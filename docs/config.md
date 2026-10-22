@@ -28,7 +28,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `terminal.auto-open` | `first` | Open a terminal on the first workspace (`first`), on every empty one (`all`), or never (`off`) |
 | `startup` | none | Commands run at session start, separated by `;` |
 | `xwayland` | `satellite` | `off`, `satellite`, `builtin` or a satellite binary path |
-| `xwayland.xsettings` | `on` | With `xwayland = builtin`, publish `Gtk/CursorThemeName`, `Gtk/CursorThemeSize` and `Xft/DPI` to X11 apps through XSETTINGS (restart required); `off` leaves them to the apps |
+| `xwayland.xsettings` | `on` | With `xwayland = builtin`, publish `Gtk/CursorThemeName`, `Gtk/CursorThemeSize`, `Xft/DPI`, `Gdk/WindowScalingFactor` and `Gdk/UnscaledDPI` to X11 apps through XSETTINGS (restart required); the scale is always announced as 1 (96 dpi) because X11 apps see logical sizes and neferwl upscales their windows; `off` leaves them to the apps |
 | `background` | `#111111` | Background color |
 | `border.radius` | `0` | Corner radius in logical pixels, `0` to `64`; floats always, tiles only with gaps |
 | `border.width` | `2` | Border width in pixels; `0` hides borders |
@@ -123,7 +123,7 @@ workspace do not flash. A click or hover focus (`focus.follow-mouse`) flashes th
 at most once per second, so a quick switch A→B→A may skip the second flash.
 It runs when `animations = on`.
 
-`xwayland = satellite` uses `xwayland-satellite` from `PATH`; a custom path also selects satellite. `off` disables X11. `builtin` (experimental): neferwl starts `Xwayland` itself and manages X11 windows as its window manager: windows tile, take focus, close with `close-window` (`WM_DELETE_WINDOW`) and show their title and class. Menus, popups and tooltips (override-redirect windows) are drawn above their window at the right place and never appear as windows in `neferwl state`. X11 apps get the cursor theme and size from `XCURSOR_THEME` and `XCURSOR_SIZE`, the DPI of the first output (96 times its scale) through XSETTINGS (`xwayland.xsettings = off` turns it off), and the themed arrow on the X background. The clipboard and the primary selection are shared with X11 apps in both directions (text only; nothing crosses while the session is locked or otherwise protected).
+`xwayland = satellite` uses `xwayland-satellite` from `PATH`; a custom path also selects satellite. `off` disables X11. `builtin` (experimental): neferwl starts `Xwayland` itself and manages X11 windows as its window manager: windows tile, take focus, close with `close-window` (`WM_DELETE_WINDOW`) and show their title and class. Menus, popups and tooltips (override-redirect windows) are drawn above their window at the right place and never appear as windows in `neferwl state`. X11 apps get the cursor theme and size from `XCURSOR_THEME` and `XCURSOR_SIZE`, a scale-1 DPI (96) through XSETTINGS (X11 apps see logical sizes; neferwl upscales their windows) (`xwayland.xsettings = off` turns it off), and the themed arrow on the X background. The clipboard and the primary selection are shared with X11 apps in both directions (text only; nothing crosses while the session is locked or otherwise protected).
 
 ## Automatic terminal
 

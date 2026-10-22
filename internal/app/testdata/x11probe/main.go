@@ -21,7 +21,7 @@
 // -copy-for, serving TARGETS and UTF8_STRING/STRING/TEXT, with INCR above
 // 64 KiB, and prints "copy owned". -paste SEL requests UTF8_STRING (INCR
 // aware) and prints `paste "<text>"`, `paste len=N sha256=H` above 4 KiB or
-// `paste none`. -xsettings prints the XSETTINGS owner's serial, Xft/DPI,
+// `paste none`. -xsettings prints the XSETTINGS owner's serial, Xft/DPI, Gdk/WindowScalingFactor, Gdk/UnscaledDPI,
 // Gtk/CursorThemeName and Gtk/CursorThemeSize, or "xsettings none".
 // -root-cursor prints "cursor WxH" of the XFixes cursor image.
 package main
@@ -654,8 +654,8 @@ func (t *tool) xsettingsMode() error {
 			return fmt.Errorf("xsettings: type %d", typ)
 		}
 	}
-	fmt.Printf("xsettings serial=%d Xft/DPI=%s Gtk/CursorThemeName=%s Gtk/CursorThemeSize=%s\n",
-		serial, vals["Xft/DPI"], vals["Gtk/CursorThemeName"], vals["Gtk/CursorThemeSize"])
+	fmt.Printf("xsettings serial=%d Xft/DPI=%s Gdk/WindowScalingFactor=%s Gdk/UnscaledDPI=%s Gtk/CursorThemeName=%s Gtk/CursorThemeSize=%s\n",
+		serial, vals["Xft/DPI"], vals["Gdk/WindowScalingFactor"], vals["Gdk/UnscaledDPI"], vals["Gtk/CursorThemeName"], vals["Gtk/CursorThemeSize"])
 	return nil
 }
 

@@ -2,7 +2,6 @@ package xwm
 
 import (
 	"encoding/binary"
-	"math"
 	"unicode/utf8"
 
 	"bnema.dev/xturbo"
@@ -29,24 +28,18 @@ type xsettings struct {
 
 	serial uint32
 	// Last published values and the serial of their last change.
-	dpi         int32
 	theme       string
 	size        int32
-	dpiSerial   uint32
+	fixedSerial uint32 // serial of the constant settings (scale 1, 96 dpi)
 	themeSerial uint32
 	sizeSerial  uint32
 
 	buf [xsBufSize]byte
 }
 
-// xsettingsDPI is Xft/DPI*1024 for a scale: 96 dpi at scale 1, rounded to an
-// integer dpi.
-func xsettingsDPI(scale float64) int32 {
-	if scale <= 0 {
-		scale = 1
-	}
-	return int32(math.Round(96*scale)) * 1024
-}
+// X11 clients see outputs at their logical size and the compositor upscales
+// their windows, so the scale announced is always 1 at 96 dpi.
+const xsDPI = 96 * 1024
 
 func (x *XWM) cursorThemeName() string {
 	t := x.cfg.CursorTheme
@@ -136,29 +129,18 @@ func (x *XWM) onSelectionClear(ev *xturbo.Event) {
 	}
 }
 
-// refreshXSettings re-evaluates the DPI after a layout change.
-func (x *XWM) refreshXSettings() {
-	if !x.xs.active {
-		return
-	}
-	if x.publishXSettings(false) {
-		x.wake()
-	}
-}
-
 // publishXSettings encodes and writes the property when a value changed
 // (force: the first time). It reports whether it wrote. Unchanged values cost
 // no allocation and no request.
 func (x *XWM) publishXSettings(force bool) bool {
 	s := &x.xs
-	dpi := xsettingsDPI(x.space.Scale())
 	theme, size := x.cursorThemeName(), x.cursorThemeSize()
-	if !force && s.serial != 0 && dpi == s.dpi && theme == s.theme && size == s.size {
+	if !force && s.serial != 0 && theme == s.theme && size == s.size {
 		return false
 	}
 	next := s.serial + 1 // wraps
-	if force || s.serial == 0 || dpi != s.dpi {
-		s.dpiSerial = next
+	if force || s.serial == 0 {
+		s.fixedSerial = next
 	}
 	if force || s.serial == 0 || theme != s.theme {
 		s.themeSerial = next
@@ -166,7 +148,7 @@ func (x *XWM) publishXSettings(force bool) bool {
 	if force || s.serial == 0 || size != s.size {
 		s.sizeSerial = next
 	}
-	s.serial, s.dpi, s.theme, s.size = next, dpi, theme, size
+	s.serial, s.theme, s.size = next, theme, size
 	n := s.encode()
 	xproto.ChangeProperty(x.conn.Buf(), xproto.PropModeReplace, xproto.Window(s.win),
 		xproto.Atom(x.atoms[atomXSettingsSettings]), xproto.Atom(x.atoms[atomXSettingsSettings]), 8, uint32(n), s.buf[:n])
@@ -182,7 +164,7 @@ func (s *xsettings) encode() int {
 	clear(b[:16])
 	b[0] = 0 // LSBFirst
 	le.PutUint32(b[4:], s.serial)
-	le.PutUint32(b[8:], 3)
+	le.PutUint32(b[8:], 5)
 	n := 12
 	putName := func(typ byte, name string, serial uint32) {
 		b[n], b[n+1] = typ, 0
@@ -194,6 +176,12 @@ func (s *xsettings) encode() int {
 		le.PutUint32(b[n:], serial)
 		n += 4
 	}
+	putName(xsInt, "Gdk/UnscaledDPI", s.fixedSerial)
+	le.PutUint32(b[n:], xsDPI)
+	n += 4
+	putName(xsInt, "Gdk/WindowScalingFactor", s.fixedSerial)
+	le.PutUint32(b[n:], 1)
+	n += 4
 	putName(xsString, "Gtk/CursorThemeName", s.themeSerial)
 	le.PutUint32(b[n:], uint32(len(s.theme)))
 	n += 4
@@ -203,8 +191,8 @@ func (s *xsettings) encode() int {
 	putName(xsInt, "Gtk/CursorThemeSize", s.sizeSerial)
 	le.PutUint32(b[n:], uint32(s.size))
 	n += 4
-	putName(xsInt, "Xft/DPI", s.dpiSerial)
-	le.PutUint32(b[n:], uint32(s.dpi))
+	putName(xsInt, "Xft/DPI", s.fixedSerial)
+	le.PutUint32(b[n:], xsDPI)
 	n += 4
 	return n
 }

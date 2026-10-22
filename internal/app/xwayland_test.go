@@ -730,11 +730,11 @@ func cursorTheme(t *testing.T, size int) {
 }
 
 // TestXwaylandXSettings: the XSETTINGS manager publishes the cursor theme,
-// the cursor size and the DPI of the first output.
+// the cursor size and a fixed scale 1 / 96 dpi.
 func TestXwaylandXSettings(t *testing.T) {
 	cursorTheme(t, 32)
 	e := startXwayland(t)
-	want := "xsettings serial=1 Xft/DPI=98304 Gtk/CursorThemeName=theme Gtk/CursorThemeSize=32"
+	want := "xsettings serial=1 Xft/DPI=98304 Gdk/WindowScalingFactor=1 Gdk/UnscaledDPI=98304 Gtk/CursorThemeName=theme Gtk/CursorThemeSize=32"
 	var got string
 	until(t, "XSETTINGS owner", func() bool { got = runProbe(t, e, "-xsettings"); return got != "xsettings none" })
 	if got != want {
@@ -742,14 +742,18 @@ func TestXwaylandXSettings(t *testing.T) {
 	}
 }
 
-// TestXwaylandXSettingsScale2: the DPI follows the output scale.
-func TestXwaylandXSettingsScale2(t *testing.T) {
+// TestXwaylandXSettingsScale2AnnouncesScale1: X11 sees logical sizes, so the
+// DPI stays 96 even on a scale-2 output.
+func TestXwaylandXSettingsScale2AnnouncesScale1(t *testing.T) {
 	cursorTheme(t, 24)
 	e := startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *ports.Config) {
 		c.Outputs = append(c.Outputs, ports.OutputConfig{Name: "HEADLESS-1", Scale: 2, ScaleOnly: true})
 	})
 	var got string
-	until(t, "Xft/DPI=196608", func() bool { got = runProbe(t, e, "-xsettings"); return strings.Contains(got, "Xft/DPI=196608") })
+	until(t, "XSETTINGS owner", func() bool { got = runProbe(t, e, "-xsettings"); return got != "xsettings none" })
+	if !strings.Contains(got, "Xft/DPI=98304") || !strings.Contains(got, "Gdk/WindowScalingFactor=1") {
+		t.Errorf("-xsettings = %q, want Xft/DPI=98304 and Gdk/WindowScalingFactor=1", got)
+	}
 	if !strings.Contains(got, "Gtk/CursorThemeSize=24") {
 		t.Errorf("-xsettings = %q, want Gtk/CursorThemeSize=24", got)
 	}

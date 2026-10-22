@@ -58,7 +58,7 @@ By default, X11 apps such as Steam run through [xwayland-satellite](https://gith
 xwayland = off   # no X11 support
 ```
 
-With `xwayland = builtin` (experimental), neferwl starts `Xwayland` itself and manages X11 windows: they tile, take focus and close like Wayland windows. Menus, popups and tooltips of X11 apps are shown above their window and do not take the keyboard focus. X11 apps get the cursor theme (`XCURSOR_THEME`), cursor size (`XCURSOR_SIZE`) and DPI (96 times the scale of the first output) through XSETTINGS (`Gtk/CursorThemeName`, `Gtk/CursorThemeSize`, `Xft/DPI`; `xwayland.xsettings = off` to disable), and the X background shows the themed arrow. The clipboard and the primary selection work between X11 and Wayland apps in both directions, for text; large copies are transferred in chunks (INCR). While the session is locked, no selection data crosses.
+With `xwayland = builtin` (experimental), neferwl starts `Xwayland` itself and manages X11 windows: they tile, take focus and close like Wayland windows. Menus, popups and tooltips of X11 apps are shown above their window and do not take the keyboard focus. X11 apps get the cursor theme (`XCURSOR_THEME`), cursor size (`XCURSOR_SIZE`) and DPI through XSETTINGS, always announced as scale 1 (96 dpi) because X11 apps see logical sizes and neferwl upscales their windows (`Gtk/CursorThemeName`, `Gtk/CursorThemeSize`, `Xft/DPI`, `Gdk/WindowScalingFactor`, `Gdk/UnscaledDPI`; `xwayland.xsettings = off` to disable), and the X background shows the themed arrow. The clipboard and the primary selection work between X11 and Wayland apps in both directions, for text; large copies are transferred in chunks (INCR). While the session is locked, no selection data crosses.
 
 Games with `builtin`:
 

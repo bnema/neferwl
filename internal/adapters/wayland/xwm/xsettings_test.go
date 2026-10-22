@@ -33,13 +33,25 @@ func (p *xpeer) count(major uint8, match func(xpeerReq) bool) (n int) {
 }
 
 func TestXSettingsEncode(t *testing.T) {
-	s := &xsettings{serial: 7, theme: "ab", size: 24, dpi: 96 * 1024, themeSerial: 7, sizeSerial: 5, dpiSerial: 3}
+	s := &xsettings{serial: 7, theme: "ab", size: 24, themeSerial: 7, sizeSerial: 5, fixedSerial: 3}
 	n := s.encode()
 	u32 := binary.LittleEndian.AppendUint32
 	var want []byte
 	want = append(want, 0, 0, 0, 0)
 	want = u32(want, 7)
+	want = u32(want, 5)
+	// Gdk/UnscaledDPI INT (name length 15 -> pad 16)
+	want = append(want, 0, 0, 15, 0)
+	want = append(want, "Gdk/UnscaledDPI"...)
+	want = append(want, 0)
 	want = u32(want, 3)
+	want = u32(want, 96*1024)
+	// Gdk/WindowScalingFactor INT 1 (length 23 -> pad 24)
+	want = append(want, 0, 0, 23, 0)
+	want = append(want, "Gdk/WindowScalingFactor"...)
+	want = append(want, 0)
+	want = u32(want, 3)
+	want = u32(want, 1)
 	// Gtk/CursorThemeName STRING "ab"
 	want = append(want, 1, 0, 19, 0)
 	want = append(want, "Gtk/CursorThemeName"...)
@@ -103,14 +115,6 @@ func TestXSettingsOwnership(t *testing.T) {
 	})
 	require.NoError(t, x.conn.Sync(&x.h))
 	require.False(t, x.xs.active)
-	before := p.count(opChangeProperty, nil)
-	var sp Space
-	sp.Set(ports.Layout{{Width: 10, Height: 10, Scale: 2}})
-	x.space = &sp
-	x.refreshXSettings()
-	require.NoError(t, x.conn.Flush())
-	require.NoError(t, x.conn.Sync(&x.h))
-	require.Equal(t, before, p.count(opChangeProperty, nil))
 }
 
 func TestXSettingsExistingOwner(t *testing.T) {
@@ -166,28 +170,38 @@ func TestXSettingsSerial(t *testing.T) {
 		return p.count(opChangeProperty, func(r xpeerReq) bool { return r.u32(4) == win })
 	}
 	require.Equal(t, 1, props())
-	layout := func(scale float64) {
+	// Layout changes (any scale) and identical settings write nothing.
+	for _, scale := range []float64{1, 2} {
 		var sp Space
 		sp.Set(ports.Layout{{Width: 100, Height: 100, Scale: scale}})
 		x.space = &sp
 		x.LayoutChanged(true)
 		require.NoError(t, x.conn.Flush())
 		require.NoError(t, x.conn.Sync(&x.h))
+		require.Equal(t, 1, props(), "scale %v", scale)
 	}
-	layout(1) // same settings as boot
-	require.Equal(t, 1, props())
-	layout(2)
-	require.Equal(t, 2, props())
 	prop, _ := p.prop(win, "_XSETTINGS_SETTINGS")
 	serial, last := decodeSettings(t, prop.data)
+	require.EqualValues(t, 1, serial)
+	require.EqualValues(t, 1, last["Xft/DPI"])
+	require.EqualValues(t, 1, last["Gdk/WindowScalingFactor"])
+	require.EqualValues(t, 1, last["Gdk/UnscaledDPI"])
+	require.EqualValues(t, 96*1024, int32(binary.LittleEndian.Uint32(prop.data[len(prop.data)-4:])), "Xft/DPI is last")
+
+	// A changed cursor size republishes: only that setting's serial moves.
+	x.cfg.CursorSize = 32
+	require.True(t, x.publishXSettings(false))
+	require.NoError(t, x.conn.Flush())
+	require.NoError(t, x.conn.Sync(&x.h))
+	prop, _ = p.prop(win, "_XSETTINGS_SETTINGS")
+	serial, last = decodeSettings(t, prop.data)
 	require.EqualValues(t, 2, serial)
-	require.EqualValues(t, 2, last["Xft/DPI"])
-	require.EqualValues(t, 1, last["Gtk/CursorThemeSize"])
-	require.EqualValues(t, 1, last["Gtk/CursorThemeName"])
-	require.EqualValues(t, 192*1024, int32(binary.LittleEndian.Uint32(prop.data[len(prop.data)-4:])))
+	require.EqualValues(t, 2, last["Gtk/CursorThemeSize"])
+	require.EqualValues(t, 1, last["Xft/DPI"])
+	require.False(t, x.publishXSettings(false), "identical settings write nothing")
 
 	x.xs.serial = 0xffffffff
-	x.xs.dpi = 0
+	x.xs.size = 0
 	x.publishXSettings(false)
 	require.EqualValues(t, 0, x.xs.serial, "wraps")
 }
@@ -198,10 +212,11 @@ func TestXSettingsNoChangeAllocations(t *testing.T) {
 	sp.Set(ports.Layout{{Width: 100, Height: 100, Scale: 1}})
 	x.space = &sp
 	x.LayoutChanged(true)
-	l := ports.Layout{{Width: 100, Height: 100, Scale: 1}}
+	l := ports.Layout{{Width: 100, Height: 100, Scale: 2}}
 	n := testing.AllocsPerRun(100, func() {
 		sp.Set(l)
 		x.LayoutChanged(false)
+		x.publishXSettings(false)
 	})
 	require.Zero(t, n)
 }
