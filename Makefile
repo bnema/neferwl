@@ -1,4 +1,4 @@
-.PHONY: build test vet race mocks mocks-check spv-check fakes-check log-check arch adapter-imports check perf-check color-check bin tty logs pkg install
+.PHONY: build test vet race e2e-xwayland mocks mocks-check spv-check fakes-check log-check arch adapter-imports check perf-check color-check bin tty logs pkg install
 
 # 0 runs until quit; set e.g. TTY_TIMEOUT=60s for a safety net.
 TTY_TIMEOUT ?= 0
@@ -26,6 +26,7 @@ test:
 	CGO_ENABLED=0 go test ./...
 vet:
 	CGO_ENABLED=0 go vet ./...
+	CGO_ENABLED=0 go vet -tags xwayland ./internal/app
 race:
 	# cgo is enabled only for the race test binary.
 	CGO_ENABLED=1 go test -race ./...
@@ -72,6 +73,11 @@ check: vet test arch fakes-check log-check perf-check
 # NeferWL. Needs a GPU and /dev/udmabuf; not part of check.
 color-check:
 	CGO_ENABLED=0 go test -tags colorcheck ./internal/app -run '^TestColorCheck' -count=1 -v
+
+# End-to-end test of the built-in XWM: a real Xwayland and an X11 probe on a
+# headless NeferWL. Needs Xwayland and a GPU; not part of check.
+e2e-xwayland:
+	CGO_ENABLED=1 go test -tags xwayland -race ./internal/app -run TestXwayland -count=1 -v
 
 # Arch package of the committed HEAD (packaging/arch/PKGBUILD). Go modules
 # come from the module proxy in prepare(); the build itself runs offline.
