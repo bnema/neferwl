@@ -32,6 +32,7 @@ var (
 type selState struct {
 	atom  uint32
 	gen   uint32 // bumped on every ownership change; stales TARGETS probes
+	probe uint32 // gen when the TARGETS ConvertSelection was issued
 	owner uint32 // X owner window other than selWin, 0 none
 	ours  bool   // selWin owns the selection (Wayland -> X)
 	// wl is what the Wayland side offers while ours: raw text availability.
@@ -206,6 +207,7 @@ func (x *XWM) onXFixesSelection(ev *xturbo.Event) {
 		x.host.SelectionOwned(k, nil)
 		return
 	}
+	st.probe = st.gen
 	x.log.Debug().Int("kind", k).Uint32("owner", owner).Msg("selection: X owner")
 	xproto.ConvertSelection(x.conn.Buf(), xproto.Window(x.selWin), xproto.Atom(st.atom),
 		xproto.Atom(x.atoms[atomTargets]), xproto.Atom(x.atoms[atomNeferwlTargets]), 0)
@@ -227,10 +229,12 @@ func (x *XWM) onSelectionNotify(ev *xturbo.Event) {
 		return
 	}
 	{
+		st := &x.sel.st[k]
+		if st.ours || st.owner == 0 || st.probe != st.gen { // stale probe
+			return
+		}
 		if e.Property() == 0 {
-			if x.sel.st[k].owner != 0 {
-				x.host.SelectionOwned(k, nil)
-			}
+			x.host.SelectionOwned(k, nil)
 			return
 		}
 		seq := xproto.GetProperty(x.conn.Buf(), true, xproto.Window(x.selWin), xproto.Atom(x.atoms[atomNeferwlTargets]), 0, 0, 256)
@@ -244,7 +248,7 @@ func (x *XWM) onSelectionNotify(ev *xturbo.Event) {
 // to Wayland: the text subset, empty for images, files and the like.
 func (x *XWM) onTargetsReply(r *xturbo.Reply) {
 	k := int(r.Args[0])
-	if k < 0 || k >= selKinds || r.Args[1] != x.sel.st[k].gen {
+	if k < 0 || k >= selKinds || r.Args[1] != x.sel.st[k].gen || x.sel.st[k].ours || x.sel.st[k].owner == 0 || x.sel.st[k].probe != r.Args[1] {
 		return
 	}
 	g, ok := xproto.ParseGetPropertyReply(r.Raw)

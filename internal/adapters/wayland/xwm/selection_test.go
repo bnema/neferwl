@@ -683,3 +683,28 @@ func TestSelectionCopyAllocationsWaylandToX(t *testing.T) {
 	require.Zero(t, allocs)
 	require.Equal(t, outFree, x.sel.out[0].state)
 }
+
+// A TARGETS reply that arrives after Wayland took the selection is dropped.
+func TestSelectionStaleTargetsAfterWaylandOwner(t *testing.T) {
+	x, p, h, _, _ := attached(t)
+	const owner = 0x500010
+	clip := p.atom("CLIPBOARD")
+	tgt := p.atom("TARGETS")
+	p.xfixesSelection(owner, clip)
+	req, _ := pumpReq(t, x, p, 0, func(r xpeerReq) bool { return r.major == 24 })
+	prop := req.u32(16)
+	x.WaylandSelection(SelClipboard, []string{"text/plain"})
+	p.setProp(x.selWin, prop, 4, 32, le32(tgt, p.atom("UTF8_STRING")))
+	p.selectionNotify(x.selWin, clip, tgt, prop) // the mock fails on SelectionOwned
+	ev := x.Stats().Events
+	readUntil(t, x, func() bool { return x.Stats().Events > ev })
+	x.flush()
+	require.True(t, x.sel.st[SelClipboard].ours)
+	for i := 0; i < 20; i++ { // let any (wrong) GetProperty round trip finish
+		x.onReadable()
+		x.flush()
+		time.Sleep(time.Millisecond)
+	}
+	require.Zero(t, getProps(p, 0, x.selWin), "the stale TARGETS reply is not fetched")
+	_ = h
+}
