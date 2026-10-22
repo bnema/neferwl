@@ -60,7 +60,7 @@ nfpms:
     homepage: https://git.bnema.dev/neferwl
     maintainer: "bnema <b@bnema.dev>"
     description: A Wayland compositor that spends its frames on your apps, not on itself
-    license: GPL-3.0-only
+    license: AGPL-3.0-only
     section: x11
     bindir: /usr/bin
     # Loaded at runtime (purego, no cgo): dpkg-shlibdeps cannot see them.
@@ -192,7 +192,7 @@ aurs:
     description: A Wayland compositor that spends its frames on your apps, not on itself
     maintainers:
       - "bnema <b at bnema dot dev>"
-    license: GPL-3.0-only
+    license: AGPL-3.0-only
     # The release workflow verifies and publishes the generated PKGBUILD.
     skip_upload: true
     # publish.sh ships the file next to the PKGBUILD.

@@ -1,7 +1,7 @@
 <h1 align="center">NeferWL</h1>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue?style=flat-square" alt="License: GPLv3"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPLv3-blue?style=flat-square" alt="License: AGPLv3"></a>
   <a href="https://github.com/bnema/neferwl"><img src="https://img.shields.io/badge/platform-Linux-blue?style=flat-square" alt="Platform: Linux"></a>
   <a href="https://github.com/bnema/neferwl/commits/main"><img src="https://img.shields.io/github/last-commit/bnema/neferwl/main?style=flat-square&logo=github" alt="Last commit"></a>
 </p>
@@ -191,4 +191,4 @@ Before submitting, run `make check`, `make race`, `make mocks-check` and `static
 
 ## License
 
-[GNU General Public License v3.0](LICENSE).
+[GNU Affero General Public License v3.0](LICENSE).

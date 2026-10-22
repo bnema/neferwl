@@ -7,7 +7,7 @@ pkgrel=1
 pkgdesc='A Wayland compositor that spends its frames on your apps, not on itself (git version)'
 arch=('x86_64' 'aarch64')
 url='https://git.bnema.dev/neferwl'
-license=('GPL-3.0-only')
+license=('AGPL-3.0-only')
 # Loaded at runtime (purego, no cgo): not seen by makepkg's library scan.
 depends=('glibc' 'libinput' 'libxkbcommon' 'seatd' 'systemd-libs' 'vulkan-icd-loader'
 	'vulkan-driver' 'wayland' 'dbus' 'libcap')
