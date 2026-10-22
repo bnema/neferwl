@@ -344,6 +344,9 @@ func openFDs(t *testing.T) int {
 // slot keeps its sync file for every lease. No mock stands in the measured
 // closure.
 func TestCaptureCycleAllocations(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation budgets are not stable under the race runtime")
+	}
 	for _, tc := range []struct {
 		name string
 		new  func(*testing.T) *Renderer

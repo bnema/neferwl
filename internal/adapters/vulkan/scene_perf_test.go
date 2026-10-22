@@ -16,6 +16,9 @@ import (
 // A new scene Seq with one of two windows moved is a partial redraw seeded by
 // sceneDelta and allocates nothing either.
 func TestRenderSteadyStateAllocations(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation budgets are not stable under the race runtime")
+	}
 	for _, tc := range []struct {
 		name           string
 		transform      domain.BufferTransform
