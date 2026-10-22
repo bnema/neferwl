@@ -475,24 +475,29 @@ func TestWaitReady(t *testing.T) {
 }
 
 // readyScript stands in for Xwayland: after a short delay it creates a marker
-// file, reports readiness on the -displayfd descriptor, then runs tail.
-func readyScript(t *testing.T, dir, tail string) (bin, marker string) {
+// file and reports readiness on the -displayfd descriptor when ready is true,
+// then runs tail.
+func readyScript(t *testing.T, dir string, ready bool, tail string) (bin, marker string) {
 	t.Helper()
 	bin, marker = filepath.Join(dir, "xwayland"), filepath.Join(dir, "ready")
 	script := "#!/bin/sh\nwhile [ $# -gt 0 ]; do [ \"$1\" = -displayfd ] && fd=$2; shift; done\n" +
-		"sleep 0.3\n: > " + marker + "\neval \"echo 1 >&$fd\"\n" + tail + "\n"
+		"sleep 0.3\n"
+	if ready {
+		script += ": > " + marker + "\neval \"echo 1 >&$fd\"\n"
+	}
+	script += tail + "\n"
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return bin, marker
 }
 
-func runBuiltin(t *testing.T, ctx context.Context, tail string, attachWM func(wmFD int)) (events []string) {
+func runBuiltin(t *testing.T, ctx context.Context, ready bool, tail string, attachWM func(wmFD int)) (events []string) {
 	t.Helper()
 	opts := testOptions(t, "")
 	opts.Backend = ports.XwaylandBuiltin
 	var marker string
-	opts.Binary, marker = readyScript(t, opts.TmpDir, tail)
+	opts.Binary, marker = readyScript(t, opts.TmpDir, ready, tail)
 	exists := func() bool { _, err := os.Stat(marker); return err == nil }
 	opts.Attach = func(wlFD int) {
 		if exists() {
@@ -528,7 +533,7 @@ func TestBuiltinAttachWMAfterReadiness(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			events := runBuiltin(t, ctx, tc.tail, func(wmFD int) {
+			events := runBuiltin(t, ctx, true, tc.tail, func(wmFD int) {
 				if _, err := unix.FcntlInt(uintptr(wmFD), unix.F_GETFD, 0); err != nil {
 					t.Errorf("wmFD not open: %v", err)
 				}
@@ -541,5 +546,13 @@ func TestBuiltinAttachWMAfterReadiness(t *testing.T) {
 				t.Fatalf("events %s", got)
 			}
 		})
+	}
+}
+
+// A process that exits before reporting readiness never reaches AttachWM.
+func TestBuiltinNoAttachWMWithoutReadiness(t *testing.T) {
+	events := runBuiltin(t, t.Context(), false, "exit 1", func(int) {})
+	if got := strings.Join(events, ","); got != "attach,returned" {
+		t.Fatalf("events %s", got)
 	}
 }

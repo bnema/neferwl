@@ -75,7 +75,7 @@ func (builtinStarter) start(ctx context.Context, d *Display, stderr *logWriter) 
 	files[wm+1].Close()
 	wr.Close()
 	d.opts.Log.Info().Str("display", d.Name()).Int("pid", cmd.Process.Pid).Msg("Xwayland started")
-	// Detach the raw descriptors from os.File ownership before handing them
+	// Detach the Wayland descriptor from os.File ownership before handing it
 	// to the display (including its finalizers).
 	if d.opts.Attach != nil {
 		// Dup transfers an independent descriptor; closing the File wrapper below
