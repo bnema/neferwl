@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"bnema.dev/xturbo"
 	"bnema.dev/xturbo/composite"
@@ -65,6 +66,8 @@ type XWM struct {
 	// attachment
 	host    host
 	src     fdSource
+	addFD   func(fd int, onReadable, onWritable func()) (fdSource, error) // display fd source seam
+	after   func(d time.Duration, fn func()) (cancel func())
 	post    func(func())
 	flushFn func()
 
@@ -94,6 +97,7 @@ func newXWM(conn *xturbo.Conn, log zerowrap.Logger) *XWM {
 	x := &XWM{conn: conn, log: log, root: conn.Root(), tab: newTable(initialSlots), space: new(Space)}
 	x.h = xturbo.Handler{OnEvent: x.onEvent, OnReply: x.onReply, OnError: x.onError}
 	x.fit()
+	x.initSelection()
 	return x
 }
 
@@ -314,6 +318,13 @@ func (x *XWM) boot() error {
 // Attach registers the X socket with the display and hands the windows found
 // at boot to h. Display goroutine only.
 func (x *XWM) Attach(d *server.Display, h host) error {
+	x.addFD = func(fd int, r, w func()) (fdSource, error) {
+		s, err := d.AddFDRW(fd, r, w)
+		if err != nil {
+			return nil, err
+		}
+		return s, nil
+	}
 	src, err := d.AddFDRW(x.conn.Fd(), x.onReadable, x.onWritable)
 	if err != nil {
 		return fmt.Errorf("xwm: watch X socket: %w", err)
@@ -325,6 +336,7 @@ func (x *XWM) Attach(d *server.Display, h host) error {
 // attach is Attach over its seams: the event source and the display's Post.
 func (x *XWM) attach(src fdSource, h host, post func(func())) {
 	x.src, x.host, x.post = src, h, post
+	x.after = h.After
 	x.flushFn = func() {
 		x.posted = false
 		x.flush()
@@ -354,6 +366,7 @@ func (x *XWM) Close() {
 		return
 	}
 	x.closed = true
+	x.selClose()
 	s := x.stats
 	x.log.Info().Uint64("events", s.Events).Uint64("replies", s.Replies).Uint64("errors", s.Errors).
 		Uint64("unattributed", s.Unattributed).Uint64("stale", s.Stale).Uint64("ring_full", s.RingFull).

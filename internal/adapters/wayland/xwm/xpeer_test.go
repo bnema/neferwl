@@ -365,12 +365,25 @@ func (p *xpeer) answer(r xpeerReq, body []byte) {
 		delete(p.props[binary.LittleEndian.Uint32(body)], binary.LittleEndian.Uint32(body[4:]))
 	case r.major == opGetProperty:
 		win, prop := binary.LittleEndian.Uint32(body), binary.LittleEndian.Uint32(body[4:])
+		off, length := int(binary.LittleEndian.Uint32(body[12:]))*4, int(binary.LittleEndian.Uint32(body[16:]))*4
 		v, ok := p.props[win][prop]
-		b := make([]byte, 24+(len(v.data)+3)&^3)
+		data, after := v.data, 0
+		if off > len(data) {
+			off = len(data)
+		}
+		data = data[off:]
+		if len(data) > length {
+			data, after = data[:length], len(data)-length
+		}
+		b := make([]byte, 24+(len(data)+3)&^3)
 		if ok && v.format != 0 {
 			binary.LittleEndian.PutUint32(b[0:], v.typ)
-			binary.LittleEndian.PutUint32(b[8:], uint32(len(v.data)/(int(v.format)/8)))
-			copy(b[24:], v.data)
+			binary.LittleEndian.PutUint32(b[4:], uint32(after))
+			binary.LittleEndian.PutUint32(b[8:], uint32(len(data)/(int(v.format)/8)))
+			copy(b[24:], data)
+			if r.raw[1] != 0 && after == 0 { // delete
+				delete(p.props[win], prop)
+			}
 		}
 		p.reply(v.format, b)
 	case r.major == opChangeWindowAttributes:

@@ -1,10 +1,18 @@
 package xwm
 
 import (
+	"bytes"
 	"encoding/binary"
+	"io"
+	"os"
 	"testing"
+	"time"
 
+	"bnema.dev/xturbo"
+	"bnema.dev/xturbo/xproto"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 const peerXFixesFirstEvent = 87
@@ -110,4 +118,307 @@ func TestSelectionXOwnsAnnounces(t *testing.T) {
 	readUntil(t, x, func() bool { return x.Stats().Events > ev })
 	x.flush()
 	require.Equal(t, before, len(p.requests()))
+}
+
+// ---- X -> Wayland ----
+
+type selRig struct {
+	x     *XWM
+	p     *xpeer
+	h     *mockhost
+	clip  uint32
+	utf8  uint32
+	data  uint32
+	skip  int
+	timer func()
+}
+
+// ownedRig attaches an XWM whose CLIPBOARD is owned by an X client offering text.
+func ownedRig(t *testing.T) *selRig {
+	t.Helper()
+	x, p, h, _, _ := attached(t)
+	r := &selRig{x: x, p: p, h: h, clip: p.atom("CLIPBOARD"), utf8: p.atom("UTF8_STRING"), data: p.atom("_NEFERWL_DATA")}
+	h.EXPECT().After(mock.Anything, mock.Anything).Run(func(_ time.Duration, fn func()) { r.timer = fn }).Return(func() {}).Maybe()
+	got := 0
+	h.EXPECT().SelectionOwned(SelClipboard, mock.Anything).Run(func(int, []string) { got++ }).Once()
+	p.xfixesSelection(0x500010, r.clip)
+	_, n := pumpReq(t, x, p, 0, func(q xpeerReq) bool { return q.major == 24 })
+	tgt := p.atom("TARGETS")
+	p.setProp(x.selWin, p.atom("_NEFERWL_TARGETS"), 4, 32, le32(tgt, r.utf8))
+	p.selectionNotify(x.selWin, r.clip, tgt, p.atom("_NEFERWL_TARGETS"))
+	readUntil(t, x, func() bool { return got == 1 })
+	r.skip = len(p.requests())
+	_ = n
+	return r
+}
+
+// receive starts a paste and returns the read end of its pipe.
+func (r *selRig) receive(t *testing.T, size int) *os.File {
+	t.Helper()
+	fds := make([]int, 2)
+	require.NoError(t, unix.Pipe2(fds, unix.O_CLOEXEC))
+	if size > 0 {
+		_, err := unix.FcntlInt(uintptr(fds[0]), unix.F_SETPIPE_SZ, size)
+		require.NoError(t, err)
+	}
+	r.x.SelectionReceive(SelClipboard, "text/plain;charset=utf-8", fds[1])
+	r.x.flush()
+	f := os.NewFile(uintptr(fds[0]), "pipe-r")
+	t.Cleanup(func() { f.Close() })
+	return f
+}
+
+func (r *selRig) waitGet(t *testing.T) {
+	t.Helper()
+	_, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == opGetProperty && q.u32(8) == r.data })
+	r.skip = n
+}
+
+func pattern(n int) []byte {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = byte(i*7 + i/251)
+	}
+	return b
+}
+
+func TestSelectionXToWaylandSmall(t *testing.T) {
+	r := ownedRig(t)
+	f := r.receive(t, 0)
+	req, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
+	require.Equal(t, r.x.selWin, req.u32(4))
+	require.Equal(t, r.clip, req.u32(8))
+	require.Equal(t, r.utf8, req.u32(12))
+	require.Equal(t, r.data, req.u32(16))
+	r.skip = n
+	r.p.setProp(r.x.selWin, r.data, r.utf8, 8, []byte("hello clipboard"))
+	r.p.selectionNotify(r.x.selWin, r.clip, r.utf8, r.data)
+	r.waitGet(t)
+	buf := make([]byte, 64)
+	var got []byte
+	readUntil(t, r.x, func() bool {
+		m, _ := unix.Read(int(f.Fd()), buf[:0:0])
+		_ = m
+		return r.x.sel.in[0].state == inFree
+	})
+	m, err := f.Read(buf)
+	require.NoError(t, err)
+	got = buf[:m]
+	require.Equal(t, "hello clipboard", string(got))
+	_, ok := r.p.prop(r.x.selWin, "_NEFERWL_DATA")
+	require.False(t, ok, "property deleted by the read")
+	_, err = f.Read(buf)
+	require.ErrorIs(t, err, io.EOF, "write end closed")
+}
+
+func TestSelectionXToWaylandRefused(t *testing.T) {
+	r := ownedRig(t)
+	f := r.receive(t, 0)
+	_, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
+	r.skip = n
+	r.p.selectionNotify(r.x.selWin, r.clip, r.utf8, 0)
+	readUntil(t, r.x, func() bool { return r.x.sel.in[0].state == inFree })
+	_, err := f.Read(make([]byte, 8))
+	require.ErrorIs(t, err, io.EOF)
+}
+
+func TestSelectionXToWaylandINCR(t *testing.T) {
+	r := ownedRig(t)
+	const total = 1 << 20
+	want := pattern(total)
+	f := r.receive(t, 1<<20)
+	_, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
+	r.skip = n
+	r.p.setProp(r.x.selWin, r.data, r.p.atom("INCR"), 32, le32(total))
+	r.p.selectionNotify(r.x.selWin, r.clip, r.utf8, r.data)
+	r.waitGet(t) // reads and deletes the INCR marker
+	gets := 1
+	for off := 0; off <= total; off += chunk {
+		end := min(off+chunk, total)
+		r.p.setProp(r.x.selWin, r.data, r.utf8, 8, want[off:end])
+		r.p.propertyNotify(r.x.selWin, r.data, false)
+		r.waitGet(t)
+		gets++
+	}
+	readUntil(t, r.x, func() bool { return r.x.sel.in[0].state == inFree })
+	got, err := io.ReadAll(f)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(want, got), "byte-exact, got %d", len(got))
+	require.Equal(t, 1+total/chunk+1, gets, "marker, 16 chunks, empty terminator")
+}
+
+// A reader that does not drain: no further GetProperty until the pipe has room.
+func TestSelectionXToWaylandBackpressure(t *testing.T) {
+	r := ownedRig(t)
+	src := newMockfdSource(t)
+	var onW func()
+	r.x.addFD = func(_ int, _, w func()) (fdSource, error) { onW = w; return src, nil }
+	src.EXPECT().SetWritable(true).Return(nil).Once()
+	src.EXPECT().SetWritable(false).Return(nil).Once()
+	src.EXPECT().Remove().Return().Once()
+	f := r.receive(t, 0) // default 64 KiB pipe
+	_, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
+	r.skip = n
+	r.p.setProp(r.x.selWin, r.data, r.p.atom("INCR"), 32, le32(3*chunk))
+	r.p.selectionNotify(r.x.selWin, r.clip, r.utf8, r.data)
+	r.waitGet(t)
+	want := pattern(3 * chunk)
+	chunkN := func(k int) {
+		r.p.setProp(r.x.selWin, r.data, r.utf8, 8, want[k*chunk:(k+1)*chunk])
+		r.p.propertyNotify(r.x.selWin, r.data, false)
+	}
+	chunkN(0) // fills the pipe exactly
+	r.waitGet(t)
+	readUntil(t, r.x, func() bool { return r.x.sel.in[0].state == inWaitIncr })
+	chunkN(1) // nobody reads: EAGAIN, the buffer stays pending
+	r.waitGet(t)
+	readUntil(t, r.x, func() bool { return r.x.sel.in[0].state == inWriting })
+	require.NotNil(t, onW)
+
+	gets := getProps(r.p, 0, r.x.selWin)
+	chunkN(2) // announced while a buffer is pending
+	ev := r.x.Stats().Events
+	readUntil(t, r.x, func() bool { return r.x.Stats().Events > ev })
+	r.x.flush()
+	require.Equal(t, gets, getProps(r.p, 0, r.x.selWin), "no GetProperty while a buffer is pending")
+
+	got := make([]byte, 0, 3*chunk)
+	buf := make([]byte, chunk)
+	m, err := f.Read(buf) // the reader wakes: room again
+	require.NoError(t, err)
+	got = append(got, buf[:m]...)
+	onW()
+	require.Equal(t, inReading, r.x.sel.in[0].state, "the pending announcement is served once drained")
+	r.waitGet(t)
+	_ = got
+	r.x.selClose()
+}
+
+func TestSelectionTimeouts(t *testing.T) {
+	r := ownedRig(t)
+	f := r.receive(t, 0)
+	_, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
+	r.skip = n
+	require.NotNil(t, r.timer)
+	// X stays silent after ConvertSelection: nine ticks keep it alive, the tenth aborts.
+	for i := 0; i < xIdleMax-1; i++ {
+		fn := r.timer
+		fn()
+		require.Equal(t, inConverting, r.x.sel.in[0].state, i)
+	}
+	r.timer()
+	require.Equal(t, inFree, r.x.sel.in[0].state)
+	_, err := f.Read(make([]byte, 8))
+	require.ErrorIs(t, err, io.EOF, "fd closed")
+	pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == opDeleteProperty && q.u32(8) == r.data })
+	require.Equal(t, nXfer, r.x.sel.pool.n)
+}
+
+func TestSelectionPoolExhausted(t *testing.T) {
+	r := ownedRig(t)
+	var files []*os.File
+	for i := 0; i < nXfer; i++ {
+		files = append(files, r.receive(t, 0))
+	}
+	fifth := r.receive(t, 0)
+	_, err := fifth.Read(make([]byte, 8))
+	require.ErrorIs(t, err, io.EOF, "the fifth paste is refused with its pipe closed")
+	for i := range r.x.sel.in {
+		require.NotEqual(t, inFree, r.x.sel.in[i].state, i)
+	}
+	_ = files
+	r.x.selClose()
+	for i := range r.x.sel.in {
+		require.Equal(t, inFree, r.x.sel.in[i].state, i)
+	}
+}
+
+// allocRig is a rig whose peer sinks requests and whose timer seam is inert.
+func allocRig(t *testing.T) *selRig {
+	r := ownedRig(t)
+	sinkPeer(t, r.x, r.p)
+	r.x.after = func(time.Duration, func()) func() { return func() {} }
+	r.x.sel.timerOn = true // no timer re-arming in the measured loop
+	return r
+}
+
+func dataReply(r *selRig, typ uint32, payload []byte) *xturbo.Reply {
+	raw := make([]byte, 32+(len(payload)+3)&^3)
+	raw[0], raw[1] = 1, 8
+	binary.LittleEndian.PutUint32(raw[8:], typ)
+	binary.LittleEndian.PutUint32(raw[16:], uint32(len(payload)))
+	copy(raw[32:], payload)
+	return &xturbo.Reply{Kind: kindSelData, Raw: raw}
+}
+
+func TestSelectionCopyAllocations(t *testing.T) {
+	r := allocRig(t)
+	x := r.x
+	fds := make([]int, 2)
+	require.NoError(t, unix.Pipe2(fds, unix.O_CLOEXEC))
+	t.Cleanup(func() { unix.Close(fds[0]); unix.Close(fds[1]) })
+	payload := pattern(4096)
+	rep := dataReply(r, r.utf8, payload)
+	var note xturbo.Event
+	note.Kind = xproto.KindSelectionNotify
+	binary.LittleEndian.PutUint32(note.Raw[8:], x.selWin)
+	binary.LittleEndian.PutUint32(note.Raw[12:], r.clip)
+	binary.LittleEndian.PutUint32(note.Raw[16:], r.utf8)
+	binary.LittleEndian.PutUint32(note.Raw[20:], r.data)
+	sink := make([]byte, 8192)
+	mime := textMimes[0]
+	round := func() {
+		fd, err := unix.FcntlInt(uintptr(fds[1]), unix.F_DUPFD_CLOEXEC, 0)
+		if err != nil {
+			t.Fatal("dup")
+		}
+		x.SelectionReceive(SelClipboard, mime, fd)
+		x.onSelectionNotify(&note)
+		rep.Args = [4]uint32{0, x.sel.in[0].gen}
+		x.onSelDataReply(rep)
+		if m, err := unix.Read(fds[0], sink); err != nil || m != 4096 {
+			t.Fatal("read")
+		}
+		x.posted = false
+		x.flush()
+	}
+	round()
+	require.Zero(t, testing.AllocsPerRun(100, round))
+}
+
+func TestSelectionINCRChunkAllocations(t *testing.T) {
+	r := allocRig(t)
+	x := r.x
+	fds := make([]int, 2)
+	require.NoError(t, unix.Pipe2(fds, unix.O_CLOEXEC))
+	t.Cleanup(func() { unix.Close(fds[0]); unix.Close(fds[1]) })
+	x.SelectionReceive(SelClipboard, textMimes[0], fds[1])
+	var note xturbo.Event
+	note.Kind = xproto.KindSelectionNotify
+	binary.LittleEndian.PutUint32(note.Raw[8:], x.selWin)
+	binary.LittleEndian.PutUint32(note.Raw[12:], r.clip)
+	binary.LittleEndian.PutUint32(note.Raw[16:], r.utf8)
+	binary.LittleEndian.PutUint32(note.Raw[20:], r.data)
+	x.onSelectionNotify(&note)
+	x.onSelDataReply(dataReply(r, r.p.atom("INCR"), le32(1<<20)))
+	require.Equal(t, inWaitIncr, x.sel.in[0].state)
+	rep := dataReply(r, r.utf8, pattern(chunk))
+	var pn xturbo.Event
+	pn.Kind = xproto.KindPropertyNotify
+	binary.LittleEndian.PutUint32(pn.Raw[4:], x.selWin)
+	binary.LittleEndian.PutUint32(pn.Raw[8:], r.data)
+	sink := make([]byte, chunk)
+	step := func() {
+		x.onSelProperty(&pn)
+		rep.Args = [4]uint32{0, x.sel.in[0].gen}
+		x.onSelDataReply(rep)
+		if m, err := unix.Read(fds[0], sink); err != nil || m != chunk {
+			t.Fatal("read")
+		}
+		x.posted = false
+		x.flush()
+	}
+	step()
+	require.Zero(t, testing.AllocsPerRun(100, step))
+	require.Equal(t, inWaitIncr, x.sel.in[0].state)
 }
