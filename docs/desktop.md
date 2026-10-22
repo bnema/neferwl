@@ -58,7 +58,7 @@ By default, X11 apps such as Steam run through [xwayland-satellite](https://gith
 xwayland = off   # no X11 support
 ```
 
-With `xwayland = builtin` (experimental), neferwl starts `Xwayland` itself and manages X11 windows: they tile, take focus and close like Wayland windows. Menus and popups, clipboard and XSETTINGS are not supported yet; use `satellite` if you need them.
+With `xwayland = builtin` (experimental), neferwl starts `Xwayland` itself and manages X11 windows: they tile, take focus and close like Wayland windows. Menus, popups and tooltips of X11 apps are shown above their window and do not take the keyboard focus. Clipboard and XSETTINGS are not supported; use `satellite` if you need them.
 
 ## Session locking
 
