@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"bnema.dev/purego-libwayland/server"
+	"bnema.dev/zerowrap"
 	"github.com/bnema/go-wayland-bindings/server/fractionalscale"
 	"github.com/bnema/go-wayland-bindings/server/inputtimestamps"
 	"github.com/bnema/go-wayland-bindings/server/relativepointer"
@@ -18,8 +20,6 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/purego-libwayland/server"
-	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 
@@ -178,6 +178,7 @@ type Server struct {
 	log             zerowrap.Logger
 	logDamage       bool
 	channels        Channels
+	xwayland        xwaylandClient
 	// awaiting holds frame callbacks by output name, due at its next
 	// frame (frameDue, or its page flip).
 	awaiting    map[string][]*wayland.Callback
@@ -599,6 +600,7 @@ func (s *Server) Run(ctx context.Context) error {
 	s.castInventoryChanged()
 	err := s.display.Run(ctx)
 	s.syncWait.releasePending()
+	s.forgetXwayland()
 	s.stopSecurityContexts()
 	wg.Wait()
 	return err

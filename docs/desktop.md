@@ -52,11 +52,13 @@ Candidate popups are not drawn yet.
 
 ## X11 apps
 
-X11 apps such as Steam run through [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite) 0.7+, found in `PATH`. NeferWL starts it when the first X11 app connects; do not start it yourself.
+By default, X11 apps such as Steam run through [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite) 0.7+, found in `PATH`. NeferWL starts it when the first X11 app connects; do not start it yourself.
 
 ```text
 xwayland = off   # no X11 support
 ```
+
+With `xwayland = builtin`, neferwl starts `Xwayland` itself (experimental). Built-in X11 windows are not managed.
 
 ## Session locking
 

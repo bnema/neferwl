@@ -263,3 +263,11 @@ packages:
           dir: internal/adapters/outputkit/routing
           pkgname: routing
           filename: contentattacher_mock_test.go
+
+  github.com/bnema/neferwl/internal/adapters/xwayland:
+    interfaces:
+      starter:
+        config:
+          dir: internal/adapters/xwayland
+          pkgname: xwayland
+          filename: starter_mock_test.go

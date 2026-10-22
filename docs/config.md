@@ -27,7 +27,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `terminal` | `$TERMINAL` or `foot` | Terminal command |
 | `terminal.auto-open` | `first` | Open a terminal on the first workspace (`first`), on every empty one (`all`), or never (`off`) |
 | `startup` | none | Commands run at session start, separated by `;` |
-| `xwayland` | `xwayland-satellite` | X11 support; `off` disables it |
+| `xwayland` | `satellite` | `off`, `satellite`, `builtin` or a satellite binary path |
 | `background` | `#111111` | Background color |
 | `border.radius` | `0` | Corner radius in logical pixels, `0` to `64`; floats always, tiles only with gaps |
 | `border.width` | `2` | Border width in pixels; `0` hides borders |
@@ -121,6 +121,8 @@ three-finger swipe and an overview pick. A cancelled swipe and an empty
 workspace do not flash. A click or hover focus (`focus.follow-mouse`) flashes the window it focuses. A window flashes
 at most once per second, so a quick switch A→B→A may skip the second flash.
 It runs when `animations = on`.
+
+`xwayland = satellite` uses `xwayland-satellite` from `PATH`; a custom path also selects satellite. `off` disables X11. `builtin`: neferwl starts `Xwayland` itself (experimental). Built-in X11 windows are not managed.
 
 ## Automatic terminal
 

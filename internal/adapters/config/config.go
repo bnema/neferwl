@@ -172,7 +172,7 @@ func Defaults() domain.Config {
 	c.Hint.TextClick = domain.ModCtrl | domain.ModShift
 	c.Hint.Detector = defaultHintDetector
 	c.Hint.Model = defaultHintModel()
-	c.Xwayland = "xwayland-satellite"
+	c.Xwayland = domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: "xwayland-satellite"}
 	c.Background.Color = "#111111"
 	c.Floating.Dim = 0.3
 	c.Stash.Width = 80
@@ -733,11 +733,15 @@ func set(c *domain.Config, key, v string) error {
 	case "xwayland":
 		switch {
 		case v == "off":
-			c.Xwayland = ""
+			c.Xwayland = domain.XwaylandConfig{Backend: domain.XwaylandOff}
+		case v == "satellite":
+			c.Xwayland = domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: "xwayland-satellite"}
+		case v == "builtin":
+			c.Xwayland = domain.XwaylandConfig{Backend: domain.XwaylandBuiltin, Binary: "Xwayland"}
 		case v == "" || strings.ContainsAny(v, " \t"):
-			return fmt.Errorf("must be off or the xwayland-satellite program")
+			return fmt.Errorf("must be off, satellite, builtin or a satellite program")
 		default:
-			c.Xwayland = v
+			c.Xwayland = domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: v}
 		}
 	case "background":
 		if !color.MatchString(v) {

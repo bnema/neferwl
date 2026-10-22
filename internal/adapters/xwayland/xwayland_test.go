@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"github.com/bnema/neferwl/internal/domain"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
 
@@ -372,4 +375,101 @@ func TestRunKillsSatelliteGroup(t *testing.T) {
 		}
 		break
 	}
+}
+
+func TestStarterSelection(t *testing.T) {
+	for _, backend := range []domain.XwaylandBackend{domain.XwaylandSatellite, domain.XwaylandBuiltin} {
+		opts := testOptions(t, "true")
+		opts.Backend = backend
+		d, err := Open(opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer d.Close()
+		switch d.starter.(type) {
+		case satelliteStarter:
+			if backend != domain.XwaylandSatellite {
+				t.Fatal("satellite selected")
+			}
+		case builtinStarter:
+			if backend != domain.XwaylandBuiltin {
+				t.Fatal("builtin selected")
+			}
+		default:
+			t.Fatalf("unexpected starter %T", d.starter)
+		}
+	}
+}
+
+func TestRunCallsStarter(t *testing.T) {
+	d, err := Open(testOptions(t, "unused"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	m := newMockstarter(t)
+	d.starter = m
+	m.EXPECT().start(ctx, d, mock.Anything).RunAndReturn(func(_ context.Context, got *Display, stderr *logWriter) error {
+		if got != d || stderr == nil {
+			t.Error("starter arguments")
+		}
+		cancel()
+		return ctx.Err()
+	}).Once()
+	done := make(chan error, 1)
+	go func() { done <- d.Run(ctx) }()
+	unix.Close(dial(t, d.socket))
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not stop")
+	}
+}
+
+func TestWaitReady(t *testing.T) {
+	for _, tt := range []struct {
+		name, data string
+		wantErr    bool
+	}{
+		{"ready", "12\n", false}, {"invalid", "bad\n", true}, {"closed", "", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var p [2]int
+			if err := unix.Pipe2(p[:], unix.O_CLOEXEC); err != nil {
+				t.Fatal(err)
+			}
+			defer unix.Close(p[0])
+			if tt.data != "" {
+				if _, err := unix.Write(p[1], []byte(tt.data)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			unix.Close(p[1])
+			joined, err := waitReady(t.Context(), p[0], make(chan error))
+			if joined || (err != nil) != tt.wantErr {
+				t.Fatalf("joined=%v err=%v", joined, err)
+			}
+		})
+	}
+	t.Run("exit", func(t *testing.T) {
+		done := make(chan error, 1)
+		done <- errors.New("exit")
+		joined, err := waitReady(t.Context(), -1, done)
+		if !joined || err == nil {
+			t.Fatal(joined, err)
+		}
+	})
+	t.Run("cancel", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		joined, err := waitReady(ctx, -1, make(chan error))
+		if joined || !errors.Is(err, context.Canceled) {
+			t.Fatal(joined, err)
+		}
+	})
 }

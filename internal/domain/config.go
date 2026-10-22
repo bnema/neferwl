@@ -93,9 +93,8 @@ type Config struct {
 		Command  []string
 		AutoOpen string
 	}
-	// Xwayland is the xwayland-satellite binary serving X11 clients; empty
-	// disables X11.
-	Xwayland string
+	// Xwayland selects the X11 launcher.
+	Xwayland XwaylandConfig
 	// Startup are commands run once when the session starts, in order.
 	// One startup line may hold several, split by SplitCommands.
 	Startup    [][]string
@@ -405,4 +404,19 @@ func equalSlice[S ~[]E, E comparable](a, b S) bool {
 }
 func equalSliceFunc[S ~[]E, E any](a, b S, equal func(E, E) bool) bool {
 	return (a == nil) == (b == nil) && slices.EqualFunc(a, b, equal)
+}
+
+// XwaylandBackend selects how X11 clients are served.
+type XwaylandBackend uint8
+
+const (
+	XwaylandOff XwaylandBackend = iota
+	XwaylandSatellite
+	XwaylandBuiltin
+)
+
+// XwaylandConfig selects the launcher and its executable.
+type XwaylandConfig struct {
+	Backend XwaylandBackend
+	Binary  string
 }

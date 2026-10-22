@@ -1,6 +1,5 @@
-// Package xwayland runs X11 clients through xwayland-satellite, started on
-// demand: neferwl owns the X11 display sockets and starts the satellite
-// when the first X11 client connects, and again after it exits.
+// Package xwayland starts an X11 backend on demand. NeferWL owns the display
+// sockets and starts the selected backend when the first client connects.
 package xwayland
 
 import (
@@ -19,14 +18,18 @@ import (
 	"time"
 
 	"bnema.dev/zerowrap"
+	"github.com/bnema/neferwl/internal/domain"
 	"golang.org/x/sys/unix"
 )
 
 // Options configures the X11 display.
 type Options struct {
-	// Binary is the xwayland-satellite executable.
+	Backend domain.XwaylandBackend
+	// Attach takes ownership of both descriptors when called.
+	Attach func(wlFD, wmFD int)
+	// Binary is the selected backend executable.
 	Binary string
-	// Env is the satellite's environment; it must hold WAYLAND_DISPLAY.
+	// Env is the backend environment; satellite requires WAYLAND_DISPLAY.
 	Env []string
 	// Dir holds the X11 sockets and TmpDir the lock files: /tmp/.X11-unix
 	// and /tmp outside tests.
@@ -36,8 +39,9 @@ type Options struct {
 	Log      zerowrap.Logger
 }
 
-// Display is an X11 display served by xwayland-satellite.
+// Display is an on-demand X11 display.
 type Display struct {
+	starter starter
 	opts    Options
 	n       int
 	sockets []*os.File // unix socket, then the abstract one
@@ -98,7 +102,10 @@ func Open(opts Options) (*Display, error) {
 			_ = os.Remove(lock)
 			return nil, fmt.Errorf("write X11 lock: %w", err)
 		}
-		d := &Display{opts: opts, n: n, lock: lock, socket: filepath.Join(opts.Dir, fmt.Sprintf("X%d", n))}
+		d := &Display{starter: satelliteStarter{}, opts: opts, n: n, lock: lock, socket: filepath.Join(opts.Dir, fmt.Sprintf("X%d", n))}
+		if opts.Backend == domain.XwaylandBuiltin {
+			d.starter = builtinStarter{}
+		}
 		if err := d.listen(); err != nil {
 			last = err
 			d.Close()
@@ -229,15 +236,15 @@ func (d *Display) Run(ctx context.Context) error {
 			return err
 		}
 		start := time.Now()
-		stderr := &logWriter{log: d.opts.Log}
-		err := d.serve(ctx, stderr)
+		stderr := &logWriter{log: d.opts.Log, backend: d.backendName()}
+		err := d.starter.start(ctx, d, stderr)
 		if ctx.Err() != nil {
 			return nil
 		}
 		if err != nil {
-			d.opts.Log.Warn().Err(err).Strs("stderr", stderr.tail()).Str("display", d.Name()).Msg("xwayland-satellite exited")
+			d.opts.Log.Warn().Err(err).Strs("stderr", stderr.tail()).Str("display", d.Name()).Msg(d.backendName() + " exited")
 		} else {
-			d.opts.Log.Info().Str("display", d.Name()).Msg("xwayland-satellite exited")
+			d.opts.Log.Info().Str("display", d.Name()).Msg(d.backendName() + " exited")
 		}
 		// Clients the satellite never accepted would wake us at once: a
 		// satellite that cannot start must not respawn in a loop.
@@ -278,8 +285,14 @@ func (d *Display) waitClient(ctx context.Context, wake int) error {
 	return ctx.Err()
 }
 
-// serve runs the satellite on the sockets until it exits or ctx ends.
-func (d *Display) serve(ctx context.Context, stderr *logWriter) error {
+// starter runs a backend on the reserved sockets until it exits or ctx ends.
+type starter interface {
+	start(ctx context.Context, d *Display, stderr *logWriter) error
+}
+
+type satelliteStarter struct{}
+
+func (satelliteStarter) start(ctx context.Context, d *Display, stderr *logWriter) error {
 	args := []string{d.Name()}
 	for i := range d.sockets {
 		args = append(args, "-listenfd", strconv.Itoa(3+i))
@@ -337,10 +350,11 @@ func (d *Display) dropPending() {
 // logWriter logs the satellite's stderr line by line and keeps the last
 // lines for the exit log; exec copies it from a pipe on its own goroutine.
 type logWriter struct {
-	mu   sync.Mutex
-	log  zerowrap.Logger
-	line []byte
-	last []string
+	backend string
+	mu      sync.Mutex
+	log     zerowrap.Logger
+	line    []byte
+	last    []string
 }
 
 // tail is the last lines written.
@@ -361,7 +375,7 @@ func (w *logWriter) Write(p []byte) (int, error) {
 		}
 		if i > 0 {
 			line := string(w.line[:i])
-			w.log.Debug().Str("line", line).Msg("xwayland-satellite")
+			w.log.Debug().Str("line", line).Msg(w.backend)
 			if w.last = append(w.last, line); len(w.last) > 5 {
 				w.last = w.last[1:]
 			}
@@ -372,4 +386,11 @@ func (w *logWriter) Write(p []byte) (int, error) {
 		w.line = w.line[:0]
 	}
 	return len(p), nil
+}
+
+func (d *Display) backendName() string {
+	if d.opts.Backend == domain.XwaylandBuiltin {
+		return "Xwayland"
+	}
+	return "xwayland-satellite"
 }

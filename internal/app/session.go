@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/config"
@@ -38,7 +39,6 @@ import (
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/zerowrap"
 )
 
 // session holds the dependencies assembleSession acquired and wired; run
@@ -186,7 +186,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 		s.statePath = statePath
 		s.childEnv = append(s.childEnv, statefile.Env+"="+statePath)
 	}
-	if s.xdisplay = openXwayland(ctx, opts, s.childEnv, logging.For(ctx, "xwayland")); s.xdisplay != nil {
+	if s.xdisplay = openXwayland(ctx, opts, s.childEnv, logging.For(ctx, "xwayland"), s.server.AttachXwayland); s.xdisplay != nil {
 		s.childEnv = append(s.childEnv, "DISPLAY="+s.xdisplay.Name())
 	}
 	s.child = launcher.New(s.childEnv, s.security, logging.For(ctx, "launcher"))

@@ -351,14 +351,24 @@ func TestWorkspacePrevNextAction(t *testing.T) {
 }
 
 func TestXwayland(t *testing.T) {
-	if Defaults().Xwayland != "xwayland-satellite" {
+	if Defaults().Xwayland != (domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: "xwayland-satellite"}) {
 		t.Fatal(Defaults().Xwayland)
 	}
-	if c, w := parseString(t, "xwayland = off"); c.Xwayland != "" || len(w) != 0 {
-		t.Fatal(c.Xwayland, w)
-	}
-	if c, w := parseString(t, "xwayland = /opt/xwls"); c.Xwayland != "/opt/xwls" || len(w) != 0 {
-		t.Fatal(c.Xwayland, w)
+	for _, tt := range []struct {
+		value string
+		want  domain.XwaylandConfig
+	}{
+		{"off", domain.XwaylandConfig{Backend: domain.XwaylandOff}},
+		{"satellite", domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: "xwayland-satellite"}},
+		{"builtin", domain.XwaylandConfig{Backend: domain.XwaylandBuiltin, Binary: "Xwayland"}},
+		{"/opt/xwls", domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: "/opt/xwls"}},
+	} {
+		t.Run(tt.value, func(t *testing.T) {
+			c, w := parseString(t, "xwayland = "+tt.value)
+			if c.Xwayland != tt.want || len(w) != 0 {
+				t.Fatal(c.Xwayland, w)
+			}
+		})
 	}
 }
 
