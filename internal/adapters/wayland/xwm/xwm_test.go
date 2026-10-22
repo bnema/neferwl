@@ -74,7 +74,7 @@ func TestBootRequests(t *testing.T) {
 			redirect = i
 			require.EqualValues(t, peerRoot, r.u32(4))
 			require.EqualValues(t, 1, r.raw[8], "manual")
-		case r.major == opCreateWindow:
+		case r.major == opCreateWindow && r.u32(4) == wm:
 			create = i
 			require.Equal(t, wm, r.u32(4))
 		case r.major == opSetSelectionOwner && r.u32(8) == p.atom("WM_S0"):

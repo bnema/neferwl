@@ -46,6 +46,14 @@ const (
 	atomClipboard
 	atomPrimary
 	atomTargets
+	atomString
+	atomText
+	atomTextPlain
+	atomTextPlainUTF8
+	atomIncr
+	atomTimestamp
+	atomNeferwlData
+	atomNeferwlTargets
 	atomCount
 )
 
@@ -93,4 +101,12 @@ var atomNames = [atomCount]string{
 	atomClipboard:                   "CLIPBOARD",
 	atomPrimary:                     "PRIMARY",
 	atomTargets:                     "TARGETS",
+	atomString:                      "STRING",
+	atomText:                        "TEXT",
+	atomTextPlain:                   "text/plain",
+	atomTextPlainUTF8:               "text/plain;charset=utf-8",
+	atomIncr:                        "INCR",
+	atomTimestamp:                   "TIMESTAMP",
+	atomNeferwlData:                 "_NEFERWL_DATA",
+	atomNeferwlTargets:              "_NEFERWL_TARGETS",
 }

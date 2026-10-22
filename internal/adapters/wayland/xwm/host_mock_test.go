@@ -564,6 +564,52 @@ func (_c *mockhost_Ready_Call) RunAndReturn(run func(slot Slot, info WindowInfo)
 	return _c
 }
 
+// SelectionOwned provides a mock function for the type mockhost
+func (_mock *mockhost) SelectionOwned(kind int, mimes []string) {
+	_mock.Called(kind, mimes)
+	return
+}
+
+// mockhost_SelectionOwned_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SelectionOwned'
+type mockhost_SelectionOwned_Call struct {
+	*mock.Call
+}
+
+// SelectionOwned is a helper method to define mock.On call
+//   - kind int
+//   - mimes []string
+func (_e *mockhost_Expecter) SelectionOwned(kind any, mimes any) *mockhost_SelectionOwned_Call {
+	return &mockhost_SelectionOwned_Call{Call: _e.mock.On("SelectionOwned", kind, mimes)}
+}
+
+func (_c *mockhost_SelectionOwned_Call) Run(run func(kind int, mimes []string)) *mockhost_SelectionOwned_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 int
+		if args[0] != nil {
+			arg0 = args[0].(int)
+		}
+		var arg1 []string
+		if args[1] != nil {
+			arg1 = args[1].([]string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *mockhost_SelectionOwned_Call) Return() *mockhost_SelectionOwned_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *mockhost_SelectionOwned_Call) RunAndReturn(run func(kind int, mimes []string)) *mockhost_SelectionOwned_Call {
+	_c.Run(run)
+	return _c
+}
+
 // Title provides a mock function for the type mockhost
 func (_mock *mockhost) Title(slot Slot, title string) {
 	_mock.Called(slot, title)

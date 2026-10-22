@@ -51,14 +51,16 @@ const unpairedCap = 64
 
 // XWM manages the windows of one Xwayland. Display goroutine only, after Boot.
 type XWM struct {
-	conn  *xturbo.Conn
-	log   zerowrap.Logger
-	root  uint32
-	wmWin uint32
-	atoms [atomCount]uint32
-	tab   *table
-	h     xturbo.Handler
-	stats Stats
+	conn   *xturbo.Conn
+	log    zerowrap.Logger
+	root   uint32
+	wmWin  uint32
+	selWin uint32 // selection bridge window (selection.go)
+	sel    selBridge
+	atoms  [atomCount]uint32
+	tab    *table
+	h      xturbo.Handler
+	stats  Stats
 
 	// attachment
 	host    host
@@ -229,6 +231,11 @@ func (x *XWM) boot() error {
 		return fmt.Errorf("xwm: allocate window id: %w", err)
 	}
 	x.wmWin = xid
+	if ext.Info(xturbo.ExtXFixes).Present {
+		if x.selWin, err = conn.NewXID(); err != nil {
+			return fmt.Errorf("xwm: allocate window id: %w", err)
+		}
+	}
 
 	b := conn.Buf()
 	x.expect(composite.QueryVersion(b, 0, 4), kindVersion, versionComposite, 0)
@@ -268,6 +275,8 @@ func (x *XWM) boot() error {
 	// neferwl and nobody waits on these selections.
 	xproto.SetSelectionOwner(b, xproto.Window(x.wmWin), xproto.Atom(x.atoms[atomWMS0]), 0)
 	xproto.SetSelectionOwner(b, xproto.Window(x.wmWin), xproto.Atom(x.atoms[atomNetWMCMS0]), 0)
+
+	x.bootSelection(root)
 
 	supported := [...]int{
 		atomNetWMState, atomNetActiveWindow, atomNetWMStateFocused,

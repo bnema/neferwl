@@ -21,6 +21,8 @@ const (
 	kindVersion
 	kindTree
 	kindOverrideType
+	kindSelTargets
+	kindSelData
 )
 
 // onEvent dispatches an X event. Before Attach there is no host: only the
@@ -59,6 +61,8 @@ func (x *XWM) onEvent(ev *xturbo.Event) {
 		x.onClientMessage(ev)
 	case xproto.KindFocusIn:
 		x.onFocusIn(ev)
+	default:
+		x.onSelectionEvent(ev)
 	}
 }
 
@@ -95,6 +99,12 @@ func (x *XWM) onReply(r *xturbo.Reply) {
 	case kindTree:
 		x.onTreeReply(r)
 		return
+	case kindSelTargets:
+		x.onTargetsReply(r)
+		return
+	case kindSelData:
+		x.onSelDataReply(r)
+		return
 	}
 	s, rec := x.tab.live(r.Args[0])
 	if rec == nil {
@@ -126,6 +136,8 @@ func (x *XWM) onError(e *xturbo.XError) {
 		return
 	}
 	switch e.Kind {
+	case kindSelTargets, kindSelData:
+		x.onSelError(e)
 	case kindRootMask:
 		if e.Code == xproto.BadAccess {
 			x.bootErr = ErrWMExists
@@ -165,7 +177,7 @@ func (x *XWM) onError(e *xturbo.XError) {
 func (x *XWM) onCreateNotify(ev *xturbo.Event) {
 	e := xproto.CreateNotifyOf(ev)
 	xid := uint32(e.Window())
-	if xid == x.wmWin || x.tab.lookup(xid) != 0 {
+	if xid == x.wmWin || xid == x.selWin || x.tab.lookup(xid) != 0 {
 		return
 	}
 	s := x.insert(xid)
@@ -218,7 +230,7 @@ func (x *XWM) onTreeReply(r *xturbo.Reply) {
 	children := q.Children()
 	for i := 0; i < children.Len(); i++ {
 		xid := uint32(children.At(i))
-		if xid == x.wmWin || x.tab.lookup(xid) != 0 {
+		if xid == x.wmWin || xid == x.selWin || x.tab.lookup(xid) != 0 {
 			continue
 		}
 		s := x.insert(xid)

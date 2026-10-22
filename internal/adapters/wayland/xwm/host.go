@@ -53,6 +53,11 @@ type host interface {
 	OverrideMoved(slot Slot, x, y, w, h int)
 	// OverrideGone ends a mapped override window: unmapped or destroyed.
 	OverrideGone(slot Slot)
+
+	// SelectionOwned: an X client owns kind (SelClipboard/SelPrimary) and
+	// offers these MIME types, or none does any more (mimes nil). mimes is
+	// scratch: the host copies it.
+	SelectionOwned(kind int, mimes []string)
 }
 
 // fdSource is the display's event source for the X socket (*server.Source).

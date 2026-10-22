@@ -373,6 +373,10 @@ func (h hostImpl) OverrideMoved(slot xwm.Slot, x, y, w, h2 int) {
 }
 
 // OverrideGone ends an override window: unmapped, or destroyed.
+func (h hostImpl) SelectionOwned(kind int, mimes []string) {
+	h.s.log.Debug().Int("kind", kind).Int("mimes", len(mimes)).Msg("X selection owner changed")
+}
+
 func (h hostImpl) OverrideGone(slot xwm.Slot) {
 	s := h.s
 	win := s.x11Slots[slot]
