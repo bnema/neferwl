@@ -335,12 +335,19 @@ type frameDecision struct {
 // composeFrame chooses overlay or composition after direct scanout cannot commit.
 // The caller owns the returned overlay fence.
 func (o *Output) composeFrame(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) frameDecision {
+	if time.Now().Before(o.scanoutPausedUntil) {
+		o.setScanoutReason("nomem")
+		o.setOverlayReason("nomem")
+		return frameDecision{composed: s}
+	}
 	ov, rest := o.overlayFrame(s, surfaces)
 	if ov.fb != 0 {
 		return frameDecision{overlay: ov, composed: rest}
 	}
 	return frameDecision{composed: s}
 }
+
+const nomemScanoutPause = 2 * time.Second
 
 // decideFrame tries direct scanout, then overlay, then composition.
 // Captures require composition; the caller owns the returned overlay fence.
@@ -349,6 +356,9 @@ func (o *Output) decideFrame(s ports.Scene, surfaces map[ports.WindowID]ports.Su
 		o.setScanoutReason("capture")
 		o.setOverlayReason("capture")
 		return frameDecision{composed: s}
+	}
+	if time.Now().Before(o.scanoutPausedUntil) {
+		return o.composeFrame(s, surfaces)
 	}
 	fb, c, mode := o.scanoutFrame(s, surfaces)
 	if fb != 0 {

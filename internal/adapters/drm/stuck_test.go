@@ -33,6 +33,9 @@ type stuckRun struct {
 	contents  *contentFeed
 	active    chan bool
 	presented chan ports.OutputPresented
+	flipped   chan flipEvent
+	done      <-chan error
+	snapshot  func() []commitRec
 	sink      ports.PresentationSink
 	count     func() int
 	stop      func() []commitRec
@@ -46,7 +49,8 @@ func startStuck(t *testing.T, render func() *os.File, errs ...error) *stuckRun {
 	o, k, commits, commitMu := testOutputMu(t, append([]error{nil, nil}, errs...)...)
 	o.cursor, o.tearing, o.fbs = nil, false, [2]uint32{}
 	o.frame.stuckAfter = 200 * time.Millisecond
-	o.flipped = make(chan flipEvent) // no event ever
+	flipped := make(chan flipEvent)
+	o.flipped = flipped // tests send events explicitly
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() ports.DMABuf {
 		f, w, _ := os.Pipe()
@@ -64,6 +68,8 @@ func startStuck(t *testing.T, render func() *os.File, errs ...error) *stuckRun {
 		return render(), nil
 	})
 	r.EXPECT().Close().Return().Once()
+	r.EXPECT().Trim(mock.Anything).Return(nil).Maybe()
+	r.EXPECT().TakeRedrawn().Return(0).Maybe()
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
 	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
 	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
@@ -72,6 +78,12 @@ func startStuck(t *testing.T, render func() *os.File, errs ...error) *stuckRun {
 	h.sink, h.presented = presentedSink(t, 64)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
+	h.done, h.flipped = done, flipped
+	h.snapshot = func() []commitRec {
+		commitMu.Lock()
+		defer commitMu.Unlock()
+		return append([]commitRec(nil), (*commits)...)
+	}
 	go func() {
 		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, h.active, h.scenes, h.contents.in(), h.contents.ret, nil, h.sink, nil, nil)
 	}()

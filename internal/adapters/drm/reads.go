@@ -41,8 +41,10 @@ func signalled(fs []*os.File) bool {
 	return true
 }
 
-// holdRead keeps the fences of a frame that was not committed.
+// holdRead keeps the fences of a frame that was not committed. Reap old
+// completed reads even when no content publication asks for a report.
 func (o *Output) holdRead(fs ...*os.File) {
+	o.readDone()
 	o.readFences = append(o.readFences, dupFences(fs...)...)
 }
 
