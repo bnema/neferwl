@@ -52,6 +52,13 @@ type xwaylandEnv struct {
 // the test ends.
 func startXwayland(t *testing.T) *xwaylandEnv {
 	t.Helper()
+	return startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, nil)
+}
+
+// startXwaylandWith is startXwayland with the given headless outputs, left to
+// right, and an optional change to the default config.
+func startXwaylandWith(t *testing.T, sizes [][2]int, mutate func(*ports.Config)) *xwaylandEnv {
+	t.Helper()
 	if _, err := exec.LookPath("Xwayland"); err != nil {
 		t.Skip("Xwayland not on PATH")
 	}
@@ -73,11 +80,14 @@ func startXwayland(t *testing.T) *xwaylandEnv {
 	ctx, cancel := context.WithCancel(zerowrap.WithCtx(context.Background(), zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: logs})))
 	cfg := config.Defaults()
 	cfg.Xwayland = ports.XwaylandConfig{Backend: ports.XwaylandBuiltin, Binary: "Xwayland"}
+	if mutate != nil {
+		mutate(&cfg)
+	}
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(ctx, Options{
 			Backend: "headless", NoTerminal: true, Config: cfg, Script: script,
-			ScreenshotDir: shots, Sizes: [][2]int{{xwaylandW, xwaylandH}},
+			ScreenshotDir: shots, Sizes: sizes,
 		})
 	}()
 	t.Cleanup(func() {
@@ -391,4 +401,177 @@ func TestXwaylandOverrideShape(t *testing.T) {
 		return magentaShare(filepath.Join(e.shots, "latest.png"), image.Rect(100, 50, 220, 130)) >= 0.9
 	})
 	until(t, "only the toplevel in state", func() bool { return len(readState(e.statePath).Windows) == 1 })
+}
+
+// fullOutput is the share of the output screenshot at path that is green.
+func fullOutput(path string) float64 {
+	return greenShare(path, image.Rect(0, 0, xwaylandW, xwaylandH))
+}
+
+// windowOf returns the state window with the given pid.
+func windowOf(st statefile.State, pid int) (statefile.Window, bool) {
+	for _, w := range st.Windows {
+		if w.PID == pid {
+			return w, true
+		}
+	}
+	return statefile.Window{}, false
+}
+
+// TestXwaylandFullscreen: a fullscreen request after the 1 s grace fills the
+// output, the toggle bind leaves it, and a request made right at the map is
+// ignored (the grace, current policy).
+func TestXwaylandFullscreen(t *testing.T) {
+	// Gaps make a tile visibly smaller than the output.
+	e := startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *ports.Config) { c.Layout.Gaps = 20 })
+	shot := filepath.Join(e.shots, "latest.png")
+	corner := image.Rect(0, 0, 4, 4)
+	p := startProbe(t, e.bin, e.display, "-fullscreen", "-fullscreen-delay", "2s")
+	until(t, "tiled with a gap", func() bool {
+		return strings.Contains(p.out.String(), "mapped ") && fullOutput(shot) > 0.3 && greenShare(shot, corner) == 0
+	})
+	until(t, "probe fullscreen at output size", func() bool {
+		return strings.Contains(p.out.String(), "fullscreen 640x360")
+	})
+	until(t, "output all green", func() bool { return fullOutput(shot) >= 0.99 })
+
+	// The toggle bind (cmd+shift+f) leaves fullscreen.
+	if _, err := io.WriteString(e.script, "key Super+Shift+f\n"); err != nil {
+		t.Fatal(err)
+	}
+	until(t, "probe left fullscreen", func() bool { return strings.Contains(p.out.String(), "fullscreen off ") })
+	until(t, "gap back", func() bool { return greenShare(shot, corner) == 0 && fullOutput(shot) < 0.99 })
+}
+
+// TestXwaylandFullscreenOff: the client leaves fullscreen itself.
+func TestXwaylandFullscreenOff(t *testing.T) {
+	e := startXwayland(t)
+	p := startProbe(t, e.bin, e.display, "-fullscreen", "-fullscreen-delay", "1500ms", "-fullscreen-off", "1s")
+	until(t, "fullscreen", func() bool { return strings.Contains(p.out.String(), "fullscreen 640x360") })
+	until(t, "fullscreen off", func() bool { return strings.Contains(p.out.String(), "fullscreen off ") })
+	until(t, "tiled", func() bool {
+		st := readState(e.statePath)
+		return len(st.Windows) == 1 && func() bool { _, ok := tileRect(st, st.Windows[0].ID); return ok }()
+	})
+}
+
+// TestXwaylandFullscreenGrace: a request made at once after the map stays
+// tiled (fullscreenGrace in core).
+func TestXwaylandFullscreenGrace(t *testing.T) {
+	e := startXwayland(t)
+	p := startProbe(t, e.bin, e.display, "-fullscreen")
+	until(t, "mapped", func() bool { return strings.Contains(p.out.String(), "mapped ") })
+	until(t, "tiled window", func() bool {
+		st := readState(e.statePath)
+		return len(st.Windows) == 1 && func() bool { _, ok := tileRect(st, st.Windows[0].ID); return ok }()
+	})
+	// Stay inside the grace, then check it is still not fullscreen.
+	time.Sleep(500 * time.Millisecond)
+	st := readState(e.statePath)
+	if _, ok := tileRect(st, st.Windows[0].ID); !ok {
+		t.Error("window went fullscreen inside the grace")
+	}
+	if strings.Contains(p.out.String(), "fullscreen ") {
+		t.Errorf("probe saw a fullscreen resize inside the grace: %q", p.out.String())
+	}
+}
+
+// TestXwaylandKeyboardGrab: while a fullscreen, focused X11 client holds the
+// keyboard grab the close bind does not fire; after it leaves fullscreen the
+// binds work again.
+func TestXwaylandKeyboardGrab(t *testing.T) {
+	e := startXwayland(t)
+	p := startProbe(t, e.bin, e.display, "-fullscreen", "-fullscreen-delay", "1500ms", "-fullscreen-off", "2500ms", "-keyboard-grab")
+	until(t, "fullscreen", func() bool { return strings.Contains(p.out.String(), "fullscreen 640x360") })
+	until(t, "grab", func() bool { return strings.Contains(p.out.String(), "grab") })
+	until(t, "probe focus", func() bool { return strings.Contains(p.out.String(), "focus") })
+	if _, err := io.WriteString(e.script, "key Super+q\n"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-p.waited:
+		t.Fatalf("probe closed (%v) by Super+q despite the keyboard grab", err)
+	case <-time.After(2 * time.Second):
+	}
+
+	// The probe leaves fullscreen itself; its grab stays, but the binds work again.
+	until(t, "fullscreen off", func() bool { return strings.Contains(p.out.String(), "fullscreen off ") })
+	if _, err := io.WriteString(e.script, "key Super+q\n"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-p.waited:
+		if err != nil {
+			t.Errorf("probe exited with %v, want 0", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Super+q did not close the client after it left fullscreen")
+	}
+}
+
+// TestXwaylandKeyboardGrabWindowed: a grab on a windowed client does not lock
+// the binds.
+func TestXwaylandKeyboardGrabWindowed(t *testing.T) {
+	e := startXwayland(t)
+	p := startProbe(t, e.bin, e.display, "-keyboard-grab")
+	until(t, "grab", func() bool { return strings.Contains(p.out.String(), "grab") })
+	until(t, "probe focus", func() bool { return strings.Contains(p.out.String(), "focus") })
+	if _, err := io.WriteString(e.script, "key Super+q\n"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-p.waited:
+		if err != nil {
+			t.Errorf("probe exited with %v, want 0", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Super+q did not close a windowed client that holds a keyboard grab")
+	}
+}
+
+// TestXwaylandOutputHint: with two outputs a window created at the origin of
+// the second one opens on it, and a fullscreen request fills that output.
+func TestXwaylandOutputHint(t *testing.T) {
+	sizes := [][2]int{{xwaylandW, xwaylandH}, {xwaylandW, xwaylandH}}
+	e := startXwaylandWith(t, sizes, nil)
+	p := startProbe(t, e.bin, e.display, "-size", "640x360", "-at", "640,0", "-fullscreen", "-fullscreen-delay", "1500ms")
+	var w statefile.Window
+	until(t, "window on HEADLESS-2", func() bool {
+		var ok bool
+		w, ok = windowOf(readState(e.statePath), p.cmd.Process.Pid)
+		if ok && w.Output != "HEADLESS-2" {
+			t.Logf("window output = %s", w.Output)
+		}
+		return ok && w.Output == "HEADLESS-2"
+	})
+	until(t, "probe fullscreen", func() bool { return strings.Contains(p.out.String(), "fullscreen 640x360") })
+	until(t, "HEADLESS-2 all green", func() bool {
+		return fullOutput(filepath.Join(e.shots, "HEADLESS-2", "latest.png")) >= 0.99
+	})
+	if g := fullOutput(filepath.Join(e.shots, "HEADLESS-1", "latest.png")); g > 0.1 {
+		t.Errorf("HEADLESS-1 green share = %.2f, want empty", g)
+	}
+}
+
+// TestXwaylandClassRule: [window-rule] matches the WM_CLASS of an X11 window
+// the way it matches a Wayland app ID (steam_app_<id> from Proton).
+func TestXwaylandClassRule(t *testing.T) {
+	yes := true
+	e := startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *ports.Config) {
+		c.Rules = append(c.Rules, ports.WindowRule{Name: "games", AppID: regexp.MustCompile(`^steam_app_\d+$`), Floating: &yes})
+	})
+	startProbe(t, e.bin, e.display, "-class", "steam_app_413150")
+	until(t, "floating steam_app window", func() bool {
+		st := readState(e.statePath)
+		return len(st.Windows) == 1 && st.Windows[0].AppID == "steam_app_413150" && st.Windows[0].Floating
+	})
+	startProbe(t, e.bin, e.display, "-class", "Other")
+	until(t, "other class tiled", func() bool {
+		for _, w := range readState(e.statePath).Windows {
+			if w.AppID == "Other" {
+				return !w.Floating
+			}
+		}
+		return false
+	})
 }

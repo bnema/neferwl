@@ -8,6 +8,13 @@
 // main one is mapped (prints "override mapped") and unmaps it after
 // -override-for (prints "override unmapped"). With -override-dismiss-on-focusout
 // it unmaps it instead when the main window loses focus (prints "dismissed").
+//
+// With -fullscreen it asks the window manager for _NET_WM_STATE_FULLSCREEN
+// -fullscreen-delay after the window is mapped (0: right at the map) and
+// prints "fullscreen WxH" when the window is resized; -fullscreen-off asks to
+// leave it that long after (prints "fullscreen off WxH"). -keyboard-grab
+// calls XGrabKeyboard on the window once it is mapped (prints "grab").
+// -at X,Y creates the window at that root position.
 package main
 
 import (
@@ -50,7 +57,16 @@ func run() error {
 	overrideType := flag.String("override-type", "menu", "override window type: menu or tooltip")
 	overrideShape := flag.Bool("override-shape", false, "give the override window an empty input shape")
 	dismiss := flag.Bool("override-dismiss-on-focusout", false, "unmap the override window when the main window loses focus")
+	fullscreen := flag.Bool("fullscreen", false, "request _NET_WM_STATE_FULLSCREEN after the window is mapped")
+	fullscreenDelay := flag.Duration("fullscreen-delay", 0, "delay between the map and the fullscreen request")
+	fullscreenOff := flag.Duration("fullscreen-off", 0, "leave fullscreen this long after the request (0: never)")
+	keyboardGrab := flag.Bool("keyboard-grab", false, "XGrabKeyboard on the window once it is mapped")
+	at := flag.String("at", "0,0", "window position X,Y in root coordinates")
 	flag.Parse()
+	atX, atY, okAt := strings.Cut(*at, ",")
+	if !okAt {
+		return fmt.Errorf("bad -at %q", *at)
+	}
 	w, h, ok := parseSize(*size)
 	if !ok {
 		return fmt.Errorf("bad -size %q", *size)
@@ -62,13 +78,14 @@ func run() error {
 	}
 	defer c.Close()
 
-	var atoms [7]uint32
+	var atoms [9]uint32
 	if err := c.InternAtoms([]string{"WM_PROTOCOLS", "WM_DELETE_WINDOW", "_NET_WM_NAME", "UTF8_STRING",
-		"_NET_WM_WINDOW_TYPE", "_NET_WM_WINDOW_TYPE_DROPDOWN_MENU", "_NET_WM_WINDOW_TYPE_TOOLTIP"}, false, atoms[:]); err != nil {
+		"_NET_WM_WINDOW_TYPE", "_NET_WM_WINDOW_TYPE_DROPDOWN_MENU", "_NET_WM_WINDOW_TYPE_TOOLTIP", "_NET_WM_STATE", "_NET_WM_STATE_FULLSCREEN"}, false, atoms[:]); err != nil {
 		return err
 	}
 	protocols, deleteWin, netWMName, utf8 := xproto.Atom(atoms[0]), xproto.Atom(atoms[1]), xproto.Atom(atoms[2]), xproto.Atom(atoms[3])
 	typeAtom, typeMenu, typeTooltip := xproto.Atom(atoms[4]), atoms[5], atoms[6]
+	netWMState, netWMFullscreen := atoms[7], atoms[8]
 
 	b := c.Buf()
 	xwin, err := c.NewXID()
@@ -82,8 +99,8 @@ func run() error {
 	win, gc := xproto.Window(xwin), xproto.Gcontext(xgc)
 
 	var v xproto.CreateWindowValues
-	v.SetEventMask(xproto.EventMaskExposure | xproto.EventMaskStructureNotify | xproto.EventMaskFocusChange)
-	xproto.CreateWindow(b, 0, win, xproto.Window(c.Root()), 0, 0, uint16(w), uint16(h), 0, xproto.WindowClassInputOutput, 0, &v)
+	v.SetEventMask(xproto.EventMaskExposure | xproto.EventMaskStructureNotify | xproto.EventMaskFocusChange | xproto.EventMaskPropertyChange)
+	xproto.CreateWindow(b, 0, win, xproto.Window(c.Root()), int16(atoi(atX)), int16(atoi(atY)), uint16(w), uint16(h), 0, xproto.WindowClassInputOutput, 0, &v)
 
 	wmClass := []byte("x11probe\x00" + *class + "\x00")
 	xproto.ChangeProperty(b, xproto.PropModeReplace, win, xproto.AtomWmClass, xproto.AtomString, 8, uint32(len(wmClass)), wmClass)
@@ -100,6 +117,13 @@ func run() error {
 		return err
 	}
 	time.Sleep(*sleep)
+	if *at != "0,0" {
+		// Like games, ask for the rect before the map (a ConfigureRequest the
+		// window manager sees as the output hint).
+		var cv xproto.ConfigureWindowValues
+		cv.SetX(int32(atoi(atX))).SetY(int32(atoi(atY))).SetWidth(uint32(w)).SetHeight(uint32(h))
+		xproto.ConfigureWindow(b, win, &cv)
+	}
 	xproto.MapWindow(b, win)
 
 	// The override-redirect window is created once the main window is mapped.
@@ -153,7 +177,21 @@ func run() error {
 	}
 	var ovErr error
 
-	mapped, done := false, false
+	// Fullscreen requests go to the root window as a client message, as ICCCM
+	// and EWMH say for a mapped window.
+	fsMsg := func(action uint32) {
+		var ev [32]byte
+		ev[0] = byte(xproto.KindClientMessage)
+		ev[1] = 32
+		binary.LittleEndian.PutUint32(ev[4:], uint32(win))
+		binary.LittleEndian.PutUint32(ev[8:], netWMState)
+		binary.LittleEndian.PutUint32(ev[12:], action)
+		binary.LittleEndian.PutUint32(ev[16:], netWMFullscreen)
+		xproto.SendEvent(b, false, xproto.Window(c.Root()), xproto.EventMaskSubstructureRedirect|xproto.EventMaskSubstructureNotify, &ev)
+	}
+	var fsAt, fsOffAt time.Time // zero: nothing pending
+
+	mapped, done, isFS := false, false, false
 	cw, ch := uint16(w), uint16(h) // current size, tracked from ConfigureNotify
 	hd := &xturbo.Handler{
 		OnEvent: func(ev *xturbo.Event) {
@@ -172,6 +210,20 @@ func run() error {
 					if *override {
 						ovErr = mapOverride()
 					}
+					if *fullscreen {
+						fsAt = time.Now().Add(*fullscreenDelay)
+					}
+					if *keyboardGrab {
+						xproto.GrabKeyboard(b, true, win, 0, xproto.GrabModeAsync, xproto.GrabModeAsync)
+						fmt.Println("grab")
+					}
+				}
+			case xproto.KindPropertyNotify:
+				if e := xproto.PropertyNotifyOf(ev); e.Window() == win && xproto.Atom(e.Atom()) == xproto.Atom(netWMState) {
+					seq := xproto.GetProperty(b, false, win, xproto.Atom(netWMState), xproto.AtomAtom, 0, 64)
+					if err := c.Expect(seq, 16, 0, 0, 0, 0); err != nil {
+						ovErr = err
+					}
 				}
 			case xproto.KindFocusIn:
 				fmt.Println("focus")
@@ -186,6 +238,24 @@ func run() error {
 				}
 			}
 		},
+		OnReply: func(r *xturbo.Reply) {
+			rep, ok := xproto.ParseGetPropertyReply(r.Raw)
+			if !ok {
+				return
+			}
+			on := false
+			for v := rep.Value(); len(v) >= 4; v = v[4:] {
+				on = on || binary.LittleEndian.Uint32(v) == netWMFullscreen
+			}
+			// Report the state the window manager published, once per change.
+			switch {
+			case on && !isFS:
+				fmt.Printf("fullscreen %dx%d\n", cw, ch)
+			case !on && isFS:
+				fmt.Printf("fullscreen off %dx%d\n", cw, ch)
+			}
+			isFS = on
+		},
 		OnError: func(e *xturbo.XError) { fmt.Fprintln(os.Stderr, "x11probe:", e) },
 	}
 	for !done {
@@ -196,8 +266,13 @@ func run() error {
 			return err
 		}
 		timeout := -1
-		if !ovDeadline.IsZero() {
-			timeout = max(int(time.Until(ovDeadline).Milliseconds()), 0)
+		for _, d := range []time.Time{ovDeadline, fsAt, fsOffAt} {
+			if !d.IsZero() {
+				ms := max(int(time.Until(d).Milliseconds())+1, 0)
+				if timeout < 0 || ms < timeout {
+					timeout = ms
+				}
+			}
 		}
 		fds := []unix.PollFd{{Fd: int32(c.Fd()), Events: events}}
 		if _, err := unix.Poll(fds, timeout); err != nil && err != unix.EINTR {
@@ -205,6 +280,17 @@ func run() error {
 		}
 		if !ovDeadline.IsZero() && !time.Now().Before(ovDeadline) {
 			unmapOverride("override unmapped")
+		}
+		if !fsAt.IsZero() && !time.Now().Before(fsAt) {
+			fsAt = time.Time{}
+			fsMsg(1)
+			if *fullscreenOff > 0 {
+				fsOffAt = time.Now().Add(*fullscreenOff)
+			}
+		}
+		if !fsOffAt.IsZero() && !time.Now().Before(fsOffAt) {
+			fsOffAt = time.Time{}
+			fsMsg(0)
 		}
 		if err := c.Dispatch(hd); err != nil {
 			return err
