@@ -92,3 +92,33 @@ func TestFullscreenColumnNoNeighborStays(t *testing.T) {
 		t.Fatalf("fullscreen %d", w.fullscreen)
 	}
 }
+
+func TestFullscreenFloatMovesToNeighborMonitor(t *testing.T) {
+	for _, tc := range []struct {
+		action Action
+		screen string
+	}{{ActionMoveColumnLeft, "L"}, {ActionMoveColumnRight, "R"}} {
+		t.Run(tc.screen, func(t *testing.T) {
+			c, w := cascadeMovesCore(t, 2, 3, true)
+			w.AddFloating(9, 5120, 2160)
+			w.SetFullscreen(9, true)
+			c.applyAction(tc.action)
+			dst := screenWorkspace(c, tc.screen)
+			if w.floatIndex(9) >= 0 || dst.floatIndex(9) < 0 || w.fullscreen != 0 || dst.fullscreen != 9 {
+				t.Fatalf("float on src %v dst %v, fullscreen src %d dst %d", w.Floats, dst.Floats, w.fullscreen, dst.fullscreen)
+			}
+			wantFocus(t, c, tc.screen, 9)
+			wantColumns(t, w, 1, 2)
+		})
+	}
+}
+
+func TestFullscreenFloatNoNeighborStays(t *testing.T) {
+	c, w := cascadeMovesCore(t, 2, 3, false)
+	w.AddFloating(9, 800, 600)
+	w.SetFullscreen(9, true)
+	c.applyAction(ActionMoveColumnLeft)
+	if w.floatIndex(9) < 0 || w.fullscreen != 9 {
+		t.Fatalf("float moved: %v fullscreen %d", w.Floats, w.fullscreen)
+	}
+}

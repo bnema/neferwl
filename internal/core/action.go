@@ -388,6 +388,17 @@ func (c *Core) dispatchAction(a Action) Effect {
 		if a == ActionMoveColumnLeft {
 			dir, d = -1, dirLeft
 		}
+		// A fullscreen float goes to the neighbor screen, fullscreen there.
+		if fid, ok := w.Focused(); ok && w.fullscreen == fid && w.floatIndex(fid) >= 0 {
+			if i := c.neighbor(d); i >= 0 {
+				from := c.cur()
+				c.focusScreen = i
+				moveFloat(w, c.cur().mon.Current(), fid)
+				from.mon.normalize()
+				c.cur().mon.normalize()
+			}
+			return Effect{}
+		}
 		// A fullscreen window leaves for the neighbor screen at once, and
 		// stays fullscreen there; with no screen, nothing moves.
 		fid, _ := w.Focused()
@@ -618,4 +629,18 @@ func (w *Workspace) Apply(a Action) Effect {
 		return Effect{Quit: true}
 	}
 	return Effect{}
+}
+
+// moveFloat moves float id from workspace cur to to, as MoveToWorkspace
+// does, focuses it there and keeps it fullscreen.
+func moveFloat(cur, to *Workspace, id WindowID) {
+	fl := cur.Floats[cur.floatIndex(id)]
+	if fl.free && fl.back != nil {
+		fl = fl.rehome()
+	}
+	cur.RemoveWindow(id)
+	to.AddFloating(id, fl.W, fl.H)
+	to.Floats[len(to.Floats)-1] = fl
+	to.Activate(id)
+	to.SetFullscreen(id, true)
 }
