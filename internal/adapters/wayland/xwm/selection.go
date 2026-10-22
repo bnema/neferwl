@@ -489,13 +489,13 @@ func (x *XWM) inDrain(i int) {
 func (x *XWM) inWatch(i int, on bool) {
 	t := &x.sel.in[i]
 	if t.src == nil {
-		if !on || x.addFD == nil {
+		if !on || x.lp == nil {
 			if on {
 				x.inAbort(i, true)
 			}
 			return
 		}
-		src, err := x.addFD(t.fd, t.onR, t.onW)
+		src, err := x.lp.AddFD(t.fd, t.onR, t.onW)
 		if err != nil {
 			x.inAbort(i, true)
 			return
@@ -573,11 +573,11 @@ func (x *XWM) onSelError(e *xturbo.XError) {
 
 func (x *XWM) selEnsureTimer() {
 	b := &x.sel
-	if b.timerOn || x.after == nil {
+	if b.timerOn || x.lp == nil {
 		return
 	}
 	b.timerOn = true
-	b.cancel = x.after(tickEvery, b.tickFn)
+	b.cancel = x.lp.After(tickEvery, b.tickFn)
 }
 
 // selTick ages every transfer by one second and aborts the stalled ones.
@@ -855,11 +855,11 @@ func (x *XWM) outWatch(i int) {
 	if o.src != nil {
 		return
 	}
-	if x.addFD == nil {
+	if x.lp == nil {
 		x.outAbort(i)
 		return
 	}
-	src, err := x.addFD(o.fd, o.onR, nil)
+	src, err := x.lp.AddFD(o.fd, o.onR, nil)
 	if err != nil {
 		x.outAbort(i)
 		return

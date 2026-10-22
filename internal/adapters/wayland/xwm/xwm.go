@@ -68,8 +68,7 @@ type XWM struct {
 	// attachment
 	host    host
 	src     fdSource
-	addFD   func(fd int, onReadable, onWritable func()) (fdSource, error) // display fd source seam
-	after   func(d time.Duration, fn func()) (cancel func())
+	lp      loop // display fd sources and timers
 	post    func(func())
 	flushFn func()
 
@@ -333,25 +332,45 @@ func (x *XWM) boot() error {
 // Attach registers the X socket with the display and hands the windows found
 // at boot to h. Display goroutine only.
 func (x *XWM) Attach(d *server.Display, h host) error {
-	x.addFD = func(fd int, r, w func()) (fdSource, error) {
-		s, err := d.AddFDRW(fd, r, w)
-		if err != nil {
-			return nil, err
-		}
-		return s, nil
-	}
 	src, err := d.AddFDRW(x.conn.Fd(), x.onReadable, x.onWritable)
 	if err != nil {
 		return fmt.Errorf("xwm: watch X socket: %w", err)
 	}
 	x.attach(src, h, d.Post)
+	x.lp.(*displayLoop).d = d
 	return nil
 }
+
+// loop is what the XWM needs from the display beyond the X socket source:
+// fd sources for transfer pipes and one-shot timers.
+type loop interface {
+	AddFD(fd int, onReadable, onWritable func()) (fdSource, error)
+	After(d time.Duration, fn func()) (cancel func())
+}
+
+// displayLoop is the production loop: the display's fd sources, the host's timers.
+type displayLoop struct {
+	d *server.Display
+	h host
+}
+
+func (l *displayLoop) AddFD(fd int, r, w func()) (fdSource, error) {
+	if l.d == nil {
+		return nil, errors.New("xwm: no display")
+	}
+	s, err := l.d.AddFDRW(fd, r, w)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func (l *displayLoop) After(d time.Duration, fn func()) func() { return l.h.After(d, fn) }
 
 // attach is Attach over its seams: the event source and the display's Post.
 func (x *XWM) attach(src fdSource, h host, post func(func())) {
 	x.src, x.host, x.post = src, h, post
-	x.after = h.After
+	x.lp = &displayLoop{h: h}
 	x.flushFn = func() {
 		x.posted = false
 		x.flush()

@@ -252,7 +252,7 @@ func TestSelectionXToWaylandBackpressure(t *testing.T) {
 	r := ownedRig(t)
 	src := newMockfdSource(t)
 	var onW func()
-	r.x.addFD = func(_ int, _, w func()) (fdSource, error) { onW = w; return src, nil }
+	r.x.lp = newFDLoop(t, r, src, nil, &onW)
 	src.EXPECT().SetWritable(true).Return(nil).Once()
 	src.EXPECT().SetWritable(false).Return(nil).Once()
 	src.EXPECT().Remove().Return().Once()
@@ -337,7 +337,7 @@ func TestSelectionPoolExhausted(t *testing.T) {
 func allocRig(t *testing.T) *selRig {
 	r := ownedRig(t)
 	sinkPeer(t, r.x, r.p)
-	r.x.after = func(time.Duration, func()) func() { return func() {} }
+	r.x.lp = newTimerLoop(t)
 	r.x.sel.timerOn = true // no timer re-arming in the measured loop
 	return r
 }
@@ -515,7 +515,7 @@ func TestSelectionWaylandToXINCR(t *testing.T) {
 	src := newMockfdSource(t)
 	var onR func()
 	removes := 0
-	r.x.addFD = func(_ int, rd, _ func()) (fdSource, error) { onR = rd; return src, nil }
+	r.x.lp = newFDLoop(t, r, src, &onR, nil)
 	src.EXPECT().Remove().Run(func() { removes++ }).Return().Maybe()
 	const total = 1<<20 + 123
 	data := pattern(total)
@@ -591,7 +591,7 @@ func TestSelectionWaylandToXTimeoutAndClear(t *testing.T) {
 	r := ownedByWayland(t, "text/plain;charset=utf-8")
 	src := newMockfdSource(t)
 	src.EXPECT().Remove().Return().Maybe()
-	r.x.addFD = func(_ int, _, _ func()) (fdSource, error) { return src, nil }
+	r.x.lp = newFDLoop(t, r, src, nil, nil)
 	w := r.serve(t, r.utf8)
 	_, err := w.Write(pattern(chunk)) // a full chunk: INCR
 	require.NoError(t, err)
@@ -622,7 +622,7 @@ func TestSelectionClearAndRace(t *testing.T) {
 	r := ownedByWayland(t, "text/plain;charset=utf-8")
 	src := newMockfdSource(t)
 	src.EXPECT().Remove().Return().Maybe()
-	r.x.addFD = func(_ int, _, _ func()) (fdSource, error) { return src, nil }
+	r.x.lp = newFDLoop(t, r, src, nil, nil)
 	w := r.serve(t, r.utf8)
 	_, err := w.Write(pattern(chunk))
 	require.NoError(t, err)
@@ -640,7 +640,7 @@ func TestSelectionCopyAllocationsWaylandToX(t *testing.T) {
 	r := ownedByWayland(t, "text/plain;charset=utf-8")
 	x := r.x
 	sinkPeer(t, x, r.p)
-	x.after = func(time.Duration, func()) func() { return func() {} }
+	x.lp = newTimerLoop(t)
 	x.sel.timerOn = true
 	data := pattern(4096)
 	var ev xturbo.Event
@@ -707,4 +707,31 @@ func TestSelectionStaleTargetsAfterWaylandOwner(t *testing.T) {
 	}
 	require.Zero(t, getProps(p, 0, x.selWin), "the stale TARGETS reply is not fetched")
 	_ = h
+}
+
+// newFDLoop is a loop whose AddFD hands out src and captures the callbacks;
+// timers are inert.
+func newFDLoop(t *testing.T, rig *selRig, src fdSource, onR, onW *func()) *mockloop {
+	l := newMockloop(t)
+	l.EXPECT().AddFD(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
+		func(_ int, r, w func()) (fdSource, error) {
+			if onR != nil {
+				*onR = r
+			}
+			if onW != nil {
+				*onW = w
+			}
+			return src, nil
+		}).Maybe()
+	l.EXPECT().After(mock.Anything, mock.Anything).RunAndReturn(
+		func(_ time.Duration, fn func()) func() { rig.timer = fn; return func() {} }).Maybe()
+	return l
+}
+
+// newTimerLoop is a loop with inert timers.
+func newTimerLoop(t *testing.T) *mockloop {
+	l := newMockloop(t)
+	l.EXPECT().After(mock.Anything, mock.Anything).RunAndReturn(
+		func(time.Duration, func()) func() { return func() {} }).Maybe()
+	return l
 }

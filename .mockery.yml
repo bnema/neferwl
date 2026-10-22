@@ -288,3 +288,8 @@ packages:
           dir: internal/adapters/wayland/xwm
           pkgname: xwm
           filename: fdsource_mock_test.go
+      loop:
+        config:
+          dir: internal/adapters/wayland/xwm
+          pkgname: xwm
+          filename: loop_mock_test.go
