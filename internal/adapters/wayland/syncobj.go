@@ -247,7 +247,7 @@ type syncWaiter struct {
 }
 
 // syncWait is one acquire point a queued commit waits for. An explicit wait
-// (src set) lives on the display loop only; an implicit one is polled by run.
+// lives on the display loop only; an implicit one is polled by run.
 type syncWait struct {
 	efd       int
 	src       acquireRemover // explicit: the display-loop registration, nil once removed
@@ -276,21 +276,21 @@ func newSyncWaiter(wake func()) (*syncWaiter, error) {
 func (sw *syncWaiter) watch(p syncPoint) (*syncWait, error) {
 	ready, err := p.tl.dev.signalled(p.tl.handle, p.point)
 	if err != nil || ready {
-		return &syncWait{efd: -1, done: true, failed: err != nil}, err
+		return &syncWait{efd: -1, explicit: true, done: true, failed: err != nil}, err
 	}
 	efd, err := unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK)
 	if err != nil {
-		return &syncWait{efd: -1, done: true, failed: true}, err
+		return &syncWait{efd: -1, explicit: true, done: true, failed: true}, err
 	}
 	if err := p.tl.dev.eventfd(p.tl.handle, p.point, efd); err != nil {
 		unix.Close(efd)
-		return &syncWait{efd: -1, done: true, failed: true}, err
+		return &syncWait{efd: -1, explicit: true, done: true, failed: true}, err
 	}
 	w := &syncWait{efd: efd, explicit: true}
 	src, err := sw.src.add(efd, func() { sw.onAcquire(w) })
 	if err != nil {
 		unix.Close(efd)
-		return &syncWait{efd: -1, done: true, failed: true}, err
+		return &syncWait{efd: -1, explicit: true, done: true, failed: true}, err
 	}
 	w.src = src
 	if sw.pending == nil {
@@ -431,7 +431,7 @@ func (sw *syncWaiter) cancel(w *syncWait) {
 	delete(sw.ready, w)
 	sw.mu.Unlock()
 	w.done = true
-	_, _ = sw.pipeW.Write([]byte{0}) // run closes its eventfd
+	_, _ = sw.pipeW.Write([]byte{0}) // run closes its fence fd
 }
 
 func (sw *syncWaiter) stopped() bool {
@@ -456,12 +456,12 @@ func (sw *syncWaiter) fail(waits []*syncWait) {
 	sw.wake()
 }
 
-// run polls every watched eventfd; it owns and closes them.
+// run polls the implicit dma-buf fence descriptors; it owns and closes them.
 func (sw *syncWaiter) run(ctx context.Context) {
 	defer sw.pipeR.Close()
 	defer sw.waiter.Close()
 	pipeFD := int(sw.pipeR.Fd())
-	// The pipe lives as long as the poller; the eventfds come and go. The
+	// The pipe lives as long as the poller; the fence fds come and go. The
 	// poll sleeps until a fence, a new or cancelled wait (the pipe), or the
 	// end of ctx.
 	var waits []*syncWait

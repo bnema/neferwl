@@ -144,7 +144,16 @@ func TestSyncobjCommitAppliedByAcquireCallback(t *testing.T) {
 		t.Fatal("content before the acquire point fired")
 	}
 	h.fire(1) // the kernel signals: efd readable (display loop is mocked, so nothing reads it)
-	h.s.display.Do(func() { fire() })
+	var applied, posted bool
+	h.s.display.Do(func() {
+		fire()
+		// Same tick: the commit left the queue without posting a pace tick.
+		applied = len(h.s.windows[h.win].xdg.surface.queue) == 0
+		posted = h.s.paceSignal.Load()
+	})
+	if !applied || posted {
+		t.Fatalf("acquire callback: applied=%v posted tick=%v, want applied inline", applied, posted)
+	}
 	got, ok := h.content(2 * time.Second)
 	if !ok || got.Acquire == nil {
 		t.Fatalf("content %+v", got)
