@@ -204,7 +204,6 @@ A swipe moves one step at most. Other gestures (pinch, hold, two-finger scroll) 
 - HDR-aware apps (games, browsers, video players) can show HDR content. Some need HDR turned on in their own settings. X11 apps stay SDR.
 - The desktop stays SDR, shown at `sdr-brightness` nits.
 - Fullscreen HDR windows go straight to the display.
-- A window that maps with the exact logical size of its output, without asking for fullscreen (a game in borderless-windowed mode), is put fullscreen as if by `toggle-fullscreen`, without being resized.
 - Screenshots and captures are SDR (tone-mapped).
 - If NeferWL crashes, the next compositor may show distorted colours until it sets its own colour pipeline.
 
@@ -260,6 +259,8 @@ bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
 | `move-workspace-to-monitor-left/right/up/down` | Move the workspace to the neighbor monitor |
 | `scale-up` / `scale-down` | Zoom the display; the scale is saved to the config |
 | `quit` | Exit NeferWL |
+
+A parentless window whose first committed size is exactly the logical size of the output it is on, without asking for fullscreen (a game in borderless-windowed mode), is put fullscreen as if by `toggle-fullscreen`, without being resized, when it is the focused window of the shown workspace. Later resizes do not.
 
 ### Default binds
 

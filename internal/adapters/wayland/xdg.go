@@ -418,6 +418,8 @@ func (w *window) afterCommit() {
 		return
 	}
 	if !w.floating {
+		// Core is authoritative: this prefilter matches any output, and
+		// core compares with the output the window is on.
 		// Core reads a tile's first size once, to spot a window that maps
 		// at its output's size without asking for fullscreen.
 		if fw, fh := w.size(); !w.sized && fw > 0 && fh > 0 {
