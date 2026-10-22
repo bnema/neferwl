@@ -191,9 +191,6 @@ func (s *surface) pendingNotDMABuf() bool {
 	return !dma
 }
 
-// syncWaiter watches acquire points: each gets an eventfd the kernel
-// writes once the point is signalled, and the pacer is woken to apply the
-// commits that waited for it.
 type acquirePoller interface {
 	poll([]unix.PollFd, int) (int, error)
 }
@@ -204,7 +201,38 @@ func (p unixAcquirePoller) poll(fds []unix.PollFd, timeout int) (int, error) {
 	return p.waiter.Poll(fds, timeout)
 }
 
+// acquireSource registers an acquire eventfd with the display loop: onReadable
+// runs on the display goroutine while fd is readable. Display goroutine only.
+type acquireSource interface {
+	add(fd int, onReadable func()) (acquireRemover, error)
+}
+
+// acquireRemover unregisters a source added by acquireSource.
+type acquireRemover interface {
+	Remove()
+}
+
+type displayAcquireSource struct{ d *server.Display }
+
+func (s displayAcquireSource) add(fd int, onReadable func()) (acquireRemover, error) {
+	src, err := s.d.AddFD(fd, onReadable)
+	if err != nil {
+		return nil, err
+	}
+	return src, nil
+}
+
+// syncWaiter watches acquire points: each gets an eventfd the kernel
+// writes once the point is signalled, and the pacer is woken to apply the
+// commits that waited for it. Explicit waits are display-loop sources; the
+// goroutine (run) with its pipe polls implicit dma-buf fences only.
 type syncWaiter struct {
+	// src and pace serve explicit waits, which run on the display loop:
+	// src registers the eventfd there, pace applies what the fired wait
+	// unblocked (display goroutine only).
+	src       acquireSource
+	pace      func()
+	pending   map[*syncWait]struct{} // explicit waits still registered (display goroutine, then Run's exit)
 	poller    acquirePoller
 	waiter    *fdwait.Poller
 	terminal  bool // polling ended in failure; protected by mu
@@ -218,9 +246,12 @@ type syncWaiter struct {
 	pollError sync.Once
 }
 
-// syncWait is one acquire point a queued commit waits for.
+// syncWait is one acquire point a queued commit waits for. An explicit wait
+// lives on the display loop only; an implicit one is polled by run.
 type syncWait struct {
 	efd       int
+	src       acquireRemover // explicit: the display-loop registration, nil once removed
+	explicit  bool
 	done      bool        // the eventfd fired or the wait was cancelled (display goroutine)
 	failed    bool        // observation failed; done must not authorize publication
 	cancelled atomic.Bool // run stops polling it and closes efd
@@ -240,28 +271,63 @@ func newSyncWaiter(wake func()) (*syncWaiter, error) {
 	return &syncWaiter{poller: unixAcquirePoller{p}, waiter: p, ready: map[*syncWait]bool{}, wake: wake, pipeR: r, pipeW: w, log: zerowrap.Default()}, nil
 }
 
-// watch registers an eventfd for p; the wait is ready once it fires.
+// watch registers an eventfd for p on the display loop; the wait is ready once
+// it fires. Display goroutine only.
 func (sw *syncWaiter) watch(p syncPoint) (*syncWait, error) {
-	if sw.stopped() {
-		return &syncWait{efd: -1, done: true, failed: true}, unix.EIO
-	}
 	ready, err := p.tl.dev.signalled(p.tl.handle, p.point)
 	if err != nil || ready {
-		return &syncWait{efd: -1, done: true, failed: err != nil}, err
+		return &syncWait{efd: -1, explicit: true, done: true, failed: err != nil}, err
 	}
 	efd, err := unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK)
 	if err != nil {
-		return &syncWait{efd: -1, done: true, failed: true}, err
+		return &syncWait{efd: -1, explicit: true, done: true, failed: true}, err
 	}
 	if err := p.tl.dev.eventfd(p.tl.handle, p.point, efd); err != nil {
 		unix.Close(efd)
-		return &syncWait{efd: -1, done: true, failed: true}, err
+		return &syncWait{efd: -1, explicit: true, done: true, failed: true}, err
 	}
-	w := sw.add(efd)
-	if w.failed {
-		return w, unix.EIO
+	w := &syncWait{efd: efd, explicit: true}
+	src, err := sw.src.add(efd, func() { sw.onAcquire(w) })
+	if err != nil {
+		unix.Close(efd)
+		return &syncWait{efd: -1, explicit: true, done: true, failed: true}, err
 	}
+	w.src = src
+	if sw.pending == nil {
+		sw.pending = map[*syncWait]struct{}{}
+	}
+	sw.pending[w] = struct{}{}
 	return w, nil
+}
+
+// onAcquire is the eventfd's callback, on the display goroutine.
+func (sw *syncWaiter) onAcquire(w *syncWait) {
+	if w.done {
+		return
+	}
+	var b [8]byte
+	if _, err := unix.Read(w.efd, b[:]); err != nil {
+		if errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EINTR) {
+			return // not signalled yet: keep waiting
+		}
+		w.failed = true
+	}
+	sw.finish(w)
+	sw.pace()
+}
+
+// finish unregisters then closes an explicit wait's eventfd and marks it done.
+func (sw *syncWaiter) finish(w *syncWait) {
+	delete(sw.pending, w)
+	if w.src != nil {
+		w.src.Remove()
+		w.src = nil
+	}
+	if w.efd >= 0 {
+		unix.Close(w.efd)
+		w.efd = -1
+	}
+	w.done = true
 }
 
 // watchImplicit waits for a dma-buf's exclusive fences without blocking dispatch.
@@ -336,6 +402,9 @@ func (sw *syncWaiter) add(fd int) *syncWait {
 
 // fired reports whether w's point is signalled, and forgets w once it has.
 func (sw *syncWaiter) fired(w *syncWait) bool {
+	if w.explicit {
+		return w.done // display goroutine only
+	}
 	sw.mu.Lock()
 	defer sw.mu.Unlock()
 	if ready, ok := sw.ready[w]; ok {
@@ -347,7 +416,14 @@ func (sw *syncWaiter) fired(w *syncWait) bool {
 
 // cancel stops watching w (the commit was dropped).
 func (sw *syncWaiter) cancel(w *syncWait) {
-	if w == nil || w.efd < 0 {
+	if w == nil {
+		return
+	}
+	if w.explicit {
+		sw.finish(w)
+		return
+	}
+	if w.efd < 0 {
 		return
 	}
 	w.cancelled.Store(true)
@@ -355,7 +431,7 @@ func (sw *syncWaiter) cancel(w *syncWait) {
 	delete(sw.ready, w)
 	sw.mu.Unlock()
 	w.done = true
-	_, _ = sw.pipeW.Write([]byte{0}) // run closes its eventfd
+	_, _ = sw.pipeW.Write([]byte{0}) // run closes its fence fd
 }
 
 func (sw *syncWaiter) stopped() bool {
@@ -380,12 +456,12 @@ func (sw *syncWaiter) fail(waits []*syncWait) {
 	sw.wake()
 }
 
-// run polls every watched eventfd; it owns and closes them.
+// run polls the implicit dma-buf fence descriptors; it owns and closes them.
 func (sw *syncWaiter) run(ctx context.Context) {
 	defer sw.pipeR.Close()
 	defer sw.waiter.Close()
 	pipeFD := int(sw.pipeR.Fd())
-	// The pipe lives as long as the poller; the eventfds come and go. The
+	// The pipe lives as long as the poller; the fence fds come and go. The
 	// poll sleeps until a fence, a new or cancelled wait (the pipe), or the
 	// end of ctx.
 	var waits []*syncWait
@@ -592,4 +668,24 @@ func (s *surface) applySync(cs *commitSync) {
 	cs.acquire.tl.uses--
 	s.server.dropTimeline(cs.acquire.tl)
 	s.hold = syncHold{acquire: f, release: cs.release}
+}
+
+// acquireSignalled applies what a fired acquire point unblocked: like a
+// commit, it ticks inline instead of posting a tick to the display loop.
+func (s *Server) acquireSignalled() {
+	s.paceDepth++
+	s.wakePacer()
+	s.paceDepth--
+	if s.paceDepth == 0 && s.paceDirty {
+		s.paceDirty = false
+		s.paceNow()
+	}
+}
+
+// releasePending unregisters and closes the explicit waits still pending at
+// shutdown. Called once the display loop has stopped.
+func (sw *syncWaiter) releasePending() {
+	for w := range sw.pending {
+		sw.finish(w)
+	}
 }

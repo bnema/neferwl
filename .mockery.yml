@@ -87,6 +87,16 @@ packages:
           dir: internal/adapters/wayland
           pkgname: wayland
           filename: acquire_poller_mock_test.go
+      acquireSource:
+        config:
+          dir: internal/adapters/wayland
+          pkgname: wayland
+          filename: acquire_source_mock_test.go
+      acquireRemover:
+        config:
+          dir: internal/adapters/wayland
+          pkgname: wayland
+          filename: acquire_remover_mock_test.go
       syncobjDevice:
         config:
           dir: internal/adapters/wayland

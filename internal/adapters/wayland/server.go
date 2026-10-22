@@ -459,6 +459,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	s.tokens = map[string]activationToken{}
 	s.foreignExports = map[string]*foreignExport{}
 	s.syncWait.log = log
+	s.syncWait.src, s.syncWait.pace = displayAcquireSource{d}, s.acquireSignalled
 	s.cleanup = func() {
 		if s.paceReady {
 			unix.Close(s.paceFD)
@@ -585,6 +586,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	s.castInventoryChanged()
 	err := s.display.Run(ctx)
+	s.syncWait.releasePending()
 	s.stopSecurityContexts()
 	wg.Wait()
 	return err

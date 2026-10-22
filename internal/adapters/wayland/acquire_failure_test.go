@@ -197,10 +197,6 @@ func TestAcquirePollTerminalFailureRetiresActiveAndAdded(t *testing.T) {
 	if !sw.stopped() {
 		t.Fatal("waiter not terminal")
 	}
-	dev := newMocksyncobjDevice(t) // no device access permitted after terminal failure
-	if w, err := sw.watch(syncPoint{tl: &timeline{dev: dev, handle: 7}, point: 1}); err == nil || !w.failed {
-		t.Fatal("new explicit watch accepted")
-	}
 	var waits [4]*syncWait
 	if err := sw.watchImplicit(&ports.DMABuf{}, &waits); err == nil {
 		t.Fatal("new implicit watch accepted")
