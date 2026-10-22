@@ -231,6 +231,9 @@ func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[ports.WindowID]por
 			mode, reason = planeColor(c.Color, c.DMABuf.Format, c.Opaque, o.hdr.on, o.primary.pipeline)
 		}
 	}
+	if reason == "" && !o.clientFenceReady(c.Acquire) {
+		reason = "fence_pending"
+	}
 	if reason == "" {
 		fb, reason = o.scanoutFB(c.DMABuf, time.Now())
 		if reason == "" {
@@ -286,6 +289,9 @@ func (o *Output) overlayFrame(s ports.Scene, surfaces map[ports.WindowID]ports.S
 			if ok, known := o.overlay.verdict(c.DMABuf.Format, o.cursorShown()); known && !ok {
 				reason = "color_refused"
 			}
+		}
+		if reason == "" && !o.clientFenceReady(c.Acquire) {
+			reason = "fence_pending"
 		}
 		if reason == "" {
 			var fb uint32

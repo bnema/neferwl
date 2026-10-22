@@ -34,6 +34,9 @@ type Renderer struct {
 	current    int
 	renderMods []uint64
 	hdrMods    []uint64
+	// importMods caches the modifiers a target of a format can be imported
+	// with (probeImportModifiers), by what the answer depends on.
+	importMods map[importKey][]uint64
 	hdrNits    float64
 	hdr        hdrPass
 	hdrError   error

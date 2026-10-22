@@ -10,6 +10,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/ports"
 	vk "github.com/bnema/purego-vulkan/vulkan"
+	"golang.org/x/sys/unix"
 )
 
 // Render targets (ADR 014). A DRM output scans out images the renderer
@@ -99,6 +100,35 @@ func (r *Renderer) ExportTargets(n int, modifiers []uint64, singlePlane bool) ([
 	return out, nil
 }
 
+// ImportTargets makes the images the display allocated (GBM dmabufs, one
+// memory object for all planes) the render targets, replacing the previous
+// ones; no buffers only drops them. The caller keeps its files: the
+// renderer imports duplicates. Each buffer must have the renderer's size and
+// target format and a modifier from TargetModifiers. A refusal (the driver
+// rejecting the explicit layout) returns an error and leaves no targets.
+func (r *Renderer) ImportTargets(bufs []ports.DMABuf) error {
+	r.dropTargets()
+	if len(bufs) == 0 {
+		return nil
+	}
+	if r.hdrNits > 0 && r.hdr.pipeline == 0 {
+		return fmt.Errorf("HDR transform unavailable: %w", r.hdrError)
+	}
+	if !r.dd.HasGetMemoryFdPropertiesKHR() || !r.dd.HasGetImageDrmFormatModifierPropertiesEXT() || len(r.dmabuf.Formats) == 0 {
+		return errors.New("device cannot import dmabufs")
+	}
+	for i := range bufs {
+		t, err := r.importTarget(&bufs[i])
+		if err != nil {
+			r.dropTargets()
+			return err
+		}
+		r.targets = append(r.targets, t)
+	}
+	r.current = 0
+	return nil
+}
+
 // SetVirtualOutput marks the output as having no display (headless): an
 // empty display modifier list then accepts every exportable HDR modifier,
 // as it does for SDR. DRM never sets it. Call before ExportTargets.
@@ -124,11 +154,19 @@ func (r *Renderer) target() *target {
 // except for a virtual output (no display) or a test readback. singlePlane
 // drops the modifiers with more than one memory plane.
 func (r *Renderer) exportModifiers(display []uint64, singlePlane bool) []uint64 {
-	var out []uint64
 	available := r.renderMods
 	if r.hdrNits > 0 {
 		available = r.hdrMods
 	}
+	return r.intersectModifiers(available, display, singlePlane)
+}
+
+// intersectModifiers keeps the available modifiers the display lists (an
+// empty display list accepts all of them, for SDR and for HDR only on a
+// virtual output or a test readback), without the multi-plane ones when
+// singlePlane.
+func (r *Renderer) intersectModifiers(available, display []uint64, singlePlane bool) []uint64 {
+	var out []uint64
 	for _, m := range available {
 		if singlePlane && r.modPlanes[m] > 1 {
 			continue
@@ -138,6 +176,27 @@ func (r *Renderer) exportModifiers(display []uint64, singlePlane bool) []uint64 
 		}
 	}
 	return out
+}
+
+// targetFormat is the Vulkan format and fourcc of the targets: XRGB8888, or
+// XRGB2101010 in HDR.
+func (r *Renderer) targetFormat() (vk.Format, uint32) {
+	if r.hdrNits > 0 {
+		return vk.FormatA2r10g10b10UnormPack32, fourccXR30
+	}
+	return vk.FormatB8g8r8a8Unorm, fourccXRGB
+}
+
+// TargetModifiers lists the modifiers an image allocated by the display
+// (GBM) can have to be imported as a target: those the device renders into
+// and imports for the target format, that the display lists (empty: any),
+// without multi-plane ones when singlePlane. Call after SetHDR.
+func (r *Renderer) TargetModifiers(display []uint64, singlePlane bool) []uint64 {
+	if r.physical == 0 || r.dd == nil || !r.dd.HasGetMemoryFdPropertiesKHR() || !r.dd.HasGetImageDrmFormatModifierPropertiesEXT() {
+		return nil
+	}
+	format, _ := r.targetFormat()
+	return r.intersectModifiers(r.probeImportModifiers(r.physical, format), display, singlePlane)
 }
 
 // probeRenderModifiers lists exportable SDR and HDR targets.
@@ -152,6 +211,34 @@ func (r *Renderer) probeRenderModifiers(physical vk.PhysicalDevice) {
 // records their plane counts in modPlanes. HDR targets need transfer-src only when
 // hdrReadback is set (GPU tests, headless --screenshot-raw; never DRM).
 func (r *Renderer) probeModifiers(physical vk.PhysicalDevice, format vk.Format) []uint64 {
+	return r.probeTargetModifiers(physical, format, vk.ExternalMemoryFeatureExportableBit)
+}
+
+// importKey is what the importable modifiers of a target depend on: its
+// format and whether test readback adds the transfer-source requirement.
+type importKey struct {
+	format   vk.Format
+	readback bool
+}
+
+// probeImportModifiers lists the modifiers of format a target can be
+// imported with: probeModifiers with the importable bit, for images the
+// display allocator made. The answer is probed once per key: it does not
+// change while the device lives.
+func (r *Renderer) probeImportModifiers(physical vk.PhysicalDevice, format vk.Format) []uint64 {
+	key := importKey{format, r.hdrReadback}
+	if mods, ok := r.importMods[key]; ok {
+		return mods
+	}
+	mods := r.probeTargetModifiers(physical, format, vk.ExternalMemoryFeatureImportableBit)
+	if r.importMods == nil {
+		r.importMods = make(map[importKey][]uint64)
+	}
+	r.importMods[key] = mods
+	return mods
+}
+
+func (r *Renderer) probeTargetModifiers(physical vk.PhysicalDevice, format vk.Format, feature vk.ExternalMemoryFeatureFlags) []uint64 {
 	list := vk.DrmFormatModifierPropertiesListEXT{SType: vk.StructureTypeDRMFormatModifierPropertiesListEXT}
 	fp := vk.FormatProperties2{SType: vk.StructureTypeFormatProperties2, Next: unsafe.Pointer(&list)}
 	r.id.GetPhysicalDeviceFormatProperties2(physical, format, &fp)
@@ -169,7 +256,7 @@ func (r *Renderer) probeModifiers(physical vk.PhysicalDevice, format vk.Format) 
 	}
 	// SDR targets are composed and read back; HDR targets are color
 	// attachments, and transfer sources only with hdrReadback.
-	result, planes := filterModifiers(mods[:list.DrmFormatModifierCount], need, func(m uint64) bool { return r.exportable(physical, format, m) })
+	result, planes := filterModifiers(mods[:list.DrmFormatModifierCount], need, func(m uint64) bool { return r.externalTarget(physical, format, m, feature) })
 	if r.modPlanes == nil {
 		r.modPlanes = make(map[uint64]uint32)
 	}
@@ -216,7 +303,10 @@ func filterModifiers(mods []vk.DrmFormatModifierPropertiesEXT, need vk.FormatFea
 	return result, planes
 }
 
-func (r *Renderer) exportable(physical vk.PhysicalDevice, format vk.Format, modifier uint64) bool {
+// externalTarget asks whether a target image of format and modifier with
+// the target usage supports the external memory feature (exportable: the
+// renderer allocates it; importable: the display allocator does).
+func (r *Renderer) externalTarget(physical vk.PhysicalDevice, format vk.Format, modifier uint64, feature vk.ExternalMemoryFeatureFlags) bool {
 	mod := vk.PhysicalDeviceImageDrmFormatModifierInfoEXT{SType: vk.StructureTypePhysicalDeviceImageDRMFormatModifierInfoEXT, DrmFormatModifier: modifier, SharingMode: vk.SharingModeExclusive}
 	ext := vk.PhysicalDeviceExternalImageFormatInfo{SType: vk.StructureTypePhysicalDeviceExternalImageFormatInfo, Next: unsafe.Pointer(&mod), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	info := vk.PhysicalDeviceImageFormatInfo2{SType: vk.StructureTypePhysicalDeviceImageFormatInfo2, Next: unsafe.Pointer(&ext), Format: format, Type: vk.ImageType2d, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: exportUsage(format, r.hdrReadback)}
@@ -225,7 +315,7 @@ func (r *Renderer) exportable(physical vk.PhysicalDevice, format vk.Format, modi
 	if r.id.GetPhysicalDeviceImageFormatProperties2(physical, &info, &out) != vk.Success {
 		return false
 	}
-	return extOut.ExternalMemoryProperties.ExternalMemoryFeatures&vk.ExternalMemoryFeatureExportableBit != 0
+	return extOut.ExternalMemoryProperties.ExternalMemoryFeatures&feature != 0
 }
 
 // VK_FORMAT_FEATURE_TRANSFER_SRC_BIT (Vulkan 1.1), missing from the
@@ -248,10 +338,7 @@ func exportUsage(format vk.Format, readback bool) vk.ImageUsageFlags {
 func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 	d := r.dd
 	t := &target{exported: true, layout: vk.ImageLayoutUndefined}
-	format, fourcc := vk.Format(vk.FormatB8g8r8a8Unorm), uint32(fourccXRGB)
-	if r.hdrNits > 0 {
-		format, fourcc = vk.FormatA2r10g10b10UnormPack32, fourccXR30
-	}
+	format, fourcc := r.targetFormat()
 	ok := false
 	defer func() {
 		if !ok {
@@ -353,4 +440,117 @@ func (r *Renderer) dropTargets() {
 	}
 	// New targets hold no HDR frame until the next Render.
 	r.targets, r.current, r.lastHDRTarget = nil, 0, -1
+}
+
+// What ImportTargets refuses an image for, before asking the driver.
+var (
+	errImageGeometry = errors.New("image size or format does not match the target")
+	errImageModifier = errors.New("image modifier is not an importable target modifier")
+	errImagePlanes   = errors.New("image plane count does not match its modifier")
+	errImageDMABuf   = errors.New("image planes are not in one dmabuf")
+)
+
+// importTarget makes a target of an image allocated outside the renderer.
+// The target is shared with the display like an exported one: frames
+// acquire it from and release it to the foreign queue family.
+func (r *Renderer) importTarget(b *ports.DMABuf) (*target, error) {
+	d := r.dd
+	format, fourcc := r.targetFormat()
+	n := len(b.Planes)
+	want, known := r.modPlanes[b.Modifier]
+	switch {
+	case b.Format != fourcc || b.Width != r.width || b.Height != r.height:
+		return nil, fmt.Errorf("%w: image %dx%d format %#x, target %dx%d format %#x", errImageGeometry, b.Width, b.Height, b.Format, r.width, r.height, fourcc)
+	case !known:
+		return nil, fmt.Errorf("%w: %#x is not a target modifier of the device", errImageModifier, b.Modifier)
+	case n < 1 || n > maxModifierPlanes || want != uint32(n):
+		return nil, fmt.Errorf("%w: modifier %#x: image has %d planes, device expects %d", errImagePlanes, b.Modifier, n, want)
+	case !r.externalTarget(r.physical, format, b.Modifier, vk.ExternalMemoryFeatureImportableBit):
+		return nil, fmt.Errorf("%w: %#x cannot be imported as a target", errImageModifier, b.Modifier)
+	}
+	if err := sameDMABuf(b.Planes); err != nil {
+		return nil, err
+	}
+	fd, err := dupFile(b.Planes[0].File)
+	if err != nil {
+		return nil, err
+	}
+	// Vulkan owns the fd it imports on success: hand it its own duplicate.
+	// Closed here on every path but the successful import.
+	defer func() {
+		if fd >= 0 {
+			_ = unix.Close(fd)
+		}
+	}()
+	t := &target{exported: true, layout: vk.ImageLayoutUndefined}
+	ok := false
+	defer func() {
+		if !ok {
+			r.freeTarget(t)
+		}
+	}()
+	var layouts [maxModifierPlanes]vk.SubresourceLayout
+	for i, p := range b.Planes {
+		layouts[i] = vk.SubresourceLayout{Offset: vk.DeviceSize(p.Offset), RowPitch: vk.DeviceSize(p.Stride)}
+	}
+	explicit := vk.ImageDrmFormatModifierExplicitCreateInfoEXT{SType: vk.StructureTypeImageDRMFormatModifierExplicitCreateInfoEXT, DrmFormatModifier: b.Modifier, DrmFormatModifierPlaneCount: uint32(n), PlaneLayouts: &layouts[0]}
+	external := vk.ExternalMemoryImageCreateInfo{SType: vk.StructureTypeExternalMemoryImageCreateInfo, Next: unsafe.Pointer(&explicit), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
+	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: format, Extent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: exportUsage(format, r.hdrReadback), SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
+	if err := checked("vkCreateImage(imported target)", d.CreateImage(r.device, &ii, nil, &t.image)); err != nil {
+		return nil, err
+	}
+	fdProps := vk.MemoryFdPropertiesKHR{SType: vk.StructureTypeMemoryFDPropertiesKHR}
+	if err := checked("vkGetMemoryFdPropertiesKHR", d.GetMemoryFdPropertiesKHR(r.device, vk.ExternalMemoryHandleTypeDMABUFBitEXT, int32(fd), &fdProps)); err != nil {
+		return nil, err
+	}
+	var req vk.MemoryRequirements
+	d.GetImageMemoryRequirements(r.device, t.image, &req)
+	bits := req.MemoryTypeBits & fdProps.MemoryTypeBits
+	kind, err := r.findMemoryType(bits, vk.MemoryPropertyDeviceLocalBit)
+	if err != nil {
+		if kind, err = r.findMemoryType(bits, 0); err != nil {
+			return nil, err
+		}
+	}
+	dedicated := vk.MemoryDedicatedAllocateInfo{SType: vk.StructureTypeMemoryDedicatedAllocateInfo, Image: t.image}
+	imp := vk.ImportMemoryFdInfoKHR{SType: vk.StructureTypeImportMemoryFDInfoKHR, Next: unsafe.Pointer(&dedicated), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT, Fd: int32(fd)}
+	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&imp), AllocationSize: req.Size, MemoryTypeIndex: kind}
+	if err := checked("vkAllocateMemory(imported target)", d.AllocateMemory(r.device, &alloc, nil, &t.memory)); err != nil {
+		return nil, err
+	}
+	fd = -1 // Vulkan owns it now.
+	if err := checked("vkBindImageMemory(imported target)", d.BindImageMemory(r.device, t.image, t.memory, 0)); err != nil {
+		return nil, err
+	}
+	if t.view, err = r.imageView(t.image, format); err != nil {
+		return nil, err
+	}
+	r.log.Debug().Uint64("modifier", b.Modifier).Int("planes", n).Msg("render target imported")
+	ok = true
+	return t, nil
+}
+
+// sameDMABuf fails unless every plane file is the same dmabuf (same device
+// and inode): the target is imported from the first plane's memory only, so
+// planes in other buffers would read the wrong memory.
+func sameDMABuf(planes []ports.DMABufPlane) error {
+	var first unix.Stat_t
+	for i, p := range planes {
+		fd, err := dupFile(p.File)
+		if err != nil {
+			return fmt.Errorf("plane %d: %w", i, err)
+		}
+		var st unix.Stat_t
+		err = unix.Fstat(fd, &st)
+		_ = unix.Close(fd)
+		if err != nil {
+			return fmt.Errorf("stat plane %d: %w", i, err)
+		}
+		if i == 0 {
+			first = st
+		} else if st.Dev != first.Dev || st.Ino != first.Ino {
+			return fmt.Errorf("%w: plane %d is not in the dmabuf of plane 0", errImageDMABuf, i)
+		}
+	}
+	return nil
 }

@@ -248,6 +248,7 @@ func TestProtectedShowImagesHDRKeepsHDRForKMSErrors(t *testing.T) {
 				errs = []error{nil, errno} // HDR test commit, then the disable
 			}
 			o, k, _ := testOutput(t, errs...)
+			o.fbs = [2]uint32{} // the first setup of a run: no image yet
 			o.cursor = nil
 			o.protected = true
 			o.hdr.cap = hdrCapability{Capable: true}

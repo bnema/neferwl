@@ -16,6 +16,7 @@ import (
 // signals. Recovery revokes earlier proof before a fresh blocking black proof.
 func TestSecurityStuckRecoveryInvalidatesBeforeFreshProof(t *testing.T) {
 	o, k, commits, mu := testOutputMu(t)
+	o.fbs = [2]uint32{} // the first setup of a run: no image yet
 	o.cursor, o.tearing = nil, false
 	o.frame.stuckAfter = 40 * time.Millisecond
 	o.flipped = make(chan flipEvent) // the event is intentionally lost

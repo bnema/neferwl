@@ -36,11 +36,12 @@ type CaptureFrame interface {
 }
 
 // Renderer draws scenes for an output. One goroutine owns it. Frames go
-// to its own image until ExportTargets gives it scanout images; then each
-// Render draws into the target chosen by UseTarget (ADR 014: no CPU pass).
+// to its own image until ExportTargets or ImportTargets gives it scanout
+// images; then each Render draws into the target chosen by UseTarget
+// (ADR 014: no CPU pass).
 type Renderer interface {
 	// SetHDR selects the HDR10 output transform (0 disables it).
-	// The DRM output calls this before ExportTargets.
+	// The DRM output calls this before ExportTargets or ImportTargets.
 	SetHDR(sdrNits float64)
 	// Render draws the scene. done is a sync file signalled when the GPU
 	// finished the frame (nil: already finished); the caller closes it.
@@ -53,6 +54,22 @@ type Renderer interface {
 	// restricts the choice to one-plane modifiers.
 	// n = 0 drops the targets.
 	ExportTargets(n int, modifiers []uint64, singlePlane bool) ([]DMABuf, error)
+	// TargetModifiers lists the modifiers an image allocated outside the
+	// renderer (by the display's allocator) can have to be imported as a
+	// target: those the device renders into and imports for the XRGB8888
+	// (SDR) or XRGB2101010 (HDR) format, that the display lists (empty: any),
+	// without multi-plane ones when singlePlane. Empty when the device
+	// cannot import dmabufs.
+	TargetModifiers(display []uint64, singlePlane bool) []uint64
+	// ImportTargets makes images allocated outside the renderer its
+	// targets, replacing the previous ones (no buffers: drops them). Each
+	// is one memory object of the renderer's size and target format, with
+	// a modifier from TargetModifiers: every plane file is the same
+	// dmabuf (the planes differ by offset), and disjoint planes are
+	// refused. The caller keeps its files and must keep the memory alive
+	// while the targets are in use. An error leaves the renderer without
+	// targets.
+	ImportTargets(bufs []DMABuf) error
 	// UseTarget selects the exported image the next Render draws into.
 	UseTarget(i int)
 	// CursorBuffers allocates two linear ARGB8888 images of size×size the

@@ -197,10 +197,26 @@ type Output struct {
 	protectNotBefore time.Time
 	// kind is how the images were made.
 	kind imageKind
-	// planes is the memory plane count of the last exported images.
+	// planes is the memory plane count of the output images.
 	planes int
-	// imageMod is the modifier of the exported images (0: linear).
+	// imageMod is the modifier of the output images (0: linear).
 	imageMod uint64
+	// openAlloc opens the GBM image allocator, once per output (nil: GBM is
+	// not used); alloc is it, allocErr why it failed. images are the GBM
+	// images alive while they are shown.
+	openAlloc func() (imageAllocator, error)
+	alloc     imageAllocator
+	allocErr  error
+	images    []imageBuffer
+	// cpuFences: the driver mishandles IN_FENCE_FD (fencegate.go), so
+	// commits wait for their fences on the CPU instead.
+	cpuFences bool
+	// fencePoll polls client fences; fenceWarnAt is when a fence wait
+	// timeout was last warned about.
+	// fenceLimit overrides fenceWaitLimit (zero: no override; tests).
+	fencePoll   fencePoll
+	fenceWarnAt time.Time
+	fenceLimit  time.Duration
 	// formats receives the direct scanout formats after each modeset;
 	// sampled and device are what they are built from (Want).
 	formats   chan<- ports.OutputFormats
@@ -222,7 +238,7 @@ type CursorLoader func(c ports.CursorChange, scale float64, t ports.BufferTransf
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
 	log := card.log
 	pipe := slices.Index(card.crtcs, crtc)
-	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, renderLog: card.renderLog, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start", ready: make(chan error, 1), seatDisable: make(chan chan struct{}), ping: make(chan chan struct{}), traceFlips: card.want.TraceFlips, vrrFlipGap: card.want.VRRFlipGap}
+	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, renderLog: card.renderLog, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, cpuFences: card.cpuFences, openAlloc: func() (imageAllocator, error) { return openGBM(card.fd) }, reason: "start", ready: make(chan error, 1), seatDisable: make(chan chan struct{}), ping: make(chan chan struct{}), traceFlips: card.want.TraceFlips, vrrFlipGap: card.want.VRRFlipGap}
 	var err error
 	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
@@ -638,6 +654,17 @@ func (o *Output) commitWith(fb uint32, fence *os.File, async bool, vrr bool, f p
 // (overlay) say. A frame that changes a plane's colour state is never async:
 // only FB_ID may change in an async commit.
 func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool, f pendingFrame, ov overlayWin, rect planeRect, pc colorUse) error {
+	// Where fences are waited for on the CPU, once per commit and before
+	// any state is read: the retries below go through commitRect. The
+	// fence is our own render's, or a client's that already signalled
+	// (clientFenceReady).
+	o.waitFences(fence)
+	return o.commitRect(fb, fence, async, vrr, f, ov, rect, pc)
+}
+
+// commitRect is commitWithRect once the fence was waited for; its retries
+// call it again, without waiting again.
+func (o *Output) commitRect(fb uint32, fence *os.File, async bool, vrr bool, f pendingFrame, ov overlayWin, rect planeRect, pc colorUse) error {
 	o.observeSecurity()
 	if o.Security != nil && (f.security != o.securityState || o.protected && !o.securityPrepared) {
 		return errSecurityScene
@@ -672,9 +699,7 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 		}
 	}
 	o.contentProps(req)
-	if fence != nil {
-		req.set(o.primary.id, o.primary.prop("IN_FENCE_FD"), uint64(fence.Fd()))
-	}
+	o.fenceProp(req, o.primary, fence)
 	// Admission linearizes at this last defensive snapshot. An already
 	// admitted native ioctl can complete, but precedes the black proof.
 	o.observeSecurity()
@@ -691,20 +716,20 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 			return errColorRefused
 		}
 		if !async && cur.on && errors.Is(err, unix.EINVAL) && o.cursorRefused() {
-			return o.commitWithRect(fb, fence, false, vrr, f, ov, rect, pc)
+			return o.commitRect(fb, fence, false, vrr, f, ov, rect, pc)
 		}
 		// The same frame without the connector hint tells whether the hint
 		// is the cause.
 		if o.contentProp != 0 && o.contentWanted != o.contentValue && errors.Is(err, unix.EINVAL) && o.frameTest(fb, fence, vrr, cur, ov, rect, pc, false) {
 			o.log.Warn().Err(err).Msg("content type refused; disabled")
 			o.contentProp = 0
-			return o.commitWithRect(fb, fence, false, vrr, f, ov, rect, pc)
+			return o.commitRect(fb, fence, false, vrr, f, ov, rect, pc)
 		}
 		if !async && vrr && !o.vrrOn && errors.Is(err, unix.EINVAL) {
 			// Retry without turning VRR on: if that passes, the driver
 			// refuses VRR on this output. The overlay stays: the composed
 			// image left its window out.
-			if o.commitWithRect(fb, fence, false, false, f, ov, rect, pc) == nil {
+			if o.commitRect(fb, fence, false, false, f, ov, rect, pc) == nil {
 				o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("vrr refused; disabled")
 				o.vrrProp = 0
 				return nil
@@ -767,9 +792,7 @@ func (o *Output) frameTest(fb uint32, fence *os.File, vrr bool, cur cursorState,
 	if withContent {
 		o.contentProps(req)
 	}
-	if fence != nil {
-		req.set(o.primary.id, o.primary.prop("IN_FENCE_FD"), uint64(fence.Fd()))
-	}
+	o.fenceProp(req, o.primary, fence)
 	return o.k.commit(req, atomicTestOnly, 0) == nil
 }
 
@@ -912,7 +935,7 @@ func (o *Output) commitScanoutRect(fb uint32, c ports.SurfaceContent, f pendingF
 		// from now on.
 		o.log.Debug().Err(err).Str("connector", o.conn.name).Msg("async flip refused")
 		cfb.noAsync = true
-		err = o.commitWithRect(fb, fence, false, vrr, f, overlayWin{}, rect, pc)
+		err = o.commitRect(fb, fence, false, vrr, f, overlayWin{}, rect, pc)
 	}
 	if errors.Is(err, errColorRefused) {
 		// KMS takes the buffer without the pipeline: compose it; the
@@ -1022,6 +1045,10 @@ func (o *Output) Close() {
 		o.cursor.free(o.k)
 	}
 	o.freeImages()
+	if o.alloc != nil {
+		o.alloc.close()
+		o.alloc = nil
+	}
 	o.frame.endPending()
 	o.dropRead()
 	o.shown, o.queued = 0, 0
@@ -1498,6 +1525,9 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			ev = ev.Int("missed_vblanks", fs.missedVblanks).Float64("max_flip_interval_ms", ms(fs.maxInterval))
 			ev = ev.Float64("max_commit_delay_ms", ms(fs.maxCommitDelay)).Float64("max_flip_to_read_ms", ms(fs.maxFlipToRead))
 			ev = ev.Int("state_commits", fs.stateCommits).Int("state_carried", fs.stateCarried)
+			if fs.fenceTimeouts > 0 {
+				ev = ev.Int("fence_timeouts", fs.fenceTimeouts)
+			}
 			ev = ev.Int("redrawn_pixels", r.TakeRedrawn())
 			if o.traceFlips {
 				ev = ev.Int("late_fences", fs.lateFences)

@@ -148,6 +148,7 @@ func TestHDRSettingsRestartComparison(t *testing.T) {
 
 func TestHDRSuccessfulModeset(t *testing.T) {
 	o, k, commits := testOutput(t)
+	o.fbs = [2]uint32{} // the first setup of a run: no image yet
 	o.cursor = nil
 	o.hdr.cap = hdrCapability{Capable: true}
 	o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: ports.DefaultSDRBrightness}

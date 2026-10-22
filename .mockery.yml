@@ -34,6 +34,16 @@ packages:
           dir: internal/adapters/drm
           pkgname: drm
           filename: kms_mock_test.go
+      imageAllocator:
+        config:
+          dir: internal/adapters/drm
+          pkgname: drm
+          filename: image_allocator_mock_test.go
+      imageBuffer:
+        config:
+          dir: internal/adapters/drm
+          pkgname: drm
+          filename: image_buffer_mock_test.go
   github.com/bnema/neferwl/internal/adapters/seat:
     interfaces:
       disabler:

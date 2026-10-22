@@ -227,10 +227,8 @@ func (o *Output) overlayProps(req *atomicReq, ov overlayWin) {
 	req.set(p.id, p.prop("CRTC_Y"), uint64(int64(ov.rect.Y)))
 	req.set(p.id, p.prop("CRTC_W"), uint64(ov.rect.W))
 	req.set(p.id, p.prop("CRTC_H"), uint64(ov.rect.H))
-	if ov.acquire != nil {
-		// KMS waits for the client's GPU work before scanning it out.
-		req.set(p.id, p.prop("IN_FENCE_FD"), uint64(ov.acquire.Fd()))
-	}
+	// KMS waits for the client's GPU work before scanning it out.
+	o.fenceProp(req, p, ov.acquire)
 }
 
 // close releases the frame's duplicate of the acquire fence.
