@@ -81,7 +81,7 @@ type XWM struct {
 }
 
 func newXWM(conn *xturbo.Conn, log zerowrap.Logger) *XWM {
-	x := &XWM{conn: conn, log: log.WithField("component", "xwm"), root: conn.Root(), tab: newTable(initialSlots)}
+	x := &XWM{conn: conn, log: log, root: conn.Root(), tab: newTable(initialSlots)}
 	x.h = xturbo.Handler{OnEvent: x.onEvent, OnReply: x.onReply, OnError: x.onError}
 	x.fit()
 	return x
@@ -145,6 +145,7 @@ func (x *XWM) setProp32(win uint32, prop int, typ xproto.Atom, vals []uint32) {
 // blocks (about 25 s at worst) and must not run on the display goroutine: the
 // handshake needs Xwayland, which needs the display goroutine to serve its
 // Wayland requests. It takes ownership of wmFD and closes it on failure.
+// log is scoped by the caller with logging.For(ctx, "xwm").
 func Boot(wmFD int, log zerowrap.Logger) (*XWM, error) {
 	conn, err := xturbo.NewConn(wmFD)
 	if err != nil {
