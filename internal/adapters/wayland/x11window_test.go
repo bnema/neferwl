@@ -533,6 +533,22 @@ func TestX11ConfineRegionHasNoOffset(t *testing.T) {
 	}
 }
 
+// waitOn waits until window id's surface is on output name: commands reach
+// the display goroutine asynchronously.
+func (r *x11Rig) waitOn(id ports.WindowID, name string) {
+	r.t.Helper()
+	waitTrue(r.t, "surface on "+name, func() bool {
+		ok := false
+		r.state(func() {
+			if w := r.s.windows[id]; w != nil {
+				on := w.surf().on
+				ok = on != nil && on.name() == name
+			}
+		})
+		return ok
+	})
+}
+
 // An X11 window is on one output only, even straddling two: a single
 // wl_surface.enter, and a leave only when its output changes.
 func TestX11WindowEntersOneOutput(t *testing.T) {
@@ -575,10 +591,7 @@ func TestX11WindowEntersOneOutput(t *testing.T) {
 	// Straddling both outputs, configured on A.
 	r.commands <- ports.PlaceWindow{ID: m.ID, X: 1900, Y: 0}
 	r.commands <- ports.ConfigureWindow{ID: m.ID, Width: 200, Height: 100, Visible: true, Output: "A"}
-	if err := r.xc.Roundtrip(); err != nil {
-		t.Fatal(err)
-	}
-	r.state(func() {})
+	r.waitOn(m.ID, "A")
 	if err := r.xc.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -604,7 +617,7 @@ func TestX11WindowEntersOneOutput(t *testing.T) {
 
 	// Moving to B leaves A and enters B once.
 	r.commands <- ports.ConfigureWindow{ID: m.ID, Width: 200, Height: 100, Visible: true, Output: "B"}
-	r.state(func() {})
+	r.waitOn(m.ID, "B")
 	if err := r.xc.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
