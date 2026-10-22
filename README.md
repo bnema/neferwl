@@ -149,7 +149,7 @@ See [Configuration](docs/config.md) for all keys, actions, bindings and automati
 - Explicit sync carries client fences to the GPU and KMS, enabled by default with no flag. HDR10 on capable displays includes configurable SDR brightness.
 - Separate workspaces and fractional scale per output; workspaces move when a monitor is unplugged and return when it reconnects.
 - Hidden apps get frame callbacks once per second and the suspended state, whether on another workspace, in a hidden stash, off screen or under fullscreen. Captured windows keep their output's refresh rate.
-- Steam and other X11 clients run through xwayland-satellite, or through the experimental built-in window manager (`xwayland = builtin`; menus, popups and tooltips, fullscreen games with keyboard grab; no clipboard or XSETTINGS yet). Wine can run natively on Wayland.
+- Steam and other X11 clients run through xwayland-satellite, or through the experimental built-in window manager (`xwayland = builtin`; menus, popups and tooltips, fullscreen games with keyboard grab; text clipboard and primary selection in both directions, XSETTINGS and a themed root cursor). Wine can run natively on Wayland.
 
 ### Windows and workspaces
 
