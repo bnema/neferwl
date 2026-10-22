@@ -129,6 +129,9 @@ func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 		return
 	}
 	if !on {
+		if w.left == id {
+			w.left = 0
+		}
 		if w.Fullscreen == id {
 			w.endFullscreen()
 		}

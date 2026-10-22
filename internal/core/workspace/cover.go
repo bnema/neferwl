@@ -5,7 +5,8 @@ import "slices"
 // settleLeft drops the latch once its window has the focus again, however
 // it got it; core calls it after each event.
 func (w *Workspace) settleLeft() {
-	if id, ok := w.Focused(); ok && id == w.left {
+	if id, ok := w.Focused(); ok && id != 0 && id == w.left {
+		w.SetFullscreen(id, true)
 		w.left = 0
 	}
 }

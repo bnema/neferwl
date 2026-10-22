@@ -1073,7 +1073,7 @@ func fullscreenAtMapIgnored(t *testing.T, animated bool) {
 // Under fixed overflow, a window opening over a fullscreen game waits
 // hidden: the game keeps the screen and the keyboard. An activation (a
 // user action in the new client) leaves fullscreen and shows both tiles;
-// a focus move back to the game and the bind make it fullscreen again.
+// a focus move back to the game makes it fullscreen again.
 func TestFixedFullscreenArrivalWaits(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startMulti(t, func(c *domain.Config) { c.Layout.Overflow = "fixed" }, left)
@@ -1096,8 +1096,7 @@ func TestFixedFullscreenArrivalWaits(t *testing.T) {
 				break
 			}
 		}
-		r.key(t, "Left", domain.ModAlt)
-		set = r.key(t, "f", domain.ModAlt|domain.ModShift)
+		set = r.key(t, "Left", domain.ModAlt)
 		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []domain.WindowID{1}) || focused != 1 {
 			t.Fatal("game again:", got, focused)
 		}

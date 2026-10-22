@@ -68,12 +68,6 @@ func TestCoreLeftFullscreenLatch(t *testing.T) {
 			t.Fatalf("re-request covered: fullscreen %d", id)
 		}
 		client <- ports.WindowActivate{ID: 2}
-		full()
-		client <- ports.WindowActivate{ID: 1}
-		full()
-		// The latch settled when 2 had the focus: scroll overflow honours an
-		// unfocused window's request again.
-		client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true}
 		if id := full(); id != 2 {
 			t.Fatalf("after refocus: fullscreen %d, want 2", id)
 		}

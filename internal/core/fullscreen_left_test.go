@@ -117,3 +117,32 @@ func TestLeftFullscreenRemoved(t *testing.T) {
 
 	})
 }
+
+// Focus back on a window whose fullscreen the user left restores it, with
+// no request from the client (X11 clients never re-ask), and allocates
+// nothing once settled.
+func TestLeftFullscreenRestoredOnFocus(t *testing.T) {
+	for _, tc := range pinnedCases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := coverMonitor(tc.overflow, tc.float)
+			w := m.Current()
+			w.Activate(1)
+			if w.fullscreen != 0 || w.left != 2 {
+				t.Fatalf("leave: fullscreen %d, left %d", w.fullscreen, w.left)
+			}
+			w.Activate(2)
+			w.settleLeft()
+			if w.fullscreen != 2 || w.left != 0 {
+				t.Fatalf("back: fullscreen %d, left %d", w.fullscreen, w.left)
+			}
+		})
+	}
+}
+
+func TestSettleLeftAllocs(t *testing.T) {
+	m := coverMonitor(OverflowScroll, false)
+	w := m.Current()
+	if n := testing.AllocsPerRun(100, w.settleLeft); n != 0 {
+		t.Fatalf("settleLeft allocs %v", n)
+	}
+}
