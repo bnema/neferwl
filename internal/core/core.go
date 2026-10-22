@@ -355,6 +355,9 @@ func (c *Core) apply(cfg ports.Config) error {
 		content, workspace := s.mon.Current().layout().axes()
 		axes[s.mon] = layoutAxes{content, workspace}
 	}
+	if c.cfg.Hint.Size != cfg.Hint.Size {
+		c.hintCancel()
+	}
 	c.cfg = cfg
 	c.binds = binds
 	c.cmdMod = map[string]ports.Mods{"super": ports.ModSuper, "alt": ports.ModAlt, "ctrl": ports.ModCtrl}[cfg.Keyboard.CmdKey]

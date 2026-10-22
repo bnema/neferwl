@@ -24,7 +24,9 @@ type hintHarness struct {
 	hints    chan ports.HintScanResult
 	win      ports.Rect // window 1, output-local
 	// state is the security state input is stamped with.
-	state ports.SecurityState
+	state  ports.SecurityState
+	config chan ports.ConfigChanged
+	cfg    ports.Config
 }
 
 // newHint starts a core with one 1000x800 output "OUT-1" and window 1 mapped.
@@ -42,6 +44,8 @@ func newHintConfig(t *testing.T, opts core.Options, edit func(*ports.Config)) *h
 	cfg.Layout.Gaps = 20
 	cfg.Binds["Cmd+g"] = "hint"
 	h := &hintHarness{
+		config:   make(chan ports.ConfigChanged),
+		cfg:      cfg,
 		t:        t,
 		input:    make(chan ports.InputEvent, 32),
 		client:   make(chan ports.ClientEvent, 32),
@@ -52,7 +56,7 @@ func newHintConfig(t *testing.T, opts core.Options, edit func(*ports.Config)) *h
 		// Unbuffered: a send returns once core took the result.
 		hints: make(chan ports.HintScanResult),
 	}
-	ch := core.Channels{Client: h.client, Input: h.input, Output: h.output, Commands: h.commands, Scenes: h.scenes, HintScans: h.scans, Hints: h.hints}
+	ch := core.Channels{Config: h.config, Client: h.client, Input: h.input, Output: h.output, Commands: h.commands, Scenes: h.scenes, HintScans: h.scans, Hints: h.hints}
 	c, err := core.New(cfg, ch, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -849,4 +853,13 @@ func TestHintOverlappingLabelsDropLowerScore(t *testing.T) {
 			t.Fatalf("rev=%v: label corners %v, want %v", rev, got, want)
 		}
 	}
+}
+
+func TestHintSizeReloadCancelsShownHints(t *testing.T) {
+	h := newHint(t, core.Options{})
+	h.show(h.inside(0))
+	cfg := h.cfg
+	cfg.Hint.Size = 40
+	h.config <- ports.ConfigChanged{Config: cfg}
+	h.until(func(s ports.Scene) bool { return s.HintStyle.Size == 40 && len(s.HintLabels) == 0 })
 }
