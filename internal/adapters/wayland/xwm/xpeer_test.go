@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"io"
 	"os"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -92,10 +93,13 @@ type xpeer struct {
 	tap      []byte // everything written to the client, when recording
 	record   bool
 
-	gate atomic.Pointer[chan struct{}] // closed = reading allowed
-	sbuf [4096]byte
-	sink atomic.Bool // discard requests without recording or allocating
-	done chan struct{}
+	gate            atomic.Pointer[chan struct{}] // closed = reading allowed
+	sbuf            [4096]byte
+	parked, reading atomic.Bool // peer state: at the closed gate / blocked in the header read
+	sink            atomic.Bool // discard requests without recording or allocating
+	// discarded counts requests fully dropped in sink mode.
+	discarded atomic.Uint64
+	done      chan struct{}
 }
 
 func fullPeerExts() map[string]xpeerExt {
@@ -163,17 +167,30 @@ func (p *xpeer) serve() {
 		return
 	}
 	for {
-		<-*p.gate.Load()
+		select {
+		case <-*p.gate.Load():
+		default:
+			p.parked.Store(true)
+			<-*p.gate.Load()
+			p.parked.Store(false)
+		}
+		// The sink decision follows the header read, so a request written
+		// after sink.Store(true) is always discarded, never recorded.
+		p.reading.Store(true)
+		_, err := io.ReadFull(p.f, p.sbuf[:4])
+		p.reading.Store(false)
+		if err != nil {
+			return
+		}
 		if p.sink.Load() {
-			if !p.discard() {
+			if !p.discardRest() {
 				return
 			}
+			p.discarded.Add(1)
 			continue
 		}
 		var h [4]byte
-		if _, err := io.ReadFull(p.f, h[:]); err != nil {
-			return
-		}
+		copy(h[:], p.sbuf[:4])
 		raw := h[:]
 		n := int(binary.LittleEndian.Uint16(h[2:])) * 4
 		if n == 0 { // BIG-REQUESTS header
@@ -198,12 +215,9 @@ func (p *xpeer) serve() {
 	}
 }
 
-// discard reads and drops one request without allocating. It reports false
-// when the connection ended.
-func (p *xpeer) discard() bool {
-	if _, err := io.ReadFull(p.f, p.sbuf[:4]); err != nil {
-		return false
-	}
+// discardRest drops the rest of the request whose 4-byte header is in
+// p.sbuf, without allocating. It reports false when the connection ended.
+func (p *xpeer) discardRest() bool {
 	n := int(binary.LittleEndian.Uint16(p.sbuf[2:])) * 4
 	left := n - 4
 	if n == 0 {
@@ -519,10 +533,20 @@ func (p *xpeer) destroyNotify(win uint32) {
 	})
 }
 
-// pause makes the peer stop reading after the request it is serving.
+// pause closes the gate: the peer parks before reading its next request.
 func (p *xpeer) pause() {
 	g := make(chan struct{})
 	p.gate.Store(&g)
+}
+
+// waitParked waits until the peer goroutine is parked at the closed gate. A
+// peer blocked in its header read only gets there after one more request, so
+// the caller must have one in flight (or be sure it is parked already).
+func (p *xpeer) waitParked() {
+	p.t.Helper()
+	for !p.parked.Load() {
+		runtime.Gosched()
+	}
 }
 
 // resume lets the peer read again.

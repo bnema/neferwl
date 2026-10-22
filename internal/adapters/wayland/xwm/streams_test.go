@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
@@ -139,11 +140,18 @@ func replay(t *testing.T, k streamKind) (mallocs uint64, hs *harness) {
 	stream := loadStream(t, k)
 	hs = streamScenario(t)
 	hs.p.pause()
-	poke(hs)
+	// A peer blocked in its read consumes one more request before it parks
+	// (this one, or an earlier one still in flight); a parked peer leaves it
+	// unread. Either way the peer ends up parked, with nothing half read.
+	xproto.GetInputFocus(hs.x.conn.Buf())
+	hs.x.flush()
+	hs.p.waitParked()
 	_, err := hs.p.f.Write(stream)
 	require.NoError(t, err)
 
 	x := hs.x
+	// The harness post queue grows by append, at batching-dependent moments.
+	x.post = func(func()) {}
 	base := x.Stats().Events + x.Stats().Replies
 	drive := func(until uint64) {
 		deadline := time.Now().Add(10 * time.Second)
@@ -162,6 +170,12 @@ func replay(t *testing.T, k streamKind) (mallocs uint64, hs *harness) {
 	target := base + uint64(streamCycles*k.perCycle)
 
 	var m0, m1 runtime.MemStats
+	// A GC cycle finishing inside the window allocates runtime-internal
+	// objects (sudogs), which Mallocs counts: keep the collector off.
+	defer debug.SetGCPercent(debug.SetGCPercent(-1))
+	// Like testing.AllocsPerRun: one P, so no other goroutine's runtime
+	// bookkeeping (timers, netpoll) lands in the window.
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
 	runtime.GC()
 	runtime.ReadMemStats(&m0)
 	drive(target)

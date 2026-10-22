@@ -2,7 +2,9 @@ package xwm
 
 import (
 	"encoding/binary"
+	"runtime"
 	"testing"
+	"time"
 
 	"bnema.dev/xturbo/xproto"
 	"github.com/bnema/neferwl/internal/ports"
@@ -506,16 +508,22 @@ func TestCloseWindow(t *testing.T) {
 
 func sinkPeer(t *testing.T, x *XWM, p *xpeer) {
 	t.Helper()
+	// Everything written after sink.Store(true) is discarded, so one marker
+	// request proves the peer loop is in sink mode and idle again.
+	// A round trip first: the peer has consumed every earlier request, so the
+	// marker is the only one it can see in sink mode.
+	require.NoError(t, x.conn.Sync(&x.h))
+	before := p.discarded.Load()
 	p.sink.Store(true)
-	n := len(p.requests())
-	xproto.GetInputFocus(x.conn.Buf()) // served by the old loop iteration
+	xproto.GetInputFocus(x.conn.Buf())
 	require.NoError(t, x.conn.Flush())
-	p.waitReq(n, func(r xpeerReq) bool { return r.major == opGetInputFocus })
-	// The peer records a request and answers it under mu: once the lock is
-	// free again it is back in its sink loop, which does not allocate.
-	p.mu.Lock()
-	_ = p.seq
-	p.mu.Unlock()
+	deadline := time.Now().Add(30 * time.Second) // failure guard only: the wait is event driven
+	for p.discarded.Load() == before {
+		if time.Now().After(deadline) {
+			t.Fatal("xpeer: sink marker never discarded")
+		}
+		runtime.Gosched()
+	}
 	x.src = nil // no source: write backpressure would not allocate either
 	x.post = func(func()) {}
 	x.warnedRing = true // the sink never answers: Expect slots stay used
