@@ -1445,7 +1445,7 @@ func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 		// Another window covers: the override was for the old cover.
 		w.dropStashOver()
 	}
-	if !w.isFloat(id) {
+	if !w.isFloat(id) && w.fullscreen != id {
 		w.fullscreenBand(id)
 	}
 	w.fullscreen = id

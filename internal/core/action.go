@@ -394,6 +394,7 @@ func (c *Core) dispatchAction(a Action) Effect {
 				from := c.cur()
 				c.focusScreen = i
 				moveFloat(w, c.cur().mon.Current(), fid)
+				w.reconcileFloats()
 				from.mon.normalize()
 				c.cur().mon.normalize()
 			}
@@ -412,6 +413,7 @@ func (c *Core) dispatchAction(a Action) Effect {
 			if !ok {
 				return Effect{}
 			}
+			w.reconcileFloats() // floats the fullscreen kept demoted show again
 			from := c.cur()
 			c.focusScreen = i
 			to := c.cur().mon.Current()
@@ -421,7 +423,7 @@ func (c *Core) dispatchAction(a Action) Effect {
 			}
 			to.receive(col, at)
 			if full {
-				to.ToggleFullscreen()
+				to.SetFullscreen(fid, true)
 			}
 			from.mon.normalize()
 			c.cur().mon.normalize()

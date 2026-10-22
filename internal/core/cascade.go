@@ -438,18 +438,25 @@ func (w *Workspace) fullscreenBand(id WindowID) {
 	}
 	fc := w.Columns[w.Focus]
 	focus := fc.Windows[fc.Focus]
-	w.dropSlotOf(id)
 	bands := w.bandList()
 	col := bands[b][i-first]
 	nc := col
 	if len(col.Windows) == 1 {
+		// The column leaves its lane, as deleteColumn: manual widths of the
+		// lane no longer add up. It keeps its slot and its own width.
+		w.clearSpans(i)
 		bands[b] = slices.Delete(bands[b], i-first, i-first+1)
 	} else {
 		j := slices.Index(col.Windows, id)
+		// The expelled window gets a plain column: no Span (a manual width
+		// is the stack's, and the new band is alone), no shares.
 		nc = Column{Windows: []WindowID{id}, Cells: col.Cells}
 		col.Windows = slices.Delete(slices.Clone(col.Windows), j, j+1)
-		switch {
-		case col.Focus > j, col.Focus >= len(col.Windows):
+		col.Shares = nil
+		if j == 0 {
+			col.Slot = 0 // the slot window left
+		}
+		if col.Focus > j || col.Focus >= len(col.Windows) {
 			col.Focus = max(min(col.Focus-1, len(col.Windows)-1), 0)
 		}
 		bands[b][i-first] = col
@@ -533,8 +540,17 @@ func (w *Workspace) restoreBand() bool {
 		}
 		return got
 	}
+	// A band the take left empty (a fullscreen column that split off its
+	// own band meanwhile) is looked past: the remembered columns may lie
+	// one band farther.
 	above := take(b-1, up, true)
+	if b >= 2 && len(bands[b-1]) == 0 {
+		above = slices.Concat(take(b-2, up, true), above)
+	}
 	below := take(b+1, down, false)
+	if b+2 < len(bands) && len(bands[b+1]) == 0 {
+		below = slices.Concat(below, take(b+2, down, false))
+	}
 	bands[b] = slices.Concat(above, bands[b], below)
 	w.setBands(bands, id)
 	return true
