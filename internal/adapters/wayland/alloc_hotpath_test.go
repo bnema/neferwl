@@ -247,3 +247,12 @@ func TestCommandForwardAllocations(t *testing.T) {
 		t.Errorf("command push + merge + drain + stats: %.1f allocs, want 0", allocs)
 	}
 }
+
+// A settled grab (none, or unchanged) is re-checked at every focus and
+// configure without allocating.
+func TestKeyboardGrabSyncAllocations(t *testing.T) {
+	s := &Server{windows: map[ports.WindowID]*window{}}
+	if n := testing.AllocsPerRun(100, s.syncKeyboardGrab); n != 0 {
+		t.Fatalf("%v allocs", n)
+	}
+}

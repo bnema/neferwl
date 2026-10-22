@@ -280,6 +280,8 @@ xdgPublic, xdgPrivate *server.Global
 	// inhibitors are the live inhibitor objects (inhibit.go);
 	// shortcutWindows and idleWindows what core was told.
 	inhibitors                   []*inhibitor
+	xgrab                        *xwaylandGrab  // Xwayland keyboard grab (xwaylandgrab.go)
+	xgrabbed                     domain.WindowID // window the grab inhibits for
 	shortcutWindows, idleWindows map[domain.WindowID]bool
 	// busInhibited is the last IdleInhibited value (idle.go).
 	busInhibited bool
@@ -831,6 +833,7 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 			s.wakePacer() // reconsider FIFO barriers at the new period
 		}
 		w.sendConfigure()
+		s.syncKeyboardGrab()
 		s.toplevelChanged(w)
 		if scanoutChanged && w.surf() != nil {
 			s.dmabuf.resendSurface(w.surf())

@@ -14,6 +14,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 	for _, register := range []func() error{
 		func() error { return registerXDG(d, s) },
 		func() error { return registerXwaylandShell(d, s) },
+		func() error { return registerXwaylandGrab(d, s) },
 		func() error { return registerLayer(d, s) },
 		func() error {
 			// Advertise only with the production owner gate and authoritative

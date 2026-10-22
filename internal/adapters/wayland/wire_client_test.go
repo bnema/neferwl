@@ -96,6 +96,7 @@ import (
 	wire_xdgforeign "github.com/bnema/go-wayland-bindings/server/xdgforeign"
 	wire_xdgoutput "github.com/bnema/go-wayland-bindings/server/xdgoutput"
 	wire_xdgshell "github.com/bnema/go-wayland-bindings/server/xdgshell"
+	wire_xwaylandkeyboardgrab "github.com/bnema/go-wayland-bindings/server/xwaylandkeyboardgrab"
 	wire_xwaylandshell "github.com/bnema/go-wayland-bindings/server/xwaylandshell"
 	wire_imagecapture "github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
 	"bnema.dev/purego-libwayland/server"
@@ -258,6 +259,8 @@ var wireSchemas = map[string]wireSchema{
 	"zwp_text_input_v3":                                    {wire_textinput.ZwpTextInputV3Interface, &client_textinput.TextInputV3{}, map[uint16]bool{0: true}, nil},
 	"zwp_virtual_keyboard_manager_v1":                      {wire_virtualkeyboard.ZwpVirtualKeyboardManagerV1Interface, &client_virtualkeyboard.VirtualKeyboardManager{}, nil, nil},
 	"zwp_virtual_keyboard_v1":                              {wire_virtualkeyboard.ZwpVirtualKeyboardV1Interface, &client_virtualkeyboard.VirtualKeyboard{}, map[uint16]bool{3: true}, nil},
+	"zwp_xwayland_keyboard_grab_manager_v1":                {wire_xwaylandkeyboardgrab.ZwpXwaylandKeyboardGrabManagerV1Interface, nil, map[uint16]bool{0: true}, nil},
+	"zwp_xwayland_keyboard_grab_v1":                        {wire_xwaylandkeyboardgrab.ZwpXwaylandKeyboardGrabV1Interface, nil, map[uint16]bool{0: true}, nil},
 	"xwayland_shell_v1":                                    {wire_xwaylandshell.XwaylandShellV1Interface, nil, map[uint16]bool{0: true}, nil},
 	"xwayland_surface_v1":                                  {wire_xwaylandshell.XwaylandSurfaceV1Interface, nil, map[uint16]bool{1: true}, nil},
 	"zxdg_output_manager_v1":                               {wire_xdgoutput.ZxdgOutputManagerV1Interface, &client_xdgoutput.ZxdgOutputManager{}, map[uint16]bool{0: true}, nil},

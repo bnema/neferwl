@@ -122,6 +122,10 @@ func (s *Server) syncInhibitors() {
 			idle[in.window] = true
 		}
 	}
+	if id := s.xgrabWindow(); id != 0 {
+		shortcuts[id] = true
+	}
+	s.xgrabbed = s.xgrabWindow()
 	for id, on := range diffSets(s.shortcutWindows, shortcuts) {
 		s.emit(ports.ShortcutsInhibit{Window: id, Active: on})
 	}

@@ -483,6 +483,7 @@ func (s *Server) changeFocus(id domain.WindowID) {
 	}
 	s.textInputFocus()
 	s.x11Focus()
+	s.syncKeyboardGrab()
 	s.log.Debug().Uint64("id", uint64(s.seat.focused)).Msg("keyboard focus")
 	s.updateConstraint()
 }

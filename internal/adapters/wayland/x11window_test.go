@@ -11,6 +11,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/pointerconstraints"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
+	"github.com/bnema/go-wayland-bindings/server/xwaylandkeyboardgrab"
 	"github.com/bnema/go-wayland-bindings/server/xwaylandshell"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
@@ -349,5 +350,67 @@ func TestX11WindowPointerLock(t *testing.T) {
 	r.commands <- ports.FocusWindow{ID: m.ID}
 	if got := constrained(t, r.events); got.ID != m.ID || got.Mode != ports.ConstraintLock {
 		t.Fatalf("constrained %+v", got)
+	}
+}
+
+// grabRig is an X11 window with an Xwayland keyboard grab on its surface.
+func grabRig(t *testing.T) (r *x11Rig, w ports.WindowID, surf uint32) {
+	t.Helper()
+	r = newX11Rig(t)
+	r.x11Window(x11Win)
+	surf = r.pair(x11Win, x11Serial)
+	w = awaitEvent[ports.WindowMapped](t, r.events).ID
+	seat := bindProtocol(t, r.xc, "wl_seat")
+	registerProtocol(t, r.xc, seat)
+	mgr := bindProtocol(t, r.xc, "zwp_xwayland_keyboard_grab_manager_v1")
+	grab := r.xc.AllocateID()
+	requestProtocol(t, r.xc, mgr, xwaylandkeyboardgrab.ZwpXwaylandKeyboardGrabManagerV1RequestGrabKeyboard, grab, surf, seat)
+	registerProtocol(t, r.xc, grab)
+	if err := r.xc.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	return r, w, grab
+}
+
+// noInhibit fails when a ShortcutsInhibit event arrives shortly.
+func noInhibit(t *testing.T, r *x11Rig) {
+	t.Helper()
+	if err := r.xc.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.After(150 * time.Millisecond); ; {
+		select {
+		case ev := <-r.events:
+			if v, ok := ev.(ports.ShortcutsInhibit); ok {
+				t.Fatalf("unexpected %+v", v)
+			}
+		case <-deadline:
+			return
+		}
+	}
+}
+
+func TestXwaylandKeyboardGrabThreeStates(t *testing.T) {
+	r, w, grab := grabRig(t)
+	// Windowed and focused: accepted, no effect.
+	r.commands <- ports.ConfigureWindow{ID: w, Width: 100, Height: 100, Visible: true}
+	r.commands <- ports.FocusWindow{ID: w}
+	noInhibit(t, r)
+	// Focused and fullscreen: inhibits.
+	r.commands <- ports.ConfigureWindow{ID: w, Width: 100, Height: 100, Visible: true, Fullscreen: true}
+	if v := awaitEvent[ports.ShortcutsInhibit](t, r.events); v != (ports.ShortcutsInhibit{Window: w, Active: true}) {
+		t.Fatal(v)
+	}
+	// Focus lost: released.
+	r.commands <- ports.FocusWindow{}
+	if v := awaitEvent[ports.ShortcutsInhibit](t, r.events); v != (ports.ShortcutsInhibit{Window: w}) {
+		t.Fatal(v)
+	}
+	// Back, then the grab object goes away.
+	r.commands <- ports.FocusWindow{ID: w}
+	awaitEvent[ports.ShortcutsInhibit](t, r.events)
+	requestProtocol(t, r.xc, grab, xwaylandkeyboardgrab.ZwpXwaylandKeyboardGrabV1RequestDestroy)
+	if v := awaitEvent[ports.ShortcutsInhibit](t, r.events); v != (ports.ShortcutsInhibit{Window: w}) {
+		t.Fatal(v)
 	}
 }
