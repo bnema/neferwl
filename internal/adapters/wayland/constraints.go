@@ -299,8 +299,8 @@ func (s *Server) emitConstraint(c *constraint) {
 	if s.protected() {
 		return
 	}
-	x := c.surface.xdg
-	if x == nil || x.window == nil {
+	w := c.surface.toplevelWindow()
+	if w == nil {
 		return
 	}
 	mode := domain.ConstraintConfine
@@ -309,8 +309,9 @@ func (s *Server) emitConstraint(c *constraint) {
 	}
 	r := c.region
 	if r.W > 0 && r.H > 0 {
-		r.X -= x.geometry.X
-		r.Y -= x.geometry.Y
+		g := w.geometry()
+		r.X -= g.X
+		r.Y -= g.Y
 	}
 	// Core supports one confinement rect, so this bounds the intersection;
 	// contains uses the exact input region to decide activation.
@@ -334,7 +335,7 @@ func (s *Server) emitConstraint(c *constraint) {
 			r = box
 		}
 	}
-	s.emit(ports.PointerConstrained{ID: x.window.id, PointerConstraint: domain.PointerConstraint{Mode: mode, Rect: r}})
+	s.emit(ports.PointerConstrained{ID: w.id, PointerConstraint: domain.PointerConstraint{Mode: mode, Rect: r}})
 }
 
 // contains reports whether the pointer is in the region: a constraint

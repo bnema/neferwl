@@ -175,6 +175,10 @@ func (h hostImpl) Associate(slot xwm.Slot, surfaceID uint64) {
 		return
 	}
 	x := w.x11
+	if x.surface != nil && x.surface != surf {
+		// A new surface replaces the shown one: core sees a remap.
+		w.unmap()
+	}
 	x.drop()
 	x.surface, surf.x11win = surf, w
 	surf.role = func(buffer bool) {
@@ -204,6 +208,11 @@ func (h hostImpl) Dissociate(slot xwm.Slot, destroyed bool) {
 	w.x11.drop()
 	w.x11.ready = false
 	if destroyed {
+		for _, c := range h.s.windows {
+			if c.parent == w {
+				c.parent = nil
+			}
+		}
 		delete(h.s.windows, w.id)
 		delete(h.s.x11Slots, slot)
 		h.s.foreignToplevelGone(w)

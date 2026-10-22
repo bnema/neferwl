@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/go-wayland-bindings/server/pointerconstraints"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/go-wayland-bindings/server/xwaylandshell"
@@ -321,4 +322,32 @@ func TestAttachXWMBootAbortsWithContext(t *testing.T) {
 	}
 	assertFDClosed(t, fds[0])
 	protocolClient(t, s, dir) // still serving
+}
+
+// Xwayland locks the pointer for games: the constraint reaches core for the
+// X11 window like for an xdg toplevel.
+func TestX11WindowPointerLock(t *testing.T) {
+	r := newX11Rig(t)
+	win := uint32(x11Win)
+	r.x11Window(win)
+	surf := r.pair(win, x11Serial)
+	m := awaitEvent[ports.WindowMapped](t, r.events)
+
+	seat := bindProtocol(t, r.xc, "wl_seat")
+	registerProtocol(t, r.xc, seat)
+	pointer := r.xc.AllocateID()
+	requestProtocol(t, r.xc, seat, wayland.SeatRequestGetPointer, pointer)
+	registerProtocol(t, r.xc, pointer)
+	constraints := bindProtocol(t, r.xc, "zwp_pointer_constraints_v1")
+	lock := r.xc.AllocateID()
+	requestProtocol(t, r.xc, constraints, pointerconstraints.ZwpPointerConstraintsV1RequestLockPointer, lock, surf, pointer, uint32(0), uint32(pointerconstraints.ZwpPointerConstraintsV1LifetimePersistent))
+	registerProtocol(t, r.xc, lock)
+	if err := r.xc.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	r.commands <- ports.PointerFocus{ID: m.ID}
+	r.commands <- ports.FocusWindow{ID: m.ID}
+	if got := constrained(t, r.events); got.ID != m.ID || got.Mode != ports.ConstraintLock {
+		t.Fatalf("constrained %+v", got)
+	}
 }
