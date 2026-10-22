@@ -1,10 +1,12 @@
 package hints
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/bnema/zerowrap"
 	"image"
 	_ "image/png"
 	"math"
@@ -395,4 +397,22 @@ func TestHintLateCaptureReaped(t *testing.T) {
 	// The worker is idle; the output finally answers.
 	h.captured <- ports.CaptureDone{ID: creq.ID, Output: creq.Output}
 	require.Eventually(t, func() bool { return len(h.captured) == 0 }, time.Second, time.Millisecond)
+}
+
+func TestScanLogsRawAndPreparedCounts(t *testing.T) {
+	dets := make([]detection, maxWorkBoxes+5)
+	for i := range dets {
+		dets[i] = detection{x1: 10, y1: 10, x2: 30, y2: 30, score: .9}
+	}
+	det := newMockdetector(t)
+	det.EXPECT().Detect(mock.Anything, mock.Anything).Return(dets, nil).Once()
+	var out bytes.Buffer // scan logs synchronously on this goroutine
+	ctx := zerowrap.WithCtx(context.Background(), zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &out}))
+	w := &worker{det: det, dumpDir: "enabled"}
+	w.scan(ctx, ports.HintScanRequest{Width: 100, Height: 100, Scale: 1}, frame{m: &mapping{}}, 0, ports.HintScanResult{})
+	var fields map[string]any
+	require.NoError(t, json.Unmarshal(out.Bytes(), &fields))
+	require.Equal(t, float64(maxWorkBoxes+5), fields["raw_boxes"])
+	require.Equal(t, float64(maxWorkBoxes), fields["prepared_boxes"])
+	require.Equal(t, "hints", fields["component"])
 }
