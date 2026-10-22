@@ -40,6 +40,14 @@ type host interface {
 	// Fullscreen forwards a fullscreen request (_NET_WM_STATE client message
 	// or initial state); the host emits WindowFullscreenRequest.
 	Fullscreen(slot Slot, on bool)
+
+	// OverrideMapped reports an override-redirect window that is mapped,
+	// typed and paired with its wl_surface. Rect is in layout coordinates.
+	OverrideMapped(slot Slot, xid uint32, surfaceID uint64, x, y, w, h int, noInput bool)
+	// OverrideMoved reports a changed layout rect of a mapped override window.
+	OverrideMoved(slot Slot, x, y, w, h int)
+	// OverrideGone ends a mapped override window: unmapped, or destroyed.
+	OverrideGone(slot Slot, destroyed bool)
 }
 
 // fdSource is the display's event source for the X socket (*server.Source).

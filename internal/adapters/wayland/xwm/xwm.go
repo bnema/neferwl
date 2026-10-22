@@ -82,6 +82,10 @@ type XWM struct {
 	listsDirty uint8    // client lists to rewrite in flush
 	unpaired   [unpairedCap]struct{ serial, surface uint64 }
 	unpairedN  int
+
+	space       Space  // layout <-> X coordinates
+	warnedSpace bool   // more outputs than the Space holds, logged once
+	ovDirty     []Slot // mapped unmanaged slots whose geometry changed, capacity == table size
 }
 
 func newXWM(conn *xturbo.Conn, log zerowrap.Logger) *XWM {
@@ -97,6 +101,7 @@ func (x *XWM) fit() {
 	if cap(x.dirty) < n {
 		x.dirty = append(make([]Slot, 0, n), x.dirty...)
 		x.clients = append(make([]uint32, 0, n), x.clients...)
+		x.ovDirty = append(make([]Slot, 0, n), x.ovDirty...)
 		x.stacking = append(make([]uint32, 0, n), x.stacking...)
 		x.scratch = make([]byte, 0, 4*n)
 	}
@@ -317,6 +322,9 @@ func (x *XWM) attach(src fdSource, h host, post func(func())) {
 	}
 	for i := range x.tab.recs {
 		r := &x.tab.recs[i]
+		if r.kind == kindUnmanaged && r.mapped && !r.ready { // mapped before Attach
+			x.requestOverrideType(Slot(i + 1))
+		}
 		if r.kind != kindManaged || r.id != 0 {
 			continue
 		}
@@ -347,9 +355,14 @@ func (x *XWM) Close() {
 	}
 	if x.host != nil {
 		for i := range x.tab.recs {
-			if r := &x.tab.recs[i]; r.kind == kindManaged && r.id != 0 {
+			r := &x.tab.recs[i]
+			switch {
+			case r.kind == kindManaged && r.id != 0:
 				r.id = 0
 				x.host.Dissociate(Slot(i+1), true)
+			case r.kind == kindUnmanaged && r.ovPaired:
+				r.ovPaired = false
+				x.host.OverrideGone(Slot(i+1), true)
 			}
 		}
 	}

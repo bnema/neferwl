@@ -21,8 +21,16 @@ func (x *XWM) onFocusIn(ev *xturbo.Event) {
 	if e.Detail() == xproto.NotifyDetailPointer {
 		return
 	}
+	// Keyboard grabs are how menus steal focus legitimately (wlroots does
+	// the same): fighting them would close every Steam menu.
+	if e.Mode() == xproto.NotifyModeGrab || e.Mode() == xproto.NotifyModeUngrab {
+		return
+	}
 	s := x.tab.lookup(uint32(e.Event()))
 	if s == 0 || s == x.active {
+		return
+	}
+	if r := x.tab.rec(s); r.kind == kindUnmanaged {
 		return
 	}
 	x.refocus = true
@@ -173,6 +181,10 @@ func (x *XWM) forgetWindow(s Slot) {
 		return
 	}
 	x.dropWindow(s)
+	if r.kind == kindUnmanaged && r.ovPaired && x.host != nil {
+		r.ovPaired = false
+		x.host.OverrideGone(s, true)
+	}
 	if r.kind == kindManaged && r.id != 0 && x.host != nil {
 		r.id = 0
 		x.host.Dissociate(s, true)

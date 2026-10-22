@@ -45,8 +45,15 @@ func (x *XWM) onMapRequest(ev *xturbo.Event) {
 }
 
 func (x *XWM) onMapNotify(ev *xturbo.Event) {
-	if s := x.tab.lookup(uint32(xproto.MapNotifyOf(ev).Window())); s != 0 {
-		x.tab.rec(s).mapped = true
+	s := x.tab.lookup(uint32(xproto.MapNotifyOf(ev).Window()))
+	if s == 0 {
+		return
+	}
+	rec := x.tab.rec(s)
+	again := rec.mapped
+	rec.mapped = true
+	if rec.kind == kindUnmanaged && !again {
+		x.requestOverrideType(s)
 	}
 }
 
@@ -63,6 +70,10 @@ func (x *XWM) onUnmapNotify(ev *xturbo.Event) {
 	}
 	rec := x.tab.rec(s)
 	rec.mapped = false
+	if rec.kind == kindUnmanaged {
+		x.overrideUnmapped(s, rec)
+		return
+	}
 	if rec.kind != kindManaged {
 		return
 	}
@@ -175,6 +186,8 @@ func (x *XWM) onClientMessage(ev *xturbo.Event) {
 		}
 	case x.atoms[atomNetWMState]:
 		x.onNetWMState(e)
+	case x.atoms[atomWMChangeState]:
+		// Iconify requests are ignored: windows stay mapped.
 	}
 }
 
@@ -277,6 +290,8 @@ func (x *XWM) tryPair(s Slot) {
 		if rec.kind == kindManaged {
 			x.log.Debug().Uint32("xid", rec.xid).Uint64("surface", rec.surface).Msg("x11 window paired")
 			x.host.Associate(s, rec.surface)
+		} else {
+			x.overrideMapped(s, rec)
 		}
 		return
 	}
@@ -331,6 +346,10 @@ func (x *XWM) SurfaceGone(surfaceID uint64) {
 	for i := range x.tab.recs {
 		if r := &x.tab.recs[i]; r.kind != kindFree && r.surface == surfaceID {
 			r.surface = 0
+			if r.kind == kindUnmanaged && r.ovPaired {
+				r.ovPaired = false
+				x.host.OverrideGone(Slot(i+1), false)
+			}
 		}
 	}
 	x.wake()

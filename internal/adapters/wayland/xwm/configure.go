@@ -87,8 +87,43 @@ func (x *XWM) Place(s Slot, px, py int) {
 	if r == nil {
 		return
 	}
-	r.pend.x, r.pend.y = int32(px), int32(py)
+	r.lx, r.ly, r.placed = int32(px), int32(py), true
+	r.pend.x, r.pend.y = x.toX(r)
 	x.markDirty(s, r)
+	x.wake()
+}
+
+// toX converts the layout position of r to X coordinates.
+func (x *XWM) toX(r *record) (px, py int32) {
+	ix, iy := x.space.ToX(int(r.lx), int(r.ly))
+	return int32(ix), int32(iy)
+}
+
+// SetLayout installs the output layout that X coordinates derive from. When it
+// changes, placed managed windows are repositioned and mapped override windows
+// are re-reported in layout coordinates. Display goroutine only.
+func (x *XWM) SetLayout(l ports.Layout) {
+	if x.closed {
+		return
+	}
+	changed := x.space.Set(l)
+	if n := x.space.Dropped(); n > 0 && !x.warnedSpace {
+		x.warnedSpace = true
+		x.log.Warn().Int("dropped", n).Int("max", maxRegions).Msg("more outputs than the X11 layout holds, extra outputs ignored")
+	}
+	if !changed {
+		return
+	}
+	for i := range x.tab.recs {
+		r, s := &x.tab.recs[i], Slot(i+1)
+		switch {
+		case r.kind == kindManaged && r.placed:
+			r.pend.x, r.pend.y = x.toX(r)
+			x.markDirty(s, r)
+		case r.kind == kindUnmanaged && r.ovPaired:
+			x.queueOverride(s, r)
+		}
+	}
 	x.wake()
 }
 
@@ -101,6 +136,7 @@ func (x *XWM) flushConfigures() {
 		}
 	}
 	x.dirty = x.dirty[:0]
+	x.flushOverrides()
 	x.flushFocus()
 }
 
@@ -262,5 +298,8 @@ func (x *XWM) onConfigureNotify(ev *xturbo.Event) {
 	}
 	if r := x.tab.rec(x.tab.lookup(uint32(e.Window()))); r != nil && r.kind != kindFree {
 		r.x, r.y, r.w, r.h = int32(e.X()), int32(e.Y()), uint32(e.Width()), uint32(e.Height())
+		if r.kind == kindUnmanaged && r.ovPaired {
+			x.queueOverride(x.tab.lookup(r.xid), r)
+		}
 	}
 }

@@ -20,6 +20,7 @@ const (
 	kindRootMask
 	kindVersion
 	kindTree
+	kindOverrideType
 )
 
 // onEvent dispatches an X event. Before Attach there is no host: only the
@@ -109,6 +110,8 @@ func (x *XWM) onReply(r *xturbo.Reply) {
 		x.onGeomReply(s, rec, r)
 	case kindClientIds:
 		x.onClientIdsReply(s, rec, r)
+	case kindOverrideType:
+		x.onOverrideType(s, rec, r)
 	}
 }
 
@@ -127,7 +130,7 @@ func (x *XWM) onError(e *xturbo.XError) {
 		if e.Code == xproto.BadAccess {
 			x.bootErr = ErrWMExists
 		}
-	case kindProp, kindGeom, kindClientIds, kindConfigure, kindFocus:
+	case kindProp, kindGeom, kindClientIds, kindConfigure, kindFocus, kindOverrideType:
 		// Usually BadWindow: the window died between request and reply and
 		// DestroyNotify follows. Whatever the code, the awaited reply will
 		// never come, so the map must not wait for it.
@@ -143,6 +146,11 @@ func (x *XWM) onError(e *xturbo.XError) {
 			rec.pending &^= propGeom
 		case kindClientIds:
 			rec.pending &^= propClientIDs
+		case kindOverrideType:
+			if e.Code != xproto.BadWindow { // typed unknown: the window still shows
+				x.overrideReady(s)
+			}
+			return
 		default:
 			return
 		}
@@ -231,6 +239,7 @@ func (x *XWM) onAttrReply(rec *record, r *xturbo.Reply) {
 	if a.OverrideRedirect() {
 		rec.override = true
 		rec.kind = kindUnmanaged
+		rec.mapped = a.MapState() == xproto.MapStateViewable
 		x.stats.UnmanagedSeen++
 		return
 	}

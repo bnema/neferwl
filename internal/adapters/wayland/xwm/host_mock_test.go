@@ -286,6 +286,198 @@ func (_c *mockhost_Fullscreen_Call) RunAndReturn(run func(slot Slot, on bool)) *
 	return _c
 }
 
+// OverrideGone provides a mock function for the type mockhost
+func (_mock *mockhost) OverrideGone(slot Slot, destroyed bool) {
+	_mock.Called(slot, destroyed)
+	return
+}
+
+// mockhost_OverrideGone_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'OverrideGone'
+type mockhost_OverrideGone_Call struct {
+	*mock.Call
+}
+
+// OverrideGone is a helper method to define mock.On call
+//   - slot Slot
+//   - destroyed bool
+func (_e *mockhost_Expecter) OverrideGone(slot any, destroyed any) *mockhost_OverrideGone_Call {
+	return &mockhost_OverrideGone_Call{Call: _e.mock.On("OverrideGone", slot, destroyed)}
+}
+
+func (_c *mockhost_OverrideGone_Call) Run(run func(slot Slot, destroyed bool)) *mockhost_OverrideGone_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 Slot
+		if args[0] != nil {
+			arg0 = args[0].(Slot)
+		}
+		var arg1 bool
+		if args[1] != nil {
+			arg1 = args[1].(bool)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *mockhost_OverrideGone_Call) Return() *mockhost_OverrideGone_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *mockhost_OverrideGone_Call) RunAndReturn(run func(slot Slot, destroyed bool)) *mockhost_OverrideGone_Call {
+	_c.Run(run)
+	return _c
+}
+
+// OverrideMapped provides a mock function for the type mockhost
+func (_mock *mockhost) OverrideMapped(slot Slot, xid uint32, surfaceID uint64, x int, y int, w int, h int, noInput bool) {
+	_mock.Called(slot, xid, surfaceID, x, y, w, h, noInput)
+	return
+}
+
+// mockhost_OverrideMapped_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'OverrideMapped'
+type mockhost_OverrideMapped_Call struct {
+	*mock.Call
+}
+
+// OverrideMapped is a helper method to define mock.On call
+//   - slot Slot
+//   - xid uint32
+//   - surfaceID uint64
+//   - x int
+//   - y int
+//   - w int
+//   - h int
+//   - noInput bool
+func (_e *mockhost_Expecter) OverrideMapped(slot any, xid any, surfaceID any, x any, y any, w any, h any, noInput any) *mockhost_OverrideMapped_Call {
+	return &mockhost_OverrideMapped_Call{Call: _e.mock.On("OverrideMapped", slot, xid, surfaceID, x, y, w, h, noInput)}
+}
+
+func (_c *mockhost_OverrideMapped_Call) Run(run func(slot Slot, xid uint32, surfaceID uint64, x int, y int, w int, h int, noInput bool)) *mockhost_OverrideMapped_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 Slot
+		if args[0] != nil {
+			arg0 = args[0].(Slot)
+		}
+		var arg1 uint32
+		if args[1] != nil {
+			arg1 = args[1].(uint32)
+		}
+		var arg2 uint64
+		if args[2] != nil {
+			arg2 = args[2].(uint64)
+		}
+		var arg3 int
+		if args[3] != nil {
+			arg3 = args[3].(int)
+		}
+		var arg4 int
+		if args[4] != nil {
+			arg4 = args[4].(int)
+		}
+		var arg5 int
+		if args[5] != nil {
+			arg5 = args[5].(int)
+		}
+		var arg6 int
+		if args[6] != nil {
+			arg6 = args[6].(int)
+		}
+		var arg7 bool
+		if args[7] != nil {
+			arg7 = args[7].(bool)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+			arg5,
+			arg6,
+			arg7,
+		)
+	})
+	return _c
+}
+
+func (_c *mockhost_OverrideMapped_Call) Return() *mockhost_OverrideMapped_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *mockhost_OverrideMapped_Call) RunAndReturn(run func(slot Slot, xid uint32, surfaceID uint64, x int, y int, w int, h int, noInput bool)) *mockhost_OverrideMapped_Call {
+	_c.Run(run)
+	return _c
+}
+
+// OverrideMoved provides a mock function for the type mockhost
+func (_mock *mockhost) OverrideMoved(slot Slot, x int, y int, w int, h int) {
+	_mock.Called(slot, x, y, w, h)
+	return
+}
+
+// mockhost_OverrideMoved_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'OverrideMoved'
+type mockhost_OverrideMoved_Call struct {
+	*mock.Call
+}
+
+// OverrideMoved is a helper method to define mock.On call
+//   - slot Slot
+//   - x int
+//   - y int
+//   - w int
+//   - h int
+func (_e *mockhost_Expecter) OverrideMoved(slot any, x any, y any, w any, h any) *mockhost_OverrideMoved_Call {
+	return &mockhost_OverrideMoved_Call{Call: _e.mock.On("OverrideMoved", slot, x, y, w, h)}
+}
+
+func (_c *mockhost_OverrideMoved_Call) Run(run func(slot Slot, x int, y int, w int, h int)) *mockhost_OverrideMoved_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 Slot
+		if args[0] != nil {
+			arg0 = args[0].(Slot)
+		}
+		var arg1 int
+		if args[1] != nil {
+			arg1 = args[1].(int)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		var arg3 int
+		if args[3] != nil {
+			arg3 = args[3].(int)
+		}
+		var arg4 int
+		if args[4] != nil {
+			arg4 = args[4].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *mockhost_OverrideMoved_Call) Return() *mockhost_OverrideMoved_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *mockhost_OverrideMoved_Call) RunAndReturn(run func(slot Slot, x int, y int, w int, h int)) *mockhost_OverrideMoved_Call {
+	_c.Run(run)
+	return _c
+}
+
 // Parent provides a mock function for the type mockhost
 func (_mock *mockhost) Parent(slot Slot, parent Slot) {
 	_mock.Called(slot, parent)

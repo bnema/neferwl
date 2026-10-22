@@ -305,3 +305,13 @@ func (x *x11Window) tryMap() {
 		surf.emitInput()
 	}
 }
+
+// OverrideMapped is a no-op until X7.5 wires override-redirect windows.
+func (h hostImpl) OverrideMapped(slot xwm.Slot, xid uint32, surfaceID uint64, x, y, w, h2 int, noInput bool) {
+}
+
+// OverrideMoved is a no-op until X7.5 wires override-redirect windows.
+func (h hostImpl) OverrideMoved(slot xwm.Slot, x, y, w, h2 int) {}
+
+// OverrideGone is a no-op until X7.5 wires override-redirect windows.
+func (h hostImpl) OverrideGone(slot xwm.Slot, destroyed bool) {}

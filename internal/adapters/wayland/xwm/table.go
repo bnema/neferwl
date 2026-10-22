@@ -30,6 +30,9 @@ type pending struct {
 	fullscreen, activated, dirty bool
 }
 
+// ovRect is a layout rectangle.
+type ovRect struct{ x, y, w, h int32 }
+
 // record is one X window known to the XWM. Strings are the only per-record
 // heap data.
 type record struct {
@@ -59,6 +62,16 @@ type record struct {
 	// pairing
 	serial  uint64
 	surface uint64
+
+	// layout position of a managed window, from Place
+	lx, ly int32
+	placed bool
+
+	// unmanaged (override-redirect) windows
+	noInput  bool   // tooltip, DND, notification: never takes the pointer
+	ovPaired bool   // OverrideMapped sent, OverrideGone owed
+	ovQueued bool   // slot is in XWM.ovDirty
+	ov       ovRect // layout rect last sent to the host
 
 	// configure
 	pend, sent pending
