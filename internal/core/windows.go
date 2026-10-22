@@ -12,6 +12,8 @@ type windowRecord struct {
 	// client holds the app ID and PID of a mapped window, for State.
 	client   ports.WindowMapped
 	mappedAt time.Time
+	// sized is set once the window's first committed size was seen.
+	sized bool
 	// region is the input region; nil accepts input everywhere.
 	region *ports.InputRegionChanged
 	// inhibitShortcuts asks to keep compositor binds while focused;
@@ -50,7 +52,18 @@ func (r *windowRegistry) lookup(id WindowID) windowRecord {
 
 func (r *windowRegistry) mapped(v ports.WindowMapped, now time.Time) {
 	rec := r.at(v.ID)
-	rec.client, rec.mappedAt = v, now
+	rec.client, rec.mappedAt, rec.sized = v, now, false
+}
+
+// firstSize reports whether this is the first committed size of the window
+// since it mapped, and records that it was seen.
+func (r *windowRegistry) firstSize(id WindowID) bool {
+	rec := r.records[id]
+	if rec == nil || rec.sized || rec.client.ID == 0 {
+		return false
+	}
+	rec.sized = true
+	return true
 }
 
 // setAppID updates the app ID of a mapped window only.

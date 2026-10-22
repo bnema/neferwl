@@ -204,6 +204,7 @@ A swipe moves one step at most. Other gestures (pinch, hold, two-finger scroll) 
 - HDR-aware apps (games, browsers, video players) can show HDR content. Some need HDR turned on in their own settings. X11 apps stay SDR.
 - The desktop stays SDR, shown at `sdr-brightness` nits.
 - Fullscreen HDR windows go straight to the display.
+- A window that maps with the exact logical size of its output, without asking for fullscreen (a game in borderless-windowed mode), is put fullscreen as if by `toggle-fullscreen`, without being resized.
 - Screenshots and captures are SDR (tone-mapped).
 - If NeferWL crashes, the next compositor may show distorted colours until it sets its own colour pipeline.
 

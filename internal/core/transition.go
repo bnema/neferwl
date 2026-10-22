@@ -518,6 +518,7 @@ func (c *Core) resizeFloating(v ports.WindowResized) {
 		old = settledRect(sc.mon, v.ID)
 	}
 	w.ResizeFloating(v.ID, v.Width, v.Height)
+	c.legacyFullscreen(sc, v)
 	if !running {
 		return
 	}
@@ -980,4 +981,26 @@ func movedFrom(b *viewShot, before []viewShot) *viewShot {
 		}
 	}
 	return nil
+}
+
+// legacyFullscreen puts a window in the fullscreen state when the first size
+// it commits after mapping is exactly its output's logical size: a game in
+// borderless-windowed mode (X11 through xwayland-satellite) never asks for
+// fullscreen. It is the state toggle-fullscreen sets, and the window is
+// not resized. Dialogs (a parent), remaps and later resizes are left alone.
+func (c *Core) legacyFullscreen(sc *screen, v ports.WindowResized) {
+	if !c.windows.firstSize(v.ID) {
+		return
+	}
+	if rec := c.windows.lookup(v.ID); rec.client.Parent != 0 || rec.client.Remap {
+		return
+	}
+	if r := sc.rect(); v.Width != r.W || v.Height != r.H || r.W <= 0 {
+		return
+	}
+	if w, _ := sc.mon.find(v.ID); w != nil {
+		w.FocusID(v.ID)
+	}
+	sc.mon.SetFullscreen(v.ID, true)
+	delete(sc.rects, v.ID)
 }
