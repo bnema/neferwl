@@ -216,25 +216,38 @@ func (c *Core) hintLabelSize(sc *screen) (w, h int) {
 		}
 		font = px / scale
 	}
-	return int(math.Ceil(2*0.6*font + 8)), int(math.Ceil(1.25*font + 4))
+	font = math.Min(font, 256/scale)
+	s := font / 13
+	return int(math.Ceil(2*0.6*font + 6*s + 2/scale + 1)), int(math.Ceil(1.25*font + 2*s + 2/scale + 1))
 }
 
-// hintSpread drops the targets whose labels would overlap another label. A
-// label hangs off its target's top-left corner, so two labels overlap when
-// the corners are closer than the label size on both axes. Targets are
-// considered by descending score (then top-left to bottom-right): the first
-// keeps its place, a later one that collides with a kept one is dropped.
+// hintLabelRect mirrors the renderer's outside top-left anchor and output
+// clamping, in output-local logical coordinates.
+func hintLabelRect(sc *screen, target ports.Rect, lw, lh int) ports.Rect {
+	bounds := sc.rect()
+	inset := int(math.Round(0.25 * float64(lh)))
+	return ports.Rect{X: min(max(target.X-lw+inset, 0), bounds.W-lw), Y: min(max(target.Y-lh+inset, 0), bounds.H-lh), W: lw, H: lh}
+}
+
+// hintSpread drops targets whose output-clamped label rectangles intersect.
+// Highest scores win; four times the label budget gives spreading headroom
+// while bounding the quadratic pass. hintlabel.FontPixels is the source of
+// truth for the font rule mirrored above.
 func (c *Core) hintSpread(sc *screen, ts []hintTarget) []hintTarget {
 	lw, lh := c.hintLabelSize(sc)
 	order := slices.Clone(ts)
 	slices.SortStableFunc(order, func(a, b hintTarget) int {
 		return cmp.Or(cmp.Compare(b.score, a.score), cmp.Compare(a.rect.Y, b.rect.Y), cmp.Compare(a.rect.X, b.rect.X))
 	})
-	kept := order[:0:0]
+	if len(order) > 4*hintMaxTargets {
+		order = order[:4*hintMaxTargets]
+	}
+	kept := order[:0]
 	for _, t := range order {
 		clash := false
 		for _, k := range kept {
-			if abs(t.rect.X-k.rect.X) < lw && abs(t.rect.Y-k.rect.Y) < lh {
+			a, b := hintLabelRect(sc, t.rect, lw, lh), hintLabelRect(sc, k.rect, lw, lh)
+			if a.X < b.X+b.W && b.X < a.X+a.W && a.Y < b.Y+b.H && b.Y < a.Y+a.H {
 				clash = true
 				break
 			}

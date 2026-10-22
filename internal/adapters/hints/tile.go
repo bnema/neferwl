@@ -19,7 +19,7 @@ type region struct{ x, y, w, h int }
 // tileRegions returns the crops to detect separately on a width x height
 // frame, or nil for one whole-frame detection (a 16:9 frame, or one whose
 // long side is at most wholeMaxSide). Otherwise the frame is covered by exact
-// 16:9 tiles (w*9 == h*16: the detector then uses its rectangular graph) of
+// 16:9 tiles (w*9 == h*16; explicit crops always use square letterboxing) of
 // height min(height, 1440) rounded down to a multiple of 9, overlapping by at
 // least 10 % of the tile side on each axis; the last tile of a row or column
 // is aligned to the frame edge. Tiles are listed row by row. A frame that

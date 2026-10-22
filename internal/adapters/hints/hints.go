@@ -4,11 +4,13 @@
 package hints
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"image"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
@@ -210,6 +212,9 @@ func (w *worker) reap(id uint64) {
 // minTarget is the smallest target side kept, in logical pixels.
 const minTarget = 4
 
+// maxWorkBoxes bounds the quadratic cut-box and merge passes.
+const maxWorkBoxes = 2000
+
 // scan sends the frame to the detector and turns the boxes into targets. It
 // releases the frame, or hands it to the dump job.
 func (w *worker) scan(ctx context.Context, req ports.HintScanRequest, fr frame, captureDur time.Duration, res ports.HintScanResult) ports.HintScanResult {
@@ -227,6 +232,7 @@ func (w *worker) scan(ctx context.Context, req ports.HintScanRequest, fr frame, 
 	// Boxes cut by a tile's inner edge are dropped when a neighbour tile
 	// saw the element whole; then, on the union of all tiles and after
 	// rounding to logical pixels, duplicates and nested boxes are merged.
+	dets = prepareDetections(dets, regions, req.Width, req.Height)
 	res.Targets = mergeTargets(targetsOf(dropCutBoxes(dets, regions), req.Scale, req.Width, req.Height))
 	if w.dumpDir != "" {
 		// The dump reads the frame after the result is sent and releases it.
@@ -268,6 +274,40 @@ func targetsOf(dets []detection, scale float64, width, height int) []ports.HintT
 			continue
 		}
 		out = append(out, ports.HintTarget{Rect: ports.Rect{X: lx1, Y: ly1, W: lx2 - lx1, H: ly2 - ly1}, Score: d.score})
+	}
+	return out
+}
+
+// prepareDetections validates and clamps boxes before any pairwise work,
+// preserving their region metadata for cut-edge suppression.
+func prepareDetections(in []detection, regions []region, width, height int) []detection {
+	out := make([]detection, 0, len(in))
+	for _, d := range in {
+		if d.region < 0 || d.region >= max(1, len(regions)) || !(d.score >= 0 && d.score <= 1) {
+			continue
+		}
+		valid := true
+		for _, v := range []float32{d.x1, d.y1, d.x2, d.y2} {
+			if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
+				valid = false
+				break
+			}
+		}
+		if !valid {
+			continue
+		}
+		d.x1 = max(0, min(d.x1, float32(width)))
+		d.x2 = max(0, min(d.x2, float32(width)))
+		d.y1 = max(0, min(d.y1, float32(height)))
+		d.y2 = max(0, min(d.y2, float32(height)))
+		if d.x2 <= d.x1 || d.y2 <= d.y1 {
+			continue
+		}
+		out = append(out, d)
+	}
+	slices.SortStableFunc(out, func(a, b detection) int { return cmp.Compare(b.score, a.score) })
+	if len(out) > maxWorkBoxes {
+		out = out[:maxWorkBoxes]
 	}
 	return out
 }

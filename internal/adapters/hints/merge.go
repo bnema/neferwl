@@ -51,7 +51,7 @@ func mergeTargets(in []ports.HintTarget) []ports.HintTarget {
 		return cmp.Or(cmp.Compare(b.Score, a.Score), cmp.Compare(a.Rect.Y, b.Rect.Y), cmp.Compare(a.Rect.X, b.Rect.X),
 			cmp.Compare(area(a.Rect), area(b.Rect)))
 	})
-	kept := s[:0:0]
+	kept := s[:0]
 	for _, t := range s {
 		dup := false
 		for _, k := range kept {

@@ -4,8 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
+	"io"
 	"math"
+	"net"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -155,4 +159,115 @@ func TestProcDetectorCommand(t *testing.T) {
 		}
 		require.Equal(t, want, d.cmd().Args)
 	}
+}
+
+func TestResponseBoxLimit(t *testing.T) {
+	_, err := readResponse(bytes.NewReader(cat([]byte("NHRS"), u32(1), u64(1), u32(0), f32(0), u32(64001))), 1)
+	require.ErrorIs(t, err, errProtocol)
+}
+
+func TestPrepareDetections(t *testing.T) {
+	regions := []region{{0, 0, 100, 100}, {50, 0, 100, 100}}
+	valid := detection{x1: 90, y1: 10, x2: 100, y2: 30, score: .5}
+	invalid := detection{x1: 80, y1: 0, x2: 120, y2: 40, score: float32(math.NaN()), region: 1}
+	badRegion := valid
+	badRegion.region = 2
+	got := prepareDetections([]detection{valid, invalid, badRegion}, regions, 150, 100)
+	require.Equal(t, []detection{valid}, dropCutBoxes(got, regions))
+	many := make([]detection, maxWorkBoxes+5)
+	for i := range many {
+		many[i] = valid
+		many[i].score = float32(i) / float32(len(many))
+	}
+	got = prepareDetections(many, nil, 150, 100)
+	require.Len(t, got, maxWorkBoxes)
+	require.Equal(t, many[len(many)-1].score, got[0].score)
+	require.Equal(t, many[5].score, got[len(got)-1].score)
+}
+
+// TestDetectorChild is a real subprocess speaking just enough protocol to
+// synchronize cancellation without timers or project-interface doubles.
+func TestDetectorChild(t *testing.T) {
+	mode := os.Getenv("HINT_CHILD_MODE")
+	if mode == "" {
+		return
+	}
+	conn, err := net.Dial("unix", os.Getenv("HINT_CHILD_SOCKET"))
+	if err != nil {
+		os.Exit(2)
+	}
+	defer conn.Close()
+	if mode != "hello" {
+		_, _ = os.Stdout.Write(cat([]byte("NHNT"), u32(1), u32(0), u32(3), []byte("cpu"), u32(1280)))
+	}
+	if mode == "request" {
+		b := make([]byte, 44) // request header, confidence and one BGRA pixel
+		if _, err := io.ReadFull(os.Stdin, b); err != nil {
+			os.Exit(3)
+		}
+	}
+	_, _ = conn.Write([]byte{1})
+	_, _ = io.Copy(io.Discard, os.Stdin)
+	os.Exit(0)
+}
+
+func childDetector(t *testing.T, mode string) (*procDetector, net.Listener) {
+	t.Helper()
+	dir := t.TempDir()
+	socket := filepath.Join(dir, "ready")
+	listener, err := net.Listen("unix", socket)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = listener.Close() })
+	t.Setenv("HINT_CHILD_MODE", mode)
+	t.Setenv("HINT_CHILD_SOCKET", socket)
+	exe, err := os.Executable()
+	require.NoError(t, err)
+	script := filepath.Join(dir, "detector")
+	require.NoError(t, os.WriteFile(script, fmt.Appendf(nil, "#!/bin/sh\nexec %q -test.run=^TestDetectorChild$\n", exe), 0700))
+	d := newProcDetector(script, dir, 0)
+	t.Cleanup(func() { _ = d.Close() })
+	return d, listener
+}
+
+func TestDetectorCancellation(t *testing.T) {
+	for _, mode := range []string{"hello", "request"} {
+		t.Run(mode, func(t *testing.T) {
+			d, l := childDetector(t, mode)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan error, 1)
+			go func() {
+				_, err := d.Detect(ctx, detFrame{width: 1, height: 1, stride: 4, m: &mapping{b: make([]byte, 4)}})
+				done <- err
+			}()
+			require.NoError(t, l.(*net.UnixListener).SetDeadline(time.Now().Add(5*time.Second)))
+			conn, err := l.Accept()
+			require.NoError(t, err)
+			require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+			var ready [1]byte
+			_, err = io.ReadFull(conn, ready[:])
+			_ = conn.Close()
+			require.NoError(t, err)
+			cancel()
+			select {
+			case err := <-done:
+				require.ErrorIs(t, err, context.Canceled)
+			case <-time.After(5 * time.Second):
+				t.Fatal("cancellation did not finish")
+			}
+		})
+	}
+}
+
+func TestDetectorCloseClosesOutput(t *testing.T) {
+	d, l := childDetector(t, "close")
+	require.NoError(t, d.start(context.Background()))
+	conn, err := l.Accept()
+	require.NoError(t, err)
+	_ = conn.Close()
+	p := d.proc
+	require.NoError(t, d.Close())
+	_, err = p.out.Read(make([]byte, 1))
+	require.ErrorIs(t, err, os.ErrClosed)
+	require.NoError(t, d.Close())
 }

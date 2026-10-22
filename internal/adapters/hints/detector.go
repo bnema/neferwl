@@ -57,7 +57,7 @@ const (
 	// maxString and maxBoxes bound what a misbehaving child can make us
 	// allocate.
 	maxString = 1 << 16
-	maxBoxes  = 1 << 20
+	maxBoxes  = 64 * 1000 // runner default max-det per region, at most 64 regions
 )
 
 var (
@@ -318,7 +318,9 @@ func (d *procDetector) start(ctx context.Context) error {
 	timedOut := !timer.Stop()
 	if err != nil {
 		p.kill()
-		if timedOut {
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		} else if timedOut {
 			err = errors.New("hello timed out")
 		}
 		return fmt.Errorf("hints: detector hello: %w", err)
@@ -384,6 +386,7 @@ func (d *procDetector) Close() error {
 	if p == nil {
 		return nil
 	}
+	defer func() { _ = p.out.Close() }()
 	_ = p.in.Close()
 	done := make(chan struct{})
 	go func() { p.wait(); close(done) }()
