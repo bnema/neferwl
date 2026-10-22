@@ -9,6 +9,7 @@ require (
 	bnema.dev/purego-pipewire v0.4.0
 	bnema.dev/purego-vulkan v0.7.0
 	bnema.dev/wlturbo v0.7.0
+	bnema.dev/xturbo v0.1.0
 	bnema.dev/zerobus v0.6.0
 	bnema.dev/zerowrap v1.5.0
 	github.com/bnema/go-wayland-bindings v0.3.1
