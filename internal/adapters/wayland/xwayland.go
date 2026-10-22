@@ -52,7 +52,7 @@ func (s *Server) forgetXwayland() {
 // closes the XWM on the display goroutine and waits for it.
 func (s *Server) AttachXWM(ctx context.Context, wmFD int) (stop func()) {
 	log := logging.For(ctx, "xwm")
-	x, err := xwm.Boot(ctx, wmFD, log)
+	x, err := xwm.BootSettings(ctx, wmFD, log, s.xsettings)
 	if err != nil {
 		if ctx.Err() != nil {
 			log.Info().Err(err).Msg("X11 window management not started: Xwayland is going away")

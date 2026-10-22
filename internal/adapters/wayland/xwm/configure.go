@@ -123,6 +123,7 @@ func (x *XWM) LayoutChanged(changed bool) {
 		x.warnedSpace = true
 		x.log.Warn().Int("dropped", n).Int("max", maxRegions).Msg("more outputs than the X11 layout holds, extra outputs ignored")
 	}
+	x.refreshXSettings()
 	if !changed {
 		return
 	}

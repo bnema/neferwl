@@ -174,6 +174,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 		RepeatRate:   opts.Config.Keyboard.RepeatRate,
 		RepeatDelay:  opts.Config.Keyboard.RepeatDelay,
 		LogDamage:    logging.Enabled(ctx, "wayland-damage"),
+		Xwayland:     xwaylandSettings(opts.Config.Xwayland),
 	}, s.p.wayland(), logging.For(ctx, "wayland")); err != nil {
 		return s, err
 	}

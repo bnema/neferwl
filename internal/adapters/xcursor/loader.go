@@ -137,3 +137,21 @@ func loadCursorUpright(c domain.CursorChange, scale float64, limit int) (domain.
 	themeCursors.m[key] = out
 	return out, nil
 }
+
+// xwaylandSettings is what the built-in XWM publishes to X11 clients: the
+// XSETTINGS cursor theme and size and the root cursor image, all from the
+// XCURSOR_* environment. The DPI follows the layout inside the XWM.
+func xwaylandSettings(cfg ports.XwaylandConfig) ports.XwaylandSettings {
+	if cfg.Backend != ports.XwaylandBuiltin {
+		return ports.XwaylandSettings{}
+	}
+	size, theme := cursorSize(), os.Getenv("XCURSOR_THEME")
+	st := ports.XwaylandSettings{XSettings: cfg.XSettings, CursorTheme: theme, CursorSize: size, RootCursor: true}
+	img, err := xcursor.Load(xcursor.SearchPath(), theme, []string{"default", "left_ptr"}, size)
+	if err != nil {
+		return st // the XWM falls back to the X cursor font
+	}
+	img = img.ForSize(size, 64)
+	st.Cursor = ports.CursorImage{W: img.W, H: img.H, HotX: img.HotX, HotY: img.HotY, Pixels: img.Pixels}
+	return st
+}

@@ -24,6 +24,8 @@ const (
 	kindSelTargets
 	kindSelData
 	kindSelOut
+	kindSelOwner
+	kindPictFormats
 )
 
 // onEvent dispatches an X event. Before Attach there is no host: only the
@@ -40,6 +42,9 @@ func (x *XWM) onEvent(ev *xturbo.Event) {
 		x.onDestroyNotify(ev)
 	case xproto.KindReparentNotify:
 		x.onReparentNotify(ev)
+	}
+	if ev.Kind == xproto.KindSelectionClear {
+		x.onXSettingsClear(ev)
 	}
 	if x.host == nil {
 		x.onEventDetached(ev)
@@ -105,6 +110,12 @@ func (x *XWM) onReply(r *xturbo.Reply) {
 		return
 	case kindSelData:
 		x.onSelDataReply(r)
+		return
+	case kindSelOwner:
+		x.onSelOwnerReply(r)
+		return
+	case kindPictFormats:
+		x.onPictFormatsReply(r)
 		return
 	}
 	s, rec := x.tab.live(r.Args[0])

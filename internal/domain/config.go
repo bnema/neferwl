@@ -419,4 +419,22 @@ const (
 type XwaylandConfig struct {
 	Backend XwaylandBackend
 	Binary  string
+	// XSettings (xwayland.xsettings) turns the XSETTINGS manager of the
+	// built-in XWM on.
+	XSettings bool
+}
+
+// XwaylandSettings is the plain data the built-in XWM publishes to X11
+// clients; the app fills it from the config and the environment.
+type XwaylandSettings struct {
+	// XSettings turns the XSETTINGS manager on.
+	XSettings bool
+	// CursorTheme and CursorSize are XCURSOR_THEME and XCURSOR_SIZE
+	// (published as Gtk/CursorThemeName and Gtk/CursorThemeSize).
+	CursorTheme string
+	CursorSize  int
+	// RootCursor sets a cursor on the X root window. Cursor is its image
+	// (premultiplied ARGB8888, little-endian); empty uses the X "left_ptr" glyph.
+	RootCursor bool
+	Cursor     CursorImage
 }

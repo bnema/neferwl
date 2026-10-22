@@ -26,6 +26,8 @@ import (
 	"github.com/bnema/purego-libwayland/server"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
+
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 var (
@@ -87,6 +89,9 @@ type XWM struct {
 	listsDirty uint8    // client lists to rewrite in flush
 	unpaired   [unpairedCap]struct{ serial, surface uint64 }
 	unpairedN  int
+
+	cfg ports.XwaylandSettings
+	xs  xsettings // XSETTINGS manager and root cursor (xsettings.go, cursor.go)
 
 	space       *Space // layout <-> X coordinates, shared with the host
 	warnedSpace bool   // more outputs than the Space holds, logged once
@@ -163,6 +168,11 @@ func (x *XWM) setProp32(win uint32, prop int, typ xproto.Atom, vals []uint32) {
 // Boot gives up promptly when ctx ends (the Xwayland process died or the run
 // was cancelled). log is scoped by the caller with logging.For(ctx, "xwm").
 func Boot(ctx context.Context, wmFD int, log zerowrap.Logger) (*XWM, error) {
+	return BootSettings(ctx, wmFD, log, ports.XwaylandSettings{})
+}
+
+// BootSettings is Boot with the XSETTINGS manager and the root cursor of cfg.
+func BootSettings(ctx context.Context, wmFD int, log zerowrap.Logger, cfg ports.XwaylandSettings) (*XWM, error) {
 	// The watcher shuts the socket down when ctx ends, which wakes any blocked
 	// handshake, Sync or InternAtoms. It holds its own duplicate so a shutdown
 	// can never reach a descriptor number reused after Boot closed wmFD.
@@ -186,7 +196,7 @@ func Boot(ctx context.Context, wmFD int, log zerowrap.Logger) (*XWM, error) {
 		}()
 		stopWatch = func() { close(quit); <-joined }
 	}
-	x, err := boot(wmFD, log)
+	x, err := boot(wmFD, log, cfg)
 	stopWatch()
 	if err == nil && ctx.Err() != nil {
 		x.CloseConn()
@@ -198,12 +208,13 @@ func Boot(ctx context.Context, wmFD int, log zerowrap.Logger) (*XWM, error) {
 	return x, err
 }
 
-func boot(wmFD int, log zerowrap.Logger) (*XWM, error) {
+func boot(wmFD int, log zerowrap.Logger, cfg ports.XwaylandSettings) (*XWM, error) {
 	conn, err := xturbo.NewConn(wmFD)
 	if err != nil {
 		return nil, fmt.Errorf("xwm: connect: %w", err)
 	}
 	x := newXWM(conn, log)
+	x.cfg = cfg
 	if err := x.boot(); err != nil {
 		_ = conn.Close()
 		return nil, err
@@ -305,6 +316,10 @@ func (x *XWM) boot() error {
 	}
 	if x.bootErr != nil {
 		return x.bootErr
+	}
+
+	if err := x.bootSettings(); err != nil {
+		return err
 	}
 
 	// Windows that exist already (Xwayland restarted under a live client set).

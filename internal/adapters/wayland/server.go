@@ -55,6 +55,9 @@ type Options struct {
 	// Casts receives the screencast events and inventory (screencast.go);
 	// nil serves no casts (Channels.CastCommands is not read).
 	Casts ports.CastSink
+	// Xwayland is what the built-in XWM publishes to X11 clients
+	// (XSETTINGS, root cursor); the zero value publishes nothing.
+	Xwayland ports.XwaylandSettings
 	// LogDamage logs the damage of every fresh client commit at debug level
 	// (--debug=wayland-damage).
 	LogDamage bool
@@ -302,6 +305,7 @@ xdgPublic, xdgPrivate *server.Global
 	workspaceIDs      *workspaceid.IDs
 	outputHeads       domain.OutputHeads
 	outputPlaces      domain.Layout
+	xsettings         ports.XwaylandSettings
 	xspace            xwm.Space // the one layout <-> X mapping, shared with the XWM
 	managementSerial  uint32
 	nextOutputApply   uint64
@@ -389,6 +393,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		cleanup:            cleanup,
 		log:                log,
 		logDamage:          opts.LogDamage,
+		xsettings:          opts.Xwayland,
 		channels:           ch,
 		surfaces:           make(map[*server.Resource]*surface),
 		surfaceByIdentity:  make(map[uint64]*surface),

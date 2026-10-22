@@ -172,7 +172,7 @@ func Defaults() domain.Config {
 	c.Hint.TextClick = domain.ModCtrl | domain.ModShift
 	c.Hint.Detector = defaultHintDetector
 	c.Hint.Model = defaultHintModel()
-	c.Xwayland = domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: "xwayland-satellite"}
+	c.Xwayland = domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: "xwayland-satellite", XSettings: true}
 	c.Background.Color = "#111111"
 	c.Floating.Dim = 0.3
 	c.Stash.Width = 80
@@ -731,17 +731,27 @@ func set(c *domain.Config, key, v string) error {
 		}
 		c.Terminal.AutoOpen = v
 	case "xwayland":
+		xs := c.Xwayland.XSettings // independent of the backend
 		switch {
 		case v == "off":
-			c.Xwayland = domain.XwaylandConfig{Backend: domain.XwaylandOff}
+			c.Xwayland = domain.XwaylandConfig{Backend: domain.XwaylandOff, XSettings: xs}
 		case v == "satellite":
-			c.Xwayland = domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: "xwayland-satellite"}
+			c.Xwayland = domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: "xwayland-satellite", XSettings: xs}
 		case v == "builtin":
-			c.Xwayland = domain.XwaylandConfig{Backend: domain.XwaylandBuiltin, Binary: "Xwayland"}
+			c.Xwayland = domain.XwaylandConfig{Backend: domain.XwaylandBuiltin, Binary: "Xwayland", XSettings: xs}
 		case v == "" || strings.ContainsAny(v, " \t"):
 			return fmt.Errorf("must be off, satellite, builtin or a satellite program")
 		default:
-			c.Xwayland = domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: v}
+			c.Xwayland = domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: v, XSettings: xs}
+		}
+	case "xwayland.xsettings":
+		switch v {
+		case "on":
+			c.Xwayland.XSettings = true
+		case "off":
+			c.Xwayland.XSettings = false
+		default:
+			return fmt.Errorf("must be on or off")
 		}
 	case "background":
 		if !color.MatchString(v) {

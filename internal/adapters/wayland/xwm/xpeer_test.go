@@ -26,6 +26,7 @@ const (
 	opChangeProperty         = 18
 	opGetProperty            = 20
 	opSetSelectionOwner      = 22
+	opGetSelectionOwner      = 23
 	opSendEvent              = 25
 	opSetInputFocus          = 42
 	opGetInputFocus          = 43
@@ -81,6 +82,8 @@ type xpeer struct {
 	geoms    map[uint32]xpeerGeom
 	attrs    map[uint32][2]byte // window -> {overrideRedirect, mapState}
 	children []uint32
+	selOwner map[uint32]uint32 // GetSelectionOwner answers, by selection atom
+	noARGB   bool              // RENDER has no ARGB32 format
 	denyRoot bool              // answer the root event-mask request with BadAccess
 	pids     map[uint32]uint32 // XRes QueryClientIds answers, by window
 	bad      map[uint32]bool   // windows whose GetProperty/GetGeometry fail with BadWindow
@@ -304,6 +307,8 @@ func (p *xpeer) answer(r xpeerReq, body []byte) {
 			p.atoms[name] = a
 		}
 		p.reply(0, le32(a))
+	case r.major == opGetSelectionOwner:
+		p.reply(0, le32(p.selOwner[binary.LittleEndian.Uint32(body)]))
 	case r.major == opGetInputFocus:
 		p.reply(1, le32(0))
 	case r.major == opQueryTree:
@@ -398,6 +403,25 @@ func (p *xpeer) answer(r xpeerReq, body []byte) {
 		case "XC-MISC":
 			if r.minor == 1 {
 				p.reply(0, le32(0, 1))
+			}
+		case "RENDER":
+			if r.minor == 1 { // QueryPictFormats: one format (ARGB32), unless noARGB
+				n := uint32(1)
+				if p.noARGB {
+					n = 0
+				}
+				b := make([]byte, 24+28*int(n))
+				binary.LittleEndian.PutUint32(b[0:], n)
+				if n == 1 {
+					f := b[24:]
+					binary.LittleEndian.PutUint32(f[0:], 0x77) // format id
+					f[4], f[5] = 1, 32                         // direct, depth 32
+					binary.LittleEndian.PutUint16(f[8:], 16)   // red shift
+					binary.LittleEndian.PutUint16(f[10:], 0xff)
+					binary.LittleEndian.PutUint16(f[20:], 24) // alpha shift
+					binary.LittleEndian.PutUint16(f[22:], 0xff)
+				}
+				p.reply(0, b)
 			}
 		case "Composite", "XFIXES":
 			if r.minor == 0 {

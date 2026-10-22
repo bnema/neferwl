@@ -15,9 +15,10 @@ type Region struct {
 type Space struct {
 	regions [maxRegions]Region
 	n       int
-	dropped int // outputs beyond maxRegions in the last Set
-	ox, oy  int // layout point that is X (0,0)
-	w, h    int // X screen size: the extents
+	dropped int     // outputs beyond maxRegions in the last Set
+	ox, oy  int     // layout point that is X (0,0)
+	w, h    int     // X screen size: the extents
+	scale   float64 // scale of the first output; not part of the change test
 }
 
 // Origin is the layout point that is X (0,0): the top-left of the layout
@@ -60,13 +61,24 @@ func (s *Space) Set(l ports.Layout) bool {
 		}
 	}
 	next.w, next.h = maxX-next.ox, maxY-next.oy
+	if n > 0 {
+		next.scale = l[0].Scale
+	}
 	if next.regions == s.regions && next.n == s.n && next.ox == s.ox && next.oy == s.oy &&
 		next.w == s.w && next.h == s.h {
-		s.dropped = next.dropped
+		s.dropped, s.scale = next.dropped, next.scale
 		return false
 	}
 	*s = next
 	return true
+}
+
+// Scale is the scale of the first output of the layout, 1 when unset.
+func (s *Space) Scale() float64 {
+	if s.scale <= 0 {
+		return 1
+	}
+	return s.scale
 }
 
 // Size is the X screen size.

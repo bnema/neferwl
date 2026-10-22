@@ -351,17 +351,17 @@ func TestWorkspacePrevNextAction(t *testing.T) {
 }
 
 func TestXwayland(t *testing.T) {
-	if Defaults().Xwayland != (domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: "xwayland-satellite"}) {
+	if Defaults().Xwayland != (domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: "xwayland-satellite", XSettings: true}) {
 		t.Fatal(Defaults().Xwayland)
 	}
 	for _, tt := range []struct {
 		value string
 		want  domain.XwaylandConfig
 	}{
-		{"off", domain.XwaylandConfig{Backend: domain.XwaylandOff}},
-		{"satellite", domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: "xwayland-satellite"}},
-		{"builtin", domain.XwaylandConfig{Backend: domain.XwaylandBuiltin, Binary: "Xwayland"}},
-		{"/opt/xwls", domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: "/opt/xwls"}},
+		{"off", domain.XwaylandConfig{Backend: domain.XwaylandOff, XSettings: true}},
+		{"satellite", domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: "xwayland-satellite", XSettings: true}},
+		{"builtin", domain.XwaylandConfig{Backend: domain.XwaylandBuiltin, Binary: "Xwayland", XSettings: true}},
+		{"/opt/xwls", domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: "/opt/xwls", XSettings: true}},
 	} {
 		t.Run(tt.value, func(t *testing.T) {
 			c, w := parseString(t, "xwayland = "+tt.value)
@@ -369,6 +369,28 @@ func TestXwayland(t *testing.T) {
 				t.Fatal(c.Xwayland, w)
 			}
 		})
+	}
+}
+
+func TestXwaylandXSettings(t *testing.T) {
+	for _, tt := range []struct {
+		src  string
+		want bool
+	}{
+		{"", true},
+		{"xwayland.xsettings = on", true},
+		{"xwayland.xsettings = off", false},
+		{"xwayland.xsettings = off\nxwayland = builtin", false},
+		{"xwayland = builtin\nxwayland.xsettings = off", false},
+	} {
+		c, w := parseString(t, tt.src)
+		if c.Xwayland.XSettings != tt.want || len(w) != 0 {
+			t.Fatal(tt.src, c.Xwayland, w)
+		}
+	}
+	c, w := parseString(t, "xwayland.xsettings = maybe")
+	if !c.Xwayland.XSettings || len(w) != 1 || !strings.Contains(w[0].Msg, "must be on or off") {
+		t.Fatal(c.Xwayland, w)
 	}
 }
 

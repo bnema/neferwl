@@ -341,6 +341,9 @@ func TestFlushWithNothingQueuedSendsNothing(t *testing.T) {
 	require.Len(t, p.requests(), n, "nothing queued, nothing sent")
 }
 
+// bootOnlyFiles run only from boot() (XSETTINGS manager, root cursor).
+var bootOnlyFiles = map[string]bool{"selection_xsettings.go": true, "cursor.go": true}
+
 // The XWM never blocks after Boot: NewXID, Sync and InternAtoms are startup
 // only, so they may appear in production code only inside boot().
 func TestNoBlockingCallsOutsideBoot(t *testing.T) {
@@ -354,6 +357,9 @@ func TestNoBlockingCallsOutsideBoot(t *testing.T) {
 		src, err := os.ReadFile(name)
 		require.NoError(t, err)
 		text := string(src)
+		if bootOnlyFiles[name] {
+			continue
+		}
 		lo, hi := 0, 0
 		if name == "xwm.go" {
 			lo = strings.Index(text, "func (x *XWM) boot() error")

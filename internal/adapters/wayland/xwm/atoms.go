@@ -54,6 +54,9 @@ const (
 	atomTimestamp
 	atomNeferwlData
 	atomNeferwlTargets
+	atomManager
+	atomXSettingsS0
+	atomXSettingsSettings
 	atomCount
 )
 
@@ -109,4 +112,7 @@ var atomNames = [atomCount]string{
 	atomTimestamp:                   "TIMESTAMP",
 	atomNeferwlData:                 "_NEFERWL_DATA",
 	atomNeferwlTargets:              "_NEFERWL_TARGETS",
+	atomManager:                     "MANAGER",
+	atomXSettingsS0:                 "_XSETTINGS_S0",
+	atomXSettingsSettings:           "_XSETTINGS_SETTINGS",
 }
