@@ -56,8 +56,9 @@ type record struct {
 	minW, minH, maxW, maxH         int32
 	title, class                   string // owned, replaced only on change
 	hasNetName                     bool
-	floating                       bool // dialog-like type; set with the properties
-	sized                          bool // the client asked for its size before Ready
+	floating                       bool  // dialog-like type; set with the properties
+	bypass                         uint8 // _NET_WM_BYPASS_COMPOSITOR, 0..2
+	sized                          bool  // the client asked for its size before Ready
 
 	// pairing
 	serial  uint64

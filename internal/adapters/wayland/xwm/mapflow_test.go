@@ -121,7 +121,7 @@ func TestMapFlowBatchesRequestsAndReadyFiresOnce(t *testing.T) {
 	want := []uint32{
 		uint32(xproto.AtomWmClass), uint32(xproto.AtomWmName), hs.p.atom("_NET_WM_NAME"), uint32(xproto.AtomWmHints),
 		uint32(xproto.AtomWmNormalHints), hs.p.atom("WM_PROTOCOLS"), uint32(xproto.AtomWmTransientFor),
-		hs.p.atom("_NET_WM_WINDOW_TYPE"), hs.p.atom("_NET_WM_STATE"), hs.p.atom("_NET_WM_PID"),
+		hs.p.atom("_NET_WM_WINDOW_TYPE"), hs.p.atom("_NET_WM_STATE"), hs.p.atom("_NET_WM_PID"), hs.p.atom("_NET_WM_BYPASS_COMPOSITOR"),
 	}
 	require.GreaterOrEqual(t, len(reqs), len(want)+2)
 	for i, a := range want {
@@ -180,6 +180,16 @@ func TestMapFlowFloatingAndModal(t *testing.T) {
 		{"modal", func(hs *harness, w uint32) {
 			hs.atoms(w, "_NET_WM_STATE", "_NET_WM_STATE_MODAL")
 		}, func(i WindowInfo) { require.True(t, i.Modal); require.False(t, i.Fullscreen) }},
+		{"bypass 1", func(hs *harness, w uint32) {
+			hs.words(w, "_NET_WM_BYPASS_COMPOSITOR", uint32(xproto.AtomCardinal), 1)
+		}, func(i WindowInfo) { require.EqualValues(t, 1, i.Bypass) }},
+		{"bypass 2 kept", func(hs *harness, w uint32) {
+			hs.words(w, "_NET_WM_BYPASS_COMPOSITOR", uint32(xproto.AtomCardinal), 2)
+		}, func(i WindowInfo) { require.EqualValues(t, 2, i.Bypass) }},
+		{"bypass absent", func(hs *harness, w uint32) {}, func(i WindowInfo) { require.Zero(t, i.Bypass) }},
+		{"class steam_app", func(hs *harness, w uint32) {
+			hs.p.setProp(w, uint32(xproto.AtomWmClass), uint32(xproto.AtomString), 8, []byte("steam_app_892970\x00steam_app_892970\x00"))
+		}, func(i WindowInfo) { require.Equal(t, "steam_app_892970", i.AppID) }},
 		{"fullscreen at map", func(hs *harness, w uint32) {
 			hs.atoms(w, "_NET_WM_STATE", "_NET_WM_STATE_FULLSCREEN")
 		}, func(i WindowInfo) { require.True(t, i.Fullscreen) }},
@@ -746,7 +756,7 @@ func TestMapFlowReadyFiresOnLastReplyInAnyOrder(t *testing.T) {
 	r := hs.x.tab.rec(s)
 	r.mapping, r.pending = true, propMaskAll&^propClientIDs
 	hs.expectReady(win)
-	order := []int{propCount, propPID, propClass, propNetName, propName, propHints, propNormalHints, propProtocols, propTransientFor, propWindowType, propState}
+	order := []int{propCount, propPID, propBypass, propClass, propNetName, propName, propHints, propNormalHints, propProtocols, propTransientFor, propWindowType, propState}
 	for i, bit := range order {
 		require.False(t, hs.x.tab.rec(s).ready, i)
 		if bit == propCount { // the geometry
@@ -776,4 +786,21 @@ func TestMapFlowReadyFiresOnLastReplyInAnyOrder(t *testing.T) {
 	require.Equal(t, "B", hs.ready[win].AppID)
 	require.Equal(t, "t", hs.ready[win].Title)
 	require.Equal(t, 5, hs.ready[win].PID)
+}
+
+func TestMapFlowWholeOutputRectSetsHint(t *testing.T) {
+	hs := newHarness(t, nil)
+	hs.x.space.Set(ports.Layout{out(0, 0, 1920, 1080), out(1920, 0, 1280, 1024)})
+	const win = 0x500001
+	hs.classic(win)
+	s := hs.create(win)
+	r := hs.x.tab.rec(s)
+	r.x, r.y, r.w, r.h, r.sized = 1920, 0, 1280, 1024, true
+	info := hs.x.info(s)
+	require.True(t, info.HasAt)
+	require.Equal(t, 1920, info.AtX)
+	r.h = 1000
+	require.False(t, hs.x.info(s).HasAt)
+	r.h, r.sized = 1024, false
+	require.False(t, hs.x.info(s).HasAt)
 }

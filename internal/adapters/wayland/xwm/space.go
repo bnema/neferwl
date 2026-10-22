@@ -114,6 +114,17 @@ func axisGap(v, lo, hi int) int {
 	return 0
 }
 
+// WholeOutput reports whether the X rect is exactly one output's, and that
+// output's layout origin.
+func (s *Space) WholeOutput(x, y, w, h int) (lx, ly int, ok bool) {
+	for i := 0; i < s.n; i++ {
+		if r := s.regions[i]; r.X.X == x && r.X.Y == y && r.X.W == w && r.X.H == h {
+			return r.Layout.X, r.Layout.Y, true
+		}
+	}
+	return 0, 0, false
+}
+
 // ToX converts a layout point to X, through the nearest region.
 func (s *Space) ToX(lx, ly int) (x, y int) {
 	i := s.nearest(lx, ly)

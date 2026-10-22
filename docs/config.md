@@ -165,7 +165,7 @@ Rules place an app's windows when they first open.
 | `rule.<name>.width` | Column width in [cells](#column-widths), 1 to 16 |
 
 ```ini
-rule.games.app-id = steam_app_.*
+rule.games.app-id = steam_app_\d+
 rule.games.workspace = 3
 rule.chat.app-id = discord|org\.telegram\..*
 rule.chat.workspace = chat
@@ -176,6 +176,8 @@ rule.calc.floating = on
 
 - Every matching rule applies, in file order; later rules win.
 - A rule never moves your focus or view.
+- Proton games (X11) use `steam_app_<id>` as app ID, taken from `WM_CLASS`.
+- An X11 window that opens exactly on one output's area opens on that output, unless a rule sets `monitor`.
 - To find an app ID: `neferwl state | jq '.windows[].app_id'`.
 
 ## Output placement

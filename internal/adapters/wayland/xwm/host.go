@@ -13,9 +13,14 @@ type WindowInfo struct {
 	Floating      bool // dialog/utility/splash/fixed size
 	Width, Height int  // requested size, logical (scale 1)
 	Parent        Slot
-	Modal         bool // _NET_WM_STATE_MODAL
-	Fullscreen    bool // _NET_WM_STATE_FULLSCREEN at map
-	Title, AppID  string
+	Modal         bool  // _NET_WM_STATE_MODAL
+	Fullscreen    bool  // _NET_WM_STATE_FULLSCREEN at map
+	Bypass        uint8 // _NET_WM_BYPASS_COMPOSITOR (0 unset, 1 bypass, 2 do not)
+	// HasAt: the client asked for a rect equal to a whole output; AtX, AtY
+	// is that output's layout origin.
+	HasAt        bool
+	AtX, AtY     int
+	Title, AppID string
 }
 
 // host is the wayland server as the XWM sees it. Display goroutine only.

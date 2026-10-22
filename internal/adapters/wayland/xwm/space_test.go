@@ -92,3 +92,19 @@ func TestSpaceAllocations(t *testing.T) {
 		t.Fatalf("allocs = %v", n)
 	}
 }
+
+func TestSpaceWholeOutputMatchesPlace(t *testing.T) {
+	var s Space
+	s.Set(ports.Layout{out(-640, 0, 640, 480), out(0, 0, 1920, 1080)})
+	lx, ly, ok := s.WholeOutput(0, 0, 640, 480)
+	if !ok || lx != -640 || ly != 0 {
+		t.Fatalf("WholeOutput = %d,%d,%v", lx, ly, ok)
+	}
+	// Placing the window at that origin lands on the same X point.
+	if x, y := s.ToX(lx, ly); x != 0 || y != 0 {
+		t.Fatalf("ToX = %d,%d", x, y)
+	}
+	if _, _, ok := s.WholeOutput(0, 0, 640, 481); ok {
+		t.Fatal("partial rect matched")
+	}
+}

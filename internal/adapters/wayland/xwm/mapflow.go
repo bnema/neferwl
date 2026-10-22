@@ -142,6 +142,10 @@ func (x *XWM) info(s Slot) WindowInfo {
 		Fullscreen: rec.fullscreen,
 		Title:      rec.title,
 		AppID:      rec.class,
+		Bypass:     rec.bypass,
+	}
+	if rec.sized && !info.Floating {
+		info.AtX, info.AtY, info.HasAt = x.space.WholeOutput(int(rec.x), int(rec.y), int(rec.w), int(rec.h))
 	}
 	if info.Floating || rec.sized {
 		info.Width, info.Height = int(rec.w), int(rec.h)

@@ -303,7 +303,7 @@ func (x *x11Window) tryMap() {
 	if w.parent != nil && w.parent.mapped {
 		parent = w.parent.id
 	}
-	s.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, PID: x.info.PID, Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Positioned: true, Modal: w.modal, Remap: w.gen > 1})
+	s.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, PID: x.info.PID, Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Positioned: true, Modal: w.modal, Remap: w.gen > 1, HasAt: x.info.HasAt, AtX: x.info.AtX, AtY: x.info.AtY})
 	if x.info.Fullscreen {
 		s.emit(ports.WindowFullscreenRequest{ID: w.id, Fullscreen: true})
 	}

@@ -24,6 +24,7 @@ const (
 	propWindowType
 	propState
 	propPID
+	propBypass
 	propCount
 )
 
@@ -67,6 +68,8 @@ func (x *XWM) propIndex(a uint32) int {
 		return propState
 	case x.atoms[atomNetWMPID]:
 		return propPID
+	case x.atoms[atomNetWMBypassCompositor]:
+		return propBypass
 	}
 	return -1
 }
@@ -91,6 +94,8 @@ func (x *XWM) propAtom(idx int) xproto.Atom {
 		return xproto.Atom(x.atoms[atomNetWMWindowType])
 	case propState:
 		return xproto.Atom(x.atoms[atomNetWMState])
+	case propBypass:
+		return xproto.Atom(x.atoms[atomNetWMBypassCompositor])
 	default:
 		return xproto.Atom(x.atoms[atomNetWMPID])
 	}
@@ -257,6 +262,14 @@ func (x *XWM) applyProp(s Slot, idx int, format uint8, val []byte) {
 		if changed && rec.ready {
 			x.host.Fullscreen(s, fs)
 		}
+	case propBypass:
+		// Kept for a later VRR/tearing policy; direct scanout and tearing
+		// do not depend on it. 2 ("do not bypass") is ignored on purpose.
+		rec.bypass = 0
+		if len(val) >= 4 {
+			rec.bypass = uint8(min(word(val, 0), 2))
+		}
+		x.log.Debug().Uint32("xid", rec.xid).Uint8("bypass", rec.bypass).Msg("_NET_WM_BYPASS_COMPOSITOR")
 	case propPID:
 		if len(val) >= 4 {
 			rec.pid = int32(word(val, 0))

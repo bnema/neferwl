@@ -563,3 +563,21 @@ func TestFocusAllocations(t *testing.T) {
 	require.Zero(t, allocs)
 	require.False(t, x.closed)
 }
+
+// Repeated identical fullscreen configures cost nothing.
+func TestFullscreenConfigureAllocations(t *testing.T) {
+	x, p, h, _, _ := attached(t)
+	s := newWin(t, x, p, h, 0x500001)
+	sinkPeer(t, x, p)
+	cfg := ports.ConfigureWindow{Width: 1920, Height: 1080, Fullscreen: true, Activated: true}
+	x.Configure(s, cfg)
+	x.posted = false
+	x.flush()
+	allocs := testing.AllocsPerRun(300, func() {
+		x.Configure(s, cfg)
+		x.Place(s, 0, 0)
+		x.posted = false
+		x.flush()
+	})
+	require.Zero(t, allocs)
+}

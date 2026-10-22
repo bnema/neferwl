@@ -40,6 +40,11 @@ type WindowMapped struct {
 	// Modal is set for a dialog that blocks its parent (xdg_dialog_v1):
 	// focusing the parent focuses the dialog.
 	Modal bool
+	// HasAt asks for the screen containing the layout point (AtX, AtY) when
+	// no rule sets a monitor: the X11 host sets it for a window that maps at
+	// exactly one output's rect.
+	HasAt    bool
+	AtX, AtY int
 }
 
 // SlotEnv is the environment variable neferwl sets on processes it spawns

@@ -486,3 +486,37 @@ func TestInitialFullscreenKeepsRuleDestination(t *testing.T) {
 		}
 	})
 }
+
+func TestMapAtOutputPlacesOnThatOutput(t *testing.T) {
+	r := startMulti(t, nil, left, right)
+	r.mapApp(t, 1, "term")
+	// DP-2 starts at layout x=200: a game mapping at its rect goes there.
+	r.client <- ports.WindowMapped{ID: 2, AppID: "game", HasAt: true, AtX: 200, AtY: 0}
+	if w := stWindow(r.stateWith(t, 2), 2); w.Output != "DP-2" {
+		t.Fatalf("not on DP-2: %+v", w)
+	}
+}
+
+func TestMapAtOutputKeepsRuleMonitor(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Rules = []ports.WindowRule{winRule("g", "game", func(r *ports.WindowRule) { r.Monitor = "DP-1" })}
+	}, left, right)
+	r.client <- ports.WindowMapped{ID: 2, AppID: "game", HasAt: true, AtX: 200, AtY: 0}
+	if w := stWindow(r.stateWith(t, 2), 2); w.Output != "DP-1" {
+		t.Fatalf("rule monitor lost to the hint: %+v", w)
+	}
+}
+
+func TestRuleMatchesSteamAppClass(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Rules = []ports.WindowRule{winRule("steam", `steam_app_\d+`, func(r *ports.WindowRule) { r.Floating = ruleOn() })}
+	}, left)
+	r.client <- ports.WindowMapped{ID: 1, AppID: "steam_app_892970", Positioned: true}
+	if w := stWindow(r.stateWith(t, 1), 1); !w.Floating {
+		t.Fatalf("steam_app rule did not match: %+v", w)
+	}
+	r.client <- ports.WindowMapped{ID: 2, AppID: "steam_app_x", Positioned: true}
+	if w := stWindow(r.stateWith(t, 2), 2); w.Floating {
+		t.Fatalf("non-numeric id matched: %+v", w)
+	}
+}
