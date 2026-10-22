@@ -145,3 +145,14 @@ func TestProcDetectorMissingBinary(t *testing.T) {
 	require.Nil(t, d.proc)
 	require.NoError(t, d.Close())
 }
+
+func TestProcDetectorCommand(t *testing.T) {
+	for _, threshold := range []float64{0, 0.3} {
+		d := newProcDetector("nefer-hints", "/models", threshold)
+		want := []string{"nefer-hints", "--model", "/models", "--imgsz", "1280", "--gpu", "auto"}
+		if threshold != 0 {
+			want = append(want, "--conf", "0.3")
+		}
+		require.Equal(t, want, d.cmd().Args)
+	}
+}

@@ -274,10 +274,18 @@ func (p *process) wait() {
 	})
 }
 
+// cmd leaves confidence selection to the runner unless explicitly configured.
+func (d *procDetector) cmd() *exec.Cmd {
+	args := []string{"--model", d.model, "--imgsz", strconv.Itoa(imgsz), "--gpu", "auto"}
+	if d.conf != 0 {
+		args = append(args, "--conf", strconv.FormatFloat(d.conf, 'f', -1, 64))
+	}
+	return exec.Command(d.command, args...)
+}
+
 func (d *procDetector) start(ctx context.Context) error {
 	log := logging.For(ctx, "hints")
-	cmd := exec.Command(d.command, "--model", d.model, "--imgsz", strconv.Itoa(imgsz),
-		"--conf", strconv.FormatFloat(d.conf, 'f', -1, 64), "--gpu", "auto")
+	cmd := d.cmd()
 	cmd.Stderr = &lineLog{log: func(line string) { log.Debug().Str("detector", d.command).Msg(line) }}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.WaitDelay = waitDelay

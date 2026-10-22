@@ -30,7 +30,8 @@ type Options struct {
 	Command string
 	// ModelDir is the directory of the detector's model files.
 	ModelDir string
-	// Threshold is the minimum detection score, 0.01 to 0.99.
+	// Threshold overrides the minimum detection score, 0.01 to 0.99.
+	// Zero uses model.json or, if absent, the runner default.
 	Threshold float64
 	// DumpDir, when not empty, receives the scanned frames (PNG, annotated
 	// PNG and JSON). They contain the screen in clear.

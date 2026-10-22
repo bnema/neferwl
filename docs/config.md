@@ -62,7 +62,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `hint.enable` | `off` | Turn on the experimental [hint mode](#hint-mode) (restart required) |
 | `hint.detector` | `nefer-hints` | The [hint mode](#hint-mode) detector binary: a path, or a name looked up in `PATH` (restart required) |
 | `hint.model` | `$XDG_DATA_HOME/nefer-hints/models` | Directory of the detector's model files; `~/.local/share/nefer-hints/models` when `XDG_DATA_HOME` is unset; a leading `~/` is expanded (restart required) |
-| `hint.threshold` | `0.05` | Minimum detection score, 0.01 to 0.99; lower finds more targets and more false ones (restart required) |
+| `hint.threshold` | model default | Optional minimum detection score override, 0.01 to 0.99; unset or empty uses the model’s own threshold (`model.json`), else the runner default. Lower finds more targets and more false ones (restart required) |
 | `hint.capture` | `off` | Show hint labels in captures requested by Wayland clients (screenshots, screencasts); the compositor's own hint scans never see them; applies on reload |
 | `hint.size` | `auto` | Label text size in logical pixels (6 to 72), or `auto` for screen pixel density |
 | `hint.background` | empty | Label background (`#rrggbb`); empty uses `border.active` |

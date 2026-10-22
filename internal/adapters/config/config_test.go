@@ -974,7 +974,7 @@ func TestHintDetectorConfig(t *testing.T) {
 	t.Setenv("HOME", "/home/u")
 	t.Setenv("XDG_DATA_HOME", "")
 	d := Defaults().Hint
-	if d.Detector != "nefer-hints" || d.Model != "/home/u/.local/share/nefer-hints/models" || d.Threshold != 0.05 {
+	if d.Detector != "nefer-hints" || d.Model != "/home/u/.local/share/nefer-hints/models" || d.Threshold != 0 {
 		t.Fatalf("defaults: %+v", d)
 	}
 	t.Setenv("XDG_DATA_HOME", "/data")
@@ -989,14 +989,24 @@ func TestHintDetectorConfig(t *testing.T) {
 	if len(w) != 0 || c.Hint.Detector != "/opt/nh" || c.Hint.Model != "/opt/models" {
 		t.Fatalf("%+v %v", c.Hint, w)
 	}
-	for _, v := range []string{"0", "0.009", "1", "0.995", "NaN", "high", "-1"} {
+	for _, input := range []string{"", "hint.threshold =\n"} {
+		c, w := parseString(t, input)
+		if len(w) != 0 || c.Hint.Threshold != 0 {
+			t.Errorf("unset threshold %q: %v %v", input, c.Hint.Threshold, w)
+		}
+	}
+	c, w = parseString(t, "hint.threshold = 0.3\nhint.threshold =\n")
+	if len(w) != 1 || c.Hint.Threshold != 0 { // duplicate-key warning only
+		t.Fatalf("cleared threshold: %v %v", c.Hint.Threshold, w)
+	}
+	for _, v := range []string{"0", "0.009", "1", "0.995", "NaN", "Inf", "-Inf", "high", "-1"} {
 		c, w := parseString(t, "hint.threshold = "+v+"\n")
-		if len(w) != 1 || c.Hint.Threshold != 0.05 {
+		if len(w) != 1 || c.Hint.Threshold != 0 {
 			t.Errorf("hint.threshold = %s: %v %v", v, c.Hint.Threshold, w)
 		}
 	}
 	for _, v := range []string{"0.01", "0.99"} {
-		if c, w := parseString(t, "hint.threshold = "+v+"\n"); len(w) != 0 || c.Hint.Threshold == 0.05 {
+		if c, w := parseString(t, "hint.threshold = "+v+"\n"); len(w) != 0 || c.Hint.Threshold == 0 {
 			t.Errorf("hint.threshold = %s: %v", v, w)
 		}
 	}

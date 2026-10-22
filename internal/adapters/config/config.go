@@ -168,7 +168,6 @@ func Defaults() ports.Config {
 	c.Hint.Enable = false
 	c.Hint.Detector = defaultHintDetector
 	c.Hint.Model = defaultHintModel()
-	c.Hint.Threshold = defaultHintThreshold
 	c.Xwayland = "xwayland-satellite"
 	c.Background.Color = "#111111"
 	c.Floating.Dim = 0.3
@@ -909,6 +908,10 @@ func set(c *ports.Config, key, v string) error {
 		}
 		c.Hint.Model = expandHome(v)
 	case "hint.threshold":
+		if v == "" {
+			c.Hint.Threshold = 0
+			break
+		}
 		n, err := strconv.ParseFloat(v, 64)
 		if err != nil || math.IsNaN(n) || n < 0.01 || n > 0.99 {
 			return fmt.Errorf("must be a number from 0.01 to 0.99")
@@ -1337,10 +1340,7 @@ func checkAction(v string) error {
 	return nil
 }
 
-const (
-	defaultHintDetector  = "nefer-hints"
-	defaultHintThreshold = 0.05
-)
+const defaultHintDetector = "nefer-hints"
 
 // defaultHintModel is $XDG_DATA_HOME/nefer-hints/models, or
 // ~/.local/share/nefer-hints/models when XDG_DATA_HOME is unset.

@@ -178,7 +178,8 @@ type Config struct {
 		// Detector is the nefer-hints binary (hint.detector): a path, or a
 		// name looked up in PATH. Model is the directory of its model files
 		// (hint.model), with a leading ~/ already expanded. Threshold is the
-		// minimum detection score (hint.threshold, 0.01 to 0.99). All three
+		// minimum detection score (hint.threshold, 0.01 to 0.99); zero leaves
+		// it unset, using model.json or the runner default. All three
 		// are read at startup.
 		Detector, Model string
 		Threshold       float64
