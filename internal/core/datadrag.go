@@ -102,7 +102,7 @@ func dataDragHitChanged(ev ports.ClientEvent) bool {
 	case ports.LayerChanged, ports.InputRegionChanged, ports.WindowMapped,
 		ports.WindowResized, ports.PopupRequest, ports.PopupMapped,
 		ports.OutputPower, ports.WindowParent, ports.WindowModal,
-		ports.WindowUnmapped, ports.PointerWarp, ports.WindowMoveRequest,
+		ports.WindowUnmapped, ports.UnmanagedMapped, ports.UnmanagedMoved, ports.UnmanagedUnmapped, ports.PointerWarp, ports.WindowMoveRequest,
 		ports.WindowFullscreenRequest, ports.WorkspaceActivate, ports.WindowActivate:
 		return true
 	default:

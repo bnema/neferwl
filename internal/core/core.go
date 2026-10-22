@@ -161,7 +161,11 @@ type Core struct {
 	// popups are the placed xdg_popups; popupOrder stacks them, oldest first.
 	popups     map[WindowID]*popupState
 	popupOrder []WindowID
-	keyboard   keyboard
+	// unmanaged are the mapped override-redirect windows, unmanagedOrder
+	// stacks them, bottom to top (unmanaged.go).
+	unmanaged      map[WindowID]*unmanagedState
+	unmanagedOrder []WindowID
+	keyboard       keyboard
 	// activity is when core last told wayland about user input
 	// (ports.UserActivity), sent at most once per ActivityInterval.
 	activity time.Time
@@ -453,7 +457,7 @@ func New(cfg domain.Config, ch Channels, opts Options) (*Core, error) {
 		return nil, fmt.Errorf("scenes, layouts, constraints, state and workspaces must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{inputKeys: map[string]bool{}, slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(opts.Tokens), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, ch: ch, opts: opts, pressed: map[string]bool{}, buttons: map[uint32]bool{}, swallow: map[uint32]bool{}, configures: newConfigures(), placed: map[WindowID]Rect{}, ping: make(chan chan struct{}), out: newOutbox(opts.Clock)}
+	c := &Core{inputKeys: map[string]bool{}, slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(opts.Tokens), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, unmanaged: map[WindowID]*unmanagedState{}, unmanagedOrder: make([]WindowID, 0, 32), ch: ch, opts: opts, pressed: map[string]bool{}, buttons: map[uint32]bool{}, swallow: map[uint32]bool{}, configures: newConfigures(), placed: map[WindowID]Rect{}, ping: make(chan chan struct{}), out: newOutbox(opts.Clock)}
 	c.screens = []*screen{{mon: newMonitorWithIDs("", "", &c.nextWorkspaceID), scale: 1, cfgScale: 1}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
@@ -1020,6 +1024,11 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	}
 	sc := c.screens[i]
 	lx, ly := x-float64(sc.x), y-float64(sc.y)
+	// Unmanaged windows are over everything, popups included; a locked
+	// pointer keeps its focus (a mouse-look game).
+	if id, px, py := c.unmanagedAt(sc, lx, ly); id != 0 {
+		return id, px, py
+	}
 	// Layer popups are over everything; window popups are over the windows
 	// only, under the top and overlay layers (as drawn).
 	if id, px, py := c.popupAt(sc, lx, ly, true); id != 0 {

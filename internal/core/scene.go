@@ -20,7 +20,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 	// layout is what is drawn; settled (same indexes) is where the
 	// windows are going, and alone sizes the configures.
 	layout, settled := sc.shown, sc.settledLayout
-	scene = domain.Scene{Security: c.security, Output: sc.name(), OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: domain.Border{Radius: c.cfg.Border.Radius, Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]domain.SceneWindow, 0, len(layout)+len(c.popupOrder)+1), Layers: shownLayers(sc)}
+	scene = domain.Scene{Security: c.security, Output: sc.name(), OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: domain.Border{Radius: c.cfg.Border.Radius, Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]domain.SceneWindow, 0, len(layout)+len(c.popupOrder)+len(c.unmanagedOrder)+1), Layers: shownLayers(sc)}
 	if !sc.mon.previewing() {
 		// Tiles stop at the panels; the overview lays out previews over
 		// the whole output.
@@ -128,6 +128,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		}
 	}
 	scene.Windows = append(scene.Windows, c.scenePopups(sc)...)
+	scene.Windows = c.sceneUnmanaged(scene.Windows, sc)
 	if icon, ok := c.dataDragIconOn(i, sc); ok {
 		// The drag icon is over everything, popups and layers included.
 		scene.Windows = append(scene.Windows, icon)

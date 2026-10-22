@@ -63,6 +63,31 @@ type WindowUnmapped struct{ ID domain.WindowID }
 
 func (WindowUnmapped) clientEvent() {}
 
+// UnmanagedMapped carries wayland → core that an override-redirect X11 window
+// shows. The rect is its place in the layout (logical coordinates). NoInput
+// windows (tooltips, drag icons, notifications) never take the pointer.
+type UnmanagedMapped struct {
+	ID                  WindowID
+	X, Y, Width, Height int
+	NoInput             bool
+}
+
+func (UnmanagedMapped) clientEvent() {}
+
+// UnmanagedMoved carries wayland → core a move and/or resize of a mapped
+// unmanaged window.
+type UnmanagedMoved struct {
+	ID                  WindowID
+	X, Y, Width, Height int
+}
+
+func (UnmanagedMoved) clientEvent() {}
+
+// UnmanagedUnmapped carries wayland → core that an unmanaged window is gone.
+type UnmanagedUnmapped struct{ ID WindowID }
+
+func (UnmanagedUnmapped) clientEvent() {}
+
 // ShortcutsInhibit carries wayland → core that a window asks for (Active)
 // or stops asking for all keys, compositor binds included, while it has
 // keyboard focus (zwp_keyboard_shortcuts_inhibit_v1).

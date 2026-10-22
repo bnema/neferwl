@@ -85,6 +85,14 @@ func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, 
 		if _, w := c.screenOf(v.ID); w != nil {
 			w.SetModal(v.ID, v.Modal)
 		}
+	case ports.UnmanagedMapped, ports.UnmanagedMoved, ports.UnmanagedUnmapped:
+		changed, err := c.unmanagedEvent(ctx, v)
+		if err != nil {
+			return false, true
+		}
+		if !changed {
+			return false, false
+		}
 	case ports.WindowUnmapped:
 		if v.ID == c.osd.window {
 			c.osd.window = 0
