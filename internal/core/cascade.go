@@ -419,6 +419,45 @@ func (w *Workspace) isolateBand() {
 	w.setBands(bands, id)
 }
 
+// fullscreenBand gives tiled window id, about to go fullscreen, a band of
+// its own right below the band it is in, so the other columns keep their
+// band and a focus change among them never touches the fullscreen output.
+// A window stacked in a column is expelled into a column of its own first.
+// Leaving fullscreen does not move it back: the column keeps its band, so
+// nothing jumps when the user leaves. Only cascade layouts do this; the
+// focus stays on the same window.
+func (w *Workspace) fullscreenBand(id WindowID) {
+	i := w.columnOf(id)
+	if !w.policy().wraps || i < 0 {
+		return
+	}
+	b := w.band(i)
+	first, last := w.bandBounds(b)
+	if len(w.Columns[i].Windows) == 1 && first == last {
+		return
+	}
+	fc := w.Columns[w.Focus]
+	focus := fc.Windows[fc.Focus]
+	w.dropSlotOf(id)
+	bands := w.bandList()
+	col := bands[b][i-first]
+	nc := col
+	if len(col.Windows) == 1 {
+		bands[b] = slices.Delete(bands[b], i-first, i-first+1)
+	} else {
+		j := slices.Index(col.Windows, id)
+		nc = Column{Windows: []WindowID{id}, Cells: col.Cells}
+		col.Windows = slices.Delete(slices.Clone(col.Windows), j, j+1)
+		switch {
+		case col.Focus > j, col.Focus >= len(col.Windows):
+			col.Focus = max(min(col.Focus-1, len(col.Windows)-1), 0)
+		}
+		bands[b][i-first] = col
+	}
+	bands = slices.Insert(bands, b+1, []Column{nc})
+	w.setBands(bands, focus)
+}
+
 // pushNeighbor makes room in the focused column's full cascade band for a
 // wider column: the column at the far end of the band leaves it. The
 // rightmost goes to the band below; from the last column, the leftmost

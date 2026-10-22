@@ -307,6 +307,8 @@ The default layout. Columns sit side by side in bands of up to `max-columns`, st
 - A new window joins the focused band when it has room, else it gets a new band right below.
 - `cycle-column-width` in a full band makes room: the rightmost column goes to the band below (from the last column, the leftmost goes to the band above). The end of the cycle brings it back.
 - `maximize-column` gives the column a band of its own: the columns on its left go to the band above, the ones on its right to the band below. Maximizing again forms the band back.
+- A fullscreen window gets a band of its own right below the band it was in (expelled into its own column first when it shares one), so the other columns stay put and focus changes among them leave the fullscreen output alone. Leaving fullscreen keeps the column in that band.
+- `move-column-left/right` on a fullscreen window sends it to the neighbor monitor, where it stays fullscreen and focused; with no neighbor monitor nothing moves.
 - A band left empty goes away. A smaller `max-columns` moves the extra columns of a band to a new band below it.
 
 ### Column widths

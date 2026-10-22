@@ -195,7 +195,7 @@ func TestCascadeCovers(t *testing.T) {
 	}
 	w.ToggleFullscreen()
 	w.FocusID(4)
-	if w.View != 600 {
+	if w.View != 1200 {
 		t.Fatal("fullscreen restore lost band reveal")
 	}
 }

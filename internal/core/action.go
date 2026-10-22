@@ -388,7 +388,15 @@ func (c *Core) dispatchAction(a Action) Effect {
 		if a == ActionMoveColumnLeft {
 			dir, d = -1, dirLeft
 		}
-		if i := c.neighbor(d); w.leavesBand(w.Focus+dir) && i >= 0 {
+		// A fullscreen window leaves for the neighbor screen at once, and
+		// stays fullscreen there; with no screen, nothing moves.
+		fid, _ := w.Focused()
+		full := fid != 0 && !w.onFloat() && w.fullscreen == fid
+		i := c.neighbor(d)
+		if full && i < 0 {
+			return Effect{}
+		}
+		if i >= 0 && (full || w.leavesBand(w.Focus+dir)) {
 			col, ok := w.takeColumn()
 			if !ok {
 				return Effect{}
@@ -401,6 +409,9 @@ func (c *Core) dispatchAction(a Action) Effect {
 				at = len(to.Columns)
 			}
 			to.receive(col, at)
+			if full {
+				to.ToggleFullscreen()
+			}
 			from.mon.normalize()
 			c.cur().mon.normalize()
 			return Effect{}
