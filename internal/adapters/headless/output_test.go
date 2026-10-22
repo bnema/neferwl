@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -299,6 +300,17 @@ func TestLinkPNGSecure(t *testing.T) {
 	if !bytes.Equal(a, b) {
 		t.Fatal("latest.png differs from the frame")
 	}
+	fi, err := os.Stat(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	li, err := os.Stat(latest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(fi, li) {
+		t.Fatal("latest.png is a copy, not a hard link to the frame")
+	}
 	got, err := png.Decode(bytes.NewReader(b))
 	if err != nil {
 		t.Fatal(err)
@@ -319,40 +331,73 @@ func TestLinkPNGSecure(t *testing.T) {
 	}
 }
 
-// A frame that crossed a security change is not published as latest.png, and
-// a source that cannot be linked is encoded instead.
+// A frame that crossed a security change is not published as latest.png, a
+// failed rename leaves no temporary file, and a source that cannot be linked
+// is encoded instead.
 func TestLinkPNGSecureSkipsAndFallsBack(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
 	good := ports.SecurityState{Generation: 1}
-	t.Run("protected", func(t *testing.T) {
+	// frameIn writes the frame to link and returns its directory and path.
+	frameIn := func(t *testing.T) (string, string) {
+		t.Helper()
 		dir := t.TempDir()
 		frame := filepath.Join(dir, "frame-000001.png")
 		if err := writePNGSecure(frame, img, nil, ports.SecurityState{}); err != nil {
 			t.Fatal(err)
 		}
+		return dir, frame
+	}
+	// onlyFrame fails unless the frame is all the directory holds: no
+	// latest.png and no latest.png.tmp.
+	onlyFrame := func(t *testing.T, dir string) {
+		t.Helper()
+		if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+			t.Fatalf("latest.png or a temp file delivered: %v", entries)
+		}
+	}
+	t.Run("protected state", func(t *testing.T) {
+		dir, frame := frameIn(t)
+		// A protected state is refused without reading the live snapshot.
+		gate := portsmocks.NewMockSessionSecurity(t)
+		if written, err := linkPNGSecure(frame, filepath.Join(dir, "latest.png"), img, gate, ports.SecurityState{Generation: 1, Protected: true}); err != nil || written {
+			t.Fatalf("link = %v, %v", written, err)
+		}
+		onlyFrame(t, dir)
+	})
+	t.Run("protected snapshot", func(t *testing.T) {
+		dir, frame := frameIn(t)
 		gate := portsmocks.NewMockSessionSecurity(t)
 		gate.EXPECT().Snapshot().Return(ports.SecurityState{Generation: 1, Protected: true})
 		if written, err := linkPNGSecure(frame, filepath.Join(dir, "latest.png"), img, gate, good); err != nil || written {
 			t.Fatalf("link = %v, %v", written, err)
 		}
-		if entries, _ := os.ReadDir(dir); len(entries) != 1 {
-			t.Fatalf("latest.png or a temp file delivered: %v", entries)
-		}
+		onlyFrame(t, dir)
 	})
 	t.Run("changed after the link", func(t *testing.T) {
-		dir := t.TempDir()
-		frame := filepath.Join(dir, "frame-000001.png")
-		if err := writePNGSecure(frame, img, nil, ports.SecurityState{}); err != nil {
-			t.Fatal(err)
-		}
+		dir, frame := frameIn(t)
 		gate := portsmocks.NewMockSessionSecurity(t)
 		gate.EXPECT().Snapshot().Return(good).Once()
 		gate.EXPECT().Snapshot().Return(ports.SecurityState{Generation: 2}).Once()
 		if written, err := linkPNGSecure(frame, filepath.Join(dir, "latest.png"), img, gate, good); err != nil || written {
 			t.Fatalf("link = %v, %v", written, err)
 		}
-		if entries, _ := os.ReadDir(dir); len(entries) != 1 {
-			t.Fatalf("latest.png or a temp file delivered: %v", entries)
+		onlyFrame(t, dir)
+	})
+	t.Run("rename failure", func(t *testing.T) {
+		dir, frame := frameIn(t)
+		// A non-empty directory cannot be replaced by a file.
+		latest := filepath.Join(dir, "latest.png")
+		if err := os.MkdirAll(filepath.Join(latest, "keep"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if written, err := linkPNGSecure(frame, latest, img, nil, ports.SecurityState{}); err == nil || written {
+			t.Fatalf("link = %v, %v; want an error", written, err)
+		}
+		if _, err := os.Stat(latest + ".tmp"); !os.IsNotExist(err) {
+			t.Fatalf("temporary link left behind: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(latest, "keep")); err != nil {
+			t.Fatalf("existing directory touched: %v", err)
 		}
 	})
 	t.Run("no source file", func(t *testing.T) {
@@ -360,6 +405,13 @@ func TestLinkPNGSecureSkipsAndFallsBack(t *testing.T) {
 		latest := filepath.Join(dir, "latest.png")
 		if written, err := linkPNGSecure(filepath.Join(dir, "missing.png"), latest, img, nil, ports.SecurityState{}); err != nil || !written {
 			t.Fatalf("link = %v, %v", written, err)
+		}
+		fi, err := os.Stat(latest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !fi.Mode().IsRegular() {
+			t.Fatalf("latest.png is %v", fi.Mode())
 		}
 		f, err := os.Open(latest)
 		if err != nil {
@@ -369,7 +421,23 @@ func TestLinkPNGSecureSkipsAndFallsBack(t *testing.T) {
 		if _, err := png.Decode(f); err != nil {
 			t.Fatal(err)
 		}
+		// Encoded on its own: nothing else in the directory shares it.
+		if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+			t.Fatalf("unexpected files: %v", entries)
+		}
+		if n, ok := linkCount(fi); ok && n != 1 {
+			t.Fatalf("latest.png has %d links, want 1", n)
+		}
 	})
+}
+
+// linkCount returns the hard link count of fi where the platform reports it.
+func linkCount(fi os.FileInfo) (uint64, bool) {
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, false
+	}
+	return uint64(st.Nlink), true
 }
 
 func TestWritePNGAtomic(t *testing.T) {
