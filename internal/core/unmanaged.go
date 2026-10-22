@@ -48,6 +48,17 @@ func (c *Core) unmanagedEvent(ctx context.Context, ev ports.ClientEvent) (change
 		if err := c.dataDragGone(ctx, v.ID); err != nil {
 			return false, err
 		}
+		// rehit does nothing while a button grab or drag is held: do not
+		// leave the pointer and grab on the dead window.
+		if c.grab == v.ID {
+			c.grab = 0
+		}
+		if c.pointer == v.ID {
+			c.pointer = 0
+			if err := c.pointerFocus(ctx, ports.PointerFocus{}); err != nil {
+				return false, err
+			}
+		}
 	}
 	// The window under a still pointer may have changed.
 	return true, c.rehit(ctx)

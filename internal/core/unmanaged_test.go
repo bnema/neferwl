@@ -122,3 +122,24 @@ func TestUnmanagedHitAllocations(t *testing.T) {
 		t.Fatalf("hit allocs = %v", n)
 	}
 }
+
+func TestUnmanagedUnmapDuringGrabClearsPointer(t *testing.T) {
+	c := publishRig(t, 1)
+	mapUnmanaged(t, c, 100, 10, 10, 50, 40, false)
+	cmds := make(chan ports.ClientCommand, 64)
+	c.ch.Commands = cmds
+	c.pointer, c.grab = 100, 100
+	c.clientEvent(context.Background(), ports.UnmanagedUnmapped{ID: 100})
+	if c.pointer == 100 || c.grab != 0 {
+		t.Fatalf("pointer %d grab %d left on the dead window", c.pointer, c.grab)
+	}
+	var focus bool
+	for len(cmds) > 0 {
+		if f, ok := (<-cmds).(ports.PointerFocus); ok && f == (ports.PointerFocus{}) {
+			focus = true
+		}
+	}
+	if !focus {
+		t.Fatal("pointer focus not reset")
+	}
+}
