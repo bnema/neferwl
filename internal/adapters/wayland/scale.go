@@ -25,6 +25,8 @@ func (s *Server) outputOfSurface(surf *surface) *output {
 	}
 	name := ""
 	switch {
+	case surf.x11win != nil && surf.x11win.isOverride():
+		name = s.overrideOutput(surf.x11win)
 	case surf.toplevelWindow() != nil:
 		name = surf.toplevelWindow().last.Output
 	case surf.layer != nil && surf.layer.output != nil:

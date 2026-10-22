@@ -306,7 +306,7 @@ func (s *Server) focusTarget(id domain.WindowID) (*wayland.Surface, []*wayland.K
 		// already dead. Admission is enforced before entering or delivering.
 		return l.surface.wl, s.clientKeyboards(l.surface.wl.Client())
 	}
-	if w := s.windows[id]; w != nil && w.mapped {
+	if w := s.windows[id]; w != nil && w.mapped && !w.isOverride() {
 		if surf := w.surfaceResource(); surf != nil {
 			return surf, s.windowKeyboards(w)
 		}

@@ -213,6 +213,8 @@ func (s *Server) suspended(surf *surface) bool {
 func (s *Server) frameOutput(surf *surface) string {
 	surf = toplevelRoot(surf)
 	switch {
+	case surf.x11win != nil && surf.x11win.isOverride():
+		return s.overrideOutput(surf.x11win)
 	case surf.toplevelWindow() != nil:
 		if s.suspended(surf) {
 			return suspendedFrameQueue

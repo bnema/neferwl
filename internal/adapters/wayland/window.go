@@ -11,7 +11,7 @@ import (
 // role.
 
 // isToplevel reports whether w is a toplevel (xdg or X11), not a popup.
-func (w *window) isToplevel() bool { return w.toplevel != nil || w.x11 != nil }
+func (w *window) isToplevel() bool { return w.toplevel != nil || (w.x11 != nil && !w.x11.override) }
 
 // srv is the server the window belongs to.
 func (w *window) srv() *Server {

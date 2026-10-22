@@ -244,6 +244,40 @@ func (p *x11Peer) createNotify(win uint32) {
 	})
 }
 
+// createOverride announces an override-redirect window of 100x50 at x,y.
+func (p *x11Peer) createOverride(win uint32, x, y int16) {
+	p.event(16, func(b *[32]byte) {
+		binary.LittleEndian.PutUint32(b[4:], x11PeerRoot)
+		binary.LittleEndian.PutUint32(b[8:], win)
+		binary.LittleEndian.PutUint16(b[12:], uint16(x))
+		binary.LittleEndian.PutUint16(b[14:], uint16(y))
+		binary.LittleEndian.PutUint16(b[16:], 100)
+		binary.LittleEndian.PutUint16(b[18:], 50)
+		b[22] = 1
+	})
+}
+
+func (p *x11Peer) mapNotify(win uint32) {
+	p.event(19, func(b *[32]byte) {
+		binary.LittleEndian.PutUint32(b[4:], x11PeerRoot)
+		binary.LittleEndian.PutUint32(b[8:], win)
+		b[12] = 1
+	})
+}
+
+// configureNotify moves and resizes a window (root SubstructureNotify form).
+func (p *x11Peer) configureNotify(win uint32, x, y int16, w, h uint16) {
+	p.event(22, func(b *[32]byte) {
+		binary.LittleEndian.PutUint32(b[4:], x11PeerRoot)
+		binary.LittleEndian.PutUint32(b[8:], win)
+		binary.LittleEndian.PutUint16(b[16:], uint16(x))
+		binary.LittleEndian.PutUint16(b[18:], uint16(y))
+		binary.LittleEndian.PutUint16(b[20:], w)
+		binary.LittleEndian.PutUint16(b[22:], h)
+		b[24] = 1
+	})
+}
+
 func (p *x11Peer) windowEvent(code uint8, win uint32) {
 	p.event(code, func(b *[32]byte) {
 		binary.LittleEndian.PutUint32(b[4:], x11PeerRoot)

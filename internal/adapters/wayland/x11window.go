@@ -18,6 +18,12 @@ type x11Window struct {
 	info    xwm.WindowInfo
 	// ready is set once the XWM read the window's properties (Ready).
 	ready bool
+	// override marks an override-redirect window: tracked and drawn, never a
+	// toplevel nor keyboard focus. rect is its layout rect, noInput keeps the
+	// pointer off it.
+	override bool
+	noInput  bool
+	rect     ports.Rect
 }
 
 // xwaylandRestricted are the globals only the Xwayland client may see.
@@ -103,6 +109,7 @@ func (s *Server) installXWM(x *xwm.XWM) {
 			x.SetSerial(surf.identity, surf.x11Serial)
 		}
 	}
+	x.SetLayout(s.outputPlaces)
 }
 
 // teardownXWM closes the window manager, dropping its windows. Idempotent.
@@ -312,12 +319,120 @@ func (x *x11Window) tryMap() {
 	}
 }
 
-// OverrideMapped is a no-op until X7.5 wires override-redirect windows.
+// OverrideMapped starts tracking an override-redirect window. It is announced
+// to core on the paired surface's first buffer commit, so it is never drawn
+// without content.
 func (h hostImpl) OverrideMapped(slot xwm.Slot, xid uint32, surfaceID uint64, x, y, w, h2 int, noInput bool) {
+	s := h.s
+	surf := s.surfaceByIdentity[surfaceID]
+	if surf == nil || surf.kind != roleX11 || surf.x11win != nil {
+		return
+	}
+	if old := s.x11Slots[slot]; old != nil {
+		h.OverrideGone(slot, true)
+	}
+	win := &window{id: s.nextWindow}
+	win.x11 = &x11Window{server: s, slot: slot, xid: xid, override: true, noInput: noInput, rect: ports.Rect{X: x, Y: y, W: w, H: h2}}
+	s.nextWindow++
+	s.windows[win.id] = win
+	s.x11Slots[slot] = win
+	ox := win.x11
+	ox.surface, surf.x11win = surf, win
+	surf.role = func(buffer bool) {
+		switch {
+		case surf.destroyed:
+			ox.hide()
+			ox.surface = nil
+			surf.x11win = nil
+		case buffer:
+			ox.show()
+		case win.mapped:
+			ox.hide()
+		}
+	}
+	ox.show()
 }
 
-// OverrideMoved is a no-op until X7.5 wires override-redirect windows.
-func (h hostImpl) OverrideMoved(slot xwm.Slot, x, y, w, h2 int) {}
+// OverrideMoved records the new layout rect of an override window and, once
+// shown, tells core. An unchanged rect costs nothing.
+func (h hostImpl) OverrideMoved(slot xwm.Slot, x, y, w, h2 int) {
+	win := h.s.x11Slots[slot]
+	if win == nil || win.x11 == nil || !win.x11.override {
+		return
+	}
+	r := ports.Rect{X: x, Y: y, W: w, H: h2}
+	if r == win.x11.rect {
+		return
+	}
+	win.x11.rect = r
+	if win.mapped {
+		h.s.emit(ports.UnmanagedMoved{ID: win.id, X: x, Y: y, Width: w, Height: h2})
+		win.x11.surface.sendTreeScale()
+	}
+}
 
-// OverrideGone is a no-op until X7.5 wires override-redirect windows.
-func (h hostImpl) OverrideGone(slot xwm.Slot, destroyed bool) {}
+// OverrideGone ends an override window: unmapped, or destroyed.
+func (h hostImpl) OverrideGone(slot xwm.Slot, destroyed bool) {
+	s := h.s
+	win := s.x11Slots[slot]
+	if win == nil || win.x11 == nil || !win.x11.override {
+		return
+	}
+	win.x11.hide()
+	win.x11.drop()
+	delete(s.windows, win.id)
+	delete(s.x11Slots, slot)
+}
+
+// show announces the window to core once its surface has content.
+func (x *x11Window) show() {
+	surf := x.surface
+	if surf == nil || surf.x11win == nil || surf.destroyed || surf.current == nil {
+		return
+	}
+	w := surf.x11win
+	if w.mapped {
+		return
+	}
+	s := x.server
+	w.mapped = true
+	r := x.rect
+	s.emit(ports.UnmanagedMapped{ID: w.id, X: r.X, Y: r.Y, Width: r.W, Height: r.H, NoInput: x.noInput})
+	surf.sendTreeScale()
+	if surf.has {
+		surf.resetInputEmission()
+		surf.redraw()
+		surf.emitInput()
+	}
+}
+
+// hide withdraws a shown override window from core and the seat.
+func (x *x11Window) hide() {
+	if x.surface == nil || x.surface.x11win == nil {
+		return
+	}
+	w := x.surface.x11win
+	s := x.server
+	if s.seat.pointerFocus == w.id {
+		s.changePointerFocus(0, 0, 0)
+	}
+	if !w.mapped {
+		return
+	}
+	w.mapped = false
+	x.surface.resetInputEmission()
+	s.emit(ports.UnmanagedUnmapped{ID: w.id})
+	s.emitContent(ports.SurfaceContent{ID: w.id}, damage{full: true})
+}
+
+// isOverride reports whether w is an override-redirect X11 window.
+func (w *window) isOverride() bool { return w.x11 != nil && w.x11.override }
+
+// overrideOutput is the name of the output under the origin of an override
+// window's rect, "" when none.
+func (s *Server) overrideOutput(w *window) string {
+	if o, ok := s.outputPlaces.At(float64(w.x11.rect.X), float64(w.x11.rect.Y)); ok {
+		return o.Info.Name
+	}
+	return ""
+}

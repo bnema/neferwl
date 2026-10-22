@@ -210,6 +210,9 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 	changed := !slices.Equal(s.outputPlaces, c.Outputs)
 	focusChanged := s.focusedOutput != c.Focused
 	s.outputPlaces = append(domain.Layout(nil), c.Outputs...)
+	if s.xwm != nil {
+		s.xwm.SetLayout(s.outputPlaces)
+	}
 	defer func() {
 		if changed {
 			s.refreshOutputManagers()
