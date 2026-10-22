@@ -13,6 +13,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 
 	"bnema.dev/xturbo"
 	"bnema.dev/xturbo/composite"
@@ -80,7 +81,7 @@ type XWM struct {
 }
 
 func newXWM(conn *xturbo.Conn, log zerowrap.Logger) *XWM {
-	x := &XWM{conn: conn, log: log, root: conn.Root(), tab: newTable(initialSlots)}
+	x := &XWM{conn: conn, log: log.WithField("component", "xwm"), root: conn.Root(), tab: newTable(initialSlots)}
 	x.h = xturbo.Handler{OnEvent: x.onEvent, OnReply: x.onReply, OnError: x.onError}
 	x.fit()
 	return x
@@ -195,6 +196,17 @@ func (x *XWM) boot() error {
 	var rootMask xproto.ChangeWindowAttributesValues
 	rootMask.SetEventMask(xproto.EventMaskSubstructureRedirect | xproto.EventMaskSubstructureNotify | xproto.EventMaskPropertyChange)
 	x.expect(xproto.ChangeWindowAttributes(b, root, &rootMask), kindRootMask, 0, 0)
+	// Only one client may select SubstructureRedirect on the root: wait for
+	// the answer before touching anything another window manager owns.
+	if err := b.Err(); err != nil {
+		return fmt.Errorf("xwm: encode root mask: %w", err)
+	}
+	if err := conn.Sync(&x.h); err != nil {
+		return fmt.Errorf("xwm: root mask: %w", err)
+	}
+	if x.bootErr != nil {
+		return x.bootErr
+	}
 	composite.RedirectSubwindows(b, root, composite.RedirectManual)
 
 	var wv xproto.CreateWindowValues
@@ -205,6 +217,8 @@ func (x *XWM) boot() error {
 		xproto.Atom(x.atoms[atomUTF8String]), 8, uint32(len(name)), name)
 	x.setProp32(x.root, atomNetSupportingWMCheck, xproto.AtomWindow, []uint32{x.wmWin})
 	x.setProp32(x.wmWin, atomNetSupportingWMCheck, xproto.AtomWindow, []uint32{x.wmWin})
+	// CurrentTime and no MANAGER announcement: this Xwayland is private to
+	// neferwl and nobody waits on these selections.
 	xproto.SetSelectionOwner(b, xproto.Window(x.wmWin), xproto.Atom(x.atoms[atomWMS0]), 0)
 	xproto.SetSelectionOwner(b, xproto.Window(x.wmWin), xproto.Atom(x.atoms[atomNetWMCMS0]), 0)
 
@@ -311,7 +325,11 @@ func (x *XWM) fail(err error) {
 	if x.closed {
 		return
 	}
-	x.log.Warn().Err(err).Msg("X11 window management stopped")
+	if errors.Is(err, io.EOF) || errors.Is(err, xturbo.ErrClosed) {
+		x.log.Info().Err(err).Msg("X11 window management stopped: Xwayland closed the connection")
+	} else {
+		x.log.Warn().Err(err).Msg("X11 window management stopped")
+	}
 	x.Close()
 }
 

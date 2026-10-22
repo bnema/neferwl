@@ -137,6 +137,13 @@ func TestBootWMExists(t *testing.T) {
 	x, err := Boot(fd, testLog())
 	require.ErrorIs(t, err, ErrWMExists)
 	require.Nil(t, x)
+	// Nothing the running window manager owns was touched.
+	for _, r := range p.requests() {
+		require.NotEqual(t, uint8(opSetSelectionOwner), r.major)
+		if r.major == opChangeProperty {
+			require.NotEqual(t, uint32(peerRoot), r.u32(4))
+		}
+	}
 }
 
 func TestBootNoComposite(t *testing.T) {
@@ -236,6 +243,17 @@ func TestCreateAndDestroyManaged(t *testing.T) {
 	readUntil(t, x, func() bool { return x.Slot(win) == 0 })
 	require.Zero(t, x.tab.n)
 	_ = src
+}
+
+// The X server reports the XWM's own check window to it like any other
+// child of the root; it is never adopted.
+func TestOwnWindowNeverAdopted(t *testing.T) {
+	x, p, _, _, _ := attached(t) // the mock fails the test on any host call
+	p.createNotify(x.wmWin, false)
+	const marker = 0x500003
+	p.createNotify(marker, true)
+	readUntil(t, x, func() bool { return x.Slot(marker) != 0 })
+	require.Zero(t, x.Slot(x.wmWin))
 }
 
 func TestOverrideRedirectNeverReachesHost(t *testing.T) {

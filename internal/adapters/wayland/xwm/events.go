@@ -132,7 +132,7 @@ func (x *XWM) onError(e *xturbo.XError) {
 func (x *XWM) onCreateNotify(ev *xturbo.Event) {
 	e := xproto.CreateNotifyOf(ev)
 	xid := uint32(e.Window())
-	if x.tab.lookup(xid) != 0 {
+	if xid == x.wmWin || x.tab.lookup(xid) != 0 {
 		return
 	}
 	s := x.insert(xid)
@@ -184,7 +184,7 @@ func (x *XWM) onTreeReply(r *xturbo.Reply) {
 	children := q.Children()
 	for i := 0; i < children.Len(); i++ {
 		xid := uint32(children.At(i))
-		if x.tab.lookup(xid) != 0 {
+		if xid == x.wmWin || x.tab.lookup(xid) != 0 {
 			continue
 		}
 		s := x.insert(xid)
