@@ -122,7 +122,7 @@ workspace do not flash. A click or hover focus (`focus.follow-mouse`) flashes th
 at most once per second, so a quick switch A→B→A may skip the second flash.
 It runs when `animations = on`.
 
-`xwayland = satellite` uses `xwayland-satellite` from `PATH`; a custom path also selects satellite. `off` disables X11. `builtin` (experimental): neferwl starts `Xwayland` itself. It does not manage X11 windows yet; use `satellite` for X11 apps.
+`xwayland = satellite` uses `xwayland-satellite` from `PATH`; a custom path also selects satellite. `off` disables X11. `builtin` (experimental): neferwl starts `Xwayland` itself and manages X11 windows as its window manager: windows tile, take focus, close with `close-window` (`WM_DELETE_WINDOW`) and show their title and class. Menus and popups (override-redirect windows), clipboard and XSETTINGS are not supported yet; use `satellite` if you need them.
 
 ## Automatic terminal
 

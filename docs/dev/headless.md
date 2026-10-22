@@ -63,6 +63,19 @@ WAYLAND_DISPLAY=<name> go run ./examples/testime -preedit nihon -commit 日本
 
 `-count <n>` exits after n commits; `-delay` sets the time between preedit and commit.
 
+## X11 check
+
+`make e2e-xwayland` runs the end-to-end test of the built-in window manager (`xwayland = builtin`). It is behind the `xwayland` build tag, so `go test ./...` and `make check` only compile it (`go vet -tags xwayland`). It needs `Xwayland` on `PATH` and a GPU, and skips without Xwayland.
+
+The test starts a headless NeferWL with a real `Xwayland` and runs `internal/app/testdata/x11probe`, a small X11 client (`-class`, `-title`, `-size`, `-sleep`) that paints its window green, prints `mapped WxH` and `focus`, and exits 0 on `WM_DELETE_WINDOW`. It checks:
+
+- the state lists one visible `X11Probe` window with the probe's pid, and the screenshot is mostly green inside its tile;
+- the probe receives focus;
+- a second probe tiles beside the first;
+- `key Super+q` closes the focused probe within 2 seconds and the state drops to one window.
+
+Run it by hand with `go test -tags xwayland -race ./internal/app -run TestXwayland -count=1 -v`.
+
 ## Colour check
 
 `make color-check` renders `examples/testpattern` on a headless output and checks the colours, in SDR and in HDR (`--headless-hdr`). It needs a GPU and `/dev/udmabuf`, and is not part of `make check`.
