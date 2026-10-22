@@ -492,7 +492,7 @@ func readyScript(t *testing.T, dir string, ready bool, tail string) (bin, marker
 	return bin, marker
 }
 
-func runBuiltin(t *testing.T, ctx context.Context, ready bool, tail string, attachWM func(wmFD int)) (events []string) {
+func runBuiltin(t *testing.T, ctx context.Context, ready bool, tail string, attachWM func(ctx context.Context, wmFD int)) (events []string) {
 	t.Helper()
 	opts := testOptions(t, "")
 	opts.Backend = ports.XwaylandBuiltin
@@ -506,12 +506,12 @@ func runBuiltin(t *testing.T, ctx context.Context, ready bool, tail string, atta
 		events = append(events, "attach")
 		unix.Close(wlFD)
 	}
-	opts.AttachWM = func(wmFD int) func() {
+	opts.AttachWM = func(ctx context.Context, wmFD int) func() {
 		if !exists() {
 			t.Error("AttachWM ran before readiness")
 		}
 		events = append(events, "attachWM")
-		attachWM(wmFD)
+		attachWM(ctx, wmFD)
 		return func() { events = append(events, "stop") }
 	}
 	d, err := Open(opts)
@@ -533,7 +533,7 @@ func TestBuiltinAttachWMAfterReadiness(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			events := runBuiltin(t, ctx, true, tc.tail, func(wmFD int) {
+			events := runBuiltin(t, ctx, true, tc.tail, func(_ context.Context, wmFD int) {
 				if _, err := unix.FcntlInt(uintptr(wmFD), unix.F_GETFD, 0); err != nil {
 					t.Errorf("wmFD not open: %v", err)
 				}
@@ -551,8 +551,33 @@ func TestBuiltinAttachWMAfterReadiness(t *testing.T) {
 
 // A process that exits before reporting readiness never reaches AttachWM.
 func TestBuiltinNoAttachWMWithoutReadiness(t *testing.T) {
-	events := runBuiltin(t, t.Context(), false, "exit 1", func(int) {})
+	events := runBuiltin(t, t.Context(), false, "exit 1", func(context.Context, int) {})
 	if got := strings.Join(events, ","); got != "attach,returned" {
+		t.Fatalf("events %s", got)
+	}
+}
+
+// The AttachWM context ends when the process dies, so a bootstrap against a
+// dead Xwayland gives up at once instead of waiting out its handshake.
+func TestBuiltinAttachWMContextEndsWithProcess(t *testing.T) {
+	ended := make(chan error, 1)
+	start := time.Now()
+	events := runBuiltin(t, t.Context(), true, "sleep 0.3", func(ctx context.Context, wmFD int) {
+		defer unix.Close(wmFD)
+		select {
+		case <-ctx.Done():
+			ended <- ctx.Err()
+		case <-time.After(5 * time.Second):
+			ended <- nil
+		}
+	})
+	if err := <-ended; err == nil {
+		t.Fatal("AttachWM context did not end with the process")
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Fatalf("took %v", time.Since(start))
+	}
+	if got := strings.Join(events, ","); got != "attach,attachWM,stop,returned" {
 		t.Fatalf("events %s", got)
 	}
 }

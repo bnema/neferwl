@@ -218,7 +218,7 @@ func logScenes(log zerowrap.Logger, set []domain.Scene) {
 
 // openXwayland reserves an X11 display for the selected backend, or returns
 // nil when X11 is off or unavailable: the session runs without it.
-func openXwayland(ctx context.Context, opts Options, env []string, log zerowrap.Logger, attach func(int), attachWM func(int) func()) *xwayland.Display {
+func openXwayland(ctx context.Context, opts Options, env []string, log zerowrap.Logger, attach func(int), attachWM func(context.Context, int) func()) *xwayland.Display {
 	cfg := opts.Config.Xwayland
 	bin := cfg.Binary
 	if cfg.Backend == domain.XwaylandOff || opts.NoXwayland {

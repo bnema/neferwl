@@ -13,6 +13,7 @@ import (
 func registerGlobals(d *server.Display, o Options, s *Server) error {
 	for _, register := range []func() error{
 		func() error { return registerXDG(d, s) },
+		func() error { return registerXwaylandShell(d, s) },
 		func() error { return registerLayer(d, s) },
 		func() error {
 			// Advertise only with the production owner gate and authoritative
@@ -137,6 +138,9 @@ func (c compositor) CreateSurface(r *wayland.Compositor, id uint32) {
 			delete(c.server.surfaces, w.Resource)
 			delete(c.server.surfaceByIdentity, state.identity)
 			state.Destroy(w)
+			if state.kind == roleX11 && c.server.xwm != nil {
+				c.server.xwm.SurfaceGone(state.identity)
+			}
 		}
 	}
 }

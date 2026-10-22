@@ -192,7 +192,8 @@ func toplevelRoot(surf *surface) *surface {
 // for a capture session is invisible.
 func (s *Server) invisible(surf *surface) bool {
 	root := toplevelRoot(surf)
-	return root.xdg != nil && root.xdg.window != nil && root.xdg.window.hasLast && !root.xdg.window.last.Visible
+	w := root.toplevelWindow()
+	return w != nil && w.hasLast && !w.last.Visible
 }
 
 // suspended reports that nothing draws the toplevel tree, not even a capture
@@ -200,10 +201,11 @@ func (s *Server) invisible(surf *surface) bool {
 // frame callbacks of its output so the capture keeps moving.
 func (s *Server) suspended(surf *surface) bool {
 	root := toplevelRoot(surf)
-	if root.xdg == nil || root.xdg.window == nil || !root.xdg.window.hasLast {
+	w := root.toplevelWindow()
+	if w == nil || !w.hasLast {
 		return false
 	}
-	return !root.xdg.window.last.Visible && !root.xdg.window.last.Captured
+	return !w.last.Visible && !w.last.Captured
 }
 
 // frameOutput is the pacing class for a surface; "" is the 60 Hz
@@ -211,11 +213,11 @@ func (s *Server) suspended(surf *surface) bool {
 func (s *Server) frameOutput(surf *surface) string {
 	surf = toplevelRoot(surf)
 	switch {
-	case surf.xdg != nil && surf.xdg.window != nil:
+	case surf.toplevelWindow() != nil:
 		if s.suspended(surf) {
 			return suspendedFrameQueue
 		}
-		return surf.xdg.window.last.Output
+		return surf.toplevelWindow().last.Output
 	case surf.layer != nil && surf.layer.output != nil:
 		return surf.layer.output.name()
 	case surf.lock != nil && surf.lock.output != nil && !surf.lock.closed:

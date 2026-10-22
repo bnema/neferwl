@@ -88,7 +88,8 @@ func (builtinStarter) start(ctx context.Context, d *Display, stderr *logWriter) 
 	}
 	files[wl].Close()
 	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	procGone := make(chan struct{})
+	go func() { done <- cmd.Wait(); close(procGone) }()
 	if err != nil {
 		stopGroup(cmd, done)
 		return err
@@ -115,7 +116,21 @@ func (builtinStarter) start(ctx context.Context, d *Display, stderr *logWriter) 
 			stopGroup(cmd, done)
 			return err
 		}
-		stop := d.opts.AttachWM(wmFD)
+		// The context ends with the process or the caller's context, so a
+		// bootstrap against a dead or silent Xwayland aborts at once.
+		wmCtx, cancel := context.WithCancel(ctx)
+		watched := make(chan struct{})
+		go func() {
+			defer close(watched)
+			select {
+			case <-procGone:
+				cancel()
+			case <-wmCtx.Done():
+			}
+		}()
+		stop := d.opts.AttachWM(wmCtx, wmFD)
+		cancel()
+		<-watched
 		if stop != nil {
 			// Runs before start returns so the restart loop never overlaps two XWMs.
 			defer stop()

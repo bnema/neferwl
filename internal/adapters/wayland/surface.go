@@ -30,7 +30,6 @@ const (
 	roleDragIcon
 	// roleX11 is the surface of an X11 window paired through
 	// xwayland_shell_v1.
-	//lint:ignore U1000 used by the X11 window role (xwm)
 	roleX11
 )
 
@@ -51,8 +50,12 @@ type surface struct {
 	formatOpaque bool
 	kind         roleKind
 	xdg          *xdgSurface
-	layer        *layerSurface
-	lock         *lockSurface
+	// x11win is the X11 window the surface is associated with; x11Serial is
+	// the serial of xwayland_surface_v1.set_serial, 0 until set.
+	x11win    *window
+	x11Serial uint64
+	layer     *layerSurface
+	lock      *lockSurface
 	// bufferCommitted is permanent, including commits later discarded by FIFO.
 	bufferCommitted bool
 	server          *Server
@@ -195,6 +198,9 @@ func (s *surface) root() *surface {
 func (s *surface) windowID() domain.WindowID {
 	if s.xdg != nil && s.xdg.window != nil && s.xdg.window.mapped {
 		return s.xdg.window.id
+	}
+	if s.x11win != nil && s.x11win.mapped {
+		return s.x11win.id
 	}
 	if s.layer != nil && s.layer.mapped {
 		return s.layer.id
@@ -580,6 +586,9 @@ func (s *surface) applyCommit(u *update) {
 	}
 	if s.xdg != nil && s.xdg.window != nil {
 		s.xdg.window.afterCommit()
+	}
+	if s.x11win != nil {
+		s.x11win.afterCommit()
 	}
 	if s.lock != nil {
 		// Role callbacks precede content construction; publish lock placement

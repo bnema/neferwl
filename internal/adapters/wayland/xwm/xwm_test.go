@@ -1,6 +1,7 @@
 package xwm
 
 import (
+	"context"
 	"encoding/binary"
 	"os"
 	"strings"
@@ -23,7 +24,7 @@ func bootPeer(t *testing.T, mutate func(p *xpeer)) (*XWM, *xpeer) {
 	if mutate != nil {
 		p.set(mutate)
 	}
-	x, err := Boot(fd, testLog())
+	x, err := Boot(context.Background(), fd, testLog())
 	require.NoError(t, err)
 	t.Cleanup(x.CloseConn)
 	return x, p
@@ -134,7 +135,7 @@ func TestBootRequests(t *testing.T) {
 func TestBootWMExists(t *testing.T) {
 	fd, p := startXPeer(t, fullPeerExts())
 	p.set(func(p *xpeer) { p.denyRoot = true })
-	x, err := Boot(fd, testLog())
+	x, err := Boot(context.Background(), fd, testLog())
 	require.ErrorIs(t, err, ErrWMExists)
 	require.Nil(t, x)
 	// Nothing the running window manager owns was touched.
@@ -150,7 +151,7 @@ func TestBootNoComposite(t *testing.T) {
 	exts := fullPeerExts()
 	delete(exts, "Composite")
 	fd, _ := startXPeer(t, exts)
-	_, err := Boot(fd, testLog())
+	_, err := Boot(context.Background(), fd, testLog())
 	require.ErrorIs(t, err, ErrNoComposite)
 }
 
@@ -159,7 +160,7 @@ func TestBootOptionalExtensions(t *testing.T) {
 	delete(exts, "XFIXES")
 	delete(exts, "X-Resource")
 	fd, _ := startXPeer(t, exts)
-	x, err := Boot(fd, testLog())
+	x, err := Boot(context.Background(), fd, testLog())
 	require.NoError(t, err)
 	x.CloseConn()
 }
@@ -167,7 +168,7 @@ func TestBootOptionalExtensions(t *testing.T) {
 func TestBootConnectFailure(t *testing.T) {
 	fd, p := startXPeer(t, fullPeerExts())
 	p.hangup()
-	_, err := Boot(fd, testLog())
+	_, err := Boot(context.Background(), fd, testLog())
 	require.Error(t, err)
 }
 

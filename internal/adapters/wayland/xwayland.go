@@ -1,7 +1,11 @@
 package wayland
 
 import (
+	"context"
+
 	"bnema.dev/purego-libwayland/server"
+	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/adapters/wayland/xwm"
 	"golang.org/x/sys/unix"
 )
 
@@ -24,6 +28,7 @@ func (s *Server) AttachXwayland(wlFD int) {
 		s.xwayland = xwaylandClient{client: c}
 		c.OnDestroy(func() {
 			if s.xwayland.client == c {
+				s.teardownXWM()
 				s.forgetXwayland()
 			}
 		})
@@ -41,11 +46,30 @@ func (s *Server) forgetXwayland() {
 	}
 }
 
-// AttachXWM takes ownership of the window manager descriptor. It runs on the
-// starter goroutine once Xwayland is ready; the XWM is not implemented yet,
-// so the descriptor is closed and stop does nothing.
-func (s *Server) AttachXWM(wmFD int) (stop func()) {
-	s.log.Info().Msg("X11 window management not implemented: closing XWM descriptor")
-	_ = unix.Close(wmFD)
-	return func() {}
+// AttachXWM bootstraps the X11 window manager on the window manager
+// descriptor, which it owns. It runs on the starter goroutine once Xwayland is
+// ready and blocks until the XWM is installed, ctx ends or Boot fails. stop
+// closes the XWM on the display goroutine and waits for it.
+func (s *Server) AttachXWM(ctx context.Context, wmFD int) (stop func()) {
+	log := logging.For(ctx, "xwm")
+	x, err := xwm.Boot(ctx, wmFD, log)
+	if err != nil {
+		if ctx.Err() != nil {
+			log.Info().Err(err).Msg("X11 window management not started: Xwayland is going away")
+		} else {
+			log.Warn().Err(err).Msg("X11 window management disabled")
+		}
+		return func() {}
+	}
+	if !s.display.Do(func() { s.installXWM(x) }) {
+		x.CloseConn()
+		return func() {}
+	}
+	return func() {
+		s.display.Do(func() {
+			if s.xwm == x {
+				s.teardownXWM()
+			}
+		})
+	}
 }

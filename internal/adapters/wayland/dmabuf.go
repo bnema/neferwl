@@ -228,10 +228,11 @@ func (g *dmabufGlobal) fullscreenOutput(surf *surface) (string, bool) {
 		return "", false
 	}
 	root := toplevelRoot(surf)
-	if root.xdg == nil || root.xdg.window == nil || !root.xdg.window.hasLast || !root.xdg.window.last.Fullscreen || g.server.invisible(surf) {
+	w := root.toplevelWindow()
+	if w == nil || !w.hasLast || !w.last.Fullscreen || g.server.invisible(surf) {
 		return "", false
 	}
-	return root.xdg.window.last.Output, true
+	return w.last.Output, true
 }
 
 // scanoutFor is the scanout offer for a surface: its window is fullscreen

@@ -1,6 +1,7 @@
 package xwm
 
 import (
+	"context"
 	"encoding/binary"
 	"testing"
 
@@ -262,7 +263,7 @@ func TestMapFlowNoXResAsksNothing(t *testing.T) {
 	exts := fullPeerExts()
 	delete(exts, "X-Resource")
 	fd, p := startXPeer(t, exts)
-	x, err := Boot(fd, testLog())
+	x, err := Boot(context.Background(), fd, testLog())
 	require.NoError(t, err)
 	t.Cleanup(x.CloseConn)
 	h := newMockhost(t)

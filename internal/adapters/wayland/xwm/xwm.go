@@ -10,10 +10,12 @@
 package xwm
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 
 	"bnema.dev/xturbo"
 	"bnema.dev/xturbo/composite"
@@ -22,6 +24,7 @@ import (
 	"bnema.dev/xturbo/xproto"
 	"github.com/bnema/purego-libwayland/server"
 	"github.com/bnema/zerowrap"
+	"golang.org/x/sys/unix"
 )
 
 var (
@@ -146,8 +149,45 @@ func (x *XWM) setProp32(win uint32, prop int, typ xproto.Atom, vals []uint32) {
 // blocks (about 25 s at worst) and must not run on the display goroutine: the
 // handshake needs Xwayland, which needs the display goroutine to serve its
 // Wayland requests. It takes ownership of wmFD and closes it on failure.
-// log is scoped by the caller with logging.For(ctx, "xwm").
-func Boot(wmFD int, log zerowrap.Logger) (*XWM, error) {
+// Boot gives up promptly when ctx ends (the Xwayland process died or the run
+// was cancelled). log is scoped by the caller with logging.For(ctx, "xwm").
+func Boot(ctx context.Context, wmFD int, log zerowrap.Logger) (*XWM, error) {
+	// The watcher shuts the socket down when ctx ends, which wakes any blocked
+	// handshake, Sync or InternAtoms. It holds its own duplicate so a shutdown
+	// can never reach a descriptor number reused after Boot closed wmFD.
+	var watch *os.File
+	if dup, err := unix.FcntlInt(uintptr(wmFD), unix.F_DUPFD_CLOEXEC, 0); err == nil {
+		watch = os.NewFile(uintptr(dup), "xwm abort")
+	}
+	stopWatch := func() {}
+	if watch != nil {
+		quit, joined := make(chan struct{}), make(chan struct{})
+		go func() {
+			defer close(joined)
+			select {
+			case <-ctx.Done():
+				if rc, err := watch.SyscallConn(); err == nil {
+					_ = rc.Control(func(fd uintptr) { _ = unix.Shutdown(int(fd), unix.SHUT_RDWR) })
+				}
+			case <-quit:
+			}
+			_ = watch.Close()
+		}()
+		stopWatch = func() { close(quit); <-joined }
+	}
+	x, err := boot(wmFD, log)
+	stopWatch()
+	if err == nil && ctx.Err() != nil {
+		x.CloseConn()
+		x, err = nil, ctx.Err()
+	}
+	if err != nil && ctx.Err() != nil {
+		err = fmt.Errorf("%w (%w)", err, ctx.Err())
+	}
+	return x, err
+}
+
+func boot(wmFD int, log zerowrap.Logger) (*XWM, error) {
 	conn, err := xturbo.NewConn(wmFD)
 	if err != nil {
 		return nil, fmt.Errorf("xwm: connect: %w", err)

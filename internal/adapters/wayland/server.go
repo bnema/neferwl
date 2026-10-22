@@ -17,6 +17,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/wayland/sessionlock"
+	"github.com/bnema/neferwl/internal/adapters/wayland/xwm"
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
@@ -179,6 +180,8 @@ type Server struct {
 	logDamage       bool
 	channels        Channels
 	xwayland        xwaylandClient
+	xwm             *xwm.XWM
+	x11Slots        map[xwm.Slot]*window
 	// awaiting holds frame callbacks by output name, due at its next
 	// frame (frameDue, or its page flip).
 	awaiting    map[string][]*wayland.Callback
@@ -386,6 +389,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		buffers:            make(map[*server.Resource]clientBuffer),
 		windows:            make(map[domain.WindowID]*window),
 		layers:             make(map[domain.WindowID]*layerSurface),
+		x11Slots:           make(map[xwm.Slot]*window),
 		nextWindow:         1,
 		eventReady:         make(chan struct{}, 1),
 		contentSeq:         make(map[domain.WindowID]uint64),
@@ -516,6 +520,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	if err = s.openPaceTimer(); err != nil {
 		return abort(err)
 	}
+	d.SetGlobalFilter(s.globalVisible)
 	if err = registerGlobals(d, opts, s); err != nil {
 		return abort(err)
 	}
@@ -604,6 +609,11 @@ func (s *Server) Run(ctx context.Context) error {
 	s.castInventoryChanged()
 	err := s.display.Run(ctx)
 	s.syncWait.releasePending()
+	// The display is gone: only the X connection is left to close.
+	if s.xwm != nil {
+		s.xwm.CloseConn()
+		s.xwm = nil
+	}
 	s.forgetXwayland()
 	s.stopSecurityContexts()
 	wg.Wait()
@@ -800,7 +810,7 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 			w.popup.dismiss()
 		}
 	case ports.PlaceWindow:
-		// Consumed by the X11 host.
+		s.x11Place(c)
 	case ports.ConfigureWindow:
 		w := s.windows[c.ID]
 		if w == nil || !w.toplevelAlive() || !w.alive() {

@@ -29,10 +29,11 @@ type Options struct {
 	// starts.
 	Attach func(wlFD int)
 	// AttachWM takes ownership of the window manager descriptor once the
-	// backend is ready. It may block to bootstrap the X11 connection. The
-	// returned stop (nil for none) is called before the run ends, on backend
-	// exit or context cancellation.
-	AttachWM func(wmFD int) (stop func())
+	// backend is ready. It may block to bootstrap the X11 connection; ctx ends
+	// when the backend exits or the run is cancelled, and the bootstrap must
+	// then give up. The returned stop (nil for none) is called before the run
+	// ends, on backend exit or context cancellation.
+	AttachWM func(ctx context.Context, wmFD int) (stop func())
 	// Binary is the selected backend executable.
 	Binary string
 	// Env is the backend environment; satellite requires WAYLAND_DISPLAY.

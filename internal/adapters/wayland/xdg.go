@@ -129,10 +129,12 @@ func (x *xdgSurface) Destroy(r *xdgshell.Surface) {
 
 // window is an xdg_toplevel, or an xdg_popup when popup is set.
 type window struct {
-	id           domain.WindowID
-	toplevel     *xdgshell.Toplevel
-	popup        *popup
-	xdg          *xdgSurface
+	id       domain.WindowID
+	toplevel *xdgshell.Toplevel
+	popup    *popup
+	xdg      *xdgSurface
+	// x11 is set for the window of an X11 client (x11window.go).
+	x11          *x11Window
 	appID, title string
 	mapped       bool
 	// initialFullscreen keeps the last request until the first map.
@@ -196,24 +198,29 @@ func toplevelStates(c ports.ConfigureWindow, version int32) []byte {
 }
 
 func (w *window) unmap() {
-	if w.xdg.server.seat.pointerFocus == w.id {
-		w.xdg.server.changePointerFocus(0, 0, 0)
+	s := w.srv()
+	if s.seat.pointerFocus == w.id {
+		s.changePointerFocus(0, 0, 0)
 	}
-	if w.xdg.server.seat.focused == w.id {
-		w.xdg.server.changeFocus(0)
+	if s.seat.focused == w.id {
+		s.changeFocus(0)
 	}
 	if !w.mapped {
 		return
 	}
 	w.mapped = false
-	w.xdg.server.toplevelClosed(w.id)
-	w.xdg.surface.resetInputEmission()
-	w.xdg.configured = false
-	w.xdg.acked = false
-	w.xdg.serials = nil
-	w.xdg.server.emit(ports.WindowUnmapped{ID: w.id})
-	w.xdg.server.syncInhibitors()
-	w.xdg.server.emitContent(domain.SurfaceContent{ID: w.id}, damage{full: true})
+	s.toplevelClosed(w.id)
+	if surf := w.surf(); surf != nil {
+		surf.resetInputEmission()
+	}
+	if x := w.xdg; x != nil {
+		x.configured = false
+		x.acked = false
+		x.serials = nil
+	}
+	s.emit(ports.WindowUnmapped{ID: w.id})
+	s.syncInhibitors()
+	s.emitContent(domain.SurfaceContent{ID: w.id}, damage{full: true})
 }
 func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 	if x.window != nil {
@@ -351,7 +358,7 @@ func (w *window) setParent(p *window) {
 	if p != nil && p.mapped {
 		id = p.id
 	}
-	w.xdg.server.emit(ports.WindowParent{ID: w.id, Parent: id})
+	w.srv().emit(ports.WindowParent{ID: w.id, Parent: id})
 }
 func (t top) SetTitle(_ *xdgshell.Toplevel, title string) {
 	if title == t.w.title {
@@ -451,7 +458,7 @@ func (w *window) afterCommit() {
 	}
 	if fw, fh := w.size(); fw > 0 && fh > 0 && (fw != w.floatW || fh != w.floatH) {
 		w.floatW, w.floatH = fw, fh
-		w.xdg.server.emit(ports.WindowResized{ID: w.id, Width: fw, Height: fh})
+		w.srv().emit(ports.WindowResized{ID: w.id, Width: fw, Height: fh})
 	}
 }
 
@@ -465,6 +472,10 @@ func (w *window) floats() bool {
 
 // size is the window geometry size, else the surface size, in logical pixels.
 func (w *window) size() (int, int) {
+	if w.xdg == nil {
+		c := w.surf().content
+		return c.LogicalW, c.LogicalH
+	}
 	if g := w.xdg.geometry; g.W > 0 && g.H > 0 {
 		return g.W, g.H
 	}
@@ -475,7 +486,7 @@ func (w *window) size() (int, int) {
 // surfacePoint turns window coordinates (core's, from the geometry origin)
 // into surface coordinates.
 func (w *window) surfacePoint(x, y float64) (float64, float64) {
-	g := w.xdg.geometry
+	g := w.geometry()
 	return x + float64(g.X), y + float64(g.Y)
 }
 
