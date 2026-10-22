@@ -388,32 +388,43 @@ func (c *Core) dispatchAction(a Action) Effect {
 		if a == ActionMoveColumnLeft {
 			dir, d = -1, dirLeft
 		}
-		// A fullscreen float goes to the neighbor screen, fullscreen there.
-		if fid, ok := w.Focused(); ok && w.fullscreen == fid && w.floatIndex(fid) >= 0 {
-			if i := c.neighbor(d); i >= 0 {
-				from := c.cur()
-				c.focusScreen = i
-				moveFloat(w, c.cur().mon.Current(), fid)
-				w.reconcileFloats()
-				from.mon.normalize()
-				c.cur().mon.normalize()
-			}
-			return Effect{}
-		}
-		// A fullscreen window leaves for the neighbor screen at once, and
-		// stays fullscreen there; with no screen, nothing moves.
-		fid, _ := w.Focused()
-		full := fid != 0 && !w.onFloat() && w.fullscreen == fid
+		// A fullscreen window (tiled or floating) leaves for the neighbor
+		// screen at once and stays fullscreen there; with no screen,
+		// nothing moves.
 		i := c.neighbor(d)
-		if full && i < 0 {
+		if fid, ok := w.Focused(); ok && w.fullscreen == fid && (w.floatIndex(fid) >= 0 || !w.onFloat()) {
+			if i < 0 {
+				return Effect{}
+			}
+			var col Column
+			if w.floatIndex(fid) < 0 {
+				if col, ok = w.takeColumn(); !ok {
+					return Effect{}
+				}
+			}
+			w.reconcileFloats() // floats the fullscreen kept demoted show again
+			from := c.cur()
+			c.focusScreen = i
+			to := c.cur().mon.Current()
+			if len(col.Windows) == 0 {
+				moveFloat(w, to, fid)
+			} else {
+				at := 0
+				if d == dirLeft {
+					at = len(to.Columns)
+				}
+				to.receive(col, at)
+				to.SetFullscreen(fid, true)
+			}
+			from.mon.normalize()
+			c.cur().mon.normalize()
 			return Effect{}
 		}
-		if i >= 0 && (full || w.leavesBand(w.Focus+dir)) {
+		if i >= 0 && w.leavesBand(w.Focus+dir) {
 			col, ok := w.takeColumn()
 			if !ok {
 				return Effect{}
 			}
-			w.reconcileFloats() // floats the fullscreen kept demoted show again
 			from := c.cur()
 			c.focusScreen = i
 			to := c.cur().mon.Current()
@@ -422,9 +433,6 @@ func (c *Core) dispatchAction(a Action) Effect {
 				at = len(to.Columns)
 			}
 			to.receive(col, at)
-			if full {
-				to.SetFullscreen(fid, true)
-			}
 			from.mon.normalize()
 			c.cur().mon.normalize()
 			return Effect{}

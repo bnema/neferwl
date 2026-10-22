@@ -503,13 +503,10 @@ func (w *Workspace) restoreBand() bool {
 	bands := w.bandList()
 	b := w.band(w.Focus)
 	room := max(max(w.MaxColumns, 1)-len(bands[b]), 0)
-	// take removes from band nb the remembered columns found there, at
-	// most room of them, in the order of ids walked from the focused
+	// take removes from the bands nbs the remembered columns found there,
+	// at most room of them, in the order of ids walked from the focused
 	// column outward (rev: ids end nearest).
-	take := func(nb int, ids [][]WindowID, rev bool) []Column {
-		if nb < 0 || nb >= len(bands) {
-			return nil
-		}
+	take := func(nbs []int, ids [][]WindowID, rev bool) []Column {
 		var got []Column
 		for k := range ids {
 			if room == 0 {
@@ -527,30 +524,37 @@ func (w *Workspace) restoreBand() bool {
 			if head < 0 {
 				continue
 			}
-			i := slices.IndexFunc(bands[nb], func(c Column) bool { return c.Windows[0] == e[head] })
-			if i < 0 {
-				continue
+			for _, nb := range nbs {
+				i := slices.IndexFunc(bands[nb], func(c Column) bool { return c.Windows[0] == e[head] })
+				if i < 0 {
+					continue
+				}
+				got = append(got, bands[nb][i])
+				bands[nb] = slices.Delete(bands[nb], i, i+1)
+				room--
+				break
 			}
-			got = append(got, bands[nb][i])
-			bands[nb] = slices.Delete(bands[nb], i, i+1)
-			room--
 		}
 		if rev {
 			slices.Reverse(got)
 		}
 		return got
 	}
-	// A band the take left empty (a fullscreen column that split off its
-	// own band meanwhile) is looked past: the remembered columns may lie
-	// one band farther.
-	above := take(b-1, up, true)
-	if b >= 2 && len(bands[b-1]) == 0 {
-		above = slices.Concat(take(b-2, up, true), above)
+	// reach lists the bands dir away to look in: the adjacent one, and the
+	// next when the adjacent holds a single column, as a fullscreen column
+	// split off a band of its own meanwhile leaves.
+	reach := func(dir int) []int {
+		var nbs []int
+		for n := b + dir; n >= 0 && n < len(bands); n += dir {
+			nbs = append(nbs, n)
+			if len(bands[n]) != 1 || len(nbs) == 2 {
+				break
+			}
+		}
+		return nbs
 	}
-	below := take(b+1, down, false)
-	if b+2 < len(bands) && len(bands[b+1]) == 0 {
-		below = slices.Concat(below, take(b+2, down, false))
-	}
+	above := take(reach(-1), up, true)
+	below := take(reach(1), down, false)
 	bands[b] = slices.Concat(above, bands[b], below)
 	w.setBands(bands, id)
 	return true

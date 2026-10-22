@@ -175,13 +175,11 @@ func TestCascadeFullscreenAfterMaximizeRestores(t *testing.T) {
 	_, w := cascadeMovesCore(t, 3, 3, false)
 	w.FocusID(1)
 	w.ToggleFullWidth()
-	before := columnOrder(w)
 	w.FocusID(3)
 	w.ToggleFullscreen()
 	w.ToggleFullscreen()
 	w.FocusID(1)
 	w.ToggleFullWidth()
-	t.Logf("before %v bands after %v", before, columnOrder(w))
 	wantBands(t, w, []WindowID{1, 2, 3})
 }
 
@@ -210,25 +208,76 @@ func TestFullscreenMoveEdges(t *testing.T) {
 		}
 	})
 	t.Run("source floats promoted", func(t *testing.T) {
-		for _, float := range []bool{false, true} {
-			c, w := cascadeMovesCore(t, 2, 3, true)
-			w.AddFloating(9, 100, 100)
-			w.SetFullscreen(9, true)
-			if !float {
-				w.FocusID(2)
-				w.ToggleFullscreen()
-			}
-			demoted := w.Floats[0].below
-			c.applyAction(ActionMoveColumnRight)
-			if float {
-				demoted = false
-			}
-			_ = demoted
-			for _, f := range w.Floats {
-				if f.below {
-					t.Fatalf("float=%v: float %d still demoted", float, f.ID)
-				}
-			}
+		c, w := cascadeMovesCore(t, 2, 3, true)
+		w.AddFloating(9, 100, 100)
+		w.FocusID(2)
+		w.ToggleFullscreen()
+		// A fullscreen keeps a float demoted without it covering the output.
+		w.Floats[0].below = true
+		if len(w.Floats) != 1 || !w.Floats[0].below || w.fullscreen != 2 {
+			t.Fatalf("setup: float not demoted: %+v", w.Floats)
+		}
+		c.applyAction(ActionMoveColumnRight)
+		if len(w.Floats) != 1 || w.Floats[0].below {
+			t.Fatalf("float still demoted: %+v", w.Floats)
+		}
+	})
+}
+
+func TestCascadeFullscreenRestoresAcrossBand(t *testing.T) {
+	_, w := cascadeMovesCore(t, 3, 3, false)
+	w.FocusID(1)
+	w.ToggleFullWidth() // X=1 alone; 2 and 3 pushed below
+	wantBands(t, w, []WindowID{1}, []WindowID{2, 3})
+	w.FocusID(2)
+	w.ToggleFullscreen()
+	wantBands(t, w, []WindowID{1}, []WindowID{3}, []WindowID{2})
+	w.ToggleFullscreen()
+	w.FocusID(1)
+	w.ToggleFullWidth()
+	wantBands(t, w, []WindowID{1, 2, 3})
+}
+
+func TestFullscreenMoveDestinations(t *testing.T) {
+	t.Run("mayCover refuses", func(t *testing.T) {
+		// A fixed destination refuses a cover unless the window is focused;
+		// the arrival is focused, so it ends fullscreen.
+		c, w := cascadeMovesCore(t, 2, 3, true)
+		dst := screenWorkspace(c, "R")
+		dst.Overflow = OverflowFixed
+		dst.left = 2
+		w.ToggleFullscreen()
+		c.applyAction(ActionMoveColumnRight)
+		wantFocus(t, c, "R", 2)
+		if dst.fullscreen != 2 {
+			t.Fatalf("fullscreen %d, want 2", dst.fullscreen)
+		}
+	})
+	t.Run("stacked column in a band", func(t *testing.T) {
+		c, w := cascadeMovesCore(t, 3, 3, true)
+		w.FocusID(3)
+		c.applyAction(ActionConsumeOrExpelLeft) // 3 under 2
+		w.ToggleFullscreen()                    // 3 expelled to its own band
+		c.applyAction(ActionMoveColumnLeft)
+		wantColumns(t, w, 1, 2)
+		dst := screenWorkspace(c, "L")
+		wantColumns(t, dst, 3)
+		if dst.fullscreen != 3 || len(w.Columns[1].Windows) != 1 {
+			t.Fatalf("fullscreen %d, source column %v", dst.fullscreen, w.Columns[1].Windows)
+		}
+	})
+	t.Run("destination with columns gets its own band", func(t *testing.T) {
+		c, w := cascadeMovesCore(t, 1, 3, true)
+		dst := screenWorkspace(c, "R")
+		dst.Overflow = OverflowCascade
+		dst.SetMaxColumns(3)
+		dst.AddWindow(20)
+		dst.AddWindow(21)
+		w.ToggleFullscreen()
+		c.applyAction(ActionMoveColumnRight)
+		wantBands(t, dst, []WindowID{20, 21}, []WindowID{1})
+		if dst.fullscreen != 1 {
+			t.Fatalf("fullscreen %d", dst.fullscreen)
 		}
 	})
 }
