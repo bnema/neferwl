@@ -53,6 +53,7 @@ type record struct {
 	minW, minH, maxW, maxH         int32
 	title, class                   string // owned, replaced only on change
 	hasNetName                     bool
+	floating                       bool // dialog-like type; set with the properties
 
 	// pairing
 	serial  uint64

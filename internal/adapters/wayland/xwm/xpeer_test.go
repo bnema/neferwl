@@ -90,6 +90,8 @@ type xpeer struct {
 	record   bool
 
 	gate atomic.Pointer[chan struct{}] // closed = reading allowed
+	sbuf [4096]byte
+	sink atomic.Bool // discard requests without recording or allocating
 	done chan struct{}
 }
 
@@ -159,6 +161,12 @@ func (p *xpeer) serve() {
 	}
 	for {
 		<-*p.gate.Load()
+		if p.sink.Load() {
+			if !p.discard() {
+				return
+			}
+			continue
+		}
 		var h [4]byte
 		if _, err := io.ReadFull(p.f, h[:]); err != nil {
 			return
@@ -185,6 +193,30 @@ func (p *xpeer) serve() {
 		p.answer(r, raw[len(raw)-len(rest):])
 		p.mu.Unlock()
 	}
+}
+
+// discard reads and drops one request without allocating. It reports false
+// when the connection ended.
+func (p *xpeer) discard() bool {
+	if _, err := io.ReadFull(p.f, p.sbuf[:4]); err != nil {
+		return false
+	}
+	n := int(binary.LittleEndian.Uint16(p.sbuf[2:])) * 4
+	left := n - 4
+	if n == 0 {
+		if _, err := io.ReadFull(p.f, p.sbuf[:4]); err != nil {
+			return false
+		}
+		left = int(binary.LittleEndian.Uint32(p.sbuf[:4]))*4 - 8
+	}
+	for left > 0 {
+		m, err := p.f.Read(p.sbuf[:min(left, len(p.sbuf))])
+		if err != nil {
+			return false
+		}
+		left -= m
+	}
+	return true
 }
 
 // write sends bytes to the client. The caller holds p.mu.
