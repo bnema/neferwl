@@ -6,7 +6,7 @@ pkgver=0.1.0.r78.ge0b15ca
 pkgrel=1
 pkgdesc='A Wayland compositor that spends its frames on your apps, not on itself (git version)'
 arch=('x86_64' 'aarch64')
-url='https://github.com/bnema/neferwl'
+url='https://git.bnema.dev/neferwl'
 license=('GPL-3.0-only')
 # Loaded at runtime (purego, no cgo): not seen by makepkg's library scan.
 depends=('glibc' 'libinput' 'libxkbcommon' 'seatd' 'systemd-libs' 'vulkan-icd-loader'
@@ -22,7 +22,7 @@ optdepends=('xwayland-satellite>=0.7: X11 apps'
 provides=('neferwl')
 conflicts=('neferwl' 'neferwl-bin')
 install=neferwl.install
-source=('git+https://github.com/bnema/neferwl.git')
+source=('git+https://git.bnema.dev/neferwl.git')
 sha256sums=('SKIP')
 
 pkgver() {

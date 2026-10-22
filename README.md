@@ -47,7 +47,7 @@ make install   # build a package from HEAD and install it with pacman
 
 ### Ubuntu 24.04 and later
 
-Download the `.deb` for your architecture (`amd64` or `arm64`) and `checksums.txt` from [Releases](https://github.com/bnema/neferwl/releases), then install it with apt, which pulls the runtime dependencies:
+Download the `.deb` for your architecture (`amd64` or `arm64`) and `checksums.txt` from [Releases](https://git.bnema.dev/neferwl/releases), then install it with apt, which pulls the runtime dependencies:
 
 ```sh
 sha256sum -c --ignore-missing checksums.txt
@@ -72,7 +72,7 @@ Copy `/usr/share/doc/neferwl/config.example` to `~/.config/neferwl/config` to st
 
 ### Other distributions
 
-Download a `linux_amd64` or `linux_arm64` archive from [Releases](https://github.com/bnema/neferwl/releases) and verify it against `checksums.txt`. To build locally, run `make bin`; the binary is `bin/neferwl`.
+Download a `linux_amd64` or `linux_arm64` archive from [Releases](https://git.bnema.dev/neferwl/releases) and verify it against `checksums.txt`. To build locally, run `make bin`; the binary is `bin/neferwl`.
 
 ## Configuration
 
