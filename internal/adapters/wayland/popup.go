@@ -32,7 +32,7 @@ func (s *Server) newPopup(x *xdgSurface, r *xdgshell.Surface, id uint32, parentX
 	var parent *window
 	if parentXDG != nil {
 		for _, w := range s.windows {
-			if w.xdg.resource != nil && w.xdg.resource.Resource == parentXDG.Resource {
+			if w.xdg != nil && w.xdg.resource != nil && w.xdg.resource.Resource == parentXDG.Resource {
 				parent = w
 			}
 		}
@@ -167,7 +167,7 @@ func (p *popup) configure(c ports.ConfigurePopup) {
 func (s *Server) topGrab(client server.Client, parent *window) bool {
 	var top *window
 	for _, w := range s.windows {
-		if w.popup != nil && w.popup.grab && !w.popup.done && w.xdg.resource.Client() == client && (top == nil || w.id > top.id) {
+		if w.popup != nil && w.popup.grab && !w.popup.done && w.client() == client && (top == nil || w.id > top.id) {
 			top = w
 		}
 	}

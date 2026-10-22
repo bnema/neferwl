@@ -182,7 +182,7 @@ func (s *Server) pacePass(flipped map[string]bool, reports []domain.OutputPresen
 func toplevelRoot(surf *surface) *surface {
 	surf = surf.root()
 	for surf.xdg != nil && surf.xdg.window != nil && surf.xdg.window.popup != nil && surf.xdg.window.popup.parent != nil {
-		surf = surf.xdg.window.popup.parent.xdg.surface.root()
+		surf = surf.xdg.window.popup.parent.surf().root()
 	}
 	return surf
 }

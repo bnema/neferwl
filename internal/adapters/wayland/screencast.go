@@ -147,7 +147,7 @@ func (s *Server) openCast(cmd domain.CastCommand) {
 	gone := domain.CaptureReasonOutputGone
 	if cmd.Window != 0 {
 		gone = domain.CaptureReasonWindowGone
-		if w := s.windows[cmd.Window]; w != nil && w.mapped && w.toplevel != nil {
+		if w := s.windows[cmd.Window]; w != nil && w.mapped && w.isToplevel() {
 			src = &captureSource{kind: srcWindow, window: cmd.Window, gen: w.gen}
 			open.Window = cmd.Window
 		}

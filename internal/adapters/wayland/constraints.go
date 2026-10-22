@@ -62,11 +62,11 @@ func (h pointerWarp) WarpPointer(r *pointerwarp.WpPointerWarpV1, surf *wayland.S
 		return
 	}
 	w := s.windows[s.seat.pointerFocus]
-	if w == nil || !w.mapped || w.xdg.resource.Client() != r.Client() || s.surfaces[surf.Resource] != w.xdg.surface {
+	if w == nil || !w.mapped || w.client() != r.Client() || s.surfaces[surf.Resource] != w.surf() {
 		return
 	}
 	// Surface-local to window-local (core's, from the geometry origin).
-	g := w.xdg.geometry
+	g := w.geometry()
 	s.emit(ports.PointerWarp{ID: w.id, X: x.Float() - float64(g.X), Y: y.Float() - float64(g.Y)})
 }
 
@@ -81,12 +81,12 @@ func (s *Server) relativeMotion(w *window, c ports.PointerMotionTo) bool {
 	if s.protected() || c.DX == 0 && c.DY == 0 && c.UnaccelDX == 0 && c.UnaccelDY == 0 {
 		return false
 	}
-	if !w.mapped || !w.xdg.resource.Resource.Alive() {
+	if !w.mapped || !w.alive() {
 		return false
 	}
 	sent := false
 	usec := uint64(c.Time / time.Microsecond)
-	for _, rel := range s.relatives[w.xdg.resource.Client()] {
+	for _, rel := range s.relatives[w.client()] {
 		if rel.Resource.Alive() {
 			rel.SendRelativeMotion(uint32(usec>>32), uint32(usec), server.FixedFromFloat(c.DX), server.FixedFromFloat(c.DY), server.FixedFromFloat(c.UnaccelDX), server.FixedFromFloat(c.UnaccelDY))
 			sent = true
@@ -273,7 +273,7 @@ func (s *Server) updateConstraint() {
 	}
 	var want *constraint
 	if w := s.windows[s.seat.pointerFocus]; w != nil && w.mapped && s.seat.pointerFocus == s.seat.focused {
-		if c := s.constraints[w.xdg.surface]; c != nil && c.surface.wl == s.seat.entered && !c.defunct && (c.active || c.contains(w)) {
+		if c := s.constraints[w.surf()]; c != nil && c.surface.wl == s.seat.entered && !c.defunct && (c.active || c.contains(w)) {
 			want = c
 		}
 	}
@@ -341,10 +341,10 @@ func (s *Server) emitConstraint(c *constraint) {
 // activates only there, so it never warps the pointer.
 func (c *constraint) contains(w *window) bool {
 	r := c.region
-	x, y := w.surfacePoint(w.xdg.server.seat.pointerX, w.xdg.server.seat.pointerY)
+	x, y := w.surfacePoint(c.surface.server.seat.pointerX, c.surface.server.seat.pointerY)
 	all, rects := c.surface.effectiveInput()
 	if !all {
-		localX, localY := x-float64(w.xdg.geometry.X), y-float64(w.xdg.geometry.Y)
+		localX, localY := x-float64(w.geometry().X), y-float64(w.geometry().Y)
 		inside := false
 		for _, input := range rects {
 			if localX >= float64(input.X) && localX < float64(input.X+input.W) && localY >= float64(input.Y) && localY < float64(input.Y+input.H) {
@@ -364,5 +364,5 @@ func (c *constraint) contains(w *window) bool {
 
 // locked reports whether the window's pointer is locked.
 func (s *Server) locked(w *window) bool {
-	return !s.protected() && s.constraint != nil && s.constraint.lock != nil && s.constraint.surface == w.xdg.surface
+	return !s.protected() && s.constraint != nil && s.constraint.lock != nil && s.constraint.surface == w.surf()
 }

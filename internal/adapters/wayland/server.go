@@ -225,8 +225,11 @@ type Server struct {
 	// foreignExports are the live xdg-foreign handles (foreign.go).
 	foreignExports map[string]*foreignExport
 	surfaces       map[*server.Resource]*surface
-	buffers        map[*server.Resource]clientBuffer
-	dmabuf         *dmabufGlobal
+	// surfaceByIdentity finds a surface by its identity (xwayland_shell_v1
+	// pairing); kept with surfaces.
+	surfaceByIdentity map[uint64]*surface
+	buffers           map[*server.Resource]clientBuffer
+	dmabuf            *dmabufGlobal
 	// hdrOutputs records confirmed DRM modesets; absent outputs are SDR.
 	hdrOutputs        map[string]domain.OutputHDR
 	colorID           uint64
@@ -379,6 +382,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		logDamage:          opts.LogDamage,
 		channels:           ch,
 		surfaces:           make(map[*server.Resource]*surface),
+		surfaceByIdentity:  make(map[uint64]*surface),
 		buffers:            make(map[*server.Resource]clientBuffer),
 		windows:            make(map[domain.WindowID]*window),
 		layers:             make(map[domain.WindowID]*layerSurface),
@@ -797,7 +801,7 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		}
 	case ports.ConfigureWindow:
 		w := s.windows[c.ID]
-		if w == nil || w.toplevel == nil || !w.toplevel.Resource.Alive() || !w.xdg.resource.Resource.Alive() {
+		if w == nil || !w.toplevelAlive() || !w.alive() {
 			s.log.Debug().Uint64("id", uint64(c.ID)).Msg("configure missing window")
 			return
 		}
@@ -808,16 +812,16 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		scanoutChanged := !w.hasLast || w.last.Fullscreen != c.Fullscreen || w.last.Output != c.Output || w.last.Visible != c.Visible
 		w.last, w.hasLast = c, true
 		if visibilityChanged {
-			s.relocateCallbacks(w.xdg.surface)
+			s.relocateCallbacks(w.surf())
 			s.dropFeedbacks(time.Now())
 			s.wakePacer() // reconsider FIFO barriers at the new period
 		}
 		w.sendConfigure()
 		s.toplevelChanged(w)
-		if scanoutChanged && w.xdg.surface != nil {
-			s.dmabuf.resendSurface(w.xdg.surface)
+		if scanoutChanged && w.surf() != nil {
+			s.dmabuf.resendSurface(w.surf())
 		}
-		if surf := w.xdg.surface; surf != nil && c.Output != "" {
+		if surf := w.surf(); surf != nil && c.Output != "" {
 			surf.sendTreeScale()
 		}
 		if scanoutChanged {
@@ -838,10 +842,10 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		s.setShortcutsInhibit(c)
 	case ports.CloseWindow:
 		w := s.windows[c.ID]
-		if w == nil || w.toplevel == nil || !w.toplevel.Resource.Alive() {
+		if w == nil || !w.toplevelAlive() {
 			s.log.Debug().Uint64("id", uint64(c.ID)).Msg("close missing window")
 			return
 		}
-		w.toplevel.SendClose()
+		w.sendClose()
 	}
 }

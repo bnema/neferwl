@@ -73,7 +73,7 @@ func (*extToplevelList) Destroy(*ext.ExtForeignToplevelListV1) {}
 func (s *Server) mappedToplevels() []domain.WindowID {
 	ids := make([]domain.WindowID, 0, len(s.windows))
 	for id, w := range s.windows {
-		if w.toplevel != nil && w.mapped {
+		if w.isToplevel() && w.mapped {
 			ids = append(ids, id)
 		}
 	}

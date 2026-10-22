@@ -76,7 +76,7 @@ func (w *window) setModal(modal bool) {
 		return
 	}
 	w.modal = modal
-	if w.mapped {
+	if w.mapped && w.xdg != nil {
 		w.xdg.server.emit(ports.WindowModal{ID: w.id, Modal: modal})
 	}
 }

@@ -282,10 +282,10 @@ func (s *Server) setModifiers(c ports.SetModifiers) {
 }
 
 func (s *Server) windowKeyboards(w *window) []*wayland.Keyboard {
-	if w == nil || !w.mapped || !w.xdg.resource.Resource.Alive() {
+	if w == nil || !w.mapped || !w.alive() {
 		return nil
 	}
-	return s.clientKeyboards(w.xdg.resource.Client())
+	return s.clientKeyboards(w.client())
 }
 
 // clientKeyboards returns c's wl_keyboards without allocating. The list holds
@@ -307,7 +307,7 @@ func (s *Server) focusTarget(id domain.WindowID) (*wayland.Surface, []*wayland.K
 		return l.surface.wl, s.clientKeyboards(l.surface.wl.Client())
 	}
 	if w := s.windows[id]; w != nil && w.mapped {
-		if surf := w.xdg.surfaceResource(); surf != nil {
+		if surf := w.surfaceResource(); surf != nil {
 			return surf, s.windowKeyboards(w)
 		}
 	}
@@ -325,8 +325,8 @@ func (s *Server) pointerTarget(id domain.WindowID) (server.Client, []*wayland.Po
 	if l := s.lockSurfaces[id]; l != nil && s.lockInputTarget(id) {
 		return l.resource.Client(), s.clientPointers(l.resource.Client()), true
 	}
-	if w := s.windows[id]; w != nil && w.mapped && w.xdg.resource.Resource.Alive() {
-		return w.xdg.resource.Client(), s.windowPointers(w), true
+	if w := s.windows[id]; w != nil && w.mapped && w.alive() {
+		return w.client(), s.windowPointers(w), true
 	}
 	if l := s.layers[id]; l != nil && l.mapped && l.resource.Resource.Alive() {
 		return l.resource.Client(), s.layerPointers(l), true
@@ -341,7 +341,7 @@ func (s *Server) pointerSurface(id domain.WindowID, x, y float64) (*wayland.Surf
 		return l.surface.wl, s.clientPointers(l.surface.wl.Client()), x, y
 	}
 	if w := s.windows[id]; w != nil && w.mapped {
-		if surf := w.xdg.surface.wl; surf != nil && surf.Resource.Alive() {
+		if surf := w.surfaceResource(); surf != nil && surf.Resource.Alive() {
 			x, y := w.surfacePoint(x, y)
 			return s.resolvePointerSurface(surf, s.windowPointers(w), x, y)
 		}
@@ -570,10 +570,10 @@ func pointerFrame(p *wayland.Pointer) {
 	}
 }
 func (s *Server) windowPointers(w *window) []*wayland.Pointer {
-	if w == nil || !w.mapped || !w.xdg.resource.Resource.Alive() {
+	if w == nil || !w.mapped || !w.alive() {
 		return nil
 	}
-	return s.clientPointers(w.xdg.resource.Client())
+	return s.clientPointers(w.client())
 }
 
 func (s *Server) layerPointers(l *layerSurface) []*wayland.Pointer {

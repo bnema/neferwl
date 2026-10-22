@@ -80,7 +80,7 @@ func (d *decoration) UnsetMode(r *xdgdecoration.ZxdgToplevelDecorationV1)       
 func (d *decoration) send(r *xdgdecoration.ZxdgToplevelDecorationV1) {
 	r.SendConfigure(uint32(xdgdecoration.ZxdgToplevelDecorationV1ModeServerSide))
 	for _, w := range d.s.windows {
-		if w.toplevel == d.toplevel && w.hasLast && w.toplevel.Resource.Alive() && w.xdg.resource.Resource.Alive() {
+		if w.toplevel == d.toplevel && w.hasLast && w.toplevelAlive() && w.alive() {
 			w.sendConfigure()
 			return
 		}

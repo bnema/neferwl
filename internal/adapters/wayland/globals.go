@@ -131,8 +131,13 @@ func (c compositor) CreateSurface(r *wayland.Compositor, id uint32) {
 		state.identity = c.server.nextSurface
 		state.wl = w
 		c.server.surfaces[w.Resource] = state
+		c.server.surfaceByIdentity[state.identity] = state
 		state.sendScale()
-		w.OnDestroy = func() { delete(c.server.surfaces, w.Resource); state.Destroy(w) }
+		w.OnDestroy = func() {
+			delete(c.server.surfaces, w.Resource)
+			delete(c.server.surfaceByIdentity, state.identity)
+			state.Destroy(w)
+		}
 	}
 }
 func (c compositor) CreateRegion(r *wayland.Compositor, id uint32) {

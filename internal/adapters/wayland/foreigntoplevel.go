@@ -46,7 +46,7 @@ func registerForeignToplevel(d *server.Display, s *Server) error {
 		r.OnDestroy = func() { s.toplevelManagers = removeItem(s.toplevelManagers, m) }
 		ids := make([]domain.WindowID, 0, len(s.windows))
 		for id, w := range s.windows {
-			if w.toplevel != nil && w.mapped {
+			if w.isToplevel() && w.mapped {
 				ids = append(ids, id)
 			}
 		}
@@ -188,7 +188,7 @@ func toplevelState(w *window, version int32) []byte {
 
 // toplevelChanged updates every manager after w mapped or changed.
 func (s *Server) toplevelChanged(w *window) {
-	if w.toplevel == nil || !w.mapped {
+	if !w.isToplevel() || !w.mapped {
 		return
 	}
 	for _, m := range s.toplevelManagers {
@@ -222,7 +222,7 @@ func (s *Server) refreshToplevels() {
 	for _, l := range s.extToplevelLists {
 		for id, h := range l.handles {
 			w := s.windows[id]
-			if h.closed || w == nil || w.toplevel == nil || !w.mapped {
+			if h.closed || w == nil || !w.isToplevel() || !w.mapped {
 				l.closed(id)
 			}
 		}
@@ -233,7 +233,7 @@ func (s *Server) refreshToplevels() {
 	for _, m := range s.toplevelManagers {
 		for id, h := range m.handles {
 			w := s.windows[id]
-			if h.req.closed || w == nil || w.toplevel == nil || !w.mapped {
+			if h.req.closed || w == nil || !w.isToplevel() || !w.mapped {
 				m.closed(id)
 			}
 		}
@@ -255,7 +255,7 @@ func (t *toplevelRequests) window() *window {
 	if t.s.protected() || t.closed {
 		return nil
 	}
-	if w := t.s.windows[t.id]; w != nil && w.toplevel != nil && w.mapped && w.toplevel.Resource.Alive() {
+	if w := t.s.windows[t.id]; w != nil && w.toplevelAlive() && w.mapped {
 		return w
 	}
 	return nil
@@ -276,7 +276,7 @@ func (t *toplevelRequests) Activate(*wlr.ZwlrForeignToplevelHandleV1, *wayland.S
 }
 func (t *toplevelRequests) Close(*wlr.ZwlrForeignToplevelHandleV1) {
 	if w := t.window(); w != nil {
-		w.toplevel.SendClose()
+		w.sendClose()
 	}
 }
 func (t *toplevelRequests) SetRectangle(r *wlr.ZwlrForeignToplevelHandleV1, _ *wayland.Surface, _, _, w, h int32) {

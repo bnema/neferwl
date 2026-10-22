@@ -28,6 +28,10 @@ const (
 	roleSessionLock
 	// roleDragIcon is the icon of a data drag (dnd.go).
 	roleDragIcon
+	// roleX11 is the surface of an X11 window paired through
+	// xwayland_shell_v1.
+	//lint:ignore U1000 used by the X11 window role (xwm)
+	roleX11
 )
 
 type surface struct {

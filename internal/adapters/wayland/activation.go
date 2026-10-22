@@ -66,7 +66,7 @@ func (a activation) Activate(_ *xdgactivation.ActivationV1, token string, surf *
 	}
 	var w *window
 	if reason == "" {
-		if w = s.windows[state.root().windowID()]; w == nil || w.toplevel == nil || !w.mapped {
+		if w = s.windows[state.root().windowID()]; w == nil || !w.isToplevel() || !w.mapped {
 			reason = "not_toplevel"
 		}
 	}
@@ -116,8 +116,8 @@ func (t *tokenRequest) Commit(r *xdgactivation.ActivationTokenV1) {
 
 // focusClient is the client with the keyboard focus.
 func (s *Server) focusClient() server.Client {
-	if w := s.windows[s.seat.focused]; w != nil && w.xdg.resource.Resource.Alive() {
-		return w.xdg.resource.Client()
+	if w := s.windows[s.seat.focused]; w != nil && w.alive() {
+		return w.client()
 	}
 	if l := s.layers[s.seat.focused]; l != nil && l.resource.Resource.Alive() {
 		return l.resource.Client()

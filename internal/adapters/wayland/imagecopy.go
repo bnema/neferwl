@@ -355,7 +355,7 @@ func (c *captureTarget) geometry() (o *output, rect image.Rectangle, hidden, ok 
 	case srcWindow:
 		// Core's state gives the size; before it, the last configure.
 		w := c.s.windows[src.window]
-		if w == nil || !w.mapped || w.toplevel == nil || w.gen != src.gen {
+		if w == nil || !w.mapped || !w.isToplevel() || w.gen != src.gen {
 			return nil, image.Rectangle{}, false, false
 		}
 		name, size := w.last.Output, domain.Rect{W: w.last.Width, H: w.last.Height}

@@ -155,8 +155,8 @@ type window struct {
 	hasLast bool
 }
 
-// sendConfigure sends w.last as xdg_toplevel + xdg_surface configure.
-func (w *window) sendConfigure() {
+// sendXDGConfigure sends w.last as xdg_toplevel + xdg_surface configure.
+func (w *window) sendXDGConfigure() {
 	c := w.last
 	w.toplevel.SendConfigure(int32(c.Width), int32(c.Height), toplevelStates(c, w.toplevel.Version()))
 	s := w.xdg.server
