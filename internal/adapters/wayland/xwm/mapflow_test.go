@@ -50,8 +50,8 @@ func (hs *harness) create(win uint32) Slot {
 	hs.t.Helper()
 	hs.expectCreated(win)
 	hs.p.createNotify(win, false)
-	readUntil(hs.t, hs.x, func() bool { return hs.x.Slot(win) != 0 })
-	return hs.x.Slot(win)
+	readUntil(hs.t, hs.x, func() bool { return hs.x.tab.lookup(win) != 0 })
+	return hs.x.tab.lookup(win)
 }
 
 // mapAndWait creates and maps win and waits for Ready.
@@ -247,7 +247,7 @@ func TestMapFlowPIDFromXRes(t *testing.T) {
 	readUntil(t, hs.x, func() bool { _, ok := hs.ready[win]; return ok })
 	require.Equal(t, 777, hs.ready[win].PID, "Ready waited for the QueryClientIds reply")
 	require.Equal(t, 1, hs.count(func(r xpeerReq) bool { return r.major == 144 && r.minor == 4 }))
-	require.Zero(t, hs.x.tab.rec(hs.x.Slot(win)).pending)
+	require.Zero(t, hs.x.tab.rec(hs.x.tab.lookup(win)).pending)
 }
 
 func TestMapFlowPIDUnknownStillReady(t *testing.T) {
@@ -293,7 +293,7 @@ func TestMapFlowBadWindowOnPropertiesNeverReady(t *testing.T) {
 
 	hs.h.EXPECT().Dissociate(s, true).Once()
 	hs.p.destroyNotify(win)
-	readUntil(t, hs.x, func() bool { return hs.x.Slot(win) == 0 })
+	readUntil(t, hs.x, func() bool { return hs.x.tab.lookup(win) == 0 })
 }
 
 func TestMapRequestTwiceBeforeReadyAsksOnce(t *testing.T) {
@@ -518,10 +518,10 @@ func TestPairingDuplicateSerialIgnored(t *testing.T) {
 func TestPairingUnmanagedKeepsSurfaceWithoutAssociate(t *testing.T) {
 	hs := newHarness(t, nil)
 	hs.p.createNotify(0x500009, true)
-	readUntil(t, hs.x, func() bool { return hs.x.Slot(0x500009) != 0 })
+	readUntil(t, hs.x, func() bool { return hs.x.tab.lookup(0x500009) != 0 })
 	hs.serialMsg(0x500009, 3)
 	hs.x.SetSerial(5, 3) // the mock fails on an Associate
-	require.EqualValues(t, 5, hs.x.tab.rec(hs.x.Slot(0x500009)).surface)
+	require.EqualValues(t, 5, hs.x.tab.rec(hs.x.tab.lookup(0x500009)).surface)
 }
 
 func TestPairingTableOverflowDropsOldest(t *testing.T) {
@@ -620,7 +620,7 @@ func TestDestroyWhileMappingNeverReady(t *testing.T) {
 	hs.waitMap(win)
 	hs.h.EXPECT().Dissociate(s, true).Once()
 	hs.p.destroyNotify(win)
-	readUntil(t, hs.x, func() bool { return hs.x.Slot(win) == 0 })
+	readUntil(t, hs.x, func() bool { return hs.x.tab.lookup(win) == 0 })
 	replies := hs.x.Stats().Replies
 	hs.p.release() // replies for a window that is gone: xturbo retired their slots
 	readUntil(t, hs.x, func() bool { return hs.x.conn.Stats().DroppedReplies >= uint64(propCount) })
@@ -638,12 +638,12 @@ func TestStaleRepliesAfterSlotReuseAreIgnored(t *testing.T) {
 	hs.waitMap(old)
 	hs.h.EXPECT().Dissociate(s, true).Once()
 	hs.p.destroyNotify(old)
-	readUntil(t, hs.x, func() bool { return hs.x.Slot(old) == 0 })
+	readUntil(t, hs.x, func() bool { return hs.x.tab.lookup(old) == 0 })
 
 	hs.expectCreated(fresh)
 	hs.p.createNotify(fresh, false)
-	readUntil(t, hs.x, func() bool { return hs.x.Slot(fresh) != 0 })
-	require.Equal(t, s, hs.x.Slot(fresh), "the freed slot is reused")
+	readUntil(t, hs.x, func() bool { return hs.x.tab.lookup(fresh) != 0 })
+	require.Equal(t, s, hs.x.tab.lookup(fresh), "the freed slot is reused")
 
 	hs.p.release()
 	readUntil(t, hs.x, func() bool { return hs.x.conn.Stats().DroppedReplies >= uint64(propCount) })
@@ -669,7 +669,7 @@ func TestReparentAwayFromRootRemovesManagedWindow(t *testing.T) {
 	s := hs.mapAndWait(win)
 	hs.h.EXPECT().Dissociate(s, true).Once()
 	hs.p.reparentNotify(win, 0x600000)
-	readUntil(t, hs.x, func() bool { return hs.x.Slot(win) == 0 })
+	readUntil(t, hs.x, func() bool { return hs.x.tab.lookup(win) == 0 })
 	list, _ := hs.p.prop(peerRoot, "_NET_CLIENT_LIST")
 	require.Empty(t, list.data)
 	require.Zero(t, hs.x.tab.n)
@@ -678,9 +678,9 @@ func TestReparentAwayFromRootRemovesManagedWindow(t *testing.T) {
 func TestReparentAwayOfUnmanagedWindowRemovesIt(t *testing.T) {
 	hs := newHarness(t, nil)
 	hs.p.createNotify(0x500009, true)
-	readUntil(t, hs.x, func() bool { return hs.x.Slot(0x500009) != 0 })
+	readUntil(t, hs.x, func() bool { return hs.x.tab.lookup(0x500009) != 0 })
 	hs.p.reparentNotify(0x500009, 0x600000)
-	readUntil(t, hs.x, func() bool { return hs.x.Slot(0x500009) == 0 })
+	readUntil(t, hs.x, func() bool { return hs.x.tab.lookup(0x500009) == 0 })
 }
 
 func TestReparentIntoRootAdoptsWindow(t *testing.T) {
@@ -688,8 +688,8 @@ func TestReparentIntoRootAdoptsWindow(t *testing.T) {
 	const win = 0x500001
 	hs.expectCreated(win)
 	hs.p.reparentNotify(win, peerRoot)
-	readUntil(t, hs.x, func() bool { return hs.x.Slot(win) != 0 })
-	require.Equal(t, kindManaged, hs.x.tab.rec(hs.x.Slot(win)).kind)
+	readUntil(t, hs.x, func() bool { return hs.x.tab.lookup(win) != 0 })
+	require.Equal(t, kindManaged, hs.x.tab.rec(hs.x.tab.lookup(win)).kind)
 
 	// Already known: no second Created.
 	hs.p.reparentNotify(win, peerRoot)
@@ -704,15 +704,15 @@ func TestReparentIntoRootOfOverrideRedirectWindowStaysUnmanaged(t *testing.T) {
 		binary.LittleEndian.PutUint32(b[12:], peerRoot)
 		b[20] = 1
 	})
-	readUntil(t, hs.x, func() bool { return hs.x.Slot(0x500009) != 0 })
-	require.Equal(t, kindUnmanaged, hs.x.tab.rec(hs.x.Slot(0x500009)).kind)
+	readUntil(t, hs.x, func() bool { return hs.x.tab.lookup(0x500009) != 0 })
+	require.Equal(t, kindUnmanaged, hs.x.tab.rec(hs.x.tab.lookup(0x500009)).kind)
 }
 
 func TestReparentOfWMWindowIgnored(t *testing.T) {
 	hs := newHarness(t, nil)
 	hs.p.reparentNotify(hs.x.wmWin, peerRoot)
 	readUntil(t, hs.x, func() bool { return hs.x.Stats().Events >= 1 })
-	require.Zero(t, hs.x.Slot(hs.x.wmWin))
+	require.Zero(t, hs.x.tab.lookup(hs.x.wmWin))
 }
 
 // Window known only before Attach: Attach replays the map flow.

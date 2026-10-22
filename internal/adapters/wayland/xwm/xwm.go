@@ -337,6 +337,10 @@ func (x *XWM) Close() {
 		return
 	}
 	x.closed = true
+	s := x.stats
+	x.log.Info().Uint64("events", s.Events).Uint64("replies", s.Replies).Uint64("errors", s.Errors).
+		Uint64("unattributed", s.Unattributed).Uint64("stale", s.Stale).Uint64("ring_full", s.RingFull).
+		Uint64("legacy_id", s.LegacyID).Uint64("unmanaged_seen", s.UnmanagedSeen).Msg("X11 window management closed")
 	if x.src != nil {
 		x.src.Remove()
 		x.src = nil
@@ -375,11 +379,8 @@ func (x *XWM) fail(err error) {
 	x.Close()
 }
 
-// Stats returns the counters.
+// Stats returns the counters; Close logs them.
 func (x *XWM) Stats() Stats { return x.stats }
-
-// Slot returns the slot of the X window xid, or 0.
-func (x *XWM) Slot(xid uint32) Slot { return x.tab.lookup(xid) }
 
 func (x *XWM) onReadable() {
 	if x.closed {

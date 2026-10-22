@@ -132,7 +132,7 @@ func TestGetGeometryBadDrawableIsNotReady(t *testing.T) {
 	require.False(t, hs.x.tab.rec(s).ready)
 	hs.h.EXPECT().Dissociate(s, true).Once()
 	hs.p.destroyNotify(win)
-	readUntil(t, hs.x, func() bool { return hs.x.Slot(win) == 0 })
+	readUntil(t, hs.x, func() bool { return hs.x.tab.lookup(win) == 0 })
 }
 
 // A host that refocuses the window while dissociating it must not leave a
@@ -143,7 +143,7 @@ func TestForgetWindowClearsActiveSetByHost(t *testing.T) {
 	s := newWin(t, x, p, h, win)
 	h.EXPECT().Dissociate(s, true).Run(func(sl Slot, _ bool) { x.Focus(sl) }).Once()
 	p.destroyNotify(win)
-	readUntil(t, x, func() bool { return x.Slot(win) == 0 })
+	readUntil(t, x, func() bool { return x.tab.lookup(win) == 0 })
 	require.Zero(t, x.active)
 	require.False(t, x.refocus)
 	settle(t, x, p)

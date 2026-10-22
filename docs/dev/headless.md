@@ -67,7 +67,7 @@ WAYLAND_DISPLAY=<name> go run ./examples/testime -preedit nihon -commit 日本
 
 `make e2e-xwayland` runs the end-to-end test of the built-in window manager (`xwayland = builtin`). It is behind the `xwayland` build tag, so `go test ./...` and `make check` only compile it (`go vet -tags xwayland`). It needs `Xwayland` on `PATH` and a GPU, and skips without Xwayland.
 
-The test starts a headless NeferWL with a real `Xwayland` and runs `internal/app/testdata/x11probe`, a small X11 client (`-class`, `-title`, `-size`, `-sleep`) that paints its window green, prints `mapped WxH` and `focus`, and exits 0 on `WM_DELETE_WINDOW`. It checks:
+The test starts a headless NeferWL with a real `Xwayland` on the first free X display (a live session's `:0` stays untouched) and runs `internal/app/testdata/x11probe`, a small X11 client (`-class`, `-title`, `-size`, `-sleep`) that paints its window green, prints `mapped WxH` and `focus`, and exits 0 on `WM_DELETE_WINDOW`. It checks:
 
 - the state lists one visible `X11Probe` window with the probe's pid, and the screenshot is mostly green inside its tile;
 - the probe receives focus;

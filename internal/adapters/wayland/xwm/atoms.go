@@ -1,7 +1,7 @@
 package xwm
 
-// Atoms interned at boot, in this fixed order. Clipboard and selection atoms
-// are interned now so later phases add no round trip.
+// Atoms interned at boot in one round trip, in this fixed order. The table
+// includes the clipboard and selection atoms.
 const (
 	atomWMProtocols = iota
 	atomWMDeleteWindow

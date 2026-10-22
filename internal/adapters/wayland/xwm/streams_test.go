@@ -64,6 +64,11 @@ func streamScenario(t *testing.T) *harness {
 	hs := newHarness(t, nil)
 	hs.classic(streamWin)
 	hs.mapAndWait(streamWin)
+	// The steady state is a focused window: a FocusIn on it is not denied,
+	// so no request depends on how events are batched into flushes. The
+	// poke makes sure the focus requests are out before the peer pauses.
+	hs.x.Focus(hs.x.tab.lookup(streamWin))
+	poke(hs)
 	return hs
 }
 
@@ -168,11 +173,11 @@ func replay(t *testing.T, k streamKind) (mallocs uint64, hs *harness) {
 func TestPropertyUnchangedAllocations(t *testing.T) {
 	m, hs := replay(t, streamKinds[0])
 	require.Zero(t, m, "unchanged property cycles must not allocate")
-	require.Equal(t, "net title", hs.x.tab.rec(hs.x.Slot(streamWin)).title)
+	require.Equal(t, "net title", hs.x.tab.rec(hs.x.tab.lookup(streamWin)).title)
 }
 
 func TestDispatchAllocations(t *testing.T) {
 	m, hs := replay(t, streamKinds[1])
 	require.Zero(t, m, "steady-state event dispatch must not allocate")
-	require.True(t, hs.x.tab.rec(hs.x.Slot(streamWin)).mapped)
+	require.True(t, hs.x.tab.rec(hs.x.tab.lookup(streamWin)).mapped)
 }

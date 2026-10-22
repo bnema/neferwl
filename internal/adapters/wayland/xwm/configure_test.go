@@ -15,8 +15,8 @@ func newWin(t *testing.T, x *XWM, p *xpeer, h *mockhost, xid uint32) Slot {
 	t.Helper()
 	h.EXPECT().Created(mock.Anything, xid).Return(ports.WindowID(xid)).Once()
 	p.createNotify(xid, false)
-	readUntil(t, x, func() bool { return x.Slot(xid) != 0 })
-	s := x.Slot(xid)
+	readUntil(t, x, func() bool { return x.tab.lookup(xid) != 0 })
+	s := x.tab.lookup(xid)
 	r := x.tab.rec(s)
 	r.ready, r.w, r.h = true, 300, 200
 	return s
@@ -209,7 +209,7 @@ func TestConfigureRequestUnmanagedHonouredVerbatim(t *testing.T) {
 	x, p, _, _, _ := attached(t)
 	const win = 0x500009
 	p.createNotify(win, true)
-	readUntil(t, x, func() bool { return x.Slot(win) != 0 })
+	readUntil(t, x, func() bool { return x.tab.lookup(win) != 0 })
 	n := settle(t, x, p)
 
 	x.feed(t, p, func() {
@@ -235,7 +235,7 @@ func TestConfigureStaleAndDuplicateDirtySlots(t *testing.T) {
 	// The window dies with its entry queued; the slot is reused.
 	h.EXPECT().Dissociate(s, true).Once()
 	p.destroyNotify(a)
-	readUntil(t, x, func() bool { return x.Slot(a) == 0 })
+	readUntil(t, x, func() bool { return x.tab.lookup(a) == 0 })
 	s2 := newWin(t, x, p, h, b)
 	require.Equal(t, s, s2, "LIFO slot reuse")
 	n := len(p.requests())
@@ -258,13 +258,13 @@ func TestDirtyQueueNeverGrows(t *testing.T) {
 		xid := uint32(base + i)
 		h.EXPECT().Created(mock.Anything, xid).Return(ports.WindowID(1)).Once()
 		p.createNotify(xid, false)
-		readUntil(t, x, func() bool { return x.Slot(xid) != 0 })
-		s := x.Slot(xid)
+		readUntil(t, x, func() bool { return x.tab.lookup(xid) != 0 })
+		s := x.tab.lookup(xid)
 		x.tab.rec(s).ready = true
 		x.Configure(s, ports.ConfigureWindow{Width: 10, Height: 10})
 		h.EXPECT().Dissociate(s, true).Once()
 		p.destroyNotify(xid)
-		readUntil(t, x, func() bool { return x.Slot(xid) == 0 })
+		readUntil(t, x, func() bool { return x.tab.lookup(xid) == 0 })
 	}
 	require.Equal(t, c0, cap(x.dirty))
 	require.LessOrEqual(t, len(x.dirty), c0)
@@ -431,7 +431,7 @@ func TestDestroyedActiveWindowClearsActive(t *testing.T) {
 	settle(t, x, p)
 	h.EXPECT().Dissociate(s, true).Once()
 	p.destroyNotify(win)
-	readUntil(t, x, func() bool { return x.Slot(win) == 0 })
+	readUntil(t, x, func() bool { return x.tab.lookup(win) == 0 })
 	settle(t, x, p)
 	require.Zero(t, x.active)
 	act, _ := p.prop(peerRoot, "_NET_ACTIVE_WINDOW")

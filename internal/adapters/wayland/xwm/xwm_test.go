@@ -178,10 +178,10 @@ func TestBootExistingWindows(t *testing.T) {
 		p.attrs[0x400002] = [2]byte{1, 2} // override-redirect, viewable
 	})
 	_ = p
-	require.NotZero(t, x.Slot(0x400001))
-	require.NotZero(t, x.Slot(0x400002))
-	require.Equal(t, kindManaged, x.tab.rec(x.Slot(0x400001)).kind)
-	require.Equal(t, kindUnmanaged, x.tab.rec(x.Slot(0x400002)).kind)
+	require.NotZero(t, x.tab.lookup(0x400001))
+	require.NotZero(t, x.tab.lookup(0x400002))
+	require.Equal(t, kindManaged, x.tab.rec(x.tab.lookup(0x400001)).kind)
+	require.Equal(t, kindUnmanaged, x.tab.rec(x.tab.lookup(0x400002)).kind)
 }
 
 // readUntil dispatches the socket until cond holds.
@@ -209,10 +209,10 @@ func TestAttachAnnouncesWindowsFoundAtBoot(t *testing.T) {
 	})
 	h := newMockhost(t)
 	src := newMockfdSource(t)
-	h.EXPECT().Created(x.Slot(0x400001), uint32(0x400001)).Return(ports.WindowID(7)).Once()
+	h.EXPECT().Created(x.tab.lookup(0x400001), uint32(0x400001)).Return(ports.WindowID(7)).Once()
 	post, _ := newPost()
 	x.attach(src, h, post)
-	require.Equal(t, ports.WindowID(7), x.tab.rec(x.Slot(0x400001)).id)
+	require.Equal(t, ports.WindowID(7), x.tab.rec(x.tab.lookup(0x400001)).id)
 }
 
 func attached(t *testing.T) (*XWM, *xpeer, *mockhost, *mockfdSource, *[]func()) {
@@ -230,8 +230,8 @@ func TestCreateAndDestroyManaged(t *testing.T) {
 	const win = 0x500001
 	h.EXPECT().Created(mock.Anything, uint32(win)).Return(ports.WindowID(3)).Once()
 	p.createNotify(win, false)
-	readUntil(t, x, func() bool { return x.Slot(win) != 0 })
-	s := x.Slot(win)
+	readUntil(t, x, func() bool { return x.tab.lookup(win) != 0 })
+	s := x.tab.lookup(win)
 	require.Equal(t, kindManaged, x.tab.rec(s).kind)
 	require.Equal(t, ports.WindowID(3), x.tab.rec(s).id)
 
@@ -241,7 +241,7 @@ func TestCreateAndDestroyManaged(t *testing.T) {
 
 	h.EXPECT().Dissociate(s, true).Once()
 	p.destroyNotify(win)
-	readUntil(t, x, func() bool { return x.Slot(win) == 0 })
+	readUntil(t, x, func() bool { return x.tab.lookup(win) == 0 })
 	require.Zero(t, x.tab.n)
 	_ = src
 }
@@ -253,18 +253,18 @@ func TestOwnWindowNeverAdopted(t *testing.T) {
 	p.createNotify(x.wmWin, false)
 	const marker = 0x500003
 	p.createNotify(marker, true)
-	readUntil(t, x, func() bool { return x.Slot(marker) != 0 })
-	require.Zero(t, x.Slot(x.wmWin))
+	readUntil(t, x, func() bool { return x.tab.lookup(marker) != 0 })
+	require.Zero(t, x.tab.lookup(x.wmWin))
 }
 
 func TestOverrideRedirectNeverReachesHost(t *testing.T) {
 	x, p, _, _, _ := attached(t) // the mock fails the test on any host call
 	p.createNotify(0x500002, true)
-	readUntil(t, x, func() bool { return x.Slot(0x500002) != 0 })
-	require.Equal(t, kindUnmanaged, x.tab.rec(x.Slot(0x500002)).kind)
+	readUntil(t, x, func() bool { return x.tab.lookup(0x500002) != 0 })
+	require.Equal(t, kindUnmanaged, x.tab.rec(x.tab.lookup(0x500002)).kind)
 	require.EqualValues(t, 1, x.Stats().UnmanagedSeen)
 	p.destroyNotify(0x500002)
-	readUntil(t, x, func() bool { return x.Slot(0x500002) == 0 })
+	readUntil(t, x, func() bool { return x.tab.lookup(0x500002) == 0 })
 }
 
 func TestCloseDissociatesEverything(t *testing.T) {
@@ -274,9 +274,9 @@ func TestCloseDissociatesEverything(t *testing.T) {
 		p.createNotify(win, false)
 	}
 	p.createNotify(0x500003, true)
-	readUntil(t, x, func() bool { return x.Slot(0x500003) != 0 })
-	h.EXPECT().Dissociate(x.Slot(0x500001), true).Once()
-	h.EXPECT().Dissociate(x.Slot(0x500002), true).Once()
+	readUntil(t, x, func() bool { return x.tab.lookup(0x500003) != 0 })
+	h.EXPECT().Dissociate(x.tab.lookup(0x500001), true).Once()
+	h.EXPECT().Dissociate(x.tab.lookup(0x500002), true).Once()
 	src.EXPECT().Remove().Once()
 	x.Close()
 	x.Close() // idempotent
@@ -288,8 +288,8 @@ func TestEOFClosesXWM(t *testing.T) {
 	x, p, h, src, _ := attached(t)
 	h.EXPECT().Created(mock.Anything, uint32(0x500001)).Return(ports.WindowID(1)).Once()
 	p.createNotify(0x500001, false)
-	readUntil(t, x, func() bool { return x.Slot(0x500001) != 0 })
-	h.EXPECT().Dissociate(x.Slot(0x500001), true).Once()
+	readUntil(t, x, func() bool { return x.tab.lookup(0x500001) != 0 })
+	h.EXPECT().Dissociate(x.tab.lookup(0x500001), true).Once()
 	src.EXPECT().Remove().Once()
 	p.hangup()
 	readUntil(t, x, func() bool { return x.closed })
