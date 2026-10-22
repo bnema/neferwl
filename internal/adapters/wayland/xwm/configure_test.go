@@ -511,6 +511,11 @@ func sinkPeer(t *testing.T, x *XWM, p *xpeer) {
 	xproto.GetInputFocus(x.conn.Buf()) // served by the old loop iteration
 	require.NoError(t, x.conn.Flush())
 	p.waitReq(n, func(r xpeerReq) bool { return r.major == opGetInputFocus })
+	// The peer records a request and answers it under mu: once the lock is
+	// free again it is back in its sink loop, which does not allocate.
+	p.mu.Lock()
+	_ = p.seq
+	p.mu.Unlock()
 	x.src = nil // no source: write backpressure would not allocate either
 	x.post = func(func()) {}
 	x.warnedRing = true // the sink never answers: Expect slots stay used
