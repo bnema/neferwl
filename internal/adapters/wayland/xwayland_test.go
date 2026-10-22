@@ -31,16 +31,15 @@ func assertFDClosed(t *testing.T, fd int) {
 
 func TestAttachXwaylandLifecycle(t *testing.T) {
 	h := newAdmissionHarness(t, 1)
-	wl, wm := xwaylandPair(t), xwaylandPair(t)
-	h.s.AttachXwayland(wl[0], wm[0])
+	wl := xwaylandPair(t)
+	h.s.AttachXwayland(wl[0])
 	var first server.Client
 	h.s.display.Do(func() { first = h.s.xwayland.client })
 	if first == (server.Client{}) {
 		t.Fatal("client not recorded")
 	}
-	wl2, wm2 := xwaylandPair(t), xwaylandPair(t)
-	h.s.AttachXwayland(wl2[0], wm2[0])
-	assertFDClosed(t, wm[0])
+	wl2 := xwaylandPair(t)
+	h.s.AttachXwayland(wl2[0])
 	unix.Close(wl[1])
 	wl[1] = -1 // Old client's destroy must not clear the new record.
 	waitTrue(t, "old client destroyed", func() bool {
@@ -59,7 +58,6 @@ func TestAttachXwaylandLifecycle(t *testing.T) {
 		h.s.display.Do(func() { clear = h.s.xwayland.client == (server.Client{}) })
 		return clear
 	})
-	assertFDClosed(t, wm2[0])
 }
 
 func TestAttachXwaylandFailureClosesFDs(t *testing.T) {
@@ -69,10 +67,8 @@ func TestAttachXwaylandFailureClosesFDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer unix.Close(p[1])
-	wm := xwaylandPair(t)
-	h.s.AttachXwayland(p[0], wm[0])
+	h.s.AttachXwayland(p[0])
 	assertFDClosed(t, p[0])
-	assertFDClosed(t, wm[0])
 }
 
 func TestAttachXwaylandStopped(t *testing.T) {
@@ -82,8 +78,7 @@ func TestAttachXwaylandStopped(t *testing.T) {
 	}
 	d.Close()
 	s := &Server{display: d}
-	wl, wm := xwaylandPair(t), xwaylandPair(t)
-	s.AttachXwayland(wl[0], wm[0])
+	wl := xwaylandPair(t)
+	s.AttachXwayland(wl[0])
 	assertFDClosed(t, wl[0])
-	assertFDClosed(t, wm[0])
 }

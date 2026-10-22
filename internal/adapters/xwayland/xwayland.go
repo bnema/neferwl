@@ -25,8 +25,14 @@ import (
 // Options configures the X11 display.
 type Options struct {
 	Backend domain.XwaylandBackend
-	// Attach takes ownership of both descriptors when called.
-	Attach func(wlFD, wmFD int)
+	// Attach takes ownership of the Wayland descriptor right after the backend
+	// starts.
+	Attach func(wlFD int)
+	// AttachWM takes ownership of the window manager descriptor once the
+	// backend is ready. It may block to bootstrap the X11 connection. The
+	// returned stop (nil for none) is called before the run ends, on backend
+	// exit or context cancellation.
+	AttachWM func(wmFD int) (stop func())
 	// Binary is the selected backend executable.
 	Binary string
 	// Env is the backend environment; satellite requires WAYLAND_DISPLAY.

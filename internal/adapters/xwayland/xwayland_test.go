@@ -473,3 +473,73 @@ func TestWaitReady(t *testing.T) {
 		}
 	})
 }
+
+// readyScript stands in for Xwayland: after a short delay it creates a marker
+// file, reports readiness on the -displayfd descriptor, then runs tail.
+func readyScript(t *testing.T, dir, tail string) (bin, marker string) {
+	t.Helper()
+	bin, marker = filepath.Join(dir, "xwayland"), filepath.Join(dir, "ready")
+	script := "#!/bin/sh\nwhile [ $# -gt 0 ]; do [ \"$1\" = -displayfd ] && fd=$2; shift; done\n" +
+		"sleep 0.3\n: > " + marker + "\neval \"echo 1 >&$fd\"\n" + tail + "\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return bin, marker
+}
+
+func runBuiltin(t *testing.T, ctx context.Context, tail string, attachWM func(wmFD int)) (events []string) {
+	t.Helper()
+	opts := testOptions(t, "")
+	opts.Backend = ports.XwaylandBuiltin
+	var marker string
+	opts.Binary, marker = readyScript(t, opts.TmpDir, tail)
+	exists := func() bool { _, err := os.Stat(marker); return err == nil }
+	opts.Attach = func(wlFD int) {
+		if exists() {
+			t.Error("Attach ran after readiness")
+		}
+		events = append(events, "attach")
+		unix.Close(wlFD)
+	}
+	opts.AttachWM = func(wmFD int) func() {
+		if !exists() {
+			t.Error("AttachWM ran before readiness")
+		}
+		events = append(events, "attachWM")
+		attachWM(wmFD)
+		return func() { events = append(events, "stop") }
+	}
+	d, err := Open(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	_ = d.starter.start(ctx, d, &logWriter{log: opts.Log, backend: d.backendName()})
+	return append(events, "returned")
+}
+
+// AttachWM runs only after -displayfd readiness; stop runs before start
+// returns, whether the process exits or the context ends.
+func TestBuiltinAttachWMAfterReadiness(t *testing.T) {
+	for name, tc := range map[string]struct {
+		tail   string
+		cancel bool
+	}{"process exit": {tail: "exit 0"}, "context end": {tail: "exec sleep 30", cancel: true}} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			events := runBuiltin(t, ctx, tc.tail, func(wmFD int) {
+				if _, err := unix.FcntlInt(uintptr(wmFD), unix.F_GETFD, 0); err != nil {
+					t.Errorf("wmFD not open: %v", err)
+				}
+				unix.Close(wmFD)
+				if tc.cancel {
+					go func() { time.Sleep(200 * time.Millisecond); cancel() }()
+				}
+			})
+			if got := strings.Join(events, ","); got != "attach,attachWM,stop,returned" {
+				t.Fatalf("events %s", got)
+			}
+		})
+	}
+}

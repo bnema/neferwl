@@ -18,7 +18,7 @@ type builtinStarter struct{}
 
 func (builtinStarter) start(ctx context.Context, d *Display, stderr *logWriter) error {
 	// Files own all setup descriptors until Start succeeds and Attach takes
-	// the two parent sockets. This also unwinds partial setup failures.
+	// the Wayland socket. This also unwinds partial setup failures.
 	var files []*os.File
 	defer func() {
 		for _, f := range files {
@@ -77,23 +77,16 @@ func (builtinStarter) start(ctx context.Context, d *Display, stderr *logWriter) 
 	d.opts.Log.Info().Str("display", d.Name()).Int("pid", cmd.Process.Pid).Msg("Xwayland started")
 	// Detach the raw descriptors from os.File ownership before handing them
 	// to the display (including its finalizers).
-	wlFD, wmFD := int(files[wl].Fd()), int(files[wm].Fd())
 	if d.opts.Attach != nil {
-		// Dup transfers independent descriptors; closing the File wrappers below
-		// cannot race with the display's ownership of the transferred descriptors.
-		wlFD, err = unix.FcntlInt(uintptr(wlFD), unix.F_DUPFD_CLOEXEC, 0)
+		// Dup transfers an independent descriptor; closing the File wrapper below
+		// cannot race with the display's ownership of the transferred descriptor.
+		var wlFD int
+		wlFD, err = unix.FcntlInt(uintptr(files[wl].Fd()), unix.F_DUPFD_CLOEXEC, 0)
 		if err == nil {
-			wmFD, err = unix.FcntlInt(uintptr(wmFD), unix.F_DUPFD_CLOEXEC, 0)
-			if err != nil {
-				unix.Close(wlFD)
-			}
-		}
-		if err == nil {
-			d.opts.Attach(wlFD, wmFD)
+			d.opts.Attach(wlFD)
 		}
 	}
 	files[wl].Close()
-	files[wm].Close()
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	if err != nil {
@@ -114,6 +107,20 @@ func (builtinStarter) start(ctx context.Context, d *Display, stderr *logWriter) 
 	}
 	rd.Close()
 	d.opts.Log.Info().Str("display", d.Name()).Msg("Xwayland ready")
+	if d.opts.AttachWM != nil {
+		// The WM socket is bootstrapped only now: Xwayland serves it after its
+		// Wayland round trips, which the display goroutine must be free to answer.
+		wmFD, err := unix.FcntlInt(uintptr(files[wm].Fd()), unix.F_DUPFD_CLOEXEC, 0)
+		if err != nil {
+			stopGroup(cmd, done)
+			return err
+		}
+		stop := d.opts.AttachWM(wmFD)
+		if stop != nil {
+			// Runs before start returns so the restart loop never overlaps two XWMs.
+			defer stop()
+		}
+	}
 	select {
 	case err := <-done:
 		return err

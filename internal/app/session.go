@@ -186,7 +186,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 		s.statePath = statePath
 		s.childEnv = append(s.childEnv, statefile.Env+"="+statePath)
 	}
-	if s.xdisplay = openXwayland(ctx, opts, s.childEnv, logging.For(ctx, "xwayland"), s.server.AttachXwayland); s.xdisplay != nil {
+	if s.xdisplay = openXwayland(ctx, opts, s.childEnv, logging.For(ctx, "xwayland"), s.server.AttachXwayland, s.server.AttachXWM); s.xdisplay != nil {
 		s.childEnv = append(s.childEnv, "DISPLAY="+s.xdisplay.Name())
 	}
 	s.child = launcher.New(s.childEnv, s.security, logging.For(ctx, "launcher"))
