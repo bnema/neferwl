@@ -203,3 +203,17 @@ func TestXSettingsNoChangeAllocations(t *testing.T) {
 	})
 	require.Zero(t, n)
 }
+
+// The XSETTINGS manager window is never adopted as a client window.
+func TestXSettingsWindowNotAdopted(t *testing.T) {
+	x, p := bootSettings(t, ports.XwaylandSettings{XSettings: true}, nil)
+	h := newMockhost(t)
+	post, _ := newPost()
+	x.attach(newMockfdSource(t), h, post)
+	require.NotZero(t, x.xs.win)
+	p.createNotify(x.xs.win, false)
+	ev := x.Stats().Events
+	readUntil(t, x, func() bool { return x.Stats().Events > ev })
+	x.flush()
+	require.Zero(t, x.tab.lookup(x.xs.win))
+}

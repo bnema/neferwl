@@ -184,12 +184,17 @@ func (x *XWM) onError(e *xturbo.XError) {
 	}
 }
 
+// ownWindow reports whether xid is one of the XWM's own helper windows.
+func (x *XWM) ownWindow(xid uint32) bool {
+	return xid != 0 && (xid == x.wmWin || xid == x.selWin || xid == x.xs.win)
+}
+
 // onCreateNotify records a new top-level window. Override-redirect windows
 // are kept (their geometry and serial matter later) but never reach the host.
 func (x *XWM) onCreateNotify(ev *xturbo.Event) {
 	e := xproto.CreateNotifyOf(ev)
 	xid := uint32(e.Window())
-	if xid == x.wmWin || xid == x.selWin || x.tab.lookup(xid) != 0 {
+	if x.ownWindow(xid) || x.tab.lookup(xid) != 0 {
 		return
 	}
 	s := x.insert(xid)
@@ -242,7 +247,7 @@ func (x *XWM) onTreeReply(r *xturbo.Reply) {
 	children := q.Children()
 	for i := 0; i < children.Len(); i++ {
 		xid := uint32(children.At(i))
-		if xid == x.wmWin || xid == x.selWin || x.tab.lookup(xid) != 0 {
+		if x.ownWindow(xid) || x.tab.lookup(xid) != 0 {
 			continue
 		}
 		s := x.insert(xid)
