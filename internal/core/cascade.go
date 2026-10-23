@@ -598,3 +598,25 @@ func (w *Workspace) forgetBands() {
 		c.BandStart, c.pushedUp, c.pushedDown = false, nil, nil
 	}
 }
+
+// fullscreenFloatBand promotes a parentless float into a permanent cascade
+// column below the selected column's band. Dialogs and stash entries keep
+// their floating placement. Like fullscreenBand, this never changes focus.
+func (w *Workspace) fullscreenFloatBand(id WindowID) {
+	i := w.floatIndex(id)
+	if !w.policy().wraps || i < 0 || w.Floats[i].over != 0 || w.stashIndex(id) >= 0 {
+		return
+	}
+	focus, _ := w.Focused()
+	bands := w.bandList()
+	at := 0
+	if len(w.Columns) > 0 {
+		at = w.band(w.Focus) + 1
+	}
+	w.Floats = slices.Delete(w.Floats, i, i+1)
+	bands = slices.Insert(bands, at, []Column{{Windows: []WindowID{id}, ownBand: true}})
+	w.setBands(bands, focus)
+	if focus == id {
+		w.floatFocus, w.stashFocus = false, false
+	}
+}

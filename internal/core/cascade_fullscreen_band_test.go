@@ -100,7 +100,7 @@ func TestFullscreenFloatMovesToNeighborMonitor(t *testing.T) {
 	}{{ActionMoveColumnLeft, "L"}, {ActionMoveColumnRight, "R"}} {
 		t.Run(tc.screen, func(t *testing.T) {
 			c, w := cascadeMovesCore(t, 2, 3, true)
-			w.AddFloating(9, 5120, 2160)
+			w.AddDialog(9, 2, 5120, 2160)
 			w.SetFullscreen(9, true)
 			c.applyAction(tc.action)
 			dst := screenWorkspace(c, tc.screen)
@@ -115,7 +115,7 @@ func TestFullscreenFloatMovesToNeighborMonitor(t *testing.T) {
 
 func TestFullscreenFloatNoNeighborStays(t *testing.T) {
 	c, w := cascadeMovesCore(t, 2, 3, false)
-	w.AddFloating(9, 800, 600)
+	w.AddDialog(9, 2, 800, 600)
 	w.SetFullscreen(9, true)
 	c.applyAction(ActionMoveColumnLeft)
 	if w.floatIndex(9) < 0 || w.fullscreen != 9 {
@@ -294,4 +294,48 @@ func TestRestoreBandDoesNotLookPastUserBand(t *testing.T) {
 	w.FocusID(1)
 	w.ToggleFullWidth()
 	wantBands(t, w, []WindowID{1, 3}, []WindowID{2})
+}
+
+func TestCascadeFullscreenHorizontalKeepsCover(t *testing.T) {
+	for _, floating := range []bool{false, true} {
+		t.Run(map[bool]string{false: "tile", true: "dialog"}[floating], func(t *testing.T) {
+			c, w := cascadeMovesCore(t, 2, 3, true)
+			id := WindowID(2)
+			if floating {
+				id = 9
+				w.AddDialog(id, 2, 800, 600)
+			}
+			w.SetFullscreen(id, true)
+			c.applyAction(ActionFocusColumnLeft)
+			if c.cur().name() != "L" || w.fullscreen != id {
+				t.Fatalf("screen %+v fullscreen %d", c.cur(), w.fullscreen)
+			}
+		})
+	}
+}
+
+func TestCascadeFullscreenUpReachesPreviousBand(t *testing.T) {
+	c, w := cascadeMovesCore(t, 2, 3, false)
+	w.ToggleFullscreen()
+	c.applyAction(ActionFocusWindowUp)
+	if w.fullscreen != 0 {
+		t.Fatalf("fullscreen %d", w.fullscreen)
+	}
+	wantFocus(t, c, "M", 1)
+}
+
+func TestCascadeFullscreenFloatEdgePrefersWorkspace(t *testing.T) {
+	c, _ := cascadeMovesCore(t, 1, 3, true)
+	m := c.cur().mon
+	m.Focus(1)
+	m.AddWindow(2)
+	w := m.Current()
+	w.Overflow = OverflowCascade
+	w.AddDialog(9, 2, 800, 600)
+	w.SetFullscreen(9, true)
+	c.applyAction(ActionFocusColumnLeft)
+	wantFocus(t, c, "M", 1)
+	if w.fullscreen != 9 {
+		t.Fatalf("fullscreen %d", w.fullscreen)
+	}
 }

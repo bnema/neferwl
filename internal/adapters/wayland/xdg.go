@@ -400,11 +400,13 @@ func (t top) SetMinSize(r *xdgshell.Toplevel, w, h int32) {
 func (top) SetMaximized(*xdgshell.Toplevel)   {}
 func (top) UnsetMaximized(*xdgshell.Toplevel) {}
 func (t top) SetFullscreen(*xdgshell.Toplevel, *wayland.Output) {
+	t.w.xdg.server.log.Info().Uint64("id", uint64(t.w.id)).Bool("on", true).Msg("client fullscreen request")
 	if t.w.mapped {
 		t.w.xdg.server.emit(ports.WindowFullscreenRequest{ID: t.w.id, Fullscreen: true})
 	}
 }
 func (t top) UnsetFullscreen(*xdgshell.Toplevel) {
+	t.w.xdg.server.log.Info().Uint64("id", uint64(t.w.id)).Bool("on", false).Msg("client fullscreen request")
 	if t.w.mapped {
 		t.w.xdg.server.emit(ports.WindowFullscreenRequest{ID: t.w.id})
 	}
