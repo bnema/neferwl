@@ -178,34 +178,4 @@ func (w *Workspace) addFloat(f Float, quiet bool) {
 
 // addColumnQuiet adds a column where a new window goes, keeping the focus
 // where it is (ADR 011 golden rule).
-func (w *Workspace) addColumnQuiet(col Column) {
-	at := len(w.Columns)
-	if w.cover() != 0 {
-		// As AddWindow: under a covering fullscreen window the column
-		// waits hidden, and a maximized layout stays as it is.
-		if !w.policy().equalCells {
-			at = min(w.Focus+1, at)
-		}
-		w.Columns = slices.Insert(w.Columns, at, col)
-		return
-	}
-	switch {
-	case w.policy().wraps:
-		// As addColumn: after the focused band, in it when it has room.
-		at, col.BandStart = w.spawnIndex()
-		w.Columns = slices.Insert(w.Columns, at, col)
-		if len(w.Columns) > 1 && at <= w.Focus {
-			w.Focus++
-		}
-		w.scroll()
-		return
-	case w.policy().equalCells:
-		if at > 0 && w.policy().maximizeHides() {
-			w.unmaximize()
-		}
-	case at > 0:
-		at = w.Focus + 1
-	}
-	w.Columns = slices.Insert(w.Columns, at, col)
-	w.scroll()
-}
+func (w *Workspace) addColumnQuiet(col Column) { w.placeColumn(col, true) }

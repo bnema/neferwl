@@ -237,7 +237,8 @@ func TestPublishOverviewAllocations(t *testing.T) {
 				if rows, _ := m.overviewRows(); rows.n != slots {
 					t.Fatalf("setup: %d overview slots, want %d", rows.n, slots)
 				}
-				if !m.ov.open || m.overviewAxis() != m.Current().policy().workspace || len(c.overviewReal) != want || len(sc.rects) == 0 || !c.animating() {
+				_, workspaceAxis := m.Current().layout().axes()
+				if !m.ov.open || m.overviewAxis() != workspaceAxis || len(c.overviewReal) != want || len(sc.rects) == 0 || !c.animating() {
 					t.Fatalf("setup: overview %v, real layouts %d (want %d), rects %d, animating %v", m.ov.open, len(c.overviewReal), want, len(sc.rects), c.animating())
 				}
 				// The rows themselves cost nothing: array slots, scratch order.

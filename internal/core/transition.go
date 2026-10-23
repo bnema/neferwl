@@ -29,6 +29,10 @@ type viewShot struct {
 	// column switcher): ws is then the workspace on screen, the camera
 	// fields stay zero, and rects are the cards.
 	preview bool
+	// overview is set when the preview was the workspace overview: it
+	// differs from preview only for the column switcher, whose navigation
+	// is not a workspace switch.
+	overview bool
 	// settledView is ws's settled view and view where its columns were on screen
 	// (settledView plus shift).
 	settledView int
@@ -52,10 +56,14 @@ type viewShot struct {
 	wraps bool
 	// list and pos are the numbered workspaces and the monitor's fractional
 	// position in them (index of the current one plus switchView.off); ok is
-	// false when there is none (a shown stash workspace).
-	list []*Workspace
-	pos  float64
-	ok   bool
+	// false when there is none (a shown stash workspace). In the overview
+	// list is the numbered workspaces too (pos and ok stay unset), and order
+	// is where ws sat among them (Monitor.overviewOrder): a workspace switch
+	// may drop ws from the overview rows (overviewWorkspaceOffset).
+	list  []*Workspace
+	pos   float64
+	ok    bool
+	order float64
 	// rects are the windows the screen drew (the cards in a preview),
 	// hidden windows left out. The slice is reused like list.
 	rects []rectShot
@@ -630,10 +638,11 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 		s.sc = sc
 		w := m.Current()
 		s.ws, s.preview = w, m.previewing()
+		s.overview = m.ov.open
 		if !m.previewing() {
 			// A preview (the overview or the switcher's cards) does not scroll or slide: no camera.
 			s.settledView, s.view = w.View, float64(w.View)+w.view.off
-			s.switchAxis = w.policy().workspace
+			_, s.switchAxis = w.layout().axes()
 			if m.switchView.busy() {
 				s.switchAxis = m.switchAxis
 			}
@@ -669,6 +678,10 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 			if !m.previewing() && w.stashIndex(p.ID) >= 0 {
 				s.stash = append(s.stash, p)
 			}
+		}
+		if m.ov.open {
+			s.list = append(s.list, m.Workspaces...)
+			s.order = m.overviewOrder(s.list, w)
 		}
 		if m.shown == nil && !m.previewing() {
 			// A landing slide measures in the list it began on.
@@ -715,7 +728,7 @@ func (c *Core) transition(before []viewShot, now time.Time) {
 			continue
 		}
 		if b.preview || b.sc.mon.previewing() {
-			c.transitionOverview(b, now)
+			c.transitionOverview(b, before, now)
 			continue
 		}
 		c.transitionCamera(b, before, now)
@@ -905,7 +918,15 @@ func (c *Core) peekDim(p Placement) float64 {
 // other state are dropped first: their rects are not the ones snapshot
 // measured from. A fade that ran on a window drawn in both states carries
 // over (picking a card that still fades in does not pop it).
-func (c *Core) transitionOverview(b *viewShot, now time.Time) {
+//
+// A workspace switch inside the overview instead gives every card of the
+// workspace entered the same short start offset, from the side of the old
+// workspace, and carries over its running fade, dim, size and speeds. The
+// cards of the old workspace that are still drawn keep their old-rect motion;
+// the clipped ones keep drawing in the leaving layer while they slide out
+// and fade. A workspace that arrived from another screen is no switch of
+// this one: it gets no group slide.
+func (c *Core) transitionOverview(b *viewShot, before []viewShot, now time.Time) {
 	sc := b.sc
 	changed := b.preview != sc.mon.previewing()
 	if changed {
@@ -916,13 +937,50 @@ func (c *Core) transitionOverview(b *viewShot, now time.Time) {
 		at = carouselStep(b)
 	}
 	w := sc.mon.Current()
+	group := b.overview && sc.mon.ov.open && b.ws != w && movedFrom(b, before) == nil
+	var groupOffset rectOffsets
+	after := sc.mon.Layout()
+	if group {
+		groupOffset = overviewWorkspaceOffset(sc.mon, b)
+		c.leaveOverviewWorkspace(b, after, groupOffset, now)
+	}
 	n := len(w.Stash)
-	for _, p := range sc.mon.Layout() {
+	for _, p := range after {
 		if p.Hidden {
 			continue
 		}
 		rm := sc.rects[p.ID]
 		i := slices.IndexFunc(b.rects, func(r rectShot) bool { return r.id == p.ID })
+		if group && w.has(p.ID) {
+			// What ran on the card carries over, as in the per-window path:
+			// the speeds, a running size change and veil, and the fade.
+			var off, vel rectOffsets
+			fade, fadeV := 1.0, 0.0
+			var dim, dimV float64
+			if i >= 0 {
+				r := &b.rects[i]
+				off, vel, fade, fadeV, dim, dimV = r.off, r.vel, r.fade, r.fadeV, r.dim, r.dimV
+			} else if rm.leaving {
+				off, vel = rm.sample(now)
+				fade = rm.df
+				sampleComponent(rm.fade, &fade, &fadeV, now)
+				fade += 1
+				dim = rm.ddim
+				sampleComponent(rm.dim, &dim, &dimV, now)
+			}
+			rm = rectMotion{scale: off.w != 0 || off.h != 0 || vel.w != 0 || vel.h != 0}
+			c.retargetComponent(&rm.x, &rm.dx, groupOffset.x, vel.x, now)
+			c.retargetComponent(&rm.y, &rm.dy, groupOffset.y, vel.y, now)
+			c.retargetComponent(&rm.w, &rm.dw, off.w, vel.w, now)
+			c.retargetComponent(&rm.h, &rm.dh, off.h, vel.h, now)
+			c.retargetLevel(&rm.fade, &rm.df, fade, fadeV, now)
+			c.retargetLevel(&rm.dim, &rm.ddim, dim, dimV, now)
+			if sc.rects == nil {
+				sc.rects = make(map[WindowID]rectMotion)
+			}
+			sc.rects[p.ID], sc.rectsWS = rm, sc.rectsOwner()
+			continue
+		}
 		if i >= 0 && at >= 0 && wrapped(w.stashIndex(p.ID), b.card, at, n, b.wraps) {
 			// The card went round the carousel to its other end: it
 			// fades in there instead of crossing the row.
@@ -931,7 +989,19 @@ func (c *Core) transitionOverview(b *viewShot, now time.Time) {
 		if i >= 0 && changed {
 			c.retargetLevel(&rm.fade, &rm.df, b.rects[i].fade, b.rects[i].fadeV, now)
 		}
-		if i < 0 {
+		if i < 0 && rm.leaving {
+			// Hidden cards are absent from the shot, but a leaving card
+			// can return as a neighbor rather than the incoming group.
+			off, vel := rm.sample(now)
+			fade, fadeV := rm.df, 0.0
+			sampleComponent(rm.fade, &fade, &fadeV, now)
+			c.retargetComponent(&rm.x, &rm.dx, float64(rm.left.Rect.X-p.Rect.X)+off.x, vel.x, now)
+			c.retargetComponent(&rm.y, &rm.dy, float64(rm.left.Rect.Y-p.Rect.Y)+off.y, vel.y, now)
+			c.retargetComponent(&rm.w, &rm.dw, float64(rm.left.Rect.W-p.Rect.W)+off.w, vel.w, now)
+			c.retargetComponent(&rm.h, &rm.dh, float64(rm.left.Rect.H-p.Rect.H)+off.h, vel.h, now)
+			c.retargetLevel(&rm.fade, &rm.df, 1+fade, fadeV, now)
+			rm.leaving = false
+		} else if i < 0 {
 			c.retargetLevel(&rm.fade, &rm.df, 1, 0, now)
 		} else if old := &b.rects[i]; old.rect != p.Rect {
 			rm.scale = true
@@ -946,6 +1016,67 @@ func (c *Core) transitionOverview(b *viewShot, now time.Time) {
 			delete(sc.rects, p.ID)
 			continue
 		}
+		if sc.rects == nil {
+			sc.rects = make(map[WindowID]rectMotion)
+		}
+		sc.rects[p.ID], sc.rectsWS = rm, sc.rectsOwner()
+	}
+}
+
+// overviewWorkspaceTravel is deliberately short: the settled overview is already
+// the input state, and this presentation must not resemble a full-screen camera.
+const overviewWorkspaceTravel = 0.12
+
+// overviewWorkspaceOffset measures slots using the NEW overview axis, including
+// when the two workspaces use different layouts. A distant workspace has no
+// preview slot, and neither has one the action dropped from the rows (an
+// empty workspace that is no longer current): project its slot with the same
+// geometry as a neighbor, on the side it sat on in the shot (viewShot.order).
+func overviewWorkspaceOffset(m *Monitor, b *viewShot) rectOffsets {
+	rows, _ := m.overviewRows()
+	cur := m.Current()
+	settled, _ := rows.lookup(cur)
+	previous, ok := rows.lookup(b.ws)
+	axis := m.overviewAxis()
+	area := cur.overviewArea()
+	if !ok {
+		before := b.order < m.overviewOrder(b.list, cur)
+		previous, _ = neighborSlot(axis, area, settled, b.ws, before, max(1, area.H*3/100))
+	}
+	if axis == horizontalAxis {
+		return rectOffsets{x: math.Copysign(float64(area.W)*overviewWorkspaceTravel, float64(settled.X-previous.X))}
+	}
+	return rectOffsets{y: math.Copysign(float64(area.H)*overviewWorkspaceTravel, float64(settled.Y-previous.Y))}
+}
+
+// leaveOverviewWorkspace retains clipped cards in the existing leaving layer.
+// Visible neighbor cards keep their normal old-rect retarget and never fade.
+// The hidden cards share a short travel target, without shrinking their content.
+func (c *Core) leaveOverviewWorkspace(b *viewShot, after []Placement, travel rectOffsets, now time.Time) {
+	sc := b.sc
+	for _, p := range sc.settledLayout {
+		if p.Hidden || !b.ws.has(p.ID) {
+			continue
+		}
+		if slices.ContainsFunc(after, func(q Placement) bool { return q.ID == p.ID && !q.Hidden }) {
+			continue
+		}
+		i := slices.IndexFunc(b.rects, func(r rectShot) bool { return r.id == p.ID })
+		if i < 0 {
+			continue
+		}
+		r := b.rects[i]
+		rm := rectMotion{leaving: true, left: p, scale: sc.rects[p.ID].scale}
+		// Incoming cards start on the opposite side of the travel direction.
+		// Exits start where they were drawn and settle a short distance away.
+		rm.left.Rect.X -= int(math.Round(travel.x))
+		rm.left.Rect.Y -= int(math.Round(travel.y))
+		c.retargetComponent(&rm.x, &rm.dx, float64(p.Rect.X-rm.left.Rect.X)+r.off.x, r.vel.x, now)
+		c.retargetComponent(&rm.y, &rm.dy, float64(p.Rect.Y-rm.left.Rect.Y)+r.off.y, r.vel.y, now)
+		c.retargetComponent(&rm.w, &rm.dw, r.off.w, r.vel.w, now)
+		c.retargetComponent(&rm.h, &rm.dh, r.off.h, r.vel.h, now)
+		c.retargetLevel(&rm.fade, &rm.df, r.fade-1, r.fadeV, now)
+		c.retargetLevel(&rm.dim, &rm.ddim, r.dim, r.dimV, now)
 		if sc.rects == nil {
 			sc.rects = make(map[WindowID]rectMotion)
 		}

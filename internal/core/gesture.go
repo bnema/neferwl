@@ -74,6 +74,8 @@ type swipeGesture struct {
 	// points are ws's column snap points when a column swipe began: the
 	// swipe ends if the layout no longer has them.
 	points []float64
+	// scratch holds the points the staleness check recomputes.
+	scratch []float64
 	// list is the numbered workspaces when a workspace slide began: the
 	// slide indexes it, so it ends if the list changes.
 	list []*Workspace
@@ -90,7 +92,8 @@ type swipeGesture struct {
 // listChanged reports whether the numbered workspaces or the active one
 // changed since a workspace slide began, or the overview opened over it.
 func (g *swipeGesture) listChanged(m *Monitor) bool {
-	return m.overviewOpens != g.opens || m.shown != nil || m.Workspaces[m.Active] != g.ws || g.horizontal != (g.ws.policy().workspace == horizontalAxis) || !slices.Equal(m.Workspaces, g.list)
+	_, workspace := g.ws.layout().axes()
+	return m.overviewOpens != g.opens || m.shown != nil || m.Workspaces[m.Active] != g.ws || g.horizontal != (workspace == horizontalAxis) || !slices.Equal(m.Workspaces, g.list)
 }
 
 // columnsChanged reports whether a column swipe lost its workspace: it is
@@ -98,22 +101,12 @@ func (g *swipeGesture) listChanged(m *Monitor) bool {
 // panel, a window mapped or resized, other gaps), or the overview opened
 // over it.
 func (g *swipeGesture) columnsChanged(m *Monitor) bool {
-	if m.overviewOpens != g.opens || m.Current() != g.ws || !g.ws.slidable() || g.horizontal != (g.ws.policy().content == horizontalAxis) {
+	content, _ := g.ws.layout().axes()
+	if m.overviewOpens != g.opens || m.Current() != g.ws || !g.ws.slidable() || g.horizontal != (content == horizontalAxis) {
 		return true
 	}
-	if g.ws.policy().wraps {
-		n, spacing := g.ws.cascadeBands()
-		if len(g.points) != n {
-			return true
-		}
-		for i, p := range g.points {
-			if p != float64(i*spacing) {
-				return true
-			}
-		}
-		return false
-	}
-	return !slices.Equal(g.ws.snapPoints(), g.points)
+	g.scratch = g.ws.snapPointsInto(g.scratch)
+	return !slices.Equal(g.scratch, g.points)
 }
 
 // stashChanged reports whether a stash swipe lost its stash: it is no
@@ -239,6 +232,7 @@ func (c *Core) decide(g *swipeGesture) {
 	m := g.screen.mon
 	g.opens = m.overviewOpens
 	w := m.Current()
+	content, workspace := w.layout().axes()
 	switch {
 	case g.fingers == 4 && !g.horizontal:
 		g.mode, g.snap = swipeOverview, newStepSwipe()
@@ -260,17 +254,17 @@ func (c *Core) decide(g *swipeGesture) {
 		}
 		w.stashView.motion = motion{}
 		g.snap = newSnapSwipe(float64(w.stashAt)+w.stashView.off, float64(w.stashAt), 1/stashSwipeMovement, indexPoints(len(w.Stash)), workspaceBand)
-	case g.horizontal == (w.policy().content == horizontalAxis) && w.slidable():
+	case g.horizontal == (content == horizontalAxis) && w.slidable():
 		g.mode, g.ws, g.points = swipeColumns, w, w.snapPoints()
 		w.view.motion = motion{}
-		g.snap = newSnapSwipe(float64(w.View)+w.view.off, float64(w.View), w.swipeScale(), g.points, workspaceBand.scaled(float64(w.policy().content.span(w.Usable))))
-	case g.horizontal == (w.policy().workspace == horizontalAxis) && m.shown == nil:
+		g.snap = newSnapSwipe(float64(w.View)+w.view.off, float64(w.View), w.swipeScale(), g.points, workspaceBand.scaled(float64(content.span(w.Usable))))
+	case g.horizontal == (workspace == horizontalAxis) && m.shown == nil:
 		// A landing slide measured in an older list lands at once first.
 		if m.switchList != nil && !slices.Equal(m.switchList, m.Workspaces) {
 			m.stopSwitch()
 		}
 		g.mode, g.ws = swipeWorkspaces, m.Workspaces[m.Active]
-		axis := w.policy().workspace
+		axis := workspace
 		if m.switchView.busy() && m.switchAxis != axis {
 			m.stopSwitch()
 		}
@@ -312,7 +306,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 		if !e.Cancelled {
 			view := int(math.Round(target))
 			focus := w.snapFocus(view, target >= shown)
-			if focus != w.Focus && w.policy().maximizeHides() {
+			if focus != w.Focus && w.layout().maximizeHides() {
 				w.unmaximize()
 			}
 			changed := w.Focus != focus
@@ -430,8 +424,8 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 			return false, nil
 		}
 		w := g.screen.mon.Current()
-		p := w.policy()
-		workspace := g.horizontal == (p.workspace == horizontalAxis)
+		_, axis := w.layout().axes()
+		workspace := g.horizontal == (axis == horizontalAxis)
 		a := ActionFocusColumnRight
 		if step < 0 {
 			a = ActionFocusColumnLeft
@@ -441,7 +435,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 			if step < 0 {
 				a = ActionFocusWorkspacePrev
 			}
-		} else if p.wraps {
+		} else if w.layout().laneGestures() {
 			// A content swipe cannot escape the last band to another workspace.
 			if w.onFloat() || w.fullscreen != 0 || w.laneNeighbor(step) < 0 {
 				return false, nil
@@ -458,8 +452,8 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 		before := c.cur().mon.Current()
 		shots := c.snapshot(now)
 		c.keyboard.takeBack()
-		if p.wraps && !workspace {
-			w.focusBand(step)
+		if w.layout().laneGestures() && !workspace {
+			w.focusLane(step)
 		} else {
 			c.applyAction(a)
 		}

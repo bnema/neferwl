@@ -1,89 +1,61 @@
 package core
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
-func TestWorkspaceStepFollowsWorkspaceAxis(t *testing.T) {
-	for _, tc := range []struct {
-		name       string
-		overflow   Overflow
-		vertical   int
-		horizontal int
-	}{
-		{"scroll", OverflowScroll, 1, 0},
-		{"fixed", OverflowFixed, 1, 0},
-		{"cascade", OverflowCascade, 0, 1},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			w := &Workspace{Overflow: tc.overflow}
-			p := w.policy()
-			for _, dir := range []int{-1, 1} {
-				if got := p.workspaceStep(verticalAxis, dir); got != dir*tc.vertical {
-					t.Errorf("vertical step %d = %d, want %d", dir, got, dir*tc.vertical)
-				}
-				if got := p.workspaceStep(horizontalAxis, dir); got != dir*tc.horizontal {
-					t.Errorf("horizontal step %d = %d, want %d", dir, got, dir*tc.horizontal)
-				}
-			}
-		})
-	}
-}
-
-// oldValidSpans is the reference implementation validSpans must match.
-func oldValidSpans(w *Workspace, first, last int) bool {
-	if first > last || w.Overflow == OverflowFixed && !w.laneRow() {
-		return false
-	}
-	stamp := w.Columns[first].spanStamp
-	if stamp == 0 {
-		return false
-	}
-	total, count := 0, 0
-	for i := first; i <= last; i++ {
-		if w.Columns[i].Span <= 0 || w.Columns[i].spanStamp != stamp {
-			return false
-		}
-		total += w.Columns[i].Span
-	}
-	for _, c := range w.Columns {
-		if c.spanStamp == stamp {
-			count++
-		}
-	}
-	return count == last-first+1 && (!w.policy().equalCells || total == 10000)
-}
-
-func TestScrollWidthsMatchPerColumnValidation(t *testing.T) {
+// Each state of a scroll lane's manual widths has a known validity: a complete
+// stamp is valid; a stamp one column left, a stamped column outside the lane
+// and a zero span are not. A workspace whose every column carries the stamp
+// is one lane again, whatever joined it. Valid lanes size columns by span,
+// the others by cells.
+func TestScrollWidthsByLaneValidity(t *testing.T) {
 	for _, n := range []int{1, 2, 5, 9} {
-		for _, state := range []string{"unstamped", "stamped", "stale", "foreign", "zero"} {
-			w := spanWorkspace(OverflowScroll, n)
-			switch state {
-			case "stamped":
-				stampSpans(w, 0, n-1)
-			case "stale":
-				stampSpans(w, 0, n-1)
-				w.Columns[n-1].spanStamp = 99
-			case "foreign":
+		for _, tc := range []struct {
+			state string
+			valid bool // the whole workspace is one valid lane
+			setup func(w *Workspace)
+		}{
+			{"unstamped", false, func(w *Workspace) {}},
+			{"stamped", true, func(w *Workspace) { stampSpans(w, 0, n-1) }},
+			{"stale", n == 1, func(w *Workspace) { stampSpans(w, 0, n-1); w.Columns[n-1].spanStamp = 99 }},
+			{"foreign", true, func(w *Workspace) {
 				stampSpans(w, 0, n-1)
 				w.Columns = append(w.Columns, Column{Windows: []WindowID{100}, Span: 5, spanStamp: w.Columns[0].spanStamp})
-			case "zero":
-				stampSpans(w, 0, n-1)
-				w.Columns[0].Span = 0
-			}
-			last := len(w.Columns) - 1
-			if got, want := w.validSpans(0, last), oldValidSpans(w, 0, last); got != want {
-				t.Fatal(n, state, got, want)
-			}
-			valid := w.scrollSpansValid()
-			xs, widths := w.columnEdges()
-			rs := w.columnRects()
-			for i := range w.Columns {
-				if widths[i] != w.scrollWidth(i, oldValidSpans(w, 0, last)) || valid != oldValidSpans(w, 0, last) {
-					t.Fatal(n, state, i, "width")
+			}},
+			{"zero", false, func(w *Workspace) { stampSpans(w, 0, n-1); w.Columns[0].Span = 0 }},
+		} {
+			t.Run(fmt.Sprintf("n=%d/%s", n, tc.state), func(t *testing.T) {
+				w := spanWorkspace(OverflowScroll, n)
+				tc.setup(w)
+				last := len(w.Columns) - 1
+				if got := w.validSpans(0, last); got != tc.valid {
+					t.Fatalf("validSpans = %v, want %v", got, tc.valid)
 				}
-				if xs[i] != w.columnX(i) || widths[i] != w.columnWidth(i) || rs[i].W != widths[i] {
-					t.Fatal(n, state, i, "edges")
+				if tc.state == "foreign" && w.validSpans(0, n-1) {
+					t.Fatal("a stamped column outside the lane must invalidate it")
 				}
-			}
+				f := w.widthFacts()
+				if f.spansValid != tc.valid {
+					t.Fatalf("spansValid = %v, want %v", f.spansValid, tc.valid)
+				}
+				xs, widths := w.columnEdges()
+				rs := w.columnRects()
+				avail := w.Usable.W - 2*w.gap()
+				for i := range w.Columns {
+					if tc.valid {
+						if want := w.Columns[i].Span * avail / 10000; widths[i] != want {
+							t.Fatalf("column %d width %d, want its span's %d", i, widths[i], want)
+						}
+					} else if widths[i] != w.scrollWidth(i, f) || widths[i] != w.equalShare(min(len(w.Columns), 3)) {
+						t.Fatalf("column %d width %d, want the cells' %d", i, widths[i], w.equalShare(min(len(w.Columns), 3)))
+					}
+					if xs[i] != w.columnX(i) || widths[i] != w.columnWidth(i) || rs[i].W != widths[i] {
+						t.Fatalf("column %d: edges (%d,%d), columnX %d, columnWidth %d, rect %d", i, xs[i], widths[i], w.columnX(i), w.columnWidth(i), rs[i].W)
+					}
+				}
+			})
 		}
 	}
 }

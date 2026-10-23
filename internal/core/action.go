@@ -360,7 +360,7 @@ func (c *Core) dispatchAction(a Action) Effect {
 		// A fullscreen float has no column in its band. Horizontal moves
 		// use the existing workspace/monitor edge order; only up/down may
 		// reveal the tiles below.
-		if w.policy().wraps && w.cover() != 0 && w.isFloat(w.cover()) && !w.stashOverCover() && !w.coverDialogFocused() {
+		if w.layout().bands() && w.cover() != 0 && w.isFloat(w.cover()) && !w.stashOverCover() && !w.coverDialogFocused() {
 			c.edgeFocus(horizontalAxis, dir, d)
 			return Effect{}
 		}
@@ -376,7 +376,7 @@ func (c *Core) dispatchAction(a Action) Effect {
 		// The first move from a float stays here unless nothing is under it:
 		// a native float leaves for the stash or the columns, and the stash
 		// keeps the focus at its ends.
-		edge := w.leavesBand(w.columnToward(dir)) && (!w.onFloat() || w.floatFocus && !w.canLeaveFloat())
+		edge := w.leavesLane(w.columnToward(dir)) && (!w.onFloat() || w.floatFocus && !w.canLeaveFloat())
 		if edge && c.edgeFocus(horizontalAxis, dir, d) {
 			return Effect{}
 		}
@@ -384,7 +384,7 @@ func (c *Core) dispatchAction(a Action) Effect {
 		m := c.cur().mon
 		// Cascade's up/down navigation stays within its bands. Let Monitor
 		// handle it unchanged; only vertical workspace axes cross screens.
-		if m.Current().policy().workspace == verticalAxis {
+		if workspaceStep(m.Current().layout(), verticalAxis, 1) != 0 {
 			dir, d := 1, dirDown
 			if a == ActionFocusWindowUp {
 				dir, d = -1, dirUp
@@ -461,7 +461,7 @@ func (c *Core) dispatchAction(a Action) Effect {
 			c.cur().mon.normalize()
 			return Effect{}
 		}
-		if i >= 0 && w.leavesBand(w.Focus+dir) {
+		if i >= 0 && w.leavesLane(w.Focus+dir) {
 			col, ok := w.takeColumn()
 			if !ok {
 				return Effect{}

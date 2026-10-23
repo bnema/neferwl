@@ -22,7 +22,7 @@ type stackItem struct {
 // others: maximized, or holding the covering fullscreen tile. Its card
 // shows in front of the hidden columns' card.
 func (w *Workspace) overviewMaximized() bool {
-	if w.Overflow != OverflowFixed || len(w.Columns) < 2 || w.Focus < 0 || w.Focus >= len(w.Columns) {
+	if !w.layout().maximizeHides() || len(w.Columns) < 2 || w.Focus < 0 || w.Focus >= len(w.Columns) {
 		return false
 	}
 	if c := w.cover(); c != 0 && !w.isFloat(c) {
@@ -214,7 +214,7 @@ func (m *Monitor) hiddenColumn(w *Workspace) int {
 // selectOverviewColumn retains the existing ordinary-row live focus semantics.
 func (w *Workspace) selectOverviewColumn(i int) {
 	w.floatFocus, w.stashFocus = false, false
-	if w.policy().maximizeHides() && w.Focus != i && w.Focus < len(w.Columns) {
+	if w.layout().maximizeHides() && w.Focus != i && w.Focus < len(w.Columns) {
 		w.unmaximize()
 	}
 	w.Focus = i
@@ -333,6 +333,10 @@ func (m *Monitor) previewItem(w *Workspace, item stackItem, axis layoutAxis, slo
 // where it was. The maximized column's own entry is an empty Rect.
 func (w *Workspace) hiddenColumnRects() []Rect {
 	v := *w
+	// The copied state is positional and would not match the shifted columns;
+	// state() rebuilds it.
+	v.lstate = nil
+	v.lstateReady = false
 	v.Columns = slices.Delete(slices.Clone(w.Columns), w.Focus, w.Focus+1)
 	v.Focus = 0
 	return slices.Insert(v.columnRectsFor(true), w.Focus, Rect{})

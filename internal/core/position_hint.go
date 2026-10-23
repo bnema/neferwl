@@ -48,10 +48,7 @@ func (c *Core) updatePositionHints(only *screen) {
 			continue
 		}
 		w := sc.mon.Current()
-		band := 0
-		if w.Overflow == OverflowCascade {
-			band = w.band(w.Focus)
-		}
+		band := w.laneOf(w.Focus)
 		focused := i == c.focusScreen
 		changed := h.initialized && (h.workspace != w || h.band != band || focused && !h.focused)
 		// Transferring the current workspace changes the source's fallback
@@ -120,18 +117,17 @@ func positionHintGrid(m *Monitor) ports.PositionHint {
 	i := 0
 	for w := range m.all() {
 		if i >= first && i < first+cap {
-			n := 1
-			if w.Overflow == OverflowCascade {
-				n, _ = w.cascadeBands()
+			n := max(1, w.layout().laneCount(w.lview()))
+			content, _ := w.layout().axes()
+			if content.span(w.Usable) <= 0 {
+				n = 1
 			}
 			h.Counts[i-first] = uint8(min(n, ports.PositionHintMaxRows))
 		}
 		i++
 	}
 	w := m.Current()
-	if w.Overflow == OverflowCascade {
-		h.ActiveRow = uint8(min(w.band(w.Focus), ports.PositionHintMaxRows-1))
-	}
+	h.ActiveRow = uint8(min(w.laneOf(w.Focus), ports.PositionHintMaxRows-1))
 	return h
 }
 

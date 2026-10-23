@@ -373,7 +373,7 @@ func TestSwitchCommitTransfersMaximization(t *testing.T) {
 			if w.Focus != b || !w.Columns[b].FullWidth || w.Columns[a].FullWidth {
 				t.Fatalf("focus %d, FullWidth source %v target %v", w.Focus, w.Columns[a].FullWidth, w.Columns[b].FullWidth)
 			}
-			if w.policy().equalCells && !w.hiddenByMaximized(a) {
+			if w.layout().equalCells() && !w.hiddenByMaximized(a) {
 				t.Fatal("source not hidden by the maximized target")
 			}
 		})

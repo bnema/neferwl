@@ -308,7 +308,7 @@ func restoreRow(w *Workspace, s rowSnapshot) {
 	// Fixed overflow maximizes at most one column: only the one holding
 	// the anchor window, wherever active binds moved it. Scroll overflow
 	// keeps each column's own width.
-	if w.policy().maximizeHides() {
+	if w.layout().maximizeHides() {
 		w.unmaximize()
 		for i := range w.Columns {
 			if s.fullWidth != 0 && slices.Contains(w.Columns[i].Windows, s.fullWidth) {
@@ -320,6 +320,34 @@ func restoreRow(w *Workspace, s rowSnapshot) {
 	// Windows that left the row since leave its maximize history too.
 	w.maximized = slices.DeleteFunc(slices.Clone(s.maximized), func(id WindowID) bool { return !w.has(id) })
 	w.scroll()
+}
+
+// overviewOrder is where w sits among the overview rows built from the
+// numbered workspaces list: its index in list, else (a named workspace) the
+// index of its anchor plus a fraction below 1, ordered by configuration like
+// overviewWorkspaces. It also places workspaces the rows drop. An anchor not
+// in list is the last occupied one, or the first. It allocates nothing.
+func (m *Monitor) overviewOrder(list []*Workspace, w *Workspace) float64 {
+	if i := indexOf(list, w); i >= 0 {
+		return float64(i)
+	}
+	at := indexOf(list, w.overviewAfter)
+	if at < 0 {
+		at = 0
+		for i, n := range list {
+			if !n.empty() {
+				at = i
+			}
+		}
+	}
+	rank := len(m.named)
+	for i, spec := range m.named {
+		if spec.Name == w.Name {
+			rank = i
+			break
+		}
+	}
+	return float64(at) + 0.5 + 0.4*float64(rank)/float64(len(m.named)+1)
 }
 
 // overviewWorkspaces inserts named rows below their invocation workspace,
@@ -381,7 +409,7 @@ func (m *Monitor) overviewWorkspaces() []*Workspace {
 // a named group uses its invocation anchor as the toggle return target, not
 // rows merely browsed in the overview.
 func (m *Monitor) showOverview(w *Workspace) {
-	if w.policy().workspace != m.overviewAxis() {
+	if _, axis := w.layout().axes(); axis != m.overviewAxis() {
 		m.ov.dropScroll()
 	}
 	if w != m.Current() && m.isHidden(w) && !m.isHidden(m.Current()) {
@@ -685,7 +713,10 @@ func (m *Monitor) OverviewPick(id WindowID) {
 // overviewAxis is the axis the overview lays workspaces out along, and the
 // stacked cards of a row fan along: the navigation axis of the current
 // workspace's layout.
-func (m *Monitor) overviewAxis() layoutAxis { return m.Current().policy().workspace }
+func (m *Monitor) overviewAxis() layoutAxis {
+	_, axis := m.Current().layout().axes()
+	return axis
+}
 
 // overviewSlots are the slots of the overview rows: the current workspace
 // and at most one neighbor on each side, in a fixed array (no allocation).
@@ -1155,77 +1186,19 @@ func (w *Workspace) previewTiles() (tiles []Placement, span int, sel Rect) {
 }
 
 // previewTilesInto is previewTiles appending to tiles (dst[:0] to reuse its
-// storage: the result then aliases it). The column rects use w.colBuf, dead
-// when it returns.
+// storage: the result then aliases it). Geometry and row rects share
+// disjoint regions of w.rowBuf, dead when it returns.
 func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect) {
-	var span int
-	var sel Rect
-	if w.pinned() {
-		c := w.cover()
-		// The row shows the columns a pinned fullscreen window hides,
-		// laid out as without it; its own tile stays marked fullscreen.
-		v := *w
-		v.fullscreen = 0
-		tiles, span, sel = v.previewTilesInto(tiles)
-		w.colBuf, w.rowBuf = v.colBuf, v.rowBuf
-		for i := range tiles {
-			tiles[i].Fullscreen = tiles[i].ID == c
-		}
-		return tiles, span, sel
+	// Reserve both geometry and row scratch without retaining the snapshot.
+	rows := 0
+	for _, c := range w.Columns {
+		rows = max(rows, len(c.Windows))
 	}
-	g := w.gap()
-	h := max(w.Usable.H-2*g, 0)
-	var rects []Rect
-	if w.Overflow == OverflowFixed {
-		w.colBuf = w.columnRectsInto(w.colBuf, false)
-		rects = w.colBuf
-		span = w.Usable.W // Fixed overflow never scrolls, even with a stash pile.
+	need := len(w.Columns) + rows
+	if cap(w.rowBuf) < need {
+		w.rowBuf = make([]Rect, 0, need)
 	}
-	for i, c := range w.Columns {
-		r := Rect{Y: g, H: h}
-		if w.policy().wraps {
-			// The band is the lane: it is encoded in Y, one screen apart.
-			// A maximized column fills its band, alone, as on screen.
-			r.X = w.cellX(i)
-			r.Y = g + w.band(i)*w.Usable.H
-			r.W = w.cellWidth(i)
-			if c.FullWidth {
-				r.X, r.W = g, max(w.Usable.W-2*g, 0)
-			}
-		} else if w.Overflow == OverflowFixed {
-			r = rects[i]
-			r.X, r.Y = r.X-w.Usable.X, r.Y-w.Usable.Y
-		} else {
-			r.X, r.W = w.columnX(i)-w.Usable.X, w.columnWidth(i)
-			if w.fullscreenColumn(i) {
-				// A fullscreen column shows at the width it had in the row.
-				r.W = max(w.Usable.W-2*g, 0)
-			}
-		}
-		if w.hiddenByMaximized(i) {
-			// Fixed overflow shows the hidden columns on their own card
-			// (previewItem). Their old buffers cannot fit their current
-			// rects; show only the maximized column here.
-			for _, id := range c.Windows {
-				tiles = append(tiles, Placement{ID: id, Hidden: true})
-			}
-			continue
-		}
-		w.rowBuf = rowRectsInto(w.rowBuf[:0], r, c, g)
-		for j, t := range w.rowBuf {
-			tiles = append(tiles, Placement{ID: c.Windows[j], Rect: t, Focused: i == w.Focus && j == c.Focus})
-		}
-		if w.Overflow != OverflowFixed && !w.policy().wraps {
-			span = max(span, r.X+r.W+g)
-		}
-		if i == w.Focus {
-			sel = r
-		}
-	}
-	if w.policy().wraps && len(w.Columns) > 0 {
-		span = w.Usable.W
-	}
-	return tiles, span, sel
+	return w.layout().previewTiles(w.lview(), tiles, w.rowBuf)
 }
 
 // previewRow scales the tiles of w into a row placed in slot, centred
@@ -1235,7 +1208,8 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 // false).
 func (w *Workspace) previewRow(axis layoutAxis, slot Rect, dim, lit bool) []Placement {
 	tiles, span, sel := w.previewTiles()
-	return w.previewRowTiles(axis, slot, dim, lit, w.policy().wraps, tiles, span, sel)
+	// The neighbor layout's lane encoding, the current workspace's overview axis.
+	return w.previewRowTiles(axis, slot, dim, lit, w.layout().previewLanes(), tiles, span, sel)
 }
 
 // previewRowTiles scales tiles, laid out unscrolled over span with sel the
@@ -1271,10 +1245,11 @@ func (w *Workspace) previewRowTiles(axis layoutAxis, slot Rect, dim, lit, lanes 
 		x = ux + uw/2 - scale(sel.X+sel.W/2)
 		x = min(max(x, ux+uw-width), ux)
 	}
-	stride := w.policy().content.span(w.Usable)
+	content, _ := w.layout().axes()
+	stride := content.span(w.Usable)
 	lanes = lanes && stride > 0
 	// Lanes along the overview axis would overlap the neighbor workspaces.
-	otherLanes := w.policy().content != axis
+	otherLanes := content != axis
 	laneStep := scale(stride) + max(1, u.H*3/100)
 	// The lanes below the selected one leave room for the stash pile.
 	below := w.pileBand(axis)
@@ -1563,12 +1538,12 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 	}
 	// A sideways finger scroll stays on columns; other sources do not, and
 	// start from zero rather than from its leftover.
-	sideways := finger && m.ov.sideways
+	repeating := finger && m.ov.sideways
 	if !finger && m.ov.sideways {
 		m.ov.scrollX, m.ov.scrollY = 0, 0
 	}
 	stepX := float64(overviewScrollStep)
-	if sideways {
+	if repeating {
 		stepX = overviewScrollRepeat
 	}
 	add := func(acc *float64, ax ports.ScrollAxis) {
@@ -1580,13 +1555,13 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 			*acc += ax.Value
 		}
 	}
-	if !sideways {
+	if !repeating {
 		add(&m.ov.scrollY, a.Vertical)
 	}
 	add(&m.ov.scrollX, a.Horizontal)
 	// A step that turns the overview returns, so the axis holds for the loop.
 	axis := m.overviewAxis()
-	cascade := axis == horizontalAxis
+	sideways := axis == horizontalAxis
 	// A finger step reports a change only when the selection moved: at an
 	// edge or over a float it does nothing, and the scene stays. The
 	// snapshot is taken only before a step: stackFront allocates.
@@ -1603,10 +1578,10 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 				before = m.overviewSelection()
 			}
 			switch {
-			case cascade && !finger && m.cardAt(m.Current()) >= 0:
+			case sideways && !finger && m.cardAt(m.Current()) >= 0:
 				// A wheel walks the unfolded stash, a row.
 				m.OverviewMove(d, 0)
-			case cascade && !finger:
+			case sideways && !finger:
 				m.overviewStep(d)
 			default:
 				m.OverviewMove(0, d)
@@ -1620,7 +1595,7 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 			}
 		case math.Abs(m.ov.scrollX) >= stepX:
 			d := sign(m.ov.scrollX)
-			if cascade && finger {
+			if sideways && finger {
 				before = m.overviewSelection()
 				// One step per gesture: one card of the unfolded
 				// stash, else one workspace.

@@ -55,7 +55,7 @@ func TestCascadeFullscreenExpelsFromStack(t *testing.T) {
 func TestScrollFullscreenKeepsColumns(t *testing.T) {
 	_, w := cascadeMovesCore(t, 3, 3, false)
 	w.Overflow = OverflowScroll
-	w.forgetBands()
+	w.resetLayoutState()
 	w.ToggleFullscreen()
 	if len(w.Columns) != 3 {
 		t.Fatalf("columns %d", len(w.Columns))

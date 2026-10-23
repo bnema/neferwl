@@ -354,6 +354,8 @@ The window must appear within 5 seconds, otherwise it opens normally. Apps that 
 
 `toggle-overview` (or a four-finger swipe up) shows previews of your workspaces. Arrows, `h/j/k/l` or three-finger swipes move the selection; `Return` or a click opens it; `Escape` goes back. `close-window` and the move-to-workspace binds work on the selected preview.
 
+With animations enabled, switching workspace in the overview slides the new workspace's cards in along the overview axis. Cards pushed out of the preview slide away and fade.
+
 A workspace's stash shows as a pile of cards. Selecting the pile unfolds it into a carousel of every stashed window: a row under the workspace with `layout.overflow = cascade`, a column on its left otherwise. The selected card stays in the middle, the earlier cards before it and the later ones after it, wrapping round; a wider gap separates the newest card from the oldest. Moves along the carousel pick a card. With fewer than three cards, or on a workspace holding only stashed windows, it does not wrap round. Leaving it folds it again. Moving to another workspace selects its windows rather than a carousel that wraps round, even when its stash has the focus, so browsing workspaces never stops on one.
 
 With `layout.overflow = cascade`, workspaces sit side by side, each band of columns is a lane, and the stash sits under the lanes. Down (or fingers down on the touchpad, with natural scroll off) moves to the lane below; past the last lane it unfolds the stash. Left/right walk the cards; where the carousel does not wrap round, they go to the neighbor workspace past either end. Up leaves the stash for the last lane, at the column you came from.

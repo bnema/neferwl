@@ -197,3 +197,56 @@ packages:
           dir: internal/adapters/screencast
           pkgname: screencast
           filename: pipewire_opener_mock_test.go
+
+  github.com/bnema/neferwl/internal/core:
+    interfaces:
+      layoutTraits:
+        config:
+          dir: internal/core
+          pkgname: core
+          filename: layout_layoutTraits_mock_test.go
+      layoutShape:
+        config:
+          dir: internal/core
+          pkgname: core
+          filename: layout_layoutShape_mock_test.go
+      layoutGeometry:
+        config:
+          dir: internal/core
+          pkgname: core
+          filename: layout_layoutGeometry_mock_test.go
+      layoutLanes:
+        config:
+          dir: internal/core
+          pkgname: core
+          filename: layout_layoutLanes_mock_test.go
+      layoutNavigator:
+        config:
+          dir: internal/core
+          pkgname: core
+          filename: layout_layoutNavigator_mock_test.go
+      layoutPlacer:
+        config:
+          dir: internal/core
+          pkgname: core
+          filename: layout_layoutPlacer_mock_test.go
+      layoutSizer:
+        config:
+          dir: internal/core
+          pkgname: core
+          filename: layout_layoutSizer_mock_test.go
+      layoutState:
+        config:
+          dir: internal/core
+          pkgname: core
+          filename: layout_layoutState_mock_test.go
+      layoutOverview:
+        config:
+          dir: internal/core
+          pkgname: core
+          filename: layout_layoutOverview_mock_test.go
+      layout:
+        config:
+          dir: internal/core
+          pkgname: core
+          filename: layout_layout_mock_test.go

@@ -2,7 +2,6 @@ package core
 
 import (
 	"math"
-	"slices"
 	"time"
 )
 
@@ -40,7 +39,7 @@ func (s *slide) busy() bool { return s.motion.on || s.off != 0 }
 // slidable reports whether a swipe can scroll the columns: scroll or cascade
 // overflow, with the focus on the columns and no fullscreen window.
 func (w *Workspace) slidable() bool {
-	return w.Overflow != OverflowFixed && len(w.Columns) > 0 && w.fullscreen == 0 && !w.onFloat()
+	return w.layout().scrolls() && len(w.Columns) > 0 && w.fullscreen == 0 && !w.onFloat()
 }
 
 // retarget keeps the view where it is on screen when View moved from
@@ -70,43 +69,26 @@ func (m *Monitor) switchSpring(off, velocity float64) spring {
 // swipeScale turns touchpad distance into pixels: viewSwipeMovement
 // scrolls one usable width.
 func (w *Workspace) swipeScale() float64 {
-	return float64(w.policy().content.span(w.Usable)) / viewSwipeMovement
+	content, _ := w.layout().axes()
+	return float64(content.span(w.Usable)) / viewSwipeMovement
 }
 
 // snapPoints are the sorted views that align a column edge with the usable
 // area, never past the first or last column. Points closer than a
 // snapSpacing of the usable width merge into the first: a swipe step
 // always moves the view visibly.
-func (w *Workspace) snapPoints() []float64 {
-	if w.policy().wraps {
-		return w.cascadePoints()
-	}
-	g := w.gap()
-	minX, maxX := w.Usable.X+g, w.Usable.X+w.Usable.W-g
-	last := len(w.Columns) - 1
-	xs, widths := w.columnEdges()
-	lo := xs[0] - minX
-	hi := max(xs[last]+widths[last]-maxX, lo)
-	views := make([]int, 0, 2*len(w.Columns))
-	for i := range w.Columns {
-		views = append(views, min(max(xs[i]-minX, lo), hi), min(max(xs[i]+widths[i]-maxX, lo), hi))
-	}
-	slices.Sort(views)
-	minStep := float64(w.Usable.W) * snapSpacing
-	points := []float64{float64(lo)}
-	for _, v := range views {
-		if float64(v)-points[len(points)-1] >= minStep {
-			points = append(points, float64(v))
-		}
-	}
-	// The last column's end stays a point; a point close before it goes.
-	if n := len(points); float64(hi) != points[n-1] {
-		if n > 1 && float64(hi)-points[n-1] < minStep {
-			points = points[:n-1]
-		}
-		points = append(points, float64(hi))
-	}
-	return points
+func (w *Workspace) snapPoints() []float64 { return w.snapPointsInto(nil) }
+
+// snapPointsInto is snapPoints built in dst's storage.
+func (w *Workspace) snapPointsInto(dst []float64) []float64 {
+	return w.layout().snapPoints(w.lview(), dst[:0])
+}
+
+// scrollsRow reports whether the columns scroll along their row: a
+// horizontal content axis that can slide.
+func (w *Workspace) scrollsRow() bool {
+	content, _ := w.layout().axes()
+	return w.layout().scrolls() && content == horizontalAxis
 }
 
 // snapSpacing is the smallest distance between column snap points, in
@@ -117,35 +99,7 @@ const snapSpacing = 0.1
 // fully shown at the current view, else the furthest fully shown column
 // toward the swipe (forward is rightward).
 func (w *Workspace) snapFocus(view int, forward bool) (focus int) {
-	if w.policy().wraps {
-		return w.cascadeFocus(view)
-	}
-	g := w.gap()
-	minX, maxX := w.Usable.X+g, w.Usable.X+w.Usable.W-g
-	xs, widths := w.columnEdges()
-	full := func(i int) bool {
-		x := xs[i] - view
-		return x >= minX && x+widths[i] <= maxX
-	}
-	if full(w.Focus) && view == w.View {
-		return w.Focus
-	}
-	focus = -1
-	for i := range w.Columns {
-		if full(i) && (focus < 0 || forward) {
-			focus = i
-		}
-	}
-	if focus < 0 {
-		// Columns wider than the view: the one at the left edge.
-		focus = 0
-		for i := range w.Columns {
-			if xs[i]-view <= minX {
-				focus = i
-			}
-		}
-	}
-	return focus
+	return w.layout().snapFocus(w.lview(), view, forward)
 }
 
 // stopSwitch lands the workspace slide and forgets the list it measured in.

@@ -171,7 +171,8 @@ func TestPositionHintIncludesNamedEmptyAndMixedOverflow(t *testing.T) {
 	m.AddWindow(2)
 	named := m.newWorkspace()
 	named.Name, named.Overflow = "hidden", OverflowScroll
-	named.Columns = []Column{{Windows: []WindowID{3}}, {Windows: []WindowID{4}, BandStart: true}}
+	named.Columns = []Column{{Windows: []WindowID{3}}, {Windows: []WindowID{4}}}
+	named.setBandStart(1, true)
 	m.hidden = append(m.hidden, named)
 	empty := m.newWorkspace()
 	empty.Name = "empty"
@@ -259,7 +260,8 @@ func TestPositionHintMaxGridTransitionAllocations(t *testing.T) {
 		w.Overflow, w.MaxColumns = OverflowCascade, 1
 		w.Columns = make([]Column, 16)
 		for i := range w.Columns {
-			w.Columns[i] = Column{Windows: []WindowID{WindowID(i + 100)}, BandStart: true}
+			w.Columns[i] = Column{Windows: []WindowID{WindowID(i + 100)}}
+			w.setBandStart(i, true)
 		}
 	}
 	c.updatePositionHints(nil)

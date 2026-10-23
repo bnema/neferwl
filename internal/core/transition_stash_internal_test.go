@@ -528,3 +528,36 @@ func TestCarouselWrapFadesIn(t *testing.T) {
 		})
 	}
 }
+
+// A stash that changed size between the shot and the move is not the carousel
+// the shot showed: no card is taken for a wrap.
+func TestCarouselStashSizeChangeNoWrapFade(t *testing.T) {
+	c, ic, _ := fadeCore(t)
+	c.cfg.Animations.On = true
+	sc := c.cur()
+	m := sc.mon
+	w := m.Current()
+	w.Overflow = OverflowCascade
+	m.AddWindow(1)
+	for id := WindowID(2); id < 7; id++ {
+		m.AddWindow(id)
+		w.FocusID(id)
+		c.applyAction(ActionToggleWindowStash)
+	}
+	w.FocusID(1)
+	c.applyAction(ActionToggleOverview)
+	m.selectCard(w, 0)
+	settleShown(t, c)
+	shots := c.snapshot(ic.now)
+	m.RemoveWindow(w.Stash[4].ID) // 5 -> 4 cards
+	m.selectCard(w, 1)
+	c.transition(shots, ic.now)
+	for i, e := range w.Stash {
+		if previewOf(t, m.Layout(), e.ID).Hidden {
+			continue
+		}
+		if rm := sc.rects[e.ID]; rm.fade.on && rm.dx == 0 {
+			t.Fatalf("card %d faded in as a wrap although the stash size changed", i)
+		}
+	}
+}

@@ -13,7 +13,7 @@ import "slices"
 
 // full reports whether a fixed-overflow workspace has no room for a column.
 func (w *Workspace) full() bool {
-	return w.Overflow == OverflowFixed && len(w.Columns) >= max(w.MaxColumns, 1)
+	return w.layout().full(w.lview())
 }
 
 // ConsumeOrExpel moves the focused window in direction dir (-1 or 1). It

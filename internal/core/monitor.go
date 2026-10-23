@@ -84,6 +84,7 @@ func newMonitor(name, key string) *Monitor {
 
 func newMonitorWithIDs(name, key string, nextID *uint64) *Monitor {
 	m := &Monitor{Name: name, Key: key, nextID: nextID}
+	m.template.setOverflow(m.template.Overflow)
 	m.normalize()
 	return m
 }
@@ -176,6 +177,10 @@ func (m *Monitor) newWorkspace() *Workspace {
 	w.colBuf, w.rowBuf, w.tileBuf, w.zoomBuf = nil, nil, nil, nil
 	w.Columns, w.Floats, w.maximized, w.floatFocus, w.home = nil, nil, nil, false, ""
 	w.overviewAfter = nil
+	// The template's layout state is its own: sharing it would leak cascade
+	// bands between workspaces. The new one builds its state on first use.
+	w.lstate = nil
+	w.lstateReady = false
 	w.Stash, w.stashAt, w.stashFocus, w.stashHidden, w.hiddenFullscreen = nil, 0, false, false, 0
 	(*m.nextID)++
 	w.ID = *m.nextID
@@ -221,7 +226,7 @@ func (m *Monitor) Focus(i int) {
 // Focus clamps past the first or the trailing workspace. A hidden named
 // workspace is outside the numbered list: it never steps.
 func (m *Monitor) stepWorkspace(axis layoutAxis, dir int) bool {
-	step := m.Current().policy().workspaceStep(axis, dir)
+	step := workspaceStep(m.Current().layout(), axis, dir)
 	if m.shown != nil || step == 0 {
 		return false
 	}
@@ -233,7 +238,7 @@ func (m *Monitor) stepWorkspace(axis layoutAxis, dir int) bool {
 // it is the layout's workspace axis and that workspace is not the trailing
 // empty one, or -1.
 func (m *Monitor) occupiedStep(axis layoutAxis, dir int) int {
-	step := m.Current().policy().workspaceStep(axis, dir)
+	step := workspaceStep(m.Current().layout(), axis, dir)
 	to := m.Active + step
 	if m.shown != nil || step == 0 || to < 0 || to >= len(m.Workspaces) {
 		return -1
@@ -591,7 +596,7 @@ func (m *Monitor) SetMaxColumns(n int) {
 
 // SetOverflow sets the default; named workspaces may override it.
 func (m *Monitor) SetOverflow(o Overflow) {
-	m.template.Overflow = o
+	m.template.setOverflow(o)
 	m.applyNamed()
 }
 
@@ -603,21 +608,23 @@ func (m *Monitor) applyNamed() {
 	}
 	m.each(func(w *Workspace) {
 		s := specs[w.Name]
-		before, axis := w.Overflow, w.policy().content
-		w.Overflow = m.template.Overflow
-		if s.Overflow != "" {
-			w.Overflow = s.Overflow
+		before := w.layout()
+		axis, _ := before.axes()
+		o := m.template.Overflow
+		if len(s.Overflow) > 0 {
+			o = s.Overflow
 		}
-		if before != w.Overflow && w.policy().equalCells {
-			w.clearMaximized()
-		}
-		if before != w.Overflow {
+		w.setOverflow(o)
+		if switched := before.name() != w.layout().name(); switched {
+			if w.layout().resetsMaximize() {
+				w.clearMaximized()
+			}
 			// Cascade bands start over from the column order.
-			w.forgetBands()
+			w.resetLayoutState()
 		}
 		// The view offset belongs to the old content axis: SetMaxColumns
 		// scrolls back to the focus along the new one.
-		if w.policy().content != axis {
+		if content, _ := w.layout().axes(); content != axis {
 			w.view.stop()
 			w.View = 0
 		}

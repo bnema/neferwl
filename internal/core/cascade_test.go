@@ -377,14 +377,14 @@ func TestSlideLayoutAxisOffset(t *testing.T) {
 	m.AddWindow(2)
 	m.Current().Overflow = OverflowScroll
 	m.Focus(0)
-	m.switchAxis = m.Current().policy().workspace
+	_, m.switchAxis = m.Current().layout().axes()
 	m.switchView.off = .5
 	if p := previewOf(t, m.layoutInto(nil), 1); p.Rect.X != -450 || p.Rect.Y != 0 {
 		t.Fatalf("cascade source offset=%v", p.Rect)
 	}
 	m.stopSwitch()
 	m.Focus(1)
-	m.switchAxis = m.Current().policy().workspace
+	_, m.switchAxis = m.Current().layout().axes()
 	m.switchView.off = -.5
 	if p := previewOf(t, m.layoutInto(nil), 2); p.Rect.X != 0 || p.Rect.Y != 300 {
 		t.Fatalf("scroll source offset=%v", p.Rect)

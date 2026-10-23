@@ -148,7 +148,7 @@ func TestSpanLaneIdentity(t *testing.T) {
 			w := spanWorkspace(OverflowCascade, 4)
 			w.SetMaxColumns(2)
 			for i := range w.Columns {
-				w.Columns[i].BandStart = i%2 == 0
+				w.setBandStart(i, i%2 == 0)
 			}
 			for _, i := range []int{0, 2} {
 				rs := w.columnRects()

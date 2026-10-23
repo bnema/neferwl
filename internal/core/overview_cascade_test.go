@@ -873,7 +873,7 @@ func TestOverviewReloadResetsScrollOnAxisChange(t *testing.T) {
 	if err := c.apply(cfg); err != nil {
 		t.Fatal(err)
 	}
-	if m.Current().policy().workspace != horizontalAxis {
+	if _, axis := m.Current().layout().axes(); axis != horizontalAxis {
 		t.Fatal("setup: not cascade")
 	}
 	// The reload keeps the overview open on its selection, and cancelling

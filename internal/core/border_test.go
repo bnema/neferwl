@@ -186,7 +186,7 @@ func TestBorderPixelRemainders(t *testing.T) {
 					w := spanWorkspace(mode, n)
 					w.SetMaxColumns(n)
 					for i := range w.Columns {
-						w.Columns[i].BandStart = false
+						w.setBandStart(i, false)
 					}
 					w.SetOutput(width, 800)
 					before := w.columnRects()

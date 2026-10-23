@@ -307,17 +307,17 @@ func (c *Core) apply(cfg ports.Config) error {
 		binds[b] = Action(a)
 	}
 	overflow := func(v string) (Overflow, error) {
-		switch o := Overflow(v); o {
-		case "", OverflowScroll, OverflowFixed, OverflowCascade:
-			return o, nil
+		if _, ok := layoutFor(Overflow(v)); ok {
+			return Overflow(v), nil
 		}
 		return "", fmt.Errorf("invalid overflow %q", v)
 	}
 	if _, err := overflow(cfg.Layout.Overflow); err != nil {
 		return err
 	}
-	if cfg.Layout.Overflow == "" {
-		cfg.Layout.Overflow = string(OverflowScroll)
+	// Normalize the global config value; empty output/workspace values still inherit.
+	if len(cfg.Layout.Overflow) == 0 {
+		cfg.Layout.Overflow = string(defaultLayout)
 	}
 	for _, o := range cfg.Layout.Outputs {
 		if _, err := overflow(o.Overflow); err != nil {
@@ -349,9 +349,11 @@ func (c *Core) apply(cfg ports.Config) error {
 		return err
 	}
 	// Reload is cold-path work; unrelated changes keep a scroll or gesture.
-	axes := make(map[*Monitor]layoutPolicy, len(c.screens))
+	type layoutAxes struct{ content, workspace layoutAxis }
+	axes := make(map[*Monitor]layoutAxes, len(c.screens))
 	for _, s := range c.screens {
-		axes[s.mon] = s.mon.Current().policy()
+		content, workspace := s.mon.Current().layout().axes()
+		axes[s.mon] = layoutAxes{content, workspace}
 	}
 	c.cfg = cfg
 	c.binds = binds
@@ -364,7 +366,8 @@ func (c *Core) apply(cfg ports.Config) error {
 	}
 	c.applyOutputConfig()
 	for _, s := range c.screens {
-		old, now := axes[s.mon], s.mon.Current().policy()
+		content, workspace := s.mon.Current().layout().axes()
+		old, now := axes[s.mon], (layoutAxes{content, workspace})
 		if old.content != now.content || old.workspace != now.workspace {
 			s.mon.ov.dropScroll()
 		}

@@ -340,7 +340,7 @@ func (w *Workspace) dropIn(id WindowID, x, y, t int) dropTarget {
 		r := Rect{X: w.Usable.X + g, Y: w.Usable.Y + g, W: max(w.Usable.W-2*g, 0), H: max(w.Usable.H-2*g, 0)}
 		return dropTarget{kind: dropInsert, hints: outline(r, t)}
 	}
-	if !w.policy().equalCells {
+	if w.scrollsRow() {
 		if tgt, ok := w.gapDrop(cols, id, src, lone, x, y, t); ok {
 			return tgt
 		}
@@ -461,8 +461,7 @@ func (c *Core) drop(id WindowID, t dropTarget) {
 		to := w.columnOf(t.anchor)
 		// Their fields move with them, as MoveColumn.
 		w.Columns[ci], w.Columns[to] = w.Columns[to], w.Columns[ci]
-		// Band starts are positional: the flag stays at its index.
-		w.Columns[ci].BandStart, w.Columns[to].BandStart = w.Columns[to].BandStart, w.Columns[ci].BandStart
+		// Layout state keyed by position stays at its index.
 		w.FocusID(id)
 	} else {
 		cells := 0
@@ -533,7 +532,7 @@ func (c *Core) edgeScroll(t time.Duration) bool {
 	}
 	sc := c.screens[i]
 	w := sc.mon.Current()
-	if w.policy().equalCells || len(w.Columns) == 0 || w.pinned() {
+	if !w.scrollsRow() || len(w.Columns) == 0 || w.pinned() {
 		return false
 	}
 	lx := int(c.cursorX) - sc.x
