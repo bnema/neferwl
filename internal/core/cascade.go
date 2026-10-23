@@ -509,10 +509,11 @@ func (w *Workspace) restoreBand() bool {
 	b := w.band(w.Focus)
 	room := max(max(w.MaxColumns, 1)-len(bands[b]), 0)
 	// Automatically isolated fullscreen bands do not separate a column
-	// from its remembered neighbors. User-shaped ordinary bands still do.
+	// from its remembered neighbors. User-shaped bands still do: ordinary
+	// ones and one whose column the user maximized.
 	ownOnly := make([]bool, len(bands))
 	for i, band := range bands {
-		ownOnly[i] = len(band) > 0 && !slices.ContainsFunc(band, func(c Column) bool { return !c.ownBand })
+		ownOnly[i] = len(band) > 0 && !slices.ContainsFunc(band, func(c Column) bool { return !c.ownBand || c.FullWidth })
 	}
 	// take removes from the bands nbs the remembered columns found there,
 	// at most room of them, in the order of ids walked from the focused

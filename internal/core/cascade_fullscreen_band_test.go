@@ -359,16 +359,31 @@ func TestCascadeFullscreenFloatChildHorizontalReturnsToCover(t *testing.T) {
 }
 
 func TestRestoreBandAcrossPromotedFloatBand(t *testing.T) {
-	_, w := cascadeMovesCore(t, 3, 3, false)
-	w.FocusID(1)
-	w.ToggleFullWidth()
-	w.AddFloating(9, 800, 600)
-	w.SetFullscreen(9, true)
-	wantBands(t, w, []WindowID{1}, []WindowID{9}, []WindowID{2, 3})
-	w.SetFullscreen(9, false)
-	w.FocusID(1)
-	w.ToggleFullWidth()
-	wantBands(t, w, []WindowID{1, 2, 3}, []WindowID{9})
+	for _, tc := range []struct {
+		name     string
+		maximize bool // the user maximizes the promoted column before 1 comes back
+		want     [][]WindowID
+	}{
+		{"an automatic band is crossed", false, [][]WindowID{{1, 2, 3}, {9}}},
+		{"a maximized band stops the restore", true, [][]WindowID{{1}, {9}, {2, 3}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, w := cascadeMovesCore(t, 3, 3, false)
+			w.FocusID(1)
+			w.ToggleFullWidth()
+			w.AddFloating(9, 800, 600)
+			w.SetFullscreen(9, true)
+			wantBands(t, w, []WindowID{1}, []WindowID{9}, []WindowID{2, 3})
+			w.SetFullscreen(9, false)
+			if tc.maximize {
+				w.FocusID(9)
+				w.ToggleFullWidth()
+			}
+			w.FocusID(1)
+			w.ToggleFullWidth()
+			wantBands(t, w, tc.want...)
+		})
+	}
 }
 
 func TestPromotedFullscreenFloatMovesToNeighborMonitor(t *testing.T) {
