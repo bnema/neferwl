@@ -266,6 +266,7 @@ func (o *Output) setupColor() {
 	}
 	o.ctmBlob = blob
 	o.colorMult = s3132(float64(o.hdr.settings.SDRBrightness) / 80)
+	o.alignLUT3DSizes()
 	if n := o.lut3dSize(); n != 0 {
 		if blob, err = o.k.createBlob(lut3dIdentityBytes(n)); err != nil {
 			o.log.Warn().Err(err).Str("connector", o.conn.name).Uint32("size", n).Msg("identity 3D LUT blob; plane colour pipelines off")
@@ -278,8 +279,24 @@ func (o *Output) setupColor() {
 		Uint32("lut3d_size", o.lut3dSize()).Msg("plane colour objects")
 }
 
-// lut3dSize is the dimension of the 3D LUT the planes' pipelines have (both
-// planes of an output share the same hardware block), 0 without one.
+// alignLUT3DSizes drops the overlay's pipeline when its 3D LUT size differs
+// from the primary's: the output has one identity LUT blob, sized for the
+// primary. SDR content on the overlay is then composed.
+func (o *Output) alignLUT3DSizes() {
+	p, ov := o.primary.pipeline, (*colorPipeline)(nil)
+	if o.overlay != nil {
+		ov = o.overlay.pipeline
+	}
+	if p == nil || ov == nil || p.lut3dSize == ov.lut3dSize {
+		return
+	}
+	o.log.Warn().Str("connector", o.conn.name).Uint32("primary", p.lut3dSize).Uint32("overlay", ov.lut3dSize).
+		Msg("3D LUT sizes differ; overlay colour pipeline off")
+	o.overlay.pipeline = nil
+}
+
+// lut3dSize is the dimension of the 3D LUT the planes' pipelines have, 0
+// without one. alignLUT3DSizes makes it the same for both planes.
 func (o *Output) lut3dSize() uint32 {
 	for _, p := range [...]*plane{o.primary, o.overlay} {
 		if p != nil && p.pipeline != nil && p.pipeline.lut3d.op != 0 {

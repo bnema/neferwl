@@ -884,6 +884,32 @@ func TestSetupColor(t *testing.T) {
 			t.Fatalf("blobs %d %d", o.ctmBlob, o.lut3dBlob)
 		}
 	})
+	t.Run("an overlay 3D LUT of another size turns the overlay pipeline off", func(t *testing.T) {
+		o, k, _ := testOutput(t)
+		props := maps0(planeProps)
+		props["zpos"] = pZpos
+		o.primary.props = props
+		colorPlane(k, o.primary, pColorPipe, opBase, amdgpuChain)
+		ov := &plane{id: tOverlay, typ: planeOverlay, props: props, zposValue: 2, formats: []ports.DMABufFormat{{Format: fourccXRGB}}}
+		other := slices.Clone(amdgpuChain)
+		other[5] = opSpec{typ: "3D LUT", size: 9}
+		colorPlane(k, ov, pColorPipeOverlay, opBase+20, other)
+		o.stray = []*plane{ov}
+		o.pickOverlay()
+		o.hdr.on = true
+		o.readColor()
+		if o.overlay == nil || o.overlay.pipeline == nil || o.primary.pipeline == nil {
+			t.Fatal("pipelines not matched")
+		}
+		o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: 203}
+		o.hdr.cap.Capable = true
+		k.EXPECT().createBlob(mock.MatchedBy(func(b []byte) bool { return slices.Equal(b, ctmBytes(bt709ToBT2020)) })).Return(uint32(61), nil).Once()
+		k.EXPECT().createBlob(mock.MatchedBy(func(b []byte) bool { return slices.Equal(b, lut3dIdentityBytes(17)) })).Return(uint32(62), nil).Once()
+		o.setupColor()
+		if o.primary.pipeline == nil || o.overlay.pipeline != nil || o.lut3dBlob != 62 {
+			t.Fatalf("primary %v overlay %v lut %d", o.primary.pipeline != nil, o.overlay.pipeline != nil, o.lut3dBlob)
+		}
+	})
 	t.Run("3D LUT blob failure turns the pipelines off", func(t *testing.T) {
 		o, k, _ := colorOutput(t, true, nil)
 		o.ctmBlob, o.lut3dBlob = 0, 0
