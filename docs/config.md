@@ -260,6 +260,8 @@ bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
 | `scale-up` / `scale-down` | Zoom the display; the scale is saved to the config |
 | `quit` | Exit NeferWL |
 
+Note on `toggle-fullscreen`: a parentless window whose first committed size is exactly the logical size of the output it is on, without asking for fullscreen (a game in borderless-windowed mode), is put fullscreen as if by `toggle-fullscreen`, without being resized, when it is the focused window of the shown workspace. Later resizes do not.
+
 ### Default binds
 
 | Keys | Action |

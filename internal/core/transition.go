@@ -518,6 +518,9 @@ func (c *Core) resizeFloating(v ports.WindowResized) {
 		old = settledRect(sc.mon, v.ID)
 	}
 	w.ResizeFloating(v.ID, v.Width, v.Height)
+	if c.legacyFullscreen(sc, v) {
+		return
+	}
 	if !running {
 		return
 	}
@@ -980,4 +983,36 @@ func movedFrom(b *viewShot, before []viewShot) *viewShot {
 		}
 	}
 	return nil
+}
+
+// legacyFullscreen puts a window in the fullscreen state when the first size
+// it commits after mapping is exactly the logical size of the output it is
+// on: a game in borderless-windowed mode (X11 through xwayland-satellite)
+// never asks for fullscreen. It is the state toggle-fullscreen sets, and the
+// window is not resized. It follows the focus rules (ADR 011): only the
+// window that already has the focus on the shown workspace goes fullscreen,
+// so a fullscreen cover or another workspace is never disturbed. The parent
+// is the one read at map (a later set_parent is not excluded); remaps and
+// later resizes are left alone. It reports whether the window went
+// fullscreen.
+func (c *Core) legacyFullscreen(sc *screen, v ports.WindowResized) bool {
+	if !c.windows.firstSize(v.ID) {
+		return false
+	}
+	if rec := c.windows.lookup(v.ID); rec.client.Parent != 0 || rec.client.Remap {
+		return false
+	}
+	if r := sc.rect(); v.Width != r.W || v.Height != r.H || r.W <= 0 {
+		return false
+	}
+	cur := sc.mon.Current()
+	if id, ok := cur.Focused(); !ok || id != v.ID || !cur.has(v.ID) {
+		return false
+	}
+	sc.mon.SetFullscreen(v.ID, true)
+	if cur.fullscreen != v.ID {
+		return false
+	}
+	delete(sc.rects, v.ID)
+	return true
 }

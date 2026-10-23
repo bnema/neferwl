@@ -145,7 +145,8 @@ type window struct {
 	minW, minH     int32
 	maxW, maxH     int32
 	floating       bool
-	floatW, floatH int // size last sent to core
+	floatW, floatH int  // size last sent to core
+	sized          bool // the first committed size after a map was sent
 	// last is the most recent core configure, resent when decoration mode changes.
 	last    ports.ConfigureWindow
 	hasLast bool
@@ -238,6 +239,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 			x.serials = append(x.serials, x.server.serial)
 		} else if buffer && !w.mapped && x.acked {
 			w.mapped = true
+			w.sized = false
 			w.gen++
 			// Placement claims are for a new toplevel, not later remaps.
 			// Ordinary commits, popups and remaps need no /proc lookup.
@@ -412,7 +414,21 @@ func (top) SetMinimized(*xdgshell.Toplevel) {}
 // afterCommit runs once the commit applied content and geometry: a
 // floating window keeps the size it draws.
 func (w *window) afterCommit() {
-	if !w.mapped || !w.floating {
+	if !w.mapped {
+		return
+	}
+	if !w.floating {
+		// Core reads a tile's first size once, to spot a window that maps
+		// at its output's size without asking for fullscreen. This
+		// prefilter accepts any output size; core compares with the output
+		// the window is on.
+		if fw, fh := w.size(); !w.sized && fw > 0 && fh > 0 {
+			w.sized = true
+			if !w.xdg.server.outputSized(fw, fh) {
+				return
+			}
+			w.xdg.server.emit(ports.WindowResized{ID: w.id, Width: fw, Height: fh})
+		}
 		return
 	}
 	if fw, fh := w.size(); fw > 0 && fh > 0 && (fw != w.floatW || fh != w.floatH) {
@@ -452,4 +468,14 @@ func (x *xdgSurface) surfaceResource() *wayland.Surface {
 		}
 	}
 	return nil
+}
+
+// outputSized reports whether an output has the logical size w×h.
+func (s *Server) outputSized(w, h int) bool {
+	for _, o := range s.outputs {
+		if o.place.Width == w && o.place.Height == h {
+			return true
+		}
+	}
+	return false
 }
