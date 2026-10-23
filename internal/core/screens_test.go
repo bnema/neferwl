@@ -1621,3 +1621,25 @@ func transformReloadClampsPointer(t *testing.T, r *landRig) {
 		}
 	}
 }
+
+// The state marks the fullscreen window of a workspace, and only it.
+func TestStateReportsFullscreen(t *testing.T) {
+	r := startMulti(t, nil, left, right)
+	r.key(t, "Left", ports.ModAlt|ports.ModCtrl) // DP-1
+	r.mapWindow(t, 1)
+	r.mapWindow(t, 2)
+	r.key(t, "f", ports.ModAlt|ports.ModShift) // 2 fullscreen
+	st := stateAfter(t, r.state, func(st ports.State) bool {
+		for _, w := range st.Windows {
+			if w.Fullscreen {
+				return true
+			}
+		}
+		return false
+	})
+	for _, w := range st.Windows {
+		if w.Fullscreen != (w.ID == 2) {
+			t.Fatalf("window %d fullscreen = %v", w.ID, w.Fullscreen)
+		}
+	}
+}
