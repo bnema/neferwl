@@ -728,7 +728,8 @@ func TestOverviewCascadeCoveringFloat(t *testing.T) {
 	}
 }
 
-// T10b: a pinned fullscreen column keeps its Fullscreen tile in the band.
+// T10b: a pinned fullscreen column keeps its Fullscreen tile, and the
+// columns of the other bands stay shown.
 func TestOverviewCascadePinnedFullscreenTile(t *testing.T) {
 	m := cascadeOverview()
 	w := m.Current()
@@ -744,7 +745,7 @@ func TestOverviewCascadePinnedFullscreenTile(t *testing.T) {
 		t.Fatalf("fullscreen tile: %+v", fs)
 	}
 	for _, id := range []WindowID{7, 9} {
-		if p := previewOf(t, ps, id); p.Hidden || p.Fullscreen || p.Peek != (fs.Peek) {
+		if p := previewOf(t, ps, id); p.Hidden || p.Fullscreen {
 			t.Fatalf("band tile %d: %+v", id, p)
 		}
 	}

@@ -371,6 +371,9 @@ func (w *Workspace) shiftBand(lo, hi, dir, at int) bool {
 	id, _ := w.Focused()
 	bands := w.bandList()
 	cols := slices.Clone(bands[b][lo-first : hi-first+1])
+	for k := range cols {
+		cols[k].ownBand = false
+	}
 	bands[b] = slices.Delete(bands[b], lo-first, hi-first+1)
 	w.setBands(w.sendBand(bands, b, dir, at, cols), id)
 	return true
@@ -419,6 +422,53 @@ func (w *Workspace) isolateBand() {
 	w.setBands(bands, id)
 }
 
+// fullscreenBand gives tiled window id, about to go fullscreen, a band of
+// its own right below the band it is in, so the other columns keep their
+// band and a focus change among them never touches the fullscreen output.
+// A window stacked in a column is expelled into a column of its own first.
+// Leaving fullscreen does not move it back: the column keeps its band, so
+// nothing jumps when the user leaves. Only cascade layouts do this; the
+// focus stays on the same window.
+func (w *Workspace) fullscreenBand(id WindowID) {
+	i := w.columnOf(id)
+	if !w.policy().wraps || i < 0 {
+		return
+	}
+	b := w.band(i)
+	first, last := w.bandBounds(b)
+	if len(w.Columns[i].Windows) == 1 && first == last {
+		return
+	}
+	fc := w.Columns[w.Focus]
+	focus := fc.Windows[fc.Focus]
+	bands := w.bandList()
+	col := bands[b][i-first]
+	nc := col
+	if len(col.Windows) == 1 {
+		// The column leaves its lane, as deleteColumn: manual widths of the
+		// lane no longer add up. It keeps its slot and its own width.
+		w.clearSpans(i)
+		bands[b] = slices.Delete(bands[b], i-first, i-first+1)
+	} else {
+		j := slices.Index(col.Windows, id)
+		// The expelled window gets a plain column: no Span (a manual width
+		// is the stack's, and the new band is alone), no shares.
+		nc = Column{Windows: []WindowID{id}, Cells: col.Cells}
+		col.Windows = slices.Delete(slices.Clone(col.Windows), j, j+1)
+		col.Shares = nil
+		if j == 0 {
+			col.Slot = 0 // the slot window left
+		}
+		if col.Focus > j || col.Focus >= len(col.Windows) {
+			col.Focus = max(min(col.Focus-1, len(col.Windows)-1), 0)
+		}
+		bands[b][i-first] = col
+	}
+	nc.ownBand = true
+	bands = slices.Insert(bands, b+1, []Column{nc})
+	w.setBands(bands, focus)
+}
+
 // pushNeighbor makes room in the focused column's full cascade band for a
 // wider column: the column at the far end of the band leaves it. The
 // rightmost goes to the band below; from the last column, the leftmost
@@ -457,13 +507,10 @@ func (w *Workspace) restoreBand() bool {
 	bands := w.bandList()
 	b := w.band(w.Focus)
 	room := max(max(w.MaxColumns, 1)-len(bands[b]), 0)
-	// take removes from band nb the remembered columns found there, at
-	// most room of them, in the order of ids walked from the focused
+	// take removes from the bands nbs the remembered columns found there,
+	// at most room of them, in the order of ids walked from the focused
 	// column outward (rev: ids end nearest).
-	take := func(nb int, ids [][]WindowID, rev bool) []Column {
-		if nb < 0 || nb >= len(bands) {
-			return nil
-		}
+	take := func(nbs []int, ids [][]WindowID, rev bool) []Column {
 		var got []Column
 		for k := range ids {
 			if room == 0 {
@@ -481,21 +528,40 @@ func (w *Workspace) restoreBand() bool {
 			if head < 0 {
 				continue
 			}
-			i := slices.IndexFunc(bands[nb], func(c Column) bool { return c.Windows[0] == e[head] })
-			if i < 0 {
-				continue
+			for k, nb := range nbs {
+				// Past the adjacent band, only a column fullscreenBand put in
+				// a band of its own is taken: one the user moved there stays.
+				i := slices.IndexFunc(bands[nb], func(c Column) bool {
+					return c.Windows[0] == e[head] && (k == 0 || c.ownBand)
+				})
+				if i < 0 {
+					continue
+				}
+				got = append(got, bands[nb][i])
+				bands[nb] = slices.Delete(bands[nb], i, i+1)
+				room--
+				break
 			}
-			got = append(got, bands[nb][i])
-			bands[nb] = slices.Delete(bands[nb], i, i+1)
-			room--
 		}
 		if rev {
 			slices.Reverse(got)
 		}
 		return got
 	}
-	above := take(b-1, up, true)
-	below := take(b+1, down, false)
+	// reach lists the bands dir away to look in: the adjacent one, and the
+	// next, where a column that fullscreenBand split off may lie.
+	reach := func(dir int) []int {
+		var nbs []int
+		for n := b + dir; n >= 0 && n < len(bands); n += dir {
+			nbs = append(nbs, n)
+			if len(nbs) == 2 {
+				break
+			}
+		}
+		return nbs
+	}
+	above := take(reach(-1), up, true)
+	below := take(reach(1), down, false)
 	bands[b] = slices.Concat(above, bands[b], below)
 	w.setBands(bands, id)
 	return true

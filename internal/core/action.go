@@ -388,7 +388,39 @@ func (c *Core) dispatchAction(a Action) Effect {
 		if a == ActionMoveColumnLeft {
 			dir, d = -1, dirLeft
 		}
-		if i := c.neighbor(d); w.leavesBand(w.Focus+dir) && i >= 0 {
+		// A fullscreen window (tiled or floating) leaves for the neighbor
+		// screen at once and stays fullscreen there; with no screen,
+		// nothing moves.
+		i := c.neighbor(d)
+		if fid, ok := w.Focused(); ok && w.fullscreen == fid && (w.floatIndex(fid) >= 0 || !w.onFloat()) {
+			if i < 0 {
+				return Effect{}
+			}
+			var col Column
+			if w.floatIndex(fid) < 0 {
+				if col, ok = w.takeColumn(); !ok {
+					return Effect{}
+				}
+			}
+			w.reconcileFloats() // floats the fullscreen kept demoted show again
+			from := c.cur()
+			c.focusScreen = i
+			to := c.cur().mon.Current()
+			if len(col.Windows) == 0 {
+				moveFloat(w, to, fid)
+			} else {
+				at := 0
+				if d == dirLeft {
+					at = len(to.Columns)
+				}
+				to.receive(col, at)
+				to.SetFullscreen(fid, true)
+			}
+			from.mon.normalize()
+			c.cur().mon.normalize()
+			return Effect{}
+		}
+		if i >= 0 && w.leavesBand(w.Focus+dir) {
 			col, ok := w.takeColumn()
 			if !ok {
 				return Effect{}
@@ -607,4 +639,18 @@ func (w *Workspace) Apply(a Action) Effect {
 		return Effect{Quit: true}
 	}
 	return Effect{}
+}
+
+// moveFloat moves float id from workspace cur to to, as MoveToWorkspace
+// does, focuses it there and keeps it fullscreen.
+func moveFloat(cur, to *Workspace, id WindowID) {
+	fl := cur.Floats[cur.floatIndex(id)]
+	if fl.free && fl.back != nil {
+		fl = fl.rehome()
+	}
+	cur.RemoveWindow(id)
+	to.AddFloating(id, fl.W, fl.H)
+	to.Floats[len(to.Floats)-1] = fl
+	to.Activate(id)
+	to.SetFullscreen(id, true)
 }

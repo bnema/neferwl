@@ -299,13 +299,14 @@ func TestCascadeMoveWindowStackedFirst(t *testing.T) {
 	wantFocus(t, c, "M", 5)
 }
 
-// A fullscreen window keeps its band.
+// A fullscreen window keeps its own band (it left {4 5} when it went
+// fullscreen).
 func TestCascadeMoveWindowFullscreenStays(t *testing.T) {
 	c, w := cascadeMovesCore(t, 5, 3, false)
 	w.FocusID(4)
 	w.ToggleFullscreen()
 	c.applyAction(ActionMoveWindowUp)
-	wantColumns(t, w, 1, 2, 3, 4, 5)
+	wantColumns(t, w, 1, 2, 3, 5, 4)
 }
 
 // Scroll overflow has no bands: up/down stop at the column edge.

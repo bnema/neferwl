@@ -40,6 +40,11 @@ type Column struct {
 	// maximize-column or cycle-column-width sent to the band above or
 	// below; they come back when the column is restored.
 	pushedUp, pushedDown [][]WindowID
+	// ownBand marks a column fullscreenBand put in a band of its own:
+	// restoreBand brings it back from past the adjacent band, unlike a
+	// column the user moved there. shiftBand clears it when the column
+	// moves to another band on purpose.
+	ownBand bool
 }
 type Placement struct {
 	ID                          WindowID
@@ -1335,6 +1340,7 @@ func (w *Workspace) ToggleFullscreen() {
 		w.endFullscreen()
 		return
 	}
+	w.fullscreenBand(id)
 	w.fullscreen = id
 	w.scroll()
 }
@@ -1443,6 +1449,9 @@ func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 	if id != w.stashOver {
 		// Another window covers: the override was for the old cover.
 		w.dropStashOver()
+	}
+	if !w.isFloat(id) && w.fullscreen != id {
+		w.fullscreenBand(id)
 	}
 	w.fullscreen = id
 	if !w.isFloat(id) {
