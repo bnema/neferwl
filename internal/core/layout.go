@@ -41,8 +41,9 @@ type Column struct {
 	// below; they come back when the column is restored.
 	pushedUp, pushedDown [][]WindowID
 	// ownBand marks a column fullscreenBand put in a band of its own:
-	// restoreBand looks past such a band. shiftBand clears it when the
-	// column moves to another band on purpose.
+	// restoreBand brings it back from past the adjacent band, unlike a
+	// column the user moved there. shiftBand clears it when the column
+	// moves to another band on purpose.
 	ownBand bool
 }
 type Placement struct {
