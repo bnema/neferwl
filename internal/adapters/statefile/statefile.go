@@ -100,6 +100,8 @@ type Window struct {
 	Visible     bool   `json:"visible"`
 	// Floating is set for native floats (dialogs) and stashed windows.
 	Floating bool `json:"floating"`
+	// Fullscreen is set for the fullscreen window of its workspace.
+	Fullscreen bool `json:"fullscreen"`
 	// StashIndex is the 1-based place of a stashed window in its
 	// workspace's stash of StashCount windows; both are 0 outside it.
 	StashIndex int `json:"stash_index"`
@@ -139,7 +141,7 @@ func fromPorts(st ports.State, ids *workspaceid.IDs) State {
 }
 
 func window(w ports.WindowState, ids *workspaceid.IDs) Window {
-	return Window{ID: uint64(w.ID), AppID: w.AppID, PID: w.PID, Output: w.Output, Workspace: w.Workspace, WorkspaceID: ids.ID(w.WorkspaceID, w.WorkspaceName), Visible: w.Visible, Floating: w.Floating, StashIndex: w.StashIndex, StashCount: w.StashCount, Column: w.Column, Row: w.Row, Hidden: w.Hidden}
+	return Window{ID: uint64(w.ID), AppID: w.AppID, PID: w.PID, Output: w.Output, Workspace: w.Workspace, WorkspaceID: ids.ID(w.WorkspaceID, w.WorkspaceName), Visible: w.Visible, Floating: w.Floating, Fullscreen: w.Fullscreen, StashIndex: w.StashIndex, StashCount: w.StashCount, Column: w.Column, Row: w.Row, Hidden: w.Hidden}
 }
 
 // writeInterval is the least time between two writes of the file.

@@ -67,7 +67,7 @@ func (c *Core) stateInto(st ports.State) ports.State {
 			c.scratch.ids = w.appendWindows(c.scratch.ids[:0])
 			for _, id := range c.scratch.ids {
 				rec := c.windows.lookup(id)
-				v := ports.WindowState{ID: id, AppID: rec.client.AppID, PID: rec.client.PID, Output: s.name(), Workspace: n, WorkspaceID: w.ID, WorkspaceName: w.Name, Visible: shown[id], IdleInhibit: rec.idleInhibit, Floating: w.isFloat(id)}
+				v := ports.WindowState{ID: id, AppID: rec.client.AppID, PID: rec.client.PID, Output: s.name(), Workspace: n, WorkspaceID: w.ID, WorkspaceName: w.Name, Visible: shown[id], IdleInhibit: rec.idleInhibit, Floating: w.isFloat(id), Fullscreen: w.fullscreen == id}
 				if i := w.stashIndex(id); i >= 0 {
 					v.StashIndex, v.StashCount, v.Hidden = i+1, len(w.Stash), w.stashHidden
 				}

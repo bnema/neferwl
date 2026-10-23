@@ -68,6 +68,9 @@ type WindowState struct {
 	IdleInhibit bool `json:",omitempty"`
 	// Floating is set for native floats and stashed windows.
 	Floating bool
+	// Fullscreen is set for its workspace's fullscreen window, also while a
+	// stashed window shows over it or its workspace is not shown.
+	Fullscreen bool
 	// StashIndex is the 1-based place of a stashed window in its stash of
 	// StashCount windows; both are 0 outside the stash.
 	StashIndex, StashCount int
