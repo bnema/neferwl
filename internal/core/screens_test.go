@@ -946,6 +946,8 @@ func TestExpelCrossesToFullNeighbor(t *testing.T) {
 	r.mapWindow(t, 4)
 	r.mapWindow(t, 5)
 	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
+	// Entry now selects the top window of the rightmost column; select 3.
+	r.key(t, "Down", ports.ModAlt)
 	// Expel right at the edge: 3 stacks under 4, the first column of DP-2.
 	set := r.key(t, "bracketright", ports.ModAlt)
 	if got, _ := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1, 2}) {
@@ -983,6 +985,8 @@ func TestExpelOntoFixedFullscreenLeavesIt(t *testing.T) {
 	r.mapWindow(t, 5)
 	r.key(t, "f", ports.ModAlt|ports.ModShift)
 	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
+	// Entry now selects the top window of the rightmost column; select 3.
+	r.key(t, "Down", ports.ModAlt)
 	// 3 joins as a tile: fullscreen ends so it is seen, focused.
 	set := r.key(t, "bracketright", ports.ModAlt)
 	got, focused := windowsOf(set, "DP-2")

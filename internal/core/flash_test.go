@@ -98,7 +98,7 @@ func TestFlashDebounceCooldownAndReplacement(t *testing.T) {
 }
 
 func TestFlashSettlesAndResolvesFinalRect(t *testing.T) {
-	for _, level := range []flashLevel{flashWindow, flashColumn, flashMonitor} {
+	for _, level := range []flashLevel{flashWindow, flashColumn} {
 		t.Run(string(rune('0'+level)), func(t *testing.T) {
 			c, clock := flashCore(t)
 			w := c.cur().mon.Current()
@@ -115,13 +115,12 @@ func TestFlashSettlesAndResolvesFinalRect(t *testing.T) {
 				t.Fatal("did not start after settling")
 			}
 			want := Rect{W: 300, H: 200}
-			if level != flashMonitor {
-				for _, p := range c.cur().mon.Layout() {
-					if p.ID == 3 {
-						want = p.Rect
-					}
+			for _, p := range c.cur().mon.Layout() {
+				if p.ID == 3 {
+					want = p.Rect
 				}
 			}
+
 			if c.flash.rect != want {
 				t.Fatalf("rect %+v want %+v", c.flash.rect, want)
 			}
@@ -232,7 +231,7 @@ func TestFlashExcludedActions(t *testing.T) {
 	}
 }
 
-func TestFlashMonitorTriggers(t *testing.T) {
+func TestFlashCrossOutputActionTriggers(t *testing.T) {
 	for _, action := range []Action{ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionFocusMonitorUp, ActionFocusMonitorDown, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown} {
 		t.Run(string(action), func(t *testing.T) {
 			c, clock := flashCore(t)
@@ -249,12 +248,23 @@ func TestFlashMonitorTriggers(t *testing.T) {
 				b.x, b.y = 0, 200
 			}
 			c.applyAction(action)
-			if c.flash.pending == nil || c.flash.pending.level != flashMonitor || c.flash.pending.output != "B" {
+			id, _ := b.mon.Focused()
+			if id == 0 {
+				if c.flash.pending != nil {
+					t.Fatalf("empty destination request %+v", c.flash.pending)
+				}
+				return
+			}
+			if c.flash.pending == nil || *c.flash.pending != (flashTarget{level: flashWindow, window: id, output: "B"}) {
 				t.Fatalf("destination request %+v", c.flash.pending)
 			}
 			clock.now = clock.now.Add(flashSettle)
-			if !c.flashTick() || c.flash.rect != (Rect{W: 400, H: 300}) {
-				t.Fatalf("monitor rect %+v", c.flash.rect)
+			if !c.flashTick() {
+				t.Fatal("destination window flash did not start")
+			}
+			want, _, ok := c.flashRect(*c.flash.running, b)
+			if !ok || c.flash.rect != want {
+				t.Fatalf("window rect %+v want %+v", c.flash.rect, want)
 			}
 		})
 	}
@@ -395,7 +405,7 @@ func TestFlashNoImplicitFocusTriggers(t *testing.T) {
 }
 
 func TestFlashCancelsStaleRunningTargets(t *testing.T) {
-	for _, level := range []flashLevel{flashWindow, flashColumn, flashMonitor} {
+	for _, level := range []flashLevel{flashWindow, flashColumn} {
 		for _, change := range []string{"overview", "output gone", "fullscreen", "unmapped", "hidden", "other output", "workspace changed"} {
 			t.Run(string(rune('0'+level))+"/"+change, func(t *testing.T) {
 				c, clock := flashCore(t)
@@ -428,13 +438,8 @@ func TestFlashCancelsStaleRunningTargets(t *testing.T) {
 				}
 				// Cancellation must not wait for the target output's next flip.
 				scenes := stepScenes(t, c, b)
-				shouldCancel := level != flashMonitor || change == "overview" || change == "output gone"
-				if shouldCancel {
-					if scenes["A"].Flash != nil || c.flash.running != nil || c.animating() {
-						t.Fatalf("stale flash retained: %+v, animating=%v", scenes["A"].Flash, c.animating())
-					}
-				} else if scenes["A"].Flash == nil || !c.animating() {
-					t.Fatal("monitor flash cancelled for a window change")
+				if scenes["A"].Flash != nil || c.flash.running != nil || c.animating() {
+					t.Fatalf("stale flash retained: %+v, animating=%v", scenes["A"].Flash, c.animating())
 				}
 			})
 		}
@@ -458,7 +463,7 @@ func TestFlashCooldownRemembersEveryTarget(t *testing.T) {
 	}
 	// Inserting after all previous starts expire prunes old target keys.
 	clock.now = clock.now.Add(flashCooldown)
-	startFlash(t, c, clock, flashMonitor, 0)
+	startFlash(t, c, clock, flashWindow, 3)
 	if len(c.flash.lastStarts) != 1 {
 		t.Fatalf("expired cooldown entries retained: %v", c.flash.lastStarts)
 	}
@@ -596,7 +601,7 @@ func TestFlashUnchangedSampleIsReused(t *testing.T) {
 	}
 }
 
-func TestFlashCrossScreenActionsMarkDestinationOutput(t *testing.T) {
+func TestFlashCrossScreenActionsMarkDestinationWindow(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		action   Action
@@ -621,7 +626,18 @@ func TestFlashCrossScreenActionsMarkDestinationOutput(t *testing.T) {
 			if c.cur() != b {
 				t.Fatal("action did not cross screens")
 			}
-			if c.flash.pending == nil || *c.flash.pending != (flashTarget{level: flashMonitor, output: "B"}) {
+			id, _ := b.mon.Focused()
+			if id == 0 {
+				if c.flash.pending != nil {
+					t.Fatalf("empty destination request %+v", c.flash.pending)
+				}
+				clock.now = clock.now.Add(flashSettle)
+				if c.flashTick() || stepScenes(t, c, b)["B"].Flash != nil {
+					t.Fatal("empty destination flashed")
+				}
+				return
+			}
+			if c.flash.pending == nil || *c.flash.pending != (flashTarget{level: flashWindow, window: id, output: "B"}) {
 				t.Fatalf("destination request %+v", c.flash.pending)
 			}
 			clock.now = clock.now.Add(flashSettle)
@@ -633,7 +649,8 @@ func TestFlashCrossScreenActionsMarkDestinationOutput(t *testing.T) {
 				t.Fatal("source output flashed")
 			}
 			f := scenes["B"].Flash
-			if f == nil || f.Rect != (Rect{W: 400, H: 300}) || !scenes["B"].Animating {
+			want, _, ok := c.flashRect(*c.flash.running, b)
+			if f == nil || !ok || f.Rect != want || !scenes["B"].Animating {
 				t.Fatalf("destination scene flash %+v", f)
 			}
 			if !tc.occupied && tc.action != ActionMoveColumnRight && len(scenes["B"].Windows) != 0 {
@@ -669,7 +686,7 @@ func TestFlashSameScreenColumnFocusKeepsColumnLevel(t *testing.T) {
 }
 
 func TestFlashCancelsOnGeometryChange(t *testing.T) {
-	for _, level := range []flashLevel{flashWindow, flashColumn, flashMonitor} {
+	for _, level := range []flashLevel{flashWindow, flashColumn} {
 		for _, change := range []string{"resize", "new window"} {
 			t.Run(string(rune('0'+level))+"/"+change, func(t *testing.T) {
 				c, clock := flashCore(t)
@@ -678,9 +695,7 @@ func TestFlashCancelsOnGeometryChange(t *testing.T) {
 				if before.Flash == nil {
 					t.Fatal("setup: no flash")
 				}
-				if level == flashMonitor {
-					c.cur().mon.SetOutput(400, 300)
-				} else if change == "resize" {
+				if change == "resize" {
 					c.cur().mon.Current().Apply(ActionCycleColumnWidth)
 				} else {
 					c.cur().mon.AddWindow(4)
@@ -699,7 +714,7 @@ func TestFlashCancelsOnGeometryChange(t *testing.T) {
 }
 
 func TestFlashGeometryRevalidationAllocations(t *testing.T) {
-	for _, level := range []flashLevel{flashWindow, flashColumn, flashMonitor} {
+	for _, level := range []flashLevel{flashWindow, flashColumn} {
 		t.Run(string(rune('0'+level)), func(t *testing.T) {
 			c, clock := flashCore(t)
 			startFlash(t, c, clock, level, 3)
@@ -727,7 +742,6 @@ func TestFlashFollowsInnerBorderAndRadius(t *testing.T) {
 		{"column with gaps", 12, false, flashColumn, 11},
 		{"tile without gaps", 0, false, flashWindow, 0},
 		{"float", 0, true, flashWindow, 11},
-		{"monitor", 12, false, flashMonitor, 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c, clock := flashCore(t)
@@ -745,16 +759,15 @@ func TestFlashFollowsInnerBorderAndRadius(t *testing.T) {
 			}
 			startFlash(t, c, clock, test.level, id)
 			want := Rect{W: 300, H: 200}
-			if test.level != flashMonitor {
-				for _, p := range c.cur().mon.Layout() {
-					if p.ID == id {
-						want = p.Rect.Inset(p.Inset, 3)
-						if test.level == flashColumn {
-							want = c.flash.rect
-						}
+			for _, p := range c.cur().mon.Layout() {
+				if p.ID == id {
+					want = p.Rect.Inset(p.Inset, 3)
+					if test.level == flashColumn {
+						want = c.flash.rect
 					}
 				}
 			}
+
 			if c.flash.rect != want || c.flash.radius != test.radius {
 				t.Fatalf("rect %+v radius %d, want %+v radius %d", c.flash.rect, c.flash.radius, want, test.radius)
 			}
