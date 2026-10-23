@@ -274,6 +274,8 @@ func (o *Output) setupColor() {
 		}
 		o.lut3dBlob = blob
 	}
+	o.log.Info().Str("connector", o.conn.name).Float64("multiplier", float64(o.hdr.settings.SDRBrightness)/80).
+		Uint32("lut3d_size", o.lut3dSize()).Msg("plane colour objects")
 }
 
 // lut3dSize is the dimension of the 3D LUT the planes' pipelines have (both
