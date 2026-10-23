@@ -491,7 +491,8 @@ func (w *Workspace) pushNeighbor() {
 }
 
 // restoreBand brings back the columns isolateBand or pushNeighbor sent
-// away, those still in the adjacent band, as many as the band has room
+// away, those still in the adjacent ordinary band (across automatic
+// own-band isolates), as many as the band has room
 // for, nearest to the focused column first: the ones sent up at the start
 // of the band, the ones sent down at its end, in their former order. The
 // others stay where they are. It reports whether the column remembered
@@ -507,6 +508,13 @@ func (w *Workspace) restoreBand() bool {
 	bands := w.bandList()
 	b := w.band(w.Focus)
 	room := max(max(w.MaxColumns, 1)-len(bands[b]), 0)
+	// Automatically isolated fullscreen bands do not separate a column
+	// from its remembered neighbors. User-shaped bands still do: ordinary
+	// ones and one whose column the user maximized.
+	ownOnly := make([]bool, len(bands))
+	for i, band := range bands {
+		ownOnly[i] = len(band) > 0 && !slices.ContainsFunc(band, func(c Column) bool { return !c.ownBand || c.FullWidth })
+	}
 	// take removes from the bands nbs the remembered columns found there,
 	// at most room of them, in the order of ids walked from the focused
 	// column outward (rev: ids end nearest).
@@ -529,10 +537,10 @@ func (w *Workspace) restoreBand() bool {
 				continue
 			}
 			for k, nb := range nbs {
-				// Past the adjacent band, only a column fullscreenBand put in
-				// a band of its own is taken: one the user moved there stays.
+				adjacent := !slices.ContainsFunc(nbs[:k], func(n int) bool { return !ownOnly[n] })
 				i := slices.IndexFunc(bands[nb], func(c Column) bool {
-					return c.Windows[0] == e[head] && (k == 0 || c.ownBand)
+					// A column the user maximized keeps its band.
+					return c.Windows[0] == e[head] && !c.FullWidth && (adjacent || c.ownBand)
 				})
 				if i < 0 {
 					continue
@@ -548,13 +556,13 @@ func (w *Workspace) restoreBand() bool {
 		}
 		return got
 	}
-	// reach lists the bands dir away to look in: the adjacent one, and the
-	// next, where a column that fullscreenBand split off may lie.
+	// reach crosses automatic own-band isolates, but looks only one band
+	// beyond the first ordinary band, as before: user moves remain boundaries.
 	reach := func(dir int) []int {
 		var nbs []int
 		for n := b + dir; n >= 0 && n < len(bands); n += dir {
 			nbs = append(nbs, n)
-			if len(nbs) == 2 {
+			if len(nbs) > 1 && !ownOnly[n-dir] {
 				break
 			}
 		}
@@ -596,5 +604,27 @@ func (w *Workspace) forgetBands() {
 	for i := range w.Columns {
 		c := &w.Columns[i]
 		c.BandStart, c.pushedUp, c.pushedDown = false, nil, nil
+	}
+}
+
+// fullscreenFloatBand promotes a parentless float into a permanent cascade
+// column below the selected column's band. Dialogs and stash entries keep
+// their floating placement. Like fullscreenBand, this never changes focus.
+func (w *Workspace) fullscreenFloatBand(id WindowID) {
+	i := w.floatIndex(id)
+	if !w.policy().wraps || i < 0 || w.Floats[i].over != 0 || w.stashIndex(id) >= 0 {
+		return
+	}
+	focus, _ := w.Focused()
+	bands := w.bandList()
+	at := 0
+	if len(w.Columns) > 0 {
+		at = w.band(w.Focus) + 1
+	}
+	w.Floats = slices.Delete(w.Floats, i, i+1)
+	bands = slices.Insert(bands, at, []Column{{Windows: []WindowID{id}, ownBand: true}})
+	w.setBands(bands, focus)
+	if focus == id {
+		w.floatFocus, w.stashFocus = false, false
 	}
 }

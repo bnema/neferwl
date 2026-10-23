@@ -323,6 +323,13 @@ func (c *Core) dispatchAction(a Action) Effect {
 		if a == ActionFocusColumnLeft {
 			dir, d = -1, dirLeft
 		}
+		// A fullscreen float has no column in its band. Horizontal moves
+		// use the existing workspace/monitor edge order; only up/down may
+		// reveal the tiles below.
+		if w.policy().wraps && w.cover() != 0 && w.isFloat(w.cover()) && !w.stashOverCover() && !w.coverDialogFocused() {
+			c.edgeFocus(horizontalAxis, dir, d)
+			return Effect{}
+		}
 		// A covering fullscreen window is left for the window on that side;
 		// with none (the workspace, band or stash edge), the move goes past
 		// the edge (see edgeFocus) and fullscreen stays.

@@ -244,3 +244,59 @@ func TestLegacyFullscreenUnderBoundCover(t *testing.T) {
 		}
 	}
 }
+
+func TestLegacyFullscreenCascadeFloatBand(t *testing.T) {
+	for _, parent := range []WindowID{0, 1} {
+		t.Run(map[bool]string{true: "dialog", false: "parentless"}[parent != 0], func(t *testing.T) {
+			c, clock, _ := fadeCore(t)
+			sc := c.cur()
+			w := sc.mon.Current()
+			w.Overflow, w.MaxColumns = OverflowCascade, 3
+			c.clientEvent(context.Background(), ports.WindowMapped{ID: 1})
+			c.clientEvent(context.Background(), ports.WindowMapped{ID: 2, Floating: true, Parent: parent})
+			o := sc.rect()
+			c.clientEvent(context.Background(), ports.WindowResized{ID: 2, Width: o.W, Height: o.H})
+			if parent != 0 {
+				if !w.isFloat(2) || w.fullscreen != 0 {
+					t.Fatal("dialog was promoted or auto-fullscreened")
+				}
+				clock.now = clock.now.Add(fullscreenGrace)
+				c.clientEvent(context.Background(), ports.WindowFullscreenRequest{ID: 2, Fullscreen: true})
+				if w.fullscreen != 2 || !w.isFloat(2) {
+					t.Fatal("explicit fullscreen promoted a dialog")
+				}
+				return
+			}
+			if w.isFloat(2) || w.fullscreen != 2 || len(w.Columns) != 2 || w.band(w.columnOf(2)) != w.band(w.columnOf(1))+1 || !w.Columns[w.columnOf(2)].ownBand {
+				t.Fatalf("fullscreen float placement: %+v, floats %+v fullscreen %d", w.Columns, w.Floats, w.fullscreen)
+			}
+			c.clientEvent(context.Background(), ports.WindowFullscreenRequest{ID: 2})
+			if id, _ := w.Focused(); id != 2 || w.fullscreen != 0 || w.isFloat(2) || w.band(w.columnOf(2)) != 1 {
+				t.Fatalf("after unset: focus %d fullscreen %d columns %+v floats %+v", id, w.fullscreen, w.Columns, w.Floats)
+			}
+			if r, ok := w.placed(2); !ok || r.W <= 0 || r.H <= 0 {
+				t.Fatalf("game not visible: %+v %v", r, ok)
+			}
+		})
+	}
+}
+
+func TestCascadeClientFullscreenPromotesFloatAfterGrace(t *testing.T) {
+	for _, requests := range []int{1, 3} {
+		t.Run(map[int]string{1: "once", 3: "repeated"}[requests], func(t *testing.T) {
+			c, clock, _ := fadeCore(t)
+			w := c.cur().mon.Current()
+			w.Overflow, w.MaxColumns = OverflowCascade, 3
+			c.clientEvent(context.Background(), ports.WindowMapped{ID: 1})
+			c.clientEvent(context.Background(), ports.WindowMapped{ID: 2, Floating: true})
+			clock.now = clock.now.Add(fullscreenGrace)
+			for range requests {
+				c.clientEvent(context.Background(), ports.WindowFullscreenRequest{ID: 2, Fullscreen: true})
+			}
+			if w.fullscreen != 2 || w.isFloat(2) {
+				t.Fatalf("fullscreen %d floats %+v", w.fullscreen, w.Floats)
+			}
+			wantBands(t, w, []WindowID{1}, []WindowID{2})
+		})
+	}
+}
