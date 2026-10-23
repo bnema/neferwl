@@ -279,15 +279,16 @@ func (o *Output) setupColor() {
 		Uint32("lut3d_size", o.lut3dSize()).Msg("plane colour objects")
 }
 
-// alignLUT3DSizes drops the overlay's pipeline when its 3D LUT size differs
-// from the primary's: the output has one identity LUT blob, sized for the
-// primary. SDR content on the overlay is then composed.
+// alignLUT3DSizes drops the overlay's pipeline when both planes have a 3D
+// LUT of different sizes: the output has one identity LUT blob, sized for
+// the primary. A pipeline without a 3D LUT ignores the blob. SDR content on
+// the overlay is then composed.
 func (o *Output) alignLUT3DSizes() {
 	p, ov := o.primary.pipeline, (*colorPipeline)(nil)
 	if o.overlay != nil {
 		ov = o.overlay.pipeline
 	}
-	if p == nil || ov == nil || p.lut3dSize == ov.lut3dSize {
+	if p == nil || ov == nil || p.lut3d.op == 0 || ov.lut3d.op == 0 || p.lut3dSize == ov.lut3dSize {
 		return
 	}
 	o.log.Warn().Str("connector", o.conn.name).Uint32("primary", p.lut3dSize).Uint32("overlay", ov.lut3dSize).
