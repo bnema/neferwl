@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -215,4 +216,31 @@ func TestLegacyFullscreenNeedsFocusAtFirstSize(t *testing.T) {
 			t.Fatalf("quiet float went fullscreen: %d", w.fullscreen)
 		}
 	})
+}
+
+// The adapter's sequence for a screen-sized tile mapping under a cover
+// (bound fullscreen, animations on): the cover and its focus stay.
+func TestLegacyFullscreenUnderBoundCover(t *testing.T) {
+	for _, anim := range []bool{false, true} {
+		c, _, _ := fadeCore(t)
+		c.cfg.Animations.On = anim
+		sc := c.cur()
+		c.mapWindow(ports.WindowMapped{ID: 1})
+		c.mapWindow(ports.WindowMapped{ID: 2})
+		sc.mon.ToggleFullscreen()
+		w := sc.mon.Current()
+		if w.fullscreen != 2 {
+			t.Fatalf("setup: fullscreen = %d", w.fullscreen)
+		}
+		c.clientEvent(context.Background(), ports.WindowMapped{ID: 3})
+		o := sc.rect()
+		c.clientEvent(context.Background(), ports.WindowResized{ID: 3, Width: o.W, Height: o.H})
+		_ = c.publish(context.Background())
+		if w.fullscreen != 2 {
+			t.Fatalf("anim=%v: fullscreen = %d, want the cover 2", anim, w.fullscreen)
+		}
+		if id, _ := w.Focused(); id != 2 {
+			t.Fatalf("anim=%v: focus moved to %d", anim, id)
+		}
+	}
 }
