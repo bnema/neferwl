@@ -12,7 +12,6 @@ type flashLevel uint8
 const (
 	flashWindow flashLevel = iota
 	flashColumn
-	flashMonitor
 	flashSettle   = 150 * time.Millisecond
 	flashRecheck  = 50 * time.Millisecond
 	flashCooldown = time.Second
@@ -72,13 +71,12 @@ func (c *Core) flashTick() bool {
 		return false
 	}
 	now := c.now()
-	if target.level != flashMonitor {
-		owner, _ := c.screenOf(target.window)
-		record := c.windows.lookup(target.window)
-		if owner != sc || record.client.ID == 0 {
-			return false
-		}
+	owner, _ := c.screenOf(target.window)
+	record := c.windows.lookup(target.window)
+	if owner != sc || record.client.ID == 0 {
+		return false
 	}
+
 	wait := flashSettle - now.Sub(f.since)
 	if wait > 0 || !sc.settled() {
 		if wait <= 0 {
@@ -142,10 +140,6 @@ func (c *Core) advanceFlash(only *screen) {
 func (c *Core) flashRect(target flashTarget, sc *screen) (Rect, int, bool) {
 	if sc.mon.ov.open {
 		return Rect{}, 0, false
-	}
-	if target.level == flashMonitor {
-		o := sc.mon.Output()
-		return Rect{W: o.W, H: o.H}, 0, true
 	}
 	owner, _ := c.screenOf(target.window)
 	if owner != sc || c.windows.lookup(target.window).client.ID == 0 {

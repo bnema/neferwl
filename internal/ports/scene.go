@@ -85,7 +85,7 @@ type Scene struct {
 	// then only those of Wayland clients.
 	HintLabels []HintLabel
 	HintStyle  HintStyle
-	// Flash is the focus flash drawn over everything of this output; nil
+	// Flash is the focus flash highlighting a window or column on this output; nil
 	// draws nothing.
 	Flash *FocusFlash
 	// PositionHint is drawn on the physical output only, never in captures.
@@ -209,7 +209,7 @@ type SceneLayer struct {
 }
 
 // FocusFlash is a brief inner border marking the entity an action just
-// changed: a window, a column or a whole output. Rect is in logical
+// changed: a window or a column. Rect is in logical
 // pixels, Width the border width inside it, Color #rrggbb and Alpha its
 // opacity at this frame (0 to 1).
 type FocusFlash struct {

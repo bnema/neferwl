@@ -216,7 +216,7 @@ type Effect struct {
 // workspace, then a neighbor screen, then a trailing empty workspace. Vertical
 // edges do this only with a vertical workspace axis; cascade stays within bands.
 // Other actions apply to the focused screen's monitor unless explicitly moving
-// between screens. Screen changes request a flash on the destination output.
+// between screens. Screen changes flash the focused window on the destination.
 func (c *Core) applyAction(a Action) Effect {
 	if !c.flashOn() {
 		return c.dispatchAction(a)
@@ -252,9 +252,16 @@ func (c *Core) applyAction(a Action) Effect {
 			}
 			return
 		}
-		// Crossing outputs marks the destination itself, even if it is empty.
+		// Crossing outputs marks the destination’s focused window, if any.
 		if sc != beforeScreen {
-			c.requestFlash(flashMonitor, 0)
+			if id != 0 {
+				for _, p := range sc.mon.Layout() {
+					if p.ID == id && sc.mon.viewport().shows(p) {
+						c.requestFlash(flashWindow, id)
+						break
+					}
+				}
+			}
 			return
 		}
 		level := flashWindow
@@ -312,6 +319,7 @@ func (c *Core) dispatchAction(a Action) Effect {
 	case ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionFocusMonitorUp, ActionFocusMonitorDown:
 		if i := c.neighbor(monitorDirection(a)); i >= 0 {
 			c.focusScreen = i
+			c.cur().mon.focusEntry(monitorDirection(a))
 		}
 		return Effect{}
 	case ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown:
@@ -461,6 +469,7 @@ func (c *Core) edgeFocus(axis layoutAxis, dir int, d direction) bool {
 	}
 	if i := c.neighbor(d); i >= 0 {
 		c.focusScreen = i
+		c.cur().mon.focusEntry(d)
 		return true
 	}
 	return m.stepWorkspace(axis, dir)

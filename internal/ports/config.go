@@ -154,7 +154,7 @@ type Config struct {
 		// moves to it.
 		FollowMove bool
 		// Flash briefly draws an inner border on the entity an action changed
-		// (window, column, output). FlashWidth is in logical pixels (1 to 8),
+		// (window or column). FlashWidth is in logical pixels (1 to 8),
 		// FlashOpacity the starting opacity (0.1 to 1), FlashDuration the fade
 		// (50ms to 1s, not scaled by Animations.Slowdown), FlashColor #rrggbb or
 		// empty for Border.Active.

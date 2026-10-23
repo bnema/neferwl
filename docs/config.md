@@ -54,7 +54,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `animations.speed` | `normal` | `slow`, `normal`, `fast`, or a factor from `0.1` to `10` |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
 | `focus.position-hint` | `on` | Show workspace/band dots near the output bottom for 600ms after a position change, then fade for 150ms (no fade with animations off); hidden in overview, fullscreen and session lock; never captured |
-| `focus.flash` | `on` | Briefly draw an inner border, inside the window border, on the window, column or output an action changed |
+| `focus.flash` | `on` | Briefly draw an inner border, inside the window border, on the window or column an action changed |
 | `focus.flash-width` | `2` | Flash border width in logical pixels, `1` to `8` |
 | `focus.flash-opacity` | `0.6` | Starting opacity of the flash, `0.1` to `1` |
 | `focus.flash-duration` | `200ms` | Fade duration, `50ms` to `1s`; not scaled by `animations.speed` |
@@ -97,10 +97,14 @@ even when empty. Cascade workspaces use top-aligned band columns; scroll/fixed
 workspaces use one vertical workspace column. Large lists show at most 16 entries
 with the active entry kept visible; band rows are capped at 16.
 
-The focus flash marks the window, column or output an action changes with a brief
-inner border. When a flash-triggering action crosses screens, it marks the whole
-destination output, even if that output has no windows. Same-screen workspace
-switches and mouse focus do not trigger a flash.
+The focus flash marks the window or column an action changes with a brief
+inner border. When a flash-triggering action crosses screens, it marks the focused window on the
+destination output; an empty destination does not flash. Directional monitor focus
+and focus past a screen edge select the visible window nearest the entry edge
+(rightmost when moving left, bottommost when moving up, and conversely). Hidden
+and off-screen windows are ignored. If none are visible, the destination keeps
+its focus and does not flash. Same-screen workspace switches and mouse focus do
+not trigger a flash.
 It runs when `animations = on`.
 
 ## Automatic terminal

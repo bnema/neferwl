@@ -325,7 +325,7 @@ func TestCascadeVerticalEdgeDoesNotCrossScreen(t *testing.T) {
 	}
 }
 
-func TestVerticalEdgeFocusFlashesDestination(t *testing.T) {
+func TestVerticalEdgeFocusEmptyDestinationDoesNotFlash(t *testing.T) {
 	for _, tc := range []struct {
 		a Action
 		y int
@@ -336,7 +336,7 @@ func TestVerticalEdgeFocusFlashesDestination(t *testing.T) {
 			c.addScreen(ports.OutputInfo{Name: "B", Width: 400, Height: 300})
 			c.screens[1].x, c.screens[1].y = 0, tc.y
 			c.applyAction(tc.a)
-			if c.focusScreen != 1 || c.flash.pending == nil || *c.flash.pending != (flashTarget{level: flashMonitor, output: "B"}) {
+			if c.focusScreen != 1 || c.flash.pending != nil {
 				t.Fatalf("screen %d, flash %+v", c.focusScreen, c.flash.pending)
 			}
 		})
