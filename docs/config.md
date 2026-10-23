@@ -374,7 +374,10 @@ focused output. Type a label to click its target; BackSpace erases a letter,
 Escape cancels. No bind is set by default; for example `bind.cmd+g = hint`.
 
 Labels use the `border.active` colour with a contrasting text colour, and
-their size follows the screen's pixel density. Each label sits just outside
+their size follows the screen's pixel density when `hint.size = auto`.
+`hint.size` also accepts a text size from 6 to 72 logical pixels. Changing it
+on reload cancels the shown labels; the next `hint` scan uses the new size.
+Each label sits just outside
 the top-left corner of its target. The click is a plain left click.
 
 Labels are not part of screenshots and screencasts by default. With
