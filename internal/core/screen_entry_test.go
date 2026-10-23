@@ -148,25 +148,30 @@ func TestFocusEntryPanelUsesCommonFrameEdge(t *testing.T) {
 	c.setLayers([]ports.LayerSurface{{ID: 90, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 50, ExclusiveZone: 50}})
 	m := c.cur().mon
 	w := m.Current()
-	// The tile reaches the bottom frame edge; the float stops above it.
-	w.addFloat(Float{ID: 4, W: 40, H: 40, free: true, cx: .5, cy: .8}, true)
+	// Entering from above: the float sits above the tiles, which start a gap
+	// below the panel. Measured from their own areas (frame for the float,
+	// usable for tiles) instead of the frame edge, the tile would win.
+	w.Gaps = 20
+	w.addFloat(Float{ID: 4, W: 40, H: 40, free: true, cx: .5, cy: 0}, true)
 	view := m.viewport()
-	if view.usable.H >= view.frame.H {
-		t.Fatal("setup: missing exclusive panel")
+	if view.usable.Y <= view.frame.Y {
+		t.Fatal("setup: missing exclusive top panel")
 	}
-	var want WindowID
+	var float, tile Rect
 	for _, p := range m.Layout() {
-		if !p.Floating && view.shows(p) {
-			want = p.ID
-			break
+		switch {
+		case p.ID == 4:
+			float = p.Rect
+		case !p.Floating && view.shows(p) && tile == (Rect{}):
+			tile = p.Rect
 		}
 	}
-	if want == 0 {
-		t.Fatal("setup: no visible tile")
+	if tile == (Rect{}) || float.Y >= tile.Y || float.Y-view.frame.Y <= tile.Y-view.usable.Y {
+		t.Fatalf("setup: float %v tile %v view %+v do not separate frame and area distances", float, tile, view)
 	}
-	m.focusEntry(dirUp)
+	m.focusEntry(dirDown)
 	id, _ := w.Focused()
-	if id != want {
-		t.Fatalf("focus %d want tile %d", id, want)
+	if id != 4 {
+		t.Fatalf("focus %d want float 4", id)
 	}
 }
