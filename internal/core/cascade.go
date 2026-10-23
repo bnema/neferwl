@@ -371,6 +371,9 @@ func (w *Workspace) shiftBand(lo, hi, dir, at int) bool {
 	id, _ := w.Focused()
 	bands := w.bandList()
 	cols := slices.Clone(bands[b][lo-first : hi-first+1])
+	for k := range cols {
+		cols[k].ownBand = false
+	}
 	bands[b] = slices.Delete(bands[b], lo-first, hi-first+1)
 	w.setBands(w.sendBand(bands, b, dir, at, cols), id)
 	return true
@@ -461,6 +464,7 @@ func (w *Workspace) fullscreenBand(id WindowID) {
 		}
 		bands[b][i-first] = col
 	}
+	nc.ownBand = true
 	bands = slices.Insert(bands, b+1, []Column{nc})
 	w.setBands(bands, focus)
 }
@@ -524,8 +528,12 @@ func (w *Workspace) restoreBand() bool {
 			if head < 0 {
 				continue
 			}
-			for _, nb := range nbs {
-				i := slices.IndexFunc(bands[nb], func(c Column) bool { return c.Windows[0] == e[head] })
+			for k, nb := range nbs {
+				// Past the adjacent band, only a column fullscreenBand put in
+				// a band of its own is taken: one the user moved there stays.
+				i := slices.IndexFunc(bands[nb], func(c Column) bool {
+					return c.Windows[0] == e[head] && (k == 0 || c.ownBand)
+				})
 				if i < 0 {
 					continue
 				}
@@ -541,13 +549,12 @@ func (w *Workspace) restoreBand() bool {
 		return got
 	}
 	// reach lists the bands dir away to look in: the adjacent one, and the
-	// next when the adjacent holds a single column, as a fullscreen column
-	// split off a band of its own meanwhile leaves.
+	// next, where a column that fullscreenBand split off may lie.
 	reach := func(dir int) []int {
 		var nbs []int
 		for n := b + dir; n >= 0 && n < len(bands); n += dir {
 			nbs = append(nbs, n)
-			if len(bands[n]) != 1 || len(nbs) == 2 {
+			if len(nbs) == 2 {
 				break
 			}
 		}

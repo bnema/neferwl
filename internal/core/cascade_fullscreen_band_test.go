@@ -239,12 +239,12 @@ func TestCascadeFullscreenRestoresAcrossBand(t *testing.T) {
 }
 
 func TestFullscreenMoveDestinations(t *testing.T) {
-	t.Run("mayCover refuses", func(t *testing.T) {
-		// A fixed destination refuses a cover unless the window is focused;
-		// the arrival is focused, so it ends fullscreen.
+	t.Run("arrival focused despite left mark", func(t *testing.T) {
+		// The destination has a pending "left" mark on the window, which
+		// mayCover would refuse unless it is focused; the arrival is
+		// focused, so it ends fullscreen.
 		c, w := cascadeMovesCore(t, 2, 3, true)
 		dst := screenWorkspace(c, "R")
-		dst.Overflow = OverflowFixed
 		dst.left = 2
 		w.ToggleFullscreen()
 		c.applyAction(ActionMoveColumnRight)
@@ -253,7 +253,7 @@ func TestFullscreenMoveDestinations(t *testing.T) {
 			t.Fatalf("fullscreen %d, want 2", dst.fullscreen)
 		}
 	})
-	t.Run("stacked column in a band", func(t *testing.T) {
+	t.Run("fullscreen window expelled from a stack then moved", func(t *testing.T) {
 		c, w := cascadeMovesCore(t, 3, 3, true)
 		w.FocusID(3)
 		c.applyAction(ActionConsumeOrExpelLeft) // 3 under 2
@@ -280,4 +280,18 @@ func TestFullscreenMoveDestinations(t *testing.T) {
 			t.Fatalf("fullscreen %d", dst.fullscreen)
 		}
 	})
+}
+
+// A band the user shaped is not looked past: P, pushed down from F, then
+// moved past Y on purpose, stays there.
+func TestRestoreBandDoesNotLookPastUserBand(t *testing.T) {
+	c, w := cascadeMovesCore(t, 3, 3, false)
+	w.FocusID(1)
+	w.ToggleFullWidth() // {1} {2 3}
+	w.FocusID(2)
+	c.applyAction(ActionMoveWindowDown) // {1} {3} {2}
+	wantBands(t, w, []WindowID{1}, []WindowID{3}, []WindowID{2})
+	w.FocusID(1)
+	w.ToggleFullWidth()
+	wantBands(t, w, []WindowID{1, 3}, []WindowID{2})
 }

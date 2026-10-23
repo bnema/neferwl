@@ -40,6 +40,10 @@ type Column struct {
 	// maximize-column or cycle-column-width sent to the band above or
 	// below; they come back when the column is restored.
 	pushedUp, pushedDown [][]WindowID
+	// ownBand marks a column fullscreenBand put in a band of its own:
+	// restoreBand looks past such a band. shiftBand clears it when the
+	// column moves to another band on purpose.
+	ownBand bool
 }
 type Placement struct {
 	ID                          WindowID
