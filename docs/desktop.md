@@ -131,7 +131,7 @@ Workspace IDs are `name:<name>` for named workspaces, stable across launches. Nu
 
 ## State for scripts
 
-NeferWL writes its state as JSON to `$XDG_RUNTIME_DIR/neferwl/<wayland socket>.json`, also given to started programs as `$NEFERWL_STATE`. It lists outputs, workspaces, the focused window, and every window with its app ID, PID, workspace, column and row, and whether it is floating or the fullscreen window of its workspace (`floating`, `fullscreen`).
+NeferWL writes its state as JSON to `$XDG_RUNTIME_DIR/neferwl/<wayland socket>.json`, also given to started programs as `$NEFERWL_STATE`. It lists outputs, workspaces, the focused window, and every window with its app ID, PID, workspace, column and row, and whether it is floating or the fullscreen window of its workspace (`floating`, `fullscreen`). A fullscreen window keeps `fullscreen` while a stashed window is shown over it and while its workspace is not shown; combine it with `visible` to know what covers an output.
 
 The `workspaces` list holds every workspace with its `visible` flag, its columns and the windows in them, each with `x`, `y`, `width` and `height` in logical pixels of its output. The file is written at most once per second.
 

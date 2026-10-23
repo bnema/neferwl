@@ -1642,4 +1642,7 @@ func TestStateReportsFullscreen(t *testing.T) {
 			t.Fatalf("window %d fullscreen = %v", w.ID, w.Fullscreen)
 		}
 	}
+	if st.Window.ID != 2 || !st.Window.Fullscreen {
+		t.Fatalf("focused window: %+v", st.Window)
+	}
 }
