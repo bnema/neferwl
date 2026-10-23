@@ -77,7 +77,9 @@ type Output struct {
 	// ctmBlob is the 3x4 matrix blob of the planes' colour pipelines
 	// (BT.709 to BT.2020), made at setup and destroyed by Close (0: none);
 	// colorMult is the S31.32 multiplier, SDR white over 80 nits.
+	// lut3dBlob is the identity 3D LUT blob (0: the pipelines have no 3D LUT).
 	ctmBlob   uint32
+	lut3dBlob uint32
 	colorMult uint64
 	// seatDisable carries a request to leave the planes on Bypass before
 	// the seat is disabled (PrepareSeatDisable); Run answers it.
@@ -1088,6 +1090,10 @@ func (o *Output) Close() {
 	if o.ctmBlob != 0 {
 		_ = o.k.destroyBlob(o.ctmBlob)
 		o.ctmBlob = 0
+	}
+	if o.lut3dBlob != 0 {
+		_ = o.k.destroyBlob(o.lut3dBlob)
+		o.lut3dBlob = 0
 	}
 	if o.cursor != nil {
 		o.cursor.free()

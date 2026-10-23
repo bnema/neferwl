@@ -265,6 +265,13 @@ func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[ports.WindowID]por
 			}
 		}
 	}
+	if reason == "" && o.reason != "" {
+		// Entering scanout: how the buffer will be shown on the plane.
+		o.renderLog.Info().Str("connector", o.conn.name).Uint32("format", c.DMABuf.Format).Uint64("modifier", c.DMABuf.Modifier).
+			Bool("opaque", c.Opaque).Uint8("tf", c.Color.TF).Uint8("primaries", c.Color.Primaries).
+			Bool("hdr_on", o.hdr.on).Bool("pipeline_matched", o.primary.pipeline != nil).Bool("sdr_to_pq", mode == colorSDRToPQ).Bool("lut3d_identity", mode == colorSDRToPQ && o.lut3dBlob != 0 && o.primary.pipeline != nil && o.primary.pipeline.lut3d.op != 0).
+			Msg("scanout colour")
+	}
 	o.setScanoutReason(reason)
 	if reason != "" {
 		return 0, c, colorBypass

@@ -304,9 +304,9 @@ func (o *Output) probeOverlay(fb uint32, ov overlayWin, mode colorMode, cur curs
 	req := &o.probeReq // no frame request is alive: the frame commit follows
 	req.reset()
 	o.primaryProps(req, fb)
-	o.primary.colorProps(req, colorBypass, 0, 0)
+	o.primary.colorProps(req, colorBypass, 0, 0, 0)
 	o.overlayProps(req, ov)
-	o.overlay.colorProps(req, mode, o.colorMult, o.ctmBlob)
+	o.overlay.colorProps(req, mode, o.colorMult, o.ctmBlob, o.lut3dBlob)
 	if o.cursor != nil {
 		o.cursor.props(req, o.crtc, cur)
 	}

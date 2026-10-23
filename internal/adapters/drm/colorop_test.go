@@ -42,6 +42,8 @@ type opSpec struct {
 	typ      string
 	curves   map[string]uint64
 	noBypass bool
+	// size is the SIZE property of a LUT (0: no such property).
+	size uint32
 }
 
 func curveOp(curves map[string]uint64) opSpec { return opSpec{typ: "1D Curve", curves: curves} }
@@ -50,10 +52,12 @@ var (
 	opSRGB, opPQ = curveOp(firstCurve), curveOp(lastCurve)
 	opMult       = opSpec{typ: "Multiplier"}
 	opCTM        = opSpec{typ: "3x4 Matrix"}
-	opLUT1D      = opSpec{typ: "1D LUT"}
-	opLUT3D      = opSpec{typ: "3D LUT"}
+	opLUT1D      = opSpec{typ: "1D LUT", size: 4096}
+	opLUT3D      = opSpec{typ: "3D LUT", size: 17}
 	// amdgpuChain is the pipeline read on kernel 7.2 (DCN3+).
 	amdgpuChain = []opSpec{opSRGB, opMult, opCTM, opPQ, opLUT1D, opLUT3D, curveOp(map[string]uint64{"sRGB EOTF": 5}), opLUT1D}
+	// lut3dBlob is the identity 3D LUT blob ID of the test output.
+	lut3dBlob uint32 = 62
 )
 
 // colorPlane gives p a COLOR_PIPELINE property (id pipeProp) offering the
@@ -89,6 +93,9 @@ func colorPlane(k *mockkms, p *plane, pipeProp, base uint32, chains ...[]opSpec)
 			case "3x4 Matrix", "1D LUT", "3D LUT":
 				props["DATA"] = [2]uint64{uint64(dataProp(id)), 0}
 			}
+			if op.size != 0 {
+				props["SIZE"] = [2]uint64{6000 + uint64(id), uint64(op.size)}
+			}
 			k.EXPECT().objProps(id, uint32(objColorop)).Return(props, nil).Maybe()
 			id++
 		}
@@ -114,6 +121,8 @@ func TestMatchColorPipeline(t *testing.T) {
 	}{
 		{"amdgpu", [][]opSpec{amdgpuChain}, 0, ""},
 		{"minimal", [][]opSpec{{opSRGB, opMult, opCTM, opPQ}}, 0, ""},
+		{"3D LUT without size", [][]opSpec{{opSRGB, opMult, opCTM, opPQ, {typ: "3D LUT"}}}, 0, ""},
+		{"3D LUT before PQ", [][]opSpec{{opSRGB, opMult, opCTM, opLUT3D, opPQ}}, 0, ""},
 		{"bypassable op before the chain", [][]opSpec{{opLUT1D, opSRGB, opMult, opCTM, opPQ}}, 0, ""},
 		{"second pipeline matches", [][]opSpec{{opLUT1D}, amdgpuChain}, 1, ""},
 		{"no pipeline", nil, -1, "only Bypass"},
@@ -164,8 +173,27 @@ func TestMatchColorPipeline(t *testing.T) {
 				cp.pq != (colorStage{op: pq, bypass: bypassProp(pq), prop: curveProp(pq), curve: 8}) {
 				t.Fatalf("stages %+v", cp)
 			}
-			if len(cp.others) != len(chain)-4 {
-				t.Fatalf("%d other ops, want %d", len(cp.others), len(chain)-4)
+			// A sized 3D LUT after the PQ curve is the LUT stage; any
+			// other operation is bypassed.
+			lut := 0
+			for i := int(pq-base) + 1; i < len(chain); i++ {
+				if chain[i].typ == "3D LUT" && chain[i].size > 1 && lut == 0 {
+					lut = i
+				}
+			}
+			if lut == 0 {
+				if cp.lut3d.op != 0 {
+					t.Fatalf("3D LUT stage %+v without a usable 3D LUT", cp.lut3d)
+				}
+			} else if id := base + uint32(lut); cp.lut3d != (colorStage{op: id, bypass: bypassProp(id), prop: dataProp(id)}) || cp.lut3dSize != chain[lut].size {
+				t.Fatalf("3D LUT stage %+v size %d, want op %d size %d", cp.lut3d, cp.lut3dSize, id, chain[lut].size)
+			}
+			want := len(chain) - 4
+			if lut != 0 {
+				want--
+			}
+			if len(cp.others) != want {
+				t.Fatalf("%d other ops, want %d", len(cp.others), want)
 			}
 		})
 	}
@@ -273,6 +301,41 @@ func TestCTMBlobMatchesHDRShader(t *testing.T) {
 	}
 }
 
+// The identity 3D LUT is laid out as the kernel reads it (red fastest)
+// and maps every grid point to itself on the 32-bit scale.
+func TestLUT3DIdentityBytes(t *testing.T) {
+	const n = 17
+	b := lut3dIdentityBytes(n)
+	if len(b) != n*n*n*16 {
+		t.Fatalf("%d bytes, want %d", len(b), n*n*n*16)
+	}
+	at := func(r, g, bl int) [4]uint32 {
+		i := (r + n*(g+n*bl)) * 16
+		return [4]uint32{binary.LittleEndian.Uint32(b[i:]), binary.LittleEndian.Uint32(b[i+4:]), binary.LittleEndian.Uint32(b[i+8:]), binary.LittleEndian.Uint32(b[i+12:])}
+	}
+	if v := at(0, 0, 0); v != [4]uint32{} {
+		t.Errorf("black %v", v)
+	}
+	if v := at(n-1, n-1, n-1); v != [4]uint32{math.MaxUint32, math.MaxUint32, math.MaxUint32, 0} {
+		t.Errorf("white %v", v)
+	}
+	if v := at(n-1, 0, 0); v != [4]uint32{math.MaxUint32, 0, 0, 0} {
+		t.Errorf("red %v", v)
+	}
+	if v := at(0, 0, n-1); v != [4]uint32{0, 0, math.MaxUint32, 0} {
+		t.Errorf("blue %v", v)
+	}
+	half := uint32(8 * uint64(math.MaxUint32) / 16)
+	if v := at(8, 8, 8); v != [4]uint32{half, half, half, 0} {
+		t.Errorf("mid grey %v, want %d", v, half)
+	}
+	for r := 1; r < n; r++ {
+		if at(r, 3, 5)[0] <= at(r-1, 3, 5)[0] {
+			t.Fatalf("red not increasing at %d", r)
+		}
+	}
+}
+
 func TestPlaneColor(t *testing.T) {
 	pq := ports.SurfaceColor{TF: ports.ColorTFPQ, Primaries: ports.ColorPrimariesBT2020}
 	srgb := ports.SurfaceColor{TF: ports.ColorTFSRGB, Primaries: ports.ColorPrimariesSRGB}
@@ -340,7 +403,7 @@ func colorOutput(t *testing.T, overlay bool, rule func(*atomicReq, uint32) error
 	}
 	o.hdr.on = true
 	o.readColor()
-	o.ctmBlob, o.colorMult = 61, s3132(203.0/80)
+	o.ctmBlob, o.lut3dBlob, o.colorMult = 61, lut3dBlob, s3132(203.0/80)
 	if o.primary.pipeline == nil || overlay && o.overlay.pipeline == nil {
 		t.Fatal("pipeline not matched")
 	}
@@ -391,10 +454,15 @@ func TestColorCommitTransitions(t *testing.T) {
 		{cp.mult.op, cp.mult.bypass, 0}, {cp.mult.op, cp.mult.prop, s3132(203.0 / 80)},
 		{cp.ctm.op, cp.ctm.bypass, 0}, {cp.ctm.op, cp.ctm.prop, 61},
 		{cp.pq.op, cp.pq.bypass, 0}, {cp.pq.op, cp.pq.prop, cp.pq.curve},
+		// The 3D LUT after the PQ shaper is on, with identity.
+		{cp.lut3d.op, cp.lut3d.bypass, 0}, {cp.lut3d.op, cp.lut3d.prop, uint64(lut3dBlob)},
 	} {
 		if v, ok := first.req.value(s.op, s.prop); !ok || v != s.want {
 			t.Errorf("colorop %d prop %d = %d %v, want %d", s.op, s.prop, v, ok, s.want)
 		}
+	}
+	if cp.lut3d.op == 0 {
+		t.Fatal("the amdgpu chain has no 3D LUT stage")
 	}
 	for _, other := range cp.others {
 		if v, ok := first.req.value(other.op, other.bypass); !ok || v != 1 {
@@ -492,11 +560,12 @@ func TestColorBypassOnComposedProtectedOffCloseAndModeset(t *testing.T) {
 		o, k, commits := colorOutput(t, true, nil)
 		k.EXPECT().rmFB(mock.Anything).Return(nil)
 		k.EXPECT().destroyBlob(uint32(61)).Return(nil).Once()
+		k.EXPECT().destroyBlob(lut3dBlob).Return(nil).Once()
 		// Unknown state: Close still writes Bypass.
 		o.Close()
 		bypassed(t, (*commits)[0])
-		if o.ctmBlob != 0 {
-			t.Fatal("CTM blob kept")
+		if o.ctmBlob != 0 || o.lut3dBlob != 0 {
+			t.Fatal("colour blobs kept")
 		}
 	})
 	t.Run("modeset", func(t *testing.T) {
@@ -558,6 +627,7 @@ func TestCRTCColorClearedOnModesetAndClose(t *testing.T) {
 		o, k, commits := setup(t)
 		k.EXPECT().rmFB(mock.Anything).Return(nil)
 		k.EXPECT().destroyBlob(uint32(61)).Return(nil).Once()
+		k.EXPECT().destroyBlob(lut3dBlob).Return(nil).Once()
 		o.Close()
 		cleared(t, (*commits)[0])
 	})
@@ -789,15 +859,81 @@ func TestColorOverlayInHDR(t *testing.T) {
 }
 
 func TestSetupColor(t *testing.T) {
-	t.Run("HDR makes the matrix blob and the multiplier", func(t *testing.T) {
+	t.Run("HDR makes the matrix blob, the multiplier and the identity 3D LUT", func(t *testing.T) {
 		o, k, _ := colorOutput(t, false, nil)
-		o.ctmBlob, o.colorMult = 0, 0
+		o.ctmBlob, o.lut3dBlob, o.colorMult = 0, 0, 0
 		o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: 160}
 		o.hdr.cap.Capable = true
 		k.EXPECT().createBlob(mock.MatchedBy(func(b []byte) bool { return slices.Equal(b, ctmBytes(bt709ToBT2020)) })).Return(uint32(61), nil).Once()
+		k.EXPECT().createBlob(mock.MatchedBy(func(b []byte) bool { return slices.Equal(b, lut3dIdentityBytes(17)) })).Return(uint32(62), nil).Once()
 		o.setupColor()
-		if o.ctmBlob != 61 || o.colorMult != 2<<32 {
-			t.Fatalf("blob %d multiplier %#x", o.ctmBlob, o.colorMult)
+		if o.ctmBlob != 61 || o.lut3dBlob != 62 || o.colorMult != 2<<32 {
+			t.Fatalf("blobs %d %d multiplier %#x", o.ctmBlob, o.lut3dBlob, o.colorMult)
+		}
+	})
+	t.Run("a pipeline without 3D LUT makes no LUT blob", func(t *testing.T) {
+		o, k, _ := testOutput(t)
+		colorPlane(k, o.primary, pColorPipe, opBase, []opSpec{opSRGB, opMult, opCTM, opPQ})
+		o.hdr.on = true
+		o.readColor()
+		o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: 160}
+		o.hdr.cap.Capable = true
+		k.EXPECT().createBlob(mock.Anything).Return(uint32(61), nil).Once()
+		o.setupColor()
+		if o.ctmBlob != 61 || o.lut3dBlob != 0 {
+			t.Fatalf("blobs %d %d", o.ctmBlob, o.lut3dBlob)
+		}
+	})
+	t.Run("3D LUT sizes of the primary and overlay pipelines", func(t *testing.T) {
+		noLUT := []opSpec{opSRGB, opMult, opCTM, opPQ}
+		small := slices.Clone(amdgpuChain)
+		small[5] = opSpec{typ: "3D LUT", size: 9}
+		for _, tc := range []struct {
+			name             string
+			primary, overlay []opSpec
+			lut              int // size of the identity LUT blob, 0: none
+			overlayKept      bool
+		}{
+			{"different sizes drop the overlay pipeline", amdgpuChain, small, 17, false},
+			{"a primary without 3D LUT keeps both", noLUT, amdgpuChain, 17, true},
+			{"an overlay without 3D LUT keeps both", amdgpuChain, noLUT, 17, true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				o, k, _ := testOutput(t)
+				props := maps0(planeProps)
+				props["zpos"] = pZpos
+				o.primary.props = props
+				colorPlane(k, o.primary, pColorPipe, opBase, tc.primary)
+				ov := &plane{id: tOverlay, typ: planeOverlay, props: props, zposValue: 2, formats: []ports.DMABufFormat{{Format: fourccXRGB}}}
+				colorPlane(k, ov, pColorPipeOverlay, opBase+20, tc.overlay)
+				o.stray = []*plane{ov}
+				o.pickOverlay()
+				o.hdr.on = true
+				o.readColor()
+				if o.overlay == nil || o.overlay.pipeline == nil || o.primary.pipeline == nil {
+					t.Fatal("pipelines not matched")
+				}
+				o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: 203}
+				o.hdr.cap.Capable = true
+				k.EXPECT().createBlob(mock.MatchedBy(func(b []byte) bool { return slices.Equal(b, ctmBytes(bt709ToBT2020)) })).Return(uint32(61), nil).Once()
+				k.EXPECT().createBlob(mock.MatchedBy(func(b []byte) bool { return slices.Equal(b, lut3dIdentityBytes(uint32(tc.lut))) })).Return(uint32(62), nil).Once()
+				o.setupColor()
+				if o.primary.pipeline == nil || (o.overlay.pipeline != nil) != tc.overlayKept || o.lut3dBlob != 62 {
+					t.Fatalf("primary %v overlay %v lut %d", o.primary.pipeline != nil, o.overlay.pipeline != nil, o.lut3dBlob)
+				}
+			})
+		}
+	})
+	t.Run("3D LUT blob failure turns the pipelines off", func(t *testing.T) {
+		o, k, _ := colorOutput(t, true, nil)
+		o.ctmBlob, o.lut3dBlob = 0, 0
+		o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: 203}
+		o.hdr.cap.Capable = true
+		k.EXPECT().createBlob(mock.Anything).Return(uint32(61), nil).Once()
+		k.EXPECT().createBlob(mock.Anything).Return(uint32(0), unix.ENOMEM).Once()
+		o.setupColor()
+		if o.primary.pipeline != nil || o.overlay.pipeline != nil || o.lut3dBlob != 0 {
+			t.Fatal("pipelines kept without their 3D LUT blob")
 		}
 	})
 	t.Run("blob failure turns the pipelines off", func(t *testing.T) {
