@@ -190,3 +190,58 @@ func TestTrimPollsFinishedFrames(t *testing.T) {
 		t.Fatalf("completed %d, frame %d", r.completed, r.frame)
 	}
 }
+
+// A window the last scene lists as Hidden (another workspace) loses its pool
+// mapping and GPU copy after hiddenTTL, while a window that merely left the
+// scene keeps them until idleTTL; the hidden window is copied again, with the
+// right pixels, once a scene draws it.
+func TestTrimFreesHiddenWindowsSooner(t *testing.T) {
+	r, err := New(48, 32)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	contents := map[ports.WindowID]ports.SurfaceContent{}
+	for id, c := range map[ports.WindowID]color.RGBA{1: {255, 0, 0, 255}, 2: {0, 255, 0, 255}, 3: {0, 0, 255, 255}} {
+		sc := solidContent(t, 16, 16, c)
+		sc.ID, sc.Seq, sc.Version = id, 1, 1
+		contents[id] = sc
+	}
+	rect := func(i int) ports.Rect { return ports.Rect{X: 16 * i, W: 16, H: 16} }
+	all := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: rect(0)}, {ID: 2, Rect: rect(1)}, {ID: 3, Rect: rect(2)}}}
+	// 1 left the scene, 2 is hidden, 3 stays on screen.
+	away := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 2, Rect: rect(1), Hidden: true}, {ID: 3, Rect: rect(2)}}}
+	if err := render(r, all, contents); err != nil {
+		t.Fatal(err)
+	}
+	if err := render(r, away, contents); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Unix(1000, 0)
+	for _, dt := range []time.Duration{0, hiddenTTL - time.Second} {
+		if err := r.Trim(start.Add(dt)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(r.shm) != 3 || len(r.pools) != 3 {
+		t.Fatalf("freed before hiddenTTL: pools %d, copies %d", len(r.pools), len(r.shm))
+	}
+	trimSettled(t, r, start.Add(hiddenTTL))
+	if _, ok := r.shm[shmKey{win: 2}]; ok {
+		t.Fatal("hidden window's copy kept past hiddenTTL")
+	}
+	if len(r.shm) != 2 || len(r.pools) != 2 {
+		t.Fatalf("only the hidden window goes: pools %d, copies %d", len(r.pools), len(r.shm))
+	}
+	trimSettled(t, r, start.Add(idleTTL))
+	if _, ok := r.shm[shmKey{win: 1}]; ok || len(r.shm) != 1 {
+		t.Fatalf("window out of the scene kept past idleTTL: %d copies", len(r.shm))
+	}
+	// Shown again: copied once more, and correct.
+	if err := render(r, all, contents); err != nil {
+		t.Fatal(err)
+	}
+	if got := readPixels(t, r).RGBAAt(20, 4); got != (color.RGBA{0, 255, 0, 255}) {
+		t.Fatalf("returning window shows %v", got)
+	}
+}

@@ -3,6 +3,7 @@ package vulkan
 import (
 	"time"
 
+	"github.com/bnema/neferwl/internal/ports"
 	vk "github.com/bnema/purego-vulkan/vulkan"
 	"golang.org/x/sys/unix"
 )
@@ -11,6 +12,14 @@ import (
 // time. An idle output renders no frame, so importTTL alone never frees
 // the pools, GPU copies and imports of windows that left the screen.
 const idleTTL = 20 * time.Second
+
+// hiddenTTL is idleTTL for the wl_shm copies and pool mappings of windows the
+// last scene lists as Hidden (another workspace, a hidden stash): they are
+// suspended, so their content will not change before they are shown again,
+// and a window coming back is copied again in the frame that draws it. Trim
+// dates frames at its own calls, so the real delay runs from the first call
+// after the window left the screen.
+const hiddenTTL = 5 * time.Second
 
 // trimMark is the last frame recorded when Trim ran at a time.
 type trimMark struct {
@@ -27,34 +36,51 @@ func (r *Renderer) Trim(now time.Time) error {
 	if n := len(r.marks); n == 0 || r.marks[n-1].frame != r.frame {
 		r.marks = append(r.marks, trimMark{frame: r.frame, at: now})
 	}
-	// cutoff is the newest mark at least idleTTL old: everything last
-	// drawn at or before it has been undrawn for idleTTL.
-	i := -1
+	// A cutoff is the newest mark at least a TTL old: everything last drawn
+	// at or before it has been undrawn for that TTL. h is the mark for
+	// hiddenTTL, i the (older or equal) one for idleTTL.
+	i, h := -1, -1
 	for j, m := range r.marks {
-		if now.Sub(m.at) >= idleTTL {
+		age := now.Sub(m.at)
+		if age >= idleTTL {
 			i = j
 		}
+		if age >= hiddenTTL {
+			h = j
+		}
 	}
-	if i >= 0 {
-		cutoff := r.marks[i].frame
-		r.marks = append(r.marks[:0], r.marks[i:]...)
-		stale := func(last uint64) bool { return last <= cutoff && last < r.frame }
+	if h >= 0 {
+		hiddenCutoff := r.marks[h].frame
+		var cutoff uint64 // frames start at 1: 0 frees nothing
+		if i >= 0 {
+			cutoff = r.marks[i].frame
+			r.marks = append(r.marks[:0], r.marks[i:]...)
+		}
+		stale := func(last uint64, win ports.WindowID) bool {
+			if last >= r.frame {
+				return false
+			}
+			if _, hidden := r.hidden[win]; hidden {
+				return last <= hiddenCutoff
+			}
+			return last <= cutoff
+		}
 		// The GPU reads the copies, never a mapping, and no frame is being
 		// recorded: unmapping now is safe.
 		for id, m := range r.pools {
-			if stale(m.last) {
+			if stale(m.last, m.win) {
 				_ = unix.Munmap(m.data)
 				delete(r.pools, id)
 			}
 		}
 		for key, s := range r.shm {
-			if stale(s.last) {
+			if stale(s.last, key.win) {
 				r.retireShm(s)
 				delete(r.shm, key)
 			}
 		}
 		for id, im := range r.imports {
-			if stale(im.last) {
+			if stale(im.last, 0) {
 				r.retire(im.last, func() { r.release(im) })
 				delete(r.imports, id)
 			}
@@ -102,4 +128,15 @@ func (r *Renderer) poll() error {
 	}
 	r.runDeferred()
 	return nil
+}
+
+// noteHidden records the windows s lists as Hidden: they are not drawn, so
+// Trim frees their copies after hiddenTTL instead of idleTTL.
+func (r *Renderer) noteHidden(s ports.Scene) {
+	clear(r.hidden)
+	for _, w := range s.Windows {
+		if w.Hidden && !w.Popup {
+			r.hidden[w.ID] = struct{}{}
+		}
+	}
 }

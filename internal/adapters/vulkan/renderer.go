@@ -96,6 +96,8 @@ type Renderer struct {
 	shmRects []image.Rectangle
 	// marks date the frames for Trim's wall-clock eviction (trim.go).
 	marks []trimMark
+	// hidden are the windows the last scene lists as Hidden (noteHidden).
+	hidden map[ports.WindowID]struct{}
 	// redrawn counts the target pixels drawn (TakeRedrawn).
 	redrawn int
 	// fullRedraws counts why whole targets or windows were redrawn; each
@@ -142,7 +144,7 @@ func New(width, height int) (r *Renderer, err error) {
 	if width <= 0 || height <= 0 || width > math.MaxUint32 || height > math.MaxUint32 || uint64(width)*uint64(height) > uint64(math.MaxInt/4) {
 		return nil, fmt.Errorf("invalid renderer dimensions %d x %d", width, height)
 	}
-	r = &Renderer{width: width, height: height, lastHDRTarget: -1, imports: map[uint64]*imported{}, pools: map[uint64]*mapping{}, shm: map[shmKey]*shmSurface{}}
+	r = &Renderer{width: width, height: height, lastHDRTarget: -1, imports: map[uint64]*imported{}, pools: map[uint64]*mapping{}, shm: map[shmKey]*shmSurface{}, hidden: map[ports.WindowID]struct{}{}}
 	defer func() {
 		if err != nil {
 			r.Close()

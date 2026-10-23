@@ -227,6 +227,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	// below. A transform change always comes with a new scene Seq, so a held
 	// target is never reused across transforms.
 	sw, sh := r.sceneSize(s.Transform)
+	r.noteHidden(s)
 	dmg := r.frameDamage(tg, s, image.Rect(0, 0, sw, sh))
 	ds := r.draws(s, contents, dmg)
 	dmg.finish()

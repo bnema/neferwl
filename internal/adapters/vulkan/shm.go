@@ -19,12 +19,16 @@ import (
 // copy, no resample, no alpha fix-up on the CPU. Each surface has two GPU
 // buffers used in turn, so the CPU never writes one a frame in flight
 // reads. Mappings and buffers are dropped after importTTL frames unused,
-// or idleTTL of wall-clock time (Trim).
+// or idleTTL of wall-clock time (Trim); hiddenTTL for a window the scene
+// lists as Hidden.
 
 // mapping is a client pool mapped read-only.
 type mapping struct {
 	data []byte
 	last uint64
+	// win is the window that last drew from the pool (0: none known), for
+	// Trim's shorter TTL of hidden windows.
+	win ports.WindowID
 }
 
 // shmPixels returns the pool bytes of a buffer, mapping the pool once and

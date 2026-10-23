@@ -680,13 +680,14 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 	if c != nil {
 		// As a drawn pool, for Trim; nothing is mapped for it.
 		if m := r.pools[b.Pool]; m != nil {
-			m.last = r.frame
+			m.last, m.win = r.frame, key.win
 		}
 	} else {
 		pixels, err := r.shmPixels(b, b.Offset+(content.Height-1)*b.Stride+content.Width*4)
 		if err != nil {
 			return
 		}
+		r.pools[b.Pool].win = key.win
 		// Damage history is the root surface's: children copy in full.
 		var damage func(uint64) ([]ports.Rect, bool)
 		if root {
