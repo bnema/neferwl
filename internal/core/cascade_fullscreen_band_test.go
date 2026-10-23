@@ -386,6 +386,26 @@ func TestRestoreBandAcrossPromotedFloatBand(t *testing.T) {
 	}
 }
 
+// A remembered neighbor the user maximized since keeps its band; the
+// ordinary neighbors still come back.
+func TestRestoreBandLeavesMaximizedNeighbor(t *testing.T) {
+	_, w := cascadeMovesCore(t, 3, 3, false)
+	w.FocusID(1)
+	w.ToggleFullWidth()
+	wantBands(t, w, []WindowID{1}, []WindowID{2, 3})
+	w.FocusID(2)
+	w.ToggleFullscreen()
+	w.ToggleFullscreen()
+	w.ToggleFullWidth()
+	wantBands(t, w, []WindowID{1}, []WindowID{3}, []WindowID{2})
+	w.FocusID(1)
+	w.ToggleFullWidth()
+	wantBands(t, w, []WindowID{1, 3}, []WindowID{2})
+	if c := w.columnOf(2); c < 0 || !w.Columns[c].FullWidth {
+		t.Fatal("column 2 lost its maximization")
+	}
+}
+
 func TestPromotedFullscreenFloatMovesToNeighborMonitor(t *testing.T) {
 	for _, tc := range []struct {
 		a      Action

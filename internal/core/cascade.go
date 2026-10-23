@@ -539,7 +539,8 @@ func (w *Workspace) restoreBand() bool {
 			for k, nb := range nbs {
 				adjacent := !slices.ContainsFunc(nbs[:k], func(n int) bool { return !ownOnly[n] })
 				i := slices.IndexFunc(bands[nb], func(c Column) bool {
-					return c.Windows[0] == e[head] && (adjacent || c.ownBand)
+					// A column the user maximized keeps its band.
+					return c.Windows[0] == e[head] && !c.FullWidth && (adjacent || c.ownBand)
 				})
 				if i < 0 {
 					continue
