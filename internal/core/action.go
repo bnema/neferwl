@@ -670,34 +670,3 @@ func moveFloat(cur, to *Workspace, id WindowID) {
 	to.Activate(id)
 	to.SetFullscreen(id, true)
 }
-
-// focusEntry selects the visible window nearest the edge entered from d.
-// Layout order breaks ties; an empty viewport preserves the existing focus.
-func (m *Monitor) focusEntry(d direction) {
-	view := m.viewport()
-	var id WindowID
-	best := 0
-	for _, p := range m.Layout() {
-		if !view.shows(p) {
-			continue
-		}
-		var distance int
-		area := view.area(p)
-		switch d {
-		case dirLeft:
-			distance = max(0, area.X+area.W-(p.Rect.X+p.Rect.W))
-		case dirRight:
-			distance = max(0, p.Rect.X-area.X)
-		case dirUp:
-			distance = max(0, area.Y+area.H-(p.Rect.Y+p.Rect.H))
-		case dirDown:
-			distance = max(0, p.Rect.Y-area.Y)
-		}
-		if id == 0 || distance < best {
-			id, best = p.ID, distance
-		}
-	}
-	if id != 0 {
-		m.Current().FocusID(id)
-	}
-}

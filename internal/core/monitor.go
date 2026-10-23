@@ -448,6 +448,42 @@ func (w *Workspace) receive(col Column, at int) {
 	w.Activate(id)
 }
 
+// focusEntry selects the visible window nearest the edge entered from d.
+// Layout order breaks ties; an empty viewport preserves the existing focus.
+func (m *Monitor) focusEntry(d direction) {
+	if m.ov.open || m.switcherShown() {
+		return
+	}
+	w := m.Current()
+	view := m.viewport()
+	var id WindowID
+	best := 0
+	for _, p := range m.Layout() {
+		if p.Preview != 0 || !w.has(p.ID) || !view.shows(p) {
+			continue
+		}
+		var distance int
+		clip := intersect(p.Rect, view.area(p))
+		frame := view.frame
+		switch d {
+		case dirLeft:
+			distance = frame.X + frame.W - (clip.X + clip.W)
+		case dirRight:
+			distance = clip.X - frame.X
+		case dirUp:
+			distance = frame.Y + frame.H - (clip.Y + clip.H)
+		case dirDown:
+			distance = clip.Y - frame.Y
+		}
+		if id == 0 || distance < best {
+			id, best = p.ID, distance
+		}
+	}
+	if id != 0 {
+		w.FocusID(id)
+	}
+}
+
 // Focused is the focused window of the workspace on screen; in the
 // overview, the selected stash card when it is one.
 func (m *Monitor) Focused() (WindowID, bool) {

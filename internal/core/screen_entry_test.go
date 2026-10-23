@@ -31,7 +31,7 @@ func TestCrossScreenFocusEntry(t *testing.T) {
 					w.addFloat(Float{ID: id, W: 40, H: 40, free: true, cx: pos[0], cy: pos[1]}, true)
 				}
 				w.FocusID(4)
-				if edge {
+				if edge && (tc.d == dirLeft || tc.d == dirRight) {
 					if !c.edgeFocus(horizontalAxis, 1, tc.d) {
 						t.Fatal("did not cross")
 					}
@@ -101,5 +101,72 @@ func TestCrossScreenNoVisibleWindowPreservesFocus(t *testing.T) {
 	id, _ := b.mon.Focused()
 	if c.cur() != b || id != 4 || c.flash.pending != nil {
 		t.Fatalf("focus %d flash %+v", id, c.flash.pending)
+	}
+}
+
+func TestFocusEntryPreservesOverview(t *testing.T) {
+	m := overviewMonitor()
+	m.ToggleOverview()
+	m.OverviewMove(-1, 0)
+	selected, at := m.ov.selected, m.ov.selectedAt
+	focused, _ := m.Current().Focused()
+	for _, d := range []direction{dirLeft, dirRight, dirUp, dirDown} {
+		m.focusEntry(d)
+		got, _ := m.Current().Focused()
+		if !m.ov.open || m.ov.selected != selected || m.ov.selectedAt != at || got != focused {
+			t.Fatalf("overview selection or focus changed: selected %d focus %d", m.ov.selected, got)
+		}
+	}
+}
+
+func TestFocusEntryDuringWorkspaceSlide(t *testing.T) {
+	m := overviewMonitor()
+	m.Focus(1)
+	m.AddWindow(5)
+	m.Current().FocusID(5)
+	m.switchAxis = verticalAxis
+	m.switchView.off = -.5
+	view := m.viewport()
+	outgoing := false
+	for _, p := range m.Layout() {
+		if !m.Current().has(p.ID) && view.shows(p) {
+			outgoing = true
+		}
+	}
+	if !outgoing {
+		t.Fatal("setup: outgoing workspace must be visible")
+	}
+	m.focusEntry(dirDown)
+	id, _ := m.Current().Focused()
+	if id != 4 {
+		t.Fatalf("focus %d want current workspace window 4", id)
+	}
+}
+
+func TestFocusEntryPanelUsesCommonFrameEdge(t *testing.T) {
+	c, _ := flashCore(t)
+	c.setLayers([]ports.LayerSurface{{ID: 90, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 50, ExclusiveZone: 50}})
+	m := c.cur().mon
+	w := m.Current()
+	// The tile reaches the bottom frame edge; the float stops above it.
+	w.addFloat(Float{ID: 4, W: 40, H: 40, free: true, cx: .5, cy: .8}, true)
+	view := m.viewport()
+	if view.usable.H >= view.frame.H {
+		t.Fatal("setup: missing exclusive panel")
+	}
+	var want WindowID
+	for _, p := range m.Layout() {
+		if !p.Floating && view.shows(p) {
+			want = p.ID
+			break
+		}
+	}
+	if want == 0 {
+		t.Fatal("setup: no visible tile")
+	}
+	m.focusEntry(dirUp)
+	id, _ := w.Focused()
+	if id != want {
+		t.Fatalf("focus %d want tile %d", id, want)
 	}
 }

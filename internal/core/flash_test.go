@@ -606,12 +606,13 @@ func TestFlashCrossScreenActionsMarkDestinationWindow(t *testing.T) {
 		name     string
 		action   Action
 		occupied bool
+		want     WindowID
 	}{
-		{"column focus to empty", ActionFocusColumnRight, false},
-		{"column focus to occupied", ActionFocusColumnRight, true},
-		{"monitor focus to empty", ActionFocusMonitorRight, false},
-		{"column move to empty", ActionMoveColumnRight, false},
-		{"column move to occupied", ActionMoveColumnRight, true},
+		{"column focus to empty", ActionFocusColumnRight, false, 0},
+		{"column focus to occupied", ActionFocusColumnRight, true, 4},
+		{"monitor focus to empty", ActionFocusMonitorRight, false, 0},
+		{"column move to empty", ActionMoveColumnRight, false, 3},
+		{"column move to occupied", ActionMoveColumnRight, true, 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, clock := flashCore(t)
@@ -627,7 +628,10 @@ func TestFlashCrossScreenActionsMarkDestinationWindow(t *testing.T) {
 				t.Fatal("action did not cross screens")
 			}
 			id, _ := b.mon.Focused()
-			if id == 0 {
+			if id != tc.want {
+				t.Fatalf("focus %d want %d", id, tc.want)
+			}
+			if tc.want == 0 {
 				if c.flash.pending != nil {
 					t.Fatalf("empty destination request %+v", c.flash.pending)
 				}
