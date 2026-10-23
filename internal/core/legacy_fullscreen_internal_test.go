@@ -248,7 +248,7 @@ func TestLegacyFullscreenUnderBoundCover(t *testing.T) {
 func TestLegacyFullscreenCascadeFloatBand(t *testing.T) {
 	for _, parent := range []WindowID{0, 1} {
 		t.Run(map[bool]string{true: "dialog", false: "parentless"}[parent != 0], func(t *testing.T) {
-			c, _, _ := fadeCore(t)
+			c, clock, _ := fadeCore(t)
 			sc := c.cur()
 			w := sc.mon.Current()
 			w.Overflow, w.MaxColumns = OverflowCascade, 3
@@ -260,8 +260,9 @@ func TestLegacyFullscreenCascadeFloatBand(t *testing.T) {
 				if !w.isFloat(2) || w.fullscreen != 0 {
 					t.Fatal("dialog was promoted or auto-fullscreened")
 				}
+				clock.now = clock.now.Add(fullscreenGrace)
 				c.clientEvent(context.Background(), ports.WindowFullscreenRequest{ID: 2, Fullscreen: true})
-				if !w.isFloat(2) {
+				if w.fullscreen != 2 || !w.isFloat(2) {
 					t.Fatal("explicit fullscreen promoted a dialog")
 				}
 				return
@@ -276,6 +277,26 @@ func TestLegacyFullscreenCascadeFloatBand(t *testing.T) {
 			if r, ok := w.placed(2); !ok || r.W <= 0 || r.H <= 0 {
 				t.Fatalf("game not visible: %+v %v", r, ok)
 			}
+		})
+	}
+}
+
+func TestCascadeClientFullscreenPromotesFloatAfterGrace(t *testing.T) {
+	for _, requests := range []int{1, 3} {
+		t.Run(map[int]string{1: "once", 3: "repeated"}[requests], func(t *testing.T) {
+			c, clock, _ := fadeCore(t)
+			w := c.cur().mon.Current()
+			w.Overflow, w.MaxColumns = OverflowCascade, 3
+			c.clientEvent(context.Background(), ports.WindowMapped{ID: 1})
+			c.clientEvent(context.Background(), ports.WindowMapped{ID: 2, Floating: true})
+			clock.now = clock.now.Add(fullscreenGrace)
+			for range requests {
+				c.clientEvent(context.Background(), ports.WindowFullscreenRequest{ID: 2, Fullscreen: true})
+			}
+			if w.fullscreen != 2 || w.isFloat(2) {
+				t.Fatalf("fullscreen %d floats %+v", w.fullscreen, w.Floats)
+			}
+			wantBands(t, w, []WindowID{1}, []WindowID{2})
 		})
 	}
 }

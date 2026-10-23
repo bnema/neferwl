@@ -339,3 +339,70 @@ func TestCascadeFullscreenFloatEdgePrefersWorkspace(t *testing.T) {
 		t.Fatalf("fullscreen %d", w.fullscreen)
 	}
 }
+
+func TestCascadeFullscreenFloatChildHorizontalReturnsToCover(t *testing.T) {
+	for _, sides := range []bool{false, true} {
+		for _, a := range []Action{ActionFocusColumnLeft, ActionFocusColumnRight} {
+			t.Run(string(a)+map[bool]string{false: "/no-edge", true: "/edge"}[sides], func(t *testing.T) {
+				c, w := cascadeMovesCore(t, 2, 3, sides)
+				w.AddDialog(9, 2, 800, 600)
+				w.SetFullscreen(9, true)
+				w.AddDialog(10, 9, 100, 100)
+				c.applyAction(a)
+				wantFocus(t, c, "M", 9)
+				if w.fullscreen != 9 {
+					t.Fatalf("fullscreen %d", w.fullscreen)
+				}
+			})
+		}
+	}
+}
+
+func TestRestoreBandAcrossPromotedFloatBand(t *testing.T) {
+	_, w := cascadeMovesCore(t, 3, 3, false)
+	w.FocusID(1)
+	w.ToggleFullWidth()
+	w.AddFloating(9, 800, 600)
+	w.SetFullscreen(9, true)
+	wantBands(t, w, []WindowID{1}, []WindowID{9}, []WindowID{2, 3})
+	w.SetFullscreen(9, false)
+	w.FocusID(1)
+	w.ToggleFullWidth()
+	wantBands(t, w, []WindowID{1, 2, 3}, []WindowID{9})
+}
+
+func TestPromotedFullscreenFloatMovesToNeighborMonitor(t *testing.T) {
+	for _, tc := range []struct {
+		a      Action
+		screen string
+	}{{ActionMoveColumnLeft, "L"}, {ActionMoveColumnRight, "R"}} {
+		t.Run(tc.screen, func(t *testing.T) {
+			c, w := cascadeMovesCore(t, 2, 3, true)
+			w.AddFloating(9, 800, 600)
+			w.SetFullscreen(9, true)
+			c.applyAction(tc.a)
+			dst := screenWorkspace(c, tc.screen)
+			wantFocus(t, c, tc.screen, 9)
+			wantColumns(t, w, 1, 2)
+			if dst.isFloat(9) || dst.columnOf(9) < 0 || dst.fullscreen != 9 || w.fullscreen != 0 {
+				t.Fatalf("destination %+v", dst)
+			}
+		})
+	}
+}
+
+func TestUserFloatedToggleFullscreenPromotes(t *testing.T) {
+	_, w := cascadeMovesCore(t, 2, 3, false)
+	w.ToggleFloating()
+	if !w.isFloat(2) {
+		t.Fatal("setup not floating")
+	}
+	w.ToggleFullscreen()
+	if w.isFloat(2) || w.fullscreen != 2 {
+		t.Fatal("user float not promoted")
+	}
+	wantBands(t, w, []WindowID{1}, []WindowID{2})
+	w.SetFullscreen(2, true)
+	w.SetFullscreen(2, true)
+	wantBands(t, w, []WindowID{1}, []WindowID{2})
+}
