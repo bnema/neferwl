@@ -627,6 +627,7 @@ func TestCRTCColorClearedOnModesetAndClose(t *testing.T) {
 		o, k, commits := setup(t)
 		k.EXPECT().rmFB(mock.Anything).Return(nil)
 		k.EXPECT().destroyBlob(uint32(61)).Return(nil).Once()
+		k.EXPECT().destroyBlob(lut3dBlob).Return(nil).Once()
 		o.Close()
 		cleared(t, (*commits)[0])
 	})
