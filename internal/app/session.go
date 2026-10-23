@@ -66,6 +66,16 @@ type session struct {
 	newRenderer func(w, h int) (ports.Renderer, error)
 }
 
+// The watchdog only writes a stack dump for a loop that stopped answering; it
+// recovers nothing. Each probe round wakes the process, so rounds are sparse.
+// Stalls are only checked at rounds: a probe still unanswered at the next round
+// (watchdogEvery later, over watchdogTimeout) is dumped. A stall that begins
+// just after a round is thus dumped about 2*watchdogEvery (10 s) after it began.
+const (
+	watchdogEvery   = 5 * time.Second
+	watchdogTimeout = 3 * time.Second
+)
+
 // assembleSession acquires and wires every dependency in startup order and
 // starts no long-lived worker.
 //
@@ -336,7 +346,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 					probes = append(probes, hw.watchdogProbes()...)
 				}
 				return probes
-			}, watchdog.Options{Dir: dir, Every: time.Second, Timeout: 3 * time.Second, Log: logging.For(ctx, "app")})
+			}, watchdog.Options{Dir: dir, Every: watchdogEvery, Timeout: watchdogTimeout, Log: logging.For(ctx, "app")})
 		}()
 	}
 	go func() {

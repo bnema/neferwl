@@ -75,3 +75,45 @@ func TestStalledLoopIsDumpedOnce(t *testing.T) {
 		<-done
 	})
 }
+
+// With the production cadence (a round every 5 s, a 3 s timeout) a stall is
+// dumped at the second round after it began, and a healthy loop is probed
+// once per round only.
+func TestSparseRoundsDumpAtSecondRound(t *testing.T) {
+	dir := t.TempDir()
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		release := make(chan struct{})
+		var answered atomic.Int32
+		probes := func() []Probe {
+			return []Probe{
+				{Name: "stuck", Ping: func() { stuckOwnerLoop(ctx, release) }},
+				{Name: "fine", Ping: func() { answered.Add(1) }},
+			}
+		}
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			Run(ctx, probes, Options{Dir: dir, Every: 5 * time.Second, Timeout: 3 * time.Second, Log: zerowrap.Default()})
+		}()
+		dumps := func() int {
+			m, _ := filepath.Glob(filepath.Join(dir, "stall-*.txt"))
+			return len(m)
+		}
+		time.Sleep(9 * time.Second)
+		synctest.Wait()
+		if n := dumps(); n != 0 {
+			t.Fatalf("%d dumps before the second round", n)
+		}
+		time.Sleep(2 * time.Second) // t = 11 s: second round ran at 10 s
+		synctest.Wait()
+		if n := dumps(); n != 1 {
+			t.Fatalf("%d dumps after the second round, want 1", n)
+		}
+		if n := answered.Load(); n != 2 {
+			t.Fatalf("healthy loop probed %d times in two rounds", n)
+		}
+		cancel()
+		<-done
+	})
+}
