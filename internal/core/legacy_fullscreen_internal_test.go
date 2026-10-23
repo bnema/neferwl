@@ -120,7 +120,7 @@ func TestLegacyFullscreenRespectsFocus(t *testing.T) {
 		ws := sc.mon.Current()
 		sc.mon.Focus(1)
 		if sc.mon.Current() == ws {
-			t.Skip("no second workspace")
+			t.Fatal("setup: no second workspace")
 		}
 		o := sc.rect()
 		c.resizeFloating(ports.WindowResized{ID: 1, Width: o.W, Height: o.H})
@@ -164,6 +164,55 @@ func TestLegacyFullscreenRemapAndOutputs(t *testing.T) {
 		c.resizeFloating(ports.WindowResized{ID: 1, Width: 300, Height: 200})
 		if b.mon.Current().fullscreen != 0 {
 			t.Fatal("window sized to output A went fullscreen on B")
+		}
+	})
+}
+
+// Only the focused window of the shown workspace is a candidate.
+func TestLegacyFullscreenNeedsFocusAtFirstSize(t *testing.T) {
+	t.Run("focus moved before the commit", func(t *testing.T) {
+		c, _, _ := fadeCore(t)
+		sc := c.cur()
+		c.mapWindow(ports.WindowMapped{ID: 1})
+		c.mapWindow(ports.WindowMapped{ID: 2})
+		w := sc.mon.Current()
+		w.FocusID(1)
+		o := sc.rect()
+		c.resizeFloating(ports.WindowResized{ID: 2, Width: o.W, Height: o.H})
+		if w.fullscreen != 0 {
+			t.Fatalf("unfocused window went fullscreen: %d", w.fullscreen)
+		}
+		if id, _ := w.Focused(); id != 1 {
+			t.Fatalf("focus moved to %d", id)
+		}
+	})
+	t.Run("quiet column", func(t *testing.T) {
+		c, _, _ := fadeCore(t)
+		sc := c.cur()
+		c.mapWindow(ports.WindowMapped{ID: 1})
+		c.windows.mapped(ports.WindowMapped{ID: 2}, c.now())
+		w := sc.mon.Current()
+		w.addColumnQuiet(Column{Windows: []WindowID{2}})
+		o := sc.rect()
+		c.resizeFloating(ports.WindowResized{ID: 2, Width: o.W, Height: o.H})
+		if w.fullscreen != 0 {
+			t.Fatalf("quiet window went fullscreen: %d", w.fullscreen)
+		}
+		if id, _ := w.Focused(); id != 1 {
+			t.Fatalf("focus moved to %d", id)
+		}
+	})
+	t.Run("quiet float", func(t *testing.T) {
+		c, _, _ := fadeCore(t)
+		sc := c.cur()
+		c.mapWindow(ports.WindowMapped{ID: 1})
+		c.windows.mapped(ports.WindowMapped{ID: 2, Floating: true}, c.now())
+		w := sc.mon.Current()
+		w.addFloat(Float{ID: 2}, true)
+		o := sc.rect()
+		c.resizeFloating(ports.WindowResized{ID: 2, Width: o.W, Height: o.H})
+		if w.fullscreen != 0 {
+			t.Fatalf("quiet float went fullscreen: %d", w.fullscreen)
 		}
 	})
 }

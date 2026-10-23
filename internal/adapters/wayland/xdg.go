@@ -418,10 +418,10 @@ func (w *window) afterCommit() {
 		return
 	}
 	if !w.floating {
-		// Core is authoritative: this prefilter matches any output, and
-		// core compares with the output the window is on.
 		// Core reads a tile's first size once, to spot a window that maps
-		// at its output's size without asking for fullscreen.
+		// at its output's size without asking for fullscreen. This
+		// prefilter accepts any output size; core compares with the output
+		// the window is on.
 		if fw, fh := w.size(); !w.sized && fw > 0 && fh > 0 {
 			w.sized = true
 			if !w.xdg.server.outputSized(fw, fh) {
