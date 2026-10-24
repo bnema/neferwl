@@ -1,8 +1,12 @@
 package core
 
 import (
+	"reflect"
 	"testing"
 	"time"
+
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Trigger budget includes snapshot, transition, animate and refreshing the
@@ -81,14 +85,67 @@ func TestOverviewWorkspaceAnimatedFrameAllocations(t *testing.T) {
 	if leaving == 0 || len(m.Workspaces[1].Stash) < 3 {
 		t.Fatalf("fixture needs leaving cards and a stack: leaving %d, stash %d", leaving, len(m.Workspaces[1].Stash))
 	}
-	// Hold the controlled clock on an in-flight frame: AllocsPerRun must not
-	// turn the fixture into a settled scene during its warmup or repetitions.
-	n := testing.AllocsPerRun(50, func() { c.animate(ic.now, nil); indicatorScene(t, c) })
-	// Measured baseline for refreshShown plus full scene publication:
-	// 52 normally, 62 under -race (including the controlled clock mock).
-	budget := 52.0
+	// Establish the complete published frame with the controlled clock and
+	// count its Now calls before excluding mock bookkeeping from the budget.
+	clock := c.opts.Clock.(*portsmocks.MockClock)
+	before := len(clock.Calls)
+	c.animate(ic.now, nil)
+	want := indicatorScene(t, c)
+	nowCalls := 0
+	for _, call := range clock.Calls[before:] {
+		if call.Method == "Now" {
+			nowCalls++
+		}
+	}
+	t.Logf("controlled clock Now calls per frame = %d", nowCalls)
+	// Measure in the actual publication call stack: testify's CallerInfo
+	// formats each stack frame, so a direct clock.Now microbenchmark would
+	// undercount the bookkeeping paid by publication.
+	mockFrameAllocs := testing.AllocsPerRun(50, func() {
+		c.animate(ic.now, nil)
+		indicatorScene(t, c)
+	})
+	t.Logf("animated frame with controlled clock allocs per run = %v", mockFrameAllocs)
+	if !want.Animating || !c.animating() {
+		t.Fatal("fixture frame is not animating")
+	}
+	checkFrame := func(got ports.Scene) {
+		t.Helper()
+		// Seq is publication identity, not rendered content. Compare every
+		// other field, including Animating, windows, rects and separators.
+		got.Seq = want.Seq
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("published frame changed after excluding clock bookkeeping:\n got: %+v\nwant: %+v", got, want)
+		}
+		remaining := 0
+		for _, rm := range sc.rects {
+			if rm.leaving {
+				remaining++
+			}
+		}
+		if remaining != leaving || !c.animating() {
+			t.Fatalf("in-flight motion lost: leaving %d, want %d; animating %v", remaining, leaving, c.animating())
+		}
+	}
+	// Use the real clock for publication, as publishRig does: testify's clock
+	// call recording includes formatting backed by sync.Pool, whose entries
+	// are randomly dropped under -race. That bookkeeping is not frame work.
+	// Animation still receives the fixed fixture time below, so warmup and
+	// repetitions cannot settle the in-flight cards.
+	c.opts.Clock = nil
+	c.animate(ic.now, nil)
+	checkFrame(indicatorScene(t, c))
+	var last ports.Scene
+	n := testing.AllocsPerRun(50, func() {
+		c.animate(ic.now, nil)
+		last = indicatorScene(t, c)
+	})
+	checkFrame(last)
+	// Measured baseline for refreshShown plus full scene publication,
+	// excluding controlled clock mock bookkeeping: 5 normally, 6 under -race.
+	budget := 5.0
 	if raceEnabled {
-		budget = 62
+		budget = 6
 	}
 	t.Logf("animated frame allocs per run = %v", n)
 	if n > budget {
