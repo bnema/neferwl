@@ -99,7 +99,7 @@ func writeDump(dir string, j *dumpJob) error {
 	}
 	for _, t := range j.targets {
 		r := image.Rect(int(float64(t.Rect.X)*scale), int(float64(t.Rect.Y)*scale), int(float64(t.Rect.X+t.Rect.W)*scale), int(float64(t.Rect.Y+t.Rect.H)*scale))
-		outline(img, r, sourceColor(t.Source, t.Kind))
+		outline(img, r, sourceColor(t.Source))
 	}
 
 	if err := writePNG(prefix+".annotated.png", img); err != nil {
@@ -259,14 +259,11 @@ func prune(dir string, keep int) error {
 }
 
 // Source colours remain distinct even when sources report the same target kind.
-func sourceColor(source ports.HintSource, kind ports.HintKind) color.RGBA {
+func sourceColor(source ports.HintSource) color.RGBA {
 	switch source {
 	case ports.HintSourceATSPI:
 		return color.RGBA{0xff, 0, 0xff, 0xff}
 	case ports.HintSourceOCR:
-		if kind == ports.HintButton {
-			return color.RGBA{0x29, 0x62, 0xff, 0xff}
-		}
 		return color.RGBA{0, 0xb0, 0xff, 0xff}
 	default:
 		return boxColor

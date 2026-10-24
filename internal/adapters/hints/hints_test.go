@@ -226,8 +226,26 @@ func waitFiles(t *testing.T, dir string, n int) []os.DirEntry {
 	t.Helper()
 	var entries []os.DirEntry
 	require.Eventually(t, func() bool {
-		entries, _ = os.ReadDir(dir)
-		return len(entries) >= n
+		all, _ := os.ReadDir(dir)
+		entries = nil
+		var raw, annotated, metadata bool
+		for _, e := range all {
+			if strings.HasPrefix(e.Name(), ".") {
+				continue
+			}
+			switch {
+			case strings.HasSuffix(e.Name(), ".annotated.png"):
+				annotated = true
+			case strings.HasSuffix(e.Name(), ".png"):
+				raw = true
+			case strings.HasSuffix(e.Name(), ".json"):
+				metadata = true
+			default:
+				continue
+			}
+			entries = append(entries, e)
+		}
+		return raw && annotated && metadata && len(entries) >= n
 	}, 5*time.Second, 10*time.Millisecond)
 	return entries
 }
@@ -283,14 +301,13 @@ func TestHintDump(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(dir, js))
 	require.NoError(t, err)
 	var meta struct {
-		Output   string  `json:"output"`
-		Width    int     `json:"width"`
-		Height   int     `json:"height"`
-		Stride   int     `json:"stride"`
-		Scale    float64 `json:"scale"`
-		DetectMS float64 `json:"detect_ms"`
-		TotalMS  float64 `json:"total_ms"`
-		Targets  []struct {
+		Output  string  `json:"output"`
+		Width   int     `json:"width"`
+		Height  int     `json:"height"`
+		Stride  int     `json:"stride"`
+		Scale   float64 `json:"scale"`
+		TotalMS float64 `json:"total_ms"`
+		Targets []struct {
 			Rect  [4]int  `json:"rect"`
 			Score float32 `json:"score"`
 		} `json:"targets"`
@@ -301,7 +318,7 @@ func TestHintDump(t *testing.T) {
 	require.Equal(t, 32, meta.Height)
 	require.Equal(t, 64*4, meta.Stride)
 	require.Equal(t, 1.0, meta.Scale)
-	require.GreaterOrEqual(t, meta.TotalMS, meta.DetectMS)
+	require.GreaterOrEqual(t, meta.TotalMS, 0.0)
 	require.Len(t, meta.Targets, 1)
 	require.Equal(t, [4]int{8, 4, 40, 20}, meta.Targets[0].Rect)
 	require.Equal(t, float32(0.75), meta.Targets[0].Score)

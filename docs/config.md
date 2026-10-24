@@ -432,6 +432,6 @@ write a raw PNG, annotated PNG and JSON under
 `$XDG_STATE_HOME/neferwl/hints/` (default `~/.local/state/neferwl/hints/`).
 JSON records each target's source, kind, window, rectangle and score, plus stages
 (input windows, duration, errors and coverage) and per-window crops with popups.
-Annotations use magenta for AT-SPI, cyan/blue for OCR, green for detector, and
+Annotations use magenta for AT-SPI, cyan for OCR, green for detector, and
 grey crop outlines with thin popup outlines. The most recent 50 scan groups are
 kept. Dumps contain screen content in clear; delete sensitive captures after use.

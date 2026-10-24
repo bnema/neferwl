@@ -72,14 +72,14 @@ func TestDumpSourcesAndCrops(t *testing.T) {
 	for i, target := range j.targets {
 		require.Equal(t, target.Source.String(), meta.Targets[i].Source)
 		require.Equal(t, target.Window, meta.Targets[i].Window)
-		require.Equal(t, sourceColor(target.Source, target.Kind), color.RGBAModel.Convert(img.At((3+i*10)*2, 6)))
+		require.Equal(t, sourceColor(target.Source), color.RGBAModel.Convert(img.At((3+i*10)*2, 6)))
 	}
-	require.NotEqual(t, sourceColor(ports.HintSourceOCR, ports.HintLink), boxColor)
+	require.NotEqual(t, sourceColor(ports.HintSourceOCR), boxColor)
 }
 
 func TestDumpStageRecordsPartialCoverageAndError(t *testing.T) {
 	s := newMocksource(t)
-	s.EXPECT().needsFrame().Return(false)
+	s.EXPECT().needsFrame(mock.Anything).Return(false)
 	s.EXPECT().kind().Return(ports.HintSourceATSPI)
 	wins := []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 20, H: 20}, Popups: []ports.Rect{{X: 20, W: 10, H: 10}}}, {ID: 2, Rect: ports.Rect{X: 40, W: 20, H: 20}}}
 	req := ports.HintScanRequest{Width: 100, Height: 80, Scale: 2, Windows: wins}
@@ -101,4 +101,18 @@ func TestDumpStageRecordsPartialCoverageAndError(t *testing.T) {
 	require.False(t, stage.Crops[1].Covered)
 	require.Equal(t, image.Rect(0, 0, 60, 40), stage.Crops[0].Rect)
 	require.Equal(t, []image.Rectangle{image.Rect(40, 0, 60, 20)}, stage.Crops[0].Popups)
+}
+
+func TestHintDumpDurations(t *testing.T) {
+	dir := t.TempDir()
+	when := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	j := &dumpJob{when: when, req: ports.HintScanRequest{Output: "o", Width: 1, Height: 1, Scale: 1}, pix: make([]byte, 4), stride: 4, captureD: 1250 * time.Microsecond, stages: []scanStage{{Source: "atspi", MS: 2.5}, {Source: "detector", MS: 4.25}}}
+	require.NoError(t, writeDump(dir, j))
+	data, err := os.ReadFile(filepath.Join(dir, when.Format("20060102-150405.000")+"-o.json"))
+	require.NoError(t, err)
+	var meta dumpMeta
+	require.NoError(t, json.Unmarshal(data, &meta))
+	require.Equal(t, 1.25, meta.CaptureMS)
+	require.Equal(t, 8.0, meta.TotalMS)
+	require.Equal(t, j.stages, meta.Stages)
 }

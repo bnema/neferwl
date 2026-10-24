@@ -95,18 +95,38 @@ For the test installation these are
 `~/.local/share/nefer-hints-test/models`.
 
 ```sh
-env -u NEFERWL_STATE -u NEFERWL_SLOT WAYLAND_DISPLAY=wp4-headless \
-  XDG_STATE_HOME="$T/state" NEFERWL_HINT_DEBUG=1 dbus-run-session -- \
-  "$T/neferwl" --backend=headless --config "$T/config" --no-xwayland \
-  --screenshot "$T/shots" --input "$T/input" --timeout 20s
+env -u NEFERWL_STATE -u NEFERWL_SLOT XDG_STATE_HOME="$T/state" \
+  NEFERWL_HINT_DEBUG=1 dbus-run-session -- bash -c '
+  T=$1
+  # Enable accessibility before either the compositor or its clients starts.
+  gdbus call --session --dest org.a11y.Bus --object-path /org/a11y/bus \
+    --method org.freedesktop.DBus.Properties.Set org.a11y.Status IsEnabled "<true>"
+  # On hosts whose registry service activation is unavailable (adjust path).
+  /usr/lib/at-spi2-registryd >"$T/registry.log" 2>&1 &
+  WAYLAND_DISPLAY=wp4-headless "$T/neferwl" --backend=headless \
+    --config "$T/config" --no-xwayland --screenshot "$T/shots" \
+    --input "$T/input" --timeout 20s & compositor=$!
+  # Bounded wait for the actual display, not an inherited live-session display.
+  for i in {1..50}; do
+    display=$(jq -r "select(.message == \"listening\") | .WAYLAND_DISPLAY" \
+      "$T/state/neferwl/runs/headless/latest.log" 2>/dev/null | head -1)
+    [ -n "$display" ] && break
+    sleep .1
+  done
+  [ -n "$display" ] || exit 1
+  export WAYLAND_DISPLAY="$display"
+  foot sh -c "printf https://example.org/a; exec sleep 60" &
+  chromium --ozone-platform=wayland --force-renderer-accessibility \
+    --user-data-dir="$T/chrome" "file://$T/page.html" >"$T/chromium.log" 2>&1 &
+  wait "$compositor"
+' bash "$T"
 ```
 
-Read the actual `WAYLAND_DISPLAY` from the `listening` JSON log entry in
-`$T/state/neferwl/runs/headless/latest.log`. Launch clients on that display,
-always with `env -u NEFERWL_STATE -u NEFERWL_SLOT WAYLAND_DISPLAY=<headless>`.
-Launch foot printing `https://example.org/a` and Chromium with
-`--force-renderer-accessibility --user-data-dir=<throwaway directory>` on a
-local HTML page with links. Arrange both windows visibly; open a menu if possible.
+All clients and state queries must run inside that wrapper shell so they share
+its session bus as well as its Wayland display. Logs are in
+`$T/state/neferwl/runs/headless/latest.log`.
+Prepare `$T/page.html` with local links before running. Arrange both windows
+visibly; open a menu if possible.
 Script `sleep 8s`, `key Super+g`, `sleep 4s`, then `type <visible label>`.
 Check screenshots before and after the click; a local link changing the page
 background is a convenient observable result.
