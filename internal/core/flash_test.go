@@ -220,7 +220,7 @@ func TestFlashActionTriggers(t *testing.T) {
 }
 
 func TestFlashExcludedActions(t *testing.T) {
-	for _, action := range []Action{ActionFocusWorkspacePrev, ActionFocusWorkspaceNext, ActionMoveWindowToWorkspaceNext, ActionMoveColumnToWorkspaceNext, ActionToggleFullscreen, ActionMaximizeColumn, ActionCycleColumnWidth, ActionFocusColumnRight, ActionMoveColumnRight, ActionMoveWindowUp} {
+	for _, action := range []Action{ActionMoveWindowToWorkspaceNext, ActionMoveColumnToWorkspaceNext, ActionToggleFullscreen, ActionMaximizeColumn, ActionCycleColumnWidth, ActionFocusColumnRight, ActionMoveColumnRight, ActionMoveWindowUp} {
 		t.Run(string(action), func(t *testing.T) {
 			c, _ := flashCore(t)
 			c.applyAction(action)
@@ -500,37 +500,6 @@ func BenchmarkFlashSceneBuild(b *testing.B) {
 			b.Fatal(err)
 		}
 		c.cur().last = scene
-	}
-}
-
-func TestFlashEdgeWorkspaceSwitchDoesNotFlash(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		overflow Overflow
-		action   Action
-	}{
-		{"vertical", OverflowScroll, ActionFocusWindowDown},
-		{"horizontal", OverflowCascade, ActionFocusColumnRight},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			c, _ := flashCore(t)
-			m := c.cur().mon
-			m.SetOverflow(tc.overflow)
-			before := m.Current()
-			m.Focus(1)
-			m.AddWindow(4)
-			m.Focus(0)
-			c.applyAction(tc.action)
-			if m.Current() == before {
-				t.Fatal("setup: edge did not switch workspace")
-			}
-			if id, _ := m.Focused(); id != 4 {
-				t.Fatalf("did not land on occupied workspace: %d", id)
-			}
-			if c.flash.pending != nil || c.flash.running != nil {
-				t.Fatal("workspace switch flashed")
-			}
-		})
 	}
 }
 

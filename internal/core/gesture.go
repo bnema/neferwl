@@ -347,6 +347,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 		// Focus may drop the empty workspace left behind and renumber the
 		// list: the slide keeps measuring in the list it began on.
 		off := cur - float64(idx)
+		landed := m.Current()
 		if idx != m.Active {
 			m.Focus(idx)
 			shown = true
@@ -354,6 +355,13 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 		if !e.Cancelled {
 			c.focusScreen = c.screenIndex(g.screen.name())
 			c.keyboard.takeBack()
+			// The committed workspace marks its focused window, once its
+			// landing slide settles; an empty one has nothing to mark.
+			if m.Current() != landed {
+				if id, _ := m.Focused(); id != 0 {
+					c.requestFlash(flashWindow, id)
+				}
+			}
 		}
 		m.switchView.off, m.switchList = off, g.list
 		if c.animOn() {

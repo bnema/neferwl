@@ -216,7 +216,8 @@ type Effect struct {
 // workspace, then a neighbor screen, then a trailing empty workspace. Vertical
 // edges do this only with a vertical workspace axis; cascade stays within bands.
 // Other actions apply to the focused screen's monitor unless explicitly moving
-// between screens. Screen changes flash the focused window on the destination.
+// between screens. Screen changes flash the focused window on the destination,
+// and so does a switch to another workspace of the same screen.
 func (c *Core) applyAction(a Action) Effect {
 	if !c.flashOn() {
 		return c.dispatchAction(a)
@@ -229,7 +230,9 @@ func (c *Core) applyAction(a Action) Effect {
 		ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionFocusMonitorUp, ActionFocusMonitorDown,
 		ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown:
 	default:
-		return c.dispatchAction(a)
+		if !switchesWorkspace(a) {
+			return c.dispatchAction(a)
+		}
 	}
 	// Compare the action's visible result, not publication-time focus: pointer,
 	// activation and mapping changes must never request a flash.
@@ -264,6 +267,18 @@ func (c *Core) applyAction(a Action) Effect {
 			}
 			return
 		}
+		// A switch to another workspace of this screen marks that
+		// workspace's focused window once the slide settles. It is always a
+		// window flash: the column-level border of the action that crossed
+		// the edge would outline a column the user never navigated within.
+		// Switches made inside the overview only move its selection; the
+		// overview branches above have already returned for them.
+		if sc.mon.Current() != beforeWS {
+			if id != 0 {
+				c.requestFlash(flashWindow, id)
+			}
+			return
+		}
 		level := flashWindow
 		switch a {
 		case ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveWindowUp, ActionMoveWindowDown,
@@ -284,9 +299,6 @@ func (c *Core) applyAction(a Action) Effect {
 		default:
 			return
 		}
-		if sc.mon.Current() != beforeWS {
-			return
-		}
 		after := sc.mon.Layout()
 		changed := id != beforeID || !slices.EqualFunc(before, after, func(a, b Placement) bool {
 			return a.ID == b.ID && a.Rect == b.Rect && a.Focused == b.Focused && a.Hidden == b.Hidden && a.Floating == b.Floating
@@ -296,6 +308,20 @@ func (c *Core) applyAction(a Action) Effect {
 		}
 	}()
 	return c.dispatchAction(a)
+}
+
+// switchesWorkspace reports a bind that may show another workspace: the
+// previous, next, numbered and named focus binds, and the moves that follow
+// their window (Monitor.followMove).
+func switchesWorkspace(a Action) bool {
+	if a == ActionFocusWorkspacePrev || a == ActionFocusWorkspaceNext {
+		return true
+	}
+	if _, _, ok := WorkspaceArg(a); ok {
+		return true
+	}
+	_, named := NamedArg(a)
+	return named || movesToWorkspace(a)
 }
 
 func (c *Core) dispatchAction(a Action) Effect {
