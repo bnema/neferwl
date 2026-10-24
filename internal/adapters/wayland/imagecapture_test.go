@@ -106,7 +106,8 @@ func newCaptureHarnessWith(t *testing.T, tune func(*Options, *Channels)) *captur
 	h.s = s
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	t.Cleanup(func() {
 		cancel()
 		if err := <-done; err != nil {
@@ -480,10 +481,12 @@ func TestStaleConstraintsAreResentBeforeBufferConstraintsFailure(t *testing.T) {
 
 func TestRegionSourceInvalidSize(t *testing.T) {
 	for _, size := range [][2]int32{{0, 4}, {4, 0}, {-1, 4}} {
-		h := newCaptureHarness(t)
-		cc := h.client(t)
-		cc.regionSource(t, 0, 0, size[0], size[1])
-		expectProtocolError(t, cc.c, cc.extra, uint32(imagecapture.NeferwlImageCaptureSourceManagerV1ErrorInvalidRegion))
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			h := newCaptureHarness(t)
+			cc := h.client(t)
+			cc.regionSource(t, 0, 0, size[0], size[1])
+			expectProtocolError(t, cc.c, cc.extra, uint32(imagecapture.NeferwlImageCaptureSourceManagerV1ErrorInvalidRegion))
+		})
 	}
 }
 

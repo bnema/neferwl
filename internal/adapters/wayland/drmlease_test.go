@@ -86,7 +86,8 @@ func leaseServerWithState(t *testing.T) (*wlturbo.Display, chan ports.LeaseMessa
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -319,7 +320,8 @@ func TestLeaseIDsAreScopedToCard(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	t.Cleanup(func() {
 		cancel()
 		if err := <-done; err != nil {

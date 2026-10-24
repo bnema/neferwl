@@ -26,7 +26,8 @@ func dmabufServer(t *testing.T, sup ports.DMABufSupport) (*Server, chan ports.Cl
 	contents := relayContents(t, s)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -106,6 +107,9 @@ func TestDMABufParams(t *testing.T) {
 	}
 	requestProtocol(t, c, big, linuxdmabuf.ZwpLinuxBufferParamsV1RequestCreate, int32(64), int32(17), linearARGB.Format, uint32(0))
 	expectProtocolError(t, c, big, uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorOutOfBounds))
+}
+
+func TestDMABufParamsUnadvertised(t *testing.T) {
 	// Each case below needs its own connection: a protocol error kills it.
 	t.Run("unadvertised format v6", func(t *testing.T) {
 		c, p, _ := createNV12(t, dmabufVersion, false, 0)
@@ -363,7 +367,8 @@ func newScanoutHarness(t *testing.T, sup ports.DMABufSupport, version uint32) *s
 	h.s = s
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	t.Cleanup(func() { cancel(); <-done })
 	h.c = protocolClient(t, s, dir)
 	w, surf, xdg := surfaceMapper(t, h.c, events)()

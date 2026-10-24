@@ -29,7 +29,8 @@ func TestWaylandInfo(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	defer func() {
 		cancel()
 		select {
@@ -71,7 +72,8 @@ func TestWestonFrames(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -133,7 +135,8 @@ func lifecycleServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -326,7 +329,8 @@ func TestUnbufferedEventsDoNotBlockDisplay(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -381,7 +385,8 @@ func TestWestonContents(t *testing.T) {
 	contents := relayContents(t, s)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	t.Cleanup(func() {
 		cancel()
 		select {

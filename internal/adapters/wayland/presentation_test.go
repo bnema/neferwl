@@ -64,7 +64,8 @@ func presentServerOn(t *testing.T, layout ports.Layout) (*Server, chan ports.Cli
 	contents := relayContents(t, s)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	t.Cleanup(func() { cancel(); <-done })
 	return s, events, commands, contents, s.Presentation(), dir
 }

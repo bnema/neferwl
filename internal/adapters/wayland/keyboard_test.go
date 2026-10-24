@@ -41,7 +41,8 @@ func keyboardServer(t *testing.T, setup ...func(*Server)) (*Server, chan ports.C
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	t.Cleanup(func() {
 		cancel()
 		select {

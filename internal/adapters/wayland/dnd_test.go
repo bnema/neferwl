@@ -933,7 +933,8 @@ func lockedPair(t *testing.T) (*dndPair, string) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -991,21 +992,23 @@ func TestDataDragLockCancels(t *testing.T) {
 // a v3 and a pre-v3 target alike.
 func TestDataDropLockCancelsPending(t *testing.T) {
 	for _, version := range []uint32{3, 2} {
-		p, dir := lockedPair(t)
-		p.b = newDndClientAt(t, p.s, dir, p.events, version)
-		p.start(t, 0)
-		p.commands <- ports.DataDragFocus{ID: p.b.window, X: 5, Y: 6}
-		p.b.until(t, "enter")
-		offer := p.b.lastOffer(t)
-		requestProtocol(t, p.b.c, offer, wayland.DataOfferRequestAccept, uint32(1), "text/plain")
-		if version >= 3 {
-			requestProtocol(t, p.b.c, offer, wayland.DataOfferRequestSetActions, actCopy, actCopy)
-		}
-		p.a.until(t, "target")
-		p.commands <- ports.DataDragDrop{}
-		p.a.until(t, "drop_performed")
-		lockSession(t, p.s, dir)
-		p.a.expect(t, "cancelled")
+		t.Run(map[uint32]string{3: "v3", 2: "v2"}[version], func(t *testing.T) {
+			p, dir := lockedPair(t)
+			p.b = newDndClientAt(t, p.s, dir, p.events, version)
+			p.start(t, 0)
+			p.commands <- ports.DataDragFocus{ID: p.b.window, X: 5, Y: 6}
+			p.b.until(t, "enter")
+			offer := p.b.lastOffer(t)
+			requestProtocol(t, p.b.c, offer, wayland.DataOfferRequestAccept, uint32(1), "text/plain")
+			if version >= 3 {
+				requestProtocol(t, p.b.c, offer, wayland.DataOfferRequestSetActions, actCopy, actCopy)
+			}
+			p.a.until(t, "target")
+			p.commands <- ports.DataDragDrop{}
+			p.a.until(t, "drop_performed")
+			lockSession(t, p.s, dir)
+			p.a.expect(t, "cancelled")
+		})
 	}
 }
 

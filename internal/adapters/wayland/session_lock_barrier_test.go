@@ -42,7 +42,8 @@ func newBarrierServer(t *testing.T) *barrierServer {
 	ctx, cancel := context.WithCancel(context.Background())
 	h.cancel = cancel
 	var runErr error
-	go func() { runErr = h.s.Run(ctx); close(h.stopped) }()
+	run := guardedServerRun(t, h.s, ctx)
+	go func() { runErr = run(); close(h.stopped) }()
 	t.Cleanup(func() {
 		cancel()
 		select {

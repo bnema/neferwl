@@ -119,7 +119,8 @@ func TestForwarderDrainsWhileDisplayBusy(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	defer func() { cancel(); <-done }()
 
 	// Deferred after the shutdown above, so it runs first: a failing
@@ -180,7 +181,8 @@ func TestCommandThroughput(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	defer func() { cancel(); <-done }()
 	start := time.Now()
 	for i := range 2000 {

@@ -71,7 +71,8 @@ func newAdmissionHarnessWith(t *testing.T, queue int, opts Options, log zerowrap
 	h.s = s
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	t.Cleanup(func() {
 		cancel()
 		if err := <-done; err != nil {

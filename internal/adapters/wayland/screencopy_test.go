@@ -65,7 +65,8 @@ func TestScreencopyProtocol(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	defer func() {
 		cancel()
 		if err := <-done; err != nil {
@@ -440,7 +441,8 @@ func TestExtCaptureLifecycle(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	defer func() {
 		cancel()
 		if err := <-done; err != nil {
@@ -596,7 +598,8 @@ func TestExtCaptureStoppedOnOutputRemoval(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	defer func() {
 		cancel()
 		if err := <-done; err != nil {
@@ -651,7 +654,8 @@ func TestWlrOutputGoneAndDestroyedBeforeReply(t *testing.T) {
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			done := make(chan error, 1)
-			go func() { done <- s.Run(ctx) }()
+			run := guardedServerRun(t, s, ctx)
+			go func() { done <- run() }()
 			defer func() {
 				cancel()
 				if err := <-done; err != nil {

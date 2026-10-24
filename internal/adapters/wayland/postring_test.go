@@ -142,7 +142,8 @@ func TestPostRingPushStopsWithDisplay(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	cancel()
 	<-done
 	r := newPostRing(s.display, 1, func(int) {})

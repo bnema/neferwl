@@ -25,7 +25,8 @@ func BenchmarkProtocolQueuedCommit(b *testing.B) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(b, s, ctx)
+	go func() { done <- run() }()
 	defer func() { cancel(); <-done }()
 	c, err := wlturbo.Connect(filepath.Join(dir, s.SocketName()))
 	if err != nil {

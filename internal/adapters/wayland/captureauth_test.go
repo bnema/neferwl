@@ -54,6 +54,13 @@ func TestCaptureAllowlistRealPeer(t *testing.T) {
 		t.Fatalf("log = %s", out.String())
 	}
 
+}
+
+func TestCaptureAllowlistRealPeerRefused(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
 	h2, out2 := authHarness(t, allowStore(t, "/usr/bin/grim\n"), nil)
 	b := h2.client(t)
 	for i := 0; i < 3; i++ {
@@ -268,6 +275,9 @@ func TestCaptureAllowlistNoPidfdFailsClosed(t *testing.T) {
 	if n := strings.Count(log, `"message":"kernel has no SO_PEERPIDFD`); n != 1 || !strings.Contains(log, `"level":"warn"`) {
 		t.Fatalf("want one warning: %s", log)
 	}
+}
+
+func TestCaptureAllowlistNoPidfdDisabled(t *testing.T) {
 	// `*` needs no identity.
 	h2, _ := authHarness(t, allowStore(t, "*\n"), linuxPeerExe{noPidfd: true})
 	if _, ok := h2.accepted(t, h2.client(t).captureWlr(t)); !ok {

@@ -136,7 +136,8 @@ func TestBusIdleInhibition(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	t.Cleanup(func() { cancel(); <-done })
 	c := protocolClient(t, s, dir)
 	seat := bindProtocol(t, c, "wl_seat")
@@ -251,7 +252,8 @@ func idleClockServer(t *testing.T) (*Server, chan ports.ClientCommand, string, c
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	t.Cleanup(func() { cancel(); <-done })
 	return s, commands, dir, timers
 }

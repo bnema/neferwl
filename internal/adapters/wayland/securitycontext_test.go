@@ -193,16 +193,18 @@ func TestSecurityContextSandboxedClientCannotCapture(t *testing.T) {
 func TestSecurityContextOverridesAllowlist(t *testing.T) {
 	self, _ := os.Executable()
 	for _, content := range []string{"*\n", self + "\n"} {
-		h, out := authHarness(t, allowStore(t, content), nil)
-		l := newSandboxListener(t)
-		newContextClient(t, h).commit(t, l, "org.flatpak", "")
-		c := h.clientOn(t, l.connect(t))
-		if _, ok := h.accepted(t, c.captureWlr(t)); ok {
-			t.Fatalf("sandboxed client captured with allowlist %q", content)
-		}
-		if !strings.Contains(out.String(), `"reason":"sandboxed client"`) {
-			t.Fatalf("log = %s", out.String())
-		}
+		t.Run(content, func(t *testing.T) {
+			h, out := authHarness(t, allowStore(t, content), nil)
+			l := newSandboxListener(t)
+			newContextClient(t, h).commit(t, l, "org.flatpak", "")
+			c := h.clientOn(t, l.connect(t))
+			if _, ok := h.accepted(t, c.captureWlr(t)); ok {
+				t.Fatalf("sandboxed client captured with allowlist %q", content)
+			}
+			if !strings.Contains(out.String(), `"reason":"sandboxed client"`) {
+				t.Fatalf("log = %s", out.String())
+			}
+		})
 	}
 }
 
@@ -246,7 +248,8 @@ func TestSecurityContextStopsWithTheCompositor(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	defer cancel()
 	c := protocolClient(t, s, dir)
 	manager := bindProtocol(t, c, "wp_security_context_manager_v1")

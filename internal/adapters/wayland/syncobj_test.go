@@ -107,7 +107,8 @@ func newSyncHarness(t *testing.T) *syncHarness {
 	h.contents = relayContents(t, s)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	t.Cleanup(func() {
 		cancel()
 		<-done
@@ -474,7 +475,8 @@ func TestSyncobjInvalidTimeline(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	run := guardedServerRun(t, s, ctx)
+	go func() { done <- run() }()
 	t.Cleanup(func() { cancel(); <-done })
 	c := protocolClient(t, s, dir)
 	mgr := bindProtocol(t, c, "wp_linux_drm_syncobj_manager_v1")
