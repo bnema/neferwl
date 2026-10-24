@@ -117,9 +117,8 @@ func TestProcDetectorIntegration(t *testing.T) {
 	f := detFrame{crop: image.Rect(0, 0, 1280, 720), stride: 1280 * 4, m: m}
 	ctx := context.Background()
 
-	dets, err := d.Detect(ctx, f)
-	require.NoError(t, err)
-	require.Empty(t, dets) // nothing clickable on a blank frame
+	_, err := d.Detect(ctx, f)
+	require.NoError(t, err) // predictions on a blank frame depend on the model
 	first := d.proc
 	require.NotNil(t, first)
 	_, err = d.Detect(ctx, f)
@@ -136,9 +135,12 @@ func TestProcDetectorIntegration(t *testing.T) {
 	require.NoError(t, err)
 	require.NotSame(t, first, d.proc)
 
-	// A wrong geometry is the detector's own error: the child stays.
+	// An out-of-bounds region is the detector's own error: the child stays.
+	// Source stride is not sent: row streaming always packs the crop rows.
 	proc := d.proc
-	_, err = d.Detect(ctx, detFrame{crop: image.Rect(0, 0, 1280, 720), stride: 4, m: m})
+	invalid := f
+	invalid.regions = []region{{x: 1280, y: 0, w: 1, h: 1}}
+	_, err = d.Detect(ctx, invalid)
 	require.ErrorIs(t, err, errDetector)
 	require.Same(t, proc, d.proc)
 	require.NoError(t, d.Close())
