@@ -60,6 +60,9 @@ See [examples/config](../examples/config) for every key with its default.
 | `focus.flash-duration` | `200ms` | Fade duration, `50ms` to `1s`; not scaled by `animations.speed` |
 | `focus.flash-color` | `border.active` | Flash color `#rrggbb`; empty uses `border.active` |
 | `hint.enable` | `off` | Turn on the experimental [hint mode](#hint-mode) (restart required) |
+| `hint.sources` | `atspi, ocr` | Ordered distinct sources: `atspi`, `ocr`, `detector` (restart required); empty resets the default |
+| `hint.targets` | `clickable` | `links` filters AT-SPI targets to links; reload applies to the next scan |
+| `hint.text-click` | `Ctrl+Shift` | Modifiers for OCR clicks only; `none` sends a plain click; reload applies at click time |
 | `hint.detector` | `nefer-hints` | The [hint mode](#hint-mode) detector binary: a path, or a name looked up in `PATH` (restart required) |
 | `hint.model` | `$XDG_DATA_HOME/nefer-hints/models` | Directory of the detector's model files; `~/.local/share/nefer-hints/models` when `XDG_DATA_HOME` is unset; a leading `~/` is expanded (restart required) |
 | `hint.threshold` | model default | Optional minimum detection score override, 0.01 to 0.99; unset or empty uses the model’s own threshold (`model.json`), else the runner default. Lower finds more targets and more false ones (restart required) |

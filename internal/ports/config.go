@@ -169,7 +169,10 @@ type Config struct {
 	Hint struct {
 		// Enable turns the experimental hint mode on (hint.enable). It is
 		// read at startup: a reload keeps the startup value.
-		Enable bool
+		Enable    bool
+		Sources   []HintSource // ordered startup-only chain
+		LinksOnly bool         // hint.targets
+		TextClick Mods         // hint.text-click
 		// Capture shows the labels in the captures requested by Wayland
 		// clients (hint.capture); the compositor's own scans never see them.
 		Capture                bool

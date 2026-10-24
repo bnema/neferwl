@@ -62,9 +62,15 @@ func TestRelayConfigKeepsStartupHintEnable(t *testing.T) {
 	go relayConfig(ctx, cur, in, out, make(chan *xkb.Keymap, 1), make(chan ports.InputDevicesConfig, 1), newCursors(clock.System{}, 0), make(chan ports.ClientCommand, 1), logging.For(ctx, "config"))
 	next := config.Defaults()
 	next.Hint.Enable = true
+	next.Hint.Sources = []ports.HintSource{ports.HintSourceDetector}
+	next.Hint.LinksOnly = true
+	next.Hint.TextClick = ports.ModAlt
 	in <- ports.ConfigChanged{Config: next}
 	got := (<-out).Config.Hint
 	require.False(t, got.Enable)
+	require.Equal(t, cur.Hint.Sources, got.Sources)
+	require.True(t, got.LinksOnly)
+	require.Equal(t, ports.ModAlt, got.TextClick)
 }
 
 func TestRelayConfigKeepsStartupHintDetector(t *testing.T) {

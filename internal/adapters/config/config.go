@@ -166,6 +166,8 @@ func Defaults() ports.Config {
 	c.Terminal.AutoOpen = "first"
 	// Hint mode is experimental: off unless the config turns it on.
 	c.Hint.Enable = false
+	c.Hint.Sources = []ports.HintSource{ports.HintSourceATSPI, ports.HintSourceOCR}
+	c.Hint.TextClick = ports.ModCtrl | ports.ModShift
 	c.Hint.Detector = defaultHintDetector
 	c.Hint.Model = defaultHintModel()
 	c.Xwayland = "xwayland-satellite"
@@ -896,6 +898,46 @@ func set(c *ports.Config, key, v string) error {
 		} else {
 			c.Hint.Foreground = v
 		}
+	case "hint.targets":
+		switch v {
+		case "clickable":
+			c.Hint.LinksOnly = false
+		case "links":
+			c.Hint.LinksOnly = true
+		default:
+			return fmt.Errorf("must be clickable or links")
+		}
+	case "hint.text-click":
+		m, err := parseTextClick(v)
+		if err != nil {
+			return err
+		}
+		c.Hint.TextClick = m
+	case "hint.sources":
+		sources := []ports.HintSource{ports.HintSourceATSPI, ports.HintSourceOCR}
+		if v != "" {
+			sources = nil
+			seen := map[ports.HintSource]bool{}
+			for _, name := range strings.Split(v, ",") {
+				var source ports.HintSource
+				switch strings.ToLower(strings.TrimSpace(name)) {
+				case "atspi":
+					source = ports.HintSourceATSPI
+				case "ocr":
+					source = ports.HintSourceOCR
+				case "detector":
+					source = ports.HintSourceDetector
+				default:
+					return fmt.Errorf("unknown hint source %q", name)
+				}
+				if seen[source] {
+					return fmt.Errorf("duplicate hint source %q", name)
+				}
+				seen[source] = true
+				sources = append(sources, source)
+			}
+		}
+		c.Hint.Sources = sources
 	case "hint.detector":
 		if v == "" {
 			v = defaultHintDetector
@@ -1521,4 +1563,34 @@ func cells(s string) (int, bool) {
 	}
 	n, err := strconv.Atoi(s)
 	return n, err == nil && n >= 1 && n <= 16
+}
+
+// parseTextClick parses hint.text-click: `+`-separated modifier names as in
+// binds, or none. cmd is an alias of super here (it is not resolved through
+// keyboard.cmd, so the result does not depend on key order).
+func parseTextClick(v string) (ports.Mods, error) {
+	if strings.ToLower(v) == "none" {
+		return 0, nil
+	}
+	var mods ports.Mods
+	for _, p := range strings.Split(v, "+") {
+		var m ports.Mods
+		switch strings.ToLower(strings.TrimSpace(p)) {
+		case "shift":
+			m = ports.ModShift
+		case "ctrl":
+			m = ports.ModCtrl
+		case "alt":
+			m = ports.ModAlt
+		case "super", "cmd":
+			m = ports.ModSuper
+		default:
+			return 0, fmt.Errorf("unknown modifier %q (use shift, ctrl, alt, super or cmd joined by +, or none)", p)
+		}
+		if mods&m != 0 {
+			return 0, fmt.Errorf("duplicate modifier %q", p)
+		}
+		mods |= m
+	}
+	return mods, nil
 }

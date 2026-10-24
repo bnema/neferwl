@@ -38,6 +38,7 @@ type hintTarget struct {
 	source hintSourceGeom // source window and its request-time client geometry
 	label  string
 	rect   ports.Rect
+	text   bool
 }
 
 type hintSourceGeom struct {
@@ -53,7 +54,7 @@ type hintState struct {
 	// one on screen ends it.
 	ws      *Workspace
 	geom    hintGeom
-	windows []hintSourceGeom // visible windows and their client geometry at request time
+	windows []ports.HintWindow // visible units at request time
 	targets []hintTarget
 	typed   string
 }
@@ -92,7 +93,7 @@ func (c *Core) hintRequest() {
 		return
 	}
 	wins := c.hintWindows(sc)
-	req := ports.HintScanRequest{Seq: c.hint.seq + 1, Output: sc.name(), Width: sc.info.Width, Height: sc.info.Height, Scale: sc.scale}
+	req := ports.HintScanRequest{Seq: c.hint.seq + 1, Output: sc.name(), Width: sc.info.Width, Height: sc.info.Height, Scale: sc.scale, LinksOnly: c.cfg.Hint.LinksOnly, Windows: wins}
 	select {
 	case c.ch.HintScans <- req:
 	default:
@@ -104,9 +105,9 @@ func (c *Core) hintRequest() {
 // hintWindows lists the windows drawn on sc, bottom to top, with their client
 // area (placements are output-local). A target is only clicked while the
 // geometry of its window is the one seen here.
-func (c *Core) hintWindows(sc *screen) []hintSourceGeom {
+func (c *Core) hintWindows(sc *screen) []ports.HintWindow {
 	view := sc.mon.viewport()
-	var out []hintSourceGeom
+	var out []ports.HintWindow
 	for _, p := range sc.shownLayout() {
 		if p.Hidden || p.Preview > 0 || !view.shows(p) {
 			continue
@@ -115,7 +116,18 @@ func (c *Core) hintWindows(sc *screen) []hintSourceGeom {
 		if r.W <= 0 || r.H <= 0 {
 			continue
 		}
-		out = append(out, hintSourceGeom{id: p.ID, rect: r})
+		w := ports.HintWindow{ID: p.ID, Rect: r, Focused: p.Focused}
+		rec := c.windows.lookup(p.ID)
+		w.PID, w.AppID = rec.client.PID, rec.client.AppID
+		for _, id := range c.popupOrder {
+			if c.popupRoot(id) != p.ID {
+				continue
+			}
+			if psc, r, ok := c.windowRect(id); ok && psc == sc && r.W > 0 && r.H > 0 {
+				w.Popups = append(w.Popups, r)
+			}
+		}
+		out = append(out, w)
 	}
 	return out
 }
@@ -162,6 +174,9 @@ func (c *Core) hintResult(res ports.HintScanResult) bool {
 			continue
 		}
 		root := c.popupRoot(id)
+		if t.Window != root {
+			continue
+		}
 		if s, _ := c.screenOf(root); s != sc {
 			// A layer surface, or a window of another output.
 			continue
@@ -170,7 +185,7 @@ func (c *Core) hintResult(res ports.HintScanResult) bool {
 		if !ok {
 			continue
 		}
-		kept = append(kept, hintTarget{x: x, y: y, window: id, source: source, rect: t.Rect, score: t.Score})
+		kept = append(kept, hintTarget{x: x, y: y, window: id, source: source, rect: t.Rect, score: t.Score, text: t.Source == ports.HintSourceOCR})
 	}
 	if len(kept) == 0 {
 		c.hintCancel()
@@ -263,8 +278,8 @@ func (c *Core) hintSpread(sc *screen, ts []hintTarget) []hintTarget {
 // geometry is unchanged.
 func (c *Core) hintSource(sc *screen, root WindowID) (hintSourceGeom, bool) {
 	for _, w := range c.hint.windows {
-		if w.id == root && c.hintSourceUnchanged(sc, w) {
-			return w, true
+		if w.ID == root && c.hintSourceUnchanged(sc, hintSourceGeom{id: w.ID, rect: w.Rect}) {
+			return hintSourceGeom{id: w.ID, rect: w.Rect}, true
 		}
 	}
 	return hintSourceGeom{}, false
@@ -366,8 +381,8 @@ func (c *Core) hintClick(ctx context.Context, t hintTarget) (err error) {
 		return err
 	}
 	// The physical modifiers (bind's Super, Ctrl, Shift) must not reach the
-	// client: state none, and always send the real state back afterwards.
-	if err := c.command(ctx, ports.SetModifiers{ID: t.window, Mods: 0}); err != nil {
+	// client: state only the OCR click modifiers, and restore real state afterwards.
+	if err := c.command(ctx, ports.SetModifiers{ID: t.window, Mods: c.hintMods(t)}); err != nil {
 		return err
 	}
 	defer func() {
@@ -417,4 +432,12 @@ func (c *Core) hintLabels(sc *screen) []ports.HintLabel {
 		out = append(out, ports.HintLabel{Rect: ports.Rect{X: t.rect.X, Y: t.rect.Y}, Text: t.label, Typed: len(h.typed)})
 	}
 	return out
+}
+
+// hintMods reads the reloadable OCR modifiers at click time.
+func (c *Core) hintMods(t hintTarget) ports.Mods {
+	if !t.text {
+		return 0
+	}
+	return c.cfg.Hint.TextClick
 }

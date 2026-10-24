@@ -136,7 +136,7 @@ func (h *hintHarness) labelled(n, typed int) ports.Scene {
 
 // inside is a target of the given size inside window 1.
 func (h *hintHarness) inside(i int) ports.HintTarget {
-	return ports.HintTarget{Rect: ports.Rect{X: h.win.X + 10 + 100*(i%4), Y: h.win.Y + 10 + 40*(i/4), W: 40, H: 10}}
+	return ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: h.win.X + 10 + 100*(i%4), Y: h.win.Y + 10 + 40*(i/4), W: 40, H: 10}}
 }
 
 func TestHintRequestOnBind(t *testing.T) {
@@ -230,7 +230,7 @@ func TestHintTwoLetterLabels(t *testing.T) {
 	h := newHint(t, core.Options{})
 	var targets []ports.HintTarget
 	for i := 0; i < 27; i++ {
-		targets = append(targets, ports.HintTarget{Rect: ports.Rect{X: h.win.X + 5 + 100*(i%4), Y: h.win.Y + 5 + 40*(i/4), W: 30, H: 10}})
+		targets = append(targets, ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: h.win.X + 5 + 100*(i%4), Y: h.win.Y + 5 + 40*(i/4), W: 30, H: 10}})
 	}
 	s := h.show(targets...)
 	if len(s.HintLabels) != 27 {
@@ -252,7 +252,7 @@ func TestHintDropsTargetsOutsideWindows(t *testing.T) {
 	h := newHint(t, core.Options{})
 	in := h.inside(0)
 	// In the gap around the window, over the background.
-	out := ports.HintTarget{Rect: ports.Rect{X: 2, Y: 2, W: 4, H: 4}}
+	out := ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: 2, Y: 2, W: 4, H: 4}}
 	if h.win.X < 8 || h.win.Y < 8 {
 		t.Fatalf("window %+v leaves no gap", h.win)
 	}
@@ -268,7 +268,7 @@ func TestHintTypingFilters(t *testing.T) {
 	h := newHint(t, core.Options{})
 	var targets []ports.HintTarget
 	for i := 0; i < 27; i++ {
-		targets = append(targets, ports.HintTarget{Rect: ports.Rect{X: h.win.X + 5 + 100*(i%4), Y: h.win.Y + 5 + 40*(i/4), W: 30, H: 10}})
+		targets = append(targets, ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: h.win.X + 5 + 100*(i%4), Y: h.win.Y + 5 + 40*(i/4), W: 30, H: 10}})
 	}
 	h.show(targets...)
 	h.press("f", 0)
@@ -585,7 +585,7 @@ func TestHintNoClickWhileGrabbed(t *testing.T) {
 func TestHintMappedWindowMovedAborts(t *testing.T) {
 	h := newHint(t, core.Options{})
 	// A target at the right edge of window 1.
-	tg := ports.HintTarget{Rect: ports.Rect{X: h.win.X + h.win.W - 50, Y: h.win.Y + 10, W: 40, H: 10}}
+	tg := ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: h.win.X + h.win.W - 50, Y: h.win.Y + 10, W: 40, H: 10}}
 	h.show(tg)
 	h.client <- ports.WindowMapped{ID: 2}
 	s := h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 && len(s.HintLabels) <= 1 })
@@ -687,7 +687,7 @@ func TestHintResultDroppedForUnseenWindow(t *testing.T) {
 func TestHintDropsTargetsOutsideOutput(t *testing.T) {
 	h := newHint(t, core.Options{})
 	req := h.start()
-	out := ports.HintTarget{Rect: ports.Rect{X: 2000, Y: 10, W: 10, H: 10}}
+	out := ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: 2000, Y: 10, W: 10, H: 10}}
 	h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{out, h.inside(0)}}
 	if s := h.labelled(1, 0); len(s.HintLabels) != 1 {
 		t.Fatalf("labels %+v", s.HintLabels)
@@ -827,7 +827,7 @@ func TestHintCaptureReachesScene(t *testing.T) {
 // closer than a label drop, the lowest score first, whatever the input order.
 func TestHintOverlappingLabelsDropLowerScore(t *testing.T) {
 	at := func(h *hintHarness, dx, dy int, score float32) ports.HintTarget {
-		return ports.HintTarget{Rect: ports.Rect{X: h.win.X + 20 + dx, Y: h.win.Y + 20 + dy, W: 80, H: 30}, Score: score}
+		return ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: h.win.X + 20 + dx, Y: h.win.Y + 20 + dy, W: 80, H: 30}, Score: score}
 	}
 	for _, rev := range []bool{false, true} {
 		h := newHint(t, core.Options{})
@@ -862,4 +862,86 @@ func TestHintSizeReloadCancelsShownHints(t *testing.T) {
 	cfg.Hint.Size = 40
 	h.config <- ports.ConfigChanged{Config: cfg}
 	h.until(func(s ports.Scene) bool { return s.HintStyle.Size == 40 && len(s.HintLabels) == 0 })
+}
+
+func TestHintSourceClickModifiers(t *testing.T) {
+	for _, source := range []ports.HintSource{ports.HintSourceATSPI, ports.HintSourceOCR, ports.HintSourceDetector} {
+		t.Run(source.String(), func(t *testing.T) {
+			h := newHintConfig(t, core.Options{}, func(c *ports.Config) { c.Hint.TextClick = ports.ModCtrl | ports.ModShift })
+			tg := h.inside(0)
+			tg.Source = source
+			h.show(tg)
+			h.drain()
+			h.press("f", 0)
+			var got []ports.Mods
+			for _, cmd := range h.commandsSent() {
+				if m, ok := cmd.(ports.SetModifiers); ok && !m.Restore {
+					got = append(got, m.Mods)
+				}
+			}
+			want := ports.Mods(0)
+			if source == ports.HintSourceOCR {
+				want = ports.ModCtrl | ports.ModShift
+			}
+			if len(got) != 1 || got[0] != want {
+				t.Fatal(got, want)
+			}
+		})
+	}
+}
+func TestHintDropsWrongWindow(t *testing.T) {
+	for _, id := range []ports.WindowID{0, 2} {
+		t.Run(fmt.Sprint(id), func(t *testing.T) {
+			h := newHint(t, core.Options{})
+			req := h.start()
+			tg := h.inside(0)
+			tg.Window = id
+			h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
+			h.labelled(0, 0)
+		})
+	}
+}
+func TestHintRequestPopupUnits(t *testing.T) {
+	h := newHintConfig(t, core.Options{}, func(c *ports.Config) { c.Hint.LinksOnly = true })
+	h.client <- ports.WindowMapped{ID: 2}
+	h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
+	popupRects := map[ports.WindowID]ports.Rect{}
+	for _, p := range []struct{ id, parent ports.WindowID }{{10, 1}, {11, 10}, {20, 2}} {
+		h.client <- ports.PopupRequest{ID: p.id, Parent: p.parent, Positioner: ports.Positioner{Width: 30, Height: 20, AnchorRect: ports.Rect{W: 1, H: 1}}}
+		h.client <- ports.PopupMapped{ID: p.id}
+		h.until(func(s ports.Scene) bool {
+			for _, w := range s.Windows {
+				if w.ID == p.id {
+					popupRects[p.id] = w.Rect
+					return true
+				}
+			}
+			return false
+		})
+	}
+	req := h.start()
+	if !req.LinksOnly || len(req.Windows) != 2 {
+		t.Fatal(req)
+	}
+	for _, w := range req.Windows {
+		expected := []ports.Rect{popupRects[20]}
+		if w.ID == 1 {
+			expected = []ports.Rect{popupRects[10], popupRects[11]}
+		}
+		if !slices.Equal(w.Popups, expected) {
+			t.Fatalf("unit %d popups %v, want %v", w.ID, w.Popups, expected)
+		}
+		want := 1
+		if w.ID == 1 {
+			want = 2
+		}
+		if len(w.Popups) != want {
+			t.Fatal(w)
+		}
+		for _, r := range w.Popups {
+			if r.W != 30 || r.H != 20 {
+				t.Fatal(r)
+			}
+		}
+	}
 }

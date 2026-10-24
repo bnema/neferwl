@@ -961,10 +961,10 @@ func TestHintBind(t *testing.T) {
 	}
 }
 
-func TestHintRemovedKeysAreUnknown(t *testing.T) {
+func TestHintRestoredKeys(t *testing.T) {
 	for _, line := range []string{"hint.targets = links", "hint.text-click = none"} {
 		_, w := parseString(t, line+"\n")
-		if len(w) != 1 {
+		if len(w) != 0 {
 			t.Errorf("%q: %v", line, w)
 		}
 	}
@@ -1106,6 +1106,48 @@ func TestBorderRadius(t *testing.T) {
 		_, w := parseString(t, "border.radius = "+v+"\n")
 		if len(w) == 0 {
 			t.Fatalf("accepted %s", v)
+		}
+	}
+}
+
+func TestHintSources(t *testing.T) {
+	defaults := Defaults()
+	if !reflect.DeepEqual(defaults.Hint.Sources, []ports.HintSource{ports.HintSourceATSPI, ports.HintSourceOCR}) || defaults.Hint.LinksOnly || defaults.Hint.TextClick != ports.ModCtrl|ports.ModShift {
+		t.Fatal(defaults.Hint)
+	}
+	c0, w0 := parseString(t, "hint.targets = clickable\nhint.text-click = none\n")
+	if len(w0) != 0 || c0.Hint.LinksOnly || c0.Hint.TextClick != 0 {
+		t.Fatal(c0.Hint, w0)
+	}
+
+	for _, tc := range []struct {
+		value string
+		want  []ports.HintSource
+		bad   bool
+	}{
+		{"", []ports.HintSource{ports.HintSourceATSPI, ports.HintSourceOCR}, false},
+		{" Detector, ATSPI, ocr ", []ports.HintSource{ports.HintSourceDetector, ports.HintSourceATSPI, ports.HintSourceOCR}, false},
+		{"ocr,ocr", nil, true}, {"other", nil, true}, {",", nil, true}, {"ocr,", nil, true},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			c, w := parseString(t, "hint.sources = "+tc.value+"\n")
+			if tc.bad {
+				if len(w) == 0 {
+					t.Fatal("accepted invalid sources")
+				}
+			} else if len(w) != 0 || !reflect.DeepEqual(c.Hint.Sources, tc.want) {
+				t.Fatal(c.Hint.Sources, w)
+			}
+		})
+	}
+	c, w := parseString(t, "hint.targets = links\nhint.text-click = ctrl+shift\n")
+	if len(w) != 0 || !c.Hint.LinksOnly || c.Hint.TextClick != ports.ModCtrl|ports.ModShift {
+		t.Fatal(c.Hint, w)
+	}
+	for _, line := range []string{"hint.targets = bad", "hint.text-click = ctrl+ctrl", "hint.text-click = ctrl+bad"} {
+		_, w := parseString(t, line+"\n")
+		if len(w) == 0 {
+			t.Fatal(line)
 		}
 	}
 }

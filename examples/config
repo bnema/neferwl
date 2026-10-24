@@ -98,6 +98,10 @@ focus.flash-duration = 200ms
 focus.flash-color =
 # Hint mode is experimental and off: turn it on here (restart required).
 # hint.enable = off
+# Ordered sources (restart required).
+# hint.sources = atspi, ocr
+# hint.targets = clickable
+# hint.text-click = Ctrl+Shift
 # Hint mode finds its targets with the nefer-hints detector (restart required).
 # hint.detector = nefer-hints
 # hint.model = ~/.local/share/nefer-hints/models
