@@ -20,8 +20,8 @@ func dupFences(fs ...*os.File) []*os.File {
 	return out
 }
 
-// signalled reports whether every fence signalled (readable); an fd that
-// cannot be polled counts as signalled.
+// signalled reports whether every fence signalled (readable). A polling
+// failure is not evidence of completion: the GPU may still read buffers.
 func signalled(fs []*os.File) bool {
 	if len(fs) == 0 {
 		return true
@@ -30,8 +30,15 @@ func signalled(fs []*os.File) bool {
 	for i, f := range fs {
 		pfds[i] = unix.PollFd{Fd: int32(f.Fd()), Events: unix.POLLIN}
 	}
-	if _, err := unix.Poll(pfds, 0); err != nil {
-		return true
+	for {
+		_, err := unix.Poll(pfds, 0)
+		if err == unix.EINTR {
+			continue // Go's signal-based preemption may interrupt ppoll.
+		}
+		if err != nil {
+			return false
+		}
+		break
 	}
 	for _, p := range pfds {
 		if p.Revents == 0 {

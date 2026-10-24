@@ -196,6 +196,10 @@ func unsignalledFenceDelaysRecovery(t *testing.T) {
 // A frame refused with EBUSY may still be read by the GPU: what was seen
 // is reported only once its fence signalled.
 func TestSeenWaitsForRefusedFrameFence(t *testing.T) {
+	synctest.Test(t, seenWaitsForRefusedFrameFence)
+}
+
+func seenWaitsForRefusedFrameFence(t *testing.T) {
 	var mu sync.Mutex
 	var signals []*os.File
 	h := startStuck(t, func() *os.File {
@@ -206,13 +210,19 @@ func TestSeenWaitsForRefusedFrameFence(t *testing.T) {
 		return f
 	}, unix.EBUSY, unix.EACCES)
 	h.scenes <- ports.Scene{Seq: 1}
-	// EBUSY, then the retry loses DRM master: nothing is pending.
+	// Recording a commit precedes handling its error. Wait for the owner
+	// to finish the EACCES path before publishing content.
 	waitFor(t, func() bool { return h.count() == 4 })
+	synctest.Wait()
 	h.contents.send(ports.SurfaceContent{ID: 1, Seq: 7})
+	<-h.contents.returned
+	// The batch is consumed and the owner has reached its next wait,
+	// including the report attempt. No wall-clock negative assertion.
+	synctest.Wait()
 	select {
 	case p := <-h.presented:
 		t.Fatalf("seen reported while refused frames may be read: %+v", p)
-	case <-time.After(50 * time.Millisecond):
+	default:
 	}
 	mu.Lock()
 	for _, w := range signals {
