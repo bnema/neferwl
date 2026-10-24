@@ -40,6 +40,7 @@ func Run(ctx context.Context, requests <-chan ports.HintScanRequest, captures ch
 }
 
 type worker struct {
+	stages  []scanStage
 	sources []source
 	warned  map[ports.HintSource]bool
 	n       uint64
@@ -147,7 +148,7 @@ func (w *worker) serve(ctx context.Context, req ports.HintScanRequest, requests 
 		return res
 	}
 	if w.dumpDir != "" && fr != nil {
-		w.pending = &dumpJob{when: time.Now(), req: req, pix: fr.pix, m: fr.m, stride: fr.stride, targets: res.Targets, captureD: captureDur}
+		w.pending = &dumpJob{when: time.Now(), req: req, pix: fr.pix, m: fr.m, stride: fr.stride, targets: res.Targets, captureD: captureDur, stages: w.stages}
 	}
 	log := logging.For(ctx, "hints")
 	log.Info().Str("output", req.Output).Float64("capture_ms", ms(captureDur)).Int("targets", len(res.Targets)).Msg("hint scan")

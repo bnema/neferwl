@@ -27,6 +27,7 @@ const (
 // dumpJob is one scan to write. pix is the capture buffer of the scan, owned
 // by the job: writeDump converts it in place.
 type dumpJob struct {
+	stages   []scanStage
 	when     time.Time
 	req      ports.HintScanRequest
 	pix      []byte

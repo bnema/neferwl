@@ -2,6 +2,7 @@ package hints
 
 import (
 	"context"
+	"image"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
@@ -57,8 +58,28 @@ func makeSources(opts Options) []source {
 	return out
 }
 
+// scanStage records only metadata; it never retains captured pixels.
+type scanStage struct {
+	Source  string           `json:"source"`
+	Windows []ports.WindowID `json:"windows"`
+	Targets int              `json:"targets"`
+	MS      float64          `json:"ms"`
+	Err     string           `json:"err,omitempty"`
+	Covered []ports.WindowID `json:"covered"`
+	Crops   []scanCrop       `json:"crops"`
+}
+
+type scanCrop struct {
+	Window  ports.WindowID    `json:"window"`
+	Source  string            `json:"source"`
+	Rect    image.Rectangle   `json:"rect"`
+	Popups  []image.Rectangle `json:"popups"`
+	Covered bool              `json:"covered"`
+}
+
 // chain covers a unit only after a stage returns at least one target in it.
 func (w *worker) chain(ctx context.Context, req ports.HintScanRequest, capture func() (*frame, error)) ([]ports.HintTarget, error) {
+	w.stages = nil
 	covered := make(map[ports.WindowID]bool)
 	var out []ports.HintTarget
 	var fr *frame
@@ -108,6 +129,24 @@ func (w *worker) chain(ctx context.Context, req ports.HintScanRequest, capture f
 		}
 		for _, t := range targets {
 			covered[t.Window] = true
+		}
+		if w.dumpDir != "" {
+			stage := scanStage{Source: s.kind().String(), Targets: len(targets), MS: ms(time.Since(start))}
+			if err != nil {
+				stage.Err = err.Error()
+			}
+			for _, win := range wins {
+				stage.Windows = append(stage.Windows, win.ID)
+				crop := scanCrop{Window: win.ID, Source: stage.Source, Rect: windowCrop(win.Bounds(), req.Scale, req.Width, req.Height), Covered: covered[win.ID]}
+				for _, popup := range win.Popups {
+					crop.Popups = append(crop.Popups, windowCrop(popup, req.Scale, req.Width, req.Height))
+				}
+				stage.Crops = append(stage.Crops, crop)
+				if covered[win.ID] {
+					stage.Covered = append(stage.Covered, win.ID)
+				}
+			}
+			w.stages = append(w.stages, stage)
 		}
 		out = append(out, targets...)
 		log.Debug().Str("source", s.kind().String()).Int("windows", len(wins)).Int("targets", len(targets)).Float64("ms", ms(time.Since(start))).Msg("hint stage")
