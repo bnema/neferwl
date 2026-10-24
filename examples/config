@@ -102,7 +102,7 @@ focus.flash-color =
 # hint.sources = atspi, ocr
 # hint.targets = clickable
 # hint.text-click = Ctrl+Shift
-# Hint mode finds its targets with the nefer-hints detector (restart required).
+# Optional detector source settings (restart required).
 # hint.detector = nefer-hints
 # hint.model = ~/.local/share/nefer-hints/models
 # Unset or empty uses the model threshold (model.json), else the runner default.

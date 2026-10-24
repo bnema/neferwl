@@ -381,7 +381,7 @@ their size follows the screen's pixel density when `hint.size = auto`.
 `hint.size` also accepts a text size from 6 to 72 logical pixels. Changing it
 on reload cancels the shown labels; the next `hint` scan uses the new size.
 Each label sits just outside
-the top-left corner of its target. The click is a plain left click.
+the top-left corner of its target. OCR clicks use `hint.text-click`; other sources use plain left clicks.
 
 Labels are not part of screenshots and screencasts by default. With
 `hint.capture = on` they appear in the captures that Wayland clients request
@@ -391,24 +391,47 @@ A reload applies `hint.capture` to the next frame.
 
 ### Where targets come from
 
-Targets come from `nefer-hints`, a separate program that looks at the pixels of
-the whole output with a neural network and returns a box for each clickable
-element. It works the same for every app, toolkit and terminal. It sees what is
-drawn: it does not know what an element does, and it can miss or invent boxes
-(`hint.threshold` trades one for the other). Boxes under 4×4 logical pixels
-are dropped.
+`hint.sources` is an ordered chain of distinct sources, defaulting to `atspi, ocr`.
+Each window is a unit together with its mapped popups. A source covers a unit
+only when it returns at least one target; zero targets or an error passes the
+unit to the next source. Only listed sources start, lazily on their first scan.
+The chain is startup-only: restart after changing it.
 
-NeferWL starts `nefer-hints` at the first hint scan (loading takes about half a
-second), keeps it running, and stops it on exit. If it dies, fails or takes
-more than 2 seconds on a scan, that scan is cancelled and a new process starts
-at the next one. Its device (GPU or CPU) is logged at startup, at info level.
+| Source | Apps | Accuracy | Speed |
+|---|---|---|---|
+| `atspi` | Accessible browsers, GTK, Qt, Electron | Exact app-reported links and controls | Usually milliseconds |
+| `ocr` | Terminals and other text-heavy apps | Best-effort visible URLs; small text can be misread | Usually hundreds of milliseconds |
+| `detector` | Any app | Pixel-based clickable boxes; may miss or invent targets | Model/device dependent; one request per window |
 
-### Requirements
+OCR and detector read a crop bounding the window and its popups, not the whole
+output. Targets outside that unit are discarded. Detector requests are sequential;
+a dropped detector process skips the remaining windows until the next scan.
 
-- The `nefer-hints` binary, found in `PATH` or named by `hint.detector`.
-- Its model files, in `hint.model`.
-- A Vulkan GPU for speed; without one the detector falls back to the CPU, which is slower.
+### Source settings and requirements
+
+- **AT-SPI:** `hint.targets = clickable` includes links and controls;
+  `links` filters accessibility targets only. Accessibility connects lazily;
+  apps already running may need restarting. Chromium needs
+  `--force-renderer-accessibility`, Electron `ACCESSIBILITY_ENABLED=1`, and Qt
+  `QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1`. A session D-Bus is required.
+- **OCR:** install `tesseract` and English language data (`tesseract-data-eng`).
+  Missing tesseract disables OCR for the process lifetime. `hint.text-click`
+  supplies modifiers for OCR clicks (default `Ctrl+Shift`); accessibility and
+  detector targets receive plain clicks. Both this setting and `hint.targets`
+  apply on reload.
+- **Detector:** install `nefer-hints` in `PATH` or set `hint.detector` to its
+  binary path, and point `hint.model` at its model directory. A Vulkan GPU is
+  recommended; CPU fallback is slower. `hint.threshold` overrides the model's
+  confidence threshold. These three settings are startup-only.
 
 ### Debugging hint mode
 
-With `hint.enable = on` and `NEFERWL_HINT_DEBUG=1` set when NeferWL starts (for example `NEFERWL_HINT_DEBUG=1 make tty`, or the variable in the launch environment), every successful scan writes three files to `$XDG_STATE_HOME/neferwl/hints/` (`~/.local/state/neferwl/hints/` when unset): `<time>-<output>.png`, the frame as scanned; `<time>-<output>.annotated.png`, the same with the detector boxes outlined; and `<time>-<output>.json`, the targets (rectangle and score) and the capture, detection and total timings. NeferWL keeps the 50 most recent scans and logs a warning at startup. The detector's own messages are logged at debug level (`log.debug = hints`). The files contain the screen in clear: delete them after use.
+Set `log.debug = hints` for source-stage timings and detector messages.
+With `NEFERWL_HINT_DEBUG=1` in NeferWL's startup environment, successful scans
+write a raw PNG, annotated PNG and JSON under
+`$XDG_STATE_HOME/neferwl/hints/` (default `~/.local/state/neferwl/hints/`).
+JSON records each target's source, kind, window, rectangle and score, plus stages
+(input windows, duration, errors and coverage) and per-window crops with popups.
+Annotations use magenta for AT-SPI, cyan/blue for OCR, green for detector, and
+grey crop outlines with thin popup outlines. The most recent 50 scan groups are
+kept. Dumps contain screen content in clear; delete sensitive captures after use.

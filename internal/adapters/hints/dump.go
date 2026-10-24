@@ -7,7 +7,6 @@ import (
 	"image"
 	"image/color"
 	"image/png"
-	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -34,24 +33,28 @@ type dumpJob struct {
 	m        *mapping // owns pix; released after the dump
 	stride   int
 	targets  []ports.HintTarget
-	dets     []detection // detector boxes, physical pixels
 	captureD time.Duration
-	detectD  time.Duration
 }
 
 type dumpTarget struct {
-	Rect  [4]int  `json:"rect"` // x1, y1, x2, y2, logical output-local
-	Score float32 `json:"score"`
+	Source string         `json:"source"`
+	Kind   string         `json:"kind"`
+	Window ports.WindowID `json:"window"`
+	Rect   [4]int         `json:"rect"` // x1, y1, x2, y2, logical output-local
+	Score  float32        `json:"score"`
 }
 
 type dumpMeta struct {
+	Stages    []scanStage  `json:"stages"`
+	Crops     []scanCrop   `json:"crops"`
+	Sources   []string     `json:"sources"`
+	LinksOnly bool         `json:"links_only"`
 	Output    string       `json:"output"`
 	Width     int          `json:"width"`
 	Height    int          `json:"height"`
 	Stride    int          `json:"stride"`
 	Scale     float64      `json:"scale"`
 	CaptureMS float64      `json:"capture_ms"`
-	DetectMS  float64      `json:"detect_ms"`
 	TotalMS   float64      `json:"total_ms"`
 	Targets   []dumpTarget `json:"targets"`
 }
@@ -82,21 +85,45 @@ func writeDump(dir string, j *dumpJob) error {
 		return err
 	}
 
-	for _, d := range j.dets {
-		outline(img, image.Rect(int(d.x1), int(d.y1), int(math.Ceil(float64(d.x2))), int(math.Ceil(float64(d.y2)))), boxColor)
+	scale := j.req.Scale
+	if scale <= 0 {
+		scale = 1
 	}
+	for _, stage := range j.stages {
+		for _, crop := range stage.Crops {
+			outline(img, crop.Rect, color.RGBA{0x80, 0x80, 0x80, 0xff})
+			for _, popup := range crop.Popups {
+				outlineWidth(img, popup, color.RGBA{0x80, 0x80, 0x80, 0xff}, 1)
+			}
+		}
+	}
+	for _, t := range j.targets {
+		r := image.Rect(int(float64(t.Rect.X)*scale), int(float64(t.Rect.Y)*scale), int(float64(t.Rect.X+t.Rect.W)*scale), int(float64(t.Rect.Y+t.Rect.H)*scale))
+		outline(img, r, sourceColor(t.Source, t.Kind))
+	}
+
 	if err := writePNG(prefix+".annotated.png", img); err != nil {
 		return err
 	}
 
 	meta := dumpMeta{
+		Stages: j.stages, LinksOnly: j.req.LinksOnly,
 		Output: j.req.Output, Width: j.req.Width, Height: j.req.Height, Stride: j.stride,
 		Scale:     j.req.Scale,
-		CaptureMS: ms(j.captureD), DetectMS: ms(j.detectD), TotalMS: ms(j.captureD + j.detectD),
+		CaptureMS: ms(j.captureD), TotalMS: ms(j.captureD),
 		Targets: make([]dumpTarget, 0, len(j.targets)),
 	}
+	for _, stage := range j.stages {
+		meta.Sources = append(meta.Sources, stage.Source)
+		meta.Crops = append(meta.Crops, stage.Crops...)
+		meta.TotalMS += stage.MS
+	}
 	for _, t := range j.targets {
-		meta.Targets = append(meta.Targets, dumpTarget{Rect: [4]int{t.Rect.X, t.Rect.Y, t.Rect.X + t.Rect.W, t.Rect.Y + t.Rect.H}, Score: t.Score})
+		kind := "button"
+		if t.Kind == ports.HintLink {
+			kind = "link"
+		}
+		meta.Targets = append(meta.Targets, dumpTarget{Source: t.Source.String(), Kind: kind, Window: t.Window, Rect: [4]int{t.Rect.X, t.Rect.Y, t.Rect.X + t.Rect.W, t.Rect.Y + t.Rect.H}, Score: t.Score})
 	}
 	data, err := json.Marshal(meta)
 	if err != nil {
@@ -174,13 +201,17 @@ func writeFile(path string, fill func(*os.File) error) error {
 
 // outline draws a 2 px frame inside r, clipped to img.
 func outline(img *image.RGBA, r image.Rectangle, c color.RGBA) {
+	outlineWidth(img, r, c, outlineSize)
+}
+
+func outlineWidth(img *image.RGBA, r image.Rectangle, c color.RGBA, width int) {
 	r = r.Intersect(img.Rect)
 	if r.Empty() {
 		return
 	}
 	for y := r.Min.Y; y < r.Max.Y; y++ {
 		for x := r.Min.X; x < r.Max.X; x++ {
-			if x-r.Min.X < outlineSize || r.Max.X-1-x < outlineSize || y-r.Min.Y < outlineSize || r.Max.Y-1-y < outlineSize {
+			if x-r.Min.X < width || r.Max.X-1-x < width || y-r.Min.Y < width || r.Max.Y-1-y < width {
 				img.SetRGBA(x, y, c)
 			}
 		}
@@ -225,4 +256,19 @@ func prune(dir string, keep int) error {
 		}
 	}
 	return nil
+}
+
+// Source colours remain distinct even when sources report the same target kind.
+func sourceColor(source ports.HintSource, kind ports.HintKind) color.RGBA {
+	switch source {
+	case ports.HintSourceATSPI:
+		return color.RGBA{0xff, 0, 0xff, 0xff}
+	case ports.HintSourceOCR:
+		if kind == ports.HintButton {
+			return color.RGBA{0x29, 0x62, 0xff, 0xff}
+		}
+		return color.RGBA{0, 0xb0, 0xff, 0xff}
+	default:
+		return boxColor
+	}
 }

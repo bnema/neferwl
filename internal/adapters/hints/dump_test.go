@@ -1,6 +1,13 @@
 package hints
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"github.com/stretchr/testify/mock"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"testing"
@@ -37,4 +44,61 @@ func TestWriteDumpPrivate(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, li.Mode().IsRegular())
 	require.Equal(t, os.FileMode(0o600), li.Mode().Perm())
+}
+
+func TestDumpSourcesAndCrops(t *testing.T) {
+	dir := t.TempDir()
+	j := &dumpJob{when: time.Now(), req: ports.HintScanRequest{Output: "test", Width: 80, Height: 80, Scale: 2}, stride: 320, pix: make([]byte, 80*80*4)}
+	for i, source := range []ports.HintSource{ports.HintSourceATSPI, ports.HintSourceOCR, ports.HintSourceDetector} {
+		j.targets = append(j.targets, ports.HintTarget{Source: source, Kind: ports.HintLink, Window: 1, Score: 1, Rect: ports.Rect{X: 3 + i*10, Y: 3, W: 5, H: 5}})
+	}
+	j.stages = []scanStage{{Source: "ocr", Windows: []ports.WindowID{1}, Targets: 1, MS: 2, Covered: []ports.WindowID{1}, Crops: []scanCrop{{Window: 1, Source: "ocr", Rect: image.Rect(1, 1, 78, 78), Popups: []image.Rectangle{image.Rect(50, 50, 60, 60)}, Covered: true}}}}
+	require.NoError(t, writeDump(dir, j))
+	files, err := filepath.Glob(filepath.Join(dir, "*.json"))
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	data, err := os.ReadFile(files[0])
+	require.NoError(t, err)
+	var meta dumpMeta
+	require.NoError(t, json.Unmarshal(data, &meta))
+	require.Equal(t, j.stages, meta.Stages)
+	require.Equal(t, j.stages[0].Crops, meta.Crops)
+	require.Equal(t, []string{"ocr"}, meta.Sources)
+	f, err := os.Open(files[0][:len(files[0])-5] + ".annotated.png")
+	require.NoError(t, err)
+	defer f.Close()
+	img, err := png.Decode(f)
+	require.NoError(t, err)
+	for i, target := range j.targets {
+		require.Equal(t, target.Source.String(), meta.Targets[i].Source)
+		require.Equal(t, target.Window, meta.Targets[i].Window)
+		require.Equal(t, sourceColor(target.Source, target.Kind), color.RGBAModel.Convert(img.At((3+i*10)*2, 6)))
+	}
+	require.NotEqual(t, sourceColor(ports.HintSourceOCR, ports.HintLink), boxColor)
+}
+
+func TestDumpStageRecordsPartialCoverageAndError(t *testing.T) {
+	s := newMocksource(t)
+	s.EXPECT().needsFrame().Return(false)
+	s.EXPECT().kind().Return(ports.HintSourceATSPI)
+	wins := []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 20, H: 20}, Popups: []ports.Rect{{X: 20, W: 10, H: 10}}}, {ID: 2, Rect: ports.Rect{X: 40, W: 20, H: 20}}}
+	req := ports.HintScanRequest{Width: 100, Height: 80, Scale: 2, Windows: wins}
+	s.EXPECT().scan(mock.Anything, req, wins, (*frame)(nil)).Return([]ports.HintTarget{{Window: 1, Source: ports.HintSourceATSPI}}, errors.New("partial")).Once()
+	w := worker{sources: []source{s}, dumpDir: t.TempDir()}
+	captures := make(chan ports.CaptureRequest, 1)
+	captured := make(chan ports.CaptureDone, 1)
+	captured <- ports.CaptureDone{ID: ports.CaptureIDInternal | 1}
+	res := w.serve(context.Background(), req, nil, captures, captured, nil, time.Second)
+	require.NoError(t, res.Err)
+	require.NotNil(t, w.pending)
+	defer w.pending.m.unmap()
+	require.Len(t, w.pending.stages, 1)
+	stage := w.pending.stages[0]
+	require.Equal(t, []ports.WindowID{1, 2}, stage.Windows)
+	require.Equal(t, []ports.WindowID{1}, stage.Covered)
+	require.Equal(t, "partial", stage.Err)
+	require.True(t, stage.Crops[0].Covered)
+	require.False(t, stage.Crops[1].Covered)
+	require.Equal(t, image.Rect(0, 0, 60, 40), stage.Crops[0].Rect)
+	require.Equal(t, []image.Rectangle{image.Rect(40, 0, 60, 20)}, stage.Crops[0].Popups)
 }

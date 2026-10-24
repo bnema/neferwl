@@ -71,3 +71,57 @@ On a real screen, compare by eye:
 ```sh
 WAYLAND_DISPLAY=<name> go run ./examples/testpattern -mode hdr -fullscreen   # or -mode sdr
 ```
+
+## Ordered hint sources
+
+Hint capture needs a hardware render node exporting sync files (the AMD backend
+used by `tools/demo/record.sh` works). Install foot, a browser or GTK client,
+`tesseract` with English data, and AT-SPI with `dbus-run-session`. Detector runs
+also need the `nefer-hints` binary, models and preferably Vulkan.
+
+Build with Go 1.27:
+
+```sh
+T=/tmp/hs-src
+mkdir -p "$T"
+CGO_ENABLED=0 go build -o "$T/neferwl" ./cmd/neferwl
+```
+
+Use a throwaway config with `hint.enable = on`, `hint.capture = on`,
+`log.debug = hints`, `bind.cmd+g = hint`, and one of the chains below. Set
+`hint.detector` and `hint.model` to the installed binary and model directory.
+For the test installation these are
+`~/.local/share/nefer-hints-test/bin/nefer-hints` and
+`~/.local/share/nefer-hints-test/models`.
+
+```sh
+env -u NEFERWL_STATE -u NEFERWL_SLOT WAYLAND_DISPLAY=wp4-headless \
+  XDG_STATE_HOME="$T/state" NEFERWL_HINT_DEBUG=1 dbus-run-session -- \
+  "$T/neferwl" --backend=headless --config "$T/config" --no-xwayland \
+  --screenshot "$T/shots" --input "$T/input" --timeout 20s
+```
+
+Read the actual `WAYLAND_DISPLAY` from the `listening` JSON log entry in
+`$T/state/neferwl/runs/headless/latest.log`. Launch clients on that display,
+always with `env -u NEFERWL_STATE -u NEFERWL_SLOT WAYLAND_DISPLAY=<headless>`.
+Launch foot printing `https://example.org/a` and Chromium with
+`--force-renderer-accessibility --user-data-dir=<throwaway directory>` on a
+local HTML page with links. Arrange both windows visibly; open a menu if possible.
+Script `sleep 8s`, `key Super+g`, `sleep 4s`, then `type <visible label>`.
+Check screenshots before and after the click; a local link changing the page
+background is a convenient observable result.
+
+| `hint.sources` | Verify in logs and dump JSON |
+|---|---|
+| `atspi, ocr` | Accessible window covered by AT-SPI, terminal passed to OCR; no detector startup |
+| `detector` | No AT-SPI connection or OCR stage; one detector request/crop per window |
+| `atspi, detector` | Covered accessible window skipped by detector; no OCR stage |
+
+`hint stage` logs give source, window count, targets and milliseconds. JSON
+under `$T/state/neferwl/hints/` retains input window IDs, coverage, popup crops,
+errors and target sources. Preserve logs, scripts, dumps and labelled screenshots
+with a short results README, including timings and any unverified assertions.
+An AT-SPI registry activation failure is a failed accessibility check, not proof
+of correct mixed-source coverage. Check that the session registry is running.
+Also test a missing detector binary (scan completes without labels) and duplicate
+sources (startup rejects `hint.sources = ocr, ocr`).
