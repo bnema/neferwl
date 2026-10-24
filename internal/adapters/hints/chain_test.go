@@ -3,6 +3,7 @@ package hints
 import (
 	"context"
 	"errors"
+	"fmt"
 	"image"
 	"testing"
 	"time"
@@ -157,4 +158,35 @@ func TestChainCaptureFailureDiscardsEarlierTargets(t *testing.T) {
 	require.ErrorIs(t, res.Err, boom)
 	require.Empty(t, res.Targets)
 	require.Zero(t, w.live)
+}
+
+func TestOffOutputATSPITargetDoesNotCoverWindow(t *testing.T) {
+	for _, scale := range []float64{1, 2} {
+		t.Run(fmt.Sprint(scale), func(t *testing.T) {
+			wins := []ports.HintWindow{{ID: 1, Rect: ports.Rect{X: -100, W: 150, H: 80}}}
+			req := ports.HintScanRequest{Width: 100, Height: 80, Scale: scale, Windows: wins}
+			tr := newMocktargetSource(t)
+			tr.EXPECT().Targets(mock.Anything, wins, false).Return([]ports.HintTarget{{Window: 1, Source: ports.HintSourceATSPI, Rect: ports.Rect{X: -90, Y: 10, W: 20, H: 20}}, {Window: 1, Source: ports.HintSourceATSPI, Rect: ports.Rect{X: 100, Y: 10, W: 20, H: 20}}}, nil).Once()
+			fallback := newMocksource(t)
+			fallback.EXPECT().needsFrame().Return(false)
+			fallback.EXPECT().kind().Return(ports.HintSourceOCR)
+			want := []ports.HintTarget{{Window: 1, Source: ports.HintSourceOCR}}
+			fallback.EXPECT().scan(mock.Anything, req, wins, (*frame)(nil)).Return(want, nil).Once()
+			w := worker{sources: []source{&atspiSource{targets: tr}, fallback}}
+			res := w.serve(context.Background(), req, nil, nil, nil, nil, time.Second)
+			require.NoError(t, res.Err)
+			require.Equal(t, want, res.Targets)
+		})
+	}
+}
+
+func TestATSPITargetClippedToLogicalOutput(t *testing.T) {
+	tr := newMocktargetSource(t)
+	req := ports.HintScanRequest{Width: 100, Height: 80, Scale: 2}
+	tr.EXPECT().Targets(mock.Anything, []ports.HintWindow(nil), false).Return([]ports.HintTarget{{Rect: ports.Rect{X: -5, Y: 30, W: 70, H: 20}}}, nil)
+	s := atspiSource{targets: tr}
+	targets, err := s.scan(context.Background(), req, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, targets, 1)
+	require.Equal(t, ports.Rect{X: 0, Y: 30, W: 50, H: 10}, targets[0].Rect)
 }
