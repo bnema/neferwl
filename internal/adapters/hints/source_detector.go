@@ -10,9 +10,9 @@ import (
 
 type detectorSource struct{ det detector }
 
-func (*detectorSource) kind() ports.HintSource { return ports.HintSourceDetector }
-func (*detectorSource) needsFrame() bool       { return true }
-func (s *detectorSource) Close() error         { return s.det.Close() }
+func (*detectorSource) kind() ports.HintSource          { return ports.HintSourceDetector }
+func (*detectorSource) needsFrame(context.Context) bool { return true }
+func (s *detectorSource) Close() error                  { return s.det.Close() }
 func (s *detectorSource) scan(ctx context.Context, req ports.HintScanRequest, wins []ports.HintWindow, fr *frame) ([]ports.HintTarget, error) {
 	var out []ports.HintTarget
 	var scanErr error

@@ -19,11 +19,11 @@ func TestChainOrderCoverageAndLazyCapture(t *testing.T) {
 			wins := []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 40, H: 40}}, {ID: 2, Rect: ports.Rect{X: 40, W: 40, H: 40}}}
 			req := ports.HintScanRequest{Width: 80, Height: 40, Scale: 1, Windows: wins}
 			a, b, c := newMocksource(t), newMocksource(t), newMocksource(t)
-			a.EXPECT().needsFrame().Return(false)
+			a.EXPECT().needsFrame(mock.Anything).Return(false)
 			a.EXPECT().kind().Return(ports.HintSourceATSPI)
-			b.EXPECT().needsFrame().Return(true).Maybe()
+			b.EXPECT().needsFrame(mock.Anything).Return(true).Maybe()
 			b.EXPECT().kind().Return(ports.HintSourceOCR).Maybe()
-			c.EXPECT().needsFrame().Return(true).Maybe()
+			c.EXPECT().needsFrame(mock.Anything).Return(true).Maybe()
 			c.EXPECT().kind().Return(ports.HintSourceDetector).Maybe()
 			targets := []ports.HintTarget{{Window: 1, Source: ports.HintSourceATSPI}}
 			var stageErr error
@@ -145,10 +145,10 @@ func TestChainCaptureFailureDiscardsEarlierTargets(t *testing.T) {
 	a, b := newMocksource(t), newMocksource(t)
 	wins := []ports.HintWindow{{ID: 1}, {ID: 2}}
 	req := ports.HintScanRequest{Width: 40, Height: 40, Windows: wins}
-	a.EXPECT().needsFrame().Return(false)
+	a.EXPECT().needsFrame(mock.Anything).Return(false)
 	a.EXPECT().kind().Return(ports.HintSourceATSPI)
 	a.EXPECT().scan(mock.Anything, req, wins, (*frame)(nil)).Return([]ports.HintTarget{{Window: 1}}, nil).Once()
-	b.EXPECT().needsFrame().Return(true)
+	b.EXPECT().needsFrame(mock.Anything).Return(true)
 	w := worker{sources: []source{a, b}}
 	captures := make(chan ports.CaptureRequest, 1)
 	captured := make(chan ports.CaptureDone, 1)
@@ -168,7 +168,7 @@ func TestOffOutputATSPITargetDoesNotCoverWindow(t *testing.T) {
 			tr := newMocktargetSource(t)
 			tr.EXPECT().Targets(mock.Anything, wins, false).Return([]ports.HintTarget{{Window: 1, Source: ports.HintSourceATSPI, Rect: ports.Rect{X: -90, Y: 10, W: 20, H: 20}}, {Window: 1, Source: ports.HintSourceATSPI, Rect: ports.Rect{X: 100, Y: 10, W: 20, H: 20}}}, nil).Once()
 			fallback := newMocksource(t)
-			fallback.EXPECT().needsFrame().Return(false)
+			fallback.EXPECT().needsFrame(mock.Anything).Return(false)
 			fallback.EXPECT().kind().Return(ports.HintSourceOCR)
 			want := []ports.HintTarget{{Window: 1, Source: ports.HintSourceOCR}}
 			fallback.EXPECT().scan(mock.Anything, req, wins, (*frame)(nil)).Return(want, nil).Once()
@@ -189,4 +189,14 @@ func TestATSPITargetClippedToLogicalOutput(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, targets, 1)
 	require.Equal(t, ports.Rect{X: 0, Y: 30, W: 50, H: 10}, targets[0].Rect)
+}
+
+func TestChainUnavailableOCRDoesNotCapture(t *testing.T) {
+	w := &worker{sources: []source{&ocrSource{state: ocrState{done: true, err: errOCRUnavailable}}}}
+	req := ports.HintScanRequest{Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 10, H: 10}}}}
+	for range 2 {
+		targets, err := w.chain(context.Background(), req, func() (*frame, error) { t.Fatal("unavailable OCR captured a frame"); return nil, nil })
+		require.NoError(t, err)
+		require.Empty(t, targets)
+	}
 }

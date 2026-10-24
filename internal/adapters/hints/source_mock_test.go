@@ -136,16 +136,16 @@ func (_c *mocksource_kind_Call) RunAndReturn(run func() ports.HintSource) *mocks
 }
 
 // needsFrame provides a mock function for the type mocksource
-func (_mock *mocksource) needsFrame() bool {
-	ret := _mock.Called()
+func (_mock *mocksource) needsFrame(context1 context.Context) bool {
+	ret := _mock.Called(context1)
 
 	if len(ret) == 0 {
 		panic("no return value specified for needsFrame")
 	}
 
 	var r0 bool
-	if returnFunc, ok := ret.Get(0).(func() bool); ok {
-		r0 = returnFunc()
+	if returnFunc, ok := ret.Get(0).(func(context.Context) bool); ok {
+		r0 = returnFunc(context1)
 	} else {
 		r0 = ret.Get(0).(bool)
 	}
@@ -158,13 +158,20 @@ type mocksource_needsFrame_Call struct {
 }
 
 // needsFrame is a helper method to define mock.On call
-func (_e *mocksource_Expecter) needsFrame() *mocksource_needsFrame_Call {
-	return &mocksource_needsFrame_Call{Call: _e.mock.On("needsFrame")}
+//   - context1 context.Context
+func (_e *mocksource_Expecter) needsFrame(context1 any) *mocksource_needsFrame_Call {
+	return &mocksource_needsFrame_Call{Call: _e.mock.On("needsFrame", context1)}
 }
 
-func (_c *mocksource_needsFrame_Call) Run(run func()) *mocksource_needsFrame_Call {
+func (_c *mocksource_needsFrame_Call) Run(run func(context1 context.Context)) *mocksource_needsFrame_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run()
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
 	})
 	return _c
 }
@@ -174,7 +181,7 @@ func (_c *mocksource_needsFrame_Call) Return(b bool) *mocksource_needsFrame_Call
 	return _c
 }
 
-func (_c *mocksource_needsFrame_Call) RunAndReturn(run func() bool) *mocksource_needsFrame_Call {
+func (_c *mocksource_needsFrame_Call) RunAndReturn(run func(context1 context.Context) bool) *mocksource_needsFrame_Call {
 	_c.Call.Return(run)
 	return _c
 }

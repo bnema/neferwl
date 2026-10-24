@@ -10,7 +10,11 @@ import (
 	"math"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -201,6 +205,13 @@ func TestDetectorChild(t *testing.T) {
 		os.Exit(2)
 	}
 	defer conn.Close()
+	if mode == "descendant" {
+		child := exec.Command("sleep", "60")
+		if err := child.Start(); err != nil {
+			os.Exit(4)
+		}
+		_, _ = fmt.Fprintln(conn, child.Process.Pid)
+	}
 	if mode != "hello" {
 		_, _ = os.Stdout.Write(cat([]byte("NHNT"), u32(1), u32(0), u32(3), []byte("cpu"), u32(1280)))
 	}
@@ -347,4 +358,34 @@ func TestWriteRequestCropRowsOnly(t *testing.T) {
 	require.NoError(t, writeRequest(&buf, 9, detFrame{stride: 20, crop: crop, m: &mapping{b: pix}}))
 	want := cat([]byte("NHRQ"), u32(1), u64(9), u32(3), u32(2), u32(12), u32(1), u32(0), f32(0), pix[24:36], pix[44:56])
 	require.Equal(t, want, buf.Bytes())
+}
+
+func TestDetectorCloseKillsDescendant(t *testing.T) {
+	// Ensure the race runtime does not delay cooperative exit past closeGrace.
+	t.Setenv("GORACE", os.Getenv("GORACE")+" atexit_sleep_ms=0")
+	d, l := childDetector(t, "descendant")
+	require.NoError(t, d.start(context.Background()))
+	require.NoError(t, l.(*net.UnixListener).SetDeadline(time.Now().Add(5*time.Second)))
+	conn, err := l.Accept()
+	require.NoError(t, err)
+	defer conn.Close()
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+	var pid int
+	_, err = fmt.Fscanln(conn, &pid)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	require.NoError(t, syscall.Kill(pid, 0))
+	require.NoError(t, d.Close())
+	require.Eventually(t, func() bool {
+		if syscall.Kill(pid, 0) == syscall.ESRCH {
+			return true
+		}
+		// An orphan zombie is dead, but may await the host init's reaper.
+		stat, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+		if os.IsNotExist(err) {
+			return true
+		}
+		fields := strings.Fields(string(stat))
+		return len(fields) > 2 && fields[2] == "Z"
+	}, 5*time.Second, 10*time.Millisecond, "descendant survived Close")
 }

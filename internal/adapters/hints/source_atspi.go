@@ -10,8 +10,8 @@ import (
 
 type atspiSource struct{ targets targetSource }
 
-func (*atspiSource) kind() ports.HintSource { return ports.HintSourceATSPI }
-func (*atspiSource) needsFrame() bool       { return false }
+func (*atspiSource) kind() ports.HintSource          { return ports.HintSourceATSPI }
+func (*atspiSource) needsFrame(context.Context) bool { return false }
 func (s *atspiSource) Close() error {
 	if s.targets == nil {
 		return nil

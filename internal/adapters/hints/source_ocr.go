@@ -18,9 +18,9 @@ type ocrSource struct {
 	seed  maphash.Seed
 }
 
-func (*ocrSource) kind() ports.HintSource { return ports.HintSourceOCR }
-func (*ocrSource) needsFrame() bool       { return true }
-func (*ocrSource) Close() error           { return nil }
+func (*ocrSource) kind() ports.HintSource                { return ports.HintSourceOCR }
+func (s *ocrSource) needsFrame(ctx context.Context) bool { return ocrReady(ctx, &s.state) }
+func (*ocrSource) Close() error                          { return nil }
 func (s *ocrSource) scan(ctx context.Context, req ports.HintScanRequest, wins []ports.HintWindow, fr *frame) ([]ports.HintTarget, error) {
 	if !ocrReady(ctx, &s.state) {
 		return nil, errOCRUnavailable

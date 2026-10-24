@@ -34,7 +34,7 @@ type Options struct {
 // Returned targets have Source and Window set; errors preserve partial targets.
 type source interface {
 	kind() ports.HintSource
-	needsFrame() bool
+	needsFrame(context.Context) bool
 	scan(context.Context, ports.HintScanRequest, []ports.HintWindow, *frame) ([]ports.HintTarget, error)
 	Close() error
 }
@@ -103,7 +103,8 @@ func (w *worker) chain(ctx context.Context, req ports.HintScanRequest, capture f
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if s.needsFrame() && fr == nil {
+		needsFrame := s.needsFrame(ctx)
+		if needsFrame && fr == nil {
 			fr, err = capture()
 			if err != nil {
 				return nil, err
@@ -111,7 +112,7 @@ func (w *worker) chain(ctx context.Context, req ports.HintScanRequest, capture f
 		}
 		start := time.Now()
 		input := fr
-		if !s.needsFrame() {
+		if !needsFrame {
 			input = nil
 		}
 		targets, err := s.scan(ctx, req, wins, input)

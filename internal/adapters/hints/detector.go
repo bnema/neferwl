@@ -244,6 +244,7 @@ type process struct {
 	in  *os.File // write end of the child's stdin
 	out *os.File // read end of the child's stdout
 	rd  *bufio.Reader
+	wr  *bufio.Writer
 
 	mu     sync.Mutex
 	reaped bool
@@ -274,6 +275,8 @@ func (p *process) kill() {
 func (p *process) wait() {
 	p.once.Do(func() {
 		_ = p.cmd.Wait()
+		// The leader may exit cooperatively while descendants keep running.
+		p.interrupt()
 		p.mu.Lock()
 		p.reaped = true
 		p.mu.Unlock()
@@ -333,7 +336,7 @@ func (d *procDetector) start(ctx context.Context) error {
 		_ = outR.Close()
 		return fmt.Errorf("hints: start detector: %w", err)
 	}
-	p := &process{cmd: cmd, in: inW, out: outR, rd: bufio.NewReaderSize(outR, 1<<16)}
+	p := &process{cmd: cmd, in: inW, out: outR, rd: bufio.NewReaderSize(outR, 1<<16), wr: bufio.NewWriterSize(inW, 1<<16)}
 	t0 := time.Now()
 	stop := interruptOnDeadline(ctx, d.helloTimeout, p)
 	device, err := readHello(p.rd)
@@ -378,8 +381,6 @@ func (d *procDetector) Detect(ctx context.Context, f detFrame) ([]detection, err
 	}
 	d.drop()
 	switch {
-	case timedOut:
-		return nil, fmt.Errorf("hints: detector timed out after %s", d.reqTimeout)
 	case ctx.Err() != nil:
 		return nil, ctx.Err()
 	}
@@ -387,7 +388,7 @@ func (d *procDetector) Detect(ctx context.Context, f detFrame) ([]detection, err
 }
 
 func (d *procDetector) roundTrip(p *process, f detFrame) ([]detection, error) {
-	bw := bufio.NewWriterSize(p.in, 1<<16)
+	bw := p.wr
 	if err := writeRequest(bw, d.seq, f); err != nil {
 		return nil, err
 	}
