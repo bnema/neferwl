@@ -103,8 +103,13 @@ destination output; an empty destination does not flash. Directional monitor foc
 and focus past a screen edge select the visible window nearest the entry edge
 (rightmost when moving left, bottommost when moving up, and conversely). Hidden
 and off-screen windows are ignored. If none are visible, the destination keeps
-its focus and does not flash. Same-screen workspace switches and mouse focus do
-not trigger a flash.
+its focus and does not flash. A switch to another workspace of the same screen
+flashes that workspace's focused window once, after the slide settles: the
+`focus-workspace`, prev/next and named `workspace` binds, a focus bind that
+crosses the workspace edge, a move bind with `focus.follow-move`, a committed
+three-finger swipe and an overview pick. A cancelled swipe and an empty
+workspace do not flash. Mouse focus does not trigger a flash. A window flashes
+at most once per second, so a quick switch A→B→A may skip the second flash.
 It runs when `animations = on`.
 
 ## Automatic terminal
