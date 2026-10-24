@@ -34,22 +34,63 @@ func TestHintPipesOffByDefault(t *testing.T) {
 }
 
 func TestHintOffStartsNoHintGoroutine(t *testing.T) {
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan error, 1)
-	go func() {
-		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), NoTerminal: true, Timeout: 800 * time.Millisecond})
-	}()
-	time.Sleep(400 * time.Millisecond)
-	buf := make([]byte, 1<<20)
-	dump := string(buf[:runtime.Stack(buf, true)])
-	require.NotContains(t, dump, "adapters/hints.")
-	require.NotContains(t, dump, "routeCaptured")
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		t.Fatal("session did not stop")
+	for _, tc := range []struct {
+		name    string
+		enable  bool
+		sources []ports.HintSource
+	}{
+		{name: "off"},
+		{name: "detector", enable: true, sources: []ports.HintSource{ports.HintSourceDetector}},
+		{name: "atspi-ocr", enable: true, sources: []ports.HintSource{ports.HintSourceATSPI, ports.HintSourceOCR}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+			t.Setenv("XDG_STATE_HOME", t.TempDir())
+			cfg := config.Defaults()
+			cfg.Hint.Enable, cfg.Hint.Sources = tc.enable, tc.sources
+			// An unlisted detector must not be started, nor resolve this command.
+			cfg.Hint.Detector = "/nonexistent/wp3-detector"
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan error, 1)
+			go func() {
+				done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, NoTerminal: true, Timeout: 800 * time.Millisecond})
+			}()
+			time.Sleep(400 * time.Millisecond)
+			buf := make([]byte, 1<<20)
+			dump := string(buf[:runtime.Stack(buf, true)])
+			if !tc.enable {
+				require.NotContains(t, dump, "adapters/hints.")
+				require.NotContains(t, dump, "routeCaptured")
+			}
+			// Both constructors are lazy: no AT-SPI connect loop or detector child
+			// before the first scan, including when the other source is listed.
+			require.NotContains(t, dump, "adapters/atspi.")
+			require.NotContains(t, dump, "(*procDetector).")
+			select {
+			case err := <-done:
+				require.NoError(t, err)
+			case <-time.After(3 * time.Second):
+				t.Fatal("session did not stop")
+			}
+		})
+	}
+}
+
+func TestHintOptionsOnlyConstructsListedATSPI(t *testing.T) {
+	for _, sources := range [][]ports.HintSource{
+		{ports.HintSourceDetector}, {ports.HintSourceATSPI, ports.HintSourceOCR},
+	} {
+		cfg := config.Defaults()
+		cfg.Hint.Sources = sources
+		opts := hintOptions(context.Background(), cfg)
+		require.Equal(t, sources, opts.Sources)
+		if sources[0] == ports.HintSourceDetector {
+			require.Nil(t, opts.ATSPI)
+		} else {
+			require.NotNil(t, opts.ATSPI)
+			require.NoError(t, opts.ATSPI.Close())
+		}
 	}
 }
 

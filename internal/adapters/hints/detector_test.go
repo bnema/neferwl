@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"image"
 	"io"
 	"math"
 	"net"
@@ -28,15 +29,15 @@ func cat(parts ...[]byte) []byte {
 func TestWriteRequest(t *testing.T) {
 	var buf bytes.Buffer
 	pix := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
-	require.NoError(t, writeRequest(&buf, 0x0102030405, detFrame{width: 2, height: 1, stride: 12, m: &mapping{b: append(pix, 99)}}))
-	want := cat([]byte("NHRQ"), u32(1), u64(0x0102030405), u32(2), u32(1), u32(12), u32(1), u32(0), f32(0), pix)
+	require.NoError(t, writeRequest(&buf, 0x0102030405, detFrame{crop: image.Rect(0, 0, 2, 1), stride: 12, m: &mapping{b: append(pix, 99)}}))
+	want := cat([]byte("NHRQ"), u32(1), u64(0x0102030405), u32(2), u32(1), u32(8), u32(1), u32(0), f32(0), pix[:8])
 	require.Equal(t, want, buf.Bytes())
 }
 
 func TestWriteRequestRegions(t *testing.T) {
 	var buf bytes.Buffer
 	pix := []byte{1, 2, 3, 4}
-	f := detFrame{width: 1, height: 1, stride: 4, m: &mapping{b: pix}, regions: []region{{0, 1, 2, 3}, {4, 5, 6, 7}}}
+	f := detFrame{crop: image.Rect(0, 0, 1, 1), stride: 4, m: &mapping{b: pix}, regions: []region{{0, 1, 2, 3}, {4, 5, 6, 7}}}
 	require.NoError(t, writeRequest(&buf, 1, f))
 	want := cat([]byte("NHRQ"), u32(1), u64(1), u32(1), u32(1), u32(4), u32(1), u32(2),
 		u32(0), u32(1), u32(2), u32(3), u32(4), u32(5), u32(6), u32(7), f32(0), pix)
@@ -113,7 +114,7 @@ func TestProcDetectorIntegration(t *testing.T) {
 	for i := range m.b {
 		m.b[i] = 0xf0 // a blank light frame
 	}
-	f := detFrame{width: 1280, height: 720, stride: 1280 * 4, m: m}
+	f := detFrame{crop: image.Rect(0, 0, 1280, 720), stride: 1280 * 4, m: m}
 	ctx := context.Background()
 
 	dets, err := d.Detect(ctx, f)
@@ -137,7 +138,7 @@ func TestProcDetectorIntegration(t *testing.T) {
 
 	// A wrong geometry is the detector's own error: the child stays.
 	proc := d.proc
-	_, err = d.Detect(ctx, detFrame{width: 1280, height: 720, stride: 4, m: m})
+	_, err = d.Detect(ctx, detFrame{crop: image.Rect(0, 0, 1280, 720), stride: 4, m: m})
 	require.ErrorIs(t, err, errDetector)
 	require.Same(t, proc, d.proc)
 	require.NoError(t, d.Close())
@@ -145,7 +146,7 @@ func TestProcDetectorIntegration(t *testing.T) {
 
 func TestProcDetectorMissingBinary(t *testing.T) {
 	d := newProcDetector("/nonexistent/nefer-hints", t.TempDir(), 0.05)
-	_, err := d.Detect(context.Background(), detFrame{width: 1, height: 1, stride: 4, m: &mapping{b: make([]byte, 4)}})
+	_, err := d.Detect(context.Background(), detFrame{crop: image.Rect(0, 0, 1, 1), stride: 4, m: &mapping{b: make([]byte, 4)}})
 	require.Error(t, err)
 	require.Nil(t, d.proc)
 	require.NoError(t, d.Close())
@@ -238,7 +239,7 @@ func TestDetectorCancellation(t *testing.T) {
 			defer cancel()
 			done := make(chan error, 1)
 			go func() {
-				_, err := d.Detect(ctx, detFrame{width: 1, height: 1, stride: 4, m: &mapping{b: make([]byte, 4)}})
+				_, err := d.Detect(ctx, detFrame{crop: image.Rect(0, 0, 1, 1), stride: 4, m: &mapping{b: make([]byte, 4)}})
 				done <- err
 			}()
 			require.NoError(t, l.(*net.UnixListener).SetDeadline(time.Now().Add(5*time.Second)))
@@ -293,7 +294,7 @@ func TestDetectorCanceledBufferedResponse(t *testing.T) {
 			p.rd.Reset(bytes.NewReader(response))
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
-			_, err = d.Detect(ctx, detFrame{width: 1, height: 1, stride: 4, m: &mapping{b: make([]byte, 4)}})
+			_, err = d.Detect(ctx, detFrame{crop: image.Rect(0, 0, 1, 1), stride: 4, m: &mapping{b: make([]byte, 4)}})
 			require.ErrorIs(t, err, context.Canceled)
 			require.Nil(t, d.proc)
 			require.True(t, p.reaped)
@@ -332,4 +333,16 @@ func TestInterruptDeadlineBoundary(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestWriteRequestCropRowsOnly(t *testing.T) {
+	pix := make([]byte, 5*4*4)
+	for i := range pix {
+		pix[i] = byte(i)
+	}
+	var buf bytes.Buffer
+	crop := image.Rect(1, 1, 4, 3)
+	require.NoError(t, writeRequest(&buf, 9, detFrame{stride: 20, crop: crop, m: &mapping{b: pix}}))
+	want := cat([]byte("NHRQ"), u32(1), u64(9), u32(3), u32(2), u32(12), u32(1), u32(0), f32(0), pix[24:36], pix[44:56])
+	require.Equal(t, want, buf.Bytes())
 }

@@ -2,6 +2,7 @@ package hints
 
 import (
 	"context"
+	"image"
 	"io"
 	"os"
 	"os/exec"
@@ -84,7 +85,7 @@ func helperDetector(t *testing.T, mode string) *procDetector {
 }
 
 func tinyFrame() detFrame {
-	return detFrame{width: 1, height: 1, stride: 4, m: &mapping{b: make([]byte, 4), live: new(int)}}
+	return detFrame{crop: image.Rect(0, 0, 1, 1), stride: 4, m: &mapping{b: make([]byte, 4), live: new(int)}}
 }
 
 // processGone reports whether pid is dead (or a zombie waiting for its

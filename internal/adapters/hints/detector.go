@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"image"
 	"io"
 	"math"
 	"os"
@@ -24,14 +25,15 @@ import (
 // so that recording a call (mocks print their arguments) never reads memory
 // that was unmapped since.
 type detFrame struct {
-	width, height, stride int
-	m                     *mapping
+	stride int
+	crop   image.Rectangle
+	m      *mapping
 	// regions are the crops detected independently; none means the whole
-	// frame.
+	// crop.
 	regions []region
 }
 
-// detection is one box found by the detector, in frame (physical) pixels.
+// detection is one box found by the detector, in crop-local physical pixels.
 type detection struct {
 	x1, y1, x2, y2, score float32
 	// region is the index of the request region the box comes from.
@@ -80,9 +82,9 @@ func writeRequest(w io.Writer, seq uint64, f detFrame) error {
 	copy(h[0:], magicRequest[:])
 	le.PutUint32(h[4:], protocolVersion)
 	le.PutUint64(h[8:], seq)
-	le.PutUint32(h[16:], uint32(f.width))
-	le.PutUint32(h[20:], uint32(f.height))
-	le.PutUint32(h[24:], uint32(f.stride))
+	le.PutUint32(h[16:], uint32(f.crop.Dx()))
+	le.PutUint32(h[20:], uint32(f.crop.Dy()))
+	le.PutUint32(h[24:], uint32(f.crop.Dx()*4))
 	le.PutUint32(h[28:], formatXRGB8888)
 	le.PutUint32(h[32:], uint32(len(f.regions)))
 	if _, err := w.Write(h[:]); err != nil {
@@ -103,8 +105,12 @@ func writeRequest(w io.Writer, seq uint64, f detFrame) error {
 	if _, err := w.Write(conf[:]); err != nil {
 		return err
 	}
-	_, err := w.Write(f.m.b[:f.height*f.stride])
-	return err
+	for y := f.crop.Min.Y; y < f.crop.Max.Y; y++ {
+		if _, err := w.Write(f.m.b[y*f.stride+f.crop.Min.X*4 : y*f.stride+f.crop.Max.X*4]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func readMagic(r io.Reader, want [4]byte) error {

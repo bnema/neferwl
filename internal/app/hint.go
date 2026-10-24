@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/bnema/neferwl/internal/adapters/atspi"
 	"github.com/bnema/neferwl/internal/adapters/hints"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/ports"
@@ -16,6 +17,12 @@ import (
 // the first scan.
 func hintOptions(ctx context.Context, cfg ports.Config) hints.Options {
 	opts := hintDump(ctx)
+	opts.Sources = append([]ports.HintSource(nil), cfg.Hint.Sources...)
+	for _, kind := range opts.Sources {
+		if kind == ports.HintSourceATSPI {
+			opts.ATSPI = atspi.New()
+		}
+	}
 	opts.Command, opts.ModelDir, opts.Threshold = cfg.Hint.Detector, cfg.Hint.Model, cfg.Hint.Threshold
 	return opts
 }

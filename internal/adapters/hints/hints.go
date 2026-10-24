@@ -1,6 +1,5 @@
-// Package hints finds clickable targets for hint mode: it captures the last
-// frame of an output through the capture pipeline and sends it to the
-// nefer-hints detector, a persistent subprocess.
+// Package hints finds clickable targets using ordered accessibility, OCR and
+// detector sources, capturing pixels only when a listed source needs them.
 package hints
 
 import (
@@ -41,7 +40,8 @@ func Run(ctx context.Context, requests <-chan ports.HintScanRequest, captures ch
 }
 
 type worker struct {
-	det     detector
+	sources []source
+	warned  map[ports.HintSource]bool
 	n       uint64
 	dumpDir string
 	pending *dumpJob
@@ -58,13 +58,21 @@ type frame struct {
 	m      *mapping
 }
 
-func run(ctx context.Context, requests <-chan ports.HintScanRequest, captures chan<- ports.CaptureRequest, captured <-chan ports.CaptureDone, results chan<- ports.HintScanResult, timeout time.Duration, opts Options) error {
-	w := &worker{dumpDir: opts.DumpDir, det: opts.detector}
-	if w.det == nil {
-		w.det = newProcDetector(opts.Command, opts.ModelDir, opts.Threshold)
+// String keeps mock diagnostics from reading pixels after the capture is unmapped.
+func (f *frame) String() string {
+	if f == nil {
+		return "<nil frame>"
 	}
-	// The worker goroutine is the only one to touch the detector.
-	defer func() { _ = w.det.Close() }()
+	return fmt.Sprintf("frame(stride=%d)", f.stride)
+}
+
+func run(ctx context.Context, requests <-chan ports.HintScanRequest, captures chan<- ports.CaptureRequest, captured <-chan ports.CaptureDone, results chan<- ports.HintScanResult, timeout time.Duration, opts Options) error {
+	w := &worker{dumpDir: opts.DumpDir, sources: makeSources(opts)}
+	defer func() {
+		for i := len(w.sources) - 1; i >= 0; i-- {
+			_ = w.sources[i].Close()
+		}
+	}()
 	for {
 		select {
 		case <-ctx.Done():
@@ -112,17 +120,43 @@ func send(ctx context.Context, results chan<- ports.HintScanResult, res ports.Hi
 }
 
 func (w *worker) serve(ctx context.Context, req ports.HintScanRequest, requests <-chan ports.HintScanRequest, captures chan<- ports.CaptureRequest, captured <-chan ports.CaptureDone, results chan<- ports.HintScanResult, timeout time.Duration) ports.HintScanResult {
-	log := logging.For(ctx, "hints")
+	ctx, cancel := context.WithTimeout(ctx, scanBudget)
+	defer cancel()
 	res := ports.HintScanResult{Seq: req.Seq, Output: req.Output}
-	fail := func(err error) ports.HintScanResult {
-		log.Info().Err(err).Str("output", req.Output).Msg("hint scan failed")
-		res.Err = err
+	if req.Width <= 0 || req.Height <= 0 || req.Width > maxPixels/req.Height {
+		res.Err = fmt.Errorf("%w: %dx%d", ErrBadRequest, req.Width, req.Height)
 		return res
 	}
-
-	if req.Width <= 0 || req.Height <= 0 || req.Width*req.Height > maxPixels {
-		return fail(fmt.Errorf("%w: %dx%d", ErrBadRequest, req.Width, req.Height))
+	var fr *frame
+	var captureDur time.Duration
+	defer func() {
+		if fr != nil && (w.pending == nil || w.pending.m != fr.m) {
+			fr.m.unmap()
+		}
+	}()
+	capture := func() (*frame, error) {
+		start := time.Now()
+		f, err := w.capture(ctx, req, requests, captures, captured, results, timeout)
+		captureDur = time.Since(start)
+		fr = f
+		return f, err
 	}
+	res.Targets, res.Err = w.chain(ctx, req, capture)
+	if res.Err != nil {
+		res.Targets = nil
+		return res
+	}
+	if w.dumpDir != "" && fr != nil {
+		w.pending = &dumpJob{when: time.Now(), req: req, pix: fr.pix, m: fr.m, stride: fr.stride, targets: res.Targets, captureD: captureDur}
+	}
+	log := logging.For(ctx, "hints")
+	log.Info().Str("output", req.Output).Float64("capture_ms", ms(captureDur)).Int("targets", len(res.Targets)).Msg("hint scan")
+	return res
+}
+
+const scanBudget = 6 * time.Second
+
+func (w *worker) capture(ctx context.Context, req ports.HintScanRequest, requests <-chan ports.HintScanRequest, captures chan<- ports.CaptureRequest, captured <-chan ports.CaptureDone, results chan<- ports.HintScanResult, timeout time.Duration) (*frame, error) {
 	// The capture buffer is anonymous mapped memory, outside the Go heap. It
 	// is released once the detector answered, or by the dump job.
 	m := w.alloc(req.Width * req.Height * 4)
@@ -137,7 +171,6 @@ func (w *worker) serve(ctx context.Context, req ports.HintScanRequest, requests 
 	w.n++
 	id := ports.CaptureIDInternal | w.n
 	stride := req.Width * 4
-	start := time.Now()
 	creq := ports.CaptureRequest{
 		ID:       id,
 		Output:   req.Output,
@@ -156,9 +189,9 @@ func (w *worker) serve(ctx context.Context, req ports.HintScanRequest, requests 
 	select {
 	case captures <- creq:
 	case <-timer.C:
-		return fail(ErrTimeout)
+		return nil, ErrTimeout
 	case <-ctx.Done():
-		return fail(ctx.Err())
+		return nil, ctx.Err()
 	}
 	// From here the output owns buf until CaptureDone.
 	abandon := func() {
@@ -177,26 +210,25 @@ func (w *worker) serve(ctx context.Context, req ports.HintScanRequest, requests 
 				continue
 			}
 			if done.Err != nil {
-				return fail(fmt.Errorf("hints: capture: %w", done.Err))
+				return nil, fmt.Errorf("hints: capture: %w", done.Err)
 			}
-			res = w.scan(ctx, req, frame{pix: buf, stride: stride, m: m}, time.Since(start), res)
-			keep = w.pending != nil && w.pending.m == m
-			return res
+			keep = true // caller owns the completed capture
+			return &frame{pix: buf, stride: stride, m: m}, nil
 		case other := <-requests:
 			// The buffer is in use until the capture is done: answer now.
 			busy := ports.HintScanResult{Seq: other.Seq, Output: other.Output, Err: ErrBusy}
 			if !send(ctx, results, busy) {
 				abandon()
-				return fail(ctx.Err())
+				return nil, ctx.Err()
 			}
 		case <-timer.C:
 			// The output may still write into buf: it is released when its
 			// CaptureDone arrives.
 			abandon()
-			return fail(ErrTimeout)
+			return nil, ErrTimeout
 		case <-ctx.Done():
 			abandon()
-			return fail(ctx.Err())
+			return nil, ctx.Err()
 		}
 	}
 }
@@ -214,37 +246,6 @@ const minTarget = 4
 
 // maxWorkBoxes bounds the quadratic cut-box and merge passes.
 const maxWorkBoxes = 2000
-
-// scan sends the frame to the detector and turns the boxes into targets. It
-// releases the frame, or hands it to the dump job.
-func (w *worker) scan(ctx context.Context, req ports.HintScanRequest, fr frame, captureDur time.Duration, res ports.HintScanResult) ports.HintScanResult {
-	log := logging.For(ctx, "hints")
-	t0 := time.Now()
-	regions := tileRegions(req.Width, req.Height)
-	dets, err := w.det.Detect(ctx, detFrame{width: req.Width, height: req.Height, stride: fr.stride, m: fr.m, regions: regions})
-	rawN := len(dets)
-	detectDur := time.Since(t0)
-	if err != nil {
-		fr.m.unmap()
-		log.Info().Err(err).Str("output", req.Output).Float64("detect_ms", ms(detectDur)).Msg("hint scan failed")
-		res.Err = err
-		return res
-	}
-	// Boxes cut by a tile's inner edge are dropped when a neighbour tile
-	// saw the element whole; then, on the union of all tiles and after
-	// rounding to logical pixels, duplicates and nested boxes are merged.
-	dets = prepareDetections(dets, regions, req.Width, req.Height)
-	res.Targets = mergeTargets(targetsOf(dropCutBoxes(dets, regions), req.Scale, req.Width, req.Height))
-	if w.dumpDir != "" {
-		// The dump reads the frame after the result is sent and releases it.
-		w.pending = &dumpJob{when: time.Now(), req: req, pix: fr.pix, m: fr.m, stride: fr.stride, targets: res.Targets, dets: dets, captureD: captureDur, detectD: detectDur}
-	} else {
-		fr.m.unmap()
-	}
-	log.Info().Str("output", req.Output).Float64("capture_ms", ms(captureDur)).Float64("detect_ms", ms(detectDur)).
-		Int("regions", len(regions)).Int("raw_boxes", rawN).Int("prepared_boxes", len(dets)).Int("targets", len(res.Targets)).Msg("hint scan")
-	return res
-}
 
 // targetsOf converts boxes in physical pixels to logical output-local
 // targets. A box with a non-finite coordinate or score, a score outside

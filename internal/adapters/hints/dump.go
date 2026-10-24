@@ -24,23 +24,6 @@ const (
 	outlineSize = 2
 )
 
-// Options tunes Run.
-type Options struct {
-	// Command is the nefer-hints binary: a path, or a name looked up in PATH.
-	Command string
-	// ModelDir is the directory of the detector's model files.
-	ModelDir string
-	// Threshold overrides the minimum detection score, 0.01 to 0.99.
-	// Zero uses model.json or, if absent, the runner default.
-	Threshold float64
-	// DumpDir, when not empty, receives the scanned frames (PNG, annotated
-	// PNG and JSON). They contain the screen in clear.
-	DumpDir string
-
-	// detector replaces the subprocess in tests.
-	detector detector
-}
-
 // dumpJob is one scan to write. pix is the capture buffer of the scan, owned
 // by the job: writeDump converts it in place.
 type dumpJob struct {

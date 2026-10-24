@@ -461,13 +461,10 @@ func upscaleBand(src *image.Gray) *image.Gray {
 }
 
 type bandJob struct {
-	//lint:ignore U1000 Reserved for the ordered-source worker in WP3.
-	win int // index into the scan's windows
-	//lint:ignore U1000 Reserved for the ordered-source worker in WP3.
-	key bandKey         //
-	ext image.Rectangle // crop-local rows read, with context
-	own [2]int          // crop-local rows owned: words centred there are kept
-	//lint:ignore U1000 Reserved for the ordered-source worker in WP3.
+	win   int             // index into the scan's windows
+	key   bandKey         //
+	ext   image.Rectangle // crop-local rows read, with context
+	own   [2]int          // crop-local rows owned: words centred there are kept
 	hash  uint64
 	hit   bool
 	gray  *image.Gray
@@ -485,8 +482,6 @@ func duplicateWord(words []OCRWord, word OCRWord) bool {
 }
 
 // bandKey identifies one OCR band of a window on an output.
-//
-//lint:ignore U1000 Reserved for the ordered-source worker in WP3.
 type bandKey struct {
 	output string
 	window ports.WindowID
@@ -496,18 +491,13 @@ type bandKey struct {
 
 // bandCache is the OCR result of a band whose pixels hash to hash. words are
 // crop-local and only the ones the band owns.
-//
-//lint:ignore U1000 Reserved for the ordered-source worker in WP3.
 type bandCache struct {
-	//lint:ignore U1000 Reserved for the ordered-source worker in WP3.
 	hash  uint64
 	ext   image.Rectangle
 	words []OCRWord
 }
 
 // windowCrop rounds outwards in physical pixels, then intersects the output.
-//
-//lint:ignore U1000 Reserved for the ordered-source worker in WP3.
 func windowCrop(r ports.Rect, scale float64, width, height int) image.Rectangle {
 	if scale <= 0 {
 		scale = 1
@@ -520,8 +510,6 @@ func windowCrop(r ports.Rect, scale float64, width, height int) image.Rectangle 
 }
 
 // cropHash hashes the raw pixels of r without copying them.
-//
-//lint:ignore U1000 Reserved for the ordered-source worker in WP3.
 func cropHash(seed maphash.Seed, buf []byte, stride int, r image.Rectangle) uint64 {
 	var h maphash.Hash
 	h.SetSeed(seed)
@@ -533,8 +521,6 @@ func cropHash(seed maphash.Seed, buf []byte, stride int, r image.Rectangle) uint
 
 // cropGray converts the BGRA pixels of r to 8-bit luma into dst, which must
 // hold r.Dx()*r.Dy() bytes; only this band is converted, not the output.
-//
-//lint:ignore U1000 Reserved for the ordered-source worker in WP3.
 func cropGray(buf []byte, stride int, r image.Rectangle, dst []byte) *image.Gray {
 	img := &image.Gray{Pix: dst[:r.Dx()*r.Dy()], Stride: r.Dx(), Rect: image.Rect(0, 0, r.Dx(), r.Dy())}
 	for y := 0; y < r.Dy(); y++ {
@@ -549,8 +535,6 @@ func cropGray(buf []byte, stride int, r image.Rectangle, dst []byte) *image.Gray
 }
 
 // targetSource reads accessibility targets; coverage belongs to the chain.
-//
-//lint:ignore U1000 Reserved for the ordered-source worker in WP3.
 type targetSource interface {
 	Targets(context.Context, []ports.HintWindow, bool) ([]ports.HintTarget, error)
 	Close() error
