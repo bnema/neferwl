@@ -27,6 +27,11 @@ func (s *detectorSource) scan(ctx context.Context, req ports.HintScanRequest, wi
 			continue
 		}
 		regions := tileRegions(crop.Dx(), crop.Dy())
+		log := logging.For(ctx, "hints")
+		log.Debug().Uint64("window", uint64(win.ID)).
+			Int("crop_x", crop.Min.X).Int("crop_y", crop.Min.Y).
+			Int("crop_width", crop.Dx()).Int("crop_height", crop.Dy()).
+			Msg("hint detector request")
 		dets, err := s.det.Detect(ctx, detFrame{m: fr.m, stride: fr.stride, crop: crop, regions: regions})
 		if err != nil {
 			scanErr = errors.Join(scanErr, err)
