@@ -40,6 +40,8 @@ func TestHintSpreadBudget(t *testing.T) {
 	}
 	got := c.hintSpread(sc, ts)
 	require.Len(t, got, 4*hintMaxTargets)
+	require.Equal(t, 4*hintMaxTargets, cap(got))
+	require.Equal(t, float32(0), ts[0].score) // Selection must not reorder the caller's slice.
 	require.Equal(t, float32(len(ts)-1), got[0].score)
 	require.Equal(t, float32(10), got[len(got)-1].score)
 }

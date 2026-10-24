@@ -268,3 +268,70 @@ func TestLanguageDiscoveryFailureDisablesOCR(t *testing.T) {
 		t.Fatalf("discovery failure was not retained: %v", err)
 	}
 }
+
+// A real child process exercises exec's stream copiers and cancellation.
+func TestOCROutputHelper(t *testing.T) {
+	stream := os.Getenv("NEFERWL_OCR_OUTPUT_HELPER")
+	if stream == "" {
+		return
+	}
+	if _, err := io.Copy(io.Discard, os.Stdin); err != nil {
+		os.Exit(2)
+	}
+	out := os.Stdout
+	if stream == "stderr" {
+		out = os.Stderr
+	}
+	block := []byte(strings.Repeat("x\n", 4096)) // Short lines evade the TSV line limit.
+	for {
+		if _, err := out.Write(block); err != nil {
+			os.Exit(0)
+		}
+	}
+}
+
+func TestRecognizeImageOutputLimits(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stream := range []string{"stdout", "stderr"} {
+		t.Run(stream, func(t *testing.T) {
+			t.Setenv("NEFERWL_OCR_OUTPUT_HELPER", stream)
+			script := filepath.Join(t.TempDir(), "tesseract")
+			if err := os.WriteFile(script, []byte("#!/bin/sh\nexec '"+exe+"' -test.run='^TestOCROutputHelper$'\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			words, err := recognizeImage(ctx, script, "eng", image.NewGray(image.Rect(0, 0, 8, 8)), "11", true)
+			if err == nil || !strings.Contains(err.Error(), "OCR output limit exceeded") || len(words) != 0 {
+				t.Fatalf("words=%v err=%v", words, err)
+			}
+			if ctx.Err() != nil {
+				t.Fatalf("child was not stopped by output limit: %v", ctx.Err())
+			}
+			if len(err.Error()) > ocrStderrLimit+256 {
+				t.Fatalf("unbounded diagnostic: %d bytes", len(err.Error()))
+			}
+		})
+	}
+}
+
+func TestOCROutputBoundary(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := ocrOutput{limit: 4, cancel: cancel}
+	if n, err := out.Write([]byte("1234")); n != 4 || err != nil {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+	if ctx.Err() != nil {
+		t.Fatal("exact limit canceled")
+	}
+	if n, err := out.Write([]byte("5")); n != 0 || err == nil {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+	if out.buf.String() != "1234" || !out.exceeded || ctx.Err() == nil {
+		t.Fatal("overflow not bounded/canceled")
+	}
+}

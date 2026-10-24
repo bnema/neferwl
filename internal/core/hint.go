@@ -237,12 +237,20 @@ func hintLabelRect(sc *screen, target ports.Rect, lw, lh int) ports.Rect {
 // while bounding the quadratic pass.
 func (c *Core) hintSpread(sc *screen, ts []hintTarget) []hintTarget {
 	lw, lh := c.hintLabelSize(sc)
-	order := slices.Clone(ts)
-	slices.SortStableFunc(order, func(a, b hintTarget) int {
+	// Sort indices so caller-owned targets remain unchanged, and only copy
+	// the capped selection rather than retaining every incoming target.
+	indices := make([]int, len(ts))
+	for i := range indices {
+		indices[i] = i
+	}
+	slices.SortStableFunc(indices, func(i, j int) int {
+		a, b := ts[i], ts[j]
 		return cmp.Or(cmp.Compare(b.score, a.score), cmp.Compare(a.rect.Y, b.rect.Y), cmp.Compare(a.rect.X, b.rect.X))
 	})
-	if len(order) > 4*hintMaxTargets {
-		order = order[:4*hintMaxTargets]
+	indices = indices[:min(len(indices), 4*hintMaxTargets)]
+	order := make([]hintTarget, len(indices))
+	for i, index := range indices {
+		order[i] = ts[index]
 	}
 	kept := order[:0]
 	rects := make([]ports.Rect, 0, len(order))

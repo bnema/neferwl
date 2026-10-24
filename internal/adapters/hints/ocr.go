@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -235,7 +236,12 @@ func readBand(ctx context.Context, st *ocrState, j *bandJob) ([]OCRWord, error) 
 			owned = append(owned, word)
 		}
 	}
-	return owned, nil
+	// Cache only retained words, not the discarded overlap or its text references.
+	// Clone of an empty non-nil slice can still reference the original array.
+	if len(owned) == 0 {
+		return nil, nil
+	}
+	return slices.Clone(owned), nil
 }
 
 // readWords recognizes the words of img, a window crop, in parallel bands.
@@ -415,7 +421,35 @@ func (r *pgmReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
+// A 5120x2160 screen holds well below 100,000 normal-sized words. 16 MiB
+// allows over 160 TSV bytes per word, including hierarchy rows and text;
+// 64 KiB is ample for tesseract diagnostics. Both limits are per band/run.
+const ocrStdoutLimit = 16 << 20
+const ocrStderrLimit = 64 << 10
+
+// ocrOutput stops the child on overflow rather than draining unbounded output.
+// Each stream has its own writer, owned by its exec copier until Wait returns.
+type ocrOutput struct {
+	buf      bytes.Buffer
+	limit    int
+	cancel   context.CancelFunc
+	exceeded bool
+}
+
+func (b *ocrOutput) Write(p []byte) (int, error) {
+	n := min(len(p), b.limit-b.buf.Len())
+	_, _ = b.buf.Write(p[:n])
+	if n < len(p) {
+		b.exceeded = true
+		b.cancel()
+		return n, fmt.Errorf("OCR output exceeds %d bytes", b.limit)
+	}
+	return n, nil
+}
+
 func recognizeImage(ctx context.Context, binary, lang string, img image.Image, psm string, normalized bool) ([]OCRWord, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	args := []string{"stdin", "stdout", "--psm", psm, "-l", lang}
 	if normalized {
 		args = append(args, "-c", "tessedit_do_invert=0")
@@ -436,13 +470,17 @@ func recognizeImage(ctx context.Context, binary, lang string, img image.Image, p
 		}()
 		cmd.Stdin = pr
 	}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("tesseract: %w: %s", err, stderr.String())
+	stdout := ocrOutput{limit: ocrStdoutLimit, cancel: cancel}
+	stderr := ocrOutput{limit: ocrStderrLimit, cancel: cancel}
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	if stdout.exceeded || stderr.exceeded {
+		return nil, fmt.Errorf("tesseract: OCR output limit exceeded (stdout=%t, stderr=%t): %s", stdout.exceeded, stderr.exceeded, stderr.buf.String())
 	}
-	return parseTSV(output, image.Point{})
+	if err != nil {
+		return nil, fmt.Errorf("tesseract: %w: %s", err, stderr.buf.String())
+	}
+	return parseTSV(stdout.buf.Bytes(), image.Point{})
 }
 
 // upscaleBand doubles a grayscale band with nearest-neighbour sampling.
