@@ -41,7 +41,11 @@ type HintWindow struct {
 func (w HintWindow) Region() []Rect { return append([]Rect{w.Rect}, w.Popups...) }
 func (w HintWindow) Bounds() Rect {
 	var b Rect
-	for _, r := range w.Region() {
+	for i := -1; i < len(w.Popups); i++ {
+		r := w.Rect
+		if i >= 0 {
+			r = w.Popups[i]
+		}
 		if r.W <= 0 || r.H <= 0 {
 			continue
 		}
@@ -55,7 +59,11 @@ func (w HintWindow) Bounds() Rect {
 	return b
 }
 func (w HintWindow) Contains(x, y int) bool {
-	for _, r := range w.Region() {
+	for i := -1; i < len(w.Popups); i++ {
+		r := w.Rect
+		if i >= 0 {
+			r = w.Popups[i]
+		}
 		if x >= r.X && y >= r.Y && x < r.X+r.W && y < r.Y+r.H {
 			return true
 		}

@@ -213,25 +213,13 @@ func (c *Core) hintResult(res ports.HintScanResult) bool {
 // hintLabelSize estimates, in logical pixels, the box of a two-letter label on
 // sc: a monospace face (advance 0.6 em) plus padding and outline, rounded up.
 // The font size follows the renderer: hint.size, or the output's density when
-// it is automatic (same rules as hintlabel.FontPixels, which core cannot
-// import).
+// it is automatic, using the shared ports font rule.
 func (c *Core) hintLabelSize(sc *screen) (w, h int) {
 	scale := sc.scale
 	if scale <= 0 {
 		scale = 1
 	}
-	font := c.cfg.Hint.Size // logical
-	if font <= 0 {
-		px := 13 * scale * math.Sqrt(math.Max(1, float64(sc.info.Height)/(1080*scale)))
-		if sc.info.Width > 0 && sc.info.Height > 0 && sc.info.PhysicalW > 0 && sc.info.PhysicalH > 0 {
-			ratio := (float64(sc.info.Width) / float64(sc.info.Height)) / (float64(sc.info.PhysicalW) / float64(sc.info.PhysicalH))
-			if math.Abs(ratio-1) <= .2 {
-				px = math.Min(math.Round(40*scale), math.Max(math.Round(13*scale), math.Round(3.2*float64(sc.info.Width)/float64(sc.info.PhysicalW))))
-			}
-		}
-		font = px / scale
-	}
-	font = math.Min(font, 256/scale)
+	font := ports.HintFontPixels(sc.info.Width, sc.info.Height, sc.info.PhysicalW, sc.info.PhysicalH, scale, c.cfg.Hint.Size) / scale
 	s := font / 13
 	return int(math.Ceil(2*0.6*font + 6*s + 2/scale + 1)), int(math.Ceil(1.25*font + 2*s + 2/scale + 1))
 }
@@ -246,8 +234,7 @@ func hintLabelRect(sc *screen, target ports.Rect, lw, lh int) ports.Rect {
 
 // hintSpread drops targets whose output-clamped label rectangles intersect.
 // Highest scores win; four times the label budget gives spreading headroom
-// while bounding the quadratic pass. hintlabel.FontPixels is the source of
-// truth for the font rule mirrored above.
+// while bounding the quadratic pass.
 func (c *Core) hintSpread(sc *screen, ts []hintTarget) []hintTarget {
 	lw, lh := c.hintLabelSize(sc)
 	order := slices.Clone(ts)
@@ -258,10 +245,11 @@ func (c *Core) hintSpread(sc *screen, ts []hintTarget) []hintTarget {
 		order = order[:4*hintMaxTargets]
 	}
 	kept := order[:0]
+	rects := make([]ports.Rect, 0, len(order))
 	for _, t := range order {
 		clash := false
-		for _, k := range kept {
-			a, b := hintLabelRect(sc, t.rect, lw, lh), hintLabelRect(sc, k.rect, lw, lh)
+		a := hintLabelRect(sc, t.rect, lw, lh)
+		for _, b := range rects {
 			if a.X < b.X+b.W && b.X < a.X+a.W && a.Y < b.Y+b.H && b.Y < a.Y+a.H {
 				clash = true
 				break
@@ -269,6 +257,7 @@ func (c *Core) hintSpread(sc *screen, ts []hintTarget) []hintTarget {
 		}
 		if !clash {
 			kept = append(kept, t)
+			rects = append(rects, a)
 		}
 	}
 	return kept

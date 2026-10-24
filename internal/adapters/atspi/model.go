@@ -198,7 +198,11 @@ func toTarget(win ports.HintWindow, fx, fy int32, e element) (ports.HintTarget, 
 	// A target crossing disjoint rectangles cannot be represented by one Rect.
 	// Keep the largest intersection (stable region order breaks ties).
 	var clipped ports.Rect
-	for _, area := range win.Region() {
+	for i := -1; i < len(win.Popups); i++ {
+		area := win.Rect
+		if i >= 0 {
+			area = win.Popups[i]
+		}
 		x0, y0 := max(r.X, area.X), max(r.Y, area.Y)
 		x1, y1 := min(r.X+r.W, area.X+area.W), min(r.Y+r.H, area.Y+area.H)
 		if x1 > x0 && y1 > y0 && (x1-x0)*(y1-y0) > clipped.W*clipped.H {
