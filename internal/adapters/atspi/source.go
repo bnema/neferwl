@@ -77,20 +77,17 @@ type busConnector struct{}
 
 func (busConnector) Connect(ctx context.Context) (transport, error) {
 	log := logging.For(ctx, "atspi")
-	// zerobus has no deadline or context API: SessionBus and Dial run the
-	// socket dial, SASL auth and Hello without a bound, and the watchdog
-	// below cannot exist before the connection does. A stall there is
-	// bounded by the single-in-flight rule of Source.ensure, not by a
-	// deadline. Follow-up: a deadline-capable zerobus API.
-	sess, err := zerobus.SessionBus()
+	ctx, cancel := context.WithTimeout(ctx, connectBudget)
+	defer cancel()
+	sess, err := zerobus.SessionBusContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("atspi: session bus: %w", err)
 	}
 	defer func() { _ = sess.Close() }()
 	// Call has no deadline: closing the connection ends the wait for a
 	// silent service.
-	stop := time.AfterFunc(connectBudget, func() { _ = sess.Close() })
-	defer stop.Stop()
+	stop := context.AfterFunc(ctx, func() { _ = sess.Close() })
+	defer stop()
 
 	sess.NewCall(a11yBusName, a11yBusPath, a11yBusName, "GetAddress", "")
 	m, err := sess.Call()
@@ -116,7 +113,7 @@ func (busConnector) Connect(ctx context.Context) (transport, error) {
 		log.Info().Msg("accessibility enabled")
 	}
 
-	zc, err := zerobus.Dial(addr)
+	zc, err := zerobus.DialContext(ctx, addr)
 	if err != nil {
 		return nil, fmt.Errorf("atspi: accessibility bus: %w", err)
 	}

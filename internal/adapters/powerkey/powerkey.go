@@ -153,15 +153,12 @@ func holdBus(ctx context.Context, conn bus, log zerowrap.Logger, lock **os.File)
 }
 
 func connect(ctx context.Context, address string) (*zerobus.Conn, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
 	var conn *zerobus.Conn
 	var err error
 	if address == "" {
-		conn, err = zerobus.SystemBus()
+		conn, err = zerobus.SystemBusContext(ctx)
 	} else {
-		conn, err = zerobus.Dial(address)
+		conn, err = zerobus.DialContext(ctx, address)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("bus: %w", err)

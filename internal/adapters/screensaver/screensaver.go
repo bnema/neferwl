@@ -52,15 +52,12 @@ type Service struct {
 }
 
 func New(ctx context.Context, address string, log zerowrap.Logger) (*Service, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
 	var c *zerobus.Conn
 	var err error
 	if address == "" {
-		c, err = zerobus.SessionBus()
+		c, err = zerobus.SessionBusContext(ctx)
 	} else {
-		c, err = zerobus.Dial(address)
+		c, err = zerobus.DialContext(ctx, address)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("session bus: %w", err)

@@ -5,6 +5,8 @@
 package screencast
 
 import (
+	"context"
+
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -45,8 +47,8 @@ func (_m *mockdialer) EXPECT() *mockdialer_Expecter {
 }
 
 // Dial provides a mock function for the type mockdialer
-func (_mock *mockdialer) Dial(address string) (bus, error) {
-	ret := _mock.Called(address)
+func (_mock *mockdialer) Dial(ctx context.Context, address string) (bus, error) {
+	ret := _mock.Called(ctx, address)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Dial")
@@ -54,18 +56,18 @@ func (_mock *mockdialer) Dial(address string) (bus, error) {
 
 	var r0 bus
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(string) (bus, error)); ok {
-		return returnFunc(address)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (bus, error)); ok {
+		return returnFunc(ctx, address)
 	}
-	if returnFunc, ok := ret.Get(0).(func(string) bus); ok {
-		r0 = returnFunc(address)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) bus); ok {
+		r0 = returnFunc(ctx, address)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(bus)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(string) error); ok {
-		r1 = returnFunc(address)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, address)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -78,19 +80,25 @@ type mockdialer_Dial_Call struct {
 }
 
 // Dial is a helper method to define mock.On call
+//   - ctx context.Context
 //   - address string
-func (_e *mockdialer_Expecter) Dial(address any) *mockdialer_Dial_Call {
-	return &mockdialer_Dial_Call{Call: _e.mock.On("Dial", address)}
+func (_e *mockdialer_Expecter) Dial(ctx any, address any) *mockdialer_Dial_Call {
+	return &mockdialer_Dial_Call{Call: _e.mock.On("Dial", ctx, address)}
 }
 
-func (_c *mockdialer_Dial_Call) Run(run func(address string)) *mockdialer_Dial_Call {
+func (_c *mockdialer_Dial_Call) Run(run func(ctx context.Context, address string)) *mockdialer_Dial_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 string
+		var arg0 context.Context
 		if args[0] != nil {
-			arg0 = args[0].(string)
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
 		}
 		run(
 			arg0,
+			arg1,
 		)
 	})
 	return _c
@@ -101,7 +109,7 @@ func (_c *mockdialer_Dial_Call) Return(busMoqParam bus, err error) *mockdialer_D
 	return _c
 }
 
-func (_c *mockdialer_Dial_Call) RunAndReturn(run func(address string) (bus, error)) *mockdialer_Dial_Call {
+func (_c *mockdialer_Dial_Call) RunAndReturn(run func(ctx context.Context, address string) (bus, error)) *mockdialer_Dial_Call {
 	_c.Call.Return(run)
 	return _c
 }

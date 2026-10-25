@@ -10,7 +10,7 @@ require (
 	github.com/bnema/purego-pipewire v0.2.0
 	github.com/bnema/purego-vulkan v0.6.0
 	github.com/bnema/wlturbo v0.6.2
-	github.com/bnema/zerobus v0.3.0
+	github.com/bnema/zerobus v0.4.0
 	github.com/bnema/zerowrap v1.4.1
 	github.com/rs/zerolog v1.35.1
 	github.com/stretchr/testify v1.12.1

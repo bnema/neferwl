@@ -212,7 +212,7 @@ func (s *Service) attempt(parent context.Context) (err error) {
 	// The PipeWire loop belongs to this OS thread for its whole life.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	conn, err := s.dial.Dial(s.address)
+	conn, err := s.dial.Dial(parent, s.address)
 	if err != nil {
 		return err
 	}

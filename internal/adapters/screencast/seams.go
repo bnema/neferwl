@@ -70,16 +70,16 @@ type runner interface {
 
 // dialer connects the session bus (address empty) or the bus at address.
 type dialer interface {
-	Dial(address string) (bus, error)
+	Dial(ctx context.Context, address string) (bus, error)
 }
 
 type zerobusDialer struct{}
 
-func (zerobusDialer) Dial(address string) (bus, error) {
+func (zerobusDialer) Dial(ctx context.Context, address string) (bus, error) {
 	if address == "" {
-		return zerobus.SessionBus()
+		return zerobus.SessionBusContext(ctx)
 	}
-	return zerobus.Dial(address)
+	return zerobus.DialContext(ctx, address)
 }
 
 // pipewireOpener connects to the PipeWire daemon. Open runs on the goroutine
