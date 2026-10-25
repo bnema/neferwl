@@ -2,6 +2,7 @@ package gbm
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -117,5 +118,57 @@ func TestReopenDeviceIndependentDescription(t *testing.T) {
 	flags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)
 	if err != nil || flags&unix.FD_CLOEXEC == 0 {
 		t.Fatalf("missing CLOEXEC: %d, %v", flags, err)
+	}
+}
+
+func TestReopenDevicePrefersRenderNode(t *testing.T) {
+	primary, err := os.CreateTemp(t.TempDir(), "card")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer primary.Close()
+	sysChar, devDRI := t.TempDir(), t.TempDir()
+	// A regular file has rdev 0:0; discovery still exercises the real fstat.
+	drmDir := filepath.Join(sysChar, "0:0", "device", "drm")
+	if err := os.MkdirAll(filepath.Join(drmDir, "renderD128"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	renderPath := filepath.Join(devDRI, "renderD128")
+	render, err := os.Create(renderPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer render.Close()
+	fd, err := reopenDeviceAt(int(primary.Fd()), sysChar, devDRI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fd)
+	var want, got unix.Stat_t
+	if err := unix.Fstat(int(render.Fd()), &want); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Fstat(fd, &got); err != nil {
+		t.Fatal(err)
+	}
+	if want.Dev != got.Dev || want.Ino != got.Ino {
+		t.Fatal("did not open render node")
+	}
+	if _, err := unix.Seek(fd, 17, 0); err != nil {
+		t.Fatal(err)
+	}
+	if offset, err := render.Seek(0, 1); err != nil || offset != 0 {
+		t.Fatalf("shared file offset: %d, %v", offset, err)
+	}
+	flags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)
+	if err != nil || flags&unix.FD_CLOEXEC == 0 {
+		t.Fatalf("missing CLOEXEC: %d, %v", flags, err)
+	}
+	if err := os.Remove(renderPath); err != nil {
+		t.Fatal(err)
+	}
+	if fd, err := reopenDeviceAt(int(primary.Fd()), sysChar, devDRI); err == nil {
+		unix.Close(fd)
+		t.Fatal("fell back to primary despite a present render node")
 	}
 }
