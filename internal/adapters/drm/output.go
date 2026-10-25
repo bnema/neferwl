@@ -635,6 +635,7 @@ func (o *Output) cursorNits() float64 {
 // cursorOff stops using the cursor plane for the rest of the output's life.
 func (o *Output) cursorOff(err error) {
 	o.cursor.off = true
+	o.cursor.last = laterImage{}
 	o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("cursor plane refused; hardware cursor off")
 }
 
@@ -1144,6 +1145,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		switch {
 		case err != nil:
 			o.cursor.off = true
+			o.cursor.last = laterImage{}
 			o.log.Warn().Err(errors.Join(dumbErr, err)).Str("connector", o.conn.name).Msg("no hardware cursor images; hardware cursor off")
 		case dumbErr != nil:
 			o.log.Warn().Err(dumbErr).Str("connector", o.conn.name).Str("alloc", o.cursor.alloc).Int("size", o.cursor.size).Msg("hardware cursor")
