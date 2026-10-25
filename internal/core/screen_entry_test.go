@@ -193,3 +193,24 @@ func TestCrossScreenFocusEntryResolvesModal(t *testing.T) {
 		t.Fatalf("focus %d, want modal 5", id)
 	}
 }
+
+func TestCrossScreenFocusEntrySkipsDemotedFloat(t *testing.T) {
+	c, clock := flashCore(t)
+	c.addScreen(ports.OutputInfo{Name: "B", Width: 400, Height: 300})
+	b := c.screens[1]
+	w := b.mon.Current()
+	w.Gaps = 0
+	for _, id := range []WindowID{4, 5} {
+		c.windows.mapped(ports.WindowMapped{ID: id}, clock.now)
+	}
+	b.mon.AddWindow(4)
+	w.AddFloating(5, 400, 300)
+	w.FocusID(4)
+	if !w.Floats[0].below {
+		t.Fatal("setup: float not demoted")
+	}
+	c.applyAction(ActionFocusMonitorRight)
+	if id, _ := b.mon.Focused(); c.cur() != b || id != 4 || !w.Floats[0].below {
+		t.Fatalf("focus %d, floats %+v", id, w.Floats)
+	}
+}

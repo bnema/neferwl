@@ -464,7 +464,7 @@ func (m *Monitor) focusEntry(d direction) {
 	var id WindowID
 	best := 0
 	for _, p := range m.Layout() {
-		if p.Preview != 0 || !w.has(p.ID) || !view.shows(p) {
+		if p.Preview != 0 || p.Below || !w.has(p.ID) || !view.shows(p) {
 			continue
 		}
 		var distance int
