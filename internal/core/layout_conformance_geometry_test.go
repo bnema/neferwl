@@ -78,9 +78,10 @@ func TestLayoutGeometryConformance(t *testing.T) {
 	})
 }
 
-// scrollTarget runs on every settle: it must not allocate in any layout.
+// scrollTarget runs on every settle: production layouts must not allocate.
+// Generated extension mocks record calls and allocate by design.
 func TestScrollTargetAllocations(t *testing.T) {
-	for _, l := range conformanceLayouts() {
+	for _, l := range registeredLayouts() {
 		t.Run(string(l.name()), func(t *testing.T) {
 			w := conformanceWorkspace(l, 2, 5, "normal")
 			w.Focus = 4

@@ -7,42 +7,79 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// The layouts below are defined in this one file. Each embeds the neutral
-// columnsBase, overrides a few methods and joins the conformance table through
-// testLayouts; the interfaces, the Workspace and layoutTable are untouched.
-// That shows the hooks are enough for these overrides, not that every
-// possible layout fits.
-//
-// centeredLayout overrides one geometry method.
-//
-// Its columns are the scroll row, centered while they fit in the usable area.
-type centeredLayout struct{ columnsBase }
+// Extension layouts use the generated composed mock, delegating unchanged
+// behavior to the real neutral base so the conformance coverage stays intact.
+const (
+	overflowCentered Overflow = "centered"
+	overflowLadder   Overflow = "ladder"
+	overflowTrail    Overflow = "trail"
+)
 
-const overflowCentered Overflow = "centered"
-
-func init() { testLayouts = append(testLayouts, centeredLayout{}) }
-
-func (centeredLayout) name() Overflow { return overflowCentered }
-
-func (l centeredLayout) columnRects(v layoutView, dst []Rect, o rectOpts) []Rect {
-	rects := l.columnsBase.columnRects(v, dst, o)
-	if len(rects) == 0 {
-		return rects
+func init() {
+	for _, name := range []Overflow{overflowCentered, overflowLadder, overflowTrail} {
+		testLayouts = append(testLayouts, extensionLayout(name, nil))
 	}
-	// The row spans first.X-gap .. last end+gap; the usable area minus that is
-	// the free room, split on both sides.
-	g := v.Gap
-	row := rects[len(rects)-1].X + rects[len(rects)-1].W - rects[0].X + 2*g
-	if free := v.Usable.W - row; free > 0 {
-		for i := range rects {
-			rects[i].X += free / 2
+}
+
+func extensionLayout(name Overflow, st layoutState) *mocklayout {
+	l := &mocklayout{}
+	base := columnsBase{}
+	l.EXPECT().name().Return(name)
+	l.EXPECT().newState().Return(st)
+	l.EXPECT().pinsFullscreen().Return(name == overflowTrail)
+	l.EXPECT().overridesWidth().Return(name == overflowLadder)
+	l.EXPECT().columnWidth(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(v layoutView, i int, ignore bool) int {
+		if name == overflowLadder {
+			return 100 + 50*i
 		}
-	}
-	return rects
+		return base.columnWidth(v, i, ignore)
+	})
+	l.EXPECT().columnRects(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(v layoutView, dst []Rect, o rectOpts) []Rect {
+		rects := base.columnRects(v, dst, o)
+		if name == overflowCentered && len(rects) > 0 {
+			row := rects[len(rects)-1].X + rects[len(rects)-1].W - rects[0].X + 2*v.Gap
+			if free := v.Usable.W - row; free > 0 {
+				for i := range rects {
+					rects[i].X += free / 2
+				}
+			}
+		}
+		return rects
+	})
+	l.EXPECT().axes().RunAndReturn(base.axes)
+	l.EXPECT().equalCells().RunAndReturn(base.equalCells)
+	l.EXPECT().maximizeHides().RunAndReturn(base.maximizeHides)
+	l.EXPECT().scrolls().RunAndReturn(base.scrolls)
+	l.EXPECT().resetsMaximize().RunAndReturn(base.resetsMaximize)
+	l.EXPECT().bands().RunAndReturn(base.bands)
+	l.EXPECT().laneGestures().RunAndReturn(base.laneGestures)
+	l.EXPECT().spiral().RunAndReturn(base.spiral)
+	l.EXPECT().scrollTarget(mock.Anything).RunAndReturn(base.scrollTarget)
+	l.EXPECT().snapPoints(mock.Anything, mock.Anything).RunAndReturn(base.snapPoints)
+	l.EXPECT().snapFocus(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(base.snapFocus)
+	l.EXPECT().laneOf(mock.Anything, mock.Anything).RunAndReturn(base.laneOf)
+	l.EXPECT().laneBounds(mock.Anything, mock.Anything).RunAndReturn(base.laneBounds)
+	l.EXPECT().laneCount(mock.Anything).RunAndReturn(base.laneCount)
+	l.EXPECT().laneNeighbor(mock.Anything, mock.Anything).RunAndReturn(base.laneNeighbor)
+	l.EXPECT().laneRow(mock.Anything).RunAndReturn(base.laneRow)
+	l.EXPECT().focusStep(mock.Anything, mock.Anything).RunAndReturn(base.focusStep)
+	l.EXPECT().laneStep(mock.Anything, mock.Anything).RunAndReturn(base.laneStep)
+	l.EXPECT().spawnAt(mock.Anything).RunAndReturn(base.spawnAt)
+	l.EXPECT().coveredSpawnAt(mock.Anything).RunAndReturn(base.coveredSpawnAt)
+	l.EXPECT().full(mock.Anything).RunAndReturn(base.full)
+	l.EXPECT().moveAllowed(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(base.moveAllowed)
+	l.EXPECT().moveLane(mock.Anything, mock.Anything).RunAndReturn(base.moveLane)
+	l.EXPECT().isolate(mock.Anything, mock.Anything).RunAndReturn(base.isolate)
+	l.EXPECT().previewTiles(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(base.previewTiles)
+	l.EXPECT().previewLanes().RunAndReturn(base.previewLanes)
+	l.EXPECT().grow(mock.Anything, mock.Anything).RunAndReturn(base.grow)
+	l.EXPECT().shrink(mock.Anything).RunAndReturn(base.shrink)
+	l.EXPECT().toggleFullWidth(mock.Anything).RunAndReturn(base.toggleFullWidth)
+	return l
 }
 
 func centeredWorkspace(n int) *Workspace {
-	w := &Workspace{Overflow: overflowCentered, lay: centeredLayout{}, MaxColumns: 4,
+	w := &Workspace{Overflow: overflowCentered, lay: extensionLayout(overflowCentered, nil), MaxColumns: 4,
 		Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}, Output: Rect{W: 1200, H: 900}, Gaps: 8}
 	for i := 0; i < n; i++ {
 		w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}, Cells: 1})
@@ -90,22 +127,8 @@ func TestCenteredLayoutInheritsNeutralBehavior(t *testing.T) {
 	}
 }
 
-// ladderLayout overrides only the width of a column: the base rect, scroll
-// and preview methods must follow it, as they call it through the layout.
-type ladderLayout struct{ columnsBase }
-
-const overflowLadder Overflow = "ladder"
-
-func init() { testLayouts = append(testLayouts, ladderLayout{}) }
-
-func (ladderLayout) name() Overflow { return overflowLadder }
-
-func (ladderLayout) overridesWidth() bool { return true }
-
-func (ladderLayout) columnWidth(_ layoutView, i int, _ bool) int { return 100 + 50*i }
-
 func TestColumnWidthOverrideIsHonored(t *testing.T) {
-	w := &Workspace{Overflow: overflowLadder, lay: ladderLayout{}, MaxColumns: 4,
+	w := &Workspace{Overflow: overflowLadder, lay: extensionLayout(overflowLadder, nil), MaxColumns: 4,
 		Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}, Output: Rect{W: 1200, H: 900}, Gaps: 8}
 	for i := 0; i < 4; i++ {
 		w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
@@ -134,26 +157,10 @@ func TestColumnWidthOverrideIsHonored(t *testing.T) {
 	}
 }
 
-// trailLayout has a state of its own and one trait override: it pins
-// fullscreen. Its state is the mock a test sets in st; nil (the zero value,
-// used by the conformance table) makes it stateless.
-type trailLayout struct {
-	columnsBase
-	st layoutState
-}
-
-const overflowTrail Overflow = "trail"
-
-func init() { testLayouts = append(testLayouts, trailLayout{}) }
-
-func (trailLayout) name() Overflow          { return overflowTrail }
-func (trailLayout) pinsFullscreen() bool    { return true }
-func (l trailLayout) newState() layoutState { return l.st }
-
 type trailCarry uint64
 
 func trailWorkspace(n int, st layoutState) *Workspace {
-	w := &Workspace{Overflow: overflowTrail, lay: trailLayout{st: st}, MaxColumns: 3,
+	w := &Workspace{Overflow: overflowTrail, lay: extensionLayout(overflowTrail, st), MaxColumns: 3,
 		Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}, Output: Rect{W: 1200, H: 900}, Gaps: 8}
 	for i := 0; i < n; i++ {
 		w.AddWindow(WindowID(i + 1))
