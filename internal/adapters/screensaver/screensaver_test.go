@@ -88,7 +88,7 @@ func serve(t *testing.T, address string) served {
 	go func() { done <- s.Run(ctx, Reports{Held: v.held, Activity: v.activity}) }()
 	t.Cleanup(func() {
 		cancel()
-		if err := <-done; err != nil {
+		if err := awaitRun(t, done); err != nil {
 			t.Error(err)
 		}
 	})
@@ -193,7 +193,11 @@ func TestSimulateUserActivity(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	<-v.activity
+	select {
+	case <-v.activity:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no activity")
+	}
 	select {
 	case <-v.activity:
 		t.Fatal("activity not coalesced")
@@ -367,7 +371,14 @@ func TestServeRetries(t *testing.T) {
 		defer close(stopped)
 		Serve(ctx, address, Reports{Held: held, Activity: make(chan struct{}, 1)}, 10*time.Millisecond, logging.For(ctx, "screensaver"))
 	}()
-	t.Cleanup(func() { cancel(); <-stopped })
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-stopped:
+		case <-time.After(2 * time.Second):
+			t.Error("Serve did not stop")
+		}
+	})
 	if _, err := other.ReleaseName(busName); err != nil {
 		t.Fatal(err)
 	}
@@ -423,7 +434,7 @@ func TestCallAfterStop(t *testing.T) {
 	c := connect(t, address)
 	waitOwner(t, c, func(owner string) bool { return owner != "" })
 	cancel()
-	if err := <-done; err != nil {
+	if err := awaitRun(t, done); err != nil {
 		t.Fatal(err)
 	}
 	callCtx, stop := context.WithTimeout(context.Background(), 2*time.Second)
@@ -434,5 +445,78 @@ func TestCallAfterStop(t *testing.T) {
 	}
 	if callCtx.Err() != nil {
 		t.Fatal("Inhibit waited on a stopped service")
+	}
+}
+
+func awaitRun(t *testing.T, done <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not stop")
+		return nil
+	}
+}
+
+// The first call is sent on the acquisition signal, without polling or a
+// readiness call that could mask a synchronous startup reader dropping it.
+func TestInhibitImmediatelyAfterNameAcquired(t *testing.T) {
+	address := privateBus(t)
+	c := connect(t, address)
+	if err := c.AddMatch("type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0='" + busName + "'"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		for {
+			m, err := c.ReadMessage()
+			if err != nil {
+				result <- err
+				return
+			}
+			if m.Type != zerobus.TypeSignal || m.Member != "NameOwnerChanged" {
+				continue
+			}
+			r := m.Body()
+			name := r.Str()
+			_ = r.Str()
+			owner := r.Str()
+			if r.Err() != nil || name != busName || owner == "" {
+				continue
+			}
+			var cookie uint32
+			err = c.Object(busName, "/ScreenSaver").CallWithContext(ctx, iface+".Inhibit", 0, "test", "video").Store(&cookie)
+			if err == nil && cookie == 0 {
+				err = errors.New("zero cookie")
+			}
+			result <- err
+			return
+		}
+	}()
+	// Closing the client also bounds the signal read if startup fails.
+	t.Cleanup(func() { _ = c.Close() })
+	s, err := New(ctx, address, logging.For(ctx, "screensaver"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx, Reports{Held: make(chan bool, 8)}) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := awaitRun(t, done); err != nil {
+			t.Error(err)
+		}
+	})
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		_ = c.Close()
+		t.Fatal("immediate Inhibit did not receive a cookie")
 	}
 }

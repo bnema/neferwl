@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -59,6 +60,7 @@ type logindPeer struct {
 	conn     *zerobus.Conn
 	commands chan func()
 	grants   chan grant
+	done     chan struct{}
 }
 
 func newPeer(t *testing.T, address string) *logindPeer {
@@ -69,8 +71,11 @@ func newPeer(t *testing.T, address string) *logindPeer {
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 	p := &logindPeer{conn: conn, commands: make(chan func()), grants: make(chan grant, 8)}
-	p.own(t)
+	if err := p.own(); err != nil {
+		t.Fatal(err)
+	}
 	done := make(chan struct{})
+	p.done = done
 	go func() {
 		defer close(done)
 		for {
@@ -119,12 +124,24 @@ func newPeer(t *testing.T, address string) *logindPeer {
 				_ = w.Close()
 				return
 			}
-			p.grants <- grant{what: what, mode: mode, hold: w, released: rd}
+			select {
+			case p.grants <- grant{what: what, mode: mode, hold: w, released: rd}:
+			case <-time.After(5 * time.Second):
+				_ = w.Close()
+				_ = rd.Close()
+				t.Error("grant delivery timed out")
+				return
+			}
 		}
 	}()
 	t.Cleanup(func() {
 		_ = conn.Close()
-		<-done
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("peer did not stop")
+			return
+		}
 		for {
 			select {
 			case g := <-p.grants:
@@ -138,11 +155,15 @@ func newPeer(t *testing.T, address string) *logindPeer {
 	return p
 }
 
-func (p *logindPeer) own(t *testing.T) {
-	t.Helper()
-	if r, err := p.conn.RequestName(logind, zerobus.NameFlagDoNotQueue); err != nil || r != zerobus.NamePrimaryOwner {
-		t.Fatal(r, err)
+func (p *logindPeer) own() error {
+	r, err := p.conn.RequestName(logind, zerobus.NameFlagDoNotQueue)
+	if err != nil {
+		return err
 	}
+	if r != zerobus.NamePrimaryOwner {
+		return fmt.Errorf("RequestName: got %d", r)
+	}
+	return nil
 }
 
 func (p *logindPeer) next(t *testing.T) grant {
@@ -279,19 +300,38 @@ func TestServeWaitsForLogind(t *testing.T) {
 	log.holding(t, 1)
 }
 
-func (p *logindPeer) release(t *testing.T) (uint32, error) {
-	done := make(chan struct{})
-	var err error
-	p.commands <- func() {
-		p.conn.NewCall(busDaemon, "/org/freedesktop/DBus", busDaemon, "ReleaseName", "s").Str(logind)
-		_, err = p.conn.Call()
-		close(done)
+// command reports errors on the test goroutine, never from the peer loop.
+func (p *logindPeer) command(t *testing.T, f func() error) error {
+	t.Helper()
+	result := make(chan error, 1)
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	select {
+	case p.commands <- func() { result <- f() }:
+	case <-p.done:
+		return fmt.Errorf("peer stopped before command")
+	case <-timer.C:
+		return fmt.Errorf("command submission timed out")
 	}
-	<-done
-	return 0, err
+	select {
+	case err := <-result:
+		return err
+	case <-p.done:
+		return fmt.Errorf("peer stopped during command")
+	case <-timer.C:
+		return fmt.Errorf("command result timed out")
+	}
+}
+func (p *logindPeer) release(t *testing.T) (uint32, error) {
+	return 0, p.command(t, func() error {
+		p.conn.NewCall(busDaemon, "/org/freedesktop/DBus", busDaemon, "ReleaseName", "s").Str(logind)
+		_, err := p.conn.Call()
+		return err
+	})
 }
 func (p *logindPeer) reown(t *testing.T) {
-	done := make(chan struct{})
-	p.commands <- func() { p.own(t); close(done) }
-	<-done
+	t.Helper()
+	if err := p.command(t, p.own); err != nil {
+		t.Fatal(err)
+	}
 }

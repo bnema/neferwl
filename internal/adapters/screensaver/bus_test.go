@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/zerobus"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestRunStartupFailures(t *testing.T) {
@@ -22,9 +24,10 @@ func TestRunStartupFailures(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			b := newMockbus(t)
-			b.EXPECT().RequestName(busName, uint32(zerobus.NameFlagDoNotQueue)).Return(tt.owner, tt.requestErr).Once()
-			if tt.owner == zerobus.NamePrimaryOwner {
-				b.EXPECT().AddMatch("type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg2=''").Return(tt.matchErr).Once()
+			match := b.EXPECT().AddMatch("type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg2=''").Return(tt.matchErr).Once()
+			if tt.matchErr == nil {
+				request := b.EXPECT().RequestName(busName, uint32(zerobus.NameFlagDoNotQueue)).Return(tt.owner, tt.requestErr).Once()
+				mock.InOrder(match, request)
 			}
 			b.EXPECT().Close().Return(nil).Once()
 			s := Service{conn: b, log: logging.For(context.Background(), "screensaver")}
@@ -87,7 +90,16 @@ func TestRunCanceledDuringStartup(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	b := newMockbus(t)
 	closed := make(chan struct{})
-	b.EXPECT().RequestName(busName, uint32(zerobus.NameFlagDoNotQueue)).RunAndReturn(func(string, uint32) (uint32, error) { cancel(); <-closed; return 0, zerobus.ErrClosed }).Once()
+	b.EXPECT().AddMatch("type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg2=''").Return(nil).Once()
+	b.EXPECT().RequestName(busName, uint32(zerobus.NameFlagDoNotQueue)).RunAndReturn(func(string, uint32) (uint32, error) {
+		cancel()
+		select {
+		case <-closed:
+		case <-time.After(2 * time.Second):
+			return 0, errors.New("close timed out")
+		}
+		return 0, zerobus.ErrClosed
+	}).Once()
 	b.EXPECT().Close().RunAndReturn(func() error { close(closed); return nil }).Once()
 	b.EXPECT().Close().Return(nil).Once()
 	s := Service{conn: b, log: logging.For(ctx, "screensaver")}

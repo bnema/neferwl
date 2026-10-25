@@ -95,15 +95,17 @@ func (s *Service) Run(ctx context.Context, reports Reports) (err error) {
 			err = nil
 		}
 	}()
+	if err := s.conn.AddMatch("type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg2=''"); err != nil {
+		return fmt.Errorf("watch bus names: %w", err)
+	}
+	// No synchronous bus calls after acquiring the public name: Call can
+	// discard client messages while waiting for its own reply.
 	owner, err := s.conn.RequestName(busName, zerobus.NameFlagDoNotQueue)
 	if err != nil {
 		return fmt.Errorf("request %s: %w", busName, err)
 	}
 	if owner != zerobus.NamePrimaryOwner {
 		return ErrNameTaken
-	}
-	if err := s.conn.AddMatch("type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg2=''"); err != nil {
-		return fmt.Errorf("watch bus names: %w", err)
 	}
 	raw, err := s.conn.SyscallConn()
 	if err != nil {
