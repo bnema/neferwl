@@ -195,6 +195,7 @@ func Run(ctx context.Context, path string, states <-chan ports.State, ids *works
 		case <-due:
 			waiting = false
 			flush(pending)
+			pending = ports.State{}
 			last = time.Now()
 		}
 	}
