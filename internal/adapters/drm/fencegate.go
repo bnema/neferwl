@@ -184,6 +184,16 @@ func (o *Output) waitFences(fences ...*os.File) {
 	if !o.cpuFences {
 		return
 	}
+	hasFence := false
+	for _, f := range fences {
+		if f != nil {
+			hasFence = true
+			break
+		}
+	}
+	if !hasFence {
+		return
+	}
 	ctx := o.runContext
 	if ctx == nil {
 		ctx = context.Background()

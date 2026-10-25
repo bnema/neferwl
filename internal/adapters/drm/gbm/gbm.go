@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"sync"
@@ -86,21 +87,22 @@ func load() error {
 	return loadErr
 }
 
-// Device is a GBM device on a duplicate of a DRM device fd. Close its
+// Device is a GBM device on an independent DRM device fd. Close its
 // buffers before the device.
 type Device struct {
 	dev uintptr
 	fd  int
 }
 
-// Open creates a GBM device on a duplicate of fd, which stays the caller's.
+// Open creates a GBM device on a reopened fd, which stays the caller's.
+// Reopening isolates GEM handles: KMS closes its PRIME imports independently.
 func Open(fd int) (*Device, error) {
 	if err := load(); err != nil {
 		return nil, err
 	}
-	dup, err := unix.FcntlInt(uintptr(fd), unix.F_DUPFD_CLOEXEC, 0)
+	dup, err := reopenDevice(fd)
 	if err != nil {
-		return nil, fmt.Errorf("duplicate drm fd: %w", err)
+		return nil, fmt.Errorf("reopen drm fd: %w", err)
 	}
 	dev := createDevice(int32(dup))
 	if dev == 0 {
@@ -108,6 +110,36 @@ func Open(fd int) (*Device, error) {
 		return nil, errors.New("gbm_create_device failed")
 	}
 	return &Device{dev: dev, fd: dup}, nil
+}
+
+// reopenDevice prefers the same device's render node: unlike a primary node,
+// it needs neither DRM master nor authentication for allocation. A new open-file
+// description isolates GBM's GEM handles from KMS's transient PRIME imports.
+func reopenDevice(fd int) (int, error) {
+	return reopenDeviceAt(fd, "/sys/dev/char", "/dev/dri")
+}
+
+// Directory parameters allow tests to exercise discovery with real files.
+func reopenDeviceAt(fd int, sysChar, devDRI string) (int, error) {
+	var st unix.Stat_t
+	if err := unix.Fstat(fd, &st); err != nil {
+		return -1, err
+	}
+	drmDir := filepath.Join(sysChar, fmt.Sprintf("%d:%d", unix.Major(st.Rdev), unix.Minor(st.Rdev)), "device", "drm")
+	nodes, err := filepath.Glob(filepath.Join(drmDir, "renderD*"))
+	if err != nil {
+		return -1, err
+	}
+	if len(nodes) > 0 {
+		// Do not fall back on open failure: a present render node should be
+		// usable, and reopening the primary could fail authentication later.
+		return unix.Open(filepath.Join(devDRI, filepath.Base(nodes[0])), unix.O_RDWR|unix.O_CLOEXEC, 0)
+	}
+	path, err := os.Readlink(fmt.Sprintf("/proc/self/fd/%d", fd))
+	if err != nil {
+		return -1, err
+	}
+	return unix.Open(path, unix.O_RDWR|unix.O_CLOEXEC, 0)
 }
 
 // Close destroys the device and its fd.

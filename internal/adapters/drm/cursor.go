@@ -162,9 +162,11 @@ func (c *Cursor) useFallback(hdrNits float64) (bool, error) {
 	}
 	c.imgs.close()
 	c.install(imgs, allocVulkan)
+	last := c.last
+	c.last = laterImage{}
 	l := c.later
 	if l == nil && c.image {
-		l = &c.last
+		l = &last
 	}
 	c.image, c.later = false, nil
 	if l == nil {
@@ -182,6 +184,7 @@ func (c *Cursor) setImage(pixels []byte, w, h, hotX, hotY int, hdrNits float64) 
 	c.later = nil
 	if w <= 0 || h <= 0 || len(pixels) < w*h*4 {
 		c.image = false
+		c.last = laterImage{}
 		return nil
 	}
 	if c.imgs == nil {
@@ -196,7 +199,9 @@ func (c *Cursor) setImage(pixels []byte, w, h, hotX, hotY int, hdrNits float64) 
 		return err
 	}
 	c.cur, c.image, c.hotX, c.hotY = next, true, hotX, hotY
-	c.last = laterImage{pixels: append(c.last.pixels[:0], pixels[:w*h*4]...), w: w, h: h, hotX: hotX, hotY: hotY}
+	if c.alloc == allocDumb && !c.off {
+		c.last = laterImage{pixels: append(c.last.pixels[:0], pixels[:w*h*4]...), w: w, h: h, hotX: hotX, hotY: hotY}
+	}
 	return nil
 }
 
@@ -281,5 +286,6 @@ func (c *Cursor) free() {
 	}
 	c.fbs = [2]uint32{}
 	c.image, c.later = false, nil
+	c.last = laterImage{}
 	c.screen, c.flying = 0, false
 }

@@ -281,3 +281,10 @@ func TestCommitWaitsForItsFenceOnce(t *testing.T) {
 		}
 	}
 }
+
+func TestWaitNilFencesAllocations(t *testing.T) {
+	o := &Output{cpuFences: true}
+	if n := testing.AllocsPerRun(100, func() { o.waitFences(nil, nil, nil) }); n != 0 {
+		t.Fatalf("nil fence wait allocated %g times", n)
+	}
+}

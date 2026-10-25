@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/mock"
@@ -405,14 +406,17 @@ func TestTimedOutCaptureIsReleasedWhenDone(t *testing.T) {
 // A capture that completes after its scan timed out is released while the
 // worker is idle, without another scan, and its reply does not linger.
 func TestHintLateCaptureReaped(t *testing.T) {
-	h := startCapturing(t, 50*time.Millisecond)
-	h.requests <- ports.HintScanRequest{Seq: 1, Output: "o", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 32}}}}
-	creq := <-h.captures
-	res := <-h.results
-	require.ErrorIs(t, res.Err, ErrTimeout)
-	// The worker is idle; the output finally answers.
-	h.captured <- ports.CaptureDone{ID: creq.ID, Output: creq.Output}
-	require.Eventually(t, func() bool { return len(h.captured) == 0 }, time.Second, time.Millisecond)
+	synctest.Test(t, func(t *testing.T) {
+		h := startCapturing(t, 50*time.Millisecond)
+		h.requests <- ports.HintScanRequest{Seq: 1, Output: "o", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 32}}}}
+		creq := <-h.captures
+		res := <-h.results
+		require.ErrorIs(t, res.Err, ErrTimeout)
+		// The worker is idle; the output finally answers.
+		h.captured <- ports.CaptureDone{ID: creq.ID, Output: creq.Output}
+		synctest.Wait()
+		require.Empty(t, h.captured)
+	})
 }
 
 func TestScanLogsRawAndPreparedCounts(t *testing.T) {

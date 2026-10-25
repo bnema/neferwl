@@ -418,6 +418,9 @@ func TestCursorFallbackState(t *testing.T) {
 			if c.screen != 0 || c.flying || c.flight != (cursorState{}) || c.applied != (cursorState{}) || c.later != nil {
 				t.Fatalf("stale scanout state: screen %d flight %+v flying %v applied %+v", c.screen, c.flight, c.flying, c.applied)
 			}
+			if c.last.pixels != nil {
+				t.Fatal("fallback retained replay pixels")
+			}
 			c.landed()
 			if c.screen != 0 {
 				t.Fatal("old pending flight resurrected")
@@ -486,6 +489,9 @@ func TestCursorFallbackFailureGoesOff(t *testing.T) {
 				k.EXPECT().rmFB(uint32(81)).Return(nil).Once()
 			}
 			c.free()
+			if c.last.pixels != nil {
+				t.Fatal("free retained replay pixels")
+			}
 		})
 	}
 }

@@ -91,6 +91,9 @@ func (w *worker) chain(ctx context.Context, req ports.HintScanRequest, capture f
 		}
 	}
 	for _, s := range w.sources {
+		if req.LinksOnly && s.kind() == ports.HintSourceDetector {
+			continue
+		}
 		var wins []ports.HintWindow
 		for _, win := range req.Windows {
 			if !covered[win.ID] {
