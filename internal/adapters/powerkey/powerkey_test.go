@@ -40,7 +40,9 @@ func startBus(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	checkStartup := boundIO(t, "dbus-daemon startup", func() { _ = cmd.Process.Kill(); _ = out.Close() })
 	line, err := bufio.NewReader(out).ReadString('\n')
+	checkStartup()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,9 +73,11 @@ func newPeer(t *testing.T, address string) *logindPeer {
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 	p := &logindPeer{conn: conn, commands: make(chan func()), grants: make(chan grant, 8)}
+	checkName := boundIO(t, "RequestName", func() { _ = conn.Close() })
 	if err := p.own(); err != nil {
 		t.Fatal(err)
 	}
+	checkName()
 	done := make(chan struct{})
 	p.done = done
 	go func() {
@@ -303,6 +307,10 @@ func TestServeWaitsForLogind(t *testing.T) {
 // command reports errors on the test goroutine, never from the peer loop.
 func (p *logindPeer) command(t *testing.T, f func() error) error {
 	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stop := context.AfterFunc(ctx, func() { _ = p.conn.Close() })
+	defer stop()
 	result := make(chan error, 1)
 	timer := time.NewTimer(5 * time.Second)
 	defer timer.Stop()

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bnema/zerobus"
 	"github.com/stretchr/testify/mock"
@@ -36,7 +37,7 @@ func TestScreenshotRunsNefercapOnFocusedOutput(t *testing.T) {
 		writeShot(t, args)
 		return nil
 	}).Once()
-	name, m := callErr(c, nameScreenshot, pathScreenshot, ifaceScreenshot, "Screenshot", "bbs", func(e *zerobus.Encoder) {
+	name, m := callErr(t, c, nameScreenshot, pathScreenshot, ifaceScreenshot, "Screenshot", "bbs", func(e *zerobus.Encoder) {
 		e.Bool(true)
 		e.Bool(true)
 		e.Str("ignored")
@@ -46,7 +47,7 @@ func TestScreenshotRunsNefercapOnFocusedOutput(t *testing.T) {
 	}
 	r := m.Body()
 	ok, file := r.Bool(), strings.Clone(r.Str())
-	args := <-got
+	args := receive(t, got)
 	if !ok || !strings.HasPrefix(file, filepath.Join(rt, "neferwl", "screenshot-")) || !strings.HasSuffix(file, ".png") {
 		t.Fatalf("reply %v %q", ok, file)
 	}
@@ -81,17 +82,17 @@ func TestScreenshotAreaMapsToRegion(t *testing.T) {
 		}
 	}
 	// HEADLESS-2 sits at x=64, 32x32: the area starts at (70,4), wider than the rest of the output.
-	if name, _ := callErr(c, nameScreenshot, pathScreenshot, ifaceScreenshot, "ScreenshotArea", "iiiibs", area(70, 4, 100, 10)); name != "" {
+	if name, _ := callErr(t, c, nameScreenshot, pathScreenshot, ifaceScreenshot, "ScreenshotArea", "iiiibs", area(70, 4, 100, 10)); name != "" {
 		t.Fatal(name)
 	}
-	args := <-got
+	args := receive(t, got)
 	if args[1] != "-output" || args[2] != "HEADLESS-2" || args[3] != "-region" || args[4] != "6,4,26x10" {
 		t.Fatalf("args %v", args)
 	}
-	if name, _ := callErr(c, nameScreenshot, pathScreenshot, ifaceScreenshot, "ScreenshotArea", "iiiibs", area(500, 4, 10, 10)); name != errInvalidArgs {
+	if name, _ := callErr(t, c, nameScreenshot, pathScreenshot, ifaceScreenshot, "ScreenshotArea", "iiiibs", area(500, 4, 10, 10)); name != errInvalidArgs {
 		t.Fatalf("outside: %q", name)
 	}
-	if name, _ := callErr(c, nameScreenshot, pathScreenshot, ifaceScreenshot, "ScreenshotArea", "iiiibs", area(0, 0, 0, 10)); name != errInvalidArgs {
+	if name, _ := callErr(t, c, nameScreenshot, pathScreenshot, ifaceScreenshot, "ScreenshotArea", "iiiibs", area(0, 0, 0, 10)); name != errInvalidArgs {
 		t.Fatalf("empty: %q", name)
 	}
 }
@@ -102,11 +103,18 @@ func TestScreenshotAreaMapsToRegion(t *testing.T) {
 func TestInteractiveScreenshotBusyAndFailure(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	h, c := ready(t, harnessOpts{})
-	release := make(chan error)
+	checkReads := boundIO(t, "interactive screenshot replies", func() { _ = c.Close() })
+	defer checkReads()
+	release := make(chan error, 2)
 	got := make(chan []string, 2)
 	h.run.EXPECT().Run(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, args []string) error {
 		got <- slices.Clone(args)
-		err := <-release
+		var err error
+		select {
+		case err = <-release:
+		case <-time.After(5 * time.Second):
+			return context.DeadlineExceeded
+		}
 		if err == nil {
 			writeShot(t, args)
 		}
@@ -118,12 +126,12 @@ func TestInteractiveScreenshotBusyAndFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	args := <-got
+	args := receive(t, got)
 	if len(args) != 3 || args[0] != "shot" || args[1] != "-file" {
 		t.Fatalf("args %v", args)
 	}
 	other := h.client()
-	if name, _ := callErr(other, nameScreenshot, pathScreenshot, ifaceScreenshot, "InteractiveScreenshot", "", nil); name != errLimits {
+	if name, _ := callErr(t, other, nameScreenshot, pathScreenshot, ifaceScreenshot, "InteractiveScreenshot", "", nil); name != errLimits {
 		t.Fatalf("second shot: %q", name)
 	}
 	release <- nil
@@ -141,7 +149,7 @@ func TestInteractiveScreenshotBusyAndFailure(t *testing.T) {
 	if _, err := c.Send(); err != nil {
 		t.Fatal(err)
 	}
-	<-got
+	receive(t, got)
 	release <- os.ErrNotExist
 	m, err = c.ReadMessage()
 	if err != nil || m.ErrorName != errFailed {
@@ -154,7 +162,7 @@ func TestScreenshotUnsupportedMethods(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	_, c := ready(t, harnessOpts{})
 	for _, member := range []string{"SelectArea", "ScreenshotWindow", "PickColor", "FlashArea"} {
-		if name, _ := callErr(c, nameScreenshot, pathScreenshot, ifaceScreenshot, member, "", nil); name != errNotSupported && name != errInvalidArgs {
+		if name, _ := callErr(t, c, nameScreenshot, pathScreenshot, ifaceScreenshot, member, "", nil); name != errNotSupported && name != errInvalidArgs {
 			t.Errorf("%s: %q", member, name)
 		}
 	}
@@ -198,7 +206,7 @@ func TestScreenshotWithoutUsableFileIsNotSuccess(t *testing.T) {
 					sig = "bbs"
 					body = func(e *zerobus.Encoder) { e.Bool(false); e.Bool(false); e.Str("x") }
 				}
-				errName, m := callErr(c, nameScreenshot, pathScreenshot, ifaceScreenshot, member, sig, body)
+				errName, m := callErr(t, c, nameScreenshot, pathScreenshot, ifaceScreenshot, member, sig, body)
 				if errName != "" {
 					t.Fatalf("%s: %s", member, errName)
 				}
@@ -234,7 +242,7 @@ func TestStaleScreenshotResultIsDropped(t *testing.T) {
 	p.s.shotSeq++
 	p.s.shot = shotState{busy: true, id: p.s.shotSeq, path: filepath.Join(t.TempDir(), "x.png")}
 	p.s.runShot([]string{"shot"})
-	<-started
+	receive(t, started)
 	// A result of some earlier job is in the transport: it is not this job's.
 	p.s.onShotDone(&shotResult{ready: true, id: p.s.shotSeq - 1, made: true})
 	if !p.s.shot.busy {

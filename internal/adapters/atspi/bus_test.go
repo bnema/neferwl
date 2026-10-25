@@ -2,6 +2,9 @@ package atspi
 
 import (
 	"bufio"
+	"bytes"
+	"context"
+	"github.com/bnema/zerowrap"
 	"os"
 	"os/exec"
 	"strings"
@@ -28,7 +31,9 @@ func startBus(t *testing.T) string {
 	require.NoError(t, err)
 	require.NoError(t, cmd.Start())
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	checkStartup := boundIO(t, "dbus-daemon startup", func() { _ = cmd.Process.Kill(); _ = out.Close() })
 	line, err := bufio.NewReader(out).ReadString('\n')
+	checkStartup()
 	require.NoError(t, err)
 	return strings.TrimSpace(line)
 }
@@ -41,8 +46,10 @@ func TestDoDecodesMatchesPipelined(t *testing.T) {
 	app, err := zerobus.Dial(addr)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = app.Close() })
+	checkName := boundIO(t, "RequestName", func() { _ = app.Close() })
 	_, err = app.RequestName("org.test.App", 0)
 	require.NoError(t, err)
+	checkName()
 
 	done := make(chan struct{})
 	go func() {
@@ -150,8 +157,10 @@ func TestDoTimesOutOnSilentApp(t *testing.T) {
 	app, err := zerobus.Dial(addr)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = app.Close() })
+	checkName := boundIO(t, "RequestName", func() { _ = app.Close() })
 	_, err = app.RequestName("org.test.Mute", 0)
 	require.NoError(t, err)
+	checkName()
 
 	cc, err := zerobus.Dial(addr)
 	require.NoError(t, err)
@@ -173,8 +182,10 @@ func TestDoDeadlineBreaksConnection(t *testing.T) {
 	app, err := zerobus.Dial(addr)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = app.Close() })
+	checkName := boundIO(t, "RequestName", func() { _ = app.Close() })
 	_, err = app.RequestName("org.test.Mute", 0)
 	require.NoError(t, err)
+	checkName()
 
 	cc, err := zerobus.Dial(addr)
 	require.NoError(t, err)
@@ -194,4 +205,58 @@ func TestDoDeadlineBreaksConnection(t *testing.T) {
 	// The socket is closed: the next batch fails at once.
 	rep = b.Do(time.Now().Add(time.Second), time.Second, mute)
 	require.ErrorIs(t, rep[0].err, ErrBroken)
+}
+
+// Cancel while IsEnabled is waiting on a real service. Its failed Call is
+// shutdown, whereas expiry of the connector's own budget must still warn.
+func TestConnectCancelledWhileEnabling(t *testing.T) {
+	address := startBus(t)
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", address)
+	app, err := zerobus.Dial(address)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = app.Close() })
+	check := boundIO(t, "own accessibility name", func() { _ = app.Close() })
+	_, err = app.RequestName(a11yBusName, 0)
+	check()
+	require.NoError(t, err)
+	var output bytes.Buffer // read only after Connect has returned
+	ctx := zerowrap.WithCtx(context.Background(), zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &output}))
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	peerDone := make(chan error, 1)
+	stopPeer := context.AfterFunc(ctx, func() { _ = app.Close() })
+	defer stopPeer()
+	go func() {
+		for {
+			m, err := app.ReadMessage()
+			if err != nil {
+				peerDone <- err
+				return
+			}
+			if m.Type != zerobus.TypeMethodCall {
+				continue
+			}
+			if m.Member == "GetAddress" {
+				app.NewReply(m, "s").Str(address)
+				if _, err := app.Send(); err != nil {
+					peerDone <- err
+					return
+				}
+			} else if m.Member == "Set" {
+				cancel()
+				peerDone <- nil
+				return
+			}
+		}
+	}()
+	tr, err := (busConnector{}).Connect(ctx)
+	require.Error(t, err)
+	require.Nil(t, tr)
+	select {
+	case err := <-peerDone:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("accessibility peer did not stop")
+	}
+	require.NotContains(t, output.String(), "could not enable accessibility")
 }

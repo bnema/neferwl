@@ -1,9 +1,11 @@
 package atspi
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"github.com/bnema/zerowrap"
 	"runtime"
 	"testing"
 	"time"
@@ -359,4 +361,31 @@ func TestTargetsPopupRegion(t *testing.T) {
 		Rect: ports.Rect{W: 800, H: 600}, Popups: []ports.Rect{{X: 800, Y: 10, W: 100, H: 100}}}}, false)
 	require.NoError(t, err)
 	require.Equal(t, []ports.HintTarget{{Rect: ports.Rect{X: 810, Y: 20, W: 40, H: 20}, Kind: ports.HintLink, Source: ports.HintSourceATSPI, Score: 1, Window: 7}}, targets)
+}
+
+// Parent shutdown is not an availability failure. In particular it must not
+// delay a later attempt; the adapter's own deadline is still a real failure.
+func TestFinishCancellationDoesNotWarnOrBackoff(t *testing.T) {
+	for _, cancelled := range []bool{true, false} {
+		t.Run(fmt.Sprint(cancelled), func(t *testing.T) {
+			var output bytes.Buffer
+			ctx := zerowrap.WithCtx(context.Background(), zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &output}))
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			if cancelled {
+				cancel()
+			}
+			s := &Source{attempt: make(chan dialResult, 1)}
+			at := time.Now()
+			s.finish(ctx, dialResult{err: context.DeadlineExceeded, at: at})
+			require.Nil(t, s.attempt)
+			if cancelled {
+				require.True(t, s.retryAt.IsZero())
+				require.Empty(t, output.String())
+			} else {
+				require.Equal(t, at.Add(retryEvery), s.retryAt)
+				require.Contains(t, output.String(), "accessibility hint targets unavailable")
+			}
+		})
+	}
 }

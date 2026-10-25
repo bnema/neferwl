@@ -76,6 +76,7 @@ func New() *Source { return &Source{dial: busConnector{}} }
 type busConnector struct{}
 
 func (busConnector) Connect(ctx context.Context) (transport, error) {
+	parent := ctx
 	log := logging.For(ctx, "atspi")
 	ctx, cancel := context.WithTimeout(ctx, connectBudget)
 	defer cancel()
@@ -107,6 +108,9 @@ func (busConnector) Connect(ctx context.Context) (transport, error) {
 	e.Variant("b")
 	e.Bool(true)
 	if _, err := sess.Call(); err != nil {
+		if parent.Err() != nil {
+			return nil, parent.Err()
+		}
 		// Toolkits that already see the bus keep working.
 		log.Warn().Err(err).Msg("could not enable accessibility")
 	} else {
@@ -186,6 +190,12 @@ func (s *Source) ensure(ctx context.Context) transport {
 // an error starts the backoff from the time the attempt finished.
 func (s *Source) finish(ctx context.Context, r dialResult) {
 	s.attempt = nil
+	if ctx.Err() != nil {
+		if r.tr != nil {
+			_ = r.tr.Close()
+		}
+		return
+	}
 	if r.err != nil || r.tr == nil {
 		s.retryAt = r.at.Add(retryEvery)
 		err := r.err

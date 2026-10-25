@@ -40,7 +40,7 @@ func ready(t *testing.T, o harnessOpts) (*svcHarness, *zerobus.Conn) {
 	// that needs it: a round trip through the service orders them.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		_, m := callErr(c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil)
+		_, m := callErr(t, c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil)
 		if m != nil && m.Signature == "a{ta{sv}}" {
 			r := m.Body()
 			if end := r.Array('{'); r.More(end) {
@@ -55,7 +55,7 @@ func ready(t *testing.T, o harnessOpts) (*svcHarness, *zerobus.Conn) {
 
 func createSession(t *testing.T, c *zerobus.Conn) string {
 	t.Helper()
-	name, m := callErr(c, nameScreenCast, pathScreenCast, ifaceScreenCast, "CreateSession", "a{sv}", func(e *zerobus.Encoder) {
+	name, m := callErr(t, c, nameScreenCast, pathScreenCast, ifaceScreenCast, "CreateSession", "a{sv}", func(e *zerobus.Encoder) {
 		a := e.BeginArray('{')
 		e.EndArray(a)
 	})
@@ -65,8 +65,8 @@ func createSession(t *testing.T, c *zerobus.Conn) string {
 	return strings.Clone(m.Body().ObjectPath())
 }
 
-func recordMonitor(c *zerobus.Conn, sess, connector string) (string, string) {
-	name, m := callErr(c, nameScreenCast, sess, ifaceSession, "RecordMonitor", "sa{sv}", func(e *zerobus.Encoder) {
+func recordMonitor(t *testing.T, c *zerobus.Conn, sess, connector string) (string, string) {
+	name, m := callErr(t, c, nameScreenCast, sess, ifaceSession, "RecordMonitor", "sa{sv}", func(e *zerobus.Encoder) {
 		e.Str(connector)
 		a := e.BeginArray('{')
 		e.Struct()
@@ -91,7 +91,7 @@ func TestMethodMatrix(t *testing.T) {
 	}
 
 	// Properties of the root object.
-	name, m := callErr(c, nameScreenCast, pathScreenCast, ifaceProps, "Get", "ss", func(e *zerobus.Encoder) { e.Str(ifaceScreenCast); e.Str("Version") })
+	name, m := callErr(t, c, nameScreenCast, pathScreenCast, ifaceProps, "Get", "ss", func(e *zerobus.Encoder) { e.Str(ifaceScreenCast); e.Str("Version") })
 	if name != "" || m.Signature != "v" {
 		t.Fatalf("Get Version: %s %v", name, m)
 	}
@@ -99,10 +99,10 @@ func TestMethodMatrix(t *testing.T) {
 	if sig := r.Variant(); sig != "i" || r.Int32() != 4 {
 		t.Fatal("Version is not 4")
 	}
-	if name, _ = callErr(c, nameScreenCast, pathScreenCast, ifaceProps, "Get", "ss", func(e *zerobus.Encoder) { e.Str(ifaceScreenCast); e.Str("Nope") }); name != errUnknownProperty {
+	if name, _ = callErr(t, c, nameScreenCast, pathScreenCast, ifaceProps, "Get", "ss", func(e *zerobus.Encoder) { e.Str(ifaceScreenCast); e.Str("Nope") }); name != errUnknownProperty {
 		t.Fatalf("unknown property: %q", name)
 	}
-	if name, _ = callErr(c, nameScreenCast, pathScreenCast, ifaceProps, "Set", "ssv", func(e *zerobus.Encoder) {
+	if name, _ = callErr(t, c, nameScreenCast, pathScreenCast, ifaceProps, "Set", "ssv", func(e *zerobus.Encoder) {
 		e.Str(ifaceScreenCast)
 		e.Str("Version")
 		e.Variant("i")
@@ -110,23 +110,23 @@ func TestMethodMatrix(t *testing.T) {
 	}); name != errPropertyReadOnly {
 		t.Fatalf("Set: %q", name)
 	}
-	name, m = callErr(c, nameScreenCast, pathScreenCast, ifaceProps, "GetAll", "s", func(e *zerobus.Encoder) { e.Str(ifaceScreenCast) })
+	name, m = callErr(t, c, nameScreenCast, pathScreenCast, ifaceProps, "GetAll", "s", func(e *zerobus.Encoder) { e.Str(ifaceScreenCast) })
 	if name != "" || m.Signature != "a{sv}" {
 		t.Fatalf("GetAll: %s", name)
 	}
 
 	// Streams: the monitor, the window, and what is not supported.
 	stream, got := "", ""
-	if name, stream = recordMonitor(c, sess, "HEADLESS-1"); name != "" {
+	if name, stream = recordMonitor(t, c, sess, "HEADLESS-1"); name != "" {
 		t.Fatalf("RecordMonitor: %s", name)
 	}
 	if stream != "/org/gnome/Mutter/ScreenCast/Stream/u1" {
 		t.Fatalf("stream path %q", stream)
 	}
-	if name, _ = recordMonitor(c, sess, "NOPE-1"); name != errInvalidArgs {
+	if name, _ = recordMonitor(t, c, sess, "NOPE-1"); name != errInvalidArgs {
 		t.Fatalf("RecordMonitor of a missing monitor: %q", name)
 	}
-	name, m = callErr(c, nameScreenCast, sess, ifaceSession, "RecordWindow", "a{sv}", func(e *zerobus.Encoder) {
+	name, m = callErr(t, c, nameScreenCast, sess, ifaceSession, "RecordWindow", "a{sv}", func(e *zerobus.Encoder) {
 		a := e.BeginArray('{')
 		e.Struct()
 		e.Str("window-id")
@@ -141,7 +141,7 @@ func TestMethodMatrix(t *testing.T) {
 	if got != "/org/gnome/Mutter/ScreenCast/Stream/u2" {
 		t.Fatalf("window stream path %q", got)
 	}
-	name, _ = callErr(c, nameScreenCast, sess, ifaceSession, "RecordWindow", "a{sv}", func(e *zerobus.Encoder) {
+	name, _ = callErr(t, c, nameScreenCast, sess, ifaceSession, "RecordWindow", "a{sv}", func(e *zerobus.Encoder) {
 		a := e.BeginArray('{')
 		e.Struct()
 		e.Str("window-id")
@@ -152,7 +152,7 @@ func TestMethodMatrix(t *testing.T) {
 	if name != errInvalidArgs {
 		t.Fatalf("RecordWindow of a closed window: %q", name)
 	}
-	if name, _ = callErr(c, nameScreenCast, sess, ifaceSession, "RecordArea", "iiiia{sv}", func(e *zerobus.Encoder) {
+	if name, _ = callErr(t, c, nameScreenCast, sess, ifaceSession, "RecordArea", "iiiia{sv}", func(e *zerobus.Encoder) {
 		e.Int32(0)
 		e.Int32(0)
 		e.Int32(1)
@@ -163,7 +163,7 @@ func TestMethodMatrix(t *testing.T) {
 	}
 
 	// The stream answers GetAll with its parameters before Start.
-	name, m = callErr(c, nameScreenCast, stream, ifaceProps, "GetAll", "s", func(e *zerobus.Encoder) { e.Str(ifaceStream) })
+	name, m = callErr(t, c, nameScreenCast, stream, ifaceProps, "GetAll", "s", func(e *zerobus.Encoder) { e.Str(ifaceStream) })
 	if name != "" {
 		t.Fatalf("stream GetAll: %s", name)
 	}
@@ -190,7 +190,7 @@ func TestMethodMatrix(t *testing.T) {
 	}
 
 	// Introspect and DisplayConfig properties.
-	name, m = callErr(c, nameIntrospect, pathIntrospect, ifaceProps, "Get", "ss", func(e *zerobus.Encoder) { e.Str(ifaceIntrospect); e.Str("version") })
+	name, m = callErr(t, c, nameIntrospect, pathIntrospect, ifaceProps, "Get", "ss", func(e *zerobus.Encoder) { e.Str(ifaceIntrospect); e.Str("version") })
 	if name != "" {
 		t.Fatalf("version: %s", name)
 	}
@@ -198,16 +198,16 @@ func TestMethodMatrix(t *testing.T) {
 	if r.Variant() != "u" || r.Uint32() != 1 {
 		t.Fatal("Introspect version is not 1")
 	}
-	if name, _ = callErr(c, nameDisplayConfig, pathDisplayConfig, ifaceDisplayConfig, "ApplyMonitorsConfig", "", nil); name == "" {
+	if name, _ = callErr(t, c, nameDisplayConfig, pathDisplayConfig, ifaceDisplayConfig, "ApplyMonitorsConfig", "", nil); name == "" {
 		t.Fatal("ApplyMonitorsConfig is not supported")
 	}
-	if name, _ = callErr(c, nameScreenCast, "/org/gnome/Mutter/ScreenCast/Session/u99", ifaceSession, "Stop", "", nil); name != errUnknownObject {
+	if name, _ = callErr(t, c, nameScreenCast, "/org/gnome/Mutter/ScreenCast/Session/u99", ifaceSession, "Stop", "", nil); name != errUnknownObject {
 		t.Fatalf("unknown session: %q", name)
 	}
-	if name, _ = callErr(c, nameScreenCast, sess, ifaceSession, "Stop", "", nil); name != "" {
+	if name, _ = callErr(t, c, nameScreenCast, sess, ifaceSession, "Stop", "", nil); name != "" {
 		t.Fatalf("Stop: %q", name)
 	}
-	if name, _ = callErr(c, nameScreenCast, sess, ifaceSession, "Stop", "", nil); name != errUnknownObject {
+	if name, _ = callErr(t, c, nameScreenCast, sess, ifaceSession, "Stop", "", nil); name != errUnknownObject {
 		t.Fatalf("Stop twice: %q", name)
 	}
 }
@@ -219,12 +219,14 @@ func TestStopSignalsClosedToOwner(t *testing.T) {
 	other := h.client()
 	rule := "type='signal',interface='" + ifaceSession + "'"
 	for _, x := range []*zerobus.Conn{c, other} {
+		checkMatch := boundIO(t, "AddMatch", func() { _ = x.Close() })
+		defer checkMatch()
 		if err := x.AddMatch(rule); err != nil {
 			t.Fatal(err)
 		}
 	}
 	sess := createSession(t, c)
-	if name, _ := callErr(c, nameScreenCast, sess, ifaceSession, "Stop", "", nil); name != "" {
+	if name, _ := callErr(t, c, nameScreenCast, sess, ifaceSession, "Stop", "", nil); name != "" {
 		t.Fatal(name)
 	}
 	m := readUntil(t, c, "Closed")
@@ -238,6 +240,8 @@ func TestStopSignalsClosedToOwner(t *testing.T) {
 		}
 	}
 	other.NewCall("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "GetId", "")
+	checkCall := boundIO(t, "bus call", func() { _ = other.Close() })
+	defer checkCall()
 	if _, err := other.Call(); err != nil {
 		t.Fatal(err)
 	}
@@ -245,6 +249,8 @@ func TestStopSignalsClosedToOwner(t *testing.T) {
 
 func readUntil(t *testing.T, c *zerobus.Conn, member string) *zerobus.Message {
 	t.Helper()
+	check := boundIO(t, "signal "+member, func() { _ = c.Close() })
+	defer check()
 	for {
 		m, err := c.ReadMessage()
 		if err != nil {
@@ -274,7 +280,7 @@ func TestDisallowedCallerGetsAccessDenied(t *testing.T) {
 		{nameScreenshot, pathScreenshot, ifaceScreenshot, "Screenshot", "bbs", func(e *zerobus.Encoder) { e.Bool(false); e.Bool(false); e.Str("x") }},
 		{nameIntrospect, pathIntrospect, ifacePeer, "Ping", "", nil},
 	} {
-		if name, _ := callErr(c, tc.dest, tc.path, tc.iface, tc.member, tc.sig, tc.body); name != errAccessDenied {
+		if name, _ := callErr(t, c, tc.dest, tc.path, tc.iface, tc.member, tc.sig, tc.body); name != errAccessDenied {
 			t.Errorf("%s.%s: %q", tc.iface, tc.member, name)
 		}
 	}
@@ -291,7 +297,7 @@ func TestPolicyChangeApplies(t *testing.T) {
 	h := newSvcHarness(t, harnessOpts{allow: captureallow.Closed()})
 	c := h.client()
 	h.waitName(c, nameIntrospect)
-	if name, _ := callErr(c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
+	if name, _ := callErr(t, c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
 		t.Fatalf("closed policy: %q", name)
 	}
 }
@@ -300,15 +306,15 @@ func TestPolicyChangeApplies(t *testing.T) {
 // check is caught at CreateSession.
 func TestExecAfterFirstCheckIsCaught(t *testing.T) {
 	h, c := ready(t, harnessOpts{})
-	if name, _ := callErr(c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != "" {
+	if name, _ := callErr(t, c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != "" {
 		t.Fatalf("first call: %q", name)
 	}
 	h.peers.exe.Store("/usr/bin/evil")
 	// Not a privileged entry point: the cached executable still serves it.
-	if name, _ := callErr(c, nameDisplayConfig, pathDisplayConfig, ifaceDisplayConfig, "GetCurrentState", "", nil); name != "" {
+	if name, _ := callErr(t, c, nameDisplayConfig, pathDisplayConfig, ifaceDisplayConfig, "GetCurrentState", "", nil); name != "" {
 		t.Fatalf("cached call: %q", name)
 	}
-	name, _ := callErr(c, nameScreenCast, pathScreenCast, ifaceScreenCast, "CreateSession", "a{sv}", func(e *zerobus.Encoder) { e.EndArray(e.BeginArray('{')) })
+	name, _ := callErr(t, c, nameScreenCast, pathScreenCast, ifaceScreenCast, "CreateSession", "a{sv}", func(e *zerobus.Encoder) { e.EndArray(e.BeginArray('{')) })
 	if name != errAccessDenied {
 		t.Fatalf("CreateSession after exec: %q", name)
 	}
@@ -320,7 +326,7 @@ func TestPidMismatchIsRefused(t *testing.T) {
 	h.peers.exePid = func(open int) int { return open + 1 }
 	c := h.client()
 	h.waitName(c, nameIntrospect)
-	if name, _ := callErr(c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
+	if name, _ := callErr(t, c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
 		t.Fatalf("pid mismatch: %q", name)
 	}
 }
@@ -330,7 +336,7 @@ func TestPidfdOpenFailureIsRefused(t *testing.T) {
 	h.peers.openErr = errors.New("no such process")
 	c := h.client()
 	h.waitName(c, nameIntrospect)
-	if name, _ := callErr(c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
+	if name, _ := callErr(t, c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
 		t.Fatalf("pidfd_open failure: %q", name)
 	}
 }
@@ -340,7 +346,7 @@ func TestNonOwnerIsDenied(t *testing.T) {
 	h, c := ready(t, harnessOpts{})
 	other := h.client()
 	sess := createSession(t, c)
-	_, stream := recordMonitor(c, sess, "HEADLESS-1")
+	_, stream := recordMonitor(t, c, sess, "HEADLESS-1")
 	for _, tc := range []struct{ path, iface, member, sig string }{
 		{sess, ifaceSession, "Stop", ""},
 		{sess, ifaceSession, "Start", ""},
@@ -348,7 +354,7 @@ func TestNonOwnerIsDenied(t *testing.T) {
 		{stream, ifaceProps, "GetAll", "s"},
 		{stream, ifaceProps, "Get", "ss"},
 	} {
-		name, _ := callErr(other, nameScreenCast, tc.path, tc.iface, tc.member, tc.sig, func(e *zerobus.Encoder) {
+		name, _ := callErr(t, other, nameScreenCast, tc.path, tc.iface, tc.member, tc.sig, func(e *zerobus.Encoder) {
 			switch tc.sig {
 			case "s":
 				e.Str(ifaceSession)
@@ -361,11 +367,11 @@ func TestNonOwnerIsDenied(t *testing.T) {
 			t.Errorf("%s %s: %q", tc.path, tc.member, name)
 		}
 	}
-	if name, _ := recordMonitor(other, sess, "HEADLESS-1"); name != errAccessDenied {
+	if name, _ := recordMonitor(t, other, sess, "HEADLESS-1"); name != errAccessDenied {
 		t.Errorf("RecordMonitor by a non-owner: %q", name)
 	}
 	// The owner is unaffected.
-	if name, _ := callErr(c, nameScreenCast, sess, ifaceSession, "Stop", "", nil); name != "" {
+	if name, _ := callErr(t, c, nameScreenCast, sess, ifaceSession, "Stop", "", nil); name != "" {
 		t.Fatalf("owner Stop: %q", name)
 	}
 }
@@ -431,13 +437,13 @@ func TestOwnerVanishFreesSessions(t *testing.T) {
 	for range maxSessions {
 		createSession(t, owner)
 	}
-	if name, _ := callErr(owner, nameScreenCast, pathScreenCast, ifaceScreenCast, "CreateSession", "a{sv}", func(e *zerobus.Encoder) { e.EndArray(e.BeginArray('{')) }); name != errLimits {
+	if name, _ := callErr(t, owner, nameScreenCast, pathScreenCast, ifaceScreenCast, "CreateSession", "a{sv}", func(e *zerobus.Encoder) { e.EndArray(e.BeginArray('{')) }); name != errLimits {
 		t.Fatalf("over the limit: %q", name)
 	}
 	_ = owner.Close()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		name, _ := callErr(c, nameScreenCast, pathScreenCast, ifaceScreenCast, "CreateSession", "a{sv}", func(e *zerobus.Encoder) { e.EndArray(e.BeginArray('{')) })
+		name, _ := callErr(t, c, nameScreenCast, pathScreenCast, ifaceScreenCast, "CreateSession", "a{sv}", func(e *zerobus.Encoder) { e.EndArray(e.BeginArray('{')) })
 		if name == "" {
 			return
 		}
@@ -452,7 +458,7 @@ func TestOwnerVanishFreesSessions(t *testing.T) {
 // take the ScreenCast name.
 func TestRemoteDesktopRefusedAndNoPipeWire(t *testing.T) {
 	_, c := ready(t, harnessOpts{})
-	name, _ := callErr(c, nameScreenCast, pathScreenCast, ifaceScreenCast, "CreateSession", "a{sv}", func(e *zerobus.Encoder) {
+	name, _ := callErr(t, c, nameScreenCast, pathScreenCast, ifaceScreenCast, "CreateSession", "a{sv}", func(e *zerobus.Encoder) {
 		a := e.BeginArray('{')
 		e.Struct()
 		e.Str("remote-desktop-session-id")
@@ -469,6 +475,8 @@ func TestRemoteDesktopRefusedAndNoPipeWire(t *testing.T) {
 	h.waitName(c2, nameIntrospect)
 	e := c2.NewCall("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameHasOwner", "s")
 	e.Str(nameScreenCast)
+	checkCall := boundIO(t, "NameHasOwner", func() { _ = c2.Close() })
+	defer checkCall()
 	m, err := c2.Call()
 	if err != nil || m.Body().Bool() {
 		t.Fatalf("ScreenCast name taken without PipeWire (%v)", err)
@@ -478,7 +486,7 @@ func TestRemoteDesktopRefusedAndNoPipeWire(t *testing.T) {
 // The encoding of GetCurrentState and GetWindows from an inventory.
 func TestDisplayConfigAndWindows(t *testing.T) {
 	_, c := ready(t, harnessOpts{})
-	name, m := callErr(c, nameDisplayConfig, pathDisplayConfig, ifaceDisplayConfig, "GetCurrentState", "", nil)
+	name, m := callErr(t, c, nameDisplayConfig, pathDisplayConfig, ifaceDisplayConfig, "GetCurrentState", "", nil)
 	if name != "" {
 		t.Fatal(name)
 	}
@@ -584,7 +592,7 @@ func TestDisplayConfigAndWindows(t *testing.T) {
 		t.Fatalf("monitors %+v", mons)
 	}
 
-	name, m = callErr(c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil)
+	name, m = callErr(t, c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil)
 	if name != "" {
 		t.Fatal(name)
 	}
@@ -634,6 +642,8 @@ func TestInventorySignalsGoToAllowedPeersOnly(t *testing.T) {
 	rule2 := "type='signal',path='" + pathDisplayConfig + "'"
 	for _, x := range []*zerobus.Conn{allowed, denied, gone} {
 		for _, r := range []string{rule, rule2} {
+			checkMatch := boundIO(t, "AddMatch", func() { _ = x.Close() })
+			defer checkMatch()
 			if err := x.AddMatch(r); err != nil {
 				t.Fatal(err)
 			}
@@ -645,7 +655,7 @@ func TestInventorySignalsGoToAllowedPeersOnly(t *testing.T) {
 		if i == 1 {
 			want = errAccessDenied
 		}
-		if name, _ := callErr(x, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != want {
+		if name, _ := callErr(t, x, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != want {
 			t.Fatalf("peer %d: %q, want %q", i, name, want)
 		}
 	}
@@ -655,7 +665,7 @@ func TestInventorySignalsGoToAllowedPeersOnly(t *testing.T) {
 	h.svc.Inventory(testInventory())
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		_, m := callErr(allowed, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil)
+		_, m := callErr(t, allowed, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil)
 		if m != nil && m.Signature == "a{ta{sv}}" {
 			r := m.Body()
 			if end := r.Array('{'); r.More(end) {
@@ -679,7 +689,11 @@ func TestInventorySignalsGoToAllowedPeersOnly(t *testing.T) {
 				return
 			}
 			if m.Type == zerobus.TypeSignal && (m.Member == "WindowsChanged" || m.Member == "MonitorsChanged") {
-				got <- m.Member
+				select {
+				case got <- m.Member:
+				case <-time.After(5 * time.Second):
+					return
+				}
 			}
 		}
 	}()
@@ -700,7 +714,7 @@ func TestInventorySignalsGoToAllowedPeersOnly(t *testing.T) {
 			t.Errorf("refused peer got %s", m.Member)
 		}
 	}
-	if name, _ := callErr(denied, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
+	if name, _ := callErr(t, denied, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
 		t.Fatalf("refused peer: %q", name)
 	}
 }
@@ -728,18 +742,18 @@ func TestDeniedCallersDoNotExhaustTheCache(t *testing.T) {
 	h.waitName(c0, nameIntrospect)
 	for i := range denied {
 		x := h.client()
-		if name, _ := callErr(x, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
+		if name, _ := callErr(t, x, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
 			t.Fatalf("denied peer %d: %q", i, name)
 		}
 		// The same peer asking again is checked again, never LimitsExceeded.
 		if i == 0 {
-			if name, _ := callErr(x, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
+			if name, _ := callErr(t, x, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
 				t.Fatalf("denied peer again: %q", name)
 			}
 		}
 	}
 	good := h.client()
-	if name, _ := callErr(good, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != "" {
+	if name, _ := callErr(t, good, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != "" {
 		t.Fatalf("allowed peer after %d denied: %q", denied, name)
 	}
 	h.peers.mu.Lock()
@@ -760,7 +774,7 @@ func TestBusLossClosesCallerPidfds(t *testing.T) {
 	h := newSvcHarness(t, harnessOpts{})
 	c := h.client()
 	h.waitName(c, nameIntrospect)
-	if name, _ := callErr(c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != "" {
+	if name, _ := callErr(t, c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != "" {
 		t.Fatal(name)
 	}
 	h.peers.mu.Lock()

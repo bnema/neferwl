@@ -23,7 +23,11 @@ type liveCast struct {
 }
 
 func (l *liveCast) loop(f func()) {
-	l.onLoop <- f
+	select {
+	case l.onLoop <- f:
+	case <-time.After(5 * time.Second):
+		l.h.t.Fatal("timed out submitting PipeWire loop operation")
+	}
 	l.h.svc.Push(ports.CastEvent{Kind: ports.CastDamage, ID: 1 << 40}) // wakes the owner
 }
 
@@ -53,10 +57,10 @@ func startLiveCast(t *testing.T, withFrame bool, drain time.Duration) *liveCast 
 	}
 
 	sess := createSession(t, c)
-	if name, _ := recordMonitor(c, sess, "HEADLESS-1"); name != "" {
+	if name, _ := recordMonitor(t, c, sess, "HEADLESS-1"); name != "" {
 		t.Fatal(name)
 	}
-	if name, _ := callErr(c, nameScreenCast, sess, ifaceSession, "Start", "", nil); name != "" {
+	if name, _ := callErr(t, c, nameScreenCast, sess, ifaceSession, "Start", "", nil); name != "" {
 		t.Fatal(name)
 	}
 	if cmd := recvCmd(t, h); cmd.Kind != ports.CastOpen {

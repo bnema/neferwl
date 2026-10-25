@@ -5,11 +5,16 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"testing"
+	"time"
 
 	"github.com/bnema/zerobus"
 )
 
-type testClient struct{ *zerobus.Conn }
+type testClient struct {
+	*zerobus.Conn
+	t *testing.T
+}
 type clientObject struct {
 	c          *testClient
 	dest, path string
@@ -19,12 +24,12 @@ type clientReply struct {
 	Err error
 }
 
-func dialClient(address string) (*testClient, error) {
+func dialClient(t *testing.T, address string) (*testClient, error) {
 	c, err := zerobus.Dial(address)
 	if err != nil {
 		return nil, err
 	}
-	return &testClient{c}, nil
+	return &testClient{c, t}, nil
 }
 func (c *testClient) Names() []string                       { return []string{c.UniqueName()} }
 func (c *testClient) Object(dest, path string) clientObject { return clientObject{c, dest, path} }
@@ -63,23 +68,23 @@ func (o clientObject) encode(method string, flags zerobus.Flags, args ...any) {
 	}
 }
 func (o clientObject) Call(method string, flags zerobus.Flags, args ...any) *clientReply {
+	check := boundIO(o.c.t, method, func() { _ = o.c.Close() })
+	defer check()
 	o.encode(method, flags, args...)
 	m, err := o.c.Call()
 	return &clientReply{m, err}
 }
 func (o clientObject) CallWithContext(ctx context.Context, method string, flags zerobus.Flags, args ...any) *clientReply {
-	done, joined := make(chan struct{}), make(chan struct{})
-	go func() {
-		defer close(joined)
-		select {
-		case <-ctx.Done():
-			_ = o.c.Close()
-		case <-done:
-		}
-	}()
-	r := o.Call(method, flags, args...)
-	close(done)
-	<-joined
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	stop := context.AfterFunc(ctx, func() { _ = o.c.Close() })
+	defer stop()
+	o.encode(method, flags, args...)
+	m, err := o.c.Call()
+	if ctx.Err() != nil {
+		err = fmt.Errorf("%s timed out or cancelled: %w", method, ctx.Err())
+	}
+	r := &clientReply{m, err}
 	return r
 }
 func (o clientObject) Go(method string, flags zerobus.Flags, _ any, args ...any) {
@@ -111,4 +116,15 @@ func (r *clientReply) Store(out any) error {
 		return fmt.Errorf("unsupported reply destination")
 	}
 	return reader.Err()
+}
+
+func (c *testClient) RequestName(name string, flags uint32) (uint32, error) {
+	check := boundIO(c.t, "RequestName", func() { _ = c.Close() })
+	defer check()
+	return c.Conn.RequestName(name, flags)
+}
+func (c *testClient) AddMatch(rule string) error {
+	check := boundIO(c.t, "AddMatch", func() { _ = c.Close() })
+	defer check()
+	return c.Conn.AddMatch(rule)
 }

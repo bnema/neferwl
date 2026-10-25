@@ -42,7 +42,9 @@ func startBus(t *testing.T) (string, func()) {
 	}
 	kill := func() { _ = cmd.Process.Kill() }
 	t.Cleanup(func() { kill(); _ = cmd.Wait() })
+	checkStartup := boundIO(t, "dbus-daemon startup", func() { _ = cmd.Process.Kill(); _ = out.Close() })
 	line, err := bufio.NewReader(out).ReadString('\n')
+	checkStartup()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +232,9 @@ func (h *svcHarness) waitName(c *zerobus.Conn, name string) {
 	for time.Now().Before(deadline) {
 		e := c.NewCall("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameHasOwner", "s")
 		e.Str(name)
+		check := boundIO(h.t, "NameHasOwner", func() { _ = c.Close() })
 		m, err := c.Call()
+		check()
 		if err != nil {
 			h.t.Fatal(err)
 		}
@@ -243,7 +247,9 @@ func (h *svcHarness) waitName(c *zerobus.Conn, name string) {
 }
 
 // callErr calls and returns the D-Bus error name, "" on success.
-func callErr(c *zerobus.Conn, dest, path, iface, member, sig string, body func(*zerobus.Encoder)) (string, *zerobus.Message) {
+func callErr(t *testing.T, c *zerobus.Conn, dest, path, iface, member, sig string, body func(*zerobus.Encoder)) (string, *zerobus.Message) {
+	check := boundIO(t, iface+"."+member, func() { _ = c.Close() })
+	defer check()
 	e := c.NewCall(dest, path, iface, member, sig)
 	if body != nil {
 		body(e)

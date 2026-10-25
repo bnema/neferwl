@@ -50,7 +50,9 @@ func startBusAt(t *testing.T, socket string) (string, *exec.Cmd) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	checkStartup := boundIO(t, "dbus-daemon startup", func() { _ = cmd.Process.Kill(); _ = out.Close() })
 	line, err := bufio.NewReader(out).ReadString('\n')
+	checkStartup()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +61,7 @@ func startBusAt(t *testing.T, socket string) (string, *exec.Cmd) {
 
 func connect(t *testing.T, address string) *testClient {
 	t.Helper()
-	c, err := dialClient(address)
+	c, err := dialClient(t, address)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +212,7 @@ func TestSimulateUserActivity(t *testing.T) {
 func TestDisconnectReleases(t *testing.T) {
 	address := privateBus(t)
 	held := serve(t, address).held
-	c, err := dialClient(address)
+	c, err := dialClient(t, address)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +256,7 @@ func TestEarlyDepartureHoldsNothing(t *testing.T) {
 	address := privateBus(t)
 	held := serve(t, address).held
 	for range 20 {
-		c, err := dialClient(address)
+		c, err := dialClient(t, address)
 		if err != nil {
 			t.Fatal(err)
 		}
