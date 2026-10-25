@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
-	"github.com/godbus/dbus/v5"
+	"github.com/bnema/zerobus"
 )
 
 // privateBus starts a dbus-daemon of its own, so tests never touch the
@@ -57,9 +57,9 @@ func startBusAt(t *testing.T, socket string) (string, *exec.Cmd) {
 	return strings.TrimSpace(line), cmd
 }
 
-func connect(t *testing.T, address string) *dbus.Conn {
+func connect(t *testing.T, address string) *testClient {
 	t.Helper()
-	c, err := dbus.Connect(address)
+	c, err := dialClient(address)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func serve(t *testing.T, address string) served {
 }
 
 // waitOwner polls the owner of busName ("" when none) until ok accepts it.
-func waitOwner(t *testing.T, probe *dbus.Conn, ok func(string) bool) {
+func waitOwner(t *testing.T, probe *testClient, ok func(string) bool) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for {
@@ -135,7 +135,7 @@ func none(t *testing.T, held <-chan bool) {
 	}
 }
 
-func inhibit(t *testing.T, c *dbus.Conn, path dbus.ObjectPath) uint32 {
+func inhibit(t *testing.T, c *testClient, path string) uint32 {
 	t.Helper()
 	var cookie uint32
 	if err := c.Object(busName, path).Call(iface+".Inhibit", 0, "test", "video").Store(&cookie); err != nil {
@@ -206,7 +206,7 @@ func TestSimulateUserActivity(t *testing.T) {
 func TestDisconnectReleases(t *testing.T) {
 	address := privateBus(t)
 	held := serve(t, address).held
-	c, err := dbus.Connect(address)
+	c, err := dialClient(address)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,19 +230,12 @@ func TestSpoofedDepartureIgnored(t *testing.T) {
 		t.Fatal(err)
 	}
 	gone := victim.Names()[0]
-	msg := &dbus.Message{
-		Type: dbus.TypeSignal,
-		Headers: map[dbus.HeaderField]dbus.Variant{
-			dbus.FieldPath:        dbus.MakeVariant(dbus.ObjectPath("/org/freedesktop/DBus")),
-			dbus.FieldInterface:   dbus.MakeVariant("org.freedesktop.DBus"),
-			dbus.FieldMember:      dbus.MakeVariant("NameOwnerChanged"),
-			dbus.FieldDestination: dbus.MakeVariant(service),
-			dbus.FieldSignature:   dbus.MakeVariant(dbus.SignatureOf("", "", "")),
-		},
-		Body: []any{gone, gone, ""},
-	}
-	if call := attacker.Send(msg, nil); call != nil && call.Err != nil {
-		t.Fatal(call.Err)
+	e := attacker.NewSignalTo(service, "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameOwnerChanged", "sss")
+	e.Str(gone)
+	e.Str(gone)
+	e.Str("")
+	if _, err := attacker.Send(); err != nil {
+		t.Fatal(err)
 	}
 	// A call after the signal: the service has read the signal by its reply.
 	inhibit(t, attacker, "/ScreenSaver")
@@ -257,11 +250,11 @@ func TestEarlyDepartureHoldsNothing(t *testing.T) {
 	address := privateBus(t)
 	held := serve(t, address).held
 	for range 20 {
-		c, err := dbus.Connect(address)
+		c, err := dialClient(address)
 		if err != nil {
 			t.Fatal(err)
 		}
-		c.Object(busName, "/ScreenSaver").Go(iface+".Inhibit", dbus.FlagNoReplyExpected, nil, "test", "video")
+		c.Object(busName, "/ScreenSaver").Go(iface+".Inhibit", zerobus.FlagNoReplyExpected, nil, "test", "video")
 		_ = c.Close()
 	}
 	// Each one may hold briefly; once all are handled, none does.
@@ -332,7 +325,7 @@ func TestBusLossReleases(t *testing.T) {
 func TestNameTaken(t *testing.T) {
 	address := privateBus(t)
 	other := connect(t, address)
-	if r, err := other.RequestName(busName, dbus.NameFlagDoNotQueue); err != nil || r != dbus.RequestNameReplyPrimaryOwner {
+	if r, err := other.RequestName(busName, zerobus.NameFlagDoNotQueue); err != nil || r != zerobus.NamePrimaryOwner {
 		t.Fatal(r, err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -364,7 +357,7 @@ func TestServeRetries(t *testing.T) {
 	socket := filepath.Join(t.TempDir(), "bus")
 	address, cmd := startBusAt(t, socket)
 	other := connect(t, address)
-	if r, err := other.RequestName(busName, dbus.NameFlagDoNotQueue); err != nil || r != dbus.RequestNameReplyPrimaryOwner {
+	if r, err := other.RequestName(busName, zerobus.NameFlagDoNotQueue); err != nil || r != zerobus.NamePrimaryOwner {
 		t.Fatal(r, err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -395,7 +388,7 @@ func TestUnknownMethodAndInvalidArguments(t *testing.T) {
 	address := privateBus(t)
 	serve(t, address)
 	c := connect(t, address)
-	for _, path := range []dbus.ObjectPath{"/org/freedesktop/ScreenSaver", "/ScreenSaver"} {
+	for _, path := range []string{"/org/freedesktop/ScreenSaver", "/ScreenSaver"} {
 		obj := c.Object(busName, path)
 		for _, tt := range []struct {
 			member string
@@ -406,7 +399,7 @@ func TestUnknownMethodAndInvalidArguments(t *testing.T) {
 			{member: "Inhibit", args: []any{uint32(1)}, want: "org.freedesktop.DBus.Error.InvalidArgs"},
 		} {
 			err := obj.Call(iface+"."+tt.member, 0, tt.args...).Err
-			busErr, ok := err.(dbus.Error)
+			busErr, ok := err.(*zerobus.Error)
 			if !ok || busErr.Name != tt.want {
 				t.Fatalf("%s %s: %v, want %s", path, tt.member, err, tt.want)
 			}

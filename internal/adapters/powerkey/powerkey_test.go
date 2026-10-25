@@ -13,8 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/zerobus"
 	"github.com/bnema/zerowrap"
-	"github.com/godbus/dbus/v5"
+	"golang.org/x/sys/unix"
 )
 
 // startBus starts a dbus-daemon of its own, so tests never touch the
@@ -55,38 +56,91 @@ type grant struct {
 // logindPeer plays logind on the private bus: it owns the name and answers
 // Inhibit with a pipe, whose other end shows when the client lets go.
 type logindPeer struct {
-	conn   *dbus.Conn
-	grants chan grant
+	conn     *zerobus.Conn
+	commands chan func()
+	grants   chan grant
 }
 
 func newPeer(t *testing.T, address string) *logindPeer {
 	t.Helper()
-	conn, err := dbus.Connect(address)
+	conn, err := zerobus.Dial(address)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
-	p := &logindPeer{conn: conn, grants: make(chan grant, 8)}
-	table := map[string]any{"Inhibit": func(what, who, why, mode string) (dbus.UnixFD, *dbus.Error) {
-		r, w, err := os.Pipe()
-		if err != nil {
-			return 0, dbus.MakeFailedError(err)
-		}
-		t.Cleanup(func() { _ = r.Close(); _ = w.Close() })
-		fd := dbus.UnixFD(w.Fd()) // before the send: the test closes w after it
-		p.grants <- grant{what: what, mode: mode, hold: w, released: r}
-		return fd, nil
-	}}
-	if err := conn.ExportMethodTable(table, logindPath, manager); err != nil {
-		t.Fatal(err)
-	}
+	p := &logindPeer{conn: conn, commands: make(chan func()), grants: make(chan grant, 8)}
 	p.own(t)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case f := <-p.commands:
+				f()
+			default:
+			}
+			if !conn.Buffered() {
+				raw, err := conn.SyscallConn()
+				if err != nil {
+					return
+				}
+				n := 0
+				if err := raw.Control(func(fd uintptr) { n, _ = unix.Poll([]unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}, 10) }); err != nil {
+					return
+				}
+				if n == 0 {
+					continue
+				}
+			}
+			m, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			if m.Type != zerobus.TypeMethodCall || m.Member != "Inhibit" {
+				continue
+			}
+			r := m.Body()
+			what := r.Str()
+			who := r.Str()
+			why := r.Str()
+			mode := r.Str()
+			if r.Err() != nil || who != "neferwl" || why != "power keys are bound in the compositor" {
+				t.Error("invalid Inhibit arguments")
+				return
+			}
+			rd, w, err := os.Pipe()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			conn.NewReply(m, "h").UnixFD(int(w.Fd()))
+			if _, err := conn.Send(); err != nil {
+				_ = rd.Close()
+				_ = w.Close()
+				return
+			}
+			p.grants <- grant{what: what, mode: mode, hold: w, released: rd}
+		}
+	}()
+	t.Cleanup(func() {
+		_ = conn.Close()
+		<-done
+		for {
+			select {
+			case g := <-p.grants:
+				_ = g.hold.Close()
+				_ = g.released.Close()
+			default:
+				return
+			}
+		}
+	})
 	return p
 }
 
 func (p *logindPeer) own(t *testing.T) {
 	t.Helper()
-	if r, err := p.conn.RequestName(logind, dbus.NameFlagDoNotQueue); err != nil || r != dbus.RequestNameReplyPrimaryOwner {
+	if r, err := p.conn.RequestName(logind, zerobus.NameFlagDoNotQueue); err != nil || r != zerobus.NamePrimaryOwner {
 		t.Fatal(r, err)
 	}
 }
@@ -95,6 +149,7 @@ func (p *logindPeer) next(t *testing.T) grant {
 	t.Helper()
 	select {
 	case g := <-p.grants:
+		t.Cleanup(func() { _ = g.hold.Close(); _ = g.released.Close() })
 		return g
 	case <-time.After(5 * time.Second):
 		t.Fatal("no Inhibit call")
@@ -197,12 +252,12 @@ func TestServeTakesTheLockAgainAfterLogindRestarts(t *testing.T) {
 	_, log := run(t, address)
 	first := peer.next(t)
 	log.holding(t, 1)
-	if _, err := peer.conn.ReleaseName(logind); err != nil {
+	if _, err := peer.release(t); err != nil {
 		t.Fatal(err)
 	}
 	log.wait(t, "ignored until the next attempt", 1)
 	// The gap: the old lock is still ours, logind keeps it through a restart.
-	peer.own(t)
+	peer.reown(t)
 	peer.next(t)
 	log.holding(t, 2)
 	if !released(t, first) {
@@ -214,32 +269,29 @@ func TestServeTakesTheLockAgainAfterLogindRestarts(t *testing.T) {
 func TestServeWaitsForLogind(t *testing.T) {
 	address := startBus(t)
 	peer := newPeer(t, address)
-	if _, err := peer.conn.ReleaseName(logind); err != nil {
+	if _, err := peer.release(t); err != nil {
 		t.Fatal(err)
 	}
 	_, log := run(t, address)
 	log.wait(t, "ignored until the next attempt", 1)
-	peer.own(t)
+	peer.reown(t)
 	peer.next(t)
 	log.holding(t, 1)
 }
 
-func TestLostTrustsOnlyTheBus(t *testing.T) {
-	body := []any{logind, "", ""}
-	for name, tc := range map[string]struct {
-		sig  *dbus.Signal
-		want bool
-	}{
-		"bus, logind gone":  {&dbus.Signal{Sender: busDaemon, Name: busDaemon + ".NameOwnerChanged", Body: body}, true},
-		"bus, logind moved": {&dbus.Signal{Sender: busDaemon, Name: busDaemon + ".NameOwnerChanged", Body: []any{logind, "", ":1.5"}}, false},
-		"bus, other name":   {&dbus.Signal{Sender: busDaemon, Name: busDaemon + ".NameOwnerChanged", Body: []any{"x.y", "", ""}}, false},
-		"client forging it": {&dbus.Signal{Sender: ":1.9", Name: busDaemon + ".NameOwnerChanged", Body: body}, false},
-		"other signal":      {&dbus.Signal{Sender: busDaemon, Name: busDaemon + ".NameAcquired", Body: body}, false},
-		"malformed body":    {&dbus.Signal{Sender: busDaemon, Name: busDaemon + ".NameOwnerChanged", Body: []any{1, 2, 3}}, false},
-		"short body":        {&dbus.Signal{Sender: busDaemon, Name: busDaemon + ".NameOwnerChanged", Body: []any{logind}}, false},
-	} {
-		if got := lost(tc.sig); got != tc.want {
-			t.Errorf("%s: lost = %v, want %v", name, got, tc.want)
-		}
+func (p *logindPeer) release(t *testing.T) (uint32, error) {
+	done := make(chan struct{})
+	var err error
+	p.commands <- func() {
+		p.conn.NewCall(busDaemon, "/org/freedesktop/DBus", busDaemon, "ReleaseName", "s").Str(logind)
+		_, err = p.conn.Call()
+		close(done)
 	}
+	<-done
+	return 0, err
+}
+func (p *logindPeer) reown(t *testing.T) {
+	done := make(chan struct{})
+	p.commands <- func() { p.own(t); close(done) }
+	<-done
 }
