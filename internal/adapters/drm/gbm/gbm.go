@@ -86,21 +86,22 @@ func load() error {
 	return loadErr
 }
 
-// Device is a GBM device on a duplicate of a DRM device fd. Close its
+// Device is a GBM device on an independent DRM device fd. Close its
 // buffers before the device.
 type Device struct {
 	dev uintptr
 	fd  int
 }
 
-// Open creates a GBM device on a duplicate of fd, which stays the caller's.
+// Open creates a GBM device on a reopened fd, which stays the caller's.
+// Reopening isolates GEM handles: KMS closes its PRIME imports independently.
 func Open(fd int) (*Device, error) {
 	if err := load(); err != nil {
 		return nil, err
 	}
-	dup, err := unix.FcntlInt(uintptr(fd), unix.F_DUPFD_CLOEXEC, 0)
+	dup, err := reopenDevice(fd)
 	if err != nil {
-		return nil, fmt.Errorf("duplicate drm fd: %w", err)
+		return nil, fmt.Errorf("reopen drm fd: %w", err)
 	}
 	dev := createDevice(int32(dup))
 	if dev == 0 {
@@ -108,6 +109,16 @@ func Open(fd int) (*Device, error) {
 		return nil, errors.New("gbm_create_device failed")
 	}
 	return &Device{dev: dev, fd: dup}, nil
+}
+
+// reopenDevice opens the same node with a new open-file description. A dup
+// would share the DRM GEM namespace with KMS, whose PRIME handles are transient.
+func reopenDevice(fd int) (int, error) {
+	path, err := os.Readlink(fmt.Sprintf("/proc/self/fd/%d", fd))
+	if err != nil {
+		return -1, err
+	}
+	return unix.Open(path, unix.O_RDWR|unix.O_CLOEXEC, 0)
 }
 
 // Close destroys the device and its fd.

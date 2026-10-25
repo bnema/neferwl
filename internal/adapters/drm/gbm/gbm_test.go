@@ -86,3 +86,36 @@ func TestCreateRejectsBadRequests(t *testing.T) {
 		}
 	}
 }
+
+func TestReopenDeviceIndependentDescription(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "device")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	fd, err := reopenDevice(int(f.Fd()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fd)
+	var a, b unix.Stat_t
+	if err := unix.Fstat(int(f.Fd()), &a); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Fstat(fd, &b); err != nil {
+		t.Fatal(err)
+	}
+	if a.Dev != b.Dev || a.Ino != b.Ino {
+		t.Fatal("reopened a different node")
+	}
+	if _, err := unix.Seek(fd, 17, 0); err != nil {
+		t.Fatal(err)
+	}
+	if offset, err := f.Seek(0, 1); err != nil || offset != 0 {
+		t.Fatalf("shared file offset: %d, %v", offset, err)
+	}
+	flags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)
+	if err != nil || flags&unix.FD_CLOEXEC == 0 {
+		t.Fatalf("missing CLOEXEC: %d, %v", flags, err)
+	}
+}
