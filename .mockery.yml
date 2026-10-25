@@ -261,3 +261,11 @@ packages:
           dir: internal/adapters/atspi
           pkgname: atspi
           filename: connector_mock_test.go
+
+  github.com/bnema/neferwl/internal/adapters/screensaver:
+    interfaces:
+      bus:
+        config:
+          dir: internal/adapters/screensaver
+          pkgname: screensaver
+          filename: bus_mock_test.go

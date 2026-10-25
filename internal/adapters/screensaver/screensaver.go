@@ -1,8 +1,4 @@
-// Package screensaver serves org.freedesktop.ScreenSaver on the session bus,
-// so programs that inhibit idle over D-Bus (browsers, video players, the GTK
-// portal's Inhibit) keep the session awake like a zwp_idle_inhibit_v1
-// surface. It only reports whether any inhibition is held, and activity
-// simulated by SimulateUserActivity: wayland decides what they do.
+// Package screensaver serves org.freedesktop.ScreenSaver idle inhibition.
 package screensaver
 
 import (
@@ -13,35 +9,19 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/busretry"
+	"github.com/bnema/zerobus"
 	"github.com/bnema/zerowrap"
-	"github.com/godbus/dbus/v5"
-	"github.com/godbus/dbus/v5/introspect"
+	"golang.org/x/sys/unix"
 )
 
 const (
-	busName = "org.freedesktop.ScreenSaver"
-	iface   = "org.freedesktop.ScreenSaver"
-	// busDaemon is the sender of the bus's own signals. Any client can send
-	// a NameOwnerChanged to us directly, so only this sender is trusted.
-	busDaemon = "org.freedesktop.DBus"
-	// callTimeout bounds the bus calls Run makes itself.
+	busName     = "org.freedesktop.ScreenSaver"
+	iface       = busName
+	busDaemon   = "org.freedesktop.DBus"
 	callTimeout = 3 * time.Second
 )
 
-// ErrNameTaken is returned by Run when another program owns the name.
 var ErrNameTaken = errors.New(busName + " is owned by another program")
-
-// paths: freedesktop clients use the first, older KDE-era ones the second.
-var paths = []dbus.ObjectPath{"/org/freedesktop/ScreenSaver", "/ScreenSaver"}
-
-var methods = []introspect.Method{
-	{Name: "Inhibit", Args: []introspect.Arg{{Name: "application_name", Type: "s", Direction: "in"}, {Name: "reason_for_inhibit", Type: "s", Direction: "in"}, {Name: "cookie", Type: "u", Direction: "out"}}},
-	{Name: "UnInhibit", Args: []introspect.Arg{{Name: "cookie", Type: "u", Direction: "in"}}},
-	{Name: "GetActive", Args: []introspect.Arg{{Type: "b", Direction: "out"}}},
-	{Name: "GetActiveTime", Args: []introspect.Arg{{Type: "u", Direction: "out"}}},
-	{Name: "SetActive", Args: []introspect.Arg{{Name: "e", Type: "b", Direction: "in"}, {Type: "b", Direction: "out"}}},
-	{Name: "SimulateUserActivity"},
-}
 
 // Reports are what Run tells wayland. Held carries each change of whether
 // any inhibition is in effect; Activity carries SimulateUserActivity calls,
@@ -64,246 +44,294 @@ func Serve(ctx context.Context, address string, r Reports, retry time.Duration, 
 	})
 }
 
-// Service owns one private session bus connection. Run must be called once.
+// Service owns one private connection. Run must be called once. All message
+// decoding and encoding belongs to Run; only Close may run concurrently.
 type Service struct {
-	conn     *dbus.Conn
-	log      zerowrap.Logger
-	requests chan request
-	done     chan struct{}
+	conn bus
+	log  zerowrap.Logger
 }
 
-// request is a method call handed from a godbus goroutine to Run.
-type request struct {
-	sender string
-	cookie uint32 // UnInhibit
-	unhold bool
-	app    string
-	reason string
-	reply  chan reply
-}
-
-type reply struct {
-	cookie uint32
-	err    *dbus.Error
-}
-
-// New connects to the bus at address, the session bus when empty. It never
-// starts a bus.
 func New(ctx context.Context, address string, log zerowrap.Logger) (*Service, error) {
-	var conn *dbus.Conn
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	var c *zerobus.Conn
 	var err error
 	if address == "" {
-		conn, err = dbus.SessionBusPrivateNoAutoStartup(dbus.WithContext(ctx))
+		c, err = zerobus.SessionBus()
 	} else {
-		conn, err = dbus.Dial(address, dbus.WithContext(ctx))
+		c, err = zerobus.Dial(address)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("session bus: %w", err)
 	}
-	if err = conn.Auth(nil); err == nil {
-		err = conn.Hello()
-	}
-	if err != nil {
-		_ = conn.Close()
-		return nil, fmt.Errorf("session bus: %w", err)
-	}
-	return &Service{conn: conn, log: log, requests: make(chan request), done: make(chan struct{})}, nil
+	return &Service{conn: c, log: log}, nil
 }
 
-// Run serves the name until ctx ends or the bus goes, and reports to r. If
-// the bus goes while an inhibition is held, it sends false on r.Held before
-// it returns. It returns nil only once ctx ends, and ErrNameTaken at once,
-// with the connection closed, when another program owns the name.
-func (s *Service) Run(ctx context.Context, r Reports) (err error) {
-	defer close(s.done)
-	defer func() { _ = s.conn.Close() }()
+type ownerCheck struct {
+	name     string
+	deadline time.Time
+	retried  bool
+}
+
+// Run reports changes until cancellation or connection loss. Owner queries
+// are asynchronous: synchronous Call would consume incoming client calls.
+func (s *Service) Run(ctx context.Context, reports Reports) (err error) {
+	stopped := make(chan struct{})
+	joined := make(chan struct{})
+	go func() {
+		defer close(joined)
+		select {
+		case <-ctx.Done():
+			_ = s.conn.Close()
+		case <-stopped:
+		}
+	}()
 	defer func() {
-		// A bus call cut short by ctx (WithContext closes the connection)
-		// is shutdown, not a failure.
+		close(stopped)
+		<-joined
+		_ = s.conn.Close()
 		if ctx.Err() != nil {
 			err = nil
 		}
 	}()
-	// Method tables, not Export(v): godbus finds Export's methods by
-	// reflection, which stops the linker from pruning unused methods and
-	// grows the binary by ~4 MB.
-	h := handler{s: s, activity: r.Activity}
-	table := map[string]any{
-		"Inhibit":              h.Inhibit,
-		"UnInhibit":            h.UnInhibit,
-		"GetActive":            h.GetActive,
-		"GetActiveTime":        h.GetActiveTime,
-		"SetActive":            h.SetActive,
-		"SimulateUserActivity": h.SimulateUserActivity,
-	}
-	for _, p := range paths {
-		if err := s.conn.ExportMethodTable(table, p, iface); err != nil {
-			return fmt.Errorf("export %s: %w", p, err)
-		}
-		node := &introspect.Node{Name: string(p), Interfaces: []introspect.Interface{{Name: iface, Methods: methods}}}
-		xml := string(introspect.NewIntrospectable(node))
-		intro := map[string]any{"Introspect": func() (string, *dbus.Error) { return xml, nil }}
-		if err := s.conn.ExportMethodTable(intro, p, "org.freedesktop.DBus.Introspectable"); err != nil {
-			return fmt.Errorf("export %s introspection: %w", p, err)
-		}
-	}
-	owner, err := s.conn.RequestName(busName, dbus.NameFlagDoNotQueue)
+	owner, err := s.conn.RequestName(busName, zerobus.NameFlagDoNotQueue)
 	if err != nil {
 		return fmt.Errorf("request %s: %w", busName, err)
 	}
-	if owner != dbus.RequestNameReplyPrimaryOwner {
+	if owner != zerobus.NamePrimaryOwner {
 		return ErrNameTaken
 	}
-	// Departures end the inhibitions of crashed clients. The match asks the
-	// bus for lost owners (new owner "") only, but the channel also gets
-	// NameAcquired and any signal a client sends to us directly: left trusts
-	// only the bus's own. A client that leaves before this match exists is
-	// caught by the onBus check on its first cookie.
-	signals := make(chan *dbus.Signal, 16)
-	s.conn.Signal(signals)
-	if err := s.conn.AddMatchSignalContext(ctx, dbus.WithMatchSender(busDaemon), dbus.WithMatchInterface("org.freedesktop.DBus"), dbus.WithMatchMember("NameOwnerChanged"), dbus.WithMatchArg(2, "")); err != nil {
+	if err := s.conn.AddMatch("type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg2=''"); err != nil {
 		return fmt.Errorf("watch bus names: %w", err)
+	}
+	raw, err := s.conn.SyscallConn()
+	if err != nil {
+		return err
 	}
 	s.log.Info().Msg("serving " + busName)
 	reg := newRegistry()
 	sent := false
 	report := func() {
-		if h := reg.held(); h != sent {
+		if held := reg.held(); held != sent {
 			select {
-			case r.Held <- h:
-				sent = h
+			case reports.Held <- held:
+				sent = held
 			case <-ctx.Done():
 			}
 		}
 	}
 	defer func() {
 		if sent && ctx.Err() == nil {
-			// The bus went, the session goes on: nothing it held keeps it awake.
 			select {
-			case r.Held <- false:
+			case reports.Held <- false:
 			case <-ctx.Done():
 			}
 		}
 	}()
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case sig, ok := <-signals:
-			if !ok {
-				if ctx.Err() != nil {
-					return nil // WithContext closed the connection
+	checks := map[uint32]ownerCheck{}
+	ask := func(name string, retried bool) error {
+		e, serial := s.conn.NewMethodCall(busDaemon, "/org/freedesktop/DBus", busDaemon, "NameHasOwner", "s")
+		e.Str(name)
+		if _, err := s.conn.Send(); err != nil {
+			return err
+		}
+		checks[serial] = ownerCheck{name: name, deadline: time.Now().Add(callTimeout), retried: retried}
+		return nil
+	}
+	retry := func(check ownerCheck) error {
+		if !check.retried {
+			return ask(check.name, true)
+		}
+		reg.drop(check.name)
+		report()
+		return nil
+	}
+	for ctx.Err() == nil {
+		for serial, check := range checks {
+			if !time.Now().Before(check.deadline) {
+				delete(checks, serial)
+				if err := retry(check); err != nil {
+					return err
 				}
-				return errors.New("session bus connection closed")
 			}
-			if name, gone := left(sig); gone {
-				reg.drop(name)
-				report()
+		}
+		if !s.conn.Buffered() {
+			n := 0
+			var pollErr error
+			err := raw.Control(func(fd uintptr) {
+				fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
+				n, pollErr = unix.Poll(fds, 50)
+			})
+			if err != nil {
+				return err
 			}
-		case req := <-s.requests:
-			if req.unhold {
-				if reg.uninhibit(req.sender, req.cookie) {
-					s.log.Debug().Str("sender", req.sender).Uint32("cookie", req.cookie).Msg("uninhibit")
-				}
-				req.reply <- reply{}
-				report()
+			if pollErr == unix.EINTR {
 				continue
 			}
-			cookie, first, ok := reg.inhibit(req.sender)
-			if !ok {
-				req.reply <- reply{err: dbus.MakeFailedError(errors.New("too many inhibitors"))}
+			if pollErr != nil {
+				return pollErr
+			}
+			if n == 0 {
 				continue
 			}
-			req.reply <- reply{cookie: cookie}
-			if first && !s.onBus(ctx, req.sender) {
-				// It left before its call reached us (its signal came first),
-				// or the bus could not tell: drop it rather than hold the
-				// session awake for good.
-				s.log.Debug().Str("sender", req.sender).Uint32("cookie", cookie).Msg("inhibitor not on the bus; dropped")
-				reg.drop(req.sender)
-			} else {
-				s.log.Debug().Str("sender", req.sender).Str("app", req.app).Str("reason", req.reason).Uint32("cookie", cookie).Msg("inhibit")
+		}
+		m, err := s.conn.ReadMessage()
+		if err != nil {
+			return err
+		}
+		switch m.Type {
+		case zerobus.TypeSignal:
+			if m.Sender == busDaemon && m.Interface == busDaemon && m.Member == "NameOwnerChanged" && m.Signature == "sss" {
+				r := m.Body()
+				name := r.Str()
+				_ = r.Str()
+				owner := r.Str()
+				if r.Err() == nil && strings.HasPrefix(name, ":") && owner == "" {
+					reg.drop(name)
+					for serial, c := range checks {
+						if c.name == name {
+							delete(checks, serial)
+						}
+					}
+					report()
+				}
+			}
+		case zerobus.TypeMethodReturn, zerobus.TypeError:
+			if m.Sender != busDaemon {
+				continue
+			}
+			check, ok := checks[m.ReplySerial]
+			if !ok {
+				continue
+			}
+			delete(checks, m.ReplySerial)
+			if m.Type == zerobus.TypeMethodReturn && m.Signature == "b" {
+				r := m.Body()
+				has := r.Bool()
+				if r.Err() == nil {
+					if !has {
+						reg.drop(check.name)
+						report()
+					}
+					continue
+				}
+			}
+			if err := retry(check); err != nil {
+				return err
+			}
+		case zerobus.TypeMethodCall:
+			// Dispatch consumes the receive buffer before the next read.
+			name, first, err := s.dispatch(m, reg, reports.Activity)
+			if err != nil {
+				return err
+			}
+			if first {
+				if err := ask(name, false); err != nil {
+					return err
+				}
 			}
 			report()
 		}
 	}
-}
-
-// onBus reports whether a unique connection name still has an owner. Its
-// departure signal may already be handled, so an unanswered query is tried
-// once more, then counts as gone: a lost inhibition is better than one that
-// keeps the session awake until the compositor restarts.
-func (s *Service) onBus(ctx context.Context, name string) bool {
-	for range 2 {
-		callCtx, cancel := context.WithTimeout(ctx, callTimeout)
-		var has bool
-		err := s.conn.BusObject().CallWithContext(callCtx, "org.freedesktop.DBus.NameHasOwner", 0, name).Store(&has)
-		cancel()
-		if err == nil {
-			return has
-		}
-		s.log.Debug().Err(err).Str("sender", name).Msg("NameHasOwner failed")
-		if ctx.Err() != nil {
-			break
-		}
-	}
-	return false
-}
-
-// left reports a unique connection name that lost its owner, from the
-// bus's own NameOwnerChanged only.
-func left(sig *dbus.Signal) (string, bool) {
-	if sig.Sender != busDaemon || sig.Name != "org.freedesktop.DBus.NameOwnerChanged" || len(sig.Body) != 3 {
-		return "", false
-	}
-	name, _ := sig.Body[0].(string)
-	owner, _ := sig.Body[2].(string)
-	return name, strings.HasPrefix(name, ":") && owner == ""
-}
-
-// call hands a request to Run, or fails once Run has stopped.
-func (s *Service) call(req request) reply {
-	req.reply = make(chan reply, 1)
-	select {
-	case s.requests <- req:
-		return <-req.reply
-	case <-s.done:
-		return reply{err: dbus.MakeFailedError(errors.New("screensaver service stopped"))}
-	}
-}
-
-// handler is the exported object; godbus runs each call on its own
-// goroutine, so it only forwards to Run.
-type handler struct {
-	s        *Service
-	activity chan<- struct{}
-}
-
-func (h handler) Inhibit(sender dbus.Sender, app, reason string) (uint32, *dbus.Error) {
-	r := h.s.call(request{sender: string(sender), app: app, reason: reason})
-	return r.cookie, r.err
-}
-
-func (h handler) UnInhibit(sender dbus.Sender, cookie uint32) *dbus.Error {
-	return h.s.call(request{sender: string(sender), cookie: cookie, unhold: true}).err
-}
-
-// GetActive: there is no screensaver to be active, only idle inhibition.
-func (handler) GetActive() (bool, *dbus.Error) { return false, nil }
-
-// GetActiveTime is the seconds the screensaver has been active: never.
-func (handler) GetActiveTime() (uint32, *dbus.Error) { return 0, nil }
-
-// SetActive cannot start a screensaver there is none of: it reports
-// failure, as the specification allows.
-func (handler) SetActive(bool) (bool, *dbus.Error) { return false, nil }
-
-// SimulateUserActivity counts as input: idle notifications resume and
-// their timers restart. Calls between two reads collapse into one.
-func (h handler) SimulateUserActivity() *dbus.Error {
-	select {
-	case h.activity <- struct{}{}:
-	default:
-	}
 	return nil
+}
+
+func (s *Service) dispatch(m *zerobus.Message, reg *registry, activity chan<- struct{}) (string, bool, error) {
+	if m.Sender == "" {
+		return "", false, nil
+	}
+	sig := ""
+	errorName := ""
+	text := ""
+	var cookie uint32
+	first := false
+	fail := func(name, msg string) { errorName = "org.freedesktop.DBus.Error." + name; text = msg }
+	validPath := m.Path == "/org/freedesktop/ScreenSaver" || m.Path == "/ScreenSaver"
+	want := ""
+	known := validPath && (m.Interface == iface || m.Interface == "")
+	if validPath && m.Interface == "org.freedesktop.DBus.Introspectable" && m.Member == "Introspect" {
+		sig = "s"
+	} else if known {
+		switch m.Member {
+		case "Inhibit":
+			want = "ss"
+			sig = "u"
+		case "UnInhibit":
+			want = "u"
+		case "GetActive", "SetActive":
+			sig = "b"
+			if m.Member == "SetActive" {
+				want = "b"
+			}
+		case "GetActiveTime":
+			sig = "u"
+		case "SimulateUserActivity":
+		default:
+			known = false
+		}
+	} else {
+		known = false
+	}
+	if sig != "s" && !known {
+		fail("UnknownMethod", "unknown method")
+	} else if m.Signature != want {
+		fail("InvalidArgs", "unexpected arguments")
+	} else {
+		r := m.Body()
+		switch m.Member {
+		case "Inhibit":
+			_ = r.Str()
+			_ = r.Str()
+			if r.Err() == nil {
+				var ok bool
+				cookie, first, ok = reg.inhibit(strings.Clone(m.Sender))
+				if !ok {
+					fail("Failed", "too many inhibitors")
+				}
+			}
+		case "UnInhibit":
+			cookie = r.Uint32()
+			if r.Err() == nil {
+				reg.uninhibit(m.Sender, cookie)
+			}
+		case "SetActive":
+			_ = r.Bool()
+		case "SimulateUserActivity":
+			select {
+			case activity <- struct{}{}:
+			default:
+			}
+		}
+		if r.Err() != nil {
+			fail("InvalidArgs", "invalid arguments")
+		}
+	}
+	name := strings.Clone(m.Sender)
+	if m.Flags&zerobus.FlagNoReplyExpected != 0 {
+		return name, first, nil
+	}
+	if errorName != "" {
+		s.conn.NewError(m, errorName, "s").Str(text)
+	} else {
+		e := s.conn.NewReply(m, sig)
+		switch sig {
+		case "s":
+			e.Str(introspection(m.Path))
+		case "u":
+			if m.Member == "Inhibit" {
+				e.Uint32(cookie)
+			} else {
+				e.Uint32(0)
+			}
+		case "b":
+			e.Bool(false)
+		}
+	}
+	_, err := s.conn.Send()
+	return name, first, err
+}
+
+func introspection(path string) string {
+	return `<node name="` + path + `"><interface name="org.freedesktop.DBus.Introspectable"><method name="Introspect"><arg type="s" direction="out"/></method></interface><interface name="org.freedesktop.ScreenSaver"><method name="Inhibit"><arg name="application_name" type="s" direction="in"/><arg name="reason_for_inhibit" type="s" direction="in"/><arg name="cookie" type="u" direction="out"/></method><method name="UnInhibit"><arg name="cookie" type="u" direction="in"/></method><method name="GetActive"><arg type="b" direction="out"/></method><method name="GetActiveTime"><arg type="u" direction="out"/></method><method name="SetActive"><arg name="e" type="b" direction="in"/><arg type="b" direction="out"/></method><method name="SimulateUserActivity"></method></interface></node>`
 }

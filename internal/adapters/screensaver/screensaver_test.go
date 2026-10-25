@@ -299,34 +299,6 @@ func TestPerSenderLimit(t *testing.T) {
 	inhibit(t, connect(t, address), "/ScreenSaver")
 }
 
-// A call that reaches the handler after Run returned fails at once
-// instead of waiting for a loop that is gone.
-func TestCallAfterStop(t *testing.T) {
-	address := privateBus(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	s, err := New(ctx, address, logging.For(ctx, "screensaver"))
-	if err != nil {
-		cancel()
-		t.Fatal(err)
-	}
-	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx, Reports{Held: make(chan bool, 1), Activity: make(chan struct{}, 1)}) }()
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-	got := make(chan *dbus.Error, 1)
-	go func() { _, err := (handler{s: s}).Inhibit(":1.9", "test", "video"); got <- err }()
-	select {
-	case err := <-got:
-		if err == nil {
-			t.Fatal("Inhibit succeeded on a stopped service")
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("Inhibit waits on a stopped service")
-	}
-}
-
 // The bus going away while inhibited reports false so idle resumes.
 func TestBusLossReleases(t *testing.T) {
 	address, cmd := startBus(t)
@@ -417,4 +389,57 @@ func TestServeRetries(t *testing.T) {
 	next(t, held, false)
 	address, _ = startBusAt(t, socket)
 	waitOwner(t, connect(t, address), func(owner string) bool { return owner != "" })
+}
+
+func TestUnknownMethodAndInvalidArguments(t *testing.T) {
+	address := privateBus(t)
+	serve(t, address)
+	c := connect(t, address)
+	for _, path := range []dbus.ObjectPath{"/org/freedesktop/ScreenSaver", "/ScreenSaver"} {
+		obj := c.Object(busName, path)
+		for _, tt := range []struct {
+			member string
+			args   []any
+			want   string
+		}{
+			{member: "NoSuchMethod", want: "org.freedesktop.DBus.Error.UnknownMethod"},
+			{member: "Inhibit", args: []any{uint32(1)}, want: "org.freedesktop.DBus.Error.InvalidArgs"},
+		} {
+			err := obj.Call(iface+"."+tt.member, 0, tt.args...).Err
+			busErr, ok := err.(dbus.Error)
+			if !ok || busErr.Name != tt.want {
+				t.Fatalf("%s %s: %v, want %s", path, tt.member, err, tt.want)
+			}
+		}
+	}
+}
+
+// A stopped service has closed its connection, so later calls fail instead
+// of waiting for a handler goroutine whose owner loop has already returned.
+func TestCallAfterStop(t *testing.T) {
+	address := privateBus(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s, err := New(ctx, address, logging.For(ctx, "screensaver"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	held := make(chan bool, 1)
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx, Reports{Held: held}) }()
+	c := connect(t, address)
+	waitOwner(t, c, func(owner string) bool { return owner != "" })
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	callCtx, stop := context.WithTimeout(context.Background(), 2*time.Second)
+	defer stop()
+	err = c.Object(busName, "/ScreenSaver").CallWithContext(callCtx, iface+".Inhibit", 0, "test", "video").Err
+	if err == nil {
+		t.Fatal("Inhibit succeeded on a stopped service")
+	}
+	if callCtx.Err() != nil {
+		t.Fatal("Inhibit waited on a stopped service")
+	}
 }
