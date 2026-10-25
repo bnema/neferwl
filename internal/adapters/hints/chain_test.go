@@ -200,3 +200,11 @@ func TestChainUnavailableOCRDoesNotCapture(t *testing.T) {
 		require.Empty(t, targets)
 	}
 }
+
+func TestDetectorLinksOnlyDoesNotCapture(t *testing.T) {
+	det := newMockdetector(t)
+	w := worker{sources: []source{&detectorSource{det: det}}}
+	targets, err := w.chain(context.Background(), ports.HintScanRequest{LinksOnly: true, Windows: []ports.HintWindow{{ID: 1}}}, nil)
+	require.NoError(t, err)
+	require.Empty(t, targets)
+}
