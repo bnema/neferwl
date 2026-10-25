@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
+	clienttext "github.com/bnema/go-wayland-bindings/client/textinput"
+	clientcore "github.com/bnema/go-wayland-bindings/client/wayland"
+	clientxdg "github.com/bnema/go-wayland-bindings/client/xdgshell"
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/wlturbo"
-	clientcore "github.com/bnema/wlturbo/protocol/core"
-	clienttext "github.com/bnema/wlturbo/protocol/textinput"
-	clientxdg "github.com/bnema/wlturbo/protocol/xdgshell"
 	"golang.org/x/sys/unix"
 )
 

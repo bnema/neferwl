@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
+	core "github.com/bnema/go-wayland-bindings/client/wayland"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
-	"github.com/bnema/wlturbo/protocol/core"
 )
 
 // This fixture wires real channel ports before starting the display owner.

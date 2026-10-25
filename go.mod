@@ -9,7 +9,7 @@ require (
 	github.com/bnema/purego-libwayland v0.11.0
 	github.com/bnema/purego-pipewire v0.2.0
 	github.com/bnema/purego-vulkan v0.6.0
-	github.com/bnema/wlturbo v0.5.0
+	github.com/bnema/wlturbo v0.6.2
 	github.com/bnema/zerobus v0.2.0
 	github.com/bnema/zerowrap v1.4.1
 	github.com/godbus/dbus/v5 v5.2.2

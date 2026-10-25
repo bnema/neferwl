@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
+	lockclient "github.com/bnema/go-wayland-bindings/client/extsessionlock"
+	clientcore "github.com/bnema/go-wayland-bindings/client/wayland"
+	captureclient "github.com/bnema/go-wayland-bindings/client/wlrscreencopy"
+	clientxdg "github.com/bnema/go-wayland-bindings/client/xdgshell"
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
-	clientcore "github.com/bnema/wlturbo/protocol/core"
-	lockclient "github.com/bnema/wlturbo/protocol/extsessionlock"
-	captureclient "github.com/bnema/wlturbo/protocol/screencopy"
-	clientxdg "github.com/bnema/wlturbo/protocol/xdgshell"
 	"golang.org/x/sys/unix"
 )
 

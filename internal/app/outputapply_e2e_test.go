@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
+	client "github.com/bnema/go-wayland-bindings/client/wlroutputmanagement"
 	wlr "github.com/bnema/go-wayland-bindings/server/wlroutputmanagement"
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
-	client "github.com/bnema/wlturbo/protocol/outputmanagement"
 )
 
 // A wlr-output-management client goes through Wayland, the headless owner

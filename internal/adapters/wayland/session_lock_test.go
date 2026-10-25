@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
+	lockclient "github.com/bnema/go-wayland-bindings/client/extsessionlock"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
-	lockclient "github.com/bnema/wlturbo/protocol/extsessionlock"
 )
 
 func lockManagerServer(t *testing.T) (*Server, *sessionsecurity.Gate, chan ports.SecurityState, chan ports.SecurityBackendEvent, string) {

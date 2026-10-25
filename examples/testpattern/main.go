@@ -36,12 +36,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bnema/go-wayland-bindings/client/colormanagement"
+	"github.com/bnema/go-wayland-bindings/client/linuxdmabuf"
+	clientcore "github.com/bnema/go-wayland-bindings/client/wayland"
+	"github.com/bnema/go-wayland-bindings/client/xdgshell"
 	"github.com/bnema/neferwl/examples/testpattern/pattern"
 	"github.com/bnema/wlturbo"
-	"github.com/bnema/wlturbo/protocol/colormanagement"
-	clientcore "github.com/bnema/wlturbo/protocol/core"
-	"github.com/bnema/wlturbo/protocol/linuxdmabuf"
-	"github.com/bnema/wlturbo/protocol/xdgshell"
 	"golang.org/x/sys/unix"
 )
 

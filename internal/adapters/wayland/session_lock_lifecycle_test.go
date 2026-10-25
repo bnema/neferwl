@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	lockclient "github.com/bnema/go-wayland-bindings/client/extsessionlock"
+	core "github.com/bnema/go-wayland-bindings/client/wayland"
 	"github.com/bnema/go-wayland-bindings/server/drmlease"
 	serverlock "github.com/bnema/go-wayland-bindings/server/extsessionlock"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
@@ -14,8 +16,6 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
-	"github.com/bnema/wlturbo/protocol/core"
-	lockclient "github.com/bnema/wlturbo/protocol/extsessionlock"
 	"golang.org/x/sys/unix"
 )
 
