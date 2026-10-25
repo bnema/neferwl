@@ -175,3 +175,21 @@ func TestFocusEntryPanelUsesCommonFrameEdge(t *testing.T) {
 		t.Fatalf("focus %d want float 4", id)
 	}
 }
+
+func TestCrossScreenFocusEntryResolvesModal(t *testing.T) {
+	c, clock := flashCore(t)
+	c.addScreen(ports.OutputInfo{Name: "B", Width: 400, Height: 300})
+	b := c.screens[1]
+	w := b.mon.Current()
+	for _, id := range []WindowID{4, 5, 6} {
+		c.windows.mapped(ports.WindowMapped{ID: id}, clock.now)
+	}
+	w.addFloat(Float{ID: 4, W: 40, H: 40, free: true, cx: .1, cy: .5}, true)
+	w.AddDialog(5, 4, 40, 40)
+	w.SetModal(5, true)
+	w.addFloat(Float{ID: 6, W: 40, H: 40, free: true, cx: .9, cy: .5}, true)
+	c.applyAction(ActionFocusMonitorRight)
+	if id, _ := b.mon.Focused(); c.cur() != b || id != 5 {
+		t.Fatalf("focus %d, want modal 5", id)
+	}
+}

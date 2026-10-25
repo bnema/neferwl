@@ -486,6 +486,8 @@ func (m *Monitor) focusEntry(d direction) {
 	}
 	if id != 0 {
 		w.FocusID(id)
+		// Entry comes from another monitor, not from a dialog here.
+		w.focusModal(0)
 	}
 }
 
