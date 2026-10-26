@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -24,7 +25,7 @@ func fileChanges(t *testing.T, dir string) func() {
 		fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
 		for {
 			n, err := unix.Poll(fds, 10000)
-			if err == unix.EINTR {
+			if errors.Is(err, unix.EINTR) {
 				continue
 			}
 			if err != nil {
@@ -34,7 +35,7 @@ func fileChanges(t *testing.T, dir string) func() {
 				t.Fatal("timed out waiting for filesystem publication")
 			}
 			var buf [16384]byte
-			if _, err := unix.Read(fd, buf[:]); err != nil && err != unix.EAGAIN {
+			if _, err := unix.Read(fd, buf[:]); err != nil && !errors.Is(err, unix.EAGAIN) {
 				t.Fatal(err)
 			}
 			return

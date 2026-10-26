@@ -747,6 +747,42 @@ func TestFirstTerminalLayoutWaitCancels(t *testing.T) {
 		if err := receive(t, done); err != nil {
 			t.Fatal(err)
 		}
+		if len(spawn) != 0 {
+			t.Fatal("terminal spawned after cancelled flush")
+		}
+	})
+}
+
+func TestFirstTerminalSpawnFollowsDeliveredLayout(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		commands := make(chan ports.ClientCommand)
+		spawn := make(chan ports.SpawnRequest, 1)
+		output := make(chan ports.OutputEvent, 1)
+		scenes := make(chan []ports.Scene, 1)
+		state := make(chan ports.State, 1)
+		c, err := core.New(scrollDefaults(), core.Channels{Output: output, Commands: commands, Spawn: spawn, Scenes: scenes, State: state}, core.Options{Terminal: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- c.Run(ctx) }()
+		receive(t, state)
+		output <- ports.OutputAdded{Info: left}
+		synctest.Wait()
+		if len(spawn) != 0 {
+			t.Fatal("terminal spawned while SetOutputs was undelivered")
+		}
+		for delivered := false; !delivered; {
+			_, delivered = receive(t, commands).(ports.SetOutputs)
+		}
+		if req := receive(t, spawn); req.Argv[0] != "foot" {
+			t.Fatal(req)
+		}
+		cancel()
+		if err := receive(t, done); err != nil {
+			t.Fatal(err)
+		}
 	})
 }
 
