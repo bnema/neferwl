@@ -30,7 +30,7 @@ type GPU struct {
 	hdrReadbackMods     []uint64 // Immutable transfer-source export list, computed at open.
 	modPlanes           map[uint64]uint32
 	importMods          map[importKey][]uint64
-	mu                  sync.Mutex
+	poolMu              sync.Mutex
 	syncFD              bool
 	resources           uint32
 	indexing            bool
@@ -164,7 +164,7 @@ func (g *GPU) initDevice(physical vk.PhysicalDevice, family, n uint32, start tim
 		probe := &Renderer{gpu: g}
 		g.dmabuf = probe.probeDMABuf(physical)
 		if g.dmabuf.Device != 0 {
-			probe.probeRenderModifiers(physical)
+			g.probeRenderModifiers()
 		}
 		g.syncFD = g.dd.HasGetSemaphoreFdKHR()
 	}
@@ -201,8 +201,8 @@ func (g *GPU) Close() {
 	if g == nil || g.dd == nil || g.device == 0 {
 		return
 	}
-	g.mu.Lock()
-	defer g.mu.Unlock()
+	g.poolMu.Lock()
+	defer g.poolMu.Unlock()
 	for _, q := range g.queues {
 		if q.users != 0 {
 			g.log.Error().Int("users", q.users).Msg("closing GPU with active renderers")
@@ -230,7 +230,7 @@ func (q *queue) submit(count uint32, submits *vk.SubmitInfo, fence vk.Fence) err
 	return checked("vkQueueSubmit", q.dd.QueueSubmit(q.q, count, submits, fence))
 }
 
-// queuePool accounting is protected by GPU.mu, not by the submission lock.
+// queuePool accounting is protected by GPU.poolMu, not by the submission lock.
 type queuePool []*queue
 
 func (p queuePool) acquire() *queue {
@@ -259,21 +259,19 @@ func (p queuePool) release(q *queue) {
 }
 
 func (g *GPU) acquireQueue() *queue {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+	g.poolMu.Lock()
+	defer g.poolMu.Unlock()
 	return queuePool(g.queues).acquire()
 }
 
 func (g *GPU) releaseQueue(q *queue) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+	g.poolMu.Lock()
+	defer g.poolMu.Unlock()
 	queuePool(g.queues).release(q)
 }
 
-// modifierPlanes reads mutable metadata without retaining the map after unlock.
+// modifierPlanes reads plane metadata published at GPU open.
 func (g *GPU) modifierPlanes(mod uint64) (uint32, bool) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
 	n, ok := g.modPlanes[mod]
 	return n, ok
 }

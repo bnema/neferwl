@@ -195,25 +195,20 @@ func (r *Renderer) TargetModifiers(display []uint64, singlePlane bool) []uint64 
 		return nil
 	}
 	format, _ := r.targetFormat()
-	return r.intersectModifiers(r.probeImportModifiers(r.gpu.physical, format), display, singlePlane)
+	return r.intersectModifiers(r.gpu.importMods[importKey{format, r.hdrReadback}], display, singlePlane)
 }
 
-// probeRenderModifiers lists exportable SDR and HDR targets.
-func (r *Renderer) probeRenderModifiers(physical vk.PhysicalDevice) {
-	r.gpu.renderMods = r.probeModifiers(physical, vk.FormatB8g8r8a8Unorm)
-	r.gpu.hdrMods = r.probeModifiers(physical, vk.FormatA2r10g10b10UnormPack32)
-	r.hdrReadback = true
-	r.gpu.hdrReadbackMods = r.probeModifiers(physical, vk.FormatA2r10g10b10UnormPack32)
-	r.hdrReadback = false
-}
-
-// probeModifiers lists the exportable modifiers of format (one to four memory
-// planes: DCC adds metadata planes; DCC retile modifiers are left out, see
-// retilesDCC) that support the target usage, and
-// records their plane counts in modPlanes. HDR targets need transfer-src only when
-// hdrReadback is set (GPU tests, headless --screenshot-raw; never DRM).
-func (r *Renderer) probeModifiers(physical vk.PhysicalDevice, format vk.Format) []uint64 {
-	return r.probeTargetModifiers(physical, format, vk.ExternalMemoryFeatureExportableBit)
+// probeRenderModifiers computes all export/import tables before GPU publication.
+func (g *GPU) probeRenderModifiers() {
+	g.renderMods = g.probeTargetModifiers(vk.FormatB8g8r8a8Unorm, vk.ExternalMemoryFeatureExportableBit, false)
+	g.hdrMods = g.probeTargetModifiers(vk.FormatA2r10g10b10UnormPack32, vk.ExternalMemoryFeatureExportableBit, false)
+	g.hdrReadbackMods = g.probeTargetModifiers(vk.FormatA2r10g10b10UnormPack32, vk.ExternalMemoryFeatureExportableBit, true)
+	g.importMods = make(map[importKey][]uint64)
+	for _, format := range []vk.Format{vk.FormatB8g8r8a8Unorm, vk.FormatA2r10g10b10UnormPack32} {
+		for _, readback := range []bool{false, true} {
+			g.importMods[importKey{format, readback}] = g.probeTargetModifiers(format, vk.ExternalMemoryFeatureImportableBit, readback)
+		}
+	}
 }
 
 // importKey is what the importable modifiers of a target depend on: its
@@ -223,55 +218,31 @@ type importKey struct {
 	readback bool
 }
 
-// probeImportModifiers lists the modifiers of format a target can be
-// imported with: probeModifiers with the importable bit, for images the
-// display allocator made. The answer is probed once per key: it does not
-// change while the device lives.
-func (r *Renderer) probeImportModifiers(physical vk.PhysicalDevice, format vk.Format) []uint64 {
-	key := importKey{format, r.hdrReadback}
-	r.gpu.mu.Lock()
-	mods, ok := r.gpu.importMods[key]
-	r.gpu.mu.Unlock()
-	if ok {
-		return mods
-	}
-	mods = r.probeTargetModifiers(physical, format, vk.ExternalMemoryFeatureImportableBit)
-	r.gpu.mu.Lock()
-	defer r.gpu.mu.Unlock()
-	if r.gpu.importMods == nil {
-		r.gpu.importMods = make(map[importKey][]uint64)
-	}
-	r.gpu.importMods[key] = mods
-	return mods
-}
-
-func (r *Renderer) probeTargetModifiers(physical vk.PhysicalDevice, format vk.Format, feature vk.ExternalMemoryFeatureFlags) []uint64 {
+func (g *GPU) probeTargetModifiers(format vk.Format, feature vk.ExternalMemoryFeatureFlags, readback bool) []uint64 {
 	list := vk.DrmFormatModifierPropertiesListEXT{SType: vk.StructureTypeDRMFormatModifierPropertiesListEXT}
 	fp := vk.FormatProperties2{SType: vk.StructureTypeFormatProperties2, Next: unsafe.Pointer(&list)}
-	r.gpu.inst.id.GetPhysicalDeviceFormatProperties2(physical, format, &fp)
+	g.inst.id.GetPhysicalDeviceFormatProperties2(g.physical, format, &fp)
 	if list.DrmFormatModifierCount == 0 {
 		return nil
 	}
 	mods := make([]vk.DrmFormatModifierPropertiesEXT, list.DrmFormatModifierCount)
 	list.DrmFormatModifierProperties = &mods[0]
-	r.gpu.inst.id.GetPhysicalDeviceFormatProperties2(physical, format, &fp)
+	g.inst.id.GetPhysicalDeviceFormatProperties2(g.physical, format, &fp)
 	need := vk.FormatFeatureFlags(vk.FormatFeatureColorAttachmentBit)
 	if format == vk.FormatB8g8r8a8Unorm {
 		need |= formatFeatureTransferSrc | vk.FormatFeatureColorAttachmentBlendBit
-	} else if r.hdrReadback {
+	} else if readback {
 		need |= formatFeatureTransferSrc
 	}
 	// SDR targets are composed and read back; HDR targets are color
 	// attachments, and transfer sources only with hdrReadback.
-	result, planes := filterModifiers(mods[:list.DrmFormatModifierCount], need, func(m uint64) bool { return r.externalTarget(physical, format, m, feature) })
-	r.gpu.mu.Lock()
-	defer r.gpu.mu.Unlock()
-	if r.gpu.modPlanes == nil {
-		r.gpu.modPlanes = make(map[uint64]uint32)
+	result, planes := filterModifiers(mods[:list.DrmFormatModifierCount], need, func(m uint64) bool { return g.externalTarget(format, m, feature, readback) })
+	if g.modPlanes == nil {
+		g.modPlanes = make(map[uint64]uint32)
 	}
 	// A modifier has the same plane count for every format (DCC planes
 	// come from the modifier), so SDR and HDR share the map.
-	maps.Copy(r.gpu.modPlanes, planes)
+	maps.Copy(g.modPlanes, planes)
 	return result
 }
 
@@ -315,13 +286,13 @@ func filterModifiers(mods []vk.DrmFormatModifierPropertiesEXT, need vk.FormatFea
 // externalTarget asks whether a target image of format and modifier with
 // the target usage supports the external memory feature (exportable: the
 // renderer allocates it; importable: the display allocator does).
-func (r *Renderer) externalTarget(physical vk.PhysicalDevice, format vk.Format, modifier uint64, feature vk.ExternalMemoryFeatureFlags) bool {
+func (g *GPU) externalTarget(format vk.Format, modifier uint64, feature vk.ExternalMemoryFeatureFlags, readback bool) bool {
 	mod := vk.PhysicalDeviceImageDrmFormatModifierInfoEXT{SType: vk.StructureTypePhysicalDeviceImageDRMFormatModifierInfoEXT, DrmFormatModifier: modifier, SharingMode: vk.SharingModeExclusive}
 	ext := vk.PhysicalDeviceExternalImageFormatInfo{SType: vk.StructureTypePhysicalDeviceExternalImageFormatInfo, Next: unsafe.Pointer(&mod), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
-	info := vk.PhysicalDeviceImageFormatInfo2{SType: vk.StructureTypePhysicalDeviceImageFormatInfo2, Next: unsafe.Pointer(&ext), Format: format, Type: vk.ImageType2d, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: exportUsage(format, r.hdrReadback)}
+	info := vk.PhysicalDeviceImageFormatInfo2{SType: vk.StructureTypePhysicalDeviceImageFormatInfo2, Next: unsafe.Pointer(&ext), Format: format, Type: vk.ImageType2d, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: exportUsage(format, readback)}
 	extOut := vk.ExternalImageFormatProperties{SType: vk.StructureTypeExternalImageFormatProperties}
 	out := vk.ImageFormatProperties2{SType: vk.StructureTypeImageFormatProperties2, Next: unsafe.Pointer(&extOut)}
-	if r.gpu.inst.id.GetPhysicalDeviceImageFormatProperties2(physical, &info, &out) != vk.Success {
+	if g.inst.id.GetPhysicalDeviceImageFormatProperties2(g.physical, &info, &out) != vk.Success {
 		return false
 	}
 	return extOut.ExternalMemoryProperties.ExternalMemoryFeatures&feature != 0
@@ -474,7 +445,7 @@ func (r *Renderer) importTarget(b *ports.DMABuf) (*target, error) {
 		return nil, fmt.Errorf("%w: %#x is not a target modifier of the device", errImageModifier, b.Modifier)
 	case n < 1 || n > maxModifierPlanes || want != uint32(n):
 		return nil, fmt.Errorf("%w: modifier %#x: image has %d planes, device expects %d", errImagePlanes, b.Modifier, n, want)
-	case !r.externalTarget(r.gpu.physical, format, b.Modifier, vk.ExternalMemoryFeatureImportableBit):
+	case !r.gpu.externalTarget(format, b.Modifier, vk.ExternalMemoryFeatureImportableBit, r.hdrReadback):
 		return nil, fmt.Errorf("%w: %#x cannot be imported as a target", errImageModifier, b.Modifier)
 	}
 	if err := sameDMABuf(b.Planes); err != nil {
