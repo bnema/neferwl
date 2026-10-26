@@ -408,6 +408,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				select {
 				case readerErr <- readerFailure{c, fmt.Errorf("%s: %w", c.Path(), err)}:
 				default:
+					log.Error().Err(err).Str("card", c.Path()).Msg("drm event reader failure dropped: error queue full")
 				}
 			}
 		})
@@ -636,6 +637,14 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 					b.seat.Unsubscribe(active)
 					o.Close()
 					c.Release(name)
+					// Undo the bookkeeping above: no stopped event will come.
+					delete(cards, name)
+					delete(outputs, name)
+					delete(readySources, name)
+					delete(progress.ready, name)
+					close(stopped)
+					delete(stopReady, name)
+					curs.set(name, nil)
 					continue
 				}
 				send(ports.OutputAdded{Info: o.Info()})
@@ -652,7 +661,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	// of a hot-added card do not change what clients are told.
 	addCard := func(name string) bool {
 		c, action := b.hotplugAdd(ctx, name, currentConfig, want(currentConfig))
-		if action == hotplugAddDying {
+		if action.retryAfterTeardown() {
 			replug.add(name) // finishCard reopens it
 		}
 		if c == nil {
@@ -680,13 +689,15 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			replug.remove(name)
 			if recovering {
 				pending.add(name)
-			} else if addCard(name) {
-				// The scan comes from the loop, not from inside a stop handler.
-				select {
-				case hotplug <- drm.HotplugEvent{}:
-				default:
-				}
+			} else {
+				addCard(name)
 			}
+		}
+		// A same-name connector on another card was refused while this one
+		// lived; the loop rescans (never inside a stop handler).
+		select {
+		case hotplug <- drm.HotplugEvent{}:
+		default:
 		}
 	}
 	// removeCard takes an unplugged card out of service: no scan sees it, its
@@ -700,8 +711,12 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		c.removed = true
 		b.cards = slices.Delete(b.cards, idx, idx+1)
 		log.Info().Str("card", c.Path()).Msg("GPU unplugged")
-		if err := revokeSecurityLeases(c, func(id uint32) { leases.send(ports.LeaseFinished{Card: c.Path(), LeaseID: id}) }); err != nil {
-			log.Warn().Err(err).Str("card", c.Path()).Msg("revoke leases of removed GPU")
+		// A lease of a dead card is finished whether or not the revoke worked.
+		for _, id := range c.LeaseIDs() {
+			if err := c.Revoke(id); err != nil {
+				log.Debug().Err(err).Str("card", c.Path()).Uint32("lease", id).Msg("revoke lease of removed GPU")
+			}
+			leases.send(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
 		}
 		leases.forget(c)
 		var names []string
@@ -778,10 +793,15 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			if failure.card.removed {
 				continue // the card is gone; its outputs are being stopped
 			}
-			if path := failure.card.Path(); path != b.renderInfo.Path && !deviceNodeExists(path) {
-				// The read fails as the card unplugs, possibly before its
+			if path := failure.card.Path(); path == b.renderInfo.Path {
+				if !deviceNodeExists(path) || errors.Is(failure.err, unix.ENODEV) {
+					log.Error().Err(failure.err).Str("card", path).Msg("render GPU removed")
+					return errors.Join(fmt.Errorf("%w: %s: %w", ErrRenderGPURemoved, path, failure.err), set.wait())
+				}
+			} else if errors.Is(failure.err, unix.ENODEV) {
+				// The device vanished under the reader, possibly before its
 				// uevent is handled.
-				log.Warn().Err(failure.err).Str("card", path).Msg("card reader failed, device node gone")
+				log.Warn().Err(failure.err).Str("card", path).Msg("card reader failed, device gone")
 				removeCard(filepath.Base(path))
 				continue
 			}
@@ -934,6 +954,11 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			delete(stopping, name)
 			curs.set(name, nil)
 			card := cards[name]
+			if card.removed && err != nil {
+				// An unplugged card fails its outputs: that is a stop, not a fault.
+				log.Info().Err(err).Str("connector", name).Msg("output of removed GPU stopped")
+				err = nil
+			}
 			card.Release(name)
 			lastHeads[card] = releasedHead(lastHeads[card], name)
 			delete(cards, name)

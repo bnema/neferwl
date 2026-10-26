@@ -56,7 +56,12 @@ const (
 	hotplugAddExisting                         // already open: duplicate event
 	hotplugAddDying                            // unplugged and still shutting down: retry after
 	hotplugAddIgnored                          // filtered out by drm.devices / drm.ignore
+	hotplugAddFailed                           // opening it failed; no retry until the next event
 )
+
+// retryAfterTeardown reports whether an add is remembered until the dying
+// card of the same name has finished. A failed open is not retried.
+func (a hotplugAddAction) retryAfterTeardown() bool { return a == hotplugAddDying }
 
 // planHotplugAdd applies the startup allow/ignore filter to a card that just
 // appeared. The render GPU never changes at runtime, so the selector's own
@@ -176,8 +181,8 @@ func (b *drmBackend) hotplugAdd(ctx context.Context, name string, cfg ports.Conf
 		}
 		c, err := b.openCard(ctx, info, multiGPUMode(cfg.Render.MultiGPU), want, logging.Enabled(ctx, "render-damage"))
 		if err != nil {
-			log.Warn().Err(err).Str("card", name).Msg("GPU hotplug: card unusable")
-			return nil, hotplugAddUnknown
+			log.Warn().Err(err).Str("card", name).Msg("GPU hotplug: card unusable, not retried")
+			return nil, hotplugAddFailed
 		}
 		return c, action
 	}

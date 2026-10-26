@@ -32,22 +32,10 @@ type HotplugEvent struct {
 	Action string
 }
 
-// ParseUevent parses a udev uevent payload (NUL-separated KEY=VALUE entries;
-// a leading "action@devpath" header is skipped). ok is false for events the
-// compositor ignores: other subsystems, render nodes, connector devices
-// appearing or disappearing, and card changes that are not connector hotplugs.
-func ParseUevent(payload []byte) (ev HotplugEvent, ok bool) {
-	props := map[string]string{}
-	for _, entry := range strings.Split(string(payload), "\x00") {
-		if key, val, found := strings.Cut(entry, "="); found && key != "" {
-			props[key] = val
-		}
-	}
-	return hotplugFromProps(func(key string) string { return props[key] })
-}
-
-// hotplugFromProps classifies an event from its udev properties, so the
-// libudev watcher (property lookups) and ParseUevent (raw payload) can share one rule set.
+// hotplugFromProps classifies an event from its udev properties: ok is false
+// for events the compositor ignores (other subsystems, render nodes, connector
+// devices appearing or disappearing, card changes that are not connector
+// hotplugs). The libudev watcher feeds it property lookups.
 func hotplugFromProps(get func(key string) string) (HotplugEvent, bool) {
 	if get("SUBSYSTEM") != "drm" {
 		return HotplugEvent{}, false

@@ -102,3 +102,12 @@ func TestHotplugPendingCards(t *testing.T) {
 	assert.Equal(t, []string{"card2", "card4"}, p.take())
 	assert.Empty(t, p.take())
 }
+
+func TestHotplugAddRetryAfterTeardown(t *testing.T) {
+	for action, want := range map[hotplugAddAction]bool{
+		hotplugAddOpen: false, hotplugAddUnknown: false, hotplugAddExisting: false,
+		hotplugAddDying: true, hotplugAddIgnored: false, hotplugAddFailed: false,
+	} {
+		assert.Equal(t, want, action.retryAfterTeardown(), "action %d", action)
+	}
+}

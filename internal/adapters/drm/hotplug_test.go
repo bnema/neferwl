@@ -10,9 +10,21 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// parseUevent splits a raw uevent payload (NUL-separated KEY=VALUE entries,
+// possibly after an "action@devpath" header) into properties, as libudev does.
+func parseUevent(payload []byte) (HotplugEvent, bool) {
+	props := map[string]string{}
+	for _, entry := range strings.Split(string(payload), "\x00") {
+		if key, val, found := strings.Cut(entry, "="); found && key != "" {
+			props[key] = val
+		}
+	}
+	return hotplugFromProps(func(key string) string { return props[key] })
+}
+
 func uevent(entries ...string) []byte { return []byte(strings.Join(entries, "\x00") + "\x00") }
 
-func TestHotplugParseUevent(t *testing.T) {
+func TestHotplugFromProps(t *testing.T) {
 	tests := []struct {
 		name    string
 		payload []byte
@@ -38,7 +50,7 @@ func TestHotplugParseUevent(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := ParseUevent(tt.payload)
+			got, ok := parseUevent(tt.payload)
 			assert.Equal(t, tt.ok, ok)
 			assert.Equal(t, tt.want, got)
 		})
