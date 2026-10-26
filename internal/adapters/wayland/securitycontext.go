@@ -60,17 +60,17 @@ func (m *securityManager) CreateListener(r *securitycontext.WpSecurityContextMan
 	case !listeningUnixSocket(listenFD):
 		r.PostError(uint32(securitycontext.WpSecurityContextManagerV1ErrorInvalidListenFd), "listen_fd is not a listening unix stream socket")
 	default:
-		if s.securityCreated != nil {
-			select {
-			case s.securityCreated <- r.Client():
-			default:
-			}
-		}
 		ctx := &securityContext{s: s, listenFD: listenFD, closeFD: closeFD}
 		res, err := securitycontext.NewWpSecurityContextV1(r.Client(), r.Version(), id, ctx)
 		if err == nil {
 			// The client went away, or destroyed the object, before commit.
 			res.OnDestroy = ctx.release
+			if s.securityCreated != nil {
+				select {
+				case s.securityCreated <- r.Client():
+				default:
+				}
+			}
 			return
 		}
 	}
@@ -163,7 +163,7 @@ func (c *securityContext) Commit(r *securitycontext.WpSecurityContextV1) {
 		return
 	}
 	c.committed = true
-	l := &securityListener{s: c.s, listenFD: c.listenFD, closeFD: c.closeFD, info: c.info}
+	l := &securityListener{s: c.s, listenFD: c.listenFD, closeFD: c.closeFD, info: c.info, done: c.s.securityDone}
 	c.s.securityLive.Add(1)
 	c.s.securityWG.Add(1)
 	go l.run()
@@ -175,15 +175,17 @@ type securityListener struct {
 	s                 *Server
 	listenFD, closeFD int
 	info              sandbox
+	// done is Server.securityDone, read on the display goroutine at commit.
+	done chan<- struct{}
 }
 
 func (l *securityListener) run() {
 	s := l.s
-	if s.securityDone != nil {
+	if l.done != nil {
 		// Runs last: the descriptors are closed and the counters updated.
 		defer func() {
 			select {
-			case s.securityDone <- struct{}{}:
+			case l.done <- struct{}{}:
 			default:
 			}
 		}()

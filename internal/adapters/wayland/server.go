@@ -160,10 +160,11 @@ type Server struct {
 	securityStop int
 	securityWG   sync.WaitGroup
 	securityLive atomic.Int32
-	// Test seams, nil in production, set on the display goroutine before a
-	// context is created: securityCreated receives the client that created a
-	// listener; securityDone is signalled when a listener goroutine has exited
-	// and closed its descriptors. Sends never block.
+	// Test seams, nil in production, set and read on the display goroutine:
+	// securityCreated receives the client whose security context was created;
+	// securityDone, captured by each listener at commit, is signalled when that
+	// listener goroutine has exited and closed its descriptors. Sends never
+	// block.
 	securityCreated chan<- server.Client
 	securityDone    chan<- struct{}
 	display         *server.Display
