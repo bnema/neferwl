@@ -78,6 +78,8 @@ func (m syncManager) GetSurface(r *linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1, i
 	}
 	st.resource = res
 	state.sync = st
+	m.server.log.Debug().Uint32("surface", state.wl.ID()).
+		Uint64("window", uint64(state.root().windowID())).Msg("explicit sync surface created")
 	res.OnDestroy = func() {
 		if state.sync == st {
 			state.sync = nil

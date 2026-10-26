@@ -262,6 +262,7 @@ func TestSyncobjAcquireAndRelease(t *testing.T) {
 	h := newSyncHarness(t)
 	h.releases = map[uint32]*syncReleaseProxy{}
 	a, b := h.dmabuf(), h.dmabuf()
+	h.s.display.Do(func() { h.s.watchStats(h.win) })
 	h.commit(a, 1, 2)
 	if _, ok := h.content(50 * time.Millisecond); ok {
 		t.Fatal("content before the acquire point had a fence")
@@ -271,6 +272,26 @@ func TestSyncobjAcquireAndRelease(t *testing.T) {
 	if !ok || first.Acquire == nil {
 		t.Fatalf("content %+v", first)
 	}
+	checkExplicit := func() {
+		t.Helper()
+		var explicit bool
+		h.s.display.Do(func() { explicit = h.s.stats.snapshot().ExplicitSync })
+		if !explicit {
+			t.Fatal("applied explicit buffer reported as implicit")
+		}
+	}
+	checkExplicit() // deferred acquire applied before fresh-buffer facts
+	// No buffer attachment: the held fence and its facts survive a re-show.
+	requestProtocol(t, h.c, h.surf, wayland.SurfaceRequestCommit)
+	if err := h.c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	checkExplicit()
+	h.s.display.Do(func() {
+		h.s.watchStats(0)
+		h.s.watchStats(h.win)
+	})
+	checkExplicit() // starting a watch reads the retained buffer's hold
 	h.commit(b, 3, 4)
 	h.fire(3)
 	second, ok := h.content(2 * time.Second)
