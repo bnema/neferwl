@@ -394,3 +394,16 @@ func TestDirectFrameNeverCopies(t *testing.T) {
 		})
 	}
 }
+
+func TestIsLocalDeviceError(t *testing.T) {
+	lost := localDeviceError{cause: ports.ErrDeviceLost}
+	if !IsLocalDeviceError(fmt.Errorf("output: %w", lost)) {
+		t.Fatal("wrapped local error not recognized")
+	}
+	if errors.Is(lost, ports.ErrDeviceLost) {
+		t.Fatal("local loss must not trigger shared render recovery")
+	}
+	if IsLocalDeviceError(ports.ErrDeviceLost) || IsLocalDeviceError(nil) {
+		t.Fatal("shared loss or nil classified as local")
+	}
+}

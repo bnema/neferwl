@@ -1,6 +1,6 @@
 # neferwl config: one `key = value` per line, # starts a comment.
 # Every value below is the default; a missing file means defaults.
-# Changes apply live. An invalid line logs a warning and keeps the default.
+# Changes apply live unless marked restart required. An invalid line logs a warning and keeps the default.
 
 # Keyboard (xkb names, e.g. layout = fr, options = caps:escape).
 keyboard.layout =
@@ -145,6 +145,12 @@ focus.flash-color =
 # step through the scales where the display divides into whole pixels and
 # save the result here.
 # output.DP-2.scale = 4/3
+
+# GPU selection (restart required). Empty lists select all cards and ignore none.
+# drm.devices =
+# drm.ignore =
+# render.device =
+render.multi-gpu = auto
 
 render.direct-scanout = on
 # Games asking for tearing flip without waiting for vblank, and variable

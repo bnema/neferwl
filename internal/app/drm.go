@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -114,12 +115,13 @@ const applyTimeout = 5 * time.Second
 
 // drmBackend is the seat and the cards with at least one usable output.
 type drmBackend struct {
-	render     ports.RenderDevice
-	opener     ports.RenderDeviceOpener
-	renderInfo ports.GPUInfo
-	advertised []ports.DMABufFormat
-	seat       *seat.Seat
-	cards      []*drmCard
+	startupConfig ports.Config
+	render        ports.RenderDevice
+	opener        ports.RenderDeviceOpener
+	renderInfo    ports.GPUInfo
+	advertised    []ports.DMABufFormat
+	seat          *seat.Seat
+	cards         []*drmCard
 	// dying holds unplugged cards until their outputs are stopped. Only the
 	// runOutputs goroutine touches it; close reads it after that returns.
 	dying map[*drmCard]*cardTeardown
@@ -217,7 +219,8 @@ type drmCard struct {
 	local *localRenderDevice
 	// removed is set by the runOutputs goroutine when the card is unplugged;
 	// its reader may then fail without ending the session.
-	removed bool
+	removed   bool
+	localLost bool
 	// stopReader and readerDone belong to the card's ReadEvents goroutine.
 	stopReader context.CancelFunc
 	readerDone <-chan struct{}
@@ -277,7 +280,7 @@ func openDRM(ctx context.Context, cfg ports.Config, opener ports.RenderDeviceOpe
 	for _, reason := range sel.Reasons {
 		log.Info().Msg(reason)
 	}
-	b := &drmBackend{seat: s, clock: clock.System{}, log: log, opener: opener}
+	b := &drmBackend{startupConfig: cfg, seat: s, clock: clock.System{}, log: log, opener: opener}
 	s.SetBeforeDisable(b.prepareSeatDisable)
 	render, info, err := openPlannedRender(opener, plans, cfg.Render.Device != "" || os.Getenv("NEFERWL_RENDER_DEVICE") != "", log)
 	if err != nil {
@@ -307,8 +310,8 @@ func openDRM(ctx context.Context, cfg ports.Config, opener ports.RenderDeviceOpe
 	return b, nil
 }
 
-// openCard opens one non-render-device card through the seat: the shared
-// body of the startup scan and of GPU hotplug. A failed card leaves no fd.
+// openCard opens one kept card; the render card gets no local device.
+// Startup and GPU hotplug share this path. A failed card leaves no fd.
 func (b *drmBackend) openCard(ctx context.Context, info ports.GPUInfo, mode drm.MultiGPU, want drm.Want, traceDamage bool) (*drmCard, error) {
 	path, log := info.Path, b.log
 	fd, err := b.seat.OpenDevice(path)
@@ -335,7 +338,7 @@ func (b *drmBackend) openCard(ctx context.Context, info ports.GPUInfo, mode drm.
 	}
 	card.SetRendererOptions(ports.RendererOptions{TraceDamage: traceDamage})
 	device := card.Device()
-	log.Info().Str("path", path).Str("device", fmt.Sprintf("%d:%d", unix.Major(device), unix.Minor(device))).Msg("opened DRM card")
+	log.Info().Str("path", path).Str("driver", info.Driver).Str("device", fmt.Sprintf("%d:%d", unix.Major(device), unix.Minor(device))).Msg("opened DRM card")
 	sf, only := card.ScanoutFormats(), 0
 	for _, f := range sf {
 		if !slices.Contains(want.Sampled, f) {
@@ -534,6 +537,9 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		}
 		var scanErrors []error
 		for _, c := range b.cards {
+			if c.localLost {
+				continue // Existing local-device users are still joining.
+			}
 			w := want(currentConfig)
 			w.Device = c.Device()
 			c.SetWant(w)
@@ -667,7 +673,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	// scans. The dmabuf feedback tables are computed at startup, so outputs
 	// of a hot-added card do not change what clients are told.
 	addCard := func(name string) bool {
-		c, action := b.hotplugAdd(ctx, name, currentConfig, want(currentConfig))
+		c, action := b.hotplugAdd(ctx, name, want(currentConfig))
 		if action.retryAfterTeardown() {
 			replug.add(name) // finishCard reopens it
 		}
@@ -975,9 +981,23 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				log.Info().Err(err).Str("connector", name).Msg("output of removed GPU stopped")
 				err = nil
 			}
+			if drm.IsLocalDeviceError(err) && card.local != nil {
+				card.localLost = true
+				for n, c := range cards {
+					if c == card && n != name && set.outs[n] != nil {
+						stopping[n] = false
+						progress.stopping(n)
+						set.outs[n].stop()
+					}
+				}
+			}
 			card.Release(name)
 			lastHeads[card] = releasedHead(lastHeads[card], name)
 			delete(cards, name)
+			if card.localLost && !slices.Contains(slices.Collect(maps.Values(cards)), card) {
+				card.local.close()
+				card.localLost = false
+			}
 			if td := b.dying[card]; td != nil && td.outputStopped(name) {
 				finishCard(card)
 			}

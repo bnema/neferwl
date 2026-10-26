@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/bnema/neferwl/internal/adapters/drm"
 	"github.com/bnema/neferwl/internal/adapters/logging"
@@ -146,7 +145,7 @@ type readerFailure struct {
 
 // hotplugAdd opens a card that just appeared, or returns nil with the action
 // that explains why not. It runs on the runOutputs goroutine.
-func (b *drmBackend) hotplugAdd(ctx context.Context, name string, cfg ports.Config, want drm.Want) (*drmCard, hotplugAddAction) {
+func (b *drmBackend) hotplugAdd(ctx context.Context, name string, want drm.Want) (*drmCard, hotplugAddAction) {
 	log := b.log
 	cands, err := drm.ListGPUs("/sys", "/dev")
 	if err != nil {
@@ -160,7 +159,7 @@ func (b *drmBackend) hotplugAdd(ctx context.Context, name string, cfg ports.Conf
 	for c := range b.dying {
 		dying = append(dying, c.Path())
 	}
-	info, action, sel, err := planHotplugAdd(cands, name, cfg, os.Getenv("NEFERWL_RENDER_DEVICE"), existing, dying)
+	info, action, sel, err := planHotplugAdd(cands, name, b.startupConfig, os.Getenv("NEFERWL_RENDER_DEVICE"), existing, dying)
 	if err != nil {
 		log.Warn().Err(err).Str("card", name).Msg("GPU hotplug: selection failed, card ignored")
 	}
@@ -175,11 +174,9 @@ func (b *drmBackend) hotplugAdd(ctx context.Context, name string, cfg ports.Conf
 		log.Info().Str("card", name).Msg("GPU hotplug: card not selected by drm.devices/drm.ignore, not opened")
 	case hotplugAddOpen:
 		for _, reason := range sel.Reasons {
-			if strings.Contains(reason, " GPU "+name+" (") {
-				log.Info().Msg(reason)
-			}
+			log.Info().Msg(reason)
 		}
-		c, err := b.openCard(ctx, info, multiGPUMode(cfg.Render.MultiGPU), want, logging.Enabled(ctx, "render-damage"))
+		c, err := b.openCard(ctx, info, multiGPUMode(b.startupConfig.Render.MultiGPU), want, logging.Enabled(ctx, "render-damage"))
 		if err != nil {
 			log.Warn().Err(err).Str("card", name).Msg("GPU hotplug: card unusable, not retried")
 			return nil, hotplugAddFailed

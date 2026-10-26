@@ -44,6 +44,12 @@ type localDeviceError struct{ cause error }
 
 func (e localDeviceError) Error() string { return fmt.Sprintf("local copy device: %v", e.cause) }
 
+// IsLocalDeviceError reports a failure confined to the card's copy device.
+func IsLocalDeviceError(err error) bool {
+	var local localDeviceError
+	return errors.As(err, &local)
+}
+
 func (o *Output) crossGPU() bool { return o.card != nil && o.card.dev.Local != nil }
 
 func (o *Output) crossImages(r ports.Renderer, cause error, skip bool) (imageKind, error) {
@@ -58,9 +64,9 @@ func (o *Output) crossImages(r ports.Renderer, cause error, skip bool) (imageKin
 			}
 		}
 		if !linear {
-			err = fmt.Errorf("primary plane has no LINEAR modifier")
+			err = errors.New("primary plane has no LINEAR modifier")
 		} else if o.card.alloc == nil {
-			err = fmt.Errorf("GBM unavailable")
+			err = errors.New("GBM unavailable")
 		} else {
 			err = o.gbmImages(r, []uint64{0}, true)
 		}
@@ -77,7 +83,7 @@ func (o *Output) crossImages(r ports.Renderer, cause error, skip bool) (imageKin
 		return imagesLinear, fmt.Errorf("cross-GPU direct import: %w", err)
 	}
 	if o.transport == transportCopy && skip {
-		return imagesLinear, fmt.Errorf("gpu-copy modeset refused: %v", err)
+		return imagesLinear, fmt.Errorf("gpu-copy modeset refused: %w", err)
 	}
 	return imagesDriver, o.copyImages(r)
 }

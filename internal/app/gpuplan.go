@@ -115,7 +115,7 @@ func openPlannedRender(opener ports.RenderDeviceOpener, plans []cardPlan, strict
 		errs = append(errs, fmt.Errorf("render card %s: %w", info.Path, err))
 	}
 	if len(errs) == 0 {
-		errs = append(errs, errors.New("no render-capable DRM card"))
+		errs = append(errs, core.ErrNoRenderGPU)
 	}
 	return nil, ports.GPUInfo{}, errors.Join(errs...)
 }
@@ -157,7 +157,7 @@ func openHeadlessRender(opener ports.RenderDeviceOpener, cands []ports.GPUInfo, 
 	}
 	sel, err := core.SelectGPUs(cands, config)
 	if err != nil {
-		if !constrained && strings.Contains(err.Error(), "no render-capable") {
+		if !constrained && errors.Is(err, core.ErrNoRenderGPU) {
 			return fallback(err)
 		}
 		return nil, err

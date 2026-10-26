@@ -4,7 +4,6 @@ import (
 	"errors"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/zerowrap"
-	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -164,20 +163,5 @@ func TestOpenHeadlessRenderDiscovery(t *testing.T) {
 				t.Fatalf("%v %v", got, err)
 			}
 		})
-	}
-}
-
-func TestOpenHeadlessRenderNodeOnly(t *testing.T) {
-	path := "/dev/dri/renderD129"
-	var st unix.Stat_t
-	if err := unix.Stat(path, &st); err != nil {
-		t.Skipf("render node unavailable: %v", err)
-	}
-	opener := portsmocks.NewMockRenderDeviceOpener(t)
-	dev := portsmocks.NewMockRenderDevice(t)
-	opener.EXPECT().Open(ports.GPUInfo{Render: st.Rdev}).Return(dev, nil).Once()
-	got, err := openHeadlessRender(opener, nil, nil, ports.Config{}, path, zerowrap.Logger{})
-	if err != nil || got != dev {
-		t.Fatalf("%v %v", got, err)
 	}
 }

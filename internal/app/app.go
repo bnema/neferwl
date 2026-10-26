@@ -96,6 +96,9 @@ func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigCh
 			return
 		case ev = <-in:
 		}
+		if next := ev.Config; !slices.Equal(next.DRM.Devices, cur.DRM.Devices) || !slices.Equal(next.DRM.Ignore, cur.DRM.Ignore) || next.Render.Device != cur.Render.Device || next.Render.MultiGPU != cur.Render.MultiGPU {
+			log.Warn().Msg("drm.devices, drm.ignore, render.device and render.multi-gpu apply after restart")
+		}
 		// hint.sources, hint.enable, hint.detector, hint.model and hint.threshold are read
 		// at startup: nothing of hint mode starts or stops on a reload.
 		if h := ev.Config.Hint; !slices.Equal(h.Sources, hint.Sources) || h.Enable != hint.Enable || h.Detector != hint.Detector || h.Model != hint.Model || h.Threshold != hint.Threshold {
