@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +35,7 @@ import (
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
+	"golang.org/x/sys/unix"
 )
 
 // session holds the dependencies assembleSession acquired and wired; run
@@ -51,6 +54,8 @@ type session struct {
 	hw           *drmBackend
 	km           *xkb.Keymap
 	core         *core.Core
+	inst         *vulkan.Instance
+	gpu          *vulkan.GPU
 	dmabuf       ports.DMABufSupport
 	hintOpts     hints.Options
 	wsIDs        *workspaceid.IDs
@@ -82,8 +87,7 @@ const (
 // Invariant: wayland.New is the last fallible step. *wayland.Server has no
 // Close: its sockets are released only by Server.Run. Every later step
 // (statefile.Path, openXwayland, launcher.New, newCursors) degrades with a
-// warning or nil instead of failing. A failure therefore releases exactly
-// the DRM backend and the keymap (abort); nothing else is owned yet.
+// warning or nil instead of failing. A failure releases the DRM backend, keymap and Vulkan resources (abort).
 func assembleSession(ctx context.Context, opts Options) (s *session, err error) {
 	s = &session{opts: opts, log: logging.For(ctx, "app"), clock: clock.System{}, security: &sessionsecurity.Gate{}}
 	defer func() {
@@ -117,7 +121,23 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 		s.hintOpts = hintOptions(ctx, opts.Config)
 	}
 	// Every output renders on the same GPU: its formats are the clients'.
-	s.dmabuf = vulkan.Probe()
+	s.inst, err = vulkan.NewInstance(logging.For(ctx, "render"))
+	if err != nil {
+		return s, err
+	}
+	var info ports.GPUInfo
+	if path := os.Getenv("NEFERWL_RENDER_DEVICE"); strings.HasPrefix(path, "/dev/dri/renderD") {
+		var stat unix.Stat_t
+		if err = unix.Stat(path, &stat); err != nil {
+			return s, fmt.Errorf("render device %q: %w", path, err)
+		}
+		info.Render = stat.Rdev
+	}
+	s.gpu, err = s.inst.OpenGPU(info)
+	if err != nil {
+		return s, err
+	}
+	s.dmabuf = s.gpu.DMABuf()
 	log.Info().Int("formats", len(s.dmabuf.Formats)).Msg("dmabuf")
 	// One launch prefix for ext-workspace ids and the state file.
 	s.wsIDs = workspaceid.New()
@@ -174,12 +194,11 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	if s.path == "" {
 		s.path = config.DefaultPath()
 	}
-	renderLog := logging.For(ctx, "render")
 	traceDamage := logging.Enabled(ctx, "render-damage")
 	if s.hw != nil {
-		s.newRenderer = newVulkanRenderer(renderLog, false, false, traceDamage)
+		s.newRenderer = newVulkanRenderer(s.gpu, false, false, traceDamage)
 	} else {
-		s.newRenderer = newVulkanRenderer(renderLog, true, opts.ScreenshotRaw, traceDamage)
+		s.newRenderer = newVulkanRenderer(s.gpu, true, opts.ScreenshotRaw, traceDamage)
 	}
 	return s, nil
 }
@@ -190,6 +209,12 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 func (s *session) abort() {
 	if s.hw != nil {
 		s.hw.close()
+	}
+	if s.gpu != nil {
+		s.gpu.Close()
+	}
+	if s.inst != nil {
+		s.inst.Close()
 	}
 	if s.km != nil {
 		s.km.Close()
@@ -207,6 +232,12 @@ func (s *session) close() {
 	if s.hw != nil {
 		s.hw.close()
 	}
+	if s.gpu != nil {
+		s.gpu.Close()
+	}
+	if s.inst != nil {
+		s.inst.Close()
+	}
 }
 
 // newVulkanRenderer returns the concrete Vulkan renderer factory. Virtual
@@ -215,21 +246,9 @@ func (s *session) close() {
 // output falls back to SDR. readback makes the HDR targets readable
 // (HDRPixels). traceDamage logs every frame's redrawn area. These settings
 // are Vulkan-only and not on ports.Renderer.
-func newVulkanRenderer(log zerowrap.Logger, virtual, readback, traceDamage bool) func(w, h int) (ports.Renderer, error) {
+func newVulkanRenderer(gpu *vulkan.GPU, virtual, readback, traceDamage bool) func(w, h int) (ports.Renderer, error) {
 	return func(w, h int) (ports.Renderer, error) {
-		r, err := vulkan.New(w, h)
-		if err != nil {
-			return nil, err
-		}
-		r.SetLogger(log)
-		r.SetTraceDamage(traceDamage)
-		info := r.DeviceInfo()
-		log.Info().Str("queue_priority", r.QueuePriority()).Str("vk_device", info.Name).Str("primary", info.Primary).Str("render", info.Render).Int64("create_ms", info.CreateMS).Msg("vulkan queue")
-		r.SetVirtualOutput(virtual)
-		if readback {
-			r.SetHDRReadback(true)
-		}
-		return r, nil
+		return gpu.NewRenderer(w, h, ports.RendererOptions{Virtual: virtual, Readback: readback, TraceDamage: traceDamage})
 	}
 }
 

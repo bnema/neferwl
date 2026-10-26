@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/bnema/zerowrap"
 	"io"
 	"os"
 	"path/filepath"
@@ -400,7 +401,18 @@ func equalSessionLockShots(a, b map[string][]byte) bool {
 // captureSupported probes the device the headless outputs will render on.
 func captureSupported(t *testing.T) bool {
 	t.Helper()
-	r, err := vulkan.New(16, 16)
+	inst, err := vulkan.NewInstance(zerowrap.Logger{})
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer inst.Close()
+	gpu, err := inst.OpenGPU(ports.GPUInfo{})
+	if err != nil {
+		t.Skipf("Vulkan GPU unavailable: %v", err)
+	}
+	defer gpu.Close()
+	renderer, err := gpu.NewRenderer(16, 16, ports.RendererOptions{})
+	r, _ := renderer.(*vulkan.Renderer)
 	if err != nil {
 		return false
 	}

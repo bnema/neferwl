@@ -8,6 +8,8 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/adapters/vulkan"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // The headless renderer factory tells a real renderer it drives a virtual
@@ -15,7 +17,17 @@ import (
 // and a headless output falls back to SDR. Skips without Vulkan or without a
 // device that exports dmabufs (lavapipe in CI).
 func TestVirtualRendererExportsHDRTargets(t *testing.T) {
-	r, err := newVulkanRenderer(logging.For(t.Context(), "render"), true, false, false)(64, 16)
+	inst, err := vulkan.NewInstance(logging.For(t.Context(), "render"))
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer inst.Close()
+	gpu, err := inst.OpenGPU(ports.GPUInfo{})
+	if err != nil {
+		t.Skipf("Vulkan GPU unavailable: %v", err)
+	}
+	defer gpu.Close()
+	r, err := newVulkanRenderer(gpu, true, false, false)(64, 16)
 	if err != nil {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}

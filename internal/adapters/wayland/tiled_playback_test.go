@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"github.com/bnema/zerowrap"
 	"testing"
 	"time"
 
@@ -91,7 +92,18 @@ func TestHeadlessTiledSHMCallbackAndCopyBudget(t *testing.T) {
 		}
 	}
 	previous := wait()
-	r, err := vulkan.New(128, 128)
+	inst, err := vulkan.NewInstance(zerowrap.Logger{})
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer inst.Close()
+	gpu, err := inst.OpenGPU(ports.GPUInfo{})
+	if err != nil {
+		t.Skipf("Vulkan GPU unavailable: %v", err)
+	}
+	defer gpu.Close()
+	renderer, err := gpu.NewRenderer(128, 128, ports.RendererOptions{})
+	r, _ := renderer.(*vulkan.Renderer)
 	if err != nil {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}

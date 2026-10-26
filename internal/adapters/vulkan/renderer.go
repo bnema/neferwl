@@ -25,8 +25,6 @@ type Renderer struct {
 	width, height int
 	gpu           *GPU
 	q             *queue
-	// legacyOwner is temporary: New owns its GPU/instance until P1.4 removes New.
-	legacyOwner bool
 	// own is the SDR composition image; HDR uses hdrOwn and PQ targets.
 	own      target
 	hdrOwn   target // linear BT.709 in units of SDR reference white
@@ -124,28 +122,6 @@ func checked(name string, result vk.Result) error {
 		return fmt.Errorf("%s: %w", name, err)
 	}
 	return nil
-}
-
-// New is a temporary compatibility wrapper; new callers use GPU.NewRenderer.
-func New(width, height int) (*Renderer, error) {
-	inst, err := NewInstance(zerowrap.Logger{})
-	if err != nil {
-		return nil, err
-	}
-	g, err := inst.openGPU(ports.GPUInfo{}, true)
-	if err != nil {
-		inst.Close()
-		return nil, err
-	}
-	renderer, err := g.NewRenderer(width, height, ports.RendererOptions{})
-	if err != nil {
-		g.Close()
-		inst.Close()
-		return nil, err
-	}
-	r := renderer.(*Renderer)
-	r.legacyOwner = true
-	return r, nil
 }
 
 // NewRenderer creates per-output resources on this GPU.
@@ -327,8 +303,4 @@ func (r *Renderer) Close() {
 	g := r.gpu
 	g.releaseQueue(r.q)
 	r.q = nil
-	if r.legacyOwner {
-		g.Close()
-		g.inst.Close()
-	}
 }

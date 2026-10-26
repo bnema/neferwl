@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/bnema/zerowrap"
 	"image/color"
 	"os"
 	"path/filepath"
@@ -39,7 +40,18 @@ func renderNodeFor(t *testing.T, dev uint64) *os.File {
 // a GPU, libgbm or an openable render node.
 func TestGBMImagesAreRenderTargets(t *testing.T) {
 	const w, h = 128, 64
-	r, err := vulkan.New(w, h)
+	inst, err := vulkan.NewInstance(zerowrap.Logger{})
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer inst.Close()
+	gpu, err := inst.OpenGPU(ports.GPUInfo{})
+	if err != nil {
+		t.Skipf("Vulkan GPU unavailable: %v", err)
+	}
+	defer gpu.Close()
+	renderer, err := gpu.NewRenderer(w, h, ports.RendererOptions{})
+	r, _ := renderer.(*vulkan.Renderer)
 	if err != nil {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}

@@ -401,14 +401,3 @@ func (r *Renderer) importSyncFD(fd int) vk.Semaphore {
 	}
 	return sem
 }
-
-// Probe reports the dmabuf formats of the device renderers use, or none
-// when Vulkan or the extensions are missing.
-func Probe() ports.DMABufSupport {
-	r, err := New(1, 1)
-	if err != nil {
-		return ports.DMABufSupport{}
-	}
-	defer r.Close()
-	return r.DMABuf()
-}
