@@ -127,8 +127,9 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 	scene.CaptureIndicators = c.captureIndicators(sc)
 	scene.Overlays = c.hintOverlays(sc)
 	if c.osd.shown {
-		target, _ := c.screenOf(c.osd.window)
-		if target == sc {
+		// Only where the target is drawn: an overlay nothing draws would
+		// still refuse direct scanout on this output.
+		if osdDrawn(scene, c.osd.window) {
 			scene.Overlays = append(scene.Overlays, ports.Overlay{Window: c.osd.window, ID: overlayIDOSD, Seq: c.osd.seq, Kind: ports.OverlayPanel, Anchor: ports.AnchorTopCenter, Rect: ports.Rect{Y: 12}, Style: osdStyle, Panel: c.osd.panel})
 		}
 	}

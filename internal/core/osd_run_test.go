@@ -196,6 +196,7 @@ func TestOSDPinnedEmptyFocusThroughRun(t *testing.T) {
 				h := newHintConfig(t, core.Options{}, func(cfg *ports.Config) {
 					cfg.Binds["Cmd+p"] = "osd-pin"
 					cfg.Binds["Cmd+n"] = "focus-workspace-next"
+					cfg.Binds["Cmd+b"] = "focus-workspace-prev"
 				})
 				h.press("p", ports.ModSuper)
 				h.release("p", 0)
@@ -223,14 +224,28 @@ func TestOSDPinnedEmptyFocusThroughRun(t *testing.T) {
 					}
 					next(t, h.commands, func(v ports.WatchStats) bool { return v.Window == 0 })
 				} else {
-					o := osdOverlay(t, h)
-					if o.Window != 1 || o.Panel != old.Panel {
-						t.Fatal("empty focus retargeted", o)
+					// The target's workspace is hidden: the panel is not
+					// published (it would refuse scanout for nothing), but
+					// the pin, target and watch stay.
+					for _, o := range (<-h.scenes)[0].Overlays {
+						if o.ID == 1<<61 {
+							t.Fatal("panel published for a window not drawn", o)
+						}
 					}
 					for len(h.commands) > 0 {
 						if v, ok := (<-h.commands).(ports.WatchStats); ok {
 							t.Fatalf("unexpected watch: %+v", v)
 						}
+					}
+					h.press("b", ports.ModSuper)
+					h.release("b", 0)
+					synctest.Wait()
+					for len(h.scenes) > 1 {
+						<-h.scenes
+					}
+					o := osdOverlay(t, h)
+					if o.Window != 1 || o.Panel != old.Panel {
+						t.Fatal("empty focus retargeted", o)
 					}
 				}
 			})

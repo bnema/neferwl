@@ -101,6 +101,20 @@ func (c *Core) osdWatch(ctx context.Context) error {
 	return nil
 }
 
+// osdDrawn reports whether the scene draws the OSD target window at its
+// size, the only case where the renderer draws the attached panel.
+func osdDrawn(s ports.Scene, id WindowID) bool {
+	if id == 0 {
+		return false
+	}
+	for _, w := range s.Windows {
+		if w.ID == id && !w.Popup {
+			return w.Preview == 0 && w.Zoom == 0 && w.Fade < 1 && s.Draws(w)
+		}
+	}
+	return false
+}
+
 // osdTearing is "on" when the last flip showing the window was torn,
 // "asked" when the client asks for tearing but the flip was synced (composed,
 // or refused by the output), "off" when the client does not ask.
