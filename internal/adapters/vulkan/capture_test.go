@@ -404,7 +404,10 @@ func TestCaptureCycleAllocations(t *testing.T) {
 				t.Fatal(cycleErr)
 			}
 			fdsBefore := openFDs(t)
-			if allocs := testing.AllocsPerRun(50, cycle); allocs != 0 {
+			// The cycle crosses into Vulkan through purego, whose argument pool
+			// drops items under the race detector; the zero count is only
+			// meaningful without it.
+			if allocs := testing.AllocsPerRun(50, cycle); allocs != 0 && !raceEnabled {
 				t.Errorf("%.1f allocations per capture cycle, want 0", allocs)
 			}
 			if cycleErr != nil {

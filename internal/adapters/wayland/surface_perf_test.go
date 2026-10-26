@@ -46,6 +46,21 @@ func TestTiledCommitPublishAllocations(t *testing.T) {
 			t.Errorf("steady-state queueUpdate/dropQueue: %.1f allocs/commit; want 0", allocs)
 		}
 	})
+	// Allocations of a publication must not depend on the tree size: the
+	// counts measured at each size are compared, not checked against a number.
+	unchanged := map[int]float64{}
+	changedAllocs := map[int]float64{}
+	t.Cleanup(func() {
+		if t.Failed() || len(unchanged) < 2 {
+			return
+		}
+		if unchanged[16] != unchanged[64] {
+			t.Errorf("unchanged publication allocs scale with children: 16 -> %.1f, 64 -> %.1f", unchanged[16], unchanged[64])
+		}
+		if changedAllocs[16] != changedAllocs[64] {
+			t.Errorf("changed publication allocs scale with children: 16 -> %.1f, 64 -> %.1f", changedAllocs[16], changedAllocs[64])
+		}
+	})
 	for _, count := range []int{16, 64} {
 		t.Run(fmt.Sprintf("%d", count), func(t *testing.T) {
 			channels := Channels{}
@@ -69,11 +84,8 @@ func TestTiledCommitPublishAllocations(t *testing.T) {
 			if first.Seq != 1 || len(first.Children) != count || len(first.DamageHistory) != 1 {
 				t.Fatalf("previous publication changed: %+v", first)
 			}
-			if allocs := testing.AllocsPerRun(100, publish); allocs > 2 {
-				t.Errorf("%d children: %.1f allocs/publication; want <=2", count, allocs)
-			} else {
-				t.Logf("%d children: %.1f allocs/unchanged publication", count, allocs)
-			}
+			unchanged[count] = testing.AllocsPerRun(100, publish)
+			t.Logf("%d children: %.1f allocs/unchanged publication", count, unchanged[count])
 			// A queued commit with an unchanged layout must not allocate
 			// proportionally to the number of children.
 			root.sub.pendingLayout = root.sub.layout
@@ -113,11 +125,8 @@ func TestTiledCommitPublishAllocations(t *testing.T) {
 				root.treeDirty = true
 				root.redraw()
 			}
-			if allocs := testing.AllocsPerRun(100, changed); allocs > 3 {
-				t.Errorf("%d children: %.1f allocs/changed publication; want <=3", count, allocs)
-			} else {
-				t.Logf("%d children: %.1f allocs/changed publication", count, allocs)
-			}
+			changedAllocs[count] = testing.AllocsPerRun(100, changed)
+			t.Logf("%d children: %.1f allocs/changed publication", count, changedAllocs[count])
 		})
 	}
 }

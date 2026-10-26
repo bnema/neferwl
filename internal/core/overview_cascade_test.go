@@ -1309,8 +1309,10 @@ func TestOverviewOutlinePileAllocations(t *testing.T) {
 		if !card || len(squareOverviewOutline(nil, ps, 2)) == 0 {
 			t.Fatal("setup: no pile under a framed lane tile")
 		}
-		if n := testing.AllocsPerRun(50, func() { _ = squareOverviewOutline(nil, ps, 2) }); n > 2 {
-			t.Fatalf("overviewOutline allocs = %v, want <= 2", n)
+		// With reused storage the outline builder allocates nothing.
+		buf := squareOverviewOutline(nil, ps, 2)
+		if n := testing.AllocsPerRun(50, func() { buf = squareOverviewOutline(buf[:0], ps, 2) }); n != 0 {
+			t.Fatalf("overviewOutline allocs = %v, want 0", n)
 		}
 
 	})
