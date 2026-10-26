@@ -17,7 +17,8 @@ const (
 	// AnchorOutsideTopLeft places the overlay outside Rect's top-left corner,
 	// overlapping it by a quarter of the overlay height, kept inside the output.
 	AnchorOutsideTopLeft OverlayAnchor = iota + 1
-	// AnchorTopCenter centres horizontally at Rect.Y from the top of the output; Rect.X is ignored.
+	// AnchorTopCenter centres horizontally in the attached window (or output
+	// when Window is 0), Rect.Y below its top edge; Rect.X is ignored.
 	AnchorTopCenter
 )
 
@@ -27,17 +28,23 @@ type OverlayStyle struct {
 	Background, Foreground string  // #rrggbb, "": derived from the active border colour
 }
 
-// Overlay is compositor-drawn content over everything on an output. It is
+// Overlay is compositor-drawn content. Unattached overlays draw over everything
+// on an output. It is
 // comparable. ID is stable while the overlay lives, never 0 and unique among
 // the overlays of a scene (renderers cache by it); Seq changes
 // whenever its pixels change for the same scene scale and style, so a
 // renderer may keep one cached image per ID.
 type Overlay struct {
+	// Window, when non-zero, attaches the overlay to that scene window: drawn
+	// right after its content in stacking order, clipped to it and faded with
+	// it. Rect is relative to its top-left. If the window is not drawn in the
+	// scene, neither is the overlay.
+	Window WindowID
 	ID     uint64
 	Seq    uint64
 	Kind   OverlayKind
 	Anchor OverlayAnchor
-	Rect   Rect // logical, output-local; W and H may be 0: sized from content
+	Rect   Rect // logical, output-local (window-local when attached); W and H may be 0: sized from content
 	// Capture keeps the overlay in captures requested by Wayland clients.
 	// Captures requested by the compositor itself never contain overlays.
 	Capture bool

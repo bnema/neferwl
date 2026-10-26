@@ -79,8 +79,9 @@ type Scene struct {
 	// drawn over everything; nil when none. Captures never hold them: the
 	// capture pipeline serves requests from a scene without them.
 	CaptureIndicators []CaptureIndicator
-	// Overlays are compositor-drawn overlays of this output, drawn over
-	// everything, after CaptureIndicators and PositionHint; nil when none.
+	// Overlays are compositor-drawn overlays of this output; nil when none.
+	// Attached overlays draw with their window; others draw over everything,
+	// after CaptureIndicators and PositionHint.
 	// The keyboard hint labels are overlays; they stay out of captures
 	// unless Overlay.Capture is set, and then only those of Wayland clients.
 	Overlays []Overlay
