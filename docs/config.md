@@ -59,6 +59,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `focus.flash-opacity` | `0.6` | Starting opacity of the flash, `0.1` to `1` |
 | `focus.flash-duration` | `200ms` | Fade duration, `50ms` to `1s`; not scaled by `animations.speed` |
 | `focus.flash-color` | `border.active` | Flash color `#rrggbb`; empty uses `border.active` |
+| `osd.enable` | `on` | Show the [window info overlay](#window-info-overlay): hold `cmd` to show it, double-tap `cmd` to keep it shown or hide it |
 | `hint.enable` | `off` | Turn on the experimental [hint mode](#hint-mode) (restart required) |
 | `hint.sources` | `atspi, ocr` | Ordered distinct sources: `atspi`, `ocr`, `detector` (restart required); empty resets the default |
 | `hint.targets` | `clickable` | `links` filters AT-SPI targets to links; reload applies to the next scan |
@@ -289,6 +290,7 @@ bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
 | `toggle-window-stash` | Move the focused window to the [stash](#stash), or back to its column |
 | `toggle-stash-visible` | Show or hide the stash |
 | `toggle-overview` | Open or close the [overview](#overview) |
+| `osd-pin` | Toggle the pinned [window info overlay](#window-info-overlay) |
 | `hint` | Label the clickable elements on the focused screen, then click the one you type ([hint mode](#hint-mode)) |
 | `switch-column-next` / `-prev` | Switch to the previously used column. Hold `cmd` and press again to go further back |
 | `maximize-column` | Toggle full width for the focused column |
@@ -402,6 +404,12 @@ A workspace's stash shows as a pile of cards. Selecting the pile unfolds it into
 With `layout.overflow = cascade`, workspaces sit side by side, each band of columns is a lane, and the stash sits under the lanes. Down (or fingers down on the touchpad, with natural scroll off) moves to the lane below; past the last lane it unfolds the stash. Left/right walk the cards; where the carousel does not wrap round, they go to the neighbor workspace past either end. Up leaves the stash for the last lane, at the column you came from.
 
 Otherwise, left from the first column unfolds the stash. Up/down walk the cards, the focus-workspace binds change workspace, and right goes back to the columns.
+
+## Window info overlay
+
+Holding `cmd` (`keyboard.cmd`) for about 0.4 s with a focused window shows an overlay with the window's app id, buffer size and format, scanout, VRR, tearing and explicit sync state, and the client and shown FPS with 1 % and 0.1 % lows and a frame-time graph. Releasing `cmd` hides it. Double-tapping `cmd` pins the overlay so it stays shown, and double-tapping again unpins it. The `osd-pin` action toggles the pin too, for example `bind.cmd+shift+i = osd-pin`.
+
+While the overlay is shown, the window is composed and not direct scanned out; the overlay shows the scanout state from before it appeared. The overlay is never captured. Nothing happens while the focused window inhibits shortcuts. `osd.enable = off` turns all of this off.
 
 ## Hint mode
 

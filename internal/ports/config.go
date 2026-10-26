@@ -165,6 +165,12 @@ type Config struct {
 		FlashDuration time.Duration
 		FlashColor    string
 	}
+	// OSD is the window info overlay: holding the cmd key shows it,
+	// double-tapping cmd or the osd-pin action keeps it shown.
+	OSD struct {
+		// Enable (osd.enable) turns the hold, the double tap and osd-pin on.
+		Enable bool
+	}
 	// Hint configures keyboard hint mode (action hint).
 	Hint struct {
 		// Enable turns the experimental hint mode on (hint.enable). It is

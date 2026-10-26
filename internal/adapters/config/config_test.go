@@ -1094,6 +1094,35 @@ func TestPositionHint(t *testing.T) {
 	}
 }
 
+func TestOSDEnable(t *testing.T) {
+	if !Defaults().OSD.Enable {
+		t.Fatal("osd default off")
+	}
+	for _, value := range []string{"on", "off", "invalid"} {
+		c, warnings := parseString(t, "osd.enable = "+value+"\n")
+		if value == "invalid" {
+			if len(warnings) == 0 {
+				t.Fatal("accepted invalid value")
+			}
+			continue
+		}
+		if len(warnings) != 0 || c.OSD.Enable != (value == "on") {
+			t.Fatalf("%s: %+v %v", value, c.OSD, warnings)
+		}
+	}
+	c, warnings := parseString(t, "bind.cmd+shift+i = osd-pin\n")
+	if len(warnings) != 0 || len(c.Binds) == 0 {
+		t.Fatalf("osd-pin bind: %v %v", c.Binds, warnings)
+	}
+	found := false
+	for _, a := range c.Binds {
+		found = found || a == "osd-pin"
+	}
+	if !found {
+		t.Fatalf("osd-pin not bound: %v", c.Binds)
+	}
+}
+
 func TestBorderRadius(t *testing.T) {
 	if Defaults().Border.Radius != 0 {
 		t.Fatal("nonzero default")

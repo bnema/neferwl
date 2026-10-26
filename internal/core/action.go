@@ -66,6 +66,8 @@ const (
 	// Show keyboard hint labels over the links and buttons of the focused
 	// output (hint.go).
 	ActionHint Action = "hint"
+	// ActionOSDPin toggles the pinned window info overlay.
+	ActionOSDPin Action = "osd-pin"
 )
 
 // monitorDirection returns the direction of the neighbor screen targeted by

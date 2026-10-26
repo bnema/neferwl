@@ -115,6 +115,7 @@ var actions = map[string]bool{
 	"move-workspace-next":             true,
 	"toggle-floating":                 true,
 	"hint":                            true,
+	"osd-pin":                         true,
 }
 var components = map[string]bool{"core": true, "wayland": true, "input": true, "drm": true, "seat": true, "render": true, "sync": true, "config": true, "app": true, "hints": true}
 var color = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
@@ -192,6 +193,7 @@ func Defaults() ports.Config {
 	c.Animations.On = false
 	c.Animations.Slowdown = normalSlowdown
 	c.Focus.PositionHint = true
+	c.OSD.Enable = true
 	c.Focus.Flash = true
 	c.Focus.FlashWidth = 2
 	c.Focus.FlashOpacity = 0.6
@@ -862,6 +864,12 @@ func set(c *ports.Config, key, v string) error {
 			return err
 		}
 		c.Focus.PositionHint = b
+	case "osd.enable":
+		b, err := onOff(v)
+		if err != nil {
+			return err
+		}
+		c.OSD.Enable = b
 	case "focus.flash":
 		b, err := onOff(v)
 		if err != nil {
