@@ -227,7 +227,7 @@ func pollImage(t *testing.T, path string, notBefore time.Time, missing string, c
 			if missing != "" && os.IsNotExist(err) {
 				last = []string{missing}
 			}
-		} else if fi.ModTime().Compare(notBefore) <= 0 {
+		} else if !fi.ModTime().After(notBefore) {
 			last = []string{fmt.Sprintf("%s not rewritten since the client started", filepath.Base(path))}
 		} else if f, err := os.Open(path); err != nil {
 			last = []string{err.Error()}
