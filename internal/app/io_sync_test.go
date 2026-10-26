@@ -68,17 +68,17 @@ func waitProcessOutputUntil(b *lockedBuffer, timeout <-chan time.Time) bool {
 	}
 }
 
-// roundtripUntil roundtrips c until ready, bounded by one timer that closes
+// dispatchUntil dispatches wire events on c until ready, bounded by one timer that closes
 // the connection; detail describes the state on timeout.
 //
-//testpolicy:realtime real Wayland socket roundtrips against the headless compositor; the bounding timer closes the connection
-func roundtripUntil(t *testing.T, c *wlturbo.Display, d time.Duration, detail func() string, ready func() bool) {
+//testpolicy:realtime blocking Dispatch on the real Wayland socket against the headless compositor; the bounding timer closes the connection
+func dispatchUntil(t *testing.T, c *wlturbo.Display, d time.Duration, detail func() string, ready func() bool) {
 	t.Helper()
 	var expired atomic.Bool
 	timer := time.AfterFunc(d, func() { expired.Store(true); _ = c.Close() })
 	defer timer.Stop()
 	for !ready() {
-		if err := c.Roundtrip(); err != nil {
+		if err := c.Dispatch(); err != nil {
 			if expired.Load() {
 				t.Fatalf("timed out after %v: %s", d, detail())
 			}

@@ -141,7 +141,7 @@ func TestHeadlessTextInputIME(t *testing.T) {
 	text := mapTextClient(t, c)
 	poll := func(what string, ok func() bool) {
 		t.Helper()
-		roundtripUntil(t, c, 5*time.Second, func() string {
+		dispatchUntil(t, c, 5*time.Second, func() string {
 			return fmt.Sprintf("%s: preedit %q commits %q, testime: %s", what, text.preedit, text.commits, imeOut.String())
 		}, ok)
 	}
@@ -222,7 +222,7 @@ func mapTextClient(t *testing.T, c *wlturbo.Display) *textClient {
 	proxy.OnPreeditString(func(value string, _, _ int32) { text.preedit = append(text.preedit, value) })
 	proxy.OnCommitString(func(value string) { text.commits = append(text.commits, value) })
 	check(surf.Commit())
-	roundtripUntil(t, c, 5*time.Second, func() string { return "no configure" }, func() bool { return serial != 0 })
+	dispatchUntil(t, c, 5*time.Second, func() string { return "no configure" }, func() bool { return serial != 0 })
 	check(xdg.AckConfigure(serial))
 	check(surf.Attach(buffer, 0, 0))
 	check(surf.Commit())
