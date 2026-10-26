@@ -24,7 +24,10 @@ type WindowStats struct {
 	// (direct scanout or overlay plane), variable refresh on, torn.
 	Scanout, VRR, Async bool
 	// ScanoutReason and OverlayReason are why the output last refused direct
-	// scanout and the overlay plane ("" when used or unknown).
+	// scanout and the overlay plane ("" when used or unknown). ScanoutReason
+	// "overlays" means the window is otherwise scene-candidate eligible with
+	// compositor overlays hidden, not that hardware acceptance is guaranteed
+	// (see FlipInfo). Other candidate failures take precedence.
 	ScanoutReason, OverlayReason string
 }
 

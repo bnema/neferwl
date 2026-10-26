@@ -100,10 +100,6 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	if s.Flash != nil {
 		return ports.SurfaceContent{}, "focus_flash"
 	}
-	// Overlays are composed over the window.
-	if len(s.Overlays) > 0 {
-		return ports.SurfaceContent{}, "overlays"
-	}
 	if s.Transform != 0 {
 		// The scanout buffer would have to be pre-rotated: rotated outputs compose.
 		return ports.SurfaceContent{}, "output_transform"
@@ -175,6 +171,11 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	}
 	if c.Source[2] != 0 && (c.Source[0] < 0 || c.Source[1] < 0 || c.Source[2] <= 0 || c.Source[3] <= 0 || c.Source[0]+c.Source[2] > float32(c.Width) || c.Source[1]+c.Source[3] > float32(c.Height)) {
 		return c, "source_crop"
+	}
+	// Report overlays only when every other candidate check passes, so the
+	// window-info panel can describe eligibility with compositor overlays hidden.
+	if len(s.Overlays) > 0 {
+		return c, "overlays"
 	}
 	return c, ""
 }

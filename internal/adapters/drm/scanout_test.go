@@ -80,8 +80,17 @@ func TestScanoutCandidate(t *testing.T) {
 		if tc.cont != nil {
 			tc.cont(&c)
 		}
-		if _, reason := scanoutCandidate(s, map[ports.WindowID]ports.SurfaceContent{1: c}, 200, 100, nil); reason != tc.reason {
-			t.Errorf("%s: reason %q, want %q", tc.name, reason, tc.reason)
+		for _, overlays := range []bool{false, true} {
+			want := tc.reason
+			if overlays {
+				s.Overlays = []ports.Overlay{{ID: 1}}
+				if want == "" {
+					want = "overlays"
+				}
+			}
+			if _, reason := scanoutCandidate(s, map[ports.WindowID]ports.SurfaceContent{1: c}, 200, 100, nil); reason != want {
+				t.Errorf("%s (added overlays=%v): reason %q, want %q", tc.name, overlays, reason, want)
+			}
 		}
 	}
 }

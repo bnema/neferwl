@@ -139,7 +139,10 @@ type FlipInfo struct {
 	Async    bool
 	// ScanoutReason and OverlayReason: why direct scanout and the overlay
 	// plane were refused for this frame ("" when used, or on outputs that do
-	// not report it).
+	// not report it). ScanoutReason "overlays" means compositor overlays
+	// are the only failed scene-candidate check; it does not promise that
+	// the buffer passes subsequent hardware format, fence or KMS checks.
+	// Other candidate failures take precedence over compositor overlays.
 	ScanoutReason, OverlayReason string
 	HardwareClock                bool
 	Merged                       int
