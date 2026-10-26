@@ -353,6 +353,8 @@ func TestInputMethodKeyboardGrab(t *testing.T) {
 
 // Disconnects and destroyed surfaces in active states do not break the
 // seat: keys return to the client, the input method is deactivated.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestTextInputTeardown(t *testing.T) {
 	s, events, commands, dir := keyboardServer(t)
 	ime := newIMEApp(t, s, dir)

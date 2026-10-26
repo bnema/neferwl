@@ -163,6 +163,8 @@ func devNull(t *testing.T) *os.File {
 // With a peer lookup mock: the pidfd is taken once per client and closed with
 // it; the executable is read again at every wlr frame request and every ext
 // session creation, but not at the frames of an ext session.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestCaptureAllowlistResolvesEachRequest(t *testing.T) {
 	peer := newMockpeerExe(t)
 	pidfd := devNull(t)
@@ -323,6 +325,7 @@ func TestCaptureAllowlistDisabledSkipsLookup(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func TestCaptureAllowlistReloadApplies(t *testing.T) {
 	self, _ := os.Executable()
 	path := filepath.Join(t.TempDir(), "capture-allow")

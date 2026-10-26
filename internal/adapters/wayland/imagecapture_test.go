@@ -313,6 +313,7 @@ func (cc *cclient) wlrFrame(t *testing.T) *captureEvents {
 	return ev
 }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func receiveCapture(t *testing.T, ch chan ports.CaptureRequest) ports.CaptureRequest {
 	t.Helper()
 	select {
@@ -543,6 +544,7 @@ func (h *captureHarness) handles(t *testing.T, cc *cclient, want int) []uint32 {
 	return out
 }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func (h *captureHarness) snapshot(t *testing.T, ws ...ports.WorkspaceInfo) {
 	t.Helper()
 	snapshot := ports.Workspaces{Outputs: []ports.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: ws}}}
@@ -1004,6 +1006,8 @@ func TestExtFrameRendererFailure(t *testing.T) {
 
 // A frame whose target stays unavailable fails once its retry deadline has
 // passed, so a client is never left waiting.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestExtFrameRetryDeadline(t *testing.T) {
 	var now atomic.Int64
 	timers := make(chan func(), 4)
@@ -1120,6 +1124,7 @@ func noMessage(t *testing.T, c *wlturbo.Display, ch chan sessionMsg) {
 	}
 }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func nextEvent[T ports.ClientEvent](t *testing.T, ch chan ports.ClientEvent) T {
 	t.Helper()
 	for {
@@ -1322,6 +1327,7 @@ func TestExclusionAttachRefusals(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func TestExclusionAttachLimit(t *testing.T) {
 	h := newCaptureHarness(t)
 	_, _, _, _, token := h.exclusionOwner(t)

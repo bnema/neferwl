@@ -44,6 +44,7 @@ func newToken(t *testing.T, c *wlturbo.Display, manager uint32, serialSeat ...ui
 	return ""
 }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func activated(t *testing.T, events <-chan ports.ClientEvent, want ports.WindowID) {
 	t.Helper()
 	deadline := waylandDeadline(2 * time.Second)
@@ -62,6 +63,7 @@ func activated(t *testing.T, events <-chan ports.ClientEvent, want ports.WindowI
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func noActivation(t *testing.T, c *wlturbo.Display, events <-chan ports.ClientEvent) {
 	t.Helper()
 	if err := c.Roundtrip(); err != nil {

@@ -12,6 +12,7 @@ import (
 	"github.com/bnema/wlturbo"
 )
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func lockManagerServer(t *testing.T) (*Server, *sessionsecurity.Gate, chan ports.SecurityState, chan ports.SecurityBackendEvent, string) {
 	t.Helper()
 	gate := &sessionsecurity.Gate{}
@@ -53,6 +54,7 @@ func bindLockManager(t *testing.T, c *wlturbo.Display) *lockclient.ExtSessionLoc
 	return manager
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSessionLockWaitsForEveryBarrierAndOwnerDeathStaysProtected(t *testing.T) {
 	s, gate, changes, _, dir := lockManagerServer(t)
 	c := protocolClient(t, s, dir)

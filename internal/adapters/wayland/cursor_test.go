@@ -31,6 +31,8 @@ func cursorServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.Cli
 }
 
 // nextCursor returns the latest cursor change sent within a short wait.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func nextCursor(t *testing.T, cursors <-chan ports.CursorChange) ports.CursorChange {
 	t.Helper()
 	var c ports.CursorChange
@@ -48,6 +50,7 @@ func nextCursor(t *testing.T, cursors <-chan ports.CursorChange) ports.CursorCha
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestCursorShapeFollowsPointerFocus(t *testing.T) {
 	s, events, commands, cursors, dir := cursorServer(t)
 	c := protocolClient(t, s, dir)
@@ -224,6 +227,7 @@ func TestSetCursorRoleError(t *testing.T) {
 	expectProtocolError(t, c, pointer, uint32(wayland.PointerErrorRole))
 }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func TestCursorOverrideProtection(t *testing.T) {
 	s, _, commands, cursors, _ := cursorServer(t)
 	state := installSecurity(t, s)

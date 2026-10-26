@@ -70,6 +70,7 @@ func presentServerOn(t *testing.T, layout ports.Layout) (*Server, chan ports.Cli
 	return s, events, commands, contents, s.Presentation(), dir
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestPresentationFeedback(t *testing.T) {
 	s, events, commands, contents, presented, dir := presentServer(t)
 	c := protocolClient(t, s, dir)

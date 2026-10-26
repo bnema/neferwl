@@ -75,6 +75,8 @@ func leaseServer(t *testing.T) (*wlturbo.Display, chan ports.LeaseMessage, chan 
 	c, requests, events, _ := leaseServerWithState(t)
 	return c, requests, events
 }
+
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func leaseServerWithState(t *testing.T) (*wlturbo.Display, chan ports.LeaseMessage, chan ports.LeaseMessage, *Server) {
 	t.Helper()
 	dir := t.TempDir()
@@ -104,6 +106,8 @@ func leaseServerWithState(t *testing.T) (*wlturbo.Display, chan ports.LeaseMessa
 	dispatchUntil(t, c, func() bool { _, ok := c.Registry().FindGlobal("wp_drm_lease_device_v1"); return ok })
 	return c, requests, events, s
 }
+
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestDRMLeaseFlow(t *testing.T) {
 	c, requests, events := leaseServer(t)
 	dev := bindProtocol(t, c, "wp_drm_lease_device_v1")
@@ -264,6 +268,7 @@ func TestDRMLeaseFinished(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func TestLeaseMessagesRemainOrderedWhenChannelFull(t *testing.T) {
 	requests := make(chan ports.LeaseMessage, 1)
 	ready := make(chan struct{}, 1)
@@ -435,6 +440,7 @@ func TestLeaseIDsAreScopedToCard(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestLeaseDestroyPendingRevokesLateReply(t *testing.T) {
 	c, requests, events, s := leaseServerWithState(t)
 	dev := bindProtocol(t, c, "wp_drm_lease_device_v1")

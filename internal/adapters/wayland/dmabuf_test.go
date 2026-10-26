@@ -15,6 +15,7 @@ import (
 
 var linearARGB = ports.DMABufFormat{Format: 'A' | 'R'<<8 | '2'<<16 | '4'<<24}
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func dmabufServer(t *testing.T, sup ports.DMABufSupport) (*Server, chan ports.ClientEvent, <-chan ports.SurfaceContent, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -273,6 +274,8 @@ func TestDMABufParamsReuse(t *testing.T) {
 
 // weston-simple-dmabuf-egl renders on the GPU and sends dmabufs: its
 // contents reach the renderer as DMABuf, never as pixels.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestWestonDMABuf(t *testing.T) {
 	tool, err := exec.LookPath("weston-simple-dmabuf-egl")
 	if err != nil {

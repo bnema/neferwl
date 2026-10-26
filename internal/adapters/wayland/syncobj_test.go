@@ -205,6 +205,8 @@ func (h *syncHarness) commit(buf uint32, acquire, release uint64) {
 }
 
 // content waits for a DMABuf content of the window.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func (h *syncHarness) content(wait time.Duration) (ports.SurfaceContent, bool) {
 	deadline := waylandDeadline(wait)
 	for {
@@ -220,6 +222,8 @@ func (h *syncHarness) content(wait time.Duration) (ports.SurfaceContent, bool) {
 }
 
 // fire makes the kernel's eventfd for an acquire point readable.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func (h *syncHarness) fire(point uint64) {
 	h.t.Helper()
 	deadline := waylandDeadline(2 * time.Second)
@@ -252,6 +256,8 @@ func (h *syncHarness) signalled() []uint64 {
 // A commit waits for its acquire point; the content carries the fence;
 // replacing it signals the release point once outputs moved on, and
 // wl_buffer.release is never sent. The acquire fence closes only then.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSyncobjAcquireAndRelease(t *testing.T) {
 	h := newSyncHarness(t)
 	h.releases = map[uint32]*syncReleaseProxy{}
@@ -560,6 +566,8 @@ func TestSyncobjDroppedCommit(t *testing.T) {
 }
 
 // A commit dropped after its acquire point fired signals its release point.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func TestSyncobjDroppedReadyCommitReleases(t *testing.T) {
 	h := newSyncHarness(t)
 	h.releases = map[uint32]*syncReleaseProxy{}

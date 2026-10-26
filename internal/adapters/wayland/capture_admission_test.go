@@ -300,6 +300,7 @@ func TestExtCaptureAdmissionSaturation(t *testing.T) {
 	h.waitInflight(t, 0)
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestCaptureAdmissionSurvivesDisconnect(t *testing.T) {
 	h := newAdmissionHarness(t, maxCaptureInflight+2)
 	a := h.client(t)

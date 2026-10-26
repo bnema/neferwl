@@ -21,6 +21,8 @@ func waylandDeadline(d time.Duration) <-chan time.Time {
 // each command before receiving the next; cap+2 sends ensure it has received
 // a marker after pushing all preceding commands. Its drain was therefore
 // posted before our display.Do. ID zero is not a window, so markers are inert.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func flushCommands(t *testing.T, s *Server, commands chan<- ports.ClientCommand) {
 	t.Helper()
 	deadline := waylandDeadline(2 * time.Second)
@@ -37,6 +39,8 @@ func flushCommands(t *testing.T, s *Server, commands chan<- ports.ClientCommand)
 }
 
 // flushCaptured sends a reply callback marker through the real reply path.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func flushCaptured(t *testing.T, s *Server, replies chan<- ports.CaptureDone) {
 	t.Helper()
 	const marker = ^uint64(0)

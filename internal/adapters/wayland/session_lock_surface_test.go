@@ -141,6 +141,7 @@ func TestLockSurfaceInitialConfigureAndCommitErrors(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestLockSurfaceCapturedAckGeometryAndDestroy(t *testing.T) {
 	s, _, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)

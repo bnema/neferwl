@@ -55,6 +55,7 @@ func requestProtocol(t *testing.T, c *wlturbo.Display, id uint32, op uint32, arg
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func expectProtocolError(t *testing.T, c *wlturbo.Display, object, code uint32) {
 	t.Helper()
 	done := make(chan error, 1)
@@ -187,6 +188,7 @@ func (p *configureProxy) Dispatch(e *wlturbo.Event) {
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestRecreatedToplevelRequiresNewBuffer(t *testing.T) {
 	s, events, _, dir := lifecycleServer(t)
 	c := protocolClient(t, s, dir)
@@ -553,6 +555,7 @@ func (p *heldKeyProxy) Dispatch(e *wlturbo.Event) {
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestHeldKeyOnKeyboardFocusTransfer(t *testing.T) {
 	s, events, commands, dir := keyboardServer(t)
 	c := protocolClient(t, s, dir)

@@ -25,6 +25,8 @@ func (p *callbackBudgetProxy) Dispatch(e *wlturbo.Event) {
 
 // TestHeadlessTiledSHMCallbackAndCopyBudget guards callback delivery and
 // the GPU copy budget across publications with many stable SHM children.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestHeadlessTiledSHMCallbackAndCopyBudget(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)

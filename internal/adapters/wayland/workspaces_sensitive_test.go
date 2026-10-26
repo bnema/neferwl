@@ -60,6 +60,7 @@ func bindProtectedWorkspaceRecorder(t *testing.T, c *wlturbo.Display) *protected
 	return p
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestProtectedWorkspaceInventoryAndActivation(t *testing.T) {
 	s, events, _, dir := lifecycleServer(t)
 	state := installSecurity(t, s)

@@ -45,6 +45,7 @@ func TestTiledFirstSizeAtOutputSizeEmitsResized(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestTiledSmallerThanOutputEmitsNoResized(t *testing.T) {
 	s, events, dir := outputSizedServer(t, 2, 2)
 	c := protocolClient(t, s, dir)

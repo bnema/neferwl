@@ -83,6 +83,8 @@ func testHead() ports.OutputHeads {
 	mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000, Preferred: true}
 	return ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 1920, Height: 1080, RefreshMilli: 60000}, Modes: []ports.OutputMode{mode}, Current: &mode, Enabled: true}}}
 }
+
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func recvManagement(t *testing.T, ch <-chan [2]uint32) [2]uint32 {
 	t.Helper()
 	select {
@@ -160,6 +162,7 @@ func TestOutputManagementStaleSerialAndLayout(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestOutputManagementHeadsAndApply(t *testing.T) {
 	s, heads, apply, replies, dir := outputTestServer(t)
 	heads <- testHead()
@@ -288,6 +291,8 @@ func TestOutputManagementUnsupportedSettings(t *testing.T) {
 
 // set_transform reaches the backend, and heads report the placement's
 // transform, at bind time and when it changes.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestOutputManagementTransform(t *testing.T) {
 	s, _, apply, replies, dir := outputTestServer(t)
 	heads := testHead()

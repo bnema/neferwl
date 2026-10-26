@@ -306,6 +306,8 @@ func (d *dndClient) surfaceNew(t *testing.T) uint32 {
 }
 
 // dndNextEvent returns the next client event of type T, skipping others.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func dndNextEvent[T ports.ClientEvent](t *testing.T, events <-chan ports.ClientEvent) T {
 	t.Helper()
 	deadline := waylandDeadline(2 * time.Second)
@@ -322,6 +324,8 @@ func dndNextEvent[T ports.ClientEvent](t *testing.T, events <-chan ports.ClientE
 }
 
 // dndNoEvent checks that no client event of type T is pending.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func dndNoEvent[T ports.ClientEvent](t *testing.T, s *Server, events <-chan ports.ClientEvent) {
 	t.Helper()
 	// Callers have observed completion of the triggering request/command.
@@ -877,6 +881,8 @@ func TestDataDragIconDestroyed(t *testing.T) {
 }
 
 // lockedPair is a pair of clients on a server that can lock the session.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func lockedPair(t *testing.T) (*dndPair, string) {
 	t.Helper()
 	gate := &sessionsecurity.Gate{}

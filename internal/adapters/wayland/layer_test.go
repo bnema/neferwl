@@ -46,6 +46,8 @@ func TestLayerInvalidSize(t *testing.T) {
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
 	expectProtocolError(t, c, layer, uint32(wlrlayershell.ZwlrLayerSurfaceV1ErrorInvalidSize))
 }
+
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestLayerLifecycle(t *testing.T) {
 	s, events, _, dir := lifecycleServer(t)
 	c := protocolClient(t, s, dir)
@@ -115,6 +117,8 @@ func TestLayerLifecycle(t *testing.T) {
 		t.Fatal("destroy timeout")
 	}
 }
+
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func TestWaybarLayer(t *testing.T) {
 	tool, err := exec.LookPath("waybar")
 	if err != nil {
@@ -273,6 +277,8 @@ func (p *layerPointerProxy) Dispatch(e *wlturbo.Event) {
 
 // A bar gets the pointer, and a menu it opens on a click through
 // get_popup reaches core with the bar as its parent and a grab.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestLayerPointerAndPopup(t *testing.T) {
 	s, events, commands, dir := lifecycleServer(t)
 	c := protocolClient(t, s, dir)

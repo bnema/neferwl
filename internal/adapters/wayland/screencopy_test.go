@@ -55,6 +55,8 @@ func TestCaptureRegionTransform(t *testing.T) {
 		t.Fatalf("full target %+v", full)
 	}
 }
+
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestScreencopyProtocol(t *testing.T) {
 	dir := t.TempDir()
 	requests := make(chan ports.CaptureRequest, 1)
@@ -415,6 +417,8 @@ func (p *captureDetails) Dispatch(e *wlturbo.Event) {
 	}
 	p.events <- values
 }
+
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestExtCaptureLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	requests := make(chan ports.CaptureRequest, 1)
@@ -626,6 +630,7 @@ func TestExtCaptureStoppedOnOutputRemoval(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestWlrOutputGoneAndDestroyedBeforeReply(t *testing.T) {
 	for _, destroy := range []bool{false, true} {
 		t.Run(fmt.Sprint("destroy=", destroy), func(t *testing.T) {

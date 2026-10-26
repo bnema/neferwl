@@ -83,6 +83,8 @@ func newClipClient(t *testing.T, s *Server, dir string, events chan ports.Client
 }
 
 // selection returns the next selection offer id sent to the client.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func (cc *clipClient) selection(t *testing.T) (uint32, bool) {
 	t.Helper()
 	if err := cc.c.Roundtrip(); err != nil {
@@ -120,6 +122,8 @@ func (cc *clipClient) focus(t *testing.T, commands chan<- ports.ClientCommand) u
 
 // The clipboard follows keyboard focus: only the focused client may set
 // it, and a client gets it when it gains focus; pasting reaches the source.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestClipboardFollowsFocus(t *testing.T) {
 	s, events, commands, dir := keyboardServer(t)
 	a := newClipClient(t, s, dir, events)
@@ -229,6 +233,8 @@ func (p *controlEvents) Dispatch(e *wlturbo.Event) {
 
 // A new copy cancels the previous source; setting the current source
 // again changes nothing.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestClipboardReplaceCancelsOldSource(t *testing.T) {
 	s, events, commands, dir := keyboardServer(t)
 	a := newClipClient(t, s, dir, events)

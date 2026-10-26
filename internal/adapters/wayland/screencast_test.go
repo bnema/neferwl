@@ -42,6 +42,8 @@ type castHarness struct {
 
 // newCastHarness starts the server; withSink false leaves Options.Casts nil
 // (the allocation test measures the server alone).
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func newCastHarness(t *testing.T, withSink bool) *castHarness {
 	t.Helper()
 	h := &castHarness{
@@ -89,6 +91,8 @@ func newCastHarness(t *testing.T, withSink bool) *castHarness {
 }
 
 // sync returns once the display goroutine ran everything posted before.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func (h *castHarness) sync() {
 	h.t.Helper()
 	ran := make(chan struct{})
@@ -101,6 +105,8 @@ func (h *castHarness) sync() {
 }
 
 // next is the next event pushed to the sink, which must have that kind.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func (h *castHarness) next(kind ports.CastEventKind) ports.CastEvent {
 	h.t.Helper()
 	select {
@@ -147,6 +153,7 @@ func (h *castHarness) none() {
 	}
 }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func (h *castHarness) request() ports.CaptureRequest {
 	h.t.Helper()
 	select {
@@ -159,6 +166,8 @@ func (h *castHarness) request() ports.CaptureRequest {
 }
 
 // noRequest says that no capture was requested.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func (h *castHarness) noRequest(wait time.Duration) {
 	h.t.Helper()
 	select {
@@ -169,6 +178,8 @@ func (h *castHarness) noRequest(wait time.Duration) {
 }
 
 // castClientEvent waits for the next ClientEvent of type T, skipping others.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func castClientEvent[T ports.ClientEvent](h *castHarness) T {
 	h.t.Helper()
 	for {
@@ -405,6 +416,8 @@ func TestCastSizeChange(t *testing.T) {
 
 // A transient failure is retried on the cadence of an ext frame; past the
 // deadline the frame fails with the error.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func TestCastTransientRetry(t *testing.T) {
 	h := newCastHarness(t, true)
 	h.open(1, "HEADLESS-1")
@@ -588,6 +601,8 @@ func TestCastWindowDamagedByPopupChanges(t *testing.T) {
 
 // The inventory is published once per change, not once per frame or flip, and
 // changes of one display loop turn share one publication.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestCastInventoryPublishedOncePerChange(t *testing.T) {
 	h := newCastHarness(t, true)
 	inv := func() ports.CastInventory {

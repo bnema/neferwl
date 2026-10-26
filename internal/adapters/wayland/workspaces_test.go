@@ -83,6 +83,8 @@ func (p *workspaceChildEvents) Dispatch(e *wlturbo.Event) {
 	p.order.add(v[0])
 	p.events <- v
 }
+
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestWorkspaceProtocol(t *testing.T) {
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)

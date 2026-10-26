@@ -27,6 +27,8 @@ func keymapText(t *testing.T) string {
 }
 
 // keyboardServer runs a server; setup, if any, runs before Run starts.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func keyboardServer(t *testing.T, setup ...func(*Server)) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -224,7 +226,9 @@ func TestSetKeymap(t *testing.T) {
 	}
 }
 
+//
 //testpolicy:realtime external foot process writes keyboard debug output asynchronously
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestFootKeyboard(t *testing.T) {
 	tool, err := exec.LookPath("foot")
 	if err != nil {

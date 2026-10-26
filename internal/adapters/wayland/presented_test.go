@@ -52,6 +52,8 @@ func requestFrame(t *testing.T, c *wlturbo.Display, surf uint32) *frameDoneProxy
 }
 
 // awaitFrame waits for the callback to be answered and returns its time.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func awaitFrame(t *testing.T, c *wlturbo.Display, p *frameDoneProxy) uint32 {
 	t.Helper()
 	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {

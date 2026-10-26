@@ -357,6 +357,7 @@ func TestProtectedActivationAndForeignInventory(t *testing.T) {
 	noActivation(t, c, events) // the protected attempt consumed the token
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestProtectedCursorChanges(t *testing.T) {
 	s, events, commands, cursors, dir := cursorServer(t)
 	state := installSecurity(t, s)

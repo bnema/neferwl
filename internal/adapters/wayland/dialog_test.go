@@ -13,6 +13,8 @@ import (
 
 // A modal dialog maps with its state, and later changes reach core. A
 // second dialog object for the same toplevel is a protocol error.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestDialogModal(t *testing.T) {
 	s, events, _, dir := lifecycleServer(t)
 	c := protocolClient(t, s, dir)
