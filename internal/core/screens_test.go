@@ -674,38 +674,80 @@ func TestPointerFocusesOutput(t *testing.T) {
 
 // The first terminal cannot launch before wayland receives its output layout.
 func TestFirstTerminalFollowsSetOutputs(t *testing.T) {
-	cfg := scrollDefaults()
-	commands := make(chan ports.ClientCommand)
-	// The launcher handoff is deliberately nonblocking. A ready buffered
-	// queue tests ordering without requiring core to wait for this reader.
-	spawn := make(chan ports.SpawnRequest, 1)
-	output := make(chan ports.OutputEvent, 1)
-	scenes := make(chan []ports.Scene, 1)
-	state := make(chan ports.State, 1)
-	c, err := core.New(cfg, core.Channels{Output: output, Commands: commands, Spawn: spawn, Scenes: scenes, State: state}, core.Options{Terminal: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- c.Run(ctx) }()
-	t.Cleanup(func() { cancel(); receive(t, done) })
-	receive(t, state) // startup finished; next command belongs to the output event
-	output <- ports.OutputAdded{Info: left}
-	select {
-	case v := <-commands:
-		if o, ok := v.(ports.SetOutputs); !ok || len(o.Outputs) != 1 || o.Outputs[0].Info.Name != left.Name {
-			t.Fatalf("first command: %v", v)
+	synctest.Test(t, func(t *testing.T) {
+		cfg := scrollDefaults()
+		commands := make(chan ports.ClientCommand)
+		// The launcher handoff is deliberately nonblocking. A ready buffered
+		// queue tests ordering without requiring core to wait for this reader.
+		spawn := make(chan ports.SpawnRequest, 1)
+		output := make(chan ports.OutputEvent, 1)
+		scenes := make(chan []ports.Scene, 1)
+		state := make(chan ports.State, 1)
+		c, err := core.New(cfg, core.Channels{Output: output, Commands: commands, Spawn: spawn, Scenes: scenes, State: state}, core.Options{Terminal: true})
+		if err != nil {
+			t.Fatal(err)
 		}
-	case req := <-spawn:
-		t.Fatalf("terminal spawned before SetOutputs: %v", req)
-	case <-time.After(time.Second):
-		t.Fatal("no output command or spawn")
-	}
-	if req := receive(t, spawn); len(req.Argv) == 0 {
-		t.Fatal(req)
-	}
-	receive(t, scenes)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- c.Run(ctx) }()
+		t.Cleanup(func() { cancel(); receive(t, done) })
+		receive(t, state) // startup finished; next command belongs to the output event
+		output <- ports.OutputAdded{Info: left}
+		synctest.Wait()
+		select {
+		case req := <-spawn:
+			t.Fatalf("terminal spawned before SetOutputs: %v", req)
+		default:
+		}
+		select {
+		case v := <-commands:
+			if o, ok := v.(ports.SetOutputs); !ok || len(o.Outputs) != 1 || o.Outputs[0].Info.Name != left.Name {
+				t.Fatalf("first command: %v", v)
+			}
+		case req := <-spawn:
+			t.Fatalf("terminal spawned before SetOutputs: %v", req)
+		default:
+			t.Fatal("no output command or spawn")
+		}
+		if req := receive(t, spawn); len(req.Argv) == 0 {
+			t.Fatal(req)
+		}
+		receive(t, scenes)
+	})
+}
+
+// Cancellation joins the sender even while automatic terminals wait for layout delivery.
+func TestFirstTerminalLayoutWaitCancels(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		cfg := scrollDefaults()
+		commands := make(chan ports.ClientCommand)
+		// The launcher handoff is deliberately nonblocking. A ready buffered
+		// queue tests ordering without requiring core to wait for this reader.
+		spawn := make(chan ports.SpawnRequest, 1)
+		output := make(chan ports.OutputEvent, 1)
+		scenes := make(chan []ports.Scene, 1)
+		state := make(chan ports.State, 1)
+		c, err := core.New(cfg, core.Channels{Output: output, Commands: commands, Spawn: spawn, Scenes: scenes, State: state}, core.Options{Terminal: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- c.Run(ctx) }()
+		defer cancel()
+		receive(t, state) // startup finished; next command belongs to the output event
+		output <- ports.OutputAdded{Info: left}
+		synctest.Wait()
+		select {
+		case req := <-spawn:
+			t.Fatalf("terminal spawned before SetOutputs: %v", req)
+		default:
+		}
+		cancel()
+		if err := receive(t, done); err != nil {
+			t.Fatal(err)
+		}
+	})
 }
 
 func TestTerminalAutoOpenFirstOnly(t *testing.T) {

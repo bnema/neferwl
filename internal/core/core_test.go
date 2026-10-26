@@ -13,19 +13,8 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-//testpolicy:realtime shared receive retains wall time only for the unresolved TestFirstTerminalFollowsSetOutputs ordering contract
 func receive[T any](t *testing.T, ch <-chan T) T {
 	t.Helper()
-	if t.Name() == "TestFirstTerminalFollowsSetOutputs" {
-		select {
-		case v := <-ch:
-			return v
-		case <-time.After(time.Second):
-			t.Fatal("timed out")
-			var zero T
-			return zero
-		}
-	}
 	synctest.Wait()
 	select {
 	case v := <-ch:
