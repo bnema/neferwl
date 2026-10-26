@@ -302,7 +302,7 @@ func (c *Core) apply(cfg ports.Config) error {
 		}
 		switch Action(a) {
 		case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowStash, ActionToggleStashVisible, ActionToggleOverview, ActionCloseWindow, ActionQuit, ActionFocusWorkspacePrev, ActionFocusWorkspaceNext, ActionMoveColumnToWorkspacePrev, ActionMoveColumnToWorkspaceNext, ActionMoveWindowToWorkspacePrev, ActionMoveWindowToWorkspaceNext, ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionFocusMonitorUp, ActionFocusMonitorDown, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown, ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight,
-			ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspacePrev, ActionMoveWorkspaceNext, ActionToggleFloating, ActionSwitchColumnNext, ActionSwitchColumnPrev, ActionHint:
+			ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspacePrev, ActionMoveWorkspaceNext, ActionToggleFloating, ActionSwitchColumnNext, ActionSwitchColumnPrev, ActionHint, ActionOSDPin:
 		default:
 			return fmt.Errorf("invalid action %q", a)
 		}
@@ -631,6 +631,9 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 	c.updatePositionHints(only)
 	c.hintValidate()
 	if c.security.Protected {
+		if err := c.osdWatch(ctx, 0); err != nil {
+			return err
+		}
 		return c.publishProtected(ctx)
 	}
 	if c.switching() && c.switcherStale() {

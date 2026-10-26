@@ -2,9 +2,12 @@ package core
 
 import (
 	"context"
-	"github.com/bnema/neferwl/internal/ports"
 	"strconv"
+
+	"github.com/bnema/neferwl/internal/ports"
 )
+
+const overlayIDOSD = 1 << 61
 
 // osd is the owner's window information overlay state.
 type osd struct {
@@ -14,7 +17,6 @@ type osd struct {
 	stats         ports.WindowStats
 	seq           uint64
 	panel         *ports.PanelContent
-	before        ports.WindowStats
 	buf           []byte
 }
 
@@ -60,7 +62,7 @@ func (c *Core) osdWatch(ctx context.Context, focus WindowID) error {
 	if !c.osd.shown {
 		focus = 0
 	}
-	if focus == c.osd.window {
+	if focus == c.osd.window && (!c.osd.shown || c.osd.panel != nil) {
 		return nil
 	}
 	if err := c.command(ctx, ports.WatchStats{Window: focus}); err != nil {
