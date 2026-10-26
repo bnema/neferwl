@@ -206,6 +206,7 @@ type Output struct {
 	// imageMod is the modifier of the output images (0: linear).
 	imageMod  uint64
 	transport outputTransport
+	copier    ports.Copier
 	card      *Card
 	images    []imageBuffer
 	// cpuFences: the driver mishandles IN_FENCE_FD (fencegate.go), so
@@ -1133,6 +1134,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 		return fmt.Errorf("create renderer: %w", err)
 	}
 	defer r.Close()
+	defer o.closeCopier()
 	if o.cursor != nil {
 		dumbErr, err := o.cursor.setup(o.k, r)
 		switch {

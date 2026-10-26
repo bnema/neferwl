@@ -292,7 +292,11 @@ func (o *Output) clearImages(r ports.Renderer) error {
 	for i := range o.fbs {
 		r.UseTarget(i)
 		var done *os.File
-		if done, err = r.Render(ports.Scene{Background: "#000000"}, nil); done != nil {
+		done, err = r.Render(ports.Scene{Background: "#000000"}, nil)
+		if err == nil {
+			done, err = o.copyFence(i, done)
+		}
+		if done != nil {
 			// The modeset is a blocking commit: wait for the clear.
 			waitCtx := o.runContext
 			if waitCtx == nil {
@@ -347,7 +351,10 @@ func (o *Output) gbmImages(r ports.Renderer, mods []uint64, singlePlane bool) (e
 // and the renderer targets built over them (they would keep the memory
 // alive after the buffers are gone). It is a no-op when there are none.
 func (o *Output) dropImages(r ports.Renderer) {
-	if len(o.images) > 0 {
+	o.closeCopier()
+	if o.transport == transportCopy {
+		_, _ = r.ExportTargets(0, nil, false)
+	} else if len(o.images) > 0 {
 		_ = r.ImportTargets(nil)
 	}
 	o.freeImages()
@@ -358,6 +365,7 @@ func (o *Output) dropImages(r ports.Renderer) {
 // alone leaves the renderer's targets over the freed images (the renderer
 // drops them when it closes, before Close frees the output's images).
 func (o *Output) freeImages() {
+	o.closeCopier()
 	o.front.forget()
 	o.forgetOverlayProbes()
 	for i, fb := range o.fbs {

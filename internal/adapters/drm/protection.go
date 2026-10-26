@@ -181,6 +181,10 @@ func (o *Output) protectedModeset(ctx context.Context, r ports.Renderer) error {
 		}
 		return fmt.Errorf("clear protected output: %w", err)
 	}
+	fence, err = o.copyFence(o.back, fence)
+	if err != nil {
+		return err
+	}
 	if fence != nil {
 		err := syncfile.Wait(ctx, fence)
 		fence.Close()
