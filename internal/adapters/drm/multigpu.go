@@ -88,7 +88,7 @@ func (o *Output) closeCopier() {
 
 // copyFence leaves the caller's render file ownership unchanged at the port.
 func (o *Output) copyFence(index int, fence *os.File) (*os.File, error) {
-	if o.copier == nil {
+	if o.transport != transportCopy || o.copier == nil {
 		return fence, nil
 	}
 	done, err := o.copier.Copy(index, index, fence)
@@ -118,8 +118,10 @@ func (o *Output) copyImages(r ports.Renderer) (err error) {
 		return localDeviceError{err}
 	}
 	o.copier = copier
+	previous := o.transport
 	defer func() {
 		if err != nil {
+			o.transport = previous
 			o.closeCopier()
 			o.freeImages()
 			_, _ = r.ExportTargets(0, nil, false)
@@ -179,12 +181,15 @@ func (o *Output) copyImages(r ports.Renderer) (err error) {
 	if err = copier.ImportTargets(bufs); err != nil {
 		return localDeviceError{err}
 	}
+	logged := o.transport == transportCopy
+	// showBufs clears the scanout images through copyFence, which copies
+	// only on gpu-copy outputs: set the transport first.
+	o.transport = transportCopy
 	if err = o.showBufs(r, bufs, allocGBM); err != nil {
 		return err
 	}
-	if o.transport != transportCopy {
+	if !logged {
 		o.log.Info().Str("card", o.card.info.Path).Str("render_card", o.card.dev.RenderCard).Str("multi_gpu", "gpu-copy").Msg("multi-GPU output")
 	}
-	o.transport = transportCopy
 	return nil
 }

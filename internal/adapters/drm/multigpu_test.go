@@ -205,6 +205,7 @@ func TestMultiGPUCopyCPUFence(t *testing.T) {
 		r := portsmocks.NewMockRenderer(t)
 		copier := portsmocks.NewMockCopier(t)
 		o.copier = copier
+		o.transport = transportCopy
 		// The render fence stays unsignalled. Only the copy fence signals, proving
 		// the existing CPU gate consumes the replacement, without waiting on render.
 		renderFence, w, err := os.Pipe()
@@ -242,6 +243,8 @@ func TestDirectFrameNeverCopies(t *testing.T) {
 			o.transport = transportDirect
 			opener := portsmocks.NewMockRenderDeviceOpener(t)
 			copier := portsmocks.NewMockCopier(t)
+			// A stale copier must not be used unless the transport is gpu-copy.
+			o.copier = copier
 			o.card = &Card{}
 			if cross {
 				o.card.dev.Local = func() (ports.RenderDevice, error) { return opener.Open(ports.GPUInfo{}) }
