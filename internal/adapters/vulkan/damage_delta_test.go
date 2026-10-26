@@ -316,10 +316,7 @@ func TestRendererSceneDeltaMatchesFullRedraw(t *testing.T) {
 func sceneDeltaMatchesFullRedraw(t *testing.T, tc deltaCase, reuse bool) {
 	tw, th := tc.out.Size(int(64*tc.scale+0.5), int(48*tc.scale+0.5))
 	newR := func() *Renderer {
-		r, err := New(tw, th)
-		if err != nil {
-			t.Skipf("Vulkan unavailable: %v", err)
-		}
+		r := newTestRenderer(t, tw, th)
 		t.Cleanup(r.Close)
 		return r
 	}

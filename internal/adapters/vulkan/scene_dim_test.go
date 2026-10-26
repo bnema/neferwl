@@ -149,10 +149,7 @@ func TestSceneDimPartialDamage(t *testing.T) {
 // floats, window popups or top layers. Also exercise a retained target:
 // content damage beneath the veil must replay it over that region.
 func TestRendererDimBlendAndDamage(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	s := ports.Scene{Seq: 10, Background: "#ffffff", Dim: 0.5,
 		Windows: []ports.SceneWindow{
@@ -214,10 +211,7 @@ func TestRendererDimBlendAndDamage(t *testing.T) {
 // A per-window veil darkens that window and its border only, also when
 // its content alone is redrawn on a retained target.
 func TestRendererWindowDimBlendAndDamage(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	s := ports.Scene{Seq: 20, Background: "#ffffff", Border: ports.Border{Width: 1, Inactive: "#ffffff"},
 		Windows: []ports.SceneWindow{

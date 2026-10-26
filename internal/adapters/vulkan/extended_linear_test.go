@@ -20,11 +20,7 @@ func TestExtendedLinearClient(t *testing.T) {
 			if hdr {
 				r = hdrTestRenderer(t)
 			} else {
-				var err error
-				r, err = New(64, 16)
-				if err != nil {
-					t.Skipf("Vulkan unavailable: %v", err)
-				}
+				r = newTestRenderer(t, 64, 16)
 				defer r.Close()
 			}
 			format := ports.DMABufFormat{Format: fourcc('A', 'B', '4', 'H'), Modifier: 0}

@@ -112,11 +112,7 @@ func TestYUVComposition(t *testing.T) {
 			if tc.hdr {
 				r = hdrTestRenderer(t)
 			} else {
-				var err error
-				r, err = New(64, 16)
-				if err != nil {
-					t.Skipf("Vulkan unavailable: %v", err)
-				}
+				r = newTestRenderer(t, 64, 16)
 				defer r.Close()
 			}
 			b := yuvTestBuffer(t, tc.p010, tc.y, tc.u, tc.v)
@@ -172,10 +168,7 @@ func pqDecode(code float64) float64 {
 
 // Luma and chroma rows outside the crop must not bleed into its edge.
 func TestYUVSourceCropEdges(t *testing.T) {
-	r, err := New(64, 16)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 16)
 	defer r.Close()
 	b := yuvTestBuffer(t, false, 235, 128, 128, [3]int{16, 16, 240})
 	if !slices.Contains(r.DMABuf().Formats, ports.DMABufFormat{Format: b.Format}) {

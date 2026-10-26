@@ -34,10 +34,7 @@ func trimSettled(t *testing.T, r *Renderer, now time.Time) {
 // longer draws once idleTTL passed, without rendering; the window drawn
 // by the last frame stays, and a window coming back is copied again.
 func TestTrimFreesUndrawnSHMWithoutRender(t *testing.T) {
-	r, err := New(32, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 32, 32)
 	defer r.Close()
 	a := solidContent(t, 16, 16, color.RGBA{255, 0, 0, 255})
 	a.ID, a.Seq, a.Version = 1, 1, 1
@@ -89,10 +86,7 @@ func TestTrimFreesUndrawnSHMWithoutRender(t *testing.T) {
 
 // A window drawn again within idleTTL keeps its caches: frames date them.
 func TestTrimKeepsRecentlyDrawn(t *testing.T) {
-	r, err := New(32, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 32, 32)
 	defer r.Close()
 	a := solidContent(t, 16, 16, color.RGBA{255, 0, 0, 255})
 	a.ID, a.Seq, a.Version = 1, 1, 1
@@ -135,10 +129,7 @@ func TestTrimKeepsRecentlyDrawn(t *testing.T) {
 
 // A dmabuf import left undrawn is released by Trim without a frame.
 func TestTrimReleasesUndrawnDMABuf(t *testing.T) {
-	r, err := New(80, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 80, 32)
 	defer r.Close()
 	linear := ports.DMABufFormat{Format: fourcc('A', 'R', '2', '4'), Modifier: 0}
 	if !slices.Contains(r.DMABuf().Formats, linear) {
@@ -166,10 +157,7 @@ func TestTrimReleasesUndrawnDMABuf(t *testing.T) {
 
 // poll frees what a finished frame held without waiting for it.
 func TestTrimPollsFinishedFrames(t *testing.T) {
-	r, err := New(32, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 32, 32)
 	defer r.Close()
 	if !r.gpu.syncFD {
 		t.Skip("frames are finished on return without sync files")
@@ -216,10 +204,7 @@ func TestTrimPollsFinishedFrames(t *testing.T) {
 // scene keeps them until idleTTL; the hidden window is copied again, with the
 // right pixels, once a scene draws it.
 func TestTrimFreesHiddenWindowsSooner(t *testing.T) {
-	r, err := New(48, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 48, 32)
 	defer r.Close()
 	contents := map[ports.WindowID]ports.SurfaceContent{}
 	for id, c := range map[ports.WindowID]color.RGBA{1: {255, 0, 0, 255}, 2: {0, 255, 0, 255}, 3: {0, 0, 255, 255}} {

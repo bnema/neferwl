@@ -11,10 +11,7 @@ import (
 // A mixed resource table must select SHM pixels, RGB images, and both YUV
 // planes independently within the same draw call.
 func TestComposeIndexedMixedResources(t *testing.T) {
-	r, err := New(64, 16)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 16)
 	defer r.Close()
 	if !r.compose.indexing || r.compose.resources < 3 {
 		t.Skip("nonuniform indexing of three resources unavailable")

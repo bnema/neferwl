@@ -62,10 +62,7 @@ func udmabuf(t testing.TB, w, h int, fill func(x, y int) [4]byte) *os.File {
 // A linear ARGB8888 dmabuf is imported and drawn like wl_shm pixels, and
 // the import is freed once no frame draws it.
 func TestRendererImportsDMABuf(t *testing.T) {
-	r, err := New(80, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 80, 32)
 	defer r.Close()
 	linear := ports.DMABufFormat{Format: fourcc('A', 'R', '2', '4'), Modifier: 0}
 	if !slices.Contains(r.DMABuf().Formats, linear) {
@@ -129,10 +126,7 @@ func TestTenBitDMABufFormats(t *testing.T) {
 
 // A subsurface dmabuf is read after its own acquire fence, not the root's.
 func TestRendererSubsurfaceAcquire(t *testing.T) {
-	r, err := New(80, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 80, 32)
 	defer r.Close()
 	linear := ports.DMABufFormat{Format: fourcc('A', 'R', '2', '4'), Modifier: 0}
 	if !slices.Contains(r.DMABuf().Formats, linear) {

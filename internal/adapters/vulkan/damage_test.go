@@ -42,10 +42,7 @@ func damageMatchesFullRedraw(t *testing.T, tr, out ports.BufferTransform) {
 	const w, h = 32, 32
 	tw, th := out.Size(64, 48)
 	newR := func() *Renderer {
-		r, err := New(tw, th)
-		if err != nil {
-			t.Skipf("Vulkan unavailable: %v", err)
-		}
+		r := newTestRenderer(t, tw, th)
 		t.Cleanup(r.Close)
 		return r
 	}
@@ -117,10 +114,7 @@ func damageMatchesFullRedraw(t *testing.T, tr, out ports.BufferTransform) {
 // cleared.
 func TestRendererDamageWindowLeftOutAndBack(t *testing.T) {
 	newR := func() *Renderer {
-		r, err := New(64, 48)
-		if err != nil {
-			t.Skipf("Vulkan unavailable: %v", err)
-		}
+		r := newTestRenderer(t, 64, 48)
 		t.Cleanup(r.Close)
 		return r
 	}

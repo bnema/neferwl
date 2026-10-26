@@ -94,10 +94,7 @@ func TestComposeInstancedBlendAndBatches(t *testing.T) {
 		{"single resource", true, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r, err := New(16, 16)
-			if err != nil {
-				t.Skipf("Vulkan unavailable: %v", err)
-			}
+			r := newTestRenderer(t, 16, 16)
 			defer r.Close()
 			if !tc.single && !r.compose.indexing {
 				t.Skip("nonuniform descriptor indexing unavailable")
@@ -164,10 +161,7 @@ func TestComposeInstancedBlendAndBatches(t *testing.T) {
 }
 
 func TestComposePreparedReuseAndGrowth(t *testing.T) {
-	r, err := New(16, 16)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 16, 16)
 	defer r.Close()
 	slot := &r.slots[0]
 	ds := []draw{r.fillDraw(image.Rect(0, 0, 16, 16), [3]uint8{255})}

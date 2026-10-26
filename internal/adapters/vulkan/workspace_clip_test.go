@@ -11,10 +11,7 @@ import (
 // A tile and its lines are cut at TileArea, so a bottom layer panel under
 // them stays visible; a float there is drawn over it.
 func TestTileInsetKeepsBottomPanel(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	red := color.RGBA{255, 0, 0, 255}
 	green := color.RGBA{0, 255, 0, 255}
@@ -49,10 +46,7 @@ func TestTileInsetKeepsBottomPanel(t *testing.T) {
 // A tile whose content changes damages only what is drawn of it, never the
 // panel under it.
 func TestTileDamageStopsAtPanel(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	scene := ports.Scene{Seq: 1, Scale: 1, OutputWidth: 64, OutputHeight: 48, Background: "#000000", TileInset: ports.Insets{Bottom: 8},
 		Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 48}}}}
@@ -69,10 +63,7 @@ func TestTileDamageStopsAtPanel(t *testing.T) {
 }
 
 func TestWorkspaceClipWindowsPopupsAndLayers(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	red := color.RGBA{255, 0, 0, 255}
 	green := color.RGBA{0, 255, 0, 255}

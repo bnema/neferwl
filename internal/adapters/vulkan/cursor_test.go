@@ -8,10 +8,7 @@ import (
 // Cursor images are packed (pitch = size*4), exported, and WriteCursor
 // crops to the image and clears around the pixels.
 func TestCursorBuffersWriteCursor(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	bufs, err := r.CursorBuffers(64)
 	if err != nil {
@@ -48,10 +45,7 @@ func TestCursorBuffersWriteCursor(t *testing.T) {
 }
 
 func TestHDRCursorWritesBothImagesAndInvalidates(t *testing.T) {
-	r, err := New(32, 16)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 32, 16)
 	defer r.Close()
 	bufs, err := r.CursorBuffers(64)
 	if err != nil {

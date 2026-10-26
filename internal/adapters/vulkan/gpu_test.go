@@ -2,6 +2,7 @@ package vulkan
 
 import (
 	"errors"
+	"image/color"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -80,5 +81,39 @@ func TestChecked(t *testing.T) {
 	}
 	if errors.Is(checked("other", vk.ErrorOutOfDeviceMemory), ports.ErrDeviceLost) {
 		t.Fatal("ordinary error marked lost")
+	}
+}
+
+func TestTwoRenderersShareGPU(t *testing.T) {
+	g := newTestGPU(t)
+	var rs [2]*Renderer
+	for i := range rs {
+		renderer, err := g.NewRenderer(32, 32, ports.RendererOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rs[i] = renderer.(*Renderer)
+		t.Cleanup(rs[i].Close)
+	}
+	if rs[0].gpu != g || rs[1].gpu != g || rs[0].gpu.device == 0 || rs[0].gpu.device != rs[1].gpu.device {
+		t.Fatal("renderers do not share one GPU device")
+	}
+	c := solidContent(t, 16, 16, color.RGBA{1, 2, 3, 255})
+	c.ID, c.Seq, c.Version = 1, 1, 1
+	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}}}}
+	contents := map[ports.WindowID]ports.SurfaceContent{1: c}
+	for frame := range 10 {
+		scene.Seq = uint64(frame + 1)
+		for i, r := range rs {
+			if err := render(r, scene, contents); err != nil {
+				t.Fatalf("renderer %d frame %d: %v", i, frame, err)
+			}
+		}
+	}
+	for i, r := range rs {
+		pixels := r.Pixels()
+		if pixels == nil || pixels.RGBAAt(8, 8) != (color.RGBA{1, 2, 3, 255}) {
+			t.Fatalf("renderer %d has incorrect pixels", i)
+		}
 	}
 }

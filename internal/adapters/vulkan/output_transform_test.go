@@ -13,10 +13,7 @@ import (
 // for all eight transforms, and the rest of the target stays background.
 func TestRendererOutputTransform(t *testing.T) {
 	const tw, th = 6, 4
-	r, err := New(tw, th)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, tw, th)
 	defer r.Close()
 	red, green := color.RGBA{255, 0, 0, 255}, color.RGBA{0, 255, 0, 255}
 	px := []byte{0, 0, 255, 255, 0, 255, 0, 255} // BGRA: red, green

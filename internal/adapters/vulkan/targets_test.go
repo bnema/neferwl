@@ -18,10 +18,7 @@ import (
 // so the targets are single-plane here; TestExportTargetsPlanes covers the
 // multi-plane (DCC) ones.
 func TestExportTargets(t *testing.T) {
-	r, err := New(64, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 32)
 	defer r.Close()
 	bufs, err := r.ExportTargets(2, nil, true)
 	if err != nil {
@@ -48,10 +45,7 @@ func TestExportTargets(t *testing.T) {
 		t.Fatalf("readback of the last target %v", got)
 	}
 	// Import target 0 as a client buffer, like the display would.
-	viewer, err := New(64, 32)
-	if err != nil {
-		t.Fatal(err)
-	}
+	viewer := newTestRenderer(t, 64, 32)
 	defer viewer.Close()
 	b := bufs[0]
 	b.ID = 1
@@ -75,10 +69,7 @@ func TestExportTargets(t *testing.T) {
 // The exported HDR image carries PQ while Pixels remains the composed SDR
 // image. A test-only transfer-src readback checks the actual shader output.
 func TestHDRExportTarget(t *testing.T) {
-	r, err := New(32, 16)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 32, 16)
 	defer r.Close()
 	r.SetHDR(203)
 	// GPU tests and headless --screenshot-raw (SetHDRReadback); never DRM.
@@ -138,10 +129,7 @@ func TestHDRExportTarget(t *testing.T) {
 // export accepts every exportable one. A DRM output (no SetVirtualOutput)
 // still refuses an unspecified list.
 func TestVirtualHDRExportsWithoutDisplayList(t *testing.T) {
-	r, err := New(64, 16)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 16)
 	defer r.Close()
 	if r.gpu.physical == 0 || len(r.gpu.hdrMods) == 0 {
 		t.Skip("no exportable HDR GPU")
@@ -216,10 +204,7 @@ func TestFilterModifiersKeepsMultiPlane(t *testing.T) {
 // A multi-plane image cannot be read back through a viewer import, which
 // only imports one-plane buffers.
 func TestExportTargetsPlanes(t *testing.T) {
-	r, err := New(64, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 32)
 	defer r.Close()
 	closeAll := func(bufs []ports.DMABuf) {
 		for _, b := range bufs {
@@ -289,10 +274,7 @@ func TestExportTargetsPlanes(t *testing.T) {
 // the plane does not advertise, so the intersection must hold on the real
 // driver (RADV also exports DCC variants displays do not list).
 func TestExportTargetsStayInTheDisplayList(t *testing.T) {
-	r, err := New(64, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 32)
 	defer r.Close()
 	if len(r.gpu.renderMods) == 0 {
 		t.Skip("device exports no render modifier")
@@ -358,10 +340,7 @@ func TestFilterModifiersDropsDCCRetile(t *testing.T) {
 // The device's exportable modifiers hold no AMD DCC retile one, whatever
 // RADV lists (it lists them on GPUs with several render backends).
 func TestProbedModifiersHaveNoDCCRetile(t *testing.T) {
-	r, err := New(64, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 32)
 	defer r.Close()
 	for _, m := range append(slices.Clone(r.gpu.renderMods), r.gpu.hdrMods...) {
 		if retilesDCC(m) {
@@ -410,10 +389,7 @@ func TestSameDMABuf(t *testing.T) {
 // TargetModifiers keeps the modifiers the display lists and drops
 // multi-plane ones for singlePlane.
 func TestTargetModifiersFiltering(t *testing.T) {
-	r, err := New(64, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 32)
 	defer r.Close()
 	mods := r.TargetModifiers(nil, false)
 	if len(mods) == 0 {
@@ -444,10 +420,7 @@ func TestTargetModifiersFiltering(t *testing.T) {
 // asking the driver, says why, and leaves no targets: frames go back to the
 // renderer's own image.
 func TestImportTargetsRefusesMismatchedImages(t *testing.T) {
-	r, err := New(64, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 32)
 	defer r.Close()
 	var single uint64
 	found := false

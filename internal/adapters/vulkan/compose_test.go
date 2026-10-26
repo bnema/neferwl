@@ -22,10 +22,7 @@ func near(a, b color.RGBA, tol int) bool {
 // Scaled wl_shm pixels filter linearly: halfway between a black and a
 // white texel is grey, not either one (nearest neighbour).
 func TestRendererScaledSHMFiltersLinearly(t *testing.T) {
-	r, err := New(64, 16)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 16)
 	defer r.Close()
 	// 2×1 buffer: black, white; drawn 64×16, texel centres at x=16, x=48.
 	px := []byte{0, 0, 0, 255, 255, 255, 255, 255}
@@ -45,10 +42,7 @@ func TestRendererScaledSHMFiltersLinearly(t *testing.T) {
 }
 
 func TestRendererSourceCrop(t *testing.T) {
-	r, err := New(16, 8)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 16, 8)
 	defer r.Close()
 	px := []byte{0, 0, 255, 255, 0, 255, 0, 255, 255, 0, 0, 255, 255, 255, 255, 255}
 	c := shmContent(t, 4, 1, 16, px)
@@ -70,10 +64,7 @@ func TestRendererSourceCrop(t *testing.T) {
 
 // Scaled dmabufs are sampled with the linear sampler.
 func TestRendererScaledDMABufFiltersLinearly(t *testing.T) {
-	r, err := New(128, 4)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 128, 4)
 	defer r.Close()
 	linear := ports.DMABufFormat{Format: fourcc('A', 'R', '2', '4'), Modifier: 0}
 	if !slices.Contains(r.DMABuf().Formats, linear) {
@@ -103,10 +94,7 @@ func TestRendererScaledDMABufFiltersLinearly(t *testing.T) {
 //
 //testpolicy:realtime real GPU sync file polled by syncfile.Wait, bounded by a context deadline
 func TestRendererReturnsDoneFence(t *testing.T) {
-	r, err := New(32, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 32, 32)
 	defer r.Close()
 	if !r.gpu.syncFD {
 		t.Skip("device cannot export sync files")
@@ -128,10 +116,7 @@ func TestRendererReturnsDoneFence(t *testing.T) {
 
 // An unchanged wl_shm window is not copied again; a new content is.
 func TestRendererSHMCopiedOncePerContent(t *testing.T) {
-	r, err := New(32, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 32, 32)
 	defer r.Close()
 	c := solidContent(t, 16, 16, color.RGBA{1, 2, 3, 255})
 	c.ID, c.Seq, c.Version = 1, 1, 1
@@ -168,10 +153,7 @@ func TestRendererSHMCopiedOncePerContent(t *testing.T) {
 // A surface fully hidden by an opaque subsurface above it is not copied:
 // only the subsurface's bytes are, and the frame shows it.
 func TestRendererSkipsOccludedSurface(t *testing.T) {
-	r, err := New(32, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 32, 32)
 	defer r.Close()
 	green := color.RGBA{0, 255, 0, 255}
 	root := solidContent(t, 16, 16, color.RGBA{255, 0, 0, 255})
@@ -208,10 +190,7 @@ func TestRendererSkipsOccludedSurface(t *testing.T) {
 // A covering child whose buffer will not draw does not hide the root:
 // an unimportable dmabuf still shows the surface below it, not a hole.
 func TestRendererKeepsSurfaceBelowFailedCover(t *testing.T) {
-	r, err := New(32, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 32, 32)
 	defer r.Close()
 	red := color.RGBA{255, 0, 0, 255}
 	root := solidContent(t, 16, 16, red)
@@ -244,10 +223,7 @@ func render(r *Renderer, s ports.Scene, contents map[ports.WindowID]ports.Surfac
 // and the third copy waits for the frame that drew the first (the slot
 // ring and shmCopyFor's waitFrame both guarantee it).
 func TestRendererSHMDoubleBufferWaitsForReaders(t *testing.T) {
-	r, err := New(32, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 32, 32)
 	defer r.Close()
 	if !r.gpu.syncFD {
 		t.Skip("frames are finished on return without sync files")
@@ -280,10 +256,7 @@ func TestRendererSHMDoubleBufferWaitsForReaders(t *testing.T) {
 // that is not a sync file is refused (no semaphore) without failing the
 // frame, and the caller's file stays open.
 func TestRendererImportsAcquireFence(t *testing.T) {
-	r, err := New(8, 8)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 8, 8)
 	defer r.Close()
 	done, err := r.Render(ports.Scene{Background: "#000000"}, nil)
 	if err != nil || done == nil {

@@ -14,13 +14,10 @@ import (
 // exported target of each modifier the device offers for B8G8R8A8, and waits
 // for the GPU after every frame: the time per frame is the GPU cost of the
 // target's tiling/compression layout (DCC retile passes included). Select the
-// GPU with NEFERWL_VK_DEVICE; the size is 2560x1600.
+// GPU with NEFERWL_RENDER_DEVICE; the size is 2560x1600.
 func BenchmarkComposeFullTarget(b *testing.B) {
 	const w, h = 2560, 1600
-	probe, err := New(w, h)
-	if err != nil {
-		b.Skipf("Vulkan unavailable: %v", err)
-	}
+	probe := newTestRenderer(b, w, h)
 	mods := append([]uint64(nil), probe.gpu.renderMods...)
 	planes := probe.gpu.modPlanes
 	probe.Close()
@@ -29,10 +26,7 @@ func BenchmarkComposeFullTarget(b *testing.B) {
 	}
 	for _, m := range mods {
 		b.Run(fmt.Sprintf("%#x/planes=%d", m, planes[m]), func(b *testing.B) {
-			r, err := New(w, h)
-			if err != nil {
-				b.Skipf("Vulkan unavailable: %v", err)
-			}
+			r := newTestRenderer(b, w, h)
 			defer r.Close()
 			bufs, err := r.ExportTargets(2, []uint64{m}, false)
 			if err != nil {

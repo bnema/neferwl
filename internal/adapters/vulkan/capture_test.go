@@ -47,10 +47,7 @@ func captureWait(t *testing.T, r *Renderer) ports.CaptureFrame {
 }
 
 func TestCaptureLastFrameRegion(t *testing.T) {
-	r, err := New(8, 8)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 8, 8)
 	defer r.Close()
 	if _, err := r.BeginCapture(); err == nil {
 		t.Fatal("capture before any frame accepted")
@@ -101,10 +98,7 @@ func TestCaptureLastFrameRegion(t *testing.T) {
 // Every slot leased: the next capture fails at once; returning one
 // frees it again once its copy finished.
 func TestCaptureSlotsBounded(t *testing.T) {
-	r, err := New(8, 8)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 8, 8)
 	defer r.Close()
 	if err := render(r, ports.Scene{Background: "#ff0000"}, nil); err != nil {
 		t.Fatal(err)
@@ -158,10 +152,7 @@ func TestCaptureSlotsBounded(t *testing.T) {
 // sees the fence unsignalled. Simulated by marking the slot pending with
 // its fence reset.
 func TestCaptureReturnedSlotWaitsForFence(t *testing.T) {
-	r, err := New(8, 8)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 8, 8)
 	defer r.Close()
 	if err := render(r, ports.Scene{Background: "#00ff00"}, nil); err != nil {
 		t.Fatal(err)
@@ -205,10 +196,7 @@ func TestCaptureReturnedSlotWaitsForFence(t *testing.T) {
 // A device without sync-file export refuses protocol capture before allocating
 // slots, but keeps synchronous debug screenshots functional (e.g. lavapipe).
 func TestCaptureWithoutSyncFileExport(t *testing.T) {
-	r, err := New(8, 8)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 8, 8)
 	defer r.Close()
 	r.gpu.syncFD = false
 	if err := render(r, ports.Scene{Background: "#123456"}, nil); err != nil {
@@ -301,10 +289,7 @@ func TestCaptureCurve(t *testing.T) {
 
 // The lease object of a slot is reused, and a stale handle reports invalid.
 func TestCaptureLeaseReused(t *testing.T) {
-	r, err := New(8, 8)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 8, 8)
 	defer r.Close()
 	if err := render(r, ports.Scene{Background: "#0000ff"}, nil); err != nil {
 		t.Fatal(err)
@@ -363,10 +348,7 @@ func TestCaptureCycleAllocations(t *testing.T) {
 		new  func(*testing.T) *Renderer
 	}{
 		{"sdr", func(t *testing.T) *Renderer {
-			r, err := New(16, 8)
-			if err != nil {
-				t.Skipf("Vulkan unavailable: %v", err)
-			}
+			r := newTestRenderer(t, 16, 8)
 			t.Cleanup(r.Close)
 			return r
 		}},
@@ -480,10 +462,7 @@ func TestCaptureAdoptSync(t *testing.T) {
 // the same file for every lease, closed once by Close, and a lease the
 // device finished at export (no sync file) hands out none.
 func TestCaptureSyncFileOwnership(t *testing.T) {
-	r, err := New(8, 8)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 8, 8)
 	requireCaptureSync(t, r)
 	closed := false
 	defer func() {
@@ -535,10 +514,7 @@ func TestCaptureSyncFileOwnership(t *testing.T) {
 // stays pending, its semaphore is kept until the fence polls signalled,
 // and only then replaced.
 func TestCaptureExportFailureKeepsSlotPending(t *testing.T) {
-	r, err := New(8, 8)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 8, 8)
 	defer r.Close()
 	requireCaptureSync(t, r)
 	if err := render(r, ports.Scene{Background: "#00ff00"}, nil); err != nil {
@@ -599,10 +575,7 @@ func TestCaptureExportFailureKeepsSlotPending(t *testing.T) {
 // A device error from the fence poll or reset propagates instead of
 // being taken as busy.
 func TestCapturePollErrorPropagates(t *testing.T) {
-	r, err := New(8, 8)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 8, 8)
 	defer r.Close()
 	if err := render(r, ports.Scene{Background: "#00ff00"}, nil); err != nil {
 		t.Fatal(err)

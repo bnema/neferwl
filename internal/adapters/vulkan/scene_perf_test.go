@@ -26,10 +26,7 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 		{"transform 1", 1, 32, 24, 24, 32},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r, err := New(tc.tw, tc.th)
-			if err != nil {
-				t.Skipf("Vulkan unavailable: %v", err)
-			}
+			r := newTestRenderer(t, tc.tw, tc.th)
 			defer r.Close()
 			scene := ports.Scene{Seq: 1, Transform: tc.transform, Scale: 1, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: tc.sceneW, H: tc.sceneH}}}}
 			content := solidContent(t, 8, 8, color.RGBA{R: 255, A: 255})
@@ -165,10 +162,7 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 // driver, so they are logged only; our draw building must allocate nothing.
 // Skipped without a GPU or /dev/udmabuf.
 func TestRenderSteadyStateDMABufAllocations(t *testing.T) {
-	r, err := New(80, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 80, 32)
 	defer r.Close()
 	linear := ports.DMABufFormat{Format: fourcc('A', 'R', '2', '4'), Modifier: 0}
 	if !slices.Contains(r.DMABuf().Formats, linear) {
@@ -218,10 +212,7 @@ func TestRenderSteadyStateDMABufAllocations(t *testing.T) {
 // Retiring a frame's wait semaphore appends a typed entry to the reused
 // deferred list: no closure, no allocation once the list has its capacity.
 func TestRetireSemaphoreAllocatesNothing(t *testing.T) {
-	r, err := New(32, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 32, 32)
 	defer r.Close()
 	r.completed = 0
 	retire := func() {
@@ -243,10 +234,7 @@ func TestRetireSemaphoreAllocatesNothing(t *testing.T) {
 // its frame completes, in order, and a semaphore whose frame already
 // completed is destroyed at once instead of queued.
 func TestRetireMixedDeferredEntries(t *testing.T) {
-	r, err := New(32, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 32, 32)
 	defer r.Close()
 	r.runDeferred()
 	r.completed = 5
@@ -275,10 +263,7 @@ func TestRetireMixedDeferredEntries(t *testing.T) {
 // subsurface tree. Each child has its own real wl_shm pool.
 func TestSceneWalkUnchangedTiledSHM(t *testing.T) {
 	const tiles = 64
-	r, err := New(128, 128)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 128, 128)
 	defer r.Close()
 	root := ports.SurfaceContent{ID: 1, Seq: 1, Surface: 1, Version: 1}
 	for i := range tiles {

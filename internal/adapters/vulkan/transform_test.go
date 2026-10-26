@@ -11,10 +11,7 @@ import (
 // surface pixel shows the buffer pixel ToBuffer names, pixel exact at 1:1,
 // with and without a viewport crop.
 func TestRendererBufferTransform(t *testing.T) {
-	r, err := New(8, 8)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 8, 8)
 	defer r.Close()
 	// 3×2 buffer, one colour per pixel.
 	colours := [2][3]color.RGBA{

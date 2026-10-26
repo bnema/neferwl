@@ -11,10 +11,7 @@ import (
 )
 
 func TestRendererClear(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	if err := r.Clear([3]uint8{0x10, 0x20, 0x30}); err != nil {
 		t.Fatal(err)
@@ -40,10 +37,7 @@ func TestParseColor(t *testing.T) {
 }
 
 func TestRendererRender(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	bg := color.RGBA{16, 32, 48, 255}
 	wc, c2, fc := color.RGBA{200, 10, 10, 255}, color.RGBA{10, 200, 10, 255}, color.RGBA{10, 10, 200, 255}
@@ -94,10 +88,7 @@ func TestRendererRender(t *testing.T) {
 
 // A faded window blends with the background (wp_alpha_modifier_v1).
 func TestRendererFade(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	c := solidContent(t, 64, 48, color.RGBA{200, 0, 0, 255})
 	c.Fade = 0.5
@@ -112,10 +103,7 @@ func TestRendererFade(t *testing.T) {
 }
 
 func TestRendererContents(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	bg := color.RGBA{16, 32, 48, 255}
 	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 8, Y: 8, W: 20, H: 10}}}}
@@ -155,10 +143,7 @@ func TestRendererContents(t *testing.T) {
 }
 
 func TestRendererUploadOrderAndOpaque(t *testing.T) {
-	r, err := New(32, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 32, 32)
 	defer r.Close()
 	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{
 		{ID: 1, Rect: ports.Rect{X: 2, Y: 2, W: 16, H: 16}},
@@ -200,10 +185,7 @@ func TestRendererUploadOrderAndOpaque(t *testing.T) {
 }
 
 func TestRendererLayers(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	red := make([]byte, 64*8*4)
 	for i := 0; i < len(red); i += 4 {
@@ -248,10 +230,7 @@ func solid(w, h int, c [3]uint8) []byte {
 }
 
 func TestRendererScale(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	red := [3]uint8{200, 0, 0}
 	// Scale 2: a 10x10 logical window at (4,4) covers physical (8,8)-(28,28);
@@ -305,10 +284,7 @@ func TestRendererScale(t *testing.T) {
 // An overview preview draws the whole buffer shrunk into its rect, not
 // the buffer's corner.
 func TestRendererPreview(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	// 40x20 buffer: left half red, right half blue, drawn at half size.
 	px := make([]byte, 40*20*4)
@@ -342,10 +318,7 @@ func TestRendererPreview(t *testing.T) {
 // A buffer shrunk under half size averages its texels: one-pixel white
 // and black columns shrunk 4× come out an even gray, not a beat pattern.
 func TestRendererPreviewSmooth(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	px := make([]byte, 80*40*4)
 	for i := 0; i < len(px); i += 4 {
@@ -400,10 +373,7 @@ var shmPools uint64
 // around it is clipped; subsurfaces draw from the root origin, above or
 // below it.
 func TestRendererGeometryAndSubsurfaces(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	red, green, blue := color.RGBA{255, 0, 0, 255}, color.RGBA{0, 255, 0, 255}, color.RGBA{0, 0, 255, 255}
 	bg := color.RGBA{16, 32, 48, 255}
@@ -451,10 +421,7 @@ func TestRendererGeometryAndSubsurfaces(t *testing.T) {
 // A tall fill covers every row through the last one.
 func TestRendererTallFill(t *testing.T) {
 	h := 135
-	r, err := New(8, h)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 8, h)
 	defer r.Close()
 	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 1, Y: 0, W: 6, H: h}}}}
 	wc := color.RGBA{200, 10, 10, 255}
@@ -489,10 +456,7 @@ func fill(w, h int, bgra [4]byte) []byte {
 // bottom layer (one draw), an opaque window copied over it, then two
 // overlapping overlays sharing one draw. A transparent pixel changes nothing.
 func TestRendererAlphaBlend(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	halfRed, halfBlue := [4]byte{0, 0, 128, 128}, [4]byte{128, 0, 0, 128}
 	partly := fill(16, 8, halfRed)
@@ -542,10 +506,7 @@ func TestRendererAlphaBlend(t *testing.T) {
 // draws from the GPU copy of its content: the pool file is closed and its
 // mapping gone, and the copy is found without reading the pool.
 func TestRendererSHMKeptWindowDrawsFromCopy(t *testing.T) {
-	r, err := New(32, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 32, 32)
 	defer r.Close()
 	scene := ports.Scene{Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}}}}
 	c := solidContent(t, 16, 16, color.RGBA{R: 255, A: 255})

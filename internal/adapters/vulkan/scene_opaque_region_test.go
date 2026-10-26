@@ -41,10 +41,7 @@ func drawRects(ds []draw) []image.Rectangle {
 // region only: the root draws the two strips around it, and the child draws
 // over its own whole rect.
 func TestSceneOpaqueRegionClipsRoot(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	scene := ports.Scene{Seq: 1, Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 20, H: 12}}}}
 	contents := map[ports.WindowID]ports.SurfaceContent{1: opaqueRegionContent(t, 20, 12)}
@@ -74,10 +71,7 @@ func sameRects(a, b []image.Rectangle) bool {
 
 // A wholly opaque child still skips the root.
 func TestSceneOpaqueChildSkipsRoot(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	root := opaqueRegionContent(t, 20, 12)
 	root.Children[0].Opaque, root.Children[0].OpaqueRect = true, ports.Rect{}
@@ -93,10 +87,7 @@ func TestSceneOpaqueChildSkipsRoot(t *testing.T) {
 // root's pixels show through there, mapped as without the clipping. Inside
 // the region the child shows.
 func TestRendererOpaqueRegionStripsKeepRoot(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	const w, h = 20, 12
 	scene := ports.Scene{Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: w, H: h}}}}
@@ -173,10 +164,7 @@ func TestOpaqueCover(t *testing.T) {
 // Building the draws of a window with a partly opaque child allocates
 // nothing.
 func TestSceneOpaqueRegionAllocations(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	scene := ports.Scene{Seq: 1, Scale: 1.5, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 20, H: 12}}}}
 	contents := map[ports.WindowID]ports.SurfaceContent{1: opaqueRegionContent(t, 20, 12)}
@@ -194,7 +182,7 @@ func TestSceneOpaqueRegionAllocations(t *testing.T) {
 // at 984x1231 (the viewport destination). "none" is a page with no opaque
 // region (the root draws in full), "short" one with a region a logical pixel
 // short of its right and bottom edges, "whole" one that covers it. The GPU is
-// waited for after every frame. Select it with NEFERWL_VK_DEVICE.
+// waited for after every frame. Select it with NEFERWL_RENDER_DEVICE.
 func BenchmarkComposeOpaqueRegionChild(b *testing.B) {
 	const w, h, lw, lh = 2560, 1600, 984, 1231
 	for _, tc := range []struct {
@@ -207,10 +195,7 @@ func BenchmarkComposeOpaqueRegionChild(b *testing.B) {
 		{"whole", true, ports.Rect{}},
 	} {
 		b.Run(tc.name, func(b *testing.B) {
-			r, err := New(w, h)
-			if err != nil {
-				b.Skipf("Vulkan unavailable: %v", err)
-			}
+			r := newTestRenderer(b, w, h)
 			defer r.Close()
 			linear := ports.DMABufFormat{Format: fourcc('A', 'R', '2', '4'), Modifier: 0}
 			if !slices.Contains(r.DMABuf().Formats, linear) {
@@ -268,10 +253,7 @@ func crossingCovers(t testing.TB, w, h, n int) ports.SurfaceContent {
 // or maxSplitStrips draws, and the root then draws whole (overdraw only, the
 // covers above it still hide the rest).
 func TestSceneSplitIsBounded(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	const w, h = 60, 40
 	scene := ports.Scene{Seq: 1, Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: w, H: h}}}}
@@ -303,10 +285,7 @@ func TestSceneSplitIsBounded(t *testing.T) {
 // show: the window's pixels are the children's inside them and the root's
 // elsewhere.
 func TestRendererSplitBoundKeepsRoot(t *testing.T) {
-	r, err := New(64, 48)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	const w, h, n = 60, 40, 40
 	scene := ports.Scene{Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: w, H: h}}}}

@@ -13,10 +13,7 @@ import (
 
 func hdrTestRenderer(t *testing.T) *Renderer {
 	t.Helper()
-	r, err := New(64, 16)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 16)
 	t.Cleanup(r.Close)
 	r.SetHDR(203)
 	r.SetHDRReadback(true)
@@ -109,10 +106,7 @@ func TestHDRPixels(t *testing.T) {
 		}
 	}
 	// An HDR virtual output without SetHDRReadback has no readable target.
-	plain, err := New(64, 16)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	plain := newTestRenderer(t, 64, 16)
 	defer plain.Close()
 	plain.SetHDR(203)
 	plain.SetVirtualOutput(true)
@@ -127,10 +121,7 @@ func TestHDRPixels(t *testing.T) {
 	if plain.HDRPixels() != nil {
 		t.Fatal("HDRPixels without SetHDRReadback")
 	}
-	sdr, err := New(64, 4)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	sdr := newTestRenderer(t, 64, 4)
 	defer sdr.Close()
 	if err := render(sdr, ports.Scene{Background: "#ffffff"}, nil); err != nil {
 		t.Fatal(err)

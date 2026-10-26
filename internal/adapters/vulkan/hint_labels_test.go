@@ -11,10 +11,7 @@ import (
 )
 
 func TestHintLabelsDrawnAfterIndicators(t *testing.T) {
-	r, err := New(256, 256)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 256, 256)
 	defer r.Close()
 	for _, scale := range []int{1, 2} {
 		s := ports.Scene{Scale: float64(scale),
@@ -43,10 +40,7 @@ func TestHintLabelsDrawnAfterIndicators(t *testing.T) {
 }
 
 func TestHintLabelsAnchoredAndClampedAtTopLeft(t *testing.T) {
-	r, err := New(128, 128)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 128, 128)
 	defer r.Close()
 	// A target at the origin puts the anchor off-screen: clamped to 0,0.
 	s := ports.Scene{Scale: 1, HintLabels: []ports.HintLabel{{Rect: ports.Rect{X: 0, Y: 0}, Text: "f"}, {Rect: ports.Rect{X: 60, Y: 60}, Text: "f"}}}
@@ -68,10 +62,7 @@ func TestHintLabelsAbsentDrawNothing(t *testing.T) {
 }
 
 func TestHintLabelsClampedInsideOutput(t *testing.T) {
-	r, err := New(128, 128)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 128, 128)
 	defer r.Close()
 	s := ports.Scene{Scale: 1, HintStyle: ports.HintStyle{Size: 40}, HintLabels: []ports.HintLabel{{Rect: ports.Rect{X: 127, Y: 127}, Text: "ff"}}}
 	ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 128, 128)))
@@ -81,10 +72,7 @@ func TestHintLabelsClampedInsideOutput(t *testing.T) {
 }
 
 func TestHintLabelsRenderAndUploadOnce(t *testing.T) {
-	r, err := New(128, 128)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 128, 128)
 	defer r.Close()
 	s := ports.Scene{Scale: 1, Seq: 1, HintLabels: []ports.HintLabel{{Rect: ports.Rect{X: 4, Y: 4}, Text: "fj"}}}
 	require.NoError(t, render(r, s, nil))

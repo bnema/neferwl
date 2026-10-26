@@ -12,10 +12,7 @@ import (
 // A PQ 2101010 client is decoded before the SDR intermediate, which clips
 // highlights above reference white. The GPU and udmabuf are optional.
 func TestPQClientComposition(t *testing.T) {
-	r, err := New(64, 4)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
+	r := newTestRenderer(t, 64, 4)
 	defer r.Close()
 	type sample struct {
 		rgb   [3]float64
