@@ -79,6 +79,9 @@ func (c *Core) securityCheckpoint(ctx context.Context) error {
 	if !c.syncSecurity() {
 		return nil
 	}
+	if err := c.osdWatch(ctx, 0); err != nil {
+		return err
+	}
 	// Clear display focus even if the new epoch has no mapped lock surfaces.
 	if err := c.pointerFocus(ctx, ports.PointerFocus{}); err != nil {
 		return err

@@ -10,6 +10,13 @@ import (
 // stop ends Run (a command could not be delivered).
 func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, stop bool) {
 	switch v := ev.(type) {
+	case ports.WindowStats:
+		if !c.osd.shown || v.Window == 0 || v.Window != c.osd.window {
+			return false, false
+		}
+		c.osd.stats = v
+		c.osdPanel(v)
+		return true, false
 	case ports.SessionLockChanged:
 		if !c.applyLockChanged(v) {
 			return false, false
@@ -76,6 +83,9 @@ func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, 
 			w.SetModal(v.ID, v.Modal)
 		}
 	case ports.WindowUnmapped:
+		if v.ID == c.osd.window {
+			c.osd.window = 0
+		}
 		if c.unmapClient(ctx, v) != nil {
 			return false, true
 		}

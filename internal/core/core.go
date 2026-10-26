@@ -673,6 +673,9 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 		return err
 	}
 	focus := c.keyboardFocus()
+	if err := c.osdWatch(ctx, focus); err != nil {
+		return err
+	}
 	c.advanceFlash(only)
 	scenes := make([]ports.Scene, 0, len(c.screens))
 	// Before the first output (and after the last is unplugged) the
