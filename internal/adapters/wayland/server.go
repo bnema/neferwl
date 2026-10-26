@@ -681,6 +681,9 @@ func (s *Server) forwardOutputFormats(ctx context.Context) {
 }
 
 func (s *Server) emit(ev ports.ClientEvent) {
+	if unmapped, ok := ev.(ports.WindowUnmapped); ok && unmapped.ID == s.stats.watched {
+		s.watchStats(0)
+	}
 	if s.channels.Events == nil {
 		return
 	}
@@ -769,6 +772,8 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		}
 	}
 	switch c := cmd.(type) {
+	case ports.WatchStats:
+		s.watchStats(c.Window)
 	case ports.CursorOverride:
 		s.setCursorOverride(c.Shape)
 	case ports.PointerFocus, ports.PointerMotionTo, ports.PointerButtonTo, ports.PointerAxisTo, ports.GestureBeginTo, ports.GestureUpdateTo, ports.GestureEndTo, ports.SetKeymap, ports.FocusWindow, ports.ForwardKey, ports.SetModifiers:

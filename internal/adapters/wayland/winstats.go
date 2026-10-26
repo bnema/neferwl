@@ -155,3 +155,43 @@ func (w *windowStats) flip(f *ports.FlipInfo) {
 	w.facts.Async = f.Async
 	w.facts.ScanoutReason, w.facts.OverlayReason = f.ScanoutReason, f.OverlayReason
 }
+
+// watchStats replaces the watched window and invalidates pending timer callbacks.
+func (s *Server) watchStats(id ports.WindowID) {
+	if id == s.stats.watched {
+		return
+	}
+	if s.stats.timer != nil {
+		s.stats.timer.Stop()
+	}
+	gen := s.stats.gen + 1
+	s.stats = windowStats{watched: id, gen: gen}
+	if id != 0 {
+		s.armStats()
+	}
+}
+
+// armStats schedules one report, returning ownership to the display goroutine.
+func (s *Server) armStats() {
+	gen := s.stats.gen
+	s.stats.timer = s.clock.AfterFunc(ports.StatsInterval, func() {
+		s.display.Do(func() {
+			if s.stats.gen != gen || s.stats.watched == 0 {
+				return
+			}
+			s.emit(s.stats.snapshot())
+			s.armStats()
+		})
+	})
+}
+
+// snapshot copies the last facts and summarizes the retained client timings.
+func (w *windowStats) snapshot() ports.WindowStats {
+	result := w.facts
+	result.Window = w.watched
+	result.ClientFPS, result.ShownFPS = w.client.fps(), w.shown.fps()
+	summary := w.client.summary(&w.scratch)
+	result.Avg, result.Min, result.Max = summary.Avg, summary.Min, summary.Max
+	result.Low1, result.Low01, result.Frametimes = summary.Low1, summary.Low01, summary.Graph
+	return result
+}

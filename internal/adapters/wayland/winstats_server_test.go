@@ -1,9 +1,11 @@
 package wayland
 
 import (
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"testing"
 	"time"
 
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -37,4 +39,121 @@ func TestWindowStatsRecording(t *testing.T) {
 	if !w.facts.Scanout || !w.facts.VRR {
 		t.Fatal("missing scanout/VRR")
 	}
+}
+
+func TestWatchStatsTimer(t *testing.T) {
+	events := make(chan ports.ClientEvent, 16)
+	s, _, timers := idleClockServerWith(t, Channels{Events: events})
+	s.display.Do(func() { s.apply(ports.WatchStats{Window: 7}) })
+	first := nextArmed(t, timers)
+	if first.d != ports.StatsInterval {
+		t.Fatalf("interval %v", first.d)
+	}
+	s.display.Do(func() { s.apply(ports.WatchStats{Window: 7}) })
+	first.fire()
+	next := nextArmed(t, timers)
+	report := clientEvent[ports.WindowStats](t, events)
+	if report.Window != 7 {
+		t.Fatalf("window %d", report.Window)
+	}
+	s.display.Do(func() {
+		timer := s.stats.timer.(*portsmocks.MockTimer)
+		timer.ExpectedCalls = nil
+		timer.EXPECT().Stop().Return(true).Once()
+		s.apply(ports.WatchStats{})
+	})
+	next.fire()
+	s.display.Do(func() {
+		if s.stats.watched != 0 || s.stats.timer != nil {
+			t.Error("watch not reset")
+		}
+	})
+	select {
+	case ev := <-events:
+		t.Fatalf("stale event %T", ev)
+	default:
+	}
+	select {
+	case <-timers:
+		t.Fatal("unexpected timer")
+	default:
+	}
+	s.display.Do(func() { s.watchStats(8) })
+	stale := nextArmed(t, timers)
+	s.display.Do(func() { s.emit(ports.WindowUnmapped{ID: 8}) })
+	_ = clientEvent[ports.WindowUnmapped](t, events)
+	stale.fire()
+	s.display.Do(func() {
+		if s.stats.watched != 0 {
+			t.Error("unmap did not stop watch")
+		}
+	})
+	select {
+	case ev := <-events:
+		t.Fatalf("stale unmap event %T", ev)
+	default:
+	}
+}
+
+// TestWatchStatsCommits uses a real client and a generated clock for commit timestamps.
+func TestWatchStatsCommits(t *testing.T) {
+	events := make(chan ports.ClientEvent, 16)
+	s, dir, timers := idleClockServerWith(t, Channels{Events: events})
+	c := protocolClient(t, s, dir)
+	w, surf, _ := surfaceMapper(t, c, events)()
+	clock := s.clock.(*portsmocks.MockClock)
+	s.display.Do(func() { s.watchStats(w.ID) })
+	first := nextArmed(t, timers)
+	now := time.Unix(1, 0)
+	clock.EXPECT().Now().RunAndReturn(func() time.Time { result := now; now = now.Add(20 * time.Millisecond); return result }).Times(3)
+	// Reattaching the retained buffer is a fresh commit, unlike damage-only commits.
+	var buffer uint32
+	s.display.Do(func() { buffer = s.windows[w.ID].xdg.surface.current.ID() })
+	for range 3 {
+		requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, buffer, int32(0), int32(0))
+		requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first.fire()
+	_ = nextArmed(t, timers)
+	report := clientEvent[ports.WindowStats](t, events)
+	if report.ClientFPS != 50 || report.Width != 1 || report.Height != 1 || report.DMABuf {
+		t.Fatalf("report %+v", report)
+	}
+	s.display.Do(func() { s.watchStats(0) })
+}
+
+func TestWatchStatsFlips(t *testing.T) {
+	s, _, timers := idleClockServerWith(t, Channels{})
+	sink := s.Presentation()
+	push := func(seq uint64, when time.Duration) {
+		sink.Push(ports.OutputPresented{Output: "HEADLESS-1", Flip: &ports.FlipInfo{When: when, Shows: map[ports.WindowID]uint64{9: seq}, ZeroCopy: 9, HardwareClock: true, OverlayReason: "occupied"}})
+		s.display.Do(func() {})
+	}
+	push(1, 0)
+	s.display.Do(func() {
+		if s.stats.shown.n != 0 {
+			t.Error("unwatched sample")
+		}
+	})
+	select {
+	case <-timers:
+		t.Fatal("unwatched timer")
+	default:
+	}
+	s.display.Do(func() { s.watchStats(9) })
+	_ = nextArmed(t, timers)
+	push(1, 0)
+	push(2, 10*time.Millisecond)
+	push(2, 15*time.Millisecond)
+	push(3, 20*time.Millisecond)
+	s.display.Do(func() {
+		report := s.stats.snapshot()
+		if s.stats.shown.n != 2 || report.ShownFPS != 100 || !report.Scanout || !report.VRR || report.OverlayReason != "occupied" {
+			t.Errorf("flip report %+v", report)
+		}
+		s.watchStats(0)
+	})
 }
