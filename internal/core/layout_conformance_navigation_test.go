@@ -3,13 +3,15 @@ package core
 import (
 	"testing"
 	"testing/synctest"
+
+	"github.com/bnema/neferwl/internal/core/layout"
 )
 
 // Navigation invariants: the lanes partition the columns in order, laneNeighbor
 // goes one lane over, focus steps stay in their lane (walking a whole lane
 // outside the spiral) and terminate, and the screen neighbor is never the focus.
 func TestLayoutNavigationConformance(t *testing.T) {
-	forEachConformance(t, func(t *testing.T, l Layout, w *Workspace, k, n int, mode string) {
+	forEachConformance(t, func(t *testing.T, l layout.Layout, w *Workspace, k, n int, mode string) {
 		v := w.Snapshot()
 		next := 0
 		for lane := 0; lane < l.LaneCount(v); lane++ {
@@ -73,9 +75,9 @@ func TestLayoutNavigationConformance(t *testing.T) {
 					step.Focus = col
 				}
 			}
-			rects := l.ColumnRects(v, nil, RectOpts{})
+			rects := l.ColumnRects(v, nil, layout.RectOpts{})
 			for _, d := range [][2]int{{-1, 0}, {1, 0}, {0, -1}, {0, 1}} {
-				if col := screenNeighbor(v, rects, d[0], d[1]); col == i || col >= n {
+				if col := layout.ScreenNeighbor(v, rects, d[0], d[1]); col == i || col >= n {
 					t.Fatalf("screen neighbor %d of column %d", col, i)
 				}
 			}
@@ -87,8 +89,8 @@ func TestGeometricNeighborEqualCellSymmetry(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rects := []Rect{{W: 100, H: 100}, {X: 110, W: 100, H: 100}, {X: 220, W: 100, H: 100}}
 		for i := 0; i < len(rects)-1; i++ {
-			j := GeometricNeighbor(rects, i, 1, 0)
-			if j != i+1 || GeometricNeighbor(rects, j, -1, 0) != i {
+			j := layout.GeometricNeighbor(rects, i, 1, 0)
+			if j != i+1 || layout.GeometricNeighbor(rects, j, -1, 0) != i {
 				t.Fatal("equal-cell neighbors not symmetric")
 			}
 		}

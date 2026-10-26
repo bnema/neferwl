@@ -1,6 +1,10 @@
 package core
 
-import "slices"
+import (
+	"slices"
+
+	"github.com/bnema/neferwl/internal/core/layout"
+)
 
 // FocusID selects a window and scrolls its column into view; a native
 // float is raised, a stashed window is selected.
@@ -100,7 +104,7 @@ func (w *Workspace) columnToward(dir int) int {
 // onScreenFocus reports whether directional focus follows the screen:
 // fixed overflow with every column visible.
 func (w *Workspace) onScreenFocus() bool {
-	return w.Engine().Spiral() && screenFocus(w.Snapshot())
+	return w.Engine().Spiral() && layout.ScreenFocus(w.Snapshot())
 }
 
 // FocusWindow moves focus inside the column, then to a fixed-overflow column

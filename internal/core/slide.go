@@ -4,6 +4,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/core/motion"
 )
 
@@ -64,12 +65,8 @@ func (w *Workspace) snapPointsInto(dst []float64) []float64 {
 // horizontal content axis that can slide.
 func (w *Workspace) scrollsRow() bool {
 	content, _ := w.Engine().Axes()
-	return w.Engine().Scrolls() && content == Horizontal
+	return w.Engine().Scrolls() && content == layout.Horizontal
 }
-
-// snapSpacing is the smallest distance between column snap points, in
-// usable widths.
-const snapSpacing = 0.1
 
 // snapFocus is the column to focus at view: the current one while it stays
 // fully shown at the current view, else the furthest fully shown column

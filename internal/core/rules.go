@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -59,7 +60,7 @@ func parseRules(rs []ports.WindowRule) ([]rule, error) {
 				p.workspace = r.Workspace
 			}
 		}
-		if r.Cells < 0 || r.Cells > MaxCells {
+		if r.Cells < 0 || r.Cells > layout.MaxCells {
 			return nil, fmt.Errorf("rule %s: invalid width %d", r.Name, r.Cells)
 		}
 		p.cells = r.Cells

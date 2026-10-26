@@ -4,29 +4,32 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/core/layout/layoutmocks"
+
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/stretchr/testify/mock"
 )
 
 // dispatchTraits are the constant answers of a layout double.
 type dispatchTraits struct {
 	scrolls, spiral, laneRow bool
-	content, workspace       Axis
+	content, workspace       layout.Axis
 }
 
 // scrollTraits are the neutral scroll layout's.
-var scrollTraits = dispatchTraits{scrolls: true, content: Horizontal, workspace: Vertical}
+var scrollTraits = dispatchTraits{scrolls: true, content: layout.Horizontal, workspace: layout.Vertical}
 
 // dispatchLayout is a composed layout double (newMocklayout) with the neutral
 // traits of the scroll layout. A test sets the expectations of the methods it
 // drives straight on it and asserts what the Workspace does with the answers,
 // not that a call happened.
-func dispatchLayout(t *testing.T, cols int) (*Workspace, *MockLayout) {
+func dispatchLayout(t *testing.T, cols int) (*Workspace, *layoutmocks.MockLayout) {
 	return dispatchLayoutWith(t, cols, scrollTraits)
 }
 
-func dispatchLayoutWith(t *testing.T, cols int, tr dispatchTraits) (*Workspace, *MockLayout) {
+func dispatchLayoutWith(t *testing.T, cols int, tr dispatchTraits) (*Workspace, *layoutmocks.MockLayout) {
 	t.Helper()
-	l := NewMockLayout(t)
+	l := layoutmocks.NewMockLayout(t)
 	l.EXPECT().NewState().Return(nil).Maybe()
 	l.EXPECT().OverridesWidth().Return(true).Maybe()
 	l.EXPECT().Name().Return(OverflowScroll).Maybe()
@@ -40,7 +43,7 @@ func dispatchLayoutWith(t *testing.T, cols int, tr dispatchTraits) (*Workspace, 
 	l.EXPECT().PinsFullscreen().Return(false).Maybe()
 	l.EXPECT().Isolate(mock.Anything, mock.Anything).Return(false).Maybe()
 	l.EXPECT().LaneRow(mock.Anything).Return(tr.laneRow).Maybe()
-	w := &Workspace{Lanes: Lanes{Override: l, MaxColumns: 3, Usable: Rect{W: 900, H: 600}, Output: Rect{W: 900, H: 600}}}
+	w := &Workspace{Lanes: layout.Lanes{Override: l, MaxColumns: 3, Usable: Rect{W: 900, H: 600}, Output: Rect{W: 900, H: 600}}}
 	for i := 0; i < cols; i++ {
 		w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
 	}
@@ -48,7 +51,7 @@ func dispatchLayoutWith(t *testing.T, cols int, tr dispatchTraits) (*Workspace, 
 }
 
 // scrollStubs answers the geometry a scroll() settle asks for.
-func scrollStubs(l *MockLayout) {
+func scrollStubs(l *layoutmocks.MockLayout) {
 	l.EXPECT().ScrollTarget(mock.Anything).Return(0).Maybe()
 	l.EXPECT().ColumnWidth(mock.Anything, mock.Anything, mock.Anything).Return(100).Maybe()
 }
@@ -87,7 +90,7 @@ func TestWorkspacePlacementDispatch(t *testing.T) {
 		w, l := dispatchLayout(t, 2)
 		scrollStubs(l)
 
-		l.EXPECT().SpawnAt(mock.Anything).Return(0, InsertDefault).Once()
+		l.EXPECT().SpawnAt(mock.Anything).Return(0, layout.InsertDefault).Once()
 		w.AddWindow(9)
 		if got := columnOrder(w); len(got) != 3 || got[0] != 9 || w.Focus != 0 {
 			t.Fatalf("columns %v focus %d: the new window belongs at the layout's index 0", got, w.Focus)
@@ -126,17 +129,17 @@ func TestWorkspaceSizingDispatch(t *testing.T) {
 		w, l := dispatchLayout(t, 2)
 		scrollStubs(l)
 
-		l.EXPECT().Grow(mock.Anything, true).Run(func(w Edit, _ bool) { w.Columns[w.Focus].Cells = 3 }).Once()
+		l.EXPECT().Grow(mock.Anything, true).Run(func(w layout.Edit, _ bool) { w.Columns[w.Focus].Cells = 3 }).Once()
 		w.GrowColumn(true)
 		if w.Columns[0].Cells != 3 {
 			t.Fatalf("cells %d: the layout's grow was not applied to the workspace", w.Columns[0].Cells)
 		}
-		l.EXPECT().Shrink(mock.Anything).Run(func(w Edit) { w.Columns[w.Focus].Cells-- }).Once()
+		l.EXPECT().Shrink(mock.Anything).Run(func(w layout.Edit) { w.Columns[w.Focus].Cells-- }).Once()
 		w.ShrinkColumn()
 		if w.Columns[0].Cells != 2 {
 			t.Fatalf("cells %d after shrink", w.Columns[0].Cells)
 		}
-		l.EXPECT().ToggleFullWidth(mock.Anything).Run(func(w Edit) { w.Columns[w.Focus].FullWidth = true }).Once()
+		l.EXPECT().ToggleFullWidth(mock.Anything).Run(func(w layout.Edit) { w.Columns[w.Focus].FullWidth = true }).Once()
 		w.ToggleFullWidth()
 		if !w.Columns[0].FullWidth {
 			t.Fatal("toggle ignored")
@@ -150,7 +153,7 @@ func TestWorkspaceGeometryDispatch(t *testing.T) {
 		w, l := dispatchLayout(t, 2)
 
 		want := []Rect{{X: 17, Y: 23, W: 101, H: 203}, {X: 120, Y: 23, W: 50, H: 203}}
-		l.EXPECT().ColumnRects(mock.Anything, []Rect(nil), RectOpts{IgnoreFullWidth: true, Shift: 9}).Return(want).Once()
+		l.EXPECT().ColumnRects(mock.Anything, []Rect(nil), layout.RectOpts{IgnoreFullWidth: true, Shift: 9}).Return(want).Once()
 		got := w.columnRectsAt(nil, true, 9)
 		if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 			t.Fatalf("rects %v, want the layout's %v", got, want)
@@ -207,7 +210,7 @@ func TestWorkspaceLaneDispatch(t *testing.T) {
 // The position hint counts a workspace's rows from the layout's lane count.
 func TestPositionHintLaneCountDispatch(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		_, l := dispatchLayoutWith(t, 0, dispatchTraits{scrolls: true, content: Vertical, workspace: Horizontal})
+		_, l := dispatchLayoutWith(t, 0, dispatchTraits{scrolls: true, content: layout.Vertical, workspace: layout.Horizontal})
 		m := newMonitor("m", "")
 		w := m.Current()
 		w.Override, w.Usable = l, Rect{W: 900, H: 600}
@@ -229,7 +232,7 @@ func TestSwipeTraitDispatch(t *testing.T) {
 			c.cfg.Animations.On = true
 			sc := c.screens[0]
 			w := sc.mon.Current()
-			_, l := dispatchLayoutWith(t, 0, dispatchTraits{scrolls: scrolls, content: Horizontal, workspace: Vertical})
+			_, l := dispatchLayoutWith(t, 0, dispatchTraits{scrolls: scrolls, content: layout.Horizontal, workspace: layout.Vertical})
 			l.EXPECT().SnapPoints(mock.Anything, mock.Anything).Return([]float64{0, 400}).Maybe()
 			w.Override, w.Usable = l, Rect{W: 900, H: 600}
 			w.Columns = []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{2}}}
@@ -262,17 +265,17 @@ func TestWorkspaceOverviewDispatch(t *testing.T) {
 func TestPreviewRowLanesDispatch(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		for _, lanes := range []bool{false, true} {
-			w, l := dispatchLayoutWith(t, 2, dispatchTraits{scrolls: true, content: Vertical, workspace: Horizontal})
+			w, l := dispatchLayoutWith(t, 2, dispatchTraits{scrolls: true, content: layout.Vertical, workspace: layout.Horizontal})
 			w.reserved = Rect{W: 900, H: 600}
 			l.EXPECT().PreviewLanes().Return(lanes)
 			l.EXPECT().PreviewTiles(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
-				func(View, []Placement, []Rect) ([]Placement, int, Rect) {
+				func(layout.View, []Placement, []Rect) ([]Placement, int, Rect) {
 					return []Placement{
 						{ID: 1, Rect: Rect{X: 0, Y: 0, W: 400, H: 500}, Focused: true},
 						{ID: 2, Rect: Rect{X: 0, Y: 600, W: 400, H: 500}},
 					}, 900, Rect{X: 0, Y: 0, W: 400, H: 500}
 				})
-			tiles := w.previewRow(Horizontal, Rect{W: 900, H: 600}, false, true)
+			tiles := w.previewRow(layout.Horizontal, Rect{W: 900, H: 600}, false, true)
 			if len(tiles) != 2 || tiles[0].Peek {
 				t.Fatalf("lanes = %v: tiles %+v", lanes, tiles)
 			}
@@ -301,7 +304,7 @@ func TestWorkspaceShapeDispatch(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				w, l := dispatchLayoutWith(t, 5, dispatchTraits{scrolls: true, content: Horizontal, workspace: Vertical, spiral: tc.spiral, laneRow: tc.row})
+				w, l := dispatchLayoutWith(t, 5, dispatchTraits{scrolls: true, content: layout.Horizontal, workspace: layout.Vertical, spiral: tc.spiral, laneRow: tc.row})
 				w.Columns[0].Cells = 2 // two cells outside the spiral, one slot in it
 				l.EXPECT().LaneOf(mock.Anything, mock.Anything).Return(0).Maybe()
 				l.EXPECT().LaneBounds(mock.Anything, mock.Anything).Return(0, 4).Maybe()
@@ -325,7 +328,7 @@ func TestWorkspaceEditCapturesFocusAtDispatch(t *testing.T) {
 		w, l := dispatchLayout(t, 2)
 		scrollStubs(l)
 		w.Columns[0].Windows = []WindowID{1, 7}
-		l.EXPECT().Grow(mock.Anything, true).RunAndReturn(func(e Edit, _ bool) {
+		l.EXPECT().Grow(mock.Anything, true).RunAndReturn(func(e layout.Edit, _ bool) {
 			id, _ := w.Focused()
 			if e.Focused != id || e.Focused != 7 || e.Lanes != &w.Lanes {
 				t.Fatalf("grow edit = %+v, focus = %d", e, id)
@@ -334,7 +337,7 @@ func TestWorkspaceEditCapturesFocusAtDispatch(t *testing.T) {
 		}).Once()
 		w.Columns[0].Focus = 1
 		w.GrowColumn(true)
-		l.EXPECT().Shrink(mock.Anything).RunAndReturn(func(e Edit) {
+		l.EXPECT().Shrink(mock.Anything).RunAndReturn(func(e layout.Edit) {
 			id, _ := w.Focused()
 			if e.Focused != id || e.Focused != 2 || e.Lanes != &w.Lanes {
 				t.Fatalf("shrink edit = %+v, focus = %d", e, id)
@@ -368,7 +371,7 @@ func TestWorkspaceSizingGuardsBeforeDispatch(t *testing.T) {
 				w.ShrinkColumn()
 				if mode == "fullscreen" {
 					scrollStubs(l)
-					l.EXPECT().ToggleFullWidth(mock.Anything).RunAndReturn(func(e Edit) { e.Maximize(e.Focus) }).Once()
+					l.EXPECT().ToggleFullWidth(mock.Anything).RunAndReturn(func(e layout.Edit) { e.Maximize(e.Focus) }).Once()
 				}
 				w.ToggleFullWidth()
 			})

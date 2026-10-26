@@ -4,6 +4,8 @@ import (
 	"slices"
 	"testing"
 	"testing/synctest"
+
+	"github.com/bnema/neferwl/internal/core/layout"
 )
 
 // cascadeMovesCore is a core whose focused screen holds a cascade of
@@ -59,7 +61,7 @@ func wantBands(t *testing.T, w *Workspace, want ...[]WindowID) {
 	t.Helper()
 	var got [][]WindowID
 	w.WalkBands(func(_, first, last int) bool {
-		got = append(got, columnOrder(&Workspace{Lanes: Lanes{Columns: w.Columns[first : last+1]}}))
+		got = append(got, columnOrder(&Workspace{Lanes: layout.Lanes{Columns: w.Columns[first : last+1]}}))
 		return true
 	})
 	if !slices.EqualFunc(got, want, slices.Equal) {

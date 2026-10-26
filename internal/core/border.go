@@ -1,6 +1,9 @@
 package core
 
-import "github.com/bnema/neferwl/internal/core/geom"
+import (
+	"github.com/bnema/neferwl/internal/core/geom"
+	"github.com/bnema/neferwl/internal/core/layout"
+)
 
 type borderKind int
 
@@ -21,7 +24,7 @@ type border struct {
 const borderMinWidth = 48
 
 // columnBorders excludes fixed spiral slots, which have no shared resize edge.
-func columnBorders(l Layout, v View) bool {
+func columnBorders(l layout.Layout, v layout.View) bool {
 	return !l.Spiral() || l.LaneRow(v)
 }
 
@@ -57,7 +60,7 @@ func (w *Workspace) borderAt(x, y, pad int) (border, bool) {
 		if r.X+r.W <= w.Usable.X || r.X >= w.Usable.X+w.Usable.W || r.Y+r.H <= w.Usable.Y || r.Y >= w.Usable.Y+w.Usable.H {
 			continue
 		}
-		rows := RowRects(r, w.Columns[i], gap)
+		rows := layout.RowRects(r, w.Columns[i], gap)
 		for j := 0; j+1 < len(rows); j++ {
 			lo, size := geom.BorderZone(rows[j].Y+rows[j].H, rows[j+1].Y, pad)
 			b := border{kind: borderRow, col: i, row: j, rect: Rect{X: r.X, Y: lo, W: r.W, H: size}}
@@ -103,12 +106,12 @@ func (w *Workspace) setBorder(b border, pos int) bool {
 		if b.row < 0 || b.row+1 >= len(c.Windows) || len(c.Windows)*minShare > 10000 {
 			return false
 		}
-		rows := RowRects(r, *c, w.Gap())
+		rows := layout.RowRects(r, *c, w.Gap())
 		avail := max(r.H-(len(rows)-1)*w.Gap(), 0)
 		if avail == 0 {
 			return false
 		}
-		stamped := !ValidShares(*c)
+		stamped := !layout.ValidShares(*c)
 		if stamped {
 			c.Shares = make([]int, len(rows))
 			used := 0

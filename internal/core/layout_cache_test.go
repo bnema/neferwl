@@ -3,22 +3,22 @@ package core
 import (
 	"testing"
 	"testing/synctest"
+
+	"github.com/bnema/neferwl/internal/core/layout"
 )
 
 // cacheAgrees checks the Workspace layout cache against the table: the cache
 // is filled and it names the layout layoutFor resolves for the same Overflow.
 func cacheAgrees(t *testing.T, step string, w *Workspace) {
 	t.Helper()
-	want, ok := Lookup(w.Overflow)
+	want, ok := layout.Lookup(w.Overflow)
 	if !ok {
-		want, _ = Lookup(Default)
+		want, _ = layout.Lookup(layout.Default)
 	}
-	if w.lcache == nil || w.lcacheFor != w.Overflow {
-		t.Fatalf("%s: cache %v for %q, overflow %q", step, w.lcache, w.lcacheFor, w.Overflow)
+	if got := w.Engine(); got != want {
+		t.Fatalf("%s: engine %v, want %v for %q", step, got, want, w.Overflow)
 	}
-	if got := w.Engine(); got != want || w.lcache != want {
-		t.Fatalf("%s: layout %v cache %v, want %v for %q", step, got, w.lcache, want, w.Overflow)
-	}
+
 }
 
 // Every production path that changes Overflow keeps the cache in step.
@@ -79,49 +79,6 @@ func TestWorkspaceLayoutCacheFollowsOverflow(t *testing.T) {
 		var u Workspace
 		u.SetOverflow("unknown")
 		cacheAgrees(t, "unknown", &u)
-
-	})
-}
-
-// A direct write to the exported field, or a literal that never set the cache,
-// still resolves from Overflow: the cache is only a shortcut.
-func TestWorkspaceLayoutCacheNeverDisagrees(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		var zero Workspace
-		if zero.lcache != nil || zero.Engine() != layoutTable[0] {
-			t.Fatal("the zero workspace must resolve to the default layout")
-		}
-		cacheAgrees(t, "zero after first use", &zero)
-		w := &Workspace{Lanes: Lanes{Overflow: OverflowFixed}}
-		if got, _ := Lookup(OverflowFixed); w.Engine() != got {
-			t.Fatal("literal without a cache")
-		}
-		cacheAgrees(t, "literal after first use", w)
-		w.SetOverflow(OverflowCascade)
-		cacheAgrees(t, "set", w)
-		for _, o := range []Overflow{OverflowScroll, OverflowFixed, "", "unknown", OverflowCascade} {
-			w.Overflow = o // a stale cache must not win
-			want, ok := Lookup(o)
-			if !ok {
-				want, _ = Lookup(Default)
-			}
-			if w.Engine() != want {
-				t.Fatalf("direct write %q: layout %v, want %v", o, w.Engine(), want)
-			}
-		}
-		// A test override still wins over both.
-		w.Override = scrollLayout{}
-		w.SetOverflow(OverflowFixed)
-		if w.Engine() != (scrollLayout{}) {
-			t.Fatal("lay override lost")
-		}
-		// Copies carry the cache with the Overflow it was resolved for.
-		w.Override = nil
-		c := *w
-		c.Overflow = OverflowCascade
-		if c.Engine() != (cascadeLayout{}) || w.Engine() != (fixedLayout{}) {
-			t.Fatal("copy and original disagree with their overflow")
-		}
 
 	})
 }

@@ -1,6 +1,10 @@
 package core
 
-import "slices"
+import (
+	"slices"
+
+	"github.com/bnema/neferwl/internal/core/layout"
+)
 
 // sizable reports whether the focused column can be resized: a tiled column
 // the fullscreen window does not hide.
@@ -8,7 +12,10 @@ func (w *Workspace) sizable() bool {
 	return !w.onFloat() && len(w.Columns) > 0 && !w.FullscreenHides()
 }
 
-func (w *Workspace) edit() Edit { id, _ := w.Focused(); return Edit{Lanes: &w.Lanes, Focused: id} }
+func (w *Workspace) edit() layout.Edit {
+	id, _ := w.Focused()
+	return layout.Edit{Lanes: &w.Lanes, Focused: id}
+}
 
 func (w *Workspace) isolate(id WindowID) bool {
 	if i := w.floatIndex(id); i >= 0 && w.Floats[i].over == 0 && w.stashIndex(id) < 0 {
@@ -63,7 +70,7 @@ func (w *Workspace) columnRectsInto(dst []Rect, ignoreFullWidth bool) []Rect {
 // columnRectsAt is columnRectsInto with the view slide's shift given: 0 is
 // the settled geometry, without the animation's presentation offset.
 func (w *Workspace) columnRectsAt(dst []Rect, ignoreFullWidth bool, shift int) []Rect {
-	return w.Engine().ColumnRects(w.Snapshot(), dst, RectOpts{IgnoreFullWidth: ignoreFullWidth, Shift: shift})
+	return w.Engine().ColumnRects(w.Snapshot(), dst, layout.RectOpts{IgnoreFullWidth: ignoreFullWidth, Shift: shift})
 }
 
 // focusLane focuses the column in the lane dir away; a maximized column

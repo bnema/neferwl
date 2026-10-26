@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core/geom"
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/core/motion"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -14,91 +15,12 @@ type WindowID = ports.WindowID
 
 type Rect = ports.Rect
 
-// MaxCells is the largest width a rule or a slot may declare, in cells.
-const MaxCells = 16
-
-// Column holds a tiled stack, its width and owner-local layout identity.
-type Column struct {
-	// Key is the workspace-local column identity; layout state keys
-	// per-column data by it.
-	Key uint64
-	// Carry is what the old layout state let travel with the column to
-	// another workspace (State.Removed). The new state takes what it
-	// understands in Inserted; the rest, or all of it in a stateless
-	// workspace, stays here until the column leaves again.
-	Carry any
-	// Span is a manually sized width in basis points; zero uses Cells.
-	Span int
-	// SpanStamp identifies the complete lane to which a manual width belongs.
-	SpanStamp uint64
-	// Windows is the ordered stack of window IDs.
-	Windows []WindowID
-	// Cells is the column width in cells; zero shares the available width.
-	Cells int
-	// FullWidth expands the column to the usable width.
-	FullWidth bool
-	// Focus is the selected index.
-	Focus int
-	// Slot is the declared column number (workspace.<name>.column.N) of a
-	// slot window; 0 for normal columns.
-	Slot int
-	// Shares are the row heights set by set-window-height, in basis points, in
-	// Windows order. They apply only while there is one per window and
-	// they sum to 10000; otherwise the rows share the height equally.
-	Shares []int
-}
-
 // Placement describes a window and its presentation geometry.
 // It is an alias for geom.Placement during the domain split.
 type Placement = geom.Placement
 
-// Overflow says what happens past MaxColumns columns: the config name of a
-// layout.
-type Overflow string
-
-// Each layout declares its own value next to its type (layout_<name>.go) and
-// registers itself in layout_registry.go.
-
-// Lanes is the column state owned by the workspace owner goroutine.
-type Lanes struct {
-	// Override optionally replaces the registry engine, primarily in tests.
-	Override    Layout // Optional test override; production resolves Overflow lazily.
-	lstate      State  // Owner-goroutine-only, initialized lazily.
-	lstateReady bool   // Distinguishes stateless layouts from uninitialized state.
-	// lcache is the layout resolved for lcacheFor. Engine re-resolves it
-	// when Overflow no longer matches.
-	lcache    Layout
-	lcacheFor Overflow
-	colSeq    uint64 // Issues workspace-local column identities.
-	// Overflow selects the engine by its configuration name.
-	Overflow Overflow
-	// Columns is the ordered tiled column storage.
-	Columns []Column
-	// spanSeq issues workspace-local identities for complete lane stamps.
-	spanSeq uint64
-	// Maximized remembers recently maximized columns by window ID, newest
-	// first; stack() filters removed windows at read time.
-	Maximized []WindowID
-	// Focus is the selected index.
-	Focus int
-	// View is the settled offset along the layout's content axis.
-	View int
-	// Output is the effective viewport in monitor coordinates: the whole
-	// monitor unless the workspace has a size override, then a centered
-	// rectangle no larger than the monitor. Fullscreen fills it.
-	Output Rect
-	// Usable is the layer reservations of the monitor intersected with Output.
-	Usable Rect
-	// Gaps is the requested spacing before viewport clamping.
-	Gaps int
-	// MaxColumns is the visible lane capacity in cells.
-	MaxColumns int
-	// Fullscreen is the fullscreen window, or zero.
-	Fullscreen WindowID
-}
-
 type Workspace struct {
-	Lanes
+	layout.Lanes
 	// ID stays with the workspace across reorder and monitor moves.
 	ID uint64
 	// Name is set for workspaces declared in config; empty for dynamic ones.
@@ -248,16 +170,6 @@ func (w *Workspace) appendWindows(dst []WindowID) []WindowID {
 		dst = append(dst, f.ID)
 	}
 	return dst
-}
-
-// Cell is the 1-based column and row of a tiled window, 0, 0 otherwise.
-func (w *Lanes) Cell(id WindowID) (col, row int) {
-	for ci, c := range w.Columns {
-		if ri := slices.Index(c.Windows, id); ri >= 0 {
-			return ci + 1, ri + 1
-		}
-	}
-	return 0, 0
 }
 
 func (w *Workspace) floatIndex(id WindowID) int {
@@ -576,95 +488,6 @@ func (w *Workspace) SetMaxColumns(n int) {
 func (w *Workspace) overviewArea() Rect { return w.reserved }
 
 // Gap is the effective spacing in pixels.
-func (w *Lanes) Gap() int { return min(w.Gaps, w.Usable.W/2, w.Usable.H/2) }
-
-// StackRects cuts r in n rows with a gap between them; the last row takes
-// the rounding remainder. Rows past the bottom (gaps taller than r) are
-// clamped to it, like windows stacked in a column.
-func StackRects(r Rect, n, gap int) []Rect {
-	return StackRectsInto(nil, r, n, gap)
-}
-
-// StackRectsInto appends the n rows of stackRects to dst (reset with dst[:0]
-// to reuse its storage).
-func StackRectsInto(dst []Rect, r Rect, n, gap int) []Rect {
-	base := len(dst)
-	dst = slices.Grow(dst, n)[:base+n]
-	rows := dst[base:]
-	avail := max(r.H-(n-1)*gap, 0)
-	height := avail / n
-	yy, bottom := r.Y, r.Y+r.H
-	for i := range rows {
-		hh := height
-		if i == n-1 {
-			hh = avail - height*(n-1)
-		}
-		yy = min(yy, bottom)
-		hh = min(hh, bottom-yy)
-		rows[i] = Rect{X: r.X, Y: yy, W: r.W, H: hh}
-		yy += hh + gap
-	}
-	return dst
-}
-
-// RowRects splits column rect r into the rows of c: by c.Shares when they
-// are valid, else equally (stackRects).
-func RowRects(r Rect, c Column, gap int) []Rect {
-	return RowRectsInto(nil, r, c, gap)
-}
-
-// RowRectsInto appends the rows of rowRects to dst (reset with dst[:0] to
-// reuse its storage).
-func RowRectsInto(dst []Rect, r Rect, c Column, gap int) []Rect {
-	n := len(c.Windows)
-	if !ValidShares(c) {
-		return StackRectsInto(dst, r, n, gap)
-	}
-	base := len(dst)
-	dst = slices.Grow(dst, n)[:base+n]
-	rows := dst[base:]
-	avail := max(r.H-(n-1)*gap, 0)
-	yy, bottom, used := r.Y, r.Y+r.H, 0
-	for i, share := range c.Shares {
-		hh := avail * share / 10000
-		if i == n-1 {
-			hh = avail - used
-		}
-		used += hh
-		yy = min(yy, bottom)
-		hh = min(hh, bottom-yy)
-		rows[i] = Rect{X: r.X, Y: yy, W: r.W, H: hh}
-		yy += hh + gap
-	}
-	return dst
-}
-
-// ValidShares reports whether c.Shares has one share per window, each at
-// least 1, summing to 10000.
-func ValidShares(c Column) bool {
-	if len(c.Shares) != len(c.Windows) || len(c.Shares) < 2 {
-		return false
-	}
-	sum := 0
-	for _, v := range c.Shares {
-		if v < 1 {
-			return false
-		}
-		sum += v
-	}
-	return sum == 10000
-}
-
-// Split cuts r in two halves with a gap: top/bottom when vertical, else left/right.
-func Split(r Rect, gap int, vertical bool) (Rect, Rect) {
-	if vertical {
-		h := max((r.H-gap)/2, 0)
-		return Rect{X: r.X, Y: r.Y, W: r.W, H: h}, Rect{X: r.X, Y: r.Y + h + gap, W: r.W, H: max(r.H-gap-h, 0)}
-	}
-	w := max((r.W-gap)/2, 0)
-	return Rect{X: r.X, Y: r.Y, W: w, H: r.H}, Rect{X: r.X + w + gap, Y: r.Y, W: max(r.W-gap-w, 0), H: r.H}
-}
-
 // Layout places every window of the workspace in a fresh slice the caller
 // owns. The per-frame paths use layoutInto instead.
 func (w *Workspace) Layout() []Placement { return w.appendLayout(nil) }
@@ -700,7 +523,7 @@ func (w *Workspace) appendLayout(dst []Placement) []Placement {
 		if fullColumn {
 			col.W = w.Output.W
 		}
-		w.rowBuf = RowRectsInto(w.rowBuf[:0], col, c, gap)
+		w.rowBuf = layout.RowRectsInto(w.rowBuf[:0], col, c, gap)
 		rows := w.rowBuf
 		for j, id := range c.Windows {
 			r := rows[j]

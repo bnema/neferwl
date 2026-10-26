@@ -3,6 +3,7 @@ package core
 import (
 	"time"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -96,7 +97,7 @@ func (c *Core) updatePositionHints(only *screen) {
 // these remain addressable even when empty. Window the list at its active
 // entry when it exceeds the cap. Bands stay top-aligned; excess rows clamp.
 func positionHintGrid(m *Monitor) ports.PositionHint {
-	h := ports.PositionHint{Vertical: m.overviewAxis() == Vertical}
+	h := ports.PositionHint{Vertical: m.overviewAxis() == layout.Vertical}
 	active, total := 0, 0
 	for w := range m.all() {
 		if w == m.Current() {

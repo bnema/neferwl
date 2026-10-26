@@ -6,6 +6,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -55,10 +56,10 @@ func TestOverviewPeekEnvelopeAndSingleCardHorizontal(t *testing.T) {
 		front := previewOf(t, m.Layout(), 7)
 		back := previewOf(t, m.Layout(), 8)
 		step := float64(front.Rect.Y - back.Rect.Y)
-		if step < float64(w.Usable.H)*w.overviewZoom(Vertical)*0.06 {
+		if step < float64(w.Usable.H)*w.overviewZoom(layout.Vertical)*0.06 {
 			t.Fatalf("peek step %.1f", step)
 		}
-		h := w.rowHeight(Vertical)
+		h := w.rowHeight(layout.Vertical)
 		y := w.Usable.Y + (w.Usable.H-h)/2
 		if back.Rect.Y < y || front.Rect.Y+front.Rect.H > y+h {
 			t.Fatalf("outside row front %+v back %+v row %d..%d", front, back, y, y+h)

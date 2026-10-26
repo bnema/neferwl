@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -309,7 +310,7 @@ func (c *Core) apply(cfg ports.Config) error {
 		binds[b] = Action(a)
 	}
 	overflow := func(v string) (Overflow, error) {
-		if _, ok := Lookup(Overflow(v)); ok {
+		if _, ok := layout.Lookup(Overflow(v)); ok {
 			return Overflow(v), nil
 		}
 		return "", fmt.Errorf("invalid overflow %q", v)
@@ -319,7 +320,7 @@ func (c *Core) apply(cfg ports.Config) error {
 	}
 	// Normalize the global config value; empty output/workspace values still inherit.
 	if len(cfg.Layout.Overflow) == 0 {
-		cfg.Layout.Overflow = string(Default)
+		cfg.Layout.Overflow = string(layout.Default)
 	}
 	for _, o := range cfg.Layout.Outputs {
 		if _, err := overflow(o.Overflow); err != nil {
@@ -351,7 +352,7 @@ func (c *Core) apply(cfg ports.Config) error {
 		return err
 	}
 	// Reload is cold-path work; unrelated changes keep a scroll or gesture.
-	type layoutAxes struct{ content, workspace Axis }
+	type layoutAxes struct{ content, workspace layout.Axis }
 	axes := make(map[*Monitor]layoutAxes, len(c.screens))
 	for _, s := range c.screens {
 		content, workspace := s.mon.Current().Engine().Axes()

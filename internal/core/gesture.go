@@ -5,6 +5,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/core/motion"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -94,7 +95,7 @@ type swipeGesture struct {
 // changed since a workspace slide began, or the overview opened over it.
 func (g *swipeGesture) listChanged(m *Monitor) bool {
 	_, workspace := g.ws.Engine().Axes()
-	return m.overviewOpens != g.opens || m.shown != nil || m.Workspaces[m.Active] != g.ws || g.horizontal != (workspace == Horizontal) || !slices.Equal(m.Workspaces, g.list)
+	return m.overviewOpens != g.opens || m.shown != nil || m.Workspaces[m.Active] != g.ws || g.horizontal != (workspace == layout.Horizontal) || !slices.Equal(m.Workspaces, g.list)
 }
 
 // columnsChanged reports whether a column swipe lost its workspace: it is
@@ -103,7 +104,7 @@ func (g *swipeGesture) listChanged(m *Monitor) bool {
 // over it.
 func (g *swipeGesture) columnsChanged(m *Monitor) bool {
 	content, _ := g.ws.Engine().Axes()
-	if m.overviewOpens != g.opens || m.Current() != g.ws || !g.ws.slidable() || g.horizontal != (content == Horizontal) {
+	if m.overviewOpens != g.opens || m.Current() != g.ws || !g.ws.slidable() || g.horizontal != (content == layout.Horizontal) {
 		return true
 	}
 	g.scratch = g.ws.snapPointsInto(g.scratch)
@@ -255,11 +256,11 @@ func (c *Core) decide(g *swipeGesture) {
 		}
 		w.stashView.Motion = motion.Motion{}
 		g.snap = motion.NewSnapSwipe(float64(w.stashAt)+w.stashView.Off, float64(w.stashAt), 1/stashSwipeMovement, motion.IndexPoints(len(w.Stash)), motion.WorkspaceBand)
-	case g.horizontal == (content == Horizontal) && w.slidable():
+	case g.horizontal == (content == layout.Horizontal) && w.slidable():
 		g.mode, g.ws, g.points = swipeColumns, w, w.snapPoints()
 		w.view.Motion = motion.Motion{}
 		g.snap = motion.NewSnapSwipe(float64(w.View)+w.view.Off, float64(w.View), w.swipeScale(), g.points, motion.WorkspaceBand.Scaled(float64(content.Span(w.Usable))))
-	case g.horizontal == (workspace == Horizontal) && m.shown == nil:
+	case g.horizontal == (workspace == layout.Horizontal) && m.shown == nil:
 		// A landing slide measured in an older list lands at once first.
 		if m.switchList != nil && !slices.Equal(m.switchList, m.Workspaces) {
 			m.stopSwitch()
@@ -426,7 +427,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 		}
 		w := g.screen.mon.Current()
 		_, axis := w.Engine().Axes()
-		workspace := g.horizontal == (axis == Horizontal)
+		workspace := g.horizontal == (axis == layout.Horizontal)
 		a := ActionFocusColumnRight
 		if step < 0 {
 			a = ActionFocusColumnLeft

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -189,7 +190,7 @@ func TestSeparatorsScrollUnderSidePanel(t *testing.T) {
 // shares with its band neighbor.
 func TestSeparatorsCascadeBottomPanel(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		w := &Workspace{Lanes: Lanes{Overflow: OverflowCascade, MaxColumns: 2}}
+		w := &Workspace{Lanes: layout.Lanes{Overflow: OverflowCascade, MaxColumns: 2}}
 		w.SetOutput(900, 600)
 		w.SetUsable(Rect{W: 900, H: 580})
 		for id := WindowID(1); id <= 3; id++ {

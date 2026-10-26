@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"slices"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -144,7 +145,7 @@ func (c *Core) workspaceInto(ws []ports.WorkspaceState, i int, w *Workspace, out
 		cv := &cols[ci]
 		tiles := cv.Windows[:0]
 		r := c.scratch.rects[ci]
-		c.scratch.rows = RowRectsInto(c.scratch.rows[:0], r, col, w.Gap())
+		c.scratch.rows = layout.RowRectsInto(c.scratch.rows[:0], r, col, w.Gap())
 		for ri, id := range col.Windows {
 			tr := c.scratch.rows[ri]
 			if w.Fullscreen == id {

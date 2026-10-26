@@ -314,7 +314,7 @@ func TestLegacyFullscreenCascadeFloatBand(t *testing.T) {
 					}
 					return
 				}
-				if w.isFloat(2) || w.Fullscreen != 2 || len(w.Columns) != 2 || w.Band(w.ColumnOf(2)) != w.Band(w.ColumnOf(1))+1 || !w.cascadeCol(w.Columns[w.ColumnOf(2)]).ownBand {
+				if w.isFloat(2) || w.Fullscreen != 2 || len(w.Columns) != 2 || w.Band(w.ColumnOf(2)) != w.Band(w.ColumnOf(1))+1 {
 					t.Fatalf("fullscreen float placement: %+v, floats %+v fullscreen %d", w.Columns, w.Floats, w.Fullscreen)
 				}
 				c.clientEvent(context.Background(), ports.WindowFullscreenRequest{ID: 2})

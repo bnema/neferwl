@@ -1,6 +1,10 @@
 package core
 
-import "slices"
+import (
+	"slices"
+
+	"github.com/bnema/neferwl/internal/core/layout"
+)
 
 type stackKind uint8
 
@@ -29,12 +33,6 @@ func (w *Workspace) overviewMaximized() bool {
 		return w.ColumnOf(c) == w.Focus
 	}
 	return w.Columns[w.Focus].FullWidth
-}
-
-// ColumnOf returns the column containing id, or -1.
-func (w *Lanes) ColumnOf(id WindowID) int {
-	c, _ := w.Cell(id)
-	return c - 1
 }
 
 // stack lists what is on screen followed by what it hides, top to bottom.
@@ -272,7 +270,7 @@ func (w *Workspace) apply(item stackItem, selected WindowID) {
 
 // previewItem draws a group using screen geometry and a single card at its
 // configured size. A prior maximized column retains its full-width buffer.
-func (m *Monitor) previewItem(w *Workspace, item stackItem, axis Axis, slot Rect, dim, lit bool) []Placement {
+func (m *Monitor) previewItem(w *Workspace, item stackItem, axis layout.Axis, slot Rect, dim, lit bool) []Placement {
 	if item.kind == stackColumns {
 		if !w.overviewMaximized() {
 			return w.previewRow(axis, slot, dim, lit)
@@ -291,7 +289,7 @@ func (m *Monitor) previewItem(w *Workspace, item stackItem, axis Axis, slot Rect
 			r := rects[i]
 			r.X -= w.Usable.X
 			r.Y -= w.Usable.Y
-			w.rowBuf = RowRectsInto(w.rowBuf[:0], r, c, g)
+			w.rowBuf = layout.RowRectsInto(w.rowBuf[:0], r, c, g)
 			for j, t := range w.rowBuf {
 				tiles = append(tiles, Placement{ID: c.Windows[j], Rect: t, Focused: i == selected && j == c.Focus})
 			}
@@ -322,7 +320,7 @@ func (m *Monitor) previewItem(w *Workspace, item stackItem, axis Axis, slot Rect
 	r.X = (w.Usable.W - r.W) / 2
 	r.Y = (w.Usable.H - r.H) / 2
 	tiles := make([]Placement, 0, len(c.Windows))
-	w.rowBuf = RowRectsInto(w.rowBuf[:0], r, c, g)
+	w.rowBuf = layout.RowRectsInto(w.rowBuf[:0], r, c, g)
 	for j, t := range w.rowBuf {
 		tiles = append(tiles, Placement{ID: c.Windows[j], Rect: t, Focused: j == c.Focus, Fullscreen: c.Windows[j] == w.cover()})
 	}
@@ -344,7 +342,7 @@ func (w *Workspace) hiddenColumnRects() []Rect {
 
 // stackRow draws up to two cards on each side of the provisional front,
 // fanned along axis.
-func (m *Monitor) stackRow(w *Workspace, axis Axis, slot Rect, dim, lit bool) []Placement {
+func (m *Monitor) stackRow(w *Workspace, axis layout.Axis, slot Rect, dim, lit bool) []Placement {
 	first, n := w.stackHead()
 	if n == 0 {
 		return w.previewRow(axis, slot, dim, lit)

@@ -5,6 +5,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/core/motion"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -43,7 +44,7 @@ type viewShot struct {
 	// one), not at their last frame. An action may stop them
 	// (Monitor.Focus), so the transition reads them here.
 	viewV, switchV float64
-	switchAxis     Axis
+	switchAxis     layout.Axis
 	// stashShown, stashAt, stashLen and stashPos are whether the stash was
 	// on screen, its selection, size and drawn position (selection plus
 	// stashView.off, in stash windows); stashV is its slide's speed.
@@ -1044,7 +1045,7 @@ func overviewWorkspaceOffset(m *Monitor, b *viewShot) rectOffsets {
 		before := b.order < m.overviewOrder(b.list, cur)
 		previous, _ = neighborSlot(axis, area, settled, b.ws, before, max(1, area.H*3/100))
 	}
-	if axis == Horizontal {
+	if axis == layout.Horizontal {
 		return rectOffsets{x: math.Copysign(float64(area.W)*overviewWorkspaceTravel, float64(settled.X-previous.X))}
 	}
 	return rectOffsets{y: math.Copysign(float64(area.H)*overviewWorkspaceTravel, float64(settled.Y-previous.Y))}

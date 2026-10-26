@@ -5,6 +5,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -22,7 +23,7 @@ func TestColumnBorders(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				w := Workspace{Lanes: Lanes{Overflow: tc.overflow, MaxColumns: 3, Columns: make([]Column, tc.n)}}
+				w := Workspace{Lanes: layout.Lanes{Overflow: tc.overflow, MaxColumns: 3, Columns: make([]Column, tc.n)}}
 				if got := columnBorders(w.Engine(), w.Snapshot()); got != tc.want {
 					t.Fatalf("column borders = %v, want %v", got, tc.want)
 				}
@@ -73,17 +74,17 @@ func TestConfigAcceptsEmptyOverflow(t *testing.T) {
 
 func TestApplyNamedResetsOldStateBeforeNewGeometry(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		w := Workspace{Lanes: Lanes{Overflow: OverflowCascade, MaxColumns: 3, View: 123,
+		w := Workspace{Lanes: layout.Lanes{Overflow: OverflowCascade, MaxColumns: 3, View: 123,
 			Columns: []Column{{Windows: []WindowID{1}, FullWidth: true}},
 			Usable:  Rect{W: 900, H: 600}, Output: Rect{W: 900, H: 600}}}
-		w.setBandStart(0, true)
-		if w.lstate == nil {
+		w.SettleLayout()
+		if w.Snapshot().State == nil {
 			t.Fatal("cascade state missing")
 		}
-		m := Monitor{Workspaces: []*Workspace{&w}, template: Workspace{Lanes: Lanes{Overflow: OverflowFixed, MaxColumns: 2}}}
+		m := Monitor{Workspaces: []*Workspace{&w}, template: Workspace{Lanes: layout.Lanes{Overflow: OverflowFixed, MaxColumns: 2}}}
 		m.applyNamed()
-		if w.lstate != nil || w.MaxColumns != 2 || w.View != 0 || w.Columns[0].FullWidth {
-			t.Fatalf("new layout did not settle: state=%T capacity=%d view=%d full=%v", w.lstate, w.MaxColumns, w.View, w.Columns[0].FullWidth)
+		if w.Snapshot().State != nil || w.MaxColumns != 2 || w.View != 0 || w.Columns[0].FullWidth {
+			t.Fatalf("new layout did not settle: state=%T capacity=%d view=%d full=%v", w.Snapshot().State, w.MaxColumns, w.View, w.Columns[0].FullWidth)
 		}
 
 	})
@@ -92,14 +93,14 @@ func TestApplyNamedResetsOldStateBeforeNewGeometry(t *testing.T) {
 // A layout that does not claim overridesWidth must size columns like the base:
 // generic loops then skip its columnWidth. This catches a forgotten flag.
 func TestOverridesWidthMatchesColumnWidth(t *testing.T) {
-	forEachConformance(t, func(t *testing.T, l Layout, w *Workspace, _, n int, _ string) {
+	forEachConformance(t, func(t *testing.T, l layout.Layout, w *Workspace, _, n int, _ string) {
 		if l.OverridesWidth() || n == 0 {
 			return
 		}
 		v := w.Snapshot()
 		for _, ignore := range []bool{false, true} {
 			for i := range v.Columns {
-				if got, want := l.ColumnWidth(v, i, ignore), (Base{}).ColumnWidth(v, i, ignore); got != want {
+				if got, want := l.ColumnWidth(v, i, ignore), (layout.Base{}).ColumnWidth(v, i, ignore); got != want {
 					t.Fatalf("%s column %d (ignore %v): width %d, base %d: set overridesWidth", l.Name(), i, ignore, got, want)
 				}
 			}
@@ -123,11 +124,11 @@ func TestApplyNamedMaximizeAcrossSwitch(t *testing.T) {
 	} {
 		t.Run(string(tc.from)+"->"+string(tc.to), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				w := Workspace{Lanes: Lanes{Overflow: tc.from, MaxColumns: 3,
+				w := Workspace{Lanes: layout.Lanes{Overflow: tc.from, MaxColumns: 3,
 					Columns: []Column{{Windows: []WindowID{1}, FullWidth: true}, {Windows: []WindowID{2}}},
 					Usable:  Rect{W: 900, H: 600}, Output: Rect{W: 900, H: 600}}}
 				w.SetOverflow(tc.from)
-				m := Monitor{Workspaces: []*Workspace{&w}, template: Workspace{Lanes: Lanes{MaxColumns: 3}}}
+				m := Monitor{Workspaces: []*Workspace{&w}, template: Workspace{Lanes: layout.Lanes{MaxColumns: 3}}}
 				m.template.SetOverflow(tc.to)
 				m.applyNamed()
 				if w.Overflow != tc.to {

@@ -6,6 +6,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/core/motion"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -48,7 +49,7 @@ func switchAndCheck(t *testing.T, c *Core, ic *indicatorClock, sc *screen, act f
 	}
 	area := m.Current().overviewArea()
 	travel := float64(area.H) * overviewWorkspaceTravel
-	horizontal := axis == Horizontal
+	horizontal := axis == layout.Horizontal
 	if horizontal {
 		travel = float64(area.W) * overviewWorkspaceTravel
 	}
@@ -293,7 +294,7 @@ func TestOverviewWorkspaceSwitchOrder(t *testing.T) {
 // rank (staying under the next numbered row), and one with a stale anchor
 // below the last occupied numbered row, else the first.
 func TestMonitorOverviewOrder(t *testing.T) {
-	occupied := func() *Workspace { return &Workspace{Lanes: Lanes{Columns: []Column{{Windows: []WindowID{1}}}}} }
+	occupied := func() *Workspace { return &Workspace{Lanes: layout.Lanes{Columns: []Column{{Windows: []WindowID{1}}}}} }
 	list := []*Workspace{occupied(), occupied(), {}}
 	m := &Monitor{named: []NamedWorkspace{{Name: "dev"}, {Name: "ops"}}}
 	named := func(name string, anchor *Workspace) *Workspace {

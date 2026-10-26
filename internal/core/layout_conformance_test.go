@@ -4,16 +4,18 @@ import (
 	"fmt"
 	"testing"
 	"testing/synctest"
+
+	"github.com/bnema/neferwl/internal/core/layout"
 )
 
 // testLayouts are layouts only tests know. A test file adds its own from an
 // init function; they reach a Workspace through Workspace.lay and never enter
 // the registry.
-var testLayouts []Layout
+var testLayouts []layout.Layout
 
 // conformanceLayouts is every layout the conformance tables cover: the
 // registry's, plus the test-only ones.
-func conformanceLayouts() []Layout {
+func conformanceLayouts() []layout.Layout {
 	return append(registeredLayouts(), testLayouts...)
 }
 
@@ -24,8 +26,8 @@ var conformanceModes = []string{"normal", "maximized", "fullscreen"}
 // of two windows (the second focused in its column) in k-column capacity,
 // the focus on column n/2, which is maximized or holds the fullscreen window
 // per mode, scrolled into view. The layout is injected through Workspace.lay.
-func conformanceWorkspace(l Layout, k, n int, mode string) *Workspace {
-	w := &Workspace{Lanes: Lanes{Overflow: l.Name(), Override: l, MaxColumns: k, Gaps: 8,
+func conformanceWorkspace(l layout.Layout, k, n int, mode string) *Workspace {
+	w := &Workspace{Lanes: layout.Lanes{Overflow: l.Name(), Override: l, MaxColumns: k, Gaps: 8,
 		Output: Rect{X: 10, Y: 20, W: 1200, H: 900}, Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}}}
 	for i := 0; i < n; i++ {
 		w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(2*i + 1), WindowID(2*i + 2)}, Focus: 1})
@@ -45,7 +47,7 @@ func conformanceWorkspace(l Layout, k, n int, mode string) *Workspace {
 
 // forEachConformance runs f on every layout x capacity 1-4 x column count
 // (0, 1, k, k+1, 2k+3) x mode.
-func forEachConformance(t *testing.T, f func(t *testing.T, l Layout, w *Workspace, k, n int, mode string)) {
+func forEachConformance(t *testing.T, f func(t *testing.T, l layout.Layout, w *Workspace, k, n int, mode string)) {
 	t.Helper()
 	for _, l := range conformanceLayouts() {
 		for k := 1; k <= 4; k++ {
@@ -72,23 +74,23 @@ func TestLayoutRegistryResolution(t *testing.T) {
 				t.Fatalf("duplicate layout %q", key)
 			}
 			seen[key] = true
-			got, ok := Lookup(key)
+			got, ok := layout.Lookup(key)
 			if !ok || got != l {
 				t.Fatalf("missing %q", key)
 			}
-			w := Workspace{Lanes: Lanes{Overflow: key}}
+			w := Workspace{Lanes: layout.Lanes{Overflow: key}}
 			if w.Engine() != l {
 				t.Fatal("workspace resolution")
 			}
 		}
-		def, _ := Lookup(Default)
-		if l, ok := Lookup(""); !ok || l != def || def.Name() != Default {
-			t.Fatal("empty layout must default to " + string(Default))
+		def, _ := layout.Lookup(layout.Default)
+		if l, ok := layout.Lookup(""); !ok || l != def || def.Name() != layout.Default {
+			t.Fatal("empty layout must default to " + string(layout.Default))
 		}
-		if _, ok := Lookup("unknown"); ok {
+		if _, ok := layout.Lookup("unknown"); ok {
 			t.Fatal("unknown layout accepted")
 		}
-		if w := (Workspace{Lanes: Lanes{Overflow: "unknown"}}); w.Engine() != def {
+		if w := (Workspace{Lanes: layout.Lanes{Overflow: "unknown"}}); w.Engine() != def {
 			t.Fatal("unknown layout must fall back to the default")
 		}
 

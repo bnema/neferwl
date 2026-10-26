@@ -1,11 +1,12 @@
 package core
 
 import (
-	"github.com/bnema/neferwl/internal/ports"
-	"github.com/stretchr/testify/require"
 	"math"
 	"testing"
 	"testing/synctest"
+
+	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/require"
 )
 
 func TestHintLabelGeometry(t *testing.T) {

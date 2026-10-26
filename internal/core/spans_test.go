@@ -22,10 +22,10 @@ func spanWorkspace(mode Overflow, n int) *Workspace {
 }
 
 func stampSpans(w *Workspace, first, last int) {
-	w.spanSeq++
+	stamp := w.NewStamp()
 	for i := first; i <= last; i++ {
 		w.Columns[i].Span = 10000 / (last - first + 1)
-		w.Columns[i].SpanStamp = w.spanSeq
+		w.Columns[i].SpanStamp = stamp
 	}
 	w.Columns[last].Span += 10000 % (last - first + 1)
 }
@@ -166,7 +166,7 @@ func TestSpanLaneIdentity(t *testing.T) {
 				w := spanWorkspace(OverflowCascade, 4)
 				w.SetMaxColumns(2)
 				for i := range w.Columns {
-					w.setBandStart(i, i%2 == 0)
+					w.SetBandStart(i, i%2 == 0)
 				}
 				for _, i := range []int{0, 2} {
 					rs := w.columnRects()
@@ -192,7 +192,7 @@ func TestSpanLaneIdentity(t *testing.T) {
 					w.Focus = 0
 					w.MoveColumn(1)
 				}
-				w.dropStaleSpans()
+				w.DropStaleSpans()
 				for _, col := range w.Columns {
 					if cross && col.Span != 0 {
 						t.Fatal("cross-band swap retained stamp", w.Columns)
@@ -213,9 +213,9 @@ func TestSpansForeignStampCleared(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		w := spanWorkspace(OverflowScroll, 2)
 		stampSpans(w, 0, 1)
-		stamp := w.spanSeq
+		stamp := w.Columns[0].SpanStamp
 		w.receive(Column{Windows: []WindowID{9}, Span: 3000, SpanStamp: stamp}, -1)
-		w.dropStaleSpans()
+		w.DropStaleSpans()
 		for _, col := range w.Columns {
 			if col.Span != 0 || col.SpanStamp != 0 {
 				t.Fatal("foreign stamp joined the lane", w.Columns)

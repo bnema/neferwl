@@ -5,6 +5,8 @@ import (
 	"slices"
 	"testing"
 	"testing/synctest"
+
+	"github.com/bnema/neferwl/internal/core/layout"
 )
 
 // TestLayoutGoldenRects pins the reviewed output of each layout: scroll,
@@ -48,7 +50,7 @@ func TestLayoutGoldenRects(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				w := Workspace{Lanes: Lanes{Overflow: tc.overflow, MaxColumns: tc.k, Output: Rect{X: 10, Y: 20, W: 1200, H: 900}, Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}, Gaps: 8}}
+				w := Workspace{Lanes: layout.Lanes{Overflow: tc.overflow, MaxColumns: tc.k, Output: Rect{X: 10, Y: 20, W: 1200, H: 900}, Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}, Gaps: 8}}
 				for i := 0; i < tc.n; i++ {
 					w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
 				}
@@ -90,7 +92,7 @@ func TestSwipeStalenessSnapPointsAllocations(t *testing.T) {
 	}{{OverflowScroll, 2}, {OverflowFixed, 2}, {OverflowCascade, 0}} {
 		t.Run(string(tc.o), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				w := Workspace{Lanes: Lanes{Overflow: tc.o, MaxColumns: 2, Usable: Rect{W: 1000, H: 720}, Output: Rect{W: 1000, H: 720}, Gaps: 8}}
+				w := Workspace{Lanes: layout.Lanes{Overflow: tc.o, MaxColumns: 2, Usable: Rect{W: 1000, H: 720}, Output: Rect{W: 1000, H: 720}, Gaps: 8}}
 				for i := 0; i < 5; i++ {
 					w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
 				}

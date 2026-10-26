@@ -1,8 +1,9 @@
 package core
 
 import (
-	"github.com/bnema/neferwl/internal/ports"
 	"testing"
+
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // axisCore is a cascade core whose monitor "M" has three workspaces of five

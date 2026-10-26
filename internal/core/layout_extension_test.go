@@ -5,6 +5,9 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/core/layout/layoutmocks"
+
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -22,20 +25,20 @@ func init() {
 	}
 }
 
-func extensionLayout(name Overflow, st State) *MockLayout {
-	l := &MockLayout{}
-	base := Base{}
+func extensionLayout(name Overflow, st layout.State) *layoutmocks.MockLayout {
+	l := &layoutmocks.MockLayout{}
+	base := layout.Base{}
 	l.EXPECT().Name().Return(name)
 	l.EXPECT().NewState().Return(st)
 	l.EXPECT().PinsFullscreen().Return(name == overflowTrail)
 	l.EXPECT().OverridesWidth().Return(name == overflowLadder)
-	l.EXPECT().ColumnWidth(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(v View, i int, ignore bool) int {
+	l.EXPECT().ColumnWidth(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(v layout.View, i int, ignore bool) int {
 		if name == overflowLadder {
 			return 100 + 50*i
 		}
 		return base.ColumnWidth(v, i, ignore)
 	})
-	l.EXPECT().ColumnRects(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(v View, dst []Rect, o RectOpts) []Rect {
+	l.EXPECT().ColumnRects(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(v layout.View, dst []Rect, o layout.RectOpts) []Rect {
 		rects := base.ColumnRects(v, dst, o)
 		if name == overflowCentered && len(rects) > 0 {
 			row := rects[len(rects)-1].X + rects[len(rects)-1].W - rects[0].X + 2*v.Gap
@@ -81,7 +84,7 @@ func extensionLayout(name Overflow, st State) *MockLayout {
 }
 
 func centeredWorkspace(n int) *Workspace {
-	w := &Workspace{Lanes: Lanes{Overflow: overflowCentered, Override: extensionLayout(overflowCentered, nil), MaxColumns: 4,
+	w := &Workspace{Lanes: layout.Lanes{Overflow: overflowCentered, Override: extensionLayout(overflowCentered, nil), MaxColumns: 4,
 		Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}, Output: Rect{W: 1200, H: 900}, Gaps: 8}}
 	for i := 0; i < n; i++ {
 		w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}, Cells: 1})
@@ -107,7 +110,7 @@ func TestCenteredLayoutCentersFittingColumns(t *testing.T) {
 		}
 		// A full row has no room to center: the scroll geometry is unchanged.
 		full := centeredWorkspace(4)
-		base := Base{}.ColumnRects(full.Snapshot(), nil, RectOpts{})
+		base := layout.Base{}.ColumnRects(full.Snapshot(), nil, layout.RectOpts{})
 		if got := full.columnRectsAt(nil, false, 0); !slices.Equal(got, base) {
 			t.Fatalf("full row %v, want the scroll geometry %v", got, base)
 		}
@@ -137,7 +140,7 @@ func TestCenteredLayoutInheritsNeutralBehavior(t *testing.T) {
 
 func TestColumnWidthOverrideIsHonored(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		w := &Workspace{Lanes: Lanes{Overflow: overflowLadder, Override: extensionLayout(overflowLadder, nil), MaxColumns: 4,
+		w := &Workspace{Lanes: layout.Lanes{Overflow: overflowLadder, Override: extensionLayout(overflowLadder, nil), MaxColumns: 4,
 			Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}, Output: Rect{W: 1200, H: 900}, Gaps: 8}}
 		for i := 0; i < 4; i++ {
 			w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
@@ -170,8 +173,8 @@ func TestColumnWidthOverrideIsHonored(t *testing.T) {
 
 type trailCarry uint64
 
-func trailWorkspace(n int, st State) *Workspace {
-	w := &Workspace{Lanes: Lanes{Overflow: overflowTrail, Override: extensionLayout(overflowTrail, st), MaxColumns: 3,
+func trailWorkspace(n int, st layout.State) *Workspace {
+	w := &Workspace{Lanes: layout.Lanes{Overflow: overflowTrail, Override: extensionLayout(overflowTrail, st), MaxColumns: 3,
 		Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}, Output: Rect{W: 1200, H: 900}, Gaps: 8}}
 	for i := 0; i < n; i++ {
 		w.AddWindow(WindowID(i + 1))
@@ -185,15 +188,15 @@ func trailWorkspace(n int, st State) *Workspace {
 func TestTrailLayoutStateAndCarry(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		// sa tags the columns it hands out; sb records the carries it receives.
-		sa, sb := NewMockState(t), NewMockState(t)
+		sa, sb := layoutmocks.NewMockState(t), layoutmocks.NewMockState(t)
 		sa.EXPECT().Inserted(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(func(_ *Lanes, _ int, _ InsertKind, carry any) any { return carry }).Times(3)
+			RunAndReturn(func(_ *layout.Lanes, _ int, _ layout.InsertKind, carry any) any { return carry }).Times(3)
 		sa.EXPECT().Removed(mock.Anything, mock.Anything).
 			RunAndReturn(func(_ int, col Column) any { return trailCarry(col.Key) }).Once()
 		sa.EXPECT().Settle(mock.Anything).Return().Maybe()
 		var received []any
 		sb.EXPECT().Inserted(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(func(_ *Lanes, _ int, _ InsertKind, carry any) any {
+			RunAndReturn(func(_ *layout.Lanes, _ int, _ layout.InsertKind, carry any) any {
 				if _, ok := carry.(trailCarry); ok {
 					received = append(received, carry)
 					return nil
@@ -211,7 +214,7 @@ func TestTrailLayoutStateAndCarry(t *testing.T) {
 		if _, ok := col.Carry.(trailCarry); !ok {
 			t.Fatalf("carry %v, want the state's tag", col.Carry)
 		}
-		via := Workspace{Lanes: Lanes{Overflow: OverflowScroll, MaxColumns: 3, Usable: a.Usable}}
+		via := Workspace{Lanes: layout.Lanes{Overflow: OverflowScroll, MaxColumns: 3, Usable: a.Usable}}
 		via.receive(col, -1)
 		col, _ = via.takeColumn()
 		b.receive(col, -1)

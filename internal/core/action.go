@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -109,7 +110,7 @@ func ResizeArg(a Action) (axis, step int, ok bool) {
 		}
 		rest = strings.TrimSpace(rest)
 		if i == ResizeWidth {
-			if p, ok := parseResizeStep(rest, MaxCells); ok {
+			if p, ok := parseResizeStep(rest, layout.MaxCells); ok {
 				return i, p, true
 			}
 			return 0, 0, false
@@ -367,7 +368,7 @@ func (c *Core) dispatchAction(a Action) Effect {
 		// use the existing workspace/monitor edge order; only up/down may
 		// reveal the tiles below.
 		if w.Engine().Bands() && w.cover() != 0 && w.isFloat(w.cover()) && !w.stashOverCover() && !w.coverDialogFocused() {
-			c.edgeFocus(Horizontal, dir, d)
+			c.edgeFocus(layout.Horizontal, dir, d)
 			return Effect{}
 		}
 		// A covering fullscreen window is left for the window on that side;
@@ -375,7 +376,7 @@ func (c *Core) dispatchAction(a Action) Effect {
 		// the edge (see edgeFocus) and fullscreen stays.
 		if w.pinned() && !w.stashOverCover() {
 			if !w.FocusColumn(dir) {
-				c.edgeFocus(Horizontal, dir, d)
+				c.edgeFocus(layout.Horizontal, dir, d)
 			}
 			return Effect{}
 		}
@@ -383,20 +384,20 @@ func (c *Core) dispatchAction(a Action) Effect {
 		// a native float leaves for the stash or the columns, and the stash
 		// keeps the focus at its ends.
 		edge := w.LeavesLane(w.columnToward(dir)) && (!w.onFloat() || w.floatFocus && !w.canLeaveFloat())
-		if edge && c.edgeFocus(Horizontal, dir, d) {
+		if edge && c.edgeFocus(layout.Horizontal, dir, d) {
 			return Effect{}
 		}
 	case ActionFocusWindowUp, ActionFocusWindowDown:
 		m := c.cur().mon
 		// Cascade's up/down navigation stays within its bands. Let Monitor
 		// handle it unchanged; only vertical workspace axes cross screens.
-		if WorkspaceStep(m.Current().Engine(), Vertical, 1) != 0 {
+		if layout.WorkspaceStep(m.Current().Engine(), layout.Vertical, 1) != 0 {
 			dir, d := 1, dirDown
 			if a == ActionFocusWindowUp {
 				dir, d = -1, dirUp
 			}
 			if !m.Current().FocusWindow(dir) {
-				c.edgeFocus(Vertical, dir, d)
+				c.edgeFocus(layout.Vertical, dir, d)
 			}
 			return Effect{}
 		}
@@ -495,10 +496,10 @@ func (c *Core) dispatchAction(a Action) Effect {
 // happen on the layout's workspace axis. It reports whether focus moved.
 // Callers keep local content navigation and decide which layout axes may
 // cross monitors.
-func (c *Core) edgeFocus(axis Axis, dir int, d direction) bool {
+func (c *Core) edgeFocus(axis layout.Axis, dir int, d direction) bool {
 	m := c.cur().mon
 	i := c.neighbor(d)
-	if monitorFirst := axis == Horizontal && i >= 0; !monitorFirst {
+	if monitorFirst := axis == layout.Horizontal && i >= 0; !monitorFirst {
 		if to := m.occupiedStep(axis, dir); to >= 0 {
 			m.Focus(to)
 			return true
@@ -551,7 +552,7 @@ func (m *Monitor) Apply(a Action) Effect {
 			dir = -1
 		}
 		if !m.Current().FocusWindow(dir) {
-			m.stepWorkspace(Vertical, dir)
+			m.stepWorkspace(layout.Vertical, dir)
 		}
 		return Effect{}
 	case ActionToggleFullscreen:

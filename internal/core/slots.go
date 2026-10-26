@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -45,7 +46,7 @@ func parseSlots(ws []ports.WorkspaceConfig) ([]slotSpec, error) {
 	var specs []slotSpec
 	for _, w := range ws {
 		for _, s := range w.Slots {
-			if s.Cells < 0 || s.Cells > MaxCells {
+			if s.Cells < 0 || s.Cells > layout.MaxCells {
 				return nil, fmt.Errorf("workspace %s column %d: invalid width %d", w.Name, s.Index, s.Cells)
 			}
 			if len(s.Argv) == 0 || s.Index < 1 {

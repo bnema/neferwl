@@ -4,6 +4,7 @@ import (
 	"iter"
 	"slices"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/core/motion"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -44,7 +45,7 @@ type Monitor struct {
 	// at Active+switchView.off, in workspaces.
 	switchView motion.Slide
 	// switchAxis is frozen from the source workspace for each transition.
-	switchAxis Axis
+	switchAxis layout.Axis
 	// switchList is the numbered list a landing slide measures from (the
 	// one its swipe began on); switchView.off is then from the current
 	// workspace's place in it.
@@ -225,8 +226,8 @@ func (m *Monitor) Focus(i int) {
 // axis is the current layout's workspace axis, and reports whether it did;
 // Focus clamps past the first or the trailing workspace. A hidden named
 // workspace is outside the numbered list: it never steps.
-func (m *Monitor) stepWorkspace(axis Axis, dir int) bool {
-	step := WorkspaceStep(m.Current().Engine(), axis, dir)
+func (m *Monitor) stepWorkspace(axis layout.Axis, dir int) bool {
+	step := layout.WorkspaceStep(m.Current().Engine(), axis, dir)
 	if m.shown != nil || step == 0 {
 		return false
 	}
@@ -237,8 +238,8 @@ func (m *Monitor) stepWorkspace(axis Axis, dir int) bool {
 // occupiedStep is the numbered workspace dir (-1/1) away along axis when
 // it is the layout's workspace axis and that workspace is not the trailing
 // empty one, or -1.
-func (m *Monitor) occupiedStep(axis Axis, dir int) int {
-	step := WorkspaceStep(m.Current().Engine(), axis, dir)
+func (m *Monitor) occupiedStep(axis layout.Axis, dir int) int {
+	step := layout.WorkspaceStep(m.Current().Engine(), axis, dir)
 	to := m.Active + step
 	if m.shown != nil || step == 0 || to < 0 || to >= len(m.Workspaces) {
 		return -1

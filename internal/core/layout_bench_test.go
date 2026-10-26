@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -115,7 +116,7 @@ func BenchmarkBorderMotion(b *testing.B) {
 
 // hotWorkspace is n one-window columns on a 1920x1080 output, max 3 columns.
 func hotWorkspace(o Overflow, n int) *Workspace {
-	w := &Workspace{Lanes: Lanes{Overflow: o, MaxColumns: 3, Usable: Rect{W: 1920, H: 1080}, Output: Rect{W: 1920, H: 1080}, Gaps: 8}}
+	w := &Workspace{Lanes: layout.Lanes{Overflow: o, MaxColumns: 3, Usable: Rect{W: 1920, H: 1080}, Output: Rect{W: 1920, H: 1080}, Gaps: 8}}
 	for i := 1; i <= n; i++ {
 		w.AddWindow(WindowID(i))
 	}

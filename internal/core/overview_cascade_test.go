@@ -6,6 +6,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -72,7 +73,7 @@ func hiddenOff(p Placement) bool { return p.Hidden && p.Preview == 0 && !p.Focus
 // The zoom does not depend on the number of bands.
 func TestOverviewCascadeZoomIgnoresBandCount(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		if one, three := cascadeWorkspace(3).overviewZoom(Horizontal), cascadeWorkspace(7).overviewZoom(Horizontal); one != three || one != overviewMaxZoom {
+		if one, three := cascadeWorkspace(3).overviewZoom(layout.Horizontal), cascadeWorkspace(7).overviewZoom(layout.Horizontal); one != three || one != overviewMaxZoom {
 			t.Fatalf("zoom with one band %v, with three %v", one, three)
 		}
 
@@ -208,7 +209,7 @@ func TestOverviewCascadeNeighborBelowScrollShowsOneBand(t *testing.T) {
 		m := cascadeOverview()
 		m.Focus(0)
 		m.ToggleOverview()
-		if m.overviewAxis() != Vertical {
+		if m.overviewAxis() != layout.Vertical {
 			t.Fatal("setup: scroll overview is not vertical")
 		}
 		ps := m.Layout()
@@ -673,7 +674,7 @@ func TestOverviewCascadeNeighborStashKeepsSlot(t *testing.T) {
 		m.Focus(1)
 		m.ToggleOverview()
 		bare, _ := m.overviewRows()
-		zoom := prev.overviewZoom(Horizontal)
+		zoom := prev.overviewZoom(layout.Horizontal)
 		m.CancelOverview()
 		if zoom <= overviewMinZoom || zoom >= overviewMaxZoom {
 			t.Fatalf("setup: neighbor zoom %v is at a bound", zoom)
@@ -686,8 +687,8 @@ func TestOverviewCascadeNeighborStashKeepsSlot(t *testing.T) {
 		m.Focus(1)
 		m.ToggleOverview()
 		rows, _ := m.overviewRows()
-		if rows.at(prev) != bare.at(prev) || prev.overviewZoom(Horizontal) != zoom {
-			t.Fatalf("neighbor slot %v zoom %v with a stash, %v %v without", rows.at(prev), prev.overviewZoom(Horizontal), bare.at(prev), zoom)
+		if rows.at(prev) != bare.at(prev) || prev.overviewZoom(layout.Horizontal) != zoom {
+			t.Fatalf("neighbor slot %v zoom %v with a stash, %v %v without", rows.at(prev), prev.overviewZoom(layout.Horizontal), bare.at(prev), zoom)
 		}
 		if p := previewOf(t, m.Layout(), 64); p.Hidden || !p.Peek {
 			t.Fatalf("neighbor pile card: %+v", p)
@@ -770,8 +771,8 @@ func TestOverviewCascadeCoveringFloat(t *testing.T) {
 				// The cards behind fan to the left: coming to the front, the
 				// columns move right by one peek step.
 				front := previewOf(t, m.Layout(), 10)
-				if front.Peek || front.Rect.X-behind.Rect.X != w.peekStep(Horizontal) {
-					t.Fatalf("columns behind %v, in front %v, peek step %d", behind.Rect, front.Rect, w.peekStep(Horizontal))
+				if front.Peek || front.Rect.X-behind.Rect.X != w.peekStep(layout.Horizontal) {
+					t.Fatalf("columns behind %v, in front %v, peek step %d", behind.Rect, front.Rect, w.peekStep(layout.Horizontal))
 				}
 				d.move(m, 1, 0)
 				if f := m.stackFront(w); f.kind != stackFloat || f.id != 90 {
@@ -944,7 +945,7 @@ func TestOverviewReloadResetsScrollOnAxisChange(t *testing.T) {
 		if err := c.apply(cfg); err != nil {
 			t.Fatal(err)
 		}
-		if _, axis := m.Current().Engine().Axes(); axis != Horizontal {
+		if _, axis := m.Current().Engine().Axes(); axis != layout.Horizontal {
 			t.Fatal("setup: not cascade")
 		}
 		// The reload keeps the overview open on its selection, and cancelling
@@ -982,12 +983,12 @@ func TestOverviewFingerLatchSurvivesAxisChange(t *testing.T) {
 		m.ToggleOverview()
 		c.swipeBegin(ports.SwipeBegin{Fingers: 3})
 		c.swipeUpdate(ports.SwipeUpdate{DX: 70})
-		if m.Current() != m.Workspaces[2] || m.overviewAxis() != Vertical {
+		if m.Current() != m.Workspaces[2] || m.overviewAxis() != layout.Vertical {
 			t.Fatalf("setup: workspace %d", indexOf(m.Workspaces, m.Current()))
 		}
 		// Back to the cascade workspace by a key, with the fingers still down.
 		m.overviewKey(ports.KeyEvent{Keysym: "k", Pressed: true})
-		if m.Current() != w || m.overviewAxis() != Horizontal {
+		if m.Current() != w || m.overviewAxis() != layout.Horizontal {
 			t.Fatal("setup: the key did not turn the overview back")
 		}
 		for _, u := range []ports.SwipeUpdate{{DY: 70}, {DX: 70}, {DY: -70}, {DX: -70}} {

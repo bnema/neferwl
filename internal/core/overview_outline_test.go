@@ -1,10 +1,11 @@
 package core
 
 import (
-	"github.com/bnema/neferwl/internal/ports"
-	"github.com/stretchr/testify/require"
 	"testing"
 	"testing/synctest"
+
+	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/require"
 )
 
 func squareOverviewOutline(dst []ports.Separator, layout []Placement, b int) []ports.Separator {

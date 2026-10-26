@@ -29,10 +29,10 @@ vet:
 race:
 	# cgo is enabled only for the race test binary.
 	CGO_ENABLED=1 go test -race ./...
-MOCKS := internal/mocks ':(glob)internal/**/*_mock_test.go'
+MOCKS := internal/mocks internal/core/layout/layoutmocks ':(glob)internal/**/*_mock_test.go'
 # Regenerate from scratch so mocks of removed interfaces disappear too.
 mocks:
-	rm -rf internal/mocks
+	rm -rf internal/mocks internal/core/layout/layoutmocks
 	find internal -name '*_mock_test.go' -delete
 	$(HOME)/go/bin/mockery
 # Generated mocks must be committed and up to date.

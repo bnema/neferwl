@@ -4,6 +4,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -34,7 +35,7 @@ func TestCrossScreenFocusEntry(t *testing.T) {
 					}
 					w.FocusID(4)
 					if edge && (tc.d == dirLeft || tc.d == dirRight) {
-						if !c.edgeFocus(Horizontal, 1, tc.d) {
+						if !c.edgeFocus(layout.Horizontal, 1, tc.d) {
 							t.Fatal("did not cross")
 						}
 					} else {
@@ -138,7 +139,7 @@ func TestFocusEntryDuringWorkspaceSlide(t *testing.T) {
 		m.Focus(1)
 		m.AddWindow(5)
 		m.Current().FocusID(5)
-		m.switchAxis = Vertical
+		m.switchAxis = layout.Vertical
 		m.switchView.Off = -.5
 		view := m.viewport()
 		outgoing := false

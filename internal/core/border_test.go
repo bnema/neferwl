@@ -6,6 +6,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/core/motion"
 )
 
@@ -31,7 +32,7 @@ func TestBorderAt(t *testing.T) {
 					t.Fatal("tile interior")
 				}
 				w.Columns[0].Windows = append(w.Columns[0].Windows, 9)
-				rows := RowRects(rs[0], w.Columns[0], gap)
+				rows := layout.RowRects(rs[0], w.Columns[0], gap)
 				b, ok = w.borderAt(rs[0].X+20, rows[0].Y+rows[0].H+gap/2, 6)
 				if !ok || b.kind != borderRow {
 					t.Fatal("row", b, ok)
@@ -171,11 +172,11 @@ func TestSetRowBorder(t *testing.T) {
 		w := spanWorkspace(OverflowFixed, 2)
 		w.Columns[0].Windows = []WindowID{1, 3, 4}
 		r := w.columnRects()[0]
-		before := RowRects(r, w.Columns[0], w.Gap())
+		before := layout.RowRects(r, w.Columns[0], w.Gap())
 		b := border{kind: borderRow, col: 0, row: 0}
 		pos := before[0].Y + before[0].H + 5 + 30
 		w.setBorder(b, pos)
-		after := RowRects(r, w.Columns[0], w.Gap())
+		after := layout.RowRects(r, w.Columns[0], w.Gap())
 		if after[0].Y+after[0].H+5 != pos || after[2] != before[2] || sum(w.Columns[0].Shares) != 10000 {
 			t.Fatal(before, after, w.Columns[0].Shares)
 		}
@@ -205,7 +206,7 @@ func TestBorderPixelRemainders(t *testing.T) {
 						w := spanWorkspace(mode, n)
 						w.SetMaxColumns(n)
 						for i := range w.Columns {
-							w.setBandStart(i, false)
+							w.SetBandStart(i, false)
 						}
 						w.SetOutput(width, 800)
 						before := w.columnRects()
@@ -276,7 +277,7 @@ func TestSetBorderReportsChange(t *testing.T) {
 		w.Columns[0].Windows = []WindowID{1, 3}
 		b := border{kind: borderRow, col: 0}
 		r := w.columnRects()[0]
-		pos := RowRects(r, w.Columns[0], w.Gap())[0].Y + 200
+		pos := layout.RowRects(r, w.Columns[0], w.Gap())[0].Y + 200
 		if !w.setBorder(b, pos) || w.setBorder(b, pos) {
 			t.Fatal("row border change reporting")
 		}
@@ -322,7 +323,7 @@ func TestSetBorderUndersizedPairReportsStampOnce(t *testing.T) {
 			// Ten rows is the most that fit; pixel rounding leaves the last pair
 			// just under twice the minimum share.
 			b := border{kind: borderRow, col: 0, row: 8}
-			rows := RowRects(w.columnRects()[0], w.Columns[0], w.Gap())
+			rows := layout.RowRects(w.columnRects()[0], w.Columns[0], w.Gap())
 			pos := rows[8].Y + 1
 			if !w.setBorder(b, pos) {
 				t.Fatal("stamping an undersized row pair must report a change")

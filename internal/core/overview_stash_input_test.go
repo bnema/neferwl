@@ -6,6 +6,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -96,7 +97,7 @@ func TestOverviewWorkspaceBindLeavesCarousel(t *testing.T) {
 			m.Focus(0)
 			m.ToggleOverview()
 			m.OverviewMove(-1, 0)
-			if m.overviewAxis() != Vertical || m.cardAt(w) < 0 {
+			if m.overviewAxis() != layout.Vertical || m.cardAt(w) < 0 {
 				t.Fatalf("%d cards, setup: no card selected in a vertical overview", n)
 			}
 			m.overviewFocus(ActionFocusWorkspaceNext)

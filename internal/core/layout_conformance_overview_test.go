@@ -1,12 +1,16 @@
 package core
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/bnema/neferwl/internal/core/layout"
+)
 
 // Overview invariants: one tile per window, none duplicated, visible tiles
 // inside the span, exactly one focused tile inside the selection, and lane
 // projection that agrees with laneOf.
 func TestLayoutConformanceOverview(t *testing.T) {
-	forEachConformance(t, func(t *testing.T, l Layout, w *Workspace, k, n int, mode string) {
+	forEachConformance(t, func(t *testing.T, l layout.Layout, w *Workspace, k, n int, mode string) {
 		v := w.Snapshot()
 		tiles, span, sel := l.PreviewTiles(v, nil, nil)
 		if len(tiles) != 2*n {

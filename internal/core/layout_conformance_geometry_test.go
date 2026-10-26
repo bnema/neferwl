@@ -5,17 +5,19 @@ import (
 	"slices"
 	"testing"
 	"testing/synctest"
+
+	"github.com/bnema/neferwl/internal/core/layout"
 )
 
 // Geometry invariants: one rect per column, widths that agree with the rects,
 // no overlap inside a lane, a scroll target that settles, sorted snap points
 // that map to columns, the focused column shown, and read-only methods.
 func TestLayoutGeometryConformance(t *testing.T) {
-	forEachConformance(t, func(t *testing.T, l Layout, w *Workspace, k, n int, mode string) {
+	forEachConformance(t, func(t *testing.T, l layout.Layout, w *Workspace, k, n int, mode string) {
 		v := w.Snapshot()
 		before := slices.Clone(w.Columns)
 		for _, ignore := range []bool{false, true} {
-			rects := l.ColumnRects(v, nil, RectOpts{IgnoreFullWidth: ignore})
+			rects := l.ColumnRects(v, nil, layout.RectOpts{IgnoreFullWidth: ignore})
 			if len(rects) != n {
 				t.Fatalf("%d rects for %d columns", len(rects), n)
 			}
@@ -56,7 +58,7 @@ func TestLayoutGeometryConformance(t *testing.T) {
 			// Scroll columns and cascade bands intentionally extend offscreen. Only
 			// the settled focused rect must fit; fullscreen scroll geometry retains
 			// the usable height while its width comes from Output.
-			r := l.ColumnRects(settled, nil, RectOpts{})[v.Focus]
+			r := l.ColumnRects(settled, nil, layout.RectOpts{})[v.Focus]
 			area := v.Usable
 			if mode == "fullscreen" && !l.PinsFullscreen() {
 				area = v.Output
@@ -66,7 +68,7 @@ func TestLayoutGeometryConformance(t *testing.T) {
 				t.Fatalf("focused rect %+v not shown in %+v", r, area)
 			}
 			if l.Spiral() && mode == "normal" {
-				for _, r := range l.ColumnRects(v, nil, RectOpts{}) {
+				for _, r := range l.ColumnRects(v, nil, layout.RectOpts{}) {
 					if r.X < area.X || r.Y < area.Y || r.X+r.W > area.X+area.W || r.Y+r.H > area.Y+area.H {
 						t.Fatalf("fixed rect %+v outside %+v", r, area)
 					}

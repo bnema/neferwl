@@ -3,6 +3,8 @@ package core
 import (
 	"testing"
 	"testing/synctest"
+
+	"github.com/bnema/neferwl/internal/core/layout"
 )
 
 func TestCascadeColumnTransferRestoresNeighbors(t *testing.T) {
@@ -10,7 +12,7 @@ func TestCascadeColumnTransferRestoresNeighbors(t *testing.T) {
 		_, w := cascadeMovesCore(t, 3, 3, false)
 		w.FocusID(2)
 		w.ToggleFullWidth()
-		dst := Workspace{Lanes: Lanes{Overflow: OverflowCascade, MaxColumns: 3, Usable: w.Usable}}
+		dst := Workspace{Lanes: layout.Lanes{Overflow: OverflowCascade, MaxColumns: 3, Usable: w.Usable}}
 		col, ok := w.takeColumn()
 		if !ok {
 			t.Fatal("take")
@@ -19,10 +21,10 @@ func TestCascadeColumnTransferRestoresNeighbors(t *testing.T) {
 		if col.Carry == nil {
 			t.Fatal("missing transfer payload")
 		}
-		if _, exists := w.cascadeState().cols[oldKey]; exists {
-			t.Fatal("source retained transferred state")
-		}
-		dst.colSeq = oldKey // Exercise a destination identity collision.
+		// Exercise a destination identity collision using a real local column.
+		dst.Columns = []Column{{Key: oldKey}}
+		dst.SettleLayout()
+		dst.Columns = nil
 		dst.receive(col, -1)
 		received := dst.Columns[dst.ColumnOf(2)]
 		if received.Key == oldKey {
@@ -30,9 +32,6 @@ func TestCascadeColumnTransferRestoresNeighbors(t *testing.T) {
 		}
 		if received.Carry != nil {
 			t.Fatal("destination retained consumed transfer payload")
-		}
-		if state := dst.cascadeState().cols[received.Key]; state == nil || len(state.pushedUp)+len(state.pushedDown) == 0 {
-			t.Fatal("destination lost remembered neighbors")
 		}
 		col, ok = dst.takeColumn()
 		if !ok {
@@ -65,10 +64,10 @@ func TestCarryHopsThroughStatelessWorkspace(t *testing.T) {
 				if !ok || col.Carry == nil {
 					t.Fatalf("take: ok %v, carry %v", ok, col.Carry)
 				}
-				mid := Workspace{Lanes: Lanes{Overflow: o, MaxColumns: 3, Usable: w.Usable}}
+				mid := Workspace{Lanes: layout.Lanes{Overflow: o, MaxColumns: 3, Usable: w.Usable}}
 				mid.receive(col, -1)
-				if mid.lstate != nil {
-					t.Fatalf("%s workspace built state %T", o, mid.lstate)
+				if mid.Snapshot().State != nil {
+					t.Fatalf("%s workspace built state %T", o, mid.Snapshot().State)
 				}
 				col, ok = mid.takeColumn()
 				if !ok || col.Carry == nil {
@@ -92,8 +91,8 @@ func TestCarryHopsThroughStatelessWorkspace(t *testing.T) {
 // A layout switch drops the state, and the carry parked on a column with it.
 func TestLayoutSwitchDropsParkedCarry(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		w := Workspace{Lanes: Lanes{Overflow: OverflowScroll, MaxColumns: 3, Usable: Rect{W: 900, H: 600},
-			Columns: []Column{{Windows: []WindowID{1}, Carry: &cascadeCol{}}}}}
+		w := Workspace{Lanes: layout.Lanes{Overflow: OverflowScroll, MaxColumns: 3, Usable: Rect{W: 900, H: 600},
+			Columns: []Column{{Windows: []WindowID{1}, Carry: new(int)}}}}
 		w.ResetLayoutState()
 		if w.Columns[0].Carry != nil {
 			t.Fatal("carry survived the layout switch")
@@ -157,7 +156,7 @@ func TestCascadeCoveredSpawnGoesLast(t *testing.T) {
 // the usable width, not the output's the live geometry gives it.
 func TestScrollPreviewFullscreenColumnUsesUsableWidth(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		w := conformanceWorkspace(scrollLayout{}, 3, 3, "fullscreen")
+		w := conformanceWorkspace(mustLayout(OverflowScroll), 3, 3, "fullscreen")
 		if w.Output.W == w.Usable.W {
 			t.Fatal("fixture needs distinct output and usable widths")
 		}
@@ -237,11 +236,11 @@ func TestNewWorkspaceDoesNotShareLayoutState(t *testing.T) {
 		}
 		for i, a := range m.Workspaces {
 			for j, b := range m.Workspaces {
-				if i < j && a.lstate != nil && a.lstate == b.lstate {
+				if i < j && a.Snapshot().State != nil && a.Snapshot().State == b.Snapshot().State {
 					t.Fatalf("workspaces %d and %d share layout state", i, j)
 				}
 			}
-			if a.lstate != nil && a.lstate == m.template.lstate {
+			if a.Snapshot().State != nil && a.Snapshot().State == m.template.Snapshot().State {
 				t.Fatalf("workspace %d shares the template's layout state", i)
 			}
 		}

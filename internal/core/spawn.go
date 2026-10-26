@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -53,8 +54,8 @@ func (w *Workspace) addWindow(id WindowID, cells int) {
 		// window (ADR 011): it waits, hidden, after the focused column.
 		at := w.Engine().CoveredSpawnAt(w.Snapshot())
 		w.Columns = slices.Insert(w.Columns, at, Column{Windows: []WindowID{id}, Cells: cells})
-		w.ColumnInserted(at, InsertDefault)
-		w.dropStaleSpans()
+		w.ColumnInserted(at, layout.InsertDefault)
+		w.DropStaleSpans()
 		return
 	}
 	w.addColumn(Column{Windows: []WindowID{id}, Cells: cells})
@@ -66,7 +67,7 @@ func (w *Workspace) addColumn(col Column) { w.placeColumn(col, false) }
 // placeColumn shares placement while preserving automatic-event focus.
 func (w *Workspace) placeColumn(col Column, quiet bool) {
 	covered := quiet && w.cover() != 0
-	at, kind := 0, InsertDefault
+	at, kind := 0, layout.InsertDefault
 	if covered {
 		at = w.Engine().CoveredSpawnAt(w.Snapshot())
 	} else {
@@ -248,5 +249,5 @@ func (w *Workspace) insertAt(at int, col Column) {
 	// Stamp identities belong to the issuing workspace and complete lane.
 	col.Span, col.SpanStamp = 0, 0
 	w.Columns = slices.Insert(w.Columns, at, col)
-	w.ColumnInserted(at, InsertJoinDisplaced)
+	w.ColumnInserted(at, layout.InsertJoinDisplaced)
 }

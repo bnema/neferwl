@@ -39,8 +39,8 @@ func TestScrollWidthsByLaneValidity(t *testing.T) {
 						t.Fatal("a stamped column outside the lane must invalidate it")
 					}
 					f := w.widthFacts()
-					if f.spansValid != tc.valid {
-						t.Fatalf("spansValid = %v, want %v", f.spansValid, tc.valid)
+					if w.scrollSpansValid() != tc.valid {
+						t.Fatalf("spansValid = %v, want %v", w.scrollSpansValid(), tc.valid)
 					}
 					xs, widths := w.ColumnEdges()
 					rs := w.columnRects()
@@ -68,7 +68,7 @@ func TestDropStaleSpansKeepsValidLanes(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		w := spanWorkspace(OverflowScroll, 4)
 		// An unstamped workspace returns before any lane is measured.
-		if n := testing.AllocsPerRun(10, w.dropStaleSpans); n != 0 {
+		if n := testing.AllocsPerRun(10, w.DropStaleSpans); n != 0 {
 			t.Fatalf("unstamped workspace allocates %v", n)
 		}
 		if w.Columns[0].Span != 0 || w.Columns[0].SpanStamp != 0 {
@@ -76,14 +76,14 @@ func TestDropStaleSpansKeepsValidLanes(t *testing.T) {
 		}
 		stampSpans(w, 0, 3)
 		spans := []int{w.Columns[0].Span, w.Columns[3].Span}
-		if n := testing.AllocsPerRun(10, w.dropStaleSpans); n != 0 {
+		if n := testing.AllocsPerRun(10, w.DropStaleSpans); n != 0 {
 			t.Fatalf("valid lane allocates %v", n)
 		}
 		if w.Columns[0].Span != spans[0] || w.Columns[3].Span != spans[1] {
 			t.Fatal("valid lane dropped")
 		}
 		w.Columns[2].SpanStamp = 77
-		w.dropStaleSpans()
+		w.DropStaleSpans()
 		for i, c := range w.Columns {
 			if c.Span != 0 || c.SpanStamp != 0 {
 				t.Fatal("stale lane kept", i)

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -41,7 +42,7 @@ func TestOverviewMaximizedGeometryAndNavigation(t *testing.T) {
 			i := w.ColumnOf(id)
 			r := rects[i]
 			if id == 3 || id == 5 {
-				r = StackRects(r, 2, w.Gap())[map[WindowID]int{3: 0, 5: 1}[id]]
+				r = layout.StackRects(r, 2, w.Gap())[map[WindowID]int{3: 0, 5: 1}[id]]
 			}
 			if p.Hidden || !p.Peek || p.Focused || math.Abs(float64(p.Rect.W)-float64(r.W)*p.Preview) > 1 || math.Abs(float64(p.Rect.H)-float64(r.H)*p.Preview) > 1 {
 				t.Fatalf("hidden tile %d: %+v cell %+v", id, p, r)
