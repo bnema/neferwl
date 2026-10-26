@@ -36,6 +36,38 @@ func dial(t *testing.T, path string) int {
 	return fd
 }
 
+// Owns recognizes the leader and a process in its session, but no other PID.
+func TestOwns(t *testing.T) {
+	pid := os.Getpid()
+	sid, err := unix.Getsid(pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := &Display{}
+	if d.Owns(pid) {
+		t.Fatal("owned without a satellite")
+	}
+	d.satellite.Store(int64(pid))
+	if !d.Owns(pid) {
+		t.Fatal("satellite not owned")
+	}
+	d.satellite.Store(int64(sid))
+	if !d.Owns(pid) {
+		t.Fatal("session member not owned")
+	}
+	if d.Owns(0) || d.Owns(-1) || d.Owns(1<<30) {
+		t.Fatal("invalid or missing process owned")
+	}
+	d.satellite.Store(int64(sid + 1))
+	if d.Owns(pid) {
+		t.Fatal("unrelated session owned")
+	}
+	d.satellite.Store(0)
+	if d.Owns(pid) {
+		t.Fatal("owned after satellite exit")
+	}
+}
+
 func TestOpenPicksFreeDisplay(t *testing.T) {
 	opts := testOptions(t, "true")
 	if err := os.WriteFile(filepath.Join(opts.TmpDir, ".X0-lock"), nil, 0o444); err != nil {

@@ -16,6 +16,8 @@ type WindowMapped struct {
 	Sandbox string
 	// ContentType is the root surface's committed content hint at map time.
 	ContentType ContentType
+	// Xwayland is set when the client belongs to the X11 satellite session.
+	Xwayland bool
 	// Floating windows are dialogs (a parent) or fixed-size windows such
 	// as splash screens: core shows them over the columns at their own
 	// size, Width×Height logical (0 when unknown).

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -42,6 +43,22 @@ type Display struct {
 	sockets []*os.File // unix socket, then the abstract one
 	socket  string
 	lock    string
+	// satellite is the running session leader's PID, or 0 between runs.
+	satellite atomic.Int64
+}
+
+// Owns reports whether pid is the running satellite or belongs to its session.
+// A missing satellite or a process whose session cannot be read is not owned.
+func (d *Display) Owns(pid int) bool {
+	satellite := int(d.satellite.Load())
+	if satellite <= 0 || pid <= 0 {
+		return false
+	}
+	if pid == satellite {
+		return true
+	}
+	sid, err := unix.Getsid(pid)
+	return err == nil && sid == satellite
 }
 
 // Supported reports whether the binary can take over listening sockets
@@ -277,6 +294,8 @@ func (d *Display) serve(ctx context.Context, stderr *logWriter) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	d.satellite.Store(int64(cmd.Process.Pid))
+	defer d.satellite.Store(0)
 	d.opts.Log.Info().Str("display", d.Name()).Int("pid", cmd.Process.Pid).Msg("xwayland-satellite started")
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()

@@ -155,6 +155,9 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 		}
 	}
 	if s.server, err = wayland.New(wayland.Options{
+		// Assembly opens the Display below, before any server/client runs;
+		// its identity stays fixed while Owns tracks satellite restarts.
+		X11Client:    func(pid int) bool { return s.xdisplay != nil && s.xdisplay.Owns(pid) },
 		CaptureAllow: s.captureAllow,
 		Casts:        casts,
 		WorkspaceIDs: s.wsIDs,

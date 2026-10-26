@@ -69,6 +69,8 @@ type WindowState struct {
 	Sandbox string `json:",omitempty"`
 	// ContentType is "photo", "video", "game", or "" without a hint.
 	ContentType string `json:",omitempty"`
+	// Xwayland is set for an X11 window served by the satellite session.
+	Xwayland bool `json:",omitempty"`
 	// IdleInhibit is set while the window keeps the session from idling.
 	IdleInhibit bool `json:",omitempty"`
 	// ShortcutsInhibited is set while the window asks to receive compositor shortcuts (keyboard_shortcuts_inhibit); core grants it only while it has keyboard focus.
