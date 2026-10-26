@@ -60,10 +60,10 @@ const fourccXR30 = 'X' | 'R'<<8 | '3'<<16 | '0'<<24
 // displays that refuse the multi-plane framebuffers of the others.
 func (r *Renderer) ExportTargets(n int, modifiers []uint64, singlePlane bool) ([]ports.DMABuf, error) {
 	r.dropTargets()
-	if n > 0 && r.hdrNits > 0 && r.hdrReadback && r.physical != 0 {
+	if n > 0 && r.hdrNits > 0 && r.hdrReadback && r.gpu.physical != 0 {
 		// Readback targets (GPU tests, headless --screenshot-raw) are also
 		// transfer sources, which changes the format requirements.
-		r.hdrMods = r.probeModifiers(r.physical, vk.FormatA2r10g10b10UnormPack32)
+		r.gpu.hdrMods = r.probeModifiers(r.gpu.physical, vk.FormatA2r10g10b10UnormPack32)
 	}
 	if n > 0 && r.hdrNits > 0 && r.hdr.pipeline == 0 {
 		return nil, fmt.Errorf("HDR transform unavailable: %w", r.hdrError)
@@ -71,7 +71,7 @@ func (r *Renderer) ExportTargets(n int, modifiers []uint64, singlePlane bool) ([
 	if n == 0 {
 		return nil, nil
 	}
-	if !r.dd.HasGetMemoryFdKHR() || !r.dd.HasGetImageDrmFormatModifierPropertiesEXT() || len(r.dmabuf.Formats) == 0 {
+	if !r.gpu.dd.HasGetMemoryFdKHR() || !r.gpu.dd.HasGetImageDrmFormatModifierPropertiesEXT() || len(r.gpu.dmabuf.Formats) == 0 {
 		return nil, errors.New("device cannot export dmabufs")
 	}
 	mods := r.exportModifiers(modifiers, singlePlane)
@@ -114,7 +114,7 @@ func (r *Renderer) ImportTargets(bufs []ports.DMABuf) error {
 	if r.hdrNits > 0 && r.hdr.pipeline == 0 {
 		return fmt.Errorf("HDR transform unavailable: %w", r.hdrError)
 	}
-	if !r.dd.HasGetMemoryFdPropertiesKHR() || !r.dd.HasGetImageDrmFormatModifierPropertiesEXT() || len(r.dmabuf.Formats) == 0 {
+	if !r.gpu.dd.HasGetMemoryFdPropertiesKHR() || !r.gpu.dd.HasGetImageDrmFormatModifierPropertiesEXT() || len(r.gpu.dmabuf.Formats) == 0 {
 		return errors.New("device cannot import dmabufs")
 	}
 	for i := range bufs {
@@ -154,9 +154,9 @@ func (r *Renderer) target() *target {
 // except for a virtual output (no display) or a test readback. singlePlane
 // drops the modifiers with more than one memory plane.
 func (r *Renderer) exportModifiers(display []uint64, singlePlane bool) []uint64 {
-	available := r.renderMods
+	available := r.gpu.renderMods
 	if r.hdrNits > 0 {
-		available = r.hdrMods
+		available = r.gpu.hdrMods
 	}
 	return r.intersectModifiers(available, display, singlePlane)
 }
@@ -168,7 +168,7 @@ func (r *Renderer) exportModifiers(display []uint64, singlePlane bool) []uint64 
 func (r *Renderer) intersectModifiers(available, display []uint64, singlePlane bool) []uint64 {
 	var out []uint64
 	for _, m := range available {
-		if singlePlane && r.modPlanes[m] > 1 {
+		if singlePlane && r.gpu.modPlanes[m] > 1 {
 			continue
 		}
 		if (len(display) == 0 && (r.hdrNits == 0 || r.hdrReadback || r.virtual)) || slices.Contains(display, m) {
@@ -192,17 +192,17 @@ func (r *Renderer) targetFormat() (vk.Format, uint32) {
 // and imports for the target format, that the display lists (empty: any),
 // without multi-plane ones when singlePlane. Call after SetHDR.
 func (r *Renderer) TargetModifiers(display []uint64, singlePlane bool) []uint64 {
-	if r.physical == 0 || r.dd == nil || !r.dd.HasGetMemoryFdPropertiesKHR() || !r.dd.HasGetImageDrmFormatModifierPropertiesEXT() {
+	if r.gpu.physical == 0 || r.gpu.dd == nil || !r.gpu.dd.HasGetMemoryFdPropertiesKHR() || !r.gpu.dd.HasGetImageDrmFormatModifierPropertiesEXT() {
 		return nil
 	}
 	format, _ := r.targetFormat()
-	return r.intersectModifiers(r.probeImportModifiers(r.physical, format), display, singlePlane)
+	return r.intersectModifiers(r.probeImportModifiers(r.gpu.physical, format), display, singlePlane)
 }
 
 // probeRenderModifiers lists exportable SDR and HDR targets.
 func (r *Renderer) probeRenderModifiers(physical vk.PhysicalDevice) {
-	r.renderMods = r.probeModifiers(physical, vk.FormatB8g8r8a8Unorm)
-	r.hdrMods = r.probeModifiers(physical, vk.FormatA2r10g10b10UnormPack32)
+	r.gpu.renderMods = r.probeModifiers(physical, vk.FormatB8g8r8a8Unorm)
+	r.gpu.hdrMods = r.probeModifiers(physical, vk.FormatA2r10g10b10UnormPack32)
 }
 
 // probeModifiers lists the exportable modifiers of format (one to four memory
@@ -226,28 +226,30 @@ type importKey struct {
 // display allocator made. The answer is probed once per key: it does not
 // change while the device lives.
 func (r *Renderer) probeImportModifiers(physical vk.PhysicalDevice, format vk.Format) []uint64 {
+	r.gpu.mu.Lock()
+	defer r.gpu.mu.Unlock()
 	key := importKey{format, r.hdrReadback}
-	if mods, ok := r.importMods[key]; ok {
+	if mods, ok := r.gpu.importMods[key]; ok {
 		return mods
 	}
 	mods := r.probeTargetModifiers(physical, format, vk.ExternalMemoryFeatureImportableBit)
-	if r.importMods == nil {
-		r.importMods = make(map[importKey][]uint64)
+	if r.gpu.importMods == nil {
+		r.gpu.importMods = make(map[importKey][]uint64)
 	}
-	r.importMods[key] = mods
+	r.gpu.importMods[key] = mods
 	return mods
 }
 
 func (r *Renderer) probeTargetModifiers(physical vk.PhysicalDevice, format vk.Format, feature vk.ExternalMemoryFeatureFlags) []uint64 {
 	list := vk.DrmFormatModifierPropertiesListEXT{SType: vk.StructureTypeDRMFormatModifierPropertiesListEXT}
 	fp := vk.FormatProperties2{SType: vk.StructureTypeFormatProperties2, Next: unsafe.Pointer(&list)}
-	r.id.GetPhysicalDeviceFormatProperties2(physical, format, &fp)
+	r.gpu.inst.id.GetPhysicalDeviceFormatProperties2(physical, format, &fp)
 	if list.DrmFormatModifierCount == 0 {
 		return nil
 	}
 	mods := make([]vk.DrmFormatModifierPropertiesEXT, list.DrmFormatModifierCount)
 	list.DrmFormatModifierProperties = &mods[0]
-	r.id.GetPhysicalDeviceFormatProperties2(physical, format, &fp)
+	r.gpu.inst.id.GetPhysicalDeviceFormatProperties2(physical, format, &fp)
 	need := vk.FormatFeatureFlags(vk.FormatFeatureColorAttachmentBit)
 	if format == vk.FormatB8g8r8a8Unorm {
 		need |= formatFeatureTransferSrc | vk.FormatFeatureColorAttachmentBlendBit
@@ -257,12 +259,12 @@ func (r *Renderer) probeTargetModifiers(physical vk.PhysicalDevice, format vk.Fo
 	// SDR targets are composed and read back; HDR targets are color
 	// attachments, and transfer sources only with hdrReadback.
 	result, planes := filterModifiers(mods[:list.DrmFormatModifierCount], need, func(m uint64) bool { return r.externalTarget(physical, format, m, feature) })
-	if r.modPlanes == nil {
-		r.modPlanes = make(map[uint64]uint32)
+	if r.gpu.modPlanes == nil {
+		r.gpu.modPlanes = make(map[uint64]uint32)
 	}
 	// A modifier has the same plane count for every format (DCC planes
 	// come from the modifier), so SDR and HDR share the map.
-	maps.Copy(r.modPlanes, planes)
+	maps.Copy(r.gpu.modPlanes, planes)
 	return result
 }
 
@@ -312,7 +314,7 @@ func (r *Renderer) externalTarget(physical vk.PhysicalDevice, format vk.Format, 
 	info := vk.PhysicalDeviceImageFormatInfo2{SType: vk.StructureTypePhysicalDeviceImageFormatInfo2, Next: unsafe.Pointer(&ext), Format: format, Type: vk.ImageType2d, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: exportUsage(format, r.hdrReadback)}
 	extOut := vk.ExternalImageFormatProperties{SType: vk.StructureTypeExternalImageFormatProperties}
 	out := vk.ImageFormatProperties2{SType: vk.StructureTypeImageFormatProperties2, Next: unsafe.Pointer(&extOut)}
-	if r.id.GetPhysicalDeviceImageFormatProperties2(physical, &info, &out) != vk.Success {
+	if r.gpu.inst.id.GetPhysicalDeviceImageFormatProperties2(physical, &info, &out) != vk.Success {
 		return false
 	}
 	return extOut.ExternalMemoryProperties.ExternalMemoryFeatures&feature != 0
@@ -336,7 +338,7 @@ func exportUsage(format vk.Format, readback bool) vk.ImageUsageFlags {
 
 // exportTarget creates one exported image with a modifier from mods.
 func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
-	d := r.dd
+	d := r.gpu.dd
 	t := &target{exported: true, layout: vk.ImageLayoutUndefined}
 	format, fourcc := r.targetFormat()
 	ok := false
@@ -348,11 +350,11 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 	list := vk.ImageDrmFormatModifierListCreateInfoEXT{SType: vk.StructureTypeImageDRMFormatModifierListCreateInfoEXT, DrmFormatModifierCount: uint32(len(mods)), DrmFormatModifiers: &mods[0]}
 	external := vk.ExternalMemoryImageCreateInfo{SType: vk.StructureTypeExternalMemoryImageCreateInfo, Next: unsafe.Pointer(&list), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: format, Extent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: exportUsage(format, r.hdrReadback), SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
-	if err := checked("vkCreateImage(target)", d.CreateImage(r.device, &ii, nil, &t.image)); err != nil {
+	if err := checked("vkCreateImage(target)", d.CreateImage(r.gpu.device, &ii, nil, &t.image)); err != nil {
 		return nil, ports.DMABuf{}, err
 	}
 	var req vk.MemoryRequirements
-	d.GetImageMemoryRequirements(r.device, t.image, &req)
+	d.GetImageMemoryRequirements(r.gpu.device, t.image, &req)
 	kind, err := r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyDeviceLocalBit)
 	if err != nil {
 		return nil, ports.DMABuf{}, err
@@ -360,21 +362,21 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 	dedicated := vk.MemoryDedicatedAllocateInfo{SType: vk.StructureTypeMemoryDedicatedAllocateInfo, Image: t.image}
 	export := vk.ExportMemoryAllocateInfo{SType: vk.StructureTypeExportMemoryAllocateInfo, Next: unsafe.Pointer(&dedicated), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&export), AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err := checked("vkAllocateMemory(target)", d.AllocateMemory(r.device, &alloc, nil, &t.memory)); err != nil {
+	if err := checked("vkAllocateMemory(target)", d.AllocateMemory(r.gpu.device, &alloc, nil, &t.memory)); err != nil {
 		return nil, ports.DMABuf{}, err
 	}
-	if err := checked("vkBindImageMemory(target)", d.BindImageMemory(r.device, t.image, t.memory, 0)); err != nil {
+	if err := checked("vkBindImageMemory(target)", d.BindImageMemory(r.gpu.device, t.image, t.memory, 0)); err != nil {
 		return nil, ports.DMABuf{}, err
 	}
 	props := vk.ImageDrmFormatModifierPropertiesEXT{SType: vk.StructureTypeImageDRMFormatModifierPropertiesEXT}
-	if err := checked("vkGetImageDrmFormatModifierPropertiesEXT", d.GetImageDrmFormatModifierPropertiesEXT(r.device, t.image, &props)); err != nil {
+	if err := checked("vkGetImageDrmFormatModifierPropertiesEXT", d.GetImageDrmFormatModifierPropertiesEXT(r.gpu.device, t.image, &props)); err != nil {
 		return nil, ports.DMABuf{}, err
 	}
-	n := min(max(r.modPlanes[props.DrmFormatModifier], 1), maxModifierPlanes)
+	n := min(max(r.gpu.modPlanes[props.DrmFormatModifier], 1), maxModifierPlanes)
 	var layouts [maxModifierPlanes]vk.SubresourceLayout
 	for i := range n {
 		sub := vk.ImageSubresource{AspectMask: vk.ImageAspectMemoryPlane0BitEXT << i}
-		d.GetImageSubresourceLayout(r.device, t.image, &sub, &layouts[i])
+		d.GetImageSubresourceLayout(r.gpu.device, t.image, &sub, &layouts[i])
 	}
 	t.view, err = r.imageView(t.image, format)
 	if err != nil {
@@ -382,7 +384,7 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 	}
 	var fd int32
 	get := vk.MemoryGetFdInfoKHR{SType: vk.StructureTypeMemoryGetFDInfoKHR, Memory: t.memory, HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
-	if err := checked("vkGetMemoryFdKHR", d.GetMemoryFdKHR(r.device, &get, &fd)); err != nil {
+	if err := checked("vkGetMemoryFdKHR", d.GetMemoryFdKHR(r.gpu.device, &get, &fd)); err != nil {
 		return nil, ports.DMABuf{}, err
 	}
 	// Every plane owns its file: the planes share the one memory object,
@@ -414,22 +416,22 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 
 func (r *Renderer) freeTarget(t *target) {
 	if t.view != 0 {
-		r.dd.DestroyImageView(r.device, t.view, nil)
+		r.gpu.dd.DestroyImageView(r.gpu.device, t.view, nil)
 		t.view = 0
 	}
 	if t.image != 0 {
-		r.dd.DestroyImage(r.device, t.image, nil)
+		r.gpu.dd.DestroyImage(r.gpu.device, t.image, nil)
 		t.image = 0
 	}
 	if t.memory != 0 {
-		r.dd.FreeMemory(r.device, t.memory, nil)
+		r.gpu.dd.FreeMemory(r.gpu.device, t.memory, nil)
 		t.memory = 0
 	}
 }
 
 func (r *Renderer) dropTargets() {
-	if len(r.targets) > 0 && r.device != 0 {
-		_ = checked("vkDeviceWaitIdle", r.dd.DeviceWaitIdle(r.device))
+	if len(r.targets) > 0 && r.gpu.device != 0 {
+		_ = checked("vkDeviceWaitIdle", r.gpu.dd.DeviceWaitIdle(r.gpu.device))
 		r.idle()
 	}
 	for _, t := range r.targets {
@@ -454,10 +456,10 @@ var (
 // The target is shared with the display like an exported one: frames
 // acquire it from and release it to the foreign queue family.
 func (r *Renderer) importTarget(b *ports.DMABuf) (*target, error) {
-	d := r.dd
+	d := r.gpu.dd
 	format, fourcc := r.targetFormat()
 	n := len(b.Planes)
-	want, known := r.modPlanes[b.Modifier]
+	want, known := r.gpu.modPlanes[b.Modifier]
 	switch {
 	case b.Format != fourcc || b.Width != r.width || b.Height != r.height:
 		return nil, fmt.Errorf("%w: image %dx%d format %#x, target %dx%d format %#x", errImageGeometry, b.Width, b.Height, b.Format, r.width, r.height, fourcc)
@@ -465,7 +467,7 @@ func (r *Renderer) importTarget(b *ports.DMABuf) (*target, error) {
 		return nil, fmt.Errorf("%w: %#x is not a target modifier of the device", errImageModifier, b.Modifier)
 	case n < 1 || n > maxModifierPlanes || want != uint32(n):
 		return nil, fmt.Errorf("%w: modifier %#x: image has %d planes, device expects %d", errImagePlanes, b.Modifier, n, want)
-	case !r.externalTarget(r.physical, format, b.Modifier, vk.ExternalMemoryFeatureImportableBit):
+	case !r.externalTarget(r.gpu.physical, format, b.Modifier, vk.ExternalMemoryFeatureImportableBit):
 		return nil, fmt.Errorf("%w: %#x cannot be imported as a target", errImageModifier, b.Modifier)
 	}
 	if err := sameDMABuf(b.Planes); err != nil {
@@ -496,15 +498,15 @@ func (r *Renderer) importTarget(b *ports.DMABuf) (*target, error) {
 	explicit := vk.ImageDrmFormatModifierExplicitCreateInfoEXT{SType: vk.StructureTypeImageDRMFormatModifierExplicitCreateInfoEXT, DrmFormatModifier: b.Modifier, DrmFormatModifierPlaneCount: uint32(n), PlaneLayouts: &layouts[0]}
 	external := vk.ExternalMemoryImageCreateInfo{SType: vk.StructureTypeExternalMemoryImageCreateInfo, Next: unsafe.Pointer(&explicit), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: format, Extent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: exportUsage(format, r.hdrReadback), SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
-	if err := checked("vkCreateImage(imported target)", d.CreateImage(r.device, &ii, nil, &t.image)); err != nil {
+	if err := checked("vkCreateImage(imported target)", d.CreateImage(r.gpu.device, &ii, nil, &t.image)); err != nil {
 		return nil, err
 	}
 	fdProps := vk.MemoryFdPropertiesKHR{SType: vk.StructureTypeMemoryFDPropertiesKHR}
-	if err := checked("vkGetMemoryFdPropertiesKHR", d.GetMemoryFdPropertiesKHR(r.device, vk.ExternalMemoryHandleTypeDMABUFBitEXT, int32(fd), &fdProps)); err != nil {
+	if err := checked("vkGetMemoryFdPropertiesKHR", d.GetMemoryFdPropertiesKHR(r.gpu.device, vk.ExternalMemoryHandleTypeDMABUFBitEXT, int32(fd), &fdProps)); err != nil {
 		return nil, err
 	}
 	var req vk.MemoryRequirements
-	d.GetImageMemoryRequirements(r.device, t.image, &req)
+	d.GetImageMemoryRequirements(r.gpu.device, t.image, &req)
 	bits := req.MemoryTypeBits & fdProps.MemoryTypeBits
 	kind, err := r.findMemoryType(bits, vk.MemoryPropertyDeviceLocalBit)
 	if err != nil {
@@ -515,11 +517,11 @@ func (r *Renderer) importTarget(b *ports.DMABuf) (*target, error) {
 	dedicated := vk.MemoryDedicatedAllocateInfo{SType: vk.StructureTypeMemoryDedicatedAllocateInfo, Image: t.image}
 	imp := vk.ImportMemoryFdInfoKHR{SType: vk.StructureTypeImportMemoryFDInfoKHR, Next: unsafe.Pointer(&dedicated), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT, Fd: int32(fd)}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&imp), AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err := checked("vkAllocateMemory(imported target)", d.AllocateMemory(r.device, &alloc, nil, &t.memory)); err != nil {
+	if err := checked("vkAllocateMemory(imported target)", d.AllocateMemory(r.gpu.device, &alloc, nil, &t.memory)); err != nil {
 		return nil, err
 	}
 	fd = -1 // Vulkan owns it now.
-	if err := checked("vkBindImageMemory(imported target)", d.BindImageMemory(r.device, t.image, t.memory, 0)); err != nil {
+	if err := checked("vkBindImageMemory(imported target)", d.BindImageMemory(r.gpu.device, t.image, t.memory, 0)); err != nil {
 		return nil, err
 	}
 	if t.view, err = r.imageView(t.image, format); err != nil {

@@ -73,13 +73,13 @@ func vkFormat(f uint32) (vk.Format, bool, bool) {
 }
 
 // extensions lists the device extensions supported by the selected GPU.
-func (r *Renderer) extensions(physical vk.PhysicalDevice) map[string]bool {
+func extensions(id *vk.InstanceDispatch, physical vk.PhysicalDevice) map[string]bool {
 	var n uint32
-	if r.id.EnumerateDeviceExtensionProperties(physical, nil, &n, nil) != vk.Success || n == 0 {
+	if id.EnumerateDeviceExtensionProperties(physical, nil, &n, nil) != vk.Success || n == 0 {
 		return nil
 	}
 	props := make([]vk.ExtensionProperties, n)
-	if r.id.EnumerateDeviceExtensionProperties(physical, nil, &n, &props[0]) != vk.Success {
+	if id.EnumerateDeviceExtensionProperties(physical, nil, &n, &props[0]) != vk.Success {
 		return nil
 	}
 	have := map[string]bool{}
@@ -103,20 +103,20 @@ func (r *Renderer) probeDMABuf(physical vk.PhysicalDevice) ports.DMABufSupport {
 	var sup ports.DMABufSupport
 	drm := vk.PhysicalDeviceDrmPropertiesEXT{SType: vk.StructureTypePhysicalDeviceDRMPropertiesEXT}
 	props := vk.PhysicalDeviceProperties2{SType: vk.StructureTypePhysicalDeviceProperties2, Next: unsafe.Pointer(&drm)}
-	r.id.GetPhysicalDeviceProperties2(physical, &props)
+	r.gpu.inst.id.GetPhysicalDeviceProperties2(physical, &props)
 	if drm.HasRender != 0 {
 		sup.Device = unix.Mkdev(uint32(drm.RenderMajor), uint32(drm.RenderMinor))
 	}
 	for _, f := range dmabufFormats {
 		list := vk.DrmFormatModifierPropertiesListEXT{SType: vk.StructureTypeDRMFormatModifierPropertiesListEXT}
 		fp := vk.FormatProperties2{SType: vk.StructureTypeFormatProperties2, Next: unsafe.Pointer(&list)}
-		r.id.GetPhysicalDeviceFormatProperties2(physical, f.format, &fp)
+		r.gpu.inst.id.GetPhysicalDeviceFormatProperties2(physical, f.format, &fp)
 		if list.DrmFormatModifierCount == 0 {
 			continue
 		}
 		mods := make([]vk.DrmFormatModifierPropertiesEXT, list.DrmFormatModifierCount)
 		list.DrmFormatModifierProperties = &mods[0]
-		r.id.GetPhysicalDeviceFormatProperties2(physical, f.format, &fp)
+		r.gpu.inst.id.GetPhysicalDeviceFormatProperties2(physical, f.format, &fp)
 		for _, m := range mods[:list.DrmFormatModifierCount] {
 			need := vk.FormatFeatureFlags(vk.FormatFeatureSampledImageBit | vk.FormatFeatureSampledImageFilterLinearBit)
 			planes := uint32(1)
@@ -148,13 +148,13 @@ func (r *Renderer) importable(physical vk.PhysicalDevice, format vk.Format, modi
 			// disjoint plane bindings. Check its tiling features as well.
 			list := vk.DrmFormatModifierPropertiesListEXT{SType: vk.StructureTypeDRMFormatModifierPropertiesListEXT}
 			properties := vk.FormatProperties2{SType: vk.StructureTypeFormatProperties2, Next: unsafe.Pointer(&list)}
-			r.id.GetPhysicalDeviceFormatProperties2(physical, format, &properties)
+			r.gpu.inst.id.GetPhysicalDeviceFormatProperties2(physical, format, &properties)
 			if list.DrmFormatModifierCount == 0 {
 				return false
 			}
 			mods := make([]vk.DrmFormatModifierPropertiesEXT, list.DrmFormatModifierCount)
 			list.DrmFormatModifierProperties = &mods[0]
-			r.id.GetPhysicalDeviceFormatProperties2(physical, format, &properties)
+			r.gpu.inst.id.GetPhysicalDeviceFormatProperties2(physical, format, &properties)
 			found := false
 			for _, m := range mods[:list.DrmFormatModifierCount] {
 				if m.DrmFormatModifier == modifier && m.DrmFormatModifierTilingFeatures&0x00400000 != 0 {
@@ -172,19 +172,19 @@ func (r *Renderer) importable(physical vk.PhysicalDevice, format vk.Format, modi
 		info := vk.PhysicalDeviceImageFormatInfo2{SType: vk.StructureTypePhysicalDeviceImageFormatInfo2, Next: unsafe.Pointer(&ext), Flags: flags, Format: format, Type: vk.ImageType2d, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: vk.ImageUsageSampledBit}
 		extOut := vk.ExternalImageFormatProperties{SType: vk.StructureTypeExternalImageFormatProperties}
 		out := vk.ImageFormatProperties2{SType: vk.StructureTypeImageFormatProperties2, Next: unsafe.Pointer(&extOut)}
-		return r.id.GetPhysicalDeviceImageFormatProperties2(physical, &info, &out) == vk.Success && extOut.ExternalMemoryProperties.ExternalMemoryFeatures&vk.ExternalMemoryFeatureImportableBit != 0
+		return r.gpu.inst.id.GetPhysicalDeviceImageFormatProperties2(physical, &info, &out) == vk.Success && extOut.ExternalMemoryProperties.ExternalMemoryFeatures&vk.ExternalMemoryFeatureImportableBit != 0
 	}
 	info := vk.PhysicalDeviceImageFormatInfo2{SType: vk.StructureTypePhysicalDeviceImageFormatInfo2, Next: unsafe.Pointer(&ext), Flags: flags, Format: format, Type: vk.ImageType2d, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: vk.ImageUsageSampledBit}
 	extOut := vk.ExternalImageFormatProperties{SType: vk.StructureTypeExternalImageFormatProperties}
 	out := vk.ImageFormatProperties2{SType: vk.StructureTypeImageFormatProperties2, Next: unsafe.Pointer(&extOut)}
-	if r.id.GetPhysicalDeviceImageFormatProperties2(physical, &info, &out) != vk.Success {
+	if r.gpu.inst.id.GetPhysicalDeviceImageFormatProperties2(physical, &info, &out) != vk.Success {
 		return false
 	}
 	return extOut.ExternalMemoryProperties.ExternalMemoryFeatures&vk.ExternalMemoryFeatureImportableBit != 0
 }
 
 // DMABuf reports the formats this renderer imports.
-func (r *Renderer) DMABuf() ports.DMABufSupport { return r.dmabuf }
+func (r *Renderer) DMABuf() ports.DMABufSupport { return r.gpu.dmabuf }
 
 // imported is a client dmabuf bound to a VkImage and its sampled views.
 type imported struct {
@@ -213,7 +213,7 @@ func (r *Renderer) importDMABuf(b *ports.DMABuf) (*imported, error) {
 		im.last = r.frame
 		return im, nil
 	}
-	if len(r.dmabuf.Formats) == 0 {
+	if len(r.gpu.dmabuf.Formats) == 0 {
 		return nil, fmt.Errorf("dmabuf unsupported")
 	}
 	format, _, ok := vkFormat(b.Format)
@@ -240,20 +240,20 @@ func (r *Renderer) importDMABuf(b *ports.DMABuf) (*imported, error) {
 			r.release(im)
 		}
 	}()
-	d := r.dd
+	d := r.gpu.dd
 	layout := vk.SubresourceLayout{Offset: vk.DeviceSize(b.Planes[0].Offset), RowPitch: vk.DeviceSize(b.Planes[0].Stride)}
 	explicit := vk.ImageDrmFormatModifierExplicitCreateInfoEXT{SType: vk.StructureTypeImageDRMFormatModifierExplicitCreateInfoEXT, DrmFormatModifier: b.Modifier, DrmFormatModifierPlaneCount: 1, PlaneLayouts: &layout}
 	external := vk.ExternalMemoryImageCreateInfo{SType: vk.StructureTypeExternalMemoryImageCreateInfo, Next: unsafe.Pointer(&explicit), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: format, Extent: vk.Extent3D{Width: uint32(b.Width), Height: uint32(b.Height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: vk.ImageUsageSampledBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
-	if err := checked("vkCreateImage(dmabuf)", d.CreateImage(r.device, &ii, nil, &im.image)); err != nil {
+	if err := checked("vkCreateImage(dmabuf)", d.CreateImage(r.gpu.device, &ii, nil, &im.image)); err != nil {
 		return nil, err
 	}
 	fdProps := vk.MemoryFdPropertiesKHR{SType: vk.StructureTypeMemoryFDPropertiesKHR}
-	if err := checked("vkGetMemoryFdPropertiesKHR", d.GetMemoryFdPropertiesKHR(r.device, vk.ExternalMemoryHandleTypeDMABUFBitEXT, int32(fd), &fdProps)); err != nil {
+	if err := checked("vkGetMemoryFdPropertiesKHR", d.GetMemoryFdPropertiesKHR(r.gpu.device, vk.ExternalMemoryHandleTypeDMABUFBitEXT, int32(fd), &fdProps)); err != nil {
 		return nil, err
 	}
 	var req vk.MemoryRequirements
-	d.GetImageMemoryRequirements(r.device, im.image, &req)
+	d.GetImageMemoryRequirements(r.gpu.device, im.image, &req)
 	kind, err := r.findMemoryType(req.MemoryTypeBits&fdProps.MemoryTypeBits, 0)
 	if err != nil {
 		return nil, err
@@ -266,11 +266,11 @@ func (r *Renderer) importDMABuf(b *ports.DMABuf) (*imported, error) {
 	dedicated := vk.MemoryDedicatedAllocateInfo{SType: vk.StructureTypeMemoryDedicatedAllocateInfo, Image: im.image}
 	imp := vk.ImportMemoryFdInfoKHR{SType: vk.StructureTypeImportMemoryFDInfoKHR, Next: unsafe.Pointer(&dedicated), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT, Fd: int32(memFD)}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&imp), AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err := checked("vkAllocateMemory(dmabuf)", d.AllocateMemory(r.device, &alloc, nil, &im.memory)); err != nil {
+	if err := checked("vkAllocateMemory(dmabuf)", d.AllocateMemory(r.gpu.device, &alloc, nil, &im.memory)); err != nil {
 		unix.Close(memFD)
 		return nil, err
 	}
-	if err := checked("vkBindImageMemory(dmabuf)", d.BindImageMemory(r.device, im.image, im.memory, 0)); err != nil {
+	if err := checked("vkBindImageMemory(dmabuf)", d.BindImageMemory(r.gpu.device, im.image, im.memory, 0)); err != nil {
 		return nil, err
 	}
 	if im.view, err = r.imageView(im.image, format); err != nil {
@@ -301,20 +301,20 @@ func dupFile(f *os.File) (int, error) {
 func (r *Renderer) release(im *imported) {
 	r.invalidateCompose(resourceKey{im: im})
 	if im.view != 0 {
-		r.dd.DestroyImageView(r.device, im.view, nil)
+		r.gpu.dd.DestroyImageView(r.gpu.device, im.view, nil)
 	}
 	if im.chromaView != 0 {
-		r.dd.DestroyImageView(r.device, im.chromaView, nil)
+		r.gpu.dd.DestroyImageView(r.gpu.device, im.chromaView, nil)
 	}
 	if im.image != 0 {
-		r.dd.DestroyImage(r.device, im.image, nil)
+		r.gpu.dd.DestroyImage(r.gpu.device, im.image, nil)
 	}
 	if im.memory != 0 {
-		r.dd.FreeMemory(r.device, im.memory, nil)
+		r.gpu.dd.FreeMemory(r.gpu.device, im.memory, nil)
 	}
 	for i := range im.memories {
 		if im.memories[i] != 0 {
-			r.dd.FreeMemory(r.device, im.memories[i], nil)
+			r.gpu.dd.FreeMemory(r.gpu.device, im.memories[i], nil)
 		}
 	}
 	if im.fd >= 0 {
@@ -389,14 +389,14 @@ func (r *Renderer) importFence(f *os.File) vk.Semaphore {
 func (r *Renderer) importSyncFD(fd int) vk.Semaphore {
 	var sem vk.Semaphore
 	si := vk.SemaphoreCreateInfo{SType: vk.StructureTypeSemaphoreCreateInfo}
-	if r.dd.CreateSemaphore(r.device, &si, nil, &sem) != vk.Success {
+	if r.gpu.dd.CreateSemaphore(r.gpu.device, &si, nil, &sem) != vk.Success {
 		unix.Close(fd)
 		return 0
 	}
 	imp := vk.ImportSemaphoreFdInfoKHR{SType: vk.StructureTypeImportSemaphoreFDInfoKHR, Semaphore: sem, Flags: vk.SemaphoreImportTemporaryBit, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit, Fd: int32(fd)}
-	if r.dd.ImportSemaphoreFdKHR(r.device, &imp) != vk.Success {
+	if r.gpu.dd.ImportSemaphoreFdKHR(r.gpu.device, &imp) != vk.Success {
 		unix.Close(fd)
-		r.dd.DestroySemaphore(r.device, sem, nil)
+		r.gpu.dd.DestroySemaphore(r.gpu.device, sem, nil)
 		return 0
 	}
 	return sem

@@ -17,7 +17,7 @@ func trimSettled(t *testing.T, r *Renderer, now time.Time) {
 	for i := range r.slots {
 		s := &r.slots[i]
 		if s.busy {
-			if result := r.dd.WaitForFences(r.device, 1, &s.fence, vk.Bool32(1), uint64(5*time.Second)); result != vk.Success {
+			if result := r.gpu.dd.WaitForFences(r.gpu.device, 1, &s.fence, vk.Bool32(1), uint64(5*time.Second)); result != vk.Success {
 				t.Fatalf("slot %d: GPU fence did not settle: %v", i, result)
 			}
 		}
@@ -171,7 +171,7 @@ func TestTrimPollsFinishedFrames(t *testing.T) {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer r.Close()
-	if !r.syncFD {
+	if !r.gpu.syncFD {
 		t.Skip("frames are finished on return without sync files")
 	}
 	done, err := r.Render(ports.Scene{Background: "#000000"}, nil)

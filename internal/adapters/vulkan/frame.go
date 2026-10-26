@@ -69,21 +69,21 @@ func (r *Renderer) free(f deferredFree) {
 		f.free()
 		return
 	}
-	r.dd.DestroySemaphore(r.device, f.sem, nil)
+	r.gpu.dd.DestroySemaphore(r.gpu.device, f.sem, nil)
 }
 
 func (r *Renderer) createSlots() error {
-	d := r.dd
+	d := r.gpu.dd
 	cmds := make([]vk.CommandBuffer, frameSlots)
 	ai := vk.CommandBufferAllocateInfo{SType: vk.StructureTypeCommandBufferAllocateInfo, CommandPool: r.pool, Level: vk.CommandBufferLevelPrimary, CommandBufferCount: frameSlots}
-	if err := checked("vkAllocateCommandBuffers", d.AllocateCommandBuffers(r.device, &ai, &cmds[0])); err != nil {
+	if err := checked("vkAllocateCommandBuffers", d.AllocateCommandBuffers(r.gpu.device, &ai, &cmds[0])); err != nil {
 		return err
 	}
 	for i := range r.slots {
 		s := &r.slots[i]
 		s.cmd = cmds[i]
 		fi := vk.FenceCreateInfo{SType: vk.StructureTypeFenceCreateInfo}
-		if err := checked("vkCreateFence", d.CreateFence(r.device, &fi, nil, &s.fence)); err != nil {
+		if err := checked("vkCreateFence", d.CreateFence(r.gpu.device, &fi, nil, &s.fence)); err != nil {
 			return err
 		}
 		if err := r.newDone(s); err != nil {
@@ -97,41 +97,40 @@ func (r *Renderer) createSlots() error {
 // the device allows it; a device that refuses falls back to waiting for
 // frames on the CPU (syncFD off).
 func (r *Renderer) newDone(s *frameSlot) error {
-	d := r.dd
+	d := r.gpu.dd
 	si := vk.SemaphoreCreateInfo{SType: vk.StructureTypeSemaphoreCreateInfo}
 	export := vk.ExportSemaphoreCreateInfo{SType: vk.StructureTypeExportSemaphoreCreateInfo, HandleTypes: vk.ExternalSemaphoreHandleTypeSyncFDBit}
-	if r.syncFD {
+	if r.gpu.syncFD {
 		si.Next = unsafe.Pointer(&export)
-		if d.CreateSemaphore(r.device, &si, nil, &s.done) == vk.Success {
+		if d.CreateSemaphore(r.gpu.device, &si, nil, &s.done) == vk.Success {
 			return nil
 		}
-		r.syncFD = false
+		r.gpu.syncFD = false
 		si.Next = nil
 	}
-	return checked("vkCreateSemaphore", d.CreateSemaphore(r.device, &si, nil, &s.done))
+	return checked("vkCreateSemaphore", d.CreateSemaphore(r.gpu.device, &si, nil, &s.done))
 }
 
 func (r *Renderer) destroySlots() {
-	d := r.dd
 	for i := range r.slots {
 		s := &r.slots[i]
 		for j := range s.batches {
 			r.freeComposeBatch(s.batches[j])
 		}
 		if s.fence != 0 {
-			d.DestroyFence(r.device, s.fence, nil)
+			r.gpu.dd.DestroyFence(r.gpu.device, s.fence, nil)
 		}
 		if s.done != 0 {
-			d.DestroySemaphore(r.device, s.done, nil)
+			r.gpu.dd.DestroySemaphore(r.gpu.device, s.done, nil)
 		}
 		if s.cmd != 0 {
-			d.FreeCommandBuffers(r.device, r.pool, 1, &s.cmd)
+			r.gpu.dd.FreeCommandBuffers(r.gpu.device, r.pool, 1, &s.cmd)
 		}
 		*s = frameSlot{}
 	}
 }
 
-// waitFrame blocks until frame n completed. Frames not submitted yet and
+// waitFrame blocks until frame n completer.gpu.dd. Frames not submitted yet and
 // frames known done return at once. Every slot holding a frame up to n
 // is waited and reset, so its fence is unsignalled before reuse.
 func (r *Renderer) waitFrame(n uint64) error {
@@ -144,10 +143,10 @@ func (r *Renderer) waitFrame(n uint64) error {
 		if !s.busy || s.frame > n {
 			continue
 		}
-		if err := checked("vkWaitForFences", r.dd.WaitForFences(r.device, 1, &s.fence, 1, math.MaxUint64)); err != nil {
+		if err := checked("vkWaitForFences", r.gpu.dd.WaitForFences(r.gpu.device, 1, &s.fence, 1, math.MaxUint64)); err != nil {
 			return err
 		}
-		if err := checked("vkResetFences", r.dd.ResetFences(r.device, 1, &s.fence)); err != nil {
+		if err := checked("vkResetFences", r.gpu.dd.ResetFences(r.gpu.device, 1, &s.fence)); err != nil {
 			return err
 		}
 		s.busy = false
@@ -169,7 +168,7 @@ func (r *Renderer) retire(frame uint64, free func()) {
 // retireSemaphore destroys sem once the frame that last used it completed.
 func (r *Renderer) retireSemaphore(frame uint64, sem vk.Semaphore) {
 	if frame <= r.completed {
-		r.dd.DestroySemaphore(r.device, sem, nil)
+		r.gpu.dd.DestroySemaphore(r.gpu.device, sem, nil)
 		return
 	}
 	r.deferred = append(r.deferred, deferredFree{frame: frame, sem: sem})
@@ -190,7 +189,7 @@ func (r *Renderer) idle() {
 	for i := range r.slots {
 		s := &r.slots[i]
 		if s.busy {
-			_ = r.dd.ResetFences(r.device, 1, &s.fence)
+			_ = r.gpu.dd.ResetFences(r.gpu.device, 1, &s.fence)
 			s.busy = false
 		}
 	}
@@ -254,7 +253,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	if err != nil {
 		return nil, err
 	}
-	d := r.dd
+	d := r.gpu.dd
 	sc := &r.call
 	cmd := slot.cmd
 	sc.cmd = cmd
@@ -275,7 +274,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	}
 	if tg.exported {
 		// Acquire from the display (foreign queue family).
-		b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = vk.QueueFamilyForeignEXT, r.family
+		b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = vk.QueueFamilyForeignEXT, r.gpu.family
 	}
 	d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit|vk.PipelineStageColorAttachmentOutputBit, vk.PipelineStageColorAttachmentOutputBit, 0, 0, nil, 0, nil, 1, b)
 	// Client buffers come from the foreign queue family (their driver)
@@ -308,7 +307,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		if tg.exported {
 			// Release to the display: KMS scans it out after the fence.
 			b.NewLayout, b.DstAccessMask = vk.ImageLayoutGeneral, 0
-			b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = r.family, vk.QueueFamilyForeignEXT
+			b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = r.gpu.family, vk.QueueFamilyForeignEXT
 			d.CmdPipelineBarrier(cmd, vk.PipelineStageColorAttachmentOutputBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, b)
 		} else {
 			b.NewLayout, b.DstAccessMask = vk.ImageLayoutTransferSrcOptimal, vk.AccessTransferReadBit
@@ -347,10 +346,10 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		}
 		submit.WaitSemaphoreCount, submit.WaitSemaphores, submit.WaitDstStageMask = uint32(len(waits)), &waits[0], &stages[0]
 	}
-	if r.syncFD {
+	if r.gpu.syncFD {
 		submit.SignalSemaphoreCount, submit.SignalSemaphores = 1, &slot.done
 	}
-	if err := checked("vkQueueSubmit", d.QueueSubmit(r.queue, 1, submit, slot.fence)); err != nil {
+	if err := r.q.submit(1, submit, slot.fence); err != nil {
 		return nil, err
 	}
 	runtime.KeepAlive(stages)
@@ -372,19 +371,19 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	}
 	r.dropUnused()
 	r.dropShm()
-	if !r.syncFD {
+	if !r.gpu.syncFD {
 		return nil, r.waitFrame(frame)
 	}
 	sc.fd = 0
 	sc.getFD = vk.SemaphoreGetFdInfoKHR{SType: vk.StructureTypeSemaphoreGetFDInfoKHR, Semaphore: slot.done, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit}
-	if d.GetSemaphoreFdKHR(r.device, &sc.getFD, &sc.fd) != vk.Success {
+	if d.GetSemaphoreFdKHR(r.gpu.device, &sc.getFD, &sc.fd) != vk.Success {
 		// The frame is drawn: finish it on the CPU. The semaphore stays
 		// signalled: replace it, so the slot's next submit signals a
 		// fresh one.
 		if err := r.waitFrame(frame); err != nil {
 			return nil, err
 		}
-		d.DestroySemaphore(r.device, slot.done, nil)
+		d.DestroySemaphore(r.gpu.device, slot.done, nil)
 		slot.done = 0
 		return nil, r.newDone(slot)
 	}
@@ -411,16 +410,16 @@ func (r *Renderer) ownership(cmd vk.CommandBuffer, dmas []*imported, acquire boo
 		}
 		if acquire {
 			b.OldLayout, b.NewLayout = vk.ImageLayoutGeneral, vk.ImageLayoutShaderReadOnlyOptimal
-			b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = vk.QueueFamilyForeignEXT, r.family
+			b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = vk.QueueFamilyForeignEXT, r.gpu.family
 			b.DstAccessMask = vk.AccessShaderReadBit
 			// The frame waits on the client's fence at the fragment
 			// stage: the transfer must come after that wait.
-			r.dd.CmdPipelineBarrier(cmd, vk.PipelineStageFragmentShaderBit, vk.PipelineStageFragmentShaderBit, 0, 0, nil, 0, nil, 1, b)
+			r.gpu.dd.CmdPipelineBarrier(cmd, vk.PipelineStageFragmentShaderBit, vk.PipelineStageFragmentShaderBit, 0, 0, nil, 0, nil, 1, b)
 		} else {
 			b.OldLayout, b.NewLayout = vk.ImageLayoutShaderReadOnlyOptimal, vk.ImageLayoutGeneral
-			b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = r.family, vk.QueueFamilyForeignEXT
+			b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = r.gpu.family, vk.QueueFamilyForeignEXT
 			b.SrcAccessMask = vk.AccessShaderReadBit
-			r.dd.CmdPipelineBarrier(cmd, vk.PipelineStageFragmentShaderBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, b)
+			r.gpu.dd.CmdPipelineBarrier(cmd, vk.PipelineStageFragmentShaderBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, b)
 		}
 	}
 }
@@ -428,19 +427,19 @@ func (r *Renderer) ownership(cmd vk.CommandBuffer, dmas []*imported, acquire boo
 // oneShot records and runs commands outside the frame ring and waits for
 // them (setup and screenshots only, never per frame).
 func (r *Renderer) oneShot(record func(vk.CommandBuffer)) error {
-	d := r.dd
+	d := r.gpu.dd
 	var cmd vk.CommandBuffer
 	ai := vk.CommandBufferAllocateInfo{SType: vk.StructureTypeCommandBufferAllocateInfo, CommandPool: r.pool, Level: vk.CommandBufferLevelPrimary, CommandBufferCount: 1}
-	if err := checked("vkAllocateCommandBuffers", d.AllocateCommandBuffers(r.device, &ai, &cmd)); err != nil {
+	if err := checked("vkAllocateCommandBuffers", d.AllocateCommandBuffers(r.gpu.device, &ai, &cmd)); err != nil {
 		return err
 	}
-	defer d.FreeCommandBuffers(r.device, r.pool, 1, &cmd)
+	defer d.FreeCommandBuffers(r.gpu.device, r.pool, 1, &cmd)
 	var fence vk.Fence
 	fi := vk.FenceCreateInfo{SType: vk.StructureTypeFenceCreateInfo}
-	if err := checked("vkCreateFence", d.CreateFence(r.device, &fi, nil, &fence)); err != nil {
+	if err := checked("vkCreateFence", d.CreateFence(r.gpu.device, &fi, nil, &fence)); err != nil {
 		return err
 	}
-	defer d.DestroyFence(r.device, fence, nil)
+	defer d.DestroyFence(r.gpu.device, fence, nil)
 	begin := vk.CommandBufferBeginInfo{SType: vk.StructureTypeCommandBufferBeginInfo, Flags: vk.CommandBufferUsageOneTimeSubmitBit}
 	if err := checked("vkBeginCommandBuffer", d.BeginCommandBuffer(cmd, &begin)); err != nil {
 		return err
@@ -450,10 +449,10 @@ func (r *Renderer) oneShot(record func(vk.CommandBuffer)) error {
 		return err
 	}
 	submit := vk.SubmitInfo{SType: vk.StructureTypeSubmitInfo, CommandBufferCount: 1, CommandBuffers: &cmd}
-	if err := checked("vkQueueSubmit", d.QueueSubmit(r.queue, 1, &submit, fence)); err != nil {
+	if err := r.q.submit(1, &submit, fence); err != nil {
 		return err
 	}
-	return checked("vkWaitForFences", d.WaitForFences(r.device, 1, &fence, 1, math.MaxUint64))
+	return checked("vkWaitForFences", d.WaitForFences(r.gpu.device, 1, &fence, 1, math.MaxUint64))
 }
 
 // Clear draws a background-only frame and waits for it.

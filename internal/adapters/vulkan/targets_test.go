@@ -83,14 +83,14 @@ func TestHDRExportTarget(t *testing.T) {
 	r.SetHDR(203)
 	// GPU tests and headless --screenshot-raw (SetHDRReadback); never DRM.
 	r.SetHDRReadback(true)
-	if r.physical == 0 {
+	if r.gpu.physical == 0 {
 		t.Skip("no exportable GPU")
 	}
-	r.hdrMods = r.probeModifiers(r.physical, vk.FormatA2r10g10b10UnormPack32)
-	if len(r.hdrMods) == 0 {
+	r.gpu.hdrMods = r.probeModifiers(r.gpu.physical, vk.FormatA2r10g10b10UnormPack32)
+	if len(r.gpu.hdrMods) == 0 {
 		t.Skip("no HDR modifier supporting transfer-src")
 	}
-	bufs, err := r.ExportTargets(1, r.hdrMods, false)
+	bufs, err := r.ExportTargets(1, r.gpu.hdrMods, false)
 	if err != nil {
 		t.Skipf("no HDR-exportable target: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestVirtualHDRExportsWithoutDisplayList(t *testing.T) {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer r.Close()
-	if r.physical == 0 || len(r.hdrMods) == 0 {
+	if r.gpu.physical == 0 || len(r.gpu.hdrMods) == 0 {
 		t.Skip("no exportable HDR GPU")
 	}
 	r.SetHDR(203)
@@ -195,7 +195,7 @@ func TestFilterModifiersKeepsMultiPlane(t *testing.T) {
 	if planes[0] != 1 || planes[10] != 3 || planes[11] != 4 || len(planes) != 3 {
 		t.Fatalf("planes %v", planes)
 	}
-	r := &Renderer{renderMods: got, modPlanes: planes}
+	r := &Renderer{gpu: &GPU{renderMods: got, modPlanes: planes}}
 	if all := r.exportModifiers(nil, false); !slices.Equal(all, []uint64{0, 10, 11}) {
 		t.Fatalf("multi-plane export %v", all)
 	}
@@ -233,13 +233,13 @@ func TestExportTargetsPlanes(t *testing.T) {
 	if err != nil {
 		t.Skipf("no single-plane targets: %v", err)
 	}
-	if len(one[0].Planes) != 1 || r.modPlanes[one[0].Modifier] > 1 {
+	if len(one[0].Planes) != 1 || r.gpu.modPlanes[one[0].Modifier] > 1 {
 		t.Fatalf("single-plane export has %d planes (modifier %#x)", len(one[0].Planes), one[0].Modifier)
 	}
 	closeAll(one)
 	multi := false
-	for _, m := range r.renderMods {
-		multi = multi || r.modPlanes[m] > 1
+	for _, m := range r.gpu.renderMods {
+		multi = multi || r.gpu.modPlanes[m] > 1
 	}
 	if !multi {
 		t.Skip("device has no multi-plane target modifier")
@@ -250,7 +250,7 @@ func TestExportTargetsPlanes(t *testing.T) {
 	}
 	defer closeAll(bufs)
 	for _, b := range bufs {
-		want := max(r.modPlanes[b.Modifier], 1)
+		want := max(r.gpu.modPlanes[b.Modifier], 1)
 		if uint32(len(b.Planes)) != want {
 			t.Fatalf("modifier %#x: %d plane files, want %d", b.Modifier, len(b.Planes), want)
 		}
@@ -294,10 +294,10 @@ func TestExportTargetsStayInTheDisplayList(t *testing.T) {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer r.Close()
-	if len(r.renderMods) == 0 {
+	if len(r.gpu.renderMods) == 0 {
 		t.Skip("device exports no render modifier")
 	}
-	for _, m := range r.renderMods {
+	for _, m := range r.gpu.renderMods {
 		bufs, err := r.ExportTargets(1, []uint64{m}, false)
 		if err != nil {
 			t.Fatalf("modifier %#x is exportable but export failed: %v", m, err)
@@ -346,7 +346,7 @@ func TestFilterModifiersDropsDCCRetile(t *testing.T) {
 	if _, ok := planes[retile]; ok {
 		t.Fatalf("retile modifier has a plane count: %v", planes)
 	}
-	r := &Renderer{renderMods: got, modPlanes: planes}
+	r := &Renderer{gpu: &GPU{renderMods: got, modPlanes: planes}}
 	if out := r.exportModifiers([]uint64{retile, tiled}, false); !slices.Equal(out, []uint64{tiled}) {
 		t.Fatalf("display listing the retile modifier: %#x", out)
 	}
@@ -363,7 +363,7 @@ func TestProbedModifiersHaveNoDCCRetile(t *testing.T) {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer r.Close()
-	for _, m := range append(slices.Clone(r.renderMods), r.hdrMods...) {
+	for _, m := range append(slices.Clone(r.gpu.renderMods), r.gpu.hdrMods...) {
 		if retilesDCC(m) {
 			t.Fatalf("target modifier %#x retiles DCC", m)
 		}
@@ -426,12 +426,12 @@ func TestTargetModifiersFiltering(t *testing.T) {
 		t.Errorf("display list %#x gave %#x", mods[:1], got)
 	}
 	for _, m := range r.TargetModifiers(nil, true) {
-		if r.modPlanes[m] > 1 {
+		if r.gpu.modPlanes[m] > 1 {
 			t.Errorf("single-plane list holds multi-plane modifier %#x", m)
 		}
 	}
 	// The answer is probed once and kept.
-	if len(r.importMods) == 0 {
+	if len(r.gpu.importMods) == 0 {
 		t.Error("import modifiers not cached")
 	}
 	again := r.TargetModifiers(nil, false)
@@ -512,7 +512,7 @@ func TestImportTargetsRefusesMismatchedImages(t *testing.T) {
 	t.Run("planes in different dmabufs", func(t *testing.T) {
 		multi := uint64(0)
 		for _, m := range r.TargetModifiers(nil, false) {
-			if r.modPlanes[m] > 1 {
+			if r.gpu.modPlanes[m] > 1 {
 				multi = m
 				break
 			}
@@ -523,7 +523,7 @@ func TestImportTargetsRefusesMismatchedImages(t *testing.T) {
 		b := good()
 		b.Modifier = multi
 		b.Planes = nil
-		for range r.modPlanes[multi] {
+		for range r.gpu.modPlanes[multi] {
 			b.Planes = append(b.Planes, ports.DMABufPlane{File: pipeFile(t)})
 		}
 		if err := r.ImportTargets([]ports.DMABuf{b}); !errors.Is(err, errImageDMABuf) {

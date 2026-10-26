@@ -61,7 +61,7 @@ func (r *Renderer) importYUV(b *ports.DMABuf, format vk.Format) (*imported, erro
 	if disjoint {
 		// Query this modifier with DISJOINT; an advertised shared-memory
 		// import does not imply support for distinct plane objects.
-		if r.physical == 0 || !r.importable(r.physical, format, b.Modifier, true, true) {
+		if r.gpu.physical == 0 || !r.importable(r.gpu.physical, format, b.Modifier, true, true) {
 			return nil, fmt.Errorf("YUV buffer has distinct plane objects without Vulkan disjoint support")
 		}
 	}
@@ -79,7 +79,7 @@ func (r *Renderer) importYUV(b *ports.DMABuf, format vk.Format) (*imported, erro
 		}
 		im.fds[i] = fd
 	}
-	d := r.dd
+	d := r.gpu.dd
 	layouts := [2]vk.SubresourceLayout{}
 	for i, pl := range b.Planes {
 		layouts[i] = vk.SubresourceLayout{Offset: vk.DeviceSize(pl.Offset), RowPitch: vk.DeviceSize(pl.Stride)}
@@ -94,7 +94,7 @@ func (r *Renderer) importYUV(b *ports.DMABuf, format vk.Format) (*imported, erro
 		flags |= imageDisjoint
 	}
 	info := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), Flags: flags, ImageType: vk.ImageType2d, Format: format, Extent: vk.Extent3D{Width: uint32(b.Width), Height: uint32(b.Height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: vk.ImageUsageSampledBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
-	if err := checked("vkCreateImage(YUV dmabuf)", d.CreateImage(r.device, &info, nil, &im.image)); err != nil {
+	if err := checked("vkCreateImage(YUV dmabuf)", d.CreateImage(r.gpu.device, &info, nil, &im.image)); err != nil {
 		return nil, err
 	}
 	if !disjoint {
@@ -106,13 +106,13 @@ func (r *Renderer) importYUV(b *ports.DMABuf, format vk.Format) (*imported, erro
 		bindings := [2]vk.BindImageMemoryInfo{}
 		for i, fd := range im.fds {
 			props := vk.MemoryFdPropertiesKHR{SType: vk.StructureTypeMemoryFDPropertiesKHR}
-			if err := checked("vkGetMemoryFdPropertiesKHR(YUV)", d.GetMemoryFdPropertiesKHR(r.device, vk.ExternalMemoryHandleTypeDMABUFBitEXT, int32(fd), &props)); err != nil {
+			if err := checked("vkGetMemoryFdPropertiesKHR(YUV)", d.GetMemoryFdPropertiesKHR(r.gpu.device, vk.ExternalMemoryHandleTypeDMABUFBitEXT, int32(fd), &props)); err != nil {
 				return nil, err
 			}
 			plane := imagePlaneRequirements{sType: structureImagePlaneRequirements, planeAspect: aspects[i]}
 			request := vk.ImageMemoryRequirementsInfo2{SType: vk.StructureTypeImageMemoryRequirementsInfo2, Next: unsafe.Pointer(&plane), Image: im.image}
 			req := vk.MemoryRequirements2{SType: vk.StructureTypeMemoryRequirements2}
-			d.GetImageMemoryRequirements2(r.device, &request, &req)
+			d.GetImageMemoryRequirements2(r.gpu.device, &request, &req)
 			kind, err := r.findMemoryType(req.MemoryRequirements.MemoryTypeBits&props.MemoryTypeBits, 0)
 			if err != nil {
 				return nil, err
@@ -124,14 +124,14 @@ func (r *Renderer) importYUV(b *ports.DMABuf, format vk.Format) (*imported, erro
 			dedicated := vk.MemoryDedicatedAllocateInfo{SType: vk.StructureTypeMemoryDedicatedAllocateInfo, Image: im.image}
 			imp := vk.ImportMemoryFdInfoKHR{SType: vk.StructureTypeImportMemoryFDInfoKHR, Next: unsafe.Pointer(&dedicated), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT, Fd: int32(memFD)}
 			alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&imp), AllocationSize: req.MemoryRequirements.Size, MemoryTypeIndex: kind}
-			if err := checked("vkAllocateMemory(YUV plane)", d.AllocateMemory(r.device, &alloc, nil, &im.memories[i])); err != nil {
+			if err := checked("vkAllocateMemory(YUV plane)", d.AllocateMemory(r.gpu.device, &alloc, nil, &im.memories[i])); err != nil {
 				unix.Close(memFD)
 				return nil, err
 			}
 			planeBind := &bindImagePlane{sType: structureBindImagePlane, planeAspect: aspects[i]}
 			bindings[i] = vk.BindImageMemoryInfo{SType: vk.StructureTypeBindImageMemoryInfo, Next: unsafe.Pointer(planeBind), Image: im.image, Memory: im.memories[i]}
 			// pNext must remain alive through vkBindImageMemory2, so bind each plane.
-			if err := checked("vkBindImageMemory2(YUV plane)", d.BindImageMemory2(r.device, 1, &bindings[i])); err != nil {
+			if err := checked("vkBindImageMemory2(YUV plane)", d.BindImageMemory2(r.gpu.device, 1, &bindings[i])); err != nil {
 				return nil, err
 			}
 		}
@@ -143,7 +143,7 @@ func (r *Renderer) importYUV(b *ports.DMABuf, format vk.Format) (*imported, erro
 	view := func(aspect vk.ImageAspectFlags, f vk.Format) (vk.ImageView, error) {
 		vi := vk.ImageViewCreateInfo{SType: vk.StructureTypeImageViewCreateInfo, Image: im.image, ViewType: vk.ImageViewType2d, Format: f, SubresourceRange: vk.ImageSubresourceRange{AspectMask: aspect, LevelCount: 1, LayerCount: 1}}
 		var result vk.ImageView
-		err := checked("vkCreateImageView(YUV plane)", d.CreateImageView(r.device, &vi, nil, &result))
+		err := checked("vkCreateImageView(YUV plane)", d.CreateImageView(r.gpu.device, &vi, nil, &result))
 		return result, err
 	}
 	if im.view, err = view(aspectPlane0, yFormat); err != nil {
@@ -183,14 +183,14 @@ func differentBacking(planes []ports.DMABufPlane) (bool, error) {
 
 // bindSharedYUV imports one DMA-BUF memory for both format planes.
 func (r *Renderer) bindSharedYUV(im *imported) error {
-	d := r.dd
+	d := r.gpu.dd
 	fd := im.fds[0]
 	props := vk.MemoryFdPropertiesKHR{SType: vk.StructureTypeMemoryFDPropertiesKHR}
-	if err := checked("vkGetMemoryFdPropertiesKHR(YUV shared)", d.GetMemoryFdPropertiesKHR(r.device, vk.ExternalMemoryHandleTypeDMABUFBitEXT, int32(fd), &props)); err != nil {
+	if err := checked("vkGetMemoryFdPropertiesKHR(YUV shared)", d.GetMemoryFdPropertiesKHR(r.gpu.device, vk.ExternalMemoryHandleTypeDMABUFBitEXT, int32(fd), &props)); err != nil {
 		return err
 	}
 	var req vk.MemoryRequirements
-	d.GetImageMemoryRequirements(r.device, im.image, &req)
+	d.GetImageMemoryRequirements(r.gpu.device, im.image, &req)
 	kind, err := r.findMemoryType(req.MemoryTypeBits&props.MemoryTypeBits, 0)
 	if err != nil {
 		return err
@@ -202,9 +202,9 @@ func (r *Renderer) bindSharedYUV(im *imported) error {
 	dedicated := vk.MemoryDedicatedAllocateInfo{SType: vk.StructureTypeMemoryDedicatedAllocateInfo, Image: im.image}
 	imp := vk.ImportMemoryFdInfoKHR{SType: vk.StructureTypeImportMemoryFDInfoKHR, Next: unsafe.Pointer(&dedicated), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT, Fd: int32(memFD)}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&imp), AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err := checked("vkAllocateMemory(YUV shared)", d.AllocateMemory(r.device, &alloc, nil, &im.memory)); err != nil {
+	if err := checked("vkAllocateMemory(YUV shared)", d.AllocateMemory(r.gpu.device, &alloc, nil, &im.memory)); err != nil {
 		unix.Close(memFD)
 		return err
 	}
-	return checked("vkBindImageMemory(YUV shared)", d.BindImageMemory(r.device, im.image, im.memory, 0))
+	return checked("vkBindImageMemory(YUV shared)", d.BindImageMemory(r.gpu.device, im.image, im.memory, 0))
 }

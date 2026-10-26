@@ -21,8 +21,8 @@ func BenchmarkComposeFullTarget(b *testing.B) {
 	if err != nil {
 		b.Skipf("Vulkan unavailable: %v", err)
 	}
-	mods := append([]uint64(nil), probe.renderMods...)
-	planes := probe.modPlanes
+	mods := append([]uint64(nil), probe.gpu.renderMods...)
+	planes := probe.gpu.modPlanes
 	probe.Close()
 	if len(mods) == 0 {
 		b.Skip("device exports no render modifier")

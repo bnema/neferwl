@@ -20,14 +20,14 @@ func hdrTestRenderer(t *testing.T) *Renderer {
 	t.Cleanup(r.Close)
 	r.SetHDR(203)
 	r.SetHDRReadback(true)
-	if r.physical == 0 {
+	if r.gpu.physical == 0 {
 		t.Skip("no exportable GPU")
 	}
-	r.hdrMods = r.probeModifiers(r.physical, vk.FormatA2r10g10b10UnormPack32)
-	if len(r.hdrMods) == 0 {
+	r.gpu.hdrMods = r.probeModifiers(r.gpu.physical, vk.FormatA2r10g10b10UnormPack32)
+	if len(r.gpu.hdrMods) == 0 {
 		t.Skip("no HDR transfer-src modifier")
 	}
-	bufs, err := r.ExportTargets(1, r.hdrMods, false)
+	bufs, err := r.ExportTargets(1, r.gpu.hdrMods, false)
 	if err != nil {
 		t.Skipf("no HDR target: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestHDRPixelsReadsRenderedTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	// New targets replace the one the frame drew into: nothing to read.
-	bufs, err := r.ExportTargets(2, r.hdrMods, false)
+	bufs, err := r.ExportTargets(2, r.gpu.hdrMods, false)
 	if err != nil {
 		t.Skipf("no two HDR targets: %v", err)
 	}

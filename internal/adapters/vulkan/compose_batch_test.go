@@ -194,7 +194,7 @@ func TestComposePreparedReuseAndGrowth(t *testing.T) {
 		t.Fatal("empty pass returned batches")
 	}
 	// Lower the draw range to force a split independently of descriptors.
-	r.maxRange = 2 * int(unsafe.Sizeof(instanceDraw{}))
+	r.gpu.maxRange = 2 * int(unsafe.Sizeof(instanceDraw{}))
 	if batches, err := r.prepareCompose(slot, ds); err != nil || len(batches) != 1 {
 		t.Fatal("single draw did not fit")
 	}

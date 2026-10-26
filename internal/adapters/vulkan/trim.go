@@ -104,7 +104,7 @@ func (r *Renderer) poll() error {
 		if !s.busy {
 			continue
 		}
-		res := r.dd.WaitForFences(r.device, 1, &s.fence, 1, 0)
+		res := r.gpu.dd.WaitForFences(r.gpu.device, 1, &s.fence, 1, 0)
 		if res == vk.Timeout {
 			if pending == 0 || s.frame < pending {
 				pending = s.frame
@@ -114,7 +114,7 @@ func (r *Renderer) poll() error {
 		if err := checked("vkWaitForFences", res); err != nil {
 			return err
 		}
-		if err := checked("vkResetFences", r.dd.ResetFences(r.device, 1, &s.fence)); err != nil {
+		if err := checked("vkResetFences", r.gpu.dd.ResetFences(r.gpu.device, 1, &s.fence)); err != nil {
 			return err
 		}
 		s.busy = false

@@ -2,6 +2,8 @@ package vulkan
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 	"unsafe"
 
@@ -48,6 +50,10 @@ func (inst *Instance) Close() {
 func (inst *Instance) Open(info ports.GPUInfo) (*GPU, error) { return inst.OpenGPU(info) }
 
 func (inst *Instance) OpenGPU(info ports.GPUInfo) (*GPU, error) {
+	return inst.openGPU(info, false)
+}
+
+func (inst *Instance) openGPU(info ports.GPUInfo, legacy bool) (*GPU, error) {
 	var count uint32
 	if err := checked("vkEnumeratePhysicalDevices(count)", inst.id.EnumeratePhysicalDevices(inst.instance, &count, nil)); err != nil {
 		return nil, err
@@ -58,14 +64,27 @@ func (inst *Instance) OpenGPU(info ports.GPUInfo) (*GPU, error) {
 			return nil, err
 		}
 	}
-	for _, physical := range devices[:count] {
+	index := -1
+	if legacy {
+		if value, ok := os.LookupEnv("NEFERWL_VK_DEVICE"); ok {
+			var err error
+			index, err = strconv.Atoi(value)
+			if err != nil || index < 0 || index >= int(count) {
+				return nil, fmt.Errorf("invalid NEFERWL_VK_DEVICE index %q", value)
+			}
+		}
+	}
+	for i, physical := range devices[:count] {
+		if index >= 0 && i != index {
+			continue
+		}
 		var props vk.PhysicalDeviceProperties
 		inst.id.GetPhysicalDeviceProperties(physical, &props)
 		if props.ApiVersion < vk.MakeVersion(1, 3, 0) {
 			continue
 		}
 		if info != (ports.GPUInfo{}) {
-			if !(&Renderer{id: inst.id}).extensions(physical)[vk.EXTPhysicalDeviceDRMExtensionName] {
+			if !extensions(inst.id, physical)[vk.EXTPhysicalDeviceDRMExtensionName] {
 				continue
 			}
 			drm := vk.PhysicalDeviceDrmPropertiesEXT{SType: vk.StructureTypePhysicalDeviceDRMPropertiesEXT}

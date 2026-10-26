@@ -106,7 +106,7 @@ type gpuBuffer struct {
 }
 
 func (r *Renderer) newGPUBuffer(b *gpuBuffer, size int) error {
-	d := r.dd
+	d := r.gpu.dd
 	ok := false
 	defer func() {
 		if !ok {
@@ -114,11 +114,11 @@ func (r *Renderer) newGPUBuffer(b *gpuBuffer, size int) error {
 		}
 	}()
 	info := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: vk.DeviceSize(size), Usage: vk.BufferUsageStorageBufferBit, SharingMode: vk.SharingModeExclusive}
-	if err := checked("vkCreateBuffer(shm)", d.CreateBuffer(r.device, &info, nil, &b.buffer)); err != nil {
+	if err := checked("vkCreateBuffer(shm)", d.CreateBuffer(r.gpu.device, &info, nil, &b.buffer)); err != nil {
 		return err
 	}
 	var req vk.MemoryRequirements
-	d.GetBufferMemoryRequirements(r.device, b.buffer, &req)
+	d.GetBufferMemoryRequirements(r.gpu.device, b.buffer, &req)
 	host := vk.MemoryPropertyFlags(vk.MemoryPropertyHostVisibleBit | vk.MemoryPropertyHostCoherentBit)
 	kind, err := r.findMemoryType(req.MemoryTypeBits, host|vk.MemoryPropertyDeviceLocalBit)
 	if err != nil {
@@ -128,13 +128,13 @@ func (r *Renderer) newGPUBuffer(b *gpuBuffer, size int) error {
 		return err
 	}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err := checked("vkAllocateMemory(shm)", d.AllocateMemory(r.device, &alloc, nil, &b.memory)); err != nil {
+	if err := checked("vkAllocateMemory(shm)", d.AllocateMemory(r.gpu.device, &alloc, nil, &b.memory)); err != nil {
 		return err
 	}
-	if err := checked("vkBindBufferMemory(shm)", d.BindBufferMemory(r.device, b.buffer, b.memory, 0)); err != nil {
+	if err := checked("vkBindBufferMemory(shm)", d.BindBufferMemory(r.gpu.device, b.buffer, b.memory, 0)); err != nil {
 		return err
 	}
-	if err := checked("vkMapMemory(shm)", d.MapMemory(r.device, b.memory, 0, vk.DeviceSize(size), 0, &b.mapped)); err != nil {
+	if err := checked("vkMapMemory(shm)", d.MapMemory(r.gpu.device, b.memory, 0, vk.DeviceSize(size), 0, &b.mapped)); err != nil {
 		return err
 	}
 	b.size, ok = size, true
@@ -142,15 +142,19 @@ func (r *Renderer) newGPUBuffer(b *gpuBuffer, size int) error {
 }
 
 func (r *Renderer) freeGPUBuffer(b *gpuBuffer) {
-	d := r.dd
+	if b.mapped == nil && b.buffer == 0 && b.memory == 0 {
+		*b = gpuBuffer{}
+		return
+	}
+	d := r.gpu.dd
 	if b.mapped != nil {
-		d.UnmapMemory(r.device, b.memory)
+		d.UnmapMemory(r.gpu.device, b.memory)
 	}
 	if b.buffer != 0 {
-		d.DestroyBuffer(r.device, b.buffer, nil)
+		d.DestroyBuffer(r.gpu.device, b.buffer, nil)
 	}
 	if b.memory != 0 {
-		d.FreeMemory(r.device, b.memory, nil)
+		d.FreeMemory(r.gpu.device, b.memory, nil)
 	}
 	*b = gpuBuffer{}
 }
@@ -225,7 +229,7 @@ func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, offset, st
 		i = 1
 	}
 	size := st.w * st.h * 4
-	if size > r.maxRange {
+	if size > r.gpu.maxRange {
 		return nil, fmt.Errorf("shm buffer of %d bytes past the storage buffer range", size)
 	}
 	c := s.bufs[i]

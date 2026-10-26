@@ -5,10 +5,6 @@ import (
 	"image"
 	"math"
 	"os"
-	"runtime"
-	"strconv"
-	"time"
-	"unsafe"
 
 	"github.com/bnema/neferwl/internal/adapters/hdrcursor"
 	"github.com/bnema/neferwl/internal/adapters/hintlabel"
@@ -27,31 +23,18 @@ type DeviceInfo struct {
 // Renderer is owned by one goroutine; its methods must not be called concurrently.
 type Renderer struct {
 	width, height int
-	deviceInfo    DeviceInfo
-	// queuePriority is the global priority the queue got: realtime, high
-	// or default.
-	queuePriority string
-	instance      vk.Instance
-	id            *vk.InstanceDispatch
-	device        vk.Device
-	dd            *vk.DeviceDispatch
-	queue         vk.Queue
+	gpu           *GPU
+	q             *queue
+	// legacyOwner is temporary: New owns its GPU/instance until P1.4 removes New.
+	legacyOwner bool
 	// own is the SDR composition image; HDR uses hdrOwn and PQ targets.
-	own        target
-	hdrOwn     target // linear BT.709 in units of SDR reference white
-	targets    []*target
-	current    int
-	renderMods []uint64
-	hdrMods    []uint64
-	// importMods caches the modifiers a target of a format can be imported
-	// with (probeImportModifiers), by what the answer depends on.
-	importMods map[importKey][]uint64
-	hdrNits    float64
-	hdr        hdrPass
-	hdrError   error
-	// modPlanes is the memory plane count of each probed target modifier
-	// (SDR and HDR): DCC modifiers have more than one.
-	modPlanes map[uint64]uint32
+	own      target
+	hdrOwn   target // linear BT.709 in units of SDR reference white
+	targets  []*target
+	current  int
+	hdrNits  float64
+	hdr      hdrPass
+	hdrError error
 	// log reports the chosen target modifier; the zero value discards.
 	log zerowrap.Logger
 	// traceDamage logs every frame's redrawn area (--debug=render-damage).
@@ -61,8 +44,7 @@ type Renderer struct {
 	hdrReadback bool
 	// virtual: the output has no display (headless), so ExportTargets
 	// accepts an empty modifier list for HDR (SetVirtualOutput).
-	virtual  bool
-	physical vk.PhysicalDevice
+	virtual bool
 	// One converted cursor image is kept; changes replace it in bounded memory.
 	cursorCache hdrcursor.Cache
 	// lastHDRTarget is the index in targets of the exported PQ target the
@@ -77,18 +59,12 @@ type Renderer struct {
 	captureSDR  target
 	sync        captureSync
 	pool        vk.CommandPool
-	memory      vk.PhysicalDeviceMemoryProperties
-	family      uint32
 	// Frames in flight (frame.go): frame is the last frame recorded,
 	// submitted the last submitted, completed the last known finished.
 	slots                       [frameSlots]frameSlot
 	frame, submitted, completed uint64
 	deferred                    []deferredFree
-	// syncFD: frames export a sync file (else Render waits for them).
-	syncFD bool
-	// dmabuf is what clients may send; imports are their buffers by ID.
-	dmabuf  ports.DMABufSupport
-	imports map[uint64]*imported
+	imports                     map[uint64]*imported
 	// pools are client wl_shm pools mapped by pool ID.
 	pools map[uint64]*mapping
 	// retired are pool mappings replaced this frame, unmapped once the
@@ -115,8 +91,7 @@ type Renderer struct {
 	cursors [2]*cursorImage
 	// compose draws every frame (compose.go); maxRange bounds one
 	// storage buffer binding.
-	compose  composer
-	maxRange int
+	compose composer
 	// Scratch belongs to the renderer goroutine; neither slice is published.
 	scratchDraws  []draw
 	scratchCovers []image.Rectangle
@@ -151,227 +126,66 @@ func checked(name string, result vk.Result) error {
 	return nil
 }
 
-func New(width, height int) (r *Renderer, err error) {
+// New is a temporary compatibility wrapper; new callers use GPU.NewRenderer.
+func New(width, height int) (*Renderer, error) {
+	inst, err := NewInstance(zerowrap.Logger{})
+	if err != nil {
+		return nil, err
+	}
+	g, err := inst.openGPU(ports.GPUInfo{}, true)
+	if err != nil {
+		inst.Close()
+		return nil, err
+	}
+	renderer, err := g.NewRenderer(width, height, ports.RendererOptions{})
+	if err != nil {
+		g.Close()
+		inst.Close()
+		return nil, err
+	}
+	r := renderer.(*Renderer)
+	r.legacyOwner = true
+	return r, nil
+}
+
+// NewRenderer creates per-output resources on this GPU.
+func (g *GPU) NewRenderer(width, height int, o ports.RendererOptions) (renderer ports.Renderer, err error) {
 	if width <= 0 || height <= 0 || width > math.MaxUint32 || height > math.MaxUint32 || uint64(width)*uint64(height) > uint64(math.MaxInt/4) {
 		return nil, fmt.Errorf("invalid renderer dimensions %d x %d", width, height)
 	}
-	r = &Renderer{width: width, height: height, lastHDRTarget: -1, imports: map[uint64]*imported{}, pools: map[uint64]*mapping{}, shm: map[shmKey]*shmSurface{}, hidden: map[ports.WindowID]struct{}{}}
+	r := &Renderer{gpu: g, q: g.acquireQueue(), width: width, height: height, lastHDRTarget: -1, imports: map[uint64]*imported{}, pools: map[uint64]*mapping{}, shm: map[shmKey]*shmSurface{}, hidden: map[ports.WindowID]struct{}{}, log: g.log}
+	r.compose.resources, r.compose.indexing = g.resources, g.indexing
+	r.SetVirtualOutput(o.Virtual)
+	r.SetTraceDamage(o.TraceDamage)
+	r.SetHDRReadback(o.Readback)
+	renderer = r
 	defer func() {
 		if err != nil {
 			r.Close()
-			r = nil
+			renderer = nil
 		}
 	}()
-	if err = vk.Init(); err != nil {
-		return nil, fmt.Errorf("vk.Init: %w", err)
-	}
-	app := vk.ApplicationInfo{SType: vk.StructureTypeApplicationInfo, ApiVersion: vk.MakeVersion(1, 3, 0)}
-	info := vk.InstanceCreateInfo{SType: vk.StructureTypeInstanceCreateInfo, ApplicationInfo: &app}
-	start := time.Now()
-	if err = checked("vkCreateInstance", vk.Global().CreateInstance(&info, nil, &r.instance)); err != nil {
-		return
-	}
-	r.id, err = vk.LoadInstanceDispatch(r.instance)
-	if err != nil {
-		err = fmt.Errorf("LoadInstanceDispatch: %w", err)
-		return
-	}
-	var count uint32
-	if err = checked("vkEnumeratePhysicalDevices(count)", r.id.EnumeratePhysicalDevices(r.instance, &count, nil)); err != nil {
-		return
-	}
-	if count == 0 {
-		err = fmt.Errorf("no Vulkan 1.3 device")
-		return
-	}
-	devices := make([]vk.PhysicalDevice, count)
-	if err = checked("vkEnumeratePhysicalDevices", r.id.EnumeratePhysicalDevices(r.instance, &count, &devices[0])); err != nil {
-		return
-	}
-	index := -1
-	if value, ok := os.LookupEnv("NEFERWL_VK_DEVICE"); ok {
-		index, err = strconv.Atoi(value)
-		if err != nil || index < 0 || index >= int(count) {
-			err = fmt.Errorf("invalid NEFERWL_VK_DEVICE index %q", value)
-			return
-		}
-	}
-	var physical vk.PhysicalDevice
-	var family uint32
-	for i, device := range devices[:count] {
-		if index >= 0 && i != index {
-			continue
-		}
-		var properties vk.PhysicalDeviceProperties
-		r.id.GetPhysicalDeviceProperties(device, &properties)
-		if properties.ApiVersion < vk.MakeVersion(1, 3, 0) {
-			continue
-		}
-		var n uint32
-		r.id.GetPhysicalDeviceQueueFamilyProperties(device, &n, nil)
-		if n == 0 {
-			continue
-		}
-		families := make([]vk.QueueFamilyProperties, n)
-		r.id.GetPhysicalDeviceQueueFamilyProperties(device, &n, &families[0])
-		for j, f := range families[:n] {
-			if f.QueueCount > 0 && f.QueueFlags&vk.QueueGraphicsBit != 0 {
-				physical = device
-				family = uint32(j)
-				break
-			}
-		}
-		if physical != 0 {
-			break
-		}
-	}
-	if physical == 0 {
-		err = fmt.Errorf("no Vulkan 1.3 device with a graphics queue")
-		return
-	}
-	r.id.GetPhysicalDeviceMemoryProperties(physical, &r.memory)
-	var properties vk.PhysicalDeviceProperties
-	r.id.GetPhysicalDeviceProperties(physical, &properties)
-	r.deviceInfo.Name = cstring(properties.DeviceName[:])
-	drmProperties := vk.PhysicalDeviceDrmPropertiesEXT{SType: vk.StructureTypePhysicalDeviceDRMPropertiesEXT}
-	deviceProperties := vk.PhysicalDeviceProperties2{SType: vk.StructureTypePhysicalDeviceProperties2, Next: unsafe.Pointer(&drmProperties)}
-	r.id.GetPhysicalDeviceProperties2(physical, &deviceProperties)
-	if drmProperties.HasPrimary != 0 {
-		r.deviceInfo.Primary = fmt.Sprintf("%d:%d", drmProperties.PrimaryMajor, drmProperties.PrimaryMinor)
-	}
-	if drmProperties.HasRender != 0 {
-		r.deviceInfo.Render = fmt.Sprintf("%d:%d", drmProperties.RenderMajor, drmProperties.RenderMinor)
-	}
-	r.maxRange = int(properties.Limits.MaxStorageBufferRange)
-	r.family = family
-	priority := float32(1)
-	qi := vk.DeviceQueueCreateInfo{SType: vk.StructureTypeDeviceQueueCreateInfo, QueueFamilyIndex: family, QueueCount: 1, QueuePriorities: &priority}
-	dynamicRendering := vk.PhysicalDeviceDynamicRenderingFeatures{SType: vk.StructureTypePhysicalDeviceDynamicRenderingFeatures, DynamicRendering: 1}
-	indexing := descriptorIndexingFeatures{SType: descriptorIndexingFeaturesType}
-	features := vk.PhysicalDeviceFeatures2{SType: vk.StructureTypePhysicalDeviceFeatures2, Next: unsafe.Pointer(&indexing)}
-	r.id.GetPhysicalDeviceFeatures2(physical, &features)
-	r.compose.resources = 1
-	coreFeatures := vk.PhysicalDeviceFeatures{}
-	if features.Features.ShaderSampledImageArrayDynamicIndexing != 0 && features.Features.ShaderStorageBufferArrayDynamicIndexing != 0 && indexing.ShaderSampledImageArrayNonUniformIndexing != 0 && indexing.ShaderStorageBufferArrayNonUniformIndexing != 0 {
-		limit := composeResourceLimit(properties.Limits)
-		if limit > 1 {
-			r.compose.resources, r.compose.indexing = limit, true
-			coreFeatures.ShaderSampledImageArrayDynamicIndexing = 1
-			coreFeatures.ShaderStorageBufferArrayDynamicIndexing = 1
-			// Enable only the array indexing features used by these shaders.
-			indexing = descriptorIndexingFeatures{SType: descriptorIndexingFeaturesType, ShaderSampledImageArrayNonUniformIndexing: 1, ShaderStorageBufferArrayNonUniformIndexing: 1}
-			dynamicRendering.Next = unsafe.Pointer(&indexing)
-		}
-	}
-	di := vk.DeviceCreateInfo{SType: vk.StructureTypeDeviceCreateInfo, Next: unsafe.Pointer(&dynamicRendering), QueueCreateInfoCount: 1, QueueCreateInfos: &qi, EnabledFeatures: &coreFeatures}
-	// dmabuf import needs every extension; without them clients use wl_shm.
-	var extNames [][]byte
-	var extPtrs []*byte
-	have := r.extensions(physical)
-	dmabufSupported := true
-	for _, e := range deviceExtensions {
-		if !have[e] {
-			dmabufSupported = false
-		}
-	}
-	if dmabufSupported {
-		for _, e := range deviceExtensions {
-			extNames = append(extNames, append([]byte(e), 0))
-			extPtrs = append(extPtrs, &extNames[len(extNames)-1][0])
-		}
-		di.EnabledExtensionCount = uint32(len(extPtrs))
-		di.PpEnabledExtensionNames = &extPtrs[0]
-	}
-	globalExt := ""
-	if have[vk.KHRGlobalPriorityExtensionName] {
-		globalExt = vk.KHRGlobalPriorityExtensionName
-	} else if have[vk.EXTGlobalPriorityExtensionName] {
-		globalExt = vk.EXTGlobalPriorityExtensionName
-	}
-	var global vk.DeviceQueueGlobalPriorityCreateInfo
-	chosen := "default"
-	for _, attempt := range priorityAttempts(globalExt != "") {
-		qi.Next = nil
-		count := len(extPtrs)
-		if attempt != 0 {
-			global = vk.DeviceQueueGlobalPriorityCreateInfo{SType: vk.StructureTypeDeviceQueueGlobalPriorityCreateInfo, GlobalPriority: attempt}
-			qi.Next = unsafe.Pointer(&global)
-			extNames = append(extNames, append([]byte(globalExt), 0))
-			extPtrs = append(extPtrs, &extNames[len(extNames)-1][0])
-			chosen = "realtime"
-			if attempt == vk.QueueGlobalPriorityHigh {
-				chosen = "high"
-			}
-		} else {
-			chosen = "default"
-		}
-		di.EnabledExtensionCount = uint32(len(extPtrs))
-		if len(extPtrs) > 0 {
-			di.PpEnabledExtensionNames = &extPtrs[0]
-		} else {
-			di.PpEnabledExtensionNames = nil
-		}
-		result := r.id.CreateDevice(physical, &di, nil, &r.device)
-		runtime.KeepAlive(global)
-		runtime.KeepAlive(coreFeatures)
-		runtime.KeepAlive(indexing)
-		runtime.KeepAlive(dynamicRendering)
-		runtime.KeepAlive(qi)
-		runtime.KeepAlive(extNames)
-		runtime.KeepAlive(extPtrs)
-		extPtrs = extPtrs[:count]
-		extNames = extNames[:count]
-		if result == vk.Success {
-			err = nil
-			break
-		}
-		err = checked("vkCreateDevice", result)
-		if attempt == 0 {
-			return
-		}
-	}
-	r.queuePriority = chosen
-	r.dd, err = vk.LoadDeviceDispatch(r.id, r.device)
-	if err != nil {
-		err = fmt.Errorf("LoadDeviceDispatch: %w", err)
-		return
-	}
-	runtime.KeepAlive(extNames)
-	runtime.KeepAlive(extPtrs)
-	if dmabufSupported {
-		// Clients need the render node to allocate on the right GPU.
-		if sup := r.probeDMABuf(physical); sup.Device != 0 {
-			r.dmabuf = sup
-			r.probeRenderModifiers(physical)
-			r.physical = physical
-		}
-		// VK_KHR_external_semaphore_fd (enabled above): frames export
-		// their fence as a sync file.
-		r.syncFD = r.dd.HasGetSemaphoreFdKHR()
-	}
-	r.dd.GetDeviceQueue(r.device, family, 0, &r.queue)
-	r.deviceInfo.CreateMS = time.Since(start).Milliseconds()
 	extent := vk.Extent3D{Width: uint32(width), Height: uint32(height), Depth: 1}
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: extent, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingOptimal, Usage: targetUsage | vk.ImageUsageSampledBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
-	if err = checked("vkCreateImage", r.dd.CreateImage(r.device, &ii, nil, &r.own.image)); err != nil {
+	if err = checked("vkCreateImage", r.gpu.dd.CreateImage(r.gpu.device, &ii, nil, &r.own.image)); err != nil {
 		return
 	}
 	var req vk.MemoryRequirements
-	r.dd.GetImageMemoryRequirements(r.device, r.own.image, &req)
+	r.gpu.dd.GetImageMemoryRequirements(r.gpu.device, r.own.image, &req)
 	var kind uint32
 	kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyDeviceLocalBit)
 	if err != nil {
 		return
 	}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err = checked("vkAllocateMemory(image)", r.dd.AllocateMemory(r.device, &alloc, nil, &r.own.memory)); err != nil {
+	if err = checked("vkAllocateMemory(image)", r.gpu.dd.AllocateMemory(r.gpu.device, &alloc, nil, &r.own.memory)); err != nil {
 		return
 	}
-	if err = checked("vkBindImageMemory", r.dd.BindImageMemory(r.device, r.own.image, r.own.memory, 0)); err != nil {
+	if err = checked("vkBindImageMemory", r.gpu.dd.BindImageMemory(r.gpu.device, r.own.image, r.own.memory, 0)); err != nil {
 		return
 	}
-	pi := vk.CommandPoolCreateInfo{SType: vk.StructureTypeCommandPoolCreateInfo, Flags: vk.CommandPoolCreateResetCommandBufferBit, QueueFamilyIndex: family}
-	if err = checked("vkCreateCommandPool", r.dd.CreateCommandPool(r.device, &pi, nil, &r.pool)); err != nil {
+	pi := vk.CommandPoolCreateInfo{SType: vk.StructureTypeCommandPoolCreateInfo, Flags: vk.CommandPoolCreateResetCommandBufferBit, QueueFamilyIndex: g.family}
+	if err = checked("vkCreateCommandPool", r.gpu.dd.CreateCommandPool(r.gpu.device, &pi, nil, &r.pool)); err != nil {
 		return
 	}
 	if err = r.createSlots(); err != nil {
@@ -383,13 +197,12 @@ func New(width, height int) (r *Renderer, err error) {
 	if err = r.createComposer(); err != nil {
 		return
 	}
-	runtime.KeepAlive(priority)
-	return
+	return r, nil
 }
 
 func (r *Renderer) findMemoryType(bits uint32, props vk.MemoryPropertyFlags) (uint32, error) {
-	for i := uint32(0); i < r.memory.MemoryTypeCount; i++ {
-		if bits&(uint32(1)<<i) != 0 && r.memory.MemoryTypes[i].PropertyFlags&props == props {
+	for i := uint32(0); i < r.gpu.memory.MemoryTypeCount; i++ {
+		if bits&(uint32(1)<<i) != 0 && r.gpu.memory.MemoryTypes[i].PropertyFlags&props == props {
 			return i, nil
 		}
 	}
@@ -421,11 +234,11 @@ func (r *Renderer) SetLogger(l zerowrap.Logger) { r.log = l }
 func (r *Renderer) SetTraceDamage(on bool) { r.traceDamage = on }
 
 // DeviceInfo returns device identity and creation timing captured by New.
-func (r *Renderer) DeviceInfo() DeviceInfo { return r.deviceInfo }
+func (r *Renderer) DeviceInfo() DeviceInfo { return r.gpu.deviceInfo }
 
 // QueuePriority is the global priority the queue got: realtime, high or
 // default.
-func (r *Renderer) QueuePriority() string { return r.queuePriority }
+func (r *Renderer) QueuePriority() string { return r.gpu.queuePriority }
 
 // Pixels reads the last frame back through a capture slot, waiting for
 // the GPU on the calling goroutine (slot fence, no sync file needed):
@@ -483,13 +296,13 @@ const (
 )
 
 func (r *Renderer) Close() {
-	if r == nil {
+	if r == nil || r.q == nil {
 		return
 	}
-	if r.dd != nil {
-		d := r.dd
-		if r.device != 0 {
-			_ = checked("vkDeviceWaitIdle", d.DeviceWaitIdle(r.device))
+	if r.gpu.dd != nil {
+		d := r.gpu.dd
+		if r.gpu.device != 0 {
+			_ = checked("vkDeviceWaitIdle", d.DeviceWaitIdle(r.gpu.device))
 			r.idle()
 		}
 		r.dropTargets()
@@ -505,26 +318,18 @@ func (r *Renderer) Close() {
 		r.destroySlots()
 		r.destroyCaptures()
 		if r.pool != 0 {
-			d.DestroyCommandPool(r.device, r.pool, nil)
+			d.DestroyCommandPool(r.gpu.device, r.pool, nil)
 			r.pool = 0
 		}
 		r.destroyComposer()
 		r.freeTarget(&r.hdrOwn)
 		r.freeTarget(&r.own)
-		d.DestroyDevice(r.device, nil)
-		r.device = 0
-	} else if r.device != 0 && r.id != nil {
-		if vk.VkDestroyDevice != nil {
-			vk.VkDestroyDevice(r.device, nil)
-		}
-		r.device = 0
 	}
-	if r.instance != 0 {
-		if r.id != nil {
-			r.id.DestroyInstance(r.instance, nil)
-		} else if vk.VkDestroyInstance != nil {
-			vk.VkDestroyInstance(r.instance, nil)
-		}
-		r.instance = 0
+	g := r.gpu
+	g.releaseQueue(r.q)
+	r.q = nil
+	if r.legacyOwner {
+		g.Close()
+		g.inst.Close()
 	}
 }

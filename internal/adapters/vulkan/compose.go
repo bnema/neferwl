@@ -99,7 +99,7 @@ type composer struct {
 }
 
 func (r *Renderer) createComposer() error {
-	d, c := r.dd, &r.compose
+	d, c := r.gpu.dd, &r.compose
 	bindings := []vk.DescriptorSetLayoutBinding{
 		{Binding: 0, DescriptorType: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: c.resources, StageFlags: vk.ShaderStageFragmentBit},
 		{Binding: 1, DescriptorType: vk.DescriptorTypeStorageBuffer, DescriptorCount: c.resources, StageFlags: vk.ShaderStageFragmentBit},
@@ -107,15 +107,15 @@ func (r *Renderer) createComposer() error {
 		{Binding: 3, DescriptorType: vk.DescriptorTypeStorageBuffer, DescriptorCount: 1, StageFlags: vk.ShaderStageVertexBit},
 	}
 	sli := vk.DescriptorSetLayoutCreateInfo{SType: vk.StructureTypeDescriptorSetLayoutCreateInfo, BindingCount: uint32(len(bindings)), Bindings: &bindings[0]}
-	if err := checked("vkCreateDescriptorSetLayout", d.CreateDescriptorSetLayout(r.device, &sli, nil, &c.setLayout)); err != nil {
+	if err := checked("vkCreateDescriptorSetLayout", d.CreateDescriptorSetLayout(r.gpu.device, &sli, nil, &c.setLayout)); err != nil {
 		return err
 	}
 	pli := vk.PipelineLayoutCreateInfo{SType: vk.StructureTypePipelineLayoutCreateInfo, SetLayoutCount: 1, SetLayouts: &c.setLayout}
-	if err := checked("vkCreatePipelineLayout", d.CreatePipelineLayout(r.device, &pli, nil, &c.layout)); err != nil {
+	if err := checked("vkCreatePipelineLayout", d.CreatePipelineLayout(r.gpu.device, &pli, nil, &c.layout)); err != nil {
 		return err
 	}
 	si := vk.SamplerCreateInfo{SType: vk.StructureTypeSamplerCreateInfo, MagFilter: vk.FilterLinear, MinFilter: vk.FilterLinear, AddressModeU: vk.SamplerAddressModeClampToEdge, AddressModeV: vk.SamplerAddressModeClampToEdge, AddressModeW: vk.SamplerAddressModeClampToEdge}
-	if err := checked("vkCreateSampler", d.CreateSampler(r.device, &si, nil, &c.sampler)); err != nil {
+	if err := checked("vkCreateSampler", d.CreateSampler(r.gpu.device, &si, nil, &c.sampler)); err != nil {
 		return err
 	}
 	if err := r.createPipeline(); err != nil {
@@ -143,17 +143,17 @@ func (r *Renderer) createComposePipeline(fragment []byte, format vk.Format, pipe
 }
 
 func (r *Renderer) createGraphicsPipeline(vertex, fragment []byte, format vk.Format, layout vk.PipelineLayout, blend bool, specialization *vk.SpecializationInfo, pipeline *vk.Pipeline) error {
-	d := r.dd
+	d := r.gpu.dd
 	vert, err := r.shaderModule(vertex)
 	if err != nil {
 		return err
 	}
-	defer d.DestroyShaderModule(r.device, vert, nil)
+	defer d.DestroyShaderModule(r.gpu.device, vert, nil)
 	frag, err := r.shaderModule(fragment)
 	if err != nil {
 		return err
 	}
-	defer d.DestroyShaderModule(r.device, frag, nil)
+	defer d.DestroyShaderModule(r.gpu.device, frag, nil)
 	main := []byte("main\x00")
 	stages := []vk.PipelineShaderStageCreateInfo{
 		{SType: vk.StructureTypePipelineShaderStageCreateInfo, Stage: vk.ShaderStageVertexBit, Module: vert, Name: &main[0]},
@@ -184,28 +184,28 @@ func (r *Renderer) createGraphicsPipeline(vertex, fragment []byte, format vk.For
 		ViewportState: &viewportState, RasterizationState: &raster, MultisampleState: &multisample,
 		ColorBlendState: &blendState, Layout: layout, BasePipelineIndex: -1,
 	}
-	return checked("vkCreateGraphicsPipelines", d.CreateGraphicsPipelines(r.device, 0, 1, &gpi, nil, pipeline))
+	return checked("vkCreateGraphicsPipelines", d.CreateGraphicsPipelines(r.gpu.device, 0, 1, &gpi, nil, pipeline))
 }
 
 // createDummies makes the placeholder image (1×1, shader-read layout) and
 // buffer used by resource-table entries a draw does not sample.
 func (r *Renderer) createDummies() error {
-	d, c := r.dd, &r.compose
+	d, c := r.gpu.dd, &r.compose
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: vk.Extent3D{Width: 1, Height: 1, Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingOptimal, Usage: vk.ImageUsageSampledBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
-	if err := checked("vkCreateImage(dummy)", d.CreateImage(r.device, &ii, nil, &c.dummyImage)); err != nil {
+	if err := checked("vkCreateImage(dummy)", d.CreateImage(r.gpu.device, &ii, nil, &c.dummyImage)); err != nil {
 		return err
 	}
 	var req vk.MemoryRequirements
-	d.GetImageMemoryRequirements(r.device, c.dummyImage, &req)
+	d.GetImageMemoryRequirements(r.gpu.device, c.dummyImage, &req)
 	kind, err := r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyDeviceLocalBit)
 	if err != nil {
 		return err
 	}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err := checked("vkAllocateMemory(dummy)", d.AllocateMemory(r.device, &alloc, nil, &c.dummyMemory)); err != nil {
+	if err := checked("vkAllocateMemory(dummy)", d.AllocateMemory(r.gpu.device, &alloc, nil, &c.dummyMemory)); err != nil {
 		return err
 	}
-	if err := checked("vkBindImageMemory(dummy)", d.BindImageMemory(r.device, c.dummyImage, c.dummyMemory, 0)); err != nil {
+	if err := checked("vkBindImageMemory(dummy)", d.BindImageMemory(r.gpu.device, c.dummyImage, c.dummyMemory, 0)); err != nil {
 		return err
 	}
 	if c.dummyView, err = r.imageView(c.dummyImage, vk.FormatB8g8r8a8Unorm); err != nil {
@@ -222,31 +222,31 @@ func (r *Renderer) createDummies() error {
 }
 
 func (r *Renderer) destroyComposer() {
-	d, c := r.dd, &r.compose
+	c := &r.compose
 	r.freeGPUBuffer(&c.dummyBuffer)
 	if c.dummyView != 0 {
-		d.DestroyImageView(r.device, c.dummyView, nil)
+		r.gpu.dd.DestroyImageView(r.gpu.device, c.dummyView, nil)
 	}
 	if c.dummyImage != 0 {
-		d.DestroyImage(r.device, c.dummyImage, nil)
+		r.gpu.dd.DestroyImage(r.gpu.device, c.dummyImage, nil)
 	}
 	if c.dummyMemory != 0 {
-		d.FreeMemory(r.device, c.dummyMemory, nil)
+		r.gpu.dd.FreeMemory(r.gpu.device, c.dummyMemory, nil)
 	}
 	if c.sampler != 0 {
-		d.DestroySampler(r.device, c.sampler, nil)
+		r.gpu.dd.DestroySampler(r.gpu.device, c.sampler, nil)
 	}
 	if c.pipeline != 0 {
-		d.DestroyPipeline(r.device, c.pipeline, nil)
+		r.gpu.dd.DestroyPipeline(r.gpu.device, c.pipeline, nil)
 	}
 	if c.hdrPipeline != 0 {
-		d.DestroyPipeline(r.device, c.hdrPipeline, nil)
+		r.gpu.dd.DestroyPipeline(r.gpu.device, c.hdrPipeline, nil)
 	}
 	if c.layout != 0 {
-		d.DestroyPipelineLayout(r.device, c.layout, nil)
+		r.gpu.dd.DestroyPipelineLayout(r.gpu.device, c.layout, nil)
 	}
 	if c.setLayout != 0 {
-		d.DestroyDescriptorSetLayout(r.device, c.setLayout, nil)
+		r.gpu.dd.DestroyDescriptorSetLayout(r.gpu.device, c.setLayout, nil)
 	}
 	*c = composer{}
 }
@@ -259,7 +259,7 @@ func (r *Renderer) shaderModule(code []byte) (vk.ShaderModule, error) {
 	}
 	info := vk.ShaderModuleCreateInfo{SType: vk.StructureTypeShaderModuleCreateInfo, CodeSize: uintptr(len(words) * 4), Code: &words[0]}
 	var m vk.ShaderModule
-	return m, checked("vkCreateShaderModule", r.dd.CreateShaderModule(r.device, &info, nil, &m))
+	return m, checked("vkCreateShaderModule", r.gpu.dd.CreateShaderModule(r.gpu.device, &info, nil, &m))
 }
 
 var colorRange = vk.ImageSubresourceRange{AspectMask: vk.ImageAspectColorBit, LevelCount: 1, LayerCount: 1}
@@ -268,7 +268,7 @@ var colorRange = vk.ImageSubresourceRange{AspectMask: vk.ImageAspectColorBit, Le
 func (r *Renderer) imageView(img vk.Image, format vk.Format) (vk.ImageView, error) {
 	info := vk.ImageViewCreateInfo{SType: vk.StructureTypeImageViewCreateInfo, Image: img, ViewType: vk.ImageViewType2d, Format: format, SubresourceRange: colorRange}
 	var v vk.ImageView
-	return v, checked("vkCreateImageView", r.dd.CreateImageView(r.device, &info, nil, &v))
+	return v, checked("vkCreateImageView", r.gpu.dd.CreateImageView(r.gpu.device, &info, nil, &v))
 }
 
 // createView makes the color attachment view of a target image.
@@ -390,7 +390,7 @@ func (r *Renderer) contentDraw(rect, full image.Rectangle, w, h int, source [4]f
 // recordDraws draws batches in one rendering pass that clears view to bg, or
 // keeps its contents (keep).
 func (r *Renderer) recordDraws(cmd vk.CommandBuffer, view vk.ImageView, bg [3]uint8, batches []*composeBatch, keep bool) {
-	d, c := r.dd, &r.compose
+	d, c := r.gpu.dd, &r.compose
 	clear := vk.ClearValue{math.Float32bits(float32(bg[0]) / 255), math.Float32bits(float32(bg[1]) / 255), math.Float32bits(float32(bg[2]) / 255), math.Float32bits(1)}
 	if r.hdrNits > 0 {
 		for i := 0; i < 3; i++ {

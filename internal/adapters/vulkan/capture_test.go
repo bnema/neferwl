@@ -25,7 +25,7 @@ import (
 // export. Software Vulkan devices can still exercise Pixels and rendering.
 func requireCaptureSync(t *testing.T, r *Renderer) {
 	t.Helper()
-	if !r.syncFD || !r.dd.HasGetSemaphoreFdKHR() {
+	if !r.gpu.syncFD || !r.gpu.dd.HasGetSemaphoreFdKHR() {
 		t.Skip("Vulkan sync-file export unavailable")
 	}
 }
@@ -172,10 +172,10 @@ func TestCaptureReturnedSlotWaitsForFence(t *testing.T) {
 	r.EndCapture(b)
 	for _, s := range r.captures {
 		// The copies finished (waited above); reset only signalled fences.
-		if err := checked("vkWaitForFences", r.dd.WaitForFences(r.device, 1, &s.fence, 1, math.MaxUint64)); err != nil {
+		if err := checked("vkWaitForFences", r.gpu.dd.WaitForFences(r.gpu.device, 1, &s.fence, 1, math.MaxUint64)); err != nil {
 			t.Fatal(err)
 		}
-		if err := checked("vkResetFences", r.dd.ResetFences(r.device, 1, &s.fence)); err != nil {
+		if err := checked("vkResetFences", r.gpu.dd.ResetFences(r.gpu.device, 1, &s.fence)); err != nil {
 			t.Fatal(err)
 		}
 		s.pending = true
@@ -185,10 +185,10 @@ func TestCaptureReturnedSlotWaitsForFence(t *testing.T) {
 	}
 	// Signal them again with an empty submit, then the poll frees them.
 	for _, s := range r.captures {
-		if err := checked("vkQueueSubmit", r.dd.QueueSubmit(r.queue, 0, nil, s.fence)); err != nil {
+		if err := checked("vkQueueSubmit", r.gpu.dd.QueueSubmit(r.q.q, 0, nil, s.fence)); err != nil {
 			t.Fatal(err)
 		}
-		if err := checked("vkWaitForFences", r.dd.WaitForFences(r.device, 1, &s.fence, 1, math.MaxUint64)); err != nil {
+		if err := checked("vkWaitForFences", r.gpu.dd.WaitForFences(r.gpu.device, 1, &s.fence, 1, math.MaxUint64)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -210,7 +210,7 @@ func TestCaptureWithoutSyncFileExport(t *testing.T) {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer r.Close()
-	r.syncFD = false
+	r.gpu.syncFD = false
 	if err := render(r, ports.Scene{Background: "#123456"}, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -569,7 +569,7 @@ func TestCaptureExportFailureKeepsSlotPending(t *testing.T) {
 	r.EndCapture(second)
 	// Once the fence polls signalled the semaphore is replaced (the old
 	// one destroyed only now) and the slot works again.
-	if err := checked("vkWaitForFences", r.dd.WaitForFences(r.device, 1, &s.fence, 1, math.MaxUint64)); err != nil {
+	if err := checked("vkWaitForFences", r.gpu.dd.WaitForFences(r.gpu.device, 1, &s.fence, 1, math.MaxUint64)); err != nil {
 		t.Fatal(err)
 	}
 	m.EXPECT().fenceStatus(s.fence).RunAndReturn(dev.fenceStatus).Once()
@@ -757,7 +757,7 @@ func TestCaptureSurvivesHDRToggle(t *testing.T) {
 	}
 	// Back to HDR: the capture pass and slots are reused.
 	r.SetHDR(203)
-	if _, err := r.ExportTargets(1, r.hdrMods, false); err != nil {
+	if _, err := r.ExportTargets(1, r.gpu.hdrMods, false); err != nil {
 		t.Skipf("no HDR target: %v", err)
 	}
 	scene.Seq++

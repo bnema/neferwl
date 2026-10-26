@@ -77,7 +77,7 @@ func (g *GPU) initDevice(physical vk.PhysicalDevice, family, n uint32, start tim
 	// dmabuf import needs every extension; without them clients use wl_shm.
 	var extNames [][]byte
 	var extPtrs []*byte
-	have := (&Renderer{id: g.inst.id}).extensions(physical)
+	have := extensions(g.inst.id, physical)
 	dmabufSupported := true
 	for _, e := range deviceExtensions {
 		if !have[e] {
@@ -158,12 +158,11 @@ func (g *GPU) initDevice(physical vk.PhysicalDevice, family, n uint32, start tim
 	runtime.KeepAlive(extPtrs)
 	if dmabufSupported {
 		// Temporary probe facade: the per-output migration follows in P1.2.
-		probe := &Renderer{id: g.inst.id, dd: g.dd, device: g.device, family: g.family}
+		probe := &Renderer{gpu: g}
 		g.dmabuf = probe.probeDMABuf(physical)
 		if g.dmabuf.Device != 0 {
 			probe.probeRenderModifiers(physical)
 		}
-		g.renderMods, g.hdrMods, g.modPlanes = probe.renderMods, probe.hdrMods, probe.modPlanes
 		g.syncFD = g.dd.HasGetSemaphoreFdKHR()
 	}
 	g.queues = make([]*queue, n)
@@ -216,14 +215,12 @@ func (g *GPU) Close() {
 }
 
 type queue struct {
-	q vk.Queue
-	//lint:ignore U1000 Used by submit when renderer queue migration lands in P1.2.
+	q     vk.Queue
 	mu    sync.Mutex
 	users int
 	dd    *vk.DeviceDispatch
 }
 
-//lint:ignore U1000 Renderer submission sites move here in P1.2.
 func (q *queue) submit(count uint32, submits *vk.SubmitInfo, fence vk.Fence) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -258,14 +255,12 @@ func (p queuePool) release(q *queue) {
 	}
 }
 
-//lint:ignore U1000 Renderer construction acquires its queue here in P1.2.
 func (g *GPU) acquireQueue() *queue {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return queuePool(g.queues).acquire()
 }
 
-//lint:ignore U1000 Renderer teardown releases its queue here in P1.2.
 func (g *GPU) releaseQueue(q *queue) {
 	g.mu.Lock()
 	defer g.mu.Unlock()

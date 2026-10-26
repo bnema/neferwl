@@ -108,7 +108,7 @@ func TestRendererReturnsDoneFence(t *testing.T) {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer r.Close()
-	if !r.syncFD {
+	if !r.gpu.syncFD {
 		t.Skip("device cannot export sync files")
 	}
 	done, err := r.Render(ports.Scene{Background: "#102030"}, nil)
@@ -249,7 +249,7 @@ func TestRendererSHMDoubleBufferWaitsForReaders(t *testing.T) {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer r.Close()
-	if !r.syncFD {
+	if !r.gpu.syncFD {
 		t.Skip("frames are finished on return without sync files")
 	}
 	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}}}}
@@ -294,7 +294,7 @@ func TestRendererImportsAcquireFence(t *testing.T) {
 	if sem == 0 {
 		t.Fatal("sync file not imported")
 	}
-	r.dd.DestroySemaphore(r.device, sem, nil)
+	r.gpu.dd.DestroySemaphore(r.gpu.device, sem, nil)
 	if _, err := done.Stat(); err != nil {
 		t.Fatal("caller's fence closed")
 	}
