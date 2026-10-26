@@ -19,6 +19,7 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 )
 
@@ -301,6 +302,30 @@ func TestFlipReportsTimestampAndShownFrame(t *testing.T) {
 	if f == nil || f.When != 5*time.Second || f.Seq != 11 || f.Refresh != time.Second/60 || f.Shows[1] != 4 || !f.HardwareClock {
 		t.Fatalf("flip %+v", f)
 	}
+}
+
+// A flip reports the refusal reasons of the frame it completes, not those
+// of a later decision, and "" when the path was used.
+func TestFlipReportsRefusalReasons(t *testing.T) {
+	o, _, commits := testOutput(t)
+	o.vrrOn = false
+	o.reason, o.overlayReason = "flip_refused", "no_plane"
+	if err := o.commitFrame(70, nil, false, false, pendingFrame{}); err != nil {
+		t.Fatal(err)
+	}
+	o.reason, o.overlayReason = "", ""
+	o.completed(flipEvent{user: (*commits)[0].user, when: time.Second, seq: 1}, nil)
+	if err := o.commitFrame(71, nil, false, false, pendingFrame{}); err != nil {
+		t.Fatal(err)
+	}
+	o.reason, o.overlayReason = "nomem", "nomem"
+	o.completed(flipEvent{user: (*commits)[1].user, when: 2 * time.Second, seq: 2}, nil)
+	u := o.reports.Unsent()
+	require.Len(t, u, 2)
+	require.Equal(t, "flip_refused", u[0].Flip.ScanoutReason)
+	require.Equal(t, "no_plane", u[0].Flip.OverlayReason)
+	require.Empty(t, u[1].Flip.ScanoutReason)
+	require.Empty(t, u[1].Flip.OverlayReason)
 }
 
 // Unchanged reports share an immutable snapshot; a later content update

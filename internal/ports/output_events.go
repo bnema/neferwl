@@ -125,19 +125,25 @@ type OutputHDR struct {
 // (hardware clock on DRM), Seq the output's vblank counter, Refresh the
 // refresh period (0 while variable refresh is on). ZeroCopy is the window
 // whose buffer was shown without composition (direct scanout or overlay
-// plane; 0: none), Async set for a tearing flip.
+// plane; 0: none), Async set for a tearing flip. ScanoutReason and
+// OverlayReason say why the output refused direct scanout and the overlay
+// plane for this frame ("" when used, or on outputs that do not report it).
 // Shows is the content Seq per window the flipped frame shows. Merged
 // counts earlier flips folded into this one when the reader fell behind:
 // their presentation feedback is discarded.
 type FlipInfo struct {
-	When          time.Duration
-	Seq           uint64
-	Refresh       time.Duration
-	ZeroCopy      WindowID
-	Async         bool
-	HardwareClock bool
-	Merged        int
-	Shows         map[WindowID]uint64
+	When     time.Duration
+	Seq      uint64
+	Refresh  time.Duration
+	ZeroCopy WindowID
+	Async    bool
+	// ScanoutReason and OverlayReason: why direct scanout and the overlay
+	// plane were refused for this frame ("" when used, or on outputs that do
+	// not report it).
+	ScanoutReason, OverlayReason string
+	HardwareClock                bool
+	Merged                       int
+	Shows                        map[WindowID]uint64
 }
 
 // OutputFrame carries output → core a completed flip of an animating scene

@@ -60,9 +60,11 @@ func TestQueueKeepsEveryFlip(t *testing.T) {
 // carried, without mutating a shared Shows snapshot.
 func TestMergeCarriesShowsWithoutMutatingSharedSnapshot(t *testing.T) {
 	shared := map[ports.WindowID]uint64{2: 5}
-	old := &ports.FlipInfo{Seq: 1, Merged: 2, Shows: map[ports.WindowID]uint64{1: 4}}
-	next := &ports.FlipInfo{Seq: 2, Shows: shared}
+	old := &ports.FlipInfo{Seq: 1, Merged: 2, Shows: map[ports.WindowID]uint64{1: 4}, ScanoutReason: "nomem", OverlayReason: "no_plane"}
+	next := &ports.FlipInfo{Seq: 2, Shows: shared, ScanoutReason: "flip_refused"}
 	Merge(old, next)
+	require.Equal(t, "flip_refused", next.ScanoutReason, "newest reasons kept")
+	require.Empty(t, next.OverlayReason)
 	require.Equal(t, 3, next.Merged)
 	require.Equal(t, map[ports.WindowID]uint64{1: 4, 2: 5}, next.Shows)
 	require.Equal(t, map[ports.WindowID]uint64{2: 5}, shared, "shared snapshot untouched")

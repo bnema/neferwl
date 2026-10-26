@@ -47,6 +47,7 @@ func (q *Queue) Push(r ports.OutputPresented) {
 // Wayland's presentation sink uses it when its ring overflows.
 func Merge(old, next *ports.FlipInfo) {
 	next.Merged += 1 + old.Merged
+	// The reasons, like ZeroCopy and Async, stay the newest flip's.
 	// A snapshot can be shared with previously sent flips. Clone only when
 	// a merge actually needs to add an absent window.
 	cloned := false
