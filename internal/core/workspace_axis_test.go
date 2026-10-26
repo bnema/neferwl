@@ -53,27 +53,24 @@ func TestCascadeFocusColumnStepsWorkspaceAtBandEdge(t *testing.T) {
 	}
 }
 
-// Occupied workspaces win over monitors; monitors still precede trailing empties.
-func TestCascadeFocusColumnGoesToWorkspaceBeforeMonitor(t *testing.T) {
-	c, m := axisCore(t, true, OverflowCascade, 3)
-	m.Current().FocusID(23)
-	c.applyAction(ActionFocusColumnRight)
-	wantActive(t, m, 2)
-	if c.cur().mon != m {
-		t.Fatal("left monitor before workspace")
+// Neighbor monitors win over occupied workspaces at either horizontal edge.
+func TestCascadeFocusColumnGoesToMonitorBeforeWorkspace(t *testing.T) {
+	for _, tc := range []struct {
+		id      WindowID
+		action  Action
+		monitor string
+	}{
+		{23, ActionFocusColumnRight, "R"},
+		{24, ActionFocusColumnLeft, "L"},
+	} {
+		t.Run(tc.monitor, func(t *testing.T) {
+			c, m := axisCore(t, true, OverflowCascade, 3)
+			m.Current().FocusID(tc.id)
+			c.applyAction(tc.action)
+			wantFocus(t, c, tc.monitor, 0)
+			wantActive(t, m, 1)
+		})
 	}
-	m.Focus(1)
-	m.Current().FocusID(24)
-	c.applyAction(ActionFocusColumnLeft)
-	wantActive(t, m, 0)
-	if c.cur().mon != m {
-		t.Fatal("left monitor before workspace")
-	}
-	m.Focus(2)
-	m.Current().FocusID(35)
-	c.applyAction(ActionFocusColumnRight)
-	wantFocus(t, c, "R", 0)
-	wantActive(t, m, 2)
 }
 
 // With no monitor on that side, the trailing empty workspace is the last
@@ -92,8 +89,8 @@ func TestCascadeFocusColumnReachesTrailingWorkspaceWithoutMonitor(t *testing.T) 
 }
 
 // One monitor on the left only. Right steps to the next workspace; left
-// from its empty band returns to the occupied workspace before that monitor.
-func TestCascadeStepRightThenLeftReturnsToWorkspace(t *testing.T) {
+// from its empty band focuses that monitor without changing the workspace.
+func TestCascadeStepRightThenLeftFocusesMonitor(t *testing.T) {
 	c := layoutCore(1, tile{"L", 0, 0, 900, 600}, tile{"M", 900, 0, 900, 600})
 	m := c.cur().mon
 	m.SetOverflow(OverflowCascade)
@@ -103,8 +100,8 @@ func TestCascadeStepRightThenLeftReturnsToWorkspace(t *testing.T) {
 	c.applyAction(ActionFocusColumnRight)
 	wantActive(t, m, 1)
 	c.applyAction(ActionFocusColumnLeft)
-	wantFocus(t, c, "M", 5)
-	wantActive(t, m, 0)
+	wantFocus(t, c, "L", 0)
+	wantActive(t, m, 1)
 }
 
 // AC3: up/down cross bands and stop at the last, with no workspace change.
@@ -188,17 +185,15 @@ func TestCascadeFullscreenBandEdgeStepsWorkspace(t *testing.T) {
 }
 
 // A covering fullscreen tile follows the same order: the monitor on that
-// side after the occupied workspace.
-func TestCascadeFullscreenGoesToWorkspaceBeforeMonitor(t *testing.T) {
+// side before the occupied workspace.
+func TestCascadeFullscreenGoesToMonitorBeforeWorkspace(t *testing.T) {
 	c, m := axisCore(t, true, OverflowCascade, 3)
 	w := m.Current()
 	w.FocusID(23)
 	w.ToggleFullscreen()
 	c.applyAction(ActionFocusColumnRight)
-	wantActive(t, m, 2)
-	if c.cur().mon != m {
-		t.Fatal("left monitor before workspace")
-	}
+	wantActive(t, m, 1)
+	wantFocus(t, c, "R", 0)
 	if w.fullscreen != 23 {
 		t.Fatalf("fullscreen %d, want 23", w.fullscreen)
 	}
@@ -246,15 +241,15 @@ func TestCascadeLoneFloatAndEmptyWorkspaceStepWorkspace(t *testing.T) {
 	}
 }
 
-// Column edges visit occupied workspaces before crossing outputs, in both directions.
-func TestColumnEdgeFocusWorkspaceBeforeScreen(t *testing.T) {
+// Column edges cross outputs before visiting occupied workspaces in either direction.
+func TestColumnEdgeFocusScreenBeforeWorkspace(t *testing.T) {
 	for _, tc := range []struct {
-		name                          string
-		screen, start, next, neighbor int
-		action                        Action
+		name                    string
+		screen, start, neighbor int
+		action                  Action
 	}{
-		{"left", 1, 1, 0, 0, ActionFocusColumnLeft},
-		{"right", 0, 0, 1, 1, ActionFocusColumnRight},
+		{"left", 1, 1, 0, ActionFocusColumnLeft},
+		{"right", 0, 0, 1, ActionFocusColumnRight},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := layoutCore(tc.screen, tile{"laptop", 0, 0, 1920, 1080}, tile{"4K", 1920, 0, 3840, 2160})
@@ -266,17 +261,27 @@ func TestColumnEdgeFocusWorkspaceBeforeScreen(t *testing.T) {
 			}
 			m.Focus(tc.start)
 			c.applyAction(tc.action)
-			if c.focusScreen != tc.screen {
-				t.Fatalf("screen %d, want %d before crossing workspace", c.focusScreen, tc.screen)
-			}
-			wantActive(t, m, tc.next)
-			c.applyAction(tc.action)
 			if c.focusScreen != tc.neighbor {
 				t.Fatalf("screen %d, want neighbor %d", c.focusScreen, tc.neighbor)
 			}
-			wantActive(t, m, tc.next)
+			wantActive(t, m, tc.start)
 		})
 	}
+}
+
+// R's occupied workspace 1 must not intercept left focus from workspace 2.
+func TestCascadeFocusLeftFromRightWorkspaceTwoFocusesLeftMonitor(t *testing.T) {
+	c := layoutCore(1, tile{"L", 0, 0, 900, 600}, tile{"R", 900, 0, 900, 600})
+	c.screens[0].mon.AddWindow(1)
+	m := c.cur().mon
+	m.SetOverflow(OverflowCascade)
+	m.SetMaxColumns(3)
+	m.AddWindow(2)
+	m.Focus(1)
+	m.AddWindow(3)
+	c.applyAction(ActionFocusColumnLeft)
+	wantFocus(t, c, "L", 1)
+	wantActive(t, m, 1)
 }
 
 func TestVerticalEdgeFocusWorkspaceBeforeScreen(t *testing.T) {

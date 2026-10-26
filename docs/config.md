@@ -315,7 +315,7 @@ With `keyboard.cmd = alt` or `ctrl`, the defaults that would combine `cmd` with 
 
 The default layout. Columns sit side by side in bands of up to `max-columns`, stacked one below the other. Each band fills the screen height and keeps its columns until you move them.
 
-- Left/right focus moves within a band, then to an occupied neighbor workspace, then to the neighbor monitor, then to the trailing empty workspace. From a fullscreen float it crosses that edge without revealing the tiles underneath; only up/down reaches another band.
+- Left/right focus moves within a band, then to the neighbor monitor, then to an occupied neighbor workspace, then to the trailing empty workspace. From a fullscreen float it crosses that edge without revealing the tiles underneath; only up/down reaches another band.
 - `move-column-left/right` stays in the band; at its edge the column goes to the neighbor monitor, if any.
 - Up/down moves through the windows of a column, then to the band above or below.
 - `move-window-up/down` past the column's top or bottom sends the whole column to the band above or below. It joins that band when it has room, else it gets a new band between the two.

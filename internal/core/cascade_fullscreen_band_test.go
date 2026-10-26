@@ -324,7 +324,7 @@ func TestCascadeFullscreenUpReachesPreviousBand(t *testing.T) {
 	wantFocus(t, c, "M", 1)
 }
 
-func TestCascadeFullscreenFloatEdgePrefersWorkspace(t *testing.T) {
+func TestCascadeFullscreenFloatEdgePrefersMonitor(t *testing.T) {
 	c, _ := cascadeMovesCore(t, 1, 3, true)
 	m := c.cur().mon
 	m.Focus(1)
@@ -334,7 +334,8 @@ func TestCascadeFullscreenFloatEdgePrefersWorkspace(t *testing.T) {
 	w.AddDialog(9, 2, 800, 600)
 	w.SetFullscreen(9, true)
 	c.applyAction(ActionFocusColumnLeft)
-	wantFocus(t, c, "M", 1)
+	wantFocus(t, c, "L", 0)
+	wantActive(t, m, 1)
 	if w.fullscreen != 9 {
 		t.Fatalf("fullscreen %d", w.fullscreen)
 	}

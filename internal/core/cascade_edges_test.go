@@ -43,8 +43,8 @@ func TestCascadeMoveColumnInsideBandSwaps(t *testing.T) {
 	wantColumns(t, w, 2, 1, 3, 4, 5)
 }
 
-// An occupied workspace wins over the neighbor monitor at the band edge.
-func TestCascadeFocusColumnEdgePrefersWorkspaceOverMonitor(t *testing.T) {
+// The neighbor monitor wins over an occupied workspace at the band edge.
+func TestCascadeFocusColumnEdgePrefersMonitorOverWorkspace(t *testing.T) {
 	c := layoutCore(0, tile{"L", 0, 0, 900, 600}, tile{"R", 900, 0, 900, 600})
 	m := c.cur().mon
 	m.SetOverflow(OverflowCascade)
@@ -57,8 +57,8 @@ func TestCascadeFocusColumnEdgePrefersWorkspaceOverMonitor(t *testing.T) {
 	m.normalize()
 	m.Current().FocusID(2)
 	c.applyAction(ActionFocusColumnRight)
-	wantFocus(t, c, "L", 3)
-	wantActive(t, m, 1)
+	wantFocus(t, c, "R", 0)
+	wantActive(t, m, 0)
 }
 
 // With no monitor on that side, the occupied neighbor workspace is next.
