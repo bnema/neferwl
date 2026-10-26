@@ -8,6 +8,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/ports"
 	vk "github.com/bnema/purego-vulkan/vulkan"
+	"golang.org/x/sys/unix"
 )
 
 // trimSettled waits for the submitted GPU fences, then lets Trim collect them.
@@ -165,7 +166,7 @@ func TestTrimReleasesUndrawnDMABuf(t *testing.T) {
 
 // poll frees what a finished frame held without waiting for it.
 //
-//testpolicy:realtime real GPU frame completion polled through Trim, bounded by one timeout
+//testpolicy:realtime GPU frame completion awaited on its sync file with poll(2)
 func TestTrimPollsFinishedFrames(t *testing.T) {
 	r, err := New(32, 32)
 	if err != nil {
@@ -175,26 +176,37 @@ func TestTrimPollsFinishedFrames(t *testing.T) {
 	if !r.syncFD {
 		t.Skip("frames are finished on return without sync files")
 	}
-	if err := render(r, ports.Scene{Background: "#000000"}, nil); err != nil {
+	done, err := r.Render(ports.Scene{Background: "#000000"}, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
+	if done == nil {
+		t.Skip("frame finished on return")
+	}
+	defer done.Close()
 	freed := false
 	r.retire(r.frame, func() { freed = true })
-	timeout, tick := time.After(5*time.Second), time.NewTicker(time.Millisecond)
-	defer tick.Stop()
-	now := time.Now()
-	for !freed {
-		if err := r.Trim(now); err != nil {
+	// The frame's sync file becomes readable when the GPU finished it: wait
+	// for that once, then one Trim polls the fences.
+	fds := []unix.PollFd{{Fd: int32(done.Fd()), Events: unix.POLLIN}}
+	for {
+		n, err := unix.Poll(fds, 5000)
+		if err == unix.EINTR {
+			continue
+		}
+		if err != nil {
 			t.Fatal(err)
 		}
-		if freed {
-			break
+		if n == 0 {
+			t.Fatal("frame never finished")
 		}
-		select {
-		case <-timeout:
-			t.Fatal("finished frame never polled")
-		case <-tick.C:
-		}
+		break
+	}
+	if err := r.Trim(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if !freed {
+		t.Fatal("finished frame not polled")
 	}
 	if r.completed != r.frame {
 		t.Fatalf("completed %d, frame %d", r.completed, r.frame)
