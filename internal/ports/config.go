@@ -194,8 +194,12 @@ type Config struct {
 	// Outputs selects and configures physical displays (drm backend).
 	Outputs []OutputConfig
 	Binds   map[string]string
-	Render  struct {
-		DirectScanout bool
+	// DRM selects devices at startup; changes require a restart.
+	DRM    struct{ Devices, Ignore []string }
+	Render struct {
+		// Device and MultiGPU are startup-only; changes require a restart.
+		Device, MultiGPU string
+		DirectScanout    bool
 		// Tearing honours wp_tearing_control_v1 in direct scanout; VRR
 		// turns variable refresh on while a buffer is scanned out.
 		Tearing, VRR bool

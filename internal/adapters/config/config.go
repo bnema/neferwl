@@ -225,6 +225,7 @@ func Defaults() ports.Config {
 		c.Binds[focus] = fmt.Sprintf("focus-workspace %d", n)
 		c.Binds[move] = fmt.Sprintf("move-column-to-workspace %d", n)
 	}
+	c.Render.MultiGPU = "auto"
 	c.Render.DirectScanout = true
 	c.Render.Tearing = true
 	c.Render.VRR = true
@@ -982,6 +983,36 @@ func set(c *ports.Config, key, v string) error {
 			return fmt.Errorf("must be #rrggbb or empty (border.active)")
 		}
 		c.Focus.FlashColor = v
+	case "drm.devices", "drm.ignore":
+		var devices []string
+		if strings.TrimSpace(v) != "" {
+			seen := map[string]bool{}
+			for _, name := range strings.Split(v, ",") {
+				name = strings.TrimSpace(name)
+				if name == "" {
+					return fmt.Errorf("DRM device must not be empty")
+				}
+				if seen[name] {
+					return fmt.Errorf("duplicate DRM device %q", name)
+				}
+				seen[name] = true
+				devices = append(devices, name)
+			}
+		}
+		if key == "drm.devices" {
+			c.DRM.Devices = devices
+		} else {
+			c.DRM.Ignore = devices
+		}
+	case "render.device":
+		c.Render.Device = strings.TrimSpace(v)
+	case "render.multi-gpu":
+		switch v {
+		case "auto", "direct", "off":
+			c.Render.MultiGPU = v
+		default:
+			return fmt.Errorf("must be auto, direct or off")
+		}
 	case "render.direct-scanout":
 		b, err := onOff(v)
 		if err != nil {
