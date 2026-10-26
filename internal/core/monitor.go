@@ -628,7 +628,7 @@ func (m *Monitor) applyNamed() {
 		// The view offset belongs to the old content axis: SetMaxColumns
 		// scrolls back to the focus along the new one.
 		if content, _ := w.Engine().Axes(); content != axis {
-			w.view.Stop()
+			w.StopColumns()
 			w.View = 0
 		}
 		// One call with the effective value: a passing smaller one would

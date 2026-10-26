@@ -219,7 +219,7 @@ func (m *Monitor) settled() bool {
 		return false
 	}
 	for w := range m.all() {
-		if w.view.Busy() || w.stashView.Busy() {
+		if w.SlidesBusy() {
 			return false
 		}
 	}

@@ -201,11 +201,11 @@ func (c *Core) swipeUpdate(u ports.SwipeUpdate) bool {
 	switch g.mode {
 	case swipeColumns:
 		if g.columnsChanged(m) {
-			g.ws.view.Stop()
+			g.ws.StopColumns()
 			g.mode = swipeDropped
 			return true
 		}
-		g.ws.view.Off = g.snap.Pos() - float64(g.ws.View)
+		g.ws.DragColumns(g.snap.Pos())
 		return true
 	case swipeWorkspaces:
 		if g.listChanged(m) {
@@ -217,11 +217,11 @@ func (c *Core) swipeUpdate(u ports.SwipeUpdate) bool {
 		return true
 	case swipeStash:
 		if g.stashChanged(m) {
-			g.ws.stashView.Stop()
+			g.ws.StopStash()
 			g.mode = swipeDropped
 			return true
 		}
-		g.ws.stashView.Off = g.snap.Pos() - float64(g.ws.stashAt)
+		g.ws.DragStash(g.snap.Pos())
 		return true
 	}
 	return false
@@ -254,12 +254,12 @@ func (c *Core) decide(g *swipeGesture) {
 		for _, f := range w.Stash {
 			g.ids = append(g.ids, f.ID)
 		}
-		w.stashView.Motion = motion.Motion{}
-		g.snap = motion.NewSnapSwipe(float64(w.stashAt)+w.stashView.Off, float64(w.stashAt), 1/stashSwipeMovement, motion.IndexPoints(len(w.Stash)), motion.WorkspaceBand)
+		pos := w.BeginStashDrag()
+		g.snap = motion.NewSnapSwipe(pos, float64(w.stashAt), 1/stashSwipeMovement, motion.IndexPoints(len(w.Stash)), motion.WorkspaceBand)
 	case g.horizontal == (content == layout.Horizontal) && w.slidable():
 		g.mode, g.ws, g.points = swipeColumns, w, w.snapPoints()
-		w.view.Motion = motion.Motion{}
-		g.snap = motion.NewSnapSwipe(float64(w.View)+w.view.Off, float64(w.View), w.swipeScale(), g.points, motion.WorkspaceBand.Scaled(float64(content.Span(w.Usable))))
+		pos := w.BeginColumnsDrag()
+		g.snap = motion.NewSnapSwipe(pos, float64(w.View), w.swipeScale(), g.points, motion.WorkspaceBand.Scaled(float64(content.Span(w.Usable))))
 	case g.horizontal == (workspace == layout.Horizontal) && m.shown == nil:
 		// A landing slide measured in an older list lands at once first.
 		if m.switchList != nil && !slices.Equal(m.switchList, m.Workspaces) {
@@ -300,10 +300,10 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 	case swipeColumns:
 		w := g.ws
 		if g.columnsChanged(m) {
-			w.view.Stop()
+			w.StopColumns()
 			return false, nil
 		}
-		shown := float64(w.View) + w.view.Off
+		shown := w.ColumnsPosition()
 		target, velocity := g.snap.End(e.Cancelled, e.Time)
 		if !e.Cancelled {
 			view := int(math.Round(target))
@@ -323,11 +323,11 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 				c.requestFlash(flashColumn, id)
 			}
 		}
-		w.view.Off = shown - float64(w.View)
+		w.DragColumns(shown)
 		if c.animOn() {
-			w.view.Motion = c.spring(motion.ViewSpring(w.view.Off, velocity), now)
+			w.LandColumns(c.spring(motion.ViewSpring(shown-float64(w.View), velocity), now))
 		} else {
-			w.view.Stop()
+			w.StopColumns()
 		}
 	case swipeWorkspaces:
 		if g.listChanged(m) {
@@ -368,10 +368,10 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 	case swipeStash:
 		w := g.ws
 		if g.stashChanged(m) {
-			w.stashView.Stop()
+			w.StopStash()
 			return false, nil
 		}
-		drawn := float64(w.stashAt) + w.stashView.Off
+		drawn := w.StashPosition()
 		target, velocity := g.snap.End(e.Cancelled, e.Time)
 		dir := 0
 		if !e.Cancelled {
@@ -387,11 +387,11 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 			c.keyboard.takeBack()
 			c.applyAction(a)
 		}
-		w.stashView.Off = drawn - float64(w.stashAt)
+		w.DragStash(drawn)
 		if c.animOn() {
-			w.stashView.Motion = c.spring(w.stashSpring(w.stashView.Off, velocity), now)
+			w.LandStash(c.spring(w.stashSpring(drawn-float64(w.stashAt), velocity), now))
 		} else {
-			w.stashView.Stop()
+			w.StopStash()
 		}
 		// The stash never brings another workspace on screen.
 		return false, nil
@@ -506,11 +506,11 @@ func (c *Core) dropSwipe() {
 	}
 	switch g.mode {
 	case swipeColumns:
-		g.ws.view.Stop()
+		g.ws.StopColumns()
 	case swipeWorkspaces:
 		g.screen.mon.stopSwitch()
 	case swipeStash:
-		g.ws.stashView.Stop()
+		g.ws.StopStash()
 	}
 	g.mode = swipeDropped
 }
@@ -551,12 +551,7 @@ func (s *screen) stopAnimations() {
 		s.mon.stopSwitch()
 	}
 	for w := range s.mon.all() {
-		if w.view.Motion.On {
-			w.view.Stop()
-		}
-		if w.stashView.Motion.On {
-			w.stashView.Stop()
-		}
+		w.StopLandings()
 	}
 	s.stopRects()
 }
@@ -576,8 +571,7 @@ func (c *Core) animate(now time.Time, only *screen) {
 			}
 		}
 		for w := range m.all() {
-			w.view.Step(now)
-			w.stashView.Step(now)
+			w.StepSlides(now)
 		}
 		for id, rm := range sc.rects {
 			rm.advance(now)
@@ -616,7 +610,7 @@ func (m *Monitor) springing() bool {
 		return true
 	}
 	for w := range m.all() {
-		if w.view.Motion.On || w.stashView.Motion.On {
+		if w.SlidesRunning() {
 			return true
 		}
 	}

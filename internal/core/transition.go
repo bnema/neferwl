@@ -643,23 +643,19 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 		s.overview = m.ov.open
 		if !m.previewing() {
 			// A preview (the overview or the switcher's cards) does not scroll or slide: no camera.
-			s.settledView, s.view = w.View, float64(w.View)+w.view.Off
+			s.settledView, s.view = w.View, w.ColumnsPosition()
 			_, s.switchAxis = w.Engine().Axes()
 			if m.switchView.Busy() {
 				s.switchAxis = m.switchAxis
 			}
 		}
-		if w.view.Motion.On {
-			_, s.viewV = w.view.Motion.SampleAt(now)
-		}
+		_, s.viewV = w.SampleColumns(now)
 		if m.switchView.Motion.On {
 			_, s.switchV = m.switchView.Motion.SampleAt(now)
 		}
-		s.stashShown, s.stashAt, s.stashLen, s.stashPos = w.stashShown(), w.stashAt, len(w.Stash), float64(w.stashAt)+w.stashView.Off
+		s.stashShown, s.stashAt, s.stashLen, s.stashPos = w.stashShown(), w.stashAt, len(w.Stash), w.StashPosition()
 		s.card, s.wraps = m.cardAt(w), w.wrapsCards()
-		if w.stashView.Motion.On {
-			_, s.stashV = w.stashView.Motion.SampleAt(now)
-		}
+		_, s.stashV = w.SampleStash(now)
 		// settledLayout and shown are index-aligned and differ only by
 		// the offsets of sc.rects: the shot keeps both unrounded. The
 		// cards of a preview are recorded like windows.
@@ -754,8 +750,8 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 		if stashSlid(b, w) {
 			// A stash navigation slides the view from where it was drawn:
 			// the windows keep their settled places (transitionRects).
-			w.stashView.Off = b.stashPos - float64(w.stashAt)
-			w.stashView.Motion = c.spring(w.stashSpring(w.stashView.Off, b.stashV), now)
+			w.DragStash(b.stashPos)
+			w.LandStash(c.spring(w.stashSpring(b.stashPos-float64(w.stashAt), b.stashV), now))
 			return
 		}
 		if w.View == b.settledView || !w.slidable() {
@@ -763,8 +759,8 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 		}
 		// A running landing slide was retargeted by scroll(): its velocity
 		// carries over, and the spring starts now like every action's.
-		w.view.Off = b.view - float64(w.View)
-		w.view.Motion = c.spring(motion.ViewSpring(w.view.Off, b.viewV), now)
+		w.DragColumns(b.view)
+		w.LandColumns(c.spring(motion.ViewSpring(b.view-float64(w.View), b.viewV), now))
 	case b.ok && m.shown == nil && movedFrom(b, before) == nil:
 		// A screen that received its workspace from another monitor does
 		// not slide to it: a running slide's list (switchList) may still
