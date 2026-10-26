@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"slices"
@@ -118,8 +120,11 @@ type drmBackend struct {
 	advertised []ports.DMABufFormat
 	seat       *seat.Seat
 	cards      []*drmCard
-	clock      ports.Clock
-	log        zerowrap.Logger
+	// dying holds unplugged cards until their outputs are stopped. Only the
+	// runOutputs goroutine touches it; close reads it after that returns.
+	dying map[*drmCard]*cardTeardown
+	clock ports.Clock
+	log   zerowrap.Logger
 	// preparers are the running outputs, guarded by mu: the seat's goroutine
 	// reads them while the output loop adds and removes them.
 	mu        sync.Mutex
@@ -210,6 +215,12 @@ type drmCard struct {
 	*drm.Card
 	fd    int
 	local *localRenderDevice
+	// removed is set by the runOutputs goroutine when the card is unplugged;
+	// its reader may then fail without ending the session.
+	removed bool
+	// stopReader and readerDone belong to the card's ReadEvents goroutine.
+	stopReader context.CancelFunc
+	readerDone <-chan struct{}
 }
 
 // A failed card read must not erase its heads from a multi-card inventory.
@@ -278,42 +289,13 @@ func openDRM(ctx context.Context, cfg ports.Config, opener ports.RenderDeviceOpe
 	want.Sampled = render.DMABuf().Formats
 	var errs []error
 	for _, p := range plans {
-		info, path := p.Info, p.Info.Path
-		fd, err := s.OpenDevice(path)
+		info := p.Info
+		card, err := b.openCard(ctx, info, multiGPUMode(cfg.Render.MultiGPU), want, logging.Enabled(ctx, "render-damage"))
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		var local *localRenderDevice
-		dev := drm.CardDevices{Render: render, RenderCard: b.renderInfo.Path, Mode: multiGPUMode(cfg.Render.MultiGPU)}
-		if info.Path != b.renderInfo.Path {
-			local = &localRenderDevice{open: func() (ports.RenderDevice, error) {
-				device, err := opener.Open(info)
-				if err != nil {
-					log.Error().Err(err).Str("card", path).Msg("open local render device")
-				}
-				return device, err
-			}}
-			dev.Local = local.get
-		}
-		card, err := drm.OpenCard(fd, info, dev, want, log, logging.For(ctx, "render"))
-		if err != nil {
-			log.Warn().Err(err).Str("card", path).Msg("card unusable")
-			errs = append(errs, err)
-			s.CloseDevice(fd)
-			continue
-		}
-		card.SetRendererOptions(ports.RendererOptions{TraceDamage: logging.Enabled(ctx, "render-damage")})
-		device := card.Device()
-		log.Info().Str("path", path).Str("device", fmt.Sprintf("%d:%d", unix.Major(device), unix.Minor(device))).Msg("opened DRM card")
-		sf, only := card.ScanoutFormats(), 0
-		for _, f := range sf {
-			if !slices.Contains(want.Sampled, f) {
-				only++
-			}
-		}
-		log.Debug().Str("path", path).Int("scanout_formats", len(sf)).Int("scanout_only", only).Msg("card scanout formats")
-		b.cards = append(b.cards, &drmCard{Card: card, fd: fd, local: local})
+		b.cards = append(b.cards, card)
 	}
 	if len(b.cards) == 0 {
 		render.Close()
@@ -323,6 +305,45 @@ func openDRM(ctx context.Context, cfg ports.Config, opener ports.RenderDeviceOpe
 		return nil, err
 	}
 	return b, nil
+}
+
+// openCard opens one non-render-device card through the seat: the shared
+// body of the startup scan and of GPU hotplug. A failed card leaves no fd.
+func (b *drmBackend) openCard(ctx context.Context, info ports.GPUInfo, mode drm.MultiGPU, want drm.Want, traceDamage bool) (*drmCard, error) {
+	path, log := info.Path, b.log
+	fd, err := b.seat.OpenDevice(path)
+	if err != nil {
+		return nil, err
+	}
+	var local *localRenderDevice
+	dev := drm.CardDevices{Render: b.render, RenderCard: b.renderInfo.Path, Mode: mode}
+	if path != b.renderInfo.Path {
+		local = &localRenderDevice{open: func() (ports.RenderDevice, error) {
+			device, err := b.opener.Open(info)
+			if err != nil {
+				log.Error().Err(err).Str("card", path).Msg("open local render device")
+			}
+			return device, err
+		}}
+		dev.Local = local.get
+	}
+	card, err := drm.OpenCard(fd, info, dev, want, log, logging.For(ctx, "render"))
+	if err != nil {
+		log.Warn().Err(err).Str("card", path).Msg("card unusable")
+		b.seat.CloseDevice(fd)
+		return nil, err
+	}
+	card.SetRendererOptions(ports.RendererOptions{TraceDamage: traceDamage})
+	device := card.Device()
+	log.Info().Str("path", path).Str("device", fmt.Sprintf("%d:%d", unix.Major(device), unix.Minor(device))).Msg("opened DRM card")
+	sf, only := card.ScanoutFormats(), 0
+	for _, f := range sf {
+		if !slices.Contains(want.Sampled, f) {
+			only++
+		}
+	}
+	log.Debug().Str("path", path).Int("scanout_formats", len(sf)).Int("scanout_only", only).Msg("card scanout formats")
+	return &drmCard{Card: card, fd: fd, local: local}, nil
 }
 
 // wantFromConfig turns output.<name> and render.* entries into connector choices.
@@ -351,10 +372,14 @@ func wantFromConfig(cfg ports.Config) drm.Want {
 // close releases the cards and the seat so the TTY comes back. Outputs are
 // closed by their goroutines first.
 func (b *drmBackend) close() {
-	for _, c := range b.cards {
+	cards := slices.Clone(b.cards)
+	for c := range b.dying {
+		cards = append(cards, c)
+	}
+	for _, c := range cards {
 		c.Card.Close()
 	}
-	for _, c := range b.cards {
+	for _, c := range cards {
 		if c.local != nil {
 			c.local.close()
 		}
@@ -362,7 +387,7 @@ func (b *drmBackend) close() {
 	if b.render != nil {
 		b.render.Close()
 	}
-	for _, c := range b.cards {
+	for _, c := range cards {
 		b.seat.CloseDevice(c.fd)
 	}
 	b.seat.Close()
@@ -377,14 +402,27 @@ func (b *drmBackend) close() {
 func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm.Want, initial ports.Config, apply *outputApply, ch outputChannels, curs *cursors, log zerowrap.Logger) error {
 	ctx, cancel := context.WithCancel(ctx)
 	var readers sync.WaitGroup
-	readerErr := make(chan error, len(b.cards))
-	for _, c := range b.cards {
-		c.SetFormats(ch.formats)
+	// A reader that fails sends at most once; cards come and go, so the
+	// buffer is generous and a full one drops (the first failure ends the run).
+	readerErr := make(chan readerFailure, 16)
+	startReader := func(c *drmCard) {
+		rctx, stop := context.WithCancel(ctx)
+		done := make(chan struct{})
+		c.stopReader, c.readerDone = stop, done
 		readers.Go(func() {
-			if err := safe("drm events", func() error { return c.ReadEvents(ctx) }); err != nil {
-				readerErr <- fmt.Errorf("%s: %w", c.Path(), err)
+			defer close(done)
+			if err := safe("drm events", func() error { return c.ReadEvents(rctx) }); err != nil {
+				select {
+				case readerErr <- readerFailure{c, fmt.Errorf("%s: %w", c.Path(), err)}:
+				default:
+					log.Error().Err(err).Str("card", c.Path()).Msg("drm event reader failure dropped: error queue full")
+				}
 			}
 		})
+	}
+	for _, c := range b.cards {
+		c.SetFormats(ch.formats)
+		startReader(c)
 	}
 	defer func() { cancel(); readers.Wait() }()
 	active := b.seat.Subscribe()
@@ -398,7 +436,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	protected := func() bool { return set.state.Protected || securitySnapshot(ch.security).Protected }
 	leases := newLeasePublisher(ctx, ch.leaseEvents, func() bool { return seatActive }, protected, log)
 	defer leases.close()
-	hotplug := make(chan struct{}, 1)
+	hotplug := make(chan drm.HotplugEvent, 8)
 	go func() {
 		if err := safe("hotplug", func() error { return drm.WatchHotplug(ctx, hotplug) }); err != nil {
 			log.Warn().Err(err).Msg("hotplug watch disabled")
@@ -606,6 +644,14 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 					b.seat.Unsubscribe(active)
 					o.Close()
 					c.Release(name)
+					// Undo the bookkeeping above: no stopped event will come.
+					delete(cards, name)
+					delete(outputs, name)
+					delete(readySources, name)
+					delete(progress.ready, name)
+					close(stopped)
+					delete(stopReady, name)
+					curs.set(name, nil)
 					continue
 				}
 				send(ports.OutputAdded{Info: o.Info()})
@@ -614,6 +660,92 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		publishInventory()
 		complete(progress.scanError(errors.Join(scanErrors...)))
 		barrier()
+	}
+	// Cards plugged in while the render device is being reopened wait here.
+	var pending, replug pendingCards
+	// addCard opens a hot-plugged card and starts its reader; the caller
+	// scans. The dmabuf feedback tables are computed at startup, so outputs
+	// of a hot-added card do not change what clients are told.
+	addCard := func(name string) bool {
+		c, action := b.hotplugAdd(ctx, name, currentConfig, want(currentConfig))
+		if action.retryAfterTeardown() {
+			replug.add(name) // finishCard reopens it
+		}
+		if c == nil {
+			return false
+		}
+		c.SetFormats(ch.formats)
+		b.cards = append(b.cards, c)
+		startReader(c)
+		return true
+	}
+	// finishCard releases an unplugged card once its outputs are closed. The
+	// reader is joined first: its fd is about to close.
+	finishCard := func(c *drmCard) {
+		c.stopReader()
+		<-c.readerDone
+		c.Card.Close()
+		if c.local != nil {
+			c.local.close()
+		}
+		b.seat.CloseDevice(c.fd)
+		delete(b.dying, c)
+		delete(lastHeads, c)
+		log.Info().Str("card", c.Path()).Msg("GPU removed")
+		if name := filepath.Base(c.Path()); replug.has(name) {
+			replug.remove(name)
+			if recovering {
+				pending.add(name)
+			} else {
+				addCard(name)
+			}
+		}
+		// A same-name connector on another card was refused while this one
+		// lived; the loop rescans (never inside a stop handler).
+		select {
+		case hotplug <- drm.HotplugEvent{}:
+		default:
+		}
+	}
+	// removeCard takes an unplugged card out of service: no scan sees it, its
+	// leases are revoked and its outputs stop through the normal path.
+	removeCard := func(name string) {
+		idx := slices.IndexFunc(b.cards, func(c *drmCard) bool { return filepath.Base(c.Path()) == name })
+		if idx < 0 {
+			return
+		}
+		c := b.cards[idx]
+		c.removed = true
+		b.cards = slices.Delete(b.cards, idx, idx+1)
+		log.Info().Str("card", c.Path()).Msg("GPU unplugged")
+		// A lease of a dead card is finished whether or not the revoke worked.
+		for _, id := range c.LeaseIDs() {
+			if err := c.Revoke(id); err != nil {
+				log.Debug().Err(err).Str("card", c.Path()).Uint32("lease", id).Msg("revoke lease of removed GPU")
+			}
+			leases.send(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
+		}
+		leases.forget(c)
+		var names []string
+		for n, owner := range cards {
+			if owner == c && set.outs[n] != nil {
+				names = append(names, n)
+			}
+		}
+		td := newCardTeardown(names)
+		if b.dying == nil {
+			b.dying = map[*drmCard]*cardTeardown{}
+		}
+		b.dying[c] = td
+		for _, n := range names {
+			stopping[n] = false
+			progress.stopping(n)
+			set.outs[n].stop()
+		}
+		publishInventory()
+		if td.done() {
+			finishCard(c)
+		}
 	}
 	scan()
 	if len(set.outs) == 0 {
@@ -664,9 +796,24 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		select {
 		case <-ctx.Done():
 			return set.wait()
-		case err := <-readerErr:
+		case failure := <-readerErr:
+			if failure.card.removed {
+				continue // the card is gone; its outputs are being stopped
+			}
+			if path := failure.card.Path(); path == b.renderInfo.Path {
+				if !deviceNodeExists(path) || errors.Is(failure.err, unix.ENODEV) {
+					log.Error().Err(failure.err).Str("card", path).Msg("render GPU removed")
+					return errors.Join(fmt.Errorf("%w: %s: %w", ErrRenderGPURemoved, path, failure.err), set.wait())
+				}
+			} else if errors.Is(failure.err, unix.ENODEV) {
+				// The device vanished under the reader, possibly before its
+				// uevent is handled.
+				log.Warn().Err(failure.err).Str("card", path).Msg("card reader failed, device gone")
+				removeCard(filepath.Base(path))
+				continue
+			}
 			// No more flips on that card: its outputs would freeze.
-			return errors.Join(err, set.wait())
+			return errors.Join(failure.err, set.wait())
 		case state, ok := <-ch.securityChanges:
 			if !ok {
 				ch.securityChanges = nil
@@ -692,8 +839,29 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		case <-revokeDeadline:
 			revokeDeadline = nil
 			barrier()
-		case <-hotplug:
-			log.Info().Msg("hotplug")
+		case ev := <-hotplug:
+			switch classifyHotplug(ev, b.renderInfo.Path) {
+			case hotplugRenderRemoved:
+				// Checked even while recovering: the device is not coming back.
+				path := b.renderInfo.Path
+				log.Error().Str("card", path).Msg("render GPU removed")
+				return errors.Join(fmt.Errorf("%w: %s", ErrRenderGPURemoved, path), set.wait())
+			case hotplugCardAdded:
+				if recovering {
+					// Opening needs the reopened render device.
+					pending.add(ev.Card)
+					continue
+				}
+				if !addCard(ev.Card) {
+					continue
+				}
+			case hotplugCardRemoved:
+				pending.remove(ev.Card)
+				replug.remove(ev.Card)
+				removeCard(ev.Card)
+				continue
+			}
+			log.Info().Str("card", ev.Card).Msg("hotplug")
 			scan()
 			if progress.active {
 				running := map[string]<-chan error{}
@@ -773,7 +941,16 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			// finish observes done after the deferred Close. Only affirmative
 			// terminal KMS inactivity retires this exact lifetime; renderer
 			// errors and missing connector inventory are not physical proof.
-			if output != nil && output.InactiveOnClose() {
+			// A card whose node is gone was unplugged: nothing can still scan
+			// out, so its outputs are retired even without KMS confirmation.
+			// A removed card with its node present (driver unbind) stays
+			// fail-closed.
+			owner := cards[name]
+			unplugged := owner != nil && owner.removed && !deviceNodeExists(owner.Path())
+			if output != nil && retireOnStop(output.InactiveOnClose(), owner != nil && owner.removed, !unplugged) {
+				if !output.InactiveOnClose() {
+					log.Info().Str("card", owner.Path()).Str("connector", name).Msg("retiring output of unplugged GPU")
+				}
 				set.securityEvent(ports.SecurityOutputRemoved{Instance: stopped.instance})
 			}
 			delete(outputs, name)
@@ -793,9 +970,17 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			delete(stopping, name)
 			curs.set(name, nil)
 			card := cards[name]
+			if card.removed && err != nil {
+				// An unplugged card fails its outputs: that is a stop, not a fault.
+				log.Info().Err(err).Str("connector", name).Msg("output of removed GPU stopped")
+				err = nil
+			}
 			card.Release(name)
 			lastHeads[card] = releasedHead(lastHeads[card], name)
 			delete(cards, name)
+			if td := b.dying[card]; td != nil && td.outputStopped(name) {
+				finishCard(card)
+			}
 			source := readySources[name]
 			delete(readySources, name)
 			if stopped := stopReady[name]; stopped != nil {
@@ -824,6 +1009,9 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 					c.SetRender(next)
 				}
 				recovering = false
+				for _, name := range pending.take() {
+					addCard(name)
+				}
 				scan()
 				continue
 			}
@@ -863,6 +1051,11 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			complete(progress.scanned(running))
 		}
 	}
+}
+
+func deviceNodeExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil || !errors.Is(err, fs.ErrNotExist)
 }
 
 // localRenderDevice opens the lazy local device on first use and caches only

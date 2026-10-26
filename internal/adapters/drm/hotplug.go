@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
+	"strings"
 	"sync"
 
 	"github.com/bnema/neferwl/internal/adapters/fdwait"
@@ -14,6 +16,67 @@ import (
 // Hotplug reports connector changes through a udev netlink monitor on the
 // drm subsystem (the kernel sends HOTPLUG=1 on the card). libudev is loaded
 // with purego.
+
+// Hotplug actions reported in HotplugEvent.Action.
+const (
+	HotplugAdd    = "add"
+	HotplugRemove = "remove"
+	HotplugChange = "change"
+)
+
+// HotplugEvent is a DRM uevent the compositor reacts to. Card is the sysname
+// ("card1") of a GPU that was added or removed; it is empty for a connector
+// change (HOTPLUG=1), which only asks for a rescan.
+type HotplugEvent struct {
+	Card   string
+	Action string
+}
+
+// hotplugFromProps classifies an event from its udev properties: ok is false
+// for events the compositor ignores (other subsystems, render nodes, connector
+// devices appearing or disappearing, card changes that are not connector
+// hotplugs). The libudev watcher feeds it property lookups.
+func hotplugFromProps(get func(key string) string) (HotplugEvent, bool) {
+	if get("SUBSYSTEM") != "drm" {
+		return HotplugEvent{}, false
+	}
+	action := get("ACTION")
+	switch action {
+	case HotplugAdd, HotplugRemove, HotplugChange:
+	default:
+		return HotplugEvent{}, false
+	}
+	if action == HotplugChange {
+		if get("HOTPLUG") == "1" {
+			return HotplugEvent{Action: action}, true
+		}
+		return HotplugEvent{}, false
+	}
+	name := get("DEVNAME")
+	if name == "" {
+		name = get("DEVPATH")
+	}
+	name = path.Base(name)
+	if !isCardName(name) {
+		return HotplugEvent{}, false
+	}
+	return HotplugEvent{Card: name, Action: action}, true
+}
+
+// isCardName reports whether name is "card" followed by digits only: render
+// nodes (renderD128) and connectors (card1-DP-2) are not cards.
+func isCardName(name string) bool {
+	digits, found := strings.CutPrefix(name, "card")
+	if !found || digits == "" {
+		return false
+	}
+	for _, r := range digits {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
 
 var (
 	udevOnce sync.Once
@@ -58,9 +121,30 @@ func loadUdev() error {
 	return udevErr
 }
 
-// WatchHotplug sends on changed after every DRM hotplug event until ctx
-// ends. Events that arrive while a send is pending are merged.
-func WatchHotplug(ctx context.Context, changed chan<- struct{}) error {
+// DeliverHotplug hands ev to changed. A connector change (Card == "") only
+// asks for a rescan, so it is dropped when one is already queued. A card
+// add or remove is never dropped: the send blocks until the consumer takes
+// it or ctx ends. It reports whether ev was queued.
+func DeliverHotplug(ctx context.Context, changed chan<- HotplugEvent, ev HotplugEvent) bool {
+	if ev.Card == "" {
+		select {
+		case changed <- ev:
+			return true
+		default:
+			return false
+		}
+	}
+	select {
+	case changed <- ev:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// WatchHotplug sends every DRM card add or remove and every connector change
+// on changed until ctx ends (see DeliverHotplug for the send policy).
+func WatchHotplug(ctx context.Context, changed chan<- HotplugEvent) error {
 	if err := loadUdev(); err != nil {
 		return err
 	}
@@ -100,14 +184,10 @@ func WatchHotplug(ctx context.Context, changed chan<- struct{}) error {
 		if dev == 0 {
 			continue
 		}
-		hot := devicePropertyVal(dev, "HOTPLUG") == "1"
+		ev, ok := hotplugFromProps(func(key string) string { return devicePropertyVal(dev, key) })
 		deviceUnref(dev)
-		if !hot {
-			continue
-		}
-		select {
-		case changed <- struct{}{}:
-		default:
+		if ok {
+			DeliverHotplug(ctx, changed, ev)
 		}
 	}
 	return nil

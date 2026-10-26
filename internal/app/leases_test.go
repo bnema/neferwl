@@ -88,3 +88,36 @@ func TestLeasePublisherProtectedWithdraws(t *testing.T) {
 		t.Fatal("client fd still tracked")
 	}
 }
+
+// An unplugged card is withdrawn once: finished leases, an empty inventory,
+// and the client fd closes so the dead card is not kept open.
+func TestLeasePublisherForgetWithdrawsCard(t *testing.T) {
+	active, protected := true, false
+	p, events, card := leaseRig(t, &active, &protected)
+	card.EXPECT().FinishedLeases().Return(nil).Once()
+	card.EXPECT().Leasable().Return([]ports.LeaseConnector{{Name: "DP-2"}}).Once()
+	card.EXPECT().ClientFD().Return(clientFile(t), nil).Once()
+	p.publish(card)
+	(<-events).(ports.LeaseConnectors).Device.Close()
+	held := p.clientFDs[card]
+
+	card.EXPECT().FinishedLeases().Return([]uint32{3}).Once()
+	p.forget(card)
+	if fin, ok := (<-events).(ports.LeaseFinished); !ok || fin.LeaseID != 3 {
+		t.Fatalf("finished lease first: %+v", fin)
+	}
+	if inv, ok := (<-events).(ports.LeaseConnectors); !ok || inv.Device != nil || len(inv.Connectors) != 0 {
+		t.Fatalf("withdrawn inventory: %+v", inv)
+	}
+	if p.clientFDs[card] != nil || len(p.last) != 0 {
+		t.Fatal("card state kept after forget")
+	}
+	if _, err := held.Stat(); err == nil {
+		t.Fatal("client fd still open")
+	}
+	card.EXPECT().FinishedLeases().Return(nil).Once()
+	p.forget(card)
+	if len(events) != 0 {
+		t.Fatalf("second forget sent %+v", <-events)
+	}
+}
