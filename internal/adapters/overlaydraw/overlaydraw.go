@@ -85,7 +85,12 @@ func (r *Raster) Label(text string, typed int, scale float64, styles ...Style) (
 }
 
 func (r *Raster) face(scale float64) font.Face {
-	if f, ok := r.faces[scale]; ok {
+	return cachedFace(&r.faces, scale)
+}
+
+// cachedFace shares font loading without sharing mutable faces between owners.
+func cachedFace(faces *map[float64]font.Face, scale float64) font.Face {
+	if f, ok := (*faces)[scale]; ok {
 		return f
 	}
 	parseOnce.Do(func() { parsed, parseErr = opentype.Parse(gomono.TTF) })
@@ -96,13 +101,13 @@ func (r *Raster) face(scale float64) font.Face {
 	if err != nil {
 		return nil
 	}
-	if r.faces == nil || len(r.faces) >= 16 {
-		for _, old := range r.faces {
+	if *faces == nil || len(*faces) >= 16 {
+		for _, old := range *faces {
 			_ = old.Close()
 		}
-		r.faces = map[float64]font.Face{}
+		*faces = map[float64]font.Face{}
 	}
-	r.faces[scale] = f
+	(*faces)[scale] = f
 	return f
 }
 
