@@ -55,7 +55,7 @@ type session struct {
 	km           *xkb.Keymap
 	core         *core.Core
 	inst         *vulkan.Instance
-	gpu          *vulkan.GPU
+	gpu          ports.RenderDevice
 	dmabuf       ports.DMABufSupport
 	hintOpts     hints.Options
 	wsIDs        *workspaceid.IDs
@@ -106,25 +106,27 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	if err != nil {
 		return s, err
 	}
-	var info ports.GPUInfo
-	if path := os.Getenv("NEFERWL_RENDER_DEVICE"); strings.HasPrefix(path, "/dev/dri/renderD") {
-		var stat unix.Stat_t
-		if err = unix.Stat(path, &stat); err != nil {
-			return s, fmt.Errorf("render device %q: %w", path, err)
-		}
-		info.Render = stat.Rdev
-	}
-	s.gpu, err = s.inst.OpenGPU(info)
-	if err != nil {
-		return s, err
-	}
-	s.dmabuf = s.gpu.DMABuf()
-	log.Info().Int("formats", len(s.dmabuf.Formats)).Msg("dmabuf")
 	if opts.Backend == "drm" {
-		if s.hw, err = openDRM(ctx, opts.Config, s.gpu); err != nil {
+		if s.hw, err = openDRM(ctx, opts.Config, s.inst); err != nil {
+			return s, err
+		}
+		s.gpu = s.hw.render
+	} else {
+		var info ports.GPUInfo
+		if path := os.Getenv("NEFERWL_RENDER_DEVICE"); strings.HasPrefix(path, "/dev/dri/renderD") {
+			var stat unix.Stat_t
+			if err = unix.Stat(path, &stat); err != nil {
+				return s, fmt.Errorf("render device %q: %w", path, err)
+			}
+			info.Render = stat.Rdev
+		}
+		s.gpu, err = s.inst.OpenGPU(info)
+		if err != nil {
 			return s, err
 		}
 	}
+	s.dmabuf = s.gpu.DMABuf()
+	log.Info().Int("formats", len(s.dmabuf.Formats)).Msg("dmabuf")
 	s.p = newPipes(s.hw != nil, opts.Config.Hint.Enable)
 	// core() carries channels only; the gate, clock and terminal flag are
 	// explicit core.Options.
@@ -168,7 +170,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 		Security:     s.security,
 		RuntimeDir:   runtimeDir,
 		DMABuf:       s.dmabuf,
-		SyncobjNode:  renderNode(s.dmabuf.Device),
+		SyncobjNode:  renderNodeForDevice(s.gpu),
 		Keymap:       s.km.String(),
 		RepeatRate:   opts.Config.Keyboard.RepeatRate,
 		RepeatDelay:  opts.Config.Keyboard.RepeatDelay,
@@ -210,7 +212,7 @@ func (s *session) abort() {
 	if s.hw != nil {
 		s.hw.close()
 	}
-	if s.gpu != nil {
+	if s.hw == nil && s.gpu != nil {
 		s.gpu.Close()
 	}
 	if s.inst != nil {
@@ -232,7 +234,7 @@ func (s *session) close() {
 	if s.hw != nil {
 		s.hw.close()
 	}
-	if s.gpu != nil {
+	if s.hw == nil && s.gpu != nil {
 		s.gpu.Close()
 	}
 	if s.inst != nil {
@@ -246,7 +248,7 @@ func (s *session) close() {
 // output falls back to SDR. readback makes the HDR targets readable
 // (HDRPixels). traceDamage logs every frame's redrawn area. These settings
 // are Vulkan-only and not on ports.Renderer.
-func newVulkanRenderer(gpu *vulkan.GPU, virtual, readback, traceDamage bool) func(w, h int) (ports.Renderer, error) {
+func newVulkanRenderer(gpu ports.RenderDevice, virtual, readback, traceDamage bool) func(w, h int) (ports.Renderer, error) {
 	return func(w, h int) (ports.Renderer, error) {
 		return gpu.NewRenderer(w, h, ports.RendererOptions{Virtual: virtual, Readback: readback, TraceDamage: traceDamage})
 	}
@@ -260,7 +262,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	defer cancel()
 	opts, log, p, hw, km, security := s.opts, s.log, s.p, s.hw, s.km, s.security
 	childEnv, curs, xdisplay, statePath := s.childEnv, s.curs, s.xdisplay, s.statePath
-	server, captureAllow, c, child, wsIDs, dmabuf, sizes, path := s.server, s.captureAllow, s.core, s.child, s.wsIDs, s.dmabuf, s.sizes, s.path
+	server, captureAllow, c, child, wsIDs, sizes, path := s.server, s.captureAllow, s.core, s.child, s.wsIDs, s.sizes, s.path
 	if opts.Session {
 		launcher.ExportSession(ctx, childEnv, logging.For(ctx, "launcher"))
 		launcher.NotifyReady(os.Getenv("NOTIFY_SOCKET"), logging.For(ctx, "launcher"))
@@ -420,7 +422,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 			done <- safe("output", func() error {
 				want := func(cfg ports.Config) drm.Want {
 					w := wantFromConfig(cfg)
-					w.Sampled = dmabuf.Formats
+					w.Sampled = s.gpu.DMABuf().Formats
 					w.TraceFlips = logging.Enabled(ctx, "drm-flip")
 					return w
 				}
@@ -489,4 +491,9 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 		return nil
 	}
 	return result
+}
+
+func renderNodeForDevice(dev ports.RenderDevice) string {
+	_, render := dev.Node()
+	return renderNode(render)
 }

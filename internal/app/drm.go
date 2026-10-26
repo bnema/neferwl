@@ -113,10 +113,11 @@ const applyTimeout = 5 * time.Second
 
 // drmBackend is the seat and the cards with at least one usable output.
 type drmBackend struct {
-	seat  *seat.Seat
-	cards []*drmCard
-	clock ports.Clock
-	log   zerowrap.Logger
+	render ports.RenderDevice
+	seat   *seat.Seat
+	cards  []*drmCard
+	clock  ports.Clock
+	log    zerowrap.Logger
 	// preparers are the running outputs, guarded by mu: the seat's goroutine
 	// reads them while the output loop adds and removes them.
 	mu        sync.Mutex
@@ -240,7 +241,7 @@ func safe(name string, fn func() error) (err error) {
 
 // openDRM opens the seat and every card with a connected display. Outputs
 // are found by the first Scan of each card.
-func openDRM(ctx context.Context, cfg ports.Config, render ports.RenderDevice) (*drmBackend, error) {
+func openDRM(ctx context.Context, cfg ports.Config, opener ports.RenderDeviceOpener) (*drmBackend, error) {
 	log := logging.For(ctx, "drm")
 	s, err := seat.Open(ctx, logging.For(ctx, "seat"))
 	if err != nil {
@@ -254,13 +255,46 @@ func openDRM(ctx context.Context, cfg ports.Config, render ports.RenderDevice) (
 	b := &drmBackend{seat: s, clock: clock.System{}, log: log}
 	s.SetBeforeDisable(b.prepareSeatDisable)
 	var errs []error
+	type openedCard struct {
+		fd   int
+		info ports.GPUInfo
+	}
+	var opened []openedCard
+	var infos []ports.GPUInfo
 	for _, path := range paths {
 		fd, err := s.OpenDevice(path)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		card, err := drm.OpenCard(fd, ports.GPUInfo{Path: path}, drm.CardDevices{Render: render, Mode: drm.MultiGPUAuto}, want, log, logging.For(ctx, "render"))
+		var st unix.Stat_t
+		if err = unix.Fstat(fd, &st); err != nil {
+			s.CloseDevice(fd)
+			errs = append(errs, err)
+			continue
+		}
+		info, err := cardGPUInfo("/sys", path, st.Rdev)
+		if err != nil {
+			s.CloseDevice(fd)
+			errs = append(errs, err)
+			continue
+		}
+		opened = append(opened, openedCard{fd, info})
+		infos = append(infos, info)
+	}
+	render, err := openCardRenderDevice(opener, infos, os.Getenv("NEFERWL_RENDER_DEVICE"))
+	if err != nil {
+		for _, c := range opened {
+			s.CloseDevice(c.fd)
+		}
+		s.Close()
+		return nil, err
+	}
+	b.render = render
+	want.Sampled = render.DMABuf().Formats
+	for _, opened := range opened {
+		fd, path := opened.fd, opened.info.Path
+		card, err := drm.OpenCard(fd, opened.info, drm.CardDevices{Render: render, Mode: drm.MultiGPUAuto}, want, log, logging.For(ctx, "render"))
 		if err != nil {
 			log.Warn().Err(err).Str("card", path).Msg("card unusable")
 			errs = append(errs, err)
@@ -273,6 +307,7 @@ func openDRM(ctx context.Context, cfg ports.Config, render ports.RenderDevice) (
 		b.cards = append(b.cards, &drmCard{Card: card, fd: fd})
 	}
 	if len(b.cards) == 0 {
+		render.Close()
 		s.Close()
 		err = fmt.Errorf("no usable DRM card in %v: %w", paths, errors.Join(errs...))
 		log.Error().Err(err).Msg("open drm")
@@ -309,6 +344,11 @@ func wantFromConfig(cfg ports.Config) drm.Want {
 func (b *drmBackend) close() {
 	for _, c := range b.cards {
 		c.Card.Close()
+	}
+	if b.render != nil {
+		b.render.Close()
+	}
+	for _, c := range b.cards {
 		b.seat.CloseDevice(c.fd)
 	}
 	b.seat.Close()
