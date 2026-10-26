@@ -105,6 +105,12 @@ func TestOverlayCandidate(t *testing.T) {
 	if _, _, _, reason := overlayCandidate(rs, rc, false, nil, nil); reason != "output_transform" {
 		t.Fatalf("rotated output reason %q", reason)
 	}
+	// Compositor overlays are composed over the windows.
+	ls, lc := overlayScene()
+	ls.Overlays = []ports.Overlay{{ID: 1, Seq: 1, Kind: ports.OverlayLabel, Text: "f"}}
+	if _, _, _, reason := overlayCandidate(ls, lc, false, nil, nil); reason != "overlays" {
+		t.Fatalf("overlays reason %q", reason)
+	}
 	c[2] = ports.SurfaceContent{ID: 2, Width: 100, Height: 100, Opaque: true, DMABuf: &ports.DMABuf{Format: fourccNV12}}
 	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "no_candidate" {
 		t.Fatalf("YUV overlay reason %q", reason)
