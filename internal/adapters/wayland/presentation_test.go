@@ -117,8 +117,7 @@ func TestPresentationFeedback(t *testing.T) {
 	}
 	answer := func(p *feedbackEvents, what string) presentedEvent {
 		t.Helper()
-		_ = what
-		return recvWire(t, c, p.out)
+		return recvWire(t, c, what, p.out)
 	}
 	// A fresh 1×1 buffer per commit: every commit is a new content.
 	shm := bindProtocol(t, c, "wl_shm")

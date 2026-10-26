@@ -46,7 +46,7 @@ func logProxy(t *testing.T, c *wlturbo.Display, id uint32) chan []float64 {
 // next dispatches until the proxy receives an event.
 func next(t *testing.T, c *wlturbo.Display, events chan []float64) []float64 {
 	t.Helper()
-	return recvWire(t, c, events)
+	return recvWire(t, c, "pointer log event", events)
 }
 
 func constrained(t *testing.T, events <-chan ports.ClientEvent) ports.PointerConstrained {
@@ -235,13 +235,14 @@ func TestPointerConfineOneshotRegion(t *testing.T) {
 		t.Fatalf("unconfine event %v", ev)
 	}
 	commands <- ports.PointerFocus{ID: w.ID, X: 5, Y: 5}
+	flushCommands(t, s, commands)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case ev := <-confineEvents:
 		t.Fatalf("oneshot reactivated: %v", ev)
-	case <-waylandDeadline(50 * time.Millisecond):
+	default:
 	}
 
 	// A second constraint on the surface is a protocol error.

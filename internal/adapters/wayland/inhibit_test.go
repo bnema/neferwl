@@ -58,7 +58,7 @@ func TestShortcutsInhibitor(t *testing.T) {
 	state := func(active bool) {
 		t.Helper()
 		commands <- ports.ShortcutsInhibitState{Window: w.ID, Active: active}
-		if got := recvWire(t, c, p.states); got != active {
+		if got := recvWire(t, c, "inhibit state", p.states); got != active {
 			t.Fatalf("state %v", got)
 		}
 	}

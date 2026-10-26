@@ -54,7 +54,7 @@ func requestFrame(t *testing.T, c *wlturbo.Display, surf uint32) *frameDoneProxy
 // awaitFrame waits for the callback to be answered and returns its time.
 func awaitFrame(t *testing.T, c *wlturbo.Display, p *frameDoneProxy) uint32 {
 	t.Helper()
-	return recvWire(t, c, p.done)
+	return recvWire(t, c, "frame done", p.done)
 }
 
 // placeWindow puts the window on an output and waits until wayland applied it.

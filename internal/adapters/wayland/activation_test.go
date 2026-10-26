@@ -30,7 +30,7 @@ func newToken(t *testing.T, c *wlturbo.Display, manager uint32, serialSeat ...ui
 		requestProtocol(t, c, id, xdgactivation.ActivationTokenV1RequestSetSerial, serialSeat[0], serialSeat[1])
 	}
 	requestProtocol(t, c, id, xdgactivation.ActivationTokenV1RequestCommit)
-	return recvWire(t, c, p.tokens)
+	return recvWire(t, c, "activation token", p.tokens)
 }
 
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)

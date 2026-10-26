@@ -66,9 +66,11 @@ func gestureObjects(t *testing.T, c *wlturbo.Display, manager uint32) (swipe, pi
 	return logs[0], logs[1], logs[2]
 }
 
-// quiet fails when the log got an event after a roundtrip.
-func quiet(t *testing.T, c *wlturbo.Display, events chan []float64) {
+// quiet fails when the log got an event after the command forwarder applied
+// everything sent so far and a roundtrip ordered the wire.
+func quiet(t *testing.T, s *Server, commands chan<- ports.ClientCommand, c *wlturbo.Display, events chan []float64) {
 	t.Helper()
+	flushCommands(t, s, commands)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +94,7 @@ func TestPointerGestures(t *testing.T) {
 	// No gesture reaches a client before it has the pointer.
 	commands <- ports.GestureBeginTo{ID: w.ID, Kind: ports.GesturePinch, Fingers: 2}
 	commands <- ports.PointerFocus{ID: w.ID, X: 10, Y: 10}
-	quiet(t, c, pinch)
+	quiet(t, s, commands, c, pinch)
 
 	// A pinch: begin carries the serial, time, surface and fingers; updates
 	// the centre, scale and rotation; the end a later serial.
@@ -136,9 +138,9 @@ func TestPointerGestures(t *testing.T) {
 	// A gesture of one kind does not reach the objects of the others, and an
 	// update of a gesture that is not running is dropped.
 	commands <- ports.GestureUpdateTo{ID: w.ID, Kind: ports.GesturePinch, Scale: 2}
-	quiet(t, c, pinch)
-	quiet(t, c, swipe)
-	quiet(t, c, hold)
+	quiet(t, s, commands, c, pinch)
+	quiet(t, s, commands, c, swipe)
+	quiet(t, s, commands, c, hold)
 
 	// The pointer leaving the window cancels the gesture. Commands run in
 	// order: the next pinch event being this begin proves the dropped
@@ -152,7 +154,7 @@ func TestPointerGestures(t *testing.T) {
 		t.Fatalf("pinch not cancelled on leave: %v", ev)
 	}
 	commands <- ports.GestureEndTo{ID: w.ID, Kind: ports.GesturePinch, Time: 4008 * 1e6}
-	quiet(t, c, pinch)
+	quiet(t, s, commands, c, pinch)
 
 	// Releasing the manager keeps its objects.
 	commands <- ports.PointerFocus{ID: w.ID, X: 10, Y: 10}
@@ -169,9 +171,9 @@ func TestPointerGestures(t *testing.T) {
 	}
 
 	// The client without the pointer saw nothing.
-	quiet(t, other, oSwipe)
-	quiet(t, other, oPinch)
-	quiet(t, other, oHold)
+	quiet(t, s, commands, other, oSwipe)
+	quiet(t, s, commands, other, oPinch)
+	quiet(t, s, commands, other, oHold)
 }
 
 // A window with the pointer but no gesture object gets gesture commands

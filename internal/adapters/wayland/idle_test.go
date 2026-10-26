@@ -40,7 +40,7 @@ func newEventProxy(c *wlturbo.Display) (uint32, *eventProxy) {
 // next dispatches until p gets an event.
 func (p *eventProxy) next(t *testing.T, c *wlturbo.Display) [2]uint32 {
 	t.Helper()
-	return recvWire(t, c, p.events)
+	return recvWire(t, c, "idle event", p.events)
 }
 
 // none checks p got no event for what the display processed so far: a

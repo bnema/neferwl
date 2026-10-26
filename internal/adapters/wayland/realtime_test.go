@@ -61,11 +61,11 @@ func flushCaptured(t *testing.T, s *Server, replies chan<- ports.CaptureDone) {
 }
 
 // recvWire dispatches wire events until a value arrives on ch, bounded by
-// dispatchUntil's single deadline.
-func recvWire[T any](t *testing.T, c *wlturbo.Display, ch <-chan T) T {
+// one deadline; what names the awaited event in the failure message.
+func recvWire[T any](t *testing.T, c *wlturbo.Display, what string, ch <-chan T) T {
 	t.Helper()
 	var v T
-	dispatchUntil(t, c, func() bool {
+	dispatchWire(t, c, what, func() bool {
 		select {
 		case v = <-ch:
 			return true
@@ -83,11 +83,19 @@ func recvWire[T any](t *testing.T, c *wlturbo.Display, ch <-chan T) T {
 //testpolicy:realtime real Wayland unix socket between server and wlturbo client
 func dispatchUntil(t *testing.T, c *wlturbo.Display, ready func() bool) {
 	t.Helper()
+	dispatchWire(t, c, "wire event", ready)
+}
+
+// dispatchWire is dispatchUntil with a label for the failure message.
+//
+//testpolicy:realtime real Wayland unix socket between server and wlturbo client
+func dispatchWire(t *testing.T, c *wlturbo.Display, what string, ready func() bool) {
+	t.Helper()
 	timer := time.AfterFunc(2*time.Second, func() { _ = c.Close() })
 	defer timer.Stop()
 	for !ready() {
 		if err := c.Dispatch(); err != nil {
-			t.Fatalf("waiting for wire event: %v", err)
+			t.Fatalf("waiting for %s: %v", what, err)
 		}
 	}
 }
