@@ -9,6 +9,7 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
+//testpolicy:realtime real capture file descriptor ownership and teardown
 func TestCaptureUnknownOutputClosesFile(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 1)
 	router := newOutputRouter(context.Background(), replies, outputRoutes{})
@@ -30,6 +31,7 @@ func TestCaptureUnknownOutputClosesFile(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime real capture file descriptor ownership and teardown
 func TestCaptureFullOutputQueueDoesNotBlockRouting(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -136,6 +138,7 @@ func TestDrainCapturesClosesQueuedFDs(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime real capture file descriptor ownership and teardown
 func TestOutputStopWithFullReplies(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	replies := make(chan ports.CaptureDone, 1)

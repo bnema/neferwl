@@ -33,6 +33,7 @@ func TestHintPipesOffByDefault(t *testing.T) {
 	require.NotEqual(t, on.captured, on.capturedAll)
 }
 
+//testpolicy:realtime real headless session starts and joins hint workers
 func TestHintOffStartsNoHintGoroutine(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -53,10 +54,15 @@ func TestHintOffStartsNoHintGoroutine(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			done := make(chan error, 1)
+			scenes := make(chan []ports.Scene, 4096)
 			go func() {
-				done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, NoTerminal: true, Timeout: 800 * time.Millisecond})
+				done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, NoTerminal: true, testScenes: scenes, Timeout: 800 * time.Millisecond})
 			}()
-			time.Sleep(400 * time.Millisecond)
+			select {
+			case <-scenes:
+			case <-time.After(3 * time.Second):
+				t.Fatal("no startup scene")
+			}
 			buf := make([]byte, 1<<20)
 			dump := string(buf[:runtime.Stack(buf, true)])
 			if !tc.enable {

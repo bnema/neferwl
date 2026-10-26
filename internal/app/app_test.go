@@ -20,6 +20,7 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
+//testpolicy:realtime headless renderer publishes screenshots and watches a real config file
 func TestHeadlessConfigReload(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	dir := t.TempDir()
@@ -49,6 +50,7 @@ func TestHeadlessConfigReload(t *testing.T) {
 		}
 	}()
 	latest := filepath.Join(shots, "latest.png")
+	waitFile := fileChanges(t, shots)
 	waitColor := func(want color.RGBA, deadline time.Time) bool {
 		for time.Now().Before(deadline) {
 			f, err := os.Open(latest)
@@ -70,7 +72,7 @@ func TestHeadlessConfigReload(t *testing.T) {
 				t.Fatalf("app exited early: %v", err)
 			default:
 			}
-			time.Sleep(20 * time.Millisecond)
+			waitFile()
 		}
 		return false
 	}
@@ -85,6 +87,7 @@ func TestHeadlessConfigReload(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime starts real headless renderer and Wayland socket workers
 func TestQuitJoinsWorkers(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
@@ -108,6 +111,7 @@ func TestHeadlessSpawnClose(t *testing.T) { headlessSpawnClose(t, false) }
 // Animations on: the window appears (faded, 90 %), then settles at 1920.
 func TestHeadlessSpawnCloseAnimated(t *testing.T) { headlessSpawnClose(t, true) }
 
+//testpolicy:realtime real Wayland client process and headless renderer
 func headlessSpawnClose(t *testing.T, animated bool) {
 	if _, err := exec.LookPath("weston-simple-shm"); err != nil {
 		t.Skip("weston-simple-shm not installed")
@@ -296,6 +300,7 @@ func headlessPointerClickFocus(t *testing.T, animated bool) {
 	}
 }
 
+//testpolicy:realtime real headless session and child processes
 func TestBlockedScriptShutdown(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	r, w := io.Pipe()

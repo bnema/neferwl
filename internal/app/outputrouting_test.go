@@ -5,7 +5,7 @@ import (
 	"os"
 	"sync"
 	"testing"
-	"time"
+	"testing/synctest"
 
 	"github.com/stretchr/testify/mock"
 
@@ -95,142 +95,156 @@ func TestOutputRouting(t *testing.T) {
 // An output started after a scene turned its name off starts off; one
 // turned back on starts on.
 func TestOutputStartsOffAfterOffScene(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	in := newRouteInputs()
-	set := newOutputSet(ctx, nil, in.routes())
-	startOff := make(chan bool, 1)
-	run := func(ctx context.Context, feed outputFeed) error {
-		startOff <- feed.StartOff
-		<-ctx.Done()
-		return nil
-	}
-	in.scenes <- []ports.Scene{{Output: "A", Off: true}, {Output: "B"}}
-	for _, tc := range []struct {
-		name string
-		want bool
-	}{{"A", true}, {"B", false}} {
-		set.start(ctx, tc.name, run)
-		if got := <-startOff; got != tc.want {
-			t.Fatalf("%s start off %v, want %v", tc.name, got, tc.want)
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		in := newRouteInputs()
+		set := newOutputSet(ctx, nil, in.routes())
+		startOff := make(chan bool, 1)
+		run := func(ctx context.Context, feed outputFeed) error {
+			startOff <- feed.StartOff
+			<-ctx.Done()
+			return nil
 		}
-	}
-	in.scenes <- []ports.Scene{{Output: "A"}}
-	set.outs["A"].stop()
-	if err := set.finish("A"); err != nil {
-		t.Fatal(err)
-	}
-	set.start(ctx, "A", run)
-	if <-startOff {
-		t.Fatal("A starts off after a scene turned it on")
-	}
-	if err := set.wait(); err != nil {
-		t.Fatal(err)
-	}
+		in.scenes <- []ports.Scene{{Output: "A", Off: true}, {Output: "B"}}
+		for _, tc := range []struct {
+			name string
+			want bool
+		}{{"A", true}, {"B", false}} {
+			set.start(ctx, tc.name, run)
+			if got := <-startOff; got != tc.want {
+				t.Fatalf("%s start off %v, want %v", tc.name, got, tc.want)
+			}
+		}
+		in.scenes <- []ports.Scene{{Output: "A"}}
+		set.outs["A"].stop()
+		if err := set.finish("A"); err != nil {
+			t.Fatal(err)
+		}
+		set.start(ctx, "A", run)
+		if <-startOff {
+			t.Fatal("A starts off after a scene turned it on")
+		}
+		if err := set.wait(); err != nil {
+			t.Fatal(err)
+		}
+
+	})
 }
 
 // A late unregister of a previous lifetime never removes its successor.
 func TestRouterUnregisterKeepsNewerLifetime(t *testing.T) {
-	r := newOutputRouter(context.Background(), nil, outputRoutes{})
-	newer := &mailbox{instance: 2, scenes: make(chan ports.Scene, 1), cursor: make(chan ports.CursorChange, 1)}
-	r.register("A", newer)
-	r.unregister("A", 1)
-	if r.outs["A"] != newer {
-		t.Fatal("stale unregister removed the newer lifetime")
-	}
-	r.unregister("A", 2)
-	if _, ok := r.outs["A"]; ok {
-		t.Fatal("unregister kept the lifetime")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		r := newOutputRouter(context.Background(), nil, outputRoutes{})
+		newer := &mailbox{instance: 2, scenes: make(chan ports.Scene, 1), cursor: make(chan ports.CursorChange, 1)}
+		r.register("A", newer)
+		r.unregister("A", 1)
+		if r.outs["A"] != newer {
+			t.Fatal("stale unregister removed the newer lifetime")
+		}
+		r.unregister("A", 2)
+		if _, ok := r.outs["A"]; ok {
+			t.Fatal("unregister kept the lifetime")
+		}
+
+	})
 }
 
 // Lifecycle work on the backend loop never holds up routing: while a new
 // output's content attach blocks (it waits for the display goroutine), the
 // running output still gets its scenes and cursor.
 func TestBlockedStartDoesNotDelayRouting(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	in := newRouteInputs()
-	set := newOutputSet(ctx, nil, in.routes())
-	set.start(ctx, "A", idleRun)
-	<-set.outs["A"].cursor
-	attacher := newMockcontentAttacher(t)
-	set.attach = attacher
-	release := make(chan struct{})
-	attaching := make(chan struct{})
-	ret := portsmocks.NewMockContentReturn(t)
-	attacher.EXPECT().AttachOutput("B").RunAndReturn(func(string) (<-chan *ports.ContentBatch, ports.ContentReturn) {
-		close(attaching)
-		<-release
-		return nil, ret
-	}).Once()
-	attacher.EXPECT().DetachOutput(mock.Anything).Maybe()
-	releaseB := sync.OnceFunc(func() { close(release) })
-	wait := sync.OnceValue(set.wait)
-	started := make(chan bool, 1)
-	startDone := make(chan struct{})
-	go func() {
-		defer close(startDone)
-		started <- set.start(ctx, "B", idleRun)
-	}()
-	// A failed assertion still unblocks and joins B's start.
-	t.Cleanup(func() {
-		releaseB()
-		cancel()
-		<-startDone
-		_ = wait()
-	})
-	<-attaching
-	a := set.outs["A"]
-	deadline := time.After(2 * time.Second)
-	for seq := uint64(1); seq <= 3; seq++ {
-		select {
-		case in.scenes <- []ports.Scene{{Output: "A", Seq: seq}}:
-		case <-deadline:
-			t.Fatal("router blocked behind a starting output")
-		}
-		select {
-		case got := <-a.scenes:
-			if got.Seq != seq {
-				t.Fatalf("A scene %d, want %d", got.Seq, seq)
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		in := newRouteInputs()
+		set := newOutputSet(ctx, nil, in.routes())
+		set.start(ctx, "A", idleRun)
+		<-set.outs["A"].cursor
+		attacher := newMockcontentAttacher(t)
+		set.attach = attacher
+		release := make(chan struct{})
+		attaching := make(chan struct{})
+		ret := portsmocks.NewMockContentReturn(t)
+		attacher.EXPECT().AttachOutput("B").RunAndReturn(func(string) (<-chan *ports.ContentBatch, ports.ContentReturn) {
+			close(attaching)
+			<-release
+			return nil, ret
+		}).Once()
+		attacher.EXPECT().DetachOutput(mock.Anything).Maybe()
+		releaseB := sync.OnceFunc(func() { close(release) })
+		wait := sync.OnceValue(set.wait)
+		started := make(chan bool, 1)
+		startDone := make(chan struct{})
+		go func() {
+			defer close(startDone)
+			started <- set.start(ctx, "B", idleRun)
+		}()
+		// A failed assertion still unblocks and joins B's start.
+		t.Cleanup(func() {
+			releaseB()
+			cancel()
+			<-startDone
+			_ = wait()
+		})
+		<-attaching
+		a := set.outs["A"]
+		for seq := uint64(1); seq <= 3; seq++ {
+			synctest.Wait()
+			select {
+			case in.scenes <- []ports.Scene{{Output: "A", Seq: seq}}:
+			default:
+				t.Fatal("router blocked behind a starting output")
 			}
-		case <-deadline:
-			t.Fatal("scene not routed while another output starts")
+			synctest.Wait()
+			select {
+			case got := <-a.scenes:
+				if got.Seq != seq {
+					t.Fatalf("A scene %d, want %d", got.Seq, seq)
+				}
+			default:
+				t.Fatal("scene not routed while another output starts")
+			}
 		}
-	}
-	select {
-	case in.cursor <- ports.CursorChange{Shape: "text"}:
-	case <-deadline:
-		t.Fatal("cursor blocked behind a starting output")
-	}
-	if got := <-a.cursor; got.Shape != "text" {
-		t.Fatalf("A cursor %+v", got)
-	}
-	releaseB()
-	if !<-started {
-		t.Fatal("B did not start")
-	}
-	if err := wait(); err != nil {
-		t.Fatal(err)
-	}
+		synctest.Wait()
+		select {
+		case in.cursor <- ports.CursorChange{Shape: "text"}:
+		default:
+			t.Fatal("cursor blocked behind a starting output")
+		}
+		if got := <-a.cursor; got.Shape != "text" {
+			t.Fatalf("A cursor %+v", got)
+		}
+		releaseB()
+		if !<-started {
+			t.Fatal("B did not start")
+		}
+		if err := wait(); err != nil {
+			t.Fatal(err)
+		}
+
+	})
 }
 
 func TestOutputRoutingAllocations(t *testing.T) {
-	r := newOutputRouter(context.Background(), nil, outputRoutes{})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	m := newMailbox(1, ctx, cancel, make(chan struct{}))
-	r.register("A", m)
-	<-m.cursor
-	scenes := []ports.Scene{{Output: "A"}}
-	cursor := ports.CursorChange{Shape: "pointer"}
-	capture := ports.CaptureRequest{Output: "A"}
-	if got := testing.AllocsPerRun(100, func() {
-		r.scenes(scenes)
-		r.setCursor(cursor)
-		r.routeCapture(capture)
-		<-m.captures
-	}); got != 0 {
-		t.Fatalf("routing: %g allocations per run, want 0", got)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		r := newOutputRouter(context.Background(), nil, outputRoutes{})
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		m := newMailbox(1, ctx, cancel, make(chan struct{}))
+		r.register("A", m)
+		<-m.cursor
+		scenes := []ports.Scene{{Output: "A"}}
+		cursor := ports.CursorChange{Shape: "pointer"}
+		capture := ports.CaptureRequest{Output: "A"}
+		if got := testing.AllocsPerRun(100, func() {
+			r.scenes(scenes)
+			r.setCursor(cursor)
+			r.routeCapture(capture)
+			<-m.captures
+		}); got != 0 {
+			t.Fatalf("routing: %g allocations per run, want 0", got)
+		}
+
+	})
 }
