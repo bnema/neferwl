@@ -127,6 +127,10 @@ func (c *Card) Scan() (added []*Output, removed, replaced []string, err error) {
 		if !c.want.usable(conn) {
 			continue
 		}
+		if c.dev.Local != nil && c.dev.Mode == MultiGPUOff {
+			c.log.Warn().Str("card", c.info.Path).Str("render_card", c.dev.RenderCard).Str("connector", conn.name).Str("multi_gpu", "off").Msg("cross-GPU output disabled")
+			continue
+		}
 		seen[conn.name] = true
 		mode := c.want.pickMode(conn)
 		if o := c.outputs[conn.name]; o != nil {

@@ -284,7 +284,7 @@ func openDRM(ctx context.Context, cfg ports.Config, opener ports.RenderDeviceOpe
 			continue
 		}
 		var local *localRenderDevice
-		dev := drm.CardDevices{Render: render, Mode: multiGPUMode(cfg.Render.MultiGPU)}
+		dev := drm.CardDevices{Render: render, RenderCard: b.renderInfo.Path, Mode: multiGPUMode(cfg.Render.MultiGPU)}
 		if info.Path != b.renderInfo.Path {
 			local = &localRenderDevice{}
 			dev.Local = sync.OnceValues(func() (ports.RenderDevice, error) {

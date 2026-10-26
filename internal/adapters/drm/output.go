@@ -204,9 +204,10 @@ type Output struct {
 	// planes is the memory plane count of the output images.
 	planes int
 	// imageMod is the modifier of the output images (0: linear).
-	imageMod uint64
-	card     *Card
-	images   []imageBuffer
+	imageMod  uint64
+	transport outputTransport
+	card      *Card
+	images    []imageBuffer
 	// cpuFences: the driver mishandles IN_FENCE_FD (fencegate.go), so
 	// commits wait for their fences on the CPU instead.
 	cpuFences bool

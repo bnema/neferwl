@@ -147,6 +147,9 @@ func (o *Output) showImageKind(r ports.Renderer, kind imageKind, cause error) er
 // leaves GBM out for the first kind. There is no CPU fallback (ADR 014): a
 // GPU that cannot export a scanout-capable image cannot drive the output.
 func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error, skipGBM bool) (imageKind, error) {
+	if o.crossGPU() {
+		return o.crossImages(r, cause, skipGBM)
+	}
 	err := cause
 	start := kind
 	for ; kind <= imagesLinear; kind++ {
