@@ -72,8 +72,6 @@ func TestOpenMissingProcess(t *testing.T) {
 
 // A process whose binary was removed is refused, and a peer that already
 // exited is never resolved from its (possibly recycled) pid.
-//
-//testpolicy:realtime real child process; its post-exec readiness line is read from a pipe
 func TestExeOfPidfdDeletedAndExited(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "child")
