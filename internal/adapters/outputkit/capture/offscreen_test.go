@@ -6,7 +6,7 @@ import (
 	"image"
 	"os"
 	"testing"
-	"time"
+	"testing/synctest"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
@@ -138,26 +138,29 @@ func TestSubmitHiddenHeldByGateUntilVerdict(t *testing.T) {
 		{"failed", GateVerdict(errors.New("frame dropped"))},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			replies := make(chan ports.CaptureDone, 4)
-			p := NewPipeline(context.Background(), replies)
-			child, _ := childMock(t, 200, 100)
-			child.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
-			p.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
-			p.BeginGate()
-			p.SubmitHidden(hiddenScene(), nil, []ports.CaptureRequest{hiddenRequest(t, 1, image.Rect(0, 0, 200, 100))})
-			select {
-			case d := <-replies:
-				t.Fatalf("answered before the gate verdict: %v", d.Err)
-			case <-time.After(100 * time.Millisecond):
-			}
-			p.EndGate(tc.verdict)
-			got := awaitCapture(t, replies)
-			if tc.verdict == nil {
-				require.NoError(t, got.Err)
-			} else {
-				require.ErrorIs(t, got.Err, ErrIndicatorMissing)
-			}
-			p.Close(nil)
+			synctest.Test(t, func(t *testing.T) {
+				replies := make(chan ports.CaptureDone, 4)
+				p := NewPipeline(context.Background(), replies)
+				child, _ := childMock(t, 200, 100)
+				child.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
+				p.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
+				p.BeginGate()
+				p.SubmitHidden(hiddenScene(), nil, []ports.CaptureRequest{hiddenRequest(t, 1, image.Rect(0, 0, 200, 100))})
+				synctest.Wait()
+				select {
+				case d := <-replies:
+					t.Fatalf("answered before the gate verdict: %v", d.Err)
+				default:
+				}
+				p.EndGate(tc.verdict)
+				got := awaitCapture(t, replies)
+				if tc.verdict == nil {
+					require.NoError(t, got.Err)
+				} else {
+					require.ErrorIs(t, got.Err, ErrIndicatorMissing)
+				}
+				p.Close(nil)
+			})
 		})
 	}
 }
