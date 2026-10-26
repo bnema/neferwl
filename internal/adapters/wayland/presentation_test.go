@@ -76,17 +76,12 @@ func TestPresentationFeedback(t *testing.T) {
 	w, surf, xdg := surfaceMapper(t, c, events)()
 	registerProtocol(t, c, xdg)
 	commands <- ports.ConfigureWindow{ID: w.ID, Width: 100, Height: 100, Output: "HEADLESS-1", Visible: true}
-	for deadline := time.Now().Add(2 * time.Second); ; {
-		var out string
-		s.display.Do(func() { out = s.frameOutput(s.windows[w.ID].xdg.surface) })
-		if out != "" {
-			break
+	flushCommands(t, s, commands)
+	s.display.Do(func() {
+		if s.frameOutput(s.windows[w.ID].xdg.surface) == "" {
+			t.Error("configure not applied")
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("configure not applied")
-		}
-		time.Sleep(2 * time.Millisecond)
-	}
+	})
 	registerProtocol(t, c, bindProtocol(t, c, "wl_output"))
 	pres := bindProtocol(t, c, "wp_presentation")
 	registerProtocol(t, c, pres)
@@ -94,14 +89,14 @@ func TestPresentationFeedback(t *testing.T) {
 	lastSeq := func() uint64 {
 		t.Helper()
 		var seq uint64
-		deadline := time.After(2 * time.Second)
+		deadline := waylandDeadline(2 * time.Second)
 		for {
 			select {
 			case got := <-contents:
 				if got.ID == w.ID {
 					seq = got.Seq
 				}
-			case <-time.After(50 * time.Millisecond):
+			case <-waylandDeadline(50 * time.Millisecond):
 				if seq != 0 {
 					return seq
 				}
@@ -129,7 +124,7 @@ func TestPresentationFeedback(t *testing.T) {
 			select {
 			case ev := <-p.out:
 				return ev
-			case <-time.After(5 * time.Millisecond):
+			case <-waylandDeadline(5 * time.Millisecond):
 			}
 		}
 		t.Fatalf("no answer: %s", what)
@@ -175,17 +170,12 @@ func TestPresentationFeedback(t *testing.T) {
 	// Wait for the resume before committing the next feedback: the command
 	// goroutine applies it in its own display round trip, which an empty Do
 	// here may overtake.
-	for deadline := time.Now().Add(2 * time.Second); ; {
-		var visible bool
-		s.display.Do(func() { visible = s.windows[w.ID].last.Visible })
-		if visible {
-			break
+	flushCommands(t, s, commands)
+	s.display.Do(func() {
+		if !s.windows[w.ID].last.Visible {
+			t.Error("resume not applied")
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("resume not applied")
-		}
-		time.Sleep(2 * time.Millisecond)
-	}
+	})
 	// Presented with the flip's time, counter and flags.
 	a := feedback()
 	commit()

@@ -95,23 +95,14 @@ func leaseServerWithState(t *testing.T) (*wlturbo.Display, chan ports.LeaseMessa
 			if err != nil {
 				t.Error(err)
 			}
-		case <-time.After(3 * time.Second):
+		case <-waylandDeadline(3 * time.Second):
 			t.Error("server hung")
 		}
 	})
 	c := protocolClient(t, s, dir)
 	events <- ports.LeaseConnectors{Card: "/dev/dri/card-test", Device: leaseFD(t), Connectors: []ports.LeaseConnector{{Card: "/dev/dri/card-test", Name: "DP-1", Description: "VR headset", ConnectorID: 42}}}
-	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		if _, ok := c.Registry().FindGlobal("wp_drm_lease_device_v1"); ok {
-			return c, requests, events, s
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatal("no lease global")
-	return nil, nil, nil, nil
+	dispatchUntil(t, c, func() bool { _, ok := c.Registry().FindGlobal("wp_drm_lease_device_v1"); return ok })
+	return c, requests, events, s
 }
 func TestDRMLeaseFlow(t *testing.T) {
 	c, requests, events := leaseServer(t)
@@ -147,7 +138,7 @@ func TestDRMLeaseFlow(t *testing.T) {
 		if !ok {
 			t.Fatalf("message %T", ev)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no request")
 	}
 	if len(got.Connectors) != 1 || got.Connectors[0] != "DP-1" {
@@ -180,7 +171,7 @@ func TestDRMLeaseFlow(t *testing.T) {
 		if v, ok := ev.(ports.LeaseRevoke); !ok || v.LeaseID != 7 {
 			t.Fatalf("revoke %v", ev)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no revoke")
 	}
 }
@@ -297,7 +288,7 @@ func TestLeaseMessagesRemainOrderedWhenChannelFull(t *testing.T) {
 		if v, ok := got.(ports.LeaseRequest); !ok || v.ID != 1 {
 			t.Fatalf("first %v", got)
 		}
-	case <-time.After(time.Second):
+	case <-waylandDeadline(time.Second):
 		t.Fatal("request timeout")
 	}
 	select {
@@ -305,7 +296,7 @@ func TestLeaseMessagesRemainOrderedWhenChannelFull(t *testing.T) {
 		if v, ok := got.(ports.LeaseRevoke); !ok || v.LeaseID != 1 {
 			t.Fatalf("second %v", got)
 		}
-	case <-time.After(time.Second):
+	case <-waylandDeadline(time.Second):
 		t.Fatal("revoke timeout")
 	}
 }
@@ -468,7 +459,7 @@ func TestLeaseDestroyPendingRevokesLateReply(t *testing.T) {
 	select {
 	case msg := <-requests:
 		sent = msg.(ports.LeaseRequest)
-	case <-time.After(time.Second):
+	case <-waylandDeadline(time.Second):
 		t.Fatal("no lease request")
 	}
 	requestProtocol(t, c, lease, dl.WpDrmLeaseV1RequestDestroy)

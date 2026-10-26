@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 )
 
@@ -14,6 +15,25 @@ import (
 //testpolicy:realtime real Wayland unix sockets, display descriptors, and external protocol clients
 func waylandDeadline(d time.Duration) <-chan time.Time {
 	return time.After(d)
+}
+
+// flushCommands joins commands sent before this call. The forwarder pushes
+// each command before receiving the next; cap+2 sends ensure it has received
+// a marker after pushing all preceding commands. Its drain was therefore
+// posted before our display.Do. ID zero is not a window, so markers are inert.
+func flushCommands(t *testing.T, s *Server, commands chan<- ports.ClientCommand) {
+	t.Helper()
+	deadline := waylandDeadline(2 * time.Second)
+	for range cap(commands) + 2 {
+		select {
+		case commands <- ports.ConfigureWindow{}:
+		case <-deadline:
+			t.Fatal("command forwarder stalled")
+		}
+	}
+	if !s.display.Do(func() {}) {
+		t.Fatal("display stopped")
+	}
 }
 
 // dispatchUntil reads actual wire events until the expected callback ran.

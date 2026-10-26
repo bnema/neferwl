@@ -81,7 +81,7 @@ func newCastHarness(t *testing.T, withSink bool) *castHarness {
 		cancel()
 		select {
 		case <-done:
-		case <-time.After(3 * time.Second):
+		case <-waylandDeadline(3 * time.Second):
 			t.Fatal("server did not stop")
 		}
 	})
@@ -95,7 +95,7 @@ func (h *castHarness) sync() {
 	h.s.display.Post(func() { close(ran) })
 	select {
 	case <-ran:
-	case <-time.After(3 * time.Second):
+	case <-waylandDeadline(3 * time.Second):
 		h.t.Fatal("display goroutine stalled")
 	}
 }
@@ -109,12 +109,13 @@ func (h *castHarness) next(kind ports.CastEventKind) ports.CastEvent {
 			h.t.Fatalf("event %+v, want kind %d", ev, kind)
 		}
 		return ev
-	case <-time.After(3 * time.Second):
+	case <-waylandDeadline(3 * time.Second):
 		h.t.Fatalf("no cast event of kind %d", kind)
 		return ports.CastEvent{}
 	}
 }
 
+//testpolicy:realtime capture replies arrive through a real Wayland display event loop
 func (h *castHarness) nextCastFrameDone() ports.CastEvent {
 	h.t.Helper()
 	timer := time.NewTimer(3 * time.Second)
@@ -151,7 +152,7 @@ func (h *castHarness) request() ports.CaptureRequest {
 	select {
 	case r := <-h.requests:
 		return r
-	case <-time.After(3 * time.Second):
+	case <-waylandDeadline(3 * time.Second):
 		h.t.Fatal("no capture request")
 		return ports.CaptureRequest{}
 	}
@@ -163,7 +164,7 @@ func (h *castHarness) noRequest(wait time.Duration) {
 	select {
 	case r := <-h.requests:
 		h.t.Fatalf("unexpected capture request for cast session %d on %s", r.Session, r.Output)
-	case <-time.After(wait):
+	case <-waylandDeadline(wait):
 	}
 }
 
@@ -176,7 +177,7 @@ func castClientEvent[T ports.ClientEvent](h *castHarness) T {
 			if v, ok := ev.(T); ok {
 				return v
 			}
-		case <-time.After(3 * time.Second):
+		case <-waylandDeadline(3 * time.Second):
 			var zero T
 			h.t.Fatalf("no %T", zero)
 			return zero
@@ -200,14 +201,12 @@ func (h *castHarness) open(id uint64, output string) (ports.CastEvent, uint64) {
 func (h *castHarness) state(core uint64, st ports.CaptureSessionState) {
 	h.t.Helper()
 	h.commands <- st
-	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
-		var seen bool
-		h.s.display.Do(func() { seen = h.s.castByCore[core].haveState })
-		if seen {
-			return
-		}
+	flushCommands(h.t, h.s, h.commands)
+	var seen bool
+	h.s.display.Do(func() { seen = h.s.castByCore[core].haveState })
+	if !seen {
+		h.t.Fatal("state not applied")
 	}
-	h.t.Fatal("state not applied")
 }
 
 func castFrame(id uint64, buf int, data []byte, w, hgt int) ports.CastCommand {
@@ -436,7 +435,7 @@ func TestCastTransientRetry(t *testing.T) {
 			if ev.Kind != ports.CastFrameDone || ev.Buf != 1 || !errors.Is(ev.Err, ports.ErrCaptureTransient) {
 				t.Fatalf("event %+v", ev)
 			}
-		case <-time.After(5 * time.Second):
+		case <-waylandDeadline(5 * time.Second):
 			t.Fatal("frame neither retried nor failed")
 		}
 		break
@@ -596,7 +595,7 @@ func TestCastInventoryPublishedOncePerChange(t *testing.T) {
 		select {
 		case v := <-h.invs:
 			return v
-		case <-time.After(3 * time.Second):
+		case <-waylandDeadline(3 * time.Second):
 			t.Fatal("no inventory")
 			return ports.CastInventory{}
 		}

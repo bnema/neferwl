@@ -44,7 +44,7 @@ func TestCachedSubsurfaceBufferReleaseOnRoleDestroy(t *testing.T) {
 	select {
 	case <-p.released:
 		t.Fatal("cached child buffer released before parent commit")
-	case <-time.After(40 * time.Millisecond):
+	case <-waylandDeadline(40 * time.Millisecond):
 	}
 	requestProtocol(t, c, sub, wayland.SubsurfaceRequestDestroy)
 	if err := c.Roundtrip(); err != nil {
@@ -52,7 +52,7 @@ func TestCachedSubsurfaceBufferReleaseOnRoleDestroy(t *testing.T) {
 	}
 	select {
 	case <-p.released:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("dropped child buffer never released")
 	}
 }
@@ -182,17 +182,11 @@ func TestInvisibleWindowBufferHeldUntilReport(t *testing.T) {
 	configure := func(v ports.ConfigureWindow) {
 		t.Helper()
 		commands <- v
-		deadline := time.Now().Add(2 * time.Second)
-		for {
-			applied := false
-			s.display.Do(func() { win := s.windows[w.ID]; applied = win.hasLast && win.last == v })
-			if applied {
-				return
-			}
-			if time.Now().After(deadline) {
-				t.Fatalf("configure not applied: %+v", v)
-			}
-			time.Sleep(time.Millisecond)
+		flushCommands(t, s, commands)
+		applied := false
+		s.display.Do(func() { win := s.windows[w.ID]; applied = win.hasLast && win.last == v })
+		if !applied {
+			t.Fatalf("configure not applied: %+v", v)
 		}
 	}
 	configure(ports.ConfigureWindow{ID: w.ID, Width: 100, Height: 100, Output: "HEADLESS-1", Visible: true})
@@ -282,6 +276,6 @@ func TestHeldBufferRequeuedBeforeOutputAck(t *testing.T) {
 	select {
 	case <-p.released:
 		t.Fatal("queued buffer released after output ack")
-	case <-time.After(40 * time.Millisecond):
+	case <-waylandDeadline(40 * time.Millisecond):
 	}
 }

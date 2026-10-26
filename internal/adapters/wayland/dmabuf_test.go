@@ -35,7 +35,7 @@ func dmabufServer(t *testing.T, sup ports.DMABufSupport) (*Server, chan ports.Cl
 			if err != nil {
 				t.Errorf("Run: %v", err)
 			}
-		case <-time.After(2 * time.Second):
+		case <-waylandDeadline(2 * time.Second):
 			t.Error("Run hung")
 		}
 	})
@@ -284,7 +284,7 @@ func TestWestonDMABuf(t *testing.T) {
 	s, events, contents, dir := dmabufServer(t, ports.DMABufSupport{Formats: []ports.DMABufFormat{linearARGB, xrgb}})
 	_, _, output := lifecycleClient(t, tool, s, dir, nil)
 	w := mapped(t, events, 5*time.Second)
-	deadline := time.After(5 * time.Second)
+	deadline := waylandDeadline(5 * time.Second)
 	for {
 		select {
 		case c := <-contents:
@@ -387,20 +387,8 @@ func newScanoutHarness(t *testing.T, sup ports.DMABufSupport, version uint32) *s
 // next waits for the next feedback round.
 func (h *scanoutHarness) next(what string) round {
 	h.t.Helper()
-	deadline := time.After(2 * time.Second)
-	for {
-		if err := h.c.Roundtrip(); err != nil {
-			h.t.Fatal(err)
-		}
-		select {
-		case r := <-h.proxy.rounds:
-			return r
-		case <-deadline:
-			h.t.Fatalf("no feedback: %s", what)
-		default:
-			time.Sleep(5 * time.Millisecond)
-		}
-	}
+	dispatchUntil(h.t, h.c, func() bool { return len(h.proxy.rounds) > 0 })
+	return <-h.proxy.rounds
 }
 
 // A fullscreen surface on an output with scanout formats gets a scanout

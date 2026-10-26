@@ -189,7 +189,7 @@ func TestWorkspaceProtocol(t *testing.T) {
 		if got, ok := v.(ports.WorkspaceActivate); !ok || !slices.Equal(got.IDs, []uint64{42, 43}) {
 			t.Fatal(v)
 		}
-	case <-time.After(time.Second):
+	case <-waylandDeadline(time.Second):
 		t.Fatal("no activation")
 	}
 	select {
@@ -198,39 +198,23 @@ func TestWorkspaceProtocol(t *testing.T) {
 	default:
 	}
 	snapshots <- ports.Workspaces{Outputs: []ports.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: []ports.WorkspaceInfo{{ID: 42, Name: "1", Hidden: true}, {ID: 43, Name: "2", Index: 1}}}}}
-	// The snapshot reaches the display through a forwarding goroutine:
-	// poll by round trips until a deadline, not a fixed count.
-	found := false
-	for deadline := time.Now().Add(2 * time.Second); !found && time.Now().Before(deadline); time.Sleep(time.Millisecond) {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
+	dispatchUntil(t, c, func() bool {
 		for len(p.events) > 0 {
-			v := <-p.events
-			if v == [2]uint32{2<<8 | ext.ExtWorkspaceHandleV1EventState, uint32(ext.ExtWorkspaceHandleV1StateHidden)} {
-				found = true
+			if v := <-p.events; v == [2]uint32{2<<8 | ext.ExtWorkspaceHandleV1EventState, uint32(ext.ExtWorkspaceHandleV1StateHidden)} {
+				return true
 			}
 		}
-	}
-	if !found {
-		t.Fatal("no state change")
-	}
+		return false
+	})
 	snapshots <- ports.Workspaces{Outputs: []ports.WorkspaceOutput{}}
-	found = false
-	for deadline := time.Now().Add(2 * time.Second); !found && time.Now().Before(deadline); time.Sleep(time.Millisecond) {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
+	dispatchUntil(t, c, func() bool {
 		for len(p.events) > 0 {
-			v := <-p.events
-			if v[0] == 1<<8|ext.ExtWorkspaceGroupHandleV1EventRemoved {
-				found = true
+			if v := <-p.events; v[0] == 1<<8|ext.ExtWorkspaceGroupHandleV1EventRemoved {
+				return true
 			}
 		}
-	}
-	if !found {
-		t.Fatal("group not removed")
-	}
+		return false
+	})
 }
 
 func TestWorkspaceConfiguredIDAndBatchDone(t *testing.T) {

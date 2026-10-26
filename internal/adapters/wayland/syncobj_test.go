@@ -44,26 +44,28 @@ func TestSyncobjStructSizes(t *testing.T) {
 // syncHarness is a server with a mocked syncobj device and a client with
 // a mapped window, a dmabuf buffer and the syncobj objects.
 type syncHarness struct {
-	t         *testing.T
-	s         *Server
-	c         *wlturbo.Display
-	dev       *mocksyncobjDevice
-	contents  <-chan ports.SurfaceContent
-	presented ports.PresentationSink
-	surf      uint32
-	syncSurf  uint32
-	timeline  uint32
-	win       ports.WindowID
-	mu        sync.Mutex
-	efds      map[uint64]int // eventfd by acquire point
-	signals   []uint64
-	fences    []*os.File
-	releases  map[uint32]*syncReleaseProxy
-	mgr       uint32
+	t           *testing.T
+	s           *Server
+	c           *wlturbo.Display
+	dev         *mocksyncobjDevice
+	contents    <-chan ports.SurfaceContent
+	presented   ports.PresentationSink
+	surf        uint32
+	syncSurf    uint32
+	timeline    uint32
+	win         ports.WindowID
+	mu          sync.Mutex
+	efds        map[uint64]int // eventfd by acquire point
+	signalReady chan struct{}
+	efdReady    chan struct{}
+	signals     []uint64
+	fences      []*os.File
+	releases    map[uint32]*syncReleaseProxy
+	mgr         uint32
 }
 
 func newSyncHarness(t *testing.T) *syncHarness {
-	h := &syncHarness{t: t, efds: map[uint64]int{}}
+	h := &syncHarness{t: t, efds: map[uint64]int{}, signalReady: make(chan struct{}, 64), efdReady: make(chan struct{}, 64)}
 	h.dev = newMocksyncobjDevice(t)
 	h.dev.EXPECT().fdToHandle(mock.Anything).Return(7, nil).Maybe()
 	h.dev.EXPECT().destroy(mock.Anything).Return(nil).Maybe()
@@ -77,6 +79,7 @@ func newSyncHarness(t *testing.T) *syncHarness {
 		h.mu.Lock()
 		h.efds[point] = dup
 		h.mu.Unlock()
+		h.efdReady <- struct{}{}
 		return nil
 	}).Maybe()
 	h.dev.EXPECT().exportSyncFile(uint32(7), mock.Anything).RunAndReturn(func(uint32, uint64) (*os.File, error) {
@@ -94,6 +97,7 @@ func newSyncHarness(t *testing.T) *syncHarness {
 		h.mu.Lock()
 		h.signals = append(h.signals, point)
 		h.mu.Unlock()
+		h.signalReady <- struct{}{}
 		return nil
 	}).Maybe()
 	dir := t.TempDir()
@@ -138,16 +142,11 @@ func newSyncHarness(t *testing.T) *syncHarness {
 	if err := wireRequest(h.c, mgr, uint16(linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1RequestImportTimeline), []int{fd}, h.timeline); err != nil {
 		t.Fatal(err)
 	}
-	for deadline := time.Now().Add(2 * time.Second); ; {
-		var out string
-		s.display.Do(func() { out = s.frameOutput(s.windows[w.ID].xdg.surface) })
-		if out != "" {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("configure not applied")
-		}
-		time.Sleep(2 * time.Millisecond)
+	flushCommands(t, s, commands)
+	var out string
+	s.display.Do(func() { out = s.frameOutput(s.windows[w.ID].xdg.surface) })
+	if out == "" {
+		t.Fatal("configure not applied")
 	}
 	return h
 }
@@ -207,7 +206,7 @@ func (h *syncHarness) commit(buf uint32, acquire, release uint64) {
 
 // content waits for a DMABuf content of the window.
 func (h *syncHarness) content(wait time.Duration) (ports.SurfaceContent, bool) {
-	deadline := time.After(wait)
+	deadline := waylandDeadline(wait)
 	for {
 		select {
 		case c := <-h.contents:
@@ -223,7 +222,7 @@ func (h *syncHarness) content(wait time.Duration) (ports.SurfaceContent, bool) {
 // fire makes the kernel's eventfd for an acquire point readable.
 func (h *syncHarness) fire(point uint64) {
 	h.t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		h.mu.Lock()
 		fd, ok := h.efds[point]
@@ -236,10 +235,11 @@ func (h *syncHarness) fire(point uint64) {
 			}
 			return
 		}
-		if time.Now().After(deadline) {
+		select {
+		case <-h.efdReady:
+		case <-deadline:
 			h.t.Fatalf("no eventfd for point %d", point)
 		}
-		time.Sleep(2 * time.Millisecond)
 	}
 }
 
@@ -276,12 +276,10 @@ func TestSyncobjAcquireAndRelease(t *testing.T) {
 	}
 	// The output read the second content: the first buffer is released.
 	h.presented.Push(ports.OutputPresented{Output: "HEADLESS-1", Seen: map[ports.WindowID]uint64{h.win: second.Seq}})
-	deadline := time.Now().Add(2 * time.Second)
-	for len(h.signalled()) == 0 && time.Now().Before(deadline) {
-		if err := h.c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		time.Sleep(2 * time.Millisecond)
+	select {
+	case <-h.signalReady:
+	case <-waylandDeadline(2 * time.Second):
+		t.Fatal("release point not signalled")
 	}
 	if got := h.signalled(); len(got) != 1 || got[0] != 2 {
 		t.Fatalf("signalled %v", got)
@@ -542,8 +540,8 @@ func TestSyncobjDroppedCommit(t *testing.T) {
 	if err := h.c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	// The point never gets a fence: the waiter must still stop polling it.
-	time.Sleep(250 * time.Millisecond)
+	// Explicit acquire registrations are removed synchronously by destruction;
+	// the roundtrip above joins that display-owner work.
 	if err := h.c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -572,12 +570,10 @@ func TestSyncobjDroppedReadyCommitReleases(t *testing.T) {
 		t.Fatal("content")
 	}
 	requestProtocol(t, h.c, h.surf, wayland.SurfaceRequestDestroy)
-	deadline := time.Now().Add(2 * time.Second)
-	for len(h.signalled()) == 0 && time.Now().Before(deadline) {
-		if err := h.c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		time.Sleep(2 * time.Millisecond)
+	select {
+	case <-h.signalReady:
+	case <-waylandDeadline(2 * time.Second):
+		t.Fatal("release point not signalled")
 	}
 	if got := h.signalled(); len(got) != 1 || got[0] != 2 {
 		t.Fatalf("signalled %v", got)
