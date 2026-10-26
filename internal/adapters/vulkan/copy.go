@@ -19,6 +19,8 @@ type Copier struct {
 	width, height    int
 	pool             vk.CommandPool
 	cmds             [3]vk.CommandBuffer
+	slots            [3]copySlot
+	next             int
 	sources, targets []*target
 }
 
@@ -28,6 +30,9 @@ var _ ports.Copier = (*Copier)(nil)
 func (g *GPU) NewCopier(w, h int) (ports.Copier, error) {
 	if w <= 0 || h <= 0 || uint64(w) > math.MaxUint32 || uint64(h) > math.MaxUint32 {
 		return nil, fmt.Errorf("invalid copier dimensions %dx%d", w, h)
+	}
+	if !g.syncFD {
+		return nil, errors.New("GPU copy requires sync_fd export")
 	}
 	c := &Copier{gpu: g, q: g.acquireQueue(), width: w, height: h}
 	info := vk.CommandPoolCreateInfo{SType: vk.StructureTypeCommandPoolCreateInfo, Flags: vk.CommandPoolCreateResetCommandBufferBit, QueueFamilyIndex: g.family}
@@ -60,6 +65,13 @@ func (c *Copier) importImage(b *ports.DMABuf, usage vk.ImageUsageFlags) (*target
 	}
 	if n < 1 || n > maxModifierPlanes {
 		return nil, errImagePlanes
+	}
+	need := vk.FormatFeatureFlags(vk.FormatFeatureBlitSrcBit)
+	if usage == vk.ImageUsageTransferDstBit {
+		need = vk.FormatFeatureBlitDstBit
+	}
+	if !c.supportsBlit(format, b.Modifier, need) {
+		return nil, fmt.Errorf("copy format %#x modifier %#x lacks blit feature %#x", b.Format, b.Modifier, need)
 	}
 	if !c.gpu.copyImportable(format, b.Modifier, usage) {
 		return nil, errImageModifier
@@ -160,6 +172,12 @@ func (c *Copier) SourceModifiers(formats []ports.DMABufFormat) []ports.DMABufFor
 }
 
 func (c *Copier) importImages(bufs []ports.DMABuf, usage vk.ImageUsageFlags, dst *[]*target) error {
+	if c.q == nil {
+		return errors.New("copier closed")
+	}
+	if err := c.waitAll(); err != nil {
+		return err
+	}
 	for _, im := range *dst {
 		c.freeImage(im)
 	}
@@ -188,9 +206,162 @@ func (c *Copier) ImportTargets(bufs []ports.DMABuf) error {
 	return c.importImages(bufs, vk.ImageUsageTransferDstBit, &c.targets)
 }
 
-// Copy is implemented by the next transfer submission phase.
+type copySlot struct {
+	fence      vk.Fence
+	busy       bool
+	wait, done vk.Semaphore
+}
+
+func (c *Copier) waitSlot(s *copySlot) error {
+	if s.busy {
+		if err := checked("vkWaitForFences(copy)", c.gpu.dd.WaitForFences(c.gpu.device, 1, &s.fence, 1, math.MaxUint64)); err != nil {
+			return err
+		}
+		if err := checked("vkResetFences(copy)", c.gpu.dd.ResetFences(c.gpu.device, 1, &s.fence)); err != nil {
+			return err
+		}
+		s.busy = false
+	}
+	if s.wait != 0 {
+		c.gpu.dd.DestroySemaphore(c.gpu.device, s.wait, nil)
+		s.wait = 0
+	}
+	if s.done != 0 {
+		c.gpu.dd.DestroySemaphore(c.gpu.device, s.done, nil)
+		s.done = 0
+	}
+	return nil
+}
+func (c *Copier) waitAll() error {
+	for i := range c.slots {
+		if err := c.waitSlot(&c.slots[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Copy submits a 1:1 nearest blit. The acquire file remains caller-owned.
 func (c *Copier) Copy(src, dst int, acquire *os.File) (*os.File, error) {
-	return nil, errors.New("copy not implemented")
+	if c.q == nil {
+		return nil, errors.New("copier closed")
+	}
+	if src < 0 || src >= len(c.sources) || dst < 0 || dst >= len(c.targets) {
+		return nil, errors.New("copy image index out of range")
+	}
+	s := &c.slots[c.next]
+	cmd := c.cmds[c.next]
+	if err := c.waitSlot(s); err != nil {
+		return nil, err
+	}
+	d, dev := c.gpu.dd, c.gpu.device
+	if s.fence == 0 {
+		fi := vk.FenceCreateInfo{SType: vk.StructureTypeFenceCreateInfo}
+		if err := checked("vkCreateFence(copy)", d.CreateFence(dev, &fi, nil, &s.fence)); err != nil {
+			return nil, err
+		}
+	}
+	export := vk.ExportSemaphoreCreateInfo{SType: vk.StructureTypeExportSemaphoreCreateInfo, HandleTypes: vk.ExternalSemaphoreHandleTypeSyncFDBit}
+	si := vk.SemaphoreCreateInfo{SType: vk.StructureTypeSemaphoreCreateInfo, Next: unsafe.Pointer(&export)}
+	if err := checked("vkCreateSemaphore(copy)", d.CreateSemaphore(dev, &si, nil, &s.done)); err != nil {
+		return nil, err
+	}
+	if acquire != nil {
+		fd, err := dupFile(acquire)
+		if err != nil {
+			return nil, err
+		}
+		s.wait, err = c.gpu.importCopyFence(fd)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := checked("vkResetCommandBuffer(copy)", d.ResetCommandBuffer(cmd, 0)); err != nil {
+		return nil, err
+	}
+	begin := vk.CommandBufferBeginInfo{SType: vk.StructureTypeCommandBufferBeginInfo}
+	if err := checked("vkBeginCommandBuffer(copy)", d.BeginCommandBuffer(cmd, &begin)); err != nil {
+		return nil, err
+	}
+	source, target := c.sources[src], c.targets[dst]
+	barriers := [2]vk.ImageMemoryBarrier{
+		{SType: vk.StructureTypeImageMemoryBarrier, DstAccessMask: vk.AccessTransferReadBit, OldLayout: vk.ImageLayoutGeneral, NewLayout: vk.ImageLayoutTransferSrcOptimal, SrcQueueFamilyIndex: vk.QueueFamilyForeignEXT, DstQueueFamilyIndex: c.gpu.family, Image: source.image, SubresourceRange: colorRange},
+		{SType: vk.StructureTypeImageMemoryBarrier, DstAccessMask: vk.AccessTransferWriteBit, OldLayout: vk.ImageLayoutUndefined, NewLayout: vk.ImageLayoutTransferDstOptimal, SrcQueueFamilyIndex: vk.QueueFamilyForeignEXT, DstQueueFamilyIndex: c.gpu.family, Image: target.image, SubresourceRange: colorRange},
+	}
+	d.CmdPipelineBarrier(cmd, vk.PipelineStageTopOfPipeBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 2, &barriers[0])
+	layers := vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}
+	offsets := [2]vk.Offset3D{{}, {X: int32(c.width), Y: int32(c.height), Z: 1}}
+	blit := vk.ImageBlit{SrcSubresource: layers, SrcOffsets: offsets, DstSubresource: layers, DstOffsets: offsets}
+	// purego-vulkan v0.6.0 lacks CmdCopyImage; 1:1 NEAREST blit is an exact copy.
+	d.CmdBlitImage(cmd, source.image, vk.ImageLayoutTransferSrcOptimal, target.image, vk.ImageLayoutTransferDstOptimal, 1, &blit, vk.FilterNearest)
+	for i := range barriers {
+		b := &barriers[i]
+		b.SrcAccessMask = b.DstAccessMask
+		b.DstAccessMask = 0
+		b.OldLayout = b.NewLayout
+		b.NewLayout = vk.ImageLayoutGeneral
+		b.SrcQueueFamilyIndex = c.gpu.family
+		b.DstQueueFamilyIndex = vk.QueueFamilyForeignEXT
+	}
+	d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 2, &barriers[0])
+	if err := checked("vkEndCommandBuffer(copy)", d.EndCommandBuffer(cmd)); err != nil {
+		return nil, err
+	}
+	submit := vk.SubmitInfo{SType: vk.StructureTypeSubmitInfo, CommandBufferCount: 1, CommandBuffers: &cmd, SignalSemaphoreCount: 1, SignalSemaphores: &s.done}
+	stage := vk.PipelineStageFlags(vk.PipelineStageTransferBit)
+	if s.wait != 0 {
+		submit.WaitSemaphoreCount = 1
+		submit.WaitSemaphores = &s.wait
+		submit.WaitDstStageMask = &stage
+	}
+	if err := c.q.submit(1, &submit, s.fence); err != nil {
+		return nil, err
+	}
+	s.busy = true
+	c.next = (c.next + 1) % len(c.cmds)
+	get := vk.SemaphoreGetFdInfoKHR{SType: vk.StructureTypeSemaphoreGetFDInfoKHR, Semaphore: s.done, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit}
+	fd := int32(-1)
+	if err := checked("vkGetSemaphoreFdKHR(copy)", d.GetSemaphoreFdKHR(dev, &get, &fd)); err != nil {
+		return nil, err
+	}
+	if fd < 0 {
+		return nil, nil
+	} // Already signalled; no CPU wait/readback fallback.
+	return os.NewFile(uintptr(fd), "copy-done"), nil
+}
+
+func (g *GPU) importCopyFence(fd int) (vk.Semaphore, error) {
+	var sem vk.Semaphore
+	si := vk.SemaphoreCreateInfo{SType: vk.StructureTypeSemaphoreCreateInfo}
+	if err := checked("vkCreateSemaphore(copy acquire)", g.dd.CreateSemaphore(g.device, &si, nil, &sem)); err != nil {
+		unix.Close(fd)
+		return 0, err
+	}
+	imp := vk.ImportSemaphoreFdInfoKHR{SType: vk.StructureTypeImportSemaphoreFDInfoKHR, Semaphore: sem, Flags: vk.SemaphoreImportTemporaryBit, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit, Fd: int32(fd)}
+	if err := checked("vkImportSemaphoreFdKHR(copy)", g.dd.ImportSemaphoreFdKHR(g.device, &imp)); err != nil {
+		unix.Close(fd)
+		g.dd.DestroySemaphore(g.device, sem, nil)
+		return 0, err
+	}
+	return sem, nil
+}
+
+func (c *Copier) supportsBlit(format vk.Format, modifier uint64, need vk.FormatFeatureFlags) bool {
+	list := vk.DrmFormatModifierPropertiesListEXT{SType: vk.StructureTypeDRMFormatModifierPropertiesListEXT}
+	props := vk.FormatProperties2{SType: vk.StructureTypeFormatProperties2, Next: unsafe.Pointer(&list)}
+	c.gpu.inst.id.GetPhysicalDeviceFormatProperties2(c.gpu.physical, format, &props)
+	if list.DrmFormatModifierCount == 0 {
+		return false
+	}
+	mods := make([]vk.DrmFormatModifierPropertiesEXT, list.DrmFormatModifierCount)
+	list.DrmFormatModifierProperties = &mods[0]
+	c.gpu.inst.id.GetPhysicalDeviceFormatProperties2(c.gpu.physical, format, &props)
+	for _, m := range mods[:list.DrmFormatModifierCount] {
+		if m.DrmFormatModifier == modifier {
+			return m.DrmFormatModifierTilingFeatures&need == need
+		}
+	}
+	return false
 }
 
 func (c *Copier) freeImage(t *target) {
@@ -208,6 +379,13 @@ func (c *Copier) freeImage(t *target) {
 func (c *Copier) Close() {
 	if c == nil || c.q == nil {
 		return
+	}
+	_ = c.waitAll()
+	for i := range c.slots {
+		if c.slots[i].fence != 0 {
+			c.gpu.dd.DestroyFence(c.gpu.device, c.slots[i].fence, nil)
+			c.slots[i].fence = 0
+		}
 	}
 	for _, im := range c.sources {
 		c.freeImage(im)
