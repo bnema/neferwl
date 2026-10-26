@@ -28,6 +28,7 @@ func TestChildEnv(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime real spawned processes record their environment in files
 func TestRun(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "result")
@@ -67,6 +68,7 @@ func TestRun(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime real spawned processes record their environment in files
 func TestChildPath(t *testing.T) {
 	dir := t.TempDir()
 	name := "neferwl-child-only-script"

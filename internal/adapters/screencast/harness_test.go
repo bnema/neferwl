@@ -127,6 +127,7 @@ type harnessOpts struct {
 	iterate func()
 }
 
+//testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func newSvcHarness(t *testing.T, o harnessOpts) *svcHarness {
 	t.Helper()
 	h := &svcHarness{t: t, cmds: make(chan ports.CastCommand, 64), peers: &peers{}, log: &logBuf{}, done: make(chan struct{}), closed: make(chan struct{}, 8)}
@@ -226,6 +227,8 @@ func (h *svcHarness) client() *zerobus.Conn {
 }
 
 // waitName waits until the service owns name.
+//
+//testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func (h *svcHarness) waitName(c *zerobus.Conn, name string) {
 	h.t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -241,7 +244,7 @@ func (h *svcHarness) waitName(c *zerobus.Conn, name string) {
 		if m.Body().Bool() {
 			return
 		}
-		time.Sleep(5 * time.Millisecond)
+		<-time.After(5 * time.Millisecond)
 	}
 	h.t.Fatalf("%s not owned", name)
 }

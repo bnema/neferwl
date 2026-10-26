@@ -24,6 +24,8 @@ func boundIO(t *testing.T, operation string, closeIO func()) func() {
 }
 
 // receive bounds channel observations made by the test goroutine.
+//
+//testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func receive[T any](t *testing.T, ch <-chan T) T {
 	t.Helper()
 	select {

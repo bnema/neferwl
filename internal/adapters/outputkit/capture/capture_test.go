@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -55,22 +56,24 @@ func TestFailCancelledStillDeliversReadyReply(t *testing.T) {
 }
 
 func TestFailCancelledWithFullReplies(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	replies := make(chan ports.CaptureDone, 1)
-	replies <- ports.CaptureDone{}
-	f, err := os.CreateTemp(t.TempDir(), "capture")
-	if err != nil {
-		t.Fatal(err)
-	}
-	done := make(chan struct{})
-	go func() { Fail(ctx, ports.CaptureRequest{Dst: ports.SHMBuffer{File: f}}, nil, replies); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("blocked")
-	}
-	if _, err := f.Stat(); err == nil {
-		t.Fatal("fd still open")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		replies := make(chan ports.CaptureDone, 1)
+		replies <- ports.CaptureDone{}
+		f, err := os.CreateTemp(t.TempDir(), "capture")
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan struct{})
+		go func() { Fail(ctx, ports.CaptureRequest{Dst: ports.SHMBuffer{File: f}}, nil, replies); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("blocked")
+		}
+		if _, err := f.Stat(); err == nil {
+			t.Fatal("fd still open")
+		}
+	})
 }

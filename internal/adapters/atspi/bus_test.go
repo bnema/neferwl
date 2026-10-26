@@ -209,6 +209,8 @@ func TestDoDeadlineBreaksConnection(t *testing.T) {
 
 // Cancel while IsEnabled is waiting on a real service. Its failed Call is
 // shutdown, whereas expiry of the connector's own budget must still warn.
+//
+//testpolicy:realtime private D-Bus peer replies over a Unix socket
 func TestConnectCancelledWhileEnabling(t *testing.T) {
 	address := startBus(t)
 	t.Setenv("DBUS_SESSION_BUS_ADDRESS", address)

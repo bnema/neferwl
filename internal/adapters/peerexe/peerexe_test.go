@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
-	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -93,17 +92,11 @@ func TestExeOfPidfdDeletedAndExited(t *testing.T) {
 		t.Skip("pidfd_open: ", err)
 	}
 	defer unix.Close(pidfd)
-	// Wait until exec has completed so /proc/<pid>/exe is the copy.
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if _, _, err := ExeOfPidfd(pidfd); errors.Is(err, ErrExeDeleted) {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("deleted executable not refused")
-		}
-		time.Sleep(5 * time.Millisecond)
+	// StartProcess returns only after the exec handshake completes.
+	if _, _, err := ExeOfPidfd(pidfd); !errors.Is(err, ErrExeDeleted) {
+		t.Fatalf("deleted executable not refused: %v", err)
 	}
+
 	if _, err := readExe(proc.Pid); !errors.Is(err, ErrExeDeleted) {
 		t.Fatalf("readExe: %v", err)
 	}

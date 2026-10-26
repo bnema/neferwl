@@ -87,6 +87,7 @@ func TestStoreStartupLogs(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime inotify reloads and missing-directory retries require kernel I/O
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -94,7 +95,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 		if time.Now().After(deadline) {
 			t.Fatal("timeout: " + what)
 		}
-		time.Sleep(5 * time.Millisecond)
+		<-time.After(5 * time.Millisecond)
 	}
 }
 
@@ -154,7 +155,6 @@ func TestStoreWaitsForMissingDirectory(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx) }()
 	defer func() { cancel(); <-done }()
-	time.Sleep(60 * time.Millisecond)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

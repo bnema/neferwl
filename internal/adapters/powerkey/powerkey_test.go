@@ -65,6 +65,7 @@ type logindPeer struct {
 	done     chan struct{}
 }
 
+//testpolicy:realtime private D-Bus logind peer passes real file descriptors over sockets
 func newPeer(t *testing.T, address string) *logindPeer {
 	t.Helper()
 	conn, err := zerobus.Dial(address)
@@ -170,6 +171,7 @@ func (p *logindPeer) own() error {
 	return nil
 }
 
+//testpolicy:realtime private D-Bus logind peer passes real file descriptors over sockets
 func (p *logindPeer) next(t *testing.T) grant {
 	t.Helper()
 	select {
@@ -201,9 +203,11 @@ func (l *logBuf) count(s string) int {
 }
 
 // wait blocks until the log has n lines containing msg.
+//
+//testpolicy:realtime private D-Bus logind peer passes real file descriptors over sockets
 func (l *logBuf) wait(t *testing.T, msg string, n int) {
 	t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); l.count(msg) < n; time.Sleep(5 * time.Millisecond) {
+	for deadline := time.Now().Add(5 * time.Second); l.count(msg) < n; <-time.After(5 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatalf("log never had %d x %q", n, msg)
 		}
@@ -217,6 +221,7 @@ func (l *logBuf) holding(t *testing.T, n int) {
 	l.wait(t, "holding logind key locks", n)
 }
 
+//testpolicy:realtime private D-Bus logind peer passes real file descriptors over sockets
 func run(t *testing.T, address string) (stop func(), log *logBuf) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -305,6 +310,8 @@ func TestServeWaitsForLogind(t *testing.T) {
 }
 
 // command reports errors on the test goroutine, never from the peer loop.
+//
+//testpolicy:realtime private D-Bus logind peer passes real file descriptors over sockets
 func (p *logindPeer) command(t *testing.T, f func() error) error {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

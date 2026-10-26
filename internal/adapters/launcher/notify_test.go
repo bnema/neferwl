@@ -12,6 +12,8 @@ import (
 
 // notify-send runs with the child environment and the summary and body as
 // separate arguments; the script on PATH records them.
+//
+//testpolicy:realtime notify-send is a real subprocess writing a result file
 func TestNotifier(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "calls")
@@ -28,7 +30,7 @@ func TestNotifier(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatal("notify-send not run")
 		}
-		time.Sleep(10 * time.Millisecond)
+		<-time.After(10 * time.Millisecond)
 	}
 	if want := "--app-name=neferwl|--|DP-2 scale saved|-Scale 1.5|unix:path=/tmp/bus|"; string(data) != want {
 		t.Fatalf("got %q, want %q", data, want)

@@ -12,6 +12,8 @@ import (
 )
 
 // A peer that accepts but never answers authentication must not hold shutdown.
+//
+//testpolicy:realtime Unix socket authentication cancellation
 func TestDialCancellationDuringAuth(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bus")
 	listener, err := net.Listen("unix", path)

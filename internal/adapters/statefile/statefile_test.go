@@ -26,43 +26,41 @@ var sample = State{
 // The file holds the latest state while the session runs; a stale file from
 // a crashed session goes at start, and the file is removed at exit.
 func TestRunWritesAndRemoves(t *testing.T) {
-	path, err := Path(t.TempDir(), "wayland-9")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(`{"output":"stale"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	states := make(chan ports.State, 1)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- Run(ctx, path, states, workspaceid.WithPrefix("0a1b2c3d"), zerowrap.Default()) }()
-	focused := ports.WindowState{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: 9, Visible: true}
-	states <- ports.State{Output: "DP-2", Outputs: []ports.OutputState{{Name: "DP-2", Active: 1, Count: 1, WorkspaceID: 9}}, Window: &focused, Windows: []ports.WindowState{focused}}
-	want := State{Output: "DP-2", Outputs: []Output{{Name: "DP-2", Active: 1, Count: 1, WorkspaceID: "0a1b2c3d-9"}}, Window: &Window{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true}, Windows: []Window{{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true}}, Workspaces: []Workspace{}}
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if got, err := Read(path); err == nil && got.Output != "stale" {
-			if !reflect.DeepEqual(got, want) {
-				t.Fatalf("%+v", got)
-			}
-			break
+	synctest.Test(t, func(t *testing.T) {
+		path, err := Path(t.TempDir(), "wayland-9")
+		if err != nil {
+			t.Fatal(err)
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("no state file")
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
 		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatal("state file left behind", err)
-	}
+		if err := os.WriteFile(path, []byte(`{"output":"stale"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		states := make(chan ports.State, 1)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- Run(ctx, path, states, workspaceid.WithPrefix("0a1b2c3d"), zerowrap.Default()) }()
+		focused := ports.WindowState{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: 9, Visible: true}
+		states <- ports.State{Output: "DP-2", Outputs: []ports.OutputState{{Name: "DP-2", Active: 1, Count: 1, WorkspaceID: 9}}, Window: &focused, Windows: []ports.WindowState{focused}}
+		want := State{Output: "DP-2", Outputs: []Output{{Name: "DP-2", Active: 1, Count: 1, WorkspaceID: "0a1b2c3d-9"}}, Window: &Window{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true}, Windows: []Window{{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true}}, Workspaces: []Workspace{}}
+		synctest.Wait()
+		got, err := Read(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%+v", got)
+		}
+
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatal("state file left behind", err)
+		}
+	})
 }
 
 // Stash and cell fields reach the file with their script-facing names.
