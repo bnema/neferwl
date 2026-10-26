@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -34,43 +35,49 @@ func partlyShown(t *testing.T) *Core {
 // A constraint region is window-local: it starts at the whole client's
 // origin, not at the visible part's, and is then cut to the viewport.
 func TestConstraintRegionUsesFullClientOrigin(t *testing.T) {
-	c := partlyShown(t)
-	full, vis, ok := c.shownClient(2)
-	if !ok || full != (Rect{X: 1075, Y: 50, W: 50, H: 100}) || vis != (Rect{X: 1100, Y: 50, W: 25, H: 100}) {
-		t.Fatalf("full %+v visible %+v %v", full, vis, ok)
-	}
-	c.constrained = ports.PointerConstrained{ID: 2, PointerConstraint: ports.PointerConstraint{Mode: ports.ConstraintConfine, Rect: Rect{X: 30, Y: 10, W: 20, H: 20}}}
-	c.resolveConstraint()
-	// Local x 30..50 is global 1105..1125, all inside the visible part.
-	if want := (Rect{X: 1105, Y: 60, W: 20, H: 20}); c.constraint.Rect != want {
-		t.Fatalf("region %+v want %+v", c.constraint.Rect, want)
-	}
-	// A region straddling the viewport edge is cut to it: local 10..40 is 1085..1115.
-	c.constrained.PointerConstraint.Rect = Rect{X: 10, Y: 0, W: 30, H: 100}
-	c.resolveConstraint()
-	if want := (Rect{X: 1100, Y: 50, W: 15, H: 100}); c.constraint.Rect != want {
-		t.Fatalf("straddling region %+v want %+v", c.constraint.Rect, want)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		c := partlyShown(t)
+		full, vis, ok := c.shownClient(2)
+		if !ok || full != (Rect{X: 1075, Y: 50, W: 50, H: 100}) || vis != (Rect{X: 1100, Y: 50, W: 25, H: 100}) {
+			t.Fatalf("full %+v visible %+v %v", full, vis, ok)
+		}
+		c.constrained = ports.PointerConstrained{ID: 2, PointerConstraint: ports.PointerConstraint{Mode: ports.ConstraintConfine, Rect: Rect{X: 30, Y: 10, W: 20, H: 20}}}
+		c.resolveConstraint()
+		// Local x 30..50 is global 1105..1125, all inside the visible part.
+		if want := (Rect{X: 1105, Y: 60, W: 20, H: 20}); c.constraint.Rect != want {
+			t.Fatalf("region %+v want %+v", c.constraint.Rect, want)
+		}
+		// A region straddling the viewport edge is cut to it: local 10..40 is 1085..1115.
+		c.constrained.PointerConstraint.Rect = Rect{X: 10, Y: 0, W: 30, H: 100}
+		c.resolveConstraint()
+		if want := (Rect{X: 1100, Y: 50, W: 15, H: 100}); c.constraint.Rect != want {
+			t.Fatalf("straddling region %+v want %+v", c.constraint.Rect, want)
+		}
+
+	})
 }
 
 // A warp target is computed from the whole client origin and refused when it
 // falls outside the viewport.
 func TestWarpUsesFullClientOriginAndFrame(t *testing.T) {
-	c := partlyShown(t)
-	c.pointer = 2
-	ctx := context.Background()
-	// Local 10 is global 1085: the hidden part of the window.
-	if err := c.warpPointer(ctx, ports.PointerWarp{ID: 2, X: 10, Y: 5}); err != nil {
-		t.Fatal(err)
-	}
-	if c.cursorX != 0 || c.cursorY != 0 {
-		t.Fatalf("warped into the hidden part: %v,%v", c.cursorX, c.cursorY)
-	}
-	// Local 30 is global 1105: shown.
-	if err := c.warpPointer(ctx, ports.PointerWarp{ID: 2, X: 30, Y: 5}); err != nil {
-		t.Fatal(err)
-	}
-	if c.cursorX != 1105 || c.cursorY != 55 {
-		t.Fatalf("cursor %v,%v want 1105,55", c.cursorX, c.cursorY)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		c := partlyShown(t)
+		c.pointer = 2
+		ctx := context.Background()
+		// Local 10 is global 1085: the hidden part of the window.
+		if err := c.warpPointer(ctx, ports.PointerWarp{ID: 2, X: 10, Y: 5}); err != nil {
+			t.Fatal(err)
+		}
+		if c.cursorX != 0 || c.cursorY != 0 {
+			t.Fatalf("warped into the hidden part: %v,%v", c.cursorX, c.cursorY)
+		}
+		// Local 30 is global 1105: shown.
+		if err := c.warpPointer(ctx, ports.PointerWarp{ID: 2, X: 30, Y: 5}); err != nil {
+			t.Fatal(err)
+		}
+		if c.cursorX != 1105 || c.cursorY != 55 {
+			t.Fatalf("cursor %v,%v want 1105,55", c.cursorX, c.cursorY)
+		}
+
+	})
 }

@@ -3,161 +3,171 @@ package core_test
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestWorkspaceChannelCapacity(t *testing.T) {
-	_, err := core.New(scrollDefaults(), core.Channels{Scenes: make(chan []ports.Scene, 1), Workspaces: make(chan ports.Workspaces, 2)}, core.Options{})
-	if err == nil {
-		t.Fatal("expected capacity-1 validation")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		_, err := core.New(scrollDefaults(), core.Channels{Scenes: make(chan []ports.Scene, 1), Workspaces: make(chan ports.Workspaces, 2)}, core.Options{})
+		if err == nil {
+			t.Fatal("expected capacity-1 validation")
+		}
+
+	})
 }
 
 func TestWorkspaceSnapshotsAndActivation(t *testing.T) {
-	cfg := scrollDefaults()
-	cfg.Workspaces = append(cfg.Workspaces, ports.WorkspaceConfig{Name: "dev"})
-	client := make(chan ports.ClientEvent, 16)
-	input := make(chan ports.InputEvent, 8)
-	output := make(chan ports.OutputEvent, 8)
-	commands := make(chan ports.ClientCommand, 32)
-	snapshots := make(chan ports.Workspaces, 1)
-	scenes := make(chan []ports.Scene, 1)
-	state := make(chan ports.State, 1)
-	spawn := make(chan ports.SpawnRequest, 8)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Workspaces: snapshots, State: state, Scenes: scenes, Spawn: spawn}, core.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- c.Run(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		if err := <-done; err != nil {
-			t.Error(err)
+	synctest.Test(t, func(t *testing.T) {
+		cfg := scrollDefaults()
+		cfg.Workspaces = append(cfg.Workspaces, ports.WorkspaceConfig{Name: "dev"})
+		client := make(chan ports.ClientEvent, 16)
+		input := make(chan ports.InputEvent, 8)
+		output := make(chan ports.OutputEvent, 8)
+		commands := make(chan ports.ClientCommand, 32)
+		snapshots := make(chan ports.Workspaces, 1)
+		scenes := make(chan []ports.Scene, 1)
+		state := make(chan ports.State, 1)
+		spawn := make(chan ports.SpawnRequest, 8)
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Workspaces: snapshots, State: state, Scenes: scenes, Spawn: spawn}, core.Options{})
+		if err != nil {
+			t.Fatal(err)
 		}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- c.Run(ctx) }()
+		t.Cleanup(func() {
+			cancel()
+			if err := <-done; err != nil {
+				t.Error(err)
+			}
+		})
+		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "A", Width: 100, Height: 80}}
+		first := receive(t, snapshots)
+		for len(first.Outputs) == 0 {
+			first = receive(t, snapshots)
+		}
+		if len(first.Outputs) != 1 || len(first.Outputs[0].Workspaces) < 2 || !first.Outputs[0].Workspaces[0].Active {
+			t.Fatal(first)
+		}
+		hidden := first.Outputs[0].Workspaces[len(first.Outputs[0].Workspaces)-1]
+		if hidden.Configured != "dev" || !hidden.Hidden {
+			t.Fatalf("configured hidden workspace: %+v", hidden)
+		}
+		id := first.Outputs[0].Workspaces[0].ID
+		client <- ports.WindowMapped{ID: 1}
+		added := receive(t, snapshots)
+		if len(added.Outputs[0].Workspaces) < 2 || added.Outputs[0].Workspaces[0].ID != id || !added.Outputs[0].Workspaces[1].Hidden {
+			t.Fatal(added)
+		}
+		spare := added.Outputs[0].Workspaces[1].ID
+		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "B", Width: 100, Height: 80}}
+		two := receive(t, snapshots)
+		if len(two.Outputs) != 2 || two.Outputs[0].Workspaces[0].ID != id {
+			t.Fatal(two)
+		}
+		// Activation on B also focuses B, without disturbing A's active workspace.
+		bID := two.Outputs[1].Workspaces[0].ID
+		client <- ports.WorkspaceActivate{IDs: []uint64{bID}}
+		for receive(t, state).Output != "B" {
+		}
+		// Both requests are applied in order in one event: A wins final focus.
+		client <- ports.WorkspaceActivate{IDs: []uint64{bID, spare}}
+		for receive(t, state).Output != "A" {
+		}
+		active := receive(t, snapshots)
+		if !active.Outputs[0].Workspaces[1].Active || active.Outputs[1].Workspaces[0].Active != true {
+			t.Fatal(active)
+		}
+		client <- ports.WorkspaceActivate{IDs: []uint64{999999999}}
+		scene(t, scenes)
+		select {
+		case v := <-snapshots:
+			t.Fatalf("unknown ID changed snapshot: %v", v)
+		default:
+		}
+		// Move the populated workspace right; its ID follows it.
+		client <- ports.WorkspaceActivate{IDs: []uint64{id}}
+		receive(t, snapshots)
+		input <- ports.KeyEvent{Keysym: "Right", Mods: ports.ModSuper | ports.ModCtrl | ports.ModShift, Pressed: true}
+		move := receive(t, snapshots)
+		found := false
+		for _, w := range move.Outputs[1].Workspaces {
+			if w.ID == id {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("workspace ID lost on move: %+v", move)
+		}
+		output <- ports.OutputRemoved{Name: "B"}
+		moved := receive(t, snapshots)
+		if len(moved.Outputs) != 1 || moved.Outputs[0].Name != "A" {
+			t.Fatal(moved)
+		}
+
 	})
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "A", Width: 100, Height: 80}}
-	first := receive(t, snapshots)
-	for len(first.Outputs) == 0 {
-		first = receive(t, snapshots)
-	}
-	if len(first.Outputs) != 1 || len(first.Outputs[0].Workspaces) < 2 || !first.Outputs[0].Workspaces[0].Active {
-		t.Fatal(first)
-	}
-	hidden := first.Outputs[0].Workspaces[len(first.Outputs[0].Workspaces)-1]
-	if hidden.Configured != "dev" || !hidden.Hidden {
-		t.Fatalf("configured hidden workspace: %+v", hidden)
-	}
-	id := first.Outputs[0].Workspaces[0].ID
-	client <- ports.WindowMapped{ID: 1}
-	added := receive(t, snapshots)
-	if len(added.Outputs[0].Workspaces) < 2 || added.Outputs[0].Workspaces[0].ID != id || !added.Outputs[0].Workspaces[1].Hidden {
-		t.Fatal(added)
-	}
-	spare := added.Outputs[0].Workspaces[1].ID
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "B", Width: 100, Height: 80}}
-	two := receive(t, snapshots)
-	if len(two.Outputs) != 2 || two.Outputs[0].Workspaces[0].ID != id {
-		t.Fatal(two)
-	}
-	// Activation on B also focuses B, without disturbing A's active workspace.
-	bID := two.Outputs[1].Workspaces[0].ID
-	client <- ports.WorkspaceActivate{IDs: []uint64{bID}}
-	for receive(t, state).Output != "B" {
-	}
-	// Both requests are applied in order in one event: A wins final focus.
-	client <- ports.WorkspaceActivate{IDs: []uint64{bID, spare}}
-	for receive(t, state).Output != "A" {
-	}
-	active := receive(t, snapshots)
-	if !active.Outputs[0].Workspaces[1].Active || active.Outputs[1].Workspaces[0].Active != true {
-		t.Fatal(active)
-	}
-	client <- ports.WorkspaceActivate{IDs: []uint64{999999999}}
-	scene(t, scenes)
-	select {
-	case v := <-snapshots:
-		t.Fatalf("unknown ID changed snapshot: %v", v)
-	default:
-	}
-	// Move the populated workspace right; its ID follows it.
-	client <- ports.WorkspaceActivate{IDs: []uint64{id}}
-	receive(t, snapshots)
-	input <- ports.KeyEvent{Keysym: "Right", Mods: ports.ModSuper | ports.ModCtrl | ports.ModShift, Pressed: true}
-	move := receive(t, snapshots)
-	found := false
-	for _, w := range move.Outputs[1].Workspaces {
-		if w.ID == id {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("workspace ID lost on move: %+v", move)
-	}
-	output <- ports.OutputRemoved{Name: "B"}
-	moved := receive(t, snapshots)
-	if len(moved.Outputs) != 1 || moved.Outputs[0].Name != "A" {
-		t.Fatal(moved)
-	}
 }
 
 func TestMoveWorkspaceReordersSnapshot(t *testing.T) {
-	cfg := scrollDefaults()
-	client := make(chan ports.ClientEvent, 16)
-	input := make(chan ports.InputEvent, 8)
-	output := make(chan ports.OutputEvent, 8)
-	snapshots := make(chan ports.Workspaces, 1)
-	scenes := make(chan []ports.Scene, 1)
-	spawn := make(chan ports.SpawnRequest, 8)
-	commands := make(chan ports.ClientCommand, 32)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Workspaces: snapshots, Scenes: scenes, Spawn: spawn}, core.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- c.Run(ctx) }()
-	go func() {
-		for {
-			select {
-			case <-scenes:
-			case <-commands:
-			case <-spawn:
-			case <-ctx.Done():
-				return
+	synctest.Test(t, func(t *testing.T) {
+		cfg := scrollDefaults()
+		client := make(chan ports.ClientEvent, 16)
+		input := make(chan ports.InputEvent, 8)
+		output := make(chan ports.OutputEvent, 8)
+		snapshots := make(chan ports.Workspaces, 1)
+		scenes := make(chan []ports.Scene, 1)
+		spawn := make(chan ports.SpawnRequest, 8)
+		commands := make(chan ports.ClientCommand, 32)
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Workspaces: snapshots, Scenes: scenes, Spawn: spawn}, core.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- c.Run(ctx) }()
+		go func() {
+			for {
+				select {
+				case <-scenes:
+				case <-commands:
+				case <-spawn:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+		t.Cleanup(func() {
+			cancel()
+			if err := <-done; err != nil {
+				t.Error(err)
+			}
+		})
+		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "A", Width: 100, Height: 80}}
+		until := func(ok func(ws []ports.WorkspaceInfo) bool) []ports.WorkspaceInfo {
+			t.Helper()
+			for {
+				v := receive(t, snapshots)
+				if len(v.Outputs) > 0 && ok(v.Outputs[0].Workspaces) {
+					return v.Outputs[0].Workspaces
+				}
 			}
 		}
-	}()
-	t.Cleanup(func() {
-		cancel()
-		if err := <-done; err != nil {
-			t.Error(err)
+		client <- ports.WindowMapped{ID: 1}
+		until(func(ws []ports.WorkspaceInfo) bool { return len(ws) >= 2 })
+		input <- ports.KeyEvent{Keysym: "Next", Mods: ports.ModSuper, Pressed: true}
+		until(func(ws []ports.WorkspaceInfo) bool { return ws[1].Active })
+		client <- ports.WindowMapped{ID: 2}
+		ws := until(func(ws []ports.WorkspaceInfo) bool { return len(ws) >= 3 && ws[1].Active })
+		before := ports.Workspaces{Outputs: []ports.WorkspaceOutput{{Workspaces: ws}}}
+		first, second := before.Outputs[0].Workspaces[0].ID, before.Outputs[0].Workspaces[1].ID
+		input <- ports.KeyEvent{Keysym: "Up", Mods: ports.ModSuper | ports.ModCtrl | ports.ModShift, Pressed: true}
+		ws = until(func(ws []ports.WorkspaceInfo) bool { return ws[0].Active })
+		if ws[0].ID != second || ws[1].ID != first || !ws[0].Active || ws[0].Index != 0 || ws[1].Index != 1 {
+			t.Fatalf("%+v", ws)
 		}
+
 	})
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "A", Width: 100, Height: 80}}
-	until := func(ok func(ws []ports.WorkspaceInfo) bool) []ports.WorkspaceInfo {
-		t.Helper()
-		for {
-			v := receive(t, snapshots)
-			if len(v.Outputs) > 0 && ok(v.Outputs[0].Workspaces) {
-				return v.Outputs[0].Workspaces
-			}
-		}
-	}
-	client <- ports.WindowMapped{ID: 1}
-	until(func(ws []ports.WorkspaceInfo) bool { return len(ws) >= 2 })
-	input <- ports.KeyEvent{Keysym: "Next", Mods: ports.ModSuper, Pressed: true}
-	until(func(ws []ports.WorkspaceInfo) bool { return ws[1].Active })
-	client <- ports.WindowMapped{ID: 2}
-	ws := until(func(ws []ports.WorkspaceInfo) bool { return len(ws) >= 3 && ws[1].Active })
-	before := ports.Workspaces{Outputs: []ports.WorkspaceOutput{{Workspaces: ws}}}
-	first, second := before.Outputs[0].Workspaces[0].ID, before.Outputs[0].Workspaces[1].ID
-	input <- ports.KeyEvent{Keysym: "Up", Mods: ports.ModSuper | ports.ModCtrl | ports.ModShift, Pressed: true}
-	ws = until(func(ws []ports.WorkspaceInfo) bool { return ws[0].Active })
-	if ws[0].ID != second || ws[1].ID != first || !ws[0].Active || ws[0].Index != 0 || ws[1].Index != 1 {
-		t.Fatalf("%+v", ws)
-	}
 }

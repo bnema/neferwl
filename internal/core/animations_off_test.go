@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -46,61 +47,73 @@ func focusedID(s ports.Scene) ports.WindowID {
 }
 
 func TestAnimationsOffColumnSwipeFocusesAtOnce(t *testing.T) {
-	r := startSwipe(t, animationsOff)
-	before := threeColumns(t, r)
-	r.begin()
-	r.stillMoves(t, 10, -40, 0)
-	s := r.end(t, false)
-	if got := focusedID(s); got != 2 {
-		t.Fatalf("focused %d right after the lift, want 2", got)
-	}
-	if got, _ := rectOf(before, 3); got.X == 0 {
-		t.Fatalf("bad setup: column 3 at %+v", got)
-	}
-	r.noFrameScene(t)
+	synctest.Test(t, func(t *testing.T) {
+		r := startSwipe(t, animationsOff)
+		before := threeColumns(t, r)
+		r.begin()
+		r.stillMoves(t, 10, -40, 0)
+		s := r.end(t, false)
+		if got := focusedID(s); got != 2 {
+			t.Fatalf("focused %d right after the lift, want 2", got)
+		}
+		if got, _ := rectOf(before, 3); got.X == 0 {
+			t.Fatalf("bad setup: column 3 at %+v", got)
+		}
+		r.noFrameScene(t)
+
+	})
 }
 
 func TestAnimationsOffWorkspaceSwipeLandsAtOnce(t *testing.T) {
-	r := startSwipe(t, animationsOff)
-	r.workspaces(t)
-	r.begin()
-	r.stillMoves(t, 9, 0, 30)
-	s := r.end(t, false)
-	if _, ok := rectOf(s, 1); ok {
-		t.Fatal("old workspace still shown right after the lift")
-	}
-	if got, ok := rectOf(s, 2); !ok || got.Y != 0 {
-		t.Fatalf("workspace 2 at %+v (shown %t), want the settled rect", got, ok)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		r := startSwipe(t, animationsOff)
+		r.workspaces(t)
+		r.begin()
+		r.stillMoves(t, 9, 0, 30)
+		s := r.end(t, false)
+		if _, ok := rectOf(s, 1); ok {
+			t.Fatal("old workspace still shown right after the lift")
+		}
+		if got, ok := rectOf(s, 2); !ok || got.Y != 0 {
+			t.Fatalf("workspace 2 at %+v (shown %t), want the settled rect", got, ok)
+		}
+
+	})
 }
 
 func TestAnimationsOffSlowSwipeStays(t *testing.T) {
-	r := startSwipe(t, animationsOff)
-	before := threeColumns(t, r)
-	r.begin()
-	r.stillMoves(t, 2, -10, 0)
-	r.input <- ports.SwipeEnd{Time: r.at + time.Second}
-	if s := scene(t, r.scenes); !s.SameAs(before) {
-		t.Fatalf("a short slow swipe changed the scene: %+v, was %+v", s.Windows, before.Windows)
-	}
-	r.noFrameScene(t)
+	synctest.Test(t, func(t *testing.T) {
+		r := startSwipe(t, animationsOff)
+		before := threeColumns(t, r)
+		r.begin()
+		r.stillMoves(t, 2, -10, 0)
+		r.input <- ports.SwipeEnd{Time: r.at + time.Second}
+		if s := scene(t, r.scenes); !s.SameAs(before) {
+			t.Fatalf("a short slow swipe changed the scene: %+v, was %+v", s.Windows, before.Windows)
+		}
+		r.noFrameScene(t)
+
+	})
 }
 
 func TestReloadToOffSettlesALanding(t *testing.T) {
-	r := startSwipe(t, nil)
-	threeColumns(t, r)
-	s := r.flick(t, 10, -40, 0)
-	if got, _ := rectOf(s, 1); got.X == 0 {
-		t.Fatal("no landing slide to interrupt")
-	}
-	cfg := r.cfg
-	cfg.Animations.On = false
-	r.reload <- ports.ConfigChanged{Config: cfg}
-	s = scene(t, r.scenes)
-	if got, _ := rectOf(s, 1); got.X != 0 {
-		t.Fatalf("column 1 at %d after the reload, want the settled rect", got.X)
-	}
-	r.noFrameScene(t)
+	synctest.Test(t, func(t *testing.T) {
+		r := startSwipe(t, nil)
+		threeColumns(t, r)
+		s := r.flick(t, 10, -40, 0)
+		if got, _ := rectOf(s, 1); got.X == 0 {
+			t.Fatal("no landing slide to interrupt")
+		}
+		cfg := r.cfg
+		cfg.Animations.On = false
+		r.reload <- ports.ConfigChanged{Config: cfg}
+		s = scene(t, r.scenes)
+		if got, _ := rectOf(s, 1); got.X != 0 {
+			t.Fatalf("column 1 at %d after the reload, want the settled rect", got.X)
+		}
+		r.noFrameScene(t)
+
+	})
 }
 
 // noFrameScene sends page flips and expects no scene: no spring runs, so
@@ -139,17 +152,20 @@ func landing(t *testing.T, slowdown float64, after ...time.Duration) []int {
 }
 
 func TestSlowdownStretchesALanding(t *testing.T) {
-	// Critically damped at stiffness 800: settled after about 330 ms, 660 ms
-	// with slowdown 2 (the exact doubling is checked on the motion).
-	one := landing(t, 1, 100*time.Millisecond, 400*time.Millisecond)
-	two := landing(t, 2, 100*time.Millisecond, 400*time.Millisecond, 700*time.Millisecond)
-	if one[0] == 0 || two[0] == 0 {
-		t.Fatalf("landing does not move after 100 ms: %v %v", one, two)
-	}
-	if one[1] != 0 || two[1] == 0 {
-		t.Fatalf("at 400 ms: slowdown 1 at %d, want settled; slowdown 2 at %d, want moving", one[1], two[1])
-	}
-	if two[2] != 0 {
-		t.Fatalf("slowdown 2 does not settle by 700 ms: %v", two)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		// Critically damped at stiffness 800: settled after about 330 ms, 660 ms
+		// with slowdown 2 (the exact doubling is checked on the motion).
+		one := landing(t, 1, 100*time.Millisecond, 400*time.Millisecond)
+		two := landing(t, 2, 100*time.Millisecond, 400*time.Millisecond, 700*time.Millisecond)
+		if one[0] == 0 || two[0] == 0 {
+			t.Fatalf("landing does not move after 100 ms: %v %v", one, two)
+		}
+		if one[1] != 0 || two[1] == 0 {
+			t.Fatalf("at 400 ms: slowdown 1 at %d, want settled; slowdown 2 at %d, want moving", one[1], two[1])
+		}
+		if two[2] != 0 {
+			t.Fatalf("slowdown 2 does not settle by 700 ms: %v", two)
+		}
+
+	})
 }

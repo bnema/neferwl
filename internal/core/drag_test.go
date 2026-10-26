@@ -5,6 +5,7 @@ import (
 	"slices"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/core"
@@ -105,9 +106,10 @@ func (r *dragRig) in(ev ports.InputEvent) {
 
 // send fails the test binary fast instead of hanging when core is stuck.
 func send[T any](ch chan T, v T) {
+	synctest.Wait()
 	select {
 	case ch <- v:
-	case <-time.After(5 * time.Second):
+	default:
 		panic("core stuck")
 	}
 }
@@ -129,10 +131,11 @@ func (r *dragRig) settle(t *testing.T) []ports.Scene {
 	}
 	send(r.client, ports.ClientEvent(ports.WindowResized{ID: barrier}))
 	send(r.client, ports.ClientEvent(ports.WindowResized{ID: barrier}))
+	synctest.Wait()
 	select {
 	case s := <-r.scenes:
 		r.last = s
-	case <-time.After(5 * time.Second):
+	default:
 		t.Fatal("no scene")
 	}
 	return r.last
@@ -225,78 +228,84 @@ func (r *dragRig) press(t *testing.T, button uint32, mods ports.Mods) {
 }
 
 func TestCmdDragMovesFloatWithoutClientEvents(t *testing.T) {
-	r := startDragRig(t, nil, dragOut)
-	r.client <- ports.WindowMapped{ID: 1}
-	r.client <- ports.WindowMapped{ID: 2, Floating: true, Width: 200, Height: 100}
-	set := r.settle(t)
-	f := dragRect(t, set, "A", 2)
-	r.moveTo(float64(f.X+10), float64(f.Y+10), 1)
-	r.settle(t)
-	r.drain()
-	r.press(t, 0x110, ports.ModSuper)
-	r.moveTo(float64(f.X+60), float64(f.Y+40), 2)
-	set = r.settle(t)
-	got := dragRect(t, set, "A", 2)
-	if got.X != f.X+50 || got.Y != f.Y+30 || got.W != f.W {
-		t.Fatalf("moved to %+v from %+v", got, f)
-	}
-	if w, _ := windowIn(set, "A", 2); !w.Floating {
-		t.Fatal("not floating")
-	}
-	r.in(ports.PointerButton{Button: 0x110})
-	r.in(ports.KeyEvent{Keysym: "Super_L"})
-	r.settle(t)
-	cmds := r.drain()
-	for _, v := range pointerSent(cmds) {
-		if _, ok := v.(ports.PointerButtonTo); ok {
-			t.Fatalf("client saw %#v", v)
+	synctest.Test(t, func(t *testing.T) {
+		r := startDragRig(t, nil, dragOut)
+		r.client <- ports.WindowMapped{ID: 1}
+		r.client <- ports.WindowMapped{ID: 2, Floating: true, Width: 200, Height: 100}
+		set := r.settle(t)
+		f := dragRect(t, set, "A", 2)
+		r.moveTo(float64(f.X+10), float64(f.Y+10), 1)
+		r.settle(t)
+		r.drain()
+		r.press(t, 0x110, ports.ModSuper)
+		r.moveTo(float64(f.X+60), float64(f.Y+40), 2)
+		set = r.settle(t)
+		got := dragRect(t, set, "A", 2)
+		if got.X != f.X+50 || got.Y != f.Y+30 || got.W != f.W {
+			t.Fatalf("moved to %+v from %+v", got, f)
 		}
-		if _, ok := v.(ports.PointerMotionTo); ok {
-			t.Fatalf("client saw %#v", v)
+		if w, _ := windowIn(set, "A", 2); !w.Floating {
+			t.Fatal("not floating")
 		}
-	}
-	// It stays there: a free float now.
-	r.moveTo(float64(f.X+61), float64(f.Y+41), 3)
-	if got2 := dragRect(t, r.settle(t), "A", 2); got2 != got {
-		t.Fatalf("moved after release: %+v", got2)
-	}
-	// A plain press goes to the client.
-	r.drain()
-	r.in(ports.PointerButton{Button: 0x110, Pressed: true})
-	r.settle(t)
-	found := false
-	for _, v := range r.drain() {
-		if b, ok := v.(ports.PointerButtonTo); ok && b.ID == 2 && b.Pressed {
-			found = true
+		r.in(ports.PointerButton{Button: 0x110})
+		r.in(ports.KeyEvent{Keysym: "Super_L"})
+		r.settle(t)
+		cmds := r.drain()
+		for _, v := range pointerSent(cmds) {
+			if _, ok := v.(ports.PointerButtonTo); ok {
+				t.Fatalf("client saw %#v", v)
+			}
+			if _, ok := v.(ports.PointerMotionTo); ok {
+				t.Fatalf("client saw %#v", v)
+			}
 		}
-	}
-	if !found {
-		t.Fatal("plain press not forwarded")
-	}
+		// It stays there: a free float now.
+		r.moveTo(float64(f.X+61), float64(f.Y+41), 3)
+		if got2 := dragRect(t, r.settle(t), "A", 2); got2 != got {
+			t.Fatalf("moved after release: %+v", got2)
+		}
+		// A plain press goes to the client.
+		r.drain()
+		r.in(ports.PointerButton{Button: 0x110, Pressed: true})
+		r.settle(t)
+		found := false
+		for _, v := range r.drain() {
+			if b, ok := v.(ports.PointerButtonTo); ok && b.ID == 2 && b.Pressed {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("plain press not forwarded")
+		}
+
+	})
 }
 
 func TestDragEscapeRestoresFloat(t *testing.T) {
-	r := startDragRig(t, nil, dragOut)
-	r.client <- ports.WindowMapped{ID: 2, Floating: true, Width: 200, Height: 100}
-	f := dragRect(t, r.settle(t), "A", 2)
-	r.moveTo(float64(f.X+10), float64(f.Y+10), 1)
-	r.settle(t)
-	r.press(t, 0x111, ports.ModSuper)
-	r.moveTo(float64(f.X+110), float64(f.Y+60), 2)
-	if got := dragRect(t, r.settle(t), "A", 2); got.W != f.W+100 || got.H != f.H+50 || got.X != f.X {
-		t.Fatalf("resize: %+v from %+v", got, f)
-	}
-	r.drain()
-	r.in(ports.KeyEvent{Keysym: "Escape", Mods: ports.ModSuper, Pressed: true})
-	if got := dragRect(t, r.settle(t), "A", 2); got != f {
-		t.Fatalf("escape: %+v, want %+v", got, f)
-	}
-	r.in(ports.KeyEvent{Keysym: "Escape", Mods: ports.ModSuper})
-	r.in(ports.PointerButton{Button: 0x111})
-	r.settle(t)
-	for _, v := range pointerSent(r.drain()) {
-		t.Fatalf("client saw %#v", v)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		r := startDragRig(t, nil, dragOut)
+		r.client <- ports.WindowMapped{ID: 2, Floating: true, Width: 200, Height: 100}
+		f := dragRect(t, r.settle(t), "A", 2)
+		r.moveTo(float64(f.X+10), float64(f.Y+10), 1)
+		r.settle(t)
+		r.press(t, 0x111, ports.ModSuper)
+		r.moveTo(float64(f.X+110), float64(f.Y+60), 2)
+		if got := dragRect(t, r.settle(t), "A", 2); got.W != f.W+100 || got.H != f.H+50 || got.X != f.X {
+			t.Fatalf("resize: %+v from %+v", got, f)
+		}
+		r.drain()
+		r.in(ports.KeyEvent{Keysym: "Escape", Mods: ports.ModSuper, Pressed: true})
+		if got := dragRect(t, r.settle(t), "A", 2); got != f {
+			t.Fatalf("escape: %+v, want %+v", got, f)
+		}
+		r.in(ports.KeyEvent{Keysym: "Escape", Mods: ports.ModSuper})
+		r.in(ports.PointerButton{Button: 0x111})
+		r.settle(t)
+		for _, v := range pointerSent(r.drain()) {
+			t.Fatalf("client saw %#v", v)
+		}
+
+	})
 }
 
 func TestDragTileZonesAndHints(t *testing.T) {
@@ -450,9 +459,10 @@ func (r *dragRig) release(t *testing.T) []ports.Scene {
 	r.in(ports.PointerButton{Button: 0x110})
 	send(r.client, ports.ClientEvent(ports.WindowResized{ID: barrier}))
 	send(r.client, ports.ClientEvent(ports.WindowResized{ID: barrier}))
+	synctest.Wait()
 	select {
 	case r.last = <-r.scenes:
-	case <-time.After(5 * time.Second):
+	default:
 		t.Fatal("no scene")
 	}
 	return r.last
@@ -614,62 +624,68 @@ func dragAcrossOutputs(t *testing.T, r *dragRig) {
 }
 
 func TestClientMoveRequest(t *testing.T) {
-	r := startDragRig(t, nil, dragOut)
-	r.client <- ports.WindowMapped{ID: 2, Floating: true, Width: 200, Height: 100}
-	f := dragRect(t, r.settle(t), "A", 2)
-	// Without a held button: ignored.
-	r.client <- ports.WindowMoveRequest{ID: 2}
-	r.moveTo(float64(f.X+10), float64(f.Y+10), 1)
-	r.settle(t)
-	r.moveTo(float64(f.X+20), float64(f.Y+10), 2)
-	if got := dragRect(t, r.settle(t), "A", 2); got != f {
-		t.Fatalf("moved without a button: %+v", got)
-	}
-	r.in(ports.PointerButton{Button: 0x110, Pressed: true})
-	r.settle(t)
-	r.client <- ports.WindowMoveRequest{ID: 2}
-	r.settle(t)
-	r.drain()
-	r.moveTo(float64(f.X+60), float64(f.Y+10), 3)
-	if got := dragRect(t, r.settle(t), "A", 2); got.X != f.X+40 {
-		t.Fatalf("move request: %+v from %+v", got, f)
-	}
-	r.in(ports.PointerButton{Button: 0x110})
-	r.settle(t)
-	for _, v := range pointerSent(r.drain()) {
-		t.Fatalf("client saw %#v", v)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		r := startDragRig(t, nil, dragOut)
+		r.client <- ports.WindowMapped{ID: 2, Floating: true, Width: 200, Height: 100}
+		f := dragRect(t, r.settle(t), "A", 2)
+		// Without a held button: ignored.
+		r.client <- ports.WindowMoveRequest{ID: 2}
+		r.moveTo(float64(f.X+10), float64(f.Y+10), 1)
+		r.settle(t)
+		r.moveTo(float64(f.X+20), float64(f.Y+10), 2)
+		if got := dragRect(t, r.settle(t), "A", 2); got != f {
+			t.Fatalf("moved without a button: %+v", got)
+		}
+		r.in(ports.PointerButton{Button: 0x110, Pressed: true})
+		r.settle(t)
+		r.client <- ports.WindowMoveRequest{ID: 2}
+		r.settle(t)
+		r.drain()
+		r.moveTo(float64(f.X+60), float64(f.Y+10), 3)
+		if got := dragRect(t, r.settle(t), "A", 2); got.X != f.X+40 {
+			t.Fatalf("move request: %+v from %+v", got, f)
+		}
+		r.in(ports.PointerButton{Button: 0x110})
+		r.settle(t)
+		for _, v := range pointerSent(r.drain()) {
+			t.Fatalf("client saw %#v", v)
+		}
+
+	})
 }
 
 func TestLockClearsDrag(t *testing.T) {
-	r := startDragRig(t, nil, dragOut)
-	r.client <- ports.WindowMapped{ID: 1}
-	r.client <- ports.WindowMapped{ID: 2}
-	set := r.settle(t)
-	one, two := dragRect(t, set, "A", 1), dragRect(t, set, "A", 2)
-	r.moveTo(float64(one.X+one.W/2), float64(one.Y+one.H/2), 1)
-	r.settle(t)
-	r.press(t, 0x110, ports.ModSuper)
-	r.moveTo(float64(two.X+two.W/2), float64(two.Y+5), 2)
-	if len(dragScene(r.settle(t), "A").DropHints) == 0 {
-		t.Fatal("no hint")
-	}
-	locked := ports.SecurityState{Generation: 1, Protected: true}
-	r.epoch.Store(locked)
-	r.client <- ports.SessionLockChanged{State: locked}
-	set = r.settle(t)
-	if len(dragScene(set, "A").DropHints) != 0 {
-		t.Fatal("hints while locked")
-	}
-	unlocked := ports.SecurityState{Generation: 2}
-	r.epoch.Store(unlocked)
-	r.client <- ports.SessionLockChanged{State: unlocked}
-	r.settle(t)
-	r.in(ports.PointerButton{Button: 0x110})
-	set = r.settle(t)
-	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{1}, {2}}, slices.Equal) {
-		t.Fatal(got)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		r := startDragRig(t, nil, dragOut)
+		r.client <- ports.WindowMapped{ID: 1}
+		r.client <- ports.WindowMapped{ID: 2}
+		set := r.settle(t)
+		one, two := dragRect(t, set, "A", 1), dragRect(t, set, "A", 2)
+		r.moveTo(float64(one.X+one.W/2), float64(one.Y+one.H/2), 1)
+		r.settle(t)
+		r.press(t, 0x110, ports.ModSuper)
+		r.moveTo(float64(two.X+two.W/2), float64(two.Y+5), 2)
+		if len(dragScene(r.settle(t), "A").DropHints) == 0 {
+			t.Fatal("no hint")
+		}
+		locked := ports.SecurityState{Generation: 1, Protected: true}
+		r.epoch.Store(locked)
+		r.client <- ports.SessionLockChanged{State: locked}
+		set = r.settle(t)
+		if len(dragScene(set, "A").DropHints) != 0 {
+			t.Fatal("hints while locked")
+		}
+		unlocked := ports.SecurityState{Generation: 2}
+		r.epoch.Store(unlocked)
+		r.client <- ports.SessionLockChanged{State: unlocked}
+		r.settle(t)
+		r.in(ports.PointerButton{Button: 0x110})
+		set = r.settle(t)
+		if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{1}, {2}}, slices.Equal) {
+			t.Fatal(got)
+		}
+
+	})
 }
 
 func TestDragEdgeScroll(t *testing.T) {
@@ -761,66 +777,75 @@ func dragFullFixedStacksInOutlinedColumn(t *testing.T, r *dragRig) {
 }
 
 func TestPressAfterCancelGrabs(t *testing.T) {
-	r := startDragRig(t, nil, dragOut)
-	r.client <- ports.WindowMapped{ID: 1}
-	r.client <- ports.WindowMapped{ID: 2, Floating: true, Width: 200, Height: 100}
-	f := dragRect(t, r.settle(t), "A", 2)
-	r.moveTo(float64(f.X+10), float64(f.Y+10), 1)
-	r.settle(t)
-	r.press(t, 0x110, ports.ModSuper)
-	r.in(ports.KeyEvent{Keysym: "Escape", Mods: ports.ModSuper, Pressed: true})
-	r.in(ports.KeyEvent{Keysym: "Escape", Mods: ports.ModSuper})
-	r.in(ports.KeyEvent{Keysym: "Super_L"})
-	r.settle(t)
-	r.drain()
-	// Left is still held, swallowed. A right click on 2 goes to 2, and so
-	// does its release after the pointer left it.
-	r.in(ports.PointerButton{Button: 0x111, Pressed: true})
-	r.moveTo(5, 5, 2)
-	r.in(ports.PointerButton{Button: 0x111})
-	r.settle(t)
-	var got []ports.PointerButtonTo
-	for _, v := range r.drain() {
-		if b, ok := v.(ports.PointerButtonTo); ok {
-			got = append(got, b)
+	synctest.Test(t, func(t *testing.T) {
+		r := startDragRig(t, nil, dragOut)
+		r.client <- ports.WindowMapped{ID: 1}
+		r.client <- ports.WindowMapped{ID: 2, Floating: true, Width: 200, Height: 100}
+		f := dragRect(t, r.settle(t), "A", 2)
+		r.moveTo(float64(f.X+10), float64(f.Y+10), 1)
+		r.settle(t)
+		r.press(t, 0x110, ports.ModSuper)
+		r.in(ports.KeyEvent{Keysym: "Escape", Mods: ports.ModSuper, Pressed: true})
+		r.in(ports.KeyEvent{Keysym: "Escape", Mods: ports.ModSuper})
+		r.in(ports.KeyEvent{Keysym: "Super_L"})
+		r.settle(t)
+		r.drain()
+		// Left is still held, swallowed. A right click on 2 goes to 2, and so
+		// does its release after the pointer left it.
+		r.in(ports.PointerButton{Button: 0x111, Pressed: true})
+		r.moveTo(5, 5, 2)
+		r.in(ports.PointerButton{Button: 0x111})
+		r.settle(t)
+		var got []ports.PointerButtonTo
+		for _, v := range r.drain() {
+			if b, ok := v.(ports.PointerButtonTo); ok {
+				got = append(got, b)
+			}
 		}
-	}
-	if len(got) != 2 || got[0].ID != 2 || got[1].ID != 2 || got[1].Pressed {
-		t.Fatalf("%+v", got)
-	}
+		if len(got) != 2 || got[0].ID != 2 || got[1].ID != 2 || got[1].Pressed {
+			t.Fatalf("%+v", got)
+		}
+
+	})
 }
 
 func TestClientResizeWithoutEdgesIgnored(t *testing.T) {
-	r := startDragRig(t, nil, dragOut)
-	r.client <- ports.WindowMapped{ID: 2, Floating: true, Width: 200, Height: 100}
-	f := dragRect(t, r.settle(t), "A", 2)
-	r.moveTo(float64(f.X+10), float64(f.Y+10), 1)
-	r.settle(t)
-	r.in(ports.PointerButton{Button: 0x110, Pressed: true})
-	r.client <- ports.WindowMoveRequest{ID: 2, Resize: true}
-	r.moveTo(float64(f.X+60), float64(f.Y+60), 2)
-	if got := dragRect(t, r.settle(t), "A", 2); got != f {
-		t.Fatalf("%+v from %+v", got, f)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		r := startDragRig(t, nil, dragOut)
+		r.client <- ports.WindowMapped{ID: 2, Floating: true, Width: 200, Height: 100}
+		f := dragRect(t, r.settle(t), "A", 2)
+		r.moveTo(float64(f.X+10), float64(f.Y+10), 1)
+		r.settle(t)
+		r.in(ports.PointerButton{Button: 0x110, Pressed: true})
+		r.client <- ports.WindowMoveRequest{ID: 2, Resize: true}
+		r.moveTo(float64(f.X+60), float64(f.Y+60), 2)
+		if got := dragRect(t, r.settle(t), "A", 2); got != f {
+			t.Fatalf("%+v from %+v", got, f)
+		}
+
+	})
 }
 
 func TestClientDragUsesLastPress(t *testing.T) {
-	r := startDragRig(t, nil, dragOut)
-	r.client <- ports.WindowMapped{ID: 2, Floating: true, Width: 200, Height: 100}
-	f := dragRect(t, r.settle(t), "A", 2)
-	r.moveTo(float64(f.X+10), float64(f.Y+10), 1)
-	r.settle(t)
-	r.in(ports.PointerButton{Button: 0x111, Pressed: true})
-	r.in(ports.PointerButton{Button: 0x110, Pressed: true})
-	r.client <- ports.WindowMoveRequest{ID: 2}
-	r.moveTo(float64(f.X+60), float64(f.Y+10), 2)
-	r.settle(t)
-	// Releasing left ends the drag: the window stays put afterwards.
-	r.in(ports.PointerButton{Button: 0x110})
-	r.moveTo(float64(f.X+90), float64(f.Y+10), 3)
-	if got := dragRect(t, r.settle(t), "A", 2); got.X != f.X+50 {
-		t.Fatalf("%+v from %+v", got, f)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		r := startDragRig(t, nil, dragOut)
+		r.client <- ports.WindowMapped{ID: 2, Floating: true, Width: 200, Height: 100}
+		f := dragRect(t, r.settle(t), "A", 2)
+		r.moveTo(float64(f.X+10), float64(f.Y+10), 1)
+		r.settle(t)
+		r.in(ports.PointerButton{Button: 0x111, Pressed: true})
+		r.in(ports.PointerButton{Button: 0x110, Pressed: true})
+		r.client <- ports.WindowMoveRequest{ID: 2}
+		r.moveTo(float64(f.X+60), float64(f.Y+10), 2)
+		r.settle(t)
+		// Releasing left ends the drag: the window stays put afterwards.
+		r.in(ports.PointerButton{Button: 0x110})
+		r.moveTo(float64(f.X+90), float64(f.Y+10), 3)
+		if got := dragRect(t, r.settle(t), "A", 2); got.X != f.X+50 {
+			t.Fatalf("%+v from %+v", got, f)
+		}
+
+	})
 }
 
 func TestEdgeScrollPublishesWithoutTarget(t *testing.T) {
@@ -867,26 +892,29 @@ func edgeScrollPublishesWithoutTarget(t *testing.T, r *dragRig) {
 }
 
 func TestModsFollowKeys(t *testing.T) {
-	r := startDragRig(t, nil, dragOut)
-	r.client <- ports.WindowMapped{ID: 1}
-	r.client <- ports.WindowMapped{ID: 2, Floating: true, Width: 200, Height: 100}
-	f := dragRect(t, r.settle(t), "A", 2)
-	r.moveTo(float64(f.X+10), float64(f.Y+10), 1)
-	r.settle(t)
-	// Super pressed then released: a click is a plain click again.
-	r.in(ports.KeyEvent{Keysym: "Super_L", Mods: ports.ModSuper, Pressed: true})
-	r.in(ports.KeyEvent{Keysym: "Super_L"})
-	r.settle(t)
-	r.drain()
-	r.in(ports.PointerButton{Button: 0x110, Pressed: true})
-	r.settle(t)
-	found := false
-	for _, v := range r.drain() {
-		if b, ok := v.(ports.PointerButtonTo); ok && b.ID == 2 {
-			found = true
+	synctest.Test(t, func(t *testing.T) {
+		r := startDragRig(t, nil, dragOut)
+		r.client <- ports.WindowMapped{ID: 1}
+		r.client <- ports.WindowMapped{ID: 2, Floating: true, Width: 200, Height: 100}
+		f := dragRect(t, r.settle(t), "A", 2)
+		r.moveTo(float64(f.X+10), float64(f.Y+10), 1)
+		r.settle(t)
+		// Super pressed then released: a click is a plain click again.
+		r.in(ports.KeyEvent{Keysym: "Super_L", Mods: ports.ModSuper, Pressed: true})
+		r.in(ports.KeyEvent{Keysym: "Super_L"})
+		r.settle(t)
+		r.drain()
+		r.in(ports.PointerButton{Button: 0x110, Pressed: true})
+		r.settle(t)
+		found := false
+		for _, v := range r.drain() {
+			if b, ok := v.(ports.PointerButtonTo); ok && b.ID == 2 {
+				found = true
+			}
 		}
-	}
-	if !found {
-		t.Fatal("click after cmd release not forwarded")
-	}
+		if !found {
+			t.Fatal("click after cmd release not forwarded")
+		}
+
+	})
 }

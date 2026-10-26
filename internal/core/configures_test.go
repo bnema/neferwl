@@ -2,6 +2,7 @@ package core
 
 import (
 	"testing"
+	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -36,57 +37,66 @@ func TestConfiguresNext(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := newConfigures()
-			if tt.first != nil {
-				v, _ := s.next(*tt.first, target)
-				s.mark(v)
-			}
-			got, send := s.next(tt.p, tt.t)
-			if got != tt.want || send != tt.send {
-				t.Fatalf("next = %+v, %v; want %+v, %v", got, send, tt.want, tt.send)
-			}
+			synctest.Test(t, func(t *testing.T) {
+				s := newConfigures()
+				if tt.first != nil {
+					v, _ := s.next(*tt.first, target)
+					s.mark(v)
+				}
+				got, send := s.next(tt.p, tt.t)
+				if got != tt.want || send != tt.send {
+					t.Fatalf("next = %+v, %v; want %+v, %v", got, send, tt.want, tt.send)
+				}
+
+			})
 		})
 	}
 }
 
 // A window awaiting an answer gets its configure once, even unchanged.
 func TestConfiguresAnswer(t *testing.T) {
-	s := newConfigures()
-	p, target := Placement{ID: 1, Rect: Rect{W: 10, H: 10}}, configureTarget{output: "A"}
-	v, _ := s.next(p, target)
-	s.mark(v)
-	s.answer[1] = true
-	if _, send := s.next(p, target); !send {
-		t.Fatal("answer not sent")
-	}
-	s.mark(v)
-	if _, send := s.next(p, target); send {
-		t.Fatal("answered twice")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		s := newConfigures()
+		p, target := Placement{ID: 1, Rect: Rect{W: 10, H: 10}}, configureTarget{output: "A"}
+		v, _ := s.next(p, target)
+		s.mark(v)
+		s.answer[1] = true
+		if _, send := s.next(p, target); !send {
+			t.Fatal("answer not sent")
+		}
+		s.mark(v)
+		if _, send := s.next(p, target); send {
+			t.Fatal("answered twice")
+		}
+
+	})
 }
 
 func TestConfiguresPruneForgetsUnseen(t *testing.T) {
-	s := newConfigures()
-	for _, id := range []WindowID{1, 2} {
-		v, _ := s.next(Placement{ID: id}, configureTarget{})
-		s.mark(v)
-	}
-	s.prune()
-	s.next(Placement{ID: 1}, configureTarget{})
-	s.prune()
-	if _, ok := s.sent[2]; ok {
-		t.Fatal("window out of the layout kept")
-	}
-	if _, send := s.next(Placement{ID: 1}, configureTarget{}); send {
-		t.Fatal("window still in the layout configured again")
-	}
-	if _, send := s.next(Placement{ID: 2}, configureTarget{}); !send {
-		t.Fatal("returning window not configured")
-	}
-	// A request from a window out of the layout is forgotten too.
-	s.answer[9] = true
-	s.prune()
-	if s.answer[9] {
-		t.Fatal("answer for a window out of the layout kept")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		s := newConfigures()
+		for _, id := range []WindowID{1, 2} {
+			v, _ := s.next(Placement{ID: id}, configureTarget{})
+			s.mark(v)
+		}
+		s.prune()
+		s.next(Placement{ID: 1}, configureTarget{})
+		s.prune()
+		if _, ok := s.sent[2]; ok {
+			t.Fatal("window out of the layout kept")
+		}
+		if _, send := s.next(Placement{ID: 1}, configureTarget{}); send {
+			t.Fatal("window still in the layout configured again")
+		}
+		if _, send := s.next(Placement{ID: 2}, configureTarget{}); !send {
+			t.Fatal("returning window not configured")
+		}
+		// A request from a window out of the layout is forgotten too.
+		s.answer[9] = true
+		s.prune()
+		if s.answer[9] {
+			t.Fatal("answer for a window out of the layout kept")
+		}
+
+	})
 }

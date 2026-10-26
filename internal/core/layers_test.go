@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
@@ -43,15 +44,18 @@ func TestArrangeLayers(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, u := arrangeLayers(1920, 1080, tt.layers)
-			if u != tt.usable || len(got) != len(tt.rects) {
-				t.Fatalf("got %v %v", got, u)
-			}
-			for i, r := range tt.rects {
-				if got[i].Rect != r {
-					t.Fatalf("rect %d: %v want %v", i, got[i].Rect, r)
+			synctest.Test(t, func(t *testing.T) {
+				got, u := arrangeLayers(1920, 1080, tt.layers)
+				if u != tt.usable || len(got) != len(tt.rects) {
+					t.Fatalf("got %v %v", got, u)
 				}
-			}
+				for i, r := range tt.rects {
+					if got[i].Rect != r {
+						t.Fatalf("rect %d: %v want %v", i, got[i].Rect, r)
+					}
+				}
+
+			})
 		})
 	}
 	layers := []ports.LayerSurface{{ID: 1, Layer: ports.LayerOverlay}, {ID: 2, Layer: ports.LayerBottom}, {ID: 3, Layer: ports.LayerBackground}, {ID: 4, Layer: ports.LayerTop}, {ID: 5, Layer: ports.LayerBottom}}
@@ -64,165 +68,180 @@ func TestArrangeLayers(t *testing.T) {
 }
 
 func TestLayerChangedChannels(t *testing.T) {
-	client := make(chan ports.ClientEvent)
-	output := make(chan ports.OutputEvent)
-	commands := make(chan ports.ClientCommand, 16)
-	scenes := make(chan []ports.Scene, 1)
-	cfg := ports.Config{}
-	cfg.Keyboard.CmdKey = "super"
-	cfg.Layout.MaxColumns = 2
-	c, err := New(cfg, Channels{Client: client, Output: output, Commands: commands, Scenes: scenes}, Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan struct{})
-	go func() { defer close(done); _ = c.Run(ctx) }()
-	recv := func() ports.Scene {
-		t.Helper()
+	synctest.Test(t, func(t *testing.T) {
+		client := make(chan ports.ClientEvent)
+		output := make(chan ports.OutputEvent)
+		commands := make(chan ports.ClientCommand, 16)
+		scenes := make(chan []ports.Scene, 1)
+		cfg := ports.Config{}
+		cfg.Keyboard.CmdKey = "super"
+		cfg.Layout.MaxColumns = 2
+		c, err := New(cfg, Channels{Client: client, Output: output, Commands: commands, Scenes: scenes}, Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan struct{})
+		go func() { defer close(done); _ = c.Run(ctx) }()
+		recv := func() ports.Scene {
+			t.Helper()
+			synctest.Wait()
+			select {
+			case s := <-scenes:
+				return s[0]
+			default:
+				t.Fatal("scene timeout")
+				return ports.Scene{}
+			}
+		}
+		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 1920, Height: 1080}}
+		recv()
+		client <- ports.WindowMapped{ID: 1}
+		before := recv()
+		for len(commands) > 0 {
+			<-commands
+		}
+		bar := ports.LayerSurface{ID: 2, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Width: 1920, Height: 30, ExclusiveZone: 30}
+		client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar}}
+		scene := recv()
+		if len(scene.Layers) != 1 || scene.Layers[0].Rect != (ports.Rect{W: 1920, H: 30}) || len(scene.Windows) != 1 || scene.Windows[0].Rect.Y < 30 {
+			t.Fatalf("scene: %v", scene)
+		}
+		if scene.Windows[0].Rect.H != before.Windows[0].Rect.H-30 {
+			t.Fatalf("height: %v vs %v", scene.Windows, before.Windows)
+		}
+		synctest.Wait()
 		select {
-		case s := <-scenes:
-			return s[0]
-		case <-time.After(time.Second):
-			t.Fatal("scene timeout")
-			return ports.Scene{}
+		case v := <-commands:
+			cfg, ok := v.(ports.ConfigureWindow)
+			if !ok || cfg.ID != 1 || cfg.Height != scene.Windows[0].Rect.H {
+				t.Fatalf("configure: %v", v)
+			}
+		default:
+			t.Fatal("configure timeout")
 		}
-	}
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 1920, Height: 1080}}
-	recv()
-	client <- ports.WindowMapped{ID: 1}
-	before := recv()
-	for len(commands) > 0 {
-		<-commands
-	}
-	bar := ports.LayerSurface{ID: 2, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Width: 1920, Height: 30, ExclusiveZone: 30}
-	client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar}}
-	scene := recv()
-	if len(scene.Layers) != 1 || scene.Layers[0].Rect != (ports.Rect{W: 1920, H: 30}) || len(scene.Windows) != 1 || scene.Windows[0].Rect.Y < 30 {
-		t.Fatalf("scene: %v", scene)
-	}
-	if scene.Windows[0].Rect.H != before.Windows[0].Rect.H-30 {
-		t.Fatalf("height: %v vs %v", scene.Windows, before.Windows)
-	}
-	select {
-	case v := <-commands:
-		cfg, ok := v.(ports.ConfigureWindow)
-		if !ok || cfg.ID != 1 || cfg.Height != scene.Windows[0].Rect.H {
-			t.Fatalf("configure: %v", v)
+		scene.Layers[0].Rect.Y = 99
+		client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar}}
+		if next := recv(); next.Layers[0].Rect.Y != 0 {
+			t.Fatalf("scene alias: %v", next)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("configure timeout")
-	}
-	scene.Layers[0].Rect.Y = 99
-	client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar}}
-	if next := recv(); next.Layers[0].Rect.Y != 0 {
-		t.Fatalf("scene alias: %v", next)
-	}
-	cancel()
-	<-done
+		cancel()
+		<-done
+
+	})
 }
 
 // In scroll overflow, a fullscreen column the user scrolled off no longer
 // covers the output: the layers show again.
 func TestScrolledOffFullscreenShowsLayers(t *testing.T) {
-	m := newMonitor("", "")
-	m.SetOutput(100, 80)
-	m.AddWindow(1)
-	m.SetFullscreen(1, true)
-	m.AddWindow(2)
-	sc := &screen{mon: m}
-	bar := ports.SceneLayer{ID: 6, Layer: ports.LayerTop}
-	if shown(sc, bar) {
-		t.Fatal("bar shown over fullscreen")
-	}
-	m.Current().FocusID(2)
-	if !shown(sc, bar) {
-		t.Fatal("bar hidden with the fullscreen column scrolled off")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		m := newMonitor("", "")
+		m.SetOutput(100, 80)
+		m.AddWindow(1)
+		m.SetFullscreen(1, true)
+		m.AddWindow(2)
+		sc := &screen{mon: m}
+		bar := ports.SceneLayer{ID: 6, Layer: ports.LayerTop}
+		if shown(sc, bar) {
+			t.Fatal("bar shown over fullscreen")
+		}
+		m.Current().FocusID(2)
+		if !shown(sc, bar) {
+			t.Fatal("bar hidden with the fullscreen column scrolled off")
+		}
+
+	})
 }
 
 // In the overview a fullscreen window is a preview: the layers show.
 func TestOverviewOverFullscreenShowsLayers(t *testing.T) {
-	m := newMonitor("", "")
-	m.SetOutput(100, 80)
-	m.AddWindow(1)
-	m.SetFullscreen(1, true)
-	sc := &screen{mon: m}
-	bar := ports.SceneLayer{ID: 6, Layer: ports.LayerTop}
-	m.ToggleOverview()
-	if !shown(sc, bar) {
-		t.Fatal("bar hidden in the overview")
-	}
-	m.ToggleOverview()
-	if shown(sc, bar) {
-		t.Fatal("bar shown over fullscreen after the overview")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		m := newMonitor("", "")
+		m.SetOutput(100, 80)
+		m.AddWindow(1)
+		m.SetFullscreen(1, true)
+		sc := &screen{mon: m}
+		bar := ports.SceneLayer{ID: 6, Layer: ports.LayerTop}
+		m.ToggleOverview()
+		if !shown(sc, bar) {
+			t.Fatal("bar hidden in the overview")
+		}
+		m.ToggleOverview()
+		if shown(sc, bar) {
+			t.Fatal("bar shown over fullscreen after the overview")
+		}
+
+	})
 }
 
 // A fullscreen window is exclusive: the scene carries only the background
 // and a layer taking the keyboard exclusively (a locker), so the output
 // can scan the window out.
 func TestFullscreenSceneLayers(t *testing.T) {
-	client := make(chan ports.ClientEvent)
-	output := make(chan ports.OutputEvent)
-	commands := make(chan ports.ClientCommand, 64)
-	scenes := make(chan []ports.Scene, 1)
-	cfg := ports.Config{}
-	cfg.Keyboard.CmdKey = "super"
-	cfg.Layout.MaxColumns = 2
-	c, err := New(cfg, Channels{Client: client, Output: output, Commands: commands, Scenes: scenes}, Options{Clock: laterClock(t)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan struct{})
-	go func() { defer close(done); _ = c.Run(ctx) }()
-	go func() {
-		for range commands {
+	synctest.Test(t, func(t *testing.T) {
+		client := make(chan ports.ClientEvent)
+		output := make(chan ports.OutputEvent)
+		commands := make(chan ports.ClientCommand, 64)
+		scenes := make(chan []ports.Scene, 1)
+		cfg := ports.Config{}
+		cfg.Keyboard.CmdKey = "super"
+		cfg.Layout.MaxColumns = 2
+		c, err := New(cfg, Channels{Client: client, Output: output, Commands: commands, Scenes: scenes}, Options{Clock: laterClock(t)})
+		if err != nil {
+			t.Fatal(err)
 		}
-	}()
-	recv := func() ports.Scene {
-		t.Helper()
-		select {
-		case s := <-scenes:
-			return s[0]
-		case <-time.After(time.Second):
-			t.Fatal("scene timeout")
-			return ports.Scene{}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan struct{})
+		go func() { defer close(done); _ = c.Run(ctx) }()
+		go func() {
+			for range commands {
+			}
+		}()
+		recv := func() ports.Scene {
+			t.Helper()
+			synctest.Wait()
+			select {
+			case s := <-scenes:
+				return s[0]
+			default:
+				t.Fatal("scene timeout")
+				return ports.Scene{}
+			}
 		}
-	}
-	layers := func(s ports.Scene) []ports.WindowID {
-		var ids []ports.WindowID
-		for _, l := range s.Layers {
-			ids = append(ids, l.ID)
+		layers := func(s ports.Scene) []ports.WindowID {
+			var ids []ports.WindowID
+			for _, l := range s.Layers {
+				ids = append(ids, l.ID)
+			}
+			return ids
 		}
-		return ids
-	}
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
-	recv()
-	client <- ports.WindowMapped{ID: 1}
-	recv()
-	all := []ports.LayerSurface{
-		{ID: 5, Layer: ports.LayerBackground, Anchor: 15},
-		{ID: 6, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 10},
-		{ID: 7, Layer: ports.LayerOverlay, Width: 20, Height: 10},
-	}
-	client <- ports.LayerChanged{Layers: all}
-	if got := layers(recv()); len(got) != 3 {
-		t.Fatalf("layers %v", got)
-	}
-	client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
-	if got := layers(recv()); len(got) != 1 || got[0] != 5 {
-		t.Fatalf("fullscreen layers %v, want the background", got)
-	}
-	locker := ports.LayerSurface{ID: 8, Layer: ports.LayerOverlay, Anchor: 15, Keyboard: 1}
-	client <- ports.LayerChanged{Layers: append(all, locker)}
-	if got := layers(recv()); len(got) != 2 || got[1] != 8 {
-		t.Fatalf("fullscreen layers %v, want the background and the locker", got)
-	}
-	cancel()
-	<-done
-	close(commands)
+		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+		recv()
+		client <- ports.WindowMapped{ID: 1}
+		recv()
+		all := []ports.LayerSurface{
+			{ID: 5, Layer: ports.LayerBackground, Anchor: 15},
+			{ID: 6, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 10},
+			{ID: 7, Layer: ports.LayerOverlay, Width: 20, Height: 10},
+		}
+		client <- ports.LayerChanged{Layers: all}
+		if got := layers(recv()); len(got) != 3 {
+			t.Fatalf("layers %v", got)
+		}
+		client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
+		if got := layers(recv()); len(got) != 1 || got[0] != 5 {
+			t.Fatalf("fullscreen layers %v, want the background", got)
+		}
+		locker := ports.LayerSurface{ID: 8, Layer: ports.LayerOverlay, Anchor: 15, Keyboard: 1}
+		client <- ports.LayerChanged{Layers: append(all, locker)}
+		if got := layers(recv()); len(got) != 2 || got[1] != 8 {
+			t.Fatalf("fullscreen layers %v, want the background and the locker", got)
+		}
+		cancel()
+		<-done
+		close(commands)
+
+	})
 }

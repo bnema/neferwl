@@ -3,6 +3,7 @@ package core_test
 import (
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
@@ -133,8 +134,16 @@ func startLanding(t *testing.T, animated bool, edit func(*ports.Config), outs ..
 // startAnimatedDragRig).
 func both(t *testing.T, body func(t *testing.T, animated bool)) {
 	t.Helper()
-	t.Run("off", func(t *testing.T) { body(t, false) })
-	t.Run("on", func(t *testing.T) { body(t, true) })
+	t.Run("off", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			body(t, false)
+		})
+	})
+	t.Run("on", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			body(t, true)
+		})
+	})
 }
 
 // keyLanded presses a key and returns the settled scene set.
