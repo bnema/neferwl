@@ -362,19 +362,27 @@ func readPlanes(k kms, pipe int) ([]*plane, error) {
 		for name, v := range props {
 			p.props[name] = uint32(v[0])
 		}
-		if blob := uint32(props["IN_FORMATS"][1]); blob != 0 {
-			if data, err := k.getBlob(blob); err == nil {
-				p.formats = parseInFormats(data)
-			}
-		}
-		if p.formats == nil {
-			for _, f := range r.formats {
-				p.formats = append(p.formats, ports.DMABufFormat{Format: f})
-			}
-		}
+		p.formats = planeFormats(k, props, r.formats)
 		out = append(out, p)
 	}
 	return out, nil
+}
+
+// planeFormats is a plane's IN_FORMATS list, or every GETPLANE format with
+// modifier 0 when the plane has no IN_FORMATS.
+func planeFormats(k kms, props map[string][2]uint64, fallback []uint32) []ports.DMABufFormat {
+	var out []ports.DMABufFormat
+	if blob := uint32(props["IN_FORMATS"][1]); blob != 0 {
+		if data, err := k.getBlob(blob); err == nil {
+			out = parseInFormats(data)
+		}
+	}
+	if out == nil {
+		for _, f := range fallback {
+			out = append(out, ports.DMABufFormat{Format: f})
+		}
+	}
+	return out
 }
 
 // parseInFormats decodes an IN_FORMATS blob (struct drm_format_modifier_blob)

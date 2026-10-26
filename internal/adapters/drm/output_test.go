@@ -7,6 +7,7 @@ import (
 	"image"
 	"maps"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1217,4 +1218,19 @@ func setOutputRenderer(t *testing.T, o *Output, r ports.Renderer) {
 		o.card = &Card{}
 	}
 	o.card.dev.Render = dev
+}
+
+// Without IN_FORMATS a plane's GETPLANE formats count as linear; a plane
+// whose properties cannot be read is skipped, and duplicates collapse.
+func TestAllPlaneFormats(t *testing.T) {
+	k := newMockkms(t)
+	k.EXPECT().planes().Return([]planeRes{{id: 1, formats: []uint32{10, 11}}, {id: 2, formats: []uint32{11, 12}}, {id: 3, formats: []uint32{99}}}, nil)
+	k.EXPECT().objProps(uint32(1), uint32(objPlane)).Return(map[string][2]uint64{}, nil)
+	k.EXPECT().objProps(uint32(2), uint32(objPlane)).Return(map[string][2]uint64{}, nil)
+	k.EXPECT().objProps(uint32(3), uint32(objPlane)).Return(nil, unix.EINVAL)
+	got := allPlaneFormats(k)
+	want := []ports.DMABufFormat{{Format: 10}, {Format: 11}, {Format: 12}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
 }
