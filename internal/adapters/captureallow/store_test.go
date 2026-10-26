@@ -157,6 +157,7 @@ func TestStoreReloads(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime inotify watch retry on a directory that appears later
 func TestStoreWaitsForMissingDirectory(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "etc", "neferwl")
 	path := filepath.Join(dir, "capture-allow")

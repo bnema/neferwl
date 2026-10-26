@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -393,6 +394,7 @@ func checkPolicySyntaxPkg(fset *token.FileSet, file *ast.File, sources map[strin
 		}
 		checkBusyPoll(decl, timeName, runtimeName, sources, add)
 		checkDeadlineLoops(decl, timeName, add)
+		checkTickerLoops(decl, timeName, synctestName, sources, add)
 	}
 	return out
 }
@@ -418,18 +420,118 @@ func isPkgCallTo(call *ast.CallExpr, pkg string) bool {
 	return ok && pkg != "" && id.Name == pkg
 }
 
-// checkDeadlineLoops flags for loops that poll the wall clock: their
-// condition, post statement or body (outside nested func literals) calls
-// time.Now/Since/Until or a Before/After method (a time.Time deadline check).
-func checkDeadlineLoops(decl ast.Decl, timeName string, add func(string, token.Pos, string, ...any)) {
-	ast.Inspect(decl, func(n ast.Node) bool {
-		loop, ok := n.(*ast.ForStmt)
+// timeValues returns the names of variables and parameters in decl that are
+// syntactically time.Time values: typed time.Time, or assigned from a time
+// expression (see isTimeExpr). Matching is by name, not by scope.
+func timeValues(decl ast.Decl, timeName string) map[string]bool {
+	vars := make(map[string]bool)
+	isTimeType := func(e ast.Expr) bool {
+		sel, ok := e.(*ast.SelectorExpr)
 		if !ok {
+			return false
+		}
+		id, ok := sel.X.(*ast.Ident)
+		return ok && timeName != "" && id.Name == timeName && sel.Sel.Name == "Time"
+	}
+	for range 3 {
+		ast.Inspect(decl, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.Field:
+				if isTimeType(x.Type) {
+					for _, name := range x.Names {
+						vars[name.Name] = true
+					}
+				}
+			case *ast.AssignStmt:
+				if len(x.Lhs) == len(x.Rhs) {
+					for i, r := range x.Rhs {
+						if id, ok := x.Lhs[i].(*ast.Ident); ok && isTimeExpr(r, timeName, vars) {
+							vars[id.Name] = true
+						}
+					}
+				}
+			case *ast.ValueSpec:
+				for i, name := range x.Names {
+					if (x.Type != nil && isTimeType(x.Type)) || (len(x.Names) == len(x.Values) && isTimeExpr(x.Values[i], timeName, vars)) {
+						vars[name.Name] = true
+					}
+				}
+			}
+			return true
+		})
+	}
+	return vars
+}
+
+// timeChainMethods are time.Time methods that return a time.Time.
+var timeChainMethods = map[string]bool{
+	"Add": true, "AddDate": true, "Truncate": true, "Round": true, "UTC": true, "Local": true, "In": true,
+}
+
+// isTimeExpr reports whether e is syntactically a time.Time: a known time
+// variable, time.Now()/Unix/Date/..., a time.Time literal, or a chain of
+// time-returning methods on one of those.
+func isTimeExpr(e ast.Expr, timeName string, vars map[string]bool) bool {
+	switch x := e.(type) {
+	case *ast.ParenExpr:
+		return isTimeExpr(x.X, timeName, vars)
+	case *ast.Ident:
+		return vars[x.Name]
+	case *ast.CompositeLit:
+		sel, ok := x.Type.(*ast.SelectorExpr)
+		if !ok {
+			return false
+		}
+		id, ok := sel.X.(*ast.Ident)
+		return ok && timeName != "" && id.Name == timeName && sel.Sel.Name == "Time"
+	case *ast.CallExpr:
+		sel, ok := x.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return false
+		}
+		if id, ok := sel.X.(*ast.Ident); ok && timeName != "" && id.Name == timeName {
+			switch sel.Sel.Name {
+			case "Now", "Unix", "UnixMilli", "UnixMicro", "Date", "Parse":
+				return true
+			}
+			return false
+		}
+		return timeChainMethods[sel.Sel.Name] && isTimeExpr(sel.X, timeName, vars)
+	}
+	return false
+}
+
+// checkDeadlineLoops flags for and range loops that poll the wall clock:
+// their condition, post statement or body (outside nested func literals)
+// calls time.Now/Since/Until, or compares a time.Time (Before/After/Compare/
+// Equal/Sub on a receiver that is syntactically a time value, so timestamp
+// order assertions on other types are not flagged). In range loops (a fixed
+// bound, not a wait) only the comparisons count: time.Now/Since there
+// measure durations.
+func checkDeadlineLoops(decl ast.Decl, timeName string, add func(string, token.Pos, string, ...any)) {
+	vars := timeValues(decl, timeName)
+	ast.Inspect(decl, func(n ast.Node) bool {
+		var parts []ast.Node
+		var pos token.Pos
+		rangeLoop := false
+		switch loop := n.(type) {
+		case *ast.ForStmt:
+			pos = loop.Pos()
+			if loop.Cond != nil {
+				parts = append(parts, loop.Cond)
+			}
+			if loop.Post != nil {
+				parts = append(parts, loop.Post)
+			}
+			parts = append(parts, loop.Body)
+		case *ast.RangeStmt:
+			parts, pos, rangeLoop = []ast.Node{loop.Body}, loop.Pos(), true
+		default:
 			return true
 		}
 		found := ""
-		for _, part := range []ast.Node{loop.Cond, loop.Post, loop.Body} {
-			if part == nil || found != "" {
+		for _, part := range parts {
+			if found != "" {
 				continue
 			}
 			ast.Inspect(part, func(m ast.Node) bool {
@@ -447,19 +549,208 @@ func checkDeadlineLoops(decl ast.Decl, timeName string, add func(string, token.P
 				if id, ok := sel.X.(*ast.Ident); ok && timeName != "" && id.Name == timeName {
 					switch sel.Sel.Name {
 					case "Now", "Since", "Until":
-						found = "time." + sel.Sel.Name
+						if !rangeLoop {
+							found = "time." + sel.Sel.Name
+						}
 					}
-				} else if sel.Sel.Name == "Before" || sel.Sel.Name == "After" {
-					found = "." + sel.Sel.Name
+				} else {
+					switch sel.Sel.Name {
+					case "Before", "After", "Compare", "Equal", "Sub":
+						if isTimeExpr(sel.X, timeName, vars) {
+							found = "." + sel.Sel.Name
+						}
+					}
 				}
 				return true
 			})
 		}
 		if found != "" {
-			add(ruleNoPolling, loop.Pos(), "loop polls the wall clock (%s) for a deadline; wait on a real event, use one bounded channel deadline, or synctest.Wait in a bubble", found)
+			add(ruleNoPolling, pos, "loop polls the wall clock (%s) for a deadline; wait on a real event, use one bounded channel deadline, or synctest.Wait in a bubble", found)
 		}
 		return true
 	})
+}
+
+// checkTickerLoops flags loops (outside synctest.Test func literals) whose
+// select pairs a ticker case with a deadline case (time.After, a timer or
+// timer-source value, ctx.Done()) and has no event receive or send case: that
+// re-checks state on every tick, which is polling. A select with any other
+// case waits for a real event and is not flagged.
+func checkTickerLoops(decl ast.Decl, timeName, synctestName string, sources map[string]bool, add func(string, token.Pos, string, ...any)) {
+	timePkgCall := func(e ast.Expr, names ...string) bool {
+		call, ok := e.(*ast.CallExpr)
+		if !ok {
+			return false
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return false
+		}
+		id, ok := sel.X.(*ast.Ident)
+		return ok && timeName != "" && id.Name == timeName && slices.Contains(names, sel.Sel.Name)
+	}
+	tickers, deadlines := make(map[string]bool), make(map[string]bool)
+	isTicker := func(e ast.Expr) bool {
+		return timePkgCall(e, "NewTicker", "Tick")
+	}
+	isDeadline := func(e ast.Expr) bool {
+		if timePkgCall(e, "After", "NewTimer") {
+			return true
+		}
+		call, ok := e.(*ast.CallExpr)
+		if !ok || timePkgCall(e, "Now") {
+			return false
+		}
+		return sources[calleeName(call)]
+	}
+	for range 2 {
+		ast.Inspect(decl, func(n ast.Node) bool {
+			assign := func(name string, v ast.Expr) {
+				if isTicker(v) {
+					tickers[name] = true
+				}
+				if isDeadline(v) {
+					deadlines[name] = true
+				}
+			}
+			switch x := n.(type) {
+			case *ast.AssignStmt:
+				if len(x.Lhs) == len(x.Rhs) {
+					for i, r := range x.Rhs {
+						if id, ok := x.Lhs[i].(*ast.Ident); ok {
+							assign(id.Name, r)
+						}
+					}
+				}
+			case *ast.ValueSpec:
+				if len(x.Names) == len(x.Values) {
+					for i, r := range x.Values {
+						assign(x.Names[i].Name, r)
+					}
+				}
+			}
+			return true
+		})
+	}
+	// classify returns "ticker", "deadline" or "" for a received expression.
+	classify := func(e ast.Expr) string {
+		for {
+			p, ok := e.(*ast.ParenExpr)
+			if !ok {
+				break
+			}
+			e = p.X
+		}
+		switch x := e.(type) {
+		case *ast.Ident:
+			if tickers[x.Name] {
+				return "ticker"
+			}
+			if deadlines[x.Name] {
+				return "deadline"
+			}
+		case *ast.SelectorExpr:
+			if id, ok := x.X.(*ast.Ident); ok && x.Sel.Name == "C" {
+				if tickers[id.Name] {
+					return "ticker"
+				}
+				if deadlines[id.Name] {
+					return "deadline"
+				}
+			}
+			if x.Sel.Name == "C" && isTicker(x.X) {
+				return "ticker"
+			}
+			if x.Sel.Name == "C" && isDeadline(x.X) {
+				return "deadline"
+			}
+		case *ast.CallExpr:
+			if isTicker(x) {
+				return "ticker"
+			}
+			if isDeadline(x) {
+				return "deadline"
+			}
+			if sel, ok := x.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Done" && len(x.Args) == 0 {
+				return "deadline"
+			}
+		}
+		return ""
+	}
+	commKind := func(c ast.Stmt) string {
+		var e ast.Expr
+		switch x := c.(type) {
+		case *ast.SendStmt:
+			return "event"
+		case *ast.ExprStmt:
+			e = x.X
+		case *ast.AssignStmt:
+			if len(x.Rhs) == 1 {
+				e = x.Rhs[0]
+			}
+		}
+		u, ok := e.(*ast.UnaryExpr)
+		if !ok || u.Op != token.ARROW {
+			return "event"
+		}
+		if k := classify(u.X); k != "" {
+			return k
+		}
+		return "event"
+	}
+	flagged := make(map[token.Pos]bool)
+	var inspect func(node ast.Node)
+	inspect = func(node ast.Node) {
+		ast.Inspect(node, func(n ast.Node) bool {
+			if call, ok := n.(*ast.CallExpr); ok {
+				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Test" {
+					if id, ok := sel.X.(*ast.Ident); ok && synctestName != "" && id.Name == synctestName {
+						return false // bubbles run on fake time
+					}
+				}
+			}
+			var body *ast.BlockStmt
+			switch x := n.(type) {
+			case *ast.ForStmt:
+				body = x.Body
+			case *ast.RangeStmt:
+				body = x.Body
+			default:
+				return true
+			}
+			ast.Inspect(body, func(m ast.Node) bool {
+				if _, ok := m.(*ast.FuncLit); ok {
+					return false
+				}
+				sel, ok := m.(*ast.SelectStmt)
+				if !ok || flagged[sel.Pos()] {
+					return true
+				}
+				ticker, deadline, event := false, false, false
+				for _, cl := range sel.Body.List {
+					cc := cl.(*ast.CommClause)
+					if cc.Comm == nil {
+						continue
+					}
+					switch commKind(cc.Comm) {
+					case "ticker":
+						ticker = true
+					case "deadline":
+						deadline = true
+					default:
+						event = true
+					}
+				}
+				if ticker && deadline && !event {
+					flagged[sel.Pos()] = true
+					add(ruleNoPolling, sel.Pos(), "loop selects on a ticker and a deadline with no event case: that re-checks state on every tick; wait on a real event, or use synctest.Wait in a bubble")
+				}
+				return true
+			})
+			return true
+		})
+	}
+	inspect(decl)
 }
 
 // checkBusyPoll implements ruleNoPolling for spin loops in one declaration.
@@ -688,6 +979,19 @@ func TestTestPolicyNegativeFixtures(t *testing.T) {
 		{"unused realtime directive", "//testpolicy:realtime nothing waits\nfunc h() {}", []string{ruleNoRealtime}},
 		{"realtime directive only used in bubble", "//testpolicy:realtime x\nfunc TestX(t *testing.T) { synctest.Test(t, func(t *testing.T) { <-time.After(1) }) }", []string{ruleNoRealtime}},
 		{"realtime directive used by timer helper", "func dl() <-chan time.Time { return nil }\n//testpolicy:realtime x\nfunc h() { <-dl() }", nil},
+		{"ticker+timeout loop flagged", "//testpolicy:realtime x\nfunc h(c func() bool) {\n\ttk := time.NewTicker(1)\n\tdl := time.After(1)\n\tfor {\n\t\tselect {\n\t\tcase <-tk.C:\n\t\t\tif c() { return }\n\t\tcase <-dl:\n\t\t\treturn\n\t\t}\n\t}\n}", []string{ruleNoPolling}},
+		{"ticker+ctx.Done loop flagged", "//testpolicy:realtime x\nfunc h(ctx context.Context, c func() bool) {\n\ttk := time.NewTicker(1)\n\tfor {\n\t\tselect {\n\t\tcase <-tk.C:\n\t\t\tif c() { return }\n\t\tcase <-ctx.Done():\n\t\t\treturn\n\t\t}\n\t}\n}", []string{ruleNoPolling}},
+		{"ticker+timer.C loop in range flagged", "//testpolicy:realtime x\nfunc h(c func() bool) {\n\ttk := time.NewTicker(1)\n\ttm := time.NewTimer(1)\n\tfor range 3 {\n\t\tselect {\n\t\tcase <-tk.C:\n\t\tcase <-tm.C:\n\t\t}\n\t}\n}", []string{ruleNoPolling}},
+		{"ticker+deadline+event loop ok", "//testpolicy:realtime x\nfunc h(ev chan int) {\n\ttk := time.NewTicker(1)\n\tdl := time.After(1)\n\tfor {\n\t\tselect {\n\t\tcase <-tk.C:\n\t\tcase <-dl:\n\t\t\treturn\n\t\tcase <-ev:\n\t\t}\n\t}\n}", nil},
+		{"ticker+ctx+send producer loop ok", "//testpolicy:realtime x\nfunc h(ctx context.Context, out chan int) {\n\ttk := time.NewTicker(1)\n\tfor {\n\t\tselect {\n\t\tcase <-tk.C:\n\t\tcase out <- 1:\n\t\tcase <-ctx.Done():\n\t\t\treturn\n\t\t}\n\t}\n}", nil},
+		{"ticker+deadline loop in bubble ok", "func TestX(t *testing.T) { synctest.Test(t, func(t *testing.T) { tk := time.NewTicker(1); dl := time.After(1); for { select { case <-tk.C: case <-dl: return } } }) }", nil},
+		{"ticker only loop ok", "//testpolicy:realtime x\nfunc h() { tk := time.NewTicker(1); for { select { case <-tk.C: } } }", nil},
+		{"timestamp order Before on non-time ok", "type ev struct{ at int }\nfunc (ev) Before(ev) bool { return true }\nfunc h(evs []ev) { for i := 1; i < len(evs); i++ { if !evs[i-1].Before(evs[i]) { return } } }", nil},
+		{"time param After in loop flagged", "func h(dl time.Time, c func() bool) { for !c() { if dl.After(dl) { return } } }", []string{ruleNoPolling}},
+		{"time var from Now().Add Equal flagged", "func h(c func() bool) { dl := time.Now().Add(1); for !c() { _ = dl.Equal(dl) } }", []string{ruleNoPolling}},
+		{"time Compare and Sub flagged", "func h(a, b time.Time) { for i := 0; i < 2; i++ { _ = a.Compare(b) }; for i := 0; i < 2; i++ { _ = a.Sub(b) } }", []string{ruleNoPolling, ruleNoPolling}},
+		{"range loop time.Now measurement ok", "func h(xs []int) { for range xs { _ = time.Since(time.Now()) } }", nil},
+		{"range loop time After flagged", "func h(xs []int, d time.Time) { for range xs { _ = d.After(d) } }", []string{ruleNoPolling}},
 		{"gosched outside loop not flagged", "func h() { runtime.Gosched() }", nil},
 	}
 	for _, tt := range tests {

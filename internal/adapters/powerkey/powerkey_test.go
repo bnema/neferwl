@@ -186,13 +186,20 @@ func (p *logindPeer) next(t *testing.T) grant {
 
 // logBuf is a log sink the test reads while Serve writes.
 type logBuf struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
+	mu      sync.Mutex
+	buf     bytes.Buffer
+	changed chan struct{} // signalled (non-blocking) on every write
 }
 
 func (l *logBuf) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.changed != nil {
+		select {
+		case l.changed <- struct{}{}:
+		default:
+		}
+	}
 	return l.buf.Write(p)
 }
 
@@ -207,13 +214,12 @@ func (l *logBuf) count(s string) int {
 //testpolicy:realtime private D-Bus logind peer passes real file descriptors over sockets
 func (l *logBuf) wait(t *testing.T, msg string, n int) {
 	t.Helper()
-	timeout, tick := time.After(5*time.Second), time.NewTicker(5*time.Millisecond)
-	defer tick.Stop()
+	timeout := time.After(5 * time.Second)
 	for l.count(msg) < n {
 		select {
 		case <-timeout:
 			t.Fatalf("log never had %d x %q", n, msg)
-		case <-tick.C:
+		case <-l.changed:
 		}
 	}
 }
@@ -230,7 +236,7 @@ func run(t *testing.T, address string) (stop func(), log *logBuf) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	log = &logBuf{}
+	log = &logBuf{changed: make(chan struct{}, 1)}
 	logger := zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: log}).WithField("component", "powerkey")
 	go func() {
 		defer close(done)
