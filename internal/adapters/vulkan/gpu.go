@@ -3,6 +3,7 @@ package vulkan
 import (
 	"fmt"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/purego"
 	vk "github.com/bnema/purego-vulkan/vulkan"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
@@ -153,15 +154,18 @@ func (g *GPU) initDevice(physical vk.PhysicalDevice, family, n uint32, start tim
 	g.queuePriority = chosen
 	g.dd, err = vk.LoadDeviceDispatch(g.inst.id, g.device)
 	if err != nil {
+		name := append([]byte("vkDestroyDevice"), 0)
+		if addr := g.inst.id.GetDeviceProcAddr(g.device, &name[0]); addr != 0 {
+			purego.SyscallN(uintptr(addr), uintptr(g.device), 0)
+		}
+		g.device = 0
 		err = fmt.Errorf("LoadDeviceDispatch: %w", err)
 		return
 	}
 	runtime.KeepAlive(extNames)
 	runtime.KeepAlive(extPtrs)
 	if dmabufSupported {
-		// Temporary probe facade: the per-output migration follows in P1.2.
-		probe := &Renderer{gpu: g}
-		g.dmabuf = probe.probeDMABuf(physical)
+		g.dmabuf = g.probeDMABuf(physical)
 		if g.dmabuf.Device != 0 {
 			g.probeRenderModifiers()
 		}
@@ -208,6 +212,16 @@ func (g *GPU) Close() {
 			break
 		}
 	}
+	queues := g.queues
+	// Queue order is stable; hold every submission lock through device destruction.
+	for _, q := range g.queues {
+		q.mu.Lock()
+	}
+	defer func() {
+		for i := len(queues) - 1; i >= 0; i-- {
+			queues[i].mu.Unlock()
+		}
+	}()
 	if err := checked("vkDeviceWaitIdle", g.dd.DeviceWaitIdle(g.device)); err != nil {
 		g.log.Error().Err(err).Msg("wait for GPU idle")
 	}

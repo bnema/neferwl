@@ -99,24 +99,24 @@ func cstring(b []byte) string {
 // probeDMABuf lists the sampled fourcc/modifier pairs supported by the GPU.
 // Multi-planar formats require mutable per-plane views; disjoint binding is
 // optional and only used when the device supports it and planes differ.
-func (r *Renderer) probeDMABuf(physical vk.PhysicalDevice) ports.DMABufSupport {
+func (g *GPU) probeDMABuf(physical vk.PhysicalDevice) ports.DMABufSupport {
 	var sup ports.DMABufSupport
 	drm := vk.PhysicalDeviceDrmPropertiesEXT{SType: vk.StructureTypePhysicalDeviceDRMPropertiesEXT}
 	props := vk.PhysicalDeviceProperties2{SType: vk.StructureTypePhysicalDeviceProperties2, Next: unsafe.Pointer(&drm)}
-	r.gpu.inst.id.GetPhysicalDeviceProperties2(physical, &props)
+	g.inst.id.GetPhysicalDeviceProperties2(physical, &props)
 	if drm.HasRender != 0 {
 		sup.Device = unix.Mkdev(uint32(drm.RenderMajor), uint32(drm.RenderMinor))
 	}
 	for _, f := range dmabufFormats {
 		list := vk.DrmFormatModifierPropertiesListEXT{SType: vk.StructureTypeDRMFormatModifierPropertiesListEXT}
 		fp := vk.FormatProperties2{SType: vk.StructureTypeFormatProperties2, Next: unsafe.Pointer(&list)}
-		r.gpu.inst.id.GetPhysicalDeviceFormatProperties2(physical, f.format, &fp)
+		g.inst.id.GetPhysicalDeviceFormatProperties2(physical, f.format, &fp)
 		if list.DrmFormatModifierCount == 0 {
 			continue
 		}
 		mods := make([]vk.DrmFormatModifierPropertiesEXT, list.DrmFormatModifierCount)
 		list.DrmFormatModifierProperties = &mods[0]
-		r.gpu.inst.id.GetPhysicalDeviceFormatProperties2(physical, f.format, &fp)
+		g.inst.id.GetPhysicalDeviceFormatProperties2(physical, f.format, &fp)
 		for _, m := range mods[:list.DrmFormatModifierCount] {
 			need := vk.FormatFeatureFlags(vk.FormatFeatureSampledImageBit | vk.FormatFeatureSampledImageFilterLinearBit)
 			planes := uint32(1)
@@ -126,7 +126,7 @@ func (r *Renderer) probeDMABuf(physical vk.PhysicalDevice) ports.DMABufSupport {
 			if m.DrmFormatModifierPlaneCount != planes || m.DrmFormatModifierTilingFeatures&need != need {
 				continue
 			}
-			if r.importable(physical, f.format, m.DrmFormatModifier, isYUVFormat(f.fourcc), false) {
+			if g.importable(physical, f.format, m.DrmFormatModifier, isYUVFormat(f.fourcc), false) {
 				sup.Formats = append(sup.Formats, ports.DMABufFormat{Format: f.fourcc, Modifier: m.DrmFormatModifier})
 			}
 		}
@@ -136,7 +136,7 @@ func (r *Renderer) probeDMABuf(physical vk.PhysicalDevice) ports.DMABufSupport {
 
 // importable asks whether an image of that format and modifier can be
 // imported from a dmabuf.
-func (r *Renderer) importable(physical vk.PhysicalDevice, format vk.Format, modifier uint64, yuv, disjoint bool) bool {
+func (g *GPU) importable(physical vk.PhysicalDevice, format vk.Format, modifier uint64, yuv, disjoint bool) bool {
 	mod := vk.PhysicalDeviceImageDrmFormatModifierInfoEXT{SType: vk.StructureTypePhysicalDeviceImageDRMFormatModifierInfoEXT, DrmFormatModifier: modifier, SharingMode: vk.SharingModeExclusive}
 	ext := vk.PhysicalDeviceExternalImageFormatInfo{SType: vk.StructureTypePhysicalDeviceExternalImageFormatInfo, Next: unsafe.Pointer(&mod), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	flags := vk.ImageCreateFlags(0)
@@ -148,13 +148,13 @@ func (r *Renderer) importable(physical vk.PhysicalDevice, format vk.Format, modi
 			// disjoint plane bindings. Check its tiling features as well.
 			list := vk.DrmFormatModifierPropertiesListEXT{SType: vk.StructureTypeDRMFormatModifierPropertiesListEXT}
 			properties := vk.FormatProperties2{SType: vk.StructureTypeFormatProperties2, Next: unsafe.Pointer(&list)}
-			r.gpu.inst.id.GetPhysicalDeviceFormatProperties2(physical, format, &properties)
+			g.inst.id.GetPhysicalDeviceFormatProperties2(physical, format, &properties)
 			if list.DrmFormatModifierCount == 0 {
 				return false
 			}
 			mods := make([]vk.DrmFormatModifierPropertiesEXT, list.DrmFormatModifierCount)
 			list.DrmFormatModifierProperties = &mods[0]
-			r.gpu.inst.id.GetPhysicalDeviceFormatProperties2(physical, format, &properties)
+			g.inst.id.GetPhysicalDeviceFormatProperties2(physical, format, &properties)
 			found := false
 			for _, m := range mods[:list.DrmFormatModifierCount] {
 				if m.DrmFormatModifier == modifier && m.DrmFormatModifierTilingFeatures&0x00400000 != 0 {
@@ -172,12 +172,12 @@ func (r *Renderer) importable(physical vk.PhysicalDevice, format vk.Format, modi
 		info := vk.PhysicalDeviceImageFormatInfo2{SType: vk.StructureTypePhysicalDeviceImageFormatInfo2, Next: unsafe.Pointer(&ext), Flags: flags, Format: format, Type: vk.ImageType2d, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: vk.ImageUsageSampledBit}
 		extOut := vk.ExternalImageFormatProperties{SType: vk.StructureTypeExternalImageFormatProperties}
 		out := vk.ImageFormatProperties2{SType: vk.StructureTypeImageFormatProperties2, Next: unsafe.Pointer(&extOut)}
-		return r.gpu.inst.id.GetPhysicalDeviceImageFormatProperties2(physical, &info, &out) == vk.Success && extOut.ExternalMemoryProperties.ExternalMemoryFeatures&vk.ExternalMemoryFeatureImportableBit != 0
+		return g.inst.id.GetPhysicalDeviceImageFormatProperties2(physical, &info, &out) == vk.Success && extOut.ExternalMemoryProperties.ExternalMemoryFeatures&vk.ExternalMemoryFeatureImportableBit != 0
 	}
 	info := vk.PhysicalDeviceImageFormatInfo2{SType: vk.StructureTypePhysicalDeviceImageFormatInfo2, Next: unsafe.Pointer(&ext), Flags: flags, Format: format, Type: vk.ImageType2d, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: vk.ImageUsageSampledBit}
 	extOut := vk.ExternalImageFormatProperties{SType: vk.StructureTypeExternalImageFormatProperties}
 	out := vk.ImageFormatProperties2{SType: vk.StructureTypeImageFormatProperties2, Next: unsafe.Pointer(&extOut)}
-	if r.gpu.inst.id.GetPhysicalDeviceImageFormatProperties2(physical, &info, &out) != vk.Success {
+	if g.inst.id.GetPhysicalDeviceImageFormatProperties2(physical, &info, &out) != vk.Success {
 		return false
 	}
 	return extOut.ExternalMemoryProperties.ExternalMemoryFeatures&vk.ExternalMemoryFeatureImportableBit != 0

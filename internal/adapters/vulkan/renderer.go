@@ -88,8 +88,7 @@ type Renderer struct {
 	fullRedraws fullRedraws
 	// cursors are the exported cursor images (CursorBuffers).
 	cursors [2]*cursorImage
-	// compose draws every frame (compose.go); maxRange bounds one
-	// storage buffer binding.
+	// compose draws every frame (compose.go).
 	compose composer
 	// Scratch belongs to the renderer goroutine; neither slice is published.
 	scratchDraws  []draw
@@ -131,6 +130,9 @@ func (g *GPU) NewRenderer(width, height int, o ports.RendererOptions) (renderer 
 		return nil, fmt.Errorf("invalid renderer dimensions %d x %d", width, height)
 	}
 	r := &Renderer{gpu: g, q: g.acquireQueue(), width: width, height: height, lastHDRTarget: -1, imports: map[uint64]*imported{}, pools: map[uint64]*mapping{}, shm: map[shmKey]*shmSurface{}, hidden: map[ports.WindowID]struct{}{}, log: g.log}
+	if r.q == nil {
+		return nil, fmt.Errorf("vulkan: GPU closed")
+	}
 	r.syncFD = g.syncFD
 	r.compose.resources, r.compose.indexing = g.resources, g.indexing
 	r.SetVirtualOutput(o.Virtual)
@@ -211,7 +213,7 @@ func (r *Renderer) SetLogger(l zerowrap.Logger) { r.log = l }
 // every frame at debug level (--debug=render-damage). Off by default.
 func (r *Renderer) SetTraceDamage(on bool) { r.traceDamage = on }
 
-// DeviceInfo returns device identity and creation timing captured by New.
+// DeviceInfo returns device identity and creation timing captured by OpenGPU.
 func (r *Renderer) DeviceInfo() DeviceInfo { return r.gpu.deviceInfo }
 
 // QueuePriority is the global priority the queue got: realtime, high or

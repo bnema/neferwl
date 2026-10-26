@@ -35,6 +35,9 @@ func (g *GPU) NewCopier(w, h int) (ports.Copier, error) {
 		return nil, errors.New("GPU copy requires sync_fd export")
 	}
 	c := &Copier{gpu: g, q: g.acquireQueue(), width: w, height: h}
+	if c.q == nil {
+		return nil, errors.New("vulkan: GPU closed")
+	}
 	info := vk.CommandPoolCreateInfo{SType: vk.StructureTypeCommandPoolCreateInfo, Flags: vk.CommandPoolCreateResetCommandBufferBit, QueueFamilyIndex: g.family}
 	if err := checked("vkCreateCommandPool(copy)", g.dd.CreateCommandPool(g.device, &info, nil, &c.pool)); err != nil {
 		c.Close()
@@ -70,8 +73,12 @@ func (c *Copier) importImage(b *ports.DMABuf, usage vk.ImageUsageFlags) (*target
 	if usage == vk.ImageUsageTransferDstBit {
 		need = vk.FormatFeatureBlitDstBit
 	}
-	if !c.supportsBlit(format, b.Modifier, need) {
+	planes, supported := c.supportsBlit(format, b.Modifier, need)
+	if !supported {
 		return nil, fmt.Errorf("copy format %#x modifier %#x lacks blit feature %#x", b.Format, b.Modifier, need)
+	}
+	if uint32(n) != planes {
+		return nil, errImagePlanes
 	}
 	if !c.gpu.copyImportable(format, b.Modifier, usage) {
 		return nil, errImageModifier
@@ -367,22 +374,22 @@ func (g *GPU) importCopyFence(fd int) (vk.Semaphore, error) {
 	return sem, nil
 }
 
-func (c *Copier) supportsBlit(format vk.Format, modifier uint64, need vk.FormatFeatureFlags) bool {
+func (c *Copier) supportsBlit(format vk.Format, modifier uint64, need vk.FormatFeatureFlags) (uint32, bool) {
 	list := vk.DrmFormatModifierPropertiesListEXT{SType: vk.StructureTypeDRMFormatModifierPropertiesListEXT}
 	props := vk.FormatProperties2{SType: vk.StructureTypeFormatProperties2, Next: unsafe.Pointer(&list)}
 	c.gpu.inst.id.GetPhysicalDeviceFormatProperties2(c.gpu.physical, format, &props)
 	if list.DrmFormatModifierCount == 0 {
-		return false
+		return 0, false
 	}
 	mods := make([]vk.DrmFormatModifierPropertiesEXT, list.DrmFormatModifierCount)
 	list.DrmFormatModifierProperties = &mods[0]
 	c.gpu.inst.id.GetPhysicalDeviceFormatProperties2(c.gpu.physical, format, &props)
 	for _, m := range mods[:list.DrmFormatModifierCount] {
 		if m.DrmFormatModifier == modifier {
-			return m.DrmFormatModifierTilingFeatures&need == need
+			return m.DrmFormatModifierPlaneCount, m.DrmFormatModifierTilingFeatures&need == need
 		}
 	}
-	return false
+	return 0, false
 }
 
 func (c *Copier) freeImage(t *target) {

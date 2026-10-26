@@ -61,7 +61,7 @@ func (r *Renderer) importYUV(b *ports.DMABuf, format vk.Format) (*imported, erro
 	if disjoint {
 		// Query this modifier with DISJOINT; an advertised shared-memory
 		// import does not imply support for distinct plane objects.
-		if r.gpu.physical == 0 || !r.importable(r.gpu.physical, format, b.Modifier, true, true) {
+		if r.gpu.dmabuf.Device == 0 || !r.gpu.importable(r.gpu.physical, format, b.Modifier, true, true) {
 			return nil, fmt.Errorf("YUV buffer has distinct plane objects without Vulkan disjoint support")
 		}
 	}

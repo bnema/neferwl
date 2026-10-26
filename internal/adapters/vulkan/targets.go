@@ -191,7 +191,7 @@ func (r *Renderer) targetFormat() (vk.Format, uint32) {
 // and imports for the target format, that the display lists (empty: any),
 // without multi-plane ones when singlePlane. Call after SetHDR.
 func (r *Renderer) TargetModifiers(display []uint64, singlePlane bool) []uint64 {
-	if r.gpu.physical == 0 || r.gpu.dd == nil || !r.gpu.dd.HasGetMemoryFdPropertiesKHR() || !r.gpu.dd.HasGetImageDrmFormatModifierPropertiesEXT() {
+	if r.gpu.dmabuf.Device == 0 || r.gpu.dd == nil || !r.gpu.dd.HasGetMemoryFdPropertiesKHR() || !r.gpu.dd.HasGetImageDrmFormatModifierPropertiesEXT() {
 		return nil
 	}
 	format, _ := r.targetFormat()
