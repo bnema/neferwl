@@ -188,8 +188,6 @@ func TestBusIdleInhibition(t *testing.T) {
 
 // An output power object reports the mode, turns set_mode into a core
 // event, hears core's decision, and fails when its output goes.
-//
-//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestOutputPower(t *testing.T) {
 	s, events, commands, _, dir := contentServer(t)
 	c := protocolClient(t, s, dir)

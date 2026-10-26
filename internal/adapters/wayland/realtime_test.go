@@ -22,7 +22,7 @@ func waylandDeadline(d time.Duration) <-chan time.Time {
 // a marker after pushing all preceding commands. Its drain was therefore
 // posted before our display.Do. ID zero is not a window, so markers are inert.
 //
-//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func flushCommands(t *testing.T, s *Server, commands chan<- ports.ClientCommand) {
 	t.Helper()
 	deadline := waylandDeadline(2 * time.Second)
@@ -40,7 +40,7 @@ func flushCommands(t *testing.T, s *Server, commands chan<- ports.ClientCommand)
 
 // flushCaptured sends a reply callback marker through the real reply path.
 //
-//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func flushCaptured(t *testing.T, s *Server, replies chan<- ports.CaptureDone) {
 	t.Helper()
 	const marker = ^uint64(0)
@@ -79,8 +79,6 @@ func recvWire[T any](t *testing.T, c *wlturbo.Display, what string, ch <-chan T)
 // dispatchUntil reads actual wire events until the expected callback ran.
 // Closing the connection on timeout releases a blocked Dispatch; there is no
 // background dispatcher left running when this helper returns.
-//
-//testpolicy:realtime real Wayland unix socket between server and wlturbo client
 func dispatchUntil(t *testing.T, c *wlturbo.Display, ready func() bool) {
 	t.Helper()
 	dispatchWire(t, c, "wire event", ready)
