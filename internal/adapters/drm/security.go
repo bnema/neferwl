@@ -136,6 +136,10 @@ func (o *Output) submitProtectedFrame(ctx context.Context, r ports.Renderer, sce
 		}
 		return errSecurityScene
 	}
+	done, err = o.copyFence(o.back, done)
+	if err != nil {
+		return renderError{err}
+	}
 	f := pendingFrame{security: scene.Security, frame: true, composed: true, shows: o.shownBy(scene, seen)}
 	err = o.commitWith(o.fbs[o.back], done, false, false, f, overlayWin{})
 	if err != nil {

@@ -206,6 +206,11 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 		ov.close()
 		return false, errSecurityScene
 	}
+	done, rerr = o.copyFence(o.back, done)
+	if rerr != nil {
+		ov.close()
+		return false, renderError{rerr}
+	}
 	// The overlay buffer is on screen like a scanned-out one: it is
 	// reported shown, so it is not released under the plane.
 	f.queued, f.zeroCopy, f.composed = ov.buf, ov.id, true

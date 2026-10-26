@@ -20,6 +20,11 @@ func (o *Output) probeAsync(r ports.Renderer) {
 	if err != nil {
 		return
 	}
+	done, err = o.copyFence(o.back, done)
+	if err != nil {
+		o.log.Warn().Err(err).Msg("copy tearing probe")
+		return
+	}
 	req := &atomicReq{}
 	req.set(o.primary.id, o.primary.prop("FB_ID"), uint64(o.fbs[o.back]))
 	if done != nil {

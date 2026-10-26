@@ -1,10 +1,12 @@
 package drm
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"testing"
+	"testing/synctest"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
@@ -140,5 +142,118 @@ func TestMultiGPUCopyCreationError(t *testing.T) {
 	_, err := o.setupImages(portsmocks.NewMockRenderer(t), imagesDriver, nil, false)
 	if err == nil || errors.Is(err, ports.ErrDeviceLost) {
 		t.Fatal(err)
+	}
+}
+
+func TestMultiGPUCopyFrameFence(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprint(fail), func(t *testing.T) {
+			o, _, commits := testOutput(t)
+			o.cursor = nil
+			o.tearing = false
+			o.vrrProp = 0
+			r := portsmocks.NewMockRenderer(t)
+			copier := portsmocks.NewMockCopier(t)
+			o.copier = copier
+			o.transport = transportCopy
+			renderFence, w, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.Close()
+			defer renderFence.Close()
+			copyFence, w, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.Close()
+			defer copyFence.Close()
+			r.EXPECT().UseTarget(0).Return().Once()
+			r.EXPECT().Render(mock.Anything, mock.Anything).Return(renderFence, nil).Once()
+			copyFD := uint64(copyFence.Fd())
+			var copyErr error
+			if fail {
+				copyErr = ports.ErrDeviceLost
+			}
+			copier.EXPECT().Copy(0, 0, renderFence).Return(copyFence, copyErr).Once()
+			_, err = o.submitFrame(context.Background(), r, ports.Scene{Seq: 1}, nil, nil, nil, nil)
+			if fail {
+				var fatal renderError
+				if err == nil || errors.Is(err, ports.ErrDeviceLost) || !errors.As(err, &fatal) || len(*commits) != 0 {
+					t.Fatalf("%v commits %d", err, len(*commits))
+				}
+				o.dropRead()
+			} else {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got, ok := (*commits)[0].req.value(tPrimary, pFence); !ok || got != copyFD {
+					t.Fatalf("commit fence %d want %d", got, copyFD)
+				}
+			}
+		})
+	}
+}
+
+func TestMultiGPUCopyCPUFence(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		o, _, commits := testOutput(t)
+		o.cursor = nil
+		o.tearing = false
+		o.vrrProp = 0
+		o.cpuFences = true
+		r := portsmocks.NewMockRenderer(t)
+		copier := portsmocks.NewMockCopier(t)
+		o.copier = copier
+		// The render fence stays unsignalled. Only the copy fence signals, proving
+		// the existing CPU gate consumes the replacement, without waiting on render.
+		renderFence, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer w.Close()
+		defer renderFence.Close()
+		copied, cw, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cw.Close()
+		defer copied.Close()
+		r.EXPECT().UseTarget(0).Return().Once()
+		r.EXPECT().Render(mock.Anything, mock.Anything).Return(renderFence, nil).Once()
+		copier.EXPECT().Copy(0, 0, renderFence).Return(copied, nil).Once()
+		_, err = o.submitFrame(context.Background(), r, ports.Scene{Seq: 1}, nil, nil, nil, nil)
+		if err != nil || len(*commits) != 1 || o.flipStats.fenceTimeouts != 0 {
+			t.Fatalf("%v commits %d timeouts %d", err, len(*commits), o.flipStats.fenceTimeouts)
+		}
+		if _, ok := (*commits)[0].req.value(tPrimary, pFence); ok {
+			t.Fatal("CPU fence gate submitted IN_FENCE_FD")
+		}
+	})
+}
+
+func TestDirectFrameNeverCopies(t *testing.T) {
+	for _, cross := range []bool{false, true} {
+		t.Run(fmt.Sprint(cross), func(t *testing.T) {
+			o, _, _ := testOutput(t)
+			o.cursor = nil
+			o.tearing = false
+			o.vrrProp = 0
+			o.transport = transportDirect
+			opener := portsmocks.NewMockRenderDeviceOpener(t)
+			copier := portsmocks.NewMockCopier(t)
+			o.card = &Card{}
+			if cross {
+				o.card.dev.Local = func() (ports.RenderDevice, error) { return opener.Open(ports.GPUInfo{}) }
+			}
+			r := portsmocks.NewMockRenderer(t)
+			r.EXPECT().UseTarget(0).Return().Once()
+			r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
+			if _, err := o.submitFrame(context.Background(), r, ports.Scene{Seq: 1}, nil, nil, nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			copier.AssertNotCalled(t, "Copy", mock.Anything, mock.Anything, mock.Anything)
+			opener.AssertNotCalled(t, "Open", mock.Anything)
+		})
 	}
 }
