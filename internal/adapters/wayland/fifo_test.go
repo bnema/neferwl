@@ -15,7 +15,7 @@ import (
 // nextContent waits for a content of window id.
 func nextContent(t *testing.T, contents <-chan ports.SurfaceContent, id ports.WindowID) time.Time {
 	t.Helper()
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case c := <-contents:
@@ -59,7 +59,7 @@ func drainContents(contents <-chan ports.SurfaceContent) {
 	for {
 		select {
 		case <-contents:
-		case <-time.After(20 * time.Millisecond):
+		case <-waylandDeadline(20 * time.Millisecond):
 			return
 		}
 	}
@@ -180,7 +180,7 @@ func TestTickFifoClearsBarrierOnFlip(t *testing.T) {
 func TestFifoQueuedBufferDestroyed(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
-	_, surf, _ := surfaceMapper(t, c, events)()
+	w, surf, _ := surfaceMapper(t, c, events)()
 	manager := bindProtocol(t, c, "wp_fifo_manager_v1")
 	f := c.AllocateID()
 	registerProtocol(t, c, f)
@@ -198,7 +198,15 @@ func TestFifoQueuedBufferDestroyed(t *testing.T) {
 		t.Fatal(err)
 	}
 	drainContents(contents)
-	time.Sleep(3 * defaultFramePeriod)
+	// Advance the display-owned pacer explicitly past the barrier deadline.
+	s.display.Do(func() {
+		surface := s.windows[w.ID].xdg.surface
+		surface.barrierAt = time.Now().Add(-3 * defaultFramePeriod)
+		s.paceNow()
+		if len(surface.queue) != 0 {
+			t.Errorf("dead buffer left %d queued commits", len(surface.queue))
+		}
+	})
 	for {
 		select {
 		case ev := <-events:

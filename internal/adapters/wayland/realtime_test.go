@@ -36,6 +36,26 @@ func flushCommands(t *testing.T, s *Server, commands chan<- ports.ClientCommand)
 	}
 }
 
+// flushCaptured sends a reply callback marker through the real reply path.
+func flushCaptured(t *testing.T, s *Server, replies chan<- ports.CaptureDone) {
+	t.Helper()
+	const marker = ^uint64(0)
+	ran := make(chan struct{})
+	if !s.display.Do(func() { s.captureReplies[marker] = func(ports.CaptureDone) { close(ran) } }) {
+		t.Fatal("display stopped")
+	}
+	select {
+	case replies <- ports.CaptureDone{ID: marker}:
+	case <-waylandDeadline(2 * time.Second):
+		t.Fatal("reply forwarder stalled")
+	}
+	select {
+	case <-ran:
+	case <-waylandDeadline(2 * time.Second):
+		t.Fatal("reply marker not applied")
+	}
+}
+
 // dispatchUntil reads actual wire events until the expected callback ran.
 // Closing the connection on timeout releases a blocked Dispatch; there is no
 // background dispatcher left running when this helper returns.
