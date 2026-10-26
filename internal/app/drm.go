@@ -113,11 +113,14 @@ const applyTimeout = 5 * time.Second
 
 // drmBackend is the seat and the cards with at least one usable output.
 type drmBackend struct {
-	render ports.RenderDevice
-	seat   *seat.Seat
-	cards  []*drmCard
-	clock  ports.Clock
-	log    zerowrap.Logger
+	render     ports.RenderDevice
+	opener     ports.RenderDeviceOpener
+	renderInfo ports.GPUInfo
+	advertised []ports.DMABufFormat
+	seat       *seat.Seat
+	cards      []*drmCard
+	clock      ports.Clock
+	log        zerowrap.Logger
 	// preparers are the running outputs, guarded by mu: the seat's goroutine
 	// reads them while the output loop adds and removes them.
 	mu        sync.Mutex
@@ -291,6 +294,15 @@ func openDRM(ctx context.Context, cfg ports.Config, opener ports.RenderDeviceOpe
 		return nil, err
 	}
 	b.render = render
+	b.opener = opener
+	primary, node := render.Node()
+	for _, info := range infos {
+		if (node != 0 && info.Render == node) || (primary != 0 && info.Primary == primary) {
+			b.renderInfo = info
+			break
+		}
+	}
+	b.advertised = append([]ports.DMABufFormat(nil), render.DMABuf().Formats...)
 	want.Sampled = render.DMABuf().Formats
 	for _, opened := range opened {
 		fd, path := opened.fd, opened.info.Path
@@ -380,6 +392,8 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	set := newOutputSet(ctx, ch.captured, ch.routes())
 	set.attach = ch.content
 	set.wireSecurity(ch)
+	limiter := reopenLimiter{clock: b.clock}
+	recovering := false
 	protected := func() bool { return set.state.Protected || securitySnapshot(ch.security).Protected }
 	leases := newLeasePublisher(ctx, ch.leaseEvents, func() bool { return seatActive }, protected, log)
 	defer leases.close()
@@ -476,6 +490,9 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		apply.heads(inventory)
 	}
 	scan := func() {
+		if recovering {
+			return
+		}
 		var scanErrors []error
 		for _, c := range b.cards {
 			w := want(currentConfig)
@@ -762,6 +779,15 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			if ctx.Err() != nil {
 				return errors.Join(err, set.wait())
 			}
+			if !recovering && errors.Is(err, ports.ErrDeviceLost) {
+				recovering = true
+				// The backend currently owns one shared render device. Cancel every
+				// consumer first; normal stopped handling joins and retires each lifetime.
+				for n, r := range set.outs {
+					stopping[n] = false
+					r.stop()
+				}
+			}
 			restart := stopping[name]
 			delete(stopping, name)
 			curs.set(name, nil)
@@ -776,6 +802,31 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				delete(stopReady, name)
 			}
 			stopDecision := progress.stopped(name, source, restart, err)
+			if recovering {
+				complete(stopDecision)
+				send(ports.OutputRemoved{Name: name})
+				if len(set.outs) > 0 {
+					continue
+				}
+				old := b.render
+				b.render = nil // failure cleanup must not close the lost device again.
+				log.Warn().Str("card", b.renderInfo.Path).Msg("render device lost, reopening")
+				next, reopenErr := reopenRender(b.opener, b.renderInfo, old, &limiter)
+				if reopenErr != nil {
+					return errors.Join(reopenErr, set.wait())
+				}
+				b.render = next
+				if lost := lostFormats(b.advertised, next.DMABuf().Formats); lost > 0 {
+					log.Warn().Str("card", b.renderInfo.Path).Int("lost_formats", lost).Msg("render device lost advertised formats")
+				}
+				for _, c := range b.cards {
+					c.SetRender(next)
+				}
+				recovering = false
+				scan()
+				continue
+			}
+
 			if err != nil {
 				// A broken output (e.g. its renderer) must not take the
 				// session down. It stays off until the next hotplug, so a

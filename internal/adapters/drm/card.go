@@ -349,3 +349,6 @@ func (c *Card) freeImage(img imageBuffer) {
 
 // SetRendererOptions sets output renderer options before outputs are started.
 func (c *Card) SetRendererOptions(o ports.RendererOptions) { c.rendererOptions = o }
+
+// SetRender replaces the render device. Call only while no output of this card is running.
+func (c *Card) SetRender(dev ports.RenderDevice) { c.dev.Render = dev }

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -28,4 +29,35 @@ func (l *reopenLimiter) allow() bool {
 	}
 	l.times = append(l.times, now)
 	return true
+}
+
+// reopenRender closes the old device once and charges every open attempt.
+func reopenRender(opener ports.RenderDeviceOpener, info ports.GPUInfo, old ports.RenderDevice, limiter *reopenLimiter) (ports.RenderDevice, error) {
+	if old != nil {
+		old.Close()
+	}
+	for limiter.allow() {
+		dev, err := opener.Open(info)
+		if err == nil {
+			return dev, nil
+		}
+	}
+	return nil, fmt.Errorf("render device %s: %w", info.Path, ports.ErrDeviceLost)
+}
+
+func lostFormats(advertised, current []ports.DMABufFormat) int {
+	lost := 0
+	for _, a := range advertised {
+		found := false
+		for _, c := range current {
+			if a == c {
+				found = true
+				break
+			}
+		}
+		if !found {
+			lost++
+		}
+	}
+	return lost
 }

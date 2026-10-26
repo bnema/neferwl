@@ -410,7 +410,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 			done <- safe("output", func() error {
 				want := func(cfg ports.Config) drm.Want {
 					w := wantFromConfig(cfg)
-					w.Sampled = s.gpu.DMABuf().Formats
+					w.Sampled = hw.render.DMABuf().Formats
 					w.TraceFlips = logging.Enabled(ctx, "drm-flip")
 					return w
 				}
