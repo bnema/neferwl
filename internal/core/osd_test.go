@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -58,5 +59,22 @@ func TestOSDWatchAfterUnmapClearsContent(t *testing.T) {
 		}
 	default:
 		t.Fatal("unmapped watch did not stop stats")
+	}
+}
+
+func TestOSDScanoutLineOmitsEmptyReason(t *testing.T) {
+	c := &Core{}
+	for _, tc := range []struct {
+		stats ports.WindowStats
+		want  string
+	}{
+		{ports.WindowStats{Scanout: true}, "scanout on / VRR"},
+		{ports.WindowStats{ScanoutReason: "overlays"}, "scanout off (overlay) / VRR"},
+		{ports.WindowStats{ScanoutReason: "format"}, "scanout off format / VRR"},
+	} {
+		c.osdPanel(tc.stats)
+		if got := c.osd.panel.Lines[1]; !strings.HasPrefix(got, tc.want) {
+			t.Fatalf("line %q, want prefix %q", got, tc.want)
+		}
 	}
 }

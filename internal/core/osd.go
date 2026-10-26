@@ -9,6 +9,11 @@ import (
 
 const overlayIDOSD = 1 << 61
 
+// osdStyle keeps the panel dark whatever the border colour: the panel is
+// translucent, so a mid-tone background would leave the derived ink with too
+// little contrast over dark content.
+var osdStyle = ports.OverlayStyle{Background: "#1c1c1c"}
+
 // osd is the owner's window information overlay state.
 type osd struct {
 	key           osdKey
@@ -110,8 +115,10 @@ func (c *Core) osdPanel(v ports.WindowStats) {
 	}
 	b = append(b[:0], "scanout "...)
 	b = append(b, osdOn(v.Scanout)...)
-	b = append(b, ' ')
-	b = append(b, reason...)
+	if reason != "" {
+		b = append(b, ' ')
+		b = append(b, reason...)
+	}
 	b = append(b, " / VRR "...)
 	b = append(b, osdOn(v.VRR)...)
 	b = append(b, " / tearing "...)
