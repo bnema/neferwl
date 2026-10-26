@@ -65,6 +65,8 @@ func TestOpenPicksFreeDisplay(t *testing.T) {
 
 // A satellite that exits without accepting drops the waiting client and is
 // not respawned until another client connects.
+//
+//testpolicy:realtime real X11 sockets and satellite subprocess lifetime
 func TestRunDropsClientsOfFailedSatellite(t *testing.T) {
 	d, err := Open(testOptions(t, "false"))
 	if err != nil {
@@ -112,6 +114,7 @@ func satelliteScript(t *testing.T, dir string) (string, string) {
 	return bin, runs
 }
 
+//testpolicy:realtime real X11 sockets and satellite subprocess lifetime
 func readRuns(t *testing.T, path string, want int) []string {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -121,11 +124,13 @@ func readRuns(t *testing.T, path string, want int) []string {
 		if len(lines) >= want || time.Now().After(deadline) {
 			return lines
 		}
-		time.Sleep(20 * time.Millisecond)
+		<-time.After(20 * time.Millisecond)
 	}
 }
 
 // Each connection starts the satellite once, with both sockets handed over.
+//
+//testpolicy:realtime real X11 sockets and satellite subprocess lifetime
 func TestRunStartsSatelliteOnConnect(t *testing.T) {
 	opts := testOptions(t, "")
 	var runs string
@@ -139,7 +144,7 @@ func TestRunStartsSatelliteOnConnect(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- d.Run(ctx) }()
-	time.Sleep(100 * time.Millisecond)
+	<-time.After(100 * time.Millisecond)
 	if got := readRuns(t, runs, 0); len(got) != 0 {
 		t.Fatalf("started without a client: %v", got)
 	}
@@ -149,7 +154,7 @@ func TestRunStartsSatelliteOnConnect(t *testing.T) {
 		t.Fatalf("runs %v, want [%s]", got, want)
 	}
 	// The next client, after the backoff, starts it again.
-	time.Sleep(1200 * time.Millisecond)
+	<-time.After(1200 * time.Millisecond)
 	if got := readRuns(t, runs, 1); len(got) != 1 {
 		t.Fatalf("respawned without a client: %v", got)
 	}
@@ -230,6 +235,8 @@ func TestSupported(t *testing.T) {
 
 // Stopping kills the satellite's whole process group, even when a child
 // keeps its stderr open.
+//
+//testpolicy:realtime real X11 sockets and satellite subprocess lifetime
 func TestRunKillsSatelliteGroup(t *testing.T) {
 	opts := testOptions(t, "")
 	pidfile := filepath.Join(opts.TmpDir, "pid")
@@ -248,7 +255,7 @@ func TestRunKillsSatelliteGroup(t *testing.T) {
 	go func() { done <- d.Run(ctx) }()
 	unix.Close(dial(t, d.socket))
 	var pid int
-	for deadline := time.Now().Add(3 * time.Second); pid == 0 && time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+	for deadline := time.Now().Add(3 * time.Second); pid == 0 && time.Now().Before(deadline); <-time.After(20 * time.Millisecond) {
 		b, _ := os.ReadFile(pidfile)
 		pid, _ = strconv.Atoi(strings.TrimSpace(string(b)))
 	}
@@ -261,7 +268,7 @@ func TestRunKillsSatelliteGroup(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not stop")
 	}
-	for deadline := time.Now().Add(2 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+	for deadline := time.Now().Add(2 * time.Second); ; <-time.After(20 * time.Millisecond) {
 		if errors.Is(unix.Kill(pid, 0), unix.ESRCH) {
 			break
 		}
