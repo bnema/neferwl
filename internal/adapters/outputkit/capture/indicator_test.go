@@ -131,7 +131,7 @@ func TestSubmitPlainServesHintLabelScenesWithoutLabels(t *testing.T) {
 	r.EXPECT().EndCapture(frame).Return().Once()
 	s := excludedTestScene()
 	s.Capture = nil
-	s.HintLabels = []ports.HintLabel{{Text: "f"}}
+	s.Overlays = []ports.Overlay{{ID: 1, Seq: 1, Kind: ports.OverlayLabel, Text: "f"}}
 	reqs := []ports.CaptureRequest{pipelineRequest(t, 1)}
 	require.False(t, reqs[0].Indicate)
 	took, done, err := p.SubmitPlain(r, s, nil, reqs)
@@ -139,7 +139,7 @@ func TestSubmitPlainServesHintLabelScenesWithoutLabels(t *testing.T) {
 	require.Nil(t, done)
 	require.True(t, took)
 	require.Len(t, rendered, 1)
-	require.Nil(t, rendered[0].HintLabels)
+	require.Nil(t, rendered[0].Overlays)
 	require.Zero(t, rendered[0].Seq)
 	require.Equal(t, uint64(1), awaitCapture(t, replies).ID)
 	p.Close(r)
@@ -150,5 +150,5 @@ func TestSubmitPlainServesHintLabelScenesWithoutLabels(t *testing.T) {
 	normal, excluded, _ := p.Split(withSession, []ports.CaptureRequest{{ID: 2, Exclude: true, Session: 7}})
 	require.Empty(t, normal)
 	require.Equal(t, []uint64{2}, ids(excluded), "labels force the Exclude request to the excluded scene")
-	require.Nil(t, p.ExcludedScene(s).HintLabels)
+	require.Nil(t, p.ExcludedScene(s).Overlays)
 }

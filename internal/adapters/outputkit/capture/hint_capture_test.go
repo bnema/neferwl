@@ -36,9 +36,8 @@ func (f hintFrame) scene() ports.Scene {
 	if f.unshown {
 		s.Capture = &ports.SceneCapture{Session: 7, Excluded: []ports.WindowID{99}}
 	}
-	s.HintStyle.Capture = f.capture
 	if f.labels {
-		s.HintLabels = []ports.HintLabel{{Text: "f"}}
+		s.Overlays = []ports.Overlay{{ID: 1, Seq: 1, Kind: ports.OverlayLabel, Capture: f.capture, Text: "f"}}
 	}
 	if f.indicator {
 		s.CaptureIndicators = []ports.CaptureIndicator{{Rect: ports.Rect{W: 10, H: 10}}}
@@ -53,7 +52,7 @@ func (f hintFrame) scene() ports.Scene {
 // position hint, and "excluded" when the excluded layers are gone.
 func drawn(s ports.Scene) string {
 	var parts []string
-	if len(s.HintLabels) > 0 {
+	if len(s.Overlays) > 0 {
 		parts = append(parts, "labels")
 	}
 	if len(s.CaptureIndicators) > 0 {
@@ -306,4 +305,26 @@ func TestSplitNoAllocHintCapture(t *testing.T) {
 	}); allocs != 0 {
 		t.Fatalf("%.1f allocs, want 0", allocs)
 	}
+}
+
+// plain keeps exactly the overlays marked Capture, in a new slice: the
+// caller's overlays are left untouched.
+func TestPlainKeepsOnlyCaptureOverlays(t *testing.T) {
+	in := []ports.Overlay{
+		{ID: 1, Seq: 1, Kind: ports.OverlayLabel, Capture: true, Text: "a"},
+		{ID: 2, Seq: 1, Kind: ports.OverlayLabel, Text: "b"},
+	}
+	want := append([]ports.Overlay(nil), in...)
+	s := excludedTestScene()
+	s.Overlays = in
+
+	require.True(t, keepsOverlays(s))
+	require.True(t, hidesOverlays(s))
+	got := plain(s)
+	require.Equal(t, []ports.Overlay{want[0]}, got.Overlays)
+	require.Equal(t, want, in)
+	require.Equal(t, want, s.Overlays)
+
+	s.Overlays = in[1:]
+	require.Nil(t, plain(s).Overlays)
 }

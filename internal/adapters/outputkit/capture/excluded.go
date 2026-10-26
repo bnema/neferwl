@@ -10,31 +10,30 @@ import (
 
 // A request with Exclude leaves out the exclusion's HUD layers and popups;
 // every other capture shows them. No capture shows the capture indicator
-// (Scene.CaptureIndicators) or the position hint. Hint labels are shown to
-// the captures of Wayland clients only when hint.capture is on
-// (HintStyle.Capture), never to the compositor's own captures
-// (CaptureIDInternal) and never with hint.capture off. A scene that carries
-// something a capture must not show is never the source of its image:
+// (Scene.CaptureIndicators) or the position hint. Overlays (Scene.Overlays) are
+// shown to the captures of Wayland clients only when they are marked Capture,
+// never to the compositor's own captures (CaptureIDInternal). A scene that
+// carries something a capture must not show is never the source of its image:
 // requests of the displayed frame are served from a frame rendered without
 // it first (SubmitPlain, ExcludedScene).
 //
 // A frame needs at most two batches: one for the displayed-frame requests
 // (served from the displayed or from the plain frame, never both) and one
-// for the Exclude requests. While labels are kept for clients, an internal
-// capture would need a third, labelless one: Split fails it instead.
+// for the Exclude requests. While overlays are kept for clients, an internal
+// capture would need a third, overlay-free one: Split fails it instead.
 
 // ErrInternalLabelled fails an internal capture (CaptureIDInternal) of a frame
-// that shows hint labels kept for client captures (hint.capture): serving it
-// without labels would need a third capture batch, and serving it with them
-// would make the hint scanner read its own labels. Core only starts a scan
-// from the idle hint mode (core/hint.go hintRequest), so labels and a scan in
+// that has overlays kept for client captures (Overlay.Capture): serving it
+// without overlays would need a third capture batch, and serving it with them
+// would make the hint scanner read its own overlays. Core only starts a scan
+// from the idle hint mode (core/hint.go hintRequest), so overlays and a scan in
 // flight coincide only on a stale scene; the scan fails with a transient
 // error and the user retries.
-var ErrInternalLabelled = fmt.Errorf("%w: internal capture on a frame that keeps hint labels for clients", ports.ErrCaptureTransient)
+var ErrInternalLabelled = fmt.Errorf("%w: internal capture on a frame that keeps overlays for clients", ports.ErrCaptureTransient)
 
 // ErrInternalExclude fails an internal Exclude capture of a frame that keeps
-// hint labels: its excluded frame carries them too.
-var ErrInternalExclude = fmt.Errorf("%w: internal capture cannot read the excluded frame, which keeps hint labels", ports.ErrCaptureTransient)
+// overlays: its excluded frame carries them too.
+var ErrInternalExclude = fmt.Errorf("%w: internal capture cannot read the excluded frame, which keeps overlays", ports.ErrCaptureTransient)
 
 // ErrSessionInactive fails an Exclude request whose session is not the one
 // the scene carries. Serving it as a normal capture would leak its HUD.
@@ -55,8 +54,9 @@ var ErrWorkspaceMoved = fmt.Errorf("%w: captured workspace is not where the requ
 // excluded layers and popups. Its scratch slices are reused,
 // so a warmed output allocates nothing.
 type excluder struct {
-	windows []ports.SceneWindow
-	layers  []ports.SceneLayer
+	windows  []ports.SceneWindow
+	layers   []ports.SceneLayer
+	overlays []ports.Overlay
 }
 
 // Shows reports whether a content change of id needs a new frame: the
@@ -86,37 +86,73 @@ func excludedShown(s ports.Scene) bool {
 	return false
 }
 
-// keepsLabels reports whether the scene shows hint labels that client
-// captures keep (hint.capture): the frames derived for captures keep them.
-func keepsLabels(s ports.Scene) bool { return s.HintStyle.Capture && len(s.HintLabels) > 0 }
+// keepsOverlays reports whether the scene has overlays that client captures
+// keep (Overlay.Capture): the frames derived for captures keep them.
+func keepsOverlays(s ports.Scene) bool {
+	for _, o := range s.Overlays {
+		if o.Capture {
+			return true
+		}
+	}
+	return false
+}
+
+// hidesOverlays reports whether the scene has overlays that client captures
+// must not show (those without Overlay.Capture).
+func hidesOverlays(s ports.Scene) bool {
+	for _, o := range s.Overlays {
+		if !o.Capture {
+			return true
+		}
+	}
+	return false
+}
 
 // internal reports a capture requested by the compositor itself (hint scan).
 func internal(q ports.CaptureRequest) bool { return q.ID&ports.CaptureIDInternal != 0 }
 
 // plain returns s as a capture shows it: without its capture state,
-// indicators and position hint, and without hint labels unless they are kept
-// for clients (keepsLabels). Seq is 0 so the renderer redraws the whole
-// target instead of reusing a displayed frame.
-func plain(s ports.Scene) ports.Scene {
+// indicators and position hint, and with only the overlays kept for clients
+// (Overlay.Capture) in a new slice, never the caller's backing array. Seq is 0
+// so the renderer redraws the whole target instead of reusing a displayed
+// frame.
+func plain(s ports.Scene) ports.Scene { return plainInto(s, nil) }
+
+// plainInto is plain with the kept overlays appended to buf[:0], which must
+// not alias s.Overlays.
+func plainInto(s ports.Scene, buf []ports.Overlay) ports.Scene {
 	s.Capture, s.CaptureIndicators, s.Seq = nil, nil, 0
-	if !s.HintStyle.Capture {
-		s.HintLabels = nil
-	}
+	s.Overlays = captured(buf, s.Overlays)
 	s.PositionHint = ports.PositionHint{}
 	return s
 }
 
+// captured returns the overlays with Capture, appended to buf[:0]; nil when
+// none.
+func captured(buf, overlays []ports.Overlay) []ports.Overlay {
+	kept := buf[:0]
+	for _, o := range overlays {
+		if o.Capture {
+			kept = append(kept, o)
+		}
+	}
+	if len(kept) == 0 {
+		return nil
+	}
+	return kept
+}
+
 // SubmitPlain serves the displayed-frame requests of a scene that carries
 // what captures must not show: the capture indicator, the position hint, or
-// hint labels while they are not kept for clients. The frame is rendered
+// overlays that are not kept for clients. The frame is rendered
 // without it, first (same renderer, queue order, like ExcludedScene), and
 // copied before the displayed one is drawn. It reports whether it took the
 // requests (and zeroed them); false when the displayed frame already shows
-// what they may (no indicator, no position hint, and no labels or labels
-// kept for clients) or there is nothing to serve, then the caller submits
+// what they may (no indicator, no position hint, and no overlays or overlays
+// all kept for clients) or there is nothing to serve, then the caller submits
 // them after the displayed frame as usual. On a render error the caller still
 // owns the requests. Internal requests never reach it on a frame that keeps
-// labels: Split fails them.
+// overlays: Split fails them.
 //
 // Admission is the session gate's: the requests are handed over with
 // SubmitScoped under the scene's epoch, so a locked or changed epoch fails
@@ -124,7 +160,7 @@ func plain(s ports.Scene) ports.Scene {
 // the plain render reads client buffers even when the requests are rejected,
 // so the caller owns it (hold or wait it) whatever happened, error included.
 func (p *Pipeline) SubmitPlain(r ports.Renderer, s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, normal []ports.CaptureRequest) (took bool, done *os.File, err error) {
-	if len(normal) == 0 || len(s.CaptureIndicators) == 0 && (len(s.HintLabels) == 0 || keepsLabels(s)) && !s.PositionHint.Shown() {
+	if len(normal) == 0 || len(s.CaptureIndicators) == 0 && !hidesOverlays(s) && !s.PositionHint.Shown() {
 		return false, nil, nil
 	}
 	done, err = r.Render(plain(s), surfaces)
@@ -143,7 +179,10 @@ func (c *excluder) scene(s ports.Scene) ports.Scene {
 	if s.Capture != nil {
 		ex = s.Capture.Excluded
 	}
-	s = plain(s)
+	s = plainInto(s, c.overlays)
+	if s.Overlays != nil {
+		c.overlays = s.Overlays[:0]
+	}
 	if len(ex) == 0 {
 		return s
 	}
@@ -168,7 +207,7 @@ func (p *Pipeline) ExcludedScene(s ports.Scene) ports.Scene { return p.excl.scen
 
 // Split answers or orders the requests of one output frame, in place. No
 // allocation. Requests that cannot be served are failed and removed:
-//   - internal requests of a frame that keeps hint labels for clients
+//   - internal requests of a frame that keeps overlays for clients
 //     (ErrInternalLabelled, ErrInternalExclude);
 //   - Exclude requests of a session other than the scene's, or with no
 //     exclusion in it (ErrSessionInactive), and those newer than its Revision
@@ -182,7 +221,7 @@ func (p *Pipeline) ExcludedScene(s ports.Scene) ports.Scene { return p.excl.scen
 //   - excluded follows: Exclude requests, drawn from ExcludedScene rendered
 //     first, or from the displayed frame (they stay in normal) when it shows
 //     no excluded surface, no capture indicator or position hint, and no
-//     hint labels that must stay out of captures;
+//     overlays that must stay out of captures;
 //   - hidden: the requests of the workspace rendered off screen
 //     (OffScreen), served from CaptureScene (see SubmitHidden); they come last.
 //
@@ -192,7 +231,7 @@ func (p *Pipeline) Split(s ports.Scene, reqs []ports.CaptureRequest) (normal, ex
 	for _, q := range reqs {
 		var err error
 		switch {
-		case internal(q) && keepsLabels(s):
+		case internal(q) && keepsOverlays(s):
 			err = ErrInternalLabelled
 			if q.Exclude {
 				err = ErrInternalExclude
@@ -215,7 +254,7 @@ func (p *Pipeline) Split(s ports.Scene, reqs []ports.CaptureRequest) (normal, ex
 	}
 	clear(reqs[n:])
 	reqs = reqs[:n]
-	excl := excludedShown(s) || len(s.CaptureIndicators) > 0 || (len(s.HintLabels) > 0 && !s.HintStyle.Capture) || s.PositionHint.Shown()
+	excl := excludedShown(s) || len(s.CaptureIndicators) > 0 || hidesOverlays(s) || s.PositionHint.Shown()
 	group := func(q ports.CaptureRequest) int {
 		switch {
 		case q.OffScreen:
