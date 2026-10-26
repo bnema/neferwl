@@ -1,7 +1,9 @@
 package app
 
 import (
+	"errors"
 	"fmt"
+	"github.com/bnema/zerowrap"
 	"path/filepath"
 	"strings"
 
@@ -74,4 +76,45 @@ func multiGPUMode(value string) drm.MultiGPU {
 	default:
 		return drm.MultiGPUAuto
 	}
+}
+
+func selectGPUPlans(cands []ports.GPUInfo, cfg ports.Config, env string) ([]cardPlan, ports.GPUSelection, error) {
+	config, err := gpuSelectConfig(cfg, env)
+	if err != nil {
+		return nil, ports.GPUSelection{}, err
+	}
+	sel, err := core.SelectGPUs(cands, config)
+	if err != nil {
+		return nil, sel, err
+	}
+	return planCards(cands, sel), sel, nil
+}
+
+func openPlannedRender(opener ports.RenderDeviceOpener, plans []cardPlan, strict bool, log zerowrap.Logger) (ports.RenderDevice, ports.GPUInfo, error) {
+	var ordered []ports.GPUInfo
+	for _, p := range plans {
+		if p.Render {
+			ordered = append(ordered, p.Info)
+		}
+	}
+	if !strict {
+		for _, p := range plans {
+			if !p.Render && p.Info.Render != 0 {
+				ordered = append(ordered, p.Info)
+			}
+		}
+	}
+	var errs []error
+	for _, info := range ordered {
+		dev, err := opener.Open(info)
+		if err == nil {
+			return dev, info, nil
+		}
+		log.Warn().Err(err).Str("card", info.Path).Msg("render GPU unavailable")
+		errs = append(errs, fmt.Errorf("render card %s: %w", info.Path, err))
+	}
+	if len(errs) == 0 {
+		errs = append(errs, errors.New("no render-capable DRM card"))
+	}
+	return nil, ports.GPUInfo{}, errors.Join(errs...)
 }

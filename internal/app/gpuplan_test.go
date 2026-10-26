@@ -104,3 +104,12 @@ func TestMultiGPUMode(t *testing.T) {
 		}
 	}
 }
+
+func TestGPUSelectionErrorBeforePlan(t *testing.T) {
+	cfg := ports.Config{}
+	cfg.DRM.Ignore = []string{"unknown-device"}
+	plans, _, err := selectGPUPlans([]ports.GPUInfo{{Path: "card0", Render: 1}}, cfg, "")
+	if err == nil || !strings.Contains(err.Error(), `unknown DRM device "unknown-device"`) || plans != nil {
+		t.Fatalf("%v %v", plans, err)
+	}
+}

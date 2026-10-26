@@ -4,10 +4,8 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
 
@@ -35,7 +33,6 @@ import (
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
-	"golang.org/x/sys/unix"
 )
 
 // session holds the dependencies assembleSession acquired and wired; run
@@ -112,13 +109,27 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 		}
 		s.gpu = s.hw.render
 	} else {
+		cands, listErr := drm.ListGPUs("/sys", "/dev")
+		if listErr != nil {
+			return s, listErr
+		}
+		config, configErr := gpuSelectConfig(opts.Config, os.Getenv("NEFERWL_RENDER_DEVICE"))
+		if configErr != nil {
+			return s, configErr
+		}
+		drmLog := logging.For(ctx, "drm")
 		var info ports.GPUInfo
-		if path := os.Getenv("NEFERWL_RENDER_DEVICE"); strings.HasPrefix(path, "/dev/dri/renderD") {
-			var stat unix.Stat_t
-			if err = unix.Stat(path, &stat); err != nil {
-				return s, fmt.Errorf("render device %q: %w", path, err)
+		if len(cands) > 0 {
+			sel, selectErr := core.SelectGPUs(cands, config)
+			if selectErr != nil {
+				return s, selectErr
 			}
-			info.Render = stat.Rdev
+			for _, reason := range sel.Reasons {
+				drmLog.Info().Msg(reason)
+			}
+			info = cands[sel.Render]
+		} else {
+			drmLog.Info().Msg("render GPU: first usable Vulkan device (no DRM cards)")
 		}
 		s.gpu, err = s.inst.Open(info)
 		if err != nil {

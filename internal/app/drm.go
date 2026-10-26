@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"runtime"
 	"runtime/debug"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -209,7 +207,8 @@ func (b *drmBackend) prepareSeatDisable() {
 
 type drmCard struct {
 	*drm.Card
-	fd int
+	fd    int
+	local *localRenderDevice
 }
 
 // A failed card read must not erase its heads from a multi-card inventory.
@@ -253,60 +252,50 @@ func openDRM(ctx context.Context, cfg ports.Config, opener ports.RenderDeviceOpe
 	}
 	want := wantFromConfig(cfg)
 	want.TraceFlips = logging.Enabled(ctx, "drm-flip")
-	paths, _ := filepath.Glob("/dev/dri/card[0-9]*")
-	sort.Strings(paths)
-	b := &drmBackend{seat: s, clock: clock.System{}, log: log}
-	s.SetBeforeDisable(b.prepareSeatDisable)
-	var errs []error
-	type openedCard struct {
-		fd   int
-		info ports.GPUInfo
+	cands, err := drm.ListGPUs("/sys", "/dev")
+	if err != nil {
+		s.Close()
+		return nil, err
 	}
-	var opened []openedCard
-	var infos []ports.GPUInfo
-	for _, path := range paths {
+	plans, sel, err := selectGPUPlans(cands, cfg, os.Getenv("NEFERWL_RENDER_DEVICE"))
+	if err != nil {
+		s.Close()
+		return nil, err
+	}
+	for _, reason := range sel.Reasons {
+		log.Info().Msg(reason)
+	}
+	b := &drmBackend{seat: s, clock: clock.System{}, log: log, opener: opener}
+	s.SetBeforeDisable(b.prepareSeatDisable)
+	render, info, err := openPlannedRender(opener, plans, cfg.Render.Device != "" || os.Getenv("NEFERWL_RENDER_DEVICE") != "", log)
+	if err != nil {
+		s.Close()
+		return nil, err
+	}
+	b.render, b.renderInfo = render, info
+	b.advertised = append([]ports.DMABufFormat(nil), render.DMABuf().Formats...)
+	want.Sampled = render.DMABuf().Formats
+	var errs []error
+	for _, p := range plans {
+		info, path := p.Info, p.Info.Path
 		fd, err := s.OpenDevice(path)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		var st unix.Stat_t
-		if err = unix.Fstat(fd, &st); err != nil {
-			s.CloseDevice(fd)
-			errs = append(errs, err)
-			continue
+		var local *localRenderDevice
+		dev := drm.CardDevices{Render: render, Mode: multiGPUMode(cfg.Render.MultiGPU)}
+		if info.Path != b.renderInfo.Path {
+			local = &localRenderDevice{}
+			dev.Local = sync.OnceValues(func() (ports.RenderDevice, error) {
+				device, err := opener.Open(info)
+				if err == nil {
+					local.set(device)
+				}
+				return device, err
+			})
 		}
-		info, err := cardGPUInfo("/sys", path, st.Rdev)
-		if err != nil {
-			s.CloseDevice(fd)
-			errs = append(errs, err)
-			continue
-		}
-		opened = append(opened, openedCard{fd, info})
-		infos = append(infos, info)
-	}
-	render, err := openCardRenderDevice(opener, infos, os.Getenv("NEFERWL_RENDER_DEVICE"))
-	if err != nil {
-		for _, c := range opened {
-			s.CloseDevice(c.fd)
-		}
-		s.Close()
-		return nil, err
-	}
-	b.render = render
-	b.opener = opener
-	primary, node := render.Node()
-	for _, info := range infos {
-		if (node != 0 && info.Render == node) || (primary != 0 && info.Primary == primary) {
-			b.renderInfo = info
-			break
-		}
-	}
-	b.advertised = append([]ports.DMABufFormat(nil), render.DMABuf().Formats...)
-	want.Sampled = render.DMABuf().Formats
-	for _, opened := range opened {
-		fd, path := opened.fd, opened.info.Path
-		card, err := drm.OpenCard(fd, opened.info, drm.CardDevices{Render: render, Mode: drm.MultiGPUAuto}, want, log, logging.For(ctx, "render"))
+		card, err := drm.OpenCard(fd, info, dev, want, log, logging.For(ctx, "render"))
 		if err != nil {
 			log.Warn().Err(err).Str("card", path).Msg("card unusable")
 			errs = append(errs, err)
@@ -316,12 +305,12 @@ func openDRM(ctx context.Context, cfg ports.Config, opener ports.RenderDeviceOpe
 		card.SetRendererOptions(ports.RendererOptions{TraceDamage: logging.Enabled(ctx, "render-damage")})
 		device := card.Device()
 		log.Info().Str("path", path).Str("device", fmt.Sprintf("%d:%d", unix.Major(device), unix.Minor(device))).Msg("opened DRM card")
-		b.cards = append(b.cards, &drmCard{Card: card, fd: fd})
+		b.cards = append(b.cards, &drmCard{Card: card, fd: fd, local: local})
 	}
 	if len(b.cards) == 0 {
 		render.Close()
 		s.Close()
-		err = fmt.Errorf("no usable DRM card in %v: %w", paths, errors.Join(errs...))
+		err = fmt.Errorf("no usable DRM card: %w", errors.Join(errs...))
 		log.Error().Err(err).Msg("open drm")
 		return nil, err
 	}
@@ -356,6 +345,11 @@ func wantFromConfig(cfg ports.Config) drm.Want {
 func (b *drmBackend) close() {
 	for _, c := range b.cards {
 		c.Card.Close()
+	}
+	for _, c := range b.cards {
+		if c.local != nil {
+			c.local.close()
+		}
 	}
 	if b.render != nil {
 		b.render.Close()
@@ -860,5 +854,26 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			}
 			complete(progress.scanned(running))
 		}
+	}
+}
+
+// localRenderDevice records only successfully opened lazy devices. Outputs are
+// joined before close; the mutex also protects concurrent first-use recording.
+type localRenderDevice struct {
+	mu  sync.Mutex
+	dev ports.RenderDevice
+}
+
+func (l *localRenderDevice) set(dev ports.RenderDevice) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.dev = dev
+}
+func (l *localRenderDevice) close() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.dev != nil {
+		l.dev.Close()
+		l.dev = nil
 	}
 }
