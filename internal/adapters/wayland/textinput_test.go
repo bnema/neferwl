@@ -99,7 +99,7 @@ func newTextApp(t *testing.T, s *Server, events chan ports.ClientEvent, commands
 	log := newIMELog(c, ti, textInputEvents...)
 	requestProtocol(t, c, manager, textinput.ZwpTextInputManagerV3RequestGetTextInput, ti, seat)
 	commands <- ports.FocusWindow{ID: w.ID}
-	waitFocus(t, s, w.ID)
+	waitFocus(t, s, commands, w.ID)
 	roundtrip(t, c)
 	// surfaceMapper allocated the toplevel right after the xdg_surface.
 	return &textApp{c: c, ti: ti, surf: surf, top: xdg + 1, window: w.ID, log: log, keys: keys}
@@ -178,7 +178,7 @@ func TestTextInputFollowsFocus(t *testing.T) {
 	expectEvents(t, "b", b.log.take(), fmt.Sprint("enter ", b.surf))
 
 	commands <- ports.FocusWindow{ID: a.window}
-	waitFocus(t, s, a.window)
+	waitFocus(t, s, commands, a.window)
 	settle(t, a.c, b.c)
 	expectEvents(t, "a", a.log.take(), fmt.Sprint("enter ", a.surf))
 	expectEvents(t, "b", b.log.take(), fmt.Sprint("leave ", b.surf))
@@ -186,7 +186,7 @@ func TestTextInputFollowsFocus(t *testing.T) {
 	// Closing the focused window leaves.
 	requestProtocol(t, a.c, a.top, xdgshell.ToplevelRequestDestroy)
 	settle(t, a.c)
-	waitFocus(t, s, 0)
+	waitFocus(t, s, commands, 0)
 	settle(t, a.c)
 	expectEvents(t, "a", a.log.take(), fmt.Sprint("leave ", a.surf))
 }
@@ -278,11 +278,8 @@ func TestInputMethodSingleSlot(t *testing.T) {
 	settle(t, second.c, app.c, first.c)
 	app.log.take()
 	_ = first.c.Close()
-	deadline := time.Now().Add(2 * time.Second)
-	for len(app.log.events) == 0 && time.Now().Before(deadline) {
-		roundtrip(t, app.c)
-		time.Sleep(5 * time.Millisecond)
-	}
+	dispatchUntil(t, app.c, func() bool { return len(app.log.events) > 0 })
+	roundtrip(t, app.c)
 	// The preedit is cleared by an empty done.
 	expectEvents(t, "app", app.log.take(), "done 1")
 	third := newIMEApp(t, s, dir)
@@ -293,12 +290,10 @@ func TestInputMethodSingleSlot(t *testing.T) {
 // goroutine on their own channel, not in order with requests.
 func until(t *testing.T, what string, ok func() bool, cs ...*wlturbo.Display) {
 	t.Helper()
-	for deadline := time.Now().Add(2 * time.Second); !ok(); time.Sleep(5 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatal(what)
-		}
-		roundtrip(t, cs...)
+	if len(cs) != 1 {
+		t.Fatalf("%s: expected one event connection", what)
 	}
+	dispatchUntil(t, cs[0], ok)
 }
 
 // A keyboard grab takes the focused client's keys until released; a key
@@ -358,6 +353,8 @@ func TestInputMethodKeyboardGrab(t *testing.T) {
 
 // Disconnects and destroyed surfaces in active states do not break the
 // seat: keys return to the client, the input method is deactivated.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestTextInputTeardown(t *testing.T) {
 	s, events, commands, dir := keyboardServer(t)
 	ime := newIMEApp(t, s, dir)
@@ -372,7 +369,7 @@ func TestTextInputTeardown(t *testing.T) {
 	requestProtocol(t, app.c, app.surf, wayland.SurfaceRequestDestroy)
 	settle(t, app.c, ime.c)
 	unmapped(t, events, app.window)
-	waitFocus(t, s, 0)
+	waitFocus(t, s, commands, 0)
 	settle(t, ime.c)
 	expectEvents(t, "ime", ime.log.take(), "deactivate", "done")
 
@@ -381,25 +378,29 @@ func TestTextInputTeardown(t *testing.T) {
 	settle(t, other.c, ime.c)
 	ime.log.take()
 	_ = other.c.Close()
-	deadline := time.Now().Add(2 * time.Second)
-	for len(ime.log.events) == 0 && time.Now().Before(deadline) {
-		roundtrip(t, ime.c)
-		time.Sleep(5 * time.Millisecond)
-	}
+	dispatchUntil(t, ime.c, func() bool { return len(ime.log.events) > 0 })
+	roundtrip(t, ime.c)
 	expectEvents(t, "ime", ime.log.take(), "deactivate", "done")
 	unmapped(t, events, other.window)
 
 	// With the grabbing input method gone, keys reach the client again.
 	last := newTextApp(t, s, events, commands, dir)
+	gone := make(chan struct{})
+	s.display.Do(func() {
+		r := s.inputMethod.res
+		old := r.OnDestroy
+		r.OnDestroy = func() { old(); close(gone) }
+	})
 	_ = ime.c.Close()
-	last.keys.opcodes = nil
-	deadline = time.Now().Add(2 * time.Second)
-	for !slices.Contains(last.keys.opcodes, uint16(wayland.KeyboardEventKey)) && time.Now().Before(deadline) {
-		commands <- ports.ForwardKey{ID: last.window, Key: ports.KeyEvent{Keycode: 30, Pressed: true}}
-		commands <- ports.ForwardKey{ID: last.window, Key: ports.KeyEvent{Keycode: 30}}
-		roundtrip(t, last.c)
-		time.Sleep(10 * time.Millisecond)
+	select {
+	case <-gone:
+	case <-waylandDeadline(2 * time.Second):
+		t.Fatal("input method disconnect not processed")
 	}
+	last.keys.opcodes = nil
+	commands <- ports.ForwardKey{ID: last.window, Key: ports.KeyEvent{Keycode: 30, Pressed: true}}
+	commands <- ports.ForwardKey{ID: last.window, Key: ports.KeyEvent{Keycode: 30}}
+	dispatchUntil(t, last.c, func() bool { return slices.Contains(last.keys.opcodes, uint16(wayland.KeyboardEventKey)) })
 	if !slices.Contains(last.keys.opcodes, uint16(wayland.KeyboardEventKey)) {
 		t.Fatal("keys did not return to the client")
 	}
@@ -463,11 +464,11 @@ func TestTextInputLeaveBeforeEnter(t *testing.T) {
 		requestProtocol(t, c, manager, textinput.ZwpTextInputManagerV3RequestGetTextInput, p.ID(), seat)
 	}
 	commands <- ports.FocusWindow{ID: a.ID}
-	waitFocus(t, s, a.ID)
+	waitFocus(t, s, commands, a.ID)
 	settle(t, c)
 	log.take()
 	commands <- ports.FocusWindow{ID: b.ID}
-	waitFocus(t, s, b.ID)
+	waitFocus(t, s, commands, b.ID)
 	settle(t, c)
 	expectEvents(t, "focus", log.take(), fmt.Sprint("t1 leave ", aSurf), fmt.Sprint("t2 leave ", aSurf), fmt.Sprint("t1 enter ", bSurf), fmt.Sprint("t2 enter ", bSurf))
 }

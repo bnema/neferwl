@@ -38,6 +38,8 @@ func newEventProxy(c *wlturbo.Display) (uint32, *eventProxy) {
 }
 
 // next dispatches until p gets an event, or fails after wait.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func (p *eventProxy) next(t *testing.T, c *wlturbo.Display, wait time.Duration) [2]uint32 {
 	t.Helper()
 	deadline := time.Now().Add(wait)
@@ -48,7 +50,7 @@ func (p *eventProxy) next(t *testing.T, c *wlturbo.Display, wait time.Duration) 
 		select {
 		case e := <-p.events:
 			return e
-		case <-time.After(5 * time.Millisecond):
+		case <-waylandDeadline(5 * time.Millisecond):
 		}
 	}
 	t.Fatal("no event")
@@ -56,6 +58,8 @@ func (p *eventProxy) next(t *testing.T, c *wlturbo.Display, wait time.Duration) 
 }
 
 // none checks p gets no event for d.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func (p *eventProxy) none(t *testing.T, c *wlturbo.Display, d time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(d)
@@ -66,7 +70,7 @@ func (p *eventProxy) none(t *testing.T, c *wlturbo.Display, d time.Duration) {
 		select {
 		case e := <-p.events:
 			t.Fatalf("unexpected event %v", e)
-		case <-time.After(5 * time.Millisecond):
+		case <-waylandDeadline(5 * time.Millisecond):
 		}
 	}
 }
@@ -176,6 +180,8 @@ func TestBusIdleInhibition(t *testing.T) {
 
 // An output power object reports the mode, turns set_mode into a core
 // event, hears core's decision, and fails when its output goes.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestOutputPower(t *testing.T) {
 	s, events, commands, _, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
@@ -222,7 +228,7 @@ func TestOutputPower(t *testing.T) {
 		if v, ok := ev.(ports.OutputPower); ok {
 			t.Fatalf("failed object sent %+v", v)
 		}
-	case <-time.After(50 * time.Millisecond):
+	case <-waylandDeadline(50 * time.Millisecond):
 	}
 }
 
@@ -258,12 +264,13 @@ func idleClockServer(t *testing.T) (*Server, chan ports.ClientCommand, string, c
 	return s, commands, dir, timers
 }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func nextArmed(t *testing.T, timers <-chan armed) armed {
 	t.Helper()
 	select {
 	case a := <-timers:
 		return a
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no idle timer started")
 		return armed{}
 	}

@@ -16,6 +16,8 @@ import (
 )
 
 // This fixture wires real channel ports before starting the display owner.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func inputEpochLockServer(t *testing.T) (*Server, *sessionsecurity.Gate, chan ports.SecurityState, chan ports.ClientEvent, string) {
 	t.Helper()
 	gate := &sessionsecurity.Gate{}
@@ -37,7 +39,7 @@ func inputEpochLockServer(t *testing.T) (*Server, *sessionsecurity.Gate, chan po
 			if err != nil {
 				t.Error(err)
 			}
-		case <-time.After(3 * time.Second):
+		case <-waylandDeadline(3 * time.Second):
 			t.Error("input epoch server did not stop")
 		}
 	})
@@ -90,13 +92,15 @@ func inputEpochCommitLocker(t *testing.T, s *Server, c *wlturbo.Display, lockSur
 
 // Marker follows display-owned event emission; no sleeps or polling are
 // needed to establish that all earlier SessionLockChanged events were read.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func inputEpochLockEvents(t *testing.T, s *Server, events <-chan ports.ClientEvent) []ports.SessionLockChanged {
 	t.Helper()
 	const marker ports.WindowID = ^ports.WindowID(0)
 	if !s.display.Do(func() { s.emit(ports.WindowAppID{ID: marker, AppID: "input-epoch-marker"}) }) {
 		t.Fatal("display stopped")
 	}
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	var locks []ports.SessionLockChanged
 	for {
 		select {

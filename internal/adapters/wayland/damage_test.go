@@ -12,6 +12,8 @@ import (
 
 // Damage reaches the renderer in buffer pixels, per content, with the
 // window's recent history; a new buffer without damage is a full change.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestDamageHistory(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
@@ -57,7 +59,7 @@ func TestDamageHistory(t *testing.T) {
 		if err := c.Roundtrip(); err != nil {
 			t.Fatal(err)
 		}
-		deadline := time.After(2 * time.Second)
+		deadline := waylandDeadline(2 * time.Second)
 		for {
 			select {
 			case got := <-contents:

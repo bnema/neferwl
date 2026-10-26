@@ -10,9 +10,11 @@ import (
 )
 
 // asyncContent waits for a content of window id with the given hint.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func asyncContent(t *testing.T, contents <-chan ports.SurfaceContent, id ports.WindowID, async bool) {
 	t.Helper()
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case c := <-contents:
@@ -28,6 +30,8 @@ func asyncContent(t *testing.T, contents <-chan ports.SurfaceContent, id ports.W
 // A subsurface carries its own hint in the window's content, even when a
 // commit changes only the hint after the tree was cached (Wine presents
 // the game in a subsurface that the output scans out).
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestTearingHintOnSubsurface(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
@@ -48,7 +52,7 @@ func TestTearingHintOnSubsurface(t *testing.T) {
 	}
 	childAsync := func(want bool) {
 		t.Helper()
-		deadline := time.After(2 * time.Second)
+		deadline := waylandDeadline(2 * time.Second)
 		for {
 			select {
 			case got := <-contents:
@@ -78,6 +82,7 @@ func TestTearingHintOnSubsurface(t *testing.T) {
 	childAsync(true)
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestTearingHintAppliesOnCommit(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
@@ -96,7 +101,7 @@ func TestTearingHintAppliesOnCommit(t *testing.T) {
 		if got.Async {
 			t.Fatal("hint applied before commit")
 		}
-	case <-time.After(50 * time.Millisecond):
+	case <-waylandDeadline(50 * time.Millisecond):
 	}
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
 	if err := c.Roundtrip(); err != nil {

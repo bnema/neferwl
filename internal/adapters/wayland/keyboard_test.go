@@ -27,6 +27,8 @@ func keymapText(t *testing.T) string {
 }
 
 // keyboardServer runs a server; setup, if any, runs before Run starts.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func keyboardServer(t *testing.T, setup ...func(*Server)) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -50,7 +52,7 @@ func keyboardServer(t *testing.T, setup ...func(*Server)) (*Server, chan ports.C
 			if err != nil {
 				t.Errorf("Run: %v", err)
 			}
-		case <-time.After(2 * time.Second):
+		case <-waylandDeadline(2 * time.Second):
 			t.Error("Run hung")
 		}
 	})
@@ -184,12 +186,8 @@ func TestSetKeymap(t *testing.T) {
 	proxy.opcodes, proxy.keymaps = nil, nil
 	sync := func() {
 		t.Helper()
-		// Commands apply on the display goroutine; wait until it has run them.
-		deadline := time.Now().Add(time.Second)
-		for len(commands) > 0 && time.Now().Before(deadline) {
-			time.Sleep(5 * time.Millisecond)
-		}
-		time.Sleep(20 * time.Millisecond)
+		// Both updates end in repeat_info, after any keymap event.
+		dispatchUntil(t, c, func() bool { return slices.Contains(proxy.opcodes, uint16(wayland.KeyboardEventRepeatInfo)) })
 		if err := c.Roundtrip(); err != nil {
 			t.Fatal(err)
 		}
@@ -228,6 +226,9 @@ func TestSetKeymap(t *testing.T) {
 	}
 }
 
+//
+//testpolicy:realtime external foot process writes keyboard debug output asynchronously
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestFootKeyboard(t *testing.T) {
 	tool, err := exec.LookPath("foot")
 	if err != nil {
@@ -243,7 +244,7 @@ func TestFootKeyboard(t *testing.T) {
 	}
 	enter := regexp.MustCompile(`wl_keyboard#[0-9]+\.enter\(`)
 	key := regexp.MustCompile(`wl_keyboard#[0-9]+\.key\(`)
-	deadline := time.After(4 * time.Second)
+	deadline := waylandDeadline(4 * time.Second)
 	tick := time.NewTicker(10 * time.Millisecond)
 	defer tick.Stop()
 	for {
@@ -313,14 +314,11 @@ func TestSetModifiersRestoreAdoptsCoreState(t *testing.T) {
 	proxy.depress, proxy.locked = nil, nil
 	want := ports.ModState{Locked: capsLocked} // the latch was consumed
 	commands <- ports.SetModifiers{ID: id, Restore: true, State: want}
+	dispatchUntil(t, target, func() bool { return len(proxy.locked) > 0 })
 	var got ports.ModState
-	deadline := time.Now().Add(2 * time.Second)
-	for got != want {
-		if time.Now().After(deadline) {
-			t.Fatalf("seat state %+v, want %+v", got, want)
-		}
-		s.display.Do(func() { got = s.seat.modState })
-		time.Sleep(time.Millisecond)
+	s.display.Do(func() { got = s.seat.modState })
+	if got != want {
+		t.Fatalf("seat state %+v, want %+v", got, want)
 	}
 	roundtrip(t, target)
 	if !slices.Equal(proxy.locked, []uint32{capsLocked}) || !slices.Equal(proxy.depress, []uint32{0}) {
@@ -363,18 +361,8 @@ func syncCommands(t *testing.T, s *Server, commands chan<- ports.ClientCommand, 
 	commands <- ports.SetKeymap{RepeatRate: rate, RepeatDelay: delay}
 	// Dispatch blocks on the protocol socket; close it on timeout to bound
 	// failure without polling the display or sleeping for command delivery.
-	timeout := time.AfterFunc(2*time.Second, func() { _ = c.Close() })
-	defer timeout.Stop()
-	for {
-		select {
-		case <-p.repeat:
-			requestProtocol(t, c, id, wayland.KeyboardRequestRelease)
-			roundtrip(t, c)
-			return
-		default:
-		}
-		if err := c.Dispatch(); err != nil {
-			t.Fatal(err)
-		}
-	}
+	dispatchUntil(t, c, func() bool { return len(p.repeat) > 0 })
+	<-p.repeat
+	requestProtocol(t, c, id, wayland.KeyboardRequestRelease)
+	roundtrip(t, c)
 }

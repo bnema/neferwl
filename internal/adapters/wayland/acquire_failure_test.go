@@ -32,7 +32,7 @@ func TestExplicitAcquireWatchFailureDiscardsCommit(t *testing.T) {
 				h.dev.EXPECT().signalled(uint32(7), uint64(101)).Return(false, nil).Once()
 				h.dev.EXPECT().eventfd(uint32(7), uint64(101), mock.Anything).Return(unix.EIO).Once()
 			}
-			drainContents(h.contents)
+			drainContents(t, h.s, h.contents)
 			buffer := h.dmabuf()
 			h.commit(buffer, 101, 102)
 			if got, ok := h.content(50 * time.Millisecond); ok {
@@ -66,7 +66,7 @@ func TestImplicitAcquireWatchFailureDiscardsCommit(t *testing.T) {
 		t.Run(failure, func(t *testing.T) {
 			h := newSyncHarness(t)
 			h.releases = map[uint32]*syncReleaseProxy{}
-			drainContents(h.contents)
+			drainContents(t, h.s, h.contents)
 			buffer := h.dmabuf()
 			var plane *os.File
 			var writer *os.File
@@ -121,6 +121,8 @@ func TestImplicitAcquireWatchFailureDiscardsCommit(t *testing.T) {
 }
 
 // An idle waiter sleeps in one poll with no timeout; cancelling ctx ends it.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSyncWaiterIdleNeverTicks(t *testing.T) {
 	sw, err := newSyncWaiter(func() {})
 	if err != nil {
@@ -144,13 +146,13 @@ func TestSyncWaiterIdleNeverTicks(t *testing.T) {
 		if timeout != -1 {
 			t.Fatalf("idle poll timeout %d, want -1", timeout)
 		}
-	case <-time.After(5 * time.Second):
+	case <-waylandDeadline(5 * time.Second):
 		t.Fatal("the waiter never polled")
 	}
 	cancel()
 	select {
 	case <-done:
-	case <-time.After(5 * time.Second):
+	case <-waylandDeadline(5 * time.Second):
 		t.Fatal("cancel did not stop the waiter")
 	}
 	if n := len(polls); n != 0 {
@@ -296,7 +298,7 @@ func TestAcquireExportFailurePreservesCurrentContent(t *testing.T) {
 	h.dev.EXPECT().signalled(uint32(7), uint64(111)).Return(true, nil).Once()
 	h.dev.EXPECT().exportSyncFile(uint32(7), uint64(111)).Return(nil, unix.EIO).Once()
 	h.dev.EXPECT().signal(uint32(7), uint64(112)).Return(nil).Once() // observed acquire: safe discarded release
-	drainContents(h.contents)
+	drainContents(t, h.s, h.contents)
 	buffer := h.dmabuf()
 	var before ports.SurfaceContent
 	h.s.display.Do(func() { before = h.s.windows[h.win].xdg.surface.content })

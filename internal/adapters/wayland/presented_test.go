@@ -52,6 +52,8 @@ func requestFrame(t *testing.T, c *wlturbo.Display, surf uint32) *frameDoneProxy
 }
 
 // awaitFrame waits for the callback to be answered and returns its time.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func awaitFrame(t *testing.T, c *wlturbo.Display, p *frameDoneProxy) uint32 {
 	t.Helper()
 	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
@@ -61,7 +63,7 @@ func awaitFrame(t *testing.T, c *wlturbo.Display, p *frameDoneProxy) uint32 {
 		select {
 		case ms := <-p.done:
 			return ms
-		case <-time.After(2 * time.Millisecond):
+		case <-waylandDeadline(2 * time.Millisecond):
 		}
 	}
 	t.Fatal("frame callback not answered")
@@ -72,16 +74,11 @@ func awaitFrame(t *testing.T, c *wlturbo.Display, p *frameDoneProxy) uint32 {
 func placeWindow(t *testing.T, s *Server, commands chan<- ports.ClientCommand, w ports.WindowMapped, output string) {
 	t.Helper()
 	commands <- ports.ConfigureWindow{ID: w.ID, Width: 100, Height: 100, Output: output, Visible: true}
-	for deadline := time.Now().Add(2 * time.Second); ; {
-		var got string
-		s.display.Do(func() { got = s.frameOutput(s.windows[w.ID].xdg.surface) })
-		if got == output {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("window not placed on %s", output)
-		}
-		time.Sleep(time.Millisecond)
+	flushCommands(t, s, commands)
+	var got string
+	s.display.Do(func() { got = s.frameOutput(s.windows[w.ID].xdg.surface) })
+	if got != output {
+		t.Fatalf("window not placed on %s", output)
 	}
 }
 

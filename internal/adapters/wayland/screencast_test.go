@@ -42,6 +42,8 @@ type castHarness struct {
 
 // newCastHarness starts the server; withSink false leaves Options.Casts nil
 // (the allocation test measures the server alone).
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func newCastHarness(t *testing.T, withSink bool) *castHarness {
 	t.Helper()
 	h := &castHarness{
@@ -81,7 +83,7 @@ func newCastHarness(t *testing.T, withSink bool) *castHarness {
 		cancel()
 		select {
 		case <-done:
-		case <-time.After(3 * time.Second):
+		case <-waylandDeadline(3 * time.Second):
 			t.Fatal("server did not stop")
 		}
 	})
@@ -89,18 +91,22 @@ func newCastHarness(t *testing.T, withSink bool) *castHarness {
 }
 
 // sync returns once the display goroutine ran everything posted before.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func (h *castHarness) sync() {
 	h.t.Helper()
 	ran := make(chan struct{})
 	h.s.display.Post(func() { close(ran) })
 	select {
 	case <-ran:
-	case <-time.After(3 * time.Second):
+	case <-waylandDeadline(3 * time.Second):
 		h.t.Fatal("display goroutine stalled")
 	}
 }
 
 // next is the next event pushed to the sink, which must have that kind.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func (h *castHarness) next(kind ports.CastEventKind) ports.CastEvent {
 	h.t.Helper()
 	select {
@@ -109,12 +115,13 @@ func (h *castHarness) next(kind ports.CastEventKind) ports.CastEvent {
 			h.t.Fatalf("event %+v, want kind %d", ev, kind)
 		}
 		return ev
-	case <-time.After(3 * time.Second):
+	case <-waylandDeadline(3 * time.Second):
 		h.t.Fatalf("no cast event of kind %d", kind)
 		return ports.CastEvent{}
 	}
 }
 
+//testpolicy:realtime capture replies arrive through a real Wayland display event loop
 func (h *castHarness) nextCastFrameDone() ports.CastEvent {
 	h.t.Helper()
 	timer := time.NewTimer(3 * time.Second)
@@ -146,28 +153,33 @@ func (h *castHarness) none() {
 	}
 }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func (h *castHarness) request() ports.CaptureRequest {
 	h.t.Helper()
 	select {
 	case r := <-h.requests:
 		return r
-	case <-time.After(3 * time.Second):
+	case <-waylandDeadline(3 * time.Second):
 		h.t.Fatal("no capture request")
 		return ports.CaptureRequest{}
 	}
 }
 
 // noRequest says that no capture was requested.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func (h *castHarness) noRequest(wait time.Duration) {
 	h.t.Helper()
 	select {
 	case r := <-h.requests:
 		h.t.Fatalf("unexpected capture request for cast session %d on %s", r.Session, r.Output)
-	case <-time.After(wait):
+	case <-waylandDeadline(wait):
 	}
 }
 
 // castClientEvent waits for the next ClientEvent of type T, skipping others.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func castClientEvent[T ports.ClientEvent](h *castHarness) T {
 	h.t.Helper()
 	for {
@@ -176,7 +188,7 @@ func castClientEvent[T ports.ClientEvent](h *castHarness) T {
 			if v, ok := ev.(T); ok {
 				return v
 			}
-		case <-time.After(3 * time.Second):
+		case <-waylandDeadline(3 * time.Second):
 			var zero T
 			h.t.Fatalf("no %T", zero)
 			return zero
@@ -200,14 +212,12 @@ func (h *castHarness) open(id uint64, output string) (ports.CastEvent, uint64) {
 func (h *castHarness) state(core uint64, st ports.CaptureSessionState) {
 	h.t.Helper()
 	h.commands <- st
-	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
-		var seen bool
-		h.s.display.Do(func() { seen = h.s.castByCore[core].haveState })
-		if seen {
-			return
-		}
+	flushCommands(h.t, h.s, h.commands)
+	var seen bool
+	h.s.display.Do(func() { seen = h.s.castByCore[core].haveState })
+	if !seen {
+		h.t.Fatal("state not applied")
 	}
-	h.t.Fatal("state not applied")
 }
 
 func castFrame(id uint64, buf int, data []byte, w, hgt int) ports.CastCommand {
@@ -406,6 +416,8 @@ func TestCastSizeChange(t *testing.T) {
 
 // A transient failure is retried on the cadence of an ext frame; past the
 // deadline the frame fails with the error.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func TestCastTransientRetry(t *testing.T) {
 	h := newCastHarness(t, true)
 	h.open(1, "HEADLESS-1")
@@ -436,7 +448,7 @@ func TestCastTransientRetry(t *testing.T) {
 			if ev.Kind != ports.CastFrameDone || ev.Buf != 1 || !errors.Is(ev.Err, ports.ErrCaptureTransient) {
 				t.Fatalf("event %+v", ev)
 			}
-		case <-time.After(5 * time.Second):
+		case <-waylandDeadline(5 * time.Second):
 			t.Fatal("frame neither retried nor failed")
 		}
 		break
@@ -589,6 +601,8 @@ func TestCastWindowDamagedByPopupChanges(t *testing.T) {
 
 // The inventory is published once per change, not once per frame or flip, and
 // changes of one display loop turn share one publication.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestCastInventoryPublishedOncePerChange(t *testing.T) {
 	h := newCastHarness(t, true)
 	inv := func() ports.CastInventory {
@@ -596,7 +610,7 @@ func TestCastInventoryPublishedOncePerChange(t *testing.T) {
 		select {
 		case v := <-h.invs:
 			return v
-		case <-time.After(3 * time.Second):
+		case <-waylandDeadline(3 * time.Second):
 			t.Fatal("no inventory")
 			return ports.CastInventory{}
 		}

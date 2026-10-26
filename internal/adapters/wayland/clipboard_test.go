@@ -83,6 +83,8 @@ func newClipClient(t *testing.T, s *Server, dir string, events chan ports.Client
 }
 
 // selection returns the next selection offer id sent to the client.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func (cc *clipClient) selection(t *testing.T) (uint32, bool) {
 	t.Helper()
 	if err := cc.c.Roundtrip(); err != nil {
@@ -91,7 +93,7 @@ func (cc *clipClient) selection(t *testing.T) (uint32, bool) {
 	select {
 	case id := <-cc.device.offers:
 		return id, true
-	case <-time.After(100 * time.Millisecond):
+	case <-waylandDeadline(100 * time.Millisecond):
 		return 0, false
 	}
 }
@@ -114,21 +116,14 @@ func (cc *clipClient) copy(t *testing.T) *sourceEvents {
 func (cc *clipClient) focus(t *testing.T, commands chan<- ports.ClientCommand) uint32 {
 	t.Helper()
 	commands <- ports.FocusWindow{ID: cc.window}
-	deadline := time.After(2 * time.Second)
-	for {
-		if id, ok := cc.selection(t); ok {
-			return id
-		}
-		select {
-		case <-deadline:
-			t.Fatal("no selection on focus")
-		default:
-		}
-	}
+	dispatchUntil(t, cc.c, func() bool { return len(cc.device.offers) > 0 })
+	return <-cc.device.offers
 }
 
 // The clipboard follows keyboard focus: only the focused client may set
 // it, and a client gets it when it gains focus; pasting reaches the source.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestClipboardFollowsFocus(t *testing.T) {
 	s, events, commands, dir := keyboardServer(t)
 	a := newClipClient(t, s, dir, events)
@@ -139,7 +134,7 @@ func TestClipboardFollowsFocus(t *testing.T) {
 	stolen := b.copy(t)
 	select {
 	case <-stolen.cancelled:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("unfocused source not cancelled")
 	}
 
@@ -169,17 +164,7 @@ func TestClipboardFollowsFocus(t *testing.T) {
 		t.Fatal(err)
 	}
 	// a answers the send event.
-	deadline := time.After(2 * time.Second)
-	for len(src.sends) == 0 {
-		if err := a.c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case <-deadline:
-			t.Fatal("source never asked to send")
-		case <-time.After(5 * time.Millisecond):
-		}
-	}
+	dispatchUntil(t, a.c, func() bool { return len(src.sends) > 0 })
 	buf := make([]byte, 16)
 	// Go runtime signals (preemption) can interrupt the raw read: retry.
 	n, err := unix.Read(fds[0], buf)
@@ -212,19 +197,8 @@ func TestDataControlSeesSelection(t *testing.T) {
 	requestProtocol(t, m, manager, extdatacontrol.ExtDataControlManagerV1RequestGetDataDevice, dev.ID(), seat)
 	next := func() uint32 {
 		t.Helper()
-		deadline := time.After(2 * time.Second)
-		for {
-			if err := m.Roundtrip(); err != nil {
-				t.Fatal(err)
-			}
-			select {
-			case id := <-offers:
-				return id
-			case <-deadline:
-				t.Fatal("no selection event")
-			case <-time.After(5 * time.Millisecond):
-			}
-		}
+		dispatchUntil(t, m, func() bool { return len(offers) > 0 })
+		return <-offers
 	}
 	if id := next(); id != 0 {
 		t.Fatalf("initial selection %d, want none", id)
@@ -259,6 +233,8 @@ func (p *controlEvents) Dispatch(e *wlturbo.Event) {
 
 // A new copy cancels the previous source; setting the current source
 // again changes nothing.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestClipboardReplaceCancelsOldSource(t *testing.T) {
 	s, events, commands, dir := keyboardServer(t)
 	a := newClipClient(t, s, dir, events)
@@ -280,7 +256,7 @@ func TestClipboardReplaceCancelsOldSource(t *testing.T) {
 	}
 	select {
 	case <-first.cancelled:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("replaced source not cancelled")
 	}
 }
@@ -350,19 +326,12 @@ func TestPrimarySelectionFromManager(t *testing.T) {
 	if err := m.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.After(2 * time.Second)
-	for {
-		if err := a.c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
+	dispatchUntil(t, a.c, func() bool {
 		select {
 		case id := <-pdev.offers:
-			if id != 0 {
-				return
-			}
-		case <-deadline:
-			t.Fatal("focused client got no primary selection")
-		case <-time.After(5 * time.Millisecond):
+			return id != 0
+		default:
+			return false
 		}
-	}
+	})
 }

@@ -43,16 +43,9 @@ func outputCount(c *wlturbo.Display) int {
 // waitOutputs round-trips until the client sees n wl_output globals.
 func waitOutputs(t *testing.T, c *wlturbo.Display, n int) {
 	t.Helper()
-	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		if outputCount(c) == n {
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	t.Fatalf("wl_output globals: %d, want %d", outputCount(c), n)
+	dispatchUntil(t, c, func() bool { return outputCount(c) == n })
+	// global_remove may precede role events from the same layout change.
+	roundtrip(t, c)
 }
 
 type closedProxy struct {
@@ -108,6 +101,7 @@ func TestFixesAckAndDestroyRegistry(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestOutputHotplugAndLayerOutput(t *testing.T) {
 	s, _, commands, dir := lifecycleServer(t)
 	c := protocolClient(t, s, dir)
@@ -149,7 +143,7 @@ func TestOutputHotplugAndLayerOutput(t *testing.T) {
 		if cfg[1] != 1280 {
 			t.Fatalf("configure %v", cfg)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("configure timeout")
 	}
 	// Unplugged: the global goes away and the layer surface is closed.
@@ -157,7 +151,7 @@ func TestOutputHotplugAndLayerOutput(t *testing.T) {
 	waitOutputs(t, c, 1)
 	select {
 	case <-proxy.closed:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("layer not closed")
 	}
 }

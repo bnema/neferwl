@@ -160,13 +160,19 @@ type Server struct {
 	securityStop int
 	securityWG   sync.WaitGroup
 	securityLive atomic.Int32
-	display      *server.Display
-	env          procEnv
-	name         string
-	cleanup      func()
-	log          zerowrap.Logger
-	logDamage    bool
-	channels     Channels
+	// Test seams, nil in production, set on the display goroutine before a
+	// context is created: securityCreated receives the client that created a
+	// listener; securityDone is signalled when a listener goroutine has exited
+	// and closed its descriptors. Sends never block.
+	securityCreated chan<- server.Client
+	securityDone    chan<- struct{}
+	display         *server.Display
+	env             procEnv
+	name            string
+	cleanup         func()
+	log             zerowrap.Logger
+	logDamage       bool
+	channels        Channels
 	// awaiting holds frame callbacks by output name, due at its next
 	// frame (frameDue, or its page flip).
 	awaiting    map[string][]*wayland.Callback

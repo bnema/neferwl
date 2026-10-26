@@ -12,6 +12,8 @@ import (
 
 // A single-pixel buffer reaches the renderer as a 1x1 solid color, opaque
 // only when its alpha is full.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSinglePixelBuffer(t *testing.T) {
 	s, events, contents, dir := dmabufServer(t, ports.DMABufSupport{})
 	c := protocolClient(t, s, dir)
@@ -34,7 +36,7 @@ func TestSinglePixelBuffer(t *testing.T) {
 		if err := c.Roundtrip(); err != nil {
 			t.Fatal(err)
 		}
-		timeout := time.After(2 * time.Second)
+		timeout := waylandDeadline(2 * time.Second)
 		for {
 			select {
 			case got := <-contents:

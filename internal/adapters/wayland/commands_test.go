@@ -77,6 +77,8 @@ func TestCommandRingCollapsesMotionInOrder(t *testing.T) {
 
 // A merge needs no room: motion keeps folding into the last queued command
 // while the ring is full of other commands, and the push does not block.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func TestCommandRingMergesWhenFull(t *testing.T) {
 	s, _, _, _, _, _ := presentServer(t)
 	var got []ports.ClientCommand
@@ -97,7 +99,7 @@ func TestCommandRingMergesWhenFull(t *testing.T) {
 	}()
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("motion push blocked on a full ring")
 	}
 	release.do()
@@ -111,6 +113,8 @@ func TestCommandRingMergesWhenFull(t *testing.T) {
 // A busy display goroutine must not stall the forwarder: it keeps draining
 // the Commands channel into the ring up to the ring capacity, and only then
 // does it wait (and core with it, through the full channel).
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func TestForwarderDrainsWhileDisplayBusy(t *testing.T) {
 	cmds := make(chan ports.ClientCommand, 32)
 	s, err := New(Options{RuntimeDir: t.TempDir(), Outputs: testOutputs}, Channels{Commands: cmds}, logging.For(context.Background(), "wayland"))
@@ -131,14 +135,20 @@ func TestForwarderDrainsWhileDisplayBusy(t *testing.T) {
 	s.display.Post(func() { close(stalled); <-release.ch })
 	<-stalled
 
+	waiting := make(chan struct{}, 1)
+	s.commands.waiting = waiting // set before any push: the forwarder starts on Run
 	// Not mergeable: every command takes a slot.
 	const total = commandRingSize + 100
+	filled := make(chan struct{})
 	sent := make(chan struct{})
 	go func() {
 		defer close(sent)
 		for i := range total {
 			select {
 			case cmds <- ports.PointerFocus{ID: ports.WindowID(i + 1)}:
+				if i+1 == commandRingSize+1+cap(cmds) {
+					close(filled)
+				}
 			case <-ctx.Done():
 				return
 			}
@@ -150,12 +160,18 @@ func TestForwarderDrainsWhileDisplayBusy(t *testing.T) {
 		return len(s.commands.ring)
 	}
 	// Ring full, one command in the blocked forwarder, a full channel.
-	deadline := time.Now().Add(5 * time.Second)
-	for queued() != commandRingSize || len(cmds) != cap(cmds) {
-		if time.Now().After(deadline) {
-			t.Fatalf("ring holds %d (want %d), channel %d (want %d)", queued(), commandRingSize, len(cmds), cap(cmds))
-		}
-		time.Sleep(time.Millisecond)
+	select {
+	case <-filled:
+	case <-waylandDeadline(5 * time.Second):
+		t.Fatal("sender did not fill channel and ring")
+	}
+	<-waiting // the forwarder is about to wait on the full ring
+	if len(cmds) != cap(cmds) {
+		t.Fatalf("channel %d, want %d", len(cmds), cap(cmds))
+	}
+	// The forwarder is blocked in Push only after filling the ring.
+	if queued() != commandRingSize {
+		t.Fatalf("ring holds %d, want %d", queued(), commandRingSize)
 	}
 	select {
 	case <-sent:
@@ -165,7 +181,7 @@ func TestForwarderDrainsWhileDisplayBusy(t *testing.T) {
 	release.do()
 	select {
 	case <-sent:
-	case <-time.After(5 * time.Second):
+	case <-waylandDeadline(5 * time.Second):
 		t.Fatal("forwarder did not resume after the display was released")
 	}
 }

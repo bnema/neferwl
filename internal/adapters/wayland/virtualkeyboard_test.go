@@ -52,7 +52,7 @@ func TestVirtualKeyboardTypesIntoFocus(t *testing.T) {
 	requestProtocol(t, target, seat, wayland.SeatRequestGetKeyboard, proxy.ID())
 	w := toplevelMapper(t, target, events)()
 	commands <- ports.FocusWindow{ID: w.ID}
-	waitFocus(t, s, w.ID)
+	waitFocus(t, s, commands, w.ID)
 	if err := target.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -79,13 +79,7 @@ func TestVirtualKeyboardTypesIntoFocus(t *testing.T) {
 
 	proxy.opcodes, proxy.keymaps = nil, nil
 	commands <- ports.ForwardKey{ID: w.ID, Key: ports.KeyEvent{Keycode: 30, Pressed: true, Time: 3 * time.Millisecond}}
-	deadline := time.Now().Add(2 * time.Second)
-	for !slices.Contains(proxy.opcodes, uint16(wayland.KeyboardEventKey)) && time.Now().Before(deadline) {
-		if err := target.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	dispatchUntil(t, target, func() bool { return slices.Contains(proxy.opcodes, uint16(wayland.KeyboardEventKey)) })
 	want = []uint16{uint16(wayland.KeyboardEventKeymap), uint16(wayland.KeyboardEventModifiers), uint16(wayland.KeyboardEventKey)}
 	if !slices.Equal(proxy.opcodes, want) {
 		t.Fatalf("real key events %v, want %v", proxy.opcodes, want)
@@ -108,7 +102,7 @@ func focusedTarget(t *testing.T, s *Server, events chan ports.ClientEvent, comma
 	requestProtocol(t, target, seat, wayland.SeatRequestGetKeyboard, proxy.ID())
 	w := toplevelMapper(t, target, events)()
 	commands <- ports.FocusWindow{ID: w.ID}
-	waitFocus(t, s, w.ID)
+	waitFocus(t, s, commands, w.ID)
 	if err := target.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -135,11 +129,8 @@ func TestVirtualKeyboardDisconnectReleases(t *testing.T) {
 	requestProtocol(t, typer, kb, virtualkeyboard.ZwpVirtualKeyboardV1RequestKey, uint32(1), uint32(30), uint32(1))
 	roundtrip(t, typer)
 	_ = typer.Close()
-	deadline := time.Now().Add(2 * time.Second)
-	for len(proxy.keymaps) < 2 && time.Now().Before(deadline) {
-		roundtrip(t, target)
-		time.Sleep(5 * time.Millisecond)
-	}
+	dispatchUntil(t, target, func() bool { return len(proxy.keymaps) >= 2 })
+	roundtrip(t, target)
 	k, m := uint16(wayland.KeyboardEventKeymap), uint16(wayland.KeyboardEventModifiers)
 	key := uint16(wayland.KeyboardEventKey)
 	// The Modifiers request comes after the switch's own modifiers event.
@@ -195,11 +186,18 @@ func TestVirtualKeyboardSameKeymapNotResent(t *testing.T) {
 		roundtrip(t, typer, target)
 		_ = typer.Close()
 	}
-	deadline := time.Now().Add(200 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		roundtrip(t, target)
-		time.Sleep(5 * time.Millisecond)
-	}
+	// Join the release event from each typer before checking the complete
+	// stream; no keymap should be emitted for the unchanged seat keymap.
+	dispatchUntil(t, target, func() bool {
+		keys := 0
+		for _, op := range proxy.opcodes {
+			if op == uint16(wayland.KeyboardEventKey) {
+				keys++
+			}
+		}
+		return keys == 4
+	})
+	roundtrip(t, target)
 	if len(proxy.keymaps) != 0 {
 		t.Fatalf("%d keymaps sent for a virtual keyboard with the seat keymap", len(proxy.keymaps))
 	}
@@ -249,11 +247,8 @@ func TestVirtualKeyboardOtherKeymapSent(t *testing.T) {
 	requestProtocol(t, typer, kb, virtualkeyboard.ZwpVirtualKeyboardV1RequestKey, uint32(2), uint32(30), uint32(0))
 	roundtrip(t, typer, target)
 	_ = typer.Close()
-	deadline := time.Now().Add(2 * time.Second)
-	for len(proxy.keymaps) < 3 && time.Now().Before(deadline) {
-		roundtrip(t, target)
-		time.Sleep(5 * time.Millisecond)
-	}
+	dispatchUntil(t, target, func() bool { return len(proxy.keymaps) >= 3 })
+	roundtrip(t, target)
 	if !slices.Equal(proxy.keymaps, []string{first, second, keymapText(t)}) {
 		t.Fatalf("keymaps %d, want virtual, updated virtual, seat", len(proxy.keymaps))
 	}
@@ -323,11 +318,8 @@ func TestVirtualKeymapWidenedForClients(t *testing.T) {
 	sendVirtualKeymap(t, typer, kb, smallKeymap)
 	requestProtocol(t, typer, kb, virtualkeyboard.ZwpVirtualKeyboardV1RequestKey, uint32(1), uint32(1), uint32(1))
 	roundtrip(t, typer, target)
-	deadline := time.Now().Add(2 * time.Second)
-	for len(proxy.keymaps) < 1 && time.Now().Before(deadline) {
-		roundtrip(t, target)
-		time.Sleep(5 * time.Millisecond)
-	}
+	dispatchUntil(t, target, func() bool { return len(proxy.keymaps) >= 1 })
+	roundtrip(t, target)
 	if n := len(proxy.keymaps); n == 0 || !strings.Contains(proxy.keymaps[n-1], "maximum = 255;") || strings.Contains(proxy.keymaps[n-1], "maximum = 26;") {
 		t.Fatalf("keymaps %q", proxy.keymaps)
 	}

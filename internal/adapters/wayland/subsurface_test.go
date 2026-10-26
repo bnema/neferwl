@@ -14,6 +14,8 @@ import (
 
 // A parent's dependency is fixed at the commit request, not when its
 // acquire point fires. A later child update cannot slip into that graph.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSubsurfaceAcquireCapturesChildAtRequest(t *testing.T) {
 	h := newSyncHarness(t)
 	h.releases = map[uint32]*syncReleaseProxy{}
@@ -41,7 +43,7 @@ func TestSubsurfaceAcquireCapturesChildAtRequest(t *testing.T) {
 		t.Fatalf("child published before parent's acquire: %+v", got.Children)
 	}
 	h.fire(1)
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case got := <-h.contents:
@@ -59,11 +61,13 @@ func TestSubsurfaceAcquireCapturesChildAtRequest(t *testing.T) {
 }
 
 // Desync drains cached commits in FIFO order, including an unmap.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSubsurfaceDesyncQueuedOrderAndUnmap(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
 	w, root, _ := surfaceMapper(t, c, events)()
-	drainContents(contents)
+	drainContents(t, s, contents)
 	comp := bindProtocol(t, c, "wl_compositor")
 	subc := bindProtocol(t, c, "wl_subcompositor")
 	child := c.AllocateID()
@@ -76,7 +80,7 @@ func TestSubsurfaceDesyncQueuedOrderAndUnmap(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	drainContents(contents)
+	drainContents(t, s, contents)
 	for _, b := range []uint32{shmBuffer(t, c), shmBuffer(t, c), 0} {
 		requestProtocol(t, c, child, wayland.SurfaceRequestAttach, b, int32(0), int32(0))
 		requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
@@ -87,13 +91,13 @@ func TestSubsurfaceDesyncQueuedOrderAndUnmap(t *testing.T) {
 	select {
 	case got := <-contents:
 		t.Fatalf("cached commit published: %+v", got)
-	case <-time.After(40 * time.Millisecond):
+	case <-waylandDeadline(40 * time.Millisecond):
 	}
 	requestProtocol(t, c, sub, wayland.SubsurfaceRequestSetDesync)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case got := <-contents:
@@ -111,11 +115,13 @@ func TestSubsurfaceDesyncQueuedOrderAndUnmap(t *testing.T) {
 }
 
 // Pending viewport and scale are captured by the child commit.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSubsurfaceCachedViewportAndScale(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
 	w, root, _ := surfaceMapper(t, c, events)()
-	drainContents(contents)
+	drainContents(t, s, contents)
 	comp := bindVersion(t, c, "wl_compositor", 4)
 	subc := bindProtocol(t, c, "wl_subcompositor")
 	vpm := bindProtocol(t, c, "wp_viewporter")
@@ -148,18 +154,20 @@ func TestSubsurfaceCachedViewportAndScale(t *testing.T) {
 		if got.ID != w.ID || len(got.Children) != 1 || got.Children[0].LogicalW != 3 || got.Children[0].LogicalH != 4 || got.Children[0].Source != ([4]float32{0, 0, 1, 1}) {
 			t.Fatalf("cached viewport: %+v", got)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no cached content")
 	}
 }
 
 // Only the final state of a graph is ever sampled by an output. Buffers
 // replaced inside the graph must be released without an output acknowledgement.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSubsurfaceSupersededBufferReleased(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
 	_, root, _ := surfaceMapper(t, c, events)()
-	drainContents(contents)
+	drainContents(t, s, contents)
 	comp := bindProtocol(t, c, "wl_compositor")
 	subc := bindProtocol(t, c, "wl_subcompositor")
 	child := c.AllocateID()
@@ -182,17 +190,19 @@ func TestSubsurfaceSupersededBufferReleased(t *testing.T) {
 	}
 	select {
 	case <-p.released:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("superseded unpublished buffer held for output")
 	}
 }
 
 // A child update captured by a parent stays with that parent after desync.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSubsurfaceBoundUpdateStaysBound(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
 	_, root, _ := surfaceMapper(t, c, events)()
-	drainContents(contents)
+	drainContents(t, s, contents)
 	comp := bindProtocol(t, c, "wl_compositor")
 	subc := bindProtocol(t, c, "wl_subcompositor")
 	child := c.AllocateID()
@@ -213,22 +223,24 @@ func TestSubsurfaceBoundUpdateStaysBound(t *testing.T) {
 		if len(got.Children) != 1 {
 			t.Fatalf("captured update not applied: %+v", got)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("missing parent graph")
 	}
 	select {
 	case got := <-contents:
 		t.Fatalf("bound update replayed: %+v", got)
-	case <-time.After(40 * time.Millisecond):
+	case <-waylandDeadline(40 * time.Millisecond):
 	}
 }
 
 // Destroying the parent cannot publish a captured child dependency.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSubsurfaceParentDestroyDropsCapturedChild(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
 	_, root, _ := surfaceMapper(t, c, events)()
-	drainContents(contents)
+	drainContents(t, s, contents)
 	comp := bindProtocol(t, c, "wl_compositor")
 	subc := bindProtocol(t, c, "wl_subcompositor")
 	child := c.AllocateID()
@@ -247,7 +259,7 @@ func TestSubsurfaceParentDestroyDropsCapturedChild(t *testing.T) {
 	// before destroying the parent, so the check below sees only later output.
 	select {
 	case <-contents:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("parent commit did not publish")
 	}
 	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, shmBuffer(t, c), int32(0), int32(0))
@@ -265,17 +277,19 @@ func TestSubsurfaceParentDestroyDropsCapturedChild(t *testing.T) {
 		if len(got.Children) != 0 {
 			t.Fatalf("destroyed parent published child: %+v", got)
 		}
-	case <-time.After(40 * time.Millisecond):
+	case <-waylandDeadline(40 * time.Millisecond):
 	}
 }
 
 // Destroying a queued child removes it from captured parent layouts and
 // retires its unpublished buffer without publishing its content.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSubsurfaceDestroyQueuedChild(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
 	w, root, _ := surfaceMapper(t, c, events)()
-	drainContents(contents)
+	drainContents(t, s, contents)
 	comp := bindProtocol(t, c, "wl_compositor")
 	subc := bindProtocol(t, c, "wl_subcompositor")
 	child := c.AllocateID()
@@ -292,7 +306,7 @@ func TestSubsurfaceDestroyQueuedChild(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case got := <-contents:
@@ -310,11 +324,13 @@ func TestSubsurfaceDestroyQueuedChild(t *testing.T) {
 
 // A queued buffer destroyed before its parent commits is skipped with the
 // crop made for it: the retained buffer keeps its own crop, without error.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSubsurfaceDestroyedQueuedBufferKeepsCrop(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
 	w, root, _ := surfaceMapper(t, c, events)()
-	drainContents(contents)
+	drainContents(t, s, contents)
 	comp := bindProtocol(t, c, "wl_compositor")
 	subc := bindProtocol(t, c, "wl_subcompositor")
 	vpm := bindProtocol(t, c, "wp_viewporter")
@@ -333,7 +349,7 @@ func TestSubsurfaceDestroyedQueuedBufferKeepsCrop(t *testing.T) {
 	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
 	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
 	roundtrip(t, c)
-	drainContents(contents)
+	drainContents(t, s, contents)
 
 	// A 2x1 crop meant for a wider buffer that is destroyed while queued.
 	requestProtocol(t, c, vp, viewporter.WpViewportRequestSetSource, int32(0), int32(0), int32(512), int32(256))
@@ -342,7 +358,7 @@ func TestSubsurfaceDestroyedQueuedBufferKeepsCrop(t *testing.T) {
 	requestProtocol(t, c, wide, wayland.BufferRequestDestroy)
 	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
 	roundtrip(t, c)
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case got := <-contents:
@@ -361,11 +377,13 @@ func TestSubsurfaceDestroyedQueuedBufferKeepsCrop(t *testing.T) {
 
 // A synchronized child cannot publish until a parent commits; position and
 // order are part of that same parent update.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSubsurfaceInitialSyncAndDeferredLayout(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
 	rootWindow, root, _ := surfaceMapper(t, c, events)()
-	drainContents(contents)
+	drainContents(t, s, contents)
 	comp := bindProtocol(t, c, "wl_compositor")
 	subc := bindProtocol(t, c, "wl_subcompositor")
 	child := c.AllocateID()
@@ -385,7 +403,7 @@ func TestSubsurfaceInitialSyncAndDeferredLayout(t *testing.T) {
 	select {
 	case got := <-contents:
 		t.Fatalf("child/layout published before parent commit: %+v", got)
-	case <-time.After(40 * time.Millisecond):
+	case <-waylandDeadline(40 * time.Millisecond):
 	}
 	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
 	if err := c.Roundtrip(); err != nil {
@@ -396,21 +414,22 @@ func TestSubsurfaceInitialSyncAndDeferredLayout(t *testing.T) {
 		if got.ID != rootWindow.ID || len(got.Children) != 1 || got.Children[0].X != 4 || got.Children[0].Y != 5 || !got.Children[0].Below {
 			t.Fatalf("parent publication: %+v", got)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no parent publication")
 	}
 	select {
 	case got := <-contents:
 		t.Fatalf("extra publication: %+v", got)
-	case <-time.After(40 * time.Millisecond):
+	case <-waylandDeadline(40 * time.Millisecond):
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSubsurfaceDesyncFlushesOnlyEffectiveTransition(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
 	_, root, _ := surfaceMapper(t, c, events)()
-	drainContents(contents)
+	drainContents(t, s, contents)
 	comp := bindProtocol(t, c, "wl_compositor")
 	subc := bindProtocol(t, c, "wl_subcompositor")
 	parent, child := c.AllocateID(), c.AllocateID()
@@ -437,13 +456,13 @@ func TestSubsurfaceDesyncFlushesOnlyEffectiveTransition(t *testing.T) {
 		if len(got.Children) != 0 {
 			t.Fatalf("ineffective desync published: %+v", got.Children)
 		}
-	case <-time.After(40 * time.Millisecond):
+	case <-waylandDeadline(40 * time.Millisecond):
 	}
 	requestProtocol(t, c, parentSub, wayland.SubsurfaceRequestSetDesync)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case got := <-contents:
@@ -459,6 +478,8 @@ func TestSubsurfaceDesyncFlushesOnlyEffectiveTransition(t *testing.T) {
 // A toplevel with a subsurface (how Firefox draws with the GPU) sends one
 // content: its own buffer, the child at its committed position and the
 // window geometry.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSubsurfaceContent(t *testing.T) {
 	s, events, contents, dir := dmabufServer(t, ports.DMABufSupport{})
 	c := protocolClient(t, s, dir)
@@ -509,7 +530,7 @@ func TestSubsurfaceContent(t *testing.T) {
 	select {
 	case serial := <-serials:
 		requestProtocol(t, c, xdg, xdgshell.SurfaceRequestAckConfigure, serial)
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("configure timeout")
 	}
 	// Child first: nothing to draw until the root maps.
@@ -524,7 +545,7 @@ func TestSubsurfaceContent(t *testing.T) {
 	}
 	w := mapped(t, events, 2*time.Second)
 	var got ports.SurfaceContent
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for got.ID == 0 {
 		select {
 		case got = <-contents:
@@ -543,7 +564,7 @@ func TestSubsurfaceContent(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	deadline = time.After(2 * time.Second)
+	deadline = waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case got = <-contents:
@@ -596,12 +617,14 @@ func TestSubsurfaceRoleOutlivesParent(t *testing.T) {
 }
 
 // A parent graph with two child commits only publishes the final child.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSubsurfaceGraphSupersededFeedback(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
 	w, root, _ := surfaceMapper(t, c, events)()
 	s.display.Do(func() { s.windows[w.ID].xdg.window.last.Output = "HEADLESS-1" })
-	drainContents(contents)
+	drainContents(t, s, contents)
 	comp := bindProtocol(t, c, "wl_compositor")
 	subc := bindProtocol(t, c, "wl_subcompositor")
 	pres := bindProtocol(t, c, "wp_presentation")
@@ -633,7 +656,7 @@ func TestSubsurfaceGraphSupersededFeedback(t *testing.T) {
 		if !ev.discarded {
 			t.Fatalf("superseded content presented: %+v", ev)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("superseded feedback not discarded")
 	}
 }
@@ -658,6 +681,8 @@ func TestSubsurfacePositionAfterParentDestroy(t *testing.T) {
 }
 
 // A graph without a changed surface must not republish a mapped tree.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSubsurfaceNoopRootCommitDoesNotPublish(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
@@ -674,13 +699,13 @@ func TestSubsurfaceNoopRootCommitDoesNotPublish(t *testing.T) {
 	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
 	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
 	roundtrip(t, c)
-	drainContents(contents)
+	drainContents(t, s, contents)
 	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
 	roundtrip(t, c)
 	select {
 	case got := <-contents:
 		t.Fatalf("no-op published: %+v", got)
-	case <-time.After(80 * time.Millisecond):
+	case <-waylandDeadline(80 * time.Millisecond):
 	}
 	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, shmBuffer(t, c), int32(0), int32(0))
 	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
@@ -691,7 +716,7 @@ func TestSubsurfaceNoopRootCommitDoesNotPublish(t *testing.T) {
 		if len(got.Children) != 1 {
 			t.Fatalf("child change not published: %+v", got)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("child change did not publish")
 	}
 }

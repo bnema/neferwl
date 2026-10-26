@@ -55,6 +55,8 @@ func TestCaptureRegionTransform(t *testing.T) {
 		t.Fatalf("full target %+v", full)
 	}
 }
+
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestScreencopyProtocol(t *testing.T) {
 	dir := t.TempDir()
 	requests := make(chan ports.CaptureRequest, 1)
@@ -136,7 +138,7 @@ func TestScreencopyProtocol(t *testing.T) {
 			t.Fatal(err)
 		}
 		deliverCapture(t, s, replies, ports.CaptureDone{ID: req.ID, Output: req.Output, Time: time.Now()})
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no request")
 	}
 	if err := c.Roundtrip(); err != nil {
@@ -146,7 +148,7 @@ func TestScreencopyProtocol(t *testing.T) {
 		var got uint16
 		select {
 		case got = <-events.events:
-		case <-time.After(2 * time.Second):
+		case <-waylandDeadline(2 * time.Second):
 			t.Fatalf("missing event %d", want)
 		}
 		if got != want {
@@ -360,19 +362,11 @@ func TestCaptureProtocolErrors(t *testing.T) {
 func deliverCapture(t *testing.T, s *Server, replies chan<- ports.CaptureDone, done ports.CaptureDone) {
 	t.Helper()
 	replies <- done
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		pending := false
-		if !s.display.Do(func() { _, pending = s.captureReplies[done.ID] }) {
-			t.Fatal("display stopped")
-		}
-		if !pending {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("capture reply not delivered")
-		}
-		time.Sleep(time.Millisecond)
+	flushCaptured(t, s, replies)
+	pending := false
+	s.display.Do(func() { _, pending = s.captureReplies[done.ID] })
+	if pending {
+		t.Fatal("capture reply not delivered")
 	}
 }
 
@@ -382,21 +376,15 @@ func deliverCapture(t *testing.T, s *Server, replies chan<- ports.CaptureDone, d
 func applyOutputs(t *testing.T, s *Server, commands chan<- ports.ClientCommand, c ports.SetOutputs) {
 	t.Helper()
 	commands <- c
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		applied := false
-		if !s.display.Do(func() {
-			applied = len(s.outputs) == len(c.Outputs) && slices.Equal(s.outputPlaces, c.Outputs)
-		}) {
-			t.Fatal("display stopped")
-		}
-		if applied {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("outputs not applied")
-		}
-		time.Sleep(time.Millisecond)
+	flushCommands(t, s, commands)
+	applied := false
+	if !s.display.Do(func() {
+		applied = len(s.outputs) == len(c.Outputs) && slices.Equal(s.outputPlaces, c.Outputs)
+	}) {
+		t.Fatal("display stopped")
+	}
+	if !applied {
+		t.Fatal("outputs not applied")
 	}
 }
 
@@ -429,6 +417,8 @@ func (p *captureDetails) Dispatch(e *wlturbo.Event) {
 	}
 	p.events <- values
 }
+
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestExtCaptureLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	requests := make(chan ports.CaptureRequest, 1)
@@ -508,7 +498,7 @@ func TestExtCaptureLifecycle(t *testing.T) {
 	var req ports.CaptureRequest
 	select {
 	case req = <-requests:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no capture request")
 	}
 	if req.Width != 4 || req.Height != 4 {
@@ -561,7 +551,7 @@ func TestExtCaptureLifecycle(t *testing.T) {
 	}
 	select {
 	case req = <-requests:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no capture request after resize")
 	}
 	if err := req.Dst.File.Close(); err != nil {
@@ -581,7 +571,7 @@ func TestExtCaptureLifecycle(t *testing.T) {
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("frame after session destroy: %v != %v", got, want)
 			}
-		case <-time.After(2 * time.Second):
+		case <-waylandDeadline(2 * time.Second):
 			t.Fatalf("frame after session destroy: missing %v", want)
 		}
 	}
@@ -640,6 +630,7 @@ func TestExtCaptureStoppedOnOutputRemoval(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestWlrOutputGoneAndDestroyedBeforeReply(t *testing.T) {
 	for _, destroy := range []bool{false, true} {
 		t.Run(fmt.Sprint("destroy=", destroy), func(t *testing.T) {
@@ -710,7 +701,7 @@ func TestWlrOutputGoneAndDestroyedBeforeReply(t *testing.T) {
 			var req ports.CaptureRequest
 			select {
 			case req = <-requests:
-			case <-time.After(2 * time.Second):
+			case <-waylandDeadline(2 * time.Second):
 				t.Fatal("no request")
 			}
 			requestProtocol(t, c, frame, wlr.ZwlrScreencopyFrameV1RequestDestroy)

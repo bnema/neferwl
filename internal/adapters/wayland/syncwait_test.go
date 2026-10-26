@@ -51,9 +51,23 @@ func TestImplicitPollErrorRejectedAndWarnOnce(t *testing.T) {
 	}
 }
 
+// waitSyncWake joins the poller's notification after a real pipe becomes ready.
+//
+//testpolicy:realtime real pipe readiness is observed by the kernel poll waiter
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
+func waitSyncWake(t *testing.T, wake <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-wake:
+	case <-waylandDeadline(time.Second):
+		t.Fatal("poll waiter did not notify the owner")
+	}
+}
+
 // POLLHUP with no POLLIN on a watched fd must wake the surface too.
 func TestImplicitPollHangupWakes(t *testing.T) {
-	sw, err := newSyncWaiter(func() {})
+	wake := make(chan struct{}, 1)
+	sw, err := newSyncWaiter(func() { wake <- struct{}{} })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,17 +86,15 @@ func TestImplicitPollHangupWakes(t *testing.T) {
 		t.Fatalf("watch: %v", err)
 	}
 	wr.Close()
-	deadline := time.Now().Add(time.Second)
-	for !sw.fired(waits[0]) && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
+	waitSyncWake(t, wake)
 	if !sw.fired(waits[0]) || !waits[0].failed {
 		t.Fatal("hangup must wake waiter as failed, not ready to publish")
 	}
 }
 
 func TestImplicitWaitAndDrop(t *testing.T) {
-	sw, err := newSyncWaiter(func() {})
+	wake := make(chan struct{}, 1)
+	sw, err := newSyncWaiter(func() { wake <- struct{}{} })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,10 +123,7 @@ func TestImplicitWaitAndDrop(t *testing.T) {
 	if _, err := wr.Write([]byte{1}); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(time.Second)
-	for !sw.fired(waits[0]) && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
+	waitSyncWake(t, wake)
 	if !sw.fired(waits[0]) {
 		t.Fatal("readable buffer never became ready")
 	}

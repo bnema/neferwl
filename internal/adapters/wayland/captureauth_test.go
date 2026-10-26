@@ -163,6 +163,8 @@ func devNull(t *testing.T) *os.File {
 // With a peer lookup mock: the pidfd is taken once per client and closed with
 // it; the executable is read again at every wlr frame request and every ext
 // session creation, but not at the frames of an ext session.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestCaptureAllowlistResolvesEachRequest(t *testing.T) {
 	peer := newMockpeerExe(t)
 	pidfd := devNull(t)
@@ -219,13 +221,20 @@ func TestCaptureAllowlistResolvesEachRequest(t *testing.T) {
 	if peers() != 1 {
 		t.Fatalf("peers = %d", peers())
 	}
-	_ = a.c.Close()
-	deadline := time.Now().Add(2 * time.Second)
-	for peers() != 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("peer entry kept after the client went")
+	disconnected := make(chan struct{}, 1)
+	h.s.display.Do(func() {
+		for client := range h.s.peers {
+			client.OnDestroy(func() { disconnected <- struct{}{} })
 		}
-		time.Sleep(time.Millisecond)
+	})
+	_ = a.c.Close()
+	select {
+	case <-disconnected:
+	case <-waylandDeadline(2 * time.Second):
+		t.Fatal("client disconnect not processed")
+	}
+	if peers() != 0 {
+		t.Fatal("peer entry kept after the client went")
 	}
 	if _, err := pidfd.Stat(); !errors.Is(err, os.ErrClosed) {
 		t.Fatalf("pidfd not closed with the client: %v", err)
@@ -316,13 +325,16 @@ func TestCaptureAllowlistDisabledSkipsLookup(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func TestCaptureAllowlistReloadApplies(t *testing.T) {
 	self, _ := os.Executable()
 	path := filepath.Join(t.TempDir(), "capture-allow")
 	if err := os.WriteFile(path, []byte("/usr/bin/grim\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	store := captureallow.NewStoreOwnedBy(path, uint32(os.Getuid()), zerowrap.Default())
+	out := &lockedBuffer{wrote: make(chan struct{}, 16)}
+	log := zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: out}).WithField("component", "captureallow")
+	store := captureallow.NewStoreOwnedBy(path, uint32(os.Getuid()), log)
 	h, _ := authHarness(t, store, nil)
 	a := h.client(t)
 	if _, ok := h.accepted(t, a.captureWlr(t)); ok {
@@ -334,17 +346,19 @@ func TestCaptureAllowlistReloadApplies(t *testing.T) {
 	}
 	ctx := t.Context()
 	go func() { _ = store.Run(ctx) }()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if req, ok := h.accepted(t, a.captureWlr(t)); ok {
-			h.complete(t, req, 0)
-			return
-		}
-		if time.Now().After(deadline) {
+	deadline := waylandDeadline(5 * time.Second)
+	for !strings.Contains(out.String(), "capture allowlist reloaded") {
+		select {
+		case <-out.wrote:
+		case <-deadline:
 			t.Fatal("reload never applied")
 		}
-		time.Sleep(20 * time.Millisecond)
 	}
+	req, ok := h.accepted(t, a.captureWlr(t))
+	if !ok {
+		t.Fatal("reloaded policy did not allow capture")
+	}
+	h.complete(t, req, 0)
 }
 
 // The real lookup, against a socket whose peer is this process.

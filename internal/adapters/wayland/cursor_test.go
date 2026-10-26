@@ -31,23 +31,26 @@ func cursorServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.Cli
 }
 
 // nextCursor returns the latest cursor change sent within a short wait.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func nextCursor(t *testing.T, cursors <-chan ports.CursorChange) ports.CursorChange {
 	t.Helper()
 	var c ports.CursorChange
 	select {
 	case c = <-cursors:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no cursor change")
 	}
 	for {
 		select {
 		case c = <-cursors:
-		case <-time.After(50 * time.Millisecond):
+		case <-waylandDeadline(50 * time.Millisecond):
 			return c
 		}
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestCursorShapeFollowsPointerFocus(t *testing.T) {
 	s, events, commands, cursors, dir := cursorServer(t)
 	c := protocolClient(t, s, dir)
@@ -70,7 +73,7 @@ func TestCursorShapeFollowsPointerFocus(t *testing.T) {
 	select {
 	case got := <-cursors:
 		t.Fatalf("cursor change without focus: %+v", got)
-	case <-time.After(50 * time.Millisecond):
+	case <-waylandDeadline(50 * time.Millisecond):
 	}
 
 	commands <- ports.PointerFocus{ID: w.ID, X: 0, Y: 0}
@@ -95,7 +98,7 @@ func TestCursorShapeFollowsPointerFocus(t *testing.T) {
 	select {
 	case got := <-cursors:
 		t.Fatalf("client cursor forwarded during override: %+v", got)
-	case <-time.After(50 * time.Millisecond):
+	case <-waylandDeadline(50 * time.Millisecond):
 	}
 	commands <- ports.CursorOverride{}
 	if got := nextCursor(t, cursors); got != (ports.CursorChange{Shape: "text"}) {
@@ -224,6 +227,7 @@ func TestSetCursorRoleError(t *testing.T) {
 	expectProtocolError(t, c, pointer, uint32(wayland.PointerErrorRole))
 }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func TestCursorOverrideProtection(t *testing.T) {
 	s, _, commands, cursors, _ := cursorServer(t)
 	state := installSecurity(t, s)
@@ -244,7 +248,7 @@ func TestCursorOverrideProtection(t *testing.T) {
 	select {
 	case got := <-cursors:
 		t.Fatalf("protected cursor forwarded: %+v", got)
-	case <-time.After(50 * time.Millisecond):
+	case <-waylandDeadline(50 * time.Millisecond):
 	}
 	protect(t, s, state, 2, false)
 	if !s.display.Do(func() { s.setCursor(ports.CursorChange{Hidden: true}) }) {

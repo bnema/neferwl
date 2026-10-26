@@ -20,6 +20,8 @@ func (p *kdeModeProxy) Dispatch(e *wlturbo.Event) { p.modes <- e.Uint32() }
 // KDE decoration defaults to server-side and acknowledges the mode a client
 // asks for: answering server to Firefox's client request made it ask again
 // in a tight loop.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestKDEDecorationAcknowledgesMode(t *testing.T) {
 	s, _, _, dir := dmabufServer(t, ports.DMABufSupport{})
 	c := protocolClient(t, s, dir)
@@ -45,7 +47,7 @@ func TestKDEDecorationAcknowledgesMode(t *testing.T) {
 			if got != uint32(want) {
 				t.Fatalf("mode %d want %d", got, want)
 			}
-		case <-time.After(2 * time.Second):
+		case <-waylandDeadline(2 * time.Second):
 			t.Fatalf("no mode %d", want)
 		}
 	}

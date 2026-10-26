@@ -118,6 +118,8 @@ func childToplevel(t *testing.T, c *wlturbo.Display, parent func(surf uint32)) u
 
 // A portal backend parents its dialog to another client's window through
 // xdg-foreign: the dialog maps floating, with that window as its parent.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestForeignParentsDialog(t *testing.T) {
 	s, events, _, dir := lifecycleServer(t)
 	app := protocolClient(t, s, dir)
@@ -139,7 +141,7 @@ func TestForeignParentsDialog(t *testing.T) {
 	if err := portal.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	for deadline := time.After(2 * time.Second); ; {
+	for deadline := waylandDeadline(2 * time.Second); ; {
 		select {
 		case ev := <-events:
 			if p, ok := ev.(ports.WindowParent); ok {

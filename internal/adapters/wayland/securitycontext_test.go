@@ -11,6 +11,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/securitycontext"
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/purego-libwayland/server"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
 )
@@ -97,15 +98,43 @@ func (l *sandboxListener) refused() bool {
 	return errors.Is(unix.Connect(fd, &unix.SockaddrUnix{Name: l.path}), unix.ECONNREFUSED)
 }
 
-func waitTrue(t *testing.T, what string, cond func() bool) {
+// watchSecurity arms the server's listener-lifecycle seams. created yields the
+// client behind each create_listener; done is signalled once a listener
+// goroutine has exited and closed its descriptors.
+func (h *admissionHarness) watchSecurity(t *testing.T) (created <-chan server.Client, done <-chan struct{}) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatal("timeout: " + what)
-		}
-		time.Sleep(2 * time.Millisecond)
+	cr, dn := make(chan server.Client, 8), make(chan struct{}, 8)
+	if !h.s.display.Do(func() { h.s.securityCreated, h.s.securityDone = cr, dn }) {
+		t.Fatal("display stopped")
 	}
+	return cr, dn
+}
+
+// onDestroy returns a channel closed once c is destroyed on the server.
+func (h *admissionHarness) onDestroy(t *testing.T, c server.Client) <-chan struct{} {
+	t.Helper()
+	gone := make(chan struct{})
+	if !h.s.display.Do(func() { c.OnDestroy(func() { close(gone) }) }) {
+		t.Fatal("display stopped")
+	}
+	return gone
+}
+
+// onlySandboxed returns the one sandboxed server client.
+func (h *admissionHarness) onlySandboxed(t *testing.T) server.Client {
+	t.Helper()
+	var out []server.Client
+	if !h.s.display.Do(func() {
+		for c := range h.s.sandboxed {
+			out = append(out, c)
+		}
+	}) {
+		t.Fatal("display stopped")
+	}
+	if len(out) != 1 {
+		t.Fatalf("sandboxed clients = %d, want 1", len(out))
+	}
+	return out[0]
 }
 
 // contextClient is a client of the main socket with a security context being built.
@@ -171,7 +200,12 @@ func TestSecurityContextSandboxedClientCannotCapture(t *testing.T) {
 	cc.commit(t, l, "org.flatpak", "org.example.App")
 
 	sandboxed := h.clientOn(t, l.connect(t))
-	waitTrue(t, "client tagged", func() bool { return h.sandboxedCount() == 1 })
+	// adopt tags the client in the same display call that creates it, before
+	// the client's first roundtrip is answered.
+	if n := h.sandboxedCount(); n != 1 {
+		t.Fatalf("sandboxed clients = %d, want 1", n)
+	}
+	gone := h.onDestroy(t, h.onlySandboxed(t))
 	for i := 0; i < 2; i++ {
 		if _, ok := h.accepted(t, sandboxed.captureWlr(t)); ok {
 			t.Fatal("sandboxed wlr capture allowed")
@@ -186,7 +220,10 @@ func TestSecurityContextSandboxedClientCannotCapture(t *testing.T) {
 	}
 	// The tag goes with the client.
 	_ = sandboxed.c.Close()
-	waitTrue(t, "tag dropped", func() bool { return h.sandboxedCount() == 0 })
+	<-gone // the tag's own OnDestroy was registered first and has run
+	if n := h.sandboxedCount(); n != 0 {
+		t.Fatalf("sandboxed clients after hangup = %d, want 0", n)
+	}
 }
 
 // Sandboxed clients refuse even when the allowlist is off or lists them.
@@ -212,17 +249,18 @@ func TestSecurityContextOverridesAllowlist(t *testing.T) {
 // several connections, and stops when close_fd hangs up.
 func TestSecurityContextListenerLifecycle(t *testing.T) {
 	h := newAdmissionHarness(t, maxCaptureInflight+2)
+	created, listenerDone := h.watchSecurity(t)
 	l := newSandboxListener(t)
 	cc := newContextClient(t, h)
 	cc.commit(t, l, "org.flatpak", "org.example.App")
+	creator := <-created
+	creatorGone := h.onDestroy(t, creator)
 	_ = cc.c.Close() // the protocol: the listener outlives the client that made it
-	waitTrue(t, "creator gone", func() bool {
-		n := 0
-		h.s.display.Do(func() { n = len(h.s.peers) })
-		return n == 0
-	})
+	<-creatorGone
 	a, b := h.clientOn(t, l.connect(t)), h.clientOn(t, l.connect(t))
-	waitTrue(t, "two tagged", func() bool { return h.sandboxedCount() == 2 })
+	if n := h.sandboxedCount(); n != 2 {
+		t.Fatalf("sandboxed clients = %d, want 2", n)
+	}
 	for _, c := range []*admissionClient{a, b} {
 		if _, ok := h.accepted(t, c.captureWlr(t)); ok {
 			t.Fatal("sandboxed client captured")
@@ -232,7 +270,10 @@ func TestSecurityContextListenerLifecycle(t *testing.T) {
 		t.Fatalf("listeners = %d", h.s.securityLive.Load())
 	}
 	l.hangUp()
-	waitTrue(t, "listener stopped", func() bool { return h.s.securityLive.Load() == 0 && l.refused() })
+	<-listenerDone
+	if h.s.securityLive.Load() != 0 || !l.refused() {
+		t.Fatalf("listener left behind: live=%d refused=%v", h.s.securityLive.Load(), l.refused())
+	}
 	// Clients already connected are untouched.
 	if err := a.c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -240,6 +281,8 @@ func TestSecurityContextListenerLifecycle(t *testing.T) {
 }
 
 // Compositor shutdown ends the listeners and closes their sockets.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSecurityContextStopsWithTheCompositor(t *testing.T) {
 	dir := t.TempDir()
 	s, err := New(Options{RuntimeDir: dir}, Channels{}, logging.For(context.Background(), "wayland"))
@@ -264,14 +307,17 @@ func TestSecurityContextStopsWithTheCompositor(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.handOver()
-	waitTrue(t, "listening", func() bool { return s.securityLive.Load() == 1 })
+	// Commit counts the listener on the display goroutine, before the roundtrip.
+	if s.securityLive.Load() != 1 {
+		t.Fatalf("listeners = %d, want 1", s.securityLive.Load())
+	}
 	cancel()
 	select {
 	case err := <-done:
 		if err != nil {
 			t.Fatal(err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-waylandDeadline(5 * time.Second):
 		t.Fatal("Run did not return")
 	}
 	if s.securityLive.Load() != 0 || !l.refused() {
@@ -297,7 +343,10 @@ func TestSecurityContextDestroyBeforeCommit(t *testing.T) {
 	if err := cc.c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	waitTrue(t, "descriptors closed", l.refused)
+	// release runs when the display destroys the context, before the roundtrip.
+	if !l.refused() {
+		t.Fatal("descriptors not closed on destroy")
+	}
 	if h.s.securityLive.Load() != 0 {
 		t.Fatal("an uncommitted context listens")
 	}
@@ -394,7 +443,9 @@ func TestSecurityContextNestedForbidden(t *testing.T) {
 	newContextClient(t, h).commit(t, l, "org.flatpak", "")
 	c := l.connect(t)
 	manager := bindProtocol(t, c, "wp_security_context_manager_v1")
-	waitTrue(t, "tagged", func() bool { return h.sandboxedCount() == 1 })
+	if n := h.sandboxedCount(); n != 1 {
+		t.Fatalf("sandboxed clients = %d, want 1", n)
+	}
 	inner := newSandboxListener(t)
 	id := c.AllocateID()
 	if err := wireRequest(c, manager, uint16(securitycontext.WpSecurityContextManagerV1RequestCreateListener), []int{inner.listen, inner.closeR}, id); err != nil {
@@ -404,5 +455,8 @@ func TestSecurityContextNestedForbidden(t *testing.T) {
 	// The compositor closed its copies: nothing listens on the inner socket
 	// once ours goes too.
 	inner.handOver()
-	waitTrue(t, "inner closed", inner.refused)
+	// CreateListener closes its copies before it posts the error.
+	if !inner.refused() {
+		t.Fatal("inner socket still listening")
+	}
 }

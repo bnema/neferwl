@@ -90,7 +90,7 @@ func newCaptureHarnessWith(t *testing.T, tune func(*Options, *Channels)) *captur
 		dir:        t.TempDir(),
 		events:     make(chan ports.ClientEvent, 64),
 		commands:   make(chan ports.ClientCommand, 16),
-		workspaces: make(chan ports.Workspaces, 4),
+		workspaces: make(chan ports.Workspaces),
 		captures:   make(chan ports.CaptureRequest, 8),
 		captured:   make(chan ports.CaptureDone, 8),
 	}
@@ -215,18 +215,8 @@ func constraints(t *testing.T, cc *cclient, ev chan []uint32) (w, h uint32) {
 // nextSession waits for the next decoded session event, dispatching the client.
 func nextSession(t *testing.T, cc *cclient, ev chan []uint32) []uint32 {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		select {
-		case v := <-ev:
-			return v
-		default:
-		}
-		cc.roundtrip(t)
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatal("timed out waiting for a session event")
-	return nil
+	dispatchUntil(t, cc.c, func() bool { return len(ev) > 0 })
+	return <-ev
 }
 
 func noSession(t *testing.T, cc *cclient, ev chan []uint32) {
@@ -323,13 +313,14 @@ func (cc *cclient) wlrFrame(t *testing.T) *captureEvents {
 	return ev
 }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func receiveCapture(t *testing.T, ch chan ports.CaptureRequest) ports.CaptureRequest {
 	t.Helper()
 	select {
 	case r := <-ch:
 		_ = r.Dst.File.Close()
 		return r
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no capture request")
 		return ports.CaptureRequest{}
 	}
@@ -553,23 +544,19 @@ func (h *captureHarness) handles(t *testing.T, cc *cclient, want int) []uint32 {
 	return out
 }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func (h *captureHarness) snapshot(t *testing.T, ws ...ports.WorkspaceInfo) {
 	t.Helper()
-	h.workspaces <- ports.Workspaces{Outputs: []ports.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: ws}}}
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		got := 0
-		h.s.display.Do(func() {
-			for _, o := range h.s.workspaceSnapshot.Outputs {
-				got += len(o.Workspaces)
-			}
-		})
-		if got == len(ws) {
-			return
+	snapshot := ports.Workspaces{Outputs: []ports.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: ws}}}
+	// forwardWorkspaces applies each snapshot with display.Do before receiving
+	// another. The second unbuffered send joins the first application.
+	for range 2 {
+		select {
+		case h.workspaces <- snapshot:
+		case <-waylandDeadline(2 * time.Second):
+			t.Fatal("snapshot not applied")
 		}
-		time.Sleep(time.Millisecond)
 	}
-	t.Fatal("snapshot not applied")
 }
 
 // A workspace source registers the workspace ID, sizes buffers from the
@@ -1006,12 +993,7 @@ func TestExtFrameRendererFailure(t *testing.T) {
 				r = receiveCapture(t, h.captures)
 				h.captured <- ports.CaptureDone{ID: r.ID, Output: r.Output, Time: time.Now()}
 			}
-			for deadline := time.Now().Add(2 * time.Second); len(frame.events) == 0; time.Sleep(time.Millisecond) {
-				cc.roundtrip(t)
-				if time.Now().After(deadline) {
-					t.Fatal("frame not answered")
-				}
-			}
+			dispatchUntil(t, cc.c, func() bool { return len(frame.events) > 0 })
 			if failed := eventsInclude(frame, frameFailed); failed == tc.retry {
 				t.Fatalf("failed = %v", failed)
 			}
@@ -1024,6 +1006,8 @@ func TestExtFrameRendererFailure(t *testing.T) {
 
 // A frame whose target stays unavailable fails once its retry deadline has
 // passed, so a client is never left waiting.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestExtFrameRetryDeadline(t *testing.T) {
 	var now atomic.Int64
 	timers := make(chan func(), 4)
@@ -1047,19 +1031,14 @@ func TestExtFrameRetryDeadline(t *testing.T) {
 	var fire func()
 	select {
 	case fire = <-timers:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no retry armed")
 	}
 	now.Store(int64(captureRetryFor))
 	fire()
 	r = receiveCapture(t, h.captures)
 	h.captured <- ports.CaptureDone{ID: r.ID, Output: r.Output, Err: busy}
-	for deadline := time.Now().Add(2 * time.Second); len(frame.events) == 0; time.Sleep(time.Millisecond) {
-		cc.roundtrip(t)
-		if time.Now().After(deadline) {
-			t.Fatal("frame not failed past its deadline")
-		}
-	}
+	dispatchUntil(t, cc.c, func() bool { return len(frame.events) > 0 })
 	if !eventsInclude(frame, frameFailed) {
 		t.Fatal("frame not failed past its deadline")
 	}
@@ -1129,20 +1108,8 @@ func expectAttachment(t *testing.T, c *wlturbo.Display, ch chan sessionMsg, op u
 // waitMsg waits for a message on ch, dispatching the client meanwhile.
 func waitMsg(t *testing.T, c *wlturbo.Display, ch chan sessionMsg) sessionMsg {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		select {
-		case m := <-ch:
-			return m
-		default:
-		}
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatal("timed out waiting for an event")
-	return sessionMsg{}
+	dispatchUntil(t, c, func() bool { return len(ch) > 0 })
+	return <-ch
 }
 
 func noMessage(t *testing.T, c *wlturbo.Display, ch chan sessionMsg) {
@@ -1157,6 +1124,7 @@ func noMessage(t *testing.T, c *wlturbo.Display, ch chan sessionMsg) {
 	}
 }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func nextEvent[T ports.ClientEvent](t *testing.T, ch chan ports.ClientEvent) T {
 	t.Helper()
 	for {
@@ -1165,7 +1133,7 @@ func nextEvent[T ports.ClientEvent](t *testing.T, ch chan ports.ClientEvent) T {
 			if v, ok := ev.(T); ok {
 				return v
 			}
-		case <-time.After(2 * time.Second):
+		case <-waylandDeadline(2 * time.Second):
 			t.Fatal("timed out waiting for a client event")
 		}
 	}
@@ -1359,6 +1327,7 @@ func TestExclusionAttachRefusals(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func TestExclusionAttachLimit(t *testing.T) {
 	h := newCaptureHarness(t)
 	_, _, _, _, token := h.exclusionOwner(t)
@@ -1377,7 +1346,7 @@ func TestExclusionAttachLimit(t *testing.T) {
 	}
 	// The refused one never follows: it was refused before the failed event
 	// the client already read, so a short wait covers the forwarder.
-	deadline := time.After(50 * time.Millisecond)
+	deadline := waylandDeadline(50 * time.Millisecond)
 	for {
 		select {
 		case ev := <-h.events:

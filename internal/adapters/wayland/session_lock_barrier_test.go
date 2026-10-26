@@ -30,6 +30,7 @@ type barrierServer struct {
 	dir      string
 }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func newBarrierServer(t *testing.T) *barrierServer {
 	t.Helper()
 	h := &barrierServer{gate: &sessionsecurity.Gate{}, changes: make(chan ports.SecurityState, 1), captures: make(chan ports.CaptureRequest, 4), captured: make(chan ports.CaptureDone, 4), stopped: make(chan struct{}), dir: t.TempDir()}
@@ -51,13 +52,14 @@ func newBarrierServer(t *testing.T) *barrierServer {
 			if runErr != nil {
 				t.Error(runErr)
 			}
-		case <-time.After(3 * time.Second):
+		case <-waylandDeadline(3 * time.Second):
 			t.Error("barrier server shutdown blocked")
 		}
 	})
 	return h
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSessionLockBarrierWaitsForAdmittedCopyAfterFrameDeath(t *testing.T) {
 	h := newBarrierServer(t)
 	// Reuse the real raw-wire admission client, retaining its SHM memfd so a
@@ -72,7 +74,7 @@ func TestSessionLockBarrierWaitsForAdmittedCopyAfterFrameDeath(t *testing.T) {
 	var request ports.CaptureRequest
 	select {
 	case request = <-h.captures:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("actual capture not admitted")
 	}
 	// Pipeline owns the dup'd destination from this point, including closure.
@@ -105,7 +107,7 @@ func TestSessionLockBarrierWaitsForAdmittedCopyAfterFrameDeath(t *testing.T) {
 	pipeline.SubmitScoped(h.gate.Snapshot(), renderer, []ports.CaptureRequest{request})
 	select {
 	case <-entered:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("capture worker did not enter Read")
 	}
 	a.destroy(t, frame)
@@ -129,7 +131,7 @@ func TestSessionLockBarrierWaitsForAdmittedCopyAfterFrameDeath(t *testing.T) {
 	var completion ports.CaptureDone
 	select {
 	case completion = <-pipelineReplies:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("capture pipeline did not complete")
 	}
 	if completion.Err != nil || completion.ID != request.ID {
@@ -165,7 +167,7 @@ func TestSessionLockBarrierWaitsForAdmittedCopyAfterFrameDeath(t *testing.T) {
 	h.captured <- completion
 	select {
 	case <-processed:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("server did not process actual capture completion")
 	}
 	h.s.display.Do(func() {
@@ -177,7 +179,7 @@ func TestSessionLockBarrierWaitsForAdmittedCopyAfterFrameDeath(t *testing.T) {
 	select {
 	case token := <-pipeline.Completed():
 		pipeline.Recycle(token, renderer)
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("capture lease not returned")
 	}
 	roundtrip(t, locker)
@@ -186,6 +188,7 @@ func TestSessionLockBarrierWaitsForAdmittedCopyAfterFrameDeath(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSessionLockBarrierTakeoverSaturationRefusesWithoutGenerationChange(t *testing.T) {
 	h := newBarrierServer(t)
 	sentinel := ports.SecurityState{Generation: 999}
@@ -203,7 +206,7 @@ func TestSessionLockBarrierTakeoverSaturationRefusesWithoutGenerationChange(t *t
 		}
 		select {
 		case <-orphaned:
-		case <-time.After(2 * time.Second):
+		case <-waylandDeadline(2 * time.Second):
 			t.Fatal("owner death not processed")
 		}
 	}
@@ -226,6 +229,7 @@ func TestSessionLockBarrierTakeoverSaturationRefusesWithoutGenerationChange(t *t
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSessionLockBarrierReservedReleaseAndBlockedSenderShutdown(t *testing.T) {
 	h := newBarrierServer(t)
 	sentinel := ports.SecurityState{Generation: 999}
@@ -272,7 +276,7 @@ func TestSessionLockBarrierReservedReleaseAndBlockedSenderShutdown(t *testing.T)
 	h.cancel()
 	select {
 	case <-h.stopped:
-	case <-time.After(3 * time.Second):
+	case <-waylandDeadline(3 * time.Second):
 		t.Fatal("blocked backend sender prevented Run shutdown")
 	}
 }

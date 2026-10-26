@@ -27,6 +27,9 @@ type postRing[T any] struct {
 	// space is signalled (never blocking) after each drain and after a push
 	// that left room, to wake blocked pushers one after the other.
 	space chan struct{}
+	// waiting is a test seam, nil in production: it is signalled (never
+	// blocking) each time a Push is about to wait on a full ring.
+	waiting chan<- struct{}
 
 	mu          sync.Mutex
 	ring, spare []T
@@ -110,6 +113,12 @@ func (r *postRing[T]) Push(v T) bool {
 		r.mu.Unlock()
 		// Only the blocking path reads the clock: the fast path stays free.
 		start := time.Now()
+		if r.waiting != nil {
+			select {
+			case r.waiting <- struct{}{}:
+			default:
+			}
+		}
 		select {
 		case <-r.space:
 			blocked += time.Since(start)

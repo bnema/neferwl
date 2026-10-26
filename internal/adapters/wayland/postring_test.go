@@ -2,8 +2,6 @@ package wayland
 
 import (
 	"context"
-	"runtime"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -42,11 +40,19 @@ func TestCapturedForwardAllocations(t *testing.T) {
 
 // A full ring blocks the push until the display goroutine drains it, and no
 // value is lost or reordered.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func TestPostRingFullBlocksWithoutLoss(t *testing.T) {
 	s, _, _, _, _, _ := presentServer(t)
 	const limit, total = 4, 3*4 + 1
 	var got []int // display goroutine only
-	r := newPostRing(s.display, limit, func(v int) { got = append(got, v) })
+	applied := make(chan struct{})
+	r := newPostRing(s.display, limit, func(v int) {
+		got = append(got, v)
+		if len(got) == total {
+			close(applied)
+		}
+	})
 
 	// Stall the display goroutine so nothing drains.
 	release := make(chan struct{})
@@ -70,33 +76,23 @@ func TestPostRingFullBlocksWithoutLoss(t *testing.T) {
 	for range limit {
 		select {
 		case <-pushed:
-		case <-time.After(2 * time.Second):
+		case <-waylandDeadline(2 * time.Second):
 			t.Fatal("pushes below the limit blocked")
 		}
 	}
 	select {
 	case i := <-pushed:
 		t.Fatalf("push %d returned on a full ring", i)
-	case <-time.After(50 * time.Millisecond):
+	case <-waylandDeadline(50 * time.Millisecond):
 	}
 	close(release)
 	wg.Wait()
-	// The marker runs after every drain posted before it.
-	var final []int
-	ran := make(chan struct{})
-	for {
-		s.display.Post(func() {
-			if len(got) == total {
-				final = append(final, got...)
-			}
-			ran <- struct{}{}
-		})
-		<-ran
-		if final != nil {
-			break
-		}
-		time.Sleep(time.Millisecond)
+	select {
+	case <-applied:
+	case <-waylandDeadline(2 * time.Second):
+		t.Fatal("ring did not apply all pushes")
 	}
+	final := got
 	for i, v := range final {
 		if v != i {
 			t.Fatalf("applied %v, want 0..%d in order", final, total-1)
@@ -105,6 +101,8 @@ func TestPostRingFullBlocksWithoutLoss(t *testing.T) {
 }
 
 // A push blocked on a full ring resumes once the display drains it.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func TestPostRingBlockedPushResumes(t *testing.T) {
 	s, _, _, _, _, _ := presentServer(t)
 	r := newPostRing(s.display, 1, func(int) {})
@@ -120,7 +118,7 @@ func TestPostRingBlockedPushResumes(t *testing.T) {
 	select {
 	case ok := <-result:
 		t.Fatalf("push on a full ring returned %v", ok)
-	case <-time.After(50 * time.Millisecond):
+	case <-waylandDeadline(50 * time.Millisecond):
 	}
 	close(release)
 	select {
@@ -128,13 +126,15 @@ func TestPostRingBlockedPushResumes(t *testing.T) {
 		if !ok {
 			t.Fatal("push refused while the display runs")
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("blocked push never resumed")
 	}
 }
 
 // A push blocked on a full ring returns false once the display has stopped,
 // instead of waiting for a drain that never comes.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func TestPostRingPushStopsWithDisplay(t *testing.T) {
 	s, err := New(Options{RuntimeDir: t.TempDir()}, Channels{}, logging.For(context.Background(), "wayland"))
 	if err != nil {
@@ -157,7 +157,7 @@ func TestPostRingPushStopsWithDisplay(t *testing.T) {
 		if ok {
 			t.Fatal("push on a stopped display reported success")
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("push blocked after the display stopped")
 	}
 }
@@ -167,6 +167,8 @@ func TestPostRingPushStopsWithDisplay(t *testing.T) {
 func TestPostRingStatsPushBlock(t *testing.T) {
 	s, _, _, _, _, _ := presentServer(t)
 	r := newPostRing(s.display, 1, func(int) {})
+	waiting := make(chan struct{}, 1)
+	r.waiting = waiting
 	// A failed assertion still frees the display before server shutdown.
 	release := releaseOnce(t)
 	stalled := make(chan struct{})
@@ -178,34 +180,18 @@ func TestPostRingStatsPushBlock(t *testing.T) {
 	}
 	done := make(chan struct{})
 	go func() { defer close(done); r.Push(2) }() // full: waits for the drain
-	waitPushWaiting(t)
+	<-waiting                                    // the push is about to wait on the stalled, full ring
 	seen := time.Now()
-	time.Sleep(2 * time.Millisecond) // the block lasts at least this
+	// Join a goroutine while the display remains stalled: this measured
+	// interval is a real lower bound on the push's blocked duration.
+	measured := make(chan struct{})
+	go func() { close(measured) }()
+	<-measured
 	held := time.Since(seen)
 	release.do()
 	<-done
 	if st := r.takeStats(); st.maxPushBlock < held {
 		t.Fatalf("stats = %+v, want a push block of at least %v", st, held)
-	}
-}
-
-// waitPushWaiting returns once a goroutine waits inside postRing.Push, read
-// from the goroutine dump, so the test needs no sleep to know the push blocks.
-func waitPushWaiting(t *testing.T) {
-	t.Helper()
-	buf := make([]byte, 1<<20)
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if time.Now().After(deadline) {
-			t.Fatalf("no goroutine waits in postRing.Push:\n%s", buf[:runtime.Stack(buf, true)])
-		}
-		dump := string(buf[:runtime.Stack(buf, true)])
-		for _, g := range strings.Split(dump, "\n\n") {
-			if strings.Contains(g, "[select") && strings.Contains(g, "postRing") && strings.Contains(g, ").Push(") {
-				return
-			}
-		}
-		runtime.Gosched()
 	}
 }
 

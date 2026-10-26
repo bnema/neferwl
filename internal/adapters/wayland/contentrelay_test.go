@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -14,24 +15,63 @@ func relayContents(t *testing.T, s *Server) <-chan ports.SurfaceContent {
 	in, ret := s.attachOutput("TEST-1")
 	out := make(chan ports.SurfaceContent, 64)
 	stop := make(chan struct{})
-	t.Cleanup(func() { close(stop) })
+	flush := make(chan chan struct{})
+	relayFlush.Store((<-chan ports.SurfaceContent)(out), flush)
+	t.Cleanup(func() { close(stop); relayFlush.Delete((<-chan ports.SurfaceContent)(out)) })
+	forward := func(b *ports.ContentBatch) bool {
+		for _, c := range b.Items {
+			select {
+			case out <- c:
+			case <-stop:
+				return false
+			}
+		}
+		b.Reset()
+		ret.Return(b)
+		return true
+	}
 	go func() {
 		for {
 			select {
 			case <-stop:
 				return
 			case b := <-in:
-				for _, c := range b.Items {
-					select {
-					case out <- c:
-					case <-stop:
-						return
-					}
+				if !forward(b) {
+					return
 				}
-				b.Reset()
-				ret.Return(b)
+			case done := <-flush:
+				// Batches the display already sent wait in `in`; forward them
+				// before reporting, so the caller sees every earlier content.
+				for {
+					select {
+					case b := <-in:
+						if !forward(b) {
+							return
+						}
+						continue
+					default:
+					}
+					break
+				}
+				close(done)
 			}
 		}
 	}()
 	return out
+}
+
+// relayFlush maps a relayContents channel to its flush request channel.
+var relayFlush sync.Map
+
+// flushRelay returns once the relay forwarded every batch the display sent
+// before the call (the caller already crossed a display.Do barrier).
+func flushRelay(t *testing.T, contents <-chan ports.SurfaceContent) {
+	t.Helper()
+	f, ok := relayFlush.Load(contents)
+	if !ok {
+		t.Fatal("contents channel has no relay")
+	}
+	done := make(chan struct{})
+	f.(chan chan struct{}) <- done
+	<-done
 }

@@ -60,6 +60,12 @@ func (m *securityManager) CreateListener(r *securitycontext.WpSecurityContextMan
 	case !listeningUnixSocket(listenFD):
 		r.PostError(uint32(securitycontext.WpSecurityContextManagerV1ErrorInvalidListenFd), "listen_fd is not a listening unix stream socket")
 	default:
+		if s.securityCreated != nil {
+			select {
+			case s.securityCreated <- r.Client():
+			default:
+			}
+		}
 		ctx := &securityContext{s: s, listenFD: listenFD, closeFD: closeFD}
 		res, err := securitycontext.NewWpSecurityContextV1(r.Client(), r.Version(), id, ctx)
 		if err == nil {
@@ -173,6 +179,15 @@ type securityListener struct {
 
 func (l *securityListener) run() {
 	s := l.s
+	if s.securityDone != nil {
+		// Runs last: the descriptors are closed and the counters updated.
+		defer func() {
+			select {
+			case s.securityDone <- struct{}{}:
+			default:
+			}
+		}()
+	}
 	defer s.securityWG.Done()
 	defer s.securityLive.Add(-1)
 	defer unix.Close(l.closeFD)

@@ -83,12 +83,14 @@ func testHead() ports.OutputHeads {
 	mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000, Preferred: true}
 	return ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 1920, Height: 1080, RefreshMilli: 60000}, Modes: []ports.OutputMode{mode}, Current: &mode, Enabled: true}}}
 }
+
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func recvManagement(t *testing.T, ch <-chan [2]uint32) [2]uint32 {
 	t.Helper()
 	select {
 	case v := <-ch:
 		return v
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("management event timeout")
 		return [2]uint32{}
 	}
@@ -160,6 +162,7 @@ func TestOutputManagementStaleSerialAndLayout(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestOutputManagementHeadsAndApply(t *testing.T) {
 	s, heads, apply, replies, dir := outputTestServer(t)
 	heads <- testHead()
@@ -201,7 +204,7 @@ func TestOutputManagementHeadsAndApply(t *testing.T) {
 	var req ports.OutputApply
 	select {
 	case req = <-apply:
-	case <-time.After(time.Second):
+	case <-waylandDeadline(time.Second):
 		t.Fatal("no test request")
 	}
 	if !req.Test || len(req.Heads) != 1 || req.Heads[0].Pos.X != 100 {
@@ -224,7 +227,7 @@ func TestOutputManagementHeadsAndApply(t *testing.T) {
 	}
 	select {
 	case req = <-apply:
-	case <-time.After(time.Second):
+	case <-waylandDeadline(time.Second):
 		t.Fatal("no apply request")
 	}
 	if req.Test || req.Heads[0].Scale != 2 {
@@ -288,6 +291,8 @@ func TestOutputManagementUnsupportedSettings(t *testing.T) {
 
 // set_transform reaches the backend, and heads report the placement's
 // transform, at bind time and when it changes.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestOutputManagementTransform(t *testing.T) {
 	s, _, apply, replies, dir := outputTestServer(t)
 	heads := testHead()
@@ -343,7 +348,7 @@ func TestOutputManagementTransform(t *testing.T) {
 	var req ports.OutputApply
 	select {
 	case req = <-apply:
-	case <-time.After(time.Second):
+	case <-waylandDeadline(time.Second):
 		t.Fatal("no apply request")
 	}
 	if len(req.Heads) != 1 || req.Heads[0].Transform == nil || *req.Heads[0].Transform != 3 {

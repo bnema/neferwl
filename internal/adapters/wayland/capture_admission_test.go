@@ -164,12 +164,9 @@ func (h *admissionHarness) inflight(t *testing.T) int {
 
 func (h *admissionHarness) waitInflight(t *testing.T, want int) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for h.inflight(t) != want {
-		if time.Now().After(deadline) {
-			t.Fatalf("inflight %d, want %d", h.inflight(t), want)
-		}
-		time.Sleep(time.Millisecond)
+	flushCaptured(t, h.s, h.replies)
+	if got := h.inflight(t); got != want {
+		t.Fatalf("inflight %d, want %d", got, want)
 	}
 }
 
@@ -303,28 +300,36 @@ func TestExtCaptureAdmissionSaturation(t *testing.T) {
 	h.waitInflight(t, 0)
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestCaptureAdmissionSurvivesDisconnect(t *testing.T) {
 	h := newAdmissionHarness(t, maxCaptureInflight+2)
 	a := h.client(t)
 	reqs := h.saturate(t, a, a.captureExt)
+	disconnected := make(chan struct{}, 1)
+	h.s.display.Do(func() {
+		for resource := range h.s.captureSources {
+			resource.Client().OnDestroy(func() {
+				select {
+				case disconnected <- struct{}{}:
+				default:
+				}
+			})
+			break
+		}
+	})
 	if err := a.c.Close(); err != nil {
 		t.Fatal(err)
 	}
-	// Wait until the display loop dropped the dead client's reply callbacks.
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		replies := -1
-		if !h.s.display.Do(func() { replies = len(h.s.captureReplies) }) {
-			t.Fatal("display stopped")
-		}
-		if replies == 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("%d reply callbacks retained after disconnect", replies)
-		}
-		time.Sleep(time.Millisecond)
+	select {
+	case <-disconnected:
+	case <-waylandDeadline(2 * time.Second):
+		t.Fatal("client disconnect not processed")
 	}
+	h.s.display.Do(func() {
+		if n := len(h.s.captureReplies); n != 0 {
+			t.Errorf("%d reply callbacks retained after disconnect", n)
+		}
+	})
 	if got := h.inflight(t); got != maxCaptureInflight {
 		t.Fatalf("inflight %d after disconnect", got)
 	}

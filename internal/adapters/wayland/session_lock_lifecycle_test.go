@@ -20,6 +20,8 @@ import (
 )
 
 // A real display with capture completion wiring established before Run starts.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func lifecycleLockServer(t *testing.T, leaseRequests ...chan ports.LeaseMessage) (*Server, *sessionsecurity.Gate, chan ports.SecurityState, chan ports.CaptureDone, string) {
 	t.Helper()
 	gate := &sessionsecurity.Gate{}
@@ -45,19 +47,20 @@ func lifecycleLockServer(t *testing.T, leaseRequests ...chan ports.LeaseMessage)
 			if err != nil {
 				t.Error(err)
 			}
-		case <-time.After(3 * time.Second):
+		case <-waylandDeadline(3 * time.Second):
 			t.Error("lock lifecycle server did not stop")
 		}
 	})
 	return s, gate, changes, captured, dir
 }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func lifecycleTransition(t *testing.T, changes <-chan ports.SecurityState) ports.SecurityState {
 	t.Helper()
 	select {
 	case state := <-changes:
 		return state
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("missing security transition")
 		return ports.SecurityState{}
 	}
@@ -79,6 +82,7 @@ func lifecycleProof(s *Server, state ports.SecurityState, instance ports.OutputI
 	s.applySecurityEvent(ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: state.Generation, Instance: instance, Kind: ports.ProtectionProtectedFrame}})
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSessionLockLifecycleCaptureCompletionAndProofEpoch(t *testing.T) {
 	s, gate, changes, captured, dir := lifecycleLockServer(t)
 	c := protocolClient(t, s, dir)
@@ -107,7 +111,7 @@ func TestSessionLockLifecycleCaptureCompletionAndProofEpoch(t *testing.T) {
 	captured <- ports.CaptureDone{ID: 88}
 	select {
 	case <-unknown:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("unknown completion not consumed")
 	}
 	s.display.Do(func() {
@@ -120,7 +124,7 @@ func TestSessionLockLifecycleCaptureCompletionAndProofEpoch(t *testing.T) {
 	captured <- ports.CaptureDone{ID: 77}
 	select {
 	case <-processed:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("capture completion not consumed")
 	}
 	roundtrip(t, c)
@@ -166,6 +170,7 @@ func TestSessionLockLifecycleUnlockProtocolErrors(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSessionLockLifecycleOrphanTakeoverAndValidUnlock(t *testing.T) {
 	s, gate, changes, _, dir := lockManagerServer(t)
 	c := protocolClient(t, s, dir)
@@ -187,7 +192,7 @@ func TestSessionLockLifecycleOrphanTakeoverAndValidUnlock(t *testing.T) {
 	}
 	select {
 	case <-orphaned:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("owner disconnect not processed")
 	}
 	s.display.Do(func() {
@@ -349,6 +354,7 @@ func TestSessionLockLifecycleIMEGrabCannotReceiveLockerKey(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSessionLockLifecycleLatePrelockLeaseRevokedAfterUnlock(t *testing.T) {
 	requests := make(chan ports.LeaseMessage, 16)
 	s, gate, changes, _, dir := lifecycleLockServer(t, requests)
@@ -386,7 +392,7 @@ func TestSessionLockLifecycleLatePrelockLeaseRevokedAfterUnlock(t *testing.T) {
 		if !ok {
 			t.Fatalf("request %T", message)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("lease request not sent")
 	}
 	lock, locked := lifecycleAcquire(t, c)
@@ -416,7 +422,7 @@ func TestSessionLockLifecycleLatePrelockLeaseRevokedAfterUnlock(t *testing.T) {
 		if !ok || revoke.Card != card || revoke.LeaseID != 123 {
 			t.Fatalf("late reply request %+v", message)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("late lease was not revoked")
 	}
 	s.display.Do(func() {

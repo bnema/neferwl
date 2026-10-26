@@ -85,9 +85,11 @@ func newTransformClient(t *testing.T) transformClient {
 }
 
 // next returns the next published content with a buffer.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func (tc transformClient) next(t *testing.T) ports.SurfaceContent {
 	t.Helper()
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case got := <-tc.contents:

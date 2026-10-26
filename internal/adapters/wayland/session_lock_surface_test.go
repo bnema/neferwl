@@ -141,6 +141,7 @@ func TestLockSurfaceInitialConfigureAndCommitErrors(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestLockSurfaceCapturedAckGeometryAndDestroy(t *testing.T) {
 	s, _, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
@@ -199,11 +200,11 @@ func TestLockSurfaceCapturedAckGeometryAndDestroy(t *testing.T) {
 				if !content.Empty() {
 					t.Error("destroy did not emit empty content")
 				}
-			case <-time.After(time.Second):
+			case <-waylandDeadline(time.Second):
 				t.Fatal("no empty content")
 			}
 		}
-	case <-time.After(time.Second):
+	case <-waylandDeadline(time.Second):
 		t.Fatal("no content emitted")
 	}
 	wm := bindProtocol(t, c, "xdg_wm_base")
@@ -437,20 +438,15 @@ func TestLockSurfaceDestroyRetiresFencedChildDependencies(t *testing.T) {
 			})
 			if destroy == "role ready" {
 				h.fire(31)
-				deadline := time.NewTimer(time.Second)
-				defer deadline.Stop()
-				ready := false
-				for !ready {
-					s.display.Do(func() { ready = child.syncReady(dep.sync) })
-					if ready {
-						break
+				// fire has written the real eventfd. Join its production
+				// callback on the display owner; if the event loop already
+				// delivered it, onAcquire's w.done check makes this a no-op.
+				s.display.Do(func() {
+					s.syncWait.onAcquire(dep.sync.wait)
+					if !child.syncReady(dep.sync) {
+						t.Error("acquire waiter did not become ready")
 					}
-					select {
-					case <-deadline.C:
-						t.Fatal("acquire waiter did not become ready")
-					case <-time.After(time.Millisecond):
-					}
-				}
+				})
 			}
 			// A later child commit is not owned by the captured root graph.
 			requestProtocol(t, c, childID, wayland.SurfaceRequestCommit)

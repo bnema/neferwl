@@ -12,6 +12,8 @@ import (
 
 // --debug=wayland-damage logs one "client damage" entry per fresh commit
 // with the damage in buffer pixels; without it nothing is logged.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestClientDamageLog(t *testing.T) {
 	for _, on := range []bool{true, false} {
 		t.Run(fmt.Sprintf("LogDamage=%v", on), func(t *testing.T) {
@@ -22,7 +24,7 @@ func TestClientDamageLog(t *testing.T) {
 			// A mapped window (its 1×1 first buffer is not under test), then
 			// the 16×16 buffer the commits below attach.
 			_, surf, _ := surfaceMapperAt(t, c, events, 4)()
-			drainContents(contents)
+			drainContents(t, s, contents)
 			buf := shmBufferSized(t, c, 16, 16)
 			commit := func(rects ...[4]int32) {
 				t.Helper()
@@ -36,7 +38,7 @@ func TestClientDamageLog(t *testing.T) {
 				}
 				select {
 				case <-contents:
-				case <-time.After(2 * time.Second):
+				case <-waylandDeadline(2 * time.Second):
 					t.Fatal("no content")
 				}
 			}
