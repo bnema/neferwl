@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -134,4 +135,134 @@ func TestOSDSuppressedThroughRun(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestOSDPinnedSecurityTransitionThroughRun(t *testing.T) {
+	for _, protected := range []bool{true, false} {
+		t.Run(map[bool]string{true: "lock", false: "epoch"}[protected], func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var epoch atomic.Value
+				epoch.Store(ports.SecurityState{})
+				gate := portsmocks.NewMockSessionSecurity(t)
+				gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return epoch.Load().(ports.SecurityState) })
+				h := newHintConfig(t, core.Options{Security: gate}, func(cfg *ports.Config) { cfg.Binds["Cmd+p"] = "osd-pin" })
+				h.press("p", ports.ModSuper)
+				h.release("p", 0)
+				synctest.Wait()
+				osdOverlay(t, h)
+				next(t, h.commands, func(v ports.SecurityCommand) bool {
+					watch, ok := v.Command.(ports.WatchStats)
+					return ok && watch.Window == 1
+				})
+				state := ports.SecurityState{Generation: 1, Protected: protected}
+				epoch.Store(state)
+				h.client <- ports.SessionLockChanged{State: state}
+				synctest.Wait()
+				for _, s := range <-h.scenes {
+					for _, o := range s.Overlays {
+						if o.ID == 1<<61 {
+							t.Fatal("security transition retained OSD")
+						}
+					}
+				}
+				next(t, h.commands, func(v ports.SecurityCommand) bool {
+					watch, ok := v.Command.(ports.WatchStats)
+					return v.State == state && ok && watch.Window == 0
+				})
+				// A fresh pin must show, not toggle an old retained pin off.
+				h.state = ports.SecurityState{Generation: 2}
+				epoch.Store(h.state)
+				h.client <- ports.SessionLockChanged{State: h.state}
+				synctest.Wait()
+				h.press("p", ports.ModSuper)
+				h.release("p", 0)
+				synctest.Wait()
+				osdOverlay(t, h)
+			})
+		})
+	}
+}
+
+func TestOSDPinnedEmptyFocusThroughRun(t *testing.T) {
+	for _, unmap := range []bool{true, false} {
+		t.Run(map[bool]string{true: "unmap", false: "empty-workspace"}[unmap], func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				h := newHintConfig(t, core.Options{}, func(cfg *ports.Config) {
+					cfg.Binds["Cmd+p"] = "osd-pin"
+					cfg.Binds["Cmd+n"] = "focus-workspace-next"
+				})
+				h.press("p", ports.ModSuper)
+				h.release("p", 0)
+				synctest.Wait()
+				osdOverlay(t, h)
+				next(t, h.commands, func(v ports.WatchStats) bool { return v.Window == 1 })
+				h.client <- ports.WindowStats{Window: 1, ClientFPS: 144}
+				synctest.Wait()
+				old := osdOverlay(t, h)
+				if !strings.Contains(old.Panel.Lines[2], "144 fps") {
+					t.Fatal(old.Panel)
+				}
+				if unmap {
+					h.client <- ports.WindowUnmapped{ID: 1}
+				} else {
+					h.press("n", ports.ModSuper)
+					h.release("n", 0)
+				}
+				synctest.Wait()
+				o := osdOverlay(t, h)
+				if o.Seq <= old.Seq || o.Panel.Lines != [4]string{"", "waiting for frames..."} {
+					t.Fatalf("empty focus retained stale content: %+v", o)
+				}
+				next(t, h.commands, func(v ports.WatchStats) bool { return v.Window == 0 })
+				h.client <- ports.WindowStats{Window: 1, ClientFPS: 999}
+				synctest.Wait()
+				select {
+				case s := <-h.scenes:
+					t.Fatalf("old window stats published: %+v", s)
+				default:
+				}
+				// Empty focus must preserve the pin: toggling now hides it.
+				h.press("p", ports.ModSuper)
+				h.release("p", 0)
+				synctest.Wait()
+				for _, o := range (<-h.scenes)[0].Overlays {
+					if o.ID == 1<<61 {
+						t.Fatal("empty focus lost pin")
+					}
+				}
+			})
+		})
+	}
+}
+
+func TestOSDCmdBindReleaseThroughRun(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := newHintConfig(t, core.Options{}, func(cfg *ports.Config) { cfg.Binds["Cmd+h"] = "close-window" })
+		for _, ev := range []ports.KeyEvent{
+			{Keysym: "Super_L", Pressed: true, Mods: ports.ModSuper},
+			{Keysym: "h", Base: "h", Pressed: true, Mods: ports.ModSuper},
+			{Keysym: "Super_L"},
+			{Keysym: "h", Base: "h"},
+		} {
+			h.input <- ev
+			synctest.Wait()
+			select {
+			case scenes := <-h.scenes:
+				for _, s := range scenes {
+					for _, o := range s.Overlays {
+						if o.ID == 1<<61 {
+							t.Fatal("chord showed OSD")
+						}
+					}
+				}
+			default:
+			}
+		}
+		next(t, h.commands, func(v ports.CloseWindow) bool { return v.ID == 1 })
+		for len(h.commands) > 0 {
+			if v, ok := (<-h.commands).(ports.WatchStats); ok {
+				t.Fatalf("chord watched stats: %+v", v)
+			}
+		}
+	})
 }
