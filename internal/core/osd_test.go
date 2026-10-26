@@ -107,3 +107,20 @@ func TestOSDPinWithoutFocusDoesNothing(t *testing.T) {
 		t.Fatal("pin without focus changed OSD", c.osd)
 	}
 }
+
+func TestOSDTearingLineSeparatesAskedFromTorn(t *testing.T) {
+	c := &Core{}
+	for _, tc := range []struct {
+		stats ports.WindowStats
+		want  string
+	}{
+		{ports.WindowStats{}, "tearing off /"},
+		{ports.WindowStats{Tearing: true}, "tearing asked /"},
+		{ports.WindowStats{Tearing: true, Async: true}, "tearing on /"},
+	} {
+		c.osdPanel(tc.stats)
+		if got := c.osd.panel.Lines[1]; !strings.Contains(got, tc.want) {
+			t.Fatalf("line %q, want %q", got, tc.want)
+		}
+	}
+}

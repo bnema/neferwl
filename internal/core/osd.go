@@ -101,6 +101,19 @@ func (c *Core) osdWatch(ctx context.Context) error {
 	return nil
 }
 
+// osdTearing is "on" when the last flip showing the window was torn,
+// "asked" when the client asks for tearing but the flip was synced (composed,
+// or refused by the output), "off" when the client does not ask.
+func osdTearing(v ports.WindowStats) string {
+	switch {
+	case v.Async:
+		return "on"
+	case v.Tearing:
+		return "asked"
+	}
+	return "off"
+}
+
 func osdOn(v bool) string {
 	if v {
 		return "on"
@@ -145,7 +158,7 @@ func (c *Core) osdPanel(v ports.WindowStats) {
 	b = append(b, " / VRR "...)
 	b = append(b, osdOn(v.VRR)...)
 	b = append(b, " / tearing "...)
-	b = append(b, osdOn(v.Tearing)...)
+	b = append(b, osdTearing(v)...)
 	b = append(b, " / sync "...)
 	if v.ExplicitSync {
 		b = append(b, "explicit"...)
