@@ -1,7 +1,6 @@
 package vulkan
 
 import (
-	"errors"
 	"fmt"
 	"github.com/bnema/neferwl/internal/ports"
 	vk "github.com/bnema/purego-vulkan/vulkan"
@@ -277,8 +276,3 @@ func (g *GPU) modifierPlanes(mod uint64) (uint32, bool) {
 }
 
 var _ ports.RenderDevice = (*GPU)(nil)
-
-// NewCopier is unavailable until GPU copy support is implemented.
-func (g *GPU) NewCopier(w, h int) (ports.Copier, error) {
-	return nil, errors.New("gpu copy not supported yet")
-}
