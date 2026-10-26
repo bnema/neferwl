@@ -2,6 +2,7 @@ package peerexe
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -71,19 +72,34 @@ func TestOpenMissingProcess(t *testing.T) {
 
 // A process whose binary was removed is refused, and a peer that already
 // exited is never resolved from its (possibly recycled) pid.
+//
+//testpolicy:realtime real child process; its post-exec readiness line is read from a pipe
 func TestExeOfPidfdDeletedAndExited(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "child")
-	src, err := os.ReadFile("/bin/sleep")
+	src, err := os.ReadFile("/bin/sh")
 	if err != nil {
-		t.Skip("no /bin/sleep")
+		t.Skip("no /bin/sh")
 	}
 	if err := os.WriteFile(path, src, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	proc, err := os.StartProcess(path, []string{path, "30"}, &os.ProcAttr{})
+	stdinR, stdinW, err := os.Pipe()
 	if err != nil {
-		t.Skip("cannot run a copy of sleep: ", err)
+		t.Fatal(err)
+	}
+	defer stdinW.Close()
+	stdoutR, stdoutW, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stdoutR.Close()
+	// The copied shell prints once it runs, then blocks reading stdin.
+	proc, err := os.StartProcess(path, []string{path, "-c", "echo ready; read _"}, &os.ProcAttr{Files: []*os.File{stdinR, stdoutW, nil}})
+	stdinR.Close()
+	stdoutW.Close()
+	if err != nil {
+		t.Skip("cannot run a copy of sh: ", err)
 	}
 	defer func() { _ = proc.Kill(); _, _ = proc.Wait() }()
 	_ = os.Remove(path)
@@ -92,7 +108,12 @@ func TestExeOfPidfdDeletedAndExited(t *testing.T) {
 		t.Skip("pidfd_open: ", err)
 	}
 	defer unix.Close(pidfd)
-	// StartProcess returns only after the exec handshake completes.
+	// StartProcess may return before /proc/<pid>/exe names the copy; the
+	// line is written by the copied shell itself, so exec has completed.
+	line := make([]byte, len("ready\n"))
+	if _, err := io.ReadFull(stdoutR, line); err != nil || string(line) != "ready\n" {
+		t.Fatalf("child readiness: %q, %v", line, err)
+	}
 	if _, _, err := ExeOfPidfd(pidfd); !errors.Is(err, ErrExeDeleted) {
 		t.Fatalf("deleted executable not refused: %v", err)
 	}
