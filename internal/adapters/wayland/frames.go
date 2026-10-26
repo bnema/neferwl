@@ -363,7 +363,6 @@ func (s *Server) sendFrames(name string, flipped bool) {
 		}
 		cb.SendDone(ms)
 		cb.Destroy()
-		s.frames++
 	}
 	// The queue keeps its backing array for the next frame (an empty queue
 	// reads like an absent one). Nothing above queues a callback.

@@ -206,7 +206,6 @@ type Server struct {
 	// heldLive is releaseHeld's scratch (display goroutine only).
 	heldLive []ports.OutputPresented
 	reports  map[string]ports.OutputPresented
-	frames   uint64
 	started  time.Time
 	// fifoSurfaces have a fifo barrier or queued commits (fifo.go);
 	// lastFlip is each output's latest page flip.
