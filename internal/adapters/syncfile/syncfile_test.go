@@ -9,6 +9,8 @@ import (
 )
 
 // A pipe stands in for a sync file: readable means signalled.
+//
+//testpolicy:realtime real pipe poll in syncfile.Wait, bounded by a 1s guard
 func TestWaitReturnsWhenReadable(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -28,6 +30,9 @@ func TestWaitReturnsWhenReadable(t *testing.T) {
 	}
 }
 
+// A canceled ctx ends the wait on a pipe that never signals.
+//
+//testpolicy:realtime real pipe poll in syncfile.Wait
 func TestWaitStopsOnCancel(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -35,9 +40,9 @@ func TestWaitStopsOnCancel(t *testing.T) {
 	}
 	defer r.Close()
 	defer w.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	defer cancel()
-	if err := Wait(ctx, r); !errors.Is(err, context.DeadlineExceeded) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := Wait(ctx, r); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err %v", err)
 	}
 }

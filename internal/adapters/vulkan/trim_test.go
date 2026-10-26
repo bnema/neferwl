@@ -11,13 +11,15 @@ import (
 )
 
 // trimSettled waits for the submitted GPU fences, then lets Trim collect them.
+//
+//testpolicy:realtime real GPU fence wait through vkWaitForFences, bounded to 5s
 func trimSettled(t *testing.T, r *Renderer, now time.Time) {
 	t.Helper()
 	for i := range r.slots {
 		s := &r.slots[i]
 		if s.busy {
 			if result := r.dd.WaitForFences(r.device, 1, &s.fence, vk.Bool32(1), uint64(5*time.Second)); result != vk.Success {
-				t.Fatalf("GPU fence did not settle: %v", result)
+				t.Fatalf("slot %d: GPU fence did not settle: %v", i, result)
 			}
 		}
 	}
@@ -25,7 +27,7 @@ func trimSettled(t *testing.T, r *Renderer, now time.Time) {
 		t.Fatal(err)
 	}
 	if len(r.deferred) != 0 {
-		t.Fatalf("%d frees never ran", len(r.deferred))
+		t.Fatalf("%d frees never ran after all slot fences settled", len(r.deferred))
 	}
 }
 
