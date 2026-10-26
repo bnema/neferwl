@@ -67,22 +67,17 @@ func (p *toplevelHandleEvents) Dispatch(e *wlturbo.Event) {
 func takeEvents(t *testing.T, c *wlturbo.Display, events chan string) []string {
 	t.Helper()
 	var got []string
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
+	dispatchUntil(t, c, func() bool {
 		for len(events) > 0 {
 			ev := <-events
 			got = append(got, ev)
 			if ev == "done" || ev == "closed" {
-				return got
+				return true
 			}
 		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("no done, got %q", got)
-	return nil
+		return false
+	})
+	return got
 }
 
 func TestForeignToplevel(t *testing.T) {
@@ -181,7 +176,7 @@ func TestForeignToplevel(t *testing.T) {
 	select {
 	case ev := <-events:
 		t.Fatalf("event from a closed handle: %#v", ev)
-	case <-time.After(100 * time.Millisecond):
+	case <-waylandDeadline(100 * time.Millisecond):
 	}
 	requestProtocol(t, c, remapped, wlr.ZwlrForeignToplevelHandleV1RequestActivate, seat)
 	if ev := clientEvent[ports.WindowActivate](t, events); ev.ID != w.ID {

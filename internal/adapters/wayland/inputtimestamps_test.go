@@ -35,19 +35,8 @@ func (r *stampRecorder) snapshot() []string {
 // wait round-trips until the log holds n lines.
 func (r *stampRecorder) wait(t *testing.T, c *wlturbo.Display, n int) []string {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		if got := r.snapshot(); len(got) >= n {
-			return got
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("log has %v, want %d lines", r.snapshot(), n)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	dispatchUntil(t, c, func() bool { return len(r.snapshot()) >= n })
+	return r.snapshot()
 }
 
 // stampedKeyboard logs the key events of one wl_keyboard under its tag.

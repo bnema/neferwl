@@ -63,7 +63,7 @@ func TestLayerLifecycle(t *testing.T) {
 	var config [3]uint32
 	select {
 	case config = <-proxy.configured:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("configure timeout")
 	}
 	if config[1] != 1920 || config[2] != 30 {
@@ -98,7 +98,7 @@ func TestLayerLifecycle(t *testing.T) {
 		if !ok || len(v.Layers) != 1 || v.Layers[0].Anchor != 13 || v.Layers[0].ExclusiveZone != 30 || v.Layers[0].Width != 1920 || v.Layers[0].Height != 30 {
 			t.Fatalf("mapped: %#v", ev)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("map timeout")
 	}
 	requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestDestroy)
@@ -111,7 +111,7 @@ func TestLayerLifecycle(t *testing.T) {
 		if !ok || len(v.Layers) != 0 {
 			t.Fatalf("destroy: %#v", ev)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("destroy timeout")
 	}
 }
@@ -148,7 +148,7 @@ func TestWaybarLayer(t *testing.T) {
 		}
 	case err := <-done:
 		t.Fatalf("waybar exited: %v stderr: %s", err, output.String())
-	case <-time.After(10 * time.Second):
+	case <-waylandDeadline(10 * time.Second):
 		t.Fatalf("waybar timeout stderr: %s", output.String())
 	}
 }
@@ -315,7 +315,7 @@ func TestLayerPointerAndPopup(t *testing.T) {
 	var config [3]uint32
 	select {
 	case config = <-lp.configured:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("configure timeout")
 	}
 	requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestAckConfigure, config[0])
@@ -333,14 +333,7 @@ func TestLayerPointerAndPopup(t *testing.T) {
 	commands <- ports.PointerFocus{ID: id, X: 0.5, Y: 0.25}
 	commands <- ports.PointerButtonTo{ID: id, Button: 0x110, Pressed: true}
 	var press uint32
-	for deadline := time.Now().Add(2 * time.Second); len(pp.buttons) == 0; time.Sleep(5 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatal("pointer events timeout")
-		}
-		if err = c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-	}
+	dispatchUntil(t, c, func() bool { return len(pp.buttons) > 0 })
 	if at := <-pp.enters; at != [2]float64{0.5, 0.25} {
 		t.Fatalf("enter at %v", at)
 	}

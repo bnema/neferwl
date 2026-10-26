@@ -278,11 +278,8 @@ func TestInputMethodSingleSlot(t *testing.T) {
 	settle(t, second.c, app.c, first.c)
 	app.log.take()
 	_ = first.c.Close()
-	deadline := time.Now().Add(2 * time.Second)
-	for len(app.log.events) == 0 && time.Now().Before(deadline) {
-		roundtrip(t, app.c)
-		time.Sleep(5 * time.Millisecond)
-	}
+	dispatchUntil(t, app.c, func() bool { return len(app.log.events) > 0 })
+	roundtrip(t, app.c)
 	// The preedit is cleared by an empty done.
 	expectEvents(t, "app", app.log.take(), "done 1")
 	third := newIMEApp(t, s, dir)
@@ -293,12 +290,10 @@ func TestInputMethodSingleSlot(t *testing.T) {
 // goroutine on their own channel, not in order with requests.
 func until(t *testing.T, what string, ok func() bool, cs ...*wlturbo.Display) {
 	t.Helper()
-	for deadline := time.Now().Add(2 * time.Second); !ok(); time.Sleep(5 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatal(what)
-		}
-		roundtrip(t, cs...)
+	if len(cs) != 1 {
+		t.Fatalf("%s: expected one event connection", what)
 	}
+	dispatchUntil(t, cs[0], ok)
 }
 
 // A keyboard grab takes the focused client's keys until released; a key
@@ -381,25 +376,29 @@ func TestTextInputTeardown(t *testing.T) {
 	settle(t, other.c, ime.c)
 	ime.log.take()
 	_ = other.c.Close()
-	deadline := time.Now().Add(2 * time.Second)
-	for len(ime.log.events) == 0 && time.Now().Before(deadline) {
-		roundtrip(t, ime.c)
-		time.Sleep(5 * time.Millisecond)
-	}
+	dispatchUntil(t, ime.c, func() bool { return len(ime.log.events) > 0 })
+	roundtrip(t, ime.c)
 	expectEvents(t, "ime", ime.log.take(), "deactivate", "done")
 	unmapped(t, events, other.window)
 
 	// With the grabbing input method gone, keys reach the client again.
 	last := newTextApp(t, s, events, commands, dir)
+	gone := make(chan struct{})
+	s.display.Do(func() {
+		r := s.inputMethod.res
+		old := r.OnDestroy
+		r.OnDestroy = func() { old(); close(gone) }
+	})
 	_ = ime.c.Close()
-	last.keys.opcodes = nil
-	deadline = time.Now().Add(2 * time.Second)
-	for !slices.Contains(last.keys.opcodes, uint16(wayland.KeyboardEventKey)) && time.Now().Before(deadline) {
-		commands <- ports.ForwardKey{ID: last.window, Key: ports.KeyEvent{Keycode: 30, Pressed: true}}
-		commands <- ports.ForwardKey{ID: last.window, Key: ports.KeyEvent{Keycode: 30}}
-		roundtrip(t, last.c)
-		time.Sleep(10 * time.Millisecond)
+	select {
+	case <-gone:
+	case <-waylandDeadline(2 * time.Second):
+		t.Fatal("input method disconnect not processed")
 	}
+	last.keys.opcodes = nil
+	commands <- ports.ForwardKey{ID: last.window, Key: ports.KeyEvent{Keycode: 30, Pressed: true}}
+	commands <- ports.ForwardKey{ID: last.window, Key: ports.KeyEvent{Keycode: 30}}
+	dispatchUntil(t, last.c, func() bool { return slices.Contains(last.keys.opcodes, uint16(wayland.KeyboardEventKey)) })
 	if !slices.Contains(last.keys.opcodes, uint16(wayland.KeyboardEventKey)) {
 		t.Fatal("keys did not return to the client")
 	}
