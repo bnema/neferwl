@@ -29,6 +29,8 @@ func (c *Core) syncSecurity() bool {
 		return false
 	}
 	c.security = state
+	c.osd.shown, c.osd.pinned = false, false
+	c.osdReset()
 	c.lock = lockState{}
 	c.pressed, c.buttons, c.inputKeys = map[string]bool{}, map[uint32]bool{}, map[string]bool{}
 	c.pointer, c.grab, c.pointerOutput = 0, 0, ""

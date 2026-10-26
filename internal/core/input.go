@@ -281,6 +281,16 @@ func (c *Core) pointerAxis(ctx context.Context, v ports.PointerAxis) error {
 }
 
 func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
+	if !c.cfg.OSD.Enable || c.keyboard.inhibited(c.keyboardFocus()) {
+		c.osdReset()
+	} else {
+		c.osd.key.clock = c.opts.Clock
+		if c.osdApply(c.osd.key.key(key, c.cmdMod, c.now())) {
+			if err := c.publish(ctx); err != nil {
+				return err
+			}
+		}
+	}
 	c.mods = key.Mods
 	c.keyState = key.State
 	c.repeatKey(key)

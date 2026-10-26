@@ -221,6 +221,10 @@ type Effect struct {
 // between screens. Screen changes flash the focused window on the destination,
 // and so does a switch to another workspace of the same screen.
 func (c *Core) applyAction(a Action) Effect {
+	if a == ActionOSDPin {
+		c.osdApply(osdTogglePin)
+		return Effect{}
+	}
 	if !c.flashOn() {
 		return c.dispatchAction(a)
 	}

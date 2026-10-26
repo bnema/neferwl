@@ -80,6 +80,7 @@ type binding struct {
 	key  string
 }
 type Core struct {
+	osd osd
 	// overviewReal is publish's scratch map of the real layouts under an open overview.
 	overviewReal map[WindowID]Placement
 	// realBuf backs the layout read through at once by publish (each
@@ -1186,6 +1187,18 @@ func (c *Core) Run(ctx context.Context) error {
 				return nil
 			}
 			if c.switcherTick() && (c.publish(ctx) != nil || c.rehit(ctx) != nil) {
+				return nil
+			}
+			continue
+		case <-c.osd.key.holdC:
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
+			}
+			if !c.cfg.OSD.Enable || c.keyboard.inhibited(c.keyboardFocus()) {
+				c.osdReset()
+				continue
+			}
+			if c.osdApply(c.osd.key.holdFired()) && c.publish(ctx) != nil {
 				return nil
 			}
 			continue
