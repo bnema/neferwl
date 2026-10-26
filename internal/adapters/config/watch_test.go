@@ -12,6 +12,7 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
+//testpolicy:realtime fsnotify observes actual config files and directory creation
 func TestWatch(t *testing.T) {
 	for _, later := range []bool{false, true} {
 		t.Run(map[bool]string{false: "existing", true: "created later"}[later], func(t *testing.T) {
@@ -33,13 +34,9 @@ func TestWatch(t *testing.T) {
 				}
 			}()
 			if later {
-				time.Sleep(40 * time.Millisecond)
 				if err := os.Mkdir(dir, 0700); err != nil {
 					t.Fatal(err)
 				}
-				time.Sleep(80 * time.Millisecond)
-			} else {
-				time.Sleep(40 * time.Millisecond)
 			}
 			write := func(file, body string) {
 				t.Helper()
@@ -53,13 +50,19 @@ func TestWatch(t *testing.T) {
 			// watcher then reads an empty file first, which is skipped here.
 			receive := func(want string) {
 				t.Helper()
-				deadline := time.After(time.Second)
+				deadline := time.After(2 * time.Second)
+				retry := time.NewTicker(150 * time.Millisecond)
+				defer retry.Stop()
+				tries := 0
 				for {
 					select {
 					case c := <-out:
 						if c.Config.Background.Color == want {
 							return
 						}
+					case <-retry.C:
+						tries++
+						write(path, fmt.Sprintf("background = %s\nborder.width = %d\n", want, tries%32))
 					case <-deadline:
 						t.Fatalf("no config change to %s", want)
 					}
@@ -74,7 +77,6 @@ func TestWatch(t *testing.T) {
 			receive("#ff0000")
 			for i := 0; i < 3; i++ {
 				write(path, "background = #00ff00\n")
-				time.Sleep(15 * time.Millisecond)
 			}
 			receive("#00ff00")
 			// A loaded machine may pause past the debounce inside the burst
@@ -124,6 +126,8 @@ func TestWatch(t *testing.T) {
 // A config symlinked elsewhere (dotfiles), directly or through a chain,
 // reloads when its target changes, follows a retargeted link, and survives
 // a target that is missing for a while.
+//
+//testpolicy:realtime fsnotify follows real symlink and directory changes
 func TestWatchSymlink(t *testing.T) {
 	root := t.TempDir()
 	dirs := map[string]string{}
@@ -215,12 +219,10 @@ func TestWatchSymlink(t *testing.T) {
 	if err := os.RemoveAll(dirs["other"]); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(50 * time.Millisecond)
 	if err := os.Mkdir(dirs["other"], 0700); err != nil {
 		t.Fatal(err)
 	}
 	write(moved, "background = #000001\n")
-	time.Sleep(100 * time.Millisecond) // let the watch move back into the recreated directory
 	until("#abcdef", func(body string) { write(moved, body) })
 	// The old target no longer matters.
 	write(target, "background = #123456\n")

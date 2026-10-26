@@ -937,6 +937,8 @@ func TestFileSyntax(t *testing.T) {
 }
 
 // A FIFO in place of the config fails at once instead of blocking startup.
+//
+//testpolicy:realtime opening a real filesystem FIFO must return without blocking
 func TestLoadRejectsFIFO(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config")
 	if err := syscall.Mkfifo(path, 0o600); err != nil {
