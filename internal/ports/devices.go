@@ -111,3 +111,20 @@ type Seat interface {
 	CloseDevice(fd int)
 	SwitchVT(vt int)
 }
+
+// ErrDeviceLost marks a Vulkan device loss requiring device recreation.
+var ErrDeviceLost = errors.New("render device lost")
+
+// RendererOptions selects per-renderer output and diagnostic behavior.
+type RendererOptions struct{ Virtual, Readback, TraceDamage bool }
+
+// GPUInfo describes one DRM card. Primary/Render are dev_t (0 = absent).
+type GPUInfo struct {
+	Path     string // /dev/dri/cardN
+	Primary  uint64
+	Render   uint64
+	PCI      string // "0000:03:00.0", "" if not PCI
+	BootVGA  bool
+	Internal bool   // a connected eDP/LVDS/DSI connector
+	Driver   string // DRM driver name, e.g. "amdgpu", "nvidia-drm"
+}

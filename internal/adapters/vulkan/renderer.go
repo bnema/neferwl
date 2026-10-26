@@ -143,6 +143,9 @@ func priorityAttempts(supported bool) []vk.QueueGlobalPriority {
 
 func checked(name string, result vk.Result) error {
 	if err := vk.Check(result); err != nil {
+		if result == vk.ErrorDeviceLost {
+			return fmt.Errorf("%s: %w: %w", name, err, ports.ErrDeviceLost)
+		}
 		return fmt.Errorf("%s: %w", name, err)
 	}
 	return nil
