@@ -122,6 +122,8 @@ func TestFenceProp(t *testing.T) {
 
 // waitFences returns for a fence that signalled, for one that never will
 // once the output stops, and at once where fences go to the kernel.
+//
+//testpolicy:realtime real pipe fence polling is performed by waitFences
 func TestWaitFences(t *testing.T) {
 	returns := func(t *testing.T, o *Output, fences ...*os.File) {
 		t.Helper()

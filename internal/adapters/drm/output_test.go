@@ -553,382 +553,389 @@ func TestBufferRefusedIsNotBlamedOnVRR(t *testing.T) {
 // Run: while a frame is in flight its buffers may still be read by the
 // GPU, so a newer content is reported only after the flip event; every
 // frame fence is closed.
-func TestRunReportsSeenAfterFlip(t *testing.T) { synctest.Test(t, runReportsSeenAfterFlip) }
-
-func runReportsSeenAfterFlip(t *testing.T) {
-	o, k, commits, commitMu := testOutputMu(t)
-	o.cursor, o.tearing = nil, false
-	flips := make(chan flipEvent, 1)
-	o.flipped = flips
-	r := portsmocks.NewMockRenderer(t)
-	var mu sync.Mutex
-	var fences []*os.File
-	pipeBuf := func() ports.DMABuf {
-		f, w, _ := os.Pipe()
-		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
-	}
-	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
-	r.EXPECT().UseTarget(mock.Anything).Return()
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
-		f, w, _ := os.Pipe()
-		_, _ = w.Write([]byte{1}) // readable: signalled
-		w.Close()
-		mu.Lock()
-		fences = append(fences, f)
-		mu.Unlock()
-		return f, nil
-	})
-	r.EXPECT().Close().Return().Once()
-	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
-	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
-	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
-	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
-	frameCommits := func() int {
+func TestRunReportsSeenAfterFlip(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		o, k, commits, commitMu := testOutputMu(t)
+		o.cursor, o.tearing = nil, false
+		flips := make(chan flipEvent, 1)
+		o.flipped = flips
+		r := portsmocks.NewMockRenderer(t)
+		var mu sync.Mutex
+		var fences []*os.File
+		pipeBuf := func() ports.DMABuf {
+			f, w, _ := os.Pipe()
+			w.Close()
+			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		}
+		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
+		r.EXPECT().UseTarget(mock.Anything).Return()
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+			f, w, _ := os.Pipe()
+			_, _ = w.Write([]byte{1}) // readable: signalled
+			w.Close()
+			mu.Lock()
+			fences = append(fences, f)
+			mu.Unlock()
+			return f, nil
+		})
+		r.EXPECT().Close().Return().Once()
+		k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+		k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+		k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+		frameCommits := func() int {
+			commitMu.Lock()
+			defer commitMu.Unlock()
+			n := 0
+			for _, c := range *commits {
+				if c.user&3 == userFrame {
+					n++
+				}
+			}
+			return n
+		}
+		scenes := make(chan ports.Scene, 1)
+		contents := newContentFeed(t, 1)
+		sink, presented := presentedSink(t, 8)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, contents.in(), contents.ret, nil, sink, nil, nil)
+		}()
+		scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 10, H: 10}}}}
+		waitFor(t, func() bool { return frameCommits() == 1 })
+		// Frame 1 is in flight: content 3 replaces what it may be reading.
+		// One batch carries two windows: both are applied and the batch goes
+		// back to wayland (reset) at once, whatever the frame in flight reads.
+		contents.send(ports.SurfaceContent{ID: 1, Seq: 3, SHM: &ports.SHMBuffer{}}, ports.SurfaceContent{ID: 2, Seq: 4, SHM: &ports.SHMBuffer{}})
+		synctest.Wait()
+		select {
+		case <-contents.returned:
+		default:
+			t.Fatal("batch not returned")
+		}
+		select {
+		case p := <-presented:
+			t.Fatalf("report while a frame is in flight: %+v", p)
+		default:
+		}
 		commitMu.Lock()
-		defer commitMu.Unlock()
-		n := 0
-		for _, c := range *commits {
-			if c.user&3 == userFrame {
-				n++
+		last := (*commits)[len(*commits)-1]
+		commitMu.Unlock()
+		flips <- flipEvent{crtc: tCrtc, user: last.user, when: time.Second, seq: 1}
+		select {
+		case p := <-presented:
+			if p.Flip == nil || p.Flip.When != time.Second || p.Seen[1] != 3 || p.Seen[2] != 4 {
+				t.Fatalf("report %+v", p)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("no report after the flip")
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if len(fences) < 3 {
+			t.Fatalf("%d renders", len(fences))
+		}
+		for _, f := range fences {
+			if _, err := f.Stat(); err == nil {
+				t.Fatal("frame fence left open")
 			}
 		}
-		return n
-	}
-	scenes := make(chan ports.Scene, 1)
-	contents := newContentFeed(t, 1)
-	sink, presented := presentedSink(t, 8)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, contents.in(), contents.ret, nil, sink, nil, nil)
-	}()
-	scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 10, H: 10}}}}
-	waitFor(t, func() bool { return frameCommits() == 1 })
-	// Frame 1 is in flight: content 3 replaces what it may be reading.
-	// One batch carries two windows: both are applied and the batch goes
-	// back to wayland (reset) at once, whatever the frame in flight reads.
-	contents.send(ports.SurfaceContent{ID: 1, Seq: 3, SHM: &ports.SHMBuffer{}}, ports.SurfaceContent{ID: 2, Seq: 4, SHM: &ports.SHMBuffer{}})
-	synctest.Wait()
-	select {
-	case <-contents.returned:
-	default:
-		t.Fatal("batch not returned")
-	}
-	select {
-	case p := <-presented:
-		t.Fatalf("report while a frame is in flight: %+v", p)
-	default:
-	}
-	commitMu.Lock()
-	last := (*commits)[len(*commits)-1]
-	commitMu.Unlock()
-	flips <- flipEvent{crtc: tCrtc, user: last.user, when: time.Second, seq: 1}
-	select {
-	case p := <-presented:
-		if p.Flip == nil || p.Flip.When != time.Second || p.Seen[1] != 3 || p.Seen[2] != 4 {
-			t.Fatalf("report %+v", p)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("no report after the flip")
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	if len(fences) < 3 {
-		t.Fatalf("%d renders", len(fences))
-	}
-	for _, f := range fences {
-		if _, err := f.Stat(); err == nil {
-			t.Fatal("frame fence left open")
-		}
-	}
+	})
 }
 
 // Run: a fullscreen window composed under an overlay layer keeps VRR on in
 // the frame commit; a tiled scene turns it off only after vrrHold.
 func TestRunComposedFullscreenKeepsVRR(t *testing.T) {
-	o, k, commits, commitMu := testOutputMu(t)
-	o.cursor, o.tearing = nil, false
-	flips := make(chan flipEvent, 1)
-	o.flipped = flips
-	r := portsmocks.NewMockRenderer(t)
-	pipeBuf := func() ports.DMABuf {
-		f, w, _ := os.Pipe()
-		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
-	}
-	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
-	r.EXPECT().UseTarget(mock.Anything).Return()
-	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
-	r.EXPECT().Close().Return().Once()
-	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
-	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
-	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
-	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
-	lastFrame := func() (commitRec, int) {
-		commitMu.Lock()
-		defer commitMu.Unlock()
-		n, last := 0, commitRec{}
-		for _, c := range *commits {
-			if c.user&3 == userFrame {
-				n, last = n+1, c
-			}
+	synctest.Test(t, func(t *testing.T) {
+		o, k, commits, commitMu := testOutputMu(t)
+		o.cursor, o.tearing = nil, false
+		flips := make(chan flipEvent, 1)
+		o.flipped = flips
+		r := portsmocks.NewMockRenderer(t)
+		pipeBuf := func() ports.DMABuf {
+			f, w, _ := os.Pipe()
+			w.Close()
+			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 		}
-		return last, n
-	}
-	scenes := make(chan ports.Scene, 1)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, nil, discardSink(t), nil, nil)
-	}()
-	scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100,
-		Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 200, H: 100}, Fullscreen: true}},
-		Layers:  []ports.SceneLayer{{ID: 5, Layer: ports.LayerOverlay, Rect: ports.Rect{W: 10, H: 10}}}}
-	waitFor(t, func() bool { _, n := lastFrame(); return n == 1 })
-	last, _ := lastFrame()
-	if v, ok := last.req.value(tCrtc, pVRR); !ok || v != 1 {
-		t.Fatalf("composed fullscreen frame VRR %d %v", v, ok)
-	}
-	flips <- flipEvent{crtc: tCrtc, user: last.user, when: time.Second, seq: 1}
-	scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 100, H: 100}}}}
-	waitFor(t, func() bool { _, n := lastFrame(); return n == 2 })
-	last, _ = lastFrame()
-	if v, _ := last.req.value(tCrtc, pVRR); v != 1 {
-		t.Fatal("VRR dropped before vrrHold")
-	}
-	flips <- flipEvent{crtc: tCrtc, user: last.user, when: 2 * time.Second, seq: 2}
-	// The vrrOff timer turns VRR off with a state commit after the hold.
-	waitFor(t, func() bool {
-		commitMu.Lock()
-		defer commitMu.Unlock()
-		c := (*commits)[len(*commits)-1]
-		v, ok := c.req.value(tCrtc, pVRR)
-		return c.user&3 == userState && ok && v == 0
+		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
+		r.EXPECT().UseTarget(mock.Anything).Return()
+		r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+		r.EXPECT().Close().Return().Once()
+		k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+		k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+		k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+		lastFrame := func() (commitRec, int) {
+			commitMu.Lock()
+			defer commitMu.Unlock()
+			n, last := 0, commitRec{}
+			for _, c := range *commits {
+				if c.user&3 == userFrame {
+					n, last = n+1, c
+				}
+			}
+			return last, n
+		}
+		scenes := make(chan ports.Scene, 1)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, nil, discardSink(t), nil, nil)
+		}()
+		scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100,
+			Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 200, H: 100}, Fullscreen: true}},
+			Layers:  []ports.SceneLayer{{ID: 5, Layer: ports.LayerOverlay, Rect: ports.Rect{W: 10, H: 10}}}}
+		waitFor(t, func() bool { _, n := lastFrame(); return n == 1 })
+		last, _ := lastFrame()
+		if v, ok := last.req.value(tCrtc, pVRR); !ok || v != 1 {
+			t.Fatalf("composed fullscreen frame VRR %d %v", v, ok)
+		}
+		flips <- flipEvent{crtc: tCrtc, user: last.user, when: time.Second, seq: 1}
+		scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 100, H: 100}}}}
+		waitFor(t, func() bool { _, n := lastFrame(); return n == 2 })
+		last, _ = lastFrame()
+		if v, _ := last.req.value(tCrtc, pVRR); v != 1 {
+			t.Fatal("VRR dropped before vrrHold")
+		}
+		flips <- flipEvent{crtc: tCrtc, user: last.user, when: 2 * time.Second, seq: 2}
+		// The vrrOff timer turns VRR off with a state commit after the hold.
+		time.Sleep(vrrHold)
+		waitFor(t, func() bool {
+			commitMu.Lock()
+			defer commitMu.Unlock()
+			c := (*commits)[len(*commits)-1]
+			v, ok := c.req.value(tCrtc, pVRR)
+			return c.user&3 == userState && ok && v == 0
+		})
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
 	})
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
 }
 
+// waitFor checks owner state after all bubble goroutines have settled.
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatal("timed out")
-		}
-		time.Sleep(2 * time.Millisecond)
+	synctest.Wait()
+	if !cond() {
+		t.Fatal("owner did not reach the expected state")
 	}
 }
 
 // The stats tick lets the renderer free what the output no longer draws,
 // even while nothing renders; a failed trim stops the output.
 func TestRunTrimsRendererOnStatsTick(t *testing.T) {
-	o, k, _ := testOutput(t)
-	o.cursor, o.tearing, o.fbs = nil, false, [2]uint32{}
-	ticks := make(chan time.Time)
-	clk := portsmocks.NewMockClock(t)
-	tk := portsmocks.NewMockTicker(t)
-	clk.EXPECT().NewTicker(10 * time.Second).Return(tk).Once()
-	tk.EXPECT().C().Return(ticks)
-	tk.EXPECT().Stop().Return().Once()
-	now := time.Unix(1000, 0)
-	clk.EXPECT().Now().Return(now)
-	o.clock = clk
-	r := portsmocks.NewMockRenderer(t)
-	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().Close().Return().Once()
-	r.EXPECT().TakeRedrawn().Return(1234).Once()
-	var statsLog bytes.Buffer // written by Run's goroutine, read after it ends
-	o.log = zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &statsLog})
-	o.flipStats = flipStats{missedVblanks: 3, maxInterval: 50 * time.Millisecond, maxFlipToRead: 25 * time.Millisecond, lateFences: 2}
-	trimmed := make(chan struct{}, 2)
-	failure := os.ErrInvalid
-	calls := 0 // Run's goroutine only
-	r.EXPECT().Trim(now).RunAndReturn(func(time.Time) error {
-		trimmed <- struct{}{}
-		if calls++; calls == 2 {
-			return failure
+	synctest.Test(t, func(t *testing.T) {
+		o, k, _ := testOutput(t)
+		o.cursor, o.tearing, o.fbs = nil, false, [2]uint32{}
+		ticks := make(chan time.Time)
+		clk := portsmocks.NewMockClock(t)
+		tk := portsmocks.NewMockTicker(t)
+		clk.EXPECT().NewTicker(10 * time.Second).Return(tk).Once()
+		tk.EXPECT().C().Return(ticks)
+		tk.EXPECT().Stop().Return().Once()
+		now := time.Unix(1000, 0)
+		clk.EXPECT().Now().Return(now)
+		o.clock = clk
+		r := portsmocks.NewMockRenderer(t)
+		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+		r.EXPECT().Close().Return().Once()
+		r.EXPECT().TakeRedrawn().Return(1234).Once()
+		var statsLog bytes.Buffer // written by Run's goroutine, read after it ends
+		o.log = zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &statsLog})
+		o.flipStats = flipStats{missedVblanks: 3, maxInterval: 50 * time.Millisecond, maxFlipToRead: 25 * time.Millisecond, lateFences: 2}
+		trimmed := make(chan struct{}, 2)
+		failure := os.ErrInvalid
+		calls := 0 // Run's goroutine only
+		r.EXPECT().Trim(now).RunAndReturn(func(time.Time) error {
+			trimmed <- struct{}{}
+			if calls++; calls == 2 {
+				return failure
+			}
+			return nil
+		}).Twice()
+		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+		k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+		// Switched away from the start: no target, no frame.
+		active := make(chan bool, 1)
+		active <- false
+		done := make(chan error, 1)
+		go func() {
+			done <- o.Run(context.Background(), func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, nil, discardSink(t), nil, nil)
+		}()
+		ticks <- now
+		<-trimmed
+		ticks <- now
+		if err := <-done; !errors.Is(err, failure) {
+			t.Fatalf("run: %v", err)
 		}
-		return nil
-	}).Twice()
-	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
-	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
-	// Switched away from the start: no target, no frame.
-	active := make(chan bool, 1)
-	active <- false
-	done := make(chan error, 1)
-	go func() {
-		done <- o.Run(context.Background(), func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, nil, discardSink(t), nil, nil)
-	}()
-	ticks <- now
-	<-trimmed
-	ticks <- now
-	if err := <-done; !errors.Is(err, failure) {
-		t.Fatalf("run: %v", err)
-	}
-	// Reported once, then reset. late_fences needs flip tracing.
-	for _, want := range []string{`"message":"stats"`, `"missed_vblanks":3`, `"max_flip_interval_ms":50`, `"max_flip_to_read_ms":25`, `"redrawn_pixels":1234`} {
-		if !strings.Contains(statsLog.String(), want) {
-			t.Fatalf("stats entry lacks %s: %s", want, statsLog.String())
+		// Reported once, then reset. late_fences needs flip tracing.
+		for _, want := range []string{`"message":"stats"`, `"missed_vblanks":3`, `"max_flip_interval_ms":50`, `"max_flip_to_read_ms":25`, `"redrawn_pixels":1234`} {
+			if !strings.Contains(statsLog.String(), want) {
+				t.Fatalf("stats entry lacks %s: %s", want, statsLog.String())
+			}
 		}
-	}
-	if strings.Contains(statsLog.String(), "late_fences") || o.flipStats != (flipStats{}) {
-		t.Fatalf("late fences untraced or stats not reset: %s %+v", statsLog.String(), o.flipStats)
-	}
+		if strings.Contains(statsLog.String(), "late_fences") || o.flipStats != (flipStats{}) {
+			t.Fatalf("late fences untraced or stats not reset: %s %+v", statsLog.String(), o.flipStats)
+		}
+	})
 }
 
 // A render failure must complete captures queued before the first frame.
 func TestCaptureRenderFailureClosesPendingRequest(t *testing.T) {
-	o, k, _ := testOutput(t)
-	o.cursor, o.tearing = nil, false
-	r := portsmocks.NewMockRenderer(t)
-	boom := errors.New("render failed")
-	r.EXPECT().SetHDR(float64(0)).Return().Once()
-	r.EXPECT().UseTarget(mock.Anything).Return()
-	makeBuf := func() ports.DMABuf {
-		f, err := os.CreateTemp(t.TempDir(), "target")
+	synctest.Test(t, func(t *testing.T) {
+		o, k, _ := testOutput(t)
+		o.cursor, o.tearing = nil, false
+		r := portsmocks.NewMockRenderer(t)
+		boom := errors.New("render failed")
+		r.EXPECT().SetHDR(float64(0)).Return().Once()
+		r.EXPECT().UseTarget(mock.Anything).Return()
+		makeBuf := func() ports.DMABuf {
+			f, err := os.CreateTemp(t.TempDir(), "target")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = f.Close() })
+			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		}
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{makeBuf(), makeBuf()}, nil).Once()
+		r.EXPECT().Render(ports.Scene{Background: "#000000"}, mock.Anything).Return(nil, nil).Twice()
+		r.EXPECT().Render(mock.MatchedBy(func(s ports.Scene) bool { return s.Background != "#000000" }), mock.Anything).Return(nil, boom).Once()
+		r.EXPECT().Close().Return().Once()
+		k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+		k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+		k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		scenes := make(chan ports.Scene, 1)
+		requests := make(chan ports.CaptureRequest)
+		replies := make(chan ports.CaptureDone, 1)
+		f, err := os.CreateTemp(t.TempDir(), "capture")
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = f.Close() })
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
-	}
-	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{makeBuf(), makeBuf()}, nil).Once()
-	r.EXPECT().Render(ports.Scene{Background: "#000000"}, mock.Anything).Return(nil, nil).Twice()
-	r.EXPECT().Render(mock.MatchedBy(func(s ports.Scene) bool { return s.Background != "#000000" }), mock.Anything).Return(nil, boom).Once()
-	r.EXPECT().Close().Return().Once()
-	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
-	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
-	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
-	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	scenes := make(chan ports.Scene, 1)
-	requests := make(chan ports.CaptureRequest)
-	replies := make(chan ports.CaptureDone, 1)
-	f, err := os.CreateTemp(t.TempDir(), "capture")
-	if err != nil {
-		t.Fatal(err)
-	}
-	done := make(chan error, 1)
-	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, scenes, nil, nil, nil, nil, requests, replies)
-	}()
-	// The unbuffered handoff proves Run owns the request before any scene.
-	select {
-	case requests <- ports.CaptureRequest{ID: 9, Dst: ports.SHMBuffer{File: f}}:
-	case <-time.After(2 * time.Second):
-		t.Fatal("output did not accept capture")
-	}
-	scenes <- ports.Scene{Seq: 1, Scale: 1}
-	select {
-	case err := <-done:
-		if !errors.Is(err, boom) {
-			t.Fatalf("run error %v", err)
+		done := make(chan error, 1)
+		go func() {
+			done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, scenes, nil, nil, nil, nil, requests, replies)
+		}()
+		// The unbuffered handoff proves Run owns the request before any scene.
+		select {
+		case requests <- ports.CaptureRequest{ID: 9, Dst: ports.SHMBuffer{File: f}}:
+		case <-time.After(2 * time.Second):
+			t.Fatal("output did not accept capture")
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("output did not stop after render failure")
-	}
-	select {
-	case result := <-replies:
-		if result.ID != 9 || result.Err == nil {
-			t.Fatalf("capture result %+v", result)
+		scenes <- ports.Scene{Seq: 1, Scale: 1}
+		select {
+		case err := <-done:
+			if !errors.Is(err, boom) {
+				t.Fatalf("run error %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("output did not stop after render failure")
 		}
-	default:
-		t.Fatal("render failure lost capture completion")
-	}
-	if _, err := f.Stat(); err == nil {
-		t.Fatal("render failure leaked capture descriptor")
-	}
+		select {
+		case result := <-replies:
+			if result.ID != 9 || result.Err == nil {
+				t.Fatalf("capture result %+v", result)
+			}
+		default:
+			t.Fatal("render failure lost capture completion")
+		}
+		if _, err := f.Stat(); err == nil {
+			t.Fatal("render failure leaked capture descriptor")
+		}
+	})
 }
 
 // A request must render even when the output already has an unchanged scene.
 func TestCaptureForcesDRMComposition(t *testing.T) {
-	o, k, commits, commitMu := testOutputMu(t)
-	o.cursor, o.tearing = nil, false
-	flips := make(chan flipEvent, 2)
-	o.flipped = flips
-	r := &portsmocks.MockRenderer{}
-	makeBuf := func() ports.DMABuf {
-		f, w, _ := os.Pipe()
-		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
-	}
-	r.EXPECT().SetHDR(float64(0)).Return().Maybe() // SDR output
-	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{makeBuf(), makeBuf()}, nil).Once()
-	r.EXPECT().UseTarget(mock.Anything).Return()
-	rendered := make(chan ports.Scene, 3)
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
-		rendered <- s
-		return nil, nil
-	})
-	frame := portsmocks.NewMockCaptureFrame(t)
-	frame.EXPECT().Done().Return(nil)
-	frame.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.MatchedBy(func(p []byte) bool { return len(p) >= 16 }), 8).RunAndReturn(func(_ image.Rectangle, dst []byte, _ int) error { copy(dst, []byte{3, 4, 5, 255}); return nil }).Once()
-	r.EXPECT().BeginCapture().Return(frame, nil).Once()
-	r.EXPECT().EndCapture(frame).Return().Once()
-	r.EXPECT().Close().Return().Once()
-	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
-	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
-	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
-	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
-	scenes := make(chan ports.Scene, 1)
-	requests := make(chan ports.CaptureRequest, 1)
-	replies := make(chan ports.CaptureDone, 1)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, scenes, nil, nil, nil, discardSink(t), requests, replies)
-	}()
-	scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Background: "#000000"}
-	select {
-	case <-rendered:
-	case <-time.After(2 * time.Second):
-		t.Fatal("no initial render")
-	}
-	waitFor(t, func() bool { commitMu.Lock(); defer commitMu.Unlock(); return len(*commits) > 0 })
-	commitMu.Lock()
-	last := (*commits)[len(*commits)-1]
-	commitMu.Unlock()
-	flips <- flipEvent{crtc: tCrtc, user: last.user, when: time.Second, seq: 1}
-	f, err := os.CreateTemp(t.TempDir(), "capture")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Truncate(16); err != nil {
-		t.Fatal(err)
-	}
-	requests <- ports.CaptureRequest{ID: 4, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Dst: ports.SHMBuffer{File: f}}
-	select {
-	case result := <-replies:
-		if result.Err != nil {
-			t.Fatal(result.Err)
+	synctest.Test(t, func(t *testing.T) {
+		o, k, commits, commitMu := testOutputMu(t)
+		o.cursor, o.tearing = nil, false
+		flips := make(chan flipEvent, 2)
+		o.flipped = flips
+		r := &portsmocks.MockRenderer{}
+		makeBuf := func() ports.DMABuf {
+			f, w, _ := os.Pipe()
+			w.Close()
+			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("capture not replied")
-	}
-	select {
-	case <-rendered:
-	case <-time.After(2 * time.Second):
-		t.Fatal("capture did not render")
-	}
-	frame.Calls = nil // Testify must not inspect unmapped slice during expectation cleanup.
-	if _, err := f.Stat(); err == nil {
-		t.Fatal("fd not closed")
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
+		r.EXPECT().SetHDR(float64(0)).Return().Maybe() // SDR output
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{makeBuf(), makeBuf()}, nil).Once()
+		r.EXPECT().UseTarget(mock.Anything).Return()
+		rendered := make(chan ports.Scene, 3)
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+			rendered <- s
+			return nil, nil
+		})
+		frame := portsmocks.NewMockCaptureFrame(t)
+		frame.EXPECT().Done().Return(nil)
+		frame.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.MatchedBy(func(p []byte) bool { return len(p) >= 16 }), 8).RunAndReturn(func(_ image.Rectangle, dst []byte, _ int) error { copy(dst, []byte{3, 4, 5, 255}); return nil }).Once()
+		r.EXPECT().BeginCapture().Return(frame, nil).Once()
+		r.EXPECT().EndCapture(frame).Return().Once()
+		r.EXPECT().Close().Return().Once()
+		k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+		k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+		k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+		scenes := make(chan ports.Scene, 1)
+		requests := make(chan ports.CaptureRequest, 1)
+		replies := make(chan ports.CaptureDone, 1)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, scenes, nil, nil, nil, discardSink(t), requests, replies)
+		}()
+		scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Background: "#000000"}
+		select {
+		case <-rendered:
+		case <-time.After(2 * time.Second):
+			t.Fatal("no initial render")
+		}
+		waitFor(t, func() bool { commitMu.Lock(); defer commitMu.Unlock(); return len(*commits) > 0 })
+		commitMu.Lock()
+		last := (*commits)[len(*commits)-1]
+		commitMu.Unlock()
+		flips <- flipEvent{crtc: tCrtc, user: last.user, when: time.Second, seq: 1}
+		f, err := os.CreateTemp(t.TempDir(), "capture")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Truncate(16); err != nil {
+			t.Fatal(err)
+		}
+		requests <- ports.CaptureRequest{ID: 4, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Dst: ports.SHMBuffer{File: f}}
+		select {
+		case result := <-replies:
+			if result.Err != nil {
+				t.Fatal(result.Err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("capture not replied")
+		}
+		select {
+		case <-rendered:
+		case <-time.After(2 * time.Second):
+			t.Fatal("capture did not render")
+		}
+		frame.Calls = nil // Testify must not inspect unmapped slice during expectation cleanup.
+		if _, err := f.Stat(); err == nil {
+			t.Fatal("fd not closed")
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
 }
 
 func TestRunPanicReportsReadinessError(t *testing.T) {
@@ -1022,69 +1029,75 @@ func startStampRun(t *testing.T) *stampRun {
 // Run: a frame wanted while the previous one is in flight is stamped when
 // it becomes dirty, and the commit that follows takes the stamp.
 func TestRunStampsWhenFrameWasWanted(t *testing.T) {
-	sr := startStampRun(t)
-	scene := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 10, H: 10}}}}
-	sr.scenes <- scene
-	waitFor(t, func() bool { return sr.frameCommit() == 1 })
-	// Frame 1 is in flight: a new scene arrives and waits.
-	last := sr.lastCommit()
-	scene.Seq = 2
-	before := monotonic()
-	sr.scenes <- scene
-	sr.contents.send(ports.SurfaceContent{ID: 1, Seq: 1, SHM: &ports.SHMBuffer{}}) // Run went round its loop
-	flipSent := monotonic()
-	sr.flips <- flipEvent{crtc: tCrtc, user: last.user, when: time.Second, seq: 1}
-	waitFor(t, func() bool { return sr.frameCommit() == 2 })
-	sr.stop()
-	if sr.o.wantedAt != 0 {
-		t.Fatalf("stamp left after the commit: %s", sr.o.wantedAt)
-	}
-	f := sr.o.frame.pendingFrame
-	if !f.frame || f.wantedAt < before || f.wantedAt >= flipSent {
-		t.Fatalf("second frame (%v) wanted at %s, scene sent at %s, flip sent at %s", f.frame, f.wantedAt, before, flipSent)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		sr := startStampRun(t)
+		scene := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 10, H: 10}}}}
+		sr.scenes <- scene
+		waitFor(t, func() bool { return sr.frameCommit() == 1 })
+		// Frame 1 is in flight: a new scene arrives and waits.
+		last := sr.lastCommit()
+		scene.Seq = 2
+		before := monotonic()
+		sr.scenes <- scene
+		sr.contents.send(ports.SurfaceContent{ID: 1, Seq: 1, SHM: &ports.SHMBuffer{}}) // Run went round its loop
+		flipSent := monotonic()
+		sr.flips <- flipEvent{crtc: tCrtc, user: last.user, when: time.Second, seq: 1}
+		waitFor(t, func() bool { return sr.frameCommit() == 2 })
+		sr.stop()
+		if sr.o.wantedAt != 0 {
+			t.Fatalf("stamp left after the commit: %s", sr.o.wantedAt)
+		}
+		f := sr.o.frame.pendingFrame
+		if !f.frame || f.wantedAt < before || f.wantedAt >= flipSent {
+			t.Fatalf("second frame (%v) wanted at %s, scene sent at %s, flip sent at %s", f.frame, f.wantedAt, before, flipSent)
+		}
+	})
 }
 
 // A change of security state drops the scene, and with it the stamp of
 // the frame it wanted.
 func TestRunSecurityResetClearsWantedAt(t *testing.T) {
-	sr := startStampRun(t)
-	scene := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 10, H: 10}}}}
-	sr.scenes <- scene
-	waitFor(t, func() bool { return sr.frameCommit() == 1 })
-	scene.Seq = 2
-	sr.scenes <- scene
-	sr.contents.send(ports.SurfaceContent{ID: 1, Seq: 1, SHM: &ports.SHMBuffer{}}) // stamped by now
-	// A new security generation, not protected.
-	sr.state.Store(2)
-	sr.wake <- ports.SecurityState{}
-	sr.contents.send(ports.SurfaceContent{ID: 1, Seq: 2, SHM: &ports.SHMBuffer{}}) // Run went round and reset
-	sr.stop()
-	if sr.o.wantedAt != 0 {
-		t.Fatalf("stamp kept across the security reset: %s", sr.o.wantedAt)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		sr := startStampRun(t)
+		scene := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 10, H: 10}}}}
+		sr.scenes <- scene
+		waitFor(t, func() bool { return sr.frameCommit() == 1 })
+		scene.Seq = 2
+		sr.scenes <- scene
+		sr.contents.send(ports.SurfaceContent{ID: 1, Seq: 1, SHM: &ports.SHMBuffer{}}) // stamped by now
+		// A new security generation, not protected.
+		sr.state.Store(2)
+		sr.wake <- ports.SecurityState{}
+		sr.contents.send(ports.SurfaceContent{ID: 1, Seq: 2, SHM: &ports.SHMBuffer{}}) // Run went round and reset
+		sr.stop()
+		if sr.o.wantedAt != 0 {
+			t.Fatalf("stamp kept across the security reset: %s", sr.o.wantedAt)
+		}
+	})
 }
 
 // A scene whose Seq the output already holds draws nothing new: no frame,
 // until a scene with a new Seq arrives.
 func TestOutputSameSeqRendersOnce(t *testing.T) {
-	sr := startStampRun(t)
-	scene := ports.Scene{Seq: 5, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 10, H: 10}}}}
-	sr.scenes <- scene
-	waitFor(t, func() bool { return sr.frameCommit() == 1 })
-	sr.flips <- flipEvent{crtc: tCrtc, user: sr.lastCommit().user, when: time.Second, seq: 1}
-	sr.scenes <- scene
-	// Unshown content only sends Run round its loop: the flip and the held
-	// scene are handled by the time the second one is taken.
-	sr.contents.send(ports.SurfaceContent{ID: 99, Seq: 1, SHM: &ports.SHMBuffer{}})
-	sr.contents.send(ports.SurfaceContent{ID: 99, Seq: 2, SHM: &ports.SHMBuffer{}})
-	if n := sr.frameCommit(); n != 1 {
-		t.Fatalf("%d frames after a scene with the held Seq", n)
-	}
-	scene.Seq = 6
-	sr.scenes <- scene
-	waitFor(t, func() bool { return sr.frameCommit() == 2 })
-	sr.stop()
+	synctest.Test(t, func(t *testing.T) {
+		sr := startStampRun(t)
+		scene := ports.Scene{Seq: 5, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 10, H: 10}}}}
+		sr.scenes <- scene
+		waitFor(t, func() bool { return sr.frameCommit() == 1 })
+		sr.flips <- flipEvent{crtc: tCrtc, user: sr.lastCommit().user, when: time.Second, seq: 1}
+		sr.scenes <- scene
+		// Unshown content only sends Run round its loop: the flip and the held
+		// scene are handled by the time the second one is taken.
+		sr.contents.send(ports.SurfaceContent{ID: 99, Seq: 1, SHM: &ports.SHMBuffer{}})
+		sr.contents.send(ports.SurfaceContent{ID: 99, Seq: 2, SHM: &ports.SHMBuffer{}})
+		if n := sr.frameCommit(); n != 1 {
+			t.Fatalf("%d frames after a scene with the held Seq", n)
+		}
+		scene.Seq = 6
+		sr.scenes <- scene
+		waitFor(t, func() bool { return sr.frameCommit() == 2 })
+		sr.stop()
+	})
 }
 
 // Run: the empty content of a window that unmapped while the scene still
@@ -1092,83 +1105,96 @@ func TestOutputSameSeqRendersOnce(t *testing.T) {
 // without its Acquire fence; a scene that no longer lists the window drops
 // it.
 func TestRunKeepsLastContentOfLeavingWindow(t *testing.T) {
-	o, k, _ := testOutput(t)
-	o.cursor, o.tearing = nil, false
-	r := portsmocks.NewMockRenderer(t)
-	pipeBuf := func() ports.DMABuf {
-		f, w, _ := os.Pipe()
-		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
-	}
-	var mu sync.Mutex
-	var last map[ports.WindowID]ports.SurfaceContent
-	var lastSeq uint64
-	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
-	r.EXPECT().UseTarget(mock.Anything).Return()
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, c map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
-		mu.Lock()
-		last, lastSeq = maps.Clone(c), s.Seq
-		mu.Unlock()
-		f, w, _ := os.Pipe()
-		_, _ = w.Write([]byte{1})
-		w.Close()
-		return f, nil
-	})
-	r.EXPECT().Close().Return().Once()
-	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
-	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
-	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
-	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
-	// drawn waits for a frame of scene seq and returns what it drew for
-	// window 1.
-	drawn := func(seq uint64, cond func(ports.SurfaceContent, bool) bool) (ports.SurfaceContent, bool) {
-		t.Helper()
-		var c ports.SurfaceContent
-		var ok bool
-		waitFor(t, func() bool {
+	synctest.Test(t, func(t *testing.T) {
+		o, k, commits := testOutput(t)
+		o.cursor, o.tearing = nil, false
+		flips := make(chan flipEvent)
+		o.flipped = flips
+		flip := func() {
+			synctest.Wait()
+			flips <- eventOf((*commits)[len(*commits)-1])
+			synctest.Wait()
+		}
+		r := portsmocks.NewMockRenderer(t)
+		pipeBuf := func() ports.DMABuf {
+			f, w, _ := os.Pipe()
+			w.Close()
+			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		}
+		var mu sync.Mutex
+		var last map[ports.WindowID]ports.SurfaceContent
+		var lastSeq uint64
+		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
+		r.EXPECT().UseTarget(mock.Anything).Return()
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, c map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
 			mu.Lock()
-			defer mu.Unlock()
-			c, ok = last[1]
-			return lastSeq == seq && cond(c, ok)
+			last, lastSeq = maps.Clone(c), s.Seq
+			mu.Unlock()
+			f, w, _ := os.Pipe()
+			_, _ = w.Write([]byte{1})
+			w.Close()
+			return f, nil
 		})
-		return c, ok
-	}
-	scenes := make(chan ports.Scene, 1)
-	contents := newContentFeed(t, 1)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, contents.in(), contents.ret, nil, discardSink(t), nil, nil)
-	}()
-	acq, acqW, _ := os.Pipe()
-	defer acq.Close()
-	defer acqW.Close()
-	win := ports.SceneWindow{ID: 1, Rect: ports.Rect{W: 10, H: 10}}
-	scenes <- ports.Scene{Seq: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{win}}
-	full := ports.SurfaceContent{ID: 1, Seq: 1, Width: 10, Height: 10, DMABuf: &ports.DMABuf{ID: 5, Planes: []ports.DMABufPlane{{}}}, Acquire: acq}
-	contents.send(full)
-	drawn(1, func(c ports.SurfaceContent, ok bool) bool { return ok && c.Acquire == acq })
-	// The window unmaps: its empty content arrives before the scene that
-	// draws it leaving (fading). The last content stays, fence dropped.
-	contents.send(ports.SurfaceContent{ID: 1, Seq: 2})
-	kept, _ := drawn(1, func(c ports.SurfaceContent, ok bool) bool { return !ok || c.Acquire == nil })
-	if kept.DMABuf != full.DMABuf || kept.Seq != 1 {
-		t.Fatalf("frame after the empty content drew %+v, want the last content", kept)
-	}
-	// A leaving frame: still drawn from the kept content.
-	win.Fade = 0.5
-	scenes <- ports.Scene{Seq: 2, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{win}}
-	if c, ok := drawn(2, func(ports.SurfaceContent, bool) bool { return true }); !ok || c.DMABuf != full.DMABuf {
-		t.Fatalf("the leaving frame drew %+v (ok %t), want the kept content", c, ok)
-	}
-	// The scene no longer lists it: gone.
-	scenes <- ports.Scene{Seq: 3, OutputWidth: 200, OutputHeight: 100}
-	if c, ok := drawn(3, func(ports.SurfaceContent, bool) bool { return true }); ok {
-		t.Fatalf("the kept content %+v survived a scene without the window", c)
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
+		r.EXPECT().Close().Return().Once()
+		k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+		k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+		k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+		// drawn waits for a frame of scene seq and returns what it drew for
+		// window 1.
+		drawn := func(seq uint64, cond func(ports.SurfaceContent, bool) bool) (ports.SurfaceContent, bool) {
+			t.Helper()
+			var c ports.SurfaceContent
+			var ok bool
+			waitFor(t, func() bool {
+				mu.Lock()
+				defer mu.Unlock()
+				c, ok = last[1]
+				return lastSeq == seq && cond(c, ok)
+			})
+			return c, ok
+		}
+		scenes := make(chan ports.Scene, 1)
+		contents := newContentFeed(t, 1)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, contents.in(), contents.ret, nil, discardSink(t), nil, nil)
+		}()
+		acq, acqW, _ := os.Pipe()
+		defer acq.Close()
+		defer acqW.Close()
+		win := ports.SceneWindow{ID: 1, Rect: ports.Rect{W: 10, H: 10}}
+		full := ports.SurfaceContent{ID: 1, Seq: 1, Width: 10, Height: 10, DMABuf: &ports.DMABuf{ID: 5, Planes: []ports.DMABufPlane{{}}}, Acquire: acq}
+		contents.send(full)
+		synctest.Wait() // apply content before the first scene can commit
+		scenes <- ports.Scene{Seq: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{win}}
+		drawn(1, func(c ports.SurfaceContent, ok bool) bool { return ok && c.Acquire == acq })
+		flip()
+		// The window unmaps: its empty content arrives before the scene that
+		// draws it leaving (fading). The last content stays, fence dropped.
+		contents.send(ports.SurfaceContent{ID: 1, Seq: 2})
+		kept, _ := drawn(1, func(c ports.SurfaceContent, ok bool) bool { return !ok || c.Acquire == nil })
+		if kept.DMABuf != full.DMABuf || kept.Seq != 1 {
+			t.Fatalf("frame after the empty content drew %+v, want the last content", kept)
+		}
+		flip()
+		// A leaving frame: still drawn from the kept content.
+		win.Fade = 0.5
+		scenes <- ports.Scene{Seq: 2, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{win}}
+		if c, ok := drawn(2, func(ports.SurfaceContent, bool) bool { return true }); !ok || c.DMABuf != full.DMABuf {
+			t.Fatalf("the leaving frame drew %+v (ok %t), want the kept content", c, ok)
+		}
+		flip()
+		// The scene no longer lists it: gone.
+		scenes <- ports.Scene{Seq: 3, OutputWidth: 200, OutputHeight: 100}
+		if c, ok := drawn(3, func(ports.SurfaceContent, bool) bool { return true }); ok {
+			t.Fatalf("the kept content %+v survived a scene without the window", c)
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
 }

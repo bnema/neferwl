@@ -376,58 +376,56 @@ func TestShowImagesSkipsSinglePlaneWhenDriverImagesHadOnePlane(t *testing.T) {
 // Enabling an output whose images were not made yet (started switched
 // away) tests them and modesets once.
 func TestEnableAfterStartAwayModesetsOnce(t *testing.T) {
-	synctest.Test(t, enableAfterStartAwayModesetsOnce)
-}
-
-func enableAfterStartAwayModesetsOnce(t *testing.T) {
-	o, k, commits, commitMu := testOutputMu(t)
-	o.cursor, o.tearing, o.fbs = nil, false, [2]uint32{}
-	r := portsmocks.NewMockRenderer(t)
-	buf := func() ports.DMABuf {
-		f, w, _ := os.Pipe()
-		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
-	}
-	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
-	r.EXPECT().UseTarget(mock.Anything).Return()
-	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
-	r.EXPECT().Close().Return().Once()
-	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
-	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
-	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
-	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
-	active := make(chan bool, 1)
-	active <- false
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, nil, discardSink(t), nil, nil)
-	}()
-	count := func(flags uint32) int {
-		commitMu.Lock()
-		defer commitMu.Unlock()
-		n := 0
-		for _, c := range *commits {
-			if c.flags == flags {
-				n++
-			}
+	synctest.Test(t, func(t *testing.T) {
+		o, k, commits, commitMu := testOutputMu(t)
+		o.cursor, o.tearing, o.fbs = nil, false, [2]uint32{}
+		r := portsmocks.NewMockRenderer(t)
+		buf := func() ports.DMABuf {
+			f, w, _ := os.Pipe()
+			w.Close()
+			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 		}
-		return n
-	}
-	synctest.Wait()
-	if n := count(atomicAllowModes); n != 0 {
-		t.Fatalf("%d modesets while away", n)
-	}
-	active <- true
-	waitFor(t, func() bool { return count(atomicAllowModes) == 1 })
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-	if n := count(atomicTestOnly | atomicAllowModes); n != 1 {
-		t.Fatalf("%d test modesets", n)
-	}
+		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+		r.EXPECT().UseTarget(mock.Anything).Return()
+		r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+		r.EXPECT().Close().Return().Once()
+		k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+		k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+		k.EXPECT().destroyBlob(mock.Anything).Return(nil)
+		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+		active := make(chan bool, 1)
+		active <- false
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, nil, discardSink(t), nil, nil)
+		}()
+		count := func(flags uint32) int {
+			commitMu.Lock()
+			defer commitMu.Unlock()
+			n := 0
+			for _, c := range *commits {
+				if c.flags == flags {
+					n++
+				}
+			}
+			return n
+		}
+		synctest.Wait()
+		if n := count(atomicAllowModes); n != 0 {
+			t.Fatalf("%d modesets while away", n)
+		}
+		active <- true
+		waitFor(t, func() bool { return count(atomicAllowModes) == 1 })
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if n := count(atomicTestOnly | atomicAllowModes); n != 1 {
+			t.Fatalf("%d test modesets", n)
+		}
+	})
 }
 
 // Close without a mode to restore turns the CRTC off.
@@ -477,172 +475,172 @@ func TestCursorOffSkipsLoads(t *testing.T) {
 // Content read while only a cursor commit is in flight is reported when
 // that commit's event arrives, not held until a later frame.
 func TestRunReportsSeenAfterCursorCommit(t *testing.T) {
-	synctest.Test(t, runReportsSeenAfterCursorCommit)
-}
-
-func runReportsSeenAfterCursorCommit(t *testing.T) {
-	o, k, commits, commitMu := testOutputMu(t)
-	o.tearing, o.cursor.fbs = false, [2]uint32{}
-	flips := make(chan flipEvent, 1)
-	o.flipped = flips
-	r := portsmocks.NewMockRenderer(t)
-	buf := func() ports.DMABuf {
-		f, w, _ := os.Pipe()
-		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
-	}
-	r.EXPECT().CursorBuffers(64).Return([2]ports.DMABuf{buf(), buf()}, nil).Once()
-	r.EXPECT().WriteCursor(mock.Anything, mock.Anything, 1, 1).Return(nil)
-	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
-	r.EXPECT().UseTarget(mock.Anything).Return()
-	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
-	r.EXPECT().Close().Return().Once()
-	k.EXPECT().createDumb(64, 64).Return(dumbBuffer{}, unix.ENOSYS).Once() // renderer images
-	k.EXPECT().addFB(mock.Anything, uint32(fourccARGB)).Return(90, nil).Once()
-	k.EXPECT().addFB(mock.Anything, uint32(fourccARGB)).Return(91, nil).Once()
-	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
-	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
-	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
-	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
-	load := func(ports.CursorChange, float64, ports.BufferTransform, int) (ports.CursorImage, error) {
-		return ports.CursorImage{Pixels: []byte{1, 2, 3, 4}, W: 1, H: 1}, nil
-	}
-	last := func(kind uint64) (commitRec, bool) {
-		commitMu.Lock()
-		defer commitMu.Unlock()
-		for i := len(*commits) - 1; i >= 0; i-- {
-			if c := (*commits)[i]; c.user&3 == kind {
-				return c, true
+	synctest.Test(t, func(t *testing.T) {
+		o, k, commits, commitMu := testOutputMu(t)
+		o.tearing, o.cursor.fbs = false, [2]uint32{}
+		flips := make(chan flipEvent, 1)
+		o.flipped = flips
+		r := portsmocks.NewMockRenderer(t)
+		buf := func() ports.DMABuf {
+			f, w, _ := os.Pipe()
+			w.Close()
+			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		}
+		r.EXPECT().CursorBuffers(64).Return([2]ports.DMABuf{buf(), buf()}, nil).Once()
+		r.EXPECT().WriteCursor(mock.Anything, mock.Anything, 1, 1).Return(nil)
+		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+		r.EXPECT().UseTarget(mock.Anything).Return()
+		r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+		r.EXPECT().Close().Return().Once()
+		k.EXPECT().createDumb(64, 64).Return(dumbBuffer{}, unix.ENOSYS).Once() // renderer images
+		k.EXPECT().addFB(mock.Anything, uint32(fourccARGB)).Return(90, nil).Once()
+		k.EXPECT().addFB(mock.Anything, uint32(fourccARGB)).Return(91, nil).Once()
+		k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+		k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+		k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+		load := func(ports.CursorChange, float64, ports.BufferTransform, int) (ports.CursorImage, error) {
+			return ports.CursorImage{Pixels: []byte{1, 2, 3, 4}, W: 1, H: 1}, nil
+		}
+		last := func(kind uint64) (commitRec, bool) {
+			commitMu.Lock()
+			defer commitMu.Unlock()
+			for i := len(*commits) - 1; i >= 0; i-- {
+				if c := (*commits)[i]; c.user&3 == kind {
+					return c, true
+				}
 			}
+			return commitRec{}, false
 		}
-		return commitRec{}, false
-	}
-	scenes := make(chan ports.Scene, 1)
-	contents := newContentFeed(t, 1)
-	sink, presented := presentedSink(t, 8)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, load, make(chan bool), scenes, contents.in(), contents.ret, nil, sink, nil, nil)
-	}()
-	scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1}
-	var frame commitRec
-	waitFor(t, func() bool { var ok bool; frame, ok = last(userFrame); return ok })
-	flips <- eventOf(frame)
-	<-presented // the frame's flip
-	o.cursor.Move(3, 3)
-	var cur commitRec
-	waitFor(t, func() bool { var ok bool; cur, ok = last(userState); return ok })
-	// A window this output does not show commits while the cursor flies.
-	contents.send(ports.SurfaceContent{ID: 7, Seq: 2, SHM: &ports.SHMBuffer{}})
-	synctest.Wait()
-	flips <- eventOf(cur)
-	select {
-	case p := <-presented:
-		if p.Seen[7] != 2 {
-			t.Fatalf("report %+v", p)
+		scenes := make(chan ports.Scene, 1)
+		contents := newContentFeed(t, 1)
+		sink, presented := presentedSink(t, 8)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, load, make(chan bool), scenes, contents.in(), contents.ret, nil, sink, nil, nil)
+		}()
+		scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1}
+		var frame commitRec
+		waitFor(t, func() bool { var ok bool; frame, ok = last(userFrame); return ok })
+		flips <- eventOf(frame)
+		<-presented // the frame's flip
+		o.cursor.Move(3, 3)
+		var cur commitRec
+		waitFor(t, func() bool { var ok bool; cur, ok = last(userState); return ok })
+		// A window this output does not show commits while the cursor flies.
+		contents.send(ports.SurfaceContent{ID: 7, Seq: 2, SHM: &ports.SHMBuffer{}})
+		synctest.Wait()
+		flips <- eventOf(cur)
+		select {
+		case p := <-presented:
+			if p.Seen[7] != 2 {
+				t.Fatalf("report %+v", p)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("Seen not reported after the cursor commit")
 		}
-	case <-time.After(time.Second):
-		t.Fatal("Seen not reported after the cursor commit")
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
 }
 
 // Frame fences are closed on every path: flipped, EBUSY (re-rendered
 // after the event) and lost master (re-rendered after the modeset). The
 // fd count is unchanged after many frames.
 func TestRunClosesFrameFences(t *testing.T) {
-	fds := func() int {
-		ents, err := os.ReadDir("/proc/self/fd")
-		if err != nil {
-			t.Skip(err)
+	synctest.Test(t, func(t *testing.T) {
+		fds := func() int {
+			ents, err := os.ReadDir("/proc/self/fd")
+			if err != nil {
+				t.Skip(err)
+			}
+			return len(ents)
 		}
-		return len(ents)
-	}
-	const rounds = 30
-	// Commit results: modeset test and modeset, then per round
-	// EBUSY + flip, or lost master + modeset + flip, or a plain flip.
-	errs := []error{nil, nil}
-	for i := range rounds {
-		switch i % 3 {
-		case 0:
-			errs = append(errs, unix.EBUSY, nil)
-		case 1:
-			errs = append(errs, unix.EACCES, nil, nil)
-		default:
-			errs = append(errs, nil)
+		const rounds = 30
+		// Commit results: modeset test and modeset, then per round
+		// EBUSY + flip, or lost master + modeset + flip, or a plain flip.
+		errs := []error{nil, nil}
+		for i := range rounds {
+			switch i % 3 {
+			case 0:
+				errs = append(errs, unix.EBUSY, nil)
+			case 1:
+				errs = append(errs, unix.EACCES, nil, nil)
+			default:
+				errs = append(errs, nil)
+			}
 		}
-	}
-	o, k, commits, commitMu := testOutputMu(t, errs...)
-	o.cursor, o.tearing, o.fbs = nil, false, [2]uint32{}
-	flips := make(chan flipEvent, 1)
-	o.flipped = flips
-	r := portsmocks.NewMockRenderer(t)
-	buf := func() ports.DMABuf {
-		f, w, _ := os.Pipe()
-		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
-	}
-	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
-	r.EXPECT().UseTarget(mock.Anything).Return()
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
-		f, w, _ := os.Pipe()
-		_, _ = w.Write([]byte{1})
-		w.Close()
-		return f, nil
+		o, k, commits, commitMu := testOutputMu(t, errs...)
+		o.cursor, o.tearing, o.fbs = nil, false, [2]uint32{}
+		flips := make(chan flipEvent, 1)
+		o.flipped = flips
+		r := portsmocks.NewMockRenderer(t)
+		buf := func() ports.DMABuf {
+			f, w, _ := os.Pipe()
+			w.Close()
+			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		}
+		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+		r.EXPECT().UseTarget(mock.Anything).Return()
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+			f, w, _ := os.Pipe()
+			_, _ = w.Write([]byte{1})
+			w.Close()
+			return f, nil
+		})
+		r.EXPECT().Close().Return().Once()
+		k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+		k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+		k.EXPECT().destroyBlob(mock.Anything).Return(nil)
+		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+		before := fds()
+		active := make(chan bool, 1)
+		scenes := make(chan ports.Scene, 1)
+		sink, _ := presentedSink(t, 4*rounds)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, scenes, nil, nil, nil, sink, nil, nil)
+		}()
+		count := func() int {
+			commitMu.Lock()
+			defer commitMu.Unlock()
+			return len(*commits)
+		}
+		last := func() commitRec {
+			commitMu.Lock()
+			defer commitMu.Unlock()
+			return (*commits)[len(*commits)-1]
+		}
+		waitFor(t, func() bool { return count() == 2 })
+		for i := range rounds {
+			n := count()
+			scenes <- ports.Scene{Seq: uint64(i)}
+			switch i % 3 {
+			case 0:
+				waitFor(t, func() bool { return count() == n+1 })
+				flips <- flipEvent{crtc: tCrtc} // ends the EBUSY wait
+				waitFor(t, func() bool { return count() == n+2 })
+			case 1:
+				waitFor(t, func() bool { return count() == n+1 })
+				active <- true
+				waitFor(t, func() bool { return count() == n+3 })
+			default:
+				waitFor(t, func() bool { return count() == n+1 })
+			}
+			flips <- eventOf(last())
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if after := fds(); after > before {
+			t.Fatalf("fds %d -> %d", before, after)
+		}
 	})
-	r.EXPECT().Close().Return().Once()
-	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
-	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
-	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
-	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
-	before := fds()
-	active := make(chan bool, 1)
-	scenes := make(chan ports.Scene, 1)
-	sink, _ := presentedSink(t, 4*rounds)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, scenes, nil, nil, nil, sink, nil, nil)
-	}()
-	count := func() int {
-		commitMu.Lock()
-		defer commitMu.Unlock()
-		return len(*commits)
-	}
-	last := func() commitRec {
-		commitMu.Lock()
-		defer commitMu.Unlock()
-		return (*commits)[len(*commits)-1]
-	}
-	waitFor(t, func() bool { return count() == 2 })
-	for i := range rounds {
-		n := count()
-		scenes <- ports.Scene{Seq: uint64(i)}
-		switch i % 3 {
-		case 0:
-			waitFor(t, func() bool { return count() == n+1 })
-			flips <- flipEvent{crtc: tCrtc} // ends the EBUSY wait
-			waitFor(t, func() bool { return count() == n+2 })
-		case 1:
-			waitFor(t, func() bool { return count() == n+1 })
-			active <- true
-			waitFor(t, func() bool { return count() == n+3 })
-		default:
-			waitFor(t, func() bool { return count() == n+1 })
-		}
-		flips <- eventOf(last())
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-	if after := fds(); after > before {
-		t.Fatalf("fds %d -> %d", before, after)
-	}
 }
