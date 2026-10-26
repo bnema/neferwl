@@ -40,7 +40,7 @@ func dispatchLayoutWith(t *testing.T, cols int, tr dispatchTraits) (*Workspace, 
 	l.EXPECT().pinsFullscreen().Return(false).Maybe()
 	l.EXPECT().isolate(mock.Anything, mock.Anything).Return(false).Maybe()
 	l.EXPECT().laneRow(mock.Anything).Return(tr.laneRow).Maybe()
-	w := &Workspace{lay: l, MaxColumns: 3, Usable: Rect{W: 900, H: 600}, Output: Rect{W: 900, H: 600}}
+	w := &Workspace{lanes: lanes{lay: l, MaxColumns: 3, Usable: Rect{W: 900, H: 600}, Output: Rect{W: 900, H: 600}}}
 	for i := 0; i < cols; i++ {
 		w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
 	}

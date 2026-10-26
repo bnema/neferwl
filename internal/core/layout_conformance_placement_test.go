@@ -15,7 +15,7 @@ func TestLayoutPlacementConformance(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				for k := 1; k <= 4; k++ {
 					for _, n := range []int{0, 1, k, k + 1, 2*k + 3} {
-						w := Workspace{Overflow: mode, lay: l, MaxColumns: k, Usable: Rect{W: 1000, H: 800}}
+						w := Workspace{lanes: lanes{Overflow: mode, lay: l, MaxColumns: k, Usable: Rect{W: 1000, H: 800}}}
 						for i := 0; i < n; i++ {
 							w.AddWindow(WindowID(i + 1))
 						}
@@ -77,8 +77,8 @@ func TestColumnCarryTravelsThroughStates(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		src := newMocklayoutState(t)
 		dst := newMocklayoutState(t)
-		from := Workspace{lstate: src, Columns: []Column{{Windows: []WindowID{1}, key: 1}}}
-		to := Workspace{lstate: dst}
+		from := Workspace{lanes: lanes{lstate: src, Columns: []Column{{Windows: []WindowID{1}, key: 1}}}}
+		to := Workspace{lanes: lanes{lstate: dst}}
 		src.EXPECT().removed(0, mock.Anything).Return(42).Once()
 		col, ok := from.takeColumn()
 		if !ok || col.carry != 42 {
@@ -107,7 +107,7 @@ func TestCascadeInsertKinds(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				w := Workspace{Overflow: OverflowCascade, MaxColumns: 3}
+				w := Workspace{lanes: lanes{Overflow: OverflowCascade, MaxColumns: 3}}
 				for i := WindowID(1); i <= 3; i++ {
 					w.Columns = append(w.Columns, Column{Windows: []WindowID{i}})
 				}
@@ -127,7 +127,7 @@ func TestCascadeInsertKinds(t *testing.T) {
 		})
 	}
 	// Inserting before a band start hands the start to the new column.
-	w := Workspace{Overflow: OverflowCascade, MaxColumns: 3}
+	w := Workspace{lanes: lanes{Overflow: OverflowCascade, MaxColumns: 3}}
 	for i := WindowID(1); i <= 3; i++ {
 		w.Columns = append(w.Columns, Column{Windows: []WindowID{i}})
 	}

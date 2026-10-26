@@ -80,8 +80,8 @@ func extensionLayout(name Overflow, st layoutState) *mocklayout {
 }
 
 func centeredWorkspace(n int) *Workspace {
-	w := &Workspace{Overflow: overflowCentered, lay: extensionLayout(overflowCentered, nil), MaxColumns: 4,
-		Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}, Output: Rect{W: 1200, H: 900}, Gaps: 8}
+	w := &Workspace{lanes: lanes{Overflow: overflowCentered, lay: extensionLayout(overflowCentered, nil), MaxColumns: 4,
+		Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}, Output: Rect{W: 1200, H: 900}, Gaps: 8}}
 	for i := 0; i < n; i++ {
 		w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}, Cells: 1})
 	}
@@ -136,8 +136,8 @@ func TestCenteredLayoutInheritsNeutralBehavior(t *testing.T) {
 
 func TestColumnWidthOverrideIsHonored(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		w := &Workspace{Overflow: overflowLadder, lay: extensionLayout(overflowLadder, nil), MaxColumns: 4,
-			Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}, Output: Rect{W: 1200, H: 900}, Gaps: 8}
+		w := &Workspace{lanes: lanes{Overflow: overflowLadder, lay: extensionLayout(overflowLadder, nil), MaxColumns: 4,
+			Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}, Output: Rect{W: 1200, H: 900}, Gaps: 8}}
 		for i := 0; i < 4; i++ {
 			w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
 		}
@@ -170,8 +170,8 @@ func TestColumnWidthOverrideIsHonored(t *testing.T) {
 type trailCarry uint64
 
 func trailWorkspace(n int, st layoutState) *Workspace {
-	w := &Workspace{Overflow: overflowTrail, lay: extensionLayout(overflowTrail, st), MaxColumns: 3,
-		Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}, Output: Rect{W: 1200, H: 900}, Gaps: 8}
+	w := &Workspace{lanes: lanes{Overflow: overflowTrail, lay: extensionLayout(overflowTrail, st), MaxColumns: 3,
+		Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}, Output: Rect{W: 1200, H: 900}, Gaps: 8}}
 	for i := 0; i < n; i++ {
 		w.AddWindow(WindowID(i + 1))
 	}
@@ -210,7 +210,7 @@ func TestTrailLayoutStateAndCarry(t *testing.T) {
 		if _, ok := col.carry.(trailCarry); !ok {
 			t.Fatalf("carry %v, want the state's tag", col.carry)
 		}
-		via := Workspace{Overflow: OverflowScroll, MaxColumns: 3, Usable: a.Usable}
+		via := Workspace{lanes: lanes{Overflow: OverflowScroll, MaxColumns: 3, Usable: a.Usable}}
 		via.receive(col, -1)
 		col, _ = via.takeColumn()
 		b.receive(col, -1)

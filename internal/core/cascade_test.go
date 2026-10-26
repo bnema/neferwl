@@ -9,7 +9,7 @@ import (
 )
 
 func cascadeWorkspace(n int) *Workspace {
-	w := &Workspace{Overflow: OverflowCascade, MaxColumns: 3}
+	w := &Workspace{lanes: lanes{Overflow: OverflowCascade, MaxColumns: 3}}
 	w.SetOutput(900, 600)
 	for i := 1; i <= n; i++ {
 		w.AddWindow(WindowID(i))
@@ -22,7 +22,7 @@ func cascadeWorkspace(n int) *Workspace {
 // the band as it fills.
 func TestCascadeBandWidthWithGaps(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		w := &Workspace{Overflow: OverflowCascade, MaxColumns: 3}
+		w := &Workspace{lanes: lanes{Overflow: OverflowCascade, MaxColumns: 3}}
 		w.SetOutput(1000, 600)
 		w.SetGaps(8)
 		w.AddWindow(1)
@@ -45,7 +45,7 @@ func TestCascadeBandWidthWithGaps(t *testing.T) {
 // each band divides by its own column count.
 func TestCascadePartialLastBandWithGaps(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		w := &Workspace{Overflow: OverflowCascade, MaxColumns: 3}
+		w := &Workspace{lanes: lanes{Overflow: OverflowCascade, MaxColumns: 3}}
 		w.SetOutput(1000, 600)
 		w.SetGaps(8)
 		for id := WindowID(1); id <= 5; id++ {
@@ -72,7 +72,7 @@ func TestCascadePartialLastBandWithGaps(t *testing.T) {
 // area's X and share its width.
 func TestCascadeSidePanel(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		w := &Workspace{Overflow: OverflowCascade, MaxColumns: 2}
+		w := &Workspace{lanes: lanes{Overflow: OverflowCascade, MaxColumns: 2}}
 		w.SetOutput(1000, 600)
 		w.SetUsable(Rect{X: 100, W: 900, H: 600})
 		for id := WindowID(1); id <= 3; id++ {
@@ -384,7 +384,7 @@ func TestLaneGeometry(t *testing.T) {
 			}
 		}
 
-		s := &Workspace{Overflow: OverflowScroll, MaxColumns: 3}
+		s := &Workspace{lanes: lanes{Overflow: OverflowScroll, MaxColumns: 3}}
 		s.SetOutput(900, 600)
 		for i := 1; i <= 5; i++ {
 			s.AddWindow(WindowID(i))

@@ -53,7 +53,7 @@ func TestSnapPointsReusableMatchesLegacy(t *testing.T) {
 func TestStatelessLayoutInitialization(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		for _, o := range []Overflow{OverflowScroll, OverflowFixed} {
-			w := Workspace{Overflow: o}
+			w := Workspace{lanes: lanes{Overflow: o}}
 			if w.state() != nil || !w.lstateReady {
 				t.Fatal("stateless layout not initialized")
 			}

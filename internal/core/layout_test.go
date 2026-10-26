@@ -34,7 +34,7 @@ func TestLaneWidths(t *testing.T) {
 		t.Run(string(overflow), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				mk := func(n int) *Workspace {
-					w := &Workspace{MaxColumns: 4, Overflow: overflow, Gaps: 8}
+					w := &Workspace{lanes: lanes{MaxColumns: 4, Overflow: overflow, Gaps: 8}}
 					w.SetOutput(1000, 500)
 					for id := 1; id <= n; id++ {
 						w.AddWindow(WindowID(id))
@@ -81,7 +81,7 @@ func TestLaneWidths(t *testing.T) {
 	}
 	t.Run("scroll", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			w := &Workspace{MaxColumns: 4, Gaps: 8}
+			w := &Workspace{lanes: lanes{MaxColumns: 4, Gaps: 8}}
 			w.SetOutput(1000, 500)
 			w.AddWindow(1)
 			w.AddWindow(2)
@@ -491,7 +491,7 @@ func TestSetFullscreenStackDeactivation(t *testing.T) {
 // split the newest one, alternating top/bottom and left/right.
 func TestFixedOverflowSpiral(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		w := &Workspace{MaxColumns: 2, Overflow: OverflowFixed}
+		w := &Workspace{lanes: lanes{MaxColumns: 2, Overflow: OverflowFixed}}
 		w.SetOutput(100, 80)
 		for id := WindowID(1); id <= 5; id++ {
 			w.AddWindow(id)
@@ -514,7 +514,7 @@ func TestFixedOverflowSpiral(t *testing.T) {
 			t.Fatal("fixed overflow scrolled", w.View)
 		}
 		// Up to max-columns it is the plain equal split.
-		w2 := &Workspace{MaxColumns: 2, Overflow: OverflowFixed}
+		w2 := &Workspace{lanes: lanes{MaxColumns: 2, Overflow: OverflowFixed}}
 		w2.SetOutput(100, 80)
 		w2.AddWindow(1)
 		w2.AddWindow(2)
@@ -723,7 +723,7 @@ func TestFixedFocusStackedColumns(t *testing.T) {
 	t.Run("lands on the nearest window of a stacked column", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			// 1 left; 2 top right holds two windows; 3 bottom right.
-			w := &Workspace{MaxColumns: 2, Overflow: OverflowFixed}
+			w := &Workspace{lanes: lanes{MaxColumns: 2, Overflow: OverflowFixed}}
 			w.SetOutput(100, 80)
 			w.Columns = []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{2, 5}}, {Windows: []WindowID{3}}}
 			w.Focus = 2
@@ -736,7 +736,7 @@ func TestFixedFocusStackedColumns(t *testing.T) {
 }
 
 func fixedWorkspace(maxCols, gaps, n int) *Workspace {
-	w := &Workspace{MaxColumns: maxCols, Overflow: OverflowFixed, Gaps: gaps}
+	w := &Workspace{lanes: lanes{MaxColumns: maxCols, Overflow: OverflowFixed, Gaps: gaps}}
 	w.SetOutput(100, 80)
 	for id := 1; id <= n; id++ {
 		w.AddWindow(WindowID(id))

@@ -25,8 +25,8 @@ var conformanceModes = []string{"normal", "maximized", "fullscreen"}
 // the focus on column n/2, which is maximized or holds the fullscreen window
 // per mode, scrolled into view. The layout is injected through Workspace.lay.
 func conformanceWorkspace(l layout, k, n int, mode string) *Workspace {
-	w := &Workspace{Overflow: l.name(), lay: l, MaxColumns: k, Gaps: 8,
-		Output: Rect{X: 10, Y: 20, W: 1200, H: 900}, Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}}
+	w := &Workspace{lanes: lanes{Overflow: l.name(), lay: l, MaxColumns: k, Gaps: 8,
+		Output: Rect{X: 10, Y: 20, W: 1200, H: 900}, Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}}}
 	for i := 0; i < n; i++ {
 		w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(2*i + 1), WindowID(2*i + 2)}, Focus: 1})
 	}
@@ -76,7 +76,7 @@ func TestLayoutRegistryResolution(t *testing.T) {
 			if !ok || got != l {
 				t.Fatalf("missing %q", key)
 			}
-			w := Workspace{Overflow: key}
+			w := Workspace{lanes: lanes{Overflow: key}}
 			if w.layout() != l {
 				t.Fatal("workspace resolution")
 			}
@@ -88,7 +88,7 @@ func TestLayoutRegistryResolution(t *testing.T) {
 		if _, ok := layoutFor("unknown"); ok {
 			t.Fatal("unknown layout accepted")
 		}
-		if w := (Workspace{Overflow: "unknown"}); w.layout() != def {
+		if w := (Workspace{lanes: lanes{Overflow: "unknown"}}); w.layout() != def {
 			t.Fatal("unknown layout must fall back to the default")
 		}
 

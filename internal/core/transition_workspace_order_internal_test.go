@@ -293,7 +293,7 @@ func TestOverviewWorkspaceSwitchOrder(t *testing.T) {
 // rank (staying under the next numbered row), and one with a stale anchor
 // below the last occupied numbered row, else the first.
 func TestMonitorOverviewOrder(t *testing.T) {
-	occupied := func() *Workspace { return &Workspace{Columns: []Column{{Windows: []WindowID{1}}}} }
+	occupied := func() *Workspace { return &Workspace{lanes: lanes{Columns: []Column{{Windows: []WindowID{1}}}}} }
 	list := []*Workspace{occupied(), occupied(), {}}
 	m := &Monitor{named: []NamedWorkspace{{Name: "dev"}, {Name: "ops"}}}
 	named := func(name string, anchor *Workspace) *Workspace {

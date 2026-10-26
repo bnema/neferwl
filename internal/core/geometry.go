@@ -5,9 +5,9 @@ import "slices"
 // geometryWorkspace adapts snapshot fields to the shared width and lane helpers.
 // Only snapshot inputs are copied; scratch storage stays local to each call.
 func geometryWorkspace(v layoutView) Workspace {
-	return Workspace{Columns: v.Columns, Focus: v.Focus, View: v.View,
+	return Workspace{lanes: lanes{Columns: v.Columns, Focus: v.Focus, View: v.View,
 		MaxColumns: v.MaxColumns, Usable: v.Usable, Output: v.Output,
-		Gaps: v.Gap, fullscreen: v.Fullscreen, lay: v.layout, lstate: v.State}
+		Gaps: v.Gap, fullscreen: v.Fullscreen, lay: v.layout, lstate: v.State}}
 }
 
 func scrollSnapPoints(v layoutView, dst []float64) []float64 {

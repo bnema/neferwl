@@ -14,7 +14,7 @@ func TestSnap(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		// Four columns of 400 on an 800 wide view, no gaps: views align on
 		// column edges between 0 and 800.
-		w := &Workspace{Output: Rect{W: 800, H: 600}, Usable: Rect{W: 800, H: 600}, MaxColumns: 2}
+		w := &Workspace{lanes: lanes{Output: Rect{W: 800, H: 600}, Usable: Rect{W: 800, H: 600}, MaxColumns: 2}}
 		for i := range 4 {
 			w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
 		}
@@ -55,7 +55,7 @@ func TestSnapPointsMergeClose(t *testing.T) {
 			{[]int{300, 300}, []float64{0}},
 		} {
 			// 100 cells of 10 px, no gaps: a width in px is px/10 cells.
-			w := &Workspace{Output: Rect{W: 1000, H: 600}, Usable: Rect{W: 1000, H: 600}, MaxColumns: 100}
+			w := &Workspace{lanes: lanes{Output: Rect{W: 1000, H: 600}, Usable: Rect{W: 1000, H: 600}, MaxColumns: 100}}
 			for _, px := range tc.widths {
 				w.Columns = append(w.Columns, Column{Cells: px / 10, Windows: []WindowID{WindowID(len(w.Columns) + 1)}})
 			}
@@ -71,7 +71,7 @@ func TestSnapPointsMergeClose(t *testing.T) {
 // gaps), the focus goes to the column at the left edge.
 func TestSnapFocusWideColumn(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		w := &Workspace{Output: Rect{W: 800, H: 600}, Usable: Rect{W: 800, H: 600}, Gaps: 10}
+		w := &Workspace{lanes: lanes{Output: Rect{W: 800, H: 600}, Usable: Rect{W: 800, H: 600}, Gaps: 10}}
 		for i := range 3 {
 			w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
 		}
@@ -94,7 +94,7 @@ func TestSnapFocusWideColumn(t *testing.T) {
 func TestRetargetKeepsVelocityAndSlowdown(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		start := time.Unix(10, 0)
-		w := &Workspace{View: 100, view: motion.Slide{Off: -300}}
+		w := &Workspace{lanes: lanes{View: 100}, view: motion.Slide{Off: -300}}
 		w.view.Motion = motion.NewMotion(motion.ViewSpring(w.view.Off, 2000), start, 2)
 		w.view.Motion.At(start.Add(20 * time.Millisecond))
 		v := w.view.Motion.Velocity()

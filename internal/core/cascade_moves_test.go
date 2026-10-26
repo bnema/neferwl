@@ -59,7 +59,7 @@ func wantBands(t *testing.T, w *Workspace, want ...[]WindowID) {
 	t.Helper()
 	var got [][]WindowID
 	w.walkBands(func(_, first, last int) bool {
-		got = append(got, columnOrder(&Workspace{Columns: w.Columns[first : last+1]}))
+		got = append(got, columnOrder(&Workspace{lanes: lanes{Columns: w.Columns[first : last+1]}}))
 		return true
 	})
 	if !slices.EqualFunc(got, want, slices.Equal) {

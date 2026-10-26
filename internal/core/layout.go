@@ -56,7 +56,8 @@ type Overflow string
 // Each layout declares its own value next to its type (layout_<name>.go) and
 // registers itself in layout_registry.go.
 
-type Workspace struct {
+// lanes is the column state owned by the workspace owner goroutine.
+type lanes struct {
 	lay         layout      // Optional test override; production resolves Overflow lazily.
 	lstate      layoutState // Owner-goroutine-only, initialized lazily.
 	lstateReady bool        // Distinguishes stateless layouts from uninitialized state.
@@ -65,6 +66,28 @@ type Workspace struct {
 	lcache    layout
 	lcacheFor Overflow
 	colSeq    uint64 // Issues workspace-local column identities.
+	Overflow  Overflow
+	Columns   []Column
+	// spanSeq issues workspace-local identities for complete lane stamps.
+	spanSeq uint64
+	// maximized remembers recently maximized columns by window ID, newest
+	// first; stack() filters removed windows at read time.
+	maximized []WindowID
+	Focus     int
+	View      int
+	// Output is the effective viewport in monitor coordinates: the whole
+	// monitor unless the workspace has a size override, then a centered
+	// rectangle no larger than the monitor. Fullscreen fills it.
+	Output Rect
+	// Usable is the layer reservations of the monitor intersected with Output.
+	Usable     Rect
+	Gaps       int
+	MaxColumns int
+	fullscreen WindowID
+}
+
+type Workspace struct {
+	lanes
 	// ID stays with the workspace across reorder and monitor moves.
 	ID uint64
 	// Name is set for workspaces declared in config; empty for dynamic ones.
@@ -72,36 +95,18 @@ type Workspace struct {
 	// overviewAfter is the numbered workspace from which this named workspace
 	// was invoked. It only orders overview rows; numbering stays unchanged.
 	overviewAfter *Workspace
-	Overflow      Overflow
-	Columns       []Column
-	// spanSeq issues workspace-local identities for complete lane stamps.
-	spanSeq uint64
-	// maximized remembers recently maximized columns by window ID, newest
-	// first; stack() filters removed windows at read time.
-	maximized []WindowID
 	// recent holds one window per column the user focused, newest first
 	// (switcher.go); columns that went are dropped when read.
 	recent []WindowID
-	Focus  int
-	View   int
 	// View is the settled offset along the layout's content axis.
 	// view is its presentation offset, in logical pixels.
 	view motion.Slide
-	// Output is the effective viewport in monitor coordinates: the whole
-	// monitor unless the workspace has a size override, then a centered
-	// rectangle no larger than the monitor. Fullscreen fills it.
-	Output Rect
-	// Usable is the layer reservations of the monitor intersected with Output.
-	Usable Rect
 	// monitor is the full logical monitor and reserved its area left by
 	// layer surfaces, both from the monitor; size is the override (0 inherits).
 	monitor, reserved Rect
 	size              [2]int
-	Gaps              int
-	MaxColumns        int
 	// border is drawn around floating windows, inside their rect.
-	border     int
-	fullscreen WindowID
+	border int
 	// left is the window whose fullscreen the user left for another
 	// window: its client requests are refused until it is focused again,
 	// so an app that re-asks at once (Wine) does not cover that window.

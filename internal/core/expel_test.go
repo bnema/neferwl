@@ -9,7 +9,7 @@ import (
 // cols builds a workspace with the given columns, focus on the last window
 // of column focus.
 func cols(overflow Overflow, max, focus int, columns ...[]WindowID) *Workspace {
-	w := &Workspace{Overflow: overflow, MaxColumns: max}
+	w := &Workspace{lanes: lanes{Overflow: overflow, MaxColumns: max}}
 	w.SetOutput(300, 100)
 	for _, c := range columns {
 		w.Columns = append(w.Columns, Column{Windows: c, Focus: len(c) - 1})

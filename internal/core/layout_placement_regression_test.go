@@ -10,7 +10,7 @@ func TestCascadeColumnTransferRestoresNeighbors(t *testing.T) {
 		_, w := cascadeMovesCore(t, 3, 3, false)
 		w.FocusID(2)
 		w.ToggleFullWidth()
-		dst := Workspace{Overflow: OverflowCascade, MaxColumns: 3, Usable: w.Usable}
+		dst := Workspace{lanes: lanes{Overflow: OverflowCascade, MaxColumns: 3, Usable: w.Usable}}
 		col, ok := w.takeColumn()
 		if !ok {
 			t.Fatal("take")
@@ -65,7 +65,7 @@ func TestCarryHopsThroughStatelessWorkspace(t *testing.T) {
 				if !ok || col.carry == nil {
 					t.Fatalf("take: ok %v, carry %v", ok, col.carry)
 				}
-				mid := Workspace{Overflow: o, MaxColumns: 3, Usable: w.Usable}
+				mid := Workspace{lanes: lanes{Overflow: o, MaxColumns: 3, Usable: w.Usable}}
 				mid.receive(col, -1)
 				if mid.lstate != nil {
 					t.Fatalf("%s workspace built state %T", o, mid.lstate)
@@ -92,8 +92,8 @@ func TestCarryHopsThroughStatelessWorkspace(t *testing.T) {
 // A layout switch drops the state, and the carry parked on a column with it.
 func TestLayoutSwitchDropsParkedCarry(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		w := Workspace{Overflow: OverflowScroll, MaxColumns: 3, Usable: Rect{W: 900, H: 600},
-			Columns: []Column{{Windows: []WindowID{1}, carry: &cascadeCol{}}}}
+		w := Workspace{lanes: lanes{Overflow: OverflowScroll, MaxColumns: 3, Usable: Rect{W: 900, H: 600},
+			Columns: []Column{{Windows: []WindowID{1}, carry: &cascadeCol{}}}}}
 		w.resetLayoutState()
 		if w.Columns[0].carry != nil {
 			t.Fatal("carry survived the layout switch")

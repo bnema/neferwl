@@ -92,7 +92,7 @@ func TestWorkspaceLayoutCacheNeverDisagrees(t *testing.T) {
 			t.Fatal("the zero workspace must resolve to the default layout")
 		}
 		cacheAgrees(t, "zero after first use", &zero)
-		w := &Workspace{Overflow: OverflowFixed}
+		w := &Workspace{lanes: lanes{Overflow: OverflowFixed}}
 		if got, _ := layoutFor(OverflowFixed); w.layout() != got {
 			t.Fatal("literal without a cache")
 		}

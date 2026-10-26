@@ -2,7 +2,7 @@ package core
 
 // laneWorkspace exposes only the snapshot fields needed by the band walk.
 func laneWorkspace(v layoutView) Workspace {
-	return Workspace{Columns: v.Columns, Focus: v.Focus, MaxColumns: v.MaxColumns, lay: v.layout, lstate: v.State}
+	return Workspace{lanes: lanes{Columns: v.Columns, Focus: v.Focus, MaxColumns: v.MaxColumns, lay: v.layout, lstate: v.State}}
 }
 
 func adjacentLane(l layoutLanes, v layoutView, d int) int {

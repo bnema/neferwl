@@ -22,7 +22,7 @@ func TestColumnBorders(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				w := Workspace{Overflow: tc.overflow, MaxColumns: 3, Columns: make([]Column, tc.n)}
+				w := Workspace{lanes: lanes{Overflow: tc.overflow, MaxColumns: 3, Columns: make([]Column, tc.n)}}
 				if got := columnBorders(w.layout(), w.lview()); got != tc.want {
 					t.Fatalf("column borders = %v, want %v", got, tc.want)
 				}
@@ -73,14 +73,14 @@ func TestConfigAcceptsEmptyOverflow(t *testing.T) {
 
 func TestApplyNamedResetsOldStateBeforeNewGeometry(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		w := Workspace{Overflow: OverflowCascade, MaxColumns: 3, View: 123,
+		w := Workspace{lanes: lanes{Overflow: OverflowCascade, MaxColumns: 3, View: 123,
 			Columns: []Column{{Windows: []WindowID{1}, FullWidth: true}},
-			Usable:  Rect{W: 900, H: 600}, Output: Rect{W: 900, H: 600}}
+			Usable:  Rect{W: 900, H: 600}, Output: Rect{W: 900, H: 600}}}
 		w.setBandStart(0, true)
 		if w.lstate == nil {
 			t.Fatal("cascade state missing")
 		}
-		m := Monitor{Workspaces: []*Workspace{&w}, template: Workspace{Overflow: OverflowFixed, MaxColumns: 2}}
+		m := Monitor{Workspaces: []*Workspace{&w}, template: Workspace{lanes: lanes{Overflow: OverflowFixed, MaxColumns: 2}}}
 		m.applyNamed()
 		if w.lstate != nil || w.MaxColumns != 2 || w.View != 0 || w.Columns[0].FullWidth {
 			t.Fatalf("new layout did not settle: state=%T capacity=%d view=%d full=%v", w.lstate, w.MaxColumns, w.View, w.Columns[0].FullWidth)
@@ -123,11 +123,11 @@ func TestApplyNamedMaximizeAcrossSwitch(t *testing.T) {
 	} {
 		t.Run(string(tc.from)+"->"+string(tc.to), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				w := Workspace{Overflow: tc.from, MaxColumns: 3,
+				w := Workspace{lanes: lanes{Overflow: tc.from, MaxColumns: 3,
 					Columns: []Column{{Windows: []WindowID{1}, FullWidth: true}, {Windows: []WindowID{2}}},
-					Usable:  Rect{W: 900, H: 600}, Output: Rect{W: 900, H: 600}}
+					Usable:  Rect{W: 900, H: 600}, Output: Rect{W: 900, H: 600}}}
 				w.setOverflow(tc.from)
-				m := Monitor{Workspaces: []*Workspace{&w}, template: Workspace{MaxColumns: 3}}
+				m := Monitor{Workspaces: []*Workspace{&w}, template: Workspace{lanes: lanes{MaxColumns: 3}}}
 				m.template.setOverflow(tc.to)
 				m.applyNamed()
 				if w.Overflow != tc.to {
