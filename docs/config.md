@@ -82,6 +82,10 @@ See [examples/config](../examples/config) for every key with its default.
 | `output.<name>.right-of`, `.left-of`, `.above`, `.below`, `.offset` | automatic | [Output placement](#output-placement) |
 | `output.<name>.hdr` | `off` | [HDR](#hdr) on capable displays |
 | `output.<name>.sdr-brightness` | `203` | Brightness of SDR content in HDR, in nits (80–1000) |
+| `drm.devices` | empty (all GPUs) | Comma-separated [GPUs](#gpus) NeferWL uses (restart required) |
+| `drm.ignore` | empty | Comma-separated [GPUs](#gpus) NeferWL leaves alone (restart required) |
+| `render.device` | automatic | [GPU](#gpus) that renders; `NEFERWL_RENDER_DEVICE` overrides it (restart required) |
+| `render.multi-gpu` | `auto` | Outputs on another GPU: `auto`, `direct` or `off` (restart required) |
 | `render.direct-scanout` | `on` | Send fullscreen windows straight to the display |
 | `render.tearing` | `on` | Allow tearing for fullscreen games |
 | `render.vrr` | `on` | Variable refresh rate for fullscreen windows |
@@ -189,6 +193,39 @@ output.DP-2.offset = 360    # DP-2 starts 360 px lower than DP-1
 ```
 
 `offset` moves down for `right-of`/`left-of`, and right for `above`/`below`. kanshi, wdisplays and wlr-randr override these settings until the next reload.
+
+## GPUs
+
+`drm.devices`, `drm.ignore` and `render.device` take these identifiers:
+
+- a card: `/dev/dri/card1`, or a stable symlink such as `/dev/dri/by-path/pci-0000:03:00.0-card`;
+- a render node: `/dev/dri/renderD128`;
+- a PCI address, with or without the domain: `0000:03:00.0` or `03:00.0`.
+
+An unknown identifier, or a `render.device` that `drm.ignore` excludes, is a startup error.
+
+One GPU renders every frame. It is chosen in this order:
+
+1. `render.device`, or `NEFERWL_RENDER_DEVICE` when set;
+2. the GPU driving an internal panel;
+3. the `boot_vga` GPU;
+4. the first GPU.
+
+Outputs on another GPU follow `render.multi-gpu`:
+
+| Value | Behaviour |
+|---|---|
+| `auto` | Zero-copy direct scanout of the rendered image (LINEAR) when the display GPU accepts it, otherwise one GPU blit per frame |
+| `direct` | Direct only; an output that cannot do it stays off |
+| `off` | Outputs on other GPUs stay off |
+
+Pixels never cross the CPU. Cards plugged in at runtime follow `drm.devices` and `drm.ignore`.
+
+Hybrid laptop, rendering on the integrated GPU:
+
+```
+render.device = 00:02.0
+```
 
 ## Workspace size
 

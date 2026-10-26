@@ -13,7 +13,7 @@ https://github.com/user-attachments/assets/1ff42ce5-47b3-4cf8-a3a7-5fc5abde4af1
 <p align="center"><sub>Stash, overview and animations, recorded on the headless backend at 1080p.</sub></p>
 
 > [!WARNING]
-> **Early alpha, but stable enough for daily use.** Developed and tested mostly on AMD CPUs and GPUs. NVIDIA support is incomplete and untested (contribs welcome). Expect bugs and breaking config changes.
+> **Early alpha, but stable enough for daily use.** Developed and tested mostly on AMD CPUs and GPUs. Hybrid and multi-GPU setups are supported but not yet tested on NVIDIA hardware (contribs welcome). Expect bugs and breaking config changes.
 
 ## Why NeferWL
 
@@ -170,7 +170,7 @@ NeferWL requires Linux, atomic KMS and a Vulkan 1.3 device that can export image
 | GPU | Status |
 | --- | --- |
 | AMD | Developed and tested on radv |
-| NVIDIA | Untested; explicit sync is implemented, but support is incomplete |
+| NVIDIA | Untested; explicit sync and multi-GPU output are implemented |
 | Intel | Untested |
 
 Reports from NVIDIA and Intel users are welcome.

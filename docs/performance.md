@@ -5,7 +5,8 @@ NeferWL uses about 40–80 MB of RAM with two 4K monitors, and almost no CPU whi
 - Only changed areas are redrawn. Windows nobody sees get one frame callback per second.
 - Windows are composed as instanced draws, so a frame makes a few Vulkan calls whatever the number of windows.
 - Fullscreen windows go straight to the display (direct scanout), with tearing for games. See `render.direct-scanout` and `render.tearing` in [Configuration](config.md#keys).
-- A full frame at 2560×1600 takes about 0.16 ms on an RX 9070 XT and 3 ms on a Radeon 680M. Measure yours with `go test ./internal/adapters/vulkan -bench ComposeFullTarget` (`NEFERWL_VK_DEVICE` picks the GPU).
+- A full frame at 2560×1600 takes about 0.16 ms on an RX 9070 XT and 3 ms on a Radeon 680M. Measure yours with `go test ./internal/adapters/vulkan -bench ComposeFullTarget` (`NEFERWL_RENDER_DEVICE=/dev/dri/renderDN` picks the GPU).
+- An output on a non-render GPU costs nothing extra in direct mode and one GPU blit per frame in gpu-copy mode. See [GPUs](config.md#gpus).
 - NeferWL runs with `GOGC=100` and a 256 MiB soft memory limit. `GOGC` and `GOMEMLIMIT` from the environment override them.
 
 ## VRR
