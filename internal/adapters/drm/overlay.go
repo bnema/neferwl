@@ -76,8 +76,8 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	if s.Flash != nil {
 		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "focus_flash"
 	}
-	if len(s.HintLabels) > 0 {
-		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "hint_labels"
+	if len(s.Overlays) > 0 {
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "overlays"
 	}
 	if s.Transform != 0 {
 		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "output_transform"
