@@ -266,3 +266,54 @@ func TestOSDCmdBindReleaseThroughRun(t *testing.T) {
 		}
 	})
 }
+
+func TestOSDInhibitShownThroughRun(t *testing.T) {
+	for _, pinned := range []bool{false, true} {
+		t.Run(map[bool]string{false: "transient", true: "pinned"}[pinned], func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				clock := portsmocks.NewMockClock(t)
+				clock.EXPECT().Now().Return(time.Unix(0, 0))
+				timer := portsmocks.NewMockTimer(t)
+				fire := make(chan time.Time, 1)
+				clock.EXPECT().NewTimer(400 * time.Millisecond).Return(timer).Once()
+				timer.EXPECT().C().Return(fire).Once()
+				timer.EXPECT().Stop().Return(true).Once()
+				h := newHintConfig(t, core.Options{Clock: clock}, func(cfg *ports.Config) { cfg.Binds["Cmd+p"] = "osd-pin" })
+				h.input <- ports.KeyEvent{Keysym: "Super_L", Pressed: true, Mods: ports.ModSuper}
+				synctest.Wait()
+				fire <- time.Unix(0, int64(400*time.Millisecond))
+				synctest.Wait()
+				osdOverlay(t, h)
+				next(t, h.commands, func(v ports.WatchStats) bool { return v.Window == 1 })
+				if pinned {
+					h.press("p", ports.ModSuper)
+					synctest.Wait()
+					osdOverlay(t, h)
+				}
+				h.client <- ports.ShortcutsInhibit{Window: 1, Active: true}
+				synctest.Wait()
+				if !pinned {
+					if s := <-h.scenes; len(s[0].Overlays) != 0 {
+						t.Fatal("inhibition retained transient overlay")
+					}
+					next(t, h.commands, func(v ports.WatchStats) bool { return v.Window == 0 })
+				}
+				h.input <- ports.KeyEvent{Keysym: "Super_L"}
+				synctest.Wait()
+				if pinned {
+					h.client <- ports.WindowStats{Window: 1, ClientFPS: 144}
+					synctest.Wait()
+					osdOverlay(t, h)
+				} else {
+					h.client <- ports.WindowStats{Window: 1, ClientFPS: 144}
+					synctest.Wait()
+					select {
+					case <-h.scenes:
+						t.Fatal("release or stale stats republished overlay")
+					default:
+					}
+				}
+			})
+		})
+	}
+}

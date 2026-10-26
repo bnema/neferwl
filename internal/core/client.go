@@ -59,6 +59,9 @@ func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, 
 			return false, true
 		}
 		c.publishState()
+		if c.keyboard.inhibited(c.keyboardFocus()) {
+			return c.osdCancel(), false
+		}
 		return false, false
 	case ports.OutputPower:
 		if i := c.screenIndex(v.Output); i >= 0 && c.screens[i].off == v.On {

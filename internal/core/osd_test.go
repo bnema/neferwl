@@ -78,3 +78,28 @@ func TestOSDScanoutLineOmitsEmptyReason(t *testing.T) {
 		}
 	}
 }
+
+func TestOSDWatchInhibitedFocus(t *testing.T) {
+	for _, pinned := range []bool{false, true} {
+		commands := make(chan ports.ClientCommand, 2)
+		c := &Core{ch: Channels{Commands: commands}}
+		c.cfg.OSD.Enable = true
+		c.windows = newWindowRegistry()
+		c.windows.setInhibitShortcuts(2, true)
+		c.osd.shown, c.osd.pinned = true, pinned
+		c.osd.window, c.osd.watched = 1, 1
+		if err := c.osdWatch(context.Background(), 2); err != nil {
+			t.Fatal(err)
+		}
+		want := WindowID(0)
+		if pinned {
+			want = 2
+		}
+		if c.osd.shown != pinned || c.osd.pinned != pinned {
+			t.Fatalf("inhibited focus: shown=%v pinned=%v", c.osd.shown, c.osd.pinned)
+		}
+		if got := <-commands; got != (ports.WatchStats{Window: want}) {
+			t.Fatalf("command: %+v", got)
+		}
+	}
+}

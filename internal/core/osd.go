@@ -33,6 +33,16 @@ func (c *Core) osdReset() {
 	c.osd.key.setPinned(c.osd.pinned)
 }
 
+// osdCancel disarms recognition and hides only a transient overlay.
+func (c *Core) osdCancel() bool {
+	c.osdReset()
+	if c.osd.pinned || !c.osd.shown {
+		return false
+	}
+	c.osd.shown = false
+	return true
+}
+
 // osdApply applies a gesture without consuming its underlying input event.
 func (c *Core) osdApply(result osdKeyResult) bool {
 	if !c.cfg.OSD.Enable || c.security.Protected {
@@ -61,6 +71,9 @@ func (c *Core) osdWatch(ctx context.Context, focus WindowID) error {
 	if !c.cfg.OSD.Enable || c.security.Protected {
 		c.osd.shown, c.osd.pinned = false, false
 		c.osdReset()
+	}
+	if c.windows.lookup(focus).inhibitShortcuts {
+		c.osdCancel()
 	}
 	if focus == 0 && !c.osd.pinned {
 		c.osd.shown = false
