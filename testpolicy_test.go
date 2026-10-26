@@ -43,9 +43,6 @@ import (
 // "testing/synctest" are rejected, and rule 1 ignores selectors on packages
 // other than testify's require and assert.
 
-// TODO: enable after migrating the violations inventoried in this branch.
-const policyEnforced = false
-
 const (
 	policyHint = "see AGENTS.md sections \"Mocks (hard rule)\" and \"Time and concurrency\""
 
@@ -148,9 +145,6 @@ func reportPolicy(t *testing.T, rule string, violations []policyViolation) {
 		return
 	}
 	sort.Strings(lines)
-	if !policyEnforced {
-		t.Skipf("%d violation(s) of %s; enforcement pending migration (%s):\n%s", len(lines), rule, policyHint, strings.Join(lines, "\n"))
-	}
 	t.Errorf("%d violation(s) of %s (%s):\n%s", len(lines), rule, policyHint, strings.Join(lines, "\n"))
 }
 
