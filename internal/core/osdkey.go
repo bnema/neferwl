@@ -69,8 +69,7 @@ func osdCmdKey(sym string, cmd ports.Mods) bool {
 
 // key consumes a transition at the owner's clock time. XKB Mods is the state
 // after the transition: cmd is normally absent on its own release.
-func (k *osdKey) key(ev ports.KeyEvent, cmd ports.Mods, now time.Time) osdKeyResult {
-	id := heldKey(ev)
+func (k *osdKey) key(ev ports.KeyEvent, id string, cmd ports.Mods, now time.Time) osdKeyResult {
 	if k.held == nil {
 		k.held = make(map[string]bool)
 	}

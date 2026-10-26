@@ -281,6 +281,7 @@ func (c *Core) pointerAxis(ctx context.Context, v ports.PointerAxis) error {
 }
 
 func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
+	held := heldKey(key)
 	if !c.cfg.OSD.Enable || c.keyboard.inhibited(c.keyboardFocus()) {
 		if c.osdCancel() {
 			if err := c.publish(ctx); err != nil {
@@ -289,7 +290,7 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 		}
 	} else {
 		c.osd.key.clock = c.opts.Clock
-		if c.osdApply(c.osd.key.key(key, c.cmdMod, c.now())) {
+		if c.osdApply(c.osd.key.key(key, held, c.cmdMod, c.now())) {
 			if err := c.publish(ctx); err != nil {
 				return err
 			}
@@ -308,12 +309,12 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 	if c.dataDrag != nil && key.Pressed && key.Keysym == "Escape" {
 		// Escape cancels the data drag first, even over the switcher;
 		// its release goes nowhere either.
-		c.pressed[heldKey(key)] = true
+		c.pressed[held] = true
 		return c.cancelDataDrag(ctx)
 	}
 	if c.switching() && key.Pressed && key.Keysym == "Escape" {
 		// Escape cancels the switcher; its release goes nowhere either.
-		c.pressed[heldKey(key)] = true
+		c.pressed[held] = true
 		return c.abortSwitcher(ctx)
 	}
 	if c.pointerBusy() && key.Pressed && key.Keysym == "Escape" {
@@ -326,7 +327,7 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 		} else {
 			c.cancelDrag()
 		}
-		c.pressed[heldKey(key)] = true
+		c.pressed[held] = true
 		if err := c.publish(ctx); err != nil {
 			return err
 		}
@@ -352,7 +353,7 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 					c.requestFlash(flashWindow, id)
 				}
 			}
-			c.pressed[heldKey(key)] = true
+			c.pressed[held] = true
 			if mon.ov.open && overviewRepeats(key) {
 				c.startRepeat(key, "")
 			}
@@ -370,7 +371,7 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 	// no bind runs (emergency quit and VT switch are handled by
 	// input before core).
 	if c.keyboard.inhibited(c.keyboardFocus()) {
-		if held := heldKey(key); !key.Pressed && c.pressed[held] {
+		if !key.Pressed && c.pressed[held] {
 			// Its press ran a bind before inhibiting began: the
 			// window never saw it.
 			delete(c.pressed, held)
@@ -392,7 +393,6 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 		action, bound = c.binds[binding{key: "code:" + strconv.FormatUint(uint64(key.Keycode), 10), mods: key.Mods}]
 	}
 	// Track presses by physical key: Shift may be released before the key.
-	held := heldKey(key)
 	if !key.Pressed {
 		consumed := c.pressed[held]
 		delete(c.pressed, held)

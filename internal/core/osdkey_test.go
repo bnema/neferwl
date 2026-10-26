@@ -83,7 +83,7 @@ func TestOSDKey(t *testing.T) {
 							ev.Pressed = s.action == "otherDown"
 							ev.Mods = cmd.mod
 						}
-						got = k.key(ev, cmd.mod, now)
+						got = k.key(ev, heldKey(ev), cmd.mod, now)
 					}
 					if got != s.want {
 						t.Fatalf("%d %s: got %v, want %v", s.at, s.action, got, s.want)
