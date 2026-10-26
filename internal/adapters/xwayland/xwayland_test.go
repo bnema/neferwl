@@ -1,6 +1,7 @@
 package xwayland
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"os"
@@ -101,36 +102,69 @@ func TestRunDropsClientsOfFailedSatellite(t *testing.T) {
 	}
 }
 
+// satelliteRuns reads the lines the satellite script writes to a FIFO. The
+// test holds the FIFO read-write, so a writer never blocks and the read never
+// sees EOF.
+type satelliteRuns struct {
+	lines chan string
+	got   []string
+}
+
+// wait returns the runs once n were recorded, within one deadline; fewer
+// when the deadline expires.
+//
+//testpolicy:realtime real X11 sockets and satellite subprocess lifetime
+func (r *satelliteRuns) wait(n int) []string {
+	deadline := time.After(3 * time.Second)
+	for len(r.got) < n {
+		select {
+		case l := <-r.lines:
+			r.got = append(r.got, l)
+		case <-deadline:
+			return r.got
+		}
+	}
+	return r.settled()
+}
+
+// settled returns the runs recorded so far, without waiting.
+func (r *satelliteRuns) settled() []string {
+	for {
+		select {
+		case l := <-r.lines:
+			r.got = append(r.got, l)
+		default:
+			return r.got
+		}
+	}
+}
+
 // satelliteScript writes a real script that records each run and whether it
 // received listening sockets on fds 3 and 4, then exits.
-func satelliteScript(t *testing.T, dir string) (string, string) {
+func satelliteScript(t *testing.T, dir string) (string, *satelliteRuns) {
 	t.Helper()
-	runs := filepath.Join(dir, "runs")
+	fifo := filepath.Join(dir, "runs")
+	if err := unix.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(fifo, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs := &satelliteRuns{lines: make(chan string, 16)}
+	go func() {
+		sc := bufio.NewScanner(f)
+		for sc.Scan() {
+			runs.lines <- strings.ReplaceAll(sc.Text(), " ", "_")
+		}
+	}()
+	t.Cleanup(func() { _ = f.Close() })
 	bin := filepath.Join(dir, "satellite")
-	script := "#!/bin/sh\n[ -S /proc/self/fd/3 ] && [ -S /proc/self/fd/4 ] && echo \"$*\" >> " + runs + "\n"
+	script := "#!/bin/sh\n[ -S /proc/self/fd/3 ] && [ -S /proc/self/fd/4 ] && echo \"$*\" >> " + fifo + "\n"
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return bin, runs
-}
-
-//testpolicy:realtime real X11 sockets and satellite subprocess lifetime
-func readRuns(t *testing.T, path string, want int) []string {
-	t.Helper()
-	timeout, tick := time.After(3*time.Second), time.NewTicker(20*time.Millisecond)
-	defer tick.Stop()
-	for {
-		b, _ := os.ReadFile(path)
-		lines := strings.Fields(strings.ReplaceAll(string(b), " ", "_"))
-		if len(lines) >= want {
-			return lines
-		}
-		select {
-		case <-timeout:
-			return lines
-		case <-tick.C:
-		}
-	}
 }
 
 // Each connection starts the satellite once, with both sockets handed over.
@@ -138,7 +172,7 @@ func readRuns(t *testing.T, path string, want int) []string {
 //testpolicy:realtime real X11 sockets and satellite subprocess lifetime
 func TestRunStartsSatelliteOnConnect(t *testing.T) {
 	opts := testOptions(t, "")
-	var runs string
+	var runs *satelliteRuns
 	opts.Binary, runs = satelliteScript(t, opts.TmpDir)
 	opts.Abstract = true
 	d, err := Open(opts)
@@ -150,21 +184,21 @@ func TestRunStartsSatelliteOnConnect(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- d.Run(ctx) }()
 	<-time.After(100 * time.Millisecond)
-	if got := readRuns(t, runs, 0); len(got) != 0 {
+	if got := runs.settled(); len(got) != 0 {
 		t.Fatalf("started without a client: %v", got)
 	}
 	unix.Close(dial(t, d.socket))
 	want := d.Name() + "_-listenfd_3_-listenfd_4"
-	if got := readRuns(t, runs, 1); len(got) != 1 || got[0] != want {
+	if got := runs.wait(1); len(got) != 1 || got[0] != want {
 		t.Fatalf("runs %v, want [%s]", got, want)
 	}
 	// The next client, after the backoff, starts it again.
 	<-time.After(1200 * time.Millisecond)
-	if got := readRuns(t, runs, 1); len(got) != 1 {
+	if got := runs.settled(); len(got) != 1 {
 		t.Fatalf("respawned without a client: %v", got)
 	}
 	unix.Close(dial(t, "\x00"+d.socket))
-	if got := readRuns(t, runs, 2); len(got) != 2 {
+	if got := runs.wait(2); len(got) != 2 {
 		t.Fatalf("runs %v after the second client", got)
 	}
 	cancel()
@@ -245,6 +279,14 @@ func TestSupported(t *testing.T) {
 func TestRunKillsSatelliteGroup(t *testing.T) {
 	opts := testOptions(t, "")
 	pidfile := filepath.Join(opts.TmpDir, "pid")
+	if err := unix.Mkfifo(pidfile, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pidfifo, err := os.OpenFile(pidfile, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pidfifo.Close()
 	opts.Binary = filepath.Join(opts.TmpDir, "satellite")
 	script := "#!/bin/sh\ntrap '' TERM\nsleep 30 &\necho $! > " + pidfile + "\nwait\n"
 	if err := os.WriteFile(opts.Binary, []byte(script), 0o755); err != nil {
@@ -259,40 +301,43 @@ func TestRunKillsSatelliteGroup(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- d.Run(ctx) }()
 	unix.Close(dial(t, d.socket))
-	var pid int
-	pidTimeout, pidTick := time.After(3*time.Second), time.NewTicker(20*time.Millisecond)
-	defer pidTick.Stop()
-	for pid == 0 {
-		b, _ := os.ReadFile(pidfile)
-		pid, _ = strconv.Atoi(strings.TrimSpace(string(b)))
-		if pid != 0 {
-			break
-		}
-		select {
-		case <-pidTimeout:
-			pid = -1
-		case <-pidTick.C:
-		}
+	// The script writes the child's pid to the FIFO the test holds
+	// read-write; the read deadline bounds the wait.
+	if err := pidfifo.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatal(err)
 	}
-	if pid < 0 {
-		pid = 0
+	line, err := bufio.NewReader(pidfifo).ReadString('\n')
+	if err != nil {
+		t.Fatalf("satellite did not start: %v", err)
 	}
-	if pid == 0 {
-		t.Fatal("satellite did not start")
+	pid, _ := strconv.Atoi(strings.TrimSpace(line))
+	if pid <= 0 {
+		t.Fatalf("satellite pid %q", line)
 	}
+	// A pidfd of the grandchild becomes readable when it exits.
+	pidfd, err := unix.PidfdOpen(pid, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(pidfd)
 	cancel()
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not stop")
 	}
-	goneTimeout, goneTick := time.After(2*time.Second), time.NewTicker(20*time.Millisecond)
-	defer goneTick.Stop()
-	for !errors.Is(unix.Kill(pid, 0), unix.ESRCH) {
-		select {
-		case <-goneTimeout:
-			t.Fatalf("child %d survived", pid)
-		case <-goneTick.C:
+	fds := []unix.PollFd{{Fd: int32(pidfd), Events: unix.POLLIN}}
+	for {
+		n, err := unix.Poll(fds, 2000)
+		if err == unix.EINTR {
+			continue
 		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n == 0 {
+			t.Fatalf("child %d survived", pid)
+		}
+		break
 	}
 }
