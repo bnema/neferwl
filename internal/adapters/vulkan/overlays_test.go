@@ -1,6 +1,7 @@
 package vulkan
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"math"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/bnema/neferwl/internal/adapters/overlaydraw"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -260,4 +262,38 @@ func TestPanelOverlayWidthLimitCache(t *testing.T) {
 		require.LessOrEqual(t, int(ds[0].pc.rect[2]-ds[0].pc.rect[0]), width-48)
 	}
 	require.Len(t, r.shm, 2, "same sequence on resized output needs a distinct cache key")
+}
+
+func TestPanelRetirementSharedKeys(t *testing.T) {
+	for _, trim := range []bool{false, true} {
+		t.Run(fmt.Sprintf("trim=%t", trim), func(t *testing.T) {
+			r := newTestRenderer(t, 128, 128)
+			defer r.Close()
+			old := shmKey{overlay: 42, scale: 1}
+			current := shmKey{overlay: 42, scale: 2}
+			panel := &overlaydraw.Panel{}
+			r.panels = map[uint64]*overlaydraw.Panel{42: panel}
+			r.frame = importTTL + 2
+			r.shm[old] = &shmSurface{last: 1}
+			r.shm[current] = &shmSurface{last: r.frame}
+			now := time.Unix(1000, 0)
+			if trim {
+				r.marks = []trimMark{{frame: 1, at: now.Add(-idleTTL)}}
+				require.NoError(t, r.Trim(now))
+			} else {
+				r.dropShm()
+			}
+			require.NotContains(t, r.shm, old)
+			require.Contains(t, r.shm, current)
+			require.Same(t, panel, r.panels[42])
+			r.frame += importTTL + 1
+			if trim {
+				require.NoError(t, r.Trim(now.Add(2*idleTTL)))
+			} else {
+				r.dropShm()
+			}
+			require.Empty(t, r.shm)
+			require.Empty(t, r.panels)
+		})
+	}
 }

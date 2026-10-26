@@ -284,8 +284,7 @@ func (r *Renderer) dropShm() {
 	for key, s := range r.shm {
 		if r.frame-s.last > importTTL {
 			r.retireShm(s)
-			delete(r.shm, key)
-			delete(r.panels, key.overlay)
+			r.removeShm(key)
 		}
 	}
 }
@@ -347,4 +346,18 @@ func disjointRects(dst []image.Rectangle, rects []ports.Rect, w, h int) []image.
 		}
 	}
 	return dst
+}
+
+// removeShm releases the CPU panel only after its last scale/style/width key.
+func (r *Renderer) removeShm(key shmKey) {
+	delete(r.shm, key)
+	if key.overlay == 0 {
+		return
+	}
+	for other := range r.shm {
+		if other.overlay == key.overlay {
+			return
+		}
+	}
+	delete(r.panels, key.overlay)
 }
