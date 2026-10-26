@@ -53,7 +53,7 @@ const (
 )
 
 // Timer sources: functions or methods declared in a package's test files
-// whose results include <-chan time.Time, *time.Timer or *time.Ticker.
+// whose results include a chan time.Time (any direction), *time.Timer or *time.Ticker.
 // Matching is by name (type-light, per package directory and package name).
 func isTimerType(e ast.Expr, timeName string) bool {
 	isTime := func(x ast.Expr, name string) bool {
@@ -66,7 +66,7 @@ func isTimerType(e ast.Expr, timeName string) bool {
 	}
 	switch x := e.(type) {
 	case *ast.ChanType:
-		return x.Dir == ast.RECV && isTime(x.Value, "Time")
+		return isTime(x.Value, "Time")
 	case *ast.StarExpr:
 		return isTime(x.X, "Timer") || isTime(x.X, "Ticker")
 	}
@@ -119,6 +119,10 @@ var (
 	}
 	realtimeFuncs = map[string]bool{
 		"After": true, "NewTimer": true, "NewTicker": true, "Tick": true, "AfterFunc": true,
+	}
+	// contextTimeFuncs are context functions that arm a real timer.
+	contextTimeFuncs = map[string]bool{
+		"WithTimeout": true, "WithDeadline": true, "WithTimeoutCause": true, "WithDeadlineCause": true, "AfterFunc": true,
 	}
 	excludedMockDirs = []string{"internal/mocks/ports/"}
 )
@@ -205,18 +209,6 @@ func docHasDirective(doc *ast.CommentGroup, name string) bool {
 	return false
 }
 
-func docHasRealIO(doc *ast.CommentGroup) bool {
-	if doc == nil {
-		return false
-	}
-	for _, c := range doc.List {
-		if rest, ok := strings.CutPrefix(c.Text, "// real I/O:"); ok && strings.TrimSpace(rest) != "" {
-			return true
-		}
-	}
-	return false
-}
-
 func importName(file *ast.File, path, def string) string {
 	for _, spec := range file.Imports {
 		p, err := strconv.Unquote(spec.Path.Value)
@@ -266,6 +258,7 @@ func checkPolicySyntaxPkg(fset *token.FileSet, file *ast.File, sources map[strin
 	timeName := importName(file, "time", "time")
 	synctestName := importName(file, "testing/synctest", "synctest")
 	runtimeName := importName(file, "runtime", "runtime")
+	contextName := importName(file, "context", "context")
 
 	sleepDirectiveLines := make(map[int]bool)
 	for _, group := range file.Comments {
@@ -316,6 +309,7 @@ func checkPolicySyntaxPkg(fset *token.FileSet, file *ast.File, sources map[strin
 		bubble   bool
 		realtime bool // enclosing top-level func allows real-time waits
 	}
+	usedRealtime := false
 	var walk func(node ast.Node, sc scope)
 	walk = func(node ast.Node, sc scope) {
 		ast.Inspect(node, func(n ast.Node) bool {
@@ -331,6 +325,13 @@ func checkPolicySyntaxPkg(fset *token.FileSet, file *ast.File, sources map[strin
 						add(ruleNoPolling, sel.Pos(), "%s is a polling assertion; use synctest.Test with synctest.Wait", sel.Sel.Name)
 					}
 				}
+				if name, ok := isPkgSel(sel, contextName); ok && contextTimeFuncs[name] && !sc.bubble {
+					if sc.realtime {
+						usedRealtime = true
+					} else {
+						add(ruleNoRealtime, sel.Pos(), "context.%s outside a synctest bubble (mark the func `//testpolicy:realtime <reason>`)", name)
+					}
+				}
 				if name, ok := isPkgSel(sel, timeName); ok {
 					switch {
 					case name == "Sleep":
@@ -339,8 +340,10 @@ func checkPolicySyntaxPkg(fset *token.FileSet, file *ast.File, sources map[strin
 							add(ruleNoSleep, sel.Pos(), "time.Sleep outside a synctest bubble (add a `//testpolicy:sleep <reason>` directive only for fake-time helpers)")
 						}
 					case realtimeFuncs[name]:
-						if !sc.bubble && !sc.realtime {
-							add(ruleNoRealtime, sel.Pos(), "time.%s outside a synctest bubble (mark the func `// real I/O: <reason>` or `//testpolicy:realtime <reason>`)", name)
+						if !sc.bubble && sc.realtime {
+							usedRealtime = true
+						} else if !sc.bubble {
+							add(ruleNoRealtime, sel.Pos(), "time.%s outside a synctest bubble (mark the func `//testpolicy:realtime <reason>`)", name)
 						}
 					}
 				}
@@ -350,8 +353,12 @@ func checkPolicySyntaxPkg(fset *token.FileSet, file *ast.File, sources map[strin
 			if !ok {
 				return true
 			}
-			if callee := calleeName(call); callee != "" && sources[callee] && !isPkgCallTo(call, timeName) && !sc.bubble && !sc.realtime {
-				add(ruleNoRealtime, call.Pos(), "call to timer-returning helper %s outside a synctest bubble (annotate the calling func `// real I/O: <reason>` or `//testpolicy:realtime <reason>`; annotating the helper does not cover callers)", callee)
+			if callee := calleeName(call); callee != "" && sources[callee] && !isPkgCallTo(call, timeName) && !sc.bubble {
+				if sc.realtime {
+					usedRealtime = true
+				} else {
+					add(ruleNoRealtime, call.Pos(), "call to timer-returning helper %s outside a synctest bubble (annotate the calling func `//testpolicy:realtime <reason>`; annotating the helper does not cover callers)", callee)
+				}
 			}
 			if name, ok := isPkgCall(call, synctestName); ok && name == "Test" {
 				walk(call.Fun, sc)
@@ -370,13 +377,22 @@ func checkPolicySyntaxPkg(fset *token.FileSet, file *ast.File, sources map[strin
 
 	for _, decl := range file.Decls {
 		sc := scope{}
-		if fn, ok := decl.(*ast.FuncDecl); ok {
+		directive := false
+		var fn *ast.FuncDecl
+		if f, ok := decl.(*ast.FuncDecl); ok {
+			fn = f
 			n := fn.Name.Name
-			sc.realtime = docHasRealIO(fn.Doc) || docHasDirective(fn.Doc, "realtime") ||
+			directive = docHasDirective(fn.Doc, "realtime")
+			sc.realtime = directive ||
 				strings.HasPrefix(n, "Benchmark") || strings.HasPrefix(n, "Fuzz") || strings.HasPrefix(n, "Example")
 		}
+		usedRealtime = false
 		walk(decl, sc)
+		if directive && !usedRealtime {
+			add(ruleNoRealtime, fn.Doc.Pos(), "//testpolicy:realtime on %s, which has no real-time wait outside a bubble; remove the unused directive", fn.Name.Name)
+		}
 		checkBusyPoll(decl, timeName, runtimeName, sources, add)
+		checkDeadlineLoops(decl, timeName, add)
 	}
 	return out
 }
@@ -402,6 +418,50 @@ func isPkgCallTo(call *ast.CallExpr, pkg string) bool {
 	return ok && pkg != "" && id.Name == pkg
 }
 
+// checkDeadlineLoops flags for loops that poll the wall clock: their
+// condition, post statement or body (outside nested func literals) calls
+// time.Now/Since/Until or a Before/After method (a time.Time deadline check).
+func checkDeadlineLoops(decl ast.Decl, timeName string, add func(string, token.Pos, string, ...any)) {
+	ast.Inspect(decl, func(n ast.Node) bool {
+		loop, ok := n.(*ast.ForStmt)
+		if !ok {
+			return true
+		}
+		found := ""
+		for _, part := range []ast.Node{loop.Cond, loop.Post, loop.Body} {
+			if part == nil || found != "" {
+				continue
+			}
+			ast.Inspect(part, func(m ast.Node) bool {
+				if _, ok := m.(*ast.FuncLit); ok || found != "" {
+					return false
+				}
+				call, ok := m.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				if id, ok := sel.X.(*ast.Ident); ok && timeName != "" && id.Name == timeName {
+					switch sel.Sel.Name {
+					case "Now", "Since", "Until":
+						found = "time." + sel.Sel.Name
+					}
+				} else if sel.Sel.Name == "Before" || sel.Sel.Name == "After" {
+					found = "." + sel.Sel.Name
+				}
+				return true
+			})
+		}
+		if found != "" {
+			add(ruleNoPolling, loop.Pos(), "loop polls the wall clock (%s) for a deadline; wait on a real event, use one bounded channel deadline, or synctest.Wait in a bubble", found)
+		}
+		return true
+	})
+}
+
 // checkBusyPoll implements ruleNoPolling for spin loops in one declaration.
 func checkBusyPoll(decl ast.Decl, timeName, runtimeName string, sources map[string]bool, add func(string, token.Pos, string, ...any)) {
 	timerVars := make(map[string]bool)
@@ -413,7 +473,7 @@ func checkBusyPoll(decl ast.Decl, timeName, runtimeName string, sources map[stri
 		case *ast.Ident:
 			return timerVars[x.Name]
 		case *ast.SelectorExpr:
-			return x.Sel.Name == "C" && isTimer(x.X)
+			return x.Sel.Name == "C"
 		case *ast.CallExpr:
 			if sel, ok := x.Fun.(*ast.SelectorExpr); ok {
 				if id, ok := sel.X.(*ast.Ident); ok && timeName != "" && id.Name == timeName {
@@ -571,7 +631,7 @@ func TestTestPolicyNoRealtimeWaits(t *testing.T) {
 }
 
 func TestTestPolicyNegativeFixtures(t *testing.T) {
-	const header = "package p\n\nimport (\n\t\"runtime\"\n\t\"testing\"\n\t\"testing/synctest\"\n\t\"time\"\n\n\t\"github.com/stretchr/testify/require\"\n)\n\nvar _ = require.True\nvar _ = synctest.Wait\nvar _ = time.Second\nvar _ = runtime.Gosched\n\n"
+	const header = "package p\n\nimport (\n\t\"context\"\n\t\"runtime\"\n\t\"testing\"\n\t\"testing/synctest\"\n\t\"time\"\n\n\t\"github.com/stretchr/testify/require\"\n)\n\nvar _ = require.True\nvar _ = synctest.Wait\nvar _ = time.Second\nvar _ = runtime.Gosched\nvar _ = context.Background\n\n"
 	tests := []struct {
 		name string
 		src  string
@@ -589,8 +649,6 @@ func TestTestPolicyNegativeFixtures(t *testing.T) {
 		{"sleep directive two lines away", "func h() {\n\t//testpolicy:sleep reason\n\n\ttime.Sleep(1)\n}", []string{ruleNoSleep}},
 		{"timer violation", "func h() { <-time.After(1); time.NewTimer(1); time.NewTicker(1); time.Tick(1); time.AfterFunc(1, nil) }", []string{ruleNoRealtime, ruleNoRealtime, ruleNoRealtime, ruleNoRealtime, ruleNoRealtime}},
 		{"timer in bubble", "func TestX(t *testing.T) { synctest.Test(t, func(t *testing.T) { <-time.After(1) }) }", nil},
-		{"timer in real I/O func", "// TestX does things.\n//\n// real I/O: unix socket\nfunc TestX(t *testing.T) { func() { <-time.After(1) }() }", nil},
-		{"real I/O without reason", "// real I/O:\nfunc TestX(t *testing.T) { <-time.After(1) }", []string{ruleNoRealtime}},
 		{"timer in realtime directive func", "// pollUntil polls.\n//testpolicy:realtime shared helper for real-I/O tests\nfunc pollUntil() { time.NewTicker(1) }", nil},
 		{"realtime directive without reason", "//testpolicy:realtime\nfunc pollUntil() { time.NewTicker(1) }", []string{ruleNoRealtime}},
 		{"timer in benchmark", "func BenchmarkX(b *testing.B) { <-time.After(1) }", nil},
@@ -601,19 +659,35 @@ func TestTestPolicyNegativeFixtures(t *testing.T) {
 		{"polling on other package", "func h() { _ = testing.Eventually }", nil},
 		{"polling on non-package receiver", "func h(r interface{ Eventually() }) { r.Eventually() }", []string{ruleNoPolling}},
 		{"polling via assert package", "func h() { _ = require.Never }", []string{ruleNoPolling}},
-		{"sleep not allowed by real I/O", "// real I/O: sockets\nfunc TestX(t *testing.T) { time.Sleep(1) }", []string{ruleNoSleep}},
+		{"sleep not allowed by real I/O", "func TestX(t *testing.T) { time.Sleep(1) }", []string{ruleNoSleep}},
 		{"wrapper caller flagged", "func dl(d time.Duration) <-chan time.Time { return nil }\nfunc h() { <-dl(1) }", []string{ruleNoRealtime}},
 		{"wrapper method and timer results", "type s struct{}\nfunc (s) tm() *time.Timer { return nil }\nfunc (s) tk() (int, *time.Ticker) { return 0, nil }\nfunc h(x s) { x.tm(); x.tk() }", []string{ruleNoRealtime, ruleNoRealtime}},
 		{"wrapper caller in annotated func", "func dl() <-chan time.Time { return nil }\n//testpolicy:realtime waits on socket\nfunc h() { <-dl() }", nil},
 		{"wrapper caller in bubble", "func dl() <-chan time.Time { return nil }\nfunc TestX(t *testing.T) { synctest.Test(t, func(t *testing.T) { <-dl() }) }", nil},
 		{"wrapper annotation does not cover callers", "//testpolicy:realtime helper\nfunc dl() <-chan time.Time { return time.After(1) }\nfunc h() { <-dl() }", []string{ruleNoRealtime}},
 		{"helper without timer result ok", "//testpolicy:realtime waits on socket\nfunc until() { time.AfterFunc(1, nil) }\nfunc h() { until() }", nil},
-		{"gosched loop flagged", "//testpolicy:realtime x\nfunc h(c func() bool) { for !c() { runtime.Gosched() } }", []string{ruleNoPolling}},
+		{"gosched loop flagged", "func h(c func() bool) { for !c() { runtime.Gosched() } }", []string{ruleNoPolling}},
 		{"gosched loop in bubble flagged", "func TestX(t *testing.T) { synctest.Test(t, func(t *testing.T) { for { runtime.Gosched() } }) }", []string{ruleNoPolling}},
 		{"select default deadline loop flagged", "//testpolicy:realtime x\nfunc h(c func() bool) {\n\tdl := time.After(1)\n\tfor !c() {\n\t\tselect {\n\t\tcase <-dl:\n\t\t\treturn\n\t\tdefault:\n\t\t}\n\t}\n}", []string{ruleNoPolling}},
 		{"select default ticker loop flagged", "func TestX(t *testing.T) { synctest.Test(t, func(t *testing.T) { tk := time.NewTicker(1); for { select { case <-tk.C: default: } } }) }", []string{ruleNoPolling}},
 		{"select default helper deadline flagged", "func dl() <-chan time.Time { return nil }\n//testpolicy:realtime x\nfunc h() { d := dl(); for { select { case <-d: default: } } }", []string{ruleNoPolling}},
 		{"non-blocking drain not flagged", "func h(ch chan int) { for { select { case <-ch: default: return } } }", nil},
+		{"deadline loop time.Now", "func h(c func() bool) { for !c() { if time.Now().After(time.Time{}) { return } } }", []string{ruleNoPolling}},
+		{"deadline loop time.Since in cond", "func h() { for time.Since(time.Time{}) < 1 { } }", []string{ruleNoPolling}},
+		{"deadline loop in bubble", "func TestX(t *testing.T) { synctest.Test(t, func(t *testing.T) { for time.Until(time.Time{}) > 0 { } }) }", []string{ruleNoPolling}},
+		{"deadline loop Before on variable", "func h(dl time.Time, c func() bool) { for !c() { if dl.Before(time.Time{}) { return } } }", []string{ruleNoPolling}},
+		{"time.Now in func lit inside loop ok", "func h() { for i := 0; i < 2; i++ { _ = func() { _ = time.Now() } } }", nil},
+		{"time.Now outside loop ok", "func h() { _ = time.Now() }", nil},
+		{"context.WithTimeout flagged", "func h(c context.Context) { context.WithTimeout(c, 1); context.WithDeadline(c, time.Time{}); context.AfterFunc(c, nil) }", []string{ruleNoRealtime, ruleNoRealtime, ruleNoRealtime}},
+		{"context.WithTimeout in bubble", "func TestX(t *testing.T) { synctest.Test(t, func(t *testing.T) { context.WithTimeout(context.Background(), 1) }) }", nil},
+		{"context.WithTimeout in realtime func", "//testpolicy:realtime socket\nfunc h() { context.WithTimeout(context.Background(), 1) }", nil},
+		{"bidirectional time chan helper", "func dl() chan time.Time { return nil }\nfunc h() { <-dl() }", []string{ruleNoRealtime}},
+		{"send-only time chan helper", "func dl() chan<- time.Time { return nil }\nfunc h() { dl() }", []string{ruleNoRealtime}},
+		{"select default field timer chain", "//testpolicy:realtime x\nfunc h(x struct{ timer *time.Timer }) { _ = time.After(1); for { select { case <-x.timer.C: default: } } }", []string{ruleNoPolling}},
+		{"named func passed to synctest.Test is not a bubble", "func body(t *testing.T) { <-time.After(1) }\nfunc TestX(t *testing.T) { synctest.Test(t, body) }", []string{ruleNoRealtime}},
+		{"unused realtime directive", "//testpolicy:realtime nothing waits\nfunc h() {}", []string{ruleNoRealtime}},
+		{"realtime directive only used in bubble", "//testpolicy:realtime x\nfunc TestX(t *testing.T) { synctest.Test(t, func(t *testing.T) { <-time.After(1) }) }", []string{ruleNoRealtime}},
+		{"realtime directive used by timer helper", "func dl() <-chan time.Time { return nil }\n//testpolicy:realtime x\nfunc h() { <-dl() }", nil},
 		{"gosched outside loop not flagged", "func h() { runtime.Gosched() }", nil},
 	}
 	for _, tt := range tests {
@@ -776,6 +850,7 @@ func stripVariant(importPath string) string {
 	return before
 }
 
+//testpolicy:realtime runs the real go list subprocess, bounded by a context deadline
 func goListExport(t *testing.T) []listedPackage {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
