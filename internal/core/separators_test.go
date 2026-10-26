@@ -3,6 +3,7 @@ package core
 import (
 	"reflect"
 	"testing"
+	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -66,85 +67,97 @@ func TestSeparators(t *testing.T) {
 		{"left column: whole line, split column untouched", tiles(0, grid...), true, []px{{14, 3, "lit"}, {14, 30, "lit"}, {20, 14, "gray"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			seps := separators(tc.ps, 2, 0, whole(bigOutput), tc.lit)
-			for _, c := range tc.check {
-				if got := colorAt(seps, c.x, c.y); got != c.want {
-					t.Errorf("(%d,%d) = %q, want %q; %v", c.x, c.y, got, c.want, seps)
+			synctest.Test(t, func(t *testing.T) {
+				seps := separators(tc.ps, 2, 0, whole(bigOutput), tc.lit)
+				for _, c := range tc.check {
+					if got := colorAt(seps, c.x, c.y); got != c.want {
+						t.Errorf("(%d,%d) = %q, want %q; %v", c.x, c.y, got, c.want, seps)
+					}
 				}
-			}
+
+			})
 		})
 	}
 }
 
 func TestSeparatorsSkip(t *testing.T) {
-	if s := separators(tiles(0, Rect{W: 32, H: 16}), 2, 0, whole(bigOutput), true); len(s) != 0 {
-		t.Fatal("lone window:", s)
-	}
-	if s := separators(tiles(0, Rect{W: 16, H: 16}, Rect{X: 16, W: 16, H: 16}), 0, 0, whole(bigOutput), true); len(s) != 0 {
-		t.Fatal("width 0:", s)
-	}
-	full := tiles(0, Rect{W: 16, H: 16}, Rect{X: 16, W: 16, H: 16})
-	full[0].Fullscreen, full[1].Hidden = true, true
-	if s := separators(full, 2, 0, whole(bigOutput), true); len(s) != 0 {
-		t.Fatal("fullscreen:", s)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		if s := separators(tiles(0, Rect{W: 32, H: 16}), 2, 0, whole(bigOutput), true); len(s) != 0 {
+			t.Fatal("lone window:", s)
+		}
+		if s := separators(tiles(0, Rect{W: 16, H: 16}, Rect{X: 16, W: 16, H: 16}), 0, 0, whole(bigOutput), true); len(s) != 0 {
+			t.Fatal("width 0:", s)
+		}
+		full := tiles(0, Rect{W: 16, H: 16}, Rect{X: 16, W: 16, H: 16})
+		full[0].Fullscreen, full[1].Hidden = true, true
+		if s := separators(full, 2, 0, whole(bigOutput), true); len(s) != 0 {
+			t.Fatal("fullscreen:", s)
+		}
+
+	})
 }
 
 func TestSeparatorsFloat(t *testing.T) {
-	float := Placement{ID: 1, Rect: Rect{X: 10, Y: 10, W: 20, H: 20}, Floating: true, Focused: true, Inset: ports.SideAll}
-	seps := separators([]Placement{float}, 2, 0, whole(bigOutput), true)
-	if seps[0].Window != 1 {
-		t.Fatal("float border not tied to its window:", seps)
-	}
-	for _, c := range [][2]int{{10, 10}, {29, 29}, {20, 11}} {
-		if got := colorAt(seps, c[0], c[1]); got != "lit" {
-			t.Errorf("(%d,%d) = %q", c[0], c[1], got)
+	synctest.Test(t, func(t *testing.T) {
+		float := Placement{ID: 1, Rect: Rect{X: 10, Y: 10, W: 20, H: 20}, Floating: true, Focused: true, Inset: ports.SideAll}
+		seps := separators([]Placement{float}, 2, 0, whole(bigOutput), true)
+		if seps[0].Window != 1 {
+			t.Fatal("float border not tied to its window:", seps)
 		}
-	}
-	if got := colorAt(seps, 20, 20); got != "" {
-		t.Error("inside:", got)
-	}
+		for _, c := range [][2]int{{10, 10}, {29, 29}, {20, 11}} {
+			if got := colorAt(seps, c[0], c[1]); got != "lit" {
+				t.Errorf("(%d,%d) = %q", c[0], c[1], got)
+			}
+		}
+		if got := colorAt(seps, 20, 20); got != "" {
+			t.Error("inside:", got)
+		}
+
+	})
 }
 
 // Through the real layout: scrolling removes borders to off-output
 // neighbors and gives the client back the reserved space.
 func TestSeparatorsScroll(t *testing.T) {
-	m := monitor() // 100x80, 2 columns on screen
-	for id := WindowID(1); id <= 3; id++ {
-		m.AddWindow(id)
-	}
-	w := m.Current()
-	insets := func() map[WindowID]ports.Sides {
-		got := map[WindowID]ports.Sides{}
-		for _, p := range w.Layout() {
-			got[p.ID] = p.Inset
+	synctest.Test(t, func(t *testing.T) {
+		m := monitor() // 100x80, 2 columns on screen
+		for id := WindowID(1); id <= 3; id++ {
+			m.AddWindow(id)
 		}
-		return got
-	}
-	before := insets()
-	if before[1] != 0 || before[3]&ports.SideRight != 0 {
-		t.Fatalf("scrolled tiles reserve off-output lines: %v", before)
-	}
-	if w.View == 0 {
-		t.Fatal("expected a scrolled view")
-	}
-	m.Apply(ActionFocusColumnLeft)
-	m.Apply(ActionFocusColumnLeft)
-	if after := insets(); reflect.DeepEqual(before, after) || after[1]&ports.SideRight == 0 || after[3] != 0 {
-		t.Fatalf("expected visible borders to change with the view: %v then %v", before, after)
-	}
-	out := Rect{W: 100, H: 80}
-	seps := separators(w.Layout(), 2, 0, whole(out), true)
-	if got := colorAt(seps, 99, 40); got != "" {
-		t.Fatalf("line at the output edge: %v", seps)
-	}
-	// Two columns on screen out of three: the half rule applies.
-	if got := colorAt(seps, 48, 60); got != "gray" {
-		t.Fatalf("(48,60) = %q; %v", got, seps)
-	}
-	if got := colorAt(seps, 48, 10); got != "lit" {
-		t.Fatalf("(48,10) = %q; %v", got, seps)
-	}
+		w := m.Current()
+		insets := func() map[WindowID]ports.Sides {
+			got := map[WindowID]ports.Sides{}
+			for _, p := range w.Layout() {
+				got[p.ID] = p.Inset
+			}
+			return got
+		}
+		before := insets()
+		if before[1] != 0 || before[3]&ports.SideRight != 0 {
+			t.Fatalf("scrolled tiles reserve off-output lines: %v", before)
+		}
+		if w.View == 0 {
+			t.Fatal("expected a scrolled view")
+		}
+		m.Apply(ActionFocusColumnLeft)
+		m.Apply(ActionFocusColumnLeft)
+		if after := insets(); reflect.DeepEqual(before, after) || after[1]&ports.SideRight == 0 || after[3] != 0 {
+			t.Fatalf("expected visible borders to change with the view: %v then %v", before, after)
+		}
+		out := Rect{W: 100, H: 80}
+		seps := separators(w.Layout(), 2, 0, whole(out), true)
+		if got := colorAt(seps, 99, 40); got != "" {
+			t.Fatalf("line at the output edge: %v", seps)
+		}
+		// Two columns on screen out of three: the half rule applies.
+		if got := colorAt(seps, 48, 60); got != "gray" {
+			t.Fatalf("(48,60) = %q; %v", got, seps)
+		}
+		if got := colorAt(seps, 48, 10); got != "lit" {
+			t.Fatalf("(48,10) = %q; %v", got, seps)
+		}
+
+	})
 }
 
 // A scroll column scrolled under a side panel is no neighbor: the column
@@ -152,63 +165,72 @@ func TestSeparatorsScroll(t *testing.T) {
 // With a gap, the edge the two share lies inside the usable area: only
 // the tile under the panel being out of it keeps the line away.
 func TestSeparatorsScrollUnderSidePanel(t *testing.T) {
-	for _, gap := range []int{0, 8} {
-		ps := []Placement{
-			{ID: 1, Rect: Rect{X: 0, W: 100, H: 600}},
-			{ID: 2, Rect: Rect{X: 100 + gap, W: 400, H: 600}, Focused: true},
-			{ID: 3, Rect: Rect{X: 500 + 2*gap, W: 380, H: 600}},
+	synctest.Test(t, func(t *testing.T) {
+		for _, gap := range []int{0, 8} {
+			ps := []Placement{
+				{ID: 1, Rect: Rect{X: 0, W: 100, H: 600}},
+				{ID: 2, Rect: Rect{X: 100 + gap, W: 400, H: 600}, Focused: true},
+				{ID: 3, Rect: Rect{X: 500 + 2*gap, W: 380, H: 600}},
+			}
+			setVisibleNeighbors(ps, gap, Rect{X: 100, W: 900, H: 600})
+			if ps[0].Neighbors != 0 {
+				t.Fatalf("gap %d: tile under the panel: neighbors %04b, want none", gap, ps[0].Neighbors)
+			}
+			if ps[1].Neighbors != ports.SideRight {
+				t.Fatalf("gap %d: tile at the panel: neighbors %04b, want right only", gap, ps[1].Neighbors)
+			}
 		}
-		setVisibleNeighbors(ps, gap, Rect{X: 100, W: 900, H: 600})
-		if ps[0].Neighbors != 0 {
-			t.Fatalf("gap %d: tile under the panel: neighbors %04b, want none", gap, ps[0].Neighbors)
-		}
-		if ps[1].Neighbors != ports.SideRight {
-			t.Fatalf("gap %d: tile at the panel: neighbors %04b, want right only", gap, ps[1].Neighbors)
-		}
-	}
+
+	})
 }
 
 // A cascade band above a bottom panel: the next band starts under the
 // panel, so the focused tile gets no line along the panel, only the one it
 // shares with its band neighbor.
 func TestSeparatorsCascadeBottomPanel(t *testing.T) {
-	w := &Workspace{Overflow: OverflowCascade, MaxColumns: 2}
-	w.SetOutput(900, 600)
-	w.SetUsable(Rect{W: 900, H: 580})
-	for id := WindowID(1); id <= 3; id++ {
-		w.AddWindow(id)
-	}
-	w.FocusID(1)
-	ps := w.Layout()
-	if p := previewOf(t, ps, 1); p.Neighbors != ports.SideRight {
-		t.Fatalf("neighbors %04b, want right only", p.Neighbors)
-	}
-	seps := separators(ps, 2, 0, viewport{frame: w.Output, usable: w.Usable}, true)
-	if got := colorAt(seps, 200, 578); got != "" {
-		t.Fatalf("line along the panel: %v", seps)
-	}
-	for _, s := range seps {
-		if s.Window == 3 {
-			t.Fatalf("line of the tile under the panel: %v", seps)
+	synctest.Test(t, func(t *testing.T) {
+		w := &Workspace{Overflow: OverflowCascade, MaxColumns: 2}
+		w.SetOutput(900, 600)
+		w.SetUsable(Rect{W: 900, H: 580})
+		for id := WindowID(1); id <= 3; id++ {
+			w.AddWindow(id)
 		}
-	}
-	// Two tiles on screen: each lights its half of the shared line.
-	if got := colorAt(seps, 449, 100); got != "lit" {
-		t.Fatalf("shared line (449,100) = %q; %v", got, seps)
-	}
-	if got := colorAt(seps, 449, 400); got != "gray" {
-		t.Fatalf("shared line (449,400) = %q; %v", got, seps)
-	}
+		w.FocusID(1)
+		ps := w.Layout()
+		if p := previewOf(t, ps, 1); p.Neighbors != ports.SideRight {
+			t.Fatalf("neighbors %04b, want right only", p.Neighbors)
+		}
+		seps := separators(ps, 2, 0, viewport{frame: w.Output, usable: w.Usable}, true)
+		if got := colorAt(seps, 200, 578); got != "" {
+			t.Fatalf("line along the panel: %v", seps)
+		}
+		for _, s := range seps {
+			if s.Window == 3 {
+				t.Fatalf("line of the tile under the panel: %v", seps)
+			}
+		}
+		// Two tiles on screen: each lights its half of the shared line.
+		if got := colorAt(seps, 449, 100); got != "lit" {
+			t.Fatalf("shared line (449,100) = %q; %v", got, seps)
+		}
+		if got := colorAt(seps, 449, 400); got != "gray" {
+			t.Fatalf("shared line (449,400) = %q; %v", got, seps)
+		}
+
+	})
 }
 
 // With gaps each tile owns four full border sides, including outer edges.
 func TestSeparatorsGaps(t *testing.T) {
-	ps := []Placement{{ID: 1, Rect: Rect{X: 0, W: 16, H: 16}, Focused: true}, {ID: 2, Rect: Rect{X: 20, W: 16, H: 16}}}
-	setVisibleNeighbors(ps, 4, bigOutput)
-	seps := separators(ps, 2, 4, whole(bigOutput), true)
-	for _, c := range []px{{14, 2, "lit"}, {14, 13, "lit"}, {0, 8, "lit"}, {8, 0, "lit"}, {8, 15, "lit"}, {20, 8, "gray"}, {35, 8, "gray"}, {28, 0, "gray"}, {28, 15, "gray"}, {17, 8, ""}} {
-		if got := colorAt(seps, c.x, c.y); got != c.want {
-			t.Errorf("(%d,%d) = %q, want %q", c.x, c.y, got, c.want)
+	synctest.Test(t, func(t *testing.T) {
+		ps := []Placement{{ID: 1, Rect: Rect{X: 0, W: 16, H: 16}, Focused: true}, {ID: 2, Rect: Rect{X: 20, W: 16, H: 16}}}
+		setVisibleNeighbors(ps, 4, bigOutput)
+		seps := separators(ps, 2, 4, whole(bigOutput), true)
+		for _, c := range []px{{14, 2, "lit"}, {14, 13, "lit"}, {0, 8, "lit"}, {8, 0, "lit"}, {8, 15, "lit"}, {20, 8, "gray"}, {35, 8, "gray"}, {28, 0, "gray"}, {28, 15, "gray"}, {17, 8, ""}} {
+			if got := colorAt(seps, c.x, c.y); got != c.want {
+				t.Errorf("(%d,%d) = %q, want %q", c.x, c.y, got, c.want)
+			}
 		}
-	}
+
+	})
 }

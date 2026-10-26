@@ -54,6 +54,8 @@ func requireCastEnv(t *testing.T) {
 // startCastApp runs the compositor with the capture allowlist content. The
 // PipeWire socket stays where it is: only the Wayland socket and the state
 // move to temporary directories.
+//
+//testpolicy:realtime real headless renderer and D-Bus service startup and teardown
 func startCastApp(t *testing.T, allow string) *castApp {
 	t.Helper()
 	t.Setenv("PIPEWIRE_RUNTIME_DIR", os.Getenv("XDG_RUNTIME_DIR"))
@@ -104,20 +106,39 @@ func castClient(t *testing.T) *zerobus.Conn {
 	return c
 }
 
+//testpolicy:realtime D-Bus NameOwnerChanged is emitted by a real session bus
 func waitOwner(t *testing.T, c *zerobus.Conn, name string) {
 	t.Helper()
-	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
-		e := c.NewCall("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameHasOwner", "s")
-		e.Str(name)
-		m, err := c.Call()
+	rule := "type='signal',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0='" + name + "'"
+	if err := c.AddMatch(rule); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.RemoveMatch(rule) }()
+	c.NewCall("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameHasOwner", "s").Str(name)
+	m, err := c.Call()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Body().Bool() {
+		return
+	}
+	timeout := time.AfterFunc(15*time.Second, func() { _ = c.Close() })
+	defer timeout.Stop()
+	for {
+		m, err := c.ReadMessage()
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("waiting for %s: %v", name, err)
 		}
-		if m.Body().Bool() {
-			return
+		if m.Member == "NameOwnerChanged" {
+			body := m.Body()
+			if body.Str() == name {
+				_ = body.Str()
+				if body.Str() != "" {
+					return
+				}
+			}
 		}
 	}
-	t.Fatalf("%s never appeared", name)
 }
 
 func emptyProps(e *zerobus.Encoder) { e.EndArray(e.BeginArray('{')) }
@@ -156,6 +177,8 @@ func recordMonitor(c *zerobus.Conn, session, connector string) (string, string) 
 
 // A monitor cast streams live to a PipeWire consumer, allocates next to
 // nothing per frame, refuses another client's calls and ends on Stop.
+//
+//testpolicy:realtime real PipeWire/GStreamer frames and D-Bus lifecycle
 func TestScreencastStreamsMonitor(t *testing.T) {
 	requireCastEnv(t)
 	app := startCastApp(t, "*\n")
@@ -163,7 +186,7 @@ func TestScreencastStreamsMonitor(t *testing.T) {
 	waitOwner(t, c, scName)
 	// The inventory reaches the service after the outputs appear.
 	var session, stream string
-	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+	for deadline := time.Now().Add(15 * time.Second); ; {
 		name, m := call(c, scPath, "org.gnome.Mutter.ScreenCast", "CreateSession", "a{sv}", emptyProps)
 		if name != "" {
 			t.Fatalf("CreateSession: %s", name)
@@ -241,12 +264,17 @@ func TestScreencastStreamsMonitor(t *testing.T) {
 		t.Fatal(err)
 	}
 	var frames atomic.Int64
+	frameSeen := make(chan struct{}, 1)
 	go func() {
 		// Counted on raw reads: a line per frame would allocate a string.
 		buf := make([]byte, 64<<10)
 		for {
 			n, err := out.Read(buf)
 			frames.Add(int64(bytes.Count(buf[:n], []byte("chain "))))
+			select {
+			case frameSeen <- struct{}{}:
+			default:
+			}
 			if err != nil {
 				return
 			}
@@ -255,7 +283,7 @@ func TestScreencastStreamsMonitor(t *testing.T) {
 	exited := make(chan error, 1)
 	go func() { exited <- gst.Wait() }()
 
-	// Steady state: 5 seconds after the stream warmed up. Every allocation is
+	// Steady state: measure 150 frames after 60 warm-up frames. Every allocation is
 	// recorded (MemProfileRate 1) and attributed by its stack: the cast path
 	// (screencast, wayland casts, purego-pipewire, zerobus) must allocate
 	// less than once per frame, and so must the renderer capture path it
@@ -263,20 +291,20 @@ func TestScreencastStreamsMonitor(t *testing.T) {
 	// pipeline worker). The headless output's own display frame (Render's
 	// sync file, the flip report, injected input) allocates whether or not
 	// a cast runs: it is reported in the whole-process figure, not asserted.
-	time.Sleep(2 * time.Second)
+	waitFrames(t, &frames, frameSeen, exited, 60)
 	runtime.MemProfileRate = 1
 	f0 := frames.Load()
 	before := allocSnapshot()
 	var m0, m1 runtime.MemStats
 	runtime.ReadMemStats(&m0)
-	time.Sleep(5 * time.Second)
+	waitFrames(t, &frames, frameSeen, exited, f0+150)
 	runtime.ReadMemStats(&m1)
 	after := allocSnapshot()
 	f1 := frames.Load()
 	runtime.MemProfileRate = 512 * 1024
 	n := f1 - f0
 	if n < 60 {
-		t.Errorf("only %d frames in 5 s", n)
+		t.Errorf("only %d frames in measurement interval", n)
 	} else {
 		cast, other := after.sub(before)
 		per := float64(cast) / float64(n)
@@ -439,4 +467,20 @@ func (a allocs) sub(b allocs) (cast, other int64) {
 		other += v - b.other[k]
 	}
 	return cast, other
+}
+
+//testpolicy:realtime observes frames from the real GStreamer/PipeWire consumer
+func waitFrames(t *testing.T, frames *atomic.Int64, changed <-chan struct{}, exited <-chan error, target int64) {
+	t.Helper()
+	timer := time.NewTimer(15 * time.Second)
+	defer timer.Stop()
+	for frames.Load() < target {
+		select {
+		case <-changed:
+		case err := <-exited:
+			t.Fatalf("consumer exited before frame %d: %v", target, err)
+		case <-timer.C:
+			t.Fatalf("consumer stalled at frame %d, want %d", frames.Load(), target)
+		}
+	}
 }

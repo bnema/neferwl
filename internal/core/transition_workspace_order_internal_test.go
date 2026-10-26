@@ -3,6 +3,7 @@ package core
 import (
 	"math"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -245,39 +246,42 @@ func TestOverviewWorkspaceSwitchOrder(t *testing.T) {
 	for _, l := range registeredLayouts() {
 		for _, s := range orderScenarios() {
 			t.Run(string(l.name())+"/"+s.name, func(t *testing.T) {
-				c, ic, sc := overviewRig(t)
-				m := sc.mon
-				m.Focus(s.start)
-				act, sign, after := s.setup(t, m)
-				for w := range m.all() {
-					w.Overflow = l.name()
-				}
-				settleShown(t, c)
-				toggleOverview(c, sc, ic.now)
-				frame(t, c, ic, 5*time.Second)
-				if s.name == "numbered-to-named" || s.name == "named-to-numbered" {
-					if _, dividers := m.overviewRows(); len(dividers) == 0 {
-						t.Fatal("fixture: no divider between numbered and named rows")
+				synctest.Test(t, func(t *testing.T) {
+					c, ic, sc := overviewRig(t)
+					m := sc.mon
+					m.Focus(s.start)
+					act, sign, after := s.setup(t, m)
+					for w := range m.all() {
+						w.Overflow = l.name()
 					}
-				}
-				switchAndCheck(t, c, ic, sc, act, sign)
-				if after != nil {
-					after(t)
-				}
-				if s.name == "moved-window" {
-					if rm, ok := sc.rects[3]; !ok || rm.leaving {
-						t.Fatalf("window 3 motion %+v (%v)", rm, ok)
-					}
-					for id, rm := range sc.rects {
-						if rm.leaving {
-							t.Errorf("leftover leaving entry %d", id)
+					settleShown(t, c)
+					toggleOverview(c, sc, ic.now)
+					frame(t, c, ic, 5*time.Second)
+					if s.name == "numbered-to-named" || s.name == "named-to-numbered" {
+						if _, dividers := m.overviewRows(); len(dividers) == 0 {
+							t.Fatal("fixture: no divider between numbered and named rows")
 						}
 					}
-					frame(t, c, ic, 5*time.Second)
-					if len(sc.rects) != 0 {
-						t.Fatal("motions did not settle")
+					switchAndCheck(t, c, ic, sc, act, sign)
+					if after != nil {
+						after(t)
 					}
-				}
+					if s.name == "moved-window" {
+						if rm, ok := sc.rects[3]; !ok || rm.leaving {
+							t.Fatalf("window 3 motion %+v (%v)", rm, ok)
+						}
+						for id, rm := range sc.rects {
+							if rm.leaving {
+								t.Errorf("leftover leaving entry %d", id)
+							}
+						}
+						frame(t, c, ic, 5*time.Second)
+						if len(sc.rects) != 0 {
+							t.Fatal("motions did not settle")
+						}
+					}
+
+				})
 			})
 		}
 	}
@@ -314,9 +318,12 @@ func TestMonitorOverviewOrder(t *testing.T) {
 		{"removed anchor: last occupied row", removed, 1.5},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := m.overviewOrder(list, tc.w); got < tc.want-eps || got > tc.want+eps {
-				t.Fatalf("order %g, want %g", got, tc.want)
-			}
+			synctest.Test(t, func(t *testing.T) {
+				if got := m.overviewOrder(list, tc.w); got < tc.want-eps || got > tc.want+eps {
+					t.Fatalf("order %g, want %g", got, tc.want)
+				}
+
+			})
 		})
 	}
 	// Strictly between its anchor and the next numbered row, ranks included.
@@ -333,117 +340,126 @@ func TestMonitorOverviewOrder(t *testing.T) {
 // Closing the overview while the switch slide runs drops it: nothing of the
 // preview stays, nor any card leaving.
 func TestOverviewWorkspaceCloseMidSwitch(t *testing.T) {
-	c, ic, sc := overviewAt(t, OverflowCascade, 1)
-	m := sc.mon
-	old := m.Current()
-	shots := c.snapshot(ic.now)
-	m.Focus(0)
-	c.transition(shots, ic.now)
-	frame(t, c, ic, 30*time.Millisecond)
-	if len(sc.rects) == 0 {
-		t.Fatal("fixture: no slide running")
-	}
-	toggleOverview(c, sc, ic.now)
-	if m.ov.open || m.previewing() {
-		t.Fatal("overview still open")
-	}
-	scene := indicatorScene(t, c)
-	for id, rm := range sc.rects {
-		if rm.leaving || old.has(id) {
-			t.Errorf("window %d keeps a preview motion: %+v", id, rm)
+	synctest.Test(t, func(t *testing.T) {
+		c, ic, sc := overviewAt(t, OverflowCascade, 1)
+		m := sc.mon
+		old := m.Current()
+		shots := c.snapshot(ic.now)
+		m.Focus(0)
+		c.transition(shots, ic.now)
+		frame(t, c, ic, 30*time.Millisecond)
+		if len(sc.rects) == 0 {
+			t.Fatal("fixture: no slide running")
 		}
-		if math.Abs(rm.dx) > 0 && !m.Current().has(id) {
-			t.Errorf("window %d slides but is not on the current workspace", id)
+		toggleOverview(c, sc, ic.now)
+		if m.ov.open || m.previewing() {
+			t.Fatal("overview still open")
 		}
-	}
-	for _, w := range scene.Windows {
-		if !w.Hidden && old.has(WindowID(w.ID)) {
-			t.Errorf("window %d of the left workspace is drawn", w.ID)
+		scene := indicatorScene(t, c)
+		for id, rm := range sc.rects {
+			if rm.leaving || old.has(id) {
+				t.Errorf("window %d keeps a preview motion: %+v", id, rm)
+			}
+			if math.Abs(rm.dx) > 0 && !m.Current().has(id) {
+				t.Errorf("window %d slides but is not on the current workspace", id)
+			}
 		}
-	}
-	frame(t, c, ic, 5*time.Second)
-	if len(sc.rects) != 0 || c.animating() {
-		t.Fatalf("motions left after settling: %d, animating %v", len(sc.rects), c.animating())
-	}
+		for _, w := range scene.Windows {
+			if !w.Hidden && old.has(WindowID(w.ID)) {
+				t.Errorf("window %d of the left workspace is drawn", w.ID)
+			}
+		}
+		frame(t, c, ic, 5*time.Second)
+		if len(sc.rects) != 0 || c.animating() {
+			t.Fatalf("motions left after settling: %d, animating %v", len(sc.rects), c.animating())
+		}
+
+	})
 }
 
 // A veil or size change running on a card is not reset by the switch that
 // enters its workspace: the group start carries it over like the per-window
 // path does.
 func TestOverviewWorkspaceSwitchKeepsRunningDimAndSize(t *testing.T) {
-	c, ic, sc := overviewAt(t, OverflowCascade, 0)
-	m := sc.mon
-	rm := sc.rects[3]
-	if !m.Workspaces[1].has(3) {
-		t.Fatal("fixture: window 3 is not on workspace 1")
-	}
-	rm.dim, rm.ddim = c.spring(levelSpring(0.4, 0), ic.now), 0.4
-	rm.w, rm.dw = c.spring(viewSpring(10, 0), ic.now), 10
-	rm.h, rm.dh = c.spring(viewSpring(6, 0), ic.now), 6
-	rm.scale = true
-	if sc.rects == nil {
-		sc.rects = make(map[WindowID]rectMotion)
-	}
-	sc.rects[3], sc.rectsWS = rm, sc.rectsOwner()
-	ic.now = ic.now.Add(10 * time.Millisecond)
-	shots := c.snapshot(ic.now)
-	var shot rectShot
-	for _, r := range shots[0].rects {
-		if r.id == 3 {
-			shot = r
+	synctest.Test(t, func(t *testing.T) {
+		c, ic, sc := overviewAt(t, OverflowCascade, 0)
+		m := sc.mon
+		rm := sc.rects[3]
+		if !m.Workspaces[1].has(3) {
+			t.Fatal("fixture: window 3 is not on workspace 1")
 		}
-	}
-	if shot.dim == 0 || shot.off.w == 0 || shot.off.h == 0 {
-		t.Fatalf("fixture: shot %+v carries no running dim or size", shot)
-	}
-	m.Focus(1)
-	c.transition(shots, ic.now)
-	got := sc.rects[3]
-	if got.ddim != shot.dim || !got.dim.on {
-		t.Errorf("dim reset: %+v, want offset %g running", got.ddim, shot.dim)
-	}
-	if got.dw != shot.off.w || got.dh != shot.off.h || !got.w.on || !got.h.on || !got.scale {
-		t.Errorf("size reset: (%g,%g) running %v/%v, want (%g,%g)", got.dw, got.dh, got.w.on, got.h.on, shot.off.w, shot.off.h)
-	}
+		rm.dim, rm.ddim = c.spring(levelSpring(0.4, 0), ic.now), 0.4
+		rm.w, rm.dw = c.spring(viewSpring(10, 0), ic.now), 10
+		rm.h, rm.dh = c.spring(viewSpring(6, 0), ic.now), 6
+		rm.scale = true
+		if sc.rects == nil {
+			sc.rects = make(map[WindowID]rectMotion)
+		}
+		sc.rects[3], sc.rectsWS = rm, sc.rectsOwner()
+		ic.now = ic.now.Add(10 * time.Millisecond)
+		shots := c.snapshot(ic.now)
+		var shot rectShot
+		for _, r := range shots[0].rects {
+			if r.id == 3 {
+				shot = r
+			}
+		}
+		if shot.dim == 0 || shot.off.w == 0 || shot.off.h == 0 {
+			t.Fatalf("fixture: shot %+v carries no running dim or size", shot)
+		}
+		m.Focus(1)
+		c.transition(shots, ic.now)
+		got := sc.rects[3]
+		if got.ddim != shot.dim || !got.dim.on {
+			t.Errorf("dim reset: %+v, want offset %g running", got.ddim, shot.dim)
+		}
+		if got.dw != shot.off.w || got.dh != shot.off.h || !got.w.on || !got.h.on || !got.scale {
+			t.Errorf("size reset: (%g,%g) running %v/%v, want (%g,%g)", got.dw, got.dh, got.w.on, got.h.on, shot.off.w, shot.off.h)
+		}
+
+	})
 }
 
 // A workspace moved here from another screen while this one shows its
 // overview is not a workspace switch of this screen: its cards get no group
 // slide from the side of the workspace this screen left.
 func TestOverviewWorkspaceMovedFromOtherScreenGetsNoGroupSlide(t *testing.T) {
-	c, ic, a := overviewRig(t)
-	c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
-	b := c.screens[1]
-	a.mon.Focus(0)
-	for w := range a.mon.all() {
-		w.Overflow = OverflowCascade
-	}
-	for w := range b.mon.all() {
-		w.Overflow = OverflowCascade
-	}
-	b.mon.AddWindow(10)
-	b.mon.Focus(1)
-	settleShown(t, c)
-	toggleOverview(c, b, ic.now)
-	frame(t, c, ic, 5*time.Second)
-	if !b.mon.ov.open || a.mon.previewing() {
-		t.Fatal("fixture: B must show its overview and A not")
-	}
-	moved := a.mon.Current()
-	c.focusScreen = 0
-	shots := c.snapshot(ic.now)
-	c.moveWorkspace(dirRight)
-	if b.mon.Current() != moved || !b.mon.ov.open {
-		t.Fatal("fixture: workspace did not move to B's overview")
-	}
-	c.transition(shots, ic.now)
-	indicatorScene(t, c)
-	for _, p := range b.settledLayout {
-		if p.Hidden || !moved.has(p.ID) {
-			continue
+	synctest.Test(t, func(t *testing.T) {
+		c, ic, a := overviewRig(t)
+		c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
+		b := c.screens[1]
+		a.mon.Focus(0)
+		for w := range a.mon.all() {
+			w.Overflow = OverflowCascade
 		}
-		if rm := b.rects[p.ID]; rm.dx != 0 || rm.dy != 0 || rm.x.on || rm.y.on {
-			t.Errorf("moved window %d slides in as a group: %+v", p.ID, rm)
+		for w := range b.mon.all() {
+			w.Overflow = OverflowCascade
 		}
-	}
+		b.mon.AddWindow(10)
+		b.mon.Focus(1)
+		settleShown(t, c)
+		toggleOverview(c, b, ic.now)
+		frame(t, c, ic, 5*time.Second)
+		if !b.mon.ov.open || a.mon.previewing() {
+			t.Fatal("fixture: B must show its overview and A not")
+		}
+		moved := a.mon.Current()
+		c.focusScreen = 0
+		shots := c.snapshot(ic.now)
+		c.moveWorkspace(dirRight)
+		if b.mon.Current() != moved || !b.mon.ov.open {
+			t.Fatal("fixture: workspace did not move to B's overview")
+		}
+		c.transition(shots, ic.now)
+		indicatorScene(t, c)
+		for _, p := range b.settledLayout {
+			if p.Hidden || !moved.has(p.ID) {
+				continue
+			}
+			if rm := b.rects[p.ID]; rm.dx != 0 || rm.dy != 0 || rm.x.on || rm.y.on {
+				t.Errorf("moved window %d slides in as a group: %+v", p.ID, rm)
+			}
+		}
+
+	})
 }

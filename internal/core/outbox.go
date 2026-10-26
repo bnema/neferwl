@@ -171,8 +171,10 @@ func (o *outbox) push(out chan<- ports.ClientCommand, v ports.ClientCommand, sta
 }
 
 // flush waits until the entry seq is in out, or ctx ends. It is for the
-// bounded outbox backpressure. Without a running sender (core driven
-// without Run), it delivers the queue itself, in order.
+// bounded outbox backpressure and for delivering the output layout before
+// dispatching automatic terminals. An already delivered seq returns immediately.
+// Without a running sender (core driven without Run), it delivers the queue
+// itself, in order.
 func (o *outbox) flush(ctx context.Context, out chan<- ports.ClientCommand, seq uint64) error {
 	var start time.Time
 	defer func() {

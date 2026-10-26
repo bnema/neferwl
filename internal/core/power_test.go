@@ -39,8 +39,8 @@ func powerCoreWith(t *testing.T, opts core.Options) (chan ports.InputEvent, chan
 // sceneOf waits for a scene set in which pred holds for the named output.
 func sceneOf(t *testing.T, scenes <-chan []ports.Scene, name string, pred func(ports.Scene) bool) {
 	t.Helper()
-	deadline := time.After(2 * time.Second)
 	for {
+		synctest.Wait()
 		select {
 		case set := <-scenes:
 			for _, s := range set {
@@ -48,7 +48,7 @@ func sceneOf(t *testing.T, scenes <-chan []ports.Scene, name string, pred func(p
 					return
 				}
 			}
-		case <-deadline:
+		default:
 			t.Fatalf("no matching scene for %s", name)
 		}
 	}
@@ -57,25 +57,28 @@ func sceneOf(t *testing.T, scenes <-chan []ports.Scene, name string, pred func(p
 // A client turning an output off marks its scene and tells wayland; back
 // on clears both. Other outputs stay on.
 func TestOutputPower(t *testing.T) {
-	_, client, _, commands, scenes := powerCore(t)
-	sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
-	client <- ports.OutputPower{Output: "OUT-2", On: false}
-	sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
-	for {
-		if v := commandOf[ports.SetOutputs](t, commands); slices.Equal(v.Off, []string{"OUT-2"}) {
-			break
+	synctest.Test(t, func(t *testing.T) {
+		_, client, _, commands, scenes := powerCore(t)
+		sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
+		client <- ports.OutputPower{Output: "OUT-2", On: false}
+		sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
+		for {
+			if v := commandOf[ports.SetOutputs](t, commands); slices.Equal(v.Off, []string{"OUT-2"}) {
+				break
+			}
 		}
-	}
-	client <- ports.OutputPower{Output: "OUT-2", On: true}
-	sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
-	for {
-		if v := commandOf[ports.SetOutputs](t, commands); len(v.Off) == 0 {
-			break
+		client <- ports.OutputPower{Output: "OUT-2", On: true}
+		sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
+		for {
+			if v := commandOf[ports.SetOutputs](t, commands); len(v.Off) == 0 {
+				break
+			}
 		}
-	}
-	// Unknown outputs are ignored.
-	client <- ports.OutputPower{Output: "NOPE", On: false}
-	sceneOf(t, scenes, "OUT-1", func(s ports.Scene) bool { return !s.Off })
+		// Unknown outputs are ignored.
+		client <- ports.OutputPower{Output: "NOPE", On: false}
+		sceneOf(t, scenes, "OUT-1", func(s ports.Scene) bool { return !s.Off })
+
+	})
 }
 
 // An output unplugged while off (a display in deep sleep) reconnects off;
@@ -84,48 +87,52 @@ func TestOutputPower(t *testing.T) {
 func TestOutputReconnectedWhileOff(t *testing.T) {
 	for _, alone := range []bool{false, true} {
 		t.Run(map[bool]string{false: "beside another", true: "alone"}[alone], func(t *testing.T) {
-			input, client, output, commands, scenes := powerCore(t)
-			stop := make(chan struct{})
-			defer close(stop)
-			active := make(chan struct{}, 1)
-			go func() { // core blocks on a full command channel
-				for {
-					select {
-					case c := <-commands:
-						if _, ok := c.(ports.UserActivity); ok {
-							active <- struct{}{}
+			synctest.Test(t, func(t *testing.T) {
+				input, client, output, commands, scenes := powerCore(t)
+				stop := make(chan struct{})
+				defer close(stop)
+				active := make(chan struct{}, 1)
+				go func() { // core blocks on a full command channel
+					for {
+						select {
+						case c := <-commands:
+							if _, ok := c.(ports.UserActivity); ok {
+								active <- struct{}{}
+							}
+						case <-stop:
+							return
 						}
-					case <-stop:
-						return
 					}
+				}()
+				sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
+				if alone {
+					output <- ports.OutputRemoved{Name: "OUT-1"}
+					gone(t, scenes, "OUT-1")
 				}
-			}()
-			sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
-			if alone {
-				output <- ports.OutputRemoved{Name: "OUT-1"}
-				gone(t, scenes, "OUT-1")
-			}
-			client <- ports.OutputPower{Output: "OUT-2", On: false}
-			sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
-			output <- ports.OutputRemoved{Name: "OUT-2"}
-			gone(t, scenes, "OUT-2") // no older scene can answer below
-			output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
-			sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
+				client <- ports.OutputPower{Output: "OUT-2", On: false}
+				sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
+				output <- ports.OutputRemoved{Name: "OUT-2"}
+				gone(t, scenes, "OUT-2") // no older scene can answer below
+				output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
+				sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
 
-			client <- ports.OutputPower{Output: "OUT-2", On: true}
-			sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
-			client <- ports.OutputPower{Output: "OUT-2", On: false}
-			sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
-			output <- ports.OutputRemoved{Name: "OUT-2"}
-			gone(t, scenes, "OUT-2")
-			input <- ports.PointerMotion{X: 1, Y: 1}
-			select { // input and outputs are separate channels: order them
-			case <-active:
-			case <-time.After(2 * time.Second):
-				t.Fatal("input not handled")
-			}
-			output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
-			sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
+				client <- ports.OutputPower{Output: "OUT-2", On: true}
+				sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
+				client <- ports.OutputPower{Output: "OUT-2", On: false}
+				sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
+				output <- ports.OutputRemoved{Name: "OUT-2"}
+				gone(t, scenes, "OUT-2")
+				input <- ports.PointerMotion{X: 1, Y: 1}
+				synctest.Wait()
+				select { // input and outputs are separate channels: order them
+				case <-active:
+				default:
+					t.Fatal("input not handled")
+				}
+				output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
+				sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
+
+			})
 		})
 	}
 }
@@ -133,14 +140,14 @@ func TestOutputReconnectedWhileOff(t *testing.T) {
 // gone waits for a scene set without the named output.
 func gone(t *testing.T, scenes <-chan []ports.Scene, name string) {
 	t.Helper()
-	deadline := time.After(2 * time.Second)
 	for {
+		synctest.Wait()
 		select {
 		case set := <-scenes:
 			if !slices.ContainsFunc(set, func(s ports.Scene) bool { return s.Output == name }) {
 				return
 			}
-		case <-deadline:
+		default:
 			t.Fatalf("%s still in the scenes", name)
 		}
 	}
@@ -171,29 +178,32 @@ func TestUserActivity(t *testing.T) {
 // With an injected clock, the throttle follows it: no second UserActivity
 // until the clock has advanced past the interval.
 func TestUserActivityFollowsClock(t *testing.T) {
-	clk := newStepClock(t)
-	input, _, _, commands, _ := powerCoreWith(t, core.Options{Clock: clk.clock})
-	input <- ports.PointerMotion{X: 1, Y: 1}
-	commandOf[ports.UserActivity](t, commands)
-	clk.advance(ports.ActivityInterval / 2)
-	// Core takes input in order and the input channel holds 4: once the
-	// sixth send returns, the first motion is handled, and a wrongly
-	// unthrottled activity would already be in commands.
-	for range 6 {
+	synctest.Test(t, func(t *testing.T) {
+		clk := newStepClock(t)
+		input, _, _, commands, _ := powerCoreWith(t, core.Options{Clock: clk.clock})
 		input <- ports.PointerMotion{X: 1, Y: 1}
-	}
-	for {
-		select {
-		case c := <-commands:
-			if _, ok := c.(ports.UserActivity); ok {
-				t.Fatal("second UserActivity before the interval passed on the clock")
-			}
-			continue
-		default:
+		commandOf[ports.UserActivity](t, commands)
+		clk.advance(ports.ActivityInterval / 2)
+		// Core takes input in order and the input channel holds 4: once the
+		// sixth send returns, the first motion is handled, and a wrongly
+		// unthrottled activity would already be in commands.
+		for range 6 {
+			input <- ports.PointerMotion{X: 1, Y: 1}
 		}
-		break
-	}
-	clk.advance(ports.ActivityInterval)
-	input <- ports.PointerMotion{X: 2, Y: 2}
-	commandOf[ports.UserActivity](t, commands)
+		for {
+			select {
+			case c := <-commands:
+				if _, ok := c.(ports.UserActivity); ok {
+					t.Fatal("second UserActivity before the interval passed on the clock")
+				}
+				continue
+			default:
+			}
+			break
+		}
+		clk.advance(ports.ActivityInterval)
+		input <- ports.PointerMotion{X: 2, Y: 2}
+		commandOf[ports.UserActivity](t, commands)
+
+	})
 }

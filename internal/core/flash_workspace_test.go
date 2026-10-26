@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -77,61 +78,70 @@ func TestFlashWorkspaceSwitchByAction(t *testing.T) {
 		{"edge to later workspace flashes the window, cascade column right", OverflowCascade, ActionFocusColumnRight, 0, 1, 4},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c, clock := flashWorkspaces(t, tc.overflow)
-			m := c.cur().mon
-			if tc.from != 1 {
-				m.Focus(tc.from)
-				indicatorScene(t, c)
-			}
-			c.applyAction(tc.action)
-			if m.Current() != m.Workspaces[tc.to] {
-				t.Fatalf("action left workspace %d, want %d", m.Active, tc.to)
-			}
-			if id := wantSwitchFlash(t, c, clock); id != tc.want {
-				t.Fatalf("flash on %d, want %d", id, tc.want)
-			}
+			synctest.Test(t, func(t *testing.T) {
+				c, clock := flashWorkspaces(t, tc.overflow)
+				m := c.cur().mon
+				if tc.from != 1 {
+					m.Focus(tc.from)
+					indicatorScene(t, c)
+				}
+				c.applyAction(tc.action)
+				if m.Current() != m.Workspaces[tc.to] {
+					t.Fatalf("action left workspace %d, want %d", m.Active, tc.to)
+				}
+				if id := wantSwitchFlash(t, c, clock); id != tc.want {
+					t.Fatalf("flash on %d, want %d", id, tc.want)
+				}
+
+			})
 		})
 	}
 }
 
 // workspace <name> shows the named workspace and flashes its focused window.
 func TestFlashNamedWorkspaceBind(t *testing.T) {
-	c, clock := flashWorkspaces(t, OverflowScroll)
-	m := c.cur().mon
-	specs := []NamedWorkspace{{Name: "dev"}}
-	m.SetNamed(specs)
-	c.specs = specs
-	c.windows.mapped(ports.WindowMapped{ID: 5}, clock.now.Add(-time.Minute))
-	numbered := m.Current()
-	m.ToggleNamed("dev")
-	m.AddWindow(5)
-	m.ToggleNamed("dev")
-	if m.Current() != numbered || m.byName("dev").empty() {
-		t.Fatal("setup: named workspace not filled, or not left")
-	}
-	indicatorScene(t, c)
-	c.applyAction("workspace dev")
-	if m.Current() != m.byName("dev") {
-		t.Fatal("bind did not show the named workspace")
-	}
-	if id := wantSwitchFlash(t, c, clock); id != 5 {
-		t.Fatalf("flash on %d, want 5", id)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		c, clock := flashWorkspaces(t, OverflowScroll)
+		m := c.cur().mon
+		specs := []NamedWorkspace{{Name: "dev"}}
+		m.SetNamed(specs)
+		c.specs = specs
+		c.windows.mapped(ports.WindowMapped{ID: 5}, clock.now.Add(-time.Minute))
+		numbered := m.Current()
+		m.ToggleNamed("dev")
+		m.AddWindow(5)
+		m.ToggleNamed("dev")
+		if m.Current() != numbered || m.byName("dev").empty() {
+			t.Fatal("setup: named workspace not filled, or not left")
+		}
+		indicatorScene(t, c)
+		c.applyAction("workspace dev")
+		if m.Current() != m.byName("dev") {
+			t.Fatal("bind did not show the named workspace")
+		}
+		if id := wantSwitchFlash(t, c, clock); id != 5 {
+			t.Fatalf("flash on %d, want 5", id)
+		}
+
+	})
 }
 
 func TestFlashWorkspaceSwitchToEmptyWorkspaceDoesNotFlash(t *testing.T) {
-	c, clock := flashCore(t)
-	m := c.cur().mon
-	c.applyAction(ActionFocusWorkspaceNext)
-	if m.Current() != m.Workspaces[1] {
-		t.Fatal("did not switch")
-	}
-	if id, _ := m.Focused(); id != 0 {
-		t.Fatalf("setup: workspace not empty (%d)", id)
-	}
-	if c.flash.pending != nil || flashTimers(clock) != 0 {
-		t.Fatal("empty workspace flashed")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		c, clock := flashCore(t)
+		m := c.cur().mon
+		c.applyAction(ActionFocusWorkspaceNext)
+		if m.Current() != m.Workspaces[1] {
+			t.Fatal("did not switch")
+		}
+		if id, _ := m.Focused(); id != 0 {
+			t.Fatalf("setup: workspace not empty (%d)", id)
+		}
+		if c.flash.pending != nil || flashTimers(clock) != 0 {
+			t.Fatal("empty workspace flashed")
+		}
+
+	})
 }
 
 func TestFlashWorkspaceSwitchRespectsConfig(t *testing.T) {
@@ -144,15 +154,18 @@ func TestFlashWorkspaceSwitchRespectsConfig(t *testing.T) {
 		{"protected", func(c *Core) { c.security.Protected = true }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c, clock := flashWorkspaces(t, OverflowScroll)
-			tc.change(c)
-			c.applyAction(ActionFocusWorkspacePrev)
-			if c.cur().mon.Current() != c.cur().mon.Workspaces[0] {
-				t.Fatal("did not switch")
-			}
-			if c.flash.pending != nil || flashTimers(clock) != 0 {
-				t.Fatal("flashed despite the config")
-			}
+			synctest.Test(t, func(t *testing.T) {
+				c, clock := flashWorkspaces(t, OverflowScroll)
+				tc.change(c)
+				c.applyAction(ActionFocusWorkspacePrev)
+				if c.cur().mon.Current() != c.cur().mon.Workspaces[0] {
+					t.Fatal("did not switch")
+				}
+				if c.flash.pending != nil || flashTimers(clock) != 0 {
+					t.Fatal("flashed despite the config")
+				}
+
+			})
 		})
 	}
 }
@@ -160,55 +173,61 @@ func TestFlashWorkspaceSwitchRespectsConfig(t *testing.T) {
 // With animations on the flash waits for the slide, then marks the focused
 // window of the new workspace where it settled.
 func TestFlashWorkspaceSwitchWaitsForSlide(t *testing.T) {
-	c, clock := flashWorkspaces(t, OverflowScroll)
-	sc := c.cur()
-	act(c, clock, ActionFocusWorkspacePrev)
-	id := wantSwitchFlash(t, c, clock)
-	if !sc.mon.switchView.busy() {
-		t.Fatal("setup: no workspace slide running")
-	}
-	clock.now = clock.now.Add(flashSettle)
-	if c.flashTick() || c.flash.pending == nil {
-		t.Fatal("flash started while the workspace slides")
-	}
-	if indicatorScene(t, c).Flash != nil {
-		t.Fatal("flash drawn during the slide")
-	}
-	clock.now = clock.now.Add(10 * time.Second)
-	c.animate(clock.now, nil)
-	if !c.flashTick() {
-		t.Fatal("flash did not start after the slide")
-	}
-	if c.flash.running.window != id {
-		t.Fatalf("flash on %d, want %d", c.flash.running.window, id)
-	}
-	var want Rect
-	for _, p := range sc.mon.Layout() {
-		if p.ID == id {
-			want = p.Rect
+	synctest.Test(t, func(t *testing.T) {
+		c, clock := flashWorkspaces(t, OverflowScroll)
+		sc := c.cur()
+		act(c, clock, ActionFocusWorkspacePrev)
+		id := wantSwitchFlash(t, c, clock)
+		if !sc.mon.switchView.busy() {
+			t.Fatal("setup: no workspace slide running")
 		}
-	}
-	if want == (Rect{}) || c.flash.rect != want {
-		t.Fatalf("flash rect %+v, want the settled %+v", c.flash.rect, want)
-	}
-	f := indicatorScene(t, c).Flash
-	if f == nil || f.Rect != want {
-		t.Fatalf("scene flash %+v", f)
-	}
+		clock.now = clock.now.Add(flashSettle)
+		if c.flashTick() || c.flash.pending == nil {
+			t.Fatal("flash started while the workspace slides")
+		}
+		if indicatorScene(t, c).Flash != nil {
+			t.Fatal("flash drawn during the slide")
+		}
+		clock.now = clock.now.Add(10 * time.Second)
+		c.animate(clock.now, nil)
+		if !c.flashTick() {
+			t.Fatal("flash did not start after the slide")
+		}
+		if c.flash.running.window != id {
+			t.Fatalf("flash on %d, want %d", c.flash.running.window, id)
+		}
+		var want Rect
+		for _, p := range sc.mon.Layout() {
+			if p.ID == id {
+				want = p.Rect
+			}
+		}
+		if want == (Rect{}) || c.flash.rect != want {
+			t.Fatalf("flash rect %+v, want the settled %+v", c.flash.rect, want)
+		}
+		f := indicatorScene(t, c).Flash
+		if f == nil || f.Rect != want {
+			t.Fatalf("scene flash %+v", f)
+		}
+
+	})
 }
 
 // A second switch before the flash starts leaves one flash, on the last target.
 func TestFlashWorkspaceSwitchRetargets(t *testing.T) {
-	c, clock := flashWorkspaces(t, OverflowScroll)
-	c.applyAction(ActionFocusWorkspacePrev)
-	c.applyAction(ActionFocusWorkspaceNext)
-	if id, _ := c.cur().mon.Focused(); id != 4 || c.flash.pending == nil || c.flash.pending.window != 4 {
-		t.Fatalf("pending %+v", c.flash.pending)
-	}
-	clock.now = clock.now.Add(flashSettle)
-	if !c.flashTick() || c.flash.running.window != 4 {
-		t.Fatal("last switch did not win")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		c, clock := flashWorkspaces(t, OverflowScroll)
+		c.applyAction(ActionFocusWorkspacePrev)
+		c.applyAction(ActionFocusWorkspaceNext)
+		if id, _ := c.cur().mon.Focused(); id != 4 || c.flash.pending == nil || c.flash.pending.window != 4 {
+			t.Fatalf("pending %+v", c.flash.pending)
+		}
+		clock.now = clock.now.Add(flashSettle)
+		if !c.flashTick() || c.flash.running.window != 4 {
+			t.Fatal("last switch did not win")
+		}
+
+	})
 }
 
 type wsSwipe struct {
@@ -233,98 +252,113 @@ func (s *wsSwipe) end(cancelled bool) {
 }
 
 func TestFlashWorkspaceSwipeCommit(t *testing.T) {
-	c, clock := flashWorkspaces(t, OverflowScroll)
-	sc := c.cur()
-	s := &wsSwipe{c: c}
-	s.begin()
-	s.move(10, -40)
-	if g := c.swipe; g == nil || g.mode != swipeWorkspaces {
-		t.Fatalf("swipe %+v, want a workspace swipe", g)
-	}
-	if c.flash.pending != nil {
-		t.Fatal("flash requested before the swipe committed")
-	}
-	s.end(false)
-	if sc.mon.Current() != sc.mon.Workspaces[0] {
-		t.Fatal("swipe did not switch")
-	}
-	id := wantSwitchFlash(t, c, clock)
-	clock.now = clock.now.Add(flashSettle)
-	if c.flashTick() {
-		t.Fatal("flash started while the landing slide runs")
-	}
-	clock.now = clock.now.Add(10 * time.Second)
-	c.animate(clock.now, nil)
-	if !c.flashTick() || c.flash.running.window != id {
-		t.Fatal("flash did not start on the focused window after the slide")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		c, clock := flashWorkspaces(t, OverflowScroll)
+		sc := c.cur()
+		s := &wsSwipe{c: c}
+		s.begin()
+		s.move(10, -40)
+		if g := c.swipe; g == nil || g.mode != swipeWorkspaces {
+			t.Fatalf("swipe %+v, want a workspace swipe", g)
+		}
+		if c.flash.pending != nil {
+			t.Fatal("flash requested before the swipe committed")
+		}
+		s.end(false)
+		if sc.mon.Current() != sc.mon.Workspaces[0] {
+			t.Fatal("swipe did not switch")
+		}
+		id := wantSwitchFlash(t, c, clock)
+		clock.now = clock.now.Add(flashSettle)
+		if c.flashTick() {
+			t.Fatal("flash started while the landing slide runs")
+		}
+		clock.now = clock.now.Add(10 * time.Second)
+		c.animate(clock.now, nil)
+		if !c.flashTick() || c.flash.running.window != id {
+			t.Fatal("flash did not start on the focused window after the slide")
+		}
+
+	})
 }
 
 func TestFlashWorkspaceSwipeCancelDoesNotFlash(t *testing.T) {
-	c, clock := flashWorkspaces(t, OverflowScroll)
-	sc := c.cur()
-	s := &wsSwipe{c: c}
-	s.begin()
-	s.move(10, -40)
-	s.end(true)
-	if sc.mon.Current() != sc.mon.Workspaces[1] {
-		t.Fatal("cancelled swipe switched")
-	}
-	if c.flash.pending != nil || flashTimers(clock) != 0 {
-		t.Fatal("cancelled swipe flashed")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		c, clock := flashWorkspaces(t, OverflowScroll)
+		sc := c.cur()
+		s := &wsSwipe{c: c}
+		s.begin()
+		s.move(10, -40)
+		s.end(true)
+		if sc.mon.Current() != sc.mon.Workspaces[1] {
+			t.Fatal("cancelled swipe switched")
+		}
+		if c.flash.pending != nil || flashTimers(clock) != 0 {
+			t.Fatal("cancelled swipe flashed")
+		}
+
+	})
 }
 
 // A swipe that is not cancelled but lands where it began changes no workspace:
 // nothing to flash.
 func TestFlashWorkspaceSwipeSnapBackDoesNotFlash(t *testing.T) {
-	c, clock := flashWorkspaces(t, OverflowScroll)
-	sc := c.cur()
-	s := &wsSwipe{c: c}
-	s.begin()
-	s.move(1, -20)
-	if g := c.swipe; g == nil || g.mode != swipeWorkspaces {
-		t.Fatalf("swipe %+v, want a workspace swipe", g)
-	}
-	s.at += time.Second // a slow release does not carry the swipe on
-	s.end(false)
-	if sc.mon.Current() != sc.mon.Workspaces[1] {
-		t.Fatal("setup: the swipe left the workspace")
-	}
-	if c.flash.pending != nil || flashTimers(clock) != 0 {
-		t.Fatal("snap back flashed")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		c, clock := flashWorkspaces(t, OverflowScroll)
+		sc := c.cur()
+		s := &wsSwipe{c: c}
+		s.begin()
+		s.move(1, -20)
+		if g := c.swipe; g == nil || g.mode != swipeWorkspaces {
+			t.Fatalf("swipe %+v, want a workspace swipe", g)
+		}
+		s.at += time.Second // a slow release does not carry the swipe on
+		s.end(false)
+		if sc.mon.Current() != sc.mon.Workspaces[1] {
+			t.Fatal("setup: the swipe left the workspace")
+		}
+		if c.flash.pending != nil || flashTimers(clock) != 0 {
+			t.Fatal("snap back flashed")
+		}
+
+	})
 }
 
 func TestFlashWorkspaceSwipeToEmptyWorkspaceDoesNotFlash(t *testing.T) {
-	c, clock := flashCore(t)
-	sc := c.cur()
-	indicatorScene(t, c)
-	s := &wsSwipe{c: c}
-	s.begin()
-	s.move(10, 40)
-	s.end(false)
-	if sc.mon.Current() != sc.mon.Workspaces[1] {
-		t.Fatal("swipe did not reach the empty workspace")
-	}
-	if c.flash.pending != nil || flashTimers(clock) != 0 {
-		t.Fatal("empty workspace flashed")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		c, clock := flashCore(t)
+		sc := c.cur()
+		indicatorScene(t, c)
+		s := &wsSwipe{c: c}
+		s.begin()
+		s.move(10, 40)
+		s.end(false)
+		if sc.mon.Current() != sc.mon.Workspaces[1] {
+			t.Fatal("swipe did not reach the empty workspace")
+		}
+		if c.flash.pending != nil || flashTimers(clock) != 0 {
+			t.Fatal("empty workspace flashed")
+		}
+
+	})
 }
 
 func TestFlashWorkspaceSwipeRespectsConfig(t *testing.T) {
-	c, clock := flashWorkspaces(t, OverflowScroll)
-	c.cfg.Focus.Flash = false
-	s := &wsSwipe{c: c}
-	s.begin()
-	s.move(10, -40)
-	s.end(false)
-	if c.cur().mon.Current() != c.cur().mon.Workspaces[0] {
-		t.Fatal("swipe did not switch")
-	}
-	if c.flash.pending != nil || flashTimers(clock) != 0 {
-		t.Fatal("flashed despite flash = off")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		c, clock := flashWorkspaces(t, OverflowScroll)
+		c.cfg.Focus.Flash = false
+		s := &wsSwipe{c: c}
+		s.begin()
+		s.move(10, -40)
+		s.end(false)
+		if c.cur().mon.Current() != c.cur().mon.Workspaces[0] {
+			t.Fatal("swipe did not switch")
+		}
+		if c.flash.pending != nil || flashTimers(clock) != 0 {
+			t.Fatal("flashed despite flash = off")
+		}
+
+	})
 }
 
 // Picking a window in the overview already flashes it: the workspace change it
@@ -364,36 +398,42 @@ func TestFlashOverviewSelectFlashesOnce(t *testing.T) {
 		}, 4},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c, clock := flashWorkspaces(t, OverflowScroll)
-			m := c.cur().mon
-			m.Focus(tc.start)
-			c.applyAction(ActionToggleOverview)
-			clock.now = clock.now.Add(10 * time.Second)
-			c.animate(clock.now, nil)
-			scene := indicatorScene(t, c)
-			if !m.ov.open || c.flash.pending != nil || flashTimers(clock) != 0 {
-				t.Fatal("setup: overview not open, or flashed on open")
-			}
-			tc.pick(t, c, scene)
-			if m.ov.open || m.Current() != m.Workspaces[1] {
-				t.Fatal("overview did not land on the other workspace")
-			}
-			if id := wantSwitchFlash(t, c, clock); id != tc.want {
-				t.Fatalf("flash on %d, want %d", id, tc.want)
-			}
+			synctest.Test(t, func(t *testing.T) {
+				c, clock := flashWorkspaces(t, OverflowScroll)
+				m := c.cur().mon
+				m.Focus(tc.start)
+				c.applyAction(ActionToggleOverview)
+				clock.now = clock.now.Add(10 * time.Second)
+				c.animate(clock.now, nil)
+				scene := indicatorScene(t, c)
+				if !m.ov.open || c.flash.pending != nil || flashTimers(clock) != 0 {
+					t.Fatal("setup: overview not open, or flashed on open")
+				}
+				tc.pick(t, c, scene)
+				if m.ov.open || m.Current() != m.Workspaces[1] {
+					t.Fatal("overview did not land on the other workspace")
+				}
+				if id := wantSwitchFlash(t, c, clock); id != tc.want {
+					t.Fatalf("flash on %d, want %d", id, tc.want)
+				}
+
+			})
 		})
 	}
 }
 
 // Workspace binds inside the overview move its selection and do not flash.
 func TestFlashOverviewWorkspaceBindDoesNotFlash(t *testing.T) {
-	c, clock := flashWorkspaces(t, OverflowScroll)
-	c.applyAction(ActionToggleOverview)
-	indicatorScene(t, c)
-	c.applyAction(ActionFocusWorkspacePrev)
-	if c.flash.pending != nil || flashTimers(clock) != 0 {
-		t.Fatal("overview workspace step flashed")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		c, clock := flashWorkspaces(t, OverflowScroll)
+		c.applyAction(ActionToggleOverview)
+		indicatorScene(t, c)
+		c.applyAction(ActionFocusWorkspacePrev)
+		if c.flash.pending != nil || flashTimers(clock) != 0 {
+			t.Fatal("overview workspace step flashed")
+		}
+
+	})
 }
 
 // A move that follows its window to another workspace shows that workspace:
@@ -401,23 +441,26 @@ func TestFlashOverviewWorkspaceBindDoesNotFlash(t *testing.T) {
 func TestFlashMoveToWorkspaceFollowsOnlyWithFollowMove(t *testing.T) {
 	for _, follow := range []bool{false, true} {
 		t.Run(fmt.Sprintf("follow-move %v", follow), func(t *testing.T) {
-			c, clock := flashWorkspaces(t, OverflowScroll)
-			m := c.cur().mon
-			m.Focus(0)
-			m.SetFollowMove(follow)
-			c.applyAction(ActionMoveWindowToWorkspaceNext)
-			if (m.Current() == m.Workspaces[1]) != follow {
-				t.Fatalf("shown workspace %d", m.Active)
-			}
-			if !follow {
-				if c.flash.pending != nil || flashTimers(clock) != 0 {
-					t.Fatal("flashed without a workspace switch")
+			synctest.Test(t, func(t *testing.T) {
+				c, clock := flashWorkspaces(t, OverflowScroll)
+				m := c.cur().mon
+				m.Focus(0)
+				m.SetFollowMove(follow)
+				c.applyAction(ActionMoveWindowToWorkspaceNext)
+				if (m.Current() == m.Workspaces[1]) != follow {
+					t.Fatalf("shown workspace %d", m.Active)
 				}
-				return
-			}
-			if id := wantSwitchFlash(t, c, clock); id != 3 {
-				t.Fatalf("flash on %d, want the moved window 3", id)
-			}
+				if !follow {
+					if c.flash.pending != nil || flashTimers(clock) != 0 {
+						t.Fatal("flashed without a workspace switch")
+					}
+					return
+				}
+				if id := wantSwitchFlash(t, c, clock); id != 3 {
+					t.Fatalf("flash on %d, want the moved window 3", id)
+				}
+
+			})
 		})
 	}
 }

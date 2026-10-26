@@ -15,10 +15,11 @@ import (
 
 func receive[T any](t *testing.T, ch <-chan T) T {
 	t.Helper()
+	synctest.Wait()
 	select {
 	case v := <-ch:
 		return v
-	case <-time.After(time.Second):
+	default:
 		t.Fatal("timed out")
 		var zero T
 		return zero
@@ -186,151 +187,163 @@ func owner(t *testing.T, animated bool) {
 	}
 }
 func TestCancelAndSceneCapacity(t *testing.T) {
-	cfg := scrollDefaults()
-	if _, err := core.New(cfg, core.Channels{Scenes: make(chan []ports.Scene, 2)}, core.Options{}); err == nil {
-		t.Fatal("capacity")
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	c, err := core.New(cfg, core.Channels{Scenes: make(chan []ports.Scene, 1)}, core.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	done := make(chan error, 1)
-	go func() { done <- c.Run(ctx) }()
-	cancel()
-	if err := receive(t, done); err != nil {
-		t.Fatal(err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		cfg := scrollDefaults()
+		if _, err := core.New(cfg, core.Channels{Scenes: make(chan []ports.Scene, 2)}, core.Options{}); err == nil {
+			t.Fatal("capacity")
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		c, err := core.New(cfg, core.Channels{Scenes: make(chan []ports.Scene, 1)}, core.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan error, 1)
+		go func() { done <- c.Run(ctx) }()
+		cancel()
+		if err := receive(t, done); err != nil {
+			t.Fatal(err)
+		}
+
+	})
 }
 
 func TestKeyPressState(t *testing.T) {
-	cfg := scrollDefaults()
-	client := make(chan ports.ClientEvent, 8)
-	input := make(chan ports.InputEvent, 8)
-	commands := make(chan ports.ClientCommand, 16)
-	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Commands: commands, Scenes: scenes}, core.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- c.Run(ctx) }()
-	defer func() { cancel(); receive(t, done) }()
-	client <- ports.WindowMapped{ID: 1}
-	scene(t, scenes)
-	command(t, commands)
-	command(t, commands)
-	press := ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper, Pressed: true}
-	input <- press
-	scene(t, scenes)
-	input <- ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper}
-	input <- ports.KeyEvent{Keysym: "Left", Pressed: true}
-	if v := command(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "Left", Pressed: true}}) {
-		t.Fatal(v)
-	}
-	input <- ports.KeyEvent{Keysym: "Left"}
-	if v := command(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "Left"}}) {
-		t.Fatal(v)
-	}
-	input <- press
-	scene(t, scenes)
-	input <- ports.KeyEvent{Keysym: "Left", Pressed: true}
-	command(t, commands)
-	input <- ports.KeyEvent{Keysym: "Left"}
-	if v := command(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "Left"}}) {
-		t.Fatal(v)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		cfg := scrollDefaults()
+		client := make(chan ports.ClientEvent, 8)
+		input := make(chan ports.InputEvent, 8)
+		commands := make(chan ports.ClientCommand, 16)
+		scenes := make(chan []ports.Scene, 1)
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Commands: commands, Scenes: scenes}, core.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- c.Run(ctx) }()
+		defer func() { cancel(); receive(t, done) }()
+		client <- ports.WindowMapped{ID: 1}
+		scene(t, scenes)
+		command(t, commands)
+		command(t, commands)
+		press := ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper, Pressed: true}
+		input <- press
+		scene(t, scenes)
+		input <- ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper}
+		input <- ports.KeyEvent{Keysym: "Left", Pressed: true}
+		if v := command(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "Left", Pressed: true}}) {
+			t.Fatal(v)
+		}
+		input <- ports.KeyEvent{Keysym: "Left"}
+		if v := command(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "Left"}}) {
+			t.Fatal(v)
+		}
+		input <- press
+		scene(t, scenes)
+		input <- ports.KeyEvent{Keysym: "Left", Pressed: true}
+		command(t, commands)
+		input <- ports.KeyEvent{Keysym: "Left"}
+		if v := command(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "Left"}}) {
+			t.Fatal(v)
+		}
+
+	})
 }
 
 func TestBoundReleaseSwallowed(t *testing.T) {
-	cfg := scrollDefaults()
-	input := make(chan ports.InputEvent, 4)
-	client := make(chan ports.ClientEvent, 2)
-	commands := make(chan ports.ClientCommand, 8)
-	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(cfg, core.Channels{Input: input, Client: client, Commands: commands, Scenes: scenes}, core.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- c.Run(ctx) }()
-	defer func() { cancel(); receive(t, done) }()
-	client <- ports.WindowMapped{ID: 1}
-	scene(t, scenes)
-	command(t, commands)
-	command(t, commands)
-	input <- ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper, Pressed: true}
-	scene(t, scenes)
-	input <- ports.KeyEvent{Keysym: "Left"}
-	input <- ports.KeyEvent{Keysym: "x", Pressed: true}
-	if v := command(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "x", Pressed: true}}) {
-		t.Fatal(v)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		cfg := scrollDefaults()
+		input := make(chan ports.InputEvent, 4)
+		client := make(chan ports.ClientEvent, 2)
+		commands := make(chan ports.ClientCommand, 8)
+		scenes := make(chan []ports.Scene, 1)
+		c, err := core.New(cfg, core.Channels{Input: input, Client: client, Commands: commands, Scenes: scenes}, core.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- c.Run(ctx) }()
+		defer func() { cancel(); receive(t, done) }()
+		client <- ports.WindowMapped{ID: 1}
+		scene(t, scenes)
+		command(t, commands)
+		command(t, commands)
+		input <- ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper, Pressed: true}
+		scene(t, scenes)
+		input <- ports.KeyEvent{Keysym: "Left"}
+		input <- ports.KeyEvent{Keysym: "x", Pressed: true}
+		if v := command(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "x", Pressed: true}}) {
+			t.Fatal(v)
+		}
+
+	})
 }
 
 func TestPointerFocusAndGrab(t *testing.T) {
-	cfg := scrollDefaults()
-	cfg.Border.Width = 0
-	cfg.Layout.Gaps = 8
-	client := make(chan ports.ClientEvent, 8)
-	input := make(chan ports.InputEvent, 8)
-	output := make(chan ports.OutputEvent, 8)
-	commands := make(chan ports.ClientCommand, 64)
-	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go c.Run(ctx)
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
-	scene(t, scenes)
-	client <- ports.WindowMapped{ID: 1}
-	first := scene(t, scenes).Windows[0].Rect
-	client <- ports.WindowMapped{ID: 2}
-	scene(t, scenes)
-	for len(commands) > 0 {
-		<-commands
-	}
-	input <- ports.PointerMotion{X: float64(first.X + 2), Y: float64(first.Y + 3), Time: 1 * time.Millisecond}
-	if v := command(t, commands); v != (ports.PointerFocus{ID: 1, X: 2, Y: 3}) {
-		t.Fatal(v)
-	}
-	if v := command(t, commands); v != (ports.PointerMotionTo{ID: 1, X: 2, Y: 3, Time: 1 * time.Millisecond}) {
-		t.Fatal(v)
-	}
-	input <- ports.PointerAxis{Vertical: ports.ScrollAxis{Set: true, Value: 15, V120: 120}}
-	if v := command(t, commands); v != (ports.PointerAxisTo{ID: 1, Axis: ports.PointerAxis{Vertical: ports.ScrollAxis{Set: true, Value: 15, V120: 120}}}) {
-		t.Fatal(v)
-	}
-	input <- ports.PointerButton{Button: 0x110, Pressed: true}
-	if v := command(t, commands); v != (ports.PointerButtonTo{ID: 1, Button: 0x110, Pressed: true, Grab: true}) {
-		t.Fatal(v)
-	}
-	scene(t, scenes)
-	found := false
-	for len(commands) > 0 {
-		if v, ok := (<-commands).(ports.FocusWindow); ok && v.ID == 1 {
-			found = true
+	synctest.Test(t, func(t *testing.T) {
+		cfg := scrollDefaults()
+		cfg.Border.Width = 0
+		cfg.Layout.Gaps = 8
+		client := make(chan ports.ClientEvent, 8)
+		input := make(chan ports.InputEvent, 8)
+		output := make(chan ports.OutputEvent, 8)
+		commands := make(chan ports.ClientCommand, 64)
+		scenes := make(chan []ports.Scene, 1)
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if !found {
-		t.Fatal("missing keyboard focus")
-	}
-	input <- ports.PointerMotion{X: 0, Y: 0}
-	if v := command(t, commands); v != (ports.PointerFocus{}) {
-		t.Fatal(v)
-	}
-	// Mid-drag off the window, scroll goes to what is under the pointer:
-	// nothing here, not the grab window that got a leave.
-	input <- ports.PointerAxis{Vertical: ports.ScrollAxis{Set: true, Value: 1}}
-	input <- ports.PointerButton{Button: 0x110}
-	if v := command(t, commands); v != (ports.PointerButtonTo{ID: 1, Button: 0x110}) {
-		t.Fatal(v)
-	}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go c.Run(ctx)
+		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+		scene(t, scenes)
+		client <- ports.WindowMapped{ID: 1}
+		first := scene(t, scenes).Windows[0].Rect
+		client <- ports.WindowMapped{ID: 2}
+		scene(t, scenes)
+		for len(commands) > 0 {
+			<-commands
+		}
+		input <- ports.PointerMotion{X: float64(first.X + 2), Y: float64(first.Y + 3), Time: 1 * time.Millisecond}
+		if v := command(t, commands); v != (ports.PointerFocus{ID: 1, X: 2, Y: 3}) {
+			t.Fatal(v)
+		}
+		if v := command(t, commands); v != (ports.PointerMotionTo{ID: 1, X: 2, Y: 3, Time: 1 * time.Millisecond}) {
+			t.Fatal(v)
+		}
+		input <- ports.PointerAxis{Vertical: ports.ScrollAxis{Set: true, Value: 15, V120: 120}}
+		if v := command(t, commands); v != (ports.PointerAxisTo{ID: 1, Axis: ports.PointerAxis{Vertical: ports.ScrollAxis{Set: true, Value: 15, V120: 120}}}) {
+			t.Fatal(v)
+		}
+		input <- ports.PointerButton{Button: 0x110, Pressed: true}
+		if v := command(t, commands); v != (ports.PointerButtonTo{ID: 1, Button: 0x110, Pressed: true, Grab: true}) {
+			t.Fatal(v)
+		}
+		scene(t, scenes)
+		found := false
+		for len(commands) > 0 {
+			if v, ok := (<-commands).(ports.FocusWindow); ok && v.ID == 1 {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("missing keyboard focus")
+		}
+		input <- ports.PointerMotion{X: 0, Y: 0}
+		if v := command(t, commands); v != (ports.PointerFocus{}) {
+			t.Fatal(v)
+		}
+		// Mid-drag off the window, scroll goes to what is under the pointer:
+		// nothing here, not the grab window that got a leave.
+		input <- ports.PointerAxis{Vertical: ports.ScrollAxis{Set: true, Value: 1}}
+		input <- ports.PointerButton{Button: 0x110}
+		if v := command(t, commands); v != (ports.PointerButtonTo{ID: 1, Button: 0x110}) {
+			t.Fatal(v)
+		}
+
+	})
 }
 
 func TestBorderInset(t *testing.T) { both(t, borderInset) }
@@ -386,63 +399,74 @@ func borderInset(t *testing.T, animated bool) {
 }
 
 func TestLayerKeyboardFocus(t *testing.T) {
-	cfg := scrollDefaults()
-	client := make(chan ports.ClientEvent, 8)
-	input := make(chan ports.InputEvent, 8)
-	output := make(chan ports.OutputEvent, 8)
-	commands := make(chan ports.ClientCommand, 64)
-	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go c.Run(ctx)
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
-	scene(t, scenes)
-	client <- ports.WindowMapped{ID: 1}
-	scene(t, scenes)
-	focusOf := func() ports.WindowID {
-		t.Helper()
+	synctest.Test(t, func(t *testing.T) {
+		cfg := scrollDefaults()
+		client := make(chan ports.ClientEvent, 8)
+		input := make(chan ports.InputEvent, 8)
+		output := make(chan ports.OutputEvent, 8)
+		commands := make(chan ports.ClientCommand, 64)
+		scenes := make(chan []ports.Scene, 1)
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go c.Run(ctx)
+		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+		scene(t, scenes)
+		client <- ports.WindowMapped{ID: 1}
+		scene(t, scenes)
+		focusOf := func() ports.WindowID {
+			t.Helper()
+			for {
+				if v, ok := command(t, commands).(ports.FocusWindow); ok {
+					return v.ID
+				}
+			}
+		}
+		if id := focusOf(); id != 1 {
+			t.Fatalf("window focus %d", id)
+		}
+		// An on-demand bar does not steal focus; an exclusive launcher does.
+		launcher := ports.LayerSurface{ID: 7, Layer: ports.LayerOverlay, Width: 40, Height: 20, Keyboard: 1}
+		bar := ports.LayerSurface{ID: 6, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 5, Keyboard: 2}
+		client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar, launcher}}
+		scene(t, scenes)
+		if id := focusOf(); id != 7 {
+			t.Fatalf("layer focus %d", id)
+		}
+		input <- ports.KeyEvent{Keysym: "a", Keycode: 30, Pressed: true}
 		for {
-			if v, ok := command(t, commands).(ports.FocusWindow); ok {
-				return v.ID
+			if v, ok := command(t, commands).(ports.ForwardKey); ok {
+				if v.ID != 7 {
+					t.Fatalf("key went to %d", v.ID)
+				}
+				break
 			}
 		}
-	}
-	if id := focusOf(); id != 1 {
-		t.Fatalf("window focus %d", id)
-	}
-	// An on-demand bar does not steal focus; an exclusive launcher does.
-	launcher := ports.LayerSurface{ID: 7, Layer: ports.LayerOverlay, Width: 40, Height: 20, Keyboard: 1}
-	bar := ports.LayerSurface{ID: 6, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 5, Keyboard: 2}
-	client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar, launcher}}
-	scene(t, scenes)
-	if id := focusOf(); id != 7 {
-		t.Fatalf("layer focus %d", id)
-	}
-	input <- ports.KeyEvent{Keysym: "a", Keycode: 30, Pressed: true}
-	for {
-		if v, ok := command(t, commands).(ports.ForwardKey); ok {
-			if v.ID != 7 {
-				t.Fatalf("key went to %d", v.ID)
-			}
-			break
+		client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar}}
+		scene(t, scenes)
+		if id := focusOf(); id != 1 {
+			t.Fatalf("focus not restored: %d", id)
 		}
-	}
-	client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar}}
-	scene(t, scenes)
-	if id := focusOf(); id != 1 {
-		t.Fatalf("focus not restored: %d", id)
-	}
+
+	})
 }
 
-func TestWorkspaceSwitch(t *testing.T) { workspaceSwitch(t, false) }
+func TestWorkspaceSwitch(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		workspaceSwitch(t, false)
+	})
+}
 
 // With animations on the scene right after the key shows the slide's start:
 // the test lands it before it asserts.
-func TestWorkspaceSwitchAnimated(t *testing.T) { workspaceSwitch(t, true) }
+func TestWorkspaceSwitchAnimated(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		workspaceSwitch(t, true)
+	})
+}
 
 // settledScene lands the springs an action started on the single output
 // OUT-1 of a rig with a stepClock and returns its scene; animations off:
@@ -593,32 +617,35 @@ func clickAfterWorkspaceSwitch(t *testing.T, animated bool) {
 }
 
 func TestShiftReleasedFirst(t *testing.T) {
-	cfg := scrollDefaults()
-	input := make(chan ports.InputEvent, 8)
-	client := make(chan ports.ClientEvent, 2)
-	commands := make(chan ports.ClientCommand, 16)
-	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(cfg, core.Channels{Input: input, Client: client, Commands: commands, Scenes: scenes}, core.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go c.Run(ctx)
-	client <- ports.WindowMapped{ID: 1}
-	scene(t, scenes)
-	for len(commands) > 0 {
-		<-commands
-	}
-	// US Cmd+Shift+1 prints exclam; the physical key (code 2) matches move-column-to-workspace 1.
-	input <- ports.KeyEvent{Keysym: "exclam", Base: "1", Keycode: 2, Mods: ports.ModSuper | ports.ModShift, Pressed: true}
-	scene(t, scenes)
-	// Shift goes up first, so the release reports "1": still swallowed.
-	input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: ports.ModSuper}
-	input <- ports.KeyEvent{Keysym: "x", Keycode: 45, Pressed: true}
-	if v := command(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "x", Keycode: 45, Pressed: true}}) {
-		t.Fatal(v)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		cfg := scrollDefaults()
+		input := make(chan ports.InputEvent, 8)
+		client := make(chan ports.ClientEvent, 2)
+		commands := make(chan ports.ClientCommand, 16)
+		scenes := make(chan []ports.Scene, 1)
+		c, err := core.New(cfg, core.Channels{Input: input, Client: client, Commands: commands, Scenes: scenes}, core.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go c.Run(ctx)
+		client <- ports.WindowMapped{ID: 1}
+		scene(t, scenes)
+		for len(commands) > 0 {
+			<-commands
+		}
+		// US Cmd+Shift+1 prints exclam; the physical key (code 2) matches move-column-to-workspace 1.
+		input <- ports.KeyEvent{Keysym: "exclam", Base: "1", Keycode: 2, Mods: ports.ModSuper | ports.ModShift, Pressed: true}
+		scene(t, scenes)
+		// Shift goes up first, so the release reports "1": still swallowed.
+		input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: ports.ModSuper}
+		input <- ports.KeyEvent{Keysym: "x", Keycode: 45, Pressed: true}
+		if v := command(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "x", Keycode: 45, Pressed: true}}) {
+			t.Fatal(v)
+		}
+
+	})
 }
 
 func TestOutputScale(t *testing.T) { both(t, outputScale) }
@@ -706,53 +733,56 @@ func outputScale(t *testing.T, animated bool) {
 // A pointer warp moves the cursor on the window under it: input takes the
 // position and the window gets the motion. Other windows cannot warp.
 func TestPointerWarp(t *testing.T) {
-	cfg := scrollDefaults()
-	cfg.Border.Width = 0
-	cfg.Layout.Gaps = 0
-	client := make(chan ports.ClientEvent, 8)
-	input := make(chan ports.InputEvent, 8)
-	output := make(chan ports.OutputEvent, 8)
-	commands := make(chan ports.ClientCommand, 64)
-	scenes := make(chan []ports.Scene, 1)
-	constraints := make(chan ports.PointerConstraint, 1)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes, Constraints: constraints}, core.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go c.Run(ctx)
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "A", Width: 100, Height: 80}}
-	scene(t, scenes)
-	client <- ports.WindowMapped{ID: 1}
-	r := receive(t, scenes)[0].Windows[0].Rect
-	input <- ports.PointerMotion{X: 50, Y: 40}
-	for {
-		if _, ok := command(t, commands).(ports.PointerMotionTo); ok {
-			break
+	synctest.Test(t, func(t *testing.T) {
+		cfg := scrollDefaults()
+		cfg.Border.Width = 0
+		cfg.Layout.Gaps = 0
+		client := make(chan ports.ClientEvent, 8)
+		input := make(chan ports.InputEvent, 8)
+		output := make(chan ports.OutputEvent, 8)
+		commands := make(chan ports.ClientCommand, 64)
+		scenes := make(chan []ports.Scene, 1)
+		constraints := make(chan ports.PointerConstraint, 1)
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes, Constraints: constraints}, core.Options{})
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	// Another window cannot move the pointer.
-	client <- ports.PointerWarp{ID: 2, X: 5, Y: 5}
-	client <- ports.PointerWarp{ID: 1, X: 10, Y: 20}
-	got := receive(t, constraints)
-	if !got.Warp || got.X != float64(r.X+10) || got.Y != float64(r.Y+20) {
-		t.Fatalf("warp %+v, window %+v", got, r)
-	}
-	for {
-		if v, ok := command(t, commands).(ports.PointerMotionTo); ok {
-			if v.ID != 1 || v.X != 10 || v.Y != 20 || v.DX != 0 || v.DY != 0 {
-				t.Fatalf("motion %+v", v)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go c.Run(ctx)
+		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "A", Width: 100, Height: 80}}
+		scene(t, scenes)
+		client <- ports.WindowMapped{ID: 1}
+		r := receive(t, scenes)[0].Windows[0].Rect
+		input <- ports.PointerMotion{X: 50, Y: 40}
+		for {
+			if _, ok := command(t, commands).(ports.PointerMotionTo); ok {
+				break
 			}
-			break
 		}
-	}
-	// A point outside the window is refused.
-	client <- ports.PointerWarp{ID: 1, X: float64(r.W), Y: 0}
-	client <- ports.PointerWarp{ID: 1, X: 1, Y: 1}
-	if got := receive(t, constraints); got.X != float64(r.X+1) || got.Y != float64(r.Y+1) {
-		t.Fatalf("warp %+v", got)
-	}
+		// Another window cannot move the pointer.
+		client <- ports.PointerWarp{ID: 2, X: 5, Y: 5}
+		client <- ports.PointerWarp{ID: 1, X: 10, Y: 20}
+		got := receive(t, constraints)
+		if !got.Warp || got.X != float64(r.X+10) || got.Y != float64(r.Y+20) {
+			t.Fatalf("warp %+v, window %+v", got, r)
+		}
+		for {
+			if v, ok := command(t, commands).(ports.PointerMotionTo); ok {
+				if v.ID != 1 || v.X != 10 || v.Y != 20 || v.DX != 0 || v.DY != 0 {
+					t.Fatalf("motion %+v", v)
+				}
+				break
+			}
+		}
+		// A point outside the window is refused.
+		client <- ports.PointerWarp{ID: 1, X: float64(r.W), Y: 0}
+		client <- ports.PointerWarp{ID: 1, X: 1, Y: 1}
+		if got := receive(t, constraints); got.X != float64(r.X+1) || got.Y != float64(r.Y+1) {
+			t.Fatalf("warp %+v", got)
+		}
+
+	})
 }
 
 func TestPointerConstraint(t *testing.T) { both(t, pointerConstraint) }
@@ -833,136 +863,145 @@ func pointerConstraint(t *testing.T, animated bool) {
 
 // A click outside a grabbing menu chain closes it, the topmost popup first.
 func TestPopupChainDismissOrder(t *testing.T) {
-	cfg := scrollDefaults()
-	cfg.Border.Width = 0
-	client := make(chan ports.ClientEvent, 8)
-	input := make(chan ports.InputEvent, 8)
-	output := make(chan ports.OutputEvent, 8)
-	commands := make(chan ports.ClientCommand, 64)
-	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go c.Run(ctx)
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
-	scene(t, scenes)
-	client <- ports.WindowMapped{ID: 1}
-	scene(t, scenes)
-	pos := ports.Positioner{Width: 10, Height: 10, AnchorRect: ports.Rect{W: 1, H: 1}, Anchor: ports.EdgeBottomRight, Gravity: ports.EdgeBottomRight}
-	for _, v := range []struct{ id, parent ports.WindowID }{{2, 1}, {3, 2}} {
-		client <- ports.PopupRequest{ID: v.id, Parent: v.parent, Positioner: pos, Grab: true}
-		for {
-			if cp, ok := command(t, commands).(ports.ConfigurePopup); ok && cp.ID == v.id {
-				break
+	synctest.Test(t, func(t *testing.T) {
+		cfg := scrollDefaults()
+		cfg.Border.Width = 0
+		client := make(chan ports.ClientEvent, 8)
+		input := make(chan ports.InputEvent, 8)
+		output := make(chan ports.OutputEvent, 8)
+		commands := make(chan ports.ClientCommand, 64)
+		scenes := make(chan []ports.Scene, 1)
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go c.Run(ctx)
+		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+		scene(t, scenes)
+		client <- ports.WindowMapped{ID: 1}
+		scene(t, scenes)
+		pos := ports.Positioner{Width: 10, Height: 10, AnchorRect: ports.Rect{W: 1, H: 1}, Anchor: ports.EdgeBottomRight, Gravity: ports.EdgeBottomRight}
+		for _, v := range []struct{ id, parent ports.WindowID }{{2, 1}, {3, 2}} {
+			client <- ports.PopupRequest{ID: v.id, Parent: v.parent, Positioner: pos, Grab: true}
+			for {
+				if cp, ok := command(t, commands).(ports.ConfigurePopup); ok && cp.ID == v.id {
+					break
+				}
+			}
+			client <- ports.PopupMapped{ID: v.id}
+			scene(t, scenes)
+		}
+		for len(commands) > 0 {
+			<-commands
+		}
+		// The window's far corner is outside both popups.
+		input <- ports.PointerMotion{X: 90, Y: 70}
+		input <- ports.PointerButton{Button: 0x110, Pressed: true}
+		var closed []ports.WindowID
+		for len(closed) < 2 {
+			if v, ok := command(t, commands).(ports.ClosePopup); ok {
+				closed = append(closed, v.ID)
 			}
 		}
-		client <- ports.PopupMapped{ID: v.id}
-		scene(t, scenes)
-	}
-	for len(commands) > 0 {
-		<-commands
-	}
-	// The window's far corner is outside both popups.
-	input <- ports.PointerMotion{X: 90, Y: 70}
-	input <- ports.PointerButton{Button: 0x110, Pressed: true}
-	var closed []ports.WindowID
-	for len(closed) < 2 {
-		if v, ok := command(t, commands).(ports.ClosePopup); ok {
-			closed = append(closed, v.ID)
+		if closed[0] != 3 || closed[1] != 2 {
+			t.Fatalf("close order %v, want [3 2]", closed)
 		}
-	}
-	if closed[0] != 3 || closed[1] != 2 {
-		t.Fatalf("close order %v, want [3 2]", closed)
-	}
+
+	})
 }
 
 // A dialog opened under a fullscreen window stays hidden and out of reach
 // of the pointer until the window leaves fullscreen.
 func TestFloatOverFullscreenHit(t *testing.T) {
-	cfg := scrollDefaults()
-	cfg.Border.Width = 0
-	client := make(chan ports.ClientEvent, 8)
-	input := make(chan ports.InputEvent, 8)
-	output := make(chan ports.OutputEvent, 8)
-	commands := make(chan ports.ClientCommand, 64)
-	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{Clock: steppingClock(t)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go c.Run(ctx)
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
-	scene(t, scenes)
-	client <- ports.WindowMapped{ID: 1}
-	scene(t, scenes)
-	client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
-	scene(t, scenes)
-	client <- ports.WindowMapped{ID: 2, Floating: true, Width: 20, Height: 10}
-	scene(t, scenes)
-	for len(commands) > 0 {
-		<-commands
-	}
-	input <- ports.PointerMotion{X: 50, Y: 40}
-	if v, ok := command(t, commands).(ports.PointerFocus); !ok || v.ID != 1 {
-		t.Fatalf("pointer went to %v, want the fullscreen window", v)
-	}
-	client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: false}
-	scene(t, scenes)
-	for len(commands) > 0 {
-		<-commands
-	}
-	input <- ports.PointerMotion{X: 50, Y: 41}
-	if v, ok := command(t, commands).(ports.PointerFocus); !ok || v.ID != 2 {
-		t.Fatalf("pointer went to %v, want the dialog", v)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		cfg := scrollDefaults()
+		cfg.Border.Width = 0
+		client := make(chan ports.ClientEvent, 8)
+		input := make(chan ports.InputEvent, 8)
+		output := make(chan ports.OutputEvent, 8)
+		commands := make(chan ports.ClientCommand, 64)
+		scenes := make(chan []ports.Scene, 1)
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{Clock: steppingClock(t)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go c.Run(ctx)
+		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+		scene(t, scenes)
+		client <- ports.WindowMapped{ID: 1}
+		scene(t, scenes)
+		client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
+		scene(t, scenes)
+		client <- ports.WindowMapped{ID: 2, Floating: true, Width: 20, Height: 10}
+		scene(t, scenes)
+		for len(commands) > 0 {
+			<-commands
+		}
+		input <- ports.PointerMotion{X: 50, Y: 40}
+		if v, ok := command(t, commands).(ports.PointerFocus); !ok || v.ID != 1 {
+			t.Fatalf("pointer went to %v, want the fullscreen window", v)
+		}
+		client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: false}
+		scene(t, scenes)
+		for len(commands) > 0 {
+			<-commands
+		}
+		input <- ports.PointerMotion{X: 50, Y: 41}
+		if v, ok := command(t, commands).(ports.PointerFocus); !ok || v.ID != 2 {
+			t.Fatalf("pointer went to %v, want the dialog", v)
+		}
+
+	})
 }
 
 // A dialog of the fullscreen window (a portal dialog parented through
 // xdg-foreign) shows over it and takes the pointer at once.
 func TestDialogOverFullscreenHit(t *testing.T) {
-	cfg := scrollDefaults()
-	cfg.Border.Width = 0
-	client := make(chan ports.ClientEvent, 8)
-	input := make(chan ports.InputEvent, 8)
-	output := make(chan ports.OutputEvent, 8)
-	commands := make(chan ports.ClientCommand, 64)
-	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{Clock: steppingClock(t)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go c.Run(ctx)
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
-	scene(t, scenes)
-	client <- ports.WindowMapped{ID: 1}
-	scene(t, scenes)
-	client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
-	scene(t, scenes)
-	client <- ports.WindowMapped{ID: 2, Floating: true, Width: 20, Height: 10, Parent: 1}
-	s := scene(t, scenes)
-	shown := false
-	for _, w := range s.Windows {
-		if w.ID == 2 {
-			shown = !w.Hidden && w.Rect.W > 0
+	synctest.Test(t, func(t *testing.T) {
+		cfg := scrollDefaults()
+		cfg.Border.Width = 0
+		client := make(chan ports.ClientEvent, 8)
+		input := make(chan ports.InputEvent, 8)
+		output := make(chan ports.OutputEvent, 8)
+		commands := make(chan ports.ClientCommand, 64)
+		scenes := make(chan []ports.Scene, 1)
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{Clock: steppingClock(t)})
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if !shown {
-		t.Fatalf("dialog not shown: %+v", s.Windows)
-	}
-	for len(commands) > 0 {
-		<-commands
-	}
-	input <- ports.PointerMotion{X: 50, Y: 40}
-	if v, ok := command(t, commands).(ports.PointerFocus); !ok || v.ID != 2 {
-		t.Fatalf("pointer went to %v, want the dialog", v)
-	}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go c.Run(ctx)
+		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+		scene(t, scenes)
+		client <- ports.WindowMapped{ID: 1}
+		scene(t, scenes)
+		client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
+		scene(t, scenes)
+		client <- ports.WindowMapped{ID: 2, Floating: true, Width: 20, Height: 10, Parent: 1}
+		s := scene(t, scenes)
+		shown := false
+		for _, w := range s.Windows {
+			if w.ID == 2 {
+				shown = !w.Hidden && w.Rect.W > 0
+			}
+		}
+		if !shown {
+			t.Fatalf("dialog not shown: %+v", s.Windows)
+		}
+		for len(commands) > 0 {
+			<-commands
+		}
+		input <- ports.PointerMotion{X: 50, Y: 40}
+		if v, ok := command(t, commands).(ports.PointerFocus); !ok || v.ID != 2 {
+			t.Fatalf("pointer went to %v, want the dialog", v)
+		}
+
+	})
 }
 
 // A window that asks for fullscreen as it maps (Wine at a remembered
@@ -1030,31 +1069,34 @@ func fullscreenAtMapIgnored(t *testing.T, animated bool) {
 // user action in the new client) leaves fullscreen and shows both tiles;
 // a focus move back to the game and the bind make it fullscreen again.
 func TestFixedFullscreenArrivalWaits(t *testing.T) {
-	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
-	r.mapWindow(t, 1)
-	r.key(t, "f", ports.ModAlt|ports.ModShift)
-	set := r.mapWindow(t, 2)
-	for len(r.commands) > 0 {
-		<-r.commands
-	}
-	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
-		t.Fatal("game disturbed:", got, focused)
-	}
-	r.client <- ports.WindowActivate{ID: 2}
-	set = receive(t, r.scenes)
-	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1, 2}) || focused != 2 {
-		t.Fatal("after activate:", got, focused)
-	}
-	for {
-		if f, ok := command(t, r.commands).(ports.FocusWindow); ok && f.ID == 2 {
-			break
+	synctest.Test(t, func(t *testing.T) {
+		r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+		r.mapWindow(t, 1)
+		r.key(t, "f", ports.ModAlt|ports.ModShift)
+		set := r.mapWindow(t, 2)
+		for len(r.commands) > 0 {
+			<-r.commands
 		}
-	}
-	r.key(t, "Left", ports.ModAlt)
-	set = r.key(t, "f", ports.ModAlt|ports.ModShift)
-	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
-		t.Fatal("game again:", got, focused)
-	}
+		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
+			t.Fatal("game disturbed:", got, focused)
+		}
+		r.client <- ports.WindowActivate{ID: 2}
+		set = receive(t, r.scenes)
+		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1, 2}) || focused != 2 {
+			t.Fatal("after activate:", got, focused)
+		}
+		for {
+			if f, ok := command(t, r.commands).(ports.FocusWindow); ok && f.ID == 2 {
+				break
+			}
+		}
+		r.key(t, "Left", ports.ModAlt)
+		set = r.key(t, "f", ports.ModAlt|ports.ModShift)
+		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
+			t.Fatal("game again:", got, focused)
+		}
+
+	})
 }
 
 // A taskbar's fullscreen request is the user's: it applies at once.
@@ -1093,69 +1135,78 @@ func externalFullscreenAtMapApplies(t *testing.T, animated bool) {
 // Under fixed overflow, a taskbar's fullscreen on an unfocused window is
 // the user's choice: the window takes the focus and covers the screen.
 func TestExternalFullscreenFocusesFixed(t *testing.T) {
-	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
-	r.mapWindow(t, 1)
-	r.mapWindow(t, 2)
-	r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
-	set := receive(t, r.scenes)
-	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
-		t.Fatal("taskbar fullscreen:", got, focused)
-	}
-	// Over another covering window too: it leaves fullscreen.
-	r.client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true, External: true}
-	set = receive(t, r.scenes)
-	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{2}) || focused != 2 {
-		t.Fatal("taskbar fullscreen over another:", got, focused)
-	}
-	// Leaving from the taskbar keeps the focus.
-	r.client <- ports.WindowFullscreenRequest{ID: 2, External: true}
-	set = receive(t, r.scenes)
-	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1, 2}) || focused != 2 {
-		t.Fatal("taskbar leave:", got, focused)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+		r.mapWindow(t, 1)
+		r.mapWindow(t, 2)
+		r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
+		set := receive(t, r.scenes)
+		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
+			t.Fatal("taskbar fullscreen:", got, focused)
+		}
+		// Over another covering window too: it leaves fullscreen.
+		r.client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true, External: true}
+		set = receive(t, r.scenes)
+		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{2}) || focused != 2 {
+			t.Fatal("taskbar fullscreen over another:", got, focused)
+		}
+		// Leaving from the taskbar keeps the focus.
+		r.client <- ports.WindowFullscreenRequest{ID: 2, External: true}
+		set = receive(t, r.scenes)
+		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1, 2}) || focused != 2 {
+			t.Fatal("taskbar leave:", got, focused)
+		}
+
+	})
 }
 
 // A taskbar fullscreen on a window of a workspace off screen, on another
 // output, brings it on screen with the focus, as an activation.
 func TestExternalFullscreenOffScreen(t *testing.T) {
-	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left, right)
-	r.mapWindow(t, 1)
-	r.key(t, "Next", ports.ModAlt|ports.ModShift) // 1 to workspace 2, not followed
-	r.key(t, "Right", ports.ModAlt|ports.ModCtrl) // focus DP-2
-	r.mapWindow(t, 2)
-	r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
-	set := receive(t, r.scenes)
-	found := false
-	for _, s := range set {
-		for _, w := range s.Windows {
-			if w.ID != 1 {
-				continue
-			}
-			found = true
-			if s.Output != "DP-1" || w.Hidden || !w.Fullscreen || !w.Focused {
-				t.Fatalf("window 1 on %s: %+v", s.Output, w)
+	synctest.Test(t, func(t *testing.T) {
+		r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left, right)
+		r.mapWindow(t, 1)
+		r.key(t, "Next", ports.ModAlt|ports.ModShift) // 1 to workspace 2, not followed
+		r.key(t, "Right", ports.ModAlt|ports.ModCtrl) // focus DP-2
+		r.mapWindow(t, 2)
+		r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
+		set := receive(t, r.scenes)
+		found := false
+		for _, s := range set {
+			for _, w := range s.Windows {
+				if w.ID != 1 {
+					continue
+				}
+				found = true
+				if s.Output != "DP-1" || w.Hidden || !w.Fullscreen || !w.Focused {
+					t.Fatalf("window 1 on %s: %+v", s.Output, w)
+				}
 			}
 		}
-	}
-	if !found {
-		t.Fatal("window 1 in no scene")
-	}
+		if !found {
+			t.Fatal("window 1 in no scene")
+		}
+
+	})
 }
 
 // In the overview, a taskbar fullscreen on a window of another workspace
 // selects its row: closing the overview lands on it, fullscreen.
 func TestExternalFullscreenInOverview(t *testing.T) {
-	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
-	r.mapWindow(t, 1)
-	r.key(t, "Next", ports.ModAlt|ports.ModShift) // 1 to workspace 2
-	r.mapWindow(t, 2)
-	r.key(t, "o", ports.ModAlt)
-	r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
-	receive(t, r.scenes)
-	set := r.key(t, "o", ports.ModAlt)
-	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
-		t.Fatal("after the overview:", got, focused)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+		r.mapWindow(t, 1)
+		r.key(t, "Next", ports.ModAlt|ports.ModShift) // 1 to workspace 2
+		r.mapWindow(t, 2)
+		r.key(t, "o", ports.ModAlt)
+		r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
+		receive(t, r.scenes)
+		set := r.key(t, "o", ports.ModAlt)
+		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
+			t.Fatal("after the overview:", got, focused)
+		}
+
+	})
 }
 
 // focus-window-down from a fullscreen tile at the bottom of its column
@@ -1180,73 +1231,78 @@ func TestFocusWindowDownKeepsFullscreen(t *testing.T) {
 // A refused fullscreen request still gets a configure, unchanged: clients
 // wait for it (xdg-shell).
 func TestRefusedFullscreenConfigured(t *testing.T) {
-	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
-	r.mapWindow(t, 1)
-	r.mapWindow(t, 2)
-	for len(r.commands) > 0 {
-		<-r.commands
-	}
-	r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
-	receive(t, r.scenes)
-	for len(r.commands) > 0 {
-		if v, ok := (<-r.commands).(ports.ConfigureWindow); ok && v.ID == 1 {
-			if v.Fullscreen {
-				t.Fatalf("refused request applied: %+v", v)
-			}
-			return
+	synctest.Test(t, func(t *testing.T) {
+		r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+		r.mapWindow(t, 1)
+		r.mapWindow(t, 2)
+		for len(r.commands) > 0 {
+			<-r.commands
 		}
-	}
-	t.Fatal("no configure answered the request")
+		r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
+		receive(t, r.scenes)
+		for len(r.commands) > 0 {
+			if v, ok := (<-r.commands).(ports.ConfigureWindow); ok && v.ID == 1 {
+				if v.Fullscreen {
+					t.Fatalf("refused request applied: %+v", v)
+				}
+				return
+			}
+		}
+		t.Fatal("no configure answered the request")
+
+	})
 }
 
 // An activated window on another workspace comes on screen with focus.
 func TestWindowActivateShowsAndFocuses(t *testing.T) {
-	cfg := scrollDefaults()
-	client := make(chan ports.ClientEvent, 8)
-	input := make(chan ports.InputEvent, 8)
-	output := make(chan ports.OutputEvent, 8)
-	commands := make(chan ports.ClientCommand, 64)
-	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go c.Run(ctx)
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
-	scene(t, scenes)
-	client <- ports.WindowMapped{ID: 1}
-	scene(t, scenes)
-	// Window 2 opens on workspace 2, then the user goes back to 1.
-	input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModSuper, Pressed: true}
-	scene(t, scenes)
-	client <- ports.WindowMapped{ID: 2}
-	scene(t, scenes)
-	input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: ports.ModSuper, Pressed: true}
-	visible := func(sc ports.Scene) (shown []ports.SceneWindow) {
-		for _, w := range sc.Windows {
-			if !w.Hidden {
-				shown = append(shown, w)
+	synctest.Test(t, func(t *testing.T) {
+		cfg := scrollDefaults()
+		client := make(chan ports.ClientEvent, 8)
+		input := make(chan ports.InputEvent, 8)
+		output := make(chan ports.OutputEvent, 8)
+		commands := make(chan ports.ClientCommand, 64)
+		scenes := make(chan []ports.Scene, 1)
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go c.Run(ctx)
+		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+		scene(t, scenes)
+		client <- ports.WindowMapped{ID: 1}
+		scene(t, scenes)
+		// Window 2 opens on workspace 2, then the user goes back to 1.
+		input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModSuper, Pressed: true}
+		scene(t, scenes)
+		client <- ports.WindowMapped{ID: 2}
+		scene(t, scenes)
+		input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: ports.ModSuper, Pressed: true}
+		visible := func(sc ports.Scene) (shown []ports.SceneWindow) {
+			for _, w := range sc.Windows {
+				if !w.Hidden {
+					shown = append(shown, w)
+				}
+			}
+			return shown
+		}
+		if v := visible(scene(t, scenes)); len(v) != 1 || v[0].ID != 1 {
+			t.Fatalf("workspace 1: %+v", v)
+		}
+		client <- ports.WindowActivate{ID: 2}
+		v := visible(scene(t, scenes))
+		for len(v) != 1 || v[0].ID != 2 {
+			v = visible(scene(t, scenes))
+		}
+		if !v[0].Focused {
+			t.Fatalf("after activate: %+v", v)
+		}
+		for {
+			if f, ok := command(t, commands).(ports.FocusWindow); ok && f.ID == 2 {
+				break
 			}
 		}
-		return shown
-	}
-	if v := visible(scene(t, scenes)); len(v) != 1 || v[0].ID != 1 {
-		t.Fatalf("workspace 1: %+v", v)
-	}
-	client <- ports.WindowActivate{ID: 2}
-	v := visible(scene(t, scenes))
-	for len(v) != 1 || v[0].ID != 2 {
-		v = visible(scene(t, scenes))
-	}
-	if !v[0].Focused {
-		t.Fatalf("after activate: %+v", v)
-	}
-	for {
-		if f, ok := command(t, commands).(ports.FocusWindow); ok && f.ID == 2 {
-			break
-		}
-	}
 
+	})
 }

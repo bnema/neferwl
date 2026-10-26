@@ -3,6 +3,7 @@ package core
 import (
 	"reflect"
 	"testing"
+	"testing/synctest"
 )
 
 // cols builds a workspace with the given columns, focus on the last window
@@ -45,49 +46,64 @@ func TestConsumeOrExpel(t *testing.T) {
 		{"past the limit counts as full", cols(OverflowFixed, 2, 0, []WindowID{1, 2}, []WindowID{3}, []WindowID{4}), 1, [][]WindowID{{1}, {3, 2}, {4}}, true, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			stays := tc.w.ConsumeOrExpel(tc.dir)
-			if got := ids(tc.w); !reflect.DeepEqual(got, tc.want) || stays != tc.stays || tc.w.Focus != tc.focusCol {
-				t.Fatal(got, stays, tc.w.Focus)
-			}
+			synctest.Test(t, func(t *testing.T) {
+				stays := tc.w.ConsumeOrExpel(tc.dir)
+				if got := ids(tc.w); !reflect.DeepEqual(got, tc.want) || stays != tc.stays || tc.w.Focus != tc.focusCol {
+					t.Fatal(got, stays, tc.w.Focus)
+				}
+
+			})
 		})
 	}
 }
 
 func TestConsumeOrExpelFocusFollows(t *testing.T) {
-	w := cols(OverflowFixed, 3, 0, []WindowID{1, 2}, []WindowID{3}, []WindowID{4})
-	w.ConsumeOrExpel(1)
-	if id, _ := w.Focused(); id != 2 {
-		t.Fatal(id)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		w := cols(OverflowFixed, 3, 0, []WindowID{1, 2}, []WindowID{3}, []WindowID{4})
+		w.ConsumeOrExpel(1)
+		if id, _ := w.Focused(); id != 2 {
+			t.Fatal(id)
+		}
+
+	})
 }
 
 func TestConsumeOrExpelSkips(t *testing.T) {
 	t.Run("floating focus", func(t *testing.T) {
-		w := cols(OverflowScroll, 2, 0, []WindowID{1, 2})
-		w.AddFloating(9, 10, 10)
-		w.FocusID(9)
-		w.ConsumeOrExpel(1)
-		if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{1, 2}}) {
-			t.Fatal(got)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			w := cols(OverflowScroll, 2, 0, []WindowID{1, 2})
+			w.AddFloating(9, 10, 10)
+			w.FocusID(9)
+			w.ConsumeOrExpel(1)
+			if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{1, 2}}) {
+				t.Fatal(got)
+			}
+
+		})
 	})
 	t.Run("fullscreen", func(t *testing.T) {
-		w := cols(OverflowFixed, 3, 0, []WindowID{1, 2})
-		w.fullscreen = 2
-		w.ConsumeOrExpel(1)
-		if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{1, 2}}) {
-			t.Fatal(got)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			w := cols(OverflowFixed, 3, 0, []WindowID{1, 2})
+			w.fullscreen = 2
+			w.ConsumeOrExpel(1)
+			if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{1, 2}}) {
+				t.Fatal(got)
+			}
+
+		})
 	})
 }
 
 func TestConsumeIntoFullscreenColumnShows(t *testing.T) {
-	w := cols(OverflowScroll, 2, 0, []WindowID{1}, []WindowID{2})
-	w.fullscreen = 2
-	w.ConsumeOrExpel(1)
-	if id, _ := w.Focused(); !reflect.DeepEqual(ids(w), [][]WindowID{{2, 1}}) || id != 1 || w.fullscreen != 0 {
-		t.Fatal(ids(w), id, w.fullscreen)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		w := cols(OverflowScroll, 2, 0, []WindowID{1}, []WindowID{2})
+		w.fullscreen = 2
+		w.ConsumeOrExpel(1)
+		if id, _ := w.Focused(); !reflect.DeepEqual(ids(w), [][]WindowID{{2, 1}}) || id != 1 || w.fullscreen != 0 {
+			t.Fatal(ids(w), id, w.fullscreen)
+		}
+
+	})
 }
 
 func TestConsumeOrExpelSlots(t *testing.T) {
@@ -99,59 +115,80 @@ func TestConsumeOrExpelSlots(t *testing.T) {
 		return out
 	}
 	t.Run("the slot follows its window", func(t *testing.T) {
-		w := cols(OverflowScroll, 1, 0, []WindowID{1, 2})
-		w.Columns[0].Slot, w.Columns[0].Cells = 1, 2
-		w.Columns[0].Focus = 0
-		w.ConsumeOrExpel(1)
-		if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{2}, {1}}) || !reflect.DeepEqual(slots(w), []int{0, 1}) || w.Columns[1].Cells != 2 || w.Columns[0].Cells != 0 {
-			t.Fatal(got, slots(w), w.Columns)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			w := cols(OverflowScroll, 1, 0, []WindowID{1, 2})
+			w.Columns[0].Slot, w.Columns[0].Cells = 1, 2
+			w.Columns[0].Focus = 0
+			w.ConsumeOrExpel(1)
+			if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{2}, {1}}) || !reflect.DeepEqual(slots(w), []int{0, 1}) || w.Columns[1].Cells != 2 || w.Columns[0].Cells != 0 {
+				t.Fatal(got, slots(w), w.Columns)
+			}
+
+		})
 	})
 	t.Run("another window leaves the slot", func(t *testing.T) {
-		w := cols(OverflowScroll, 1, 0, []WindowID{1, 2})
-		w.Columns[0].Slot = 1
-		w.ConsumeOrExpel(1)
-		if !reflect.DeepEqual(slots(w), []int{1, 0}) {
-			t.Fatal(slots(w))
-		}
+		synctest.Test(t, func(t *testing.T) {
+			w := cols(OverflowScroll, 1, 0, []WindowID{1, 2})
+			w.Columns[0].Slot = 1
+			w.ConsumeOrExpel(1)
+			if !reflect.DeepEqual(slots(w), []int{1, 0}) {
+				t.Fatal(slots(w))
+			}
+
+		})
 	})
 	t.Run("stacking the slot window releases it", func(t *testing.T) {
-		w := cols(OverflowFixed, 2, 0, []WindowID{1, 2}, []WindowID{3})
-		w.Columns[0].Slot, w.Columns[0].Focus = 1, 0
-		w.ConsumeOrExpel(1)
-		if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{2}, {3, 1}}) || !reflect.DeepEqual(slots(w), []int{0, 0}) {
-			t.Fatal(got, slots(w))
-		}
+		synctest.Test(t, func(t *testing.T) {
+			w := cols(OverflowFixed, 2, 0, []WindowID{1, 2}, []WindowID{3})
+			w.Columns[0].Slot, w.Columns[0].Focus = 1, 0
+			w.ConsumeOrExpel(1)
+			if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{2}, {3, 1}}) || !reflect.DeepEqual(slots(w), []int{0, 0}) {
+				t.Fatal(got, slots(w))
+			}
+
+		})
 	})
 }
 
 func TestExpelTo(t *testing.T) {
 	t.Run("new edge column", func(t *testing.T) {
-		w := cols(OverflowFixed, 3, 0, []WindowID{1}, []WindowID{2})
-		w.expelTo(9, 1)
-		if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{9}, {1}, {2}}) || w.Focus != 0 {
-			t.Fatal(got)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			w := cols(OverflowFixed, 3, 0, []WindowID{1}, []WindowID{2})
+			w.expelTo(9, 1)
+			if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{9}, {1}, {2}}) || w.Focus != 0 {
+				t.Fatal(got)
+			}
+
+		})
 	})
 	t.Run("full stacks into the first column", func(t *testing.T) {
-		w := cols(OverflowFixed, 2, 1, []WindowID{1}, []WindowID{2})
-		w.expelTo(9, 1)
-		if id, _ := w.Focused(); !reflect.DeepEqual(ids(w), [][]WindowID{{1, 9}, {2}}) || id != 9 {
-			t.Fatal(ids(w), id)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			w := cols(OverflowFixed, 2, 1, []WindowID{1}, []WindowID{2})
+			w.expelTo(9, 1)
+			if id, _ := w.Focused(); !reflect.DeepEqual(ids(w), [][]WindowID{{1, 9}, {2}}) || id != 9 {
+				t.Fatal(ids(w), id)
+			}
+
+		})
 	})
 	t.Run("full from the right stacks into the last column", func(t *testing.T) {
-		w := cols(OverflowFixed, 2, 0, []WindowID{1}, []WindowID{2}, []WindowID{3})
-		w.expelTo(9, -1)
-		if id, _ := w.Focused(); !reflect.DeepEqual(ids(w), [][]WindowID{{1}, {2}, {3, 9}}) || id != 9 {
-			t.Fatal(ids(w), id)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			w := cols(OverflowFixed, 2, 0, []WindowID{1}, []WindowID{2}, []WindowID{3})
+			w.expelTo(9, -1)
+			if id, _ := w.Focused(); !reflect.DeepEqual(ids(w), [][]WindowID{{1}, {2}, {3, 9}}) || id != 9 {
+				t.Fatal(ids(w), id)
+			}
+
+		})
 	})
 	t.Run("empty workspace", func(t *testing.T) {
-		w := cols(OverflowFixed, 2, 0)
-		w.expelTo(9, -1)
-		if !reflect.DeepEqual(ids(w), [][]WindowID{{9}}) {
-			t.Fatal(ids(w))
-		}
+		synctest.Test(t, func(t *testing.T) {
+			w := cols(OverflowFixed, 2, 0)
+			w.expelTo(9, -1)
+			if !reflect.DeepEqual(ids(w), [][]WindowID{{9}}) {
+				t.Fatal(ids(w))
+			}
+
+		})
 	})
 }

@@ -4,6 +4,7 @@ import (
 	"math/rand"
 	"slices"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -15,14 +16,17 @@ func TestBorderSceneInvariants(t *testing.T) {
 	for _, overflow := range []string{"fixed", "scroll"} {
 		for _, gap := range []int{0, 6} {
 			t.Run(overflow+map[int]string{0: "-flush", 6: "-gaps"}[gap], func(t *testing.T) {
-				r := startMulti(t, func(c *ports.Config) {
-					c.Animations.On = false
-					c.Border.Width = 2
-					c.Layout.MaxColumns = 3
-					c.Layout.Overflow = overflow
-					c.Layout.Gaps = gap
-				}, left, right)
-				borderScenario(t, r, gap, nil)
+				synctest.Test(t, func(t *testing.T) {
+					r := startMulti(t, func(c *ports.Config) {
+						c.Animations.On = false
+						c.Border.Width = 2
+						c.Layout.MaxColumns = 3
+						c.Layout.Overflow = overflow
+						c.Layout.Gaps = gap
+					}, left, right)
+					borderScenario(t, r, gap, nil)
+
+				})
 			})
 		}
 	}
@@ -37,32 +41,35 @@ func TestBorderSceneInvariantsAnimated(t *testing.T) {
 	for _, overflow := range []string{"fixed", "scroll"} {
 		for _, gap := range []int{0, 6} {
 			t.Run(overflow+map[int]string{0: "-flush", 6: "-gaps"}[gap], func(t *testing.T) {
-				r := startSwipeOn(t, func(c *ports.Config) {
-					c.Animations.On = true
-					c.Border.Width = 2
-					c.Layout.MaxColumns = 3
-					c.Layout.Overflow = overflow
-					c.Layout.Gaps = gap
-				}, left, right)
-				moved := 0
-				borderScenario(t, r.multiRig, gap, func(set []ports.Scene) []ports.Scene {
-					settled, ok := r.settleAll(t, left.Name, right.Name)
-					if !ok {
-						return set
+				synctest.Test(t, func(t *testing.T) {
+					r := startSwipeOn(t, func(c *ports.Config) {
+						c.Animations.On = true
+						c.Border.Width = 2
+						c.Layout.MaxColumns = 3
+						c.Layout.Overflow = overflow
+						c.Layout.Gaps = gap
+					}, left, right)
+					moved := 0
+					borderScenario(t, r.multiRig, gap, func(set []ports.Scene) []ports.Scene {
+						settled, ok := r.settleAll(t, left.Name, right.Name)
+						if !ok {
+							return set
+						}
+						if !sameRects(set, settled) {
+							moved++
+						}
+						// Settled means no spring runs: a further flip has nothing to do.
+						if _, again := r.clk.flip(t, r.frames, r.scenes, 16*time.Millisecond, left.Name, right.Name); again {
+							t.Fatal("a flip after the settle still published: a spring runs")
+						}
+						return settled
+					})
+					if moved == 0 {
+						t.Fatal("no scene was ever mid-transition: the case checks nothing")
 					}
-					if !sameRects(set, settled) {
-						moved++
-					}
-					// Settled means no spring runs: a further flip has nothing to do.
-					if _, again := r.clk.flip(t, r.frames, r.scenes, 16*time.Millisecond, left.Name, right.Name); again {
-						t.Fatal("a flip after the settle still published: a spring runs")
-					}
-					return settled
+					t.Logf("%d steps checked mid-transition and settled", moved)
+
 				})
-				if moved == 0 {
-					t.Fatal("no scene was ever mid-transition: the case checks nothing")
-				}
-				t.Logf("%d steps checked mid-transition and settled", moved)
 			})
 		}
 	}
@@ -292,56 +299,62 @@ func wantInset(s ports.Scene, w ports.SceneWindow, gap int) ports.Sides {
 // Regression for the original two-monitor transfer: when the last tile
 // comes back, neither the old output nor the new one has a shared line.
 func TestBorderMoveBackAlone(t *testing.T) {
-	r := startMulti(t, func(c *ports.Config) {
-		c.Border.Width = 2
-		c.Layout.MaxColumns = 3
-		c.Layout.Overflow = "fixed"
-	}, left, right)
-	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
-	r.mapWindow(t, 1)
-	for _, sym := range []string{"Left", "Right"} {
-		scenes := r.key(t, sym, ports.ModAlt|ports.ModShift)
-		checkBorderScenes(t, 0, 0, scenes)
-		if got := shown(scenes); len(got["DP-1"]) != map[string]int{"Left": 1, "Right": 0}[sym] || len(got["DP-2"]) != map[string]int{"Left": 0, "Right": 1}[sym] {
-			t.Fatalf("%s: window did not move: %v", sym, got)
+	synctest.Test(t, func(t *testing.T) {
+		r := startMulti(t, func(c *ports.Config) {
+			c.Border.Width = 2
+			c.Layout.MaxColumns = 3
+			c.Layout.Overflow = "fixed"
+		}, left, right)
+		r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+		r.mapWindow(t, 1)
+		for _, sym := range []string{"Left", "Right"} {
+			scenes := r.key(t, sym, ports.ModAlt|ports.ModShift)
+			checkBorderScenes(t, 0, 0, scenes)
+			if got := shown(scenes); len(got["DP-1"]) != map[string]int{"Left": 1, "Right": 0}[sym] || len(got["DP-2"]) != map[string]int{"Left": 0, "Right": 1}[sym] {
+				t.Fatalf("%s: window did not move: %v", sym, got)
+			}
 		}
-	}
+
+	})
 }
 
 func TestBorderRadiusScene(t *testing.T) {
 	for _, gap := range []int{0, 8} {
 		t.Run(map[int]string{0: "flush", 8: "gaps"}[gap], func(t *testing.T) {
-			r := startMulti(t, func(c *ports.Config) { c.Animations.On = false; c.Layout.Gaps = gap; c.Border.Radius = 10 }, left, right)
-			scenes := r.mapWindow(t, 1)
-			for _, s := range scenes {
-				for _, w := range s.Windows {
-					if w.ID == 1 {
-						want := 0
-						if gap > 0 {
-							want = 10
-						}
-						if w.Radius != want || s.Border.Radius != 10 {
-							t.Fatalf("radius %d, style %d", w.Radius, s.Border.Radius)
-						}
-					}
-				}
-			}
-			for _, action := range []struct {
-				sym  string
-				mods ports.Mods
-				want int
-			}{
-				{"space", ports.ModAlt | ports.ModShift, 10},
-				{"f", ports.ModAlt | ports.ModShift, 0},
-			} {
-				for _, s := range r.key(t, action.sym, action.mods) {
+			synctest.Test(t, func(t *testing.T) {
+				r := startMulti(t, func(c *ports.Config) { c.Animations.On = false; c.Layout.Gaps = gap; c.Border.Radius = 10 }, left, right)
+				scenes := r.mapWindow(t, 1)
+				for _, s := range scenes {
 					for _, w := range s.Windows {
-						if w.ID == 1 && w.Radius != action.want {
-							t.Fatalf("%s radius %d, want %d", action.sym, w.Radius, action.want)
+						if w.ID == 1 {
+							want := 0
+							if gap > 0 {
+								want = 10
+							}
+							if w.Radius != want || s.Border.Radius != 10 {
+								t.Fatalf("radius %d, style %d", w.Radius, s.Border.Radius)
+							}
 						}
 					}
 				}
-			}
+				for _, action := range []struct {
+					sym  string
+					mods ports.Mods
+					want int
+				}{
+					{"space", ports.ModAlt | ports.ModShift, 10},
+					{"f", ports.ModAlt | ports.ModShift, 0},
+				} {
+					for _, s := range r.key(t, action.sym, action.mods) {
+						for _, w := range s.Windows {
+							if w.ID == 1 && w.Radius != action.want {
+								t.Fatalf("%s radius %d, want %d", action.sym, w.Radius, action.want)
+							}
+						}
+					}
+				}
+
+			})
 		})
 	}
 }
@@ -349,18 +362,21 @@ func TestBorderRadiusScene(t *testing.T) {
 // A reload that only changes border.radius republishes the scene with the
 // new radius.
 func TestReloadBorderRadiusRepublishes(t *testing.T) {
-	r := startMulti(t, func(c *ports.Config) { c.Animations.On = false; c.Layout.Gaps = 8; c.Border.Radius = 4 }, left)
-	r.mapWindow(t, 1)
-	cfg := r.cfg
-	cfg.Border.Radius = 12
-	r.reload <- ports.ConfigChanged{Config: cfg}
-	s := scene(t, r.scenes)
-	if s.Border.Radius != 12 {
-		t.Fatalf("style radius %d, want 12", s.Border.Radius)
-	}
-	for _, w := range s.Windows {
-		if w.ID == 1 && w.Radius != 12 {
-			t.Fatalf("window radius %d, want 12", w.Radius)
+	synctest.Test(t, func(t *testing.T) {
+		r := startMulti(t, func(c *ports.Config) { c.Animations.On = false; c.Layout.Gaps = 8; c.Border.Radius = 4 }, left)
+		r.mapWindow(t, 1)
+		cfg := r.cfg
+		cfg.Border.Radius = 12
+		r.reload <- ports.ConfigChanged{Config: cfg}
+		s := scene(t, r.scenes)
+		if s.Border.Radius != 12 {
+			t.Fatalf("style radius %d, want 12", s.Border.Radius)
 		}
-	}
+		for _, w := range s.Windows {
+			if w.ID == 1 && w.Radius != 12 {
+				t.Fatalf("window radius %d, want 12", w.Radius)
+			}
+		}
+
+	})
 }

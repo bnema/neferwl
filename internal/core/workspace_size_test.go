@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"testing"
+	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -151,15 +152,18 @@ func TestWorkspaceSizeFixedFullscreenKeepsFrame(t *testing.T) {
 }
 
 func TestWorkspaceSizeFloatsContained(t *testing.T) {
-	r, _ := sizedRig(t, "scroll", nil)
-	r.mapWindow(t, 1)
-	r.client <- ports.WindowMapped{ID: 2, Floating: true, Width: 5000, Height: 4000}
-	s := receive(t, r.scenes)[0]
-	for _, w := range s.Windows {
-		if w.Floating && !within(w.Rect, frame) {
-			t.Fatalf("float %+v outside %+v", w.Rect, frame)
+	synctest.Test(t, func(t *testing.T) {
+		r, _ := sizedRig(t, "scroll", nil)
+		r.mapWindow(t, 1)
+		r.client <- ports.WindowMapped{ID: 2, Floating: true, Width: 5000, Height: 4000}
+		s := receive(t, r.scenes)[0]
+		for _, w := range s.Windows {
+			if w.Floating && !within(w.Rect, frame) {
+				t.Fatalf("float %+v outside %+v", w.Rect, frame)
+			}
 		}
-	}
+
+	})
 }
 
 func TestWorkspaceSizeReloadAndRemoval(t *testing.T) {
@@ -245,36 +249,42 @@ func workspaceSizeReservedZoneIntersectsFrame(t *testing.T, r *landRig) {
 }
 
 func TestWorkspaceSizeFractionalScaleUnchanged(t *testing.T) {
-	r, _ := sizedRig(t, "scroll", func(c *ports.Config) {
-		c.Outputs = []ports.OutputConfig{{Name: "DP-3", Scale: 2}}
+	synctest.Test(t, func(t *testing.T) {
+		r, _ := sizedRig(t, "scroll", func(c *ports.Config) {
+			c.Outputs = []ports.OutputConfig{{Name: "DP-3", Scale: 2}}
+		})
+		s := r.mapWindow(t, 1)[0]
+		// The monitor is 1720x720 logical; a 1920x1080 workspace clamps to it.
+		if s.OutputWidth != 1720 || s.OutputHeight != 720 || s.Scale != 2 || s.WorkspaceClip != (ports.Rect{}) {
+			t.Fatalf("%dx%d scale %v clip %+v", s.OutputWidth, s.OutputHeight, s.Scale, s.WorkspaceClip)
+		}
+
 	})
-	s := r.mapWindow(t, 1)[0]
-	// The monitor is 1720x720 logical; a 1920x1080 workspace clamps to it.
-	if s.OutputWidth != 1720 || s.OutputHeight != 720 || s.Scale != 2 || s.WorkspaceClip != (ports.Rect{}) {
-		t.Fatalf("%dx%d scale %v clip %+v", s.OutputWidth, s.OutputHeight, s.Scale, s.WorkspaceClip)
-	}
 }
 
 func TestWorkspaceSizeInputOutsideFrame(t *testing.T) {
-	r, _ := sizedRig(t, "scroll", nil)
-	r.mapWindow(t, 1)
-	r.mapWindow(t, 2)
-	for len(r.commands) > 0 {
-		<-r.commands
-	}
-	// Inside the frame the window under the pointer gets the focus; window 1
-	// is scrolled partly off but its visible part outside the frame is dead.
-	r.input <- ports.PointerMotion{X: 2000, Y: 700}
-	if v, ok := command(t, r.commands).(ports.PointerFocus); !ok || v.ID != 2 {
-		t.Fatal(v)
-	}
-	r.input <- ports.PointerMotion{X: 100, Y: 700}
-	for {
-		if v, ok := command(t, r.commands).(ports.PointerFocus); ok {
-			if v.ID != 0 {
-				t.Fatalf("outside the frame: %+v", v)
-			}
-			break
+	synctest.Test(t, func(t *testing.T) {
+		r, _ := sizedRig(t, "scroll", nil)
+		r.mapWindow(t, 1)
+		r.mapWindow(t, 2)
+		for len(r.commands) > 0 {
+			<-r.commands
 		}
-	}
+		// Inside the frame the window under the pointer gets the focus; window 1
+		// is scrolled partly off but its visible part outside the frame is dead.
+		r.input <- ports.PointerMotion{X: 2000, Y: 700}
+		if v, ok := command(t, r.commands).(ports.PointerFocus); !ok || v.ID != 2 {
+			t.Fatal(v)
+		}
+		r.input <- ports.PointerMotion{X: 100, Y: 700}
+		for {
+			if v, ok := command(t, r.commands).(ports.PointerFocus); ok {
+				if v.ID != 0 {
+					t.Fatalf("outside the frame: %+v", v)
+				}
+				break
+			}
+		}
+
+	})
 }

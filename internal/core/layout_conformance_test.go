@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"testing"
+	"testing/synctest"
 )
 
 // testLayouts are layouts only tests know. A test file adds its own from an
@@ -51,7 +52,10 @@ func forEachConformance(t *testing.T, f func(t *testing.T, l layout, w *Workspac
 			for _, n := range []int{0, 1, k, k + 1, 2*k + 3} {
 				for _, mode := range conformanceModes {
 					t.Run(fmt.Sprintf("%s/k=%d/n=%d/%s", l.name(), k, n, mode), func(t *testing.T) {
-						f(t, l, conformanceWorkspace(l, k, n, mode), k, n, mode)
+						synctest.Test(t, func(t *testing.T) {
+							f(t, l, conformanceWorkspace(l, k, n, mode), k, n, mode)
+
+						})
 					})
 				}
 			}
@@ -60,30 +64,33 @@ func forEachConformance(t *testing.T, f func(t *testing.T, l layout, w *Workspac
 }
 
 func TestLayoutRegistryResolution(t *testing.T) {
-	seen := map[Overflow]bool{}
-	for _, l := range registeredLayouts() {
-		key := l.name()
-		if seen[key] {
-			t.Fatalf("duplicate layout %q", key)
+	synctest.Test(t, func(t *testing.T) {
+		seen := map[Overflow]bool{}
+		for _, l := range registeredLayouts() {
+			key := l.name()
+			if seen[key] {
+				t.Fatalf("duplicate layout %q", key)
+			}
+			seen[key] = true
+			got, ok := layoutFor(key)
+			if !ok || got != l {
+				t.Fatalf("missing %q", key)
+			}
+			w := Workspace{Overflow: key}
+			if w.layout() != l {
+				t.Fatal("workspace resolution")
+			}
 		}
-		seen[key] = true
-		got, ok := layoutFor(key)
-		if !ok || got != l {
-			t.Fatalf("missing %q", key)
+		def, _ := layoutFor(defaultLayout)
+		if l, ok := layoutFor(""); !ok || l != def || def.name() != defaultLayout {
+			t.Fatal("empty layout must default to " + string(defaultLayout))
 		}
-		w := Workspace{Overflow: key}
-		if w.layout() != l {
-			t.Fatal("workspace resolution")
+		if _, ok := layoutFor("unknown"); ok {
+			t.Fatal("unknown layout accepted")
 		}
-	}
-	def, _ := layoutFor(defaultLayout)
-	if l, ok := layoutFor(""); !ok || l != def || def.name() != defaultLayout {
-		t.Fatal("empty layout must default to " + string(defaultLayout))
-	}
-	if _, ok := layoutFor("unknown"); ok {
-		t.Fatal("unknown layout accepted")
-	}
-	if w := (Workspace{Overflow: "unknown"}); w.layout() != def {
-		t.Fatal("unknown layout must fall back to the default")
-	}
+		if w := (Workspace{Overflow: "unknown"}); w.layout() != def {
+			t.Fatal("unknown layout must fall back to the default")
+		}
+
+	})
 }

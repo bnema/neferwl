@@ -6,7 +6,7 @@ import (
 	"slices"
 	"sync/atomic"
 	"testing"
-	"time"
+	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/core"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
@@ -140,288 +140,330 @@ func (h *hintHarness) inside(i int) ports.HintTarget {
 }
 
 func TestHintRequestOnBind(t *testing.T) {
-	h := newHint(t, core.Options{})
-	req := h.start()
-	if req.Output != "OUT-1" || req.Width != 1000 || req.Height != 800 || req.Scale != 1 || req.Seq == 0 {
-		t.Fatalf("request %+v", req)
-	}
-	// A second bind while pending does not ask again; the pending phase
-	// cancels on any key.
-	h.press("g", ports.ModSuper)
-	select {
-	case r := <-h.scans:
-		t.Fatalf("second request %+v", r)
-	case <-time.After(50 * time.Millisecond):
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		req := h.start()
+		if req.Output != "OUT-1" || req.Width != 1000 || req.Height != 800 || req.Scale != 1 || req.Seq == 0 {
+			t.Fatalf("request %+v", req)
+		}
+		// A second bind while pending does not ask again; the pending phase
+		// cancels on any key.
+		h.press("g", ports.ModSuper)
+		synctest.Wait()
+		select {
+		case r := <-h.scans:
+			t.Fatalf("second request %+v", r)
+		default:
+		}
+
+	})
 }
 
 func TestHintRequestNilScansIsNoop(t *testing.T) {
-	cfg := scrollDefaults()
-	cfg.Binds["Cmd+g"] = "hint"
-	input := make(chan ports.InputEvent, 4)
-	client := make(chan ports.ClientEvent, 4)
-	output := make(chan ports.OutputEvent, 4)
-	commands := make(chan ports.ClientCommand, 32)
-	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- c.Run(ctx) }()
-	defer func() { cancel(); receive(t, done) }()
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 1000, Height: 800}}
-	scene(t, scenes)
-	input <- ports.KeyEvent{Keysym: "g", Base: "g", Mods: ports.ModSuper, Pressed: true}
-	if s := scene(t, scenes); len(s.HintLabels) != 0 {
-		t.Fatal(s.HintLabels)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		cfg := scrollDefaults()
+		cfg.Binds["Cmd+g"] = "hint"
+		input := make(chan ports.InputEvent, 4)
+		client := make(chan ports.ClientEvent, 4)
+		output := make(chan ports.OutputEvent, 4)
+		commands := make(chan ports.ClientCommand, 32)
+		scenes := make(chan []ports.Scene, 1)
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- c.Run(ctx) }()
+		defer func() { cancel(); receive(t, done) }()
+		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 1000, Height: 800}}
+		scene(t, scenes)
+		input <- ports.KeyEvent{Keysym: "g", Base: "g", Mods: ports.ModSuper, Pressed: true}
+		if s := scene(t, scenes); len(s.HintLabels) != 0 {
+			t.Fatal(s.HintLabels)
+		}
+
+	})
 }
 
 func TestHintRefusedWhenProtected(t *testing.T) {
-	var state atomic.Pointer[ports.SecurityState]
-	state.Store(&ports.SecurityState{})
-	gate := portsmocks.NewMockSessionSecurity(t)
-	gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return *state.Load() }).Maybe()
-	h := newHint(t, core.Options{Security: gate})
-	// Hint mode shown, then the session locks: the labels go away.
-	h.show(h.inside(0))
-	state.Store(&ports.SecurityState{Generation: 2, Protected: true})
-	h.state = *state.Load()
-	h.client <- ports.WindowMapped{ID: 2}
-	s := h.until(func(s ports.Scene) bool { return s.Security.Protected })
-	if len(s.HintLabels) != 0 {
-		t.Fatalf("labels while protected %+v", s.HintLabels)
-	}
-	// And a new request is refused while it lasts.
-	h.press("g", ports.ModSuper)
-	select {
-	case r := <-h.scans:
-		t.Fatalf("request while protected %+v", r)
-	case <-time.After(100 * time.Millisecond):
-	}
+	synctest.Test(t, func(t *testing.T) {
+		var state atomic.Pointer[ports.SecurityState]
+		state.Store(&ports.SecurityState{})
+		gate := portsmocks.NewMockSessionSecurity(t)
+		gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return *state.Load() }).Maybe()
+		h := newHint(t, core.Options{Security: gate})
+		// Hint mode shown, then the session locks: the labels go away.
+		h.show(h.inside(0))
+		state.Store(&ports.SecurityState{Generation: 2, Protected: true})
+		h.state = *state.Load()
+		h.client <- ports.WindowMapped{ID: 2}
+		s := h.until(func(s ports.Scene) bool { return s.Security.Protected })
+		if len(s.HintLabels) != 0 {
+			t.Fatalf("labels while protected %+v", s.HintLabels)
+		}
+		// And a new request is refused while it lasts.
+		h.press("g", ports.ModSuper)
+		synctest.Wait()
+		select {
+		case r := <-h.scans:
+			t.Fatalf("request while protected %+v", r)
+		default:
+		}
+
+	})
 }
 
 func TestHintResultShowsLabels(t *testing.T) {
-	h := newHint(t, core.Options{})
-	var targets []ports.HintTarget
-	for i := 0; i < 26; i++ {
-		targets = append(targets, h.inside(i))
-	}
-	s := h.show(targets...)
-	if len(s.HintLabels) != 26 {
-		t.Fatalf("%d labels", len(s.HintLabels))
-	}
-	seen := map[string]bool{}
-	for _, l := range s.HintLabels {
-		if len(l.Text) != 1 || l.Typed != 0 || seen[l.Text] {
-			t.Fatalf("label %+v", l)
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		var targets []ports.HintTarget
+		for i := 0; i < 26; i++ {
+			targets = append(targets, h.inside(i))
 		}
-		seen[l.Text] = true
-	}
-	// Sorted by position: the first target gets the first letter.
-	if s.HintLabels[0].Text != "f" || s.HintLabels[0].Rect.X != targets[0].Rect.X || s.HintLabels[0].Rect.Y != targets[0].Rect.Y {
-		t.Fatalf("first %+v", s.HintLabels[0])
-	}
+		s := h.show(targets...)
+		if len(s.HintLabels) != 26 {
+			t.Fatalf("%d labels", len(s.HintLabels))
+		}
+		seen := map[string]bool{}
+		for _, l := range s.HintLabels {
+			if len(l.Text) != 1 || l.Typed != 0 || seen[l.Text] {
+				t.Fatalf("label %+v", l)
+			}
+			seen[l.Text] = true
+		}
+		// Sorted by position: the first target gets the first letter.
+		if s.HintLabels[0].Text != "f" || s.HintLabels[0].Rect.X != targets[0].Rect.X || s.HintLabels[0].Rect.Y != targets[0].Rect.Y {
+			t.Fatalf("first %+v", s.HintLabels[0])
+		}
+
+	})
 }
 
 func TestHintTwoLetterLabels(t *testing.T) {
-	h := newHint(t, core.Options{})
-	var targets []ports.HintTarget
-	for i := 0; i < 27; i++ {
-		targets = append(targets, ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: h.win.X + 5 + 100*(i%4), Y: h.win.Y + 5 + 40*(i/4), W: 30, H: 10}})
-	}
-	s := h.show(targets...)
-	if len(s.HintLabels) != 27 {
-		t.Fatalf("%d labels", len(s.HintLabels))
-	}
-	seen := map[string]bool{}
-	for _, l := range s.HintLabels {
-		if len(l.Text) != 2 || seen[l.Text] {
-			t.Fatalf("label %+v", l)
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		var targets []ports.HintTarget
+		for i := 0; i < 27; i++ {
+			targets = append(targets, ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: h.win.X + 5 + 100*(i%4), Y: h.win.Y + 5 + 40*(i/4), W: 30, H: 10}})
 		}
-		seen[l.Text] = true
-	}
-	if s.HintLabels[0].Text != "ff" || s.HintLabels[1].Text != "fj" {
-		t.Fatalf("labels %v %v", s.HintLabels[0].Text, s.HintLabels[1].Text)
-	}
+		s := h.show(targets...)
+		if len(s.HintLabels) != 27 {
+			t.Fatalf("%d labels", len(s.HintLabels))
+		}
+		seen := map[string]bool{}
+		for _, l := range s.HintLabels {
+			if len(l.Text) != 2 || seen[l.Text] {
+				t.Fatalf("label %+v", l)
+			}
+			seen[l.Text] = true
+		}
+		if s.HintLabels[0].Text != "ff" || s.HintLabels[1].Text != "fj" {
+			t.Fatalf("labels %v %v", s.HintLabels[0].Text, s.HintLabels[1].Text)
+		}
+
+	})
 }
 
 func TestHintDropsTargetsOutsideWindows(t *testing.T) {
-	h := newHint(t, core.Options{})
-	in := h.inside(0)
-	// In the gap around the window, over the background.
-	out := ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: 2, Y: 2, W: 4, H: 4}}
-	if h.win.X < 8 || h.win.Y < 8 {
-		t.Fatalf("window %+v leaves no gap", h.win)
-	}
-	req := h.start()
-	h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{out, in}}
-	s := h.labelled(1, 0)
-	if len(s.HintLabels) != 1 || s.HintLabels[0].Rect.X != in.Rect.X {
-		t.Fatalf("labels %+v (window %+v)", s.HintLabels, h.win)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		in := h.inside(0)
+		// In the gap around the window, over the background.
+		out := ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: 2, Y: 2, W: 4, H: 4}}
+		if h.win.X < 8 || h.win.Y < 8 {
+			t.Fatalf("window %+v leaves no gap", h.win)
+		}
+		req := h.start()
+		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{out, in}}
+		s := h.labelled(1, 0)
+		if len(s.HintLabels) != 1 || s.HintLabels[0].Rect.X != in.Rect.X {
+			t.Fatalf("labels %+v (window %+v)", s.HintLabels, h.win)
+		}
+
+	})
 }
 
 func TestHintTypingFilters(t *testing.T) {
-	h := newHint(t, core.Options{})
-	var targets []ports.HintTarget
-	for i := 0; i < 27; i++ {
-		targets = append(targets, ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: h.win.X + 5 + 100*(i%4), Y: h.win.Y + 5 + 40*(i/4), W: 30, H: 10}})
-	}
-	h.show(targets...)
-	h.press("f", 0)
-	s := h.labelled(26, 1)
-	if len(s.HintLabels) != 26 {
-		t.Fatalf("%d labels after f", len(s.HintLabels))
-	}
-	for _, l := range s.HintLabels {
-		if l.Typed != 1 || l.Text[0] != 'f' {
-			t.Fatalf("label %+v", l)
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		var targets []ports.HintTarget
+		for i := 0; i < 27; i++ {
+			targets = append(targets, ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: h.win.X + 5 + 100*(i%4), Y: h.win.Y + 5 + 40*(i/4), W: 30, H: 10}})
 		}
-	}
-	h.press("BackSpace", 0)
-	h.labelled(27, 0)
-	// Only the 27th target starts with j: its label is "jf".
-	h.press("j", 0)
-	s = h.labelled(1, 1)
-	if len(s.HintLabels) != 1 || s.HintLabels[0].Text != "jf" {
-		t.Fatalf("after j %+v", s.HintLabels)
-	}
+		h.show(targets...)
+		h.press("f", 0)
+		s := h.labelled(26, 1)
+		if len(s.HintLabels) != 26 {
+			t.Fatalf("%d labels after f", len(s.HintLabels))
+		}
+		for _, l := range s.HintLabels {
+			if l.Typed != 1 || l.Text[0] != 'f' {
+				t.Fatalf("label %+v", l)
+			}
+		}
+		h.press("BackSpace", 0)
+		h.labelled(27, 0)
+		// Only the 27th target starts with j: its label is "jf".
+		h.press("j", 0)
+		s = h.labelled(1, 1)
+		if len(s.HintLabels) != 1 || s.HintLabels[0].Text != "jf" {
+			t.Fatalf("after j %+v", s.HintLabels)
+		}
+
+	})
 }
 
 func TestHintClick(t *testing.T) {
-	h := newHint(t, core.Options{})
-	tg := h.inside(0)
-	h.show(tg)
-	h.drain()
-	h.press("f", 0)
-	s := h.labelled(0, 0)
-	if len(s.HintLabels) != 0 {
-		t.Fatalf("labels after click %+v", s.HintLabels)
-	}
-	cx := float64(tg.Rect.X) + float64(tg.Rect.W)/2 - float64(h.win.X)
-	cy := float64(tg.Rect.Y) + float64(tg.Rect.H)/2 - float64(h.win.Y)
-	var gotMotion, gotPress, gotRelease, gotFocus bool
-	for len(h.commands) > 0 || !gotRelease {
-		var cmd ports.ClientCommand
-		select {
-		case cmd = <-h.commands:
-		case <-time.After(time.Second):
-			t.Fatalf("missing commands: focus %v motion %v press %v release %v", gotFocus, gotMotion, gotPress, gotRelease)
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		tg := h.inside(0)
+		h.show(tg)
+		h.drain()
+		h.press("f", 0)
+		s := h.labelled(0, 0)
+		if len(s.HintLabels) != 0 {
+			t.Fatalf("labels after click %+v", s.HintLabels)
 		}
-		switch v := cmd.(type) {
-		case ports.PointerFocus:
-			if v.ID == 1 && v.X == cx && v.Y == cy {
-				gotFocus = true
+		cx := float64(tg.Rect.X) + float64(tg.Rect.W)/2 - float64(h.win.X)
+		cy := float64(tg.Rect.Y) + float64(tg.Rect.H)/2 - float64(h.win.Y)
+		var gotMotion, gotPress, gotRelease, gotFocus bool
+		for len(h.commands) > 0 || !gotRelease {
+			var cmd ports.ClientCommand
+			synctest.Wait()
+			select {
+			case cmd = <-h.commands:
+			default:
+				t.Fatalf("missing commands: focus %v motion %v press %v release %v", gotFocus, gotMotion, gotPress, gotRelease)
 			}
-		case ports.PointerMotionTo:
-			if v.ID == 1 && v.X == cx && v.Y == cy {
-				gotMotion = true
-			}
-		case ports.PointerButtonTo:
-			if v.ID != 1 || v.Button != 0x110 {
-				t.Fatalf("button %+v", v)
-			}
-			if v.Pressed {
-				gotPress = true
-			} else {
-				gotRelease = gotPress
+			switch v := cmd.(type) {
+			case ports.PointerFocus:
+				if v.ID == 1 && v.X == cx && v.Y == cy {
+					gotFocus = true
+				}
+			case ports.PointerMotionTo:
+				if v.ID == 1 && v.X == cx && v.Y == cy {
+					gotMotion = true
+				}
+			case ports.PointerButtonTo:
+				if v.ID != 1 || v.Button != 0x110 {
+					t.Fatalf("button %+v", v)
+				}
+				if v.Pressed {
+					gotPress = true
+				} else {
+					gotRelease = gotPress
+				}
 			}
 		}
-	}
-	if !gotFocus || !gotMotion {
-		t.Fatalf("focus %v motion %v", gotFocus, gotMotion)
-	}
+		if !gotFocus || !gotMotion {
+			t.Fatalf("focus %v motion %v", gotFocus, gotMotion)
+		}
+
+	})
 }
 
 func TestHintEscapeCancels(t *testing.T) {
-	h := newHint(t, core.Options{})
-	h.show(h.inside(0))
-	h.drain()
-	h.press("Escape", 0)
-	s := h.labelled(0, 0)
-	if len(s.HintLabels) != 0 {
-		t.Fatalf("labels %+v", s.HintLabels)
-	}
-	h.release("Escape", 0)
-	// A later key goes to the window again: the Escape release did not.
-	h.press("x", 0)
-	cmd := command(t, h.commands)
-	if v, ok := cmd.(ports.ForwardKey); !ok || v.Key.Keysym != "x" {
-		t.Fatalf("command %#v", cmd)
-	}
-	for len(h.commands) > 0 {
-		if _, ok := (<-h.commands).(ports.PointerButtonTo); ok {
-			t.Fatal("button sent")
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		h.show(h.inside(0))
+		h.drain()
+		h.press("Escape", 0)
+		s := h.labelled(0, 0)
+		if len(s.HintLabels) != 0 {
+			t.Fatalf("labels %+v", s.HintLabels)
 		}
-	}
+		h.release("Escape", 0)
+		// A later key goes to the window again: the Escape release did not.
+		h.press("x", 0)
+		cmd := command(t, h.commands)
+		if v, ok := cmd.(ports.ForwardKey); !ok || v.Key.Keysym != "x" {
+			t.Fatalf("command %#v", cmd)
+		}
+		for len(h.commands) > 0 {
+			if _, ok := (<-h.commands).(ports.PointerButtonTo); ok {
+				t.Fatal("button sent")
+			}
+		}
+
+	})
 }
 
 func TestHintKeysNotForwarded(t *testing.T) {
-	h := newHint(t, core.Options{})
-	h.show(h.inside(0), h.inside(1))
-	h.drain()
-	// A letter that matches nothing is swallowed and does not cancel.
-	h.press("q", 0)
-	h.release("q", 0)
-	// Any other key cancels and is swallowed.
-	h.press("Return", 0)
-	s := h.labelled(0, 0)
-	if len(s.HintLabels) != 0 {
-		t.Fatalf("labels %+v", s.HintLabels)
-	}
-	h.release("Return", 0)
-	h.press("x", 0)
-	cmd := command(t, h.commands)
-	if v, ok := cmd.(ports.ForwardKey); !ok || v.Key.Keysym != "x" {
-		t.Fatalf("first forwarded command %#v", cmd)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		h.show(h.inside(0), h.inside(1))
+		h.drain()
+		// A letter that matches nothing is swallowed and does not cancel.
+		h.press("q", 0)
+		h.release("q", 0)
+		// Any other key cancels and is swallowed.
+		h.press("Return", 0)
+		s := h.labelled(0, 0)
+		if len(s.HintLabels) != 0 {
+			t.Fatalf("labels %+v", s.HintLabels)
+		}
+		h.release("Return", 0)
+		h.press("x", 0)
+		cmd := command(t, h.commands)
+		if v, ok := cmd.(ports.ForwardKey); !ok || v.Key.Keysym != "x" {
+			t.Fatalf("first forwarded command %#v", cmd)
+		}
+
+	})
 }
 
 func TestHintStaleSeqIgnored(t *testing.T) {
-	h := newHint(t, core.Options{})
-	req := h.start()
-	h.hints <- ports.HintScanResult{Seq: req.Seq + 7, Output: req.Output, Targets: []ports.HintTarget{h.inside(0)}}
-	// A matching result afterwards shows: the stale one changed nothing.
-	h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{h.inside(0), h.inside(1)}}
-	s := h.labelled(2, 0)
-	if len(s.HintLabels) != 2 {
-		t.Fatalf("labels %+v", s.HintLabels)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		req := h.start()
+		h.hints <- ports.HintScanResult{Seq: req.Seq + 7, Output: req.Output, Targets: []ports.HintTarget{h.inside(0)}}
+		// A matching result afterwards shows: the stale one changed nothing.
+		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{h.inside(0), h.inside(1)}}
+		s := h.labelled(2, 0)
+		if len(s.HintLabels) != 2 {
+			t.Fatalf("labels %+v", s.HintLabels)
+		}
+
+	})
 }
 
 func TestHintErrorCancels(t *testing.T) {
-	h := newHint(t, core.Options{})
-	req := h.start()
-	h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Err: fmt.Errorf("boom")}
-	h.press("x", 0)
-	cmd := command(t, h.commands)
-	if v, ok := cmd.(ports.ForwardKey); !ok || v.Key.Keysym != "x" {
-		t.Fatalf("command %#v", cmd)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		req := h.start()
+		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Err: fmt.Errorf("boom")}
+		h.press("x", 0)
+		cmd := command(t, h.commands)
+		if v, ok := cmd.(ports.ForwardKey); !ok || v.Key.Keysym != "x" {
+			t.Fatalf("command %#v", cmd)
+		}
+
+	})
 }
 
 func TestHintWindowMovedAborts(t *testing.T) {
-	h := newHint(t, core.Options{})
-	tg := h.inside(0)
-	h.show(tg)
-	// The window closes before the label is typed: the click must not go
-	// anywhere.
-	h.client <- ports.WindowUnmapped{ID: 1}
-	h.until(func(s ports.Scene) bool { return len(s.Windows) == 0 })
-	h.drain()
-	h.press("f", 0)
-	// With no window left a key goes nowhere; the next bind press, answered
-	// by a scan request, shows core handled the label key before it.
-	h.press("g", ports.ModSuper)
-	receive(t, h.scans)
-	for len(h.commands) > 0 {
-		if _, ok := (<-h.commands).(ports.PointerButtonTo); ok {
-			t.Fatal("button sent to a moved window")
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		tg := h.inside(0)
+		h.show(tg)
+		// The window closes before the label is typed: the click must not go
+		// anywhere.
+		h.client <- ports.WindowUnmapped{ID: 1}
+		h.until(func(s ports.Scene) bool { return len(s.Windows) == 0 })
+		h.drain()
+		h.press("f", 0)
+		// With no window left a key goes nowhere; the next bind press, answered
+		// by a scan request, shows core handled the label key before it.
+		h.press("g", ports.ModSuper)
+		receive(t, h.scans)
+		for len(h.commands) > 0 {
+			if _, ok := (<-h.commands).(ports.PointerButtonTo); ok {
+				t.Fatal("button sent to a moved window")
+			}
 		}
-	}
+
+	})
 }
 
 // barrier returns the commands core sent for everything given to it so far:
@@ -457,41 +499,44 @@ func (h *hintHarness) buttonsSent() (presses, releases int) {
 // The bind's modifier is still held while the label is typed: the synthetic
 // click must reach the client, not start a Cmd+left-button window drag.
 func TestHintClickWithBindModifierHeld(t *testing.T) {
-	h := newHint(t, core.Options{})
-	tg := h.inside(0)
-	h.press("g", ports.ModSuper)
-	req := receive(t, h.scans)
-	h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
-	h.labelled(1, 0)
-	h.drain()
-	h.press("f", ports.ModSuper) // Super is still down
-	h.labelled(0, 0)
-	cmds := h.barrier()
-	if got, want := commandKinds(cmds), []string{"mods:0", "motion", "press", "release", "mods:restore"}; !slices.Equal(got, want) {
-		t.Fatalf("commands %v, want %v", got, want)
-	}
-	presses, releases := 0, 0
-	for _, c := range cmds {
-		if b, ok := c.(ports.PointerButtonTo); ok {
-			if b.Pressed {
-				presses++
-			} else {
-				releases++
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		tg := h.inside(0)
+		h.press("g", ports.ModSuper)
+		req := receive(t, h.scans)
+		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
+		h.labelled(1, 0)
+		h.drain()
+		h.press("f", ports.ModSuper) // Super is still down
+		h.labelled(0, 0)
+		cmds := h.barrier()
+		if got, want := commandKinds(cmds), []string{"mods:0", "motion", "press", "release", "mods:restore"}; !slices.Equal(got, want) {
+			t.Fatalf("commands %v, want %v", got, want)
+		}
+		presses, releases := 0, 0
+		for _, c := range cmds {
+			if b, ok := c.(ports.PointerButtonTo); ok {
+				if b.Pressed {
+					presses++
+				} else {
+					releases++
+				}
 			}
 		}
-	}
-	if presses != 1 || releases != 1 {
-		t.Fatalf("client got %d presses, %d releases", presses, releases)
-	}
-	// No drag is left behind: a later plain motion and a click work as usual.
-	h.release("f", ports.ModSuper)
-	h.release("Super_L", 0)
-	h.send(ports.PointerMotion{X: float64(tg.Rect.X), Y: float64(tg.Rect.Y)})
-	h.send(ports.PointerButton{Button: 0x110, Pressed: true})
-	h.send(ports.PointerButton{Button: 0x110})
-	if presses, releases = h.buttonsSent(); presses != 1 || releases != 1 {
-		t.Fatalf("after: %d presses, %d releases (drag left active?)", presses, releases)
-	}
+		if presses != 1 || releases != 1 {
+			t.Fatalf("client got %d presses, %d releases", presses, releases)
+		}
+		// No drag is left behind: a later plain motion and a click work as usual.
+		h.release("f", ports.ModSuper)
+		h.release("Super_L", 0)
+		h.send(ports.PointerMotion{X: float64(tg.Rect.X), Y: float64(tg.Rect.Y)})
+		h.send(ports.PointerButton{Button: 0x110, Pressed: true})
+		h.send(ports.PointerButton{Button: 0x110})
+		if presses, releases = h.buttonsSent(); presses != 1 || releases != 1 {
+			t.Fatalf("after: %d presses, %d releases (drag left active?)", presses, releases)
+		}
+
+	})
 }
 
 // constrain gives window 1 a pointer constraint and waits until core applied it.
@@ -507,14 +552,18 @@ func TestHintRefusedWithPointerConstraint(t *testing.T) {
 		"confine": {Mode: ports.ConstraintConfine, Rect: ports.Rect{X: 0, Y: 0, W: 5, H: 5}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			h := newHint(t, core.Options{})
-			h.constrain(c.Mode, c.Rect)
-			h.press("g", ports.ModSuper)
-			select {
-			case r := <-h.scans:
-				t.Fatalf("request under a %s: %+v", name, r)
-			case <-time.After(100 * time.Millisecond):
-			}
+			synctest.Test(t, func(t *testing.T) {
+				h := newHint(t, core.Options{})
+				h.constrain(c.Mode, c.Rect)
+				h.press("g", ports.ModSuper)
+				synctest.Wait()
+				select {
+				case r := <-h.scans:
+					t.Fatalf("request under a %s: %+v", name, r)
+				default:
+				}
+
+			})
 		})
 	}
 }
@@ -527,14 +576,17 @@ func TestHintNoClickWhenConstraintAppears(t *testing.T) {
 		"confine": {Mode: ports.ConstraintConfine, Rect: ports.Rect{X: 0, Y: 0, W: 5, H: 5}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			h := newHint(t, core.Options{})
-			h.show(h.inside(0))
-			h.constrain(c.Mode, c.Rect)
-			h.drain()
-			h.press("f", 0)
-			if p, r := h.buttonsSent(); p+r != 0 {
-				t.Fatalf("%d presses, %d releases under a %s", p, r, name)
-			}
+			synctest.Test(t, func(t *testing.T) {
+				h := newHint(t, core.Options{})
+				h.show(h.inside(0))
+				h.constrain(c.Mode, c.Rect)
+				h.drain()
+				h.press("f", 0)
+				if p, r := h.buttonsSent(); p+r != 0 {
+					t.Fatalf("%d presses, %d releases under a %s", p, r, name)
+				}
+
+			})
 		})
 	}
 }
@@ -554,49 +606,59 @@ func (h *hintHarness) pressReal() {
 }
 
 func TestHintRefusedWhileButtonHeld(t *testing.T) {
-	h := newHint(t, core.Options{})
-	h.pressReal()
-	h.press("g", ports.ModSuper)
-	select {
-	case r := <-h.scans:
-		t.Fatalf("request with a button held: %+v", r)
-	case <-time.After(100 * time.Millisecond):
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		h.pressReal()
+		h.press("g", ports.ModSuper)
+		synctest.Wait()
+		select {
+		case r := <-h.scans:
+			t.Fatalf("request with a button held: %+v", r)
+		default:
+		}
+
+	})
 }
 
 // A button pressed (and so a grab taken) after the labels appeared: the label
 // is typed, no synthetic button goes out and the real press stays held.
 func TestHintNoClickWhileGrabbed(t *testing.T) {
-	h := newHint(t, core.Options{})
-	h.show(h.inside(0))
-	h.pressReal()
-	h.press("f", 0)
-	if p, r := h.buttonsSent(); p+r != 0 {
-		t.Fatalf("synthetic click during a grab: %d presses, %d releases", p, r)
-	}
-	// The real release still reaches the client: c.buttons was not touched.
-	h.send(ports.PointerButton{Button: 0x110})
-	if _, r := h.buttonsSent(); r != 1 {
-		t.Fatalf("real release delivered %d times", r)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		h.show(h.inside(0))
+		h.pressReal()
+		h.press("f", 0)
+		if p, r := h.buttonsSent(); p+r != 0 {
+			t.Fatalf("synthetic click during a grab: %d presses, %d releases", p, r)
+		}
+		// The real release still reaches the client: c.buttons was not touched.
+		h.send(ports.PointerButton{Button: 0x110})
+		if _, r := h.buttonsSent(); r != 1 {
+			t.Fatalf("real release delivered %d times", r)
+		}
+
+	})
 }
 
 // The window stays mapped but moves away from the target's centre.
 func TestHintMappedWindowMovedAborts(t *testing.T) {
-	h := newHint(t, core.Options{})
-	// A target at the right edge of window 1.
-	tg := ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: h.win.X + h.win.W - 50, Y: h.win.Y + 10, W: 40, H: 10}}
-	h.show(tg)
-	h.client <- ports.WindowMapped{ID: 2}
-	s := h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 && len(s.HintLabels) <= 1 })
-	if s.Windows[0].Rect == h.win {
-		t.Fatalf("window 1 did not move: %+v", s.Windows)
-	}
-	h.drain()
-	h.press("f", 0)
-	if p, r := h.buttonsSent(); p+r != 0 {
-		t.Fatalf("click went to %d presses %d releases after the window moved", p, r)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		// A target at the right edge of window 1.
+		tg := ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: h.win.X + h.win.W - 50, Y: h.win.Y + 10, W: 40, H: 10}}
+		h.show(tg)
+		h.client <- ports.WindowMapped{ID: 2}
+		s := h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 && len(s.HintLabels) <= 1 })
+		if s.Windows[0].Rect == h.win {
+			t.Fatalf("window 1 did not move: %+v", s.Windows)
+		}
+		h.drain()
+		h.press("f", 0)
+		if p, r := h.buttonsSent(); p+r != 0 {
+			t.Fatalf("click went to %d presses %d releases after the window moved", p, r)
+		}
+
+	})
 }
 
 // commandsSent drains the commands up to a barrier, keeping the ones that
@@ -640,134 +702,158 @@ func commandKinds(cmds []ports.ClientCommand) []string {
 // A click on the focused window moves the pointer to the target and presses
 // and releases the left button; it states no modifiers.
 func TestHintClickSequence(t *testing.T) {
-	h := newHint(t, core.Options{})
-	h.show(h.inside(0))
-	h.drain()
-	h.press("f", 0)
-	got := commandKinds(h.commandsSent())
-	want := []string{"mods:0", "motion", "press", "release", "mods:restore"}
-	if !slices.Equal(got, want) {
-		t.Fatalf("commands %v, want %v", got, want)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		h.show(h.inside(0))
+		h.drain()
+		h.press("f", 0)
+		got := commandKinds(h.commandsSent())
+		want := []string{"mods:0", "motion", "press", "release", "mods:restore"}
+		if !slices.Equal(got, want) {
+			t.Fatalf("commands %v, want %v", got, want)
+		}
+
+	})
 }
 
 // A window that moved while the scan ran: a target over it is dropped.
 func TestHintResultDroppedWhenWindowMoved(t *testing.T) {
-	h := newHint(t, core.Options{})
-	req := h.start()
-	tg := h.inside(0)
-	h.client <- ports.WindowMapped{ID: 2}
-	h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
-	h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
-	// Whatever window now covers the target was not scanned: no labels.
-	if s := h.labelled(0, 0); len(s.HintLabels) != 0 {
-		t.Fatalf("labels %+v", s.HintLabels)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		req := h.start()
+		tg := h.inside(0)
+		h.client <- ports.WindowMapped{ID: 2}
+		h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
+		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
+		// Whatever window now covers the target was not scanned: no labels.
+		if s := h.labelled(0, 0); len(s.HintLabels) != 0 {
+			t.Fatalf("labels %+v", s.HintLabels)
+		}
+
+	})
 }
 
 // A new window covering the target (not in the snapshot) drops it as well.
 func TestHintResultDroppedForUnseenWindow(t *testing.T) {
-	h := newHint(t, core.Options{})
-	req := h.start()
-	h.client <- ports.WindowMapped{ID: 2}
-	s := h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
-	var tg ports.HintTarget
-	for _, w := range s.Windows {
-		if w.ID == 2 {
-			tg.Rect = ports.Rect{X: w.Rect.X + 5, Y: w.Rect.Y + 5, W: 20, H: 10}
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		req := h.start()
+		h.client <- ports.WindowMapped{ID: 2}
+		s := h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
+		var tg ports.HintTarget
+		for _, w := range s.Windows {
+			if w.ID == 2 {
+				tg.Rect = ports.Rect{X: w.Rect.X + 5, Y: w.Rect.Y + 5, W: 20, H: 10}
+			}
 		}
-	}
-	h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
-	if s := h.labelled(0, 0); len(s.HintLabels) != 0 {
-		t.Fatalf("labels %+v", s.HintLabels)
-	}
+		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
+		if s := h.labelled(0, 0); len(s.HintLabels) != 0 {
+			t.Fatalf("labels %+v", s.HintLabels)
+		}
+
+	})
 }
 
 // Targets outside the output are dropped.
 func TestHintDropsTargetsOutsideOutput(t *testing.T) {
-	h := newHint(t, core.Options{})
-	req := h.start()
-	out := ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: 2000, Y: 10, W: 10, H: 10}}
-	h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{out, h.inside(0)}}
-	if s := h.labelled(1, 0); len(s.HintLabels) != 1 {
-		t.Fatalf("labels %+v", s.HintLabels)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		req := h.start()
+		out := ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: 2000, Y: 10, W: 10, H: 10}}
+		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{out, h.inside(0)}}
+		if s := h.labelled(1, 0); len(s.HintLabels) != 1 {
+			t.Fatalf("labels %+v", s.HintLabels)
+		}
+
+	})
 }
 
 // The output changing size while labels are shown ends hint mode.
 func TestHintCancelsWhenOutputChanges(t *testing.T) {
-	h := newHint(t, core.Options{})
-	h.show(h.inside(0))
-	h.output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 1200, Height: 800}}
-	if s := h.labelled(0, 0); len(s.HintLabels) != 0 {
-		t.Fatalf("labels %+v", s.HintLabels)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		h.show(h.inside(0))
+		h.output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 1200, Height: 800}}
+		if s := h.labelled(0, 0); len(s.HintLabels) != 0 {
+			t.Fatalf("labels %+v", s.HintLabels)
+		}
+
+	})
 }
 
 // A window that does not have the keyboard gets it before the click.
 func TestHintClickFocusesWindowFirst(t *testing.T) {
-	h := newHint(t, core.Options{})
-	h.client <- ports.WindowMapped{ID: 2}
-	s := h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
-	var r ports.Rect
-	for _, w := range s.Windows {
-		if w.ID == 1 {
-			r = w.Rect
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		h.client <- ports.WindowMapped{ID: 2}
+		s := h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
+		var r ports.Rect
+		for _, w := range s.Windows {
+			if w.ID == 1 {
+				r = w.Rect
+			}
 		}
-	}
-	h.win = r
-	h.show(h.inside(0))
-	h.drain()
-	h.press("f", 0)
-	got := commandKinds(h.commandsSent())
-	want := []string{"focus:1", "mods:0", "motion", "press", "release", "mods:restore"}
-	if !slices.Equal(got, want) {
-		t.Fatalf("commands %v, want %v", got, want)
-	}
+		h.win = r
+		h.show(h.inside(0))
+		h.drain()
+		h.press("f", 0)
+		got := commandKinds(h.commandsSent())
+		want := []string{"focus:1", "mods:0", "motion", "press", "release", "mods:restore"}
+		if !slices.Equal(got, want) {
+			t.Fatalf("commands %v, want %v", got, want)
+		}
+
+	})
 }
 
 // A click that is no longer allowed sends no command at all.
 func TestHintClickNothingWhenNotClickable(t *testing.T) {
-	h := newHint(t, core.Options{})
-	h.show(h.inside(0))
-	h.constrain(ports.ConstraintLock, ports.Rect{})
-	h.drain()
-	h.press("f", 0)
-	if got := commandKinds(h.commandsSent()); len(got) != 0 {
-		t.Fatalf("commands %v under a constraint", got)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		h.show(h.inside(0))
+		h.constrain(ports.ConstraintLock, ports.Rect{})
+		h.drain()
+		h.press("f", 0)
+		if got := commandKinds(h.commandsSent()); len(got) != 0 {
+			t.Fatalf("commands %v under a constraint", got)
+		}
+
+	})
 }
 
 func TestHintDisabledNotesOnce(t *testing.T) {
-	cfg := scrollDefaults()
-	cfg.Binds["Cmd+g"] = "hint"
-	var noted atomic.Int32
-	h := &hintHarness{
-		input:    make(chan ports.InputEvent, 32),
-		client:   make(chan ports.ClientEvent, 32),
-		output:   make(chan ports.OutputEvent, 8),
-		commands: make(chan ports.ClientCommand, 256),
-		scenes:   make(chan []ports.Scene, 1),
-	}
-	ch := core.Channels{Client: h.client, Input: h.input, Output: h.output, Commands: h.commands, Scenes: h.scenes}
-	c, err := core.New(cfg, ch, core.Options{HintDisabled: func() { noted.Add(1) }})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- c.Run(ctx) }()
-	t.Cleanup(func() { cancel(); receive(t, done) })
-	h.output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 1000, Height: 800}}
-	scene(t, h.scenes)
-	for range 3 {
-		h.press("g", ports.ModSuper)
-		h.release("g", 0)
-	}
-	c.Ping(ctx)
-	if got := noted.Load(); got != 1 {
-		t.Fatalf("disabled note ran %d times, want 1", got)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		cfg := scrollDefaults()
+		cfg.Binds["Cmd+g"] = "hint"
+		var noted atomic.Int32
+		h := &hintHarness{
+			input:    make(chan ports.InputEvent, 32),
+			client:   make(chan ports.ClientEvent, 32),
+			output:   make(chan ports.OutputEvent, 8),
+			commands: make(chan ports.ClientCommand, 256),
+			scenes:   make(chan []ports.Scene, 1),
+		}
+		ch := core.Channels{Client: h.client, Input: h.input, Output: h.output, Commands: h.commands, Scenes: h.scenes}
+		c, err := core.New(cfg, ch, core.Options{HintDisabled: func() { noted.Add(1) }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- c.Run(ctx) }()
+		t.Cleanup(func() { cancel(); receive(t, done) })
+		h.output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 1000, Height: 800}}
+		scene(t, h.scenes)
+		for range 3 {
+			h.press("g", ports.ModSuper)
+			h.release("g", 0)
+		}
+		c.Ping(ctx)
+		if got := noted.Load(); got != 1 {
+			t.Fatalf("disabled note ran %d times, want 1", got)
+		}
+
+	})
 }
 
 // Resizing window 1 leaves the old target centre inside it. Identity alone
@@ -776,37 +862,40 @@ func TestHintRejectsResizedSource(t *testing.T) {
 	{
 		for _, beforeResult := range []bool{false, true} {
 			t.Run(fmt.Sprintf("beforeResult=%v", beforeResult), func(t *testing.T) {
-				h := newHint(t, core.Options{})
-				tg := h.inside(0)
-				req := h.start()
-				if !beforeResult {
-					h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
-					h.labelled(1, 0)
-				}
-				h.client <- ports.WindowMapped{ID: 2}
-				s := h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
-				var resized ports.Rect
-				for _, w := range s.Windows {
-					if w.ID == 1 {
-						resized = w.Rect
+				synctest.Test(t, func(t *testing.T) {
+					h := newHint(t, core.Options{})
+					tg := h.inside(0)
+					req := h.start()
+					if !beforeResult {
+						h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
+						h.labelled(1, 0)
 					}
-				}
-				x, y := tg.Rect.X+tg.Rect.W/2, tg.Rect.Y+tg.Rect.H/2
-				if resized == h.win || x < resized.X || x >= resized.X+resized.W || y < resized.Y || y >= resized.Y+resized.H {
-					t.Fatalf("setup: old target %+v not inside resized window %+v (was %+v)", tg.Rect, resized, h.win)
-				}
-				if beforeResult {
-					h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
-					h.labelled(0, 0)
-				} else {
-					h.drain()
-					h.press("f", 0)
-					for _, cmd := range h.barrier() {
-						if _, ok := cmd.(ports.PointerButtonTo); ok {
-							t.Fatal("clicked resized source window")
+					h.client <- ports.WindowMapped{ID: 2}
+					s := h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
+					var resized ports.Rect
+					for _, w := range s.Windows {
+						if w.ID == 1 {
+							resized = w.Rect
 						}
 					}
-				}
+					x, y := tg.Rect.X+tg.Rect.W/2, tg.Rect.Y+tg.Rect.H/2
+					if resized == h.win || x < resized.X || x >= resized.X+resized.W || y < resized.Y || y >= resized.Y+resized.H {
+						t.Fatalf("setup: old target %+v not inside resized window %+v (was %+v)", tg.Rect, resized, h.win)
+					}
+					if beforeResult {
+						h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
+						h.labelled(0, 0)
+					} else {
+						h.drain()
+						h.press("f", 0)
+						for _, cmd := range h.barrier() {
+							if _, ok := cmd.(ports.PointerButtonTo); ok {
+								t.Fatal("clicked resized source window")
+							}
+						}
+					}
+
+				})
 			})
 		}
 	}
@@ -814,134 +903,152 @@ func TestHintRejectsResizedSource(t *testing.T) {
 
 // hint.capture reaches the scene next to the labels, off by default.
 func TestHintCaptureReachesScene(t *testing.T) {
-	for _, on := range []bool{false, true} {
-		h := newHintConfig(t, core.Options{}, func(cfg *ports.Config) { cfg.Hint.Capture = on })
-		s := h.show(h.inside(0))
-		if s.HintStyle.Capture != on {
-			t.Errorf("hint.capture %v: scene has %v", on, s.HintStyle.Capture)
+	synctest.Test(t, func(t *testing.T) {
+		for _, on := range []bool{false, true} {
+			h := newHintConfig(t, core.Options{}, func(cfg *ports.Config) { cfg.Hint.Capture = on })
+			s := h.show(h.inside(0))
+			if s.HintStyle.Capture != on {
+				t.Errorf("hint.capture %v: scene has %v", on, s.HintStyle.Capture)
+			}
 		}
-	}
+
+	})
 }
 
 // Labels hang off the targets' top-left corners: targets whose corners are
 // closer than a label drop, the lowest score first, whatever the input order.
 func TestHintOverlappingLabelsDropLowerScore(t *testing.T) {
-	at := func(h *hintHarness, dx, dy int, score float32) ports.HintTarget {
-		return ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: h.win.X + 20 + dx, Y: h.win.Y + 20 + dy, W: 80, H: 30}, Score: score}
-	}
-	for _, rev := range []bool{false, true} {
-		h := newHint(t, core.Options{})
-		ts := []ports.HintTarget{
-			at(h, 0, 0, 0.4),    // clashes with the next one, loses
-			at(h, 3, 2, 0.9),    // wins
-			at(h, 300, 0, 0.1),  // far away: kept, whatever its score
-			at(h, 0, 200, 0.5),  // far below
-			at(h, 4, 200, 0.45), // clashes with the previous one
+	synctest.Test(t, func(t *testing.T) {
+		at := func(h *hintHarness, dx, dy int, score float32) ports.HintTarget {
+			return ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: h.win.X + 20 + dx, Y: h.win.Y + 20 + dy, W: 80, H: 30}, Score: score}
 		}
-		if rev {
-			slices.Reverse(ts)
+		for _, rev := range []bool{false, true} {
+			h := newHint(t, core.Options{})
+			ts := []ports.HintTarget{
+				at(h, 0, 0, 0.4),    // clashes with the next one, loses
+				at(h, 3, 2, 0.9),    // wins
+				at(h, 300, 0, 0.1),  // far away: kept, whatever its score
+				at(h, 0, 200, 0.5),  // far below
+				at(h, 4, 200, 0.45), // clashes with the previous one
+			}
+			if rev {
+				slices.Reverse(ts)
+			}
+			req := h.start()
+			h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: ts}
+			s := h.labelled(3, 0)
+			var got [][2]int
+			for _, l := range s.HintLabels {
+				got = append(got, [2]int{l.Rect.X - h.win.X - 20, l.Rect.Y - h.win.Y - 20})
+			}
+			want := [][2]int{{300, 0}, {3, 2}, {0, 200}} // sorted by Y, then X
+			if !slices.Equal(got, want) {
+				t.Fatalf("rev=%v: label corners %v, want %v", rev, got, want)
+			}
 		}
-		req := h.start()
-		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: ts}
-		s := h.labelled(3, 0)
-		var got [][2]int
-		for _, l := range s.HintLabels {
-			got = append(got, [2]int{l.Rect.X - h.win.X - 20, l.Rect.Y - h.win.Y - 20})
-		}
-		want := [][2]int{{300, 0}, {3, 2}, {0, 200}} // sorted by Y, then X
-		if !slices.Equal(got, want) {
-			t.Fatalf("rev=%v: label corners %v, want %v", rev, got, want)
-		}
-	}
+
+	})
 }
 
 func TestHintSizeReloadCancelsShownHints(t *testing.T) {
-	h := newHint(t, core.Options{})
-	h.show(h.inside(0))
-	cfg := h.cfg
-	cfg.Hint.Size = 40
-	h.config <- ports.ConfigChanged{Config: cfg}
-	h.until(func(s ports.Scene) bool { return s.HintStyle.Size == 40 && len(s.HintLabels) == 0 })
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		h.show(h.inside(0))
+		cfg := h.cfg
+		cfg.Hint.Size = 40
+		h.config <- ports.ConfigChanged{Config: cfg}
+		h.until(func(s ports.Scene) bool { return s.HintStyle.Size == 40 && len(s.HintLabels) == 0 })
+
+	})
 }
 
 func TestHintSourceClickModifiers(t *testing.T) {
 	for _, source := range []ports.HintSource{ports.HintSourceATSPI, ports.HintSourceOCR, ports.HintSourceDetector} {
 		t.Run(source.String(), func(t *testing.T) {
-			h := newHintConfig(t, core.Options{}, func(c *ports.Config) { c.Hint.TextClick = ports.ModCtrl | ports.ModShift })
-			tg := h.inside(0)
-			tg.Source = source
-			h.show(tg)
-			h.drain()
-			h.press("f", 0)
-			var got []ports.Mods
-			for _, cmd := range h.commandsSent() {
-				if m, ok := cmd.(ports.SetModifiers); ok && !m.Restore {
-					got = append(got, m.Mods)
+			synctest.Test(t, func(t *testing.T) {
+				h := newHintConfig(t, core.Options{}, func(c *ports.Config) { c.Hint.TextClick = ports.ModCtrl | ports.ModShift })
+				tg := h.inside(0)
+				tg.Source = source
+				h.show(tg)
+				h.drain()
+				h.press("f", 0)
+				var got []ports.Mods
+				for _, cmd := range h.commandsSent() {
+					if m, ok := cmd.(ports.SetModifiers); ok && !m.Restore {
+						got = append(got, m.Mods)
+					}
 				}
-			}
-			want := ports.Mods(0)
-			if source == ports.HintSourceOCR {
-				want = ports.ModCtrl | ports.ModShift
-			}
-			if len(got) != 1 || got[0] != want {
-				t.Fatal(got, want)
-			}
+				want := ports.Mods(0)
+				if source == ports.HintSourceOCR {
+					want = ports.ModCtrl | ports.ModShift
+				}
+				if len(got) != 1 || got[0] != want {
+					t.Fatal(got, want)
+				}
+
+			})
 		})
 	}
 }
 func TestHintDropsWrongWindow(t *testing.T) {
 	for _, id := range []ports.WindowID{0, 2} {
 		t.Run(fmt.Sprint(id), func(t *testing.T) {
-			h := newHint(t, core.Options{})
-			req := h.start()
-			tg := h.inside(0)
-			tg.Window = id
-			h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
-			h.labelled(0, 0)
+			synctest.Test(t, func(t *testing.T) {
+				h := newHint(t, core.Options{})
+				req := h.start()
+				tg := h.inside(0)
+				tg.Window = id
+				h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
+				h.labelled(0, 0)
+
+			})
 		})
 	}
 }
 func TestHintRequestPopupUnits(t *testing.T) {
-	h := newHintConfig(t, core.Options{}, func(c *ports.Config) { c.Hint.LinksOnly = true })
-	h.client <- ports.WindowMapped{ID: 2}
-	h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
-	popupRects := map[ports.WindowID]ports.Rect{}
-	for _, p := range []struct{ id, parent ports.WindowID }{{10, 1}, {11, 10}, {20, 2}} {
-		h.client <- ports.PopupRequest{ID: p.id, Parent: p.parent, Positioner: ports.Positioner{Width: 30, Height: 20, AnchorRect: ports.Rect{W: 1, H: 1}}}
-		h.client <- ports.PopupMapped{ID: p.id}
-		h.until(func(s ports.Scene) bool {
-			for _, w := range s.Windows {
-				if w.ID == p.id {
-					popupRects[p.id] = w.Rect
-					return true
+	synctest.Test(t, func(t *testing.T) {
+		h := newHintConfig(t, core.Options{}, func(c *ports.Config) { c.Hint.LinksOnly = true })
+		h.client <- ports.WindowMapped{ID: 2}
+		h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
+		popupRects := map[ports.WindowID]ports.Rect{}
+		for _, p := range []struct{ id, parent ports.WindowID }{{10, 1}, {11, 10}, {20, 2}} {
+			h.client <- ports.PopupRequest{ID: p.id, Parent: p.parent, Positioner: ports.Positioner{Width: 30, Height: 20, AnchorRect: ports.Rect{W: 1, H: 1}}}
+			h.client <- ports.PopupMapped{ID: p.id}
+			h.until(func(s ports.Scene) bool {
+				for _, w := range s.Windows {
+					if w.ID == p.id {
+						popupRects[p.id] = w.Rect
+						return true
+					}
+				}
+				return false
+			})
+		}
+		req := h.start()
+		if !req.LinksOnly || len(req.Windows) != 2 {
+			t.Fatal(req)
+		}
+		for _, w := range req.Windows {
+			expected := []ports.Rect{popupRects[20]}
+			if w.ID == 1 {
+				expected = []ports.Rect{popupRects[10], popupRects[11]}
+			}
+			if !slices.Equal(w.Popups, expected) {
+				t.Fatalf("unit %d popups %v, want %v", w.ID, w.Popups, expected)
+			}
+			want := 1
+			if w.ID == 1 {
+				want = 2
+			}
+			if len(w.Popups) != want {
+				t.Fatal(w)
+			}
+			for _, r := range w.Popups {
+				if r.W != 30 || r.H != 20 {
+					t.Fatal(r)
 				}
 			}
-			return false
-		})
-	}
-	req := h.start()
-	if !req.LinksOnly || len(req.Windows) != 2 {
-		t.Fatal(req)
-	}
-	for _, w := range req.Windows {
-		expected := []ports.Rect{popupRects[20]}
-		if w.ID == 1 {
-			expected = []ports.Rect{popupRects[10], popupRects[11]}
 		}
-		if !slices.Equal(w.Popups, expected) {
-			t.Fatalf("unit %d popups %v, want %v", w.ID, w.Popups, expected)
-		}
-		want := 1
-		if w.ID == 1 {
-			want = 2
-		}
-		if len(w.Popups) != want {
-			t.Fatal(w)
-		}
-		for _, r := range w.Popups {
-			if r.W != 30 || r.H != 20 {
-				t.Fatal(r)
-			}
-		}
-	}
+
+	})
 }

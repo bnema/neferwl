@@ -29,58 +29,67 @@ func takeAll(o *outbox) []ports.ClientCommand {
 // Only adjacent motions for the same window merge: the position is the
 // latest, the deltas add up. Everything else keeps its place.
 func TestOutboxMergesAdjacentMotionOnly(t *testing.T) {
-	o := newOutbox()
-	// Nobody receives, so every command queues.
-	out := make(chan ports.ClientCommand)
-	push := func(v ports.ClientCommand) { o.push(out, v, ports.SecurityState{}, false) }
-	push(ports.PointerMotionTo{ID: 1, X: 1, Y: 1, DX: 1, DY: 2, UnaccelDX: 3, UnaccelDY: 4})
-	push(ports.PointerMotionTo{ID: 1, X: 2, Y: 2, DX: 10, DY: 20, UnaccelDX: 30, UnaccelDY: 40})
-	push(ports.PointerButtonTo{ID: 1, Button: 0x110, Pressed: true})
-	push(ports.PointerMotionTo{ID: 1, X: 3, Y: 3, DX: 5})
-	push(ports.PointerMotionTo{ID: 2, X: 4, Y: 4, DX: 7})
-	push(ports.FocusWindow{ID: 2})
-	push(ports.PointerMotionTo{ID: 2, X: 5, Y: 5, DX: 1})
-	push(ports.PointerMotionTo{ID: 2, X: 6, Y: 6, DX: 1})
-	want := []ports.ClientCommand{
-		ports.PointerMotionTo{ID: 1, X: 2, Y: 2, DX: 11, DY: 22, UnaccelDX: 33, UnaccelDY: 44},
-		ports.PointerButtonTo{ID: 1, Button: 0x110, Pressed: true},
-		ports.PointerMotionTo{ID: 1, X: 3, Y: 3, DX: 5},
-		ports.PointerMotionTo{ID: 2, X: 4, Y: 4, DX: 7},
-		ports.FocusWindow{ID: 2},
-		ports.PointerMotionTo{ID: 2, X: 6, Y: 6, DX: 2},
-	}
-	wantOutbox(t, takeAll(&o), want...)
+	synctest.Test(t, func(t *testing.T) {
+		o := newOutbox()
+		// Nobody receives, so every command queues.
+		out := make(chan ports.ClientCommand)
+		push := func(v ports.ClientCommand) { o.push(out, v, ports.SecurityState{}, false) }
+		push(ports.PointerMotionTo{ID: 1, X: 1, Y: 1, DX: 1, DY: 2, UnaccelDX: 3, UnaccelDY: 4})
+		push(ports.PointerMotionTo{ID: 1, X: 2, Y: 2, DX: 10, DY: 20, UnaccelDX: 30, UnaccelDY: 40})
+		push(ports.PointerButtonTo{ID: 1, Button: 0x110, Pressed: true})
+		push(ports.PointerMotionTo{ID: 1, X: 3, Y: 3, DX: 5})
+		push(ports.PointerMotionTo{ID: 2, X: 4, Y: 4, DX: 7})
+		push(ports.FocusWindow{ID: 2})
+		push(ports.PointerMotionTo{ID: 2, X: 5, Y: 5, DX: 1})
+		push(ports.PointerMotionTo{ID: 2, X: 6, Y: 6, DX: 1})
+		want := []ports.ClientCommand{
+			ports.PointerMotionTo{ID: 1, X: 2, Y: 2, DX: 11, DY: 22, UnaccelDX: 33, UnaccelDY: 44},
+			ports.PointerButtonTo{ID: 1, Button: 0x110, Pressed: true},
+			ports.PointerMotionTo{ID: 1, X: 3, Y: 3, DX: 5},
+			ports.PointerMotionTo{ID: 2, X: 4, Y: 4, DX: 7},
+			ports.FocusWindow{ID: 2},
+			ports.PointerMotionTo{ID: 2, X: 6, Y: 6, DX: 2},
+		}
+		wantOutbox(t, takeAll(&o), want...)
+
+	})
 }
 
 // Wrapped motions merge only under an identical owner envelope, and keep it.
 func TestOutboxMergesSecuredMotionPerEnvelope(t *testing.T) {
-	o := newOutbox()
-	out := make(chan ports.ClientCommand)
-	a := ports.SecurityState{Generation: 1}
-	b := ports.SecurityState{Generation: 2}
-	o.push(out, ports.PointerMotionTo{ID: 1, X: 1, DX: 1}, a, true)
-	o.push(out, ports.PointerMotionTo{ID: 1, X: 2, DX: 2}, a, true)
-	o.push(out, ports.PointerMotionTo{ID: 1, X: 3, DX: 4}, b, true)
-	o.push(out, ports.PointerMotionTo{ID: 1, X: 4, DX: 8}, ports.SecurityState{}, false)
-	wantOutbox(t, takeAll(&o),
-		ports.SecurityCommand{State: a, Command: ports.PointerMotionTo{ID: 1, X: 2, DX: 3}},
-		ports.SecurityCommand{State: b, Command: ports.PointerMotionTo{ID: 1, X: 3, DX: 4}},
-		ports.PointerMotionTo{ID: 1, X: 4, DX: 8},
-	)
+	synctest.Test(t, func(t *testing.T) {
+		o := newOutbox()
+		out := make(chan ports.ClientCommand)
+		a := ports.SecurityState{Generation: 1}
+		b := ports.SecurityState{Generation: 2}
+		o.push(out, ports.PointerMotionTo{ID: 1, X: 1, DX: 1}, a, true)
+		o.push(out, ports.PointerMotionTo{ID: 1, X: 2, DX: 2}, a, true)
+		o.push(out, ports.PointerMotionTo{ID: 1, X: 3, DX: 4}, b, true)
+		o.push(out, ports.PointerMotionTo{ID: 1, X: 4, DX: 8}, ports.SecurityState{}, false)
+		wantOutbox(t, takeAll(&o),
+			ports.SecurityCommand{State: a, Command: ports.PointerMotionTo{ID: 1, X: 2, DX: 3}},
+			ports.SecurityCommand{State: b, Command: ports.PointerMotionTo{ID: 1, X: 3, DX: 4}},
+			ports.PointerMotionTo{ID: 1, X: 4, DX: 8},
+		)
+
+	})
 }
 
 // With room in the channel and nothing queued, a command goes straight out.
 func TestOutboxSendsDirectlyWhileDisplayKeepsUp(t *testing.T) {
-	o := newOutbox()
-	out := make(chan ports.ClientCommand, 4)
-	o.push(out, ports.PointerMotionTo{ID: 1, DX: 1}, ports.SecurityState{}, false)
-	o.push(out, ports.PointerMotionTo{ID: 1, DX: 2}, ports.SecurityState{}, false)
-	if len(out) != 2 {
-		t.Fatalf("%d commands sent, want 2 unmerged", len(out))
-	}
-	if got := o.take(); len(got) != 0 {
-		t.Fatalf("queued %d", len(got))
-	}
+	synctest.Test(t, func(t *testing.T) {
+		o := newOutbox()
+		out := make(chan ports.ClientCommand, 4)
+		o.push(out, ports.PointerMotionTo{ID: 1, DX: 1}, ports.SecurityState{}, false)
+		o.push(out, ports.PointerMotionTo{ID: 1, DX: 2}, ports.SecurityState{}, false)
+		if len(out) != 2 {
+			t.Fatalf("%d commands sent, want 2 unmerged", len(out))
+		}
+		if got := o.take(); len(got) != 0 {
+			t.Fatalf("queued %d", len(got))
+		}
+
+	})
 }
 
 // A display that reads nothing for long fills the outbox to its limit, then
@@ -127,32 +136,35 @@ func TestOutboxIsBounded(t *testing.T) {
 // Queuing a command and delivering it allocates nothing once warm: the
 // batches are recycled and flush's progress signal is reused.
 func TestOutboxQueuedDeliveryAllocations(t *testing.T) {
-	o := newOutbox()
-	full := make(chan ports.ClientCommand, 1)
-	full <- ports.FocusWindow{}
-	sink := make(chan ports.ClientCommand, 8)
-	var cmd ports.ClientCommand = ports.FocusWindow{ID: 1}
-	var state ports.SecurityState
-	ctx := context.Background()
-	cycle := func() {
-		// full has no room: push queues, even for a secured command.
-		o.push(full, cmd, state, false)
-		o.push(full, cmd, state, true)
-		o.deliver(ctx, sink, o.take())
-		<-sink
-		<-sink
-		select {
-		case <-o.progress:
-		default:
-			t.Fatal("delivery left no progress signal")
+	synctest.Test(t, func(t *testing.T) {
+		o := newOutbox()
+		full := make(chan ports.ClientCommand, 1)
+		full <- ports.FocusWindow{}
+		sink := make(chan ports.ClientCommand, 8)
+		var cmd ports.ClientCommand = ports.FocusWindow{ID: 1}
+		var state ports.SecurityState
+		ctx := context.Background()
+		cycle := func() {
+			// full has no room: push queues, even for a secured command.
+			o.push(full, cmd, state, false)
+			o.push(full, cmd, state, true)
+			o.deliver(ctx, sink, o.take())
+			<-sink
+			<-sink
+			select {
+			case <-o.progress:
+			default:
+				t.Fatal("delivery left no progress signal")
+			}
 		}
-	}
-	cycle()
-	// The secured delivery boxes its envelope once; the failed direct send
-	// must not box another.
-	if n := testing.AllocsPerRun(100, cycle); n > 1 {
-		t.Fatalf("%v allocations per queued delivery, want at most 1", n)
-	}
+		cycle()
+		// The secured delivery boxes its envelope once; the failed direct send
+		// must not box another.
+		if n := testing.AllocsPerRun(100, cycle); n > 1 {
+			t.Fatalf("%v allocations per queued delivery, want at most 1", n)
+		}
+
+	})
 }
 
 // The stats tell direct sends from queued ones, count merges, and time how
@@ -214,19 +226,22 @@ func TestOutboxQueueWaitIsPerEntry(t *testing.T) {
 // A stalled sender must remain visible in every reporting period, including
 // when it has taken the queue into its private delivery batch.
 func TestOutboxStatsSampleOutstandingBacklog(t *testing.T) {
-	o := newOutbox()
-	out := make(chan ports.ClientCommand)
-	for range outboxLimit {
-		o.push(out, ports.FocusWindow{ID: 1}, ports.SecurityState{}, false)
-	}
-	batch := o.take()
-	for range 2 {
-		if got := o.takeStats().MaxBacklog; got != outboxLimit {
-			t.Fatalf("backlog %d, want %d", got, outboxLimit)
+	synctest.Test(t, func(t *testing.T) {
+		o := newOutbox()
+		out := make(chan ports.ClientCommand)
+		for range outboxLimit {
+			o.push(out, ports.FocusWindow{ID: 1}, ports.SecurityState{}, false)
 		}
-	}
-	o.recycle(batch)
-	if got := o.takeStats().MaxBacklog; got != 0 {
-		t.Fatalf("recovered backlog %d", got)
-	}
+		batch := o.take()
+		for range 2 {
+			if got := o.takeStats().MaxBacklog; got != outboxLimit {
+				t.Fatalf("backlog %d, want %d", got, outboxLimit)
+			}
+		}
+		o.recycle(batch)
+		if got := o.takeStats().MaxBacklog; got != 0 {
+			t.Fatalf("recovered backlog %d", got)
+		}
+
+	})
 }
