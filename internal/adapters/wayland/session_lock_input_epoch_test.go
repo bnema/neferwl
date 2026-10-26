@@ -37,7 +37,7 @@ func inputEpochLockServer(t *testing.T) (*Server, *sessionsecurity.Gate, chan po
 			if err != nil {
 				t.Error(err)
 			}
-		case <-time.After(3 * time.Second):
+		case <-waylandDeadline(3 * time.Second):
 			t.Error("input epoch server did not stop")
 		}
 	})
@@ -96,7 +96,7 @@ func inputEpochLockEvents(t *testing.T, s *Server, events <-chan ports.ClientEve
 	if !s.display.Do(func() { s.emit(ports.WindowAppID{ID: marker, AppID: "input-epoch-marker"}) }) {
 		t.Fatal("display stopped")
 	}
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	var locks []ports.SessionLockChanged
 	for {
 		select {

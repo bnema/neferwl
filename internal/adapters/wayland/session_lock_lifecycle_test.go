@@ -45,7 +45,7 @@ func lifecycleLockServer(t *testing.T, leaseRequests ...chan ports.LeaseMessage)
 			if err != nil {
 				t.Error(err)
 			}
-		case <-time.After(3 * time.Second):
+		case <-waylandDeadline(3 * time.Second):
 			t.Error("lock lifecycle server did not stop")
 		}
 	})
@@ -57,7 +57,7 @@ func lifecycleTransition(t *testing.T, changes <-chan ports.SecurityState) ports
 	select {
 	case state := <-changes:
 		return state
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("missing security transition")
 		return ports.SecurityState{}
 	}
@@ -107,7 +107,7 @@ func TestSessionLockLifecycleCaptureCompletionAndProofEpoch(t *testing.T) {
 	captured <- ports.CaptureDone{ID: 88}
 	select {
 	case <-unknown:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("unknown completion not consumed")
 	}
 	s.display.Do(func() {
@@ -120,7 +120,7 @@ func TestSessionLockLifecycleCaptureCompletionAndProofEpoch(t *testing.T) {
 	captured <- ports.CaptureDone{ID: 77}
 	select {
 	case <-processed:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("capture completion not consumed")
 	}
 	roundtrip(t, c)
@@ -187,7 +187,7 @@ func TestSessionLockLifecycleOrphanTakeoverAndValidUnlock(t *testing.T) {
 	}
 	select {
 	case <-orphaned:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("owner disconnect not processed")
 	}
 	s.display.Do(func() {
@@ -386,7 +386,7 @@ func TestSessionLockLifecycleLatePrelockLeaseRevokedAfterUnlock(t *testing.T) {
 		if !ok {
 			t.Fatalf("request %T", message)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("lease request not sent")
 	}
 	lock, locked := lifecycleAcquire(t, c)
@@ -416,7 +416,7 @@ func TestSessionLockLifecycleLatePrelockLeaseRevokedAfterUnlock(t *testing.T) {
 		if !ok || revoke.Card != card || revoke.LeaseID != 123 {
 			t.Fatalf("late reply request %+v", message)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("late lease was not revoked")
 	}
 	s.display.Do(func() {

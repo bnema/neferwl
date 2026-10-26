@@ -33,7 +33,7 @@ func lockManagerServer(t *testing.T) (*Server, *sessionsecurity.Gate, chan ports
 			if err != nil {
 				t.Error(err)
 			}
-		case <-time.After(3 * time.Second):
+		case <-waylandDeadline(3 * time.Second):
 			t.Error("session-lock server did not stop")
 		}
 	})
@@ -69,7 +69,7 @@ func TestSessionLockWaitsForEveryBarrierAndOwnerDeathStaysProtected(t *testing.T
 	var state ports.SecurityState
 	select {
 	case state = <-changes:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no backend transition")
 	}
 	if !state.Protected || !gate.Snapshot().Protected || locked != 0 {

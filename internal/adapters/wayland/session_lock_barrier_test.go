@@ -51,7 +51,7 @@ func newBarrierServer(t *testing.T) *barrierServer {
 			if runErr != nil {
 				t.Error(runErr)
 			}
-		case <-time.After(3 * time.Second):
+		case <-waylandDeadline(3 * time.Second):
 			t.Error("barrier server shutdown blocked")
 		}
 	})
@@ -72,7 +72,7 @@ func TestSessionLockBarrierWaitsForAdmittedCopyAfterFrameDeath(t *testing.T) {
 	var request ports.CaptureRequest
 	select {
 	case request = <-h.captures:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("actual capture not admitted")
 	}
 	// Pipeline owns the dup'd destination from this point, including closure.
@@ -105,7 +105,7 @@ func TestSessionLockBarrierWaitsForAdmittedCopyAfterFrameDeath(t *testing.T) {
 	pipeline.SubmitScoped(h.gate.Snapshot(), renderer, []ports.CaptureRequest{request})
 	select {
 	case <-entered:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("capture worker did not enter Read")
 	}
 	a.destroy(t, frame)
@@ -129,7 +129,7 @@ func TestSessionLockBarrierWaitsForAdmittedCopyAfterFrameDeath(t *testing.T) {
 	var completion ports.CaptureDone
 	select {
 	case completion = <-pipelineReplies:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("capture pipeline did not complete")
 	}
 	if completion.Err != nil || completion.ID != request.ID {
@@ -165,7 +165,7 @@ func TestSessionLockBarrierWaitsForAdmittedCopyAfterFrameDeath(t *testing.T) {
 	h.captured <- completion
 	select {
 	case <-processed:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("server did not process actual capture completion")
 	}
 	h.s.display.Do(func() {
@@ -177,7 +177,7 @@ func TestSessionLockBarrierWaitsForAdmittedCopyAfterFrameDeath(t *testing.T) {
 	select {
 	case token := <-pipeline.Completed():
 		pipeline.Recycle(token, renderer)
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("capture lease not returned")
 	}
 	roundtrip(t, locker)
@@ -203,7 +203,7 @@ func TestSessionLockBarrierTakeoverSaturationRefusesWithoutGenerationChange(t *t
 		}
 		select {
 		case <-orphaned:
-		case <-time.After(2 * time.Second):
+		case <-waylandDeadline(2 * time.Second):
 			t.Fatal("owner death not processed")
 		}
 	}
@@ -272,7 +272,7 @@ func TestSessionLockBarrierReservedReleaseAndBlockedSenderShutdown(t *testing.T)
 	h.cancel()
 	select {
 	case <-h.stopped:
-	case <-time.After(3 * time.Second):
+	case <-waylandDeadline(3 * time.Second):
 		t.Fatal("blocked backend sender prevented Run shutdown")
 	}
 }
