@@ -297,3 +297,54 @@ func TestPanelRetirementSharedKeys(t *testing.T) {
 		})
 	}
 }
+
+func TestAttachedPanelPlacementAndCache(t *testing.T) {
+	r := newTestRenderer(t, 512, 256)
+	defer r.Close()
+	s := ports.Scene{Scale: 1, Background: "#0000ff", Windows: []ports.SceneWindow{{ID: 7, Rect: ports.Rect{X: 40, Y: 20, W: 300, H: 220}}}, Overlays: []ports.Overlay{{ID: 42, Window: 7, Seq: 1, Kind: ports.OverlayPanel, Anchor: ports.AnchorTopCenter, Rect: ports.Rect{Y: 12}, Style: ports.OverlayStyle{Background: "#000000"}, Panel: &ports.PanelContent{Lines: [4]string{"panel"}}}}}
+	bounds := image.Rect(0, 0, 512, 256)
+	draws := func() []draw { return r.draws(s, nil, newDamage(&target{}, s, bounds)) }
+	ds := draws()
+	first := ds[len(ds)-1]
+	require.Equal(t, int32(32), first.pc.rect[1])
+	require.NoError(t, render(r, s, nil))
+	pixels := readPixels(t, r)
+	x := int(first.pc.rect[0]+first.pc.rect[2]) / 2
+	y := int(first.pc.rect[3]) - 2
+	require.Less(t, pixels.RGBAAt(x, y).B, uint8(255))
+	copied := r.copied
+	delete(r.panels, 42) // A cache hit must not call Panel.Draw.
+	s.Windows[0].Rect.X += 100
+	s.Windows[0].Rect.Y += 10
+	ds = draws()
+	moved := ds[len(ds)-1]
+	require.Equal(t, first.pc.rect[0]+100, moved.pc.rect[0])
+	require.Equal(t, first.pc.rect[1]+10, moved.pc.rect[1])
+	require.Same(t, first.shm, moved.shm)
+	s.Windows[0].Rect.W = 80
+	ds = draws()
+	clipped := ds[len(ds)-1]
+	require.GreaterOrEqual(t, clipped.pc.rect[0], int32(140))
+	require.LessOrEqual(t, clipped.pc.rect[2], int32(220))
+	require.Same(t, first.shm, clipped.shm)
+	require.Empty(t, r.panels)
+	require.Equal(t, copied, r.copied)
+	// Isolate the warmed per-overlay draw path from damage bookkeeping.
+	walk := sceneWalk{r: r, s: s, scale: 1, alpha: 1, bounds: bounds, draws: make([]draw, 0, 1)}
+	anchor := image.Rect(140, 30, 220, 250)
+	allocs := testing.AllocsPerRun(100, func() { walk.draws = walk.draws[:0]; walk.overlay(s.Overlays[0], anchor, anchor, 512) })
+	require.Zero(t, allocs)
+	t.Logf("attached panel cache hit: %.0f allocations", allocs)
+	// A later window paints over the panel, not underneath a global pass.
+	s.Windows = append(s.Windows, ports.SceneWindow{ID: 8, Rect: ports.Rect{W: 512, H: 256}})
+	require.NoError(t, render(r, s, nil))
+	require.Equal(t, color.RGBA{0, 0, 255, 255}, readPixels(t, r).RGBAAt(180, 60))
+	s.Windows = nil
+	require.Empty(t, draws(), "absent target must not draw")
+	for _, win := range []ports.SceneWindow{{ID: 7, Hidden: true, Rect: ports.Rect{W: 512, H: 256}}, {ID: 7, Preview: 0.5, Rect: ports.Rect{W: 512, H: 256}}} {
+		s.Windows = []ports.SceneWindow{win}
+		for _, d := range draws() {
+			require.Nil(t, d.shm, "hidden/preview target must not draw its panel")
+		}
+	}
+}

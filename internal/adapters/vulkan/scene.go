@@ -339,6 +339,16 @@ func (w *sceneWalk) windows() {
 		} else {
 			w.separators(win.ID)
 		}
+		// Above this client's entire surface tree and border, below later
+		// windows and the separate popup pass. Overview cards omit panels.
+		if win.Preview == 0 {
+			outputWidth, _ := w.r.sceneSize(w.s.Transform)
+			for _, o := range w.s.Overlays {
+				if o.Window == win.ID {
+					w.overlay(o, body, outer.Intersect(w.bounds), outputWidth)
+				}
+			}
+		}
 		dimStart := len(w.draws)
 		if win.Dim > 0 {
 			// A stashed window peeking in: dimmed with its border.
