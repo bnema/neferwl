@@ -13,6 +13,8 @@ import (
 )
 
 // nextContent waits for a content of window id.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func nextContent(t *testing.T, contents <-chan ports.SurfaceContent, id ports.WindowID) time.Time {
 	t.Helper()
 	deadline := waylandDeadline(2 * time.Second)
@@ -55,11 +57,19 @@ func shmBufferSized(t *testing.T, c *wlturbo.Display, w, h int32) uint32 {
 	return buffer
 }
 
-func drainContents(contents <-chan ports.SurfaceContent) {
+// drainContents discards the content already relayed. The relay runs on the
+// display goroutine, so a display.Do barrier orders every earlier emission
+// before the non-blocking drain.
+func drainContents(t *testing.T, s *Server, contents <-chan ports.SurfaceContent) {
+	t.Helper()
+	if !s.display.Do(func() {}) {
+		t.Fatal("display stopped")
+	}
+	flushRelay(t, contents)
 	for {
 		select {
 		case <-contents:
-		case <-waylandDeadline(20 * time.Millisecond):
+		default:
 			return
 		}
 	}
@@ -74,7 +84,7 @@ func TestFifoBarrierHoldsCommitOneRefresh(t *testing.T) {
 	registerProtocol(t, c, f)
 	requestProtocol(t, c, manager, fifo.WpFifoManagerV1RequestGetFifo, f, surf)
 	buf := shmBuffer(t, c)
-	drainContents(contents)
+	drainContents(t, s, contents)
 
 	// Vulkan FIFO: every frame sets a barrier and waits on the last one.
 	// Headless outputs never flip: the barrier clears after one 60 Hz
@@ -106,7 +116,7 @@ func TestCommitTimingDelaysCommit(t *testing.T) {
 	registerProtocol(t, c, timer)
 	requestProtocol(t, c, manager, committiming.WpCommitTimingManagerV1RequestGetTimer, timer, surf)
 	buf := shmBuffer(t, c)
-	drainContents(contents)
+	drainContents(t, s, contents)
 
 	var now unix.Timespec
 	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &now); err != nil {
@@ -197,16 +207,20 @@ func TestFifoQueuedBufferDestroyed(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	drainContents(contents)
+	drainContents(t, s, contents)
 	// Advance the display-owned pacer explicitly past the barrier deadline.
-	s.display.Do(func() {
+	queued := -1
+	if !s.display.Do(func() {
 		surface := s.windows[w.ID].xdg.surface
 		surface.barrierAt = time.Now().Add(-3 * defaultFramePeriod)
 		s.paceNow()
-		if len(surface.queue) != 0 {
-			t.Errorf("dead buffer left %d queued commits", len(surface.queue))
-		}
-	})
+		queued = len(surface.queue)
+	}) {
+		t.Fatal("display stopped")
+	}
+	if queued != 0 {
+		t.Fatalf("dead buffer left %d queued commits", queued)
+	}
 	for {
 		select {
 		case ev := <-events:

@@ -11,11 +11,13 @@ import (
 
 // A queued attachment that was destroyed cannot apply either its new crop or
 // its scale to the buffer retained by a synchronized child.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestQueuedDestroyedAttachmentRetainsScaleAndCrop(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
 	w, root, _ := surfaceMapper(t, c, events)()
-	drainContents(contents)
+	drainContents(t, s, contents)
 	comp := bindVersion(t, c, "wl_compositor", 4)
 	subc := bindProtocol(t, c, "wl_subcompositor")
 	vpm := bindProtocol(t, c, "wp_viewporter")
@@ -34,7 +36,7 @@ func TestQueuedDestroyedAttachmentRetainsScaleAndCrop(t *testing.T) {
 	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
 	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
 	roundtrip(t, c)
-	drainContents(contents)
+	drainContents(t, s, contents)
 	requestProtocol(t, c, child, wayland.SurfaceRequestSetBufferScale, int32(2))
 	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, discarded, int32(0), int32(0))
 	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
@@ -60,11 +62,13 @@ func TestQueuedDestroyedAttachmentRetainsScaleAndCrop(t *testing.T) {
 
 // A scale-only commit validates the retained buffer; same-buffer reattaches
 // still advance its version.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestScaleOnlyRetainedViewportAndSameBufferReattach(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
 	w, root, _ := surfaceMapper(t, c, events)()
-	drainContents(contents)
+	drainContents(t, s, contents)
 	comp := bindVersion(t, c, "wl_compositor", 4)
 	subc := bindProtocol(t, c, "wl_subcompositor")
 	vpm := bindProtocol(t, c, "wp_viewporter")
@@ -125,11 +129,13 @@ reattached:
 }
 
 // A destroyed queued buffer does not suppress the later, valid attachment.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestQueuedDestroyedThenNewBuffer(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
 	w, root, _ := surfaceMapper(t, c, events)()
-	drainContents(contents)
+	drainContents(t, s, contents)
 	comp := bindVersion(t, c, "wl_compositor", 4)
 	subc := bindProtocol(t, c, "wl_subcompositor")
 	vpm := bindProtocol(t, c, "wp_viewporter")
@@ -148,7 +154,7 @@ func TestQueuedDestroyedThenNewBuffer(t *testing.T) {
 	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
 	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
 	roundtrip(t, c)
-	drainContents(contents)
+	drainContents(t, s, contents)
 	requestProtocol(t, c, child, wayland.SurfaceRequestSetBufferScale, int32(2))
 	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, destroyed, int32(0), int32(0))
 	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
@@ -181,13 +187,15 @@ func TestQueuedDestroyedThenNewBuffer(t *testing.T) {
 
 // A destroyed viewport in an earlier queued update must not replace the new
 // viewport or steal its protocol errors.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestQueuedViewportRecreatedErrorObject(t *testing.T) {
 	for _, oversized := range []bool{false, true} {
 		t.Run(fmt.Sprintf("oversized=%v", oversized), func(t *testing.T) {
 			s, events, _, contents, dir := contentServer(t)
 			c := protocolClient(t, s, dir)
 			_, root, _ := surfaceMapper(t, c, events)()
-			drainContents(contents)
+			drainContents(t, s, contents)
 			comp := bindVersion(t, c, "wl_compositor", 4)
 			subc := bindProtocol(t, c, "wl_subcompositor")
 			vpm := bindProtocol(t, c, "wp_viewporter")

@@ -24,6 +24,7 @@ func (p *pressSerials) Dispatch(e *wlturbo.Event) {
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestToplevelMoveRequest(t *testing.T) {
 	s, events, commands, dir := lifecycleServer(t)
 	c := protocolClient(t, s, dir)
@@ -80,18 +81,14 @@ func TestToplevelMoveRequest(t *testing.T) {
 	commands <- ports.PointerFocus{ID: w.ID, X: 1, Y: 1}
 	commands <- ports.PointerButtonTo{ID: w.ID, Button: 0x110, Pressed: true, Time: 1 * time.Millisecond}
 	var serial uint32
-	deadline := waylandDeadline(2 * time.Second)
-	for serial == 0 {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
+	dispatchUntil(t, c, func() bool {
 		select {
 		case serial = <-p.serials:
-		case <-deadline:
-			t.Fatal("no button")
+			return true
 		default:
+			return false
 		}
-	}
+	})
 	// A stale serial emits nothing.
 	requestProtocol(t, c, top, xdgshell.ToplevelRequestMove, seat, serial-1)
 	requestProtocol(t, c, top, xdgshell.ToplevelRequestResize, seat, serial+7, uint32(xdgshell.ToplevelResizeEdgeRight))

@@ -19,11 +19,13 @@ import (
 
 // A cached child buffer is not released until its role is destroyed;
 // nothing in the output could have sampled an unpublished commit.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestCachedSubsurfaceBufferReleaseOnRoleDestroy(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
 	_, root, _ := surfaceMapper(t, c, events)()
-	drainContents(contents)
+	drainContents(t, s, contents)
 	comp := bindProtocol(t, c, "wl_compositor")
 	subc := bindProtocol(t, c, "wl_subcompositor")
 	child := c.AllocateID()
@@ -224,6 +226,8 @@ func TestInvisibleWindowBufferHeldUntilReport(t *testing.T) {
 
 // A later queued use of the same wl_buffer still owns it after the output
 // acknowledges the intervening commit.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestHeldBufferRequeuedBeforeOutputAck(t *testing.T) {
 	s, events, commands, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
@@ -248,7 +252,7 @@ func TestHeldBufferRequeuedBeforeOutputAck(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	drainContents(contents)
+	drainContents(t, s, contents)
 	requestProtocol(t, c, f, fifo.WpFifoV1RequestSetBarrier)
 	attach(other)
 	requestProtocol(t, c, f, fifo.WpFifoV1RequestWaitBarrier)

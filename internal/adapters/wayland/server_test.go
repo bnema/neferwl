@@ -17,6 +17,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/logging"
 )
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestWaylandInfo(t *testing.T) {
 	tool, err := exec.LookPath("wayland-info")
 	if err != nil {
@@ -60,7 +61,9 @@ func TestWaylandInfo(t *testing.T) {
 	}
 }
 
+//
 //testpolicy:realtime external weston-simple-shm process writes protocol debug output asynchronously
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestWestonFrames(t *testing.T) {
 	tool, err := exec.LookPath("weston-simple-shm")
 	if err != nil {
@@ -125,6 +128,8 @@ func TestWestonFrames(t *testing.T) {
 }
 
 // lifecycleServer starts a display with buffered command and event channels.
+//
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func lifecycleServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -152,6 +157,7 @@ func lifecycleServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.
 	return s, events, commands, dir
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func lifecycleClient(t *testing.T, tool string, s *Server, dir string, extra []string, args ...string) (*exec.Cmd, <-chan error, *lockedBuffer) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -198,6 +204,7 @@ func (b *lockedBuffer) Write(p []byte) (int, error) {
 }
 func (b *lockedBuffer) String() string { b.mu.Lock(); defer b.mu.Unlock(); return b.b.String() }
 
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func waitEvent(t *testing.T, events <-chan ports.ClientEvent, duration time.Duration) ports.ClientEvent {
 	t.Helper()
 	select {
@@ -226,6 +233,7 @@ func unmapped(t *testing.T, events <-chan ports.ClientEvent, id ports.WindowID) 
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestWindowClose(t *testing.T) {
 	tool, err := exec.LookPath("weston-simple-shm")
 	if err != nil {
@@ -246,7 +254,9 @@ func TestWindowClose(t *testing.T) {
 	unmapped(t, events, w.ID)
 }
 
+//
 //testpolicy:realtime external weston-simple-shm process writes configure debug output asynchronously
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestWindowConfigure(t *testing.T) {
 	tool, err := exec.LookPath("weston-simple-shm")
 	if err != nil {
@@ -283,6 +293,8 @@ func TestWindowKilled(t *testing.T) {
 	}
 	unmapped(t, events, w.ID)
 }
+
+//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func TestFootWindow(t *testing.T) {
 	tool, err := exec.LookPath("foot")
 	if err != nil {
@@ -327,6 +339,7 @@ func TestNewMissingRuntimeDirClosesDisplay(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestUnbufferedEventsDoNotBlockDisplay(t *testing.T) {
 	tool, err := exec.LookPath("weston-simple-shm")
 	if err != nil {
@@ -354,34 +367,29 @@ func TestUnbufferedEventsDoNotBlockDisplay(t *testing.T) {
 		}
 	})
 	lifecycleClient(t, tool, s, dir, nil)
-	deadline := waylandDeadline(5 * time.Second)
-	for {
-		ready := make(chan bool, 1)
-		go func() { ready <- s.display.Do(func() {}) }()
-		select {
-		case ok := <-ready:
-			if !ok {
-				t.Fatal("display stopped")
-			}
-		case <-waylandDeadline(time.Second):
-			t.Fatal("display blocked on event")
-		}
-		mappedOnDisplay := false
-		if !s.display.Do(func() { mappedOnDisplay = len(s.windows) > 0 }) {
+	// The events channel is unbuffered and nobody receives yet: the display
+	// must keep serving calls while the mapping event is undelivered.
+	ready := make(chan bool, 1)
+	go func() { ready <- s.display.Do(func() {}) }()
+	select {
+	case ok := <-ready:
+		if !ok {
 			t.Fatal("display stopped")
 		}
-		if mappedOnDisplay {
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatal("no mapping event")
-		case <-waylandDeadline(10 * time.Millisecond):
-		}
+	case <-waylandDeadline(5 * time.Second):
+		t.Fatal("display blocked on event")
 	}
-	mapped(t, events, time.Second)
+	mapped(t, events, 5*time.Second)
+	mappedOnDisplay := false
+	if !s.display.Do(func() { mappedOnDisplay = len(s.windows) > 0 }) {
+		t.Fatal("display stopped")
+	}
+	if !mappedOnDisplay {
+		t.Fatal("mapping event delivered without a window on the display")
+	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestWestonContents(t *testing.T) {
 	tool, err := exec.LookPath("weston-simple-shm")
 	if err != nil {

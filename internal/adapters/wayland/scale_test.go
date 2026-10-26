@@ -160,6 +160,7 @@ func TestPreferredBufferTransform(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestFractionalScaleAndViewport(t *testing.T) {
 	s, events, commands, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
@@ -394,6 +395,8 @@ func TestViewportApplyErrors(t *testing.T) {
 // their sum can pass the buffer edge by a unit: that is accepted. The
 // values are a real rejected source (y 213.86, height 1946.14 on 2160 rows).
 // One pixel past the edge is still out_of_buffer.
+//
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestViewportSourceEdgeRounding(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -407,7 +410,7 @@ func TestViewportSourceEdgeRounding(t *testing.T) {
 			s, events, _, contents, dir := contentServer(t)
 			c := protocolClient(t, s, dir)
 			win, surf, _ := surfaceMapper(t, c, events)()
-			drainContents(contents)
+			drainContents(t, s, contents)
 			vpm := bindProtocol(t, c, "wp_viewporter")
 			shm := bindProtocol(t, c, "wl_shm")
 			registerProtocol(t, c, shm)
