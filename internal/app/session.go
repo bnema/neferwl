@@ -223,7 +223,8 @@ func newVulkanRenderer(log zerowrap.Logger, virtual, readback, traceDamage bool)
 		}
 		r.SetLogger(log)
 		r.SetTraceDamage(traceDamage)
-		log.Info().Str("queue_priority", r.QueuePriority()).Msg("vulkan queue")
+		info := r.DeviceInfo()
+		log.Info().Str("queue_priority", r.QueuePriority()).Str("vk_device", info.Name).Str("primary", info.Primary).Str("render", info.Render).Int64("create_ms", info.CreateMS).Msg("vulkan queue")
 		r.SetVirtualOutput(virtual)
 		if readback {
 			r.SetHDRReadback(true)

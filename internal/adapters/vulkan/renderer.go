@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"time"
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/adapters/hdrcursor"
@@ -17,9 +18,16 @@ import (
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
 
+// DeviceInfo describes the selected Vulkan device and its startup cost.
+type DeviceInfo struct {
+	Name, Primary, Render string
+	CreateMS              int64
+}
+
 // Renderer is owned by one goroutine; its methods must not be called concurrently.
 type Renderer struct {
 	width, height int
+	deviceInfo    DeviceInfo
 	// queuePriority is the global priority the queue got: realtime, high
 	// or default.
 	queuePriority string
@@ -156,6 +164,7 @@ func New(width, height int) (r *Renderer, err error) {
 	}
 	app := vk.ApplicationInfo{SType: vk.StructureTypeApplicationInfo, ApiVersion: vk.MakeVersion(1, 3, 0)}
 	info := vk.InstanceCreateInfo{SType: vk.StructureTypeInstanceCreateInfo, ApplicationInfo: &app}
+	start := time.Now()
 	if err = checked("vkCreateInstance", vk.Global().CreateInstance(&info, nil, &r.instance)); err != nil {
 		return
 	}
@@ -220,6 +229,16 @@ func New(width, height int) (r *Renderer, err error) {
 	r.id.GetPhysicalDeviceMemoryProperties(physical, &r.memory)
 	var properties vk.PhysicalDeviceProperties
 	r.id.GetPhysicalDeviceProperties(physical, &properties)
+	r.deviceInfo.Name = cstring(properties.DeviceName[:])
+	drmProperties := vk.PhysicalDeviceDrmPropertiesEXT{SType: vk.StructureTypePhysicalDeviceDRMPropertiesEXT}
+	deviceProperties := vk.PhysicalDeviceProperties2{SType: vk.StructureTypePhysicalDeviceProperties2, Next: unsafe.Pointer(&drmProperties)}
+	r.id.GetPhysicalDeviceProperties2(physical, &deviceProperties)
+	if drmProperties.HasPrimary != 0 {
+		r.deviceInfo.Primary = fmt.Sprintf("%d:%d", drmProperties.PrimaryMajor, drmProperties.PrimaryMinor)
+	}
+	if drmProperties.HasRender != 0 {
+		r.deviceInfo.Render = fmt.Sprintf("%d:%d", drmProperties.RenderMajor, drmProperties.RenderMinor)
+	}
 	r.maxRange = int(properties.Limits.MaxStorageBufferRange)
 	r.family = family
 	priority := float32(1)
@@ -328,6 +347,7 @@ func New(width, height int) (r *Renderer, err error) {
 		r.syncFD = r.dd.HasGetSemaphoreFdKHR()
 	}
 	r.dd.GetDeviceQueue(r.device, family, 0, &r.queue)
+	r.deviceInfo.CreateMS = time.Since(start).Milliseconds()
 	extent := vk.Extent3D{Width: uint32(width), Height: uint32(height), Depth: 1}
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: extent, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingOptimal, Usage: targetUsage | vk.ImageUsageSampledBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
 	if err = checked("vkCreateImage", r.dd.CreateImage(r.device, &ii, nil, &r.own.image)); err != nil {
@@ -396,6 +416,9 @@ func (r *Renderer) SetLogger(l zerowrap.Logger) { r.log = l }
 // SetTraceDamage logs the redrawn pixels, draw count and partial flag of
 // every frame at debug level (--debug=render-damage). Off by default.
 func (r *Renderer) SetTraceDamage(on bool) { r.traceDamage = on }
+
+// DeviceInfo returns device identity and creation timing captured by New.
+func (r *Renderer) DeviceInfo() DeviceInfo { return r.deviceInfo }
 
 // QueuePriority is the global priority the queue got: realtime, high or
 // default.

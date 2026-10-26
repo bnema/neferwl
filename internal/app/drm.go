@@ -22,6 +22,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/watchdog"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
+	"golang.org/x/sys/unix"
 )
 
 var errTimeout = errors.New("timeout")
@@ -266,6 +267,8 @@ func openDRM(ctx context.Context, cfg ports.Config) (*drmBackend, error) {
 			s.CloseDevice(fd)
 			continue
 		}
+		device := card.Device()
+		log.Info().Str("path", path).Str("device", fmt.Sprintf("%d:%d", unix.Major(device), unix.Minor(device))).Msg("opened DRM card")
 		b.cards = append(b.cards, &drmCard{Card: card, fd: fd})
 	}
 	if len(b.cards) == 0 {
