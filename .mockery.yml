@@ -29,6 +29,7 @@ packages:
       SessionSecurityController:
       Ticker:
       Timer:
+      X11Clients:
   # Unexported adapter seams: mocks live next to the code, in test files.
   github.com/bnema/neferwl/internal/adapters/drm:
     interfaces:

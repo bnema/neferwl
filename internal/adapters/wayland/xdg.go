@@ -261,7 +261,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 				}
 			}
 			pid := r.Client().PID()
-			x11 := x.server.x11Client != nil && x.server.x11Client(pid)
+			x11 := x.server.x11Client != nil && x.server.x11Client.Owns(pid)
 			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Slot: slot, Sandbox: sandbox, ContentType: windowContentType(x.surface.contentKind), Xwayland: x11, PID: pid, Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Modal: w.modal, Remap: w.gen > 1})
 			x.server.syncInhibitors()
 			x.server.toplevelChanged(w)

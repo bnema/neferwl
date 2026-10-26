@@ -27,10 +27,10 @@ import (
 // replaces it with ports.SetOutputs.
 type Options struct {
 	RuntimeDir string
-	// X11Client reports whether a client PID belongs to the X11 satellite.
+	// X11Clients classifies client PIDs as X11 satellite processes.
 	// Nil means no client is X11.
-	X11Client func(pid int) bool
-	Outputs   ports.Layout
+	X11Clients ports.X11Clients
+	Outputs    ports.Layout
 	// DMABuf is what the renderer imports; empty disables linux-dmabuf.
 	DMABuf ports.DMABufSupport
 	// SyncobjNode is the render node (/dev/dri/renderD*) timeline
@@ -103,7 +103,7 @@ type Channels struct {
 }
 
 type Server struct {
-	x11Client          func(pid int) bool
+	x11Client          ports.X11Clients
 	security           ports.SessionSecurity
 	securityController ports.SessionSecurityController
 	securityPending    []ports.SecurityState // display-owned ordered backend outbox
@@ -364,7 +364,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	}
 	s := &Server{
 		securityWake:       make(chan struct{}, 1),
-		x11Client:          opts.X11Client,
+		x11Client:          opts.X11Clients,
 		security:           opts.Security,
 		securityController: opts.Security,
 		display:            d,
