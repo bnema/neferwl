@@ -34,7 +34,7 @@ func (o *Output) probeAsync(r ports.Renderer) {
 
 // wantVRR is the VRR state the next frame commit sets: on while game (a
 // buffer is scanned out or a fullscreen window covers the output), off
-// after vrrHold without it (each toggle may flicker, so short breaks keep
+// at vrrHold without it (each toggle may flicker, so short breaks keep
 // it).
 func (o *Output) wantVRR(game bool) bool {
 	if o.vrrProp == 0 {
@@ -48,7 +48,7 @@ func (o *Output) wantVRR(game bool) bool {
 	if o.composedSince.IsZero() {
 		o.composedSince = time.Now()
 	}
-	return o.vrrOn && time.Since(o.composedSince) <= vrrHold
+	return o.vrrOn && time.Since(o.composedSince) < vrrHold
 }
 
 // stateVRR is the VRR state of a commit without a new frame (cursor,
