@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+//testpolicy:realtime bounded wait for real pipe acquire fence and capture completion
 func TestExcludeFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 	for _, finish := range []string{"signal", "cancel", "render-error"} {
 		t.Run(finish, func(t *testing.T) {
