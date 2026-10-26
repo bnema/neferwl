@@ -130,7 +130,7 @@ func (r *Renderer) destroySlots() {
 	}
 }
 
-// waitFrame blocks until frame n completer.gpu.dd. Frames not submitted yet and
+// waitFrame blocks until frame n completed. Frames not submitted yet and
 // frames known done return at once. Every slot holding a frame up to n
 // is waited and reset, so its fence is unsignalled before reuse.
 func (r *Renderer) waitFrame(n uint64) error {
@@ -184,7 +184,30 @@ func (r *Renderer) runDeferred() {
 	})
 }
 
-// idle records that the device finished every submitted frame.
+// waitOwnIdle waits only for work successfully submitted by this renderer.
+func (r *Renderer) waitOwnIdle() error {
+	fences := make([]vk.Fence, 0, len(r.slots)+len(r.captures))
+	for i := range r.slots {
+		s := &r.slots[i]
+		if s.busy {
+			fences = append(fences, s.fence)
+		}
+	}
+	for _, s := range r.captures {
+		if s.pending {
+			fences = append(fences, s.fence)
+		}
+	}
+	if len(fences) > 0 {
+		if err := checked("vkWaitForFences(own idle)", r.gpu.dd.WaitForFences(r.gpu.device, uint32(len(fences)), &fences[0], 1, math.MaxUint64)); err != nil {
+			return err
+		}
+	}
+	r.idle()
+	return nil
+}
+
+// idle records that this renderer finished every submitted frame.
 func (r *Renderer) idle() {
 	for i := range r.slots {
 		s := &r.slots[i]

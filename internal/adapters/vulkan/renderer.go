@@ -302,8 +302,7 @@ func (r *Renderer) Close() {
 	if r.gpu.dd != nil {
 		d := r.gpu.dd
 		if r.gpu.device != 0 {
-			_ = checked("vkDeviceWaitIdle", d.DeviceWaitIdle(r.gpu.device))
-			r.idle()
+			_ = r.waitOwnIdle()
 		}
 		r.dropTargets()
 		r.destroyHDR()

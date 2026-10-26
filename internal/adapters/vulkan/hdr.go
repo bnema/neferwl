@@ -33,8 +33,7 @@ func (r *Renderer) SetHDR(nits float64) {
 			r.hdrOwn.valid = false
 		}
 		if (nits > 0) != (r.hdrNits > 0) && r.gpu.device != 0 {
-			_ = checked("vkDeviceWaitIdle", r.gpu.dd.DeviceWaitIdle(r.gpu.device))
-			r.idle()
+			_ = r.waitOwnIdle()
 			r.hdrOwn.valid = false
 			r.own.valid = false
 			for _, t := range r.targets {
@@ -207,8 +206,7 @@ func (r *Renderer) dropHDROwn() {
 	if r.capturePass.pipeline != 0 {
 		for _, s := range r.captures {
 			if s.pending {
-				_ = checked("vkDeviceWaitIdle", r.gpu.dd.DeviceWaitIdle(r.gpu.device))
-				r.idle()
+				_ = r.waitOwnIdle()
 				break
 			}
 		}

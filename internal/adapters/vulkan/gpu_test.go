@@ -116,4 +116,17 @@ func TestTwoRenderersShareGPU(t *testing.T) {
 			t.Fatalf("renderer %d has incorrect pixels", i)
 		}
 	}
+	rs[0].SetHDR(203)
+	rs[0].Close()
+	for frame := range 5 {
+		scene.Seq = uint64(11 + frame)
+		if err := render(rs[1], scene, contents); err != nil {
+			t.Fatalf("surviving renderer frame %d: %v", frame, err)
+		}
+	}
+	pixels := rs[1].Pixels()
+	if pixels == nil || pixels.RGBAAt(8, 8) != (color.RGBA{1, 2, 3, 255}) {
+		t.Fatal("surviving renderer has incorrect pixels")
+	}
+
 }

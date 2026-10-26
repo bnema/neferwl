@@ -431,8 +431,7 @@ func (r *Renderer) freeTarget(t *target) {
 
 func (r *Renderer) dropTargets() {
 	if len(r.targets) > 0 && r.gpu.device != 0 {
-		_ = checked("vkDeviceWaitIdle", r.gpu.dd.DeviceWaitIdle(r.gpu.device))
-		r.idle()
+		_ = r.waitOwnIdle()
 	}
 	for _, t := range r.targets {
 		if r.last == t {
