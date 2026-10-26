@@ -89,6 +89,22 @@ func (p *leasePublisher) publish(c leaseInventoryCard) {
 	p.send(ports.LeaseConnectors{Card: c.Path(), Device: os.NewFile(uintptr(fd), c.Path()), Connectors: next})
 }
 
+// forget withdraws c for good (its card was unplugged): finished leases are
+// reported, wayland is told the device has no connectors, the client fd closes.
+func (p *leasePublisher) forget(c leaseInventoryCard) {
+	for _, id := range c.FinishedLeases() {
+		p.send(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
+	}
+	if p.clientFDs[c] != nil || p.protected() {
+		p.send(ports.LeaseConnectors{Card: c.Path()})
+	}
+	if p.clientFDs[c] != nil {
+		p.clientFDs[c].Close()
+	}
+	delete(p.clientFDs, c)
+	delete(p.last, c)
+}
+
 // close releases the client fds.
 func (p *leasePublisher) close() {
 	for _, f := range p.clientFDs {
