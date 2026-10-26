@@ -22,12 +22,12 @@ func TestVirtualRendererExportsHDRTargets(t *testing.T) {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer inst.Close()
-	gpu, err := inst.OpenGPU(ports.GPUInfo{})
+	gpu, err := inst.Open(ports.GPUInfo{})
 	if err != nil {
 		t.Skipf("Vulkan GPU unavailable: %v", err)
 	}
 	defer gpu.Close()
-	r, err := newVulkanRenderer(gpu, true, false, false)(64, 16)
+	r, err := gpu.NewRenderer(64, 16, ports.RendererOptions{Virtual: true})
 	if err != nil {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}

@@ -24,7 +24,7 @@ type headlessOptions struct {
 // With several outputs, screenshots go to a subdirectory per output. Modes
 // are fixed, so apply answers every configuration without backend work.
 //
-// newRenderer is configured for virtual outputs by newVulkanRenderer.
+// newRenderer is configured for virtual outputs by the session.
 func runHeadless(ctx context.Context, o headlessOptions, apply *outputApply, ch outputChannels, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
 	set := newOutputSet(ctx, ch.captured, ch.routes())
 	set.attach = ch.content

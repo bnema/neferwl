@@ -120,7 +120,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 			}
 			info.Render = stat.Rdev
 		}
-		s.gpu, err = s.inst.OpenGPU(info)
+		s.gpu, err = s.inst.Open(info)
 		if err != nil {
 			return s, err
 		}
@@ -196,11 +196,11 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	if s.path == "" {
 		s.path = config.DefaultPath()
 	}
-	traceDamage := logging.Enabled(ctx, "render-damage")
-	if s.hw != nil {
-		s.newRenderer = newVulkanRenderer(s.gpu, false, false, traceDamage)
-	} else {
-		s.newRenderer = newVulkanRenderer(s.gpu, true, opts.ScreenshotRaw, traceDamage)
+	if s.hw == nil {
+		traceDamage := logging.Enabled(ctx, "render-damage")
+		s.newRenderer = func(w, h int) (ports.Renderer, error) {
+			return s.gpu.NewRenderer(w, h, ports.RendererOptions{Virtual: true, Readback: opts.ScreenshotRaw, TraceDamage: traceDamage})
+		}
 	}
 	return s, nil
 }
@@ -239,18 +239,6 @@ func (s *session) close() {
 	}
 	if s.inst != nil {
 		s.inst.Close()
-	}
-}
-
-// newVulkanRenderer returns the concrete Vulkan renderer factory. Virtual
-// outputs have no display to list modifiers, so a headless renderer is told
-// it drives one: without it a real GPU refuses the HDR targets and the
-// output falls back to SDR. readback makes the HDR targets readable
-// (HDRPixels). traceDamage logs every frame's redrawn area. These settings
-// are Vulkan-only and not on ports.Renderer.
-func newVulkanRenderer(gpu ports.RenderDevice, virtual, readback, traceDamage bool) func(w, h int) (ports.Renderer, error) {
-	return func(w, h int) (ports.Renderer, error) {
-		return gpu.NewRenderer(w, h, ports.RendererOptions{Virtual: virtual, Readback: readback, TraceDamage: traceDamage})
 	}
 }
 
