@@ -125,8 +125,6 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 	scene.PositionHint = sc.positionHint.sample
 	scene.Flash = c.flashFor(sc)
 	scene.CaptureIndicators = c.captureIndicators(sc)
-	scene.HintLabels = c.hintLabels(sc)
-	scene.HintStyle = ports.HintStyle{Capture: c.cfg.Hint.Capture, Size: c.cfg.Hint.Size, Background: c.cfg.Hint.Background, Foreground: c.cfg.Hint.Foreground, Width: sc.info.Width, Height: sc.info.Height, PhysicalW: sc.info.PhysicalW, PhysicalH: sc.info.PhysicalH}
 	scene.Overlays = c.hintOverlays(sc)
 	scene.Physical = ports.OutputPhysical{Width: sc.info.Width, Height: sc.info.Height, MMWidth: sc.info.PhysicalW, MMHeight: sc.info.PhysicalH}
 	scene.Capture = c.captureSceneFor(sc, capture)

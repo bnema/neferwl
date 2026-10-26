@@ -100,15 +100,3 @@ type HintScanResult struct {
 	Targets []HintTarget
 	Err     error
 }
-
-// HintLabel is a label drawn over a hint target.
-type HintLabel struct {
-	// Rect is the label box in logical output-local coordinates; X and Y are
-	// the target's top-left corner, which the renderer anchors the label
-	// outside of. W and H may be 0: the renderer sizes the box from Text.
-	Rect Rect
-	// Text is the full label, lowercase a–z.
-	Text string
-	// Typed is the number of leading characters already typed (drawn dimmed).
-	Typed int
-}

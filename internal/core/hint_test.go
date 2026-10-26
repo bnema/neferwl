@@ -130,7 +130,7 @@ func (h *hintHarness) until(ok func(ports.Scene) bool) ports.Scene {
 func (h *hintHarness) labelled(n, typed int) ports.Scene {
 	h.t.Helper()
 	return h.until(func(s ports.Scene) bool {
-		return len(s.HintLabels) == n && (n == 0 || s.HintLabels[0].Typed == typed)
+		return len(s.Overlays) == n && (n == 0 || s.Overlays[0].Typed == typed)
 	})
 }
 
@@ -179,8 +179,8 @@ func TestHintRequestNilScansIsNoop(t *testing.T) {
 		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 1000, Height: 800}}
 		scene(t, scenes)
 		input <- ports.KeyEvent{Keysym: "g", Base: "g", Mods: ports.ModSuper, Pressed: true}
-		if s := scene(t, scenes); len(s.HintLabels) != 0 {
-			t.Fatal(s.HintLabels)
+		if s := scene(t, scenes); len(s.Overlays) != 0 {
+			t.Fatal(s.Overlays)
 		}
 
 	})
@@ -199,8 +199,8 @@ func TestHintRefusedWhenProtected(t *testing.T) {
 		h.state = *state.Load()
 		h.client <- ports.WindowMapped{ID: 2}
 		s := h.until(func(s ports.Scene) bool { return s.Security.Protected })
-		if len(s.HintLabels) != 0 {
-			t.Fatalf("labels while protected %+v", s.HintLabels)
+		if len(s.Overlays) != 0 {
+			t.Fatalf("labels while protected %+v", s.Overlays)
 		}
 		// And a new request is refused while it lasts.
 		h.press("g", ports.ModSuper)
@@ -222,19 +222,19 @@ func TestHintResultShowsLabels(t *testing.T) {
 			targets = append(targets, h.inside(i))
 		}
 		s := h.show(targets...)
-		if len(s.HintLabels) != 26 {
-			t.Fatalf("%d labels", len(s.HintLabels))
+		if len(s.Overlays) != 26 {
+			t.Fatalf("%d labels", len(s.Overlays))
 		}
 		seen := map[string]bool{}
-		for _, l := range s.HintLabels {
+		for _, l := range s.Overlays {
 			if len(l.Text) != 1 || l.Typed != 0 || seen[l.Text] {
 				t.Fatalf("label %+v", l)
 			}
 			seen[l.Text] = true
 		}
 		// Sorted by position: the first target gets the first letter.
-		if s.HintLabels[0].Text != "f" || s.HintLabels[0].Rect.X != targets[0].Rect.X || s.HintLabels[0].Rect.Y != targets[0].Rect.Y {
-			t.Fatalf("first %+v", s.HintLabels[0])
+		if s.Overlays[0].Text != "f" || s.Overlays[0].Rect.X != targets[0].Rect.X || s.Overlays[0].Rect.Y != targets[0].Rect.Y {
+			t.Fatalf("first %+v", s.Overlays[0])
 		}
 
 	})
@@ -248,18 +248,18 @@ func TestHintTwoLetterLabels(t *testing.T) {
 			targets = append(targets, ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: h.win.X + 5 + 100*(i%4), Y: h.win.Y + 5 + 40*(i/4), W: 30, H: 10}})
 		}
 		s := h.show(targets...)
-		if len(s.HintLabels) != 27 {
-			t.Fatalf("%d labels", len(s.HintLabels))
+		if len(s.Overlays) != 27 {
+			t.Fatalf("%d labels", len(s.Overlays))
 		}
 		seen := map[string]bool{}
-		for _, l := range s.HintLabels {
+		for _, l := range s.Overlays {
 			if len(l.Text) != 2 || seen[l.Text] {
 				t.Fatalf("label %+v", l)
 			}
 			seen[l.Text] = true
 		}
-		if s.HintLabels[0].Text != "ff" || s.HintLabels[1].Text != "fj" {
-			t.Fatalf("labels %v %v", s.HintLabels[0].Text, s.HintLabels[1].Text)
+		if s.Overlays[0].Text != "ff" || s.Overlays[1].Text != "fj" {
+			t.Fatalf("labels %v %v", s.Overlays[0].Text, s.Overlays[1].Text)
 		}
 
 	})
@@ -277,8 +277,8 @@ func TestHintDropsTargetsOutsideWindows(t *testing.T) {
 		req := h.start()
 		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{out, in}}
 		s := h.labelled(1, 0)
-		if len(s.HintLabels) != 1 || s.HintLabels[0].Rect.X != in.Rect.X {
-			t.Fatalf("labels %+v (window %+v)", s.HintLabels, h.win)
+		if len(s.Overlays) != 1 || s.Overlays[0].Rect.X != in.Rect.X {
+			t.Fatalf("labels %+v (window %+v)", s.Overlays, h.win)
 		}
 
 	})
@@ -294,10 +294,10 @@ func TestHintTypingFilters(t *testing.T) {
 		h.show(targets...)
 		h.press("f", 0)
 		s := h.labelled(26, 1)
-		if len(s.HintLabels) != 26 {
-			t.Fatalf("%d labels after f", len(s.HintLabels))
+		if len(s.Overlays) != 26 {
+			t.Fatalf("%d labels after f", len(s.Overlays))
 		}
-		for _, l := range s.HintLabels {
+		for _, l := range s.Overlays {
 			if l.Typed != 1 || l.Text[0] != 'f' {
 				t.Fatalf("label %+v", l)
 			}
@@ -307,8 +307,8 @@ func TestHintTypingFilters(t *testing.T) {
 		// Only the 27th target starts with j: its label is "jf".
 		h.press("j", 0)
 		s = h.labelled(1, 1)
-		if len(s.HintLabels) != 1 || s.HintLabels[0].Text != "jf" {
-			t.Fatalf("after j %+v", s.HintLabels)
+		if len(s.Overlays) != 1 || s.Overlays[0].Text != "jf" {
+			t.Fatalf("after j %+v", s.Overlays)
 		}
 
 	})
@@ -322,8 +322,8 @@ func TestHintClick(t *testing.T) {
 		h.drain()
 		h.press("f", 0)
 		s := h.labelled(0, 0)
-		if len(s.HintLabels) != 0 {
-			t.Fatalf("labels after click %+v", s.HintLabels)
+		if len(s.Overlays) != 0 {
+			t.Fatalf("labels after click %+v", s.Overlays)
 		}
 		cx := float64(tg.Rect.X) + float64(tg.Rect.W)/2 - float64(h.win.X)
 		cy := float64(tg.Rect.Y) + float64(tg.Rect.H)/2 - float64(h.win.Y)
@@ -370,8 +370,8 @@ func TestHintEscapeCancels(t *testing.T) {
 		h.drain()
 		h.press("Escape", 0)
 		s := h.labelled(0, 0)
-		if len(s.HintLabels) != 0 {
-			t.Fatalf("labels %+v", s.HintLabels)
+		if len(s.Overlays) != 0 {
+			t.Fatalf("labels %+v", s.Overlays)
 		}
 		h.release("Escape", 0)
 		// A later key goes to the window again: the Escape release did not.
@@ -400,8 +400,8 @@ func TestHintKeysNotForwarded(t *testing.T) {
 		// Any other key cancels and is swallowed.
 		h.press("Return", 0)
 		s := h.labelled(0, 0)
-		if len(s.HintLabels) != 0 {
-			t.Fatalf("labels %+v", s.HintLabels)
+		if len(s.Overlays) != 0 {
+			t.Fatalf("labels %+v", s.Overlays)
 		}
 		h.release("Return", 0)
 		h.press("x", 0)
@@ -421,8 +421,8 @@ func TestHintStaleSeqIgnored(t *testing.T) {
 		// A matching result afterwards shows: the stale one changed nothing.
 		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{h.inside(0), h.inside(1)}}
 		s := h.labelled(2, 0)
-		if len(s.HintLabels) != 2 {
-			t.Fatalf("labels %+v", s.HintLabels)
+		if len(s.Overlays) != 2 {
+			t.Fatalf("labels %+v", s.Overlays)
 		}
 
 	})
@@ -648,7 +648,7 @@ func TestHintMappedWindowMovedAborts(t *testing.T) {
 		tg := ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: h.win.X + h.win.W - 50, Y: h.win.Y + 10, W: 40, H: 10}}
 		h.show(tg)
 		h.client <- ports.WindowMapped{ID: 2}
-		s := h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 && len(s.HintLabels) <= 1 })
+		s := h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 && len(s.Overlays) <= 1 })
 		if s.Windows[0].Rect == h.win {
 			t.Fatalf("window 1 did not move: %+v", s.Windows)
 		}
@@ -726,8 +726,8 @@ func TestHintResultDroppedWhenWindowMoved(t *testing.T) {
 		h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
 		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
 		// Whatever window now covers the target was not scanned: no labels.
-		if s := h.labelled(0, 0); len(s.HintLabels) != 0 {
-			t.Fatalf("labels %+v", s.HintLabels)
+		if s := h.labelled(0, 0); len(s.Overlays) != 0 {
+			t.Fatalf("labels %+v", s.Overlays)
 		}
 
 	})
@@ -747,8 +747,8 @@ func TestHintResultDroppedForUnseenWindow(t *testing.T) {
 			}
 		}
 		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
-		if s := h.labelled(0, 0); len(s.HintLabels) != 0 {
-			t.Fatalf("labels %+v", s.HintLabels)
+		if s := h.labelled(0, 0); len(s.Overlays) != 0 {
+			t.Fatalf("labels %+v", s.Overlays)
 		}
 
 	})
@@ -761,8 +761,8 @@ func TestHintDropsTargetsOutsideOutput(t *testing.T) {
 		req := h.start()
 		out := ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: 2000, Y: 10, W: 10, H: 10}}
 		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{out, h.inside(0)}}
-		if s := h.labelled(1, 0); len(s.HintLabels) != 1 {
-			t.Fatalf("labels %+v", s.HintLabels)
+		if s := h.labelled(1, 0); len(s.Overlays) != 1 {
+			t.Fatalf("labels %+v", s.Overlays)
 		}
 
 	})
@@ -774,8 +774,8 @@ func TestHintCancelsWhenOutputChanges(t *testing.T) {
 		h := newHint(t, core.Options{})
 		h.show(h.inside(0))
 		h.output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 1200, Height: 800}}
-		if s := h.labelled(0, 0); len(s.HintLabels) != 0 {
-			t.Fatalf("labels %+v", s.HintLabels)
+		if s := h.labelled(0, 0); len(s.Overlays) != 0 {
+			t.Fatalf("labels %+v", s.Overlays)
 		}
 
 	})
@@ -907,8 +907,13 @@ func TestHintCaptureReachesScene(t *testing.T) {
 		for _, on := range []bool{false, true} {
 			h := newHintConfig(t, core.Options{}, func(cfg *ports.Config) { cfg.Hint.Capture = on })
 			s := h.show(h.inside(0))
-			if s.HintStyle.Capture != on {
-				t.Errorf("hint.capture %v: scene has %v", on, s.HintStyle.Capture)
+			if len(s.Overlays) == 0 {
+				t.Fatal("no overlays")
+			}
+			for _, o := range s.Overlays {
+				if o.Capture != on {
+					t.Errorf("hint.capture %v: overlay has %v", on, o.Capture)
+				}
 			}
 		}
 
@@ -938,7 +943,7 @@ func TestHintOverlappingLabelsDropLowerScore(t *testing.T) {
 			h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: ts}
 			s := h.labelled(3, 0)
 			var got [][2]int
-			for _, l := range s.HintLabels {
+			for _, l := range s.Overlays {
 				got = append(got, [2]int{l.Rect.X - h.win.X - 20, l.Rect.Y - h.win.Y - 20})
 			}
 			want := [][2]int{{300, 0}, {3, 2}, {0, 200}} // sorted by Y, then X
@@ -957,7 +962,16 @@ func TestHintSizeReloadCancelsShownHints(t *testing.T) {
 		cfg := h.cfg
 		cfg.Hint.Size = 40
 		h.config <- ports.ConfigChanged{Config: cfg}
-		h.until(func(s ports.Scene) bool { return s.HintStyle.Size == 40 && len(s.HintLabels) == 0 })
+		h.until(func(s ports.Scene) bool { return len(s.Overlays) == 0 })
+		s := h.show(h.inside(0))
+		if len(s.Overlays) == 0 {
+			t.Fatal("no overlays")
+		}
+		for _, o := range s.Overlays {
+			if o.Style.Size != 40 {
+				t.Fatalf("overlay size %v, want 40", o.Style.Size)
+			}
+		}
 
 	})
 }
@@ -1061,19 +1075,15 @@ func hintTargets27(h *hintHarness) []ports.HintTarget {
 	return targets
 }
 
-func TestHintOverlaysMirrorLabels(t *testing.T) {
+func TestHintOverlays(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := newHint(t, core.Options{})
 		s := h.show(hintTargets27(h)...)
-		if len(s.Overlays) != len(s.HintLabels) || len(s.Overlays) != 27 {
-			t.Fatalf("%d overlays, %d labels", len(s.Overlays), len(s.HintLabels))
+		if len(s.Overlays) != 27 {
+			t.Fatalf("%d overlays", len(s.Overlays))
 		}
 		ids := map[uint64]bool{}
-		for i, o := range s.Overlays {
-			l := s.HintLabels[i]
-			if o.Text != l.Text || o.Typed != l.Typed || o.Rect.X != l.Rect.X || o.Rect.Y != l.Rect.Y {
-				t.Fatalf("overlay %+v, label %+v", o, l)
-			}
+		for _, o := range s.Overlays {
 			if o.Kind != ports.OverlayLabel || o.Anchor != ports.AnchorOutsideTopLeft {
 				t.Fatalf("overlay %+v", o)
 			}
@@ -1130,9 +1140,8 @@ func TestScenePhysicalFromOutputInfo(t *testing.T) {
 		h := newHint(t, core.Options{})
 		s := h.show(h.inside(0))
 		p := s.Physical
-		st := s.HintStyle
-		if p.Width == 0 || p.Height == 0 || p.Width != st.Width || p.Height != st.Height || p.MMWidth != st.PhysicalW || p.MMHeight != st.PhysicalH {
-			t.Fatalf("physical %+v, style %+v", p, st)
+		if p.Width == 0 || p.Height == 0 {
+			t.Fatalf("physical %+v", p)
 		}
 	})
 }

@@ -79,14 +79,10 @@ type Scene struct {
 	// drawn over everything; nil when none. Captures never hold them: the
 	// capture pipeline serves requests from a scene without them.
 	CaptureIndicators []CaptureIndicator
-	// HintLabels are the keyboard hint labels of this output, drawn over
-	// everything, after CaptureIndicators; nil when hint mode is not shown
-	// here. Captures never contain them unless HintStyle.Capture is set, and
-	// then only those of Wayland clients.
-	HintLabels []HintLabel
-	HintStyle  HintStyle
 	// Overlays are compositor-drawn overlays of this output, drawn over
 	// everything, after CaptureIndicators and PositionHint; nil when none.
+	// The keyboard hint labels are overlays; they stay out of captures
+	// unless Overlay.Capture is set, and then only those of Wayland clients.
 	Overlays []Overlay
 	// Physical is the output density the overlays are sized from.
 	Physical OutputPhysical
@@ -139,7 +135,6 @@ func (s Scene) SameAs(o Scene) bool {
 	return slices.Equal(s.Windows, o.Windows) && slices.Equal(s.Separators, o.Separators) &&
 		slices.Equal(s.DropHints, o.DropHints) && slices.Equal(s.Layers, o.Layers) &&
 		slices.Equal(s.CaptureIndicators, o.CaptureIndicators) &&
-		s.HintStyle == o.HintStyle && slices.Equal(s.HintLabels, o.HintLabels) &&
 		s.Physical == o.Physical && slices.Equal(s.Overlays, o.Overlays)
 }
 
@@ -270,15 +265,4 @@ type SceneWindow struct {
 // and popups are placed against the whole viewport.
 func (w SceneWindow) Tile() bool {
 	return !w.Floating && !w.Fullscreen && !w.Popup && w.Preview == 0
-}
-
-// HintStyle carries reloadable label settings and untransformed output density.
-type HintStyle struct {
-	// Capture (hint.capture) shows the labels in the captures requested by
-	// Wayland clients. Captures requested by the compositor itself
-	// (CaptureIDInternal) never contain them.
-	Capture                             bool
-	Size                                float64
-	Background, Foreground              string
-	Width, Height, PhysicalW, PhysicalH int
 }

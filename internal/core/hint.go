@@ -423,23 +423,6 @@ func (c *Core) hintClickable(t hintTarget) bool {
 	return id == t.window && sc != nil && c.hintSourceUnchanged(sc, t.source)
 }
 
-// hintLabels are the labels to draw on sc: those still matching what was
-// typed. Nil unless sc is the hint output.
-func (c *Core) hintLabels(sc *screen) []ports.HintLabel {
-	h := &c.hint
-	if h.phase != hintShown || sc.name() != h.output {
-		return nil
-	}
-	var out []ports.HintLabel
-	for _, t := range h.targets {
-		if len(t.label) < len(h.typed) || t.label[:len(h.typed)] != h.typed {
-			continue
-		}
-		out = append(out, ports.HintLabel{Rect: ports.Rect{X: t.rect.X, Y: t.rect.Y}, Text: t.label, Typed: len(h.typed)})
-	}
-	return out
-}
-
 // hintOverlays are the labels to draw on sc as generic overlays: those still
 // matching what was typed. Nil unless sc is the hint output.
 func (c *Core) hintOverlays(sc *screen) []ports.Overlay {
