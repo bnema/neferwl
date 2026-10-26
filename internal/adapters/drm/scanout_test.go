@@ -383,6 +383,11 @@ func TestFrameDecisionAllocations(t *testing.T) {
 			}
 		})
 	}
+	// Capture must not leave its reasons on the next direct-scanout decision.
+	direct := o.decideFrame(s, surfaces, false)
+	if direct.fb != 77 || o.reason != "" || o.overlayReason != "direct_scanout" {
+		t.Fatalf("after capture: fb=%d scanout=%q overlay=%q", direct.fb, o.reason, o.overlayReason)
+	}
 	o.primary.formats = nil
 	d := o.decideFrame(s, surfaces, false)
 	if d.fb != 0 || o.overlayReason != "no_plane" || len(d.composed.Windows) != 1 {

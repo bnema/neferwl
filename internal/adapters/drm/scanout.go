@@ -369,6 +369,7 @@ func (o *Output) decideFrame(s ports.Scene, surfaces map[ports.WindowID]ports.Su
 	}
 	fb, c, mode := o.scanoutFrame(s, surfaces)
 	if fb != 0 {
+		o.setOverlayReason("direct_scanout")
 		return frameDecision{fb: fb, content: c, rect: scanoutRect(c, o.Width(), o.Height()), color: mode}
 	}
 	return o.composeFrame(s, surfaces)
