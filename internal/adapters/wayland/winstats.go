@@ -32,12 +32,6 @@ func (r *frameRing) push(us uint32) {
 	}
 }
 
-// reset drops every sample.
-func (r *frameRing) reset() {
-	r.n = 0
-	r.head = 0
-}
-
 // fps is 1e6 / mean frame time over the held samples; 0 when n == 0.
 func (r *frameRing) fps() float32 {
 	if r.n == 0 {

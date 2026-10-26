@@ -120,14 +120,6 @@ func TestFrameRingCapOrder(t *testing.T) {
 	assert.Zero(t, s.Graph[0])
 }
 
-func TestFrameRingReset(t *testing.T) {
-	r := statsRingOf(10000, 20000)
-	r.reset()
-	var scratch [ports.StatsFrames]uint32
-	assert.Equal(t, frameSummary{}, r.summary(&scratch))
-	assert.Zero(t, r.fps())
-}
-
 func TestFrameRingSummaryAllocs(t *testing.T) {
 	r := statsRingOf(statsRepeat(12000, 3000)...)
 	var scratch [ports.StatsFrames]uint32
