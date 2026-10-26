@@ -12,8 +12,8 @@ import (
 )
 
 type testClient struct {
-	*zerobus.Conn
-	t *testing.T
+	Conn *zerobus.Conn
+	t    *testing.T
 }
 type clientObject struct {
 	c          *testClient
@@ -31,7 +31,7 @@ func dialClient(t *testing.T, address string) (*testClient, error) {
 	}
 	return &testClient{c, t}, nil
 }
-func (c *testClient) Names() []string                       { return []string{c.UniqueName()} }
+func (c *testClient) Names() []string                       { return []string{c.Conn.UniqueName()} }
 func (c *testClient) Object(dest, path string) clientObject { return clientObject{c, dest, path} }
 func (c *testClient) BusObject() clientObject               { return c.Object(busDaemon, "/org/freedesktop/DBus") }
 func (c *testClient) ReleaseName(name string) (uint32, error) {
@@ -54,7 +54,7 @@ func (o clientObject) encode(method string, flags zerobus.Flags, args ...any) {
 			panic("unsupported wire argument")
 		}
 	}
-	e := o.c.NewCall(o.dest, o.path, method[:split], method[split+1:], sig)
+	e := o.c.Conn.NewCall(o.dest, o.path, method[:split], method[split+1:], sig)
 	e.SetFlags(flags)
 	for _, arg := range args {
 		switch v := arg.(type) {
@@ -71,7 +71,7 @@ func (o clientObject) Call(method string, flags zerobus.Flags, args ...any) *cli
 	check := boundIO(o.c.t, method, func() { _ = o.c.Close() })
 	defer check()
 	o.encode(method, flags, args...)
-	m, err := o.c.Call()
+	m, err := o.c.Conn.Call()
 	return &clientReply{m, err}
 }
 func (o clientObject) CallWithContext(ctx context.Context, method string, flags zerobus.Flags, args ...any) *clientReply {
@@ -80,7 +80,7 @@ func (o clientObject) CallWithContext(ctx context.Context, method string, flags 
 	stop := context.AfterFunc(ctx, func() { _ = o.c.Close() })
 	defer stop()
 	o.encode(method, flags, args...)
-	m, err := o.c.Call()
+	m, err := o.c.Conn.Call()
 	if ctx.Err() != nil {
 		err = fmt.Errorf("%s timed out or cancelled: %w", method, ctx.Err())
 	}
@@ -89,7 +89,7 @@ func (o clientObject) CallWithContext(ctx context.Context, method string, flags 
 }
 func (o clientObject) Go(method string, flags zerobus.Flags, _ any, args ...any) {
 	o.encode(method, flags, args...)
-	_, _ = o.c.Send()
+	_, _ = o.c.Conn.Send()
 }
 func (r *clientReply) Store(out any) error {
 	if r.Err != nil {
@@ -128,3 +128,5 @@ func (c *testClient) AddMatch(rule string) error {
 	defer check()
 	return c.Conn.AddMatch(rule)
 }
+
+func (c *testClient) Close() error { return c.Conn.Close() }
