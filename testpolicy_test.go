@@ -699,58 +699,54 @@ func checkTickerLoops(decl ast.Decl, timeName, synctestName string, sources map[
 		return "event"
 	}
 	flagged := make(map[token.Pos]bool)
-	var inspect func(node ast.Node)
-	inspect = func(node ast.Node) {
-		ast.Inspect(node, func(n ast.Node) bool {
-			if call, ok := n.(*ast.CallExpr); ok {
-				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Test" {
-					if id, ok := sel.X.(*ast.Ident); ok && synctestName != "" && id.Name == synctestName {
-						return false // bubbles run on fake time
-					}
+	ast.Inspect(decl, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok {
+			if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Test" {
+				if id, ok := sel.X.(*ast.Ident); ok && synctestName != "" && id.Name == synctestName {
+					return false // bubbles run on fake time
 				}
 			}
-			var body *ast.BlockStmt
-			switch x := n.(type) {
-			case *ast.ForStmt:
-				body = x.Body
-			case *ast.RangeStmt:
-				body = x.Body
-			default:
+		}
+		var body *ast.BlockStmt
+		switch x := n.(type) {
+		case *ast.ForStmt:
+			body = x.Body
+		case *ast.RangeStmt:
+			body = x.Body
+		default:
+			return true
+		}
+		ast.Inspect(body, func(m ast.Node) bool {
+			if _, ok := m.(*ast.FuncLit); ok {
+				return false
+			}
+			sel, ok := m.(*ast.SelectStmt)
+			if !ok || flagged[sel.Pos()] {
 				return true
 			}
-			ast.Inspect(body, func(m ast.Node) bool {
-				if _, ok := m.(*ast.FuncLit); ok {
-					return false
+			ticker, deadline, event := false, false, false
+			for _, cl := range sel.Body.List {
+				cc := cl.(*ast.CommClause)
+				if cc.Comm == nil {
+					continue
 				}
-				sel, ok := m.(*ast.SelectStmt)
-				if !ok || flagged[sel.Pos()] {
-					return true
+				switch commKind(cc.Comm) {
+				case "ticker":
+					ticker = true
+				case "deadline":
+					deadline = true
+				default:
+					event = true
 				}
-				ticker, deadline, event := false, false, false
-				for _, cl := range sel.Body.List {
-					cc := cl.(*ast.CommClause)
-					if cc.Comm == nil {
-						continue
-					}
-					switch commKind(cc.Comm) {
-					case "ticker":
-						ticker = true
-					case "deadline":
-						deadline = true
-					default:
-						event = true
-					}
-				}
-				if ticker && deadline && !event {
-					flagged[sel.Pos()] = true
-					add(ruleNoPolling, sel.Pos(), "loop selects on a ticker and a deadline with no event case: that re-checks state on every tick; wait on a real event, or use synctest.Wait in a bubble")
-				}
-				return true
-			})
+			}
+			if ticker && deadline && !event {
+				flagged[sel.Pos()] = true
+				add(ruleNoPolling, sel.Pos(), "loop selects on a ticker and a deadline with no event case: that re-checks state on every tick; wait on a real event, or use synctest.Wait in a bubble")
+			}
 			return true
 		})
-	}
-	inspect(decl)
+		return true
+	})
 }
 
 // checkBusyPoll implements ruleNoPolling for spin loops in one declaration.
