@@ -1,0 +1,104 @@
+package wayland
+
+import (
+	"slices"
+
+	"github.com/bnema/neferwl/internal/ports"
+)
+
+// frameRing keeps the last ports.StatsFrames frame times in microseconds.
+type frameRing struct {
+	buf  [ports.StatsFrames]uint32
+	n    int // samples held, ≤ len(buf)
+	head int // next write index
+}
+
+// frameSummary is the statistics of a frameRing; FPS figures are client FPS.
+type frameSummary struct {
+	Avg, Min, Max, Low1, Low01 float32
+	Graph                      [ports.StatsGraph]uint16
+}
+
+// push records a frame time; 0 µs is ignored.
+func (r *frameRing) push(us uint32) {
+	if us == 0 {
+		return
+	}
+	r.buf[r.head] = us
+	r.head = (r.head + 1) % len(r.buf)
+	if r.n < len(r.buf) {
+		r.n++
+	}
+}
+
+// reset drops every sample.
+func (r *frameRing) reset() {
+	r.n = 0
+	r.head = 0
+}
+
+// fps is 1e6 / mean frame time over the held samples; 0 when n == 0.
+func (r *frameRing) fps() float32 {
+	if r.n == 0 {
+		return 0
+	}
+	var sum uint64
+	for _, v := range r.buf[:r.n] {
+		sum += uint64(v)
+	}
+	return meanFPS(sum, r.n)
+}
+
+// meanFPS is the FPS of count frames lasting sum µs in total.
+func meanFPS(sum uint64, count int) float32 {
+	if count == 0 || sum == 0 {
+		return 0
+	}
+	return float32(1e6 * float64(count) / float64(sum))
+}
+
+// summary fills avg/min/max/low1/low01 FPS and the last ports.StatsGraph
+// frame times (oldest first, capped at 65535 µs, zero-padded at the front
+// when fewer samples). scratch is reused for sorting; it must hold
+// ports.StatsFrames values.
+func (r *frameRing) summary(scratch *[ports.StatsFrames]uint32) frameSummary {
+	var s frameSummary
+	if r.n == 0 {
+		return s
+	}
+	n := r.n
+	// The oldest sample sits at head when full, at 0 otherwise.
+	start := (r.head - n + len(r.buf)) % len(r.buf)
+	for i := range n {
+		scratch[i] = r.buf[(start+i)%len(r.buf)]
+	}
+	for i := range ports.StatsGraph {
+		k := n - ports.StatsGraph + i
+		if k < 0 {
+			continue
+		}
+		s.Graph[i] = uint16(min(scratch[k], 65535))
+	}
+	sorted := scratch[:n]
+	slices.Sort(sorted)
+	var sum uint64
+	for _, v := range sorted {
+		sum += uint64(v)
+	}
+	s.Avg = meanFPS(sum, n)
+	s.Min = meanFPS(uint64(sorted[n-1]), 1)
+	s.Max = meanFPS(uint64(sorted[0]), 1)
+	s.Low1 = lowFPS(sorted, (n+99)/100)
+	s.Low01 = lowFPS(sorted, (n+999)/1000)
+	return s
+}
+
+// lowFPS is the FPS of the k slowest frames of ascending sorted.
+func lowFPS(sorted []uint32, k int) float32 {
+	k = max(k, 1)
+	var sum uint64
+	for _, v := range sorted[len(sorted)-k:] {
+		sum += uint64(v)
+	}
+	return meanFPS(sum, k)
+}
