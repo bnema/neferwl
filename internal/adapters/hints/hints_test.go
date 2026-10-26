@@ -226,7 +226,7 @@ func TestHintBadSize(t *testing.T) {
 func waitFiles(t *testing.T, dir string, n int) []os.DirEntry {
 	t.Helper()
 	var entries []os.DirEntry
-	require.Eventually(t, func() bool {
+	waitRealIO(t, func() bool {
 		all, _ := os.ReadDir(dir)
 		entries = nil
 		var raw, annotated, metadata bool
@@ -247,7 +247,7 @@ func waitFiles(t *testing.T, dir string, n int) []os.DirEntry {
 			entries = append(entries, e)
 		}
 		return raw && annotated && metadata && len(entries) >= n
-	}, 5*time.Second, 10*time.Millisecond)
+	}, "worker dump files")
 	return entries
 }
 

@@ -59,7 +59,7 @@ func helperChild(mode string) {
 		_, _ = os.Stdout.Write(helperHello())
 	}
 	if mode != "ok" {
-		time.Sleep(time.Minute)
+		_, _ = io.Copy(io.Discard, os.Stdin)
 		return
 	}
 	for {
@@ -102,14 +102,14 @@ func processGone(pid int) bool {
 func readPID(t *testing.T, file string) int {
 	t.Helper()
 	var pid int
-	require.Eventually(t, func() bool {
+	waitRealIO(t, func() bool {
 		b, err := os.ReadFile(file)
 		if err != nil {
 			return false
 		}
 		pid, err = strconv.Atoi(string(b))
 		return err == nil
-	}, time.Second, 10*time.Millisecond)
+	}, "child PID file")
 	return pid
 }
 
@@ -155,7 +155,7 @@ func TestProcDetectorKillsGrandchild(t *testing.T) {
 	require.ErrorContains(t, err, "hello timed out")
 	require.Less(t, time.Since(start), 2500*time.Millisecond)
 	pid := readPID(t, pidFile)
-	require.Eventually(t, func() bool { return processGone(pid) }, 2*time.Second, 20*time.Millisecond, "grandchild %d survives", pid)
+	waitRealIO(t, func() bool { return processGone(pid) }, "grandchild exit")
 	require.Nil(t, d.proc)
 }
 
@@ -170,4 +170,20 @@ func TestProcDetectorContextCancel(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.Less(t, time.Since(start), 2*time.Second)
 	require.Nil(t, d.proc)
+}
+
+//testpolicy:realtime subprocess exit and worker dump files are real kernel I/O
+func waitRealIO(t *testing.T, ready func() bool, what string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for !ready() {
+		select {
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for %s", what)
+		case <-ticker.C:
+		}
+	}
 }
