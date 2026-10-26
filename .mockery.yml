@@ -277,3 +277,11 @@ packages:
           dir: internal/adapters/powerkey
           pkgname: powerkey
           filename: bus_mock_test.go
+
+  github.com/bnema/neferwl/internal/adapters/captureallow:
+    interfaces:
+      watchInstaller:
+        config:
+          dir: internal/adapters/captureallow
+          pkgname: captureallow
+          filename: watch_installer_mock_test.go

@@ -182,6 +182,21 @@ func (s *Store) reload(startup, quiet bool) {
 // seconds. An error means the watch could not be set up: the policy then
 // stays as loaded ("restart to apply").
 func (s *Store) Run(ctx context.Context) error {
+	return s.run(ctx, inotifyWatchInstaller{})
+}
+
+// watchInstaller keeps the actual watch attempt observable in package tests.
+type watchInstaller interface {
+	AddWatch(fd int, path string, mask uint32) (int, error)
+}
+
+type inotifyWatchInstaller struct{}
+
+func (inotifyWatchInstaller) AddWatch(fd int, path string, mask uint32) (int, error) {
+	return unix.InotifyAddWatch(fd, path, mask)
+}
+
+func (s *Store) run(ctx context.Context, watches watchInstaller) error {
 	fd, err := unix.InotifyInit1(unix.IN_CLOEXEC | unix.IN_NONBLOCK)
 	if err != nil {
 		return err
@@ -208,7 +223,7 @@ func (s *Store) Run(ctx context.Context) error {
 		}
 		if wd < 0 && (retry.IsZero() || !time.Now().Before(retry)) {
 			retry = time.Time{}
-			w, err := unix.InotifyAddWatch(fd, dir, watchMask)
+			w, err := watches.AddWatch(fd, dir, watchMask)
 			switch {
 			case err == nil:
 				wd = w

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bnema/zerowrap"
+	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
 
@@ -153,8 +154,30 @@ func TestStoreWaitsForMissingDirectory(t *testing.T) {
 	s.retryInterval = 20 * time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	attempted := make(chan error, 1)
+	watches := newMockwatchInstaller(t)
+	watches.EXPECT().AddWatch(mock.Anything, filepath.Dir(path), uint32(watchMask)).RunAndReturn(func(fd int, dir string, mask uint32) (int, error) {
+		wd, err := unix.InotifyAddWatch(fd, dir, mask)
+		select {
+		case attempted <- err:
+		default:
+		}
+		return wd, err
+	}).Once()
+	watches.EXPECT().AddWatch(mock.Anything, filepath.Dir(path), uint32(watchMask)).RunAndReturn(unix.InotifyAddWatch)
+	go func() { done <- s.run(ctx, watches) }()
 	defer func() { cancel(); <-done }()
+	waitFor(t, "initial failed watch attempt", func() bool {
+		select {
+		case err := <-attempted:
+			if !errors.Is(err, unix.ENOENT) {
+				t.Fatalf("initial watch: %v, want ENOENT", err)
+			}
+			return true
+		default:
+			return false
+		}
+	})
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
