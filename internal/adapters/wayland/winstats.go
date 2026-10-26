@@ -2,6 +2,7 @@ package wayland
 
 import (
 	"slices"
+	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -101,4 +102,56 @@ func lowFPS(sorted []uint32, k int) float32 {
 		sum += uint64(v)
 	}
 	return meanFPS(sum, k)
+}
+
+// windowStats belongs to the display goroutine and tracks one window.
+type windowStats struct {
+	watched       ports.WindowID
+	gen           uint64
+	timer         ports.Timer
+	client, shown frameRing
+	lastCommit    time.Time
+	lastShown     time.Duration
+	lastShownSeq  uint64
+	facts         ports.WindowStats
+	scratch       [ports.StatsFrames]uint32
+}
+
+// commit records a fresh root buffer and its presentation hints.
+func (w *windowStats) commit(now time.Time, c ports.SurfaceContent, explicitSync, tearing bool) {
+	if w.watched == 0 {
+		return
+	}
+	if !w.lastCommit.IsZero() && now.After(w.lastCommit) {
+		w.client.push(uint32(min(now.Sub(w.lastCommit).Microseconds(), int64(^uint32(0)))))
+	}
+	w.lastCommit = now
+	w.facts.Width, w.facts.Height = c.Width, c.Height
+	w.facts.DMABuf = c.DMABuf != nil
+	w.facts.Format, w.facts.Modifier = 0, 0
+	if c.DMABuf != nil {
+		w.facts.Format, w.facts.Modifier = c.DMABuf.Format, c.DMABuf.Modifier
+	}
+	w.facts.ExplicitSync, w.facts.Tearing = explicitSync, tearing
+}
+
+// flip records only advancing content sequences, but refreshes output facts on every showing.
+func (w *windowStats) flip(f *ports.FlipInfo) {
+	if w.watched == 0 {
+		return
+	}
+	seq, ok := f.Shows[w.watched]
+	if !ok {
+		return
+	}
+	if seq > w.lastShownSeq {
+		if w.lastShownSeq != 0 && f.When > w.lastShown {
+			w.shown.push(uint32(min((f.When - w.lastShown).Microseconds(), int64(^uint32(0)))))
+		}
+		w.lastShown, w.lastShownSeq = f.When, seq
+	}
+	w.facts.Scanout = f.ZeroCopy == w.watched
+	w.facts.VRR = f.Refresh == 0 && f.HardwareClock
+	w.facts.Async = f.Async
+	w.facts.ScanoutReason, w.facts.OverlayReason = f.ScanoutReason, f.OverlayReason
 }

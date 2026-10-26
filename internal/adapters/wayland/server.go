@@ -275,6 +275,7 @@ type Server struct {
 	// objects (idle.go); outputsOff the outputs core turned off.
 	idleNotes         []*idleNotification
 	clock             ports.Clock
+	stats             windowStats
 	powers            []*outputPower
 	outputsOff        map[string]bool
 	outputs           []*output

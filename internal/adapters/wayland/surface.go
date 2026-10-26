@@ -499,6 +499,9 @@ func (s *surface) applyCommit(u *update) {
 				if !s.validateViewport(c.Width, c.Height) {
 					return
 				}
+				if s.sub.parent == nil && s.server.stats.watched != 0 && s.windowID() == s.server.stats.watched {
+					s.server.stats.commit(s.server.clock.Now(), c, s.hold.acquire != nil, s.async)
+				}
 				c.Transform = s.transform
 				c.Source, _ = s.source(c.Width, c.Height)
 				c.LogicalW, c.LogicalH = s.logicalSize(c.Width, c.Height)

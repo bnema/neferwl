@@ -156,6 +156,7 @@ func (s *Server) pacePass(flipped map[string]bool, reports []ports.OutputPresent
 			s.flips[p.Output] = *p.Flip
 			s.presentFlip(p.Output, p.Flip)
 			s.castFlip(p.Output, p.Flip)
+			s.stats.flip(p.Flip)
 		}
 	}
 	s.dropFeedbacks(time.Now())
