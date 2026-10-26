@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+//testpolicy:realtime real pipe clear fence must signal before KMS activation
 func TestProtectedModesetWaitsForClearFence(t *testing.T) {
 	o, k, commits, mu := testOutputMu(t)
 	k.EXPECT().createBlob(mock.Anything).Return(99, nil).Once()

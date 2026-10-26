@@ -16,6 +16,7 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
@@ -55,156 +56,155 @@ func recordingRenderer(t *testing.T, err error) (*portsmocks.MockRenderer, *fram
 	return r, f
 }
 
-// waitFrames polls until the renderer drew at least n frames.
+// waitFrames lets the owner finish the input already sent to it.
 func waitFrames(t *testing.T, f *frames, n int) {
 	t.Helper()
-	deadline := time.After(3 * time.Second)
-	for {
-		if s, _ := f.snapshot(); len(s) >= n {
-			return
-		}
-		select {
-		case <-deadline:
-			t.Fatal("no frame")
-		case <-time.After(10 * time.Millisecond):
-		}
+	synctest.Wait()
+	if s, _ := f.snapshot(); len(s) < n {
+		t.Fatalf("got %d frames, want at least %d", len(s), n)
 	}
 }
 
 func TestRun(t *testing.T) {
-	dir := t.TempDir()
-	scenes := make(chan ports.Scene, 8)
-	contents := newContentFeed(t, 8)
-	r, f := recordingRenderer(t, nil)
-	contents.send(ports.SurfaceContent{ID: 1, SHM: &ports.SHMBuffer{Pool: 1}})
-	shown := []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}, {ID: 2, Rect: ports.Rect{W: 2, H: 2}}}
-	scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: shown}
-	scenes <- ports.Scene{Seq: 2, OutputWidth: 2, OutputHeight: 2, Windows: shown}
-	contents.send(ports.SurfaceContent{ID: 2, SHM: &ports.SHMBuffer{Pool: 2}})
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, ScreenshotDir: dir, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
-	}()
-	waitFrames(t, f, 1)
-	if s, c := f.snapshot(); len(s) != 1 || s[0].Seq != 2 || len(c[0]) != 2 {
-		t.Errorf("coalescing: %+v %+v", s, c)
-	}
-	// An empty content of a window the scene still draws (it unmapped
-	// and fades out) keeps the last one; a scene without it drops it.
-	contents.send(ports.SurfaceContent{ID: 1})
-	waitFrames(t, f, 2)
-	if _, c := f.snapshot(); len(c) < 2 {
-		t.Fatal("no second frame")
-	} else if kept, ok := c[1][1]; !ok || kept.SHM == nil || kept.SHM.Pool != 1 {
-		t.Errorf("content of the shown window dropped on its empty content: %+v", c[1])
-	}
-	scenes <- ports.Scene{Seq: 3, OutputWidth: 2, OutputHeight: 2, Windows: shown[1:]}
-	waitFrames(t, f, 3)
-	if _, c := f.snapshot(); len(c) < 3 {
-		t.Fatal("no third frame")
-	} else if _, ok := c[2][1]; ok {
-		t.Error("content not deleted")
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"frame-000001.png", "frame-000002.png", "frame-000003.png", "latest.png"} {
-		file, err := os.Open(filepath.Join(dir, name))
-		if err != nil {
+	synctest.Test(t, func(t *testing.T) {
+		dir := t.TempDir()
+		scenes := make(chan ports.Scene, 8)
+		contents := newContentFeed(t, 8)
+		r, f := recordingRenderer(t, nil)
+		contents.send(ports.SurfaceContent{ID: 1, SHM: &ports.SHMBuffer{Pool: 1}})
+		shown := []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}, {ID: 2, Rect: ports.Rect{W: 2, H: 2}}}
+		scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: shown}
+		scenes <- ports.Scene{Seq: 2, OutputWidth: 2, OutputHeight: 2, Windows: shown}
+		contents.send(ports.SurfaceContent{ID: 2, SHM: &ports.SHMBuffer{Pool: 2}})
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- Run(ctx, Options{Width: 2, Height: 2, ScreenshotDir: dir, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
+		}()
+		waitFrames(t, f, 1)
+		if s, c := f.snapshot(); len(s) != 1 || s[0].Seq != 2 || len(c[0]) != 2 {
+			t.Errorf("coalescing: %+v %+v", s, c)
+		}
+		// An empty content of a window the scene still draws (it unmapped
+		// and fades out) keeps the last one; a scene without it drops it.
+		contents.send(ports.SurfaceContent{ID: 1})
+		waitFrames(t, f, 2)
+		if _, c := f.snapshot(); len(c) < 2 {
+			t.Fatal("no second frame")
+		} else if kept, ok := c[1][1]; !ok || kept.SHM == nil || kept.SHM.Pool != 1 {
+			t.Errorf("content of the shown window dropped on its empty content: %+v", c[1])
+		}
+		scenes <- ports.Scene{Seq: 3, OutputWidth: 2, OutputHeight: 2, Windows: shown[1:]}
+		waitFrames(t, f, 3)
+		if _, c := f.snapshot(); len(c) < 3 {
+			t.Fatal("no third frame")
+		} else if _, ok := c[2][1]; ok {
+			t.Error("content not deleted")
+		}
+		cancel()
+		if err := <-done; err != nil {
 			t.Fatal(err)
 		}
-		_, err = png.Decode(file)
-		_ = file.Close()
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	index, err := os.ReadFile(filepath.Join(dir, "frames.ffconcat"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	lines := strings.Split(strings.TrimSpace(string(index)), "\n")
-	if len(lines) != 8 || lines[0] != "ffconcat version 1.0" {
-		t.Fatalf("unexpected index: %s", index)
-	}
-	for i, want := range []string{"file 'frame-000001.png'", "file 'frame-000002.png'", "file 'frame-000003.png'"} {
-		if lines[1+2*i] != want {
-			t.Fatalf("frame %d: %s", i+1, lines[1+2*i])
-		}
-		if i < 3 {
-			line := lines[2+2*i]
-			value, err := strconv.ParseFloat(strings.TrimPrefix(line, "duration "), 64)
-			if !strings.HasPrefix(line, "duration ") || err != nil || value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
-				t.Fatalf("invalid duration: %q", line)
+		for _, name := range []string{"frame-000001.png", "frame-000002.png", "frame-000003.png", "latest.png"} {
+			file, err := os.Open(filepath.Join(dir, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = png.Decode(file)
+			_ = file.Close()
+			if err != nil {
+				t.Fatal(err)
 			}
 		}
-	}
-	if lines[7] != lines[5] {
-		t.Fatalf("missing final repeated frame: %s", index)
-	}
+		index, err := os.ReadFile(filepath.Join(dir, "frames.ffconcat"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(strings.TrimSpace(string(index)), "\n")
+		if len(lines) != 8 || lines[0] != "ffconcat version 1.0" {
+			t.Fatalf("unexpected index: %s", index)
+		}
+		for i, want := range []string{"file 'frame-000001.png'", "file 'frame-000002.png'", "file 'frame-000003.png'"} {
+			if lines[1+2*i] != want {
+				t.Fatalf("frame %d: %s", i+1, lines[1+2*i])
+			}
+			if i < 3 {
+				line := lines[2+2*i]
+				value, err := strconv.ParseFloat(strings.TrimPrefix(line, "duration "), 64)
+				if !strings.HasPrefix(line, "duration ") || err != nil || value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+					t.Fatalf("invalid duration: %q", line)
+				}
+			}
+		}
+		if lines[7] != lines[5] {
+			t.Fatalf("missing final repeated frame: %s", index)
+		}
+	})
 }
 
 // A scene whose Seq the output already holds is not drawn again.
 func TestHeadlessSameSeqRendersOnce(t *testing.T) {
-	scenes := make(chan ports.Scene)
-	contents := newContentFeed(t, 0)
-	r, f := recordingRenderer(t, nil)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
-	}()
-	scene := ports.Scene{Seq: 5, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}}}
-	scenes <- scene
-	waitFrames(t, f, 1)
-	scenes <- scene
-	// Unshown content sends Run round its loop: the held scene is handled.
-	contents.send(ports.SurfaceContent{ID: 99, Seq: 1, SHM: &ports.SHMBuffer{}})
-	contents.send(ports.SurfaceContent{ID: 99, Seq: 2, SHM: &ports.SHMBuffer{}})
-	if s, _ := f.snapshot(); len(s) != 1 {
-		t.Fatalf("%d frames for a scene with the held Seq", len(s))
-	}
-	scene.Seq = 6
-	scenes <- scene
-	waitFrames(t, f, 2)
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-	if s, _ := f.snapshot(); len(s) != 2 {
-		t.Fatalf("%d frames, want 2", len(s))
-	}
+	synctest.Test(t, func(t *testing.T) {
+		scenes := make(chan ports.Scene)
+		contents := newContentFeed(t, 0)
+		r, f := recordingRenderer(t, nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
+		}()
+		scene := ports.Scene{Seq: 5, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}}}
+		scenes <- scene
+		waitFrames(t, f, 1)
+		scenes <- scene
+		// Unshown content sends Run round its loop: the held scene is handled.
+		contents.send(ports.SurfaceContent{ID: 99, Seq: 1, SHM: &ports.SHMBuffer{}})
+		contents.send(ports.SurfaceContent{ID: 99, Seq: 2, SHM: &ports.SHMBuffer{}})
+		if s, _ := f.snapshot(); len(s) != 1 {
+			t.Fatalf("%d frames for a scene with the held Seq", len(s))
+		}
+		scene.Seq = 6
+		scenes <- scene
+		waitFrames(t, f, 2)
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if s, _ := f.snapshot(); len(s) != 2 {
+			t.Fatalf("%d frames, want 2", len(s))
+		}
+	})
 }
 
 // Content of a window the output does not show draws no frame.
 func TestRunSkipsContentNotShown(t *testing.T) {
-	scenes := make(chan ports.Scene, 1)
-	contents := newContentFeed(t, 2)
-	scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}, {ID: 3, Hidden: true}}}
-	r, f := recordingRenderer(t, nil)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
-	}()
-	waitFrames(t, f, 1)
-	contents.send(ports.SurfaceContent{ID: 2, SHM: &ports.SHMBuffer{Pool: 2}})
-	contents.send(ports.SurfaceContent{ID: 3, SHM: &ports.SHMBuffer{Pool: 3}})
-	time.Sleep(50 * time.Millisecond)
-	if s, _ := f.snapshot(); len(s) != 1 {
-		t.Fatalf("%d frames for content not shown", len(s))
-	}
-	contents.send(ports.SurfaceContent{ID: 1, SHM: &ports.SHMBuffer{Pool: 1}})
-	waitFrames(t, f, 2)
-	if _, c := f.snapshot(); c[1][2].SHM == nil {
-		t.Error("content not shown was dropped")
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		scenes := make(chan ports.Scene, 1)
+		contents := newContentFeed(t, 2)
+		scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}, {ID: 3, Hidden: true}}}
+		r, f := recordingRenderer(t, nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
+		}()
+		waitFrames(t, f, 1)
+		contents.send(ports.SurfaceContent{ID: 2, SHM: &ports.SHMBuffer{Pool: 2}})
+		contents.send(ports.SurfaceContent{ID: 3, SHM: &ports.SHMBuffer{Pool: 3}})
+		synctest.Wait()
+		if s, _ := f.snapshot(); len(s) != 1 {
+			t.Fatalf("%d frames for content not shown", len(s))
+		}
+		contents.send(ports.SurfaceContent{ID: 1, SHM: &ports.SHMBuffer{Pool: 1}})
+		waitFrames(t, f, 2)
+		if _, c := f.snapshot(); c[1][2].SHM == nil {
+			t.Error("content not shown was dropped")
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
 }
 
 func TestErrors(t *testing.T) {
@@ -223,51 +223,53 @@ func TestErrors(t *testing.T) {
 // Each trim tick lets the idle renderer free what it no longer draws,
 // without a frame; a failed trim stops the output.
 func TestRunTrimsRendererOnTick(t *testing.T) {
-	ticks := make(chan time.Time)
-	clk := portsmocks.NewMockClock(t)
-	tk := portsmocks.NewMockTicker(t)
-	clk.EXPECT().NewTicker(trimEvery).Return(tk).Once()
-	tk.EXPECT().C().Return(ticks)
-	tk.EXPECT().Stop().Return().Once()
-	now := time.Unix(1000, 0)
-	clk.EXPECT().Now().Return(now)
-	r, f := recordingRenderer(t, nil)
-	trimmed := make(chan time.Time, 2)
-	failure := errors.New("trim failed")
-	calls := 0 // Run's goroutine only
-	r.EXPECT().Trim(now).RunAndReturn(func(at time.Time) error {
-		trimmed <- at
-		if calls++; calls == 2 {
-			return failure
+	synctest.Test(t, func(t *testing.T) {
+		ticks := make(chan time.Time)
+		clk := portsmocks.NewMockClock(t)
+		tk := portsmocks.NewMockTicker(t)
+		clk.EXPECT().NewTicker(trimEvery).Return(tk).Once()
+		tk.EXPECT().C().Return(ticks)
+		tk.EXPECT().Stop().Return().Once()
+		now := time.Unix(1000, 0)
+		clk.EXPECT().Now().Return(now)
+		r, f := recordingRenderer(t, nil)
+		trimmed := make(chan time.Time, 2)
+		failure := errors.New("trim failed")
+		calls := 0 // Run's goroutine only
+		r.EXPECT().Trim(now).RunAndReturn(func(at time.Time) error {
+			trimmed <- at
+			if calls++; calls == 2 {
+				return failure
+			}
+			return nil
+		}).Twice()
+		done := make(chan error, 1)
+		var statsLog bytes.Buffer // written by Run's goroutine, read after it ends
+		log := zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &statsLog})
+		go func() {
+			done <- Run(context.Background(), Options{Width: 2, Height: 2, Clock: clk, Log: log, Name: "HEADLESS-1", NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, nil)
+		}()
+		ticks <- now
+		if got := <-trimmed; !got.Equal(now) {
+			t.Fatalf("trimmed at %v", got)
 		}
-		return nil
-	}).Twice()
-	done := make(chan error, 1)
-	var statsLog bytes.Buffer // written by Run's goroutine, read after it ends
-	log := zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &statsLog})
-	go func() {
-		done <- Run(context.Background(), Options{Width: 2, Height: 2, Clock: clk, Log: log, Name: "HEADLESS-1", NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, nil)
-	}()
-	ticks <- now
-	if got := <-trimmed; !got.Equal(now) {
-		t.Fatalf("trimmed at %v", got)
-	}
-	ticks <- now
-	if err := <-done; !errors.Is(err, failure) {
-		t.Fatalf("run: %v", err)
-	}
-	if s, _ := f.snapshot(); len(s) != 0 {
-		t.Fatalf("%d frames for a trim", len(s))
-	}
-	// A trim tick that succeeded logs the periodic stats once.
-	if got := strings.Count(statsLog.String(), `"message":"stats"`); got != 1 {
-		t.Fatalf("%d stats entries: %s", got, statsLog.String())
-	}
-	for _, want := range []string{`"output":"HEADLESS-1"`, `"frames":0`} {
-		if !strings.Contains(statsLog.String(), want) {
-			t.Fatalf("stats entry lacks %s: %s", want, statsLog.String())
+		ticks <- now
+		if err := <-done; !errors.Is(err, failure) {
+			t.Fatalf("run: %v", err)
 		}
-	}
+		if s, _ := f.snapshot(); len(s) != 0 {
+			t.Fatalf("%d frames for a trim", len(s))
+		}
+		// A trim tick that succeeded logs the periodic stats once.
+		if got := strings.Count(statsLog.String(), `"message":"stats"`); got != 1 {
+			t.Fatalf("%d stats entries: %s", got, statsLog.String())
+		}
+		for _, want := range []string{`"output":"HEADLESS-1"`, `"frames":0`} {
+			if !strings.Contains(statsLog.String(), want) {
+				t.Fatalf("stats entry lacks %s: %s", want, statsLog.String())
+			}
+		}
+	})
 }
 
 // latest.png is the frame file linked, not encoded again: the same pixels,
@@ -467,157 +469,147 @@ func TestWritePNGAtomic(t *testing.T) {
 }
 
 func TestRunPassesLayerContent(t *testing.T) {
-	scenes := make(chan ports.Scene, 1)
-	contents := newContentFeed(t, 1)
-	layer := ports.SceneLayer{ID: 42, Layer: ports.LayerTop, Rect: ports.Rect{W: 2, H: 2}}
-	scenes <- ports.Scene{Layers: []ports.SceneLayer{layer}}
-	contents.send(ports.SurfaceContent{ID: 42, Width: 1, Height: 1, SHM: &ports.SHMBuffer{Pool: 42, Stride: 4}})
-	r, f := recordingRenderer(t, nil)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
-	}()
-	deadline := time.After(3 * time.Second)
-	for {
-		s, c := f.snapshot()
-		if len(c) > 0 && len(s[0].Layers) == 1 && c[0][42].SHM != nil {
-			break
-		}
-		select {
-		case <-deadline:
-			cancel()
-			<-done
+	synctest.Test(t, func(t *testing.T) {
+		scenes := make(chan ports.Scene, 1)
+		contents := newContentFeed(t, 1)
+		layer := ports.SceneLayer{ID: 42, Layer: ports.LayerTop, Rect: ports.Rect{W: 2, H: 2}}
+		scenes <- ports.Scene{Layers: []ports.SceneLayer{layer}}
+		contents.send(ports.SurfaceContent{ID: 42, Width: 1, Height: 1, SHM: &ports.SHMBuffer{Pool: 42, Stride: 4}})
+		r, f := recordingRenderer(t, nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
+		}()
+		waitFrames(t, f, 1)
+		if s, c := f.snapshot(); len(s[0].Layers) != 1 || c[0][42].SHM == nil {
 			t.Fatal("layer content not passed to renderer")
-		case <-time.After(10 * time.Millisecond):
 		}
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
 }
 
 func TestCaptureForcesFreshHeadlessFrame(t *testing.T) {
-	scenes := make(chan ports.Scene, 1)
-	requests := make(chan ports.CaptureRequest, 1)
-	replies := make(chan ports.CaptureDone, 1)
-	r, frames := recordingRenderer(t, nil)
+	synctest.Test(t, func(t *testing.T) {
+		scenes := make(chan ports.Scene, 1)
+		requests := make(chan ports.CaptureRequest, 1)
+		replies := make(chan ports.CaptureDone, 1)
+		r, frames := recordingRenderer(t, nil)
 
-	frame := portsmocks.NewMockCaptureFrame(t)
-	frame.EXPECT().Done().Return(nil)
-	frame.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.MatchedBy(func(p []byte) bool { return len(p) >= 16 }), 8).RunAndReturn(func(_ image.Rectangle, dst []byte, _ int) error { copy(dst, []byte{1, 2, 3, 255}); return nil }).Once()
-	r.EXPECT().BeginCapture().Return(frame, nil).Once()
-	r.EXPECT().EndCapture(frame).Return().Once()
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, requests)
-	}()
-	scenes <- ports.Scene{Background: "#000000"}
-	waitFrames(t, frames, 1)
-	f, err := os.CreateTemp(t.TempDir(), "shot")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Truncate(16); err != nil {
-		t.Fatal(err)
-	}
-	requests <- ports.CaptureRequest{ID: 1, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Dst: ports.SHMBuffer{File: f}}
-	select {
-	case result := <-replies:
-		if result.Err != nil {
-			t.Fatal(result.Err)
+		frame := portsmocks.NewMockCaptureFrame(t)
+		frame.EXPECT().Done().Return(nil)
+		frame.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.MatchedBy(func(p []byte) bool { return len(p) >= 16 }), 8).RunAndReturn(func(_ image.Rectangle, dst []byte, _ int) error { copy(dst, []byte{1, 2, 3, 255}); return nil }).Once()
+		r.EXPECT().BeginCapture().Return(frame, nil).Once()
+		r.EXPECT().EndCapture(frame).Return().Once()
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- Run(ctx, Options{Width: 2, Height: 2, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, requests)
+		}()
+		scenes <- ports.Scene{Background: "#000000"}
+		waitFrames(t, frames, 1)
+		f, err := os.CreateTemp(t.TempDir(), "shot")
+		if err != nil {
+			t.Fatal(err)
 		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("no capture")
-	}
-	frame.Calls = nil // Testify must not inspect unmapped slice during expectation cleanup.
-	if _, err := f.Stat(); err == nil {
-		t.Fatal("descriptor not closed")
-	}
-	if s, _ := frames.snapshot(); len(s) < 2 {
-		t.Fatal("no fresh frame")
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
+		if err := f.Truncate(16); err != nil {
+			t.Fatal(err)
+		}
+		requests <- ports.CaptureRequest{ID: 1, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Dst: ports.SHMBuffer{File: f}}
+		select {
+		case result := <-replies:
+			if result.Err != nil {
+				t.Fatal(result.Err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("no capture")
+		}
+		frame.Calls = nil // Testify must not inspect unmapped slice during expectation cleanup.
+		if _, err := f.Stat(); err == nil {
+			t.Fatal("descriptor not closed")
+		}
+		if s, _ := frames.snapshot(); len(s) < 2 {
+			t.Fatal("no fresh frame")
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
 }
 
 // RawHDR writes the renderer's raw PQ codes as a 16-bit latest-pq.png next
 // to the 8-bit screenshots.
 func TestHeadlessRawHDRScreenshot(t *testing.T) {
-	dir := t.TempDir()
-	want := image.NewRGBA64(image.Rect(0, 0, 2, 2))
-	for i := range 4 {
-		want.SetRGBA64(i%2, i/2, color.RGBA64{R: uint16(i*0x1111 + 0x0123), G: 0x8000 + uint16(i), B: 0xffc0, A: 0xffff})
-	}
-	f, err := os.CreateTemp(t.TempDir(), "target")
-	if err != nil {
-		t.Fatal(err)
-	}
-	r := portsmocks.NewMockRenderer(t)
-	r.EXPECT().SetHDR(float64(203)).Return().Once()
-	r.EXPECT().ExportTargets(1, []uint64(nil), false).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
-	rendered := make(chan struct{}, 4)
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
-		rendered <- struct{}{}
-		return nil, nil
-	}).Maybe()
-	r.EXPECT().Pixels().Return(image.NewRGBA(image.Rect(0, 0, 2, 2))).Maybe()
-	r.EXPECT().HDRPixels().Return(want).Maybe()
-	r.EXPECT().Close().Return().Once()
-	scenes := make(chan ports.Scene, 1)
-	scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, HDR: true, RawHDR: true, ScreenshotDir: dir, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
-	}()
-	select {
-	case <-rendered:
-	case <-time.After(3 * time.Second):
-		t.Fatal("no frame")
-	}
-	// The files are written after Render returns.
-	path := filepath.Join(dir, "latest-pq.png")
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		if _, err := os.Stat(path); err == nil {
-			break
+	synctest.Test(t, func(t *testing.T) {
+		dir := t.TempDir()
+		want := image.NewRGBA64(image.Rect(0, 0, 2, 2))
+		for i := range 4 {
+			want.SetRGBA64(i%2, i/2, color.RGBA64{R: uint16(i*0x1111 + 0x0123), G: 0x8000 + uint16(i), B: 0xffc0, A: 0xffff})
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("no latest-pq.png")
+		f, err := os.CreateTemp(t.TempDir(), "target")
+		if err != nil {
+			t.Fatal(err)
 		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer file.Close()
-	got, err := png.Decode(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := got.(*image.NRGBA64); !ok && got.ColorModel() != color.RGBA64Model {
-		t.Fatalf("not a 16-bit image: %T", got)
-	}
-	for y := range 2 {
-		for x := range 2 {
-			if g, w := color.RGBA64Model.Convert(got.At(x, y)), want.RGBA64At(x, y); g != color.Color(w) {
-				t.Errorf("(%d,%d) = %v, want %v", x, y, g, w)
+		r := portsmocks.NewMockRenderer(t)
+		r.EXPECT().SetHDR(float64(203)).Return().Once()
+		r.EXPECT().ExportTargets(1, []uint64(nil), false).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
+		rendered := make(chan struct{}, 4)
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+			rendered <- struct{}{}
+			return nil, nil
+		}).Maybe()
+		r.EXPECT().Pixels().Return(image.NewRGBA(image.Rect(0, 0, 2, 2))).Maybe()
+		r.EXPECT().HDRPixels().Return(want).Maybe()
+		r.EXPECT().Close().Return().Once()
+		scenes := make(chan ports.Scene, 1)
+		scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- Run(ctx, Options{Width: 2, Height: 2, HDR: true, RawHDR: true, ScreenshotDir: dir, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
+		}()
+		select {
+		case <-rendered:
+		case <-time.After(3 * time.Second):
+			t.Fatal("no frame")
+		}
+		// The files are written after Render returns.
+		path := filepath.Join(dir, "latest-pq.png")
+		synctest.Wait()
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("no latest-pq.png: %v", err)
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer file.Close()
+		got, err := png.Decode(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := got.(*image.NRGBA64); !ok && got.ColorModel() != color.RGBA64Model {
+			t.Fatalf("not a 16-bit image: %T", got)
+		}
+		for y := range 2 {
+			for x := range 2 {
+				if g, w := color.RGBA64Model.Convert(got.At(x, y)), want.RGBA64At(x, y); g != color.Color(w) {
+					t.Errorf("(%d,%d) = %v, want %v", x, y, g, w)
+				}
 			}
 		}
-	}
-	if _, err := os.Stat(filepath.Join(dir, "latest.png")); err != nil {
-		t.Errorf("8-bit screenshot: %v", err)
-	}
+		if _, err := os.Stat(filepath.Join(dir, "latest.png")); err != nil {
+			t.Errorf("8-bit screenshot: %v", err)
+		}
+	})
 }
 
 // Only the output which successfully prepared HDR reports confirmed HDR.
@@ -625,46 +617,48 @@ func TestHeadlessRawHDRScreenshot(t *testing.T) {
 func TestHeadlessHDRFormatsConfirmed(t *testing.T) {
 	for _, success := range []bool{true, false} {
 		t.Run(map[bool]string{true: "confirmed", false: "fallback"}[success], func(t *testing.T) {
-			r := portsmocks.NewMockRenderer(t)
-			r.EXPECT().SetHDR(float64(203)).Return().Once()
-			if success {
-				f, err := os.CreateTemp(t.TempDir(), "target")
-				if err != nil {
+			synctest.Test(t, func(t *testing.T) {
+				r := portsmocks.NewMockRenderer(t)
+				r.EXPECT().SetHDR(float64(203)).Return().Once()
+				if success {
+					f, err := os.CreateTemp(t.TempDir(), "target")
+					if err != nil {
+						t.Fatal(err)
+					}
+					r.EXPECT().ExportTargets(1, []uint64(nil), false).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
+					t.Cleanup(func() {
+						if _, err := f.Stat(); err == nil {
+							t.Error("exported fd not closed")
+						}
+					})
+				} else {
+					r.EXPECT().ExportTargets(1, []uint64(nil), false).Return(nil, errors.New("no compatible target")).Once()
+					r.EXPECT().SetHDR(float64(0)).Return().Once()
+					r.EXPECT().ExportTargets(0, []uint64(nil), false).Return(nil, nil).Once()
+				}
+				r.EXPECT().Close().Return().Once()
+				formats := make(chan ports.OutputFormats, 1)
+				ctx, cancel := context.WithCancel(context.Background())
+				done := make(chan error, 1)
+				go func() {
+					done <- Run(ctx, Options{Width: 2, Height: 2, HDR: true, Name: "HEADLESS-1", Formats: formats, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, nil)
+				}()
+				select {
+				case f := <-formats:
+					if f.Output != "HEADLESS-1" || (f.HDR != nil) != success {
+						t.Fatalf("report %+v, success=%t", f, success)
+					}
+					if success && (f.HDR.MaxLuminance != 1000 || f.HDR.MaxFrameAverage != 400 || f.HDR.MinLuminance != .005) {
+						t.Fatalf("HDR metadata %+v", f.HDR)
+					}
+				case <-time.After(2 * time.Second):
+					t.Fatal("no format report")
+				}
+				cancel()
+				if err := <-done; err != nil {
 					t.Fatal(err)
 				}
-				r.EXPECT().ExportTargets(1, []uint64(nil), false).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
-				t.Cleanup(func() {
-					if _, err := f.Stat(); err == nil {
-						t.Error("exported fd not closed")
-					}
-				})
-			} else {
-				r.EXPECT().ExportTargets(1, []uint64(nil), false).Return(nil, errors.New("no compatible target")).Once()
-				r.EXPECT().SetHDR(float64(0)).Return().Once()
-				r.EXPECT().ExportTargets(0, []uint64(nil), false).Return(nil, nil).Once()
-			}
-			r.EXPECT().Close().Return().Once()
-			formats := make(chan ports.OutputFormats, 1)
-			ctx, cancel := context.WithCancel(context.Background())
-			done := make(chan error, 1)
-			go func() {
-				done <- Run(ctx, Options{Width: 2, Height: 2, HDR: true, Name: "HEADLESS-1", Formats: formats, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, nil)
-			}()
-			select {
-			case f := <-formats:
-				if f.Output != "HEADLESS-1" || (f.HDR != nil) != success {
-					t.Fatalf("report %+v, success=%t", f, success)
-				}
-				if success && (f.HDR.MaxLuminance != 1000 || f.HDR.MaxFrameAverage != 400 || f.HDR.MinLuminance != .005) {
-					t.Fatalf("HDR metadata %+v", f.HDR)
-				}
-			case <-time.After(2 * time.Second):
-				t.Fatal("no format report")
-			}
-			cancel()
-			if err := <-done; err != nil {
-				t.Fatal(err)
-			}
+			})
 		})
 	}
 }
@@ -672,78 +666,74 @@ func TestHeadlessHDRFormatsConfirmed(t *testing.T) {
 // One batch with two windows applies both before the frame they show in, and
 // goes back to wayland reset and exactly once.
 func TestRunAppliesWholeBatch(t *testing.T) {
-	scenes := make(chan ports.Scene, 1)
-	contents := newContentFeed(t, 1)
-	shown := []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}, {ID: 2, Rect: ports.Rect{W: 2, H: 2}}}
-	scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: shown}
-	r, f := recordingRenderer(t, nil)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
-	}()
-	waitFrames(t, f, 1)
-	contents.send(ports.SurfaceContent{ID: 1, Seq: 1, SHM: &ports.SHMBuffer{Pool: 1}}, ports.SurfaceContent{ID: 2, Seq: 1, SHM: &ports.SHMBuffer{Pool: 2}})
-	waitFrames(t, f, 2)
-	if _, c := f.snapshot(); len(c[1]) != 2 || c[1][1].SHM == nil || c[1][2].SHM == nil {
-		t.Errorf("batch not applied whole: %+v", c[1])
-	}
-	select {
-	case b := <-contents.returned:
-		if len(b.Items) != 0 {
-			t.Errorf("batch returned with %d items", len(b.Items))
+	synctest.Test(t, func(t *testing.T) {
+		scenes := make(chan ports.Scene, 1)
+		contents := newContentFeed(t, 1)
+		shown := []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}, {ID: 2, Rect: ports.Rect{W: 2, H: 2}}}
+		scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: shown}
+		r, f := recordingRenderer(t, nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
+		}()
+		waitFrames(t, f, 1)
+		contents.send(ports.SurfaceContent{ID: 1, Seq: 1, SHM: &ports.SHMBuffer{Pool: 1}}, ports.SurfaceContent{ID: 2, Seq: 1, SHM: &ports.SHMBuffer{Pool: 2}})
+		waitFrames(t, f, 2)
+		if _, c := f.snapshot(); len(c[1]) != 2 || c[1][1].SHM == nil || c[1][2].SHM == nil {
+			t.Errorf("batch not applied whole: %+v", c[1])
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("batch not returned")
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-	if len(contents.returned) != 0 {
-		t.Error("batch returned more than once")
-	}
+		select {
+		case b := <-contents.returned:
+			if len(b.Items) != 0 {
+				t.Errorf("batch returned with %d items", len(b.Items))
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("batch not returned")
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if len(contents.returned) != 0 {
+			t.Error("batch returned more than once")
+		}
+	})
 }
 
 func TestRunFinalizesLastFrameDuration(t *testing.T) {
-	dir := t.TempDir()
-	scenes := make(chan ports.Scene, 1)
-	scenes <- ports.Scene{Seq: 1}
-	r, _ := recordingRenderer(t, nil)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan error, 1)
-	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, ScreenshotDir: dir, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
-	}()
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		data, _ := os.ReadFile(filepath.Join(dir, "frames.ffconcat"))
-		if strings.Contains(string(data), "file 'frame-000001.png'") {
-			break
+	synctest.Test(t, func(t *testing.T) {
+		dir := t.TempDir()
+		scenes := make(chan ports.Scene, 1)
+		scenes <- ports.Scene{Seq: 1}
+		r, _ := recordingRenderer(t, nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() {
+			done <- Run(ctx, Options{Width: 2, Height: 2, ScreenshotDir: dir, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
+		}()
+		synctest.Wait()
+		initial, err := os.ReadFile(filepath.Join(dir, "frames.ffconcat"))
+		if err != nil || !strings.Contains(string(initial), "file 'frame-000001.png'") {
+			t.Fatalf("frame index not written: %s (%v)", initial, err)
 		}
-		if time.Now().After(deadline) {
-			cancel()
-			<-done
-			t.Fatal("frame index not written")
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
 		}
-		time.Sleep(time.Millisecond)
-	}
-	time.Sleep(50 * time.Millisecond)
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "frames.ffconcat"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	if len(lines) != 4 || lines[0] != "ffconcat version 1.0" || lines[1] != "file 'frame-000001.png'" || lines[3] != lines[1] {
-		t.Fatalf("unexpected finalized index: %s", data)
-	}
-	duration, err := strconv.ParseFloat(strings.TrimPrefix(lines[2], "duration "), 64)
-	if err != nil || duration < 0.05 || math.IsNaN(duration) || math.IsInf(duration, 0) {
-		t.Fatalf("final duration: %q (%v)", lines[2], err)
-	}
+		data, err := os.ReadFile(filepath.Join(dir, "frames.ffconcat"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+		if len(lines) != 4 || lines[0] != "ffconcat version 1.0" || lines[1] != "file 'frame-000001.png'" || lines[3] != lines[1] {
+			t.Fatalf("unexpected finalized index: %s", data)
+		}
+		duration, err := strconv.ParseFloat(strings.TrimPrefix(lines[2], "duration "), 64)
+		if err != nil || duration < 0.05 || math.IsNaN(duration) || math.IsInf(duration, 0) {
+			t.Fatalf("final duration: %q (%v)", lines[2], err)
+		}
+	})
 }

@@ -65,6 +65,8 @@ func TestPollPinnedAllocations(t *testing.T) {
 
 // Wake ends a wait without a timeout and returns no events; wakes before a
 // Poll coalesce into one early return.
+//
+//testpolicy:realtime bounded wait for kernel epoll/eventfd readiness or shutdown
 func TestPollWake(t *testing.T) {
 	p, err := New()
 	if err != nil {
@@ -101,6 +103,8 @@ func TestPollWake(t *testing.T) {
 
 // After the StopOn context ends, a running and every later Poll return at
 // once, also with no timeout.
+//
+//testpolicy:realtime bounded wait for kernel epoll/eventfd readiness or shutdown
 func TestPollStopOn(t *testing.T) {
 	p, err := New()
 	if err != nil {

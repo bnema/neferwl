@@ -7,24 +7,25 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
+	vk "github.com/bnema/purego-vulkan/vulkan"
 )
 
-// trimSettled calls Trim at now until the frames the GPU was running
-// finished and their deferred frees ran: Trim never waits for them.
+// trimSettled waits for the submitted GPU fences, then lets Trim collect them.
 func trimSettled(t *testing.T, r *Renderer, now time.Time) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if err := r.Trim(now); err != nil {
-			t.Fatal(err)
+	for i := range r.slots {
+		s := &r.slots[i]
+		if s.busy {
+			if result := r.dd.WaitForFences(r.device, 1, &s.fence, vk.Bool32(1), uint64(5*time.Second)); result != vk.Success {
+				t.Fatalf("GPU fence did not settle: %v", result)
+			}
 		}
-		if len(r.deferred) == 0 {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("%d frees never ran", len(r.deferred))
-		}
-		time.Sleep(time.Millisecond)
+	}
+	if err := r.Trim(now); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.deferred) != 0 {
+		t.Fatalf("%d frees never ran", len(r.deferred))
 	}
 }
 
