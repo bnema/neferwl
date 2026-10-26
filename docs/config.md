@@ -258,7 +258,7 @@ bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
 | `cycle-column-width` | Grow the focused column by one [cell](#column-widths), then back to equal widths |
 | `set-column-width <+N\|-N>` | Widen or narrow the focused column by N cells |
 | `set-window-height <+N%\|-N%>` | Change the focused window's share of its column |
-| `focus-column-left/right` | Focus the neighbor column, then the neighbor monitor |
+| `focus-column-left/right` | Focus the neighbor column, then the neighbor monitor, else the neighbor workspace |
 | `focus-window-up/down` | Focus the neighbor window in the column, then the neighbor workspace (band in cascade) |
 | `move-column-left/right` | Move the focused column, then to the neighbor monitor |
 | `move-window-up/down` | Move the focused window in its column |
@@ -315,7 +315,7 @@ With `keyboard.cmd = alt` or `ctrl`, the defaults that would combine `cmd` with 
 
 The default layout. Columns sit side by side in bands of up to `max-columns`, stacked one below the other. Each band fills the screen height and keeps its columns until you move them.
 
-- Left/right focus moves within a band, then to an occupied neighbor workspace, then to the neighbor monitor, then to the trailing empty workspace. From a fullscreen float it crosses that edge without revealing the tiles underneath; only up/down reaches another band.
+- Left/right focus moves within a band, then to the neighbor monitor. With no monitor on that side, it goes to an occupied neighbor workspace, then to the trailing empty workspace; otherwise use `focus-workspace-prev/next`. From a fullscreen float it crosses that edge without revealing the tiles underneath; only up/down reaches another band.
 - `move-column-left/right` stays in the band; at its edge the column goes to the neighbor monitor, if any.
 - Up/down moves through the windows of a column, then to the band above or below.
 - `move-window-up/down` past the column's top or bottom sends the whole column to the band above or below. It joins that band when it has room, else it gets a new band between the two.

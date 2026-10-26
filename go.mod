@@ -5,8 +5,8 @@ go 1.27
 require (
 	github.com/bnema/go-wayland-bindings v0.1.0
 	github.com/bnema/kvconf v0.1.2
-	github.com/bnema/purego v0.13.0-bnema.1
-	github.com/bnema/purego-libwayland v0.11.0
+	github.com/bnema/purego v0.13.0-bnema.2
+	github.com/bnema/purego-libwayland v0.12.0
 	github.com/bnema/purego-pipewire v0.2.0
 	github.com/bnema/purego-vulkan v0.6.0
 	github.com/bnema/wlturbo v0.6.2

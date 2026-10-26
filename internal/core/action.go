@@ -482,18 +482,23 @@ func (c *Core) dispatchAction(a Action) Effect {
 	return c.cur().mon.Apply(a)
 }
 
-// edgeFocus moves focus past a content edge along axis (dir -1/1, toward d):
-// first to an occupied workspace when axis is the workspace axis, then to the
-// neighbor monitor, then to the trailing empty workspace. It reports whether
-// focus moved. Callers retain responsibility for local content navigation and
-// for restricting which layout axes may cross monitors.
+// edgeFocus moves focus past a content edge along axis (dir -1/1, toward d).
+// Horizontal: the neighbor monitor, else an occupied workspace, else the
+// trailing empty workspace. Vertical: an occupied workspace, else the
+// neighbor monitor, else the trailing empty workspace. Workspace steps only
+// happen on the layout's workspace axis. It reports whether focus moved.
+// Callers keep local content navigation and decide which layout axes may
+// cross monitors.
 func (c *Core) edgeFocus(axis layoutAxis, dir int, d direction) bool {
 	m := c.cur().mon
-	if to := m.occupiedStep(axis, dir); to >= 0 {
-		m.Focus(to)
-		return true
+	i := c.neighbor(d)
+	if monitorFirst := axis == horizontalAxis && i >= 0; !monitorFirst {
+		if to := m.occupiedStep(axis, dir); to >= 0 {
+			m.Focus(to)
+			return true
+		}
 	}
-	if i := c.neighbor(d); i >= 0 {
+	if i >= 0 {
 		c.focusScreen = i
 		c.cur().mon.focusEntry(d)
 		return true
