@@ -88,16 +88,24 @@ func TestStoreStartupLogs(t *testing.T) {
 	}
 }
 
+// watchReloads makes s signal every policy reload; call it before Run.
+func watchReloads(s *Store) <-chan struct{} {
+	ch := make(chan struct{}, 16)
+	s.reloaded = ch
+	return ch
+}
+
+// waitFor waits for reloads until cond holds, within one deadline.
+//
 //testpolicy:realtime inotify reloads and missing-directory retries require kernel I/O
-func waitFor(t *testing.T, what string, cond func() bool) {
+func waitFor(t *testing.T, reloaded <-chan struct{}, what string, cond func() bool) {
 	t.Helper()
-	timeout, tick := time.After(5*time.Second), time.NewTicker(5*time.Millisecond)
-	defer tick.Stop()
+	deadline := time.After(5 * time.Second)
 	for !cond() {
 		select {
-		case <-timeout:
+		case <-reloaded:
+		case <-deadline:
 			t.Fatal("timeout: " + what)
-		case <-tick.C:
 		}
 	}
 }
@@ -107,6 +115,7 @@ func TestStoreReloads(t *testing.T) {
 	path := filepath.Join(dir, "capture-allow")
 	var out logBuf
 	s := newTestStore(path, testLog(&out))
+	reloaded := watchReloads(s)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx) }()
@@ -126,23 +135,23 @@ func TestStoreReloads(t *testing.T) {
 		}
 	}
 	write("/usr/bin/grim\n")
-	waitFor(t, "list", func() bool { return s.Policy().Mode() == ModeList && s.Policy().Allows("/usr/bin/grim") })
+	waitFor(t, reloaded, "list", func() bool { return s.Policy().Mode() == ModeList && s.Policy().Allows("/usr/bin/grim") })
 	if s.Policy().Allows("/usr/bin/other") {
 		t.Fatal("unlisted allowed")
 	}
 	write("/usr/bin/other\nbroken\n")
-	waitFor(t, "closed", func() bool { return s.Policy().Mode() == ModeClosed })
+	waitFor(t, reloaded, "closed", func() bool { return s.Policy().Mode() == ModeClosed })
 	write("*\n")
-	waitFor(t, "disabled", func() bool { return s.Policy().Mode() == ModeDisabled })
+	waitFor(t, reloaded, "disabled", func() bool { return s.Policy().Mode() == ModeDisabled })
 	// In-place rewrite.
 	if err := os.WriteFile(path, []byte("/usr/bin/third\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "in place", func() bool { return s.Policy().Allows("/usr/bin/third") && !s.Policy().Allows("/x") })
+	waitFor(t, reloaded, "in place", func() bool { return s.Policy().Allows("/usr/bin/third") && !s.Policy().Allows("/x") })
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "removed", func() bool { return s.Policy().Allows("/usr/bin/grim") && !s.Policy().Allows("/usr/bin/third") })
+	waitFor(t, reloaded, "removed", func() bool { return s.Policy().Allows("/usr/bin/grim") && !s.Policy().Allows("/usr/bin/third") })
 	if s.Policy().Mode() != ModeList || s.Policy().Len() != Builtin().Len() {
 		t.Fatal("deleting the file must restore the built-in list")
 	}
@@ -154,6 +163,7 @@ func TestStoreWaitsForMissingDirectory(t *testing.T) {
 	var out logBuf
 	s := newTestStore(path, testLog(&out))
 	s.retryInterval = 20 * time.Millisecond
+	reloaded := watchReloads(s)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	attempted := make(chan error, 1)
@@ -169,24 +179,21 @@ func TestStoreWaitsForMissingDirectory(t *testing.T) {
 	watches.EXPECT().AddWatch(mock.Anything, filepath.Dir(path), uint32(watchMask)).RunAndReturn(unix.InotifyAddWatch)
 	go func() { done <- s.run(ctx, watches) }()
 	defer func() { cancel(); <-done }()
-	waitFor(t, "initial failed watch attempt", func() bool {
-		select {
-		case err := <-attempted:
-			if !errors.Is(err, unix.ENOENT) {
-				t.Fatalf("initial watch: %v, want ENOENT", err)
-			}
-			return true
-		default:
-			return false
+	select {
+	case err := <-attempted:
+		if !errors.Is(err, unix.ENOENT) {
+			t.Fatalf("initial watch: %v, want ENOENT", err)
 		}
-	})
+	case <-time.After(5 * time.Second):
+		t.Fatal("no initial watch attempt")
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte("/usr/bin/other\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "list after mkdir", func() bool { return s.Policy().Mode() == ModeList && s.Policy().Allows("/usr/bin/other") })
+	waitFor(t, reloaded, "list after mkdir", func() bool { return s.Policy().Mode() == ModeList && s.Policy().Allows("/usr/bin/other") })
 }
 
 func mustWrite(t *testing.T, path, content string, mode os.FileMode) {

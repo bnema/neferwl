@@ -127,6 +127,9 @@ type Store struct {
 	cur   atomic.Pointer[Policy]
 	// retryInterval is the wait before watching a missing directory again.
 	retryInterval time.Duration
+	// reloaded, when set (tests only), gets a non-blocking signal after every
+	// policy reload so tests wait on the event instead of polling the policy.
+	reloaded chan<- struct{}
 }
 
 // NewStore loads path once and logs the outcome: an Info when the file is
@@ -152,6 +155,14 @@ func (s *Store) Policy() *Policy { return s.cur.Load() }
 // when the policy changed: the check that closes the gap between the first
 // load and the watch must not repeat the startup line.
 func (s *Store) reload(startup, quiet bool) {
+	if s.reloaded != nil {
+		defer func() {
+			select {
+			case s.reloaded <- struct{}{}:
+			default:
+			}
+		}()
+	}
 	p, err := load(s.path, s.owner)
 	old := s.cur.Swap(p)
 	if quiet && old != nil && old.equal(p) {
