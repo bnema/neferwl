@@ -117,19 +117,8 @@ func TestPresentationFeedback(t *testing.T) {
 	}
 	answer := func(p *feedbackEvents, what string) presentedEvent {
 		t.Helper()
-		deadline := time.Now().Add(2 * time.Second)
-		for time.Now().Before(deadline) {
-			if err := c.Roundtrip(); err != nil {
-				t.Fatal(err)
-			}
-			select {
-			case ev := <-p.out:
-				return ev
-			case <-waylandDeadline(5 * time.Millisecond):
-			}
-		}
-		t.Fatalf("no answer: %s", what)
-		return presentedEvent{}
+		_ = what
+		return recvWire(t, c, p.out)
 	}
 	// A fresh 1×1 buffer per commit: every commit is a new content.
 	shm := bindProtocol(t, c, "wl_shm")

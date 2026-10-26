@@ -275,7 +275,7 @@ func TestDMABufParamsReuse(t *testing.T) {
 // weston-simple-dmabuf-egl renders on the GPU and sends dmabufs: its
 // contents reach the renderer as DMABuf, never as pixels.
 //
-//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
+//testpolicy:realtime real external Wayland client process on the display socket (Server.Run on libwayland epoll)
 func TestWestonDMABuf(t *testing.T) {
 	tool, err := exec.LookPath("weston-simple-dmabuf-egl")
 	if err != nil {

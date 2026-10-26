@@ -84,7 +84,7 @@ func testHead() ports.OutputHeads {
 	return ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 1920, Height: 1080, RefreshMilli: 60000}, Modes: []ports.OutputMode{mode}, Current: &mode, Enabled: true}}}
 }
 
-//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func recvManagement(t *testing.T, ch <-chan [2]uint32) [2]uint32 {
 	t.Helper()
 	select {

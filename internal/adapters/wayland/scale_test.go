@@ -200,16 +200,7 @@ func TestFractionalScaleAndViewport(t *testing.T) {
 	// Core switches to 1.5: the surface gets 180/120.
 	commands <- ports.SetOutputs{Outputs: ports.Layout{{Info: testOutputs[0].Info, Width: 1280, Height: 720, Scale: 1.5}}}
 	// Events are read by Roundtrip; the command is applied asynchronously.
-	var got uint32
-	for deadline := time.Now().Add(2 * time.Second); got == 0 && time.Now().Before(deadline); {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case got = <-values:
-		case <-waylandDeadline(10 * time.Millisecond):
-		}
-	}
+	got := recvWire(t, c, values)
 	if got != 180 {
 		t.Fatalf("scale %d", got)
 	}

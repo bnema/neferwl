@@ -21,7 +21,7 @@ func (p *inhibitorProxy) Dispatch(e *wlturbo.Event) {
 
 // clientEvent waits for the next client event of type T.
 //
-//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func clientEvent[T ports.ClientEvent](t *testing.T, events <-chan ports.ClientEvent) T {
 	t.Helper()
 	deadline := waylandDeadline(2 * time.Second)
@@ -39,7 +39,6 @@ func clientEvent[T ports.ClientEvent](t *testing.T, events <-chan ports.ClientEv
 	}
 }
 
-//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestShortcutsInhibitor(t *testing.T) {
 	s, events, commands, _, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
@@ -59,21 +58,9 @@ func TestShortcutsInhibitor(t *testing.T) {
 	state := func(active bool) {
 		t.Helper()
 		commands <- ports.ShortcutsInhibitState{Window: w.ID, Active: active}
-		deadline := time.Now().Add(2 * time.Second)
-		for time.Now().Before(deadline) {
-			if err := c.Roundtrip(); err != nil {
-				t.Fatal(err)
-			}
-			select {
-			case got := <-p.states:
-				if got != active {
-					t.Fatalf("state %v", got)
-				}
-				return
-			case <-waylandDeadline(5 * time.Millisecond):
-			}
+		if got := recvWire(t, c, p.states); got != active {
+			t.Fatalf("state %v", got)
 		}
-		t.Fatal("no active/inactive event")
 	}
 	state(true)
 	state(false)

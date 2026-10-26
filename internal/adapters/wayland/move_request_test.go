@@ -24,7 +24,6 @@ func (p *pressSerials) Dispatch(e *wlturbo.Event) {
 	}
 }
 
-//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestToplevelMoveRequest(t *testing.T) {
 	s, events, commands, dir := lifecycleServer(t)
 	c := protocolClient(t, s, dir)

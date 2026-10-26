@@ -54,7 +54,6 @@ func TestImplicitPollErrorRejectedAndWarnOnce(t *testing.T) {
 // waitSyncWake joins the poller's notification after a real pipe becomes ready.
 //
 //testpolicy:realtime real pipe readiness is observed by the kernel poll waiter
-//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func waitSyncWake(t *testing.T, wake <-chan struct{}) {
 	t.Helper()
 	select {

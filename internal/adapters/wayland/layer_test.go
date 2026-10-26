@@ -118,7 +118,7 @@ func TestLayerLifecycle(t *testing.T) {
 	}
 }
 
-//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
+//testpolicy:realtime real external Wayland client process on the display socket (Server.Run on libwayland epoll)
 func TestWaybarLayer(t *testing.T) {
 	tool, err := exec.LookPath("waybar")
 	if err != nil {

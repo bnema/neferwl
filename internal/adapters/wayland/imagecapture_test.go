@@ -313,7 +313,7 @@ func (cc *cclient) wlrFrame(t *testing.T) *captureEvents {
 	return ev
 }
 
-//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func receiveCapture(t *testing.T, ch chan ports.CaptureRequest) ports.CaptureRequest {
 	t.Helper()
 	select {
@@ -1124,7 +1124,7 @@ func noMessage(t *testing.T, c *wlturbo.Display, ch chan sessionMsg) {
 	}
 }
 
-//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func nextEvent[T ports.ClientEvent](t *testing.T, ch chan ports.ClientEvent) T {
 	t.Helper()
 	for {
@@ -1327,7 +1327,7 @@ func TestExclusionAttachRefusals(t *testing.T) {
 	}
 }
 
-//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
+//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestExclusionAttachLimit(t *testing.T) {
 	h := newCaptureHarness(t)
 	_, _, _, _, token := h.exclusionOwner(t)

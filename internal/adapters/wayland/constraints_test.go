@@ -46,19 +46,7 @@ func logProxy(t *testing.T, c *wlturbo.Display, id uint32) chan []float64 {
 // next dispatches until the proxy receives an event.
 func next(t *testing.T, c *wlturbo.Display, events chan []float64) []float64 {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		select {
-		case ev := <-events:
-			return ev
-		default:
-		}
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-	}
-	t.Fatal("no event")
-	return nil
+	return recvWire(t, c, events)
 }
 
 func constrained(t *testing.T, events <-chan ports.ClientEvent) ports.PointerConstrained {

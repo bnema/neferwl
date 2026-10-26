@@ -41,7 +41,7 @@ func (s *Server) publish(t *testing.T, contents ...ports.SurfaceContent) {
 	}
 }
 
-//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func nextBatch(t *testing.T, in <-chan *ports.ContentBatch) *ports.ContentBatch {
 	t.Helper()
 	select {
@@ -245,7 +245,7 @@ func TestContentBatchCycleAllocations(t *testing.T) {
 // A late-attached output gets all the live windows in one batch, however
 // many there are, and AttachOutput returns without the output reading.
 //
-//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func TestContentBatchAttachReplaysLargeSet(t *testing.T) {
 	s := linkServer(t)
 	const windows = 100
@@ -278,7 +278,7 @@ func TestContentBatchAttachReplaysLargeSet(t *testing.T) {
 // output ends up with the newest Seq of every window (the pending/flushPosted
 // handshake never strands content). Run with -race -count=20.
 //
-//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func TestContentBatchHandshakeNeverStrandsContent(t *testing.T) {
 	s := linkServer(t)
 	in, ret := s.AttachOutput("A")

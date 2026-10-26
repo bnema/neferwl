@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	dl "github.com/bnema/go-wayland-bindings/server/drmlease"
@@ -157,11 +158,7 @@ func TestDRMLeaseFlow(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	for deadline := time.Now().Add(2 * time.Second); len(l.fds) == 0 && time.Now().Before(deadline); {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-	}
+	dispatchUntil(t, c, func() bool { return len(l.fds) > 0 })
 	if len(l.fds) != 1 {
 		t.Fatalf("lease fd count %d", len(l.fds))
 	}
@@ -245,11 +242,7 @@ func TestDRMLeaseFinished(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	for deadline := time.Now().Add(2 * time.Second); len(l.fds) == 0 && time.Now().Before(deadline); {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-	}
+	dispatchUntil(t, c, func() bool { return len(l.fds) > 0 })
 	if len(l.fds) != 1 {
 		t.Fatal("missing lease fd")
 	}
@@ -258,52 +251,49 @@ func TestDRMLeaseFinished(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	for deadline := time.Now().Add(2 * time.Second); l.finished == 0 && time.Now().Before(deadline); {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-	}
+	dispatchUntil(t, c, func() bool { return l.finished > 0 })
 	if l.finished != 1 {
 		t.Fatalf("finished %d", l.finished)
 	}
 }
 
-//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func TestLeaseMessagesRemainOrderedWhenChannelFull(t *testing.T) {
-	requests := make(chan ports.LeaseMessage, 1)
-	ready := make(chan struct{}, 1)
-	display, err := server.NewDisplay()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer display.Close()
-	s := &Server{display: display, channels: Channels{LeaseRequests: requests}, leaseReady: ready}
-	requests <- ports.LeaseRequest{ID: 99}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { s.forwardLeaseRequests(ctx); close(done) }()
-	defer func() { cancel(); <-done }()
-	s.sendLeaseRequest(ports.LeaseRequest{ID: 1})
-	s.sendLeaseRequest(ports.LeaseRevoke{Card: "card", LeaseID: 1})
-	if got := <-requests; got.(ports.LeaseRequest).ID != 99 {
-		t.Fatal(got)
-	}
-	select {
-	case got := <-requests:
-		if v, ok := got.(ports.LeaseRequest); !ok || v.ID != 1 {
-			t.Fatalf("first %v", got)
+	synctest.Test(t, func(t *testing.T) {
+		requests := make(chan ports.LeaseMessage, 1)
+		ready := make(chan struct{}, 1)
+		display, err := server.NewDisplay()
+		if err != nil {
+			t.Fatal(err)
 		}
-	case <-waylandDeadline(time.Second):
-		t.Fatal("request timeout")
-	}
-	select {
-	case got := <-requests:
-		if v, ok := got.(ports.LeaseRevoke); !ok || v.LeaseID != 1 {
-			t.Fatalf("second %v", got)
+		defer display.Close()
+		s := &Server{display: display, channels: Channels{LeaseRequests: requests}, leaseReady: ready}
+		requests <- ports.LeaseRequest{ID: 99}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() { s.forwardLeaseRequests(ctx); close(done) }()
+		defer func() { cancel(); <-done }()
+		s.sendLeaseRequest(ports.LeaseRequest{ID: 1})
+		s.sendLeaseRequest(ports.LeaseRevoke{Card: "card", LeaseID: 1})
+		if got := <-requests; got.(ports.LeaseRequest).ID != 99 {
+			t.Fatal(got)
 		}
-	case <-waylandDeadline(time.Second):
-		t.Fatal("revoke timeout")
-	}
+		select {
+		case got := <-requests:
+			if v, ok := got.(ports.LeaseRequest); !ok || v.ID != 1 {
+				t.Fatalf("first %v", got)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("request timeout")
+		}
+		select {
+		case got := <-requests:
+			if v, ok := got.(ports.LeaseRevoke); !ok || v.LeaseID != 1 {
+				t.Fatalf("second %v", got)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("revoke timeout")
+		}
+	})
 }
 
 func TestLeaseIDsAreScopedToCard(t *testing.T) {
@@ -328,20 +318,15 @@ func TestLeaseIDsAreScopedToCard(t *testing.T) {
 	for i, card := range []string{"card-one", "card-two"} {
 		events <- ports.LeaseConnectors{Card: card, Device: leaseFD(t), Connectors: []ports.LeaseConnector{{Card: card, Name: fmt.Sprintf("DP-%d", i+1), ConnectorID: uint32(i + 40)}}}
 	}
-	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
+	dispatchUntil(t, c, func() bool {
 		count := 0
 		for _, g := range c.Registry().GetGlobals() {
 			if g.Interface == "wp_drm_lease_device_v1" {
 				count++
 			}
 		}
-		if count == 2 {
-			break
-		}
-	}
+		return count == 2
+	})
 	var devices []uint32
 	for _, g := range c.Registry().GetGlobals() {
 		if g.Interface == "wp_drm_lease_device_v1" {
@@ -400,16 +385,11 @@ func TestLeaseIDsAreScopedToCard(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
+	dispatchUntil(t, c, func() bool {
 		count := 0
 		s.display.Do(func() { count = len(s.activeLeases) })
-		if count == 2 {
-			break
-		}
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-	}
+		return count == 2
+	})
 	if !s.display.Do(func() {
 		if len(s.activeLeases) != 2 {
 			t.Errorf("active leases %v", s.activeLeases)
@@ -421,16 +401,11 @@ func TestLeaseIDsAreScopedToCard(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
+	dispatchUntil(t, c, func() bool {
 		count := 0
 		s.display.Do(func() { count = len(s.activeLeases) })
-		if count == 1 {
-			break
-		}
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-	}
+		return count == 1
+	})
 	if !s.display.Do(func() {
 		if len(s.activeLeases) != 1 || s.activeLeases[leaseKey{second.Card, 7}] == nil {
 			t.Errorf("wrong card finished: %v", s.activeLeases)
@@ -492,6 +467,8 @@ func TestLeaseDestroyPendingRevokesLateReply(t *testing.T) {
 }
 
 // A destroyed lease keeps only the card tombstone until the DRM reply arrives.
+//
+//testpolicy:realtime revoke is forwarded to the requests channel by the display goroutine (Server.Run on libwayland epoll); no wire event announces it
 func safelyLeaseMaps(t *testing.T, c *wlturbo.Display, events chan ports.LeaseMessage, requests chan ports.LeaseMessage, sent ports.LeaseRequest) bool {
 	t.Helper()
 	r, w, err := os.Pipe()
@@ -500,18 +477,16 @@ func safelyLeaseMaps(t *testing.T, c *wlturbo.Display, events chan ports.LeaseMe
 	}
 	defer r.Close()
 	events <- ports.LeaseReply{ID: sent.ID, FD: w, LeaseID: 51}
-	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case event := <-requests:
-			revoked, ok := event.(ports.LeaseRevoke)
-			return ok && revoked.Card == sent.Card && revoked.LeaseID == 51
-		default:
-		}
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
 	}
-	return false
+	select {
+	case event := <-requests:
+		revoked, ok := event.(ports.LeaseRevoke)
+		return ok && revoked.Card == sent.Card && revoked.LeaseID == 51
+	case <-waylandDeadline(2 * time.Second):
+		return false
+	}
 }
 
 func TestLeaseGlobalRemoveAndReadd(t *testing.T) {
@@ -529,20 +504,12 @@ func TestLeaseGlobalRemoveAndReadd(t *testing.T) {
 		t.Fatalf("initial globals %d", count())
 	}
 	events <- ports.LeaseConnectors{Card: "/dev/dri/card-test"}
-	for deadline := time.Now().Add(2 * time.Second); count() != 0 && time.Now().Before(deadline); {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-	}
+	dispatchUntil(t, c, func() bool { return count() == 0 })
 	if count() != 0 {
 		t.Fatal("lease global not removed")
 	}
 	events <- ports.LeaseConnectors{Card: "/dev/dri/card-test", Device: leaseFD(t), Connectors: []ports.LeaseConnector{{Card: "/dev/dri/card-test", Name: "DP-1", ConnectorID: 42}}}
-	for deadline := time.Now().Add(2 * time.Second); count() != 1 && time.Now().Before(deadline); {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-	}
+	dispatchUntil(t, c, func() bool { return count() == 1 })
 	if count() != 1 {
 		t.Fatal("lease global not re-added")
 	}

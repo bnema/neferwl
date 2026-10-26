@@ -60,6 +60,22 @@ func flushCaptured(t *testing.T, s *Server, replies chan<- ports.CaptureDone) {
 	}
 }
 
+// recvWire dispatches wire events until a value arrives on ch, bounded by
+// dispatchUntil's single deadline.
+func recvWire[T any](t *testing.T, c *wlturbo.Display, ch <-chan T) T {
+	t.Helper()
+	var v T
+	dispatchUntil(t, c, func() bool {
+		select {
+		case v = <-ch:
+			return true
+		default:
+			return false
+		}
+	})
+	return v
+}
+
 // dispatchUntil reads actual wire events until the expected callback ran.
 // Closing the connection on timeout releases a blocked Dispatch; there is no
 // background dispatcher left running when this helper returns.

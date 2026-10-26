@@ -122,7 +122,7 @@ func TestImplicitAcquireWatchFailureDiscardsCommit(t *testing.T) {
 
 // An idle waiter sleeps in one poll with no timeout; cancelling ctx ends it.
 //
-//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
+//testpolicy:realtime real poll(2) on kernel fds in syncWaiter
 func TestSyncWaiterIdleNeverTicks(t *testing.T) {
 	sw, err := newSyncWaiter(func() {})
 	if err != nil {

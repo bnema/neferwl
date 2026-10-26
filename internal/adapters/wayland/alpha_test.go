@@ -12,7 +12,7 @@ import (
 
 // contentMatching waits for a content of the window that matches want.
 //
-//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func contentMatching(t *testing.T, contents <-chan ports.SurfaceContent, id ports.WindowID, want func(ports.SurfaceContent) bool) ports.SurfaceContent {
 	t.Helper()
 	deadline := waylandDeadline(2 * time.Second)

@@ -30,21 +30,10 @@ func newToken(t *testing.T, c *wlturbo.Display, manager uint32, serialSeat ...ui
 		requestProtocol(t, c, id, xdgactivation.ActivationTokenV1RequestSetSerial, serialSeat[0], serialSeat[1])
 	}
 	requestProtocol(t, c, id, xdgactivation.ActivationTokenV1RequestCommit)
-	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case tok := <-p.tokens:
-			return tok
-		default:
-		}
-	}
-	t.Fatal("no token")
-	return ""
+	return recvWire(t, c, p.tokens)
 }
 
-//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func activated(t *testing.T, events <-chan ports.ClientEvent, want ports.WindowID) {
 	t.Helper()
 	deadline := waylandDeadline(2 * time.Second)

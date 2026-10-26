@@ -307,7 +307,7 @@ func (d *dndClient) surfaceNew(t *testing.T) uint32 {
 
 // dndNextEvent returns the next client event of type T, skipping others.
 //
-//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func dndNextEvent[T ports.ClientEvent](t *testing.T, events <-chan ports.ClientEvent) T {
 	t.Helper()
 	deadline := waylandDeadline(2 * time.Second)

@@ -37,41 +37,23 @@ func newEventProxy(c *wlturbo.Display) (uint32, *eventProxy) {
 	return id, p
 }
 
-// next dispatches until p gets an event, or fails after wait.
-//
-//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
-func (p *eventProxy) next(t *testing.T, c *wlturbo.Display, wait time.Duration) [2]uint32 {
+// next dispatches until p gets an event.
+func (p *eventProxy) next(t *testing.T, c *wlturbo.Display) [2]uint32 {
 	t.Helper()
-	deadline := time.Now().Add(wait)
-	for time.Now().Before(deadline) {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case e := <-p.events:
-			return e
-		case <-waylandDeadline(5 * time.Millisecond):
-		}
-	}
-	t.Fatal("no event")
-	return [2]uint32{}
+	return recvWire(t, c, p.events)
 }
 
-// none checks p gets no event for d.
-//
-//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
-func (p *eventProxy) none(t *testing.T, c *wlturbo.Display, d time.Duration) {
+// none checks p got no event for what the display processed so far: a
+// roundtrip orders everything the server already sent before the check.
+func (p *eventProxy) none(t *testing.T, c *wlturbo.Display) {
 	t.Helper()
-	deadline := time.Now().Add(d)
-	for time.Now().Before(deadline) {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case e := <-p.events:
-			t.Fatalf("unexpected event %v", e)
-		case <-waylandDeadline(5 * time.Millisecond):
-		}
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case e := <-p.events:
+		t.Fatalf("unexpected event %v", e)
+	default:
 	}
 }
 
@@ -87,18 +69,18 @@ func TestIdleNotification(t *testing.T) {
 	id, n := newEventProxy(c)
 	requestProtocol(t, c, notifier, extidlenotify.ExtIdleNotifierV1RequestGetIdleNotification, id, uint32(50), seat)
 	idled, resumed := uint32(extidlenotify.ExtIdleNotificationV1EventIdled), uint32(extidlenotify.ExtIdleNotificationV1EventResumed)
-	if e := n.next(t, c, 2*time.Second); e[0] != idled {
+	if e := n.next(t, c); e[0] != idled {
 		t.Fatalf("event %v, want idled", e)
 	}
 	commands <- ports.UserActivity{}
-	if e := n.next(t, c, 2*time.Second); e[0] != resumed {
+	if e := n.next(t, c); e[0] != resumed {
 		t.Fatalf("event %v, want resumed", e)
 	}
-	if e := n.next(t, c, 2*time.Second); e[0] != idled {
+	if e := n.next(t, c); e[0] != idled {
 		t.Fatalf("event %v, want idled again", e)
 	}
 	commands <- ports.UserActivity{}
-	n.next(t, c, 2*time.Second) // resumed
+	n.next(t, c) // resumed
 
 	// An idle inhibitor holds it; input-idle notifications still fire.
 	_, surf, _ := surfaceMapper(t, c, events)()
@@ -109,13 +91,13 @@ func TestIdleNotification(t *testing.T) {
 	clientEvent[ports.IdleInhibit](t, events)
 	inputID, input := newEventProxy(c)
 	requestProtocol(t, c, notifier, extidlenotify.ExtIdleNotifierV1RequestGetInputIdleNotification, inputID, uint32(50), seat)
-	if e := input.next(t, c, 2*time.Second); e[0] != idled {
+	if e := input.next(t, c); e[0] != idled {
 		t.Fatalf("input-idle event %v, want idled", e)
 	}
-	n.none(t, c, 200*time.Millisecond)
+	n.none(t, c)
 	// The inhibitor goes: the held notification counts from zero.
 	requestProtocol(t, c, in, idleinhibit.ZwpIdleInhibitorV1RequestDestroy)
-	if e := n.next(t, c, 2*time.Second); e[0] != idled {
+	if e := n.next(t, c); e[0] != idled {
 		t.Fatalf("event %v, want idled after the inhibitor", e)
 	}
 	requestProtocol(t, c, id, extidlenotify.ExtIdleNotificationV1RequestDestroy)
@@ -153,11 +135,11 @@ func TestBusIdleInhibition(t *testing.T) {
 	// D-Bus activity resumes an idle notification and restarts it.
 	id, n := newEventProxy(c)
 	requestProtocol(t, c, notifier, extidlenotify.ExtIdleNotifierV1RequestGetIdleNotification, id, uint32(300), seat)
-	if e := n.next(t, c, 2*time.Second); e[0] != idled {
+	if e := n.next(t, c); e[0] != idled {
 		t.Fatalf("event %v, want idled", e)
 	}
 	activity <- struct{}{}
-	if e := n.next(t, c, 2*time.Second); e[0] != resumed {
+	if e := n.next(t, c); e[0] != resumed {
 		t.Fatalf("event %v, want resumed", e)
 	}
 
@@ -165,15 +147,15 @@ func TestBusIdleInhibition(t *testing.T) {
 	// forwarder takes the second send only once the first is applied.
 	inhibited <- true
 	inhibited <- true
-	n.none(t, c, 500*time.Millisecond)
+	n.none(t, c)
 	inputID, input := newEventProxy(c)
 	requestProtocol(t, c, notifier, extidlenotify.ExtIdleNotifierV1RequestGetInputIdleNotification, inputID, uint32(50), seat)
-	if e := input.next(t, c, 2*time.Second); e[0] != idled {
+	if e := input.next(t, c); e[0] != idled {
 		t.Fatalf("input-idle event %v, want idled", e)
 	}
-	n.none(t, c, 100*time.Millisecond)
+	n.none(t, c)
 	inhibited <- false
-	if e := n.next(t, c, 2*time.Second); e[0] != idled {
+	if e := n.next(t, c); e[0] != idled {
 		t.Fatalf("event %v, want idled after the inhibition", e)
 	}
 }
@@ -193,7 +175,7 @@ func TestOutputPower(t *testing.T) {
 	requestProtocol(t, c, mgr, wlroutputpowermanagement.ZwlrOutputPowerManagerV1RequestGetOutputPower, id, output)
 	modeEv, failed := uint32(wlroutputpowermanagement.ZwlrOutputPowerV1EventMode), uint32(wlroutputpowermanagement.ZwlrOutputPowerV1EventFailed)
 	on, off := uint32(wlroutputpowermanagement.ZwlrOutputPowerV1ModeOn), uint32(wlroutputpowermanagement.ZwlrOutputPowerV1ModeOff)
-	if e := p.next(t, c, 2*time.Second); e != [2]uint32{modeEv, on} {
+	if e := p.next(t, c); e != [2]uint32{modeEv, on} {
 		t.Fatalf("initial %v", e)
 	}
 	name := testOutputs[0].Info.Name
@@ -202,19 +184,19 @@ func TestOutputPower(t *testing.T) {
 		t.Fatal(v)
 	}
 	commands <- ports.SetOutputs{Outputs: testOutputs, Off: []string{name}}
-	if e := p.next(t, c, 2*time.Second); e != [2]uint32{modeEv, off} {
+	if e := p.next(t, c); e != [2]uint32{modeEv, off} {
 		t.Fatalf("after off %v", e)
 	}
 	// Unchanged state: no event.
 	commands <- ports.SetOutputs{Outputs: testOutputs, Off: []string{name}}
-	p.none(t, c, 50*time.Millisecond)
+	p.none(t, c)
 	commands <- ports.SetOutputs{Outputs: testOutputs}
-	if e := p.next(t, c, 2*time.Second); e != [2]uint32{modeEv, on} {
+	if e := p.next(t, c); e != [2]uint32{modeEv, on} {
 		t.Fatalf("after on %v", e)
 	}
 	// The output goes: the object fails.
 	commands <- ports.SetOutputs{}
-	if e := p.next(t, c, 2*time.Second); e[0] != failed {
+	if e := p.next(t, c); e[0] != failed {
 		t.Fatalf("after unplug %v", e)
 	}
 	// Back with the same name: the failed object controls nothing.
@@ -264,7 +246,7 @@ func idleClockServer(t *testing.T) (*Server, chan ports.ClientCommand, string, c
 	return s, commands, dir, timers
 }
 
-//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func nextArmed(t *testing.T, timers <-chan armed) armed {
 	t.Helper()
 	select {
@@ -292,20 +274,20 @@ func TestIdleShortTimeout(t *testing.T) {
 		t.Fatalf("timer %v, want the activity interval", first.d)
 	}
 	first.fire()
-	if e := n.next(t, c, 2*time.Second); e[0] != uint32(extidlenotify.ExtIdleNotificationV1EventIdled) {
+	if e := n.next(t, c); e[0] != uint32(extidlenotify.ExtIdleNotificationV1EventIdled) {
 		t.Fatalf("event %v, want idled", e)
 	}
 	commands <- ports.UserActivity{}
-	if e := n.next(t, c, 2*time.Second); e[0] != uint32(extidlenotify.ExtIdleNotificationV1EventResumed) {
+	if e := n.next(t, c); e[0] != uint32(extidlenotify.ExtIdleNotificationV1EventResumed) {
 		t.Fatalf("event %v, want resumed", e)
 	}
 	stale := nextArmed(t, timers)
 	commands <- ports.UserActivity{}
 	current := nextArmed(t, timers)
 	stale.fire()
-	n.none(t, c, 50*time.Millisecond)
+	n.none(t, c)
 	current.fire()
-	if e := n.next(t, c, 2*time.Second); e[0] != uint32(extidlenotify.ExtIdleNotificationV1EventIdled) {
+	if e := n.next(t, c); e[0] != uint32(extidlenotify.ExtIdleNotificationV1EventIdled) {
 		t.Fatalf("event %v, want idled", e)
 	}
 }

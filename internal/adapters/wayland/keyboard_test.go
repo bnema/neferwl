@@ -59,6 +59,7 @@ func keyboardServer(t *testing.T, setup ...func(*Server)) (*Server, chan ports.C
 	return s, events, commands, dir
 }
 
+//testpolicy:realtime real external Wayland client process on the display socket (Server.Run on libwayland epoll)
 func TestKeyboardInfo(t *testing.T) {
 	tool, err := exec.LookPath("wayland-info")
 	if err != nil {
@@ -227,8 +228,7 @@ func TestSetKeymap(t *testing.T) {
 }
 
 //
-//testpolicy:realtime external foot process writes keyboard debug output asynchronously
-//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
+//testpolicy:realtime real external Wayland client process on the display socket (Server.Run on libwayland epoll)
 func TestFootKeyboard(t *testing.T) {
 	tool, err := exec.LookPath("foot")
 	if err != nil {

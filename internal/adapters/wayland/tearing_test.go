@@ -11,7 +11,7 @@ import (
 
 // asyncContent waits for a content of window id with the given hint.
 //
-//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func asyncContent(t *testing.T, contents <-chan ports.SurfaceContent, id ports.WindowID, async bool) {
 	t.Helper()
 	deadline := waylandDeadline(2 * time.Second)

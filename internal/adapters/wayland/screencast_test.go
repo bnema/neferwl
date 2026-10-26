@@ -106,7 +106,7 @@ func (h *castHarness) sync() {
 
 // next is the next event pushed to the sink, which must have that kind.
 //
-//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func (h *castHarness) next(kind ports.CastEventKind) ports.CastEvent {
 	h.t.Helper()
 	select {
@@ -121,7 +121,7 @@ func (h *castHarness) next(kind ports.CastEventKind) ports.CastEvent {
 	}
 }
 
-//testpolicy:realtime capture replies arrive through a real Wayland display event loop
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func (h *castHarness) nextCastFrameDone() ports.CastEvent {
 	h.t.Helper()
 	timer := time.NewTimer(3 * time.Second)
@@ -153,7 +153,7 @@ func (h *castHarness) none() {
 	}
 }
 
-//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func (h *castHarness) request() ports.CaptureRequest {
 	h.t.Helper()
 	select {
@@ -167,7 +167,7 @@ func (h *castHarness) request() ports.CaptureRequest {
 
 // noRequest says that no capture was requested.
 //
-//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func (h *castHarness) noRequest(wait time.Duration) {
 	h.t.Helper()
 	select {
@@ -179,7 +179,7 @@ func (h *castHarness) noRequest(wait time.Duration) {
 
 // castClientEvent waits for the next ClientEvent of type T, skipping others.
 //
-//testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func castClientEvent[T ports.ClientEvent](h *castHarness) T {
 	h.t.Helper()
 	for {

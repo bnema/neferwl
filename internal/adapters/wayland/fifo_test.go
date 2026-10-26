@@ -14,20 +14,22 @@ import (
 
 // nextContent waits for a content of window id.
 //
-//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func nextContent(t *testing.T, contents <-chan ports.SurfaceContent, id ports.WindowID) time.Time {
 	t.Helper()
 	deadline := waylandDeadline(2 * time.Second)
+wait:
 	for {
 		select {
 		case c := <-contents:
 			if c.ID == id && !c.Empty() {
-				return time.Now()
+				break wait
 			}
 		case <-deadline:
 			t.Fatal("no content")
 		}
 	}
+	return time.Now()
 }
 
 // shmBuffer creates a 1x1 wl_shm buffer.
