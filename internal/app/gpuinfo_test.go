@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/synctest"
 
@@ -62,6 +64,59 @@ func TestOneRenderDeviceTwoOutputs(t *testing.T) {
 		set.start(t.Context(), "B", run)
 		synctest.Wait()
 		if err := set.wait(); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestOpenCardRenderDeviceFallback(t *testing.T) {
+	first := ports.GPUInfo{Path: "/dev/dri/card0", Render: unix.Mkdev(226, 128)}
+	second := ports.GPUInfo{Path: "/dev/dri/card1", Render: unix.Mkdev(226, 129)}
+	boom := errors.New("unsupported Vulkan")
+	t.Run("fallback", func(t *testing.T) {
+		opener := portsmocks.NewMockRenderDeviceOpener(t)
+		dev := portsmocks.NewMockRenderDevice(t)
+		opener.EXPECT().Open(first).Return(nil, boom).Once()
+		opener.EXPECT().Open(second).Return(dev, nil).Once()
+		got, err := openCardRenderDevice(opener, []ports.GPUInfo{first, second}, "")
+		if err != nil || got != dev {
+			t.Fatalf("%v %v", got, err)
+		}
+	})
+	t.Run("all fail", func(t *testing.T) {
+		opener := portsmocks.NewMockRenderDeviceOpener(t)
+		opener.EXPECT().Open(first).Return(nil, boom).Once()
+		opener.EXPECT().Open(second).Return(nil, boom).Once()
+		_, err := openCardRenderDevice(opener, []ports.GPUInfo{first, second}, "")
+		if !errors.Is(err, boom) || !strings.Contains(err.Error(), first.Path) || !strings.Contains(err.Error(), second.Path) {
+			t.Fatal(err)
+		}
+	})
+	// /dev/null is a real character node, so override resolution uses real stat
+	// without requiring access to a DRM node or a handwritten stat seam.
+	var st unix.Stat_t
+	if err := unix.Stat("/dev/null", &st); err != nil {
+		t.Fatal(err)
+	}
+	t.Run("override unmatched", func(t *testing.T) {
+		opener := portsmocks.NewMockRenderDeviceOpener(t)
+		_, err := openCardRenderDevice(opener, []ports.GPUInfo{first, second}, "/dev/null")
+		if err == nil {
+			t.Fatal("unmatched override accepted")
+		}
+	})
+	t.Run("override strict", func(t *testing.T) {
+		opener := portsmocks.NewMockRenderDeviceOpener(t)
+		selected := ports.GPUInfo{Path: "selected", Render: st.Rdev}
+		opener.EXPECT().Open(selected).Return(nil, boom).Once()
+		_, err := openCardRenderDevice(opener, []ports.GPUInfo{selected, second}, "/dev/null")
+		if !errors.Is(err, boom) {
+			t.Fatal(err)
+		}
+	})
+	t.Run("empty", func(t *testing.T) {
+		_, err := openCardRenderDevice(portsmocks.NewMockRenderDeviceOpener(t), nil, "")
+		if err == nil || strings.Contains(err.Error(), `for ""`) {
 			t.Fatal(err)
 		}
 	})

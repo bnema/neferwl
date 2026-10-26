@@ -36,11 +36,16 @@ func reopenRender(opener ports.RenderDeviceOpener, info ports.GPUInfo, old ports
 	if old != nil {
 		old.Close()
 	}
+	var lastErr error
 	for limiter.allow() {
 		dev, err := opener.Open(info)
 		if err == nil {
 			return dev, nil
 		}
+		lastErr = err
+	}
+	if lastErr != nil {
+		return nil, fmt.Errorf("render device %s: %w: %w", info.Path, ports.ErrDeviceLost, lastErr)
 	}
 	return nil, fmt.Errorf("render device %s: %w", info.Path, ports.ErrDeviceLost)
 }

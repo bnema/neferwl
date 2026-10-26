@@ -105,11 +105,12 @@ func TestReopenRenderFailedAttempts(t *testing.T) {
 	clock.EXPECT().Now().Return(time.Unix(0, 0)).Times(4)
 	opener := portsmocks.NewMockRenderDeviceOpener(t)
 	info := ports.GPUInfo{Path: "card1"}
-	opener.EXPECT().Open(info).Return(nil, errors.New("open failed")).Times(3)
+	openErr := errors.New("open failed")
+	opener.EXPECT().Open(info).Return(nil, openErr).Times(3)
 	old := portsmocks.NewMockRenderDevice(t)
 	old.EXPECT().Close().Return().Once()
 	dev, err := reopenRender(opener, info, old, &reopenLimiter{clock: clock})
-	if dev != nil || !errors.Is(err, ports.ErrDeviceLost) {
+	if dev != nil || !errors.Is(err, ports.ErrDeviceLost) || !errors.Is(err, openErr) {
 		t.Fatalf("%v %v", dev, err)
 	}
 }

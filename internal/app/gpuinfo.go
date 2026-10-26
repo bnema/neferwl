@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -41,10 +42,26 @@ func openCardRenderDevice(opener ports.RenderDeviceOpener, infos []ports.GPUInfo
 		}
 		want = st.Rdev
 	}
+	var errs []error
 	for _, info := range infos {
-		if info.Render != 0 && (override == "" || info.Render == want) {
-			return opener.Open(info)
+		if info.Render == 0 || (override != "" && info.Render != want) {
+			continue
 		}
+		dev, err := opener.Open(info)
+		if err == nil {
+			return dev, nil
+		}
+		err = fmt.Errorf("render card %s: %w", info.Path, err)
+		if override != "" {
+			return nil, err
+		}
+		errs = append(errs, err)
 	}
-	return nil, fmt.Errorf("no render-capable DRM card for %q", override)
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+	if override != "" {
+		return nil, fmt.Errorf("no render-capable DRM card for %q", override)
+	}
+	return nil, errors.New("no render-capable DRM card")
 }

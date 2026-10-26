@@ -374,7 +374,6 @@ func (b *drmBackend) close() {
 // out. It returns when ctx ends, after every output is closed.
 func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm.Want, initial ports.Config, apply *outputApply, ch outputChannels, curs *cursors, log zerowrap.Logger) error {
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	var readers sync.WaitGroup
 	readerErr := make(chan error, len(b.cards))
 	for _, c := range b.cards {
@@ -385,7 +384,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			}
 		})
 	}
-	defer readers.Wait()
+	defer func() { cancel(); readers.Wait() }()
 	active := b.seat.Subscribe()
 	defer b.seat.Unsubscribe(active)
 	seatActive := true // openDRM waits for the first seat enable
