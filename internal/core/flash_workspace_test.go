@@ -178,7 +178,7 @@ func TestFlashWorkspaceSwitchWaitsForSlide(t *testing.T) {
 		sc := c.cur()
 		act(c, clock, ActionFocusWorkspacePrev)
 		id := wantSwitchFlash(t, c, clock)
-		if !sc.mon.switchView.busy() {
+		if !sc.mon.switchView.Busy() {
 			t.Fatal("setup: no workspace slide running")
 		}
 		clock.now = clock.now.Add(flashSettle)

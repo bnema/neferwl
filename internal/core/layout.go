@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core/geom"
+	"github.com/bnema/neferwl/internal/core/motion"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -85,7 +86,7 @@ type Workspace struct {
 	View   int
 	// View is the settled offset along the layout's content axis.
 	// view is its presentation offset, in logical pixels.
-	view slide
+	view motion.Slide
 	// Output is the effective viewport in monitor coordinates: the whole
 	// monitor unless the workspace has a size override, then a centered
 	// rectangle no larger than the monitor. Fullscreen fills it.
@@ -117,7 +118,7 @@ type Workspace struct {
 	// stashView slides the stash: the selected window is drawn at
 	// stashAt+stashView.off, in stash windows. Pure presentation over
 	// stashAt.
-	stashView   slide
+	stashView   motion.Slide
 	stashFocus  bool
 	stashHidden bool
 	// stashWidth is the width of a stashed window (0: the default) and

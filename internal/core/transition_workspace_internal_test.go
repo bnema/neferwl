@@ -421,11 +421,11 @@ func TestOverviewLeavingNeighborReappearsContinuously(t *testing.T) {
 			float64(prev.left.Rect.X-base.X) + wantOff.x, float64(prev.left.Rect.Y-base.Y) + wantOff.y,
 			float64(prev.left.Rect.W-base.W) + wantOff.w, float64(prev.left.Rect.H-base.H) + wantOff.h,
 		}
-		gotVel := rectOffsets{rm.x.spring.Velocity, rm.y.spring.Velocity, rm.w.spring.Velocity, rm.h.spring.Velocity}
+		gotVel := rectOffsets{rm.x.Spring.Velocity, rm.y.Spring.Velocity, rm.w.Spring.Velocity, rm.h.Spring.Velocity}
 		for i, pair := range [][2]float64{
 			{gotOff.x, wantAbs.x}, {gotOff.y, wantAbs.y}, {gotOff.w, wantAbs.w}, {gotOff.h, wantAbs.h},
 			{gotVel.x, wantVel.x}, {gotVel.y, wantVel.y}, {gotVel.w, wantVel.w}, {gotVel.h, wantVel.h},
-			{rm.df, 1 + wantFade}, {rm.fade.spring.Velocity, wantFadeV},
+			{rm.df, 1 + wantFade}, {rm.fade.Spring.Velocity, wantFadeV},
 		} {
 			if math.Abs(pair[0]-pair[1]) > 1e-6 {
 				t.Errorf("component %d: got %g want %g", i, pair[0], pair[1])

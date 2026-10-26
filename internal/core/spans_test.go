@@ -3,6 +3,8 @@ package core
 import (
 	"testing"
 	"testing/synctest"
+
+	"github.com/bnema/neferwl/internal/core/motion"
 )
 
 func spanWorkspace(mode Overflow, n int) *Workspace {
@@ -15,7 +17,7 @@ func spanWorkspace(mode Overflow, n int) *Workspace {
 		w.AddWindow(WindowID(i + 1))
 	}
 	w.View = 0
-	w.view = slide{}
+	w.view = motion.Slide{}
 	return w
 }
 

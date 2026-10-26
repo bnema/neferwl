@@ -1,4 +1,4 @@
-package core
+package motion
 
 import (
 	"math"
@@ -24,7 +24,9 @@ const (
 	snapEpsilon = 1e-6
 )
 
-type snapSwipe struct {
+// SnapSwipe follows a gesture between neighboring sorted snap points.
+// Construct it with NewSnapSwipe or NewStepSwipe before sampling it.
+type SnapSwipe struct {
 	tracker swipeTracker
 	// scale turns touchpad units into view units.
 	scale float64
@@ -42,14 +44,14 @@ type snapSwipe struct {
 	lo, hi float64
 	// stops are the detent ends: the points within [lo, hi], and start.
 	stops []float64
-	band  rubberBand
+	band  RubberBand
 }
 
-// newSnapSwipe follows a swipe from the view start toward points, the view
+// NewSnapSwipe follows a swipe from the view start toward points, the view
 // resting on or heading to rest. A rest between points becomes a point:
 // a slow swipe never settles behind the view it started from.
-func newSnapSwipe(start, rest, scale float64, points []float64, band rubberBand) snapSwipe {
-	s := snapSwipe{scale: scale, start: start, points: points, band: band}
+func NewSnapSwipe(start, rest, scale float64, points []float64, band RubberBand) SnapSwipe {
+	s := SnapSwipe{scale: scale, start: start, points: points, band: band}
 	s.points = withPoint(s.points, rest)
 	s.home = s.closest(rest)
 	s.landLo = s.points[max(s.home-1, 0)]
@@ -74,8 +76,8 @@ func withPoint(points []float64, v float64) []float64 {
 	return slices.Insert(slices.Clone(points), i, v)
 }
 
-// indexPoints are the points 0 to n-1: one per workspace.
-func indexPoints(n int) []float64 {
+// IndexPoints are the points 0 to n-1: one per workspace.
+func IndexPoints(n int) []float64 {
 	points := make([]float64, n)
 	for i := range points {
 		points[i] = float64(i)
@@ -83,7 +85,7 @@ func indexPoints(n int) []float64 {
 	return points
 }
 
-func (s *snapSwipe) closest(pos float64) int {
+func (s *SnapSwipe) closest(pos float64) int {
 	best := 0
 	for i, v := range s.points {
 		if math.Abs(v-pos) < math.Abs(s.points[best]-pos) {
@@ -93,14 +95,15 @@ func (s *snapSwipe) closest(pos float64) int {
 	return best
 }
 
-func (s *snapSwipe) push(delta float64, at time.Duration) { s.tracker.push(delta, at) }
+// Push adds movement at a device-clock timestamp, ignoring out-of-order events.
+func (s *SnapSwipe) Push(delta float64, at time.Duration) { s.tracker.push(delta, at) }
 
 // raw is where the fingers put the view, before resistance and detents.
-func (s *snapSwipe) raw() float64 { return s.start + s.tracker.pos*s.scale }
+func (s *SnapSwipe) raw() float64 { return s.start + s.tracker.pos*s.scale }
 
-// pos is the view shown: rubber-banded past the bounds, with detents
+// Pos is the view shown: rubber-banded past the bounds, with detents
 // between them.
-func (s *snapSwipe) pos() float64 {
+func (s *SnapSwipe) Pos() float64 {
 	x := s.raw()
 	if x < s.lo || x > s.hi {
 		return s.band.clamp(s.lo, s.hi, x)
@@ -114,7 +117,7 @@ func (s *snapSwipe) pos() float64 {
 }
 
 // slope is the derivative of pos at the fingers' view.
-func (s *snapSwipe) slope() float64 {
+func (s *SnapSwipe) slope() float64 {
 	x := s.raw()
 	if x < s.lo || x > s.hi {
 		return s.band.clampDerivative(s.lo, s.hi, x)
@@ -127,7 +130,7 @@ func (s *snapSwipe) slope() float64 {
 }
 
 // around returns the stops around x, which lies within [lo, hi].
-func (s *snapSwipe) around(x float64) (a, b float64, ok bool) {
+func (s *SnapSwipe) around(x float64) (a, b float64, ok bool) {
 	for i := 1; i < len(s.stops); i++ {
 		if x <= s.stops[i] {
 			a, b = s.stops[i-1], s.stops[i]
@@ -137,10 +140,10 @@ func (s *snapSwipe) around(x float64) (a, b float64, ok bool) {
 	return 0, 0, false
 }
 
-// end is the point the swipe settles on when the fingers lift (home when
+// End is the point the swipe settles on when the fingers lift (home when
 // cancelled), and the view's speed for the spring there, in view units
 // per second.
-func (s *snapSwipe) end(cancelled bool, at time.Duration) (target, velocity float64) {
+func (s *SnapSwipe) End(cancelled bool, at time.Duration) (target, velocity float64) {
 	// Idle time before the lift slows the swipe down.
 	s.tracker.push(0, at)
 	v := s.tracker.velocity()
@@ -175,13 +178,13 @@ func (s *snapSwipe) end(cancelled bool, at time.Duration) (target, velocity floa
 // that runs an action instead of sliding the view.
 const discreteSwipeMovement = 300.0
 
-// newStepSwipe is a swipe that settles on a step of -1, 0 or 1.
-func newStepSwipe() snapSwipe {
-	return newSnapSwipe(0, 0, 1/discreteSwipeMovement, []float64{-1, 0, 1}, workspaceBand)
+// NewStepSwipe is a swipe that settles on a step of -1, 0 or 1.
+func NewStepSwipe() SnapSwipe {
+	return NewSnapSwipe(0, 0, 1/discreteSwipeMovement, []float64{-1, 0, 1}, WorkspaceBand)
 }
 
-// step is where a step swipe settles when the fingers lift.
-func (s *snapSwipe) step(cancelled bool, at time.Duration) int {
-	target, _ := s.end(cancelled, at)
+// Step is where a step swipe settles when the fingers lift.
+func (s *SnapSwipe) Step(cancelled bool, at time.Duration) int {
+	target, _ := s.End(cancelled, at)
 	return int(math.Round(target))
 }

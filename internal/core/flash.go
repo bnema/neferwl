@@ -215,11 +215,11 @@ func (c *Core) stopFlash() {
 }
 
 func (m *Monitor) settled() bool {
-	if m.switchView.busy() {
+	if m.switchView.Busy() {
 		return false
 	}
 	for w := range m.all() {
-		if w.view.busy() || w.stashView.busy() {
+		if w.view.Busy() || w.stashView.Busy() {
 			return false
 		}
 	}

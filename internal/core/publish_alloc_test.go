@@ -8,6 +8,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/core/motion"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -92,14 +93,14 @@ func publishStep(t *testing.T, c *Core, only *screen) func() {
 // component: position and size, fade, dim and content scale.
 func startRectMotions(c *Core, sc *screen, t0 time.Time) {
 	sc.rects = make(map[WindowID]rectMotion, 6)
-	sp := viewSpring(100, 0)
+	sp := motion.ViewSpring(100, 0)
 	for _, p := range sc.settledLayout {
 		sc.rects[p.ID] = rectMotion{
 			x: c.spring(sp, t0), y: c.spring(sp, t0),
 			w: c.spring(sp, t0), h: c.spring(sp, t0),
 			dx: 100, dy: 100, dw: 100, dh: 100,
-			fade: c.spring(levelSpring(0.5, 0), t0), df: 0.5,
-			dim: c.spring(levelSpring(0.5, 0), t0), ddim: 0.5,
+			fade: c.spring(motion.LevelSpring(0.5, 0), t0), df: 0.5,
+			dim: c.spring(motion.LevelSpring(0.5, 0), t0), ddim: 0.5,
 			scale: true,
 		}
 	}
@@ -114,8 +115,8 @@ func checkRunning(t *testing.T, c *Core, when string) {
 		if sc.name() == "" {
 			continue
 		}
-		if len(sc.rects) != 6 || !sc.mon.Current().view.motion.on || len(sc.shown) < 6 {
-			t.Fatalf("%s: rects %d camera %v shown %d", when, len(sc.rects), sc.mon.Current().view.motion.on, len(sc.shown))
+		if len(sc.rects) != 6 || !sc.mon.Current().view.Motion.On || len(sc.shown) < 6 {
+			t.Fatalf("%s: rects %d camera %v shown %d", when, len(sc.rects), sc.mon.Current().view.Motion.On, len(sc.shown))
 		}
 	}
 }
@@ -132,8 +133,8 @@ func TestPublishAllocations(t *testing.T) {
 				continue
 			}
 			ws := sc.mon.Current()
-			ws.view.motion = c.spring(viewSpring(100, 0), t0)
-			ws.view.off = 100
+			ws.view.Motion = c.spring(motion.ViewSpring(100, 0), t0)
+			ws.view.Off = 100
 			startRectMotions(c, sc, t0)
 		}
 		for _, tc := range []struct {
@@ -171,11 +172,11 @@ func TestPublishStashSlideAllocations(t *testing.T) {
 		}
 		sc.arrange()
 		c.refreshShown()
-		ws.stashView.off = 0.5
-		ws.stashView.motion = c.spring(ws.stashSpring(0.5, 0), time.Now())
+		ws.stashView.Off = 0.5
+		ws.stashView.Motion = c.spring(ws.stashSpring(0.5, 0), time.Now())
 		step := publishStep(t, c, nil)
 		step()
-		if !ws.stashView.motion.on || !ws.stashShown() {
+		if !ws.stashView.Motion.On || !ws.stashShown() {
 			t.Fatal("setup: no stash slide on screen")
 		}
 		var partial int
@@ -189,7 +190,7 @@ func TestPublishStashSlideAllocations(t *testing.T) {
 		}
 		n := testing.AllocsPerRun(50, step)
 		t.Logf("stash slide allocs per step = %v", n)
-		if !ws.stashView.motion.on {
+		if !ws.stashView.Motion.On {
 			t.Fatal("the slide settled during the measure")
 		}
 		if n > publishAllocBudget {
@@ -362,7 +363,7 @@ func TestPublishLeavingAllocations(t *testing.T) {
 			c.refreshShown()
 			layout := sc.settledLayout
 			sc.rects = make(map[WindowID]rectMotion, 6)
-			sp := viewSpring(100, 0)
+			sp := motion.ViewSpring(100, 0)
 			for i, p := range layout {
 				if i < 2 {
 					sc.mon.RemoveWindow(p.ID)
@@ -424,8 +425,8 @@ func TestPublishSubscribersAllocations(t *testing.T) {
 				continue
 			}
 			ws := sc.mon.Current()
-			ws.view.motion = c.spring(viewSpring(100, 0), t0)
-			ws.view.off = 100
+			ws.view.Motion = c.spring(motion.ViewSpring(100, 0), t0)
+			ws.view.Off = 100
 			startRectMotions(c, sc, t0)
 		}
 		step := publishStep(t, c, nil)
@@ -511,8 +512,8 @@ func BenchmarkPublishSubscribers(b *testing.B) {
 			continue
 		}
 		ws := sc.mon.Current()
-		ws.view.motion = c.spring(viewSpring(100, 0), t0)
-		ws.view.off = 100
+		ws.view.Motion = c.spring(motion.ViewSpring(100, 0), t0)
+		ws.view.Off = 100
 		startRectMotions(c, sc, t0)
 	}
 	ctx := context.Background()

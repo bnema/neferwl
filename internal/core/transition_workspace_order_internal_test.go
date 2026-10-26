@@ -6,6 +6,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/core/motion"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -388,9 +389,9 @@ func TestOverviewWorkspaceSwitchKeepsRunningDimAndSize(t *testing.T) {
 		if !m.Workspaces[1].has(3) {
 			t.Fatal("fixture: window 3 is not on workspace 1")
 		}
-		rm.dim, rm.ddim = c.spring(levelSpring(0.4, 0), ic.now), 0.4
-		rm.w, rm.dw = c.spring(viewSpring(10, 0), ic.now), 10
-		rm.h, rm.dh = c.spring(viewSpring(6, 0), ic.now), 6
+		rm.dim, rm.ddim = c.spring(motion.LevelSpring(0.4, 0), ic.now), 0.4
+		rm.w, rm.dw = c.spring(motion.ViewSpring(10, 0), ic.now), 10
+		rm.h, rm.dh = c.spring(motion.ViewSpring(6, 0), ic.now), 6
 		rm.scale = true
 		if sc.rects == nil {
 			sc.rects = make(map[WindowID]rectMotion)
@@ -410,11 +411,11 @@ func TestOverviewWorkspaceSwitchKeepsRunningDimAndSize(t *testing.T) {
 		m.Focus(1)
 		c.transition(shots, ic.now)
 		got := sc.rects[3]
-		if got.ddim != shot.dim || !got.dim.on {
+		if got.ddim != shot.dim || !got.dim.On {
 			t.Errorf("dim reset: %+v, want offset %g running", got.ddim, shot.dim)
 		}
-		if got.dw != shot.off.w || got.dh != shot.off.h || !got.w.on || !got.h.on || !got.scale {
-			t.Errorf("size reset: (%g,%g) running %v/%v, want (%g,%g)", got.dw, got.dh, got.w.on, got.h.on, shot.off.w, shot.off.h)
+		if got.dw != shot.off.w || got.dh != shot.off.h || !got.w.On || !got.h.On || !got.scale {
+			t.Errorf("size reset: (%g,%g) running %v/%v, want (%g,%g)", got.dw, got.dh, got.w.On, got.h.On, shot.off.w, shot.off.h)
 		}
 
 	})
@@ -456,7 +457,7 @@ func TestOverviewWorkspaceMovedFromOtherScreenGetsNoGroupSlide(t *testing.T) {
 			if p.Hidden || !moved.has(p.ID) {
 				continue
 			}
-			if rm := b.rects[p.ID]; rm.dx != 0 || rm.dy != 0 || rm.x.on || rm.y.on {
+			if rm := b.rects[p.ID]; rm.dx != 0 || rm.dy != 0 || rm.x.On || rm.y.On {
 				t.Errorf("moved window %d slides in as a group: %+v", p.ID, rm)
 			}
 		}

@@ -5,6 +5,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/bnema/neferwl/internal/core/motion"
 )
 
 func TestBorderAt(t *testing.T) {
@@ -14,7 +16,7 @@ func TestBorderAt(t *testing.T) {
 				w := spanWorkspace(mode, 2)
 				w.SetGaps(gap)
 				w.View = 0
-				w.view = slide{}
+				w.view = motion.Slide{}
 				rs := w.columnRects()
 				x := rs[0].X + rs[0].W + gap/2
 				y := rs[0].Y + 100

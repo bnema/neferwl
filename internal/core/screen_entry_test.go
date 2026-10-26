@@ -65,7 +65,7 @@ func TestCrossScreenFocusEntryIgnoresOffscreenColumns(t *testing.T) {
 			b.mon.AddWindow(id)
 		}
 		// Leave focus at the right end, so the earlier columns are off-screen.
-		w.view.stop()
+		w.view.Stop()
 		view := b.mon.viewport()
 		var want WindowID
 		best := 0
@@ -99,7 +99,7 @@ func TestCrossScreenNoVisibleWindowPreservesFocus(t *testing.T) {
 		w := b.mon.Current()
 		c.windows.mapped(ports.WindowMapped{ID: 4}, clock.now)
 		b.mon.AddWindow(4)
-		w.view.off = 2000
+		w.view.Off = 2000
 		for _, p := range b.mon.Layout() {
 			if b.mon.viewport().shows(p) {
 				t.Fatal("setup: visible window")
@@ -139,7 +139,7 @@ func TestFocusEntryDuringWorkspaceSlide(t *testing.T) {
 		m.AddWindow(5)
 		m.Current().FocusID(5)
 		m.switchAxis = verticalAxis
-		m.switchView.off = -.5
+		m.switchView.Off = -.5
 		view := m.viewport()
 		outgoing := false
 		for _, p := range m.Layout() {

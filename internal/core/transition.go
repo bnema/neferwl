@@ -5,6 +5,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/bnema/neferwl/internal/core/motion"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -113,9 +114,9 @@ type rectShot struct {
 // left is its last settled placement, which refreshShown appends (Hidden
 // and Leaving) to the settled and shown layouts, keeping them aligned.
 type rectMotion struct {
-	x, y, w, h     motion
+	x, y, w, h     motion.Motion
 	dx, dy, dw, dh float64
-	fade, dim      motion
+	fade, dim      motion.Motion
 	df, ddim       float64
 	scale          bool
 	leaving        bool
@@ -141,9 +142,9 @@ func (m *rectMotion) sample(now time.Time) (off, vel rectOffsets) {
 	return off, vel
 }
 
-func sampleComponent(m motion, off, vel *float64, now time.Time) {
-	if m.on {
-		*off, *vel = m.sampleAt(now)
+func sampleComponent(m motion.Motion, off, vel *float64, now time.Time) {
+	if m.On {
+		*off, *vel = m.SampleAt(now)
 	}
 }
 
@@ -157,13 +158,13 @@ func (m *rectMotion) advance(now time.Time) {
 	m.ddim = stepComponent(&m.dim, m.ddim, now)
 }
 
-func stepComponent(m *motion, cur float64, now time.Time) float64 {
-	if !m.on {
+func stepComponent(m *motion.Motion, cur float64, now time.Time) float64 {
+	if !m.On {
 		return cur
 	}
-	v, done := m.at(now)
+	v, done := m.At(now)
 	if done {
-		*m = motion{}
+		*m = motion.Motion{}
 		return 0
 	}
 	return v
@@ -171,7 +172,7 @@ func stepComponent(m *motion, cur float64, now time.Time) float64 {
 
 // on reports whether any component still runs.
 func (m *rectMotion) on() bool {
-	return m.x.on || m.y.on || m.w.on || m.h.on || m.fade.on || m.dim.on
+	return m.x.On || m.y.On || m.w.On || m.h.On || m.fade.On || m.dim.On
 }
 
 // settledFade is the Fade the motion springs to: a leaving window fades
@@ -219,20 +220,20 @@ func (m *rectMotion) show(p *Placement) {
 // retargetComponent starts m for an offset of off from its settled value at
 // now, with the speed v it had then. A component with nothing to move and no
 // speed stops.
-func (c *Core) retargetComponent(m *motion, cur *float64, off, v float64, now time.Time) {
-	c.retargetWith(m, cur, viewSpring(off, v), now)
+func (c *Core) retargetComponent(m *motion.Motion, cur *float64, off, v float64, now time.Time) {
+	c.retargetWith(m, cur, motion.ViewSpring(off, v), now)
 }
 
 // retargetLevel is retargetComponent for a fade or veil offset (a level in
 // 0..1): its spring runs to its fine epsilon, no pixel snap.
-func (c *Core) retargetLevel(m *motion, cur *float64, off, v float64, now time.Time) {
-	c.retargetWith(m, cur, levelSpring(off, v), now)
+func (c *Core) retargetLevel(m *motion.Motion, cur *float64, off, v float64, now time.Time) {
+	c.retargetWith(m, cur, motion.LevelSpring(off, v), now)
 }
 
-func (c *Core) retargetWith(m *motion, cur *float64, s spring, now time.Time) {
+func (c *Core) retargetWith(m *motion.Motion, cur *float64, s motion.Spring, now time.Time) {
 	*cur = s.From
 	if s.From == 0 && s.Velocity == 0 {
-		*m = motion{}
+		*m = motion.Motion{}
 		return
 	}
 	*m = c.spring(s, now)
@@ -539,10 +540,10 @@ func (c *Core) resizeFloating(v ports.WindowResized) {
 	kw, kh := float64(cur.W)/float64(old.W), float64(cur.H)/float64(old.H)
 	rm.dx, rm.dw = rm.dx*kw, rm.dw*kw
 	rm.dy, rm.dh = rm.dy*kh, rm.dh*kh
-	rm.x.scale(kw)
-	rm.w.scale(kw)
-	rm.y.scale(kh)
-	rm.h.scale(kh)
+	rm.x.Scale(kw)
+	rm.w.Scale(kw)
+	rm.y.Scale(kh)
+	rm.h.Scale(kh)
 	sc.rects[v.ID] = rm
 }
 
@@ -641,22 +642,22 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 		s.overview = m.ov.open
 		if !m.previewing() {
 			// A preview (the overview or the switcher's cards) does not scroll or slide: no camera.
-			s.settledView, s.view = w.View, float64(w.View)+w.view.off
+			s.settledView, s.view = w.View, float64(w.View)+w.view.Off
 			_, s.switchAxis = w.layout().axes()
-			if m.switchView.busy() {
+			if m.switchView.Busy() {
 				s.switchAxis = m.switchAxis
 			}
 		}
-		if w.view.motion.on {
-			_, s.viewV = w.view.motion.sampleAt(now)
+		if w.view.Motion.On {
+			_, s.viewV = w.view.Motion.SampleAt(now)
 		}
-		if m.switchView.motion.on {
-			_, s.switchV = m.switchView.motion.sampleAt(now)
+		if m.switchView.Motion.On {
+			_, s.switchV = m.switchView.Motion.SampleAt(now)
 		}
-		s.stashShown, s.stashAt, s.stashLen, s.stashPos = w.stashShown(), w.stashAt, len(w.Stash), float64(w.stashAt)+w.stashView.off
+		s.stashShown, s.stashAt, s.stashLen, s.stashPos = w.stashShown(), w.stashAt, len(w.Stash), float64(w.stashAt)+w.stashView.Off
 		s.card, s.wraps = m.cardAt(w), w.wrapsCards()
-		if w.stashView.motion.on {
-			_, s.stashV = w.stashView.motion.sampleAt(now)
+		if w.stashView.Motion.On {
+			_, s.stashV = w.stashView.Motion.SampleAt(now)
 		}
 		// settledLayout and shown are index-aligned and differ only by
 		// the offsets of sc.rects: the shot keeps both unrounded. The
@@ -691,7 +692,7 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 			}
 			if i := indexOf(list, w); i >= 0 {
 				s.list = append(s.list, list...)
-				s.pos, s.ok = float64(i)+m.switchView.off, true
+				s.pos, s.ok = float64(i)+m.switchView.Off, true
 			}
 		}
 		out = append(out, s)
@@ -752,8 +753,8 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 		if stashSlid(b, w) {
 			// A stash navigation slides the view from where it was drawn:
 			// the windows keep their settled places (transitionRects).
-			w.stashView.off = b.stashPos - float64(w.stashAt)
-			w.stashView.motion = c.spring(w.stashSpring(w.stashView.off, b.stashV), now)
+			w.stashView.Off = b.stashPos - float64(w.stashAt)
+			w.stashView.Motion = c.spring(w.stashSpring(w.stashView.Off, b.stashV), now)
 			return
 		}
 		if w.View == b.settledView || !w.slidable() {
@@ -761,8 +762,8 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 		}
 		// A running landing slide was retargeted by scroll(): its velocity
 		// carries over, and the spring starts now like every action's.
-		w.view.off = b.view - float64(w.View)
-		w.view.motion = c.spring(viewSpring(w.view.off, b.viewV), now)
+		w.view.Off = b.view - float64(w.View)
+		w.view.Motion = c.spring(motion.ViewSpring(w.view.Off, b.viewV), now)
 	case b.ok && m.shown == nil && movedFrom(b, before) == nil:
 		// A screen that received its workspace from another monitor does
 		// not slide to it: a running slide's list (switchList) may still
@@ -775,13 +776,13 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 		off := b.pos - float64(j)
 		// The snapshot's list is reused by the next action: the slide keeps
 		// its own copy.
-		m.switchView.off, m.switchList = off, slices.Clone(b.list)
+		m.switchView.Off, m.switchList = off, slices.Clone(b.list)
 		m.switchAxis = b.switchAxis
 		if off == 0 || m.framedSwitch() {
 			m.stopSwitch()
 			return
 		}
-		m.switchView.motion = c.spring(m.switchSpring(off, b.switchV), now)
+		m.switchView.Motion = c.spring(m.switchSpring(off, b.switchV), now)
 	}
 }
 

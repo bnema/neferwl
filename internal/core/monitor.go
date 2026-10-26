@@ -4,6 +4,7 @@ import (
 	"iter"
 	"slices"
 
+	"github.com/bnema/neferwl/internal/core/motion"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -41,7 +42,7 @@ type Monitor struct {
 	stashTerminal bool
 	// switchView slides the view between numbered workspaces: the view is
 	// at Active+switchView.off, in workspaces.
-	switchView slide
+	switchView motion.Slide
 	// switchAxis is frozen from the source workspace for each transition.
 	switchAxis layoutAxis
 	// switchList is the numbered list a landing slide measures from (the
@@ -627,7 +628,7 @@ func (m *Monitor) applyNamed() {
 		// The view offset belongs to the old content axis: SetMaxColumns
 		// scrolls back to the focus along the new one.
 		if content, _ := w.layout().axes(); content != axis {
-			w.view.stop()
+			w.view.Stop()
 			w.View = 0
 		}
 		// One call with the effective value: a passing smaller one would

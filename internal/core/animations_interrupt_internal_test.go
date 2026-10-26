@@ -6,6 +6,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/core/motion"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -142,13 +143,13 @@ func TestLastOutputUnplugMidRectMotion(t *testing.T) {
 		movingRects(t, c, ic, sc)
 		// A workspace switch spring runs too.
 		m := sc.mon
-		m.switchView.off, m.switchView.motion = 0.5, c.spring(workspaceSpring(0.5, 0), ic.now)
-		if !m.switchView.motion.on || !sc.springing() {
+		m.switchView.Off, m.switchView.Motion = 0.5, c.spring(motion.WorkspaceSpring(0.5, 0), ic.now)
+		if !m.switchView.Motion.On || !sc.springing() {
 			t.Fatal("no workspace switch to interrupt")
 		}
 		c.removeScreen("A")
-		if sc.mon.springing() || len(sc.rects) != 0 || sc.rectsWS != nil || sc.mon.switchView.motion.on || sc.mon.switchView.off != 0 {
-			t.Fatalf("the placeholder keeps springs: monitor %t, rects %d, switch %t (%v)", sc.mon.springing(), len(sc.rects), sc.mon.switchView.motion.on, sc.mon.switchView.off)
+		if sc.mon.springing() || len(sc.rects) != 0 || sc.rectsWS != nil || sc.mon.switchView.Motion.On || sc.mon.switchView.Off != 0 {
+			t.Fatalf("the placeholder keeps springs: monitor %t, rects %d, switch %t (%v)", sc.mon.springing(), len(sc.rects), sc.mon.switchView.Motion.On, sc.mon.switchView.Off)
 		}
 		if err := c.publish(context.Background()); err != nil {
 			t.Fatal(err)

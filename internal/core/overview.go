@@ -87,7 +87,7 @@ func (m *Monitor) ToggleOverview() {
 	// A slide in progress lands at once: the overview lays out the
 	// settled state.
 	m.stopSwitch()
-	m.each(func(w *Workspace) { w.view.stop(); w.stashView.stop() })
+	m.each(func(w *Workspace) { w.view.Stop(); w.stashView.Stop() })
 	m.ov.open, m.ov.from, m.ov.back = true, w, m.back
 	m.ov.scrollX, m.ov.scrollY, m.ov.scrolled, m.ov.sideways = 0, 0, false, false
 	m.overviewOpens++

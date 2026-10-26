@@ -3,38 +3,14 @@ package core
 import (
 	"math"
 	"time"
+
+	"github.com/bnema/neferwl/internal/core/motion"
 )
 
 // Slides move what is on screen smoothly: a workspace's columns (view), its
 // stash (stashView) and the monitor between workspaces (switchView). All
 // are pure presentation over the settled state (View, Focus, stashAt,
 // Active): the layout ends where the state says as soon as a slide stops.
-
-// slide is a view offset that a swipe sets while the fingers follow it, and
-// a spring then takes to 0 (off: pixels for the columns, windows for the
-// stash, workspaces for the monitor). Pure presentation over settled state.
-type slide struct {
-	off    float64
-	motion motion
-}
-
-// stop lands the slide where its state says.
-func (s *slide) stop() { *s = slide{} }
-
-// step moves a running spring to now and stops it once it settles.
-func (s *slide) step(now time.Time) {
-	if !s.motion.on {
-		return
-	}
-	v, done := s.motion.at(now)
-	s.off = v
-	if done {
-		s.stop()
-	}
-}
-
-// busy reports whether the slide is off its state or its spring runs.
-func (s *slide) busy() bool { return s.motion.on || s.off != 0 }
 
 // slidable reports whether a swipe can scroll the columns: scroll or cascade
 // overflow, with the focus on the columns and no fullscreen window.
@@ -46,22 +22,22 @@ func (w *Workspace) slidable() bool {
 // before during a landing slide: the slide heads for the new view.
 // Without a landing slide the view moves at once, as it always has.
 func (w *Workspace) retarget(before int) {
-	if w.View == before || !w.view.motion.on {
+	if w.View == before || !w.view.Motion.On {
 		return
 	}
-	w.view.off += float64(before - w.View)
-	w.view.motion = newMotion(viewSpring(w.view.off, w.view.motion.velocity()), time.Time{}, w.view.motion.slow)
+	w.view.Off += float64(before - w.View)
+	w.view.Motion = motion.NewMotion(motion.ViewSpring(w.view.Off, w.view.Motion.Velocity()), time.Time{}, w.view.Motion.Slow)
 }
 
-func (w *Workspace) shiftPixels() int { return int(math.Round(w.view.off)) }
+func (w *Workspace) shiftPixels() int { return int(math.Round(w.view.Off)) }
 
 // switchSpring is the workspace slide's spring from off: it snaps once it
 // is under half a logical pixel of the output span along the switch axis
 // from its target (slideLayout rounds the offset times that span).
-func (m *Monitor) switchSpring(off, velocity float64) spring {
-	s := workspaceSpring(off, velocity)
+func (m *Monitor) switchSpring(off, velocity float64) motion.Spring {
+	s := motion.WorkspaceSpring(off, velocity)
 	if h := m.switchAxis.span(m.template.Output); h > 0 {
-		s.Snap = pixelSnap / float64(h)
+		s.Snap = motion.PixelSnap / float64(h)
 	}
 	return s
 }
@@ -103,7 +79,7 @@ func (w *Workspace) snapFocus(view int, forward bool) (focus int) {
 }
 
 // stopSwitch lands the workspace slide and forgets the list it measured in.
-func (m *Monitor) stopSwitch() { m.switchView.stop(); m.switchList = nil }
+func (m *Monitor) stopSwitch() { m.switchView.Stop(); m.switchList = nil }
 
 // framedSwitch keeps transitions involving a sized workspace settled. A
 // monitor-wide animation has no per-workspace crop; it must not expose
@@ -120,7 +96,7 @@ func (m *Monitor) framedSwitch() bool {
 	if base < 0 {
 		return false
 	}
-	pos := float64(base) + m.switchView.off
+	pos := float64(base) + m.switchView.Off
 	for _, i := range [2]int{int(math.Floor(pos)), int(math.Ceil(pos))} {
 		if i >= 0 && i < len(list) && m.has(list[i]) && list[i].Output != m.Output() {
 			return true
@@ -134,7 +110,7 @@ func (m *Monitor) framedSwitch() bool {
 // A landing slide places them as the list was when the swipe began
 // (switchList): an empty workspace dropped since shows as background.
 func (m *Monitor) slideLayout(cur []Placement) []Placement {
-	if m.switchView.off == 0 || m.shown != nil || m.framedSwitch() {
+	if m.switchView.Off == 0 || m.shown != nil || m.framedSwitch() {
 		return cur
 	}
 	list := m.Workspaces
@@ -146,7 +122,7 @@ func (m *Monitor) slideLayout(cur []Placement) []Placement {
 		return cur
 	}
 	h := float64(m.switchAxis.span(m.template.Output))
-	pos := float64(base) + m.switchView.off
+	pos := float64(base) + m.switchView.Off
 	offset := func(p []Placement, k int) []Placement {
 		d := int(math.Round((float64(k) - pos) * h))
 		for i := range p {

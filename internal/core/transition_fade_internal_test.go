@@ -420,7 +420,7 @@ func TestRetargetClearsScaleKeepsFade(t *testing.T) {
 		settleShown(t, c)
 		c.appearAt(sc, settledOf(t, sc, 1), ic.now)
 		settleShown(t, c)
-		if rm := sc.rects[1]; !rm.scale || !rm.fade.on {
+		if rm := sc.rects[1]; !rm.scale || !rm.fade.On {
 			t.Fatalf("setup: %+v", rm)
 		}
 		ic.now = ic.now.Add(20 * time.Millisecond)
@@ -430,7 +430,7 @@ func TestRetargetClearsScaleKeepsFade(t *testing.T) {
 		sc.mon.AddWindow(2) // re-flows window 1
 		c.transition(before, ic.now)
 		rm, ok := sc.rects[1]
-		if !ok || rm.scale || !rm.fade.on || !rm.on() {
+		if !ok || rm.scale || !rm.fade.On || !rm.on() {
 			t.Fatalf("after the re-flow: %+v", rm)
 		}
 		w := sceneWindow(t, indicatorScene(t, c), 1)

@@ -5,6 +5,7 @@ import (
 	"math"
 	"slices"
 
+	"github.com/bnema/neferwl/internal/core/motion"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -260,7 +261,7 @@ func (w *Workspace) appendStash(out []Placement, focusedID, cover WindowID) []Pl
 	// The view is moved by stashView.off pitches, rounded once so every
 	// window shares the offset.
 	pitch := w.stashPitch(fw)
-	shift := int(math.Round(w.stashView.off * float64(pitch)))
+	shift := int(math.Round(w.stashView.Off * float64(pitch)))
 	for i, f := range w.Stash {
 		p := Placement{ID: f.ID, Floating: true, Focused: f.ID == focusedID, Inset: ports.SideAll}
 		d := i - w.stashAt
@@ -296,9 +297,9 @@ func (w *Workspace) stashPitch(fw int) int { return max(fw+w.stashGapPx(), 1) }
 
 // stashSpring lands a stash slide from off (in stash windows) with the
 // speed velocity; it snaps under half a pixel like the other slides.
-func (w *Workspace) stashSpring(off, velocity float64) spring {
-	s := workspaceSpring(off, velocity)
-	s.Snap = pixelSnap / float64(w.stashPitch(w.stashRect().W))
+func (w *Workspace) stashSpring(off, velocity float64) motion.Spring {
+	s := motion.WorkspaceSpring(off, velocity)
+	s.Snap = motion.PixelSnap / float64(w.stashPitch(w.stashRect().W))
 	return s
 }
 
@@ -306,5 +307,5 @@ func (w *Workspace) stashSpring(off, velocity float64) spring {
 // from stashAt draws: none at the centre of the view, all of it one window
 // away or more.
 func (w *Workspace) stashVeil(d int) float64 {
-	return min(math.Abs(float64(d)-w.stashView.off), 1)
+	return min(math.Abs(float64(d)-w.stashView.Off), 1)
 }

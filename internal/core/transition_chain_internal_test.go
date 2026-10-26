@@ -8,6 +8,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/core/motion"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -71,11 +72,12 @@ func TestChainedActionsSampleVelocityAtActionTime(t *testing.T) {
 				c.animate(ic.now, nil)
 				settleShown(t, c)
 				m := tt.motion(c)
-				last := m.velocity()
+				last := m.Velocity()
 				ic.now = ic.now.Add(time.Millisecond)
-				// The spring's own speed at now, computed without motion.at.
-				tau := time.Duration(float64(ic.now.Sub(m.start)) / m.slow)
-				want := m.spring.velocityAt(tau) / m.slow
+				// Advance a copy independently of snapshot's sampling.
+				sample := m
+				sample.At(ic.now)
+				want := sample.Velocity()
 				if math.Abs(want-last) < 1e-3 {
 					t.Fatalf("speed %v did not change in 1 ms (%v): the case checks nothing", last, want)
 				}
@@ -99,11 +101,11 @@ type chainCase struct {
 	first  []Action
 	second []Action
 	// motion is the motion the first action started.
-	motion func(*Core) motion
+	motion func(*Core) motion.Motion
 }
 
 // velocity is the speed of the motion the first action started.
-func (tt chainCase) velocity(c *Core) float64 { return tt.motion(c).velocity() }
+func (tt chainCase) velocity(c *Core) float64 { return tt.motion(c).Velocity() }
 
 func chainCases() []chainCase {
 	return []chainCase{
@@ -114,7 +116,7 @@ func chainCases() []chainCase {
 			}
 		}, []Action{ActionFocusColumnLeft, ActionFocusColumnLeft, ActionFocusColumnLeft},
 			[]Action{ActionFocusColumnRight, ActionFocusColumnRight, ActionFocusColumnRight},
-			func(c *Core) motion { return c.cur().mon.Current().view.motion }},
+			func(c *Core) motion.Motion { return c.cur().mon.Current().view.Motion }},
 		{"workspace switch", func(c *Core) {
 			m := c.cur().mon
 			m.AddWindow(1)
@@ -122,13 +124,13 @@ func chainCases() []chainCase {
 			m.AddWindow(2)
 			m.Focus(0)
 		}, []Action{ActionFocusWorkspaceNext}, []Action{ActionFocusWorkspaceNext},
-			func(c *Core) motion { return c.cur().mon.switchView.motion }},
+			func(c *Core) motion.Motion { return c.cur().mon.switchView.Motion }},
 		{"rect", func(c *Core) {
 			m := c.cur().mon
 			m.AddWindow(1)
 			m.AddWindow(2)
 		}, []Action{ActionMoveColumnLeft}, []Action{ActionMoveColumnRight},
-			func(c *Core) motion { return c.cur().rects[1].x }},
+			func(c *Core) motion.Motion { return c.cur().rects[1].x }},
 	}
 }
 
@@ -146,7 +148,7 @@ func TestStepKeepsFallbackTimerWhileAnotherOutputAnimates(t *testing.T) {
 		settleShown(t, c)
 		for _, sc := range []*screen{a, b} {
 			w := sc.mon.Current()
-			w.view.off, w.view.motion = 100, c.spring(viewSpring(100, 0), ic.now)
+			w.view.Off, w.view.Motion = 100, c.spring(motion.ViewSpring(100, 0), ic.now)
 		}
 		// The one frame timer is made on the first arm and reset afterwards:
 		// a re-arm shows as a Reset on the clock.
@@ -162,7 +164,7 @@ func TestStepKeepsFallbackTimerWhileAnotherOutputAnimates(t *testing.T) {
 		}
 
 		// With nothing else animating the flip's own publish decides.
-		b.mon.Current().view.stop()
+		b.mon.Current().view.Stop()
 		if err := c.step(context.Background(), a); err != nil {
 			t.Fatal(err)
 		}
@@ -192,7 +194,7 @@ func TestRefreshShownDropsRectsOfWindowsOutOfLayout(t *testing.T) {
 		sc.mon.AddWindow(1)
 		sc.mon.AddWindow(2)
 		settleShown(t, c)
-		sp := viewSpring(40, 0)
+		sp := motion.ViewSpring(40, 0)
 		sc.rects = map[WindowID]rectMotion{
 			1:  {x: c.spring(sp, ic.now), dx: 40},
 			99: {x: c.spring(sp, ic.now), dx: 40},
@@ -221,7 +223,7 @@ func TestNoCameraTransitionWhileSwipeFollows(t *testing.T) {
 		}
 		settleShown(t, c)
 		w := sc.mon.Current()
-		w.view.off = 25
+		w.view.Off = 25
 		c.swipe = &swipeGesture{screen: sc, ws: w, mode: swipeColumns}
 		before := c.snapshot(ic.now)
 		viewX := w.View
@@ -232,8 +234,8 @@ func TestNoCameraTransitionWhileSwipeFollows(t *testing.T) {
 			t.Fatal("the focus did not move the view: the case checks nothing")
 		}
 		c.transition(before, ic.now)
-		if w.view.motion.on || w.view.off != 25 {
-			t.Fatalf("camera motion %v, shift %v: the transition took over the fingers' view", w.view.motion.on, w.view.off)
+		if w.view.Motion.On || w.view.Off != 25 {
+			t.Fatalf("camera motion %v, shift %v: the transition took over the fingers' view", w.view.Motion.On, w.view.Off)
 		}
 
 	})
@@ -260,11 +262,11 @@ func TestNoSwitchMotionForSizedWorkspace(t *testing.T) {
 				before := c.snapshot(ic.now)
 				m.Focus(1)
 				c.transition(before, ic.now)
-				if got := m.switchView.motion.on; got == tc.sized {
+				if got := m.switchView.Motion.On; got == tc.sized {
 					t.Fatalf("switch motion %v with a sized workspace %v", got, tc.sized)
 				}
-				if tc.sized && m.switchView.off != 0 {
-					t.Fatalf("switchOff %v left for a framed switch", m.switchView.off)
+				if tc.sized && m.switchView.Off != 0 {
+					t.Fatalf("switchOff %v left for a framed switch", m.switchView.Off)
 				}
 
 			})
@@ -301,13 +303,13 @@ func TestChainedRectVelocityIsSampledAtActionTime(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
 		first, second Action
-		comp          func(*rectMotion) *motion
+		comp          func(*rectMotion) *motion.Motion
 		sampled       func(rectShot) float64
 	}{
 		{"width", ActionMaximizeColumn, ActionMaximizeColumn,
-			func(m *rectMotion) *motion { return &m.w }, func(r rectShot) float64 { return r.vel.w }},
+			func(m *rectMotion) *motion.Motion { return &m.w }, func(r rectShot) float64 { return r.vel.w }},
 		{"position", ActionMoveColumnLeft, ActionMoveColumnRight,
-			func(m *rectMotion) *motion { return &m.x }, func(r rectShot) float64 { return r.vel.x }},
+			func(m *rectMotion) *motion.Motion { return &m.x }, func(r rectShot) float64 { return r.vel.x }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -315,7 +317,7 @@ func TestChainedRectVelocityIsSampledAtActionTime(t *testing.T) {
 				sc := c.cur()
 				id := WindowID(0)
 				for k, rm := range sc.rects {
-					if tc.comp(&rm).on {
+					if tc.comp(&rm).On {
 						id = k
 					}
 				}
@@ -324,12 +326,13 @@ func TestChainedRectVelocityIsSampledAtActionTime(t *testing.T) {
 				}
 				rm := sc.rects[id]
 				m := tc.comp(&rm)
-				last := m.velocity()
+				last := m.Velocity()
 				ic.now = ic.now.Add(time.Millisecond)
 
-				// The expected speed is the spring's own at now, sampled independently.
-				tau := time.Duration(float64(ic.now.Sub(m.start)) / m.slow)
-				want := m.spring.velocityAt(tau) / m.slow
+				// Advance a copy independently of snapshot's sampling.
+				sample := *m
+				sample.At(ic.now)
+				want := sample.Velocity()
 				if math.Abs(want-last) < 1e-3 {
 					t.Fatalf("the speed did not change in 1 ms (%v to %v): the case checks nothing", last, want)
 				}
@@ -346,7 +349,7 @@ func TestChainedRectVelocityIsSampledAtActionTime(t *testing.T) {
 				}
 				// Sampling left the motion alone.
 				cur := sc.rects[id]
-				if got := tc.comp(&cur).velocity(); got != last {
+				if got := tc.comp(&cur).Velocity(); got != last {
 					t.Fatalf("snapshot moved the motion: speed %v, was %v", got, last)
 				}
 
@@ -354,10 +357,10 @@ func TestChainedRectVelocityIsSampledAtActionTime(t *testing.T) {
 				c.transition(before, ic.now)
 				after := sc.rects[id]
 				n := tc.comp(&after)
-				if !n.on {
+				if !n.On {
 					t.Fatalf("the second action left no %s motion", tc.name)
 				}
-				if v := n.velocity(); math.Abs(v-want) > 1e-6 {
+				if v := n.Velocity(); math.Abs(v-want) > 1e-6 {
 					t.Fatalf("speed %v after the second action, want the sampled %v", v, want)
 				}
 
@@ -430,14 +433,14 @@ func TestRectMotionOfUnmovedWindowIsUntouched(t *testing.T) {
 		sc := c.cur()
 
 		// A runs a rect motion, one frame in.
-		sp := viewSpring(60.5, 0)
+		sp := motion.ViewSpring(60.5, 0)
 		sc.rects = map[WindowID]rectMotion{1: {x: c.spring(sp, ic.now), dx: 60.5}}
 		sc.rectsWS = m.Current()
 		ic.now = ic.now.Add(30 * time.Millisecond)
 		c.animate(ic.now, nil)
 		settleShown(t, c)
 		a := sc.rects[1]
-		if !a.x.on || a.dx == 0 || a.dx == 60.5 || a.x.velocity() == 0 {
+		if !a.x.On || a.dx == 0 || a.dx == 60.5 || a.x.Velocity() == 0 {
 			t.Fatalf("setup: A's motion %+v is not mid-flight", a)
 		}
 
@@ -451,10 +454,10 @@ func TestRectMotionOfUnmovedWindowIsUntouched(t *testing.T) {
 		}
 		for _, id := range []WindowID{2, 3} {
 			b, ok := sc.rects[id]
-			if !ok || !b.y.on || b.dy == 0 {
+			if !ok || !b.y.On || b.dy == 0 {
 				t.Fatalf("window %d does not animate: %+v", id, b)
 			}
-			if b.x.on {
+			if b.x.On {
 				t.Fatalf("window %d moved sideways: %+v", id, b)
 			}
 		}

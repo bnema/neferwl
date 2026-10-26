@@ -1,4 +1,4 @@
-package core
+package motion
 
 import (
 	"math"
@@ -63,13 +63,19 @@ func (t *swipeTracker) projectedEnd() float64 {
 	return t.pos - t.velocity()/(1000*math.Log(touchpadDeceleration))
 }
 
-// spring is a damped spring from From to To (libadwaita's model, as in
+// Spring is a damped spring from From to To (libadwaita's model, as in
 // niri). Velocity is the initial speed in units per second.
-type spring struct {
-	From, To, Velocity float64
-	DampingRatio       float64
-	Stiffness          float64
-	Epsilon            float64
+type Spring struct {
+	// From and To are the starting and target positions.
+	From, To float64
+	// Velocity is the initial speed in units per second.
+	Velocity float64
+	// DampingRatio controls damping relative to critical damping (1).
+	DampingRatio float64
+	// Stiffness is the spring constant for a unit mass.
+	Stiffness float64
+	// Epsilon is the settling tolerance used to determine duration.
+	Epsilon float64
 	// Snap, when set, settles the motion as soon as it can no longer
 	// stray that far from To: a position in pixels whose rounded value
 	// is already the settled one draws no different frame, so the tail
@@ -79,37 +85,39 @@ type spring struct {
 	Snap float64
 }
 
-// pixelSnap is the Snap of a spring in logical pixels: offsets are rounded
+// PixelSnap is the Snap of a spring in logical pixels: offsets are rounded
 // to whole logical pixels before the renderer scales them (rectMotion.apply,
 // Workspace.shiftPixels), so a spring that stays under half a pixel from
 // its target draws the settled rect from then on, at any output scale.
-const pixelSnap = 0.5
+const PixelSnap = 0.5
 
-// viewSpring moves a scrolled view, or a rect offset, in logical pixels;
-// workspaceSpring switches workspaces, in workspaces (the caller sets its
+// ViewSpring moves a scrolled view, or a rect offset, in logical pixels;
+// WorkspaceSpring switches workspaces, in workspaces (the caller sets its
 // Snap from the output height). Both are critically damped: fast, with no
 // overshoot.
-func viewSpring(from, velocity float64) spring {
-	return spring{From: from, Velocity: velocity, DampingRatio: 1, Stiffness: 800, Epsilon: 0.0001, Snap: pixelSnap}
+func ViewSpring(from, velocity float64) Spring {
+	return Spring{From: from, Velocity: velocity, DampingRatio: 1, Stiffness: 800, Epsilon: 0.0001, Snap: PixelSnap}
 }
 
-// levelSpring is viewSpring for a level in 0..1 (a fade, a veil): no snap,
+// LevelSpring is ViewSpring for a level in 0..1 (a fade, a veil): no snap,
 // a fraction of a level still shows.
-func levelSpring(from, velocity float64) spring {
-	s := viewSpring(from, velocity)
+func LevelSpring(from, velocity float64) Spring {
+	s := ViewSpring(from, velocity)
 	s.Snap = 0
 	return s
 }
 
-func workspaceSpring(from, velocity float64) spring {
-	return spring{From: from, Velocity: velocity, DampingRatio: 1, Stiffness: 1000, Epsilon: 0.0001}
+// WorkspaceSpring switches workspaces with critical damping, in workspace units.
+// The caller sets Snap from the output span.
+func WorkspaceSpring(from, velocity float64) Spring {
+	return Spring{From: from, Velocity: velocity, DampingRatio: 1, Stiffness: 1000, Epsilon: 0.0001}
 }
 
 // settled reports whether a critically damped spring at pos with speed vel
 // stays within Snap of To from now on. From there the offset is
 // x(t) = e^(-βt)(x + (βx+v)t), bounded by |x| + (β|x|+|v|)·max(t·e^(-βt))
 // = |x|(1+1/e) + |v|/(βe) (the peak is at t = 1/β).
-func (s spring) settled(pos, vel float64) bool {
+func (s Spring) settled(pos, vel float64) bool {
 	if s.Snap <= 0 {
 		return false
 	}
@@ -125,7 +133,7 @@ func (s spring) settled(pos, vel float64) bool {
 // them (libadwaita, niri).
 const f32Epsilon = 1.1920929e-07
 
-func (s spring) coefficients() (beta, omega0 float64) {
+func (s Spring) coefficients() (beta, omega0 float64) {
 	const mass = 1.0
 	k := max(s.Stiffness, 0)
 	damping := max(s.DampingRatio, 0) * 2 * math.Sqrt(mass*k)
@@ -133,7 +141,7 @@ func (s spring) coefficients() (beta, omega0 float64) {
 }
 
 // valueAt is the spring position t after it started.
-func (s spring) valueAt(t time.Duration) float64 {
+func (s Spring) valueAt(t time.Duration) float64 {
 	sec := t.Seconds()
 	beta, omega0 := s.coefficients()
 	x0 := s.From - s.To
@@ -152,7 +160,7 @@ func (s spring) valueAt(t time.Duration) float64 {
 }
 
 // duration is how long the spring takes to settle within Epsilon.
-func (s spring) duration() time.Duration {
+func (s Spring) duration() time.Duration {
 	const step = 0.001
 	beta, omega0 := s.coefficients()
 	if beta <= 0 {
@@ -190,7 +198,7 @@ func (s spring) duration() time.Duration {
 func seconds(s float64) time.Duration { return time.Duration(s * float64(time.Second)) }
 
 // velocityAt is the spring speed t after it started, in units per second.
-func (s spring) velocityAt(t time.Duration) float64 {
+func (s Spring) velocityAt(t time.Duration) float64 {
 	sec := t.Seconds()
 	beta, omega0 := s.coefficients()
 	x0 := s.From - s.To
@@ -212,22 +220,24 @@ func (s spring) velocityAt(t time.Duration) float64 {
 	}
 }
 
-// motion is a spring started at a given time; a zero start begins at the
-// first frame. It is a value: on tells whether one runs. slow stretches
-// the spring's time (a slowdown of 2 takes twice as long) and v is the
-// current speed in units per second, so a retarget can keep it.
-type motion struct {
-	spring spring
+// Motion is a spring started at a given time; a zero start begins at the
+// first frame. It remains a value, not an interface or a shared animation.
+// The former core motion type is named Motion to distinguish it from this package.
+type Motion struct {
+	// Spring is the underlying spring, with velocity in slowed spring time.
+	Spring Spring
 	start  time.Time
 	end    time.Duration
-	slow   float64
-	v      float64
-	on     bool
+	// Slow stretches spring time: 2 takes twice as long.
+	Slow float64
+	v    float64
+	// On reports whether this value holds a running motion. The owner clears it.
+	On bool
 }
 
-// newMotion starts s at now, slowed down slow times (slow <= 0 is 1). The
+// NewMotion starts s at now, slowed down slow times (slow <= 0 is 1). The
 // spring's Velocity is in units per second of real time.
-func newMotion(s spring, now time.Time, slow float64) motion {
+func NewMotion(s Spring, now time.Time, slow float64) Motion {
 	if slow <= 0 {
 		slow = 1
 	}
@@ -235,74 +245,74 @@ func newMotion(s spring, now time.Time, slow float64) motion {
 	s.Velocity *= slow
 	// The slowdown is capped by the config, so this cannot overflow.
 	end := time.Duration(float64(s.duration()) * slow)
-	return motion{spring: s, start: now, end: end, slow: slow, v: v, on: true}
+	return Motion{Spring: s, start: now, end: end, Slow: slow, v: v, On: true}
 }
 
-// at is the position at now and whether the motion has settled.
-func (m *motion) at(now time.Time) (float64, bool) {
+// At is the position at now and whether the motion has settled.
+func (m *Motion) At(now time.Time) (float64, bool) {
 	if m.start.IsZero() {
 		m.start = now
 	}
 	t := now.Sub(m.start)
 	if t >= m.end {
 		m.v = 0
-		return m.spring.To, true
+		return m.Spring.To, true
 	}
-	tau := time.Duration(float64(max(t, 0)) / m.slow)
-	pos, vel := m.spring.valueAt(tau), m.spring.velocityAt(tau)
-	if m.spring.settled(pos, vel) {
+	tau := time.Duration(float64(max(t, 0)) / m.Slow)
+	pos, vel := m.Spring.valueAt(tau), m.Spring.velocityAt(tau)
+	if m.Spring.settled(pos, vel) {
 		m.v = 0
-		return m.spring.To, true
+		return m.Spring.To, true
 	}
-	m.v = vel / m.slow
+	m.v = vel / m.Slow
 	return pos, false
 }
 
-// sampleAt is the position and speed m has at now, in units per second,
-// without moving m: m is a copy, so at's bookkeeping (start, v) stays out.
-func (m motion) sampleAt(now time.Time) (pos, vel float64) {
-	pos, _ = m.at(now)
+// SampleAt is the position and speed m has at now, in units per second,
+// without moving m: m is a copy, so At's bookkeeping (start, v) stays out.
+func (m Motion) SampleAt(now time.Time) (pos, vel float64) {
+	pos, _ = m.At(now)
 	return pos, m.v
 }
 
-// scale multiplies the motion's distance and speed by k: the spring is
+// Scale multiplies the motion's distance and speed by k: the spring is
 // linear in its start offset and speed, so the progress is unchanged.
-func (m *motion) scale(k float64) {
-	if !m.on {
+func (m *Motion) Scale(k float64) {
+	if !m.On {
 		return
 	}
-	m.spring.From *= k
-	m.spring.Velocity *= k
+	m.Spring.From *= k
+	m.Spring.Velocity *= k
 	m.v *= k
 }
 
-// velocity is the speed of the last sample, in units per second.
-func (m motion) velocity() float64 { return m.v }
+// Velocity is the speed of the last sample, in units per second.
+func (m Motion) Velocity() float64 { return m.v }
 
-// rubberBand resists movement past the edges: the further out, the less
+// RubberBand resists movement past the edges: the further out, the less
 // it moves, never more than limit.
-type rubberBand struct{ stiffness, limit float64 }
+type RubberBand struct{ stiffness, limit float64 }
 
-// workspaceBand holds a swipe past the steps it may reach, in steps: a
+// WorkspaceBand holds a swipe past the steps it may reach, in steps: a
 // twentieth of a workspace at most. Column swipes scale it to pixels.
-var workspaceBand = rubberBand{stiffness: 0.5, limit: 0.05}
+var WorkspaceBand = RubberBand{stiffness: 0.5, limit: 0.05}
 
-// scaled is the band measured in units k times smaller.
-func (r rubberBand) scaled(k float64) rubberBand {
-	return rubberBand{stiffness: r.stiffness, limit: r.limit * k}
+// Scaled is the band measured in units k times smaller.
+func (r RubberBand) Scaled(k float64) RubberBand {
+	return RubberBand{stiffness: r.stiffness, limit: r.limit * k}
 }
 
-func (r rubberBand) band(x float64) float64 {
+func (r RubberBand) band(x float64) float64 {
 	return (1 - 1/(x*r.stiffness/r.limit+1)) * r.limit
 }
 
-func (r rubberBand) derivative(x float64) float64 {
+func (r RubberBand) derivative(x float64) float64 {
 	d := r.stiffness*x + r.limit
 	return r.stiffness * r.limit * r.limit / (d * d)
 }
 
 // clamp keeps x in [lo, hi], letting it stretch past the edges.
-func (r rubberBand) clamp(lo, hi, x float64) float64 {
+func (r RubberBand) clamp(lo, hi, x float64) float64 {
 	c := min(max(x, lo), hi)
 	if x < c {
 		return c - r.band(c-x)
@@ -311,7 +321,7 @@ func (r rubberBand) clamp(lo, hi, x float64) float64 {
 }
 
 // clampDerivative is the slope of clamp at x: 1 inside the edges.
-func (r rubberBand) clampDerivative(lo, hi, x float64) float64 {
+func (r RubberBand) clampDerivative(lo, hi, x float64) float64 {
 	if lo <= x && x <= hi {
 		return 1
 	}

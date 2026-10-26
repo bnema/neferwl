@@ -4,6 +4,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/bnema/neferwl/internal/core/motion"
 )
 
 // TestAnimateAllocations guards animate: with a camera, a switch and 20 rect
@@ -20,21 +22,21 @@ func TestAnimateAllocations(t *testing.T) {
 		m.AddWindow(2)
 
 		ws := m.Workspaces[0]
-		ws.view.motion = c.spring(viewSpring(100, 0), t0)
-		ws.view.off = 100
-		m.switchView.motion = c.spring(workspaceSpring(100, 0), t0)
-		m.switchView.off = 100
-		ws.stashView.motion = c.spring(workspaceSpring(0.5, 0), t0)
-		ws.stashView.off = 0.5
+		ws.view.Motion = c.spring(motion.ViewSpring(100, 0), t0)
+		ws.view.Off = 100
+		m.switchView.Motion = c.spring(motion.WorkspaceSpring(100, 0), t0)
+		m.switchView.Off = 100
+		ws.stashView.Motion = c.spring(motion.WorkspaceSpring(0.5, 0), t0)
+		ws.stashView.Off = 0.5
 		sc.rects = make(map[WindowID]rectMotion, 20)
 		for i := range 20 {
-			sp := viewSpring(50, 0)
+			sp := motion.ViewSpring(50, 0)
 			rm := rectMotion{
 				x: c.spring(sp, t0), y: c.spring(sp, t0),
 				w: c.spring(sp, t0), h: c.spring(sp, t0),
 				dx: 50, dy: 50, dw: 50, dh: 50,
-				fade: c.spring(levelSpring(1, 0), t0), df: 1,
-				dim: c.spring(levelSpring(0.5, 0), t0), ddim: 0.5,
+				fade: c.spring(motion.LevelSpring(1, 0), t0), df: 1,
+				dim: c.spring(motion.LevelSpring(0.5, 0), t0), ddim: 0.5,
 				scale: true,
 			}
 			if i%2 == 0 {
@@ -51,7 +53,7 @@ func TestAnimateAllocations(t *testing.T) {
 			if i%2 == 1 {
 				from = -0.5
 			}
-			rm.dim, rm.ddim = c.spring(levelSpring(from, 0), t0), from
+			rm.dim, rm.ddim = c.spring(motion.LevelSpring(from, 0), t0), from
 			sc.rects[WindowID(200+i)] = rm
 		}
 
@@ -61,8 +63,8 @@ func TestAnimateAllocations(t *testing.T) {
 				t.Errorf("animate(%s) allocs = %v, want 0", name, n)
 			}
 		}
-		if !ws.view.motion.on || !ws.stashView.motion.on || !m.switchView.motion.on || len(sc.rects) != 24 {
-			t.Fatalf("motions settled: camera %v switch %v rects %d", ws.view.motion.on, m.switchView.motion.on, len(sc.rects))
+		if !ws.view.Motion.On || !ws.stashView.Motion.On || !m.switchView.Motion.On || len(sc.rects) != 24 {
+			t.Fatalf("motions settled: camera %v switch %v rects %d", ws.view.Motion.On, m.switchView.Motion.On, len(sc.rects))
 		}
 
 	})

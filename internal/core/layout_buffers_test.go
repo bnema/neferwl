@@ -8,6 +8,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/core/motion"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -73,7 +74,7 @@ func layoutVariants(t *testing.T) map[string]*Monitor {
 	m.Apply(ActionFocusWorkspaceNext)
 	m.AddWindow(20)
 	m.Apply(ActionFocusWorkspacePrev)
-	m.switchView.off = 0.4
+	m.switchView.Off = 0.4
 	v["slide"] = m
 
 	// The variants must hold what they are named for, on the workspace on
@@ -187,9 +188,9 @@ func TestLayoutResultsDoNotAlias(t *testing.T) {
 			}
 			_ = m.Layout()
 			_ = m.Current().Layout()
-			m.switchView.off = 0.3
+			m.switchView.Off = 0.3
 			_ = m.Layout()
-			m.switchView.off = 0
+			m.switchView.Off = 0
 
 			if !slices.Equal(first, kept) {
 				t.Fatalf("%s: a retained Monitor.Layout() changed\n got %+v\nwant %+v", name, first, kept)
@@ -261,7 +262,7 @@ func TestPublishedScenesAreNeverMutated(t *testing.T) {
 			var e []expect
 			for _, sc := range c.screens {
 				if sc.name() != "" {
-					e = append(e, expect{sc.name(), sc.mon.Layout(), len(sc.rects) == 0 && !sc.mon.Current().view.motion.on})
+					e = append(e, expect{sc.name(), sc.mon.Layout(), len(sc.rects) == 0 && !sc.mon.Current().view.Motion.On})
 				}
 			}
 			return e
@@ -310,8 +311,8 @@ func TestPublishedScenesAreNeverMutated(t *testing.T) {
 				continue
 			}
 			ws := sc.mon.Current()
-			ws.view.motion = c.spring(viewSpring(100, 0), t0)
-			ws.view.off = 100
+			ws.view.Motion = c.spring(motion.ViewSpring(100, 0), t0)
+			ws.view.Off = 100
 			startRectMotions(c, sc, t0)
 		}
 		for range 12 {

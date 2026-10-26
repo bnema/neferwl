@@ -111,12 +111,12 @@ func TestFlashSettlesAndResolvesFinalRect(t *testing.T) {
 				c, clock := flashCore(t)
 				w := c.cur().mon.Current()
 				c.requestFlash(level, 3)
-				w.view.off = 20
+				w.view.Off = 20
 				clock.now = clock.now.Add(flashSettle)
 				if c.flashTick() || c.flash.timerC == nil {
 					t.Fatal("did not wait for layout")
 				}
-				w.view.stop()
+				w.view.Stop()
 				w.MoveColumn(-1)
 				clock.now = clock.now.Add(flashRecheck)
 				if !c.flashTick() {
