@@ -41,7 +41,7 @@ func TestQueuedDestroyedAttachmentRetainsScaleAndCrop(t *testing.T) {
 	requestProtocol(t, c, discarded, wayland.BufferRequestDestroy)
 	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
 	roundtrip(t, c)
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case got := <-contents:
@@ -83,7 +83,7 @@ func TestScaleOnlyRetainedViewportAndSameBufferReattach(t *testing.T) {
 	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
 	roundtrip(t, c)
 	var first uint64
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for first == 0 {
 		select {
 		case got := <-contents:
@@ -98,7 +98,7 @@ func TestScaleOnlyRetainedViewportAndSameBufferReattach(t *testing.T) {
 	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
 	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
 	roundtrip(t, c)
-	deadline = time.After(2 * time.Second)
+	deadline = waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case got := <-contents:
@@ -158,7 +158,7 @@ func TestQueuedDestroyedThenNewBuffer(t *testing.T) {
 	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
 	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
 	roundtrip(t, c)
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case got := <-contents:
@@ -224,7 +224,7 @@ func TestQueuedViewportRecreatedErrorObject(t *testing.T) {
 			requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
 			requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
 			roundtrip(t, c)
-			deadline := time.After(2 * time.Second)
+			deadline := waylandDeadline(2 * time.Second)
 			for {
 				select {
 				case got := <-contents:

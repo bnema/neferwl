@@ -22,7 +22,7 @@ func (p *inhibitorProxy) Dispatch(e *wlturbo.Event) {
 // clientEvent waits for the next client event of type T.
 func clientEvent[T ports.ClientEvent](t *testing.T, events <-chan ports.ClientEvent) T {
 	t.Helper()
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case ev := <-events:
@@ -67,7 +67,7 @@ func TestShortcutsInhibitor(t *testing.T) {
 					t.Fatalf("state %v", got)
 				}
 				return
-			case <-time.After(5 * time.Millisecond):
+			case <-waylandDeadline(5 * time.Millisecond):
 			}
 		}
 		t.Fatal("no active/inactive event")

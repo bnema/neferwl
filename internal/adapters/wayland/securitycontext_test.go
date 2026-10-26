@@ -271,7 +271,7 @@ func TestSecurityContextStopsWithTheCompositor(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-waylandDeadline(5 * time.Second):
 		t.Fatal("Run did not return")
 	}
 	if s.securityLive.Load() != 0 || !l.refused() {

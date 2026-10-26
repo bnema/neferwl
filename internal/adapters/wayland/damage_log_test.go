@@ -36,7 +36,7 @@ func TestClientDamageLog(t *testing.T) {
 				}
 				select {
 				case <-contents:
-				case <-time.After(2 * time.Second):
+				case <-waylandDeadline(2 * time.Second):
 					t.Fatal("no content")
 				}
 			}

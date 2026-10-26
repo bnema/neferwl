@@ -34,7 +34,7 @@ func TestSinglePixelBuffer(t *testing.T) {
 		if err := c.Roundtrip(); err != nil {
 			t.Fatal(err)
 		}
-		timeout := time.After(2 * time.Second)
+		timeout := waylandDeadline(2 * time.Second)
 		for {
 			select {
 			case got := <-contents:

@@ -81,7 +81,7 @@ func TestDialogModal(t *testing.T) {
 		if err := c.Roundtrip(); err != nil {
 			t.Fatal(err)
 		}
-		for deadline := time.After(2 * time.Second); ; {
+		for deadline := waylandDeadline(2 * time.Second); ; {
 			select {
 			case ev := <-events:
 				if m, ok := ev.(ports.WindowModal); ok {

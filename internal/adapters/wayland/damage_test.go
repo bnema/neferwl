@@ -57,7 +57,7 @@ func TestDamageHistory(t *testing.T) {
 		if err := c.Roundtrip(); err != nil {
 			t.Fatal(err)
 		}
-		deadline := time.After(2 * time.Second)
+		deadline := waylandDeadline(2 * time.Second)
 		for {
 			select {
 			case got := <-contents:

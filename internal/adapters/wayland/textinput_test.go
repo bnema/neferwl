@@ -99,7 +99,7 @@ func newTextApp(t *testing.T, s *Server, events chan ports.ClientEvent, commands
 	log := newIMELog(c, ti, textInputEvents...)
 	requestProtocol(t, c, manager, textinput.ZwpTextInputManagerV3RequestGetTextInput, ti, seat)
 	commands <- ports.FocusWindow{ID: w.ID}
-	waitFocus(t, s, w.ID)
+	waitFocus(t, s, commands, w.ID)
 	roundtrip(t, c)
 	// surfaceMapper allocated the toplevel right after the xdg_surface.
 	return &textApp{c: c, ti: ti, surf: surf, top: xdg + 1, window: w.ID, log: log, keys: keys}
@@ -178,7 +178,7 @@ func TestTextInputFollowsFocus(t *testing.T) {
 	expectEvents(t, "b", b.log.take(), fmt.Sprint("enter ", b.surf))
 
 	commands <- ports.FocusWindow{ID: a.window}
-	waitFocus(t, s, a.window)
+	waitFocus(t, s, commands, a.window)
 	settle(t, a.c, b.c)
 	expectEvents(t, "a", a.log.take(), fmt.Sprint("enter ", a.surf))
 	expectEvents(t, "b", b.log.take(), fmt.Sprint("leave ", b.surf))
@@ -186,7 +186,7 @@ func TestTextInputFollowsFocus(t *testing.T) {
 	// Closing the focused window leaves.
 	requestProtocol(t, a.c, a.top, xdgshell.ToplevelRequestDestroy)
 	settle(t, a.c)
-	waitFocus(t, s, 0)
+	waitFocus(t, s, commands, 0)
 	settle(t, a.c)
 	expectEvents(t, "a", a.log.take(), fmt.Sprint("leave ", a.surf))
 }
@@ -367,7 +367,7 @@ func TestTextInputTeardown(t *testing.T) {
 	requestProtocol(t, app.c, app.surf, wayland.SurfaceRequestDestroy)
 	settle(t, app.c, ime.c)
 	unmapped(t, events, app.window)
-	waitFocus(t, s, 0)
+	waitFocus(t, s, commands, 0)
 	settle(t, ime.c)
 	expectEvents(t, "ime", ime.log.take(), "deactivate", "done")
 
@@ -462,11 +462,11 @@ func TestTextInputLeaveBeforeEnter(t *testing.T) {
 		requestProtocol(t, c, manager, textinput.ZwpTextInputManagerV3RequestGetTextInput, p.ID(), seat)
 	}
 	commands <- ports.FocusWindow{ID: a.ID}
-	waitFocus(t, s, a.ID)
+	waitFocus(t, s, commands, a.ID)
 	settle(t, c)
 	log.take()
 	commands <- ports.FocusWindow{ID: b.ID}
-	waitFocus(t, s, b.ID)
+	waitFocus(t, s, commands, b.ID)
 	settle(t, c)
 	expectEvents(t, "focus", log.take(), fmt.Sprint("t1 leave ", aSurf), fmt.Sprint("t2 leave ", aSurf), fmt.Sprint("t1 enter ", bSurf), fmt.Sprint("t2 enter ", bSurf))
 }

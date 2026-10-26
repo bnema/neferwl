@@ -139,7 +139,7 @@ func TestForeignParentsDialog(t *testing.T) {
 	if err := portal.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	for deadline := time.After(2 * time.Second); ; {
+	for deadline := waylandDeadline(2 * time.Second); ; {
 		select {
 		case ev := <-events:
 			if p, ok := ev.(ports.WindowParent); ok {

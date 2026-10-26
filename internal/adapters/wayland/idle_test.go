@@ -48,7 +48,7 @@ func (p *eventProxy) next(t *testing.T, c *wlturbo.Display, wait time.Duration) 
 		select {
 		case e := <-p.events:
 			return e
-		case <-time.After(5 * time.Millisecond):
+		case <-waylandDeadline(5 * time.Millisecond):
 		}
 	}
 	t.Fatal("no event")
@@ -66,7 +66,7 @@ func (p *eventProxy) none(t *testing.T, c *wlturbo.Display, d time.Duration) {
 		select {
 		case e := <-p.events:
 			t.Fatalf("unexpected event %v", e)
-		case <-time.After(5 * time.Millisecond):
+		case <-waylandDeadline(5 * time.Millisecond):
 		}
 	}
 }
@@ -222,7 +222,7 @@ func TestOutputPower(t *testing.T) {
 		if v, ok := ev.(ports.OutputPower); ok {
 			t.Fatalf("failed object sent %+v", v)
 		}
-	case <-time.After(50 * time.Millisecond):
+	case <-waylandDeadline(50 * time.Millisecond):
 	}
 }
 
@@ -263,7 +263,7 @@ func nextArmed(t *testing.T, timers <-chan armed) armed {
 	select {
 	case a := <-timers:
 		return a
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no idle timer started")
 		return armed{}
 	}

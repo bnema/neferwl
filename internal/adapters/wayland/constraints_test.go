@@ -252,7 +252,7 @@ func TestPointerConfineOneshotRegion(t *testing.T) {
 	select {
 	case ev := <-confineEvents:
 		t.Fatalf("oneshot reactivated: %v", ev)
-	case <-time.After(50 * time.Millisecond):
+	case <-waylandDeadline(50 * time.Millisecond):
 	}
 
 	// A second constraint on the surface is a protocol error.

@@ -46,7 +46,13 @@ func TestPostRingFullBlocksWithoutLoss(t *testing.T) {
 	s, _, _, _, _, _ := presentServer(t)
 	const limit, total = 4, 3*4 + 1
 	var got []int // display goroutine only
-	r := newPostRing(s.display, limit, func(v int) { got = append(got, v) })
+	applied := make(chan struct{})
+	r := newPostRing(s.display, limit, func(v int) {
+		got = append(got, v)
+		if len(got) == total {
+			close(applied)
+		}
+	})
 
 	// Stall the display goroutine so nothing drains.
 	release := make(chan struct{})
@@ -70,33 +76,23 @@ func TestPostRingFullBlocksWithoutLoss(t *testing.T) {
 	for range limit {
 		select {
 		case <-pushed:
-		case <-time.After(2 * time.Second):
+		case <-waylandDeadline(2 * time.Second):
 			t.Fatal("pushes below the limit blocked")
 		}
 	}
 	select {
 	case i := <-pushed:
 		t.Fatalf("push %d returned on a full ring", i)
-	case <-time.After(50 * time.Millisecond):
+	case <-waylandDeadline(50 * time.Millisecond):
 	}
 	close(release)
 	wg.Wait()
-	// The marker runs after every drain posted before it.
-	var final []int
-	ran := make(chan struct{})
-	for {
-		s.display.Post(func() {
-			if len(got) == total {
-				final = append(final, got...)
-			}
-			ran <- struct{}{}
-		})
-		<-ran
-		if final != nil {
-			break
-		}
-		time.Sleep(time.Millisecond)
+	select {
+	case <-applied:
+	case <-waylandDeadline(2 * time.Second):
+		t.Fatal("ring did not apply all pushes")
 	}
+	final := got
 	for i, v := range final {
 		if v != i {
 			t.Fatalf("applied %v, want 0..%d in order", final, total-1)
@@ -120,7 +116,7 @@ func TestPostRingBlockedPushResumes(t *testing.T) {
 	select {
 	case ok := <-result:
 		t.Fatalf("push on a full ring returned %v", ok)
-	case <-time.After(50 * time.Millisecond):
+	case <-waylandDeadline(50 * time.Millisecond):
 	}
 	close(release)
 	select {
@@ -128,7 +124,7 @@ func TestPostRingBlockedPushResumes(t *testing.T) {
 		if !ok {
 			t.Fatal("push refused while the display runs")
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("blocked push never resumed")
 	}
 }
@@ -157,7 +153,7 @@ func TestPostRingPushStopsWithDisplay(t *testing.T) {
 		if ok {
 			t.Fatal("push on a stopped display reported success")
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("push blocked after the display stopped")
 	}
 }
@@ -180,7 +176,11 @@ func TestPostRingStatsPushBlock(t *testing.T) {
 	go func() { defer close(done); r.Push(2) }() // full: waits for the drain
 	waitPushWaiting(t)
 	seen := time.Now()
-	time.Sleep(2 * time.Millisecond) // the block lasts at least this
+	// Join a goroutine while the display remains stalled: this measured
+	// interval is a real lower bound on the push's blocked duration.
+	measured := make(chan struct{})
+	go func() { close(measured) }()
+	<-measured
 	held := time.Since(seen)
 	release.do()
 	<-done

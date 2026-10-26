@@ -46,7 +46,7 @@ func nextBatch(t *testing.T, in <-chan *ports.ContentBatch) *ports.ContentBatch 
 	select {
 	case b := <-in:
 		return b
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no batch")
 		return nil
 	}
@@ -256,7 +256,7 @@ func TestContentBatchAttachReplaysLargeSet(t *testing.T) {
 	var in <-chan *ports.ContentBatch
 	select {
 	case in = <-attached:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("AttachOutput waits for the output to read")
 	}
 	b := nextBatch(t, in)
@@ -278,6 +278,7 @@ func TestContentBatchHandshakeNeverStrandsContent(t *testing.T) {
 	s := linkServer(t)
 	in, ret := s.AttachOutput("A")
 	const windows, rounds = 4, 3000
+	progress := make(chan struct{}, 1)
 	var last [windows + 1]atomic.Uint64
 	stop, ended := make(chan struct{}), make(chan struct{})
 	t.Cleanup(func() { close(stop); <-ended })
@@ -311,6 +312,10 @@ func TestContentBatchHandshakeNeverStrandsContent(t *testing.T) {
 					last[c.ID].Store(c.Seq)
 				}
 			}
+			select {
+			case progress <- struct{}{}:
+			default:
+			}
 			held = append(held, b)
 			if len(held) >= 2 {
 				giveBack(1 + n%2) // a burst of one or two
@@ -326,7 +331,8 @@ func TestContentBatchHandshakeNeverStrandsContent(t *testing.T) {
 			want[id] = s.contentSeq[ports.WindowID(id)]
 		}
 	})
-	for deadline := time.Now().Add(5 * time.Second); ; {
+	deadline := waylandDeadline(5 * time.Second)
+	for {
 		missing := 0
 		for id := 1; id <= windows; id++ {
 			if last[id].Load() != want[id] {
@@ -336,13 +342,15 @@ func TestContentBatchHandshakeNeverStrandsContent(t *testing.T) {
 		if missing == 0 {
 			return
 		}
-		if time.Now().After(deadline) {
+		select {
+		case <-progress:
+			continue
+		case <-deadline:
 			for id := 1; id <= windows; id++ {
 				t.Errorf("window %d: output saw seq %d, newest is %d", id, last[id].Load(), want[id])
 			}
 			t.Fatal("content stranded")
 		}
-		time.Sleep(time.Millisecond)
 	}
 }
 

@@ -88,7 +88,7 @@ func recvManagement(t *testing.T, ch <-chan [2]uint32) [2]uint32 {
 	select {
 	case v := <-ch:
 		return v
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("management event timeout")
 		return [2]uint32{}
 	}
@@ -201,7 +201,7 @@ func TestOutputManagementHeadsAndApply(t *testing.T) {
 	var req ports.OutputApply
 	select {
 	case req = <-apply:
-	case <-time.After(time.Second):
+	case <-waylandDeadline(time.Second):
 		t.Fatal("no test request")
 	}
 	if !req.Test || len(req.Heads) != 1 || req.Heads[0].Pos.X != 100 {
@@ -224,7 +224,7 @@ func TestOutputManagementHeadsAndApply(t *testing.T) {
 	}
 	select {
 	case req = <-apply:
-	case <-time.After(time.Second):
+	case <-waylandDeadline(time.Second):
 		t.Fatal("no apply request")
 	}
 	if req.Test || req.Heads[0].Scale != 2 {
@@ -343,7 +343,7 @@ func TestOutputManagementTransform(t *testing.T) {
 	var req ports.OutputApply
 	select {
 	case req = <-apply:
-	case <-time.After(time.Second):
+	case <-waylandDeadline(time.Second):
 		t.Fatal("no apply request")
 	}
 	if len(req.Heads) != 1 || req.Heads[0].Transform == nil || *req.Heads[0].Transform != 3 {

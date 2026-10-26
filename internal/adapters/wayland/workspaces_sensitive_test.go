@@ -129,7 +129,7 @@ func TestProtectedWorkspaceInventoryAndActivation(t *testing.T) {
 		if !ok || len(activation.IDs) != 1 || activation.IDs[0] != 42 {
 			t.Fatalf("unlocked activation: %v", ev)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("unlocked activation not emitted")
 	}
 }

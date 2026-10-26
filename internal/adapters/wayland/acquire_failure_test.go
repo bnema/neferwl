@@ -144,13 +144,13 @@ func TestSyncWaiterIdleNeverTicks(t *testing.T) {
 		if timeout != -1 {
 			t.Fatalf("idle poll timeout %d, want -1", timeout)
 		}
-	case <-time.After(5 * time.Second):
+	case <-waylandDeadline(5 * time.Second):
 		t.Fatal("the waiter never polled")
 	}
 	cancel()
 	select {
 	case <-done:
-	case <-time.After(5 * time.Second):
+	case <-waylandDeadline(5 * time.Second):
 		t.Fatal("cancel did not stop the waiter")
 	}
 	if n := len(polls); n != 0 {

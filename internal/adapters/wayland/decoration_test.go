@@ -45,7 +45,7 @@ func TestKDEDecorationAcknowledgesMode(t *testing.T) {
 			if got != uint32(want) {
 				t.Fatalf("mode %d want %d", got, want)
 			}
-		case <-time.After(2 * time.Second):
+		case <-waylandDeadline(2 * time.Second):
 			t.Fatalf("no mode %d", want)
 		}
 	}

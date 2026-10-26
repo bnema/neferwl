@@ -58,7 +58,7 @@ func waitSyncWake(t *testing.T, wake <-chan struct{}) {
 	t.Helper()
 	select {
 	case <-wake:
-	case <-time.After(time.Second):
+	case <-waylandDeadline(time.Second):
 		t.Fatal("poll waiter did not notify the owner")
 	}
 }

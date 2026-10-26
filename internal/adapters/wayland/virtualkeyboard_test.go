@@ -52,7 +52,7 @@ func TestVirtualKeyboardTypesIntoFocus(t *testing.T) {
 	requestProtocol(t, target, seat, wayland.SeatRequestGetKeyboard, proxy.ID())
 	w := toplevelMapper(t, target, events)()
 	commands <- ports.FocusWindow{ID: w.ID}
-	waitFocus(t, s, w.ID)
+	waitFocus(t, s, commands, w.ID)
 	if err := target.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func focusedTarget(t *testing.T, s *Server, events chan ports.ClientEvent, comma
 	requestProtocol(t, target, seat, wayland.SeatRequestGetKeyboard, proxy.ID())
 	w := toplevelMapper(t, target, events)()
 	commands <- ports.FocusWindow{ID: w.ID}
-	waitFocus(t, s, w.ID)
+	waitFocus(t, s, commands, w.ID)
 	if err := target.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}

@@ -13,7 +13,7 @@ import (
 // contentMatching waits for a content of the window that matches want.
 func contentMatching(t *testing.T, contents <-chan ports.SurfaceContent, id ports.WindowID, want func(ports.SurfaceContent) bool) ports.SurfaceContent {
 	t.Helper()
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case c := <-contents:

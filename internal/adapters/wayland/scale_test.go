@@ -206,7 +206,7 @@ func TestFractionalScaleAndViewport(t *testing.T) {
 		}
 		select {
 		case got = <-values:
-		case <-time.After(10 * time.Millisecond):
+		case <-waylandDeadline(10 * time.Millisecond):
 		}
 	}
 	if got != 180 {
@@ -258,7 +258,7 @@ func TestFractionalScaleAndViewport(t *testing.T) {
 		t.Fatal(err)
 	}
 	mapped(t, events, 2*time.Second)
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case got := <-contents:
@@ -286,7 +286,7 @@ viewportOnly:
 			if got.LogicalW != int(size[0]) || got.LogicalH != int(size[1]) || got.Width != 30 || got.Height != 15 {
 				t.Fatalf("viewport-only content: %+v", got)
 			}
-		case <-time.After(2 * time.Second):
+		case <-waylandDeadline(2 * time.Second):
 			t.Fatal("no viewport-only content")
 		}
 	}
@@ -301,7 +301,7 @@ viewportOnly:
 		if got.LogicalW != 5 || got.LogicalH != 4 || got.Source != [4]float32{1, 1, 5, 4} {
 			t.Fatalf("source-only crop: %+v", got)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no crop content")
 	}
 	requestProtocol(t, c, vp, viewporter.WpViewportRequestSetDestination, int32(2), int32(3))
@@ -314,7 +314,7 @@ viewportOnly:
 		if got.LogicalW != 2 || got.LogicalH != 3 || got.Source != [4]float32{1, 1, 5, 4} {
 			t.Fatalf("source and destination: %+v", got)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no source and destination content")
 	}
 }
@@ -444,7 +444,7 @@ func TestViewportSourceEdgeRounding(t *testing.T) {
 				if got.ID != win.ID || got.Source[1]+got.Source[3] > h || got.Source[1] == 0 {
 					t.Fatalf("published source outside buffer: %+v", got)
 				}
-			case <-time.After(2 * time.Second):
+			case <-waylandDeadline(2 * time.Second):
 				t.Fatal("missing viewport publication")
 			}
 		})

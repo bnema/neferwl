@@ -36,13 +36,13 @@ func nextCursor(t *testing.T, cursors <-chan ports.CursorChange) ports.CursorCha
 	var c ports.CursorChange
 	select {
 	case c = <-cursors:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no cursor change")
 	}
 	for {
 		select {
 		case c = <-cursors:
-		case <-time.After(50 * time.Millisecond):
+		case <-waylandDeadline(50 * time.Millisecond):
 			return c
 		}
 	}
@@ -70,7 +70,7 @@ func TestCursorShapeFollowsPointerFocus(t *testing.T) {
 	select {
 	case got := <-cursors:
 		t.Fatalf("cursor change without focus: %+v", got)
-	case <-time.After(50 * time.Millisecond):
+	case <-waylandDeadline(50 * time.Millisecond):
 	}
 
 	commands <- ports.PointerFocus{ID: w.ID, X: 0, Y: 0}
@@ -95,7 +95,7 @@ func TestCursorShapeFollowsPointerFocus(t *testing.T) {
 	select {
 	case got := <-cursors:
 		t.Fatalf("client cursor forwarded during override: %+v", got)
-	case <-time.After(50 * time.Millisecond):
+	case <-waylandDeadline(50 * time.Millisecond):
 	}
 	commands <- ports.CursorOverride{}
 	if got := nextCursor(t, cursors); got != (ports.CursorChange{Shape: "text"}) {
@@ -244,7 +244,7 @@ func TestCursorOverrideProtection(t *testing.T) {
 	select {
 	case got := <-cursors:
 		t.Fatalf("protected cursor forwarded: %+v", got)
-	case <-time.After(50 * time.Millisecond):
+	case <-waylandDeadline(50 * time.Millisecond):
 	}
 	protect(t, s, state, 2, false)
 	if !s.display.Do(func() { s.setCursor(ports.CursorChange{Hidden: true}) }) {

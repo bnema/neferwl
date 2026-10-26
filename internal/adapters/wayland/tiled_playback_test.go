@@ -76,7 +76,7 @@ func TestHeadlessTiledSHMCallbackAndCopyBudget(t *testing.T) {
 	}
 	wait := func() ports.SurfaceContent {
 		t.Helper()
-		deadline := time.After(5 * time.Second)
+		deadline := waylandDeadline(5 * time.Second)
 		for {
 			select {
 			case got := <-contents:
@@ -120,7 +120,7 @@ func TestHeadlessTiledSHMCallbackAndCopyBudget(t *testing.T) {
 		if err := c.Roundtrip(); err != nil {
 			t.Fatal(err)
 		}
-		deadline := time.After(3 * time.Second)
+		deadline := waylandDeadline(3 * time.Second)
 		for {
 			select {
 			case <-done:

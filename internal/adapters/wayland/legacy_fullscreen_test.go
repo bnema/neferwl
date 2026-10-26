@@ -55,6 +55,6 @@ func TestTiledSmallerThanOutputEmitsNoResized(t *testing.T) {
 	select {
 	case ev := <-events:
 		t.Fatalf("unexpected event %#v", ev)
-	case <-time.After(200 * time.Millisecond):
+	case <-waylandDeadline(200 * time.Millisecond):
 	}
 }

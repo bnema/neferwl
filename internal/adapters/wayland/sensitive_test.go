@@ -324,7 +324,7 @@ func TestProtectedActivationAndForeignInventory(t *testing.T) {
 	c := protocolClient(t, s, dir)
 	w, surf, xdg := surfaceMapper(t, c, events)()
 	commands <- ports.FocusWindow{ID: w.ID}
-	waitFocus(t, s, w.ID)
+	waitFocus(t, s, commands, w.ID)
 	manager := bindProtocol(t, c, "xdg_activation_v1")
 	token := newToken(t, c, manager)
 	foreign := bindVersion(t, c, "zwlr_foreign_toplevel_manager_v1", 3)
@@ -380,7 +380,7 @@ func TestProtectedCursorChanges(t *testing.T) {
 	select {
 	case change := <-cursors:
 		t.Fatalf("normal cursor overrode protection: %+v", change)
-	case <-time.After(50 * time.Millisecond):
+	case <-waylandDeadline(50 * time.Millisecond):
 	}
 }
 

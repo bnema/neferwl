@@ -179,14 +179,22 @@ func lifecycleClient(t *testing.T, tool string, s *Server, dir string, extra []s
 }
 
 type lockedBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
+	mu    sync.Mutex
+	b     bytes.Buffer
+	wrote chan struct{}
 }
 
 func (b *lockedBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.b.Write(p)
+	n, err := b.b.Write(p)
+	if b.wrote != nil {
+		select {
+		case b.wrote <- struct{}{}:
+		default:
+		}
+	}
+	return n, err
 }
 func (b *lockedBuffer) String() string { b.mu.Lock(); defer b.mu.Unlock(); return b.b.String() }
 

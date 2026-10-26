@@ -360,19 +360,11 @@ func TestCaptureProtocolErrors(t *testing.T) {
 func deliverCapture(t *testing.T, s *Server, replies chan<- ports.CaptureDone, done ports.CaptureDone) {
 	t.Helper()
 	replies <- done
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		pending := false
-		if !s.display.Do(func() { _, pending = s.captureReplies[done.ID] }) {
-			t.Fatal("display stopped")
-		}
-		if !pending {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("capture reply not delivered")
-		}
-		time.Sleep(time.Millisecond)
+	flushCaptured(t, s, replies)
+	pending := false
+	s.display.Do(func() { _, pending = s.captureReplies[done.ID] })
+	if pending {
+		t.Fatal("capture reply not delivered")
 	}
 }
 

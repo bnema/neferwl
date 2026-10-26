@@ -46,7 +46,7 @@ func newToken(t *testing.T, c *wlturbo.Display, manager uint32, serialSeat ...ui
 
 func activated(t *testing.T, events <-chan ports.ClientEvent, want ports.WindowID) {
 	t.Helper()
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case ev := <-events:
@@ -67,7 +67,7 @@ func noActivation(t *testing.T, c *wlturbo.Display, events <-chan ports.ClientEv
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.After(100 * time.Millisecond)
+	deadline := waylandDeadline(100 * time.Millisecond)
 	for {
 		select {
 		case ev := <-events:
@@ -95,7 +95,7 @@ func TestActivationNeedsFocusedRequester(t *testing.T) {
 
 	// The focused client's token activates, once.
 	commands <- ports.FocusWindow{ID: first.ID}
-	waitFocus(t, s, first.ID)
+	waitFocus(t, s, commands, first.ID)
 	token = newToken(t, c, manager)
 	requestProtocol(t, c, manager, xdgactivation.ActivationV1RequestActivate, token, surf)
 	activated(t, events, second.ID)
@@ -118,7 +118,7 @@ func TestActivationAcrossClients(t *testing.T) {
 	managerA := bindProtocol(t, a, "xdg_activation_v1")
 	managerB := bindProtocol(t, b, "xdg_activation_v1")
 	commands <- ports.FocusWindow{ID: winA.ID}
-	waitFocus(t, s, winA.ID)
+	waitFocus(t, s, commands, winA.ID)
 	token := newToken(t, b, managerB)
 	requestProtocol(t, b, managerB, xdgactivation.ActivationV1RequestActivate, token, surfB)
 	noActivation(t, b, events)
@@ -129,7 +129,7 @@ func TestActivationAcrossClients(t *testing.T) {
 	// A token dies when the focus leaves its client.
 	token = newToken(t, a, managerA)
 	commands <- ports.FocusWindow{ID: winB.ID}
-	waitFocus(t, s, winB.ID)
+	waitFocus(t, s, commands, winB.ID)
 	requestProtocol(t, b, managerB, xdgactivation.ActivationV1RequestActivate, token, surfB)
 	noActivation(t, b, events)
 }
@@ -167,9 +167,9 @@ func TestActivationPressSerial(t *testing.T) {
 	// focus starts at 0, so a single wait could pass before either
 	// command applies and leave the client focused.
 	commands <- ports.FocusWindow{ID: w.ID}
-	waitFocus(t, s, w.ID)
+	waitFocus(t, s, commands, w.ID)
 	commands <- ports.FocusWindow{}
-	waitFocus(t, s, 0)
+	waitFocus(t, s, commands, 0)
 	token = newToken(t, c, manager, serial, seat)
 	requestProtocol(t, c, manager, xdgactivation.ActivationV1RequestActivate, token, surf)
 	noActivation(t, c, events)
@@ -188,14 +188,12 @@ func TestActivationTokenCommittedTwice(t *testing.T) {
 }
 
 // waitFocus waits until the display goroutine has applied a focus change.
-func waitFocus(t *testing.T, s *Server, id ports.WindowID) {
+func waitFocus(t *testing.T, s *Server, commands chan<- ports.ClientCommand, id ports.WindowID) {
 	t.Helper()
-	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
-		done := make(chan ports.WindowID, 1)
-		s.display.Do(func() { done <- s.seat.focused })
-		if <-done == id {
-			return
-		}
+	flushCommands(t, s, commands)
+	var got ports.WindowID
+	s.display.Do(func() { got = s.seat.focused })
+	if got != id {
+		t.Fatalf("focus %d, want %d", got, id)
 	}
-	t.Fatal("focus not applied", id)
 }

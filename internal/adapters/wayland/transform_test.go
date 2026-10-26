@@ -87,7 +87,7 @@ func newTransformClient(t *testing.T) transformClient {
 // next returns the next published content with a buffer.
 func (tc transformClient) next(t *testing.T) ports.SurfaceContent {
 	t.Helper()
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case got := <-tc.contents:

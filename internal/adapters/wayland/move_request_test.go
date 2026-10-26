@@ -80,7 +80,7 @@ func TestToplevelMoveRequest(t *testing.T) {
 	commands <- ports.PointerFocus{ID: w.ID, X: 1, Y: 1}
 	commands <- ports.PointerButtonTo{ID: w.ID, Button: 0x110, Pressed: true, Time: 1 * time.Millisecond}
 	var serial uint32
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for serial == 0 {
 		if err := c.Roundtrip(); err != nil {
 			t.Fatal(err)
