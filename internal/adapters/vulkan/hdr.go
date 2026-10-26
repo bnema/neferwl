@@ -84,7 +84,7 @@ func (r *Renderer) SetHDR(nits float64) {
 func (r *Renderer) createHDROwn() error {
 	// An HDR compositor needs an fp16 blendable color attachment that can
 	// also be sampled by the PQ pass and copied only for capture.
-	if r.gpu.physical == 0 {
+	if r.gpu.dmabuf.Device == 0 {
 		return fmt.Errorf("HDR fp16 device unavailable")
 	}
 	props := vk.FormatProperties2{SType: vk.StructureTypeFormatProperties2}

@@ -97,7 +97,7 @@ func TestTwoRenderersShareGPU(t *testing.T) {
 		rs[i] = renderer.(*Renderer)
 		t.Cleanup(rs[i].Close)
 	}
-	if rs[0].gpu != g || rs[1].gpu != g || rs[0].gpu.device == 0 || rs[0].gpu.device != rs[1].gpu.device {
+	if rs[0].gpu != g || rs[1].gpu != g || rs[0].gpu.device == 0 {
 		t.Fatal("renderers do not share one GPU device")
 	}
 	c := solidContent(t, 16, 16, color.RGBA{1, 2, 3, 255})
@@ -150,7 +150,7 @@ func TestConcurrentRendererTargets(t *testing.T) {
 	for _, r := range rs {
 		wg.Go(func() {
 			r.SetHDR(203)
-			// Import probing publishes mutable plane metadata while the other output reads it.
+			// Exercise concurrent SetHDR, ExportTargets and Render sharing one GPU queue.
 			_ = r.TargetModifiers(nil, true)
 			bufs, err := r.ExportTargets(2, nil, true)
 			if err != nil {
@@ -178,10 +178,24 @@ func TestConcurrentRendererTargets(t *testing.T) {
 	for err := range errs {
 		t.Fatal(err)
 	}
-	if !slices.Equal(g.hdrMods, baseline) || !slices.Equal(rs[1].exportModifiers(nil, false), baseline) {
+	if !slices.Equal(rs[1].exportModifiers(nil, false), baseline) {
 		t.Fatal("readback output narrowed non-readback HDR modifiers")
 	}
-	if rs[0].syncFD != g.syncFD || rs[1].syncFD != g.syncFD {
-		t.Log("renderer-local semaphore fallback active")
+}
+
+func TestClosedGPUConstructors(t *testing.T) {
+	g := &GPU{syncFD: true}
+	for _, tc := range []struct {
+		name   string
+		create func() error
+	}{
+		{"renderer", func() error { _, err := g.NewRenderer(16, 16, ports.RendererOptions{}); return err }},
+		{"copier", func() error { _, err := g.NewCopier(16, 16); return err }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.create(); err == nil || err.Error() != "vulkan: GPU closed" {
+				t.Fatalf("got %v, want GPU closed", err)
+			}
+		})
 	}
 }

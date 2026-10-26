@@ -6,6 +6,7 @@ import (
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/purego"
 	vk "github.com/bnema/purego-vulkan/vulkan"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
@@ -31,6 +32,10 @@ func NewInstance(log zerowrap.Logger) (*Instance, error) {
 	var err error
 	inst.id, err = vk.LoadInstanceDispatch(inst.instance)
 	if err != nil {
+		name := append([]byte("vkDestroyInstance"), 0)
+		if addr := vk.Global().GetInstanceProcAddr(inst.instance, &name[0]); addr != 0 {
+			purego.SyscallN(uintptr(addr), uintptr(inst.instance), 0)
+		}
 		return nil, fmt.Errorf("LoadInstanceDispatch: %w", err)
 	}
 	return inst, nil
