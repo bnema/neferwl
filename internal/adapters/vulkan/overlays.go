@@ -79,7 +79,7 @@ func (w *sceneWalk) overlays() {
 				continue
 			}
 		}
-		dr := r.contentDraw(rect, rect, lw, lh, [4]float32{}, 0, modeBuffer, true)
+		dr := r.contentDraw(rect, rect, lw, lh, [4]float32{}, 0, modeBuffer, false)
 		dr.pc.color[3] = 1
 		dr.shm = c
 		dr.pc.buf = [4]uint32{0, uint32(lw), uint32(lh), 0}

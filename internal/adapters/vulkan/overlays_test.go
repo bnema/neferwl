@@ -2,6 +2,7 @@ package vulkan
 
 import (
 	"image"
+	"image/color"
 	"math"
 	"testing"
 	"time"
@@ -225,4 +226,22 @@ func TestPanelOverlayNilAndClamped(t *testing.T) {
 		require.LessOrEqual(t, ds[0].pc.rect[2], int32(512))
 		require.LessOrEqual(t, ds[0].pc.rect[3], int32(256))
 	}
+}
+
+func TestPanelOverlayBlends(t *testing.T) {
+	r := newTestRenderer(t, 256, 128)
+	defer r.Close()
+	s := ports.Scene{Scale: 1, Background: "#0000ff", Overlays: []ports.Overlay{{ID: 1, Seq: 1, Kind: ports.OverlayPanel, Anchor: ports.AnchorTopCenter, Panel: &ports.PanelContent{Lines: [4]string{"panel"}}}}}
+	s.Overlays[0].Style.Background = "#000000"
+	ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 256, 128)))
+	require.Len(t, ds, 1)
+	require.NoError(t, render(r, s, nil))
+	pixels := readPixels(t, r)
+	x, y := int(ds[0].pc.rect[0]), int(ds[0].pc.rect[1])
+	require.Equal(t, color.RGBA{0, 0, 255, 255}, pixels.RGBAAt(x, y), "transparent corner preserves background")
+	bottom := int(ds[0].pc.rect[3]) - 2
+	center := (x + int(ds[0].pc.rect[2])) / 2
+	got := pixels.RGBAAt(center, bottom)
+	require.Greater(t, got.B, uint8(0), "panel background blends rather than forcing alpha to one")
+	require.Less(t, got.B, uint8(255))
 }
