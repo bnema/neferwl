@@ -17,11 +17,15 @@ import (
 
 // runStuck runs an output whose commits return errs (after the start
 // modeset test and modeset) and whose CRTC never sends an event. It
-// returns the recorded commits once n were made, failing after 2s.
+// advances bubble time through recovery/retry and returns the recorded commits.
 func runStuck(t *testing.T, n int, errs ...error) []commitRec {
 	t.Helper()
 	h := startStuck(t, nil, errs...)
 	h.scenes <- ports.Scene{Seq: 1}
+	synctest.Wait()
+	// One lost-event recovery period plus the supplied busy retries.
+	//testpolicy:sleep advance fake time through missing-event recovery and retries
+	time.Sleep(200*time.Millisecond + time.Duration(len(errs)+1)*busyRetry)
 	waitFor(t, func() bool { return h.count() >= n })
 	return h.stop()
 }
@@ -109,44 +113,50 @@ func startStuck(t *testing.T, render func() *os.File, errs ...error) *stuckRun {
 // A commit whose event never comes must not stop the output: it is
 // abandoned with a modeset, then the scene is committed again.
 func TestMissingEventRecoversWithModeset(t *testing.T) {
-	c := runStuck(t, 5)
-	if c[2].user&3 != userFrame {
-		t.Fatalf("commit 2 is not a frame: %+v", c[2])
-	}
-	if c[3].flags&atomicAllowModes == 0 {
-		t.Fatalf("no recovery modeset after the missing event: flags %#x", c[3].flags)
-	}
-	if c[4].user&3 != userFrame || c[4].user>>userKindBits <= c[2].user>>userKindBits {
-		t.Fatalf("scene not committed again after the modeset: %+v", c[4])
-	}
+	synctest.Test(t, func(t *testing.T) {
+		c := runStuck(t, 5)
+		if c[2].user&3 != userFrame {
+			t.Fatalf("commit 2 is not a frame: %+v", c[2])
+		}
+		if c[3].flags&atomicAllowModes == 0 {
+			t.Fatalf("no recovery modeset after the missing event: flags %#x", c[3].flags)
+		}
+		if c[4].user&3 != userFrame || c[4].user>>userKindBits <= c[2].user>>userKindBits {
+			t.Fatalf("scene not committed again after the modeset: %+v", c[4])
+		}
+	})
 }
 
 // EBUSY with no commit of ours in flight gets no event: the commit is
 // retried without one.
 func TestBusyWithoutEventRetries(t *testing.T) {
-	c := runStuck(t, 4, unix.EBUSY)
-	if c[2].user&3 != userFrame || c[3].user&3 != userFrame || c[3].flags&atomicAllowModes != 0 {
-		t.Fatalf("busy frame not retried: %+v", c[2:])
-	}
+	synctest.Test(t, func(t *testing.T) {
+		c := runStuck(t, 4, unix.EBUSY)
+		if c[2].user&3 != userFrame || c[3].user&3 != userFrame || c[3].flags&atomicAllowModes != 0 {
+			t.Fatalf("busy frame not retried: %+v", c[2:])
+		}
+	})
 }
 
 // EBUSY that lasts past the limit ends in a modeset, and a modeset
 // refused as busy is retried too.
 func TestLastingBusyModesets(t *testing.T) {
-	errs := make([]error, 8)
-	for i := range errs {
-		errs[i] = unix.EBUSY
-	}
-	c := runStuck(t, 2+len(errs)+1, errs...)
-	found := false
-	for _, r := range c[2:] {
-		if r.flags&atomicAllowModes != 0 {
-			found = true
+	synctest.Test(t, func(t *testing.T) {
+		errs := make([]error, 8)
+		for i := range errs {
+			errs[i] = unix.EBUSY
 		}
-	}
-	if !found {
-		t.Fatal("no modeset while EBUSY lasted")
-	}
+		c := runStuck(t, 2+len(errs)+1, errs...)
+		found := false
+		for _, r := range c[2:] {
+			if r.flags&atomicAllowModes != 0 {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("no modeset while EBUSY lasted")
+		}
+	})
 }
 
 // fencePipe is a fence that signals when its write end is written.
@@ -164,101 +174,100 @@ func fencePipe(t *testing.T) (fence, signal *os.File) {
 // waiting past the limit; once the fence signalled and still no event
 // came, the output modesets.
 func TestUnsignalledFenceDelaysRecovery(t *testing.T) {
-	synctest.Test(t, unsignalledFenceDelaysRecovery)
-}
-
-func unsignalledFenceDelaysRecovery(t *testing.T) {
-	var mu sync.Mutex
-	var signals []*os.File
-	h := startStuck(t, func() *os.File {
-		f, w := fencePipe(t)
+	synctest.Test(t, func(t *testing.T) {
+		var mu sync.Mutex
+		var signals []*os.File
+		h := startStuck(t, func() *os.File {
+			f, w := fencePipe(t)
+			mu.Lock()
+			signals = append(signals, w)
+			mu.Unlock()
+			return f
+		})
+		h.scenes <- ports.Scene{Seq: 1}
+		waitFor(t, func() bool { return h.count() == 3 })
+		time.Sleep(3 * 200 * time.Millisecond)
+		synctest.Wait()
+		if n := h.count(); n != 3 {
+			t.Fatalf("%d commits while the frame's fence is unsignalled", n)
+		}
 		mu.Lock()
-		signals = append(signals, w)
+		_, _ = signals[0].Write([]byte{1})
 		mu.Unlock()
-		return f
+		time.Sleep(200 * time.Millisecond) // fake time: wake the next acquire-fence retry
+		waitFor(t, func() bool { return h.count() >= 4 })
+		if c := h.stop(); c[3].flags&atomicAllowModes == 0 {
+			t.Fatalf("no modeset once the fence signalled: %#x", c[3].flags)
+		}
 	})
-	h.scenes <- ports.Scene{Seq: 1}
-	waitFor(t, func() bool { return h.count() == 3 })
-	time.Sleep(3 * 200 * time.Millisecond)
-	synctest.Wait()
-	if n := h.count(); n != 3 {
-		t.Fatalf("%d commits while the frame's fence is unsignalled", n)
-	}
-	mu.Lock()
-	_, _ = signals[0].Write([]byte{1})
-	mu.Unlock()
-	waitFor(t, func() bool { return h.count() >= 4 })
-	if c := h.stop(); c[3].flags&atomicAllowModes == 0 {
-		t.Fatalf("no modeset once the fence signalled: %#x", c[3].flags)
-	}
 }
 
 // A frame refused with EBUSY may still be read by the GPU: what was seen
 // is reported only once its fence signalled.
 func TestSeenWaitsForRefusedFrameFence(t *testing.T) {
-	synctest.Test(t, seenWaitsForRefusedFrameFence)
-}
-
-func seenWaitsForRefusedFrameFence(t *testing.T) {
-	var mu sync.Mutex
-	var signals []*os.File
-	h := startStuck(t, func() *os.File {
-		f, w := fencePipe(t)
-		mu.Lock()
-		signals = append(signals, w)
-		mu.Unlock()
-		return f
-	}, unix.EBUSY, unix.EACCES)
-	h.scenes <- ports.Scene{Seq: 1}
-	// Recording a commit precedes handling its error. Wait for the owner
-	// to finish the EACCES path before publishing content.
-	waitFor(t, func() bool { return h.count() == 4 })
-	synctest.Wait()
-	h.contents.send(ports.SurfaceContent{ID: 1, Seq: 7})
-	<-h.contents.returned
-	// The batch is consumed and the owner has reached its next wait,
-	// including the report attempt. No wall-clock negative assertion.
-	synctest.Wait()
-	select {
-	case p := <-h.presented:
-		t.Fatalf("seen reported while refused frames may be read: %+v", p)
-	default:
-	}
-	mu.Lock()
-	for _, w := range signals {
-		_, _ = w.Write([]byte{1})
-	}
-	mu.Unlock()
-	select {
-	case p := <-h.presented:
-		if p.Seen[1] != 7 {
-			t.Fatalf("report %+v", p)
+	synctest.Test(t, func(t *testing.T) {
+		var mu sync.Mutex
+		var signals []*os.File
+		h := startStuck(t, func() *os.File {
+			f, w := fencePipe(t)
+			mu.Lock()
+			signals = append(signals, w)
+			mu.Unlock()
+			return f
+		}, unix.EBUSY, unix.EACCES)
+		h.scenes <- ports.Scene{Seq: 1}
+		// Drive the EBUSY retry, then let the owner finish the EACCES path
+		// before publishing content.
+		synctest.Wait()
+		time.Sleep(busyRetry)
+		waitFor(t, func() bool { return h.count() == 4 })
+		synctest.Wait()
+		h.contents.send(ports.SurfaceContent{ID: 1, Seq: 7})
+		<-h.contents.returned
+		// The batch is consumed and the owner has reached its next wait,
+		// including the report attempt. No wall-clock negative assertion.
+		synctest.Wait()
+		select {
+		case p := <-h.presented:
+			t.Fatalf("seen reported while refused frames may be read: %+v", p)
+		default:
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("seen not reported once the fences signalled")
-	}
-	h.stop()
+		mu.Lock()
+		for _, w := range signals {
+			_, _ = w.Write([]byte{1})
+		}
+		mu.Unlock()
+		select {
+		case p := <-h.presented:
+			if p.Seen[1] != 7 {
+				t.Fatalf("report %+v", p)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("seen not reported once the fences signalled")
+		}
+		h.stop()
+	})
 }
 
 // An EBUSY run ends when commits stop being refused: a later EBUSY is
 // retried, not taken as the same run lasting past the limit.
-func TestLaterBusyStartsNewRun(t *testing.T) { synctest.Test(t, laterBusyStartsNewRun) }
-
-func laterBusyStartsNewRun(t *testing.T) {
-	o, _, _ := testOutput(t, unix.EBUSY, unix.EBUSY)
-	o.frame.stuckAfter = 100 * time.Millisecond
-	enabled := true
-	o.commitFailed(o.commitFrame(70, nil, false, false, pendingFrame{}), &enabled)
-	time.Sleep(busyRetry)
-	if o.expire() {
-		t.Fatal("first EBUSY retry modesets")
-	}
-	time.Sleep(2 * o.frame.stuckAfter)
-	o.commitFailed(o.commitFrame(70, nil, false, false, pendingFrame{}), &enabled)
-	time.Sleep(busyRetry)
-	if o.expire() {
-		t.Fatal("a new EBUSY taken as the old run: modeset")
-	}
+func TestLaterBusyStartsNewRun(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		o, _, _ := testOutput(t, unix.EBUSY, unix.EBUSY)
+		o.frame.stuckAfter = 100 * time.Millisecond
+		enabled := true
+		o.commitFailed(o.commitFrame(70, nil, false, false, pendingFrame{}), &enabled)
+		time.Sleep(busyRetry)
+		if o.expire() {
+			t.Fatal("first EBUSY retry modesets")
+		}
+		time.Sleep(2 * o.frame.stuckAfter)
+		o.commitFailed(o.commitFrame(70, nil, false, false, pendingFrame{}), &enabled)
+		time.Sleep(busyRetry)
+		if o.expire() {
+			t.Fatal("a new EBUSY taken as the old run: modeset")
+		}
+	})
 }
 
 // A modeset that fails keeps what is on screen: buffers still shown are

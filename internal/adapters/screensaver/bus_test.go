@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
@@ -87,23 +88,25 @@ func TestNoReplyActivity(t *testing.T) {
 
 // Cancellation closes a connection blocked in startup, then joins the watcher.
 func TestRunCanceledDuringStartup(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	b := newMockbus(t)
-	closed := make(chan struct{})
-	b.EXPECT().AddMatch("type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg2=''").Return(nil).Once()
-	b.EXPECT().RequestName(busName, uint32(zerobus.NameFlagDoNotQueue)).RunAndReturn(func(string, uint32) (uint32, error) {
-		cancel()
-		select {
-		case <-closed:
-		case <-time.After(2 * time.Second):
-			return 0, errors.New("close timed out")
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		b := newMockbus(t)
+		closed := make(chan struct{})
+		b.EXPECT().AddMatch("type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg2=''").Return(nil).Once()
+		b.EXPECT().RequestName(busName, uint32(zerobus.NameFlagDoNotQueue)).RunAndReturn(func(string, uint32) (uint32, error) {
+			cancel()
+			select {
+			case <-closed:
+			case <-time.After(2 * time.Second):
+				return 0, errors.New("close timed out")
+			}
+			return 0, zerobus.ErrClosed
+		}).Once()
+		b.EXPECT().Close().RunAndReturn(func() error { close(closed); return nil }).Once()
+		b.EXPECT().Close().Return(nil).Once()
+		s := Service{conn: b, log: logging.For(ctx, "screensaver")}
+		if err := s.Run(ctx, Reports{}); err != nil {
+			t.Fatal(err)
 		}
-		return 0, zerobus.ErrClosed
-	}).Once()
-	b.EXPECT().Close().RunAndReturn(func() error { close(closed); return nil }).Once()
-	b.EXPECT().Close().Return(nil).Once()
-	s := Service{conn: b, log: logging.For(ctx, "screensaver")}
-	if err := s.Run(ctx, Reports{}); err != nil {
-		t.Fatal(err)
-	}
+	})
 }

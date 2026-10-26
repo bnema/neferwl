@@ -6,6 +6,7 @@ import (
 	"image"
 	"os"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
@@ -26,6 +27,7 @@ func pipelineRequest(t *testing.T, id uint64) ports.CaptureRequest {
 	return ports.CaptureRequest{ID: id, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: ports.SHMBuffer{File: f}}
 }
 
+//testpolicy:realtime pipeline workers may wait for real pipe fence descriptors
 func awaitCapture(t *testing.T, replies <-chan ports.CaptureDone) ports.CaptureDone {
 	t.Helper()
 	select {
@@ -38,46 +40,49 @@ func awaitCapture(t *testing.T, replies <-chan ports.CaptureDone) ports.CaptureD
 }
 
 func TestPipelineCopiesOffOwnerAndRecycles(t *testing.T) {
-	r := portsmocks.NewMockRenderer(t)
-	frame := portsmocks.NewMockCaptureFrame(t)
-	frame.EXPECT().Done().Return(nil)
-	entered, release := make(chan struct{}), make(chan struct{})
-	frame.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.Anything, 8).RunAndReturn(func(_ image.Rectangle, dst []byte, _ int) error {
-		close(entered)
-		<-release
-		copy(dst, []byte{1, 2, 3, 255})
-		return nil
-	}).Once()
-	r.EXPECT().BeginCapture().Return(frame, nil).Once()
-	r.EXPECT().EndCapture(frame).Return().Once()
-	replies := make(chan ports.CaptureDone, 1)
-	p := NewPipeline(context.Background(), replies)
-	q := pipelineRequest(t, 1)
-	p.SubmitScoped(ports.SecurityState{}, r, []ports.CaptureRequest{q})
-	select {
-	case <-entered:
-	case <-time.After(time.Second):
-		t.Fatal("copy worker did not run")
-	}
-	// Submit returned while the worker is still inside Read.
-	select {
-	case <-replies:
-		t.Fatal("reply before copy completed")
-	default:
-	}
-	close(release)
-	done := awaitCapture(t, replies)
-	if done.Err != nil || done.ID != q.ID {
-		t.Fatalf("result %+v", done)
-	}
-	if _, err := q.Dst.File.Stat(); err == nil {
-		t.Fatal("descriptor open at completion")
-	}
-	p.Close(r)
-	// Mockery retains Read arguments, which point at an unmapped SHM slice.
-	frame.Calls = nil
+	synctest.Test(t, func(t *testing.T) {
+		r := portsmocks.NewMockRenderer(t)
+		frame := portsmocks.NewMockCaptureFrame(t)
+		frame.EXPECT().Done().Return(nil)
+		entered, release := make(chan struct{}), make(chan struct{})
+		frame.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.Anything, 8).RunAndReturn(func(_ image.Rectangle, dst []byte, _ int) error {
+			close(entered)
+			<-release
+			copy(dst, []byte{1, 2, 3, 255})
+			return nil
+		}).Once()
+		r.EXPECT().BeginCapture().Return(frame, nil).Once()
+		r.EXPECT().EndCapture(frame).Return().Once()
+		replies := make(chan ports.CaptureDone, 1)
+		p := NewPipeline(context.Background(), replies)
+		q := pipelineRequest(t, 1)
+		p.SubmitScoped(ports.SecurityState{}, r, []ports.CaptureRequest{q})
+		select {
+		case <-entered:
+		case <-time.After(time.Second):
+			t.Fatal("copy worker did not run")
+		}
+		// Submit returned while the worker is still inside Read.
+		select {
+		case <-replies:
+			t.Fatal("reply before copy completed")
+		default:
+		}
+		close(release)
+		done := awaitCapture(t, replies)
+		if done.Err != nil || done.ID != q.ID {
+			t.Fatalf("result %+v", done)
+		}
+		if _, err := q.Dst.File.Stat(); err == nil {
+			t.Fatal("descriptor open at completion")
+		}
+		p.Close(r)
+		// Mockery retains Read arguments, which point at an unmapped SHM slice.
+		frame.Calls = nil
+	})
 }
 
+//testpolicy:realtime shutdown interrupts real pipe fence descriptors
 func TestPipelineSaturationAndShutdownWithoutGPUCompletion(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
 	replies := make(chan ports.CaptureDone, 4)

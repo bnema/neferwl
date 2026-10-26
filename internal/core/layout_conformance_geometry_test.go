@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+	"testing/synctest"
 )
 
 // Geometry invariants: one rect per column, widths that agree with the rects,
@@ -83,12 +84,15 @@ func TestLayoutGeometryConformance(t *testing.T) {
 func TestScrollTargetAllocations(t *testing.T) {
 	for _, l := range registeredLayouts() {
 		t.Run(string(l.name()), func(t *testing.T) {
-			w := conformanceWorkspace(l, 2, 5, "normal")
-			w.Focus = 4
-			v := w.lview()
-			if allocs := testing.AllocsPerRun(100, func() { _ = l.scrollTarget(v) }); allocs != 0 {
-				t.Fatalf("scrollTarget allocates %g times", allocs)
-			}
+			synctest.Test(t, func(t *testing.T) {
+				w := conformanceWorkspace(l, 2, 5, "normal")
+				w.Focus = 4
+				v := w.lview()
+				if allocs := testing.AllocsPerRun(100, func() { _ = l.scrollTarget(v) }); allocs != 0 {
+					t.Fatalf("scrollTarget allocates %g times", allocs)
+				}
+
+			})
 		})
 	}
 }

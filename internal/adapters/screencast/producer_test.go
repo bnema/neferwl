@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
@@ -404,43 +405,45 @@ func TestShutdownClosesStreamWithoutSource(t *testing.T) {
 // destroyed and PipeWire closed, in that order. The wait has no deadline
 // while the service runs on (drain is far shorter than the wait here).
 func TestShutdownWaitsForFrameInFlight(t *testing.T) {
-	p := newProducer(t)
-	p.s.drain = time.Nanosecond
-	p.streaming()
-	p.src.EXPECT().Dequeue().Return(p.buf).Once()
-	p.s.pump(p.st, p.now)
-	p.cmd()
-	var delivered atomic.Bool
-	var order []string
-	step := func(name string) {
-		if !delivered.Load() {
-			t.Errorf("%s before the CastFrameDone", name)
+	synctest.Test(t, func(t *testing.T) {
+		p := newProducer(t)
+		p.s.drain = time.Nanosecond
+		p.streaming()
+		p.src.EXPECT().Dequeue().Return(p.buf).Once()
+		p.s.pump(p.st, p.now)
+		p.cmd()
+		var delivered atomic.Bool
+		var order []string
+		step := func(name string) {
+			if !delivered.Load() {
+				t.Errorf("%s before the CastFrameDone", name)
+			}
+			order = append(order, name)
 		}
-		order = append(order, name)
-	}
-	p.src.EXPECT().Release(p.buf).Run(func(*pipewire.VideoBuffer) { step("release") }).Once()
-	p.src.EXPECT().Destroy().Run(func() { step("destroy") }).Once()
-	p.core.EXPECT().Close().Run(func() { step("close") }).Once()
-	done := make(chan struct{})
-	go func() { defer close(done); p.s.shutdown(context.Background()) }()
-	select {
-	case c := <-p.cmds:
-		if c.Kind != ports.CastClose {
-			t.Errorf("%+v", c)
+		p.src.EXPECT().Release(p.buf).Run(func(*pipewire.VideoBuffer) { step("release") }).Once()
+		p.src.EXPECT().Destroy().Run(func() { step("destroy") }).Once()
+		p.core.EXPECT().Close().Run(func() { step("close") }).Once()
+		done := make(chan struct{})
+		go func() { defer close(done); p.s.shutdown(context.Background()) }()
+		select {
+		case c := <-p.cmds:
+			if c.Kind != ports.CastClose {
+				t.Errorf("%+v", c)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("no CastClose")
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("no CastClose")
-	}
-	delivered.Store(true)
-	p.s.Push(ports.CastEvent{Kind: ports.CastFrameDone, ID: 1, Buf: 3})
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("shutdown did not return")
-	}
-	if len(order) != 3 || order[0] != "release" || order[1] != "destroy" || order[2] != "close" {
-		t.Fatalf("order %v", order)
-	}
+		delivered.Store(true)
+		p.s.Push(ports.CastEvent{Kind: ports.CastFrameDone, ID: 1, Buf: 3})
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("shutdown did not return")
+		}
+		if len(order) != 3 || order[0] != "release" || order[1] != "destroy" || order[2] != "close" {
+			t.Fatalf("order %v", order)
+		}
+	})
 }
 
 // When the service itself is stopping and the frame never comes back, nothing is destroyed or closed (the
@@ -448,37 +451,39 @@ func TestShutdownWaitsForFrameInFlight(t *testing.T) {
 // handler points into is left untouched and abandoned, and the service has
 // a fresh table: repeated reconnects do not exhaust it.
 func TestShutdownTimeoutKeepsHandlerStateAndFreesTable(t *testing.T) {
-	p := newProducer(t)
-	p.s.drain = 20 * time.Millisecond
-	p.streaming()
-	p.src.EXPECT().Dequeue().Return(p.buf).Once()
-	p.s.pump(p.st, p.now)
-	p.cmd()
-	old := p.s.sessions
-	// The service itself is stopping: the wait is bounded.
-	stopped, stop := context.WithCancel(context.Background())
-	stop()
-	p.s.shutdown(stopped) // no Destroy, Release or Close is expected
-	if c := p.cmd(); c.Kind != ports.CastClose {
-		t.Fatalf("%+v", c)
-	}
-	if p.s.sessions == old {
-		t.Fatal("the table the leaked handler points into is still in use")
-	}
-	if !p.st.used || p.st.src == nil || !p.st.inflight || p.st.h2.st != p.st {
-		t.Fatal("the leaked stream's state was reset")
-	}
-	if p.s.streamsLive() || p.s.pwc != nil {
-		t.Fatal("new table not empty or PipeWire kept")
-	}
-	// The handler of the leaked source still works on its own storage.
-	p.st.h2.StateChanged(pipewire.StreamStatePaused, 42, "")
-	if p.st.pwState != pipewire.StreamStatePaused {
-		t.Fatal("handler lost its stream")
-	}
-	// A new attempt starts clean and can fill its table again.
-	p.s.reset(p.s.ctx, p.bus)
-	for i := range maxSessions {
-		p.s.sessions[i] = session{used: true, id: uint32(i + 1)}
-	}
+	synctest.Test(t, func(t *testing.T) {
+		p := newProducer(t)
+		p.s.drain = 20 * time.Millisecond
+		p.streaming()
+		p.src.EXPECT().Dequeue().Return(p.buf).Once()
+		p.s.pump(p.st, p.now)
+		p.cmd()
+		old := p.s.sessions
+		// The service itself is stopping: the wait is bounded.
+		stopped, stop := context.WithCancel(context.Background())
+		stop()
+		p.s.shutdown(stopped) // no Destroy, Release or Close is expected
+		if c := p.cmd(); c.Kind != ports.CastClose {
+			t.Fatalf("%+v", c)
+		}
+		if p.s.sessions == old {
+			t.Fatal("the table the leaked handler points into is still in use")
+		}
+		if !p.st.used || p.st.src == nil || !p.st.inflight || p.st.h2.st != p.st {
+			t.Fatal("the leaked stream's state was reset")
+		}
+		if p.s.streamsLive() || p.s.pwc != nil {
+			t.Fatal("new table not empty or PipeWire kept")
+		}
+		// The handler of the leaked source still works on its own storage.
+		p.st.h2.StateChanged(pipewire.StreamStatePaused, 42, "")
+		if p.st.pwState != pipewire.StreamStatePaused {
+			t.Fatal("handler lost its stream")
+		}
+		// A new attempt starts clean and can fill its table again.
+		p.s.reset(p.s.ctx, p.bus)
+		for i := range maxSessions {
+			p.s.sessions[i] = session{used: true, id: uint32(i + 1)}
+		}
+	})
 }

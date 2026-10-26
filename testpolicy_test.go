@@ -55,6 +55,64 @@ const (
 	ruleNoDoubles  = "no-hand-written-doubles"
 )
 
+// Timer sources: functions or methods declared in a package's test files
+// whose results include <-chan time.Time, *time.Timer or *time.Ticker.
+// Matching is by name (type-light, per package directory and package name).
+func isTimerType(e ast.Expr, timeName string) bool {
+	isTime := func(x ast.Expr, name string) bool {
+		sel, ok := x.(*ast.SelectorExpr)
+		if !ok {
+			return false
+		}
+		id, ok := sel.X.(*ast.Ident)
+		return ok && timeName != "" && id.Name == timeName && sel.Sel.Name == name
+	}
+	switch x := e.(type) {
+	case *ast.ChanType:
+		return x.Dir == ast.RECV && isTime(x.Value, "Time")
+	case *ast.StarExpr:
+		return isTime(x.X, "Timer") || isTime(x.X, "Ticker")
+	}
+	return false
+}
+
+func timerSourceNames(file *ast.File) map[string]bool {
+	out := make(map[string]bool)
+	timeName := importName(file, "time", "time")
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Type.Results == nil {
+			continue
+		}
+		for _, r := range fn.Type.Results.List {
+			if isTimerType(r.Type, timeName) {
+				out[fn.Name.Name] = true
+			}
+		}
+	}
+	return out
+}
+
+// packageTimerSources merges timer sources per directory and package name.
+func packageTimerSources(files map[string]*ast.File) map[*ast.File]map[string]bool {
+	groups := make(map[string]map[string]bool)
+	key := func(path string, f *ast.File) string { return filepath.Dir(path) + "\x00" + f.Name.Name }
+	for path, f := range files {
+		k := key(path, f)
+		if groups[k] == nil {
+			groups[k] = make(map[string]bool)
+		}
+		for n := range timerSourceNames(f) {
+			groups[k][n] = true
+		}
+	}
+	out := make(map[*ast.File]map[string]bool, len(files))
+	for path, f := range files {
+		out[f] = groups[key(path, f)]
+	}
+	return out
+}
+
 var (
 	generatedHeader = regexp.MustCompile(`^// Code generated .* DO NOT EDIT\.$`)
 
@@ -206,8 +264,14 @@ func isTestifyAssertPath(p string) bool {
 
 // checkPolicySyntax applies rules 1-3 to one parsed file.
 func checkPolicySyntax(fset *token.FileSet, file *ast.File) []policyViolation {
+	return checkPolicySyntaxPkg(fset, file, timerSourceNames(file))
+}
+
+// checkPolicySyntaxPkg is checkPolicySyntax with the package's timer sources.
+func checkPolicySyntaxPkg(fset *token.FileSet, file *ast.File, sources map[string]bool) []policyViolation {
 	timeName := importName(file, "time", "time")
 	synctestName := importName(file, "testing/synctest", "synctest")
+	runtimeName := importName(file, "runtime", "runtime")
 
 	sleepDirectiveLines := make(map[int]bool)
 	for _, group := range file.Comments {
@@ -292,6 +356,9 @@ func checkPolicySyntax(fset *token.FileSet, file *ast.File) []policyViolation {
 			if !ok {
 				return true
 			}
+			if callee := calleeName(call); callee != "" && sources[callee] && !isPkgCallTo(call, timeName) && !sc.bubble && !sc.realtime {
+				add(ruleNoRealtime, call.Pos(), "call to timer-returning helper %s outside a synctest bubble (annotate the calling func `// real I/O: <reason>` or `//testpolicy:realtime <reason>`; annotating the helper does not cover callers)", callee)
+			}
 			if name, ok := isPkgCall(call, synctestName); ok && name == "Test" {
 				walk(call.Fun, sc)
 				for _, arg := range call.Args {
@@ -315,8 +382,136 @@ func checkPolicySyntax(fset *token.FileSet, file *ast.File) []policyViolation {
 				strings.HasPrefix(n, "Benchmark") || strings.HasPrefix(n, "Fuzz") || strings.HasPrefix(n, "Example")
 		}
 		walk(decl, sc)
+		checkBusyPoll(decl, timeName, runtimeName, sources, add)
 	}
 	return out
+}
+
+func calleeName(call *ast.CallExpr) string {
+	switch f := call.Fun.(type) {
+	case *ast.Ident:
+		return f.Name
+	case *ast.SelectorExpr:
+		return f.Sel.Name
+	}
+	return ""
+}
+
+// isPkgCallTo reports whether call is pkg.Fn(...), so that e.g. time.After is
+// not treated as a call to a same-named test helper.
+func isPkgCallTo(call *ast.CallExpr, pkg string) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	id, ok := sel.X.(*ast.Ident)
+	return ok && pkg != "" && id.Name == pkg
+}
+
+// checkBusyPoll implements ruleNoPolling for spin loops in one declaration.
+func checkBusyPoll(decl ast.Decl, timeName, runtimeName string, sources map[string]bool, add func(string, token.Pos, string, ...any)) {
+	timerVars := make(map[string]bool)
+	var isTimer func(e ast.Expr) bool
+	isTimer = func(e ast.Expr) bool {
+		switch x := e.(type) {
+		case *ast.ParenExpr:
+			return isTimer(x.X)
+		case *ast.Ident:
+			return timerVars[x.Name]
+		case *ast.SelectorExpr:
+			return x.Sel.Name == "C" && isTimer(x.X)
+		case *ast.CallExpr:
+			if sel, ok := x.Fun.(*ast.SelectorExpr); ok {
+				if id, ok := sel.X.(*ast.Ident); ok && timeName != "" && id.Name == timeName {
+					switch sel.Sel.Name {
+					case "After", "NewTimer", "NewTicker", "Tick":
+						return true
+					}
+					return false
+				}
+			}
+			return sources[calleeName(x)]
+		}
+		return false
+	}
+	// Variables assigned from timer expressions; iterate to propagate.
+	for range 3 {
+		ast.Inspect(decl, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.AssignStmt:
+				if len(x.Lhs) == len(x.Rhs) {
+					for i, r := range x.Rhs {
+						if id, ok := x.Lhs[i].(*ast.Ident); ok && isTimer(r) {
+							timerVars[id.Name] = true
+						}
+					}
+				}
+			case *ast.ValueSpec:
+				if len(x.Names) == len(x.Values) {
+					for i, r := range x.Values {
+						if isTimer(r) {
+							timerVars[x.Names[i].Name] = true
+						}
+					}
+				}
+			}
+			return true
+		})
+	}
+	flagged := make(map[token.Pos]bool)
+	recvTimer := func(c ast.Stmt) bool {
+		var e ast.Expr
+		switch x := c.(type) {
+		case *ast.ExprStmt:
+			e = x.X
+		case *ast.AssignStmt:
+			if len(x.Rhs) == 1 {
+				e = x.Rhs[0]
+			}
+		}
+		u, ok := e.(*ast.UnaryExpr)
+		return ok && u.Op == token.ARROW && isTimer(u.X)
+	}
+	ast.Inspect(decl, func(n ast.Node) bool {
+		var body *ast.BlockStmt
+		switch x := n.(type) {
+		case *ast.ForStmt:
+			body = x.Body
+		case *ast.RangeStmt:
+			body = x.Body
+		default:
+			return true
+		}
+		ast.Inspect(body, func(m ast.Node) bool {
+			switch x := m.(type) {
+			case *ast.FuncLit:
+				return false
+			case *ast.CallExpr:
+				if sel, ok := x.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Gosched" {
+					if id, ok := sel.X.(*ast.Ident); ok && runtimeName != "" && id.Name == runtimeName && !flagged[x.Pos()] {
+						flagged[x.Pos()] = true
+						add(ruleNoPolling, x.Pos(), "runtime.Gosched in a loop is a busy-poll; wait on a real event, or use synctest.Wait in a bubble")
+					}
+				}
+			case *ast.SelectStmt:
+				hasDefault, hasTimer := false, false
+				for _, cl := range x.Body.List {
+					cc := cl.(*ast.CommClause)
+					if cc.Comm == nil {
+						hasDefault = true
+					} else if recvTimer(cc.Comm) {
+						hasTimer = true
+					}
+				}
+				if hasDefault && hasTimer && !flagged[x.Pos()] {
+					flagged[x.Pos()] = true
+					add(ruleNoPolling, x.Pos(), "loop with select-default and a timer deadline is a busy-poll; wait on a real event, or use synctest.Wait in a bubble")
+				}
+			}
+			return true
+		})
+		return true
+	})
 }
 
 func parsePolicyFile(fset *token.FileSet, path string, src any) (*ast.File, error) {
@@ -362,8 +557,9 @@ func syntacticViolations(t *testing.T) []policyViolation {
 	t.Helper()
 	fset, files := policyTestFiles(t)
 	var all []policyViolation
+	sources := packageTimerSources(files)
 	for _, file := range files {
-		all = append(all, checkPolicySyntax(fset, file)...)
+		all = append(all, checkPolicySyntaxPkg(fset, file, sources[file])...)
 	}
 	return all
 }
@@ -381,7 +577,7 @@ func TestTestPolicyNoRealtimeWaits(t *testing.T) {
 }
 
 func TestTestPolicyNegativeFixtures(t *testing.T) {
-	const header = "package p\n\nimport (\n\t\"testing\"\n\t\"testing/synctest\"\n\t\"time\"\n\n\t\"github.com/stretchr/testify/require\"\n)\n\nvar _ = require.True\nvar _ = synctest.Wait\nvar _ = time.Second\n\n"
+	const header = "package p\n\nimport (\n\t\"runtime\"\n\t\"testing\"\n\t\"testing/synctest\"\n\t\"time\"\n\n\t\"github.com/stretchr/testify/require\"\n)\n\nvar _ = require.True\nvar _ = synctest.Wait\nvar _ = time.Second\nvar _ = runtime.Gosched\n\n"
 	tests := []struct {
 		name string
 		src  string
@@ -412,6 +608,19 @@ func TestTestPolicyNegativeFixtures(t *testing.T) {
 		{"polling on non-package receiver", "func h(r interface{ Eventually() }) { r.Eventually() }", []string{ruleNoPolling}},
 		{"polling via assert package", "func h() { _ = require.Never }", []string{ruleNoPolling}},
 		{"sleep not allowed by real I/O", "// real I/O: sockets\nfunc TestX(t *testing.T) { time.Sleep(1) }", []string{ruleNoSleep}},
+		{"wrapper caller flagged", "func dl(d time.Duration) <-chan time.Time { return nil }\nfunc h() { <-dl(1) }", []string{ruleNoRealtime}},
+		{"wrapper method and timer results", "type s struct{}\nfunc (s) tm() *time.Timer { return nil }\nfunc (s) tk() (int, *time.Ticker) { return 0, nil }\nfunc h(x s) { x.tm(); x.tk() }", []string{ruleNoRealtime, ruleNoRealtime}},
+		{"wrapper caller in annotated func", "func dl() <-chan time.Time { return nil }\n//testpolicy:realtime waits on socket\nfunc h() { <-dl() }", nil},
+		{"wrapper caller in bubble", "func dl() <-chan time.Time { return nil }\nfunc TestX(t *testing.T) { synctest.Test(t, func(t *testing.T) { <-dl() }) }", nil},
+		{"wrapper annotation does not cover callers", "//testpolicy:realtime helper\nfunc dl() <-chan time.Time { return time.After(1) }\nfunc h() { <-dl() }", []string{ruleNoRealtime}},
+		{"helper without timer result ok", "//testpolicy:realtime waits on socket\nfunc until() { time.AfterFunc(1, nil) }\nfunc h() { until() }", nil},
+		{"gosched loop flagged", "//testpolicy:realtime x\nfunc h(c func() bool) { for !c() { runtime.Gosched() } }", []string{ruleNoPolling}},
+		{"gosched loop in bubble flagged", "func TestX(t *testing.T) { synctest.Test(t, func(t *testing.T) { for { runtime.Gosched() } }) }", []string{ruleNoPolling}},
+		{"select default deadline loop flagged", "//testpolicy:realtime x\nfunc h(c func() bool) {\n\tdl := time.After(1)\n\tfor !c() {\n\t\tselect {\n\t\tcase <-dl:\n\t\t\treturn\n\t\tdefault:\n\t\t}\n\t}\n}", []string{ruleNoPolling}},
+		{"select default ticker loop flagged", "func TestX(t *testing.T) { synctest.Test(t, func(t *testing.T) { tk := time.NewTicker(1); for { select { case <-tk.C: default: } } }) }", []string{ruleNoPolling}},
+		{"select default helper deadline flagged", "func dl() <-chan time.Time { return nil }\n//testpolicy:realtime x\nfunc h() { d := dl(); for { select { case <-d: default: } } }", []string{ruleNoPolling}},
+		{"non-blocking drain not flagged", "func h(ch chan int) { for { select { case <-ch: default: return } } }", nil},
+		{"gosched outside loop not flagged", "func h() { runtime.Gosched() }", nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

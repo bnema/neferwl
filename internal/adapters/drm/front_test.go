@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
@@ -108,161 +109,162 @@ func TestSubmitFrameOverlayOnlyWaitsForHeldReads(t *testing.T) {
 // one frame commit of the same composed image with no render, and each flip
 // reports the video shown zero-copy at its latest content.
 func TestRunVideoOnOverlayDoesNotRender(t *testing.T) {
-	o, k, commits, commitMu := testOutputMu(t)
-	o.cursor, o.tearing, o.vrrProp = nil, false, 0
-	props := map[string]uint32{"zpos": pZpos}
-	for n, v := range planeProps {
-		props[n] = v
-	}
-	o.primary.props = props
-	o.stray = []*plane{{id: tOverlay, typ: planeOverlay, props: props, zposValue: 2, formats: []ports.DMABufFormat{{Format: fourccXRGB}}}}
-	o.primary.formats = nil
-	o.pickOverlay()
-	flips := make(chan flipEvent, 1)
-	o.flipped = flips
-	r := portsmocks.NewMockRenderer(t)
-	pipeBuf := func() ports.DMABuf {
-		f, w, err := os.Pipe()
-		if err != nil {
-			t.Fatal(err)
+	synctest.Test(t, func(t *testing.T) {
+		o, k, commits, commitMu := testOutputMu(t)
+		o.cursor, o.tearing, o.vrrProp = nil, false, 0
+		props := map[string]uint32{"zpos": pZpos}
+		for n, v := range planeProps {
+			props[n] = v
 		}
-		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
-	}
-	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
-	r.EXPECT().UseTarget(mock.Anything).Return()
-	var renders atomic.Int32
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
-		renders.Add(1)
-		return nil, nil
-	})
-	r.EXPECT().Close().Return().Once()
-	var images atomic.Uint32
-	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).RunAndReturn(func(b *ports.DMABuf, _ uint32) (uint32, error) {
-		if b.ID == 0 {
-			return 70 + images.Add(1) - 1, nil // the output images
-		}
-		return uint32(100 + b.ID), nil
-	})
-	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
-	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
-	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
-	k.EXPECT().objProps(uint32(tOverlay), uint32(objPlane)).Return(map[string][2]uint64{}, nil).Maybe()
-	frameCommits := func() []commitRec {
-		commitMu.Lock()
-		defer commitMu.Unlock()
-		var out []commitRec
-		for _, c := range *commits {
-			if c.user&3 == userFrame {
-				out = append(out, c)
-			}
-		}
-		return out
-	}
-	scenes := make(chan ports.Scene, 1)
-	contents := newContentFeed(t, 1)
-	sink, presented := presentedSink(t, 64)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, contents.in(), contents.ret, nil, sink, nil, nil)
-	}()
-	// Stop Run on every path, before the mocks check their calls.
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case err := <-done:
+		o.primary.props = props
+		o.stray = []*plane{{id: tOverlay, typ: planeOverlay, props: props, zposValue: 2, formats: []ports.DMABufFormat{{Format: fourccXRGB}}}}
+		o.primary.formats = nil
+		o.pickOverlay()
+		flips := make(chan flipEvent, 1)
+		o.flipped = flips
+		r := portsmocks.NewMockRenderer(t)
+		pipeBuf := func() ports.DMABuf {
+			f, w, err := os.Pipe()
 			if err != nil {
-				t.Error(err)
+				t.Fatal(err)
 			}
-		case <-time.After(2 * time.Second):
-			t.Error("Run did not stop")
+			w.Close()
+			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 		}
-	})
-	static := ports.SurfaceContent{ID: 1, Seq: 1, Width: 100, Height: 100, Opaque: true, Solid: &ports.SolidColor{A: 1}}
-	video := func(n int) ports.SurfaceContent {
-		return ports.SurfaceContent{ID: 2, Seq: uint64(n), Width: 100, Height: 100, Opaque: true,
-			DMABuf: &ports.DMABuf{ID: uint64(n%3 + 1), Width: 100, Height: 100, Format: fourccXRGB}}
-	}
-	contents.send(static, video(1))
-	scenes <- ports.Scene{Seq: 1, Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{
-		{ID: 1, Rect: ports.Rect{W: 100, H: 100}},
-		{ID: 2, Rect: ports.Rect{X: 100, W: 100, H: 100}},
-	}}
-	// play delivers video frame n and flips every frame commit until a flip
-	// shows it; it returns that commit and its report. (Seen is what the
-	// output took in, which may run ahead of the flip.)
-	flipped := 0
-	vseq := uint32(0)
-	play := func(n int) (commitRec, ports.OutputPresented) {
-		t.Helper()
-		contents.send(video(n))
-		var c commitRec
-		var got ports.OutputPresented
-		waitFor(t, func() bool {
-			if cs := frameCommits(); len(cs) > flipped {
-				c = cs[len(cs)-1]
-				flipped = len(cs)
-				vseq++
-				flips <- flipEvent{crtc: tCrtc, user: c.user, when: time.Duration(vseq) * time.Millisecond, seq: vseq}
+		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
+		r.EXPECT().UseTarget(mock.Anything).Return()
+		var renders atomic.Int32
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+			renders.Add(1)
+			return nil, nil
+		})
+		r.EXPECT().Close().Return().Once()
+		var images atomic.Uint32
+		k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).RunAndReturn(func(b *ports.DMABuf, _ uint32) (uint32, error) {
+			if b.ID == 0 {
+				return 70 + images.Add(1) - 1, nil // the output images
 			}
-			for {
-				select {
-				case p := <-presented:
-					if p.Flip != nil && p.Flip.Shows[2] == uint64(n) {
-						got = p
-						return true
-					}
-				default:
-					return false
+			return uint32(100 + b.ID), nil
+		})
+		k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+		k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+		k.EXPECT().objProps(uint32(tOverlay), uint32(objPlane)).Return(map[string][2]uint64{}, nil).Maybe()
+		frameCommits := func() []commitRec {
+			commitMu.Lock()
+			defer commitMu.Unlock()
+			var out []commitRec
+			for _, c := range *commits {
+				if c.user&3 == userFrame {
+					out = append(out, c)
 				}
 			}
+			return out
+		}
+		scenes := make(chan ports.Scene, 1)
+		contents := newContentFeed(t, 1)
+		sink, presented := presentedSink(t, 64)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, contents.in(), contents.ret, nil, sink, nil, nil)
+		}()
+		// Stop Run on every path, before the mocks check their calls.
+		t.Cleanup(func() {
+			cancel()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Error(err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Error("Run did not stop")
+			}
 		})
-		return c, got
-	}
-	// Warm up until the video is on the overlay over a composed image.
-	n := 1
-	for ; n < 10; n++ {
-		c, _ := play(n)
-		if v, _ := c.req.value(tOverlay, pFB); v != 0 {
-			break
+		static := ports.SurfaceContent{ID: 1, Seq: 1, Width: 100, Height: 100, Opaque: true, Solid: &ports.SolidColor{A: 1}}
+		video := func(n int) ports.SurfaceContent {
+			return ports.SurfaceContent{ID: 2, Seq: uint64(n), Width: 100, Height: 100, Opaque: true,
+				DMABuf: &ports.DMABuf{ID: uint64(n%3 + 1), Width: 100, Height: 100, Format: fourccXRGB}}
 		}
-	}
-	base, commitsBefore := renders.Load(), len(frameCommits())
-	const frames = 60
-	for i := range frames {
-		n++
-		c, p := play(n)
-		if v, _ := c.req.value(tOverlay, pFB); v != uint64(100+n%3+1) {
-			t.Fatalf("video frame %d: overlay fb %d", i, v)
+		contents.send(static, video(1))
+		scenes <- ports.Scene{Seq: 1, Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{
+			{ID: 1, Rect: ports.Rect{W: 100, H: 100}},
+			{ID: 2, Rect: ports.Rect{X: 100, W: 100, H: 100}},
+		}}
+		// play delivers video frame n and flips every frame commit until a flip
+		// shows it; it returns that commit and its report. (Seen is what the
+		// output took in, which may run ahead of the flip.)
+		flipped := 0
+		vseq := uint32(0)
+		play := func(n int) (commitRec, ports.OutputPresented) {
+			t.Helper()
+			contents.send(video(n))
+			var c commitRec
+			var got ports.OutputPresented
+			synctest.Wait()
+			for attempts := 0; attempts < 3; attempts++ {
+				if cs := frameCommits(); len(cs) > flipped {
+					c = cs[len(cs)-1]
+					flipped = len(cs)
+					vseq++
+					flips <- flipEvent{crtc: tCrtc, user: c.user, when: time.Duration(vseq) * time.Millisecond, seq: vseq}
+				}
+				synctest.Wait()
+				for len(presented) > 0 {
+					p := <-presented
+					if p.Flip != nil && p.Flip.Shows[2] == uint64(n) {
+						got = p
+						return c, got
+					}
+				}
+			}
+			t.Fatalf("video frame %d not presented after three commits", n)
+			return c, got
 		}
-		if _, ok := c.req.value(tPrimary, pFence); ok {
-			t.Fatalf("video frame %d waits on a render", i)
+		// Warm up until the video is on the overlay over a composed image.
+		n := 1
+		for ; n < 10; n++ {
+			c, _ := play(n)
+			if v, _ := c.req.value(tOverlay, pFB); v != 0 {
+				break
+			}
 		}
-		// The flip reports the video shown zero-copy at its content.
-		if p.Flip.ZeroCopy != 2 || p.Flip.Shows[2] != uint64(n) || p.Seen[1] != 1 {
-			t.Fatalf("video frame %d: report %+v flip %+v", i, p, *p.Flip)
+		base, commitsBefore := renders.Load(), len(frameCommits())
+		const frames = 60
+		for i := range frames {
+			n++
+			c, p := play(n)
+			if v, _ := c.req.value(tOverlay, pFB); v != uint64(100+n%3+1) {
+				t.Fatalf("video frame %d: overlay fb %d", i, v)
+			}
+			if _, ok := c.req.value(tPrimary, pFence); ok {
+				t.Fatalf("video frame %d waits on a render", i)
+			}
+			// The flip reports the video shown zero-copy at its content.
+			if p.Flip.ZeroCopy != 2 || p.Flip.Shows[2] != uint64(n) || p.Seen[1] != 1 {
+				t.Fatalf("video frame %d: report %+v flip %+v", i, p, *p.Flip)
+			}
 		}
-	}
-	if got := len(frameCommits()) - commitsBefore; got != frames {
-		t.Fatalf("%d frame commits for %d video frames", got, frames)
-	}
-	if got := renders.Load() - base; got != 0 {
-		t.Fatalf("%d renders for %d video frames, want 0", got, frames)
-	}
-	// Three buffers in rotation: each probed once, then remembered.
-	commitMu.Lock()
-	probes := 0
-	for _, c := range *commits {
-		if c.flags&atomicTestOnly != 0 {
-			probes++
+		if got := len(frameCommits()) - commitsBefore; got != frames {
+			t.Fatalf("%d frame commits for %d video frames", got, frames)
 		}
-	}
-	commitMu.Unlock()
-	if probes > 4 {
-		t.Fatalf("%d overlay probes for %d video frames of 3 buffers", probes, frames)
-	}
+		if got := renders.Load() - base; got != 0 {
+			t.Fatalf("%d renders for %d video frames, want 0", got, frames)
+		}
+		// Three buffers in rotation: each probed once, then remembered.
+		commitMu.Lock()
+		probes := 0
+		for _, c := range *commits {
+			if c.flags&atomicTestOnly != 0 {
+				probes++
+			}
+		}
+		commitMu.Unlock()
+		if probes > 4 {
+			t.Fatalf("%d overlay probes for %d video frames of 3 buffers", probes, frames)
+		}
+	})
 }
 
 // Refusals on the overlay-only path: a refused probe composes the whole

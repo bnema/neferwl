@@ -16,6 +16,8 @@ import (
 
 // A wlr-output-management client goes through Wayland, the headless owner
 // loop and core: an accepted scale reaches the scene, a disable is refused.
+//
+//testpolicy:realtime real headless outputs and Wayland output-management socket
 func TestHeadlessOutputManagementEndToEnd(t *testing.T) {
 	runtime := t.TempDir()
 	t.Setenv("XDG_RUNTIME_DIR", runtime)

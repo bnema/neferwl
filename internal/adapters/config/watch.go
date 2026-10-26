@@ -29,6 +29,11 @@ func loadRaw(path string) map[string]string {
 // replacements are seen, follows symlinks (dotfiles) down to their target, and
 // waits for a missing directory to appear.
 func Watch(ctx context.Context, path string, out chan<- ports.ConfigChanged, log zerowrap.Logger) error {
+	return watch(ctx, path, out, log, nil)
+}
+
+// watch exposes kvconf readiness to package tests without changing the public API.
+func watch(ctx context.Context, path string, out chan<- ports.ConfigChanged, log zerowrap.Logger, ready chan<- struct{}) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	// A pending signal already means "changed": one slot is enough.
@@ -36,7 +41,7 @@ func Watch(ctx context.Context, path string, out chan<- ports.ConfigChanged, log
 	last := loadRaw(path)
 	watchErr := make(chan error, 1)
 	go func() {
-		watchErr <- kvconf.Watch(ctx, path, kvconf.WatchOptions{Debounce: reloadDebounce}, signals)
+		watchErr <- kvconf.Watch(ctx, path, kvconf.WatchOptions{Debounce: reloadDebounce, Ready: ready}, signals)
 	}()
 	for {
 		select {

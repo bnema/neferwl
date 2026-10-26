@@ -131,7 +131,7 @@ func TestProcDetectorIntegration(t *testing.T) {
 
 	// A dead child fails one scan, and the next one starts a new child.
 	require.NoError(t, first.cmd.Process.Kill())
-	time.Sleep(50 * time.Millisecond)
+	first.wait()
 	_, err = d.Detect(ctx, f)
 	require.Error(t, err)
 	require.Nil(t, d.proc)
@@ -244,6 +244,7 @@ func childDetector(t *testing.T, mode string) (*procDetector, net.Listener) {
 	return d, listener
 }
 
+//testpolicy:realtime subprocess cancellation uses a real Unix listener
 func TestDetectorCancellation(t *testing.T) {
 	for _, mode := range []string{"hello", "request"} {
 		t.Run(mode, func(t *testing.T) {
@@ -376,7 +377,7 @@ func TestDetectorCloseKillsDescendant(t *testing.T) {
 	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
 	require.NoError(t, syscall.Kill(pid, 0))
 	require.NoError(t, d.Close())
-	require.Eventually(t, func() bool {
+	waitRealIO(t, func() bool {
 		if syscall.Kill(pid, 0) == syscall.ESRCH {
 			return true
 		}
@@ -387,5 +388,5 @@ func TestDetectorCloseKillsDescendant(t *testing.T) {
 		}
 		fields := strings.Fields(string(stat))
 		return len(fields) > 2 && fields[2] == "Z"
-	}, 5*time.Second, 10*time.Millisecond, "descendant survived Close")
+	}, "descendant exit after Close")
 }

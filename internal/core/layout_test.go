@@ -4,6 +4,7 @@ import (
 	"math"
 	"reflect"
 	"testing"
+	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -31,225 +32,252 @@ func TestLaneWidths(t *testing.T) {
 	}
 	for _, overflow := range []Overflow{OverflowCascade, OverflowFixed} {
 		t.Run(string(overflow), func(t *testing.T) {
-			mk := func(n int) *Workspace {
-				w := &Workspace{MaxColumns: 4, Overflow: overflow, Gaps: 8}
-				w.SetOutput(1000, 500)
-				for id := 1; id <= n; id++ {
-					w.AddWindow(WindowID(id))
-				}
-				return w
-			}
-			avail := 1000 - 3*8
-			if got, want := cells(mk(2), 1, 3), []int{avail / 4, avail * 3 / 4}; !reflect.DeepEqual(got, want) {
-				t.Errorf("1,3: got %v want %v", got, want)
-			}
-			// Auto columns share what the set ones leave.
-			w := mk(3)
-			avail = 1000 - 4*8
-			if got, want := cells(w, 2, 0, 0), []int{avail * 2 / 4, avail / 4, avail / 4}; !reflect.DeepEqual(got, want) {
-				t.Errorf("2,auto,auto: got %v want %v", got, want)
-			}
-			// No room for them: an auto column weighs one cell.
-			if got, want := cells(w, 3, 0, 0), []int{avail * 3 / 5, avail / 5, avail - avail*3/5 - avail/5}; !reflect.DeepEqual(got, want) {
-				t.Errorf("3,auto,auto: got %v want %v", got, want)
-			}
-			// All auto: equal shares, with remaining pixels in the last column.
-			for n := 1; n <= 4; n++ {
-				w := mk(n)
-				for i := range w.Columns {
-					want := w.equalShare(n)
-					if i == n-1 {
-						want = 1000 - 8*(n+1) - (n-1)*want
+			synctest.Test(t, func(t *testing.T) {
+				mk := func(n int) *Workspace {
+					w := &Workspace{MaxColumns: 4, Overflow: overflow, Gaps: 8}
+					w.SetOutput(1000, 500)
+					for id := 1; id <= n; id++ {
+						w.AddWindow(WindowID(id))
 					}
-					if got := w.cellWidth(i); got != want {
-						t.Errorf("%d auto columns: width %d want %d", n, got, want)
+					return w
+				}
+				avail := 1000 - 3*8
+				if got, want := cells(mk(2), 1, 3), []int{avail / 4, avail * 3 / 4}; !reflect.DeepEqual(got, want) {
+					t.Errorf("1,3: got %v want %v", got, want)
+				}
+				// Auto columns share what the set ones leave.
+				w := mk(3)
+				avail = 1000 - 4*8
+				if got, want := cells(w, 2, 0, 0), []int{avail * 2 / 4, avail / 4, avail / 4}; !reflect.DeepEqual(got, want) {
+					t.Errorf("2,auto,auto: got %v want %v", got, want)
+				}
+				// No room for them: an auto column weighs one cell.
+				if got, want := cells(w, 3, 0, 0), []int{avail * 3 / 5, avail / 5, avail - avail*3/5 - avail/5}; !reflect.DeepEqual(got, want) {
+					t.Errorf("3,auto,auto: got %v want %v", got, want)
+				}
+				// All auto: equal shares, with remaining pixels in the last column.
+				for n := 1; n <= 4; n++ {
+					w := mk(n)
+					for i := range w.Columns {
+						want := w.equalShare(n)
+						if i == n-1 {
+							want = 1000 - 8*(n+1) - (n-1)*want
+						}
+						if got := w.cellWidth(i); got != want {
+							t.Errorf("%d auto columns: width %d want %d", n, got, want)
+						}
 					}
 				}
-			}
-			// Positions follow the widths.
-			w = mk(2)
-			cells(w, 1, 3)
-			r := w.columnRects()
-			if r[0].X != 8 || r[1].X != 8+r[0].W+8 {
-				t.Errorf("rects %v", r)
-			}
+				// Positions follow the widths.
+				w = mk(2)
+				cells(w, 1, 3)
+				r := w.columnRects()
+				if r[0].X != 8 || r[1].X != 8+r[0].W+8 {
+					t.Errorf("rects %v", r)
+				}
+
+			})
 		})
 	}
 	t.Run("scroll", func(t *testing.T) {
-		w := &Workspace{MaxColumns: 4, Gaps: 8}
-		w.SetOutput(1000, 500)
-		w.AddWindow(1)
-		w.AddWindow(2)
-		w.Columns[1].Cells = 2
-		if got, want := w.columnWidth(1), 2*w.equalShare(4)+8; got != want {
-			t.Errorf("2 cells: %d want %d", got, want)
-		}
-		if got, want := w.columnWidth(0), w.equalShare(2); got != want {
-			t.Errorf("auto: %d want %d", got, want)
-		}
-		w.Columns[1].Cells = 9
-		if got, want := w.columnWidth(1), 4*w.equalShare(4)+3*8; got != want {
-			t.Errorf("above max-columns: %d want %d", got, want)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			w := &Workspace{MaxColumns: 4, Gaps: 8}
+			w.SetOutput(1000, 500)
+			w.AddWindow(1)
+			w.AddWindow(2)
+			w.Columns[1].Cells = 2
+			if got, want := w.columnWidth(1), 2*w.equalShare(4)+8; got != want {
+				t.Errorf("2 cells: %d want %d", got, want)
+			}
+			if got, want := w.columnWidth(0), w.equalShare(2); got != want {
+				t.Errorf("auto: %d want %d", got, want)
+			}
+			w.Columns[1].Cells = 9
+			if got, want := w.columnWidth(1), 4*w.equalShare(4)+3*8; got != want {
+				t.Errorf("above max-columns: %d want %d", got, want)
+			}
+
+		})
 	})
 	t.Run("fixed past max-columns ignores cells", func(t *testing.T) {
-		w := fixedWorkspace(2, 0, 3)
-		before := w.columnRects()
-		w.Columns[0].Cells = 1
-		w.Columns[1].Cells = 3
-		if after := w.columnRects(); !reflect.DeepEqual(before, after) {
-			t.Errorf("%v != %v", after, before)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			w := fixedWorkspace(2, 0, 3)
+			before := w.columnRects()
+			w.Columns[0].Cells = 1
+			w.Columns[1].Cells = 3
+			if after := w.columnRects(); !reflect.DeepEqual(before, after) {
+				t.Errorf("%v != %v", after, before)
+			}
+
+		})
 	})
 }
 func TestOperations(t *testing.T) {
-	w := workspace()
-	w.FocusColumn(1)
-	w.FocusWindow(-1)
-	w.MoveColumn(1)
-	w.GrowColumn(true)
-	w.ToggleFullscreen()
-	w.RemoveWindow(1)
-	if _, ok := w.Focused(); ok {
-		t.Fatal("empty focus")
-	}
-	w.AddWindow(1)
-	w.AddWindow(2)
-	w.AddWindow(3)
-	// Three auto columns, two visible: each (100-3*5)/2 = 42 wide.
-	if w.Focus != 2 || w.View != 46 || w.columnWidth(0) != 42 {
-		t.Fatalf("scroll: %+v", w)
-	}
-	w.FocusColumn(-1)
-	if w.View != 46 {
-		t.Fatal(w.View)
-	}
-	w.FocusColumn(-1)
-	if w.View != 0 {
-		t.Fatal(w.View)
-	}
-	w.MoveColumn(1)
-	if w.Focus != 1 || w.Columns[1].Windows[0] != 1 {
-		t.Fatal(w.Columns)
-	}
-	w.RemoveWindow(1)
-	if id, _ := w.Focused(); id != 2 {
-		t.Fatal(id)
-	}
-	w.RemoveWindow(3)
-	w.RemoveWindow(2)
-	if len(w.Columns) != 0 {
-		t.Fatal(w.Columns)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		w := workspace()
+		w.FocusColumn(1)
+		w.FocusWindow(-1)
+		w.MoveColumn(1)
+		w.GrowColumn(true)
+		w.ToggleFullscreen()
+		w.RemoveWindow(1)
+		if _, ok := w.Focused(); ok {
+			t.Fatal("empty focus")
+		}
+		w.AddWindow(1)
+		w.AddWindow(2)
+		w.AddWindow(3)
+		// Three auto columns, two visible: each (100-3*5)/2 = 42 wide.
+		if w.Focus != 2 || w.View != 46 || w.columnWidth(0) != 42 {
+			t.Fatalf("scroll: %+v", w)
+		}
+		w.FocusColumn(-1)
+		if w.View != 46 {
+			t.Fatal(w.View)
+		}
+		w.FocusColumn(-1)
+		if w.View != 0 {
+			t.Fatal(w.View)
+		}
+		w.MoveColumn(1)
+		if w.Focus != 1 || w.Columns[1].Windows[0] != 1 {
+			t.Fatal(w.Columns)
+		}
+		w.RemoveWindow(1)
+		if id, _ := w.Focused(); id != 2 {
+			t.Fatal(id)
+		}
+		w.RemoveWindow(3)
+		w.RemoveWindow(2)
+		if len(w.Columns) != 0 {
+			t.Fatal(w.Columns)
+		}
+
+	})
 }
 func TestStackAndLayout(t *testing.T) {
-	w := workspace()
-	w.Columns = []Column{{Windows: []WindowID{1, 2, 3}, Focus: 1}}
-	w.RemoveWindow(2)
-	if id, _ := w.Focused(); id != 1 {
-		t.Fatal(id)
-	}
-	w.FocusWindow(1)
-	if id, _ := w.Focused(); id != 3 {
-		t.Fatal(id)
-	}
-	w.FocusWindow(-1)
-	p := w.Layout()
-	if p[0].Rect != (Rect{X: 5, Y: 5, W: 90, H: 33}) || p[1].Rect != (Rect{X: 5, Y: 43, W: 90, H: 33}) || p[0].Neighbors != ports.SideBottom || p[1].Inset != ports.SideAll {
-		t.Fatal(p)
-	}
-	w.ToggleFullscreen()
-	if p = w.Layout(); !p[0].Fullscreen || p[0].Rect != (Rect{X: 0, Y: 0, W: 100, H: 81}) || !p[1].Hidden || p[1].Rect != (Rect{}) {
-		t.Fatal(p)
-	}
-	w.ToggleFullscreen()
-	if w.Layout()[0].Fullscreen {
-		t.Fatal("toggle")
-	}
-	w.SetUsable(Rect{X: 10, Y: 10, W: 60, H: 50})
-	w.SetGaps(2)
-	if w.Layout()[0].Rect.X != 12 {
-		t.Fatal(w.Layout())
-	}
-	w.SetOutput(120, 90)
-	if w.Usable.W != 60 {
-		t.Fatal(w.Usable)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		w := workspace()
+		w.Columns = []Column{{Windows: []WindowID{1, 2, 3}, Focus: 1}}
+		w.RemoveWindow(2)
+		if id, _ := w.Focused(); id != 1 {
+			t.Fatal(id)
+		}
+		w.FocusWindow(1)
+		if id, _ := w.Focused(); id != 3 {
+			t.Fatal(id)
+		}
+		w.FocusWindow(-1)
+		p := w.Layout()
+		if p[0].Rect != (Rect{X: 5, Y: 5, W: 90, H: 33}) || p[1].Rect != (Rect{X: 5, Y: 43, W: 90, H: 33}) || p[0].Neighbors != ports.SideBottom || p[1].Inset != ports.SideAll {
+			t.Fatal(p)
+		}
+		w.ToggleFullscreen()
+		if p = w.Layout(); !p[0].Fullscreen || p[0].Rect != (Rect{X: 0, Y: 0, W: 100, H: 81}) || !p[1].Hidden || p[1].Rect != (Rect{}) {
+			t.Fatal(p)
+		}
+		w.ToggleFullscreen()
+		if w.Layout()[0].Fullscreen {
+			t.Fatal("toggle")
+		}
+		w.SetUsable(Rect{X: 10, Y: 10, W: 60, H: 50})
+		w.SetGaps(2)
+		if w.Layout()[0].Rect.X != 12 {
+			t.Fatal(w.Layout())
+		}
+		w.SetOutput(120, 90)
+		if w.Usable.W != 60 {
+			t.Fatal(w.Usable)
+		}
+
+	})
 }
 func TestMaximizeColumnScroll(t *testing.T) {
-	w := workspace()
-	for id := WindowID(1); id <= 3; id++ {
-		w.AddWindow(id)
-	}
-	w.Columns[1].Cells = 2
-	w.FocusID(2)
-	w.Apply(ActionMaximizeColumn)
-	if !w.Columns[1].FullWidth || w.Columns[1].Cells != 2 || w.Layout()[1].Rect != (Rect{X: 5, Y: 5, W: 90, H: 71}) {
-		t.Fatal(w.Columns, w.Layout())
-	}
-	if w.Layout()[0].Rect.X >= 0 || w.Layout()[2].Rect.X < 100 || w.Layout()[1].Fullscreen {
-		t.Fatal(w.Layout())
-	}
-	w.Apply(ActionMaximizeColumn)
-	if w.Columns[1].FullWidth || w.Columns[1].Cells != 2 || w.Layout()[1].Rect.W != 89 {
-		t.Fatal(w.Columns, w.Layout())
-	}
+	synctest.Test(t, func(t *testing.T) {
+		w := workspace()
+		for id := WindowID(1); id <= 3; id++ {
+			w.AddWindow(id)
+		}
+		w.Columns[1].Cells = 2
+		w.FocusID(2)
+		w.Apply(ActionMaximizeColumn)
+		if !w.Columns[1].FullWidth || w.Columns[1].Cells != 2 || w.Layout()[1].Rect != (Rect{X: 5, Y: 5, W: 90, H: 71}) {
+			t.Fatal(w.Columns, w.Layout())
+		}
+		if w.Layout()[0].Rect.X >= 0 || w.Layout()[2].Rect.X < 100 || w.Layout()[1].Fullscreen {
+			t.Fatal(w.Layout())
+		}
+		w.Apply(ActionMaximizeColumn)
+		if w.Columns[1].FullWidth || w.Columns[1].Cells != 2 || w.Layout()[1].Rect.W != 89 {
+			t.Fatal(w.Columns, w.Layout())
+		}
+
+	})
 }
 
 func TestMaximizeColumnFixed(t *testing.T) {
-	w := workspace()
-	w.Overflow = OverflowFixed
-	for id := WindowID(1); id <= 3; id++ {
-		w.AddWindow(id)
-	}
-	w.FocusID(2)
-	w.Apply(ActionMaximizeColumn)
-	p := w.Layout()
-	if p[1].Rect != (Rect{X: 5, Y: 5, W: 90, H: 71}) || p[1].Fullscreen || !p[0].Hidden || !p[2].Hidden {
-		t.Fatal(p)
-	}
-	w.FocusColumn(1)
-	p = w.Layout()
-	if w.Columns[1].FullWidth || p[2].Hidden || p[0].Hidden || p[1].Hidden {
-		t.Fatal(w.Columns, p)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		w := workspace()
+		w.Overflow = OverflowFixed
+		for id := WindowID(1); id <= 3; id++ {
+			w.AddWindow(id)
+		}
+		w.FocusID(2)
+		w.Apply(ActionMaximizeColumn)
+		p := w.Layout()
+		if p[1].Rect != (Rect{X: 5, Y: 5, W: 90, H: 71}) || p[1].Fullscreen || !p[0].Hidden || !p[2].Hidden {
+			t.Fatal(p)
+		}
+		w.FocusColumn(1)
+		p = w.Layout()
+		if w.Columns[1].FullWidth || p[2].Hidden || p[0].Hidden || p[1].Hidden {
+			t.Fatal(w.Columns, p)
+		}
+
+	})
 }
 
 func TestMaximizeColumnFixedAddWindow(t *testing.T) {
-	w := workspace()
-	w.Overflow = OverflowFixed
-	w.AddWindow(1)
-	w.AddWindow(2)
-	w.ToggleFullWidth()
-	w.AddWindow(3)
-	p := w.Layout()
-	if w.Columns[1].FullWidth || p[0].Hidden || p[1].Hidden || p[2].Hidden || p[2].Rect.W == 0 {
-		t.Fatal(w.Columns, p)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		w := workspace()
+		w.Overflow = OverflowFixed
+		w.AddWindow(1)
+		w.AddWindow(2)
+		w.ToggleFullWidth()
+		w.AddWindow(3)
+		p := w.Layout()
+		if w.Columns[1].FullWidth || p[0].Hidden || p[1].Hidden || p[2].Hidden || p[2].Rect.W == 0 {
+			t.Fatal(w.Columns, p)
+		}
+
+	})
 }
 
 func TestCellsAndActions(t *testing.T) {
-	w := workspace()
-	w.AddWindow(1)
-	w.AddWindow(2)
-	// Scroll overflow: auto is 1 cell of 2, then 2 (the whole width), then auto.
-	w.Apply(ActionCycleColumnWidth)
-	if w.Columns[1].Cells != 2 {
-		t.Fatal(w.Columns)
-	}
-	w.GrowColumn(true)
-	if w.Columns[1].Cells != 0 {
-		t.Fatal(w.Columns)
-	}
-	w.RemoveWindow(2)
-	for _, tc := range []struct {
-		a    Action
-		want Effect
-	}{{ActionSpawnTerminal, Effect{Spawn: true}}, {ActionCloseWindow, Effect{Close: 1}}, {ActionQuit, Effect{Quit: true}}, {ActionFocusColumnLeft, Effect{}}, {ActionFocusColumnRight, Effect{}}, {ActionFocusWindowUp, Effect{}}, {ActionFocusWindowDown, Effect{}}, {ActionMoveColumnLeft, Effect{}}, {ActionMoveColumnRight, Effect{}}, {ActionToggleFullscreen, Effect{}}, {ActionCycleColumnWidth, Effect{}}, {"spawn fuzzel --prompt x", Effect{Spawn: true, Commands: [][]string{{"fuzzel", "--prompt", "x"}}}}, {"spawn a -x; ; b", Effect{Spawn: true, Commands: [][]string{{"a", "-x"}, {"b"}}}}, {"spawn   ", Effect{}}, {"spawn ; ", Effect{}}} {
-		if got := w.Apply(tc.a); !reflect.DeepEqual(got, tc.want) {
-			t.Errorf("%s: %+v", tc.a, got)
+	synctest.Test(t, func(t *testing.T) {
+		w := workspace()
+		w.AddWindow(1)
+		w.AddWindow(2)
+		// Scroll overflow: auto is 1 cell of 2, then 2 (the whole width), then auto.
+		w.Apply(ActionCycleColumnWidth)
+		if w.Columns[1].Cells != 2 {
+			t.Fatal(w.Columns)
 		}
-	}
+		w.GrowColumn(true)
+		if w.Columns[1].Cells != 0 {
+			t.Fatal(w.Columns)
+		}
+		w.RemoveWindow(2)
+		for _, tc := range []struct {
+			a    Action
+			want Effect
+		}{{ActionSpawnTerminal, Effect{Spawn: true}}, {ActionCloseWindow, Effect{Close: 1}}, {ActionQuit, Effect{Quit: true}}, {ActionFocusColumnLeft, Effect{}}, {ActionFocusColumnRight, Effect{}}, {ActionFocusWindowUp, Effect{}}, {ActionFocusWindowDown, Effect{}}, {ActionMoveColumnLeft, Effect{}}, {ActionMoveColumnRight, Effect{}}, {ActionToggleFullscreen, Effect{}}, {ActionCycleColumnWidth, Effect{}}, {"spawn fuzzel --prompt x", Effect{Spawn: true, Commands: [][]string{{"fuzzel", "--prompt", "x"}}}}, {"spawn a -x; ; b", Effect{Spawn: true, Commands: [][]string{{"a", "-x"}, {"b"}}}}, {"spawn   ", Effect{}}, {"spawn ; ", Effect{}}} {
+			if got := w.Apply(tc.a); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("%s: %+v", tc.a, got)
+			}
+		}
+
+	})
 }
 func FuzzWorkspaceOps(f *testing.F) {
 	f.Add([]byte{0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9})
@@ -379,107 +407,122 @@ func stackFocused(w *Workspace) {
 }
 
 func TestLargeWidthAndBounds(t *testing.T) {
-	w := workspace()
-	w.AddWindow(1)
-	w.SetUsable(Rect{X: -1, Y: -2, W: -10, H: math.MaxInt})
-	w.SetGaps(math.MaxInt)
-	for _, p := range w.Layout() {
-		if p.Rect.W != 0 || p.Rect.H < 0 {
-			t.Fatal(p)
+	synctest.Test(t, func(t *testing.T) {
+		w := workspace()
+		w.AddWindow(1)
+		w.SetUsable(Rect{X: -1, Y: -2, W: -10, H: math.MaxInt})
+		w.SetGaps(math.MaxInt)
+		for _, p := range w.Layout() {
+			if p.Rect.W != 0 || p.Rect.H < 0 {
+				t.Fatal(p)
+			}
 		}
-	}
-	w.SetOutput(-1, -1)
-	if w.Output.W != 0 || w.Output.H != 0 {
-		t.Fatal(w.Output)
-	}
+		w.SetOutput(-1, -1)
+		if w.Output.W != 0 || w.Output.H != 0 {
+			t.Fatal(w.Output)
+		}
+
+	})
 }
 func TestUnchangedUsablePreservesView(t *testing.T) {
-	w := workspace()
-	w.AddWindow(1)
-	w.AddWindow(2)
-	w.AddWindow(3)
-	before := w.View
-	if before == 0 {
-		t.Fatal("expected a scrolled workspace")
-	}
-	w.SetUsable(w.Usable)
-	if w.View != before {
-		t.Fatalf("View changed from %d to %d", before, w.View)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		w := workspace()
+		w.AddWindow(1)
+		w.AddWindow(2)
+		w.AddWindow(3)
+		before := w.View
+		if before == 0 {
+			t.Fatal("expected a scrolled workspace")
+		}
+		w.SetUsable(w.Usable)
+		if w.View != before {
+			t.Fatalf("View changed from %d to %d", before, w.View)
+		}
+
+	})
 }
 
 func TestFullscreenPersistsAndScrolls(t *testing.T) {
-	w := workspace()
-	w.AddWindow(1)
-	w.AddWindow(2)
-	w.FocusColumn(-1)
-	w.ToggleFullscreen()
-	if p := w.Layout()[0]; !p.Fullscreen || p.Rect.X != 0 || p.Rect.W != 100 {
-		t.Fatal(p)
-	}
-	w.FocusColumn(1)
-	if p := w.Layout()[0]; !p.Fullscreen || p.Rect.X >= 0 {
-		t.Fatal(p)
-	}
-	w.ToggleFullscreen()
-	if w.Layout()[0].Fullscreen || !w.Layout()[1].Fullscreen {
-		t.Fatal(w.Layout())
-	}
-	w.RemoveWindow(2)
-	if w.Layout()[0].Fullscreen {
-		t.Fatal(w.Layout())
-	}
+	synctest.Test(t, func(t *testing.T) {
+		w := workspace()
+		w.AddWindow(1)
+		w.AddWindow(2)
+		w.FocusColumn(-1)
+		w.ToggleFullscreen()
+		if p := w.Layout()[0]; !p.Fullscreen || p.Rect.X != 0 || p.Rect.W != 100 {
+			t.Fatal(p)
+		}
+		w.FocusColumn(1)
+		if p := w.Layout()[0]; !p.Fullscreen || p.Rect.X >= 0 {
+			t.Fatal(p)
+		}
+		w.ToggleFullscreen()
+		if w.Layout()[0].Fullscreen || !w.Layout()[1].Fullscreen {
+			t.Fatal(w.Layout())
+		}
+		w.RemoveWindow(2)
+		if w.Layout()[0].Fullscreen {
+			t.Fatal(w.Layout())
+		}
+
+	})
 }
 
 func TestSetFullscreenStackDeactivation(t *testing.T) {
-	w := workspace()
-	w.Columns = []Column{{Windows: []WindowID{1, 2}, Focus: 0}}
-	// The covering fullscreen window is the only one drawn, so it has the
-	// focus; window 1 gets it back when 2 leaves fullscreen.
-	w.SetFullscreen(2, true)
-	p := w.Layout()
-	if !p[0].Hidden || !p[1].Fullscreen || !p[1].Focused || p[0].Focused {
-		t.Fatal(p)
-	}
-	w.SetFullscreen(2, false)
-	if p := w.Layout(); p[0].Hidden || !p[0].Focused {
-		t.Fatal(p)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		w := workspace()
+		w.Columns = []Column{{Windows: []WindowID{1, 2}, Focus: 0}}
+		// The covering fullscreen window is the only one drawn, so it has the
+		// focus; window 1 gets it back when 2 leaves fullscreen.
+		w.SetFullscreen(2, true)
+		p := w.Layout()
+		if !p[0].Hidden || !p[1].Fullscreen || !p[1].Focused || p[0].Focused {
+			t.Fatal(p)
+		}
+		w.SetFullscreen(2, false)
+		if p := w.Layout(); p[0].Hidden || !p[0].Focused {
+			t.Fatal(p)
+		}
+
+	})
 }
 
 // Fixed overflow keeps every window on screen: past max-columns, new columns
 // split the newest one, alternating top/bottom and left/right.
 func TestFixedOverflowSpiral(t *testing.T) {
-	w := &Workspace{MaxColumns: 2, Overflow: OverflowFixed}
-	w.SetOutput(100, 80)
-	for id := WindowID(1); id <= 5; id++ {
-		w.AddWindow(id)
-	}
-	got := map[WindowID]Rect{}
-	for _, p := range w.Layout() {
-		got[p.ID] = p.Rect
-	}
-	want := map[WindowID]Rect{
-		1: {X: 0, Y: 0, W: 50, H: 80},
-		2: {X: 50, Y: 0, W: 50, H: 40},  // top half of slot 2
-		3: {X: 50, Y: 40, W: 25, H: 40}, // left of the bottom half
-		4: {X: 75, Y: 40, W: 25, H: 20},
-		5: {X: 75, Y: 60, W: 25, H: 20},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %v\nwant %v", got, want)
-	}
-	if w.View != 0 {
-		t.Fatal("fixed overflow scrolled", w.View)
-	}
-	// Up to max-columns it is the plain equal split.
-	w2 := &Workspace{MaxColumns: 2, Overflow: OverflowFixed}
-	w2.SetOutput(100, 80)
-	w2.AddWindow(1)
-	w2.AddWindow(2)
-	if p := w2.Layout(); p[0].Rect.W != 50 || p[1].Rect != (Rect{X: 50, Y: 0, W: 50, H: 80}) {
-		t.Fatal(p)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		w := &Workspace{MaxColumns: 2, Overflow: OverflowFixed}
+		w.SetOutput(100, 80)
+		for id := WindowID(1); id <= 5; id++ {
+			w.AddWindow(id)
+		}
+		got := map[WindowID]Rect{}
+		for _, p := range w.Layout() {
+			got[p.ID] = p.Rect
+		}
+		want := map[WindowID]Rect{
+			1: {X: 0, Y: 0, W: 50, H: 80},
+			2: {X: 50, Y: 0, W: 50, H: 40},  // top half of slot 2
+			3: {X: 50, Y: 40, W: 25, H: 40}, // left of the bottom half
+			4: {X: 75, Y: 40, W: 25, H: 20},
+			5: {X: 75, Y: 60, W: 25, H: 20},
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("got %v\nwant %v", got, want)
+		}
+		if w.View != 0 {
+			t.Fatal("fixed overflow scrolled", w.View)
+		}
+		// Up to max-columns it is the plain equal split.
+		w2 := &Workspace{MaxColumns: 2, Overflow: OverflowFixed}
+		w2.SetOutput(100, 80)
+		w2.AddWindow(1)
+		w2.AddWindow(2)
+		if p := w2.Layout(); p[0].Rect.W != 50 || p[1].Rect != (Rect{X: 50, Y: 0, W: 50, H: 80}) {
+			t.Fatal(p)
+		}
+
+	})
 }
 
 // In fixed overflow, cycle-column-width grows the focused column by one
@@ -499,87 +542,114 @@ func TestFixedGrowColumn(t *testing.T) {
 		}
 	}
 	t.Run("free cell", func(t *testing.T) {
-		w := fixedWorkspace(4, 0, 2)
-		w.FocusID(1)
-		w.GrowColumn(true)
-		check(t, w, map[WindowID]Rect{1: {W: 75, H: 80}, 2: {X: 75, W: 25, H: 80}})
-		w.GrowColumn(true)
-		check(t, w, map[WindowID]Rect{1: {W: 50, H: 80}, 2: {X: 50, W: 50, H: 80}})
+		synctest.Test(t, func(t *testing.T) {
+			w := fixedWorkspace(4, 0, 2)
+			w.FocusID(1)
+			w.GrowColumn(true)
+			check(t, w, map[WindowID]Rect{1: {W: 75, H: 80}, 2: {X: 75, W: 25, H: 80}})
+			w.GrowColumn(true)
+			check(t, w, map[WindowID]Rect{1: {W: 50, H: 80}, 2: {X: 50, W: 50, H: 80}})
+
+		})
 	})
 	t.Run("middle column", func(t *testing.T) {
-		w := fixedWorkspace(4, 0, 3)
-		w.FocusID(2)
-		w.GrowColumn(true)
-		// The remainder cell was the step.
-		check(t, w, map[WindowID]Rect{1: {W: 25, H: 80}, 2: {X: 25, W: 50, H: 80}, 3: {X: 75, W: 25, H: 80}})
-		// No donor is left: back to equal shares.
-		w.GrowColumn(true)
-		check(t, w, map[WindowID]Rect{1: {W: 33, H: 80}, 2: {X: 33, W: 33, H: 80}, 3: {X: 66, W: 34, H: 80}})
+		synctest.Test(t, func(t *testing.T) {
+			w := fixedWorkspace(4, 0, 3)
+			w.FocusID(2)
+			w.GrowColumn(true)
+			// The remainder cell was the step.
+			check(t, w, map[WindowID]Rect{1: {W: 25, H: 80}, 2: {X: 25, W: 50, H: 80}, 3: {X: 75, W: 25, H: 80}})
+			// No donor is left: back to equal shares.
+			w.GrowColumn(true)
+			check(t, w, map[WindowID]Rect{1: {W: 33, H: 80}, 2: {X: 33, W: 33, H: 80}, 3: {X: 66, W: 34, H: 80}})
+
+		})
 	})
 	t.Run("with gaps", func(t *testing.T) {
-		w := fixedWorkspace(4, 4, 2)
-		w.FocusID(1)
-		w.GrowColumn(true)
-		// Three cells and one of the 88 px left by the three gaps.
-		check(t, w, map[WindowID]Rect{
-			1: {X: 4, Y: 4, W: 66, H: 72},
-			2: {X: 74, Y: 4, W: 22, H: 72},
+		synctest.Test(t, func(t *testing.T) {
+			w := fixedWorkspace(4, 4, 2)
+			w.FocusID(1)
+			w.GrowColumn(true)
+			// Three cells and one of the 88 px left by the three gaps.
+			check(t, w, map[WindowID]Rect{
+				1: {X: 4, Y: 4, W: 66, H: 72},
+				2: {X: 74, Y: 4, W: 22, H: 72},
+			})
+
 		})
 	})
 	t.Run("stays on focus change and new windows", func(t *testing.T) {
-		w := fixedWorkspace(4, 0, 2)
-		w.FocusID(1)
-		w.GrowColumn(true)
-		w.FocusColumn(1)
-		w.AddWindow(3)
-		// 3, 1 and an auto column that weighs one cell.
-		check(t, w, map[WindowID]Rect{1: {W: 60, H: 80}, 2: {X: 60, W: 20, H: 80}, 3: {X: 80, W: 20, H: 80}})
+		synctest.Test(t, func(t *testing.T) {
+			w := fixedWorkspace(4, 0, 2)
+			w.FocusID(1)
+			w.GrowColumn(true)
+			w.FocusColumn(1)
+			w.AddWindow(3)
+			// 3, 1 and an auto column that weighs one cell.
+			check(t, w, map[WindowID]Rect{1: {W: 60, H: 80}, 2: {X: 60, W: 20, H: 80}, 3: {X: 80, W: 20, H: 80}})
+
+		})
 	})
 	t.Run("the wider column gives a cell to the focused one", func(t *testing.T) {
-		w := fixedWorkspace(4, 0, 2)
-		w.FocusID(1)
-		w.GrowColumn(true)
-		w.FocusID(2)
-		w.GrowColumn(true)
-		check(t, w, map[WindowID]Rect{1: {W: 50, H: 80}, 2: {X: 50, W: 50, H: 80}})
-	})
-	t.Run("closing it shares again", func(t *testing.T) {
-		w := fixedWorkspace(4, 0, 3)
-		w.FocusID(1)
-		w.GrowColumn(true)
-		w.RemoveWindow(1)
-		check(t, w, map[WindowID]Rect{2: {W: 50, H: 80}, 3: {X: 50, W: 50, H: 80}})
-	})
-	t.Run("no-op when it cannot grow", func(t *testing.T) {
-		for _, w := range []*Workspace{fixedWorkspace(3, 0, 1), fixedWorkspace(2, 0, 2), fixedWorkspace(3, 0, 5)} {
-			before := rects(w)
+		synctest.Test(t, func(t *testing.T) {
+			w := fixedWorkspace(4, 0, 2)
+			w.FocusID(1)
 			w.GrowColumn(true)
-			check(t, w, before)
-		}
-	})
-	t.Run("stays on screen when gaps do not fit", func(t *testing.T) {
-		for _, w := range []*Workspace{fixedWorkspace(4, 4, 2), fixedWorkspace(4, 4, 3)} {
-			w.SetOutput(12, 80)
 			w.FocusID(2)
 			w.GrowColumn(true)
-			for id, p := range placements(w) {
-				r := p.Rect
-				if r.X < 0 || r.Y < 0 || r.W < 0 || r.H < 0 || r.X+r.W > w.Output.W || r.Y+r.H > w.Output.H {
-					t.Fatal(id, r)
+			check(t, w, map[WindowID]Rect{1: {W: 50, H: 80}, 2: {X: 50, W: 50, H: 80}})
+
+		})
+	})
+	t.Run("closing it shares again", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			w := fixedWorkspace(4, 0, 3)
+			w.FocusID(1)
+			w.GrowColumn(true)
+			w.RemoveWindow(1)
+			check(t, w, map[WindowID]Rect{2: {W: 50, H: 80}, 3: {X: 50, W: 50, H: 80}})
+
+		})
+	})
+	t.Run("no-op when it cannot grow", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			for _, w := range []*Workspace{fixedWorkspace(3, 0, 1), fixedWorkspace(2, 0, 2), fixedWorkspace(3, 0, 5)} {
+				before := rects(w)
+				w.GrowColumn(true)
+				check(t, w, before)
+			}
+
+		})
+	})
+	t.Run("stays on screen when gaps do not fit", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			for _, w := range []*Workspace{fixedWorkspace(4, 4, 2), fixedWorkspace(4, 4, 3)} {
+				w.SetOutput(12, 80)
+				w.FocusID(2)
+				w.GrowColumn(true)
+				for id, p := range placements(w) {
+					r := p.Rect
+					if r.X < 0 || r.Y < 0 || r.W < 0 || r.H < 0 || r.X+r.W > w.Output.W || r.Y+r.H > w.Output.H {
+						t.Fatal(id, r)
+					}
 				}
 			}
-		}
+
+		})
 	})
 	t.Run("maximize wins and gives it back", func(t *testing.T) {
-		w := fixedWorkspace(4, 0, 2)
-		w.FocusID(1)
-		w.GrowColumn(true)
-		w.ToggleFullWidth()
-		if p := placements(w); p[1].Rect != (Rect{W: 100, H: 80}) || !p[2].Hidden {
-			t.Fatal(p)
-		}
-		w.ToggleFullWidth()
-		check(t, w, map[WindowID]Rect{1: {W: 75, H: 80}, 2: {X: 75, W: 25, H: 80}})
+		synctest.Test(t, func(t *testing.T) {
+			w := fixedWorkspace(4, 0, 2)
+			w.FocusID(1)
+			w.GrowColumn(true)
+			w.ToggleFullWidth()
+			if p := placements(w); p[1].Rect != (Rect{W: 100, H: 80}) || !p[2].Hidden {
+				t.Fatal(p)
+			}
+			w.ToggleFullWidth()
+			check(t, w, map[WindowID]Rect{1: {W: 75, H: 80}, 2: {X: 75, W: 25, H: 80}})
+
+		})
 	})
 }
 
@@ -587,69 +657,81 @@ func TestFixedGrowColumn(t *testing.T) {
 func TestFixedFocusStackedColumns(t *testing.T) {
 	focused := func(w *Workspace) WindowID { id, _ := w.Focused(); return id }
 	t.Run("spiral", func(t *testing.T) {
-		// 1 left, 2 top right, 3 bottom left, 4 over 5 bottom right.
-		w := fixedWorkspace(2, 4, 5)
-		for _, want := range []WindowID{4, 2} {
-			if !w.FocusWindow(-1) || focused(w) != want {
-				t.Fatal(focused(w), want)
+		synctest.Test(t, func(t *testing.T) {
+			// 1 left, 2 top right, 3 bottom left, 4 over 5 bottom right.
+			w := fixedWorkspace(2, 4, 5)
+			for _, want := range []WindowID{4, 2} {
+				if !w.FocusWindow(-1) || focused(w) != want {
+					t.Fatal(focused(w), want)
+				}
 			}
-		}
-		if w.FocusWindow(-1) {
-			t.Fatal("moved past the top", focused(w))
-		}
-		w.FocusID(1)
-		if w.FocusWindow(1) {
-			t.Fatal("full height column moved", focused(w))
-		}
+			if w.FocusWindow(-1) {
+				t.Fatal("moved past the top", focused(w))
+			}
+			w.FocusID(1)
+			if w.FocusWindow(1) {
+				t.Fatal("full height column moved", focused(w))
+			}
+
+		})
 	})
 	t.Run("left and right follow the screen", func(t *testing.T) {
-		// 1 left, 2 top right, 3 bottom left, 4 over 5 bottom right.
-		w := fixedWorkspace(2, 4, 5)
-		for _, step := range []struct {
-			dir  int
-			want WindowID
-		}{{-1, 3}, {-1, 1}, {1, 2}} {
-			w.FocusColumn(step.dir)
-			if focused(w) != step.want {
-				t.Fatal(focused(w), step.want)
+		synctest.Test(t, func(t *testing.T) {
+			// 1 left, 2 top right, 3 bottom left, 4 over 5 bottom right.
+			w := fixedWorkspace(2, 4, 5)
+			for _, step := range []struct {
+				dir  int
+				want WindowID
+			}{{-1, 3}, {-1, 1}, {1, 2}} {
+				w.FocusColumn(step.dir)
+				if focused(w) != step.want {
+					t.Fatal(focused(w), step.want)
+				}
 			}
-		}
-		w.FocusID(3)
-		w.FocusColumn(1)
-		if focused(w) != 4 {
-			t.Fatal(focused(w))
-		}
-		if w.FocusID(2); w.columnToward(1) >= 0 {
-			t.Fatal("right edge has a neighbor")
-		}
+			w.FocusID(3)
+			w.FocusColumn(1)
+			if focused(w) != 4 {
+				t.Fatal(focused(w))
+			}
+			if w.FocusID(2); w.columnToward(1) >= 0 {
+				t.Fatal("right edge has a neighbor")
+			}
+
+		})
 	})
 	t.Run("a row of wide and narrow columns", func(t *testing.T) {
-		// 1 wide; 2, 3 and 4 beside it in one row.
-		w := fixedWorkspace(4, 0, 4)
-		w.Columns[0].Cells, w.Columns[1].Cells, w.Columns[2].Cells, w.Columns[3].Cells = 2, 1, 0, 0
-		w.FocusID(2)
-		if w.FocusWindow(1) || w.FocusWindow(-1) || focused(w) != 2 {
-			t.Fatal("a single row has no window above or below", focused(w))
-		}
-		w.FocusColumn(1)
-		if focused(w) != 3 {
-			t.Fatal(focused(w))
-		}
-		w.FocusColumn(-1)
-		w.FocusColumn(-1)
-		if focused(w) != 1 {
-			t.Fatal(focused(w))
-		}
+		synctest.Test(t, func(t *testing.T) {
+			// 1 wide; 2, 3 and 4 beside it in one row.
+			w := fixedWorkspace(4, 0, 4)
+			w.Columns[0].Cells, w.Columns[1].Cells, w.Columns[2].Cells, w.Columns[3].Cells = 2, 1, 0, 0
+			w.FocusID(2)
+			if w.FocusWindow(1) || w.FocusWindow(-1) || focused(w) != 2 {
+				t.Fatal("a single row has no window above or below", focused(w))
+			}
+			w.FocusColumn(1)
+			if focused(w) != 3 {
+				t.Fatal(focused(w))
+			}
+			w.FocusColumn(-1)
+			w.FocusColumn(-1)
+			if focused(w) != 1 {
+				t.Fatal(focused(w))
+			}
+
+		})
 	})
 	t.Run("lands on the nearest window of a stacked column", func(t *testing.T) {
-		// 1 left; 2 top right holds two windows; 3 bottom right.
-		w := &Workspace{MaxColumns: 2, Overflow: OverflowFixed}
-		w.SetOutput(100, 80)
-		w.Columns = []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{2, 5}}, {Windows: []WindowID{3}}}
-		w.Focus = 2
-		if !w.FocusWindow(-1) || focused(w) != 5 {
-			t.Fatal(focused(w))
-		}
+		synctest.Test(t, func(t *testing.T) {
+			// 1 left; 2 top right holds two windows; 3 bottom right.
+			w := &Workspace{MaxColumns: 2, Overflow: OverflowFixed}
+			w.SetOutput(100, 80)
+			w.Columns = []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{2, 5}}, {Windows: []WindowID{3}}}
+			w.Focus = 2
+			if !w.FocusWindow(-1) || focused(w) != 5 {
+				t.Fatal(focused(w))
+			}
+
+		})
 	})
 }
 
@@ -672,47 +754,59 @@ func placements(w *Workspace) map[WindowID]Placement {
 
 func TestFixedOverflowEdgeCases(t *testing.T) {
 	t.Run("new windows go last whatever the focus", func(t *testing.T) {
-		w := fixedWorkspace(2, 0, 3)
-		w.FocusID(1)
-		w.AddWindow(4)
-		if got := w.Columns[len(w.Columns)-1].Windows[0]; got != 4 {
-			t.Fatal(got)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			w := fixedWorkspace(2, 0, 3)
+			w.FocusID(1)
+			w.AddWindow(4)
+			if got := w.Columns[len(w.Columns)-1].Windows[0]; got != 4 {
+				t.Fatal(got)
+			}
+
+		})
 	})
 	for _, col := range []WindowID{1, 4} { // a plain column and a spiral slot
 		t.Run("fullscreen covers the output", func(t *testing.T) {
-			w := fixedWorkspace(2, 4, 4)
-			w.FocusID(col)
-			w.ToggleFullscreen()
-			for id, p := range placements(w) {
-				if id == col && (p.Rect != Rect{W: 100, H: 80} || !p.Fullscreen) {
-					t.Fatal(p)
+			synctest.Test(t, func(t *testing.T) {
+				w := fixedWorkspace(2, 4, 4)
+				w.FocusID(col)
+				w.ToggleFullscreen()
+				for id, p := range placements(w) {
+					if id == col && (p.Rect != Rect{W: 100, H: 80} || !p.Fullscreen) {
+						t.Fatal(p)
+					}
+					if id != col && !p.Hidden {
+						t.Fatalf("window %d visible over fullscreen: %+v", id, p)
+					}
 				}
-				if id != col && !p.Hidden {
-					t.Fatalf("window %d visible over fullscreen: %+v", id, p)
-				}
-			}
+
+			})
 		})
 	}
 	t.Run("a full row does not grow", func(t *testing.T) {
-		w := fixedWorkspace(2, 0, 2)
-		w.GrowColumn(true)
-		w.FocusColumn(-1)
-		w.GrowColumn(true)
-		for id, p := range placements(w) {
-			if p.Rect.X+p.Rect.W > 100 || p.Rect.W != 50 {
-				t.Fatal(id, p)
+		synctest.Test(t, func(t *testing.T) {
+			w := fixedWorkspace(2, 0, 2)
+			w.GrowColumn(true)
+			w.FocusColumn(-1)
+			w.GrowColumn(true)
+			for id, p := range placements(w) {
+				if p.Rect.X+p.Rect.W > 100 || p.Rect.W != 50 {
+					t.Fatal(id, p)
+				}
 			}
-		}
+
+		})
 	})
 	t.Run("gaps between spiral halves", func(t *testing.T) {
-		got := placements(fixedWorkspace(1, 4, 2))
-		if got[1].Rect != (Rect{X: 4, Y: 4, W: 92, H: 34}) || got[2].Rect != (Rect{X: 4, Y: 42, W: 92, H: 34}) {
-			t.Fatal(got[1].Rect, got[2].Rect)
-		}
-		if got[1].Neighbors == 0 || got[2].Neighbors == 0 {
-			t.Fatal("spiral windows must keep borders to show focus")
-		}
+		synctest.Test(t, func(t *testing.T) {
+			got := placements(fixedWorkspace(1, 4, 2))
+			if got[1].Rect != (Rect{X: 4, Y: 4, W: 92, H: 34}) || got[2].Rect != (Rect{X: 4, Y: 42, W: 92, H: 34}) {
+				t.Fatal(got[1].Rect, got[2].Rect)
+			}
+			if got[1].Neighbors == 0 || got[2].Neighbors == 0 {
+				t.Fatal("spiral windows must keep borders to show focus")
+			}
+
+		})
 	})
 }
 
@@ -729,21 +823,24 @@ func TestActivateLeavesFullscreen(t *testing.T) {
 		{"floating", func(w *Workspace) { w.AddFloating(3, 10, 10) }, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			w := &Workspace{}
-			w.SetOutput(100, 80)
-			w.AddWindow(2)
-			tc.setup(w)
-			w.FocusID(2)
-			w.SetFullscreen(2, true)
-			w.Activate(3)
-			for _, p := range w.Layout() {
-				if p.ID == 3 && (p.Hidden || !p.Focused) {
-					t.Fatalf("3 not shown and focused: %+v", p)
+			synctest.Test(t, func(t *testing.T) {
+				w := &Workspace{}
+				w.SetOutput(100, 80)
+				w.AddWindow(2)
+				tc.setup(w)
+				w.FocusID(2)
+				w.SetFullscreen(2, true)
+				w.Activate(3)
+				for _, p := range w.Layout() {
+					if p.ID == 3 && (p.Hidden || !p.Focused) {
+						t.Fatalf("3 not shown and focused: %+v", p)
+					}
+					if p.ID == 2 && p.Fullscreen != tc.keep {
+						t.Fatalf("fullscreen of 2 = %v", p.Fullscreen)
+					}
 				}
-				if p.ID == 2 && p.Fullscreen != tc.keep {
-					t.Fatalf("fullscreen of 2 = %v", p.Fullscreen)
-				}
-			}
+
+			})
 		})
 	}
 }

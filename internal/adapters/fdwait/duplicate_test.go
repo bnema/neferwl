@@ -8,6 +8,8 @@ import (
 
 // Epoll retains a registration after its fd closes if another descriptor
 // still refers to the same open file description.
+//
+//testpolicy:realtime bounded wait for kernel epoll/eventfd readiness or shutdown
 func TestRemovedDuplicatedDescriptorDoesNotKeepPollReadable(t *testing.T) {
 	p, err := New()
 	if err != nil {

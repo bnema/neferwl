@@ -219,7 +219,8 @@ func assertNoCursorOverlap(t *testing.T, patches []pattern.Patch) {
 func pollImage(t *testing.T, path string, notBefore time.Time, missing string, check func(image.Image) []string) {
 	t.Helper()
 	var last []string
-	for deadline := time.Now().Add(colorTimeout); ; time.Sleep(50 * time.Millisecond) {
+	waitFile := fileChanges(t, filepath.Dir(path))
+	for deadline := time.Now().Add(colorTimeout); ; waitFile() {
 		last = nil
 		if fi, err := os.Stat(path); err != nil {
 			last = []string{err.Error()}
@@ -248,6 +249,8 @@ func pollImage(t *testing.T, path string, notBefore time.Time, missing string, c
 // startColorCompositor runs a headless NeferWL with one 640×360 output in
 // temporary runtime and state directories and returns its socket path. A Run
 // error, Vulkan included, fails the test: the target requires a GPU.
+//
+//testpolicy:realtime real headless renderer, Wayland sockets and screenshot files
 func startColorCompositor(t *testing.T, opts Options) string {
 	t.Helper()
 	runtime := t.TempDir()
@@ -278,7 +281,8 @@ func startColorCompositor(t *testing.T, opts Options) string {
 		}
 	})
 	socket := filepath.Join(runtime, "wayland-1")
-	for deadline := time.Now().Add(colorTimeout); ; time.Sleep(20 * time.Millisecond) {
+	waitFile := fileChanges(t, runtime)
+	for deadline := time.Now().Add(colorTimeout); ; waitFile() {
 		if _, err := os.Stat(socket); err == nil {
 			return socket
 		}
@@ -314,7 +318,7 @@ func startPatternClient(t *testing.T, socket, mode string) *patternClient {
 	}
 	cmd := exec.Command(bin, "-mode", mode, "-fullscreen")
 	cmd.Env = append(os.Environ(), "WAYLAND_DISPLAY="+filepath.Base(socket))
-	stderr := &lockedBuffer{}
+	stderr := &lockedBuffer{changed: make(chan struct{}, 1)}
 	cmd.Stderr = stderr
 	// Taken before the start so that no frame of this client predates it.
 	// Frames of its windowed state (before fullscreen) are newer, so they
@@ -333,7 +337,7 @@ func startPatternClient(t *testing.T, socket, mode string) *patternClient {
 		}
 	})
 
-	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(10 * time.Millisecond) { // includes the 1.2 s fullscreen delay
+	for deadline := time.Now().Add(15 * time.Second); ; waitProcessOutput(t, stderr) { // includes the 1.2 s fullscreen delay
 		log := stderr.String()
 		if strings.Contains(log, fmt.Sprintf("ready %d %d\n", colorW, colorH)) {
 			c := &patternClient{ready: started}

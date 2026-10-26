@@ -24,6 +24,8 @@ import (
 // Exercise the production gate, backend proofs and protocol owner together.
 // No test-only global registration or injected security events: bufferless
 // locked must come from both real headless owners' affirmative black proofs.
+//
+//testpolicy:realtime real Wayland session-lock clients and headless outputs
 func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 	runtime := t.TempDir()
 	t.Setenv("XDG_RUNTIME_DIR", runtime)

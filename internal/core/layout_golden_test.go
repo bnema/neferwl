@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+	"testing/synctest"
 )
 
 // TestLayoutGoldenRects pins the reviewed output of each layout: scroll,
@@ -46,29 +47,32 @@ func TestLayoutGoldenRects(t *testing.T) {
 			snaps: []float64{0, 720, 1440}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			w := Workspace{Overflow: tc.overflow, MaxColumns: tc.k, Output: Rect{X: 10, Y: 20, W: 1200, H: 900}, Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}, Gaps: 8}
-			for i := 0; i < tc.n; i++ {
-				w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
-			}
-			w.Focus = tc.focus
-			w.Columns[tc.focus].FullWidth = tc.maximized
-			w.scroll()
-			if w.View != tc.view {
-				t.Fatalf("view %d, want %d", w.View, tc.view)
-			}
-			if got := w.columnRectsAt(nil, false, 0); !reflect.DeepEqual(got, tc.rects) {
-				t.Fatalf("rects\n got %v\nwant %v", got, tc.rects)
-			}
-			ignore := tc.ignoreFull
-			if ignore == nil {
-				ignore = tc.rects
-			}
-			if got := w.columnRectsAt(nil, true, 0); !reflect.DeepEqual(got, ignore) {
-				t.Fatalf("rects ignoring full width\n got %v\nwant %v", got, ignore)
-			}
-			if got := w.snapPoints(); !reflect.DeepEqual(got, tc.snaps) {
-				t.Fatalf("snap points %v, want %v", got, tc.snaps)
-			}
+			synctest.Test(t, func(t *testing.T) {
+				w := Workspace{Overflow: tc.overflow, MaxColumns: tc.k, Output: Rect{X: 10, Y: 20, W: 1200, H: 900}, Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}, Gaps: 8}
+				for i := 0; i < tc.n; i++ {
+					w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
+				}
+				w.Focus = tc.focus
+				w.Columns[tc.focus].FullWidth = tc.maximized
+				w.scroll()
+				if w.View != tc.view {
+					t.Fatalf("view %d, want %d", w.View, tc.view)
+				}
+				if got := w.columnRectsAt(nil, false, 0); !reflect.DeepEqual(got, tc.rects) {
+					t.Fatalf("rects\n got %v\nwant %v", got, tc.rects)
+				}
+				ignore := tc.ignoreFull
+				if ignore == nil {
+					ignore = tc.rects
+				}
+				if got := w.columnRectsAt(nil, true, 0); !reflect.DeepEqual(got, ignore) {
+					t.Fatalf("rects ignoring full width\n got %v\nwant %v", got, ignore)
+				}
+				if got := w.snapPoints(); !reflect.DeepEqual(got, tc.snaps) {
+					t.Fatalf("snap points %v, want %v", got, tc.snaps)
+				}
+
+			})
 		})
 	}
 }
@@ -85,21 +89,24 @@ func TestSwipeStalenessSnapPointsAllocations(t *testing.T) {
 		allocs float64
 	}{{OverflowScroll, 2}, {OverflowFixed, 2}, {OverflowCascade, 0}} {
 		t.Run(string(tc.o), func(t *testing.T) {
-			w := Workspace{Overflow: tc.o, MaxColumns: 2, Usable: Rect{W: 1000, H: 720}, Output: Rect{W: 1000, H: 720}, Gaps: 8}
-			for i := 0; i < 5; i++ {
-				w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
-			}
-			w.scroll()
-			g := swipeGesture{ws: &w, points: w.snapPoints()}
-			g.scratch = w.snapPointsInto(g.scratch)
-			if allocs := testing.AllocsPerRun(50, func() {
-				g.scratch = g.ws.snapPointsInto(g.scratch)
-				if !slices.Equal(g.scratch, g.points) {
-					t.Fatal("points moved")
+			synctest.Test(t, func(t *testing.T) {
+				w := Workspace{Overflow: tc.o, MaxColumns: 2, Usable: Rect{W: 1000, H: 720}, Output: Rect{W: 1000, H: 720}, Gaps: 8}
+				for i := 0; i < 5; i++ {
+					w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
 				}
-			}); allocs != tc.allocs {
-				t.Fatalf("staleness check allocates %g times, want %g", allocs, tc.allocs)
-			}
+				w.scroll()
+				g := swipeGesture{ws: &w, points: w.snapPoints()}
+				g.scratch = w.snapPointsInto(g.scratch)
+				if allocs := testing.AllocsPerRun(50, func() {
+					g.scratch = g.ws.snapPointsInto(g.scratch)
+					if !slices.Equal(g.scratch, g.points) {
+						t.Fatal("points moved")
+					}
+				}); allocs != tc.allocs {
+					t.Fatalf("staleness check allocates %g times, want %g", allocs, tc.allocs)
+				}
+
+			})
 		})
 	}
 }

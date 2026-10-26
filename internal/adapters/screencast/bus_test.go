@@ -25,6 +25,8 @@ func testInventory() ports.CastInventory {
 }
 
 // ready starts the service, waits for its names and publishes the inventory.
+//
+//testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func ready(t *testing.T, o harnessOpts) (*svcHarness, *zerobus.Conn) {
 	t.Helper()
 	h := newSvcHarness(t, o)
@@ -47,7 +49,7 @@ func ready(t *testing.T, o harnessOpts) (*svcHarness, *zerobus.Conn) {
 				return h, c
 			}
 		}
-		time.Sleep(5 * time.Millisecond)
+		<-time.After(5 * time.Millisecond)
 	}
 	t.Fatal("inventory not applied")
 	return h, c
@@ -379,6 +381,8 @@ func TestNonOwnerIsDenied(t *testing.T) {
 // Requests wait in a fixed table while their sender is checked: when it is
 // full, the next one gets LimitsExceeded, and the parked ones are answered
 // once the check ends.
+//
+//testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func TestPendingTableFull(t *testing.T) {
 	// Drive admission on this goroutine, delaying the caller-check transition
 	// rather than blocking Open on the service owner. A PID reply may arrive
@@ -431,6 +435,8 @@ func TestPendingTableFull(t *testing.T) {
 
 // Closing the owner's connection stops its session: its slot is freed, so
 // a new session starts again from the table.
+//
+//testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func TestOwnerVanishFreesSessions(t *testing.T) {
 	h, c := ready(t, harnessOpts{})
 	owner := h.client()
@@ -450,7 +456,7 @@ func TestOwnerVanishFreesSessions(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("sessions of a vanished owner stay: %q\n%s", name, h.log.String())
 		}
-		time.Sleep(10 * time.Millisecond)
+		<-time.After(10 * time.Millisecond)
 	}
 }
 
@@ -626,6 +632,8 @@ func TestDisplayConfigAndWindows(t *testing.T) {
 // MonitorsChanged and WindowsChanged are directed: a peer that was refused
 // gets nothing, even with a match rule for them; an allowed one gets them,
 // and a peer that left the bus is forgotten.
+//
+//testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func TestInventorySignalsGoToAllowedPeersOnly(t *testing.T) {
 	h := newSvcHarness(t, harnessOpts{})
 	h.peers.exeFile = func(n int) string {
@@ -675,7 +683,7 @@ func TestInventorySignalsGoToAllowedPeersOnly(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatal("inventory not applied")
 		}
-		time.Sleep(5 * time.Millisecond)
+		<-time.After(5 * time.Millisecond)
 	}
 	changed := testInventory()
 	changed.Windows = append(changed.Windows, ports.CastWindow{ID: 9, AppID: "x", Title: "new"})
@@ -770,6 +778,8 @@ func TestDeniedCallersDoNotExhaustTheCache(t *testing.T) {
 }
 
 // The pidfds of the cached callers are closed when the bus is lost.
+//
+//testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func TestBusLossClosesCallerPidfds(t *testing.T) {
 	h := newSvcHarness(t, harnessOpts{})
 	c := h.client()
@@ -789,6 +799,6 @@ func TestBusLossClosesCallerPidfds(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatal("pidfd of a cached caller survives the bus loss")
 		}
-		time.Sleep(5 * time.Millisecond)
+		<-time.After(5 * time.Millisecond)
 	}
 }

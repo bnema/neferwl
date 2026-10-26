@@ -2,6 +2,7 @@ package core
 
 import (
 	"testing"
+	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -114,23 +115,26 @@ func TestNeighbor(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			for _, st := range tc.steps {
-				c := layoutCore(0, tc.tiles...)
-				for i, s := range c.screens {
-					if s.name() == st.from {
-						c.focusScreen = i
+			synctest.Test(t, func(t *testing.T) {
+				for _, st := range tc.steps {
+					c := layoutCore(0, tc.tiles...)
+					for i, s := range c.screens {
+						if s.name() == st.from {
+							c.focusScreen = i
+						}
+					}
+					for i, d := range dirs {
+						got := ""
+						if n := c.neighbor(d); n >= 0 {
+							got = c.screens[n].name()
+						}
+						if got != st.want[i] {
+							t.Errorf("from %s %s: got %q, want %q", st.from, dirNames[i], got, st.want[i])
+						}
 					}
 				}
-				for i, d := range dirs {
-					got := ""
-					if n := c.neighbor(d); n >= 0 {
-						got = c.screens[n].name()
-					}
-					if got != st.want[i] {
-						t.Errorf("from %s %s: got %q, want %q", st.from, dirNames[i], got, st.want[i])
-					}
-				}
-			}
+
+			})
 		})
 	}
 	if n := layoutCore(0, tile{"A", 0, 0, 10, 10}).neighbor(direction(0)); n != -1 {

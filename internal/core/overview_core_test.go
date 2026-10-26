@@ -2,7 +2,7 @@ package core_test
 
 import (
 	"testing"
-	"time"
+	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -70,8 +70,8 @@ func overviewClickPicksOnPointerOutput(t *testing.T, r *landRig) {
 	}
 	r.input <- ports.PointerMotion{X: float64(left.Width + p.Rect.X + p.Rect.W/2), Y: float64(p.Rect.Y + p.Rect.H/2)}
 	r.input <- ports.PointerButton{Button: 0x110, Pressed: true}
-	deadline := time.After(time.Second)
 	for picked := false; !picked; {
+		synctest.Wait()
 		select {
 		case set := <-r.scenes:
 			s := outputScene(t, set, "DP-2")
@@ -80,7 +80,7 @@ func overviewClickPicksOnPointerOutput(t *testing.T, r *landRig) {
 					picked = true
 				}
 			}
-		case <-deadline:
+		default:
 			t.Fatal("window 2 not picked")
 		}
 	}
@@ -113,69 +113,76 @@ func overviewClickOutsidePreview(t *testing.T, r *landRig) {
 	// h moves the selection in the overview; it would be a plain key
 	// otherwise, with no scene.
 	r.input <- ports.KeyEvent{Keysym: "h", Pressed: true}
+	synctest.Wait()
 	select {
 	case s := <-r.scenes:
 		if !hasPreview(s[0]) {
 			t.Fatal("overview closed by a click outside the previews")
 		}
-	case <-time.After(time.Second):
+	default:
 		t.Fatal("overview closed by a click outside the previews: h published nothing")
 	}
 	noButtonSent(t, r.commands)
 }
 
 func TestOverviewCoreEscapeRestoresFocus(t *testing.T) {
-	r := startMulti(t, nil, right)
-	r.mapWindow(t, 1)
-	r.mapWindow(t, 2)
-	r.mapWindow(t, 3)
-	r.key(t, "o", ports.ModAlt)
-	r.key(t, "h", 0)
-	set := r.key(t, "h", 0)
-	if p, ok := scenePreview(set[0], 1); !ok || !p.Focused {
-		t.Fatalf("preview 1 not selected: %+v", set[0].Windows)
-	}
-	set = r.key(t, "Escape", 0)
-	if hasPreview(set[0]) {
-		t.Fatal("overview still open")
-	}
-	for _, w := range set[0].Windows {
-		if w.Focused != (w.ID == 3) {
-			t.Fatalf("focus: %+v", w)
+	synctest.Test(t, func(t *testing.T) {
+		r := startMulti(t, nil, right)
+		r.mapWindow(t, 1)
+		r.mapWindow(t, 2)
+		r.mapWindow(t, 3)
+		r.key(t, "o", ports.ModAlt)
+		r.key(t, "h", 0)
+		set := r.key(t, "h", 0)
+		if p, ok := scenePreview(set[0], 1); !ok || !p.Focused {
+			t.Fatalf("preview 1 not selected: %+v", set[0].Windows)
 		}
-	}
+		set = r.key(t, "Escape", 0)
+		if hasPreview(set[0]) {
+			t.Fatal("overview still open")
+		}
+		for _, w := range set[0].Windows {
+			if w.Focused != (w.ID == 3) {
+				t.Fatalf("focus: %+v", w)
+			}
+		}
+
+	})
 }
 
 // The default move bind moves the selected preview and keeps the overview
 // open, through the same path as any key.
 func TestOverviewCoreMoveBind(t *testing.T) {
-	r := startMulti(t, nil, right)
-	r.mapWindow(t, 1)
-	r.mapWindow(t, 2)
-	r.mapWindow(t, 3)
-	r.key(t, "o", ports.ModAlt)
-	r.key(t, "h", 0)
-	if set := r.key(t, "Next", ports.ModAlt|ports.ModShift); !hasPreview(set[0]) {
-		t.Fatal("overview closed")
-	}
-	r.key(t, "Escape", 0)
-	// The state channel keeps the latest snapshot: wait for the one after
-	// Escape, back on window 3 of workspace 1. The overview showed window
-	// 2 in the row below; closed, it is off screen on workspace 2.
-	deadline := time.After(time.Second)
-	for {
-		select {
-		case st := <-r.state:
-			if st.Window == nil || st.Window.ID != 3 || st.Outputs[0].Active != 1 {
-				continue
-			}
-			for _, w := range st.Windows {
-				if w.ID == 2 && w.Workspace == 2 && !w.Visible {
-					return
-				}
-			}
-		case <-deadline:
-			t.Fatal("window 2 not on workspace 2 after escape")
+	synctest.Test(t, func(t *testing.T) {
+		r := startMulti(t, nil, right)
+		r.mapWindow(t, 1)
+		r.mapWindow(t, 2)
+		r.mapWindow(t, 3)
+		r.key(t, "o", ports.ModAlt)
+		r.key(t, "h", 0)
+		if set := r.key(t, "Next", ports.ModAlt|ports.ModShift); !hasPreview(set[0]) {
+			t.Fatal("overview closed")
 		}
-	}
+		r.key(t, "Escape", 0)
+		// The state channel keeps the latest snapshot: wait for the one after
+		// Escape, back on window 3 of workspace 1. The overview showed window
+		// 2 in the row below; closed, it is off screen on workspace 2.
+		for {
+			synctest.Wait()
+			select {
+			case st := <-r.state:
+				if st.Window == nil || st.Window.ID != 3 || st.Outputs[0].Active != 1 {
+					continue
+				}
+				for _, w := range st.Windows {
+					if w.ID == 2 && w.Workspace == 2 && !w.Visible {
+						return
+					}
+				}
+			default:
+				t.Fatal("window 2 not on workspace 2 after escape")
+			}
+		}
+
+	})
 }

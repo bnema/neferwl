@@ -4,6 +4,7 @@ import (
 	"image"
 	"slices"
 	"testing"
+	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -161,9 +162,12 @@ func TestPlaceOutputs(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := placeOutputs(tc.items); !slices.Equal(got, tc.want) {
-				t.Fatalf("got %v, want %v", got, tc.want)
-			}
+			synctest.Test(t, func(t *testing.T) {
+				if got := placeOutputs(tc.items); !slices.Equal(got, tc.want) {
+					t.Fatalf("got %v, want %v", got, tc.want)
+				}
+
+			})
 		})
 	}
 }

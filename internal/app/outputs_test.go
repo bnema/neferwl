@@ -3,13 +3,17 @@ package app
 import (
 	"context"
 	"testing"
-	"time"
+	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Every output gets the latest cursor, and a new output starts with it.
 func TestOutputSetCursor(t *testing.T) {
+	synctest.Test(t, testOutputSetCursor)
+}
+
+func testOutputSetCursor(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cursors := make(chan ports.CursorChange)
@@ -32,12 +36,13 @@ func TestOutputSetCursor(t *testing.T) {
 	}
 	expect := func(name string, want ports.CursorChange) {
 		t.Helper()
+		synctest.Wait()
 		select {
 		case c := <-got[name]:
 			if c.Shape != want.Shape || c.Hidden != want.Hidden {
 				t.Fatalf("%s: %+v, want %+v", name, c, want)
 			}
-		case <-time.After(2 * time.Second):
+		default:
 			t.Fatalf("%s: no cursor", name)
 		}
 	}

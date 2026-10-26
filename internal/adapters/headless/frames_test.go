@@ -3,6 +3,7 @@ package headless
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -32,35 +33,39 @@ func runWithFrames(t *testing.T, size int) (scenes chan ports.Scene, frames chan
 // The presentation of an animating scene tells core the next frame is due;
 // the one of a settled scene does not.
 func TestAnimatingSceneSendsFrame(t *testing.T) {
-	scenes, frames, rec, stop := runWithFrames(t, 4)
-	defer stop()
+	synctest.Test(t, func(t *testing.T) {
+		scenes, frames, rec, stop := runWithFrames(t, 4)
+		defer stop()
 
-	scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Animating: true}
-	select {
-	case got := <-frames:
-		require.Equal(t, ports.OutputFrame{Output: "HEADLESS-1"}, got)
-	case <-time.After(3 * time.Second):
-		t.Fatal("no frame for an animating scene")
-	}
+		scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Animating: true}
+		select {
+		case got := <-frames:
+			require.Equal(t, ports.OutputFrame{Output: "HEADLESS-1"}, got)
+		case <-time.After(3 * time.Second):
+			t.Fatal("no frame for an animating scene")
+		}
 
-	// The scene an animation settles on: drawn, nobody woken.
-	scenes <- ports.Scene{Seq: 2, OutputWidth: 2, OutputHeight: 2}
-	waitFrames(t, rec, 2)
-	// A third scene is drawn after the settled one (the owner handles scenes
-	// in order): had the settled frame woken core, its frame precedes the
-	// third's in the channel.
-	scenes <- ports.Scene{Seq: 3, OutputWidth: 2, OutputHeight: 2}
-	waitFrames(t, rec, 3)
-	require.Empty(t, frames)
+		// The scene an animation settles on: drawn, nobody woken.
+		scenes <- ports.Scene{Seq: 2, OutputWidth: 2, OutputHeight: 2}
+		waitFrames(t, rec, 2)
+		// A third scene is drawn after the settled one (the owner handles scenes
+		// in order): had the settled frame woken core, its frame precedes the
+		// third's in the channel.
+		scenes <- ports.Scene{Seq: 3, OutputWidth: 2, OutputHeight: 2}
+		waitFrames(t, rec, 3)
+		require.Empty(t, frames)
+	})
 }
 
 // A frames channel core has not read stays full: the owner never waits.
 func TestAnimatingFramesNeverBlock(t *testing.T) {
-	scenes, frames, rec, stop := runWithFrames(t, 1)
-	defer stop()
-	for seq := uint64(1); seq <= 3; seq++ {
-		scenes <- ports.Scene{Seq: seq, OutputWidth: 2, OutputHeight: 2, Animating: true}
-		waitFrames(t, rec, int(seq))
-	}
-	require.Len(t, frames, 1)
+	synctest.Test(t, func(t *testing.T) {
+		scenes, frames, rec, stop := runWithFrames(t, 1)
+		defer stop()
+		for seq := uint64(1); seq <= 3; seq++ {
+			scenes <- ports.Scene{Seq: seq, OutputWidth: 2, OutputHeight: 2, Animating: true}
+			waitFrames(t, rec, int(seq))
+		}
+		require.Len(t, frames, 1)
+	})
 }

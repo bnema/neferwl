@@ -100,6 +100,8 @@ func TestScreenshotAreaMapsToRegion(t *testing.T) {
 // InteractiveScreenshot: nefercap shot, answered with a file:// uri. A second
 // shot while one runs is LimitsExceeded; a failure is Failed and the busy
 // flag clears.
+//
+//testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func TestInteractiveScreenshotBusyAndFailure(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	h, c := ready(t, harnessOpts{})

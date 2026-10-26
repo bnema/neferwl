@@ -7,6 +7,7 @@ import (
 	"os"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
@@ -23,77 +24,80 @@ func TestScopedCaptureClosesPostRenderAdmissionGap(t *testing.T) {
 			name = "excluded"
 		}
 		t.Run(name, func(t *testing.T) {
-			admitted := ports.SecurityState{Generation: 2}
-			protected := ports.SecurityState{Generation: 3, Protected: true}
-			var state atomic.Value
-			state.Store(admitted)
-			var arm atomic.Bool
-			gate := portsmocks.NewMockSessionSecurity(t)
-			gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState {
-				before := state.Load().(ports.SecurityState)
-				if arm.CompareAndSwap(true, false) {
-					state.Store(protected)
-				}
-				return before
-			})
-			r := portsmocks.NewMockRenderer(t)
-			r.EXPECT().Close().Return().Once()
-			frameRendered := make(chan struct{}, 1)
-			proof := make(chan ports.SecurityBackendEvent, 1)
-			r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
-				if s.Security == protected {
-					if s.Seq != 0 || len(s.Windows) != 0 {
-						t.Errorf("bad protection frame %+v", s)
+			synctest.Test(t, func(t *testing.T) {
+				admitted := ports.SecurityState{Generation: 2}
+				protected := ports.SecurityState{Generation: 3, Protected: true}
+				var state atomic.Value
+				state.Store(admitted)
+				var arm atomic.Bool
+				gate := portsmocks.NewMockSessionSecurity(t)
+				gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState {
+					before := state.Load().(ports.SecurityState)
+					if arm.CompareAndSwap(true, false) {
+						state.Store(protected)
 					}
+					return before
+				})
+				r := portsmocks.NewMockRenderer(t)
+				r.EXPECT().Close().Return().Once()
+				frameRendered := make(chan struct{}, 1)
+				proof := make(chan ports.SecurityBackendEvent, 1)
+				r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+					if s.Security == protected {
+						if s.Seq != 0 || len(s.Windows) != 0 {
+							t.Errorf("bad protection frame %+v", s)
+						}
+						return nil, nil
+					}
+					if s.Security != admitted {
+						t.Errorf("wrong render epoch %+v", s)
+					}
+					arm.Store(true)
+					frameRendered <- struct{}{}
 					return nil, nil
+				}).Twice()
+				// BeginCapture has no expectation: any native export fails the test.
+				ctx, cancel := context.WithCancel(context.Background())
+				done := make(chan error, 1)
+				scenes := make(chan ports.Scene, 1)
+				incoming := make(chan ports.CaptureRequest)
+				replies := make(chan ports.CaptureDone, 2)
+				go func() {
+					done <- Run(ctx, Options{Security: gate, SecurityEvents: proof, Instance: 8, Width: 2, Height: 2, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, incoming)
+				}()
+				dst := sessionCaptureFile(t)
+				incoming <- ports.CaptureRequest{ID: 91, Exclude: excluded, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: dst}
+				scene := ports.Scene{Security: admitted, Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2}
+				if excluded {
+					scene = sessionScene()
+					scene.Security = admitted
+					scene.Scale = 1
 				}
-				if s.Security != admitted {
-					t.Errorf("wrong render epoch %+v", s)
+				scenes <- scene
+				securityReceive(t, frameRendered)
+				result := securityReceive(t, replies)
+				if result.ID != 91 || !errors.Is(result.Err, capture.ErrSecurityState) {
+					t.Fatalf("scoped rejection missing: %+v", result)
 				}
-				arm.Store(true)
-				frameRendered <- struct{}{}
-				return nil, nil
-			}).Twice()
-			// BeginCapture has no expectation: any native export fails the test.
-			ctx, cancel := context.WithCancel(context.Background())
-			done := make(chan error, 1)
-			scenes := make(chan ports.Scene, 1)
-			incoming := make(chan ports.CaptureRequest)
-			replies := make(chan ports.CaptureDone, 2)
-			go func() {
-				done <- Run(ctx, Options{Security: gate, SecurityEvents: proof, Instance: 8, Width: 2, Height: 2, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, incoming)
-			}()
-			dst := sessionCaptureFile(t)
-			incoming <- ports.CaptureRequest{ID: 91, Exclude: excluded, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: dst}
-			scene := ports.Scene{Security: admitted, Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2}
-			if excluded {
-				scene = sessionScene()
-				scene.Security = admitted
-				scene.Scale = 1
-			}
-			scenes <- scene
-			securityReceive(t, frameRendered)
-			result := securityReceive(t, replies)
-			if result.ID != 91 || !errors.Is(result.Err, capture.ErrSecurityState) {
-				t.Fatalf("scoped rejection missing: %+v", result)
-			}
-			if _, err := dst.File.Stat(); !errors.Is(err, os.ErrClosed) {
-				t.Fatalf("destination not closed: %v", err)
-			}
-			securityReceive(t, proof)
-			cancel()
-			if err := securityReceive(t, done); err != nil {
-				t.Fatal(err)
-			}
-			select {
-			case extra := <-replies:
-				t.Fatalf("duplicate reply %+v", extra)
-			default:
-			}
+				if _, err := dst.File.Stat(); !errors.Is(err, os.ErrClosed) {
+					t.Fatalf("destination not closed: %v", err)
+				}
+				securityReceive(t, proof)
+				cancel()
+				if err := securityReceive(t, done); err != nil {
+					t.Fatal(err)
+				}
+				select {
+				case extra := <-replies:
+					t.Fatalf("duplicate reply %+v", extra)
+				default:
+				}
+			})
 		})
 	}
 }
 
+//testpolicy:realtime bounded wait for real pipe acquire fence and capture completion
 func TestTransitionDuringHeadlessRenderWaitRetainsFenceAndRejectsCapture(t *testing.T) {
 	admitted := ports.SecurityState{Generation: 2}
 	locked := ports.SecurityState{Generation: 3, Protected: true}

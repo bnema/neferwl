@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
@@ -41,31 +42,37 @@ func claimToken(req ports.SpawnRequest) string {
 
 // A stalled command transport must not delay a placement spawn.
 func TestSpawnStashIndependentOfCommandDrain(t *testing.T) {
-	now := claimBase
-	commands := make(chan ports.ClientCommand)
-	spawn := make(chan ports.SpawnRequest, 1)
-	c := stashSpawnCore(t, commands, spawn, fixedClock(t, &now))
-	if err := c.spawnStash(context.Background(), c.cur().mon.Current(), [][]string{{"firefox"}}, false); err != nil {
-		t.Fatal(err)
-	}
-	req := <-spawn
-	c.placement.place(c, ports.WindowMapped{ID: 5, Slot: claimToken(req)})
-	if w := c.cur().mon.Current(); len(w.Stash) != 1 || w.Stash[0].ID != 5 {
-		t.Fatal("placement lost while commands unread")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		now := claimBase
+		commands := make(chan ports.ClientCommand)
+		spawn := make(chan ports.SpawnRequest, 1)
+		c := stashSpawnCore(t, commands, spawn, fixedClock(t, &now))
+		if err := c.spawnStash(context.Background(), c.cur().mon.Current(), [][]string{{"firefox"}}, false); err != nil {
+			t.Fatal(err)
+		}
+		req := <-spawn
+		c.placement.place(c, ports.WindowMapped{ID: 5, Slot: claimToken(req)})
+		if w := c.cur().mon.Current(); len(w.Stash) != 1 || w.Stash[0].ID != 5 {
+			t.Fatal("placement lost while commands unread")
+		}
+
+	})
 }
 
 // A send the launcher queue suppresses leaves no claim behind.
 func TestSpawnStashSuppressedLeavesNoClaim(t *testing.T) {
-	now := claimBase
-	commands := make(chan ports.ClientCommand, 8)
-	c := stashSpawnCore(t, commands, nil, fixedClock(t, &now)) // no launcher queue: every send is suppressed
-	if err := c.spawnStash(context.Background(), c.cur().mon.Current(), [][]string{{"a"}, {"b"}}, false); err != nil {
-		t.Fatal(err)
-	}
-	if c.placement.anyPending() {
-		t.Fatal("suppressed claims stayed pending")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		now := claimBase
+		commands := make(chan ports.ClientCommand, 8)
+		c := stashSpawnCore(t, commands, nil, fixedClock(t, &now)) // no launcher queue: every send is suppressed
+		if err := c.spawnStash(context.Background(), c.cur().mon.Current(), [][]string{{"a"}, {"b"}}, false); err != nil {
+			t.Fatal(err)
+		}
+		if c.placement.anyPending() {
+			t.Fatal("suppressed claims stayed pending")
+		}
+
+	})
 }
 
 // From the first command that is not issued, the rest are not sent and their
@@ -82,30 +89,33 @@ func TestSpawnStashCancelsClaimsFromFirstUnissued(t *testing.T) {
 		{"context cancelled", 4, true, 0, context.Canceled},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			now := claimBase
-			commands := make(chan ports.ClientCommand) // unread: spawns are independent of command delivery
-			spawn := make(chan ports.SpawnRequest, tc.queue)
-			c := stashSpawnCore(t, commands, spawn, fixedClock(t, &now))
-			ctx, cancel := context.WithCancel(context.Background())
-			t.Cleanup(cancel)
-			if tc.cancelled {
-				cancel()
-			}
-			err := c.spawnStash(ctx, c.cur().mon.Current(), [][]string{{"a"}, {"b"}}, false)
-			if !errors.Is(err, tc.wantErr) {
-				t.Fatalf("error %v, want %v", err, tc.wantErr)
-			}
-			if len(spawn) != tc.issued {
-				t.Fatalf("%d spawns, want %d", len(spawn), tc.issued)
-			}
-			if len(c.placement.pending) != tc.issued {
-				t.Fatalf("%d claims kept, want %d", len(c.placement.pending), tc.issued)
-			}
-			if tc.issued == 1 {
-				if _, ok := c.placement.pending[claimToken(<-spawn)]; !ok {
-					t.Fatal("the issued command lost its claim")
+			synctest.Test(t, func(t *testing.T) {
+				now := claimBase
+				commands := make(chan ports.ClientCommand) // unread: spawns are independent of command delivery
+				spawn := make(chan ports.SpawnRequest, tc.queue)
+				c := stashSpawnCore(t, commands, spawn, fixedClock(t, &now))
+				ctx, cancel := context.WithCancel(context.Background())
+				t.Cleanup(cancel)
+				if tc.cancelled {
+					cancel()
 				}
-			}
+				err := c.spawnStash(ctx, c.cur().mon.Current(), [][]string{{"a"}, {"b"}}, false)
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("error %v, want %v", err, tc.wantErr)
+				}
+				if len(spawn) != tc.issued {
+					t.Fatalf("%d spawns, want %d", len(spawn), tc.issued)
+				}
+				if len(c.placement.pending) != tc.issued {
+					t.Fatalf("%d claims kept, want %d", len(c.placement.pending), tc.issued)
+				}
+				if tc.issued == 1 {
+					if _, ok := c.placement.pending[claimToken(<-spawn)]; !ok {
+						t.Fatal("the issued command lost its claim")
+					}
+				}
+
+			})
 		})
 	}
 }
@@ -123,35 +133,41 @@ func TestStashClaimExpiry(t *testing.T) {
 		{"just after", termRetry + time.Nanosecond, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			now := claimBase
-			c := stashSpawnCore(t, nil, nil, fixedClock(t, &now))
-			m := c.cur().mon
-			m.AddWindow(1)
-			target := m.Current()
-			m.show(m.Workspaces[1])
-			req := c.placement.request([]string{"firefox"}, spawnTarget{kind: spawnStash, ws: target, at: now})
-			now = claimBase.Add(tc.age)
-			c.placement.place(c, ports.WindowMapped{ID: 5, Slot: claimToken(req)})
-			_, w := c.screenOf(5)
-			if placed := w == target && len(target.Stash) == 1; placed != tc.placed {
-				t.Fatalf("placed %t, want %t", placed, tc.placed)
-			}
+			synctest.Test(t, func(t *testing.T) {
+				now := claimBase
+				c := stashSpawnCore(t, nil, nil, fixedClock(t, &now))
+				m := c.cur().mon
+				m.AddWindow(1)
+				target := m.Current()
+				m.show(m.Workspaces[1])
+				req := c.placement.request([]string{"firefox"}, spawnTarget{kind: spawnStash, ws: target, at: now})
+				now = claimBase.Add(tc.age)
+				c.placement.place(c, ports.WindowMapped{ID: 5, Slot: claimToken(req)})
+				_, w := c.screenOf(5)
+				if placed := w == target && len(target.Stash) == 1; placed != tc.placed {
+					t.Fatalf("placed %t, want %t", placed, tc.placed)
+				}
+
+			})
 		})
 	}
 }
 
 // A workspace that left every screen no longer takes the window.
 func TestStashClaimWithoutWorkspaceMapsNormally(t *testing.T) {
-	now := claimBase
-	c := stashSpawnCore(t, nil, nil, fixedClock(t, &now))
-	req := c.placement.request([]string{"firefox"}, spawnTarget{kind: spawnStash, ws: &Workspace{}, at: now})
-	c.placement.place(c, ports.WindowMapped{ID: 5, Slot: claimToken(req)})
-	if _, w := c.screenOf(5); w != c.cur().mon.Current() {
-		t.Fatal("window did not map onto the current workspace")
-	}
-	if c.placement.anyPending() {
-		t.Fatal("claim kept")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		now := claimBase
+		c := stashSpawnCore(t, nil, nil, fixedClock(t, &now))
+		req := c.placement.request([]string{"firefox"}, spawnTarget{kind: spawnStash, ws: &Workspace{}, at: now})
+		c.placement.place(c, ports.WindowMapped{ID: 5, Slot: claimToken(req)})
+		if _, w := c.screenOf(5); w != c.cur().mon.Current() {
+			t.Fatal("window did not map onto the current workspace")
+		}
+		if c.placement.anyPending() {
+			t.Fatal("claim kept")
+		}
+
+	})
 }
 
 // A window opened by a stash spawn is shown, selected and focused in the
@@ -183,53 +199,62 @@ func TestStashSpawnedAlwaysShown(t *testing.T) {
 	}
 
 	t.Run("covering tile outside the stash", func(t *testing.T) {
-		w := base()
-		w.FocusID(1)
-		w.ToggleFullscreen()
-		w.stashSpawned(5)
-		shown(t, w)
-		if w.cover() != 1 || !w.stashOverCover() {
-			t.Fatalf("cover %d: the tile must stay fullscreen under the stash", w.cover())
-		}
-		if p := previewOf(t, w.Layout(), 1); !p.Fullscreen || p.Hidden {
-			t.Fatalf("tile %+v", p)
-		}
-		w.ToggleStashVisible()
-		if id, _ := w.Focused(); id != 1 || w.cover() != 1 {
-			t.Fatalf("hidden stash: focused %d cover %d, want the tile", id, w.cover())
-		}
+		synctest.Test(t, func(t *testing.T) {
+			w := base()
+			w.FocusID(1)
+			w.ToggleFullscreen()
+			w.stashSpawned(5)
+			shown(t, w)
+			if w.cover() != 1 || !w.stashOverCover() {
+				t.Fatalf("cover %d: the tile must stay fullscreen under the stash", w.cover())
+			}
+			if p := previewOf(t, w.Layout(), 1); !p.Fullscreen || p.Hidden {
+				t.Fatalf("tile %+v", p)
+			}
+			w.ToggleStashVisible()
+			if id, _ := w.Focused(); id != 1 || w.cover() != 1 {
+				t.Fatalf("hidden stash: focused %d cover %d, want the tile", id, w.cover())
+			}
+
+		})
 	})
 
 	t.Run("fullscreen stash member", func(t *testing.T) {
-		w := base()
-		w.ToggleFullscreen() // 3
-		if w.cover() != 3 {
-			t.Fatalf("setup: cover %d", w.cover())
-		}
-		w.stashSpawned(5)
-		shown(t, w)
-		if w.cover() != 0 {
-			t.Fatalf("cover %d: the stash member still covers", w.cover())
-		}
-		if p := previewOf(t, w.Layout(), 3); p.Fullscreen {
-			t.Fatalf("old member %+v", p)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			w := base()
+			w.ToggleFullscreen() // 3
+			if w.cover() != 3 {
+				t.Fatalf("setup: cover %d", w.cover())
+			}
+			w.stashSpawned(5)
+			shown(t, w)
+			if w.cover() != 0 {
+				t.Fatalf("cover %d: the stash member still covers", w.cover())
+			}
+			if p := previewOf(t, w.Layout(), 3); p.Fullscreen {
+				t.Fatalf("old member %+v", p)
+			}
+
+		})
 	})
 
 	t.Run("fullscreen waiting for the stash", func(t *testing.T) {
-		w := base()
-		w.ToggleStashVisible() // hidden
-		w.SetFullscreen(3, true)
-		if w.hiddenFullscreen != 3 {
-			t.Fatalf("setup: deferred %d", w.hiddenFullscreen)
-		}
-		w.stashSpawned(5)
-		shown(t, w)
-		if w.cover() != 0 || w.hiddenFullscreen != 0 {
-			t.Fatalf("cover %d, deferred %d", w.cover(), w.hiddenFullscreen)
-		}
-		w.ToggleStashVisible()
-		w.ToggleStashVisible()
-		shown(t, w)
+		synctest.Test(t, func(t *testing.T) {
+			w := base()
+			w.ToggleStashVisible() // hidden
+			w.SetFullscreen(3, true)
+			if w.hiddenFullscreen != 3 {
+				t.Fatalf("setup: deferred %d", w.hiddenFullscreen)
+			}
+			w.stashSpawned(5)
+			shown(t, w)
+			if w.cover() != 0 || w.hiddenFullscreen != 0 {
+				t.Fatalf("cover %d, deferred %d", w.cover(), w.hiddenFullscreen)
+			}
+			w.ToggleStashVisible()
+			w.ToggleStashVisible()
+			shown(t, w)
+
+		})
 	})
 }

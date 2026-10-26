@@ -22,6 +22,7 @@ type liveCast struct {
 	hdl    chan pipewire.VideoHandler
 }
 
+//testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func (l *liveCast) loop(f func()) {
 	select {
 	case l.onLoop <- f:
@@ -31,6 +32,7 @@ func (l *liveCast) loop(f func()) {
 	l.h.svc.Push(ports.CastEvent{Kind: ports.CastDamage, ID: 1 << 40}) // wakes the owner
 }
 
+//testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func startLiveCast(t *testing.T, withFrame bool, drain time.Duration) *liveCast {
 	t.Helper()
 	l := &liveCast{onLoop: make(chan func(), 8), hdl: make(chan pipewire.VideoHandler, 1)}
@@ -86,6 +88,7 @@ func startLiveCast(t *testing.T, withFrame bool, drain time.Duration) *liveCast 
 	return l
 }
 
+//testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func recvCmd(t *testing.T, h *svcHarness) ports.CastCommand {
 	t.Helper()
 	select {
@@ -97,6 +100,7 @@ func recvCmd(t *testing.T, h *svcHarness) ports.CastCommand {
 	}
 }
 
+//testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func waitClosed(t *testing.T, h *svcHarness) {
 	t.Helper()
 	select {
@@ -149,6 +153,8 @@ func TestBusLossWaitsForFrameInFlight(t *testing.T) {
 
 // The service itself stopping with a frame that is never answered returns
 // within the bounded wait, and leaves the source and PipeWire alone.
+//
+//testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func TestStopWithUnansweredFrameIsBounded(t *testing.T) {
 	l := startLiveCast(t, true, 20*time.Millisecond)
 	l.h.cancel()

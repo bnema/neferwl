@@ -210,26 +210,28 @@ func TestSubmitFrameHiddenWorkspaceWithoutFactoryFailsClosed(t *testing.T) {
 // hidden path, which fails it closed: it is neither dropped unanswered nor
 // served from the displayed frame.
 func TestSubmitFrameHiddenWorkspaceWithoutCaptureSceneFails(t *testing.T) {
-	o, _, _ := testOutput(t)
-	o.cursor = nil
-	r := portsmocks.NewMockRenderer(t)
-	r.EXPECT().UseTarget(0).Return().Once()
-	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once() // the display only
-	replies := make(chan ports.CaptureDone, 2)
-	pipeline := capture.NewPipeline(context.Background(), replies)
-	defer pipeline.Close(r)
-	scene := drmSessionScene()
-	scene.Capture.Workspace = 9
-	requests := []ports.CaptureRequest{sessionRequest(t, 1, false)}
-	requests[0].Workspace, requests[0].OffScreen = 9, true
-	_, err := o.submitFrame(context.Background(), r, scene, nil, nil, requests, pipeline)
-	require.NoError(t, err)
-	select {
-	case d := <-replies:
-		require.ErrorIs(t, d.Err, capture.ErrOffscreenUnavailable)
-	case <-time.After(3 * time.Second):
-		t.Fatal("hidden request without CaptureScene was dropped unanswered")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		o, _, _ := testOutput(t)
+		o.cursor = nil
+		r := portsmocks.NewMockRenderer(t)
+		r.EXPECT().UseTarget(0).Return().Once()
+		r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once() // the display only
+		replies := make(chan ports.CaptureDone, 2)
+		pipeline := capture.NewPipeline(context.Background(), replies)
+		defer pipeline.Close(r)
+		scene := drmSessionScene()
+		scene.Capture.Workspace = 9
+		requests := []ports.CaptureRequest{sessionRequest(t, 1, false)}
+		requests[0].Workspace, requests[0].OffScreen = 9, true
+		_, err := o.submitFrame(context.Background(), r, scene, nil, nil, requests, pipeline)
+		require.NoError(t, err)
+		select {
+		case d := <-replies:
+			require.ErrorIs(t, d.Err, capture.ErrOffscreenUnavailable)
+		case <-time.After(3 * time.Second):
+			t.Fatal("hidden request without CaptureScene was dropped unanswered")
+		}
+	})
 }
 
 // A report caps only the windows an unfinished child render drew; the display's
@@ -329,99 +331,101 @@ func TestHiddenWorkspaceChildKeepsDirectScanout(t *testing.T) {
 // hold even while the display's own commit never completes. The display's
 // Seen stays at the last safe value and the output is not stopped.
 func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
-	o, k, commits, commitMu := testOutputMu(t, nil, nil)
-	o.cursor, o.tearing, o.fbs = nil, false, [2]uint32{}
-	o.frame.stuckAfter = 30 * time.Second // the display commit stays in flight
-	o.flipped = make(chan flipEvent)      // no flip event ever
-	display := portsmocks.NewMockRenderer(t)
-	buf := func() ports.DMABuf {
-		f, w, _ := os.Pipe()
-		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
-	}
-	display.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	display.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
-	display.EXPECT().UseTarget(mock.Anything).Return()
-	display.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
-	display.EXPECT().Close().Return().Once()
-	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
-	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
-	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
-	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+	synctest.Test(t, func(t *testing.T) {
+		o, k, commits, commitMu := testOutputMu(t, nil, nil)
+		o.cursor, o.tearing, o.fbs = nil, false, [2]uint32{}
+		o.frame.stuckAfter = 30 * time.Second // the display commit stays in flight
+		o.flipped = make(chan flipEvent)      // no flip event ever
+		display := portsmocks.NewMockRenderer(t)
+		buf := func() ports.DMABuf {
+			f, w, _ := os.Pipe()
+			w.Close()
+			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		}
+		display.EXPECT().SetHDR(float64(0)).Return().Maybe()
+		display.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+		display.EXPECT().UseTarget(mock.Anything).Return()
+		display.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+		display.EXPECT().Close().Return().Once()
+		k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+		k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+		k.EXPECT().destroyBlob(mock.Anything).Return(nil)
+		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
 
-	readEnd, writeEnd, err := os.Pipe()
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = writeEnd.Close() })
-	child := portsmocks.NewMockRenderer(t)
-	frame := portsmocks.NewMockCaptureFrame(t)
-	frame.EXPECT().Done().Return(nil).Maybe()
-	frame.EXPECT().Read(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	child.EXPECT().Render(mock.Anything, mock.Anything).Return(readEnd, nil).Once()
-	child.EXPECT().BeginCapture().Return(frame, nil).Once()
-	child.EXPECT().EndCapture(frame).Return().Maybe()
-	child.EXPECT().Close().Return().Once()
-	o.NewCaptureRenderer = func(int, int) (ports.Renderer, error) { return child, nil }
+		readEnd, writeEnd, err := os.Pipe()
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = writeEnd.Close() })
+		child := portsmocks.NewMockRenderer(t)
+		frame := portsmocks.NewMockCaptureFrame(t)
+		frame.EXPECT().Done().Return(nil).Maybe()
+		frame.EXPECT().Read(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+		child.EXPECT().Render(mock.Anything, mock.Anything).Return(readEnd, nil).Once()
+		child.EXPECT().BeginCapture().Return(frame, nil).Once()
+		child.EXPECT().EndCapture(frame).Return().Maybe()
+		child.EXPECT().Close().Return().Once()
+		o.NewCaptureRenderer = func(int, int) (ports.Renderer, error) { return child, nil }
 
-	scenes := make(chan ports.Scene)
-	contents := newContentFeed(t, 0)            // unbuffered: taken before the scene
-	captures := make(chan ports.CaptureRequest) // unbuffered: a send returns once Run took it
-	captured := make(chan ports.CaptureDone, 4)
-	sink, presented := presentedSink(t, 64)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return display, nil }, nil, make(chan bool), scenes, contents.in(), contents.ret, nil, sink, captures, captured)
-	}()
-	count := func() int {
-		commitMu.Lock()
-		defer commitMu.Unlock()
-		return len(*commits)
-	}
-	waitFor(t, func() bool { return count() == 2 })
+		scenes := make(chan ports.Scene)
+		contents := newContentFeed(t, 0)            // unbuffered: taken before the scene
+		captures := make(chan ports.CaptureRequest) // unbuffered: a send returns once Run took it
+		captured := make(chan ports.CaptureDone, 4)
+		sink, presented := presentedSink(t, 64)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return display, nil }, nil, make(chan bool), scenes, contents.in(), contents.ret, nil, sink, captures, captured)
+		}()
+		count := func() int {
+			commitMu.Lock()
+			defer commitMu.Unlock()
+			return len(*commits)
+		}
+		waitFor(t, func() bool { return count() == 2 })
 
-	contents.send(ports.SurfaceContent{ID: 5, Seq: 2, Width: 1, Height: 1, SHM: &ports.SHMBuffer{}})
-	// The request waits for the scene; once a display frame is pending no
-	// request is served, so it must be queued before the scene arrives.
-	req := sessionRequest(t, 1, false)
-	req.Workspace, req.OffScreen = 9, true
-	req.Region, req.Width, req.Height, req.Stride = image.Rect(0, 0, 200, 100), 200, 100, 800
-	require.NoError(t, req.Dst.File.Truncate(800*100))
-	captures <- req
-	scenes <- ports.Scene{Seq: 1, Scale: 1, OutputWidth: 200, OutputHeight: 100,
-		Capture:      &ports.SceneCapture{Workspace: 9},
-		CaptureScene: &ports.Scene{Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 5, Rect: ports.Rect{W: 200, H: 100}}}}}
+		contents.send(ports.SurfaceContent{ID: 5, Seq: 2, Width: 1, Height: 1, SHM: &ports.SHMBuffer{}})
+		// The request waits for the scene; once a display frame is pending no
+		// request is served, so it must be queued before the scene arrives.
+		req := sessionRequest(t, 1, false)
+		req.Workspace, req.OffScreen = 9, true
+		req.Region, req.Width, req.Height, req.Stride = image.Rect(0, 0, 200, 100), 200, 100, 800
+		require.NoError(t, req.Dst.File.Truncate(800*100))
+		captures <- req
+		scenes <- ports.Scene{Seq: 1, Scale: 1, OutputWidth: 200, OutputHeight: 100,
+			Capture:      &ports.SceneCapture{Workspace: 9},
+			CaptureScene: &ports.Scene{Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 5, Rect: ports.Rect{W: 200, H: 100}}}}}
 
-	next := func(match func(ports.OutputPresented) bool) ports.OutputPresented {
-		t.Helper()
-		timeout := time.After(2 * time.Second)
-		for {
-			select {
-			case r := <-presented:
-				if match(r) {
-					return r
+		next := func(match func(ports.OutputPresented) bool) ports.OutputPresented {
+			t.Helper()
+			timeout := time.After(2 * time.Second)
+			for {
+				select {
+				case r := <-presented:
+					if match(r) {
+						return r
+					}
+				case <-timeout:
+					t.Fatal("no matching report")
 				}
-			case <-timeout:
-				t.Fatal("no matching report")
 			}
 		}
-	}
-	held := next(func(r ports.OutputPresented) bool { return len(r.ChildReads) > 0 })
-	require.Equal(t, map[ports.WindowID]uint64{5: 2}, held.ChildReads)
-	require.Equal(t, 3, count(), "display frame committed, never completes")
+		held := next(func(r ports.OutputPresented) bool { return len(r.ChildReads) > 0 })
+		require.Equal(t, map[ports.WindowID]uint64{5: 2}, held.ChildReads)
+		require.Equal(t, 3, count(), "display frame committed, never completes")
 
-	// A newer buffer of a display window arrives while the display commit is
-	// pending: the GPU may still read the older one, so it is not reported.
-	contents.send(ports.SurfaceContent{ID: 1, Seq: 9, Width: 1, Height: 1, SHM: &ports.SHMBuffer{}})
-	_, err = writeEnd.Write([]byte{1}) // the child's GPU work finished
-	require.NoError(t, err)
-	lifted := next(func(r ports.OutputPresented) bool { return len(r.ChildReads) == 0 })
-	require.Empty(t, lifted.ChildReads)
-	require.NotContains(t, lifted.Seen, ports.WindowID(1), "display Seen does not advance while its commit is pending: only the child hold is lifted")
-	require.Nil(t, lifted.Flip)
-	require.Equal(t, 3, count(), "no extra commit")
-	require.NoError(t, (<-captured).Err)
-	cancel()
-	require.NoError(t, <-done)
+		// A newer buffer of a display window arrives while the display commit is
+		// pending: the GPU may still read the older one, so it is not reported.
+		contents.send(ports.SurfaceContent{ID: 1, Seq: 9, Width: 1, Height: 1, SHM: &ports.SHMBuffer{}})
+		_, err = writeEnd.Write([]byte{1}) // the child's GPU work finished
+		require.NoError(t, err)
+		lifted := next(func(r ports.OutputPresented) bool { return len(r.ChildReads) == 0 })
+		require.Empty(t, lifted.ChildReads)
+		require.NotContains(t, lifted.Seen, ports.WindowID(1), "display Seen does not advance while its commit is pending: only the child hold is lifted")
+		require.Nil(t, lifted.Flip)
+		require.Equal(t, 3, count(), "no extra commit")
+		require.NoError(t, (<-captured).Err)
+		cancel()
+		require.NoError(t, <-done)
+	})
 }
 
 // A capture requested before the scene that shows its indicator is held: the
@@ -429,167 +433,167 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 // that shows the border draws the frame without it, copies that, then draws
 // and commits the frame with the border.
 func TestRunCaptureWaitsForItsIndicatorScene(t *testing.T) {
-	synctest.Test(t, runCaptureWaitsForItsIndicatorScene)
-}
+	synctest.Test(t, func(t *testing.T) {
+		o, k, commits, commitMu := testOutputMu(t)
+		o.tearing, o.cursor, o.fbs = false, nil, [2]uint32{}
+		flips := make(chan flipEvent, 4)
+		o.flipped = flips
+		buf := func() ports.DMABuf {
+			f, w, _ := os.Pipe()
+			w.Close()
+			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		}
+		// Only what the renderer draws for scenes after the modeset's black frame.
+		var mu sync.Mutex
+		var order []string
+		note := func(what string) {
+			mu.Lock()
+			defer mu.Unlock()
+			order = append(order, what)
+		}
+		r := portsmocks.NewMockRenderer(t)
+		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+		r.EXPECT().UseTarget(mock.Anything).Return()
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+			switch {
+			case s.OutputWidth == 0:
+				// The modeset's black frame.
+			case s.Seq == 0:
+				note("plain")
+			case len(s.CaptureIndicators) > 0:
+				note("indicated")
+			default:
+				note("bare")
+			}
+			return nil, nil
+		})
+		frame := portsmocks.NewMockCaptureFrame(t)
+		frame.EXPECT().Done().Return(nil).Maybe()
+		frame.EXPECT().Read(mock.Anything, mock.Anything, 8).Return(nil).Maybe()
+		r.EXPECT().BeginCapture().RunAndReturn(func() (ports.CaptureFrame, error) {
+			note("copy")
+			return frame, nil
+		}).Once()
+		r.EXPECT().EndCapture(frame).Return().Maybe()
+		r.EXPECT().Close().Return().Once()
+		k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+		k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+		k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
 
-func runCaptureWaitsForItsIndicatorScene(t *testing.T) {
-	o, k, commits, commitMu := testOutputMu(t)
-	o.tearing, o.cursor, o.fbs = false, nil, [2]uint32{}
-	flips := make(chan flipEvent, 4)
-	o.flipped = flips
-	buf := func() ports.DMABuf {
-		f, w, _ := os.Pipe()
-		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
-	}
-	// Only what the renderer draws for scenes after the modeset's black frame.
-	var mu sync.Mutex
-	var order []string
-	note := func(what string) {
+		scenes := make(chan ports.Scene, 2)
+		captures := make(chan ports.CaptureRequest)
+		captured := make(chan ports.CaptureDone, 4)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, nil, discardSink(t), captures, captured)
+		}()
+		count := func() int {
+			commitMu.Lock()
+			defer commitMu.Unlock()
+			return len(*commits)
+		}
+		last := func() commitRec {
+			commitMu.Lock()
+			defer commitMu.Unlock()
+			return (*commits)[len(*commits)-1]
+		}
+		waitFor(t, func() bool { return count() == 2 }) // modeset
+		bare := ports.Scene{Seq: 1, Scale: 1, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1}}}
+		scenes <- bare
+		waitFor(t, func() bool { return count() == 3 })
+		flips <- eventOf(last())
+
+		req := sessionRequest(t, 1, false)
+		req.Indicate = true
+		captures <- req
+		synctest.Wait()
+		select {
+		case d := <-captured:
+			t.Fatalf("served from a scene without the indicator: %+v", d)
+		default:
+		}
+		require.Equal(t, 3, count(), "no frame is drawn for a held request")
+
+		indicated := bare
+		indicated.Seq = 2
+		indicated.CaptureIndicators = []ports.CaptureIndicator{{Rect: ports.Rect{W: 2, H: 2}}}
+		scenes <- indicated
+		waitFor(t, func() bool { return count() == 4 })
+		select {
+		case d := <-captured:
+			require.NoError(t, d.Err)
+		case <-time.After(2 * time.Second):
+			t.Fatal("not served once the indicator scene exists")
+		}
+		flips <- eventOf(last())
+		cancel()
+		require.NoError(t, <-done)
 		mu.Lock()
 		defer mu.Unlock()
-		order = append(order, what)
-	}
-	r := portsmocks.NewMockRenderer(t)
-	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
-	r.EXPECT().UseTarget(mock.Anything).Return()
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
-		switch {
-		case s.OutputWidth == 0:
-			// The modeset's black frame.
-		case s.Seq == 0:
-			note("plain")
-		case len(s.CaptureIndicators) > 0:
-			note("indicated")
-		default:
-			note("bare")
-		}
-		return nil, nil
+		require.Equal(t, []string{"bare", "plain", "copy", "indicated"}, order, "copied from the frame without the indicator, committed together with the indicated frame")
 	})
-	frame := portsmocks.NewMockCaptureFrame(t)
-	frame.EXPECT().Done().Return(nil).Maybe()
-	frame.EXPECT().Read(mock.Anything, mock.Anything, 8).Return(nil).Maybe()
-	r.EXPECT().BeginCapture().RunAndReturn(func() (ports.CaptureFrame, error) {
-		note("copy")
-		return frame, nil
-	}).Once()
-	r.EXPECT().EndCapture(frame).Return().Maybe()
-	r.EXPECT().Close().Return().Once()
-	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
-	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
-	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
-	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
-
-	scenes := make(chan ports.Scene, 2)
-	captures := make(chan ports.CaptureRequest)
-	captured := make(chan ports.CaptureDone, 4)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, nil, discardSink(t), captures, captured)
-	}()
-	count := func() int {
-		commitMu.Lock()
-		defer commitMu.Unlock()
-		return len(*commits)
-	}
-	last := func() commitRec {
-		commitMu.Lock()
-		defer commitMu.Unlock()
-		return (*commits)[len(*commits)-1]
-	}
-	waitFor(t, func() bool { return count() == 2 }) // modeset
-	bare := ports.Scene{Seq: 1, Scale: 1, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1}}}
-	scenes <- bare
-	waitFor(t, func() bool { return count() == 3 })
-	flips <- eventOf(last())
-
-	req := sessionRequest(t, 1, false)
-	req.Indicate = true
-	captures <- req
-	synctest.Wait()
-	select {
-	case d := <-captured:
-		t.Fatalf("served from a scene without the indicator: %+v", d)
-	default:
-	}
-	require.Equal(t, 3, count(), "no frame is drawn for a held request")
-
-	indicated := bare
-	indicated.Seq = 2
-	indicated.CaptureIndicators = []ports.CaptureIndicator{{Rect: ports.Rect{W: 2, H: 2}}}
-	scenes <- indicated
-	waitFor(t, func() bool { return count() == 4 })
-	select {
-	case d := <-captured:
-		require.NoError(t, d.Err)
-	case <-time.After(2 * time.Second):
-		t.Fatal("not served once the indicator scene exists")
-	}
-	flips <- eventOf(last())
-	cancel()
-	require.NoError(t, <-done)
-	mu.Lock()
-	defer mu.Unlock()
-	require.Equal(t, []string{"bare", "plain", "copy", "indicated"}, order, "copied from the frame without the indicator, committed together with the indicated frame")
 }
 
 // A request whose indicator never comes fails after the bounded wait, and no
 // frame is drawn or copied for it.
 func TestRunCaptureWithoutIndicatorFailsAfterTheBoundedWait(t *testing.T) {
-	o, k, commits, commitMu := testOutputMu(t)
-	o.tearing, o.cursor, o.fbs = false, nil, [2]uint32{}
-	flips := make(chan flipEvent, 2)
-	o.flipped = flips
-	buf := func() ports.DMABuf {
-		f, w, _ := os.Pipe()
-		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
-	}
-	r := portsmocks.NewMockRenderer(t)
-	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
-	r.EXPECT().UseTarget(mock.Anything).Return()
-	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
-	r.EXPECT().Close().Return().Once()
-	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
-	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
-	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
-	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
-	scenes := make(chan ports.Scene, 1)
-	captures := make(chan ports.CaptureRequest)
-	captured := make(chan ports.CaptureDone, 4)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, nil, discardSink(t), captures, captured)
-	}()
-	count := func() int {
+	synctest.Test(t, func(t *testing.T) {
+		o, k, commits, commitMu := testOutputMu(t)
+		o.tearing, o.cursor, o.fbs = false, nil, [2]uint32{}
+		flips := make(chan flipEvent, 2)
+		o.flipped = flips
+		buf := func() ports.DMABuf {
+			f, w, _ := os.Pipe()
+			w.Close()
+			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		}
+		r := portsmocks.NewMockRenderer(t)
+		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+		r.EXPECT().UseTarget(mock.Anything).Return()
+		r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+		r.EXPECT().Close().Return().Once()
+		k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+		k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+		k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+		scenes := make(chan ports.Scene, 1)
+		captures := make(chan ports.CaptureRequest)
+		captured := make(chan ports.CaptureDone, 4)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, nil, discardSink(t), captures, captured)
+		}()
+		count := func() int {
+			commitMu.Lock()
+			defer commitMu.Unlock()
+			return len(*commits)
+		}
+		waitFor(t, func() bool { return count() == 2 })
+		scenes <- ports.Scene{Seq: 1, Scale: 1, OutputWidth: 2, OutputHeight: 2}
+		waitFor(t, func() bool { return count() == 3 })
 		commitMu.Lock()
-		defer commitMu.Unlock()
-		return len(*commits)
-	}
-	waitFor(t, func() bool { return count() == 2 })
-	scenes <- ports.Scene{Seq: 1, Scale: 1, OutputWidth: 2, OutputHeight: 2}
-	waitFor(t, func() bool { return count() == 3 })
-	commitMu.Lock()
-	flips <- eventOf((*commits)[2])
-	commitMu.Unlock()
-	start := time.Now()
-	req := sessionRequest(t, 1, false)
-	req.Indicate = true
-	captures <- req
-	select {
-	case d := <-captured:
-		require.ErrorIs(t, d.Err, capture.ErrIndicatorMissing)
-		require.GreaterOrEqual(t, time.Since(start), capture.HoldFor-20*time.Millisecond)
-	case <-time.After(3 * time.Second):
-		t.Fatal("a held request was never answered")
-	}
-	require.Equal(t, 3, count())
-	cancel()
-	require.NoError(t, <-done)
+		flips <- eventOf((*commits)[2])
+		commitMu.Unlock()
+		start := time.Now()
+		req := sessionRequest(t, 1, false)
+		req.Indicate = true
+		captures <- req
+		select {
+		case d := <-captured:
+			require.ErrorIs(t, d.Err, capture.ErrIndicatorMissing)
+			require.GreaterOrEqual(t, time.Since(start), capture.HoldFor-20*time.Millisecond)
+		case <-time.After(3 * time.Second):
+			t.Fatal("a held request was never answered")
+		}
+		require.Equal(t, 3, count())
+		cancel()
+		require.NoError(t, <-done)
+	})
 }
 
 func indicatedScene() ports.Scene {
@@ -612,61 +616,65 @@ func TestSubmitFrameFailedIndicatedFrameDeliversNothing(t *testing.T) {
 		{"commit error", []error{nil, nil}, []error{boom}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			o, _, _ := testOutput(t, tc.commit...)
-			o.cursor = nil
-			r := portsmocks.NewMockRenderer(t)
-			r.EXPECT().UseTarget(0).Return().Once()
-			for _, err := range tc.renders {
-				r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, err).Once()
-			}
-			frame := portsmocks.NewMockCaptureFrame(t)
-			frame.EXPECT().Done().Return(nil).Maybe()
-			r.EXPECT().BeginCapture().Return(frame, nil).Once()
-			r.EXPECT().EndCapture(frame).Return().Once()
-			replies := make(chan ports.CaptureDone, 4)
-			pipeline := capture.NewPipeline(context.Background(), replies)
-			q := sessionRequest(t, 1, false)
-			_, err := o.submitFrame(context.Background(), r, indicatedScene(), nil, nil, []ports.CaptureRequest{q}, pipeline)
-			require.Error(t, err)
-			var done ports.CaptureDone
-			select {
-			case done = <-replies:
-			case <-time.After(5 * time.Second):
-				t.Fatal("no reply")
-			}
-			pipeline.Close(r)
-			require.ErrorIs(t, done.Err, capture.ErrIndicatorMissing)
-			require.ErrorIs(t, done.Err, boom)
+			synctest.Test(t, func(t *testing.T) {
+				o, _, _ := testOutput(t, tc.commit...)
+				o.cursor = nil
+				r := portsmocks.NewMockRenderer(t)
+				r.EXPECT().UseTarget(0).Return().Once()
+				for _, err := range tc.renders {
+					r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, err).Once()
+				}
+				frame := portsmocks.NewMockCaptureFrame(t)
+				frame.EXPECT().Done().Return(nil).Maybe()
+				r.EXPECT().BeginCapture().Return(frame, nil).Once()
+				r.EXPECT().EndCapture(frame).Return().Once()
+				replies := make(chan ports.CaptureDone, 4)
+				pipeline := capture.NewPipeline(context.Background(), replies)
+				q := sessionRequest(t, 1, false)
+				_, err := o.submitFrame(context.Background(), r, indicatedScene(), nil, nil, []ports.CaptureRequest{q}, pipeline)
+				require.Error(t, err)
+				var done ports.CaptureDone
+				select {
+				case done = <-replies:
+				case <-time.After(5 * time.Second):
+					t.Fatal("no reply")
+				}
+				pipeline.Close(r)
+				require.ErrorIs(t, done.Err, capture.ErrIndicatorMissing)
+				require.ErrorIs(t, done.Err, boom)
+			})
 		})
 	}
 }
 
 // The same frame committed: the capture is delivered.
 func TestSubmitFrameIndicatedFrameCommittedDelivers(t *testing.T) {
-	o, _, _ := testOutput(t)
-	o.cursor = nil
-	r := portsmocks.NewMockRenderer(t)
-	r.EXPECT().UseTarget(0).Return().Once()
-	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Twice()
-	frame := portsmocks.NewMockCaptureFrame(t)
-	frame.EXPECT().Done().Return(nil).Maybe()
-	var reads atomic.Int32
-	frame.EXPECT().Read(mock.Anything, mock.Anything, 8).RunAndReturn(func(image.Rectangle, []byte, int) error {
-		reads.Add(1)
-		return nil
-	}).Maybe()
-	r.EXPECT().BeginCapture().Return(frame, nil).Once()
-	r.EXPECT().EndCapture(frame).Return().Once()
-	replies := make(chan ports.CaptureDone, 4)
-	pipeline := capture.NewPipeline(context.Background(), replies)
-	_, err := o.submitFrame(context.Background(), r, indicatedScene(), nil, nil, []ports.CaptureRequest{sessionRequest(t, 1, false)}, pipeline)
-	require.NoError(t, err)
-	select {
-	case done := <-replies:
-		require.NoError(t, done.Err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("no reply")
-	}
-	pipeline.Close(r)
-	require.Equal(t, int32(1), reads.Load())
+	synctest.Test(t, func(t *testing.T) {
+		o, _, _ := testOutput(t)
+		o.cursor = nil
+		r := portsmocks.NewMockRenderer(t)
+		r.EXPECT().UseTarget(0).Return().Once()
+		r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Twice()
+		frame := portsmocks.NewMockCaptureFrame(t)
+		frame.EXPECT().Done().Return(nil).Maybe()
+		var reads atomic.Int32
+		frame.EXPECT().Read(mock.Anything, mock.Anything, 8).RunAndReturn(func(image.Rectangle, []byte, int) error {
+			reads.Add(1)
+			return nil
+		}).Maybe()
+		r.EXPECT().BeginCapture().Return(frame, nil).Once()
+		r.EXPECT().EndCapture(frame).Return().Once()
+		replies := make(chan ports.CaptureDone, 4)
+		pipeline := capture.NewPipeline(context.Background(), replies)
+		_, err := o.submitFrame(context.Background(), r, indicatedScene(), nil, nil, []ports.CaptureRequest{sessionRequest(t, 1, false)}, pipeline)
+		require.NoError(t, err)
+		select {
+		case done := <-replies:
+			require.NoError(t, done.Err)
+		case <-time.After(5 * time.Second):
+			t.Fatal("no reply")
+		}
+		pipeline.Close(r)
+		require.Equal(t, int32(1), reads.Load())
+	})
 }

@@ -21,14 +21,22 @@ import (
 
 // lockedBuffer is an io.Writer read while exec writes to it.
 type lockedBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
+	mu      sync.Mutex
+	buf     bytes.Buffer
+	changed chan struct{}
 }
 
 func (b *lockedBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.buf.Write(p)
+	n, err := b.buf.Write(p)
+	if b.changed != nil {
+		select {
+		case b.changed <- struct{}{}:
+		default:
+		}
+	}
+	return n, err
 }
 
 func (b *lockedBuffer) String() string {
@@ -47,6 +55,8 @@ type textClient struct {
 
 // NeferWL headless, the examples/testime input method and a text input
 // client: the input method's preedit and commit reach the client.
+//
+//testpolicy:realtime real Wayland socket and IME child process
 func TestHeadlessTextInputIME(t *testing.T) {
 	runtime := t.TempDir()
 	t.Setenv("XDG_RUNTIME_DIR", runtime)
@@ -79,7 +89,8 @@ func TestHeadlessTextInputIME(t *testing.T) {
 		}
 	}()
 	socket := filepath.Join(runtime, "wayland-1")
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+	waitFile := fileChanges(t, runtime)
+	for deadline := time.Now().Add(5 * time.Second); ; waitFile() {
 		if _, err := os.Stat(socket); err == nil {
 			break
 		}
@@ -100,7 +111,7 @@ func TestHeadlessTextInputIME(t *testing.T) {
 	// Two commits: the second comes from enabling the text input again.
 	cmd := exec.Command(ime, "-count", "2", "-preedit", "nihon", "-commit", "日本")
 	cmd.Env = append(os.Environ(), "WAYLAND_DISPLAY=wayland-1")
-	imeOut := &lockedBuffer{}
+	imeOut := &lockedBuffer{changed: make(chan struct{}, 1)}
 	cmd.Stderr = imeOut
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -114,7 +125,7 @@ func TestHeadlessTextInputIME(t *testing.T) {
 			<-imeDone
 		}
 	}()
-	for deadline := time.Now().Add(5 * time.Second); !strings.Contains(imeOut.String(), "ready"); time.Sleep(10 * time.Millisecond) {
+	for deadline := time.Now().Add(5 * time.Second); !strings.Contains(imeOut.String(), "ready"); waitProcessOutput(t, imeOut) {
 		if time.Now().After(deadline) {
 			t.Fatalf("testime not ready: %s", imeOut.String())
 		}
@@ -128,7 +139,7 @@ func TestHeadlessTextInputIME(t *testing.T) {
 	text := mapTextClient(t, c)
 	poll := func(what string, ok func() bool) {
 		t.Helper()
-		for deadline := time.Now().Add(5 * time.Second); !ok(); time.Sleep(10 * time.Millisecond) {
+		for deadline := time.Now().Add(5 * time.Second); !ok(); {
 			if time.Now().After(deadline) {
 				t.Fatalf("%s: preedit %q commits %q, testime: %s", what, text.preedit, text.commits, imeOut.String())
 			}
@@ -214,7 +225,7 @@ func mapTextClient(t *testing.T, c *wlturbo.Display) *textClient {
 	proxy.OnPreeditString(func(value string, _, _ int32) { text.preedit = append(text.preedit, value) })
 	proxy.OnCommitString(func(value string) { text.commits = append(text.commits, value) })
 	check(surf.Commit())
-	for deadline := time.Now().Add(5 * time.Second); serial == 0; time.Sleep(10 * time.Millisecond) {
+	for deadline := time.Now().Add(5 * time.Second); serial == 0; {
 		if time.Now().After(deadline) {
 			t.Fatal("no configure")
 		}

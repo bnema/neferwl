@@ -1,6 +1,9 @@
 package core
 
-import "testing"
+import (
+	"testing"
+	"testing/synctest"
+)
 
 // Navigation invariants: the lanes partition the columns in order, laneNeighbor
 // goes one lane over, focus steps stay in their lane (walking a whole lane
@@ -81,11 +84,14 @@ func TestLayoutNavigationConformance(t *testing.T) {
 }
 
 func TestGeometricNeighborEqualCellSymmetry(t *testing.T) {
-	rects := []Rect{{W: 100, H: 100}, {X: 110, W: 100, H: 100}, {X: 220, W: 100, H: 100}}
-	for i := 0; i < len(rects)-1; i++ {
-		j := geometricNeighbor(rects, i, 1, 0)
-		if j != i+1 || geometricNeighbor(rects, j, -1, 0) != i {
-			t.Fatal("equal-cell neighbors not symmetric")
+	synctest.Test(t, func(t *testing.T) {
+		rects := []Rect{{W: 100, H: 100}, {X: 110, W: 100, H: 100}, {X: 220, W: 100, H: 100}}
+		for i := 0; i < len(rects)-1; i++ {
+			j := geometricNeighbor(rects, i, 1, 0)
+			if j != i+1 || geometricNeighbor(rects, j, -1, 0) != i {
+				t.Fatal("equal-cell neighbors not symmetric")
+			}
 		}
-	}
+
+	})
 }

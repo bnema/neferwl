@@ -12,6 +12,7 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
+//testpolicy:realtime fsnotify observes actual config files and directory creation
 func TestWatch(t *testing.T) {
 	for _, later := range []bool{false, true} {
 		t.Run(map[bool]string{false: "existing", true: "created later"}[later], func(t *testing.T) {
@@ -25,21 +26,28 @@ func TestWatch(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			out := make(chan ports.ConfigChanged, 8)
 			done := make(chan error, 1)
-			go func() { done <- Watch(ctx, path, out, logging.For(ctx, "config")) }()
+			ready := make(chan struct{})
+			go func() { done <- watch(ctx, path, out, logging.For(ctx, "config"), ready) }()
 			defer func() {
 				cancel()
 				if err := <-done; err != nil {
 					t.Error(err)
 				}
 			}()
+			// kvconf closes Ready after its initial rewatch attempt. Keep the
+			// directory absent until that attempt has finished, exercising recovery.
+			select {
+			case <-ready:
+			case <-time.After(5 * time.Second):
+				t.Fatal("initial watch attempt did not finish")
+			}
 			if later {
-				time.Sleep(40 * time.Millisecond)
+				if _, err := os.Stat(dir); !os.IsNotExist(err) {
+					t.Fatalf("directory must still be missing: %v", err)
+				}
 				if err := os.Mkdir(dir, 0700); err != nil {
 					t.Fatal(err)
 				}
-				time.Sleep(80 * time.Millisecond)
-			} else {
-				time.Sleep(40 * time.Millisecond)
 			}
 			write := func(file, body string) {
 				t.Helper()
@@ -53,7 +61,7 @@ func TestWatch(t *testing.T) {
 			// watcher then reads an empty file first, which is skipped here.
 			receive := func(want string) {
 				t.Helper()
-				deadline := time.After(time.Second)
+				deadline := time.After(2 * time.Second)
 				for {
 					select {
 					case c := <-out:
@@ -74,7 +82,6 @@ func TestWatch(t *testing.T) {
 			receive("#ff0000")
 			for i := 0; i < 3; i++ {
 				write(path, "background = #00ff00\n")
-				time.Sleep(15 * time.Millisecond)
 			}
 			receive("#00ff00")
 			// A loaded machine may pause past the debounce inside the burst
@@ -124,6 +131,8 @@ func TestWatch(t *testing.T) {
 // A config symlinked elsewhere (dotfiles), directly or through a chain,
 // reloads when its target changes, follows a retargeted link, and survives
 // a target that is missing for a while.
+//
+//testpolicy:realtime fsnotify follows real symlink and directory changes
 func TestWatchSymlink(t *testing.T) {
 	root := t.TempDir()
 	dirs := map[string]string{}
@@ -215,12 +224,10 @@ func TestWatchSymlink(t *testing.T) {
 	if err := os.RemoveAll(dirs["other"]); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(50 * time.Millisecond)
 	if err := os.Mkdir(dirs["other"], 0700); err != nil {
 		t.Fatal(err)
 	}
 	write(moved, "background = #000001\n")
-	time.Sleep(100 * time.Millisecond) // let the watch move back into the recreated directory
 	until("#abcdef", func(body string) { write(moved, body) })
 	// The old target no longer matters.
 	write(target, "background = #123456\n")

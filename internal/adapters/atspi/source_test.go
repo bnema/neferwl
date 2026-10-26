@@ -8,6 +8,7 @@ import (
 	"github.com/bnema/zerowrap"
 	"runtime"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/mock"
@@ -149,17 +150,19 @@ var oneWindow = []ports.HintWindow{{ID: 1, PID: 77, Rect: ports.Rect{W: 800, H: 
 
 // New does not touch the bus; the first Targets call connects, once.
 func TestConnectsLazilyOnFirstTargets(t *testing.T) {
-	tr := newMocktransport(t)
-	tr.EXPECT().Do(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(answerTree(
-		[4]int32{0, 0, 800, 600}, []ref{{":1.5", "/a"}}, map[string][4]int32{"/a": {1, 1, 9, 9}}, map[string]uint32{"/a": roleLink}, false))
-	c := newMockconnector(t)
-	c.EXPECT().Connect(mock.Anything).Return(tr, nil).Once()
-	s := &Source{dial: c}
-	for range 2 {
-		targets, err := s.Targets(context.Background(), oneWindow, false)
-		require.NoError(t, err)
-		require.Len(t, targets, 1)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		tr := newMocktransport(t)
+		tr.EXPECT().Do(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(answerTree(
+			[4]int32{0, 0, 800, 600}, []ref{{":1.5", "/a"}}, map[string][4]int32{"/a": {1, 1, 9, 9}}, map[string]uint32{"/a": roleLink}, false))
+		c := newMockconnector(t)
+		c.EXPECT().Connect(mock.Anything).Return(tr, nil).Once()
+		s := &Source{dial: c}
+		for range 2 {
+			targets, err := s.Targets(context.Background(), oneWindow, false)
+			require.NoError(t, err)
+			require.Len(t, targets, 1)
+		}
+	})
 }
 
 // Without PIDs nothing is asked and nothing is connected.
@@ -172,22 +175,24 @@ func TestNoConnectWithoutWindows(t *testing.T) {
 // A failed connection is retried no sooner than retryEvery; meanwhile no
 // targets are returned.
 func TestConnectRetriesWithBackoff(t *testing.T) {
-	c := newMockconnector(t)
-	c.EXPECT().Connect(mock.Anything).Return(nil, errors.New("down")).Once()
-	s := &Source{dial: c}
-	for range 3 {
+	synctest.Test(t, func(t *testing.T) {
+		c := newMockconnector(t)
+		c.EXPECT().Connect(mock.Anything).Return(nil, errors.New("down")).Once()
+		s := &Source{dial: c}
+		for range 3 {
+			targets, err := s.Targets(context.Background(), oneWindow, false)
+			require.NoError(t, err)
+			require.Empty(t, targets)
+		}
+		tr := newMocktransport(t)
+		tr.EXPECT().Do(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(answerTree(
+			[4]int32{0, 0, 800, 600}, []ref{{":1.5", "/a"}}, map[string][4]int32{"/a": {1, 1, 9, 9}}, map[string]uint32{"/a": roleLink}, false))
+		c.EXPECT().Connect(mock.Anything).Return(tr, nil).Once()
+		s.retryAt = time.Now().Add(-time.Second)
 		targets, err := s.Targets(context.Background(), oneWindow, false)
 		require.NoError(t, err)
-		require.Empty(t, targets)
-	}
-	tr := newMocktransport(t)
-	tr.EXPECT().Do(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(answerTree(
-		[4]int32{0, 0, 800, 600}, []ref{{":1.5", "/a"}}, map[string][4]int32{"/a": {1, 1, 9, 9}}, map[string]uint32{"/a": roleLink}, false))
-	c.EXPECT().Connect(mock.Anything).Return(tr, nil).Once()
-	s.retryAt = time.Now().Add(-time.Second)
-	targets, err := s.Targets(context.Background(), oneWindow, false)
-	require.NoError(t, err)
-	require.Len(t, targets, 1)
+		require.Len(t, targets, 1)
+	})
 }
 
 // A broken connection is closed and dropped; the next attempt reconnects.
@@ -229,86 +234,94 @@ func blockedConnector(t *testing.T, release <-chan struct{}, tr transport, err e
 // A silent service cannot hold Targets beyond the wait, is not doubled while
 // in flight, and its late transport is used.
 func TestConnectIsBoundedAndNotDoubled(t *testing.T) {
-	release := make(chan struct{})
-	tr := newMocktransport(t)
-	tr.EXPECT().Do(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(answerTree(
-		[4]int32{0, 0, 800, 600}, []ref{{":1.5", "/a"}}, map[string][4]int32{"/a": {1, 1, 9, 9}}, map[string]uint32{"/a": roleLink}, false))
-	c := blockedConnector(t, release, tr, nil, 1)
-	s := &Source{dial: c, wait: testWait}
-	t0 := time.Now()
-	targets, err := s.Targets(context.Background(), oneWindow, false)
-	require.NoError(t, err)
-	require.Empty(t, targets)
-	require.Less(t, time.Since(t0), testWait+200*time.Millisecond)
-	require.NotNil(t, s.attempt)
-	// Still in flight: no second Connect (Times(1)), and no blocking.
-	targets, err = s.Targets(context.Background(), oneWindow, false)
-	require.NoError(t, err)
-	require.Empty(t, targets)
-	// It connects late: the next call uses it.
-	close(release)
-	require.Eventually(t, func() bool { return len(s.attempt) == 1 }, time.Second, time.Millisecond)
-	targets, err = s.Targets(context.Background(), oneWindow, false)
-	require.NoError(t, err)
-	require.Len(t, targets, 1)
-	require.Nil(t, s.attempt)
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		tr := newMocktransport(t)
+		tr.EXPECT().Do(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(answerTree(
+			[4]int32{0, 0, 800, 600}, []ref{{":1.5", "/a"}}, map[string][4]int32{"/a": {1, 1, 9, 9}}, map[string]uint32{"/a": roleLink}, false))
+		c := blockedConnector(t, release, tr, nil, 1)
+		s := &Source{dial: c, wait: testWait}
+		t0 := time.Now()
+		targets, err := s.Targets(context.Background(), oneWindow, false)
+		require.NoError(t, err)
+		require.Empty(t, targets)
+		require.Less(t, time.Since(t0), testWait+200*time.Millisecond)
+		require.NotNil(t, s.attempt)
+		// Still in flight: no second Connect (Times(1)), and no blocking.
+		targets, err = s.Targets(context.Background(), oneWindow, false)
+		require.NoError(t, err)
+		require.Empty(t, targets)
+		// It connects late: the next call uses it.
+		close(release)
+		synctest.Wait()
+		require.Len(t, s.attempt, 1)
+		targets, err = s.Targets(context.Background(), oneWindow, false)
+		require.NoError(t, err)
+		require.Len(t, targets, 1)
+		require.Nil(t, s.attempt)
+	})
 }
 
 // An abandoned attempt that fails applies the backoff, then one new attempt.
 func TestAbandonedAttemptErrorBacksOff(t *testing.T) {
-	release := make(chan struct{})
-	tr := newMocktransport(t)
-	tr.EXPECT().Do(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(answerTree(
-		[4]int32{0, 0, 800, 600}, []ref{{":1.5", "/a"}}, map[string][4]int32{"/a": {1, 1, 9, 9}}, map[string]uint32{"/a": roleLink}, false))
-	c := newMockconnector(t)
-	c.EXPECT().Connect(mock.Anything).RunAndReturn(func(context.Context) (transport, error) {
-		<-release
-		return nil, errors.New("down")
-	}).Once()
-	c.EXPECT().Connect(mock.Anything).Return(tr, nil).Once()
-	s := &Source{dial: c, wait: testWait}
-	targets, err := s.Targets(context.Background(), oneWindow, false)
-	require.NoError(t, err)
-	require.Empty(t, targets)
-	close(release)
-	require.Eventually(t, func() bool { return len(s.attempt) == 1 }, time.Second, time.Millisecond)
-	// The error is collected; the backoff runs from its finish time.
-	targets, err = s.Targets(context.Background(), oneWindow, false)
-	require.NoError(t, err)
-	require.Empty(t, targets)
-	require.Nil(t, s.attempt)
-	require.WithinDuration(t, time.Now().Add(retryEvery), s.retryAt, time.Second)
-	targets, err = s.Targets(context.Background(), oneWindow, false) // backoff: no Connect
-	require.NoError(t, err)
-	require.Empty(t, targets)
-	s.retryAt = time.Now().Add(-time.Second)
-	targets, err = s.Targets(context.Background(), oneWindow, false)
-	require.NoError(t, err)
-	require.Len(t, targets, 1)
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		tr := newMocktransport(t)
+		tr.EXPECT().Do(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(answerTree(
+			[4]int32{0, 0, 800, 600}, []ref{{":1.5", "/a"}}, map[string][4]int32{"/a": {1, 1, 9, 9}}, map[string]uint32{"/a": roleLink}, false))
+		c := newMockconnector(t)
+		c.EXPECT().Connect(mock.Anything).RunAndReturn(func(context.Context) (transport, error) {
+			<-release
+			return nil, errors.New("down")
+		}).Once()
+		c.EXPECT().Connect(mock.Anything).Return(tr, nil).Once()
+		s := &Source{dial: c, wait: testWait}
+		targets, err := s.Targets(context.Background(), oneWindow, false)
+		require.NoError(t, err)
+		require.Empty(t, targets)
+		close(release)
+		synctest.Wait()
+		require.Len(t, s.attempt, 1)
+		// The error is collected; the backoff runs from its finish time.
+		targets, err = s.Targets(context.Background(), oneWindow, false)
+		require.NoError(t, err)
+		require.Empty(t, targets)
+		require.Nil(t, s.attempt)
+		require.WithinDuration(t, time.Now().Add(retryEvery), s.retryAt, time.Second)
+		targets, err = s.Targets(context.Background(), oneWindow, false) // backoff: no Connect
+		require.NoError(t, err)
+		require.Empty(t, targets)
+		s.retryAt = time.Now().Add(-time.Second)
+		targets, err = s.Targets(context.Background(), oneWindow, false)
+		require.NoError(t, err)
+		require.Len(t, targets, 1)
+	})
 }
 
 // Close with an attempt in flight closes the late transport; afterwards
 // Targets finds nothing and never connects.
 func TestCloseReapsLateTransport(t *testing.T) {
-	release := make(chan struct{})
-	closed := make(chan struct{})
-	tr := newMocktransport(t)
-	tr.EXPECT().Close().RunAndReturn(func() error { close(closed); return nil }).Once()
-	c := blockedConnector(t, release, tr, nil, 1)
-	s := &Source{dial: c, wait: testWait}
-	_, err := s.Targets(context.Background(), oneWindow, false)
-	require.NoError(t, err)
-	require.NoError(t, s.Close())
-	close(release)
-	select {
-	case <-closed:
-	case <-time.After(5 * time.Second):
-		t.Fatal("late transport not closed")
-	}
-	targets, err := s.Targets(context.Background(), oneWindow, false)
-	require.NoError(t, err)
-	require.Empty(t, targets)
-	require.NoError(t, s.Close()) // idempotent
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		closed := make(chan struct{})
+		tr := newMocktransport(t)
+		tr.EXPECT().Close().RunAndReturn(func() error { close(closed); return nil }).Once()
+		c := blockedConnector(t, release, tr, nil, 1)
+		s := &Source{dial: c, wait: testWait}
+		_, err := s.Targets(context.Background(), oneWindow, false)
+		require.NoError(t, err)
+		require.NoError(t, s.Close())
+		close(release)
+		select {
+		case <-closed:
+		case <-time.After(5 * time.Second):
+			t.Fatal("late transport not closed")
+		}
+		targets, err := s.Targets(context.Background(), oneWindow, false)
+		require.NoError(t, err)
+		require.Empty(t, targets)
+		require.NoError(t, s.Close()) // idempotent
+	})
 }
 
 func TestWalkWideTreeStaysWithinBudget(t *testing.T) {

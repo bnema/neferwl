@@ -13,10 +13,11 @@ import (
 
 func hotplugEvent(t *testing.T, events <-chan ports.SecurityBackendEvent) ports.SecurityBackendEvent {
 	t.Helper()
+	synctest.Wait()
 	select {
 	case event := <-events:
 		return event
-	case <-time.After(2 * time.Second):
+	default:
 		t.Fatal("missing ordered security event")
 		return nil
 	}
@@ -42,148 +43,151 @@ func hotplugApply(ledger *sessionlock.Readiness, event ports.SecurityBackendEven
 }
 
 func TestSecurityHotplugLifetimeAndProofOrdering(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	events := make(chan ports.SecurityBackendEvent, 8)
-	set := newOutputSet(ctx, nil, outputRoutes{})
-	set.wireSecurity(outputChannels{securityEvents: events})
-	defer func() {
-		if err := set.wait(); err != nil {
-			t.Error(err)
-		}
-	}()
-	const generation = ports.LockGeneration(41)
-	set.setSecurity(ports.SecurityState{Generation: generation, Protected: true})
-	var ledger sessionlock.Readiness
-	if !ledger.Begin(generation) || !ledger.BackendBarrier(generation) || !ledger.CaptureBarrier(generation) {
-		t.Fatal("could not begin display readiness round")
-	}
-	// Native Close success is independently tested in DRM. Here the real
-	// owner callback synchronizes that affirmative result before the backend
-	// sends removal; mere callback exit never emits removal from outputSet.
-	start := func(closeSuccess bool) (ports.OutputInstance, chan []ports.SecurityBackendEvent, <-chan bool) {
-		t.Helper()
-		commands := make(chan []ports.SecurityBackendEvent, 1)
-		closed := make(chan bool, 1)
-		var ownerEvents chan<- ports.SecurityBackendEvent
-		if !set.start(ctx, "DP-1", func(octx context.Context, feed outputFeed) error {
-			security, instance := feed.Security, feed.Instance
-			defer func() { closed <- closeSuccess }()
-			state := <-security
-			proof := ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: state.Generation, Instance: instance, Kind: ports.ProtectionProtectedFrame}}
-			select {
-			case ownerEvents <- proof:
-			case <-octx.Done():
-				return nil
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		events := make(chan ports.SecurityBackendEvent, 8)
+		set := newOutputSet(ctx, nil, outputRoutes{})
+		set.wireSecurity(outputChannels{securityEvents: events})
+		defer func() {
+			if err := set.wait(); err != nil {
+				t.Error(err)
 			}
-			for {
+		}()
+		const generation = ports.LockGeneration(41)
+		set.setSecurity(ports.SecurityState{Generation: generation, Protected: true})
+		var ledger sessionlock.Readiness
+		if !ledger.Begin(generation) || !ledger.BackendBarrier(generation) || !ledger.CaptureBarrier(generation) {
+			t.Fatal("could not begin display readiness round")
+		}
+		// Native Close success is independently tested in DRM. Here the real
+		// owner callback synchronizes that affirmative result before the backend
+		// sends removal; mere callback exit never emits removal from outputSet.
+		start := func(closeSuccess bool) (ports.OutputInstance, chan []ports.SecurityBackendEvent, <-chan bool) {
+			t.Helper()
+			commands := make(chan []ports.SecurityBackendEvent, 1)
+			closed := make(chan bool, 1)
+			var ownerEvents chan<- ports.SecurityBackendEvent
+			if !set.start(ctx, "DP-1", func(octx context.Context, feed outputFeed) error {
+				security, instance := feed.Security, feed.Instance
+				defer func() { closed <- closeSuccess }()
+				state := <-security
+				proof := ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: state.Generation, Instance: instance, Kind: ports.ProtectionProtectedFrame}}
 				select {
-				case batch := <-commands:
-					for _, event := range batch {
-						select {
-						case ownerEvents <- event:
-						case <-octx.Done():
-							return nil
-						}
-					}
+				case ownerEvents <- proof:
 				case <-octx.Done():
 					return nil
 				}
+				for {
+					select {
+					case batch := <-commands:
+						for _, event := range batch {
+							select {
+							case ownerEvents <- event:
+							case <-octx.Done():
+								return nil
+							}
+						}
+					case <-octx.Done():
+						return nil
+					}
+				}
+			}, &ownerEvents) {
+				t.Fatal("start refused")
 			}
-		}, &ownerEvents) {
-			t.Fatal("start refused")
+			registered := hotplugEvent(t, events)
+			added, ok := registered.(ports.SecurityOutputAdded)
+			if !ok || added.Output != "DP-1" || added.Instance == 0 || !hotplugApply(&ledger, registered) {
+				t.Fatalf("owner evidence preceded lifetime registration: %+v", registered)
+			}
+			if ledger.Ready() {
+				t.Fatal("new lifetime reused previous physical readiness")
+			}
+			proof := hotplugEvent(t, events)
+			if !hotplugApply(&ledger, proof) || !ledger.Ready() {
+				t.Fatalf("missing exact lifetime proof: %+v", proof)
+			}
+			return added.Instance, commands, closed
 		}
-		registered := hotplugEvent(t, events)
-		added, ok := registered.(ports.SecurityOutputAdded)
-		if !ok || added.Output != "DP-1" || added.Instance == 0 || !hotplugApply(&ledger, registered) {
-			t.Fatalf("owner evidence preceded lifetime registration: %+v", registered)
+		old, commands, closed := start(true)
+		// A proof already queued by this owner precedes invalidation, even if the
+		// display reads later. No separate forwarder can replay it after revoke.
+		oldProof := ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: generation, Instance: old, Kind: ports.ProtectionProtectedFrame}}
+		invalid := ports.SecurityOutputInvalidated{Generation: generation, Instance: old}
+		commands <- []ports.SecurityBackendEvent{oldProof, invalid}
+		if got := hotplugEvent(t, events); got != oldProof || !hotplugApply(&ledger, got) {
+			t.Fatalf("queued proof lost: %+v", got)
+		}
+		if got := hotplugEvent(t, events); got != invalid || !hotplugApply(&ledger, got) || ledger.Ready() {
+			t.Fatalf("invalidation reordered or ineffective: %+v", got)
+		}
+		commands <- []ports.SecurityBackendEvent{oldProof}
+		if got := hotplugEvent(t, events); got != oldProof || !hotplugApply(&ledger, got) || !ledger.Ready() {
+			t.Fatal("fresh resume proof did not restore readiness")
+		}
+		set.outs["DP-1"].stop()
+		select {
+		case stopped := <-set.stopped:
+			if stopped.instance != old || !set.stoppedCurrent(stopped) {
+				t.Fatalf("wrong stopped lifetime: %+v", stopped)
+			}
+		case <-ctx.Done():
+			t.Fatal("owner did not stop")
+		}
+		if err := set.finish("DP-1"); err != nil {
+			t.Fatal(err)
+		}
+		if !<-closed {
+			t.Fatal("shutdown not affirmative")
+		}
+		select {
+		case got := <-events:
+			t.Fatalf("owner exit forged removal: %+v", got)
+		default:
+		}
+		if !set.securityEvent(ports.SecurityOutputRemoved{Instance: old}) {
+			t.Fatal("confirmed removal refused")
+		}
+		removal := hotplugEvent(t, events)
+		if removal != (ports.SecurityOutputRemoved{Instance: old}) || !hotplugApply(&ledger, removal) {
+			t.Fatalf("wrong removal: %+v", removal)
+		}
+		replacement, _, replacementClosed := start(false)
+		if replacement <= old || set.stoppedCurrent(outputStopped{name: "DP-1", instance: old}) {
+			t.Fatal("same-name replacement reused retired lifetime")
+		}
+		if hotplugApply(&ledger, oldProof) || hotplugApply(&ledger, invalid) {
+			t.Fatal("retired lifetime affected replacement")
+		}
+		stale := ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: generation - 1, Instance: replacement, Kind: ports.ProtectionInactiveOutput}}
+		if hotplugApply(&ledger, stale) || !ledger.Ready() {
+			t.Fatal("stale generation overwrote valid replacement proof")
+		}
+		if !ledger.Invalidate(generation, replacement) || ledger.Ready() {
+			t.Fatal("replacement invalidation ineffective")
+		}
+		set.outs["DP-1"].stop()
+		select {
+		case <-set.stopped:
+		case <-ctx.Done():
+			t.Fatal("replacement stop blocked")
+		}
+		if err := set.finish("DP-1"); err != nil {
+			t.Fatal(err)
+		}
+		if <-replacementClosed {
+			t.Fatal("expected failed shutdown")
+		}
+		select {
+		case got := <-events:
+			t.Fatalf("failed shutdown forged removal: %+v", got)
+		default:
 		}
 		if ledger.Ready() {
-			t.Fatal("new lifetime reused previous physical readiness")
+			t.Fatal("failed replacement exit erased required unproved lifetime")
 		}
-		proof := hotplugEvent(t, events)
-		if !hotplugApply(&ledger, proof) || !ledger.Ready() {
-			t.Fatalf("missing exact lifetime proof: %+v", proof)
-		}
-		return added.Instance, commands, closed
-	}
-	old, commands, closed := start(true)
-	// A proof already queued by this owner precedes invalidation, even if the
-	// display reads later. No separate forwarder can replay it after revoke.
-	oldProof := ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: generation, Instance: old, Kind: ports.ProtectionProtectedFrame}}
-	invalid := ports.SecurityOutputInvalidated{Generation: generation, Instance: old}
-	commands <- []ports.SecurityBackendEvent{oldProof, invalid}
-	if got := hotplugEvent(t, events); got != oldProof || !hotplugApply(&ledger, got) {
-		t.Fatalf("queued proof lost: %+v", got)
-	}
-	if got := hotplugEvent(t, events); got != invalid || !hotplugApply(&ledger, got) || ledger.Ready() {
-		t.Fatalf("invalidation reordered or ineffective: %+v", got)
-	}
-	commands <- []ports.SecurityBackendEvent{oldProof}
-	if got := hotplugEvent(t, events); got != oldProof || !hotplugApply(&ledger, got) || !ledger.Ready() {
-		t.Fatal("fresh resume proof did not restore readiness")
-	}
-	set.outs["DP-1"].stop()
-	select {
-	case stopped := <-set.stopped:
-		if stopped.instance != old || !set.stoppedCurrent(stopped) {
-			t.Fatalf("wrong stopped lifetime: %+v", stopped)
-		}
-	case <-ctx.Done():
-		t.Fatal("owner did not stop")
-	}
-	if err := set.finish("DP-1"); err != nil {
-		t.Fatal(err)
-	}
-	if !<-closed {
-		t.Fatal("shutdown not affirmative")
-	}
-	select {
-	case got := <-events:
-		t.Fatalf("owner exit forged removal: %+v", got)
-	default:
-	}
-	if !set.securityEvent(ports.SecurityOutputRemoved{Instance: old}) {
-		t.Fatal("confirmed removal refused")
-	}
-	removal := hotplugEvent(t, events)
-	if removal != (ports.SecurityOutputRemoved{Instance: old}) || !hotplugApply(&ledger, removal) {
-		t.Fatalf("wrong removal: %+v", removal)
-	}
-	replacement, _, replacementClosed := start(false)
-	if replacement <= old || set.stoppedCurrent(outputStopped{name: "DP-1", instance: old}) {
-		t.Fatal("same-name replacement reused retired lifetime")
-	}
-	if hotplugApply(&ledger, oldProof) || hotplugApply(&ledger, invalid) {
-		t.Fatal("retired lifetime affected replacement")
-	}
-	stale := ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: generation - 1, Instance: replacement, Kind: ports.ProtectionInactiveOutput}}
-	if hotplugApply(&ledger, stale) || !ledger.Ready() {
-		t.Fatal("stale generation overwrote valid replacement proof")
-	}
-	if !ledger.Invalidate(generation, replacement) || ledger.Ready() {
-		t.Fatal("replacement invalidation ineffective")
-	}
-	set.outs["DP-1"].stop()
-	select {
-	case <-set.stopped:
-	case <-ctx.Done():
-		t.Fatal("replacement stop blocked")
-	}
-	if err := set.finish("DP-1"); err != nil {
-		t.Fatal(err)
-	}
-	if <-replacementClosed {
-		t.Fatal("expected failed shutdown")
-	}
-	select {
-	case got := <-events:
-		t.Fatalf("failed shutdown forged removal: %+v", got)
-	default:
-	}
-	if ledger.Ready() {
-		t.Fatal("failed replacement exit erased required unproved lifetime")
-	}
+
+	})
 }
 
 func TestSecurityOwnerFIFOSaturationDrainsOnNormalStop(t *testing.T) {
@@ -284,58 +288,61 @@ func securityOwnerFIFOSaturationDrainsOnNormalStop(t *testing.T) {
 // All producer evidence is already buffered when the owner stops normally.
 // finish must not cancel that owner's forwarder or lose its outstanding FIFO.
 func TestSecurityOwnerBufferedEvidenceDrainsAfterFinish(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	events := make(chan ports.SecurityBackendEvent)
-	set := newOutputSet(ctx, nil, outputRoutes{})
-	set.wireSecurity(outputChannels{securityEvents: events})
-	defer func() {
-		if err := set.wait(); err != nil {
-			t.Error(err)
-		}
-	}()
-	startDone := make(chan bool, 1)
-	var ownerEvents chan<- ports.SecurityBackendEvent
-	go func() {
-		startDone <- set.start(ctx, "DP-1", func(octx context.Context, feed outputFeed) error {
-			instance := feed.Instance
-			for i := range 16 {
-				event := ports.SecurityOutputInvalidated{Generation: ports.LockGeneration(i + 1), Instance: instance}
-				select {
-				case ownerEvents <- event:
-				case <-octx.Done():
-					return nil
-				}
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		events := make(chan ports.SecurityBackendEvent)
+		set := newOutputSet(ctx, nil, outputRoutes{})
+		set.wireSecurity(outputChannels{securityEvents: events})
+		defer func() {
+			if err := set.wait(); err != nil {
+				t.Error(err)
 			}
-			return nil
-		}, &ownerEvents)
-	}()
-	registered := hotplugEvent(t, events).(ports.SecurityOutputAdded)
-	if !<-startDone {
-		t.Fatal("start refused")
-	}
-	select {
-	case stopped := <-set.stopped:
-		if stopped.instance != registered.Instance {
-			t.Fatal("wrong stopped lifetime")
+		}()
+		startDone := make(chan bool, 1)
+		var ownerEvents chan<- ports.SecurityBackendEvent
+		go func() {
+			startDone <- set.start(ctx, "DP-1", func(octx context.Context, feed outputFeed) error {
+				instance := feed.Instance
+				for i := range 16 {
+					event := ports.SecurityOutputInvalidated{Generation: ports.LockGeneration(i + 1), Instance: instance}
+					select {
+					case ownerEvents <- event:
+					case <-octx.Done():
+						return nil
+					}
+				}
+				return nil
+			}, &ownerEvents)
+		}()
+		registered := hotplugEvent(t, events).(ports.SecurityOutputAdded)
+		if !<-startDone {
+			t.Fatal("start refused")
 		}
-	case <-ctx.Done():
-		t.Fatal("buffered owner did not finish")
-	}
-	if err := set.finish("DP-1"); err != nil {
-		t.Fatal(err)
-	}
-	for i := range 16 {
-		want := ports.SecurityOutputInvalidated{Generation: ports.LockGeneration(i + 1), Instance: registered.Instance}
-		if got := hotplugEvent(t, events); got != want {
-			t.Fatalf("buffered stopped-owner evidence %d: %+v", i, got)
+		select {
+		case stopped := <-set.stopped:
+			if stopped.instance != registered.Instance {
+				t.Fatal("wrong stopped lifetime")
+			}
+		case <-ctx.Done():
+			t.Fatal("buffered owner did not finish")
 		}
-	}
-	select {
-	case got := <-events:
-		t.Fatalf("duplicate buffered evidence: %+v", got)
-	default:
-	}
+		if err := set.finish("DP-1"); err != nil {
+			t.Fatal(err)
+		}
+		for i := range 16 {
+			want := ports.SecurityOutputInvalidated{Generation: ports.LockGeneration(i + 1), Instance: registered.Instance}
+			if got := hotplugEvent(t, events); got != want {
+				t.Fatalf("buffered stopped-owner evidence %d: %+v", i, got)
+			}
+		}
+		select {
+		case got := <-events:
+			t.Fatalf("duplicate buffered evidence: %+v", got)
+		default:
+		}
+
+	})
 }
 
 func TestSecurityOwnerFIFOSaturationCancelReleasesOwnerAndForwarders(t *testing.T) {

@@ -24,6 +24,7 @@ func fencePipe(t *testing.T) (read, write *os.File) {
 	return read, write
 }
 
+//testpolicy:realtime a real pipe fence must remain unsignalled before GPU completion
 func TestPipelineWaitsForFenceBeforeRead(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
 	frame := portsmocks.NewMockCaptureFrame(t)

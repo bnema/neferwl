@@ -100,6 +100,8 @@ func serve(t *testing.T, address string) served {
 }
 
 // waitOwner polls the owner of busName ("" when none) until ok accepts it.
+//
+//testpolicy:realtime private D-Bus daemon name acquisition crosses a Unix socket
 func waitOwner(t *testing.T, probe *testClient, ok func(string) bool) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -112,10 +114,11 @@ func waitOwner(t *testing.T, probe *testClient, ok func(string) bool) {
 		if time.Now().After(deadline) {
 			t.Fatalf("owner %q not accepted", owner)
 		}
-		time.Sleep(5 * time.Millisecond)
+		<-time.After(5 * time.Millisecond)
 	}
 }
 
+//testpolicy:realtime private D-Bus daemon replies and disconnects cross Unix sockets
 func next(t *testing.T, held <-chan bool, want bool) {
 	t.Helper()
 	select {
@@ -128,6 +131,7 @@ func next(t *testing.T, held <-chan bool, want bool) {
 	}
 }
 
+//testpolicy:realtime private D-Bus daemon replies and disconnects cross Unix sockets
 func none(t *testing.T, held <-chan bool) {
 	t.Helper()
 	select {
@@ -186,6 +190,8 @@ func TestInhibitAndUnInhibit(t *testing.T) {
 
 // SimulateUserActivity reports activity without blocking: calls the
 // reader has not taken yet collapse into one.
+//
+//testpolicy:realtime private D-Bus daemon replies and disconnects cross Unix sockets
 func TestSimulateUserActivity(t *testing.T) {
 	address := privateBus(t)
 	v := serve(t, address)
@@ -236,11 +242,11 @@ func TestSpoofedDepartureIgnored(t *testing.T) {
 		t.Fatal(err)
 	}
 	gone := victim.Names()[0]
-	e := attacker.NewSignalTo(service, "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameOwnerChanged", "sss")
+	e := attacker.Conn.NewSignalTo(service, "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameOwnerChanged", "sss")
 	e.Str(gone)
 	e.Str(gone)
 	e.Str("")
-	if _, err := attacker.Send(); err != nil {
+	if _, err := attacker.Conn.Send(); err != nil {
 		t.Fatal(err)
 	}
 	// A call after the signal: the service has read the signal by its reply.
@@ -252,6 +258,8 @@ func TestSpoofedDepartureIgnored(t *testing.T) {
 
 // A client that leaves right after its Inhibit, before the service handles
 // the call, holds nothing: its departure may come first.
+//
+//testpolicy:realtime private D-Bus daemon replies and disconnects cross Unix sockets
 func TestEarlyDepartureHoldsNothing(t *testing.T) {
 	address := privateBus(t)
 	held := serve(t, address).held
@@ -299,6 +307,8 @@ func TestPerSenderLimit(t *testing.T) {
 }
 
 // The bus going away while inhibited reports false so idle resumes.
+//
+//testpolicy:realtime private D-Bus daemon replies and disconnects cross Unix sockets
 func TestBusLossReleases(t *testing.T) {
 	address, cmd := startBus(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -328,6 +338,8 @@ func TestBusLossReleases(t *testing.T) {
 
 // Another owner keeps the name: Run stands aside at once, so it holds no
 // bus connection.
+//
+//testpolicy:realtime private D-Bus daemon replies and disconnects cross Unix sockets
 func TestNameTaken(t *testing.T) {
 	address := privateBus(t)
 	other := connect(t, address)
@@ -359,6 +371,8 @@ func TestNameTaken(t *testing.T) {
 
 // Serve takes the name once its owner lets it go, and serves again after
 // the bus restarts.
+//
+//testpolicy:realtime private D-Bus daemon replies and disconnects cross Unix sockets
 func TestServeRetries(t *testing.T) {
 	socket := filepath.Join(t.TempDir(), "bus")
 	address, cmd := startBusAt(t, socket)
@@ -450,6 +464,7 @@ func TestCallAfterStop(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime private D-Bus daemon replies and disconnects cross Unix sockets
 func awaitRun(t *testing.T, done <-chan error) error {
 	t.Helper()
 	select {
@@ -474,7 +489,7 @@ func TestInhibitImmediatelyAfterNameAcquired(t *testing.T) {
 	result := make(chan error, 1)
 	go func() {
 		for {
-			m, err := c.ReadMessage()
+			m, err := c.Conn.ReadMessage()
 			if err != nil {
 				result <- err
 				return

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bnema/zerowrap"
+	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
 
@@ -87,6 +88,7 @@ func TestStoreStartupLogs(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime inotify reloads and missing-directory retries require kernel I/O
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -94,7 +96,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 		if time.Now().After(deadline) {
 			t.Fatal("timeout: " + what)
 		}
-		time.Sleep(5 * time.Millisecond)
+		<-time.After(5 * time.Millisecond)
 	}
 }
 
@@ -152,9 +154,30 @@ func TestStoreWaitsForMissingDirectory(t *testing.T) {
 	s.retryInterval = 20 * time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
+	attempted := make(chan error, 1)
+	watches := newMockwatchInstaller(t)
+	watches.EXPECT().AddWatch(mock.Anything, filepath.Dir(path), uint32(watchMask)).RunAndReturn(func(fd int, dir string, mask uint32) (int, error) {
+		wd, err := unix.InotifyAddWatch(fd, dir, mask)
+		select {
+		case attempted <- err:
+		default:
+		}
+		return wd, err
+	}).Once()
+	watches.EXPECT().AddWatch(mock.Anything, filepath.Dir(path), uint32(watchMask)).RunAndReturn(unix.InotifyAddWatch)
+	go func() { done <- s.run(ctx, watches) }()
 	defer func() { cancel(); <-done }()
-	time.Sleep(60 * time.Millisecond)
+	waitFor(t, "initial failed watch attempt", func() bool {
+		select {
+		case err := <-attempted:
+			if !errors.Is(err, unix.ENOENT) {
+				t.Fatalf("initial watch: %v, want ENOENT", err)
+			}
+			return true
+		default:
+			return false
+		}
+	})
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

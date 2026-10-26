@@ -62,6 +62,7 @@ func TestPollReadinessTimeoutAndReplacement(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime bounded wait for kernel epoll/eventfd readiness or shutdown
 func TestCloseUnblocksPoll(t *testing.T) {
 	p, err := New()
 	if err != nil {
