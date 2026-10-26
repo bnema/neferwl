@@ -44,8 +44,16 @@ func (inst *Instance) Close() {
 	inst.instance = 0
 }
 
-// Open is the concrete opener until the RenderDevice port is introduced.
-func (inst *Instance) Open(info ports.GPUInfo) (*GPU, error) { return inst.OpenGPU(info) }
+var _ ports.RenderDeviceOpener = (*Instance)(nil)
+
+// Open opens the selected GPU through the render-device port.
+func (inst *Instance) Open(info ports.GPUInfo) (ports.RenderDevice, error) {
+	g, err := inst.OpenGPU(info)
+	if err != nil {
+		return nil, err
+	}
+	return g, nil
+}
 
 func (inst *Instance) OpenGPU(info ports.GPUInfo) (*GPU, error) {
 	var count uint32

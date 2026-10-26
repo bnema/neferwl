@@ -17,10 +17,13 @@ packages:
       CastSink:
       Clock:
       ContentReturn:
+      Copier:
       Notifier:
       OutputScaleStore:
       PresentationSink:
       Renderer:
+      RenderDevice:
+      RenderDeviceOpener:
       Seat:
       SessionSecurity:
       SessionSecurityController:

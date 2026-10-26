@@ -128,3 +128,34 @@ type GPUInfo struct {
 	Internal bool   // a connected eDP/LVDS/DSI connector
 	Driver   string // DRM driver name, e.g. "amdgpu", "nvidia-drm"
 }
+
+// RenderDevice owns one GPU's rendering and copy resources.
+type RenderDevice interface {
+	NewRenderer(w, h int, o RendererOptions) (Renderer, error)
+	NewCopier(w, h int) (Copier, error)
+	DMABuf() DMABufSupport
+	Node() (primary, render uint64)
+	Close()
+}
+
+// RenderDeviceOpener opens a GPU; zero GPUInfo selects the first usable device.
+type RenderDeviceOpener interface {
+	Open(g GPUInfo) (RenderDevice, error)
+}
+
+// Copier copies a rendered image from another GPU into a scanout buffer, on
+// the display GPU. One goroutine owns it.
+type Copier interface {
+	ImportSources(bufs []DMABuf) error
+	ImportTargets(bufs []DMABuf) error
+	SourceModifiers(formats []DMABufFormat) []DMABufFormat // what it can sample
+	Copy(src, dst int, acquire *os.File) (done *os.File, err error)
+	Close()
+}
+
+// GPUSelection identifies the render GPU and cards kept by selection.
+type GPUSelection struct {
+	Render  int      // index into candidates
+	Keep    []int    // candidates to open, ascending
+	Reasons []string // one human line per decision, logged by app
+}
