@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -244,4 +245,19 @@ func TestPanelOverlayBlends(t *testing.T) {
 	got := pixels.RGBAAt(center, bottom)
 	require.Greater(t, got.B, uint8(0), "panel background blends rather than forcing alpha to one")
 	require.Less(t, got.B, uint8(255))
+}
+
+func TestPanelOverlayWidthLimitCache(t *testing.T) {
+	r := newTestRenderer(t, 512, 256)
+	defer r.Close()
+	s := ports.Scene{Scale: 1, Overlays: []ports.Overlay{{ID: 42, Seq: 1, Kind: ports.OverlayPanel, Panel: &ports.PanelContent{Lines: [4]string{strings.Repeat("app", 100)}}}}}
+	for _, width := range []int{512, 128} {
+		bounds := image.Rect(0, 0, width, 256)
+		walk := sceneWalk{r: r, s: s, scale: 1, bounds: bounds}
+		walk.overlays()
+		ds := walk.draws
+		require.Len(t, ds, 1)
+		require.LessOrEqual(t, int(ds[0].pc.rect[2]-ds[0].pc.rect[0]), width-48)
+	}
+	require.Len(t, r.shm, 2, "same sequence on resized output needs a distinct cache key")
 }

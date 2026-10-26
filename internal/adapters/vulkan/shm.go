@@ -165,9 +165,10 @@ type shmKey struct {
 	surface uint64
 	// overlay identifies a compositor-drawn overlay (overlays.go). Its ID is
 	// never zero, and win and surface are zero, so client keys cannot collide.
-	overlay uint64
-	scale   float64
-	style   overlaydraw.Style
+	overlay  uint64
+	scale    float64
+	style    overlaydraw.Style
+	maxWidth int // physical panel width limit; zero for labels
 }
 
 // shmState is what a GPU buffer holds: a w×h client buffer at a content

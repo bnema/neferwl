@@ -12,7 +12,7 @@ import (
 // Panel rasterizes a window info panel: a rounded rectangle holding up to
 // len(lines) text lines and, when graph has a non-zero sample, a frame-time
 // sparkline under them. It draws into its own buffer, reused while the size
-// stays the same: a panel redrawn with new text allocates nothing.
+// stays the same: a panel redrawn with unclipped text allocates nothing.
 // It is not safe for concurrent use; the caller owns it.
 type Panel struct {
 	faces      map[float64]font.Face
@@ -24,8 +24,12 @@ type Panel struct {
 
 // Draw returns premultiplied BGRA pixels owned by p and valid until the next
 // Draw call. Empty lines are skipped; an all-zero graph is omitted. Invalid
-// scales use 1. A font that cannot load yields a nil slice.
-func (p *Panel) Draw(lines [4]string, graph [64]uint16, scale float64, style Style) (pix []byte, w, h int) {
+// scales use 1. maxWidth bounds the physical width; non-positive limits draw
+// nothing. A font that cannot load yields a nil slice.
+func (p *Panel) Draw(lines [4]string, graph [64]uint16, scale float64, maxWidth int, style Style) (pix []byte, w, h int) {
+	if maxWidth <= 0 {
+		return nil, 0, 0
+	}
 	if scale <= 0 || math.IsNaN(scale) || math.IsInf(scale, 0) {
 		scale = 1
 	}
@@ -37,11 +41,13 @@ func (p *Panel) Draw(lines [4]string, graph [64]uint16, scale float64, style Sty
 	lineHeight := metrics.Height.Ceil()
 	padding := int(math.Round(.6 * float64(lineHeight)))
 	radius := float64(lineHeight) * .5
+	innerWidth := max(0, maxWidth-2*padding)
 	count, widest := 0, 0
-	for _, line := range lines {
+	for i, line := range lines {
 		if line != "" {
 			count++
-			widest = max(widest, font.MeasureString(face, line).Ceil())
+			lines[i] = clipPanelLine(face, line, innerWidth)
+			widest = max(widest, font.MeasureString(face, lines[i]).Ceil())
 		}
 	}
 	var peak uint16
@@ -53,7 +59,8 @@ func (p *Panel) Draw(lines [4]string, graph [64]uint16, scale float64, style Sty
 	if peak != 0 {
 		graphWidth, graphHeight = len(graph)*step, 2*lineHeight
 	}
-	w = max(widest, graphWidth) + 2*padding
+	w = min(maxWidth, max(widest, graphWidth)+2*padding)
+	graphWidth = min(graphWidth, max(0, w-2*padding))
 	h = count*lineHeight + graphHeight + 2*padding
 	size := w * h * 4
 	if p.img.Rect.Dx() != w || p.img.Rect.Dy() != h || cap(p.img.Pix) < size {
@@ -94,7 +101,7 @@ func (p *Panel) Draw(lines [4]string, graph [64]uint16, scale float64, style Sty
 		for i, sample := range graph {
 			height := int(math.Round(float64(sample) * float64(graphHeight) / float64(peak)))
 			for y := bottom - height + 1; y <= bottom; y++ {
-				for x := padding + i*step; x < padding+(i+1)*step-1; x++ {
+				for x := padding + i*step; x < min(padding+(i+1)*step-1, padding+graphWidth); x++ {
 					p.over(x, y, bar)
 				}
 			}
@@ -118,4 +125,23 @@ func (p *Panel) over(x, y int, c color.RGBA) {
 	for j, v := range [4]uint8{c.R, c.G, c.B, c.A} {
 		p.img.Pix[i+j] = uint8(uint32(v) + (uint32(p.img.Pix[i+j])*inv+127)/255)
 	}
+}
+
+// clipPanelLine truncates at UTF-8 boundaries and reserves room for ASCII ellipsis.
+func clipPanelLine(face font.Face, line string, width int) string {
+	if font.MeasureString(face, line).Ceil() <= width {
+		return line
+	}
+	suffix := "..."
+	if font.MeasureString(face, suffix).Ceil() > width {
+		return ""
+	}
+	end := 0
+	for i := range line {
+		if font.MeasureString(face, line[:i]+suffix).Ceil() > width {
+			break
+		}
+		end = i
+	}
+	return line[:end] + suffix
 }

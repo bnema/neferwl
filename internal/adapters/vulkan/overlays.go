@@ -26,6 +26,9 @@ func (w *sceneWalk) overlays() {
 		bg, fg := overlaydraw.Colors(w.s.Border.Active, o.Style.Background, o.Style.Foreground)
 		style := overlaydraw.Style{FontPx: overlaydraw.FontPixels(w.s.Physical.Width, w.s.Physical.Height, w.s.Physical.MMWidth, w.s.Physical.MMHeight, w.scale, o.Style.Size), Background: bg, Foreground: fg}
 		key := shmKey{overlay: o.ID, scale: w.scale, style: style}
+		if o.Kind == ports.OverlayPanel {
+			key.maxWidth = max(1, w.bounds.Dx()-2*w.phys(24))
+		}
 		var pix []byte
 		var lw, lh int
 		var c *shmCopy
@@ -50,7 +53,7 @@ func (w *sceneWalk) overlays() {
 					p = &overlaydraw.Panel{}
 					r.panels[o.ID] = p
 				}
-				pix, lw, lh = p.Draw(o.Panel.Lines, o.Panel.Graph, w.scale, style)
+				pix, lw, lh = p.Draw(o.Panel.Lines, o.Panel.Graph, w.scale, key.maxWidth, style)
 			}
 		} else {
 			pix, lw, lh = r.overlayRaster.Label(o.Text, o.Typed, w.scale, style)
