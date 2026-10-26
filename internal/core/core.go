@@ -211,6 +211,7 @@ type publishScratch struct {
 // channels; an unchanged value is not sent again.
 type sentCache struct {
 	outputs    ports.SetOutputs
+	outputsSeq uint64 // last successfully queued output layout
 	state      ports.State
 	workspaces ports.Workspaces
 }
@@ -930,9 +931,11 @@ func (c *Core) syncOutputs(ctx context.Context) error {
 		return nil
 	}
 	v.Outputs = append(make(ports.Layout, 0, len(v.Outputs)), v.Outputs...)
-	if err := c.command(ctx, v); err != nil {
+	seq, err := c.queue(ctx, v)
+	if err != nil {
 		return err
 	}
+	c.sent.outputsSeq = seq
 	if c.ch.Layouts != nil && !slices.Equal(v.Outputs, c.sent.outputs.Outputs) {
 		latest(c.ch.Layouts, v.Outputs)
 	}
@@ -1332,6 +1335,16 @@ func (c *Core) spawnEmpty(ctx context.Context) error {
 	}
 	first := c.firstTerminalResolved
 	terms := c.fillEmpty()
+	if len(terms) > 0 && c.sent.outputsSeq != 0 {
+		// flush returns immediately when this layout was already delivered.
+		if err := c.out.flush(ctx, c.ch.Commands, c.sent.outputsSeq); err != nil {
+			for _, req := range terms {
+				c.cancelClaim(req)
+			}
+			c.firstTerminalResolved = first
+			return err
+		}
+	}
 	issued, err := c.dispatch(ctx, terms)
 	if len(terms) > 0 && issued == 0 {
 		c.firstTerminalResolved = first
