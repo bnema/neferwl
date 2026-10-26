@@ -31,6 +31,8 @@ type Card struct {
 	// decisions belong to the render path, not to KMS bookkeeping.
 	renderLog zerowrap.Logger
 	crtcs     []uint32
+	// scanoutFormats are read once by OpenCard.
+	scanoutFormats []ports.DMABufFormat
 	// outputs by connector name; owned by the goroutine that calls Scan.
 	outputs map[string]*Output
 	// offWarned: connectors whose multi-GPU off warning was logged; owned
@@ -80,8 +82,38 @@ func OpenCard(fd int, info ports.GPUInfo, dev CardDevices, want Want, log, rende
 	if err != nil {
 		log.Info().Err(err).Str("card", path).Msg("GBM unavailable; the renderer allocates the output images")
 	}
-	return &Card{alloc: alloc, fd: fd, info: info, dev: dev, want: want, log: log, renderLog: renderLog, crtcs: crtcs, outputs: map[string]*Output{}, leasable: map[string]connector{}, leases: map[uint32]leaseRecord{}, flips: flips, k: k, taken: map[uint32]bool{}, async: hasCap(fd, capAtomicAsync), cpuFences: fenceGate(fd, log)}, nil
+	card := &Card{alloc: alloc, fd: fd, info: info, dev: dev, want: want, log: log, renderLog: renderLog, crtcs: crtcs, outputs: map[string]*Output{}, leasable: map[string]connector{}, leases: map[uint32]leaseRecord{}, flips: flips, k: k, taken: map[uint32]bool{}, async: hasCap(fd, capAtomicAsync), cpuFences: fenceGate(fd, log)}
+	card.scanoutFormats = allPlaneFormats(k)
+	return card, nil
 }
+
+// allPlaneFormats is the union of every plane's IN_FORMATS (deduplicated,
+// in plane order); planes that cannot be read are skipped.
+func allPlaneFormats(k kms) []ports.DMABufFormat {
+	res, err := k.planes()
+	if err != nil {
+		return nil
+	}
+	seen := map[ports.DMABufFormat]bool{}
+	var out []ports.DMABufFormat
+	for _, r := range res {
+		props, err := k.objProps(r.id, objPlane)
+		if err != nil {
+			continue
+		}
+		for _, f := range planeFormats(k, props, r.formats) {
+			if !seen[f] {
+				seen[f] = true
+				out = append(out, f)
+			}
+		}
+	}
+	return out
+}
+
+// ScanoutFormats is the union of every plane's IN_FORMATS, read by OpenCard:
+// the formats a client can allocate for this card's display engine.
+func (c *Card) ScanoutFormats() []ports.DMABufFormat { return c.scanoutFormats }
 
 // Path is the device path, e.g. /dev/dri/card1.
 func (c *Card) Path() string { return c.info.Path }

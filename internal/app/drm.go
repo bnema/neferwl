@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -305,6 +306,13 @@ func openDRM(ctx context.Context, cfg ports.Config, opener ports.RenderDeviceOpe
 		card.SetRendererOptions(ports.RendererOptions{TraceDamage: logging.Enabled(ctx, "render-damage")})
 		device := card.Device()
 		log.Info().Str("path", path).Str("device", fmt.Sprintf("%d:%d", unix.Major(device), unix.Minor(device))).Msg("opened DRM card")
+		sf, only := card.ScanoutFormats(), 0
+		for _, f := range sf {
+			if !slices.Contains(want.Sampled, f) {
+				only++
+			}
+		}
+		log.Debug().Str("path", path).Int("scanout_formats", len(sf)).Int("scanout_only", only).Msg("card scanout formats")
 		b.cards = append(b.cards, &drmCard{Card: card, fd: fd, local: local})
 	}
 	if len(b.cards) == 0 {

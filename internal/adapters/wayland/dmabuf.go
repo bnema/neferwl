@@ -26,6 +26,11 @@ import (
 // params accept set_sampling_device. Older clients keep getting the whole
 // feedback on every round.
 
+// Scanout tranches only offer formats the renderer samples, so the table is
+// the renderer's formats: a buffer the display engine can scan out but the
+// GPU cannot sample would have no composition fallback (overlap, screencast,
+// a failed direct scanout). Same policy as wlroots.
+
 const dmabufVersion = 6
 
 // maxPlanes is the protocol limit (DRM planes).
