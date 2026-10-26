@@ -26,14 +26,25 @@ func TestWatch(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			out := make(chan ports.ConfigChanged, 8)
 			done := make(chan error, 1)
-			go func() { done <- Watch(ctx, path, out, logging.For(ctx, "config")) }()
+			ready := make(chan struct{})
+			go func() { done <- watch(ctx, path, out, logging.For(ctx, "config"), ready) }()
 			defer func() {
 				cancel()
 				if err := <-done; err != nil {
 					t.Error(err)
 				}
 			}()
+			// kvconf closes Ready after its initial rewatch attempt. Keep the
+			// directory absent until that attempt has finished, exercising recovery.
+			select {
+			case <-ready:
+			case <-time.After(5 * time.Second):
+				t.Fatal("initial watch attempt did not finish")
+			}
 			if later {
+				if _, err := os.Stat(dir); !os.IsNotExist(err) {
+					t.Fatalf("directory must still be missing: %v", err)
+				}
 				if err := os.Mkdir(dir, 0700); err != nil {
 					t.Fatal(err)
 				}
@@ -51,18 +62,12 @@ func TestWatch(t *testing.T) {
 			receive := func(want string) {
 				t.Helper()
 				deadline := time.After(2 * time.Second)
-				retry := time.NewTicker(150 * time.Millisecond)
-				defer retry.Stop()
-				tries := 0
 				for {
 					select {
 					case c := <-out:
 						if c.Config.Background.Color == want {
 							return
 						}
-					case <-retry.C:
-						tries++
-						write(path, fmt.Sprintf("background = %s\nborder.width = %d\n", want, tries%32))
 					case <-deadline:
 						t.Fatalf("no config change to %s", want)
 					}
