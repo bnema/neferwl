@@ -85,6 +85,11 @@ type Scene struct {
 	// then only those of Wayland clients.
 	HintLabels []HintLabel
 	HintStyle  HintStyle
+	// Overlays are compositor-drawn overlays of this output, drawn over
+	// everything, after CaptureIndicators and PositionHint; nil when none.
+	Overlays []Overlay
+	// Physical is the output density the overlays are sized from.
+	Physical OutputPhysical
 	// Flash is the focus flash highlighting a window or column on this output; nil
 	// draws nothing.
 	Flash *FocusFlash
@@ -134,7 +139,8 @@ func (s Scene) SameAs(o Scene) bool {
 	return slices.Equal(s.Windows, o.Windows) && slices.Equal(s.Separators, o.Separators) &&
 		slices.Equal(s.DropHints, o.DropHints) && slices.Equal(s.Layers, o.Layers) &&
 		slices.Equal(s.CaptureIndicators, o.CaptureIndicators) &&
-		s.HintStyle == o.HintStyle && slices.Equal(s.HintLabels, o.HintLabels)
+		s.HintStyle == o.HintStyle && slices.Equal(s.HintLabels, o.HintLabels) &&
+		s.Physical == o.Physical && slices.Equal(s.Overlays, o.Overlays)
 }
 
 // Shows reports whether the scene draws the surface of id: only its

@@ -27,6 +27,8 @@ func sameSceneBase() Scene {
 		Flash:             &FocusFlash{Rect: Rect{W: 20, H: 10}, Width: 2, Color: "#ff0000", Alpha: 0.6},
 		CaptureIndicators: []CaptureIndicator{{Rect: Rect{W: 4, H: 4}}},
 		HintLabels:        []HintLabel{{Rect: Rect{X: 3, Y: 4}, Text: "fj", Typed: 1}},
+		Overlays:          []Overlay{{ID: 1, Seq: 1, Kind: OverlayLabel, Anchor: AnchorOutsideTopLeft, Text: "fj"}},
+		Physical:          OutputPhysical{Width: 100, Height: 50, MMWidth: 40, MMHeight: 20},
 	}
 }
 
@@ -71,6 +73,10 @@ func TestSceneSameAs(t *testing.T) {
 		"indicator":         func(s *Scene) { s.CaptureIndicators[0].Pill = true },
 		"hint style":        func(s *Scene) { s.HintStyle.Size = 24 },
 		"hint capture":      func(s *Scene) { s.HintStyle.Capture = true },
+		"overlay seq":       func(s *Scene) { s.Overlays[0].Seq++ },
+		"overlay style":     func(s *Scene) { s.Overlays[0].Style.Size = 12 },
+		"overlay count":     func(s *Scene) { s.Overlays = nil },
+		"physical":          func(s *Scene) { s.Physical.MMWidth++ },
 		"excluded":          func(s *Scene) { s.Capture.Excluded[0] = 4 },
 		"transform":         func(s *Scene) { s.Transform = 1 },
 		"capture shown":     func(s *Scene) { s.Capture.Shown++ },
@@ -99,9 +105,9 @@ func TestSceneSameAs(t *testing.T) {
 // TestSceneSameAsCoversEveryField fails when Scene gains or loses a field:
 // update Scene.SameAs, then this count.
 func TestSceneSameAsCoversEveryField(t *testing.T) {
-	// 25 with Animating, which SameAs intentionally does not compare: it
+	// 27 with Animating, which SameAs intentionally does not compare: it
 	// only schedules the next frame, it draws nothing.
-	const fields = 27
+	const fields = 29
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(Scene{}))),
 		"Scene fields changed: update Scene.SameAs (and TestSceneSameAs), then this count")
 }
