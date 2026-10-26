@@ -396,6 +396,8 @@ func errorsIsEINVAL(err error) bool { return err != nil && errors.Is(err, unix.E
 
 // Run: activation refused twice with EINVAL. The output keeps running, stays
 // dark, and only the later accepted black activation produces proof.
+//
+//testpolicy:realtime Output.Run goroutine driven by channels and mocked KMS; context deadline only bounds the wait for the event
 func TestRunProtectedActivationRetriesWithoutStoppingOrEarlyProof(t *testing.T) {
 	var activations, refusals atomic.Int32
 	o, k, _, _ := testOutputRules(t, func(r *atomicReq, flags uint32) error {

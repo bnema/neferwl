@@ -40,8 +40,9 @@ func ready(t *testing.T, o harnessOpts) (*svcHarness, *zerobus.Conn) {
 	h.svc.Inventory(testInventory())
 	// The inventory is applied by the owner before it serves the next call
 	// that needs it: a round trip through the service orders them.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	timeout, tick := time.After(5*time.Second), time.NewTicker(5*time.Millisecond)
+	defer tick.Stop()
+	for {
 		_, m := callErr(t, c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil)
 		if m != nil && m.Signature == "a{ta{sv}}" {
 			r := m.Body()
@@ -49,10 +50,12 @@ func ready(t *testing.T, o harnessOpts) (*svcHarness, *zerobus.Conn) {
 				return h, c
 			}
 		}
-		<-time.After(5 * time.Millisecond)
+		select {
+		case <-timeout:
+			t.Fatal("inventory not applied")
+		case <-tick.C:
+		}
 	}
-	t.Fatal("inventory not applied")
-	return h, c
 }
 
 func createSession(t *testing.T, c *zerobus.Conn) string {
@@ -447,16 +450,18 @@ func TestOwnerVanishFreesSessions(t *testing.T) {
 		t.Fatalf("over the limit: %q", name)
 	}
 	_ = owner.Close()
-	deadline := time.Now().Add(5 * time.Second)
+	timeout, tick := time.After(5*time.Second), time.NewTicker(10*time.Millisecond)
+	defer tick.Stop()
 	for {
 		name, _ := callErr(t, c, nameScreenCast, pathScreenCast, ifaceScreenCast, "CreateSession", "a{sv}", func(e *zerobus.Encoder) { e.EndArray(e.BeginArray('{')) })
 		if name == "" {
 			return
 		}
-		if time.Now().After(deadline) {
+		select {
+		case <-timeout:
 			t.Fatalf("sessions of a vanished owner stay: %q\n%s", name, h.log.String())
+		case <-tick.C:
 		}
-		<-time.After(10 * time.Millisecond)
 	}
 }
 
@@ -671,19 +676,22 @@ func TestInventorySignalsGoToAllowedPeersOnly(t *testing.T) {
 	// The first inventory is not a change. Wait until the owner applied it
 	// (a published inventory replaces an unread one), then publish a change.
 	h.svc.Inventory(testInventory())
-	deadline := time.Now().Add(5 * time.Second)
-	for {
+	timeout, tick := time.After(5*time.Second), time.NewTicker(5*time.Millisecond)
+	defer tick.Stop()
+	for applied := false; !applied; {
 		_, m := callErr(t, allowed, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil)
 		if m != nil && m.Signature == "a{ta{sv}}" {
 			r := m.Body()
 			if end := r.Array('{'); r.More(end) {
-				break
+				applied = true
+				continue
 			}
 		}
-		if time.Now().After(deadline) {
+		select {
+		case <-timeout:
 			t.Fatal("inventory not applied")
+		case <-tick.C:
 		}
-		<-time.After(5 * time.Millisecond)
 	}
 	changed := testInventory()
 	changed.Windows = append(changed.Windows, ports.CastWindow{ID: 9, AppID: "x", Title: "new"})
@@ -794,11 +802,13 @@ func TestBusLossClosesCallerPidfds(t *testing.T) {
 		t.Fatalf("%d pidfds, want one open", len(opened))
 	}
 	h.killBus()
-	deadline := time.Now().Add(5 * time.Second)
+	timeout, tick := time.After(5*time.Second), time.NewTicker(5*time.Millisecond)
+	defer tick.Stop()
 	for !pidfdClosed(opened[0]) {
-		if time.Now().After(deadline) {
+		select {
+		case <-timeout:
 			t.Fatal("pidfd of a cached caller survives the bus loss")
+		case <-tick.C:
 		}
-		<-time.After(5 * time.Millisecond)
 	}
 }

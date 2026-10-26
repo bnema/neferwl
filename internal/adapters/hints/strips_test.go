@@ -80,6 +80,7 @@ func packLines(src *image.RGBA, lines []image.Rectangle, workers int, normalize 
 	return strips
 }
 
+//testpolicy:realtime real OCR subprocesses, bounded by a context deadline
 func readStrips(ctx context.Context, img *image.RGBA, lines []image.Rectangle, workers int, normalize bool) ([]OCRWord, int, error) {
 	binary, err := exec.LookPath("tesseract")
 	if err != nil {

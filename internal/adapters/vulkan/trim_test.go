@@ -11,8 +11,6 @@ import (
 )
 
 // trimSettled waits for the submitted GPU fences, then lets Trim collect them.
-//
-//testpolicy:realtime real GPU fence wait through vkWaitForFences, bounded to 5s
 func trimSettled(t *testing.T, r *Renderer, now time.Time) {
 	t.Helper()
 	for i := range r.slots {
@@ -166,6 +164,8 @@ func TestTrimReleasesUndrawnDMABuf(t *testing.T) {
 }
 
 // poll frees what a finished frame held without waiting for it.
+//
+//testpolicy:realtime real GPU frame completion polled through Trim, bounded by one timeout
 func TestTrimPollsFinishedFrames(t *testing.T) {
 	r, err := New(32, 32)
 	if err != nil {
@@ -180,13 +180,20 @@ func TestTrimPollsFinishedFrames(t *testing.T) {
 	}
 	freed := false
 	r.retire(r.frame, func() { freed = true })
-	deadline := time.Now().Add(5 * time.Second)
+	timeout, tick := time.After(5*time.Second), time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	now := time.Now()
 	for !freed {
-		if time.Now().After(deadline) {
-			t.Fatal("finished frame never polled")
-		}
-		if err := r.Trim(time.Now()); err != nil {
+		if err := r.Trim(now); err != nil {
 			t.Fatal(err)
+		}
+		if freed {
+			break
+		}
+		select {
+		case <-timeout:
+			t.Fatal("finished frame never polled")
+		case <-tick.C:
 		}
 	}
 	if r.completed != r.frame {

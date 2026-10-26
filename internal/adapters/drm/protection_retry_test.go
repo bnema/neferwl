@@ -18,6 +18,8 @@ import (
 // runProtectedStartup runs o with the session already protected. k and r are
 // set up with permissive renderer/KMS expectations; inject holds the failure
 // under test.
+//
+//testpolicy:realtime Output.Run goroutine driven by channels and mocked KMS; context deadline only bounds the wait for the event
 func runProtectedStartup(t *testing.T, o *Output, k *mockkms, renders func() (*os.File, error)) (<-chan ports.SecurityBackendEvent, <-chan error, context.CancelFunc) {
 	t.Helper()
 	o.cursor = nil

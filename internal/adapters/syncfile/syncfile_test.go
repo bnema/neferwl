@@ -31,8 +31,6 @@ func TestWaitReturnsWhenReadable(t *testing.T) {
 }
 
 // A canceled ctx ends the wait on a pipe that never signals.
-//
-//testpolicy:realtime real pipe poll in syncfile.Wait
 func TestWaitStopsOnCancel(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {

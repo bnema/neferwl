@@ -97,7 +97,6 @@ func TestScopedCaptureClosesPostRenderAdmissionGap(t *testing.T) {
 	}
 }
 
-//testpolicy:realtime bounded wait for real pipe acquire fence and capture completion
 func TestTransitionDuringHeadlessRenderWaitRetainsFenceAndRejectsCapture(t *testing.T) {
 	admitted := ports.SecurityState{Generation: 2}
 	locked := ports.SecurityState{Generation: 3, Protected: true}

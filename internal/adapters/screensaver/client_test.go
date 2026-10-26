@@ -74,6 +74,8 @@ func (o clientObject) Call(method string, flags zerobus.Flags, args ...any) *cli
 	m, err := o.c.Conn.Call()
 	return &clientReply{m, err}
 }
+
+//testpolicy:realtime private D-Bus daemon call over a Unix socket, bounded by a context deadline
 func (o clientObject) CallWithContext(ctx context.Context, method string, flags zerobus.Flags, args ...any) *clientReply {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

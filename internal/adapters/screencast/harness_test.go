@@ -231,8 +231,9 @@ func (h *svcHarness) client() *zerobus.Conn {
 //testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func (h *svcHarness) waitName(c *zerobus.Conn, name string) {
 	h.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	timeout, tick := time.After(5*time.Second), time.NewTicker(5*time.Millisecond)
+	defer tick.Stop()
+	for {
 		e := c.NewCall("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameHasOwner", "s")
 		e.Str(name)
 		check := boundIO(h.t, "NameHasOwner", func() { _ = c.Close() })
@@ -244,9 +245,12 @@ func (h *svcHarness) waitName(c *zerobus.Conn, name string) {
 		if m.Body().Bool() {
 			return
 		}
-		<-time.After(5 * time.Millisecond)
+		select {
+		case <-timeout:
+			h.t.Fatalf("%s not owned", name)
+		case <-tick.C:
+		}
 	}
-	h.t.Fatalf("%s not owned", name)
 }
 
 // callErr calls and returns the D-Bus error name, "" on success.

@@ -290,6 +290,7 @@ func TestOCROutputHelper(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime real OCR subprocess killed by the output limit, bounded by a context deadline
 func TestRecognizeImageOutputLimits(t *testing.T) {
 	exe, err := os.Executable()
 	if err != nil {

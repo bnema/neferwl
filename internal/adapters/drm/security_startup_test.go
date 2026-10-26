@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+//testpolicy:realtime Output.Run goroutine driven by channels and mocked KMS; context deadline only bounds the wait for the event
 func TestSecurityProtectedStartupBlackProofAndCaptureRejection(t *testing.T) {
 	o, k, commits, mu := testOutputMu(t)
 	o.fbs = [2]uint32{} // the first setup of a run: no image yet

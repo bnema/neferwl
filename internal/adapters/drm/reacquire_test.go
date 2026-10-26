@@ -136,7 +136,7 @@ func TestEnableRefusedForMasterIsRetried(t *testing.T) {
 		}
 		// Let the backoff grow past the ping period.
 		pingFor := func(d time.Duration) {
-			for end := time.Now().Add(d); time.Now().Before(end); {
+			for range int(d / (100 * time.Millisecond)) {
 				time.Sleep(100 * time.Millisecond)
 				h.o.Ping(context.Background())
 			}

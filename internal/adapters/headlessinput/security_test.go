@@ -177,6 +177,7 @@ func TestSecureScriptSnapshotsBeforeKeyTranslation(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime RunSecure goroutine driven by channels; context deadline only bounds the wait for the event
 func TestSecureScriptBlockedSendPreservesProductionSnapshot(t *testing.T) {
 	for _, line := range []string{"key a", "move 1 2"} {
 		t.Run(line, func(t *testing.T) {

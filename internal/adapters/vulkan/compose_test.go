@@ -100,6 +100,8 @@ func TestRendererScaledDMABufFiltersLinearly(t *testing.T) {
 }
 
 // Render returns a sync file that becomes readable when the GPU is done.
+//
+//testpolicy:realtime real GPU sync file polled by syncfile.Wait, bounded by a context deadline
 func TestRendererReturnsDoneFence(t *testing.T) {
 	r, err := New(32, 32)
 	if err != nil {

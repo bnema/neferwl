@@ -207,9 +207,13 @@ func (l *logBuf) count(s string) int {
 //testpolicy:realtime private D-Bus logind peer passes real file descriptors over sockets
 func (l *logBuf) wait(t *testing.T, msg string, n int) {
 	t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); l.count(msg) < n; <-time.After(5 * time.Millisecond) {
-		if time.Now().After(deadline) {
+	timeout, tick := time.After(5*time.Second), time.NewTicker(5*time.Millisecond)
+	defer tick.Stop()
+	for l.count(msg) < n {
+		select {
+		case <-timeout:
 			t.Fatalf("log never had %d x %q", n, msg)
+		case <-tick.C:
 		}
 	}
 }

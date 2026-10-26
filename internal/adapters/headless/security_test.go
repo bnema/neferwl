@@ -30,7 +30,6 @@ func securityReceive[T any](t *testing.T, ch <-chan T) T {
 	}
 }
 
-//testpolicy:realtime bounded wait for real pipe acquire fence and capture completion
 func TestSecurityInitialBlackFenceBeforeLockerAndNoReadback(t *testing.T) {
 	state := ports.SecurityState{Generation: 7, Protected: true}
 	gate := portsmocks.NewMockSessionSecurity(t)

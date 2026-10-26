@@ -117,14 +117,19 @@ func satelliteScript(t *testing.T, dir string) (string, string) {
 //testpolicy:realtime real X11 sockets and satellite subprocess lifetime
 func readRuns(t *testing.T, path string, want int) []string {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
+	timeout, tick := time.After(3*time.Second), time.NewTicker(20*time.Millisecond)
+	defer tick.Stop()
 	for {
 		b, _ := os.ReadFile(path)
 		lines := strings.Fields(strings.ReplaceAll(string(b), " ", "_"))
-		if len(lines) >= want || time.Now().After(deadline) {
+		if len(lines) >= want {
 			return lines
 		}
-		<-time.After(20 * time.Millisecond)
+		select {
+		case <-timeout:
+			return lines
+		case <-tick.C:
+		}
 	}
 }
 
@@ -255,9 +260,22 @@ func TestRunKillsSatelliteGroup(t *testing.T) {
 	go func() { done <- d.Run(ctx) }()
 	unix.Close(dial(t, d.socket))
 	var pid int
-	for deadline := time.Now().Add(3 * time.Second); pid == 0 && time.Now().Before(deadline); <-time.After(20 * time.Millisecond) {
+	pidTimeout, pidTick := time.After(3*time.Second), time.NewTicker(20*time.Millisecond)
+	defer pidTick.Stop()
+	for pid == 0 {
 		b, _ := os.ReadFile(pidfile)
 		pid, _ = strconv.Atoi(strings.TrimSpace(string(b)))
+		if pid != 0 {
+			break
+		}
+		select {
+		case <-pidTimeout:
+			pid = -1
+		case <-pidTick.C:
+		}
+	}
+	if pid < 0 {
+		pid = 0
 	}
 	if pid == 0 {
 		t.Fatal("satellite did not start")
@@ -268,12 +286,13 @@ func TestRunKillsSatelliteGroup(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not stop")
 	}
-	for deadline := time.Now().Add(2 * time.Second); ; <-time.After(20 * time.Millisecond) {
-		if errors.Is(unix.Kill(pid, 0), unix.ESRCH) {
-			break
-		}
-		if time.Now().After(deadline) {
+	goneTimeout, goneTick := time.After(2*time.Second), time.NewTicker(20*time.Millisecond)
+	defer goneTick.Stop()
+	for !errors.Is(unix.Kill(pid, 0), unix.ESRCH) {
+		select {
+		case <-goneTimeout:
 			t.Fatalf("child %d survived", pid)
+		case <-goneTick.C:
 		}
 	}
 }

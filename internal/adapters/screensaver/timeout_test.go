@@ -8,6 +8,8 @@ import (
 
 // boundIO interrupts a real blocking operation. Check runs on its caller,
 // never on the timer goroutine, and reports even an otherwise ignored error.
+//
+//testpolicy:realtime private D-Bus daemon on Unix sockets, interrupted by a 5s context deadline
 func boundIO(t *testing.T, operation string, closeIO func()) func() {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

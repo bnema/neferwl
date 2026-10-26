@@ -91,12 +91,14 @@ func TestStoreStartupLogs(t *testing.T) {
 //testpolicy:realtime inotify reloads and missing-directory retries require kernel I/O
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	timeout, tick := time.After(5*time.Second), time.NewTicker(5*time.Millisecond)
+	defer tick.Stop()
 	for !cond() {
-		if time.Now().After(deadline) {
+		select {
+		case <-timeout:
 			t.Fatal("timeout: " + what)
+		case <-tick.C:
 		}
-		<-time.After(5 * time.Millisecond)
 	}
 }
 

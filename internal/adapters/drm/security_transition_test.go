@@ -58,6 +58,7 @@ func TestSecurityMasterLossInvalidatesWithoutProof(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime Output.Run goroutine driven by channels and mocked KMS; context deadline only bounds the wait for the event
 func TestSecurityProofBackpressureRechecksEpoch(t *testing.T) {
 	o, k, _ := testOutput(t)
 	var state atomic.Uint64

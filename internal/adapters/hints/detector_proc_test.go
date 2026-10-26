@@ -160,6 +160,8 @@ func TestProcDetectorKillsGrandchild(t *testing.T) {
 }
 
 // Cancelling the context interrupts a pending read.
+//
+//testpolicy:realtime real OCR worker subprocess, bounded by a context deadline
 func TestProcDetectorContextCancel(t *testing.T) {
 	d := helperDetector(t, "silent")
 	d.reqTimeout = time.Minute

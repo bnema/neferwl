@@ -104,17 +104,19 @@ func serve(t *testing.T, address string) served {
 //testpolicy:realtime private D-Bus daemon name acquisition crosses a Unix socket
 func waitOwner(t *testing.T, probe *testClient, ok func(string) bool) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	timeout, tick := time.After(2*time.Second), time.NewTicker(5*time.Millisecond)
+	defer tick.Stop()
 	for {
 		var owner string
 		_ = probe.BusObject().Call("org.freedesktop.DBus.GetNameOwner", 0, busName).Store(&owner)
 		if ok(owner) {
 			return
 		}
-		if time.Now().After(deadline) {
+		select {
+		case <-timeout:
 			t.Fatalf("owner %q not accepted", owner)
+		case <-tick.C:
 		}
-		<-time.After(5 * time.Millisecond)
 	}
 }
 
@@ -436,6 +438,8 @@ func TestUnknownMethodAndInvalidArguments(t *testing.T) {
 
 // A stopped service has closed its connection, so later calls fail instead
 // of waiting for a handler goroutine whose owner loop has already returned.
+//
+//testpolicy:realtime private D-Bus daemon replies cross Unix sockets, bounded by a context deadline
 func TestCallAfterStop(t *testing.T) {
 	address := privateBus(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -478,6 +482,8 @@ func awaitRun(t *testing.T, done <-chan error) error {
 
 // The first call is sent on the acquisition signal, without polling or a
 // readiness call that could mask a synchronous startup reader dropping it.
+//
+//testpolicy:realtime private D-Bus daemon replies cross Unix sockets, bounded by a context deadline
 func TestInhibitImmediatelyAfterNameAcquired(t *testing.T) {
 	address := privateBus(t)
 	c := connect(t, address)
