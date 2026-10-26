@@ -304,3 +304,12 @@ func (SetModifiers) clientCommand() {}
 type CursorOverride struct{ Shape string }
 
 func (CursorOverride) clientCommand() {}
+
+// WatchStats carries core → wayland the window whose frame statistics
+// wayland reports (WindowStats) every StatsInterval; 0 stops reporting.
+type WatchStats struct{ Window WindowID }
+
+func (WatchStats) clientCommand() {}
+
+// StatsInterval is how often wayland reports the watched window's stats.
+const StatsInterval = 500 * time.Millisecond
