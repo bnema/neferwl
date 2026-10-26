@@ -1052,3 +1052,87 @@ func TestHintRequestPopupUnits(t *testing.T) {
 
 	})
 }
+
+func hintTargets27(h *hintHarness) []ports.HintTarget {
+	var targets []ports.HintTarget
+	for i := 0; i < 27; i++ {
+		targets = append(targets, ports.HintTarget{Window: 1, Source: ports.HintSourceDetector, Rect: ports.Rect{X: h.win.X + 5 + 100*(i%4), Y: h.win.Y + 5 + 40*(i/4), W: 30, H: 10}})
+	}
+	return targets
+}
+
+func TestHintOverlaysMirrorLabels(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		s := h.show(hintTargets27(h)...)
+		if len(s.Overlays) != len(s.HintLabels) || len(s.Overlays) != 27 {
+			t.Fatalf("%d overlays, %d labels", len(s.Overlays), len(s.HintLabels))
+		}
+		ids := map[uint64]bool{}
+		for i, o := range s.Overlays {
+			l := s.HintLabels[i]
+			if o.Text != l.Text || o.Typed != l.Typed || o.Rect.X != l.Rect.X || o.Rect.Y != l.Rect.Y {
+				t.Fatalf("overlay %+v, label %+v", o, l)
+			}
+			if o.Kind != ports.OverlayLabel || o.Anchor != ports.AnchorOutsideTopLeft {
+				t.Fatalf("overlay %+v", o)
+			}
+			if o.ID == 0 || ids[o.ID] {
+				t.Fatalf("overlay id %d zero or repeated", o.ID)
+			}
+			ids[o.ID] = true
+		}
+	})
+}
+
+func TestHintOverlaysTypingKeepsIDChangesSeq(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		before := h.show(hintTargets27(h)...)
+		seqs := map[uint64]uint64{}
+		for _, o := range before.Overlays {
+			seqs[o.ID] = o.Seq
+		}
+		h.press("f", 0)
+		after := h.labelled(26, 1)
+		if len(after.Overlays) != 26 {
+			t.Fatalf("%d overlays after f", len(after.Overlays))
+		}
+		for _, o := range after.Overlays {
+			old, ok := seqs[o.ID]
+			if !ok || old == o.Seq {
+				t.Fatalf("overlay %+v: id known %v, seq %d before", o, ok, old)
+			}
+		}
+	})
+}
+
+func TestHintOverlaysNewScanChangesSeq(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		first := h.show(hintTargets27(h)...)
+		h.press("Escape", 0)
+		h.labelled(0, 0)
+		second := h.show(hintTargets27(h)...)
+		if len(first.Overlays) == 0 || len(first.Overlays) != len(second.Overlays) {
+			t.Fatalf("%d then %d overlays", len(first.Overlays), len(second.Overlays))
+		}
+		for i, o := range second.Overlays {
+			if o.ID != first.Overlays[i].ID || o.Seq == first.Overlays[i].Seq {
+				t.Fatalf("overlay %+v, first scan %+v", o, first.Overlays[i])
+			}
+		}
+	})
+}
+
+func TestScenePhysicalFromOutputInfo(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		s := h.show(h.inside(0))
+		p := s.Physical
+		st := s.HintStyle
+		if p.Width == 0 || p.Height == 0 || p.Width != st.Width || p.Height != st.Height || p.MMWidth != st.PhysicalW || p.MMHeight != st.PhysicalH {
+			t.Fatalf("physical %+v, style %+v", p, st)
+		}
+	})
+}

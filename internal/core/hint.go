@@ -46,6 +46,11 @@ type hintSourceGeom struct {
 	rect ports.Rect
 }
 
+// overlayIDHint is the overlay ID namespace of hint labels: their IDs are
+// overlayIDHint | (target index + 1), so they never collide with other
+// overlay namespaces.
+const overlayIDHint uint64 = 1 << 62
+
 type hintState struct {
 	phase  hintPhase
 	seq    uint64 // last request sequence number
@@ -57,6 +62,9 @@ type hintState struct {
 	windows []ports.HintWindow // visible units at request time
 	targets []hintTarget
 	typed   string
+	// gen is incremented each time a scan's targets are shown, so overlay
+	// Seqs of a new scan never repeat earlier ones.
+	gen uint64
 }
 
 // hintGeom is the output geometry a scan was requested on: a result or a
@@ -99,7 +107,7 @@ func (c *Core) hintRequest() {
 	default:
 		return
 	}
-	c.hint = hintState{phase: hintPending, seq: req.Seq, output: sc.name(), ws: sc.mon.Current(), geom: sc.hintGeom(), windows: slices.Clone(wins)}
+	c.hint = hintState{phase: hintPending, seq: req.Seq, output: sc.name(), ws: sc.mon.Current(), geom: sc.hintGeom(), windows: slices.Clone(wins), gen: c.hint.gen}
 }
 
 // hintWindows lists the windows drawn on sc, bottom to top, with their client
@@ -207,6 +215,7 @@ func (c *Core) hintResult(res ports.HintScanResult) bool {
 		}
 	}
 	h.phase, h.targets, h.typed = hintShown, kept, ""
+	h.gen++
 	return true
 }
 
@@ -292,7 +301,7 @@ func (c *Core) hintSourceUnchanged(sc *screen, w hintSourceGeom) bool {
 }
 
 // hintCancel ends hint mode.
-func (c *Core) hintCancel() { c.hint = hintState{seq: c.hint.seq} }
+func (c *Core) hintCancel() { c.hint = hintState{seq: c.hint.seq, gen: c.hint.gen} }
 
 // hintValidate ends hint mode when what it was started on is gone: the
 // session became protected, the output went or changed geometry, another workspace is on screen
@@ -427,6 +436,33 @@ func (c *Core) hintLabels(sc *screen) []ports.HintLabel {
 			continue
 		}
 		out = append(out, ports.HintLabel{Rect: ports.Rect{X: t.rect.X, Y: t.rect.Y}, Text: t.label, Typed: len(h.typed)})
+	}
+	return out
+}
+
+// hintOverlays are the labels to draw on sc as generic overlays: those still
+// matching what was typed. Nil unless sc is the hint output.
+func (c *Core) hintOverlays(sc *screen) []ports.Overlay {
+	h := &c.hint
+	if h.phase != hintShown || sc.name() != h.output {
+		return nil
+	}
+	var out []ports.Overlay
+	for i, t := range h.targets {
+		if len(t.label) < len(h.typed) || t.label[:len(h.typed)] != h.typed {
+			continue
+		}
+		out = append(out, ports.Overlay{
+			ID:      overlayIDHint | uint64(i+1),
+			Seq:     h.gen<<16 | uint64(len(h.typed)),
+			Kind:    ports.OverlayLabel,
+			Anchor:  ports.AnchorOutsideTopLeft,
+			Rect:    ports.Rect{X: t.rect.X, Y: t.rect.Y},
+			Capture: c.cfg.Hint.Capture,
+			Style:   ports.OverlayStyle{Size: c.cfg.Hint.Size, Background: c.cfg.Hint.Background, Foreground: c.cfg.Hint.Foreground},
+			Text:    t.label,
+			Typed:   len(h.typed),
+		})
 	}
 	return out
 }
