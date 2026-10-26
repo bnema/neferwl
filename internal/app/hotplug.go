@@ -188,3 +188,11 @@ func (b *drmBackend) hotplugAdd(ctx context.Context, name string, cfg ports.Conf
 	}
 	return nil, action
 }
+
+// retireOnStop says whether a stopped output's security instance is retired:
+// on affirmative KMS inactivity, or when its card was removed and the device
+// node is gone (a real unplug). A removed card whose node still exists, such
+// as a driver unbind, is not proof of inactivity.
+func retireOnStop(inactiveOnClose, removed, nodeExists bool) bool {
+	return inactiveOnClose || (removed && !nodeExists)
+}

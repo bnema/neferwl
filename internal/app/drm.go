@@ -934,7 +934,16 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			// finish observes done after the deferred Close. Only affirmative
 			// terminal KMS inactivity retires this exact lifetime; renderer
 			// errors and missing connector inventory are not physical proof.
-			if output != nil && output.InactiveOnClose() {
+			// A card whose node is gone was unplugged: nothing can still scan
+			// out, so its outputs are retired even without KMS confirmation.
+			// A removed card with its node present (driver unbind) stays
+			// fail-closed.
+			owner := cards[name]
+			unplugged := owner != nil && owner.removed && !deviceNodeExists(owner.Path())
+			if output != nil && retireOnStop(output.InactiveOnClose(), owner != nil && owner.removed, !unplugged) {
+				if !output.InactiveOnClose() {
+					log.Info().Str("card", owner.Path()).Str("connector", name).Msg("retiring output of unplugged GPU")
+				}
 				set.securityEvent(ports.SecurityOutputRemoved{Instance: stopped.instance})
 			}
 			delete(outputs, name)

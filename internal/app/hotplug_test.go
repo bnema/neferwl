@@ -111,3 +111,22 @@ func TestHotplugAddRetryAfterTeardown(t *testing.T) {
 		assert.Equal(t, want, action.retryAfterTeardown(), "action %d", action)
 	}
 }
+
+func TestHotplugRetireOnStop(t *testing.T) {
+	for _, tc := range []struct {
+		name                                 string
+		inactiveOnClose, removed, nodeExists bool
+		want                                 bool
+	}{
+		{"kms confirmed", true, false, true, true},
+		{"kms confirmed on removed card", true, true, true, true},
+		{"unplug: removed, node gone", false, true, false, true},
+		{"unbind: removed, node present", false, true, true, false},
+		{"node missing but card not removed", false, false, false, false},
+		{"plain error stop", false, false, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, retireOnStop(tc.inactiveOnClose, tc.removed, tc.nodeExists))
+		})
+	}
+}
