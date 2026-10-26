@@ -57,10 +57,30 @@ func (p *eventProxy) none(t *testing.T, c *wlturbo.Display) {
 	}
 }
 
+// barrier returns once the display goroutine ran everything queued so far.
+func barrier(t *testing.T, s *Server) {
+	t.Helper()
+	if !s.display.Do(func() {}) {
+		t.Fatal("display stopped")
+	}
+}
+
+// noArmed fails if an idle timer was started; call it after a barrier.
+func noArmed(t *testing.T, timers <-chan armed) {
+	t.Helper()
+	select {
+	case a := <-timers:
+		t.Fatalf("unexpected idle timer %v", a.d)
+	default:
+	}
+}
+
 // A notification idles after its timeout, resumes on user activity and
 // idles again; an idle inhibitor holds it, an input-idle one ignores it.
 func TestIdleNotification(t *testing.T) {
-	s, events, commands, _, dir := contentServer(t)
+	events := make(chan ports.ClientEvent, 16)
+	commands := make(chan ports.ClientCommand, 16)
+	s, dir, timers := idleClockServerWith(t, Channels{Events: events, Commands: commands})
 	c := protocolClient(t, s, dir)
 	seat := bindProtocol(t, c, "wl_seat")
 	registerProtocol(t, c, seat)
@@ -69,6 +89,7 @@ func TestIdleNotification(t *testing.T) {
 	id, n := newEventProxy(c)
 	requestProtocol(t, c, notifier, extidlenotify.ExtIdleNotifierV1RequestGetIdleNotification, id, uint32(50), seat)
 	idled, resumed := uint32(extidlenotify.ExtIdleNotificationV1EventIdled), uint32(extidlenotify.ExtIdleNotificationV1EventResumed)
+	nextArmed(t, timers).fire()
 	if e := n.next(t, c); e[0] != idled {
 		t.Fatalf("event %v, want idled", e)
 	}
@@ -76,11 +97,13 @@ func TestIdleNotification(t *testing.T) {
 	if e := n.next(t, c); e[0] != resumed {
 		t.Fatalf("event %v, want resumed", e)
 	}
+	nextArmed(t, timers).fire()
 	if e := n.next(t, c); e[0] != idled {
 		t.Fatalf("event %v, want idled again", e)
 	}
 	commands <- ports.UserActivity{}
 	n.next(t, c) // resumed
+	running := nextArmed(t, timers)
 
 	// An idle inhibitor holds it; input-idle notifications still fire.
 	_, surf, _ := surfaceMapper(t, c, events)()
@@ -89,14 +112,20 @@ func TestIdleNotification(t *testing.T) {
 	registerProtocol(t, c, in)
 	requestProtocol(t, c, inhibitMgr, idleinhibit.ZwpIdleInhibitManagerV1RequestCreateInhibitor, in, surf)
 	clientEvent[ports.IdleInhibit](t, events)
+	barrier(t, s)
+	noArmed(t, timers)
 	inputID, input := newEventProxy(c)
 	requestProtocol(t, c, notifier, extidlenotify.ExtIdleNotifierV1RequestGetInputIdleNotification, inputID, uint32(50), seat)
+	nextArmed(t, timers).fire()
 	if e := input.next(t, c); e[0] != idled {
 		t.Fatalf("input-idle event %v, want idled", e)
 	}
+	// The timer that ran before the inhibitor must not idle the held one.
+	running.fire()
 	n.none(t, c)
 	// The inhibitor goes: the held notification counts from zero.
 	requestProtocol(t, c, in, idleinhibit.ZwpIdleInhibitorV1RequestDestroy)
+	nextArmed(t, timers).fire()
 	if e := n.next(t, c); e[0] != idled {
 		t.Fatalf("event %v, want idled after the inhibitor", e)
 	}
@@ -112,19 +141,9 @@ func TestIdleNotification(t *testing.T) {
 // and held ones count from zero once it ends. D-Bus activity
 // (IdleActivity) resumes them like input.
 func TestBusIdleInhibition(t *testing.T) {
-	dir := t.TempDir()
-	events := make(chan ports.ClientEvent, 16)
 	inhibited := make(chan bool)
 	activity := make(chan struct{})
-	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs}, Channels{Events: events, IdleInhibited: inhibited, IdleActivity: activity}, logging.For(context.Background(), "wayland"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	run := guardedServerRun(t, s, ctx)
-	go func() { done <- run() }()
-	t.Cleanup(func() { cancel(); <-done })
+	s, dir, timers := idleClockServerWith(t, Channels{IdleInhibited: inhibited, IdleActivity: activity})
 	c := protocolClient(t, s, dir)
 	seat := bindProtocol(t, c, "wl_seat")
 	registerProtocol(t, c, seat)
@@ -135,6 +154,7 @@ func TestBusIdleInhibition(t *testing.T) {
 	// D-Bus activity resumes an idle notification and restarts it.
 	id, n := newEventProxy(c)
 	requestProtocol(t, c, notifier, extidlenotify.ExtIdleNotifierV1RequestGetIdleNotification, id, uint32(300), seat)
+	nextArmed(t, timers).fire()
 	if e := n.next(t, c); e[0] != idled {
 		t.Fatalf("event %v, want idled", e)
 	}
@@ -142,19 +162,25 @@ func TestBusIdleInhibition(t *testing.T) {
 	if e := n.next(t, c); e[0] != resumed {
 		t.Fatalf("event %v, want resumed", e)
 	}
+	running := nextArmed(t, timers)
 
-	// Its timer runs again: the inhibition stops it before it fires. The
-	// forwarder takes the second send only once the first is applied.
+	// The inhibition stops the running timer and arms none. The forwarder
+	// takes the second send only once the first is applied.
 	inhibited <- true
 	inhibited <- true
+	barrier(t, s)
+	noArmed(t, timers)
+	running.fire()
 	n.none(t, c)
 	inputID, input := newEventProxy(c)
 	requestProtocol(t, c, notifier, extidlenotify.ExtIdleNotifierV1RequestGetInputIdleNotification, inputID, uint32(50), seat)
+	nextArmed(t, timers).fire()
 	if e := input.next(t, c); e[0] != idled {
 		t.Fatalf("input-idle event %v, want idled", e)
 	}
 	n.none(t, c)
 	inhibited <- false
+	nextArmed(t, timers).fire()
 	if e := n.next(t, c); e[0] != idled {
 		t.Fatalf("event %v, want idled after the inhibition", e)
 	}
@@ -189,6 +215,7 @@ func TestOutputPower(t *testing.T) {
 	}
 	// Unchanged state: no event.
 	commands <- ports.SetOutputs{Outputs: testOutputs, Off: []string{name}}
+	flushCommands(t, s, commands)
 	p.none(t, c)
 	commands <- ports.SetOutputs{Outputs: testOutputs}
 	if e := p.next(t, c); e != [2]uint32{modeEv, on} {
@@ -201,6 +228,7 @@ func TestOutputPower(t *testing.T) {
 	}
 	// Back with the same name: the failed object controls nothing.
 	commands <- ports.SetOutputs{Outputs: testOutputs}
+	flushCommands(t, s, commands)
 	requestProtocol(t, c, id, wlroutputpowermanagement.ZwlrOutputPowerV1RequestSetMode, off)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -210,7 +238,7 @@ func TestOutputPower(t *testing.T) {
 		if v, ok := ev.(ports.OutputPower); ok {
 			t.Fatalf("failed object sent %+v", v)
 		}
-	case <-waylandDeadline(50 * time.Millisecond):
+	default:
 	}
 }
 
@@ -224,8 +252,15 @@ type armed struct {
 // calls them; every started timer is sent on the returned channel.
 func idleClockServer(t *testing.T) (*Server, chan ports.ClientCommand, string, chan armed) {
 	t.Helper()
-	dir := t.TempDir()
 	commands := make(chan ports.ClientCommand, 16)
+	s, dir, timers := idleClockServerWith(t, Channels{Commands: commands})
+	return s, commands, dir, timers
+}
+
+// idleClockServerWith is idleClockServer with the given channels.
+func idleClockServerWith(t *testing.T, ch Channels) (*Server, string, chan armed) {
+	t.Helper()
+	dir := t.TempDir()
 	timers := make(chan armed, 16)
 	clock := portsmocks.NewMockClock(t)
 	clock.EXPECT().AfterFunc(mock.Anything, mock.Anything).RunAndReturn(func(d time.Duration, f func()) ports.Timer {
@@ -234,7 +269,7 @@ func idleClockServer(t *testing.T) (*Server, chan ports.ClientCommand, string, c
 		timers <- armed{d, f}
 		return timer
 	}).Maybe()
-	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, Clock: clock}, Channels{Commands: commands}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, Clock: clock}, ch, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +278,7 @@ func idleClockServer(t *testing.T) (*Server, chan ports.ClientCommand, string, c
 	run := guardedServerRun(t, s, ctx)
 	go func() { done <- run() }()
 	t.Cleanup(func() { cancel(); <-done })
-	return s, commands, dir, timers
+	return s, dir, timers
 }
 
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
