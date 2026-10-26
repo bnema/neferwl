@@ -194,6 +194,7 @@ func TestSecurityOwnerFIFOSaturationDrainsOnNormalStop(t *testing.T) {
 	synctest.Test(t, securityOwnerFIFOSaturationDrainsOnNormalStop)
 }
 
+//testpolicy:realtime output goroutines fed by channels; context deadline only bounds the wait
 func securityOwnerFIFOSaturationDrainsOnNormalStop(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -349,6 +350,7 @@ func TestSecurityOwnerFIFOSaturationCancelReleasesOwnerAndForwarders(t *testing.
 	synctest.Test(t, securityOwnerFIFOSaturationCancelReleasesOwnerAndForwarders)
 }
 
+//testpolicy:realtime output goroutines fed by channels; context deadline only bounds the wait
 func securityOwnerFIFOSaturationCancelReleasesOwnerAndForwarders(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

@@ -186,7 +186,9 @@ func TestScreencastStreamsMonitor(t *testing.T) {
 	waitOwner(t, c, scName)
 	// The inventory reaches the service after the outputs appear.
 	var session, stream string
-	for deadline := time.Now().Add(15 * time.Second); ; {
+	timeout, tick := time.After(15*time.Second), time.NewTicker(50*time.Millisecond)
+	defer tick.Stop()
+	for {
 		name, m := call(c, scPath, "org.gnome.Mutter.ScreenCast", "CreateSession", "a{sv}", emptyProps)
 		if name != "" {
 			t.Fatalf("CreateSession: %s", name)
@@ -197,8 +199,10 @@ func TestScreencastStreamsMonitor(t *testing.T) {
 			break
 		}
 		call(c, session, scSession, "Stop", "", nil)
-		if time.Now().After(deadline) {
+		select {
+		case <-timeout:
 			t.Fatalf("RecordMonitor: %s", errName)
+		case <-tick.C:
 		}
 	}
 	rule := "type='signal',interface='" + scStream + "'"

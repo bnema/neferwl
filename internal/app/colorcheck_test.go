@@ -219,15 +219,15 @@ func assertNoCursorOverlap(t *testing.T, patches []pattern.Patch) {
 func pollImage(t *testing.T, path string, notBefore time.Time, missing string, check func(image.Image) []string) {
 	t.Helper()
 	var last []string
-	waitFile := fileChanges(t, filepath.Dir(path))
-	for deadline := time.Now().Add(colorTimeout); ; waitFile() {
+	waitFile := fileChangesWithin(t, filepath.Dir(path), colorTimeout)
+	for {
 		last = nil
 		if fi, err := os.Stat(path); err != nil {
 			last = []string{err.Error()}
 			if missing != "" && os.IsNotExist(err) {
 				last = []string{missing}
 			}
-		} else if !fi.ModTime().After(notBefore) {
+		} else if fi.ModTime().Compare(notBefore) <= 0 {
 			last = []string{fmt.Sprintf("%s not rewritten since the client started", filepath.Base(path))}
 		} else if f, err := os.Open(path); err != nil {
 			last = []string{err.Error()}
@@ -240,7 +240,7 @@ func pollImage(t *testing.T, path string, notBefore time.Time, missing string, c
 				return
 			}
 		}
-		if time.Now().After(deadline) {
+		if !waitFile() {
 			t.Fatalf("%s does not match after %v:\n  %s", filepath.Base(path), colorTimeout, strings.Join(last, "\n  "))
 		}
 	}
@@ -281,8 +281,8 @@ func startColorCompositor(t *testing.T, opts Options) string {
 		}
 	})
 	socket := filepath.Join(runtime, "wayland-1")
-	waitFile := fileChanges(t, runtime)
-	for deadline := time.Now().Add(colorTimeout); ; waitFile() {
+	waitFile := fileChangesWithin(t, runtime, colorTimeout)
+	for {
 		if _, err := os.Stat(socket); err == nil {
 			return socket
 		}
@@ -292,7 +292,7 @@ func startColorCompositor(t *testing.T, opts Options) string {
 			t.Fatalf("neferwl exited: %v", err)
 		default:
 		}
-		if time.Now().After(deadline) {
+		if !waitFile() {
 			t.Fatal("no wayland socket")
 		}
 	}
@@ -308,6 +308,8 @@ type patternClient struct {
 // and returns once it printed "ready 640 360". It skips the test when the
 // client reports that linear XR30 is unsupported, and stops the client when
 // the test (or subtest) ends.
+//
+//testpolicy:realtime real child process stderr; one 15s deadline bounds the wait for its ready line
 func startPatternClient(t *testing.T, socket, mode string) *patternClient {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "testpattern")
@@ -337,7 +339,8 @@ func startPatternClient(t *testing.T, socket, mode string) *patternClient {
 		}
 	})
 
-	for deadline := time.Now().Add(15 * time.Second); ; waitProcessOutput(t, stderr) { // includes the 1.2 s fullscreen delay
+	timeout := time.After(15 * time.Second) // includes the 1.2 s fullscreen delay
+	for {
 		log := stderr.String()
 		if strings.Contains(log, fmt.Sprintf("ready %d %d\n", colorW, colorH)) {
 			c := &patternClient{ready: started}
@@ -362,7 +365,7 @@ func startPatternClient(t *testing.T, socket, mode string) *patternClient {
 			t.Fatalf("testpattern exited before ready (%v): %s", err, strings.TrimSpace(log))
 		default:
 		}
-		if time.Now().After(deadline) {
+		if !waitProcessOutputUntil(stderr, timeout) {
 			t.Fatalf("testpattern not ready: %s", strings.TrimSpace(log))
 		}
 	}

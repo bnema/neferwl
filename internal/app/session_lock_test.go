@@ -104,13 +104,7 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 	}
 	until := func(c *wlturbo.Display, what string, ready func() bool) {
 		t.Helper()
-		deadline := time.Now().Add(5 * time.Second)
-		for !ready() {
-			if time.Now().After(deadline) {
-				t.Fatalf("missing %s", what)
-			}
-			check(c.Roundtrip())
-		}
+		roundtripUntil(t, c, 5*time.Second, func() string { return "missing " + what }, ready)
 	}
 	desktop := connect()
 	// This fails RED until the parent authorizes production advertisement.

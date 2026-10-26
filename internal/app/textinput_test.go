@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -89,8 +90,8 @@ func TestHeadlessTextInputIME(t *testing.T) {
 		}
 	}()
 	socket := filepath.Join(runtime, "wayland-1")
-	waitFile := fileChanges(t, runtime)
-	for deadline := time.Now().Add(5 * time.Second); ; waitFile() {
+	waitFile := fileChangesWithin(t, runtime, 5*time.Second)
+	for {
 		if _, err := os.Stat(socket); err == nil {
 			break
 		}
@@ -103,7 +104,7 @@ func TestHeadlessTextInputIME(t *testing.T) {
 			t.Fatalf("neferwl exited: %v", err)
 		default:
 		}
-		if time.Now().After(deadline) {
+		if !waitFile() {
 			t.Fatal("no wayland socket")
 		}
 	}
@@ -125,8 +126,9 @@ func TestHeadlessTextInputIME(t *testing.T) {
 			<-imeDone
 		}
 	}()
-	for deadline := time.Now().Add(5 * time.Second); !strings.Contains(imeOut.String(), "ready"); waitProcessOutput(t, imeOut) {
-		if time.Now().After(deadline) {
+	imeTimeout := time.After(5 * time.Second)
+	for !strings.Contains(imeOut.String(), "ready") {
+		if !waitProcessOutputUntil(imeOut, imeTimeout) {
 			t.Fatalf("testime not ready: %s", imeOut.String())
 		}
 	}
@@ -139,14 +141,9 @@ func TestHeadlessTextInputIME(t *testing.T) {
 	text := mapTextClient(t, c)
 	poll := func(what string, ok func() bool) {
 		t.Helper()
-		for deadline := time.Now().Add(5 * time.Second); !ok(); {
-			if time.Now().After(deadline) {
-				t.Fatalf("%s: preedit %q commits %q, testime: %s", what, text.preedit, text.commits, imeOut.String())
-			}
-			if err := c.Roundtrip(); err != nil {
-				t.Fatal(err)
-			}
-		}
+		roundtripUntil(t, c, 5*time.Second, func() string {
+			return fmt.Sprintf("%s: preedit %q commits %q, testime: %s", what, text.preedit, text.commits, imeOut.String())
+		}, ok)
 	}
 	poll("no text input enter", func() bool { return text.entered })
 	for i := 1; i <= 2; i++ {
@@ -225,12 +222,7 @@ func mapTextClient(t *testing.T, c *wlturbo.Display) *textClient {
 	proxy.OnPreeditString(func(value string, _, _ int32) { text.preedit = append(text.preedit, value) })
 	proxy.OnCommitString(func(value string) { text.commits = append(text.commits, value) })
 	check(surf.Commit())
-	for deadline := time.Now().Add(5 * time.Second); serial == 0; {
-		if time.Now().After(deadline) {
-			t.Fatal("no configure")
-		}
-		check(c.Roundtrip())
-	}
+	roundtripUntil(t, c, 5*time.Second, func() string { return "no configure" }, func() bool { return serial != 0 })
 	check(xdg.AckConfigure(serial))
 	check(surf.Attach(buffer, 0, 0))
 	check(surf.Commit())

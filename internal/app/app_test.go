@@ -50,9 +50,9 @@ func TestHeadlessConfigReload(t *testing.T) {
 		}
 	}()
 	latest := filepath.Join(shots, "latest.png")
-	waitFile := fileChanges(t, shots)
-	waitColor := func(want color.RGBA, deadline time.Time) bool {
-		for time.Now().Before(deadline) {
+	waitColor := func(want color.RGBA, budget time.Duration) bool {
+		waitFile := fileChangesWithin(t, shots, budget)
+		for {
 			f, err := os.Open(latest)
 			if err == nil {
 				img, decodeErr := png.Decode(f)
@@ -72,17 +72,18 @@ func TestHeadlessConfigReload(t *testing.T) {
 				t.Fatalf("app exited early: %v", err)
 			default:
 			}
-			waitFile()
+			if !waitFile() {
+				return false
+			}
 		}
-		return false
 	}
-	if !waitColor(color.RGBA{A: 255}, time.Now().Add(10*time.Second)) {
+	if !waitColor(color.RGBA{A: 255}, 10*time.Second) {
 		t.Fatal("first black frame missing")
 	}
 	if err := os.WriteFile(path, []byte("background = #ff0000\nkeyboard.layout = fr\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if !waitColor(color.RGBA{R: 255, A: 255}, time.Now().Add(10*time.Second)) {
+	if !waitColor(color.RGBA{R: 255, A: 255}, 10*time.Second) {
 		t.Fatal("red frame missing after reload")
 	}
 }
