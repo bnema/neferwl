@@ -135,6 +135,9 @@ func TestTwoRenderersShareGPU(t *testing.T) {
 
 func TestConcurrentRendererTargets(t *testing.T) {
 	g := newTestGPU(t)
+	if g.dmabuf.Device == 0 {
+		t.Skip("no exportable GPU")
+	}
 	baseline := slices.Clone(g.hdrMods)
 	var rs [2]*Renderer
 	for i := range rs {
