@@ -172,19 +172,8 @@ func (d *dndClient) lastOffer(t *testing.T) uint32 {
 // next returns the next event the client sees.
 func (d *dndClient) next(t *testing.T) dndEvent {
 	t.Helper()
-	deadline := time.After(2 * time.Second)
-	for {
-		if err := d.c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case ev := <-d.log:
-			return ev
-		case <-deadline:
-			t.Fatal("no event")
-		case <-time.After(5 * time.Millisecond):
-		}
-	}
+	dispatchUntil(t, d.c, func() bool { return len(d.log) > 0 })
+	return <-d.log
 }
 
 // expect waits for the next event and checks its name.
@@ -233,37 +222,15 @@ func (d *dndClient) press(t *testing.T, commands chan<- ports.ClientCommand) uin
 	t.Helper()
 	commands <- ports.PointerFocus{ID: d.window, X: 1, Y: 1}
 	commands <- ports.PointerButtonTo{ID: d.window, Button: 0x110, Pressed: true, Grab: true, Time: time.Millisecond}
-	deadline := time.After(2 * time.Second)
-	for {
-		if err := d.c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case serial := <-d.serials:
-			return serial
-		case <-deadline:
-			t.Fatal("no button")
-		case <-time.After(5 * time.Millisecond):
-		}
-	}
+	dispatchUntil(t, d.c, func() bool { return len(d.serials) > 0 })
+	return <-d.serials
 }
 
 // press2 returns the next pointer button serial.
 func (d *dndClient) press2(t *testing.T) uint32 {
 	t.Helper()
-	deadline := time.After(2 * time.Second)
-	for {
-		if err := d.c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case serial := <-d.serials:
-			return serial
-		case <-deadline:
-			t.Fatal("no button")
-		case <-time.After(5 * time.Millisecond):
-		}
-	}
+	dispatchUntil(t, d.c, func() bool { return len(d.serials) > 0 })
+	return <-d.serials
 }
 
 // release releases the button press took and waits for the client to see it.
@@ -278,19 +245,8 @@ func (d *dndClient) key(t *testing.T, commands chan<- ports.ClientCommand) uint3
 	t.Helper()
 	commands <- ports.FocusWindow{ID: d.window}
 	commands <- ports.ForwardKey{ID: d.window, Key: ports.KeyEvent{Keycode: 30, Pressed: true, Time: 3 * time.Millisecond}}
-	deadline := time.After(2 * time.Second)
-	for {
-		if err := d.c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case serial := <-d.keys:
-			return serial
-		case <-deadline:
-			t.Fatal("no key")
-		case <-time.After(5 * time.Millisecond):
-		}
-	}
+	dispatchUntil(t, d.c, func() bool { return len(d.keys) > 0 })
+	return <-d.keys
 }
 
 // events returns what the client saw up to and including name.
@@ -352,7 +308,7 @@ func (d *dndClient) surfaceNew(t *testing.T) uint32 {
 // dndNextEvent returns the next client event of type T, skipping others.
 func dndNextEvent[T ports.ClientEvent](t *testing.T, events <-chan ports.ClientEvent) T {
 	t.Helper()
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case ev := <-events:
@@ -374,7 +330,7 @@ func dndNoEvent[T ports.ClientEvent](t *testing.T, s *Server, events <-chan port
 	if !s.display.Do(func() { s.emit(marker) }) {
 		t.Fatal("display stopped")
 	}
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case ev := <-events:
@@ -942,7 +898,7 @@ func lockedPair(t *testing.T) (*dndPair, string) {
 			if err != nil {
 				t.Error(err)
 			}
-		case <-time.After(3 * time.Second):
+		case <-waylandDeadline(3 * time.Second):
 			t.Error("server did not stop")
 		}
 	})

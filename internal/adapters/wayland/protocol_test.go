@@ -75,7 +75,7 @@ func expectProtocolError(t *testing.T, c *wlturbo.Display, object, code uint32) 
 		if displayErr.ObjectID != object || displayErr.Code != code {
 			t.Fatalf("protocol error = %v, want object=%d code=%d", displayErr, object, code)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		_ = c.Close()
 		t.Fatal("protocol error timeout")
 	}
@@ -226,7 +226,7 @@ func TestRecreatedToplevelRequiresNewBuffer(t *testing.T) {
 	select {
 	case serial := <-serials:
 		requestProtocol(t, c, xdg, xdgshell.SurfaceRequestAckConfigure, serial)
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("initial configure timeout")
 	}
 	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, buffer, int32(0), int32(0))
@@ -244,7 +244,7 @@ func TestRecreatedToplevelRequiresNewBuffer(t *testing.T) {
 		if _, ok := ev.(ports.WindowUnmapped); !ok {
 			t.Fatalf("expected unmap, got %T", ev)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("unmap timeout")
 	}
 	top = c.AllocateID()
@@ -257,7 +257,7 @@ func TestRecreatedToplevelRequiresNewBuffer(t *testing.T) {
 	select {
 	case serial := <-serials:
 		requestProtocol(t, c, xdg, xdgshell.SurfaceRequestAckConfigure, serial)
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("recreated configure timeout")
 	}
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
@@ -267,7 +267,7 @@ func TestRecreatedToplevelRequiresNewBuffer(t *testing.T) {
 	select {
 	case ev := <-events:
 		t.Fatalf("mapped without new buffer: %T", ev)
-	case <-time.After(300 * time.Millisecond):
+	case <-waylandDeadline(300 * time.Millisecond):
 	}
 	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, buffer, int32(0), int32(0))
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
@@ -517,25 +517,9 @@ func TestPointerProtocol(t *testing.T) {
 	}
 	commands <- ports.PointerAxisTo{ID: w.ID, Axis: ports.PointerAxis{Source: ports.AxisWheel, Vertical: ports.ScrollAxis{Set: true, Value: 15, V120: 120}, Time: 2 * time.Millisecond}}
 	commands <- ports.PointerAxisTo{ID: w.ID, Axis: ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Stop: true}, Time: 3 * time.Millisecond}}
-	deadline := time.After(2 * time.Second)
-	dispatched := make(chan error, 1)
-	go func() {
-		for {
-			if err := c.Dispatch(); err != nil {
-				dispatched <- err
-				return
-			}
-		}
-	}()
-	for len(p.enters) == 0 || len(p.buttons) < 4 || len(p.axes) < 5 {
-		select {
-		case err := <-dispatched:
-			t.Fatal(err)
-		case <-deadline:
-			t.Fatal("pointer events timeout")
-		case <-time.After(time.Millisecond):
-		}
-	}
+	dispatchUntil(t, c, func() bool {
+		return len(p.enters) > 0 && len(p.buttons) >= 4 && len(p.axes) >= 5
+	})
 	select {
 	case coords := <-p.enters:
 		if coords != [2]float64{10, 20} {
@@ -601,7 +585,7 @@ func TestHeldKeyOnKeyboardFocusTransfer(t *testing.T) {
 			}
 		case err := <-dispatched:
 			t.Fatal(err)
-		case <-time.After(2 * time.Second):
+		case <-waylandDeadline(2 * time.Second):
 			t.Fatal("keyboard enter timeout")
 		}
 	}
@@ -715,13 +699,7 @@ func xdgWindow(t *testing.T, c *wlturbo.Display, comp, wm, buffer uint32, role f
 
 func ackAndAttach(t *testing.T, c *wlturbo.Display, surf, xdg, buffer uint32, serials chan uint32) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for len(serials) == 0 && time.Now().Before(deadline) {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	dispatchUntil(t, c, func() bool { return len(serials) > 0 })
 	select {
 	case serial := <-serials:
 		requestProtocol(t, c, xdg, xdgshell.SurfaceRequestAckConfigure, serial)
@@ -797,14 +775,7 @@ func TestPopupAndFloatingLifecycle(t *testing.T) {
 		t.Fatalf("popup mapped %+v", ev)
 	}
 	commands <- ports.ClosePopup{ID: req.ID}
-	for deadline := time.Now().Add(2 * time.Second); len(done) == 0; time.Sleep(10 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatal("popup_done timeout")
-		}
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-	}
+	dispatchUntil(t, c, func() bool { return len(done) > 0 })
 }
 
 func TestPopupIncompletePositioner(t *testing.T) {
