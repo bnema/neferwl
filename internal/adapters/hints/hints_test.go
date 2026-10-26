@@ -226,14 +226,30 @@ func TestHintBadSize(t *testing.T) {
 // waitFiles waits for the dump the worker writes after sending the result.
 func waitFiles(t *testing.T, dir string, n int) []os.DirEntry {
 	t.Helper()
-	// Watch the directory before looking, so no write is missed.
+	// Watch before looking, so no write is missed. The worker creates dir
+	// itself, possibly after this call: watch the parent for its creation,
+	// then dir once it exists.
 	fd, err := unix.InotifyInit1(unix.IN_CLOEXEC | unix.IN_NONBLOCK)
 	require.NoError(t, err)
 	defer unix.Close(fd)
-	_, err = unix.InotifyAddWatch(fd, dir, unix.IN_CLOSE_WRITE|unix.IN_MOVED_TO|unix.IN_CREATE)
+	_, err = unix.InotifyAddWatch(fd, filepath.Dir(dir), unix.IN_CREATE|unix.IN_MOVED_TO)
 	require.NoError(t, err)
+	watching := false
+	watchDir := func() {
+		if watching {
+			return
+		}
+		_, err := unix.InotifyAddWatch(fd, dir, unix.IN_CLOSE_WRITE|unix.IN_MOVED_TO|unix.IN_CREATE)
+		if errors.Is(err, unix.ENOENT) {
+			return
+		}
+		require.NoError(t, err)
+		watching = true
+	}
+	watchDir()
 	var entries []os.DirEntry
 	dumped := func() bool {
+		watchDir()
 		all, _ := os.ReadDir(dir)
 		entries = nil
 		var raw, annotated, metadata bool
