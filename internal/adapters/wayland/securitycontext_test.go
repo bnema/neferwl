@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -97,14 +98,21 @@ func (l *sandboxListener) refused() bool {
 	return errors.Is(unix.Connect(fd, &unix.SockaddrUnix{Name: l.path}), unix.ECONNREFUSED)
 }
 
+// waitTrue yields to the compositor's accept and listener goroutines until
+// cond holds; the state it watches changes on kernel socket events that have
+// no in-process signal.
+//
+//testpolicy:realtime compositor goroutines react to real unix socket accept and hangup
 func waitTrue(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := waylandDeadline(5 * time.Second)
 	for !cond() {
-		if time.Now().After(deadline) {
+		select {
+		case <-deadline:
 			t.Fatal("timeout: " + what)
+		default:
+			runtime.Gosched()
 		}
-		time.Sleep(2 * time.Millisecond)
 	}
 }
 
