@@ -65,7 +65,7 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 	w.focusFlash()
 	w.captureIndicators()
 	w.positionHint()
-	w.hintLabels()
+	w.overlays()
 	r.scratchDraws = w.draws
 	return w.draws
 }

@@ -44,7 +44,7 @@ type target struct {
 	heldLayers     []ports.SceneLayer
 	heldHints      []ports.Rect
 	heldIndicators []ports.CaptureIndicator
-	heldLabels     []ports.HintLabel
+	heldOverlays   []ports.Overlay
 	windows        map[ports.WindowID]heldWindow
 }
 

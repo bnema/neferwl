@@ -73,8 +73,8 @@ type Renderer struct {
 	// the bytes copied into them, for tests.
 	shm    map[shmKey]*shmSurface
 	copied int
-	// labels rasterizes the hint labels (hint_labels.go); the zero value works.
-	labels overlaydraw.Raster
+	// overlayRaster rasterizes label overlays (overlays.go); the zero value works.
+	overlayRaster overlaydraw.Raster
 	// shmRects is scratch for shmCopyFor.
 	shmRects []image.Rectangle
 	// marks date the frames for Trim's wall-clock eviction (trim.go).

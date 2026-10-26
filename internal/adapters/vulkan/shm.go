@@ -163,13 +163,11 @@ func (r *Renderer) freeGPUBuffer(b *gpuBuffer) {
 type shmKey struct {
 	win     ports.WindowID
 	surface uint64
-	// label, typed and scale name a compositor-drawn hint label (hint_labels.go)
-	// instead of a client surface: win and surface are 0 and label is never
-	// empty, so such a key cannot collide with a client's.
-	label string
-	typed int
-	scale float64
-	style overlaydraw.Style
+	// overlay identifies a compositor-drawn overlay (overlays.go). Its ID is
+	// never zero, and win and surface are zero, so client keys cannot collide.
+	overlay uint64
+	scale   float64
+	style   overlaydraw.Style
 }
 
 // shmState is what a GPU buffer holds: a w×h client buffer at a content

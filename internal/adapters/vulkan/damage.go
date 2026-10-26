@@ -238,11 +238,11 @@ func (tg *target) hold(s ports.Scene, d *damageRegion) {
 	tg.heldLayers = append(tg.heldLayers[:0], s.Layers...)
 	tg.heldHints = append(tg.heldHints[:0], s.DropHints...)
 	tg.heldIndicators = append(tg.heldIndicators[:0], s.CaptureIndicators...)
-	tg.heldLabels = append(tg.heldLabels[:0], s.HintLabels...)
+	tg.heldOverlays = append(tg.heldOverlays[:0], s.Overlays...)
 	tg.valid, tg.sceneSeq, tg.scene, tg.windows = true, s.Seq, s, d.drawn
 	tg.scene.Windows, tg.scene.Separators, tg.scene.Layers = tg.heldWindows, tg.heldSeparators, tg.heldLayers
 	tg.scene.DropHints, tg.scene.CaptureIndicators = tg.heldHints, tg.heldIndicators
-	tg.scene.HintLabels = tg.heldLabels
+	tg.scene.Overlays = tg.heldOverlays
 	// Only whether they are set matters (any capture redraws everything):
 	// sentinels, so no pointer into the caller's capture state is kept.
 	tg.scene.Capture, tg.scene.CaptureScene = nil, nil
@@ -268,16 +268,16 @@ var (
 // belongs here too (see Scene.SameAs, TestSceneSameAsCoversEveryField); a
 // new SceneWindow field is checked by TestSceneWindowFieldCount.
 // Scene.Animating is not compared: it schedules the next frame, it draws
-// nothing.
+// nothing. Legacy hint fields are not rendered and are not compared.
 func sceneDelta(old, cur ports.Scene, phys func(ports.Rect) image.Rectangle, limit int) (image.Rectangle, bool) {
 	if old.Security != cur.Security || old.Output != cur.Output ||
 		old.OutputWidth != cur.OutputWidth || old.OutputHeight != cur.OutputHeight ||
 		old.Scale != cur.Scale || old.Transform != cur.Transform || old.Off != cur.Off ||
-		old.HintStyle != cur.HintStyle || old.Background != cur.Background || old.Border != cur.Border ||
+		old.Physical != cur.Physical || old.Background != cur.Background || old.Border != cur.Border ||
 		old.WorkspaceClip != cur.WorkspaceClip || old.TileInset != cur.TileInset || old.Dim != cur.Dim || old.DimBehind != cur.DimBehind ||
 		old.Capture != nil || cur.Capture != nil || old.CaptureScene != nil || cur.CaptureScene != nil ||
 		!slices.Equal(old.Layers, cur.Layers) || !slices.Equal(old.DropHints, cur.DropHints) ||
-		!slices.Equal(old.CaptureIndicators, cur.CaptureIndicators) || !slices.Equal(old.HintLabels, cur.HintLabels) ||
+		!slices.Equal(old.CaptureIndicators, cur.CaptureIndicators) || !slices.Equal(old.Overlays, cur.Overlays) ||
 		len(old.Windows) != len(cur.Windows) {
 		return image.Rectangle{}, false
 	}
