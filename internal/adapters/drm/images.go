@@ -186,7 +186,7 @@ func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error, skip
 			// attempt was the single-plane one.
 			continue
 		}
-		if !noGBM && o.openAlloc != nil {
+		if !noGBM && o.card != nil && o.card.alloc != nil {
 			gerr := o.gbmImages(r, mods, kind == imagesSinglePlane)
 			if gerr == nil {
 				return kind, nil
@@ -311,15 +311,6 @@ func (o *Output) clearImages(r ports.Renderer) error {
 // render into and import. On failure nothing is left allocated.
 func (o *Output) gbmImages(r ports.Renderer, mods []uint64, singlePlane bool) (err error) {
 	o.dropImages(r)
-	if o.alloc == nil {
-		if o.allocErr != nil {
-			return o.allocErr
-		}
-		if o.alloc, o.allocErr = o.openAlloc(); o.allocErr != nil {
-			o.log.Info().Err(o.allocErr).Str("connector", o.conn.name).Str("alloc", allocGBM).Msg("GBM unavailable; the renderer allocates the output images")
-			return o.allocErr
-		}
-	}
 	usable := r.TargetModifiers(mods, singlePlane)
 	if len(usable) == 0 {
 		return errors.New("no modifier both the plane and the renderer accept for GBM images")
@@ -332,12 +323,12 @@ func (o *Output) gbmImages(r ports.Renderer, mods []uint64, singlePlane bool) (e
 		}
 	}()
 	for range o.fbs {
-		img, cerr := o.alloc.create(o.Width(), o.Height(), o.imageFormat(), usable)
+		img, cerr := o.card.allocate(o.Width(), o.Height(), o.imageFormat(), usable)
 		if cerr != nil {
 			return cerr
 		}
 		o.images = append(o.images, img)
-		b, derr := img.dmabuf()
+		b, derr := o.card.imageDMABuf(img)
 		if derr != nil {
 			return derr
 		}
@@ -373,7 +364,7 @@ func (o *Output) freeImages() {
 		o.fbs[i] = 0
 	}
 	for _, img := range o.images {
-		img.close()
+		o.card.freeImage(img)
 	}
 	o.images = nil
 }

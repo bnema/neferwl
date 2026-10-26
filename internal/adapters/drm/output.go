@@ -205,13 +205,8 @@ type Output struct {
 	planes int
 	// imageMod is the modifier of the output images (0: linear).
 	imageMod uint64
-	// openAlloc opens the GBM image allocator, once per output (nil: GBM is
-	// not used); alloc is it, allocErr why it failed. images are the GBM
-	// images alive while they are shown.
-	openAlloc func() (imageAllocator, error)
-	alloc     imageAllocator
-	allocErr  error
-	images    []imageBuffer
+	card     *Card
+	images   []imageBuffer
 	// cpuFences: the driver mishandles IN_FENCE_FD (fencegate.go), so
 	// commits wait for their fences on the CPU instead.
 	cpuFences bool
@@ -242,7 +237,7 @@ type CursorLoader func(c ports.CursorChange, scale float64, t ports.BufferTransf
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
 	log := card.log
 	pipe := slices.Index(card.crtcs, crtc)
-	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, renderLog: card.renderLog, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, cpuFences: card.cpuFences, openAlloc: func() (imageAllocator, error) { return openGBM(card.fd) }, reason: "start", ready: make(chan error, 1), seatDisable: make(chan chan struct{}), ping: make(chan chan struct{}), traceFlips: card.want.TraceFlips, vrrFlipGap: card.want.VRRFlipGap}
+	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, renderLog: card.renderLog, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, cpuFences: card.cpuFences, card: card, reason: "start", ready: make(chan error, 1), seatDisable: make(chan chan struct{}), ping: make(chan chan struct{}), traceFlips: card.want.TraceFlips, vrrFlipGap: card.want.VRRFlipGap}
 	var err error
 	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
@@ -1100,10 +1095,6 @@ func (o *Output) Close() {
 		o.cursor.free()
 	}
 	o.freeImages()
-	if o.alloc != nil {
-		o.alloc.close()
-		o.alloc = nil
-	}
 	o.frame.endPending()
 	o.dropRead()
 	o.shown, o.queued = 0, 0

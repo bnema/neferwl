@@ -19,10 +19,12 @@ import (
 // goroutine. One reader goroutine reads commit events for all of them
 // and hands each to its output by CRTC.
 type Card struct {
-	fd   int
-	path string
-	want Want
-	log  zerowrap.Logger
+	alloc   imageAllocator
+	allocMu sync.Mutex
+	fd      int
+	path    string
+	want    Want
+	log     zerowrap.Logger
 	// renderLog carries the render component: direct scanout and overlay
 	// decisions belong to the render path, not to KMS bookkeeping.
 	renderLog zerowrap.Logger
@@ -68,7 +70,11 @@ func OpenCard(fd int, path string, want Want, log, renderLog zerowrap.Logger) (*
 		flips[c] = make(chan flipEvent, 4)
 	}
 	k := kmsDevice{fd: fd, gemMu: &sync.Mutex{}, modifiers: hasCap(fd, capAddFB2Modifiers)}
-	return &Card{fd: fd, path: path, want: want, log: log, renderLog: renderLog, crtcs: crtcs, outputs: map[string]*Output{}, leasable: map[string]connector{}, leases: map[uint32]leaseRecord{}, flips: flips, k: k, taken: map[uint32]bool{}, async: hasCap(fd, capAtomicAsync), cpuFences: fenceGate(fd, log)}, nil
+	alloc, err := openGBM(fd)
+	if err != nil {
+		log.Info().Err(err).Str("card", path).Msg("GBM unavailable; the renderer allocates the output images")
+	}
+	return &Card{alloc: alloc, fd: fd, path: path, want: want, log: log, renderLog: renderLog, crtcs: crtcs, outputs: map[string]*Output{}, leasable: map[string]connector{}, leases: map[uint32]leaseRecord{}, flips: flips, k: k, taken: map[uint32]bool{}, async: hasCap(fd, capAtomicAsync), cpuFences: fenceGate(fd, log)}, nil
 }
 
 // Path is the device path, e.g. /dev/dri/card1.
@@ -305,4 +311,35 @@ func normalizedHDRSettings(settings HDRSettings) HDRSettings {
 // configuration changes; Release drops the old output before reopening it.
 func outputNeedsRestart(o *Output, mode modeInfo, settings HDRSettings) bool {
 	return o.mode != mode || o.hdr.settings != normalizedHDRSettings(settings)
+}
+
+// Close releases the shared allocator after all outputs have closed.
+func (c *Card) Close() {
+	c.allocMu.Lock()
+	defer c.allocMu.Unlock()
+	if c.alloc != nil {
+		c.alloc.close()
+		c.alloc = nil
+	}
+}
+
+func (c *Card) allocate(w, h int, format uint32, modifiers []uint64) (imageBuffer, error) {
+	c.allocMu.Lock()
+	defer c.allocMu.Unlock()
+	if c.alloc == nil {
+		return nil, errors.New("GBM unavailable")
+	}
+	return c.alloc.create(w, h, format, modifiers)
+}
+
+func (c *Card) imageDMABuf(img imageBuffer) (ports.DMABuf, error) {
+	c.allocMu.Lock()
+	defer c.allocMu.Unlock()
+	return img.dmabuf()
+}
+
+func (c *Card) freeImage(img imageBuffer) {
+	c.allocMu.Lock()
+	defer c.allocMu.Unlock()
+	img.close()
 }

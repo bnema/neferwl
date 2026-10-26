@@ -307,6 +307,7 @@ func wantFromConfig(cfg ports.Config) drm.Want {
 // closed by their goroutines first.
 func (b *drmBackend) close() {
 	for _, c := range b.cards {
+		c.Card.Close()
 		b.seat.CloseDevice(c.fd)
 	}
 	b.seat.Close()

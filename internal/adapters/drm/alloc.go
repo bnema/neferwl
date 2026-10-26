@@ -8,7 +8,7 @@ import (
 // imageAllocator makes the output images with the display driver's own
 // allocator (GBM), which knows the layouts the driver scans out correctly:
 // images allocated by the renderer show corrupted on NVIDIA. One per
-// output, used by its goroutine only.
+// card, with all calls serialized by Card.allocMu.
 type imageAllocator interface {
 	// create allocates an image whose modifier is one of modifiers.
 	create(width, height int, format uint32, modifiers []uint64) (imageBuffer, error)
