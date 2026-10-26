@@ -14,6 +14,7 @@ type osd struct {
 	key           osdKey
 	shown, pinned bool
 	window        WindowID
+	watched       WindowID // last WatchStats sent; window can be cleared by unmap
 	stats         ports.WindowStats
 	seq           uint64
 	panel         *ports.PanelContent
@@ -62,13 +63,13 @@ func (c *Core) osdWatch(ctx context.Context, focus WindowID) error {
 	if !c.osd.shown {
 		focus = 0
 	}
-	if focus == c.osd.window && (!c.osd.shown || c.osd.panel != nil) {
+	if focus == c.osd.window && focus == c.osd.watched && (!c.osd.shown || c.osd.panel != nil) {
 		return nil
 	}
 	if err := c.command(ctx, ports.WatchStats{Window: focus}); err != nil {
 		return err
 	}
-	c.osd.window = focus
+	c.osd.window, c.osd.watched = focus, focus
 	c.osd.stats = ports.WindowStats{}
 	c.osd.panel = &ports.PanelContent{Lines: [4]string{c.windows.lookup(focus).client.AppID, "waiting for frames..."}}
 	c.osd.seq++
