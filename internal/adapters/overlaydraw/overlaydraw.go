@@ -1,7 +1,7 @@
-// Package hintlabel rasterizes the keyboard hint labels on the CPU: a small
-// box with the label text in Go Mono, as premultiplied BGRA pixels for the
-// renderer to upload and draw.
-package hintlabel
+// Package overlaydraw rasterizes compositor overlays (such as keyboard hint
+// labels) on the CPU as premultiplied BGRA pixels for the renderer to upload
+// and draw.
+package overlaydraw
 
 import (
 	"image"

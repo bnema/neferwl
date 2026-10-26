@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/bnema/neferwl/internal/adapters/hdrcursor"
-	"github.com/bnema/neferwl/internal/adapters/hintlabel"
+	"github.com/bnema/neferwl/internal/adapters/overlaydraw"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 
@@ -74,7 +74,7 @@ type Renderer struct {
 	shm    map[shmKey]*shmSurface
 	copied int
 	// labels rasterizes the hint labels (hint_labels.go); the zero value works.
-	labels hintlabel.Raster
+	labels overlaydraw.Raster
 	// shmRects is scratch for shmCopyFor.
 	shmRects []image.Rectangle
 	// marks date the frames for Trim's wall-clock eviction (trim.go).

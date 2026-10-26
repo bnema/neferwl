@@ -6,7 +6,7 @@ import (
 	"runtime/debug"
 	"unsafe"
 
-	"github.com/bnema/neferwl/internal/adapters/hintlabel"
+	"github.com/bnema/neferwl/internal/adapters/overlaydraw"
 	"github.com/bnema/neferwl/internal/ports"
 	vk "github.com/bnema/purego-vulkan/vulkan"
 	"golang.org/x/sys/unix"
@@ -169,7 +169,7 @@ type shmKey struct {
 	label string
 	typed int
 	scale float64
-	style hintlabel.Style
+	style overlaydraw.Style
 }
 
 // shmState is what a GPU buffer holds: a w×h client buffer at a content

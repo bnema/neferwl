@@ -4,12 +4,12 @@ import (
 	"image"
 	"math"
 
-	"github.com/bnema/neferwl/internal/adapters/hintlabel"
+	"github.com/bnema/neferwl/internal/adapters/overlaydraw"
 )
 
 // hintLabels draws the keyboard hint labels (ports.Scene.HintLabels) over
 // everything, after the capture indicators. Each label is rasterized on the CPU
-// (hintlabel) at the scene's scale and drawn from the SHM copy path: the GPU
+// (overlaydraw) at the scene's scale and drawn from the SHM copy path: the GPU
 // buffer is cached under a key naming the label, so a label that stays the
 // same uploads once. Captures are rendered from scenes without labels.
 func (w *sceneWalk) hintLabels() {
@@ -18,8 +18,8 @@ func (w *sceneWalk) hintLabels() {
 	}
 	r := w.r
 	hs := w.s.HintStyle
-	bg, fg := hintlabel.Colors(w.s.Border.Active, hs.Background, hs.Foreground)
-	style := hintlabel.Style{FontPx: hintlabel.FontPixels(hs.Width, hs.Height, hs.PhysicalW, hs.PhysicalH, w.scale, hs.Size), Background: bg, Foreground: fg}
+	bg, fg := overlaydraw.Colors(w.s.Border.Active, hs.Background, hs.Foreground)
+	style := overlaydraw.Style{FontPx: overlaydraw.FontPixels(hs.Width, hs.Height, hs.PhysicalW, hs.PhysicalH, w.scale, hs.Size), Background: bg, Foreground: fg}
 	for _, l := range w.s.HintLabels {
 		pix, lw, lh := r.labels.Label(l.Text, l.Typed, w.scale, style)
 		if lw <= 0 || lh <= 0 {

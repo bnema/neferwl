@@ -1,4 +1,4 @@
-package hintlabel
+package overlaydraw
 
 import (
 	"testing"
