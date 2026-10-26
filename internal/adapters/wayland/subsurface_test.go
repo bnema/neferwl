@@ -41,7 +41,7 @@ func TestSubsurfaceAcquireCapturesChildAtRequest(t *testing.T) {
 		t.Fatalf("child published before parent's acquire: %+v", got.Children)
 	}
 	h.fire(1)
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case got := <-h.contents:
@@ -87,13 +87,13 @@ func TestSubsurfaceDesyncQueuedOrderAndUnmap(t *testing.T) {
 	select {
 	case got := <-contents:
 		t.Fatalf("cached commit published: %+v", got)
-	case <-time.After(40 * time.Millisecond):
+	case <-waylandDeadline(40 * time.Millisecond):
 	}
 	requestProtocol(t, c, sub, wayland.SubsurfaceRequestSetDesync)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case got := <-contents:
@@ -148,7 +148,7 @@ func TestSubsurfaceCachedViewportAndScale(t *testing.T) {
 		if got.ID != w.ID || len(got.Children) != 1 || got.Children[0].LogicalW != 3 || got.Children[0].LogicalH != 4 || got.Children[0].Source != ([4]float32{0, 0, 1, 1}) {
 			t.Fatalf("cached viewport: %+v", got)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no cached content")
 	}
 }
@@ -182,7 +182,7 @@ func TestSubsurfaceSupersededBufferReleased(t *testing.T) {
 	}
 	select {
 	case <-p.released:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("superseded unpublished buffer held for output")
 	}
 }
@@ -213,13 +213,13 @@ func TestSubsurfaceBoundUpdateStaysBound(t *testing.T) {
 		if len(got.Children) != 1 {
 			t.Fatalf("captured update not applied: %+v", got)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("missing parent graph")
 	}
 	select {
 	case got := <-contents:
 		t.Fatalf("bound update replayed: %+v", got)
-	case <-time.After(40 * time.Millisecond):
+	case <-waylandDeadline(40 * time.Millisecond):
 	}
 }
 
@@ -247,7 +247,7 @@ func TestSubsurfaceParentDestroyDropsCapturedChild(t *testing.T) {
 	// before destroying the parent, so the check below sees only later output.
 	select {
 	case <-contents:
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("parent commit did not publish")
 	}
 	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, shmBuffer(t, c), int32(0), int32(0))
@@ -265,7 +265,7 @@ func TestSubsurfaceParentDestroyDropsCapturedChild(t *testing.T) {
 		if len(got.Children) != 0 {
 			t.Fatalf("destroyed parent published child: %+v", got)
 		}
-	case <-time.After(40 * time.Millisecond):
+	case <-waylandDeadline(40 * time.Millisecond):
 	}
 }
 
@@ -292,7 +292,7 @@ func TestSubsurfaceDestroyQueuedChild(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case got := <-contents:
@@ -342,7 +342,7 @@ func TestSubsurfaceDestroyedQueuedBufferKeepsCrop(t *testing.T) {
 	requestProtocol(t, c, wide, wayland.BufferRequestDestroy)
 	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
 	roundtrip(t, c)
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case got := <-contents:
@@ -385,7 +385,7 @@ func TestSubsurfaceInitialSyncAndDeferredLayout(t *testing.T) {
 	select {
 	case got := <-contents:
 		t.Fatalf("child/layout published before parent commit: %+v", got)
-	case <-time.After(40 * time.Millisecond):
+	case <-waylandDeadline(40 * time.Millisecond):
 	}
 	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
 	if err := c.Roundtrip(); err != nil {
@@ -396,13 +396,13 @@ func TestSubsurfaceInitialSyncAndDeferredLayout(t *testing.T) {
 		if got.ID != rootWindow.ID || len(got.Children) != 1 || got.Children[0].X != 4 || got.Children[0].Y != 5 || !got.Children[0].Below {
 			t.Fatalf("parent publication: %+v", got)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no parent publication")
 	}
 	select {
 	case got := <-contents:
 		t.Fatalf("extra publication: %+v", got)
-	case <-time.After(40 * time.Millisecond):
+	case <-waylandDeadline(40 * time.Millisecond):
 	}
 }
 
@@ -437,13 +437,13 @@ func TestSubsurfaceDesyncFlushesOnlyEffectiveTransition(t *testing.T) {
 		if len(got.Children) != 0 {
 			t.Fatalf("ineffective desync published: %+v", got.Children)
 		}
-	case <-time.After(40 * time.Millisecond):
+	case <-waylandDeadline(40 * time.Millisecond):
 	}
 	requestProtocol(t, c, parentSub, wayland.SubsurfaceRequestSetDesync)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case got := <-contents:
@@ -509,7 +509,7 @@ func TestSubsurfaceContent(t *testing.T) {
 	select {
 	case serial := <-serials:
 		requestProtocol(t, c, xdg, xdgshell.SurfaceRequestAckConfigure, serial)
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("configure timeout")
 	}
 	// Child first: nothing to draw until the root maps.
@@ -524,7 +524,7 @@ func TestSubsurfaceContent(t *testing.T) {
 	}
 	w := mapped(t, events, 2*time.Second)
 	var got ports.SurfaceContent
-	deadline := time.After(2 * time.Second)
+	deadline := waylandDeadline(2 * time.Second)
 	for got.ID == 0 {
 		select {
 		case got = <-contents:
@@ -543,7 +543,7 @@ func TestSubsurfaceContent(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	deadline = time.After(2 * time.Second)
+	deadline = waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case got = <-contents:
@@ -633,7 +633,7 @@ func TestSubsurfaceGraphSupersededFeedback(t *testing.T) {
 		if !ev.discarded {
 			t.Fatalf("superseded content presented: %+v", ev)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("superseded feedback not discarded")
 	}
 }
@@ -680,7 +680,7 @@ func TestSubsurfaceNoopRootCommitDoesNotPublish(t *testing.T) {
 	select {
 	case got := <-contents:
 		t.Fatalf("no-op published: %+v", got)
-	case <-time.After(80 * time.Millisecond):
+	case <-waylandDeadline(80 * time.Millisecond):
 	}
 	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, shmBuffer(t, c), int32(0), int32(0))
 	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
@@ -691,7 +691,7 @@ func TestSubsurfaceNoopRootCommitDoesNotPublish(t *testing.T) {
 		if len(got.Children) != 1 {
 			t.Fatalf("child change not published: %+v", got)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("child change did not publish")
 	}
 }
