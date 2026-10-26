@@ -32,3 +32,24 @@ func TestLocalRenderDeviceRetriesAfterFailure(t *testing.T) {
 	l.close()
 	l.close()
 }
+
+func TestLocalRenderDeviceReopensAfterClose(t *testing.T) {
+	info := ports.GPUInfo{Path: "card1"}
+	opener := portsmocks.NewMockRenderDeviceOpener(t)
+	first := portsmocks.NewMockRenderDevice(t)
+	next := portsmocks.NewMockRenderDevice(t)
+	opener.EXPECT().Open(info).Return(first, nil).Once()
+	opener.EXPECT().Open(info).Return(next, nil).Once()
+	first.EXPECT().Close().Once()
+	next.EXPECT().Close().Once()
+	l := &localRenderDevice{open: func() (ports.RenderDevice, error) { return opener.Open(info) }}
+	if got, err := l.get(); err != nil || got != first {
+		t.Fatalf("initial: %v %v", got, err)
+	}
+	l.close() // The owner joins every user before invalidating the cache.
+	l.close()
+	if got, err := l.get(); err != nil || got != next {
+		t.Fatalf("reopen: %v %v", got, err)
+	}
+	l.close()
+}

@@ -37,7 +37,7 @@ A DRM output flips between two images the renderer draws into, with no CPU copy.
 - **Ownership:** one Vulkan instance serves the process. Each GPU is one `VkDevice` and a queue pool, shared by the renderers on it. A mutex guards only `vkQueueSubmit` on shared queues. Each output has its own renderer, and each DRM card has its own GBM allocator.
 - **Selection:** `core.SelectGPUs` applies `drm.devices`, `drm.ignore` and the render GPU order of [Configuration](../config.md#gpus). It opens nothing.
 - **Cross-GPU output:** an output on a card other than the render card either scans out the render GPU's LINEAR image directly (the card allocates it, the render GPU renders into it), or, in `gpu-copy`, gets a 1:1 blit from the render image into a scanout image on its own GPU, ordered with sync_file fences. `render.multi-gpu` picks `auto` (direct, then gpu-copy), `direct` or `off`. There is no CPU copy.
-- **Device lost:** the render device is reopened at most 3 times per 60 s, then the session exits. A lost local copy device stops only its outputs.
+- **Device lost:** the render device is reopened at most 3 times per 60 s, then the session exits. A lost local copy device stops only its card's outputs; the next connector scan opens a new one.
 - **Hotplug:** removing the render card ends the session with an error, so a supervisor can restart it. Other cards are added and removed at runtime; added cards follow `drm.devices` and `drm.ignore`. dmabuf feedback is computed at startup, and its scanout tranches only offer formats the renderer can sample.
 
 ### Cursor images

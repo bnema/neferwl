@@ -84,7 +84,8 @@ const (
 // Invariant: wayland.New is the last fallible step. *wayland.Server has no
 // Close: its sockets are released only by Server.Run. Every later step
 // (statefile.Path, openXwayland, launcher.New, newCursors) degrades with a
-// warning or nil instead of failing. A failure releases the DRM backend, keymap and Vulkan resources (abort).
+// warning or nil instead of failing. A failure releases the DRM backend,
+// keymap and Vulkan resources (abort).
 func assembleSession(ctx context.Context, opts Options) (s *session, err error) {
 	s = &session{opts: opts, log: logging.For(ctx, "app"), clock: clock.System{}, security: &sessionsecurity.Gate{}}
 	defer func() {
@@ -199,15 +200,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 // backend and the keymap. It runs only when assembly fails, before
 // anything else is owned.
 func (s *session) abort() {
-	if s.hw != nil {
-		s.hw.close()
-	}
-	if s.hw == nil && s.gpu != nil {
-		s.gpu.Close()
-	}
-	if s.inst != nil {
-		s.inst.Close()
-	}
+	s.releaseRender()
 	if s.km != nil {
 		s.km.Close()
 	}
@@ -221,6 +214,11 @@ func (s *session) close() {
 	if s.xdisplay != nil {
 		s.xdisplay.Close()
 	}
+	s.releaseRender()
+}
+
+// releaseRender releases the backend/device before its Vulkan instance.
+func (s *session) releaseRender() {
 	if s.hw != nil {
 		s.hw.close()
 	}

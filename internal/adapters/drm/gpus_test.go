@@ -85,11 +85,3 @@ func TestListGPUsClassError(t *testing.T) {
 		t.Fatal("missing class directory: expected error")
 	}
 }
-
-func TestListGPUsRealSys(t *testing.T) {
-	if _, err := os.Stat("/sys/class/drm"); os.IsNotExist(err) {
-		t.Skip("/sys/class/drm absent")
-	}
-	gpus, err := ListGPUs("/sys", "/dev")
-	t.Logf("ListGPUs(/sys, /dev): GPUs=%+v error=%v", gpus, err)
-}

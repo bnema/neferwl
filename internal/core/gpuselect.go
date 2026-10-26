@@ -1,12 +1,16 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
+
+// ErrNoRenderGPU means selection has no render-capable DRM device.
+var ErrNoRenderGPU = errors.New("no render-capable DRM device")
 
 // GPUSelectConfig selects startup DRM cards using resolved paths or PCI addresses.
 type GPUSelectConfig struct {
@@ -104,7 +108,7 @@ func SelectGPUs(c []ports.GPUInfo, cfg GPUSelectConfig) (ports.GPUSelection, err
 		}
 	}
 	if render < 0 {
-		return ports.GPUSelection{}, fmt.Errorf("no render-capable DRM device")
+		return ports.GPUSelection{}, ErrNoRenderGPU
 	}
 	out.Render = render
 	g := c[render]
