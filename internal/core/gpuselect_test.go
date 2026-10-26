@@ -105,3 +105,24 @@ func TestSelectGPUs(t *testing.T) {
 		})
 	}
 }
+
+func TestSelectGPUsPCIDomains(t *testing.T) {
+	c := []ports.GPUInfo{{PCI: "0001:03:00.0", Render: 1}, {PCI: "0002:03:00.0", Render: 2}, {PCI: "0000:04:00.0", Render: 3}}
+	for _, tc := range []struct {
+		name   string
+		cfg    core.GPUSelectConfig
+		keep   []int
+		render int
+	}{
+		{"render first", core.GPUSelectConfig{Render: "03:00.0"}, []int{0, 1, 2}, 0},
+		{"devices both", core.GPUSelectConfig{Devices: []string{"03:00.0"}}, []int{0, 1}, 0},
+		{"ignore both", core.GPUSelectConfig{Ignore: []string{"03:00.0"}}, []int{2}, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sel, err := core.SelectGPUs(c, tc.cfg)
+			if err != nil || !slices.Equal(sel.Keep, tc.keep) || sel.Render != tc.render {
+				t.Fatalf("%+v %v", sel, err)
+			}
+		})
+	}
+}

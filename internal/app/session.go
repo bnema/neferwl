@@ -110,28 +110,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 		s.gpu = s.hw.render
 	} else {
 		cands, listErr := drm.ListGPUs("/sys", "/dev")
-		if listErr != nil {
-			return s, listErr
-		}
-		config, configErr := gpuSelectConfig(opts.Config, os.Getenv("NEFERWL_RENDER_DEVICE"))
-		if configErr != nil {
-			return s, configErr
-		}
-		drmLog := logging.For(ctx, "drm")
-		var info ports.GPUInfo
-		if len(cands) > 0 {
-			sel, selectErr := core.SelectGPUs(cands, config)
-			if selectErr != nil {
-				return s, selectErr
-			}
-			for _, reason := range sel.Reasons {
-				drmLog.Info().Msg(reason)
-			}
-			info = cands[sel.Render]
-		} else {
-			drmLog.Info().Msg("render GPU: first usable Vulkan device (no DRM cards)")
-		}
-		s.gpu, err = s.inst.Open(info)
+		s.gpu, err = openHeadlessRender(s.inst, cands, listErr, opts.Config, os.Getenv("NEFERWL_RENDER_DEVICE"), logging.For(ctx, "drm"))
 		if err != nil {
 			return s, err
 		}

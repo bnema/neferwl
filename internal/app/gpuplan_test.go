@@ -1,6 +1,10 @@
 package app
 
 import (
+	"errors"
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
+	"github.com/bnema/zerowrap"
+	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -111,5 +115,69 @@ func TestGPUSelectionErrorBeforePlan(t *testing.T) {
 	plans, _, err := selectGPUPlans([]ports.GPUInfo{{Path: "card0", Render: 1}}, cfg, "")
 	if err == nil || !strings.Contains(err.Error(), `unknown DRM device "unknown-device"`) || plans != nil {
 		t.Fatalf("%v %v", plans, err)
+	}
+}
+
+func TestOpenHeadlessRenderDiscovery(t *testing.T) {
+	first := ports.GPUInfo{Path: "card0", Render: 1, PCI: "0001:03:00.0"}
+	second := ports.GPUInfo{Path: "card1", Render: 2}
+	boom := errors.New("unavailable")
+	for _, name := range []string{"list error", "empty", "no render", "open failure", "second success", "constrained empty", "constrained list", "constrained open"} {
+		t.Run(name, func(t *testing.T) {
+			opener := portsmocks.NewMockRenderDeviceOpener(t)
+			dev := portsmocks.NewMockRenderDevice(t)
+			cfg := ports.Config{}
+			var c []ports.GPUInfo
+			var listErr error
+			fail := strings.HasPrefix(name, "constrained")
+			switch name {
+			case "list error":
+				listErr = boom
+			case "no render":
+				c = []ports.GPUInfo{{Path: "card0"}}
+			case "open failure":
+				c = []ports.GPUInfo{first}
+				opener.EXPECT().Open(first).Return(nil, boom).Once()
+			case "second success":
+				c = []ports.GPUInfo{first, second}
+				opener.EXPECT().Open(first).Return(nil, boom).Once()
+				opener.EXPECT().Open(second).Return(dev, nil).Once()
+			case "constrained empty":
+				cfg.Render.Device = "nope"
+			case "constrained list":
+				cfg.Render.Device = "nope"
+				listErr = boom
+			case "constrained open":
+				cfg.Render.Device = first.PCI
+				c = []ports.GPUInfo{first}
+				opener.EXPECT().Open(first).Return(nil, boom).Once()
+			}
+			if !fail && name != "second success" {
+				opener.EXPECT().Open(ports.GPUInfo{}).Return(dev, nil).Once()
+			}
+			got, err := openHeadlessRender(opener, c, listErr, cfg, "", zerowrap.Logger{})
+			if fail {
+				if err == nil {
+					t.Fatal("constraint discarded")
+				}
+			} else if err != nil || got != dev {
+				t.Fatalf("%v %v", got, err)
+			}
+		})
+	}
+}
+
+func TestOpenHeadlessRenderNodeOnly(t *testing.T) {
+	path := "/dev/dri/renderD129"
+	var st unix.Stat_t
+	if err := unix.Stat(path, &st); err != nil {
+		t.Skipf("render node unavailable: %v", err)
+	}
+	opener := portsmocks.NewMockRenderDeviceOpener(t)
+	dev := portsmocks.NewMockRenderDevice(t)
+	opener.EXPECT().Open(ports.GPUInfo{Render: st.Rdev}).Return(dev, nil).Once()
+	got, err := openHeadlessRender(opener, nil, nil, ports.Config{}, path, zerowrap.Logger{})
+	if err != nil || got != dev {
+		t.Fatalf("%v %v", got, err)
 	}
 }

@@ -121,5 +121,11 @@ func matchesGPU(g ports.GPUInfo, id string) bool {
 		minor := (g.Render & 0xff) | ((g.Render >> 12) & 0xffffff00)
 		return g.Render != 0 && id == fmt.Sprintf("/dev/dri/renderD%d", minor)
 	}
-	return g.PCI != "" && (strings.EqualFold(id, g.PCI) || strings.EqualFold(id, strings.TrimPrefix(g.PCI, "0000:")))
+	short := g.PCI
+	if len(short) > 5 && short[4] == ':' {
+		short = short[5:]
+	}
+	// A short address can match several domains: lists select all matches,
+	// while explicit render selection uses the first candidate.
+	return g.PCI != "" && (strings.EqualFold(id, g.PCI) || strings.EqualFold(id, short))
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/bnema/zerowrap"
+	"golang.org/x/sys/unix"
 	"path/filepath"
 	"strings"
 
@@ -117,4 +118,56 @@ func openPlannedRender(opener ports.RenderDeviceOpener, plans []cardPlan, strict
 		errs = append(errs, errors.New("no render-capable DRM card"))
 	}
 	return nil, ports.GPUInfo{}, errors.Join(errs...)
+}
+
+// openHeadlessRender tolerates missing DRM discovery only without constraints.
+func openHeadlessRender(opener ports.RenderDeviceOpener, cands []ports.GPUInfo, listErr error, cfg ports.Config, env string, log zerowrap.Logger) (ports.RenderDevice, error) {
+	constrained := len(cfg.DRM.Devices) > 0 || len(cfg.DRM.Ignore) > 0 || cfg.Render.Device != "" || env != ""
+	fallback := func(reason error) (ports.RenderDevice, error) {
+		log.Info().Err(reason).Msg("render GPU: first usable Vulkan device (headless discovery fallback)")
+		return opener.Open(ports.GPUInfo{})
+	}
+	config, err := gpuSelectConfig(cfg, env)
+	if err != nil {
+		return nil, err
+	}
+	// Explicit render nodes can exist without a card/sysfs mount in containers.
+	if strings.HasPrefix(config.Render, "/dev/dri/renderD") && len(cfg.DRM.Devices) == 0 && len(cfg.DRM.Ignore) == 0 {
+		matched := false
+		for _, c := range cands {
+			if config.Render == fmt.Sprintf("/dev/dri/renderD%d", unix.Minor(c.Render)) && c.Render != 0 {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			var st unix.Stat_t
+			if err := unix.Stat(config.Render, &st); err != nil {
+				return nil, fmt.Errorf("DRM device %q: %w", config.Render, err)
+			}
+			log.Info().Str("render", config.Render).Msg("render GPU: explicit render node without DRM card")
+			return opener.Open(ports.GPUInfo{Render: st.Rdev})
+		}
+	}
+	if listErr != nil {
+		if constrained {
+			return nil, listErr
+		}
+		return fallback(listErr)
+	}
+	sel, err := core.SelectGPUs(cands, config)
+	if err != nil {
+		if !constrained && strings.Contains(err.Error(), "no render-capable") {
+			return fallback(err)
+		}
+		return nil, err
+	}
+	for _, reason := range sel.Reasons {
+		log.Info().Msg(reason)
+	}
+	dev, _, err := openPlannedRender(opener, planCards(cands, sel), config.Render != "", log)
+	if err != nil && !constrained {
+		return fallback(err)
+	}
+	return dev, err
 }
