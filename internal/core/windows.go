@@ -73,6 +73,13 @@ func (r *windowRegistry) setAppID(id WindowID, appID string) {
 	}
 }
 
+// setContentType updates the content hint of a mapped window only.
+func (r *windowRegistry) setContentType(id WindowID, kind ports.ContentType) {
+	if rec := r.records[id]; rec != nil && rec.client.ID != 0 {
+		rec.client.ContentType = kind
+	}
+}
+
 func (r *windowRegistry) setRegion(v ports.InputRegionChanged) { r.at(v.ID).region = &v }
 
 func (r *windowRegistry) setInhibitShortcuts(id WindowID, on bool) {

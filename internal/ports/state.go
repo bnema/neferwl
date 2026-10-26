@@ -67,6 +67,8 @@ type WindowState struct {
 	// Sandbox is the client's security context app id, else its engine,
 	// "" when not sandboxed.
 	Sandbox string `json:",omitempty"`
+	// ContentType is "photo", "video", "game", or "" without a hint.
+	ContentType string `json:",omitempty"`
 	// IdleInhibit is set while the window keeps the session from idling.
 	IdleInhibit bool `json:",omitempty"`
 	// ShortcutsInhibited is set while the window asks to receive compositor shortcuts (keyboard_shortcuts_inhibit); core grants it only while it has keyboard focus.

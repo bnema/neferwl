@@ -14,6 +14,8 @@ type WindowMapped struct {
 	// Sandbox is the wp_security_context_v1 app id of the client, else
 	// its engine, "" when not sandboxed.
 	Sandbox string
+	// ContentType is the root surface's committed content hint at map time.
+	ContentType ContentType
 	// Floating windows are dialogs (a parent) or fixed-size windows such
 	// as splash screens: core shows them over the columns at their own
 	// size, Width×Height logical (0 when unknown).
@@ -126,6 +128,14 @@ type WindowAppID struct {
 }
 
 func (WindowAppID) clientEvent() {}
+
+// WindowContentType carries wayland → core a content hint changed after map.
+type WindowContentType struct {
+	ID   WindowID
+	Type ContentType
+}
+
+func (WindowContentType) clientEvent() {}
 
 // WindowParent carries the new parent of a mapped dialog (0: none), after
 // set_parent or an xdg-foreign import changed or ended the relationship.

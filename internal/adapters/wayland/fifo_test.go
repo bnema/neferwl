@@ -5,8 +5,10 @@ import (
 	"time"
 
 	"github.com/bnema/go-wayland-bindings/server/committiming"
+	"github.com/bnema/go-wayland-bindings/server/contenttype"
 	"github.com/bnema/go-wayland-bindings/server/fifo"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
@@ -232,6 +234,93 @@ func TestFifoQueuedBufferDestroyed(t *testing.T) {
 		default:
 			return
 		}
+	}
+}
+
+// Content hints set before mapping survive, and later committed changes
+// produce exactly one event; repeating the same hint produces none.
+func TestWindowContentType(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		kind uint32
+		want ports.ContentType
+	}{
+		{"photo", uint32(contenttype.WpContentTypeV1TypePhoto), ports.ContentPhoto},
+		{"video", uint32(contenttype.WpContentTypeV1TypeVideo), ports.ContentVideo},
+		{"game", uint32(contenttype.WpContentTypeV1TypeGame), ports.ContentGame},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, events, _, _, dir := contentServer(t)
+			c := protocolClient(t, s, dir)
+			comp := bindProtocol(t, c, "wl_compositor")
+			wm := bindProtocol(t, c, "xdg_wm_base")
+			manager := bindProtocol(t, c, "wp_content_type_manager_v1")
+			buf := shmBuffer(t, c)
+			surf := c.AllocateID()
+			requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
+			registerProtocol(t, c, surf)
+			hint := c.AllocateID()
+			requestProtocol(t, c, manager, contenttype.WpContentTypeManagerV1RequestGetSurfaceContentType, hint, surf)
+			requestProtocol(t, c, hint, contenttype.WpContentTypeV1RequestSetContentType, tc.kind)
+			requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+			if err := c.Roundtrip(); err != nil {
+				t.Fatal(err)
+			}
+			xdg, top := c.AllocateID(), c.AllocateID()
+			requestProtocol(t, c, wm, xdgshell.WmBaseRequestGetXdgSurface, xdg, surf)
+			serials := make(chan uint32, 4)
+			xp := &configureProxy{serial: serials}
+			xp.SetID(xdg)
+			registerWireProxy(c, xp)
+			registerProtocol(t, c, top)
+			requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetToplevel, top)
+			requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+			ackAndAttach(t, c, surf, xdg, buf, serials)
+			w := mapped(t, events, 2*time.Second)
+			if w.ContentType != tc.want {
+				t.Fatalf("map hint = %v, want %v", w.ContentType, tc.want)
+			}
+			// An ordered marker traverses the event relay after all prior commits.
+			check := func(want []ports.WindowContentType) {
+				t.Helper()
+				marker := ports.WindowAppID{ID: w.ID, AppID: "barrier"}
+				if !s.display.Do(func() { s.emit(marker) }) {
+					t.Fatal("display stopped")
+				}
+				var got []ports.WindowContentType
+				for {
+					ev := waitEvent(t, events, 2*time.Second)
+					if ev == marker {
+						break
+					}
+					if v, ok := ev.(ports.WindowContentType); ok {
+						got = append(got, v)
+					}
+				}
+				if len(got) != len(want) {
+					t.Fatalf("events = %v, want %v", got, want)
+				}
+				for i := range got {
+					if got[i] != want[i] {
+						t.Fatalf("events = %v, want %v", got, want)
+					}
+				}
+			}
+			check(nil)
+			for _, kind := range []uint32{uint32(contenttype.WpContentTypeV1TypeNone), tc.kind, tc.kind} {
+				requestProtocol(t, c, hint, contenttype.WpContentTypeV1RequestSetContentType, kind)
+				requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+				if err := c.Roundtrip(); err != nil {
+					t.Fatal(err)
+				}
+				var want []ports.WindowContentType
+				if kind != tc.kind || w.ContentType == ports.ContentNone {
+					want = []ports.WindowContentType{{ID: w.ID, Type: windowContentType(kind)}}
+				}
+				check(want)
+				w.ContentType = windowContentType(kind)
+			}
+		})
 	}
 }
 

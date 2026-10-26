@@ -61,6 +61,10 @@ func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, 
 		c.windows.setIdleInhibit(v.Window, v.Active)
 		c.publishState()
 		return false, false
+	case ports.WindowContentType:
+		c.windows.setContentType(v.ID, v.Type)
+		c.publishState()
+		return false, false
 	case ports.WindowAppID:
 		c.windows.setAppID(v.ID, v.AppID)
 	case ports.WindowParent:

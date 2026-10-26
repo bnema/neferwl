@@ -14,6 +14,7 @@ import (
 	client_colormanagement "github.com/bnema/go-wayland-bindings/client/colormanagement"
 	client_colorrepresentation "github.com/bnema/go-wayland-bindings/client/colorrepresentation"
 	client_committiming "github.com/bnema/go-wayland-bindings/client/committiming"
+	client_contenttype "github.com/bnema/go-wayland-bindings/client/contenttype"
 	client_cursorshape "github.com/bnema/go-wayland-bindings/client/cursorshape"
 	client_drmlease "github.com/bnema/go-wayland-bindings/client/drmlease"
 	client_datacontrol "github.com/bnema/go-wayland-bindings/client/extdatacontrol"
@@ -53,6 +54,7 @@ import (
 	wire_colormanagement "github.com/bnema/go-wayland-bindings/server/colormanagement"
 	wire_colorrepresentation "github.com/bnema/go-wayland-bindings/server/colorrepresentation"
 	wire_committiming "github.com/bnema/go-wayland-bindings/server/committiming"
+	wire_contenttype "github.com/bnema/go-wayland-bindings/server/contenttype"
 	wire_cursorshape "github.com/bnema/go-wayland-bindings/server/cursorshape"
 	wire_drmlease "github.com/bnema/go-wayland-bindings/server/drmlease"
 	wire_extdatacontrol "github.com/bnema/go-wayland-bindings/server/extdatacontrol"
@@ -207,6 +209,8 @@ var wireSchemas = map[string]wireSchema{
 	"zxdg_imported_v2":                                     {wire_xdgforeign.ZxdgImportedV2Interface, nil, map[uint16]bool{0: true}, nil},
 	"xdg_popup":                                            {wire_xdgshell.PopupInterface, &client_xdgshell.XdgPopup{}, map[uint16]bool{0: true}, nil},
 	"xdg_positioner":                                       {wire_xdgshell.PositionerInterface, &client_xdgshell.XdgPositioner{}, map[uint16]bool{0: true}, nil},
+	"wp_content_type_manager_v1":                           {wire_contenttype.WpContentTypeManagerV1Interface, &client_contenttype.WpContentTypeManager{}, map[uint16]bool{0: true}, nil},
+	"wp_content_type_v1":                                   {wire_contenttype.WpContentTypeV1Interface, &client_contenttype.WpContentType{}, map[uint16]bool{0: true}, nil},
 	"xdg_surface":                                          {wire_xdgshell.SurfaceInterface, &client_xdgshell.XdgSurface{}, map[uint16]bool{0: true}, nil},
 	"xdg_toplevel":                                         {wire_xdgshell.ToplevelInterface, &client_xdgshell.XdgToplevel{}, map[uint16]bool{0: true}, nil},
 	"xdg_wm_base":                                          {wire_xdgshell.WmBaseInterface, &client_xdgshell.XdgWmBase{}, map[uint16]bool{0: true}, nil},

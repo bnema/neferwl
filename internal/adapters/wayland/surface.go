@@ -436,6 +436,9 @@ func (s *surface) applyCommit(u *update) {
 	}
 	if s.contentKind != u.kind {
 		s.contentKind = u.kind
+		if id := s.windowID(); s.root() == s && id != 0 {
+			s.server.emit(ports.WindowContentType{ID: id, Type: windowContentType(s.contentKind)})
+		}
 		s.server.log.Info().Uint64("id", uint64(s.root().windowID())).Uint32("content_type", s.contentKind).Msg("content type")
 	}
 	if u.scale > 0 {

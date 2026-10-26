@@ -23,7 +23,7 @@ import (
 //
 // Every commit captures its pending state into an update; the pacer (frames.go)
 // applies queued updates in order when they are ready. Requests arriving after
-// capture stay in live pending state. wp_content_type_v1 is logged only.
+// capture stay in live pending state. wp_content_type_v1 labels window state.
 
 func registerPresentationConstraints(d *server.Display, s *Server) error {
 	if err := fifo.NewWpFifoManagerV1Global(d, 1, func(c server.Client, v, id uint32) {
@@ -152,6 +152,20 @@ func monotonicTime(sec uint64, nsec int64) time.Time {
 }
 
 // content_type_v1
+
+// windowContentType translates the protocol hint into the port's enum.
+func windowContentType(kind uint32) ports.ContentType {
+	switch kind {
+	case uint32(contenttype.WpContentTypeV1TypePhoto):
+		return ports.ContentPhoto
+	case uint32(contenttype.WpContentTypeV1TypeVideo):
+		return ports.ContentVideo
+	case uint32(contenttype.WpContentTypeV1TypeGame):
+		return ports.ContentGame
+	default:
+		return ports.ContentNone
+	}
+}
 
 type contentTypeManager struct{ server *Server }
 

@@ -65,15 +65,15 @@ func TestRunWritesAndRemoves(t *testing.T) {
 
 // Stash and cell fields reach the file with their script-facing names.
 func TestWindowScriptFields(t *testing.T) {
-	got := window(ports.WindowState{ID: 3, Floating: true, Fullscreen: true, StashIndex: 2, StashCount: 4, Column: 5, Row: 6, Hidden: true, IdleInhibit: true, ShortcutsInhibited: true, PointerConstraint: "locked", Sandbox: "org.example.App"}, workspaceid.WithPrefix("0a1b2c3d"))
-	if !got.Floating || !got.Fullscreen || got.StashIndex != 2 || got.StashCount != 4 || got.Column != 5 || got.Row != 6 || !got.Hidden || !got.IdleInhibit || !got.ShortcutsInhibited || got.PointerConstraint != "locked" || got.Sandbox != "org.example.App" {
+	got := window(ports.WindowState{ID: 3, Floating: true, Fullscreen: true, StashIndex: 2, StashCount: 4, Column: 5, Row: 6, Hidden: true, IdleInhibit: true, ShortcutsInhibited: true, PointerConstraint: "locked", Sandbox: "org.example.App", ContentType: "video"}, workspaceid.WithPrefix("0a1b2c3d"))
+	if !got.Floating || !got.Fullscreen || got.StashIndex != 2 || got.StashCount != 4 || got.Column != 5 || got.Row != 6 || !got.Hidden || !got.IdleInhibit || !got.ShortcutsInhibited || got.PointerConstraint != "locked" || got.Sandbox != "org.example.App" || got.ContentType != "video" {
 		t.Fatalf("%+v", got)
 	}
 	data, err := json.Marshal(got)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{`"floating":true`, `"fullscreen":true`, `"stash_index":2`, `"stash_count":4`, `"column":5`, `"row":6`, `"hidden":true`, `"idle_inhibit":true`, `"shortcuts_inhibited":true`, `"pointer_constraint":"locked"`, `"sandbox":"org.example.App"`} {
+	for _, key := range []string{`"floating":true`, `"fullscreen":true`, `"stash_index":2`, `"stash_count":4`, `"column":5`, `"row":6`, `"hidden":true`, `"idle_inhibit":true`, `"shortcuts_inhibited":true`, `"pointer_constraint":"locked"`, `"sandbox":"org.example.App"`, `"content_type":"video"`} {
 		if !strings.Contains(string(data), key) {
 			t.Fatalf("%s missing %s", data, key)
 		}
