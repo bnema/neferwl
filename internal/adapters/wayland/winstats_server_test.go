@@ -43,17 +43,21 @@ func TestWindowStatsRecording(t *testing.T) {
 
 func TestWatchStatsTimer(t *testing.T) {
 	events := make(chan ports.ClientEvent, 16)
-	s, _, timers := idleClockServerWith(t, Channels{Events: events})
-	s.display.Do(func() { s.apply(ports.WatchStats{Window: 7}) })
+	s, dir, timers := idleClockServerWith(t, Channels{Events: events})
+	c := protocolClient(t, s, dir)
+	mapWindow := surfaceMapper(t, c, events)
+	a, _, _ := mapWindow()
+	b, _, _ := mapWindow()
+	s.display.Do(func() { s.apply(ports.WatchStats{Window: a.ID}) })
 	first := nextArmed(t, timers)
 	if first.d != ports.StatsInterval {
 		t.Fatalf("interval %v", first.d)
 	}
-	s.display.Do(func() { s.apply(ports.WatchStats{Window: 7}) })
+	s.display.Do(func() { s.apply(ports.WatchStats{Window: a.ID}) })
 	first.fire()
 	next := nextArmed(t, timers)
 	report := clientEvent[ports.WindowStats](t, events)
-	if report.Window != 7 {
+	if report.Window != a.ID {
 		t.Fatalf("window %d", report.Window)
 	}
 	s.display.Do(func() {
@@ -78,9 +82,9 @@ func TestWatchStatsTimer(t *testing.T) {
 		t.Fatal("unexpected timer")
 	default:
 	}
-	s.display.Do(func() { s.watchStats(8) })
+	s.display.Do(func() { s.watchStats(b.ID) })
 	stale := nextArmed(t, timers)
-	s.display.Do(func() { s.emit(ports.WindowUnmapped{ID: 8}) })
+	s.display.Do(func() { s.emit(ports.WindowUnmapped{ID: b.ID}) })
 	_ = clientEvent[ports.WindowUnmapped](t, events)
 	stale.fire()
 	s.display.Do(func() {
@@ -126,10 +130,13 @@ func TestWatchStatsCommits(t *testing.T) {
 }
 
 func TestWatchStatsFlips(t *testing.T) {
-	s, _, timers := idleClockServerWith(t, Channels{})
+	events := make(chan ports.ClientEvent, 16)
+	s, dir, timers := idleClockServerWith(t, Channels{Events: events})
+	c := protocolClient(t, s, dir)
+	w, _, _ := surfaceMapper(t, c, events)()
 	sink := s.Presentation()
 	push := func(seq uint64, when time.Duration) {
-		sink.Push(ports.OutputPresented{Output: "HEADLESS-1", Flip: &ports.FlipInfo{When: when, Shows: map[ports.WindowID]uint64{9: seq}, ZeroCopy: 9, HardwareClock: true, OverlayReason: "occupied"}})
+		sink.Push(ports.OutputPresented{Output: "HEADLESS-1", Flip: &ports.FlipInfo{When: when, Shows: map[ports.WindowID]uint64{w.ID: seq}, ZeroCopy: w.ID, HardwareClock: true, OverlayReason: "occupied"}})
 		s.display.Do(func() {})
 	}
 	push(1, 0)
@@ -143,7 +150,7 @@ func TestWatchStatsFlips(t *testing.T) {
 		t.Fatal("unwatched timer")
 	default:
 	}
-	s.display.Do(func() { s.watchStats(9) })
+	s.display.Do(func() { s.watchStats(w.ID) })
 	_ = nextArmed(t, timers)
 	push(1, 0)
 	push(2, 10*time.Millisecond)
@@ -156,4 +163,50 @@ func TestWatchStatsFlips(t *testing.T) {
 		}
 		s.watchStats(0)
 	})
+}
+
+// TestWatchStatsMappedIdle seeds facts and rejects stale callbacks when switching windows.
+func TestWatchStatsMappedIdle(t *testing.T) {
+	events := make(chan ports.ClientEvent, 16)
+	s, dir, timers := idleClockServerWith(t, Channels{Events: events})
+	c := protocolClient(t, s, dir)
+	mapWindow := surfaceMapper(t, c, events)
+	a, surf, _ := mapWindow()
+	b, _, _ := mapWindow()
+	s.display.Do(func() { s.watchStats(a.ID) })
+	first := nextArmed(t, timers)
+	first.fire()
+	stale := nextArmed(t, timers)
+	report := clientEvent[ports.WindowStats](t, events)
+	if report.Window != a.ID || report.Width != 1 || report.Height != 1 || report.ClientFPS != 0 {
+		t.Fatalf("idle report %+v", report)
+	}
+	s.display.Do(func() { s.watchStats(b.ID) })
+	current := nextArmed(t, timers)
+	stale.fire()
+	s.display.Do(func() {})
+	select {
+	case ev := <-events:
+		t.Fatalf("stale event %T", ev)
+	default:
+	}
+	current.fire()
+	_ = nextArmed(t, timers)
+	report = clientEvent[ports.WindowStats](t, events)
+	if report.Window != b.ID {
+		t.Fatalf("switched report %+v", report)
+	}
+	s.display.Do(func() { s.watchStats(0) })
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, uint32(0), int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	_ = clientEvent[ports.WindowUnmapped](t, events)
+	s.display.Do(func() { s.watchStats(a.ID); s.watchStats(ports.WindowID(999999)) })
+	select {
+	case <-timers:
+		t.Fatal("unmapped or unknown watch armed a timer")
+	default:
+	}
 }

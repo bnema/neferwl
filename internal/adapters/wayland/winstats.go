@@ -126,6 +126,11 @@ func (w *windowStats) commit(now time.Time, c ports.SurfaceContent, explicitSync
 		w.client.push(uint32(min(now.Sub(w.lastCommit).Microseconds(), int64(^uint32(0)))))
 	}
 	w.lastCommit = now
+	w.bufferFacts(c, explicitSync, tearing)
+}
+
+// bufferFacts refreshes committed buffer facts without recording a frame time.
+func (w *windowStats) bufferFacts(c ports.SurfaceContent, explicitSync, tearing bool) {
 	w.facts.Width, w.facts.Height = c.Width, c.Height
 	w.facts.DMABuf = c.DMABuf != nil
 	w.facts.Format, w.facts.Modifier = 0, 0
@@ -158,6 +163,10 @@ func (w *windowStats) flip(f *ports.FlipInfo) {
 
 // watchStats replaces the watched window and invalidates pending timer callbacks.
 func (s *Server) watchStats(id ports.WindowID) {
+	w := s.windows[id]
+	if w == nil || !w.mapped {
+		id = 0
+	}
 	if id == s.stats.watched {
 		return
 	}
@@ -167,6 +176,8 @@ func (s *Server) watchStats(id ports.WindowID) {
 	gen := s.stats.gen + 1
 	s.stats = windowStats{watched: id, gen: gen}
 	if id != 0 {
+		root := w.xdg.surface
+		s.stats.bufferFacts(root.content, root.hold.acquire != nil, root.async)
 		s.armStats()
 	}
 }
