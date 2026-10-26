@@ -1,5 +1,7 @@
 package core
 
+import "github.com/bnema/neferwl/internal/core/geom"
+
 type borderKind int
 
 const (
@@ -17,12 +19,6 @@ type border struct {
 // borderMinWidth is the minimum logical pixel width for a border resize.
 // The effective minimum also includes 5% of the lane and four border widths.
 const borderMinWidth = 48
-
-func borderZone(a, b, pad int) (int, int) {
-	mid := (a + b) / 2
-	lo, hi := min(a, mid-pad), max(b, mid+pad)
-	return lo, max(hi-lo, 1)
-}
 
 // columnBorders excludes fixed spiral slots, which have no shared resize edge.
 func columnBorders(l layout, v layoutView) bool {
@@ -63,7 +59,7 @@ func (w *Workspace) borderAt(x, y, pad int) (border, bool) {
 		}
 		rows := rowRects(r, w.Columns[i], gap)
 		for j := 0; j+1 < len(rows); j++ {
-			lo, size := borderZone(rows[j].Y+rows[j].H, rows[j+1].Y, pad)
+			lo, size := geom.BorderZone(rows[j].Y+rows[j].H, rows[j+1].Y, pad)
 			b := border{kind: borderRow, col: i, row: j, rect: Rect{X: r.X, Y: lo, W: r.W, H: size}}
 			if contains(b.rect, x, y) {
 				return b, true
@@ -77,7 +73,7 @@ func (w *Workspace) borderAt(x, y, pad int) (border, bool) {
 			continue
 		}
 		top, bottom := max(r.Y, next.Y), min(r.Y+r.H, next.Y+next.H)
-		lo, size := borderZone(r.X+r.W, next.X, pad)
+		lo, size := geom.BorderZone(r.X+r.W, next.X, pad)
 		b := border{kind: borderColumn, col: i, rect: Rect{X: lo, Y: top, W: size, H: max(bottom-top, 0)}}
 		if contains(b.rect, x, y) {
 			return b, true

@@ -278,7 +278,7 @@ func (w *Workspace) appendStash(out []Placement, focusedID, cover WindowID) []Pl
 			// shows what the view moves in, and keeps what it moves out
 			// until it is gone.
 			p.Rect = r
-			p.peeking(w.stashVeil(d))
+			p.Peeking(w.stashVeil(d))
 		default:
 			p.Hidden = true
 		}

@@ -887,7 +887,7 @@ func fan(cards [][]Placement, front, maxBehind, maxBefore int,
 				p.Rect.X += dx
 				p.Rect.Y += dy
 				if p.Peek || peek || dim {
-					p.peeking(1)
+					p.Peeking(1)
 				}
 				p.Focused = p.Focused && !peek && !dim && lit
 			}
@@ -1002,7 +1002,7 @@ func (w *Workspace) pile(dst []Placement, axis layoutAxis, slot Rect, dim bool, 
 		p := Placement{ID: w.Stash[i].ID, Rect: folded, Preview: overviewCardZoom, Card: true}
 		p.Rect.X, p.Rect.Y = p.Rect.X+d*step, p.Rect.Y-d*step
 		if d > 0 || dim {
-			p.peeking(1)
+			p.Peeking(1)
 		}
 		return p
 	}
@@ -1095,7 +1095,7 @@ func carouselSlot(i, at, n int, wraps bool) int {
 func (w *Workspace) unfoldedCard(dst []Placement, i int, r Rect, at int, u Rect) []Placement {
 	p := Placement{ID: w.Stash[i].ID, Rect: r, Preview: overviewCardZoom, Card: true, Focused: i == at}
 	if i != at {
-		p.peeking(1)
+		p.Peeking(1)
 	}
 	if !r.Overlaps(u) {
 		p.Hidden, p.Preview, p.Focused = true, 0, false
@@ -1275,7 +1275,7 @@ func (w *Workspace) previewRowTiles(axis layoutAxis, slot Rect, dim, lit, lanes 
 		tiles[i].Rect = Rect{X: x + x0, Y: y, W: scale(r.X+r.W) - x0, H: scale(ly+r.H) - y0}
 		tiles[i].Preview = z
 		if dim || lane != 0 {
-			tiles[i].peeking(1)
+			tiles[i].Peeking(1)
 		}
 		tiles[i].Focused = tiles[i].Focused && !dim && lit && lane == 0
 		out := false

@@ -3,6 +3,7 @@ package core
 import (
 	"slices"
 
+	"github.com/bnema/neferwl/internal/core/geom"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -100,9 +101,9 @@ func (s *screen) placement() ports.OutputPlacement {
 
 // setScale resizes the logical output; layer placement follows.
 func (s *screen) setScale(v float64) {
-	s.scale = SnapScale(v)
+	s.scale = geom.SnapScale(v)
 	w, h := s.modeSize()
-	s.mon.SetOutput(logical(w, s.scale), logical(h, s.scale))
+	s.mon.SetOutput(geom.Logical(w, s.scale), geom.Logical(h, s.scale))
 	s.arrange()
 }
 
@@ -252,7 +253,7 @@ func (c *Core) configScale(name string) float64 {
 	if o, ok := c.outputConfig(name); ok && o.Scale != 0 {
 		v = o.Scale
 	}
-	return SnapScale(v)
+	return geom.SnapScale(v)
 }
 
 // configTransform is output.<name>.transform, else 0.

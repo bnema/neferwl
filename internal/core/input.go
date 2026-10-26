@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 
+	"github.com/bnema/neferwl/internal/core/geom"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -525,7 +526,7 @@ func (c *Core) scaleBind(ctx context.Context, action Action) error {
 	}
 	sc := c.cur()
 	prev := sc.scale
-	sc.setScale(StepScale(sc.info.Width, sc.info.Height, sc.scale, dir))
+	sc.setScale(geom.StepScale(sc.info.Width, sc.info.Height, sc.scale, dir))
 	c.order()
 	if c.ch.Scales != nil && sc.scale != prev && sc.name() != "" {
 		// Never wait on persistence: a stalled save drops the change.

@@ -1,4 +1,4 @@
-package core
+package geom
 
 import "math"
 
@@ -49,5 +49,5 @@ func SnapScale(s float64) float64 {
 	return math.Round(min(s, 4)*scaleDen) / scaleDen
 }
 
-// logical converts a physical size to logical pixels.
-func logical(v int, scale float64) int { return int(math.Round(float64(v) / scale)) }
+// Logical converts a physical size to logical pixels.
+func Logical(v int, scale float64) int { return int(math.Round(float64(v) / scale)) }
