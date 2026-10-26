@@ -112,7 +112,8 @@ func TestExeOfPidfdDeletedAndExited(t *testing.T) {
 	// line is written by the copied shell itself, so exec has completed.
 	line := make([]byte, len("ready\n"))
 	if _, err := io.ReadFull(stdoutR, line); err != nil || string(line) != "ready\n" {
-		t.Fatalf("child readiness: %q, %v", line, err)
+		// A renamed busybox sh exits without output (unknown applet).
+		t.Skipf("copied sh did not start: %q, %v", line, err)
 	}
 	if _, _, err := ExeOfPidfd(pidfd); !errors.Is(err, ErrExeDeleted) {
 		t.Fatalf("deleted executable not refused: %v", err)
