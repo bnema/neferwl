@@ -202,14 +202,21 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 	}
 	// Protocol focus/capture completion is not completion of asynchronous PNG
 	// writes. Establish both screenshot baselines before engaging protection.
-	until(desktop, "initial screenshots on both outputs", func() bool {
-		for _, name := range []string{"HEADLESS-1", "HEADLESS-2"} {
-			if _, err := os.Stat(filepath.Join(shots, name, "latest.png")); err != nil {
-				return false
+	// The PNGs are written by the app, not announced on the wire: watch each
+	// output directory (created here, the app's MkdirAll is idempotent).
+	for _, name := range []string{"HEADLESS-1", "HEADLESS-2"} {
+		dir := filepath.Join(shots, name)
+		check(os.MkdirAll(dir, 0o755))
+		changed := fileChangesWithin(t, dir, 5*time.Second)
+		for {
+			if _, err := os.Stat(filepath.Join(dir, "latest.png")); err == nil {
+				break
+			}
+			if !changed() {
+				t.Fatalf("missing initial screenshot of %s", name)
 			}
 		}
-		return true
-	})
+	}
 	acquire := func(c *wlturbo.Display) *lockclient.ExtSessionLock {
 		t.Helper()
 		manager := lockclient.NewExtSessionLockManager(c.Context())
