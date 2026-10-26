@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
+	"strings"
 	"sync"
 
 	"github.com/bnema/neferwl/internal/adapters/fdwait"
@@ -14,6 +16,79 @@ import (
 // Hotplug reports connector changes through a udev netlink monitor on the
 // drm subsystem (the kernel sends HOTPLUG=1 on the card). libudev is loaded
 // with purego.
+
+// Hotplug actions reported in HotplugEvent.Action.
+const (
+	HotplugAdd    = "add"
+	HotplugRemove = "remove"
+	HotplugChange = "change"
+)
+
+// HotplugEvent is a DRM uevent the compositor reacts to. Card is the sysname
+// ("card1") of a GPU that was added or removed; it is empty for a connector
+// change (HOTPLUG=1), which only asks for a rescan.
+type HotplugEvent struct {
+	Card   string
+	Action string
+}
+
+// ParseUevent parses a udev uevent payload (NUL-separated KEY=VALUE entries;
+// a leading "action@devpath" header is skipped). ok is false for events the
+// compositor ignores: other subsystems, render nodes, connector devices
+// appearing or disappearing, and card changes that are not connector hotplugs.
+func ParseUevent(payload []byte) (ev HotplugEvent, ok bool) {
+	props := map[string]string{}
+	for _, entry := range strings.Split(string(payload), "\x00") {
+		if key, val, found := strings.Cut(entry, "="); found && key != "" {
+			props[key] = val
+		}
+	}
+	return hotplugFromProps(func(key string) string { return props[key] })
+}
+
+// hotplugFromProps classifies an event from its udev properties, so the
+// libudev watcher (property lookups) and ParseUevent (raw payload) can share one rule set.
+func hotplugFromProps(get func(key string) string) (HotplugEvent, bool) {
+	if get("SUBSYSTEM") != "drm" {
+		return HotplugEvent{}, false
+	}
+	action := get("ACTION")
+	switch action {
+	case HotplugAdd, HotplugRemove, HotplugChange:
+	default:
+		return HotplugEvent{}, false
+	}
+	if action == HotplugChange {
+		if get("HOTPLUG") == "1" {
+			return HotplugEvent{Action: action}, true
+		}
+		return HotplugEvent{}, false
+	}
+	name := get("DEVNAME")
+	if name == "" {
+		name = get("DEVPATH")
+	}
+	name = path.Base(name)
+	if !isCardName(name) {
+		return HotplugEvent{}, false
+	}
+	return HotplugEvent{Card: name, Action: action}, true
+}
+
+// isCardName reports whether name is "card" followed by digits only: render
+// nodes (renderD128) and connectors (card1-DP-2) are not cards.
+func isCardName(name string) bool {
+	digits, found := strings.CutPrefix(name, "card")
+	if !found || digits == "" {
+		return false
+	}
+	for _, r := range digits {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
 
 var (
 	udevOnce sync.Once
