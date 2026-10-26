@@ -351,8 +351,9 @@ func (o *Output) gbmImages(r ports.Renderer, mods []uint64, singlePlane bool) (e
 // and the renderer targets built over them (they would keep the memory
 // alive after the buffers are gone). It is a no-op when there are none.
 func (o *Output) dropImages(r ports.Renderer) {
+	copied := o.transport == transportCopy
 	o.closeCopier()
-	if o.transport == transportCopy {
+	if copied {
 		_, _ = r.ExportTargets(0, nil, false)
 	} else if len(o.images) > 0 {
 		_ = r.ImportTargets(nil)

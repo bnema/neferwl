@@ -221,6 +221,7 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 	presented = err == nil
 	if err != nil {
 		// The GPU may still read client buffers for this frame.
+		o.settleCopy(done)
 		o.holdRead(done)
 	}
 	if done != nil {

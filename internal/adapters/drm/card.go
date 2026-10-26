@@ -32,12 +32,15 @@ type Card struct {
 	renderLog zerowrap.Logger
 	crtcs     []uint32
 	// outputs by connector name; owned by the goroutine that calls Scan.
-	outputs  map[string]*Output
-	leasable map[string]connector
-	leases   map[uint32]leaseRecord
-	finished []uint32
-	flips    map[uint32]chan flipEvent // by CRTC; set before the reader starts
-	k        kms
+	outputs map[string]*Output
+	// offWarned: connectors whose multi-GPU off warning was logged; owned
+	// by the goroutine that calls Scan (app's DRM backend loop).
+	offWarned map[string]bool
+	leasable  map[string]connector
+	leases    map[uint32]leaseRecord
+	finished  []uint32
+	flips     map[uint32]chan flipEvent // by CRTC; set before the reader starts
+	k         kms
 	// taken are planes driven by an output, by plane ID.
 	taken map[uint32]bool
 	// async is DRM_CAP_ATOMIC_ASYNC_PAGE_FLIP.
@@ -128,7 +131,13 @@ func (c *Card) Scan() (added []*Output, removed, replaced []string, err error) {
 			continue
 		}
 		if c.dev.Local != nil && c.dev.Mode == MultiGPUOff {
-			c.log.Warn().Str("card", c.info.Path).Str("render_card", c.dev.RenderCard).Str("connector", conn.name).Str("multi_gpu", "off").Msg("cross-GPU output disabled")
+			if !c.offWarned[conn.name] {
+				if c.offWarned == nil {
+					c.offWarned = map[string]bool{}
+				}
+				c.offWarned[conn.name] = true
+				c.log.Warn().Str("card", c.info.Path).Str("render_card", c.dev.RenderCard).Str("connector", conn.name).Str("multi_gpu", "off").Msg("cross-GPU output disabled")
+			}
 			continue
 		}
 		seen[conn.name] = true

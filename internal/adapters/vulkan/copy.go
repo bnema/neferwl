@@ -210,6 +210,8 @@ type copySlot struct {
 	fence      vk.Fence
 	busy       bool
 	wait, done vk.Semaphore
+	// stale: done was signalled but not exported; recreate it before reuse.
+	stale bool
 }
 
 func (c *Copier) waitSlot(s *copySlot) error {
@@ -226,12 +228,25 @@ func (c *Copier) waitSlot(s *copySlot) error {
 		c.gpu.dd.DestroySemaphore(c.gpu.device, s.wait, nil)
 		s.wait = 0
 	}
+	if s.stale {
+		c.destroySlotSemaphores(s)
+	}
+	return nil
+}
+
+// destroySlotSemaphores destroys the slot's wait and done semaphores.
+func (c *Copier) destroySlotSemaphores(s *copySlot) {
+	if s.wait != 0 {
+		c.gpu.dd.DestroySemaphore(c.gpu.device, s.wait, nil)
+		s.wait = 0
+	}
 	if s.done != 0 {
 		c.gpu.dd.DestroySemaphore(c.gpu.device, s.done, nil)
 		s.done = 0
 	}
-	return nil
+	s.stale = false
 }
+
 func (c *Copier) waitAll() error {
 	for i := range c.slots {
 		if err := c.waitSlot(&c.slots[i]); err != nil {
@@ -261,10 +276,13 @@ func (c *Copier) Copy(src, dst int, acquire *os.File) (*os.File, error) {
 			return nil, err
 		}
 	}
-	export := vk.ExportSemaphoreCreateInfo{SType: vk.StructureTypeExportSemaphoreCreateInfo, HandleTypes: vk.ExternalSemaphoreHandleTypeSyncFDBit}
-	si := vk.SemaphoreCreateInfo{SType: vk.StructureTypeSemaphoreCreateInfo, Next: unsafe.Pointer(&export)}
-	if err := checked("vkCreateSemaphore(copy)", d.CreateSemaphore(dev, &si, nil, &s.done)); err != nil {
-		return nil, err
+	if s.done == 0 {
+		// Exporting a sync_fd resets the semaphore to unsignalled: reused.
+		export := vk.ExportSemaphoreCreateInfo{SType: vk.StructureTypeExportSemaphoreCreateInfo, HandleTypes: vk.ExternalSemaphoreHandleTypeSyncFDBit}
+		si := vk.SemaphoreCreateInfo{SType: vk.StructureTypeSemaphoreCreateInfo, Next: unsafe.Pointer(&export)}
+		if err := checked("vkCreateSemaphore(copy)", d.CreateSemaphore(dev, &si, nil, &s.done)); err != nil {
+			return nil, err
+		}
 	}
 	if acquire != nil {
 		fd, err := dupFile(acquire)
@@ -288,7 +306,9 @@ func (c *Copier) Copy(src, dst int, acquire *os.File) (*os.File, error) {
 		{SType: vk.StructureTypeImageMemoryBarrier, DstAccessMask: vk.AccessTransferReadBit, OldLayout: vk.ImageLayoutGeneral, NewLayout: vk.ImageLayoutTransferSrcOptimal, SrcQueueFamilyIndex: vk.QueueFamilyForeignEXT, DstQueueFamilyIndex: c.gpu.family, Image: source.image, SubresourceRange: colorRange},
 		{SType: vk.StructureTypeImageMemoryBarrier, DstAccessMask: vk.AccessTransferWriteBit, OldLayout: vk.ImageLayoutUndefined, NewLayout: vk.ImageLayoutTransferDstOptimal, SrcQueueFamilyIndex: vk.QueueFamilyForeignEXT, DstQueueFamilyIndex: c.gpu.family, Image: target.image, SubresourceRange: colorRange},
 	}
-	d.CmdPipelineBarrier(cmd, vk.PipelineStageTopOfPipeBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 2, &barriers[0])
+	// The submit waits on the acquire fence at the transfer stage: the
+	// ownership transfer must come after that wait (as in Renderer.ownership).
+	d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 2, &barriers[0])
 	layers := vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}
 	offsets := [2]vk.Offset3D{{}, {X: int32(c.width), Y: int32(c.height), Z: 1}}
 	blit := vk.ImageBlit{SrcSubresource: layers, SrcOffsets: offsets, DstSubresource: layers, DstOffsets: offsets}
@@ -322,6 +342,7 @@ func (c *Copier) Copy(src, dst int, acquire *os.File) (*os.File, error) {
 	get := vk.SemaphoreGetFdInfoKHR{SType: vk.StructureTypeSemaphoreGetFDInfoKHR, Semaphore: s.done, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit}
 	fd := int32(-1)
 	if err := checked("vkGetSemaphoreFdKHR(copy)", d.GetSemaphoreFdKHR(dev, &get, &fd)); err != nil {
+		s.stale = true // signalled, never exported
 		return nil, err
 	}
 	if fd < 0 {
@@ -380,12 +401,17 @@ func (c *Copier) Close() {
 	if c == nil || c.q == nil {
 		return
 	}
-	_ = c.waitAll()
 	for i := range c.slots {
-		if c.slots[i].fence != 0 {
-			c.gpu.dd.DestroyFence(c.gpu.device, c.slots[i].fence, nil)
-			c.slots[i].fence = 0
+		s := &c.slots[i]
+		if err := c.waitSlot(s); err != nil {
+			c.gpu.log.Error().Err(err).Int("slot", i).Msg("wait for GPU copy on close")
 		}
+		c.destroySlotSemaphores(s)
+		if s.fence != 0 {
+			c.gpu.dd.DestroyFence(c.gpu.device, s.fence, nil)
+			s.fence = 0
+		}
+		s.busy = false
 	}
 	for _, im := range c.sources {
 		c.freeImage(im)

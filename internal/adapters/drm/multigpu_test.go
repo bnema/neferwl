@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
@@ -84,6 +85,8 @@ func TestMultiGPUCopySetup(t *testing.T) {
 			copier := portsmocks.NewMockCopier(t)
 			alloc := newMockimageAllocator(t)
 			o.card = &Card{alloc: alloc, dev: CardDevices{Mode: MultiGPUAuto, Local: func() (ports.RenderDevice, error) { return opener.Open(ports.GPUInfo{}) }}}
+			// The display card scans out tiled only: GBM must receive these.
+			o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: tiledMod}}
 			opener.EXPECT().Open(ports.GPUInfo{}).Return(local, nil).Once()
 			local.EXPECT().NewCopier(200, 100).Return(copier, nil).Once()
 			formats := []ports.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
@@ -95,7 +98,7 @@ func TestMultiGPUCopySetup(t *testing.T) {
 			copier.EXPECT().ImportSources(sources).Return(nil).Once()
 			closed := false
 			copier.EXPECT().Close().Run(func() { closed = true }).Once()
-			alloc.EXPECT().create(200, 100, uint32(fourccXRGB), []uint64(nil)).RunAndReturn(func(int, int, uint32, []uint64) (imageBuffer, error) {
+			alloc.EXPECT().create(200, 100, uint32(fourccXRGB), []uint64{tiledMod}).RunAndReturn(func(int, int, uint32, []uint64) (imageBuffer, error) {
 				img := newMockimageBuffer(t)
 				img.EXPECT().dmabuf().RunAndReturn(func() (ports.DMABuf, error) { return gbmBuf(1), nil }).Once()
 				img.EXPECT().close().Run(func() {
@@ -131,12 +134,81 @@ func TestMultiGPUCopySetup(t *testing.T) {
 	}
 }
 
+// copyFixture is an output on a cross-GPU card whose local device offers
+// a copier that accepts the given source modifiers.
+func copyFixture(t *testing.T, mods []ports.DMABufFormat) (*Output, *mockkms, *portsmocks.MockRenderer, *portsmocks.MockCopier, *mockimageAllocator) {
+	o, k, _ := testOutput(t)
+	o.cursor = nil
+	o.fbs = [2]uint32{}
+	local := portsmocks.NewMockRenderDevice(t)
+	opener := portsmocks.NewMockRenderDeviceOpener(t)
+	copier := portsmocks.NewMockCopier(t)
+	alloc := newMockimageAllocator(t)
+	o.card = &Card{alloc: alloc, dev: CardDevices{Mode: MultiGPUAuto, Local: func() (ports.RenderDevice, error) { return opener.Open(ports.GPUInfo{}) }}}
+	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: tiledMod}}
+	opener.EXPECT().Open(ports.GPUInfo{}).Return(local, nil).Once()
+	local.EXPECT().NewCopier(200, 100).Return(copier, nil).Once()
+	local.EXPECT().DMABuf().Return(ports.DMABufSupport{Formats: mods}).Once()
+	copier.EXPECT().SourceModifiers(mods).Return(mods).Once()
+	return o, k, gbmRenderer(t), copier, alloc
+}
+
+func TestMultiGPUCopySourceModifiers(t *testing.T) {
+	t.Run("no LINEAR", func(t *testing.T) {
+		mods := []ports.DMABufFormat{{Format: fourccXRGB, Modifier: tiledMod}}
+		o, _, r, copier, _ := copyFixture(t, mods)
+		r.EXPECT().ExportTargets(2, []uint64{tiledMod}, false).Return([]ports.DMABuf{gbmBuf(1), gbmBuf(1)}, nil).Once()
+		copier.EXPECT().ImportSources(mock.Anything).Return(ports.ErrDeviceLost).Once()
+		copier.EXPECT().Close().Return().Once()
+		r.EXPECT().ExportTargets(0, []uint64(nil), false).Return(nil, nil).Once()
+		if _, err := o.setupImages(r, imagesDriver, nil, false); err == nil {
+			t.Fatal("import failure accepted")
+		}
+	})
+	t.Run("LINEAR only is not retried", func(t *testing.T) {
+		mods := []ports.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
+		o, _, r, copier, _ := copyFixture(t, mods)
+		r.EXPECT().ExportTargets(2, []uint64{0}, false).Return(nil, errors.New("not exportable")).Once()
+		copier.EXPECT().Close().Return().Once()
+		r.EXPECT().ExportTargets(0, []uint64(nil), false).Return(nil, nil).Once()
+		if _, err := o.setupImages(r, imagesDriver, nil, false); err == nil {
+			t.Fatal("export failure accepted")
+		}
+	})
+}
+
+func TestMultiGPUCopyShowFailureRestores(t *testing.T) {
+	mods := []ports.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
+	o, k, r, copier, alloc := copyFixture(t, mods)
+	o.transport = transportDirect
+	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]ports.DMABuf{gbmBuf(1), gbmBuf(1)}, nil).Once()
+	copier.EXPECT().ImportSources(mock.Anything).Return(nil).Once()
+	copier.EXPECT().ImportTargets(mock.Anything).Return(nil).Once()
+	freed := 0
+	alloc.EXPECT().create(200, 100, uint32(fourccXRGB), []uint64{tiledMod}).RunAndReturn(func(int, int, uint32, []uint64) (imageBuffer, error) {
+		img := newMockimageBuffer(t)
+		img.EXPECT().dmabuf().RunAndReturn(func() (ports.DMABuf, error) { return gbmBuf(1), nil }).Once()
+		img.EXPECT().close().Run(func() { freed++ }).Once()
+		return img, nil
+	}).Twice()
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(0, errors.New("addfb refused")).Once()
+	closed := false
+	copier.EXPECT().Close().Run(func() { closed = true }).Once()
+	r.EXPECT().ExportTargets(0, []uint64(nil), false).Return(nil, nil).Once()
+	if _, err := o.setupImages(r, imagesDriver, nil, false); err == nil {
+		t.Fatal("showBufs failure accepted")
+	}
+	if o.transport != transportDirect || !closed || o.copier != nil || freed != 2 || len(o.images) != 0 {
+		t.Fatalf("transport %q closed %v copier %v freed %d images %d", o.transport, closed, o.copier, freed, len(o.images))
+	}
+}
+
 func TestMultiGPUCopyCreationError(t *testing.T) {
 	o, _, _ := testOutput(t)
 	o.fbs = [2]uint32{}
 	local := portsmocks.NewMockRenderDevice(t)
 	opener := portsmocks.NewMockRenderDeviceOpener(t)
-	o.card = &Card{dev: CardDevices{Local: func() (ports.RenderDevice, error) { return opener.Open(ports.GPUInfo{}) }}}
+	o.card = &Card{alloc: newMockimageAllocator(t), dev: CardDevices{Local: func() (ports.RenderDevice, error) { return opener.Open(ports.GPUInfo{}) }}}
 	opener.EXPECT().Open(ports.GPUInfo{}).Return(local, nil).Once()
 	local.EXPECT().NewCopier(200, 100).Return(nil, ports.ErrDeviceLost).Once()
 	_, err := o.setupImages(portsmocks.NewMockRenderer(t), imagesDriver, nil, false)
@@ -177,7 +249,17 @@ func TestMultiGPUCopyFrameFence(t *testing.T) {
 			}
 			copier.EXPECT().Copy(0, 0, renderFence).Return(copyFence, copyErr).Once()
 			_, err = o.submitFrame(context.Background(), r, ports.Scene{Seq: 1}, nil, nil, nil, nil)
+			// The render fence is consumed by the copy either way.
+			if _, serr := renderFence.Stat(); serr == nil {
+				t.Fatal("render fence left open")
+			}
 			if fail {
+				if len(o.readFences) != 1 {
+					t.Fatalf("readFences %d, want a dup of the render fence", len(o.readFences))
+				}
+				if !signalled(o.readFences) {
+					t.Fatal("held fence is not the (signalled) render fence")
+				}
 				var fatal renderError
 				if err == nil || errors.Is(err, ports.ErrDeviceLost) || !errors.As(err, &fatal) || len(*commits) != 0 {
 					t.Fatalf("%v commits %d", err, len(*commits))
@@ -193,6 +275,58 @@ func TestMultiGPUCopyFrameFence(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The copy of a frame whose commit failed may still read the render target:
+// the failure path waits for it before the next frame can render.
+//
+//testpolicy:realtime pipe fd poll in settleCopy; a bounded real wait shows submitFrame still blocked
+func TestMultiGPUCopyCommitFailureWaitsForCopy(t *testing.T) {
+	copyFence, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer copyFence.Close()
+	committed := make(chan struct{}, 1)
+	o, _, _, _ := testOutputRules(t, func(*atomicReq, uint32) error {
+		committed <- struct{}{}
+		return errors.New("commit refused")
+	})
+	o.cursor = nil
+	o.tearing = false
+	o.vrrProp = 0
+	r := portsmocks.NewMockRenderer(t)
+	copier := portsmocks.NewMockCopier(t)
+	o.copier = copier
+	o.transport = transportCopy
+	r.EXPECT().UseTarget(0).Return().Once()
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
+	copier.EXPECT().Copy(0, 0, (*os.File)(nil)).Return(copyFence, nil).Once()
+	result := make(chan error, 1)
+	go func() {
+		_, err := o.submitFrame(context.Background(), r, ports.Scene{Seq: 1}, nil, nil, nil, nil)
+		result <- err
+	}()
+	<-committed
+	// The copy fence is unsignalled: the failure path must still be waiting.
+	select {
+	case <-result:
+		t.Fatal("commit failure returned before the copy finished")
+	case <-time.After(100 * time.Millisecond):
+	}
+	w.Close()
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Fatal("commit failure accepted")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("submitFrame did not return after the copy finished")
+	}
+	if len(o.readFences) != 1 || !signalled(o.readFences) {
+		t.Fatalf("held fences %d", len(o.readFences))
+	}
+	o.dropRead()
 }
 
 func TestMultiGPUCopyCPUFence(t *testing.T) {

@@ -32,6 +32,8 @@ func (o *Output) probeAsync(r ports.Renderer) {
 		o.fenceProp(req, o.primary, done)
 	}
 	err = o.k.commit(req, atomicTestOnly|flipAsyncFlag, 0)
+	// A test-only commit never holds the target: the copy may still read it.
+	o.settleCopy(done)
 	// With CPU waits no fence is in a commit, async or not.
 	o.asyncFence = err == nil && (done != nil || o.cpuFences)
 	o.log.Info().Err(err).Str("connector", o.conn.name).Bool("async_fence", o.asyncFence).Msg("tearing probe")

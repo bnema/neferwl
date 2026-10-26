@@ -1,11 +1,14 @@
 package drm
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"github.com/bnema/neferwl/internal/ports"
 	"os"
 	"slices"
+
+	"github.com/bnema/neferwl/internal/adapters/syncfile"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // MultiGPU selects how outputs on a different GPU are composed.
@@ -44,7 +47,7 @@ func (e localDeviceError) Error() string { return fmt.Sprintf("local copy device
 func (o *Output) crossGPU() bool { return o.card != nil && o.card.dev.Local != nil }
 
 func (o *Output) crossImages(r ports.Renderer, cause error, skip bool) (imageKind, error) {
-	var err error = cause
+	err := cause
 	if !skip {
 		mods := o.primaryModifiers(o.imageFormat())
 		linear := false
@@ -83,13 +86,21 @@ func (o *Output) closeCopier() {
 	if o.copier != nil {
 		o.copier.Close()
 		o.copier = nil
+		// A gpu-copy output without a copier cannot exist: the next setup
+		// takes the direct path or a fresh copyImages.
+		if o.transport == transportCopy {
+			o.transport = ""
+		}
 	}
 }
 
 // copyFence leaves the caller's render file ownership unchanged at the port.
 func (o *Output) copyFence(index int, fence *os.File) (*os.File, error) {
-	if o.transport != transportCopy || o.copier == nil {
+	if o.transport != transportCopy {
 		return fence, nil
+	}
+	if o.copier == nil {
+		return nil, localDeviceError{errors.New("gpu-copy without copier")}
 	}
 	done, err := o.copier.Copy(index, index, fence)
 	if fence != nil {
@@ -107,7 +118,27 @@ func (o *Output) copyFence(index int, fence *os.File) (*os.File, error) {
 	return done, nil
 }
 
+// settleCopy waits on the copy's fence of a frame whose commit failed: the
+// next frame renders into the same target, which the copy may still read.
+// Waiting on a fence is not a pixel path. It is a no-op off gpu-copy.
+func (o *Output) settleCopy(done *os.File) {
+	if o.transport != transportCopy || done == nil {
+		return
+	}
+	ctx := o.runContext
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := syncfile.Wait(ctx, done); err != nil {
+		o.log.Warn().Err(err).Msg("wait for GPU copy after failed commit")
+	}
+}
+
 func (o *Output) copyImages(r ports.Renderer) (err error) {
+	if o.card.alloc == nil {
+		return errors.New("GPU-copy requires GBM scanout images")
+	}
+	previous := o.transport
 	o.dropImages(r)
 	local, err := o.card.dev.Local()
 	if err != nil {
@@ -118,11 +149,13 @@ func (o *Output) copyImages(r ports.Renderer) (err error) {
 		return localDeviceError{err}
 	}
 	o.copier = copier
-	previous := o.transport
 	defer func() {
 		if err != nil {
-			o.transport = previous
 			o.closeCopier()
+			// previous gpu-copy had its copier closed by dropImages above.
+			if previous != transportCopy {
+				o.transport = previous
+			}
 			o.freeImages()
 			_, _ = r.ExportTargets(0, nil, false)
 		}
@@ -149,19 +182,19 @@ func (o *Output) copyImages(r ports.Renderer) (err error) {
 	if slices.Contains(mods, uint64(0)) {
 		sources, err = r.ExportTargets(len(o.fbs), []uint64{0}, false)
 	}
-	if len(sources) == 0 {
+	if len(sources) == 0 && !slices.Equal(mods, []uint64{0}) {
 		sources, err = r.ExportTargets(len(o.fbs), mods, false)
 	}
 	if err != nil {
 		return err
 	}
+	if len(sources) == 0 {
+		return errors.New("no GPU-copy source images")
+	}
 	defer closeBufs(sources)
 	o.log.Debug().Uint64("source_modifier", sources[0].Modifier).Msg("GPU-copy source modifier")
 	if err = copier.ImportSources(sources); err != nil {
 		return localDeviceError{err}
-	}
-	if o.card.alloc == nil {
-		return errors.New("GPU-copy requires GBM scanout images")
 	}
 	var bufs []ports.DMABuf
 	defer func() { closeBufs(bufs) }()
@@ -181,7 +214,7 @@ func (o *Output) copyImages(r ports.Renderer) (err error) {
 	if err = copier.ImportTargets(bufs); err != nil {
 		return localDeviceError{err}
 	}
-	logged := o.transport == transportCopy
+	logged := previous == transportCopy
 	// showBufs clears the scanout images through copyFence, which copies
 	// only on gpu-copy outputs: set the transport first.
 	o.transport = transportCopy

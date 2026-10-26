@@ -2,12 +2,12 @@ package vulkan
 
 import (
 	"context"
-	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"image/color"
 	"slices"
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"github.com/bnema/neferwl/internal/ports"
 )
 

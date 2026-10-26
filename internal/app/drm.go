@@ -286,14 +286,14 @@ func openDRM(ctx context.Context, cfg ports.Config, opener ports.RenderDeviceOpe
 		var local *localRenderDevice
 		dev := drm.CardDevices{Render: render, RenderCard: b.renderInfo.Path, Mode: multiGPUMode(cfg.Render.MultiGPU)}
 		if info.Path != b.renderInfo.Path {
-			local = &localRenderDevice{}
-			dev.Local = sync.OnceValues(func() (ports.RenderDevice, error) {
+			local = &localRenderDevice{open: func() (ports.RenderDevice, error) {
 				device, err := opener.Open(info)
-				if err == nil {
-					local.set(device)
+				if err != nil {
+					log.Error().Err(err).Str("card", path).Msg("open local render device")
 				}
 				return device, err
-			})
+			}}
+			dev.Local = local.get
 		}
 		card, err := drm.OpenCard(fd, info, dev, want, log, logging.For(ctx, "render"))
 		if err != nil {
@@ -857,18 +857,29 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	}
 }
 
-// localRenderDevice records only successfully opened lazy devices. Outputs are
-// joined before close; the mutex also protects concurrent first-use recording.
+// localRenderDevice opens the lazy local device on first use and caches only
+// success: a failed open is retried by the next caller. Outputs are joined
+// before close; the mutex protects concurrent first-use opens.
 type localRenderDevice struct {
-	mu  sync.Mutex
-	dev ports.RenderDevice
+	mu   sync.Mutex
+	open func() (ports.RenderDevice, error)
+	dev  ports.RenderDevice
 }
 
-func (l *localRenderDevice) set(dev ports.RenderDevice) {
+func (l *localRenderDevice) get() (ports.RenderDevice, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.dev != nil {
+		return l.dev, nil
+	}
+	dev, err := l.open()
+	if err != nil {
+		return nil, err
+	}
 	l.dev = dev
+	return dev, nil
 }
+
 func (l *localRenderDevice) close() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
