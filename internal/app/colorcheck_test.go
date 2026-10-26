@@ -211,7 +211,8 @@ func assertNoCursorOverlap(t *testing.T, patches []pattern.Patch) {
 	}
 }
 
-// pollImage decodes path every 50 ms, up to colorTimeout, until check returns
+// pollImage re-decodes path after each change in its directory, up to
+// colorTimeout, until check returns
 // no mismatch. Only files modified after notBefore count, so a frame of a
 // previous client is never judged (files are replaced atomically). On timeout
 // it reports every mismatch of the last attempt; missing, when not empty,
