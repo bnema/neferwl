@@ -192,6 +192,8 @@ func TestForwarderDrainsWhileDisplayBusy(t *testing.T) {
 // busy, mergeable motions fold in the ring, so the sender never blocks and
 // the ring never fills. Unmergeable commands are covered by
 // TestForwarderDrainsWhileDisplayBusy.
+//
+//testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func TestCommandThroughput(t *testing.T) {
 	cmds := make(chan ports.ClientCommand, 32)
 	s, err := New(Options{RuntimeDir: t.TempDir(), Outputs: testOutputs}, Channels{Commands: cmds}, logging.For(context.Background(), "wayland"))
@@ -216,9 +218,12 @@ func TestCommandThroughput(t *testing.T) {
 			cmds <- ports.PointerMotionTo{ID: 1, X: float64(i), Y: 1}
 		}
 	}()
-	// The sender finishes with the display still stalled; a blocked sender
-	// would hang here until the package test timeout.
-	<-sent
+	// The sender finishes with the display still stalled.
+	select {
+	case <-sent:
+	case <-waylandDeadline(10 * time.Second):
+		t.Fatal("sender blocked: motions not folded while the display is busy")
+	}
 	s.commands.mu.Lock()
 	queued := len(s.commands.ring)
 	s.commands.mu.Unlock()

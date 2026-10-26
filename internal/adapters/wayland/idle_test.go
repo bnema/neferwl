@@ -231,12 +231,14 @@ func TestOutputPower(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case ev := <-events:
-		if v, ok := ev.(ports.OutputPower); ok {
-			t.Fatalf("failed object sent %+v", v)
-		}
-	default:
+	// The event forwarder is FIFO: a sentinel emitted after the request was
+	// handled arrives after anything the failed object could have sent.
+	sentinel := ports.OutputPower{Output: "sentinel", On: true}
+	if !s.display.Do(func() { s.emit(sentinel) }) {
+		t.Fatal("display stopped")
+	}
+	if v := clientEvent[ports.OutputPower](t, events); v != sentinel {
+		t.Fatalf("failed object sent %+v", v)
 	}
 }
 
