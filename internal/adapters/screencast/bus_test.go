@@ -284,7 +284,7 @@ func TestDisallowedCallerGetsAccessDenied(t *testing.T) {
 func TestPolicyChangeApplies(t *testing.T) {
 	h := newSvcHarness(t, harnessOpts{allow: captureallow.Closed()})
 	c := h.client()
-	h.waitName(c, nameIntrospect)
+	h.waitServing(c)
 	if name, _ := callErr(t, c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
 		t.Fatalf("closed policy: %q", name)
 	}
@@ -313,7 +313,7 @@ func TestPidMismatchIsRefused(t *testing.T) {
 	h := newSvcHarness(t, harnessOpts{})
 	h.peers.exePid = func(open int) int { return open + 1 }
 	c := h.client()
-	h.waitName(c, nameIntrospect)
+	h.waitServing(c)
 	if name, _ := callErr(t, c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
 		t.Fatalf("pid mismatch: %q", name)
 	}
@@ -323,7 +323,7 @@ func TestPidfdOpenFailureIsRefused(t *testing.T) {
 	h := newSvcHarness(t, harnessOpts{})
 	h.peers.openErr = errors.New("no such process")
 	c := h.client()
-	h.waitName(c, nameIntrospect)
+	h.waitServing(c)
 	if name, _ := callErr(t, c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
 		t.Fatalf("pidfd_open failure: %q", name)
 	}
@@ -456,7 +456,7 @@ func TestRemoteDesktopRefusedAndNoPipeWire(t *testing.T) {
 
 	h := newSvcHarness(t, harnessOpts{noPW: true})
 	c2 := h.client()
-	h.waitName(c2, nameIntrospect)
+	h.waitServing(c2)
 	e := c2.NewCall("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameHasOwner", "s")
 	e.Str(nameScreenCast)
 	checkCall := boundIO(t, "NameHasOwner", func() { _ = c2.Close() })
@@ -624,6 +624,7 @@ func TestInventorySignalsGoToAllowedPeersOnly(t *testing.T) {
 	for _, n := range []string{nameDisplayConfig, nameIntrospect} {
 		h.waitName(allowed, n)
 	}
+	h.waitServing(allowed)
 	rule := "type='signal',path='" + pathIntrospect + "'"
 	rule2 := "type='signal',path='" + pathDisplayConfig + "'"
 	for _, x := range []*zerobus.Conn{allowed, denied, gone} {
@@ -712,7 +713,7 @@ func TestDeniedCallersDoNotExhaustTheCache(t *testing.T) {
 		return "/usr/bin/grim"
 	}
 	c0 := h.client()
-	h.waitName(c0, nameIntrospect)
+	h.waitServing(c0)
 	for i := range denied {
 		x := h.client()
 		if name, _ := callErr(t, x, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
@@ -746,7 +747,7 @@ func TestDeniedCallersDoNotExhaustTheCache(t *testing.T) {
 func TestBusLossClosesCallerPidfds(t *testing.T) {
 	h := newSvcHarness(t, harnessOpts{})
 	c := h.client()
-	h.waitName(c, nameIntrospect)
+	h.waitServing(c)
 	if name, _ := callErr(t, c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != "" {
 		t.Fatal(name)
 	}

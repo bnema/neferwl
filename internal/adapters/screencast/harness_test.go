@@ -100,7 +100,9 @@ func (p *peers) waitClosed(t *testing.T, i int) {
 	p.mu.Lock()
 	end := p.ends[i]
 	p.mu.Unlock()
-	fds := []unix.PollFd{{Fd: int32(end.Fd()), Events: unix.POLLOUT}}
+	// No requested events: an empty pipe is always writable, so POLLOUT would
+	// return at once. POLLERR (read end closed) is reported regardless.
+	fds := []unix.PollFd{{Fd: int32(end.Fd())}}
 	for {
 		n, err := unix.Poll(fds, 5000)
 		if err == unix.EINTR {
@@ -297,6 +299,15 @@ func (h *svcHarness) waitName(c *zerobus.Conn, name string) {
 			return
 		}
 	}
+}
+
+// waitServing waits until the service finished taking its names. It takes
+// them one by one, and while it waits for the reply to a request it drops
+// every other message, so a call made once an earlier name is owned can be
+// lost. nameScreenshot is the last one it takes.
+func (h *svcHarness) waitServing(c *zerobus.Conn) {
+	h.t.Helper()
+	h.waitName(c, nameScreenshot)
 }
 
 // callErr calls and returns the D-Bus error name, "" on success.
