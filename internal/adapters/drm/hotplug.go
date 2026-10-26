@@ -133,9 +133,30 @@ func loadUdev() error {
 	return udevErr
 }
 
-// WatchHotplug sends on changed after every DRM hotplug event until ctx
-// ends. Events that arrive while a send is pending are merged.
-func WatchHotplug(ctx context.Context, changed chan<- struct{}) error {
+// DeliverHotplug hands ev to changed. A connector change (Card == "") only
+// asks for a rescan, so it is dropped when one is already queued. A card
+// add or remove is never dropped: the send blocks until the consumer takes
+// it or ctx ends. It reports whether ev was queued.
+func DeliverHotplug(ctx context.Context, changed chan<- HotplugEvent, ev HotplugEvent) bool {
+	if ev.Card == "" {
+		select {
+		case changed <- ev:
+			return true
+		default:
+			return false
+		}
+	}
+	select {
+	case changed <- ev:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// WatchHotplug sends every DRM card add or remove and every connector change
+// on changed until ctx ends (see DeliverHotplug for the send policy).
+func WatchHotplug(ctx context.Context, changed chan<- HotplugEvent) error {
 	if err := loadUdev(); err != nil {
 		return err
 	}
@@ -175,14 +196,10 @@ func WatchHotplug(ctx context.Context, changed chan<- struct{}) error {
 		if dev == 0 {
 			continue
 		}
-		hot := devicePropertyVal(dev, "HOTPLUG") == "1"
+		ev, ok := hotplugFromProps(func(key string) string { return devicePropertyVal(dev, key) })
 		deviceUnref(dev)
-		if !hot {
-			continue
-		}
-		select {
-		case changed <- struct{}{}:
-		default:
+		if ok {
+			DeliverHotplug(ctx, changed, ev)
 		}
 	}
 	return nil

@@ -390,7 +390,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	protected := func() bool { return set.state.Protected || securitySnapshot(ch.security).Protected }
 	leases := newLeasePublisher(ctx, ch.leaseEvents, func() bool { return seatActive }, protected, log)
 	defer leases.close()
-	hotplug := make(chan struct{}, 1)
+	hotplug := make(chan drm.HotplugEvent, 8)
 	go func() {
 		if err := safe("hotplug", func() error { return drm.WatchHotplug(ctx, hotplug) }); err != nil {
 			log.Warn().Err(err).Msg("hotplug watch disabled")
@@ -684,7 +684,17 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		case <-revokeDeadline:
 			revokeDeadline = nil
 			barrier()
-		case <-hotplug:
+		case ev := <-hotplug:
+			switch classifyHotplug(ev, b.renderInfo.Path) {
+			case hotplugRenderRemoved:
+				// Checked even while recovering: the device is not coming back.
+				path := b.renderInfo.Path
+				log.Error().Str("card", path).Msg("render GPU removed")
+				return errors.Join(fmt.Errorf("%w: %s", ErrRenderGPURemoved, path), set.wait())
+			case hotplugCardAdded, hotplugCardRemoved:
+				log.Info().Str("card", ev.Card).Str("action", ev.Action).Msg("GPU hotplug not handled yet")
+				continue
+			}
 			log.Info().Msg("hotplug")
 			scan()
 			if progress.active {

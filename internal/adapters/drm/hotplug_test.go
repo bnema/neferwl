@@ -1,8 +1,11 @@
 package drm
 
 import (
+	"context"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -40,4 +43,54 @@ func TestHotplugParseUevent(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestHotplugDeliverPolicy(t *testing.T) {
+	change := HotplugEvent{Action: "change"}
+	add := HotplugEvent{Card: "card1", Action: "add"}
+	remove := HotplugEvent{Card: "card1", Action: "remove"}
+
+	t.Run("pending change is coalesced", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			ch := make(chan HotplugEvent, 1)
+			assert.True(t, DeliverHotplug(t.Context(), ch, change))
+			assert.False(t, DeliverHotplug(t.Context(), ch, change), "second change is dropped, not blocked")
+			assert.Equal(t, change, <-ch)
+		})
+	})
+	t.Run("card event blocks until taken", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			ch := make(chan HotplugEvent, 1)
+			ch <- change
+			var delivered atomic.Bool
+			go func() { delivered.Store(DeliverHotplug(t.Context(), ch, remove)) }()
+			synctest.Wait()
+			assert.False(t, delivered.Load(), "blocked on a full channel")
+			assert.Equal(t, change, <-ch)
+			synctest.Wait()
+			assert.True(t, delivered.Load())
+			assert.Equal(t, remove, <-ch)
+		})
+	})
+	t.Run("card events keep their order", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			ch := make(chan HotplugEvent, 2)
+			assert.True(t, DeliverHotplug(t.Context(), ch, add))
+			assert.True(t, DeliverHotplug(t.Context(), ch, remove))
+			assert.Equal(t, []HotplugEvent{add, remove}, []HotplugEvent{<-ch, <-ch})
+		})
+	})
+	t.Run("context ends a blocked card send", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			ch := make(chan HotplugEvent)
+			var delivered atomic.Bool
+			delivered.Store(true)
+			go func() { delivered.Store(DeliverHotplug(ctx, ch, add)) }()
+			synctest.Wait()
+			cancel()
+			synctest.Wait()
+			assert.False(t, delivered.Load())
+		})
+	})
 }
