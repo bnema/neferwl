@@ -51,6 +51,7 @@ func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, 
 		if err := c.updateInhibit(ctx); err != nil {
 			return false, true
 		}
+		c.publishState()
 		return false, false
 	case ports.OutputPower:
 		if i := c.screenIndex(v.Output); i >= 0 && c.screens[i].off == v.On {
@@ -76,6 +77,7 @@ func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, 
 		}
 	case ports.PointerConstrained:
 		c.constrained = v
+		c.publishState()
 	case ports.PointerWarp:
 		if c.warpPointer(ctx, v) != nil {
 			return false, true

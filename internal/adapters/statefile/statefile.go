@@ -98,6 +98,14 @@ type Window struct {
 	// (see Output.WorkspaceID).
 	WorkspaceID string `json:"workspace_id"`
 	Visible     bool   `json:"visible"`
+	// IdleInhibit is set while the window keeps the session from idling.
+	IdleInhibit bool `json:"idle_inhibit"`
+	// ShortcutsInhibited is set while the window asks to receive compositor
+	// shortcuts.
+	ShortcutsInhibited bool `json:"shortcuts_inhibited"`
+	// PointerConstraint is "locked" or "confined" while the window holds the
+	// pointer constraint, "" otherwise.
+	PointerConstraint string `json:"pointer_constraint"`
 	// Floating is set for native floats (dialogs) and stashed windows.
 	Floating bool `json:"floating"`
 	// Fullscreen is set for the fullscreen window of its workspace.
@@ -141,7 +149,7 @@ func fromPorts(st ports.State, ids *workspaceid.IDs) State {
 }
 
 func window(w ports.WindowState, ids *workspaceid.IDs) Window {
-	return Window{ID: uint64(w.ID), AppID: w.AppID, PID: w.PID, Output: w.Output, Workspace: w.Workspace, WorkspaceID: ids.ID(w.WorkspaceID, w.WorkspaceName), Visible: w.Visible, Floating: w.Floating, Fullscreen: w.Fullscreen, StashIndex: w.StashIndex, StashCount: w.StashCount, Column: w.Column, Row: w.Row, Hidden: w.Hidden}
+	return Window{ID: uint64(w.ID), AppID: w.AppID, PID: w.PID, Output: w.Output, Workspace: w.Workspace, WorkspaceID: ids.ID(w.WorkspaceID, w.WorkspaceName), Visible: w.Visible, IdleInhibit: w.IdleInhibit, ShortcutsInhibited: w.ShortcutsInhibited, PointerConstraint: w.PointerConstraint, Floating: w.Floating, Fullscreen: w.Fullscreen, StashIndex: w.StashIndex, StashCount: w.StashCount, Column: w.Column, Row: w.Row, Hidden: w.Hidden}
 }
 
 // writeInterval is the least time between two writes of the file.

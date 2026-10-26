@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"testing/synctest"
 
@@ -76,17 +77,30 @@ func shortcutsInhibit(t *testing.T) {
 	receive(t, spawn)
 	// Idle inhibitors show in the state.
 	client <- ports.IdleInhibit{Window: 2, Active: true}
+	waitState(t, state, "idle inhibit", func(w ports.WindowState) bool { return w.ID == 2 && w.IdleInhibit })
+	// So do shortcuts inhibition and the pointer constraint.
+	client <- ports.ShortcutsInhibit{Window: 2, Active: true}
+	waitState(t, state, "shortcuts inhibited", func(w ports.WindowState) bool { return w.ID == 2 && w.ShortcutsInhibited })
+	client <- ports.PointerConstrained{ID: 2, PointerConstraint: ports.PointerConstraint{Mode: ports.ConstraintLock}}
+	waitState(t, state, "locked", func(w ports.WindowState) bool { return w.ID == 2 && w.PointerConstraint == "locked" })
+	client <- ports.PointerConstrained{ID: 2, PointerConstraint: ports.PointerConstraint{Mode: ports.ConstraintConfine}}
+	waitState(t, state, "confined", func(w ports.WindowState) bool { return w.ID == 2 && w.PointerConstraint == "confined" })
+	client <- ports.PointerConstrained{}
+	waitState(t, state, "unconstrained", func(w ports.WindowState) bool { return w.ID == 2 && w.PointerConstraint == "" })
+}
+
+// waitState drains published states until one has a window matching ok.
+func waitState(t *testing.T, state <-chan ports.State, what string, ok func(ports.WindowState) bool) {
+	t.Helper()
 	for {
 		synctest.Wait()
 		select {
 		case st := <-state:
-			for _, w := range st.Windows {
-				if w.ID == 2 && w.IdleInhibit {
-					return
-				}
+			if slices.ContainsFunc(st.Windows, ok) {
+				return
 			}
 		default:
-			t.Fatal("idle inhibit not in state")
+			t.Fatal(what, "not in state")
 		}
 	}
 }

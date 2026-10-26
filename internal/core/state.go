@@ -67,7 +67,15 @@ func (c *Core) stateInto(st ports.State) ports.State {
 			c.scratch.ids = w.appendWindows(c.scratch.ids[:0])
 			for _, id := range c.scratch.ids {
 				rec := c.windows.lookup(id)
-				v := ports.WindowState{ID: id, AppID: rec.client.AppID, PID: rec.client.PID, Output: s.name(), Workspace: n, WorkspaceID: w.ID, WorkspaceName: w.Name, Visible: shown[id], IdleInhibit: rec.idleInhibit, Floating: w.isFloat(id), Fullscreen: w.fullscreen == id}
+				v := ports.WindowState{ID: id, AppID: rec.client.AppID, PID: rec.client.PID, Output: s.name(), Workspace: n, WorkspaceID: w.ID, WorkspaceName: w.Name, Visible: shown[id], IdleInhibit: rec.idleInhibit, ShortcutsInhibited: rec.inhibitShortcuts, Floating: w.isFloat(id), Fullscreen: w.fullscreen == id}
+				if c.constrained.ID == id {
+					switch c.constrained.Mode {
+					case ports.ConstraintLock:
+						v.PointerConstraint = constraintLocked
+					case ports.ConstraintConfine:
+						v.PointerConstraint = constraintConfined
+					}
+				}
 				if i := w.stashIndex(id); i >= 0 {
 					v.StashIndex, v.StashCount, v.Hidden = i+1, len(w.Stash), w.stashHidden
 				}
@@ -87,6 +95,12 @@ func (c *Core) stateInto(st ports.State) ports.State {
 	}
 	return st
 }
+
+// Values of ports.WindowState.PointerConstraint.
+const (
+	constraintLocked   = "locked"
+	constraintConfined = "confined"
+)
 
 // workspaceInto fills ws[i] (appended when ws is shorter) with w's settled
 // geometry, reusing the storage the element held: no slide, fade or zoom,

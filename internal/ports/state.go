@@ -66,6 +66,10 @@ type WindowState struct {
 	Visible bool
 	// IdleInhibit is set while the window keeps the session from idling.
 	IdleInhibit bool `json:",omitempty"`
+	// ShortcutsInhibited is set while the window asks to receive compositor shortcuts (keyboard_shortcuts_inhibit); core grants it only while it has keyboard focus.
+	ShortcutsInhibited bool `json:",omitempty"`
+	// PointerConstraint is "locked" or "confined" while the window holds the pointer constraint, "" otherwise.
+	PointerConstraint string `json:",omitempty"`
 	// Floating is set for native floats and stashed windows.
 	Floating bool
 	// Fullscreen is set for its workspace's fullscreen window, also while a
