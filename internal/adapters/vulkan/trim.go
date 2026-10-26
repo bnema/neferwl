@@ -77,6 +77,7 @@ func (r *Renderer) Trim(now time.Time) error {
 			if stale(s.last, key.win) {
 				r.retireShm(s)
 				delete(r.shm, key)
+				delete(r.panels, key.overlay)
 			}
 		}
 		for id, im := range r.imports {

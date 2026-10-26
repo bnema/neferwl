@@ -8,7 +8,7 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// overlays draws scene label overlays over everything, after the capture
+// overlays draws scene overlays over everything, after the capture
 // indicators. CPU rasters use the SHM copy path, cached by overlay ID, scale
 // and style; Seq versions the content held by the GPU's double buffer.
 func (w *sceneWalk) overlays() {
@@ -16,12 +16,45 @@ func (w *sceneWalk) overlays() {
 	for _, o := range w.s.Overlays {
 		switch o.Kind {
 		case ports.OverlayLabel:
+		case ports.OverlayPanel:
+			if o.Panel == nil {
+				continue
+			}
 		default:
 			continue
 		}
 		bg, fg := overlaydraw.Colors(w.s.Border.Active, o.Style.Background, o.Style.Foreground)
 		style := overlaydraw.Style{FontPx: overlaydraw.FontPixels(w.s.Physical.Width, w.s.Physical.Height, w.s.Physical.MMWidth, w.s.Physical.MMHeight, w.scale, o.Style.Size), Background: bg, Foreground: fg}
-		pix, lw, lh := r.overlayRaster.Label(o.Text, o.Typed, w.scale, style)
+		key := shmKey{overlay: o.ID, scale: w.scale, style: style}
+		var pix []byte
+		var lw, lh int
+		var c *shmCopy
+		if o.Kind == ports.OverlayPanel {
+			// SHM already records dimensions for each cached sequence: check it
+			// before touching the panel's reusable CPU raster.
+			if surface := r.shm[key]; surface != nil {
+				for _, b := range surface.bufs {
+					if b != nil && b.valid && b.holds.seq == o.Seq {
+						lw, lh = b.holds.w, b.holds.h
+						c = r.shmCached(key, b.holds)
+						break
+					}
+				}
+			}
+			if c == nil {
+				if r.panels == nil {
+					r.panels = make(map[uint64]*overlaydraw.Panel)
+				}
+				p := r.panels[o.ID]
+				if p == nil {
+					p = &overlaydraw.Panel{}
+					r.panels[o.ID] = p
+				}
+				pix, lw, lh = p.Draw(o.Panel.Lines, o.Panel.Graph, w.scale, style)
+			}
+		} else {
+			pix, lw, lh = r.overlayRaster.Label(o.Text, o.Typed, w.scale, style)
+		}
 		if lw <= 0 || lh <= 0 {
 			continue
 		}
@@ -30,13 +63,16 @@ func (w *sceneWalk) overlays() {
 		inset := int(math.Round(0.25 * float64(lh)))
 		x := min(max(w.phys(o.Rect.X)-lw+inset, w.bounds.Min.X), max(w.bounds.Max.X-lw, w.bounds.Min.X))
 		y := min(max(w.phys(o.Rect.Y)-lh+inset, w.bounds.Min.Y), max(w.bounds.Max.Y-lh, w.bounds.Min.Y))
+		if o.Anchor == ports.AnchorTopCenter {
+			x = min(max((w.bounds.Dx()-lw)/2+w.bounds.Min.X, w.bounds.Min.X), max(w.bounds.Max.X-lw, w.bounds.Min.X))
+			y = min(max(w.phys(o.Rect.Y), w.bounds.Min.Y), max(w.bounds.Max.Y-lh, w.bounds.Min.Y))
+		}
 		rect := image.Rect(x, y, x+lw, y+lh)
 		if rect.Intersect(w.bounds).Empty() {
 			continue
 		}
-		key := shmKey{overlay: o.ID, scale: w.scale, style: style}
 		st := shmState{w: lw, h: lh, seq: o.Seq}
-		c := r.shmCached(key, st)
+		c = r.shmCached(key, st)
 		if c == nil {
 			var err error
 			if c, err = r.shmCopyFor(key, st, pix, 0, lw*4, nil); err != nil {

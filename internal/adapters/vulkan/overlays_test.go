@@ -4,6 +4,7 @@ import (
 	"image"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -161,4 +162,67 @@ func TestPhysicalChangesSceneDamage(t *testing.T) {
 	changed.Physical.MMWidth = 300
 	_, partial := sceneDelta(old, changed, func(r ports.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }, 10)
 	require.False(t, partial)
+}
+
+func TestPanelOverlaySequenceAndRetirement(t *testing.T) {
+	r := newTestRenderer(t, 512, 256)
+	defer r.Close()
+	s := ports.Scene{Scale: 1, Seq: 1, Overlays: []ports.Overlay{{ID: 42, Seq: 1, Kind: ports.OverlayPanel, Anchor: ports.AnchorTopCenter, Rect: ports.Rect{X: 500, Y: 8}, Panel: &ports.PanelContent{Lines: [4]string{"frame time", "16 ms"}, Graph: [ports.StatsGraph]uint16{16000}}}}}
+	ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 512, 256)))
+	require.Len(t, ds, 1)
+	d := ds[0]
+	require.Equal(t, (int32(512)-(d.pc.rect[2]-d.pc.rect[0]))/2, d.pc.rect[0])
+	require.Equal(t, int32(8), d.pc.rect[1])
+	require.NoError(t, render(r, s, nil))
+	first := r.copied
+	require.Positive(t, first)
+	require.Len(t, r.shm, 1)
+	require.Len(t, r.panels, 1)
+	var key shmKey
+	var surface *shmSurface
+	for k, v := range r.shm {
+		key, surface = k, v
+	}
+	panel := r.panels[42]
+	// A cache hit must not even create a raster, let alone call Draw.
+	delete(r.panels, 42)
+	s.Seq++
+	require.NoError(t, render(r, s, nil))
+	require.Empty(t, r.panels)
+	require.Equal(t, first, r.copied)
+	r.panels[42] = panel
+	s.Seq++
+	s.Overlays[0].Seq++
+	s.Overlays[0].Panel = &ports.PanelContent{Lines: [4]string{"frame time", "17 ms"}, Graph: [ports.StatsGraph]uint16{17000}}
+	require.NoError(t, render(r, s, nil))
+	require.Len(t, r.shm, 1)
+	require.Same(t, surface, r.shm[key])
+	require.Same(t, panel, r.panels[42])
+	require.Equal(t, first*2, r.copied)
+	s.Seq++
+	s.Overlays = nil
+	require.NoError(t, render(r, s, nil))
+	now := time.Unix(1000, 0)
+	require.NoError(t, r.Trim(now))
+	trimSettled(t, r, now.Add(idleTTL))
+	require.Empty(t, r.shm)
+	require.Empty(t, r.panels)
+}
+
+func TestPanelOverlayNilAndClamped(t *testing.T) {
+	r := newTestRenderer(t, 512, 256)
+	defer r.Close()
+	s := ports.Scene{Scale: 2, Overlays: []ports.Overlay{{ID: 1, Seq: 1, Kind: ports.OverlayPanel, Anchor: ports.AnchorTopCenter}}}
+	bounds := image.Rect(0, 0, 512, 256)
+	require.Empty(t, r.draws(s, nil, newDamage(&target{}, s, bounds)))
+	for _, y := range []int{-100, 1000} {
+		s.Overlays[0].Rect.Y = y
+		s.Overlays[0].Panel = &ports.PanelContent{Lines: [4]string{"panel"}}
+		ds := r.draws(s, nil, newDamage(&target{}, s, bounds))
+		require.Len(t, ds, 1)
+		require.GreaterOrEqual(t, ds[0].pc.rect[0], int32(0))
+		require.GreaterOrEqual(t, ds[0].pc.rect[1], int32(0))
+		require.LessOrEqual(t, ds[0].pc.rect[2], int32(512))
+		require.LessOrEqual(t, ds[0].pc.rect[3], int32(256))
+	}
 }

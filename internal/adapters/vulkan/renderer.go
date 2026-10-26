@@ -75,6 +75,8 @@ type Renderer struct {
 	copied int
 	// overlayRaster rasterizes label overlays (overlays.go); the zero value works.
 	overlayRaster overlaydraw.Raster
+	// panels owns one reusable panel raster per overlay ID, retired with SHM.
+	panels map[uint64]*overlaydraw.Panel
 	// shmRects is scratch for shmCopyFor.
 	shmRects []image.Rectangle
 	// marks date the frames for Trim's wall-clock eviction (trim.go).

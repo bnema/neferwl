@@ -284,6 +284,7 @@ func (r *Renderer) dropShm() {
 		if r.frame-s.last > importTTL {
 			r.retireShm(s)
 			delete(r.shm, key)
+			delete(r.panels, key.overlay)
 		}
 	}
 }

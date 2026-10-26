@@ -6,6 +6,8 @@ type OverlayKind uint8
 const (
 	// OverlayLabel is a one-line text label (Text, Typed).
 	OverlayLabel OverlayKind = iota + 1
+	// OverlayPanel is a multi-line text panel with a frame-time graph (Panel).
+	OverlayPanel
 )
 
 // OverlayAnchor is how the renderer places an Overlay relative to its Rect.
@@ -15,6 +17,8 @@ const (
 	// AnchorOutsideTopLeft places the overlay outside Rect's top-left corner,
 	// overlapping it by a quarter of the overlay height, kept inside the output.
 	AnchorOutsideTopLeft OverlayAnchor = iota + 1
+	// AnchorTopCenter centres horizontally at Rect.Y from the top of the output; Rect.X is ignored.
+	AnchorTopCenter
 )
 
 // OverlayStyle carries reloadable overlay settings.
@@ -40,8 +44,17 @@ type Overlay struct {
 	Style   OverlayStyle
 	Text    string // OverlayLabel
 	Typed   int    // OverlayLabel: leading characters already typed, drawn dimmed
+	// Panel is OverlayPanel content, immutable once published. The pointer keeps
+	// Overlay comparable: new content has a new pointer and a new Seq.
+	Panel *PanelContent
 }
 
 // OutputPhysical is an output's untransformed mode size in pixels and
 // physical size in millimetres.
 type OutputPhysical struct{ Width, Height, MMWidth, MMHeight int }
+
+// PanelContent holds a multi-line panel and its frame-time graph.
+type PanelContent struct {
+	Lines [4]string
+	Graph [StatsGraph]uint16
+}
