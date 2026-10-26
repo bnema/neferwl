@@ -8,13 +8,14 @@ import (
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 )
 
 func TestLeaseResourceOwnership(t *testing.T) {
 	k := newMockkms(t)
 	conn := connector{id: 40, name: "DP-1", connected: true, nonDesktop: true, encoders: []uint32{3}}
-	c := &Card{path: "/dev/dri/card-test", crtcs: []uint32{30}, outputs: map[string]*Output{}, leasable: map[string]connector{conn.name: conn}, leases: map[uint32]leaseRecord{}, taken: map[uint32]bool{}, k: k}
+	c := &Card{info: ports.GPUInfo{Path: "/dev/dri/card-test"}, crtcs: []uint32{30}, outputs: map[string]*Output{}, leasable: map[string]connector{conn.name: conn}, leases: map[uint32]leaseRecord{}, taken: map[uint32]bool{}, k: k}
 	k.EXPECT().pickCrtc(conn, []uint32{30}, mock.Anything).RunAndReturn(func(_ connector, _ []uint32, used map[uint32]bool) (uint32, error) {
 		if used[30] {
 			t.Fatal("CRTC already used")
@@ -66,7 +67,7 @@ func TestLeaseABI(t *testing.T) {
 func TestScanNonDesktopAndRevokeDisconnected(t *testing.T) {
 	k := newMockkms(t)
 	conn := connector{id: 40, name: "DP-1", connected: true, nonDesktop: true, modes: []modeInfo{{HDisplay: 1920}}, encoders: []uint32{3}}
-	c := &Card{k: k, path: "/dev/dri/card-test", crtcs: []uint32{30}, outputs: map[string]*Output{}, leases: map[uint32]leaseRecord{7: {names: []string{"DP-1"}, crtcs: []uint32{30}, planes: []uint32{50}}}, want: Want{}, log: logging.For(context.Background(), "drm"), taken: map[uint32]bool{}}
+	c := &Card{k: k, info: ports.GPUInfo{Path: "/dev/dri/card-test"}, crtcs: []uint32{30}, outputs: map[string]*Output{}, leases: map[uint32]leaseRecord{7: {names: []string{"DP-1"}, crtcs: []uint32{30}, planes: []uint32{50}}}, want: Want{}, log: logging.For(context.Background(), "drm"), taken: map[uint32]bool{}}
 	k.EXPECT().resources().Return([]uint32{30}, []uint32{40}, nil).Once()
 	k.EXPECT().connector(uint32(40)).Return(conn, nil).Once()
 	added, _, _, err := c.Scan()

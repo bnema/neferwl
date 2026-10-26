@@ -398,8 +398,9 @@ func TestEnableAfterStartAwayModesetsOnce(t *testing.T) {
 		active <- false
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
+		setOutputRenderer(t, o, r)
 		go func() {
-			done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, nil, discardSink(t), nil, nil)
+			done <- o.Run(ctx, nil, active, nil, nil, nil, nil, discardSink(t), nil, nil)
 		}()
 		count := func(flags uint32) int {
 			commitMu.Lock()
@@ -518,8 +519,9 @@ func TestRunReportsSeenAfterCursorCommit(t *testing.T) {
 		sink, presented := presentedSink(t, 8)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
+		setOutputRenderer(t, o, r)
 		go func() {
-			done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, load, make(chan bool), scenes, contents.in(), contents.ret, nil, sink, nil, nil)
+			done <- o.Run(ctx, load, make(chan bool), scenes, contents.in(), contents.ret, nil, sink, nil, nil)
 		}()
 		scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1}
 		var frame commitRec
@@ -604,8 +606,9 @@ func TestRunClosesFrameFences(t *testing.T) {
 		sink, _ := presentedSink(t, 4*rounds)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
+		setOutputRenderer(t, o, r)
 		go func() {
-			done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, scenes, nil, nil, nil, sink, nil, nil)
+			done <- o.Run(ctx, nil, active, scenes, nil, nil, nil, sink, nil, nil)
 		}()
 		count := func() int {
 			commitMu.Lock()

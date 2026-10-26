@@ -240,7 +240,7 @@ func safe(name string, fn func() error) (err error) {
 
 // openDRM opens the seat and every card with a connected display. Outputs
 // are found by the first Scan of each card.
-func openDRM(ctx context.Context, cfg ports.Config) (*drmBackend, error) {
+func openDRM(ctx context.Context, cfg ports.Config, render ports.RenderDevice) (*drmBackend, error) {
 	log := logging.For(ctx, "drm")
 	s, err := seat.Open(ctx, logging.For(ctx, "seat"))
 	if err != nil {
@@ -260,13 +260,14 @@ func openDRM(ctx context.Context, cfg ports.Config) (*drmBackend, error) {
 			errs = append(errs, err)
 			continue
 		}
-		card, err := drm.OpenCard(fd, path, want, log, logging.For(ctx, "render"))
+		card, err := drm.OpenCard(fd, ports.GPUInfo{Path: path}, drm.CardDevices{Render: render, Mode: drm.MultiGPUAuto}, want, log, logging.For(ctx, "render"))
 		if err != nil {
 			log.Warn().Err(err).Str("card", path).Msg("card unusable")
 			errs = append(errs, err)
 			s.CloseDevice(fd)
 			continue
 		}
+		card.SetRendererOptions(ports.RendererOptions{TraceDamage: logging.Enabled(ctx, "render-damage")})
 		device := card.Device()
 		log.Info().Str("path", path).Str("device", fmt.Sprintf("%d:%d", unix.Major(device), unix.Minor(device))).Msg("opened DRM card")
 		b.cards = append(b.cards, &drmCard{Card: card, fd: fd})
@@ -319,7 +320,7 @@ func (b *drmBackend) close() {
 // output configuration: reloads and protocol requests go through apply, and
 // each configuration is finished when its outputs are ready, fail or time
 // out. It returns when ctx ends, after every output is closed.
-func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm.Want, initial ports.Config, apply *outputApply, ch outputChannels, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
+func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm.Want, initial ports.Config, apply *outputApply, ch outputChannels, curs *cursors, log zerowrap.Logger) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var readers sync.WaitGroup
@@ -514,7 +515,6 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 					case <-ctx.Done():
 					}
 				}()
-				o.NewCaptureRenderer = newRenderer
 				progress.started(name, source)
 				if cur := o.Cursor(); cur != nil {
 					curs.set(name, cur)
@@ -541,7 +541,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 								schedLog.Warn().Err(err).Msg("output scheduling")
 							}
 						}
-						return o.Run(octx, newRenderer, loadCursor, active, feed.Scenes, feed.Contents, feed.Returns, feed.Cursor, ch.presented, feed.Captures, ch.captured)
+						return o.Run(octx, loadCursor, active, feed.Scenes, feed.Contents, feed.Returns, feed.Cursor, ch.presented, feed.Captures, ch.captured)
 					})
 				}, &o.SecurityEvents)
 				if !started {

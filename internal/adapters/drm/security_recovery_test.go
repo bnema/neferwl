@@ -63,8 +63,9 @@ func TestSecurityStuckRecoveryInvalidatesBeforeFreshProof(t *testing.T) {
 		defer cancel()
 		scenes := make(chan ports.Scene, 1)
 		done := make(chan error, 1)
+		setOutputRenderer(t, o, r)
 		go func() {
-			done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, scenes, nil, nil, nil, discardSink(t), nil, nil)
+			done <- o.Run(ctx, nil, nil, scenes, nil, nil, nil, discardSink(t), nil, nil)
 		}()
 		receive := func() ports.SecurityBackendEvent {
 			t.Helper()

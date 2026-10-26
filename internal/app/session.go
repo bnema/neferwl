@@ -101,25 +101,6 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	if len(s.sizes) == 0 {
 		s.sizes = [][2]int{{1920, 1080}}
 	}
-	if opts.Backend == "drm" {
-		if s.hw, err = openDRM(ctx, opts.Config); err != nil {
-			return s, err
-		}
-	}
-	s.p = newPipes(s.hw != nil, opts.Config.Hint.Enable)
-	// core() carries channels only; the gate, clock and terminal flag are
-	// explicit core.Options.
-	if s.core, err = core.New(opts.Config, s.p.core(), core.Options{Security: s.security, Clock: s.clock, Terminal: !opts.NoTerminal, HintDisabled: hintDisabledNote(ctx)}); err != nil {
-		return s, err
-	}
-	if s.km, err = xkb.New(xkb.RMLVO{Layout: opts.Config.Keyboard.Layout, Variant: opts.Config.Keyboard.Variant, Options: opts.Config.Keyboard.Options}); err != nil {
-		return s, err
-	}
-	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
-	// Hint mode off: no detector, no debug env, nothing.
-	if opts.Config.Hint.Enable {
-		s.hintOpts = hintOptions(ctx, opts.Config)
-	}
 	// Every output renders on the same GPU: its formats are the clients'.
 	s.inst, err = vulkan.NewInstance(logging.For(ctx, "render"))
 	if err != nil {
@@ -139,6 +120,25 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	}
 	s.dmabuf = s.gpu.DMABuf()
 	log.Info().Int("formats", len(s.dmabuf.Formats)).Msg("dmabuf")
+	if opts.Backend == "drm" {
+		if s.hw, err = openDRM(ctx, opts.Config, s.gpu); err != nil {
+			return s, err
+		}
+	}
+	s.p = newPipes(s.hw != nil, opts.Config.Hint.Enable)
+	// core() carries channels only; the gate, clock and terminal flag are
+	// explicit core.Options.
+	if s.core, err = core.New(opts.Config, s.p.core(), core.Options{Security: s.security, Clock: s.clock, Terminal: !opts.NoTerminal, HintDisabled: hintDisabledNote(ctx)}); err != nil {
+		return s, err
+	}
+	if s.km, err = xkb.New(xkb.RMLVO{Layout: opts.Config.Keyboard.Layout, Variant: opts.Config.Keyboard.Variant, Options: opts.Config.Keyboard.Options}); err != nil {
+		return s, err
+	}
+	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
+	// Hint mode off: no detector, no debug env, nothing.
+	if opts.Config.Hint.Enable {
+		s.hintOpts = hintOptions(ctx, opts.Config)
+	}
 	// One launch prefix for ext-workspace ids and the state file.
 	s.wsIDs = workspaceid.New()
 	// The path is fixed: a config key would let a program of the same user
@@ -424,7 +424,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 					w.TraceFlips = logging.Enabled(ctx, "drm-flip")
 					return w
 				}
-				return hw.runOutputs(ctx, want, opts.Config, apply, outputIO, curs, s.newRenderer, logging.For(ctx, "drm"))
+				return hw.runOutputs(ctx, want, opts.Config, apply, outputIO, curs, logging.For(ctx, "drm"))
 			})
 			return
 		}

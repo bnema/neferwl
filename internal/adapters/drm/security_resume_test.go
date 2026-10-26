@@ -62,8 +62,9 @@ func TestSecurityUnlockedResumeUsesOwnerRetry(t *testing.T) {
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
 				done := make(chan error, 1)
+				setOutputRenderer(t, o, r)
 				go func() {
-					done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, nil, nil, nil, nil)
+					done <- o.Run(ctx, nil, active, nil, nil, nil, nil, nil, nil, nil)
 				}()
 				active <- true
 				if stage == "master-loss" {

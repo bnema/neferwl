@@ -54,8 +54,9 @@ func TestSecurityRunWakePendingResumeAndOff(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		done := make(chan error, 1)
+		setOutputRenderer(t, o, r)
 		go func() {
-			done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, scenes, nil, nil, nil, discardSink(t), nil, nil)
+			done <- o.Run(ctx, nil, active, scenes, nil, nil, nil, discardSink(t), nil, nil)
 		}()
 		scenes <- ports.Scene{Seq: 99, Scale: 1}
 		select {

@@ -237,7 +237,8 @@ type CursorLoader func(c ports.CursorChange, scale float64, t ports.BufferTransf
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
 	log := card.log
 	pipe := slices.Index(card.crtcs, crtc)
-	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, renderLog: card.renderLog, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, cpuFences: card.cpuFences, card: card, reason: "start", ready: make(chan error, 1), seatDisable: make(chan chan struct{}), ping: make(chan chan struct{}), traceFlips: card.want.TraceFlips, vrrFlipGap: card.want.VRRFlipGap}
+	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, renderLog: card.renderLog, monitor: readMonitor(card.info.Path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, cpuFences: card.cpuFences, card: card, reason: "start", ready: make(chan error, 1), seatDisable: make(chan chan struct{}), ping: make(chan chan struct{}), traceFlips: card.want.TraceFlips, vrrFlipGap: card.want.VRRFlipGap}
+	o.NewCaptureRenderer = func(w, h int) (ports.Renderer, error) { return card.dev.Render.NewRenderer(w, h, card.rendererOptions) }
 	var err error
 	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
@@ -257,7 +258,7 @@ func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, er
 	if !card.want.NoVRR {
 		o.vrrProp = vrrProperty(o.k, c.id, crtc)
 	}
-	log.Info().Str("card", card.path).Str("connector", c.name).Str("mode", mode.String()).Str("make", o.monitor.Make).Str("model", o.monitor.Model).Uint32("crtc", crtc).Uint32("primary", o.primary.id).Bool("cursor", o.cursor != nil).Bool("tearing", o.tearing).Bool("vrr", o.vrrProp != 0).Msg("output")
+	log.Info().Str("card", card.info.Path).Str("connector", c.name).Str("mode", mode.String()).Str("make", o.monitor.Make).Str("model", o.monitor.Model).Uint32("crtc", crtc).Uint32("primary", o.primary.id).Bool("cursor", o.cursor != nil).Bool("tearing", o.tearing).Bool("vrr", o.vrrProp != 0).Msg("output")
 	return o, nil
 }
 
@@ -1109,7 +1110,7 @@ func (o *Output) InactiveOnClose() bool { return o.inactiveOnClose }
 
 // Run renders scenes and commits them until ctx ends. active reports seat
 // enable/disable. What the output shows and read is pushed to reports.
-func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan *ports.ContentBatch, returns ports.ContentReturn, cursor <-chan ports.CursorChange, reports ports.PresentationSink, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) (runErr error) {
+func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan *ports.ContentBatch, returns ports.ContentReturn, cursor <-chan ports.CursorChange, reports ports.PresentationSink, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) (runErr error) {
 	defer func() {
 		p := recover()
 		if p != nil {
@@ -1126,7 +1127,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	o.runContext = ctx
 	o.wantOff = o.StartOff
 	o.observeSecurity()
-	r, err := newRenderer(o.Width(), o.Height())
+	r, err := o.card.dev.Render.NewRenderer(o.Width(), o.Height(), o.card.rendererOptions)
 	if err != nil {
 		return fmt.Errorf("create renderer: %w", err)
 	}

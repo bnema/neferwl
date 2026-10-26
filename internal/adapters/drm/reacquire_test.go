@@ -9,7 +9,6 @@ import (
 	"time"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
@@ -95,8 +94,9 @@ func newRetryHarness(t *testing.T) retryHarness {
 	active <- false
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
+	setOutputRenderer(t, o, r)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, nil, discardSink(t), nil, nil)
+		done <- o.Run(ctx, nil, active, nil, nil, nil, nil, discardSink(t), nil, nil)
 	}()
 	synctest.Wait()
 	return retryHarness{

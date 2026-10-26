@@ -116,8 +116,9 @@ func TestRunWaitsVRRFlipGap(t *testing.T) {
 		scenes := make(chan ports.Scene, 1)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
+		setOutputRenderer(t, o, r)
 		go func() {
-			done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, nil, discardSink(t), nil, nil)
+			done <- o.Run(ctx, nil, make(chan bool), scenes, nil, nil, nil, discardSink(t), nil, nil)
 		}()
 		// A composed fullscreen window: a game frame under VRR.
 		game := ports.Scene{OutputWidth: 200, OutputHeight: 100,

@@ -433,8 +433,9 @@ func TestRunProtectedActivationRetriesWithoutStoppingOrEarlyProof(t *testing.T) 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
+	setOutputRenderer(t, o, r)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, nil, nil, nil, nil, discardSink(t), nil, nil)
+		done <- o.Run(ctx, nil, nil, nil, nil, nil, nil, discardSink(t), nil, nil)
 	}()
 	for {
 		select {

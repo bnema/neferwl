@@ -19,12 +19,14 @@ import (
 // goroutine. One reader goroutine reads commit events for all of them
 // and hands each to its output by CRTC.
 type Card struct {
-	alloc   imageAllocator
-	allocMu sync.Mutex
-	fd      int
-	path    string
-	want    Want
-	log     zerowrap.Logger
+	alloc           imageAllocator
+	allocMu         sync.Mutex
+	fd              int
+	info            ports.GPUInfo
+	dev             CardDevices
+	rendererOptions ports.RendererOptions
+	want            Want
+	log             zerowrap.Logger
 	// renderLog carries the render component: direct scanout and overlay
 	// decisions belong to the render path, not to KMS bookkeeping.
 	renderLog zerowrap.Logger
@@ -53,7 +55,8 @@ type Card struct {
 // OpenCard turns on atomic modesetting and reads the card's CRTCs. fd
 // stays owned by the caller. A card without atomic KMS is refused. log
 // carries the drm component and renderLog the render component.
-func OpenCard(fd int, path string, want Want, log, renderLog zerowrap.Logger) (*Card, error) {
+func OpenCard(fd int, info ports.GPUInfo, dev CardDevices, want Want, log, renderLog zerowrap.Logger) (*Card, error) {
+	path := info.Path
 	if err := enableAtomic(fd); err != nil {
 		return nil, fmt.Errorf("drm: atomic modesetting unsupported by %s: %w", path, err)
 	}
@@ -74,11 +77,11 @@ func OpenCard(fd int, path string, want Want, log, renderLog zerowrap.Logger) (*
 	if err != nil {
 		log.Info().Err(err).Str("card", path).Msg("GBM unavailable; the renderer allocates the output images")
 	}
-	return &Card{alloc: alloc, fd: fd, path: path, want: want, log: log, renderLog: renderLog, crtcs: crtcs, outputs: map[string]*Output{}, leasable: map[string]connector{}, leases: map[uint32]leaseRecord{}, flips: flips, k: k, taken: map[uint32]bool{}, async: hasCap(fd, capAtomicAsync), cpuFences: fenceGate(fd, log)}, nil
+	return &Card{alloc: alloc, fd: fd, info: info, dev: dev, want: want, log: log, renderLog: renderLog, crtcs: crtcs, outputs: map[string]*Output{}, leasable: map[string]connector{}, leases: map[uint32]leaseRecord{}, flips: flips, k: k, taken: map[uint32]bool{}, async: hasCap(fd, capAtomicAsync), cpuFences: fenceGate(fd, log)}, nil
 }
 
 // Path is the device path, e.g. /dev/dri/card1.
-func (c *Card) Path() string { return c.path }
+func (c *Card) Path() string { return c.info.Path }
 
 // Device is the card's dev_t, the KMS device clients allocate scanout
 // buffers for (0 when unknown).
@@ -181,7 +184,7 @@ func (c *Card) ConnectedHeads() ([]ports.OutputHead, error) {
 		if !conn.connected || conn.nonDesktop || len(conn.modes) == 0 {
 			continue
 		}
-		monitor := readMonitor(c.path, conn.name)
+		monitor := readMonitor(c.info.Path, conn.name)
 		h := ports.OutputHead{Info: ports.OutputInfo{Name: conn.name, Make: monitor.Make, Model: monitor.Model, Serial: monitor.Serial, PhysicalW: conn.mmW, PhysicalH: conn.mmH}}
 		if h.Info.Make == "Unknown" {
 			h.Info.Make = ""
@@ -343,3 +346,6 @@ func (c *Card) freeImage(img imageBuffer) {
 	defer c.allocMu.Unlock()
 	img.close()
 }
+
+// SetRendererOptions sets output renderer options before outputs are started.
+func (c *Card) SetRendererOptions(o ports.RendererOptions) { c.rendererOptions = o }

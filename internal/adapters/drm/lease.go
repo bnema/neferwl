@@ -58,8 +58,8 @@ func (c *Card) Leasable() []ports.LeaseConnector {
 		if !conn.connected || c.leasedName(conn.name) {
 			continue
 		}
-		m := readMonitor(c.path, conn.name)
-		result = append(result, ports.LeaseConnector{Card: c.path, Name: conn.name, Description: fmt.Sprintf("%s %s", m.Make, m.Model), ConnectorID: conn.id})
+		m := readMonitor(c.info.Path, conn.name)
+		result = append(result, ports.LeaseConnector{Card: c.info.Path, Name: conn.name, Description: fmt.Sprintf("%s %s", m.Make, m.Model), ConnectorID: conn.id})
 	}
 	slices.SortFunc(result, func(a, b ports.LeaseConnector) int {
 		if a.Name < b.Name {
@@ -187,7 +187,7 @@ func (c *Card) LeaseIDs() []uint32 {
 
 // ClientFD opens a separate card fd and makes sure it is not a DRM master.
 func (c *Card) ClientFD() (*os.File, error) {
-	fd, err := unix.Open(c.path, unix.O_RDWR|unix.O_CLOEXEC, 0)
+	fd, err := unix.Open(c.info.Path, unix.O_RDWR|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +195,7 @@ func (c *Card) ClientFD() (*os.File, error) {
 		unix.Close(fd)
 		return nil, err
 	}
-	return os.NewFile(uintptr(fd), c.path), nil
+	return os.NewFile(uintptr(fd), c.info.Path), nil
 }
 
 // FinishedLeases drains IDs revoked after a connector disappeared during Scan.

@@ -45,8 +45,9 @@ func runProtectedStartup(t *testing.T, o *Output, k *mockkms, renders func() (*o
 	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	done := make(chan error, 1)
+	setOutputRenderer(t, o, r)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, nil, nil, nil, nil, discardSink(t), nil, nil)
+		done <- o.Run(ctx, nil, nil, nil, nil, nil, nil, discardSink(t), nil, nil)
 	}()
 	return events, done, cancel
 }

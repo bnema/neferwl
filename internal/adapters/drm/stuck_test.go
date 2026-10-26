@@ -88,8 +88,9 @@ func startStuck(t *testing.T, render func() *os.File, errs ...error) *stuckRun {
 		defer commitMu.Unlock()
 		return append([]commitRec(nil), (*commits)...)
 	}
+	setOutputRenderer(t, o, r)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, h.active, h.scenes, h.contents.in(), h.contents.ret, nil, h.sink, nil, nil)
+		done <- o.Run(ctx, nil, h.active, h.scenes, h.contents.in(), h.contents.ret, nil, h.sink, nil, nil)
 	}()
 	h.count = func() int {
 		commitMu.Lock()

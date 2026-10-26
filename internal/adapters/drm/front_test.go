@@ -167,8 +167,9 @@ func TestRunVideoOnOverlayDoesNotRender(t *testing.T) {
 		sink, presented := presentedSink(t, 64)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
+		setOutputRenderer(t, o, r)
 		go func() {
-			done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, contents.in(), contents.ret, nil, sink, nil, nil)
+			done <- o.Run(ctx, nil, make(chan bool), scenes, contents.in(), contents.ret, nil, sink, nil, nil)
 		}()
 		// Stop Run on every path, before the mocks check their calls.
 		t.Cleanup(func() {
