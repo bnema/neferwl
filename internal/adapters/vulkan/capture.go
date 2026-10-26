@@ -435,7 +435,7 @@ func (r *Renderer) freeCapture() (*captureSlot, error) {
 // CaptureSupported reports whether BeginCapture can work on this device: it
 // needs sync-file export, which software devices such as lavapipe lack.
 func (r *Renderer) CaptureSupported() bool {
-	return r.gpu.dd != nil && r.gpu.syncFD && r.gpu.dd.HasGetSemaphoreFdKHR()
+	return r.gpu.dd != nil && r.syncFD && r.gpu.dd.HasGetSemaphoreFdKHR()
 }
 
 // BeginCapture submits a GPU copy of the last frame and leases its slot.
@@ -458,7 +458,7 @@ func (r *Renderer) beginCapture(debug bool) (*captureFrame, error) {
 	if r.last == nil || r.last.image == 0 {
 		return nil, errors.New("no rendered frame")
 	}
-	if !debug && (!r.gpu.syncFD || !r.gpu.dd.HasGetSemaphoreFdKHR()) {
+	if !debug && (!r.syncFD || !r.gpu.dd.HasGetSemaphoreFdKHR()) {
 		return nil, errors.New("capture needs sync file export")
 	}
 	if r.submitted != r.frame {

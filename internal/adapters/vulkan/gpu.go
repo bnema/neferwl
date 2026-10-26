@@ -14,17 +14,19 @@ import (
 
 // GPU owns a logical device and the queues shared by its renderers.
 type GPU struct {
-	inst                *Instance
-	physical            vk.PhysicalDevice
-	device              vk.Device
-	dd                  *vk.DeviceDispatch
-	family              uint32
-	memory              vk.PhysicalDeviceMemoryProperties
-	maxRange            int
-	queuePriority       string
-	deviceInfo          DeviceInfo
-	dmabuf              ports.DMABufSupport
+	inst          *Instance
+	physical      vk.PhysicalDevice
+	device        vk.Device
+	dd            *vk.DeviceDispatch
+	family        uint32
+	memory        vk.PhysicalDeviceMemoryProperties
+	maxRange      int
+	queuePriority string
+	deviceInfo    DeviceInfo
+	dmabuf        ports.DMABufSupport
+	// Export modifier lists are computed before OpenGPU returns and immutable afterwards.
 	renderMods, hdrMods []uint64
+	hdrReadbackMods     []uint64 // Immutable transfer-source export list, computed at open.
 	modPlanes           map[uint64]uint32
 	importMods          map[importKey][]uint64
 	mu                  sync.Mutex
@@ -265,4 +267,12 @@ func (g *GPU) releaseQueue(q *queue) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	queuePool(g.queues).release(q)
+}
+
+// modifierPlanes reads mutable metadata without retaining the map after unlock.
+func (g *GPU) modifierPlanes(mod uint64) (uint32, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	n, ok := g.modPlanes[mod]
+	return n, ok
 }

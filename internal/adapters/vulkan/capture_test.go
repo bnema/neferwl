@@ -25,7 +25,7 @@ import (
 // export. Software Vulkan devices can still exercise Pixels and rendering.
 func requireCaptureSync(t *testing.T, r *Renderer) {
 	t.Helper()
-	if !r.gpu.syncFD || !r.gpu.dd.HasGetSemaphoreFdKHR() {
+	if !r.syncFD || !r.gpu.dd.HasGetSemaphoreFdKHR() {
 		t.Skip("Vulkan sync-file export unavailable")
 	}
 }
@@ -198,7 +198,7 @@ func TestCaptureReturnedSlotWaitsForFence(t *testing.T) {
 func TestCaptureWithoutSyncFileExport(t *testing.T) {
 	r := newTestRenderer(t, 8, 8)
 	defer r.Close()
-	r.gpu.syncFD = false
+	r.syncFD = false
 	if err := render(r, ports.Scene{Background: "#123456"}, nil); err != nil {
 		t.Fatal(err)
 	}

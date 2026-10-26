@@ -159,7 +159,7 @@ func TestTrimReleasesUndrawnDMABuf(t *testing.T) {
 func TestTrimPollsFinishedFrames(t *testing.T) {
 	r := newTestRenderer(t, 32, 32)
 	defer r.Close()
-	if !r.gpu.syncFD {
+	if !r.syncFD {
 		t.Skip("frames are finished on return without sync files")
 	}
 	done, err := r.Render(ports.Scene{Background: "#000000"}, nil)

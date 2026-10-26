@@ -96,7 +96,7 @@ func TestRendererScaledDMABufFiltersLinearly(t *testing.T) {
 func TestRendererReturnsDoneFence(t *testing.T) {
 	r := newTestRenderer(t, 32, 32)
 	defer r.Close()
-	if !r.gpu.syncFD {
+	if !r.syncFD {
 		t.Skip("device cannot export sync files")
 	}
 	done, err := r.Render(ports.Scene{Background: "#102030"}, nil)
@@ -225,7 +225,7 @@ func render(r *Renderer, s ports.Scene, contents map[ports.WindowID]ports.Surfac
 func TestRendererSHMDoubleBufferWaitsForReaders(t *testing.T) {
 	r := newTestRenderer(t, 32, 32)
 	defer r.Close()
-	if !r.gpu.syncFD {
+	if !r.syncFD {
 		t.Skip("frames are finished on return without sync files")
 	}
 	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}}}}

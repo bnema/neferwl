@@ -41,7 +41,7 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 			// Render crosses into Vulkan through purego, whose calls allocate
 			// (more under -race): the absolute count is information only. What
 			// our code guarantees is that it does not grow with the scene.
-			t.Logf("small steady-state Render: %.1f allocs/frame (syncFD path: %v)", testing.AllocsPerRun(20, frame), r.gpu.syncFD)
+			t.Logf("small steady-state Render: %.1f allocs/frame (syncFD path: %v)", testing.AllocsPerRun(20, frame), r.syncFD)
 			renderAllocs := func(windows int) float64 {
 				var scenes [4]ports.Scene
 				for i := range scenes {
@@ -196,7 +196,7 @@ func TestRenderSteadyStateDMABufAllocations(t *testing.T) {
 		}
 	}
 	moved()
-	t.Logf("dmabuf Render: %.1f allocs/frame (syncFD path: %v)", testing.AllocsPerRun(20, moved), r.gpu.syncFD)
+	t.Logf("dmabuf Render: %.1f allocs/frame (syncFD path: %v)", testing.AllocsPerRun(20, moved), r.syncFD)
 	bounds := image.Rect(0, 0, r.width, r.height)
 	drawsOnly := func() {
 		n++

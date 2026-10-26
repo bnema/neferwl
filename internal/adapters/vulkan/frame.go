@@ -100,12 +100,12 @@ func (r *Renderer) newDone(s *frameSlot) error {
 	d := r.gpu.dd
 	si := vk.SemaphoreCreateInfo{SType: vk.StructureTypeSemaphoreCreateInfo}
 	export := vk.ExportSemaphoreCreateInfo{SType: vk.StructureTypeExportSemaphoreCreateInfo, HandleTypes: vk.ExternalSemaphoreHandleTypeSyncFDBit}
-	if r.gpu.syncFD {
+	if r.syncFD {
 		si.Next = unsafe.Pointer(&export)
 		if d.CreateSemaphore(r.gpu.device, &si, nil, &s.done) == vk.Success {
 			return nil
 		}
-		r.gpu.syncFD = false
+		r.syncFD = false
 		si.Next = nil
 	}
 	return checked("vkCreateSemaphore", d.CreateSemaphore(r.gpu.device, &si, nil, &s.done))
@@ -369,7 +369,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		}
 		submit.WaitSemaphoreCount, submit.WaitSemaphores, submit.WaitDstStageMask = uint32(len(waits)), &waits[0], &stages[0]
 	}
-	if r.gpu.syncFD {
+	if r.syncFD {
 		submit.SignalSemaphoreCount, submit.SignalSemaphores = 1, &slot.done
 	}
 	if err := r.q.submit(1, submit, slot.fence); err != nil {
@@ -394,7 +394,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	}
 	r.dropUnused()
 	r.dropShm()
-	if !r.gpu.syncFD {
+	if !r.syncFD {
 		return nil, r.waitFrame(frame)
 	}
 	sc.fd = 0

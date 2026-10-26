@@ -77,11 +77,11 @@ func TestHDRExportTarget(t *testing.T) {
 	if r.gpu.physical == 0 {
 		t.Skip("no exportable GPU")
 	}
-	r.gpu.hdrMods = r.probeModifiers(r.gpu.physical, vk.FormatA2r10g10b10UnormPack32)
-	if len(r.gpu.hdrMods) == 0 {
+	mods := r.gpu.hdrReadbackMods
+	if len(r.gpu.hdrReadbackMods) == 0 {
 		t.Skip("no HDR modifier supporting transfer-src")
 	}
-	bufs, err := r.ExportTargets(1, r.gpu.hdrMods, false)
+	bufs, err := r.ExportTargets(1, mods, false)
 	if err != nil {
 		t.Skipf("no HDR-exportable target: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestHDRExportTarget(t *testing.T) {
 func TestVirtualHDRExportsWithoutDisplayList(t *testing.T) {
 	r := newTestRenderer(t, 64, 16)
 	defer r.Close()
-	if r.gpu.physical == 0 || len(r.gpu.hdrMods) == 0 {
+	if r.gpu.physical == 0 || len(r.gpu.hdrReadbackMods) == 0 {
 		t.Skip("no exportable HDR GPU")
 	}
 	r.SetHDR(203)

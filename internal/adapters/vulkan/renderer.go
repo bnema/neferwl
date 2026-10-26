@@ -25,6 +25,7 @@ type Renderer struct {
 	width, height int
 	gpu           *GPU
 	q             *queue
+	syncFD        bool // Per-renderer fallback; GPU capability remains immutable.
 	// own is the SDR composition image; HDR uses hdrOwn and PQ targets.
 	own      target
 	hdrOwn   target // linear BT.709 in units of SDR reference white
@@ -130,6 +131,7 @@ func (g *GPU) NewRenderer(width, height int, o ports.RendererOptions) (renderer 
 		return nil, fmt.Errorf("invalid renderer dimensions %d x %d", width, height)
 	}
 	r := &Renderer{gpu: g, q: g.acquireQueue(), width: width, height: height, lastHDRTarget: -1, imports: map[uint64]*imported{}, pools: map[uint64]*mapping{}, shm: map[shmKey]*shmSurface{}, hidden: map[ports.WindowID]struct{}{}, log: g.log}
+	r.syncFD = g.syncFD
 	r.compose.resources, r.compose.indexing = g.resources, g.indexing
 	r.SetVirtualOutput(o.Virtual)
 	r.SetTraceDamage(o.TraceDamage)

@@ -3,6 +3,8 @@ package vulkan
 import (
 	"errors"
 	"image/color"
+	"slices"
+	"sync"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -129,4 +131,57 @@ func TestTwoRenderersShareGPU(t *testing.T) {
 		t.Fatal("surviving renderer has incorrect pixels")
 	}
 
+}
+
+func TestConcurrentRendererTargets(t *testing.T) {
+	g := newTestGPU(t)
+	baseline := slices.Clone(g.hdrMods)
+	var rs [2]*Renderer
+	for i := range rs {
+		renderer, err := g.NewRenderer(32, 32, ports.RendererOptions{Virtual: true, Readback: i == 0})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rs[i] = renderer.(*Renderer)
+		t.Cleanup(rs[i].Close)
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for _, r := range rs {
+		wg.Go(func() {
+			r.SetHDR(203)
+			// Import probing publishes mutable plane metadata while the other output reads it.
+			_ = r.TargetModifiers(nil, true)
+			bufs, err := r.ExportTargets(2, nil, true)
+			if err != nil {
+				errs <- err
+				return
+			}
+			defer func() {
+				r.ExportTargets(0, nil, false)
+				for _, b := range bufs {
+					for _, p := range b.Planes {
+						p.File.Close()
+					}
+				}
+			}()
+			for frame := range 3 {
+				if err := render(r, ports.Scene{Seq: uint64(frame + 1), Background: "#102030"}, nil); err != nil {
+					errs <- err
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+	if !slices.Equal(g.hdrMods, baseline) || !slices.Equal(rs[1].exportModifiers(nil, false), baseline) {
+		t.Fatal("readback output narrowed non-readback HDR modifiers")
+	}
+	if rs[0].syncFD != g.syncFD || rs[1].syncFD != g.syncFD {
+		t.Log("renderer-local semaphore fallback active")
+	}
 }

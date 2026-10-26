@@ -60,11 +60,6 @@ const fourccXR30 = 'X' | 'R'<<8 | '3'<<16 | '0'<<24
 // displays that refuse the multi-plane framebuffers of the others.
 func (r *Renderer) ExportTargets(n int, modifiers []uint64, singlePlane bool) ([]ports.DMABuf, error) {
 	r.dropTargets()
-	if n > 0 && r.hdrNits > 0 && r.hdrReadback && r.gpu.physical != 0 {
-		// Readback targets (GPU tests, headless --screenshot-raw) are also
-		// transfer sources, which changes the format requirements.
-		r.gpu.hdrMods = r.probeModifiers(r.gpu.physical, vk.FormatA2r10g10b10UnormPack32)
-	}
 	if n > 0 && r.hdrNits > 0 && r.hdr.pipeline == 0 {
 		return nil, fmt.Errorf("HDR transform unavailable: %w", r.hdrError)
 	}
@@ -157,6 +152,9 @@ func (r *Renderer) exportModifiers(display []uint64, singlePlane bool) []uint64 
 	available := r.gpu.renderMods
 	if r.hdrNits > 0 {
 		available = r.gpu.hdrMods
+		if r.hdrReadback {
+			available = r.gpu.hdrReadbackMods
+		}
 	}
 	return r.intersectModifiers(available, display, singlePlane)
 }
@@ -168,7 +166,8 @@ func (r *Renderer) exportModifiers(display []uint64, singlePlane bool) []uint64 
 func (r *Renderer) intersectModifiers(available, display []uint64, singlePlane bool) []uint64 {
 	var out []uint64
 	for _, m := range available {
-		if singlePlane && r.gpu.modPlanes[m] > 1 {
+		planes, _ := r.gpu.modifierPlanes(m)
+		if singlePlane && planes > 1 {
 			continue
 		}
 		if (len(display) == 0 && (r.hdrNits == 0 || r.hdrReadback || r.virtual)) || slices.Contains(display, m) {
@@ -203,6 +202,9 @@ func (r *Renderer) TargetModifiers(display []uint64, singlePlane bool) []uint64 
 func (r *Renderer) probeRenderModifiers(physical vk.PhysicalDevice) {
 	r.gpu.renderMods = r.probeModifiers(physical, vk.FormatB8g8r8a8Unorm)
 	r.gpu.hdrMods = r.probeModifiers(physical, vk.FormatA2r10g10b10UnormPack32)
+	r.hdrReadback = true
+	r.gpu.hdrReadbackMods = r.probeModifiers(physical, vk.FormatA2r10g10b10UnormPack32)
+	r.hdrReadback = false
 }
 
 // probeModifiers lists the exportable modifiers of format (one to four memory
@@ -226,13 +228,16 @@ type importKey struct {
 // display allocator made. The answer is probed once per key: it does not
 // change while the device lives.
 func (r *Renderer) probeImportModifiers(physical vk.PhysicalDevice, format vk.Format) []uint64 {
-	r.gpu.mu.Lock()
-	defer r.gpu.mu.Unlock()
 	key := importKey{format, r.hdrReadback}
-	if mods, ok := r.gpu.importMods[key]; ok {
+	r.gpu.mu.Lock()
+	mods, ok := r.gpu.importMods[key]
+	r.gpu.mu.Unlock()
+	if ok {
 		return mods
 	}
-	mods := r.probeTargetModifiers(physical, format, vk.ExternalMemoryFeatureImportableBit)
+	mods = r.probeTargetModifiers(physical, format, vk.ExternalMemoryFeatureImportableBit)
+	r.gpu.mu.Lock()
+	defer r.gpu.mu.Unlock()
 	if r.gpu.importMods == nil {
 		r.gpu.importMods = make(map[importKey][]uint64)
 	}
@@ -259,6 +264,8 @@ func (r *Renderer) probeTargetModifiers(physical vk.PhysicalDevice, format vk.Fo
 	// SDR targets are composed and read back; HDR targets are color
 	// attachments, and transfer sources only with hdrReadback.
 	result, planes := filterModifiers(mods[:list.DrmFormatModifierCount], need, func(m uint64) bool { return r.externalTarget(physical, format, m, feature) })
+	r.gpu.mu.Lock()
+	defer r.gpu.mu.Unlock()
 	if r.gpu.modPlanes == nil {
 		r.gpu.modPlanes = make(map[uint64]uint32)
 	}
@@ -372,7 +379,8 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 	if err := checked("vkGetImageDrmFormatModifierPropertiesEXT", d.GetImageDrmFormatModifierPropertiesEXT(r.gpu.device, t.image, &props)); err != nil {
 		return nil, ports.DMABuf{}, err
 	}
-	n := min(max(r.gpu.modPlanes[props.DrmFormatModifier], 1), maxModifierPlanes)
+	planeCount, _ := r.gpu.modifierPlanes(props.DrmFormatModifier)
+	n := min(max(planeCount, 1), maxModifierPlanes)
 	var layouts [maxModifierPlanes]vk.SubresourceLayout
 	for i := range n {
 		sub := vk.ImageSubresource{AspectMask: vk.ImageAspectMemoryPlane0BitEXT << i}
@@ -458,7 +466,7 @@ func (r *Renderer) importTarget(b *ports.DMABuf) (*target, error) {
 	d := r.gpu.dd
 	format, fourcc := r.targetFormat()
 	n := len(b.Planes)
-	want, known := r.gpu.modPlanes[b.Modifier]
+	want, known := r.gpu.modifierPlanes(b.Modifier)
 	switch {
 	case b.Format != fourcc || b.Width != r.width || b.Height != r.height:
 		return nil, fmt.Errorf("%w: image %dx%d format %#x, target %dx%d format %#x", errImageGeometry, b.Width, b.Height, b.Format, r.width, r.height, fourcc)

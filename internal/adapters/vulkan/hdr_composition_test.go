@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/ports"
-	vk "github.com/bnema/purego-vulkan/vulkan"
 )
 
 func hdrTestRenderer(t *testing.T) *Renderer {
@@ -20,11 +19,11 @@ func hdrTestRenderer(t *testing.T) *Renderer {
 	if r.gpu.physical == 0 {
 		t.Skip("no exportable GPU")
 	}
-	r.gpu.hdrMods = r.probeModifiers(r.gpu.physical, vk.FormatA2r10g10b10UnormPack32)
-	if len(r.gpu.hdrMods) == 0 {
+	mods := r.gpu.hdrReadbackMods
+	if len(r.gpu.hdrReadbackMods) == 0 {
 		t.Skip("no HDR transfer-src modifier")
 	}
-	bufs, err := r.ExportTargets(1, r.gpu.hdrMods, false)
+	bufs, err := r.ExportTargets(1, mods, false)
 	if err != nil {
 		t.Skipf("no HDR target: %v", err)
 	}
