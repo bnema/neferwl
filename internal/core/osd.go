@@ -53,12 +53,21 @@ func (c *Core) osdApply(result osdKeyResult) bool {
 	case osdShow:
 		if c.keyboardFocus() != 0 {
 			c.osd.shown = true
+			if !before {
+				c.osd.window = c.keyboardFocus()
+			}
 		}
 	case osdHide:
 		if !c.osd.pinned {
 			c.osd.shown = false
 		}
 	case osdTogglePin:
+		if !before {
+			if c.keyboardFocus() == 0 {
+				return false
+			}
+			c.osd.window = c.keyboardFocus()
+		}
 		c.osd.pinned = !c.osd.pinned
 		c.osd.shown = c.osd.pinned
 	}
@@ -66,30 +75,28 @@ func (c *Core) osdApply(result osdKeyResult) bool {
 	return before != c.osd.shown || pin != c.osd.pinned
 }
 
-// osdWatch follows committed keyboard focus, including an empty pinned panel.
-func (c *Core) osdWatch(ctx context.Context, focus WindowID) error {
-	if !c.cfg.OSD.Enable || c.security.Protected {
+// osdWatch synchronizes stats with the fixed target, never keyboard focus.
+func (c *Core) osdWatch(ctx context.Context) error {
+	if !c.cfg.OSD.Enable || c.security.Protected || c.osd.shown && c.osd.window == 0 {
 		c.osd.shown, c.osd.pinned = false, false
 		c.osdReset()
 	}
-	if c.windows.lookup(focus).inhibitShortcuts {
-		c.osdCancel()
-	}
-	if focus == 0 && !c.osd.pinned {
-		c.osd.shown = false
-	}
+	target := c.osd.window
 	if !c.osd.shown {
-		focus = 0
+		target = 0
 	}
-	if focus == c.osd.window && focus == c.osd.watched && (!c.osd.shown || c.osd.panel != nil) {
+	if target == c.osd.watched {
 		return nil
 	}
-	if err := c.command(ctx, ports.WatchStats{Window: focus}); err != nil {
+	if err := c.command(ctx, ports.WatchStats{Window: target}); err != nil {
 		return err
 	}
-	c.osd.window, c.osd.watched = focus, focus
+	c.osd.window, c.osd.watched = target, target
 	c.osd.stats = ports.WindowStats{}
-	c.osd.panel = &ports.PanelContent{Lines: [4]string{c.windows.lookup(focus).client.AppID, "waiting for frames..."}}
+	c.osd.panel = nil
+	if target != 0 {
+		c.osd.panel = &ports.PanelContent{Lines: [4]string{c.windows.lookup(target).client.AppID, "waiting for frames..."}}
+	}
 	c.osd.seq++
 	return nil
 }

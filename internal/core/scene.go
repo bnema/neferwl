@@ -127,9 +127,9 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 	scene.CaptureIndicators = c.captureIndicators(sc)
 	scene.Overlays = c.hintOverlays(sc)
 	if c.osd.shown {
-		focused, _ := c.screenOf(c.keyboardFocus())
-		if focused == sc || (c.keyboardFocus() == 0 && sc == c.cur()) {
-			scene.Overlays = append(scene.Overlays, ports.Overlay{ID: overlayIDOSD, Seq: c.osd.seq, Kind: ports.OverlayPanel, Anchor: ports.AnchorTopCenter, Rect: ports.Rect{Y: 24}, Style: osdStyle, Panel: c.osd.panel})
+		target, _ := c.screenOf(c.osd.window)
+		if target == sc {
+			scene.Overlays = append(scene.Overlays, ports.Overlay{Window: c.osd.window, ID: overlayIDOSD, Seq: c.osd.seq, Kind: ports.OverlayPanel, Anchor: ports.AnchorTopCenter, Rect: ports.Rect{Y: 12}, Style: osdStyle, Panel: c.osd.panel})
 		}
 	}
 	scene.Physical = ports.OutputPhysical{Width: sc.info.Width, Height: sc.info.Height, MMWidth: sc.info.PhysicalW, MMHeight: sc.info.PhysicalH}

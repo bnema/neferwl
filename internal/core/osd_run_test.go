@@ -39,7 +39,7 @@ func TestOSDHoldThroughRun(t *testing.T) {
 		fire <- time.Unix(0, int64(400*time.Millisecond))
 		synctest.Wait()
 		o := osdOverlay(t, h)
-		if o.Kind != ports.OverlayPanel || o.Anchor != ports.AnchorTopCenter || o.Capture || o.Panel == nil {
+		if o.Window != 1 || o.Rect != (ports.Rect{Y: 12}) || o.Kind != ports.OverlayPanel || o.Anchor != ports.AnchorTopCenter || o.Capture || o.Panel == nil {
 			t.Fatalf("overlay: %+v", o)
 		}
 		if !strings.Contains(o.Panel.Lines[0], "org.test.app") {
@@ -83,8 +83,14 @@ func TestOSDPinThroughRun(t *testing.T) {
 		osdOverlay(t, h)
 		h.client <- ports.WindowMapped{ID: 2, AppID: "second"}
 		synctest.Wait()
-		osdOverlay(t, h)
-		next(t, h.commands, func(v ports.WatchStats) bool { return v.Window == 2 })
+		if o := osdOverlay(t, h); o.Window != 1 {
+			t.Fatal(o)
+		}
+		for len(h.commands) > 0 {
+			if v, ok := (<-h.commands).(ports.WatchStats); ok && v.Window != 1 {
+				t.Fatalf("focus retargeted: %+v", v)
+			}
+		}
 		tap()
 		tap()
 		s := <-h.scenes
@@ -209,25 +215,22 @@ func TestOSDPinnedEmptyFocusThroughRun(t *testing.T) {
 					h.release("n", 0)
 				}
 				synctest.Wait()
-				o := osdOverlay(t, h)
-				if o.Seq <= old.Seq || o.Panel.Lines != [4]string{"", "waiting for frames..."} {
-					t.Fatalf("empty focus retained stale content: %+v", o)
-				}
-				next(t, h.commands, func(v ports.WatchStats) bool { return v.Window == 0 })
-				h.client <- ports.WindowStats{Window: 1, ClientFPS: 999}
-				synctest.Wait()
-				select {
-				case s := <-h.scenes:
-					t.Fatalf("old window stats published: %+v", s)
-				default:
-				}
-				// Empty focus must preserve the pin: toggling now hides it.
-				h.press("p", ports.ModSuper)
-				h.release("p", 0)
-				synctest.Wait()
-				for _, o := range (<-h.scenes)[0].Overlays {
-					if o.ID == 1<<61 {
-						t.Fatal("empty focus lost pin")
+				if unmap {
+					for _, o := range (<-h.scenes)[0].Overlays {
+						if o.ID == 1<<61 {
+							t.Fatal("unmap retained panel")
+						}
+					}
+					next(t, h.commands, func(v ports.WatchStats) bool { return v.Window == 0 })
+				} else {
+					o := osdOverlay(t, h)
+					if o.Window != 1 || o.Panel != old.Panel {
+						t.Fatal("empty focus retargeted", o)
+					}
+					for len(h.commands) > 0 {
+						if v, ok := (<-h.commands).(ports.WatchStats); ok {
+							t.Fatalf("unexpected watch: %+v", v)
+						}
 					}
 				}
 			})

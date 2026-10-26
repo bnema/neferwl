@@ -631,7 +631,7 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 	c.updatePositionHints(only)
 	c.hintValidate()
 	if c.security.Protected {
-		if err := c.osdWatch(ctx, 0); err != nil {
+		if err := c.osdWatch(ctx); err != nil {
 			return err
 		}
 		return c.publishProtected(ctx)
@@ -676,7 +676,7 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 		return err
 	}
 	focus := c.keyboardFocus()
-	if err := c.osdWatch(ctx, focus); err != nil {
+	if err := c.osdWatch(ctx); err != nil {
 		return err
 	}
 	c.advanceFlash(only)

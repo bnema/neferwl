@@ -409,6 +409,8 @@ Otherwise, left from the first column unfolds the stash. Up/down walk the cards,
 
 Holding `cmd` (`keyboard.cmd`) for about 0.4 s with a focused window shows an overlay with the window's app id, buffer size and format, scanout, VRR, tearing and explicit sync state, and the client and shown FPS with 1 % and 0.1 % lows and a frame-time graph. Releasing `cmd` hides it. Double-tapping `cmd` pins the overlay so it stays shown, and double-tapping again unpins it. The `osd-pin` action toggles the pin too, for example `bind.cmd+shift+i = osd-pin`.
 
+The panel sits at the top centre of the window it was called on and follows its moves and resizes, clipped and faded with that window. Other windows cover it just like the app. A pinned panel stays on that app when focus changes, until it is unpinned or the window closes. Showing or pinning without a focused window does nothing.
+
 The overlay shows live scanout state, typically `scanout off (overlay)` because the overlay itself blocks direct scanout. The overlay is never captured. Nothing happens while the focused window inhibits shortcuts. `osd.enable = off` turns all of this off.
 
 ## Hint mode

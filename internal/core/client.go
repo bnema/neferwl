@@ -88,6 +88,8 @@ func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, 
 	case ports.WindowUnmapped:
 		if v.ID == c.osd.window {
 			c.osd.window = 0
+			c.osd.shown, c.osd.pinned = false, false
+			c.osdReset()
 		}
 		if c.unmapClient(ctx, v) != nil {
 			return false, true
