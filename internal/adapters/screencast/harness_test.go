@@ -17,6 +17,7 @@ import (
 	"github.com/bnema/zerobus"
 	"github.com/bnema/zerowrap"
 	"github.com/stretchr/testify/mock"
+	"golang.org/x/sys/unix"
 )
 
 // startBus starts a dbus-daemon of its own, so tests never touch the
@@ -87,6 +88,36 @@ type peers struct {
 	exeFile func(n int) string
 	mu      sync.Mutex
 	opened  []*os.File
+	// ends[i] is the write end of the pipe whose read end is opened[i]: it
+	// polls POLLERR once the service closed that pidfd.
+	ends []*os.File
+}
+
+// waitClosed waits until the service closed pidfd i (see ends), within one
+// deadline.
+//
+//testpolicy:realtime poll(2) on a pipe whose reader the service closes
+func (p *peers) waitClosed(t *testing.T, i int) {
+	t.Helper()
+	p.mu.Lock()
+	end := p.ends[i]
+	p.mu.Unlock()
+	fds := []unix.PollFd{{Fd: int32(end.Fd()), Events: unix.POLLOUT}}
+	for {
+		n, err := unix.Poll(fds, 5000)
+		if err == unix.EINTR {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n == 0 {
+			t.Fatalf("pidfd %d not closed", i)
+		}
+		if fds[0].Revents&unix.POLLERR != 0 {
+			return
+		}
+	}
 }
 
 func (p *peers) number(f *os.File) int {
@@ -116,6 +147,8 @@ type svcHarness struct {
 	killBus func()             // loses the bus: the daemon dies
 	cancel  context.CancelFunc // stops the service, as the process exit does
 	closed  chan struct{}      // a PipeWire connection was closed
+	applied chan struct{}      // the owner applied an inventory
+	reaped  chan struct{}      // the owner freed dying sessions
 }
 
 type harnessOpts struct {
@@ -139,6 +172,9 @@ func newSvcHarness(t *testing.T, o harnessOpts) *svcHarness {
 	}
 	h.svc = New(func() *captureallow.Policy { return allow }, h.cmds, testLog(h.log))
 	h.svc.address = h.addr
+	h.applied = make(chan struct{}, 8)
+	h.reaped = make(chan struct{}, 8)
+	h.svc.inventoryApplied, h.svc.sessionsReaped = h.applied, h.reaped
 	if o.drain > 0 {
 		h.svc.drain = o.drain
 	}
@@ -149,11 +185,15 @@ func newSvcHarness(t *testing.T, o harnessOpts) *svcHarness {
 			return nil, h.peers.openErr
 		}
 		h.peers.pid.Store(int64(pid))
-		f, err := os.Open(os.DevNull)
+		// A pipe's read end stands in for the pidfd: its closing shows on
+		// the write end.
+		f, w, err := os.Pipe()
 		if err == nil {
 			h.peers.mu.Lock()
 			h.peers.opened = append(h.peers.opened, f)
+			h.peers.ends = append(h.peers.ends, w)
 			h.peers.mu.Unlock()
+			t.Cleanup(func() { _ = w.Close() })
 		}
 		return f, err
 	}).Maybe()
@@ -226,29 +266,39 @@ func (h *svcHarness) client() *zerobus.Conn {
 	return c
 }
 
-// waitName waits until the service owns name.
+// waitName waits until the service owns name: it subscribes to the
+// NameOwnerChanged of name, then asks once, so an acquisition before the
+// subscription is seen by the question and a later one by the signal.
 //
 //testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func (h *svcHarness) waitName(c *zerobus.Conn, name string) {
 	h.t.Helper()
-	timeout, tick := time.After(5*time.Second), time.NewTicker(5*time.Millisecond)
-	defer tick.Stop()
+	check := boundIO(h.t, "waiting for "+name, func() { _ = c.Close() })
+	defer check()
+	if err := c.AddMatch("type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0='" + name + "'"); err != nil {
+		h.t.Fatal(err)
+	}
+	e := c.NewCall("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameHasOwner", "s")
+	e.Str(name)
+	m, err := c.Call()
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	if m.Body().Bool() {
+		return
+	}
 	for {
-		e := c.NewCall("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameHasOwner", "s")
-		e.Str(name)
-		check := boundIO(h.t, "NameHasOwner", func() { _ = c.Close() })
-		m, err := c.Call()
-		check()
+		m, err := c.ReadMessage()
 		if err != nil {
-			h.t.Fatal(err)
+			h.t.Fatalf("%s not owned: %v", name, err)
 		}
-		if m.Body().Bool() {
+		if m.Type != zerobus.TypeSignal || m.Member != "NameOwnerChanged" {
+			continue
+		}
+		r := m.Body()
+		_, _, owner := r.Str(), r.Str(), r.Str()
+		if r.Err() == nil && owner != "" {
 			return
-		}
-		select {
-		case <-timeout:
-			h.t.Fatalf("%s not owned", name)
-		case <-tick.C:
 		}
 	}
 }

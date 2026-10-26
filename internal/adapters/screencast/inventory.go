@@ -25,6 +25,7 @@ func (s *Service) applyInventory(inv ports.CastInventory) {
 	})
 	old, had := s.inv, s.haveInv
 	s.inv, s.haveInv = inv, true
+	defer signal(s.inventoryApplied)
 	if !had {
 		return
 	}

@@ -113,6 +113,19 @@ type Service struct {
 	fatal    error
 	jobs     sync.WaitGroup
 	drain    time.Duration // how long shutdown waits for frames once the service stops
+
+	// Test seams, nil in production: each gets a non-blocking signal on the
+	// owner goroutine, so a test waits on the event instead of polling.
+	inventoryApplied chan<- struct{} // after applyInventory
+	sessionsReaped   chan<- struct{} // after reap freed at least one session
+}
+
+// signal sends on ch without blocking; a nil ch is a no-op.
+func signal(ch chan<- struct{}) {
+	select {
+	case ch <- struct{}{}:
+	default:
+	}
 }
 
 // New creates the service. policy returns the capture allowlist in force;

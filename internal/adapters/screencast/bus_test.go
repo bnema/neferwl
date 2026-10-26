@@ -38,24 +38,9 @@ func ready(t *testing.T, o harnessOpts) (*svcHarness, *zerobus.Conn) {
 		h.waitName(c, nameScreenCast)
 	}
 	h.svc.Inventory(testInventory())
-	// The inventory is applied by the owner before it serves the next call
-	// that needs it: a round trip through the service orders them.
-	timeout, tick := time.After(5*time.Second), time.NewTicker(5*time.Millisecond)
-	defer tick.Stop()
-	for {
-		_, m := callErr(t, c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil)
-		if m != nil && m.Signature == "a{ta{sv}}" {
-			r := m.Body()
-			if end := r.Array('{'); r.More(end) {
-				return h, c
-			}
-		}
-		select {
-		case <-timeout:
-			t.Fatal("inventory not applied")
-		case <-tick.C:
-		}
-	}
+	// The owner signals once it applied the inventory.
+	receive(t, h.applied)
+	return h, c
 }
 
 func createSession(t *testing.T, c *zerobus.Conn) string {
@@ -450,18 +435,10 @@ func TestOwnerVanishFreesSessions(t *testing.T) {
 		t.Fatalf("over the limit: %q", name)
 	}
 	_ = owner.Close()
-	timeout, tick := time.After(5*time.Second), time.NewTicker(10*time.Millisecond)
-	defer tick.Stop()
-	for {
-		name, _ := callErr(t, c, nameScreenCast, pathScreenCast, ifaceScreenCast, "CreateSession", "a{sv}", func(e *zerobus.Encoder) { e.EndArray(e.BeginArray('{')) })
-		if name == "" {
-			return
-		}
-		select {
-		case <-timeout:
-			t.Fatalf("sessions of a vanished owner stay: %q\n%s", name, h.log.String())
-		case <-tick.C:
-		}
+	// The owner frees the vanished owner's sessions on NameOwnerChanged.
+	receive(t, h.reaped)
+	if name, _ := callErr(t, c, nameScreenCast, pathScreenCast, ifaceScreenCast, "CreateSession", "a{sv}", func(e *zerobus.Encoder) { e.EndArray(e.BeginArray('{')) }); name != "" {
+		t.Fatalf("sessions of a vanished owner stay: %q\n%s", name, h.log.String())
 	}
 }
 
@@ -676,23 +653,7 @@ func TestInventorySignalsGoToAllowedPeersOnly(t *testing.T) {
 	// The first inventory is not a change. Wait until the owner applied it
 	// (a published inventory replaces an unread one), then publish a change.
 	h.svc.Inventory(testInventory())
-	timeout, tick := time.After(5*time.Second), time.NewTicker(5*time.Millisecond)
-	defer tick.Stop()
-	for applied := false; !applied; {
-		_, m := callErr(t, allowed, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil)
-		if m != nil && m.Signature == "a{ta{sv}}" {
-			r := m.Body()
-			if end := r.Array('{'); r.More(end) {
-				applied = true
-				continue
-			}
-		}
-		select {
-		case <-timeout:
-			t.Fatal("inventory not applied")
-		case <-tick.C:
-		}
-	}
+	receive(t, h.applied)
 	changed := testInventory()
 	changed.Windows = append(changed.Windows, ports.CastWindow{ID: 9, AppID: "x", Title: "new"})
 	changed.Outputs[0].X = 100
@@ -802,13 +763,8 @@ func TestBusLossClosesCallerPidfds(t *testing.T) {
 		t.Fatalf("%d pidfds, want one open", len(opened))
 	}
 	h.killBus()
-	timeout, tick := time.After(5*time.Second), time.NewTicker(5*time.Millisecond)
-	defer tick.Stop()
-	for !pidfdClosed(opened[0]) {
-		select {
-		case <-timeout:
-			t.Fatal("pidfd of a cached caller survives the bus loss")
-		case <-tick.C:
-		}
+	h.peers.waitClosed(t, 0)
+	if !pidfdClosed(opened[0]) {
+		t.Fatal("pidfd of a cached caller survives the bus loss")
 	}
 }

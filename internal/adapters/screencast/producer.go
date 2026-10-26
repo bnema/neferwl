@@ -343,6 +343,7 @@ func (s *Service) pumpClosing(st *stream) {
 
 // reap frees the dying sessions once every stream released its resources.
 func (s *Service) reap() {
+	freed := false
 	for i := range s.sessions {
 		sess := &s.sessions[i]
 		if !sess.used || !sess.dying {
@@ -354,7 +355,11 @@ func (s *Service) reap() {
 		}
 		if !live {
 			*sess = session{}
+			freed = true
 		}
+	}
+	if freed {
+		signal(s.sessionsReaped)
 	}
 }
 
