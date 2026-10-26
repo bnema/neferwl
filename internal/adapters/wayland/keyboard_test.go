@@ -244,21 +244,8 @@ func TestFootKeyboard(t *testing.T) {
 	}
 	enter := regexp.MustCompile(`wl_keyboard#[0-9]+\.enter\(`)
 	key := regexp.MustCompile(`wl_keyboard#[0-9]+\.key\(`)
-	deadline := waylandDeadline(4 * time.Second)
-	tick := time.NewTicker(10 * time.Millisecond)
-	defer tick.Stop()
-	for {
-		select {
-		case err := <-done:
-			t.Fatalf("foot exited: %v: %s", err, output.String())
-		case <-deadline:
-			t.Fatalf("keyboard events missing: %s", output.String())
-		case <-tick.C:
-			text := output.String()
-			if enter.MatchString(text) && key.MatchString(text) {
-				return
-			}
-		}
+	if exited, ok := waitOutput(output, done, 4*time.Second, func(text string) bool { return enter.MatchString(text) && key.MatchString(text) }); !ok {
+		t.Fatalf("keyboard events missing (foot exit: %v): %s", exited, output.String())
 	}
 }
 

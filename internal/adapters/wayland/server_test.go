@@ -3,9 +3,11 @@ package wayland
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -90,9 +92,9 @@ func TestWestonFrames(t *testing.T) {
 	})
 	clientCtx, stop := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(clientCtx, tool)
-	cmd.Env = append(os.Environ(), "XDG_RUNTIME_DIR="+dir, "WAYLAND_DISPLAY="+s.SocketName())
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
+	cmd.Env = append(os.Environ(), "XDG_RUNTIME_DIR="+dir, "WAYLAND_DISPLAY="+s.SocketName(), "WAYLAND_DEBUG=client")
+	stderr := &lockedBuffer{wrote: make(chan struct{}, 1)}
+	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
 		stop()
 		t.Fatal(err)
@@ -107,22 +109,10 @@ func TestWestonFrames(t *testing.T) {
 			t.Error("client did not exit")
 		}
 	})
-	deadline := waylandDeadline(2 * time.Second)
-	tick := time.NewTicker(25 * time.Millisecond)
-	defer tick.Stop()
-	for {
-		select {
-		case err := <-exited:
-			t.Fatalf("client exited: %v: %s", err, stderr.String())
-		case <-deadline:
-			t.Fatalf("only %d frames; stderr: %s", s.frames, stderr.String())
-		case <-tick.C:
-			var n uint64
-			s.display.Do(func() { n = s.frames })
-			if n >= 10 {
-				return
-			}
-		}
+	// The client logs each frame callback it receives (wl_callback#N.done).
+	frame := regexp.MustCompile(`wl_callback#[0-9]+\.done\(`)
+	if exited, ok := waitOutput(stderr, exited, 5*time.Second, func(text string) bool { return len(frame.FindAllStringIndex(text, -1)) >= 10 }); !ok {
+		t.Fatalf("fewer than 10 frames (client exit: %v); stderr: %s", exited, stderr.String())
 	}
 }
 
@@ -162,7 +152,7 @@ func lifecycleClient(t *testing.T, tool string, s *Server, dir string, extra []s
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, tool, args...)
 	cmd.Env = append(append(os.Environ(), "XDG_RUNTIME_DIR="+dir, "WAYLAND_DISPLAY="+s.SocketName()), extra...)
-	output := &lockedBuffer{}
+	output := &lockedBuffer{wrote: make(chan struct{}, 1)}
 	cmd.Stderr = output
 	if err := cmd.Start(); err != nil {
 		cancel()
@@ -202,6 +192,28 @@ func (b *lockedBuffer) Write(p []byte) (int, error) {
 	return n, err
 }
 func (b *lockedBuffer) String() string { b.mu.Lock(); defer b.mu.Unlock(); return b.b.String() }
+
+// waitOutput waits until ok accepts the buffer's text, the process exits
+// (done) or one deadline passes; it returns the exit error and whether ok
+// accepted. b must have been made with a wrote channel.
+//
+//testpolicy:realtime real external Wayland client process writing to a pipe
+func waitOutput(b *lockedBuffer, done <-chan error, d time.Duration, ok func(string) bool) (exited error, accepted bool) {
+	deadline := waylandDeadline(d)
+	for !ok(b.String()) {
+		select {
+		case <-b.wrote:
+		case err := <-done:
+			if err == nil {
+				err = errors.New("exit status 0")
+			}
+			return err, ok(b.String())
+		case <-deadline:
+			return nil, false
+		}
+	}
+	return nil, true
+}
 
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func waitEvent(t *testing.T, events <-chan ports.ClientEvent, duration time.Duration) ports.ClientEvent {
@@ -261,21 +273,11 @@ func TestWindowConfigure(t *testing.T) {
 		t.Skip("weston-simple-shm not installed")
 	}
 	s, events, commands, dir := lifecycleServer(t)
-	_, _, output := lifecycleClient(t, tool, s, dir, []string{"WAYLAND_DEBUG=client"})
+	_, done, output := lifecycleClient(t, tool, s, dir, []string{"WAYLAND_DEBUG=client"})
 	w := mapped(t, events, 5*time.Second)
 	commands <- ports.ConfigureWindow{ID: w.ID, Width: 640, Height: 480, Activated: true}
-	deadline := waylandDeadline(3 * time.Second)
-	tick := time.NewTicker(10 * time.Millisecond)
-	defer tick.Stop()
-	for {
-		select {
-		case <-deadline:
-			t.Fatalf("missing configure(640, 480: %s", output.String())
-		case <-tick.C:
-			if strings.Contains(output.String(), "configure(640, 480") {
-				return
-			}
-		}
+	if exited, ok := waitOutput(output, done, 3*time.Second, func(text string) bool { return strings.Contains(text, "configure(640, 480") }); !ok {
+		t.Fatalf("missing configure(640, 480 (client exit: %v): %s", exited, output.String())
 	}
 }
 func TestWindowKilled(t *testing.T) {
