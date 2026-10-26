@@ -49,6 +49,9 @@ type Options struct {
 	// captureAllowOwner is the uid that must own that file (tests use their
 	// own; root, 0, otherwise).
 	captureAllowOwner uint32
+	// castInventoryApplied (tests) is signalled after each screencast
+	// inventory the D-Bus service applied.
+	castInventoryApplied chan<- struct{}
 }
 
 func Run(ctx context.Context, opts Options) error { return run(ctx, opts, nil) }

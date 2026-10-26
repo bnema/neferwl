@@ -137,6 +137,9 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	if s.hw != nil || opts.DBus {
 		s.cast = screencast.New(s.captureAllow.Policy, s.p.castCommands, logging.For(ctx, "screencast"))
 		casts = s.cast
+		if opts.castInventoryApplied != nil {
+			s.cast.NotifyInventoryApplied(opts.castInventoryApplied)
+		}
 	}
 	if s.server, err = wayland.New(wayland.Options{
 		CaptureAllow: s.captureAllow,

@@ -36,6 +36,8 @@ const (
 type castApp struct {
 	input chan<- ports.InputEvent
 	stop  func()
+	// inventory is signalled after each inventory the service applied.
+	inventory <-chan struct{}
 }
 
 func requireCastEnv(t *testing.T) {
@@ -67,13 +69,14 @@ func startCastApp(t *testing.T, allow string) *castApp {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	inventory := make(chan struct{}, 16)
 	inputReady := make(chan chan<- ports.InputEvent, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, Options{Backend: "headless", DBus: true, NoXwayland: true, NoTerminal: true, Config: config.Defaults(), Sizes: [][2]int{{320, 240}}, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid())},
+		done <- run(ctx, Options{Backend: "headless", DBus: true, NoXwayland: true, NoTerminal: true, Config: config.Defaults(), Sizes: [][2]int{{320, 240}}, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid()), castInventoryApplied: inventory},
 			func(in chan<- ports.InputEvent) { inputReady <- in })
 	}()
-	a := &castApp{}
+	a := &castApp{inventory: inventory}
 	select {
 	case a.input = <-inputReady:
 	case <-time.After(10 * time.Second):
@@ -184,10 +187,10 @@ func TestScreencastStreamsMonitor(t *testing.T) {
 	app := startCastApp(t, "*\n")
 	c := castClient(t)
 	waitOwner(t, c, scName)
-	// The inventory reaches the service after the outputs appear.
+	// The inventory reaches the service after the outputs appear: each
+	// attempt waits for the next applied inventory.
 	var session, stream string
-	timeout, tick := time.After(15*time.Second), time.NewTicker(50*time.Millisecond)
-	defer tick.Stop()
+	timeout := time.After(15 * time.Second)
 	for {
 		name, m := call(c, scPath, "org.gnome.Mutter.ScreenCast", "CreateSession", "a{sv}", emptyProps)
 		if name != "" {
@@ -202,7 +205,7 @@ func TestScreencastStreamsMonitor(t *testing.T) {
 		select {
 		case <-timeout:
 			t.Fatalf("RecordMonitor: %s", errName)
-		case <-tick.C:
+		case <-app.inventory:
 		}
 	}
 	rule := "type='signal',interface='" + scStream + "'"

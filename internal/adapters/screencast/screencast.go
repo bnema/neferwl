@@ -120,6 +120,11 @@ type Service struct {
 	sessionsReaped   chan<- struct{} // after reap freed at least one session
 }
 
+// NotifyInventoryApplied makes the owner send on ch, without blocking, after
+// each inventory it applied. A test seam: call it before Run; nil in
+// production.
+func (s *Service) NotifyInventoryApplied(ch chan<- struct{}) { s.inventoryApplied = ch }
+
 // signal sends on ch without blocking; a nil ch is a no-op.
 func signal(ch chan<- struct{}) {
 	select {
