@@ -7,43 +7,25 @@ import "slices"
 // equal lane shares (growLane, shrinkLane), or both with its own lane work
 // around them (cascade_sizing.go).
 
-func (columnsBase) grow(w *Workspace, cycle bool) { growCells(w, cycle) }
-func (columnsBase) shrink(w *Workspace)           { shrinkCells(w) }
-func (columnsBase) toggleFullWidth(w *Workspace)  { toggleMaximized(w) }
+func (columnsBase) grow(w edit, cycle bool) { growCells(w.lanes, cycle) }
+func (columnsBase) shrink(w edit)           { shrinkCells(w.lanes) }
+func (columnsBase) toggleFullWidth(w edit)  { toggleMaximized(w.lanes) }
 
-func (fixedLayout) grow(w *Workspace, cycle bool) {
-	if !w.sizable() {
-		return
-	}
-	defer w.scroll()
+func (fixedLayout) grow(w edit, cycle bool) {
 	w.clearSpans(w.Focus)
 	w.unmaximize()
-	growLane(w, cycle)
+	growLane(w.lanes, cycle)
 }
 
-func (fixedLayout) shrink(w *Workspace) {
-	if !w.sizable() {
-		return
-	}
-	defer w.scroll()
+func (fixedLayout) shrink(w edit) {
 	w.clearSpans(w.Focus)
 	w.unmaximize()
-	shrinkLane(w)
-}
-
-// sizable reports whether the focused column can be resized: a tiled column
-// the fullscreen window does not hide.
-func (w *Workspace) sizable() bool {
-	return !w.onFloat() && len(w.Columns) > 0 && !w.fullscreenHides()
+	shrinkLane(w.lanes)
 }
 
 // growCells widens the focused column by a cell of the row, up to MaxColumns;
 // cycle then goes back to auto. The rest of the row keeps its width.
-func growCells(w *Workspace, cycle bool) {
-	if !w.sizable() {
-		return
-	}
-	defer w.scroll()
+func growCells(w *lanes, cycle bool) {
 	w.clearSpans(w.Focus)
 	w.unmaximize()
 	k := max(w.MaxColumns, 1)
@@ -58,11 +40,7 @@ func growCells(w *Workspace, cycle bool) {
 }
 
 // shrinkCells narrows the focused column by a cell, down to one.
-func shrinkCells(w *Workspace) {
-	if !w.sizable() {
-		return
-	}
-	defer w.scroll()
+func shrinkCells(w *lanes) {
 	w.clearSpans(w.Focus)
 	w.unmaximize()
 	w.Columns[w.Focus].Cells = max(w.scrollCells(w.Focus)-1, 1)
@@ -71,7 +49,7 @@ func shrinkCells(w *Workspace) {
 // growLane moves a cell from another column of the focused lane to the
 // focused column; cycle returns an uneven lane to equal cells at the end.
 // Only lanes sized by cells in one row grow.
-func growLane(w *Workspace, cycle bool) {
+func growLane(w *lanes, cycle bool) {
 	if !w.laneRow() {
 		return
 	}
@@ -88,7 +66,7 @@ func growLane(w *Workspace, cycle bool) {
 
 // cycleLane returns a lane that cannot grow, but was left uneven (a column
 // joined it, or max-columns shrank), to equal cells when cycling.
-func cycleLane(w *Workspace, first, n int, cycle bool) {
+func cycleLane(w *lanes, first, n int, cycle bool) {
 	if cycle && slices.ContainsFunc(w.Columns[first:first+n], func(c Column) bool { return c.Cells != 0 }) {
 		w.setLaneCells(first, make([]int, n))
 	}
@@ -97,7 +75,7 @@ func cycleLane(w *Workspace, first, n int, cycle bool) {
 // growLaneCell gives the focused column a cell of the lane first..last,
 // taken from the best donor. It reports false when no column has a cell to
 // spare.
-func (w *Workspace) growLaneCell(first, last int) bool {
+func (w *lanes) growLaneCell(first, last int) bool {
 	k, n := max(w.MaxColumns, 1), last-first+1
 	cells, ok := w.laneCells(first, last, w.Focus)
 	if !ok {
@@ -117,7 +95,7 @@ func (w *Workspace) growLaneCell(first, last int) bool {
 // shrinkLane narrows the focused column by one cell, giving it to its right
 // neighbor in the lane (the left one at the lane's end). A column never goes
 // below one cell.
-func shrinkLane(w *Workspace) {
+func shrinkLane(w *lanes) {
 	if !w.laneRow() {
 		return
 	}
@@ -139,14 +117,10 @@ func shrinkLane(w *Workspace) {
 
 // toggleMaximized expands the focused tiled column without changing its saved
 // width, or restores it.
-func toggleMaximized(w *Workspace) {
-	if len(w.Columns) == 0 || w.onFloat() {
-		return
-	}
+func toggleMaximized(w *lanes) {
 	if w.Columns[w.Focus].FullWidth {
 		w.unmaximize()
 	} else {
 		w.maximize(w.Focus)
 	}
-	w.scroll()
 }

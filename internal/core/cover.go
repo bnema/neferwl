@@ -109,7 +109,7 @@ func (w *Workspace) cover() WindowID {
 // fullscreenHides reports whether a fullscreen window hides the focused
 // column's layout: the others (fixed) or its own column (scroll). Column
 // edits would change what the user cannot see.
-func (w *Workspace) fullscreenHides() bool {
+func (w *lanes) fullscreenHides() bool {
 	return w.fullscreen != 0 && (w.layout().pinsFullscreen() || w.fullscreenColumn(w.Focus))
 }
 

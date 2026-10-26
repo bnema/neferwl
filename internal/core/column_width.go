@@ -1,9 +1,5 @@
 package core
 
-func (w *Workspace) columnWidthFor(i int, ignoreFullWidth bool) int {
-	return w.layout().columnWidth(w.lview(), i, ignoreFullWidth)
-}
-
 // scrollSpansValid is the lane validity scrollWidth needs. It costs O(n):
 // loops over columns compute it once and pass it down.
 func (w *layoutView) scrollSpansValid() bool {
@@ -111,12 +107,6 @@ func (w *layoutView) columnEdges() (xs, widths []int) {
 	return xs, widths
 }
 
-func (w *Workspace) columnX(i int) int {
-	v := w.lview()
-	v = v.withFacts()
-	return v.columnX(i)
-}
-
 // columnX is the left edge of column i in the unscrolled row; v carries facts.
 func (v layoutView) columnX(i int) int {
 	x := v.Usable.X + v.Gap
@@ -131,37 +121,6 @@ func (v layoutView) columnX(i int) int {
 		}
 	}
 	return x
-}
-
-func (w *Workspace) scroll() {
-	w.settleLayout()
-	before := w.View
-	w.View = w.layout().scrollTarget(w.lview())
-	w.retarget(before)
-}
-
-// columnRects returns each column's area on screen, before stacking windows.
-func (w *Workspace) columnRects() []Rect {
-	return w.columnRectsInto(nil, false)
-}
-
-// columnRectsFor shares the fixed layout geometry with the overview's hidden
-// columns card, without changing FullWidth or the clients' saved buffers.
-func (w *Workspace) columnRectsFor(ignoreFullWidth bool) []Rect {
-	return w.columnRectsInto(nil, ignoreFullWidth)
-}
-
-// columnRectsInto is columnRectsFor built in dst's storage (dst[:0] grown
-// when too small): the result aliases dst, so a caller passing a reused
-// buffer must be done with the previous result.
-func (w *Workspace) columnRectsInto(dst []Rect, ignoreFullWidth bool) []Rect {
-	return w.columnRectsAt(dst, ignoreFullWidth, w.shiftPixels())
-}
-
-// columnRectsAt is columnRectsInto with the view slide's shift given: 0 is
-// the settled geometry, without the animation's presentation offset.
-func (w *Workspace) columnRectsAt(dst []Rect, ignoreFullWidth bool, shift int) []Rect {
-	return w.layout().columnRects(w.lview(), dst, rectOpts{IgnoreFullWidth: ignoreFullWidth, Shift: shift})
 }
 
 // nativeWidths keeps the adapter and row statistics outside column loops.

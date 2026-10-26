@@ -41,7 +41,7 @@ func resolveLayout(o Overflow) layout {
 
 // setOverflow is the one writer of Overflow: it resolves the layout once so
 // the hot paths do not scan the table.
-func (w *Workspace) setOverflow(o Overflow) {
+func (w *lanes) setOverflow(o Overflow) {
 	w.Overflow = o
 	w.lstateReady = false
 	w.lcache, w.lcacheFor = resolveLayout(o), o
@@ -52,7 +52,7 @@ func (w *Workspace) setOverflow(o Overflow) {
 // a direct write to Overflow) it resolves from the table and fills the cache,
 // so the two never disagree. Workspace.lay wins over both. The owner goroutine
 // calls it, like every other Workspace method.
-func (w *Workspace) layout() layout {
+func (w *lanes) layout() layout {
 	if w.lay != nil {
 		return w.lay
 	}

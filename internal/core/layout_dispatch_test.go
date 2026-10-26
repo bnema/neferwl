@@ -126,17 +126,17 @@ func TestWorkspaceSizingDispatch(t *testing.T) {
 		w, l := dispatchLayout(t, 2)
 		scrollStubs(l)
 
-		l.EXPECT().grow(w, true).Run(func(w *Workspace, _ bool) { w.Columns[w.Focus].Cells = 3 }).Once()
+		l.EXPECT().grow(mock.Anything, true).Run(func(w edit, _ bool) { w.Columns[w.Focus].Cells = 3 }).Once()
 		w.GrowColumn(true)
 		if w.Columns[0].Cells != 3 {
 			t.Fatalf("cells %d: the layout's grow was not applied to the workspace", w.Columns[0].Cells)
 		}
-		l.EXPECT().shrink(w).Run(func(w *Workspace) { w.Columns[w.Focus].Cells-- }).Once()
+		l.EXPECT().shrink(mock.Anything).Run(func(w edit) { w.Columns[w.Focus].Cells-- }).Once()
 		w.ShrinkColumn()
 		if w.Columns[0].Cells != 2 {
 			t.Fatalf("cells %d after shrink", w.Columns[0].Cells)
 		}
-		l.EXPECT().toggleFullWidth(w).Run(func(w *Workspace) { w.Columns[w.Focus].FullWidth = true }).Once()
+		l.EXPECT().toggleFullWidth(mock.Anything).Run(func(w edit) { w.Columns[w.Focus].FullWidth = true }).Once()
 		w.ToggleFullWidth()
 		if !w.Columns[0].FullWidth {
 			t.Fatal("toggle ignored")
@@ -313,6 +313,64 @@ func TestWorkspaceShapeDispatch(t *testing.T) {
 					t.Fatalf("width %d, spiral slot %d: slot width = %v, want %v", got, slot, got == slot, tc.wantSlotWidth)
 				}
 
+			})
+		})
+	}
+}
+
+// Each dispatch captures the current window, including the row within a stack,
+// rather than caching the previous operation's focus or using the column head.
+func TestWorkspaceEditCapturesFocusAtDispatch(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w, l := dispatchLayout(t, 2)
+		scrollStubs(l)
+		w.Columns[0].Windows = []WindowID{1, 7}
+		l.EXPECT().grow(mock.Anything, true).RunAndReturn(func(e edit, _ bool) {
+			id, _ := w.Focused()
+			if e.Focused != id || e.Focused != 7 || e.lanes != &w.lanes {
+				t.Fatalf("grow edit = %+v, focus = %d", e, id)
+			}
+			e.Columns[e.Focus].Cells = 2
+		}).Once()
+		w.Columns[0].Focus = 1
+		w.GrowColumn(true)
+		l.EXPECT().shrink(mock.Anything).RunAndReturn(func(e edit) {
+			id, _ := w.Focused()
+			if e.Focused != id || e.Focused != 2 || e.lanes != &w.lanes {
+				t.Fatalf("shrink edit = %+v, focus = %d", e, id)
+			}
+		}).Once()
+		w.Focus = 1
+		w.ShrinkColumn()
+	})
+}
+
+// Guards belong to Workspace, before dispatch and before scroll. Toggle keeps
+// its original weaker guard: fullscreen prevents sizing, not maximization.
+func TestWorkspaceSizingGuardsBeforeDispatch(t *testing.T) {
+	for _, mode := range []string{"empty", "float", "stash", "fullscreen"} {
+		t.Run(mode, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				w, l := dispatchLayout(t, 1)
+				switch mode {
+				case "empty":
+					w.Columns = nil
+				case "float":
+					w.Floats = []Float{{ID: 9}}
+					w.floatFocus = true
+				case "stash":
+					w.Stash = []Float{{ID: 9}}
+					w.stashFocus = true
+				case "fullscreen":
+					w.fullscreen = 1
+				}
+				w.GrowColumn(true)
+				w.ShrinkColumn()
+				if mode == "fullscreen" {
+					scrollStubs(l)
+					l.EXPECT().toggleFullWidth(mock.Anything).RunAndReturn(func(e edit) { e.maximize(e.Focus) }).Once()
+				}
+				w.ToggleFullWidth()
 			})
 		})
 	}

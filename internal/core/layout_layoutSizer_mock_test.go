@@ -45,7 +45,7 @@ func (_m *mocklayoutSizer) EXPECT() *mocklayoutSizer_Expecter {
 }
 
 // grow provides a mock function for the type mocklayoutSizer
-func (_mock *mocklayoutSizer) grow(w *Workspace, cycle bool) {
+func (_mock *mocklayoutSizer) grow(w edit, cycle bool) {
 	_mock.Called(w, cycle)
 	return
 }
@@ -56,17 +56,17 @@ type mocklayoutSizer_grow_Call struct {
 }
 
 // grow is a helper method to define mock.On call
-//   - w *Workspace
+//   - w edit
 //   - cycle bool
 func (_e *mocklayoutSizer_Expecter) grow(w any, cycle any) *mocklayoutSizer_grow_Call {
 	return &mocklayoutSizer_grow_Call{Call: _e.mock.On("grow", w, cycle)}
 }
 
-func (_c *mocklayoutSizer_grow_Call) Run(run func(w *Workspace, cycle bool)) *mocklayoutSizer_grow_Call {
+func (_c *mocklayoutSizer_grow_Call) Run(run func(w edit, cycle bool)) *mocklayoutSizer_grow_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 *Workspace
+		var arg0 edit
 		if args[0] != nil {
-			arg0 = args[0].(*Workspace)
+			arg0 = args[0].(edit)
 		}
 		var arg1 bool
 		if args[1] != nil {
@@ -85,13 +85,13 @@ func (_c *mocklayoutSizer_grow_Call) Return() *mocklayoutSizer_grow_Call {
 	return _c
 }
 
-func (_c *mocklayoutSizer_grow_Call) RunAndReturn(run func(w *Workspace, cycle bool)) *mocklayoutSizer_grow_Call {
+func (_c *mocklayoutSizer_grow_Call) RunAndReturn(run func(w edit, cycle bool)) *mocklayoutSizer_grow_Call {
 	_c.Run(run)
 	return _c
 }
 
 // shrink provides a mock function for the type mocklayoutSizer
-func (_mock *mocklayoutSizer) shrink(w *Workspace) {
+func (_mock *mocklayoutSizer) shrink(w edit) {
 	_mock.Called(w)
 	return
 }
@@ -102,16 +102,16 @@ type mocklayoutSizer_shrink_Call struct {
 }
 
 // shrink is a helper method to define mock.On call
-//   - w *Workspace
+//   - w edit
 func (_e *mocklayoutSizer_Expecter) shrink(w any) *mocklayoutSizer_shrink_Call {
 	return &mocklayoutSizer_shrink_Call{Call: _e.mock.On("shrink", w)}
 }
 
-func (_c *mocklayoutSizer_shrink_Call) Run(run func(w *Workspace)) *mocklayoutSizer_shrink_Call {
+func (_c *mocklayoutSizer_shrink_Call) Run(run func(w edit)) *mocklayoutSizer_shrink_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 *Workspace
+		var arg0 edit
 		if args[0] != nil {
-			arg0 = args[0].(*Workspace)
+			arg0 = args[0].(edit)
 		}
 		run(
 			arg0,
@@ -125,13 +125,13 @@ func (_c *mocklayoutSizer_shrink_Call) Return() *mocklayoutSizer_shrink_Call {
 	return _c
 }
 
-func (_c *mocklayoutSizer_shrink_Call) RunAndReturn(run func(w *Workspace)) *mocklayoutSizer_shrink_Call {
+func (_c *mocklayoutSizer_shrink_Call) RunAndReturn(run func(w edit)) *mocklayoutSizer_shrink_Call {
 	_c.Run(run)
 	return _c
 }
 
 // toggleFullWidth provides a mock function for the type mocklayoutSizer
-func (_mock *mocklayoutSizer) toggleFullWidth(w *Workspace) {
+func (_mock *mocklayoutSizer) toggleFullWidth(w edit) {
 	_mock.Called(w)
 	return
 }
@@ -142,16 +142,16 @@ type mocklayoutSizer_toggleFullWidth_Call struct {
 }
 
 // toggleFullWidth is a helper method to define mock.On call
-//   - w *Workspace
+//   - w edit
 func (_e *mocklayoutSizer_Expecter) toggleFullWidth(w any) *mocklayoutSizer_toggleFullWidth_Call {
 	return &mocklayoutSizer_toggleFullWidth_Call{Call: _e.mock.On("toggleFullWidth", w)}
 }
 
-func (_c *mocklayoutSizer_toggleFullWidth_Call) Run(run func(w *Workspace)) *mocklayoutSizer_toggleFullWidth_Call {
+func (_c *mocklayoutSizer_toggleFullWidth_Call) Run(run func(w edit)) *mocklayoutSizer_toggleFullWidth_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 *Workspace
+		var arg0 edit
 		if args[0] != nil {
-			arg0 = args[0].(*Workspace)
+			arg0 = args[0].(edit)
 		}
 		run(
 			arg0,
@@ -165,7 +165,7 @@ func (_c *mocklayoutSizer_toggleFullWidth_Call) Return() *mocklayoutSizer_toggle
 	return _c
 }
 
-func (_c *mocklayoutSizer_toggleFullWidth_Call) RunAndReturn(run func(w *Workspace)) *mocklayoutSizer_toggleFullWidth_Call {
+func (_c *mocklayoutSizer_toggleFullWidth_Call) RunAndReturn(run func(w edit)) *mocklayoutSizer_toggleFullWidth_Call {
 	_c.Run(run)
 	return _c
 }

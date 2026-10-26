@@ -151,8 +151,8 @@ func (columnsBase) full(layoutView) bool            { return false }
 func (columnsBase) moveAllowed(v layoutView, from, to int) bool {
 	return from >= 0 && to >= 0 && from < len(v.Columns) && to < len(v.Columns)
 }
-func (columnsBase) moveLane(*Workspace, int) bool     { return false }
-func (columnsBase) isolate(*Workspace, WindowID) bool { return false }
+func (columnsBase) moveLane(edit, int) bool     { return false }
+func (columnsBase) isolate(edit, WindowID) bool { return false }
 
 func (columnsBase) previewTiles(v layoutView, dst []Placement, rowBuf []Rect) ([]Placement, int, Rect) {
 	if tiles, span, sel, ok := previewPinned(v, dst, rowBuf); ok {
@@ -181,3 +181,5 @@ func (columnsBase) previewTiles(v layoutView, dst []Placement, rowBuf []Rect) ([
 	return dst, span, sel
 }
 func (columnsBase) previewLanes() bool { return false }
+
+func (columnsBase) adoptFloat(edit, WindowID) bool { return false }

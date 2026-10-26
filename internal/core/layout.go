@@ -74,7 +74,8 @@ type lanes struct {
 	// first; stack() filters removed windows at read time.
 	maximized []WindowID
 	Focus     int
-	View      int
+	// View is the settled offset along the layout's content axis.
+	View int
 	// Output is the effective viewport in monitor coordinates: the whole
 	// monitor unless the workspace has a size override, then a centered
 	// rectangle no larger than the monitor. Fullscreen fills it.
@@ -98,8 +99,7 @@ type Workspace struct {
 	// recent holds one window per column the user focused, newest first
 	// (switcher.go); columns that went are dropped when read.
 	recent []WindowID
-	// View is the settled offset along the layout's content axis.
-	// view is its presentation offset, in logical pixels.
+	// view is the presentation offset, in logical pixels.
 	view motion.Slide
 	// monitor is the full logical monitor and reserved its area left by
 	// layer surfaces, both from the monitor; size is the override (0 inherits).
@@ -241,7 +241,7 @@ func (w *Workspace) appendWindows(dst []WindowID) []WindowID {
 }
 
 // cell is the 1-based column and row of a tiled window, 0, 0 otherwise.
-func (w *Workspace) cell(id WindowID) (col, row int) {
+func (w *lanes) cell(id WindowID) (col, row int) {
 	for ci, c := range w.Columns {
 		if ri := slices.Index(c.Windows, id); ri >= 0 {
 			return ci + 1, ri + 1
@@ -564,7 +564,7 @@ func (w *Workspace) SetMaxColumns(n int) {
 // workspace's own geometry, scaled uniformly.
 func (w *Workspace) overviewArea() Rect { return w.reserved }
 
-func (w *Workspace) gap() int { return min(w.Gaps, w.Usable.W/2, w.Usable.H/2) }
+func (w *lanes) gap() int { return min(w.Gaps, w.Usable.W/2, w.Usable.H/2) }
 
 // stackRects cuts r in n rows with a gap between them; the last row takes
 // the rounding remainder. Rows past the bottom (gaps taller than r) are

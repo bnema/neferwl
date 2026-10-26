@@ -4,11 +4,7 @@ package core
 // makes room for a wider column by pushing a neighbor to the adjacent band,
 // and the end of the width cycle (or unmaximizing) brings it back.
 
-func (cascadeLayout) grow(w *Workspace, cycle bool) {
-	if !w.sizable() {
-		return
-	}
-	defer w.scroll()
+func (cascadeLayout) grow(w edit, cycle bool) {
 	w.clearSpans(w.Focus)
 	if w.Columns[w.Focus].FullWidth {
 		w.unmaximizeBand()
@@ -31,7 +27,7 @@ func (cascadeLayout) grow(w *Workspace, cycle bool) {
 			w.setLaneCells(first, make([]int, last-first+1))
 			return
 		}
-		cycleLane(w, first, n, cycle)
+		cycleLane(w.lanes, first, n, cycle)
 		return
 	}
 	if !w.growLaneCell(first, last) && cycle {
@@ -44,23 +40,16 @@ func (cascadeLayout) grow(w *Workspace, cycle bool) {
 	}
 }
 
-func (cascadeLayout) shrink(w *Workspace) {
-	if !w.sizable() {
-		return
-	}
-	defer w.scroll()
+func (cascadeLayout) shrink(w edit) {
 	w.clearSpans(w.Focus)
 	if w.Columns[w.Focus].FullWidth {
 		w.unmaximizeBand()
 	}
 	w.unmaximize()
-	shrinkLane(w)
+	shrinkLane(w.lanes)
 }
 
-func (cascadeLayout) toggleFullWidth(w *Workspace) {
-	if len(w.Columns) == 0 || w.onFloat() {
-		return
-	}
+func (cascadeLayout) toggleFullWidth(w edit) {
 	if w.Columns[w.Focus].FullWidth {
 		w.unmaximizeBand()
 	} else {
@@ -68,12 +57,11 @@ func (cascadeLayout) toggleFullWidth(w *Workspace) {
 		w.isolateBand()
 		w.maximize(w.Focus)
 	}
-	w.scroll()
 }
 
 // unevenLane reports whether a column of the band first..last has its own
 // width.
-func (w *Workspace) unevenLane(first, last int) bool {
+func (w *lanes) unevenLane(first, last int) bool {
 	for _, c := range w.Columns[first : last+1] {
 		if c.Cells != 0 {
 			return true
@@ -84,7 +72,7 @@ func (w *Workspace) unevenLane(first, last int) bool {
 
 // unmaximizeBand unmaximizes the focused cascade column and brings back
 // the columns its maximization sent to the adjacent bands.
-func (w *Workspace) unmaximizeBand() {
+func (w edit) unmaximizeBand() {
 	w.Columns[w.Focus].FullWidth = false
 	w.restoreBand()
 }

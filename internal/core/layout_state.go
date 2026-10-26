@@ -4,7 +4,7 @@ import "slices"
 
 // state is the layout's per-workspace data, built on first use. Stateless
 // layouts keep nil.
-func (w *Workspace) state() layoutState {
+func (w *lanes) state() layoutState {
 	if w.lcacheFor != w.Overflow {
 		w.layout()
 	}
@@ -18,13 +18,13 @@ func (w *Workspace) state() layoutState {
 }
 
 // newKey issues a workspace-local column identity.
-func (w *Workspace) newKey() uint64 {
+func (w *lanes) newKey() uint64 {
 	w.colSeq++
 	return w.colSeq
 }
 
 // ensureKeys gives every keyless column an identity.
-func (w *Workspace) ensureKeys() {
+func (w *lanes) ensureKeys() {
 	for _, c := range w.Columns {
 		w.colSeq = max(w.colSeq, c.key)
 	}
@@ -38,7 +38,7 @@ func (w *Workspace) ensureKeys() {
 // columnInserted follows Columns[at] being added: the column gets an
 // identity of this workspace, and the layout state receives how it was
 // inserted and what the old workspace's state let travel with it.
-func (w *Workspace) columnInserted(at int, kind insertKind) {
+func (w *lanes) columnInserted(at int, kind insertKind) {
 	w.ensureKeys()
 	// Incoming columns may carry an identity from a different workspace.
 	w.Columns[at].key = w.newKey()
@@ -51,7 +51,7 @@ func (w *Workspace) columnInserted(at int, kind insertKind) {
 
 // settleLayout runs before scroll() measures: keys exist, the layout state
 // refreshes, stale manual widths go.
-func (w *Workspace) settleLayout() {
+func (w *lanes) settleLayout() {
 	s := w.state()
 	w.ensureKeys()
 	if s != nil {
@@ -64,7 +64,7 @@ func (w *Workspace) settleLayout() {
 // resetLayoutState forgets the layout state: on a layout switch, the next
 // use builds it from the column order. Carries parked on columns by a
 // stateless workspace go with it.
-func (w *Workspace) resetLayoutState() {
+func (w *lanes) resetLayoutState() {
 	w.lstate = nil
 	w.lstateReady = false
 	for i := range w.Columns {
@@ -75,7 +75,7 @@ func (w *Workspace) resetLayoutState() {
 // deleteColumn removes column i and returns what travels with it to another
 // workspace: what the layout state hands out, else the carry a stateless
 // workspace kept on the column.
-func (w *Workspace) deleteColumn(i int) (carry any) {
+func (w *lanes) deleteColumn(i int) (carry any) {
 	// A removed member cannot be detected by counting surviving stamp members.
 	w.clearSpans(i)
 	col := w.Columns[i]

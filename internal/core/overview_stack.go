@@ -31,7 +31,7 @@ func (w *Workspace) overviewMaximized() bool {
 	return w.Columns[w.Focus].FullWidth
 }
 
-func (w *Workspace) columnOf(id WindowID) int {
+func (w *lanes) columnOf(id WindowID) int {
 	c, _ := w.cell(id)
 	return c - 1
 }

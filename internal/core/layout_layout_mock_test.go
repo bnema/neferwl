@@ -44,6 +44,63 @@ func (_m *mocklayout) EXPECT() *mocklayout_Expecter {
 	return &mocklayout_Expecter{mock: &_m.Mock}
 }
 
+// adoptFloat provides a mock function for the type mocklayout
+func (_mock *mocklayout) adoptFloat(w edit, id WindowID) bool {
+	ret := _mock.Called(w, id)
+
+	if len(ret) == 0 {
+		panic("no return value specified for adoptFloat")
+	}
+
+	var r0 bool
+	if returnFunc, ok := ret.Get(0).(func(edit, WindowID) bool); ok {
+		r0 = returnFunc(w, id)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	return r0
+}
+
+// mocklayout_adoptFloat_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'adoptFloat'
+type mocklayout_adoptFloat_Call struct {
+	*mock.Call
+}
+
+// adoptFloat is a helper method to define mock.On call
+//   - w edit
+//   - id WindowID
+func (_e *mocklayout_Expecter) adoptFloat(w any, id any) *mocklayout_adoptFloat_Call {
+	return &mocklayout_adoptFloat_Call{Call: _e.mock.On("adoptFloat", w, id)}
+}
+
+func (_c *mocklayout_adoptFloat_Call) Run(run func(w edit, id WindowID)) *mocklayout_adoptFloat_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 edit
+		if args[0] != nil {
+			arg0 = args[0].(edit)
+		}
+		var arg1 WindowID
+		if args[1] != nil {
+			arg1 = args[1].(WindowID)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *mocklayout_adoptFloat_Call) Return(b bool) *mocklayout_adoptFloat_Call {
+	_c.Call.Return(b)
+	return _c
+}
+
+func (_c *mocklayout_adoptFloat_Call) RunAndReturn(run func(w edit, id WindowID) bool) *mocklayout_adoptFloat_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // axes provides a mock function for the type mocklayout
 func (_mock *mocklayout) axes() (layoutAxis, layoutAxis) {
 	ret := _mock.Called()
@@ -473,7 +530,7 @@ func (_c *mocklayout_full_Call) RunAndReturn(run func(v layoutView) bool) *mockl
 }
 
 // grow provides a mock function for the type mocklayout
-func (_mock *mocklayout) grow(w *Workspace, cycle bool) {
+func (_mock *mocklayout) grow(w edit, cycle bool) {
 	_mock.Called(w, cycle)
 	return
 }
@@ -484,17 +541,17 @@ type mocklayout_grow_Call struct {
 }
 
 // grow is a helper method to define mock.On call
-//   - w *Workspace
+//   - w edit
 //   - cycle bool
 func (_e *mocklayout_Expecter) grow(w any, cycle any) *mocklayout_grow_Call {
 	return &mocklayout_grow_Call{Call: _e.mock.On("grow", w, cycle)}
 }
 
-func (_c *mocklayout_grow_Call) Run(run func(w *Workspace, cycle bool)) *mocklayout_grow_Call {
+func (_c *mocklayout_grow_Call) Run(run func(w edit, cycle bool)) *mocklayout_grow_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 *Workspace
+		var arg0 edit
 		if args[0] != nil {
-			arg0 = args[0].(*Workspace)
+			arg0 = args[0].(edit)
 		}
 		var arg1 bool
 		if args[1] != nil {
@@ -513,13 +570,13 @@ func (_c *mocklayout_grow_Call) Return() *mocklayout_grow_Call {
 	return _c
 }
 
-func (_c *mocklayout_grow_Call) RunAndReturn(run func(w *Workspace, cycle bool)) *mocklayout_grow_Call {
+func (_c *mocklayout_grow_Call) RunAndReturn(run func(w edit, cycle bool)) *mocklayout_grow_Call {
 	_c.Run(run)
 	return _c
 }
 
 // isolate provides a mock function for the type mocklayout
-func (_mock *mocklayout) isolate(w *Workspace, id WindowID) bool {
+func (_mock *mocklayout) isolate(w edit, id WindowID) bool {
 	ret := _mock.Called(w, id)
 
 	if len(ret) == 0 {
@@ -527,7 +584,7 @@ func (_mock *mocklayout) isolate(w *Workspace, id WindowID) bool {
 	}
 
 	var r0 bool
-	if returnFunc, ok := ret.Get(0).(func(*Workspace, WindowID) bool); ok {
+	if returnFunc, ok := ret.Get(0).(func(edit, WindowID) bool); ok {
 		r0 = returnFunc(w, id)
 	} else {
 		r0 = ret.Get(0).(bool)
@@ -541,17 +598,17 @@ type mocklayout_isolate_Call struct {
 }
 
 // isolate is a helper method to define mock.On call
-//   - w *Workspace
+//   - w edit
 //   - id WindowID
 func (_e *mocklayout_Expecter) isolate(w any, id any) *mocklayout_isolate_Call {
 	return &mocklayout_isolate_Call{Call: _e.mock.On("isolate", w, id)}
 }
 
-func (_c *mocklayout_isolate_Call) Run(run func(w *Workspace, id WindowID)) *mocklayout_isolate_Call {
+func (_c *mocklayout_isolate_Call) Run(run func(w edit, id WindowID)) *mocklayout_isolate_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 *Workspace
+		var arg0 edit
 		if args[0] != nil {
-			arg0 = args[0].(*Workspace)
+			arg0 = args[0].(edit)
 		}
 		var arg1 WindowID
 		if args[1] != nil {
@@ -570,7 +627,7 @@ func (_c *mocklayout_isolate_Call) Return(b bool) *mocklayout_isolate_Call {
 	return _c
 }
 
-func (_c *mocklayout_isolate_Call) RunAndReturn(run func(w *Workspace, id WindowID) bool) *mocklayout_isolate_Call {
+func (_c *mocklayout_isolate_Call) RunAndReturn(run func(w edit, id WindowID) bool) *mocklayout_isolate_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1066,7 +1123,7 @@ func (_c *mocklayout_moveAllowed_Call) RunAndReturn(run func(v layoutView, from 
 }
 
 // moveLane provides a mock function for the type mocklayout
-func (_mock *mocklayout) moveLane(w *Workspace, dir int) bool {
+func (_mock *mocklayout) moveLane(w edit, dir int) bool {
 	ret := _mock.Called(w, dir)
 
 	if len(ret) == 0 {
@@ -1074,7 +1131,7 @@ func (_mock *mocklayout) moveLane(w *Workspace, dir int) bool {
 	}
 
 	var r0 bool
-	if returnFunc, ok := ret.Get(0).(func(*Workspace, int) bool); ok {
+	if returnFunc, ok := ret.Get(0).(func(edit, int) bool); ok {
 		r0 = returnFunc(w, dir)
 	} else {
 		r0 = ret.Get(0).(bool)
@@ -1088,17 +1145,17 @@ type mocklayout_moveLane_Call struct {
 }
 
 // moveLane is a helper method to define mock.On call
-//   - w *Workspace
+//   - w edit
 //   - dir int
 func (_e *mocklayout_Expecter) moveLane(w any, dir any) *mocklayout_moveLane_Call {
 	return &mocklayout_moveLane_Call{Call: _e.mock.On("moveLane", w, dir)}
 }
 
-func (_c *mocklayout_moveLane_Call) Run(run func(w *Workspace, dir int)) *mocklayout_moveLane_Call {
+func (_c *mocklayout_moveLane_Call) Run(run func(w edit, dir int)) *mocklayout_moveLane_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 *Workspace
+		var arg0 edit
 		if args[0] != nil {
-			arg0 = args[0].(*Workspace)
+			arg0 = args[0].(edit)
 		}
 		var arg1 int
 		if args[1] != nil {
@@ -1117,7 +1174,7 @@ func (_c *mocklayout_moveLane_Call) Return(b bool) *mocklayout_moveLane_Call {
 	return _c
 }
 
-func (_c *mocklayout_moveLane_Call) RunAndReturn(run func(w *Workspace, dir int) bool) *mocklayout_moveLane_Call {
+func (_c *mocklayout_moveLane_Call) RunAndReturn(run func(w edit, dir int) bool) *mocklayout_moveLane_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1564,7 +1621,7 @@ func (_c *mocklayout_scrolls_Call) RunAndReturn(run func() bool) *mocklayout_scr
 }
 
 // shrink provides a mock function for the type mocklayout
-func (_mock *mocklayout) shrink(w *Workspace) {
+func (_mock *mocklayout) shrink(w edit) {
 	_mock.Called(w)
 	return
 }
@@ -1575,16 +1632,16 @@ type mocklayout_shrink_Call struct {
 }
 
 // shrink is a helper method to define mock.On call
-//   - w *Workspace
+//   - w edit
 func (_e *mocklayout_Expecter) shrink(w any) *mocklayout_shrink_Call {
 	return &mocklayout_shrink_Call{Call: _e.mock.On("shrink", w)}
 }
 
-func (_c *mocklayout_shrink_Call) Run(run func(w *Workspace)) *mocklayout_shrink_Call {
+func (_c *mocklayout_shrink_Call) Run(run func(w edit)) *mocklayout_shrink_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 *Workspace
+		var arg0 edit
 		if args[0] != nil {
-			arg0 = args[0].(*Workspace)
+			arg0 = args[0].(edit)
 		}
 		run(
 			arg0,
@@ -1598,7 +1655,7 @@ func (_c *mocklayout_shrink_Call) Return() *mocklayout_shrink_Call {
 	return _c
 }
 
-func (_c *mocklayout_shrink_Call) RunAndReturn(run func(w *Workspace)) *mocklayout_shrink_Call {
+func (_c *mocklayout_shrink_Call) RunAndReturn(run func(w edit)) *mocklayout_shrink_Call {
 	_c.Run(run)
 	return _c
 }
@@ -1830,7 +1887,7 @@ func (_c *mocklayout_spiral_Call) RunAndReturn(run func() bool) *mocklayout_spir
 }
 
 // toggleFullWidth provides a mock function for the type mocklayout
-func (_mock *mocklayout) toggleFullWidth(w *Workspace) {
+func (_mock *mocklayout) toggleFullWidth(w edit) {
 	_mock.Called(w)
 	return
 }
@@ -1841,16 +1898,16 @@ type mocklayout_toggleFullWidth_Call struct {
 }
 
 // toggleFullWidth is a helper method to define mock.On call
-//   - w *Workspace
+//   - w edit
 func (_e *mocklayout_Expecter) toggleFullWidth(w any) *mocklayout_toggleFullWidth_Call {
 	return &mocklayout_toggleFullWidth_Call{Call: _e.mock.On("toggleFullWidth", w)}
 }
 
-func (_c *mocklayout_toggleFullWidth_Call) Run(run func(w *Workspace)) *mocklayout_toggleFullWidth_Call {
+func (_c *mocklayout_toggleFullWidth_Call) Run(run func(w edit)) *mocklayout_toggleFullWidth_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 *Workspace
+		var arg0 edit
 		if args[0] != nil {
-			arg0 = args[0].(*Workspace)
+			arg0 = args[0].(edit)
 		}
 		run(
 			arg0,
@@ -1864,7 +1921,7 @@ func (_c *mocklayout_toggleFullWidth_Call) Return() *mocklayout_toggleFullWidth_
 	return _c
 }
 
-func (_c *mocklayout_toggleFullWidth_Call) RunAndReturn(run func(w *Workspace)) *mocklayout_toggleFullWidth_Call {
+func (_c *mocklayout_toggleFullWidth_Call) RunAndReturn(run func(w edit)) *mocklayout_toggleFullWidth_Call {
 	_c.Run(run)
 	return _c
 }

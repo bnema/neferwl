@@ -71,6 +71,7 @@ func extensionLayout(name Overflow, st layoutState) *mocklayout {
 	l.EXPECT().moveAllowed(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(base.moveAllowed)
 	l.EXPECT().moveLane(mock.Anything, mock.Anything).RunAndReturn(base.moveLane)
 	l.EXPECT().isolate(mock.Anything, mock.Anything).RunAndReturn(base.isolate)
+	l.EXPECT().adoptFloat(mock.Anything, mock.Anything).RunAndReturn(base.adoptFloat)
 	l.EXPECT().previewTiles(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(base.previewTiles)
 	l.EXPECT().previewLanes().RunAndReturn(base.previewLanes)
 	l.EXPECT().grow(mock.Anything, mock.Anything).RunAndReturn(base.grow)
@@ -186,13 +187,13 @@ func TestTrailLayoutStateAndCarry(t *testing.T) {
 		// sa tags the columns it hands out; sb records the carries it receives.
 		sa, sb := newMocklayoutState(t), newMocklayoutState(t)
 		sa.EXPECT().inserted(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(func(_ *Workspace, _ int, _ insertKind, carry any) any { return carry }).Times(3)
+			RunAndReturn(func(_ *lanes, _ int, _ insertKind, carry any) any { return carry }).Times(3)
 		sa.EXPECT().removed(mock.Anything, mock.Anything).
 			RunAndReturn(func(_ int, col Column) any { return trailCarry(col.key) }).Once()
 		sa.EXPECT().settle(mock.Anything).Return().Maybe()
 		var received []any
 		sb.EXPECT().inserted(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(func(_ *Workspace, _ int, _ insertKind, carry any) any {
+			RunAndReturn(func(_ *lanes, _ int, _ insertKind, carry any) any {
 				if _, ok := carry.(trailCarry); ok {
 					received = append(received, carry)
 					return nil

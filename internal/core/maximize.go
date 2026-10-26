@@ -3,7 +3,7 @@ package core
 import "slices"
 
 // maximize sets FullWidth on column i; unlike ToggleFullWidth it never toggles.
-func (w *Workspace) maximize(i int) {
+func (w *lanes) maximize(i int) {
 	if i >= 0 && i < len(w.Columns) {
 		w.Columns[i].FullWidth = true
 		id := w.Columns[i].Windows[w.Columns[i].Focus]
@@ -21,7 +21,7 @@ func (w *layoutView) hiddenByMaximized(i int) bool {
 
 // unmaximize clears the focused column in scroll and cascade, or all
 // maximized columns in fixed overflow (including after Escape changed focus).
-func (w *Workspace) unmaximize() {
+func (w *lanes) unmaximize() {
 	if w.layout().maximizeHides() {
 		w.clearMaximized()
 	} else if w.Focus < len(w.Columns) {
@@ -30,7 +30,7 @@ func (w *Workspace) unmaximize() {
 }
 
 // clearMaximized unmaximizes every column and forgets the history.
-func (w *Workspace) clearMaximized() {
+func (w *lanes) clearMaximized() {
 	for i := range w.Columns {
 		w.Columns[i].FullWidth = false
 	}
@@ -38,7 +38,7 @@ func (w *Workspace) clearMaximized() {
 }
 
 // transferMaximization changes the maximized column without forgetting MRU.
-func (w *Workspace) transferMaximization(i int) {
+func (w *lanes) transferMaximization(i int) {
 	if i == w.Focus || i < 0 || i >= len(w.Columns) {
 		return
 	}
@@ -47,7 +47,13 @@ func (w *Workspace) transferMaximization(i int) {
 }
 
 // ToggleFullWidth expands the focused tiled column without changing its saved width.
-func (w *Workspace) ToggleFullWidth() { w.layout().toggleFullWidth(w) }
+func (w *Workspace) ToggleFullWidth() {
+	if len(w.Columns) == 0 || w.onFloat() {
+		return
+	}
+	w.layout().toggleFullWidth(w.edit())
+	w.scroll()
+}
 
 func (w *Workspace) ToggleFullscreen() {
 	id, ok := w.Focused()
@@ -67,7 +73,7 @@ func (w *Workspace) ToggleFullscreen() {
 		w.endFullscreen()
 		return
 	}
-	w.layout().isolate(w, id)
+	w.isolate(id)
 	w.fullscreen = id
 	w.scroll()
 }
@@ -177,7 +183,7 @@ func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 		// Another window covers: the override was for the old cover.
 		w.dropStashOver()
 	}
-	w.layout().isolate(w, id)
+	w.isolate(id)
 	w.fullscreen = id
 	if !w.isFloat(id) {
 		w.scroll()

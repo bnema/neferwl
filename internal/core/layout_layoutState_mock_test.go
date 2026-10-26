@@ -45,7 +45,7 @@ func (_m *mocklayoutState) EXPECT() *mocklayoutState_Expecter {
 }
 
 // inserted provides a mock function for the type mocklayoutState
-func (_mock *mocklayoutState) inserted(w *Workspace, at int, kind insertKind, carry any) any {
+func (_mock *mocklayoutState) inserted(w *lanes, at int, kind insertKind, carry any) any {
 	ret := _mock.Called(w, at, kind, carry)
 
 	if len(ret) == 0 {
@@ -53,7 +53,7 @@ func (_mock *mocklayoutState) inserted(w *Workspace, at int, kind insertKind, ca
 	}
 
 	var r0 any
-	if returnFunc, ok := ret.Get(0).(func(*Workspace, int, insertKind, any) any); ok {
+	if returnFunc, ok := ret.Get(0).(func(*lanes, int, insertKind, any) any); ok {
 		r0 = returnFunc(w, at, kind, carry)
 	} else {
 		if ret.Get(0) != nil {
@@ -69,7 +69,7 @@ type mocklayoutState_inserted_Call struct {
 }
 
 // inserted is a helper method to define mock.On call
-//   - w *Workspace
+//   - w *lanes
 //   - at int
 //   - kind insertKind
 //   - carry any
@@ -77,11 +77,11 @@ func (_e *mocklayoutState_Expecter) inserted(w any, at any, kind any, carry any)
 	return &mocklayoutState_inserted_Call{Call: _e.mock.On("inserted", w, at, kind, carry)}
 }
 
-func (_c *mocklayoutState_inserted_Call) Run(run func(w *Workspace, at int, kind insertKind, carry any)) *mocklayoutState_inserted_Call {
+func (_c *mocklayoutState_inserted_Call) Run(run func(w *lanes, at int, kind insertKind, carry any)) *mocklayoutState_inserted_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 *Workspace
+		var arg0 *lanes
 		if args[0] != nil {
-			arg0 = args[0].(*Workspace)
+			arg0 = args[0].(*lanes)
 		}
 		var arg1 int
 		if args[1] != nil {
@@ -110,7 +110,7 @@ func (_c *mocklayoutState_inserted_Call) Return(unconsumed any) *mocklayoutState
 	return _c
 }
 
-func (_c *mocklayoutState_inserted_Call) RunAndReturn(run func(w *Workspace, at int, kind insertKind, carry any) any) *mocklayoutState_inserted_Call {
+func (_c *mocklayoutState_inserted_Call) RunAndReturn(run func(w *lanes, at int, kind insertKind, carry any) any) *mocklayoutState_inserted_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -175,7 +175,7 @@ func (_c *mocklayoutState_removed_Call) RunAndReturn(run func(at int, col Column
 }
 
 // settle provides a mock function for the type mocklayoutState
-func (_mock *mocklayoutState) settle(w *Workspace) {
+func (_mock *mocklayoutState) settle(w *lanes) {
 	_mock.Called(w)
 	return
 }
@@ -186,16 +186,16 @@ type mocklayoutState_settle_Call struct {
 }
 
 // settle is a helper method to define mock.On call
-//   - w *Workspace
+//   - w *lanes
 func (_e *mocklayoutState_Expecter) settle(w any) *mocklayoutState_settle_Call {
 	return &mocklayoutState_settle_Call{Call: _e.mock.On("settle", w)}
 }
 
-func (_c *mocklayoutState_settle_Call) Run(run func(w *Workspace)) *mocklayoutState_settle_Call {
+func (_c *mocklayoutState_settle_Call) Run(run func(w *lanes)) *mocklayoutState_settle_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 *Workspace
+		var arg0 *lanes
 		if args[0] != nil {
-			arg0 = args[0].(*Workspace)
+			arg0 = args[0].(*lanes)
 		}
 		run(
 			arg0,
@@ -209,7 +209,7 @@ func (_c *mocklayoutState_settle_Call) Return() *mocklayoutState_settle_Call {
 	return _c
 }
 
-func (_c *mocklayoutState_settle_Call) RunAndReturn(run func(w *Workspace)) *mocklayoutState_settle_Call {
+func (_c *mocklayoutState_settle_Call) RunAndReturn(run func(w *lanes)) *mocklayoutState_settle_Call {
 	_c.Run(run)
 	return _c
 }

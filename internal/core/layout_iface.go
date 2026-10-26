@@ -87,16 +87,17 @@ type layoutPlacer interface {
 	coveredSpawnAt(v layoutView) int                // under a covering window (ADR 011)
 	full(v layoutView) bool                         // no room: expel to neighbor (fixed)
 	moveAllowed(v layoutView, from, to int) bool    // MoveColumn/drag swap inside a lane
-	moveLane(w *Workspace, dir int) bool            // MoveWindow past the column: to the lane dir away
-	isolate(w *Workspace, id WindowID) bool         // before id goes fullscreen: a lane of its own
+	moveLane(w edit, dir int) bool                  // MoveWindow past the column: to the lane dir away
+	adoptFloat(w edit, id WindowID) bool
+	isolate(w edit, id WindowID) bool // before id goes fullscreen: a lane of its own
 }
 
-// layoutSizer mutates column widths and maximization through the Workspace.
+// layoutSizer mutates column widths and maximization after Workspace guards.
 // Mock: newMocklayoutSizer.
 type layoutSizer interface {
-	grow(w *Workspace, cycle bool)
-	shrink(w *Workspace)
-	toggleFullWidth(w *Workspace)
+	grow(w edit, cycle bool)
+	shrink(w edit)
+	toggleFullWidth(w edit)
 }
 
 // layoutState owns per-layout data and follows column edits. Workspace calls
@@ -108,12 +109,12 @@ type layoutState interface {
 	// returns the carry it did not consume (nil once consumed): that stays
 	// on the column and the next workspace's removed or takeColumn passes it
 	// on. A stateless workspace consumes nothing and keeps it too.
-	inserted(w *Workspace, at int, kind insertKind, carry any) (unconsumed any)
+	inserted(w *lanes, at int, kind insertKind, carry any) (unconsumed any)
 	// removed follows the column col leaving index at; the returned carry
 	// travels with the column to its next workspace. Nil leaves the carry
 	// the column already holds.
 	removed(at int, col Column) (carry any)
-	settle(w *Workspace) // before scroll(): refresh keyed data, drop stale spans
+	settle(w *lanes) // before scroll(): refresh keyed data, drop stale spans
 }
 
 // layoutOverview projects a workspace for the overview. Mock: newMocklayoutOverview.
@@ -134,4 +135,10 @@ type layout interface {
 	layoutSizer
 	layoutOverview
 	newState() layoutState // nil for stateless layouts
+}
+
+// edit captures focus once at the start of a workspace layout operation.
+type edit struct {
+	*lanes
+	Focused WindowID
 }

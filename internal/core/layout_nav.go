@@ -65,25 +65,8 @@ func geometricNeighbor(rects []Rect, focus, dx, dy int) int {
 }
 
 // lview snapshots layout inputs without retaining the Workspace.
-func (w *Workspace) lview() layoutView {
+func (w *lanes) lview() layoutView {
 	return layoutView{Columns: w.Columns, Focus: w.Focus, View: w.View, MaxColumns: w.MaxColumns, Usable: w.Usable, Output: w.Output, Gap: w.gap(), Fullscreen: w.fullscreen, State: w.state(), layout: w.layout()}
-}
-
-// focusLane focuses the column in the lane dir away; a maximized column
-// keeps its own band, so it stays maximized.
-func (w *Workspace) focusLane(dir int) bool {
-	i := w.laneNeighbor(dir)
-	if i < 0 {
-		return false
-	}
-	w.Focus = i
-	w.Columns[i].Focus = 0
-	if dir < 0 {
-		w.Columns[i].Focus = len(w.Columns[i].Windows) - 1
-	}
-	w.raiseColumns()
-	w.scroll()
-	return true
 }
 
 // laneOf is the lane of column i in the overview: its band, or the only
@@ -101,7 +84,7 @@ func (w *layoutView) laneBounds(lane int) (first, last int) {
 // leavesLane reports whether column i, where a left/right move from the
 // focused column goes, is past the workspace or in another cascade band:
 // the move then goes to the neighbor monitor first.
-func (w *Workspace) leavesLane(i int) bool {
+func (w *lanes) leavesLane(i int) bool {
 	return i < 0 || i >= len(w.Columns) || w.laneOf(i) != w.laneOf(w.Focus)
 }
 

@@ -31,7 +31,7 @@ func (w *layoutView) validSpans(first, last int) bool {
 // dropStaleSpans runs before scroll measures mutated layout geometry. Decide
 // validity before clearing any stamps, so shared identities cannot become
 // valid merely because an earlier invalid lane was cleared.
-func (w *Workspace) dropStaleSpans() {
+func (w *lanes) dropStaleSpans() {
 	stamped := false
 	for _, c := range w.Columns {
 		if c.Span != 0 || c.spanStamp != 0 {
@@ -58,7 +58,7 @@ func (w *Workspace) dropStaleSpans() {
 	}
 }
 
-func (w *Workspace) clearSpans(col int) {
+func (w *lanes) clearSpans(col int) {
 	if col < 0 || col >= len(w.Columns) {
 		return
 	}

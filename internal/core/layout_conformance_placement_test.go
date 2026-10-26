@@ -84,7 +84,7 @@ func TestColumnCarryTravelsThroughStates(t *testing.T) {
 		if !ok || col.carry != 42 {
 			t.Fatalf("taken column carry %v", col.carry)
 		}
-		dst.EXPECT().inserted(&to, 0, insertJoinDisplaced, 42).Return(nil).Once()
+		dst.EXPECT().inserted(&to.lanes, 0, insertJoinDisplaced, 42).Return(nil).Once()
 		to.insertAt(0, col)
 		if to.Columns[0].carry != nil {
 			t.Fatal("carry not cleared once received")

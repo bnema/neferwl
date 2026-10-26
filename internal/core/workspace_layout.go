@@ -1,35 +1,84 @@
 package core
 
-// Workspace forwards pure reads through a snapshot; layout helpers never need
-// floating, stash, or presentation state.
-func (w *Workspace) band(i int) int                       { v := w.lview(); return v.band(i) }
-func (w *Workspace) bandBounds(b int) (int, int)          { v := w.lview(); return v.bandBounds(b) }
-func (w *Workspace) walkBands(f func(int, int, int) bool) { v := w.lview(); v.walkBands(f) }
-func (w *Workspace) startsBand(i, n int) bool             { v := w.lview(); return v.startsBand(i, n) }
-func (w *Workspace) bandStart(i int) bool                 { v := w.lview(); return v.bandStart(i) }
-func (w *Workspace) cascadeBands() (int, int)             { v := w.lview(); return v.cascadeBands() }
-func (w *Workspace) cellWidth(i int) int                  { v := w.lview(); return v.cellWidth(i) }
-func (w *Workspace) laneStats(first, last int) (int, int, int) {
-	v := w.lview()
-	return v.laneStats(first, last)
-}
-func (w *Workspace) laneWeight(i, s, u int) int { v := w.lview(); return v.laneWeight(i, s, u) }
-func (w *Workspace) laneWidth(i, first, last, s, u, sum int, valid bool) int {
-	v := w.lview()
-	return v.laneWidth(i, first, last, s, u, sum, valid)
-}
-func (w *Workspace) equalShare(k int) int           { v := w.lview(); return v.equalShare(k) }
-func (w *Workspace) laneRow() bool                  { v := w.lview(); return v.laneRow() }
-func (w *Workspace) inSpiral() bool                 { v := w.lview(); return v.inSpiral() }
-func (w *Workspace) laneOf(i int) int               { v := w.lview(); return v.laneOf(i) }
-func (w *Workspace) laneBounds(lane int) (int, int) { v := w.lview(); return v.laneBounds(lane) }
-func (w *Workspace) laneNeighbor(d int) int         { v := w.lview(); return v.laneNeighbor(d) }
-func (w *Workspace) validSpans(first, last int) bool {
-	v := w.lview()
-	return v.validSpans(first, last)
-}
-func (w *Workspace) hiddenByMaximized(i int) bool { v := w.lview(); return v.hiddenByMaximized(i) }
-func (w *Workspace) fullscreenColumn(i int) bool  { v := w.lview(); return v.fullscreenColumn(i) }
-func (w *Workspace) columnEdges() ([]int, []int)  { v := w.lview(); return v.columnEdges() }
+import "slices"
 
-func (v *layoutView) gap() int { return v.Gap }
+// sizable reports whether the focused column can be resized: a tiled column
+// the fullscreen window does not hide.
+func (w *Workspace) sizable() bool {
+	return !w.onFloat() && len(w.Columns) > 0 && !w.fullscreenHides()
+}
+
+func (w *Workspace) edit() edit { id, _ := w.Focused(); return edit{lanes: &w.lanes, Focused: id} }
+
+func (w *Workspace) isolate(id WindowID) bool {
+	if i := w.floatIndex(id); i >= 0 && w.Floats[i].over == 0 && w.stashIndex(id) < 0 {
+		if e := w.edit(); w.layout().adoptFloat(e, id) {
+			w.Floats = slices.Delete(w.Floats, i, i+1)
+			if e.Focused == id {
+				w.floatFocus, w.stashFocus = false, false
+			}
+		}
+	}
+	if w.isFloat(id) || w.fullscreen == id {
+		return false
+	}
+	return w.layout().isolate(w.edit(), id)
+}
+
+func (w *Workspace) columnWidthFor(i int, ignoreFullWidth bool) int {
+	return w.layout().columnWidth(w.lview(), i, ignoreFullWidth)
+}
+
+func (w *Workspace) columnX(i int) int {
+	v := w.lview()
+	v = v.withFacts()
+	return v.columnX(i)
+}
+
+func (w *Workspace) scroll() {
+	w.settleLayout()
+	before := w.View
+	w.View = w.layout().scrollTarget(w.lview())
+	w.retarget(before)
+}
+
+// columnRects returns each column's area on screen, before stacking windows.
+func (w *Workspace) columnRects() []Rect {
+	return w.columnRectsInto(nil, false)
+}
+
+// columnRectsFor shares the fixed layout geometry with the overview's hidden
+// columns card, without changing FullWidth or the clients' saved buffers.
+func (w *Workspace) columnRectsFor(ignoreFullWidth bool) []Rect {
+	return w.columnRectsInto(nil, ignoreFullWidth)
+}
+
+// columnRectsInto is columnRectsFor built in dst's storage (dst[:0] grown
+// when too small): the result aliases dst, so a caller passing a reused
+// buffer must be done with the previous result.
+func (w *Workspace) columnRectsInto(dst []Rect, ignoreFullWidth bool) []Rect {
+	return w.columnRectsAt(dst, ignoreFullWidth, w.shiftPixels())
+}
+
+// columnRectsAt is columnRectsInto with the view slide's shift given: 0 is
+// the settled geometry, without the animation's presentation offset.
+func (w *Workspace) columnRectsAt(dst []Rect, ignoreFullWidth bool, shift int) []Rect {
+	return w.layout().columnRects(w.lview(), dst, rectOpts{IgnoreFullWidth: ignoreFullWidth, Shift: shift})
+}
+
+// focusLane focuses the column in the lane dir away; a maximized column
+// keeps its own band, so it stays maximized.
+func (w *Workspace) focusLane(dir int) bool {
+	i := w.laneNeighbor(dir)
+	if i < 0 {
+		return false
+	}
+	w.Focus = i
+	w.Columns[i].Focus = 0
+	if dir < 0 {
+		w.Columns[i].Focus = len(w.Columns[i].Windows) - 1
+	}
+	w.raiseColumns()
+	w.scroll()
+	return true
+}

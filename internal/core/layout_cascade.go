@@ -143,25 +143,17 @@ func (cascadeLayout) moveAllowed(v layoutView, from, to int) bool {
 }
 
 // moveLane sends the focused column to the band dir away, focus following.
-func (cascadeLayout) moveLane(w *Workspace, dir int) bool {
+func (cascadeLayout) moveLane(w edit, dir int) bool {
 	if len(w.Columns) == 0 {
 		return false
 	}
 	first, _ := w.bandBounds(w.band(w.Focus))
-	if !w.shiftBand(w.Focus, w.Focus, dir, w.Focus-first) {
-		return false
-	}
-	w.scroll()
-	return true
+	return w.shiftBand(w.Focus, w.Focus, dir, w.Focus-first)
 }
 
 // isolate gives a window about to go fullscreen a band of its own: a
 // parentless float becomes a column first.
-func (cascadeLayout) isolate(w *Workspace, id WindowID) bool {
-	w.fullscreenFloatBand(id)
-	if w.isFloat(id) || w.fullscreen == id {
-		return false
-	}
+func (cascadeLayout) isolate(w edit, id WindowID) bool {
 	return w.fullscreenBand(id)
 }
 
@@ -188,7 +180,7 @@ type cascadeCol struct {
 
 // cascadeState is the workspace's cascade state. Only cascade code calls
 // it; any other state is left alone and a detached one is returned.
-func (w *Workspace) cascadeState() *cascadeState {
+func (w *lanes) cascadeState() *cascadeState {
 	if s, ok := w.state().(*cascadeState); ok {
 		return s
 	}
@@ -198,14 +190,14 @@ func (w *layoutView) bandStart(i int) bool {
 	s, ok := w.State.(*cascadeState)
 	return ok && i >= 0 && i < len(s.bandStart) && s.bandStart[i]
 }
-func (w *Workspace) setBandStart(i int, start bool) {
+func (w *lanes) setBandStart(i int, start bool) {
 	s := w.cascadeState()
 	if len(s.bandStart) < len(w.Columns) {
 		s.bandStart = append(s.bandStart, make([]bool, len(w.Columns)-len(s.bandStart))...)
 	}
 	s.bandStart[i] = start
 }
-func (w *Workspace) cascadeCol(c Column) *cascadeCol {
+func (w *lanes) cascadeCol(c Column) *cascadeCol {
 	s := w.cascadeState()
 	if s.cols == nil {
 		s.cols = make(map[uint64]*cascadeCol)
@@ -216,7 +208,7 @@ func (w *Workspace) cascadeCol(c Column) *cascadeCol {
 	return s.cols[c.key]
 }
 
-func (s *cascadeState) inserted(w *Workspace, at int, kind insertKind, carry any) any {
+func (s *cascadeState) inserted(w *lanes, at int, kind insertKind, carry any) any {
 	for len(s.bandStart) < len(w.Columns)-1 {
 		s.bandStart = append(s.bandStart, false)
 	}
@@ -254,4 +246,4 @@ func (s *cascadeState) removed(at int, col Column) any {
 	}
 	return c
 }
-func (*cascadeState) settle(w *Workspace) { w.markBands(); w.dropStaleSpans() }
+func (*cascadeState) settle(w *lanes) { w.markBands(); w.dropStaleSpans() }

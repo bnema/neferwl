@@ -3,7 +3,7 @@ package core
 import "slices"
 
 // markBands freezes the band starts into cascadeState.
-func (w *Workspace) markBands() {
+func (w *lanes) markBands() {
 	n := 0
 	for i := range w.Columns {
 		s := w.startsBand(i, n)
@@ -16,7 +16,7 @@ func (w *Workspace) markBands() {
 }
 
 // bandList copies the cascade columns into their bands.
-func (w *Workspace) bandList() [][]Column {
+func (w *lanes) bandList() [][]Column {
 	var bands [][]Column
 	w.walkBands(func(_, first, last int) bool {
 		bands = append(bands, slices.Clone(w.Columns[first:last+1]))
@@ -27,7 +27,7 @@ func (w *Workspace) bandList() [][]Column {
 
 // setBands stores bands as the columns, empty bands dropped, and focuses
 // the column holding window focus.
-func (w *Workspace) setBands(bands [][]Column, focus WindowID) {
+func (w *lanes) setBands(bands [][]Column, focus WindowID) {
 	w.ensureKeys()
 	cols := w.Columns[:0]
 	var starts []bool
@@ -49,7 +49,7 @@ func (w *Workspace) setBands(bands [][]Column, focus WindowID) {
 
 // fits reports whether cols can join band b: it has room for them and
 // neither side holds a maximized column, which keeps a band to itself.
-func (w *Workspace) fits(bands [][]Column, b int, cols []Column) bool {
+func (w *lanes) fits(bands [][]Column, b int, cols []Column) bool {
 	if b < 0 || b >= len(bands) || len(bands[b])+len(cols) > max(w.MaxColumns, 1) {
 		return false
 	}
@@ -62,7 +62,7 @@ func (w *Workspace) fits(bands [][]Column, b int, cols []Column) bool {
 // band between the two, or past the outer band. When cols were alone in
 // band b, it goes away and a band that cannot take them is passed: the
 // new band goes on its far side, so repeated moves always progress.
-func (w *Workspace) sendBand(bands [][]Column, b, dir, at int, cols []Column) [][]Column {
+func (w *lanes) sendBand(bands [][]Column, b, dir, at int, cols []Column) [][]Column {
 	t, nb := b+dir, b // A new band between b and t, before b going up.
 	if dir > 0 {
 		nb = b + 1
@@ -84,7 +84,7 @@ func (w *Workspace) sendBand(bands [][]Column, b, dir, at int, cols []Column) []
 
 // shiftBand moves the columns lo..hi of one cascade band to the band dir
 // away (see sendBand), at offset at in it. It reports whether they moved.
-func (w *Workspace) shiftBand(lo, hi, dir, at int) bool {
+func (w edit) shiftBand(lo, hi, dir, at int) bool {
 	if len(w.Columns) == 0 || lo < 0 || hi >= len(w.Columns) || lo > hi {
 		return false
 	}
@@ -96,7 +96,7 @@ func (w *Workspace) shiftBand(lo, hi, dir, at int) bool {
 	if lo == first && hi == last && (b+dir < 0 || b+dir > w.band(len(w.Columns)-1)) {
 		return false // Alone at the outer band: nothing to cross.
 	}
-	id, _ := w.Focused()
+	id := w.Focused
 	bands := w.bandList()
 	cols := slices.Clone(bands[b][lo-first : hi-first+1])
 	for k := range cols {
@@ -123,13 +123,13 @@ func columnIDs(cols []Column) [][]WindowID {
 // isolateBand gives the focused cascade column a band of its own: the
 // columns on its left go to the band above, the ones on its right to the
 // band below (sendBand), and the column remembers them for restoreBand.
-func (w *Workspace) isolateBand() {
+func (w edit) isolateBand() {
 	b := w.band(w.Focus)
 	first, last := w.bandBounds(b)
 	if first == last {
 		return
 	}
-	id, _ := w.Focused()
+	id := w.Focused
 	bands := w.bandList()
 	p := w.Focus - first
 	left := slices.Clone(bands[b][:p])
@@ -157,7 +157,7 @@ func (w *Workspace) isolateBand() {
 // Leaving fullscreen does not move it back: the column keeps its band, so
 // nothing jumps when the user leaves. Only cascade layouts do this; the
 // focus stays on the same window.
-func (w *Workspace) fullscreenBand(id WindowID) bool {
+func (w *lanes) fullscreenBand(id WindowID) bool {
 	i := w.columnOf(id)
 	if i < 0 {
 		return false
@@ -205,12 +205,12 @@ func (w *Workspace) fullscreenBand(id WindowID) bool {
 // wider column: the column at the far end of the band leaves it. The
 // rightmost goes to the band below; from the last column, the leftmost
 // goes to the band above, at its right end. The column remembers it.
-func (w *Workspace) pushNeighbor() {
+func (w edit) pushNeighbor() {
 	first, last := w.bandBounds(w.band(w.Focus))
 	if first == last {
 		return
 	}
-	id, _ := w.Focused()
+	id := w.Focused
 	c := w.Columns[w.Focus]
 	if w.Focus < last {
 		w.cascadeCol(c).pushedDown = append(w.cascadeCol(c).pushedDown, columnIDs(w.Columns[last:last+1])...)
@@ -229,14 +229,14 @@ func (w *Workspace) pushNeighbor() {
 // of the band, the ones sent down at its end, in their former order. The
 // others stay where they are. It reports whether the column remembered
 // any.
-func (w *Workspace) restoreBand() bool {
+func (w edit) restoreBand() bool {
 	c := w.Columns[w.Focus]
 	up, down := w.cascadeCol(c).pushedUp, w.cascadeCol(c).pushedDown
 	w.cascadeCol(c).pushedUp, w.cascadeCol(c).pushedDown = nil, nil
 	if len(up) == 0 && len(down) == 0 {
 		return false
 	}
-	id, _ := w.Focused()
+	id := w.Focused
 	bands := w.bandList()
 	b := w.band(w.Focus)
 	room := max(max(w.MaxColumns, 1)-len(bands[b]), 0)
@@ -307,26 +307,18 @@ func (w *Workspace) restoreBand() bool {
 	return true
 }
 
-// fullscreenFloatBand promotes a parentless float into a permanent cascade
-// column below the selected column's band. Dialogs and stash entries keep
-// their floating placement. Like fullscreenBand, this never changes focus.
-func (w *Workspace) fullscreenFloatBand(id WindowID) {
-	i := w.floatIndex(id)
-	if i < 0 || w.Floats[i].over != 0 || w.stashIndex(id) >= 0 {
-		return
-	}
-	focus, _ := w.Focused()
+// adoptFloat inserts the column half of an eligible float promotion below
+// the selected band. Workspace checks eligibility and removes the float.
+func (cascadeLayout) adoptFloat(w edit, id WindowID) bool {
+	focus := w.Focused
 	bands := w.bandList()
 	at := 0
 	if len(w.Columns) > 0 {
 		at = w.band(w.Focus) + 1
 	}
-	w.Floats = slices.Delete(w.Floats, i, i+1)
 	col := Column{Windows: []WindowID{id}, key: w.newKey()}
 	w.cascadeCol(col).ownBand = true
 	bands = slices.Insert(bands, at, []Column{col})
 	w.setBands(bands, focus)
-	if focus == id {
-		w.floatFocus, w.stashFocus = false, false
-	}
+	return true
 }

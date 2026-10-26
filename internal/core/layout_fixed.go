@@ -19,9 +19,7 @@ func (fixedLayout) spiral() bool                { return true }
 func (fixedLayout) scrolls() bool               { return false }
 func (fixedLayout) scrollTarget(layoutView) int { return 0 }
 
-// columnRects is the row of columns, with the spiral past MaxColumns. The
-// post-pass reads the snapshot directly: the base already built the one
-// Workspace adapter this call needs.
+// columnRects is the row of columns, with the spiral past MaxColumns.
 func (l fixedLayout) columnRects(v layoutView, dst []Rect, o rectOpts) []Rect {
 	rects := l.columnsBase.columnRects(v, dst, o)
 	n, g := len(v.Columns), v.Gap

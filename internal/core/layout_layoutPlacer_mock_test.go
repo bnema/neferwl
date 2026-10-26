@@ -44,6 +44,63 @@ func (_m *mocklayoutPlacer) EXPECT() *mocklayoutPlacer_Expecter {
 	return &mocklayoutPlacer_Expecter{mock: &_m.Mock}
 }
 
+// adoptFloat provides a mock function for the type mocklayoutPlacer
+func (_mock *mocklayoutPlacer) adoptFloat(w edit, id WindowID) bool {
+	ret := _mock.Called(w, id)
+
+	if len(ret) == 0 {
+		panic("no return value specified for adoptFloat")
+	}
+
+	var r0 bool
+	if returnFunc, ok := ret.Get(0).(func(edit, WindowID) bool); ok {
+		r0 = returnFunc(w, id)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	return r0
+}
+
+// mocklayoutPlacer_adoptFloat_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'adoptFloat'
+type mocklayoutPlacer_adoptFloat_Call struct {
+	*mock.Call
+}
+
+// adoptFloat is a helper method to define mock.On call
+//   - w edit
+//   - id WindowID
+func (_e *mocklayoutPlacer_Expecter) adoptFloat(w any, id any) *mocklayoutPlacer_adoptFloat_Call {
+	return &mocklayoutPlacer_adoptFloat_Call{Call: _e.mock.On("adoptFloat", w, id)}
+}
+
+func (_c *mocklayoutPlacer_adoptFloat_Call) Run(run func(w edit, id WindowID)) *mocklayoutPlacer_adoptFloat_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 edit
+		if args[0] != nil {
+			arg0 = args[0].(edit)
+		}
+		var arg1 WindowID
+		if args[1] != nil {
+			arg1 = args[1].(WindowID)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *mocklayoutPlacer_adoptFloat_Call) Return(b bool) *mocklayoutPlacer_adoptFloat_Call {
+	_c.Call.Return(b)
+	return _c
+}
+
+func (_c *mocklayoutPlacer_adoptFloat_Call) RunAndReturn(run func(w edit, id WindowID) bool) *mocklayoutPlacer_adoptFloat_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // coveredSpawnAt provides a mock function for the type mocklayoutPlacer
 func (_mock *mocklayoutPlacer) coveredSpawnAt(v layoutView) int {
 	ret := _mock.Called(v)
@@ -147,7 +204,7 @@ func (_c *mocklayoutPlacer_full_Call) RunAndReturn(run func(v layoutView) bool) 
 }
 
 // isolate provides a mock function for the type mocklayoutPlacer
-func (_mock *mocklayoutPlacer) isolate(w *Workspace, id WindowID) bool {
+func (_mock *mocklayoutPlacer) isolate(w edit, id WindowID) bool {
 	ret := _mock.Called(w, id)
 
 	if len(ret) == 0 {
@@ -155,7 +212,7 @@ func (_mock *mocklayoutPlacer) isolate(w *Workspace, id WindowID) bool {
 	}
 
 	var r0 bool
-	if returnFunc, ok := ret.Get(0).(func(*Workspace, WindowID) bool); ok {
+	if returnFunc, ok := ret.Get(0).(func(edit, WindowID) bool); ok {
 		r0 = returnFunc(w, id)
 	} else {
 		r0 = ret.Get(0).(bool)
@@ -169,17 +226,17 @@ type mocklayoutPlacer_isolate_Call struct {
 }
 
 // isolate is a helper method to define mock.On call
-//   - w *Workspace
+//   - w edit
 //   - id WindowID
 func (_e *mocklayoutPlacer_Expecter) isolate(w any, id any) *mocklayoutPlacer_isolate_Call {
 	return &mocklayoutPlacer_isolate_Call{Call: _e.mock.On("isolate", w, id)}
 }
 
-func (_c *mocklayoutPlacer_isolate_Call) Run(run func(w *Workspace, id WindowID)) *mocklayoutPlacer_isolate_Call {
+func (_c *mocklayoutPlacer_isolate_Call) Run(run func(w edit, id WindowID)) *mocklayoutPlacer_isolate_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 *Workspace
+		var arg0 edit
 		if args[0] != nil {
-			arg0 = args[0].(*Workspace)
+			arg0 = args[0].(edit)
 		}
 		var arg1 WindowID
 		if args[1] != nil {
@@ -198,7 +255,7 @@ func (_c *mocklayoutPlacer_isolate_Call) Return(b bool) *mocklayoutPlacer_isolat
 	return _c
 }
 
-func (_c *mocklayoutPlacer_isolate_Call) RunAndReturn(run func(w *Workspace, id WindowID) bool) *mocklayoutPlacer_isolate_Call {
+func (_c *mocklayoutPlacer_isolate_Call) RunAndReturn(run func(w edit, id WindowID) bool) *mocklayoutPlacer_isolate_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -267,7 +324,7 @@ func (_c *mocklayoutPlacer_moveAllowed_Call) RunAndReturn(run func(v layoutView,
 }
 
 // moveLane provides a mock function for the type mocklayoutPlacer
-func (_mock *mocklayoutPlacer) moveLane(w *Workspace, dir int) bool {
+func (_mock *mocklayoutPlacer) moveLane(w edit, dir int) bool {
 	ret := _mock.Called(w, dir)
 
 	if len(ret) == 0 {
@@ -275,7 +332,7 @@ func (_mock *mocklayoutPlacer) moveLane(w *Workspace, dir int) bool {
 	}
 
 	var r0 bool
-	if returnFunc, ok := ret.Get(0).(func(*Workspace, int) bool); ok {
+	if returnFunc, ok := ret.Get(0).(func(edit, int) bool); ok {
 		r0 = returnFunc(w, dir)
 	} else {
 		r0 = ret.Get(0).(bool)
@@ -289,17 +346,17 @@ type mocklayoutPlacer_moveLane_Call struct {
 }
 
 // moveLane is a helper method to define mock.On call
-//   - w *Workspace
+//   - w edit
 //   - dir int
 func (_e *mocklayoutPlacer_Expecter) moveLane(w any, dir any) *mocklayoutPlacer_moveLane_Call {
 	return &mocklayoutPlacer_moveLane_Call{Call: _e.mock.On("moveLane", w, dir)}
 }
 
-func (_c *mocklayoutPlacer_moveLane_Call) Run(run func(w *Workspace, dir int)) *mocklayoutPlacer_moveLane_Call {
+func (_c *mocklayoutPlacer_moveLane_Call) Run(run func(w edit, dir int)) *mocklayoutPlacer_moveLane_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 *Workspace
+		var arg0 edit
 		if args[0] != nil {
-			arg0 = args[0].(*Workspace)
+			arg0 = args[0].(edit)
 		}
 		var arg1 int
 		if args[1] != nil {
@@ -318,7 +375,7 @@ func (_c *mocklayoutPlacer_moveLane_Call) Return(b bool) *mocklayoutPlacer_moveL
 	return _c
 }
 
-func (_c *mocklayoutPlacer_moveLane_Call) RunAndReturn(run func(w *Workspace, dir int) bool) *mocklayoutPlacer_moveLane_Call {
+func (_c *mocklayoutPlacer_moveLane_Call) RunAndReturn(run func(w edit, dir int) bool) *mocklayoutPlacer_moveLane_Call {
 	_c.Call.Return(run)
 	return _c
 }
