@@ -64,6 +64,9 @@ type WindowState struct {
 	// Visible means on the workspace on screen (it may be behind a
 	// fullscreen window).
 	Visible bool
+	// Sandbox is the client's security context app id, else its engine,
+	// "" when not sandboxed.
+	Sandbox string `json:",omitempty"`
 	// IdleInhibit is set while the window keeps the session from idling.
 	IdleInhibit bool `json:",omitempty"`
 	// ShortcutsInhibited is set while the window asks to receive compositor shortcuts (keyboard_shortcuts_inhibit); core grants it only while it has keyboard focus.

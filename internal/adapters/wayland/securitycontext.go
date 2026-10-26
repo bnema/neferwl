@@ -32,7 +32,7 @@ import (
 // context goes away (the protocol says so).
 
 // sandbox is what a sandboxed client was committed with. Engine, app and
-// instance ids are the sandbox's own claims; they label logs and nothing else.
+// instance ids are the sandbox's own claims; they label logs and window state.
 type sandbox struct {
 	engine, appID, instanceID string
 }

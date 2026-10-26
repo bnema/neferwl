@@ -253,7 +253,14 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 			if w.parent != nil && w.parent.mapped {
 				parent = w.parent.id
 			}
-			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Slot: slot, PID: r.Client().PID(), Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Modal: w.modal, Remap: w.gen > 1})
+			var sandbox string
+			if ctx := x.server.sandboxed[r.Client()]; ctx != nil {
+				sandbox = ctx.appID
+				if sandbox == "" {
+					sandbox = ctx.engine
+				}
+			}
+			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Slot: slot, Sandbox: sandbox, PID: r.Client().PID(), Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Modal: w.modal, Remap: w.gen > 1})
 			x.server.syncInhibitors()
 			x.server.toplevelChanged(w)
 			x.server.castInventoryChanged()

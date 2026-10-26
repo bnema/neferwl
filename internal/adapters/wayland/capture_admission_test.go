@@ -21,6 +21,7 @@ type admissionHarness struct {
 	dir      string
 	requests chan ports.CaptureRequest
 	replies  chan ports.CaptureDone
+	events   chan ports.ClientEvent
 	held     []ports.CaptureRequest // dup'd descriptors handed to the test
 }
 
@@ -62,9 +63,10 @@ func newAdmissionHarnessWith(t *testing.T, queue int, opts Options, log zerowrap
 			_ = r.Dst.File.Close()
 		}
 	})
+	h.events = make(chan ports.ClientEvent, 64)
 	out := ports.Layout{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 2, Height: 2}, Width: 2, Height: 2, Scale: 1}}
 	opts.RuntimeDir, opts.Outputs = h.dir, out
-	s, err := New(opts, Channels{Captures: h.requests, Captured: h.replies}, log)
+	s, err := New(opts, Channels{Captures: h.requests, Captured: h.replies, Events: h.events}, log)
 	if err != nil {
 		t.Fatal(err)
 	}

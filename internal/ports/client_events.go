@@ -11,6 +11,9 @@ type WindowMapped struct {
 	Slot string
 	// PID is the client process, 0 when unknown.
 	PID int
+	// Sandbox is the wp_security_context_v1 app id of the client, else
+	// its engine, "" when not sandboxed.
+	Sandbox string
 	// Floating windows are dialogs (a parent) or fixed-size windows such
 	// as splash screens: core shows them over the columns at their own
 	// size, Width×Height logical (0 when unknown).

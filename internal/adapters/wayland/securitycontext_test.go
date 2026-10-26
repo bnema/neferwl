@@ -191,8 +191,8 @@ func (h *admissionHarness) sandboxedCount() int {
 func TestSecurityContextSandboxedClientCannotCapture(t *testing.T) {
 	h := newAdmissionHarnessWith(t, maxCaptureInflight+2, Options{CaptureAllow: allowStore(t, "*\n")}, logging.For(context.Background(), "wayland"))
 	plain := h.client(t)
-	if _, ok := h.accepted(t, plain.captureWlr(t)); !ok {
-		t.Fatal("plain client refused")
+	if w := toplevelMapper(t, plain.c, h.events)(); w.Sandbox != "" {
+		t.Fatalf("plain sandbox = %q", w.Sandbox)
 	}
 
 	l := newSandboxListener(t)
@@ -200,6 +200,12 @@ func TestSecurityContextSandboxedClientCannotCapture(t *testing.T) {
 	cc.commit(t, l, "org.flatpak", "org.example.App")
 
 	sandboxed := h.clientOn(t, l.connect(t))
+	if w := toplevelMapper(t, sandboxed.c, h.events)(); w.Sandbox != "org.example.App" {
+		t.Fatalf("sandbox = %q", w.Sandbox)
+	}
+	if _, ok := h.accepted(t, plain.captureWlr(t)); !ok {
+		t.Fatal("plain client refused")
+	}
 	// adopt tags the client in the same display call that creates it, before
 	// the client's first roundtrip is answered.
 	if n := h.sandboxedCount(); n != 1 {
@@ -235,6 +241,9 @@ func TestSecurityContextOverridesAllowlist(t *testing.T) {
 			l := newSandboxListener(t)
 			newContextClient(t, h).commit(t, l, "org.flatpak", "")
 			c := h.clientOn(t, l.connect(t))
+			if w := toplevelMapper(t, c.c, h.events)(); w.Sandbox != "org.flatpak" {
+				t.Fatalf("sandbox engine fallback = %q", w.Sandbox)
+			}
 			if _, ok := h.accepted(t, c.captureWlr(t)); ok {
 				t.Fatalf("sandboxed client captured with allowlist %q", content)
 			}
