@@ -24,7 +24,8 @@ type OverlayStyle struct {
 }
 
 // Overlay is compositor-drawn content over everything on an output. It is
-// comparable. ID is stable while the overlay lives and never 0; Seq changes
+// comparable. ID is stable while the overlay lives, never 0 and unique among
+// the overlays of a scene (renderers cache by it); Seq changes
 // whenever its pixels change for the same scene scale and style, so a
 // renderer may keep one cached image per ID.
 type Overlay struct {
