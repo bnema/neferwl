@@ -25,8 +25,6 @@ func testInventory() ports.CastInventory {
 }
 
 // ready starts the service, waits for its names and publishes the inventory.
-//
-//testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func ready(t *testing.T, o harnessOpts) (*svcHarness, *zerobus.Conn) {
 	t.Helper()
 	h := newSvcHarness(t, o)
@@ -423,8 +421,6 @@ func TestPendingTableFull(t *testing.T) {
 
 // Closing the owner's connection stops its session: its slot is freed, so
 // a new session starts again from the table.
-//
-//testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func TestOwnerVanishFreesSessions(t *testing.T) {
 	h, c := ready(t, harnessOpts{})
 	owner := h.client()
@@ -747,8 +743,6 @@ func TestDeniedCallersDoNotExhaustTheCache(t *testing.T) {
 }
 
 // The pidfds of the cached callers are closed when the bus is lost.
-//
-//testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func TestBusLossClosesCallerPidfds(t *testing.T) {
 	h := newSvcHarness(t, harnessOpts{})
 	c := h.client()

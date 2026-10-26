@@ -165,8 +165,6 @@ func TestTrimReleasesUndrawnDMABuf(t *testing.T) {
 }
 
 // poll frees what a finished frame held without waiting for it.
-//
-//testpolicy:realtime GPU frame completion awaited on its sync file with poll(2)
 func TestTrimPollsFinishedFrames(t *testing.T) {
 	r, err := New(32, 32)
 	if err != nil {

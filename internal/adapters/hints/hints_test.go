@@ -19,6 +19,7 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -225,8 +226,14 @@ func TestHintBadSize(t *testing.T) {
 // waitFiles waits for the dump the worker writes after sending the result.
 func waitFiles(t *testing.T, dir string, n int) []os.DirEntry {
 	t.Helper()
+	// Watch the directory before looking, so no write is missed.
+	fd, err := unix.InotifyInit1(unix.IN_CLOEXEC | unix.IN_NONBLOCK)
+	require.NoError(t, err)
+	defer unix.Close(fd)
+	_, err = unix.InotifyAddWatch(fd, dir, unix.IN_CLOSE_WRITE|unix.IN_MOVED_TO|unix.IN_CREATE)
+	require.NoError(t, err)
 	var entries []os.DirEntry
-	waitRealIO(t, func() bool {
+	dumped := func() bool {
 		all, _ := os.ReadDir(dir)
 		entries = nil
 		var raw, annotated, metadata bool
@@ -247,7 +254,24 @@ func waitFiles(t *testing.T, dir string, n int) []os.DirEntry {
 			entries = append(entries, e)
 		}
 		return raw && annotated && metadata && len(entries) >= n
-	}, "worker dump files")
+	}
+	fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
+	var buf [4096]byte
+	for !dumped() {
+		// Each wake-up is a directory event; 5 s of silence is a failure.
+		n, err := unix.Poll(fds, 5000)
+		if err != nil && err != unix.EINTR {
+			t.Fatal(err)
+		}
+		if n == 0 && err == nil {
+			t.Fatal("timed out waiting for worker dump files")
+		}
+		for { // drain the events; the directory listing is the state
+			if _, err := unix.Read(fd, buf[:]); err != nil {
+				break
+			}
+		}
+	}
 	return entries
 }
 

@@ -12,8 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"syscall"
 	"testing"
 	"testing/synctest"
@@ -377,16 +375,5 @@ func TestDetectorCloseKillsDescendant(t *testing.T) {
 	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
 	require.NoError(t, syscall.Kill(pid, 0))
 	require.NoError(t, d.Close())
-	waitRealIO(t, func() bool {
-		if syscall.Kill(pid, 0) == syscall.ESRCH {
-			return true
-		}
-		// An orphan zombie is dead, but may await the host init's reaper.
-		stat, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
-		if os.IsNotExist(err) {
-			return true
-		}
-		fields := strings.Fields(string(stat))
-		return len(fields) > 2 && fields[2] == "Z"
-	}, "descendant exit after Close")
+	waitGone(t, pid)
 }

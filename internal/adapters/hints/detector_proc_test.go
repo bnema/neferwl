@@ -6,12 +6,14 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 // The detector child of these tests is the test binary itself, re-executed:
@@ -88,35 +90,69 @@ func tinyFrame() detFrame {
 	return detFrame{crop: image.Rect(0, 0, 1, 1), stride: 4, m: &mapping{b: make([]byte, 4), live: new(int)}}
 }
 
-// processGone reports whether pid is dead (or a zombie waiting for its
-// reaper).
-func processGone(pid int) bool {
-	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
-	if err != nil {
-		return true
+// pidFifo makes a FIFO the helper writes a pid to. The test holds it
+// read-write, so the helper's write never blocks; await reads the pid.
+func pidFifo(t *testing.T) (path string, await func() int) {
+	t.Helper()
+	path = filepath.Join(t.TempDir(), "pid")
+	if err := unix.Mkfifo(path, 0o600); err != nil {
+		t.Fatal(err)
 	}
-	s := string(b)
-	return strings.HasPrefix(s[strings.LastIndexByte(s, ')')+2:], "Z")
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+	return path, func() int {
+		t.Helper()
+		if err := f.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		var buf [32]byte
+		n, err := f.Read(buf[:])
+		if err != nil {
+			t.Fatalf("child PID: %v", err)
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(string(buf[:n])))
+		if err != nil {
+			t.Fatalf("child PID %q: %v", buf[:n], err)
+		}
+		return pid
+	}
 }
 
-func readPID(t *testing.T, file string) int {
+// waitGone waits until pid exited (a zombie counts), within one deadline,
+// through a pidfd that polls readable at exit.
+func waitGone(t *testing.T, pid int) {
 	t.Helper()
-	var pid int
-	waitRealIO(t, func() bool {
-		b, err := os.ReadFile(file)
-		if err != nil {
-			return false
+	fd, err := unix.PidfdOpen(pid, 0)
+	if err == unix.ESRCH {
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fd)
+	fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
+	for {
+		n, err := unix.Poll(fds, 5000)
+		if err == unix.EINTR {
+			continue
 		}
-		pid, err = strconv.Atoi(string(b))
-		return err == nil
-	}, "child PID file")
-	return pid
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n == 0 {
+			t.Fatalf("child %d survives", pid)
+		}
+		return
+	}
 }
 
 func TestProcDetectorHungChildIsKilledAndRestarted(t *testing.T) {
 	for _, mode := range []string{"nohello", "silent"} {
 		t.Run(mode, func(t *testing.T) {
-			pidFile := t.TempDir() + "/child"
+			pidFile, readPID := pidFifo(t)
 			t.Setenv(helperChildPID, pidFile)
 			d := helperDetector(t, mode)
 			ctx := context.Background()
@@ -128,8 +164,7 @@ func TestProcDetectorHungChildIsKilledAndRestarted(t *testing.T) {
 			}
 			require.Less(t, time.Since(start), 2*time.Second)
 			require.Nil(t, d.proc)
-			pid := readPID(t, pidFile)
-			require.True(t, processGone(pid), "child %d survives", pid)
+			waitGone(t, readPID())
 
 			// The next Detect starts a new, healthy child.
 			t.Setenv(helperEnv, "ok")
@@ -147,15 +182,14 @@ func TestProcDetectorHungChildIsKilledAndRestarted(t *testing.T) {
 // A grandchild holding the child's stdout and stderr open must neither
 // survive the kill nor keep Wait blocked.
 func TestProcDetectorKillsGrandchild(t *testing.T) {
-	pidFile := t.TempDir() + "/pid"
+	pidFile, readPID := pidFifo(t)
 	t.Setenv(helperPIDFile, pidFile)
 	d := helperDetector(t, "grandchild")
 	start := time.Now()
 	_, err := d.Detect(context.Background(), tinyFrame())
 	require.ErrorContains(t, err, "hello timed out")
 	require.Less(t, time.Since(start), 2500*time.Millisecond)
-	pid := readPID(t, pidFile)
-	waitRealIO(t, func() bool { return processGone(pid) }, "grandchild exit")
+	waitGone(t, readPID())
 	require.Nil(t, d.proc)
 }
 
@@ -172,20 +206,4 @@ func TestProcDetectorContextCancel(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.Less(t, time.Since(start), 2*time.Second)
 	require.Nil(t, d.proc)
-}
-
-//testpolicy:realtime subprocess exit and worker dump files are real kernel I/O
-func waitRealIO(t *testing.T, ready func() bool, what string) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-	for !ready() {
-		select {
-		case <-ctx.Done():
-			t.Fatalf("timed out waiting for %s", what)
-		case <-ticker.C:
-		}
-	}
 }

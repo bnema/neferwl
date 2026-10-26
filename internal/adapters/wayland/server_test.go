@@ -265,8 +265,6 @@ func TestWindowClose(t *testing.T) {
 	unmapped(t, events, w.ID)
 }
 
-//
-//testpolicy:realtime real external Wayland client process on the display socket (Server.Run on libwayland epoll)
 func TestWindowConfigure(t *testing.T) {
 	tool, err := exec.LookPath("weston-simple-shm")
 	if err != nil {

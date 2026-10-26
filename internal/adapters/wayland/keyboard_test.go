@@ -227,8 +227,6 @@ func TestSetKeymap(t *testing.T) {
 	}
 }
 
-//
-//testpolicy:realtime real external Wayland client process on the display socket (Server.Run on libwayland epoll)
 func TestFootKeyboard(t *testing.T) {
 	tool, err := exec.LookPath("foot")
 	if err != nil {

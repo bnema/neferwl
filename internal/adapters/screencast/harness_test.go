@@ -95,8 +95,6 @@ type peers struct {
 
 // waitClosed waits until the service closed pidfd i (see ends), within one
 // deadline.
-//
-//testpolicy:realtime poll(2) on a pipe whose reader the service closes
 func (p *peers) waitClosed(t *testing.T, i int) {
 	t.Helper()
 	p.mu.Lock()
@@ -269,8 +267,6 @@ func (h *svcHarness) client() *zerobus.Conn {
 // waitName waits until the service owns name: it subscribes to the
 // NameOwnerChanged of name, then asks once, so an acquisition before the
 // subscription is seen by the question and a later one by the signal.
-//
-//testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func (h *svcHarness) waitName(c *zerobus.Conn, name string) {
 	h.t.Helper()
 	check := boundIO(h.t, "waiting for "+name, func() { _ = c.Close() })

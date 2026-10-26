@@ -103,8 +103,6 @@ func serve(t *testing.T, address string) served {
 // subscribes to NameOwnerChanged first and asks once after, so a change
 // before the subscription is seen by the question and a later one by the
 // signal. The probe connection must not be used by another goroutine.
-//
-//testpolicy:realtime private D-Bus daemon name acquisition crosses a Unix socket
 func waitOwner(t *testing.T, probe *testClient, ok func(string) bool) {
 	t.Helper()
 	check := boundIO(t, "waiting for the owner of "+busName, func() { _ = probe.Close() })
