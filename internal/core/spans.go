@@ -3,7 +3,7 @@ package core
 // validSpans requires a complete, exclusive lane stamp: every column has
 // a positive span and the same nonzero identity, with no members elsewhere
 // in the workspace. Equal-cell lanes must also sum to 10000 basis points.
-func (w *Workspace) validSpans(first, last int) bool {
+func (w *layoutView) validSpans(first, last int) bool {
 	if first > last || w.inSpiral() {
 		return false
 	}
@@ -25,7 +25,7 @@ func (w *Workspace) validSpans(first, last int) bool {
 			count++
 		}
 	}
-	return count == last-first+1 && (total == 10000 || !w.layout().equalCells())
+	return count == last-first+1 && (total == 10000 || !w.layout.equalCells())
 }
 
 // dropStaleSpans runs before scroll measures mutated layout geometry. Decide

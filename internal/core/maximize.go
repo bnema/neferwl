@@ -15,8 +15,8 @@ func (w *Workspace) maximize(i int) {
 // hiddenByMaximized reports whether the maximized focused column hides
 // column i on screen: in fixed overflow it hides the rest of the row. A
 // maximized cascade column has its band to itself, so it hides nothing.
-func (w *Workspace) hiddenByMaximized(i int) bool {
-	return w.layout().maximizeHides() && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth && i != w.Focus
+func (w *layoutView) hiddenByMaximized(i int) bool {
+	return w.layout.maximizeHides() && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth && i != w.Focus
 }
 
 // unmaximize clears the focused column in scroll and cascade, or all

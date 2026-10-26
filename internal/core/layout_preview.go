@@ -12,11 +12,10 @@ func appendPreviewColumn(dst []Placement, rowBuf []Rect, r Rect, c Column, gap i
 
 // Pinned fullscreen previews expose the underlying row and tag its cover.
 func previewPinned(v layoutView, dst []Placement, rowBuf []Rect) ([]Placement, int, Rect, bool) {
-	w := geometryWorkspace(v)
-	if !w.pinned() {
+	if !pinnedView(v) {
 		return nil, 0, Rect{}, false
 	}
-	cover := w.cover()
+	cover := v.Fullscreen
 	v.Fullscreen = 0
 	tiles, span, sel := v.layout.previewTiles(v, dst, rowBuf)
 	for i := range tiles {
@@ -24,3 +23,5 @@ func previewPinned(v layoutView, dst []Placement, rowBuf []Rect) ([]Placement, i
 	}
 	return tiles, span, sel, true
 }
+
+func pinnedView(v layoutView) bool { return v.Fullscreen != 0 && v.layout.pinsFullscreen() }

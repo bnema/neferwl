@@ -113,7 +113,9 @@ func (w *Workspace) fullscreenHides() bool {
 	return w.fullscreen != 0 && (w.layout().pinsFullscreen() || w.fullscreenColumn(w.Focus))
 }
 
-func (w *Workspace) fullscreenColumn(i int) bool { return fullscreenColumn(w.Columns[i], w.fullscreen) }
+func (w *layoutView) fullscreenColumn(i int) bool {
+	return fullscreenColumn(w.Columns[i], w.Fullscreen)
+}
 
 // fullscreenColumn reports whether column c holds the fullscreen window.
 func fullscreenColumn(c Column, fullscreen WindowID) bool {

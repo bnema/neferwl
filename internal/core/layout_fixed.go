@@ -68,7 +68,7 @@ func (fixedLayout) previewTiles(v layoutView, dst []Placement, rowBuf []Rect) ([
 	if tiles, span, sel, ok := previewPinned(v, dst, rowBuf); ok {
 		return tiles, span, sel
 	}
-	w := geometryWorkspace(v)
+	w := &v
 	rects := v.layout.columnRects(v, rowBuf[:0], rectOpts{})
 	rowBuf = rects[len(rects):cap(rects)]
 	var sel Rect

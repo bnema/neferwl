@@ -16,7 +16,7 @@ func (cascadeLayout) bands() bool             { return true }
 func (cascadeLayout) laneGestures() bool      { return true }
 func (cascadeLayout) laneRow(layoutView) bool { return true }
 func (cascadeLayout) columnRects(v layoutView, dst []Rect, o rectOpts) []Rect {
-	w := geometryWorkspace(v)
+	w := &v
 	ignoreFullWidth, shift := o.IgnoreFullWidth, o.Shift
 
 	g := w.gap()
@@ -41,7 +41,7 @@ func (cascadeLayout) columnRects(v layoutView, dst []Rect, o rectOpts) []Rect {
 	return rects
 }
 func (cascadeLayout) snapPoints(v layoutView, dst []float64) []float64 {
-	w := geometryWorkspace(v)
+	w := &v
 
 	n, spacing := w.cascadeBands()
 	points := slices.Grow(dst[:0], n)[:n]
@@ -51,7 +51,7 @@ func (cascadeLayout) snapPoints(v layoutView, dst []float64) []float64 {
 	return points
 }
 func (cascadeLayout) snapFocus(v layoutView, view int, forward bool) int {
-	w := geometryWorkspace(v)
+	w := &v
 
 	if len(w.Columns) == 0 {
 		return -1
@@ -60,18 +60,18 @@ func (cascadeLayout) snapFocus(v layoutView, view int, forward bool) int {
 	return w.laneNeighbor(b - w.band(w.Focus))
 }
 func (cascadeLayout) laneOf(v layoutView, i int) int {
-	w := laneWorkspace(v)
+	w := &v
 	return w.band(i)
 }
 func (cascadeLayout) laneBounds(v layoutView, lane int) (int, int) {
-	w := laneWorkspace(v)
+	w := &v
 	return w.bandBounds(lane)
 }
 func (cascadeLayout) laneNeighbor(v layoutView, d int) int {
 	return adjacentLane(v.layout, v, d)
 }
 func (cascadeLayout) scrollTarget(v layoutView) int {
-	w := geometryWorkspace(v)
+	w := &v
 	return w.band(v.Focus) * v.Usable.H
 }
 func (l cascadeLayout) focusStep(v layoutView, dir int) int {
@@ -86,7 +86,7 @@ func (cascadeLayout) previewTiles(v layoutView, dst []Placement, rowBuf []Rect) 
 	if tiles, span, sel, ok := previewPinned(v, dst, rowBuf); ok {
 		return tiles, span, sel
 	}
-	w := geometryWorkspace(v)
+	w := &v
 	var sel Rect
 	// One walk over the bands: each lane is measured once and its columns
 	// step through it left to right.
@@ -117,7 +117,7 @@ func (cascadeLayout) laneCount(v layoutView) int {
 	if len(v.Columns) == 0 {
 		return 0
 	}
-	w := laneWorkspace(v)
+	w := &v
 	return w.band(len(v.Columns)-1) + 1
 }
 func (cascadeLayout) laneStep(v layoutView, dir int) int { return v.layout.laneNeighbor(v, dir) }
@@ -194,8 +194,8 @@ func (w *Workspace) cascadeState() *cascadeState {
 	}
 	return &cascadeState{}
 }
-func (w *Workspace) bandStart(i int) bool {
-	s, ok := w.lstate.(*cascadeState)
+func (w *layoutView) bandStart(i int) bool {
+	s, ok := w.State.(*cascadeState)
 	return ok && i >= 0 && i < len(s.bandStart) && s.bandStart[i]
 }
 func (w *Workspace) setBandStart(i int, start bool) {

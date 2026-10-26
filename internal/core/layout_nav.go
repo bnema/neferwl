@@ -1,10 +1,5 @@
 package core
 
-// laneWorkspace exposes only the snapshot fields needed by the band walk.
-func laneWorkspace(v layoutView) Workspace {
-	return Workspace{lanes: lanes{Columns: v.Columns, Focus: v.Focus, MaxColumns: v.MaxColumns, lay: v.layout, lstate: v.State}}
-}
-
 func adjacentLane(l layoutLanes, v layoutView, d int) int {
 	lane := l.laneOf(v, v.Focus)
 	first, _ := l.laneBounds(v, lane)
@@ -93,14 +88,14 @@ func (w *Workspace) focusLane(dir int) bool {
 
 // laneOf is the lane of column i in the overview: its band, or the only
 // lane of a layout that does not wrap.
-func (w *Workspace) laneOf(i int) int {
-	return w.layout().laneOf(w.lview(), i)
+func (w *layoutView) laneOf(i int) int {
+	return w.layout.laneOf(*w, i)
 }
 
 // laneBounds is the range of columns of a lane, first > last when the lane
 // does not exist. A layout that does not wrap has the whole row as lane 0.
-func (w *Workspace) laneBounds(lane int) (first, last int) {
-	return w.layout().laneBounds(w.lview(), lane)
+func (w *layoutView) laneBounds(lane int) (first, last int) {
+	return w.layout.laneBounds(*w, lane)
 }
 
 // leavesLane reports whether column i, where a left/right move from the
@@ -112,6 +107,6 @@ func (w *Workspace) leavesLane(i int) bool {
 
 // laneNeighbor is the closest column to the focus in the lane d lanes away,
 // the focus's offset in its lane kept; -1 past the first or last lane.
-func (w *Workspace) laneNeighbor(d int) int {
-	return w.layout().laneNeighbor(w.lview(), d)
+func (w *layoutView) laneNeighbor(d int) int {
+	return w.layout.laneNeighbor(*w, d)
 }

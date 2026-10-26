@@ -23,16 +23,16 @@ func (columnsBase) laneGestures() bool { return false }
 func (columnsBase) spiral() bool       { return false }
 
 func (columnsBase) columnRects(v layoutView, dst []Rect, o rectOpts) []Rect {
-	w := geometryWorkspace(v)
+	w := &v
 	g := w.gap()
 	y, h := w.Usable.Y+g, max(w.Usable.H-2*g, 0)
 	rects := slices.Grow(dst[:0], len(w.Columns))[:len(w.Columns)]
 	view := w.View + o.Shift
 	x := w.Usable.X + g
-	v = v.withFacts(&w)
+	v = v.withFacts()
 	if !v.layout.overridesWidth() {
 		// Resolve native geometry once, without copying a view per column.
-		native := newNativeWidths(&w, v.facts)
+		native := newNativeWidths(w, v.facts)
 		for i := range w.Columns {
 			width := nativeColumnWidth(&v, &native, i, o.IgnoreFullWidth)
 			rects[i] = Rect{X: x - view, Y: y, W: width, H: h}
@@ -49,20 +49,20 @@ func (columnsBase) columnRects(v layoutView, dst []Rect, o rectOpts) []Rect {
 }
 
 func (columnsBase) columnWidth(v layoutView, i int, ignore bool) int {
-	w := geometryWorkspace(v)
+	w := &v
 	if !v.facts.set {
-		v = v.withFacts(&w)
+		v = v.withFacts()
 	}
-	row := newNativeWidths(&w, v.facts)
+	row := newNativeWidths(w, v.facts)
 	return nativeColumnWidth(&v, &row, i, ignore)
 }
 
 func nativeColumnWidth(v *layoutView, row *nativeWidths, i int, ignore bool) int {
 	f := v.facts
 	if !f.set {
-		w := geometryWorkspace(*v)
+		w := v
 		if !f.set {
-			f = w.widthFactsOf(*v) // called alone: the loops set them once
+			f = w.widthFactsOf() // called alone: the loops set them once
 		}
 		return w.columnWidthWith(i, ignore, f)
 	}
@@ -90,11 +90,11 @@ func nativeColumnWidth(v *layoutView, row *nativeWidths, i int, ignore bool) int
 }
 
 func (columnsBase) scrollTarget(v layoutView) int {
-	w := geometryWorkspace(v)
+	w := &v
 	if len(w.Columns) == 0 {
 		return w.View
 	}
-	vf := v.withFacts(&w)
+	vf := v.withFacts()
 	left := vf.columnX(w.Focus) - w.View
 	width := vf.layout.columnWidth(vf, w.Focus, false)
 	if w.fullscreenColumn(w.Focus) {

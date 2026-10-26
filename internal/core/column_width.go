@@ -6,8 +6,8 @@ func (w *Workspace) columnWidthFor(i int, ignoreFullWidth bool) int {
 
 // scrollSpansValid is the lane validity scrollWidth needs. It costs O(n):
 // loops over columns compute it once and pass it down.
-func (w *Workspace) scrollSpansValid() bool {
-	return !w.layout().equalCells() && w.validSpans(0, len(w.Columns)-1)
+func (w *layoutView) scrollSpansValid() bool {
+	return !w.layout.equalCells() && w.validSpans(0, len(w.Columns)-1)
 }
 
 // widthFacts are what column widths need to know about the whole workspace,
@@ -23,20 +23,20 @@ type widthFacts struct {
 }
 
 // widthFactsOf is widthFacts for a view the caller already built.
-func (w *Workspace) widthFactsOf(v layoutView) widthFacts {
+func (w *layoutView) widthFactsOf() widthFacts {
 	k := max(w.MaxColumns, 1)
-	return widthFacts{set: true, spansValid: w.scrollSpansValid(), laneRow: v.layout.laneRow(v), spiral: v.layout.spiral(),
+	return widthFacts{set: true, spansValid: w.scrollSpansValid(), laneRow: w.layout.laneRow(*w), spiral: w.layout.spiral(),
 		slot: int32(w.equalShare(k)), auto: int32(w.equalShare(min(len(w.Columns), k)))}
 }
 
-// withFacts is v with its width facts set; w is geometryWorkspace(v).
-func (v layoutView) withFacts(w *Workspace) layoutView {
-	v.facts = w.widthFactsOf(v)
+// withFacts is v with its width facts set.
+func (v layoutView) withFacts() layoutView {
+	v.facts = v.widthFactsOf()
 	return v
 }
 
 // columnWidthWith is columnWidthFor with the workspace's width facts given.
-func (w *Workspace) columnWidthWith(i int, ignoreFullWidth bool, f widthFacts) int {
+func (w *layoutView) columnWidthWith(i int, ignoreFullWidth bool, f widthFacts) int {
 	if width, ok := w.specialWidth(i, ignoreFullWidth); ok {
 		return width
 	}
@@ -47,7 +47,7 @@ func (w *Workspace) columnWidthWith(i int, ignoreFullWidth bool, f widthFacts) i
 }
 
 // specialWidth is the width of a maximized or fullscreen column.
-func (w *Workspace) specialWidth(i int, ignoreFullWidth bool) (int, bool) {
+func (w *layoutView) specialWidth(i int, ignoreFullWidth bool) (int, bool) {
 	if w.Columns[i].FullWidth && !ignoreFullWidth {
 		return max(w.Usable.W-2*w.gap(), 0), true
 	}
@@ -60,18 +60,18 @@ func (w *Workspace) specialWidth(i int, ignoreFullWidth bool) (int, bool) {
 // laneRow reports whether the columns share one row of cells: fixed
 // overflow up to MaxColumns of them. Past that the spiral applies and
 // cells are ignored.
-func (w *Workspace) laneRow() bool {
-	return w.layout().laneRow(w.lview())
+func (w *layoutView) laneRow() bool {
+	return w.layout.laneRow(*w)
 }
 
 // inSpiral reports whether the spiral applies: more columns than the row
 // holds, in a layout that subdivides its last slot.
-func (w *Workspace) inSpiral() bool { return w.layout().spiral() && !w.laneRow() }
+func (w *layoutView) inSpiral() bool { return w.layout.spiral() && !w.laneRow() }
 
 // scrollWidth is the width of column i when it is sized on its own: auto
 // columns share the usable width as the visible ones would, the others take
 // their cells (at most MaxColumns) and the gaps between them.
-func (w *Workspace) scrollWidth(i int, f widthFacts) int {
+func (w *layoutView) scrollWidth(i int, f widthFacts) int {
 	k := max(w.MaxColumns, 1)
 	if f.spiral {
 		// Past MaxColumns the spiral's slots.
@@ -91,12 +91,11 @@ func (w *Workspace) scrollWidth(i int, f widthFacts) int {
 // columnEdges returns the x and width of every column in one pass, the
 // prefix sums columnX(i) and columnWidth(i) would each recompute in O(i).
 // Both slices share one backing array. Widths come from the layout.
-func (w *Workspace) columnEdges() (xs, widths []int) {
+func (w *layoutView) columnEdges() (xs, widths []int) {
 	n := len(w.Columns)
 	buf := make([]int, 2*n)
 	xs, widths = buf[:n:n], buf[n:]
-	v := w.lview()
-	v = v.withFacts(w)
+	v := w.withFacts()
 	x := w.Usable.X + w.gap()
 	native := newNativeWidths(w, v.facts)
 	override := v.layout.overridesWidth()
@@ -114,15 +113,15 @@ func (w *Workspace) columnEdges() (xs, widths []int) {
 
 func (w *Workspace) columnX(i int) int {
 	v := w.lview()
-	v = v.withFacts(w)
+	v = v.withFacts()
 	return v.columnX(i)
 }
 
 // columnX is the left edge of column i in the unscrolled row; v carries facts.
 func (v layoutView) columnX(i int) int {
 	x := v.Usable.X + v.Gap
-	w := geometryWorkspace(v)
-	native := newNativeWidths(&w, v.facts)
+	w := &v
+	native := newNativeWidths(w, v.facts)
 	override := v.layout.overridesWidth()
 	for j := 0; j < i; j++ {
 		if override {
@@ -168,15 +167,15 @@ func (w *Workspace) columnRectsAt(dst []Rect, ignoreFullWidth bool, shift int) [
 // nativeWidths keeps the adapter and row statistics outside column loops.
 // Overrides still receive the complete snapshot through the layout interface.
 type nativeWidths struct {
-	w         *Workspace
+	v         *layoutView
 	facts     widthFacts
 	S, u, sum int
 	spans     bool
 }
 
-func newNativeWidths(w *Workspace, f widthFacts) nativeWidths {
-	n := nativeWidths{w: w, facts: f}
-	if f.laneRow && !w.layout().bands() {
+func newNativeWidths(w *layoutView, f widthFacts) nativeWidths {
+	n := nativeWidths{v: w, facts: f}
+	if f.laneRow && !w.layout.bands() {
 		n.S, n.u, n.sum = w.laneStats(0, len(w.Columns)-1)
 		n.spans = w.validSpans(0, len(w.Columns)-1)
 	}
@@ -184,14 +183,14 @@ func newNativeWidths(w *Workspace, f widthFacts) nativeWidths {
 }
 
 func (n nativeWidths) width(i int, ignore bool) int {
-	if width, ok := n.w.specialWidth(i, ignore); ok {
+	if width, ok := n.v.specialWidth(i, ignore); ok {
 		return width
 	}
 	if n.facts.laneRow {
-		if n.w.layout().bands() {
-			return n.w.cellWidth(i)
+		if n.v.layout.bands() {
+			return n.v.cellWidth(i)
 		}
-		return n.w.laneWidth(i, 0, len(n.w.Columns)-1, n.S, n.u, n.sum, n.spans)
+		return n.v.laneWidth(i, 0, len(n.v.Columns)-1, n.S, n.u, n.sum, n.spans)
 	}
-	return n.w.scrollWidth(i, n.facts)
+	return n.v.scrollWidth(i, n.facts)
 }
