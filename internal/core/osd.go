@@ -130,11 +130,14 @@ func (c *Core) osdPanel(v ports.WindowStats) {
 	}
 	p.Lines[0] = string(b)
 	reason := v.ScanoutReason
-	if !v.Scanout && reason == "overlays" {
-		reason = "(overlay)"
+	ready := !v.Scanout && reason == "overlays"
+	if v.Scanout {
+		reason = ""
+	} else if ready {
+		reason = "(OSD hidden)"
 	}
 	b = append(b[:0], "scanout "...)
-	b = append(b, osdOn(v.Scanout)...)
+	b = append(b, osdOn(v.Scanout || ready)...)
 	if reason != "" {
 		b = append(b, ' ')
 		b = append(b, reason...)

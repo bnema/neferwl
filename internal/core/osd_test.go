@@ -71,7 +71,7 @@ func TestOSDScanoutLineOmitsEmptyReason(t *testing.T) {
 		want  string
 	}{
 		{ports.WindowStats{Scanout: true}, "scanout on / VRR"},
-		{ports.WindowStats{ScanoutReason: "overlays"}, "scanout off (overlay) / VRR"},
+		{ports.WindowStats{ScanoutReason: "overlays"}, "scanout on (OSD hidden) / VRR"},
 		{ports.WindowStats{ScanoutReason: "format"}, "scanout off format / VRR"},
 	} {
 		c.osdPanel(tc.stats)

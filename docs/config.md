@@ -411,7 +411,7 @@ Holding `cmd` (`keyboard.cmd`) for about 0.4 s with a focused window shows an ov
 
 The panel sits at the top centre of the window it was called on and follows its moves and resizes, clipped and faded with that window. Other windows cover it just like the app. A pinned panel stays on that app when focus changes, until it is unpinned or the window closes. Showing or pinning without a focused window does nothing.
 
-The overlay shows live scanout state, typically `scanout off (overlay)` because the overlay itself blocks direct scanout. The overlay is never captured. Nothing happens while the focused window inhibits shortcuts. `osd.enable = off` turns all of this off.
+The overlay shows `scanout on` for zero-copy presentation, `scanout on (OSD hidden)` when compositor overlays are the only failed direct-scanout scene check, and `scanout off <reason>` otherwise. The OSD-hidden state describes scene eligibility, not a guarantee that the hardware accepts the buffer. The overlay is never captured. Nothing happens while the focused window inhibits shortcuts. `osd.enable = off` turns all of this off.
 
 ## Hint mode
 

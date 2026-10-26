@@ -49,7 +49,7 @@ func TestOSDHoldThroughRun(t *testing.T) {
 		h.client <- ports.WindowStats{Window: 1, ClientFPS: 144, ShownFPS: 120, ScanoutReason: "overlays"}
 		synctest.Wait()
 		updated := osdOverlay(t, h)
-		if updated.Seq <= o.Seq || !strings.Contains(updated.Panel.Lines[2], "144 fps") || !strings.Contains(updated.Panel.Lines[1], "off (overlay)") {
+		if updated.Seq <= o.Seq || !strings.Contains(updated.Panel.Lines[2], "144 fps") || !strings.Contains(updated.Panel.Lines[1], "on (OSD hidden)") {
 			t.Fatal(updated)
 		}
 		h.client <- ports.WindowStats{Window: 2, ClientFPS: 999}

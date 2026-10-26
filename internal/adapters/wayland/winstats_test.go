@@ -125,3 +125,20 @@ func TestFrameRingSummaryAllocs(t *testing.T) {
 	var scratch [ports.StatsFrames]uint32
 	assert.Zero(t, testing.AllocsPerRun(100, func() { _ = r.summary(&scratch) }))
 }
+
+func TestWindowStatsScanoutReasons(t *testing.T) {
+	w := windowStats{watched: 1}
+	for _, reason := range []string{"overlays", "other_windows", "no_fullscreen", ""} {
+		f := ports.FlipInfo{Shows: map[ports.WindowID]uint64{1: 1}, ScanoutReason: reason, OverlayReason: "overlays"}
+		if reason == "" {
+			f.ZeroCopy = 1
+		}
+		w.flip(&f)
+		got := w.snapshot()
+		assert.Equal(t, reason, got.ScanoutReason)
+		assert.Equal(t, "overlays", got.OverlayReason)
+		assert.Equal(t, reason == "", got.Scanout)
+	}
+	w.flip(&ports.FlipInfo{ScanoutReason: "unrelated output"})
+	assert.Empty(t, w.snapshot().ScanoutReason)
+}
