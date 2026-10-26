@@ -99,23 +99,29 @@ func serve(t *testing.T, address string) served {
 	return v
 }
 
-// waitOwner polls the owner of busName ("" when none) until ok accepts it.
+// waitOwner waits until the owner of busName ("" when none) satisfies ok. It
+// subscribes to NameOwnerChanged first and asks once after, so a change
+// before the subscription is seen by the question and a later one by the
+// signal. The probe connection must not be used by another goroutine.
 //
 //testpolicy:realtime private D-Bus daemon name acquisition crosses a Unix socket
 func waitOwner(t *testing.T, probe *testClient, ok func(string) bool) {
 	t.Helper()
-	timeout, tick := time.After(2*time.Second), time.NewTicker(5*time.Millisecond)
-	defer tick.Stop()
-	for {
-		var owner string
-		_ = probe.BusObject().Call("org.freedesktop.DBus.GetNameOwner", 0, busName).Store(&owner)
-		if ok(owner) {
-			return
+	check := boundIO(t, "waiting for the owner of "+busName, func() { _ = probe.Close() })
+	defer check()
+	if err := probe.Conn.AddMatch("type='signal',sender='" + busDaemon + "',interface='" + busDaemon + "',member='NameOwnerChanged',arg0='" + busName + "'"); err != nil {
+		t.Fatal(err)
+	}
+	var owner string
+	_ = probe.BusObject().Call(busDaemon+".GetNameOwner", 0, busName).Store(&owner)
+	for !ok(owner) {
+		m, err := probe.Conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("owner %q not accepted: %v", owner, err)
 		}
-		select {
-		case <-timeout:
-			t.Fatalf("owner %q not accepted", owner)
-		case <-tick.C:
+		if m.Type == zerobus.TypeSignal && m.Member == "NameOwnerChanged" {
+			r := m.Body()
+			_, _, owner = r.Str(), r.Str(), r.Str()
 		}
 	}
 }
