@@ -48,7 +48,7 @@ func (c *Core) updatePositionHints(only *screen) {
 			continue
 		}
 		w := sc.mon.Current()
-		band := w.laneOf(w.Focus)
+		band := w.LaneOf(w.Focus)
 		focused := i == c.focusScreen
 		changed := h.initialized && (h.workspace != w || h.band != band || focused && !h.focused)
 		// Transferring the current workspace changes the source's fallback
@@ -96,7 +96,7 @@ func (c *Core) updatePositionHints(only *screen) {
 // these remain addressable even when empty. Window the list at its active
 // entry when it exceeds the cap. Bands stay top-aligned; excess rows clamp.
 func positionHintGrid(m *Monitor) ports.PositionHint {
-	h := ports.PositionHint{Vertical: m.overviewAxis() == verticalAxis}
+	h := ports.PositionHint{Vertical: m.overviewAxis() == Vertical}
 	active, total := 0, 0
 	for w := range m.all() {
 		if w == m.Current() {
@@ -117,9 +117,9 @@ func positionHintGrid(m *Monitor) ports.PositionHint {
 	i := 0
 	for w := range m.all() {
 		if i >= first && i < first+cap {
-			n := max(1, w.layout().laneCount(w.lview()))
-			content, _ := w.layout().axes()
-			if content.span(w.Usable) <= 0 {
+			n := max(1, w.Engine().LaneCount(w.Snapshot()))
+			content, _ := w.Engine().Axes()
+			if content.Span(w.Usable) <= 0 {
 				n = 1
 			}
 			h.Counts[i-first] = uint8(min(n, ports.PositionHintMaxRows))
@@ -127,7 +127,7 @@ func positionHintGrid(m *Monitor) ports.PositionHint {
 		i++
 	}
 	w := m.Current()
-	h.ActiveRow = uint8(min(w.laneOf(w.Focus), ports.PositionHintMaxRows-1))
+	h.ActiveRow = uint8(min(w.LaneOf(w.Focus), ports.PositionHintMaxRows-1))
 	return h
 }
 

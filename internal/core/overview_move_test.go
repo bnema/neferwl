@@ -201,8 +201,8 @@ func TestOverviewMoveDropsMaximizeHistory(t *testing.T) {
 			t.Fatal("3 not moved")
 		}
 		m.CancelOverview()
-		if slices.Contains(w.maximized, 3) {
-			t.Fatalf("maximized %v keeps a moved window", w.maximized)
+		if slices.Contains(w.Maximized, 3) {
+			t.Fatalf("maximized %v keeps a moved window", w.Maximized)
 		}
 
 	})
@@ -233,7 +233,7 @@ func TestOverviewMoveFromFullscreenRow(t *testing.T) {
 			if !slices.Equal(w.windows(), []WindowID{1, 3, 4}) || !slices.Equal(m.Workspaces[1].windows(), []WindowID{2}) {
 				t.Fatalf("follow %v: windows %v", follow, windows(m))
 			}
-			if w.fullscreen != 0 || m.Workspaces[1].fullscreen != 0 {
+			if w.Fullscreen != 0 || m.Workspaces[1].Fullscreen != 0 {
 				t.Fatalf("follow %v: fullscreen kept", follow)
 			}
 			m.CancelOverview()

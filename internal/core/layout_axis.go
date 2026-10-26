@@ -1,21 +1,26 @@
 package core
 
-// layoutAxis is a logical navigation axis, independent of rendering.
-type layoutAxis uint8
+// Axis is a logical navigation axis, independent of rendering.
+type Axis uint8
 
 const (
-	verticalAxis layoutAxis = iota
-	horizontalAxis
+	// Vertical follows the logical Y axis.
+	Vertical Axis = iota
+	// Horizontal follows the logical X axis.
+	Horizontal
 )
 
-func (a layoutAxis) span(r Rect) int {
-	if a == verticalAxis {
+// Span returns the rectangle’s extent along the axis.
+func (a Axis) Span(r Rect) int {
+	if a == Vertical {
 		return r.H
 	}
 	return r.W
 }
-func (a layoutAxis) offset(r *Rect, pixels int) {
-	if a == verticalAxis {
+
+// Offset translates the rectangle along the axis.
+func (a Axis) Offset(r *Rect, pixels int) {
+	if a == Vertical {
 		r.Y += pixels
 	} else {
 		r.X += pixels

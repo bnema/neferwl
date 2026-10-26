@@ -22,21 +22,21 @@ func init() {
 	}
 }
 
-func extensionLayout(name Overflow, st layoutState) *mocklayout {
-	l := &mocklayout{}
-	base := columnsBase{}
-	l.EXPECT().name().Return(name)
-	l.EXPECT().newState().Return(st)
-	l.EXPECT().pinsFullscreen().Return(name == overflowTrail)
-	l.EXPECT().overridesWidth().Return(name == overflowLadder)
-	l.EXPECT().columnWidth(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(v layoutView, i int, ignore bool) int {
+func extensionLayout(name Overflow, st State) *MockLayout {
+	l := &MockLayout{}
+	base := Base{}
+	l.EXPECT().Name().Return(name)
+	l.EXPECT().NewState().Return(st)
+	l.EXPECT().PinsFullscreen().Return(name == overflowTrail)
+	l.EXPECT().OverridesWidth().Return(name == overflowLadder)
+	l.EXPECT().ColumnWidth(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(v View, i int, ignore bool) int {
 		if name == overflowLadder {
 			return 100 + 50*i
 		}
-		return base.columnWidth(v, i, ignore)
+		return base.ColumnWidth(v, i, ignore)
 	})
-	l.EXPECT().columnRects(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(v layoutView, dst []Rect, o rectOpts) []Rect {
-		rects := base.columnRects(v, dst, o)
+	l.EXPECT().ColumnRects(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(v View, dst []Rect, o RectOpts) []Rect {
+		rects := base.ColumnRects(v, dst, o)
 		if name == overflowCentered && len(rects) > 0 {
 			row := rects[len(rects)-1].X + rects[len(rects)-1].W - rects[0].X + 2*v.Gap
 			if free := v.Usable.W - row; free > 0 {
@@ -47,41 +47,41 @@ func extensionLayout(name Overflow, st layoutState) *mocklayout {
 		}
 		return rects
 	})
-	l.EXPECT().axes().RunAndReturn(base.axes)
-	l.EXPECT().equalCells().RunAndReturn(base.equalCells)
-	l.EXPECT().maximizeHides().RunAndReturn(base.maximizeHides)
-	l.EXPECT().scrolls().RunAndReturn(base.scrolls)
-	l.EXPECT().resetsMaximize().RunAndReturn(base.resetsMaximize)
-	l.EXPECT().bands().RunAndReturn(base.bands)
-	l.EXPECT().laneGestures().RunAndReturn(base.laneGestures)
-	l.EXPECT().spiral().RunAndReturn(base.spiral)
-	l.EXPECT().scrollTarget(mock.Anything).RunAndReturn(base.scrollTarget)
-	l.EXPECT().snapPoints(mock.Anything, mock.Anything).RunAndReturn(base.snapPoints)
-	l.EXPECT().snapFocus(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(base.snapFocus)
-	l.EXPECT().laneOf(mock.Anything, mock.Anything).RunAndReturn(base.laneOf)
-	l.EXPECT().laneBounds(mock.Anything, mock.Anything).RunAndReturn(base.laneBounds)
-	l.EXPECT().laneCount(mock.Anything).RunAndReturn(base.laneCount)
-	l.EXPECT().laneNeighbor(mock.Anything, mock.Anything).RunAndReturn(base.laneNeighbor)
-	l.EXPECT().laneRow(mock.Anything).RunAndReturn(base.laneRow)
-	l.EXPECT().focusStep(mock.Anything, mock.Anything).RunAndReturn(base.focusStep)
-	l.EXPECT().laneStep(mock.Anything, mock.Anything).RunAndReturn(base.laneStep)
-	l.EXPECT().spawnAt(mock.Anything).RunAndReturn(base.spawnAt)
-	l.EXPECT().coveredSpawnAt(mock.Anything).RunAndReturn(base.coveredSpawnAt)
-	l.EXPECT().full(mock.Anything).RunAndReturn(base.full)
-	l.EXPECT().moveAllowed(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(base.moveAllowed)
-	l.EXPECT().moveLane(mock.Anything, mock.Anything).RunAndReturn(base.moveLane)
-	l.EXPECT().isolate(mock.Anything, mock.Anything).RunAndReturn(base.isolate)
-	l.EXPECT().adoptFloat(mock.Anything, mock.Anything).RunAndReturn(base.adoptFloat)
-	l.EXPECT().previewTiles(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(base.previewTiles)
-	l.EXPECT().previewLanes().RunAndReturn(base.previewLanes)
-	l.EXPECT().grow(mock.Anything, mock.Anything).RunAndReturn(base.grow)
-	l.EXPECT().shrink(mock.Anything).RunAndReturn(base.shrink)
-	l.EXPECT().toggleFullWidth(mock.Anything).RunAndReturn(base.toggleFullWidth)
+	l.EXPECT().Axes().RunAndReturn(base.Axes)
+	l.EXPECT().EqualCells().RunAndReturn(base.EqualCells)
+	l.EXPECT().MaximizeHides().RunAndReturn(base.MaximizeHides)
+	l.EXPECT().Scrolls().RunAndReturn(base.Scrolls)
+	l.EXPECT().ResetsMaximize().RunAndReturn(base.ResetsMaximize)
+	l.EXPECT().Bands().RunAndReturn(base.Bands)
+	l.EXPECT().LaneGestures().RunAndReturn(base.LaneGestures)
+	l.EXPECT().Spiral().RunAndReturn(base.Spiral)
+	l.EXPECT().ScrollTarget(mock.Anything).RunAndReturn(base.ScrollTarget)
+	l.EXPECT().SnapPoints(mock.Anything, mock.Anything).RunAndReturn(base.SnapPoints)
+	l.EXPECT().SnapFocus(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(base.SnapFocus)
+	l.EXPECT().LaneOf(mock.Anything, mock.Anything).RunAndReturn(base.LaneOf)
+	l.EXPECT().LaneBounds(mock.Anything, mock.Anything).RunAndReturn(base.LaneBounds)
+	l.EXPECT().LaneCount(mock.Anything).RunAndReturn(base.LaneCount)
+	l.EXPECT().LaneNeighbor(mock.Anything, mock.Anything).RunAndReturn(base.LaneNeighbor)
+	l.EXPECT().LaneRow(mock.Anything).RunAndReturn(base.LaneRow)
+	l.EXPECT().FocusStep(mock.Anything, mock.Anything).RunAndReturn(base.FocusStep)
+	l.EXPECT().LaneStep(mock.Anything, mock.Anything).RunAndReturn(base.LaneStep)
+	l.EXPECT().SpawnAt(mock.Anything).RunAndReturn(base.SpawnAt)
+	l.EXPECT().CoveredSpawnAt(mock.Anything).RunAndReturn(base.CoveredSpawnAt)
+	l.EXPECT().Full(mock.Anything).RunAndReturn(base.Full)
+	l.EXPECT().MoveAllowed(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(base.MoveAllowed)
+	l.EXPECT().MoveLane(mock.Anything, mock.Anything).RunAndReturn(base.MoveLane)
+	l.EXPECT().Isolate(mock.Anything, mock.Anything).RunAndReturn(base.Isolate)
+	l.EXPECT().AdoptFloat(mock.Anything, mock.Anything).RunAndReturn(base.AdoptFloat)
+	l.EXPECT().PreviewTiles(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(base.PreviewTiles)
+	l.EXPECT().PreviewLanes().RunAndReturn(base.PreviewLanes)
+	l.EXPECT().Grow(mock.Anything, mock.Anything).RunAndReturn(base.Grow)
+	l.EXPECT().Shrink(mock.Anything).RunAndReturn(base.Shrink)
+	l.EXPECT().ToggleFullWidth(mock.Anything).RunAndReturn(base.ToggleFullWidth)
 	return l
 }
 
 func centeredWorkspace(n int) *Workspace {
-	w := &Workspace{lanes: lanes{Overflow: overflowCentered, lay: extensionLayout(overflowCentered, nil), MaxColumns: 4,
+	w := &Workspace{Lanes: Lanes{Overflow: overflowCentered, Override: extensionLayout(overflowCentered, nil), MaxColumns: 4,
 		Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}, Output: Rect{W: 1200, H: 900}, Gaps: 8}}
 	for i := 0; i < n; i++ {
 		w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}, Cells: 1})
@@ -96,7 +96,7 @@ func TestCenteredLayoutCentersFittingColumns(t *testing.T) {
 		rects := w.columnRectsAt(nil, false, 0)
 		left := rects[0].X - w.Usable.X
 		right := w.Usable.X + w.Usable.W - (rects[1].X + rects[1].W)
-		if left != right || left <= w.gap() {
+		if left != right || left <= w.Gap() {
 			t.Fatalf("margins %d / %d: the row is not centered (rects %v)", left, right, rects)
 		}
 		// The windows the workspace publishes follow the layout's rects.
@@ -107,7 +107,7 @@ func TestCenteredLayoutCentersFittingColumns(t *testing.T) {
 		}
 		// A full row has no room to center: the scroll geometry is unchanged.
 		full := centeredWorkspace(4)
-		base := columnsBase{}.columnRects(full.lview(), nil, rectOpts{})
+		base := Base{}.ColumnRects(full.Snapshot(), nil, RectOpts{})
 		if got := full.columnRectsAt(nil, false, 0); !slices.Equal(got, base) {
 			t.Fatalf("full row %v, want the scroll geometry %v", got, base)
 		}
@@ -137,7 +137,7 @@ func TestCenteredLayoutInheritsNeutralBehavior(t *testing.T) {
 
 func TestColumnWidthOverrideIsHonored(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		w := &Workspace{lanes: lanes{Overflow: overflowLadder, lay: extensionLayout(overflowLadder, nil), MaxColumns: 4,
+		w := &Workspace{Lanes: Lanes{Overflow: overflowLadder, Override: extensionLayout(overflowLadder, nil), MaxColumns: 4,
 			Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}, Output: Rect{W: 1200, H: 900}, Gaps: 8}}
 		for i := 0; i < 4; i++ {
 			w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
@@ -161,7 +161,7 @@ func TestColumnWidthOverrideIsHonored(t *testing.T) {
 		if r := w.columnRectsAt(nil, false, 0)[3]; r.X < w.Usable.X || r.X+r.W > w.Usable.X+w.Usable.W {
 			t.Fatalf("focused rect %+v not scrolled into %+v", r, w.Usable)
 		}
-		if xs, ws := w.columnEdges(); ws[3] != 250 || xs[3] != w.Usable.X+8+(100+8)+(150+8)+(200+8) {
+		if xs, ws := w.ColumnEdges(); ws[3] != 250 || xs[3] != w.Usable.X+8+(100+8)+(150+8)+(200+8) {
 			t.Fatalf("edges %v %v", xs, ws)
 		}
 
@@ -170,8 +170,8 @@ func TestColumnWidthOverrideIsHonored(t *testing.T) {
 
 type trailCarry uint64
 
-func trailWorkspace(n int, st layoutState) *Workspace {
-	w := &Workspace{lanes: lanes{Overflow: overflowTrail, lay: extensionLayout(overflowTrail, st), MaxColumns: 3,
+func trailWorkspace(n int, st State) *Workspace {
+	w := &Workspace{Lanes: Lanes{Overflow: overflowTrail, Override: extensionLayout(overflowTrail, st), MaxColumns: 3,
 		Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}, Output: Rect{W: 1200, H: 900}, Gaps: 8}}
 	for i := 0; i < n; i++ {
 		w.AddWindow(WindowID(i + 1))
@@ -185,22 +185,22 @@ func trailWorkspace(n int, st layoutState) *Workspace {
 func TestTrailLayoutStateAndCarry(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		// sa tags the columns it hands out; sb records the carries it receives.
-		sa, sb := newMocklayoutState(t), newMocklayoutState(t)
-		sa.EXPECT().inserted(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(func(_ *lanes, _ int, _ insertKind, carry any) any { return carry }).Times(3)
-		sa.EXPECT().removed(mock.Anything, mock.Anything).
-			RunAndReturn(func(_ int, col Column) any { return trailCarry(col.key) }).Once()
-		sa.EXPECT().settle(mock.Anything).Return().Maybe()
+		sa, sb := NewMockState(t), NewMockState(t)
+		sa.EXPECT().Inserted(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			RunAndReturn(func(_ *Lanes, _ int, _ InsertKind, carry any) any { return carry }).Times(3)
+		sa.EXPECT().Removed(mock.Anything, mock.Anything).
+			RunAndReturn(func(_ int, col Column) any { return trailCarry(col.Key) }).Once()
+		sa.EXPECT().Settle(mock.Anything).Return().Maybe()
 		var received []any
-		sb.EXPECT().inserted(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(func(_ *lanes, _ int, _ insertKind, carry any) any {
+		sb.EXPECT().Inserted(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			RunAndReturn(func(_ *Lanes, _ int, _ InsertKind, carry any) any {
 				if _, ok := carry.(trailCarry); ok {
 					received = append(received, carry)
 					return nil
 				}
 				return carry
 			}).Once()
-		sb.EXPECT().settle(mock.Anything).Return().Maybe()
+		sb.EXPECT().Settle(mock.Anything).Return().Maybe()
 
 		a, b := trailWorkspace(3, sa), trailWorkspace(0, sb)
 		a.Focus = 1
@@ -208,15 +208,15 @@ func TestTrailLayoutStateAndCarry(t *testing.T) {
 		if !ok {
 			t.Fatal("take: no column")
 		}
-		if _, ok := col.carry.(trailCarry); !ok {
-			t.Fatalf("carry %v, want the state's tag", col.carry)
+		if _, ok := col.Carry.(trailCarry); !ok {
+			t.Fatalf("carry %v, want the state's tag", col.Carry)
 		}
-		via := Workspace{lanes: lanes{Overflow: OverflowScroll, MaxColumns: 3, Usable: a.Usable}}
+		via := Workspace{Lanes: Lanes{Overflow: OverflowScroll, MaxColumns: 3, Usable: a.Usable}}
 		via.receive(col, -1)
 		col, _ = via.takeColumn()
 		b.receive(col, -1)
-		if len(received) != 1 || b.Columns[0].carry != nil {
-			t.Fatalf("received %v, stored carry %v", received, b.Columns[0].carry)
+		if len(received) != 1 || b.Columns[0].Carry != nil {
+			t.Fatalf("received %v, stored carry %v", received, b.Columns[0].Carry)
 		}
 
 	})

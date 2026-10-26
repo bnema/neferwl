@@ -13,7 +13,7 @@ import "slices"
 
 // full reports whether a fixed-overflow workspace has no room for a column.
 func (w *Workspace) full() bool {
-	return w.layout().full(w.lview())
+	return w.Engine().Full(w.Snapshot())
 }
 
 // ConsumeOrExpel moves the focused window in direction dir (-1 or 1). It
@@ -25,7 +25,7 @@ func (w *Workspace) ConsumeOrExpel(dir int) bool {
 	}
 	// A fullscreen window hides the others (fixed) or its column (scroll):
 	// moving would break its way back.
-	if w.fullscreenHides() {
+	if w.FullscreenHides() {
 		return true
 	}
 	src := w.Focus

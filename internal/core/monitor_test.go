@@ -504,8 +504,8 @@ func TestMaximizeLeavesClientFullscreen(t *testing.T) {
 					t.Fatal(got, m.Active)
 				}
 				w := m.Current()
-				if w.fullscreen != 0 || w.Columns[1].FullWidth {
-					t.Fatal(w.fullscreen, w.Columns)
+				if w.Fullscreen != 0 || w.Columns[1].FullWidth {
+					t.Fatal(w.Fullscreen, w.Columns)
 				}
 				if id, _ := m.Focused(); id != 2 {
 					t.Fatal("focus", id)
@@ -563,7 +563,7 @@ func TestFixedFullscreenStaysInPlace(t *testing.T) {
 			t.Fatal("focus", id)
 		}
 		m.ToggleFullscreen()
-		if id, _ := m.Focused(); id != 2 || w.fullscreen != 0 || w.Columns[1].Cells != 2 {
+		if id, _ := m.Focused(); id != 2 || w.Fullscreen != 0 || w.Columns[1].Cells != 2 {
 			t.Fatal("after bind", id, w.Columns)
 		}
 
@@ -597,11 +597,11 @@ func TestFullscreenRequestStaysPut(t *testing.T) {
 				m.AddWindow(1)
 				w, _ := m.find(tc.id)
 				m.SetFullscreen(tc.id, true)
-				if id, _ := m.Focused(); m.Active != 1 || id != 1 || (w.fullscreen == tc.id) != tc.applied {
-					t.Fatal("active", m.Active, "focused", id, "fullscreen", w.fullscreen)
+				if id, _ := m.Focused(); m.Active != 1 || id != 1 || (w.Fullscreen == tc.id) != tc.applied {
+					t.Fatal("active", m.Active, "focused", id, "fullscreen", w.Fullscreen)
 				}
 				m.SetFullscreen(tc.id, false)
-				if id, _ := m.Focused(); id != 1 || w.fullscreen != 0 || len(m.Workspaces) != 3 {
+				if id, _ := m.Focused(); id != 1 || w.Fullscreen != 0 || len(m.Workspaces) != 3 {
 					t.Fatal("round trip", id, windows(m))
 				}
 

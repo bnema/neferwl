@@ -9,7 +9,7 @@ import (
 // cols builds a workspace with the given columns, focus on the last window
 // of column focus.
 func cols(overflow Overflow, max, focus int, columns ...[]WindowID) *Workspace {
-	w := &Workspace{lanes: lanes{Overflow: overflow, MaxColumns: max}}
+	w := &Workspace{Lanes: Lanes{Overflow: overflow, MaxColumns: max}}
 	w.SetOutput(300, 100)
 	for _, c := range columns {
 		w.Columns = append(w.Columns, Column{Windows: c, Focus: len(c) - 1})
@@ -84,7 +84,7 @@ func TestConsumeOrExpelSkips(t *testing.T) {
 	t.Run("fullscreen", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			w := cols(OverflowFixed, 3, 0, []WindowID{1, 2})
-			w.fullscreen = 2
+			w.Fullscreen = 2
 			w.ConsumeOrExpel(1)
 			if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{1, 2}}) {
 				t.Fatal(got)
@@ -97,10 +97,10 @@ func TestConsumeOrExpelSkips(t *testing.T) {
 func TestConsumeIntoFullscreenColumnShows(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		w := cols(OverflowScroll, 2, 0, []WindowID{1}, []WindowID{2})
-		w.fullscreen = 2
+		w.Fullscreen = 2
 		w.ConsumeOrExpel(1)
-		if id, _ := w.Focused(); !reflect.DeepEqual(ids(w), [][]WindowID{{2, 1}}) || id != 1 || w.fullscreen != 0 {
-			t.Fatal(ids(w), id, w.fullscreen)
+		if id, _ := w.Focused(); !reflect.DeepEqual(ids(w), [][]WindowID{{2, 1}}) || id != 1 || w.Fullscreen != 0 {
+			t.Fatal(ids(w), id, w.Fullscreen)
 		}
 
 	})

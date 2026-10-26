@@ -5,6 +5,7 @@ const OverflowScroll Overflow = "scroll"
 
 // scrollLayout opens further columns to the right; the view scrolls. It is
 // the neutral columnsBase.
-type scrollLayout struct{ columnsBase }
+type scrollLayout struct{ Base }
 
-func (scrollLayout) name() Overflow { return OverflowScroll }
+// Name returns the configuration key.
+func (scrollLayout) Name() Overflow { return OverflowScroll }

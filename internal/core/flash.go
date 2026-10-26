@@ -157,7 +157,7 @@ func (c *Core) flashRect(target flashTarget, sc *screen) (Rect, int, bool) {
 			}
 			// The flash sits inside the drawn border, hugging the body.
 			rect, found = c.clientRect(p), true
-			radius = max(windowRadius(p, sc.mon.Current().gap(), c.cfg.Border.Radius)-c.cfg.Border.Width, 0)
+			radius = max(windowRadius(p, sc.mon.Current().Gap(), c.cfg.Border.Radius)-c.cfg.Border.Width, 0)
 			break
 		}
 	}
@@ -166,7 +166,7 @@ func (c *Core) flashRect(target flashTarget, sc *screen) (Rect, int, bool) {
 	}
 	if target.level == flashColumn {
 		w := sc.mon.Current()
-		col := w.columnOf(target.window)
+		col := w.ColumnOf(target.window)
 		if col < 0 {
 			return Rect{}, 0, false
 		}

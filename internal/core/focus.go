@@ -30,8 +30,8 @@ func (w *Workspace) FocusID(id WindowID) bool {
 				w.dropStashOver()
 				w.floatFocus, w.stashFocus = false, false
 				w.raiseColumns()
-				if w.layout().maximizeHides() && w.Focus != i && w.Focus < len(w.Columns) && !w.Columns[i].FullWidth {
-					w.unmaximize()
+				if w.Engine().MaximizeHides() && w.Focus != i && w.Focus < len(w.Columns) && !w.Columns[i].FullWidth {
+					w.Unmaximize()
 				}
 				w.Focus = i
 				w.Columns[i].Focus = j
@@ -78,8 +78,8 @@ func (w *Workspace) focusColumn(dir int) {
 	}
 	if i := w.columnToward(dir); i >= 0 {
 		w.raiseColumns()
-		if w.layout().maximizeHides() {
-			w.unmaximize()
+		if w.Engine().MaximizeHides() {
+			w.Unmaximize()
 		}
 		w.Focus = i
 		w.scroll()
@@ -94,13 +94,13 @@ func (w *Workspace) columnToward(dir int) int {
 	if len(w.Columns) == 0 || (dir != -1 && dir != 1) || w.pinned() {
 		return -1
 	}
-	return w.layout().focusStep(w.lview(), dir)
+	return w.Engine().FocusStep(w.Snapshot(), dir)
 }
 
 // onScreenFocus reports whether directional focus follows the screen:
 // fixed overflow with every column visible.
 func (w *Workspace) onScreenFocus() bool {
-	return w.layout().spiral() && screenFocus(w.lview())
+	return w.Engine().Spiral() && screenFocus(w.Snapshot())
 }
 
 // FocusWindow moves focus inside the column, then to a fixed-overflow column
@@ -138,7 +138,7 @@ func (w *Workspace) focusWindow(dir int) bool {
 		w.scroll()
 		return true
 	}
-	if i := w.layout().laneStep(w.lview(), dir); i >= 0 {
+	if i := w.Engine().LaneStep(w.Snapshot(), dir); i >= 0 {
 		w.Focus = i
 		w.raiseColumns()
 		w.Columns[i].Focus = 0

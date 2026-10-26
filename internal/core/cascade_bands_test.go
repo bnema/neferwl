@@ -382,7 +382,7 @@ func TestCascadeNamedMaxColumnsKeepsBands(t *testing.T) {
 
 func bandIDs(w *Workspace) [][]WindowID {
 	var out [][]WindowID
-	w.walkBands(func(_, first, last int) bool {
+	w.WalkBands(func(_, first, last int) bool {
 		var b []WindowID
 		for _, c := range w.Columns[first : last+1] {
 			b = append(b, c.Windows[0])

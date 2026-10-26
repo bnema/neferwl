@@ -67,7 +67,7 @@ func (c *Core) stateInto(st ports.State) ports.State {
 			c.scratch.ids = w.appendWindows(c.scratch.ids[:0])
 			for _, id := range c.scratch.ids {
 				rec := c.windows.lookup(id)
-				v := ports.WindowState{ID: id, AppID: rec.client.AppID, PID: rec.client.PID, Sandbox: rec.client.Sandbox, ContentType: contentTypeName(rec.client.ContentType), Xwayland: rec.client.Xwayland, Output: s.name(), Workspace: n, WorkspaceID: w.ID, WorkspaceName: w.Name, Visible: shown[id], IdleInhibit: rec.idleInhibit, ShortcutsInhibited: rec.inhibitShortcuts, Floating: w.isFloat(id), Fullscreen: w.fullscreen == id}
+				v := ports.WindowState{ID: id, AppID: rec.client.AppID, PID: rec.client.PID, Sandbox: rec.client.Sandbox, ContentType: contentTypeName(rec.client.ContentType), Xwayland: rec.client.Xwayland, Output: s.name(), Workspace: n, WorkspaceID: w.ID, WorkspaceName: w.Name, Visible: shown[id], IdleInhibit: rec.idleInhibit, ShortcutsInhibited: rec.inhibitShortcuts, Floating: w.isFloat(id), Fullscreen: w.Fullscreen == id}
 				if c.constrained.ID == id {
 					switch c.constrained.Mode {
 					case ports.ConstraintLock:
@@ -80,7 +80,7 @@ func (c *Core) stateInto(st ports.State) ports.State {
 					v.StashIndex, v.StashCount, v.Hidden = i+1, len(w.Stash), w.stashHidden
 				}
 				if !v.Floating {
-					v.Column, v.Row = w.cell(id)
+					v.Column, v.Row = w.Cell(id)
 				}
 				st.Windows = append(st.Windows, v)
 			}
@@ -144,10 +144,10 @@ func (c *Core) workspaceInto(ws []ports.WorkspaceState, i int, w *Workspace, out
 		cv := &cols[ci]
 		tiles := cv.Windows[:0]
 		r := c.scratch.rects[ci]
-		c.scratch.rows = rowRectsInto(c.scratch.rows[:0], r, col, w.gap())
+		c.scratch.rows = RowRectsInto(c.scratch.rows[:0], r, col, w.Gap())
 		for ri, id := range col.Windows {
 			tr := c.scratch.rows[ri]
-			if w.fullscreen == id {
+			if w.Fullscreen == id {
 				tr = w.Output
 			}
 			tiles = append(tiles, ports.TileState{ID: id, Rect: tr})

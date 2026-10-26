@@ -9,7 +9,7 @@ import (
 // cellsWorkspace is n columns on an 800 px wide output, no gaps, so a cell
 // of max-columns k is 800/k px.
 func cellsWorkspace(o Overflow, k, n int) *Workspace {
-	w := &Workspace{lanes: lanes{Overflow: o, MaxColumns: k}}
+	w := &Workspace{Lanes: Lanes{Overflow: o, MaxColumns: k}}
 	w.SetOutput(800, 600)
 	for id := 1; id <= n; id++ {
 		w.AddWindow(WindowID(id))

@@ -21,12 +21,12 @@ type border struct {
 const borderMinWidth = 48
 
 // columnBorders excludes fixed spiral slots, which have no shared resize edge.
-func columnBorders(l layout, v layoutView) bool {
-	return !l.spiral() || l.laneRow(v)
+func columnBorders(l Layout, v View) bool {
+	return !l.Spiral() || l.LaneRow(v)
 }
 
 func (w *Workspace) borderAt(x, y, pad int) (border, bool) {
-	if w.fullscreen != 0 || !contains(w.Usable, x, y) {
+	if w.Fullscreen != 0 || !contains(w.Usable, x, y) {
 		return border{}, false
 	}
 	// Overview and preview are Monitor presentation, not Workspace state. Their
@@ -37,10 +37,10 @@ func (w *Workspace) borderAt(x, y, pad int) (border, bool) {
 		}
 	}
 	rs := w.columnRects()
-	l, v := w.layout(), w.lview()
-	fixedFull := l.maximizeHides() && len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth
+	l, v := w.Engine(), w.Snapshot()
+	fixedFull := l.MaximizeHides() && len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth
 	borders := columnBorders(l, v)
-	gap := w.gap()
+	gap := w.Gap()
 	// The lanes are walked once, not asked per column: lane is the one
 	// holding column i, ending at laneLast.
 	lane, laneLast := 0, -1
@@ -49,7 +49,7 @@ func (w *Workspace) borderAt(x, y, pad int) (border, bool) {
 			if i > 0 {
 				lane++
 			}
-			_, laneLast = l.laneBounds(v, lane)
+			_, laneLast = l.LaneBounds(v, lane)
 		}
 		if fixedFull && i != w.Focus {
 			continue
@@ -57,7 +57,7 @@ func (w *Workspace) borderAt(x, y, pad int) (border, bool) {
 		if r.X+r.W <= w.Usable.X || r.X >= w.Usable.X+w.Usable.W || r.Y+r.H <= w.Usable.Y || r.Y >= w.Usable.Y+w.Usable.H {
 			continue
 		}
-		rows := rowRects(r, w.Columns[i], gap)
+		rows := RowRects(r, w.Columns[i], gap)
 		for j := 0; j+1 < len(rows); j++ {
 			lo, size := geom.BorderZone(rows[j].Y+rows[j].H, rows[j+1].Y, pad)
 			b := border{kind: borderRow, col: i, row: j, rect: Rect{X: r.X, Y: lo, W: r.W, H: size}}
@@ -93,7 +93,7 @@ func pixelShare(pixels, total int) int {
 // setBorder moves border b to pos and reports whether any span or share
 // changed (stamping a lane or a column's shares counts as a change).
 func (w *Workspace) setBorder(b border, pos int) bool {
-	if b.col < 0 || b.col >= len(w.Columns) || w.fullscreen != 0 {
+	if b.col < 0 || b.col >= len(w.Columns) || w.Fullscreen != 0 {
 		return false
 	}
 	rs := w.columnRects()
@@ -103,12 +103,12 @@ func (w *Workspace) setBorder(b border, pos int) bool {
 		if b.row < 0 || b.row+1 >= len(c.Windows) || len(c.Windows)*minShare > 10000 {
 			return false
 		}
-		rows := rowRects(r, *c, w.gap())
-		avail := max(r.H-(len(rows)-1)*w.gap(), 0)
+		rows := RowRects(r, *c, w.Gap())
+		avail := max(r.H-(len(rows)-1)*w.Gap(), 0)
 		if avail == 0 {
 			return false
 		}
-		stamped := !validShares(*c)
+		stamped := !ValidShares(*c)
 		if stamped {
 			c.Shares = make([]int, len(rows))
 			used := 0
@@ -124,7 +124,7 @@ func (w *Workspace) setBorder(b border, pos int) bool {
 		if pair < 2*minShare {
 			return stamped
 		}
-		target := pixelShare(pos-w.gap()/2-rows[b.row].Y, avail)
+		target := pixelShare(pos-w.Gap()/2-rows[b.row].Y, avail)
 		target = min(max(target, minShare), pair-minShare)
 		if b.row+1 < len(rows)-1 {
 			target = pairPixelShare(target, pair, avail, rows[b.row].H+rows[b.row+1].H, minShare)
@@ -133,34 +133,34 @@ func (w *Workspace) setBorder(b border, pos int) bool {
 		c.Shares[b.row], c.Shares[b.row+1] = target, pair-target
 		return changed
 	}
-	if b.kind != borderColumn || b.col+1 >= len(w.Columns) || w.laneOf(b.col) != w.laneOf(b.col+1) || !columnBorders(w.layout(), w.lview()) || w.Columns[b.col].FullWidth || w.Columns[b.col+1].FullWidth {
+	if b.kind != borderColumn || b.col+1 >= len(w.Columns) || w.LaneOf(b.col) != w.LaneOf(b.col+1) || !columnBorders(w.Engine(), w.Snapshot()) || w.Columns[b.col].FullWidth || w.Columns[b.col+1].FullWidth {
 		return false
 	}
-	first, last := w.laneBounds(w.laneOf(b.col))
-	avail := max(w.Usable.W-2*w.gap(), 0)
-	if w.layout().equalCells() {
-		avail = max(w.Usable.W-w.gap()*(last-first+2), 0)
+	first, last := w.LaneBounds(w.LaneOf(b.col))
+	avail := max(w.Usable.W-2*w.Gap(), 0)
+	if w.Engine().EqualCells() {
+		avail = max(w.Usable.W-w.Gap()*(last-first+2), 0)
 	}
 	if avail == 0 {
 		return false
 	}
-	stamped := !w.validSpans(first, last)
+	stamped := !w.ValidSpans(first, last)
 	if stamped {
 		// Mutates spans, so it must not cache validity across this loop.
-		w.spanSeq++
+		stamp := w.NewStamp()
 		used := 0
 		for i := first; i <= last; i++ {
 			w.Columns[i].Span = max((w.columnWidthFor(i, true)*10000+5000)/avail, 1)
-			w.Columns[i].spanStamp = w.spanSeq
+			w.Columns[i].SpanStamp = stamp
 			used += w.Columns[i].Span
 		}
-		if w.layout().equalCells() {
+		if w.Engine().EqualCells() {
 			w.Columns[last].Span += 10000 - used
 		}
 	}
 	minimum := pixelShare(max(avail/20, 4*w.border, borderMinWidth), avail)
-	target := pixelShare(pos-w.gap()/2-r.X, avail)
-	if !w.layout().equalCells() {
+	target := pixelShare(pos-w.Gap()/2-r.X, avail)
+	if !w.Engine().EqualCells() {
 		span := min(max(target, min(minimum, 10000)), 10000)
 		changed := stamped || w.Columns[b.col].Span != span
 		w.Columns[b.col].Span = span
@@ -185,7 +185,7 @@ func (w *Workspace) resetBorder(b border) {
 	}
 	switch b.kind {
 	case borderColumn:
-		w.clearSpans(b.col)
+		w.ClearSpans(b.col)
 	case borderRow:
 		w.Columns[b.col].Shares = nil
 	}

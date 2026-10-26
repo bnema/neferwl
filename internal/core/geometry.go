@@ -2,7 +2,7 @@ package core
 
 import "slices"
 
-func scrollSnapPoints(v layoutView, dst []float64) []float64 {
+func scrollSnapPoints(v View, dst []float64) []float64 {
 	if len(v.Columns) == 0 {
 		return dst[:0]
 	}
@@ -11,7 +11,7 @@ func scrollSnapPoints(v layoutView, dst []float64) []float64 {
 	g := w.gap()
 	minX, maxX := w.Usable.X+g, w.Usable.X+w.Usable.W-g
 	last := len(w.Columns) - 1
-	xs, widths := w.columnEdges()
+	xs, widths := w.ColumnEdges()
 	lo := xs[0] - minX
 	hi := max(xs[last]+widths[last]-maxX, lo)
 	views := make([]int, 0, 2*len(w.Columns))
@@ -56,7 +56,7 @@ func scrollSnapPoints(v layoutView, dst []float64) []float64 {
 	return points
 }
 
-func scrollSnapFocus(v layoutView, view int, forward bool) (focus int) {
+func scrollSnapFocus(v View, view int, forward bool) (focus int) {
 	if len(v.Columns) == 0 {
 		return -1
 	}
@@ -64,7 +64,7 @@ func scrollSnapFocus(v layoutView, view int, forward bool) (focus int) {
 
 	g := w.gap()
 	minX, maxX := w.Usable.X+g, w.Usable.X+w.Usable.W-g
-	xs, widths := w.columnEdges()
+	xs, widths := w.ColumnEdges()
 	full := func(i int) bool {
 		x := xs[i] - view
 		return x >= minX && x+widths[i] <= maxX

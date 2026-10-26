@@ -1,6 +1,6 @@
 package core
 
-func (w *layoutView) cascadeBands() (n, spacing int) {
+func (w *View) cascadeBands() (n, spacing int) {
 	if len(w.Columns) == 0 || w.Usable.H <= 0 {
 		return 1, 0
 	}
@@ -10,8 +10,8 @@ func (w *layoutView) cascadeBands() (n, spacing int) {
 // cellWidth is the width of column i in its lane: the columns of a band
 // (the whole row in fixed overflow) share the usable width by their cells,
 // auto columns sharing what the others leave, so a lone column fills it.
-func (w *layoutView) cellWidth(i int) int {
-	first, last := w.laneBounds(w.laneOf(i))
+func (w *View) cellWidth(i int) int {
+	first, last := w.LaneBounds(w.LaneOf(i))
 	S, u, sum := w.laneStats(first, last)
 	return w.laneWidth(i, first, last, S, u, sum, w.validSpans(first, last))
 }
@@ -19,7 +19,7 @@ func (w *layoutView) cellWidth(i int) int {
 // laneStats measures the lane first..last: S is the sum of the cells of
 // its set columns, u the count of its auto columns and sum the total of
 // their weights (laneWeight).
-func (w *layoutView) laneStats(first, last int) (S, u, sum int) {
+func (w *View) laneStats(first, last int) (S, u, sum int) {
 	for i := first; i <= last; i++ {
 		if c := w.Columns[i].Cells; c > 0 {
 			S += c
@@ -37,7 +37,7 @@ func (w *layoutView) laneStats(first, last int) (S, u, sum int) {
 // room left for every auto column, they share the cells the set ones leave
 // and the set ones keep their cells; otherwise an auto column weighs one
 // cell.
-func (w *layoutView) laneWeight(i, S, u int) int {
+func (w *View) laneWeight(i, S, u int) int {
 	k := max(w.MaxColumns, 1)
 	c := w.Columns[i].Cells
 	switch {
@@ -58,7 +58,7 @@ func (w *layoutView) laneWeight(i, S, u int) int {
 // stats of laneStats: the usable width after gaps, split by weight. The
 // last column receives the pixel remainder, just as for stamped spans.
 // The caller passes the lane's validSpans so a loop over the lane checks it once.
-func (w *layoutView) laneWidth(i, first, last, S, u, sum int, spansValid bool) int {
+func (w *View) laneWidth(i, first, last, S, u, sum int, spansValid bool) int {
 	if spansValid {
 		avail := max(w.Usable.W-w.gap()*(last-first+2), 0)
 		if i == last {
@@ -91,7 +91,7 @@ func (w *layoutView) laneWidth(i, first, last, S, u, sum int, spansValid bool) i
 
 // equalShare is the width of each of k columns sharing the usable width
 // after gaps; a remainder under k pixels stays empty.
-func (w *layoutView) equalShare(k int) int {
+func (w *View) equalShare(k int) int {
 	k = max(k, 1)
 	return max((w.Usable.W-w.gap()*(k+1))/k, 0)
 }

@@ -259,7 +259,7 @@ func TestFocusWindowUpStashAndPinned(t *testing.T) {
 			t.Fatalf("setup: active %d", m.Active)
 		}
 		m.Apply(ActionFocusWindowUp)
-		if id, _ := m.Current().Focused(); id != 1 || m.Active != 0 || m.Current().fullscreen != 0 {
+		if id, _ := m.Current().Focused(); id != 1 || m.Active != 0 || m.Current().Fullscreen != 0 {
 			t.Fatalf("pinned up focused %d on %d", id, m.Active)
 		}
 

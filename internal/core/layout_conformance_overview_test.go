@@ -6,9 +6,9 @@ import "testing"
 // inside the span, exactly one focused tile inside the selection, and lane
 // projection that agrees with laneOf.
 func TestLayoutConformanceOverview(t *testing.T) {
-	forEachConformance(t, func(t *testing.T, l layout, w *Workspace, k, n int, mode string) {
-		v := w.lview()
-		tiles, span, sel := l.previewTiles(v, nil, nil)
+	forEachConformance(t, func(t *testing.T, l Layout, w *Workspace, k, n int, mode string) {
+		v := w.Snapshot()
+		tiles, span, sel := l.PreviewTiles(v, nil, nil)
 		if len(tiles) != 2*n {
 			t.Fatalf("%d tiles for %d windows", len(tiles), 2*n)
 		}
@@ -38,14 +38,14 @@ func TestLayoutConformanceOverview(t *testing.T) {
 		if span <= 0 || sel.X < 0 || sel.X+sel.W > span || focused != 1 {
 			t.Fatalf("invalid selection %+v, span %d, focused %d", sel, span, focused)
 		}
-		if l.laneCount(v) > 1 && !l.previewLanes() {
+		if l.LaneCount(v) > 1 && !l.PreviewLanes() {
 			t.Fatal("multiple lanes without lane projection")
 		}
-		if l.previewLanes() {
+		if l.PreviewLanes() {
 			for i, c := range v.Columns {
 				for _, id := range c.Windows {
 					for _, tile := range tiles {
-						if tile.ID == id && !tile.Hidden && tile.Rect.Y/v.Usable.H != l.laneOf(v, i) {
+						if tile.ID == id && !tile.Hidden && tile.Rect.Y/v.Usable.H != l.LaneOf(v, i) {
 							t.Fatal("tile lane differs from laneOf")
 						}
 					}

@@ -7,27 +7,34 @@ import "slices"
 // equal lane shares (growLane, shrinkLane), or both with its own lane work
 // around them (cascade_sizing.go).
 
-func (columnsBase) grow(w edit, cycle bool) { growCells(w.lanes, cycle) }
-func (columnsBase) shrink(w edit)           { shrinkCells(w.lanes) }
-func (columnsBase) toggleFullWidth(w edit)  { toggleMaximized(w.lanes) }
+// Grow widens the selected column; cycle resets a fully grown lane.
+func (Base) Grow(w Edit, cycle bool) { growCells(w.Lanes, cycle) }
 
-func (fixedLayout) grow(w edit, cycle bool) {
-	w.clearSpans(w.Focus)
-	w.unmaximize()
-	growLane(w.lanes, cycle)
+// Shrink narrows the selected column.
+func (Base) Shrink(w Edit) { shrinkCells(w.Lanes) }
+
+// ToggleFullWidth toggles maximization after workspace guards.
+func (Base) ToggleFullWidth(w Edit) { toggleMaximized(w.Lanes) }
+
+// Grow widens the selected column; cycle resets a fully grown lane.
+func (fixedLayout) Grow(w Edit, cycle bool) {
+	w.ClearSpans(w.Focus)
+	w.Unmaximize()
+	growLane(w.Lanes, cycle)
 }
 
-func (fixedLayout) shrink(w edit) {
-	w.clearSpans(w.Focus)
-	w.unmaximize()
-	shrinkLane(w.lanes)
+// Shrink narrows the selected column.
+func (fixedLayout) Shrink(w Edit) {
+	w.ClearSpans(w.Focus)
+	w.Unmaximize()
+	shrinkLane(w.Lanes)
 }
 
 // growCells widens the focused column by a cell of the row, up to MaxColumns;
 // cycle then goes back to auto. The rest of the row keeps its width.
-func growCells(w *lanes, cycle bool) {
-	w.clearSpans(w.Focus)
-	w.unmaximize()
+func growCells(w *Lanes, cycle bool) {
+	w.ClearSpans(w.Focus)
+	w.Unmaximize()
 	k := max(w.MaxColumns, 1)
 	c := &w.Columns[w.Focus]
 	cur := w.scrollCells(w.Focus)
@@ -40,20 +47,20 @@ func growCells(w *lanes, cycle bool) {
 }
 
 // shrinkCells narrows the focused column by a cell, down to one.
-func shrinkCells(w *lanes) {
-	w.clearSpans(w.Focus)
-	w.unmaximize()
+func shrinkCells(w *Lanes) {
+	w.ClearSpans(w.Focus)
+	w.Unmaximize()
 	w.Columns[w.Focus].Cells = max(w.scrollCells(w.Focus)-1, 1)
 }
 
 // growLane moves a cell from another column of the focused lane to the
 // focused column; cycle returns an uneven lane to equal cells at the end.
 // Only lanes sized by cells in one row grow.
-func growLane(w *lanes, cycle bool) {
-	if !w.laneRow() {
+func growLane(w *Lanes, cycle bool) {
+	if !w.LaneRow() {
 		return
 	}
-	first, last := w.laneBounds(w.laneOf(w.Focus))
+	first, last := w.LaneBounds(w.LaneOf(w.Focus))
 	n := last - first + 1
 	if n == 1 || n >= max(w.MaxColumns, 1) {
 		cycleLane(w, first, n, cycle)
@@ -66,7 +73,7 @@ func growLane(w *lanes, cycle bool) {
 
 // cycleLane returns a lane that cannot grow, but was left uneven (a column
 // joined it, or max-columns shrank), to equal cells when cycling.
-func cycleLane(w *lanes, first, n int, cycle bool) {
+func cycleLane(w *Lanes, first, n int, cycle bool) {
 	if cycle && slices.ContainsFunc(w.Columns[first:first+n], func(c Column) bool { return c.Cells != 0 }) {
 		w.setLaneCells(first, make([]int, n))
 	}
@@ -75,7 +82,7 @@ func cycleLane(w *lanes, first, n int, cycle bool) {
 // growLaneCell gives the focused column a cell of the lane first..last,
 // taken from the best donor. It reports false when no column has a cell to
 // spare.
-func (w *lanes) growLaneCell(first, last int) bool {
+func (w *Lanes) growLaneCell(first, last int) bool {
 	k, n := max(w.MaxColumns, 1), last-first+1
 	cells, ok := w.laneCells(first, last, w.Focus)
 	if !ok {
@@ -95,11 +102,11 @@ func (w *lanes) growLaneCell(first, last int) bool {
 // shrinkLane narrows the focused column by one cell, giving it to its right
 // neighbor in the lane (the left one at the lane's end). A column never goes
 // below one cell.
-func shrinkLane(w *lanes) {
-	if !w.laneRow() {
+func shrinkLane(w *Lanes) {
+	if !w.LaneRow() {
 		return
 	}
-	first, last := w.laneBounds(w.laneOf(w.Focus))
+	first, last := w.LaneBounds(w.LaneOf(w.Focus))
 	n := last - first + 1
 	if n == 1 || n >= max(w.MaxColumns, 1) {
 		return
@@ -117,10 +124,10 @@ func shrinkLane(w *lanes) {
 
 // toggleMaximized expands the focused tiled column without changing its saved
 // width, or restores it.
-func toggleMaximized(w *lanes) {
+func toggleMaximized(w *Lanes) {
 	if w.Columns[w.Focus].FullWidth {
-		w.unmaximize()
+		w.Unmaximize()
 	} else {
-		w.maximize(w.Focus)
+		w.Maximize(w.Focus)
 	}
 }

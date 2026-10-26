@@ -1,144 +1,194 @@
 package core
 
-// layoutView is the read-only snapshot a layout computes from. Slices
+// View is the read-only snapshot a layout computes from. Slices
 // alias Workspace storage: never retained, never written.
-type layoutView struct {
-	Columns    []Column
-	Focus      int
-	View       int // settled offset along the content axis
+type View struct {
+	// Columns is the ordered tiled column storage.
+	Columns []Column
+	// Focus is the selected index.
+	Focus int
+	// View is the settled content-axis offset in pixels.
+	View int // settled offset along the content axis
+	// MaxColumns is the visible lane capacity in cells.
 	MaxColumns int // lane capacity (cells per view or columns per lane)
-	Usable     Rect
-	Output     Rect
-	Gap        int
+	// Usable is the viewport after layer reservations.
+	Usable Rect
+	// Output is the viewport filled by fullscreen windows.
+	Output Rect
+	// Gap is the effective spacing in pixels.
+	Gap int
+	// Fullscreen is the fullscreen window, or zero.
 	Fullscreen WindowID
-	State      layoutState // per-layout state, nil for stateless layouts
-	layout     layout      // the resolved layout; shared helpers dispatch through it
+	// State is per-layout data, nil for stateless layouts.
+	State State // per-layout state, nil for stateless layouts
+	// Layout is the resolved engine used by shared geometry helpers.
+	Layout Layout // the resolved layout; shared helpers dispatch through it
 
 	// facts are the width facts of this view, set by withFacts. A loop over
 	// columns computes them once and calls layout.columnWidth per column, so
 	// an override of columnWidth is honored without an O(n) cost per column.
 	// They describe the view they were set on: a modified copy sets them again.
-	facts widthFacts
+	facts WidthFacts
 }
 
-// rectOpts selects a geometry variant.
-type rectOpts struct {
+// RectOpts selects a geometry variant.
+type RectOpts struct {
+	// IgnoreFullWidth measures hidden columns without maximization.
 	IgnoreFullWidth bool // overview hidden-columns card
-	Shift           int  // presentation offset, 0 = settled
+	// Shift is the presentation offset; zero gives settled geometry.
+	Shift int // presentation offset, 0 = settled
 }
 
-// layoutTraits are constant capabilities. Mock: newMocklayoutTraits.
-type layoutTraits interface {
-	name() Overflow                        // registry key, config value
-	axes() (content, workspace layoutAxis) // scroll axis, workspace-step axis
-	scrolls() bool                         // content axis can slide
-	equalCells() bool                      // lanes share width equally: sized by cells
-	maximizeHides() bool                   // a maximized column hides the others
-	pinsFullscreen() bool                  // fullscreen covers the output at once and hides the rest
-	resetsMaximize() bool                  // switching to this layout unmaximizes every column
-	overridesWidth() bool                  // columnWidth differs from columnsBase's: generic loops dispatch to it
+// Traits are constant capabilities.
+type Traits interface {
+	// Name returns the configuration key.
+	Name() Overflow // registry key, config value
+	// Axes returns the content and workspace navigation axes.
+	Axes() (content, workspace Axis) // scroll axis, workspace-step axis
+	// Scrolls reports whether the content axis can slide.
+	Scrolls() bool // content axis can slide
+	// EqualCells reports whether lanes share width by cells.
+	EqualCells() bool // lanes share width equally: sized by cells
+	// MaximizeHides reports whether maximization hides other columns.
+	MaximizeHides() bool // a maximized column hides the others
+	// PinsFullscreen reports whether fullscreen immediately covers the output.
+	PinsFullscreen() bool // fullscreen covers the output at once and hides the rest
+	// ResetsMaximize reports whether switching layouts clears maximization.
+	ResetsMaximize() bool // switching to this layout unmaximizes every column
+	// OverridesWidth enables dispatch to the engine’s custom column widths.
+	OverridesWidth() bool // columnWidth differs from columnsBase's: generic loops dispatch to it
 }
 
-// layoutShape says how columns group into lanes and how the user moves
-// through them. Mock: newMocklayoutShape.
-type layoutShape interface {
-	bands() bool               // lanes are bands: a maximized column keeps its own, floats have none
-	laneGestures() bool        // a swipe along the content axis steps between lanes, not workspaces
-	spiral() bool              // past capacity the last slot subdivides; directional focus follows the screen
-	laneRow(v layoutView) bool // a lane's columns share its width by cells, in one row
+// Shape says how columns group into lanes and how the user moves
+// through them.
+type Shape interface {
+	// Bands reports whether columns group into independent bands.
+	Bands() bool // lanes are bands: a maximized column keeps its own, floats have none
+	// LaneGestures reports whether content swipes step between lanes.
+	LaneGestures() bool // a swipe along the content axis steps between lanes, not workspaces
+	// Spiral reports whether excess columns subdivide the last slot.
+	Spiral() bool // past capacity the last slot subdivides; directional focus follows the screen
+	// LaneRow reports whether columns share a row by cells.
+	LaneRow(v View) bool // a lane's columns share its width by cells, in one row
 }
 
-// layoutGeometry turns columns into rects. Mock: newMocklayoutGeometry.
-type layoutGeometry interface {
-	columnRects(v layoutView, dst []Rect, o rectOpts) []Rect // one rect per column, screen coords
-	columnWidth(v layoutView, i int, ignoreFullWidth bool) int
-	scrollTarget(v layoutView) int                      // View that shows v.Focus (scroll())
-	snapPoints(v layoutView, dst []float64) []float64   // sorted views a swipe may land on, built in dst[:0]
-	snapFocus(v layoutView, view int, forward bool) int // column to focus at view
+// Geometry turns columns into rects.
+type Geometry interface {
+	// ColumnRects appends screen-space column rectangles using the supplied storage.
+	ColumnRects(v View, dst []Rect, o RectOpts) []Rect // one rect per column, screen coords
+	// ColumnWidth returns a column’s width in logical pixels.
+	ColumnWidth(v View, i int, ignoreFullWidth bool) int
+	// ScrollTarget returns the settled offset that shows the selected column.
+	ScrollTarget(v View) int // View that shows v.Focus (scroll())
+	// SnapPoints builds sorted gesture destinations in dst[:0].
+	SnapPoints(v View, dst []float64) []float64 // sorted views a swipe may land on, built in dst[:0]
+	// SnapFocus selects the column at a gesture destination.
+	SnapFocus(v View, view int, forward bool) int // column to focus at view
 }
 
-// layoutLanes groups columns into lanes (cascade bands; one lane otherwise;
-// a tree layout projects its leaves). Mock: newMocklayoutLanes.
-type layoutLanes interface {
-	laneOf(v layoutView, i int) int
-	laneBounds(v layoutView, lane int) (first, last int) // first > last: no lane
-	laneCount(v layoutView) int
-	laneNeighbor(v layoutView, d int) int // -1 past the edge
+// LaneSet groups columns into lanes (cascade bands; one lane otherwise;
+// a tree layout projects its leaves).
+type LaneSet interface {
+	// LaneOf returns the lane containing a column.
+	LaneOf(v View, i int) int
+	// LaneBounds returns inclusive column bounds; first > last denotes no lane.
+	LaneBounds(v View, lane int) (first, last int) // first > last: no lane
+	// LaneCount returns the number of lanes.
+	LaneCount(v View) int
+	// LaneNeighbor selects the closest column in an adjacent lane, or -1.
+	LaneNeighbor(v View, d int) int // -1 past the edge
 }
 
-// layoutNavigator decides where focus goes. Mock: newMocklayoutNavigator.
-type layoutNavigator interface {
-	focusStep(v layoutView, dir int) int // column left/right of the focus; -1: hand to the neighbor monitor
-	laneStep(v layoutView, dir int) int  // column up/down past the focused one; -1: none
+// Navigator decides where focus goes.
+type Navigator interface {
+	// FocusStep selects a column along the content axis, or -1 at an edge.
+	FocusStep(v View, dir int) int // column left/right of the focus; -1: hand to the neighbor monitor
+	// LaneStep selects a column across lanes, or -1 when none exists.
+	LaneStep(v View, dir int) int // column up/down past the focused one; -1: none
 }
 
-// insertKind says how an inserted column relates to the lanes around it.
-type insertKind uint8
+// InsertKind says how an inserted column relates to the lanes around it.
+type InsertKind uint8
 
 const (
-	insertDefault       insertKind = iota // the column takes its slot
-	insertNewLane                         // it starts a lane of its own
-	insertJoinDisplaced                   // it takes the lane position of the column it displaces
+	// InsertDefault places a column in its existing lane slot.
+	InsertDefault InsertKind = iota // the column takes its slot
+	// InsertNewLane starts an independent lane.
+	InsertNewLane // it starts a lane of its own
+	// InsertJoinDisplaced inherits the displaced column’s lane position.
+	InsertJoinDisplaced // it takes the lane position of the column it displaces
 )
 
-// layoutPlacer decides where columns and windows go. Mock: newMocklayoutPlacer.
-type layoutPlacer interface {
-	spawnAt(v layoutView) (at int, kind insertKind) // after the focused column/lane
-	coveredSpawnAt(v layoutView) int                // under a covering window (ADR 011)
-	full(v layoutView) bool                         // no room: expel to neighbor (fixed)
-	moveAllowed(v layoutView, from, to int) bool    // MoveColumn/drag swap inside a lane
-	moveLane(w edit, dir int) bool                  // MoveWindow past the column: to the lane dir away
-	adoptFloat(w edit, id WindowID) bool
-	isolate(w edit, id WindowID) bool // before id goes fullscreen: a lane of its own
+// Placer decides where columns and windows go.
+type Placer interface {
+	// SpawnAt returns the insertion position and lane relationship of a new column.
+	SpawnAt(v View) (at int, kind InsertKind) // after the focused column/lane
+	// CoveredSpawnAt returns the insertion position under a covering window.
+	CoveredSpawnAt(v View) int // under a covering window (ADR 011)
+	// Full reports whether a new column must be expelled to a neighbor.
+	Full(v View) bool // no room: expel to neighbor (fixed)
+	// MoveAllowed reports whether columns may swap positions.
+	MoveAllowed(v View, from, to int) bool // MoveColumn/drag swap inside a lane
+	// MoveLane moves a window to the lane in dir and reports a change.
+	MoveLane(w Edit, dir int) bool // MoveWindow past the column: to the lane dir away
+	// AdoptFloat isolates a formerly floating window in a tiled lane.
+	AdoptFloat(w Edit, id WindowID) bool
+	// Isolate gives a window its own lane before fullscreen.
+	Isolate(w Edit, id WindowID) bool // before id goes fullscreen: a lane of its own
 }
 
-// layoutSizer mutates column widths and maximization after Workspace guards.
-// Mock: newMocklayoutSizer.
-type layoutSizer interface {
-	grow(w edit, cycle bool)
-	shrink(w edit)
-	toggleFullWidth(w edit)
+// Sizer mutates column widths and maximization after Workspace guards.
+type Sizer interface {
+	// Grow widens the selected column; cycle resets a fully grown lane.
+	Grow(w Edit, cycle bool)
+	// Shrink narrows the selected column.
+	Shrink(w Edit)
+	// ToggleFullWidth toggles maximization after workspace guards.
+	ToggleFullWidth(w Edit)
 }
 
-// layoutState owns per-layout data and follows column edits. Workspace calls
+// State owns per-layout data and follows column edits. Workspace calls
 // the hooks after it changed Columns; a layout switch drops the state.
-// Mock: newMocklayoutState.
-type layoutState interface {
-	// inserted follows Columns[at] being added; carry is what removed
+type State interface {
+	// Inserted follows Columns[at] being added; carry is what removed
 	// returned in the workspace the column came from, nil if none. It
 	// returns the carry it did not consume (nil once consumed): that stays
 	// on the column and the next workspace's removed or takeColumn passes it
 	// on. A stateless workspace consumes nothing and keeps it too.
-	inserted(w *lanes, at int, kind insertKind, carry any) (unconsumed any)
-	// removed follows the column col leaving index at; the returned carry
+	Inserted(w *Lanes, at int, kind InsertKind, carry any) (unconsumed any)
+	// Removed follows the column col leaving index at; the returned carry
 	// travels with the column to its next workspace. Nil leaves the carry
 	// the column already holds.
-	removed(at int, col Column) (carry any)
-	settle(w *lanes) // before scroll(): refresh keyed data, drop stale spans
+	Removed(at int, col Column) (carry any)
+	// Settle refreshes layout state after column edits, before measuring.
+	Settle(w *Lanes) // before scroll(): refresh keyed data, drop stale spans
 }
 
-// layoutOverview projects a workspace for the overview. Mock: newMocklayoutOverview.
-type layoutOverview interface {
-	previewTiles(v layoutView, dst []Placement, rowBuf []Rect) (tiles []Placement, span int, sel Rect)
-	previewLanes() bool // tiles carry their lane in Y, one Usable.H apart
+// Overview projects a workspace for the overview.
+type Overview interface {
+	// PreviewTiles projects columns for overview, reusing the supplied buffers.
+	PreviewTiles(v View, dst []Placement, rowBuf []Rect) (tiles []Placement, span int, sel Rect)
+	// PreviewLanes reports whether preview Y coordinates encode lanes.
+	PreviewLanes() bool // tiles carry their lane in Y, one Usable.H apart
 }
 
-// layout is what the registry stores. Mock: newMocklayout (composed, used by
-// Workspace-level tests through w.lay).
-type layout interface {
-	layoutTraits
-	layoutShape
-	layoutGeometry
-	layoutLanes
-	layoutNavigator
-	layoutPlacer
-	layoutSizer
-	layoutOverview
-	newState() layoutState // nil for stateless layouts
+// Layout composes the engine hooks stored in the registry.
+type Layout interface {
+	Traits
+	Shape
+	Geometry
+	LaneSet
+	Navigator
+	Placer
+	Sizer
+	Overview
+	// NewState constructs independent per-owner state, or nil.
+	NewState() State // nil for stateless layouts
 }
 
-// edit captures focus once at the start of a workspace layout operation.
-type edit struct {
-	*lanes
+// Edit captures focus once at the start of a workspace layout operation.
+type Edit struct {
+	*Lanes
+	// Focused is the window selected when the operation began.
 	Focused WindowID
 }

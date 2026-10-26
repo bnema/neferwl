@@ -51,9 +51,9 @@ func (w *Workspace) addWindow(id WindowID, cells int) {
 	if w.cover() != 0 {
 		// A new window never moves the view off a covering fullscreen
 		// window (ADR 011): it waits, hidden, after the focused column.
-		at := w.layout().coveredSpawnAt(w.lview())
+		at := w.Engine().CoveredSpawnAt(w.Snapshot())
 		w.Columns = slices.Insert(w.Columns, at, Column{Windows: []WindowID{id}, Cells: cells})
-		w.columnInserted(at, insertDefault)
+		w.ColumnInserted(at, InsertDefault)
 		w.dropStaleSpans()
 		return
 	}
@@ -66,18 +66,18 @@ func (w *Workspace) addColumn(col Column) { w.placeColumn(col, false) }
 // placeColumn shares placement while preserving automatic-event focus.
 func (w *Workspace) placeColumn(col Column, quiet bool) {
 	covered := quiet && w.cover() != 0
-	at, kind := 0, insertDefault
+	at, kind := 0, InsertDefault
 	if covered {
-		at = w.layout().coveredSpawnAt(w.lview())
+		at = w.Engine().CoveredSpawnAt(w.Snapshot())
 	} else {
-		at, kind = w.layout().spawnAt(w.lview())
-		if w.layout().maximizeHides() && len(w.Columns) > 0 {
-			w.unmaximize()
+		at, kind = w.Engine().SpawnAt(w.Snapshot())
+		if w.Engine().MaximizeHides() && len(w.Columns) > 0 {
+			w.Unmaximize()
 		}
-		col.Span, col.spanStamp = 0, 0
+		col.Span, col.SpanStamp = 0, 0
 	}
 	w.Columns = slices.Insert(w.Columns, at, col)
-	w.columnInserted(at, kind)
+	w.ColumnInserted(at, kind)
 	if !quiet && !covered {
 		w.Focus = at
 	} else if !covered && len(w.Columns) > 1 && at <= w.Focus {
@@ -139,10 +139,10 @@ func (w *Workspace) unslot(n int) {
 }
 
 func (w *Workspace) RemoveWindow(id WindowID) {
-	w.maximized = slices.DeleteFunc(w.maximized, func(v WindowID) bool { return v == id })
+	w.Maximized = slices.DeleteFunc(w.Maximized, func(v WindowID) bool { return v == id })
 	w.recent = slices.DeleteFunc(w.recent, func(v WindowID) bool { return v == id })
-	if w.fullscreen == id {
-		w.fullscreen = 0
+	if w.Fullscreen == id {
+		w.Fullscreen = 0
 	}
 	if w.stashOver == id {
 		w.stashOver = 0
@@ -180,7 +180,7 @@ func (w *Workspace) RemoveWindow(id WindowID) {
 			c.Windows = append(c.Windows[:j], c.Windows[j+1:]...)
 			c.Shares = nil
 			if len(c.Windows) == 0 {
-				w.deleteColumn(i)
+				w.DeleteColumn(i)
 				if len(w.Columns) == 0 {
 					w.Focus = 0
 					w.View = 0
@@ -209,8 +209,8 @@ func (w *Workspace) takeColumn() (Column, bool) {
 	}
 	col := w.Columns[w.Focus]
 	col.Slot = 0
-	if slices.Contains(col.Windows, w.fullscreen) {
-		w.fullscreen = 0
+	if slices.Contains(col.Windows, w.Fullscreen) {
+		w.Fullscreen = 0
 	}
 	if slices.Contains(col.Windows, w.stashOver) {
 		w.stashOver = 0
@@ -221,7 +221,7 @@ func (w *Workspace) takeColumn() (Column, bool) {
 	// Its windows leave this workspace's recent use with it.
 	w.recent = slices.DeleteFunc(w.recent, func(v WindowID) bool { return slices.Contains(col.Windows, v) })
 
-	col.carry = w.deleteColumn(w.Focus)
+	col.Carry = w.DeleteColumn(w.Focus)
 	w.Focus = min(w.Focus, max(len(w.Columns)-1, 0))
 	if len(w.Columns) == 0 {
 		w.View = 0
@@ -234,8 +234,8 @@ func (w *Workspace) takeColumn() (Column, bool) {
 // insertColumn adds a column at index at (clamped) and focuses it.
 func (w *Workspace) insertColumn(at int, col Column) {
 	at = min(max(at, 0), len(w.Columns))
-	if w.layout().maximizeHides() && len(w.Columns) > 0 {
-		w.unmaximize()
+	if w.Engine().MaximizeHides() && len(w.Columns) > 0 {
+		w.Unmaximize()
 	}
 	w.insertAt(at, col)
 	w.Focus = at
@@ -246,7 +246,7 @@ func (w *Workspace) insertColumn(at int, col Column) {
 // position of the column it goes before.
 func (w *Workspace) insertAt(at int, col Column) {
 	// Stamp identities belong to the issuing workspace and complete lane.
-	col.Span, col.spanStamp = 0, 0
+	col.Span, col.SpanStamp = 0, 0
 	w.Columns = slices.Insert(w.Columns, at, col)
-	w.columnInserted(at, insertJoinDisplaced)
+	w.ColumnInserted(at, InsertJoinDisplaced)
 }

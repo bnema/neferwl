@@ -58,8 +58,8 @@ func wantColumns(t *testing.T, w *Workspace, want ...WindowID) {
 func wantBands(t *testing.T, w *Workspace, want ...[]WindowID) {
 	t.Helper()
 	var got [][]WindowID
-	w.walkBands(func(_, first, last int) bool {
-		got = append(got, columnOrder(&Workspace{lanes: lanes{Columns: w.Columns[first : last+1]}}))
+	w.WalkBands(func(_, first, last int) bool {
+		got = append(got, columnOrder(&Workspace{Lanes: Lanes{Columns: w.Columns[first : last+1]}}))
 		return true
 	})
 	if !slices.EqualFunc(got, want, slices.Equal) {
@@ -272,7 +272,7 @@ func TestCascadeMoveWindowAndMaximizedBand(t *testing.T) {
 				c.applyAction(tc.action)
 				wantBands(t, w, tc.want...)
 				wantFocus(t, c, "M", tc.focus)
-				if !w.Columns[w.columnOf(tc.max)].FullWidth {
+				if !w.Columns[w.ColumnOf(tc.max)].FullWidth {
 					t.Fatal("maximization lost")
 				}
 
@@ -292,8 +292,8 @@ func TestCascadeFullscreenBandEdgeFocusesMonitor(t *testing.T) {
 		if got := c.cur().name(); got != "R" {
 			t.Fatalf("focused screen %q, want R", got)
 		}
-		if id, _ := w.Focused(); w.fullscreen != 3 || id != 3 {
-			t.Fatalf("fullscreen %d, focused %d on M, want 3 and 3", w.fullscreen, id)
+		if id, _ := w.Focused(); w.Fullscreen != 3 || id != 3 {
+			t.Fatalf("fullscreen %d, focused %d on M, want 3 and 3", w.Fullscreen, id)
 		}
 
 	})

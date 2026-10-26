@@ -1,9 +1,9 @@
 package core
 
-func adjacentLane(l layoutLanes, v layoutView, d int) int {
-	lane := l.laneOf(v, v.Focus)
-	first, _ := l.laneBounds(v, lane)
-	next, last := l.laneBounds(v, lane+d)
+func adjacentLane(l LaneSet, v View, d int) int {
+	lane := l.LaneOf(v, v.Focus)
+	first, _ := l.LaneBounds(v, lane)
+	next, last := l.LaneBounds(v, lane+d)
 	if next > last {
 		return -1
 	}
@@ -11,30 +11,30 @@ func adjacentLane(l layoutLanes, v layoutView, d int) int {
 }
 
 // screenNeighbor is the column on that side of the focus on screen, -1 if none.
-func screenNeighbor(v layoutView, rects []Rect, dx, dy int) int {
+func screenNeighbor(v View, rects []Rect, dx, dy int) int {
 	if v.Focus < 0 || v.Focus >= len(rects) {
 		return -1
 	}
-	return geometricNeighbor(rects, v.Focus, dx, dy)
+	return GeometricNeighbor(rects, v.Focus, dx, dy)
 }
 
 // screenFocus reports whether directional focus follows the screen: a column
 // is focused, and nothing fullscreen or maximized hides the others.
-func screenFocus(v layoutView) bool {
+func screenFocus(v View) bool {
 	return v.Focus >= 0 && v.Focus < len(v.Columns) && v.Fullscreen == 0 && !v.Columns[v.Focus].FullWidth
 }
 
-// workspaceStep maps a directional edge to the layout's workspace axis.
-func workspaceStep(l layoutTraits, axis layoutAxis, dir int) int {
-	_, workspace := l.axes()
+// WorkspaceStep maps a directional edge to the layout's workspace axis.
+func WorkspaceStep(l Traits, axis Axis, dir int) int {
+	_, workspace := l.Axes()
 	if axis == workspace {
 		return dir
 	}
 	return 0
 }
 
-// geometricNeighbor selects the closest overlapping rect with stable tie breaks.
-func geometricNeighbor(rects []Rect, focus, dx, dy int) int {
+// GeometricNeighbor selects the closest overlapping rect with stable tie breaks.
+func GeometricNeighbor(rects []Rect, focus, dx, dy int) int {
 	if focus < 0 || focus >= len(rects) {
 		return -1
 	}
@@ -64,32 +64,32 @@ func geometricNeighbor(rects []Rect, focus, dx, dy int) int {
 	return best
 }
 
-// lview snapshots layout inputs without retaining the Workspace.
-func (w *lanes) lview() layoutView {
-	return layoutView{Columns: w.Columns, Focus: w.Focus, View: w.View, MaxColumns: w.MaxColumns, Usable: w.Usable, Output: w.Output, Gap: w.gap(), Fullscreen: w.fullscreen, State: w.state(), layout: w.layout()}
+// Snapshot snapshots layout inputs without retaining the Workspace.
+func (w *Lanes) Snapshot() View {
+	return View{Columns: w.Columns, Focus: w.Focus, View: w.View, MaxColumns: w.MaxColumns, Usable: w.Usable, Output: w.Output, Gap: w.Gap(), Fullscreen: w.Fullscreen, State: w.state(), Layout: w.Engine()}
 }
 
-// laneOf is the lane of column i in the overview: its band, or the only
+// LaneOf is the lane of column i in the overview: its band, or the only
 // lane of a layout that does not wrap.
-func (w *layoutView) laneOf(i int) int {
-	return w.layout.laneOf(*w, i)
+func (w *View) LaneOf(i int) int {
+	return w.Layout.LaneOf(*w, i)
 }
 
-// laneBounds is the range of columns of a lane, first > last when the lane
+// LaneBounds is the range of columns of a lane, first > last when the lane
 // does not exist. A layout that does not wrap has the whole row as lane 0.
-func (w *layoutView) laneBounds(lane int) (first, last int) {
-	return w.layout.laneBounds(*w, lane)
+func (w *View) LaneBounds(lane int) (first, last int) {
+	return w.Layout.LaneBounds(*w, lane)
 }
 
-// leavesLane reports whether column i, where a left/right move from the
+// LeavesLane reports whether column i, where a left/right move from the
 // focused column goes, is past the workspace or in another cascade band:
 // the move then goes to the neighbor monitor first.
-func (w *lanes) leavesLane(i int) bool {
-	return i < 0 || i >= len(w.Columns) || w.laneOf(i) != w.laneOf(w.Focus)
+func (w *Lanes) LeavesLane(i int) bool {
+	return i < 0 || i >= len(w.Columns) || w.LaneOf(i) != w.LaneOf(w.Focus)
 }
 
-// laneNeighbor is the closest column to the focus in the lane d lanes away,
+// LaneNeighbor is the closest column to the focus in the lane d lanes away,
 // the focus's offset in its lane kept; -1 past the first or last lane.
-func (w *layoutView) laneNeighbor(d int) int {
-	return w.layout.laneNeighbor(*w, d)
+func (w *View) LaneNeighbor(d int) int {
+	return w.Layout.LaneNeighbor(*w, d)
 }

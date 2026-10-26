@@ -82,9 +82,9 @@ func layoutVariants(t *testing.T) map[string]*Monitor {
 	for name, has := range map[string]func(*Workspace) bool{
 		"stash":       func(w *Workspace) bool { return len(w.Stash) > 0 && len(w.Columns) > 0 },
 		"floats":      func(w *Workspace) bool { return len(w.Floats) == 2 && len(w.Columns) > 0 },
-		"shares":      func(w *Workspace) bool { return validShares(w.Columns[0]) },
+		"shares":      func(w *Workspace) bool { return ValidShares(w.Columns[0]) },
 		"fixed-cells": func(w *Workspace) bool { return w.Columns[1].Cells == 2 },
-		"fullscreen":  func(w *Workspace) bool { return w.fullscreen == 2 },
+		"fullscreen":  func(w *Workspace) bool { return w.Fullscreen == 2 },
 		"scroll":      func(w *Workspace) bool { return len(w.Columns) == 5 },
 	} {
 		if w := v[name].Current(); len(w.Columns) == 0 || !has(w) {
@@ -209,19 +209,19 @@ func TestRectHelpersKeepAppendSemantics(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := Rect{X: 3, Y: 4, W: 50, H: 103}
 		pre := []Rect{{W: 1}, {W: 2}}
-		got := stackRectsInto(slices.Clone(pre), r, 3, 5)
-		if !slices.Equal(got[:2], pre) || !slices.Equal(got[2:], stackRects(r, 3, 5)) {
+		got := StackRectsInto(slices.Clone(pre), r, 3, 5)
+		if !slices.Equal(got[:2], pre) || !slices.Equal(got[2:], StackRects(r, 3, 5)) {
 			t.Fatalf("stackRectsInto: %+v", got)
 		}
 		c := Column{Windows: []WindowID{1, 2, 3}, Shares: []int{5000, 3000, 2000}}
-		got = rowRectsInto(slices.Clone(pre), r, c, 5)
-		if !slices.Equal(got[:2], pre) || !slices.Equal(got[2:], rowRects(r, c, 5)) {
+		got = RowRectsInto(slices.Clone(pre), r, c, 5)
+		if !slices.Equal(got[:2], pre) || !slices.Equal(got[2:], RowRects(r, c, 5)) {
 			t.Fatalf("rowRectsInto: %+v", got)
 		}
 		// A reused destination overwrites in place.
 		buf := make([]Rect, 0, 8)
-		a := stackRectsInto(buf, r, 3, 5)
-		b := stackRectsInto(buf, r, 2, 5)
+		a := StackRectsInto(buf, r, 3, 5)
+		b := StackRectsInto(buf, r, 2, 5)
 		if &a[0] != &b[0] || len(b) != 2 {
 			t.Fatalf("not reused: %d %d", len(a), len(b))
 		}

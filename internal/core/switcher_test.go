@@ -85,7 +85,7 @@ func TestMRUOrder(t *testing.T) {
 				// recent never keeps a closed window nor two of one column.
 				seen := map[int]bool{}
 				for _, id := range w.recent {
-					i := w.columnOf(id)
+					i := w.ColumnOf(id)
 					if i < 0 || seen[i] {
 						t.Fatalf("recent %v keeps window %d (column %d)", w.recent, id, i)
 					}
@@ -114,10 +114,10 @@ func TestMRUOneWindowPerColumn(t *testing.T) {
 		}
 		seen := map[int]bool{}
 		for _, id := range order {
-			if seen[w.columnOf(id)] {
+			if seen[w.ColumnOf(id)] {
 				t.Fatalf("order %v lists a column twice", order)
 			}
-			seen[w.columnOf(id)] = true
+			seen[w.ColumnOf(id)] = true
 		}
 
 	})
@@ -388,7 +388,7 @@ func TestSwitchCommitTransfersMaximization(t *testing.T) {
 				m.commitSwitcher()
 				if overflow == OverflowCascade {
 					// The maximized column has its own band: it stays.
-					if id, _ := w.Focused(); w.Columns[w.columnOf(id)].FullWidth || !w.Columns[a].FullWidth {
+					if id, _ := w.Focused(); w.Columns[w.ColumnOf(id)].FullWidth || !w.Columns[a].FullWidth {
 						t.Fatalf("cascade: maximization moved: %+v", w.Columns)
 					}
 					return
@@ -396,7 +396,7 @@ func TestSwitchCommitTransfersMaximization(t *testing.T) {
 				if w.Focus != b || !w.Columns[b].FullWidth || w.Columns[a].FullWidth {
 					t.Fatalf("focus %d, FullWidth source %v target %v", w.Focus, w.Columns[a].FullWidth, w.Columns[b].FullWidth)
 				}
-				if w.layout().equalCells() && !w.hiddenByMaximized(a) {
+				if w.Engine().EqualCells() && !w.HiddenByMaximized(a) {
 					t.Fatal("source not hidden by the maximized target")
 				}
 
@@ -410,14 +410,14 @@ func TestSwitchCommitLeavesPinnedFullscreen(t *testing.T) {
 		m, w := switcherMonitor(OverflowFixed, 2)
 		src := w.Columns[w.Focus].Windows[0]
 		w.SetFullscreen(src, true)
-		if w.fullscreen != src {
+		if w.Fullscreen != src {
 			t.Fatal("setup: no fullscreen")
 		}
 		openSwitcher(m, 1)
 		target := m.sw.order[1]
 		m.commitSwitcher()
-		if w.fullscreen != 0 {
-			t.Fatalf("fullscreen %d kept", w.fullscreen)
+		if w.Fullscreen != 0 {
+			t.Fatalf("fullscreen %d kept", w.Fullscreen)
 		}
 		if id, _ := w.Focused(); id != target {
 			t.Fatalf("focus %d, want %d", id, target)
@@ -622,8 +622,8 @@ func TestSwitchAnotherBindCancelsThenRuns(t *testing.T) {
 		if switcherFocus(c) != start {
 			t.Fatalf("focus %d moved", switcherFocus(c))
 		}
-		if c.cur().mon.Current().fullscreen != start {
-			t.Fatalf("bind not applied: fullscreen %d", c.cur().mon.Current().fullscreen)
+		if c.cur().mon.Current().Fullscreen != start {
+			t.Fatalf("bind not applied: fullscreen %d", c.cur().mon.Current().Fullscreen)
 		}
 
 	})
@@ -907,7 +907,7 @@ func TestSwitcherShownIsAPreview(t *testing.T) {
 		if len(c.cur().rects) != 0 {
 			t.Fatalf("an unmap behind the cards started motions: %+v", c.cur().rects)
 		}
-		if m.Current().columnOf(gone) >= 0 || len(m.sw.order) != 2 {
+		if m.Current().ColumnOf(gone) >= 0 || len(m.sw.order) != 2 {
 			t.Fatalf("window %d not removed from the cards: %v", gone, m.sw.order)
 		}
 		// The workspace comes back with the panel inset.
@@ -1550,7 +1550,7 @@ func TestSwitcherClosingSelectedWindowPicksColumnsNextWindow(t *testing.T) {
 		}
 		w.FocusID(1)
 		openSwitcher(m, 0)
-		at := slices.IndexFunc(m.sw.order, func(id WindowID) bool { return w.columnOf(id) == 1 })
+		at := slices.IndexFunc(m.sw.order, func(id WindowID) bool { return w.ColumnOf(id) == 1 })
 		m.sw.at = at
 		gone := m.sw.order[at]
 		size := Rect{W: 120, H: 90}

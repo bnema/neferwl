@@ -43,7 +43,7 @@ type viewShot struct {
 	// one), not at their last frame. An action may stop them
 	// (Monitor.Focus), so the transition reads them here.
 	viewV, switchV float64
-	switchAxis     layoutAxis
+	switchAxis     Axis
 	// stashShown, stashAt, stashLen and stashPos are whether the stash was
 	// on screen, its selection, size and drawn position (selection plus
 	// stashView.off, in stash windows); stashV is its slide's speed.
@@ -643,7 +643,7 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 		if !m.previewing() {
 			// A preview (the overview or the switcher's cards) does not scroll or slide: no camera.
 			s.settledView, s.view = w.View, float64(w.View)+w.view.Off
-			_, s.switchAxis = w.layout().axes()
+			_, s.switchAxis = w.Engine().Axes()
 			if m.switchView.Busy() {
 				s.switchAxis = m.switchAxis
 			}
@@ -1044,7 +1044,7 @@ func overviewWorkspaceOffset(m *Monitor, b *viewShot) rectOffsets {
 		before := b.order < m.overviewOrder(b.list, cur)
 		previous, _ = neighborSlot(axis, area, settled, b.ws, before, max(1, area.H*3/100))
 	}
-	if axis == horizontalAxis {
+	if axis == Horizontal {
 		return rectOffsets{x: math.Copysign(float64(area.W)*overviewWorkspaceTravel, float64(settled.X-previous.X))}
 	}
 	return rectOffsets{y: math.Copysign(float64(area.H)*overviewWorkspaceTravel, float64(settled.Y-previous.Y))}
@@ -1142,7 +1142,7 @@ func (c *Core) legacyFullscreen(sc *screen, v ports.WindowResized) bool {
 		return false
 	}
 	sc.mon.SetFullscreen(v.ID, true)
-	if cur.fullscreen != v.ID {
+	if cur.Fullscreen != v.ID {
 		return false
 	}
 	delete(sc.rects, v.ID)

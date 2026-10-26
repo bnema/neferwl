@@ -3,10 +3,10 @@ package core
 import "slices"
 
 // markBands freezes the band starts into cascadeState.
-func (w *lanes) markBands() {
+func (w *Lanes) markBands() {
 	n := 0
 	for i := range w.Columns {
-		s := w.startsBand(i, n)
+		s := w.StartsBand(i, n)
 		w.setBandStart(i, s)
 		if s {
 			n = 0
@@ -16,9 +16,9 @@ func (w *lanes) markBands() {
 }
 
 // bandList copies the cascade columns into their bands.
-func (w *lanes) bandList() [][]Column {
+func (w *Lanes) bandList() [][]Column {
 	var bands [][]Column
-	w.walkBands(func(_, first, last int) bool {
+	w.WalkBands(func(_, first, last int) bool {
 		bands = append(bands, slices.Clone(w.Columns[first:last+1]))
 		return true
 	})
@@ -27,29 +27,29 @@ func (w *lanes) bandList() [][]Column {
 
 // setBands stores bands as the columns, empty bands dropped, and focuses
 // the column holding window focus.
-func (w *lanes) setBands(bands [][]Column, focus WindowID) {
+func (w *Lanes) setBands(bands [][]Column, focus WindowID) {
 	w.ensureKeys()
 	cols := w.Columns[:0]
 	var starts []bool
 	for _, b := range bands {
 		for i, c := range b {
 			starts = append(starts, i == 0)
-			if c.key == 0 {
-				c.key = w.newKey()
+			if c.Key == 0 {
+				c.Key = w.newKey()
 			}
 			cols = append(cols, c)
 		}
 	}
 	w.Columns = cols
 	w.cascadeState().bandStart = starts
-	if i := w.columnOf(focus); i >= 0 {
+	if i := w.ColumnOf(focus); i >= 0 {
 		w.Focus = i
 	}
 }
 
 // fits reports whether cols can join band b: it has room for them and
 // neither side holds a maximized column, which keeps a band to itself.
-func (w *lanes) fits(bands [][]Column, b int, cols []Column) bool {
+func (w *Lanes) fits(bands [][]Column, b int, cols []Column) bool {
 	if b < 0 || b >= len(bands) || len(bands[b])+len(cols) > max(w.MaxColumns, 1) {
 		return false
 	}
@@ -62,7 +62,7 @@ func (w *lanes) fits(bands [][]Column, b int, cols []Column) bool {
 // band between the two, or past the outer band. When cols were alone in
 // band b, it goes away and a band that cannot take them is passed: the
 // new band goes on its far side, so repeated moves always progress.
-func (w *lanes) sendBand(bands [][]Column, b, dir, at int, cols []Column) [][]Column {
+func (w *Lanes) sendBand(bands [][]Column, b, dir, at int, cols []Column) [][]Column {
 	t, nb := b+dir, b // A new band between b and t, before b going up.
 	if dir > 0 {
 		nb = b + 1
@@ -84,16 +84,16 @@ func (w *lanes) sendBand(bands [][]Column, b, dir, at int, cols []Column) [][]Co
 
 // shiftBand moves the columns lo..hi of one cascade band to the band dir
 // away (see sendBand), at offset at in it. It reports whether they moved.
-func (w edit) shiftBand(lo, hi, dir, at int) bool {
+func (w Edit) shiftBand(lo, hi, dir, at int) bool {
 	if len(w.Columns) == 0 || lo < 0 || hi >= len(w.Columns) || lo > hi {
 		return false
 	}
-	b := w.band(lo)
-	if w.band(hi) != b {
+	b := w.Band(lo)
+	if w.Band(hi) != b {
 		return false
 	}
-	first, last := w.bandBounds(b)
-	if lo == first && hi == last && (b+dir < 0 || b+dir > w.band(len(w.Columns)-1)) {
+	first, last := w.BandBounds(b)
+	if lo == first && hi == last && (b+dir < 0 || b+dir > w.Band(len(w.Columns)-1)) {
 		return false // Alone at the outer band: nothing to cross.
 	}
 	id := w.Focused
@@ -123,9 +123,9 @@ func columnIDs(cols []Column) [][]WindowID {
 // isolateBand gives the focused cascade column a band of its own: the
 // columns on its left go to the band above, the ones on its right to the
 // band below (sendBand), and the column remembers them for restoreBand.
-func (w edit) isolateBand() {
-	b := w.band(w.Focus)
-	first, last := w.bandBounds(b)
+func (w Edit) isolateBand() {
+	b := w.Band(w.Focus)
+	first, last := w.BandBounds(b)
 	if first == last {
 		return
 	}
@@ -157,13 +157,13 @@ func (w edit) isolateBand() {
 // Leaving fullscreen does not move it back: the column keeps its band, so
 // nothing jumps when the user leaves. Only cascade layouts do this; the
 // focus stays on the same window.
-func (w *lanes) fullscreenBand(id WindowID) bool {
-	i := w.columnOf(id)
+func (w *Lanes) fullscreenBand(id WindowID) bool {
+	i := w.ColumnOf(id)
 	if i < 0 {
 		return false
 	}
-	b := w.band(i)
-	first, last := w.bandBounds(b)
+	b := w.Band(i)
+	first, last := w.BandBounds(b)
 	if len(w.Columns[i].Windows) == 1 && first == last {
 		return false
 	}
@@ -175,7 +175,7 @@ func (w *lanes) fullscreenBand(id WindowID) bool {
 	if len(col.Windows) == 1 {
 		// The column leaves its lane, as deleteColumn: manual widths of the
 		// lane no longer add up. It keeps its slot and its own width.
-		w.clearSpans(i)
+		w.ClearSpans(i)
 		bands[b] = slices.Delete(bands[b], i-first, i-first+1)
 	} else {
 		j := slices.Index(col.Windows, id)
@@ -192,8 +192,8 @@ func (w *lanes) fullscreenBand(id WindowID) bool {
 		}
 		bands[b][i-first] = col
 	}
-	if nc.key == 0 {
-		nc.key = w.newKey()
+	if nc.Key == 0 {
+		nc.Key = w.newKey()
 	}
 	w.cascadeCol(nc).ownBand = true
 	bands = slices.Insert(bands, b+1, []Column{nc})
@@ -205,8 +205,8 @@ func (w *lanes) fullscreenBand(id WindowID) bool {
 // wider column: the column at the far end of the band leaves it. The
 // rightmost goes to the band below; from the last column, the leftmost
 // goes to the band above, at its right end. The column remembers it.
-func (w edit) pushNeighbor() {
-	first, last := w.bandBounds(w.band(w.Focus))
+func (w Edit) pushNeighbor() {
+	first, last := w.BandBounds(w.Band(w.Focus))
 	if first == last {
 		return
 	}
@@ -219,7 +219,7 @@ func (w edit) pushNeighbor() {
 		w.cascadeCol(c).pushedUp = append(columnIDs(w.Columns[first:first+1]), w.cascadeCol(c).pushedUp...)
 		w.shiftBand(first, first, -1, max(w.MaxColumns, 1))
 	}
-	w.Focus = w.columnOf(id)
+	w.Focus = w.ColumnOf(id)
 }
 
 // restoreBand brings back the columns isolateBand or pushNeighbor sent
@@ -229,7 +229,7 @@ func (w edit) pushNeighbor() {
 // of the band, the ones sent down at its end, in their former order. The
 // others stay where they are. It reports whether the column remembered
 // any.
-func (w edit) restoreBand() bool {
+func (w Edit) restoreBand() bool {
 	c := w.Columns[w.Focus]
 	up, down := w.cascadeCol(c).pushedUp, w.cascadeCol(c).pushedDown
 	w.cascadeCol(c).pushedUp, w.cascadeCol(c).pushedDown = nil, nil
@@ -238,7 +238,7 @@ func (w edit) restoreBand() bool {
 	}
 	id := w.Focused
 	bands := w.bandList()
-	b := w.band(w.Focus)
+	b := w.Band(w.Focus)
 	room := max(max(w.MaxColumns, 1)-len(bands[b]), 0)
 	// Automatically isolated fullscreen bands do not separate a column
 	// from its remembered neighbors. User-shaped bands still do: ordinary
@@ -307,16 +307,16 @@ func (w edit) restoreBand() bool {
 	return true
 }
 
-// adoptFloat inserts the column half of an eligible float promotion below
+// AdoptFloat inserts the column half of an eligible float promotion below
 // the selected band. Workspace checks eligibility and removes the float.
-func (cascadeLayout) adoptFloat(w edit, id WindowID) bool {
+func (cascadeLayout) AdoptFloat(w Edit, id WindowID) bool {
 	focus := w.Focused
 	bands := w.bandList()
 	at := 0
 	if len(w.Columns) > 0 {
-		at = w.band(w.Focus) + 1
+		at = w.Band(w.Focus) + 1
 	}
-	col := Column{Windows: []WindowID{id}, key: w.newKey()}
+	col := Column{Windows: []WindowID{id}, Key: w.newKey()}
 	w.cascadeCol(col).ownBand = true
 	bands = slices.Insert(bands, at, []Column{col})
 	w.setBands(bands, focus)

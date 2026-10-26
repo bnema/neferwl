@@ -59,7 +59,7 @@ func parseRules(rs []ports.WindowRule) ([]rule, error) {
 				p.workspace = r.Workspace
 			}
 		}
-		if r.Cells < 0 || r.Cells > maxCells {
+		if r.Cells < 0 || r.Cells > MaxCells {
 			return nil, fmt.Errorf("rule %s: invalid width %d", r.Name, r.Cells)
 		}
 		p.cells = r.Cells

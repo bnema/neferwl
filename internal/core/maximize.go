@@ -2,48 +2,48 @@ package core
 
 import "slices"
 
-// maximize sets FullWidth on column i; unlike ToggleFullWidth it never toggles.
-func (w *lanes) maximize(i int) {
+// Maximize sets FullWidth on column i; unlike ToggleFullWidth it never toggles.
+func (w *Lanes) Maximize(i int) {
 	if i >= 0 && i < len(w.Columns) {
 		w.Columns[i].FullWidth = true
 		id := w.Columns[i].Windows[w.Columns[i].Focus]
-		w.maximized = slices.DeleteFunc(w.maximized, func(v WindowID) bool { return v == id })
-		w.maximized = slices.Insert(w.maximized, 0, id)
+		w.Maximized = slices.DeleteFunc(w.Maximized, func(v WindowID) bool { return v == id })
+		w.Maximized = slices.Insert(w.Maximized, 0, id)
 	}
 }
 
-// hiddenByMaximized reports whether the maximized focused column hides
+// HiddenByMaximized reports whether the maximized focused column hides
 // column i on screen: in fixed overflow it hides the rest of the row. A
 // maximized cascade column has its band to itself, so it hides nothing.
-func (w *layoutView) hiddenByMaximized(i int) bool {
-	return w.layout.maximizeHides() && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth && i != w.Focus
+func (w *View) HiddenByMaximized(i int) bool {
+	return w.Layout.MaximizeHides() && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth && i != w.Focus
 }
 
-// unmaximize clears the focused column in scroll and cascade, or all
+// Unmaximize clears the focused column in scroll and cascade, or all
 // maximized columns in fixed overflow (including after Escape changed focus).
-func (w *lanes) unmaximize() {
-	if w.layout().maximizeHides() {
-		w.clearMaximized()
+func (w *Lanes) Unmaximize() {
+	if w.Engine().MaximizeHides() {
+		w.ClearMaximized()
 	} else if w.Focus < len(w.Columns) {
 		w.Columns[w.Focus].FullWidth = false
 	}
 }
 
-// clearMaximized unmaximizes every column and forgets the history.
-func (w *lanes) clearMaximized() {
+// ClearMaximized unmaximizes every column and forgets the history.
+func (w *Lanes) ClearMaximized() {
 	for i := range w.Columns {
 		w.Columns[i].FullWidth = false
 	}
-	w.maximized = nil
+	w.Maximized = nil
 }
 
-// transferMaximization changes the maximized column without forgetting MRU.
-func (w *lanes) transferMaximization(i int) {
+// TransferMaximization changes the maximized column without forgetting MRU.
+func (w *Lanes) TransferMaximization(i int) {
 	if i == w.Focus || i < 0 || i >= len(w.Columns) {
 		return
 	}
 	w.Columns[w.Focus].FullWidth = false
-	w.maximize(i)
+	w.Maximize(i)
 }
 
 // ToggleFullWidth expands the focused tiled column without changing its saved width.
@@ -51,7 +51,7 @@ func (w *Workspace) ToggleFullWidth() {
 	if len(w.Columns) == 0 || w.onFloat() {
 		return
 	}
-	w.layout().toggleFullWidth(w.edit())
+	w.Engine().ToggleFullWidth(w.edit())
 	w.scroll()
 }
 
@@ -64,24 +64,24 @@ func (w *Workspace) ToggleFullscreen() {
 		// A stashed window the user picked over the cover replaces it.
 		w.leaveFullscreen()
 	}
-	if w.fullscreen == id {
+	if w.Fullscreen == id {
 		// The user was on it: it keeps the focus, in front of floats that
 		// mapped meanwhile. Cleared first, so that floats it covers drop
 		// below the columns.
-		w.fullscreen = 0
+		w.Fullscreen = 0
 		w.FocusID(id)
 		w.endFullscreen()
 		return
 	}
 	w.isolate(id)
-	w.fullscreen = id
+	w.Fullscreen = id
 	w.scroll()
 }
 
 // endFullscreen ends the fullscreen: floats it kept demoted are promoted
 // again and the view follows the focus.
 func (w *Workspace) endFullscreen() {
-	w.fullscreen, w.stashOver = 0, 0
+	w.Fullscreen, w.stashOver = 0, 0
 	w.reconcileFloats()
 	w.scroll()
 }
@@ -90,8 +90,8 @@ func (w *Workspace) endFullscreen() {
 // and refuses its client's requests until it is focused again (mayCover,
 // settleLeft).
 func (w *Workspace) leaveFullscreen() {
-	if w.fullscreen != 0 {
-		w.left = w.fullscreen
+	if w.Fullscreen != 0 {
+		w.left = w.Fullscreen
 	}
 	w.endFullscreen()
 }
@@ -138,7 +138,7 @@ func (w *Workspace) Activate(id WindowID) {
 		w.stashAt = i
 		w.showStash()
 	}
-	if w.fullscreen != 0 && w.fullscreen != id {
+	if w.Fullscreen != 0 && w.Fullscreen != id {
 		w.leaveFullscreen()
 	}
 	w.FocusID(id)
@@ -174,7 +174,7 @@ func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 		return
 	}
 	if !on {
-		if w.fullscreen == id {
+		if w.Fullscreen == id {
 			w.endFullscreen()
 		}
 		return
@@ -184,7 +184,7 @@ func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 		w.dropStashOver()
 	}
 	w.isolate(id)
-	w.fullscreen = id
+	w.Fullscreen = id
 	if !w.isFloat(id) {
 		w.scroll()
 	}

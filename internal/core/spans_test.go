@@ -25,7 +25,7 @@ func stampSpans(w *Workspace, first, last int) {
 	w.spanSeq++
 	for i := first; i <= last; i++ {
 		w.Columns[i].Span = 10000 / (last - first + 1)
-		w.Columns[i].spanStamp = w.spanSeq
+		w.Columns[i].SpanStamp = w.spanSeq
 	}
 	w.Columns[last].Span += 10000 % (last - first + 1)
 }
@@ -71,7 +71,7 @@ func TestSpansMutations(t *testing.T) {
 							if c.Span == 0 {
 								t.Fatal("swap discarded valid spans")
 							}
-						} else if c.Span != 0 || c.spanStamp != 0 {
+						} else if c.Span != 0 || c.SpanStamp != 0 {
 							t.Fatal("stale span", c)
 						}
 					}
@@ -150,7 +150,7 @@ func TestSpansDropIntoLane(t *testing.T) {
 				t.Fatal("not dropped", mode, w.Columns)
 			}
 			for _, col := range w.Columns {
-				if col.Span != 0 || col.spanStamp != 0 {
+				if col.Span != 0 || col.SpanStamp != 0 {
 					t.Fatal("drop retained stamp", mode, col)
 				}
 			}
@@ -214,10 +214,10 @@ func TestSpansForeignStampCleared(t *testing.T) {
 		w := spanWorkspace(OverflowScroll, 2)
 		stampSpans(w, 0, 1)
 		stamp := w.spanSeq
-		w.receive(Column{Windows: []WindowID{9}, Span: 3000, spanStamp: stamp}, -1)
+		w.receive(Column{Windows: []WindowID{9}, Span: 3000, SpanStamp: stamp}, -1)
 		w.dropStaleSpans()
 		for _, col := range w.Columns {
-			if col.Span != 0 || col.spanStamp != 0 {
+			if col.Span != 0 || col.SpanStamp != 0 {
 				t.Fatal("foreign stamp joined the lane", w.Columns)
 			}
 		}

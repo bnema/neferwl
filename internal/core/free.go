@@ -17,7 +17,7 @@ const freeMinSize = 64
 // stashed window is left alone.
 func (w *Workspace) ToggleFloating() {
 	id, ok := w.Focused()
-	if !ok || id == w.fullscreen || w.stashIndex(id) >= 0 {
+	if !ok || id == w.Fullscreen || w.stashIndex(id) >= 0 {
 		return
 	}
 	if i := w.floatIndex(id); i >= 0 {
@@ -58,7 +58,7 @@ func (w *Workspace) focusedFree() int {
 	if !ok || !w.floatFocus {
 		return -1
 	}
-	if i := w.floatIndex(id); i >= 0 && w.Floats[i].free && id != w.fullscreen {
+	if i := w.floatIndex(id); i >= 0 && w.Floats[i].free && id != w.Fullscreen {
 		return i
 	}
 	return -1

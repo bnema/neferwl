@@ -28,8 +28,8 @@ func TestDialogOverFullscreenParent(t *testing.T) {
 				if !w.FocusColumn(1) {
 					t.Fatal("focus move refused")
 				}
-				if id, _ := w.Focused(); id != 1 || w.fullscreen != 1 {
-					t.Fatalf("focus %d fullscreen %d", id, w.fullscreen)
+				if id, _ := w.Focused(); id != 1 || w.Fullscreen != 1 {
+					t.Fatalf("focus %d fullscreen %d", id, w.Fullscreen)
 				}
 				wantOrder(t, w, 1, 4)
 				w.FocusID(4)
@@ -37,8 +37,8 @@ func TestDialogOverFullscreenParent(t *testing.T) {
 					t.Fatalf("focus %d, want the dialog back", id)
 				}
 				w.RemoveWindow(4)
-				if id, _ := w.Focused(); id != 1 || w.fullscreen != 1 {
-					t.Fatalf("after close focus %d fullscreen %d", id, w.fullscreen)
+				if id, _ := w.Focused(); id != 1 || w.Fullscreen != 1 {
+					t.Fatalf("after close focus %d fullscreen %d", id, w.Fullscreen)
 				}
 				wantOrder(t, w, 1)
 

@@ -37,7 +37,7 @@ func (g *borderResize) cursor() string {
 
 func (g *borderResize) valid() bool {
 	c, s, w := g.core, g.screen, g.ws
-	if !slices.Contains(c.screens, s) || s.mon.Current() != w || s.mon.previewing() || s.mon.ov.open || w.pinned() || w.fullscreen != 0 || len(w.Columns) != len(g.saved) {
+	if !slices.Contains(c.screens, s) || s.mon.Current() != w || s.mon.previewing() || s.mon.ov.open || w.pinned() || w.Fullscreen != 0 || len(w.Columns) != len(g.saved) {
 		return false
 	}
 	for i, col := range w.Columns {
@@ -52,7 +52,7 @@ func (g *borderResize) valid() bool {
 	if b.kind == borderRow {
 		return b.row >= 0 && b.row+1 < len(w.Columns[b.col].Windows)
 	}
-	return b.col+1 < len(w.Columns) && w.laneOf(b.col) == w.laneOf(b.col+1)
+	return b.col+1 < len(w.Columns) && w.LaneOf(b.col) == w.LaneOf(b.col+1)
 }
 
 func (g *borderResize) motion(ctx context.Context, _ time.Duration) error {
@@ -86,6 +86,6 @@ func (g *borderResize) cancel() {
 	}
 	for i, saved := range g.saved {
 		col := &g.ws.Columns[i]
-		col.Span, col.spanStamp, col.Shares = saved.Span, saved.spanStamp, slices.Clone(saved.Shares)
+		col.Span, col.SpanStamp, col.Shares = saved.Span, saved.SpanStamp, slices.Clone(saved.Shares)
 	}
 }

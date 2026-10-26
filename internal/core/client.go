@@ -189,7 +189,7 @@ func (c *Core) fullscreenRequest(ctx context.Context, v ports.WindowFullscreenRe
 	}
 	if s, _ := c.screenOf(v.ID); s != nil {
 		s.mon.SetFullscreen(v.ID, v.Fullscreen)
-		if w := s.mon.Current(); v.Fullscreen && w.fullscreen == v.ID {
+		if w := s.mon.Current(); v.Fullscreen && w.Fullscreen == v.ID {
 			// A taskbar or late fullscreen request that took
 			// effect: the window does not fade in, it keeps the
 			// direct scanout path. One that was ignored (the

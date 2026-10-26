@@ -202,56 +202,56 @@ packages:
 
   github.com/bnema/neferwl/internal/core:
     interfaces:
-      layoutTraits:
+      Traits:
         config:
           dir: internal/core
           pkgname: core
-          filename: layout_layoutTraits_mock_test.go
-      layoutShape:
+          filename: layout_Traits_mock_test.go
+      Shape:
         config:
           dir: internal/core
           pkgname: core
-          filename: layout_layoutShape_mock_test.go
-      layoutGeometry:
+          filename: layout_Shape_mock_test.go
+      Geometry:
         config:
           dir: internal/core
           pkgname: core
-          filename: layout_layoutGeometry_mock_test.go
-      layoutLanes:
+          filename: layout_Geometry_mock_test.go
+      LaneSet:
         config:
           dir: internal/core
           pkgname: core
-          filename: layout_layoutLanes_mock_test.go
-      layoutNavigator:
+          filename: layout_LaneSet_mock_test.go
+      Navigator:
         config:
           dir: internal/core
           pkgname: core
-          filename: layout_layoutNavigator_mock_test.go
-      layoutPlacer:
+          filename: layout_Navigator_mock_test.go
+      Placer:
         config:
           dir: internal/core
           pkgname: core
-          filename: layout_layoutPlacer_mock_test.go
-      layoutSizer:
+          filename: layout_Placer_mock_test.go
+      Sizer:
         config:
           dir: internal/core
           pkgname: core
-          filename: layout_layoutSizer_mock_test.go
-      layoutState:
+          filename: layout_Sizer_mock_test.go
+      State:
         config:
           dir: internal/core
           pkgname: core
-          filename: layout_layoutState_mock_test.go
-      layoutOverview:
+          filename: layout_State_mock_test.go
+      Overview:
         config:
           dir: internal/core
           pkgname: core
-          filename: layout_layoutOverview_mock_test.go
-      layout:
+          filename: layout_Overview_mock_test.go
+      Layout:
         config:
           dir: internal/core
           pkgname: core
-          filename: layout_layout_mock_test.go
+          filename: layout_Layout_mock_test.go
 
   github.com/bnema/neferwl/internal/adapters/atspi:
     interfaces:

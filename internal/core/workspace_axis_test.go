@@ -179,8 +179,8 @@ func TestCascadeFullscreenBandEdgeStepsWorkspace(t *testing.T) {
 	w.ToggleFullscreen()
 	c.applyAction(ActionFocusColumnRight)
 	wantActive(t, m, 2)
-	if w.fullscreen != 23 {
-		t.Fatalf("fullscreen %d, want 23", w.fullscreen)
+	if w.Fullscreen != 23 {
+		t.Fatalf("fullscreen %d, want 23", w.Fullscreen)
 	}
 }
 
@@ -194,8 +194,8 @@ func TestCascadeFullscreenGoesToMonitorBeforeWorkspace(t *testing.T) {
 	c.applyAction(ActionFocusColumnRight)
 	wantActive(t, m, 1)
 	wantFocus(t, c, "R", 0)
-	if w.fullscreen != 23 {
-		t.Fatalf("fullscreen %d, want 23", w.fullscreen)
+	if w.Fullscreen != 23 {
+		t.Fatalf("fullscreen %d, want 23", w.Fullscreen)
 	}
 }
 

@@ -15,7 +15,7 @@ func TestAddColumnQuietUnderCover(t *testing.T) {
 		w.AddWindow(1)
 		w.AddWindow(2)
 		w.FocusID(1)
-		w.maximize(w.Focus)
+		w.Maximize(w.Focus)
 		w.ToggleFullscreen()
 		if w.cover() != 1 {
 			t.Fatalf("setup: cover %d", w.cover())
@@ -24,11 +24,11 @@ func TestAddColumnQuietUnderCover(t *testing.T) {
 		if !w.has(3) {
 			t.Fatal("column not added")
 		}
-		if id, _ := w.Focused(); id != 1 || w.fullscreen != 1 {
-			t.Fatalf("focus %d fullscreen %d", id, w.fullscreen)
+		if id, _ := w.Focused(); id != 1 || w.Fullscreen != 1 {
+			t.Fatalf("focus %d fullscreen %d", id, w.Fullscreen)
 		}
-		if i := w.columnOf(1); i < 0 || !w.Columns[i].FullWidth || len(w.maximized) == 0 || w.maximized[0] != 1 {
-			t.Fatalf("maximized layout lost: %+v %v", w.Columns, w.maximized)
+		if i := w.ColumnOf(1); i < 0 || !w.Columns[i].FullWidth || len(w.Maximized) == 0 || w.Maximized[0] != 1 {
+			t.Fatalf("maximized layout lost: %+v %v", w.Columns, w.Maximized)
 		}
 
 	})

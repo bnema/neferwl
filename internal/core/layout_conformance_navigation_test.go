@@ -9,22 +9,22 @@ import (
 // goes one lane over, focus steps stay in their lane (walking a whole lane
 // outside the spiral) and terminate, and the screen neighbor is never the focus.
 func TestLayoutNavigationConformance(t *testing.T) {
-	forEachConformance(t, func(t *testing.T, l layout, w *Workspace, k, n int, mode string) {
-		v := w.lview()
+	forEachConformance(t, func(t *testing.T, l Layout, w *Workspace, k, n int, mode string) {
+		v := w.Snapshot()
 		next := 0
-		for lane := 0; lane < l.laneCount(v); lane++ {
-			first, last := l.laneBounds(v, lane)
+		for lane := 0; lane < l.LaneCount(v); lane++ {
+			first, last := l.LaneBounds(v, lane)
 			if first != next || last < first || last >= n {
 				t.Fatalf("invalid partition %d: %d..%d, next %d", lane, first, last, next)
 			}
 			for i := first; i <= last; i++ {
-				if l.laneOf(v, i) != lane {
+				if l.LaneOf(v, i) != lane {
 					t.Fatal("laneOf disagrees with bounds")
 				}
 			}
 			// Focus traverses every column of a lane, except in the spiral,
 			// where it follows screen adjacency.
-			if !l.spiral() {
+			if !l.Spiral() {
 				for _, dir := range []int{-1, 1} {
 					step := v
 					step.Focus = first
@@ -32,7 +32,7 @@ func TestLayoutNavigationConformance(t *testing.T) {
 						step.Focus = last
 					}
 					visited := 1
-					for col := l.focusStep(step, dir); col >= 0; col = l.focusStep(step, dir) {
+					for col := l.FocusStep(step, dir); col >= 0; col = l.FocusStep(step, dir) {
 						if col < first || col > last || visited > last-first {
 							t.Fatal("focus escaped lane or cycled")
 						}
@@ -52,10 +52,10 @@ func TestLayoutNavigationConformance(t *testing.T) {
 		for i := 0; i < n; i++ {
 			v.Focus = i
 			for _, dir := range []int{-1, 1} {
-				if col := l.laneStep(v, dir); col >= n {
+				if col := l.LaneStep(v, dir); col >= n {
 					t.Fatal("laneStep out of range")
 				}
-				if col := l.laneNeighbor(v, dir); col != -1 && (col >= n || l.laneOf(v, col) != l.laneOf(v, i)+dir) {
+				if col := l.LaneNeighbor(v, dir); col != -1 && (col >= n || l.LaneOf(v, col) != l.LaneOf(v, i)+dir) {
 					t.Fatalf("lane neighbor %d of column %d, direction %d", col, i, dir)
 				}
 				step := v
@@ -63,7 +63,7 @@ func TestLayoutNavigationConformance(t *testing.T) {
 					if count > n {
 						t.Fatal("focusStep does not terminate")
 					}
-					col := l.focusStep(step, dir)
+					col := l.FocusStep(step, dir)
 					if col < 0 {
 						break
 					}
@@ -73,7 +73,7 @@ func TestLayoutNavigationConformance(t *testing.T) {
 					step.Focus = col
 				}
 			}
-			rects := l.columnRects(v, nil, rectOpts{})
+			rects := l.ColumnRects(v, nil, RectOpts{})
 			for _, d := range [][2]int{{-1, 0}, {1, 0}, {0, -1}, {0, 1}} {
 				if col := screenNeighbor(v, rects, d[0], d[1]); col == i || col >= n {
 					t.Fatalf("screen neighbor %d of column %d", col, i)
@@ -87,8 +87,8 @@ func TestGeometricNeighborEqualCellSymmetry(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rects := []Rect{{W: 100, H: 100}, {X: 110, W: 100, H: 100}, {X: 220, W: 100, H: 100}}
 		for i := 0; i < len(rects)-1; i++ {
-			j := geometricNeighbor(rects, i, 1, 0)
-			if j != i+1 || geometricNeighbor(rects, j, -1, 0) != i {
+			j := GeometricNeighbor(rects, i, 1, 0)
+			if j != i+1 || GeometricNeighbor(rects, j, -1, 0) != i {
 				t.Fatal("equal-cell neighbors not symmetric")
 			}
 		}

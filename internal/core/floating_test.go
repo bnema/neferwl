@@ -286,8 +286,8 @@ func TestFullscreenPinsFocus(t *testing.T) {
 		w.focusCover()
 		w.Apply(ActionMoveColumnLeft)
 		w.Apply(ActionCycleColumnWidth)
-		if id, _ := w.Focused(); id != 3 || w.fullscreen != 3 || w.Columns[0].Windows[0] != 1 || w.Columns[1].Cells != 0 {
-			t.Fatalf("focused %d fullscreen %d columns %+v", id, w.fullscreen, w.Columns)
+		if id, _ := w.Focused(); id != 3 || w.Fullscreen != 3 || w.Columns[0].Windows[0] != 1 || w.Columns[1].Cells != 0 {
+			t.Fatalf("focused %d fullscreen %d columns %+v", id, w.Fullscreen, w.Columns)
 		}
 		if e := w.Apply(ActionCloseWindow); e.Close != 3 {
 			t.Fatalf("close %d, want the fullscreen window", e.Close)
@@ -306,34 +306,34 @@ func TestFocusMoveLeavesFullscreen(t *testing.T) {
 		w.AddFloating(3, 20, 10)
 		w.SetFullscreen(3, true)
 		w.FocusColumn(-1)
-		if id, _ := w.Focused(); id == 3 || w.fullscreen != 0 {
-			t.Fatalf("float: focused %d fullscreen %d", id, w.fullscreen)
+		if id, _ := w.Focused(); id == 3 || w.Fullscreen != 0 {
+			t.Fatalf("float: focused %d fullscreen %d", id, w.Fullscreen)
 		}
 		f := workspace()
 		f.Overflow = OverflowFixed
 		f.AddWindow(1)
 		f.AddWindow(2)
 		f.SetFullscreen(2, true)
-		if f.FocusColumn(1); f.fullscreen != 2 || f.Focus != 1 {
-			t.Fatalf("fixed edge: focus %d fullscreen %d", f.Focus, f.fullscreen)
+		if f.FocusColumn(1); f.Fullscreen != 2 || f.Focus != 1 {
+			t.Fatalf("fixed edge: focus %d fullscreen %d", f.Focus, f.Fullscreen)
 		}
-		if f.FocusColumn(-1); f.fullscreen != 0 || f.Focus != 0 {
-			t.Fatalf("fixed: focus %d fullscreen %d", f.Focus, f.fullscreen)
+		if f.FocusColumn(-1); f.Fullscreen != 0 || f.Focus != 0 {
+			t.Fatalf("fixed: focus %d fullscreen %d", f.Focus, f.Fullscreen)
 		}
 		// Side by side: nothing above, so up keeps fullscreen and reports
 		// the edge (the monitor goes to the workspace above).
 		f.Focus = 1
 		f.SetFullscreen(2, true)
-		if f.FocusWindow(-1) || f.fullscreen != 2 || f.Focus != 1 {
-			t.Fatalf("fixed up: focus %d fullscreen %d", f.Focus, f.fullscreen)
+		if f.FocusWindow(-1) || f.Fullscreen != 2 || f.Focus != 1 {
+			t.Fatalf("fixed up: focus %d fullscreen %d", f.Focus, f.Fullscreen)
 		}
 		// Stacked: up reaches the window above in the column.
 		f.SetFullscreen(2, false)
 		f.stackWindow(2, 1)
 		f.FocusID(2)
 		f.SetFullscreen(2, true)
-		if !f.FocusWindow(-1) || f.fullscreen != 0 {
-			t.Fatalf("stacked up: fullscreen %d", f.fullscreen)
+		if !f.FocusWindow(-1) || f.Fullscreen != 0 {
+			t.Fatalf("stacked up: fullscreen %d", f.Fullscreen)
 		}
 		if id, _ := f.Focused(); id != 1 {
 			t.Fatalf("stacked up: focused %d", id)
@@ -358,7 +358,7 @@ func TestToggleWindowStashIgnoresFullscreen(t *testing.T) {
 		w.AddWindow(1)
 		w.SetFullscreen(1, true)
 		w.Apply(ActionToggleWindowStash)
-		if len(w.Stash) != 0 || w.fullscreen != 1 {
+		if len(w.Stash) != 0 || w.Fullscreen != 1 {
 			t.Fatalf("fullscreen window floated: %+v", w)
 		}
 		w.SetFullscreen(1, false)
@@ -422,12 +422,12 @@ func TestHiddenFloatFullscreenRequest(t *testing.T) {
 		w.ToggleWindowStash()
 		w.ToggleStashVisible()
 		m.SetFullscreen(2, true)
-		if m.Current() != w || w.stashIndex(2) < 0 || !w.stashHidden || w.fullscreen != 0 {
+		if m.Current() != w || w.stashIndex(2) < 0 || !w.stashHidden || w.Fullscreen != 0 {
 			t.Fatalf("hidden stash left or showed: %+v", w)
 		}
 		w.ToggleStashVisible()
-		if w.fullscreen != 2 {
-			t.Fatalf("fullscreen lost on show: %d", w.fullscreen)
+		if w.Fullscreen != 2 {
+			t.Fatalf("fullscreen lost on show: %d", w.Fullscreen)
 		}
 
 	})
@@ -443,8 +443,8 @@ func TestToggleStashVisibleFullscreen(t *testing.T) {
 		w.ToggleWindowStash()
 		w.SetFullscreen(2, true)
 		w.Apply(ActionToggleStashVisible)
-		if id, _ := w.Focused(); id != 2 || w.fullscreen != 2 || w.stashHidden {
-			t.Fatalf("fullscreen stash hidden: focused %d fullscreen %d", id, w.fullscreen)
+		if id, _ := w.Focused(); id != 2 || w.Fullscreen != 2 || w.stashHidden {
+			t.Fatalf("fullscreen stash hidden: focused %d fullscreen %d", id, w.Fullscreen)
 		}
 
 	})
@@ -549,8 +549,8 @@ func TestActivateHiddenFloat(t *testing.T) {
 		w.SetFullscreen(2, true)
 		w.SetFullscreen(1, true)
 		w.Activate(2)
-		if id, _ := w.Focused(); id != 2 || w.stashHidden || w.fullscreen != 2 {
-			t.Fatalf("own fullscreen: focused %d hidden %v fullscreen %d", id, w.stashHidden, w.fullscreen)
+		if id, _ := w.Focused(); id != 2 || w.stashHidden || w.Fullscreen != 2 {
+			t.Fatalf("own fullscreen: focused %d hidden %v fullscreen %d", id, w.stashHidden, w.Fullscreen)
 		}
 
 	})

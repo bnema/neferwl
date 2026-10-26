@@ -5,40 +5,40 @@ import "slices"
 // sizable reports whether the focused column can be resized: a tiled column
 // the fullscreen window does not hide.
 func (w *Workspace) sizable() bool {
-	return !w.onFloat() && len(w.Columns) > 0 && !w.fullscreenHides()
+	return !w.onFloat() && len(w.Columns) > 0 && !w.FullscreenHides()
 }
 
-func (w *Workspace) edit() edit { id, _ := w.Focused(); return edit{lanes: &w.lanes, Focused: id} }
+func (w *Workspace) edit() Edit { id, _ := w.Focused(); return Edit{Lanes: &w.Lanes, Focused: id} }
 
 func (w *Workspace) isolate(id WindowID) bool {
 	if i := w.floatIndex(id); i >= 0 && w.Floats[i].over == 0 && w.stashIndex(id) < 0 {
-		if e := w.edit(); w.layout().adoptFloat(e, id) {
+		if e := w.edit(); w.Engine().AdoptFloat(e, id) {
 			w.Floats = slices.Delete(w.Floats, i, i+1)
 			if e.Focused == id {
 				w.floatFocus, w.stashFocus = false, false
 			}
 		}
 	}
-	if w.isFloat(id) || w.fullscreen == id {
+	if w.isFloat(id) || w.Fullscreen == id {
 		return false
 	}
-	return w.layout().isolate(w.edit(), id)
+	return w.Engine().Isolate(w.edit(), id)
 }
 
 func (w *Workspace) columnWidthFor(i int, ignoreFullWidth bool) int {
-	return w.layout().columnWidth(w.lview(), i, ignoreFullWidth)
+	return w.Engine().ColumnWidth(w.Snapshot(), i, ignoreFullWidth)
 }
 
 func (w *Workspace) columnX(i int) int {
-	v := w.lview()
-	v = v.withFacts()
-	return v.columnX(i)
+	v := w.Snapshot()
+	v = v.WithFacts()
+	return v.ColumnX(i)
 }
 
 func (w *Workspace) scroll() {
-	w.settleLayout()
+	w.SettleLayout()
 	before := w.View
-	w.View = w.layout().scrollTarget(w.lview())
+	w.View = w.Engine().ScrollTarget(w.Snapshot())
 	w.retarget(before)
 }
 
@@ -63,13 +63,13 @@ func (w *Workspace) columnRectsInto(dst []Rect, ignoreFullWidth bool) []Rect {
 // columnRectsAt is columnRectsInto with the view slide's shift given: 0 is
 // the settled geometry, without the animation's presentation offset.
 func (w *Workspace) columnRectsAt(dst []Rect, ignoreFullWidth bool, shift int) []Rect {
-	return w.layout().columnRects(w.lview(), dst, rectOpts{IgnoreFullWidth: ignoreFullWidth, Shift: shift})
+	return w.Engine().ColumnRects(w.Snapshot(), dst, RectOpts{IgnoreFullWidth: ignoreFullWidth, Shift: shift})
 }
 
 // focusLane focuses the column in the lane dir away; a maximized column
 // keeps its own band, so it stays maximized.
 func (w *Workspace) focusLane(dir int) bool {
-	i := w.laneNeighbor(dir)
+	i := w.LaneNeighbor(dir)
 	if i < 0 {
 		return false
 	}

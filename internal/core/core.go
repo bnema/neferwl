@@ -309,7 +309,7 @@ func (c *Core) apply(cfg ports.Config) error {
 		binds[b] = Action(a)
 	}
 	overflow := func(v string) (Overflow, error) {
-		if _, ok := layoutFor(Overflow(v)); ok {
+		if _, ok := Lookup(Overflow(v)); ok {
 			return Overflow(v), nil
 		}
 		return "", fmt.Errorf("invalid overflow %q", v)
@@ -319,7 +319,7 @@ func (c *Core) apply(cfg ports.Config) error {
 	}
 	// Normalize the global config value; empty output/workspace values still inherit.
 	if len(cfg.Layout.Overflow) == 0 {
-		cfg.Layout.Overflow = string(defaultLayout)
+		cfg.Layout.Overflow = string(Default)
 	}
 	for _, o := range cfg.Layout.Outputs {
 		if _, err := overflow(o.Overflow); err != nil {
@@ -351,10 +351,10 @@ func (c *Core) apply(cfg ports.Config) error {
 		return err
 	}
 	// Reload is cold-path work; unrelated changes keep a scroll or gesture.
-	type layoutAxes struct{ content, workspace layoutAxis }
+	type layoutAxes struct{ content, workspace Axis }
 	axes := make(map[*Monitor]layoutAxes, len(c.screens))
 	for _, s := range c.screens {
-		content, workspace := s.mon.Current().layout().axes()
+		content, workspace := s.mon.Current().Engine().Axes()
 		axes[s.mon] = layoutAxes{content, workspace}
 	}
 	if c.cfg.Hint.Size != cfg.Hint.Size {
@@ -371,7 +371,7 @@ func (c *Core) apply(cfg ports.Config) error {
 	}
 	c.applyOutputConfig()
 	for _, s := range c.screens {
-		content, workspace := s.mon.Current().layout().axes()
+		content, workspace := s.mon.Current().Engine().Axes()
 		old, now := axes[s.mon], (layoutAxes{content, workspace})
 		if old.content != now.content || old.workspace != now.workspace {
 			s.mon.ov.dropScroll()

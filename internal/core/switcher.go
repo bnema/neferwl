@@ -55,7 +55,7 @@ func (w *Workspace) noteFocus() {
 		w.recent[0] = id
 		return
 	}
-	w.recent = slices.DeleteFunc(w.recent, func(v WindowID) bool { return v == id || w.columnOf(v) == w.Focus })
+	w.recent = slices.DeleteFunc(w.recent, func(v WindowID) bool { return v == id || w.ColumnOf(v) == w.Focus })
 	w.recent = slices.Insert(w.recent, 0, id)
 	if len(w.recent) > switcherRecentMax {
 		w.recent = w.recent[:switcherRecentMax]
@@ -82,7 +82,7 @@ func (w *Workspace) switchOrder() []WindowID {
 	}
 	add(w.Focus)
 	for _, id := range w.recent {
-		if i := w.columnOf(id); i >= 0 {
+		if i := w.ColumnOf(id); i >= 0 {
 			add(i)
 		}
 	}
@@ -98,7 +98,7 @@ func (s *switcherState) heir(id WindowID) WindowID {
 	if s.ws == nil || !slices.Contains(s.order, id) {
 		return 0
 	}
-	if i := s.ws.columnOf(id); i >= 0 {
+	if i := s.ws.ColumnOf(id); i >= 0 {
 		for _, v := range s.ws.Columns[i].Windows {
 			if v != id {
 				return v
@@ -121,7 +121,7 @@ func (s *switcherState) remove(id, heir WindowID) {
 	if i < 0 {
 		return
 	}
-	if j := s.ws.columnOf(heir); heir != 0 && j >= 0 {
+	if j := s.ws.ColumnOf(heir); heir != 0 && j >= 0 {
 		col := s.ws.Columns[j]
 		next := col.Windows[col.Focus]
 		if size, ok := s.sizes[id]; ok {
@@ -158,15 +158,15 @@ func (m *Monitor) commitSwitcher() bool {
 	if w != m.Current() {
 		return false
 	}
-	i := w.columnOf(id)
+	i := w.ColumnOf(id)
 	if i < 0 {
 		return false
 	}
 	if i == w.Focus && !w.floatFocus && !w.stashFocused() {
 		return true
 	}
-	if i != w.Focus && !w.layout().bands() && w.Focus >= 0 && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth {
-		w.transferMaximization(i)
+	if i != w.Focus && !w.Engine().Bands() && w.Focus >= 0 && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth {
+		w.TransferMaximization(i)
 	}
 	// Activate leaves another window's fullscreen and handles dialogs.
 	w.Activate(id)

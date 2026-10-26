@@ -109,7 +109,7 @@ func ResizeArg(a Action) (axis, step int, ok bool) {
 		}
 		rest = strings.TrimSpace(rest)
 		if i == ResizeWidth {
-			if p, ok := parseResizeStep(rest, maxCells); ok {
+			if p, ok := parseResizeStep(rest, MaxCells); ok {
 				return i, p, true
 			}
 			return 0, 0, false
@@ -366,8 +366,8 @@ func (c *Core) dispatchAction(a Action) Effect {
 		// A fullscreen float has no column in its band. Horizontal moves
 		// use the existing workspace/monitor edge order; only up/down may
 		// reveal the tiles below.
-		if w.layout().bands() && w.cover() != 0 && w.isFloat(w.cover()) && !w.stashOverCover() && !w.coverDialogFocused() {
-			c.edgeFocus(horizontalAxis, dir, d)
+		if w.Engine().Bands() && w.cover() != 0 && w.isFloat(w.cover()) && !w.stashOverCover() && !w.coverDialogFocused() {
+			c.edgeFocus(Horizontal, dir, d)
 			return Effect{}
 		}
 		// A covering fullscreen window is left for the window on that side;
@@ -375,28 +375,28 @@ func (c *Core) dispatchAction(a Action) Effect {
 		// the edge (see edgeFocus) and fullscreen stays.
 		if w.pinned() && !w.stashOverCover() {
 			if !w.FocusColumn(dir) {
-				c.edgeFocus(horizontalAxis, dir, d)
+				c.edgeFocus(Horizontal, dir, d)
 			}
 			return Effect{}
 		}
 		// The first move from a float stays here unless nothing is under it:
 		// a native float leaves for the stash or the columns, and the stash
 		// keeps the focus at its ends.
-		edge := w.leavesLane(w.columnToward(dir)) && (!w.onFloat() || w.floatFocus && !w.canLeaveFloat())
-		if edge && c.edgeFocus(horizontalAxis, dir, d) {
+		edge := w.LeavesLane(w.columnToward(dir)) && (!w.onFloat() || w.floatFocus && !w.canLeaveFloat())
+		if edge && c.edgeFocus(Horizontal, dir, d) {
 			return Effect{}
 		}
 	case ActionFocusWindowUp, ActionFocusWindowDown:
 		m := c.cur().mon
 		// Cascade's up/down navigation stays within its bands. Let Monitor
 		// handle it unchanged; only vertical workspace axes cross screens.
-		if workspaceStep(m.Current().layout(), verticalAxis, 1) != 0 {
+		if WorkspaceStep(m.Current().Engine(), Vertical, 1) != 0 {
 			dir, d := 1, dirDown
 			if a == ActionFocusWindowUp {
 				dir, d = -1, dirUp
 			}
 			if !m.Current().FocusWindow(dir) {
-				c.edgeFocus(verticalAxis, dir, d)
+				c.edgeFocus(Vertical, dir, d)
 			}
 			return Effect{}
 		}
@@ -439,7 +439,7 @@ func (c *Core) dispatchAction(a Action) Effect {
 		// screen at once and stays fullscreen there; with no screen,
 		// nothing moves.
 		i := c.neighbor(d)
-		if fid, ok := w.Focused(); ok && w.fullscreen == fid && (w.floatIndex(fid) >= 0 || !w.onFloat()) {
+		if fid, ok := w.Focused(); ok && w.Fullscreen == fid && (w.floatIndex(fid) >= 0 || !w.onFloat()) {
 			if i < 0 {
 				return Effect{}
 			}
@@ -467,7 +467,7 @@ func (c *Core) dispatchAction(a Action) Effect {
 			c.cur().mon.normalize()
 			return Effect{}
 		}
-		if i >= 0 && w.leavesLane(w.Focus+dir) {
+		if i >= 0 && w.LeavesLane(w.Focus+dir) {
 			col, ok := w.takeColumn()
 			if !ok {
 				return Effect{}
@@ -495,10 +495,10 @@ func (c *Core) dispatchAction(a Action) Effect {
 // happen on the layout's workspace axis. It reports whether focus moved.
 // Callers keep local content navigation and decide which layout axes may
 // cross monitors.
-func (c *Core) edgeFocus(axis layoutAxis, dir int, d direction) bool {
+func (c *Core) edgeFocus(axis Axis, dir int, d direction) bool {
 	m := c.cur().mon
 	i := c.neighbor(d)
-	if monitorFirst := axis == horizontalAxis && i >= 0; !monitorFirst {
+	if monitorFirst := axis == Horizontal && i >= 0; !monitorFirst {
 		if to := m.occupiedStep(axis, dir); to >= 0 {
 			m.Focus(to)
 			return true
@@ -551,7 +551,7 @@ func (m *Monitor) Apply(a Action) Effect {
 			dir = -1
 		}
 		if !m.Current().FocusWindow(dir) {
-			m.stepWorkspace(verticalAxis, dir)
+			m.stepWorkspace(Vertical, dir)
 		}
 		return Effect{}
 	case ActionToggleFullscreen:
@@ -574,8 +574,8 @@ func (m *Monitor) Apply(a Action) Effect {
 	case ActionMaximizeColumn:
 		// A client that made itself fullscreen (Wine at monitor size) goes
 		// back to its column width; the next press maximizes the column.
-		if w := m.Current(); w.fullscreen != 0 {
-			if id, ok := w.Focused(); ok && id == w.fullscreen {
+		if w := m.Current(); w.Fullscreen != 0 {
+			if id, ok := w.Focused(); ok && id == w.Fullscreen {
 				m.ToggleFullscreen()
 				return Effect{}
 			}

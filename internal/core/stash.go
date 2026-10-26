@@ -88,7 +88,7 @@ func (w *Workspace) captureStash(id WindowID) bool {
 // show, ends first, so the newcomer is the window on screen. Under a
 // covering fullscreen window outside the stash, the stash shows over it.
 func (w *Workspace) stashSpawned(id WindowID) {
-	if w.fullscreen != 0 && w.stashIndex(w.fullscreen) >= 0 {
+	if w.Fullscreen != 0 && w.stashIndex(w.Fullscreen) >= 0 {
 		w.endFullscreen()
 	}
 	w.hiddenFullscreen = 0
@@ -104,7 +104,7 @@ func (w *Workspace) stashSpawned(id WindowID) {
 func (w *Workspace) showStash() {
 	w.stashHidden, w.stashFocus, w.floatFocus = false, true, false
 	if i := w.stashIndex(w.hiddenFullscreen); i >= 0 {
-		w.fullscreen, w.stashAt = w.hiddenFullscreen, i
+		w.Fullscreen, w.stashAt = w.hiddenFullscreen, i
 	}
 	w.hiddenFullscreen = 0
 }
@@ -149,8 +149,8 @@ func (w *Workspace) restore(id WindowID, back *origPlace) {
 		}
 		c.Windows = slices.Insert(c.Windows, row, id)
 		c.Focus = row
-		if w.layout().maximizeHides() && w.Focus != i {
-			w.unmaximize()
+		if w.Engine().MaximizeHides() && w.Focus != i {
+			w.Unmaximize()
 		}
 		w.Focus = i
 		w.scroll()
@@ -159,7 +159,7 @@ func (w *Workspace) restore(id WindowID, back *origPlace) {
 	// Its column is gone: it comes back at its width.
 	w.insertColumn(at, Column{Windows: []WindowID{id}, Cells: back.cells, Slot: back.slot})
 	if back.fullWidth {
-		w.maximize(w.Focus)
+		w.Maximize(w.Focus)
 	}
 }
 

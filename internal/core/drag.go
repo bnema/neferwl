@@ -78,10 +78,10 @@ type dragState struct {
 // not fullscreen, outside the overview.
 func (c *Core) draggable(id WindowID) (*screen, *Workspace, bool) {
 	s, w := c.screenOf(id)
-	if s == nil || w != s.mon.Current() || s.mon.previewing() || id == w.fullscreen || w.cover() != 0 {
+	if s == nil || w != s.mon.Current() || s.mon.previewing() || id == w.Fullscreen || w.cover() != 0 {
 		return nil, nil, false
 	}
-	if w.floatIndex(id) < 0 && w.columnOf(id) < 0 {
+	if w.floatIndex(id) < 0 && w.ColumnOf(id) < 0 {
 		return nil, nil, false
 	}
 	return s, w, true
@@ -312,7 +312,7 @@ func (w *Workspace) dropIn(id WindowID, x, y, t int) dropTarget {
 			return dropTarget{}
 		}
 	}
-	src, srcRow := w.columnOf(id), -1
+	src, srcRow := w.ColumnOf(id), -1
 	if src >= 0 {
 		srcRow = slices.Index(w.Columns[src].Windows, id)
 	}
@@ -322,7 +322,7 @@ func (w *Workspace) dropIn(id WindowID, x, y, t int) dropTarget {
 		if p.Floating || p.Hidden || !p.Rect.Overlaps(w.Usable) {
 			continue
 		}
-		ci := w.columnOf(p.ID)
+		ci := w.ColumnOf(p.ID)
 		if ci < 0 {
 			continue
 		}
@@ -336,7 +336,7 @@ func (w *Workspace) dropIn(id WindowID, x, y, t int) dropTarget {
 		if !contains(w.Usable, x, y) {
 			return dropTarget{}
 		}
-		g := w.gap()
+		g := w.Gap()
 		r := Rect{X: w.Usable.X + g, Y: w.Usable.Y + g, W: max(w.Usable.W-2*g, 0), H: max(w.Usable.H-2*g, 0)}
 		return dropTarget{kind: dropInsert, hints: outline(r, t)}
 	}
@@ -349,7 +349,7 @@ func (w *Workspace) dropIn(id WindowID, x, y, t int) dropTarget {
 		if p.Floating || p.Hidden || !contains(p.Rect, x, y) {
 			continue
 		}
-		ci := w.columnOf(p.ID)
+		ci := w.ColumnOf(p.ID)
 		if ci < 0 {
 			continue
 		}
@@ -386,17 +386,17 @@ func (w *Workspace) dropIn(id WindowID, x, y, t int) dropTarget {
 // gapDrop is the insert zone of scroll overflow: the gaps between the
 // columns on screen and beside the outer ones.
 func (w *Workspace) gapDrop(cols []visibleColumn, id WindowID, src int, lone bool, x, y, t int) (dropTarget, bool) {
-	pad := max(w.gap()/2, gapPad)
+	pad := max(w.Gap()/2, gapPad)
 	for i := 0; i <= len(cols); i++ {
 		var mid, at int
 		var ref Rect
 		switch {
 		case i == 0:
 			ref = cols[0].rect
-			mid, at = ref.X-w.gap()/2, cols[0].index
+			mid, at = ref.X-w.Gap()/2, cols[0].index
 		case i == len(cols):
 			ref = cols[i-1].rect
-			mid, at = ref.X+ref.W+w.gap()/2, cols[i-1].index+1
+			mid, at = ref.X+ref.W+w.Gap()/2, cols[i-1].index+1
 		default:
 			a, b := cols[i-1].rect, cols[i].rect
 			ref = union(a, b)
@@ -451,14 +451,14 @@ func outline(r Rect, t int) []Rect {
 // screen; focus follows it.
 func (c *Core) drop(id WindowID, t dropTarget) {
 	from, src := c.screenOf(id)
-	if from == nil || t.ws == nil || src.columnOf(id) < 0 {
+	if from == nil || t.ws == nil || src.ColumnOf(id) < 0 {
 		return
 	}
 	w := t.ws
-	ci := src.columnOf(id)
+	ci := src.ColumnOf(id)
 	lone := len(src.Columns[ci].Windows) == 1
 	if t.kind == dropSwap && w == src && lone {
-		to := w.columnOf(t.anchor)
+		to := w.ColumnOf(t.anchor)
 		// Their fields move with them, as MoveColumn.
 		w.Columns[ci], w.Columns[to] = w.Columns[to], w.Columns[ci]
 		// Layout state keyed by position stays at its index.
@@ -474,7 +474,7 @@ func (c *Core) drop(id WindowID, t dropTarget) {
 		col := Column{Windows: []WindowID{id}, Cells: cells}
 		switch t.kind {
 		case dropAbove, dropBelow:
-			ai := w.columnOf(t.anchor)
+			ai := w.ColumnOf(t.anchor)
 			if ai < 0 {
 				w.receive(col, -1)
 				break
@@ -494,7 +494,7 @@ func (c *Core) drop(id WindowID, t dropTarget) {
 		default:
 			at, anchorCol := len(w.Columns), -1
 			if t.anchor != 0 {
-				if ai := w.columnOf(t.anchor); ai >= 0 {
+				if ai := w.ColumnOf(t.anchor); ai >= 0 {
 					at, anchorCol = ai, ai
 					// A stacked window dropped on a column right of its
 					// own lands after it.
@@ -555,9 +555,9 @@ func (c *Core) edgeScroll(t time.Duration) bool {
 // scrollBy moves the view one column toward dir, within the row; the
 // focus stays. It reports whether the view moved.
 func (w *Workspace) scrollBy(dir int) bool {
-	g := w.gap()
+	g := w.Gap()
 	n := len(w.Columns)
-	xs, ws := w.columnEdges()
+	xs, ws := w.ColumnEdges()
 	maxView := max(xs[n-1]+ws[n-1]+g-(w.Usable.X+w.Usable.W), 0)
 	view := w.View
 	if dir < 0 {

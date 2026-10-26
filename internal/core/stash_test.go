@@ -95,13 +95,13 @@ func TestStashFullscreenRoundTrip(t *testing.T) {
 			t.Fatalf("fullscreen: cover %d stash %v", w.cover(), stashIDs(w))
 		}
 		m.ToggleFullscreen()
-		if id, _ := w.Focused(); id != 2 || w.stashAt != 0 || w.fullscreen != 0 {
+		if id, _ := w.Focused(); id != 2 || w.stashAt != 0 || w.Fullscreen != 0 {
 			t.Fatalf("focused %d at %d", id, w.stashAt)
 		}
 		m.ToggleFullscreen()
 		m.Focus(1)
 		m.SetFullscreen(2, false)
-		if !slices.Equal(stashIDs(w), []WindowID{2, 3}) || w.fullscreen != 0 || m.Active != 1 {
+		if !slices.Equal(stashIDs(w), []WindowID{2, 3}) || w.Fullscreen != 0 || m.Active != 1 {
 			t.Fatalf("request: %v on %d", stashIDs(w), m.Active)
 		}
 
@@ -182,8 +182,8 @@ func TestStashPendingFullscreenOverTile(t *testing.T) {
 			t.Fatal("tile still covers")
 		}
 		w.ToggleStashVisible()
-		if w.fullscreen != 3 || w.hiddenFullscreen != 0 {
-			t.Fatalf("fullscreen %d pending %d", w.fullscreen, w.hiddenFullscreen)
+		if w.Fullscreen != 3 || w.hiddenFullscreen != 0 {
+			t.Fatalf("fullscreen %d pending %d", w.Fullscreen, w.hiddenFullscreen)
 		}
 		if id, _ := w.Focused(); id != 3 {
 			t.Fatalf("focused %d", id)
@@ -346,8 +346,8 @@ func TestFullscreenStashEdgeGoesToMonitor(t *testing.T) {
 		}
 		c.focusScreen = 0
 		c.applyAction(ActionFocusColumnLeft)
-		if id, _ := w.Focused(); id != 2 || w.fullscreen != 0 || c.focusScreen != 0 {
-			t.Fatalf("inside: focused %d fullscreen %d", id, w.fullscreen)
+		if id, _ := w.Focused(); id != 2 || w.Fullscreen != 0 || c.focusScreen != 0 {
+			t.Fatalf("inside: focused %d fullscreen %d", id, w.Fullscreen)
 		}
 
 	})
@@ -366,8 +366,8 @@ func TestActivateHiddenStashOverScrollFullscreen(t *testing.T) {
 		w.FocusID(2)
 		w.SetFullscreen(2, true)
 		w.Activate(3)
-		if id, _ := w.Focused(); id != 3 || w.fullscreen != 2 || !w.stashOverCover() {
-			t.Fatalf("focused %d fullscreen %d over %v", id, w.fullscreen, w.stashOverCover())
+		if id, _ := w.Focused(); id != 3 || w.Fullscreen != 2 || !w.stashOverCover() {
+			t.Fatalf("focused %d fullscreen %d over %v", id, w.Fullscreen, w.stashOverCover())
 		}
 		view := w.View
 		w.scroll()

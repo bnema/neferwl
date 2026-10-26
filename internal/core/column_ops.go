@@ -7,7 +7,7 @@ func (w *Workspace) MoveColumn(dir int) {
 		return
 	}
 	if (dir == -1 || dir == 1) && w.Focus+dir >= 0 && w.Focus+dir < len(w.Columns) {
-		if !w.layout().moveAllowed(w.lview(), w.Focus, w.Focus+dir) {
+		if !w.Engine().MoveAllowed(w.Snapshot(), w.Focus, w.Focus+dir) {
 			return // a cascade column never crosses into the adjacent band
 		}
 		i := w.Focus
@@ -22,13 +22,13 @@ func (w *Workspace) MoveColumn(dir int) {
 // column; focus follows it. A slot window leaving row 0 releases the slot.
 // Past the column, a cascade column moves to the adjacent band.
 func (w *Workspace) MoveWindow(dir int) {
-	if w.onFloat() || len(w.Columns) == 0 || (dir != -1 && dir != 1) || w.fullscreenHides() {
+	if w.onFloat() || len(w.Columns) == 0 || (dir != -1 && dir != 1) || w.FullscreenHides() {
 		return
 	}
 	c := &w.Columns[w.Focus]
 	to := c.Focus + dir
 	if to < 0 || to >= len(c.Windows) {
-		if w.layout().moveLane(w.edit(), dir) {
+		if w.Engine().MoveLane(w.edit(), dir) {
 			w.scroll()
 		}
 		return
@@ -37,7 +37,7 @@ func (w *Workspace) MoveWindow(dir int) {
 		w.dropSlotOf(c.Windows[0])
 	}
 	c.Windows[c.Focus], c.Windows[to] = c.Windows[to], c.Windows[c.Focus]
-	if validShares(*c) {
+	if ValidShares(*c) {
 		c.Shares[c.Focus], c.Shares[to] = c.Shares[to], c.Shares[c.Focus]
 	}
 	c.Focus = to
@@ -48,7 +48,7 @@ func (w *Workspace) MoveWindow(dir int) {
 // other rows of its column give or take it in proportion to their shares.
 // Every row keeps at least minShare basis points.
 func (w *Workspace) ResizeRow(pct int) {
-	if w.onFloat() || len(w.Columns) == 0 || w.fullscreenHides() {
+	if w.onFloat() || len(w.Columns) == 0 || w.FullscreenHides() {
 		return
 	}
 	c := &w.Columns[w.Focus]
@@ -57,7 +57,7 @@ func (w *Workspace) ResizeRow(pct int) {
 		return
 	}
 	shares := c.Shares
-	if !validShares(*c) {
+	if !ValidShares(*c) {
 		shares = make([]int, n)
 		for i := range shares {
 			shares[i] = 10000 / n
@@ -125,7 +125,7 @@ func (w *Workspace) GrowColumn(cycle bool) {
 	if !w.sizable() {
 		return
 	}
-	w.layout().grow(w.edit(), cycle)
+	w.Engine().Grow(w.edit(), cycle)
 	w.scroll()
 }
 
@@ -134,13 +134,13 @@ func (w *Workspace) ShrinkColumn() {
 	if !w.sizable() {
 		return
 	}
-	w.layout().shrink(w.edit())
+	w.Engine().Shrink(w.edit())
 	w.scroll()
 }
 
 // scrollCells is the width in cells of column i in scroll overflow: its
 // cells, at most the ones in view for an auto column.
-func (w *lanes) scrollCells(i int) int {
+func (w *Lanes) scrollCells(i int) int {
 	if c := w.Columns[i].Cells; c > 0 {
 		return c
 	}
@@ -153,7 +153,7 @@ func (w *lanes) scrollCells(i int) int {
 // (ok); otherwise each column gets an equal share and the remainder goes
 // to column remAt, or one cell each to the leftmost columns when remAt is
 // negative.
-func (w *lanes) laneCells(first, last, remAt int) (cells []int, ok bool) {
+func (w *Lanes) laneCells(first, last, remAt int) (cells []int, ok bool) {
 	k := max(w.MaxColumns, 1)
 	n := last - first + 1
 	cells = make([]int, n)
@@ -182,7 +182,7 @@ func (w *lanes) laneCells(first, last, remAt int) (cells []int, ok bool) {
 }
 
 // setLaneCells stores cells on the lane's columns, from column first.
-func (w *lanes) setLaneCells(first int, cells []int) {
+func (w *Lanes) setLaneCells(first int, cells []int) {
 	for i, c := range cells {
 		w.Columns[first+i].Cells = c
 	}
@@ -191,7 +191,7 @@ func (w *lanes) setLaneCells(first int, cells []int) {
 // donor is the lane column that gives a cell to the focused one: among the
 // others with more than one cell, the largest; on a tie the nearest to the
 // focus, the right side first. -1 when there is none.
-func (w *lanes) donor(first, last int, cells []int) int {
+func (w *Lanes) donor(first, last int, cells []int) int {
 	best := -1
 	for i := first; i <= last; i++ {
 		c := cells[i-first]
@@ -212,7 +212,7 @@ func (w *lanes) donor(first, last int, cells []int) int {
 
 // moveCell moves one cell from column from to column to of the lane that
 // starts at first, and stores the lane.
-func (w *lanes) moveCell(first int, cells []int, from, to int) {
+func (w *Lanes) moveCell(first int, cells []int, from, to int) {
 	cells[from-first]--
 	cells[to-first]++
 	w.setLaneCells(first, cells)

@@ -10,13 +10,13 @@ func TestCascadeColumnTransferRestoresNeighbors(t *testing.T) {
 		_, w := cascadeMovesCore(t, 3, 3, false)
 		w.FocusID(2)
 		w.ToggleFullWidth()
-		dst := Workspace{lanes: lanes{Overflow: OverflowCascade, MaxColumns: 3, Usable: w.Usable}}
+		dst := Workspace{Lanes: Lanes{Overflow: OverflowCascade, MaxColumns: 3, Usable: w.Usable}}
 		col, ok := w.takeColumn()
 		if !ok {
 			t.Fatal("take")
 		}
-		oldKey := col.key
-		if col.carry == nil {
+		oldKey := col.Key
+		if col.Carry == nil {
 			t.Fatal("missing transfer payload")
 		}
 		if _, exists := w.cascadeState().cols[oldKey]; exists {
@@ -24,14 +24,14 @@ func TestCascadeColumnTransferRestoresNeighbors(t *testing.T) {
 		}
 		dst.colSeq = oldKey // Exercise a destination identity collision.
 		dst.receive(col, -1)
-		received := dst.Columns[dst.columnOf(2)]
-		if received.key == oldKey {
+		received := dst.Columns[dst.ColumnOf(2)]
+		if received.Key == oldKey {
 			t.Fatal("destination reused source identity")
 		}
-		if received.carry != nil {
+		if received.Carry != nil {
 			t.Fatal("destination retained consumed transfer payload")
 		}
-		if state := dst.cascadeState().cols[received.key]; state == nil || len(state.pushedUp)+len(state.pushedDown) == 0 {
+		if state := dst.cascadeState().cols[received.Key]; state == nil || len(state.pushedUp)+len(state.pushedDown) == 0 {
 			t.Fatal("destination lost remembered neighbors")
 		}
 		col, ok = dst.takeColumn()
@@ -39,7 +39,7 @@ func TestCascadeColumnTransferRestoresNeighbors(t *testing.T) {
 			t.Fatal("return")
 		}
 		w.receive(col, 1)
-		if w.Columns[w.columnOf(2)].carry != nil {
+		if w.Columns[w.ColumnOf(2)].Carry != nil {
 			t.Fatal("return retained consumed transfer payload")
 		}
 		w.ToggleFullWidth()
@@ -58,29 +58,29 @@ func TestCarryHopsThroughStatelessWorkspace(t *testing.T) {
 				_, w := cascadeMovesCore(t, 3, 3, false)
 				w.FocusID(2)
 				w.ToggleFullWidth()
-				if n := w.layout().laneCount(w.lview()); n != 3 {
+				if n := w.Engine().LaneCount(w.Snapshot()); n != 3 {
 					t.Fatalf("lanes %d after maximizing, want 3", n)
 				}
 				col, ok := w.takeColumn()
-				if !ok || col.carry == nil {
-					t.Fatalf("take: ok %v, carry %v", ok, col.carry)
+				if !ok || col.Carry == nil {
+					t.Fatalf("take: ok %v, carry %v", ok, col.Carry)
 				}
-				mid := Workspace{lanes: lanes{Overflow: o, MaxColumns: 3, Usable: w.Usable}}
+				mid := Workspace{Lanes: Lanes{Overflow: o, MaxColumns: 3, Usable: w.Usable}}
 				mid.receive(col, -1)
 				if mid.lstate != nil {
 					t.Fatalf("%s workspace built state %T", o, mid.lstate)
 				}
 				col, ok = mid.takeColumn()
-				if !ok || col.carry == nil {
-					t.Fatalf("hop: ok %v, carry %v", ok, col.carry)
+				if !ok || col.Carry == nil {
+					t.Fatalf("hop: ok %v, carry %v", ok, col.Carry)
 				}
 				w.receive(col, 1)
-				if w.Columns[w.columnOf(2)].carry != nil {
+				if w.Columns[w.ColumnOf(2)].Carry != nil {
 					t.Fatal("carry not consumed")
 				}
 				w.ToggleFullWidth()
 				wantBands(t, w, []WindowID{1, 2, 3})
-				if n := w.layout().laneCount(w.lview()); n != 1 {
+				if n := w.Engine().LaneCount(w.Snapshot()); n != 1 {
 					t.Fatalf("lanes %d after restoring, want 1", n)
 				}
 
@@ -92,10 +92,10 @@ func TestCarryHopsThroughStatelessWorkspace(t *testing.T) {
 // A layout switch drops the state, and the carry parked on a column with it.
 func TestLayoutSwitchDropsParkedCarry(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		w := Workspace{lanes: lanes{Overflow: OverflowScroll, MaxColumns: 3, Usable: Rect{W: 900, H: 600},
-			Columns: []Column{{Windows: []WindowID{1}, carry: &cascadeCol{}}}}}
-		w.resetLayoutState()
-		if w.Columns[0].carry != nil {
+		w := Workspace{Lanes: Lanes{Overflow: OverflowScroll, MaxColumns: 3, Usable: Rect{W: 900, H: 600},
+			Columns: []Column{{Windows: []WindowID{1}, Carry: &cascadeCol{}}}}}
+		w.ResetLayoutState()
+		if w.Columns[0].Carry != nil {
 			t.Fatal("carry survived the layout switch")
 		}
 
@@ -108,7 +108,7 @@ func TestCascadeExplicitPlacementUnderIntermediateFullscreen(t *testing.T) {
 		w.FocusID(3)
 		w.SetFullscreen(3, true)
 		w.addColumn(Column{Windows: []WindowID{7}})
-		if i, j := w.columnOf(7), w.columnOf(3); i != j+1 {
+		if i, j := w.ColumnOf(7), w.ColumnOf(3); i != j+1 {
 			t.Fatalf("new column at %d, fullscreen at %d", i, j)
 		}
 		if id, _ := w.Focused(); id != 3 {
@@ -121,10 +121,10 @@ func TestCascadeExplicitPlacementUnderIntermediateFullscreen(t *testing.T) {
 func TestCascadeScrollTargetDoesNotMutateState(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		_, w := cascadeMovesCore(t, 2, 2, false)
-		v := w.lview()
+		v := w.Snapshot()
 		v.MaxColumns = 1
-		w.layout().scrollTarget(v)
-		if w.bandStart(1) {
+		w.Engine().ScrollTarget(v)
+		if w.BandStart(1) {
 			t.Fatal("snapshot scrollTarget changed owner's boundary")
 		}
 
@@ -138,8 +138,8 @@ func TestCascadeCoveredSpawnGoesLast(t *testing.T) {
 		_, w := cascadeMovesCore(t, 4, 2, false)
 		w.FocusID(2)
 		w.SetFullscreen(2, true)
-		v := w.lview()
-		if at := w.layout().coveredSpawnAt(v); at != len(w.Columns) {
+		v := w.Snapshot()
+		if at := w.Engine().CoveredSpawnAt(v); at != len(w.Columns) {
 			t.Fatalf("covered spawn %d, want %d", at, len(w.Columns))
 		}
 		w.AddWindow(9)
@@ -165,7 +165,7 @@ func TestScrollPreviewFullscreenColumnUsesUsableWidth(t *testing.T) {
 			t.Fatal("scroll must not pin")
 		}
 		tiles, span, sel := w.previewTilesInto(nil)
-		want := w.Usable.W - 2*w.gap()
+		want := w.Usable.W - 2*w.Gap()
 		if sel.W != want {
 			t.Fatalf("selection width %d, want the usable %d (output %d)", sel.W, want, w.Output.W)
 		}
@@ -190,15 +190,15 @@ func TestCascadePreviewMaximizedColumnFillsItsBand(t *testing.T) {
 			for _, span := range []int{0, 4000} {
 				_, w := cascadeMovesCore(t, 4, 3, false)
 				w.FocusID(2)
-				w.Columns[w.columnOf(2)].Cells = cells
+				w.Columns[w.ColumnOf(2)].Cells = cells
 				w.ToggleFullWidth()
-				if first, last := w.laneBounds(w.laneOf(w.columnOf(2))); first != last {
+				if first, last := w.LaneBounds(w.LaneOf(w.ColumnOf(2))); first != last {
 					t.Fatalf("maximized column shares its band %d..%d", first, last)
 				}
-				w.Columns[w.columnOf(2)].Span = span
+				w.Columns[w.ColumnOf(2)].Span = span
 				_, _, sel := w.previewTilesInto(nil)
-				if want := w.Usable.W - 2*w.gap(); sel.X != w.gap() || sel.W != want {
-					t.Fatalf("cells %d span %d: selection %+v, want X %d W %d", cells, span, sel, w.gap(), want)
+				if want := w.Usable.W - 2*w.Gap(); sel.X != w.Gap() || sel.W != want {
+					t.Fatalf("cells %d span %d: selection %+v, want X %d W %d", cells, span, sel, w.Gap(), want)
 				}
 			}
 		}

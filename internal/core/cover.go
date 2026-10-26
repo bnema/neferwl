@@ -23,7 +23,7 @@ func (w *Workspace) mayCover(id WindowID) bool {
 		}
 		w.left = 0
 	}
-	if !w.layout().pinsFullscreen() || w.stashHidden && w.stashIndex(id) >= 0 {
+	if !w.Engine().PinsFullscreen() || w.stashHidden && w.stashIndex(id) >= 0 {
 		return true
 	}
 	focused, ok := w.Focused()
@@ -36,7 +36,7 @@ func (w *Workspace) mayCover(id WindowID) bool {
 // tiled neighbor scroll it off and show the target instead.
 func (w *Workspace) pinned() bool {
 	c := w.cover()
-	return c != 0 && (w.layout().pinsFullscreen() || w.isFloat(c))
+	return c != 0 && (w.Engine().PinsFullscreen() || w.isFloat(c))
 }
 
 // leaveCover runs a focus move from the covering fullscreen window as if it
@@ -45,15 +45,15 @@ func (w *Workspace) pinned() bool {
 // and the caller goes on to the next workspace or monitor.
 func (w *Workspace) leaveCover(move func()) bool {
 	w.focusCover()
-	full := w.fullscreen
-	w.fullscreen = 0
+	full := w.Fullscreen
+	w.Fullscreen = 0
 	move()
 	if id, ok := w.Focused(); ok && id != full {
-		w.fullscreen = full
+		w.Fullscreen = full
 		w.leaveFullscreen()
 		return true
 	}
-	w.fullscreen = full
+	w.Fullscreen = full
 	return false
 }
 
@@ -91,29 +91,30 @@ func (w *Workspace) focusCover() {
 // fullscreen is exclusive: while it covers, no other window of the
 // workspace is drawn, so the output can scan it out.
 func (w *Workspace) cover() WindowID {
-	if w.fullscreen == 0 {
+	if w.Fullscreen == 0 {
 		return 0
 	}
-	if w.isFloat(w.fullscreen) || w.layout().pinsFullscreen() {
-		return w.fullscreen
+	if w.isFloat(w.Fullscreen) || w.Engine().PinsFullscreen() {
+		return w.Fullscreen
 	}
 	// Scroll overflow: only while its column is aligned on the output.
 	for i, c := range w.Columns {
-		if slices.Contains(c.Windows, w.fullscreen) && w.columnX(i)-w.View == 0 {
-			return w.fullscreen
+		if slices.Contains(c.Windows, w.Fullscreen) && w.columnX(i)-w.View == 0 {
+			return w.Fullscreen
 		}
 	}
 	return 0
 }
 
-// fullscreenHides reports whether a fullscreen window hides the focused
+// FullscreenHides reports whether a fullscreen window hides the focused
 // column's layout: the others (fixed) or its own column (scroll). Column
 // edits would change what the user cannot see.
-func (w *lanes) fullscreenHides() bool {
-	return w.fullscreen != 0 && (w.layout().pinsFullscreen() || w.fullscreenColumn(w.Focus))
+func (w *Lanes) FullscreenHides() bool {
+	return w.Fullscreen != 0 && (w.Engine().PinsFullscreen() || w.FullscreenColumn(w.Focus))
 }
 
-func (w *layoutView) fullscreenColumn(i int) bool {
+// FullscreenColumn reports whether column i contains the fullscreen window.
+func (w *View) FullscreenColumn(i int) bool {
 	return fullscreenColumn(w.Columns[i], w.Fullscreen)
 }
 

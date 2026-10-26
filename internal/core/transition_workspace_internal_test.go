@@ -318,7 +318,7 @@ func TestOverviewWorkspaceSwitchDuringRunningSlide(t *testing.T) {
 // never applies, and none of the landing carousel's cards starts faded in.
 func TestOverviewWorkspaceSwitchCarouselWrapIsGroupSlide(t *testing.T) {
 	for _, l := range registeredLayouts() {
-		t.Run(string(l.name()), func(t *testing.T) {
+		t.Run(string(l.Name()), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				c, ic, sc := overviewRig(t)
 				m := sc.mon
@@ -334,7 +334,7 @@ func TestOverviewWorkspaceSwitchCarouselWrapIsGroupSlide(t *testing.T) {
 				stash(m.Workspaces[1], 20)
 				m.Focus(0)
 				for _, w := range m.Workspaces {
-					w.Overflow = l.name()
+					w.Overflow = l.Name()
 				}
 				from, to := m.Workspaces[0], m.Workspaces[1]
 				if !from.wrapsCards() || !to.wrapsCards() {

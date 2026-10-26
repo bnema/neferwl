@@ -74,7 +74,7 @@ func TestPositionHintWorkspaceAndSuppression(t *testing.T) {
 					sc.mon.ov.open = true
 				case "fullscreen":
 					sc.mon.Current().Overflow = OverflowFixed
-					sc.mon.Current().fullscreen = 1
+					sc.mon.Current().Fullscreen = 1
 				case "off":
 					c.cfg.Focus.PositionHint = false
 				default:
@@ -250,9 +250,9 @@ func TestPositionHintScrolledAwayFullscreen(t *testing.T) {
 		w.Overflow = OverflowScroll
 		a.mon.AddWindow(1)
 		a.mon.AddWindow(2)
-		w.fullscreen = 1
+		w.Fullscreen = 1
 		w.View = w.columnX(1)
-		require.NotZero(t, w.fullscreen)
+		require.NotZero(t, w.Fullscreen)
 		require.Zero(t, w.cover())
 		c.focusScreen = 1
 		c.updatePositionHints(nil)

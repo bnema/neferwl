@@ -31,7 +31,7 @@ func TestBorderAt(t *testing.T) {
 					t.Fatal("tile interior")
 				}
 				w.Columns[0].Windows = append(w.Columns[0].Windows, 9)
-				rows := rowRects(rs[0], w.Columns[0], gap)
+				rows := RowRects(rs[0], w.Columns[0], gap)
 				b, ok = w.borderAt(rs[0].X+20, rows[0].Y+rows[0].H+gap/2, 6)
 				if !ok || b.kind != borderRow {
 					t.Fatal("row", b, ok)
@@ -114,7 +114,7 @@ func TestSetColumnBorder(t *testing.T) {
 				}
 				w.resetBorder(b)
 				for _, c := range w.Columns {
-					if c.Span != 0 || c.spanStamp != 0 {
+					if c.Span != 0 || c.SpanStamp != 0 {
 						t.Fatal("reset")
 					}
 				}
@@ -171,11 +171,11 @@ func TestSetRowBorder(t *testing.T) {
 		w := spanWorkspace(OverflowFixed, 2)
 		w.Columns[0].Windows = []WindowID{1, 3, 4}
 		r := w.columnRects()[0]
-		before := rowRects(r, w.Columns[0], w.gap())
+		before := RowRects(r, w.Columns[0], w.Gap())
 		b := border{kind: borderRow, col: 0, row: 0}
 		pos := before[0].Y + before[0].H + 5 + 30
 		w.setBorder(b, pos)
-		after := rowRects(r, w.Columns[0], w.gap())
+		after := RowRects(r, w.Columns[0], w.Gap())
 		if after[0].Y+after[0].H+5 != pos || after[2] != before[2] || sum(w.Columns[0].Shares) != 10000 {
 			t.Fatal(before, after, w.Columns[0].Shares)
 		}
@@ -276,7 +276,7 @@ func TestSetBorderReportsChange(t *testing.T) {
 		w.Columns[0].Windows = []WindowID{1, 3}
 		b := border{kind: borderRow, col: 0}
 		r := w.columnRects()[0]
-		pos := rowRects(r, w.Columns[0], w.gap())[0].Y + 200
+		pos := RowRects(r, w.Columns[0], w.Gap())[0].Y + 200
 		if !w.setBorder(b, pos) || w.setBorder(b, pos) {
 			t.Fatal("row border change reporting")
 		}
@@ -322,7 +322,7 @@ func TestSetBorderUndersizedPairReportsStampOnce(t *testing.T) {
 			// Ten rows is the most that fit; pixel rounding leaves the last pair
 			// just under twice the minimum share.
 			b := border{kind: borderRow, col: 0, row: 8}
-			rows := rowRects(w.columnRects()[0], w.Columns[0], w.gap())
+			rows := RowRects(w.columnRects()[0], w.Columns[0], w.Gap())
 			pos := rows[8].Y + 1
 			if !w.setBorder(b, pos) {
 				t.Fatal("stamping an undersized row pair must report a change")
@@ -346,7 +346,7 @@ func TestSetBorderUndersizedPairReportsStampOnce(t *testing.T) {
 				if !w.setBorder(b, pos) {
 					t.Fatal("stamping an undersized column pair must report a change")
 				}
-				avail := w.Usable.W - w.gap()*4
+				avail := w.Usable.W - w.Gap()*4
 				if pair := w.Columns[0].Span + w.Columns[1].Span; pair >= 2*pixelShare(4*w.border, avail) {
 					t.Fatal("column pair not undersized", pair)
 				}

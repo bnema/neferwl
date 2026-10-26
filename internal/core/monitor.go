@@ -44,7 +44,7 @@ type Monitor struct {
 	// at Active+switchView.off, in workspaces.
 	switchView motion.Slide
 	// switchAxis is frozen from the source workspace for each transition.
-	switchAxis layoutAxis
+	switchAxis Axis
 	// switchList is the numbered list a landing slide measures from (the
 	// one its swipe began on); switchView.off is then from the current
 	// workspace's place in it.
@@ -85,7 +85,7 @@ func newMonitor(name, key string) *Monitor {
 
 func newMonitorWithIDs(name, key string, nextID *uint64) *Monitor {
 	m := &Monitor{Name: name, Key: key, nextID: nextID}
-	m.template.setOverflow(m.template.Overflow)
+	m.template.SetOverflow(m.template.Overflow)
 	m.normalize()
 	return m
 }
@@ -176,12 +176,11 @@ func (m *Monitor) Current() *Workspace {
 func (m *Monitor) newWorkspace() *Workspace {
 	w := m.template
 	w.colBuf, w.rowBuf, w.tileBuf, w.zoomBuf = nil, nil, nil, nil
-	w.Columns, w.Floats, w.maximized, w.floatFocus, w.home = nil, nil, nil, false, ""
+	w.Columns, w.Floats, w.Maximized, w.floatFocus, w.home = nil, nil, nil, false, ""
 	w.overviewAfter = nil
 	// The template's layout state is its own: sharing it would leak cascade
 	// bands between workspaces. The new one builds its state on first use.
-	w.lstate = nil
-	w.lstateReady = false
+	w.DropState()
 	w.Stash, w.stashAt, w.stashFocus, w.stashHidden, w.hiddenFullscreen = nil, 0, false, false, 0
 	(*m.nextID)++
 	w.ID = *m.nextID
@@ -226,8 +225,8 @@ func (m *Monitor) Focus(i int) {
 // axis is the current layout's workspace axis, and reports whether it did;
 // Focus clamps past the first or the trailing workspace. A hidden named
 // workspace is outside the numbered list: it never steps.
-func (m *Monitor) stepWorkspace(axis layoutAxis, dir int) bool {
-	step := workspaceStep(m.Current().layout(), axis, dir)
+func (m *Monitor) stepWorkspace(axis Axis, dir int) bool {
+	step := WorkspaceStep(m.Current().Engine(), axis, dir)
 	if m.shown != nil || step == 0 {
 		return false
 	}
@@ -238,8 +237,8 @@ func (m *Monitor) stepWorkspace(axis layoutAxis, dir int) bool {
 // occupiedStep is the numbered workspace dir (-1/1) away along axis when
 // it is the layout's workspace axis and that workspace is not the trailing
 // empty one, or -1.
-func (m *Monitor) occupiedStep(axis layoutAxis, dir int) int {
-	step := workspaceStep(m.Current().layout(), axis, dir)
+func (m *Monitor) occupiedStep(axis Axis, dir int) int {
+	step := WorkspaceStep(m.Current().Engine(), axis, dir)
 	to := m.Active + step
 	if m.shown != nil || step == 0 || to < 0 || to >= len(m.Workspaces) {
 		return -1
@@ -599,7 +598,7 @@ func (m *Monitor) SetMaxColumns(n int) {
 
 // SetOverflow sets the default; named workspaces may override it.
 func (m *Monitor) SetOverflow(o Overflow) {
-	m.template.setOverflow(o)
+	m.template.SetOverflow(o)
 	m.applyNamed()
 }
 
@@ -611,23 +610,23 @@ func (m *Monitor) applyNamed() {
 	}
 	m.each(func(w *Workspace) {
 		s := specs[w.Name]
-		before := w.layout()
-		axis, _ := before.axes()
+		before := w.Engine()
+		axis, _ := before.Axes()
 		o := m.template.Overflow
 		if len(s.Overflow) > 0 {
 			o = s.Overflow
 		}
-		w.setOverflow(o)
-		if switched := before.name() != w.layout().name(); switched {
-			if w.layout().resetsMaximize() {
-				w.clearMaximized()
+		w.SetOverflow(o)
+		if switched := before.Name() != w.Engine().Name(); switched {
+			if w.Engine().ResetsMaximize() {
+				w.ClearMaximized()
 			}
 			// Cascade bands start over from the column order.
-			w.resetLayoutState()
+			w.ResetLayoutState()
 		}
 		// The view offset belongs to the old content axis: SetMaxColumns
 		// scrolls back to the focus along the new one.
-		if content, _ := w.layout().axes(); content != axis {
+		if content, _ := w.Engine().Axes(); content != axis {
 			w.view.Stop()
 			w.View = 0
 		}

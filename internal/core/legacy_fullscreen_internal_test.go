@@ -19,15 +19,15 @@ func TestLegacyFullscreenAtOutputSize(t *testing.T) {
 		o := sc.rect()
 		c.resizeFloating(ports.WindowResized{ID: 2, Width: o.W, Height: o.H})
 		w := sc.mon.Current()
-		if w.fullscreen != 2 {
-			t.Fatalf("fullscreen = %d, want 2", w.fullscreen)
+		if w.Fullscreen != 2 {
+			t.Fatalf("fullscreen = %d, want 2", w.Fullscreen)
 		}
 		if id, _ := w.Focused(); id != 2 {
 			t.Fatalf("focused %d, want 2", id)
 		}
 		sc.mon.ToggleFullscreen()
-		if w.fullscreen != 0 {
-			t.Fatalf("toggle left fullscreen = %d", w.fullscreen)
+		if w.Fullscreen != 0 {
+			t.Fatalf("toggle left fullscreen = %d", w.Fullscreen)
 		}
 
 	})
@@ -40,7 +40,7 @@ func TestLegacyFullscreenFloatingFixedSize(t *testing.T) {
 		c.mapWindow(ports.WindowMapped{ID: 1, Floating: true})
 		o := sc.rect()
 		c.resizeFloating(ports.WindowResized{ID: 1, Width: o.W, Height: o.H})
-		if sc.mon.Current().fullscreen != 1 {
+		if sc.mon.Current().Fullscreen != 1 {
 			t.Fatal("a screen-sized float did not go fullscreen")
 		}
 
@@ -55,7 +55,7 @@ func TestLegacyFullscreenNoFalsePositive(t *testing.T) {
 			c.mapWindow(ports.WindowMapped{ID: 1})
 			o := sc.rect()
 			c.resizeFloating(ports.WindowResized{ID: 1, Width: o.W - 1, Height: o.H})
-			if sc.mon.Current().fullscreen != 0 {
+			if sc.mon.Current().Fullscreen != 0 {
 				t.Fatal("smaller window went fullscreen")
 			}
 
@@ -69,7 +69,7 @@ func TestLegacyFullscreenNoFalsePositive(t *testing.T) {
 			c.mapWindow(ports.WindowMapped{ID: 2, Floating: true, Parent: 1})
 			o := sc.rect()
 			c.resizeFloating(ports.WindowResized{ID: 2, Width: o.W, Height: o.H})
-			if sc.mon.Current().fullscreen != 0 {
+			if sc.mon.Current().Fullscreen != 0 {
 				t.Fatal("dialog went fullscreen")
 			}
 
@@ -83,7 +83,7 @@ func TestLegacyFullscreenNoFalsePositive(t *testing.T) {
 			o := sc.rect()
 			c.resizeFloating(ports.WindowResized{ID: 1, Width: 50, Height: 50})
 			c.resizeFloating(ports.WindowResized{ID: 1, Width: o.W, Height: o.H})
-			if sc.mon.Current().fullscreen != 0 {
+			if sc.mon.Current().Fullscreen != 0 {
 				t.Fatal("a later resize went fullscreen")
 			}
 
@@ -127,8 +127,8 @@ func TestLegacyFullscreenRespectsFocus(t *testing.T) {
 			o := sc.rect()
 			c.resizeFloating(ports.WindowResized{ID: 2, Width: o.W, Height: o.H})
 			w := sc.mon.Current()
-			if w.fullscreen != 1 {
-				t.Fatalf("fullscreen = %d, want the cover 1", w.fullscreen)
+			if w.Fullscreen != 1 {
+				t.Fatalf("fullscreen = %d, want the cover 1", w.Fullscreen)
 			}
 			if id, _ := w.Focused(); id != 1 {
 				t.Fatalf("focus moved to %d", id)
@@ -148,7 +148,7 @@ func TestLegacyFullscreenRespectsFocus(t *testing.T) {
 			}
 			o := sc.rect()
 			c.resizeFloating(ports.WindowResized{ID: 1, Width: o.W, Height: o.H})
-			if ws.fullscreen != 0 {
+			if ws.Fullscreen != 0 {
 				t.Fatal("a window on a hidden workspace went fullscreen")
 			}
 
@@ -164,7 +164,7 @@ func TestLegacyFullscreenRemapAndOutputs(t *testing.T) {
 			c.mapWindow(ports.WindowMapped{ID: 1, Remap: true})
 			o := sc.rect()
 			c.resizeFloating(ports.WindowResized{ID: 1, Width: o.W, Height: o.H})
-			if sc.mon.Current().fullscreen != 0 {
+			if sc.mon.Current().Fullscreen != 0 {
 				t.Fatal("a remap went fullscreen")
 			}
 
@@ -184,7 +184,7 @@ func TestLegacyFullscreenRemapAndOutputs(t *testing.T) {
 				t.Fatal("window not on B")
 			}
 			c.resizeFloating(ports.WindowResized{ID: 1, Width: 500, Height: 300})
-			if b.mon.Current().fullscreen != 1 {
+			if b.mon.Current().Fullscreen != 1 {
 				t.Fatal("window sized to its output B did not go fullscreen")
 			}
 
@@ -195,7 +195,7 @@ func TestLegacyFullscreenRemapAndOutputs(t *testing.T) {
 			c, b := second(t)
 			c.mapWindow(ports.WindowMapped{ID: 1})
 			c.resizeFloating(ports.WindowResized{ID: 1, Width: 300, Height: 200})
-			if b.mon.Current().fullscreen != 0 {
+			if b.mon.Current().Fullscreen != 0 {
 				t.Fatal("window sized to output A went fullscreen on B")
 			}
 
@@ -215,8 +215,8 @@ func TestLegacyFullscreenNeedsFocusAtFirstSize(t *testing.T) {
 			w.FocusID(1)
 			o := sc.rect()
 			c.resizeFloating(ports.WindowResized{ID: 2, Width: o.W, Height: o.H})
-			if w.fullscreen != 0 {
-				t.Fatalf("unfocused window went fullscreen: %d", w.fullscreen)
+			if w.Fullscreen != 0 {
+				t.Fatalf("unfocused window went fullscreen: %d", w.Fullscreen)
 			}
 			if id, _ := w.Focused(); id != 1 {
 				t.Fatalf("focus moved to %d", id)
@@ -234,8 +234,8 @@ func TestLegacyFullscreenNeedsFocusAtFirstSize(t *testing.T) {
 			w.addColumnQuiet(Column{Windows: []WindowID{2}})
 			o := sc.rect()
 			c.resizeFloating(ports.WindowResized{ID: 2, Width: o.W, Height: o.H})
-			if w.fullscreen != 0 {
-				t.Fatalf("quiet window went fullscreen: %d", w.fullscreen)
+			if w.Fullscreen != 0 {
+				t.Fatalf("quiet window went fullscreen: %d", w.Fullscreen)
 			}
 			if id, _ := w.Focused(); id != 1 {
 				t.Fatalf("focus moved to %d", id)
@@ -253,8 +253,8 @@ func TestLegacyFullscreenNeedsFocusAtFirstSize(t *testing.T) {
 			w.addFloat(Float{ID: 2}, true)
 			o := sc.rect()
 			c.resizeFloating(ports.WindowResized{ID: 2, Width: o.W, Height: o.H})
-			if w.fullscreen != 0 {
-				t.Fatalf("quiet float went fullscreen: %d", w.fullscreen)
+			if w.Fullscreen != 0 {
+				t.Fatalf("quiet float went fullscreen: %d", w.Fullscreen)
 			}
 
 		})
@@ -273,15 +273,15 @@ func TestLegacyFullscreenUnderBoundCover(t *testing.T) {
 			c.mapWindow(ports.WindowMapped{ID: 2})
 			sc.mon.ToggleFullscreen()
 			w := sc.mon.Current()
-			if w.fullscreen != 2 {
-				t.Fatalf("setup: fullscreen = %d", w.fullscreen)
+			if w.Fullscreen != 2 {
+				t.Fatalf("setup: fullscreen = %d", w.Fullscreen)
 			}
 			c.clientEvent(context.Background(), ports.WindowMapped{ID: 3})
 			o := sc.rect()
 			c.clientEvent(context.Background(), ports.WindowResized{ID: 3, Width: o.W, Height: o.H})
 			_ = c.publish(context.Background())
-			if w.fullscreen != 2 {
-				t.Fatalf("anim=%v: fullscreen = %d, want the cover 2", anim, w.fullscreen)
+			if w.Fullscreen != 2 {
+				t.Fatalf("anim=%v: fullscreen = %d, want the cover 2", anim, w.Fullscreen)
 			}
 			if id, _ := w.Focused(); id != 2 {
 				t.Fatalf("anim=%v: focus moved to %d", anim, id)
@@ -304,22 +304,22 @@ func TestLegacyFullscreenCascadeFloatBand(t *testing.T) {
 				o := sc.rect()
 				c.clientEvent(context.Background(), ports.WindowResized{ID: 2, Width: o.W, Height: o.H})
 				if parent != 0 {
-					if !w.isFloat(2) || w.fullscreen != 0 {
+					if !w.isFloat(2) || w.Fullscreen != 0 {
 						t.Fatal("dialog was promoted or auto-fullscreened")
 					}
 					clock.now = clock.now.Add(fullscreenGrace)
 					c.clientEvent(context.Background(), ports.WindowFullscreenRequest{ID: 2, Fullscreen: true})
-					if w.fullscreen != 2 || !w.isFloat(2) {
+					if w.Fullscreen != 2 || !w.isFloat(2) {
 						t.Fatal("explicit fullscreen promoted a dialog")
 					}
 					return
 				}
-				if w.isFloat(2) || w.fullscreen != 2 || len(w.Columns) != 2 || w.band(w.columnOf(2)) != w.band(w.columnOf(1))+1 || !w.cascadeCol(w.Columns[w.columnOf(2)]).ownBand {
-					t.Fatalf("fullscreen float placement: %+v, floats %+v fullscreen %d", w.Columns, w.Floats, w.fullscreen)
+				if w.isFloat(2) || w.Fullscreen != 2 || len(w.Columns) != 2 || w.Band(w.ColumnOf(2)) != w.Band(w.ColumnOf(1))+1 || !w.cascadeCol(w.Columns[w.ColumnOf(2)]).ownBand {
+					t.Fatalf("fullscreen float placement: %+v, floats %+v fullscreen %d", w.Columns, w.Floats, w.Fullscreen)
 				}
 				c.clientEvent(context.Background(), ports.WindowFullscreenRequest{ID: 2})
-				if id, _ := w.Focused(); id != 2 || w.fullscreen != 0 || w.isFloat(2) || w.band(w.columnOf(2)) != 1 {
-					t.Fatalf("after unset: focus %d fullscreen %d columns %+v floats %+v", id, w.fullscreen, w.Columns, w.Floats)
+				if id, _ := w.Focused(); id != 2 || w.Fullscreen != 0 || w.isFloat(2) || w.Band(w.ColumnOf(2)) != 1 {
+					t.Fatalf("after unset: focus %d fullscreen %d columns %+v floats %+v", id, w.Fullscreen, w.Columns, w.Floats)
 				}
 				if r, ok := w.placed(2); !ok || r.W <= 0 || r.H <= 0 {
 					t.Fatalf("game not visible: %+v %v", r, ok)
@@ -343,8 +343,8 @@ func TestCascadeClientFullscreenPromotesFloatAfterGrace(t *testing.T) {
 				for range requests {
 					c.clientEvent(context.Background(), ports.WindowFullscreenRequest{ID: 2, Fullscreen: true})
 				}
-				if w.fullscreen != 2 || w.isFloat(2) {
-					t.Fatalf("fullscreen %d floats %+v", w.fullscreen, w.Floats)
+				if w.Fullscreen != 2 || w.isFloat(2) {
+					t.Fatalf("fullscreen %d floats %+v", w.Fullscreen, w.Floats)
 				}
 				wantBands(t, w, []WindowID{1}, []WindowID{2})
 

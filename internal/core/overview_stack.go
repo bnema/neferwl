@@ -22,17 +22,18 @@ type stackItem struct {
 // others: maximized, or holding the covering fullscreen tile. Its card
 // shows in front of the hidden columns' card.
 func (w *Workspace) overviewMaximized() bool {
-	if !w.layout().maximizeHides() || len(w.Columns) < 2 || w.Focus < 0 || w.Focus >= len(w.Columns) {
+	if !w.Engine().MaximizeHides() || len(w.Columns) < 2 || w.Focus < 0 || w.Focus >= len(w.Columns) {
 		return false
 	}
 	if c := w.cover(); c != 0 && !w.isFloat(c) {
-		return w.columnOf(c) == w.Focus
+		return w.ColumnOf(c) == w.Focus
 	}
 	return w.Columns[w.Focus].FullWidth
 }
 
-func (w *lanes) columnOf(id WindowID) int {
-	c, _ := w.cell(id)
+// ColumnOf returns the column containing id, or -1.
+func (w *Lanes) ColumnOf(id WindowID) int {
+	c, _ := w.Cell(id)
 	return c - 1
 }
 
@@ -121,11 +122,11 @@ func (w *Workspace) itemOf(id WindowID) (stackItem, bool) {
 				return item, true
 			}
 		case stackColumn:
-			if i := w.columnOf(id); i >= 0 && i == w.columnOf(item.id) {
+			if i := w.ColumnOf(id); i >= 0 && i == w.ColumnOf(item.id) {
 				return item, true
 			}
 		case stackColumns:
-			if i := w.columnOf(id); i >= 0 && (!w.overviewMaximized() || i != w.Focus) {
+			if i := w.ColumnOf(id); i >= 0 && (!w.overviewMaximized() || i != w.Focus) {
 				return item, true
 			}
 		}
@@ -142,7 +143,7 @@ func (m *Monitor) stackFront(w *Workspace) stackItem {
 	}
 	if m.ov.row == w {
 		for _, item := range items {
-			if item == m.ov.front || item.kind == stackColumn && m.ov.front.kind == stackColumn && w.columnOf(item.id) >= 0 && w.columnOf(item.id) == w.columnOf(m.ov.front.id) {
+			if item == m.ov.front || item.kind == stackColumn && m.ov.front.kind == stackColumn && w.ColumnOf(item.id) >= 0 && w.ColumnOf(item.id) == w.ColumnOf(m.ov.front.id) {
 				return item
 			}
 		}
@@ -181,7 +182,7 @@ func (m *Monitor) hiddenColumn(w *Workspace) int {
 	if !w.overviewMaximized() {
 		return -1
 	}
-	if i := w.columnOf(m.ov.selected); i >= 0 && i != w.Focus && m.ov.row == w {
+	if i := w.ColumnOf(m.ov.selected); i >= 0 && i != w.Focus && m.ov.row == w {
 		return i
 	}
 	if m.ov.row == w && m.ov.selectedAt >= 0 {
@@ -195,12 +196,12 @@ func (m *Monitor) hiddenColumn(w *Workspace) int {
 		}
 		return i
 	}
-	for _, id := range w.maximized {
-		if i := w.columnOf(id); i >= 0 && i != w.Focus {
+	for _, id := range w.Maximized {
+		if i := w.ColumnOf(id); i >= 0 && i != w.Focus {
 			return i
 		}
 	}
-	if i := w.columnOf(m.ov.rows[m.ov.from].focus); w == m.ov.from && i >= 0 && i != w.Focus {
+	if i := w.ColumnOf(m.ov.rows[m.ov.from].focus); w == m.ov.from && i >= 0 && i != w.Focus {
 		return i
 	}
 	for i := range w.Columns {
@@ -214,8 +215,8 @@ func (m *Monitor) hiddenColumn(w *Workspace) int {
 // selectOverviewColumn retains the existing ordinary-row live focus semantics.
 func (w *Workspace) selectOverviewColumn(i int) {
 	w.floatFocus, w.stashFocus = false, false
-	if w.layout().maximizeHides() && w.Focus != i && w.Focus < len(w.Columns) {
-		w.unmaximize()
+	if w.Engine().MaximizeHides() && w.Focus != i && w.Focus < len(w.Columns) {
+		w.Unmaximize()
 	}
 	w.Focus = i
 	w.scroll()
@@ -230,7 +231,7 @@ func (w *Workspace) apply(item stackItem, selected WindowID) {
 	case stackFloat:
 		w.FocusID(item.id)
 	case stackColumns:
-		i := w.columnOf(selected)
+		i := w.ColumnOf(selected)
 		if w.overviewMaximized() && i == w.Focus {
 			i = -1
 		}
@@ -249,21 +250,21 @@ func (w *Workspace) apply(item stackItem, selected WindowID) {
 		}
 		if selected != 0 {
 			if w.overviewMaximized() && i != w.Focus {
-				w.transferMaximization(i)
+				w.TransferMaximization(i)
 			}
 			w.FocusID(selected)
 		}
 	case stackColumn:
-		i := w.columnOf(item.id)
+		i := w.ColumnOf(item.id)
 		if i < 0 {
 			return
 		}
-		if w.columnOf(selected) != i {
+		if w.ColumnOf(selected) != i {
 			c := w.Columns[i]
 			selected = c.Windows[c.Focus]
 		}
 		if w.overviewMaximized() && i != w.Focus {
-			w.transferMaximization(i)
+			w.TransferMaximization(i)
 		}
 		w.FocusID(selected)
 	}
@@ -271,7 +272,7 @@ func (w *Workspace) apply(item stackItem, selected WindowID) {
 
 // previewItem draws a group using screen geometry and a single card at its
 // configured size. A prior maximized column retains its full-width buffer.
-func (m *Monitor) previewItem(w *Workspace, item stackItem, axis layoutAxis, slot Rect, dim, lit bool) []Placement {
+func (m *Monitor) previewItem(w *Workspace, item stackItem, axis Axis, slot Rect, dim, lit bool) []Placement {
 	if item.kind == stackColumns {
 		if !w.overviewMaximized() {
 			return w.previewRow(axis, slot, dim, lit)
@@ -279,7 +280,7 @@ func (m *Monitor) previewItem(w *Workspace, item stackItem, axis layoutAxis, slo
 		// The hidden columns fill the screen as if the maximized column,
 		// shown on its own card, were not there. In particular, an earlier
 		// maximized buffer scales into its unmaximized cell here.
-		g := w.gap()
+		g := w.Gap()
 		rects := w.hiddenColumnRects()
 		var tiles []Placement
 		selected := m.hiddenColumn(w)
@@ -290,7 +291,7 @@ func (m *Monitor) previewItem(w *Workspace, item stackItem, axis layoutAxis, slo
 			r := rects[i]
 			r.X -= w.Usable.X
 			r.Y -= w.Usable.Y
-			w.rowBuf = rowRectsInto(w.rowBuf[:0], r, c, g)
+			w.rowBuf = RowRectsInto(w.rowBuf[:0], r, c, g)
 			for j, t := range w.rowBuf {
 				tiles = append(tiles, Placement{ID: c.Windows[j], Rect: t, Focused: i == selected && j == c.Focus})
 			}
@@ -299,7 +300,7 @@ func (m *Monitor) previewItem(w *Workspace, item stackItem, axis layoutAxis, slo
 		sel.X -= w.Usable.X
 		return w.previewRowTiles(axis, slot, dim, lit, false, tiles, w.Usable.W, sel)
 	}
-	g := w.gap()
+	g := w.Gap()
 	if item.kind == stackFloat && item.id == w.cover() {
 		// A fullscreen float shows at the size of a fullscreen column.
 		r := Rect{X: g, Y: g, W: max(w.Usable.W-2*g, 0), H: max(w.Usable.H-2*g, 0)}
@@ -312,7 +313,7 @@ func (m *Monitor) previewItem(w *Workspace, item stackItem, axis layoutAxis, slo
 		r.Y -= w.Usable.Y
 		return w.previewRowTiles(axis, slot, dim, lit, false, []Placement{{ID: item.id, Rect: r, Floating: true, Focused: true}}, w.Usable.W, r)
 	}
-	i := w.columnOf(item.id)
+	i := w.ColumnOf(item.id)
 	if i < 0 {
 		return nil
 	}
@@ -321,7 +322,7 @@ func (m *Monitor) previewItem(w *Workspace, item stackItem, axis layoutAxis, slo
 	r.X = (w.Usable.W - r.W) / 2
 	r.Y = (w.Usable.H - r.H) / 2
 	tiles := make([]Placement, 0, len(c.Windows))
-	w.rowBuf = rowRectsInto(w.rowBuf[:0], r, c, g)
+	w.rowBuf = RowRectsInto(w.rowBuf[:0], r, c, g)
 	for j, t := range w.rowBuf {
 		tiles = append(tiles, Placement{ID: c.Windows[j], Rect: t, Focused: j == c.Focus, Fullscreen: c.Windows[j] == w.cover()})
 	}
@@ -335,8 +336,7 @@ func (w *Workspace) hiddenColumnRects() []Rect {
 	v := *w
 	// The copied state is positional and would not match the shifted columns;
 	// state() rebuilds it.
-	v.lstate = nil
-	v.lstateReady = false
+	v.DropState()
 	v.Columns = slices.Delete(slices.Clone(w.Columns), w.Focus, w.Focus+1)
 	v.Focus = 0
 	return slices.Insert(v.columnRectsFor(true), w.Focus, Rect{})
@@ -344,7 +344,7 @@ func (w *Workspace) hiddenColumnRects() []Rect {
 
 // stackRow draws up to two cards on each side of the provisional front,
 // fanned along axis.
-func (m *Monitor) stackRow(w *Workspace, axis layoutAxis, slot Rect, dim, lit bool) []Placement {
+func (m *Monitor) stackRow(w *Workspace, axis Axis, slot Rect, dim, lit bool) []Placement {
 	first, n := w.stackHead()
 	if n == 0 {
 		return w.previewRow(axis, slot, dim, lit)
@@ -362,7 +362,7 @@ func (m *Monitor) stackRow(w *Workspace, axis layoutAxis, slot Rect, dim, lit bo
 	// along is the offset of d steps on the overview axis.
 	along := func(d int) (int, int) {
 		var r Rect
-		axis.offset(&r, d*step)
+		axis.Offset(&r, d*step)
 		return r.X, r.Y
 	}
 	for i, item := range items {

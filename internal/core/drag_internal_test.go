@@ -58,7 +58,7 @@ func TestScrollBy(t *testing.T) {
 			t.Fatal(steps)
 		}
 		last := w.columnX(3) + w.columnWidth(3) - w.View
-		if last != w.Usable.X+w.Usable.W-w.gap() {
+		if last != w.Usable.X+w.Usable.W-w.Gap() {
 			t.Fatal(last)
 		}
 		// Focus did not change.

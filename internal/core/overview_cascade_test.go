@@ -72,7 +72,7 @@ func hiddenOff(p Placement) bool { return p.Hidden && p.Preview == 0 && !p.Focus
 // The zoom does not depend on the number of bands.
 func TestOverviewCascadeZoomIgnoresBandCount(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		if one, three := cascadeWorkspace(3).overviewZoom(horizontalAxis), cascadeWorkspace(7).overviewZoom(horizontalAxis); one != three || one != overviewMaxZoom {
+		if one, three := cascadeWorkspace(3).overviewZoom(Horizontal), cascadeWorkspace(7).overviewZoom(Horizontal); one != three || one != overviewMaxZoom {
 			t.Fatalf("zoom with one band %v, with three %v", one, three)
 		}
 
@@ -208,7 +208,7 @@ func TestOverviewCascadeNeighborBelowScrollShowsOneBand(t *testing.T) {
 		m := cascadeOverview()
 		m.Focus(0)
 		m.ToggleOverview()
-		if m.overviewAxis() != verticalAxis {
+		if m.overviewAxis() != Vertical {
 			t.Fatal("setup: scroll overview is not vertical")
 		}
 		ps := m.Layout()
@@ -527,12 +527,12 @@ func TestOverviewCascadeThreeFinger(t *testing.T) {
 			c.swipeEnd(ports.SwipeEnd{})
 		}
 		swipe(0, 40)
-		if m.Current() != w || w.band(w.Focus) != 1 {
-			t.Fatalf("one swipe down: band %d", w.band(w.Focus))
+		if m.Current() != w || w.Band(w.Focus) != 1 {
+			t.Fatalf("one swipe down: band %d", w.Band(w.Focus))
 		}
 		swipe(0, -40)
-		if w.band(w.Focus) != 0 {
-			t.Fatalf("one swipe up: band %d", w.band(w.Focus))
+		if w.Band(w.Focus) != 0 {
+			t.Fatalf("one swipe up: band %d", w.Band(w.Focus))
 		}
 		swipe(40, 0)
 		if m.Current() != m.Workspaces[2] {
@@ -587,8 +587,8 @@ func TestOverviewCascadeStashToMaximized(t *testing.T) {
 			t.Fatalf("setup: no stash card, target %d", m.overviewTarget())
 		}
 		m.OverviewMove(0, -1)
-		if m.overviewTarget() != 10 || !w.Columns[w.Focus].FullWidth || len(w.maximized) == 0 || w.maximized[0] != 10 {
-			t.Fatalf("target %d, maximized %v; want 10", m.overviewTarget(), w.maximized)
+		if m.overviewTarget() != 10 || !w.Columns[w.Focus].FullWidth || len(w.Maximized) == 0 || w.Maximized[0] != 10 {
+			t.Fatalf("target %d, maximized %v; want 10", m.overviewTarget(), w.Maximized)
 		}
 
 	})
@@ -673,7 +673,7 @@ func TestOverviewCascadeNeighborStashKeepsSlot(t *testing.T) {
 		m.Focus(1)
 		m.ToggleOverview()
 		bare, _ := m.overviewRows()
-		zoom := prev.overviewZoom(horizontalAxis)
+		zoom := prev.overviewZoom(Horizontal)
 		m.CancelOverview()
 		if zoom <= overviewMinZoom || zoom >= overviewMaxZoom {
 			t.Fatalf("setup: neighbor zoom %v is at a bound", zoom)
@@ -686,8 +686,8 @@ func TestOverviewCascadeNeighborStashKeepsSlot(t *testing.T) {
 		m.Focus(1)
 		m.ToggleOverview()
 		rows, _ := m.overviewRows()
-		if rows.at(prev) != bare.at(prev) || prev.overviewZoom(horizontalAxis) != zoom {
-			t.Fatalf("neighbor slot %v zoom %v with a stash, %v %v without", rows.at(prev), prev.overviewZoom(horizontalAxis), bare.at(prev), zoom)
+		if rows.at(prev) != bare.at(prev) || prev.overviewZoom(Horizontal) != zoom {
+			t.Fatalf("neighbor slot %v zoom %v with a stash, %v %v without", rows.at(prev), prev.overviewZoom(Horizontal), bare.at(prev), zoom)
 		}
 		if p := previewOf(t, m.Layout(), 64); p.Hidden || !p.Peek {
 			t.Fatalf("neighbor pile card: %+v", p)
@@ -770,8 +770,8 @@ func TestOverviewCascadeCoveringFloat(t *testing.T) {
 				// The cards behind fan to the left: coming to the front, the
 				// columns move right by one peek step.
 				front := previewOf(t, m.Layout(), 10)
-				if front.Peek || front.Rect.X-behind.Rect.X != w.peekStep(horizontalAxis) {
-					t.Fatalf("columns behind %v, in front %v, peek step %d", behind.Rect, front.Rect, w.peekStep(horizontalAxis))
+				if front.Peek || front.Rect.X-behind.Rect.X != w.peekStep(Horizontal) {
+					t.Fatalf("columns behind %v, in front %v, peek step %d", behind.Rect, front.Rect, w.peekStep(Horizontal))
 				}
 				d.move(m, 1, 0)
 				if f := m.stackFront(w); f.kind != stackFloat || f.id != 90 {
@@ -819,11 +819,11 @@ func TestOverviewCascadeFocusBinds(t *testing.T) {
 		m := cascadeOverview()
 		w := m.Current()
 		m.ToggleOverview()
-		if !m.overviewFocus(ActionFocusWindowDown) || w.band(w.Focus) != 2 || m.Current() != w {
-			t.Fatalf("focus-window-down: band %d", w.band(w.Focus))
+		if !m.overviewFocus(ActionFocusWindowDown) || w.Band(w.Focus) != 2 || m.Current() != w {
+			t.Fatalf("focus-window-down: band %d", w.Band(w.Focus))
 		}
-		if !m.overviewFocus(ActionFocusWindowUp) || w.band(w.Focus) != 1 {
-			t.Fatalf("focus-window-up: band %d", w.band(w.Focus))
+		if !m.overviewFocus(ActionFocusWindowUp) || w.Band(w.Focus) != 1 {
+			t.Fatalf("focus-window-up: band %d", w.Band(w.Focus))
 		}
 		m.overviewFocus(ActionFocusWorkspaceNext)
 		if m.Current() != m.Workspaces[2] {
@@ -944,7 +944,7 @@ func TestOverviewReloadResetsScrollOnAxisChange(t *testing.T) {
 		if err := c.apply(cfg); err != nil {
 			t.Fatal(err)
 		}
-		if _, axis := m.Current().layout().axes(); axis != horizontalAxis {
+		if _, axis := m.Current().Engine().Axes(); axis != Horizontal {
 			t.Fatal("setup: not cascade")
 		}
 		// The reload keeps the overview open on its selection, and cancelling
@@ -982,12 +982,12 @@ func TestOverviewFingerLatchSurvivesAxisChange(t *testing.T) {
 		m.ToggleOverview()
 		c.swipeBegin(ports.SwipeBegin{Fingers: 3})
 		c.swipeUpdate(ports.SwipeUpdate{DX: 70})
-		if m.Current() != m.Workspaces[2] || m.overviewAxis() != verticalAxis {
+		if m.Current() != m.Workspaces[2] || m.overviewAxis() != Vertical {
 			t.Fatalf("setup: workspace %d", indexOf(m.Workspaces, m.Current()))
 		}
 		// Back to the cascade workspace by a key, with the fingers still down.
 		m.overviewKey(ports.KeyEvent{Keysym: "k", Pressed: true})
-		if m.Current() != w || m.overviewAxis() != horizontalAxis {
+		if m.Current() != w || m.overviewAxis() != Horizontal {
 			t.Fatal("setup: the key did not turn the overview back")
 		}
 		for _, u := range []ports.SwipeUpdate{{DY: 70}, {DX: 70}, {DY: -70}, {DX: -70}} {
@@ -1001,8 +1001,8 @@ func TestOverviewFingerLatchSurvivesAxisChange(t *testing.T) {
 		c.swipeBegin(ports.SwipeBegin{Fingers: 3})
 		c.swipeUpdate(ports.SwipeUpdate{DY: 70})
 		c.swipeEnd(ports.SwipeEnd{})
-		if w.band(w.Focus) != 1 {
-			t.Fatalf("the next gesture did not step: band %d", w.band(w.Focus))
+		if w.Band(w.Focus) != 1 {
+			t.Fatalf("the next gesture did not step: band %d", w.Band(w.Focus))
 		}
 
 	})
@@ -1113,8 +1113,8 @@ func TestOverviewCascadeScroll(t *testing.T) {
 				w := m.Current()
 				m.ToggleOverview()
 				m.overviewScroll(ports.PointerAxis{Source: source, Vertical: vertical})
-				if m.Current() != m.Workspaces[2] || w.band(w.Focus) != 1 || m.ov.scrollX != 0 || m.ov.scrollY != 0 {
-					t.Fatalf("vertical: workspace %d, band %d, scroll %v,%v", indexOf(m.Workspaces, m.Current()), w.band(w.Focus), m.ov.scrollX, m.ov.scrollY)
+				if m.Current() != m.Workspaces[2] || w.Band(w.Focus) != 1 || m.ov.scrollX != 0 || m.ov.scrollY != 0 {
+					t.Fatalf("vertical: workspace %d, band %d, scroll %v,%v", indexOf(m.Workspaces, m.Current()), w.Band(w.Focus), m.ov.scrollX, m.ov.scrollY)
 				}
 
 				m = cascadeOverview()

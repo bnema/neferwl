@@ -15,7 +15,7 @@ import (
 // slidable reports whether a swipe can scroll the columns: scroll or cascade
 // overflow, with the focus on the columns and no fullscreen window.
 func (w *Workspace) slidable() bool {
-	return w.layout().scrolls() && len(w.Columns) > 0 && w.fullscreen == 0 && !w.onFloat()
+	return w.Engine().Scrolls() && len(w.Columns) > 0 && w.Fullscreen == 0 && !w.onFloat()
 }
 
 // retarget keeps the view where it is on screen when View moved from
@@ -36,7 +36,7 @@ func (w *Workspace) shiftPixels() int { return int(math.Round(w.view.Off)) }
 // from its target (slideLayout rounds the offset times that span).
 func (m *Monitor) switchSpring(off, velocity float64) motion.Spring {
 	s := motion.WorkspaceSpring(off, velocity)
-	if h := m.switchAxis.span(m.template.Output); h > 0 {
+	if h := m.switchAxis.Span(m.template.Output); h > 0 {
 		s.Snap = motion.PixelSnap / float64(h)
 	}
 	return s
@@ -45,8 +45,8 @@ func (m *Monitor) switchSpring(off, velocity float64) motion.Spring {
 // swipeScale turns touchpad distance into pixels: viewSwipeMovement
 // scrolls one usable width.
 func (w *Workspace) swipeScale() float64 {
-	content, _ := w.layout().axes()
-	return float64(content.span(w.Usable)) / viewSwipeMovement
+	content, _ := w.Engine().Axes()
+	return float64(content.Span(w.Usable)) / viewSwipeMovement
 }
 
 // snapPoints are the sorted views that align a column edge with the usable
@@ -57,14 +57,14 @@ func (w *Workspace) snapPoints() []float64 { return w.snapPointsInto(nil) }
 
 // snapPointsInto is snapPoints built in dst's storage.
 func (w *Workspace) snapPointsInto(dst []float64) []float64 {
-	return w.layout().snapPoints(w.lview(), dst[:0])
+	return w.Engine().SnapPoints(w.Snapshot(), dst[:0])
 }
 
 // scrollsRow reports whether the columns scroll along their row: a
 // horizontal content axis that can slide.
 func (w *Workspace) scrollsRow() bool {
-	content, _ := w.layout().axes()
-	return w.layout().scrolls() && content == horizontalAxis
+	content, _ := w.Engine().Axes()
+	return w.Engine().Scrolls() && content == Horizontal
 }
 
 // snapSpacing is the smallest distance between column snap points, in
@@ -75,7 +75,7 @@ const snapSpacing = 0.1
 // fully shown at the current view, else the furthest fully shown column
 // toward the swipe (forward is rightward).
 func (w *Workspace) snapFocus(view int, forward bool) (focus int) {
-	return w.layout().snapFocus(w.lview(), view, forward)
+	return w.Engine().SnapFocus(w.Snapshot(), view, forward)
 }
 
 // stopSwitch lands the workspace slide and forgets the list it measured in.
@@ -121,13 +121,13 @@ func (m *Monitor) slideLayout(cur []Placement) []Placement {
 	if base < 0 {
 		return cur
 	}
-	h := float64(m.switchAxis.span(m.template.Output))
+	h := float64(m.switchAxis.Span(m.template.Output))
 	pos := float64(base) + m.switchView.Off
 	offset := func(p []Placement, k int) []Placement {
 		d := int(math.Round((float64(k) - pos) * h))
 		for i := range p {
 			if !p[i].Hidden {
-				m.switchAxis.offset(&p[i].Rect, d)
+				m.switchAxis.Offset(&p[i].Rect, d)
 			}
 		}
 		return p

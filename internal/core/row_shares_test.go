@@ -28,19 +28,19 @@ func TestRowRectsEqualWithoutShares(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := Rect{X: 0, Y: 0, W: 50, H: 103}
 		c := Column{Windows: []WindowID{1, 2, 3}}
-		if !slices.Equal(rowRects(r, c, 5), stackRects(r, 3, 5)) {
-			t.Fatal(rowRects(r, c, 5))
+		if !slices.Equal(RowRects(r, c, 5), StackRects(r, 3, 5)) {
+			t.Fatal(RowRects(r, c, 5))
 		}
 		c.Shares = []int{5000, 5000} // wrong length: ignored
-		if !slices.Equal(rowRects(r, c, 5), stackRects(r, 3, 5)) {
-			t.Fatal(rowRects(r, c, 5))
+		if !slices.Equal(RowRects(r, c, 5), StackRects(r, 3, 5)) {
+			t.Fatal(RowRects(r, c, 5))
 		}
 		c.Shares = []int{5000, 3000, 3000} // wrong sum: ignored
-		if !slices.Equal(rowRects(r, c, 5), stackRects(r, 3, 5)) {
-			t.Fatal(rowRects(r, c, 5))
+		if !slices.Equal(RowRects(r, c, 5), StackRects(r, 3, 5)) {
+			t.Fatal(RowRects(r, c, 5))
 		}
 		c.Shares = []int{5000, 3000, 2000}
-		rows := rowRects(r, c, 5)
+		rows := RowRects(r, c, 5)
 		if rows[0].H != 46 || rows[1].H != 27 || rows[2].H != 93-46-27 || rows[2].Y+rows[2].H != 103 {
 			t.Fatal(rows)
 		}

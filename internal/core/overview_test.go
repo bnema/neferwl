@@ -257,8 +257,8 @@ func TestOverviewOpensOverFullscreenTile(t *testing.T) {
 		m = open()
 		m.OverviewMove(-1, 0)
 		m.ToggleOverview()
-		if f, _ := m.Focused(); f != 1 || m.Current().fullscreen != 0 {
-			t.Fatalf("behind: focused %d, fullscreen %d", f, m.Current().fullscreen)
+		if f, _ := m.Focused(); f != 1 || m.Current().Fullscreen != 0 {
+			t.Fatalf("behind: focused %d, fullscreen %d", f, m.Current().Fullscreen)
 		}
 
 	})
@@ -659,8 +659,8 @@ func TestOverviewCardOverPendingFullscreen(t *testing.T) {
 		m.ToggleOverview()
 		m.OverviewMove(-1, 0)
 		m.ToggleOverview()
-		if id, _ := m.Focused(); id != 7 || w.fullscreen != 0 {
-			t.Fatalf("focused %d, fullscreen %d", id, w.fullscreen)
+		if id, _ := m.Focused(); id != 7 || w.Fullscreen != 0 {
+			t.Fatalf("focused %d, fullscreen %d", id, w.Fullscreen)
 		}
 
 	})

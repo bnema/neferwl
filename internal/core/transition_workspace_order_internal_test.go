@@ -42,13 +42,13 @@ func switchAndCheck(t *testing.T, c *Core, ic *indicatorClock, sc *screen, act f
 	}
 	c.transition(shots, ic.now)
 	indicatorScene(t, c)
-	_, axis := m.Current().layout().axes()
+	_, axis := m.Current().Engine().Axes()
 	if m.overviewAxis() != axis {
 		t.Fatalf("overview axis %v, want the landing layout's workspace axis %v", m.overviewAxis(), axis)
 	}
 	area := m.Current().overviewArea()
 	travel := float64(area.H) * overviewWorkspaceTravel
-	horizontal := axis == horizontalAxis
+	horizontal := axis == Horizontal
 	if horizontal {
 		travel = float64(area.W) * overviewWorkspaceTravel
 	}
@@ -246,14 +246,14 @@ func orderScenarios() []orderScenario {
 func TestOverviewWorkspaceSwitchOrder(t *testing.T) {
 	for _, l := range registeredLayouts() {
 		for _, s := range orderScenarios() {
-			t.Run(string(l.name())+"/"+s.name, func(t *testing.T) {
+			t.Run(string(l.Name())+"/"+s.name, func(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
 					c, ic, sc := overviewRig(t)
 					m := sc.mon
 					m.Focus(s.start)
 					act, sign, after := s.setup(t, m)
 					for w := range m.all() {
-						w.Overflow = l.name()
+						w.Overflow = l.Name()
 					}
 					settleShown(t, c)
 					toggleOverview(c, sc, ic.now)
@@ -293,7 +293,7 @@ func TestOverviewWorkspaceSwitchOrder(t *testing.T) {
 // rank (staying under the next numbered row), and one with a stale anchor
 // below the last occupied numbered row, else the first.
 func TestMonitorOverviewOrder(t *testing.T) {
-	occupied := func() *Workspace { return &Workspace{lanes: lanes{Columns: []Column{{Windows: []WindowID{1}}}}} }
+	occupied := func() *Workspace { return &Workspace{Lanes: Lanes{Columns: []Column{{Windows: []WindowID{1}}}}} }
 	list := []*Workspace{occupied(), occupied(), {}}
 	m := &Monitor{named: []NamedWorkspace{{Name: "dev"}, {Name: "ops"}}}
 	named := func(name string, anchor *Workspace) *Workspace {

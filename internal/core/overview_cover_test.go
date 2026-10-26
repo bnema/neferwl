@@ -85,8 +85,8 @@ func TestOverviewCoverConfirmKeeps(t *testing.T) {
 					} else {
 						m.ToggleOverview()
 					}
-					if f, _ := m.Focused(); f != 2 || m.ov.open || m.Current().fullscreen != 2 || !previewOf(t, m.Layout(), 2).Fullscreen {
-						t.Fatalf("pick %v: focused %d, fullscreen %d", pick, f, m.Current().fullscreen)
+					if f, _ := m.Focused(); f != 2 || m.ov.open || m.Current().Fullscreen != 2 || !previewOf(t, m.Layout(), 2).Fullscreen {
+						t.Fatalf("pick %v: focused %d, fullscreen %d", pick, f, m.Current().Fullscreen)
 					}
 				}
 
@@ -111,8 +111,8 @@ func TestOverviewCoverPickOther(t *testing.T) {
 						m.ToggleOverview()
 					}
 					w := m.Current()
-					if f, _ := m.Focused(); f != 1 || m.ov.open || w.fullscreen != 0 {
-						t.Fatalf("pick %v: focused %d, fullscreen %d", pick, f, w.fullscreen)
+					if f, _ := m.Focused(); f != 1 || m.ov.open || w.Fullscreen != 0 {
+						t.Fatalf("pick %v: focused %d, fullscreen %d", pick, f, w.Fullscreen)
 					}
 					if p := placement(w, 2); p.Fullscreen || (p.Hidden && !tc.float) {
 						t.Fatalf("pick %v: left window %+v", pick, p)
@@ -136,8 +136,8 @@ func TestOverviewCoverCancel(t *testing.T) {
 				m.ToggleOverview()
 				m.OverviewMove(-1, 0)
 				m.CancelOverview()
-				if f, _ := m.Focused(); f != 2 || m.Current().fullscreen != 2 {
-					t.Fatalf("focused %d, fullscreen %d", f, m.Current().fullscreen)
+				if f, _ := m.Focused(); f != 2 || m.Current().Fullscreen != 2 {
+					t.Fatalf("focused %d, fullscreen %d", f, m.Current().Fullscreen)
 				}
 
 			})
@@ -169,8 +169,8 @@ func TestOverviewCoverPickStashCard(t *testing.T) {
 			t.Fatalf("card %d", m.card())
 		}
 		m.ToggleOverview()
-		if f, _ := m.Focused(); f != 5 || w.fullscreen != 0 {
-			t.Fatalf("focused %d, fullscreen %d", f, w.fullscreen)
+		if f, _ := m.Focused(); f != 5 || w.Fullscreen != 0 {
+			t.Fatalf("focused %d, fullscreen %d", f, w.Fullscreen)
 		}
 
 	})
@@ -216,8 +216,8 @@ func TestOverviewCoverMaximizedPick(t *testing.T) {
 		m.ToggleFullscreen()
 		m.ToggleOverview()
 		m.OverviewPick(1)
-		if f, _ := m.Focused(); f != 1 || w.fullscreen != 0 || !w.Columns[0].FullWidth || w.Columns[1].FullWidth {
-			t.Fatalf("focused %d, fullscreen %d, columns %+v", f, w.fullscreen, w.Columns)
+		if f, _ := m.Focused(); f != 1 || w.Fullscreen != 0 || !w.Columns[0].FullWidth || w.Columns[1].FullWidth {
+			t.Fatalf("focused %d, fullscreen %d, columns %+v", f, w.Fullscreen, w.Columns)
 		}
 
 	})
@@ -247,8 +247,8 @@ func TestOverviewCoverTileAmongColumns(t *testing.T) {
 			}
 		}
 		m.OverviewPick(3)
-		if f, _ := m.Focused(); f != 3 || m.Current().fullscreen != 0 {
-			t.Fatalf("focused %d, fullscreen %d", f, m.Current().fullscreen)
+		if f, _ := m.Focused(); f != 3 || m.Current().Fullscreen != 0 {
+			t.Fatalf("focused %d, fullscreen %d", f, m.Current().Fullscreen)
 		}
 
 	})

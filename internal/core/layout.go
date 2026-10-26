@@ -14,28 +14,31 @@ type WindowID = ports.WindowID
 
 type Rect = ports.Rect
 
-// maxCells is the largest width a rule or a slot may declare, in cells.
-const maxCells = 16
+// MaxCells is the largest width a rule or a slot may declare, in cells.
+const MaxCells = 16
 
-// Column.Cells is the width of the column in cells, a cell being one
-// max-columns-th of the usable width. Zero (auto) shares the width equally
-// with the other auto columns, up to MaxColumns visible at once.
+// Column holds a tiled stack, its width and owner-local layout identity.
 type Column struct {
-	// key is the workspace-local column identity; layout state keys
+	// Key is the workspace-local column identity; layout state keys
 	// per-column data by it.
-	key uint64
-	// carry is what the old layout state let travel with the column to
-	// another workspace (layoutState.removed). The new state takes what it
-	// understands in inserted; the rest, or all of it in a stateless
+	Key uint64
+	// Carry is what the old layout state let travel with the column to
+	// another workspace (State.Removed). The new state takes what it
+	// understands in Inserted; the rest, or all of it in a stateless
 	// workspace, stays here until the column leaves again.
-	carry any
+	Carry any
 	// Span is a manually sized width in basis points; zero uses Cells.
-	Span      int
-	spanStamp uint64
-	Windows   []WindowID
-	Cells     int
+	Span int
+	// SpanStamp identifies the complete lane to which a manual width belongs.
+	SpanStamp uint64
+	// Windows is the ordered stack of window IDs.
+	Windows []WindowID
+	// Cells is the column width in cells; zero shares the available width.
+	Cells int
+	// FullWidth expands the column to the usable width.
 	FullWidth bool
-	Focus     int
+	// Focus is the selected index.
+	Focus int
 	// Slot is the declared column number (workspace.<name>.column.N) of a
 	// slot window; 0 for normal columns.
 	Slot int
@@ -56,24 +59,28 @@ type Overflow string
 // Each layout declares its own value next to its type (layout_<name>.go) and
 // registers itself in layout_registry.go.
 
-// lanes is the column state owned by the workspace owner goroutine.
-type lanes struct {
-	lay         layout      // Optional test override; production resolves Overflow lazily.
-	lstate      layoutState // Owner-goroutine-only, initialized lazily.
-	lstateReady bool        // Distinguishes stateless layouts from uninitialized state.
-	// lcache is the layout resolved for lcacheFor (setOverflow and layout()
-	// fill it); layout() re-resolves when Overflow no longer equals lcacheFor.
-	lcache    layout
+// Lanes is the column state owned by the workspace owner goroutine.
+type Lanes struct {
+	// Override optionally replaces the registry engine, primarily in tests.
+	Override    Layout // Optional test override; production resolves Overflow lazily.
+	lstate      State  // Owner-goroutine-only, initialized lazily.
+	lstateReady bool   // Distinguishes stateless layouts from uninitialized state.
+	// lcache is the layout resolved for lcacheFor. Engine re-resolves it
+	// when Overflow no longer matches.
+	lcache    Layout
 	lcacheFor Overflow
 	colSeq    uint64 // Issues workspace-local column identities.
-	Overflow  Overflow
-	Columns   []Column
+	// Overflow selects the engine by its configuration name.
+	Overflow Overflow
+	// Columns is the ordered tiled column storage.
+	Columns []Column
 	// spanSeq issues workspace-local identities for complete lane stamps.
 	spanSeq uint64
-	// maximized remembers recently maximized columns by window ID, newest
+	// Maximized remembers recently maximized columns by window ID, newest
 	// first; stack() filters removed windows at read time.
-	maximized []WindowID
-	Focus     int
+	Maximized []WindowID
+	// Focus is the selected index.
+	Focus int
 	// View is the settled offset along the layout's content axis.
 	View int
 	// Output is the effective viewport in monitor coordinates: the whole
@@ -81,14 +88,17 @@ type lanes struct {
 	// rectangle no larger than the monitor. Fullscreen fills it.
 	Output Rect
 	// Usable is the layer reservations of the monitor intersected with Output.
-	Usable     Rect
-	Gaps       int
+	Usable Rect
+	// Gaps is the requested spacing before viewport clamping.
+	Gaps int
+	// MaxColumns is the visible lane capacity in cells.
 	MaxColumns int
-	fullscreen WindowID
+	// Fullscreen is the fullscreen window, or zero.
+	Fullscreen WindowID
 }
 
 type Workspace struct {
-	lanes
+	Lanes
 	// ID stays with the workspace across reorder and monitor moves.
 	ID uint64
 	// Name is set for workspaces declared in config; empty for dynamic ones.
@@ -240,8 +250,8 @@ func (w *Workspace) appendWindows(dst []WindowID) []WindowID {
 	return dst
 }
 
-// cell is the 1-based column and row of a tiled window, 0, 0 otherwise.
-func (w *lanes) cell(id WindowID) (col, row int) {
+// Cell is the 1-based column and row of a tiled window, 0, 0 otherwise.
+func (w *Lanes) Cell(id WindowID) (col, row int) {
 	for ci, c := range w.Columns {
 		if ri := slices.Index(c.Windows, id); ri >= 0 {
 			return ci + 1, ri + 1
@@ -257,7 +267,7 @@ func (w *Workspace) floatIndex(id WindowID) int {
 // coversFloat uses the placed rectangle, not a map-time size. Allow up to
 // two border widths plus two logical pixels per axis for scale rounding.
 func (w *Workspace) coversFloat(f Float) bool {
-	if w.fullscreen == f.ID || w.Usable.W <= 0 || w.Usable.H <= 0 {
+	if w.Fullscreen == f.ID || w.Usable.W <= 0 || w.Usable.H <= 0 {
 		return false
 	}
 	r := w.floatRect(f)
@@ -269,7 +279,7 @@ func (w *Workspace) coversFloat(f Float) bool {
 // float focus when no raised float remains on top.
 func (w *Workspace) reconcileFloats() {
 	for i := range w.Floats {
-		if w.Floats[i].below && !w.coversFloat(w.Floats[i]) && w.fullscreen != w.Floats[i].ID {
+		if w.Floats[i].below && !w.coversFloat(w.Floats[i]) && w.Fullscreen != w.Floats[i].ID {
 			w.Floats[i].below = false
 		}
 	}
@@ -466,6 +476,7 @@ func (w *Workspace) has(id WindowID) bool {
 	return false
 }
 
+// Focused is the window selected when the operation began.
 func (w *Workspace) Focused() (WindowID, bool) {
 	// Nothing else is drawn but its dialogs: the covering fullscreen window
 	// has the focus unless one of them took it.
@@ -564,18 +575,19 @@ func (w *Workspace) SetMaxColumns(n int) {
 // workspace's own geometry, scaled uniformly.
 func (w *Workspace) overviewArea() Rect { return w.reserved }
 
-func (w *lanes) gap() int { return min(w.Gaps, w.Usable.W/2, w.Usable.H/2) }
+// Gap is the effective spacing in pixels.
+func (w *Lanes) Gap() int { return min(w.Gaps, w.Usable.W/2, w.Usable.H/2) }
 
-// stackRects cuts r in n rows with a gap between them; the last row takes
+// StackRects cuts r in n rows with a gap between them; the last row takes
 // the rounding remainder. Rows past the bottom (gaps taller than r) are
 // clamped to it, like windows stacked in a column.
-func stackRects(r Rect, n, gap int) []Rect {
-	return stackRectsInto(nil, r, n, gap)
+func StackRects(r Rect, n, gap int) []Rect {
+	return StackRectsInto(nil, r, n, gap)
 }
 
-// stackRectsInto appends the n rows of stackRects to dst (reset with dst[:0]
+// StackRectsInto appends the n rows of stackRects to dst (reset with dst[:0]
 // to reuse its storage).
-func stackRectsInto(dst []Rect, r Rect, n, gap int) []Rect {
+func StackRectsInto(dst []Rect, r Rect, n, gap int) []Rect {
 	base := len(dst)
 	dst = slices.Grow(dst, n)[:base+n]
 	rows := dst[base:]
@@ -595,18 +607,18 @@ func stackRectsInto(dst []Rect, r Rect, n, gap int) []Rect {
 	return dst
 }
 
-// rowRects splits column rect r into the rows of c: by c.Shares when they
+// RowRects splits column rect r into the rows of c: by c.Shares when they
 // are valid, else equally (stackRects).
-func rowRects(r Rect, c Column, gap int) []Rect {
-	return rowRectsInto(nil, r, c, gap)
+func RowRects(r Rect, c Column, gap int) []Rect {
+	return RowRectsInto(nil, r, c, gap)
 }
 
-// rowRectsInto appends the rows of rowRects to dst (reset with dst[:0] to
+// RowRectsInto appends the rows of rowRects to dst (reset with dst[:0] to
 // reuse its storage).
-func rowRectsInto(dst []Rect, r Rect, c Column, gap int) []Rect {
+func RowRectsInto(dst []Rect, r Rect, c Column, gap int) []Rect {
 	n := len(c.Windows)
-	if !validShares(c) {
-		return stackRectsInto(dst, r, n, gap)
+	if !ValidShares(c) {
+		return StackRectsInto(dst, r, n, gap)
 	}
 	base := len(dst)
 	dst = slices.Grow(dst, n)[:base+n]
@@ -627,9 +639,9 @@ func rowRectsInto(dst []Rect, r Rect, c Column, gap int) []Rect {
 	return dst
 }
 
-// validShares reports whether c.Shares has one share per window, each at
+// ValidShares reports whether c.Shares has one share per window, each at
 // least 1, summing to 10000.
-func validShares(c Column) bool {
+func ValidShares(c Column) bool {
 	if len(c.Shares) != len(c.Windows) || len(c.Shares) < 2 {
 		return false
 	}
@@ -643,8 +655,8 @@ func validShares(c Column) bool {
 	return sum == 10000
 }
 
-// split cuts r in two halves with a gap: top/bottom when vertical, else left/right.
-func split(r Rect, gap int, vertical bool) (Rect, Rect) {
+// Split cuts r in two halves with a gap: top/bottom when vertical, else left/right.
+func Split(r Rect, gap int, vertical bool) (Rect, Rect) {
 	if vertical {
 		h := max((r.H-gap)/2, 0)
 		return Rect{X: r.X, Y: r.Y, W: r.W, H: h}, Rect{X: r.X, Y: r.Y + h + gap, W: r.W, H: max(r.H-gap-h, 0)}
@@ -665,7 +677,7 @@ func (w *Workspace) layoutInto(dst []Placement) []Placement { return w.appendLay
 
 // appendLayout appends the workspace's placements to dst.
 func (w *Workspace) appendLayout(dst []Placement) []Placement {
-	gap := w.gap()
+	gap := w.Gap()
 	// The column and row rects live in the workspace's scratch: each is dead
 	// once the placements it feeds are built (owner goroutine only, and
 	// layoutInto does not nest on a workspace).
@@ -674,8 +686,8 @@ func (w *Workspace) appendLayout(dst []Placement) []Placement {
 	focusedID, _ := w.Focused()
 	cover := w.cover()
 	// Facts of the layout, asked once, not per window.
-	l := w.layout()
-	pins, maxHides := l.pinsFullscreen(), l.maximizeHides()
+	l := w.Engine()
+	pins, maxHides := l.PinsFullscreen(), l.MaximizeHides()
 	maxFocus := maxHides && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth
 	tiles := w.tileBuf[:0]
 	for i, c := range w.Columns {
@@ -684,18 +696,18 @@ func (w *Workspace) appendLayout(dst []Placement) []Placement {
 		if n == 0 {
 			continue
 		}
-		fullColumn := w.fullscreenColumn(i)
+		fullColumn := w.FullscreenColumn(i)
 		if fullColumn {
 			col.W = w.Output.W
 		}
-		w.rowBuf = rowRectsInto(w.rowBuf[:0], col, c, gap)
+		w.rowBuf = RowRectsInto(w.rowBuf[:0], col, c, gap)
 		rows := w.rowBuf
 		for j, id := range c.Windows {
 			r := rows[j]
-			full := w.fullscreen == id && id != 0
+			full := w.Fullscreen == id && id != 0
 			// Fixed overflow cannot scroll to other columns while one fills
 			// the view. Keep them in place, but out of the scene.
-			hidden := (cover != 0 && id != cover) || ((fullColumn || pins && w.fullscreen != 0) && !full) || maxFocus && i != w.Focus
+			hidden := (cover != 0 && id != cover) || ((fullColumn || pins && w.Fullscreen != 0) && !full) || maxFocus && i != w.Focus
 			if full {
 				// A layout that does not pin the cover aligns the view on the
 				// column; a pinned one fills the output at once.
@@ -734,7 +746,7 @@ func (w *Workspace) appendLayout(dst []Placement) []Placement {
 			order := dialogs
 			if below {
 				order = belowTiles
-			} else if !dialog && (w.coversFloat(f) || w.fullscreen == f.ID) {
+			} else if !dialog && (w.coversFloat(f) || w.Fullscreen == f.ID) {
 				order = coveringFloats
 			}
 			if order != group {
@@ -749,7 +761,7 @@ func (w *Workspace) appendLayout(dst []Placement) []Placement {
 				result = append(result, p)
 				continue
 			}
-			if w.fullscreen == f.ID {
+			if w.Fullscreen == f.ID {
 				p.Rect, p.Fullscreen, p.Inset = w.Output, true, 0
 			}
 			result = append(result, p)
@@ -845,7 +857,7 @@ func (w *Workspace) ToggleWindowStash() {
 	id, ok := w.Focused()
 	// A fullscreen window (a Wine game in scanout) keeps its place: it
 	// leaves fullscreen first, then may float.
-	if !ok || id == w.fullscreen {
+	if !ok || id == w.Fullscreen {
 		return
 	}
 	switch {

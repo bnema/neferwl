@@ -59,20 +59,20 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		if len(dividers) > 0 {
 			seps = append(make([]ports.Separator, 0, len(dividers)+outlineLines), dividers...)
 		}
-		scene.Separators, scene.Outline = overviewOutline(seps, layout, max(c.cfg.Border.Width, 2), sc.mon.Current().gap(), c.cfg.Border.Radius)
+		scene.Separators, scene.Outline = overviewOutline(seps, layout, max(c.cfg.Border.Width, 2), sc.mon.Current().Gap(), c.cfg.Border.Radius)
 	} else if sc.mon.switcherShown() {
 		// The switcher's cards: only the selection is framed.
-		scene.Separators, scene.Outline = overviewOutline(nil, layout, max(c.cfg.Border.Width, 2), sc.mon.Current().gap(), c.cfg.Border.Radius)
+		scene.Separators, scene.Outline = overviewOutline(nil, layout, max(c.cfg.Border.Width, 2), sc.mon.Current().Gap(), c.cfg.Border.Radius)
 	} else {
 		// Only the focused output lights the focused window's lines.
-		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), view, i == c.focusScreen)
+		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().Gap(), view, i == c.focusScreen)
 	}
 	for k, p := range layout {
 		ps := settled[k]
 		// Only the focused output has an activated window.
 		focused := p.Focused && i == c.focusScreen
 		sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview, Fade: p.Fade}
-		sw.Radius = windowRadius(p, sc.mon.Current().gap(), c.cfg.Border.Radius)
+		sw.Radius = windowRadius(p, sc.mon.Current().Gap(), c.cfg.Border.Radius)
 		if p.Zoom > 0 && (p.Zoom < 1 || p.Preview > 0) {
 			// A scale motion: the content follows the drawn size. A
 			// card in flight drawn at its size still needs Zoom 1:

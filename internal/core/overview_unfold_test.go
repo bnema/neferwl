@@ -163,12 +163,12 @@ func TestOverviewCascadeStashFolds(t *testing.T) {
 // with cards on both sides, on either axis; the cards past the area are
 // hidden.
 func TestOverviewCarouselScrolls(t *testing.T) {
-	for _, axis := range []layoutAxis{horizontalAxis, verticalAxis} {
-		t.Run(map[layoutAxis]string{horizontalAxis: "cascade", verticalAxis: "scroll"}[axis], func(t *testing.T) {
+	for _, axis := range []Axis{Horizontal, Vertical} {
+		t.Run(map[Axis]string{Horizontal: "cascade", Vertical: "scroll"}[axis], func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				m := cascadeOverview()
 				w := m.Current()
-				if axis == verticalAxis {
+				if axis == Vertical {
 					w.Overflow = OverflowScroll
 				}
 				withStash(m, 12)
@@ -179,7 +179,7 @@ func TestOverviewCarouselScrolls(t *testing.T) {
 				m.selectCard(w, 11)
 				u := w.overviewArea()
 				pos := func(r Rect) (int, int) {
-					if axis == verticalAxis {
+					if axis == Vertical {
 						return r.Y, r.Y + r.H/2 - (u.Y + u.H/2)
 					}
 					return r.X, r.X + r.W/2 - (u.X + u.W/2)
@@ -205,7 +205,7 @@ func TestOverviewCarouselScrolls(t *testing.T) {
 					if !before || !after || !hidden {
 						t.Fatalf("step %d: cards before %v, after %v, hidden %v", step, before, after, hidden)
 					}
-					if axis == verticalAxis {
+					if axis == Vertical {
 						m.OverviewMove(0, 1)
 					} else {
 						m.OverviewMove(1, 0)
@@ -259,7 +259,7 @@ func TestOverviewScrollStashUnfolds(t *testing.T) {
 		}
 		w.FocusID(1)
 		m.ToggleOverview()
-		if m.overviewAxis() != verticalAxis {
+		if m.overviewAxis() != Vertical {
 			t.Fatal("setup: not a vertical overview")
 		}
 		m.OverviewMove(-1, 0)
@@ -302,8 +302,8 @@ func TestOverviewScrollStashUnfolds(t *testing.T) {
 // side of it. Past the ends a vertical overview stops; a cascade one
 // changes workspace.
 func TestOverviewStashOnlyCarousel(t *testing.T) {
-	for _, axis := range []layoutAxis{horizontalAxis, verticalAxis} {
-		t.Run(map[layoutAxis]string{horizontalAxis: "cascade", verticalAxis: "scroll"}[axis], func(t *testing.T) {
+	for _, axis := range []Axis{Horizontal, Vertical} {
+		t.Run(map[Axis]string{Horizontal: "cascade", Vertical: "scroll"}[axis], func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				m := overviewMonitor()
 				m.Focus(2)
@@ -311,7 +311,7 @@ func TestOverviewStashOnlyCarousel(t *testing.T) {
 				m.Focus(1)
 				w := m.Current()
 				w.Overflow = OverflowCascade
-				if axis == verticalAxis {
+				if axis == Vertical {
 					w.Overflow = OverflowScroll
 				}
 				w.ToggleWindowStash() // its own window
@@ -328,7 +328,7 @@ func TestOverviewStashOnlyCarousel(t *testing.T) {
 				m.selectCard(w, last)
 				ps := m.Layout()
 				pos := func(i int) int {
-					if r := previewOf(t, ps, w.Stash[i].ID).Rect; axis == verticalAxis {
+					if r := previewOf(t, ps, w.Stash[i].ID).Rect; axis == Vertical {
 						return r.Y
 					} else {
 						return r.X
@@ -339,7 +339,7 @@ func TestOverviewStashOnlyCarousel(t *testing.T) {
 						t.Fatalf("card %d at %d, not after card %d at %d", i, pos(i), i-1, pos(i-1))
 					}
 				}
-				if axis == verticalAxis {
+				if axis == Vertical {
 					m.OverviewMove(0, 1)
 					if m.Current() != w || m.cardAt(w) != last {
 						t.Fatalf("down past the last card: card %d", m.cardAt(w))

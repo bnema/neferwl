@@ -26,7 +26,7 @@ func TestLaneWidths(t *testing.T) {
 		}
 		var got []int
 		for i := range w.Columns {
-			got = append(got, w.cellWidth(i))
+			got = append(got, w.CellWidth(i))
 		}
 		return got
 	}
@@ -34,7 +34,7 @@ func TestLaneWidths(t *testing.T) {
 		t.Run(string(overflow), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				mk := func(n int) *Workspace {
-					w := &Workspace{lanes: lanes{MaxColumns: 4, Overflow: overflow, Gaps: 8}}
+					w := &Workspace{Lanes: Lanes{MaxColumns: 4, Overflow: overflow, Gaps: 8}}
 					w.SetOutput(1000, 500)
 					for id := 1; id <= n; id++ {
 						w.AddWindow(WindowID(id))
@@ -59,11 +59,11 @@ func TestLaneWidths(t *testing.T) {
 				for n := 1; n <= 4; n++ {
 					w := mk(n)
 					for i := range w.Columns {
-						want := w.equalShare(n)
+						want := w.EqualShare(n)
 						if i == n-1 {
 							want = 1000 - 8*(n+1) - (n-1)*want
 						}
-						if got := w.cellWidth(i); got != want {
+						if got := w.CellWidth(i); got != want {
 							t.Errorf("%d auto columns: width %d want %d", n, got, want)
 						}
 					}
@@ -81,19 +81,19 @@ func TestLaneWidths(t *testing.T) {
 	}
 	t.Run("scroll", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			w := &Workspace{lanes: lanes{MaxColumns: 4, Gaps: 8}}
+			w := &Workspace{Lanes: Lanes{MaxColumns: 4, Gaps: 8}}
 			w.SetOutput(1000, 500)
 			w.AddWindow(1)
 			w.AddWindow(2)
 			w.Columns[1].Cells = 2
-			if got, want := w.columnWidth(1), 2*w.equalShare(4)+8; got != want {
+			if got, want := w.columnWidth(1), 2*w.EqualShare(4)+8; got != want {
 				t.Errorf("2 cells: %d want %d", got, want)
 			}
-			if got, want := w.columnWidth(0), w.equalShare(2); got != want {
+			if got, want := w.columnWidth(0), w.EqualShare(2); got != want {
 				t.Errorf("auto: %d want %d", got, want)
 			}
 			w.Columns[1].Cells = 9
-			if got, want := w.columnWidth(1), 4*w.equalShare(4)+3*8; got != want {
+			if got, want := w.columnWidth(1), 4*w.EqualShare(4)+3*8; got != want {
 				t.Errorf("above max-columns: %d want %d", got, want)
 			}
 
@@ -349,8 +349,8 @@ func FuzzWorkspaceOps(f *testing.F) {
 				}
 				left := w.columnX(w.Focus) - w.View
 				width := w.columnWidth(w.Focus)
-				minX, maxX := w.Usable.X+w.gap(), w.Usable.X+w.Usable.W-w.gap()
-				if w.fullscreenColumn(w.Focus) {
+				minX, maxX := w.Usable.X+w.Gap(), w.Usable.X+w.Usable.W-w.Gap()
+				if w.FullscreenColumn(w.Focus) {
 					minX, maxX = 0, w.Output.W
 				}
 				if width <= maxX-minX && (left < minX || left+width > maxX) {
@@ -491,7 +491,7 @@ func TestSetFullscreenStackDeactivation(t *testing.T) {
 // split the newest one, alternating top/bottom and left/right.
 func TestFixedOverflowSpiral(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		w := &Workspace{lanes: lanes{MaxColumns: 2, Overflow: OverflowFixed}}
+		w := &Workspace{Lanes: Lanes{MaxColumns: 2, Overflow: OverflowFixed}}
 		w.SetOutput(100, 80)
 		for id := WindowID(1); id <= 5; id++ {
 			w.AddWindow(id)
@@ -514,7 +514,7 @@ func TestFixedOverflowSpiral(t *testing.T) {
 			t.Fatal("fixed overflow scrolled", w.View)
 		}
 		// Up to max-columns it is the plain equal split.
-		w2 := &Workspace{lanes: lanes{MaxColumns: 2, Overflow: OverflowFixed}}
+		w2 := &Workspace{Lanes: Lanes{MaxColumns: 2, Overflow: OverflowFixed}}
 		w2.SetOutput(100, 80)
 		w2.AddWindow(1)
 		w2.AddWindow(2)
@@ -723,7 +723,7 @@ func TestFixedFocusStackedColumns(t *testing.T) {
 	t.Run("lands on the nearest window of a stacked column", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			// 1 left; 2 top right holds two windows; 3 bottom right.
-			w := &Workspace{lanes: lanes{MaxColumns: 2, Overflow: OverflowFixed}}
+			w := &Workspace{Lanes: Lanes{MaxColumns: 2, Overflow: OverflowFixed}}
 			w.SetOutput(100, 80)
 			w.Columns = []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{2, 5}}, {Windows: []WindowID{3}}}
 			w.Focus = 2
@@ -736,7 +736,7 @@ func TestFixedFocusStackedColumns(t *testing.T) {
 }
 
 func fixedWorkspace(maxCols, gaps, n int) *Workspace {
-	w := &Workspace{lanes: lanes{MaxColumns: maxCols, Overflow: OverflowFixed, Gaps: gaps}}
+	w := &Workspace{Lanes: Lanes{MaxColumns: maxCols, Overflow: OverflowFixed, Gaps: gaps}}
 	w.SetOutput(100, 80)
 	for id := 1; id <= n; id++ {
 		w.AddWindow(WindowID(id))

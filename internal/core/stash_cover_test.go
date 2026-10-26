@@ -161,8 +161,8 @@ func TestStashOverCoverLeaves(t *testing.T) {
 		c, w, _ := stashCoverCore(t, OverflowFixed, false)
 		c.applyAction(ActionToggleStashVisible)
 		c.applyAction(ActionToggleWindowStash)
-		if id, _ := w.Focused(); id != 3 || w.fullscreen != 0 || previewOf(t, w.Layout(), 3).Hidden {
-			t.Fatalf("unstash: focused %d fullscreen %d", id, w.fullscreen)
+		if id, _ := w.Focused(); id != 3 || w.Fullscreen != 0 || previewOf(t, w.Layout(), 3).Hidden {
+			t.Fatalf("unstash: focused %d fullscreen %d", id, w.Fullscreen)
 		}
 		c, w, _ = stashCoverCore(t, OverflowFixed, false)
 		c.applyAction(ActionToggleStashVisible)
@@ -300,13 +300,13 @@ func TestActivateOverCoverReturns(t *testing.T) {
 				_, w, cover := stashCoverCore(t, cv.overflow, cv.float)
 				w.Activate(2)
 				w.ToggleStashVisible()
-				if id, _ := w.Focused(); id != cover || w.stashShown() || w.fullscreen != cover {
-					t.Fatalf("hide: focused %d shown %v fullscreen %d", id, w.stashShown(), w.fullscreen)
+				if id, _ := w.Focused(); id != cover || w.stashShown() || w.Fullscreen != cover {
+					t.Fatalf("hide: focused %d shown %v fullscreen %d", id, w.stashShown(), w.Fullscreen)
 				}
 				w.Activate(2)
 				w.Activate(cover)
-				if id, _ := w.Focused(); id != cover || w.stashShown() || w.fullscreen != cover {
-					t.Fatalf("activate cover: focused %d shown %v fullscreen %d", id, w.stashShown(), w.fullscreen)
+				if id, _ := w.Focused(); id != cover || w.stashShown() || w.Fullscreen != cover {
+					t.Fatalf("activate cover: focused %d shown %v fullscreen %d", id, w.stashShown(), w.Fullscreen)
 				}
 				w.AddDialog(7, 2, 20, 10)
 				w.SetModal(7, true)
@@ -350,8 +350,8 @@ func TestActivateDialogLeavesCover(t *testing.T) {
 			w.AddDialog(9, 5, 10, 5)
 			w.FocusID(cover)
 			w.Activate(9)
-			if id, _ := w.Focused(); id != 9 || w.fullscreen != 0 || w.left != cover {
-				t.Fatalf("focused %d fullscreen %d left %d", id, w.fullscreen, w.left)
+			if id, _ := w.Focused(); id != 9 || w.Fullscreen != 0 || w.left != cover {
+				t.Fatalf("focused %d fullscreen %d left %d", id, w.Fullscreen, w.left)
 			}
 
 		})
@@ -362,8 +362,8 @@ func TestActivateDialogLeavesCover(t *testing.T) {
 			w.AddDialog(9, 1, 10, 5)
 			w.FocusID(cover)
 			w.Activate(9)
-			if id, _ := w.Focused(); id != 9 || w.fullscreen != 0 || w.left != cover {
-				t.Fatalf("focused %d fullscreen %d left %d", id, w.fullscreen, w.left)
+			if id, _ := w.Focused(); id != 9 || w.Fullscreen != 0 || w.left != cover {
+				t.Fatalf("focused %d fullscreen %d left %d", id, w.Fullscreen, w.left)
 			}
 
 		})
@@ -375,8 +375,8 @@ func TestActivateDialogLeavesCover(t *testing.T) {
 			w.AddDialog(9, 2, 10, 5)
 			w.FocusID(cover)
 			w.Activate(9)
-			if id, _ := w.Focused(); id != 9 || w.fullscreen != 2 || w.stashHidden || w.left != cover {
-				t.Fatalf("focused %d fullscreen %d hidden %v left %d", id, w.fullscreen, w.stashHidden, w.left)
+			if id, _ := w.Focused(); id != 9 || w.Fullscreen != 2 || w.stashHidden || w.left != cover {
+				t.Fatalf("focused %d fullscreen %d hidden %v left %d", id, w.Fullscreen, w.stashHidden, w.left)
 			}
 			if p := previewOf(t, w.Layout(), 9); p.Hidden {
 				t.Fatalf("dialog hidden: %+v", p)

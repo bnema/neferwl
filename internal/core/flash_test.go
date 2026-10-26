@@ -301,7 +301,7 @@ func TestFlashColumnUnion(t *testing.T) {
 		w := c.cur().mon.Current()
 		w.ConsumeOrExpel(-1)
 		startFlash(t, c, clock, flashColumn, 3)
-		col := w.Columns[w.columnOf(3)]
+		col := w.Columns[w.ColumnOf(3)]
 		var area int
 		for _, p := range c.cur().mon.Layout() {
 			for _, id := range col.Windows {

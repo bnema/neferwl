@@ -2,7 +2,7 @@ package core
 
 // startsBand reports whether column i starts a band, n being the count of
 // columns in the band before it.
-func (w *layoutView) startsBand(i, n int) bool {
+func (w *View) startsBand(i, n int) bool {
 	if i == 0 {
 		return true
 	}
@@ -12,7 +12,7 @@ func (w *layoutView) startsBand(i, n int) bool {
 
 // walkBands calls f with each band and its column range, in order, until f
 // returns false.
-func (w *layoutView) walkBands(f func(b, first, last int) bool) {
+func (w *View) walkBands(f func(b, first, last int) bool) {
 	b, first, n := 0, 0, 0
 	for i := range w.Columns {
 		if i > first && w.startsBand(i, n) {
@@ -29,7 +29,7 @@ func (w *layoutView) walkBands(f func(b, first, last int) bool) {
 }
 
 // band is the cascade band of column i.
-func (w *layoutView) band(i int) (band int) {
+func (w *View) band(i int) (band int) {
 	w.walkBands(func(b, _, last int) bool {
 		band = b
 		return last < i
@@ -38,7 +38,7 @@ func (w *layoutView) band(i int) (band int) {
 }
 
 // bandBounds is the column range of band b, first > last past the bands.
-func (w *layoutView) bandBounds(b int) (first, last int) {
+func (w *View) bandBounds(b int) (first, last int) {
 	first, last = 0, -1
 	if b < 0 {
 		return first, last

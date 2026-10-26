@@ -32,10 +32,10 @@ func borderCore(t *testing.T, row bool) (*pointerRig, *Workspace) {
 		w.Focus = 0
 	}
 	rs := w.columnRects()
-	c.cursorX, c.cursorY = float64(rs[0].X+rs[0].W+w.gap()/2), 100
+	c.cursorX, c.cursorY = float64(rs[0].X+rs[0].W+w.Gap()/2), 100
 	if row {
-		rows := rowRects(rs[0], w.Columns[0], w.gap())
-		c.cursorX, c.cursorY = 100, float64(rows[0].Y+rows[0].H+w.gap()/2)
+		rows := RowRects(rs[0], w.Columns[0], w.Gap())
+		c.cursorX, c.cursorY = 100, float64(rows[0].Y+rows[0].H+w.Gap()/2)
 	}
 	c.mods = ports.ModSuper
 	return c, w
@@ -300,7 +300,7 @@ func TestBorderGrabFullscreenPublish(t *testing.T) {
 			t.Fatal("grab not started")
 		}
 		grabCommands(c)
-		w.fullscreen = 1
+		w.Fullscreen = 1
 		if err := c.publish(context.Background()); err != nil {
 			t.Fatal(err)
 		}

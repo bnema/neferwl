@@ -18,8 +18,8 @@ func TestCascadeFullscreenOwnBand(t *testing.T) {
 			tc.do(w)
 			wantBands(t, w, []WindowID{1, 2}, []WindowID{3})
 			wantFocus(t, c, "M", 3)
-			if w.fullscreen != 3 {
-				t.Fatalf("fullscreen %d, want 3", w.fullscreen)
+			if w.Fullscreen != 3 {
+				t.Fatalf("fullscreen %d, want 3", w.Fullscreen)
 			}
 			w.ToggleFullscreen()
 			wantBands(t, w, []WindowID{1, 2}, []WindowID{3})
@@ -46,8 +46,8 @@ func TestCascadeFullscreenExpelsFromStack(t *testing.T) {
 	wantColumns(t, w, 1)
 	w.ToggleFullscreen()
 	wantBands(t, w, []WindowID{1}, []WindowID{2})
-	if len(w.Columns[0].Windows) != 1 || w.fullscreen != 2 {
-		t.Fatalf("columns %v fullscreen %d", w.Columns, w.fullscreen)
+	if len(w.Columns[0].Windows) != 1 || w.Fullscreen != 2 {
+		t.Fatalf("columns %v fullscreen %d", w.Columns, w.Fullscreen)
 	}
 	wantFocus(t, c, "M", 2)
 }
@@ -55,7 +55,7 @@ func TestCascadeFullscreenExpelsFromStack(t *testing.T) {
 func TestScrollFullscreenKeepsColumns(t *testing.T) {
 	_, w := cascadeMovesCore(t, 3, 3, false)
 	w.Overflow = OverflowScroll
-	w.resetLayoutState()
+	w.ResetLayoutState()
 	w.ToggleFullscreen()
 	if len(w.Columns) != 3 {
 		t.Fatalf("columns %d", len(w.Columns))
@@ -75,8 +75,8 @@ func TestFullscreenColumnMovesToNeighborMonitor(t *testing.T) {
 			dst := screenWorkspace(c, tc.screen)
 			wantColumns(t, dst, 3)
 			wantFocus(t, c, tc.screen, 3)
-			if dst.fullscreen != 3 || w.fullscreen != 0 {
-				t.Fatalf("fullscreen dst %d src %d", dst.fullscreen, w.fullscreen)
+			if dst.Fullscreen != 3 || w.Fullscreen != 0 {
+				t.Fatalf("fullscreen dst %d src %d", dst.Fullscreen, w.Fullscreen)
 			}
 		})
 	}
@@ -88,8 +88,8 @@ func TestFullscreenColumnNoNeighborStays(t *testing.T) {
 	c.applyAction(ActionMoveColumnLeft)
 	c.applyAction(ActionMoveColumnRight)
 	wantBands(t, w, []WindowID{1, 2}, []WindowID{3})
-	if w.fullscreen != 3 {
-		t.Fatalf("fullscreen %d", w.fullscreen)
+	if w.Fullscreen != 3 {
+		t.Fatalf("fullscreen %d", w.Fullscreen)
 	}
 }
 
@@ -104,8 +104,8 @@ func TestFullscreenFloatMovesToNeighborMonitor(t *testing.T) {
 			w.SetFullscreen(9, true)
 			c.applyAction(tc.action)
 			dst := screenWorkspace(c, tc.screen)
-			if w.floatIndex(9) >= 0 || dst.floatIndex(9) < 0 || w.fullscreen != 0 || dst.fullscreen != 9 {
-				t.Fatalf("float on src %v dst %v, fullscreen src %d dst %d", w.Floats, dst.Floats, w.fullscreen, dst.fullscreen)
+			if w.floatIndex(9) >= 0 || dst.floatIndex(9) < 0 || w.Fullscreen != 0 || dst.Fullscreen != 9 {
+				t.Fatalf("float on src %v dst %v, fullscreen src %d dst %d", w.Floats, dst.Floats, w.Fullscreen, dst.Fullscreen)
 			}
 			wantFocus(t, c, tc.screen, 9)
 			wantColumns(t, w, 1, 2)
@@ -118,8 +118,8 @@ func TestFullscreenFloatNoNeighborStays(t *testing.T) {
 	w.AddDialog(9, 2, 800, 600)
 	w.SetFullscreen(9, true)
 	c.applyAction(ActionMoveColumnLeft)
-	if w.floatIndex(9) < 0 || w.fullscreen != 9 {
-		t.Fatalf("float moved: %v fullscreen %d", w.Floats, w.fullscreen)
+	if w.floatIndex(9) < 0 || w.Fullscreen != 9 {
+		t.Fatalf("float moved: %v fullscreen %d", w.Floats, w.Fullscreen)
 	}
 }
 
@@ -166,7 +166,7 @@ func TestCascadeFullscreenKeepsSlotOfIntactColumn(t *testing.T) {
 	_, w := cascadeMovesCore(t, 3, 3, false)
 	w.Columns[2].Slot = 4
 	w.ToggleFullscreen()
-	if i := w.columnOf(3); w.Columns[i].Slot != 4 {
+	if i := w.ColumnOf(3); w.Columns[i].Slot != 4 {
 		t.Fatalf("slot %d, want 4", w.Columns[i].Slot)
 	}
 }
@@ -191,8 +191,8 @@ func TestFullscreenMoveEdges(t *testing.T) {
 		dst.SetFullscreen(20, true)
 		w.ToggleFullscreen()
 		c.applyAction(ActionMoveColumnRight)
-		if dst.fullscreen != 2 {
-			t.Fatalf("fullscreen %d, want 2", dst.fullscreen)
+		if dst.Fullscreen != 2 {
+			t.Fatalf("fullscreen %d, want 2", dst.Fullscreen)
 		}
 		wantFocus(t, c, "R", 2)
 	})
@@ -203,8 +203,8 @@ func TestFullscreenMoveEdges(t *testing.T) {
 		c.applyAction(ActionMoveColumnLeft)
 		dst := screenWorkspace(c, "L")
 		wantColumns(t, dst, 2)
-		if dst.fullscreen != 2 || w.fullscreen != 0 {
-			t.Fatalf("fullscreen dst %d src %d", dst.fullscreen, w.fullscreen)
+		if dst.Fullscreen != 2 || w.Fullscreen != 0 {
+			t.Fatalf("fullscreen dst %d src %d", dst.Fullscreen, w.Fullscreen)
 		}
 	})
 	t.Run("source floats promoted", func(t *testing.T) {
@@ -214,7 +214,7 @@ func TestFullscreenMoveEdges(t *testing.T) {
 		w.ToggleFullscreen()
 		// A fullscreen keeps a float demoted without it covering the output.
 		w.Floats[0].below = true
-		if len(w.Floats) != 1 || !w.Floats[0].below || w.fullscreen != 2 {
+		if len(w.Floats) != 1 || !w.Floats[0].below || w.Fullscreen != 2 {
 			t.Fatalf("setup: float not demoted: %+v", w.Floats)
 		}
 		c.applyAction(ActionMoveColumnRight)
@@ -249,8 +249,8 @@ func TestFullscreenMoveDestinations(t *testing.T) {
 		w.ToggleFullscreen()
 		c.applyAction(ActionMoveColumnRight)
 		wantFocus(t, c, "R", 2)
-		if dst.fullscreen != 2 {
-			t.Fatalf("fullscreen %d, want 2", dst.fullscreen)
+		if dst.Fullscreen != 2 {
+			t.Fatalf("fullscreen %d, want 2", dst.Fullscreen)
 		}
 	})
 	t.Run("fullscreen window expelled from a stack then moved", func(t *testing.T) {
@@ -262,8 +262,8 @@ func TestFullscreenMoveDestinations(t *testing.T) {
 		wantColumns(t, w, 1, 2)
 		dst := screenWorkspace(c, "L")
 		wantColumns(t, dst, 3)
-		if dst.fullscreen != 3 || len(w.Columns[1].Windows) != 1 {
-			t.Fatalf("fullscreen %d, source column %v", dst.fullscreen, w.Columns[1].Windows)
+		if dst.Fullscreen != 3 || len(w.Columns[1].Windows) != 1 {
+			t.Fatalf("fullscreen %d, source column %v", dst.Fullscreen, w.Columns[1].Windows)
 		}
 	})
 	t.Run("destination with columns gets its own band", func(t *testing.T) {
@@ -276,8 +276,8 @@ func TestFullscreenMoveDestinations(t *testing.T) {
 		w.ToggleFullscreen()
 		c.applyAction(ActionMoveColumnRight)
 		wantBands(t, dst, []WindowID{20, 21}, []WindowID{1})
-		if dst.fullscreen != 1 {
-			t.Fatalf("fullscreen %d", dst.fullscreen)
+		if dst.Fullscreen != 1 {
+			t.Fatalf("fullscreen %d", dst.Fullscreen)
 		}
 	})
 }
@@ -307,8 +307,8 @@ func TestCascadeFullscreenHorizontalKeepsCover(t *testing.T) {
 			}
 			w.SetFullscreen(id, true)
 			c.applyAction(ActionFocusColumnLeft)
-			if c.cur().name() != "L" || w.fullscreen != id {
-				t.Fatalf("screen %+v fullscreen %d", c.cur(), w.fullscreen)
+			if c.cur().name() != "L" || w.Fullscreen != id {
+				t.Fatalf("screen %+v fullscreen %d", c.cur(), w.Fullscreen)
 			}
 		})
 	}
@@ -318,8 +318,8 @@ func TestCascadeFullscreenUpReachesPreviousBand(t *testing.T) {
 	c, w := cascadeMovesCore(t, 2, 3, false)
 	w.ToggleFullscreen()
 	c.applyAction(ActionFocusWindowUp)
-	if w.fullscreen != 0 {
-		t.Fatalf("fullscreen %d", w.fullscreen)
+	if w.Fullscreen != 0 {
+		t.Fatalf("fullscreen %d", w.Fullscreen)
 	}
 	wantFocus(t, c, "M", 1)
 }
@@ -336,8 +336,8 @@ func TestCascadeFullscreenFloatEdgePrefersMonitor(t *testing.T) {
 	c.applyAction(ActionFocusColumnLeft)
 	wantFocus(t, c, "L", 0)
 	wantActive(t, m, 1)
-	if w.fullscreen != 9 {
-		t.Fatalf("fullscreen %d", w.fullscreen)
+	if w.Fullscreen != 9 {
+		t.Fatalf("fullscreen %d", w.Fullscreen)
 	}
 }
 
@@ -351,8 +351,8 @@ func TestCascadeFullscreenFloatChildHorizontalReturnsToCover(t *testing.T) {
 				w.AddDialog(10, 9, 100, 100)
 				c.applyAction(a)
 				wantFocus(t, c, "M", 9)
-				if w.fullscreen != 9 {
-					t.Fatalf("fullscreen %d", w.fullscreen)
+				if w.Fullscreen != 9 {
+					t.Fatalf("fullscreen %d", w.Fullscreen)
 				}
 			})
 		}
@@ -402,7 +402,7 @@ func TestRestoreBandLeavesMaximizedNeighbor(t *testing.T) {
 	w.FocusID(1)
 	w.ToggleFullWidth()
 	wantBands(t, w, []WindowID{1, 3}, []WindowID{2})
-	if c := w.columnOf(2); c < 0 || !w.Columns[c].FullWidth {
+	if c := w.ColumnOf(2); c < 0 || !w.Columns[c].FullWidth {
 		t.Fatal("column 2 lost its maximization")
 	}
 }
@@ -420,7 +420,7 @@ func TestPromotedFullscreenFloatMovesToNeighborMonitor(t *testing.T) {
 			dst := screenWorkspace(c, tc.screen)
 			wantFocus(t, c, tc.screen, 9)
 			wantColumns(t, w, 1, 2)
-			if dst.isFloat(9) || dst.columnOf(9) < 0 || dst.fullscreen != 9 || w.fullscreen != 0 {
+			if dst.isFloat(9) || dst.ColumnOf(9) < 0 || dst.Fullscreen != 9 || w.Fullscreen != 0 {
 				t.Fatalf("destination %+v", dst)
 			}
 		})
@@ -434,7 +434,7 @@ func TestUserFloatedToggleFullscreenPromotes(t *testing.T) {
 		t.Fatal("setup not floating")
 	}
 	w.ToggleFullscreen()
-	if w.isFloat(2) || w.fullscreen != 2 {
+	if w.isFloat(2) || w.Fullscreen != 2 {
 		t.Fatal("user float not promoted")
 	}
 	wantBands(t, w, []WindowID{1}, []WindowID{2})

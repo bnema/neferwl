@@ -15,8 +15,8 @@ func TestSnapPointsReusableMatchesLegacy(t *testing.T) {
 				for _, width := range []int{0, 1, 900, 1920} {
 					w := benchLane(n, stamped)
 					w.Usable.W = width
-					xs, widths := w.columnEdges()
-					g := w.gap()
+					xs, widths := w.ColumnEdges()
+					g := w.Gap()
 					lo := xs[0] - (w.Usable.X + g)
 					hi := max(xs[n-1]+widths[n-1]-(w.Usable.X+width-g), lo)
 					var views []int
@@ -38,7 +38,7 @@ func TestSnapPointsReusableMatchesLegacy(t *testing.T) {
 						want = append(want, float64(hi))
 					}
 					for _, dst := range [][]float64{nil, make([]float64, 0, 2*n+2)} {
-						got := scrollSnapPoints(w.lview(), dst)
+						got := scrollSnapPoints(w.Snapshot(), dst)
 						if !slices.Equal(got, want) {
 							t.Fatalf("n=%d stamped=%t width=%d: got %v want %v", n, stamped, width, got, want)
 						}
@@ -53,15 +53,15 @@ func TestSnapPointsReusableMatchesLegacy(t *testing.T) {
 func TestStatelessLayoutInitialization(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		for _, o := range []Overflow{OverflowScroll, OverflowFixed} {
-			w := Workspace{lanes: lanes{Overflow: o}}
+			w := Workspace{Lanes: Lanes{Overflow: o}}
 			if w.state() != nil || !w.lstateReady {
 				t.Fatal("stateless layout not initialized")
 			}
-			w.resetLayoutState()
+			w.ResetLayoutState()
 			if w.lstateReady {
 				t.Fatal("state initialization not reset")
 			}
-			w.lview()
+			w.Snapshot()
 			if !w.lstateReady {
 				t.Fatal("snapshot did not initialize state")
 			}
@@ -74,20 +74,20 @@ func TestStatelessLayoutBuildsStateOnce(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		w, l := dispatchLayout(t, 3)
 		// dispatchLayout allows newState at will; this test counts it.
-		l.Mock.ExpectedCalls = slices.DeleteFunc(l.Mock.ExpectedCalls, func(c *mock.Call) bool { return c.Method == "newState" })
-		l.EXPECT().newState().Return(nil).Once()
+		l.Mock.ExpectedCalls = slices.DeleteFunc(l.Mock.ExpectedCalls, func(c *mock.Call) bool { return c.Method == "NewState" })
+		l.EXPECT().NewState().Return(nil).Once()
 		for range 3 {
 			w.state()
-			w.lview()
+			w.Snapshot()
 		}
-		l.AssertNumberOfCalls(t, "newState", 1)
+		l.AssertNumberOfCalls(t, "NewState", 1)
 
-		w.resetLayoutState()
-		l.EXPECT().newState().Return(nil).Once()
+		w.ResetLayoutState()
+		l.EXPECT().NewState().Return(nil).Once()
 		for range 3 {
-			w.lview()
+			w.Snapshot()
 		}
-		l.AssertNumberOfCalls(t, "newState", 2)
+		l.AssertNumberOfCalls(t, "NewState", 2)
 
 	})
 }
