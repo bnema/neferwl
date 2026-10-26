@@ -340,12 +340,19 @@ func (w *sceneWalk) windows() {
 			w.separators(win.ID)
 		}
 		// Above this client's entire surface tree and border, below later
-		// windows and the separate popup pass. Overview cards omit panels.
-		if win.Preview == 0 {
+		// windows and the separate popup pass. Overview cards and windows
+		// zooming in or out omit panels; rounded windows round them too.
+		if win.Preview == 0 && win.Zoom == 0 {
 			outputWidth, _ := w.r.sceneSize(w.s.Transform)
 			for _, o := range w.s.Overlays {
 				if o.Window == win.ID {
+					start := len(w.draws)
 					w.overlay(o, body, outer.Intersect(w.bounds), outputWidth)
+					if win.Radius > 0 {
+						for j := start; j < len(w.draws); j++ {
+							roundedDraw(&w.draws[j], body, innerRadius)
+						}
+					}
 				}
 			}
 		}
