@@ -33,10 +33,13 @@ type localDeviceError struct{ cause error }
 
 func (e localDeviceError) Error() string { return fmt.Sprintf("local copy device: %v", e.cause) }
 
-// IsLocalDeviceError reports a failure confined to the card's copy device.
+// IsLocalDeviceError reports device loss confined to the card's copy device.
+// Capability and import refusals affect only the output, not sibling users of
+// the cached device. Inspect the hidden cause without exposing local loss to
+// the shared render device's errors.Is recovery path.
 func IsLocalDeviceError(err error) bool {
 	var local localDeviceError
-	return errors.As(err, &local)
+	return errors.As(err, &local) && errors.Is(local.cause, ports.ErrDeviceLost)
 }
 
 func (o *Output) crossGPU() bool { return o.card != nil && o.card.dev.Local != nil }

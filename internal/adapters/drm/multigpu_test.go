@@ -409,3 +409,28 @@ func TestIsLocalDeviceError(t *testing.T) {
 		t.Fatal("shared loss or nil classified as local")
 	}
 }
+
+func TestLocalImportRefusalIsNotDeviceLoss(t *testing.T) {
+	for _, cause := range []error{errors.New("unsupported copier"), errors.New("source import refused"), errors.New("target import refused")} {
+		err := fmt.Errorf("output: %w", localDeviceError{cause: cause})
+		if IsLocalDeviceError(err) || errors.Is(err, ports.ErrDeviceLost) {
+			t.Fatalf("per-output refusal classified as device loss: %v", err)
+		}
+	}
+	if !IsLocalDeviceError(localDeviceError{cause: fmt.Errorf("import: %w", ports.ErrDeviceLost)}) {
+		t.Fatal("wrapped device loss not recognized")
+	}
+}
+
+func TestCopyImagesImportRefusalIsOutputLocal(t *testing.T) {
+	mods := []domain.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
+	o, _, r, copier, _ := copyFixture(t, mods)
+	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]domain.DMABuf{gbmBuf(1), gbmBuf(1)}, nil).Once()
+	copier.EXPECT().ImportSources(mock.Anything).Return(errors.New("unsupported source import")).Once()
+	copier.EXPECT().Close().Return().Once()
+	r.EXPECT().ExportTargets(0, []uint64(nil), false).Return(nil, nil).Once()
+	_, err := o.setupImages(r, imagesDriver, nil, false)
+	if err == nil || IsLocalDeviceError(err) || errors.Is(err, ports.ErrDeviceLost) {
+		t.Fatalf("import refusal should stop only this output: %v", err)
+	}
+}
