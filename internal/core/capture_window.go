@@ -21,8 +21,8 @@ func (c *Core) windowSize(w *Workspace, id WindowID) Rect {
 			return Rect{W: r.W, H: r.H}
 		}
 	}
-	if i := w.floatIndex(id); i >= 0 && w.Floats[i].W > 0 && w.Floats[i].H > 0 {
-		return Rect{W: w.Floats[i].W, H: w.Floats[i].H}
+	if f, _, ok := w.FloatAt(id); ok && f.W > 0 && f.H > 0 {
+		return Rect{W: f.W, H: f.H}
 	}
 	if v, ok := c.configures.sent[id]; ok && v.Width > 0 && v.Height > 0 {
 		return Rect{W: v.Width, H: v.Height}

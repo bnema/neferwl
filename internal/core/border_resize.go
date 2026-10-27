@@ -12,12 +12,12 @@ type borderResize struct {
 	core   *Core
 	screen *screen
 	ws     *Workspace
-	border border
+	border Border
 	btn    uint32
 	saved  []Column
 }
 
-func newBorderResize(c *Core, s *screen, w *Workspace, b border, button uint32) *borderResize {
+func newBorderResize(c *Core, s *screen, w *Workspace, b Border, button uint32) *borderResize {
 	g := &borderResize{core: c, screen: s, ws: w, border: b, btn: button, saved: slices.Clone(w.Columns)}
 	for i := range g.saved {
 		g.saved[i].Windows = slices.Clone(g.saved[i].Windows)
@@ -29,7 +29,7 @@ func newBorderResize(c *Core, s *screen, w *Workspace, b border, button uint32) 
 
 func (g *borderResize) button() uint32 { return g.btn }
 func (g *borderResize) cursor() string {
-	if g.border.kind == borderColumn {
+	if g.border.Kind == BorderColumn {
 		return "ew-resize"
 	}
 	return "ns-resize"
@@ -37,7 +37,7 @@ func (g *borderResize) cursor() string {
 
 func (g *borderResize) valid() bool {
 	c, s, w := g.core, g.screen, g.ws
-	if !slices.Contains(c.screens, s) || s.mon.Current() != w || s.mon.previewing() || s.mon.ov.open || w.pinned() || w.Fullscreen != 0 || len(w.Columns) != len(g.saved) {
+	if !slices.Contains(c.screens, s) || s.mon.Current() != w || s.mon.previewing() || s.mon.ov.open || w.Pinned() || w.Fullscreen != 0 || len(w.Columns) != len(g.saved) {
 		return false
 	}
 	for i, col := range w.Columns {
@@ -46,13 +46,13 @@ func (g *borderResize) valid() bool {
 		}
 	}
 	b := g.border
-	if b.col < 0 || b.col >= len(w.Columns) {
+	if b.Col < 0 || b.Col >= len(w.Columns) {
 		return false
 	}
-	if b.kind == borderRow {
-		return b.row >= 0 && b.row+1 < len(w.Columns[b.col].Windows)
+	if b.Kind == BorderRow {
+		return b.Row >= 0 && b.Row+1 < len(w.Columns[b.Col].Windows)
 	}
-	return b.col+1 < len(w.Columns) && w.LaneOf(b.col) == w.LaneOf(b.col+1)
+	return b.Col+1 < len(w.Columns) && w.LaneOf(b.Col) == w.LaneOf(b.Col+1)
 }
 
 func (g *borderResize) motion(ctx context.Context, _ time.Duration) error {
@@ -64,10 +64,10 @@ func (g *borderResize) motion(ctx context.Context, _ time.Duration) error {
 		return c.publish(ctx)
 	}
 	pos := int(c.cursorX) - g.screen.x
-	if g.border.kind == borderRow {
+	if g.border.Kind == BorderRow {
 		pos = int(c.cursorY) - g.screen.y
 	}
-	if !g.ws.setBorder(g.border, pos) {
+	if !g.ws.MoveBorder(g.border, pos) {
 		return nil
 	}
 	return c.publish(ctx)

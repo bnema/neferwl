@@ -6,8 +6,9 @@ import (
 	"github.com/bnema/neferwl/internal/core/layout"
 )
 
+// MoveColumn moves the focused column one step toward dir.
 func (w *Workspace) MoveColumn(dir int) {
-	if w.onFloat() {
+	if w.OnFloat() {
 		return
 	}
 	if (dir == -1 || dir == 1) && w.Focus+dir >= 0 && w.Focus+dir < len(w.Columns) {
@@ -26,7 +27,7 @@ func (w *Workspace) MoveColumn(dir int) {
 // column; focus follows it. A slot window leaving row 0 releases the slot.
 // Past the column, a cascade column moves to the adjacent band.
 func (w *Workspace) MoveWindow(dir int) {
-	if w.onFloat() || len(w.Columns) == 0 || (dir != -1 && dir != 1) || w.FullscreenHides() {
+	if w.OnFloat() || len(w.Columns) == 0 || (dir != -1 && dir != 1) || w.FullscreenHides() {
 		return
 	}
 	c := &w.Columns[w.Focus]
@@ -52,7 +53,7 @@ func (w *Workspace) MoveWindow(dir int) {
 // other rows of its column give or take it in proportion to their shares.
 // Every row keeps at least minShare basis points.
 func (w *Workspace) ResizeRow(pct int) {
-	if w.onFloat() || len(w.Columns) == 0 || w.FullscreenHides() {
+	if w.OnFloat() || len(w.Columns) == 0 || w.FullscreenHides() {
 		return
 	}
 	c := &w.Columns[w.Focus]

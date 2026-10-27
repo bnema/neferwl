@@ -283,7 +283,7 @@ func TestFullscreenPinsFocus(t *testing.T) {
 		w.AddWindow(2)
 		w.AddFloating(3, 20, 10)
 		w.SetFullscreen(3, true)
-		w.focusCover()
+		w.FocusCover()
 		w.Apply(ActionMoveColumnLeft)
 		w.Apply(ActionCycleColumnWidth)
 		if id, _ := w.Focused(); id != 3 || w.Fullscreen != 3 || w.Columns[0].Windows[0] != 1 || w.Columns[1].Cells != 0 {
@@ -344,8 +344,8 @@ func TestFocusMoveLeavesFullscreen(t *testing.T) {
 		s.AddWindow(1)
 		s.AddWindow(2)
 		s.SetFullscreen(2, true)
-		if s.FocusColumn(-1); s.Focus != 0 || s.cover() != 0 {
-			t.Fatalf("scroll: focus %d cover %d", s.Focus, s.cover())
+		if s.FocusColumn(-1); s.Focus != 0 || s.Cover() != 0 {
+			t.Fatalf("scroll: focus %d cover %d", s.Focus, s.Cover())
 		}
 
 	})
@@ -422,7 +422,7 @@ func TestHiddenFloatFullscreenRequest(t *testing.T) {
 		w.ToggleWindowStash()
 		w.ToggleStashVisible()
 		m.SetFullscreen(2, true)
-		if m.Current() != w || w.stashIndex(2) < 0 || !w.stashHidden || w.Fullscreen != 0 {
+		if m.Current() != w || w.StashIndex(2) < 0 || !w.stashHidden || w.Fullscreen != 0 {
 			t.Fatalf("hidden stash left or showed: %+v", w)
 		}
 		w.ToggleStashVisible()

@@ -82,7 +82,7 @@ func TestCascadeFocusColumnReachesTrailingWorkspaceWithoutMonitor(t *testing.T) 
 	m.Current().FocusID(35)
 	c.applyAction(ActionFocusColumnRight)
 	wantActive(t, m, 3)
-	if !m.Current().empty() {
+	if !m.Current().Empty() {
 		t.Fatal("want the trailing empty workspace")
 	}
 	c.applyAction(ActionFocusColumnLeft)
@@ -220,7 +220,7 @@ func TestCascadeFloatOnlyWorkspaceIsOccupied(t *testing.T) {
 func TestCascadeLoneFloatAndEmptyWorkspaceStepWorkspace(t *testing.T) {
 	c, m := axisCore(t, false, OverflowCascade, 3)
 	m.Focus(3) // the trailing empty workspace
-	if !m.Current().empty() {
+	if !m.Current().Empty() {
 		t.Fatal("workspace 4 not empty")
 	}
 	c.applyAction(ActionFocusColumnLeft)
@@ -259,7 +259,7 @@ func TestCascadeRightmostMonitorStepsWorkspacesRight(t *testing.T) {
 	wantActive(t, m, 1)
 	c.applyAction(ActionFocusColumnRight)
 	wantActive(t, m, 2)
-	if c.cur().mon != m || !m.Current().empty() {
+	if c.cur().mon != m || !m.Current().Empty() {
 		t.Fatal("want R's trailing empty workspace")
 	}
 	c.applyAction(ActionFocusColumnLeft)

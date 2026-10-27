@@ -203,17 +203,17 @@ func TestStashSpawnedAlwaysShown(t *testing.T) {
 			w := base()
 			w.FocusID(1)
 			w.ToggleFullscreen()
-			w.stashSpawned(5)
+			w.StashSpawned(5)
 			shown(t, w)
-			if w.cover() != 1 || !w.stashOverCover() {
-				t.Fatalf("cover %d: the tile must stay fullscreen under the stash", w.cover())
+			if w.Cover() != 1 || !w.stashOverCover() {
+				t.Fatalf("cover %d: the tile must stay fullscreen under the stash", w.Cover())
 			}
 			if p := previewOf(t, w.Layout(), 1); !p.Fullscreen || p.Hidden {
 				t.Fatalf("tile %+v", p)
 			}
 			w.ToggleStashVisible()
-			if id, _ := w.Focused(); id != 1 || w.cover() != 1 {
-				t.Fatalf("hidden stash: focused %d cover %d, want the tile", id, w.cover())
+			if id, _ := w.Focused(); id != 1 || w.Cover() != 1 {
+				t.Fatalf("hidden stash: focused %d cover %d, want the tile", id, w.Cover())
 			}
 
 		})
@@ -223,13 +223,13 @@ func TestStashSpawnedAlwaysShown(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			w := base()
 			w.ToggleFullscreen() // 3
-			if w.cover() != 3 {
-				t.Fatalf("setup: cover %d", w.cover())
+			if w.Cover() != 3 {
+				t.Fatalf("setup: cover %d", w.Cover())
 			}
-			w.stashSpawned(5)
+			w.StashSpawned(5)
 			shown(t, w)
-			if w.cover() != 0 {
-				t.Fatalf("cover %d: the stash member still covers", w.cover())
+			if w.Cover() != 0 {
+				t.Fatalf("cover %d: the stash member still covers", w.Cover())
 			}
 			if p := previewOf(t, w.Layout(), 3); p.Fullscreen {
 				t.Fatalf("old member %+v", p)
@@ -246,10 +246,10 @@ func TestStashSpawnedAlwaysShown(t *testing.T) {
 			if w.hiddenFullscreen != 3 {
 				t.Fatalf("setup: deferred %d", w.hiddenFullscreen)
 			}
-			w.stashSpawned(5)
+			w.StashSpawned(5)
 			shown(t, w)
-			if w.cover() != 0 || w.hiddenFullscreen != 0 {
-				t.Fatalf("cover %d, deferred %d", w.cover(), w.hiddenFullscreen)
+			if w.Cover() != 0 || w.hiddenFullscreen != 0 {
+				t.Fatalf("cover %d, deferred %d", w.Cover(), w.hiddenFullscreen)
 			}
 			w.ToggleStashVisible()
 			w.ToggleStashVisible()

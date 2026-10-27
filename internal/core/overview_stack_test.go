@@ -158,7 +158,7 @@ func TestOverviewStackStashDialogNeighbor(t *testing.T) {
 			t.Fatalf("dialog %+v", p)
 		}
 		m.OverviewMove(-1, 0) // single-window float sends behind before stash
-		if m.stackFront(w).kind != stackColumns || m.cardAt(w) >= 0 {
+		if m.stackFront(w).Kind != StackColumns || m.cardAt(w) >= 0 {
 			t.Fatal("float did not send behind")
 		}
 		m.OverviewMove(-1, 0)
@@ -246,12 +246,12 @@ func TestOverviewStackRowChangeResetsRotation(t *testing.T) {
 		m := stackMonitor()
 		m.ToggleOverview()
 		m.OverviewMove(0, -1)
-		if m.stackFront(m.Current()).kind != stackColumns {
+		if m.stackFront(m.Current()).Kind != StackColumns {
 			t.Fatal("stack did not move to columns")
 		}
 		m.OverviewMove(0, -1) // at stack end: workspace above, if present
 		m.OverviewMove(0, 1)
-		if m.stackFront(m.Current()) != (stackItem{stackFloat, 9}) {
+		if m.stackFront(m.Current()) != (StackItem{StackFloat, 9}) {
 			t.Fatal("row change retained cursor")
 		}
 		m.CancelOverview()
@@ -289,7 +289,7 @@ func TestOverviewStashRightBringsColumnsFront(t *testing.T) {
 			t.Fatal("not in stash")
 		}
 		m.OverviewMove(1, 0)
-		if m.cardAt(w) >= 0 || m.stackFront(w).kind != stackColumns {
+		if m.cardAt(w) >= 0 || m.stackFront(w).Kind != StackColumns {
 			t.Fatal("not returned to front column card")
 		}
 		m.ToggleOverview()

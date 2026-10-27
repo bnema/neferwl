@@ -66,7 +66,7 @@ func TestExpiredTerminalTokenMapsNormally(t *testing.T) {
 			t.Fatal("claim survived past retry boundary")
 		}
 		c.placement.place(c, ports.WindowMapped{ID: 51, Slot: token})
-		if _, w := c.screenOf(51); w != focused || target.has(51) {
+		if _, w := c.screenOf(51); w != focused || target.Has(51) {
 			t.Fatal("expired token did not map onto focused workspace")
 		}
 

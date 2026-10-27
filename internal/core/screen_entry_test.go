@@ -144,7 +144,7 @@ func TestFocusEntryDuringWorkspaceSlide(t *testing.T) {
 		view := m.viewport()
 		outgoing := false
 		for _, p := range m.Layout() {
-			if !m.Current().has(p.ID) && view.shows(p) {
+			if !m.Current().Has(p.ID) && view.shows(p) {
 				outgoing = true
 			}
 		}

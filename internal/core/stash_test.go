@@ -91,8 +91,8 @@ func TestStashFullscreenRoundTrip(t *testing.T) {
 		w := m.Current()
 		w.FocusID(2)
 		m.ToggleFullscreen()
-		if m.Current() != w || w.cover() != 2 || !slices.Equal(stashIDs(w), []WindowID{2, 3}) {
-			t.Fatalf("fullscreen: cover %d stash %v", w.cover(), stashIDs(w))
+		if m.Current() != w || w.Cover() != 2 || !slices.Equal(stashIDs(w), []WindowID{2, 3}) {
+			t.Fatalf("fullscreen: cover %d stash %v", w.Cover(), stashIDs(w))
 		}
 		m.ToggleFullscreen()
 		if id, _ := w.Focused(); id != 2 || w.stashAt != 0 || w.Fullscreen != 0 {
@@ -130,7 +130,7 @@ func TestStashAloneHasFocus(t *testing.T) {
 		w = m.Current()
 		w.ToggleWindowStash()
 		m.ToggleFullscreen()
-		if w.cover() != 2 {
+		if w.Cover() != 2 {
 			t.Fatal("not fullscreen")
 		}
 		m.RemoveWindow(1)
@@ -156,8 +156,8 @@ func TestStashFullscreenWithoutTilesAddWindow(t *testing.T) {
 		w.ToggleWindowStash()
 		w.ToggleFullscreen()
 		w.AddWindow(2)
-		if len(w.Columns) != 1 || w.Columns[0].Windows[0] != 2 || w.cover() != 1 {
-			t.Fatalf("columns %+v cover %d", w.Columns, w.cover())
+		if len(w.Columns) != 1 || w.Columns[0].Windows[0] != 2 || w.Cover() != 1 {
+			t.Fatalf("columns %+v cover %d", w.Columns, w.Cover())
 		}
 
 	})
@@ -178,7 +178,7 @@ func TestStashPendingFullscreenOverTile(t *testing.T) {
 		w.FocusID(1)
 		w.SetFullscreen(1, true)
 		w.FocusID(2) // 1 scrolled off: it no longer covers
-		if w.cover() != 0 {
+		if w.Cover() != 0 {
 			t.Fatal("tile still covers")
 		}
 		w.ToggleStashVisible()
@@ -243,7 +243,7 @@ func TestStashCapture(t *testing.T) {
 				tc.setup(m)
 				w := m.Current()
 				m.AddWindow(4)
-				if captured := w.stashIndex(4) == 2 && w.stashAt == 2; captured != tc.captured {
+				if captured := w.StashIndex(4) == 2 && w.stashAt == 2; captured != tc.captured {
 					t.Fatalf("captured %v, stash %+v", captured, w.Stash)
 				}
 				if id, _ := w.Focused(); id != tc.focused {
@@ -264,7 +264,7 @@ func TestStashCaptureUnstash(t *testing.T) {
 		w := m.Current()
 		m.AddWindow(4)
 		w.ToggleWindowStash()
-		if len(w.Columns) != 2 || w.Columns[1].Windows[0] != 4 || w.Focus != 1 || w.stashIndex(4) >= 0 {
+		if len(w.Columns) != 2 || w.Columns[1].Windows[0] != 4 || w.Focus != 1 || w.StashIndex(4) >= 0 {
 			t.Fatalf("columns %+v focus %d stash %+v", w.Columns, w.Focus, w.Stash)
 		}
 
@@ -337,12 +337,12 @@ func TestFullscreenStashEdgeGoesToMonitor(t *testing.T) {
 		w.FocusID(3)
 		w.ToggleWindowStash() // stash [2 3], 3 selected
 		m.ToggleFullscreen()
-		if w.cover() != 3 {
-			t.Fatal("setup", w.cover())
+		if w.Cover() != 3 {
+			t.Fatal("setup", w.Cover())
 		}
 		c.applyAction(ActionFocusColumnRight)
-		if c.focusScreen != 1 || w.cover() != 3 {
-			t.Fatalf("edge: screen %d cover %d", c.focusScreen, w.cover())
+		if c.focusScreen != 1 || w.Cover() != 3 {
+			t.Fatalf("edge: screen %d cover %d", c.focusScreen, w.Cover())
 		}
 		c.focusScreen = 0
 		c.applyAction(ActionFocusColumnLeft)

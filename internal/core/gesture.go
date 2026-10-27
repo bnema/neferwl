@@ -104,10 +104,10 @@ func (g *swipeGesture) listChanged(m *Monitor) bool {
 // over it.
 func (g *swipeGesture) columnsChanged(m *Monitor) bool {
 	content, _ := g.ws.Engine().Axes()
-	if m.overviewOpens != g.opens || m.Current() != g.ws || !g.ws.slidable() || g.horizontal != (content == layout.Horizontal) {
+	if m.overviewOpens != g.opens || m.Current() != g.ws || !workspaceSlidable(g.ws) || g.horizontal != (content == layout.Horizontal) {
 		return true
 	}
-	g.scratch = g.ws.snapPointsInto(g.scratch)
+	g.scratch = g.ws.Engine().SnapPoints(g.ws.Snapshot(), g.scratch[:0])
 	return !slices.Equal(g.scratch, g.points)
 }
 
@@ -116,7 +116,7 @@ func (g *swipeGesture) columnsChanged(m *Monitor) bool {
 // overview opened over it.
 func (g *swipeGesture) stashChanged(m *Monitor) bool {
 	w := g.ws
-	return m.overviewOpens != g.opens || m.Current() != w || !w.StashSwipeable() || w.stashAt != g.home ||
+	return m.overviewOpens != g.opens || m.Current() != w || !w.StashSwipeable() || w.StashAt() != g.home ||
 		!slices.EqualFunc(w.Stash, g.ids, func(f Float, id WindowID) bool { return f.ID == id })
 }
 
@@ -249,17 +249,17 @@ func (c *Core) decide(g *swipeGesture) {
 		// focus action when the fingers lift.
 		g.mode, g.snap = swipeDiscrete, motion.NewStepSwipe()
 	case g.horizontal && w.StashSwipeable():
-		g.mode, g.ws, g.home = swipeStash, w, w.stashAt
+		g.mode, g.ws, g.home = swipeStash, w, w.StashAt()
 		g.ids = make([]WindowID, 0, len(w.Stash))
 		for _, f := range w.Stash {
 			g.ids = append(g.ids, f.ID)
 		}
 		pos := w.BeginStashDrag()
-		g.snap = motion.NewSnapSwipe(pos, float64(w.stashAt), 1/stashSwipeMovement, motion.IndexPoints(len(w.Stash)), motion.WorkspaceBand)
-	case g.horizontal == (content == layout.Horizontal) && w.slidable():
-		g.mode, g.ws, g.points = swipeColumns, w, w.snapPoints()
+		g.snap = motion.NewSnapSwipe(pos, float64(w.StashAt()), 1/stashSwipeMovement, motion.IndexPoints(len(w.Stash)), motion.WorkspaceBand)
+	case g.horizontal == (content == layout.Horizontal) && workspaceSlidable(w):
+		g.mode, g.ws, g.points = swipeColumns, w, w.Engine().SnapPoints(w.Snapshot(), nil)
 		pos := w.BeginColumnsDrag()
-		g.snap = motion.NewSnapSwipe(pos, float64(w.View), w.swipeScale(), g.points, motion.WorkspaceBand.Scaled(float64(content.Span(w.Usable))))
+		g.snap = motion.NewSnapSwipe(pos, float64(w.View), workspaceSwipeScale(w), g.points, motion.WorkspaceBand.Scaled(float64(content.Span(w.Usable))))
 	case g.horizontal == (workspace == layout.Horizontal) && m.shown == nil:
 		// A landing slide measured in an older list lands at once first.
 		if m.switchList != nil && !slices.Equal(m.switchList, m.Workspaces) {
@@ -367,7 +367,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 		target, velocity := g.snap.End(e.Cancelled, e.Time)
 		dir := 0
 		if !e.Cancelled {
-			dir = int(math.Round(target)) - w.stashAt
+			dir = int(math.Round(target)) - w.StashAt()
 		}
 		if c.cur() == g.screen && dir != 0 {
 			// The landing is the focus action's: the selection, the focus
@@ -381,7 +381,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 		}
 		w.DragStash(drawn)
 		if c.animOn() {
-			w.LandStash(c.spring(w.stashSpring(drawn-float64(w.stashAt), velocity), now))
+			w.LandStash(c.spring(w.StashSpring(drawn-float64(w.StashAt()), velocity), now))
 		} else {
 			w.StopStash()
 		}
@@ -392,7 +392,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 		if step == 0 {
 			return false, nil
 		}
-		if !m.ov.open && (step > 0 || m.Current().stashShown()) {
+		if !m.ov.open && (step > 0 || m.Current().StashShown()) {
 			return c.swipeStash(g, now)
 		}
 		if (step < 0) == m.ov.open {
@@ -431,7 +431,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 			}
 		} else if w.Engine().LaneGestures() {
 			// A content swipe cannot escape the last band to another workspace.
-			if w.onFloat() || w.Fullscreen != 0 || w.LaneNeighbor(step) < 0 {
+			if w.OnFloat() || w.Fullscreen != 0 || w.LaneNeighbor(step) < 0 {
 				return false, nil
 			}
 		}
@@ -447,7 +447,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 		shots := c.snapshot(now)
 		c.keyboard.takeBack()
 		if w.Engine().LaneGestures() && !workspace {
-			w.focusLane(step)
+			w.FocusLane(step)
 		} else {
 			c.applyAction(a)
 		}

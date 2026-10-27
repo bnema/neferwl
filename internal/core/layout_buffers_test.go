@@ -123,7 +123,7 @@ func TestLayoutIntoMatchesLayout(t *testing.T) {
 			}
 			for w := range m.all() {
 				ws := w.Layout()
-				if got := w.layoutInto(buf); !slices.Equal(got, ws) {
+				if got := w.AppendLayout(buf[:0]); !slices.Equal(got, ws) {
 					t.Fatalf("%s: workspace layoutInto differs", name)
 				}
 			}
@@ -151,7 +151,7 @@ func TestLayoutResultsDoNotAlias(t *testing.T) {
 			var buf []Placement
 			for range 2 {
 				buf = m.layoutInto(buf)
-				buf = m.Current().layoutInto(buf)
+				buf = m.Current().AppendLayout(buf[:0])
 				m.Current().previewTiles()
 				m.Current().overviewZoom(m.overviewAxis())
 			}
@@ -159,7 +159,7 @@ func TestLayoutResultsDoNotAlias(t *testing.T) {
 			// the workspace: with the capacity there it returns that storage.
 			w := m.Current()
 			big := make([]Placement, 0, 2*len(buf)+8)
-			res := w.layoutInto(big)
+			res := w.AppendLayout(big[:0])
 			if len(res) == 0 || &res[0] != &big[:1][0] {
 				t.Fatalf("%s: Workspace.layoutInto did not build in the caller's buffer", name)
 			}
@@ -169,14 +169,14 @@ func TestLayoutResultsDoNotAlias(t *testing.T) {
 			// A result kept across the calls that use the workspace scratch
 			// (zoom tiles, preview tiles, columns, rows, a second layout) is
 			// unchanged.
-			mine := w.layoutInto(make([]Placement, 0, len(res)))
+			mine := w.AppendLayout(make([]Placement, 0, len(res)))
 			mineKept := slices.Clone(mine)
 			w.overviewZoom(m.overviewAxis())
 			w.peekStep(m.overviewAxis())
 			w.previewTiles()
 			w.columnRects()
 			_ = w.Layout()
-			_ = w.layoutInto(nil)
+			_ = w.AppendLayout(nil)
 			_ = m.Layout()
 			if !slices.Equal(mine, mineKept) {
 				t.Fatalf("%s: a kept layoutInto result changed across scratch-using calls\n got %+v\nwant %+v", name, mine, mineKept)

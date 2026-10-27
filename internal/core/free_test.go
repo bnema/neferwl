@@ -49,7 +49,7 @@ func TestToggleFloatingRoundTrip(t *testing.T) {
 		if got := w.floatRect(w.Floats[i]); got.X+got.W/2 != w.Usable.X+w.Usable.W/2 {
 			t.Fatal(got)
 		}
-		if !w.imposedFloat(3) || len(w.Columns[1].Windows) != 1 {
+		if !w.ImposedFloat(3) || len(w.Columns[1].Windows) != 1 {
 			t.Fatal(w.Columns)
 		}
 		// Client reports do not change a free float's size.
@@ -87,7 +87,7 @@ func TestToggleFloatingNativeAndNoops(t *testing.T) {
 		w.Apply(ActionToggleWindowStash)
 		id, _ := w.Focused()
 		w.Apply(ActionToggleFloating)
-		if w.stashIndex(id) < 0 {
+		if w.StashIndex(id) < 0 {
 			t.Fatal(w.Stash)
 		}
 		// Fullscreen: no-op.
@@ -123,7 +123,7 @@ func TestFreeFloatStash(t *testing.T) {
 		w.Floats[i].cx, w.Floats[i].cy = 0.3, 0.6
 		want := w.Floats[i]
 		w.Apply(ActionToggleWindowStash)
-		if w.stashIndex(2) < 0 || w.floatIndex(2) >= 0 {
+		if w.StashIndex(2) < 0 || w.floatIndex(2) >= 0 {
 			t.Fatal(w.Stash, w.Floats)
 		}
 		w.Apply(ActionToggleWindowStash)

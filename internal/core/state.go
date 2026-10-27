@@ -65,10 +65,10 @@ func (c *Core) stateInto(st ports.State) ports.State {
 			n := indexOf(m.Workspaces, w) + 1
 			st.Workspaces = c.workspaceInto(st.Workspaces, nws, w, s.name(), n, w == cur)
 			nws++
-			c.scratch.ids = w.appendWindows(c.scratch.ids[:0])
+			c.scratch.ids = w.AppendWindows(c.scratch.ids[:0])
 			for _, id := range c.scratch.ids {
 				rec := c.windows.lookup(id)
-				v := ports.WindowState{ID: id, AppID: rec.client.AppID, PID: rec.client.PID, Sandbox: rec.client.Sandbox, ContentType: contentTypeName(rec.client.ContentType), Xwayland: rec.client.Xwayland, Output: s.name(), Workspace: n, WorkspaceID: w.ID, WorkspaceName: w.Name, Visible: shown[id], IdleInhibit: rec.idleInhibit, ShortcutsInhibited: rec.inhibitShortcuts, Floating: w.isFloat(id), Fullscreen: w.Fullscreen == id}
+				v := ports.WindowState{ID: id, AppID: rec.client.AppID, PID: rec.client.PID, Sandbox: rec.client.Sandbox, ContentType: contentTypeName(rec.client.ContentType), Xwayland: rec.client.Xwayland, Output: s.name(), Workspace: n, WorkspaceID: w.ID, WorkspaceName: w.Name, Visible: shown[id], IdleInhibit: rec.idleInhibit, ShortcutsInhibited: rec.inhibitShortcuts, Floating: isWorkspaceFloat(w, id), Fullscreen: w.Fullscreen == id}
 				if c.constrained.ID == id {
 					switch c.constrained.Mode {
 					case ports.ConstraintLock:
@@ -77,8 +77,9 @@ func (c *Core) stateInto(st ports.State) ports.State {
 						v.PointerConstraint = constraintConfined
 					}
 				}
-				if i := w.stashIndex(id); i >= 0 {
-					v.StashIndex, v.StashCount, v.Hidden = i+1, len(w.Stash), w.stashHidden
+				if i := w.StashIndex(id); i >= 0 {
+					v.StashIndex, v.StashCount = i+1, len(w.Stash)
+					v.Hidden, _ = w.StashVisibility()
 				}
 				if !v.Floating {
 					v.Column, v.Row = w.Cell(id)
@@ -135,7 +136,7 @@ func (c *Core) workspaceInto(ws []ports.WorkspaceState, i int, w *Workspace, out
 	v := &ws[i]
 	cols := v.Columns[:0]
 	*v = ports.WorkspaceState{ID: w.ID, Number: number, Name: w.Name, Output: output, Visible: visible, Overflow: string(w.Overflow)}
-	c.scratch.rects = w.columnRectsAt(c.scratch.rects, false, 0)
+	c.scratch.rects = w.Engine().ColumnRects(w.Snapshot(), c.scratch.rects, layout.RectOpts{})
 	for ci, col := range w.Columns {
 		if ci < cap(cols) {
 			cols = cols[:ci+1]
@@ -193,7 +194,7 @@ func cloneState(st ports.State) ports.State {
 // unless it is on screen.
 func numbered(m *Monitor) int {
 	n := len(m.Workspaces)
-	if last := m.Workspaces[n-1]; n > 1 && last.empty() && last.Name == "" && m.Current() != last {
+	if last := m.Workspaces[n-1]; n > 1 && last.Empty() && last.Name == "" && m.Current() != last {
 		n--
 	}
 	return n

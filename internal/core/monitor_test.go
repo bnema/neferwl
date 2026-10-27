@@ -556,8 +556,8 @@ func TestFixedFullscreenStaysInPlace(t *testing.T) {
 		m.Apply(ActionCycleColumnWidth) // wider: kept through fullscreen
 		m.ToggleFullscreen()
 		m.AddWindow(4)
-		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2, 3, 4}, {}}) || m.Current() != w || w.cover() != 2 {
-			t.Fatal(got, w.cover())
+		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2, 3, 4}, {}}) || m.Current() != w || w.Cover() != 2 {
+			t.Fatal(got, w.Cover())
 		}
 		if id, _ := m.Focused(); id != 2 {
 			t.Fatal("focus", id)

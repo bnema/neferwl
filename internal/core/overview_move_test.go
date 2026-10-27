@@ -34,7 +34,7 @@ func TestOverviewMove(t *testing.T) {
 					t.Fatalf("selection %d, want 2", m.overviewTarget())
 				}
 				m.Apply(tt.action)
-				if !slices.Equal(m.Workspaces[0].windows(), []WindowID{1, 3}) || !slices.Contains(m.Workspaces[1].windows(), 2) {
+				if !slices.Equal(m.Workspaces[0].AppendWindows(nil), []WindowID{1, 3}) || !slices.Contains(m.Workspaces[1].AppendWindows(nil), 2) {
 					t.Fatalf("window 2 not moved: %v", windows(m))
 				}
 				if !m.ov.open || m.Current() != m.Workspaces[tt.row] {
@@ -44,7 +44,7 @@ func TestOverviewMove(t *testing.T) {
 					t.Fatalf("selection %d did not follow", m.overviewTarget())
 				}
 				m.CancelOverview()
-				if !slices.Contains(m.Workspaces[1].windows(), 2) {
+				if !slices.Contains(m.Workspaces[1].AppendWindows(nil), 2) {
 					t.Fatal("escape undid the move")
 				}
 				if id, _ := m.Workspaces[0].Focused(); m.Current() != m.Workspaces[0] || id != 3 {
@@ -73,7 +73,7 @@ func TestOverviewMoveWindowFromStack(t *testing.T) {
 			t.Fatalf("selection %d", m.overviewTarget())
 		}
 		m.Apply(ActionMoveWindowToWorkspaceNext)
-		if !slices.Equal(w.windows(), []WindowID{1, 3}) || !slices.Contains(m.Workspaces[1].windows(), 2) {
+		if !slices.Equal(w.AppendWindows(nil), []WindowID{1, 3}) || !slices.Contains(m.Workspaces[1].AppendWindows(nil), 2) {
 			t.Fatalf("windows %v", windows(m))
 		}
 
@@ -91,7 +91,7 @@ func TestOverviewMoveSelectedUnderFloat(t *testing.T) {
 			t.Fatalf("selection %d", id)
 		}
 		m.Apply(ActionMoveColumnToWorkspaceNext)
-		if !slices.Contains(m.Workspaces[1].windows(), id) || m.Workspaces[1].isFloat(9) {
+		if !slices.Contains(m.Workspaces[1].AppendWindows(nil), id) || isWorkspaceFloat(m.Workspaces[1], 9) {
 			t.Fatalf("moved the wrong window: %v floats %v", windows(m), m.Workspaces[0].Floats)
 		}
 		// The provisional stack front went with the moved column.
@@ -197,7 +197,7 @@ func TestOverviewMoveDropsMaximizeHistory(t *testing.T) {
 		w.ToggleFullWidth()
 		m.ToggleOverview()
 		m.Apply(ActionMoveColumnToWorkspaceNext)
-		if w.has(3) {
+		if w.Has(3) {
 			t.Fatal("3 not moved")
 		}
 		m.CancelOverview()
@@ -230,14 +230,14 @@ func TestOverviewMoveFromFullscreenRow(t *testing.T) {
 				t.Fatalf("follow %v: selection %d", follow, m.overviewTarget())
 			}
 			m.Apply(ActionMoveColumnToWorkspaceNext)
-			if !slices.Equal(w.windows(), []WindowID{1, 3, 4}) || !slices.Equal(m.Workspaces[1].windows(), []WindowID{2}) {
+			if !slices.Equal(w.AppendWindows(nil), []WindowID{1, 3, 4}) || !slices.Equal(m.Workspaces[1].AppendWindows(nil), []WindowID{2}) {
 				t.Fatalf("follow %v: windows %v", follow, windows(m))
 			}
 			if w.Fullscreen != 0 || m.Workspaces[1].Fullscreen != 0 {
 				t.Fatalf("follow %v: fullscreen kept", follow)
 			}
 			m.CancelOverview()
-			if id, ok := w.Focused(); !ok || !w.has(id) || m.Current() != w {
+			if id, ok := w.Focused(); !ok || !w.Has(id) || m.Current() != w {
 				t.Fatalf("follow %v: focus %d on workspace %d", follow, id, m.Active)
 			}
 		}

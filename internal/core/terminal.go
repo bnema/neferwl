@@ -35,15 +35,15 @@ func (c *Core) fillEmpty() []ports.SpawnRequest {
 				continue
 			}
 			c.firstTerminalResolved = true
-			if w != s.mon.Workspaces[0] || !w.empty() || c.hasSlots(w) {
+			if w != s.mon.Workspaces[0] || !w.Empty() || c.hasSlots(w) {
 				continue
 			}
 		}
-		if s.name() == "" || !w.empty() || c.hasSlots(w) || c.placement.workspacePending(w, spawnTerminal) || now.Sub(w.termAt) < termRetry {
+		if s.name() == "" || !w.Empty() || c.hasSlots(w) || c.placement.workspacePending(w, spawnTerminal) || now.Sub(w.TermAt) < termRetry {
 			continue
 		}
 		c.firstTerminalResolved = true
-		w.termAt = now
+		w.TermAt = now
 		reqs = append(reqs, c.placement.request(c.cfg.Terminal.Command, spawnTarget{kind: spawnTerminal, ws: w, at: now}))
 	}
 	return reqs
@@ -56,7 +56,7 @@ func (c *Core) cancelClaim(req ports.SpawnRequest) {
 		if token, ok := strings.CutPrefix(env, ports.SlotEnv+"="); ok {
 			if target, ok := c.placement.pending[token]; ok && target.kind != spawnSlot {
 				if target.kind == spawnTerminal {
-					target.ws.termAt = time.Time{}
+					target.ws.TermAt = time.Time{}
 				}
 				delete(c.placement.pending, token)
 			}

@@ -8,14 +8,14 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// wrapsCards reports whether the unfolded stash of w wraps round, drawn
+// WrapsCards reports whether the unfolded stash of w wraps round, drawn
 // (unfold) and walked (stepCard). A carousel of fewer than three cards does
 // not, so that each side has the card its move selects; nor does the one
 // of a stash-only workspace, which has nothing beside its pile to leave it
 // for. Past the ends of one that does not, a move goes on as from a lane
 // (cascade) or stops (a vertical overview).
-func (w *Workspace) wrapsCards() bool {
-	_, k := w.stackHead()
+func (w *Workspace) WrapsCards() bool {
+	_, k := w.StackHead()
 	return k > 0 && len(w.Stash) >= 3
 }
 
@@ -27,7 +27,7 @@ func (w *Workspace) pileWidth() int {
 	}
 	card, _ := w.cardSize()
 	// Never more than a third of the width: the columns keep the rest.
-	a := w.overviewArea()
+	a := w.OverviewArea()
 	return min(card+(min(len(w.Stash), overviewCards)-1)*w.cardStep()+a.W*2/100, a.W/3)
 }
 
@@ -46,12 +46,12 @@ func (w *Workspace) pileBand(axis layout.Axis) int {
 		return 0
 	}
 	_, ch := w.cardSize()
-	return max(1, w.overviewArea().H*3/100) + ch + (min(len(w.Stash), overviewCards)-1)*w.cardStep()
+	return max(1, w.OverviewArea().H*3/100) + ch + (min(len(w.Stash), overviewCards)-1)*w.cardStep()
 }
 
 // cardStep is the offset between stacked cards, smaller on tiny outputs.
 func (w *Workspace) cardStep() int {
-	a := w.overviewArea()
+	a := w.OverviewArea()
 	return min(overviewCardStep, a.W/100, a.H/50)
 }
 
@@ -65,7 +65,7 @@ func (w *Workspace) pile(dst []Placement, axis layout.Axis, slot Rect, dim bool,
 	if n == 0 {
 		return dst
 	}
-	u := w.overviewArea()
+	u := w.OverviewArea()
 	cw, ch := w.cardSize()
 	rowH := int(math.Round(float64(w.Usable.H) * w.overviewZoom(axis)))
 	var x0, y0 int
@@ -122,7 +122,7 @@ func (w *Workspace) pile(dst []Placement, axis layout.Axis, slot Rect, dim bool,
 // the ones other than at dimmed. The cards are appended to dst.
 func (w *Workspace) unfold(dst []Placement, axis layout.Axis, folded Rect, at int) []Placement {
 	n := len(w.Stash)
-	u := w.overviewArea()
+	u := w.OverviewArea()
 	size, origin, lo, room := folded.W, folded.X, u.X, u.W
 	if axis == layout.Vertical {
 		size, origin, lo, room = folded.H, folded.Y, u.Y, u.H
@@ -130,7 +130,7 @@ func (w *Workspace) unfold(dst []Placement, axis layout.Axis, folded Rect, at in
 	stride := size + 2*w.cardStep()
 	// The extra room at the seam, on top of the stride.
 	gap := size / 4
-	wraps := w.wrapsCards()
+	wraps := w.WrapsCards()
 	pos := func(s int) int {
 		p := origin + s*stride
 		switch {
@@ -196,9 +196,9 @@ func (w *Workspace) zoomSpan(axis layout.Axis) (float64, int) {
 	if span <= 0 {
 		return overviewMaxZoom, span
 	}
-	room := float64(w.overviewArea().W) * 0.96
+	room := float64(w.OverviewArea().W) * 0.96
 	if axis == layout.Vertical {
-		room = float64(w.overviewArea().W-w.pileWidth()) * 0.96
+		room = float64(w.OverviewArea().W-w.pileWidth()) * 0.96
 	}
 	z := min(max(room/float64(span), overviewMinZoom), overviewMaxZoom)
 	if w.stacked() {
@@ -217,7 +217,7 @@ func (w *Workspace) rowWidth(axis layout.Axis) int {
 		// An empty workspace keeps the room of a screen.
 		span = w.Usable.W
 	}
-	width := min(int(math.Round(float64(span)*z)), w.overviewArea().W)
+	width := min(int(math.Round(float64(span)*z)), w.OverviewArea().W)
 	if w.stacked() {
 		width += 4 * w.peekStep(axis)
 	}
@@ -302,7 +302,7 @@ func (w *Workspace) previewRowTiles(axis layout.Axis, slot Rect, dim, lit, lanes
 	z := w.overviewZoom(axis)
 	scale := func(v int) int { return int(math.Round(float64(v) * z)) }
 	width := scale(span)
-	u := w.overviewArea()
+	u := w.OverviewArea()
 	top := slot.Y
 	if axis == layout.Horizontal {
 		top = slot.Y + (slot.H-scale(w.Usable.H))/2
@@ -367,10 +367,11 @@ func (w *Workspace) previewRowTiles(axis layout.Axis, slot Rect, dim, lit, lanes
 	return tiles
 }
 
-// rowSnapshot is a row as the overview first showed it: browsing moves its
+// RowSnapshot is a row as the overview first showed it: browsing moves its
 // focus and scroll, closing puts them back.
-type rowSnapshot struct {
-	focus     WindowID
+type RowSnapshot struct {
+	// Focus anchors the row's original selection across column moves.
+	Focus     WindowID
 	floats    []Float
 	fullWidth WindowID
 	// FullWidth history is restored when active binds changed it.
@@ -378,9 +379,9 @@ type rowSnapshot struct {
 }
 
 // restoreRow puts w back as snapshot s found it.
-func restoreRow(w *Workspace, s rowSnapshot) {
-	if s.focus != 0 {
-		w.FocusID(s.focus)
+func restoreRow(w *Workspace, s RowSnapshot) {
+	if s.Focus != 0 {
+		w.FocusID(s.Focus)
 	} else {
 		w.floatFocus, w.stashFocus = false, false
 	}
@@ -412,13 +413,13 @@ func restoreRow(w *Workspace, s rowSnapshot) {
 		}
 	}
 	// Windows that left the row since leave its maximize history too.
-	w.Maximized = slices.DeleteFunc(slices.Clone(s.maximized), func(id WindowID) bool { return !w.has(id) })
+	w.Maximized = slices.DeleteFunc(slices.Clone(s.maximized), func(id WindowID) bool { return !w.Has(id) })
 	w.scroll()
 }
 
-// neighborSlot is the slot of w, the neighbor before or after the current
+// NeighborSlot is the slot of w, the neighbor before or after the current
 // slot cs along axis, spacing away; gapAt is where the spacing begins.
-func neighborSlot(axis layout.Axis, u, cs Rect, w *Workspace, before bool, spacing int) (slot Rect, gapAt int) {
+func NeighborSlot(axis layout.Axis, u, cs Rect, w *Workspace, before bool, spacing int) (slot Rect, gapAt int) {
 	if axis == layout.Horizontal {
 		slot = Rect{Y: u.Y, W: w.rowWidth(axis), H: u.H}
 		if before {

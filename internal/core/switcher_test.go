@@ -79,7 +79,7 @@ func TestMRUOrder(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				w := threeColumns()
 				tt.run(w)
-				if got := w.switchOrder(); !slices.Equal(got, tt.want) {
+				if got := w.SwitchOrder(); !slices.Equal(got, tt.want) {
 					t.Fatalf("order %v, want %v", got, tt.want)
 				}
 				// recent never keeps a closed window nor two of one column.
@@ -108,7 +108,7 @@ func TestMRUOneWindowPerColumn(t *testing.T) {
 			w.noteFocus()
 			w.FocusColumn(-1)
 		}
-		order := w.switchOrder()
+		order := w.SwitchOrder()
 		if len(order) != len(w.Columns) {
 			t.Fatalf("order %v for %d columns", order, len(w.Columns))
 		}
@@ -126,12 +126,12 @@ func TestMRUOneWindowPerColumn(t *testing.T) {
 func TestMRUSwitchOrderNeedsTwoColumns(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		w := workspace()
-		if w.switchOrder() != nil {
+		if w.SwitchOrder() != nil {
 			t.Fatal("order of an empty workspace")
 		}
 		w.AddWindow(1)
 		w.noteFocus()
-		if w.switchOrder() != nil {
+		if w.SwitchOrder() != nil {
 			t.Fatal("order of one column")
 		}
 
@@ -199,7 +199,7 @@ func TestOverviewBrowsingKeepsMRU(t *testing.T) {
 		focusNote(w, 3)
 		focusNote(w, 2)
 		indicatorScene(t, c)
-		order, recent := w.switchOrder(), slices.Clone(w.recent)
+		order, recent := w.SwitchOrder(), slices.Clone(w.recent)
 		focus := switcherFocus(c)
 		m.ToggleOverview()
 		m.OverviewMove(1, 0)
@@ -214,7 +214,7 @@ func TestOverviewBrowsingKeepsMRU(t *testing.T) {
 		}
 		m.CancelOverview()
 		indicatorScene(t, c)
-		if got := w.switchOrder(); !slices.Equal(got, order) || !slices.Equal(w.recent, recent) {
+		if got := w.SwitchOrder(); !slices.Equal(got, order) || !slices.Equal(w.recent, recent) {
 			t.Fatalf("order %v recent %v, were %v %v", got, w.recent, order, recent)
 		}
 		if switcherFocus(c) != focus {
@@ -356,7 +356,7 @@ func switcherMonitor(overflow Overflow, n int) (*Monitor, *Workspace) {
 
 func openSwitcher(m *Monitor, at int) {
 	w := m.Current()
-	m.sw = switcherState{ws: w, order: w.switchOrder(), at: at}
+	m.sw = switcherState{ws: w, order: w.SwitchOrder(), at: at}
 }
 
 func TestSwitchCommitFocusesSelectedColumn(t *testing.T) {
@@ -568,7 +568,7 @@ func TestSwitchHoldCommitsOnReleaseAndForwardsIt(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, cmds := switcherCore(t, 3)
 		start := switcherFocus(c)
-		order := c.cur().mon.Current().switchOrder()
+		order := c.cur().mon.Current().SwitchOrder()
 		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true), tab(ports.ModSuper, false))
 		if switcherFocus(c) != start || c.cur().mon.sw.ws == nil {
 			t.Fatal("focus moved or switcher closed before the release")
@@ -688,7 +688,7 @@ func TestSwitchCmdKeyFollowsConfig(t *testing.T) {
 		if err := c.apply(cfg); err != nil {
 			t.Fatal(err)
 		}
-		order := c.cur().mon.Current().switchOrder()
+		order := c.cur().mon.Current().SwitchOrder()
 		sendKeys(t, c, tab(ports.ModAlt, true))
 		if c.cur().mon.sw.ws == nil {
 			t.Fatal("Alt+Tab did not open the switcher")
@@ -711,7 +711,7 @@ func TestSwitcherLayoutCards(t *testing.T) {
 		// A wider focused column: the cards have different aspect ratios.
 		c.cur().mon.Current().GrowColumn(false)
 		indicatorScene(t, c)
-		area := c.cur().mon.Current().overviewArea()
+		area := c.cur().mon.Current().OverviewArea()
 		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
 		if s := indicatorScene(t, c); len(scenePreviews(s)) != 0 || c.cur().mon.sw.shown {
 			t.Fatalf("cards before the delay: %+v", s.Windows)
@@ -894,7 +894,7 @@ func TestSwitcherShownIsAPreview(t *testing.T) {
 		if _, _, ok := c.draggable(card); ok {
 			t.Fatal("a card can be dragged")
 		}
-		if tgt := c.dropAt(card, x, y); tgt.kind != dropNone {
+		if tgt := c.dropAt(card, x, y); tgt.kind != DropNone {
 			t.Fatalf("a drop target %+v under the cards", tgt)
 		}
 		// A map and an unmap behind the cards do not animate.
@@ -972,7 +972,7 @@ func TestSwitcherCardOfUnconfiguredWindowKeepsRealSize(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := switcherCore(t, 3)
 		m := c.cur().mon
-		id := m.Current().switchOrder()[1]
+		id := m.Current().SwitchOrder()[1]
 		c.configures.forget(id) // the card falls back to the usable size
 		c.mods = ports.ModSuper
 		bind(t, c, ActionSwitchColumnNext)
@@ -1330,7 +1330,7 @@ func TestSwitcherAnimatedHoldAndCommit(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, ic, _ := switcherCore(t, 3)
 		c.cfg.Animations.On = true
-		target := c.cur().mon.Current().switchOrder()[1]
+		target := c.cur().mon.Current().SwitchOrder()[1]
 		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
 		c.switcherTick()
 		if err := c.publish(context.Background()); err != nil {

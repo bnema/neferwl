@@ -11,23 +11,28 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
+// WindowID identifies a managed window.
 type WindowID = ports.WindowID
 
+// Rect is a logical-pixel rectangle.
 type Rect = ports.Rect
 
 // Placement describes a window and its presentation geometry.
 // It is an alias for geom.Placement during the domain split.
 type Placement = geom.Placement
 
+// Workspace owns the window, focus and presentation model. Only the owner
+// goroutine may read or mutate its state and reusable layout buffers.
 type Workspace struct {
+	// Lanes is the lower-level tiled layout state.
 	layout.Lanes
 	// ID stays with the workspace across reorder and monitor moves.
 	ID uint64
 	// Name is set for workspaces declared in config; empty for dynamic ones.
 	Name string
-	// overviewAfter is the numbered workspace from which this named workspace
+	// OverviewAfter is the numbered workspace from which this named workspace
 	// was invoked. It only orders overview rows; numbering stays unchanged.
-	overviewAfter *Workspace
+	OverviewAfter *Workspace
 	// recent holds one window per column the user focused, newest first
 	// (switcher.go); columns that went are dropped when read.
 	recent []WindowID
@@ -70,13 +75,14 @@ type Workspace struct {
 	// (Activate); 0 without. Bound to that window,
 	// it ends with its cover. Focusing another window ends it too.
 	stashOver WindowID
-	// home is the monitor (key or connector) the workspace belongs to; ""
+	// Home is the monitor (key or connector) the workspace belongs to; ""
 	// means the one it is on. On another monitor it is a guest; homePos is
 	// its position there, where it returns.
-	home    string
-	homePos int
-	// termAt is when core last spawned a terminal for this workspace.
-	termAt time.Time
+	Home string
+	// HomePos is the position to restore on the home monitor; core owns ordering.
+	HomePos int
+	// TermAt is when core last spawned a terminal for this workspace.
+	TermAt time.Time
 	// colBuf, rowBuf and tileBuf are appendLayout's scratch (column rects,
 	// the rows of one column, the tiles before the floats are merged in),
 	// reused across calls and never handed out: owner goroutine only, and
@@ -101,7 +107,9 @@ type origPlace struct {
 
 // Float is a floating window and its client size, logical.
 type Float struct {
-	ID   WindowID
+	// ID identifies the floating window.
+	ID WindowID
+	// W and H are the client size in logical pixels.
 	W, H int
 	// below places a covering native float behind columns and stash.
 	below bool
@@ -121,7 +129,8 @@ type Float struct {
 	modal bool
 }
 
-func (w *Workspace) empty() bool {
+// Empty reports that columns, native floats and stash are all empty.
+func (w *Workspace) Empty() bool {
 	return len(w.Columns) == 0 && len(w.Floats) == 0 && len(w.Stash) == 0
 }
 
@@ -134,10 +143,10 @@ func (w *Workspace) columnWindows() int {
 	return n
 }
 
-// appendHidden appends every window of w as a Hidden placement, in the order
+// AppendHidden appends every window of w as a Hidden placement, in the order
 // of windows (columns, stash, then floats when floats is set), without
 // building the list.
-func (w *Workspace) appendHidden(dst []Placement, floats bool) []Placement {
+func (w *Workspace) AppendHidden(dst []Placement, floats bool) []Placement {
 	for _, c := range w.Columns {
 		for _, id := range c.Windows {
 			dst = append(dst, Placement{ID: id, Hidden: true})
@@ -154,12 +163,8 @@ func (w *Workspace) appendHidden(dst []Placement, floats bool) []Placement {
 	return dst
 }
 
-// windows lists every window: columns first, then the stash, then native
-// floats.
-func (w *Workspace) windows() []WindowID { return w.appendWindows(nil) }
-
-// appendWindows appends windows' list to dst.
-func (w *Workspace) appendWindows(dst []WindowID) []WindowID {
+// AppendWindows appends windows' list to dst.
+func (w *Workspace) AppendWindows(dst []WindowID) []WindowID {
 	for _, c := range w.Columns {
 		dst = append(dst, c.Windows...)
 	}
@@ -229,7 +234,7 @@ func (w *Workspace) raiseColumns() {
 // AddFloating shows a native floating window over the columns and the
 // stash, and focuses it.
 func (w *Workspace) AddFloating(id WindowID, width, height int) {
-	if id == 0 || w.has(id) {
+	if id == 0 || w.Has(id) {
 		return
 	}
 	w.Floats = append(w.Floats, Float{ID: id, W: width, H: height})
@@ -240,7 +245,7 @@ func (w *Workspace) AddFloating(id WindowID, width, height int) {
 // its parent's fullscreen. A dialog follows a user action in its parent
 // (a portal request, a file chooser), so the user expects to see it.
 func (w *Workspace) AddDialog(id, parent WindowID, width, height int) {
-	if id == 0 || w.has(id) {
+	if id == 0 || w.Has(id) {
 		return
 	}
 	w.Floats = append(w.Floats, Float{ID: id, W: width, H: height, over: parent})
@@ -287,11 +292,11 @@ func (w *Workspace) modalOf(id WindowID) WindowID {
 	return blocker
 }
 
-// focusModal sends the focus the user just moved onto the parent of a
+// FocusModal sends the focus the user just moved onto the parent of a
 // modal dialog to that dialog, unless the move came from the dialog: a move
 // away from a dialog reaches its parent, and the next one goes on. Nothing
 // happens when the focus did not move.
-func (w *Workspace) focusModal(from WindowID) {
+func (w *Workspace) FocusModal(from WindowID) {
 	to, ok := w.Focused()
 	if !ok || to == from {
 		return
@@ -300,7 +305,7 @@ func (w *Workspace) focusModal(from WindowID) {
 	if d == 0 || d == from {
 		return
 	}
-	if c := w.cover(); c != 0 && c != d {
+	if c := w.Cover(); c != 0 && c != d {
 		if i := w.floatIndex(d); i >= 0 && !w.overCover(w.Floats[i]) {
 			// Hidden under another window's fullscreen: leave it, as
 			// Activate does for a window not shown over the cover, so
@@ -316,12 +321,12 @@ func (w *Workspace) focusModal(from WindowID) {
 // shows over the cover (a "Save as…" of the app the user picked there),
 // or a dialog of such a dialog (an "Overwrite?" over the "Save as…").
 func (w *Workspace) overCover(f Float) bool {
-	c := w.cover()
+	c := w.Cover()
 	if c == 0 || f.ID == c {
 		return false
 	}
 	owner := w.dialogOwner(f, c)
-	return owner == c || owner != 0 && w.stashOverCover() && w.stashIndex(owner) >= 0
+	return owner == c || owner != 0 && w.stashOverCover() && w.StashIndex(owner) >= 0
 }
 
 // dialogOwner is the window float f is a dialog of, through dialogs of
@@ -373,9 +378,9 @@ func (w *Workspace) ResizeFloating(id WindowID, width, height int) {
 	}
 }
 
-// has reports whether the workspace holds the window.
-func (w *Workspace) has(id WindowID) bool {
-	if w.isFloat(id) {
+// Has reports whether the workspace holds the window.
+func (w *Workspace) Has(id WindowID) bool {
+	if isWorkspaceFloat(w, id) {
 		return true
 	}
 	for _, c := range w.Columns {
@@ -392,7 +397,7 @@ func (w *Workspace) has(id WindowID) bool {
 func (w *Workspace) Focused() (WindowID, bool) {
 	// Nothing else is drawn but its dialogs: the covering fullscreen window
 	// has the focus unless one of them took it.
-	if full := w.cover(); full != 0 {
+	if full := w.Cover(); full != 0 {
 		if d := w.coverDialog(); d != 0 {
 			return d, true
 		}
@@ -470,6 +475,8 @@ func (w *Workspace) fit() {
 	w.reconcileFloats()
 	w.scroll()
 }
+
+// SetGaps changes tile spacing and scrolls to the focus.
 func (w *Workspace) SetGaps(g int) {
 	if g < 0 {
 		g = 0
@@ -477,29 +484,25 @@ func (w *Workspace) SetGaps(g int) {
 	w.Gaps = g
 	w.scroll()
 }
+
+// SetMaxColumns changes the cell count and scrolls to the focus.
 func (w *Workspace) SetMaxColumns(n int) {
 	w.MaxColumns = n
 	w.scroll()
 }
 
-// overviewArea is the monitor area the overview lays rows out in: the whole
+// OverviewArea is the monitor area the overview lays rows out in: the whole
 // area left by layer surfaces, whatever the workspace's size. Tiles keep the
 // workspace's own geometry, scaled uniformly.
-func (w *Workspace) overviewArea() Rect { return w.reserved }
+func (w *Workspace) OverviewArea() Rect { return w.reserved }
 
 // Gap is the effective spacing in pixels.
 // Layout places every window of the workspace in a fresh slice the caller
 // owns. The per-frame paths use layoutInto instead.
-func (w *Workspace) Layout() []Placement { return w.appendLayout(nil) }
+func (w *Workspace) Layout() []Placement { return w.AppendLayout(nil) }
 
-// layoutInto is Layout built in dst[:0]: the result aliases dst's storage
-// (a reused buffer's previous result is overwritten), so only a caller that
-// is done with the previous one may pass it. It never returns the
-// workspace's own scratch.
-func (w *Workspace) layoutInto(dst []Placement) []Placement { return w.appendLayout(dst[:0]) }
-
-// appendLayout appends the workspace's placements to dst.
-func (w *Workspace) appendLayout(dst []Placement) []Placement {
+// AppendLayout appends the workspace's placements to dst.
+func (w *Workspace) AppendLayout(dst []Placement) []Placement {
 	gap := w.Gap()
 	// The column and row rects live in the workspace's scratch: each is dead
 	// once the placements it feeds are built (owner goroutine only, and
@@ -507,7 +510,7 @@ func (w *Workspace) appendLayout(dst []Placement) []Placement {
 	w.colBuf = w.columnRectsInto(w.colBuf, false)
 	cols := w.colBuf
 	focusedID, _ := w.Focused()
-	cover := w.cover()
+	cover := w.Cover()
 	// Facts of the layout, asked once, not per window.
 	l := w.Engine()
 	pins, maxHides := l.PinsFullscreen(), l.MaximizeHides()
@@ -665,13 +668,13 @@ func (w *Workspace) floatRect(f Float) Rect {
 	return Rect{X: x, Y: y, W: fw, H: fh}
 }
 
-// imposedFloat reports whether core, rather than the client, owns the
+// ImposedFloat reports whether core, rather than the client, owns the
 // size of a floating window: a stashed one or a free float.
-func (w *Workspace) imposedFloat(id WindowID) bool {
+func (w *Workspace) ImposedFloat(id WindowID) bool {
 	if i := w.floatIndex(id); i >= 0 {
 		return w.Floats[i].free
 	}
-	return w.stashIndex(id) >= 0
+	return w.StashIndex(id) >= 0
 }
 
 // ToggleWindowStash stashes the focused tile, or returns the focused
@@ -692,12 +695,12 @@ func (w *Workspace) ToggleWindowStash() {
 	case w.floatIndex(id) >= 0:
 		w.RemoveWindow(id)
 		w.restore(id, nil)
-	case w.stashIndex(id) >= 0:
+	case w.StashIndex(id) >= 0:
 		if w.stashOverCover() {
 			// Its column would be hidden under the cover: leave it.
 			w.leaveFullscreen()
 		}
-		w.unstash(w.stashIndex(id))
+		w.unstash(w.StashIndex(id))
 	default:
 		w.stashWindow(id)
 	}

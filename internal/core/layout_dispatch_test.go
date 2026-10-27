@@ -168,7 +168,7 @@ func TestWorkspaceGeometryDispatch(t *testing.T) {
 			t.Fatalf("width %d", got)
 		}
 		l.EXPECT().SnapPoints(mock.Anything, mock.Anything).Return([]float64{0, 5}).Once()
-		if got := w.snapPoints(); len(got) != 2 || got[1] != 5 {
+		if got := w.Engine().SnapPoints(w.Snapshot(), nil); len(got) != 2 || got[1] != 5 {
 			t.Fatalf("snap points %v", got)
 		}
 		l.EXPECT().SnapFocus(mock.Anything, 40, true).Return(1).Once()

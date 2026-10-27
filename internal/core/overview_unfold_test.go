@@ -179,7 +179,7 @@ func TestOverviewCarouselScrolls(t *testing.T) {
 					t.Fatal("setup: wrong overview axis")
 				}
 				m.selectCard(w, 11)
-				u := w.overviewArea()
+				u := w.OverviewArea()
 				pos := func(r Rect) (int, int) {
 					if axis == layout.Vertical {
 						return r.Y, r.Y + r.H/2 - (u.Y + u.H/2)
@@ -374,10 +374,10 @@ func TestOverviewStashOnlyCarouselScrolls(t *testing.T) {
 			w.ToggleWindowStash()
 		}
 		m.ToggleOverview()
-		if w.wrapsCards() || m.cardAt(w) < 0 {
-			t.Fatalf("setup: wraps %v, card %d", w.wrapsCards(), m.cardAt(w))
+		if w.WrapsCards() || m.cardAt(w) < 0 {
+			t.Fatalf("setup: wraps %v, card %d", w.WrapsCards(), m.cardAt(w))
 		}
-		u := w.overviewArea()
+		u := w.OverviewArea()
 		m.selectCard(w, 0)
 		ps := m.Layout()
 		if r := previewOf(t, ps, w.Stash[0].ID).Rect; r.X != u.X {

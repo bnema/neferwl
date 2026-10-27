@@ -145,7 +145,7 @@ func TestSpansDropIntoLane(t *testing.T) {
 			m.Workspaces = []*Workspace{w, src}
 			sc := &screen{mon: m}
 			c := &Core{screens: []*screen{sc}}
-			c.drop(9, dropTarget{kind: dropInsert, screen: sc, ws: w, anchor: w.Columns[1].Windows[0]})
+			c.drop(9, dropTarget{kind: DropInsert, screen: sc, ws: w, anchor: w.Columns[1].Windows[0]})
 			if len(w.Columns) != 3 {
 				t.Fatal("not dropped", mode, w.Columns)
 			}
@@ -170,7 +170,7 @@ func TestSpanLaneIdentity(t *testing.T) {
 				}
 				for _, i := range []int{0, 2} {
 					rs := w.columnRects()
-					w.setBorder(border{kind: borderColumn, col: i}, rs[i].X+rs[i].W+5)
+					w.MoveBorder(Border{Kind: BorderColumn, Col: i}, rs[i].X+rs[i].W+5)
 				}
 				for _, col := range w.Columns {
 					if col.Span != 5000 {
@@ -187,7 +187,7 @@ func TestSpanLaneIdentity(t *testing.T) {
 					if cross {
 						to = 2
 					}
-					c.drop(w.Columns[0].Windows[0], dropTarget{kind: dropSwap, screen: sc, ws: w, anchor: w.Columns[to].Windows[0]})
+					c.drop(w.Columns[0].Windows[0], dropTarget{kind: DropSwap, screen: sc, ws: w, anchor: w.Columns[to].Windows[0]})
 				} else {
 					w.Focus = 0
 					w.MoveColumn(1)

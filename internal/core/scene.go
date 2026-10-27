@@ -36,7 +36,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		clear(c.overviewReal)
 		real = c.overviewReal
 		for w := range sc.mon.all() {
-			c.realBuf = w.layoutInto(c.realBuf)
+			c.realBuf = w.AppendLayout(c.realBuf[:0])
 			for _, p := range c.realBuf {
 				real[p.ID] = p
 			}
@@ -48,7 +48,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		scene.Dim = c.cfg.Floating.Dim
 		scene.DimBehind = scene.Dim > 0
 	}
-	if d := c.drag; d != nil && d.target.screen == sc && d.target.kind != dropNone {
+	if d := c.drag; d != nil && d.target.screen == sc && d.target.kind != DropNone {
 		scene.DropHints = slices.Clone(d.target.hints)
 	}
 	if sc.mon.ov.open {
@@ -99,7 +99,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		t := configureTarget{output: sc.name(), view: view, focused: focused, captured: capture != nil && capture.window == p.ID}
 		if !p.Hidden && p.Preview == 0 {
 			// Only a sized configure needs the client size.
-			t.client, t.imposed = c.clientRect(ps), sc.mon.Current().imposedFloat(p.ID)
+			t.client, t.imposed = c.clientRect(ps), sc.mon.Current().ImposedFloat(p.ID)
 		} else if t.captured && p.Hidden {
 			// A captured hidden window is sized like its capture.
 			t.client = capture.windowSz

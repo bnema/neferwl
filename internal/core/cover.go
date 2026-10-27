@@ -23,20 +23,20 @@ func (w *Workspace) mayCover(id WindowID) bool {
 		}
 		w.left = 0
 	}
-	if !w.Engine().PinsFullscreen() || w.stashHidden && w.stashIndex(id) >= 0 {
+	if !w.Engine().PinsFullscreen() || w.stashHidden && w.StashIndex(id) >= 0 {
 		return true
 	}
 	focused, ok := w.Focused()
 	return ok && focused == id
 }
 
-// pinned reports whether the covering fullscreen window hides every other
+// Pinned reports whether the covering fullscreen window hides every other
 // window: focus moves leave it (leaveCover), and the overview shows it as
 // the front card of its row. Only in scroll overflow does moving to a
 // tiled neighbor scroll it off and show the target instead.
-func (w *Workspace) pinned() bool {
-	c := w.cover()
-	return c != 0 && (w.Engine().PinsFullscreen() || w.isFloat(c))
+func (w *Workspace) Pinned() bool {
+	c := w.Cover()
+	return c != 0 && (w.Engine().PinsFullscreen() || isWorkspaceFloat(w, c))
 }
 
 // leaveCover runs a focus move from the covering fullscreen window as if it
@@ -44,7 +44,7 @@ func (w *Workspace) pinned() bool {
 // ends and that window shows, focused; otherwise (an edge) nothing changes
 // and the caller goes on to the next workspace or monitor.
 func (w *Workspace) leaveCover(move func()) bool {
-	w.focusCover()
+	w.FocusCover()
 	full := w.Fullscreen
 	w.Fullscreen = 0
 	move()
@@ -57,11 +57,11 @@ func (w *Workspace) leaveCover(move func()) bool {
 	return false
 }
 
-// focusCover points the focus state at the covering fullscreen window,
+// FocusCover points the focus state at the covering fullscreen window,
 // which Focused already reports, so a user action acts on the window on
 // screen, not on one it hides.
-func (w *Workspace) focusCover() {
-	c := w.cover()
+func (w *Workspace) FocusCover() {
+	c := w.Cover()
 	if c == 0 {
 		return
 	}
@@ -75,7 +75,7 @@ func (w *Workspace) focusCover() {
 		w.stashFocus, w.floatFocus = true, false
 		return
 	}
-	if w.isFloat(c) {
+	if isWorkspaceFloat(w, c) {
 		w.FocusID(c)
 		return
 	}
@@ -87,14 +87,14 @@ func (w *Workspace) focusCover() {
 	}
 }
 
-// cover returns the fullscreen window that covers the output, or 0. The
+// Cover returns the fullscreen window that covers the output, or 0. The
 // fullscreen is exclusive: while it covers, no other window of the
 // workspace is drawn, so the output can scan it out.
-func (w *Workspace) cover() WindowID {
+func (w *Workspace) Cover() WindowID {
 	if w.Fullscreen == 0 {
 		return 0
 	}
-	if w.isFloat(w.Fullscreen) || w.Engine().PinsFullscreen() {
+	if isWorkspaceFloat(w, w.Fullscreen) || w.Engine().PinsFullscreen() {
 		return w.Fullscreen
 	}
 	// Scroll overflow: only while its column is aligned on the output.

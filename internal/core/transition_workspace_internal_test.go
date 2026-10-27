@@ -41,14 +41,14 @@ func TestOverviewWorkspaceEntranceGroup(t *testing.T) {
 				if m.Current() != m.Workspaces[0] {
 					t.Fatal("focus did not change immediately")
 				}
-				area := m.Current().overviewArea()
+				area := m.Current().OverviewArea()
 				want := -float64(area.H) * 0.12
 				if tc.horizontal {
 					want = -float64(area.W) * 0.12
 				}
 				count := 0
 				for _, p := range sc.settledLayout {
-					if p.Hidden || !m.Current().has(p.ID) {
+					if p.Hidden || !m.Current().Has(p.ID) {
 						continue
 					}
 					count++
@@ -78,7 +78,7 @@ func TestOverviewWorkspaceEntranceGroup(t *testing.T) {
 				}
 				frame(t, c, ic, 150*time.Millisecond)
 				for id, rm := range sc.rects {
-					if m.Current().has(id) && math.Abs(rm.dx+rm.dy) > math.Abs(want)*0.1 {
+					if m.Current().Has(id) && math.Abs(rm.dx+rm.dy) > math.Abs(want)*0.1 {
 						t.Errorf("tile %d still more than 10%% away after 150ms: (%g,%g)", id, rm.dx, rm.dy)
 					}
 				}
@@ -111,7 +111,7 @@ func TestOverviewWorkspaceHiddenTilesLeave(t *testing.T) {
 		indicatorScene(t, c)
 		left := 0
 		for _, r := range before {
-			if !old.has(r.id) {
+			if !old.Has(r.id) {
 				continue
 			}
 			p := settledOf(t, sc, r.id)
@@ -121,7 +121,7 @@ func TestOverviewWorkspaceHiddenTilesLeave(t *testing.T) {
 				if !p.Leaving || !rm.leaving {
 					t.Errorf("tile %d vanished instead of leaving", r.id)
 				}
-				want := int(math.Round(float64(m.Current().overviewArea().W) * overviewWorkspaceTravel))
+				want := int(math.Round(float64(m.Current().OverviewArea().W) * overviewWorkspaceTravel))
 				if rm.left.Rect.X != r.rect.X-want || rm.dx != float64(want)+r.off.x || rm.dy != r.off.y {
 					t.Errorf("tile %d does not share the exit offset: %+v", r.id, rm)
 				}
@@ -192,7 +192,7 @@ func TestOverviewWorkspaceRetargetCarriesVelocity(t *testing.T) {
 		c.transition(shots, ic.now)
 		moving := 0
 		for _, r := range shots[0].rects {
-			if !sc.mon.Current().has(r.id) {
+			if !sc.mon.Current().Has(r.id) {
 				continue
 			}
 			rm := sc.rects[r.id]
@@ -240,7 +240,7 @@ func TestOverviewWorkspaceIncludesStashAndFloats(t *testing.T) {
 				t.Fatalf("tile %d hidden in fixture", id)
 			}
 			rm := sc.rects[id]
-			if rm.dx != -float64(w.overviewArea().W)*overviewWorkspaceTravel || rm.dy != 0 {
+			if rm.dx != -float64(w.OverviewArea().W)*overviewWorkspaceTravel || rm.dy != 0 {
 				t.Errorf("tile %d not in group: %+v", id, rm)
 			}
 		}
@@ -275,7 +275,7 @@ func TestOverviewWorkspaceSwitchDuringRunningSlide(t *testing.T) {
 		var speed rectOffsets
 		var fade float64
 		for id, rm := range sc.rects {
-			if rm.leaving && home.has(id) {
+			if rm.leaving && home.Has(id) {
 				leaving = id
 				_, speed = rm.sample(ic.now)
 				fade = rm.df
@@ -337,8 +337,8 @@ func TestOverviewWorkspaceSwitchCarouselWrapIsGroupSlide(t *testing.T) {
 					w.Overflow = l.Name()
 				}
 				from, to := m.Workspaces[0], m.Workspaces[1]
-				if !from.wrapsCards() || !to.wrapsCards() {
-					t.Fatalf("fixture: wraps %v / %v", from.wrapsCards(), to.wrapsCards())
+				if !from.WrapsCards() || !to.WrapsCards() {
+					t.Fatalf("fixture: wraps %v / %v", from.WrapsCards(), to.WrapsCards())
 				}
 				settleShown(t, c)
 				toggleOverview(c, sc, ic.now)
@@ -351,7 +351,7 @@ func TestOverviewWorkspaceSwitchCarouselWrapIsGroupSlide(t *testing.T) {
 				switchAndCheck(t, c, ic, sc, func() { m.Focus(1) }, 1)
 				cards := 0
 				for _, p := range sc.settledLayout {
-					if p.Hidden || to.stashIndex(p.ID) < 0 {
+					if p.Hidden || to.StashIndex(p.ID) < 0 {
 						continue
 					}
 					cards++
@@ -390,7 +390,7 @@ func TestOverviewLeavingNeighborReappearsContinuously(t *testing.T) {
 		m.Focus(1)
 		var id WindowID
 		for _, p := range m.Layout() {
-			if !p.Hidden && sc.rects[p.ID].leaving && m.Workspaces[0].has(p.ID) {
+			if !p.Hidden && sc.rects[p.ID].leaving && m.Workspaces[0].Has(p.ID) {
 				id = p.ID
 				break
 			}

@@ -6,21 +6,24 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// workspaceDrop is an output-local model target, without screen ownership.
-type workspaceDrop struct {
-	kind   dropKind
-	anchor WindowID
-	hints  []Rect
+// DropSpot is an output-local model target, without screen ownership.
+type DropSpot struct {
+	// Kind selects the insertion, stack or swap operation.
+	Kind DropKind
+	// Anchor is the hovered window, or zero for insertion at the end.
+	Anchor WindowID
+	// Hints are output-local preview outlines.
+	Hints []Rect
 }
 
-// dropIn resolves the drop of window id at the output-local point x, y,
+// DropIn resolves the drop of window id at the output-local point x, y,
 // hints t logical px thick.
-func (w *Workspace) dropIn(id WindowID, x, y, t int) workspaceDrop {
+func (w *Workspace) DropIn(id WindowID, x, y, t int) DropSpot {
 	layout := w.Layout()
 	for _, p := range slices.Backward(layout) {
 		// Floats and the stash are over the tiles: nothing lands there.
 		if p.Floating && !p.Hidden && !p.Below && p.ID != id && contains(p.Rect, x, y) {
-			return workspaceDrop{}
+			return DropSpot{}
 		}
 	}
 	src, srcRow := w.ColumnOf(id), -1
@@ -45,11 +48,11 @@ func (w *Workspace) dropIn(id WindowID, x, y, t int) workspaceDrop {
 	}
 	if len(w.Columns) == 0 || src < 0 && len(cols) == 0 {
 		if !contains(w.Usable, x, y) {
-			return workspaceDrop{}
+			return DropSpot{}
 		}
 		g := w.Gap()
 		r := Rect{X: w.Usable.X + g, Y: w.Usable.Y + g, W: max(w.Usable.W-2*g, 0), H: max(w.Usable.H-2*g, 0)}
-		return workspaceDrop{kind: dropInsert, hints: outline(r, t)}
+		return DropSpot{Kind: DropInsert, Hints: outline(r, t)}
 	}
 	if w.scrollsRow() {
 		if tgt, ok := w.gapDrop(cols, id, src, lone, x, y, t); ok {
@@ -71,32 +74,32 @@ func (w *Workspace) dropIn(id WindowID, x, y, t int) workspaceDrop {
 		case y < r.Y+band:
 			// Above the window just below it, or above itself: no move.
 			if p.ID == id || ci == src && row == srcRow+1 {
-				return workspaceDrop{}
+				return DropSpot{}
 			}
-			return workspaceDrop{kind: dropAbove, anchor: p.ID, hints: []Rect{{X: r.X, Y: r.Y, W: r.W, H: min(t, r.H)}}}
+			return DropSpot{Kind: DropAbove, Anchor: p.ID, Hints: []Rect{{X: r.X, Y: r.Y, W: r.W, H: min(t, r.H)}}}
 		case y >= r.Y+r.H-band:
 			if p.ID == id || ci == src && row == srcRow-1 {
-				return workspaceDrop{}
+				return DropSpot{}
 			}
-			return workspaceDrop{kind: dropBelow, anchor: p.ID, hints: []Rect{{X: r.X, Y: r.Y + r.H - min(t, r.H), W: r.W, H: min(t, r.H)}}}
+			return DropSpot{Kind: DropBelow, Anchor: p.ID, Hints: []Rect{{X: r.X, Y: r.Y + r.H - min(t, r.H), W: r.W, H: min(t, r.H)}}}
 		default:
 			if ci == src {
-				return workspaceDrop{}
+				return DropSpot{}
 			}
 			for _, vc := range cols {
 				if vc.index == ci {
-					return workspaceDrop{kind: dropSwap, anchor: p.ID, hints: outline(vc.rect, t)}
+					return DropSpot{Kind: DropSwap, Anchor: p.ID, Hints: outline(vc.rect, t)}
 				}
 			}
-			return workspaceDrop{}
+			return DropSpot{}
 		}
 	}
-	return workspaceDrop{}
+	return DropSpot{}
 }
 
 // gapDrop is the insert zone of scroll overflow: the gaps between the
 // columns on screen and beside the outer ones.
-func (w *Workspace) gapDrop(cols []visibleColumn, id WindowID, src int, lone bool, x, y, t int) (workspaceDrop, bool) {
+func (w *Workspace) gapDrop(cols []visibleColumn, id WindowID, src int, lone bool, x, y, t int) (DropSpot, bool) {
 	pad := max(w.Gap()/2, gapPad)
 	for i := 0; i <= len(cols); i++ {
 		var mid, at int
@@ -118,7 +121,7 @@ func (w *Workspace) gapDrop(cols []visibleColumn, id WindowID, src int, lone boo
 		}
 		// A lone column next to its own place does not move.
 		if lone && (at == src || at == src+1) {
-			return workspaceDrop{}, true
+			return DropSpot{}, true
 		}
 		var anchor WindowID
 		if at < len(w.Columns) {
@@ -128,9 +131,9 @@ func (w *Workspace) gapDrop(cols []visibleColumn, id WindowID, src int, lone boo
 			}
 		}
 		hint := Rect{X: mid - t/2, Y: ref.Y, W: t, H: ref.H}
-		return workspaceDrop{kind: dropInsert, anchor: anchor, hints: []Rect{hint}}, true
+		return DropSpot{Kind: DropInsert, Anchor: anchor, Hints: []Rect{hint}}, true
 	}
-	return workspaceDrop{}, false
+	return DropSpot{}, false
 }
 
 // scrollBy moves the view one column toward dir, within the row; the
@@ -229,12 +232,18 @@ func outline(r Rect, t int) []Rect {
 	}
 }
 
-type dropKind int
+// DropKind describes how a dragged tile joins its destination.
+type DropKind int
 
 const (
-	dropNone dropKind = iota
-	dropAbove
-	dropBelow
-	dropSwap
-	dropInsert
+	// DropNone leaves the tile in place.
+	DropNone DropKind = iota
+	// DropAbove stacks before the anchor window.
+	DropAbove
+	// DropBelow stacks after the anchor window.
+	DropBelow
+	// DropSwap exchanges columns or inserts beside the anchor.
+	DropSwap
+	// DropInsert inserts a column before the anchor, or at the end.
+	DropInsert
 )

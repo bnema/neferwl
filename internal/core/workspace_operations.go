@@ -23,13 +23,13 @@ const (
 
 // ColumnEdge preserves fullscreen and floating focus rules at a content edge.
 func (w *Workspace) ColumnEdge(dir int) EdgeKind {
-	if w.Engine().Bands() && w.cover() != 0 && w.isFloat(w.cover()) && !w.stashOverCover() && !w.coverDialogFocused() {
+	if w.Engine().Bands() && w.Cover() != 0 && isWorkspaceFloat(w, w.Cover()) && !w.stashOverCover() && !w.coverDialogFocused() {
 		return EdgeAlways
 	}
-	if w.pinned() && !w.stashOverCover() {
+	if w.Pinned() && !w.stashOverCover() {
 		return EdgeIfStuck
 	}
-	if w.LeavesLane(w.columnToward(dir)) && (!w.onFloat() || w.floatFocus && !w.canLeaveFloat()) {
+	if w.LeavesLane(w.columnToward(dir)) && (!w.OnFloat() || w.floatFocus && !w.canLeaveFloat()) {
 		return EdgeFirst
 	}
 	return EdgeNone
@@ -38,7 +38,7 @@ func (w *Workspace) ColumnEdge(dir int) EdgeKind {
 // MovableFullscreen reports a focused fullscreen tile or native float.
 func (w *Workspace) MovableFullscreen() bool {
 	fid, ok := w.Focused()
-	return ok && w.Fullscreen == fid && (w.floatIndex(fid) >= 0 || !w.onFloat())
+	return ok && w.Fullscreen == fid && (w.floatIndex(fid) >= 0 || !w.OnFloat())
 }
 
 // MoveFullscreen transfers the focused fullscreen window, keeping its cover.
@@ -75,7 +75,7 @@ func MoveFocused(from, to *Workspace, column bool, at int) bool {
 		to.AddFloating(id, f.W, f.H)
 		to.Floats[len(to.Floats)-1] = f
 		to.Activate(id)
-	} else if i := from.stashIndex(id); i >= 0 {
+	} else if i := from.StashIndex(id); i >= 0 {
 		f := from.Stash[i].rehome()
 		from.RemoveWindow(id)
 		to.addStash(f)
@@ -158,7 +158,7 @@ func (w *Workspace) LandSwipe(view int, forward bool) bool {
 
 // LeaveCoverFor leaves a pinned cover when selecting a different window.
 func (w *Workspace) LeaveCoverFor(id WindowID) {
-	if w.pinned() && id != w.cover() {
+	if w.Pinned() && id != w.Cover() {
 		w.leaveFullscreen()
 	}
 }
@@ -181,8 +181,8 @@ func (w *Workspace) AddRuleFloat(id WindowID, floating bool, width, height int, 
 func NewFrom(t *Workspace, id uint64) *Workspace {
 	w := *t
 	w.colBuf, w.rowBuf, w.tileBuf, w.zoomBuf = nil, nil, nil, nil
-	w.Columns, w.Floats, w.Maximized, w.floatFocus, w.home = nil, nil, nil, false, ""
-	w.overviewAfter = nil
+	w.Columns, w.Floats, w.Maximized, w.floatFocus, w.Home = nil, nil, nil, false, ""
+	w.OverviewAfter = nil
 	w.DropState()
 	w.Stash, w.stashAt, w.stashFocus, w.stashHidden, w.hiddenFullscreen = nil, 0, false, false, 0
 	w.ID = id
@@ -210,7 +210,7 @@ func (w *Workspace) SetStash(width, gap int) {
 }
 
 // StashSwipeable reports a shown stash focused beneath no native float.
-func (w *Workspace) StashSwipeable() bool { return w.stashFocused() && !w.floatFocus && w.stashShown() }
+func (w *Workspace) StashSwipeable() bool { return w.stashFocused() && !w.floatFocus && w.StashShown() }
 
 // StashVisibility returns the hidden state and covering-window override.
 func (w *Workspace) StashVisibility() (bool, WindowID) { return w.stashHidden, w.stashOver }
@@ -247,7 +247,7 @@ func (w *Workspace) DragFloat(id WindowID, from Rect, edges ports.ResizeEdges, d
 
 // EdgeScroll scrolls the columns when an output-local pointer reaches an edge.
 func (w *Workspace) EdgeScroll(lx int) bool {
-	if !w.scrollsRow() || len(w.Columns) == 0 || w.pinned() {
+	if !w.scrollsRow() || len(w.Columns) == 0 || w.Pinned() {
 		return false
 	}
 	dir := 0
@@ -263,14 +263,14 @@ func (w *Workspace) EdgeScroll(lx int) bool {
 }
 
 // Drop moves a tile to an output-local target, possibly in another workspace.
-func Drop(src, w *Workspace, id WindowID, t workspaceDrop) {
+func Drop(src, w *Workspace, id WindowID, t DropSpot) {
 	ci := src.ColumnOf(id)
 	if ci < 0 {
 		return
 	}
 	lone := len(src.Columns[ci].Windows) == 1
-	if t.kind == dropSwap && w == src && lone {
-		to := w.ColumnOf(t.anchor)
+	if t.Kind == DropSwap && w == src && lone {
+		to := w.ColumnOf(t.Anchor)
 		w.Columns[ci], w.Columns[to] = w.Columns[to], w.Columns[ci]
 		w.FocusID(id)
 	} else {
@@ -282,16 +282,16 @@ func Drop(src, w *Workspace, id WindowID, t workspaceDrop) {
 		src.dropSlotOf(id)
 		src.RemoveWindow(id)
 		col := Column{Windows: []WindowID{id}, Cells: cells}
-		switch t.kind {
-		case dropAbove, dropBelow:
-			ai := w.ColumnOf(t.anchor)
+		switch t.Kind {
+		case DropAbove, DropBelow:
+			ai := w.ColumnOf(t.Anchor)
 			if ai < 0 {
 				w.receive(col, -1)
 				break
 			}
 			tc := &w.Columns[ai]
-			row := slices.Index(tc.Windows, t.anchor)
-			if t.kind == dropBelow {
+			row := slices.Index(tc.Windows, t.Anchor)
+			if t.Kind == DropBelow {
 				row++
 			}
 			if row == 0 {
@@ -302,10 +302,10 @@ func Drop(src, w *Workspace, id WindowID, t workspaceDrop) {
 			w.Activate(id)
 		default:
 			at, anchorCol := len(w.Columns), -1
-			if t.anchor != 0 {
-				if ai := w.ColumnOf(t.anchor); ai >= 0 {
+			if t.Anchor != 0 {
+				if ai := w.ColumnOf(t.Anchor); ai >= 0 {
 					at, anchorCol = ai, ai
-					if t.kind == dropSwap && w == src && ai >= srcIndex {
+					if t.Kind == DropSwap && w == src && ai >= srcIndex {
 						at = ai + 1
 					}
 				}
@@ -333,18 +333,21 @@ type OverviewRow struct {
 	// Shown, Current and Dim describe row visibility and focus presentation.
 	Shown, Current, Dim bool
 	// Front is the monitor's provisional front stack item.
-	Front stackItem
+	Front StackItem
 	// HiddenColumn and Card are provisional column and stash selections.
 	HiddenColumn, Card int
 }
 
 // EnterOverview focuses the cover and returns an initially selected stash card.
-func (w *Workspace) EnterOverview(front stackItem) int {
-	w.focusCover()
-	if w.floatFocus && len(w.Columns) > 0 && (len(w.stack()) < 2 || front.kind == stackColumns) {
+func (w *Workspace) EnterOverview(front StackItem) int {
+	w.FocusCover()
+	if front == (StackItem{}) {
+		front, _ = w.StackHead()
+	}
+	if w.floatFocus && len(w.Columns) > 0 && (len(w.Stack()) < 2 || front.Kind == StackColumns) {
 		w.floatFocus = false
 	}
-	if len(w.Stash) > 0 && (len(w.stack()) == 0 || w.stashFocused() && !w.floatFocus) {
+	if len(w.Stash) > 0 && (len(w.Stack()) == 0 || w.stashFocused() && !w.floatFocus) {
 		return w.stashAt
 	}
 	return -1
@@ -352,8 +355,8 @@ func (w *Workspace) EnterOverview(front stackItem) int {
 
 // Pickable reports whether an overview window is not a small hidden float.
 func (w *Workspace) Pickable(id WindowID) bool {
-	if i := w.floatIndex(id); i >= 0 && w.stashIndex(id) < 0 {
-		return w.coversFloat(w.Floats[i]) || id == w.cover() && w.pinned()
+	if i := w.floatIndex(id); i >= 0 && w.StashIndex(id) < 0 {
+		return w.coversFloat(w.Floats[i]) || id == w.Cover() && w.Pinned()
 	}
 	return true
 }
@@ -367,9 +370,9 @@ func (w *Workspace) RowSpan(axis layout.Axis) int {
 }
 
 // SaveRow snapshots live focus, float order and maximization for overview cancel.
-func (w *Workspace) SaveRow() rowSnapshot {
-	s := rowSnapshot{floats: append([]Float(nil), w.Floats...), maximized: slices.Clone(w.Maximized)}
-	s.focus, _ = w.Focused()
+func (w *Workspace) SaveRow() RowSnapshot {
+	s := RowSnapshot{floats: append([]Float(nil), w.Floats...), maximized: slices.Clone(w.Maximized)}
+	s.Focus, _ = w.Focused()
 	if len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth {
 		c := w.Columns[w.Focus]
 		s.fullWidth = c.Windows[c.Focus]
@@ -378,7 +381,7 @@ func (w *Workspace) SaveRow() rowSnapshot {
 }
 
 // RestoreRow restores still-present windows from an overview snapshot.
-func (w *Workspace) RestoreRow(s rowSnapshot) { restoreRow(w, s) }
+func (w *Workspace) RestoreRow(s RowSnapshot) { restoreRow(w, s) }
 
 // AppendOverviewRow appends row, folded pile, then hidden windows. An unfolded
 // pile is deferred to AppendPile by the monitor so it paints after every row.
@@ -387,7 +390,7 @@ func (w *Workspace) AppendOverviewRow(dst []Placement, r OverviewRow) ([]Placeme
 	if r.Shown {
 		slot := r.Slot
 		slot.H -= w.pileBand(r.Axis)
-		first, n := w.stackHead()
+		first, n := w.StackHead()
 		var tiles []Placement
 		if n == 0 {
 			tiles = w.previewRow(r.Axis, slot, r.Dim, r.Card < 0)
@@ -404,12 +407,12 @@ func (w *Workspace) AppendOverviewRow(dst []Placement, r OverviewRow) ([]Placeme
 		}
 	}
 	for _, f := range w.Floats {
-		if _, drawn := w.itemOf(f.ID); !r.Shown || !drawn {
+		if _, drawn := w.ItemOf(f.ID); !r.Shown || !drawn {
 			dst = append(dst, Placement{ID: f.ID, Hidden: true})
 		}
 	}
 	if !r.Shown {
-		dst = w.appendHidden(dst, false)
+		dst = w.AppendHidden(dst, false)
 	}
 	return dst, unfolded
 }

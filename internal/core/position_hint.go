@@ -63,7 +63,7 @@ func (c *Core) updatePositionHints(only *screen) {
 			}
 		}
 		h.workspace, h.band, h.focused, h.initialized = w, band, focused, true
-		if c.protectionRequested() || w.cover() != 0 {
+		if c.protectionRequested() || w.Cover() != 0 {
 			h.live, h.sample = false, ports.PositionHint{}
 			continue
 		}

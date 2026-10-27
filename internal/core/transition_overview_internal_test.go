@@ -232,7 +232,7 @@ func TestOverviewNavigationAnimates(t *testing.T) {
 			if !ok || b.Hidden {
 				continue
 			}
-			if !sc.mon.Current().has(w.ID) && w.Rect != b.Rect {
+			if !sc.mon.Current().Has(w.ID) && w.Rect != b.Rect {
 				t.Fatalf("leaving window %d jumped on the first frame: %+v then %+v", w.ID, b.Rect, w.Rect)
 			}
 			moved++

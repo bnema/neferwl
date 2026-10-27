@@ -134,7 +134,7 @@ func TestDemotedFloatMoveAndAdopt(t *testing.T) {
 		other.show(w)
 		w.FocusID(2)
 		other.MoveToWorkspace(1, false)
-		if w.has(2) || !other.Workspaces[1].has(2) {
+		if w.Has(2) || !other.Workspaces[1].Has(2) {
 			t.Fatal("move lost float")
 		}
 
@@ -255,7 +255,7 @@ func TestFocusWindowUpStashAndPinned(t *testing.T) {
 		m.AddWindow(1)
 		m.AddFloating(2, 50, 40)
 		m.SetFullscreen(2, true)
-		if m.Active != 0 || !m.Current().pinned() {
+		if m.Active != 0 || !m.Current().Pinned() {
 			t.Fatalf("setup: active %d", m.Active)
 		}
 		m.Apply(ActionFocusWindowUp)

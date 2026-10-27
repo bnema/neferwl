@@ -22,12 +22,12 @@ func (w *Workspace) ruleFloat(id WindowID, floating bool, width, height int) Flo
 // addFloat adds a new float; quiet puts it below the others without the
 // float focus, so the focused window stays the same.
 func (w *Workspace) addFloat(f Float, quiet bool) {
-	if f.ID == 0 || w.has(f.ID) {
+	if f.ID == 0 || w.Has(f.ID) {
 		return
 	}
 	if quiet {
 		// A workspace with nothing else focuses it, so it has a focus when shown.
-		w.floatFocus = w.floatFocus || w.empty()
+		w.floatFocus = w.floatFocus || w.Empty()
 		w.Floats = slices.Insert(w.Floats, 0, f)
 		return
 	}

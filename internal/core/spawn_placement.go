@@ -117,7 +117,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 				for _, s := range c.screens {
 					if s.mon.has(target.ws) {
 						if target.kind == spawnStash {
-							target.ws.stashSpawned(v.ID)
+							target.ws.StashSpawned(v.ID)
 						} else {
 							target.ws.AddWindow(v.ID)
 						}

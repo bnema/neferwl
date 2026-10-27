@@ -653,8 +653,8 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 		if m.switchView.Motion.On {
 			_, s.switchV = m.switchView.Motion.SampleAt(now)
 		}
-		s.stashShown, s.stashAt, s.stashLen, s.stashPos = w.stashShown(), w.stashAt, len(w.Stash), w.StashPosition()
-		s.card, s.wraps = m.cardAt(w), w.wrapsCards()
+		s.stashShown, s.stashAt, s.stashLen, s.stashPos = w.StashShown(), w.StashAt(), len(w.Stash), w.StashPosition()
+		s.card, s.wraps = m.cardAt(w), w.WrapsCards()
 		_, s.stashV = w.SampleStash(now)
 		// settledLayout and shown are index-aligned and differ only by
 		// the offsets of sc.rects: the shot keeps both unrounded. The
@@ -673,7 +673,7 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 			}
 			r.veil = c.peekDim(p)
 			s.rects = append(s.rects, r)
-			if !m.previewing() && w.stashIndex(p.ID) >= 0 {
+			if !m.previewing() && w.StashIndex(p.ID) >= 0 {
 				s.stash = append(s.stash, p)
 			}
 		}
@@ -751,10 +751,10 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 			// A stash navigation slides the view from where it was drawn:
 			// the windows keep their settled places (transitionRects).
 			w.DragStash(b.stashPos)
-			w.LandStash(c.spring(w.stashSpring(b.stashPos-float64(w.stashAt), b.stashV), now))
+			w.LandStash(c.spring(w.StashSpring(b.stashPos-float64(w.StashAt()), b.stashV), now))
 			return
 		}
-		if w.View == b.settledView || !w.slidable() {
+		if w.View == b.settledView || !workspaceSlidable(w) {
 			return
 		}
 		// A running landing slide was retargeted by scroll(): its velocity
@@ -786,7 +786,7 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 // stashSlid reports whether an action moved the selection of the stash b
 // showed on w: a navigation, not a toggle, an unstash or a hide.
 func stashSlid(b *viewShot, w *Workspace) bool {
-	return b.stashShown && w.stashAt != b.stashAt && len(w.Stash) == b.stashLen && w.stashShown()
+	return b.stashShown && w.StashAt() != b.stashAt && len(w.Stash) == b.stashLen && w.StashShown()
 }
 
 // transitionRects starts or retargets the rect motions of the windows whose
@@ -872,7 +872,7 @@ func (c *Core) transitionStash(b *viewShot, now time.Time) {
 	sc := b.sc
 	m := sc.mon
 	w := m.Current()
-	if w != b.ws || len(w.Stash) == 0 || c.security.Protected || w.cover() != 0 || stashSlid(b, w) {
+	if w != b.ws || len(w.Stash) == 0 || c.security.Protected || w.Cover() != 0 || stashSlid(b, w) {
 		return
 	}
 	layout := m.Layout()
@@ -887,7 +887,7 @@ func (c *Core) transitionStash(b *viewShot, now time.Time) {
 		}
 	}
 	for _, p := range layout {
-		if p.Hidden || p.Fullscreen || w.stashIndex(p.ID) < 0 || slices.ContainsFunc(b.rects, func(r rectShot) bool { return r.id == p.ID }) {
+		if p.Hidden || p.Fullscreen || w.StashIndex(p.ID) < 0 || slices.ContainsFunc(b.rects, func(r rectShot) bool { return r.id == p.ID }) {
 			continue
 		}
 		c.appearAt(sc, p, now)
@@ -949,7 +949,7 @@ func (c *Core) transitionOverview(b *viewShot, before []viewShot, now time.Time)
 		}
 		rm := sc.rects[p.ID]
 		i := slices.IndexFunc(b.rects, func(r rectShot) bool { return r.id == p.ID })
-		if group && w.has(p.ID) {
+		if group && w.Has(p.ID) {
 			// What ran on the card carries over, as in the per-window path:
 			// the speeds, a running size change and veil, and the fade.
 			var off, vel rectOffsets
@@ -979,7 +979,7 @@ func (c *Core) transitionOverview(b *viewShot, before []viewShot, now time.Time)
 			sc.rects[p.ID], sc.rectsWS = rm, sc.rectsOwner()
 			continue
 		}
-		if i >= 0 && at >= 0 && wrapped(w.stashIndex(p.ID), b.card, at, n, b.wraps) {
+		if i >= 0 && at >= 0 && wrapped(w.StashIndex(p.ID), b.card, at, n, b.wraps) {
 			// The card went round the carousel to its other end: it
 			// fades in there instead of crossing the row.
 			rm, i = rectMotion{}, -1
@@ -1036,10 +1036,10 @@ func overviewWorkspaceOffset(m *Monitor, b *viewShot) rectOffsets {
 	settled, _ := rows.lookup(cur)
 	previous, ok := rows.lookup(b.ws)
 	axis := m.overviewAxis()
-	area := cur.overviewArea()
+	area := cur.OverviewArea()
 	if !ok {
 		before := b.order < m.overviewOrder(b.list, cur)
-		previous, _ = neighborSlot(axis, area, settled, b.ws, before, max(1, area.H*3/100))
+		previous, _ = NeighborSlot(axis, area, settled, b.ws, before, max(1, area.H*3/100))
 	}
 	if axis == layout.Horizontal {
 		return rectOffsets{x: math.Copysign(float64(area.W)*overviewWorkspaceTravel, float64(settled.X-previous.X))}
@@ -1053,7 +1053,7 @@ func overviewWorkspaceOffset(m *Monitor, b *viewShot) rectOffsets {
 func (c *Core) leaveOverviewWorkspace(b *viewShot, after []Placement, travel rectOffsets, now time.Time) {
 	sc := b.sc
 	for _, p := range sc.settledLayout {
-		if p.Hidden || !b.ws.has(p.ID) {
+		if p.Hidden || !b.ws.Has(p.ID) {
 			continue
 		}
 		if slices.ContainsFunc(after, func(q Placement) bool { return q.ID == p.ID && !q.Hidden }) {
@@ -1088,7 +1088,7 @@ func (c *Core) leaveOverviewWorkspace(b *viewShot, after []Placement, travel rec
 func carouselStep(b *viewShot) int {
 	m := b.sc.mon
 	w := m.Current()
-	if b.card < 0 || w != b.ws || len(w.Stash) != b.stashLen || w.wrapsCards() != b.wraps {
+	if b.card < 0 || w != b.ws || len(w.Stash) != b.stashLen || w.WrapsCards() != b.wraps {
 		return -1
 	}
 	return m.cardAt(w)
@@ -1135,7 +1135,7 @@ func (c *Core) legacyFullscreen(sc *screen, v ports.WindowResized) bool {
 		return false
 	}
 	cur := sc.mon.Current()
-	if id, ok := cur.Focused(); !ok || id != v.ID || !cur.has(v.ID) {
+	if id, ok := cur.Focused(); !ok || id != v.ID || !cur.Has(v.ID) {
 		return false
 	}
 	sc.mon.SetFullscreen(v.ID, true)

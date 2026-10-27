@@ -9,7 +9,7 @@ import (
 // sizable reports whether the focused column can be resized: a tiled column
 // the fullscreen window does not hide.
 func (w *Workspace) sizable() bool {
-	return !w.onFloat() && len(w.Columns) > 0 && !w.FullscreenHides()
+	return !w.OnFloat() && len(w.Columns) > 0 && !w.FullscreenHides()
 }
 
 func (w *Workspace) edit() layout.Edit {
@@ -18,7 +18,7 @@ func (w *Workspace) edit() layout.Edit {
 }
 
 func (w *Workspace) isolate(id WindowID) bool {
-	if i := w.floatIndex(id); i >= 0 && w.Floats[i].over == 0 && w.stashIndex(id) < 0 {
+	if i := w.floatIndex(id); i >= 0 && w.Floats[i].over == 0 && w.StashIndex(id) < 0 {
 		if e := w.edit(); w.Engine().AdoptFloat(e, id) {
 			w.Floats = slices.Delete(w.Floats, i, i+1)
 			if e.Focused == id {
@@ -26,7 +26,7 @@ func (w *Workspace) isolate(id WindowID) bool {
 			}
 		}
 	}
-	if w.isFloat(id) || w.Fullscreen == id {
+	if isWorkspaceFloat(w, id) || w.Fullscreen == id {
 		return false
 	}
 	return w.Engine().Isolate(w.edit(), id)
@@ -73,9 +73,9 @@ func (w *Workspace) columnRectsAt(dst []Rect, ignoreFullWidth bool, shift int) [
 	return w.Engine().ColumnRects(w.Snapshot(), dst, layout.RectOpts{IgnoreFullWidth: ignoreFullWidth, Shift: shift})
 }
 
-// focusLane focuses the column in the lane dir away; a maximized column
+// FocusLane focuses the column in the lane dir away; a maximized column
 // keeps its own band, so it stays maximized.
-func (w *Workspace) focusLane(dir int) bool {
+func (w *Workspace) FocusLane(dir int) bool {
 	i := w.LaneNeighbor(dir)
 	if i < 0 {
 		return false

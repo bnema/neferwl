@@ -117,7 +117,7 @@ type Core struct {
 	lastBorderClick struct {
 		at time.Duration
 		ws *Workspace
-		b  border
+		b  Border
 	}
 	// dataDrag is the client data drag in progress (datadrag.go).
 	dataDrag         *dataDragState

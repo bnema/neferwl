@@ -21,7 +21,7 @@ func (w *Workspace) FocusID(id WindowID) bool {
 		w.floatFocus = true
 		return true
 	}
-	if i := w.stashIndex(id); i >= 0 {
+	if i := w.StashIndex(id); i >= 0 {
 		if w.stashHidden {
 			return false
 		}
@@ -52,14 +52,14 @@ func (w *Workspace) FocusID(id WindowID) bool {
 // false means it stays, with no window on that side.
 func (w *Workspace) FocusColumn(dir int) bool {
 	from, _ := w.Focused()
-	defer w.focusModal(from)
+	defer w.FocusModal(from)
 	if w.coverDialogFocused() {
 		// The first move goes back to the window under it: the stash
 		// over the cover, or the cover.
 		w.floatFocus = false
 		return true
 	}
-	if w.pinned() && !w.stashOverCover() {
+	if w.Pinned() && !w.stashOverCover() {
 		return w.leaveCover(func() { w.focusColumn(dir) })
 	}
 	w.focusColumn(dir)
@@ -95,7 +95,7 @@ func (w *Workspace) focusColumn(dir int) {
 // overflow stacks columns (spiral), so it follows the screen: the column
 // on that side. Cascade stays in its band: past the band edge is the edge.
 func (w *Workspace) columnToward(dir int) int {
-	if len(w.Columns) == 0 || (dir != -1 && dir != 1) || w.pinned() {
+	if len(w.Columns) == 0 || (dir != -1 && dir != 1) || w.Pinned() {
 		return -1
 	}
 	return w.Engine().FocusStep(w.Snapshot(), dir)
@@ -113,12 +113,12 @@ func (w *Workspace) onScreenFocus() bool {
 // covering fullscreen window it leaves fullscreen for that window.
 func (w *Workspace) FocusWindow(dir int) bool {
 	from, _ := w.Focused()
-	defer w.focusModal(from)
+	defer w.FocusModal(from)
 	if w.coverDialogFocused() {
 		w.floatFocus = false
 		return true
 	}
-	if w.pinned() && !w.stashOverCover() {
+	if w.Pinned() && !w.stashOverCover() {
 		return w.leaveCover(func() { w.focusWindow(dir) })
 	}
 	return w.focusWindow(dir)

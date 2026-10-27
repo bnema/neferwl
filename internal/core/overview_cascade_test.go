@@ -87,7 +87,7 @@ func TestOverviewCascadeCentreLane(t *testing.T) {
 		m := cascadeOverview()
 		m.ToggleOverview()
 		ps := m.Layout()
-		u := m.Current().overviewArea()
+		u := m.Current().OverviewArea()
 		for _, id := range []WindowID{7, 8, 9} {
 			p := previewOf(t, ps, id)
 			if p.Hidden || p.Peek || p.Preview != overviewMaxZoom || p.Focused != (id == 8) {
@@ -122,7 +122,7 @@ func TestOverviewCascadeOtherLanes(t *testing.T) {
 		if gap := up - sel.H; gap <= 0 {
 			t.Fatalf("lane above overlaps the selected one: %v over %v", above.Rect, sel)
 		}
-		u := m.Current().overviewArea()
+		u := m.Current().OverviewArea()
 		if above.Rect.Y+above.Rect.H <= u.Y || below.Rect.Y >= u.Y+u.H {
 			t.Fatalf("adjacent lanes not visible in %v: %v, %v", u, above.Rect, below.Rect)
 		}
@@ -274,7 +274,7 @@ func TestOverviewCascadeStashInSlot(t *testing.T) {
 			t.Fatalf("lane and pile not centred together: %d above, %d below", top, bottom)
 		}
 		// The pile does not shift the band: its row stays centred on the area.
-		u := m.Current().overviewArea()
+		u := m.Current().OverviewArea()
 		lo, hi := previewOf(t, ps, 7).Rect, previewOf(t, ps, 9).Rect
 		if mid := (lo.X + hi.X + hi.W) / 2; !within1(mid, u.X+u.W/2) {
 			t.Fatalf("band centre %d with a stash, area centre %d", mid, u.X+u.W/2)
@@ -649,7 +649,7 @@ func TestOverviewCascadeStashInsideArea(t *testing.T) {
 			m.SetOutput(size[0], size[1])
 			withStash(m, 4)
 			m.ToggleOverview()
-			u := m.Current().overviewArea()
+			u := m.Current().OverviewArea()
 			for _, id := range []WindowID{40, 41, 42, 43} {
 				p := previewOf(t, m.Layout(), id)
 				if !p.Hidden && (p.Rect.Y < u.Y || p.Rect.Y+p.Rect.H > u.Y+u.H || p.Rect.X < u.X || p.Rect.X+p.Rect.W > u.X+u.W) {
@@ -707,7 +707,7 @@ func TestOverviewCascadeFloatStashRight(t *testing.T) {
 		w.AddFloating(90, 300, 200)
 		w.FocusID(90)
 		m.ToggleOverview()
-		if f := m.stackFront(w); f.kind != stackFloat {
+		if f := m.stackFront(w); f.Kind != StackFloat {
 			t.Fatalf("setup: front %+v", f)
 		}
 		m.OverviewMove(0, 1)
@@ -715,7 +715,7 @@ func TestOverviewCascadeFloatStashRight(t *testing.T) {
 			t.Fatal("down from the float did not select the stash")
 		}
 		m.OverviewMove(0, -1)
-		if m.cardAt(w) >= 0 || m.stackFront(w).kind != stackFloat || m.overviewTarget() != 90 {
+		if m.cardAt(w) >= 0 || m.stackFront(w).Kind != StackFloat || m.overviewTarget() != 90 {
 			t.Fatalf("up from the stash: card %d, front %+v, target %d", m.cardAt(w), m.stackFront(w), m.overviewTarget())
 		}
 
@@ -733,23 +733,23 @@ func TestOverviewCascadeCoveringFloat(t *testing.T) {
 				w := m.Current()
 				w.FocusID(10)
 				m.ToggleOverview()
-				if m.stackFront(w).kind != stackColumns {
+				if m.stackFront(w).Kind != StackColumns {
 					t.Fatal("setup: columns not in front")
 				}
 				d.move(m, 0, -1) // columns: up is a band
 				d.move(m, -1, 0)
-				if f := m.stackFront(w); f.kind != stackFloat || f.id != 90 {
+				if f := m.stackFront(w); f.Kind != StackFloat || f.ID != 90 {
 					t.Fatalf("left from the first column: front %+v", f)
 				}
 				if p := previewOf(t, m.Layout(), 90); p.Peek || !p.Focused {
 					t.Fatalf("float not in front: %+v", p)
 				}
 				d.move(m, 0, 1) // a float front takes no band move
-				if f := m.stackFront(w); f.kind != stackFloat {
+				if f := m.stackFront(w); f.Kind != StackFloat {
 					t.Fatalf("down left the float: %+v", f)
 				}
 				d.move(m, 1, 0)
-				if m.stackFront(w).kind != stackColumns || m.Current() != w {
+				if m.stackFront(w).Kind != StackColumns || m.Current() != w {
 					t.Fatalf("right from the float: front %+v", m.stackFront(w))
 				}
 
@@ -757,7 +757,7 @@ func TestOverviewCascadeCoveringFloat(t *testing.T) {
 				m.CancelOverview()
 				w.FocusID(90)
 				m.ToggleOverview()
-				if f := m.stackFront(w); f.kind != stackFloat {
+				if f := m.stackFront(w); f.Kind != StackFloat {
 					t.Fatalf("setup: front %+v", f)
 				}
 				behind := previewOf(t, m.Layout(), 10)
@@ -765,7 +765,7 @@ func TestOverviewCascadeCoveringFloat(t *testing.T) {
 					t.Fatalf("columns not behind the float: %+v", behind)
 				}
 				d.move(m, -1, 0)
-				if m.stackFront(w).kind != stackColumns || m.Current() != w {
+				if m.stackFront(w).Kind != StackColumns || m.Current() != w {
 					t.Fatalf("left from the front float: front %+v", m.stackFront(w))
 				}
 				// The cards behind fan to the left: coming to the front, the
@@ -775,7 +775,7 @@ func TestOverviewCascadeCoveringFloat(t *testing.T) {
 					t.Fatalf("columns behind %v, in front %v, peek step %d", behind.Rect, front.Rect, w.peekStep(layout.Horizontal))
 				}
 				d.move(m, 1, 0)
-				if f := m.stackFront(w); f.kind != stackFloat || f.id != 90 {
+				if f := m.stackFront(w); f.Kind != StackFloat || f.ID != 90 {
 					t.Fatalf("right from the columns behind the float: front %+v", f)
 				}
 
@@ -792,7 +792,7 @@ func TestOverviewCascadePinnedFullscreenTile(t *testing.T) {
 		w := m.Current()
 		w.FocusID(8)
 		m.ToggleFullscreen()
-		if !w.pinned() {
+		if !w.Pinned() {
 			t.Fatal("setup: not pinned")
 		}
 		m.ToggleOverview()
@@ -806,7 +806,7 @@ func TestOverviewCascadePinnedFullscreenTile(t *testing.T) {
 				t.Fatalf("band tile %d: %+v", id, p)
 			}
 		}
-		u := w.overviewArea()
+		u := w.OverviewArea()
 		if !within1(centreY(fs.Rect), u.Y+u.H/2) {
 			t.Fatalf("fullscreen tile not on the centre lane: %+v", fs.Rect)
 		}
@@ -1083,7 +1083,7 @@ func TestOverviewCascadeWideScrollNeighborIsClipped(t *testing.T) {
 		cur, slot := rows.at(m.Current()), rows.at(prev)
 		hidden, shown := 0, 0
 		for _, p := range m.Layout() {
-			if !prev.has(p.ID) {
+			if !prev.Has(p.ID) {
 				continue
 			}
 			if p.Hidden {
@@ -1171,12 +1171,12 @@ func TestOverviewCascadePileVisible(t *testing.T) {
 					ps := m.Layout()
 					shown := 0
 					for i, p := range ps {
-						if w.stashIndex(p.ID) < 0 || p.Hidden {
+						if w.StashIndex(p.ID) < 0 || p.Hidden {
 							continue
 						}
 						shown++
 						for _, q := range ps[i+1:] {
-							if w.stashIndex(q.ID) < 0 && !q.Hidden && q.Preview > 0 && q.Rect.Overlaps(p.Rect) {
+							if w.StashIndex(q.ID) < 0 && !q.Hidden && q.Preview > 0 && q.Rect.Overlaps(p.Rect) {
 								t.Fatalf("n=%d hidden=%v down=%d: card %d painted under tile %d", n, hidden, down, p.ID, q.ID)
 							}
 						}
@@ -1259,7 +1259,7 @@ func TestOverviewCascadeOutlineAndPile(t *testing.T) {
 			}
 		}
 		for _, p := range ps {
-			if w.stashIndex(p.ID) < 0 && p.Focused && !p.Hidden && p.Preview > 0 {
+			if w.StashIndex(p.ID) < 0 && p.Focused && !p.Hidden && p.Preview > 0 {
 				t.Fatalf("lane tile %d still framed with a card selected", p.ID)
 			}
 		}
@@ -1271,7 +1271,7 @@ func TestOverviewCascadeOutlineAndPile(t *testing.T) {
 			t.Fatalf("lane reselected: card %d, %d framed", m.cardAt(w), framed(ps))
 		}
 		for _, p := range ps {
-			if w.stashIndex(p.ID) >= 0 && p.Focused {
+			if w.StashIndex(p.ID) >= 0 && p.Focused {
 				t.Fatalf("card %d still framed on the lane", p.ID)
 			}
 		}

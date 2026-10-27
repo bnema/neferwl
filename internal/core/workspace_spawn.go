@@ -6,15 +6,16 @@ import (
 	"github.com/bnema/neferwl/internal/core/layout"
 )
 
+// AddWindow adds and focuses a tiled window with automatic width.
 func (w *Workspace) AddWindow(id WindowID) { w.addWindow(id, 0) }
 
 // addWindow is AddWindow with the width of the new column in cells (zero:
 // automatic).
 func (w *Workspace) addWindow(id WindowID, cells int) {
-	if id == 0 || w.has(id) {
+	if id == 0 || w.Has(id) {
 		return
 	}
-	if w.cover() != 0 {
+	if w.Cover() != 0 {
 		// A new window never moves the view off a covering fullscreen
 		// window (ADR 011): it waits, hidden, after the focused column.
 		at := w.Engine().CoveredSpawnAt(w.Snapshot())
@@ -31,7 +32,7 @@ func (w *Workspace) addColumn(col Column) { w.placeColumn(col, false) }
 
 // placeColumn shares placement while preserving automatic-event focus.
 func (w *Workspace) placeColumn(col Column, quiet bool) {
-	covered := quiet && w.cover() != 0
+	covered := quiet && w.Cover() != 0
 	at, kind := 0, layout.InsertDefault
 	if covered {
 		at = w.Engine().CoveredSpawnAt(w.Snapshot())
@@ -58,7 +59,7 @@ func (w *Workspace) placeColumn(col Column, quiet bool) {
 // number before the other columns. Focus stays on the focused window: slot
 // windows are automatic events (ADR 011 golden rule).
 func (w *Workspace) AddSlotWindow(id WindowID, slot int, cells int) {
-	if id == 0 || w.has(id) {
+	if id == 0 || w.Has(id) {
 		return
 	}
 	// Right after the last slot column with a lower number, else first.
@@ -75,8 +76,8 @@ func (w *Workspace) AddSlotWindow(id WindowID, slot int, cells int) {
 	w.scroll()
 }
 
-// setSlotCells updates the width in cells of slot column n, if present.
-func (w *Workspace) setSlotCells(n int, cells int) {
+// SetSlotCells updates the width in cells of slot column n, if present.
+func (w *Workspace) SetSlotCells(n int, cells int) {
 	for i := range w.Columns {
 		if w.Columns[i].Slot == n {
 			w.Columns[i].Cells = cells
@@ -85,8 +86,8 @@ func (w *Workspace) setSlotCells(n int, cells int) {
 	w.scroll()
 }
 
-// inSlot reports whether window id is in slot column n.
-func (w *Workspace) inSlot(id WindowID, n int) bool {
+// InSlot reports whether window id is in slot column n.
+func (w *Workspace) InSlot(id WindowID, n int) bool {
 	for _, c := range w.Columns {
 		if c.Slot == n && slices.Contains(c.Windows, id) {
 			return true
@@ -95,8 +96,8 @@ func (w *Workspace) inSlot(id WindowID, n int) bool {
 	return false
 }
 
-// unslot turns slot column n into a normal column.
-func (w *Workspace) unslot(n int) {
+// Unslot turns slot column n into a normal column.
+func (w *Workspace) Unslot(n int) {
 	for i := range w.Columns {
 		if w.Columns[i].Slot == n {
 			w.Columns[i].Slot = 0
@@ -104,6 +105,7 @@ func (w *Workspace) unslot(n int) {
 	}
 }
 
+// RemoveWindow drops a window and repairs focus and fullscreen state.
 func (w *Workspace) RemoveWindow(id WindowID) {
 	w.Maximized = slices.DeleteFunc(w.Maximized, func(v WindowID) bool { return v == id })
 	w.recent = slices.DeleteFunc(w.recent, func(v WindowID) bool { return v == id })
@@ -126,7 +128,7 @@ func (w *Workspace) RemoveWindow(id WindowID) {
 		}
 		return
 	}
-	if i := w.stashIndex(id); i >= 0 {
+	if i := w.StashIndex(id); i >= 0 {
 		// The right neighbor takes the selection, else the left one.
 		w.Stash = slices.Delete(w.Stash, i, i+1)
 		if i < w.stashAt || w.stashAt == len(w.Stash) {
@@ -170,7 +172,7 @@ func (w *Workspace) RemoveWindow(id WindowID) {
 
 // takeColumn removes the focused column and returns it, as a normal column.
 func (w *Workspace) takeColumn() (Column, bool) {
-	if len(w.Columns) == 0 || w.onFloat() {
+	if len(w.Columns) == 0 || w.OnFloat() {
 		return Column{}, false
 	}
 	col := w.Columns[w.Focus]

@@ -109,7 +109,7 @@ func (m *Monitor) commitSwitcher() bool {
 	if i < 0 {
 		return false
 	}
-	if i == w.Focus && !w.floatFocus && !w.stashFocused() {
+	if i == w.Focus && !w.OnFloat() {
 		return true
 	}
 	if i != w.Focus && !w.Engine().Bands() && w.Focus >= 0 && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth {
@@ -194,7 +194,7 @@ func (c *Core) switchStep(dir int) {
 	if !c.switching() {
 		c.cancelSwitcher()
 		w := m.Current()
-		order := w.switchOrder()
+		order := w.SwitchOrder()
 		if order == nil {
 			return
 		}
@@ -311,11 +311,11 @@ func (c *Core) switcherClick(ctx context.Context, button uint32) (handled bool, 
 func (m *Monitor) switcherLayout(dst []Placement) []Placement {
 	sw := &m.sw
 	w := sw.ws
-	area := w.overviewArea()
+	area := w.OverviewArea()
 	n := len(sw.order)
 	for ws := range m.all() {
 		start := len(dst)
-		dst = ws.appendHidden(dst, true)
+		dst = ws.AppendHidden(dst, true)
 		kept := slices.DeleteFunc(dst[start:], func(p Placement) bool { return slices.Contains(sw.order, p.ID) })
 		dst = dst[:start+len(kept)]
 	}

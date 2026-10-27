@@ -40,7 +40,7 @@ const (
 // (above, below, swap) or a window of the column the new one goes before
 // (insert; 0 is the end).
 type dropTarget struct {
-	kind   dropKind
+	kind   DropKind
 	screen *screen
 	ws     *Workspace
 	anchor WindowID
@@ -68,10 +68,10 @@ type dragState struct {
 // not fullscreen, outside the overview.
 func (c *Core) draggable(id WindowID) (*screen, *Workspace, bool) {
 	s, w := c.screenOf(id)
-	if s == nil || w != s.mon.Current() || s.mon.previewing() || id == w.Fullscreen || w.cover() != 0 {
+	if s == nil || w != s.mon.Current() || s.mon.previewing() || id == w.Fullscreen || w.Cover() != 0 {
 		return nil, nil, false
 	}
-	if w.floatIndex(id) < 0 && w.ColumnOf(id) < 0 {
+	if _, _, floating := w.FloatAt(id); !floating && w.ColumnOf(id) < 0 {
 		return nil, nil, false
 	}
 	return s, w, true
@@ -92,7 +92,11 @@ func (c *Core) startDrag(ctx context.Context, v ports.PointerButton) (bool, erro
 	}
 	_, w, ok := c.draggable(id)
 	// Tiles only move; resizing them with the pointer is not supported.
-	if !ok || v.Button == btnRight && w.floatIndex(id) < 0 {
+	if !ok {
+		return false, nil
+	}
+	_, _, floating := w.FloatAt(id)
+	if v.Button == btnRight && !floating {
 		return false, nil
 	}
 	var edges ports.ResizeEdges
@@ -123,7 +127,11 @@ func (c *Core) clientDrag(ctx context.Context, v ports.WindowMoveRequest) error 
 		return nil
 	}
 	_, w, ok := c.draggable(v.ID)
-	if !ok || v.Resize && (w.floatIndex(v.ID) < 0 || v.Edges == 0) {
+	if !ok {
+		return nil
+	}
+	_, _, floating := w.FloatAt(v.ID)
+	if v.Resize && (!floating || v.Edges == 0) {
 		return nil
 	}
 	// Other held buttons release without a client to tell.
@@ -146,8 +154,8 @@ func (c *Core) beginDrag(ctx context.Context, id WindowID, button uint32, resize
 	// Click raises a float above the columns: Escape keeps that.
 	c.focusClick(s, w, id)
 	d := &dragState{id: id, button: button, resize: resize, edges: edges, start: [2]float64{c.cursorX, c.cursorY}}
-	if i := w.floatIndex(id); i >= 0 {
-		d.float, d.from, d.rect = true, w.Floats[i], w.floatRect(w.Floats[i])
+	if f, r, ok := w.FloatAt(id); ok {
+		d.float, d.from, d.rect = true, f, r
 	}
 	c.drag = d
 	c.buttons[button] = true
@@ -199,7 +207,7 @@ func (c *Core) endDrag(ctx context.Context) error {
 	d := c.drag
 	c.drag = nil
 	if !d.float {
-		if t := c.dropAt(d.id, c.cursorX, c.cursorY); t.kind != dropNone {
+		if t := c.dropAt(d.id, c.cursorX, c.cursorY); t.kind != DropNone {
 			now := c.now()
 			shots := c.snapshot(now)
 			c.drop(d.id, t)
@@ -222,7 +230,7 @@ func (c *Core) cancelDrag() {
 	d := c.drag
 	if d.float {
 		if _, w := c.screenOf(d.id); w != nil {
-			if i := w.floatIndex(d.id); i >= 0 {
+			if i := slices.IndexFunc(w.Floats, func(f Float) bool { return f.ID == d.id }); i >= 0 {
 				w.Floats[i] = d.from
 			}
 		}
@@ -249,11 +257,11 @@ func (c *Core) dropAt(id WindowID, x, y float64) dropTarget {
 	m := sc.mon
 	lx, ly := int(x)-sc.x, int(y)-sc.y
 	w := m.Current()
-	if m.previewing() || w.pinned() || !m.frameHas(float64(lx), float64(ly)) {
+	if m.previewing() || w.Pinned() || !m.frameHas(float64(lx), float64(ly)) {
 		return dropTarget{}
 	}
-	t := w.dropIn(id, lx, ly, max(4*c.cfg.Border.Width, 4))
-	return dropTarget{kind: t.kind, anchor: t.anchor, hints: t.hints, screen: sc, ws: w}
+	t := w.DropIn(id, lx, ly, max(4*c.cfg.Border.Width, 4))
+	return dropTarget{kind: t.Kind, anchor: t.Anchor, hints: t.Hints, screen: sc, ws: w}
 }
 
 // drop moves tile id to target t, possibly on another workspace or
@@ -263,7 +271,7 @@ func (c *Core) drop(id WindowID, t dropTarget) {
 	if from == nil || t.ws == nil || src.ColumnOf(id) < 0 {
 		return
 	}
-	Drop(src, t.ws, id, workspaceDrop{kind: t.kind, anchor: t.anchor, hints: t.hints})
+	Drop(src, t.ws, id, DropSpot{Kind: t.kind, Anchor: t.anchor, Hints: t.hints})
 	from.mon.normalize()
 	t.screen.mon.normalize()
 	c.focusScreen = c.screenIndex(t.screen.name())

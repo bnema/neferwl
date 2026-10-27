@@ -17,11 +17,11 @@ func TestAddColumnQuietUnderCover(t *testing.T) {
 		w.FocusID(1)
 		w.Maximize(w.Focus)
 		w.ToggleFullscreen()
-		if w.cover() != 1 {
-			t.Fatalf("setup: cover %d", w.cover())
+		if w.Cover() != 1 {
+			t.Fatalf("setup: cover %d", w.Cover())
 		}
 		w.addColumnQuiet(Column{Windows: []WindowID{3}})
-		if !w.has(3) {
+		if !w.Has(3) {
 			t.Fatal("column not added")
 		}
 		if id, _ := w.Focused(); id != 1 || w.Fullscreen != 1 {

@@ -146,7 +146,7 @@ func TestOverviewNamedAnchorSurvivesConfigAndMonitorMove(t *testing.T) {
 		if at := slices.Index(rows, anchor); at < 0 || at+2 >= len(rows) || rows[at+1] != dev || rows[at+2] != game {
 			t.Fatal("moved named workspaces not reachable on destination monitor")
 		}
-		if dev.overviewAfter != nil && !dst.has(dev.overviewAfter) {
+		if dev.OverviewAfter != nil && !dst.has(dev.OverviewAfter) {
 			t.Fatal("named workspace retained detached monitor anchor")
 		}
 
@@ -181,7 +181,7 @@ func TestOverviewNamedAnchorSurvivesReplug(t *testing.T) {
 			if sc.name() != "OUT-1" {
 				continue
 			}
-			if !sc.mon.has(dev) || dev.overviewAfter != anchor {
+			if !sc.mon.has(dev) || dev.OverviewAfter != anchor {
 				t.Fatal("replug lost named invocation anchor")
 			}
 			rows := sc.mon.overviewWorkspaces()
@@ -342,7 +342,7 @@ func TestOverviewWorkspaceBindKeepsCurrentSelection(t *testing.T) {
 		m.OverviewMove(0, -1)
 		m.OverviewMove(1, 0)
 		front, selected := m.stackFront(m.Current()), m.overviewTarget()
-		if front.kind != stackColumns || selected != 3 {
+		if front.Kind != StackColumns || selected != 3 {
 			t.Fatal("expected provisional hidden column 3")
 		}
 		for _, action := range []Action{"focus-workspace 1", "workspace unknown"} {
@@ -406,7 +406,7 @@ func TestOverviewNamedOutsideNavigationUnchanged(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		m := namedOverviewMonitor()
 		m.Apply(ActionFocusWorkspaceNext)
-		if m.shown != nil || !m.Current().empty() {
+		if m.shown != nil || !m.Current().Empty() {
 			t.Fatal("outside overview, down no longer reaches numbered spare")
 		}
 		m.ToggleNamed("dev")
@@ -423,7 +423,7 @@ func TestOverviewNamedEmptyCurrentAndRemoval(t *testing.T) {
 		m := namedOverviewMonitor()
 		m.ToggleNamed("empty")
 		m.ToggleOverview()
-		if !m.Current().empty() {
+		if !m.Current().Empty() {
 			t.Fatal("expected empty named current")
 		}
 		m.OverviewMove(0, 1)

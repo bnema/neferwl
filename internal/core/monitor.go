@@ -175,7 +175,7 @@ func (m *Monitor) newWorkspace() *Workspace { (*m.nextID)++; return NewFrom(&m.t
 // normalize keeps one trailing empty unnamed workspace and drops other empty
 // unnamed ones that are not active. The active workspace never changes.
 func (m *Monitor) normalize() {
-	spare := func(i int) bool { return m.Workspaces[i].empty() && m.Workspaces[i].Name == "" }
+	spare := func(i int) bool { return m.Workspaces[i].Empty() && m.Workspaces[i].Name == "" }
 	for i := len(m.Workspaces) - 2; i >= 0; i-- {
 		if spare(i) && i != m.Active {
 			m.Workspaces = append(m.Workspaces[:i], m.Workspaces[i+1:]...)
@@ -191,8 +191,8 @@ func (m *Monitor) normalize() {
 		m.Workspaces = append(m.Workspaces, m.newWorkspace())
 	}
 	for _, w := range m.hidden {
-		if indexOf(m.Workspaces, w.overviewAfter) < 0 {
-			w.overviewAfter = nil
+		if indexOf(m.Workspaces, w.OverviewAfter) < 0 {
+			w.OverviewAfter = nil
 		}
 	}
 }
@@ -228,7 +228,7 @@ func (m *Monitor) occupiedStep(axis layout.Axis, dir int) int {
 	if m.shown != nil || step == 0 || to < 0 || to >= len(m.Workspaces) {
 		return -1
 	}
-	if w := m.Workspaces[to]; w.empty() && w.Name == "" {
+	if w := m.Workspaces[to]; w.Empty() && w.Name == "" {
 		return -1
 	}
 	return to
@@ -271,12 +271,12 @@ func (m *Monitor) ToggleNamed(name string) {
 	case target != cur:
 		anchor := cur
 		if m.isHidden(cur) {
-			anchor = cur.overviewAfter
+			anchor = cur.OverviewAfter
 		}
 		if indexOf(m.Workspaces, anchor) < 0 {
 			anchor = m.Workspaces[m.Active]
 		}
-		target.overviewAfter = anchor
+		target.OverviewAfter = anchor
 		m.back = cur
 		m.show(target)
 	case m.back != nil && m.has(m.back):
@@ -317,12 +317,12 @@ func (m *Monitor) has(w *Workspace) bool {
 // find returns the workspace holding the window; i is -1 for hidden ones.
 func (m *Monitor) find(id WindowID) (*Workspace, int) {
 	for i, w := range m.Workspaces {
-		if w.has(id) {
+		if w.Has(id) {
 			return w, i
 		}
 	}
 	for _, w := range m.hidden {
-		if w.has(id) {
+		if w.Has(id) {
 			return w, -1
 		}
 	}
@@ -339,7 +339,7 @@ func (m *Monitor) addWindow(id WindowID, cells int) {
 	if w, _ := m.find(id); w != nil {
 		return
 	}
-	if w := m.Current(); !m.stashCapture || !w.captureStash(id) {
+	if w := m.Current(); !m.stashCapture || !w.CaptureStash(id) {
 		w.AddTile(id, cells, false)
 	}
 	m.normalize()
@@ -404,7 +404,7 @@ func (m *Monitor) focusEntry(d direction) {
 	var id WindowID
 	best := 0
 	for _, p := range m.Layout() {
-		if p.Preview != 0 || p.Below || !w.has(p.ID) || !view.shows(p) {
+		if p.Preview != 0 || p.Below || !w.Has(p.ID) || !view.shows(p) {
 			continue
 		}
 		var distance int
@@ -427,7 +427,7 @@ func (m *Monitor) focusEntry(d direction) {
 	if id != 0 {
 		w.FocusID(id)
 		// Entry comes from another monitor, not from a dialog here.
-		w.focusModal(0)
+		w.FocusModal(0)
 	}
 }
 
@@ -458,10 +458,10 @@ func (m *Monitor) layoutInto(dst []Placement) []Placement {
 	cur := m.Current()
 	for w := range m.all() {
 		if w == cur {
-			result = w.appendLayout(result)
+			result = w.AppendLayout(result)
 			continue
 		}
-		result = w.appendHidden(result, true)
+		result = w.AppendHidden(result, true)
 	}
 	return m.slideLayout(result)
 }

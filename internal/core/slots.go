@@ -72,7 +72,7 @@ func (c *Core) updateSlots(specs []slotSpec) []slotKey {
 			continue
 		}
 		if _, w := c.byName(key.workspace); w != nil {
-			w.unslot(key.index)
+			w.Unslot(key.index)
 		}
 		c.placement.dropSlot(key)
 		delete(c.slots, key)
@@ -88,7 +88,7 @@ func (c *Core) updateSlots(specs []slotSpec) []slotKey {
 		if st.cells != s.cells {
 			st.cells = s.cells
 			if _, w := c.byName(s.key.workspace); w != nil {
-				w.setSlotCells(s.key.index, s.cells)
+				w.SetSlotCells(s.key.index, s.cells)
 			}
 		}
 		if !slices.Equal(st.argv, s.argv) {
@@ -120,7 +120,7 @@ func (c *Core) releaseSlots() {
 			continue
 		}
 		_, w := c.byName(key.workspace)
-		if w == nil || !w.inSlot(st.window, key.index) {
+		if w == nil || !w.InSlot(st.window, key.index) {
 			st.window = 0
 		}
 	}

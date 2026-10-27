@@ -248,8 +248,8 @@ func (c *Core) applyAction(a Action) Effect {
 	beforeID, _ := beforeScreen.mon.Focused()
 	before := beforeScreen.mon.Layout()
 	wasOverview := beforeScreen.mon.ov.open
-	wasStashed := beforeWS.stashIndex(beforeID) >= 0
-	wasShown := beforeWS.stashShown()
+	wasStashed := beforeWS.StashIndex(beforeID) >= 0
+	wasShown := beforeWS.StashShown()
 	defer func() {
 		sc := c.cur()
 		id, _ := sc.mon.Focused()
@@ -295,7 +295,7 @@ func (c *Core) applyAction(a Action) Effect {
 				return
 			}
 		case ActionToggleStashVisible:
-			if wasShown || !sc.mon.Current().stashShown() {
+			if wasShown || !sc.mon.Current().StashShown() {
 				return
 			}
 		case ActionFocusColumnLeft, ActionFocusColumnRight, ActionMoveColumnLeft, ActionMoveColumnRight:
@@ -337,7 +337,7 @@ func (c *Core) dispatchAction(a Action) Effect {
 	}
 	// A bind acts on the window on screen: under a covering fullscreen
 	// window, that is the one Focused reports.
-	c.cur().mon.Current().focusCover()
+	c.cur().mon.Current().FocusCover()
 	// Before the edge moves below: a free float moves on its screen.
 	if c.cur().mon.Current().freeAction(a) {
 		return Effect{}

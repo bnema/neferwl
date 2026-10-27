@@ -32,14 +32,14 @@ func (c *Core) startPointerGrab(ctx context.Context, v ports.PointerButton) (boo
 			s := c.screens[i]
 			w := s.mon.Current()
 			lx, ly := int(c.cursorX)-s.x, int(c.cursorY)-s.y
-			if !s.mon.previewing() && !s.mon.ov.open && !w.pinned() && s.mon.frameHas(float64(lx), float64(ly)) {
-				if b, ok := w.borderAt(lx, ly, max(w.Gap()/2, gapPad)); ok {
+			if !s.mon.previewing() && !s.mon.ov.open && !w.Pinned() && s.mon.frameHas(float64(lx), float64(ly)) {
+				if b, ok := w.BorderAt(lx, ly, max(w.Gap()/2, gapPad)); ok {
 					last := c.lastBorderClick
-					if last.ws == w && last.b.kind == b.kind && last.b.col == b.col && last.b.row == b.row && v.Time >= last.at && v.Time-last.at <= 400*time.Millisecond {
+					if last.ws == w && last.b.Kind == b.Kind && last.b.Col == b.Col && last.b.Row == b.Row && v.Time >= last.at && v.Time-last.at <= 400*time.Millisecond {
 						c.lastBorderClick.ws = nil
 						now := c.now()
 						shots := c.snapshot(now)
-						w.resetBorder(b)
+						w.ResetBorder(b)
 						c.transition(shots, now)
 						c.buttons[v.Button], c.swallow[v.Button] = true, true
 						return true, c.publish(ctx)

@@ -152,8 +152,8 @@ func TestCascadeCompactionAndNavigation(t *testing.T) {
 		if w.View != w.Band(w.Focus)*580 {
 			t.Fatal("resize did not reveal band")
 		}
-		if !slices.Equal(w.snapPoints(), []float64{0, 580, 1160, 1740}) {
-			t.Fatalf("points=%v", w.snapPoints())
+		if !slices.Equal(w.Engine().SnapPoints(w.Snapshot(), nil), []float64{0, 580, 1160, 1740}) {
+			t.Fatalf("points=%v", w.Engine().SnapPoints(w.Snapshot(), nil))
 		}
 
 	})
@@ -330,7 +330,7 @@ func TestCascadeGestureValidityDoesNotAllocate(t *testing.T) {
 		for i := WindowID(1); i <= 7; i++ {
 			m.AddWindow(i)
 		}
-		g := &swipeGesture{ws: m.Current(), points: m.Current().snapPoints(), horizontal: false, opens: m.overviewOpens}
+		g := &swipeGesture{ws: m.Current(), points: m.Current().Engine().SnapPoints(m.Current().Snapshot(), nil), horizontal: false, opens: m.overviewOpens}
 		if n := testing.AllocsPerRun(100, func() {
 			if g.columnsChanged(m) {
 				t.Fatal("unchanged gesture invalidated")
@@ -449,7 +449,7 @@ func TestCascadeViewportSnap(t *testing.T) {
 			t.Fatal("short band neighbour")
 		}
 		w.SetUsable(Rect{})
-		if got := w.snapPoints(); len(got) != 1 || got[0] != 0 {
+		if got := w.Engine().SnapPoints(w.Snapshot(), nil); len(got) != 1 || got[0] != 0 {
 			t.Fatalf("zero area=%v", got)
 		}
 

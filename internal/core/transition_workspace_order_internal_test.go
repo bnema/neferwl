@@ -47,7 +47,7 @@ func switchAndCheck(t *testing.T, c *Core, ic *indicatorClock, sc *screen, act f
 	if m.overviewAxis() != axis {
 		t.Fatalf("overview axis %v, want the landing layout's workspace axis %v", m.overviewAxis(), axis)
 	}
-	area := m.Current().overviewArea()
+	area := m.Current().OverviewArea()
 	travel := float64(area.H) * overviewWorkspaceTravel
 	horizontal := axis == layout.Horizontal
 	if horizontal {
@@ -55,7 +55,7 @@ func switchAndCheck(t *testing.T, c *Core, ic *indicatorClock, sc *screen, act f
 	}
 	count := 0
 	for _, p := range sc.settledLayout {
-		if p.Hidden || !m.Current().has(p.ID) {
+		if p.Hidden || !m.Current().Has(p.ID) {
 			continue
 		}
 		count++
@@ -105,7 +105,7 @@ func orderScenarios() []orderScenario {
 		// workspace that is not current is skipped): the slide still comes
 		// from the side it sat on.
 		{"trailing-dropped", 2, func(t *testing.T, m *Monitor) (func(), float64, func(*testing.T)) {
-			if !m.Workspaces[2].empty() {
+			if !m.Workspaces[2].Empty() {
 				t.Fatal("fixture: workspace 2 is not the trailing empty one")
 			}
 			left := m.Workspaces[2]
@@ -121,7 +121,7 @@ func orderScenarios() []orderScenario {
 			m.ToggleNamed("dev")
 			m.AddWindow(30)
 			m.ToggleNamed("dev")
-			if dev := m.byName("dev"); !m.isHidden(dev) || dev.empty() {
+			if dev := m.byName("dev"); !m.isHidden(dev) || dev.Empty() {
 				t.Fatal("fixture: dev is not an occupied named workspace")
 			}
 			return func() { m.ToggleNamed("dev") }, 1, nil
@@ -146,8 +146,8 @@ func orderScenarios() []orderScenario {
 			m.AddWindow(30)
 			m.RemoveWindow(30)
 			dev := m.Current()
-			if !m.isHidden(dev) || !dev.empty() || dev.overviewAfter != m.Workspaces[0] {
-				t.Fatalf("fixture: dev hidden %v empty %v anchor %v", m.isHidden(dev), dev.empty(), dev.overviewAfter)
+			if !m.isHidden(dev) || !dev.Empty() || dev.OverviewAfter != m.Workspaces[0] {
+				t.Fatalf("fixture: dev hidden %v empty %v anchor %v", m.isHidden(dev), dev.Empty(), dev.OverviewAfter)
 			}
 			return func() { m.Focus(tc.to) }, tc.sign, func(t *testing.T) { droppedFromRows(t, m, dev) }
 		}})
@@ -175,8 +175,8 @@ func orderScenarios() []orderScenario {
 				m.ToggleNamed("dev")
 			}
 			dev, ops := m.byName("dev"), m.byName("ops")
-			if dev.overviewAfter != m.Workspaces[0] || ops.overviewAfter != m.Workspaces[0] {
-				t.Fatalf("fixture: anchors %v %v, want workspace 0", dev.overviewAfter, ops.overviewAfter)
+			if dev.OverviewAfter != m.Workspaces[0] || ops.OverviewAfter != m.Workspaces[0] {
+				t.Fatalf("fixture: anchors %v %v, want workspace 0", dev.OverviewAfter, ops.OverviewAfter)
 			}
 			from := m.Current()
 			if from != m.byName(tc.from) {
@@ -184,7 +184,7 @@ func orderScenarios() []orderScenario {
 			}
 			if tc.emptyFrom {
 				m.RemoveWindow(map[string]WindowID{"dev": 30, "ops": 31}[tc.from])
-				if !from.empty() {
+				if !from.Empty() {
 					t.Fatal("fixture: source is not empty")
 				}
 			}
@@ -207,18 +207,18 @@ func orderScenarios() []orderScenario {
 				m.AddWindow(30)
 				m.RemoveWindow(30)
 				dev := m.Current()
-				dev.overviewAfter = nil
+				dev.OverviewAfter = nil
 				if anchor == "removed" {
-					dev.overviewAfter = &Workspace{}
+					dev.OverviewAfter = &Workspace{}
 				}
 				at := 0
 				for i, w := range m.Workspaces {
-					if !w.empty() {
+					if !w.Empty() {
 						at = i
 					}
 				}
-				if at != 1 || !dev.empty() {
-					t.Fatalf("fixture: fallback row %d, dev empty %v", at, dev.empty())
+				if at != 1 || !dev.Empty() {
+					t.Fatalf("fixture: fallback row %d, dev empty %v", at, dev.Empty())
 				}
 				sign := 1.0
 				if to <= at {
@@ -233,7 +233,7 @@ func orderScenarios() []orderScenario {
 	sc = append(sc, orderScenario{"moved-window", 1, func(t *testing.T, m *Monitor) (func(), float64, func(*testing.T)) {
 		m.SetFollowMove(true)
 		return func() { m.MoveToWorkspace(0, false) }, -1, func(t *testing.T) {
-			if !m.Current().has(3) {
+			if !m.Current().Has(3) {
 				t.Fatal("window 3 did not follow")
 			}
 		}
@@ -298,7 +298,7 @@ func TestMonitorOverviewOrder(t *testing.T) {
 	list := []*Workspace{occupied(), occupied(), {}}
 	m := &Monitor{named: []NamedWorkspace{{Name: "dev"}, {Name: "ops"}}}
 	named := func(name string, anchor *Workspace) *Workspace {
-		return &Workspace{Name: name, overviewAfter: anchor}
+		return &Workspace{Name: name, OverviewAfter: anchor}
 	}
 	dev, ops := named("dev", list[0]), named("ops", list[0])
 	anchored1 := named("dev", list[1])
@@ -359,15 +359,15 @@ func TestOverviewWorkspaceCloseMidSwitch(t *testing.T) {
 		}
 		scene := indicatorScene(t, c)
 		for id, rm := range sc.rects {
-			if rm.leaving || old.has(id) {
+			if rm.leaving || old.Has(id) {
 				t.Errorf("window %d keeps a preview motion: %+v", id, rm)
 			}
-			if math.Abs(rm.dx) > 0 && !m.Current().has(id) {
+			if math.Abs(rm.dx) > 0 && !m.Current().Has(id) {
 				t.Errorf("window %d slides but is not on the current workspace", id)
 			}
 		}
 		for _, w := range scene.Windows {
-			if !w.Hidden && old.has(WindowID(w.ID)) {
+			if !w.Hidden && old.Has(WindowID(w.ID)) {
 				t.Errorf("window %d of the left workspace is drawn", w.ID)
 			}
 		}
@@ -387,7 +387,7 @@ func TestOverviewWorkspaceSwitchKeepsRunningDimAndSize(t *testing.T) {
 		c, ic, sc := overviewAt(t, OverflowCascade, 0)
 		m := sc.mon
 		rm := sc.rects[3]
-		if !m.Workspaces[1].has(3) {
+		if !m.Workspaces[1].Has(3) {
 			t.Fatal("fixture: window 3 is not on workspace 1")
 		}
 		rm.dim, rm.ddim = c.spring(motion.LevelSpring(0.4, 0), ic.now), 0.4
@@ -455,7 +455,7 @@ func TestOverviewWorkspaceMovedFromOtherScreenGetsNoGroupSlide(t *testing.T) {
 		c.transition(shots, ic.now)
 		indicatorScene(t, c)
 		for _, p := range b.settledLayout {
-			if p.Hidden || !moved.has(p.ID) {
+			if p.Hidden || !moved.Has(p.ID) {
 				continue
 			}
 			if rm := b.rects[p.ID]; rm.dx != 0 || rm.dy != 0 || rm.x.On || rm.y.On {

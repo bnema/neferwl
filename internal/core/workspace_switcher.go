@@ -24,10 +24,10 @@ func (w *Workspace) noteFocus() {
 	}
 }
 
-// switchOrder lists one window per column, the focused window of each: the
+// SwitchOrder lists one window per column, the focused window of each: the
 // focused column first, then the others by recent use, then those never
 // used by position. It is nil with fewer than two columns.
-func (w *Workspace) switchOrder() []WindowID {
+func (w *Workspace) SwitchOrder() []WindowID {
 	n := len(w.Columns)
 	if n < 2 || w.Focus < 0 || w.Focus >= n {
 		return nil

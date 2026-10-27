@@ -95,7 +95,7 @@ func (c *Core) captureConfigure(sc *screen, p Placement, t configureTarget) (*Pl
 	t.focused = false
 	t.client, t.imposed = Rect{}, false
 	if !cp.Hidden {
-		t.client, t.imposed = c.clientRect(*cp), cw.ws.imposedFloat(cp.ID)
+		t.client, t.imposed = c.clientRect(*cp), cw.ws.ImposedFloat(cp.ID)
 	}
 	return cp, t
 }

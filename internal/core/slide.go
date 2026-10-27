@@ -81,7 +81,7 @@ func (m *Monitor) slideLayout(cur []Placement) []Placement {
 		if k == base || k < 0 || k >= len(list) || !m.has(list[k]) {
 			continue
 		}
-		next := list[k].layoutInto(m.slideBuf)
+		next := list[k].AppendLayout(m.slideBuf[:0])
 		m.slideBuf = next
 		for i := range next {
 			next[i].Focused = false

@@ -160,7 +160,7 @@ func TestScrollPreviewFullscreenColumnUsesUsableWidth(t *testing.T) {
 		if w.Output.W == w.Usable.W {
 			t.Fatal("fixture needs distinct output and usable widths")
 		}
-		if w.pinned() {
+		if w.Pinned() {
 			t.Fatal("scroll must not pin")
 		}
 		tiles, span, sel := w.previewTilesInto(nil)

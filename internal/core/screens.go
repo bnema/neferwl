@@ -239,7 +239,7 @@ func (c *Core) isPrimary(name string) bool {
 func (c *Core) anyWindow() bool {
 	for _, s := range c.screens {
 		for w := range s.mon.all() {
-			if !w.empty() {
+			if !w.Empty() {
 				return true
 			}
 		}
@@ -366,26 +366,26 @@ func (c *Core) removeScreen(name string) {
 	c.focusScreen = max(slices.Index(c.screens, focused), 0)
 	host := c.cur()
 	for pos, w := range gone.mon.Workspaces {
-		if w.empty() && w.Name == "" {
+		if w.Empty() && w.Name == "" {
 			continue
 		}
 		switch {
-		case host.mon.matches(w.home):
+		case host.mon.matches(w.Home):
 			// A guest from the host goes home.
-			w.home = ""
-			host.mon.adopt(w, false, w.homePos)
+			w.Home = ""
+			host.mon.adopt(w, false, w.HomePos)
 			continue
-		case w.home == "":
-			w.home, w.homePos = gone.info.Key(), pos
+		case w.Home == "":
+			w.Home, w.HomePos = gone.info.Key(), pos
 		}
 		host.mon.adopt(w, false, len(host.mon.Workspaces))
 	}
 	for _, w := range gone.mon.hidden {
 		switch {
-		case host.mon.matches(w.home):
-			w.home = ""
-		case w.home == "":
-			w.home = gone.info.Key()
+		case host.mon.matches(w.Home):
+			w.Home = ""
+		case w.Home == "":
+			w.Home = gone.info.Key()
 		}
 		host.mon.adopt(w, true, 0)
 	}
@@ -408,8 +408,8 @@ func (c *Core) settleGuests() {
 				continue
 			}
 			for w := range host.mon.all() {
-				if home.mon.matches(w.home) && host.mon.Current() != w {
-					list = append(list, guest{w: w, anchor: w.overviewAfter, host: host.mon, hidden: host.mon.isHidden(w)})
+				if home.mon.matches(w.Home) && host.mon.Current() != w {
+					list = append(list, guest{w: w, anchor: w.OverviewAfter, host: host.mon, hidden: host.mon.isHidden(w)})
 				}
 			}
 		}
@@ -418,13 +418,13 @@ func (c *Core) settleGuests() {
 		for _, g := range list {
 			g.host.take(g.w)
 		}
-		slices.SortStableFunc(list, func(a, b guest) int { return a.w.homePos - b.w.homePos })
+		slices.SortStableFunc(list, func(a, b guest) int { return a.w.HomePos - b.w.HomePos })
 		// A monitor showing an empty workspace (just plugged in) shows
 		// its first returning workspace instead.
-		idle := home.mon.Current().empty() && home.mon.Current().Name == ""
+		idle := home.mon.Current().Empty() && home.mon.Current().Name == ""
 		for _, g := range list {
-			g.w.home = ""
-			home.mon.adopt(g.w, g.hidden, g.w.homePos)
+			g.w.Home = ""
+			home.mon.adopt(g.w, g.hidden, g.w.HomePos)
 			if idle && !g.hidden {
 				home.mon.show(g.w)
 				idle = false
@@ -432,7 +432,7 @@ func (c *Core) settleGuests() {
 		}
 		for _, g := range list {
 			if g.hidden && indexOf(home.mon.Workspaces, g.anchor) >= 0 {
-				g.w.overviewAfter = g.anchor
+				g.w.OverviewAfter = g.anchor
 			}
 		}
 	}
@@ -467,9 +467,9 @@ func (c *Core) named() {
 	}
 	for _, spec := range c.specs {
 		s, w := c.byName(spec.Name)
-		w.home = ""
+		w.Home = ""
 		if spec.Monitor != "" && !s.mon.matches(spec.Monitor) {
-			w.home = spec.Monitor
+			w.Home = spec.Monitor
 		}
 	}
 }
@@ -508,7 +508,7 @@ func (c *Core) bringNamed(name string) bool {
 func moveNamed(src, dst *screen, w *Workspace, home string) {
 	hidden := src.mon.isHidden(w)
 	src.mon.take(w)
-	w.home = home
+	w.Home = home
 	dst.mon.adopt(w, hidden, len(dst.mon.Workspaces))
 }
 
@@ -613,12 +613,12 @@ func (c *Core) moveWorkspace(d direction) {
 	}
 	from := c.cur()
 	w := from.mon.Current()
-	if w.empty() && w.Name == "" {
+	if w.Empty() && w.Name == "" {
 		return
 	}
 	hidden := from.mon.isHidden(w)
 	from.mon.take(w)
-	w.home = ""
+	w.Home = ""
 	dst := c.screens[to]
 	dst.mon.adopt(w, hidden, len(dst.mon.Workspaces))
 	dst.mon.show(w)

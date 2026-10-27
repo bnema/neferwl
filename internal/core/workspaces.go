@@ -36,7 +36,7 @@ func (c *Core) publishWorkspaces() {
 			if name == "" {
 				name = strconv.Itoa(i + 1)
 			}
-			out.Workspaces = append(out.Workspaces, ports.WorkspaceInfo{ID: w.ID, Name: name, Index: i, Active: m.Current() == w, Hidden: m.Current() != w && (m.isHidden(w) || w.empty()), Configured: w.Name, Frame: w.Output})
+			out.Workspaces = append(out.Workspaces, ports.WorkspaceInfo{ID: w.ID, Name: name, Index: i, Active: m.Current() == w, Hidden: m.Current() != w && (m.isHidden(w) || w.Empty()), Configured: w.Name, Frame: w.Output})
 		}
 		buf.Outputs = append(buf.Outputs, out)
 	}

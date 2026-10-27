@@ -173,10 +173,10 @@ func TestPublishStashSlideAllocations(t *testing.T) {
 		sc.arrange()
 		c.refreshShown()
 		ws.stashView.Off = 0.5
-		ws.stashView.Motion = c.spring(ws.stashSpring(0.5, 0), time.Now())
+		ws.stashView.Motion = c.spring(ws.StashSpring(0.5, 0), time.Now())
 		step := publishStep(t, c, nil)
 		step()
-		if !ws.stashView.Motion.On || !ws.stashShown() {
+		if !ws.stashView.Motion.On || !ws.StashShown() {
 			t.Fatal("setup: no stash slide on screen")
 		}
 		var partial int

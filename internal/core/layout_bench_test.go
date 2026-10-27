@@ -33,7 +33,7 @@ func benchLanes(b *testing.B, f func(b *testing.B, w *Workspace)) {
 func BenchmarkSnapPoints(b *testing.B) {
 	benchLanes(b, func(b *testing.B, w *Workspace) {
 		for b.Loop() {
-			_ = w.snapPoints()
+			_ = w.Engine().SnapPoints(w.Snapshot(), nil)
 		}
 	})
 }
@@ -89,7 +89,7 @@ func BenchmarkBorderMotion(b *testing.B) {
 				b.Fatal(err)
 			}
 			rs := w.columnRects()
-			g := newBorderResize(c, sc, w, border{kind: borderColumn, col: 0}, btnRight)
+			g := newBorderResize(c, sc, w, Border{Kind: BorderColumn, Col: 0}, btnRight)
 			x := float64(rs[0].X + rs[0].W)
 			c.cursorY = 100
 			n := 0
@@ -161,7 +161,7 @@ func BenchmarkLayoutBorderAt(b *testing.B) {
 			// A point on no border: every column is examined.
 			b.ReportAllocs()
 			for b.Loop() {
-				w.borderAt(1, 1, 4)
+				w.BorderAt(1, 1, 4)
 			}
 		})
 	}

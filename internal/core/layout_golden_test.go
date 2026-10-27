@@ -70,7 +70,7 @@ func TestLayoutGoldenRects(t *testing.T) {
 				if got := w.columnRectsAt(nil, true, 0); !reflect.DeepEqual(got, ignore) {
 					t.Fatalf("rects ignoring full width\n got %v\nwant %v", got, ignore)
 				}
-				if got := w.snapPoints(); !reflect.DeepEqual(got, tc.snaps) {
+				if got := w.Engine().SnapPoints(w.Snapshot(), nil); !reflect.DeepEqual(got, tc.snaps) {
 					t.Fatalf("snap points %v, want %v", got, tc.snaps)
 				}
 
@@ -97,10 +97,10 @@ func TestSwipeStalenessSnapPointsAllocations(t *testing.T) {
 					w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
 				}
 				w.scroll()
-				g := swipeGesture{ws: &w, points: w.snapPoints()}
-				g.scratch = w.snapPointsInto(g.scratch)
+				g := swipeGesture{ws: &w, points: w.Engine().SnapPoints(w.Snapshot(), nil)}
+				g.scratch = w.Engine().SnapPoints(w.Snapshot(), g.scratch[:0])
 				if allocs := testing.AllocsPerRun(50, func() {
-					g.scratch = g.ws.snapPointsInto(g.scratch)
+					g.scratch = g.ws.Engine().SnapPoints(g.ws.Snapshot(), g.scratch[:0])
 					if !slices.Equal(g.scratch, g.points) {
 						t.Fatal("points moved")
 					}

@@ -61,7 +61,7 @@ func TestModalDialogTakesParentFocus(t *testing.T) {
 		w.RemoveWindow(4)
 		// Picking the parent's card in the overview is a user focus too.
 		w.Click(2)
-		w.apply(stackItem{kind: stackColumns}, 1)
+		w.ApplyStack(StackItem{Kind: StackColumns}, 1)
 		focus(3)
 		// Closed: the parent is reachable again.
 		w.RemoveWindow(3)

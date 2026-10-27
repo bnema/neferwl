@@ -5,18 +5,24 @@ import (
 	"github.com/bnema/neferwl/internal/core/layout"
 )
 
-type borderKind int
+// BorderKind identifies a resize edge between columns or rows.
+type BorderKind int
 
 const (
-	borderColumn borderKind = iota + 1
-	borderRow
+	// BorderColumn resizes adjacent column widths.
+	BorderColumn BorderKind = iota + 1
+	// BorderRow resizes adjacent rows within a column.
+	BorderRow
 )
 
-// border is an output-local hit zone between consecutive columns or rows.
-type border struct {
-	kind     borderKind
-	col, row int
-	rect     Rect
+// Border is an output-local hit zone between consecutive columns or rows.
+type Border struct {
+	// Kind selects the column or row edge.
+	Kind BorderKind
+	// Col and Row identify the adjacent cells.
+	Col, Row int
+	// Rect is the output-local pointer hit zone.
+	Rect Rect
 }
 
 // borderMinWidth is the minimum logical pixel width for a border resize.
@@ -28,15 +34,16 @@ func columnBorders(l layout.Layout, v layout.View) bool {
 	return !l.Spiral() || l.LaneRow(v)
 }
 
-func (w *Workspace) borderAt(x, y, pad int) (border, bool) {
+// BorderAt finds a resize hit zone at an output-local point.
+func (w *Workspace) BorderAt(x, y, pad int) (Border, bool) {
 	if w.Fullscreen != 0 || !contains(w.Usable, x, y) {
-		return border{}, false
+		return Border{}, false
 	}
 	// Overview and preview are Monitor presentation, not Workspace state. Their
 	// caller must not ask for workspace borders while presenting those scenes.
 	for _, p := range w.Layout() {
 		if p.Floating && !p.Hidden && !p.Below && contains(p.Rect, x, y) {
-			return border{}, false
+			return Border{}, false
 		}
 	}
 	rs := w.columnRects()
@@ -63,8 +70,8 @@ func (w *Workspace) borderAt(x, y, pad int) (border, bool) {
 		rows := layout.RowRects(r, w.Columns[i], gap)
 		for j := 0; j+1 < len(rows); j++ {
 			lo, size := geom.BorderZone(rows[j].Y+rows[j].H, rows[j+1].Y, pad)
-			b := border{kind: borderRow, col: i, row: j, rect: Rect{X: r.X, Y: lo, W: r.W, H: size}}
-			if contains(b.rect, x, y) {
+			b := Border{Kind: BorderRow, Col: i, Row: j, Rect: Rect{X: r.X, Y: lo, W: r.W, H: size}}
+			if contains(b.Rect, x, y) {
 				return b, true
 			}
 		}
@@ -77,12 +84,12 @@ func (w *Workspace) borderAt(x, y, pad int) (border, bool) {
 		}
 		top, bottom := max(r.Y, next.Y), min(r.Y+r.H, next.Y+next.H)
 		lo, size := geom.BorderZone(r.X+r.W, next.X, pad)
-		b := border{kind: borderColumn, col: i, rect: Rect{X: lo, Y: top, W: size, H: max(bottom-top, 0)}}
-		if contains(b.rect, x, y) {
+		b := Border{Kind: BorderColumn, Col: i, Rect: Rect{X: lo, Y: top, W: size, H: max(bottom-top, 0)}}
+		if contains(b.Rect, x, y) {
 			return b, true
 		}
 	}
-	return border{}, false
+	return Border{}, false
 }
 
 // pixelShare rounds upward so a stamped width reproduces its integer pixels.
@@ -93,17 +100,17 @@ func pixelShare(pixels, total int) int {
 	return (pixels*10000 + total - 1) / total
 }
 
-// setBorder moves border b to pos and reports whether any span or share
+// MoveBorder moves border b to pos and reports whether any span or share
 // changed (stamping a lane or a column's shares counts as a change).
-func (w *Workspace) setBorder(b border, pos int) bool {
-	if b.col < 0 || b.col >= len(w.Columns) || w.Fullscreen != 0 {
+func (w *Workspace) MoveBorder(b Border, pos int) bool {
+	if b.Col < 0 || b.Col >= len(w.Columns) || w.Fullscreen != 0 {
 		return false
 	}
 	rs := w.columnRects()
-	r := rs[b.col]
-	if b.kind == borderRow {
-		c := &w.Columns[b.col]
-		if b.row < 0 || b.row+1 >= len(c.Windows) || len(c.Windows)*minShare > 10000 {
+	r := rs[b.Col]
+	if b.Kind == BorderRow {
+		c := &w.Columns[b.Col]
+		if b.Row < 0 || b.Row+1 >= len(c.Windows) || len(c.Windows)*minShare > 10000 {
 			return false
 		}
 		rows := layout.RowRects(r, *c, w.Gap())
@@ -123,23 +130,23 @@ func (w *Workspace) setBorder(b border, pos int) bool {
 			}
 			c.Shares[len(rows)-1] += 10000 - used
 		}
-		pair := c.Shares[b.row] + c.Shares[b.row+1]
+		pair := c.Shares[b.Row] + c.Shares[b.Row+1]
 		if pair < 2*minShare {
 			return stamped
 		}
-		target := pixelShare(pos-w.Gap()/2-rows[b.row].Y, avail)
+		target := pixelShare(pos-w.Gap()/2-rows[b.Row].Y, avail)
 		target = min(max(target, minShare), pair-minShare)
-		if b.row+1 < len(rows)-1 {
-			target = pairPixelShare(target, pair, avail, rows[b.row].H+rows[b.row+1].H, minShare)
+		if b.Row+1 < len(rows)-1 {
+			target = pairPixelShare(target, pair, avail, rows[b.Row].H+rows[b.Row+1].H, minShare)
 		}
-		changed := stamped || c.Shares[b.row] != target
-		c.Shares[b.row], c.Shares[b.row+1] = target, pair-target
+		changed := stamped || c.Shares[b.Row] != target
+		c.Shares[b.Row], c.Shares[b.Row+1] = target, pair-target
 		return changed
 	}
-	if b.kind != borderColumn || b.col+1 >= len(w.Columns) || w.LaneOf(b.col) != w.LaneOf(b.col+1) || !columnBorders(w.Engine(), w.Snapshot()) || w.Columns[b.col].FullWidth || w.Columns[b.col+1].FullWidth {
+	if b.Kind != BorderColumn || b.Col+1 >= len(w.Columns) || w.LaneOf(b.Col) != w.LaneOf(b.Col+1) || !columnBorders(w.Engine(), w.Snapshot()) || w.Columns[b.Col].FullWidth || w.Columns[b.Col+1].FullWidth {
 		return false
 	}
-	first, last := w.LaneBounds(w.LaneOf(b.col))
+	first, last := w.LaneBounds(w.LaneOf(b.Col))
 	avail := max(w.Usable.W-2*w.Gap(), 0)
 	if w.Engine().EqualCells() {
 		avail = max(w.Usable.W-w.Gap()*(last-first+2), 0)
@@ -165,32 +172,33 @@ func (w *Workspace) setBorder(b border, pos int) bool {
 	target := pixelShare(pos-w.Gap()/2-r.X, avail)
 	if !w.Engine().EqualCells() {
 		span := min(max(target, min(minimum, 10000)), 10000)
-		changed := stamped || w.Columns[b.col].Span != span
-		w.Columns[b.col].Span = span
+		changed := stamped || w.Columns[b.Col].Span != span
+		w.Columns[b.Col].Span = span
 		return changed
 	}
-	pair := w.Columns[b.col].Span + w.Columns[b.col+1].Span
+	pair := w.Columns[b.Col].Span + w.Columns[b.Col+1].Span
 	if pair < 2*minimum {
 		return stamped
 	}
 	target = min(max(target, minimum), pair-minimum)
-	if b.col+1 < last {
-		target = pairPixelShare(target, pair, avail, rs[b.col].W+rs[b.col+1].W, minimum)
+	if b.Col+1 < last {
+		target = pairPixelShare(target, pair, avail, rs[b.Col].W+rs[b.Col+1].W, minimum)
 	}
-	changed := stamped || w.Columns[b.col].Span != target
-	w.Columns[b.col].Span, w.Columns[b.col+1].Span = target, pair-target
+	changed := stamped || w.Columns[b.Col].Span != target
+	w.Columns[b.Col].Span, w.Columns[b.Col+1].Span = target, pair-target
 	return changed
 }
 
-func (w *Workspace) resetBorder(b border) {
-	if b.col < 0 || b.col >= len(w.Columns) {
+// ResetBorder restores automatic sizing at the given border.
+func (w *Workspace) ResetBorder(b Border) {
+	if b.Col < 0 || b.Col >= len(w.Columns) {
 		return
 	}
-	switch b.kind {
-	case borderColumn:
-		w.ClearSpans(b.col)
-	case borderRow:
-		w.Columns[b.col].Shares = nil
+	switch b.Kind {
+	case BorderColumn:
+		w.ClearSpans(b.Col)
+	case BorderRow:
+		w.Columns[b.Col].Shares = nil
 	}
 }
 

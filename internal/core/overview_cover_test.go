@@ -53,7 +53,7 @@ func TestOverviewCoverShowsWorkspace(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				m := coverMonitor(tc.overflow, tc.float)
-				if !m.Current().pinned() {
+				if !m.Current().Pinned() {
 					t.Fatal("not pinned")
 				}
 				m.ToggleOverview()
@@ -159,7 +159,7 @@ func TestOverviewCoverPickStashCard(t *testing.T) {
 		w.ToggleWindowStash()
 		w.FocusID(1)
 		m.ToggleFullscreen()
-		if !w.pinned() {
+		if !w.Pinned() {
 			t.Fatal("not pinned")
 		}
 		m.ToggleOverview()
@@ -193,7 +193,7 @@ func TestOverviewCoverActsOnSelection(t *testing.T) {
 				}
 				w := m.Current()
 				m.Apply(ActionMoveWindowToWorkspaceNext)
-				if got, _ := m.find(1); got == w || !w.has(2) {
+				if got, _ := m.find(1); got == w || !w.Has(2) {
 					t.Fatalf("moved the wrong window: %v", windows(m))
 				}
 

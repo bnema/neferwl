@@ -15,11 +15,11 @@ func TestOverviewVerticalBoundariesAndInputs(t *testing.T) {
 		m := stackMonitor()
 		w := m.Current()
 		m.ToggleOverview()
-		if m.stackFront(w) != (stackItem{stackFloat, 9}) {
+		if m.stackFront(w) != (StackItem{StackFloat, 9}) {
 			t.Fatal("screen front")
 		}
 		m.overviewFocus(ActionFocusWorkspacePrev)
-		if m.stackFront(w).kind != stackColumns || m.Active != 0 {
+		if m.stackFront(w).Kind != StackColumns || m.Active != 0 {
 			t.Fatal("swipe did not visit card")
 		}
 		m.overviewFocus(ActionFocusWorkspacePrev)
@@ -27,7 +27,7 @@ func TestOverviewVerticalBoundariesAndInputs(t *testing.T) {
 			t.Fatal("up at top crossed workspace boundary")
 		}
 		m.overviewFocus(ActionFocusWorkspaceNext)
-		if m.stackFront(w).kind != stackFloat || m.Active != 0 {
+		if m.stackFront(w).Kind != StackFloat || m.Active != 0 {
 			t.Fatal("down did not return to front")
 		}
 		m.OverviewMove(0, 1)
@@ -35,10 +35,10 @@ func TestOverviewVerticalBoundariesAndInputs(t *testing.T) {
 			t.Fatal("down did not reach workspace below")
 		}
 		m.OverviewMove(0, -1)
-		if m.Active != 0 || m.stackFront(w).kind != stackFloat {
+		if m.Active != 0 || m.stackFront(w).Kind != StackFloat {
 			t.Fatal("row change kept stack cursor")
 		}
-		if !m.overviewScroll(ports.PointerAxis{Source: ports.AxisWheel, Vertical: ports.ScrollAxis{Set: true, V120: -120}}) || m.stackFront(w).kind != stackColumns {
+		if !m.overviewScroll(ports.PointerAxis{Source: ports.AxisWheel, Vertical: ports.ScrollAxis{Set: true, V120: -120}}) || m.stackFront(w).Kind != StackColumns {
 			t.Fatal("wheel did not visit card")
 		}
 		m.CancelOverview()
@@ -65,11 +65,11 @@ func TestOverviewPeekEnvelopeAndSingleCardHorizontal(t *testing.T) {
 			t.Fatalf("outside row front %+v back %+v row %d..%d", front, back, y, y+h)
 		}
 		m.OverviewMove(1, 0)
-		if m.stackFront(w) != (stackItem{stackFloat, 7}) {
+		if m.stackFront(w) != (StackItem{StackFloat, 7}) {
 			t.Fatal("right moved single card")
 		}
 		m.OverviewMove(-1, 0)
-		if m.stackFront(w) != (stackItem{stackFloat, 8}) {
+		if m.stackFront(w) != (StackItem{StackFloat, 8}) {
 			t.Fatal("left did not send single card behind")
 		}
 		m.CancelOverview()
@@ -133,7 +133,7 @@ func TestOverviewStackMRUAndSize(t *testing.T) {
 		m.OverviewMove(0, -1)
 		m.ToggleOverview()
 		m.ToggleOverview()
-		if got := w.stack(); !slices.Equal(got, []stackItem{{stackColumn, 1}, {kind: stackColumns}}) {
+		if got := w.Stack(); !slices.Equal(got, []StackItem{{StackColumn, 1}, {Kind: StackColumns}}) {
 			t.Fatalf("stack %v", got)
 		}
 		if m.hiddenColumn(w) != 1 {

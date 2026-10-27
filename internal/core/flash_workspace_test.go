@@ -111,7 +111,7 @@ func TestFlashNamedWorkspaceBind(t *testing.T) {
 		m.ToggleNamed("dev")
 		m.AddWindow(5)
 		m.ToggleNamed("dev")
-		if m.Current() != numbered || m.byName("dev").empty() {
+		if m.Current() != numbered || m.byName("dev").Empty() {
 			t.Fatal("setup: named workspace not filled, or not left")
 		}
 		indicatorScene(t, c)

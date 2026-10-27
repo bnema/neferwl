@@ -231,7 +231,7 @@ func TestTrailLayoutPinsFullscreen(t *testing.T) {
 		w := trailWorkspace(3, nil)
 		id, _ := w.Focused()
 		w.SetFullscreen(id, true)
-		if !w.pinned() {
+		if !w.Pinned() {
 			t.Fatal("fullscreen is not pinned in a layout that pins it")
 		}
 		// A window other than the focused one may not take the cover, as in every

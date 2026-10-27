@@ -41,7 +41,7 @@ func TestDemotedFloatFullscreenUserReturn(t *testing.T) {
 		w := m.Current()
 		w.FocusID(2)
 		m.SetFullscreen(2, true)
-		w.focusCover()
+		w.FocusCover()
 		m.SetFullscreen(2, false)
 		if id, _ := w.Focused(); id != 2 || !w.floatFocus || w.Floats[0].below {
 			t.Fatalf("returned focus %d floats %+v", id, w.Floats)
@@ -59,7 +59,7 @@ func TestSetNamedDemotedFloatKeepsColumnActions(t *testing.T) {
 		m.Current().FocusID(1)
 		m.SetNamed(nil)
 		w := m.Current()
-		if id, _ := w.Focused(); id != 1 || w.onFloat() || w.floatFocus {
+		if id, _ := w.Focused(); id != 1 || w.OnFloat() || w.floatFocus {
 			t.Fatalf("focus %d float focus %v floats %+v", id, w.floatFocus, w.Floats)
 		}
 		w.ToggleFullWidth()
@@ -146,8 +146,8 @@ func TestOverviewTargetAfterColumnActivation(t *testing.T) {
 				w.ToggleFullWidth()
 			}
 			m.ToggleOverview()
-			if maximized && w.stack()[0].kind != stackColumn {
-				t.Fatalf("expected maximized column card: %+v", w.stack())
+			if maximized && w.Stack()[0].Kind != StackColumn {
+				t.Fatalf("expected maximized column card: %+v", w.Stack())
 			}
 			w.Activate(5)
 			var highlighted WindowID

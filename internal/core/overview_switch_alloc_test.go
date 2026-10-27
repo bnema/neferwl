@@ -46,7 +46,7 @@ func TestOverviewWorkspaceSwitchAllocations(t *testing.T) {
 				}
 				// The switch takes the group path: its entering cards share
 				// one offset along the axis.
-				if rm := sc.rects[1]; tc.group && (!m.Current().has(1) || rm.dx == 0 || rm.dy != 0) {
+				if rm := sc.rects[1]; tc.group && (!m.Current().Has(1) || rm.dx == 0 || rm.dy != 0) {
 					t.Fatalf("setup: window 1 has no group slide: %+v", rm)
 				}
 				n := testing.AllocsPerRun(50, step)

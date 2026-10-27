@@ -19,7 +19,7 @@ func TestSnap(t *testing.T) {
 		for i := range 4 {
 			w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
 		}
-		if got := w.snapPoints(); !slices.Equal(got, []float64{0, 400, 800}) {
+		if got := w.Engine().SnapPoints(w.Snapshot(), nil); !slices.Equal(got, []float64{0, 400, 800}) {
 			t.Fatalf("snap points %v", got)
 		}
 		for _, tc := range []struct {
@@ -60,7 +60,7 @@ func TestSnapPointsMergeClose(t *testing.T) {
 			for _, px := range tc.widths {
 				w.Columns = append(w.Columns, Column{Cells: px / 10, Windows: []WindowID{WindowID(len(w.Columns) + 1)}})
 			}
-			if got := w.snapPoints(); !slices.Equal(got, tc.want) {
+			if got := w.Engine().SnapPoints(w.Snapshot(), nil); !slices.Equal(got, tc.want) {
 				t.Errorf("widths %v: snap points %v, want %v", tc.widths, got, tc.want)
 			}
 		}
@@ -79,7 +79,7 @@ func TestSnapFocusWideColumn(t *testing.T) {
 		// Full width with gaps: 780 wide, between 10 and 790. The view
 		// columnX(1)+1 shifts it 1 px left, so it is not fully shown.
 		w.Columns[1].FullWidth = true
-		if !w.slidable() {
+		if !workspaceSlidable(w) {
 			t.Fatal("the workspace does not scroll")
 		}
 		view := w.columnX(1) - w.Usable.X - w.Gap() + 1
