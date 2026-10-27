@@ -42,6 +42,8 @@ func TestPurePackageImports(t *testing.T) {
 		allow []string
 	}{
 		{"domain", nil},
+		{"ports", []string{"domain"}},
+		{"core", []string{"domain", "ports", "core/geom", "core/layout", "core/motion", "core/workspace"}},
 		{"core/geom", []string{"domain"}},
 		{"core/layout", []string{"domain", "core/geom"}},
 		{"core/motion", []string{"domain"}},
@@ -96,11 +98,7 @@ func TestRootCoreHasNoDirectSideEffects(t *testing.T) {
 			}
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
+			sel, ok := n.(*ast.SelectorExpr)
 			if !ok {
 				return true
 			}
@@ -109,8 +107,8 @@ func TestRootCoreHasNoDirectSideEffects(t *testing.T) {
 				return true
 			}
 			switch sel.Sel.Name {
-			case "Now", "Since", "NewTimer", "After", "Sleep":
-				t.Errorf("%s calls time.%s; use ports.Clock", path, sel.Sel.Name)
+			case "Now", "Since", "Until", "After", "AfterFunc", "NewTimer", "NewTicker", "Tick", "Sleep":
+				t.Errorf("%s uses time.%s; use ports.Clock", path, sel.Sel.Name)
 			}
 			return true
 		})
@@ -162,5 +160,46 @@ func TestPortsExportedTypesAreSealed(t *testing.T) {
 		if !sealed[name] {
 			t.Errorf("%s: exported type %s has no unexported seal method declared in ports", path, name)
 		}
+	}
+}
+
+// TestAdapterImports checks every production source file, including inactive
+// build tags. Adapters may import their own subpackages and shared libraries.
+func TestAdapterImports(t *testing.T) {
+	const base = "github.com/bnema/neferwl/"
+	const adapters = base + "internal/adapters/"
+	// Keep the shared-library allowlist here, not in the build-tag-sensitive
+	// go list output. All other cross-adapter dependencies must use ports.
+	libraries := strings.Fields("drm config sched seat watchdog fdwait busretry overlaydraw outputkit/routing outputkit/cursors xcursor outputkit/capture outputkit/corewake outputkit/presented outputkit/surfaces captureallow clock hdrcursor logging peerexe sessionsecurity syncfile workspaceid xkb")
+	err := filepath.WalkDir("internal/adapters", func(dir string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() {
+			return nil
+		}
+		policyFiles(t, dir, func(path string, f *ast.File) {
+			from := base + filepath.ToSlash(filepath.Dir(path))
+			for _, imp := range f.Imports {
+				name, err := strconv.Unquote(imp.Path.Value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.HasPrefix(name, adapters) || strings.HasPrefix(name, from+"/") {
+					continue
+				}
+				allowed := false
+				for _, lib := range libraries {
+					allowed = allowed || name == adapters+lib
+				}
+				if !allowed {
+					t.Errorf("%s imports forbidden adapter %s; use ports or a shared library", path, name)
+				}
+			}
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

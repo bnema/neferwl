@@ -58,15 +58,10 @@ log-check:
 	[ $$rc -eq 1 ] || { [ $$rc -eq 0 ] && echo 'component log field: derive a logger with logging.For instead (see AGENTS.md)' >&2; exit 1; }
 arch: adapter-imports
 	$(HOME)/go/bin/hexcheck -fail-on warn -config .hexcheck.yaml -root . ./...
-# Adapters stay independent: production code may import only the shared
-# adapter libraries below. outputkit holds what both output backends (drm,
-# headless) run; the others are leaf helpers.
-ADAPTER_LIBS := drm|config|sched|seat|watchdog|fdwait|busretry|overlaydraw|outputkit/routing|outputkit/cursors|xcursor|outputkit/capture|outputkit/corewake|outputkit/presented|outputkit/surfaces|captureallow|clock|hdrcursor|logging|peerexe|sessionsecurity|syncfile|workspaceid|xkb
+# Parser-based production import guard, including inactive build tags.
+# The shared adapter library allowlist lives in domainpolicy_test.go.
 adapter-imports:
-	@edges=$$(CGO_ENABLED=0 go list -f '{{$$p := .ImportPath}}{{range .Imports}}{{$$p}} {{.}}{{"\n"}}{{end}}' ./internal/adapters/...) || exit 1; \
-	bad=$$(echo "$$edges" | grep -E ' \S+/internal/adapters/' | grep -vE '/internal/adapters/($(ADAPTER_LIBS))$$' \
-		| while read -r from to; do case $$to in $$from/*) ;; *) echo "$$from -> $$to";; esac; done); \
-	[ -z "$$bad" ] || { echo "$$bad"; echo 'adapter imports another adapter: use ports or a shared library (Makefile ADAPTER_LIBS)' >&2; exit 1; }
+	CGO_ENABLED=0 go test . -run '^TestAdapterImports$$' -count=1
 # Fast, mandatory guards for tiled content publications and SHM copies.
 perf-check:
 	CGO_ENABLED=0 go test ./internal/core ./internal/app ./internal/adapters/drm ./internal/adapters/headless ./internal/adapters/vulkan ./internal/adapters/wayland ./internal/adapters/outputkit/capture ./internal/adapters/outputkit/routing ./internal/adapters/screencast -run '^(TestWaitNilFencesAllocations|TestAnimateAllocations|TestPublishAllocations|TestPublishSubscribersAllocations|TestPublishStashSlideAllocations|TestPublishOverviewAllocations|TestPublishLeavingAllocations|TestOutputRoutingAllocations|TestReportSeenAllocations|TestFrameLifecycleTransitionsAllocations|TestFullscreenShownAllocations|TestFrameDecisionAllocations|TestCommitFrameAllocations|TestColorPipelineAllocations|TestShownBySnapshotAllocations|TestFlipShowsAllocations|TestMRUNoteFocusDoesNotAllocateWhenSettled|TestDueFramesAllocations|TestRenderSteadyStateAllocations|TestRenderSteadyStateDMABufAllocations|TestSceneOpaqueRegionAllocations|TestSceneDeltaAllocations|TestAccountFlipAllocations|TestFlipDoneAllocations|TestSceneWalkUnchangedTiledSHM|TestTiledCommitPublishAllocations|TestCapturedCommitApplyAllocations|TestCapturedViewportApplyAllocations|TestEffectiveInputEmptyTreeAllocations|TestHeadlessTiledSHMCallbackAndCopyBudget|TestReleaseHeldAllocations|TestCommitDamageAllocations|TestEmitContentAllocations|TestPresentationPushAllocations|TestAnimatingFrameSendAllocations|TestContentBatchCycleAllocations|TestWriteMappedAllocations|TestCapturedForwardAllocations|TestCommandForwardAllocations|TestOutboxQueuedDeliveryAllocations|TestCastFrameAllocations|TestCastProducerAllocations|TestCaptureCycleAllocations|TestLogScenesAllocations|TestOverviewNamedRowsAllocations|TestOverviewWorkspaceSwitchAllocations|TestBufferContentAllocations|TestDueFramesFireScratch|TestRetireSemaphoreAllocatesNothing)$$' -count=1
