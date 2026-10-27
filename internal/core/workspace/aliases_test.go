@@ -2,8 +2,7 @@ package workspace
 
 import "github.com/bnema/neferwl/internal/core/layout"
 
-// Column is a tiled stack. Kept as an alias while Workspace and its callers
-// still live in core; the layout package owns the representation.
+// Column is test shorthand for layout.Column, which owns the representation.
 type Column = layout.Column
 
 // Overflow is the layout configuration key shared by core's config contracts.
@@ -18,5 +17,5 @@ const (
 	OverflowCascade = layout.OverflowCascade
 )
 
-// LayoutNames lists the registered configuration keys for config callers.
+// LayoutNames lists the registered configuration keys for tests.
 func LayoutNames() []string { return layout.LayoutNames() }

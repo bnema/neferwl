@@ -4,9 +4,16 @@ import "github.com/bnema/neferwl/internal/ports"
 
 // Placement describes a window and its presentation geometry.
 type Placement struct {
-	ID                          ports.WindowID
-	Rect                        ports.Rect
-	Fullscreen, Focused, Hidden bool
+	// ID is the window the placement is for.
+	ID ports.WindowID
+	// Rect is the window's rectangle in output-local logical pixels.
+	Rect ports.Rect
+	// Fullscreen marks the window as the workspace's fullscreen window.
+	Fullscreen bool
+	// Focused marks the window that has the keyboard focus.
+	Focused bool
+	// Hidden marks a window that is not drawn or reachable by input.
+	Hidden bool
 	// Floating windows sit at their own size. Below marks a native float
 	// ordered behind the columns (never a stashed window).
 	Floating, Below bool

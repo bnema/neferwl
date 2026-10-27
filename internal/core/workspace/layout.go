@@ -18,7 +18,8 @@ type WindowID = ports.WindowID
 type Rect = ports.Rect
 
 // Placement describes a window and its presentation geometry.
-// It is an alias for geom.Placement during the domain split.
+// It aliases geom.Placement so the model's API spells it without importing
+// geom.
 type Placement = geom.Placement
 
 // Workspace owns the window, focus and presentation model. Only the owner
@@ -76,7 +77,7 @@ type Workspace struct {
 	// it ends with its cover. Focusing another window ends it too.
 	stashOver WindowID
 	// Home is the monitor (key or connector) the workspace belongs to; ""
-	// means the one it is on. On another monitor it is a guest; homePos is
+	// means the one it is on. On another monitor it is a guest; HomePos is
 	// its position there, where it returns.
 	Home string
 	// HomePos is the position to restore on the home monitor; core owns ordering.

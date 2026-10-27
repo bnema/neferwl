@@ -20,17 +20,11 @@ type Workspace = workspacedomain.Workspace
 // Float preserves core's existing caller contract while workspace owns the model.
 type Float = workspacedomain.Float
 
-// BorderKind preserves core's existing caller contract while workspace owns the model.
-type BorderKind = workspacedomain.BorderKind
-
 // Border preserves core's existing caller contract while workspace owns the model.
 type Border = workspacedomain.Border
 
 // Action preserves core's existing caller contract while workspace owns the model.
 type Action = workspacedomain.Action
-
-// WorkspaceOp preserves core's existing caller contract while workspace owns the model.
-type WorkspaceOp = workspacedomain.WorkspaceOp
 
 // Effect preserves core's existing caller contract while workspace owns the model.
 type Effect = workspacedomain.Effect
@@ -41,17 +35,11 @@ type DropSpot = workspacedomain.DropSpot
 // DropKind preserves core's existing caller contract while workspace owns the model.
 type DropKind = workspacedomain.DropKind
 
-// EdgeKind preserves core's existing caller contract while workspace owns the model.
-type EdgeKind = workspacedomain.EdgeKind
-
 // OverviewRow preserves core's existing caller contract while workspace owns the model.
 type OverviewRow = workspacedomain.OverviewRow
 
 // RowSnapshot preserves core's existing caller contract while workspace owns the model.
 type RowSnapshot = workspacedomain.RowSnapshot
-
-// StackKind preserves core's existing caller contract while workspace owns the model.
-type StackKind = workspacedomain.StackKind
 
 // StackItem preserves core's existing caller contract while workspace owns the model.
 type StackItem = workspacedomain.StackItem
@@ -188,38 +176,14 @@ const ActionHint = workspacedomain.ActionHint
 // ActionOSDPin shares the model value with core dispatch and existing callers.
 const ActionOSDPin = workspacedomain.ActionOSDPin
 
-// ResizeWidth shares the model value with core dispatch and existing callers.
-const ResizeWidth = workspacedomain.ResizeWidth
-
-// ResizeHeight shares the model value with core dispatch and existing callers.
-const ResizeHeight = workspacedomain.ResizeHeight
-
 // FocusWorkspace shares the model value with core dispatch and existing callers.
 const FocusWorkspace = workspacedomain.FocusWorkspace
 
 // MoveColumnToWorkspace shares the model value with core dispatch and existing callers.
 const MoveColumnToWorkspace = workspacedomain.MoveColumnToWorkspace
 
-// MoveWindowToWorkspace shares the model value with core dispatch and existing callers.
-const MoveWindowToWorkspace = workspacedomain.MoveWindowToWorkspace
-
 // DropNone shares the model value with core dispatch and existing callers.
 const DropNone = workspacedomain.DropNone
-
-// DropAbove shares the model value with core dispatch and existing callers.
-const DropAbove = workspacedomain.DropAbove
-
-// DropBelow shares the model value with core dispatch and existing callers.
-const DropBelow = workspacedomain.DropBelow
-
-// DropSwap shares the model value with core dispatch and existing callers.
-const DropSwap = workspacedomain.DropSwap
-
-// DropInsert shares the model value with core dispatch and existing callers.
-const DropInsert = workspacedomain.DropInsert
-
-// EdgeNone shares the model value with core dispatch and existing callers.
-const EdgeNone = workspacedomain.EdgeNone
 
 // EdgeAlways shares the model value with core dispatch and existing callers.
 const EdgeAlways = workspacedomain.EdgeAlways
@@ -243,7 +207,9 @@ const StackColumn = workspacedomain.StackColumn
 func ResizeArg(a Action) (axis, step int, ok bool) { return workspacedomain.ResizeArg(a) }
 
 // WorkspaceArg forwards the model operation without changing existing core call sites.
-func WorkspaceArg(a Action) (n int, op WorkspaceOp, ok bool) { return workspacedomain.WorkspaceArg(a) }
+func WorkspaceArg(a Action) (n int, op workspacedomain.WorkspaceOp, ok bool) {
+	return workspacedomain.WorkspaceArg(a)
+}
 
 // NamedArg forwards the model operation without changing existing core call sites.
 func NamedArg(a Action) (string, bool) { return workspacedomain.NamedArg(a) }

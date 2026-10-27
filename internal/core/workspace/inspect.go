@@ -15,9 +15,11 @@ type Inspection struct {
 	Left WindowID
 	// FloatFocus and StashFocus retain the underlying focus flags.
 	FloatFocus, StashFocus bool
-	// StashHidden and StashOver retain stash visibility bookkeeping.
+	// StashHidden reports that the stash is hidden by user override.
 	StashHidden bool
-	StashOver   WindowID
+	// StashOver is the covering fullscreen window the stash shows over, a
+	// user override or a stashed window's activation; 0 without.
+	StashOver WindowID
 	// HiddenFullscreen is the deferred stash fullscreen request.
 	HiddenFullscreen WindowID
 	// ColumnsSlide and StashSlide are detached presentation values.

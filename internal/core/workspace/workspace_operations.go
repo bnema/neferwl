@@ -353,8 +353,9 @@ func (w *Workspace) RestoreFloat(f Float) {
 
 // OverviewRow supplies the monitor's provisional selection for one model row.
 type OverviewRow struct {
-	// Axis and Slot place the row in output-local coordinates.
+	// Axis is the row's layout axis in output-local coordinates.
 	Axis layout.Axis
+	// Slot is the row's output-local rectangle along Axis.
 	Slot Rect
 	// Shown, Current and Dim describe row visibility and focus presentation.
 	Shown, Current, Dim bool
