@@ -91,12 +91,12 @@ func revokeSecurityLeases(c securityLeaseCard, finished func(uint32)) error {
 // enter connector-name routing. They still require protection just like owners.
 // The same backend-owned counter is used by outputSet.start; no instance reuse.
 func registerDiscardedOutput(set *routing.Set, name string) (domain.OutputInstance, error) {
-	if set.NextInstance == ^domain.OutputInstance(0) {
-		set.StartErr = errors.New("output instance exhausted")
-		return 0, set.StartErr
+	instance, err := core.RegisterDiscardedOutput(set.NextInstance)
+	if err != nil {
+		set.StartErr = err
+		return 0, err
 	}
-	set.NextInstance++
-	instance := set.NextInstance
+	set.NextInstance = instance
 	if !set.SecurityEvent(ports.SecurityOutputAdded{Instance: instance, Output: name}) {
 		return instance, set.Ctx.Err()
 	}
@@ -106,8 +106,8 @@ func registerDiscardedOutput(set *routing.Set, name string) (domain.OutputInstan
 // retireDiscardedOutput consumes only affirmative terminal evidence. A failed
 // close remains in authoritative inventory, even though it has no render owner.
 func retireDiscardedOutput(set *routing.Set, instance domain.OutputInstance, inactive bool) error {
-	if !inactive {
-		return fmt.Errorf("discarded output %d shutdown inactivity unconfirmed", instance)
+	if err := core.RetireDiscardedOutput(instance, inactive); err != nil {
+		return err
 	}
 	if !set.SecurityEvent(ports.SecurityOutputRemoved{Instance: instance}) {
 		return set.Ctx.Err()
@@ -446,8 +446,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 	set := routing.NewSet(ctx, ch.Captured, ch.Routes())
 	set.Attach = ch.Content
 	set.WireSecurity(ch)
-	limiter := core.ReopenLimiter{Clock: b.clock}
-	recovering := false
+	policy := core.OutputPolicy{RenderCard: b.renderInfo.Name, ReopenLimiter: core.ReopenLimiter{Clock: b.clock}}
 	protected := func() bool { return set.State.Protected || securitySnapshot(ch.Security).Protected }
 	leases := routing.NewLeasePublisher(ctx, ch.LeaseEvents, func() bool { return seatActive }, protected, log)
 	defer leases.Close()
@@ -494,7 +493,6 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 	revokeTimer.Stop()
 	defer revokeTimer.Stop()
 	var revokeDeadline <-chan time.Time
-	var revokeAttempts int
 	var discardedOutputErr error // first unconfirmed lifetime; inventory retains every instance
 	barrier := func() {
 		if !set.State.Protected {
@@ -515,8 +513,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 			return
 		}
 		set.SecurityEvent(ports.SecurityBackendBarrier{Generation: set.State.Generation, Err: err})
-		revokeAttempts++
-		if err != nil && revokeAttempts < 3 {
+		if policy.OnBarrier(err) {
 			revokeTimer.Reset(time.Second)
 			revokeDeadline = revokeTimer.C()
 		}
@@ -544,7 +541,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 		apply.Heads(inventory)
 	}
 	scan := func() {
-		if recovering {
+		if policy.Recovering {
 			return
 		}
 		var scanErrors []error
@@ -679,16 +676,12 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 		complete(progress.ScanError(errors.Join(scanErrors...)))
 		barrier()
 	}
-	// Cards plugged in while the render device is being reopened wait here.
-	var pending, replug core.PendingCards
 	// addCard opens a hot-plugged card and starts its reader; the caller
 	// scans. The dmabuf feedback tables are computed at startup, so outputs
 	// of a hot-added card do not change what clients are told.
 	addCard := func(name domain.CardName) bool {
 		c, action := b.hotplugAdd(ctx, name, want(currentConfig))
-		if action.RetryAfterTeardown() {
-			replug.Add(name) // finishCard reopens it
-		}
+		policy.OnCardOpen(name, action)
 		if c == nil {
 			return false
 		}
@@ -710,12 +703,9 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 		delete(b.dying, c)
 		delete(lastHeads, c)
 		log.Info().Str("card", c.Path()).Msg("GPU removed")
-		if name := domain.CardName(filepath.Base(c.Path())); replug.Has(name) {
-			replug.Remove(name)
-			if recovering {
-				pending.Add(name)
-			} else {
-				addCard(name)
+		for _, action := range policy.OnCardClosed(domain.CardName(filepath.Base(c.Path()))) {
+			if open, ok := action.(core.ActOpenCard); ok {
+				addCard(open.Card)
 			}
 		}
 		// A same-name connector on another card was refused while this one
@@ -815,23 +805,20 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 		case <-ctx.Done():
 			return set.Wait()
 		case failure := <-readerErr:
-			if failure.card.removed {
-				continue // the card is gone; its outputs are being stopped
-			}
-			if path := failure.card.Path(); path == b.renderInfo.Path {
-				if !deviceNodeExists(path) || errors.Is(failure.err, unix.ENODEV) {
-					log.Error().Err(failure.err).Str("card", path).Msg("render GPU removed")
-					return errors.Join(fmt.Errorf("%w: %s: %w", core.ErrRenderGPURemoved, path, failure.err), set.Wait())
+			path := failure.card.Path()
+			for _, action := range policy.OnReaderFailure(domain.CardName(filepath.Base(path)), failure.card.removed, deviceNodeExists(path), errors.Is(failure.err, unix.ENODEV), failure.err) {
+				switch a := action.(type) {
+				case core.ActRemoveCard:
+					log.Warn().Err(failure.err).Str("card", path).Msg("card reader failed, device gone")
+					removeCard(a.Card)
+				case core.ActExit:
+					if errors.Is(a.Err, core.ErrRenderGPURemoved) {
+						log.Error().Err(failure.err).Str("card", path).Msg("render GPU removed")
+						return errors.Join(fmt.Errorf("%w: %s: %w", core.ErrRenderGPURemoved, path, failure.err), set.Wait())
+					}
+					return errors.Join(failure.err, set.Wait())
 				}
-			} else if errors.Is(failure.err, unix.ENODEV) {
-				// The device vanished under the reader, possibly before its
-				// uevent is handled.
-				log.Warn().Err(failure.err).Str("card", path).Msg("card reader failed, device gone")
-				removeCard(domain.CardName(filepath.Base(path)))
-				continue
 			}
-			// No more flips on that card: its outputs would freeze.
-			return errors.Join(failure.err, set.Wait())
 		case state, ok := <-ch.SecurityChanges:
 			if !ok {
 				ch.SecurityChanges = nil
@@ -840,9 +827,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 			if state.Generation < set.State.Generation {
 				continue
 			}
-			if set.SetSecurity(state) {
-				revokeAttempts = 0
-			}
+			policy.OnSecurity(set.SetSecurity(state))
 			// start can refresh the gate while scanning; its queued transition
 			// must still receive a barrier even if forwarding already occurred.
 			revokeTimer.Stop()
@@ -858,25 +843,25 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 			revokeDeadline = nil
 			barrier()
 		case ev := <-hotplug:
-			switch core.ClassifyHotplug(ev, b.renderInfo.Name) {
-			case core.HotplugRenderRemoved:
-				// Checked even while recovering: the device is not coming back.
-				path := b.renderInfo.Path
-				log.Error().Str("card", path).Msg("render GPU removed")
-				return errors.Join(fmt.Errorf("%w: %s", core.ErrRenderGPURemoved, path), set.Wait())
-			case core.HotplugCardAdded:
-				if recovering {
-					// Opening needs the reopened render device.
-					pending.Add(ev.Card)
-					continue
+			scanRequested := false
+			for _, action := range policy.OnHotplug(ev) {
+				switch a := action.(type) {
+				case core.ActExit:
+					path := b.renderInfo.Path
+					log.Error().Str("card", path).Msg("render GPU removed")
+					return errors.Join(fmt.Errorf("%w: %s", a.Err, path), set.Wait())
+				case core.ActOpenCard:
+					if !addCard(a.Card) {
+						goto hotplugDone
+					}
+				case core.ActRemoveCard:
+					removeCard(a.Card)
+				case core.ActScan:
+					scanRequested = true
 				}
-				if !addCard(ev.Card) {
-					continue
-				}
-			case core.HotplugCardRemoved:
-				pending.Remove(ev.Card)
-				replug.Remove(ev.Card)
-				removeCard(ev.Card)
+			}
+		hotplugDone:
+			if !scanRequested {
 				continue
 			}
 			log.Info().Str("card", string(ev.Card)).Msg("hotplug")
@@ -910,8 +895,8 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 			switch req := event.(type) {
 			case ports.LeaseRequest:
 				reply := ports.LeaseReply{ID: req.ID, Err: fmt.Errorf("unknown card %s", req.Card)}
-				if !seatActive || protected() {
-					reply.Err = errors.New("DRM seat inactive or session protected")
+				if decision := policy.OnLeaseRequest(seatActive, set.State, securitySnapshot(ch.Security)); decision.Err != nil {
+					reply.Err = decision.Err
 					leases.Send(reply)
 					break
 				}
@@ -968,18 +953,21 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 			// fail-closed.
 			owner := cards[name]
 			unplugged := owner != nil && owner.removed && !deviceNodeExists(owner.Path())
-			if output != nil && core.RetireOnStop(output.InactiveOnClose(), owner != nil && owner.removed, !unplugged) {
-				if !output.InactiveOnClose() {
-					log.Info().Str("card", owner.Path()).Str("connector", name).Msg("retiring output of unplugged GPU")
+			if output != nil {
+				for _, action := range policy.OnOutputStopped(stopped.Instance, output.InactiveOnClose(), owner != nil && owner.removed, !unplugged) {
+					if retire, ok := action.(core.ActRetireInstance); ok {
+						if !output.InactiveOnClose() {
+							log.Info().Str("card", owner.Path()).Str("connector", name).Msg("retiring output of unplugged GPU")
+						}
+						set.SecurityEvent(ports.SecurityOutputRemoved{Instance: retire.Instance})
+					}
 				}
-				set.SecurityEvent(ports.SecurityOutputRemoved{Instance: stopped.Instance})
 			}
 			delete(outputs, name)
 			if ctx.Err() != nil {
 				return errors.Join(err, set.Wait())
 			}
-			if !recovering && errors.Is(err, ports.ErrDeviceLost) {
-				recovering = true
+			if policy.OnOutputFailure(err) {
 				// The backend currently owns one shared render device. Cancel every
 				// consumer first; normal stopped handling joins and retires each lifetime.
 				for n, r := range set.Outs {
@@ -1023,7 +1011,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 				delete(stopReady, name)
 			}
 			stopDecision := progress.Stopped(name, source, restart, err)
-			if recovering {
+			if policy.Recovering {
 				complete(stopDecision)
 				send(ports.OutputRemoved{Name: name})
 				if len(set.Outs) > 0 {
@@ -1032,7 +1020,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 				old := b.render
 				b.render = nil // failure cleanup must not close the lost device again.
 				log.Warn().Str("card", b.renderInfo.Path).Msg("render device lost, reopening")
-				next, reopenErr := reopenRender(b.opener, b.renderInfo, old, &limiter)
+				next, reopenErr := reopenRender(b.opener, b.renderInfo, old, &policy.ReopenLimiter)
 				if reopenErr != nil {
 					return errors.Join(reopenErr, set.Wait())
 				}
@@ -1043,8 +1031,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 				for _, c := range b.cards {
 					c.SetRender(next)
 				}
-				recovering = false
-				for _, name := range pending.Take() {
+				for _, name := range policy.OnReopened() {
 					addCard(name)
 				}
 				scan()
@@ -1056,8 +1043,8 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 				// session down. It stays off until the next hotplug, so a
 				// lasting failure does not loop.
 				log.Error().Err(err).Str("connector", name).Msg("output stopped")
-				restart = false
 			}
+			restart = policy.RestartOutput(restart, err)
 			// Release changes the enabled state in ConnectedHeads. Do not
 			// restart a failed or disabled output just to refresh inventory.
 			if restart {
