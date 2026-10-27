@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-pipewire/pipewire"
 )
 
@@ -67,7 +66,7 @@ func (s *Service) streamOfCast(id uint64) *stream {
 }
 
 // onCastEvent applies one event of the wayland server.
-func (s *Service) onCastEvent(ev *ports.CastEvent) {
+func (s *Service) onCastEvent(ev *domain.CastEvent) {
 	st := s.streamOfCast(ev.ID)
 	if st == nil {
 		return
@@ -113,7 +112,7 @@ func (s *Service) giveBack(st *stream) {
 
 // frameDone settles the frame in flight: a complete image is queued and
 // triggered, anything else gives the buffer back.
-func (s *Service) frameDone(st *stream, ev *ports.CastEvent) {
+func (s *Service) frameDone(st *stream, ev *domain.CastEvent) {
 	b := s.settleFrame(st, ev)
 	if b == nil {
 		return
@@ -132,7 +131,7 @@ func (s *Service) frameDone(st *stream, ev *ports.CastEvent) {
 // settleFrame updates the stream for the CastFrameDone of its frame and
 // returns the buffer to queue, nil when there is none. It touches no
 // PipeWire object but Release on the failure path.
-func (s *Service) settleFrame(st *stream, ev *ports.CastEvent) *pipewire.VideoBuffer {
+func (s *Service) settleFrame(st *stream, ev *domain.CastEvent) *pipewire.VideoBuffer {
 	if !st.inflight || st.buf == nil || st.buf.Index != ev.Buf {
 		s.log.Warn().Str("stream", st.path).Int("buf", ev.Buf).Msg("frame done for no frame in flight")
 		return nil
@@ -191,7 +190,7 @@ func (s *Service) wait(d time.Duration) {
 }
 
 // send puts a command on the wayland channel without blocking.
-func (s *Service) sendCmd(cmd ports.CastCommand) bool {
+func (s *Service) sendCmd(cmd domain.CastCommand) bool {
 	select {
 	case s.cmds <- cmd:
 		return true
@@ -206,7 +205,7 @@ func (s *Service) pump(st *stream, now time.Time) {
 		return
 	}
 	if st.needOpen {
-		cmd := ports.CastCommand{Kind: domain.CastOpen, ID: st.cast, Output: st.output, Window: st.window, Cursor: st.cursor}
+		cmd := domain.CastCommand{Kind: domain.CastOpen, ID: st.cast, Output: st.output, Window: st.window, Cursor: st.cursor}
 		if !s.sendCmd(cmd) {
 			s.wait(retryOpen)
 			return
@@ -307,7 +306,7 @@ func (s *Service) issueFrame(st *stream, b *pipewire.VideoBuffer, now time.Time)
 		s.wait(st.interval())
 		return false
 	}
-	cmd := ports.CastCommand{Kind: domain.CastFrame, ID: st.cast, Buf: b.Index, Data: b.Data, Stride: b.Stride, Width: b.Width, Height: b.Height, Format: shmFormat(b.Format)}
+	cmd := domain.CastCommand{Kind: domain.CastFrame, ID: st.cast, Buf: b.Index, Data: b.Data, Stride: b.Stride, Width: b.Width, Height: b.Height, Format: shmFormat(b.Format)}
 	if !s.sendCmd(cmd) {
 		s.wait(st.interval())
 		return false
@@ -323,7 +322,7 @@ func (s *Service) issueFrame(st *stream, b *pipewire.VideoBuffer, now time.Time)
 // but the slot is kept until it is.
 func (s *Service) pumpClosing(st *stream) {
 	if st.needClose {
-		if s.sendCmd(ports.CastCommand{Kind: domain.CastClose, ID: st.cast}) {
+		if s.sendCmd(domain.CastCommand{Kind: domain.CastClose, ID: st.cast}) {
 			st.needClose = false
 		} else {
 			s.wait(retryOpen)

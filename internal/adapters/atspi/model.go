@@ -2,7 +2,6 @@ package atspi
 
 import (
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // AT-SPI constants (atspi-constants.h). The role ids are the AtspiRole enum
@@ -126,7 +125,7 @@ type frameInfo struct {
 //
 // Ambiguous windows are left out. The result maps the index of a window in
 // wins to the index of its frame in frames.
-func matchFrames(wins []ports.HintWindow, frames []frameInfo) map[int]int {
+func matchFrames(wins []domain.HintWindow, frames []frameInfo) map[int]int {
 	out := map[int]int{}
 	if len(wins) == 1 && len(frames) == 1 {
 		out[0] = 0
@@ -193,9 +192,9 @@ type element struct {
 // target: the element extents are relative to the top-level frame, whose own
 // window-relative origin is (fx, fy); the result is clipped to the window.
 // It reports false for an empty result.
-func toTarget(win ports.HintWindow, fx, fy int32, e element) (ports.HintTarget, bool) {
+func toTarget(win domain.HintWindow, fx, fy int32, e element) (domain.HintTarget, bool) {
 	if e.w <= 0 || e.h <= 0 {
-		return ports.HintTarget{}, false
+		return domain.HintTarget{}, false
 	}
 	r := domain.Rect{X: win.Rect.X + int(e.x-fx), Y: win.Rect.Y + int(e.y-fy), W: int(e.w), H: int(e.h)}
 	// A target crossing disjoint rectangles cannot be represented by one Rect.
@@ -213,9 +212,9 @@ func toTarget(win ports.HintWindow, fx, fy int32, e element) (ports.HintTarget, 
 		}
 	}
 	if clipped.W == 0 {
-		return ports.HintTarget{}, false
+		return domain.HintTarget{}, false
 	}
-	return ports.HintTarget{Rect: clipped, Kind: kindOf(e.role), Source: domain.HintSourceATSPI, Score: 1, Window: win.ID}, true
+	return domain.HintTarget{Rect: clipped, Kind: kindOf(e.role), Source: domain.HintSourceATSPI, Score: 1, Window: win.ID}, true
 }
 
 func isDocument(role uint32) bool { return role == roleDocumentFrame || role == roleDocumentWeb }

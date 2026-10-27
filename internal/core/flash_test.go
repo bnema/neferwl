@@ -41,7 +41,7 @@ func TestFlashFadeAndOutputFrames(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, clock := flashCore(t)
 		a := c.cur()
-		c.addScreen(ports.OutputInfo{Name: "B", Width: 400, Height: 300})
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 400, Height: 300})
 		b := c.screens[1]
 		startFlash(t, c, clock, flashWindow, 3)
 		first := stepScenes(t, c, a)
@@ -260,7 +260,7 @@ func TestFlashCrossOutputActionTriggers(t *testing.T) {
 		t.Run(string(action), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				c, clock := flashCore(t)
-				c.addScreen(ports.OutputInfo{Name: "B", Width: 400, Height: 300})
+				c.addScreen(domain.OutputInfo{Name: "B", Width: 400, Height: 300})
 				a, b := c.screens[0], c.screens[1]
 				a.x, a.y = 0, 0
 				b.x, b.y = 300, 0
@@ -456,7 +456,7 @@ func TestFlashCancelsStaleRunningTargets(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
 					c, clock := flashCore(t)
 					a := c.cur()
-					c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
+					c.addScreen(domain.OutputInfo{Name: "B", Width: 300, Height: 200})
 					b := c.screens[1]
 					startFlash(t, c, clock, level, 3)
 					if indicatorScene(t, c).Flash == nil {
@@ -533,7 +533,7 @@ func BenchmarkFlashSceneBuild(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	c.addScreen(ports.OutputInfo{Name: "A", Width: 1000, Height: 600})
+	c.addScreen(domain.OutputInfo{Name: "A", Width: 1000, Height: 600})
 	c.windows.mapped(ports.WindowMapped{ID: 1}, time.Now())
 	c.cur().mon.AddWindow(1)
 	c.flash.running = &flashTarget{level: flashWindow, window: 1, output: "A"}
@@ -647,7 +647,7 @@ func TestFlashCrossScreenActionsMarkDestinationWindow(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				c, clock := flashCore(t)
 				a := c.cur()
-				c.addScreen(ports.OutputInfo{Name: "B", Width: 400, Height: 300})
+				c.addScreen(domain.OutputInfo{Name: "B", Width: 400, Height: 300})
 				b := c.screens[1]
 				if tc.occupied {
 					c.windows.mapped(ports.WindowMapped{ID: 4}, clock.now)

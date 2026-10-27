@@ -20,13 +20,13 @@ import (
 // moves are global logical coordinates; moveCursor, when set, places the
 // software cursor of the output under them (physical position on it), using
 // the latest layout from layouts.
-func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script <-chan string, input chan<- ports.InputEvent, layouts <-chan ports.Layout, moveCursor func(output string, x, y float64), log zerowrap.Logger) error {
+func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script <-chan string, input chan<- ports.InputEvent, layouts <-chan domain.Layout, moveCursor func(output string, x, y float64), log zerowrap.Logger) error {
 	return RunSecure(ctx, km, keymaps, script, input, layouts, moveCursor, log, nil)
 }
 
 // RunSecure snapshots the protection epoch before each event enters the input
 // queue. Scripts are a headless test transport, never an unlock authority.
-func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script <-chan string, input chan<- ports.InputEvent, layouts <-chan ports.Layout, moveCursor func(output string, x, y float64), log zerowrap.Logger, security ports.SessionSecurity) error {
+func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script <-chan string, input chan<- ports.InputEvent, layouts <-chan domain.Layout, moveCursor func(output string, x, y float64), log zerowrap.Logger, security ports.SessionSecurity) error {
 	snapshot := func() domain.SecurityState {
 		if security != nil {
 			return security.Snapshot()
@@ -49,7 +49,7 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 		}
 		entry.Str(field, value).Msg(message)
 	}
-	var layout ports.Layout
+	var layout domain.Layout
 	defer func() { km.Close() }()
 	emit := func(code uint32, down bool) error {
 		state := snapshot()

@@ -15,7 +15,7 @@ import (
 type rig struct {
 	input    chan ports.InputEvent
 	client   chan ports.ClientEvent
-	reload   chan ports.ConfigChanged
+	reload   chan domain.ConfigChanged
 	commands chan ports.ClientCommand
 	cfg      domain.Config
 }
@@ -27,11 +27,11 @@ func repeatRig(t *testing.T) rig {
 	input := make(chan ports.InputEvent, 4)
 	client := make(chan ports.ClientEvent, 8)
 	output := make(chan ports.OutputEvent, 1)
-	reload := make(chan ports.ConfigChanged, 1)
+	reload := make(chan domain.ConfigChanged, 1)
 	commands := make(chan ports.ClientCommand, 256)
 	cfg := scrollDefaults()
 	cfg.Layout.MaxColumns = 5
-	c, err := core.New(cfg, core.Channels{Input: input, Client: client, Output: output, Config: reload, ConfigErrors: make(chan error, 1), Commands: commands, Scenes: make(chan []domain.Scene, 1), Spawn: make(chan ports.SpawnRequest, 4)}, core.Options{})
+	c, err := core.New(cfg, core.Channels{Input: input, Client: client, Output: output, Config: reload, ConfigErrors: make(chan error, 1), Commands: commands, Scenes: make(chan []domain.Scene, 1), Spawn: make(chan domain.SpawnRequest, 4)}, core.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func repeatRig(t *testing.T) rig {
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
 	t.Cleanup(func() { cancel(); <-done })
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 500, Height: 100}}
+	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 500, Height: 100}}
 	for id := domain.WindowID(1); id <= 5; id++ {
 		client <- ports.WindowMapped{ID: id}
 	}
@@ -94,9 +94,9 @@ func TestRepeatStopsThroughRun(t *testing.T) {
 		send func(rig)
 	}{
 		// The new keymap may swallow the release.
-		{"config reload", func(r rig) { r.reload <- ports.ConfigChanged{Config: r.cfg} }},
+		{"config reload", func(r rig) { r.reload <- domain.ConfigChanged{Config: r.cfg} }},
 		{"launcher takes the keyboard", func(r rig) {
-			r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{{ID: 9, Layer: domain.LayerOverlay, Width: 100, Height: 40, Keyboard: 1}}}
+			r.client <- ports.LayerChanged{Layers: []domain.LayerSurface{{ID: 9, Layer: domain.LayerOverlay, Width: 100, Height: 40, Keyboard: 1}}}
 		}},
 		{"window inhibits shortcuts", func(r rig) { r.client <- ports.ShortcutsInhibit{Window: 4, Active: true} }},
 	} {

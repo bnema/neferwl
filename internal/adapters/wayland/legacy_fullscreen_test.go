@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -14,7 +15,7 @@ func outputSizedServer(t *testing.T, w, h int) (*Server, chan ports.ClientEvent,
 	t.Helper()
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
-	out := ports.Layout{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: w, Height: h}, Width: w, Height: h, Scale: 1}}
+	out := domain.Layout{{Info: domain.OutputInfo{Name: "HEADLESS-1", Width: w, Height: h}, Width: w, Height: h, Scale: 1}}
 	s, err := New(Options{RuntimeDir: dir, Outputs: out}, Channels{Events: events, Commands: make(chan ports.ClientCommand, 16)}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)

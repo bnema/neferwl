@@ -39,7 +39,7 @@ func shortcutsInhibit(t *testing.T) {
 	client := make(chan ports.ClientEvent, 4)
 	commands := make(chan ports.ClientCommand, 64)
 	scenes := make(chan []domain.Scene, 1)
-	spawn := make(chan ports.SpawnRequest, 4)
+	spawn := make(chan domain.SpawnRequest, 4)
 	state := make(chan domain.State, 1)
 	output := make(chan ports.OutputEvent, 1)
 	c, err := core.New(cfg, core.Channels{Input: input, Client: client, Output: output, Commands: commands, Scenes: scenes, Spawn: spawn, State: state}, core.Options{})
@@ -50,7 +50,7 @@ func shortcutsInhibit(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
 	defer func() { cancel(); receive(t, done) }()
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 	scene(t, scenes)
 	client <- ports.WindowMapped{ID: 1}
 	scene(t, scenes)
@@ -82,9 +82,9 @@ func shortcutsInhibit(t *testing.T) {
 	// So do shortcuts inhibition and the pointer constraint.
 	client <- ports.ShortcutsInhibit{Window: 2, Active: true}
 	waitState(t, state, "shortcuts inhibited", func(w domain.WindowState) bool { return w.ID == 2 && w.ShortcutsInhibited })
-	client <- ports.PointerConstrained{ID: 2, PointerConstraint: ports.PointerConstraint{Mode: domain.ConstraintLock}}
+	client <- ports.PointerConstrained{ID: 2, PointerConstraint: domain.PointerConstraint{Mode: domain.ConstraintLock}}
 	waitState(t, state, "locked", func(w domain.WindowState) bool { return w.ID == 2 && w.PointerConstraint == "locked" })
-	client <- ports.PointerConstrained{ID: 2, PointerConstraint: ports.PointerConstraint{Mode: domain.ConstraintConfine}}
+	client <- ports.PointerConstrained{ID: 2, PointerConstraint: domain.PointerConstraint{Mode: domain.ConstraintConfine}}
 	waitState(t, state, "confined", func(w domain.WindowState) bool { return w.ID == 2 && w.PointerConstraint == "confined" })
 	client <- ports.PointerConstrained{}
 	waitState(t, state, "unconstrained", func(w domain.WindowState) bool { return w.ID == 2 && w.PointerConstraint == "" })
@@ -115,7 +115,7 @@ func TestShortcutsInhibitDropsBoundRelease(t *testing.T) {
 		client := make(chan ports.ClientEvent, 4)
 		commands := make(chan ports.ClientCommand, 64)
 		scenes := make(chan []domain.Scene, 1)
-		spawn := make(chan ports.SpawnRequest, 4)
+		spawn := make(chan domain.SpawnRequest, 4)
 		output := make(chan ports.OutputEvent, 1)
 		c, err := core.New(cfg, core.Channels{Input: input, Client: client, Output: output, Commands: commands, Scenes: scenes, Spawn: spawn}, core.Options{})
 		if err != nil {
@@ -125,7 +125,7 @@ func TestShortcutsInhibitDropsBoundRelease(t *testing.T) {
 		done := make(chan error, 1)
 		go func() { done <- c.Run(ctx) }()
 		defer func() { cancel(); receive(t, done) }()
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}
 		scene(t, scenes)

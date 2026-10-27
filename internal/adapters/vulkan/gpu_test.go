@@ -92,7 +92,7 @@ func TestTwoRenderersShareGPU(t *testing.T) {
 	g := newTestGPU(t)
 	var rs [2]*Renderer
 	for i := range rs {
-		renderer, err := g.NewRenderer(32, 32, ports.RendererOptions{})
+		renderer, err := g.NewRenderer(32, 32, domain.RendererOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -143,7 +143,7 @@ func TestConcurrentRendererTargets(t *testing.T) {
 	baseline := slices.Clone(g.hdrMods)
 	var rs [2]*Renderer
 	for i := range rs {
-		renderer, err := g.NewRenderer(32, 32, ports.RendererOptions{Virtual: true, Readback: i == 0})
+		renderer, err := g.NewRenderer(32, 32, domain.RendererOptions{Virtual: true, Readback: i == 0})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -194,7 +194,7 @@ func TestClosedGPUConstructors(t *testing.T) {
 		name   string
 		create func() error
 	}{
-		{"renderer", func() error { _, err := g.NewRenderer(16, 16, ports.RendererOptions{}); return err }},
+		{"renderer", func() error { _, err := g.NewRenderer(16, 16, domain.RendererOptions{}); return err }},
 		{"copier", func() error { _, err := g.NewCopier(16, 16); return err }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

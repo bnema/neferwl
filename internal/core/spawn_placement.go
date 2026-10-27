@@ -5,6 +5,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -41,13 +42,13 @@ func newSpawnPlacement() spawnPlacement {
 }
 
 // request mints a token and records its pending destination.
-func (p *spawnPlacement) request(argv []string, target spawnTarget) ports.SpawnRequest {
+func (p *spawnPlacement) request(argv []string, target spawnTarget) domain.SpawnRequest {
 	token := rand.Text()
 	p.pending[token] = target
 	if target.kind == spawnSlot {
 		p.slots[target.slot] = token
 	}
-	return ports.SpawnRequest{Argv: slices.Clone(argv), Env: []string{ports.SlotEnv + "=" + token}}
+	return domain.SpawnRequest{Argv: slices.Clone(argv), Env: []string{ports.SlotEnv + "=" + token}}
 }
 
 // dropSlot invalidates the pending token of a slot.

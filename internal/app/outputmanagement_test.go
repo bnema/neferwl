@@ -9,7 +9,6 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // applyRig drives outputApply the way a backend owner loop does.
@@ -21,7 +20,7 @@ type applyRig struct {
 func newApplyRig(t *testing.T, headless bool) applyRig {
 	mode := domain.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
 	a := newOutputApply(core.NewOutputOverrides(domain.Config{}, headless), logging.For(context.Background(), "app"))
-	a.heads(ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}})
+	a.heads(domain.OutputHeads{Heads: []domain.OutputHead{{Info: domain.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}})
 	return applyRig{t, a}
 }
 
@@ -47,7 +46,7 @@ func (r applyRig) idle() {
 
 // core returns the configuration waiting for core, if any.
 func (r applyRig) core() (domain.Config, bool) {
-	ch := make(chan ports.ConfigChanged, 1)
+	ch := make(chan domain.ConfigChanged, 1)
 	out := r.a.configOut(ch)
 	if out == nil {
 		return domain.Config{}, false
@@ -57,9 +56,9 @@ func (r applyRig) core() (domain.Config, bool) {
 	return (<-ch).Config, true
 }
 
-func (r applyRig) replies() []ports.OutputApplied {
-	var got []ports.OutputApplied
-	ch := make(chan ports.OutputApplied, 1)
+func (r applyRig) replies() []domain.OutputApplied {
+	var got []domain.OutputApplied
+	ch := make(chan domain.OutputApplied, 1)
 	for {
 		out, next := r.a.replyOut(ch)
 		if out == nil {
@@ -71,8 +70,8 @@ func (r applyRig) replies() []ports.OutputApplied {
 	}
 }
 
-func moveDP1(id uint64, x int) ports.OutputApply {
-	return ports.OutputApply{ID: id, Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Pos: &image.Point{X: x}}}}
+func moveDP1(id uint64, x int) domain.OutputApply {
+	return domain.OutputApply{ID: id, Heads: []domain.HeadChange{{Name: "DP-1", Enabled: true, Pos: &image.Point{X: x}}}}
 }
 
 func TestOutputApply(t *testing.T) {
@@ -139,17 +138,17 @@ func TestOutputApplyOutbox(t *testing.T) {
 	r.started()
 	r.a.reload(domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 1.5}}})
 	r.a.reload(domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 2}}})
-	r.a.request(ports.OutputApply{ID: 2})
-	r.a.request(ports.OutputApply{ID: 3})
+	r.a.request(domain.OutputApply{ID: 2})
+	r.a.request(domain.OutputApply{ID: 3})
 	// The reloads wait for the running configuration: no overlap.
 	r.idle()
 	r.a.finished(nil)
 	// Inventory updates while Wayland is not reading: only the latest waits.
 	mode := domain.OutputMode{Width: 1280, Height: 720, RefreshMilli: 60000}
 	for _, name := range []string{"DP-1", "DP-2"} {
-		r.a.heads(ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: name}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}})
+		r.a.heads(domain.OutputHeads{Heads: []domain.OutputHead{{Info: domain.OutputInfo{Name: name}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}})
 	}
-	headsCh := make(chan ports.OutputHeads, 1)
+	headsCh := make(chan domain.OutputHeads, 1)
 	out, heads := r.a.headsOut(headsCh)
 	if out == nil || len(heads.Heads) != 1 || heads.Heads[0].Info.Name != "DP-2" {
 		t.Fatalf("latest heads: %+v", heads)
@@ -242,8 +241,8 @@ func TestReloadDuringRollback(t *testing.T) {
 
 func TestOutputApplyAnsweredAtOnce(t *testing.T) {
 	r := newApplyRig(t, false)
-	r.a.request(ports.OutputApply{ID: 1, Test: true, Heads: moveDP1(1, 10).Heads})
-	r.a.request(ports.OutputApply{ID: 2, Heads: []ports.HeadChange{{Name: "DP-9", Enabled: true}}})
+	r.a.request(domain.OutputApply{ID: 1, Test: true, Heads: moveDP1(1, 10).Heads})
+	r.a.request(domain.OutputApply{ID: 2, Heads: []domain.HeadChange{{Name: "DP-9", Enabled: true}}})
 	r.idle()
 	if _, ok := r.core(); ok {
 		t.Fatal("test or invalid request changed core config")
@@ -259,7 +258,7 @@ func TestOutputApplyAnsweredAtOnce(t *testing.T) {
 	}
 
 	h := newApplyRig(t, true)
-	h.a.request(ports.OutputApply{ID: 1, Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Scale: 2}}})
+	h.a.request(domain.OutputApply{ID: 1, Heads: []domain.HeadChange{{Name: "DP-1", Enabled: true, Scale: 2}}})
 	var gaps domain.Config
 	gaps.Layout.Gaps = 4
 	h.a.reload(gaps)

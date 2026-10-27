@@ -56,7 +56,7 @@ func viewportCore(t *testing.T, layout func(*domain.Config), usable Rect) (*Core
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.addScreen(ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80})
+	c.addScreen(domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80})
 	c.cur().mon.SetUsable(usable)
 	sent := map[WindowID]ports.ConfigureWindow{}
 	check := func(want map[WindowID]bool) domain.Scene {

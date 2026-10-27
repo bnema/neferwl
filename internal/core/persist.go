@@ -7,6 +7,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -14,7 +15,7 @@ import (
 // debounce, so a burst of Cmd+= presses writes the config once, and tells
 // the user through notes. It runs until ctx ends; pending scales are then
 // dropped.
-func PersistScales(ctx context.Context, changes <-chan ports.ScaleChanged, store ports.OutputScaleStore, notes ports.Notifier, clock ports.Clock, debounce time.Duration) {
+func PersistScales(ctx context.Context, changes <-chan domain.ScaleChanged, store ports.OutputScaleStore, notes ports.Notifier, clock ports.Clock, debounce time.Duration) {
 	pending := map[string]float64{}
 	timer := clock.NewTimer(debounce)
 	timer.Stop()

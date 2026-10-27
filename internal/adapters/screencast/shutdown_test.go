@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-pipewire/pipewire"
 	"github.com/stretchr/testify/mock"
 )
@@ -30,7 +29,7 @@ func (l *liveCast) loop(f func()) {
 	case <-time.After(5 * time.Second):
 		l.h.t.Fatal("timed out submitting PipeWire loop operation")
 	}
-	l.h.svc.Push(ports.CastEvent{Kind: domain.CastDamage, ID: 1 << 40}) // wakes the owner
+	l.h.svc.Push(domain.CastEvent{Kind: domain.CastDamage, ID: 1 << 40}) // wakes the owner
 }
 
 //testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
@@ -69,7 +68,7 @@ func startLiveCast(t *testing.T, withFrame bool, drain time.Duration) *liveCast 
 	if cmd := recvCmd(t, h); cmd.Kind != domain.CastOpen {
 		t.Fatalf("%+v", cmd)
 	}
-	h.svc.Push(ports.CastEvent{Kind: domain.CastSize, ID: 1, Width: 64, Height: 32})
+	h.svc.Push(domain.CastEvent{Kind: domain.CastSize, ID: 1, Width: 64, Height: 32})
 	var hd pipewire.VideoHandler
 	select {
 	case hd = <-l.hdl:
@@ -90,14 +89,14 @@ func startLiveCast(t *testing.T, withFrame bool, drain time.Duration) *liveCast 
 }
 
 //testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
-func recvCmd(t *testing.T, h *svcHarness) ports.CastCommand {
+func recvCmd(t *testing.T, h *svcHarness) domain.CastCommand {
 	t.Helper()
 	select {
 	case c := <-h.cmds:
 		return c
 	case <-time.After(5 * time.Second):
 		t.Fatal("no command\n" + h.log.String())
-		return ports.CastCommand{}
+		return domain.CastCommand{}
 	}
 }
 
@@ -145,7 +144,7 @@ func TestBusLossWaitsForFrameInFlight(t *testing.T) {
 	l.src.EXPECT().Release(l.buf).Run(func(*pipewire.VideoBuffer) { step("release") }).Once()
 	l.src.EXPECT().Destroy().Run(func() { step("destroy") }).Once()
 	delivered.Store(true)
-	l.h.svc.Push(ports.CastEvent{Kind: domain.CastFrameDone, ID: 1, Buf: 2})
+	l.h.svc.Push(domain.CastEvent{Kind: domain.CastFrameDone, ID: 1, Buf: 2})
 	waitClosed(t, l.h)
 	if len(steps) != 2 || <-steps != "release" || <-steps != "destroy" {
 		t.Fatal("release and destroy did not run in order before PipeWire closed")

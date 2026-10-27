@@ -89,7 +89,7 @@ func TestPreferredBufferTransform(t *testing.T) {
 	info := testOutputs[0].Info
 	setOutputs := func(tr domain.BufferTransform, scale float64) {
 		if !s.display.Do(func() {
-			s.setOutputs(ports.SetOutputs{Outputs: ports.Layout{{Info: info, Width: info.Height, Height: info.Width, Scale: scale, Transform: tr}}})
+			s.setOutputs(ports.SetOutputs{Outputs: domain.Layout{{Info: info, Width: info.Height, Height: info.Width, Scale: scale, Transform: tr}}})
 		}) {
 			t.Fatal("display stopped")
 		}
@@ -199,7 +199,7 @@ func TestFractionalScaleAndViewport(t *testing.T) {
 		t.Fatalf("initial scale %d", v)
 	}
 	// Core switches to 1.5: the surface gets 180/120.
-	commands <- ports.SetOutputs{Outputs: ports.Layout{{Info: testOutputs[0].Info, Width: 1280, Height: 720, Scale: 1.5}}}
+	commands <- ports.SetOutputs{Outputs: domain.Layout{{Info: testOutputs[0].Info, Width: 1280, Height: 720, Scale: 1.5}}}
 	// Events are read by Roundtrip; the command is applied asynchronously.
 	got := recvWire(t, c, "scale value", values)
 	if got != 180 {

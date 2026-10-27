@@ -65,9 +65,9 @@ func TestCaptureBatchBoundedAndRecycledWhileIdle(t *testing.T) {
 		r.EXPECT().EndCapture(frame).Run(func(ports.CaptureFrame) { close(recycled) }).Return().Once()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		incoming := make(chan ports.CaptureRequest)
+		incoming := make(chan domain.CaptureRequest)
 		scenes := make(chan domain.Scene)
-		replies := make(chan ports.CaptureDone, capture.MaxRequests+1)
+		replies := make(chan domain.CaptureDone, capture.MaxRequests+1)
 		done := make(chan error, 1)
 		go func() {
 			done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }, Captured: replies}, scenes, nil, nil, nil, incoming)
@@ -82,7 +82,7 @@ func TestCaptureBatchBoundedAndRecycledWhileIdle(t *testing.T) {
 				t.Fatal(err)
 			}
 			select {
-			case incoming <- ports.CaptureRequest{ID: uint64(i), Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: domain.SHMBuffer{File: f}}:
+			case incoming <- domain.CaptureRequest{ID: uint64(i), Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: domain.SHMBuffer{File: f}}:
 			case <-time.After(time.Second):
 				t.Fatal("capture admission blocked")
 			}

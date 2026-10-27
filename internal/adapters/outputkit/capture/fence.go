@@ -51,7 +51,7 @@ var ErrIndicatorMissing = fmt.Errorf("%w: capture indicator is not on screen", p
 
 // IndicatorShown reports whether scene s shows the indicator request q needs.
 // A request that does not ask for one (Indicate false) needs none.
-func IndicatorShown(s domain.Scene, q ports.CaptureRequest) bool {
+func IndicatorShown(s domain.Scene, q domain.CaptureRequest) bool {
 	if !q.Indicate {
 		return true
 	}
@@ -102,7 +102,7 @@ func covers(s domain.Scene, m domain.Rect, r image.Rectangle) bool {
 }
 
 // expired reports whether q has waited for its indicator for HoldFor.
-func expired(q ports.CaptureRequest, now time.Time) bool {
+func expired(q domain.CaptureRequest, now time.Time) bool {
 	return now.Sub(q.Since) >= HoldFor
 }
 
@@ -110,7 +110,7 @@ func expired(q ports.CaptureRequest, now time.Time) bool {
 // being shown by s, and returns the others, in order, in place (the entries
 // past them are zeroed). wait is how long until the next one expires, 0 when
 // none waits for its indicator. No allocation.
-func (p *Pipeline) Expire(s domain.Scene, reqs []ports.CaptureRequest, now time.Time) (kept []ports.CaptureRequest, wait time.Duration) {
+func (p *Pipeline) Expire(s domain.Scene, reqs []domain.CaptureRequest, now time.Time) (kept []domain.CaptureRequest, wait time.Duration) {
 	n := 0
 	for _, q := range reqs {
 		if !IndicatorShown(s, q) {
@@ -134,7 +134,7 @@ func (p *Pipeline) Expire(s domain.Scene, reqs []ports.CaptureRequest, now time.
 // that keep waiting for a scene that shows theirs. Expired ones are failed
 // first (see Expire). ready and held are consecutive in reqs; the entries
 // past them are zeroed. No allocation.
-func (p *Pipeline) Hold(s domain.Scene, reqs []ports.CaptureRequest, now time.Time) (ready, held []ports.CaptureRequest) {
+func (p *Pipeline) Hold(s domain.Scene, reqs []domain.CaptureRequest, now time.Time) (ready, held []domain.CaptureRequest) {
 	reqs, _ = p.Expire(s, reqs, now)
 	j := 0
 	for i := range reqs {
@@ -150,7 +150,7 @@ func (p *Pipeline) Hold(s domain.Scene, reqs []ports.CaptureRequest, now time.Ti
 // indicator of s: the ones neither handed over nor failed, whose indicator s
 // does not show. The entries past them are zeroed. The capacity is kept, so
 // the result replaces the owner's request list.
-func Waiting(reqs []ports.CaptureRequest, s domain.Scene) []ports.CaptureRequest {
+func Waiting(reqs []domain.CaptureRequest, s domain.Scene) []domain.CaptureRequest {
 	n := 0
 	for _, q := range reqs {
 		if !Handed(q) && !IndicatorShown(s, q) {

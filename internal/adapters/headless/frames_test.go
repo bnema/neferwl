@@ -13,10 +13,10 @@ import (
 
 // runWithFrames runs an output with a frames channel of the given size and
 // returns what it needs to feed scenes and stop it.
-func runWithFrames(t *testing.T, size int) (scenes chan domain.Scene, frames chan ports.OutputFrame, f *frames, stop func()) {
+func runWithFrames(t *testing.T, size int) (scenes chan domain.Scene, frames chan domain.OutputFrame, f *frames, stop func()) {
 	t.Helper()
 	scenes = make(chan domain.Scene, 8)
-	frames = make(chan ports.OutputFrame, size)
+	frames = make(chan domain.OutputFrame, size)
 	r, rec := recordingRenderer(t, nil)
 	sink, _ := presentedSink(t, 16)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -41,7 +41,7 @@ func TestAnimatingSceneSendsFrame(t *testing.T) {
 		scenes <- domain.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Animating: true}
 		select {
 		case got := <-frames:
-			require.Equal(t, ports.OutputFrame{Output: "HEADLESS-1"}, got)
+			require.Equal(t, domain.OutputFrame{Output: "HEADLESS-1"}, got)
 		case <-time.After(3 * time.Second):
 			t.Fatal("no frame for an animating scene")
 		}

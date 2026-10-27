@@ -128,7 +128,7 @@ func checked(name string, result vk.Result) error {
 }
 
 // NewRenderer creates per-output resources on this GPU.
-func (g *GPU) NewRenderer(width, height int, o ports.RendererOptions) (renderer ports.Renderer, err error) {
+func (g *GPU) NewRenderer(width, height int, o domain.RendererOptions) (renderer ports.Renderer, err error) {
 	if width <= 0 || height <= 0 || width > math.MaxUint32 || height > math.MaxUint32 || uint64(width)*uint64(height) > uint64(math.MaxInt/4) {
 		return nil, fmt.Errorf("invalid renderer dimensions %d x %d", width, height)
 	}

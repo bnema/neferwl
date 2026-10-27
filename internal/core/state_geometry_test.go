@@ -21,7 +21,7 @@ func TestStateWorkspaceGeometry(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		c.addScreen(ports.OutputInfo{Name: "OUT-1", Width: 1000, Height: 800})
+		c.addScreen(domain.OutputInfo{Name: "OUT-1", Width: 1000, Height: 800})
 		m := c.cur().mon
 		shown := m.Current()
 		shown.Columns = []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{2, 3}}}
@@ -83,7 +83,7 @@ func TestStateWorkspaceChange(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		c.addScreen(ports.OutputInfo{Name: "OUT-1", Width: 1000, Height: 800})
+		c.addScreen(domain.OutputInfo{Name: "OUT-1", Width: 1000, Height: 800})
 		w := c.cur().mon.Current()
 		w.Columns = []Column{{Windows: []WindowID{1}}}
 		a := c.state()

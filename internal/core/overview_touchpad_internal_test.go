@@ -16,9 +16,9 @@ func TestOverviewTwoFingerDoesNotNavigate(t *testing.T) {
 		m.ToggleOverview()
 		w, card := m.Current(), m.cardAt(m.Current())
 		for _, axis := range []ports.PointerAxis{
-			{Source: domain.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Value: 1000}},
-			{Source: domain.AxisFinger, Vertical: ports.ScrollAxis{Set: true, Value: 1000}},
-			{Source: domain.AxisFinger, Vertical: ports.ScrollAxis{Stop: true}},
+			{Source: domain.AxisFinger, Horizontal: domain.ScrollAxis{Set: true, Value: 1000}},
+			{Source: domain.AxisFinger, Vertical: domain.ScrollAxis{Set: true, Value: 1000}},
+			{Source: domain.AxisFinger, Vertical: domain.ScrollAxis{Stop: true}},
 		} {
 			if err := c.handleInput(context.Background(), axis); err != nil {
 				t.Fatal(err)

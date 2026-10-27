@@ -4,21 +4,20 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
 
 func TestToTargetConvertsWindowCoordinates(t *testing.T) {
 	win := domain.Rect{X: 100, Y: 50, W: 800, H: 600}
 	// The frame origin (fx, fy) is subtracted: toolkit offsets cancel out.
-	got, ok := toTarget(ports.HintWindow{Rect: win}, 10, 20, element{role: roleLink, x: 110, y: 120, w: 40, h: 16})
+	got, ok := toTarget(domain.HintWindow{Rect: win}, 10, 20, element{role: roleLink, x: 110, y: 120, w: 40, h: 16})
 	require.True(t, ok)
-	require.Equal(t, ports.HintTarget{Rect: domain.Rect{X: 200, Y: 150, W: 40, H: 16}, Kind: domain.HintLink, Source: domain.HintSourceATSPI, Score: 1}, got)
+	require.Equal(t, domain.HintTarget{Rect: domain.Rect{X: 200, Y: 150, W: 40, H: 16}, Kind: domain.HintLink, Source: domain.HintSourceATSPI, Score: 1}, got)
 }
 
 func TestToTargetClipsToWindow(t *testing.T) {
 	win := domain.Rect{X: 100, Y: 50, W: 200, H: 100}
-	got, ok := toTarget(ports.HintWindow{Rect: win}, 0, 0, element{role: rolePushButton, x: 180, y: 90, w: 60, h: 30})
+	got, ok := toTarget(domain.HintWindow{Rect: win}, 0, 0, element{role: rolePushButton, x: 180, y: 90, w: 60, h: 30})
 	require.True(t, ok)
 	require.Equal(t, domain.Rect{X: 280, Y: 140, W: 20, H: 10}, got.Rect)
 	require.Equal(t, domain.HintButton, got.Kind)
@@ -33,7 +32,7 @@ func TestToTargetDropsEmptyAndOutside(t *testing.T) {
 		"above":       {role: roleLink, x: 1, y: -50, w: 10, h: 10},
 		"left of win": {role: roleLink, x: -30, y: 1, w: 10, h: 10},
 	} {
-		_, ok := toTarget(ports.HintWindow{Rect: win}, 0, 0, e)
+		_, ok := toTarget(domain.HintWindow{Rect: win}, 0, 0, e)
 		require.False(t, ok, name)
 	}
 }
@@ -59,10 +58,10 @@ func TestRoleAndStateBits(t *testing.T) {
 	require.Equal(t, []int32{1<<25 | 1<<30, 0}, stateBits(stateShowing, stateVisible))
 }
 
-func wins(ws ...ports.HintWindow) []ports.HintWindow { return ws }
+func wins(ws ...domain.HintWindow) []domain.HintWindow { return ws }
 
-func win(id domain.WindowID, w, h int, focused bool) ports.HintWindow {
-	return ports.HintWindow{ID: id, PID: 1, Rect: domain.Rect{W: w, H: h}, Focused: focused}
+func win(id domain.WindowID, w, h int, focused bool) domain.HintWindow {
+	return domain.HintWindow{ID: id, PID: 1, Rect: domain.Rect{W: w, H: h}, Focused: focused}
 }
 
 func TestMatchFramesSingle(t *testing.T) {

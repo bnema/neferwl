@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -13,7 +14,7 @@ import (
 // wired: internal replies are dropped (logged at debug) instead of blocking
 // forever, since nothing would ever receive them. It returns when ctx is done
 // or in is closed.
-func routeCaptured(ctx context.Context, in <-chan ports.CaptureDone, wayland, internal chan<- ports.CaptureDone) {
+func routeCaptured(ctx context.Context, in <-chan domain.CaptureDone, wayland, internal chan<- domain.CaptureDone) {
 	log := logging.For(ctx, "app")
 	for {
 		select {

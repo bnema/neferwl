@@ -52,7 +52,7 @@ func indicatorCoreWith(t *testing.T, commands chan ports.ClientCommand) (*Core, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.addScreen(ports.OutputInfo{Name: "A", Width: 300, Height: 200})
+	c.addScreen(domain.OutputInfo{Name: "A", Width: 300, Height: 200})
 	return c, ic
 }
 

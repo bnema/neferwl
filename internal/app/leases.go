@@ -5,6 +5,7 @@ import (
 	"os"
 	"slices"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
@@ -14,7 +15,7 @@ import (
 type leaseInventoryCard interface {
 	Path() string
 	FinishedLeases() []uint32
-	Leasable() []ports.LeaseConnector
+	Leasable() []domain.LeaseConnector
 	ClientFD() (*os.File, error)
 }
 
@@ -30,11 +31,11 @@ type leasePublisher struct {
 	// active seat in an unprotected session.
 	seatActive, protected func() bool
 	clientFDs             map[leaseInventoryCard]*os.File
-	last                  map[leaseInventoryCard][]ports.LeaseConnector
+	last                  map[leaseInventoryCard][]domain.LeaseConnector
 }
 
 func newLeasePublisher(ctx context.Context, events chan<- ports.LeaseMessage, seatActive, protected func() bool, log zerowrap.Logger) *leasePublisher {
-	return &leasePublisher{ctx: ctx, events: events, seatActive: seatActive, protected: protected, log: log, clientFDs: map[leaseInventoryCard]*os.File{}, last: map[leaseInventoryCard][]ports.LeaseConnector{}}
+	return &leasePublisher{ctx: ctx, events: events, seatActive: seatActive, protected: protected, log: log, clientFDs: map[leaseInventoryCard]*os.File{}, last: map[leaseInventoryCard][]domain.LeaseConnector{}}
 }
 
 // send delivers msg, closing its files when ctx ends first.
@@ -53,7 +54,7 @@ func (p *leasePublisher) publish(c leaseInventoryCard) {
 	for _, id := range c.FinishedLeases() {
 		p.send(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
 	}
-	var next []ports.LeaseConnector
+	var next []domain.LeaseConnector
 	if p.seatActive() && !p.protected() {
 		next = c.Leasable()
 	}

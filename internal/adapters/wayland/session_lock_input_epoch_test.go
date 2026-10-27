@@ -127,14 +127,14 @@ func TestSessionLockInputEpochHeldPasswordClearedBeforeDesktopEnter(t *testing.T
 	keys := inputEpochKeyboard(t, desktop)
 	var enters [][]byte
 	var enterSurfaces []uint32
-	var mods []ports.ModState
+	var mods []domain.ModState
 	var delivered []uint32
 	keys.OnEnter(func(_ uint32, surface uint32, held []byte) {
 		enters = append(enters, slices.Clone(held))
 		enterSurfaces = append(enterSurfaces, surface)
 	})
 	keys.OnModifiers(func(_ uint32, d, l, k, g uint32) {
-		mods = append(mods, ports.ModState{Depressed: d, Latched: l, Locked: k, Group: g})
+		mods = append(mods, domain.ModState{Depressed: d, Latched: l, Locked: k, Group: g})
 	})
 	keys.OnKey(func(_, _, key, _ uint32) { delivered = append(delivered, key) })
 	roundtrip(t, desktop)
@@ -165,7 +165,7 @@ func TestSessionLockInputEpochHeldPasswordClearedBeforeDesktopEnter(t *testing.T
 	if *locked != 1 {
 		t.Fatal("lock not confirmed")
 	}
-	password := ports.KeyEvent{Keycode: 30, Pressed: true, Time: 1 * time.Millisecond, State: ports.ModState{Depressed: 65, Latched: 2, Locked: 16, Group: 1}}
+	password := ports.KeyEvent{Keycode: 30, Pressed: true, Time: 1 * time.Millisecond, State: domain.ModState{Depressed: 65, Latched: 2, Locked: 16, Group: 1}}
 	s.display.Do(func() {
 		s.apply(ports.SecurityCommand{State: state, Command: ports.FocusWindow{ID: id}})
 		s.apply(ports.SecurityCommand{State: state, Command: ports.ForwardKey{ID: id, Key: password}})
@@ -194,7 +194,7 @@ func TestSessionLockInputEpochHeldPasswordClearedBeforeDesktopEnter(t *testing.T
 		t.Fatal(released)
 	}
 	s.display.Do(func() {
-		if len(s.seat.heldKeys) != 0 || len(s.seat.grabKeys) != 0 || s.seat.modState != (ports.ModState{}) {
+		if len(s.seat.heldKeys) != 0 || len(s.seat.grabKeys) != 0 || s.seat.modState != (domain.ModState{}) {
 			t.Error("release retained password input state")
 		}
 		s.apply(ports.SecurityCommand{State: state, Command: ports.FocusWindow{ID: normal.ID}})
@@ -216,7 +216,7 @@ func TestSessionLockInputEpochHeldPasswordClearedBeforeDesktopEnter(t *testing.T
 	if len(enters) != 1 || enterSurfaces[0] != normalSurface || len(enters[0]) != 0 {
 		t.Fatalf("desktop enter surfaces=%v held=%v", enterSurfaces, enters)
 	}
-	if len(mods) == 0 || mods[len(mods)-1] != (ports.ModState{}) {
+	if len(mods) == 0 || mods[len(mods)-1] != (domain.ModState{}) {
 		t.Fatalf("desktop modifiers not reset: %+v", mods)
 	}
 	for _, event := range grab.take() {
@@ -272,8 +272,8 @@ func TestSessionLockInputEpochMappedRolePublishedOnlyAfterEveryProof(t *testing.
 	if cfg.width != testOutputs[0].Width || cfg.height != testOutputs[0].Height {
 		t.Fatalf("lock configure %+v does not match output %+v", cfg, testOutputs[0])
 	}
-	want := ports.LockSurfacePlacement{ID: id, Output: "HEADLESS-1", Width: cfg.width, Height: cfg.height}
-	if len(after) != 1 || after[0].State != state || !slices.Equal(after[0].Surfaces, []ports.LockSurfacePlacement{want}) {
+	want := domain.LockSurfacePlacement{ID: id, Output: "HEADLESS-1", Width: cfg.width, Height: cfg.height}
+	if len(after) != 1 || after[0].State != state || !slices.Equal(after[0].Surfaces, []domain.LockSurfacePlacement{want}) {
 		t.Fatalf("validated placement events %+v want %+v", after, want)
 	}
 }

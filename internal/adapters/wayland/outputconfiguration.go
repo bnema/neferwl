@@ -7,7 +7,6 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	wlr "github.com/bnema/go-wayland-bindings/server/wlroutputmanagement"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 )
 
@@ -21,7 +20,7 @@ type outputConfiguration struct {
 type headConfiguration struct {
 	parent                                                *outputConfiguration
 	res                                                   *wlr.ZwlrOutputConfigurationHeadV1
-	change                                                ports.HeadChange
+	change                                                domain.HeadChange
 	unsupported                                           bool
 	modeSet, positionSet, transformSet, scaleSet, syncSet bool
 }
@@ -51,7 +50,7 @@ func (c *outputConfiguration) add(r *wlr.ZwlrOutputConfigurationV1, head *wlr.Zw
 		r.PostError(uint32(wlr.ZwlrOutputConfigurationV1ErrorAlreadyConfiguredHead), "head configured twice")
 		return
 	}
-	h := &headConfiguration{parent: c, change: ports.HeadChange{Name: name, Enabled: enabled}}
+	h := &headConfiguration{parent: c, change: domain.HeadChange{Name: name, Enabled: enabled}}
 	c.heads[name] = h
 	if enabled {
 		res, err := wlr.NewZwlrOutputConfigurationHeadV1(r.Client(), r.Version(), id, h)
@@ -87,7 +86,7 @@ func (c *outputConfiguration) submit(r *wlr.ZwlrOutputConfigurationV1, test bool
 		r.PostError(uint32(wlr.ZwlrOutputConfigurationV1ErrorUnconfiguredHead), "not all heads configured")
 		return
 	}
-	request := ports.OutputApply{ID: c.manager.s.nextOutputApply, Test: test}
+	request := domain.OutputApply{ID: c.manager.s.nextOutputApply, Test: test}
 	c.manager.s.nextOutputApply++
 	for _, head := range c.manager.s.outputHeads.Heads {
 		change, ok := c.heads[head.Info.Name]

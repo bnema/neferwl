@@ -19,19 +19,19 @@ type outputChannels struct {
 	events          chan<- ports.OutputEvent
 	scenes          <-chan []domain.Scene
 	content         contentAttacher
-	cursorChanges   <-chan ports.CursorChange
+	cursorChanges   <-chan domain.CursorChange
 	presented       ports.PresentationSink
-	frames          chan<- ports.OutputFrame
-	captures        <-chan ports.CaptureRequest
-	captured        chan<- ports.CaptureDone
-	formats         chan<- ports.OutputFormats
-	heads           chan<- ports.OutputHeads
+	frames          chan<- domain.OutputFrame
+	captures        <-chan domain.CaptureRequest
+	captured        chan<- domain.CaptureDone
+	formats         chan<- domain.OutputFormats
+	heads           chan<- domain.OutputHeads
 	// reloads carries file configuration; configured carries the effective
 	// configuration, overrides included, to core.
-	reloads    <-chan ports.ConfigChanged
-	configured chan<- ports.ConfigChanged
-	requests   <-chan ports.OutputApply
-	replies    chan<- ports.OutputApplied
+	reloads    <-chan domain.ConfigChanged
+	configured chan<- domain.ConfigChanged
+	requests   <-chan domain.OutputApply
+	replies    chan<- domain.OutputApplied
 }
 
 // routes are the inputs the output router feeds the outputs from.

@@ -8,7 +8,7 @@ import (
 	"slices"
 	"unsafe"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"golang.org/x/sys/unix"
 )
 
@@ -52,16 +52,16 @@ type leaseRecord struct {
 
 // Leasable returns connected non-desktop connectors not held by a lease.
 // Scan and lease operations share one owner goroutine.
-func (c *Card) Leasable() []ports.LeaseConnector {
-	var result []ports.LeaseConnector
+func (c *Card) Leasable() []domain.LeaseConnector {
+	var result []domain.LeaseConnector
 	for _, conn := range c.leasable {
 		if !conn.connected || c.leasedName(conn.name) {
 			continue
 		}
 		m := readMonitor(c.info.Path, conn.name)
-		result = append(result, ports.LeaseConnector{Card: c.info.Path, Name: conn.name, Description: fmt.Sprintf("%s %s", m.Make, m.Model), ConnectorID: conn.id})
+		result = append(result, domain.LeaseConnector{Card: c.info.Path, Name: conn.name, Description: fmt.Sprintf("%s %s", m.Make, m.Model), ConnectorID: conn.id})
 	}
-	slices.SortFunc(result, func(a, b ports.LeaseConnector) int {
+	slices.SortFunc(result, func(a, b domain.LeaseConnector) int {
 		if a.Name < b.Name {
 			return -1
 		}

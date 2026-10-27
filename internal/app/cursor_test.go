@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // themeCursor writes a one-image Xcursor file of side size under
@@ -53,14 +52,14 @@ func TestLoadCursorShapes(t *testing.T) {
 	themeCursor(t, dir, "left_ptr", 24, 1)
 	themeCursor(t, dir, "hand2", 24, 2)
 	for _, tc := range []struct {
-		change ports.CursorChange
+		change domain.CursorChange
 		px     byte
 	}{
-		{ports.CursorChange{}, 1},
+		{domain.CursorChange{}, 1},
 		// Themes with only X11 names still get the hand.
-		{ports.CursorChange{Shape: "pointer"}, 2},
+		{domain.CursorChange{Shape: "pointer"}, 2},
 		// Unknown shapes fall back to the arrow.
-		{ports.CursorChange{Shape: "zoom-in"}, 1},
+		{domain.CursorChange{Shape: "zoom-in"}, 1},
 	} {
 		img, err := loadCursor(tc.change, 2, 0, 256)
 		if err != nil {
@@ -74,27 +73,27 @@ func TestLoadCursorShapes(t *testing.T) {
 	if err := os.RemoveAll(dir); err != nil {
 		t.Fatal(err)
 	}
-	if img, err := loadCursor(ports.CursorChange{Shape: "pointer"}, 2, 0, 256); err != nil || img.Pixels[0] != 2 {
+	if img, err := loadCursor(domain.CursorChange{Shape: "pointer"}, 2, 0, 256); err != nil || img.Pixels[0] != 2 {
 		t.Fatalf("cached: %v", err)
 	}
-	if img, err := loadCursor(ports.CursorChange{Hidden: true}, 1, 0, 256); err != nil || img.W != 0 {
+	if img, err := loadCursor(domain.CursorChange{Hidden: true}, 1, 0, 256); err != nil || img.W != 0 {
 		t.Fatalf("hidden: %+v %v", img, err)
 	}
 }
 
 // A client cursor drawn at buffer scale 2 is shown at the output scale.
 func TestLoadCursorClientImage(t *testing.T) {
-	src := &ports.CursorImage{W: 4, H: 2, HotX: 2, HotY: 1, Pixels: make([]byte, 4*2*4)}
-	img, err := loadCursor(ports.CursorChange{Image: src, Scale: 2}, 1, 0, 256)
+	src := &domain.CursorImage{W: 4, H: 2, HotX: 2, HotY: 1, Pixels: make([]byte, 4*2*4)}
+	img, err := loadCursor(domain.CursorChange{Image: src, Scale: 2}, 1, 0, 256)
 	if err != nil || img.W != 2 || img.H != 1 || img.HotX != 1 || img.HotY != 0 {
 		t.Fatalf("%+v %v", img, err)
 	}
-	img, err = loadCursor(ports.CursorChange{Image: src, Scale: 2}, 2, 0, 256)
+	img, err = loadCursor(domain.CursorChange{Image: src, Scale: 2}, 2, 0, 256)
 	if err != nil || img.W != 4 || img.HotX != 2 {
 		t.Fatalf("%+v %v", img, err)
 	}
 	// Bounded by the cursor plane.
-	img, err = loadCursor(ports.CursorChange{Image: src, Scale: 1}, 4, 0, 8)
+	img, err = loadCursor(domain.CursorChange{Image: src, Scale: 1}, 4, 0, 8)
 	if err != nil || img.W != 8 || img.H != 4 {
 		t.Fatalf("%+v %v", img, err)
 	}
@@ -119,7 +118,7 @@ func TestLoadCursorInheritedShape(t *testing.T) {
 	if err := os.Rename(filepath.Join(dir, "theme", "cursors", "left_ptr"), child); err != nil {
 		t.Fatal(err)
 	}
-	img, err := loadCursor(ports.CursorChange{Shape: "text"}, 1, 0, 256)
+	img, err := loadCursor(domain.CursorChange{Shape: "text"}, 1, 0, 256)
 	if err != nil || img.Pixels[0] != 3 {
 		t.Fatalf("got arrow instead of the inherited text cursor: %v", err)
 	}
@@ -133,7 +132,7 @@ func TestRotateCursor(t *testing.T) {
 	for i := range 6 {
 		copy(px[i*4:], []byte{byte(i), 0, 0, 255})
 	}
-	img := ports.CursorImage{W: 3, H: 2, Pixels: px}
+	img := domain.CursorImage{W: 3, H: 2, Pixels: px}
 	if got := rotateCursor(img, 0); &got.Pixels[0] != &img.Pixels[0] || got.W != 3 || got.H != 2 {
 		t.Fatalf("identity: %+v", got)
 	}
@@ -161,12 +160,12 @@ func TestRotateCursor(t *testing.T) {
 		}
 	}
 	// Pixels shorter than W*H*4 are returned as they are.
-	short := ports.CursorImage{W: 3, H: 2, Pixels: px[:8]}
+	short := domain.CursorImage{W: 3, H: 2, Pixels: px[:8]}
 	if got := rotateCursor(short, 1); got.W != 3 || got.H != 2 || len(got.Pixels) != 8 {
 		t.Fatalf("short pixels: %+v", got)
 	}
 	// 90 degrees: the top left pixel goes to the bottom left.
-	if got := rotateCursor(ports.CursorImage{W: 3, H: 2, Pixels: px}, 1); got.Pixels[(2*2+0)*4] != 0 {
+	if got := rotateCursor(domain.CursorImage{W: 3, H: 2, Pixels: px}, 1); got.Pixels[(2*2+0)*4] != 0 {
 		t.Fatalf("90: top-left pixel at %v", got.Pixels)
 	}
 }

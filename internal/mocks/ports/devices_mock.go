@@ -1331,7 +1331,7 @@ func (_c *MockRenderDevice_NewCopier_Call) RunAndReturn(run func(w int, h int) (
 }
 
 // NewRenderer provides a mock function for the type MockRenderDevice
-func (_mock *MockRenderDevice) NewRenderer(w int, h int, o ports.RendererOptions) (ports.Renderer, error) {
+func (_mock *MockRenderDevice) NewRenderer(w int, h int, o domain.RendererOptions) (ports.Renderer, error) {
 	ret := _mock.Called(w, h, o)
 
 	if len(ret) == 0 {
@@ -1340,17 +1340,17 @@ func (_mock *MockRenderDevice) NewRenderer(w int, h int, o ports.RendererOptions
 
 	var r0 ports.Renderer
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(int, int, ports.RendererOptions) (ports.Renderer, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(int, int, domain.RendererOptions) (ports.Renderer, error)); ok {
 		return returnFunc(w, h, o)
 	}
-	if returnFunc, ok := ret.Get(0).(func(int, int, ports.RendererOptions) ports.Renderer); ok {
+	if returnFunc, ok := ret.Get(0).(func(int, int, domain.RendererOptions) ports.Renderer); ok {
 		r0 = returnFunc(w, h, o)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(ports.Renderer)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(int, int, ports.RendererOptions) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(int, int, domain.RendererOptions) error); ok {
 		r1 = returnFunc(w, h, o)
 	} else {
 		r1 = ret.Error(1)
@@ -1366,12 +1366,12 @@ type MockRenderDevice_NewRenderer_Call struct {
 // NewRenderer is a helper method to define mock.On call
 //   - w int
 //   - h int
-//   - o ports.RendererOptions
+//   - o domain.RendererOptions
 func (_e *MockRenderDevice_Expecter) NewRenderer(w any, h any, o any) *MockRenderDevice_NewRenderer_Call {
 	return &MockRenderDevice_NewRenderer_Call{Call: _e.mock.On("NewRenderer", w, h, o)}
 }
 
-func (_c *MockRenderDevice_NewRenderer_Call) Run(run func(w int, h int, o ports.RendererOptions)) *MockRenderDevice_NewRenderer_Call {
+func (_c *MockRenderDevice_NewRenderer_Call) Run(run func(w int, h int, o domain.RendererOptions)) *MockRenderDevice_NewRenderer_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 int
 		if args[0] != nil {
@@ -1381,9 +1381,9 @@ func (_c *MockRenderDevice_NewRenderer_Call) Run(run func(w int, h int, o ports.
 		if args[1] != nil {
 			arg1 = args[1].(int)
 		}
-		var arg2 ports.RendererOptions
+		var arg2 domain.RendererOptions
 		if args[2] != nil {
-			arg2 = args[2].(ports.RendererOptions)
+			arg2 = args[2].(domain.RendererOptions)
 		}
 		run(
 			arg0,
@@ -1399,7 +1399,7 @@ func (_c *MockRenderDevice_NewRenderer_Call) Return(renderer ports.Renderer, err
 	return _c
 }
 
-func (_c *MockRenderDevice_NewRenderer_Call) RunAndReturn(run func(w int, h int, o ports.RendererOptions) (ports.Renderer, error)) *MockRenderDevice_NewRenderer_Call {
+func (_c *MockRenderDevice_NewRenderer_Call) RunAndReturn(run func(w int, h int, o domain.RendererOptions) (ports.Renderer, error)) *MockRenderDevice_NewRenderer_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1494,7 +1494,7 @@ func (_m *MockRenderDeviceOpener) EXPECT() *MockRenderDeviceOpener_Expecter {
 }
 
 // Open provides a mock function for the type MockRenderDeviceOpener
-func (_mock *MockRenderDeviceOpener) Open(g ports.GPUInfo) (ports.RenderDevice, error) {
+func (_mock *MockRenderDeviceOpener) Open(g domain.GPUInfo) (ports.RenderDevice, error) {
 	ret := _mock.Called(g)
 
 	if len(ret) == 0 {
@@ -1503,17 +1503,17 @@ func (_mock *MockRenderDeviceOpener) Open(g ports.GPUInfo) (ports.RenderDevice, 
 
 	var r0 ports.RenderDevice
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(ports.GPUInfo) (ports.RenderDevice, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(domain.GPUInfo) (ports.RenderDevice, error)); ok {
 		return returnFunc(g)
 	}
-	if returnFunc, ok := ret.Get(0).(func(ports.GPUInfo) ports.RenderDevice); ok {
+	if returnFunc, ok := ret.Get(0).(func(domain.GPUInfo) ports.RenderDevice); ok {
 		r0 = returnFunc(g)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(ports.RenderDevice)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(ports.GPUInfo) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(domain.GPUInfo) error); ok {
 		r1 = returnFunc(g)
 	} else {
 		r1 = ret.Error(1)
@@ -1527,16 +1527,16 @@ type MockRenderDeviceOpener_Open_Call struct {
 }
 
 // Open is a helper method to define mock.On call
-//   - g ports.GPUInfo
+//   - g domain.GPUInfo
 func (_e *MockRenderDeviceOpener_Expecter) Open(g any) *MockRenderDeviceOpener_Open_Call {
 	return &MockRenderDeviceOpener_Open_Call{Call: _e.mock.On("Open", g)}
 }
 
-func (_c *MockRenderDeviceOpener_Open_Call) Run(run func(g ports.GPUInfo)) *MockRenderDeviceOpener_Open_Call {
+func (_c *MockRenderDeviceOpener_Open_Call) Run(run func(g domain.GPUInfo)) *MockRenderDeviceOpener_Open_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 ports.GPUInfo
+		var arg0 domain.GPUInfo
 		if args[0] != nil {
-			arg0 = args[0].(ports.GPUInfo)
+			arg0 = args[0].(domain.GPUInfo)
 		}
 		run(
 			arg0,
@@ -1550,7 +1550,7 @@ func (_c *MockRenderDeviceOpener_Open_Call) Return(renderDevice ports.RenderDevi
 	return _c
 }
 
-func (_c *MockRenderDeviceOpener_Open_Call) RunAndReturn(run func(g ports.GPUInfo) (ports.RenderDevice, error)) *MockRenderDeviceOpener_Open_Call {
+func (_c *MockRenderDeviceOpener_Open_Call) RunAndReturn(run func(g domain.GPUInfo) (ports.RenderDevice, error)) *MockRenderDeviceOpener_Open_Call {
 	_c.Call.Return(run)
 	return _c
 }

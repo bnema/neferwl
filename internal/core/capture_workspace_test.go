@@ -32,7 +32,7 @@ func hiddenCaptureCommands(t *testing.T) (*Core, *Workspace, chan ports.ClientCo
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.addScreen(ports.OutputInfo{Name: "A", Width: 300, Height: 200})
+	c.addScreen(domain.OutputInfo{Name: "A", Width: 300, Height: 200})
 	m := c.screens[0].mon
 	ws := m.Current()
 	ws.SetSize(100, 100)

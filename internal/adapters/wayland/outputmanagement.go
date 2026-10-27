@@ -7,7 +7,6 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	wlr "github.com/bnema/go-wayland-bindings/server/wlroutputmanagement"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 )
 
@@ -15,19 +14,19 @@ type managementHead struct {
 	res           *wlr.ZwlrOutputHeadV1
 	modes         map[*server.Resource]domain.OutputMode
 	modeResources []*wlr.ZwlrOutputModeV1
-	info          ports.OutputHead
+	info          domain.OutputHead
 }
 type outputManager struct {
 	s       *Server
 	res     *wlr.ZwlrOutputManagerV1
 	heads   map[string]*managementHead
 	stopped bool
-	places  map[string]ports.OutputPlacement
+	places  map[string]domain.OutputPlacement
 }
 
 func registerOutputManagement(d *server.Display, s *Server) error {
 	return wlr.NewZwlrOutputManagerV1Global(d, 4, func(c server.Client, v, id uint32) {
-		m := &outputManager{s: s, heads: map[string]*managementHead{}, places: map[string]ports.OutputPlacement{}}
+		m := &outputManager{s: s, heads: map[string]*managementHead{}, places: map[string]domain.OutputPlacement{}}
 		res, err := wlr.NewZwlrOutputManagerV1(c, int32(v), id, m)
 		if err != nil {
 			return
@@ -72,7 +71,7 @@ func (m *outputManager) CreateConfiguration(r *wlr.ZwlrOutputManagerV1, id, seri
 		res.SendCancelled()
 	}
 }
-func (m *outputManager) addHead(info ports.OutputHead) {
+func (m *outputManager) addHead(info domain.OutputHead) {
 	h := &managementHead{info: info, modes: map[*server.Resource]domain.OutputMode{}}
 	res, err := wlr.NewZwlrOutputHeadV1(m.res.Client(), m.res.Version(), 0, managementHeadHandler{})
 	if err != nil {
@@ -116,7 +115,7 @@ func (m *outputManager) update() {
 	if m.stopped {
 		return
 	}
-	wanted := map[string]ports.OutputHead{}
+	wanted := map[string]domain.OutputHead{}
 	for _, h := range m.s.outputHeads.Heads {
 		wanted[h.Info.Name] = h
 	}
@@ -153,7 +152,7 @@ func (m *outputManager) update() {
 		m.sendState(h, info)
 	}
 }
-func (m *outputManager) sendState(h *managementHead, info ports.OutputHead) {
+func (m *outputManager) sendState(h *managementHead, info domain.OutputHead) {
 	h.info = info
 	enabled := int32(0)
 	if info.Enabled {
@@ -178,15 +177,15 @@ func (m *outputManager) sendState(h *managementHead, info ports.OutputHead) {
 	}
 	m.places[info.Info.Name] = m.s.placementFor(info.Info.Name)
 }
-func (s *Server) placementFor(name string) ports.OutputPlacement {
+func (s *Server) placementFor(name string) domain.OutputPlacement {
 	for _, p := range s.outputPlaces {
 		if p.Info.Name == name {
 			return p
 		}
 	}
-	return ports.OutputPlacement{}
+	return domain.OutputPlacement{}
 }
-func (s *Server) setOutputHeads(h ports.OutputHeads) {
+func (s *Server) setOutputHeads(h domain.OutputHeads) {
 	if reflect.DeepEqual(s.outputHeads, h) {
 		return
 	}

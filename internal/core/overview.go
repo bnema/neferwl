@@ -879,7 +879,7 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 	if repeating {
 		stepX = overviewScrollRepeat
 	}
-	add := func(acc *float64, ax ports.ScrollAxis) {
+	add := func(acc *float64, ax domain.ScrollAxis) {
 		switch {
 		case !ax.Set:
 		case a.Source == domain.AxisWheel:

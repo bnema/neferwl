@@ -59,12 +59,12 @@ func (p *managementHeadEvents) Dispatch(e *wlturbo.Event) {
 		}
 	}
 }
-func outputTestServer(t *testing.T) (*Server, chan ports.OutputHeads, chan ports.OutputApply, chan ports.OutputApplied, string) {
+func outputTestServer(t *testing.T) (*Server, chan domain.OutputHeads, chan domain.OutputApply, chan domain.OutputApplied, string) {
 	t.Helper()
 	dir := t.TempDir()
-	heads := make(chan ports.OutputHeads, 8)
-	applies := make(chan ports.OutputApply, 8)
-	replies := make(chan ports.OutputApplied, 8)
+	heads := make(chan domain.OutputHeads, 8)
+	applies := make(chan domain.OutputApply, 8)
+	replies := make(chan domain.OutputApplied, 8)
 	s, err := New(Options{RuntimeDir: dir}, Channels{OutputHeads: heads, OutputApply: applies, OutputApplied: replies}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
@@ -81,9 +81,9 @@ func outputTestServer(t *testing.T) (*Server, chan ports.OutputHeads, chan ports
 	})
 	return s, heads, applies, replies, dir
 }
-func testHead() ports.OutputHeads {
+func testHead() domain.OutputHeads {
 	mode := domain.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000, Preferred: true}
-	return ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 1920, Height: 1080, RefreshMilli: 60000}, Modes: []domain.OutputMode{mode}, Current: &mode, Enabled: true}}}
+	return domain.OutputHeads{Heads: []domain.OutputHead{{Info: domain.OutputInfo{Name: "HEADLESS-1", Width: 1920, Height: 1080, RefreshMilli: 60000}, Modes: []domain.OutputMode{mode}, Current: &mode, Enabled: true}}}
 }
 
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
@@ -135,7 +135,7 @@ func TestOutputManagementStaleSerialAndLayout(t *testing.T) {
 		t.Fatalf("initial: %v", first)
 	}
 	if !s.display.Do(func() {
-		s.setOutputs(ports.SetOutputs{Outputs: ports.Layout{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 1920, Height: 1080}, X: 100, Width: 1920, Height: 1080, Scale: 1}}})
+		s.setOutputs(ports.SetOutputs{Outputs: domain.Layout{{Info: domain.OutputInfo{Name: "HEADLESS-1", Width: 1920, Height: 1080}, X: 100, Width: 1920, Height: 1080, Scale: 1}}})
 	}) {
 		t.Fatal("display stopped")
 	}
@@ -152,7 +152,7 @@ func TestOutputManagementStaleSerialAndLayout(t *testing.T) {
 	registerWireProxy(c, proxy)
 	requestProtocol(t, c, id, wlr.ZwlrOutputManagerV1RequestCreateConfiguration, configID, first[1])
 	waitManagementEvent(t, c, proxy.events, uint32(wlr.ZwlrOutputConfigurationV1EventCancelled))
-	if !s.display.Do(func() { s.setOutputHeads(ports.OutputHeads{}) }) {
+	if !s.display.Do(func() { s.setOutputHeads(domain.OutputHeads{}) }) {
 		t.Fatal("display stopped")
 	}
 	if err := c.Roundtrip(); err != nil {
@@ -203,7 +203,7 @@ func TestOutputManagementHeadsAndApply(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	var req ports.OutputApply
+	var req domain.OutputApply
 	select {
 	case req = <-apply:
 	case <-waylandDeadline(time.Second):
@@ -212,7 +212,7 @@ func TestOutputManagementHeadsAndApply(t *testing.T) {
 	if !req.Test || len(req.Heads) != 1 || req.Heads[0].Pos.X != 100 {
 		t.Fatalf("test: %+v", req)
 	}
-	replies <- ports.OutputApplied{ID: req.ID}
+	replies <- domain.OutputApplied{ID: req.ID}
 	waitManagementEvent(t, c, configProxy.events, uint32(wlr.ZwlrOutputConfigurationV1EventSucceeded))
 	configID = c.AllocateID()
 	configProxy = &managementEvents{events: make(chan [2]uint32, 8), client: c}
@@ -235,7 +235,7 @@ func TestOutputManagementHeadsAndApply(t *testing.T) {
 	if req.Test || req.Heads[0].Scale != 2 {
 		t.Fatalf("apply: %+v", req)
 	}
-	replies <- ports.OutputApplied{ID: req.ID}
+	replies <- domain.OutputApplied{ID: req.ID}
 	waitManagementEvent(t, c, configProxy.events, uint32(wlr.ZwlrOutputConfigurationV1EventSucceeded))
 }
 
@@ -300,7 +300,7 @@ func TestOutputManagementTransform(t *testing.T) {
 	heads := testHead()
 	if !s.display.Do(func() {
 		s.setOutputHeads(heads)
-		s.setOutputs(ports.SetOutputs{Outputs: ports.Layout{{Info: heads.Heads[0].Info, Scale: 1, Transform: 1}}})
+		s.setOutputs(ports.SetOutputs{Outputs: domain.Layout{{Info: heads.Heads[0].Info, Scale: 1, Transform: 1}}})
 	}) {
 		t.Fatal("display stopped")
 	}
@@ -347,7 +347,7 @@ func TestOutputManagementTransform(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	var req ports.OutputApply
+	var req domain.OutputApply
 	select {
 	case req = <-apply:
 	case <-waylandDeadline(time.Second):
@@ -356,10 +356,10 @@ func TestOutputManagementTransform(t *testing.T) {
 	if len(req.Heads) != 1 || req.Heads[0].Transform == nil || *req.Heads[0].Transform != 3 {
 		t.Fatalf("apply: %+v", req)
 	}
-	replies <- ports.OutputApplied{ID: req.ID}
+	replies <- domain.OutputApplied{ID: req.ID}
 	waitManagementEvent(t, c, configProxy.events, uint32(wlr.ZwlrOutputConfigurationV1EventSucceeded))
 	if !s.display.Do(func() {
-		s.setOutputs(ports.SetOutputs{Outputs: ports.Layout{{Info: heads.Heads[0].Info, Scale: 1, Transform: 3}}})
+		s.setOutputs(ports.SetOutputs{Outputs: domain.Layout{{Info: heads.Heads[0].Info, Scale: 1, Transform: 3}}})
 		s.setOutputHeads(heads)
 	}) {
 		t.Fatal("display stopped")
@@ -510,7 +510,7 @@ func TestOutputManagementInitialHeadState(t *testing.T) {
 			heads.Heads[0].Enabled = enabled
 			if !s.display.Do(func() {
 				s.setOutputHeads(heads)
-				s.setOutputs(ports.SetOutputs{Outputs: ports.Layout{{Info: heads.Heads[0].Info, X: 100, Scale: 2}}})
+				s.setOutputs(ports.SetOutputs{Outputs: domain.Layout{{Info: heads.Heads[0].Info, X: 100, Scale: 2}}})
 			}) {
 				t.Fatal("display stopped")
 			}
@@ -591,7 +591,7 @@ func TestOutputManagementReleasedModeNotReused(t *testing.T) {
 		if len(h.modes) != 0 || len(h.modeResources) != 0 {
 			t.Errorf("released mode retained: %d %d", len(h.modes), len(h.modeResources))
 		}
-		s.setOutputs(ports.SetOutputs{Outputs: ports.Layout{{Info: testHead().Heads[0].Info, X: 100, Scale: 1}}})
+		s.setOutputs(ports.SetOutputs{Outputs: domain.Layout{{Info: testHead().Heads[0].Info, X: 100, Scale: 1}}})
 	}) {
 		t.Fatal("display stopped")
 	}
@@ -638,7 +638,7 @@ func TestOutputManagementSetModeAfterHotplug(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	if !s.display.Do(func() { s.setOutputHeads(ports.OutputHeads{}) }) {
+	if !s.display.Do(func() { s.setOutputHeads(domain.OutputHeads{}) }) {
 		t.Fatal("display stopped")
 	}
 	requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetMode, mode)

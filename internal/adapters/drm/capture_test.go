@@ -21,13 +21,13 @@ import (
 )
 
 // sessionRequest is a capture request; exclude sets the exclusion of session 7.
-func sessionRequest(t *testing.T, id uint64, exclude bool) ports.CaptureRequest {
+func sessionRequest(t *testing.T, id uint64, exclude bool) domain.CaptureRequest {
 	t.Helper()
 	f, err := os.CreateTemp(t.TempDir(), "capture")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = f.Close() })
 	require.NoError(t, f.Truncate(16))
-	q := ports.CaptureRequest{ID: id, Dst: domain.SHMBuffer{File: f}, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1}
+	q := domain.CaptureRequest{ID: id, Dst: domain.SHMBuffer{File: f}, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1}
 	if exclude {
 		q.Exclude, q.Session, q.CaptureRevision = true, 7, 1
 	}
@@ -66,9 +66,9 @@ func TestSubmitFrameExcludeBeforeDisplayedThenStandard(t *testing.T) {
 		return frame, nil
 	}).Twice()
 	r.EXPECT().EndCapture(frame).Return().Twice()
-	replies := make(chan ports.CaptureDone, 4)
+	replies := make(chan domain.CaptureDone, 4)
 	pipeline := capture.NewPipeline(context.Background(), replies)
-	requests := []ports.CaptureRequest{sessionRequest(t, 1, true), sessionRequest(t, 2, false)}
+	requests := []domain.CaptureRequest{sessionRequest(t, 1, true), sessionRequest(t, 2, false)}
 	direct, err := o.submitFrame(context.Background(), r, drmSessionScene(), nil, nil, requests, pipeline)
 	require.NoError(t, err)
 	require.False(t, direct)
@@ -93,9 +93,9 @@ func TestCaptureRequestPreventsDirectScanout(t *testing.T) {
 	frame.EXPECT().Read(mock.Anything, mock.Anything, 8).Return(nil).Maybe()
 	r.EXPECT().BeginCapture().Return(frame, nil).Once()
 	r.EXPECT().EndCapture(frame).Return().Once()
-	replies := make(chan ports.CaptureDone, 2)
+	replies := make(chan domain.CaptureDone, 2)
 	pipeline := capture.NewPipeline(context.Background(), replies)
-	direct, err := o.submitFrame(context.Background(), r, drmSessionScene(), nil, nil, []ports.CaptureRequest{sessionRequest(t, 2, false)}, pipeline)
+	direct, err := o.submitFrame(context.Background(), r, drmSessionScene(), nil, nil, []domain.CaptureRequest{sessionRequest(t, 2, false)}, pipeline)
 	require.NoError(t, err)
 	require.False(t, direct)
 	require.Equal(t, "capture", o.reason)
@@ -118,9 +118,9 @@ func TestSubmitFrameRenderErrorKeepsOnlyUnhandedRequests(t *testing.T) {
 	frame.EXPECT().Read(mock.Anything, mock.Anything, 8).Return(nil).Maybe()
 	r.EXPECT().BeginCapture().Return(frame, nil).Once()
 	r.EXPECT().EndCapture(frame).Return().Once()
-	replies := make(chan ports.CaptureDone, 4)
+	replies := make(chan domain.CaptureDone, 4)
 	pipeline := capture.NewPipeline(context.Background(), replies)
-	requests := []ports.CaptureRequest{sessionRequest(t, 1, true), sessionRequest(t, 2, false)}
+	requests := []domain.CaptureRequest{sessionRequest(t, 1, true), sessionRequest(t, 2, false)}
 	_, err := o.submitFrame(context.Background(), r, drmSessionScene(), nil, nil, requests, pipeline)
 	var fatal renderError
 	require.ErrorAs(t, err, &fatal)
@@ -144,10 +144,10 @@ func TestSubmitFrameExcludeRequestWithoutSessionFails(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().UseTarget(0).Return().Once()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
-	replies := make(chan ports.CaptureDone, 2)
+	replies := make(chan domain.CaptureDone, 2)
 	pipeline := capture.NewPipeline(context.Background(), replies)
 	defer pipeline.Close(r)
-	requests := []ports.CaptureRequest{sessionRequest(t, 1, true)}
+	requests := []domain.CaptureRequest{sessionRequest(t, 1, true)}
 	scene := drmSessionScene()
 	scene.Capture = nil
 	_, err := o.submitFrame(context.Background(), r, scene, nil, nil, requests, pipeline)
@@ -195,13 +195,13 @@ func TestSubmitFrameHiddenWorkspaceWithoutFactoryFailsClosed(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().UseTarget(0).Return().Once()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once() // the display only
-	replies := make(chan ports.CaptureDone, 2)
+	replies := make(chan domain.CaptureDone, 2)
 	pipeline := capture.NewPipeline(context.Background(), replies)
 	defer pipeline.Close(r)
 	scene := drmSessionScene()
 	scene.CaptureScene = &domain.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1}
 	scene.Capture.Workspace = 9
-	requests := []ports.CaptureRequest{sessionRequest(t, 1, false)}
+	requests := []domain.CaptureRequest{sessionRequest(t, 1, false)}
 	requests[0].Workspace, requests[0].OffScreen = 9, true
 	_, err := o.submitFrame(context.Background(), r, scene, nil, nil, requests, pipeline)
 	require.NoError(t, err)
@@ -218,12 +218,12 @@ func TestSubmitFrameHiddenWorkspaceWithoutCaptureSceneFails(t *testing.T) {
 		r := portsmocks.NewMockRenderer(t)
 		r.EXPECT().UseTarget(0).Return().Once()
 		r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once() // the display only
-		replies := make(chan ports.CaptureDone, 2)
+		replies := make(chan domain.CaptureDone, 2)
 		pipeline := capture.NewPipeline(context.Background(), replies)
 		defer pipeline.Close(r)
 		scene := drmSessionScene()
 		scene.Capture.Workspace = 9
-		requests := []ports.CaptureRequest{sessionRequest(t, 1, false)}
+		requests := []domain.CaptureRequest{sessionRequest(t, 1, false)}
 		requests[0].Workspace, requests[0].OffScreen = 9, true
 		_, err := o.submitFrame(context.Background(), r, scene, nil, nil, requests, pipeline)
 		require.NoError(t, err)
@@ -252,7 +252,7 @@ func TestReportCapsPerWindowWhileChildReads(t *testing.T) {
 	child.EXPECT().BeginCapture().Return(frame, nil).Once()
 	child.EXPECT().EndCapture(frame).Return().Maybe()
 	child.EXPECT().Close().Return().Once()
-	replies := make(chan ports.CaptureDone, 2)
+	replies := make(chan domain.CaptureDone, 2)
 	pipeline := capture.NewPipeline(context.Background(), replies)
 	pipeline.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
 	o.capHidden = pipeline.CapHiddenSeen
@@ -263,7 +263,7 @@ func TestReportCapsPerWindowWhileChildReads(t *testing.T) {
 	req := sessionRequest(t, 1, false)
 	req.Workspace, req.OffScreen = 9, true
 	req.Region, req.Width, req.Height = image.Rect(0, 0, 2, 2), 2, 2
-	pipeline.SubmitHidden(scene, surfaces, []ports.CaptureRequest{req})
+	pipeline.SubmitHidden(scene, surfaces, []domain.CaptureRequest{req})
 
 	seen := map[domain.WindowID]uint64{1: 9, 5: 7} // window 1 belongs to the display
 	o.report(nil, seen)
@@ -306,7 +306,7 @@ func TestHiddenWorkspaceChildKeepsDirectScanout(t *testing.T) {
 	child.EXPECT().EndCapture(frame).Return().Maybe()
 	child.EXPECT().Close().Return().Once()
 	display := portsmocks.NewMockRenderer(t) // no Render: the display is scanned out
-	replies := make(chan ports.CaptureDone, 2)
+	replies := make(chan domain.CaptureDone, 2)
 	pipeline := capture.NewPipeline(context.Background(), replies)
 	pipeline.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
 	o.capHidden = pipeline.CapHiddenSeen
@@ -317,7 +317,7 @@ func TestHiddenWorkspaceChildKeepsDirectScanout(t *testing.T) {
 	req.Workspace, req.OffScreen = 9, true
 	req.Region, req.Width, req.Height, req.Stride = image.Rect(0, 0, 200, 100), 200, 100, 800
 	require.NoError(t, req.Dst.File.Truncate(800*100))
-	direct, err := o.submitFrame(context.Background(), display, s, c, map[domain.WindowID]uint64{}, []ports.CaptureRequest{req}, pipeline)
+	direct, err := o.submitFrame(context.Background(), display, s, c, map[domain.WindowID]uint64{}, []domain.CaptureRequest{req}, pipeline)
 	require.NoError(t, err)
 	require.True(t, direct, "the displayed fullscreen window stays scanned out")
 	require.True(t, o.frame.pendingCommit(), "display flip has not completed")
@@ -368,9 +368,9 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 		o.NewCaptureRenderer = func(int, int) (ports.Renderer, error) { return child, nil }
 
 		scenes := make(chan domain.Scene)
-		contents := newContentFeed(t, 0)            // unbuffered: taken before the scene
-		captures := make(chan ports.CaptureRequest) // unbuffered: a send returns once Run took it
-		captured := make(chan ports.CaptureDone, 4)
+		contents := newContentFeed(t, 0)             // unbuffered: taken before the scene
+		captures := make(chan domain.CaptureRequest) // unbuffered: a send returns once Run took it
+		captured := make(chan domain.CaptureDone, 4)
 		sink, presented := presentedSink(t, 64)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
@@ -397,7 +397,7 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 			Capture:      &domain.SceneCapture{Workspace: 9},
 			CaptureScene: &domain.Scene{Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []domain.SceneWindow{{ID: 5, Rect: domain.Rect{W: 200, H: 100}}}}}
 
-		next := func(match func(ports.OutputPresented) bool) ports.OutputPresented {
+		next := func(match func(domain.OutputPresented) bool) domain.OutputPresented {
 			t.Helper()
 			timeout := time.After(2 * time.Second)
 			for {
@@ -411,7 +411,7 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 				}
 			}
 		}
-		held := next(func(r ports.OutputPresented) bool { return len(r.ChildReads) > 0 })
+		held := next(func(r domain.OutputPresented) bool { return len(r.ChildReads) > 0 })
 		require.Equal(t, map[domain.WindowID]uint64{5: 2}, held.ChildReads)
 		require.Equal(t, 3, count(), "display frame committed, never completes")
 
@@ -420,7 +420,7 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 		contents.send(domain.SurfaceContent{ID: 1, Seq: 9, Width: 1, Height: 1, SHM: &domain.SHMBuffer{}})
 		_, err = writeEnd.Write([]byte{1}) // the child's GPU work finished
 		require.NoError(t, err)
-		lifted := next(func(r ports.OutputPresented) bool { return len(r.ChildReads) == 0 })
+		lifted := next(func(r domain.OutputPresented) bool { return len(r.ChildReads) == 0 })
 		require.Empty(t, lifted.ChildReads)
 		require.NotContains(t, lifted.Seen, domain.WindowID(1), "display Seen does not advance while its commit is pending: only the child hold is lifted")
 		require.Nil(t, lifted.Flip)
@@ -486,8 +486,8 @@ func TestRunCaptureWaitsForItsIndicatorScene(t *testing.T) {
 		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
 
 		scenes := make(chan domain.Scene, 2)
-		captures := make(chan ports.CaptureRequest)
-		captured := make(chan ports.CaptureDone, 4)
+		captures := make(chan domain.CaptureRequest)
+		captured := make(chan domain.CaptureDone, 4)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		setOutputRenderer(t, o, r)
@@ -565,8 +565,8 @@ func TestRunCaptureWithoutIndicatorFailsAfterTheBoundedWait(t *testing.T) {
 		k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
 		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
 		scenes := make(chan domain.Scene, 1)
-		captures := make(chan ports.CaptureRequest)
-		captured := make(chan ports.CaptureDone, 4)
+		captures := make(chan domain.CaptureRequest)
+		captured := make(chan domain.CaptureDone, 4)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		setOutputRenderer(t, o, r)
@@ -633,12 +633,12 @@ func TestSubmitFrameFailedIndicatedFrameDeliversNothing(t *testing.T) {
 				frame.EXPECT().Done().Return(nil).Maybe()
 				r.EXPECT().BeginCapture().Return(frame, nil).Once()
 				r.EXPECT().EndCapture(frame).Return().Once()
-				replies := make(chan ports.CaptureDone, 4)
+				replies := make(chan domain.CaptureDone, 4)
 				pipeline := capture.NewPipeline(context.Background(), replies)
 				q := sessionRequest(t, 1, false)
-				_, err := o.submitFrame(context.Background(), r, indicatedScene(), nil, nil, []ports.CaptureRequest{q}, pipeline)
+				_, err := o.submitFrame(context.Background(), r, indicatedScene(), nil, nil, []domain.CaptureRequest{q}, pipeline)
 				require.Error(t, err)
-				var done ports.CaptureDone
+				var done domain.CaptureDone
 				select {
 				case done = <-replies:
 				case <-time.After(5 * time.Second):
@@ -669,9 +669,9 @@ func TestSubmitFrameIndicatedFrameCommittedDelivers(t *testing.T) {
 		}).Maybe()
 		r.EXPECT().BeginCapture().Return(frame, nil).Once()
 		r.EXPECT().EndCapture(frame).Return().Once()
-		replies := make(chan ports.CaptureDone, 4)
+		replies := make(chan domain.CaptureDone, 4)
 		pipeline := capture.NewPipeline(context.Background(), replies)
-		_, err := o.submitFrame(context.Background(), r, indicatedScene(), nil, nil, []ports.CaptureRequest{sessionRequest(t, 1, false)}, pipeline)
+		_, err := o.submitFrame(context.Background(), r, indicatedScene(), nil, nil, []domain.CaptureRequest{sessionRequest(t, 1, false)}, pipeline)
 		require.NoError(t, err)
 		select {
 		case done := <-replies:

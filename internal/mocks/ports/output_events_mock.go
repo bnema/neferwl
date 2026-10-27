@@ -5,7 +5,7 @@
 package portsmocks
 
 import (
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -46,7 +46,7 @@ func (_m *MockPresentationSink) EXPECT() *MockPresentationSink_Expecter {
 }
 
 // Push provides a mock function for the type MockPresentationSink
-func (_mock *MockPresentationSink) Push(outputPresented ports.OutputPresented) {
+func (_mock *MockPresentationSink) Push(outputPresented domain.OutputPresented) {
 	_mock.Called(outputPresented)
 	return
 }
@@ -57,16 +57,16 @@ type MockPresentationSink_Push_Call struct {
 }
 
 // Push is a helper method to define mock.On call
-//   - outputPresented ports.OutputPresented
+//   - outputPresented domain.OutputPresented
 func (_e *MockPresentationSink_Expecter) Push(outputPresented any) *MockPresentationSink_Push_Call {
 	return &MockPresentationSink_Push_Call{Call: _e.mock.On("Push", outputPresented)}
 }
 
-func (_c *MockPresentationSink_Push_Call) Run(run func(outputPresented ports.OutputPresented)) *MockPresentationSink_Push_Call {
+func (_c *MockPresentationSink_Push_Call) Run(run func(outputPresented domain.OutputPresented)) *MockPresentationSink_Push_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 ports.OutputPresented
+		var arg0 domain.OutputPresented
 		if args[0] != nil {
-			arg0 = args[0].(ports.OutputPresented)
+			arg0 = args[0].(domain.OutputPresented)
 		}
 		run(
 			arg0,
@@ -80,7 +80,7 @@ func (_c *MockPresentationSink_Push_Call) Return() *MockPresentationSink_Push_Ca
 	return _c
 }
 
-func (_c *MockPresentationSink_Push_Call) RunAndReturn(run func(outputPresented ports.OutputPresented)) *MockPresentationSink_Push_Call {
+func (_c *MockPresentationSink_Push_Call) RunAndReturn(run func(outputPresented domain.OutputPresented)) *MockPresentationSink_Push_Call {
 	_c.Run(run)
 	return _c
 }

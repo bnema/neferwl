@@ -110,7 +110,7 @@ func hidesOverlays(s domain.Scene) bool {
 }
 
 // internal reports a capture requested by the compositor itself (hint scan).
-func internal(q ports.CaptureRequest) bool { return q.ID&ports.CaptureIDInternal != 0 }
+func internal(q domain.CaptureRequest) bool { return q.ID&ports.CaptureIDInternal != 0 }
 
 // plain returns s as a capture shows it: without its capture state,
 // indicators and position hint, and with only the overlays kept for clients
@@ -160,7 +160,7 @@ func captured(buf, overlays []domain.Overlay) []domain.Overlay {
 // them before BeginCapture. The render fence is returned, never closed here:
 // the plain render reads client buffers even when the requests are rejected,
 // so the caller owns it (hold or wait it) whatever happened, error included.
-func (p *Pipeline) SubmitPlain(r ports.Renderer, s domain.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, normal []ports.CaptureRequest) (took bool, done *os.File, err error) {
+func (p *Pipeline) SubmitPlain(r ports.Renderer, s domain.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, normal []domain.CaptureRequest) (took bool, done *os.File, err error) {
 	if len(normal) == 0 || len(s.CaptureIndicators) == 0 && !hidesOverlays(s) && !s.PositionHint.Shown() {
 		return false, nil, nil
 	}
@@ -227,7 +227,7 @@ func (p *Pipeline) ExcludedScene(s domain.Scene) domain.Scene { return p.excl.sc
 //     (OffScreen), served from CaptureScene (see SubmitHidden); they come last.
 //
 // The entries past the groups are zeroed.
-func (p *Pipeline) Split(s domain.Scene, reqs []ports.CaptureRequest) (normal, excluded, hidden []ports.CaptureRequest) {
+func (p *Pipeline) Split(s domain.Scene, reqs []domain.CaptureRequest) (normal, excluded, hidden []domain.CaptureRequest) {
 	n := 0
 	for _, q := range reqs {
 		var err error
@@ -256,7 +256,7 @@ func (p *Pipeline) Split(s domain.Scene, reqs []ports.CaptureRequest) (normal, e
 	clear(reqs[n:])
 	reqs = reqs[:n]
 	excl := excludedShown(s) || len(s.CaptureIndicators) > 0 || hidesOverlays(s) || s.PositionHint.Shown()
-	group := func(q ports.CaptureRequest) int {
+	group := func(q domain.CaptureRequest) int {
 		switch {
 		case q.OffScreen:
 			return 2
@@ -284,4 +284,4 @@ func (p *Pipeline) Split(s domain.Scene, reqs []ports.CaptureRequest) (normal, e
 
 // Handed reports a zeroed request: one Split failed, or one already given to
 // the worker. The owner never answers it again.
-func Handed(q ports.CaptureRequest) bool { return q.ID == 0 && q.Dst.File == nil && q.Mapped == nil }
+func Handed(q domain.CaptureRequest) bool { return q.ID == 0 && q.Dst.File == nil && q.Mapped == nil }

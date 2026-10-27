@@ -28,7 +28,7 @@ func hiddenScene() domain.Scene {
 	}
 }
 
-func hiddenRequest(t *testing.T, id uint64, region image.Rectangle) ports.CaptureRequest {
+func hiddenRequest(t *testing.T, id uint64, region image.Rectangle) domain.CaptureRequest {
 	q := pipelineRequest(t, id)
 	q.Workspace, q.OffScreen = 9, true
 	q.Region, q.Width, q.Height, q.Stride = region, region.Dx(), region.Dy(), region.Dx()*4
@@ -48,7 +48,7 @@ func childMock(t *testing.T, w, h int) (*portsmocks.MockRenderer, *portsmocks.Mo
 }
 
 func TestSubmitHiddenDrawsChildAndRebasesRegion(t *testing.T) {
-	replies := make(chan ports.CaptureDone, 4)
+	replies := make(chan domain.CaptureDone, 4)
 	p := NewPipeline(context.Background(), replies)
 	child, _ := childMock(t, 200, 100)
 	var scene domain.Scene
@@ -59,7 +59,7 @@ func TestSubmitHiddenDrawsChildAndRebasesRegion(t *testing.T) {
 	var made [2]int
 	p.EnableOffscreen(func(w, h int) (ports.Renderer, error) { made = [2]int{w, h}; return child, nil })
 	s := hiddenScene()
-	p.SubmitHidden(s, nil, []ports.CaptureRequest{hiddenRequest(t, 1, image.Rect(480, 360, 680, 460))})
+	p.SubmitHidden(s, nil, []domain.CaptureRequest{hiddenRequest(t, 1, image.Rect(480, 360, 680, 460))})
 	require.Equal(t, [2]int{200, 100}, made, "child image is the frame in physical pixels")
 	require.Nil(t, scene.Capture)
 	require.Zero(t, scene.Seq)
@@ -81,13 +81,13 @@ func TestSubmitHiddenFailsClosed(t *testing.T) {
 		{"frame empty", func(s *domain.Scene) { s.CaptureScene.OutputWidth = 0 }, ErrOffscreenGeometry},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			replies := make(chan ports.CaptureDone, 2)
+			replies := make(chan domain.CaptureDone, 2)
 			p := NewPipeline(context.Background(), replies)
 			defer p.Close(nil)
 			p.EnableOffscreen(func(int, int) (ports.Renderer, error) { t.Fatal("factory called"); return nil, nil })
 			s := hiddenScene()
 			tc.edit(&s)
-			p.SubmitHidden(s, nil, []ports.CaptureRequest{hiddenRequest(t, 1, image.Rect(0, 0, 200, 100))})
+			p.SubmitHidden(s, nil, []domain.CaptureRequest{hiddenRequest(t, 1, image.Rect(0, 0, 200, 100))})
 			got := awaitCapture(t, replies)
 			require.Error(t, got.Err)
 			if tc.want != nil {
@@ -98,23 +98,23 @@ func TestSubmitHiddenFailsClosed(t *testing.T) {
 }
 
 func TestSubmitHiddenFactoryFailureAndNoFactory(t *testing.T) {
-	replies := make(chan ports.CaptureDone, 4)
+	replies := make(chan domain.CaptureDone, 4)
 	p := NewPipeline(context.Background(), replies)
 	defer p.Close(nil)
-	p.SubmitHidden(hiddenScene(), nil, []ports.CaptureRequest{hiddenRequest(t, 1, image.Rect(0, 0, 200, 100))})
+	p.SubmitHidden(hiddenScene(), nil, []domain.CaptureRequest{hiddenRequest(t, 1, image.Rect(0, 0, 200, 100))})
 	require.ErrorIs(t, awaitCapture(t, replies).Err, ErrOffscreenUnavailable)
 	p.EnableOffscreen(func(int, int) (ports.Renderer, error) { return nil, errors.New("no gpu") })
-	p.SubmitHidden(hiddenScene(), nil, []ports.CaptureRequest{hiddenRequest(t, 2, image.Rect(0, 0, 200, 100))})
+	p.SubmitHidden(hiddenScene(), nil, []domain.CaptureRequest{hiddenRequest(t, 2, image.Rect(0, 0, 200, 100))})
 	require.ErrorIs(t, awaitCapture(t, replies).Err, ErrOffscreenUnavailable)
 }
 
 func TestSubmitHiddenRegionOutsideFrameFailsOthersServed(t *testing.T) {
-	replies := make(chan ports.CaptureDone, 4)
+	replies := make(chan domain.CaptureDone, 4)
 	p := NewPipeline(context.Background(), replies)
 	child, _ := childMock(t, 200, 100)
 	child.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
 	p.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
-	p.SubmitHidden(hiddenScene(), nil, []ports.CaptureRequest{
+	p.SubmitHidden(hiddenScene(), nil, []domain.CaptureRequest{
 		hiddenRequest(t, 1, image.Rect(0, 0, 300, 100)), // not the child's size
 		hiddenRequest(t, 2, image.Rect(0, 0, 200, 100)),
 	})
@@ -141,13 +141,13 @@ func TestSubmitHiddenHeldByGateUntilVerdict(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				replies := make(chan ports.CaptureDone, 4)
+				replies := make(chan domain.CaptureDone, 4)
 				p := NewPipeline(context.Background(), replies)
 				child, _ := childMock(t, 200, 100)
 				child.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
 				p.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
 				p.BeginGate()
-				p.SubmitHidden(hiddenScene(), nil, []ports.CaptureRequest{hiddenRequest(t, 1, image.Rect(0, 0, 200, 100))})
+				p.SubmitHidden(hiddenScene(), nil, []domain.CaptureRequest{hiddenRequest(t, 1, image.Rect(0, 0, 200, 100))})
 				synctest.Wait()
 				select {
 				case d := <-replies:
@@ -168,12 +168,12 @@ func TestSubmitHiddenHeldByGateUntilVerdict(t *testing.T) {
 }
 
 func TestSubmitHiddenChildClosesWhenSessionEnds(t *testing.T) {
-	replies := make(chan ports.CaptureDone, 4)
+	replies := make(chan domain.CaptureDone, 4)
 	p := NewPipeline(context.Background(), replies)
 	child, _ := childMock(t, 200, 100)
 	child.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
 	p.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
-	p.SubmitHidden(hiddenScene(), nil, []ports.CaptureRequest{hiddenRequest(t, 1, image.Rect(0, 0, 200, 100))})
+	p.SubmitHidden(hiddenScene(), nil, []domain.CaptureRequest{hiddenRequest(t, 1, image.Rect(0, 0, 200, 100))})
 	require.NoError(t, awaitCapture(t, replies).Err)
 	// Wait for the worker to hand the lease back, then the session ends.
 	b := <-p.HiddenCompleted()
@@ -192,7 +192,7 @@ func TestHiddenNilPipelineSafe(t *testing.T) {
 // A window is drawn by the child like a hidden workspace; another window or
 // a workspace needs a new child.
 func TestSubmitHiddenWindow(t *testing.T) {
-	replies := make(chan ports.CaptureDone, 4)
+	replies := make(chan domain.CaptureDone, 4)
 	p := NewPipeline(context.Background(), replies)
 	child, _ := childMock(t, 200, 100)
 	child.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
@@ -202,7 +202,7 @@ func TestSubmitHiddenWindow(t *testing.T) {
 	s.Capture = &domain.SceneCapture{Window: 5}
 	q := hiddenRequest(t, 1, image.Rect(0, 0, 200, 100))
 	q.Workspace, q.Window = 0, 5
-	p.SubmitHidden(s, nil, []ports.CaptureRequest{q})
+	p.SubmitHidden(s, nil, []domain.CaptureRequest{q})
 	require.NoError(t, awaitCapture(t, replies).Err)
 	require.Equal(t, 1, made)
 	require.Equal(t, offTarget{window: 5}, p.off.target)

@@ -166,7 +166,7 @@ func (s *Server) workspaceIDOf(res *server.Resource) (uint64, bool) {
 }
 
 // workspaceInfo finds a workspace of the last snapshot core sent.
-func (s *Server) workspaceInfo(id uint64) (output string, w ports.WorkspaceInfo, ok bool) {
+func (s *Server) workspaceInfo(id uint64) (output string, w domain.WorkspaceInfo, ok bool) {
 	for _, out := range s.workspaceSnapshot.Outputs {
 		for _, w := range out.Workspaces {
 			if w.ID == id {
@@ -174,7 +174,7 @@ func (s *Server) workspaceInfo(id uint64) (output string, w ports.WorkspaceInfo,
 			}
 		}
 	}
-	return "", ports.WorkspaceInfo{}, false
+	return "", domain.WorkspaceInfo{}, false
 }
 
 type copyCaptureManager struct{ s *Server }
@@ -690,7 +690,7 @@ func (f *captureExtFrame) attempt() {
 		f.retry("exclusion not confirmed")
 		return
 	}
-	f.replyID, ok = c.s.requestCapture(o, region, c.cursor, f.buf, buf.format, func(done ports.CaptureDone) {
+	f.replyID, ok = c.s.requestCapture(o, region, c.cursor, f.buf, buf.format, func(done domain.CaptureDone) {
 		switch {
 		case errors.Is(done.Err, ports.ErrCaptureTransient):
 			f.retry(done.Err.Error())

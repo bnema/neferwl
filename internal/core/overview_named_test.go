@@ -164,7 +164,7 @@ func TestOverviewNamedAnchorSurvivesReplug(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		c.addScreen(ports.OutputInfo{Name: "OUT-1", Width: 300, Height: 200})
+		c.addScreen(domain.OutputInfo{Name: "OUT-1", Width: 300, Height: 200})
 		home := c.cur()
 		home.mon.SetNamed([]NamedWorkspace{{Name: "dev"}})
 		home.mon.AddWindow(1)
@@ -174,9 +174,9 @@ func TestOverviewNamedAnchorSurvivesReplug(t *testing.T) {
 		dev := home.mon.Current()
 		home.mon.Focus(1)
 		home.mon.AddWindow(3) // a later row makes bottom fallback detectably wrong
-		c.addScreen(ports.OutputInfo{Name: "OUT-2", Width: 300, Height: 200})
+		c.addScreen(domain.OutputInfo{Name: "OUT-2", Width: 300, Height: 200})
 		c.removeScreen("OUT-1")
-		c.addScreen(ports.OutputInfo{Name: "OUT-1", Width: 300, Height: 200})
+		c.addScreen(domain.OutputInfo{Name: "OUT-1", Width: 300, Height: 200})
 		c.settleGuests()
 		for _, sc := range c.screens {
 			if sc.name() != "OUT-1" {
@@ -470,7 +470,7 @@ func TestOverviewNamedDividerPublished(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		c.addScreen(ports.OutputInfo{Name: "OUT-1", Width: 300, Height: 200})
+		c.addScreen(domain.OutputInfo{Name: "OUT-1", Width: 300, Height: 200})
 		c.cur().mon = namedOverviewMonitor()
 		c.cur().mon.ToggleOverview()
 		if err := c.publish(context.Background()); err != nil {
@@ -494,7 +494,7 @@ func TestOverviewNamedScrollAndSwipe(t *testing.T) {
 			t.Fatal("swipe did not cross groups")
 		}
 		m.overviewFocus(ActionFocusColumnRight)
-		m.overviewScroll(ports.PointerAxis{Source: domain.AxisWheel, Vertical: ports.ScrollAxis{Set: true, V120: 120}})
+		m.overviewScroll(ports.PointerAxis{Source: domain.AxisWheel, Vertical: domain.ScrollAxis{Set: true, V120: 120}})
 		if m.Current().Name != "game" {
 			t.Fatal("scroll did not reach next named workspace")
 		}

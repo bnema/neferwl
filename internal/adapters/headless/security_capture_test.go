@@ -62,13 +62,13 @@ func TestScopedCaptureClosesPostRenderAdmissionGap(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				done := make(chan error, 1)
 				scenes := make(chan domain.Scene, 1)
-				incoming := make(chan ports.CaptureRequest)
-				replies := make(chan ports.CaptureDone, 2)
+				incoming := make(chan domain.CaptureRequest)
+				replies := make(chan domain.CaptureDone, 2)
 				go func() {
 					done <- Run(ctx, Options{Security: gate, SecurityEvents: proof, Instance: 8, Width: 2, Height: 2, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, incoming)
 				}()
 				dst := sessionCaptureFile(t)
-				incoming <- ports.CaptureRequest{ID: 91, Exclude: excluded, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: dst}
+				incoming <- domain.CaptureRequest{ID: 91, Exclude: excluded, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: dst}
 				scene := domain.Scene{Security: admitted, Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2}
 				if excluded {
 					scene = sessionScene()
@@ -123,8 +123,8 @@ func TestTransitionDuringHeadlessRenderWaitRetainsFenceAndRejectsCapture(t *test
 		return nil, nil
 	}).Twice()
 	scenes := make(chan domain.Scene, 1)
-	incoming := make(chan ports.CaptureRequest)
-	replies := make(chan ports.CaptureDone, 2)
+	incoming := make(chan domain.CaptureRequest)
+	replies := make(chan domain.CaptureDone, 2)
 	proof := make(chan ports.SecurityBackendEvent, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -132,7 +132,7 @@ func TestTransitionDuringHeadlessRenderWaitRetainsFenceAndRejectsCapture(t *test
 		done <- Run(ctx, Options{Security: gate, SecurityEvents: proof, Instance: 8, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, incoming)
 	}()
 	dst := sessionCaptureFile(t)
-	incoming <- ports.CaptureRequest{ID: 92, Dst: dst}
+	incoming <- domain.CaptureRequest{ID: 92, Dst: dst}
 	scenes <- domain.Scene{Security: admitted, Seq: 2}
 	securityReceive(t, rendered)
 	if _, err := fence.Stat(); err != nil {

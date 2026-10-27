@@ -58,7 +58,7 @@ type castSession struct {
 	stopped bool
 	// frame is the frame the adapter waits for (waiting) and, once its
 	// capture was accepted, whether the output owns the buffer (inflight).
-	frame      ports.CastCommand
+	frame      domain.CastCommand
 	waiting    bool
 	inflight   bool
 	deadline   time.Time
@@ -66,7 +66,7 @@ type castSession struct {
 	// doneFn, retryFn and timerFn are bound once, so a frame binds no
 	// closure: the capture reply, the retry on the display goroutine and the
 	// timer callback that posts it.
-	doneFn  func(ports.CaptureDone)
+	doneFn  func(domain.CaptureDone)
 	retryFn func()
 	timerFn func()
 	// ending: the cast ended while a capture still wrote into the adapter's
@@ -81,20 +81,20 @@ type castSession struct {
 func (c *castSession) postRetry() { c.s.display.Post(c.retryFn) }
 
 // push hands an event to the adapter.
-func (c *castSession) push(ev ports.CastEvent) {
+func (c *castSession) push(ev domain.CastEvent) {
 	ev.ID = c.cast
 	c.s.pushCast(ev)
 }
 
 // pushCast sends ev to the sink; Push never blocks.
-func (s *Server) pushCast(ev ports.CastEvent) {
+func (s *Server) pushCast(ev domain.CastEvent) {
 	if s.casts != nil {
 		s.casts.Push(ev)
 	}
 }
 
 // applyCast runs one command of the adapter on the display goroutine.
-func (s *Server) applyCast(cmd ports.CastCommand) {
+func (s *Server) applyCast(cmd domain.CastCommand) {
 	switch cmd.Kind {
 	case domain.CastOpen:
 		s.openCast(cmd)
@@ -119,18 +119,18 @@ func (s *Server) applyCast(cmd ports.CastCommand) {
 
 // refuseCastFrame answers a frame no cast takes, so the adapter gets its
 // buffer back.
-func (s *Server) refuseCastFrame(cmd ports.CastCommand, err error) {
-	s.pushCast(ports.CastEvent{Kind: domain.CastFrameDone, ID: cmd.ID, Buf: cmd.Buf, Err: err})
+func (s *Server) refuseCastFrame(cmd domain.CastCommand, err error) {
+	s.pushCast(domain.CastEvent{Kind: domain.CastFrameDone, ID: cmd.ID, Buf: cmd.Buf, Err: err})
 }
 
 // refuseCast ends a cast that never began.
 func (s *Server) refuseCast(id uint64, reason domain.CaptureReason, err error) {
 	s.log.Info().Uint64("cast", id).Str("reason", string(reason)).Err(err).Msg("cast refused")
-	s.pushCast(ports.CastEvent{Kind: domain.CastStopped, ID: id, Reason: reason, Err: err})
+	s.pushCast(domain.CastEvent{Kind: domain.CastStopped, ID: id, Reason: reason, Err: err})
 }
 
 // openCast registers a cast with core and tells the adapter its size.
-func (s *Server) openCast(cmd ports.CastCommand) {
+func (s *Server) openCast(cmd domain.CastCommand) {
 	switch {
 	case s.castSessions[cmd.ID] != nil:
 		s.log.Warn().Uint64("cast", cmd.ID).Msg("cast open: duplicate ID ignored")
@@ -173,7 +173,7 @@ func (s *Server) openCast(cmd ports.CastCommand) {
 	s.castSessions[cmd.ID], s.castByCore[c.id] = c, c
 	s.emit(open)
 	s.log.Info().Uint64("cast", cmd.ID).Uint64("session", c.id).Int("w", c.size.X).Int("h", c.size.Y).Msg("cast open")
-	c.push(ports.CastEvent{Kind: domain.CastSize, Width: c.size.X, Height: c.size.Y})
+	c.push(domain.CastEvent{Kind: domain.CastSize, Width: c.size.X, Height: c.size.Y})
 }
 
 // state applies what core decided about the cast.
@@ -200,7 +200,7 @@ func (c *castSession) refresh() {
 		c.end(domain.CaptureReasonOutputGone, nil, true, true)
 	case ok && image.Pt(rect.Dx(), rect.Dy()) != c.size:
 		c.size = image.Pt(rect.Dx(), rect.Dy())
-		c.push(ports.CastEvent{Kind: domain.CastSize, Width: c.size.X, Height: c.size.Y})
+		c.push(domain.CastEvent{Kind: domain.CastSize, Width: c.size.X, Height: c.size.Y})
 	}
 }
 
@@ -237,15 +237,15 @@ func (c *castSession) end(reason domain.CaptureReason, err error, notify, announ
 // finish tells the adapter the cast is over.
 func (c *castSession) finish() {
 	if c.announce {
-		c.push(ports.CastEvent{Kind: domain.CastStopped, Reason: c.endReason, Err: c.endErr})
+		c.push(domain.CastEvent{Kind: domain.CastStopped, Reason: c.endReason, Err: c.endErr})
 	}
 }
 
 // frameDone answers the frame the adapter waits for.
 func (c *castSession) frameDone(err error, at time.Time) {
 	c.waiting = false
-	c.push(ports.CastEvent{Kind: domain.CastFrameDone, Buf: c.frame.Buf, Err: err, Time: at})
-	c.frame = ports.CastCommand{}
+	c.push(domain.CastEvent{Kind: domain.CastFrameDone, Buf: c.frame.Buf, Err: err, Time: at})
+	c.frame = domain.CastCommand{}
 }
 
 // retryNow is the posted retry timer: the frame is tried again.
@@ -309,7 +309,7 @@ func (s *Server) requestCast(c *castSession, o *output, rect image.Rectangle, ta
 	id := s.nextCapture
 	s.captureInflight[id] = struct{}{}
 	s.captureReplies[id] = c.doneFn
-	req := ports.CaptureRequest{ID: id, Output: o.name(), Region: rect, Cursor: c.cursor, Mapped: f.Data, Width: f.Width, Height: f.Height, Stride: f.Stride, Format: f.Format, Session: tag.session, Workspace: tag.workspace, Window: tag.window, OffScreen: tag.offscreen, Indicate: true}
+	req := domain.CaptureRequest{ID: id, Output: o.name(), Region: rect, Cursor: c.cursor, Mapped: f.Data, Width: f.Width, Height: f.Height, Stride: f.Stride, Format: f.Format, Session: tag.session, Workspace: tag.workspace, Window: tag.window, OffScreen: tag.offscreen, Indicate: true}
 	select {
 	case s.channels.Captures <- req:
 	default:
@@ -330,7 +330,7 @@ func (s *Server) requestCast(c *castSession, o *output, rect image.Rectangle, ta
 }
 
 // onDone settles the capture of the waiting frame.
-func (c *castSession) onDone(done ports.CaptureDone) {
+func (c *castSession) onDone(done domain.CaptureDone) {
 	c.inflight = false
 	if errors.Is(done.Err, ports.ErrCaptureTransient) && !c.stopped {
 		c.retry(done.Err)
@@ -356,7 +356,7 @@ func (c *castSession) onDone(done ports.CaptureDone) {
 // castFlip answers a flip of an output: the casts on it have something new
 // to show. An output cast always has; a window cast only when its window
 // committed since the last damage. Display goroutine; no allocation.
-func (s *Server) castFlip(output string, f *ports.FlipInfo) {
+func (s *Server) castFlip(output string, f *domain.FlipInfo) {
 	if len(s.castSessions) == 0 {
 		return
 	}
@@ -381,12 +381,12 @@ func (s *Server) castFlip(output string, f *ports.FlipInfo) {
 			at = flipTime(f)
 		}
 		c.dirty = false
-		c.push(ports.CastEvent{Kind: domain.CastDamage, Time: at})
+		c.push(domain.CastEvent{Kind: domain.CastDamage, Time: at})
 	}
 }
 
 // flipTime is when a flip happened, on CLOCK_MONOTONIC as capture times are.
-func flipTime(f *ports.FlipInfo) time.Time {
+func flipTime(f *domain.FlipInfo) time.Time {
 	if f.When > 0 {
 		return time.Unix(0, int64(f.When))
 	}
@@ -465,11 +465,11 @@ func (s *Server) publishCastInventory() {
 
 // castInventory is the outputs and, unless the session is protected, the
 // mapped toplevels now.
-func (s *Server) castInventory() ports.CastInventory {
-	inv := ports.CastInventory{Focused: s.focusedOutput, Outputs: make([]ports.CastOutput, 0, len(s.outputs))}
+func (s *Server) castInventory() domain.CastInventory {
+	inv := domain.CastInventory{Focused: s.focusedOutput, Outputs: make([]domain.CastOutput, 0, len(s.outputs))}
 	for _, o := range s.outputs {
 		p := o.place
-		out := ports.CastOutput{Info: p.Info, Current: -1, X: p.X, Y: p.Y, Width: p.Width, Height: p.Height, Scale: p.Scale, Transform: p.Transform}
+		out := domain.CastOutput{Info: p.Info, Current: -1, X: p.X, Y: p.Y, Width: p.Width, Height: p.Height, Scale: p.Scale, Transform: p.Transform}
 		for _, h := range s.outputHeads.Heads {
 			if h.Info.Name == p.Info.Name {
 				out.Modes = slices.Clone(h.Modes)
@@ -495,7 +495,7 @@ func (s *Server) castInventory() ports.CastInventory {
 	}
 	for _, id := range s.mappedToplevels() {
 		w := s.windows[id]
-		inv.Windows = append(inv.Windows, ports.CastWindow{ID: id, AppID: w.appID, Title: w.title})
+		inv.Windows = append(inv.Windows, domain.CastWindow{ID: id, AppID: w.appID, Title: w.title})
 	}
 	return inv
 }

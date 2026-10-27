@@ -19,7 +19,7 @@ func TestStateColumnRow(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		c.addScreen(ports.OutputInfo{Name: "OUT-1", Width: 400, Height: 300})
+		c.addScreen(domain.OutputInfo{Name: "OUT-1", Width: 400, Height: 300})
 		w := c.cur().mon.Current()
 		w.Columns = []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{65, 66}}, {Windows: []WindowID{2}}}
 		w.Stash = []Float{{ID: 7}}

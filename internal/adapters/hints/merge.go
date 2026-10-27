@@ -5,7 +5,6 @@ import (
 	"slices"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 const (
@@ -46,9 +45,9 @@ func nested(a, b domain.Rect) bool {
 //     a nested chain is kept (a row loses against its icon and its text).
 //
 // The result is ordered by descending score, then position.
-func mergeTargets(in []ports.HintTarget) []ports.HintTarget {
+func mergeTargets(in []domain.HintTarget) []domain.HintTarget {
 	s := slices.Clone(in)
-	slices.SortStableFunc(s, func(a, b ports.HintTarget) int {
+	slices.SortStableFunc(s, func(a, b domain.HintTarget) int {
 		return cmp.Or(cmp.Compare(b.Score, a.Score), cmp.Compare(a.Rect.Y, b.Rect.Y), cmp.Compare(a.Rect.X, b.Rect.X),
 			cmp.Compare(area(a.Rect), area(b.Rect)))
 	})
@@ -66,7 +65,7 @@ func mergeTargets(in []ports.HintTarget) []ports.HintTarget {
 			kept = append(kept, t)
 		}
 	}
-	out := make([]ports.HintTarget, 0, len(kept))
+	out := make([]domain.HintTarget, 0, len(kept))
 	for i, t := range kept {
 		contains := false
 		for j, k := range kept {

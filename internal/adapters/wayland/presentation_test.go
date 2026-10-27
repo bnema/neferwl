@@ -53,7 +53,7 @@ func presentServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.Cl
 }
 
 // presentServerOn is presentServer with its own output layout.
-func presentServerOn(t *testing.T, layout ports.Layout) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, <-chan domain.SurfaceContent, ports.PresentationSink, string) {
+func presentServerOn(t *testing.T, layout domain.Layout) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, <-chan domain.SurfaceContent, ports.PresentationSink, string) {
 	t.Helper()
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
@@ -147,7 +147,7 @@ func TestPresentationFeedback(t *testing.T) {
 		}
 	}
 	flip := func(when time.Duration, seq uint64, shows uint64, zero domain.WindowID) {
-		presented.Push(ports.OutputPresented{Output: "HEADLESS-1", Flip: &ports.FlipInfo{When: when, Seq: seq, Refresh: time.Second / 60, ZeroCopy: zero, HardwareClock: true, Shows: map[domain.WindowID]uint64{w.ID: shows}}})
+		presented.Push(domain.OutputPresented{Output: "HEADLESS-1", Flip: &domain.FlipInfo{When: when, Seq: seq, Refresh: time.Second / 60, ZeroCopy: zero, HardwareClock: true, Shows: map[domain.WindowID]uint64{w.ID: shows}}})
 	}
 	// With no flip, hiding must discard a waiting feedback immediately.
 	hidden := feedback()
@@ -268,12 +268,12 @@ func TestPresentationHiddenDiscarded(t *testing.T) {
 // Commit timing: a commit targeted two refreshes ahead of the last flip
 // is not applied on the next one.
 func TestNextRefreshFollowsFlips(t *testing.T) {
-	s := &Server{flips: map[string]ports.FlipInfo{}}
-	s.outputs = []*output{{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "A", RefreshMilli: 60000}}}}
+	s := &Server{flips: map[string]domain.FlipInfo{}}
+	s.outputs = []*output{{place: domain.OutputPlacement{Info: domain.OutputInfo{Name: "A", RefreshMilli: 60000}}}}
 	now := time.Now()
 	mono := monotonic(now)
 	period := time.Second / 60
-	s.flips["A"] = ports.FlipInfo{When: mono - period/4, Refresh: period}
+	s.flips["A"] = domain.FlipInfo{When: mono - period/4, Refresh: period}
 	next := s.nextRefresh("A", now)
 	if d := next.Sub(now); d < period*3/4-time.Millisecond || d > period*3/4+time.Millisecond {
 		t.Fatalf("next refresh in %v, want %v", d, period*3/4)
@@ -283,10 +283,10 @@ func TestNextRefreshFollowsFlips(t *testing.T) {
 // Software flips (headless) answer feedback without flags and do not pace
 // frame callbacks.
 func TestSoftwareFlipsDoNotPace(t *testing.T) {
-	if paces(ports.OutputPresented{Flip: &ports.FlipInfo{}}) {
+	if paces(domain.OutputPresented{Flip: &domain.FlipInfo{}}) {
 		t.Fatal("software flip paces callbacks")
 	}
-	if !paces(ports.OutputPresented{Flip: &ports.FlipInfo{HardwareClock: true}}) {
+	if !paces(domain.OutputPresented{Flip: &domain.FlipInfo{HardwareClock: true}}) {
 		t.Fatal("display flip does not pace")
 	}
 }

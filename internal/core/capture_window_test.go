@@ -18,7 +18,7 @@ func TestCaptureWindowSession(t *testing.T) {
 		scene(t, r.scenes)
 		r.client <- ports.WindowMapped{ID: 2}
 		scene(t, r.scenes)
-		var ws []ports.WorkspaceInfo
+		var ws []domain.WorkspaceInfo
 		for len(ws) < 2 {
 			ws = receive(t, r.workspaces).Outputs[0].Workspaces
 		}
@@ -101,7 +101,7 @@ func TestCaptureWindowHiddenReflow(t *testing.T) {
 		scene(t, r.scenes)
 		r.client <- ports.WindowMapped{ID: 2}
 		scene(t, r.scenes)
-		var ws []ports.WorkspaceInfo
+		var ws []domain.WorkspaceInfo
 		for len(ws) < 2 {
 			ws = receive(t, r.workspaces).Outputs[0].Workspaces
 		}

@@ -324,7 +324,7 @@ func (s *surface) Destroy(*wayland.Surface) {
 	if s.server.cursorSurface == s {
 		// The pointer keeps no cursor until the client sets another.
 		s.server.cursorSurface = nil
-		s.server.setCursor(ports.CursorChange{Hidden: true})
+		s.server.setCursor(domain.CursorChange{Hidden: true})
 	}
 	s.detach()
 	for _, ch := range s.sub.children {

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -21,13 +22,13 @@ func (c *Core) keepsTerminal() bool {
 
 // fillEmpty returns the terminals to spawn for empty workspaces on screen.
 // Workspaces with slots are left to them.
-func (c *Core) fillEmpty() []ports.SpawnRequest {
+func (c *Core) fillEmpty() []domain.SpawnRequest {
 	now := c.now()
 	c.placement.expireWorkspaceClaims(now)
 	if !c.keepsTerminal() {
 		return nil
 	}
-	var reqs []ports.SpawnRequest
+	var reqs []domain.SpawnRequest
 	for _, s := range c.screens {
 		w := s.mon.Current()
 		if c.cfg.Terminal.AutoOpen == "first" {
@@ -51,7 +52,7 @@ func (c *Core) fillEmpty() []ports.SpawnRequest {
 
 // cancelClaim removes a workspace claim minted for a send suppressed by the
 // gate. A terminal may be requested again at once.
-func (c *Core) cancelClaim(req ports.SpawnRequest) {
+func (c *Core) cancelClaim(req domain.SpawnRequest) {
 	for _, env := range req.Env {
 		if token, ok := strings.CutPrefix(env, ports.SlotEnv+"="); ok {
 			if target, ok := c.placement.pending[token]; ok && target.kind != spawnSlot {

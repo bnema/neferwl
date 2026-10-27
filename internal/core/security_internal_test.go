@@ -22,7 +22,7 @@ func TestProtectedDropsPrivateOffscreenCaptureAndDesktopEffects(t *testing.T) {
 		c.captureOpen(ports.CaptureSessionOpen{ID: 7, Workspace: ws.ID})
 		c.captureExclusionBegin(ports.CaptureExclusionBegin{Session: 7})
 		c.capt.flashes = []capFlash{{target: capTarget{output: "A"}, until: c.now().Add(time.Hour)}}
-		c.screens[0].layers = []ports.LayerSurface{{ID: 50, Layer: domain.LayerOverlay, Keyboard: 1}}
+		c.screens[0].layers = []domain.LayerSurface{{ID: 50, Layer: domain.LayerOverlay, Keyboard: 1}}
 		c.pressed["password"] = true
 		c.buttons[0x110] = true
 		c.pointer, c.grab = 1, 1
@@ -41,11 +41,11 @@ func TestProtectedDropsPrivateOffscreenCaptureAndDesktopEffects(t *testing.T) {
 			t.Fatal("transition kept desktop input/capture state")
 		}
 		// Logical dimensions must match exactly, including after output changes.
-		c.applyLockChanged(ports.SessionLockChanged{State: state, Surfaces: []ports.LockSurfacePlacement{{ID: 10, Output: "A", Width: 299, Height: 200}}})
+		c.applyLockChanged(ports.SessionLockChanged{State: state, Surfaces: []domain.LockSurfacePlacement{{ID: 10, Output: "A", Width: 299, Height: 200}}})
 		if c.lockKeyboardFocus() != 0 {
 			t.Fatal("wrong dimensions accepted")
 		}
-		c.applyLockChanged(ports.SessionLockChanged{State: state, Surfaces: []ports.LockSurfacePlacement{{ID: 10, Output: "A", Width: 300, Height: 200}}})
+		c.applyLockChanged(ports.SessionLockChanged{State: state, Surfaces: []domain.LockSurfacePlacement{{ID: 10, Output: "A", Width: 300, Height: 200}}})
 		if c.lockKeyboardFocus() != 10 {
 			t.Fatal("mapped role not focused")
 		}
@@ -94,7 +94,7 @@ func TestLockFocusMovesToFocusedOutputSurfaceUntilPinned(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				c, _, _ := hiddenCaptureCommands(t)
-				c.addScreen(ports.OutputInfo{Name: "B", Width: 400, Height: 300})
+				c.addScreen(domain.OutputInfo{Name: "B", Width: 400, Height: 300})
 				c.focusScreen = c.screenIndex("B")
 				state := domain.SecurityState{Generation: 1, Protected: true}
 				gate := portsmocks.NewMockSessionSecurity(t)
@@ -102,7 +102,7 @@ func TestLockFocusMovesToFocusedOutputSurfaceUntilPinned(t *testing.T) {
 				c.opts.Security = gate
 				c.syncSecurity()
 				ctx := context.Background()
-				mapped := func(s ...ports.LockSurfacePlacement) {
+				mapped := func(s ...domain.LockSurfacePlacement) {
 					t.Helper()
 					c.applyLockChanged(ports.SessionLockChanged{State: state, Surfaces: s})
 					if err := c.publishProtected(ctx); err != nil {
@@ -110,8 +110,8 @@ func TestLockFocusMovesToFocusedOutputSurfaceUntilPinned(t *testing.T) {
 					}
 				}
 
-				a := ports.LockSurfacePlacement{ID: 10, Output: "A", Width: 300, Height: 200}
-				b := ports.LockSurfacePlacement{ID: 11, Output: "B", Width: 400, Height: 300}
+				a := domain.LockSurfacePlacement{ID: 10, Output: "A", Width: 300, Height: 200}
+				b := domain.LockSurfacePlacement{ID: 11, Output: "B", Width: 400, Height: 300}
 				mapped(a)
 				if c.keyboard.sent != 10 {
 					t.Fatalf("only mapped surface not focused: %d", c.keyboard.sent)

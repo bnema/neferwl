@@ -8,6 +8,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/virtualkeyboard"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
@@ -220,7 +221,7 @@ func TestVirtualKeyboardSameKeymapOwnModifiers(t *testing.T) {
 	target, proxy := focusedTarget(t, s, events, commands, dir)
 	const capsLocked = 2
 	set := make(chan struct{})
-	s.display.Do(func() { s.seat.modState = ports.ModState{Locked: capsLocked}; close(set) })
+	s.display.Do(func() { s.seat.modState = domain.ModState{Locked: capsLocked}; close(set) })
 	<-set
 	proxy.locked = nil
 	typer, kb := virtualTyper(t, s, dir)

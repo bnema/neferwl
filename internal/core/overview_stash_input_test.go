@@ -40,9 +40,9 @@ func TestOverviewStashInputNavigation(t *testing.T) {
 						send(ports.SwipeEnd{Time: at})
 					case "wheel":
 						m.overviewScroll(ports.PointerAxis{Source: domain.AxisWheel,
-							Horizontal: ports.ScrollAxis{Set: dx != 0, Value: float64(dx) * 70, V120: int32(dx * 120)},
-							Vertical:   ports.ScrollAxis{Set: dy != 0, Value: float64(dy) * 70, V120: int32(dy * 120)}})
-						c.scrollStop(ports.PointerAxis{Vertical: ports.ScrollAxis{Stop: true}})
+							Horizontal: domain.ScrollAxis{Set: dx != 0, Value: float64(dx) * 70, V120: int32(dx * 120)},
+							Vertical:   domain.ScrollAxis{Set: dy != 0, Value: float64(dy) * 70, V120: int32(dy * 120)}})
+						c.scrollStop(ports.PointerAxis{Vertical: domain.ScrollAxis{Stop: true}})
 					case "bind":
 						var a Action
 						switch {

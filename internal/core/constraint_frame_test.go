@@ -17,11 +17,11 @@ func partlyShown(t *testing.T) *Core {
 	var cfg domain.Config
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 2
-	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Layouts: make(chan ports.Layout, 1), Constraints: make(chan ports.PointerConstraint, 1), State: make(chan domain.State, 1), Workspaces: make(chan ports.Workspaces, 1), Commands: make(chan ports.ClientCommand, 16)}, Options{})
+	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Layouts: make(chan domain.Layout, 1), Constraints: make(chan domain.PointerConstraint, 1), State: make(chan domain.State, 1), Workspaces: make(chan domain.Workspaces, 1), Commands: make(chan ports.ClientCommand, 16)}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.addScreen(ports.OutputInfo{Name: "A", Width: 300, Height: 200})
+	c.addScreen(domain.OutputInfo{Name: "A", Width: 300, Height: 200})
 	s := c.screens[0]
 	s.x = 1000
 	s.mon.SetNamed([]NamedWorkspace{{Name: "s", Size: [2]int{100, 100}}})
@@ -42,7 +42,7 @@ func TestConstraintRegionUsesFullClientOrigin(t *testing.T) {
 		if !ok || full != (Rect{X: 1075, Y: 50, W: 50, H: 100}) || vis != (Rect{X: 1100, Y: 50, W: 25, H: 100}) {
 			t.Fatalf("full %+v visible %+v %v", full, vis, ok)
 		}
-		c.constrained = ports.PointerConstrained{ID: 2, PointerConstraint: ports.PointerConstraint{Mode: domain.ConstraintConfine, Rect: Rect{X: 30, Y: 10, W: 20, H: 20}}}
+		c.constrained = ports.PointerConstrained{ID: 2, PointerConstraint: domain.PointerConstraint{Mode: domain.ConstraintConfine, Rect: Rect{X: 30, Y: 10, W: 20, H: 20}}}
 		c.resolveConstraint()
 		// Local x 30..50 is global 1105..1125, all inside the visible part.
 		if want := (Rect{X: 1105, Y: 60, W: 20, H: 20}); c.constraint.Rect != want {

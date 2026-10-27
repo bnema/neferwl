@@ -6,14 +6,13 @@ import (
 	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
 
 func TestHintLabelGeometry(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		for _, scale := range []float64{1, 1.5} {
-			sc := &screen{scale: scale, info: ports.OutputInfo{Width: 1500, Height: 1200}}
+			sc := &screen{scale: scale, info: domain.OutputInfo{Width: 1500, Height: 1200}}
 			sc.mon = newMonitor("", "")
 			sc.mon.SetOutput(int(float64(sc.info.Width)/sc.scale), int(float64(sc.info.Height)/sc.scale))
 			c := &Core{}
@@ -37,7 +36,7 @@ func TestHintLabelGeometry(t *testing.T) {
 
 func TestHintSpreadBudget(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		sc := &screen{scale: 1, info: ports.OutputInfo{Width: 1000000, Height: 1000}}
+		sc := &screen{scale: 1, info: domain.OutputInfo{Width: 1000000, Height: 1000}}
 		sc.mon = newMonitor("", "")
 		sc.mon.SetOutput(int(float64(sc.info.Width)/sc.scale), int(float64(sc.info.Height)/sc.scale))
 		c := &Core{}

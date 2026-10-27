@@ -15,16 +15,16 @@ import (
 type slotRig struct {
 	client     chan ports.ClientEvent
 	input      chan ports.InputEvent
-	reload     chan ports.ConfigChanged
-	spawn      chan ports.SpawnRequest
+	reload     chan domain.ConfigChanged
+	spawn      chan domain.SpawnRequest
 	scenes     chan []domain.Scene
-	workspaces chan ports.Workspaces
+	workspaces chan domain.Workspaces
 	errs       chan error
 	cfg        domain.Config
 	// With animations on and a clock the test moves (startSlotsMode),
 	// land flips the output past every spring.
 	clk    *stepClock
-	frames chan ports.OutputFrame
+	frames chan domain.OutputFrame
 	lands  int
 }
 
@@ -58,15 +58,15 @@ func startSlotsMode(t *testing.T, animated *bool, numbered ...bool) *slotRig {
 	}
 	r := &slotRig{
 		client: make(chan ports.ClientEvent, 16), input: make(chan ports.InputEvent, 16),
-		reload: make(chan ports.ConfigChanged, 4), spawn: make(chan ports.SpawnRequest, 16),
-		scenes: make(chan []domain.Scene, 1), workspaces: make(chan ports.Workspaces, 1), errs: make(chan error, 4), cfg: cfg,
+		reload: make(chan domain.ConfigChanged, 4), spawn: make(chan domain.SpawnRequest, 16),
+		scenes: make(chan []domain.Scene, 1), workspaces: make(chan domain.Workspaces, 1), errs: make(chan error, 4), cfg: cfg,
 	}
 	output := make(chan ports.OutputEvent, 1)
 	commands := make(chan ports.ClientCommand, 1024)
 	ch := core.Channels{Client: r.client, Input: r.input, Output: output, Config: r.reload, Commands: commands, Spawn: r.spawn, Scenes: r.scenes, Workspaces: r.workspaces, ConfigErrors: r.errs}
 	opts := core.Options{}
 	if animated != nil && *animated {
-		r.clk, r.frames = newStepClock(t), make(chan ports.OutputFrame)
+		r.clk, r.frames = newStepClock(t), make(chan domain.OutputFrame)
 		opts.Clock, ch.Frames = r.clk.clock, r.frames
 		t.Cleanup(func() {
 			if r.lands == 0 {
@@ -91,7 +91,7 @@ func startSlotsMode(t *testing.T, animated *bool, numbered ...bool) *slotRig {
 			}
 		}
 	}()
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 	scene(t, r.scenes)
 	return r
 }
@@ -113,7 +113,7 @@ func (r *slotRig) land(t *testing.T, s domain.Scene) domain.Scene {
 }
 
 // token returns the SlotEnv value of a spawn request.
-func token(t *testing.T, req ports.SpawnRequest) string {
+func token(t *testing.T, req domain.SpawnRequest) string {
 	t.Helper()
 	for _, e := range req.Env {
 		if v, ok := strings.CutPrefix(e, ports.SlotEnv+"="); ok {
@@ -126,7 +126,7 @@ func token(t *testing.T, req ports.SpawnRequest) string {
 
 // noSpawn checks that nothing was spawned. Core sends spawns before it
 // publishes the scene of the same event, so callers wait for that scene first.
-func noSpawn(t *testing.T, ch <-chan ports.SpawnRequest) {
+func noSpawn(t *testing.T, ch <-chan domain.SpawnRequest) {
 	t.Helper()
 	select {
 	case v := <-ch:
@@ -151,7 +151,7 @@ func (r *slotRig) sync(t *testing.T) domain.Scene {
 
 // fill maps the slot windows 2 (code) and 3 (foot) and waits until core
 // has placed them: client and input events are separate channels.
-func (r *slotRig) fill(t *testing.T) (code, foot ports.SpawnRequest) {
+func (r *slotRig) fill(t *testing.T) (code, foot domain.SpawnRequest) {
 	t.Helper()
 	code, foot = receive(t, r.spawn), receive(t, r.spawn)
 	r.client <- ports.WindowMapped{ID: 2, Slot: token(t, code)}
@@ -308,7 +308,7 @@ func TestSlotReload(t *testing.T) {
 			{Index: 3, Cells: 2, Argv: []string{"btop"}},  // new slot
 		}
 		cfg.Workspaces = []domain.WorkspaceConfig{ws}
-		r.reload <- ports.ConfigChanged{Config: cfg}
+		r.reload <- domain.ConfigChanged{Config: cfg}
 		var argv []string
 		for range 2 {
 			argv = append(argv, receive(t, r.spawn).Argv[0])
@@ -336,7 +336,7 @@ func TestSlotReload(t *testing.T) {
 		// Dropping the workspace's slots spawns nothing and keeps the window.
 		ws.Slots = nil
 		cfg.Workspaces = []domain.WorkspaceConfig{ws}
-		r.reload <- ports.ConfigChanged{Config: cfg}
+		r.reload <- domain.ConfigChanged{Config: cfg}
 		scene(t, r.scenes)
 		noSpawn(t, r.spawn)
 
@@ -352,7 +352,7 @@ func TestInvalidSlotWidthRejected(t *testing.T) {
 		ws := cfg.Workspaces[0]
 		ws.Slots = []domain.SlotConfig{{Index: 1, Cells: 17, Argv: []string{"x"}}}
 		cfg.Workspaces = []domain.WorkspaceConfig{ws}
-		r.reload <- ports.ConfigChanged{Config: cfg}
+		r.reload <- domain.ConfigChanged{Config: cfg}
 		if err := receive(t, r.errs); err == nil {
 			t.Fatal("no error")
 		}
@@ -372,7 +372,7 @@ func TestSlotReloadWhileShownSpawnsOnce(t *testing.T) {
 		ws := cfg.Workspaces[0]
 		ws.Slots = append(ws.Slots, domain.SlotConfig{Index: 3, Cells: 2, Argv: []string{"btop"}})
 		cfg.Workspaces = []domain.WorkspaceConfig{ws}
-		r.reload <- ports.ConfigChanged{Config: cfg}
+		r.reload <- domain.ConfigChanged{Config: cfg}
 		if v := receive(t, r.spawn); v.Argv[0] != "btop" {
 			t.Fatal(v)
 		}
@@ -455,8 +455,8 @@ func TestStartupCommands(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		cfg := scrollDefaults()
 		cfg.Startup = [][]string{{"wl-paste", "--watch", "cliphist", "store"}, {"waybar"}}
-		spawn := make(chan ports.SpawnRequest, 4)
-		c, err := core.New(cfg, core.Channels{Client: make(chan ports.ClientEvent), Input: make(chan ports.InputEvent), Output: make(chan ports.OutputEvent), Config: make(chan ports.ConfigChanged), Commands: make(chan ports.ClientCommand, 16), Spawn: spawn, Scenes: make(chan []domain.Scene, 1), ConfigErrors: make(chan error, 1)}, core.Options{})
+		spawn := make(chan domain.SpawnRequest, 4)
+		c, err := core.New(cfg, core.Channels{Client: make(chan ports.ClientEvent), Input: make(chan ports.InputEvent), Output: make(chan ports.OutputEvent), Config: make(chan domain.ConfigChanged), Commands: make(chan ports.ClientCommand, 16), Spawn: spawn, Scenes: make(chan []domain.Scene, 1), ConfigErrors: make(chan error, 1)}, core.Options{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -482,8 +482,8 @@ func TestSpawnBindSeveralCommands(t *testing.T) {
 		input := make(chan ports.InputEvent, 4)
 		output := make(chan ports.OutputEvent, 1)
 		scenes := make(chan []domain.Scene, 1)
-		spawn := make(chan ports.SpawnRequest, 4)
-		c, err := core.New(cfg, core.Channels{Client: make(chan ports.ClientEvent), Input: input, Output: output, Config: make(chan ports.ConfigChanged), Commands: make(chan ports.ClientCommand, 16), Spawn: spawn, Scenes: scenes, ConfigErrors: make(chan error, 1)}, core.Options{})
+		spawn := make(chan domain.SpawnRequest, 4)
+		c, err := core.New(cfg, core.Channels{Client: make(chan ports.ClientEvent), Input: input, Output: output, Config: make(chan domain.ConfigChanged), Commands: make(chan ports.ClientCommand, 16), Spawn: spawn, Scenes: scenes, ConfigErrors: make(chan error, 1)}, core.Options{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -491,7 +491,7 @@ func TestSpawnBindSeveralCommands(t *testing.T) {
 		done := make(chan error, 1)
 		go func() { done <- c.Run(ctx) }()
 		defer func() { cancel(); <-done }()
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
 		input <- ports.KeyEvent{Keysym: "p", Mods: domain.ModAlt, Pressed: true}
 		for _, want := range [][]string{{"grim", "-g", "x"}, {"notify-send", "done"}} {

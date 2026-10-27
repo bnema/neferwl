@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,20 +16,20 @@ func TestCompletedFrames(t *testing.T) {
 		name      string
 		buffer    int    // frames channel capacity; 0: no channel
 		animating []bool // the flips, one per frame
-		want      []ports.OutputFrame
+		want      []domain.OutputFrame
 	}{
 		{name: "a settled scene wakes nobody", buffer: 2, animating: []bool{false}},
-		{name: "an animating scene wakes core once", buffer: 2, animating: []bool{false, true}, want: []ports.OutputFrame{{Output: "DP-1"}}},
-		{name: "a full channel never blocks", buffer: 1, animating: []bool{true, true, true}, want: []ports.OutputFrame{{Output: "DP-1"}}},
+		{name: "an animating scene wakes core once", buffer: 2, animating: []bool{false, true}, want: []domain.OutputFrame{{Output: "DP-1"}}},
+		{name: "a full channel never blocks", buffer: 1, animating: []bool{true, true, true}, want: []domain.OutputFrame{{Output: "DP-1"}}},
 		{name: "no frames channel", animating: []bool{true}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			o, _, commits := testOutput(t)
 			o.cursor = nil
-			var frames chan ports.OutputFrame
+			var frames chan domain.OutputFrame
 			if tt.buffer > 0 {
-				frames = make(chan ports.OutputFrame, tt.buffer)
+				frames = make(chan domain.OutputFrame, tt.buffer)
 				o.Frames = frames
 			}
 			seen := map[domain.WindowID]uint64{}
@@ -45,8 +44,8 @@ func TestCompletedFrames(t *testing.T) {
 	}
 }
 
-func drain(ch chan ports.OutputFrame) []ports.OutputFrame {
-	var out []ports.OutputFrame
+func drain(ch chan domain.OutputFrame) []domain.OutputFrame {
+	var out []domain.OutputFrame
 	for len(ch) > 0 {
 		out = append(out, <-ch)
 	}
@@ -56,7 +55,7 @@ func drain(ch chan ports.OutputFrame) []ports.OutputFrame {
 // The frame send of an animating flip allocates nothing, full channel or not.
 func TestAnimatingFrameSendAllocations(t *testing.T) {
 	o, _, _ := testOutput(t)
-	frames := make(chan ports.OutputFrame, 1)
+	frames := make(chan domain.OutputFrame, 1)
 	o.Frames = frames
 	if n := testing.AllocsPerRun(100, func() {
 		o.wakeCore() // fills the channel, or finds it full

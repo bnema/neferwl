@@ -31,9 +31,9 @@ func fenceClosed(f *os.File) bool {
 
 // hiddenPipeline returns a pipeline whose child renders return the given
 // fences in order, and the scene/surfaces to submit.
-func hiddenPipeline(t *testing.T, fences ...*os.File) (*Pipeline, chan ports.CaptureDone, *portsmocks.MockRenderer) {
+func hiddenPipeline(t *testing.T, fences ...*os.File) (*Pipeline, chan domain.CaptureDone, *portsmocks.MockRenderer) {
 	t.Helper()
-	replies := make(chan ports.CaptureDone, 8)
+	replies := make(chan domain.CaptureDone, 8)
 	p := NewPipeline(context.Background(), replies)
 	child := portsmocks.NewMockRenderer(t)
 	frame := portsmocks.NewMockCaptureFrame(t)
@@ -60,7 +60,7 @@ func hiddenSceneWindows(ids ...domain.WindowID) domain.Scene {
 
 func submitHiddenOne(t *testing.T, p *Pipeline, s domain.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, id uint64) {
 	t.Helper()
-	p.SubmitHidden(s, surfaces, []ports.CaptureRequest{hiddenRequest(t, id, image.Rect(0, 0, 200, 100))})
+	p.SubmitHidden(s, surfaces, []domain.CaptureRequest{hiddenRequest(t, id, image.Rect(0, 0, 200, 100))})
 }
 
 // GO001: a failing or cancelled wait still closes every fence, the ones not
@@ -92,7 +92,7 @@ func TestTerminalChildFenceClosesPipelineBeforeClearingHolds(t *testing.T) {
 	require.NoError(t, err)
 	defer failed.Close()
 	pending, _ := fencePipe(t)
-	p := NewPipeline(context.Background(), make(chan ports.CaptureDone, 2))
+	p := NewPipeline(context.Background(), make(chan domain.CaptureDone, 2))
 	defer p.Close(nil)
 	child := portsmocks.NewMockRenderer(t)
 	frame := portsmocks.NewMockCaptureFrame(t)
@@ -229,7 +229,7 @@ func TestSubmitHiddenThirdRenderRefusedBeforeRender(t *testing.T) {
 // or its fence came back last.
 func TestRetireClosesIdleChildOnce(t *testing.T) {
 	f1, w1 := fencePipe(t)
-	replies := make(chan ports.CaptureDone, 4)
+	replies := make(chan domain.CaptureDone, 4)
 	p := NewPipeline(context.Background(), replies)
 	child := portsmocks.NewMockRenderer(t)
 	frame := portsmocks.NewMockCaptureFrame(t)

@@ -26,35 +26,35 @@ type Channels struct {
 	Client   <-chan ports.ClientEvent
 	Input    <-chan ports.InputEvent
 	Output   <-chan ports.OutputEvent
-	Config   <-chan ports.ConfigChanged
+	Config   <-chan domain.ConfigChanged
 	Commands chan<- ports.ClientCommand
-	Spawn    chan<- ports.SpawnRequest
+	Spawn    chan<- domain.SpawnRequest
 	Scenes   chan []domain.Scene
 	// Layouts, when set, receives the output layout whenever it changes,
 	// latest first (capacity 1, drained like Scenes). Input and cursors use it.
-	Layouts chan ports.Layout
+	Layouts chan domain.Layout
 	// Constraints, when set, receives the active pointer constraint in
 	// global logical coordinates whenever it changes (capacity 1, drained
 	// like Scenes). Input applies it to the pointer.
-	Constraints  chan ports.PointerConstraint
+	Constraints  chan domain.PointerConstraint
 	ConfigErrors chan<- error
 	// State, when set, receives a snapshot for scripts whenever it changes,
 	// latest first (capacity 1, drained like Scenes).
 	State      chan domain.State
-	Workspaces chan ports.Workspaces
+	Workspaces chan domain.Workspaces
 	// Scales, when set, receives each scale a scale bind sets, to persist it.
 	// Core does not wait: a full channel drops the change.
-	Scales chan<- ports.ScaleChanged
+	Scales chan<- domain.ScaleChanged
 	// Frames, when set, carries the outputs' reports of each flip of an
 	// animating scene (Scene.Animating): a running slide moves one step per
 	// report. Without them it moves on a timer.
-	Frames <-chan ports.OutputFrame
+	Frames <-chan domain.OutputFrame
 	// HintScans, when set, receives the scan request of each hint action
 	// (capacity 1; core never waits: a full channel cancels the hint).
 	// Hints carries the results back. With HintScans nil the hint action
 	// does nothing.
-	HintScans chan<- ports.HintScanRequest
-	Hints     <-chan ports.HintScanResult
+	HintScans chan<- domain.HintScanRequest
+	Hints     <-chan domain.HintScanResult
 }
 
 // Options are the services and policy core is constructed with.
@@ -131,7 +131,7 @@ type Core struct {
 	// constrained is the constraint wayland activated; constraint is it
 	// resolved to global coordinates, as last sent to input.
 	constrained ports.PointerConstrained
-	constraint  ports.PointerConstraint
+	constraint  domain.PointerConstraint
 	seq         uint64
 	// layerChanged is set once layer state arrives from wayland.
 	layerChanged bool
@@ -180,7 +180,7 @@ type Core struct {
 	hint hintState
 	// keyState is the real modifier state of the latest key event, swallowed
 	// keys included.
-	keyState ports.ModState
+	keyState domain.ModState
 	// synthetic is set while a hint click runs through the pointer handlers:
 	// compositor modifier+button actions (window drag) do not apply to it.
 	synthetic bool
@@ -202,12 +202,12 @@ type Core struct {
 // is copied out of it when it changed).
 type publishScratch struct {
 	state      domain.State
-	workspaces ports.Workspaces
+	workspaces domain.Workspaces
 	shown      map[WindowID]bool
 	ids        []WindowID
 	rects      []Rect
 	rows       []Rect
-	layout     ports.Layout
+	layout     domain.Layout
 }
 
 // sentCache is what core last sent to wayland and on its latest-only
@@ -216,7 +216,7 @@ type sentCache struct {
 	outputs    ports.SetOutputs
 	outputsSeq uint64 // last successfully queued output layout
 	state      domain.State
-	workspaces ports.Workspaces
+	workspaces domain.Workspaces
 }
 
 func keyName(s string) string {
@@ -594,7 +594,7 @@ func (c *Core) keyboardFocus() WindowID {
 
 // setLayers splits the mapped layer surfaces by output. A surface without an
 // output, or on an unknown one, goes to the focused output.
-func (c *Core) setLayers(all []ports.LayerSurface) {
+func (c *Core) setLayers(all []domain.LayerSurface) {
 	previous := make(map[WindowID]bool)
 	for _, sc := range c.screens {
 		for _, l := range sc.layers {
@@ -821,7 +821,7 @@ func (c *Core) updateInhibit(ctx context.Context) error {
 // resolveConstraint turns the active constraint into global coordinates
 // and sends it to input when it changed. A hidden window holds nothing.
 func (c *Core) resolveConstraint() {
-	var g ports.PointerConstraint
+	var g domain.PointerConstraint
 	if full, vis, ok := c.shownClient(c.constrained.ID); ok {
 		r := full
 		if w := c.constrained.Rect; w.W > 0 && w.H > 0 {
@@ -835,10 +835,10 @@ func (c *Core) resolveConstraint() {
 		}
 		r = intersect(r, vis)
 		if r.W > 0 && r.H > 0 {
-			g = ports.PointerConstraint{Mode: c.constrained.Mode, Rect: r}
+			g = domain.PointerConstraint{Mode: c.constrained.Mode, Rect: r}
 		} else {
 			// The region lies outside the viewport: hold the visible client.
-			g = ports.PointerConstraint{Mode: c.constrained.Mode, Rect: vis}
+			g = domain.PointerConstraint{Mode: c.constrained.Mode, Rect: vis}
 		}
 	}
 	// The cursor follows core; input resyncs to it only on a change.
@@ -936,7 +936,7 @@ func (c *Core) syncOutputs(ctx context.Context) error {
 	if sameOutputs(v, c.sent.outputs) {
 		return nil
 	}
-	v.Outputs = append(make(ports.Layout, 0, len(v.Outputs)), v.Outputs...)
+	v.Outputs = append(make(domain.Layout, 0, len(v.Outputs)), v.Outputs...)
 	seq, err := c.queue(ctx, v)
 	if err != nil {
 		return err
@@ -983,8 +983,8 @@ func sameOutputs(a, b ports.SetOutputs) bool {
 }
 
 // allLayers lists the layer surfaces of every output.
-func (c *Core) allLayers() []ports.LayerSurface {
-	var all []ports.LayerSurface
+func (c *Core) allLayers() []domain.LayerSurface {
+	var all []domain.LayerSurface
 	for _, sc := range c.screens {
 		all = append(all, sc.layers...)
 	}
@@ -1373,7 +1373,7 @@ func (c *Core) spawnEmpty(ctx context.Context) error {
 // dispatch sends reqs to the launcher and reports how many it issued.
 // From the first request that is not issued (context ended, or the gate
 // suppressed the send), the rest are not sent and their claims are cancelled.
-func (c *Core) dispatch(ctx context.Context, reqs []ports.SpawnRequest) (issued int, err error) {
+func (c *Core) dispatch(ctx context.Context, reqs []domain.SpawnRequest) (issued int, err error) {
 	for i, req := range reqs {
 		err = ctx.Err()
 		if err != nil || !c.trySpawn(ctx, req) {

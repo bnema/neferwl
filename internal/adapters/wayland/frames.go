@@ -5,11 +5,9 @@ import (
 	"slices"
 	"time"
 
-	"golang.org/x/sys/unix"
-
-	"github.com/bnema/neferwl/internal/ports"
-
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
+	"golang.org/x/sys/unix"
 )
 
 // Frame callbacks (wl_surface.frame) tell a client when to draw its next
@@ -114,7 +112,7 @@ func (s *Server) paceSignalled() {
 // paceTick answers the flips in reports, fires the due frame callbacks,
 // releases buffers and applies the ready FIFO commits, then arms the timer
 // for the next deadline (stopped when nothing waits). Display goroutine only.
-func (s *Server) paceTick(flipped map[string]bool, reports []ports.OutputPresented) {
+func (s *Server) paceTick(flipped map[string]bool, reports []domain.OutputPresented) {
 	if s.ctx != nil && s.ctx.Err() != nil {
 		return
 	}
@@ -148,7 +146,7 @@ func (s *Server) paceTick(flipped map[string]bool, reports []ports.OutputPresent
 
 // pacePass is one pass of paceTick; it returns the time to the next
 // deadline and whether nothing waits.
-func (s *Server) pacePass(flipped map[string]bool, reports []ports.OutputPresented) (wait time.Duration, idle bool) {
+func (s *Server) pacePass(flipped map[string]bool, reports []domain.OutputPresented) (wait time.Duration, idle bool) {
 	// Each flip answers its own presentation feedbacks, in order: flips
 	// are never merged here.
 	for _, p := range reports {
@@ -343,7 +341,7 @@ func (s *Server) dueFrames(now time.Time, flipped map[string]bool) (fire []strin
 // paces reports whether a report paces frame callbacks: a flip of a real
 // display. Software flips (headless) answer presentation feedback, but
 // callbacks keep the output's refresh period.
-func paces(p ports.OutputPresented) bool { return p.Flip != nil && p.Flip.HardwareClock }
+func paces(p domain.OutputPresented) bool { return p.Flip != nil && p.Flip.HardwareClock }
 
 // sendFrames fires an output's callbacks; flipped: a flip of it fired them.
 func (s *Server) sendFrames(name string, flipped bool) {

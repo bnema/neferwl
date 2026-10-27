@@ -5,7 +5,6 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Buffer release. Outputs read client buffers in place: the renderer
@@ -88,7 +87,7 @@ func (s *Server) releaseBufferSync(surf *surface, sync syncHold) {
 // a later content of its window (or heldTimeout passed, without child reads).
 // It reports
 // whether buffers are still held.
-func (s *Server) releaseHeld(now time.Time, reports []ports.OutputPresented) bool {
+func (s *Server) releaseHeld(now time.Time, reports []domain.OutputPresented) bool {
 	for _, r := range reports {
 		s.reports[r.Output] = r
 	}
@@ -141,7 +140,7 @@ func (s *Server) bufferReferenced(b *wayland.Buffer) bool {
 // one has not got a later content of its window yet and heldTimeout has
 // not passed. Child reads are exempt from the timeout until the render
 // finishes or its device shuts down.
-func keepHeld(h heldBuffer, reports []ports.OutputPresented, now time.Time) bool {
+func keepHeld(h heldBuffer, reports []domain.OutputPresented, now time.Time) bool {
 	seen := true
 	for _, r := range reports {
 		if h.id != 0 && (r.Shown == h.id || r.Queued == h.id) {

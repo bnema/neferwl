@@ -366,7 +366,7 @@ func TestUnmapLeavingDroppedByInterruptions(t *testing.T) {
 			if c.animating() || len(sc.rects) != 0 {
 				t.Fatalf("motions survived the unplug: %d", len(sc.rects))
 			}
-			c.addScreen(ports.OutputInfo{Name: "A", Width: 300, Height: 200})
+			c.addScreen(domain.OutputInfo{Name: "A", Width: 300, Height: 200})
 			gone(t, c, c.cur(), indicatorScene(t, c))
 
 		})

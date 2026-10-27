@@ -71,13 +71,13 @@ func TestSecurityInitialBlackFenceBeforeLockerAndNoReadback(t *testing.T) {
 	defer acquireSignal.Close()
 	contents.send(domain.SurfaceContent{ID: 10, SHM: &domain.SHMBuffer{Pool: 10}, Acquire: acquire})
 	proof := make(chan ports.SecurityBackendEvent, 4)
-	replies := make(chan ports.CaptureDone, 4)
-	requests := make(chan ports.CaptureRequest, 2)
+	replies := make(chan domain.CaptureDone, 4)
+	requests := make(chan domain.CaptureRequest, 2)
 	dst, err := os.CreateTemp(t.TempDir(), "capture")
 	if err != nil {
 		t.Fatal(err)
 	}
-	requests <- ports.CaptureRequest{ID: 44, Dst: domain.SHMBuffer{File: dst}}
+	requests <- domain.CaptureRequest{ID: 44, Dst: domain.SHMBuffer{File: dst}}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	dir := t.TempDir()
@@ -216,7 +216,7 @@ func TestSecurityCursorAndPNGSuppressed(t *testing.T) {
 	state := domain.SecurityState{Generation: 1, Protected: true}
 	gate.EXPECT().Snapshot().Return(state)
 	c := &Cursor{}
-	c.set(ports.CursorImage{W: 1, H: 1, Pixels: []byte{0, 0, 255, 255}})
+	c.set(domain.CursorImage{W: 1, H: 1, Pixels: []byte{0, 0, 255, 255}})
 	c.Move(0, 0)
 	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
 	c.drawSecure(img, gate)
@@ -339,8 +339,8 @@ func TestSecurityQueuedCaptureFailedOnceAndProofCancellation(t *testing.T) {
 		r.EXPECT().Close().Return().Once()
 		black := make(chan struct{})
 		r.EXPECT().Render(mock.Anything, mock.Anything).Run(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) { close(black) }).Return(nil, nil).Once()
-		incoming := make(chan ports.CaptureRequest)
-		replies := make(chan ports.CaptureDone, 2)
+		incoming := make(chan domain.CaptureRequest)
+		replies := make(chan domain.CaptureDone, 2)
 		changes := make(chan domain.SecurityState, 1)
 		// No receiver: proof delivery must wait rather than drop, and cancel.
 		proofs := make(chan ports.SecurityBackendEvent)
@@ -354,7 +354,7 @@ func TestSecurityQueuedCaptureFailedOnceAndProofCancellation(t *testing.T) {
 			t.Fatal(err)
 		}
 		select {
-		case incoming <- ports.CaptureRequest{ID: 100, Dst: domain.SHMBuffer{File: file}}:
+		case incoming <- domain.CaptureRequest{ID: 100, Dst: domain.SHMBuffer{File: file}}:
 		case <-time.After(time.Second):
 			t.Fatal("capture not admitted")
 		}
@@ -450,9 +450,9 @@ func TestSecurityCompletionLeaseRecycledBeforeProtectionRenderFailure(t *testing
 			return nil, nil
 		}).Twice()
 		r.EXPECT().Close().Return().Once()
-		incoming := make(chan ports.CaptureRequest)
+		incoming := make(chan domain.CaptureRequest)
 		scenes := make(chan domain.Scene)
-		replies := make(chan ports.CaptureDone, 1)
+		replies := make(chan domain.CaptureDone, 1)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		done := make(chan error, 1)
@@ -466,7 +466,7 @@ func TestSecurityCompletionLeaseRecycledBeforeProtectionRenderFailure(t *testing
 		if err := file.Truncate(16); err != nil {
 			t.Fatal(err)
 		}
-		incoming <- ports.CaptureRequest{ID: 77, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: domain.SHMBuffer{File: file}}
+		incoming <- domain.CaptureRequest{ID: 77, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: domain.SHMBuffer{File: file}}
 		scenes <- domain.Scene{Seq: 1, Scale: 1}
 		securityReceive(t, replies)
 		if err := securityReceive(t, done); !errors.Is(err, failure) {

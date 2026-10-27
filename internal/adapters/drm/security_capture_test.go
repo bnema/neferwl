@@ -27,9 +27,9 @@ func TestSecurityEngageDuringExcludeRenderRejectsCaptureTransfer(t *testing.T) {
 		state.Store(3)
 		return f, nil
 	}).Once()
-	replies := make(chan ports.CaptureDone, 2)
+	replies := make(chan domain.CaptureDone, 2)
 	pipeline := capture.NewPipeline(context.Background(), replies)
-	requests := []ports.CaptureRequest{sessionRequest(t, 1, true), sessionRequest(t, 2, false)}
+	requests := []domain.CaptureRequest{sessionRequest(t, 1, true), sessionRequest(t, 2, false)}
 	files := []*os.File{requests[0].Dst.File, requests[1].Dst.File}
 	_, err := o.submitFrame(context.Background(), r, drmSessionScene(), nil, nil, requests, pipeline)
 	if !errors.Is(err, errSecurityScene) || len(*commits) != 0 {
@@ -76,7 +76,7 @@ func TestSecurityHiddenAdmissionRechecksBeforeNativeStart(t *testing.T) {
 	o.Security = security
 	r := portsmocks.NewMockRenderer(t)
 	child := portsmocks.NewMockRenderer(t)
-	replies := make(chan ports.CaptureDone, 1)
+	replies := make(chan domain.CaptureDone, 1)
 	pipeline := capture.NewPipeline(context.Background(), replies)
 	pipeline.EnableOffscreen(func(int, int) (ports.Renderer, error) {
 		t.Fatal("obsolete hidden capture created child")
@@ -84,7 +84,7 @@ func TestSecurityHiddenAdmissionRechecksBeforeNativeStart(t *testing.T) {
 	})
 	s := drmSessionScene()
 	s.CaptureScene = &domain.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1}
-	requests := []ports.CaptureRequest{sessionRequest(t, 1, true)}
+	requests := []domain.CaptureRequest{sessionRequest(t, 1, true)}
 	file := requests[0].Dst.File
 	_, err := o.submitFrame(context.Background(), r, s, nil, nil, requests, pipeline)
 	if !errors.Is(err, errSecurityScene) || capture.Handed(requests[0]) {

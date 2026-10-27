@@ -81,9 +81,9 @@ type frameRun struct {
 
 // runFrame serves the requests the way the outputs do: Split, SubmitPlain,
 // the excluded frame, then the displayed frame and what still reads it.
-func runFrame(t *testing.T, s domain.Scene, reqs ...ports.CaptureRequest) frameRun {
+func runFrame(t *testing.T, s domain.Scene, reqs ...domain.CaptureRequest) frameRun {
 	t.Helper()
-	replies := make(chan ports.CaptureDone, len(reqs))
+	replies := make(chan domain.CaptureDone, len(reqs))
 	p := NewPipeline(context.Background(), replies)
 	r := portsmocks.NewMockRenderer(t)
 	var mu sync.Mutex
@@ -140,15 +140,15 @@ func runFrame(t *testing.T, s domain.Scene, reqs ...ports.CaptureRequest) frameR
 	return run
 }
 
-func client(t *testing.T, id uint64) ports.CaptureRequest { return pipelineRequest(t, id) }
+func client(t *testing.T, id uint64) domain.CaptureRequest { return pipelineRequest(t, id) }
 
-func clientExclude(t *testing.T, id uint64) ports.CaptureRequest {
+func clientExclude(t *testing.T, id uint64) domain.CaptureRequest {
 	q := pipelineRequest(t, id)
 	q.Exclude, q.Session = true, 7
 	return q
 }
 
-func internalReq(t *testing.T, exclude bool) ports.CaptureRequest {
+func internalReq(t *testing.T, exclude bool) domain.CaptureRequest {
 	q := pipelineRequest(t, internalID)
 	if exclude {
 		q.Exclude, q.Session = true, 7
@@ -167,7 +167,7 @@ func TestHintCaptureFrames(t *testing.T) {
 	tests := []struct {
 		name    string
 		frame   hintFrame
-		reqs    func(t *testing.T) []ports.CaptureRequest
+		reqs    func(t *testing.T) []domain.CaptureRequest
 		renders []string
 		batches []int
 		failed  map[uint64]error // want errors (ErrorIs); every other request succeeds
@@ -175,8 +175,8 @@ func TestHintCaptureFrames(t *testing.T) {
 		{
 			name:  "off: labels leave every capture, one plain frame serves both",
 			frame: hintFrame{labels: true},
-			reqs: func(t *testing.T) []ports.CaptureRequest {
-				return []ports.CaptureRequest{client(t, 1), internalReq(t, false)}
+			reqs: func(t *testing.T) []domain.CaptureRequest {
+				return []domain.CaptureRequest{client(t, 1), internalReq(t, false)}
 			},
 			renders: []string{bare, displayed},
 			batches: []int{2},
@@ -184,29 +184,29 @@ func TestHintCaptureFrames(t *testing.T) {
 		{
 			name:    "on: a client capture reads the displayed frame, labels included",
 			frame:   hintFrame{capture: true, labels: true},
-			reqs:    func(t *testing.T) []ports.CaptureRequest { return []ports.CaptureRequest{client(t, 1)} },
+			reqs:    func(t *testing.T) []domain.CaptureRequest { return []domain.CaptureRequest{client(t, 1)} },
 			renders: []string{displayed},
 			batches: []int{1},
 		},
 		{
 			name:    "on: the indicator is dropped, the labels are kept",
 			frame:   hintFrame{capture: true, labels: true, indicator: true},
-			reqs:    func(t *testing.T) []ports.CaptureRequest { return []ports.CaptureRequest{client(t, 1)} },
+			reqs:    func(t *testing.T) []domain.CaptureRequest { return []domain.CaptureRequest{client(t, 1)} },
 			renders: []string{"labels", "labels+indicator"},
 			batches: []int{1},
 		},
 		{
 			name:    "on: the position hint is dropped, the labels are kept",
 			frame:   hintFrame{capture: true, labels: true, posHint: true},
-			reqs:    func(t *testing.T) []ports.CaptureRequest { return []ports.CaptureRequest{client(t, 1)} },
+			reqs:    func(t *testing.T) []domain.CaptureRequest { return []domain.CaptureRequest{client(t, 1)} },
 			renders: []string{"labels", "labels+poshint"},
 			batches: []int{1},
 		},
 		{
 			name:  "on: an internal capture of a labelled frame fails, the client is served",
 			frame: hintFrame{capture: true, labels: true, indicator: true},
-			reqs: func(t *testing.T) []ports.CaptureRequest {
-				return []ports.CaptureRequest{client(t, 1), internalReq(t, false)}
+			reqs: func(t *testing.T) []domain.CaptureRequest {
+				return []domain.CaptureRequest{client(t, 1), internalReq(t, false)}
 			},
 			renders: []string{"labels", "labels+indicator"},
 			batches: []int{1},
@@ -215,7 +215,7 @@ func TestHintCaptureFrames(t *testing.T) {
 		{
 			name:  "on: an internal capture alone fails and renders nothing for it",
 			frame: hintFrame{capture: true, labels: true},
-			reqs:  func(t *testing.T) []ports.CaptureRequest { return []ports.CaptureRequest{internalReq(t, false)} },
+			reqs:  func(t *testing.T) []domain.CaptureRequest { return []domain.CaptureRequest{internalReq(t, false)} },
 			// the displayed frame is still drawn by the output, with no batch
 			renders: []string{displayed},
 			failed:  map[uint64]error{internalID: ErrInternalLabelled},
@@ -223,7 +223,7 @@ func TestHintCaptureFrames(t *testing.T) {
 		{
 			name:  "on: an internal Exclude capture fails, its excluded frame has labels",
 			frame: hintFrame{capture: true, labels: true, exclusion: true},
-			reqs:  func(t *testing.T) []ports.CaptureRequest { return []ports.CaptureRequest{internalReq(t, true)} },
+			reqs:  func(t *testing.T) []domain.CaptureRequest { return []domain.CaptureRequest{internalReq(t, true)} },
 			// no excluded frame is rendered for a failed request
 			renders: []string{displayed},
 			failed:  map[uint64]error{internalID: ErrInternalExclude},
@@ -231,8 +231,8 @@ func TestHintCaptureFrames(t *testing.T) {
 		{
 			name:  "on: client, internal and Exclude requests over an indicator fit two batches",
 			frame: hintFrame{capture: true, labels: true, indicator: true, posHint: true, exclusion: true},
-			reqs: func(t *testing.T) []ports.CaptureRequest {
-				return []ports.CaptureRequest{client(t, 1), internalReq(t, false), clientExclude(t, 3)}
+			reqs: func(t *testing.T) []domain.CaptureRequest {
+				return []domain.CaptureRequest{client(t, 1), internalReq(t, false), clientExclude(t, 3)}
 			},
 			// plain frame for the client, excluded frame (labels kept, no
 			// indicator, no position hint) for Exclude, then the displayed one
@@ -243,22 +243,22 @@ func TestHintCaptureFrames(t *testing.T) {
 		{
 			name:    "on: labels alone do not force the excluded frame",
 			frame:   hintFrame{capture: true, labels: true, unshown: true},
-			reqs:    func(t *testing.T) []ports.CaptureRequest { return []ports.CaptureRequest{clientExclude(t, 1)} },
+			reqs:    func(t *testing.T) []domain.CaptureRequest { return []domain.CaptureRequest{clientExclude(t, 1)} },
 			renders: []string{displayed},
 			batches: []int{1},
 		},
 		{
 			name:    "off: labels force the excluded frame, without labels",
 			frame:   hintFrame{labels: true, exclusion: true},
-			reqs:    func(t *testing.T) []ports.CaptureRequest { return []ports.CaptureRequest{clientExclude(t, 1)} },
+			reqs:    func(t *testing.T) []domain.CaptureRequest { return []domain.CaptureRequest{clientExclude(t, 1)} },
 			renders: []string{"excluded", displayed},
 			batches: []int{1},
 		},
 		{
 			name:  "on without labels shown: internal and client share the plain frame",
 			frame: hintFrame{capture: true, indicator: true},
-			reqs: func(t *testing.T) []ports.CaptureRequest {
-				return []ports.CaptureRequest{client(t, 1), internalReq(t, false)}
+			reqs: func(t *testing.T) []domain.CaptureRequest {
+				return []domain.CaptureRequest{client(t, 1), internalReq(t, false)}
 			},
 			renders: []string{bare, "indicator"},
 			batches: []int{2},
@@ -266,8 +266,8 @@ func TestHintCaptureFrames(t *testing.T) {
 		{
 			name:  "nothing to hide: the displayed frame serves everyone",
 			frame: hintFrame{capture: true},
-			reqs: func(t *testing.T) []ports.CaptureRequest {
-				return []ports.CaptureRequest{client(t, 1), internalReq(t, false)}
+			reqs: func(t *testing.T) []domain.CaptureRequest {
+				return []domain.CaptureRequest{client(t, 1), internalReq(t, false)}
 			},
 			renders: []string{bare},
 			batches: []int{2},
@@ -294,14 +294,14 @@ func TestHintCaptureFrames(t *testing.T) {
 // Splitting and building the excluded scene of a frame that keeps labels
 // allocates nothing.
 func TestSplitNoAllocHintCapture(t *testing.T) {
-	p := NewPipeline(context.Background(), make(chan ports.CaptureDone, 8))
+	p := NewPipeline(context.Background(), make(chan domain.CaptureDone, 8))
 	defer p.Close(nil)
 	s := hintFrame{capture: true, labels: true, indicator: true, exclusion: true}.scene()
-	reqs := make([]ports.CaptureRequest, 3)
+	reqs := make([]domain.CaptureRequest, 3)
 	if allocs := testing.AllocsPerRun(100, func() {
-		reqs[0] = ports.CaptureRequest{ID: 1}
-		reqs[1] = ports.CaptureRequest{ID: 2, Exclude: true, Session: 7}
-		reqs[2] = ports.CaptureRequest{ID: 3, Exclude: true, Session: 7}
+		reqs[0] = domain.CaptureRequest{ID: 1}
+		reqs[1] = domain.CaptureRequest{ID: 2, Exclude: true, Session: 7}
+		reqs[2] = domain.CaptureRequest{ID: 3, Exclude: true, Session: 7}
 		_ = p.ExcludedScene(s)
 		p.Split(s, reqs)
 	}); allocs != 0 {

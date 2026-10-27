@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Reasons an output owner fails a request with.
@@ -23,15 +22,15 @@ var (
 // is the only user. List is the live slice the pipeline calls take and
 // return; assign their result back to it.
 type Requests struct {
-	storage [MaxRequests]ports.CaptureRequest
-	List    []ports.CaptureRequest
+	storage [MaxRequests]domain.CaptureRequest
+	List    []domain.CaptureRequest
 	ctx     context.Context
-	replies chan<- ports.CaptureDone
+	replies chan<- domain.CaptureDone
 }
 
 // Init binds the requests to the owner's context and reply channel. It must
 // run before any other method.
-func (r *Requests) Init(ctx context.Context, replies chan<- ports.CaptureDone) {
+func (r *Requests) Init(ctx context.Context, replies chan<- domain.CaptureDone) {
 	r.List, r.ctx, r.replies = r.storage[:0], ctx, replies
 }
 
@@ -41,7 +40,7 @@ func (r *Requests) Len() int { return len(r.List) }
 // Admit takes q for the next frame, or fails it with refuse when that is not
 // nil, or when the batch is full. It reports whether q needs a new frame: its
 // indicator is already on the current scene.
-func (r *Requests) Admit(q ports.CaptureRequest, refuse error, scene domain.Scene, haveScene bool) (redraw bool) {
+func (r *Requests) Admit(q domain.CaptureRequest, refuse error, scene domain.Scene, haveScene bool) (redraw bool) {
 	if refuse == nil && len(r.List) == cap(r.List) {
 		refuse = ErrBatchFull
 	}
@@ -76,7 +75,7 @@ func (r *Requests) Reset() {
 
 // Stop fails what the owner still holds, then what is queued on incoming,
 // with ErrOutputStopped. It returns once incoming is empty or closed.
-func (r *Requests) Stop(incoming <-chan ports.CaptureRequest) {
+func (r *Requests) Stop(incoming <-chan domain.CaptureRequest) {
 	for _, q := range r.List {
 		if !Handed(q) {
 			Fail(r.ctx, q, ErrOutputStopped, r.replies)

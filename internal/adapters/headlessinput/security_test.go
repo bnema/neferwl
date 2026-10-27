@@ -266,7 +266,7 @@ func TestSecureScriptQuarantinesModifierAcrossTransition(t *testing.T) {
 	for len(input) > 0 {
 		ev := (<-input).(ports.SecurityInput)
 		key := ev.Event.(ports.KeyEvent)
-		if ev.State != locked || key.Keycode != 16 || key.Mods != 0 || key.State != (ports.ModState{}) {
+		if ev.State != locked || key.Keycode != 16 || key.Mods != 0 || key.State != (domain.ModState{}) {
 			t.Fatalf("script password inherited modifiers: %#v", ev)
 		}
 	}

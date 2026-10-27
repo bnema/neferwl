@@ -22,11 +22,8 @@ type KeyEvent struct {
 	Pressed bool
 	Time    time.Duration
 	Keycode uint32
-	State   ModState
+	State   domain.ModState
 }
-
-// ModState is the serialized xkb modifier state sent in wl_keyboard.modifiers.
-type ModState struct{ Depressed, Latched, Locked, Group uint32 }
 
 func (KeyEvent) inputEvent() {}
 
@@ -53,21 +50,11 @@ type PointerButton struct {
 
 func (PointerButton) inputEvent() {}
 
-// ScrollAxis is one scroll direction in a pointer frame. Value is in
-// surface pixels; V120 counts wheel detents in 1/120 steps (wheel only).
-// Stop ends a finger or continuous scroll on this axis.
-type ScrollAxis struct {
-	Set   bool
-	Value float64
-	V120  int32
-	Stop  bool
-}
-
 // PointerAxis is one scroll frame: Vertical, then Horizontal. Time is the
 // device timestamp (CLOCK_MONOTONIC).
 type PointerAxis struct {
 	Source               domain.AxisSource
-	Vertical, Horizontal ScrollAxis
+	Vertical, Horizontal domain.ScrollAxis
 	Time                 time.Duration
 }
 

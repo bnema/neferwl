@@ -8,7 +8,7 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-var ultrawide = ports.OutputInfo{Name: "DP-3", Make: "Acme", Model: "W", Serial: "3", Width: 3440, Height: 1440}
+var ultrawide = domain.OutputInfo{Name: "DP-3", Make: "Acme", Model: "W", Serial: "3", Width: 3440, Height: 1440}
 
 // sizedRig runs an ultrawide with the named workspace "focus" (1920x1080)
 // bound to Alt+w, and shows it. The animations setting is the default's
@@ -104,12 +104,12 @@ func TestWorkspaceSizeFixedFullscreenKeepsFrame(t *testing.T) {
 		}
 		// Reload keeps the size; removing it frees the workspace.
 		cfg := r.cfg
-		r.reload <- ports.ConfigChanged{Config: cfg}
+		r.reload <- domain.ConfigChanged{Config: cfg}
 		if s := r.land(receive(t, r.scenes))[0]; s.WorkspaceClip != frame {
 			t.Fatalf("after reload %+v", s.WorkspaceClip)
 		}
 		cfg.Workspaces = []domain.WorkspaceConfig{{Name: "focus", LayoutRules: domain.LayoutRules{Overflow: "fixed"}}}
-		r.reload <- ports.ConfigChanged{Config: cfg}
+		r.reload <- domain.ConfigChanged{Config: cfg}
 		if s := r.land(receive(t, r.scenes))[0]; s.WorkspaceClip != (domain.Rect{}) {
 			t.Fatalf("after size removal %+v", s.WorkspaceClip)
 		}
@@ -229,25 +229,25 @@ func workspaceSizeReloadAndRemoval(t *testing.T, r *landRig) {
 	r.mapLanded(t, 1)
 	cfg := r.cfg
 	cfg.Workspaces = []domain.WorkspaceConfig{{Name: "focus", Size: [2]int{1000, 600}}}
-	r.reload <- ports.ConfigChanged{Config: cfg}
+	r.reload <- domain.ConfigChanged{Config: cfg}
 	s := receive(t, r.scenes)[0]
 	if want := (domain.Rect{X: 1220, Y: 420, W: 1000, H: 600}); s.WorkspaceClip != want || s.Windows[0].Rect != want {
 		t.Fatalf("%+v %+v", s.WorkspaceClip, s.Windows[0])
 	}
 	// Larger than the monitor clamps to it: no clip, no invisible area.
 	cfg.Workspaces = []domain.WorkspaceConfig{{Name: "focus", Size: [2]int{9000, 9000}}}
-	r.reload <- ports.ConfigChanged{Config: cfg}
+	r.reload <- domain.ConfigChanged{Config: cfg}
 	s = receive(t, r.scenes)[0]
 	if s.WorkspaceClip != (domain.Rect{}) || s.Windows[0].Rect != (domain.Rect{W: 3440, H: 1440}) {
 		t.Fatalf("%+v %+v", s.WorkspaceClip, s.Windows[0])
 	}
 	cfg.Workspaces = []domain.WorkspaceConfig{{Name: "focus", Size: [2]int{1920, 1080}}}
-	r.reload <- ports.ConfigChanged{Config: cfg}
+	r.reload <- domain.ConfigChanged{Config: cfg}
 	if s = receive(t, r.scenes)[0]; s.WorkspaceClip != frame {
 		t.Fatal(s.WorkspaceClip)
 	}
 	cfg.Workspaces = []domain.WorkspaceConfig{{Name: "focus"}}
-	r.reload <- ports.ConfigChanged{Config: cfg}
+	r.reload <- domain.ConfigChanged{Config: cfg}
 	if s = receive(t, r.scenes)[0]; s.WorkspaceClip != (domain.Rect{}) || s.Windows[0].Rect != (domain.Rect{W: 3440, H: 1440}) {
 		t.Fatalf("%+v %+v", s.WorkspaceClip, s.Windows[0])
 	}
@@ -268,8 +268,8 @@ func workspaceSizeFollowsOutputResize(t *testing.T, r *landRig) {
 }
 func workspaceSizeReservedZoneIntersectsFrame(t *testing.T, r *landRig) {
 	// A bar inside the top of the monitor but above the frame reserves nothing of it.
-	bar := ports.LayerSurface{ID: 9, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 100, ExclusiveZone: 100}
-	r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar}}
+	bar := domain.LayerSurface{ID: 9, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 100, ExclusiveZone: 100}
+	r.client <- ports.LayerChanged{Layers: []domain.LayerSurface{bar}}
 	receive(t, r.scenes)
 	s := r.mapLanded(t, 1)[0]
 	if s.Windows[0].Rect != frame {
@@ -277,7 +277,7 @@ func workspaceSizeReservedZoneIntersectsFrame(t *testing.T, r *landRig) {
 	}
 	// A bar reaching into the frame shrinks it from the top.
 	bar.Height, bar.ExclusiveZone = 300, 300
-	r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar}}
+	r.client <- ports.LayerChanged{Layers: []domain.LayerSurface{bar}}
 	s = receive(t, r.scenes)[0]
 	if want := (domain.Rect{X: 760, Y: 300, W: 1920, H: 960}); s.Windows[0].Rect != want || s.WorkspaceClip != frame {
 		t.Fatalf("%+v clip %+v", s.Windows[0], s.WorkspaceClip)

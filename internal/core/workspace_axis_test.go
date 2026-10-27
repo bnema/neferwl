@@ -3,7 +3,7 @@ package core
 import (
 	"testing"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // axisCore is a cascade core whose monitor "M" has three workspaces of five
@@ -336,7 +336,7 @@ func TestVerticalEdgeFocusEmptyDestinationDoesNotFlash(t *testing.T) {
 		t.Run(string(tc.a), func(t *testing.T) {
 			c, _ := flashCore(t)
 			c.cur().mon.SetOverflow(OverflowScroll)
-			c.addScreen(ports.OutputInfo{Name: "B", Width: 400, Height: 300})
+			c.addScreen(domain.OutputInfo{Name: "B", Width: 400, Height: 300})
 			c.screens[1].x, c.screens[1].y = 0, tc.y
 			c.applyAction(tc.a)
 			if c.focusScreen != 1 || c.flash.pending != nil {

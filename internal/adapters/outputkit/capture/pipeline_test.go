@@ -12,11 +12,10 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 )
 
-func pipelineRequest(t *testing.T, id uint64) ports.CaptureRequest {
+func pipelineRequest(t *testing.T, id uint64) domain.CaptureRequest {
 	t.Helper()
 	f, err := os.CreateTemp(t.TempDir(), "capture")
 	if err != nil {
@@ -26,18 +25,18 @@ func pipelineRequest(t *testing.T, id uint64) ports.CaptureRequest {
 	if err := f.Truncate(16); err != nil {
 		t.Fatal(err)
 	}
-	return ports.CaptureRequest{ID: id, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: domain.SHMBuffer{File: f}}
+	return domain.CaptureRequest{ID: id, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: domain.SHMBuffer{File: f}}
 }
 
 //testpolicy:realtime pipeline workers may wait for real pipe fence descriptors
-func awaitCapture(t *testing.T, replies <-chan ports.CaptureDone) ports.CaptureDone {
+func awaitCapture(t *testing.T, replies <-chan domain.CaptureDone) domain.CaptureDone {
 	t.Helper()
 	select {
 	case done := <-replies:
 		return done
 	case <-time.After(2 * time.Second):
 		t.Fatal("no capture reply")
-		return ports.CaptureDone{}
+		return domain.CaptureDone{}
 	}
 }
 
@@ -55,10 +54,10 @@ func TestPipelineCopiesOffOwnerAndRecycles(t *testing.T) {
 		}).Once()
 		r.EXPECT().BeginCapture().Return(frame, nil).Once()
 		r.EXPECT().EndCapture(frame).Return().Once()
-		replies := make(chan ports.CaptureDone, 1)
+		replies := make(chan domain.CaptureDone, 1)
 		p := NewPipeline(context.Background(), replies)
 		q := pipelineRequest(t, 1)
-		p.SubmitScoped(domain.SecurityState{}, r, []ports.CaptureRequest{q})
+		p.SubmitScoped(domain.SecurityState{}, r, []domain.CaptureRequest{q})
 		select {
 		case <-entered:
 		case <-time.After(time.Second):
@@ -87,7 +86,7 @@ func TestPipelineCopiesOffOwnerAndRecycles(t *testing.T) {
 //testpolicy:realtime shutdown interrupts real pipe fence descriptors
 func TestPipelineSaturationAndShutdownWithoutGPUCompletion(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
-	replies := make(chan ports.CaptureDone, 4)
+	replies := make(chan domain.CaptureDone, 4)
 	p := NewPipeline(context.Background(), replies)
 	for id := range uint64(2) {
 		read, write, err := os.Pipe()
@@ -99,10 +98,10 @@ func TestPipelineSaturationAndShutdownWithoutGPUCompletion(t *testing.T) {
 		frame.EXPECT().Done().Return(read).Maybe()
 		r.EXPECT().BeginCapture().Return(frame, nil).Once()
 		r.EXPECT().EndCapture(frame).Return().Once()
-		p.SubmitScoped(domain.SecurityState{}, r, []ports.CaptureRequest{pipelineRequest(t, id)})
+		p.SubmitScoped(domain.SecurityState{}, r, []domain.CaptureRequest{pipelineRequest(t, id)})
 	}
 	q := pipelineRequest(t, 3)
-	p.SubmitScoped(domain.SecurityState{}, r, []ports.CaptureRequest{q})
+	p.SubmitScoped(domain.SecurityState{}, r, []domain.CaptureRequest{q})
 	if done := awaitCapture(t, replies); done.ID != 3 || done.Err == nil {
 		t.Fatalf("saturation result %+v", done)
 	}
@@ -124,10 +123,10 @@ func TestPipelineBeginFailureClosesRequest(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
 	boom := errors.New("submission failed")
 	r.EXPECT().BeginCapture().Return(nil, boom).Once()
-	replies := make(chan ports.CaptureDone, 1)
+	replies := make(chan domain.CaptureDone, 1)
 	p := NewPipeline(context.Background(), replies)
 	q := pipelineRequest(t, 1)
-	p.SubmitScoped(domain.SecurityState{}, r, []ports.CaptureRequest{q})
+	p.SubmitScoped(domain.SecurityState{}, r, []domain.CaptureRequest{q})
 	if done := awaitCapture(t, replies); !errors.Is(done.Err, boom) {
 		t.Fatalf("result %+v", done)
 	}
@@ -139,9 +138,9 @@ func TestPipelineBeginFailureClosesRequest(t *testing.T) {
 
 func TestPipelineRejectsOversizedBatch(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
-	replies := make(chan ports.CaptureDone, MaxRequests+1)
+	replies := make(chan domain.CaptureDone, MaxRequests+1)
 	p := NewPipeline(context.Background(), replies)
-	requests := make([]ports.CaptureRequest, MaxRequests+1)
+	requests := make([]domain.CaptureRequest, MaxRequests+1)
 	for i := range requests {
 		requests[i] = pipelineRequest(t, uint64(i))
 	}

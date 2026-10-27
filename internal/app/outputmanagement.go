@@ -5,7 +5,6 @@ import (
 
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
 
@@ -28,14 +27,14 @@ type outputApply struct {
 	pending bool
 	// req is the request behind the backend work; nil for a reload or after
 	// a reload superseded it.
-	req      *ports.OutputApply
+	req      *domain.OutputApply
 	previous map[string]domain.OutputConfig
 	rollback bool
 	failure  error
 	// config is the latest effective configuration core has not received.
-	config  ports.ConfigChanged
+	config  domain.ConfigChanged
 	publish bool
-	replies []ports.OutputApplied
+	replies []domain.OutputApplied
 	// headsDue is set while Wayland has not received the latest inventory.
 	headsDue bool
 }
@@ -60,14 +59,14 @@ func (a *outputApply) reload(file domain.Config) {
 
 // heads records the backend inventory: it validates requests and waits for
 // Wayland in the outbox, latest only.
-func (a *outputApply) heads(heads ports.OutputHeads) {
+func (a *outputApply) heads(heads domain.OutputHeads) {
 	a.state.SetHeads(heads)
 	a.headsDue = true
 }
 
 // request validates a protocol request. Test, invalid and headless requests
 // are answered at once; others wait for the backend.
-func (a *outputApply) request(req ports.OutputApply) {
+func (a *outputApply) request(req domain.OutputApply) {
 	if a.running || a.pending {
 		a.reply(req.ID, errors.New("output apply already pending"))
 		return
@@ -144,7 +143,7 @@ func (a *outputApply) due(cfg domain.Config) {
 }
 
 func (a *outputApply) setConfig(cfg domain.Config) {
-	a.config = ports.ConfigChanged{Config: cfg}
+	a.config = domain.ConfigChanged{Config: cfg}
 	a.publish = true
 }
 
@@ -152,12 +151,12 @@ func (a *outputApply) reply(id uint64, err error) {
 	if err != nil {
 		a.log.Warn().Err(err).Msg("output configuration failed")
 	}
-	a.replies = append(a.replies, ports.OutputApplied{ID: id, Err: err})
+	a.replies = append(a.replies, domain.OutputApplied{ID: id, Err: err})
 }
 
 // configOut returns the core channel when a configuration waits, else nil so
 // the owner loop's send case stays disabled.
-func (a *outputApply) configOut(ch chan<- ports.ConfigChanged) chan<- ports.ConfigChanged {
+func (a *outputApply) configOut(ch chan<- domain.ConfigChanged) chan<- domain.ConfigChanged {
 	if !a.publish {
 		return nil
 	}
@@ -168,18 +167,18 @@ func (a *outputApply) configOut(ch chan<- ports.ConfigChanged) chan<- ports.Conf
 func (a *outputApply) configSent() { a.publish = false }
 
 // replyOut returns the reply channel and the oldest reply, or a nil channel.
-func (a *outputApply) replyOut(ch chan<- ports.OutputApplied) (chan<- ports.OutputApplied, ports.OutputApplied) {
+func (a *outputApply) replyOut(ch chan<- domain.OutputApplied) (chan<- domain.OutputApplied, domain.OutputApplied) {
 	if len(a.replies) == 0 {
-		return nil, ports.OutputApplied{}
+		return nil, domain.OutputApplied{}
 	}
 	return ch, a.replies[0]
 }
 
 // headsOut returns the Wayland inventory channel and the latest inventory,
 // or a nil channel when Wayland has it.
-func (a *outputApply) headsOut(ch chan<- ports.OutputHeads) (chan<- ports.OutputHeads, ports.OutputHeads) {
+func (a *outputApply) headsOut(ch chan<- domain.OutputHeads) (chan<- domain.OutputHeads, domain.OutputHeads) {
 	if !a.headsDue {
-		return nil, ports.OutputHeads{}
+		return nil, domain.OutputHeads{}
 	}
 	return ch, a.state.Heads()
 }
@@ -189,6 +188,6 @@ func (a *outputApply) headsSent() { a.headsDue = false }
 
 // replySent drops the delivered reply.
 func (a *outputApply) replySent() {
-	a.replies[0] = ports.OutputApplied{}
+	a.replies[0] = domain.OutputApplied{}
 	a.replies = a.replies[1:]
 }

@@ -60,16 +60,16 @@ func TestPersistScalesDebounces(t *testing.T) {
 		notes.EXPECT().Notify("DP-1 scale saved", "Scale 1.25 is kept after restart").Once()
 		notes.EXPECT().Notify("DP-2 scale saved", "Scale 2 is kept after restart").Once()
 		clock, fire := persistClock(t, time.Second, 4)
-		changes := make(chan ports.ScaleChanged)
+		changes := make(chan domain.ScaleChanged)
 		ctx, cancel := context.WithCancel(context.Background())
 		stopped := make(chan struct{})
 		go func() { core.PersistScales(ctx, changes, store, notes, clock, time.Second); close(stopped) }()
-		for _, ev := range []ports.ScaleChanged{{Output: "DP-2", Scale: 1.5}, {Output: "DP-1", Scale: 1.25}, {Output: "DP-2", Scale: 2}} {
+		for _, ev := range []domain.ScaleChanged{{Output: "DP-2", Scale: 1.5}, {Output: "DP-1", Scale: 1.25}, {Output: "DP-2", Scale: 2}} {
 			changes <- ev
 		}
 		fire <- time.Time{}
 		// The next change is received only after the fired batch is saved.
-		changes <- ports.ScaleChanged{Output: "DP-1", Scale: 1.25}
+		changes <- domain.ScaleChanged{Output: "DP-1", Scale: 1.25}
 		cancel()
 		<-stopped
 
@@ -84,11 +84,11 @@ func TestPersistScalesReportsFailure(t *testing.T) {
 		store.EXPECT().SaveOutputScale("DP-1", 1.5).Return(errors.New("read-only file system")).Once()
 		notes.EXPECT().Notify("DP-1 scale not saved", "read-only file system").Once()
 		clock, fire := persistClock(t, time.Second, 1)
-		changes := make(chan ports.ScaleChanged)
+		changes := make(chan domain.ScaleChanged)
 		ctx, cancel := context.WithCancel(context.Background())
 		stopped := make(chan struct{})
 		go func() { core.PersistScales(ctx, changes, store, notes, clock, time.Second); close(stopped) }()
-		changes <- ports.ScaleChanged{Output: "DP-1", Scale: 1.5}
+		changes <- domain.ScaleChanged{Output: "DP-1", Scale: 1.5}
 		fire <- time.Time{}
 		cancel()
 		<-stopped
@@ -103,7 +103,7 @@ func TestScaleBindReportsScale(t *testing.T) {
 		cfg := scrollDefaults()
 		input := make(chan ports.InputEvent, 8)
 		output := make(chan ports.OutputEvent, 8)
-		scales := make(chan ports.ScaleChanged, 8)
+		scales := make(chan domain.ScaleChanged, 8)
 		scenes := make(chan []domain.Scene, 1)
 		c, err := core.New(cfg, core.Channels{Input: input, Output: output, Commands: make(chan ports.ClientCommand, 64), Scenes: scenes, Scales: scales}, core.Options{})
 		if err != nil {
@@ -112,7 +112,7 @@ func TestScaleBindReportsScale(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go c.Run(ctx)
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "DP-2", Width: 5120, Height: 2160}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "DP-2", Width: 5120, Height: 2160}}
 		scene(t, scenes)
 		press := func(sym string, code uint32) {
 			input <- ports.KeyEvent{Keysym: sym, Keycode: code, Mods: domain.ModSuper, Pressed: true}

@@ -7,7 +7,6 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Options tunes Run.
@@ -36,7 +35,7 @@ type Options struct {
 type source interface {
 	kind() domain.HintSource
 	needsFrame(context.Context) bool
-	scan(context.Context, ports.HintScanRequest, []ports.HintWindow, *frame) ([]ports.HintTarget, error)
+	scan(context.Context, domain.HintScanRequest, []domain.HintWindow, *frame) ([]domain.HintTarget, error)
 	Close() error
 }
 
@@ -79,10 +78,10 @@ type scanCrop struct {
 }
 
 // chain covers a unit only after a stage returns at least one target in it.
-func (w *worker) chain(ctx context.Context, req ports.HintScanRequest, capture func() (*frame, error)) ([]ports.HintTarget, error) {
+func (w *worker) chain(ctx context.Context, req domain.HintScanRequest, capture func() (*frame, error)) ([]domain.HintTarget, error) {
 	w.stages = nil
 	covered := make(map[domain.WindowID]bool)
-	var out []ports.HintTarget
+	var out []domain.HintTarget
 	var fr *frame
 	var err error
 	if w.dumpDir != "" {
@@ -95,7 +94,7 @@ func (w *worker) chain(ctx context.Context, req ports.HintScanRequest, capture f
 		if req.LinksOnly && s.kind() == domain.HintSourceDetector {
 			continue
 		}
-		var wins []ports.HintWindow
+		var wins []domain.HintWindow
 		for _, win := range req.Windows {
 			if !covered[win.ID] {
 				wins = append(wins, win)

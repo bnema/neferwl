@@ -5,7 +5,7 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestCursorDraw(t *testing.T) {
@@ -15,7 +15,7 @@ func TestCursorDraw(t *testing.T) {
 	}
 	// 2x2: opaque red, transparent, half black, opaque blue; hotspot (1,1).
 	c := &Cursor{}
-	c.set(ports.CursorImage{W: 2, H: 2, HotX: 1, HotY: 1, Pixels: []byte{0, 0, 255, 255, 0, 0, 0, 0, 0, 0, 0, 128, 255, 0, 0, 255}})
+	c.set(domain.CursorImage{W: 2, H: 2, HotX: 1, HotY: 1, Pixels: []byte{0, 0, 255, 255, 0, 0, 0, 0, 0, 0, 0, 128, 255, 0, 0, 255}})
 	c.Move(5, 5)
 	c.draw(dst)
 	for p, want := range map[image.Point]color.RGBA{{4, 4}: {255, 0, 0, 255}, {5, 4}: {255, 255, 255, 255}, {4, 5}: {127, 127, 127, 255}, {5, 5}: {0, 0, 255, 255}} {

@@ -21,9 +21,9 @@ import (
 
 // slowOutputs has two outputs refreshing once a second: their deadlines never
 // fire inside a test, so only flips pace their frame callbacks.
-var slowOutputs = ports.Layout{
-	{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 1920, Height: 1080, RefreshMilli: 1000}, Width: 1920, Height: 1080, Scale: 1},
-	{Info: ports.OutputInfo{Name: "HEADLESS-2", Width: 1920, Height: 1080, RefreshMilli: 1000}, X: 1920, Width: 1920, Height: 1080, Scale: 1},
+var slowOutputs = domain.Layout{
+	{Info: domain.OutputInfo{Name: "HEADLESS-1", Width: 1920, Height: 1080, RefreshMilli: 1000}, Width: 1920, Height: 1080, Scale: 1},
+	{Info: domain.OutputInfo{Name: "HEADLESS-2", Width: 1920, Height: 1080, RefreshMilli: 1000}, X: 1920, Width: 1920, Height: 1080, Scale: 1},
 }
 
 // frameDoneProxy records the time of a wl_callback.done.
@@ -109,7 +109,7 @@ func TestPresentationPushCoalescesWhileDisplayBusy(t *testing.T) {
 	const step = 100 * time.Millisecond
 	for i := range flips {
 		for _, name := range outputs {
-			sink.Push(ports.OutputPresented{Output: name, Flip: &ports.FlipInfo{When: base + time.Duration(i+1)*step, Seq: uint64(i + 1), HardwareClock: true}})
+			sink.Push(domain.OutputPresented{Output: name, Flip: &domain.FlipInfo{When: base + time.Duration(i+1)*step, Seq: uint64(i + 1), HardwareClock: true}})
 		}
 	}
 	close(release)
@@ -135,9 +135,9 @@ func TestPresentationPushCoalescesWhileDisplayBusy(t *testing.T) {
 }
 
 func ringOf(outputs ...string) *presentSink {
-	p := &presentSink{ring: make([]ports.OutputPresented, 0, maxPresentRing+1)}
+	p := &presentSink{ring: make([]domain.OutputPresented, 0, maxPresentRing+1)}
 	for _, o := range outputs {
-		p.ring = append(p.ring, ports.OutputPresented{Output: o})
+		p.ring = append(p.ring, domain.OutputPresented{Output: o})
 	}
 	return p
 }
@@ -145,12 +145,12 @@ func ringOf(outputs ...string) *presentSink {
 // fill pads the ring with reports of distinct outputs up to the bound.
 func (p *presentSink) fill() {
 	for i := 0; len(p.ring) < maxPresentRing; i++ {
-		p.ring = append(p.ring, ports.OutputPresented{Output: "pad" + string(rune('A'+i/26)) + string(rune('a'+i%26))})
+		p.ring = append(p.ring, domain.OutputPresented{Output: "pad" + string(rune('A'+i/26)) + string(rune('a'+i%26))})
 	}
 }
 
-func flipOf(seq uint64, shows ...domain.WindowID) *ports.FlipInfo {
-	f := &ports.FlipInfo{Seq: seq}
+func flipOf(seq uint64, shows ...domain.WindowID) *domain.FlipInfo {
+	f := &domain.FlipInfo{Seq: seq}
 	if len(shows) > 0 {
 		f.Shows = map[domain.WindowID]uint64{}
 		for _, id := range shows {
@@ -166,9 +166,9 @@ func TestPresentationRingMakeRoom(t *testing.T) {
 	tests := []struct {
 		name       string
 		ring       func() *presentSink
-		in         ports.OutputPresented
+		in         domain.OutputPresented
 		wantMerged bool
-		check      func(t *testing.T, p *presentSink, in *ports.OutputPresented)
+		check      func(t *testing.T, p *presentSink, in *domain.OutputPresented)
 	}{
 		{
 			// A full ring merges the oldest flip of an output into its next flip.
@@ -176,13 +176,13 @@ func TestPresentationRingMakeRoom(t *testing.T) {
 			ring: func() *presentSink {
 				p := ringOf()
 				for i := range maxPresentRing {
-					p.ring = append(p.ring, ports.OutputPresented{Output: "A", Flip: flipOf(uint64(i + 1))})
+					p.ring = append(p.ring, domain.OutputPresented{Output: "A", Flip: flipOf(uint64(i + 1))})
 				}
 				return p
 			},
-			in:         ports.OutputPresented{Output: "A", Flip: flipOf(maxPresentRing + 1)},
+			in:         domain.OutputPresented{Output: "A", Flip: flipOf(maxPresentRing + 1)},
 			wantMerged: true,
-			check: func(t *testing.T, p *presentSink, _ *ports.OutputPresented) {
+			check: func(t *testing.T, p *presentSink, _ *domain.OutputPresented) {
 				if len(p.ring) != maxPresentRing-1 || p.ring[0].Flip.Seq != 2 || p.ring[0].Flip.Merged != 1 {
 					t.Fatalf("ring %d, first seq %d merged %d", len(p.ring), p.ring[0].Flip.Seq, p.ring[0].Flip.Merged)
 				}
@@ -199,8 +199,8 @@ func TestPresentationRingMakeRoom(t *testing.T) {
 				p.ring = p.ring[:maxPresentRing]
 				return p
 			},
-			in: ports.OutputPresented{Output: "B", Flip: flipOf(9)},
-			check: func(t *testing.T, p *presentSink, _ *ports.OutputPresented) {
+			in: domain.OutputPresented{Output: "B", Flip: flipOf(9)},
+			check: func(t *testing.T, p *presentSink, _ *domain.OutputPresented) {
 				if len(p.ring) != maxPresentRing-1 || p.ring[0].Output != "A" || p.ring[0].Flip == nil || p.ring[0].Flip.Seq != 7 || p.ring[0].Flip.Merged != 0 {
 					t.Fatalf("flip lost: ring %d, first %+v", len(p.ring), p.ring[0])
 				}
@@ -218,9 +218,9 @@ func TestPresentationRingMakeRoom(t *testing.T) {
 				p.fill()
 				return p
 			},
-			in:         ports.OutputPresented{Output: "C"},
+			in:         domain.OutputPresented{Output: "C"},
 			wantMerged: true,
-			check: func(t *testing.T, p *presentSink, _ *ports.OutputPresented) {
+			check: func(t *testing.T, p *presentSink, _ *domain.OutputPresented) {
 				if p.ring[0].Output != "B" || p.ring[0].Flip.Seq != 2 || p.ring[0].Flip.Merged != 0 {
 					t.Fatalf("B's flip touched: %+v", p.ring[0])
 				}
@@ -242,8 +242,8 @@ func TestPresentationRingMakeRoom(t *testing.T) {
 				p.fill()
 				return p
 			},
-			in: ports.OutputPresented{Output: "A"},
-			check: func(t *testing.T, p *presentSink, in *ports.OutputPresented) {
+			in: domain.OutputPresented{Output: "A"},
+			check: func(t *testing.T, p *presentSink, in *domain.OutputPresented) {
 				if in.Flip == nil || in.Flip.Seq != 4 || len(p.ring) != maxPresentRing-1 {
 					t.Fatalf("incoming %+v, ring %d", in.Flip, len(p.ring))
 				}
@@ -257,12 +257,12 @@ func TestPresentationRingMakeRoom(t *testing.T) {
 			ring: func() *presentSink {
 				p := ringOf()
 				for i := range maxPresentRing {
-					p.ring = append(p.ring, ports.OutputPresented{Output: "o" + string(rune('A'+i/26)) + string(rune('a'+i%26)), Flip: flipOf(uint64(i + 1))})
+					p.ring = append(p.ring, domain.OutputPresented{Output: "o" + string(rune('A'+i/26)) + string(rune('a'+i%26)), Flip: flipOf(uint64(i + 1))})
 				}
 				return p
 			},
-			in: ports.OutputPresented{Output: "other", Flip: flipOf(99)},
-			check: func(t *testing.T, p *presentSink, _ *ports.OutputPresented) {
+			in: domain.OutputPresented{Output: "other", Flip: flipOf(99)},
+			check: func(t *testing.T, p *presentSink, _ *domain.OutputPresented) {
 				if len(p.ring) != maxPresentRing {
 					t.Fatalf("merged or dropped: ring %d", len(p.ring))
 				}
@@ -289,10 +289,10 @@ func TestPresentationRingWarnsRateLimited(t *testing.T) {
 	p := ringOf()
 	p.s = &Server{clock: clk}
 	for i := range maxPresentRing {
-		p.ring = append(p.ring, ports.OutputPresented{Output: "A", Flip: flipOf(uint64(i + 1))})
+		p.ring = append(p.ring, domain.OutputPresented{Output: "A", Flip: flipOf(uint64(i + 1))})
 	}
 	push := func(seq uint64) (bool, int) {
-		return p.enqueueLocked(ports.OutputPresented{Output: "A", Flip: flipOf(seq)})
+		return p.enqueueLocked(domain.OutputPresented{Output: "A", Flip: flipOf(seq)})
 	}
 	if warn, n := push(100); !warn || n != 1 {
 		t.Fatalf("first merge: warn %v merged %d", warn, n)
@@ -321,7 +321,7 @@ func TestPresentationMergeWarnsInLog(t *testing.T) {
 	}()
 	<-started
 	for i := range 3 * maxPresentRing {
-		s.Presentation().Push(ports.OutputPresented{Output: "HEADLESS-1", Flip: &ports.FlipInfo{Seq: uint64(i + 1)}})
+		s.Presentation().Push(domain.OutputPresented{Output: "HEADLESS-1", Flip: &domain.FlipInfo{Seq: uint64(i + 1)}})
 	}
 	close(release)
 	<-finished
@@ -343,7 +343,7 @@ func TestPresentationPushAllocations(t *testing.T) {
 		t.Skip("the race detector makes the purego wake callback allocate")
 	}
 	s, _, _, _, sink, _ := presentServer(t)
-	r := ports.OutputPresented{Output: "HEADLESS-1"}
+	r := domain.OutputPresented{Output: "HEADLESS-1"}
 	// Posts run in order: once the marker ran, the drain before it did.
 	// The marker is bound once and the channel is reused, so waiting for it
 	// allocates nothing.

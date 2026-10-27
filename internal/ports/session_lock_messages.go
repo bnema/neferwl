@@ -7,14 +7,7 @@ import "github.com/bnema/neferwl/internal/domain"
 // the generation. A dead owner leaves Protected true and no surfaces.
 type SessionLockChanged struct {
 	State    domain.SecurityState
-	Surfaces []LockSurfacePlacement
-}
-
-// LockSurfacePlacement is a validated mapped lock role, never a desktop window.
-type LockSurfacePlacement struct {
-	ID            domain.WindowID
-	Output        string
-	Width, Height int
+	Surfaces []domain.LockSurfacePlacement
 }
 
 func (SessionLockChanged) clientEvent() {}

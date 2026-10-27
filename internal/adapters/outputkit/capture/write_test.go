@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -16,16 +18,16 @@ import (
 )
 
 // writeRequest is a valid 2x2 request over a 16-byte file.
-func writeRequest(t *testing.T) ports.CaptureRequest {
+func writeRequest(t *testing.T) domain.CaptureRequest {
 	t.Helper()
 	return pipelineRequest(t, 7)
 }
 
 // runWriteFrame calls writeFrame with a buffered reply channel and returns its
 // single reply.
-func runWriteFrame(t *testing.T, req ports.CaptureRequest, frame ports.CaptureFrame) ports.CaptureDone {
+func runWriteFrame(t *testing.T, req domain.CaptureRequest, frame ports.CaptureFrame) domain.CaptureDone {
 	t.Helper()
-	replies := make(chan ports.CaptureDone, 1)
+	replies := make(chan domain.CaptureDone, 1)
 	writeFrame(context.Background(), req, frame, time.Unix(5, 6), replies)
 	done := awaitCapture(t, replies)
 	if done.ID != req.ID {
@@ -50,42 +52,42 @@ func requireClosed(t *testing.T, f *os.File) {
 func TestWriteFrameRejectsInvalidDestination(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
-		mutate func(t *testing.T, q *ports.CaptureRequest)
+		mutate func(t *testing.T, q *domain.CaptureRequest)
 	}{
-		{"nil file", func(_ *testing.T, q *ports.CaptureRequest) { q.Dst.File = nil }},
-		{"zero width", func(_ *testing.T, q *ports.CaptureRequest) { q.Width = 0 }},
-		{"negative width", func(_ *testing.T, q *ports.CaptureRequest) { q.Width = -2 }},
-		{"zero height", func(_ *testing.T, q *ports.CaptureRequest) { q.Height = 0 }},
-		{"negative height", func(_ *testing.T, q *ports.CaptureRequest) { q.Height = -2 }},
-		{"stride below row", func(_ *testing.T, q *ports.CaptureRequest) { q.Stride = 4 }},
-		{"region width mismatch", func(_ *testing.T, q *ports.CaptureRequest) { q.Region = image.Rect(0, 0, 3, 2) }},
-		{"region height mismatch", func(_ *testing.T, q *ports.CaptureRequest) { q.Region = image.Rect(0, 0, 2, 1) }},
-		{"negative offset", func(_ *testing.T, q *ports.CaptureRequest) { q.Dst.Offset = -4 }},
-		{"invalid format", func(_ *testing.T, q *ports.CaptureRequest) { q.Format = 0xdeadbeef }},
-		{"width overflows bound", func(_ *testing.T, q *ports.CaptureRequest) {
+		{"nil file", func(_ *testing.T, q *domain.CaptureRequest) { q.Dst.File = nil }},
+		{"zero width", func(_ *testing.T, q *domain.CaptureRequest) { q.Width = 0 }},
+		{"negative width", func(_ *testing.T, q *domain.CaptureRequest) { q.Width = -2 }},
+		{"zero height", func(_ *testing.T, q *domain.CaptureRequest) { q.Height = 0 }},
+		{"negative height", func(_ *testing.T, q *domain.CaptureRequest) { q.Height = -2 }},
+		{"stride below row", func(_ *testing.T, q *domain.CaptureRequest) { q.Stride = 4 }},
+		{"region width mismatch", func(_ *testing.T, q *domain.CaptureRequest) { q.Region = image.Rect(0, 0, 3, 2) }},
+		{"region height mismatch", func(_ *testing.T, q *domain.CaptureRequest) { q.Region = image.Rect(0, 0, 2, 1) }},
+		{"negative offset", func(_ *testing.T, q *domain.CaptureRequest) { q.Dst.Offset = -4 }},
+		{"invalid format", func(_ *testing.T, q *domain.CaptureRequest) { q.Format = 0xdeadbeef }},
+		{"width overflows bound", func(_ *testing.T, q *domain.CaptureRequest) {
 			q.Width, q.Region = math.MaxInt32, image.Rect(0, 0, math.MaxInt32, 2)
 			q.Stride = q.Width * 4
 		}},
-		{"huge stride overflowing h-1", func(_ *testing.T, q *ports.CaptureRequest) {
+		{"huge stride overflowing h-1", func(_ *testing.T, q *domain.CaptureRequest) {
 			q.Height, q.Region = 3, image.Rect(0, 0, 2, 3)
 			q.Stride = math.MaxInt64 / 2
 		}},
-		{"max stride", func(_ *testing.T, q *ports.CaptureRequest) { q.Stride = math.MaxInt }},
-		{"huge height", func(_ *testing.T, q *ports.CaptureRequest) {
+		{"max stride", func(_ *testing.T, q *domain.CaptureRequest) { q.Stride = math.MaxInt }},
+		{"huge height", func(_ *testing.T, q *domain.CaptureRequest) {
 			q.Height, q.Region = math.MaxInt32, image.Rect(0, 0, 2, math.MaxInt32)
 		}},
-		{"offset past bound", func(_ *testing.T, q *ports.CaptureRequest) { q.Dst.Offset = maxMappedBytes }},
-		{"one GiB plus one byte", func(_ *testing.T, q *ports.CaptureRequest) {
+		{"offset past bound", func(_ *testing.T, q *domain.CaptureRequest) { q.Dst.Offset = maxMappedBytes }},
+		{"one GiB plus one byte", func(_ *testing.T, q *domain.CaptureRequest) {
 			// 1 row of 4 bytes at offset 1GiB-3 ends one byte past the bound.
 			q.Width, q.Height, q.Stride, q.Region = 1, 1, 4, image.Rect(0, 0, 1, 1)
 			q.Dst.Offset = maxMappedBytes - 3
 		}},
-		{"truncated file", func(t *testing.T, q *ports.CaptureRequest) {
+		{"truncated file", func(t *testing.T, q *domain.CaptureRequest) {
 			if err := q.Dst.File.Truncate(15); err != nil {
 				t.Fatal(err)
 			}
 		}},
-		{"offset past end of file", func(_ *testing.T, q *ports.CaptureRequest) { q.Dst.Offset = 4 }},
+		{"offset past end of file", func(_ *testing.T, q *domain.CaptureRequest) { q.Dst.Offset = 4 }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := writeRequest(t)
@@ -181,8 +183,8 @@ func TestWriteFrameRecoversFromTruncationFault(t *testing.T) {
 
 // mappedRequest is a valid 2x2 request that writes into a borrowed mapping of
 // size bytes.
-func mappedRequest(size int) ports.CaptureRequest {
-	return ports.CaptureRequest{ID: 9, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Mapped: make([]byte, size)}
+func mappedRequest(size int) domain.CaptureRequest {
+	return domain.CaptureRequest{ID: 9, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Mapped: make([]byte, size)}
 }
 
 func TestWriteFrameMappedWritesAtOffset(t *testing.T) {
@@ -220,14 +222,14 @@ func TestWriteFrameMappedExactFit(t *testing.T) {
 func TestWriteFrameMappedRejectsShortOrAmbiguous(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
-		mutate func(q *ports.CaptureRequest)
+		mutate func(q *domain.CaptureRequest)
 	}{
-		{"one byte short", func(q *ports.CaptureRequest) { q.Mapped = q.Mapped[:15] }},
-		{"offset past mapping", func(q *ports.CaptureRequest) { q.Dst.Offset = 4 }},
-		{"stride bound", func(q *ports.CaptureRequest) { q.Stride = math.MaxInt }},
-		{"negative offset", func(q *ports.CaptureRequest) { q.Dst.Offset = -4 }},
-		{"invalid format", func(q *ports.CaptureRequest) { q.Format = 7 }},
-		{"file and mapping", func(q *ports.CaptureRequest) { q.Dst.File = os.Stdin }},
+		{"one byte short", func(q *domain.CaptureRequest) { q.Mapped = q.Mapped[:15] }},
+		{"offset past mapping", func(q *domain.CaptureRequest) { q.Dst.Offset = 4 }},
+		{"stride bound", func(q *domain.CaptureRequest) { q.Stride = math.MaxInt }},
+		{"negative offset", func(q *domain.CaptureRequest) { q.Dst.Offset = -4 }},
+		{"invalid format", func(q *domain.CaptureRequest) { q.Format = 7 }},
+		{"file and mapping", func(q *domain.CaptureRequest) { q.Dst.File = os.Stdin }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := mappedRequest(16)
@@ -260,10 +262,10 @@ func TestWriteFrameMappedStaysMapped(t *testing.T) {
 }
 
 func TestHandedKeepsMappedRequests(t *testing.T) {
-	if Handed(ports.CaptureRequest{Mapped: make([]byte, 4)}) {
+	if Handed(domain.CaptureRequest{Mapped: make([]byte, 4)}) {
 		t.Fatal("a mapped request with ID 0 is not handed")
 	}
-	if !Handed(ports.CaptureRequest{}) {
+	if !Handed(domain.CaptureRequest{}) {
 		t.Fatal("a zero request is handed")
 	}
 }
@@ -276,7 +278,7 @@ func TestWriteMappedAllocations(t *testing.T) {
 		t.Skip("the race detector allocates")
 	}
 	req := mappedRequest(16)
-	replies := make(chan ports.CaptureDone, 1)
+	replies := make(chan domain.CaptureDone, 1)
 	ctx := context.Background()
 	at := time.Unix(1, 2)
 	var sink []byte

@@ -69,7 +69,7 @@ var _ ports.CastSink = (*Service)(nil)
 // with Run; Push and Inventory are the only methods other goroutines call.
 type Service struct {
 	policy func() *captureallow.Policy
-	cmds   chan<- ports.CastCommand
+	cmds   chan<- domain.CastCommand
 	log    zerowrap.Logger
 
 	poller  *fdwait.Poller
@@ -86,11 +86,11 @@ type Service struct {
 
 	// Transport: filled by other goroutines, drained by the owner.
 	mu      sync.Mutex
-	queue   []ports.CastEvent
-	spare   []ports.CastEvent
+	queue   []domain.CastEvent
+	spare   []domain.CastEvent
 	lost    bool // damage was merged away
 	woken   bool
-	invNew  *ports.CastInventory
+	invNew  *domain.CastInventory
 	shotRes shotResult
 
 	// Owner state.
@@ -98,7 +98,7 @@ type Service struct {
 	conn    bus
 	pwc     videoCore
 	owns    [4]bool // nameScreenCast, nameDisplayConfig, nameIntrospect, nameScreenshot
-	inv     ports.CastInventory
+	inv     domain.CastInventory
 	haveInv bool
 	callers [maxCallers]caller
 	pending [maxPending]pending
@@ -137,7 +137,7 @@ func signal(ch chan<- struct{}) {
 
 // New creates the service. policy returns the capture allowlist in force;
 // cmds carries the commands for the wayland server.
-func New(policy func() *captureallow.Policy, cmds chan<- ports.CastCommand, log zerowrap.Logger) *Service {
+func New(policy func() *captureallow.Policy, cmds chan<- domain.CastCommand, log zerowrap.Logger) *Service {
 	s := &Service{
 		policy: policy,
 		cmds:   cmds,
@@ -146,8 +146,8 @@ func New(policy func() *captureallow.Policy, cmds chan<- ports.CastCommand, log 
 		dial:   zerobusDialer{},
 		pw:     realPipeWire{},
 		peers:  pidfdPeers{},
-		queue:  make([]ports.CastEvent, 0, sinkCap),
-		spare:  make([]ports.CastEvent, 0, sinkCap),
+		queue:  make([]domain.CastEvent, 0, sinkCap),
+		spare:  make([]domain.CastEvent, 0, sinkCap),
 
 		sessions: new([maxSessions]session),
 		drain:    shutdownWait,
@@ -161,7 +161,7 @@ func New(policy func() *captureallow.Policy, cmds chan<- ports.CastCommand, log 
 func (s *Service) SetEnv(env []string) { s.env = env }
 
 // Push queues an event of the wayland server for the owner. It never blocks.
-func (s *Service) Push(ev ports.CastEvent) {
+func (s *Service) Push(ev domain.CastEvent) {
 	s.mu.Lock()
 	if ev.Kind == domain.CastDamage && len(s.queue) >= sinkCap {
 		s.lost = true
@@ -177,7 +177,7 @@ func (s *Service) Push(ev ports.CastEvent) {
 }
 
 // Inventory takes the new outputs and windows; the owner publishes them.
-func (s *Service) Inventory(inv ports.CastInventory) {
+func (s *Service) Inventory(inv domain.CastInventory) {
 	s.mu.Lock()
 	s.invNew = &inv
 	wake := !s.woken
@@ -196,7 +196,7 @@ func (s *Service) wake() {
 
 // take swaps out what other goroutines queued. The events stay valid until
 // the next take.
-func (s *Service) take() (evs []ports.CastEvent, lost bool, inv *ports.CastInventory, shot *shotResult) {
+func (s *Service) take() (evs []domain.CastEvent, lost bool, inv *domain.CastInventory, shot *shotResult) {
 	s.mu.Lock()
 	s.spare, s.queue = s.queue, s.spare[:0]
 	evs, lost, inv = s.spare, s.lost, s.invNew

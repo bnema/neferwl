@@ -2,18 +2,18 @@
 // animation.
 package corewake
 
-import "github.com/bnema/neferwl/internal/ports"
+import "github.com/bnema/neferwl/internal/domain"
 
 // Send tells core the next frame of a running animation of output is due.
 // A frame core has not read yet is enough, so the owner never waits: a full
 // channel drops the wake. A nil ch (tests, nobody to wake) does nothing.
 // It allocates nothing.
-func Send(ch chan<- ports.OutputFrame, output string) {
+func Send(ch chan<- domain.OutputFrame, output string) {
 	if ch == nil {
 		return
 	}
 	select {
-	case ch <- ports.OutputFrame{Output: output}:
+	case ch <- domain.OutputFrame{Output: output}:
 	default:
 	}
 }

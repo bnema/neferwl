@@ -9,7 +9,6 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/linuxdmabuf"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
 )
@@ -124,9 +123,9 @@ type dmabufGlobal struct {
 
 // scanoutOffer is an output's scanout tranche, ready to send.
 type scanoutOffer struct {
-	formats ports.OutputFormats // as reported, for change detection
-	device  []byte              // devBytes(formats.Device)
-	indices []byte              // u16 table indices of formats present in the table
+	formats domain.OutputFormats // as reported, for change detection
+	device  []byte               // devBytes(formats.Device)
+	indices []byte               // u16 table indices of formats present in the table
 }
 
 // feedbackState is a live feedback object: its surface (nil: default
@@ -137,7 +136,7 @@ type feedbackState struct {
 }
 
 // offer builds the scanout tranche of an output's formats.
-func (g *dmabufGlobal) offer(f ports.OutputFormats) scanoutOffer {
+func (g *dmabufGlobal) offer(f domain.OutputFormats) scanoutOffer {
 	o := scanoutOffer{formats: f, device: devBytes(f.Device)}
 	for _, format := range f.Formats {
 		if i, ok := g.index[format]; ok {
@@ -250,7 +249,7 @@ func (g *dmabufGlobal) scanoutFor(surf *surface) (scanoutOffer, bool) {
 // feedback of the surfaces fullscreen on it again. Outputs offer only
 // formats the renderer samples (a refused buffer is composed), so they
 // are all in the table.
-func (g *dmabufGlobal) setOutputFormats(f ports.OutputFormats) {
+func (g *dmabufGlobal) setOutputFormats(f domain.OutputFormats) {
 	if old, ok := g.scanout[f.Output]; ok && old.formats.Device == f.Device && slices.Equal(old.formats.Formats, f.Formats) {
 		return
 	}

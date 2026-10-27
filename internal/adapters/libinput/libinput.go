@@ -214,11 +214,11 @@ type Options struct {
 	// Keymaps replaces Keymap live; Run takes ownership and closes the old one.
 	Keymaps <-chan *xkb.Keymap
 	// Layout is the initial output layout; Layouts replaces it live.
-	Layout  ports.Layout
-	Layouts <-chan ports.Layout
+	Layout  domain.Layout
+	Layouts <-chan domain.Layout
 	// Constraints holds the pointer lock or confinement of the focused
 	// window, in global logical coordinates.
-	Constraints <-chan ports.PointerConstraint
+	Constraints <-chan domain.PointerConstraint
 	// DeviceConfig is the initial config: Touchpad for touchpads, Mouse for
 	// the other pointers (mice, trackballs, trackpoints); other devices are
 	// left alone. DeviceConfigs replaces it live, on the devices already added.
@@ -745,7 +745,7 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 		source := domain.AxisSource(eventType(ev) - evScrollWheel)
 		a := ports.PointerAxis{Source: source, Time: usec(pointerUsec(pe))}
 		// libinput axis 0 is vertical, 1 horizontal, as in wl_pointer.
-		for i, s := range []*ports.ScrollAxis{&a.Vertical, &a.Horizontal} {
+		for i, s := range []*domain.ScrollAxis{&a.Vertical, &a.Horizontal} {
 			if pointerHasAxis(pe, uint32(i)) == 0 {
 				continue
 			}
@@ -842,13 +842,13 @@ func hotkey(ke ports.KeyEvent, protected bool) (hotkeyAction, int) {
 // same number of physical pixels on every output.
 type pointer struct {
 	x, y       float64
-	layout     ports.Layout
+	layout     domain.Layout
 	touched    bool // false until the user moves it: it follows the primary output
-	constraint ports.PointerConstraint
+	constraint domain.PointerConstraint
 }
 
 // newPointer starts at the centre of the primary output, else the first.
-func newPointer(l ports.Layout) *pointer {
+func newPointer(l domain.Layout) *pointer {
 	p := &pointer{}
 	p.setLayout(l)
 	return p
@@ -857,7 +857,7 @@ func newPointer(l ports.Layout) *pointer {
 // setLayout keeps the pointer where it is, or clamps it onto an output.
 // Until it is first moved it stays centred on the primary output, which
 // may be plugged in after the others.
-func (p *pointer) setLayout(l ports.Layout) {
+func (p *pointer) setLayout(l domain.Layout) {
 	p.layout = l
 	if !p.touched && len(l) > 0 {
 		o := l[0]
@@ -899,7 +899,7 @@ func (p *pointer) set(x, y float64) (float64, float64) {
 // constrain applies a new constraint. Entering or leaving a lock resyncs
 // the pointer to core's cursor, which stood still meanwhile; a confined
 // pointer moves inside. A warp moves it to core's cursor.
-func (p *pointer) constrain(c ports.PointerConstraint) {
+func (p *pointer) constrain(c domain.PointerConstraint) {
 	if c.Warp || c.Mode == domain.ConstraintLock || p.constraint.Mode == domain.ConstraintLock {
 		p.x, p.y = p.layout.Clamp(c.X, c.Y, c.X, c.Y)
 	}

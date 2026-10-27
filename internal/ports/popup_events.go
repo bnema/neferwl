@@ -25,24 +25,13 @@ const (
 	AdjustResizeY
 )
 
-// Positioner places a popup relative to its parent's window geometry:
-// the Anchor point of AnchorRect, moved by Offset, with the popup extending
-// towards Gravity. Adjust says how core may move it to stay on screen.
-type Positioner struct {
-	Width, Height    int
-	AnchorRect       domain.Rect
-	Anchor, Gravity  uint32
-	OffsetX, OffsetY int
-	Adjust           uint32
-}
-
 // PopupRequest carries wayland → core a popup to place (xdg_popup), on
 // its first commit and on reposition (Reposition, with the client's
 // Token). Parent is a window or popup. Grab popups take the keyboard and
 // close on a click elsewhere.
 type PopupRequest struct {
 	ID, Parent domain.WindowID
-	Positioner Positioner
+	Positioner domain.Positioner
 	Grab       bool
 	Reposition bool
 	Token      uint32

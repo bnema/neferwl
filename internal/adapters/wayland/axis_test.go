@@ -14,8 +14,8 @@ func TestWheelSteps(t *testing.T) {
 	var values [2]float64
 	wheel := func(v, h int32) (steps [2]int32) {
 		steps, values = s.seat.wheelSteps(ports.PointerAxis{
-			Vertical:   ports.ScrollAxis{Set: v != 0, V120: v, Value: float64(v) / 8},
-			Horizontal: ports.ScrollAxis{Set: h != 0, V120: h},
+			Vertical:   domain.ScrollAxis{Set: v != 0, V120: v, Value: float64(v) / 8},
+			Horizontal: domain.ScrollAxis{Set: h != 0, V120: h},
 		})
 		return steps
 	}
@@ -49,7 +49,7 @@ func TestWheelSteps(t *testing.T) {
 	if wheel(-180, 0) != [2]int32{-1, 0} || values[0] != -22.5 {
 		t.Fatal("after reversal", values)
 	}
-	if steps, _ := s.seat.wheelSteps(ports.PointerAxis{Source: domain.AxisFinger, Vertical: ports.ScrollAxis{Set: true, V120: 240}}); steps != [2]int32{} {
+	if steps, _ := s.seat.wheelSteps(ports.PointerAxis{Source: domain.AxisFinger, Vertical: domain.ScrollAxis{Set: true, V120: 240}}); steps != [2]int32{} {
 		t.Fatal("finger scroll made discrete steps")
 	}
 }

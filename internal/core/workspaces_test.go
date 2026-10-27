@@ -12,7 +12,7 @@ import (
 
 func TestWorkspaceChannelCapacity(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		_, err := core.New(scrollDefaults(), core.Channels{Scenes: make(chan []domain.Scene, 1), Workspaces: make(chan ports.Workspaces, 2)}, core.Options{})
+		_, err := core.New(scrollDefaults(), core.Channels{Scenes: make(chan []domain.Scene, 1), Workspaces: make(chan domain.Workspaces, 2)}, core.Options{})
 		if err == nil {
 			t.Fatal("expected capacity-1 validation")
 		}
@@ -28,10 +28,10 @@ func TestWorkspaceSnapshotsAndActivation(t *testing.T) {
 		input := make(chan ports.InputEvent, 8)
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 32)
-		snapshots := make(chan ports.Workspaces, 1)
+		snapshots := make(chan domain.Workspaces, 1)
 		scenes := make(chan []domain.Scene, 1)
 		state := make(chan domain.State, 1)
-		spawn := make(chan ports.SpawnRequest, 8)
+		spawn := make(chan domain.SpawnRequest, 8)
 		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Workspaces: snapshots, State: state, Scenes: scenes, Spawn: spawn}, core.Options{})
 		if err != nil {
 			t.Fatal(err)
@@ -45,7 +45,7 @@ func TestWorkspaceSnapshotsAndActivation(t *testing.T) {
 				t.Error(err)
 			}
 		})
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "A", Width: 100, Height: 80}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "A", Width: 100, Height: 80}}
 		first := receive(t, snapshots)
 		for len(first.Outputs) == 0 {
 			first = receive(t, snapshots)
@@ -64,7 +64,7 @@ func TestWorkspaceSnapshotsAndActivation(t *testing.T) {
 			t.Fatal(added)
 		}
 		spare := added.Outputs[0].Workspaces[1].ID
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "B", Width: 100, Height: 80}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "B", Width: 100, Height: 80}}
 		two := receive(t, snapshots)
 		if len(two.Outputs) != 2 || two.Outputs[0].Workspaces[0].ID != id {
 			t.Fatal(two)
@@ -118,9 +118,9 @@ func TestMoveWorkspaceReordersSnapshot(t *testing.T) {
 		client := make(chan ports.ClientEvent, 16)
 		input := make(chan ports.InputEvent, 8)
 		output := make(chan ports.OutputEvent, 8)
-		snapshots := make(chan ports.Workspaces, 1)
+		snapshots := make(chan domain.Workspaces, 1)
 		scenes := make(chan []domain.Scene, 1)
-		spawn := make(chan ports.SpawnRequest, 8)
+		spawn := make(chan domain.SpawnRequest, 8)
 		commands := make(chan ports.ClientCommand, 32)
 		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Workspaces: snapshots, Scenes: scenes, Spawn: spawn}, core.Options{})
 		if err != nil {
@@ -146,8 +146,8 @@ func TestMoveWorkspaceReordersSnapshot(t *testing.T) {
 				t.Error(err)
 			}
 		})
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "A", Width: 100, Height: 80}}
-		until := func(ok func(ws []ports.WorkspaceInfo) bool) []ports.WorkspaceInfo {
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "A", Width: 100, Height: 80}}
+		until := func(ok func(ws []domain.WorkspaceInfo) bool) []domain.WorkspaceInfo {
 			t.Helper()
 			for {
 				v := receive(t, snapshots)
@@ -157,15 +157,15 @@ func TestMoveWorkspaceReordersSnapshot(t *testing.T) {
 			}
 		}
 		client <- ports.WindowMapped{ID: 1}
-		until(func(ws []ports.WorkspaceInfo) bool { return len(ws) >= 2 })
+		until(func(ws []domain.WorkspaceInfo) bool { return len(ws) >= 2 })
 		input <- ports.KeyEvent{Keysym: "Next", Mods: domain.ModSuper, Pressed: true}
-		until(func(ws []ports.WorkspaceInfo) bool { return ws[1].Active })
+		until(func(ws []domain.WorkspaceInfo) bool { return ws[1].Active })
 		client <- ports.WindowMapped{ID: 2}
-		ws := until(func(ws []ports.WorkspaceInfo) bool { return len(ws) >= 3 && ws[1].Active })
-		before := ports.Workspaces{Outputs: []ports.WorkspaceOutput{{Workspaces: ws}}}
+		ws := until(func(ws []domain.WorkspaceInfo) bool { return len(ws) >= 3 && ws[1].Active })
+		before := domain.Workspaces{Outputs: []domain.WorkspaceOutput{{Workspaces: ws}}}
 		first, second := before.Outputs[0].Workspaces[0].ID, before.Outputs[0].Workspaces[1].ID
 		input <- ports.KeyEvent{Keysym: "Up", Mods: domain.ModSuper | domain.ModCtrl | domain.ModShift, Pressed: true}
-		ws = until(func(ws []ports.WorkspaceInfo) bool { return ws[0].Active })
+		ws = until(func(ws []domain.WorkspaceInfo) bool { return ws[0].Active })
 		if ws[0].ID != second || ws[1].ID != first || !ws[0].Active || ws[0].Index != 0 || ws[1].Index != 1 {
 			t.Fatalf("%+v", ws)
 		}

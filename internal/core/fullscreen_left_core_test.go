@@ -49,7 +49,7 @@ func TestCoreLeftFullscreenLatch(t *testing.T) {
 				return 0
 			}
 		}
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		full()
 		client <- ports.WindowMapped{ID: 1}
 		full()

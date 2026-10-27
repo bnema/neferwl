@@ -485,7 +485,7 @@ func (c *Core) runSpawn(ctx context.Context, w *Workspace, effect Effect) error 
 		// Explicit actions are suppressed on a full launcher queue;
 		// never keep the input owner waiting across an epoch change.
 		for _, argv := range commands {
-			if !c.trySpawn(ctx, ports.SpawnRequest{Argv: argv}) {
+			if !c.trySpawn(ctx, domain.SpawnRequest{Argv: argv}) {
 				break
 			}
 		}
@@ -511,7 +511,7 @@ func (c *Core) spawnStash(ctx context.Context, w *Workspace, commands [][]string
 	if terminal && c.placement.workspacePending(w, spawnStash) {
 		return nil
 	}
-	reqs := make([]ports.SpawnRequest, len(commands))
+	reqs := make([]domain.SpawnRequest, len(commands))
 	for i, argv := range commands {
 		reqs[i] = c.placement.request(argv, spawnTarget{kind: spawnStash, ws: w, at: now})
 	}
@@ -532,7 +532,7 @@ func (c *Core) scaleBind(ctx context.Context, action Action) error {
 	if c.ch.Scales != nil && sc.scale != prev && sc.name() != "" {
 		// Never wait on persistence: a stalled save drops the change.
 		select {
-		case c.ch.Scales <- ports.ScaleChanged{Output: sc.name(), Scale: sc.scale}:
+		case c.ch.Scales <- domain.ScaleChanged{Output: sc.name(), Scale: sc.scale}:
 		default:
 		}
 	}

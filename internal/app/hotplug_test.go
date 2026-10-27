@@ -7,7 +7,6 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/drm"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestHotplugClassify(t *testing.T) {
@@ -33,7 +32,7 @@ func TestHotplugClassify(t *testing.T) {
 
 // Device ids are PCI addresses: path ids are resolved on the real filesystem.
 func TestHotplugPlanAdd(t *testing.T) {
-	cands := []ports.GPUInfo{
+	cands := []domain.GPUInfo{
 		{Path: "/dev/dri/card0", PCI: "0000:03:00.0", Render: 1},
 		{Path: "/dev/dri/card1", PCI: "0000:00:02.0", Render: 2},
 		{Path: "/dev/dri/card2", PCI: "0000:04:00.0", Render: 3},

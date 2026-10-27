@@ -341,8 +341,8 @@ func (o *offscreen) track(done *os.File, drawn domain.Scene, surfaces map[domain
 // must cover the whole child frame; they are rebased to its origin. Anything smaller needs the viewport
 // origin in output coordinates, which the scene does not carry, and fails with
 // ErrOffscreenGeometry.
-func (p *Pipeline) SubmitHidden(s domain.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, reqs []ports.CaptureRequest) {
-	fail := func(err error, qs []ports.CaptureRequest) {
+func (p *Pipeline) SubmitHidden(s domain.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, reqs []domain.CaptureRequest) {
+	fail := func(err error, qs []domain.CaptureRequest) {
 		for _, q := range qs {
 			Fail(p.ctx, q, err, p.replies)
 		}

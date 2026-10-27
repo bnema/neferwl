@@ -210,7 +210,7 @@ func TestPointerConfineOneshotRegion(t *testing.T) {
 	if ev := next(t, c, confineEvents); ev[0] != float64(pointerconstraints.ZwpConfinedPointerV1EventConfined) {
 		t.Fatalf("confine event %v", ev)
 	}
-	want := ports.PointerConstrained{ID: w.ID, PointerConstraint: ports.PointerConstraint{Mode: domain.ConstraintConfine, Rect: domain.Rect{X: 2, Y: 3, W: 23, H: 20}}}
+	want := ports.PointerConstrained{ID: w.ID, PointerConstraint: domain.PointerConstraint{Mode: domain.ConstraintConfine, Rect: domain.Rect{X: 2, Y: 3, W: 23, H: 20}}}
 	if got := constrained(t, events); got != want {
 		t.Fatalf("constrained %+v, want %+v", got, want)
 	}

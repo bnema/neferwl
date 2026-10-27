@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
@@ -57,7 +58,7 @@ func ChildEnv(base []string, waylandDisplay, runtimeDir string, cursorSize int) 
 	return env
 }
 
-func (l *Launcher) Run(ctx context.Context, reqs <-chan ports.SpawnRequest) error {
+func (l *Launcher) Run(ctx context.Context, reqs <-chan domain.SpawnRequest) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -100,7 +101,7 @@ func (l *Launcher) Run(ctx context.Context, reqs <-chan ports.SpawnRequest) erro
 	}
 }
 
-func (l *Launcher) admitted(req ports.SpawnRequest) bool {
+func (l *Launcher) admitted(req domain.SpawnRequest) bool {
 	if l.security == nil {
 		return true
 	}

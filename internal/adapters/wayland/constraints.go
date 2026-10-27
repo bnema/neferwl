@@ -334,7 +334,7 @@ func (s *Server) emitConstraint(c *constraint) {
 			r = box
 		}
 	}
-	s.emit(ports.PointerConstrained{ID: x.window.id, PointerConstraint: ports.PointerConstraint{Mode: mode, Rect: r}})
+	s.emit(ports.PointerConstrained{ID: x.window.id, PointerConstraint: domain.PointerConstraint{Mode: mode, Rect: r}})
 }
 
 // contains reports whether the pointer is in the region: a constraint

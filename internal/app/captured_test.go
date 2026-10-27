@@ -5,23 +5,23 @@ import (
 	"testing"
 	"testing/synctest"
 
-	"github.com/stretchr/testify/require"
-
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCapturedDemux(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		in := make(chan ports.CaptureDone, 4)
-		wl := make(chan ports.CaptureDone, 4)
-		internal := make(chan ports.CaptureDone, 4)
+		in := make(chan domain.CaptureDone, 4)
+		wl := make(chan domain.CaptureDone, 4)
+		internal := make(chan domain.CaptureDone, 4)
 		exited := make(chan struct{})
 		go func() { routeCaptured(ctx, in, wl, internal); close(exited) }()
 
-		in <- ports.CaptureDone{ID: 7}
-		in <- ports.CaptureDone{ID: ports.CaptureIDInternal | 3}
+		in <- domain.CaptureDone{ID: 7}
+		in <- domain.CaptureDone{ID: ports.CaptureIDInternal | 3}
 		require.Equal(t, uint64(7), recvDone(t, wl).ID)
 		require.Equal(t, ports.CaptureIDInternal|3, recvDone(t, internal).ID)
 		require.Empty(t, wl)
@@ -41,11 +41,11 @@ func TestCapturedDemux(t *testing.T) {
 func TestCapturedDemuxCancelWhileBlocked(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
-		in := make(chan ports.CaptureDone, 1)
-		wl := make(chan ports.CaptureDone) // never read
+		in := make(chan domain.CaptureDone, 1)
+		wl := make(chan domain.CaptureDone) // never read
 		exited := make(chan struct{})
 		go func() { routeCaptured(ctx, in, wl, nil); close(exited) }()
-		in <- ports.CaptureDone{ID: 1}
+		in <- domain.CaptureDone{ID: 1}
 		cancel()
 		synctest.Wait()
 		select {
@@ -61,17 +61,17 @@ func TestCapturedDemuxDropsInternalWithoutConsumer(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		in := make(chan ports.CaptureDone, 2)
-		wl := make(chan ports.CaptureDone, 2)
+		in := make(chan domain.CaptureDone, 2)
+		wl := make(chan domain.CaptureDone, 2)
 		go routeCaptured(ctx, in, wl, nil)
-		in <- ports.CaptureDone{ID: ports.CaptureIDInternal | 1}
-		in <- ports.CaptureDone{ID: 2}
+		in <- domain.CaptureDone{ID: ports.CaptureIDInternal | 1}
+		in <- domain.CaptureDone{ID: 2}
 		require.Equal(t, uint64(2), recvDone(t, wl).ID)
 
 	})
 }
 
-func recvDone(t *testing.T, ch <-chan ports.CaptureDone) ports.CaptureDone {
+func recvDone(t *testing.T, ch <-chan domain.CaptureDone) domain.CaptureDone {
 	t.Helper()
 	synctest.Wait()
 	select {
@@ -79,6 +79,6 @@ func recvDone(t *testing.T, ch <-chan ports.CaptureDone) ports.CaptureDone {
 		return d
 	default:
 		t.Fatal("no capture reply")
-		return ports.CaptureDone{}
+		return domain.CaptureDone{}
 	}
 }

@@ -24,7 +24,7 @@ func TestFlipAdvancesOnlyItsOutput(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, nil)
 		threeColumns(t, r)
-		second := ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000}
+		second := domain.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000}
 		r.plug(t, second)
 		r.input <- ports.PointerMotion{X: 1000, Y: 300}
 		scene(t, r.scenes)
@@ -42,11 +42,11 @@ func TestFlipAdvancesOnlyItsOutput(t *testing.T) {
 
 		// The first flip of each output moves its columns.
 		r.advance(32 * time.Millisecond)
-		r.frames <- ports.OutputFrame{Output: wide.Name}
+		r.frames <- domain.OutputFrame{Output: wide.Name}
 		set := receive(t, r.scenes)
 		a, b := sceneFor(set, wide.Name), sceneFor(set, second.Name)
 		r.advance(32 * time.Millisecond)
-		r.frames <- ports.OutputFrame{Output: second.Name}
+		r.frames <- domain.OutputFrame{Output: second.Name}
 		set = receive(t, r.scenes)
 		a2, b2 := sceneFor(set, wide.Name), sceneFor(set, second.Name)
 		if a2.Seq != a.Seq || !a2.SameAs(a) {
@@ -58,7 +58,7 @@ func TestFlipAdvancesOnlyItsOutput(t *testing.T) {
 
 		// And the other way round.
 		r.advance(32 * time.Millisecond)
-		r.frames <- ports.OutputFrame{Output: wide.Name}
+		r.frames <- domain.OutputFrame{Output: wide.Name}
 		set = receive(t, r.scenes)
 		a3, b3 := sceneFor(set, wide.Name), sceneFor(set, second.Name)
 		if a3.Seq <= a2.Seq || a3.SameAs(a2) {

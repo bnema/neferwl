@@ -368,7 +368,7 @@ func TestReloadBorderRadiusRepublishes(t *testing.T) {
 		r.mapWindow(t, 1)
 		cfg := r.cfg
 		cfg.Border.Radius = 12
-		r.reload <- ports.ConfigChanged{Config: cfg}
+		r.reload <- domain.ConfigChanged{Config: cfg}
 		s := scene(t, r.scenes)
 		if s.Border.Radius != 12 {
 			t.Fatalf("style radius %d, want 12", s.Border.Radius)

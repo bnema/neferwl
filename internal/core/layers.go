@@ -8,7 +8,7 @@ import (
 )
 
 // arrangeLayers places exclusive surfaces first, then sorts the resulting scene by layer.
-func arrangeLayers(outW, outH int, layers []ports.LayerSurface) (placed []domain.SceneLayer, usable domain.Rect) {
+func arrangeLayers(outW, outH int, layers []domain.LayerSurface) (placed []domain.SceneLayer, usable domain.Rect) {
 	full := domain.Rect{W: max(outW, 0), H: max(outH, 0)}
 	usable = full
 	for pass := 0; pass < 2; pass++ {

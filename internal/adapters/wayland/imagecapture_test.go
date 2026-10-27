@@ -76,12 +76,12 @@ type captureHarness struct {
 	dir        string
 	events     chan ports.ClientEvent
 	commands   chan ports.ClientCommand
-	workspaces chan ports.Workspaces
-	captures   chan ports.CaptureRequest
-	captured   chan ports.CaptureDone
+	workspaces chan domain.Workspaces
+	captures   chan domain.CaptureRequest
+	captured   chan domain.CaptureDone
 }
 
-var captureOutput = ports.OutputPlacement{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 4, Height: 4}, Width: 4, Height: 4, Scale: 1}
+var captureOutput = domain.OutputPlacement{Info: domain.OutputInfo{Name: "HEADLESS-1", Width: 4, Height: 4}, Width: 4, Height: 4, Scale: 1}
 
 func newCaptureHarness(t *testing.T) *captureHarness {
 	t.Helper()
@@ -96,11 +96,11 @@ func newCaptureHarnessWith(t *testing.T, tune func(*Options, *Channels)) *captur
 		dir:        t.TempDir(),
 		events:     make(chan ports.ClientEvent, 64),
 		commands:   make(chan ports.ClientCommand, 16),
-		workspaces: make(chan ports.Workspaces),
-		captures:   make(chan ports.CaptureRequest, 8),
-		captured:   make(chan ports.CaptureDone, 8),
+		workspaces: make(chan domain.Workspaces),
+		captures:   make(chan domain.CaptureRequest, 8),
+		captured:   make(chan domain.CaptureDone, 8),
 	}
-	opts := Options{RuntimeDir: h.dir, Outputs: ports.Layout{captureOutput}, CaptureAllow: allowStore(t, "*\n")}
+	opts := Options{RuntimeDir: h.dir, Outputs: domain.Layout{captureOutput}, CaptureAllow: allowStore(t, "*\n")}
 	ch := Channels{Events: h.events, Commands: h.commands, Workspaces: h.workspaces, Captures: h.captures, Captured: h.captured}
 	if tune != nil {
 		tune(&opts, &ch)
@@ -320,7 +320,7 @@ func (cc *cclient) wlrFrame(t *testing.T) *captureEvents {
 }
 
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
-func receiveCapture(t *testing.T, ch chan ports.CaptureRequest) ports.CaptureRequest {
+func receiveCapture(t *testing.T, ch chan domain.CaptureRequest) domain.CaptureRequest {
 	t.Helper()
 	select {
 	case r := <-ch:
@@ -328,11 +328,11 @@ func receiveCapture(t *testing.T, ch chan ports.CaptureRequest) ports.CaptureReq
 		return r
 	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no capture request")
-		return ports.CaptureRequest{}
+		return domain.CaptureRequest{}
 	}
 }
 
-func noCapture(t *testing.T, ch chan ports.CaptureRequest) {
+func noCapture(t *testing.T, ch chan domain.CaptureRequest) {
 	t.Helper()
 	select {
 	case r := <-ch:
@@ -426,15 +426,15 @@ func TestRegionSourceConstraintsFollowScale(t *testing.T) {
 	}
 	h.open(t)
 	// Doubling the scale of a bigger mode doubles the buffer.
-	bigger := ports.OutputPlacement{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 8, Height: 8}, Width: 4, Height: 4, Scale: 2}
-	applyOutputs(t, h.s, h.commands, ports.SetOutputs{Outputs: ports.Layout{bigger}})
+	bigger := domain.OutputPlacement{Info: domain.OutputInfo{Name: "HEADLESS-1", Width: 8, Height: 8}, Width: 4, Height: 4, Scale: 2}
+	applyOutputs(t, h.s, h.commands, ports.SetOutputs{Outputs: domain.Layout{bigger}})
 	if w, hh := constraints(t, cc, ev); w != 4 || hh != 4 {
 		t.Fatalf("size after the scale change %dx%d", w, hh)
 	}
 	noSession(t, cc, ev) // one batch only
 	_ = session
 	// The frame asked with the new size is served for the new region.
-	r := func() ports.CaptureRequest {
+	r := func() domain.CaptureRequest {
 		cc.extFrame(t, session, 4, 4)
 		return receiveCapture(t, h.captures)
 	}()
@@ -551,9 +551,9 @@ func (h *captureHarness) handles(t *testing.T, cc *cclient, want int) []uint32 {
 }
 
 //testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
-func (h *captureHarness) snapshot(t *testing.T, ws ...ports.WorkspaceInfo) {
+func (h *captureHarness) snapshot(t *testing.T, ws ...domain.WorkspaceInfo) {
 	t.Helper()
-	snapshot := ports.Workspaces{Outputs: []ports.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: ws}}}
+	snapshot := domain.Workspaces{Outputs: []domain.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: ws}}}
 	// forwardWorkspaces applies each snapshot with display.Do before receiving
 	// another. The second unbuffered send joins the first application.
 	for range 2 {
@@ -572,8 +572,8 @@ func (h *captureHarness) snapshot(t *testing.T, ws ...ports.WorkspaceInfo) {
 func TestWorkspaceSourceSessionLifecycle(t *testing.T) {
 	h := newCaptureHarness(t)
 	h.snapshot(t,
-		ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 4, H: 4}},
-		ports.WorkspaceInfo{ID: 43, Name: "2", Hidden: true, Index: 1, Frame: domain.Rect{W: 3, H: 2}},
+		domain.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 4, H: 4}},
+		domain.WorkspaceInfo{ID: 43, Name: "2", Hidden: true, Index: 1, Frame: domain.Rect{W: 3, H: 2}},
 	)
 	cc := h.client(t)
 	handles := h.handles(t, cc, 2)
@@ -609,7 +609,7 @@ func TestWorkspaceSourceSessionLifecycle(t *testing.T) {
 		t.Fatalf("request %+v", r)
 	}
 	// Removing workspace 43 stops its session at once; the other lives on.
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 4, H: 4}})
+	h.snapshot(t, domain.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 4, H: 4}})
 	if g := nextSession(t, cc, ev); g[0] != evStopped {
 		t.Fatalf("event %v", g)
 	}
@@ -622,7 +622,7 @@ func TestWorkspaceSourceSessionLifecycle(t *testing.T) {
 // A handle that is already removed gives a source whose sessions stop at once.
 func TestWorkspaceSourceOfRemovedHandleStops(t *testing.T) {
 	h := newCaptureHarness(t)
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 4, H: 4}})
+	h.snapshot(t, domain.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 4, H: 4}})
 	cc := h.client(t)
 	handles := h.handles(t, cc, 1)
 	h.snapshot(t)
@@ -637,13 +637,13 @@ func TestWorkspaceSourceOfRemovedHandleStops(t *testing.T) {
 // decimal id, so a source made before stays valid.
 func TestWorkspaceSourceSurvivesConfiguredRename(t *testing.T) {
 	h := newCaptureHarness(t)
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 4, H: 4}})
+	h.snapshot(t, domain.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 4, H: 4}})
 	cc := h.client(t)
 	handles := h.handles(t, cc, 1)
 	_, ev := cc.session(t, cc.workspaceSource(t, handles[0]))
 	constraints(t, cc, ev)
 	h.open(t)
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "dev", Configured: "dev", Active: true, Frame: domain.Rect{W: 4, H: 4}})
+	h.snapshot(t, domain.WorkspaceInfo{ID: 42, Name: "dev", Configured: "dev", Active: true, Frame: domain.Rect{W: 4, H: 4}})
 	h.settle(t, cc)
 	noSession(t, cc, ev)
 	select {
@@ -702,8 +702,8 @@ func noFrame(t *testing.T, ch chan [4]int32) {
 func TestWorkspaceFrameEvents(t *testing.T) {
 	h := newCaptureHarness(t)
 	h.snapshot(t,
-		ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{X: 1, Y: 0, W: 2, H: 4}},
-		ports.WorkspaceInfo{ID: 43, Name: "2", Hidden: true, Index: 1, Frame: domain.Rect{W: 3, H: 2}},
+		domain.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{X: 1, Y: 0, W: 2, H: 4}},
+		domain.WorkspaceInfo{ID: 43, Name: "2", Hidden: true, Index: 1, Frame: domain.Rect{W: 3, H: 2}},
 	)
 	cc := h.client(t)
 	handles := h.handles(t, cc, 2)
@@ -713,21 +713,21 @@ func TestWorkspaceFrameEvents(t *testing.T) {
 	wantFrame(t, off, [4]int32{0, 0, 3, 2})
 	// Unchanged snapshot: nothing. A change: once, to the right object.
 	h.snapshot(t,
-		ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{X: 1, Y: 0, W: 2, H: 4}},
-		ports.WorkspaceInfo{ID: 43, Name: "2", Hidden: true, Index: 1, Frame: domain.Rect{X: 1, Y: 1, W: 2, H: 2}},
+		domain.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{X: 1, Y: 0, W: 2, H: 4}},
+		domain.WorkspaceInfo{ID: 43, Name: "2", Hidden: true, Index: 1, Frame: domain.Rect{X: 1, Y: 1, W: 2, H: 2}},
 	)
 	h.settle(t, cc)
 	noFrame(t, on)
 	wantFrame(t, off, [4]int32{1, 1, 2, 2})
 	noFrame(t, off)
 	// Removal sends nothing; a handle removed before the request sends nothing.
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{X: 1, Y: 0, W: 2, H: 4}})
+	h.snapshot(t, domain.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{X: 1, Y: 0, W: 2, H: 4}})
 	h.settle(t, cc)
 	noFrame(t, off)
 	_, gone := cc.workspaceFrame(t, handles[1])
 	noFrame(t, gone)
 	// A configured rename replaces the handle: the old object goes quiet.
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "dev", Configured: "dev", Active: true, Frame: domain.Rect{W: 4, H: 4}})
+	h.snapshot(t, domain.WorkspaceInfo{ID: 42, Name: "dev", Configured: "dev", Active: true, Frame: domain.Rect{W: 4, H: 4}})
 	h.settle(t, cc)
 	noFrame(t, on)
 }
@@ -744,8 +744,8 @@ func TestWorkspaceFrameSessionLock(t *testing.T) {
 			t.Fatal("display stopped")
 		}
 	}
-	info := func(r domain.Rect) ports.WorkspaceInfo {
-		return ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: r}
+	info := func(r domain.Rect) domain.WorkspaceInfo {
+		return domain.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: r}
 	}
 	t.Run("change while locked", func(t *testing.T) {
 		h := newCaptureHarness(t)
@@ -801,7 +801,7 @@ func TestWorkspaceFrameSessionLock(t *testing.T) {
 // sent to it afterwards.
 func TestWorkspaceFrameDestroyRemovesObject(t *testing.T) {
 	h := newCaptureHarness(t)
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 2, H: 2}})
+	h.snapshot(t, domain.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 2, H: 2}})
 	cc := h.client(t)
 	handles := h.handles(t, cc, 1)
 	count := func() (n int) {
@@ -818,7 +818,7 @@ func TestWorkspaceFrameDestroyRemovesObject(t *testing.T) {
 	if n := count(); n != 0 {
 		t.Fatalf("%d frame objects after destroy, want 0", n)
 	}
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 3, H: 3}})
+	h.snapshot(t, domain.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 3, H: 3}})
 	h.settle(t, cc)
 	noFrame(t, ev)
 }
@@ -953,14 +953,14 @@ func TestExclusionFrameTagging(t *testing.T) {
 	if !r.Exclude || r.Session != open.ID || r.CaptureRevision != 9 {
 		t.Fatalf("owner frame %+v", r)
 	}
-	h.captured <- ports.CaptureDone{ID: r.ID, Output: r.Output, Time: time.Now()}
+	h.captured <- domain.CaptureDone{ID: r.ID, Output: r.Output, Time: time.Now()}
 	// A wlr-screencopy capture, even of the owner's connection, is untagged.
 	owner.wlrFrame(t)
 	r = receiveCapture(t, h.captures)
 	if r.Exclude || r.Session != 0 || r.CaptureRevision != 0 || r.Workspace != 0 {
 		t.Fatalf("wlr capture tagged: %+v", r)
 	}
-	h.captured <- ports.CaptureDone{ID: r.ID, Output: r.Output, Time: time.Now()}
+	h.captured <- domain.CaptureDone{ID: r.ID, Output: r.Output, Time: time.Now()}
 	// So is a plain ext session of another client.
 	other := h.client(t)
 	session2, sev := other.session(t, other.outputSource(t))
@@ -994,10 +994,10 @@ func TestExtFrameRendererFailure(t *testing.T) {
 			h.settle(t, cc)
 			frame := cc.liveExtFrame(t, session, 4, 4)
 			r := receiveCapture(t, h.captures)
-			h.captured <- ports.CaptureDone{ID: r.ID, Output: r.Output, Err: tc.err}
+			h.captured <- domain.CaptureDone{ID: r.ID, Output: r.Output, Err: tc.err}
 			if tc.retry {
 				r = receiveCapture(t, h.captures)
-				h.captured <- ports.CaptureDone{ID: r.ID, Output: r.Output, Time: time.Now()}
+				h.captured <- domain.CaptureDone{ID: r.ID, Output: r.Output, Time: time.Now()}
 			}
 			dispatchUntil(t, cc.c, func() bool { return len(frame.events) > 0 })
 			if failed := eventsInclude(frame, frameFailed); failed == tc.retry {
@@ -1033,7 +1033,7 @@ func TestExtFrameRetryDeadline(t *testing.T) {
 	frame := cc.liveExtFrame(t, session, 4, 4)
 	busy := fmt.Errorf("%w: busy", ports.ErrCaptureTransient)
 	r := receiveCapture(t, h.captures)
-	h.captured <- ports.CaptureDone{ID: r.ID, Output: r.Output, Err: busy}
+	h.captured <- domain.CaptureDone{ID: r.ID, Output: r.Output, Err: busy}
 	var fire func()
 	select {
 	case fire = <-timers:
@@ -1043,7 +1043,7 @@ func TestExtFrameRetryDeadline(t *testing.T) {
 	now.Store(int64(captureRetryFor))
 	fire()
 	r = receiveCapture(t, h.captures)
-	h.captured <- ports.CaptureDone{ID: r.ID, Output: r.Output, Err: busy}
+	h.captured <- domain.CaptureDone{ID: r.ID, Output: r.Output, Err: busy}
 	dispatchUntil(t, cc.c, func() bool { return len(frame.events) > 0 })
 	if !eventsInclude(frame, frameFailed) {
 		t.Fatal("frame not failed past its deadline")
@@ -1444,7 +1444,7 @@ func (h *captureHarness) frameTaken(t *testing.T) ports.CaptureFrameTaken {
 // with the target the client asked for.
 func TestEveryCaptureFrameIsReportedToCore(t *testing.T) {
 	h := newCaptureHarness(t)
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 4, H: 4}})
+	h.snapshot(t, domain.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 4, H: 4}})
 	cc := h.client(t)
 	// wlr-screencopy, whole output.
 	cc.wlrFrame(t)
@@ -1452,7 +1452,7 @@ func TestEveryCaptureFrameIsReportedToCore(t *testing.T) {
 	if got := h.frameTaken(t); got != (ports.CaptureFrameTaken{Output: "HEADLESS-1"}) {
 		t.Fatalf("wlr frame reported %+v", got)
 	}
-	h.captured <- ports.CaptureDone{ID: r.ID, Output: r.Output, Time: time.Now()}
+	h.captured <- domain.CaptureDone{ID: r.ID, Output: r.Output, Time: time.Now()}
 	if got := h.frameTaken(t); got != (ports.CaptureFrameTaken{Output: "HEADLESS-1"}) {
 		t.Fatalf("wlr completion reported %+v", got)
 	}
@@ -1490,7 +1490,7 @@ func TestEveryCaptureFrameIsReportedToCore(t *testing.T) {
 // is on screen, whatever protocol or source made it.
 func TestEveryCaptureRequestAsksForItsIndicator(t *testing.T) {
 	h := newCaptureHarness(t)
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 4, H: 4}})
+	h.snapshot(t, domain.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 4, H: 4}})
 	cc := h.client(t)
 	cc.wlrFrame(t)
 	if r := receiveCapture(t, h.captures); !r.Indicate {
@@ -1533,7 +1533,7 @@ func TestRefusedCaptureIsNotReported(t *testing.T) {
 
 // logicalRegion gives core the logical rectangle of a physical region.
 func TestLogicalRegion(t *testing.T) {
-	o := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Width: 8, Height: 8}, Scale: 2}}
+	o := &output{place: domain.OutputPlacement{Info: domain.OutputInfo{Width: 8, Height: 8}, Scale: 2}}
 	for _, tc := range []struct {
 		phys image.Rectangle
 		want domain.Rect

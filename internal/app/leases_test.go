@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -33,7 +34,7 @@ func clientFile(t *testing.T) *os.File {
 func TestLeasePublisherSendsChangesOnly(t *testing.T) {
 	active, protected := true, false
 	p, events, card := leaseRig(t, &active, &protected)
-	connectors := []ports.LeaseConnector{{Name: "HDMI-A-1"}}
+	connectors := []domain.LeaseConnector{{Name: "HDMI-A-1"}}
 	card.EXPECT().FinishedLeases().Return([]uint32{7}).Once()
 	card.EXPECT().FinishedLeases().Return(nil)
 	card.EXPECT().Leasable().Return(connectors)
@@ -69,7 +70,7 @@ func TestLeasePublisherProtectedWithdraws(t *testing.T) {
 	}
 
 	protected = false
-	card.EXPECT().Leasable().Return([]ports.LeaseConnector{{Name: "DP-2"}}).Once()
+	card.EXPECT().Leasable().Return([]domain.LeaseConnector{{Name: "DP-2"}}).Once()
 	card.EXPECT().ClientFD().Return(clientFile(t), nil).Once()
 	p.publish(card)
 	inv := (<-events).(ports.LeaseConnectors)
@@ -95,7 +96,7 @@ func TestLeasePublisherForgetWithdrawsCard(t *testing.T) {
 	active, protected := true, false
 	p, events, card := leaseRig(t, &active, &protected)
 	card.EXPECT().FinishedLeases().Return(nil).Once()
-	card.EXPECT().Leasable().Return([]ports.LeaseConnector{{Name: "DP-2"}}).Once()
+	card.EXPECT().Leasable().Return([]domain.LeaseConnector{{Name: "DP-2"}}).Once()
 	card.EXPECT().ClientFD().Return(clientFile(t), nil).Once()
 	p.publish(card)
 	(<-events).(ports.LeaseConnectors).Device.Close()

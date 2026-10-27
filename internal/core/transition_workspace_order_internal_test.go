@@ -8,7 +8,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/core/motion"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // overviewAt opens the overview on numbered workspace start of the standard
@@ -428,7 +428,7 @@ func TestOverviewWorkspaceSwitchKeepsRunningDimAndSize(t *testing.T) {
 func TestOverviewWorkspaceMovedFromOtherScreenGetsNoGroupSlide(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, ic, a := overviewRig(t)
-		c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 300, Height: 200})
 		b := c.screens[1]
 		a.mon.Focus(0)
 		for w := range a.mon.all() {

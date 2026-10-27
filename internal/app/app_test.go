@@ -322,8 +322,8 @@ func TestRelayConfigKeyboard(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cur := config.Defaults()
-	in := make(chan ports.ConfigChanged, 1)
-	out := make(chan ports.ConfigChanged, 1)
+	in := make(chan domain.ConfigChanged, 1)
+	out := make(chan domain.ConfigChanged, 1)
 	keymaps := make(chan *xkb.Keymap, 1)
 	commands := make(chan ports.ClientCommand, 1)
 	devices := make(chan domain.InputDevicesConfig, 1)
@@ -331,17 +331,17 @@ func TestRelayConfigKeyboard(t *testing.T) {
 
 	next := config.Defaults()
 	next.Background.Color = "#000000"
-	in <- ports.ConfigChanged{Config: next}
+	in <- domain.ConfigChanged{Config: next}
 	if got := <-out; got.Config.Background.Color != "#000000" || len(keymaps) != 0 || len(commands) != 0 || len(devices) != 0 {
 		t.Fatalf("non-keyboard change rebuilt keymap: %+v", got)
 	}
 
 	// Touchpad changes reach input; the newest replaces one not yet taken.
 	next.Touchpad.NaturalScroll = true
-	in <- ports.ConfigChanged{Config: next}
+	in <- domain.ConfigChanged{Config: next}
 	<-out
 	next.Touchpad.NaturalScroll = false
-	in <- ports.ConfigChanged{Config: next}
+	in <- domain.ConfigChanged{Config: next}
 	<-out
 	if d := <-devices; d.Touchpad.NaturalScroll || len(devices) != 0 {
 		t.Fatalf("touchpad: %+v", d)
@@ -351,7 +351,7 @@ func TestRelayConfigKeyboard(t *testing.T) {
 	next.Touchpad.Tap = false
 	next.Mouse.LeftHanded = true
 	next.Mouse.AccelSpeed = 0.25
-	in <- ports.ConfigChanged{Config: next}
+	in <- domain.ConfigChanged{Config: next}
 	<-out
 	want := domain.InputDevicesConfig{Touchpad: next.Touchpad, Mouse: next.Mouse}
 	if d := <-devices; d != want || len(devices) != 0 {
@@ -360,7 +360,7 @@ func TestRelayConfigKeyboard(t *testing.T) {
 	// A mouse-only change is relayed too, with the touchpad config beside it.
 	// relayConfig sends to devices before out, so it is ready after <-out.
 	next.Mouse.NaturalScroll = true
-	in <- ports.ConfigChanged{Config: next}
+	in <- domain.ConfigChanged{Config: next}
 	<-out
 	select {
 	case d := <-devices:
@@ -372,7 +372,7 @@ func TestRelayConfigKeyboard(t *testing.T) {
 	}
 
 	next.Keyboard.Layout, next.Keyboard.RepeatRate = "fr", 40
-	in <- ports.ConfigChanged{Config: next}
+	in <- domain.ConfigChanged{Config: next}
 	<-out
 	km := <-keymaps
 	defer km.Close()
@@ -386,7 +386,7 @@ func TestRelayConfigKeyboard(t *testing.T) {
 
 	// Repeat-only changes update clients without a new keymap.
 	next.Keyboard.RepeatDelay = 300
-	in <- ports.ConfigChanged{Config: next}
+	in <- domain.ConfigChanged{Config: next}
 	<-out
 	if cmd := (<-commands).(ports.SetKeymap); cmd.Keymap != "" || cmd.RepeatDelay != 300 || len(keymaps) != 0 {
 		t.Fatalf("repeat-only: keymap=%t delay=%d", cmd.Keymap != "", cmd.RepeatDelay)
@@ -395,7 +395,7 @@ func TestRelayConfigKeyboard(t *testing.T) {
 	// A bad layout keeps the previous one; its repeat change still applies.
 	bad := next
 	bad.Keyboard.Layout, bad.Keyboard.RepeatRate = "no-such-layout", 50
-	in <- ports.ConfigChanged{Config: bad}
+	in <- domain.ConfigChanged{Config: bad}
 	if got := <-out; got.Config.Keyboard.Layout != "fr" || got.Config.Keyboard.RepeatRate != 50 || len(keymaps) != 0 {
 		t.Fatalf("bad layout applied: %+v", got.Config.Keyboard)
 	}

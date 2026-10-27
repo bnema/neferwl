@@ -187,9 +187,9 @@ func TestNoTransitionWithOverview(t *testing.T) {
 }
 
 // movedRig plugs a second 800x600 output right of the first.
-func movedRig(t *testing.T, edit func(*domain.Config)) (*swipeRig, ports.OutputInfo) {
+func movedRig(t *testing.T, edit func(*domain.Config)) (*swipeRig, domain.OutputInfo) {
 	t.Helper()
-	other := ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000}
+	other := domain.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000}
 	return startSwipeOn(t, edit, wide, other), other
 }
 
@@ -343,16 +343,16 @@ func TestMovedBackWorkspaceHasNoSwitchSlide(t *testing.T) {
 // outputs' positions on both axes, with the source's size; they settle on
 // the destination's layout.
 func TestMovedWorkspaceStartsFromSourceGeometry(t *testing.T) {
-	big := ports.OutputInfo{Name: "DP-2", Width: 1024, Height: 768, RefreshMilli: 60000}
+	big := domain.OutputInfo{Name: "DP-2", Width: 1024, Height: 768, RefreshMilli: 60000}
 	for _, tc := range []struct {
 		name         string
-		dst          ports.OutputInfo
+		dst          domain.OutputInfo
 		anchor       domain.OutputAnchor
 		key          string
 		start, final [2]domain.Rect
 	}{
 		{
-			name: "right same size", dst: ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000},
+			name: "right same size", dst: domain.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000},
 			anchor: domain.OutputAnchor{Relation: domain.RelationRightOf, To: "DP-1"}, key: "Right",
 			start: [2]domain.Rect{{X: -800, W: 400, H: 600}, {X: -400, W: 400, H: 600}},
 			final: [2]domain.Rect{{W: 400, H: 600}, {X: 400, W: 400, H: 600}},

@@ -529,7 +529,7 @@ func (s *Server) grabKey(c ports.ForwardKey) bool {
 
 // grabReleaseDropped keeps the focused client's modifiers right when the
 // release of a grab-owned key is dropped.
-func (s *Server) grabReleaseDropped(m ports.ModState) {
+func (s *Server) grabReleaseDropped(m domain.ModState) {
 	if s.protected() {
 		return
 	}

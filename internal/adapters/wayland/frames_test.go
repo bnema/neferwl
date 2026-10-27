@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -34,8 +35,8 @@ func TestFramePeriod(t *testing.T) {
 // Each output is paced at its own refresh; a flip fires its queue and
 // pushes its deadline back; the pacer idles with nothing queued.
 func TestDueFrames(t *testing.T) {
-	fast := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 165000}}}
-	slow := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "HDMI-A-1", RefreshMilli: 60000}}}
+	fast := &output{place: domain.OutputPlacement{Info: domain.OutputInfo{Name: "DP-2", RefreshMilli: 165000}}}
+	slow := &output{place: domain.OutputPlacement{Info: domain.OutputInfo{Name: "HDMI-A-1", RefreshMilli: 60000}}}
 	s := &Server{outputs: []*output{fast, slow}, frameDue: map[string]time.Time{}, awaiting: map[string][]*wayland.Callback{}}
 	// dueFrames only counts the queued callbacks: nil ones stand for them.
 	queue := func(name string) { s.awaiting[name] = append(s.awaiting[name], nil) }
@@ -87,7 +88,7 @@ func TestDueFrames(t *testing.T) {
 }
 
 func TestInvisibleFramePacingAndMigration(t *testing.T) {
-	out := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
+	out := &output{place: domain.OutputPlacement{Info: domain.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
 	s := &Server{outputs: []*output{out}, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}}
 	w := &window{hasLast: true, last: ports.ConfigureWindow{Output: "DP-2", Visible: true}}
 	root := &surface{xdg: &xdgSurface{window: w}}
@@ -127,7 +128,7 @@ func TestInvisibleFramePacingAndMigration(t *testing.T) {
 // no presentation feedback) but is not throttled: its callbacks stay on its
 // output's queue and move when Captured changes.
 func TestCapturedWindowKeepsOutputFramePacing(t *testing.T) {
-	out := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
+	out := &output{place: domain.OutputPlacement{Info: domain.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
 	s := &Server{outputs: []*output{out}, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}}
 	w := &window{hasLast: true, last: ports.ConfigureWindow{Output: "DP-2", Visible: true}}
 	root := &surface{xdg: &xdgSurface{window: w}}
@@ -148,7 +149,7 @@ func TestCapturedWindowKeepsOutputFramePacing(t *testing.T) {
 // Relocation filters a queue in place: the callbacks that move away leave
 // no pointer in the kept queue's backing array.
 func TestRelocateCallbacksClearsFilteredTail(t *testing.T) {
-	out := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
+	out := &output{place: domain.OutputPlacement{Info: domain.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
 	s := &Server{outputs: []*output{out}, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}}
 	hidden := &window{hasLast: true, last: ports.ConfigureWindow{Output: "DP-2", Visible: true}}
 	shown := &window{hasLast: true, last: ports.ConfigureWindow{Output: "DP-2", Visible: true}}

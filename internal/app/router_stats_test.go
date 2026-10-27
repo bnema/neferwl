@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
 
@@ -42,8 +41,8 @@ func TestRouterStatsCountReplaced(t *testing.T) {
 		t.Fatalf("a drained mailbox is not behind: %+v", r.stats)
 	}
 
-	r.setCursor(ports.CursorChange{Shape: "text"})
-	r.setCursor(ports.CursorChange{Shape: "pointer"})
+	r.setCursor(domain.CursorChange{Shape: "text"})
+	r.setCursor(domain.CursorChange{Shape: "pointer"})
 	if r.stats.cursor != 2 || r.stats.cursorReplaced != 1 {
 		t.Fatalf("cursor: %+v", r.stats)
 	}
@@ -54,17 +53,17 @@ func TestRouterStatsCountReplaced(t *testing.T) {
 
 // A full capture queue fails the request fast and counts it.
 func TestRouterStatsCapturesFull(t *testing.T) {
-	replies := make(chan ports.CaptureDone, 2)
+	replies := make(chan domain.CaptureDone, 2)
 	r, m := statsRegistered(t.Context(), outputRoutes{})
 	r.captured = replies
 	for id := range uint64(cap(m.captures)) {
-		r.routeCapture(ports.CaptureRequest{ID: id, Output: "A"})
+		r.routeCapture(domain.CaptureRequest{ID: id, Output: "A"})
 	}
 	if r.stats.capturesFull != 0 {
 		t.Fatalf("queue not full yet: %+v", r.stats)
 	}
-	r.routeCapture(ports.CaptureRequest{ID: 99, Output: "A"})
-	r.routeCapture(ports.CaptureRequest{ID: 100, Output: "missing"})
+	r.routeCapture(domain.CaptureRequest{ID: 99, Output: "A"})
+	r.routeCapture(domain.CaptureRequest{ID: 100, Output: "missing"})
 	if r.stats.capturesFull != 1 {
 		t.Fatalf("captures full: %+v", r.stats)
 	}
@@ -108,8 +107,8 @@ func TestRouterLogsStatsEvery10s(t *testing.T) {
 
 		in.scenes <- []domain.Scene{{Output: "A", Seq: 1}}
 		in.scenes <- []domain.Scene{{Output: "A", Seq: 2}}
-		in.cursor <- ports.CursorChange{Shape: "text"}
-		in.cursor <- ports.CursorChange{Shape: "pointer"}
+		in.cursor <- domain.CursorChange{Shape: "text"}
+		in.cursor <- domain.CursorChange{Shape: "pointer"}
 		in.scenes <- nil // the router took both cursors
 		r.noteEventSend(1500 * time.Microsecond)
 		time.Sleep(routerStatsEvery)

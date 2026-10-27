@@ -1,12 +1,10 @@
 package ports
 
-import "os"
+import (
+	"os"
 
-// LeaseConnector identifies a non-desktop connector available for DRM leasing.
-type LeaseConnector struct {
-	Card, Name, Description string
-	ConnectorID             uint32
-}
+	"github.com/bnema/neferwl/internal/domain"
+)
 
 // LeaseMessage is an adapter-to-adapter DRM lease channel message.
 type LeaseMessage interface{ leaseMessage() }
@@ -18,7 +16,7 @@ type LeaseMessage interface{ leaseMessage() }
 type LeaseConnectors struct {
 	Card       string
 	Device     *os.File
-	Connectors []LeaseConnector
+	Connectors []domain.LeaseConnector
 }
 
 func (LeaseConnectors) leaseMessage() {}

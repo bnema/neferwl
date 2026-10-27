@@ -356,14 +356,14 @@ type scanoutHarness struct {
 	fb       uint32
 	proxy    *feedbackProxy
 	commands chan ports.ClientCommand
-	formats  chan ports.OutputFormats
+	formats  chan domain.OutputFormats
 }
 
 func newScanoutHarness(t *testing.T, sup domain.DMABufSupport, version uint32) *scanoutHarness {
 	t.Helper()
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
-	h := &scanoutHarness{t: t, commands: make(chan ports.ClientCommand, 16), formats: make(chan ports.OutputFormats, 1)}
+	h := &scanoutHarness{t: t, commands: make(chan ports.ClientCommand, 16), formats: make(chan domain.OutputFormats, 1)}
 	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, DMABuf: sup}, Channels{Events: events, Commands: h.commands, OutputFormats: h.formats}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
@@ -409,7 +409,7 @@ func TestDMABufScanoutTranche(t *testing.T) {
 	if r := h.next("initial"); len(r.tranches) != 1 || r.tranches[0].flags != sampling || len(r.tranches[0].indices) != 2 || r.tables != 1 || r.mainDevices != 0 {
 		t.Fatalf("tiled window: %+v", r)
 	}
-	formats <- ports.OutputFormats{Output: "HEADLESS-1", Device: 7, Formats: []domain.DMABufFormat{tiled}}
+	formats <- domain.OutputFormats{Output: "HEADLESS-1", Device: 7, Formats: []domain.DMABufFormat{tiled}}
 	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1", Visible: true}
 	r := h.next("fullscreen")
 	for len(r.tranches) == 1 { // the formats may land after the configure
@@ -443,7 +443,7 @@ func TestDMABufScanoutTranche(t *testing.T) {
 	// kill the connection) and leaves the server's list.
 	requestProtocol(t, c, fb, linuxdmabuf.ZwpLinuxDmabufFeedbackV1RequestDestroy)
 	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1", Visible: true}
-	formats <- ports.OutputFormats{Output: "HEADLESS-1", Device: 7}
+	formats <- domain.OutputFormats{Output: "HEADLESS-1", Device: 7}
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -467,7 +467,7 @@ func TestDMABufFeedbackV4(t *testing.T) {
 		}
 	}
 	check("initial", h.next("initial"), 1)
-	h.formats <- ports.OutputFormats{Output: "HEADLESS-1", Device: 7, Formats: []domain.DMABufFormat{tiled}}
+	h.formats <- domain.OutputFormats{Output: "HEADLESS-1", Device: 7, Formats: []domain.DMABufFormat{tiled}}
 	h.commands <- ports.ConfigureWindow{ID: h.w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1", Visible: true}
 	r := h.next("fullscreen")
 	for len(r.tranches) == 1 { // the formats may land after the configure
@@ -481,7 +481,7 @@ func TestDMABufFeedbackV4(t *testing.T) {
 }
 
 // testDMABufGlobal is a global with one scanout offer for f's output.
-func testDMABufGlobal(s *Server, f ports.OutputFormats) *dmabufGlobal {
+func testDMABufGlobal(s *Server, f domain.OutputFormats) *dmabufGlobal {
 	g := &dmabufGlobal{
 		server:  s,
 		support: domain.DMABufSupport{Formats: []domain.DMABufFormat{linearARGB}},
@@ -512,7 +512,7 @@ func TestFullscreenOutput(t *testing.T) {
 		{"invisible", windowSurface(func(w *window) { w.last.Visible = false }), "", false},
 		{"visible fullscreen", windowSurface(func(*window) {}), "DP-2", true},
 	}
-	g := testDMABufGlobal(&Server{}, ports.OutputFormats{Output: "DP-2", Formats: []domain.DMABufFormat{linearARGB}})
+	g := testDMABufGlobal(&Server{}, domain.OutputFormats{Output: "DP-2", Formats: []domain.DMABufFormat{linearARGB}})
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			if out, ok := g.fullscreenOutput(tc.surf); out != tc.out || ok != tc.ok {
@@ -526,7 +526,7 @@ func TestInvisibleScanoutOffer(t *testing.T) {
 	w := &window{hasLast: true, last: ports.ConfigureWindow{Fullscreen: true, Output: "DP-2", Visible: true}}
 	surf := &surface{xdg: &xdgSurface{window: w}}
 	s := &Server{}
-	g := testDMABufGlobal(s, ports.OutputFormats{Output: "DP-2", Formats: []domain.DMABufFormat{linearARGB}})
+	g := testDMABufGlobal(s, domain.OutputFormats{Output: "DP-2", Formats: []domain.DMABufFormat{linearARGB}})
 	if _, ok := g.scanoutFor(surf); !ok {
 		t.Fatal("no visible scanout")
 	}
@@ -555,7 +555,7 @@ func TestPopupFeedbackFollowsToplevel(t *testing.T) {
 	if toplevelRoot(pop) != top {
 		t.Fatal("popup does not resolve to its toplevel")
 	}
-	g := testDMABufGlobal(&Server{}, ports.OutputFormats{Output: "DP-2", Formats: []domain.DMABufFormat{linearARGB}})
+	g := testDMABufGlobal(&Server{}, domain.OutputFormats{Output: "DP-2", Formats: []domain.DMABufFormat{linearARGB}})
 	if _, ok := g.scanoutFor(pop); !ok {
 		t.Fatal("popup of a visible fullscreen window has no offer")
 	}

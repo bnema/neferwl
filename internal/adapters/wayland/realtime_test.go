@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 )
@@ -41,15 +42,15 @@ func flushCommands(t *testing.T, s *Server, commands chan<- ports.ClientCommand)
 // flushCaptured sends a reply callback marker through the real reply path.
 //
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
-func flushCaptured(t *testing.T, s *Server, replies chan<- ports.CaptureDone) {
+func flushCaptured(t *testing.T, s *Server, replies chan<- domain.CaptureDone) {
 	t.Helper()
 	const marker = ^uint64(0)
 	ran := make(chan struct{})
-	if !s.display.Do(func() { s.captureReplies[marker] = func(ports.CaptureDone) { close(ran) } }) {
+	if !s.display.Do(func() { s.captureReplies[marker] = func(domain.CaptureDone) { close(ran) } }) {
 		t.Fatal("display stopped")
 	}
 	select {
-	case replies <- ports.CaptureDone{ID: marker}:
+	case replies <- domain.CaptureDone{ID: marker}:
 	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("reply forwarder stalled")
 	}

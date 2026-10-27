@@ -5,7 +5,6 @@ import (
 
 	"github.com/bnema/neferwl/internal/core/geom"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // screen is one connected output: its monitor tree, scale, layer surfaces and
@@ -13,7 +12,7 @@ import (
 // (output.<name>.*), then by connection; order places them (placeOutputs).
 type screen struct {
 	positionHint    positionHintState
-	info            ports.OutputInfo
+	info            domain.OutputInfo
 	mon             *Monitor
 	scale, cfgScale float64
 	// transform is how the physical target holds the screen's logical
@@ -22,7 +21,7 @@ type screen struct {
 	primary   bool
 	x, y      int  // logical origin in the global layout
 	off       bool // turned off by a client (output power management)
-	layers    []ports.LayerSurface
+	layers    []domain.LayerSurface
 	placed    []domain.SceneLayer
 	// capture holds the attached layers of the capture exclusion: shown over
 	// a fullscreen window (capture.go).
@@ -95,9 +94,9 @@ func (s *screen) rect() Rect {
 	return Rect{X: s.x, Y: s.y, W: o.W, H: o.H}
 }
 
-func (s *screen) placement() ports.OutputPlacement {
+func (s *screen) placement() domain.OutputPlacement {
 	r := s.rect()
-	return ports.OutputPlacement{Info: s.info, X: r.X, Y: r.Y, Width: r.W, Height: r.H, Scale: s.scale, Transform: s.transform, Primary: s.primary}
+	return domain.OutputPlacement{Info: s.info, X: r.X, Y: r.Y, Width: r.W, Height: r.H, Scale: s.scale, Transform: s.transform, Primary: s.primary}
 }
 
 // setScale resizes the logical output; layer placement follows.
@@ -157,10 +156,10 @@ func (c *Core) outputConfig(name string) (domain.OutputConfig, bool) {
 }
 
 // layout lists the connected outputs; the placeholder is not one.
-func (c *Core) layout() ports.Layout { return c.layoutInto(make(ports.Layout, 0, len(c.screens))) }
+func (c *Core) layout() domain.Layout { return c.layoutInto(make(domain.Layout, 0, len(c.screens))) }
 
 // layoutInto is layout built in l[:0]: the result aliases l's storage.
-func (c *Core) layoutInto(l ports.Layout) ports.Layout {
+func (c *Core) layoutInto(l domain.Layout) domain.Layout {
 	l = l[:0]
 	for _, s := range c.screens {
 		if s.name() != "" {
@@ -285,7 +284,7 @@ func (c *Core) applyOutputConfig() {
 // addScreen handles a connected output or a new mode for a known one. The
 // first output takes over the placeholder screen core starts with; a new
 // monitor gets its named workspaces and takes its guests back.
-func (c *Core) addScreen(info ports.OutputInfo) {
+func (c *Core) addScreen(info domain.OutputInfo) {
 	if i := c.screenIndex(info.Name); i >= 0 {
 		s := c.screens[i]
 		s.info = info
@@ -348,7 +347,7 @@ func (c *Core) removeScreen(name string) {
 		c.offGone[name] = true
 	}
 	if len(c.screens) == 1 {
-		c.screens[0].info = ports.OutputInfo{}
+		c.screens[0].info = domain.OutputInfo{}
 		c.screens[0].layers = nil
 		// Nothing draws the placeholder: its springs would only wake the
 		// fallback timer, and start from the old output's geometry if an

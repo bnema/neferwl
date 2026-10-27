@@ -23,9 +23,9 @@ type Card struct {
 	alloc           imageAllocator
 	allocMu         sync.Mutex
 	fd              int
-	info            ports.GPUInfo
+	info            domain.GPUInfo
 	dev             CardDevices
-	rendererOptions ports.RendererOptions
+	rendererOptions domain.RendererOptions
 	want            Want
 	log             zerowrap.Logger
 	// renderLog carries the render component: direct scanout and overlay
@@ -55,13 +55,13 @@ type Card struct {
 	serials atomic.Uint64
 	// formats receives each output's direct scanout formats (nil: none
 	// sent); set before the first Scan.
-	formats chan<- ports.OutputFormats
+	formats chan<- domain.OutputFormats
 }
 
 // OpenCard turns on atomic modesetting and reads the card's CRTCs. fd
 // stays owned by the caller. A card without atomic KMS is refused. log
 // carries the drm component and renderLog the render component.
-func OpenCard(fd int, info ports.GPUInfo, dev CardDevices, want Want, log, renderLog zerowrap.Logger) (*Card, error) {
+func OpenCard(fd int, info domain.GPUInfo, dev CardDevices, want Want, log, renderLog zerowrap.Logger) (*Card, error) {
 	path := info.Path
 	if err := enableAtomic(fd); err != nil {
 		return nil, fmt.Errorf("drm: atomic modesetting unsupported by %s: %w", path, err)
@@ -131,7 +131,7 @@ func (c *Card) Device() uint64 {
 
 // SetFormats sets where outputs report their direct scanout formats.
 // Call before the first Scan.
-func (c *Card) SetFormats(ch chan<- ports.OutputFormats) { c.formats = ch }
+func (c *Card) SetFormats(ch chan<- domain.OutputFormats) { c.formats = ch }
 
 // SetWant replaces the connector config; the next Scan applies it.
 func (c *Card) SetWant(w Want) {
@@ -215,12 +215,12 @@ func (c *Card) Scan() (added []*Output, removed, replaced []string, err error) {
 
 // ConnectedHeads inventories physical connectors independently of the desired
 // enabled state. The caller owns Scan and must invoke this on the same goroutine.
-func (c *Card) ConnectedHeads() ([]ports.OutputHead, error) {
+func (c *Card) ConnectedHeads() ([]domain.OutputHead, error) {
 	_, ids, err := c.k.resources()
 	if err != nil {
 		return nil, err
 	}
-	var heads []ports.OutputHead
+	var heads []domain.OutputHead
 	for _, id := range ids {
 		conn, err := c.k.connector(id)
 		if err != nil {
@@ -231,7 +231,7 @@ func (c *Card) ConnectedHeads() ([]ports.OutputHead, error) {
 			continue
 		}
 		monitor := readMonitor(c.info.Path, conn.name)
-		h := ports.OutputHead{Info: ports.OutputInfo{Name: conn.name, Make: monitor.Make, Model: monitor.Model, Serial: monitor.Serial, PhysicalW: conn.mmW, PhysicalH: conn.mmH}}
+		h := domain.OutputHead{Info: domain.OutputInfo{Name: conn.name, Make: monitor.Make, Model: monitor.Model, Serial: monitor.Serial, PhysicalW: conn.mmW, PhysicalH: conn.mmH}}
 		if h.Info.Make == "Unknown" {
 			h.Info.Make = ""
 		}
@@ -394,7 +394,7 @@ func (c *Card) freeImage(img imageBuffer) {
 }
 
 // SetRendererOptions sets output renderer options before outputs are started.
-func (c *Card) SetRendererOptions(o ports.RendererOptions) { c.rendererOptions = o }
+func (c *Card) SetRendererOptions(o domain.RendererOptions) { c.rendererOptions = o }
 
 // SetRender replaces the render device. Call only while no output of this card is running.
 func (c *Card) SetRender(dev ports.RenderDevice) { c.dev.Render = dev }

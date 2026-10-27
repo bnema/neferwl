@@ -49,7 +49,7 @@ func startOutboxRig(t *testing.T, commandCap int) *outboxRig {
 			t.Error(err)
 		}
 	})
-	r.output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "DP-2", Width: 5120, Height: 2160}}
+	r.output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "DP-2", Width: 5120, Height: 2160}}
 	r.client <- ports.WindowMapped{ID: 1}
 	synctest.Wait()
 	// Settle: drop the scenes and the commands of the map.

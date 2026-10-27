@@ -6,7 +6,6 @@ import (
 	"math"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 type atspiSource struct{ targets targetSource }
@@ -19,7 +18,7 @@ func (s *atspiSource) Close() error {
 	}
 	return s.targets.Close()
 }
-func (s *atspiSource) scan(ctx context.Context, req ports.HintScanRequest, wins []ports.HintWindow, _ *frame) ([]ports.HintTarget, error) {
+func (s *atspiSource) scan(ctx context.Context, req domain.HintScanRequest, wins []domain.HintWindow, _ *frame) ([]domain.HintTarget, error) {
 	if s.targets == nil {
 		return nil, errors.New("hints: accessibility source unavailable")
 	}

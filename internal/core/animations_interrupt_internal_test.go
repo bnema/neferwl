@@ -10,7 +10,6 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // movingRects makes two windows on sc swap places and returns with their
@@ -104,7 +103,7 @@ func TestOutputUnplugMidRectMotion(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, ic := indicatorCore(t)
 		a := c.cur()
-		c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 300, Height: 200})
 		b := c.screens[1]
 		movingRects(t, c, ic, b)
 		c.removeScreen("B")
@@ -162,7 +161,7 @@ func TestLastOutputUnplugMidRectMotion(t *testing.T) {
 		}
 
 		// The output comes back: its windows are where the move left them.
-		c.addScreen(ports.OutputInfo{Name: "A", Width: 300, Height: 200})
+		c.addScreen(domain.OutputInfo{Name: "A", Width: 300, Height: 200})
 		settled := indicatorScene(t, c)
 		if settled.Seq <= gone.Seq {
 			t.Fatalf("scene after the replug reuses Seq %d (placeholder %d)", settled.Seq, gone.Seq)

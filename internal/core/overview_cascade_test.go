@@ -856,7 +856,7 @@ func TestOverviewCascadeFingerNoopReportsNoChange(t *testing.T) {
 		m := cascadeOverview()
 		m.Current().FocusID(5)
 		m.ToggleOverview()
-		up := ports.PointerAxis{Source: domain.AxisFinger, Vertical: ports.ScrollAxis{Set: true, Value: -overviewScrollStep}}
+		up := ports.PointerAxis{Source: domain.AxisFinger, Vertical: domain.ScrollAxis{Set: true, Value: -overviewScrollStep}}
 		if m.overviewScroll(up) {
 			t.Fatal("a step past the first band reported a change")
 		}
@@ -875,7 +875,7 @@ func TestOverviewMixedLayoutGestureAndCancel(t *testing.T) {
 		if rows.at(m.Workspaces[1]).X <= rows.at(from).X {
 			t.Fatal("cascade neighbor not horizontal")
 		}
-		m.overviewScroll(ports.PointerAxis{Source: domain.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Value: overviewScrollStep}})
+		m.overviewScroll(ports.PointerAxis{Source: domain.AxisFinger, Horizontal: domain.ScrollAxis{Set: true, Value: overviewScrollStep}})
 		if m.Current() == from {
 			t.Fatal("horizontal gesture did not change workspace")
 		}
@@ -1097,7 +1097,7 @@ func TestOverviewCascadeWideScrollNeighborIsClipped(t *testing.T) {
 // workspace (and does not bounce back on a workspace with another axis),
 // horizontal moves along the band.
 func TestOverviewCascadeScroll(t *testing.T) {
-	vertical := ports.ScrollAxis{Set: true, Value: overviewScrollStep, V120: 120}
+	vertical := domain.ScrollAxis{Set: true, Value: overviewScrollStep, V120: 120}
 	for _, source := range []domain.AxisSource{domain.AxisWheel, domain.AxisContinuous} {
 		t.Run(fmt.Sprint(source), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {

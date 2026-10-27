@@ -26,11 +26,11 @@ import (
 // A real display with capture completion wiring established before Run starts.
 //
 //testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
-func lifecycleLockServer(t *testing.T, leaseRequests ...chan ports.LeaseMessage) (*Server, *sessionsecurity.Gate, chan domain.SecurityState, chan ports.CaptureDone, string) {
+func lifecycleLockServer(t *testing.T, leaseRequests ...chan ports.LeaseMessage) (*Server, *sessionsecurity.Gate, chan domain.SecurityState, chan domain.CaptureDone, string) {
 	t.Helper()
 	gate := &sessionsecurity.Gate{}
 	changes := make(chan domain.SecurityState, 16)
-	captured := make(chan ports.CaptureDone, 16)
+	captured := make(chan domain.CaptureDone, 16)
 	dir := t.TempDir()
 	channels := Channels{SecurityChanges: changes, SecurityEvents: make(chan ports.SecurityBackendEvent, 16), Captured: captured}
 	if len(leaseRequests) != 0 {
@@ -111,8 +111,8 @@ func TestSessionLockLifecycleCaptureCompletionAndProofEpoch(t *testing.T) {
 	}
 	// Unknown completion cannot retire an outstanding credit.
 	unknown := make(chan struct{})
-	s.display.Do(func() { s.captureReplies[88] = func(ports.CaptureDone) { close(unknown) } })
-	captured <- ports.CaptureDone{ID: 88}
+	s.display.Do(func() { s.captureReplies[88] = func(domain.CaptureDone) { close(unknown) } })
+	captured <- domain.CaptureDone{ID: 88}
 	select {
 	case <-unknown:
 	case <-waylandDeadline(2 * time.Second):
@@ -124,8 +124,8 @@ func TestSessionLockLifecycleCaptureCompletionAndProofEpoch(t *testing.T) {
 		}
 	})
 	processed := make(chan struct{})
-	s.display.Do(func() { s.captureReplies[77] = func(ports.CaptureDone) { close(processed) } })
-	captured <- ports.CaptureDone{ID: 77}
+	s.display.Do(func() { s.captureReplies[77] = func(domain.CaptureDone) { close(processed) } })
+	captured <- domain.CaptureDone{ID: 77}
 	select {
 	case <-processed:
 	case <-waylandDeadline(2 * time.Second):
@@ -365,7 +365,7 @@ func TestSessionLockLifecycleLatePrelockLeaseRevokedAfterUnlock(t *testing.T) {
 	c := protocolClient(t, s, dir)
 	const card = "/dev/dri/card-lifecycle"
 	s.display.Do(func() {
-		s.applyLeaseEvent(ports.LeaseConnectors{Card: card, Device: leaseFD(t), Connectors: []ports.LeaseConnector{{Card: card, Name: "DP-1", ConnectorID: 42}}})
+		s.applyLeaseEvent(ports.LeaseConnectors{Card: card, Device: leaseFD(t), Connectors: []domain.LeaseConnector{{Card: card, Name: "DP-1", ConnectorID: 42}}})
 	})
 	roundtrip(t, c)
 	dev := bindProtocol(t, c, "wp_drm_lease_device_v1")

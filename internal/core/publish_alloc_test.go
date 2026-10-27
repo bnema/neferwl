@@ -58,7 +58,7 @@ func publishRig(t testing.TB, screens int) *Core {
 	}
 	next := WindowID(1)
 	for i := range screens {
-		c.addScreen(ports.OutputInfo{Name: string(rune('A' + i)), Width: 300, Height: 200})
+		c.addScreen(domain.OutputInfo{Name: string(rune('A' + i)), Width: 300, Height: 200})
 	}
 	for _, sc := range c.screens {
 		if sc.name() == "" {
@@ -419,7 +419,7 @@ func TestPublishSubscribersAllocations(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c := publishRig(t, 2)
 		c.ch.State = make(chan domain.State, 1)
-		c.ch.Workspaces = make(chan ports.Workspaces, 1)
+		c.ch.Workspaces = make(chan domain.Workspaces, 1)
 		t0 := time.Now()
 		for _, sc := range c.screens {
 			if sc.name() == "" {
@@ -456,7 +456,7 @@ func TestPublishSubscribersAllocations(t *testing.T) {
 		if &st.Windows[0] == &sc.state.Windows[:1][0] || &st.Outputs[0] == &sc.state.Outputs[:1][0] || inSlice(st.Window, sc.state.Windows) || inSlice(st.Window, st.Windows) {
 			t.Error("the sent state shares the scratch")
 		}
-		for _, sent := range []ports.Workspaces{ws, c.sent.workspaces} {
+		for _, sent := range []domain.Workspaces{ws, c.sent.workspaces} {
 			if &sent.Outputs[0] == &sc.workspaces.Outputs[:1][0] {
 				t.Error("the sent workspaces share the scratch")
 			}
@@ -506,7 +506,7 @@ func inSlice[T any](p *T, s []T) bool {
 func BenchmarkPublishSubscribers(b *testing.B) {
 	c := publishRig(b, 2)
 	c.ch.State = make(chan domain.State, 1)
-	c.ch.Workspaces = make(chan ports.Workspaces, 1)
+	c.ch.Workspaces = make(chan domain.Workspaces, 1)
 	t0 := time.Now()
 	for _, sc := range c.screens {
 		if sc.name() == "" {

@@ -23,8 +23,8 @@ func stashCoverCore(t *testing.T, overflow Overflow, float bool) (*Core, *Worksp
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.addScreen(ports.OutputInfo{Name: "A", Width: 100, Height: 80})
-	c.addScreen(ports.OutputInfo{Name: "B", Width: 100, Height: 80})
+	c.addScreen(domain.OutputInfo{Name: "A", Width: 100, Height: 80})
+	c.addScreen(domain.OutputInfo{Name: "B", Width: 100, Height: 80})
 	m := c.screens[0].mon
 	for id := WindowID(1); id <= 3; id++ {
 		m.AddWindow(id)
@@ -415,7 +415,7 @@ func TestCoreActivateStashKeepsGameConfigure(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		c.addScreen(ports.OutputInfo{Name: "A", Width: 100, Height: 80})
+		c.addScreen(domain.OutputInfo{Name: "A", Width: 100, Height: 80})
 		m := c.screens[0].mon
 		m.AddWindow(2)
 		w := m.Current()

@@ -6,7 +6,6 @@ import (
 
 	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Slots of declared workspaces (ADR 011): workspace.<name>.column.N reserves
@@ -106,7 +105,7 @@ func (c *Core) updateSlots(specs []slotSpec) []slotKey {
 }
 
 // spawnSlot starts the slot's command with a fresh token.
-func (c *Core) spawnSlot(key slotKey) ports.SpawnRequest {
+func (c *Core) spawnSlot(key slotKey) domain.SpawnRequest {
 	st := c.slots[key]
 	c.placement.dropSlot(key)
 	st.stale = false

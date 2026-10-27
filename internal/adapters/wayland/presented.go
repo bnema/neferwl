@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -26,7 +27,7 @@ type presentSink struct {
 	s *Server
 
 	mu          sync.Mutex
-	ring, spare []ports.OutputPresented
+	ring, spare []domain.OutputPresented
 	pending     bool // a drain is posted and has not taken the ring yet
 	// merged counts flips merged since the last warning;
 	// lastWarn is when that warning was logged.
@@ -39,8 +40,8 @@ type presentSink struct {
 func newPresentSink(s *Server) *presentSink {
 	p := &presentSink{
 		s:            s,
-		ring:         make([]ports.OutputPresented, 0, maxPresentRing),
-		spare:        make([]ports.OutputPresented, 0, maxPresentRing),
+		ring:         make([]domain.OutputPresented, 0, maxPresentRing),
+		spare:        make([]domain.OutputPresented, 0, maxPresentRing),
 		scratchFlips: make(map[string]bool),
 	}
 	p.drainFn = p.drain
@@ -54,7 +55,7 @@ func (s *Server) Presentation() ports.PresentationSink { return s.sink }
 // serves every report pushed before the drain runs. When the ring is full the
 // flip of the oldest report is carried or merged forward; merges are counted
 // and warned about at most every mergeWarnEvery.
-func (p *presentSink) Push(r ports.OutputPresented) {
+func (p *presentSink) Push(r domain.OutputPresented) {
 	p.mu.Lock()
 	warn, merged := p.enqueueLocked(r)
 	post := !p.pending
@@ -71,7 +72,7 @@ func (p *presentSink) Push(r ports.OutputPresented) {
 // enqueueLocked appends r, making room first when the ring is full. It
 // reports whether to warn now and how many flips were merged since the last
 // warning.
-func (p *presentSink) enqueueLocked(r ports.OutputPresented) (warn bool, merged int) {
+func (p *presentSink) enqueueLocked(r domain.OutputPresented) (warn bool, merged int) {
 	if len(p.ring) >= maxPresentRing {
 		if p.makeRoomLocked(&r) {
 			p.merged++
@@ -96,7 +97,7 @@ func (p *presentSink) enqueueLocked(r ports.OutputPresented) (warn bool, merged 
 // distinct outputs: only possible with more than maxPresentRing outputs.
 // Nothing is dropped then; the ring grows by one, bounded by the number of
 // outputs, because the next report of any of them finds a successor.
-func (p *presentSink) makeRoomLocked(incoming *ports.OutputPresented) (merged bool) {
+func (p *presentSink) makeRoomLocked(incoming *domain.OutputPresented) (merged bool) {
 	for i := range p.ring {
 		next := p.successorLocked(i, incoming)
 		if next == nil {
@@ -118,7 +119,7 @@ func (p *presentSink) makeRoomLocked(incoming *ports.OutputPresented) (merged bo
 
 // successorLocked returns the next report of ring[i]'s output: a later ring
 // entry, else incoming; nil when none follows.
-func (p *presentSink) successorLocked(i int, incoming *ports.OutputPresented) *ports.OutputPresented {
+func (p *presentSink) successorLocked(i int, incoming *domain.OutputPresented) *domain.OutputPresented {
 	for j := i + 1; j < len(p.ring); j++ {
 		if p.ring[j].Output == p.ring[i].Output {
 			return &p.ring[j]

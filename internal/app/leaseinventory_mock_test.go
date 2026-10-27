@@ -7,7 +7,7 @@ package app
 import (
 	"os"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -149,19 +149,19 @@ func (_c *mockleaseInventoryCard_FinishedLeases_Call) RunAndReturn(run func() []
 }
 
 // Leasable provides a mock function for the type mockleaseInventoryCard
-func (_mock *mockleaseInventoryCard) Leasable() []ports.LeaseConnector {
+func (_mock *mockleaseInventoryCard) Leasable() []domain.LeaseConnector {
 	ret := _mock.Called()
 
 	if len(ret) == 0 {
 		panic("no return value specified for Leasable")
 	}
 
-	var r0 []ports.LeaseConnector
-	if returnFunc, ok := ret.Get(0).(func() []ports.LeaseConnector); ok {
+	var r0 []domain.LeaseConnector
+	if returnFunc, ok := ret.Get(0).(func() []domain.LeaseConnector); ok {
 		r0 = returnFunc()
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]ports.LeaseConnector)
+			r0 = ret.Get(0).([]domain.LeaseConnector)
 		}
 	}
 	return r0
@@ -184,12 +184,12 @@ func (_c *mockleaseInventoryCard_Leasable_Call) Run(run func()) *mockleaseInvent
 	return _c
 }
 
-func (_c *mockleaseInventoryCard_Leasable_Call) Return(leaseConnectors []ports.LeaseConnector) *mockleaseInventoryCard_Leasable_Call {
+func (_c *mockleaseInventoryCard_Leasable_Call) Return(leaseConnectors []domain.LeaseConnector) *mockleaseInventoryCard_Leasable_Call {
 	_c.Call.Return(leaseConnectors)
 	return _c
 }
 
-func (_c *mockleaseInventoryCard_Leasable_Call) RunAndReturn(run func() []ports.LeaseConnector) *mockleaseInventoryCard_Leasable_Call {
+func (_c *mockleaseInventoryCard_Leasable_Call) RunAndReturn(run func() []domain.LeaseConnector) *mockleaseInventoryCard_Leasable_Call {
 	_c.Call.Return(run)
 	return _c
 }

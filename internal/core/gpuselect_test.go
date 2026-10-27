@@ -8,11 +8,11 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/core"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestSelectGPUs(t *testing.T) {
-	candidates := []ports.GPUInfo{
+	candidates := []domain.GPUInfo{
 		{Path: "/dev/dri/card0", PCI: "0000:00:02.0", Render: 226<<8 | 128, Internal: true, Driver: "i915"},
 		{Path: "/dev/dri/card1", PCI: "0000:03:00.0", Render: 226<<8 | 129, BootVGA: true, Driver: "amdgpu"},
 		{Path: "/dev/dri/card2", PCI: "0000:0a:00.0", Render: 226<<8 | 130, Driver: "nvidia-drm"},
@@ -107,7 +107,7 @@ func TestSelectGPUs(t *testing.T) {
 }
 
 func TestSelectGPUsPCIDomains(t *testing.T) {
-	c := []ports.GPUInfo{{PCI: "0001:03:00.0", Render: 1}, {PCI: "0002:03:00.0", Render: 2}, {PCI: "0000:04:00.0", Render: 3}}
+	c := []domain.GPUInfo{{PCI: "0001:03:00.0", Render: 1}, {PCI: "0002:03:00.0", Render: 2}, {PCI: "0000:04:00.0", Render: 3}}
 	for _, tc := range []struct {
 		name   string
 		cfg    core.GPUSelectConfig

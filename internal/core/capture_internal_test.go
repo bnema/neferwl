@@ -17,7 +17,7 @@ import (
 func TestExclusionKeepIsSharedAndBuiltOncePerChange(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := hiddenCaptureCommands(t)
-		c.addScreen(ports.OutputInfo{Name: "B", Width: 100, Height: 100})
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 100, Height: 100})
 		c.captureOpen(ports.CaptureSessionOpen{ID: 1, Output: "A"})
 		c.captureExclusionBegin(ports.CaptureExclusionBegin{Session: 1})
 		c.captureExclusionLayer(ports.CaptureExclusionLayer{Session: 1, Layer: 10, Attached: true})
@@ -44,7 +44,7 @@ func TestExclusionKeepIsSharedAndBuiltOncePerChange(t *testing.T) {
 			t.Fatalf("keep after detach %v", k)
 		}
 		// An ended exclusion keeps nothing over a fullscreen window.
-		c.screens[0].layers = []ports.LayerSurface{{ID: 10}}
+		c.screens[0].layers = []domain.LayerSurface{{ID: 10}}
 		c.captureExclusionEnd(1)
 		if c.capt.excl == nil || !c.capt.excl.ended || !slices.Equal(c.capt.excl.retained, []WindowID{10}) {
 			t.Fatalf("ended exclusion %+v", c.capt.excl)

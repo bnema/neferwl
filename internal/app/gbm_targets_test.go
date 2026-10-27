@@ -9,7 +9,6 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/drm/gbm"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
 )
@@ -46,12 +45,12 @@ func TestGBMImagesAreRenderTargets(t *testing.T) {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer inst.Close()
-	gpu, err := inst.OpenGPU(ports.GPUInfo{})
+	gpu, err := inst.OpenGPU(domain.GPUInfo{})
 	if err != nil {
 		t.Skipf("Vulkan GPU unavailable: %v", err)
 	}
 	defer gpu.Close()
-	renderer, err := gpu.NewRenderer(w, h, ports.RendererOptions{})
+	renderer, err := gpu.NewRenderer(w, h, domain.RendererOptions{})
 	r, _ := renderer.(*vulkan.Renderer)
 	if err != nil {
 		t.Skipf("Vulkan unavailable: %v", err)

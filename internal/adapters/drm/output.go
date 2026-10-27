@@ -34,7 +34,7 @@ type Output struct {
 	SecurityEvents  chan<- ports.SecurityBackendEvent
 	// Frames, set before Run, tells core a flip of an animating scene
 	// completed (nil: nobody is told). Sends never block.
-	Frames           chan<- ports.OutputFrame
+	Frames           chan<- domain.OutputFrame
 	securityState    domain.SecurityState
 	securityPrepared bool
 	securityInvalid  bool
@@ -220,7 +220,7 @@ type Output struct {
 	fenceLimit  time.Duration
 	// formats receives the direct scanout formats after each modeset;
 	// sampled and device are what they are built from (Want).
-	formats   chan<- ports.OutputFormats
+	formats   chan<- domain.OutputFormats
 	sampled   []domain.DMABufFormat
 	device    uint64
 	ready     chan error // first successful modeset, or a startup failure
@@ -233,7 +233,7 @@ func (o *Output) Ready() <-chan error { return o.ready }
 // CursorLoader returns the image of a cursor at an output scale, already
 // rotated by the output transform t (the cursor plane is not rotated by the
 // hardware), at most limit pixels on a side; an empty image hides the cursor.
-type CursorLoader func(c ports.CursorChange, scale float64, t domain.BufferTransform, limit int) (ports.CursorImage, error)
+type CursorLoader func(c domain.CursorChange, scale float64, t domain.BufferTransform, limit int) (domain.CursorImage, error)
 
 // newOutput reads the CRTC's planes and properties for a connector on crtc.
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
@@ -369,14 +369,14 @@ func (o *Output) Ping(ctx context.Context) {
 }
 
 // Info describes the output for core and clients. Unknown EDID fields are empty.
-func (o *Output) Info() ports.OutputInfo {
+func (o *Output) Info() domain.OutputInfo {
 	known := func(v string) string {
 		if v == "Unknown" {
 			return ""
 		}
 		return v
 	}
-	return ports.OutputInfo{Name: o.conn.name, Make: known(o.monitor.Make), Model: known(o.monitor.Model), Serial: o.monitor.Serial, Width: o.Width(), Height: o.Height(), RefreshMilli: o.mode.refreshMilli(), PhysicalW: o.conn.mmW, PhysicalH: o.conn.mmH}
+	return domain.OutputInfo{Name: o.conn.name, Make: known(o.monitor.Make), Model: known(o.monitor.Model), Serial: o.monitor.Serial, Width: o.Width(), Height: o.Height(), RefreshMilli: o.mode.refreshMilli(), PhysicalW: o.conn.mmW, PhysicalH: o.conn.mmH}
 }
 
 func (o *Output) Width() int  { return int(o.mode.HDisplay) }
@@ -545,9 +545,9 @@ func (o *Output) sendFormats() {
 	if o.formats == nil {
 		return
 	}
-	f := ports.OutputFormats{Output: o.conn.name, Device: o.device}
+	f := domain.OutputFormats{Output: o.conn.name, Device: o.device}
 	if o.hdr.on && !o.off {
-		f.HDR = &ports.OutputHDR{MaxLuminance: o.hdr.cap.MaxLuminance, MaxFrameAverage: o.hdr.cap.MaxFrameAverage, MinLuminance: o.hdr.cap.MinLuminance}
+		f.HDR = &domain.OutputHDR{MaxLuminance: o.hdr.cap.MaxLuminance, MaxFrameAverage: o.hdr.cap.MaxFrameAverage, MinLuminance: o.hdr.cap.MinLuminance}
 	}
 	if o.scanout && !o.off {
 		for _, format := range o.scanoutFormats(o.sampled) {
@@ -1113,7 +1113,7 @@ func (o *Output) InactiveOnClose() bool { return o.inactiveOnClose }
 
 // Run renders scenes and commits them until ctx ends. active reports seat
 // enable/disable. What the output shows and read is pushed to reports.
-func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan bool, scenes <-chan domain.Scene, contents <-chan *domain.ContentBatch, returns ports.ContentReturn, cursor <-chan ports.CursorChange, reports ports.PresentationSink, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) (runErr error) {
+func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan bool, scenes <-chan domain.Scene, contents <-chan *domain.ContentBatch, returns ports.ContentReturn, cursor <-chan domain.CursorChange, reports ports.PresentationSink, captures <-chan domain.CaptureRequest, captured chan<- domain.CaptureDone) (runErr error) {
 	defer func() {
 		p := recover()
 		if p != nil {
@@ -1175,7 +1175,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 	o.kept = table.Kept
 	var scene domain.Scene
 	haveScene, dirty := false, false
-	var want ports.CursorChange
+	var want domain.CursorChange
 	cursorScale := -1.0 // not loaded yet
 	var cursorTransform domain.BufferTransform
 	frame := 0
@@ -1298,7 +1298,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 		if o.observeSecurity() || haveScene && !o.sceneCurrent(scene) {
 			scene, haveScene, dirty = domain.Scene{}, false, false
 			o.wantedAt = 0
-			want, cursorScale, cursorTransform = ports.CursorChange{}, -1, 0
+			want, cursorScale, cursorTransform = domain.CursorChange{}, -1, 0
 			if o.cursor != nil {
 				o.cursor.image, o.cursor.later = false, nil
 			}
@@ -1805,7 +1805,7 @@ func (o *Output) completed(ev flipEvent, seen map[domain.WindowID]uint64) bool {
 	if o.queued == f.queued {
 		o.queued = 0
 	}
-	o.report(&ports.FlipInfo{When: ev.when, Seq: uint64(ev.seq), Refresh: o.refreshPeriod(), ZeroCopy: f.zeroCopy, Async: f.async, ScanoutReason: f.scanoutReason, OverlayReason: f.overlayReason, HardwareClock: true, Shows: f.shows}, seen)
+	o.report(&domain.FlipInfo{When: ev.when, Seq: uint64(ev.seq), Refresh: o.refreshPeriod(), ZeroCopy: f.zeroCopy, Async: f.async, ScanoutReason: f.scanoutReason, OverlayReason: f.overlayReason, HardwareClock: true, Shows: f.shows}, seen)
 	if f.animating {
 		o.wakeCore()
 	}
@@ -1818,7 +1818,7 @@ func (o *Output) wakeCore() { corewake.Send(o.Frames, o.conn.name) }
 
 // setCursor loads a cursor for scale and output transform t into the cursor
 // images.
-func (o *Output) setCursor(load CursorLoader, c ports.CursorChange, scale float64, t domain.BufferTransform) {
+func (o *Output) setCursor(load CursorLoader, c domain.CursorChange, scale float64, t domain.BufferTransform) {
 	o.observeSecurity()
 	if o.protected || o.cursor.off {
 		return

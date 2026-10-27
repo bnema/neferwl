@@ -97,7 +97,7 @@ func (s *Server) lockSurfaceChanged() {
 	if l == nil {
 		return
 	}
-	placements := make([]ports.LockSurfacePlacement, 0, len(l.surfaces))
+	placements := make([]domain.LockSurfacePlacement, 0, len(l.surfaces))
 	// Before locked, only compositor black is displayed. Protocol configure
 	// and buffer commits may still prepare the UI while proofs are pending.
 	if l.locked {
@@ -106,12 +106,12 @@ func (s *Server) lockSurfaceChanged() {
 				p := surface.output.place
 				c := surface.surface.content
 				if c.LogicalW == p.Width && c.LogicalH == p.Height {
-					placements = append(placements, ports.LockSurfacePlacement{ID: surface.id, Output: surface.output.name(), Width: p.Width, Height: p.Height})
+					placements = append(placements, domain.LockSurfacePlacement{ID: surface.id, Output: surface.output.name(), Width: p.Width, Height: p.Height})
 				}
 			}
 		}
 	}
-	slices.SortFunc(placements, func(a, b ports.LockSurfacePlacement) int { return cmp.Compare(a.ID, b.ID) })
+	slices.SortFunc(placements, func(a, b domain.LockSurfacePlacement) int { return cmp.Compare(a.ID, b.ID) })
 	s.emit(ports.SessionLockChanged{State: l.state, Surfaces: placements})
 }
 

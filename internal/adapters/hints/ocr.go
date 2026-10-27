@@ -25,7 +25,6 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // OCRWord is a recognized word in physical output coordinates.
@@ -308,7 +307,7 @@ func isTextLink(text string) bool {
 	return true
 }
 
-func textLinks(words []OCRWord, scale float64) []ports.HintTarget {
+func textLinks(words []OCRWord, scale float64) []domain.HintTarget {
 	if scale <= 0 {
 		scale = 1
 	}
@@ -319,7 +318,7 @@ func textLinks(words []OCRWord, scale float64) []ports.HintTarget {
 		}
 		return words[i].Rect.Min.X < words[j].Rect.Min.X
 	})
-	var out []ports.HintTarget
+	var out []domain.HintTarget
 	var urls []image.Rectangle // boxes of the URL targets, in pixels
 	used := make([]bool, len(words))
 	for i, word := range words {
@@ -357,7 +356,7 @@ func textLinks(words []OCRWord, scale float64) []ports.HintTarget {
 		}
 		x, y := int(math.Floor(float64(rect.Min.X)/scale)), int(math.Floor(float64(rect.Min.Y)/scale))
 		right, bottom := int(math.Ceil(float64(rect.Max.X)/scale)), int(math.Ceil(float64(rect.Max.Y)/scale))
-		out = append(out, ports.HintTarget{Kind: domain.HintLink, Source: domain.HintSourceOCR, Score: 1, Rect: domain.Rect{X: x, Y: y, W: right - x, H: bottom - y}})
+		out = append(out, domain.HintTarget{Kind: domain.HintLink, Source: domain.HintSourceOCR, Score: 1, Rect: domain.Rect{X: x, Y: y, W: right - x, H: bottom - y}})
 		urls = append(urls, rect)
 	}
 	return append(out, underlinedLinks(words, urls, scale)...)
@@ -377,7 +376,7 @@ func overlap(a, b image.Rectangle) float64 {
 	}
 	return float64(intersection.Dx()*intersection.Dy()) / float64(area)
 }
-func targetRect(t ports.HintTarget) image.Rectangle {
+func targetRect(t domain.HintTarget) image.Rectangle {
 	return image.Rect(t.Rect.X, t.Rect.Y, t.Rect.X+t.Rect.W, t.Rect.Y+t.Rect.H)
 }
 func recognizeBand(ctx context.Context, binary, lang string, img image.Image) ([]OCRWord, error) {
@@ -575,6 +574,6 @@ func cropGray(buf []byte, stride int, r image.Rectangle, dst []byte) *image.Gray
 
 // targetSource reads accessibility targets; coverage belongs to the chain.
 type targetSource interface {
-	Targets(context.Context, []ports.HintWindow, bool) ([]ports.HintTarget, error)
+	Targets(context.Context, []domain.HintWindow, bool) ([]domain.HintTarget, error)
 	Close() error
 }

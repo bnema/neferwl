@@ -7,7 +7,6 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -20,7 +19,7 @@ func TestQueueSnapshotsCloneOnlyOnChange(t *testing.T) {
 	var q Queue
 	seen := map[domain.WindowID]uint64{1: 4, 5: 7}
 	reads := map[domain.WindowID]uint64{5: 2}
-	q.Push(ports.OutputPresented{Output: "A", Seen: seen, ChildReads: reads})
+	q.Push(domain.OutputPresented{Output: "A", Seen: seen, ChildReads: reads})
 	first := q.Unsent()[0]
 	require.Equal(t, seen, first.Seen)
 	require.Equal(t, reads, first.ChildReads)
@@ -28,15 +27,15 @@ func TestQueueSnapshotsCloneOnlyOnChange(t *testing.T) {
 	require.Equal(t, uint64(4), first.Seen[1])
 
 	seen[1] = 4
-	q.Push(ports.OutputPresented{Output: "A", Seen: seen, ChildReads: reads})
+	q.Push(domain.OutputPresented{Output: "A", Seen: seen, ChildReads: reads})
 	again := q.Unsent()[0]
 	require.Equal(t, ptr(first.Seen), ptr(again.Seen), "unchanged seen is shared")
 	require.Equal(t, ptr(first.ChildReads), ptr(again.ChildReads), "unchanged reads are shared")
-	allocs := testing.AllocsPerRun(100, func() { q.Push(ports.OutputPresented{Output: "A", Seen: seen, ChildReads: reads}) })
+	allocs := testing.AllocsPerRun(100, func() { q.Push(domain.OutputPresented{Output: "A", Seen: seen, ChildReads: reads}) })
 	require.Zero(t, allocs, "unchanged publication allocates nothing")
 
 	reads[5] = 3
-	q.Push(ports.OutputPresented{Output: "A", Seen: seen, ChildReads: reads})
+	q.Push(domain.OutputPresented{Output: "A", Seen: seen, ChildReads: reads})
 	changed := q.Unsent()[0]
 	require.Equal(t, map[domain.WindowID]uint64{5: 3}, changed.ChildReads)
 	require.Equal(t, map[domain.WindowID]uint64{5: 2}, first.ChildReads, "sent snapshot stays immutable")
@@ -47,10 +46,10 @@ func TestQueueSnapshotsCloneOnlyOnChange(t *testing.T) {
 func TestQueueKeepsEveryFlip(t *testing.T) {
 	var q Queue
 	seen := map[domain.WindowID]uint64{1: 1}
-	q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: 1}, Seen: seen})
-	q.Push(ports.OutputPresented{Seen: seen})
-	q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: 2}, Seen: seen})
-	q.Push(ports.OutputPresented{Seen: map[domain.WindowID]uint64{1: 3}})
+	q.Push(domain.OutputPresented{Flip: &domain.FlipInfo{Seq: 1}, Seen: seen})
+	q.Push(domain.OutputPresented{Seen: seen})
+	q.Push(domain.OutputPresented{Flip: &domain.FlipInfo{Seq: 2}, Seen: seen})
+	q.Push(domain.OutputPresented{Seen: map[domain.WindowID]uint64{1: 3}})
 	u := q.Unsent()
 	require.Len(t, u, 2)
 	require.Equal(t, uint64(1), u[0].Flip.Seq)
@@ -62,8 +61,8 @@ func TestQueueKeepsEveryFlip(t *testing.T) {
 // carried, without mutating a shared Shows snapshot.
 func TestMergeCarriesShowsWithoutMutatingSharedSnapshot(t *testing.T) {
 	shared := map[domain.WindowID]uint64{2: 5}
-	old := &ports.FlipInfo{Seq: 1, Merged: 2, Shows: map[domain.WindowID]uint64{1: 4}, ScanoutReason: "nomem", OverlayReason: "no_plane"}
-	next := &ports.FlipInfo{Seq: 2, Shows: shared, ScanoutReason: "flip_refused"}
+	old := &domain.FlipInfo{Seq: 1, Merged: 2, Shows: map[domain.WindowID]uint64{1: 4}, ScanoutReason: "nomem", OverlayReason: "no_plane"}
+	next := &domain.FlipInfo{Seq: 2, Shows: shared, ScanoutReason: "flip_refused"}
 	Merge(old, next)
 	require.Equal(t, "flip_refused", next.ScanoutReason, "newest reasons kept")
 	require.Empty(t, next.OverlayReason)
@@ -76,7 +75,7 @@ func TestMergeCarriesShowsWithoutMutatingSharedSnapshot(t *testing.T) {
 func TestQueueDoesNotBoundFlips(t *testing.T) {
 	var q Queue
 	for i := range 40 {
-		q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: uint64(i + 1)}})
+		q.Push(domain.OutputPresented{Flip: &domain.FlipInfo{Seq: uint64(i + 1)}})
 	}
 	u := q.Unsent()
 	require.Len(t, u, 40)
@@ -86,11 +85,11 @@ func TestQueueDoesNotBoundFlips(t *testing.T) {
 
 func TestQueueFlushPushesInOrderAndEmpties(t *testing.T) {
 	var q Queue
-	q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: 1}})
-	q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: 2}})
-	var got []ports.OutputPresented
+	q.Push(domain.OutputPresented{Flip: &domain.FlipInfo{Seq: 1}})
+	q.Push(domain.OutputPresented{Flip: &domain.FlipInfo{Seq: 2}})
+	var got []domain.OutputPresented
 	sink := portsmocks.NewMockPresentationSink(t)
-	sink.EXPECT().Push(mock.Anything).RunAndReturn(func(r ports.OutputPresented) { got = append(got, r) })
+	sink.EXPECT().Push(mock.Anything).RunAndReturn(func(r domain.OutputPresented) { got = append(got, r) })
 	q.Flush(sink)
 	require.Zero(t, q.Len())
 	require.Len(t, got, 2)
@@ -99,7 +98,7 @@ func TestQueueFlushPushesInOrderAndEmpties(t *testing.T) {
 	q.Flush(sink) // empty: nothing more is pushed
 	require.Len(t, got, 2)
 
-	q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: 3}})
+	q.Push(domain.OutputPresented{Flip: &domain.FlipInfo{Seq: 3}})
 	q.Reset()
 	require.Zero(t, q.Len())
 }

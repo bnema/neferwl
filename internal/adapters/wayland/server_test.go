@@ -444,4 +444,4 @@ func TestWestonContents(t *testing.T) {
 }
 
 // testOutputs is the 1920x1080 output tests start with.
-var testOutputs = ports.Layout{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 1920, Height: 1080}, Width: 1920, Height: 1080, Scale: 1}}
+var testOutputs = domain.Layout{{Info: domain.OutputInfo{Name: "HEADLESS-1", Width: 1920, Height: 1080}, Width: 1920, Height: 1080, Scale: 1}}

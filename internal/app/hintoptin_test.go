@@ -104,15 +104,15 @@ func TestRelayConfigKeepsStartupHintEnable(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cur := config.Defaults()
-	in := make(chan ports.ConfigChanged, 1)
-	out := make(chan ports.ConfigChanged, 1)
+	in := make(chan domain.ConfigChanged, 1)
+	out := make(chan domain.ConfigChanged, 1)
 	go relayConfig(ctx, cur, in, out, make(chan *xkb.Keymap, 1), make(chan domain.InputDevicesConfig, 1), newCursors(clock.System{}, 0), make(chan ports.ClientCommand, 1), logging.For(ctx, "config"))
 	next := config.Defaults()
 	next.Hint.Enable = true
 	next.Hint.Sources = []domain.HintSource{domain.HintSourceDetector}
 	next.Hint.LinksOnly = true
 	next.Hint.TextClick = domain.ModAlt
-	in <- ports.ConfigChanged{Config: next}
+	in <- domain.ConfigChanged{Config: next}
 	got := (<-out).Config.Hint
 	require.False(t, got.Enable)
 	require.Equal(t, cur.Hint.Sources, got.Sources)
@@ -124,12 +124,12 @@ func TestRelayConfigKeepsStartupHintDetector(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cur := config.Defaults()
-	in := make(chan ports.ConfigChanged, 1)
-	out := make(chan ports.ConfigChanged, 1)
+	in := make(chan domain.ConfigChanged, 1)
+	out := make(chan domain.ConfigChanged, 1)
 	go relayConfig(ctx, cur, in, out, make(chan *xkb.Keymap, 1), make(chan domain.InputDevicesConfig, 1), newCursors(clock.System{}, 0), make(chan ports.ClientCommand, 1), logging.For(ctx, "config"))
 	next := config.Defaults()
 	next.Hint.Detector, next.Hint.Model, next.Hint.Threshold = "/other/nh", "/other/models", 0.5
-	in <- ports.ConfigChanged{Config: next}
+	in <- domain.ConfigChanged{Config: next}
 	got := (<-out).Config.Hint
 	require.Equal(t, cur.Hint.Detector, got.Detector)
 	require.Equal(t, cur.Hint.Model, got.Model)

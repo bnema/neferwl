@@ -26,7 +26,7 @@ type workspaceGroup struct {
 }
 type workspaceHandle struct {
 	res   *ext.ExtWorkspaceHandleV1
-	info  ports.WorkspaceInfo
+	info  domain.WorkspaceInfo
 	group string
 }
 
@@ -139,7 +139,7 @@ func (s *Server) forwardWorkspaces(ctx context.Context) {
 		}
 	}
 }
-func (s *Server) updateWorkspaces(snapshot ports.Workspaces) {
+func (s *Server) updateWorkspaces(snapshot domain.Workspaces) {
 	s.workspaceSnapshot = snapshot
 	s.updateWorkspaceManagers(snapshot)
 }
@@ -147,7 +147,7 @@ func (s *Server) updateWorkspaces(snapshot ports.Workspaces) {
 // updateWorkspaceManagers also refreshes inventory on protection transitions.
 // Keep the last sent state while protected: old client knowledge cannot be
 // revoked, but an unlock refresh must compare against it, not suppressed updates.
-func (s *Server) updateWorkspaceManagers(snapshot ports.Workspaces) {
+func (s *Server) updateWorkspaceManagers(snapshot domain.Workspaces) {
 	for _, m := range s.workspaceManagers {
 		m.update(snapshot)
 	}
@@ -216,7 +216,7 @@ func (s *Server) updateWorkspaceFrames() {
 	s.workspaceFrames = kept
 }
 
-func workspaceState(w ports.WorkspaceInfo) uint32 {
+func workspaceState(w domain.WorkspaceInfo) uint32 {
 	var state uint32
 	if w.Active {
 		state |= uint32(ext.ExtWorkspaceHandleV1StateActive)
@@ -231,7 +231,7 @@ func (m *workspaceManager) sendCoordinates(r *ext.ExtWorkspaceHandleV1, index in
 	binary.NativeEndian.PutUint32(b[:], uint32(index))
 	r.SendCoordinates(b[:])
 }
-func (m *workspaceManager) update(snapshot ports.Workspaces) {
+func (m *workspaceManager) update(snapshot domain.Workspaces) {
 	if m.s.protected() {
 		m.pending = nil
 		return
@@ -240,7 +240,7 @@ func (m *workspaceManager) update(snapshot ports.Workspaces) {
 		return
 	}
 	wanted := map[string]bool{}
-	infos := map[uint64]ports.WorkspaceInfo{}
+	infos := map[uint64]domain.WorkspaceInfo{}
 	for _, out := range snapshot.Outputs {
 		wanted[out.Name] = true
 		for _, w := range out.Workspaces {

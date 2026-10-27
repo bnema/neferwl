@@ -22,12 +22,12 @@ type hintHarness struct {
 	output   chan ports.OutputEvent
 	commands chan ports.ClientCommand
 	scenes   chan []domain.Scene
-	scans    chan ports.HintScanRequest
-	hints    chan ports.HintScanResult
+	scans    chan domain.HintScanRequest
+	hints    chan domain.HintScanResult
 	win      domain.Rect // window 1, output-local
 	// state is the security state input is stamped with.
 	state  domain.SecurityState
-	config chan ports.ConfigChanged
+	config chan domain.ConfigChanged
 	cfg    domain.Config
 }
 
@@ -46,7 +46,7 @@ func newHintConfig(t *testing.T, opts core.Options, edit func(*domain.Config)) *
 	cfg.Layout.Gaps = 20
 	cfg.Binds["Cmd+g"] = "hint"
 	h := &hintHarness{
-		config:   make(chan ports.ConfigChanged),
+		config:   make(chan domain.ConfigChanged),
 		cfg:      cfg,
 		t:        t,
 		input:    make(chan ports.InputEvent, 32),
@@ -54,9 +54,9 @@ func newHintConfig(t *testing.T, opts core.Options, edit func(*domain.Config)) *
 		output:   make(chan ports.OutputEvent, 8),
 		commands: make(chan ports.ClientCommand, 256),
 		scenes:   make(chan []domain.Scene, 1),
-		scans:    make(chan ports.HintScanRequest, 1),
+		scans:    make(chan domain.HintScanRequest, 1),
 		// Unbuffered: a send returns once core took the result.
-		hints: make(chan ports.HintScanResult),
+		hints: make(chan domain.HintScanResult),
 	}
 	ch := core.Channels{Config: h.config, Client: h.client, Input: h.input, Output: h.output, Commands: h.commands, Scenes: h.scenes, HintScans: h.scans, Hints: h.hints}
 	c, err := core.New(cfg, ch, opts)
@@ -67,7 +67,7 @@ func newHintConfig(t *testing.T, opts core.Options, edit func(*domain.Config)) *
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
 	t.Cleanup(func() { cancel(); receive(t, done) })
-	h.output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 1000, Height: 800}}
+	h.output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 1000, Height: 800}}
 	scene(t, h.scenes)
 	h.client <- ports.WindowMapped{ID: 1, AppID: "org.test.app", PID: 4242}
 	s := scene(t, h.scenes)
@@ -101,7 +101,7 @@ func (h *hintHarness) send(ev ports.InputEvent) {
 }
 
 // start presses the hint bind and returns the request.
-func (h *hintHarness) start() ports.HintScanRequest {
+func (h *hintHarness) start() domain.HintScanRequest {
 	h.t.Helper()
 	h.press("g", domain.ModSuper)
 	req := receive(h.t, h.scans)
@@ -110,10 +110,10 @@ func (h *hintHarness) start() ports.HintScanRequest {
 }
 
 // show starts hint mode and answers with targets, returning the next scene.
-func (h *hintHarness) show(targets ...ports.HintTarget) domain.Scene {
+func (h *hintHarness) show(targets ...domain.HintTarget) domain.Scene {
 	h.t.Helper()
 	req := h.start()
-	h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: targets}
+	h.hints <- domain.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: targets}
 	return h.labelled(len(targets), 0)
 }
 
@@ -137,8 +137,8 @@ func (h *hintHarness) labelled(n, typed int) domain.Scene {
 }
 
 // inside is a target of the given size inside window 1.
-func (h *hintHarness) inside(i int) ports.HintTarget {
-	return ports.HintTarget{Window: 1, Source: domain.HintSourceDetector, Rect: domain.Rect{X: h.win.X + 10 + 100*(i%4), Y: h.win.Y + 10 + 40*(i/4), W: 40, H: 10}}
+func (h *hintHarness) inside(i int) domain.HintTarget {
+	return domain.HintTarget{Window: 1, Source: domain.HintSourceDetector, Rect: domain.Rect{X: h.win.X + 10 + 100*(i%4), Y: h.win.Y + 10 + 40*(i/4), W: 40, H: 10}}
 }
 
 func TestHintRequestOnBind(t *testing.T) {
@@ -178,7 +178,7 @@ func TestHintRequestNilScansIsNoop(t *testing.T) {
 		done := make(chan error, 1)
 		go func() { done <- c.Run(ctx) }()
 		defer func() { cancel(); receive(t, done) }()
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 1000, Height: 800}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 1000, Height: 800}}
 		scene(t, scenes)
 		input <- ports.KeyEvent{Keysym: "g", Base: "g", Mods: domain.ModSuper, Pressed: true}
 		if s := scene(t, scenes); len(s.Overlays) != 0 {
@@ -219,7 +219,7 @@ func TestHintRefusedWhenProtected(t *testing.T) {
 func TestHintResultShowsLabels(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := newHint(t, core.Options{})
-		var targets []ports.HintTarget
+		var targets []domain.HintTarget
 		for i := 0; i < 26; i++ {
 			targets = append(targets, h.inside(i))
 		}
@@ -245,9 +245,9 @@ func TestHintResultShowsLabels(t *testing.T) {
 func TestHintTwoLetterLabels(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := newHint(t, core.Options{})
-		var targets []ports.HintTarget
+		var targets []domain.HintTarget
 		for i := 0; i < 27; i++ {
-			targets = append(targets, ports.HintTarget{Window: 1, Source: domain.HintSourceDetector, Rect: domain.Rect{X: h.win.X + 5 + 100*(i%4), Y: h.win.Y + 5 + 40*(i/4), W: 30, H: 10}})
+			targets = append(targets, domain.HintTarget{Window: 1, Source: domain.HintSourceDetector, Rect: domain.Rect{X: h.win.X + 5 + 100*(i%4), Y: h.win.Y + 5 + 40*(i/4), W: 30, H: 10}})
 		}
 		s := h.show(targets...)
 		if len(s.Overlays) != 27 {
@@ -272,12 +272,12 @@ func TestHintDropsTargetsOutsideWindows(t *testing.T) {
 		h := newHint(t, core.Options{})
 		in := h.inside(0)
 		// In the gap around the window, over the background.
-		out := ports.HintTarget{Window: 1, Source: domain.HintSourceDetector, Rect: domain.Rect{X: 2, Y: 2, W: 4, H: 4}}
+		out := domain.HintTarget{Window: 1, Source: domain.HintSourceDetector, Rect: domain.Rect{X: 2, Y: 2, W: 4, H: 4}}
 		if h.win.X < 8 || h.win.Y < 8 {
 			t.Fatalf("window %+v leaves no gap", h.win)
 		}
 		req := h.start()
-		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{out, in}}
+		h.hints <- domain.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []domain.HintTarget{out, in}}
 		s := h.labelled(1, 0)
 		if len(s.Overlays) != 1 || s.Overlays[0].Rect.X != in.Rect.X {
 			t.Fatalf("labels %+v (window %+v)", s.Overlays, h.win)
@@ -289,9 +289,9 @@ func TestHintDropsTargetsOutsideWindows(t *testing.T) {
 func TestHintTypingFilters(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := newHint(t, core.Options{})
-		var targets []ports.HintTarget
+		var targets []domain.HintTarget
 		for i := 0; i < 27; i++ {
-			targets = append(targets, ports.HintTarget{Window: 1, Source: domain.HintSourceDetector, Rect: domain.Rect{X: h.win.X + 5 + 100*(i%4), Y: h.win.Y + 5 + 40*(i/4), W: 30, H: 10}})
+			targets = append(targets, domain.HintTarget{Window: 1, Source: domain.HintSourceDetector, Rect: domain.Rect{X: h.win.X + 5 + 100*(i%4), Y: h.win.Y + 5 + 40*(i/4), W: 30, H: 10}})
 		}
 		h.show(targets...)
 		h.press("f", 0)
@@ -419,9 +419,9 @@ func TestHintStaleSeqIgnored(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := newHint(t, core.Options{})
 		req := h.start()
-		h.hints <- ports.HintScanResult{Seq: req.Seq + 7, Output: req.Output, Targets: []ports.HintTarget{h.inside(0)}}
+		h.hints <- domain.HintScanResult{Seq: req.Seq + 7, Output: req.Output, Targets: []domain.HintTarget{h.inside(0)}}
 		// A matching result afterwards shows: the stale one changed nothing.
-		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{h.inside(0), h.inside(1)}}
+		h.hints <- domain.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []domain.HintTarget{h.inside(0), h.inside(1)}}
 		s := h.labelled(2, 0)
 		if len(s.Overlays) != 2 {
 			t.Fatalf("labels %+v", s.Overlays)
@@ -434,7 +434,7 @@ func TestHintErrorCancels(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := newHint(t, core.Options{})
 		req := h.start()
-		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Err: fmt.Errorf("boom")}
+		h.hints <- domain.HintScanResult{Seq: req.Seq, Output: req.Output, Err: fmt.Errorf("boom")}
 		h.press("x", 0)
 		cmd := command(t, h.commands)
 		if v, ok := cmd.(ports.ForwardKey); !ok || v.Key.Keysym != "x" {
@@ -506,7 +506,7 @@ func TestHintClickWithBindModifierHeld(t *testing.T) {
 		tg := h.inside(0)
 		h.press("g", domain.ModSuper)
 		req := receive(t, h.scans)
-		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
+		h.hints <- domain.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []domain.HintTarget{tg}}
 		h.labelled(1, 0)
 		h.drain()
 		h.press("f", domain.ModSuper) // Super is still down
@@ -543,13 +543,13 @@ func TestHintClickWithBindModifierHeld(t *testing.T) {
 
 // constrain gives window 1 a pointer constraint and waits until core applied it.
 func (h *hintHarness) constrain(mode domain.ConstraintMode, r domain.Rect) {
-	h.client <- ports.PointerConstrained{ID: 1, PointerConstraint: ports.PointerConstraint{Mode: mode, Rect: r}}
+	h.client <- ports.PointerConstrained{ID: 1, PointerConstraint: domain.PointerConstraint{Mode: mode, Rect: r}}
 	h.client <- ports.WindowMapped{ID: 1} // a publish after the event
 	h.until(func(domain.Scene) bool { return true })
 }
 
 func TestHintRefusedWithPointerConstraint(t *testing.T) {
-	for name, c := range map[string]ports.PointerConstraint{
+	for name, c := range map[string]domain.PointerConstraint{
 		"lock":    {Mode: domain.ConstraintLock},
 		"confine": {Mode: domain.ConstraintConfine, Rect: domain.Rect{X: 0, Y: 0, W: 5, H: 5}},
 	} {
@@ -573,7 +573,7 @@ func TestHintRefusedWithPointerConstraint(t *testing.T) {
 // A constraint that appears while the labels are shown (the pointer would be
 // held or bent away from the target) cancels the click.
 func TestHintNoClickWhenConstraintAppears(t *testing.T) {
-	for name, c := range map[string]ports.PointerConstraint{
+	for name, c := range map[string]domain.PointerConstraint{
 		"lock":    {Mode: domain.ConstraintLock},
 		"confine": {Mode: domain.ConstraintConfine, Rect: domain.Rect{X: 0, Y: 0, W: 5, H: 5}},
 	} {
@@ -647,7 +647,7 @@ func TestHintMappedWindowMovedAborts(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := newHint(t, core.Options{})
 		// A target at the right edge of window 1.
-		tg := ports.HintTarget{Window: 1, Source: domain.HintSourceDetector, Rect: domain.Rect{X: h.win.X + h.win.W - 50, Y: h.win.Y + 10, W: 40, H: 10}}
+		tg := domain.HintTarget{Window: 1, Source: domain.HintSourceDetector, Rect: domain.Rect{X: h.win.X + h.win.W - 50, Y: h.win.Y + 10, W: 40, H: 10}}
 		h.show(tg)
 		h.client <- ports.WindowMapped{ID: 2}
 		s := h.until(func(s domain.Scene) bool { return len(s.Windows) == 2 && len(s.Overlays) <= 1 })
@@ -726,7 +726,7 @@ func TestHintResultDroppedWhenWindowMoved(t *testing.T) {
 		tg := h.inside(0)
 		h.client <- ports.WindowMapped{ID: 2}
 		h.until(func(s domain.Scene) bool { return len(s.Windows) == 2 })
-		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
+		h.hints <- domain.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []domain.HintTarget{tg}}
 		// Whatever window now covers the target was not scanned: no labels.
 		if s := h.labelled(0, 0); len(s.Overlays) != 0 {
 			t.Fatalf("labels %+v", s.Overlays)
@@ -742,13 +742,13 @@ func TestHintResultDroppedForUnseenWindow(t *testing.T) {
 		req := h.start()
 		h.client <- ports.WindowMapped{ID: 2}
 		s := h.until(func(s domain.Scene) bool { return len(s.Windows) == 2 })
-		var tg ports.HintTarget
+		var tg domain.HintTarget
 		for _, w := range s.Windows {
 			if w.ID == 2 {
 				tg.Rect = domain.Rect{X: w.Rect.X + 5, Y: w.Rect.Y + 5, W: 20, H: 10}
 			}
 		}
-		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
+		h.hints <- domain.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []domain.HintTarget{tg}}
 		if s := h.labelled(0, 0); len(s.Overlays) != 0 {
 			t.Fatalf("labels %+v", s.Overlays)
 		}
@@ -761,8 +761,8 @@ func TestHintDropsTargetsOutsideOutput(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := newHint(t, core.Options{})
 		req := h.start()
-		out := ports.HintTarget{Window: 1, Source: domain.HintSourceDetector, Rect: domain.Rect{X: 2000, Y: 10, W: 10, H: 10}}
-		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{out, h.inside(0)}}
+		out := domain.HintTarget{Window: 1, Source: domain.HintSourceDetector, Rect: domain.Rect{X: 2000, Y: 10, W: 10, H: 10}}
+		h.hints <- domain.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []domain.HintTarget{out, h.inside(0)}}
 		if s := h.labelled(1, 0); len(s.Overlays) != 1 {
 			t.Fatalf("labels %+v", s.Overlays)
 		}
@@ -775,7 +775,7 @@ func TestHintCancelsWhenOutputChanges(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := newHint(t, core.Options{})
 		h.show(h.inside(0))
-		h.output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 1200, Height: 800}}
+		h.output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 1200, Height: 800}}
 		if s := h.labelled(0, 0); len(s.Overlays) != 0 {
 			t.Fatalf("labels %+v", s.Overlays)
 		}
@@ -844,7 +844,7 @@ func TestHintDisabledNotesOnce(t *testing.T) {
 		done := make(chan error, 1)
 		go func() { done <- c.Run(ctx) }()
 		t.Cleanup(func() { cancel(); receive(t, done) })
-		h.output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 1000, Height: 800}}
+		h.output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 1000, Height: 800}}
 		scene(t, h.scenes)
 		for range 3 {
 			h.press("g", domain.ModSuper)
@@ -869,7 +869,7 @@ func TestHintRejectsResizedSource(t *testing.T) {
 					tg := h.inside(0)
 					req := h.start()
 					if !beforeResult {
-						h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
+						h.hints <- domain.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []domain.HintTarget{tg}}
 						h.labelled(1, 0)
 					}
 					h.client <- ports.WindowMapped{ID: 2}
@@ -885,7 +885,7 @@ func TestHintRejectsResizedSource(t *testing.T) {
 						t.Fatalf("setup: old target %+v not inside resized window %+v (was %+v)", tg.Rect, resized, h.win)
 					}
 					if beforeResult {
-						h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
+						h.hints <- domain.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []domain.HintTarget{tg}}
 						h.labelled(0, 0)
 					} else {
 						h.drain()
@@ -926,12 +926,12 @@ func TestHintCaptureReachesScene(t *testing.T) {
 // closer than a label drop, the lowest score first, whatever the input order.
 func TestHintOverlappingLabelsDropLowerScore(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		at := func(h *hintHarness, dx, dy int, score float32) ports.HintTarget {
-			return ports.HintTarget{Window: 1, Source: domain.HintSourceDetector, Rect: domain.Rect{X: h.win.X + 20 + dx, Y: h.win.Y + 20 + dy, W: 80, H: 30}, Score: score}
+		at := func(h *hintHarness, dx, dy int, score float32) domain.HintTarget {
+			return domain.HintTarget{Window: 1, Source: domain.HintSourceDetector, Rect: domain.Rect{X: h.win.X + 20 + dx, Y: h.win.Y + 20 + dy, W: 80, H: 30}, Score: score}
 		}
 		for _, rev := range []bool{false, true} {
 			h := newHint(t, core.Options{})
-			ts := []ports.HintTarget{
+			ts := []domain.HintTarget{
 				at(h, 0, 0, 0.4),    // clashes with the next one, loses
 				at(h, 3, 2, 0.9),    // wins
 				at(h, 300, 0, 0.1),  // far away: kept, whatever its score
@@ -942,7 +942,7 @@ func TestHintOverlappingLabelsDropLowerScore(t *testing.T) {
 				slices.Reverse(ts)
 			}
 			req := h.start()
-			h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: ts}
+			h.hints <- domain.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: ts}
 			s := h.labelled(3, 0)
 			var got [][2]int
 			for _, l := range s.Overlays {
@@ -963,7 +963,7 @@ func TestHintSizeReloadCancelsShownHints(t *testing.T) {
 		h.show(h.inside(0))
 		cfg := h.cfg
 		cfg.Hint.Size = 40
-		h.config <- ports.ConfigChanged{Config: cfg}
+		h.config <- domain.ConfigChanged{Config: cfg}
 		h.until(func(s domain.Scene) bool { return len(s.Overlays) == 0 })
 		s := h.show(h.inside(0))
 		if len(s.Overlays) == 0 {
@@ -1014,7 +1014,7 @@ func TestHintDropsWrongWindow(t *testing.T) {
 				req := h.start()
 				tg := h.inside(0)
 				tg.Window = id
-				h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
+				h.hints <- domain.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []domain.HintTarget{tg}}
 				h.labelled(0, 0)
 
 			})
@@ -1028,7 +1028,7 @@ func TestHintRequestPopupUnits(t *testing.T) {
 		h.until(func(s domain.Scene) bool { return len(s.Windows) == 2 })
 		popupRects := map[domain.WindowID]domain.Rect{}
 		for _, p := range []struct{ id, parent domain.WindowID }{{10, 1}, {11, 10}, {20, 2}} {
-			h.client <- ports.PopupRequest{ID: p.id, Parent: p.parent, Positioner: ports.Positioner{Width: 30, Height: 20, AnchorRect: domain.Rect{W: 1, H: 1}}}
+			h.client <- ports.PopupRequest{ID: p.id, Parent: p.parent, Positioner: domain.Positioner{Width: 30, Height: 20, AnchorRect: domain.Rect{W: 1, H: 1}}}
 			h.client <- ports.PopupMapped{ID: p.id}
 			h.until(func(s domain.Scene) bool {
 				for _, w := range s.Windows {
@@ -1069,10 +1069,10 @@ func TestHintRequestPopupUnits(t *testing.T) {
 	})
 }
 
-func hintTargets27(h *hintHarness) []ports.HintTarget {
-	var targets []ports.HintTarget
+func hintTargets27(h *hintHarness) []domain.HintTarget {
+	var targets []domain.HintTarget
 	for i := 0; i < 27; i++ {
-		targets = append(targets, ports.HintTarget{Window: 1, Source: domain.HintSourceDetector, Rect: domain.Rect{X: h.win.X + 5 + 100*(i%4), Y: h.win.Y + 5 + 40*(i/4), W: 30, H: 10}})
+		targets = append(targets, domain.HintTarget{Window: 1, Source: domain.HintSourceDetector, Rect: domain.Rect{X: h.win.X + 5 + 100*(i%4), Y: h.win.Y + 5 + 40*(i/4), W: 30, H: 10}})
 	}
 	return targets
 }

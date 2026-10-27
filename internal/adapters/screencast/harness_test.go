@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/zerobus"
 	"github.com/bnema/zerowrap"
 	"github.com/stretchr/testify/mock"
@@ -137,7 +137,7 @@ type svcHarness struct {
 	t     *testing.T
 	addr  string
 	svc   *Service
-	cmds  chan ports.CastCommand
+	cmds  chan domain.CastCommand
 	peers *peers
 	core  *mockvideoCore
 	run   *mockrunner
@@ -163,7 +163,7 @@ type harnessOpts struct {
 //testpolicy:realtime service integration uses a private D-Bus daemon and Unix descriptors
 func newSvcHarness(t *testing.T, o harnessOpts) *svcHarness {
 	t.Helper()
-	h := &svcHarness{t: t, cmds: make(chan ports.CastCommand, 64), peers: &peers{}, log: &logBuf{}, done: make(chan struct{}), closed: make(chan struct{}, 8)}
+	h := &svcHarness{t: t, cmds: make(chan domain.CastCommand, 64), peers: &peers{}, log: &logBuf{}, done: make(chan struct{}), closed: make(chan struct{}, 8)}
 	h.addr, h.killBus = startBus(t)
 	h.peers.exe.Store("/usr/bin/grim")
 	allow := o.allow

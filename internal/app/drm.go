@@ -119,7 +119,7 @@ type drmBackend struct {
 	startupConfig domain.Config
 	render        ports.RenderDevice
 	opener        ports.RenderDeviceOpener
-	renderInfo    ports.GPUInfo
+	renderInfo    domain.GPUInfo
 	advertised    []domain.DMABufFormat
 	seat          *seat.Seat
 	cards         []*drmCard
@@ -228,7 +228,7 @@ type drmCard struct {
 }
 
 // A failed card read must not erase its heads from a multi-card inventory.
-func retainedHeads(previous, found []ports.OutputHead, err error) []ports.OutputHead {
+func retainedHeads(previous, found []domain.OutputHead, err error) []domain.OutputHead {
 	if err != nil {
 		return previous
 	}
@@ -236,8 +236,8 @@ func retainedHeads(previous, found []ports.OutputHead, err error) []ports.Output
 }
 
 // A stopped instance is no longer enabled, even if the inventory read fails.
-func releasedHead(heads []ports.OutputHead, name string) []ports.OutputHead {
-	heads = append([]ports.OutputHead(nil), heads...)
+func releasedHead(heads []domain.OutputHead, name string) []domain.OutputHead {
+	heads = append([]domain.OutputHead(nil), heads...)
 	for i := range heads {
 		if heads[i].Info.Name == name {
 			heads[i].Enabled = false
@@ -313,7 +313,7 @@ func openDRM(ctx context.Context, cfg domain.Config, opener ports.RenderDeviceOp
 
 // openCard opens one kept card; the render card gets no local device.
 // Startup and GPU hotplug share this path. A failed card leaves no fd.
-func (b *drmBackend) openCard(ctx context.Context, info ports.GPUInfo, mode drm.MultiGPU, want drm.Want, traceDamage bool) (*drmCard, error) {
+func (b *drmBackend) openCard(ctx context.Context, info domain.GPUInfo, mode drm.MultiGPU, want drm.Want, traceDamage bool) (*drmCard, error) {
 	path, log := info.Path, b.log
 	fd, err := b.seat.OpenDevice(path)
 	if err != nil {
@@ -337,7 +337,7 @@ func (b *drmBackend) openCard(ctx context.Context, info ports.GPUInfo, mode drm.
 		b.seat.CloseDevice(fd)
 		return nil, err
 	}
-	card.SetRendererOptions(ports.RendererOptions{TraceDamage: traceDamage})
+	card.SetRendererOptions(domain.RendererOptions{TraceDamage: traceDamage})
 	device := card.Device()
 	log.Info().Str("path", path).Str("driver", info.Driver).Str("device", fmt.Sprintf("%d:%d", unix.Major(device), unix.Minor(device))).Msg("opened DRM card")
 	sf, only := card.ScanoutFormats(), 0
@@ -462,8 +462,8 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 	// new mode (core keeps the screen), false when they are gone.
 	stopping := map[string]bool{}
 	currentConfig := initial
-	var currentHeads ports.OutputHeads
-	lastHeads := map[*drmCard][]ports.OutputHead{}
+	var currentHeads domain.OutputHeads
+	lastHeads := map[*drmCard][]domain.OutputHead{}
 	progress := &applyProgress{completed: map[<-chan error]bool{}}
 	readySources := map[string]<-chan error{}
 	stopReady := map[string]chan struct{}{}
@@ -520,7 +520,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 		apply.finished(d.err)
 	}
 	publishInventory := func() {
-		var inventory ports.OutputHeads
+		var inventory domain.OutputHeads
 		for _, card := range b.cards {
 			found, err := card.ConnectedHeads()
 			if err != nil {

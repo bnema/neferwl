@@ -55,18 +55,18 @@ func (s *stepClock) advance(d time.Duration) {
 // is handled and the scene channel holds the result. One is sent first too,
 // and a scene left over from earlier events is dropped, so a scene found
 // afterwards is the flips' own.
-func (s *stepClock) flip(t *testing.T, frames chan ports.OutputFrame, scenes chan []domain.Scene, d time.Duration, outputs ...string) ([]domain.Scene, bool) {
+func (s *stepClock) flip(t *testing.T, frames chan domain.OutputFrame, scenes chan []domain.Scene, d time.Duration, outputs ...string) ([]domain.Scene, bool) {
 	t.Helper()
-	send(frames, ports.OutputFrame{Output: "sync"})
+	send(frames, domain.OutputFrame{Output: "sync"})
 	select {
 	case <-scenes:
 	default:
 	}
 	s.advance(d)
 	for _, o := range outputs {
-		send(frames, ports.OutputFrame{Output: o})
+		send(frames, domain.OutputFrame{Output: o})
 	}
-	send(frames, ports.OutputFrame{Output: "sync"})
+	send(frames, domain.OutputFrame{Output: "sync"})
 	select {
 	case set := <-scenes:
 		return set, true
@@ -76,7 +76,7 @@ func (s *stepClock) flip(t *testing.T, frames chan ports.OutputFrame, scenes cha
 }
 
 // settle is flip past every spring.
-func (s *stepClock) settle(t *testing.T, frames chan ports.OutputFrame, scenes chan []domain.Scene, outputs ...string) ([]domain.Scene, bool) {
+func (s *stepClock) settle(t *testing.T, frames chan domain.OutputFrame, scenes chan []domain.Scene, outputs ...string) ([]domain.Scene, bool) {
 	t.Helper()
 	return s.flip(t, frames, scenes, 5*time.Second, outputs...)
 }
@@ -95,7 +95,7 @@ type landRig struct {
 
 // startLanding runs core on the given outputs (gaps and terminal policy as
 // in startMulti) with animations on or off.
-func startLanding(t *testing.T, animated bool, edit func(*domain.Config), outs ...ports.OutputInfo) *landRig {
+func startLanding(t *testing.T, animated bool, edit func(*domain.Config), outs ...domain.OutputInfo) *landRig {
 	t.Helper()
 	if !animated {
 		r := startMulti(t, func(c *domain.Config) {

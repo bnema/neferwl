@@ -9,7 +9,6 @@ import (
 	cm "github.com/bnema/go-wayland-bindings/server/colormanagement"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/logging"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 )
 
@@ -36,11 +35,11 @@ func watchColor(c *wlturbo.Display, id uint32) *colorEvent {
 	registerWireProxy(c, p)
 	return p
 }
-func colorServer(t *testing.T) (*Server, *wlturbo.Display, chan ports.OutputFormats) {
+func colorServer(t *testing.T) (*Server, *wlturbo.Display, chan domain.OutputFormats) {
 	t.Helper()
 	dir := t.TempDir()
-	formats := make(chan ports.OutputFormats, 8)
-	s, err := New(Options{RuntimeDir: dir, Outputs: ports.Layout{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 8, Height: 8}, Width: 8, Height: 8, Scale: 1}}}, Channels{OutputFormats: formats}, logging.For(context.Background(), "wayland"))
+	formats := make(chan domain.OutputFormats, 8)
+	s, err := New(Options{RuntimeDir: dir, Outputs: domain.Layout{{Info: domain.OutputInfo{Name: "HEADLESS-1", Width: 8, Height: 8}, Width: 8, Height: 8, Scale: 1}}}, Channels{OutputFormats: formats}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +257,7 @@ func TestColorOutputAndFeedback(t *testing.T) {
 		t.Fatalf("preferred %v", preferred.events)
 	}
 	s.display.Do(func() {
-		s.setOutputHDR(ports.OutputFormats{Output: "HEADLESS-1", HDR: &ports.OutputHDR{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: .005}})
+		s.setOutputHDR(domain.OutputFormats{Output: "HEADLESS-1", HDR: &domain.OutputHDR{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: .005}})
 	})
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)

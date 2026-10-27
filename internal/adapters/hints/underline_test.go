@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,7 +53,7 @@ func (c *canvas) word(x, y, w int, descender bool) OCRWord {
 
 func (c *canvas) underline(x0, x1, y int) { c.fill(x0, y, x1, y+1, c.ink) }
 
-func scanUnder(c *canvas, words ...OCRWord) []ports.HintTarget {
+func scanUnder(c *canvas, words ...OCRWord) []domain.HintTarget {
 	markUnderlined(c.g, words)
 	return textLinks(words, float64(c.s))
 }
@@ -243,7 +242,7 @@ func TestUnderlineIgnoresSingleGlyph(t *testing.T) {
 }
 
 // Exclude URL targets without depending on the removed HintTarget.Text flag.
-func underlineOnlyTargets(words []OCRWord) []ports.HintTarget {
+func underlineOnlyTargets(words []OCRWord) []domain.HintTarget {
 	plain := append([]OCRWord(nil), words...)
 	for i := range plain {
 		plain[i].Underlined = false

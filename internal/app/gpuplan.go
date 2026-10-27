@@ -16,12 +16,12 @@ import (
 )
 
 type cardPlan struct {
-	Info   ports.GPUInfo
+	Info   domain.GPUInfo
 	Render bool
 }
 
 // planCards preserves the selector's candidate order; mode is irrelevant here.
-func planCards(cands []ports.GPUInfo, sel ports.GPUSelection) []cardPlan {
+func planCards(cands []domain.GPUInfo, sel domain.GPUSelection) []cardPlan {
 	plans := make([]cardPlan, 0, len(sel.Keep))
 	for _, i := range sel.Keep {
 		plans = append(plans, cardPlan{Info: cands[i], Render: i == sel.Render})
@@ -81,10 +81,10 @@ func multiGPUMode(value string) drm.MultiGPU {
 	}
 }
 
-func selectGPUPlans(cands []ports.GPUInfo, cfg domain.Config, env string) ([]cardPlan, ports.GPUSelection, error) {
+func selectGPUPlans(cands []domain.GPUInfo, cfg domain.Config, env string) ([]cardPlan, domain.GPUSelection, error) {
 	config, err := gpuSelectConfig(cfg, env)
 	if err != nil {
-		return nil, ports.GPUSelection{}, err
+		return nil, domain.GPUSelection{}, err
 	}
 	sel, err := core.SelectGPUs(cands, config)
 	if err != nil {
@@ -93,8 +93,8 @@ func selectGPUPlans(cands []ports.GPUInfo, cfg domain.Config, env string) ([]car
 	return planCards(cands, sel), sel, nil
 }
 
-func openPlannedRender(opener ports.RenderDeviceOpener, plans []cardPlan, strict bool, log zerowrap.Logger) (ports.RenderDevice, ports.GPUInfo, error) {
-	var ordered []ports.GPUInfo
+func openPlannedRender(opener ports.RenderDeviceOpener, plans []cardPlan, strict bool, log zerowrap.Logger) (ports.RenderDevice, domain.GPUInfo, error) {
+	var ordered []domain.GPUInfo
 	for _, p := range plans {
 		if p.Render {
 			ordered = append(ordered, p.Info)
@@ -119,15 +119,15 @@ func openPlannedRender(opener ports.RenderDeviceOpener, plans []cardPlan, strict
 	if len(errs) == 0 {
 		errs = append(errs, core.ErrNoRenderGPU)
 	}
-	return nil, ports.GPUInfo{}, errors.Join(errs...)
+	return nil, domain.GPUInfo{}, errors.Join(errs...)
 }
 
 // openHeadlessRender tolerates missing DRM discovery only without constraints.
-func openHeadlessRender(opener ports.RenderDeviceOpener, cands []ports.GPUInfo, listErr error, cfg domain.Config, env string, log zerowrap.Logger) (ports.RenderDevice, error) {
+func openHeadlessRender(opener ports.RenderDeviceOpener, cands []domain.GPUInfo, listErr error, cfg domain.Config, env string, log zerowrap.Logger) (ports.RenderDevice, error) {
 	constrained := len(cfg.DRM.Devices) > 0 || len(cfg.DRM.Ignore) > 0 || cfg.Render.Device != "" || env != ""
 	fallback := func(reason error) (ports.RenderDevice, error) {
 		log.Info().Err(reason).Msg("render GPU: first usable Vulkan device (headless discovery fallback)")
-		return opener.Open(ports.GPUInfo{})
+		return opener.Open(domain.GPUInfo{})
 	}
 	config, err := gpuSelectConfig(cfg, env)
 	if err != nil {
@@ -148,7 +148,7 @@ func openHeadlessRender(opener ports.RenderDeviceOpener, cands []ports.GPUInfo, 
 				return nil, fmt.Errorf("DRM device %q: %w", config.Render, err)
 			}
 			log.Info().Str("render", config.Render).Msg("render GPU: explicit render node without DRM card")
-			return opener.Open(ports.GPUInfo{Render: st.Rdev})
+			return opener.Open(domain.GPUInfo{Render: st.Rdev})
 		}
 	}
 	if listErr != nil {

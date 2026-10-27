@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 //testpolicy:realtime fsnotify observes actual config files and directory creation
@@ -24,7 +24,7 @@ func TestWatch(t *testing.T) {
 			}
 			path := filepath.Join(dir, "config")
 			ctx, cancel := context.WithCancel(context.Background())
-			out := make(chan ports.ConfigChanged, 8)
+			out := make(chan domain.ConfigChanged, 8)
 			done := make(chan error, 1)
 			ready := make(chan struct{})
 			go func() { done <- watch(ctx, path, out, logging.For(ctx, "config"), ready) }()
@@ -166,7 +166,7 @@ func TestWatchSymlink(t *testing.T) {
 	path := filepath.Join(dirs["config"], "config")
 	link(middle, path)
 	ctx, cancel := context.WithCancel(context.Background())
-	out := make(chan ports.ConfigChanged, 8)
+	out := make(chan domain.ConfigChanged, 8)
 	done := make(chan error, 1)
 	go func() { done <- Watch(ctx, path, out, logging.For(ctx, "config")) }()
 	defer func() {

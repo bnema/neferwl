@@ -31,7 +31,7 @@ func TestWriteDumpPrivate(t *testing.T) {
 	prefix := filepath.Join(dir, when.Format("20060102-150405.000")+"-o")
 	require.NoError(t, os.Symlink(victim, prefix+".json"))
 	pix := make([]byte, 4*4*4)
-	j := &dumpJob{when: when, req: ports.HintScanRequest{Output: "o", Width: 4, Height: 4, Scale: 1}, pix: pix, stride: 16, m: &mapping{}}
+	j := &dumpJob{when: when, req: domain.HintScanRequest{Output: "o", Width: 4, Height: 4, Scale: 1}, pix: pix, stride: 16, m: &mapping{}}
 	require.NoError(t, writeDump(dir, j))
 
 	fi, err := os.Stat(dir)
@@ -48,9 +48,9 @@ func TestWriteDumpPrivate(t *testing.T) {
 
 func TestDumpSourcesAndCrops(t *testing.T) {
 	dir := t.TempDir()
-	j := &dumpJob{when: time.Now(), req: ports.HintScanRequest{Output: "test", Width: 80, Height: 80, Scale: 2}, stride: 320, pix: make([]byte, 80*80*4)}
+	j := &dumpJob{when: time.Now(), req: domain.HintScanRequest{Output: "test", Width: 80, Height: 80, Scale: 2}, stride: 320, pix: make([]byte, 80*80*4)}
 	for i, source := range []domain.HintSource{domain.HintSourceATSPI, domain.HintSourceOCR, domain.HintSourceDetector} {
-		j.targets = append(j.targets, ports.HintTarget{Source: source, Kind: domain.HintLink, Window: 1, Score: 1, Rect: domain.Rect{X: 3 + i*10, Y: 3, W: 5, H: 5}})
+		j.targets = append(j.targets, domain.HintTarget{Source: source, Kind: domain.HintLink, Window: 1, Score: 1, Rect: domain.Rect{X: 3 + i*10, Y: 3, W: 5, H: 5}})
 	}
 	j.stages = []scanStage{{Source: "ocr", Windows: []domain.WindowID{1}, Targets: 1, MS: 2, Covered: []domain.WindowID{1}, Crops: []scanCrop{{Window: 1, Source: "ocr", Rect: image.Rect(1, 1, 78, 78), Popups: []image.Rectangle{image.Rect(50, 50, 60, 60)}, Covered: true}}}}
 	require.NoError(t, writeDump(dir, j))
@@ -81,13 +81,13 @@ func TestDumpStageRecordsPartialCoverageAndError(t *testing.T) {
 	s := newMocksource(t)
 	s.EXPECT().needsFrame(mock.Anything).Return(false)
 	s.EXPECT().kind().Return(domain.HintSourceATSPI)
-	wins := []ports.HintWindow{{ID: 1, Rect: domain.Rect{W: 20, H: 20}, Popups: []domain.Rect{{X: 20, W: 10, H: 10}}}, {ID: 2, Rect: domain.Rect{X: 40, W: 20, H: 20}}}
-	req := ports.HintScanRequest{Width: 100, Height: 80, Scale: 2, Windows: wins}
-	s.EXPECT().scan(mock.Anything, req, wins, (*frame)(nil)).Return([]ports.HintTarget{{Window: 1, Source: domain.HintSourceATSPI}}, errors.New("partial")).Once()
+	wins := []domain.HintWindow{{ID: 1, Rect: domain.Rect{W: 20, H: 20}, Popups: []domain.Rect{{X: 20, W: 10, H: 10}}}, {ID: 2, Rect: domain.Rect{X: 40, W: 20, H: 20}}}
+	req := domain.HintScanRequest{Width: 100, Height: 80, Scale: 2, Windows: wins}
+	s.EXPECT().scan(mock.Anything, req, wins, (*frame)(nil)).Return([]domain.HintTarget{{Window: 1, Source: domain.HintSourceATSPI}}, errors.New("partial")).Once()
 	w := worker{sources: []source{s}, dumpDir: t.TempDir()}
-	captures := make(chan ports.CaptureRequest, 1)
-	captured := make(chan ports.CaptureDone, 1)
-	captured <- ports.CaptureDone{ID: ports.CaptureIDInternal | 1}
+	captures := make(chan domain.CaptureRequest, 1)
+	captured := make(chan domain.CaptureDone, 1)
+	captured <- domain.CaptureDone{ID: ports.CaptureIDInternal | 1}
 	res := w.serve(context.Background(), req, nil, captures, captured, nil, time.Second)
 	require.NoError(t, res.Err)
 	require.NotNil(t, w.pending)
@@ -106,7 +106,7 @@ func TestDumpStageRecordsPartialCoverageAndError(t *testing.T) {
 func TestHintDumpDurations(t *testing.T) {
 	dir := t.TempDir()
 	when := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-	j := &dumpJob{when: when, req: ports.HintScanRequest{Output: "o", Width: 1, Height: 1, Scale: 1}, pix: make([]byte, 4), stride: 4, captureD: 1250 * time.Microsecond, stages: []scanStage{{Source: "atspi", MS: 2.5}, {Source: "detector", MS: 4.25}}}
+	j := &dumpJob{when: when, req: domain.HintScanRequest{Output: "o", Width: 1, Height: 1, Scale: 1}, pix: make([]byte, 4), stride: 4, captureD: 1250 * time.Microsecond, stages: []scanStage{{Source: "atspi", MS: 2.5}, {Source: "detector", MS: 4.25}}}
 	require.NoError(t, writeDump(dir, j))
 	data, err := os.ReadFile(filepath.Join(dir, when.Format("20060102-150405.000")+"-o.json"))
 	require.NoError(t, err)

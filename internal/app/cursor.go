@@ -8,7 +8,6 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/xcursor"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // cursorSize is XCURSOR_SIZE (logical pixels), 24 by default.
@@ -57,8 +56,8 @@ var legacyCursorNames = map[string][]string{
 // hover and each output loads them on its render goroutine.
 var themeCursors = struct {
 	sync.Mutex
-	m map[themeKey]ports.CursorImage
-}{m: map[themeKey]ports.CursorImage{}}
+	m map[themeKey]domain.CursorImage
+}{m: map[themeKey]domain.CursorImage{}}
 
 type themeKey struct {
 	shape       string
@@ -71,7 +70,7 @@ type themeKey struct {
 // an empty image when hidden, then rotated by the output transform t (the
 // cursor plane and the headless cursor are drawn in target space). Unknown
 // shapes fall back to the arrow.
-func loadCursor(c ports.CursorChange, scale float64, t domain.BufferTransform, limit int) (ports.CursorImage, error) {
+func loadCursor(c domain.CursorChange, scale float64, t domain.BufferTransform, limit int) (domain.CursorImage, error) {
 	img, err := loadCursorUpright(c, scale, limit)
 	if err != nil {
 		return img, err
@@ -81,7 +80,7 @@ func loadCursor(c ports.CursorChange, scale float64, t domain.BufferTransform, l
 
 // rotateCursor returns img as an output with transform t holds it, hotspot
 // included. It never modifies img (theme images are cached).
-func rotateCursor(img ports.CursorImage, t domain.BufferTransform) ports.CursorImage {
+func rotateCursor(img domain.CursorImage, t domain.BufferTransform) domain.CursorImage {
 	if t == 0 || img.W <= 0 || img.H <= 0 || len(img.Pixels) < img.W*img.H*4 {
 		return img
 	}
@@ -95,13 +94,13 @@ func rotateCursor(img ports.CursorImage, t domain.BufferTransform) ports.CursorI
 		}
 	}
 	hx, hy := t.ToBuffer(float64(img.HotX)+.5, float64(img.HotY)+.5, float64(img.W), float64(img.H))
-	return ports.CursorImage{W: dw, H: dh, HotX: int(hx), HotY: int(hy), Pixels: out}
+	return domain.CursorImage{W: dw, H: dh, HotX: int(hx), HotY: int(hy), Pixels: out}
 }
 
-func loadCursorUpright(c ports.CursorChange, scale float64, limit int) (ports.CursorImage, error) {
+func loadCursorUpright(c domain.CursorChange, scale float64, limit int) (domain.CursorImage, error) {
 	scale = max(scale, 1)
 	if c.Hidden {
-		return ports.CursorImage{}, nil
+		return domain.CursorImage{}, nil
 	}
 	if c.Image != nil {
 		img := xcursor.Image{W: c.Image.W, H: c.Image.H, HotX: c.Image.HotX, HotY: c.Image.HotY, Pixels: c.Image.Pixels}
@@ -111,7 +110,7 @@ func loadCursorUpright(c ports.CursorChange, scale float64, limit int) (ports.Cu
 			w, h = w*limit/big, h*limit/big
 		}
 		img = img.Scale(max(w, 1), max(h, 1))
-		return ports.CursorImage{W: img.W, H: img.H, HotX: img.HotX, HotY: img.HotY, Pixels: img.Pixels}, nil
+		return domain.CursorImage{W: img.W, H: img.H, HotX: img.HotX, HotY: img.HotY, Pixels: img.Pixels}, nil
 	}
 	shape := c.Shape
 	if shape == "" {
@@ -132,10 +131,10 @@ func loadCursorUpright(c ports.CursorChange, scale float64, limit int) (ports.Cu
 		img, err = xcursor.Load(dirs, theme, []string{"default", "left_ptr"}, size)
 	}
 	if err != nil {
-		return ports.CursorImage{}, err
+		return domain.CursorImage{}, err
 	}
 	img = img.ForSize(size, limit)
-	out := ports.CursorImage{W: img.W, H: img.H, HotX: img.HotX, HotY: img.HotY, Pixels: img.Pixels}
+	out := domain.CursorImage{W: img.W, H: img.H, HotX: img.HotX, HotY: img.HotY, Pixels: img.Pixels}
 	themeCursors.m[key] = out
 	return out, nil
 }

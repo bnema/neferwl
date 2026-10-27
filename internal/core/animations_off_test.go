@@ -29,7 +29,7 @@ func (r *swipeRig) stillMoves(t *testing.T, n int, dx, dy float64) {
 // events in order and publishes before taking the next one, so once the
 // send returns every earlier event is handled.
 func (r *swipeRig) published() ([]domain.Scene, bool) {
-	send(r.frames, ports.OutputFrame{Output: "sync"})
+	send(r.frames, domain.OutputFrame{Output: "sync"})
 	select {
 	case s := <-r.scenes:
 		return s, true
@@ -107,7 +107,7 @@ func TestReloadToOffSettlesALanding(t *testing.T) {
 		}
 		cfg := r.cfg
 		cfg.Animations.On = false
-		r.reload <- ports.ConfigChanged{Config: cfg}
+		r.reload <- domain.ConfigChanged{Config: cfg}
 		s = scene(t, r.scenes)
 		if got, _ := rectOf(s, 1); got.X != 0 {
 			t.Fatalf("column 1 at %d after the reload, want the settled rect", got.X)
@@ -127,7 +127,7 @@ func (r *swipeRig) noFrameScene(t *testing.T, outputs ...string) {
 	for range 2 {
 		r.advance(16 * time.Millisecond)
 		for _, o := range outputs {
-			r.frames <- ports.OutputFrame{Output: o}
+			r.frames <- domain.OutputFrame{Output: o}
 		}
 	}
 	if s, ok := r.published(); ok {

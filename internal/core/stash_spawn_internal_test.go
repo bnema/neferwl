@@ -25,7 +25,7 @@ func fixedClock(t *testing.T, now *time.Time) ports.Clock {
 	return clock
 }
 
-func stashSpawnCore(t *testing.T, commands chan ports.ClientCommand, spawn chan ports.SpawnRequest, clock ports.Clock) *Core {
+func stashSpawnCore(t *testing.T, commands chan ports.ClientCommand, spawn chan domain.SpawnRequest, clock ports.Clock) *Core {
 	t.Helper()
 	var cfg domain.Config
 	cfg.Keyboard.CmdKey = "alt"
@@ -34,11 +34,11 @@ func stashSpawnCore(t *testing.T, commands chan ports.ClientCommand, spawn chan 
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.addScreen(ports.OutputInfo{Name: "A", Width: 300, Height: 200})
+	c.addScreen(domain.OutputInfo{Name: "A", Width: 300, Height: 200})
 	return c
 }
 
-func claimToken(req ports.SpawnRequest) string {
+func claimToken(req domain.SpawnRequest) string {
 	return strings.TrimPrefix(req.Env[0], ports.SlotEnv+"=")
 }
 
@@ -47,7 +47,7 @@ func TestSpawnStashIndependentOfCommandDrain(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		now := claimBase
 		commands := make(chan ports.ClientCommand)
-		spawn := make(chan ports.SpawnRequest, 1)
+		spawn := make(chan domain.SpawnRequest, 1)
 		c := stashSpawnCore(t, commands, spawn, fixedClock(t, &now))
 		if err := c.spawnStash(context.Background(), c.cur().mon.Current(), [][]string{{"firefox"}}, false); err != nil {
 			t.Fatal(err)
@@ -94,7 +94,7 @@ func TestSpawnStashCancelsClaimsFromFirstUnissued(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				now := claimBase
 				commands := make(chan ports.ClientCommand) // unread: spawns are independent of command delivery
-				spawn := make(chan ports.SpawnRequest, tc.queue)
+				spawn := make(chan domain.SpawnRequest, tc.queue)
 				c := stashSpawnCore(t, commands, spawn, fixedClock(t, &now))
 				ctx, cancel := context.WithCancel(context.Background())
 				t.Cleanup(cancel)

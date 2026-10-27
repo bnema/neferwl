@@ -11,7 +11,6 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -40,10 +39,10 @@ func TestPipelineWaitsForFenceBeforeRead(t *testing.T) {
 	}).Once()
 	r.EXPECT().BeginCapture().Return(frame, nil).Once()
 	r.EXPECT().EndCapture(frame).Return().Once()
-	replies := make(chan ports.CaptureDone, 1)
+	replies := make(chan domain.CaptureDone, 1)
 	p := NewPipeline(context.Background(), replies)
 	q := pipelineRequest(t, 1)
-	p.SubmitScoped(domain.SecurityState{}, r, []ports.CaptureRequest{q})
+	p.SubmitScoped(domain.SecurityState{}, r, []domain.CaptureRequest{q})
 	// Longer than one syncfile poll slice: the worker has polled at least once.
 	select {
 	case <-entered:
@@ -79,10 +78,10 @@ func TestPipelinePropagatesReadError(t *testing.T) {
 	frame.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.Anything, 8).Return(boom).Once()
 	r.EXPECT().BeginCapture().Return(frame, nil).Once()
 	r.EXPECT().EndCapture(frame).Return().Once()
-	replies := make(chan ports.CaptureDone, 1)
+	replies := make(chan domain.CaptureDone, 1)
 	p := NewPipeline(context.Background(), replies)
 	q := pipelineRequest(t, 1)
-	p.SubmitScoped(domain.SecurityState{}, r, []ports.CaptureRequest{q})
+	p.SubmitScoped(domain.SecurityState{}, r, []domain.CaptureRequest{q})
 	done := awaitCapture(t, replies)
 	if !errors.Is(done.Err, boom) || done.ID != q.ID {
 		t.Fatalf("result %+v", done)

@@ -60,7 +60,7 @@ type hintState struct {
 	// one on screen ends it.
 	ws      *Workspace
 	geom    hintGeom
-	windows []ports.HintWindow // visible units at request time
+	windows []domain.HintWindow // visible units at request time
 	targets []hintTarget
 	typed   string
 	// gen is incremented each time a scan's targets are shown, so overlay
@@ -102,7 +102,7 @@ func (c *Core) hintRequest() {
 		return
 	}
 	wins := c.hintWindows(sc)
-	req := ports.HintScanRequest{Seq: c.hint.seq + 1, Output: sc.name(), Width: sc.info.Width, Height: sc.info.Height, Scale: sc.scale, LinksOnly: c.cfg.Hint.LinksOnly, Windows: wins}
+	req := domain.HintScanRequest{Seq: c.hint.seq + 1, Output: sc.name(), Width: sc.info.Width, Height: sc.info.Height, Scale: sc.scale, LinksOnly: c.cfg.Hint.LinksOnly, Windows: wins}
 	select {
 	case c.ch.HintScans <- req:
 	default:
@@ -114,9 +114,9 @@ func (c *Core) hintRequest() {
 // hintWindows lists the windows drawn on sc, bottom to top, with their client
 // area (placements are output-local). A target is only clicked while the
 // geometry of its window is the one seen here.
-func (c *Core) hintWindows(sc *screen) []ports.HintWindow {
+func (c *Core) hintWindows(sc *screen) []domain.HintWindow {
 	view := sc.mon.viewport()
-	var out []ports.HintWindow
+	var out []domain.HintWindow
 	for _, p := range sc.shownLayout() {
 		if p.Hidden || p.Preview > 0 || !view.shows(p) {
 			continue
@@ -125,7 +125,7 @@ func (c *Core) hintWindows(sc *screen) []ports.HintWindow {
 		if r.W <= 0 || r.H <= 0 {
 			continue
 		}
-		w := ports.HintWindow{ID: p.ID, Rect: r, Focused: p.Focused}
+		w := domain.HintWindow{ID: p.ID, Rect: r, Focused: p.Focused}
 		rec := c.windows.lookup(p.ID)
 		w.PID, w.AppID = rec.client.PID, rec.client.AppID
 		for _, id := range c.popupOrder {
@@ -151,7 +151,7 @@ func (c *Core) hintPointerBusy() bool {
 }
 
 // hintResult handles a scanner result and reports whether to publish.
-func (c *Core) hintResult(res ports.HintScanResult) bool {
+func (c *Core) hintResult(res domain.HintScanResult) bool {
 	h := &c.hint
 	if h.phase != hintPending || res.Seq != h.seq || res.Output != h.output {
 		return false

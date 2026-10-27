@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	ext "github.com/bnema/go-wayland-bindings/server/extworkspace"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
@@ -88,7 +90,7 @@ func (p *workspaceChildEvents) Dispatch(e *wlturbo.Event) {
 func TestWorkspaceProtocol(t *testing.T) {
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
-	snapshots := make(chan ports.Workspaces, 1)
+	snapshots := make(chan domain.Workspaces, 1)
 	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, WorkspaceIDs: workspaceid.WithPrefix("0a1b2c3d")}, Channels{Events: events, Workspaces: snapshots}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
@@ -104,7 +106,7 @@ func TestWorkspaceProtocol(t *testing.T) {
 		}
 	})
 	c := protocolClient(t, s, dir)
-	snapshots <- ports.Workspaces{Outputs: []ports.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: []ports.WorkspaceInfo{{ID: 42, Name: "1", Active: true}, {ID: 43, Name: "2", Index: 1}}}}}
+	snapshots <- domain.Workspaces{Outputs: []domain.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: []domain.WorkspaceInfo{{ID: 42, Name: "1", Active: true}, {ID: 43, Name: "2", Index: 1}}}}}
 	if !s.display.Do(func() {}) {
 		t.Fatal("display stopped")
 	}
@@ -199,7 +201,7 @@ func TestWorkspaceProtocol(t *testing.T) {
 		t.Fatalf("extra activation message: %v", v)
 	default:
 	}
-	snapshots <- ports.Workspaces{Outputs: []ports.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: []ports.WorkspaceInfo{{ID: 42, Name: "1", Hidden: true}, {ID: 43, Name: "2", Index: 1}}}}}
+	snapshots <- domain.Workspaces{Outputs: []domain.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: []domain.WorkspaceInfo{{ID: 42, Name: "1", Hidden: true}, {ID: 43, Name: "2", Index: 1}}}}}
 	dispatchUntil(t, c, func() bool {
 		for len(p.events) > 0 {
 			if v := <-p.events; v == [2]uint32{2<<8 | ext.ExtWorkspaceHandleV1EventState, uint32(ext.ExtWorkspaceHandleV1StateHidden)} {
@@ -208,7 +210,7 @@ func TestWorkspaceProtocol(t *testing.T) {
 		}
 		return false
 	})
-	snapshots <- ports.Workspaces{Outputs: []ports.WorkspaceOutput{}}
+	snapshots <- domain.Workspaces{Outputs: []domain.WorkspaceOutput{}}
 	dispatchUntil(t, c, func() bool {
 		for len(p.events) > 0 {
 			if v := <-p.events; v[0] == 1<<8|ext.ExtWorkspaceGroupHandleV1EventRemoved {
@@ -221,7 +223,7 @@ func TestWorkspaceProtocol(t *testing.T) {
 
 func TestWorkspaceConfiguredIDAndBatchDone(t *testing.T) {
 	dir := t.TempDir()
-	snapshots := make(chan ports.Workspaces, 1)
+	snapshots := make(chan domain.Workspaces, 1)
 	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, WorkspaceIDs: workspaceid.WithPrefix("0a1b2c3d")}, Channels{Workspaces: snapshots}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
@@ -249,9 +251,9 @@ func TestWorkspaceConfiguredIDAndBatchDone(t *testing.T) {
 		<-p.events
 	}
 	p.order.take()
-	snapshots <- ports.Workspaces{Outputs: []ports.WorkspaceOutput{
-		{Name: "HEADLESS-1", Workspaces: []ports.WorkspaceInfo{{ID: 42, Name: "1", Active: true}, {ID: 43, Name: "dev", Configured: "dev", Index: 1, Hidden: true}}},
-		{Name: "HEADLESS-2", Workspaces: []ports.WorkspaceInfo{{ID: 44, Name: "1", Active: true}}},
+	snapshots <- domain.Workspaces{Outputs: []domain.WorkspaceOutput{
+		{Name: "HEADLESS-1", Workspaces: []domain.WorkspaceInfo{{ID: 42, Name: "1", Active: true}, {ID: 43, Name: "dev", Configured: "dev", Index: 1, Hidden: true}}},
+		{Name: "HEADLESS-2", Workspaces: []domain.WorkspaceInfo{{ID: 44, Name: "1", Active: true}}},
 	}}
 	// Synchronize with the display owner's processing of the channel snapshot.
 	for i := 0; i < 8; i++ {
@@ -359,7 +361,7 @@ func TestWorkspaceConfiguredIDAndBatchDone(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	snapshots <- ports.Workspaces{Outputs: []ports.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: []ports.WorkspaceInfo{{ID: 42, Name: "one", Active: true}, {ID: 43, Name: "dev", Configured: "dev", Index: 1, Hidden: true}}}, {Name: "HEADLESS-2", Workspaces: []ports.WorkspaceInfo{{ID: 44, Name: "1", Active: true}}}}}
+	snapshots <- domain.Workspaces{Outputs: []domain.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: []domain.WorkspaceInfo{{ID: 42, Name: "one", Active: true}, {ID: 43, Name: "dev", Configured: "dev", Index: 1, Hidden: true}}}, {Name: "HEADLESS-2", Workspaces: []domain.WorkspaceInfo{{ID: 44, Name: "1", Active: true}}}}}
 	for i := 0; i < 8; i++ {
 		if !s.display.Do(func() {}) {
 			t.Fatal("display stopped")
@@ -377,7 +379,7 @@ func TestWorkspaceConfiguredIDAndBatchDone(t *testing.T) {
 	// A configured rename is a removed handle and a new one (the id is the
 	// configured name), on the still-live second group. The destroyed first
 	// group remains a tombstone until it disappears.
-	snapshots <- ports.Workspaces{Outputs: []ports.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: []ports.WorkspaceInfo{{ID: 42, Name: "one", Active: true}, {ID: 43, Name: "dev", Configured: "dev", Index: 1, Hidden: true}}}, {Name: "HEADLESS-2", Workspaces: []ports.WorkspaceInfo{{ID: 44, Name: "code", Configured: "code", Active: true}}}}}
+	snapshots <- domain.Workspaces{Outputs: []domain.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: []domain.WorkspaceInfo{{ID: 42, Name: "one", Active: true}, {ID: 43, Name: "dev", Configured: "dev", Index: 1, Hidden: true}}}, {Name: "HEADLESS-2", Workspaces: []domain.WorkspaceInfo{{ID: 44, Name: "code", Configured: "code", Active: true}}}}}
 	replaced, removed := 0, 0
 	for i := 0; i < 8 && replaced == 0; i++ {
 		if !s.display.Do(func() {}) {
@@ -411,7 +413,7 @@ func TestWorkspaceConfiguredIDAndBatchDone(t *testing.T) {
 		t.Fatal("extra id")
 	}
 	// Removing the group clears its tombstone, allowing a new handle on return.
-	snapshots <- ports.Workspaces{Outputs: []ports.WorkspaceOutput{}}
+	snapshots <- domain.Workspaces{Outputs: []domain.WorkspaceOutput{}}
 	for i := 0; i < 8; i++ {
 		if !s.display.Do(func() {}) {
 			t.Fatal("display stopped")
@@ -423,7 +425,7 @@ func TestWorkspaceConfiguredIDAndBatchDone(t *testing.T) {
 	for len(p.events) > 0 {
 		<-p.events
 	}
-	snapshots <- ports.Workspaces{Outputs: []ports.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: []ports.WorkspaceInfo{{ID: 42, Name: "1", Active: true}}}}}
+	snapshots <- domain.Workspaces{Outputs: []domain.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: []domain.WorkspaceInfo{{ID: 42, Name: "1", Active: true}}}}}
 	recreated := 0
 	for i := 0; i < 8 && recreated < 2; i++ {
 		if !s.display.Do(func() {}) {

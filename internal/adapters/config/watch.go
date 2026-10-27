@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/bnema/kvconf"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/zerowrap"
 )
 
@@ -28,12 +28,12 @@ func loadRaw(path string) map[string]string {
 // changed config on out. kvconf watches the parent directory, so atomic file
 // replacements are seen, follows symlinks (dotfiles) down to their target, and
 // waits for a missing directory to appear.
-func Watch(ctx context.Context, path string, out chan<- ports.ConfigChanged, log zerowrap.Logger) error {
+func Watch(ctx context.Context, path string, out chan<- domain.ConfigChanged, log zerowrap.Logger) error {
 	return watch(ctx, path, out, log, nil)
 }
 
 // watch exposes kvconf readiness to package tests without changing the public API.
-func watch(ctx context.Context, path string, out chan<- ports.ConfigChanged, log zerowrap.Logger, ready chan<- struct{}) error {
+func watch(ctx context.Context, path string, out chan<- domain.ConfigChanged, log zerowrap.Logger, ready chan<- struct{}) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	// A pending signal already means "changed": one slot is enough.
@@ -72,7 +72,7 @@ func watch(ctx context.Context, path string, out chan<- ports.ConfigChanged, log
 		select {
 		case <-ctx.Done():
 			return <-watchErr
-		case out <- ports.ConfigChanged{Config: cfg}:
+		case out <- domain.ConfigChanged{Config: cfg}:
 		}
 		log.Info().Strs("changed", changed).Msg("config reloaded")
 	}

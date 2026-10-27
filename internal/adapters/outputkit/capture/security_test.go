@@ -20,7 +20,7 @@ import (
 func TestSubmitScopedRejectsChangedAndProtectedEpoch(t *testing.T) {
 	for _, state := range []domain.SecurityState{{Generation: 4}, {Generation: 3, Protected: true}} {
 		t.Run(fmt.Sprintf("generation-%d-protected-%v", state.Generation, state.Protected), func(t *testing.T) {
-			replies := make(chan ports.CaptureDone, 2)
+			replies := make(chan domain.CaptureDone, 2)
 			p := NewPipeline(context.Background(), replies)
 			security := portsmocks.NewMockSessionSecurity(t)
 			security.EXPECT().Snapshot().Return(state)
@@ -28,7 +28,7 @@ func TestSubmitScopedRejectsChangedAndProtectedEpoch(t *testing.T) {
 			r := portsmocks.NewMockRenderer(t)
 			q := pipelineRequest(t, 1)
 			file := q.Dst.File
-			p.SubmitScoped(domain.SecurityState{Generation: 3}, r, []ports.CaptureRequest{q})
+			p.SubmitScoped(domain.SecurityState{Generation: 3}, r, []domain.CaptureRequest{q})
 			p.Close(r)
 			require.Len(t, replies, 1)
 			require.ErrorIs(t, (<-replies).Err, ErrSecurityState)
@@ -40,7 +40,7 @@ func TestSubmitScopedRejectsChangedAndProtectedEpoch(t *testing.T) {
 }
 
 func TestSubmitHiddenEngageDuringRenderRejectsCopyRetainsReads(t *testing.T) {
-	replies := make(chan ports.CaptureDone, 4)
+	replies := make(chan domain.CaptureDone, 4)
 	p := NewPipeline(context.Background(), replies)
 	security := portsmocks.NewMockSessionSecurity(t)
 	var engaged atomic.Bool
@@ -64,7 +64,7 @@ func TestSubmitHiddenEngageDuringRenderRejectsCopyRetainsReads(t *testing.T) {
 	s := hiddenScene()
 	s.CaptureScene.Windows = []domain.SceneWindow{{ID: 5}}
 	surfaces := map[domain.WindowID]domain.SurfaceContent{5: {ID: 5, Seq: 8}}
-	reqs := []ports.CaptureRequest{hiddenRequest(t, 1, image.Rect(0, 0, 200, 100)), hiddenRequest(t, 2, image.Rect(0, 0, 200, 100))}
+	reqs := []domain.CaptureRequest{hiddenRequest(t, 1, image.Rect(0, 0, 200, 100)), hiddenRequest(t, 2, image.Rect(0, 0, 200, 100))}
 	files := []*os.File{reqs[0].Dst.File, reqs[1].Dst.File}
 	p.SubmitHidden(s, surfaces, reqs)
 	child.AssertNotCalled(t, "BeginCapture")

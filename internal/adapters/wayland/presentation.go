@@ -6,7 +6,6 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/presentationtime"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
 )
@@ -118,7 +117,7 @@ func discard(fb *presentationtime.WpPresentationFeedback) {
 // presentFlip answers the feedbacks a flip of output answers: a window
 // content at or after a feedback's is shown; the feedback is presented,
 // or discarded when its surface committed again by then.
-func (s *Server) presentFlip(output string, f *ports.FlipInfo) {
+func (s *Server) presentFlip(output string, f *domain.FlipInfo) {
 	if f == nil || len(s.feedbacks) == 0 {
 		return
 	}
@@ -149,7 +148,7 @@ func (s *Server) presentFlip(output string, f *ports.FlipInfo) {
 // sendPresented sends presented for the flip; exact is false when a
 // later commit of the surface replaced it before the flip (then it is
 // discarded).
-func (s *Server) sendPresented(w feedbackWait, o *output, f *ports.FlipInfo, exact bool) {
+func (s *Server) sendPresented(w feedbackWait, o *output, f *domain.FlipInfo, exact bool) {
 	if !exact {
 		discard(w.fb)
 		return

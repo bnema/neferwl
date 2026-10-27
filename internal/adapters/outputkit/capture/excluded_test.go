@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,7 +19,7 @@ func excludedTestScene() domain.Scene {
 	}
 }
 
-func ids(q []ports.CaptureRequest) (out []uint64) {
+func ids(q []domain.CaptureRequest) (out []uint64) {
 	for _, r := range q {
 		out = append(out, r.ID)
 	}
@@ -28,7 +27,7 @@ func ids(q []ports.CaptureRequest) (out []uint64) {
 }
 
 func TestExcludedSceneDropsOnlyExcluded(t *testing.T) {
-	p := NewPipeline(context.Background(), make(chan ports.CaptureDone, 1))
+	p := NewPipeline(context.Background(), make(chan domain.CaptureDone, 1))
 	defer p.Close(nil)
 	s := excludedTestScene()
 	c := p.ExcludedScene(s)
@@ -44,10 +43,10 @@ func TestExcludedSceneDropsOnlyExcluded(t *testing.T) {
 }
 
 func TestSplitNoAlloc(t *testing.T) {
-	p := NewPipeline(context.Background(), make(chan ports.CaptureDone, 1))
+	p := NewPipeline(context.Background(), make(chan domain.CaptureDone, 1))
 	defer p.Close(nil)
 	for name, s := range map[string]domain.Scene{"no capture": {Windows: excludedTestScene().Windows}, "exclusion": excludedTestScene()} {
-		reqs := make([]ports.CaptureRequest, 3)
+		reqs := make([]domain.CaptureRequest, 3)
 		for i := range reqs {
 			reqs[i].ID = uint64(i + 1)
 		}
@@ -61,12 +60,12 @@ func TestSplitNoAlloc(t *testing.T) {
 }
 
 func TestSplitOrdersAndFailsClosed(t *testing.T) {
-	replies := make(chan ports.CaptureDone, 8)
+	replies := make(chan domain.CaptureDone, 8)
 	p := NewPipeline(context.Background(), replies)
 	defer p.Close(nil)
 	s := excludedTestScene()
 	s.Capture.Revision = 1
-	reqs := []ports.CaptureRequest{
+	reqs := []domain.CaptureRequest{
 		{ID: 1, Exclude: true, Session: 7, CaptureRevision: 1},
 		{ID: 2},
 		{ID: 3, Exclude: true, Session: 8, CaptureRevision: 1}, // another session: never served
@@ -89,12 +88,12 @@ func TestSplitOrdersAndFailsClosed(t *testing.T) {
 }
 
 func TestSplitExcludeWithoutSceneExclusionFails(t *testing.T) {
-	replies := make(chan ports.CaptureDone, 4)
+	replies := make(chan domain.CaptureDone, 4)
 	p := NewPipeline(context.Background(), replies)
 	defer p.Close(nil)
 	s := excludedTestScene()
 	s.Capture = nil
-	normal, excluded, _ := p.Split(s, []ports.CaptureRequest{{ID: 1, Exclude: true, Session: 7}, {ID: 2}})
+	normal, excluded, _ := p.Split(s, []domain.CaptureRequest{{ID: 1, Exclude: true, Session: 7}, {ID: 2}})
 	require.Equal(t, []uint64{2}, ids(normal))
 	require.Empty(t, excluded)
 	got := awaitCapture(t, replies)
@@ -105,20 +104,20 @@ func TestSplitExcludeWithoutSceneExclusionFails(t *testing.T) {
 // An exclusion with nothing to hide in the scene is served from the displayed
 // frame: no second composition.
 func TestSplitNoSecondCompositionWhenNothingExcludedIsShown(t *testing.T) {
-	p := NewPipeline(context.Background(), make(chan ports.CaptureDone, 1))
+	p := NewPipeline(context.Background(), make(chan domain.CaptureDone, 1))
 	defer p.Close(nil)
 	s := excludedTestScene()
 	s.Capture.Excluded = []domain.WindowID{99}
-	normal, excluded, _ := p.Split(s, []ports.CaptureRequest{{ID: 1, Exclude: true, Session: 7}, {ID: 2}})
+	normal, excluded, _ := p.Split(s, []domain.CaptureRequest{{ID: 1, Exclude: true, Session: 7}, {ID: 2}})
 	require.Len(t, normal, 2)
 	require.Empty(t, excluded)
 }
 
 // Every other capture keeps the HUD, even while an exclusion is live.
 func TestSplitStandardCapturesKeepExclusionScene(t *testing.T) {
-	p := NewPipeline(context.Background(), make(chan ports.CaptureDone, 1))
+	p := NewPipeline(context.Background(), make(chan domain.CaptureDone, 1))
 	defer p.Close(nil)
-	normal, excluded, _ := p.Split(excludedTestScene(), []ports.CaptureRequest{{ID: 1}, {ID: 2}})
+	normal, excluded, _ := p.Split(excludedTestScene(), []domain.CaptureRequest{{ID: 1}, {ID: 2}})
 	require.Len(t, normal, 2)
 	require.Empty(t, excluded)
 }
@@ -126,12 +125,12 @@ func TestSplitStandardCapturesKeepExclusionScene(t *testing.T) {
 // A request stamped with a revision the scene has not reached is refused:
 // the scene's exclusion list may predate a newly mapped HUD layer.
 func TestSplitStaleRevisionFailsClosed(t *testing.T) {
-	replies := make(chan ports.CaptureDone, 4)
+	replies := make(chan domain.CaptureDone, 4)
 	p := NewPipeline(context.Background(), replies)
 	defer p.Close(nil)
 	s := excludedTestScene()
 	s.Capture.Revision = 3
-	normal, excluded, _ := p.Split(s, []ports.CaptureRequest{
+	normal, excluded, _ := p.Split(s, []domain.CaptureRequest{
 		{ID: 1, Exclude: true, Session: 7, CaptureRevision: 4},
 		{ID: 2, Exclude: true, Session: 7, CaptureRevision: 3},
 		{ID: 3, Exclude: true, Session: 7, CaptureRevision: 2},
@@ -146,11 +145,11 @@ func TestSplitStaleRevisionFailsClosed(t *testing.T) {
 // A workspace request is served only if its workspace is still where the
 // request expected: on screen (Shown), or the one rendered off screen.
 func TestSplitWorkspaceMovedFailsClosed(t *testing.T) {
-	replies := make(chan ports.CaptureDone, 8)
+	replies := make(chan domain.CaptureDone, 8)
 	p := NewPipeline(context.Background(), replies)
 	defer p.Close(nil)
 	s := domain.Scene{Capture: &domain.SceneCapture{Shown: 3, Workspace: 4}}
-	reqs := []ports.CaptureRequest{
+	reqs := []domain.CaptureRequest{
 		{ID: 1, Workspace: 3},                  // on screen, still shown
 		{ID: 2, Workspace: 4, OffScreen: true}, // off screen, still rendered
 		{ID: 3, Workspace: 4},                  // was on screen, now hidden
@@ -170,7 +169,7 @@ func TestSplitWorkspaceMovedFailsClosed(t *testing.T) {
 	}
 	require.Equal(t, map[uint64]bool{3: true, 4: true, 5: true}, failed)
 	// Without any capture state no workspace request is served.
-	normal, _, hidden = p.Split(domain.Scene{}, []ports.CaptureRequest{{ID: 7, Workspace: 3}})
+	normal, _, hidden = p.Split(domain.Scene{}, []domain.CaptureRequest{{ID: 7, Workspace: 3}})
 	require.Empty(t, normal)
 	require.Empty(t, hidden)
 	require.ErrorIs(t, awaitCapture(t, replies).Err, ErrWorkspaceMoved)
@@ -179,11 +178,11 @@ func TestSplitWorkspaceMovedFailsClosed(t *testing.T) {
 // A window request is served off screen only while the scene renders that
 // window; any other is failed, never served from the displayed frame.
 func TestSplitWindowFailsClosed(t *testing.T) {
-	replies := make(chan ports.CaptureDone, 8)
+	replies := make(chan domain.CaptureDone, 8)
 	p := NewPipeline(context.Background(), replies)
 	defer p.Close(nil)
 	s := domain.Scene{Capture: &domain.SceneCapture{Window: 7}}
-	reqs := []ports.CaptureRequest{
+	reqs := []domain.CaptureRequest{
 		{ID: 1, Window: 7, OffScreen: true}, // rendered
 		{ID: 2, Window: 8, OffScreen: true}, // another window
 		{ID: 3, Window: 7},                  // never on screen
@@ -201,10 +200,10 @@ func TestPositionHintRemovedFromPlainCapture(t *testing.T) {
 	s := domain.Scene{PositionHint: domain.PositionHint{Opacity: 1, Columns: 1, Counts: [16]uint8{1}}}
 	require.True(t, s.PositionHint.Shown())
 	require.False(t, plain(s).PositionHint.Shown())
-	p := NewPipeline(context.Background(), make(chan ports.CaptureDone, 1))
+	p := NewPipeline(context.Background(), make(chan domain.CaptureDone, 1))
 	defer p.Close(nil)
 	s.Capture = &domain.SceneCapture{Session: 7}
-	normal, excluded, _ := p.Split(s, []ports.CaptureRequest{{ID: 1, Exclude: true, Session: 7}})
+	normal, excluded, _ := p.Split(s, []domain.CaptureRequest{{ID: 1, Exclude: true, Session: 7}})
 	require.Empty(t, normal)
 	require.Len(t, excluded, 1)
 }

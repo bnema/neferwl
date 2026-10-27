@@ -19,9 +19,9 @@ import (
 
 // castLayout: two small outputs, so frames are cheap and a flip of the other
 // output can be told from a flip of the cast's.
-var castLayout = ports.Layout{
-	{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 64, Height: 32}, Width: 64, Height: 32, Scale: 1},
-	{Info: ports.OutputInfo{Name: "HEADLESS-2", Width: 32, Height: 32}, X: 64, Width: 32, Height: 32, Scale: 1},
+var castLayout = domain.Layout{
+	{Info: domain.OutputInfo{Name: "HEADLESS-1", Width: 64, Height: 32}, Width: 64, Height: 32, Scale: 1},
+	{Info: domain.OutputInfo{Name: "HEADLESS-2", Width: 32, Height: 32}, X: 64, Width: 32, Height: 32, Scale: 1},
 }
 
 // castHarness runs a server with the cast channels wired: the commands go in
@@ -34,11 +34,11 @@ type castHarness struct {
 	dir      string
 	events   chan ports.ClientEvent
 	commands chan ports.ClientCommand
-	requests chan ports.CaptureRequest
-	replies  chan ports.CaptureDone
-	casts    chan ports.CastCommand
-	got      chan ports.CastEvent
-	invs     chan ports.CastInventory
+	requests chan domain.CaptureRequest
+	replies  chan domain.CaptureDone
+	casts    chan domain.CastCommand
+	got      chan domain.CastEvent
+	invs     chan domain.CastInventory
 	changes  chan domain.SecurityState
 }
 
@@ -53,18 +53,18 @@ func newCastHarness(t *testing.T, withSink bool) *castHarness {
 		dir:      t.TempDir(),
 		events:   make(chan ports.ClientEvent, 256),
 		commands: make(chan ports.ClientCommand, 16),
-		requests: make(chan ports.CaptureRequest, maxCaptureInflight),
-		replies:  make(chan ports.CaptureDone, maxCaptureInflight+2),
-		casts:    make(chan ports.CastCommand, 16),
-		got:      make(chan ports.CastEvent, 4096),
-		invs:     make(chan ports.CastInventory, 64),
+		requests: make(chan domain.CaptureRequest, maxCaptureInflight),
+		replies:  make(chan domain.CaptureDone, maxCaptureInflight+2),
+		casts:    make(chan domain.CastCommand, 16),
+		got:      make(chan domain.CastEvent, 4096),
+		invs:     make(chan domain.CastInventory, 64),
 		changes:  make(chan domain.SecurityState, 16),
 	}
 	opts := Options{RuntimeDir: h.dir, Outputs: castLayout, Security: &sessionsecurity.Gate{}}
 	if withSink {
 		sink := portsmocks.NewMockCastSink(t)
-		sink.EXPECT().Push(mock.Anything).RunAndReturn(func(ev ports.CastEvent) { h.got <- ev }).Maybe()
-		sink.EXPECT().Inventory(mock.Anything).RunAndReturn(func(inv ports.CastInventory) { h.invs <- inv }).Maybe()
+		sink.EXPECT().Push(mock.Anything).RunAndReturn(func(ev domain.CastEvent) { h.got <- ev }).Maybe()
+		sink.EXPECT().Inventory(mock.Anything).RunAndReturn(func(inv domain.CastInventory) { h.invs <- inv }).Maybe()
 		opts.Casts = sink
 	}
 	ch := Channels{
@@ -109,7 +109,7 @@ func (h *castHarness) sync() {
 // next is the next event pushed to the sink, which must have that kind.
 //
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
-func (h *castHarness) next(kind domain.CastEventKind) ports.CastEvent {
+func (h *castHarness) next(kind domain.CastEventKind) domain.CastEvent {
 	h.t.Helper()
 	select {
 	case ev := <-h.got:
@@ -119,12 +119,12 @@ func (h *castHarness) next(kind domain.CastEventKind) ports.CastEvent {
 		return ev
 	case <-waylandDeadline(3 * time.Second):
 		h.t.Fatalf("no cast event of kind %d", kind)
-		return ports.CastEvent{}
+		return domain.CastEvent{}
 	}
 }
 
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
-func (h *castHarness) nextCastFrameDone() ports.CastEvent {
+func (h *castHarness) nextCastFrameDone() domain.CastEvent {
 	h.t.Helper()
 	timer := time.NewTimer(3 * time.Second)
 	defer timer.Stop()
@@ -139,7 +139,7 @@ func (h *castHarness) nextCastFrameDone() ports.CastEvent {
 			}
 		case <-timer.C:
 			h.t.Fatal("no frame completion")
-			return ports.CastEvent{}
+			return domain.CastEvent{}
 		}
 	}
 }
@@ -156,14 +156,14 @@ func (h *castHarness) none() {
 }
 
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
-func (h *castHarness) request() ports.CaptureRequest {
+func (h *castHarness) request() domain.CaptureRequest {
 	h.t.Helper()
 	select {
 	case r := <-h.requests:
 		return r
 	case <-waylandDeadline(3 * time.Second):
 		h.t.Fatal("no capture request")
-		return ports.CaptureRequest{}
+		return domain.CaptureRequest{}
 	}
 }
 
@@ -199,13 +199,13 @@ func castClientEvent[T ports.ClientEvent](h *castHarness) T {
 }
 
 // complete answers a capture request the way an output does.
-func (h *castHarness) complete(req ports.CaptureRequest, err error) {
-	h.replies <- ports.CaptureDone{ID: req.ID, Output: req.Output, Err: err, Time: time.Unix(5, 6)}
+func (h *castHarness) complete(req domain.CaptureRequest, err error) {
+	h.replies <- domain.CaptureDone{ID: req.ID, Output: req.Output, Err: err, Time: time.Unix(5, 6)}
 }
 
-func (h *castHarness) open(id uint64, output string) (ports.CastEvent, uint64) {
+func (h *castHarness) open(id uint64, output string) (domain.CastEvent, uint64) {
 	h.t.Helper()
-	h.casts <- ports.CastCommand{Kind: domain.CastOpen, ID: id, Output: output, Cursor: true}
+	h.casts <- domain.CastCommand{Kind: domain.CastOpen, ID: id, Output: output, Cursor: true}
 	size := h.next(domain.CastSize)
 	return size, castClientEvent[ports.CaptureSessionOpen](h).ID
 }
@@ -222,13 +222,13 @@ func (h *castHarness) state(core uint64, st ports.CaptureSessionState) {
 	}
 }
 
-func castFrame(id uint64, buf int, data []byte, w, hgt int) ports.CastCommand {
-	return ports.CastCommand{Kind: domain.CastFrame, ID: id, Buf: buf, Data: data, Stride: w * 4, Width: w, Height: hgt, Format: 1}
+func castFrame(id uint64, buf int, data []byte, w, hgt int) domain.CastCommand {
+	return domain.CastCommand{Kind: domain.CastFrame, ID: id, Buf: buf, Data: data, Stride: w * 4, Width: w, Height: hgt, Format: 1}
 }
 
 func (h *castHarness) flip(output string) {
 	h.t.Helper()
-	h.s.Presentation().Push(ports.OutputPresented{Output: output, Flip: &ports.FlipInfo{When: 3 * time.Second, Seq: 1}})
+	h.s.Presentation().Push(domain.OutputPresented{Output: output, Flip: &domain.FlipInfo{When: 3 * time.Second, Seq: 1}})
 	h.sync()
 }
 
@@ -274,7 +274,7 @@ func TestCastOpenSizeFrameDone(t *testing.T) {
 		}
 	}
 	// CastClose ends the cast without a reply and tells core.
-	h.casts <- ports.CastCommand{Kind: domain.CastClose, ID: 7}
+	h.casts <- domain.CastCommand{Kind: domain.CastClose, ID: 7}
 	if c := castClientEvent[ports.CaptureSessionClose](h); c.ID != core {
 		t.Fatalf("close %+v", c)
 	}
@@ -289,16 +289,16 @@ func TestCastOpenSizeFrameDone(t *testing.T) {
 // A target that is missing refuses the cast.
 func TestCastOpenRefused(t *testing.T) {
 	h := newCastHarness(t, true)
-	h.casts <- ports.CastCommand{Kind: domain.CastOpen, ID: 1, Output: "NOPE-1"}
+	h.casts <- domain.CastCommand{Kind: domain.CastOpen, ID: 1, Output: "NOPE-1"}
 	if ev := h.next(domain.CastStopped); ev.ID != 1 || ev.Err == nil {
 		t.Fatalf("stopped %+v", ev)
 	}
-	h.casts <- ports.CastCommand{Kind: domain.CastOpen, ID: 2, Window: 99}
+	h.casts <- domain.CastCommand{Kind: domain.CastOpen, ID: 2, Window: 99}
 	if ev := h.next(domain.CastStopped); ev.ID != 2 || ev.Reason != domain.CaptureReasonWindowGone {
 		t.Fatalf("stopped %+v", ev)
 	}
 	for id := uint64(10); id < 10+maxCasts+1; id++ {
-		h.casts <- ports.CastCommand{Kind: domain.CastOpen, ID: id, Output: "HEADLESS-1"}
+		h.casts <- domain.CastCommand{Kind: domain.CastOpen, ID: id, Output: "HEADLESS-1"}
 	}
 	for range maxCasts {
 		h.next(domain.CastSize)
@@ -316,7 +316,7 @@ func TestCastWindowCloseStops(t *testing.T) {
 	registerProtocol(t, c, xdg)
 	top := xdg + 1
 	placeWindow(t, h.s, h.commands, w, "HEADLESS-1")
-	h.casts <- ports.CastCommand{Kind: domain.CastOpen, ID: 4, Window: w.ID}
+	h.casts <- domain.CastCommand{Kind: domain.CastOpen, ID: 4, Window: w.ID}
 	if size := h.next(domain.CastSize); size.ID != 4 || size.Width != 100 || size.Height != 100 {
 		t.Fatalf("size %+v", size)
 	}
@@ -357,7 +357,7 @@ func TestCastSessionLockStops(t *testing.T) {
 	if ev := h.next(domain.CastStopped); ev.ID != 1 || !errors.Is(ev.Err, errCastProtected) {
 		t.Fatalf("stopped %+v", ev)
 	}
-	h.casts <- ports.CastCommand{Kind: domain.CastOpen, ID: 2, Output: "HEADLESS-1"}
+	h.casts <- domain.CastCommand{Kind: domain.CastOpen, ID: 2, Output: "HEADLESS-1"}
 	if ev := h.next(domain.CastStopped); ev.ID != 2 || !errors.Is(ev.Err, errCastProtected) {
 		t.Fatalf("open under lock: %+v", ev)
 	}
@@ -398,7 +398,7 @@ func TestCastOutputUnplugStops(t *testing.T) {
 func TestCastSizeChange(t *testing.T) {
 	h := newCastHarness(t, true)
 	h.open(1, "HEADLESS-1")
-	bigger := ports.Layout{castLayout[0], castLayout[1]}
+	bigger := domain.Layout{castLayout[0], castLayout[1]}
 	bigger[0].Info.Width, bigger[0].Info.Height, bigger[0].Width, bigger[0].Height = 128, 64, 128, 64
 	h.commands <- ports.SetOutputs{Outputs: bigger, Focused: "HEADLESS-1"}
 	if size := h.next(domain.CastSize); size.Width != 128 || size.Height != 64 {
@@ -515,7 +515,7 @@ func TestCastFlipDamagesWindowCastAfterCommit(t *testing.T) {
 	c := protocolClient(t, h.s, h.dir)
 	w, _, _ := surfaceMapper(t, c, h.events)()
 	placeWindow(t, h.s, h.commands, w, "HEADLESS-1")
-	h.casts <- ports.CastCommand{Kind: domain.CastOpen, ID: 1, Window: w.ID}
+	h.casts <- domain.CastCommand{Kind: domain.CastOpen, ID: 1, Window: w.ID}
 	h.next(domain.CastSize)
 
 	h.flip("HEADLESS-1")
@@ -550,7 +550,7 @@ func TestCastWindowDamagedByPopupChanges(t *testing.T) {
 	c := protocolClient(t, h.s, h.dir)
 	w, _, _ := surfaceMapper(t, c, h.events)()
 	placeWindow(t, h.s, h.commands, w, "HEADLESS-1")
-	h.casts <- ports.CastCommand{Kind: domain.CastOpen, ID: 1, Window: w.ID}
+	h.casts <- domain.CastCommand{Kind: domain.CastOpen, ID: 1, Window: w.ID}
 	h.next(domain.CastSize)
 
 	var menu, sub domain.WindowID
@@ -607,14 +607,14 @@ func TestCastWindowDamagedByPopupChanges(t *testing.T) {
 //testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestCastInventoryPublishedOncePerChange(t *testing.T) {
 	h := newCastHarness(t, true)
-	inv := func() ports.CastInventory {
+	inv := func() domain.CastInventory {
 		t.Helper()
 		select {
 		case v := <-h.invs:
 			return v
 		case <-waylandDeadline(3 * time.Second):
 			t.Fatal("no inventory")
-			return ports.CastInventory{}
+			return domain.CastInventory{}
 		}
 	}
 	noInv := func() {
@@ -649,7 +649,7 @@ func TestCastInventoryPublishedOncePerChange(t *testing.T) {
 	requestProtocol(t, c, top, xdgshell.ToplevelRequestSetTitle, "editor")
 	requestProtocol(t, c, top, xdgshell.ToplevelRequestSetAppId, "app.editor")
 	roundtrip(t, c)
-	var got ports.CastInventory
+	var got domain.CastInventory
 	for got = inv(); got.Windows[0].Title != "editor" || got.Windows[0].AppID != "app.editor"; got = inv() {
 	}
 	noInv()
@@ -719,18 +719,18 @@ func TestCastFrameAllocations(t *testing.T) {
 	}
 	h := newCastHarness(t, false)
 	s := h.s
-	s.castRing.Push(ports.CastCommand{Kind: domain.CastOpen, ID: 1, Output: "HEADLESS-1"})
+	s.castRing.Push(domain.CastCommand{Kind: domain.CastOpen, ID: 1, Output: "HEADLESS-1"})
 	core := castClientEvent[ports.CaptureSessionOpen](h).ID
 	data := make([]byte, 64*32*4)
 	frame := castFrame(1, 0, data, 64, 32)
-	flip := ports.OutputPresented{Output: "HEADLESS-1", Flip: &ports.FlipInfo{When: time.Second, Seq: 1}}
+	flip := domain.OutputPresented{Output: "HEADLESS-1", Flip: &domain.FlipInfo{When: time.Second, Seq: 1}}
 	ran := make(chan struct{}, 1)
 	marker := func() { ran <- struct{}{} }
 	at := time.Unix(1, 2)
 	cycle := func() {
 		s.castRing.Push(frame)
 		req := <-h.requests
-		s.capturedRing.Push(ports.CaptureDone{ID: req.ID, Output: req.Output, Time: at})
+		s.capturedRing.Push(domain.CaptureDone{ID: req.ID, Output: req.Output, Time: at})
 		s.Presentation().Push(flip)
 		s.display.Post(marker)
 		<-ran

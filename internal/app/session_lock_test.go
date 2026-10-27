@@ -22,7 +22,6 @@ import (
 	clientxdg "github.com/bnema/go-wayland-bindings/client/xdgshell"
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
 )
@@ -411,12 +410,12 @@ func captureSupported(t *testing.T) bool {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer inst.Close()
-	gpu, err := inst.OpenGPU(ports.GPUInfo{})
+	gpu, err := inst.OpenGPU(domain.GPUInfo{})
 	if err != nil {
 		t.Skipf("Vulkan GPU unavailable: %v", err)
 	}
 	defer gpu.Close()
-	renderer, err := gpu.NewRenderer(16, 16, ports.RendererOptions{})
+	renderer, err := gpu.NewRenderer(16, 16, domain.RendererOptions{})
 	r, _ := renderer.(*vulkan.Renderer)
 	if err != nil {
 		return false

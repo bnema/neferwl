@@ -316,7 +316,7 @@ func TestStashSwipeSecurityLockSettlesTheStash(t *testing.T) {
 func TestStashSwipeLiftOnAnotherOutputSpringsBack(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		s, w := newStashSwipe(t, nil)
-		s.c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
+		s.c.addScreen(domain.OutputInfo{Name: "B", Width: 300, Height: 200})
 		s.begin()
 		s.move(-40)
 		s.move(-80)
@@ -465,7 +465,7 @@ func TestCaptureSceneDrawsTheSlidingVeil(t *testing.T) {
 func TestStashSwipeUnpluggedOutputSettlesTheAdoptedStash(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		s, w := newStashSwipe(t, nil)
-		s.c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
+		s.c.addScreen(domain.OutputInfo{Name: "B", Width: 300, Height: 200})
 		s.begin()
 		s.move(-40)
 		s.move(-80)

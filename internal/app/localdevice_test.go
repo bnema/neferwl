@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -11,7 +13,7 @@ import (
 // A failed lazy open is not cached: the next call retries and its success is
 // kept and closed once.
 func TestLocalRenderDeviceRetriesAfterFailure(t *testing.T) {
-	info := ports.GPUInfo{Path: "card1"}
+	info := domain.GPUInfo{Path: "card1"}
 	opener := portsmocks.NewMockRenderDeviceOpener(t)
 	dev := portsmocks.NewMockRenderDevice(t)
 	openErr := errors.New("open failed")
@@ -34,7 +36,7 @@ func TestLocalRenderDeviceRetriesAfterFailure(t *testing.T) {
 }
 
 func TestLocalRenderDeviceReopensAfterClose(t *testing.T) {
-	info := ports.GPUInfo{Path: "card1"}
+	info := domain.GPUInfo{Path: "card1"}
 	opener := portsmocks.NewMockRenderDeviceOpener(t)
 	first := portsmocks.NewMockRenderDevice(t)
 	next := portsmocks.NewMockRenderDevice(t)

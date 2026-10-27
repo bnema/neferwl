@@ -50,7 +50,7 @@ func (m wm) GetXdgSurface(r *xdgshell.WmBase, id uint32, w *wayland.Surface) {
 
 // positioner is an xdg_positioner: popups copy it when they use it.
 type positioner struct {
-	p                  ports.Positioner
+	p                  domain.Positioner
 	sizeSet, anchorSet bool
 }
 
@@ -95,7 +95,7 @@ func (*positioner) SetParentSize(*xdgshell.Positioner, int32, int32) {}
 func (*positioner) SetParentConfigure(*xdgshell.Positioner, uint32)  {}
 
 // positionerOf returns a complete positioner, or posts invalid_positioner.
-func (s *Server) positionerOf(wm *xdgshell.WmBase, p *xdgshell.Positioner) (ports.Positioner, bool) {
+func (s *Server) positionerOf(wm *xdgshell.WmBase, p *xdgshell.Positioner) (domain.Positioner, bool) {
 	if p != nil && p.Resource != nil {
 		if state := s.positioners[p.Resource]; state != nil && state.sizeSet && state.anchorSet {
 			return state.p, true
@@ -104,7 +104,7 @@ func (s *Server) positionerOf(wm *xdgshell.WmBase, p *xdgshell.Positioner) (port
 	if wm != nil {
 		wm.PostError(uint32(xdgshell.WmBaseErrorInvalidPositioner), "incomplete positioner")
 	}
-	return ports.Positioner{}, false
+	return domain.Positioner{}, false
 }
 
 type xdgSurface struct {

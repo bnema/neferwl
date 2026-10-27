@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
@@ -22,15 +23,15 @@ const (
 	shmXRGB8888 = 1
 )
 
-func reply(ctx context.Context, req ports.CaptureRequest, err error, replies chan<- ports.CaptureDone) {
+func reply(ctx context.Context, req domain.CaptureRequest, err error, replies chan<- domain.CaptureDone) {
 	replyAt(ctx, req, err, monotonicNow(), replies)
 }
 
-func replyAt(ctx context.Context, req ports.CaptureRequest, err error, at time.Time, replies chan<- ports.CaptureDone) {
+func replyAt(ctx context.Context, req domain.CaptureRequest, err error, at time.Time, replies chan<- domain.CaptureDone) {
 	if req.Dst.File != nil {
 		err = errors.Join(err, req.Dst.File.Close())
 	}
-	done := ports.CaptureDone{ID: req.ID, Output: req.Output, Err: err, Time: at}
+	done := domain.CaptureDone{ID: req.ID, Output: req.Output, Err: err, Time: at}
 	// Prefer a ready reply even after output cancellation: Wayland needs the
 	// completion to release admission credit while the session is still alive.
 	select {
@@ -54,11 +55,11 @@ func monotonicNow() time.Time {
 	return time.Unix(ts.Sec, ts.Nsec)
 }
 
-func Fail(ctx context.Context, req ports.CaptureRequest, err error, replies chan<- ports.CaptureDone) {
+func Fail(ctx context.Context, req domain.CaptureRequest, err error, replies chan<- domain.CaptureDone) {
 	reply(ctx, req, err, replies)
 }
 
-func writeFrame(ctx context.Context, req ports.CaptureRequest, frame ports.CaptureFrame, at time.Time, replies chan<- ports.CaptureDone) {
+func writeFrame(ctx context.Context, req domain.CaptureRequest, frame ports.CaptureFrame, at time.Time, replies chan<- domain.CaptureDone) {
 	var err error
 	var data []byte
 	// A client can truncate its file after Stat while it is still mapped.
@@ -106,7 +107,7 @@ func writeFrame(ctx context.Context, req ports.CaptureRequest, frame ports.Captu
 
 // destSize validates the destination of req, a file or a borrowed mapping, and
 // returns the bytes it must hold from offset 0 through the last pixel.
-func destSize(req ports.CaptureRequest) (int64, error) {
+func destSize(req domain.CaptureRequest) (int64, error) {
 	if (req.Dst.File == nil) == (req.Mapped == nil) || req.Width <= 0 || req.Width > maxMappedBytes/4 || req.Height <= 0 || req.Stride < req.Width*4 || req.Region.Dx() != req.Width || req.Region.Dy() != req.Height || req.Dst.Offset < 0 || (req.Format != shmARGB8888 && req.Format != shmXRGB8888) {
 		return 0, errInvalidDest
 	}
@@ -124,7 +125,7 @@ func destSize(req ports.CaptureRequest) (int64, error) {
 
 // mappedDst returns the borrowed mapping of req from the destination offset.
 // The output never maps, unmaps or closes it.
-func mappedDst(req ports.CaptureRequest, size int64) ([]byte, error) {
+func mappedDst(req domain.CaptureRequest, size int64) ([]byte, error) {
 	if int64(len(req.Mapped)) < size {
 		return nil, errTruncated
 	}

@@ -34,14 +34,14 @@ type Options struct {
 	// LoadCursor at the scene scale and transform. The cursor is drawn in
 	// target space: the image comes rotated and Move takes target pixels.
 	Cursor        *Cursor
-	LoadCursor    func(c ports.CursorChange, scale float64, t domain.BufferTransform, limit int) (ports.CursorImage, error)
+	LoadCursor    func(c domain.CursorChange, scale float64, t domain.BufferTransform, limit int) (domain.CursorImage, error)
 	Width, Height int
 	ScreenshotDir string
 	HDR           bool // virtual HDR output for protocol testing only
 	// RawHDR also writes latest-pq.png, the raw PQ codes of an HDR output
 	// (16-bit), next to the screenshots. Test-only; needs HDR and ScreenshotDir.
 	RawHDR      bool
-	Formats     chan<- ports.OutputFormats // confirmed color state; nil disables reporting
+	Formats     chan<- domain.OutputFormats // confirmed color state; nil disables reporting
 	Log         zerowrap.Logger
 	NewRenderer func(w, h int) (ports.Renderer, error)
 	// NewCaptureRenderer makes the child renderer of a hidden workspace
@@ -53,8 +53,8 @@ type Options struct {
 	Presented ports.PresentationSink
 	// Frames tells core a presented scene is animating: its next frame is
 	// due. Sends never block (nil: nobody is told).
-	Frames   chan<- ports.OutputFrame
-	Captured chan<- ports.CaptureDone
+	Frames   chan<- domain.OutputFrame
+	Captured chan<- domain.CaptureDone
 	// Clock paces the renderer trim (nil: system clock).
 	Clock ports.Clock
 }
@@ -63,13 +63,13 @@ type Options struct {
 // windows it no longer draws.
 const trimEvery = 10 * time.Second
 
-func Run(ctx context.Context, opts Options, scenes <-chan domain.Scene, contents <-chan *domain.ContentBatch, returns ports.ContentReturn, cursor <-chan ports.CursorChange, incoming <-chan ports.CaptureRequest) error {
+func Run(ctx context.Context, opts Options, scenes <-chan domain.Scene, contents <-chan *domain.ContentBatch, returns ports.ContentReturn, cursor <-chan domain.CursorChange, incoming <-chan domain.CaptureRequest) error {
 	r, err := opts.NewRenderer(opts.Width, opts.Height)
 	if err != nil {
 		return fmt.Errorf("create renderer: %w", err)
 	}
 	defer r.Close()
-	var confirmed *ports.OutputHDR
+	var confirmed *domain.OutputHDR
 	if opts.HDR {
 		r.SetHDR(203)
 		if bufs, err := r.ExportTargets(1, nil, false); err != nil {
@@ -82,12 +82,12 @@ func Run(ctx context.Context, opts Options, scenes <-chan domain.Scene, contents
 					_ = p.File.Close()
 				}
 			}
-			confirmed = &ports.OutputHDR{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: .005}
+			confirmed = &domain.OutputHDR{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: .005}
 			opts.Log.Info().Str("output", opts.Name).Msg("virtual HDR enabled")
 		}
 		if opts.Formats != nil {
 			select {
-			case opts.Formats <- ports.OutputFormats{Output: opts.Name, HDR: confirmed}:
+			case opts.Formats <- domain.OutputFormats{Output: opts.Name, HDR: confirmed}:
 			case <-ctx.Done():
 				return nil
 			}
@@ -127,7 +127,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan domain.Scene, contents
 		pipeline.Close(r)
 		requests.Stop(incoming)
 	}()
-	var want ports.CursorChange
+	var want domain.CursorChange
 	cursorScale := -1.0 // not loaded yet
 	var cursorTransform domain.BufferTransform
 	seen := map[domain.WindowID]uint64{}
@@ -456,7 +456,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan domain.Scene, contents
 			if opts.Presented != nil {
 				_, reads, _ := pipeline.CapHiddenSeen(seen)
 				if len(reads) > 0 {
-					reports.Push(ports.OutputPresented{Output: opts.Name, Seen: seen, ChildReads: reads})
+					reports.Push(domain.OutputPresented{Output: opts.Name, Seen: seen, ChildReads: reads})
 					reports.Flush(opts.Presented)
 				}
 			}
@@ -717,11 +717,11 @@ func linkPNGSecure(src, dst string, img image.Image, security ports.SessionSecur
 
 // report queues what the output read, with flip for a drawn frame, and
 // pushes it to the sink.
-func (opts Options) report(q *presented.Queue, flip *ports.FlipInfo, seen map[domain.WindowID]uint64) {
+func (opts Options) report(q *presented.Queue, flip *domain.FlipInfo, seen map[domain.WindowID]uint64) {
 	if opts.Presented == nil {
 		return
 	}
-	q.Push(ports.OutputPresented{Output: opts.Name, Flip: flip, Seen: seen})
+	q.Push(domain.OutputPresented{Output: opts.Name, Flip: flip, Seen: seen})
 	q.Flush(opts.Presented)
 }
 
@@ -743,8 +743,8 @@ func (f *flipShows) of(scene domain.Scene, contents map[domain.WindowID]domain.S
 // time (software clock, refresh unknown), so presentation feedback and
 // frame callbacks follow headless frames. The FlipInfo itself is new per
 // flip (the sink counts merges on it); only its Shows is shared.
-func (f *flipShows) flipInfo(scene domain.Scene, contents map[domain.WindowID]domain.SurfaceContent, kept func(domain.WindowID) bool) *ports.FlipInfo {
+func (f *flipShows) flipInfo(scene domain.Scene, contents map[domain.WindowID]domain.SurfaceContent, kept func(domain.WindowID) bool) *domain.FlipInfo {
 	var ts unix.Timespec
 	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
-	return &ports.FlipInfo{When: time.Duration(ts.Nano()), Shows: f.of(scene, contents, kept)}
+	return &domain.FlipInfo{When: time.Duration(ts.Nano()), Shows: f.of(scene, contents, kept)}
 }

@@ -10,7 +10,6 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/drm"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // ErrRenderGPURemoved ends the session when the card of the render GPU is
@@ -67,18 +66,18 @@ func (a hotplugAddAction) retryAfterTeardown() bool { return a == hotplugAddDyin
 // appeared. The render GPU never changes at runtime, so the selector's own
 // render choice is not used: every added card is a non-render card. existing
 // and dying are device paths (/dev/dri/cardN).
-func planHotplugAdd(cands []ports.GPUInfo, card string, cfg domain.Config, env string, existing, dying []string) (ports.GPUInfo, hotplugAddAction, ports.GPUSelection, error) {
+func planHotplugAdd(cands []domain.GPUInfo, card string, cfg domain.Config, env string, existing, dying []string) (domain.GPUInfo, hotplugAddAction, domain.GPUSelection, error) {
 	path := filepath.Join("/dev/dri", card)
-	i := slices.IndexFunc(cands, func(g ports.GPUInfo) bool { return filepath.Base(g.Path) == card })
+	i := slices.IndexFunc(cands, func(g domain.GPUInfo) bool { return filepath.Base(g.Path) == card })
 	if i < 0 {
-		return ports.GPUInfo{}, hotplugAddUnknown, ports.GPUSelection{}, nil
+		return domain.GPUInfo{}, hotplugAddUnknown, domain.GPUSelection{}, nil
 	}
 	info := cands[i]
 	switch {
 	case slices.Contains(existing, path):
-		return info, hotplugAddExisting, ports.GPUSelection{}, nil
+		return info, hotplugAddExisting, domain.GPUSelection{}, nil
 	case slices.Contains(dying, path):
-		return info, hotplugAddDying, ports.GPUSelection{}, nil
+		return info, hotplugAddDying, domain.GPUSelection{}, nil
 	}
 	_, sel, err := selectGPUPlans(cands, cfg, env)
 	if err != nil {

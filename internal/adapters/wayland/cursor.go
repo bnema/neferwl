@@ -6,7 +6,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/cursorshape"
 	"github.com/bnema/go-wayland-bindings/server/tablet"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/purego-libwayland/server"
 )
 
@@ -63,7 +63,7 @@ func (d cursorShapeDevice) SetShape(r *cursorshape.WpCursorShapeDeviceV1, _ uint
 		return
 	}
 	s.cursorSurface = nil
-	s.setCursor(ports.CursorChange{Shape: cursorShapes[shape]})
+	s.setCursor(domain.CursorChange{Shape: cursorShapes[shape]})
 }
 
 type pointer struct{ server *Server }
@@ -95,7 +95,7 @@ func (p pointer) SetCursor(r *wayland.Pointer, _ uint32, surf *wayland.Surface, 
 	}
 	if state == nil {
 		s.cursorSurface = nil
-		s.setCursor(ports.CursorChange{Hidden: true})
+		s.setCursor(domain.CursorChange{Hidden: true})
 		return
 	}
 	s.cursorSurface, state.hotX, state.hotY = state, int(hotX), int(hotY)
@@ -113,19 +113,19 @@ func (s *Server) hasPointerFocus(c server.Client) bool {
 // cursorImage copies the committed shm buffer of a cursor surface. No
 // buffer hides the cursor; an unreadable or transformed one falls back to
 // the arrow.
-func (s *surface) cursorImage() ports.CursorChange {
+func (s *surface) cursorImage() domain.CursorChange {
 	if s.current == nil {
-		return ports.CursorChange{Hidden: true}
+		return domain.CursorChange{Hidden: true}
 	}
 	b, ok := s.server.buffers[s.current.Resource].(*buffer)
 	if !ok || b.width > maxCursorSide || b.height > maxCursorSide || s.transform != 0 {
-		return ports.CursorChange{}
+		return domain.CursorChange{}
 	}
-	img := ports.CursorImage{W: b.width, H: b.height, Pixels: make([]byte, b.width*b.height*4)}
+	img := domain.CursorImage{W: b.width, H: b.height, Pixels: make([]byte, b.width*b.height*4)}
 	for y := range b.height {
 		row := img.Pixels[y*b.width*4 : (y+1)*b.width*4]
 		if _, err := b.pool.file.ReadAt(row, int64(b.offset+y*b.stride)); err != nil {
-			return ports.CursorChange{}
+			return domain.CursorChange{}
 		}
 		if b.format == uint32(wayland.ShmFormatXrgb8888) {
 			for i := 3; i < len(row); i += 4 {
@@ -135,11 +135,11 @@ func (s *surface) cursorImage() ports.CursorChange {
 	}
 	scale := max(s.bufferScale, 1)
 	img.HotX, img.HotY = min(max(s.hotX*scale, 0), b.width-1), min(max(s.hotY*scale, 0), b.height-1)
-	return ports.CursorChange{Image: &img, Scale: scale}
+	return domain.CursorChange{Image: &img, Scale: scale}
 }
 
 // setCursor remembers the client cursor, forwarding it unless overridden.
-func (s *Server) setCursor(c ports.CursorChange) {
+func (s *Server) setCursor(c domain.CursorChange) {
 	if s.protected() {
 		return
 	}
@@ -158,12 +158,12 @@ func (s *Server) setCursorOverride(shape string) {
 	if shape == "" {
 		s.queueCursor(s.cursorClient)
 	} else {
-		s.queueCursor(ports.CursorChange{Shape: shape})
+		s.queueCursor(domain.CursorChange{Shape: shape})
 	}
 }
 
 // queueCursor queues a cursor change; only the latest is delivered.
-func (s *Server) queueCursor(c ports.CursorChange) {
+func (s *Server) queueCursor(c domain.CursorChange) {
 	if s.channels.Cursors == nil {
 		return
 	}

@@ -11,30 +11,29 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestSpawnAdmissionRequiresCurrentUnlockedEpoch(t *testing.T) {
 	var gate sessionsecurity.Gate
 	l := New(nil, &gate, logging.For(context.Background(), "launcher"))
-	if !l.admitted(ports.SpawnRequest{}) {
+	if !l.admitted(domain.SpawnRequest{}) {
 		t.Fatal("initial unlocked request refused")
 	}
 	protected, err := gate.Engage()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if l.admitted(ports.SpawnRequest{}) || l.admitted(ports.SpawnRequest{Security: protected}) {
+	if l.admitted(domain.SpawnRequest{}) || l.admitted(domain.SpawnRequest{Security: protected}) {
 		t.Fatal("protected spawn admitted")
 	}
 	unlocked, err := gate.Release(protected.Generation)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if l.admitted(ports.SpawnRequest{}) || l.admitted(ports.SpawnRequest{Security: protected}) {
+	if l.admitted(domain.SpawnRequest{}) || l.admitted(domain.SpawnRequest{Security: protected}) {
 		t.Fatal("old spawn admitted after release")
 	}
-	if !l.admitted(ports.SpawnRequest{Security: unlocked}) {
+	if !l.admitted(domain.SpawnRequest{Security: unlocked}) {
 		t.Fatal("current spawn refused")
 	}
 }
@@ -46,8 +45,8 @@ func TestSpawnRechecksBeforeProcessStart(t *testing.T) {
 	security.EXPECT().Snapshot().Return(domain.SecurityState{Generation: 1, Protected: true}).Once()
 	l := New([]string{"PATH=/bin"}, security, logging.For(ctx, "launcher"))
 	result := filepath.Join(t.TempDir(), "must-not-exist")
-	requests := make(chan ports.SpawnRequest, 1)
-	requests <- ports.SpawnRequest{Argv: []string{"touch", result}}
+	requests := make(chan domain.SpawnRequest, 1)
+	requests <- domain.SpawnRequest{Argv: []string{"touch", result}}
 	close(requests)
 	if err := l.Run(ctx, requests); err != nil {
 		t.Fatal(err)

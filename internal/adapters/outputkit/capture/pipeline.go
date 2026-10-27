@@ -25,7 +25,7 @@ var ErrSecurityState = errors.New("capture security epoch changed or session pro
 // Both batches and their request storage are reused for the output's lifetime.
 type batch struct {
 	frame    ports.CaptureFrame
-	requests [MaxRequests]ports.CaptureRequest
+	requests [MaxRequests]domain.CaptureRequest
 	count    int
 	at       time.Time
 	// gated: the worker delivers the requests only when the owner releases
@@ -42,7 +42,7 @@ type Pipeline struct {
 	Security  ports.SessionSecurity
 	ctx       context.Context
 	cancel    context.CancelFunc
-	replies   chan<- ports.CaptureDone
+	replies   chan<- domain.CaptureDone
 	jobs      chan *batch
 	completed chan *batch
 	batches   [pipelineSlots]batch
@@ -56,7 +56,7 @@ type Pipeline struct {
 	worker sync.WaitGroup
 }
 
-func NewPipeline(ctx context.Context, replies chan<- ports.CaptureDone) *Pipeline {
+func NewPipeline(ctx context.Context, replies chan<- domain.CaptureDone) *Pipeline {
 	ctx, cancel := context.WithCancel(ctx)
 	p := &Pipeline{ctx: ctx, cancel: cancel, replies: replies, jobs: make(chan *batch, pipelineSlots), completed: make(chan *batch, pipelineSlots)}
 	for i := range p.batches {
@@ -126,7 +126,7 @@ func (p *Pipeline) EndGate(err error) {
 
 // SubmitScoped consumes requests with explicit immutable scene admission. The
 // final gate read precedes BeginCapture, not the render that produced pixels.
-func (p *Pipeline) SubmitScoped(state domain.SecurityState, r ports.Renderer, requests []ports.CaptureRequest) {
+func (p *Pipeline) SubmitScoped(state domain.SecurityState, r ports.Renderer, requests []domain.CaptureRequest) {
 	if len(requests) == 0 {
 		return
 	}

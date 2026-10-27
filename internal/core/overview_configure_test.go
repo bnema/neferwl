@@ -22,7 +22,7 @@ func TestOverviewNeighborPreviewKeepsHiddenConfigureSize(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		c.addScreen(ports.OutputInfo{Name: "OUT-1", Width: 600, Height: 400})
+		c.addScreen(domain.OutputInfo{Name: "OUT-1", Width: 600, Height: 400})
 		m := c.cur().mon
 		m.AddWindow(1)
 		m.Focus(1)
@@ -82,7 +82,7 @@ func TestOverviewConfigureUsesRealLayoutAfterMaximize(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		c.addScreen(ports.OutputInfo{Name: "OUT-1", Width: 600, Height: 400})
+		c.addScreen(domain.OutputInfo{Name: "OUT-1", Width: 600, Height: 400})
 		m := c.cur().mon
 		for id := WindowID(1); id <= 3; id++ {
 			m.AddWindow(id)

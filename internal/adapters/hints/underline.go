@@ -6,7 +6,6 @@ import (
 	"sort"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // underlineCandidate is a word with a thin line under it.
@@ -188,7 +187,7 @@ func contrastOf(g *image.Gray, box image.Rectangle) (bg, ink int) {
 // underlinedLinks returns the targets for underlined words, joining the
 // words of one continuous underline. A group that overlaps a URL target (in
 // pixels) is left to it. Coordinates are scaled to logical.
-func underlinedLinks(words []OCRWord, urls []image.Rectangle, scale float64) []ports.HintTarget {
+func underlinedLinks(words []OCRWord, urls []image.Rectangle, scale float64) []domain.HintTarget {
 	var us []OCRWord
 	for _, w := range words {
 		if w.Underlined {
@@ -197,7 +196,7 @@ func underlinedLinks(words []OCRWord, urls []image.Rectangle, scale float64) []p
 	}
 	sort.Slice(us, func(i, j int) bool { return us[i].Rect.Min.X < us[j].Rect.Min.X })
 	used := make([]bool, len(us))
-	var out []ports.HintTarget
+	var out []domain.HintTarget
 	for i := range us {
 		if used[i] {
 			continue
@@ -241,7 +240,7 @@ func underlinedLinks(words []OCRWord, urls []image.Rectangle, scale float64) []p
 		}
 		x, y := int(math.Floor(float64(rect.Min.X)/scale)), int(math.Floor(float64(rect.Min.Y)/scale))
 		right, bottom := int(math.Ceil(float64(rect.Max.X)/scale)), int(math.Ceil(float64(rect.Max.Y)/scale))
-		out = append(out, ports.HintTarget{Kind: domain.HintLink, Source: domain.HintSourceOCR, Score: 1, Rect: domain.Rect{X: x, Y: y, W: right - x, H: bottom - y}})
+		out = append(out, domain.HintTarget{Kind: domain.HintLink, Source: domain.HintSourceOCR, Score: 1, Rect: domain.Rect{X: x, Y: y, W: right - x, H: bottom - y}})
 	}
 	return out
 }

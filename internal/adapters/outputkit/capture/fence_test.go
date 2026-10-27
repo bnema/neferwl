@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,8 +14,8 @@ func fenceScene(scale float64, w, h int, marks ...domain.CaptureIndicator) domai
 	return domain.Scene{Scale: scale, OutputWidth: w, OutputHeight: h, CaptureIndicators: marks}
 }
 
-func fenceRequest(id uint64, region image.Rectangle, since time.Time) ports.CaptureRequest {
-	return ports.CaptureRequest{ID: id, Region: region, Indicate: true, Since: since}
+func fenceRequest(id uint64, region image.Rectangle, since time.Time) domain.CaptureRequest {
+	return domain.CaptureRequest{ID: id, Region: region, Indicate: true, Since: since}
 }
 
 // A request is served only from a scene that shows its mark: a border that
@@ -29,11 +28,11 @@ func TestIndicatorShown(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		scene domain.Scene
-		req   ports.CaptureRequest
+		req   domain.CaptureRequest
 		want  bool
 	}{
 		{"no indicator", fenceScene(1, 200, 100), fenceRequest(1, whole, time.Time{}), false},
-		{"request without a mark to show", fenceScene(1, 200, 100), ports.CaptureRequest{ID: 1, Region: whole}, true},
+		{"request without a mark to show", fenceScene(1, 200, 100), domain.CaptureRequest{ID: 1, Region: whole}, true},
 		{"whole output border", fenceScene(1, 200, 100, border(domain.Rect{W: 200, H: 100})), fenceRequest(1, whole, time.Time{}), true},
 		{"pill is not a border", fenceScene(1, 200, 100, pill), fenceRequest(1, whole, time.Time{}), false},
 		{"region border", fenceScene(1, 200, 100, border(domain.Rect{X: 10, Y: 10, W: 20, H: 20})), fenceRequest(1, image.Rect(10, 10, 30, 30), time.Time{}), true},
@@ -46,12 +45,12 @@ func TestIndicatorShown(t *testing.T) {
 		{"undrawable thin border shows nothing", fenceScene(1, 200, 100, border(domain.Rect{X: 10, Y: 10, W: 1, H: 20})), fenceRequest(1, image.Rect(10, 10, 11, 30), time.Time{}), false},
 		{"undrawable flat border shows nothing", fenceScene(1, 200, 100, border(domain.Rect{X: 10, Y: 10, W: 20, H: 1})), fenceRequest(1, image.Rect(10, 10, 30, 11), time.Time{}), false},
 		{"smallest drawable border", fenceScene(1, 200, 100, border(domain.Rect{X: 10, Y: 10, W: 2, H: 2})), fenceRequest(1, image.Rect(10, 10, 12, 12), time.Time{}), true},
-		{"pill cut by a short output shows nothing", fenceScene(1, 200, 8, domain.CaptureIndicator{Pill: true, Rect: domain.Rect{X: 180, Y: 8, W: 12, H: 12}}), ports.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, false},
-		{"pill partly outside shows nothing", fenceScene(1, 200, 100, domain.CaptureIndicator{Pill: true, Rect: domain.Rect{X: 195, Y: 8, W: 12, H: 12}}), ports.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, false},
-		{"whole-output pill of a tiny output", fenceScene(1, 200, 8, domain.CaptureIndicator{Pill: true, Rect: domain.Rect{W: 200, H: 8}}), ports.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, true},
-		{"empty pill shows nothing", fenceScene(1, 200, 100, domain.CaptureIndicator{Pill: true}), ports.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, false},
-		{"off-screen needs the pill", fenceScene(1, 200, 100, pill), ports.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, true},
-		{"off-screen border is not its mark", fenceScene(1, 200, 100, border(domain.Rect{W: 200, H: 100})), ports.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, false},
+		{"pill cut by a short output shows nothing", fenceScene(1, 200, 8, domain.CaptureIndicator{Pill: true, Rect: domain.Rect{X: 180, Y: 8, W: 12, H: 12}}), domain.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, false},
+		{"pill partly outside shows nothing", fenceScene(1, 200, 100, domain.CaptureIndicator{Pill: true, Rect: domain.Rect{X: 195, Y: 8, W: 12, H: 12}}), domain.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, false},
+		{"whole-output pill of a tiny output", fenceScene(1, 200, 8, domain.CaptureIndicator{Pill: true, Rect: domain.Rect{W: 200, H: 8}}), domain.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, true},
+		{"empty pill shows nothing", fenceScene(1, 200, 100, domain.CaptureIndicator{Pill: true}), domain.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, false},
+		{"off-screen needs the pill", fenceScene(1, 200, 100, pill), domain.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, true},
+		{"off-screen border is not its mark", fenceScene(1, 200, 100, border(domain.Rect{W: 200, H: 100})), domain.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.want, IndicatorShown(tc.scene, tc.req))
@@ -62,7 +61,7 @@ func TestIndicatorShown(t *testing.T) {
 // A request waits HoldFor for its indicator, then fails closed; one whose
 // indicator shows is never failed. No allocation.
 func TestExpireFailsOnlyTheRequestsWhoseIndicatorNeverCame(t *testing.T) {
-	replies := make(chan ports.CaptureDone, 4)
+	replies := make(chan domain.CaptureDone, 4)
 	p := NewPipeline(context.Background(), replies)
 	defer p.Close(nil)
 	now := time.Unix(100, 0)
@@ -72,17 +71,17 @@ func TestExpireFailsOnlyTheRequestsWhoseIndicatorNeverCame(t *testing.T) {
 	late.OffScreen = true
 	young := fenceRequest(3, image.Rect(0, 0, 200, 100), now.Add(-HoldFor/2))
 	young.OffScreen = true
-	kept, wait := p.Expire(s, []ports.CaptureRequest{shown, late, young}, now)
+	kept, wait := p.Expire(s, []domain.CaptureRequest{shown, late, young}, now)
 	require.Equal(t, []uint64{1, 3}, ids(kept))
 	require.Equal(t, HoldFor/2, wait)
 	d := <-replies
 	require.Equal(t, uint64(2), d.ID)
 	require.ErrorIs(t, d.Err, ErrIndicatorMissing)
 	// Nothing waits: no timer needed.
-	_, wait = p.Expire(s, []ports.CaptureRequest{shown}, now)
+	_, wait = p.Expire(s, []domain.CaptureRequest{shown}, now)
 	require.Zero(t, wait)
 
-	reqs := []ports.CaptureRequest{young, shown}
+	reqs := []domain.CaptureRequest{young, shown}
 	if n := testing.AllocsPerRun(100, func() { _, _ = p.Expire(s, reqs, now) }); n != 0 {
 		t.Fatalf("%v allocations", n)
 	}
@@ -91,14 +90,14 @@ func TestExpireFailsOnlyTheRequestsWhoseIndicatorNeverCame(t *testing.T) {
 // Hold hands over the requests whose indicator the scene shows and keeps the
 // others, in place.
 func TestHoldSplitsByIndicator(t *testing.T) {
-	p := NewPipeline(context.Background(), make(chan ports.CaptureDone, 4))
+	p := NewPipeline(context.Background(), make(chan domain.CaptureDone, 4))
 	defer p.Close(nil)
 	now := time.Unix(100, 0)
 	none := fenceScene(1, 200, 100)
 	with := fenceScene(1, 200, 100, domain.CaptureIndicator{Rect: domain.Rect{W: 200, H: 100}})
 	a := fenceRequest(1, image.Rect(0, 0, 200, 100), now)
 	b := fenceRequest(2, image.Rect(0, 0, 200, 100), now)
-	reqs := []ports.CaptureRequest{a, b}
+	reqs := []domain.CaptureRequest{a, b}
 	ready, held := p.Hold(none, reqs, now)
 	require.Empty(t, ready)
 	require.Equal(t, []uint64{1, 2}, ids(held))
@@ -116,7 +115,7 @@ func TestWaitingKeepsOnlyHeldRequests(t *testing.T) {
 	with := fenceScene(1, 200, 100, domain.CaptureIndicator{Rect: domain.Rect{W: 200, H: 100}})
 	held := fenceRequest(3, image.Rect(0, 0, 200, 100), now)
 	held.OffScreen = true
-	reqs := []ports.CaptureRequest{{}, held, fenceRequest(4, image.Rect(0, 0, 200, 100), now)}
+	reqs := []domain.CaptureRequest{{}, held, fenceRequest(4, image.Rect(0, 0, 200, 100), now)}
 	got := Waiting(reqs, with)
 	require.Equal(t, []uint64{3}, ids(got))
 	require.Equal(t, 3, cap(reqs[:cap(got)]), "the owner's storage is kept")
@@ -129,7 +128,7 @@ func TestWaitingKeepsOnlyHeldRequests(t *testing.T) {
 // covers it in that scene's pixels; otherwise it stays held and fails after
 // HoldFor. Nothing is served unindicated.
 func TestHeldRequestAcrossScaleAndModeChange(t *testing.T) {
-	replies := make(chan ports.CaptureDone, 4)
+	replies := make(chan domain.CaptureDone, 4)
 	p := NewPipeline(context.Background(), replies)
 	defer p.Close(nil)
 	now := time.Unix(100, 0)
@@ -152,7 +151,7 @@ func TestHeldRequestAcrossScaleAndModeChange(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.shown, IndicatorShown(tc.scene, q))
-			reqs := []ports.CaptureRequest{q}
+			reqs := []domain.CaptureRequest{q}
 			ready, held := p.Hold(tc.scene, reqs, now)
 			if tc.shown {
 				require.Equal(t, []uint64{1}, ids(ready))

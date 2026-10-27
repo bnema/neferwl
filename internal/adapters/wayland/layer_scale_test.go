@@ -38,8 +38,8 @@ func TestLayerTargetScaleBeforeConfigure(t *testing.T) {
 		t.Run(target, func(t *testing.T) {
 			s, _, commands, dir := lifecycleServer(t)
 			c := protocolClient(t, s, dir)
-			fractional := ports.OutputPlacement{Info: ports.OutputInfo{Name: "HEADLESS-2", Width: 900, Height: 600}, X: 1920, Width: 750, Height: 500, Scale: 1.2}
-			commands <- ports.SetOutputs{Outputs: ports.Layout{testOutputs[0], fractional}, Focused: "HEADLESS-1"}
+			fractional := domain.OutputPlacement{Info: domain.OutputInfo{Name: "HEADLESS-2", Width: 900, Height: 600}, X: 1920, Width: 750, Height: 500, Scale: 1.2}
+			commands <- ports.SetOutputs{Outputs: domain.Layout{testOutputs[0], fractional}, Focused: "HEADLESS-1"}
 			waitOutputs(t, c, 2)
 			var first, last uint32
 			for n, g := range c.Registry().GetGlobals() {

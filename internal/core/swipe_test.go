@@ -16,7 +16,7 @@ import (
 // clock the test moves, and page flips the test sends.
 type swipeRig struct {
 	*multiRig
-	frames chan ports.OutputFrame
+	frames chan domain.OutputFrame
 	clk    *stepClock
 	// at is the device time of the next swipe event.
 	at time.Duration
@@ -24,7 +24,7 @@ type swipeRig struct {
 	outs []string
 }
 
-var wide = ports.OutputInfo{Name: "DP-1", Width: 800, Height: 600, RefreshMilli: 60000}
+var wide = domain.OutputInfo{Name: "DP-1", Width: 800, Height: 600, RefreshMilli: 60000}
 
 func startSwipe(t *testing.T, edit func(*domain.Config)) *swipeRig {
 	t.Helper()
@@ -32,7 +32,7 @@ func startSwipe(t *testing.T, edit func(*domain.Config)) *swipeRig {
 }
 
 // startSwipeOn is startSwipe with the given outputs plugged in order.
-func startSwipeOn(t *testing.T, edit func(*domain.Config), outs ...ports.OutputInfo) *swipeRig {
+func startSwipeOn(t *testing.T, edit func(*domain.Config), outs ...domain.OutputInfo) *swipeRig {
 	t.Helper()
 	cfg := altCmdDefaults()
 	cfg.Border.Width = 0
@@ -44,11 +44,11 @@ func startSwipeOn(t *testing.T, edit func(*domain.Config), outs ...ports.OutputI
 	if edit != nil {
 		edit(&cfg)
 	}
-	r := &swipeRig{frames: make(chan ports.OutputFrame), clk: newStepClock(t)}
+	r := &swipeRig{frames: make(chan domain.OutputFrame), clk: newStepClock(t)}
 	r.multiRig = &multiRig{
 		client: make(chan ports.ClientEvent, 16), input: make(chan ports.InputEvent, 64),
-		output: make(chan ports.OutputEvent, 4), reload: make(chan ports.ConfigChanged, 4),
-		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []domain.Scene, 1), spawn: make(chan ports.SpawnRequest, 16), state: make(chan domain.State, 1), cfg: cfg,
+		output: make(chan ports.OutputEvent, 4), reload: make(chan domain.ConfigChanged, 4),
+		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []domain.Scene, 1), spawn: make(chan domain.SpawnRequest, 16), state: make(chan domain.State, 1), cfg: cfg,
 	}
 	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Spawn: r.spawn, State: r.state, Frames: r.frames}, core.Options{Clock: r.clk.clock})
 	if err != nil {
@@ -106,7 +106,7 @@ func (r *swipeRig) end(t *testing.T, cancelled bool) domain.Scene {
 func (r *swipeRig) frame(t *testing.T, d time.Duration) domain.Scene {
 	t.Helper()
 	r.advance(d)
-	r.frames <- ports.OutputFrame{Output: wide.Name}
+	r.frames <- domain.OutputFrame{Output: wide.Name}
 	return scene(t, r.scenes)
 }
 
@@ -532,7 +532,7 @@ func TestSwipeKeptWhenAnotherOutputSwitchesWorkspace(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, nil)
 		before, _ := rectOf(threeColumns(t, r), 2)
-		r.plug(t, ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000})
+		r.plug(t, domain.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000})
 		// Window 4 on DP-2, so it has a workspace below to switch to.
 		r.input <- ports.PointerMotion{X: 1000, Y: 300}
 		scene(t, r.scenes)
@@ -548,7 +548,7 @@ func TestSwipeKeptWhenAnotherOutputSwitchesWorkspace(t *testing.T) {
 		r.key(t, "Next", domain.ModAlt)
 		// DP-2 slides to its other workspace on its own flips.
 		r.advance(5 * time.Second)
-		r.frames <- ports.OutputFrame{Output: "DP-2"}
+		r.frames <- domain.OutputFrame{Output: "DP-2"}
 		for _, sc := range receive(t, r.scenes) {
 			if _, ok := rectOf(sc, 4); ok {
 				t.Fatal("DP-2 did not switch workspace")
@@ -582,7 +582,7 @@ func TestDiscreteSwipeSkippedWhenPointerChangesOutput(t *testing.T) {
 		r := startSwipe(t, func(c *domain.Config) { c.Layout.Overflow = "fixed" })
 		r.mapWindow(t, 1)
 		r.mapWindow(t, 2)
-		r.plug(t, ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000})
+		r.plug(t, domain.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000})
 		// Windows 3 and 4 on DP-2, 4 focused there.
 		r.input <- ports.PointerMotion{X: 1000, Y: 300}
 		scene(t, r.scenes)
@@ -619,7 +619,7 @@ func (r *swipeRig) drain() {
 // sent waits for core to handle what was sent and returns the commands it
 // sent meanwhile (the sync flip is a barrier, see published).
 func (r *swipeRig) sent() []ports.ClientCommand {
-	send(r.frames, ports.OutputFrame{Output: "sync"})
+	send(r.frames, domain.OutputFrame{Output: "sync"})
 	var out []ports.ClientCommand
 	for {
 		select {
@@ -1017,7 +1017,7 @@ func TestOverviewScrollStopOnOtherOutput(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, nil)
 		threeColumns(t, r)
-		r.plug(t, ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000})
+		r.plug(t, domain.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000})
 		r.key(t, "o", domain.ModAlt)
 		selected := func(s domain.Scene) domain.WindowID {
 			for _, w := range s.Windows {
@@ -1053,7 +1053,7 @@ func TestOverviewScrollStopOnOtherOutput(t *testing.T) {
 // of the swipe moves nothing.
 func TestSwipeOutputResizedMidSwipe(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		smaller := ports.OutputInfo{Name: wide.Name, Width: 600, Height: 600, RefreshMilli: 60000}
+		smaller := domain.OutputInfo{Name: wide.Name, Width: 600, Height: 600, RefreshMilli: 60000}
 		four := func(r *swipeRig) {
 			for id := domain.WindowID(1); id <= 4; id++ {
 				r.mapWindow(t, id)

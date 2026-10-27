@@ -6,19 +6,18 @@ import (
 	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestOutputSettingsDisableAndHeadlessMode(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		mode := domain.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
 		state := NewOutputOverrides(domain.Config{}, true)
-		state.heads = ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "HEADLESS-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}}
-		if _, err := state.Apply(ports.OutputApply{Heads: []ports.HeadChange{{Name: "HEADLESS-1", Enabled: false}}}); err == nil {
+		state.heads = domain.OutputHeads{Heads: []domain.OutputHead{{Info: domain.OutputInfo{Name: "HEADLESS-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}}
+		if _, err := state.Apply(domain.OutputApply{Heads: []domain.HeadChange{{Name: "HEADLESS-1", Enabled: false}}}); err == nil {
 			t.Fatal("headless disable accepted")
 		}
 		state.headless = false
-		cfg, err := state.Apply(ports.OutputApply{Heads: []ports.HeadChange{{Name: "HEADLESS-1", Enabled: false}}})
+		cfg, err := state.Apply(domain.OutputApply{Heads: []domain.HeadChange{{Name: "HEADLESS-1", Enabled: false}}})
 		if err != nil || !cfg.Outputs[0].Off {
 			t.Fatalf("disable: %+v, %v", cfg, err)
 		}
@@ -33,8 +32,8 @@ func TestReloadScaleOnlyKeepsOverrides(t *testing.T) {
 		mode := domain.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
 		file := domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 2}}}
 		state := NewOutputOverrides(file, false)
-		state.heads = ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}, {Info: ports.OutputInfo{Name: "DP-2"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}}
-		if _, err := state.Apply(ports.OutputApply{Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Pos: &image.Point{X: 100}}, {Name: "DP-2", Enabled: true}}}); err != nil {
+		state.heads = domain.OutputHeads{Heads: []domain.OutputHead{{Info: domain.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}, {Info: domain.OutputInfo{Name: "DP-2"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}}
+		if _, err := state.Apply(domain.OutputApply{Heads: []domain.HeadChange{{Name: "DP-1", Enabled: true, Pos: &image.Point{X: 100}}, {Name: "DP-2", Enabled: true}}}); err != nil {
 			t.Fatal(err)
 		}
 		scaled := file
@@ -76,9 +75,9 @@ func TestOutputApplyTransform(t *testing.T) {
 		mode := domain.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
 		file := domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 2}}}
 		state := NewOutputOverrides(file, false)
-		state.heads = ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}}
+		state.heads = domain.OutputHeads{Heads: []domain.OutputHead{{Info: domain.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}}
 		tr := domain.BufferTransform(3)
-		cfg, err := state.Apply(ports.OutputApply{Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Transform: &tr}}})
+		cfg, err := state.Apply(domain.OutputApply{Heads: []domain.HeadChange{{Name: "DP-1", Enabled: true, Transform: &tr}}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -91,12 +90,12 @@ func TestOutputApplyTransform(t *testing.T) {
 			t.Fatalf("scale reload lost the runtime transform: %+v", cfg.Outputs)
 		}
 		// Without a transform in the change, the current one stays.
-		cfg, err = state.Apply(ports.OutputApply{Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true}}})
+		cfg, err = state.Apply(domain.OutputApply{Heads: []domain.HeadChange{{Name: "DP-1", Enabled: true}}})
 		if err != nil || cfg.Outputs[0].Transform != 3 {
 			t.Fatalf("unset transform changed: %+v, %v", cfg.Outputs, err)
 		}
 		bad := domain.BufferTransform(8)
-		if _, err := state.Apply(ports.OutputApply{Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Transform: &bad}}}); err == nil {
+		if _, err := state.Apply(domain.OutputApply{Heads: []domain.HeadChange{{Name: "DP-1", Enabled: true, Transform: &bad}}}); err == nil {
 			t.Fatal("transform 8 accepted")
 		}
 
@@ -112,12 +111,12 @@ func TestOutputApplyKeepsFileAnchor(t *testing.T) {
 		anchor := domain.OutputAnchor{Relation: domain.RelationRightOf, To: "DP-1", Offset: 40}
 		file := domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-2", Anchor: anchor, ScaleOnly: true}}}
 		o := NewOutputOverrides(file, false)
-		head := func(name string) ports.OutputHead {
-			return ports.OutputHead{Info: ports.OutputInfo{Name: name}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}
+		head := func(name string) domain.OutputHead {
+			return domain.OutputHead{Info: domain.OutputInfo{Name: name}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}
 		}
-		o.heads = ports.OutputHeads{Heads: []ports.OutputHead{head("DP-1"), head("DP-2")}}
-		change := func(name string, x int) ports.HeadChange {
-			return ports.HeadChange{Name: name, Enabled: true, Pos: &image.Point{X: x}}
+		o.heads = domain.OutputHeads{Heads: []domain.OutputHead{head("DP-1"), head("DP-2")}}
+		change := func(name string, x int) domain.HeadChange {
+			return domain.HeadChange{Name: name, Enabled: true, Pos: &image.Point{X: x}}
 		}
 		byName := func(cfg domain.Config, name string) domain.OutputConfig {
 			t.Helper()
@@ -133,7 +132,7 @@ func TestOutputApplyKeepsFileAnchor(t *testing.T) {
 			return found[0]
 		}
 
-		cfg, err := o.Apply(ports.OutputApply{ID: 1, Heads: []ports.HeadChange{change("DP-1", 100), {Name: "DP-2", Enabled: true}}})
+		cfg, err := o.Apply(domain.OutputApply{ID: 1, Heads: []domain.HeadChange{change("DP-1", 100), {Name: "DP-2", Enabled: true}}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -142,7 +141,7 @@ func TestOutputApplyKeepsFileAnchor(t *testing.T) {
 			t.Fatalf("position on the reference only: DP-1 %+v, DP-2 %+v", dp1, dp2)
 		}
 
-		cfg, err = o.Apply(ports.OutputApply{ID: 2, Heads: []ports.HeadChange{change("DP-1", 100), change("DP-2", 900)}})
+		cfg, err = o.Apply(domain.OutputApply{ID: 2, Heads: []domain.HeadChange{change("DP-1", 100), change("DP-2", 900)}})
 		if err != nil {
 			t.Fatal(err)
 		}

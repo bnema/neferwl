@@ -147,7 +147,7 @@ func (s *Server) resetProtectionInput() {
 	s.deactivateConstraint()
 	clear(s.seat.heldKeys)
 	clear(s.seat.grabKeys)
-	s.seat.modState = ports.ModState{}
+	s.seat.modState = domain.ModState{}
 	s.seat.press, s.seat.pressClient = 0, server.Client{}
 	s.seat.grabSerial, s.seat.grabButton = 0, 0
 	s.seat.wheelRest, s.seat.wheelHeld = [2]int32{}, [2]float64{}

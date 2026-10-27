@@ -9,7 +9,6 @@ import (
 	"slices"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // OutputOverrides holds runtime-only output settings applied through output
@@ -18,7 +17,7 @@ import (
 type OutputOverrides struct {
 	file      domain.Config
 	overrides map[string]domain.OutputConfig
-	heads     ports.OutputHeads
+	heads     domain.OutputHeads
 	headless  bool
 }
 
@@ -32,10 +31,10 @@ func NewOutputOverrides(file domain.Config, headless bool) *OutputOverrides {
 func (o *OutputOverrides) Headless() bool { return o.headless }
 
 // Heads is the backend inventory requests are validated against.
-func (o *OutputOverrides) Heads() ports.OutputHeads { return o.heads }
+func (o *OutputOverrides) Heads() domain.OutputHeads { return o.heads }
 
 // SetHeads records the backend inventory.
-func (o *OutputOverrides) SetHeads(heads ports.OutputHeads) { o.heads = heads }
+func (o *OutputOverrides) SetHeads(heads domain.OutputHeads) { o.heads = heads }
 
 // Snapshot copies the current overrides for a later Restore.
 func (o *OutputOverrides) Snapshot() map[string]domain.OutputConfig {
@@ -125,7 +124,7 @@ func scaleChanges(old, cur domain.Config) (map[string]float64, bool) {
 	return scales, true
 }
 
-func (o *OutputOverrides) validate(req ports.OutputApply) error {
+func (o *OutputOverrides) validate(req domain.OutputApply) error {
 	if len(req.Heads) != len(o.heads.Heads) {
 		return fmt.Errorf("incomplete head configuration")
 	}
@@ -135,7 +134,7 @@ func (o *OutputOverrides) validate(req ports.OutputApply) error {
 			return fmt.Errorf("duplicate head %s", change.Name)
 		}
 		seen[change.Name] = true
-		index := slices.IndexFunc(o.heads.Heads, func(h ports.OutputHead) bool { return h.Info.Name == change.Name })
+		index := slices.IndexFunc(o.heads.Heads, func(h domain.OutputHead) bool { return h.Info.Name == change.Name })
 		if index < 0 {
 			return fmt.Errorf("unknown head %s", change.Name)
 		}
@@ -161,7 +160,7 @@ func (o *OutputOverrides) validate(req ports.OutputApply) error {
 // Apply validates a request against the inventory and, unless it is a
 // test, records its changes as overrides. It returns the effective
 // configuration.
-func (o *OutputOverrides) Apply(req ports.OutputApply) (domain.Config, error) {
+func (o *OutputOverrides) Apply(req domain.OutputApply) (domain.Config, error) {
 	if err := o.validate(req); err != nil {
 		return domain.Config{}, err
 	}

@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	ext "github.com/bnema/go-wayland-bindings/server/extworkspace"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
@@ -64,7 +66,7 @@ func bindProtectedWorkspaceRecorder(t *testing.T, c *wlturbo.Display) *protected
 func TestProtectedWorkspaceInventoryAndActivation(t *testing.T) {
 	s, events, _, dir := lifecycleServer(t)
 	state := installSecurity(t, s)
-	snapshot := ports.Workspaces{Outputs: []ports.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: []ports.WorkspaceInfo{{ID: 42, Name: "workspace-before", Active: true}}}}}
+	snapshot := domain.Workspaces{Outputs: []domain.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: []domain.WorkspaceInfo{{ID: 42, Name: "workspace-before", Active: true}}}}}
 	if !s.display.Do(func() { s.updateWorkspaces(snapshot) }) {
 		t.Fatal("display stopped")
 	}

@@ -80,7 +80,7 @@ func TestSceneAnimatingIsPerOutput(t *testing.T) {
 		c, ic := indicatorCore(t)
 		c.cfg.Animations.On = true
 		a := c.cur()
-		c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 300, Height: 200})
 		b := c.screens[1]
 		a.mon.AddWindow(1)
 		b.mon.AddWindow(2)

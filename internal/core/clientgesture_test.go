@@ -55,8 +55,8 @@ func pointerCommand(t *testing.T, ch <-chan ports.ClientCommand) ports.ClientCom
 // goes first, so the check waits for core to have handled what came before.
 func (r *multiRig) idle(t *testing.T) {
 	t.Helper()
-	r.input <- ports.PointerAxis{Vertical: ports.ScrollAxis{Set: true, Value: 1}}
-	if v := pointerCommand(t, r.commands); v != (ports.PointerAxisTo{ID: 1, Axis: ports.PointerAxis{Vertical: ports.ScrollAxis{Set: true, Value: 1}}}) {
+	r.input <- ports.PointerAxis{Vertical: domain.ScrollAxis{Set: true, Value: 1}}
+	if v := pointerCommand(t, r.commands); v != (ports.PointerAxisTo{ID: 1, Axis: ports.PointerAxis{Vertical: domain.ScrollAxis{Set: true, Value: 1}}}) {
 		t.Fatalf("unexpected command %#v", v)
 	}
 }
@@ -246,11 +246,11 @@ func TestGesturesRefusedWhileLocked(t *testing.T) {
 		gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return epoch.Load().(domain.SecurityState) })
 		r := &multiRig{
 			client: make(chan ports.ClientEvent, 16), input: make(chan ports.InputEvent, 32),
-			output: make(chan ports.OutputEvent, 4), reload: make(chan ports.ConfigChanged, 4),
+			output: make(chan ports.OutputEvent, 4), reload: make(chan domain.ConfigChanged, 4),
 			commands: make(chan ports.ClientCommand, 256), scenes: make(chan []domain.Scene, 1),
 		}
 		cfg := scrollDefaults()
-		c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Constraints: make(chan ports.PointerConstraint, 1)}, core.Options{Security: gate})
+		c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Constraints: make(chan domain.PointerConstraint, 1)}, core.Options{Security: gate})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -258,7 +258,7 @@ func TestGesturesRefusedWhileLocked(t *testing.T) {
 		done := make(chan error, 1)
 		go func() { done <- c.Run(ctx) }()
 		t.Cleanup(func() { cancel(); <-done })
-		r.output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "A", Width: 300, Height: 200}}
+		r.output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "A", Width: 300, Height: 200}}
 		scene(t, r.scenes)
 		r.client <- ports.WindowMapped{ID: 1}
 		scene(t, r.scenes)
@@ -278,7 +278,7 @@ func TestGesturesRefusedWhileLocked(t *testing.T) {
 		// The lock clears the pointer focus, which cancels the gesture in wayland.
 		locked := domain.SecurityState{Generation: 1, Protected: true}
 		epoch.Store(locked)
-		r.client <- ports.SessionLockChanged{State: locked, Surfaces: []ports.LockSurfacePlacement{{ID: 10, Output: "A", Width: 300, Height: 200}}}
+		r.client <- ports.SessionLockChanged{State: locked, Surfaces: []domain.LockSurfacePlacement{{ID: 10, Output: "A", Width: 300, Height: 200}}}
 		sceneMatch(t, r.scenes, func(s domain.Scene) bool { return s.Security == locked && len(s.Windows) == 1 })
 		r.input <- ports.SecurityInput{State: locked, Event: ports.PointerMotion{X: 50, Y: 50}}
 		r.input <- ports.SecurityInput{State: locked, Event: ports.PinchBegin{Fingers: 2, Time: 2 * time.Second}}

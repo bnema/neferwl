@@ -35,12 +35,12 @@ func TestSecurityEpochQuarantinesHeldKeysAcrossAcquireAndRelease(t *testing.T) {
 	for _, code := range []uint32{125, 42, 29, 56, 30} {
 		suppressedKey(t, k, code, true, locked) // repeats cannot reintroduce held modifiers
 	}
-	if ev := secureKey(t, k, 16, true, locked); ev.Keysym != "q" || ev.Mods != 0 || ev.State != (ports.ModState{}) {
+	if ev := secureKey(t, k, 16, true, locked); ev.Keysym != "q" || ev.Mods != 0 || ev.State != (domain.ModState{}) {
 		t.Fatalf("password inherited native state: %+v", ev)
 	}
 	secureKey(t, k, 16, false, locked)
 	secureKey(t, k, 54, true, locked) // password-era right Shift
-	if ev := secureKey(t, k, 16, true, unlocked); ev.Keysym != "q" || ev.Mods != 0 || ev.State != (ports.ModState{}) {
+	if ev := secureKey(t, k, 16, true, unlocked); ev.Keysym != "q" || ev.Mods != 0 || ev.State != (domain.ModState{}) {
 		t.Fatalf("desktop inherited password/native state: %+v", ev)
 	}
 	secureKey(t, k, 16, false, unlocked)
@@ -90,7 +90,7 @@ func TestSecurityEpochUsesActualRemappedModifiers(t *testing.T) {
 	defer k.Close()
 	initial, locked := domain.SecurityState{}, domain.SecurityState{Generation: 1, Protected: true}
 	secureKey(t, k, 58, true, initial) // physical Caps is Control in this map
-	if ev := secureKey(t, k, 16, true, locked); ev.Mods != 0 || ev.State != (ports.ModState{}) {
+	if ev := secureKey(t, k, 16, true, locked); ev.Mods != 0 || ev.State != (domain.ModState{}) {
 		t.Fatalf("remapped inherited Control leaked: %+v", ev)
 	}
 	secureKey(t, k, 16, false, locked)
@@ -150,7 +150,7 @@ func TestSecurityStateChangeResetsAltGrAndAltWithoutMaskInference(t *testing.T) 
 	locked := domain.SecurityState{Generation: 1, Protected: true}
 	secureKey(t, k, 100, true, initial)
 	secureKey(t, k, 56, true, initial)
-	if ev := secureKey(t, k, 11, true, locked); ev.Keysym != "agrave" || ev.Mods != 0 || ev.State != (ports.ModState{}) {
+	if ev := secureKey(t, k, 11, true, locked); ev.Keysym != "agrave" || ev.Mods != 0 || ev.State != (domain.ModState{}) {
 		t.Fatalf("inherited AltGr/Alt crossed acquisition: %+v", ev)
 	}
 	secureKey(t, k, 11, false, locked)
@@ -161,7 +161,7 @@ func TestSecurityStateChangeResetsAltGrAndAltWithoutMaskInference(t *testing.T) 
 	// protection bit without advancing the generation.
 	changed := locked
 	changed.Protected = false
-	if ev := secureKey(t, k, 11, true, changed); ev.Keysym != "agrave" || ev.Mods != 0 || ev.State != (ports.ModState{}) {
+	if ev := secureKey(t, k, 11, true, changed); ev.Keysym != "agrave" || ev.Mods != 0 || ev.State != (domain.ModState{}) {
 		t.Fatalf("state change missed native reset: %+v", ev)
 	}
 	suppressedKey(t, k, 100, false, changed)

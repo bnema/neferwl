@@ -12,7 +12,6 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
@@ -200,11 +199,11 @@ func TestRunVideoOnOverlayDoesNotRender(t *testing.T) {
 		// output took in, which may run ahead of the flip.)
 		flipped := 0
 		vseq := uint32(0)
-		play := func(n int) (commitRec, ports.OutputPresented) {
+		play := func(n int) (commitRec, domain.OutputPresented) {
 			t.Helper()
 			contents.send(video(n))
 			var c commitRec
-			var got ports.OutputPresented
+			var got domain.OutputPresented
 			synctest.Wait()
 			for attempts := 0; attempts < 3; attempts++ {
 				if cs := frameCommits(); len(cs) > flipped {

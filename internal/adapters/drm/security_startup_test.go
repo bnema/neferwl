@@ -39,8 +39,8 @@ func TestSecurityProtectedStartupBlackProofAndCaptureRejection(t *testing.T) {
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
 	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
 	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
-	captures := make(chan ports.CaptureRequest, 1)
-	captured := make(chan ports.CaptureDone, 1)
+	captures := make(chan domain.CaptureRequest, 1)
+	captured := make(chan domain.CaptureDone, 1)
 	scenes := make(chan domain.Scene, 1)
 	scenes <- domain.Scene{Seq: 99} // never render stale desktop after startup
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -71,7 +71,7 @@ func TestSecurityProtectedStartupBlackProofAndCaptureRejection(t *testing.T) {
 	mu.Unlock()
 	f, w := protectionFence(t, false)
 	w.Close()
-	captures <- ports.CaptureRequest{ID: 9, Dst: domain.SHMBuffer{File: f}}
+	captures <- domain.CaptureRequest{ID: 9, Dst: domain.SHMBuffer{File: f}}
 	select {
 	case reply := <-captured:
 		if reply.ID != 9 || reply.Err == nil {

@@ -141,7 +141,7 @@ func (c *Core) swipeBegin(b ports.SwipeBegin) bool {
 	}
 	c.swipe = &swipeGesture{screen: c.cur(), fingers: b.Fingers}
 	if b.Fingers == 3 && c.cur().mon.ov.open && !c.overviewKeyboardTaken() {
-		c.scrollStop(ports.PointerAxis{Horizontal: ports.ScrollAxis{Stop: true}})
+		c.scrollStop(ports.PointerAxis{Horizontal: domain.ScrollAxis{Stop: true}})
 		c.swipe.mode = swipeNavigation
 	}
 	return changed
@@ -168,8 +168,8 @@ func (c *Core) swipeUpdate(u ports.SwipeUpdate) bool {
 		now := c.now()
 		shots := c.snapshot(now)
 		changed := m.overviewScroll(ports.PointerAxis{Source: domain.AxisFinger,
-			Horizontal: ports.ScrollAxis{Set: true, Value: u.DX * c.swipeSign()},
-			Vertical:   ports.ScrollAxis{Set: true, Value: u.DY * c.swipeSign()}})
+			Horizontal: domain.ScrollAxis{Set: true, Value: u.DX * c.swipeSign()},
+			Vertical:   domain.ScrollAxis{Set: true, Value: u.DY * c.swipeSign()}})
 		if changed {
 			c.keyboard.takeBack()
 			c.transition(shots, now)
@@ -293,7 +293,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 	m := g.screen.mon
 	switch g.mode {
 	case swipeNavigation:
-		c.scrollStop(ports.PointerAxis{Horizontal: ports.ScrollAxis{Stop: true}})
+		c.scrollStop(ports.PointerAxis{Horizontal: domain.ScrollAxis{Stop: true}})
 		return false, nil
 	case swipeColumns:
 		w := g.ws

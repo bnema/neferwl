@@ -7,18 +7,17 @@ import (
 	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestCaptureUnknownOutputClosesFile(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		replies := make(chan ports.CaptureDone, 1)
+		replies := make(chan domain.CaptureDone, 1)
 		router := newOutputRouter(context.Background(), replies, outputRoutes{})
 		f, err := os.CreateTemp(t.TempDir(), "capture")
 		if err != nil {
 			t.Fatal(err)
 		}
-		router.routeCapture(ports.CaptureRequest{ID: 9, Output: "missing", Dst: domain.SHMBuffer{File: f}})
+		router.routeCapture(domain.CaptureRequest{ID: 9, Output: "missing", Dst: domain.SHMBuffer{File: f}})
 		synctest.Wait()
 		select {
 		case result := <-replies:
@@ -38,10 +37,10 @@ func TestCaptureFullOutputQueueDoesNotBlockRouting(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		replies := make(chan ports.CaptureDone, 1)
+		replies := make(chan domain.CaptureDone, 1)
 		router := newOutputRouter(ctx, replies, outputRoutes{})
-		queued := make(chan ports.CaptureRequest, 1)
-		queued <- ports.CaptureRequest{ID: 1}
+		queued := make(chan domain.CaptureRequest, 1)
+		queued <- domain.CaptureRequest{ID: 1}
 		router.outs["test"] = &mailbox{ctx: ctx, captures: queued, done: make(chan struct{}), stop: func() {}}
 		f, err := os.CreateTemp(t.TempDir(), "capture")
 		if err != nil {
@@ -49,7 +48,7 @@ func TestCaptureFullOutputQueueDoesNotBlockRouting(t *testing.T) {
 		}
 		routed := make(chan struct{})
 		go func() {
-			router.routeCapture(ports.CaptureRequest{ID: 2, Output: "test", Dst: domain.SHMBuffer{File: f}})
+			router.routeCapture(domain.CaptureRequest{ID: 2, Output: "test", Dst: domain.SHMBuffer{File: f}})
 			close(routed)
 		}()
 		synctest.Wait()
@@ -77,14 +76,14 @@ func TestStoppedOutputCaptureStillReplies(t *testing.T) {
 	ctx := context.Background()
 	outputCtx, stop := context.WithCancel(ctx)
 	stop()
-	replies := make(chan ports.CaptureDone, 1)
+	replies := make(chan domain.CaptureDone, 1)
 	router := newOutputRouter(ctx, replies, outputRoutes{})
-	router.outs["test"] = &mailbox{ctx: outputCtx, captures: make(chan ports.CaptureRequest)}
+	router.outs["test"] = &mailbox{ctx: outputCtx, captures: make(chan domain.CaptureRequest)}
 	f, err := os.CreateTemp(t.TempDir(), "capture")
 	if err != nil {
 		t.Fatal(err)
 	}
-	router.routeCapture(ports.CaptureRequest{ID: 7, Output: "test", Dst: domain.SHMBuffer{File: f}})
+	router.routeCapture(domain.CaptureRequest{ID: 7, Output: "test", Dst: domain.SHMBuffer{File: f}})
 	select {
 	case result := <-replies:
 		if result.ID != 7 || result.Err == nil {
@@ -100,13 +99,13 @@ func TestStoppedOutputCaptureStillReplies(t *testing.T) {
 
 func TestFinishedOutputDrainsCapturesWithReplies(t *testing.T) {
 	ctx := context.Background()
-	replies := make(chan ports.CaptureDone, 1)
-	queued := make(chan ports.CaptureRequest, 1)
+	replies := make(chan domain.CaptureDone, 1)
+	queued := make(chan domain.CaptureRequest, 1)
 	f, err := os.CreateTemp(t.TempDir(), "capture")
 	if err != nil {
 		t.Fatal(err)
 	}
-	queued <- ports.CaptureRequest{ID: 8, Dst: domain.SHMBuffer{File: f}}
+	queued <- domain.CaptureRequest{ID: 8, Dst: domain.SHMBuffer{File: f}}
 	failQueued(ctx, &mailbox{captures: queued}, replies)
 	select {
 	case result := <-replies:
@@ -124,13 +123,13 @@ func TestFinishedOutputDrainsCapturesWithReplies(t *testing.T) {
 func TestDrainCapturesClosesQueuedFDs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	pending := make(chan ports.CaptureRequest, 3)
+	pending := make(chan domain.CaptureRequest, 3)
 	for i := 0; i < 3; i++ {
 		f, err := os.CreateTemp(t.TempDir(), "queued")
 		if err != nil {
 			t.Fatal(err)
 		}
-		pending <- ports.CaptureRequest{Dst: domain.SHMBuffer{File: f}}
+		pending <- domain.CaptureRequest{Dst: domain.SHMBuffer{File: f}}
 		t.Cleanup(func() {
 			if _, err := f.Stat(); err == nil {
 				t.Error("queued fd not closed")
@@ -146,16 +145,16 @@ func TestDrainCapturesClosesQueuedFDs(t *testing.T) {
 func TestOutputStopWithFullReplies(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
-		replies := make(chan ports.CaptureDone, 1)
-		replies <- ports.CaptureDone{}
-		captures := make(chan ports.CaptureRequest)
+		replies := make(chan domain.CaptureDone, 1)
+		replies <- domain.CaptureDone{}
+		captures := make(chan domain.CaptureRequest)
 		set := newOutputSet(ctx, replies, outputRoutes{captures: captures})
 		set.start(ctx, "test", idleRun)
 		f, err := os.CreateTemp(t.TempDir(), "queued")
 		if err != nil {
 			t.Fatal(err)
 		}
-		captures <- ports.CaptureRequest{Output: "test", Dst: domain.SHMBuffer{File: f}}
+		captures <- domain.CaptureRequest{Output: "test", Dst: domain.SHMBuffer{File: f}}
 		cancel()
 		done := make(chan struct{})
 		go func() { _ = set.wait(); close(done) }()

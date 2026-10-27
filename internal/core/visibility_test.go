@@ -23,7 +23,7 @@ func TestConfigureVisible(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		c.addScreen(ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80})
+		c.addScreen(domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80})
 		m := c.cur().mon
 		w := m.Current()
 		ctx := context.Background()

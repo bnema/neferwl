@@ -9,7 +9,6 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -24,7 +23,7 @@ func indicatorScene() domain.Scene {
 // No capture scene ever carries the indicator: excluded scenes, plain scenes
 // and the off-screen child are derived without it.
 func TestCaptureScenesNeverCarryTheIndicator(t *testing.T) {
-	p := NewPipeline(context.Background(), make(chan ports.CaptureDone, 1))
+	p := NewPipeline(context.Background(), make(chan domain.CaptureDone, 1))
 	defer p.Close(nil)
 	s := indicatorScene()
 	require.Nil(t, p.ExcludedScene(s).CaptureIndicators)
@@ -33,7 +32,7 @@ func TestCaptureScenesNeverCarryTheIndicator(t *testing.T) {
 	require.Nil(t, plain(s).CaptureIndicators)
 	require.Len(t, s.CaptureIndicators, 2, "the displayed scene keeps its indicator")
 	// Even an exclusion-less request is fine: it is drawn from the plain frame.
-	normal, excluded, _ := p.Split(s, []ports.CaptureRequest{{ID: 1}, {ID: 2, Exclude: true, Session: 7}})
+	normal, excluded, _ := p.Split(s, []domain.CaptureRequest{{ID: 1}, {ID: 2, Exclude: true, Session: 7}})
 	require.Equal(t, []uint64{1}, ids(normal))
 	require.Equal(t, []uint64{2}, ids(excluded), "an Exclude request is drawn from ExcludedScene, never the displayed frame")
 }
@@ -41,7 +40,7 @@ func TestCaptureScenesNeverCarryTheIndicator(t *testing.T) {
 // The requests of the displayed frame are answered from a frame rendered
 // without the indicator before the displayed one.
 func TestSubmitPlainRendersWithoutIndicatorFirst(t *testing.T) {
-	replies := make(chan ports.CaptureDone, 1)
+	replies := make(chan domain.CaptureDone, 1)
 	p := NewPipeline(context.Background(), replies)
 	r := portsmocks.NewMockRenderer(t)
 	frame := portsmocks.NewMockCaptureFrame(t)
@@ -55,7 +54,7 @@ func TestSubmitPlainRendersWithoutIndicatorFirst(t *testing.T) {
 	r.EXPECT().BeginCapture().Return(frame, nil).Once()
 	r.EXPECT().EndCapture(frame).Return().Once()
 	q := pipelineRequest(t, 1)
-	reqs := []ports.CaptureRequest{q}
+	reqs := []domain.CaptureRequest{q}
 	took, done, err := p.SubmitPlain(r, indicatorScene(), nil, reqs)
 	require.NoError(t, err)
 	require.Nil(t, done)
@@ -72,11 +71,11 @@ func TestSubmitPlainRendersWithoutIndicatorFirst(t *testing.T) {
 // Without indicator, or without requests, nothing is rendered and nothing
 // allocates: the feature is free while no capture is shown.
 func TestSubmitPlainIdleCostsNothing(t *testing.T) {
-	p := NewPipeline(context.Background(), make(chan ports.CaptureDone, 1))
+	p := NewPipeline(context.Background(), make(chan domain.CaptureDone, 1))
 	defer p.Close(nil)
 	r := portsmocks.NewMockRenderer(t)
 	s := excludedTestScene()
-	reqs := []ports.CaptureRequest{{ID: 1}}
+	reqs := []domain.CaptureRequest{{ID: 1}}
 	if took, _, err := p.SubmitPlain(r, s, nil, reqs); took || err != nil {
 		t.Fatalf("took %v err %v without an indicator", took, err)
 	}
@@ -93,7 +92,7 @@ func TestSubmitPlainIdleCostsNothing(t *testing.T) {
 // security error, closed, exactly once.
 func TestSubmitPlainRejectsProtectedEpoch(t *testing.T) {
 	locked := domain.SecurityState{Generation: 3, Protected: true}
-	replies := make(chan ports.CaptureDone, 2)
+	replies := make(chan domain.CaptureDone, 2)
 	p := NewPipeline(context.Background(), replies)
 	security := portsmocks.NewMockSessionSecurity(t)
 	security.EXPECT().Snapshot().Return(locked).Maybe()
@@ -104,7 +103,7 @@ func TestSubmitPlainRejectsProtectedEpoch(t *testing.T) {
 	file := q.Dst.File
 	s := indicatorScene()
 	s.Security = locked
-	took, _, err := p.SubmitPlain(r, s, nil, []ports.CaptureRequest{q})
+	took, _, err := p.SubmitPlain(r, s, nil, []domain.CaptureRequest{q})
 	require.NoError(t, err)
 	require.True(t, took)
 	p.Close(r)
@@ -118,7 +117,7 @@ func TestSubmitPlainRejectsProtectedEpoch(t *testing.T) {
 // Hint labels are never captured either: a scene with only labels is served
 // from the plain frame, and an Exclude request is ordered to the excluded scene.
 func TestSubmitPlainServesHintLabelScenesWithoutLabels(t *testing.T) {
-	replies := make(chan ports.CaptureDone, 1)
+	replies := make(chan domain.CaptureDone, 1)
 	p := NewPipeline(context.Background(), replies)
 	r := portsmocks.NewMockRenderer(t)
 	frame := portsmocks.NewMockCaptureFrame(t)
@@ -134,7 +133,7 @@ func TestSubmitPlainServesHintLabelScenesWithoutLabels(t *testing.T) {
 	s := excludedTestScene()
 	s.Capture = nil
 	s.Overlays = []domain.Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Text: "f"}}
-	reqs := []ports.CaptureRequest{pipelineRequest(t, 1)}
+	reqs := []domain.CaptureRequest{pipelineRequest(t, 1)}
 	require.False(t, reqs[0].Indicate)
 	took, done, err := p.SubmitPlain(r, s, nil, reqs)
 	require.NoError(t, err)
@@ -149,7 +148,7 @@ func TestSubmitPlainServesHintLabelScenesWithoutLabels(t *testing.T) {
 
 	withSession := s
 	withSession.Capture = &domain.SceneCapture{Session: 7}
-	normal, excluded, _ := p.Split(withSession, []ports.CaptureRequest{{ID: 2, Exclude: true, Session: 7}})
+	normal, excluded, _ := p.Split(withSession, []domain.CaptureRequest{{ID: 2, Exclude: true, Session: 7}})
 	require.Empty(t, normal)
 	require.Equal(t, []uint64{2}, ids(excluded), "labels force the Exclude request to the excluded scene")
 	require.Nil(t, p.ExcludedScene(s).Overlays)

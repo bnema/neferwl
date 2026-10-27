@@ -209,7 +209,7 @@ func TestMoveCursorTarget(t *testing.T) {
 	if err != nil {
 		t.Skip(err)
 	}
-	layouts := make(chan ports.Layout)
+	layouts := make(chan domain.Layout)
 	script := make(chan string)
 	input := make(chan ports.InputEvent, 4)
 	type pos struct {
@@ -222,7 +222,7 @@ func TestMoveCursorTarget(t *testing.T) {
 		done <- Run(context.Background(), km, nil, script, input, layouts, func(o string, x, y float64) { moved <- pos{o, x, y} }, logging.For(context.Background(), "input"))
 	}()
 	// Unbuffered: the layout is taken before the move is read.
-	layouts <- ports.Layout{{Info: ports.OutputInfo{Name: "A", Width: 200, Height: 100}, Scale: 1, Transform: 1, Width: 100, Height: 200}}
+	layouts <- domain.Layout{{Info: domain.OutputInfo{Name: "A", Width: 200, Height: 100}, Scale: 1, Transform: 1, Width: 100, Height: 200}}
 	script <- "move 10 20"
 	if got, want := <-moved, (pos{"A", 20, 90}); got != want {
 		t.Fatalf("got %+v want %+v", got, want)

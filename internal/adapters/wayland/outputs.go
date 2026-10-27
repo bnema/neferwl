@@ -7,15 +7,16 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgoutput"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 )
 
 // setOutputHDR records confirmed DRM state independently of the core layout.
 // Until the first modeset report for an output it is treated as SDR.
-func (s *Server) setOutputHDR(f ports.OutputFormats) {
+func (s *Server) setOutputHDR(f domain.OutputFormats) {
 	if s.hdrOutputs == nil {
-		s.hdrOutputs = make(map[string]ports.OutputHDR)
+		s.hdrOutputs = make(map[string]domain.OutputHDR)
 	}
 	old, had := s.hdrOutputs[f.Output]
 	if f.HDR == nil {
@@ -38,7 +39,7 @@ func (s *Server) setOutputHDR(f ports.OutputFormats) {
 
 // output is one advertised display and the resources clients bound to it.
 type output struct {
-	place      ports.OutputPlacement
+	place      domain.OutputPlacement
 	global     *server.Global
 	resources  []*wayland.Output
 	xdgOutputs []*xdgoutput.ZxdgOutputV1
@@ -127,7 +128,7 @@ func (s *Server) outputByName(name string) *output {
 }
 
 // addOutput advertises a new wl_output global.
-func (s *Server) addOutput(p ports.OutputPlacement) {
+func (s *Server) addOutput(p domain.OutputPlacement) {
 	o := &output{place: p}
 	g, err := s.display.AddGlobal(wayland.OutputInterface, 4, func(c server.Client, v, id uint32) {
 		r, err := wayland.NewOutput(c, int32(v), id, outputHandler{})
@@ -161,7 +162,7 @@ func (s *Server) addOutput(p ports.OutputPlacement) {
 func (s *Server) setOutputs(c ports.SetOutputs) {
 	changed := !slices.Equal(s.outputPlaces, c.Outputs)
 	focusChanged := s.focusedOutput != c.Focused
-	s.outputPlaces = append(ports.Layout(nil), c.Outputs...)
+	s.outputPlaces = append(domain.Layout(nil), c.Outputs...)
 	defer func() {
 		if changed {
 			s.refreshOutputManagers()
@@ -171,7 +172,7 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 		}
 	}()
 	s.focusedOutput = c.Focused
-	want := map[string]ports.OutputPlacement{}
+	want := map[string]domain.OutputPlacement{}
 	for _, p := range c.Outputs {
 		want[p.Info.Name] = p
 	}

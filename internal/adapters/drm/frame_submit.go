@@ -25,7 +25,7 @@ func (e renderError) Unwrap() error { return e.err }
 // On success the frame is in flight; errOverlayDropped asks for a new frame
 // without the overlay; a renderError stops the output; other errors are
 // commit errors for commitFailed.
-func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene domain.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, seen map[domain.WindowID]uint64, requests []ports.CaptureRequest, pipeline *capture.Pipeline) (direct bool, err error) {
+func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene domain.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, seen map[domain.WindowID]uint64, requests []domain.CaptureRequest, pipeline *capture.Pipeline) (direct bool, err error) {
 	presented := false // the frame was committed: what it gated is released
 	if !o.sceneCurrent(scene) {
 		return false, errSecurityScene

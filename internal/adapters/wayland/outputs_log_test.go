@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
@@ -17,7 +18,7 @@ func TestSetOutputsLogsPlacementChange(t *testing.T) {
 	if added := out.String(); !strings.Contains(added, `"message":"output added"`) || !strings.Contains(added, `"x":0,"y":0`) {
 		t.Fatalf("output added: %s", added)
 	}
-	placed := ports.Layout{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 2, Height: 2}, X: 3200, Y: 40, Width: 2, Height: 2, Scale: 1, Primary: true}}
+	placed := domain.Layout{{Info: domain.OutputInfo{Name: "HEADLESS-1", Width: 2, Height: 2}, X: 3200, Y: 40, Width: 2, Height: 2, Scale: 1, Primary: true}}
 	h.s.display.Do(func() { h.s.setOutputs(ports.SetOutputs{Outputs: placed}) })
 	if got := out.String(); !strings.Contains(got, `"message":"output changed"`) || !strings.Contains(got, `"x":3200,"y":40`) || !strings.Contains(got, `"primary":true`) || !strings.Contains(got, `"transform":0`) {
 		t.Fatalf("placement change not logged: %s", got)

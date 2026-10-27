@@ -86,12 +86,12 @@ const busRetry = 2 * time.Second
 // or mouse change goes to the input goroutine as one InputDevicesConfig; only
 // the newest one waits there. The cursor idle delay goes straight to the
 // cursor router.
-func relayConfig(ctx context.Context, cur domain.Config, in <-chan ports.ConfigChanged, out chan<- ports.ConfigChanged, keymaps chan *xkb.Keymap, deviceConfigs chan domain.InputDevicesConfig, curs *cursors, commands chan<- ports.ClientCommand, log zerowrap.Logger) {
+func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.ConfigChanged, out chan<- domain.ConfigChanged, keymaps chan *xkb.Keymap, deviceConfigs chan domain.InputDevicesConfig, curs *cursors, commands chan<- ports.ClientCommand, log zerowrap.Logger) {
 	kb := cur.Keyboard
 	devCfg := cur.InputDevicesConfig
 	hint := cur.Hint
 	for {
-		var ev ports.ConfigChanged
+		var ev domain.ConfigChanged
 		select {
 		case <-ctx.Done():
 			return

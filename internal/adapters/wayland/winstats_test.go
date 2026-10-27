@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -129,7 +128,7 @@ func TestFrameRingSummaryAllocs(t *testing.T) {
 func TestWindowStatsScanoutReasons(t *testing.T) {
 	w := windowStats{watched: 1}
 	for _, reason := range []string{"overlays", "other_windows", "no_fullscreen", ""} {
-		f := ports.FlipInfo{Shows: map[domain.WindowID]uint64{1: 1}, ScanoutReason: reason, OverlayReason: "overlays"}
+		f := domain.FlipInfo{Shows: map[domain.WindowID]uint64{1: 1}, ScanoutReason: reason, OverlayReason: "overlays"}
 		if reason == "" {
 			f.ZeroCopy = 1
 		}
@@ -139,6 +138,6 @@ func TestWindowStatsScanoutReasons(t *testing.T) {
 		assert.Equal(t, "overlays", got.OverlayReason)
 		assert.Equal(t, reason == "", got.Scanout)
 	}
-	w.flip(&ports.FlipInfo{ScanoutReason: "unrelated output"})
+	w.flip(&domain.FlipInfo{ScanoutReason: "unrelated output"})
 	assert.Empty(t, w.snapshot().ScanoutReason)
 }

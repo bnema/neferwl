@@ -117,23 +117,9 @@ type Seat interface {
 // ErrDeviceLost marks a Vulkan device loss requiring device recreation.
 var ErrDeviceLost = errors.New("render device lost")
 
-// RendererOptions selects per-renderer output and diagnostic behavior.
-type RendererOptions struct{ Virtual, Readback, TraceDamage bool }
-
-// GPUInfo describes one DRM card. Primary/Render are dev_t (0 = absent).
-type GPUInfo struct {
-	Path     string // /dev/dri/cardN
-	Primary  uint64
-	Render   uint64
-	PCI      string // "0000:03:00.0", "" if not PCI
-	BootVGA  bool
-	Internal bool   // a connected eDP/LVDS/DSI connector
-	Driver   string // DRM driver name, e.g. "amdgpu", "nvidia-drm"
-}
-
 // RenderDevice owns one GPU's rendering and copy resources.
 type RenderDevice interface {
-	NewRenderer(w, h int, o RendererOptions) (Renderer, error)
+	NewRenderer(w, h int, o domain.RendererOptions) (Renderer, error)
 	NewCopier(w, h int) (Copier, error)
 	DMABuf() domain.DMABufSupport
 	Node() (primary, render uint64)
@@ -142,7 +128,7 @@ type RenderDevice interface {
 
 // RenderDeviceOpener opens a GPU; zero GPUInfo selects the first usable device.
 type RenderDeviceOpener interface {
-	Open(g GPUInfo) (RenderDevice, error)
+	Open(g domain.GPUInfo) (RenderDevice, error)
 }
 
 // Copier copies a rendered image from another GPU into a scanout buffer, on
@@ -153,11 +139,4 @@ type Copier interface {
 	SourceModifiers(formats []domain.DMABufFormat) []domain.DMABufFormat // what it can sample
 	Copy(src, dst int, acquire *os.File) (done *os.File, err error)
 	Close()
-}
-
-// GPUSelection identifies the render GPU and cards kept by selection.
-type GPUSelection struct {
-	Render  int      // index into candidates
-	Keep    []int    // candidates to open, ascending
-	Reasons []string // one human line per decision, logged by app
 }

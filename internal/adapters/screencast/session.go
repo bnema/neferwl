@@ -4,7 +4,6 @@ import (
 	"strconv"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // session is one org.gnome.Mutter.ScreenCast.Session. The sessions live in a
@@ -193,7 +192,7 @@ func (s *Service) closeSession(sess *session, signal bool) {
 }
 
 // outputByName finds an output of the inventory by connector.
-func (s *Service) outputByName(name string) *ports.CastOutput {
+func (s *Service) outputByName(name string) *domain.CastOutput {
 	for i := range s.inv.Outputs {
 		if s.inv.Outputs[i].Info.Name == name {
 			return &s.inv.Outputs[i]

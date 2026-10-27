@@ -5,7 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
+
 	wlr "github.com/bnema/go-wayland-bindings/server/wlrscreencopy"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/ports"
@@ -19,10 +22,10 @@ import (
 type admissionHarness struct {
 	s        *Server
 	dir      string
-	requests chan ports.CaptureRequest
-	replies  chan ports.CaptureDone
+	requests chan domain.CaptureRequest
+	replies  chan domain.CaptureDone
 	events   chan ports.ClientEvent
-	held     []ports.CaptureRequest // dup'd descriptors handed to the test
+	held     []domain.CaptureRequest // dup'd descriptors handed to the test
 }
 
 type admissionClient struct {
@@ -51,7 +54,7 @@ func newAdmissionHarness(t *testing.T, queue int) *admissionHarness {
 // Outputs are the harness's) and a logger.
 func newAdmissionHarnessWith(t *testing.T, queue int, opts Options, log zerowrap.Logger) *admissionHarness {
 	t.Helper()
-	h := &admissionHarness{dir: t.TempDir(), requests: make(chan ports.CaptureRequest, queue), replies: make(chan ports.CaptureDone, maxCaptureInflight+2)}
+	h := &admissionHarness{dir: t.TempDir(), requests: make(chan domain.CaptureRequest, queue), replies: make(chan domain.CaptureDone, maxCaptureInflight+2)}
 	// Registered first so it runs after Run stopped and the clients closed:
 	// close every dup'd descriptor, including the ones a failed test left in
 	// the queue or in held.
@@ -64,7 +67,7 @@ func newAdmissionHarnessWith(t *testing.T, queue int, opts Options, log zerowrap
 		}
 	})
 	h.events = make(chan ports.ClientEvent, 64)
-	out := ports.Layout{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 2, Height: 2}, Width: 2, Height: 2, Scale: 1}}
+	out := domain.Layout{{Info: domain.OutputInfo{Name: "HEADLESS-1", Width: 2, Height: 2}, Width: 2, Height: 2, Scale: 1}}
 	opts.RuntimeDir, opts.Outputs = h.dir, out
 	s, err := New(opts, Channels{Captures: h.requests, Captured: h.replies, Events: h.events}, log)
 	if err != nil {
@@ -175,7 +178,7 @@ func (h *admissionHarness) waitInflight(t *testing.T, want int) {
 // accepted reports whether the capture reached the backend queue; a refused
 // capture is answered with failed and queues no request. Accepted requests
 // are kept in held so cleanup closes their descriptors.
-func (h *admissionHarness) accepted(t *testing.T, p pendingCapture) (ports.CaptureRequest, bool) {
+func (h *admissionHarness) accepted(t *testing.T, p pendingCapture) (domain.CaptureRequest, bool) {
 	t.Helper()
 	var last uint16
 	for len(p.events.events) > 0 {
@@ -194,22 +197,22 @@ func (h *admissionHarness) accepted(t *testing.T, p pendingCapture) (ports.Captu
 		if last != p.failed && (!p.ext || last != 0) {
 			t.Fatalf("refused capture not failed: last event %d", last)
 		}
-		return ports.CaptureRequest{}, false
+		return domain.CaptureRequest{}, false
 	}
 }
 
-func (h *admissionHarness) complete(t *testing.T, req ports.CaptureRequest, remaining int) {
+func (h *admissionHarness) complete(t *testing.T, req domain.CaptureRequest, remaining int) {
 	t.Helper()
 	_ = req.Dst.File.Close()
-	h.replies <- ports.CaptureDone{ID: req.ID, Output: req.Output, Time: time.Now()}
+	h.replies <- domain.CaptureDone{ID: req.ID, Output: req.Output, Time: time.Now()}
 	h.waitInflight(t, remaining)
 }
 
 // saturate fills the cap with captures whose frames are destroyed right away,
 // and returns their requests.
-func (h *admissionHarness) saturate(t *testing.T, a *admissionClient, capture func(*testing.T) pendingCapture) []ports.CaptureRequest {
+func (h *admissionHarness) saturate(t *testing.T, a *admissionClient, capture func(*testing.T) pendingCapture) []domain.CaptureRequest {
 	t.Helper()
-	var reqs []ports.CaptureRequest
+	var reqs []domain.CaptureRequest
 	for i := 0; i < maxCaptureInflight; i++ {
 		p := capture(t)
 		req, ok := h.accepted(t, p)
@@ -229,7 +232,7 @@ func TestCaptureAdmissionSaturation(t *testing.T) {
 	h := newAdmissionHarness(t, maxCaptureInflight+2)
 	a := h.client(t)
 	var frames []pendingCapture
-	var reqs []ports.CaptureRequest
+	var reqs []domain.CaptureRequest
 	for i := 0; i < maxCaptureInflight; i++ {
 		p := a.captureWlr(t)
 		req, ok := h.accepted(t, p)

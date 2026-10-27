@@ -11,7 +11,7 @@ import (
 	"github.com/bnema/wlturbo"
 )
 
-var second = ports.OutputPlacement{Info: ports.OutputInfo{Name: "HEADLESS-2", Width: 1280, Height: 1024}, X: 1920, Width: 1280, Height: 1024, Scale: 1}
+var second = domain.OutputPlacement{Info: domain.OutputInfo{Name: "HEADLESS-2", Width: 1280, Height: 1024}, X: 1920, Width: 1280, Height: 1024, Scale: 1}
 
 func TestOutputHDRConfirmedState(t *testing.T) {
 	s := &Server{}
@@ -19,12 +19,12 @@ func TestOutputHDRConfirmedState(t *testing.T) {
 	if _, ok := s.hdrOutputs[name]; ok {
 		t.Fatal("output must start SDR")
 	}
-	want := ports.OutputHDR{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: 0.005}
-	s.setOutputHDR(ports.OutputFormats{Output: name, HDR: &want})
+	want := domain.OutputHDR{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: 0.005}
+	s.setOutputHDR(domain.OutputFormats{Output: name, HDR: &want})
 	if got := s.hdrOutputs[name]; got != want {
 		t.Fatalf("HDR report: %+v", got)
 	}
-	s.setOutputHDR(ports.OutputFormats{Output: name})
+	s.setOutputHDR(domain.OutputFormats{Output: name})
 	if _, ok := s.hdrOutputs[name]; ok {
 		t.Fatal("SDR fallback must clear HDR")
 	}
@@ -74,7 +74,7 @@ func TestFixesAckAndDestroyRegistry(t *testing.T) {
 		t.Fatalf("wl_fixes %+v", g)
 	}
 	fixes := bindVersion(t, c, "wl_fixes", 2)
-	commands <- ports.SetOutputs{Outputs: ports.Layout{testOutputs[0], second}, Focused: "HEADLESS-1"}
+	commands <- ports.SetOutputs{Outputs: domain.Layout{testOutputs[0], second}, Focused: "HEADLESS-1"}
 	waitOutputs(t, c, 2)
 	var name uint32
 	for n, g := range c.Registry().GetGlobals() {
@@ -82,7 +82,7 @@ func TestFixesAckAndDestroyRegistry(t *testing.T) {
 			name = n
 		}
 	}
-	commands <- ports.SetOutputs{Outputs: ports.Layout{testOutputs[0]}, Focused: "HEADLESS-1"}
+	commands <- ports.SetOutputs{Outputs: domain.Layout{testOutputs[0]}, Focused: "HEADLESS-1"}
 	waitOutputs(t, c, 1)
 	requestProtocol(t, c, fixes, wayland.FixesRequestAckGlobalRemove, c.Registry().ID(), name)
 	requestProtocol(t, c, fixes, wayland.FixesRequestDestroyRegistry, c.Registry().ID())
@@ -109,7 +109,7 @@ func TestOutputHotplugAndLayerOutput(t *testing.T) {
 	if outputCount(c) != 1 {
 		t.Fatal(outputCount(c))
 	}
-	commands <- ports.SetOutputs{Outputs: ports.Layout{testOutputs[0], second}, Focused: "HEADLESS-1"}
+	commands <- ports.SetOutputs{Outputs: domain.Layout{testOutputs[0], second}, Focused: "HEADLESS-1"}
 	waitOutputs(t, c, 2)
 	// A layer surface on the second output is sized from it.
 	var name uint32
@@ -148,7 +148,7 @@ func TestOutputHotplugAndLayerOutput(t *testing.T) {
 		t.Fatal("configure timeout")
 	}
 	// Unplugged: the global goes away and the layer surface is closed.
-	commands <- ports.SetOutputs{Outputs: ports.Layout{testOutputs[0]}, Focused: "HEADLESS-1"}
+	commands <- ports.SetOutputs{Outputs: domain.Layout{testOutputs[0]}, Focused: "HEADLESS-1"}
 	waitOutputs(t, c, 1)
 	select {
 	case <-proxy.closed:

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"testing/synctest"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 type tile struct {
@@ -17,7 +17,7 @@ type tile struct {
 func layoutCore(focus int, tiles ...tile) *Core {
 	c := &Core{focusScreen: focus}
 	for _, t := range tiles {
-		s := &screen{info: ports.OutputInfo{Name: t.name}, mon: newMonitor(t.name, ""), x: t.x, y: t.y}
+		s := &screen{info: domain.OutputInfo{Name: t.name}, mon: newMonitor(t.name, ""), x: t.x, y: t.y}
 		s.mon.SetOutput(t.w, t.h)
 		c.screens = append(c.screens, s)
 	}

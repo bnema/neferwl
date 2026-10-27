@@ -180,9 +180,9 @@ func TestTimestamps(t *testing.T) {
 }
 
 func TestPointerAcrossOutputs(t *testing.T) {
-	layout := ports.Layout{
-		{Info: ports.OutputInfo{Name: "A"}, Width: 100, Height: 50, Scale: 1},
-		{Info: ports.OutputInfo{Name: "B"}, X: 100, Width: 200, Height: 100, Scale: 2},
+	layout := domain.Layout{
+		{Info: domain.OutputInfo{Name: "A"}, Width: 100, Height: 50, Scale: 1},
+		{Info: domain.OutputInfo{Name: "B"}, X: 100, Width: 200, Height: 100, Scale: 2},
 	}
 	p := newPointer(layout)
 	if p.x != 50 || p.y != 25 {
@@ -211,9 +211,9 @@ func TestPointerAcrossOutputs(t *testing.T) {
 }
 
 func TestPointerStartsOnPrimary(t *testing.T) {
-	p := newPointer(ports.Layout{
-		{Info: ports.OutputInfo{Name: "A"}, Width: 100, Height: 50, Scale: 1},
-		{Info: ports.OutputInfo{Name: "B"}, X: 100, Width: 200, Height: 100, Scale: 1, Primary: true},
+	p := newPointer(domain.Layout{
+		{Info: domain.OutputInfo{Name: "A"}, Width: 100, Height: 50, Scale: 1},
+		{Info: domain.OutputInfo{Name: "B"}, X: 100, Width: 200, Height: 100, Scale: 1, Primary: true},
 	})
 	if p.x != 200 || p.y != 50 {
 		t.Fatal(p.x, p.y)
@@ -221,35 +221,35 @@ func TestPointerStartsOnPrimary(t *testing.T) {
 }
 
 func TestPointerConstraints(t *testing.T) {
-	p := newPointer(ports.Layout{{Info: ports.OutputInfo{Name: "A"}, Width: 100, Height: 100, Scale: 1}})
-	p.constrain(ports.PointerConstraint{Mode: domain.ConstraintLock, X: 50, Y: 50})
+	p := newPointer(domain.Layout{{Info: domain.OutputInfo{Name: "A"}, Width: 100, Height: 100, Scale: 1}})
+	p.constrain(domain.PointerConstraint{Mode: domain.ConstraintLock, X: 50, Y: 50})
 	if m := p.move(10, -5); m.X != 50 || m.Y != 50 || m.DX != 10 || m.DY != -5 {
 		t.Fatalf("locked: %+v", m)
 	}
 	// Confining moves the pointer inside, then keeps it there.
-	p.constrain(ports.PointerConstraint{Mode: domain.ConstraintConfine, Rect: domain.Rect{X: 60, Y: 10, W: 20, H: 20}, X: 50, Y: 50})
+	p.constrain(domain.PointerConstraint{Mode: domain.ConstraintConfine, Rect: domain.Rect{X: 60, Y: 10, W: 20, H: 20}, X: 50, Y: 50})
 	if p.x != 60 || p.y != 29 {
 		t.Fatal(p.x, p.y)
 	}
 	if m := p.move(100, 0); m.X != 79 || m.DX != 100 {
 		t.Fatalf("confined: %+v", m)
 	}
-	p.constrain(ports.PointerConstraint{})
+	p.constrain(domain.PointerConstraint{})
 	if m := p.move(10, 0); m.X != 89 {
 		t.Fatalf("free: %+v", m)
 	}
 	// A lock takes core's cursor position, and so does its release.
-	p.constrain(ports.PointerConstraint{Mode: domain.ConstraintLock, X: 20, Y: 30})
+	p.constrain(domain.PointerConstraint{Mode: domain.ConstraintLock, X: 20, Y: 30})
 	if p.x != 20 || p.y != 30 {
 		t.Fatal(p.x, p.y)
 	}
 	p.move(40, 40)
-	p.constrain(ports.PointerConstraint{X: 21, Y: 31})
+	p.constrain(domain.PointerConstraint{X: 21, Y: 31})
 	if p.x != 21 || p.y != 31 {
 		t.Fatal(p.x, p.y)
 	}
 	// A warp moves a free pointer to core's cursor.
-	p.constrain(ports.PointerConstraint{X: 70, Y: 40, Warp: true})
+	p.constrain(domain.PointerConstraint{X: 70, Y: 40, Warp: true})
 	if p.x != 70 || p.y != 40 {
 		t.Fatal(p.x, p.y)
 	}
@@ -386,13 +386,13 @@ func TestKeyboardProducerQuarantinesBeforeHotkeysAndLogging(t *testing.T) {
 	}
 	// Ctrl+Alt held before lock must not activate emergency quit, even on a
 	// fresh Backspace. Super must not contaminate the credential either.
-	if ev := produce(14, true).(ports.SecurityInput).Event.(ports.KeyEvent); ev.Mods != 0 || ev.State != (ports.ModState{}) {
+	if ev := produce(14, true).(ports.SecurityInput).Event.(ports.KeyEvent); ev.Mods != 0 || ev.State != (domain.ModState{}) {
 		t.Fatalf("protected fresh key inherited native state: %+v", ev)
 	}
 	if buf.Len() != 0 {
 		t.Fatalf("protected keyboard logged: %s", &buf)
 	}
-	if ev := produce(16, true).(ports.SecurityInput); ev.State != unlocked || ev.Event.(ports.KeyEvent).Mods != 0 || ev.Event.(ports.KeyEvent).State != (ports.ModState{}) {
+	if ev := produce(16, true).(ports.SecurityInput); ev.State != unlocked || ev.Event.(ports.KeyEvent).Mods != 0 || ev.Event.(ports.KeyEvent).State != (domain.ModState{}) {
 		t.Fatalf("unlocked q inherited state: %#v", ev)
 	}
 	buf.Reset()
@@ -408,7 +408,7 @@ func TestKeyboardProducerQuarantinesBeforeHotkeysAndLogging(t *testing.T) {
 
 // The cursor is placed in target pixels: after the output transform.
 func TestPointerMovedTransform(t *testing.T) {
-	p := newPointer(ports.Layout{{Info: ports.OutputInfo{Name: "A", Width: 200, Height: 100}, Scale: 1, Transform: 1, Width: 100, Height: 200}})
+	p := newPointer(domain.Layout{{Info: domain.OutputInfo{Name: "A", Width: 200, Height: 100}, Scale: 1, Transform: 1, Width: 100, Height: 200}})
 	p.set(10, 20)
 	var out string
 	var px, py float64

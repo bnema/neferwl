@@ -19,7 +19,7 @@ type popupState struct {
 
 // place computes a popup rectangle relative to its parent, kept inside
 // bounds (also parent-relative) as the positioner's adjustments allow.
-func place(p ports.Positioner, bounds Rect) Rect {
+func place(p domain.Positioner, bounds Rect) Rect {
 	r := initial(p, p.Anchor, p.Gravity)
 	if bounds.W <= 0 || bounds.H <= 0 {
 		return r
@@ -58,7 +58,7 @@ func place(p ports.Positioner, bounds Rect) Rect {
 }
 
 // initial is the unconstrained placement for an anchor and gravity.
-func initial(p ports.Positioner, anchor, gravity uint32) Rect {
+func initial(p domain.Positioner, anchor, gravity uint32) Rect {
 	a := p.AnchorRect
 	x, y := a.X+a.W/2, a.Y+a.H/2
 	switch anchor {

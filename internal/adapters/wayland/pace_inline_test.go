@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
@@ -21,7 +22,7 @@ func paceFixture(t *testing.T) (*Server, *surface) {
 		t.Fatal(err)
 	}
 	t.Cleanup(display.Close)
-	out := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
+	out := &output{place: domain.OutputPlacement{Info: domain.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
 	s := &Server{
 		display:      display,
 		outputs:      []*output{out},
@@ -29,8 +30,8 @@ func paceFixture(t *testing.T) (*Server, *surface) {
 		frameDue:     map[string]time.Time{"DP-2": time.Now().Add(time.Hour)},
 		fifoSurfaces: map[*surface]struct{}{},
 		lastFlip:     map[string]time.Time{},
-		flips:        map[string]ports.FlipInfo{},
-		reports:      map[string]ports.OutputPresented{},
+		flips:        map[string]domain.FlipInfo{},
+		reports:      map[string]domain.OutputPresented{},
 	}
 	s.paceSignalFn = s.paceSignalled
 	if err := s.openPaceTimer(); err != nil {

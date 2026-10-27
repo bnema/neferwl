@@ -27,7 +27,7 @@ func TestOverviewLauncherKeepsKeys(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go c.Run(ctx)
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 300, Height: 200}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 300, Height: 200}}
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}
 		scene(t, scenes)
@@ -37,8 +37,8 @@ func TestOverviewLauncherKeepsKeys(t *testing.T) {
 		sceneMatch(t, scenes, func(s domain.Scene) bool { return len(s.Windows) == 2 && s.Windows[0].Preview > 0 })
 		input <- ports.KeyEvent{Keysym: "o", Mods: domain.ModSuper}
 
-		launcher := ports.LayerSurface{ID: 7, Layer: domain.LayerOverlay, Width: 100, Height: 40, Keyboard: 1}
-		client <- ports.LayerChanged{Layers: []ports.LayerSurface{launcher}}
+		launcher := domain.LayerSurface{ID: 7, Layer: domain.LayerOverlay, Width: 100, Height: 40, Keyboard: 1}
+		client <- ports.LayerChanged{Layers: []domain.LayerSurface{launcher}}
 		scene(t, scenes)
 		for len(commands) > 0 {
 			<-commands
@@ -83,7 +83,7 @@ func TestOverviewFocusBindsNavigate(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go c.Run(ctx)
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 300, Height: 200}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 300, Height: 200}}
 		scene(t, scenes)
 		for id := domain.WindowID(1); id <= 2; id++ {
 			client <- ports.WindowMapped{ID: id}
@@ -137,7 +137,7 @@ func TestOverviewCloseBindTargetsPreview(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go c.Run(ctx)
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 300, Height: 200}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 300, Height: 200}}
 		scene(t, scenes)
 		for _, id := range []domain.WindowID{1, 2} {
 			client <- ports.WindowMapped{ID: id}
@@ -215,7 +215,7 @@ func TestOverviewThreeFingerNavigation(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go c.Run(ctx)
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 300, Height: 200}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 300, Height: 200}}
 		scene(t, scenes)
 		for id := domain.WindowID(1); id <= 3; id++ {
 			client <- ports.WindowMapped{ID: id}
@@ -259,7 +259,7 @@ func TestOverviewThreeFingerNavigation(t *testing.T) {
 		input <- ports.SwipeBegin{Fingers: 3}
 		// A wheel notch down has nowhere to go (no workspace below with
 		// windows); a finger scroll left moves on.
-		input <- ports.PointerAxis{Source: domain.AxisWheel, Vertical: ports.ScrollAxis{Set: true, Value: 15, V120: 120}}
+		input <- ports.PointerAxis{Source: domain.AxisWheel, Vertical: domain.ScrollAxis{Set: true, Value: 15, V120: 120}}
 		input <- finger(-70, 0)
 		sceneMatch(t, scenes, focused(1))
 

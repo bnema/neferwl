@@ -214,7 +214,7 @@ func TestProtectedInputMethod(t *testing.T) {
 	// Exercise the live grab's delivery entrypoint; normal seat routing/reset is
 	// deliberately outside this adapter assignment.
 	if !s.display.Do(func() {
-		s.grabKey(ports.ForwardKey{ID: app.window, Key: ports.KeyEvent{Keycode: 30, Pressed: true, State: ports.ModState{Depressed: 1}}})
+		s.grabKey(ports.ForwardKey{ID: app.window, Key: ports.KeyEvent{Keycode: 30, Pressed: true, State: domain.ModState{Depressed: 1}}})
 		s.sendGrabKeymap(true)
 	}) {
 		t.Fatal("display stopped")
@@ -248,7 +248,7 @@ func TestProtectedCapture(t *testing.T) {
 	if !accepted.Exclude || accepted.Session != open.ID {
 		t.Fatalf("owner capture not excluded: %+v", accepted)
 	}
-	h.captured <- ports.CaptureDone{ID: accepted.ID, Output: accepted.Output, Time: time.Now()}
+	h.captured <- domain.CaptureDone{ID: accepted.ID, Output: accepted.Output, Time: time.Now()}
 	hd := h.hud(t, domain.LayerTop, 0)
 	protect(t, h.s, state, 1, true)
 	if !eventsInclude(owner.extFrame(t, session, 4, 4), frameFailed) {

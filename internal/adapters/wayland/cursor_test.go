@@ -8,16 +8,17 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/cursorshape"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
 
-func cursorServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, chan ports.CursorChange, string) {
+func cursorServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, chan domain.CursorChange, string) {
 	t.Helper()
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
 	commands := make(chan ports.ClientCommand, 16)
-	cursors := make(chan ports.CursorChange, 16)
+	cursors := make(chan domain.CursorChange, 16)
 	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs}, Channels{Events: events, Commands: commands, Cursors: cursors}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
@@ -33,9 +34,9 @@ func cursorServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.Cli
 // nextCursor returns the latest cursor change sent within a short wait.
 //
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
-func nextCursor(t *testing.T, cursors <-chan ports.CursorChange) ports.CursorChange {
+func nextCursor(t *testing.T, cursors <-chan domain.CursorChange) domain.CursorChange {
 	t.Helper()
-	var c ports.CursorChange
+	var c domain.CursorChange
 	select {
 	case c = <-cursors:
 	case <-waylandDeadline(2 * time.Second):
@@ -77,7 +78,7 @@ func TestCursorShapeFollowsPointerFocus(t *testing.T) {
 	}
 
 	commands <- ports.PointerFocus{ID: w.ID, X: 0, Y: 0}
-	if got := nextCursor(t, cursors); got != (ports.CursorChange{}) {
+	if got := nextCursor(t, cursors); got != (domain.CursorChange{}) {
 		t.Fatalf("enter: %+v, want the arrow", got)
 	}
 	requestProtocol(t, c, device, cursorshape.WpCursorShapeDeviceV1RequestSetShape, uint32(2), uint32(cursorshape.WpCursorShapeDeviceV1ShapePointer))
@@ -88,7 +89,7 @@ func TestCursorShapeFollowsPointerFocus(t *testing.T) {
 		t.Fatalf("shape: %+v", got)
 	}
 	commands <- ports.CursorOverride{Shape: "ew-resize"}
-	if got := nextCursor(t, cursors); got != (ports.CursorChange{Shape: "ew-resize"}) {
+	if got := nextCursor(t, cursors); got != (domain.CursorChange{Shape: "ew-resize"}) {
 		t.Fatalf("override: %+v", got)
 	}
 	requestProtocol(t, c, device, cursorshape.WpCursorShapeDeviceV1RequestSetShape, uint32(3), uint32(cursorshape.WpCursorShapeDeviceV1ShapeText))
@@ -101,11 +102,11 @@ func TestCursorShapeFollowsPointerFocus(t *testing.T) {
 	case <-waylandDeadline(50 * time.Millisecond):
 	}
 	commands <- ports.CursorOverride{}
-	if got := nextCursor(t, cursors); got != (ports.CursorChange{Shape: "text"}) {
+	if got := nextCursor(t, cursors); got != (domain.CursorChange{Shape: "text"}) {
 		t.Fatalf("restored client cursor: %+v", got)
 	}
 	commands <- ports.PointerFocus{ID: 0}
-	if got := nextCursor(t, cursors); got != (ports.CursorChange{}) {
+	if got := nextCursor(t, cursors); got != (domain.CursorChange{}) {
 		t.Fatalf("leave: %+v, want the arrow", got)
 	}
 }
@@ -251,10 +252,10 @@ func TestCursorOverrideProtection(t *testing.T) {
 	case <-waylandDeadline(50 * time.Millisecond):
 	}
 	protect(t, s, state, 2, false)
-	if !s.display.Do(func() { s.setCursor(ports.CursorChange{Hidden: true}) }) {
+	if !s.display.Do(func() { s.setCursor(domain.CursorChange{Hidden: true}) }) {
 		t.Fatal("display stopped")
 	}
-	if got := nextCursor(t, cursors); got != (ports.CursorChange{Hidden: true}) {
+	if got := nextCursor(t, cursors); got != (domain.CursorChange{Hidden: true}) {
 		t.Fatalf("override survived protection: %+v", got)
 	}
 }

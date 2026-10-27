@@ -416,7 +416,7 @@ func TestRuleReloadAffectsFutureMapsOnly(t *testing.T) {
 		r.mapApp(t, 1, "code")
 		cfg := r.cfg
 		cfg.Rules = []domain.WindowRule{winRule("fl", "code", func(r *domain.WindowRule) { r.Floating = ruleOn() })}
-		r.reload <- ports.ConfigChanged{Config: cfg}
+		r.reload <- domain.ConfigChanged{Config: cfg}
 		// Handled in order with the map below.
 		st := r.mapApp(t, 2, "code")
 		if w := stWindow(st, 1); w.WorkspaceName != "dev" || w.Floating {

@@ -7,7 +7,6 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
@@ -98,12 +97,12 @@ func TestHeadlessTiledSHMCallbackAndCopyBudget(t *testing.T) {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer inst.Close()
-	gpu, err := inst.OpenGPU(ports.GPUInfo{})
+	gpu, err := inst.OpenGPU(domain.GPUInfo{})
 	if err != nil {
 		t.Skipf("Vulkan GPU unavailable: %v", err)
 	}
 	defer gpu.Close()
-	renderer, err := gpu.NewRenderer(128, 128, ports.RendererOptions{})
+	renderer, err := gpu.NewRenderer(128, 128, domain.RendererOptions{})
 	r, _ := renderer.(*vulkan.Renderer)
 	if err != nil {
 		t.Skipf("Vulkan unavailable: %v", err)

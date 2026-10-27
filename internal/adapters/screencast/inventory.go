@@ -6,16 +6,15 @@ import (
 	"strings"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerobus"
 )
 
 // applyInventory takes the outputs and windows wayland published. The
 // receiver owns the slices. Departures of outputs and windows are signalled
 // to the clients that watch them (the first inventory is not a change).
-func (s *Service) applyInventory(inv ports.CastInventory) {
-	slices.SortFunc(inv.Outputs, func(a, b ports.CastOutput) int { return strings.Compare(a.Info.Name, b.Info.Name) })
-	slices.SortFunc(inv.Windows, func(a, b ports.CastWindow) int {
+func (s *Service) applyInventory(inv domain.CastInventory) {
+	slices.SortFunc(inv.Outputs, func(a, b domain.CastOutput) int { return strings.Compare(a.Info.Name, b.Info.Name) })
+	slices.SortFunc(inv.Windows, func(a, b domain.CastWindow) int {
 		switch {
 		case a.ID < b.ID:
 			return -1
@@ -161,7 +160,7 @@ func (s *Service) replyState(req *request) {
 
 // encodeNames writes the monitor spec (connector, vendor, product, serial).
 // The serial falls back to the connector, as session restore needs one.
-func (s *Service) encodeNames(e *zerobus.Encoder, o *ports.CastOutput) {
+func (s *Service) encodeNames(e *zerobus.Encoder, o *domain.CastOutput) {
 	e.Struct()
 	serial := o.Info.Serial
 	if serial == "" {

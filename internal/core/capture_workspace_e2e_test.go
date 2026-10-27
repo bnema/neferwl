@@ -27,7 +27,7 @@ func TestCaptureSessionSurvivesWorkspaceSwitch(t *testing.T) {
 		r.client <- ports.WindowMapped{ID: 1}
 		scene(t, r.scenes)
 		// Mapping the window adds a spare workspace: wait for the inventory that lists it.
-		var ws []ports.WorkspaceInfo
+		var ws []domain.WorkspaceInfo
 		for len(ws) < 2 {
 			ws = receive(t, r.workspaces).Outputs[0].Workspaces
 		}

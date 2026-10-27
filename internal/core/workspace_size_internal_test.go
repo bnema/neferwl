@@ -6,7 +6,6 @@ import (
 	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 func sizedMonitor(overflow Overflow) *Monitor {
@@ -115,7 +114,7 @@ func TestShownClientRectIsClippedToFrame(t *testing.T) {
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
 		c := newSizedCore(t, cfg)
-		c.addScreen(ports.OutputInfo{Name: "A", Width: 300, Height: 200})
+		c.addScreen(domain.OutputInfo{Name: "A", Width: 300, Height: 200})
 		s := c.screens[0]
 		s.x = 1000
 		s.mon.SetNamed([]NamedWorkspace{{Name: "s", Size: [2]int{100, 100}}})
@@ -144,8 +143,8 @@ func TestBringNamedLookupAllocations(t *testing.T) {
 		cfg.Layout.MaxColumns = 2
 		cfg.Workspaces = []domain.WorkspaceConfig{{Name: "s"}, {Name: "h", Monitor: "A"}}
 		c := newSizedCore(t, cfg)
-		c.addScreen(ports.OutputInfo{Name: "A", Width: 300, Height: 200})
-		c.addScreen(ports.OutputInfo{Name: "B", Width: 600, Height: 400})
+		c.addScreen(domain.OutputInfo{Name: "A", Width: 300, Height: 200})
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 600, Height: 400})
 		if n := testing.AllocsPerRun(100, func() { c.focusScreen = 0; c.bringNamed("s"); c.bringNamed("h") }); n != 0 {
 			t.Fatalf("%v allocs", n)
 		}
@@ -156,7 +155,7 @@ func TestBringNamedLookupAllocations(t *testing.T) {
 // newSizedCore returns a core with buffered output channels and no outputs.
 func newSizedCore(t *testing.T, cfg domain.Config) *Core {
 	t.Helper()
-	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Layouts: make(chan ports.Layout, 1), Constraints: make(chan ports.PointerConstraint, 1), State: make(chan domain.State, 1), Workspaces: make(chan ports.Workspaces, 1)}, Options{})
+	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Layouts: make(chan domain.Layout, 1), Constraints: make(chan domain.PointerConstraint, 1), State: make(chan domain.State, 1), Workspaces: make(chan domain.Workspaces, 1)}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

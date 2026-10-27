@@ -18,35 +18,35 @@ type multiRig struct {
 	client   chan ports.ClientEvent
 	input    chan ports.InputEvent
 	output   chan ports.OutputEvent
-	reload   chan ports.ConfigChanged
+	reload   chan domain.ConfigChanged
 	commands chan ports.ClientCommand
 	scenes   chan []domain.Scene
-	spawn    chan ports.SpawnRequest
+	spawn    chan domain.SpawnRequest
 	state    chan domain.State
 	cfg      domain.Config
 }
 
 var (
-	left  = ports.OutputInfo{Name: "DP-1", Make: "Acme", Model: "A", Serial: "1", Width: 200, Height: 100}
-	right = ports.OutputInfo{Name: "DP-2", Make: "Acme", Model: "B", Serial: "2", Width: 400, Height: 200}
-	third = ports.OutputInfo{Name: "DP-3", Make: "Acme", Model: "C", Serial: "3", Width: 300, Height: 100}
+	left  = domain.OutputInfo{Name: "DP-1", Make: "Acme", Model: "A", Serial: "1", Width: 200, Height: 100}
+	right = domain.OutputInfo{Name: "DP-2", Make: "Acme", Model: "B", Serial: "2", Width: 400, Height: 200}
+	third = domain.OutputInfo{Name: "DP-3", Make: "Acme", Model: "C", Serial: "3", Width: 300, Height: 100}
 )
 
 // startMulti runs core with Alt as Cmd, no border and no gaps, and plugs
 // the given outputs in order.
-func startMulti(t *testing.T, edit func(*domain.Config), outs ...ports.OutputInfo) *multiRig {
+func startMulti(t *testing.T, edit func(*domain.Config), outs ...domain.OutputInfo) *multiRig {
 	t.Helper()
 	return startRig(t, false, edit, outs...)
 }
 
 // startRig is startMulti; terminal enables the configured automatic-open policy.
-func startRig(t *testing.T, terminal bool, edit func(*domain.Config), outs ...ports.OutputInfo) *multiRig {
+func startRig(t *testing.T, terminal bool, edit func(*domain.Config), outs ...domain.OutputInfo) *multiRig {
 	t.Helper()
 	return startRigWith(t, core.Options{Terminal: terminal}, edit, outs...)
 }
 
 // startRigWith is startRig with explicit core options.
-func startRigWith(t *testing.T, opts core.Options, edit func(*domain.Config), outs ...ports.OutputInfo) *multiRig {
+func startRigWith(t *testing.T, opts core.Options, edit func(*domain.Config), outs ...domain.OutputInfo) *multiRig {
 	t.Helper()
 	cfg := altCmdDefaults()
 	cfg.Border.Width = 0
@@ -55,8 +55,8 @@ func startRigWith(t *testing.T, opts core.Options, edit func(*domain.Config), ou
 	}
 	r := &multiRig{
 		client: make(chan ports.ClientEvent, 16), input: make(chan ports.InputEvent, 16),
-		output: make(chan ports.OutputEvent, 4), reload: make(chan ports.ConfigChanged, 4),
-		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []domain.Scene, 1), spawn: make(chan ports.SpawnRequest, 16), state: make(chan domain.State, 1), cfg: cfg,
+		output: make(chan ports.OutputEvent, 4), reload: make(chan domain.ConfigChanged, 4),
+		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []domain.Scene, 1), spawn: make(chan domain.SpawnRequest, 16), state: make(chan domain.State, 1), cfg: cfg,
 	}
 	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Spawn: r.spawn, State: r.state}, opts)
 	if err != nil {
@@ -72,7 +72,7 @@ func startRigWith(t *testing.T, opts core.Options, edit func(*domain.Config), ou
 	return r
 }
 
-func (r *multiRig) plug(t *testing.T, o ports.OutputInfo) []domain.Scene {
+func (r *multiRig) plug(t *testing.T, o domain.OutputInfo) []domain.Scene {
 	t.Helper()
 	r.output <- ports.OutputAdded{Info: o}
 	return receive(t, r.scenes)
@@ -206,7 +206,7 @@ func layoutPerOutputFollowsMonitorAndReload(t *testing.T, r *landRig) {
 	r.land(r.plug(t, right))
 	cfg := r.cfg
 	cfg.Layout.Outputs = nil
-	r.reload <- ports.ConfigChanged{Config: cfg}
+	r.reload <- domain.ConfigChanged{Config: cfg}
 	if got := widths(r.land(receive(t, r.scenes)), "DP-2"); !slices.Equal(got, []int{400, 400}) {
 		t.Fatal(got)
 	}
@@ -222,7 +222,7 @@ func TestExplicitOutputPositionAndAutomaticFallback(t *testing.T) {
 			t.Fatalf("unexpected positions: %+v", out.Outputs)
 		}
 		r.cfg.Outputs[1].Pos = &image.Point{X: -200, Y: 12}
-		r.reload <- ports.ConfigChanged{Config: r.cfg}
+		r.reload <- domain.ConfigChanged{Config: r.cfg}
 		_ = receive(t, r.scenes)
 		out = lastOutputs(t, r.commands)
 		if out.Outputs[0].X != 200 || out.Outputs[1].X != -200 || out.Outputs[1].Y != 12 {
@@ -255,14 +255,14 @@ func TestRelativeOutputPlacement(t *testing.T) {
 		}
 		// A reload with another offset moves the output.
 		r.cfg.Outputs[1].Anchor.Offset = -50
-		r.reload <- ports.ConfigChanged{Config: r.cfg}
+		r.reload <- domain.ConfigChanged{Config: r.cfg}
 		_ = receive(t, r.scenes)
 		if got, want := positions(), [][2]int{{0, 0}, {-50, 100}, {350, 90}}; !slices.Equal(got, want) {
 			t.Fatalf("positions after offset reload %v, want %v", got, want)
 		}
 		// Scaling the reference down moves the output below it.
 		r.cfg.Outputs[0].Scale = 2
-		r.reload <- ports.ConfigChanged{Config: r.cfg}
+		r.reload <- domain.ConfigChanged{Config: r.cfg}
 		_ = receive(t, r.scenes)
 		if got, want := positions(), [][2]int{{0, 0}, {-50, 50}, {350, 40}}; !slices.Equal(got, want) {
 			t.Fatalf("positions after scale reload %v, want %v", got, want)
@@ -507,7 +507,7 @@ func TestNamedWorkspaceHomeChangeAppliesLive(t *testing.T) {
 		r.mapWindow(t, 1)
 		r.key(t, "w", domain.ModAlt)
 		r.cfg.Workspaces[0].Monitor = "DP-2"
-		r.reload <- ports.ConfigChanged{Config: r.cfg}
+		r.reload <- domain.ConfigChanged{Config: r.cfg}
 		receive(t, r.scenes)
 		r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
 		if got := shown(r.key(t, "w", domain.ModAlt)); len(got["DP-1"]) != 0 || len(got["DP-2"]) != 1 {
@@ -541,8 +541,8 @@ func TestNamedWorkspaceOnItsMonitor(t *testing.T) {
 func TestLayersStayOnTheirOutput(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startMulti(t, nil, left, right)
-		bar := ports.LayerSurface{ID: 9, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 10, ExclusiveZone: 10, Output: "DP-2"}
-		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar}}
+		bar := domain.LayerSurface{ID: 9, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 10, ExclusiveZone: 10, Output: "DP-2"}
+		r.client <- ports.LayerChanged{Layers: []domain.LayerSurface{bar}}
 		set := receive(t, r.scenes)
 		for _, s := range set {
 			if (len(s.Layers) == 1) != (s.Output == "DP-2") {
@@ -680,7 +680,7 @@ func TestFirstTerminalFollowsSetOutputs(t *testing.T) {
 		commands := make(chan ports.ClientCommand)
 		// The launcher handoff is deliberately nonblocking. A ready buffered
 		// queue tests ordering without requiring core to wait for this reader.
-		spawn := make(chan ports.SpawnRequest, 1)
+		spawn := make(chan domain.SpawnRequest, 1)
 		output := make(chan ports.OutputEvent, 1)
 		scenes := make(chan []domain.Scene, 1)
 		state := make(chan domain.State, 1)
@@ -724,7 +724,7 @@ func TestFirstTerminalLayoutWaitCancels(t *testing.T) {
 		commands := make(chan ports.ClientCommand)
 		// The launcher handoff is deliberately nonblocking. A ready buffered
 		// queue tests ordering without requiring core to wait for this reader.
-		spawn := make(chan ports.SpawnRequest, 1)
+		spawn := make(chan domain.SpawnRequest, 1)
 		output := make(chan ports.OutputEvent, 1)
 		scenes := make(chan []domain.Scene, 1)
 		state := make(chan domain.State, 1)
@@ -757,7 +757,7 @@ func TestFirstTerminalLayoutWaitCancels(t *testing.T) {
 func TestFirstTerminalSpawnFollowsDeliveredLayout(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		commands := make(chan ports.ClientCommand)
-		spawn := make(chan ports.SpawnRequest, 1)
+		spawn := make(chan domain.SpawnRequest, 1)
 		output := make(chan ports.OutputEvent, 1)
 		scenes := make(chan []domain.Scene, 1)
 		state := make(chan domain.State, 1)
@@ -821,7 +821,7 @@ func TestTerminalAutoOpenFirstSkipsPopulatedInitialWorkspace(t *testing.T) {
 		r := startRig(t, false, nil, left)
 		r.mapWindow(t, 1)
 		r.cfg.Terminal.AutoOpen = "first"
-		r.reload <- ports.ConfigChanged{Config: r.cfg}
+		r.reload <- domain.ConfigChanged{Config: r.cfg}
 		receive(t, r.scenes)
 		r.key(t, "Next", domain.ModAlt)
 		if len(r.spawn) != 0 {
@@ -836,7 +836,7 @@ func TestTerminalAutoOpenFirstDoesNotTargetLaterWorkspace(t *testing.T) {
 		r := startRig(t, false, nil, left)
 		r.key(t, "Next", domain.ModAlt)
 		r.cfg.Terminal.AutoOpen = "first"
-		r.reload <- ports.ConfigChanged{Config: r.cfg}
+		r.reload <- domain.ConfigChanged{Config: r.cfg}
 		receive(t, r.scenes)
 		if len(r.spawn) != 0 {
 			t.Fatal("opened the first terminal outside workspace 1")
@@ -848,7 +848,7 @@ func TestTerminalAutoOpenFirstDoesNotTargetLaterWorkspace(t *testing.T) {
 func TestTerminalAutoOpenFirstSurvivesReloadBeforeOutput(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startRig(t, true, nil)
-		r.reload <- ports.ConfigChanged{Config: r.cfg}
+		r.reload <- domain.ConfigChanged{Config: r.cfg}
 		receive(t, r.scenes)
 		r.plug(t, left)
 		if req := receive(t, r.spawn); req.Argv[0] != "foot" {
@@ -866,7 +866,7 @@ func TestTerminalAutoOpenAllThenFirstDoesNotOpenAgain(t *testing.T) {
 		r.client <- ports.WindowMapped{ID: 1, Slot: token}
 		receive(t, r.scenes)
 		r.cfg.Terminal.AutoOpen = "first"
-		r.reload <- ports.ConfigChanged{Config: r.cfg}
+		r.reload <- domain.ConfigChanged{Config: r.cfg}
 		receive(t, r.scenes)
 		r.client <- ports.WindowUnmapped{ID: 1}
 		receive(t, r.scenes)
@@ -881,14 +881,14 @@ func TestEmptyWorkspaceGetsTerminal(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startRig(t, true, func(c *domain.Config) { c.Terminal.AutoOpen = "all" }, left, right)
 		// One terminal per output, each tagged for its workspace.
-		var reqs []ports.SpawnRequest
+		var reqs []domain.SpawnRequest
 		for len(reqs) < 2 {
 			reqs = append(reqs, receive(t, r.spawn))
 		}
 		if len(r.spawn) != 0 || reqs[0].Argv[0] != "foot" || reqs[0].Env[0] == reqs[1].Env[0] {
 			t.Fatal(reqs, len(r.spawn))
 		}
-		token := func(req ports.SpawnRequest) string { return req.Env[0][len(ports.SlotEnv)+1:] }
+		token := func(req domain.SpawnRequest) string { return req.Env[0][len(ports.SlotEnv)+1:] }
 		// The focused screen is DP-2 now; DP-1's terminal still lands on DP-1.
 		r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
 		r.client <- ports.WindowMapped{ID: 1, Slot: token(reqs[0])}
@@ -1286,7 +1286,7 @@ func stashEndToEnd(t *testing.T, r *landRig) {
 		t.Fatalf("peek %+v selected %+v", peek, sel)
 	}
 	// A popup of the peek waits until the peek is selected.
-	r.client <- ports.PopupRequest{ID: 9, Parent: 3, Positioner: ports.Positioner{Width: 5, Height: 5, AnchorRect: domain.Rect{W: 1, H: 1}}}
+	r.client <- ports.PopupRequest{ID: 9, Parent: 3, Positioner: domain.Positioner{Width: 5, Height: 5, AnchorRect: domain.Rect{W: 1, H: 1}}}
 	r.client <- ports.PopupMapped{ID: 9}
 	sc = receive(t, r.scenes)
 	for _, w := range sc[0].Windows {
@@ -1786,7 +1786,7 @@ func TestTransformReload(t *testing.T) {
 		}
 
 		r.cfg.Outputs[0].Transform = 1
-		r.reload <- ports.ConfigChanged{Config: r.cfg}
+		r.reload <- domain.ConfigChanged{Config: r.cfg}
 		set = receive(t, r.scenes)
 		out := lastOutputs(t, r.commands)
 		if o := out.Outputs[0]; o.Width != 100 || o.Height != 200 || o.Transform != 1 {
@@ -1801,14 +1801,14 @@ func TestTransformReload(t *testing.T) {
 
 		// A transform change on the scaled output itself keeps its live scale.
 		r.cfg.Outputs[1].Transform = 1
-		r.reload <- ports.ConfigChanged{Config: r.cfg}
+		r.reload <- domain.ConfigChanged{Config: r.cfg}
 		set = receive(t, r.scenes)
 		if set[1].Scale != scale || set[1].Transform != 1 {
 			t.Fatalf("scale %v transform %d", set[1].Scale, set[1].Transform)
 		}
 		// Back to normal.
 		r.cfg.Outputs[0].Transform = 0
-		r.reload <- ports.ConfigChanged{Config: r.cfg}
+		r.reload <- domain.ConfigChanged{Config: r.cfg}
 		_ = receive(t, r.scenes)
 		if o := lastOutputs(t, r.commands).Outputs[0]; o.Width != 200 || o.Transform != 0 {
 			t.Fatalf("DP-1: %+v", o)
@@ -1841,7 +1841,7 @@ func transformReloadClampsPointer(t *testing.T, r *landRig) {
 	}
 	// Rotating DP-1 moves DP-2 to x 100..500: 550 is off every output.
 	r.cfg.Outputs[0].Transform = 1
-	r.reload <- ports.ConfigChanged{Config: r.cfg}
+	r.reload <- domain.ConfigChanged{Config: r.cfg}
 	receive(t, r.scenes)
 	for len(r.commands) > 0 {
 		<-r.commands

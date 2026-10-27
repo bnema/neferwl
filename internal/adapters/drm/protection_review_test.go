@@ -10,7 +10,6 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
@@ -77,7 +76,7 @@ func TestProtectedModesetDisableSendsInactiveFormats(t *testing.T) {
 			}
 			o, k, _ := testOutput(t, failures...)
 			o.device, o.hdr.on = 42, true
-			feedback := make(chan ports.OutputFormats, 2)
+			feedback := make(chan domain.OutputFormats, 2)
 			o.formats = feedback
 			r := portsmocks.NewMockRenderer(t)
 			ctx, cancel := context.WithCancel(context.Background())

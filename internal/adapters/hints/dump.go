@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 const (
@@ -29,11 +28,11 @@ const (
 type dumpJob struct {
 	stages   []scanStage
 	when     time.Time
-	req      ports.HintScanRequest
+	req      domain.HintScanRequest
 	pix      []byte
 	m        *mapping // owns pix; released after the dump
 	stride   int
-	targets  []ports.HintTarget
+	targets  []domain.HintTarget
 	captureD time.Duration
 }
 

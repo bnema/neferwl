@@ -8,13 +8,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"golang.org/x/sys/unix"
 )
 
 // ListGPUs discovers DRM cards through sysfs without opening device nodes.
 // Optional attributes that cannot be read are left at their zero value.
-func ListGPUs(sysRoot, devRoot string) ([]ports.GPUInfo, error) {
+func ListGPUs(sysRoot, devRoot string) ([]domain.GPUInfo, error) {
 	class := filepath.Join(sysRoot, "class", "drm")
 	entries, err := os.ReadDir(class)
 	if err != nil {
@@ -48,11 +48,11 @@ func ListGPUs(sysRoot, devRoot string) ([]ports.GPUInfo, error) {
 		}
 		return strings.Compare(a.name, b.name)
 	})
-	result := make([]ports.GPUInfo, 0, len(cards))
+	result := make([]domain.GPUInfo, 0, len(cards))
 	for _, c := range cards {
 		path := filepath.Join(class, c.name)
 		device := filepath.Join(path, "device")
-		info := ports.GPUInfo{Path: filepath.Join(devRoot, "dri", c.name), Primary: readGPUDevice(filepath.Join(path, "dev"))}
+		info := domain.GPUInfo{Path: filepath.Join(devRoot, "dri", c.name), Primary: readGPUDevice(filepath.Join(path, "dev"))}
 		renders, _ := filepath.Glob(filepath.Join(device, "drm", "renderD*", "dev"))
 		for _, render := range renders {
 			if info.Render = readGPUDevice(render); info.Render != 0 {

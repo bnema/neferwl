@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestChildEnv(t *testing.T) {
@@ -34,14 +34,14 @@ func TestRun(t *testing.T) {
 	file := filepath.Join(dir, "result")
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	reqs := make(chan ports.SpawnRequest, 3)
+	reqs := make(chan domain.SpawnRequest, 3)
 	go func() {
 		done <- New([]string{"PATH=/bin", "FILE=" + file}, nil, logging.For(ctx, "launcher")).Run(ctx, reqs)
 	}()
-	reqs <- ports.SpawnRequest{}
-	reqs <- ports.SpawnRequest{Argv: []string{"nonexistent-neferwl-binary"}}
+	reqs <- domain.SpawnRequest{}
+	reqs <- domain.SpawnRequest{Argv: []string{"nonexistent-neferwl-binary"}}
 	// Env adds to the child environment (slot tokens).
-	reqs <- ports.SpawnRequest{Argv: []string{"sh", "-c", "echo ok$NEFERWL_SLOT > $FILE"}, Env: []string{"NEFERWL_SLOT=7"}}
+	reqs <- domain.SpawnRequest{Argv: []string{"sh", "-c", "echo ok$NEFERWL_SLOT > $FILE"}, Env: []string{"NEFERWL_SLOT=7"}}
 	deadline := time.After(3 * time.Second)
 	for {
 		data, err := os.ReadFile(file)
@@ -78,10 +78,10 @@ func TestChildPath(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	reqs := make(chan ports.SpawnRequest, 1)
+	reqs := make(chan domain.SpawnRequest, 1)
 	done := make(chan error, 1)
 	go func() { done <- New([]string{"PATH=" + dir}, nil, logging.For(ctx, "launcher")).Run(ctx, reqs) }()
-	reqs <- ports.SpawnRequest{Argv: []string{name, result}}
+	reqs <- domain.SpawnRequest{Argv: []string{name, result}}
 	deadline := time.After(3 * time.Second)
 	for {
 		if data, err := os.ReadFile(result); err == nil {

@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // publishWorkspaces describes the numbered vertical stack and configured hidden
@@ -24,11 +24,11 @@ func (c *Core) publishWorkspaces() {
 		}
 		m := sc.mon
 		// Reuse the list of the entry this one overwrites.
-		var list []ports.WorkspaceInfo
+		var list []domain.WorkspaceInfo
 		if n := len(buf.Outputs); n < cap(buf.Outputs) {
 			list = buf.Outputs[:n+1][n].Workspaces[:0]
 		}
-		out := ports.WorkspaceOutput{Name: sc.name(), Workspaces: list}
+		out := domain.WorkspaceOutput{Name: sc.name(), Workspaces: list}
 		i := -1
 		for w := range m.all() {
 			i++
@@ -36,7 +36,7 @@ func (c *Core) publishWorkspaces() {
 			if name == "" {
 				name = strconv.Itoa(i + 1)
 			}
-			out.Workspaces = append(out.Workspaces, ports.WorkspaceInfo{ID: w.ID, Name: name, Index: i, Active: m.Current() == w, Hidden: m.Current() != w && (m.isHidden(w) || w.Empty()), Configured: w.Name, Frame: w.Output})
+			out.Workspaces = append(out.Workspaces, domain.WorkspaceInfo{ID: w.ID, Name: name, Index: i, Active: m.Current() == w, Hidden: m.Current() != w && (m.isHidden(w) || w.Empty()), Configured: w.Name, Frame: w.Output})
 		}
 		buf.Outputs = append(buf.Outputs, out)
 	}
@@ -45,16 +45,16 @@ func (c *Core) publishWorkspaces() {
 		return
 	}
 	// Empty lists stay non-nil (JSON []).
-	snapshot := ports.Workspaces{Outputs: make([]ports.WorkspaceOutput, len(buf.Outputs))}
+	snapshot := domain.Workspaces{Outputs: make([]domain.WorkspaceOutput, len(buf.Outputs))}
 	for k, o := range buf.Outputs {
-		snapshot.Outputs[k] = ports.WorkspaceOutput{Name: o.Name, Workspaces: append([]ports.WorkspaceInfo{}, o.Workspaces...)}
+		snapshot.Outputs[k] = domain.WorkspaceOutput{Name: o.Name, Workspaces: append([]domain.WorkspaceInfo{}, o.Workspaces...)}
 	}
 	c.sent.workspaces = snapshot
 	latest(c.ch.Workspaces, snapshot)
 }
 
-func sameWorkspaces(a, b ports.Workspaces) bool {
-	return slices.EqualFunc(a.Outputs, b.Outputs, func(x, y ports.WorkspaceOutput) bool {
+func sameWorkspaces(a, b domain.Workspaces) bool {
+	return slices.EqualFunc(a.Outputs, b.Outputs, func(x, y domain.WorkspaceOutput) bool {
 		return x.Name == y.Name && slices.Equal(x.Workspaces, y.Workspaces)
 	})
 }

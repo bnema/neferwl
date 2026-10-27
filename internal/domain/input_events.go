@@ -18,3 +18,16 @@ const (
 	AxisFinger
 	AxisContinuous
 )
+
+// ModState is the serialized xkb modifier state sent in wl_keyboard.modifiers.
+type ModState struct{ Depressed, Latched, Locked, Group uint32 }
+
+// ScrollAxis is one scroll direction in a pointer frame. Value is in
+// surface pixels; V120 counts wheel detents in 1/120 steps (wheel only).
+// Stop ends a finger or continuous scroll on this axis.
+type ScrollAxis struct {
+	Set   bool
+	Value float64
+	V120  int32
+	Stop  bool
+}

@@ -8,6 +8,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	dl "github.com/bnema/go-wayland-bindings/server/drmlease"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/ports"
@@ -103,7 +105,7 @@ func leaseServerWithState(t *testing.T) (*wlturbo.Display, chan ports.LeaseMessa
 		}
 	})
 	c := protocolClient(t, s, dir)
-	events <- ports.LeaseConnectors{Card: "/dev/dri/card-test", Device: leaseFD(t), Connectors: []ports.LeaseConnector{{Card: "/dev/dri/card-test", Name: "DP-1", Description: "VR headset", ConnectorID: 42}}}
+	events <- ports.LeaseConnectors{Card: "/dev/dri/card-test", Device: leaseFD(t), Connectors: []domain.LeaseConnector{{Card: "/dev/dri/card-test", Name: "DP-1", Description: "VR headset", ConnectorID: 42}}}
 	dispatchUntil(t, c, func() bool { _, ok := c.Registry().FindGlobal("wp_drm_lease_device_v1"); return ok })
 	return c, requests, events, s
 }
@@ -316,7 +318,7 @@ func TestLeaseIDsAreScopedToCard(t *testing.T) {
 	})
 	c := protocolClient(t, s, dir)
 	for i, card := range []string{"card-one", "card-two"} {
-		events <- ports.LeaseConnectors{Card: card, Device: leaseFD(t), Connectors: []ports.LeaseConnector{{Card: card, Name: fmt.Sprintf("DP-%d", i+1), ConnectorID: uint32(i + 40)}}}
+		events <- ports.LeaseConnectors{Card: card, Device: leaseFD(t), Connectors: []domain.LeaseConnector{{Card: card, Name: fmt.Sprintf("DP-%d", i+1), ConnectorID: uint32(i + 40)}}}
 	}
 	dispatchUntil(t, c, func() bool {
 		count := 0
@@ -508,7 +510,7 @@ func TestLeaseGlobalRemoveAndReadd(t *testing.T) {
 	if count() != 0 {
 		t.Fatal("lease global not removed")
 	}
-	events <- ports.LeaseConnectors{Card: "/dev/dri/card-test", Device: leaseFD(t), Connectors: []ports.LeaseConnector{{Card: "/dev/dri/card-test", Name: "DP-1", ConnectorID: 42}}}
+	events <- ports.LeaseConnectors{Card: "/dev/dri/card-test", Device: leaseFD(t), Connectors: []domain.LeaseConnector{{Card: "/dev/dri/card-test", Name: "DP-1", ConnectorID: 42}}}
 	dispatchUntil(t, c, func() bool { return count() == 1 })
 	if count() != 1 {
 		t.Fatal("lease global not re-added")

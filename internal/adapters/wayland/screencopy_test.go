@@ -31,7 +31,7 @@ type captureEvents struct {
 
 func (p *captureEvents) Dispatch(e *wlturbo.Event) { p.events <- e.Opcode }
 func TestCaptureRegion(t *testing.T) {
-	o := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Width: 300, Height: 200}, Scale: 1.5}}
+	o := &output{place: domain.OutputPlacement{Info: domain.OutputInfo{Width: 300, Height: 200}, Scale: 1.5}}
 	for _, tc := range []struct{ in, want image.Rectangle }{
 		{image.Rect(0, 0, 100, 100), image.Rect(0, 0, 150, 150)},
 		{image.Rect(-10, -10, 10, 10), image.Rect(0, 0, 15, 15)},
@@ -46,7 +46,7 @@ func TestCaptureRegion(t *testing.T) {
 // Regions are logical; a rotated output holds them in its target under the
 // transform, and logicalRegion maps them back.
 func TestCaptureRegionTransform(t *testing.T) {
-	o := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Width: 200, Height: 100}, Scale: 1, Transform: 1, Width: 100, Height: 200}}
+	o := &output{place: domain.OutputPlacement{Info: domain.OutputInfo{Width: 200, Height: 100}, Scale: 1, Transform: 1, Width: 100, Height: 200}}
 	got := captureRegion(o, image.Rect(0, 0, 10, 20))
 	if want := image.Rect(0, 90, 20, 100); got != want {
 		t.Fatalf("captureRegion %v, want %v", got, want)
@@ -62,9 +62,9 @@ func TestCaptureRegionTransform(t *testing.T) {
 //testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestScreencopyProtocol(t *testing.T) {
 	dir := t.TempDir()
-	requests := make(chan ports.CaptureRequest, 1)
-	replies := make(chan ports.CaptureDone, 1)
-	s, err := New(Options{RuntimeDir: dir, CaptureAllow: allowStore(t, "*\n"), Outputs: ports.Layout{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 4, Height: 4}, Width: 4, Height: 4, Scale: 1}}}, Channels{Captures: requests, Captured: replies}, logging.For(context.Background(), "wayland"))
+	requests := make(chan domain.CaptureRequest, 1)
+	replies := make(chan domain.CaptureDone, 1)
+	s, err := New(Options{RuntimeDir: dir, CaptureAllow: allowStore(t, "*\n"), Outputs: domain.Layout{{Info: domain.OutputInfo{Name: "HEADLESS-1", Width: 4, Height: 4}, Width: 4, Height: 4, Scale: 1}}}, Channels{Captures: requests, Captured: replies}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestScreencopyProtocol(t *testing.T) {
 		if err := req.Dst.File.Close(); err != nil {
 			t.Fatal(err)
 		}
-		deliverCapture(t, s, replies, ports.CaptureDone{ID: req.ID, Output: req.Output, Time: time.Now()})
+		deliverCapture(t, s, replies, domain.CaptureDone{ID: req.ID, Output: req.Output, Time: time.Now()})
 	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("no request")
 	}
@@ -362,7 +362,7 @@ func TestCaptureProtocolErrors(t *testing.T) {
 
 // deliverCapture sends a capture reply and waits until the display
 // goroutine has run it, so a following Roundtrip sees its events.
-func deliverCapture(t *testing.T, s *Server, replies chan<- ports.CaptureDone, done ports.CaptureDone) {
+func deliverCapture(t *testing.T, s *Server, replies chan<- domain.CaptureDone, done domain.CaptureDone) {
 	t.Helper()
 	replies <- done
 	flushCaptured(t, s, replies)
@@ -424,11 +424,11 @@ func (p *captureDetails) Dispatch(e *wlturbo.Event) {
 //testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestExtCaptureLifecycle(t *testing.T) {
 	dir := t.TempDir()
-	requests := make(chan ports.CaptureRequest, 1)
-	replies := make(chan ports.CaptureDone, 1)
+	requests := make(chan domain.CaptureRequest, 1)
+	replies := make(chan domain.CaptureDone, 1)
 	commands := make(chan ports.ClientCommand, 4)
-	initial := ports.OutputPlacement{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 4, Height: 4}, Width: 4, Height: 4, Scale: 1}
-	s, err := New(Options{RuntimeDir: dir, CaptureAllow: allowStore(t, "*\n"), Outputs: ports.Layout{initial}}, Channels{Captures: requests, Captured: replies, Commands: commands}, logging.For(context.Background(), "wayland"))
+	initial := domain.OutputPlacement{Info: domain.OutputInfo{Name: "HEADLESS-1", Width: 4, Height: 4}, Width: 4, Height: 4, Scale: 1}
+	s, err := New(Options{RuntimeDir: dir, CaptureAllow: allowStore(t, "*\n"), Outputs: domain.Layout{initial}}, Channels{Captures: requests, Captured: replies, Commands: commands}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -498,7 +498,7 @@ func TestExtCaptureLifecycle(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	var req ports.CaptureRequest
+	var req domain.CaptureRequest
 	select {
 	case req = <-requests:
 	case <-waylandDeadline(2 * time.Second):
@@ -514,7 +514,7 @@ func TestExtCaptureLifecycle(t *testing.T) {
 	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &now); err != nil {
 		t.Fatal(err)
 	}
-	deliverCapture(t, s, replies, ports.CaptureDone{ID: req.ID, Time: time.Unix(now.Sec, now.Nsec)})
+	deliverCapture(t, s, replies, domain.CaptureDone{ID: req.ID, Time: time.Unix(now.Sec, now.Nsec)})
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -527,7 +527,7 @@ func TestExtCaptureLifecycle(t *testing.T) {
 	resized := initial
 	resized.Info.Width = 5
 	resized.Width = 5
-	applyOutputs(t, s, commands, ports.SetOutputs{Outputs: ports.Layout{resized}})
+	applyOutputs(t, s, commands, ports.SetOutputs{Outputs: domain.Layout{resized}})
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -564,7 +564,7 @@ func TestExtCaptureLifecycle(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	deliverCapture(t, s, replies, ports.CaptureDone{ID: req.ID, Time: time.Unix(now.Sec, now.Nsec)})
+	deliverCapture(t, s, replies, domain.CaptureDone{ID: req.ID, Time: time.Unix(now.Sec, now.Nsec)})
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -584,8 +584,8 @@ func TestExtCaptureLifecycle(t *testing.T) {
 func TestExtCaptureStoppedOnOutputRemoval(t *testing.T) {
 	dir := t.TempDir()
 	commands := make(chan ports.ClientCommand, 4)
-	initial := ports.OutputPlacement{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 4, Height: 4}, Width: 4, Height: 4, Scale: 1}
-	s, err := New(Options{RuntimeDir: dir, CaptureAllow: allowStore(t, "*\n"), Outputs: ports.Layout{initial}}, Channels{Captures: make(chan ports.CaptureRequest, 1), Captured: make(chan ports.CaptureDone, 1), Commands: commands}, logging.For(context.Background(), "wayland"))
+	initial := domain.OutputPlacement{Info: domain.OutputInfo{Name: "HEADLESS-1", Width: 4, Height: 4}, Width: 4, Height: 4, Scale: 1}
+	s, err := New(Options{RuntimeDir: dir, CaptureAllow: allowStore(t, "*\n"), Outputs: domain.Layout{initial}}, Channels{Captures: make(chan domain.CaptureRequest, 1), Captured: make(chan domain.CaptureDone, 1), Commands: commands}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -638,11 +638,11 @@ func TestWlrOutputGoneAndDestroyedBeforeReply(t *testing.T) {
 	for _, destroy := range []bool{false, true} {
 		t.Run(fmt.Sprint("destroy=", destroy), func(t *testing.T) {
 			dir := t.TempDir()
-			requests := make(chan ports.CaptureRequest, 1)
-			replies := make(chan ports.CaptureDone, 1)
+			requests := make(chan domain.CaptureRequest, 1)
+			replies := make(chan domain.CaptureDone, 1)
 			commands := make(chan ports.ClientCommand, 2)
-			initial := ports.OutputPlacement{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 2, Height: 2}, Width: 2, Height: 2, Scale: 1}
-			s, err := New(Options{RuntimeDir: dir, CaptureAllow: allowStore(t, "*\n"), Outputs: ports.Layout{initial}}, Channels{Captures: requests, Captured: replies, Commands: commands}, logging.For(context.Background(), "wayland"))
+			initial := domain.OutputPlacement{Info: domain.OutputInfo{Name: "HEADLESS-1", Width: 2, Height: 2}, Width: 2, Height: 2, Scale: 1}
+			s, err := New(Options{RuntimeDir: dir, CaptureAllow: allowStore(t, "*\n"), Outputs: domain.Layout{initial}}, Channels{Captures: requests, Captured: replies, Commands: commands}, logging.For(context.Background(), "wayland"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -701,7 +701,7 @@ func TestWlrOutputGoneAndDestroyedBeforeReply(t *testing.T) {
 			if err := c.Roundtrip(); err != nil {
 				t.Fatal(err)
 			}
-			var req ports.CaptureRequest
+			var req domain.CaptureRequest
 			select {
 			case req = <-requests:
 			case <-waylandDeadline(2 * time.Second):
@@ -724,7 +724,7 @@ func TestWlrOutputGoneAndDestroyedBeforeReply(t *testing.T) {
 			if _, err := req.Dst.File.Stat(); err == nil {
 				t.Fatal("output descriptor open")
 			}
-			deliverCapture(t, s, replies, ports.CaptureDone{ID: req.ID})
+			deliverCapture(t, s, replies, domain.CaptureDone{ID: req.ID})
 			if err := c.Roundtrip(); err != nil {
 				t.Fatal(err)
 			}

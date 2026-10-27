@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/bnema/go-wayland-bindings/server/drmlease"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
@@ -16,7 +17,7 @@ type leaseDevice struct {
 	card       string
 	global     *server.Global
 	fd         *os.File // owned by the display after receiving a duplicated DRM fd
-	connectors map[string]ports.LeaseConnector
+	connectors map[string]domain.LeaseConnector
 	binds      map[*drmlease.WpDrmLeaseDeviceV1]*leaseBind
 }
 type leaseBind struct {
@@ -174,7 +175,7 @@ func (s *Server) updateLeaseConnectors(msg ports.LeaseConnectors) {
 			}
 			return
 		}
-		d = &leaseDevice{server: s, card: msg.Card, fd: copyFD, connectors: map[string]ports.LeaseConnector{}, binds: map[*drmlease.WpDrmLeaseDeviceV1]*leaseBind{}}
+		d = &leaseDevice{server: s, card: msg.Card, fd: copyFD, connectors: map[string]domain.LeaseConnector{}, binds: map[*drmlease.WpDrmLeaseDeviceV1]*leaseBind{}}
 		g, err := s.display.AddGlobal(drmlease.WpDrmLeaseDeviceV1Interface, 1, func(c server.Client, v, id uint32) { d.bind(c, v, id) })
 		if err != nil {
 			copyFD.Close()
@@ -211,7 +212,7 @@ func (s *Server) updateLeaseConnectors(msg ports.LeaseConnectors) {
 		}
 		d.fd = copyFD
 	}
-	next := map[string]ports.LeaseConnector{}
+	next := map[string]domain.LeaseConnector{}
 	for _, c := range msg.Connectors {
 		next[c.Name] = c
 	}
@@ -269,7 +270,7 @@ func (d *leaseDevice) bind(c server.Client, v, id uint32) {
 	}
 	r.SendDone()
 }
-func (b *leaseBind) add(c ports.LeaseConnector) {
+func (b *leaseBind) add(c domain.LeaseConnector) {
 	r, err := drmlease.NewWpDrmLeaseConnectorV1(b.res.Client(), 1, 0, leaseConnectorHandler{})
 	if err != nil {
 		return

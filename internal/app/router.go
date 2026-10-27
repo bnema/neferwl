@@ -9,7 +9,6 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
 
@@ -29,8 +28,8 @@ type outputRouter struct {
 	// off is the latest Scene.Off per output name, kept after the output
 	// goes: it reconnects off until core's first scene (drm StartOff).
 	off      map[string]bool
-	cursor   ports.CursorChange
-	captured chan<- ports.CaptureDone
+	cursor   domain.CursorChange
+	captured chan<- domain.CaptureDone
 	ctx      context.Context
 
 	in   outputRoutes
@@ -61,16 +60,16 @@ type routerStats struct {
 // capture requests.
 type outputRoutes struct {
 	scenes   <-chan []domain.Scene
-	cursor   <-chan ports.CursorChange
-	captures <-chan ports.CaptureRequest
+	cursor   <-chan domain.CursorChange
+	captures <-chan domain.CaptureRequest
 }
 
 // mailbox is what the router feeds one output lifetime.
 type mailbox struct {
 	instance domain.OutputInstance
 	scenes   chan domain.Scene
-	cursor   chan ports.CursorChange
-	captures chan ports.CaptureRequest
+	cursor   chan domain.CursorChange
+	captures chan domain.CaptureRequest
 	// ctx ends and done closes with the output; stop cancels it.
 	ctx  context.Context
 	stop context.CancelFunc
@@ -78,7 +77,7 @@ type mailbox struct {
 }
 
 func newMailbox(instance domain.OutputInstance, ctx context.Context, stop context.CancelFunc, done chan struct{}) *mailbox {
-	return &mailbox{instance: instance, scenes: make(chan domain.Scene, 1), cursor: make(chan ports.CursorChange, 1), captures: make(chan ports.CaptureRequest, 16), ctx: ctx, stop: stop, done: done}
+	return &mailbox{instance: instance, scenes: make(chan domain.Scene, 1), cursor: make(chan domain.CursorChange, 1), captures: make(chan domain.CaptureRequest, 16), ctx: ctx, stop: stop, done: done}
 }
 
 // routerOp registers (add set) or unregisters an output. reply carries the
@@ -90,7 +89,7 @@ type routerOp struct {
 	reply chan bool
 }
 
-func newOutputRouter(ctx context.Context, captured chan<- ports.CaptureDone, in outputRoutes) *outputRouter {
+func newOutputRouter(ctx context.Context, captured chan<- domain.CaptureDone, in outputRoutes) *outputRouter {
 	return &outputRouter{outs: map[string]*mailbox{}, off: map[string]bool{}, captured: captured, ctx: ctx, in: in, ops: make(chan routerOp), done: make(chan struct{}), log: logging.For(ctx, "router")}
 }
 
@@ -171,7 +170,7 @@ func (r *outputRouter) unregister(name string, instance domain.OutputInstance) {
 }
 
 // setCursor gives every output the latest cursor, replacing an unread one.
-func (r *outputRouter) setCursor(c ports.CursorChange) {
+func (r *outputRouter) setCursor(c domain.CursorChange) {
 	r.cursor = c
 	r.stats.cursor++
 	for _, m := range r.outs {
@@ -200,7 +199,7 @@ func (r *outputRouter) scenes(set []domain.Scene) {
 
 // routeCapture hands the request to its output or fails it at once: a full
 // or stopped output never holds up the router.
-func (r *outputRouter) routeCapture(req ports.CaptureRequest) {
+func (r *outputRouter) routeCapture(req domain.CaptureRequest) {
 	m := r.outs[req.Output]
 	if m == nil {
 		capture.Fail(r.ctx, req, fmt.Errorf("output %q unavailable", req.Output), r.captured)

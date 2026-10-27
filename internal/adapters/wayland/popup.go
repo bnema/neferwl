@@ -18,7 +18,7 @@ type popup struct {
 	// layer is the parent set through zwlr_layer_surface_v1.get_popup,
 	// for a popup created without an xdg parent.
 	layer *layerSurface
-	pos   ports.Positioner
+	pos   domain.Positioner
 	grab  bool
 	// sent is set once core got the PopupRequest; done once dismissed.
 	sent, done bool

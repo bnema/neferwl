@@ -19,56 +19,56 @@ type pipes struct {
 	input    chan ports.InputEvent
 	output   chan ports.OutputEvent
 	commands chan ports.ClientCommand
-	spawn    chan ports.SpawnRequest
+	spawn    chan domain.SpawnRequest
 
 	// Capacity 1: each holds the latest value its sender published.
 	scenes        chan []domain.Scene
 	renderScenes  chan []domain.Scene
-	layouts       chan ports.Layout
-	constraints   chan ports.PointerConstraint
+	layouts       chan domain.Layout
+	constraints   chan domain.PointerConstraint
 	states        chan domain.State
-	workspaces    chan ports.Workspaces
-	cursorChanges chan ports.CursorChange
+	workspaces    chan domain.Workspaces
+	cursorChanges chan domain.CursorChange
 	keymaps       chan *xkb.Keymap
 	deviceConfigs chan domain.InputDevicesConfig
 
 	// Configuration: watched from the file, filtered by relayConfig, then
 	// configured (overrides included) by outputs for core.
-	watched      chan ports.ConfigChanged
-	filtered     chan ports.ConfigChanged
-	configured   chan ports.ConfigChanged
+	watched      chan domain.ConfigChanged
+	filtered     chan domain.ConfigChanged
+	configured   chan domain.ConfigChanged
 	configErrors chan error
 	// scales is nil outside a real session: headless runs never touch the
 	// config file.
-	scales chan ports.ScaleChanged
+	scales chan domain.ScaleChanged
 
 	// Outputs report to wayland through its presentation sink and, for each
 	// flip of an animating scene (Scene.Animating), tell core (frames) to
 	// move running slides.
-	frames chan ports.OutputFrame
+	frames chan domain.OutputFrame
 
 	// Hint mode: core asks the hints adapter for a scan and gets the result.
-	hintScans   chan ports.HintScanRequest
-	hintResults chan ports.HintScanResult
+	hintScans   chan domain.HintScanRequest
+	hintResults chan domain.HintScanResult
 
-	captures chan ports.CaptureRequest
+	captures chan domain.CaptureRequest
 	// Every admitted capture owns one reply slot until routeCaptured takes
 	// it. Keep this capacity tied to admission so output routing never waits.
 	// With hint mode on, the outputs reply on capturedAll and routeCaptured splits the replies by
 	// ports.CaptureIDInternal into captured (the wayland consumer) and
 	// hintCaptured (internal consumers). With hint mode off, capturedAll is
 	// captured itself and there is no routeCaptured.
-	capturedAll chan ports.CaptureDone
-	captured    chan ports.CaptureDone
+	capturedAll chan domain.CaptureDone
+	captured    chan domain.CaptureDone
 	// hintCaptured carries internal capture replies to the hints adapter.
-	hintCaptured chan ports.CaptureDone
+	hintCaptured chan domain.CaptureDone
 
-	outputFormats chan ports.OutputFormats
-	outputHeads   chan ports.OutputHeads
+	outputFormats chan domain.OutputFormats
+	outputHeads   chan domain.OutputHeads
 	leaseRequests chan ports.LeaseMessage
 	leaseEvents   chan ports.LeaseMessage
-	applyOutput   chan ports.OutputApply
-	appliedOutput chan ports.OutputApplied
+	applyOutput   chan domain.OutputApply
+	appliedOutput chan domain.OutputApplied
 
 	// D-Bus idle inhibition and SimulateUserActivity (screensaver), for
 	// wayland's idle notifications. Activity sends never block: capacity 1
@@ -78,7 +78,7 @@ type pipes struct {
 
 	// Screencast commands to wayland (the screencast adapter's side is the
 	// sender); the events come back through wayland.Options.Casts.
-	castCommands chan ports.CastCommand
+	castCommands chan domain.CastCommand
 }
 
 // newPipes makes the channels. The hint channels exist only with hint set
@@ -93,51 +93,51 @@ func newPipes(realSession, hint bool) *pipes {
 		input:    make(chan ports.InputEvent, 32),
 		output:   make(chan ports.OutputEvent, 32),
 		commands: make(chan ports.ClientCommand, 32),
-		spawn:    make(chan ports.SpawnRequest, 32),
+		spawn:    make(chan domain.SpawnRequest, 32),
 
 		scenes:        make(chan []domain.Scene, 1),
 		renderScenes:  make(chan []domain.Scene, 1),
-		layouts:       make(chan ports.Layout, 1),
-		constraints:   make(chan ports.PointerConstraint, 1),
+		layouts:       make(chan domain.Layout, 1),
+		constraints:   make(chan domain.PointerConstraint, 1),
 		states:        make(chan domain.State, 1),
-		workspaces:    make(chan ports.Workspaces, 1),
-		cursorChanges: make(chan ports.CursorChange, 1),
+		workspaces:    make(chan domain.Workspaces, 1),
+		cursorChanges: make(chan domain.CursorChange, 1),
 		keymaps:       make(chan *xkb.Keymap, 1),
 		deviceConfigs: make(chan domain.InputDevicesConfig, 1),
 
-		watched:      make(chan ports.ConfigChanged, 8),
-		filtered:     make(chan ports.ConfigChanged, 8),
-		configured:   make(chan ports.ConfigChanged, 8),
+		watched:      make(chan domain.ConfigChanged, 8),
+		filtered:     make(chan domain.ConfigChanged, 8),
+		configured:   make(chan domain.ConfigChanged, 8),
 		configErrors: make(chan error, 8),
 
-		frames: make(chan ports.OutputFrame, 8),
+		frames: make(chan domain.OutputFrame, 8),
 
-		captures: make(chan ports.CaptureRequest, ports.MaxCaptureInflight),
-		captured: make(chan ports.CaptureDone, ports.MaxCaptureInflight),
+		captures: make(chan domain.CaptureRequest, ports.MaxCaptureInflight),
+		captured: make(chan domain.CaptureDone, ports.MaxCaptureInflight),
 
-		outputFormats: make(chan ports.OutputFormats, 8),
-		outputHeads:   make(chan ports.OutputHeads, 8),
+		outputFormats: make(chan domain.OutputFormats, 8),
+		outputHeads:   make(chan domain.OutputHeads, 8),
 		leaseRequests: make(chan ports.LeaseMessage, 32),
 		leaseEvents:   make(chan ports.LeaseMessage, 32),
-		applyOutput:   make(chan ports.OutputApply, 8),
-		appliedOutput: make(chan ports.OutputApplied, 8),
+		applyOutput:   make(chan domain.OutputApply, 8),
+		appliedOutput: make(chan domain.OutputApplied, 8),
 
 		idleInhibited: make(chan bool, 1),
 		idleActivity:  make(chan struct{}, 1),
 
-		castCommands: make(chan ports.CastCommand, 64),
+		castCommands: make(chan domain.CastCommand, 64),
 	}
 	// Without hint mode every reply is for the wayland consumer: the outputs
 	// reply on its channel directly and nothing demultiplexes.
 	p.capturedAll = p.captured
 	if hint {
-		p.capturedAll = make(chan ports.CaptureDone, ports.MaxCaptureInflight)
-		p.hintScans = make(chan ports.HintScanRequest, 1)
-		p.hintResults = make(chan ports.HintScanResult, 1)
-		p.hintCaptured = make(chan ports.CaptureDone, 1)
+		p.capturedAll = make(chan domain.CaptureDone, ports.MaxCaptureInflight)
+		p.hintScans = make(chan domain.HintScanRequest, 1)
+		p.hintResults = make(chan domain.HintScanResult, 1)
+		p.hintCaptured = make(chan domain.CaptureDone, 1)
 	}
 	if realSession {
-		p.scales = make(chan ports.ScaleChanged, 8)
+		p.scales = make(chan domain.ScaleChanged, 8)
 	}
 	return p
 }
@@ -167,7 +167,7 @@ func (p *pipes) core() core.Channels {
 
 // internalCaptured is the channel internal capture replies are routed to: the
 // hints adapter reads it.
-func (p *pipes) internalCaptured() chan<- ports.CaptureDone { return p.hintCaptured }
+func (p *pipes) internalCaptured() chan<- domain.CaptureDone { return p.hintCaptured }
 
 // wayland is the wayland server's side.
 func (p *pipes) wayland() wayland.Channels {

@@ -303,7 +303,7 @@ func TestSyncobjAcquireAndRelease(t *testing.T) {
 		t.Fatal("acquire fence closed before release")
 	}
 	// The output read the second content: the first buffer is released.
-	h.presented.Push(ports.OutputPresented{Output: "HEADLESS-1", Seen: map[domain.WindowID]uint64{h.win: second.Seq}})
+	h.presented.Push(domain.OutputPresented{Output: "HEADLESS-1", Seen: map[domain.WindowID]uint64{h.win: second.Seq}})
 	select {
 	case <-h.signalReady:
 	case <-waylandDeadline(2 * time.Second):

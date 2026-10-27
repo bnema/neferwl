@@ -745,7 +745,7 @@ func TestSwitcherShownIsAPreview(t *testing.T) {
 		c.cfg.Animations.On = true
 		m := c.cur().mon
 		// A bar reserves the top of the output: tiles stop below it.
-		c.setLayers([]ports.LayerSurface{{ID: 90, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Width: 300, Height: 20, ExclusiveZone: 20}})
+		c.setLayers([]domain.LayerSurface{{ID: 90, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Width: 300, Height: 20, ExclusiveZone: 20}})
 		if s := indicatorScene(t, c); s.TileInset.Top != 20 {
 			t.Fatalf("setup: tile inset %+v, want the bar's 20", s.TileInset)
 		}
@@ -1181,7 +1181,7 @@ func TestSwitcherClosingDownToOneColumnClosesIt(t *testing.T) {
 func TestSwitcherOutputRemovalCancels(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := switcherCore(t, 3)
-		c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 300, Height: 200})
 		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		c.switcherTick()
 		sc := c.switcher.sc
@@ -1206,7 +1206,7 @@ func TestSwitcherOutputRemovalCancels(t *testing.T) {
 func TestSwitcherFocusMovingToAnotherOutputReopensThere(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := switcherCore(t, 3)
-		c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 300, Height: 200})
 		first := c.cur()
 		for id := WindowID(11); id <= 13; id++ {
 			c.screens[c.screenIndex("B")].mon.AddWindow(id)
@@ -1505,7 +1505,7 @@ func TestSwitchCommitFocusesTileUnderFloat(t *testing.T) {
 func TestSwitchCommitFollowsToItsOutput(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := switcherCore(t, 3)
-		c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 300, Height: 200})
 		first := c.focusScreen
 		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		want := c.cur().mon.sw.order[1]

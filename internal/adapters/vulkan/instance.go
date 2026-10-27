@@ -5,8 +5,10 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego"
+
 	vk "github.com/bnema/purego-vulkan/vulkan"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
@@ -52,7 +54,7 @@ func (inst *Instance) Close() {
 var _ ports.RenderDeviceOpener = (*Instance)(nil)
 
 // Open opens the selected GPU through the render-device port.
-func (inst *Instance) Open(info ports.GPUInfo) (ports.RenderDevice, error) {
+func (inst *Instance) Open(info domain.GPUInfo) (ports.RenderDevice, error) {
 	g, err := inst.OpenGPU(info)
 	if err != nil {
 		return nil, err
@@ -60,7 +62,7 @@ func (inst *Instance) Open(info ports.GPUInfo) (ports.RenderDevice, error) {
 	return g, nil
 }
 
-func (inst *Instance) OpenGPU(info ports.GPUInfo) (*GPU, error) {
+func (inst *Instance) OpenGPU(info domain.GPUInfo) (*GPU, error) {
 	var count uint32
 	if err := checked("vkEnumeratePhysicalDevices(count)", inst.id.EnumeratePhysicalDevices(inst.instance, &count, nil)); err != nil {
 		return nil, err
@@ -77,7 +79,7 @@ func (inst *Instance) OpenGPU(info ports.GPUInfo) (*GPU, error) {
 		if props.ApiVersion < vk.MakeVersion(1, 3, 0) {
 			continue
 		}
-		if info != (ports.GPUInfo{}) {
+		if info != (domain.GPUInfo{}) {
 			if !extensions(inst.id, physical)[vk.EXTPhysicalDeviceDRMExtensionName] {
 				continue
 			}

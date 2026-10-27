@@ -33,7 +33,7 @@ func (l *reopenLimiter) allow() bool {
 }
 
 // reopenRender closes the old device once and charges every open attempt.
-func reopenRender(opener ports.RenderDeviceOpener, info ports.GPUInfo, old ports.RenderDevice, limiter *reopenLimiter) (ports.RenderDevice, error) {
+func reopenRender(opener ports.RenderDeviceOpener, info domain.GPUInfo, old ports.RenderDevice, limiter *reopenLimiter) (ports.RenderDevice, error) {
 	if old != nil {
 		old.Close()
 	}

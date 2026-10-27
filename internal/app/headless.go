@@ -30,11 +30,11 @@ func runHeadless(ctx context.Context, o headlessOptions, apply *outputApply, ch 
 	set := newOutputSet(ctx, ch.captured, ch.routes())
 	set.attach = ch.content
 	set.wireSecurity(ch)
-	inventory := ports.OutputHeads{}
+	inventory := domain.OutputHeads{}
 	for i, size := range o.sizes {
 		name := fmt.Sprintf("HEADLESS-%d", i+1)
 		mode := domain.OutputMode{Width: size[0], Height: size[1], RefreshMilli: 60000, Preferred: true}
-		inventory.Heads = append(inventory.Heads, ports.OutputHead{Info: ports.OutputInfo{Name: name, Width: size[0], Height: size[1], RefreshMilli: 60000}, Modes: []domain.OutputMode{mode}, Current: &mode, Enabled: true})
+		inventory.Heads = append(inventory.Heads, domain.OutputHead{Info: domain.OutputInfo{Name: name, Width: size[0], Height: size[1], RefreshMilli: 60000}, Modes: []domain.OutputMode{mode}, Current: &mode, Enabled: true})
 		dir := o.shots
 		if dir != "" && len(o.sizes) > 1 {
 			dir = filepath.Join(o.shots, name)
@@ -54,7 +54,7 @@ func runHeadless(ctx context.Context, o headlessOptions, apply *outputApply, ch 
 			return set.wait()
 		}
 		select {
-		case ch.events <- ports.OutputAdded{Info: ports.OutputInfo{Name: name, Width: size[0], Height: size[1]}}:
+		case ch.events <- ports.OutputAdded{Info: domain.OutputInfo{Name: name, Width: size[0], Height: size[1]}}:
 		case <-ctx.Done():
 			return set.wait()
 		}

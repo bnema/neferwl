@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // Pushing a capture reply and applying it on the display goroutine allocates
@@ -18,7 +18,7 @@ func TestCapturedForwardAllocations(t *testing.T) {
 		t.Skip("the race detector makes the purego wake callback allocate")
 	}
 	s, _, _, _, _, _ := presentServer(t)
-	done := ports.CaptureDone{ID: 77, Output: "HEADLESS-1", Time: time.Unix(1, 2)}
+	done := domain.CaptureDone{ID: 77, Output: "HEADLESS-1", Time: time.Unix(1, 2)}
 	// Posts run in order: once the marker ran, the drain before it did. The
 	// marker is bound once and the channel reused, so waiting allocates nothing.
 	ran := make(chan struct{}, 1)

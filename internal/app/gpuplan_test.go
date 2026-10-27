@@ -13,19 +13,18 @@ import (
 	"github.com/bnema/zerowrap"
 
 	"github.com/bnema/neferwl/internal/adapters/drm"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestPlanCards(t *testing.T) {
-	c := []ports.GPUInfo{{Path: "card0"}, {Path: "card1"}, {Path: "card2"}}
+	c := []domain.GPUInfo{{Path: "card0"}, {Path: "card1"}, {Path: "card2"}}
 	for _, tc := range []struct {
 		name string
-		sel  ports.GPUSelection
+		sel  domain.GPUSelection
 		want []cardPlan
 	}{
-		{"ignored absent", ports.GPUSelection{Keep: []int{0, 2}, Render: 2}, []cardPlan{{c[0], false}, {c[2], true}}},
-		{"selected only and order", ports.GPUSelection{Keep: []int{0, 1, 2}, Render: 1}, []cardPlan{{c[0], false}, {c[1], true}, {c[2], false}}},
-		{"empty", ports.GPUSelection{}, []cardPlan{}},
+		{"ignored absent", domain.GPUSelection{Keep: []int{0, 2}, Render: 2}, []cardPlan{{c[0], false}, {c[2], true}}},
+		{"selected only and order", domain.GPUSelection{Keep: []int{0, 1, 2}, Render: 1}, []cardPlan{{c[0], false}, {c[1], true}, {c[2], false}}},
+		{"empty", domain.GPUSelection{}, []cardPlan{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := planCards(c, tc.sel); !reflect.DeepEqual(got, tc.want) {
@@ -113,34 +112,34 @@ func TestMultiGPUMode(t *testing.T) {
 func TestGPUSelectionErrorBeforePlan(t *testing.T) {
 	cfg := domain.Config{}
 	cfg.DRM.Ignore = []string{"unknown-device"}
-	plans, _, err := selectGPUPlans([]ports.GPUInfo{{Path: "card0", Render: 1}}, cfg, "")
+	plans, _, err := selectGPUPlans([]domain.GPUInfo{{Path: "card0", Render: 1}}, cfg, "")
 	if err == nil || !strings.Contains(err.Error(), `unknown DRM device "unknown-device"`) || plans != nil {
 		t.Fatalf("%v %v", plans, err)
 	}
 }
 
 func TestOpenHeadlessRenderDiscovery(t *testing.T) {
-	first := ports.GPUInfo{Path: "card0", Render: 1, PCI: "0001:03:00.0"}
-	second := ports.GPUInfo{Path: "card1", Render: 2}
+	first := domain.GPUInfo{Path: "card0", Render: 1, PCI: "0001:03:00.0"}
+	second := domain.GPUInfo{Path: "card1", Render: 2}
 	boom := errors.New("unavailable")
 	for _, name := range []string{"list error", "empty", "no render", "open failure", "second success", "constrained empty", "constrained list", "constrained open"} {
 		t.Run(name, func(t *testing.T) {
 			opener := portsmocks.NewMockRenderDeviceOpener(t)
 			dev := portsmocks.NewMockRenderDevice(t)
 			cfg := domain.Config{}
-			var c []ports.GPUInfo
+			var c []domain.GPUInfo
 			var listErr error
 			fail := strings.HasPrefix(name, "constrained")
 			switch name {
 			case "list error":
 				listErr = boom
 			case "no render":
-				c = []ports.GPUInfo{{Path: "card0"}}
+				c = []domain.GPUInfo{{Path: "card0"}}
 			case "open failure":
-				c = []ports.GPUInfo{first}
+				c = []domain.GPUInfo{first}
 				opener.EXPECT().Open(first).Return(nil, boom).Once()
 			case "second success":
-				c = []ports.GPUInfo{first, second}
+				c = []domain.GPUInfo{first, second}
 				opener.EXPECT().Open(first).Return(nil, boom).Once()
 				opener.EXPECT().Open(second).Return(dev, nil).Once()
 			case "constrained empty":
@@ -150,11 +149,11 @@ func TestOpenHeadlessRenderDiscovery(t *testing.T) {
 				listErr = boom
 			case "constrained open":
 				cfg.Render.Device = first.PCI
-				c = []ports.GPUInfo{first}
+				c = []domain.GPUInfo{first}
 				opener.EXPECT().Open(first).Return(nil, boom).Once()
 			}
 			if !fail && name != "second success" {
-				opener.EXPECT().Open(ports.GPUInfo{}).Return(dev, nil).Once()
+				opener.EXPECT().Open(domain.GPUInfo{}).Return(dev, nil).Once()
 			}
 			got, err := openHeadlessRender(opener, c, listErr, cfg, "", zerowrap.Logger{})
 			if fail {

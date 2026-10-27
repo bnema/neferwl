@@ -8,7 +8,6 @@ import (
 	"context"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -188,26 +187,26 @@ func (_c *mocksource_needsFrame_Call) RunAndReturn(run func(context1 context.Con
 }
 
 // scan provides a mock function for the type mocksource
-func (_mock *mocksource) scan(context1 context.Context, hintScanRequest ports.HintScanRequest, hintWindows []ports.HintWindow, frameMoqParam *frame) ([]ports.HintTarget, error) {
+func (_mock *mocksource) scan(context1 context.Context, hintScanRequest domain.HintScanRequest, hintWindows []domain.HintWindow, frameMoqParam *frame) ([]domain.HintTarget, error) {
 	ret := _mock.Called(context1, hintScanRequest, hintWindows, frameMoqParam)
 
 	if len(ret) == 0 {
 		panic("no return value specified for scan")
 	}
 
-	var r0 []ports.HintTarget
+	var r0 []domain.HintTarget
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, ports.HintScanRequest, []ports.HintWindow, *frame) ([]ports.HintTarget, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.HintScanRequest, []domain.HintWindow, *frame) ([]domain.HintTarget, error)); ok {
 		return returnFunc(context1, hintScanRequest, hintWindows, frameMoqParam)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, ports.HintScanRequest, []ports.HintWindow, *frame) []ports.HintTarget); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.HintScanRequest, []domain.HintWindow, *frame) []domain.HintTarget); ok {
 		r0 = returnFunc(context1, hintScanRequest, hintWindows, frameMoqParam)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]ports.HintTarget)
+			r0 = ret.Get(0).([]domain.HintTarget)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, ports.HintScanRequest, []ports.HintWindow, *frame) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.HintScanRequest, []domain.HintWindow, *frame) error); ok {
 		r1 = returnFunc(context1, hintScanRequest, hintWindows, frameMoqParam)
 	} else {
 		r1 = ret.Error(1)
@@ -222,26 +221,26 @@ type mocksource_scan_Call struct {
 
 // scan is a helper method to define mock.On call
 //   - context1 context.Context
-//   - hintScanRequest ports.HintScanRequest
-//   - hintWindows []ports.HintWindow
+//   - hintScanRequest domain.HintScanRequest
+//   - hintWindows []domain.HintWindow
 //   - frameMoqParam *frame
 func (_e *mocksource_Expecter) scan(context1 any, hintScanRequest any, hintWindows any, frameMoqParam any) *mocksource_scan_Call {
 	return &mocksource_scan_Call{Call: _e.mock.On("scan", context1, hintScanRequest, hintWindows, frameMoqParam)}
 }
 
-func (_c *mocksource_scan_Call) Run(run func(context1 context.Context, hintScanRequest ports.HintScanRequest, hintWindows []ports.HintWindow, frameMoqParam *frame)) *mocksource_scan_Call {
+func (_c *mocksource_scan_Call) Run(run func(context1 context.Context, hintScanRequest domain.HintScanRequest, hintWindows []domain.HintWindow, frameMoqParam *frame)) *mocksource_scan_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 ports.HintScanRequest
+		var arg1 domain.HintScanRequest
 		if args[1] != nil {
-			arg1 = args[1].(ports.HintScanRequest)
+			arg1 = args[1].(domain.HintScanRequest)
 		}
-		var arg2 []ports.HintWindow
+		var arg2 []domain.HintWindow
 		if args[2] != nil {
-			arg2 = args[2].([]ports.HintWindow)
+			arg2 = args[2].([]domain.HintWindow)
 		}
 		var arg3 *frame
 		if args[3] != nil {
@@ -257,12 +256,12 @@ func (_c *mocksource_scan_Call) Run(run func(context1 context.Context, hintScanR
 	return _c
 }
 
-func (_c *mocksource_scan_Call) Return(hintTargets []ports.HintTarget, err error) *mocksource_scan_Call {
+func (_c *mocksource_scan_Call) Return(hintTargets []domain.HintTarget, err error) *mocksource_scan_Call {
 	_c.Call.Return(hintTargets, err)
 	return _c
 }
 
-func (_c *mocksource_scan_Call) RunAndReturn(run func(context1 context.Context, hintScanRequest ports.HintScanRequest, hintWindows []ports.HintWindow, frameMoqParam *frame) ([]ports.HintTarget, error)) *mocksource_scan_Call {
+func (_c *mocksource_scan_Call) RunAndReturn(run func(context1 context.Context, hintScanRequest domain.HintScanRequest, hintWindows []domain.HintWindow, frameMoqParam *frame) ([]domain.HintTarget, error)) *mocksource_scan_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -22,11 +22,11 @@ func TestSecurityOwnerAdversarialQueues(t *testing.T) {
 		client := make(chan ports.ClientEvent, 32)
 		input := make(chan ports.InputEvent, 32)
 		output := make(chan ports.OutputEvent, 8)
-		reload := make(chan ports.ConfigChanged, 8)
+		reload := make(chan domain.ConfigChanged, 8)
 		commands := make(chan ports.ClientCommand, 256)
 		scenes := make(chan []domain.Scene, 1)
-		spawn := make(chan ports.SpawnRequest, 8)
-		constraints := make(chan ports.PointerConstraint, 1)
+		spawn := make(chan domain.SpawnRequest, 8)
+		constraints := make(chan domain.PointerConstraint, 1)
 		cfg := scrollDefaults()
 		cfg.Terminal.Command = []string{"terminal"}
 		cfg.Terminal.AutoOpen = "off"
@@ -44,7 +44,7 @@ func TestSecurityOwnerAdversarialQueues(t *testing.T) {
 				t.Error(err)
 			}
 		})
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "A", Width: 300, Height: 200}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "A", Width: 300, Height: 200}}
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}
 		scene(t, scenes)
@@ -59,9 +59,9 @@ func TestSecurityOwnerAdversarialQueues(t *testing.T) {
 			t.Fatal(s)
 		}
 		receive(t, constraints)
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "B", Width: 200, Height: 100}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "B", Width: 200, Height: 100}}
 		sceneMatch(t, scenes, func(s domain.Scene) bool { return s.Security == locked })
-		surfaces := []ports.LockSurfacePlacement{{ID: 10, Output: "A", Width: 300, Height: 200}, {ID: 20, Output: "B", Width: 200, Height: 100}}
+		surfaces := []domain.LockSurfacePlacement{{ID: 10, Output: "A", Width: 300, Height: 200}, {ID: 20, Output: "B", Width: 200, Height: 100}}
 		client <- ports.SessionLockChanged{State: locked, Surfaces: surfaces}
 		s = sceneMatch(t, scenes, func(s domain.Scene) bool { return len(s.Windows) == 1 && s.Windows[0].ID == 10 })
 		assertProtected(t, s)
@@ -78,16 +78,16 @@ func TestSecurityOwnerAdversarialQueues(t *testing.T) {
 		expectKey(t, commands, locked, 20, "clicked")
 		// Stale surfaces cannot replace the current lock roles. Invalid logical
 		// dimensions and unknown outputs never become drawn/input targets.
-		client <- ports.SessionLockChanged{State: domain.SecurityState{}, Surfaces: []ports.LockSurfacePlacement{{ID: 1, Output: "A", Width: 300, Height: 200}}}
-		client <- ports.SessionLockChanged{State: locked, Surfaces: append(surfaces, ports.LockSurfacePlacement{ID: 99, Output: "unknown", Width: 300, Height: 200})}
+		client <- ports.SessionLockChanged{State: domain.SecurityState{}, Surfaces: []domain.LockSurfacePlacement{{ID: 1, Output: "A", Width: 300, Height: 200}}}
+		client <- ports.SessionLockChanged{State: locked, Surfaces: append(surfaces, domain.LockSurfacePlacement{ID: 99, Output: "unknown", Width: 300, Height: 200})}
 		s = sceneMatch(t, scenes, func(s domain.Scene) bool { return len(s.Windows) == 1 && s.Windows[0].ID == 10 })
 		assertProtected(t, s)
 		cfg.Terminal.AutoOpen = "always"
 		cfg.Startup = [][]string{{"must-not-start"}}
-		reload <- ports.ConfigChanged{Config: cfg}
+		reload <- domain.ConfigChanged{Config: cfg}
 		s = scene(t, scenes)
 		assertProtected(t, s)
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "C", Width: 100, Height: 100}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "C", Width: 100, Height: 100}}
 		for _, s := range receive(t, scenes) {
 			assertProtected(t, s)
 			if s.Output == "C" && len(s.Windows) != 0 {

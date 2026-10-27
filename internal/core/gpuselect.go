@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // ErrNoRenderGPU means selection has no render-capable DRM device.
@@ -21,8 +21,8 @@ type GPUSelectConfig struct {
 
 // SelectGPUs chooses cards and a render GPU without opening devices or resolving symlinks.
 // Candidate order breaks ties and is preserved in Keep.
-func SelectGPUs(c []ports.GPUInfo, cfg GPUSelectConfig) (ports.GPUSelection, error) {
-	var out ports.GPUSelection
+func SelectGPUs(c []domain.GPUInfo, cfg GPUSelectConfig) (domain.GPUSelection, error) {
+	var out domain.GPUSelection
 	resolve := func(ids []string) ([]bool, error) {
 		selected := make([]bool, len(c))
 		for _, id := range ids {
@@ -77,7 +77,7 @@ func SelectGPUs(c []ports.GPUInfo, cfg GPUSelectConfig) (ports.GPUSelection, err
 		out.Reasons = append(out.Reasons, fmt.Sprintf("%s GPU %s (%s): %s", decision, filepath.Base(g.Path), g.PCI, reason))
 	}
 	if explicit >= 0 && !kept[explicit] {
-		return ports.GPUSelection{}, fmt.Errorf("render device %q is ignored", cfg.Render)
+		return domain.GPUSelection{}, fmt.Errorf("render device %q is ignored", cfg.Render)
 	}
 	render, reason := -1, "lowest index"
 	if explicit >= 0 {
@@ -108,7 +108,7 @@ func SelectGPUs(c []ports.GPUInfo, cfg GPUSelectConfig) (ports.GPUSelection, err
 		}
 	}
 	if render < 0 {
-		return ports.GPUSelection{}, ErrNoRenderGPU
+		return domain.GPUSelection{}, ErrNoRenderGPU
 	}
 	out.Render = render
 	g := c[render]
@@ -116,7 +116,7 @@ func SelectGPUs(c []ports.GPUInfo, cfg GPUSelectConfig) (ports.GPUSelection, err
 	return out, nil
 }
 
-func matchesGPU(g ports.GPUInfo, id string) bool {
+func matchesGPU(g domain.GPUInfo, id string) bool {
 	if strings.Contains(id, "/") {
 		if id == g.Path {
 			return true

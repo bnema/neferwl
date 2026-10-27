@@ -4,6 +4,7 @@ import (
 	"image"
 	"sync"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -12,7 +13,7 @@ import (
 type Cursor struct {
 	mu     sync.Mutex
 	x, y   float64
-	img    ports.CursorImage
+	img    domain.CursorImage
 	hidden bool
 }
 
@@ -29,7 +30,7 @@ func (c *Cursor) Hide() {
 	c.mu.Unlock()
 }
 
-func (c *Cursor) set(img ports.CursorImage) {
+func (c *Cursor) set(img domain.CursorImage) {
 	c.mu.Lock()
 	c.img = img
 	c.mu.Unlock()

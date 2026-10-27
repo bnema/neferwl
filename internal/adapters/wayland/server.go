@@ -30,7 +30,7 @@ type Options struct {
 	// X11Clients classifies client PIDs as X11 satellite processes.
 	// Nil means no client is X11.
 	X11Clients ports.X11Clients
-	Outputs    ports.Layout
+	Outputs    domain.Layout
 	// DMABuf is what the renderer imports; empty disables linux-dmabuf.
 	DMABuf domain.DMABufSupport
 	// SyncobjNode is the render node (/dev/dri/renderD*) timeline
@@ -73,26 +73,26 @@ type Channels struct {
 	LeaseEvents     <-chan ports.LeaseMessage
 	Events          chan<- ports.ClientEvent
 	Commands        <-chan ports.ClientCommand
-	Workspaces      <-chan ports.Workspaces
+	Workspaces      <-chan domain.Workspaces
 	// Cursors receives the cursor the client under the pointer asks for.
-	Cursors chan<- ports.CursorChange
+	Cursors chan<- domain.CursorChange
 	// Captures carries accepted capture requests, never blocking. Each
 	// accepted request holds one of ports.MaxCaptureInflight credits until its
 	// CaptureDone arrives on Captured, whether or not the client is still
 	// there; the backend must complete every request it takes. In production
 	// both channels have capacity >= ports.MaxCaptureInflight, so replies
 	// never block the backend; standalone tests may use smaller channels.
-	Captures chan<- ports.CaptureRequest
-	Captured <-chan ports.CaptureDone
+	Captures chan<- domain.CaptureRequest
+	Captured <-chan domain.CaptureDone
 	// CastCommands carries the screencast adapter's commands (ports.CastCommand);
 	// they are applied in order on the display goroutine. Nil serves no casts.
-	CastCommands <-chan ports.CastCommand
+	CastCommands <-chan domain.CastCommand
 	// OutputFormats are the outputs' direct scanout formats, offered in
 	// dmabuf feedback to fullscreen surfaces.
-	OutputFormats <-chan ports.OutputFormats
-	OutputHeads   <-chan ports.OutputHeads
-	OutputApply   chan<- ports.OutputApply
-	OutputApplied <-chan ports.OutputApplied
+	OutputFormats <-chan domain.OutputFormats
+	OutputHeads   <-chan domain.OutputHeads
+	OutputApply   chan<- domain.OutputApply
+	OutputApplied <-chan domain.OutputApplied
 	// IdleInhibited reports whether D-Bus clients (org.freedesktop.ScreenSaver)
 	// inhibit idle; while true, it holds idle notifications like an inhibitor
 	// surface does.
@@ -120,10 +120,10 @@ type Server struct {
 	leaseReady         chan struct{}
 	nextLeaseID        uint64
 	nextCapture        uint64
-	captureReplies     map[uint64]func(ports.CaptureDone)
+	captureReplies     map[uint64]func(domain.CaptureDone)
 	// capturedRing hands backend replies to the display goroutine
 	// (forwardCaptured); the display goroutine applies them in order.
-	capturedRing *postRing[ports.CaptureDone]
+	capturedRing *postRing[domain.CaptureDone]
 	// captureInflight counts accepted captures until the backend completes
 	// them, independent of client resources; only the display loop touches it.
 	captureInflight map[uint64]struct{}
@@ -138,14 +138,14 @@ type Server struct {
 	casts        ports.CastSink
 	castSessions map[uint64]*castSession
 	castByCore   map[uint64]*castSession
-	castRing     *postRing[ports.CastCommand]
+	castRing     *postRing[domain.CastCommand]
 	// commands carries core's client commands to the display goroutine.
 	commands      *postRing[queuedCommand]
 	commandStats  commandStats
 	castInvFn     func()
 	castInvPosted bool
 	castInvSent   bool
-	castInvLast   ports.CastInventory
+	castInvLast   domain.CastInventory
 	nextSession   uint64
 	excl          *exclusion
 	ownUID        uint32
@@ -208,8 +208,8 @@ type Server struct {
 	// are the outputs' latest ports.OutputPresented.
 	held []heldBuffer
 	// heldLive is releaseHeld's scratch (display goroutine only).
-	heldLive []ports.OutputPresented
-	reports  map[string]ports.OutputPresented
+	heldLive []domain.OutputPresented
+	reports  map[string]domain.OutputPresented
 	started  time.Time
 	// fifoSurfaces have a fifo barrier or queued commits (fifo.go);
 	// lastFlip is each output's latest page flip.
@@ -227,7 +227,7 @@ type Server struct {
 	buffers        map[*server.Resource]clientBuffer
 	dmabuf         *dmabufGlobal
 	// hdrOutputs records confirmed DRM modesets; absent outputs are SDR.
-	hdrOutputs        map[string]ports.OutputHDR
+	hdrOutputs        map[string]domain.OutputHDR
 	colorID           uint64
 	colorIdentity     map[string]uint64
 	colorDescriptions map[*server.Resource]colorDescription
@@ -268,7 +268,7 @@ type Server struct {
 	timelines map[*server.Resource]*timeline
 	syncWait  *syncWaiter
 	// flips is each output's latest flip (display goroutine).
-	flips map[string]ports.FlipInfo
+	flips map[string]domain.FlipInfo
 	// inhibitors are the live inhibitor objects (inhibit.go);
 	// shortcutWindows and idleWindows what core was told.
 	inhibitors                   []*inhibitor
@@ -287,11 +287,11 @@ type Server struct {
 	workspaceManagers []*workspaceManager
 	toplevelManagers  []*toplevelManager
 	extToplevelLists  []*extToplevelList
-	workspaceSnapshot ports.Workspaces
+	workspaceSnapshot domain.Workspaces
 	workspaceFrames   []*workspaceFrame
 	workspaceIDs      *workspaceid.IDs
-	outputHeads       ports.OutputHeads
-	outputPlaces      ports.Layout
+	outputHeads       domain.OutputHeads
+	outputPlaces      domain.Layout
 	managementSerial  uint32
 	nextOutputApply   uint64
 	outputReplies     map[uint64]*outputConfiguration
@@ -300,11 +300,11 @@ type Server struct {
 	// cursorSurface is the wl_pointer.set_cursor surface in use.
 	cursorSurface *surface
 	// cursorClient and cursorOverride belong to the display goroutine.
-	cursorClient   ports.CursorChange
+	cursorClient   domain.CursorChange
 	cursorOverride string
 	// cursorMu guards only the latest cursor change for forwardCursors.
 	cursorMu     sync.Mutex
-	cursorLatest ports.CursorChange
+	cursorLatest domain.CursorChange
 	cursorQueued bool
 	cursorReady  chan struct{}
 	// Clipboard and primary selection (clipboard.go).
@@ -370,7 +370,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		display:            d,
 		awaiting:           map[string][]*wayland.Callback{},
 		frameDue:           map[string]time.Time{},
-		reports:            map[string]ports.OutputPresented{},
+		reports:            map[string]domain.OutputPresented{},
 		env:                linuxProcEnv{},
 		name:               name,
 		cleanup:            cleanup,
@@ -426,7 +426,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		s.peer = linuxPeerExe{}
 	}
 	s.sandboxed, s.securityStop = map[server.Client]*sandbox{}, -1
-	s.captureReplies = map[uint64]func(ports.CaptureDone){}
+	s.captureReplies = map[uint64]func(domain.CaptureDone){}
 	s.captureInflight = map[uint64]struct{}{}
 	s.outputReplies = map[uint64]*outputConfiguration{}
 	s.managementSerial = 1
@@ -435,7 +435,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	s.captureSessions = map[*captureSession]struct{}{}
 	s.fractions = map[*surface]*fractionalscale.WpFractionalScaleV1{}
 	s.fifoSurfaces, s.lastFlip = map[*surface]struct{}{}, map[string]time.Time{}
-	s.flips = map[string]ports.FlipInfo{}
+	s.flips = map[string]domain.FlipInfo{}
 	s.timelines = map[*server.Resource]*timeline{}
 	var node *renderNode
 	if opts.syncDev != nil {

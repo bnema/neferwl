@@ -44,7 +44,7 @@ func TestCrossScreenFocusEntry(t *testing.T) {
 			t.Run(string(tc.action)+"/edge="+map[bool]string{false: "false", true: "true"}[edge], func(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
 					c, clock := flashCore(t)
-					c.addScreen(ports.OutputInfo{Name: "B", Width: 400, Height: 300})
+					c.addScreen(domain.OutputInfo{Name: "B", Width: 400, Height: 300})
 					b := c.screens[1]
 					b.x, b.y = tc.x, tc.y
 					w := b.mon.Current()
@@ -78,7 +78,7 @@ func TestCrossScreenFocusEntry(t *testing.T) {
 func TestCrossScreenFocusEntryIgnoresOffscreenColumns(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, clock := flashCore(t)
-		c.addScreen(ports.OutputInfo{Name: "B", Width: 400, Height: 300})
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 400, Height: 300})
 		b := c.screens[1]
 		w := b.mon.Current()
 		for id := WindowID(4); id <= 10; id++ {
@@ -115,7 +115,7 @@ func TestCrossScreenFocusEntryIgnoresOffscreenColumns(t *testing.T) {
 func TestCrossScreenNoVisibleWindowPreservesFocus(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, clock := flashCore(t)
-		c.addScreen(ports.OutputInfo{Name: "B", Width: 400, Height: 300})
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 400, Height: 300})
 		b := c.screens[1]
 		w := b.mon.Current()
 		c.windows.mapped(ports.WindowMapped{ID: 4}, clock.now)
@@ -183,7 +183,7 @@ func TestFocusEntryDuringWorkspaceSlide(t *testing.T) {
 func TestFocusEntryPanelUsesCommonFrameEdge(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _ := flashCore(t)
-		c.setLayers([]ports.LayerSurface{{ID: 90, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 50, ExclusiveZone: 50}})
+		c.setLayers([]domain.LayerSurface{{ID: 90, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 50, ExclusiveZone: 50}})
 		m := c.cur().mon
 		w := m.Current()
 		// Entering from above: the float sits above the tiles, which start a gap
@@ -219,7 +219,7 @@ func TestFocusEntryPanelUsesCommonFrameEdge(t *testing.T) {
 func TestCrossScreenFocusEntryResolvesModal(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, clock := flashCore(t)
-		c.addScreen(ports.OutputInfo{Name: "B", Width: 400, Height: 300})
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 400, Height: 300})
 		b := c.screens[1]
 		w := b.mon.Current()
 		for _, id := range []WindowID{4, 5, 6} {
@@ -240,7 +240,7 @@ func TestCrossScreenFocusEntryResolvesModal(t *testing.T) {
 func TestCrossScreenFocusEntrySkipsDemotedFloat(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, clock := flashCore(t)
-		c.addScreen(ports.OutputInfo{Name: "B", Width: 400, Height: 300})
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 400, Height: 300})
 		b := c.screens[1]
 		w := b.mon.Current()
 		w.Gaps = 0

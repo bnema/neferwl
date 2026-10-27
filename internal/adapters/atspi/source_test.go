@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -71,13 +70,13 @@ func TestTargetsCoversWindowAndConverts(t *testing.T) {
 		map[string]uint32{"/a": roleLink, "/b": rolePushButton, "/zero": roleLink}, false))
 	s := &Source{tr: tr}
 
-	windows := []ports.HintWindow{
+	windows := []domain.HintWindow{
 		{ID: 1, PID: 77, Rect: domain.Rect{X: 100, Y: 200, W: 800, H: 600}, Focused: true},
 		{ID: 2, PID: 5, Rect: domain.Rect{X: 0, Y: 0, W: 50, H: 50}},
 	}
 	targets, err := s.Targets(context.Background(), windows, false)
 	require.NoError(t, err)
-	require.Equal(t, []ports.HintTarget{
+	require.Equal(t, []domain.HintTarget{
 		{Rect: domain.Rect{X: 110, Y: 300, W: 50, H: 16}, Kind: domain.HintLink, Window: 1, Source: domain.HintSourceATSPI, Score: 1},
 		{Rect: domain.Rect{X: 200, Y: 400, W: 20, H: 20}, Kind: domain.HintButton, Window: 1, Source: domain.HintSourceATSPI, Score: 1},
 	}, targets)
@@ -91,7 +90,7 @@ func TestTargetsLinksOnlyDropsButtons(t *testing.T) {
 		map[string][4]int32{"/a": {14, 130, 50, 16}, "/b": {104, 230, 20, 20}},
 		map[string]uint32{"/a": roleLink, "/b": rolePushButton}, false))
 	s := &Source{tr: tr}
-	targets, err := s.Targets(context.Background(), []ports.HintWindow{{ID: 1, PID: 77, Rect: domain.Rect{W: 800, H: 600}}}, true)
+	targets, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1, PID: 77, Rect: domain.Rect{W: 800, H: 600}}}, true)
 	require.NoError(t, err)
 	require.Len(t, targets, 1)
 	require.Equal(t, domain.HintLink, targets[0].Kind)
@@ -105,7 +104,7 @@ func TestTargetsWalkWithoutCollection(t *testing.T) {
 		map[string][4]int32{"/a": {14, 130, 50, 16}},
 		map[string]uint32{"/a": roleLink}, true))
 	s := &Source{tr: tr}
-	targets, err := s.Targets(context.Background(), []ports.HintWindow{{ID: 1, PID: 77, Rect: domain.Rect{W: 800, H: 600}}}, false)
+	targets, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1, PID: 77, Rect: domain.Rect{W: 800, H: 600}}}, false)
 	require.NoError(t, err)
 	require.Len(t, targets, 1)
 }
@@ -114,14 +113,14 @@ func TestTargetsNoPIDMatchCoversNothing(t *testing.T) {
 	tr := newMocktransport(t)
 	tr.EXPECT().Do(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(answerTree([4]int32{}, nil, nil, nil, false))
 	s := &Source{tr: tr}
-	targets, err := s.Targets(context.Background(), []ports.HintWindow{{ID: 1, PID: 1234, Rect: domain.Rect{W: 8, H: 6}}}, false)
+	targets, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1, PID: 1234, Rect: domain.Rect{W: 8, H: 6}}}, false)
 	require.NoError(t, err)
 	require.Empty(t, targets)
 }
 
 func TestTargetsWithoutPIDsAsksNothing(t *testing.T) {
 	s := &Source{tr: newMocktransport(t)}
-	targets, err := s.Targets(context.Background(), []ports.HintWindow{{ID: 1, Rect: domain.Rect{W: 8, H: 6}}}, false)
+	targets, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1, Rect: domain.Rect{W: 8, H: 6}}}, false)
 	require.NoError(t, err)
 	require.Empty(t, targets)
 }
@@ -134,7 +133,7 @@ func TestDocumentsAreNotTargets(t *testing.T) {
 				tr.EXPECT().Do(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(answerTree(
 					[4]int32{0, 0, 800, 600}, []ref{{":1.5", "/a"}}, map[string][4]int32{"/a": {10, 20, 30, 40}}, map[string]uint32{"/a": role}, !collection))
 				s := &Source{tr: tr}
-				targets, err := s.Targets(context.Background(), []ports.HintWindow{{ID: 1, PID: 77, Rect: domain.Rect{W: 800, H: 600}}}, false)
+				targets, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1, PID: 77, Rect: domain.Rect{W: 800, H: 600}}}, false)
 				require.NoError(t, err)
 				if isDocument(role) {
 					require.Empty(t, targets)
@@ -146,7 +145,7 @@ func TestDocumentsAreNotTargets(t *testing.T) {
 	}
 }
 
-var oneWindow = []ports.HintWindow{{ID: 1, PID: 77, Rect: domain.Rect{W: 800, H: 600}}}
+var oneWindow = []domain.HintWindow{{ID: 1, PID: 77, Rect: domain.Rect{W: 800, H: 600}}}
 
 // New does not touch the bus; the first Targets call connects, once.
 func TestConnectsLazilyOnFirstTargets(t *testing.T) {
@@ -168,7 +167,7 @@ func TestConnectsLazilyOnFirstTargets(t *testing.T) {
 // Without PIDs nothing is asked and nothing is connected.
 func TestNoConnectWithoutWindows(t *testing.T) {
 	s := &Source{dial: newMockconnector(t)}
-	_, err := s.Targets(context.Background(), []ports.HintWindow{{ID: 1}}, false)
+	_, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1}}, false)
 	require.NoError(t, err)
 }
 
@@ -370,10 +369,10 @@ func TestTargetsPopupRegion(t *testing.T) {
 		map[string][4]int32{"/popup": {810, 20, 40, 20}, "/outside": {950, 20, 40, 20}},
 		map[string]uint32{"/popup": roleLink, "/outside": roleLink}, false))
 	s := &Source{tr: tr}
-	targets, err := s.Targets(context.Background(), []ports.HintWindow{{ID: 7, PID: 77,
+	targets, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 7, PID: 77,
 		Rect: domain.Rect{W: 800, H: 600}, Popups: []domain.Rect{{X: 800, Y: 10, W: 100, H: 100}}}}, false)
 	require.NoError(t, err)
-	require.Equal(t, []ports.HintTarget{{Rect: domain.Rect{X: 810, Y: 20, W: 40, H: 20}, Kind: domain.HintLink, Source: domain.HintSourceATSPI, Score: 1, Window: 7}}, targets)
+	require.Equal(t, []domain.HintTarget{{Rect: domain.Rect{X: 810, Y: 20, W: 40, H: 20}, Kind: domain.HintLink, Source: domain.HintSourceATSPI, Score: 1, Window: 7}}, targets)
 }
 
 // Parent shutdown is not an availability failure. In particular it must not

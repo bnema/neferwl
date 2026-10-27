@@ -26,7 +26,7 @@ type dragRig struct {
 	// With a clock the test moves (animated rigs), frames carries the page
 	// flips and outputs lists the plugged ones: settle lands every spring
 	// before it reads the scene.
-	frames  chan ports.OutputFrame
+	frames  chan domain.OutputFrame
 	clock   *stepClock
 	outputs []string
 	// lands counts the settles that found a spring running.
@@ -35,7 +35,7 @@ type dragRig struct {
 
 // startDrag runs core with Super as Cmd, no border, 10 px gaps, and
 // the given outputs. edit may change the config.
-func startDragRig(t *testing.T, edit func(*domain.Config), outs ...ports.OutputInfo) *dragRig {
+func startDragRig(t *testing.T, edit func(*domain.Config), outs ...domain.OutputInfo) *dragRig {
 	t.Helper()
 	return newDragRig(t, false, edit, outs...)
 }
@@ -43,7 +43,7 @@ func startDragRig(t *testing.T, edit func(*domain.Config), outs ...ports.OutputI
 // startAnimatedDragRig is startDragRig with animations on and a clock the
 // test moves: settle moves it past every spring and sends the page flips,
 // so the scene it returns is the settled one, deterministically.
-func startAnimatedDragRig(t *testing.T, edit func(*domain.Config), outs ...ports.OutputInfo) *dragRig {
+func startAnimatedDragRig(t *testing.T, edit func(*domain.Config), outs ...domain.OutputInfo) *dragRig {
 	t.Helper()
 	return newDragRig(t, true, func(c *domain.Config) {
 		c.Animations.On = true
@@ -53,7 +53,7 @@ func startAnimatedDragRig(t *testing.T, edit func(*domain.Config), outs ...ports
 	}, outs...)
 }
 
-func newDragRig(t *testing.T, animated bool, edit func(*domain.Config), outs ...ports.OutputInfo) *dragRig {
+func newDragRig(t *testing.T, animated bool, edit func(*domain.Config), outs ...domain.OutputInfo) *dragRig {
 	t.Helper()
 	cfg := scrollDefaults()
 	cfg.Border.Width = 0
@@ -76,7 +76,7 @@ func newDragRig(t *testing.T, animated bool, edit func(*domain.Config), outs ...
 	ch := core.Channels{Client: r.client, Input: r.input, Output: r.output, Commands: r.commands, Scenes: r.scenes}
 	opts := core.Options{Security: gate}
 	if animated {
-		r.frames, r.clock = make(chan ports.OutputFrame), newStepClock(t)
+		r.frames, r.clock = make(chan domain.OutputFrame), newStepClock(t)
 		ch.Frames, opts.Clock = r.frames, r.clock.clock
 		// An on variant that never saw a spring would be the off variant again.
 		t.Cleanup(func() {
@@ -215,7 +215,7 @@ func columnsOf(set []domain.Scene, output string) [][]domain.WindowID {
 	return out
 }
 
-var dragOut = ports.OutputInfo{Name: "A", Width: 1000, Height: 600}
+var dragOut = domain.OutputInfo{Name: "A", Width: 1000, Height: 600}
 
 func (r *dragRig) moveTo(x, y float64, msec uint32) {
 	r.in(ports.PointerMotion{X: x, Y: y, Time: time.Duration(msec) * time.Millisecond})
@@ -401,7 +401,7 @@ func dragTileZonesAndHints(t *testing.T, r *dragRig) {
 
 // startDragMode is the drag rig with animations off, or on and landed by
 // settle.
-func startDragMode(t *testing.T, animated bool, edit func(*domain.Config), outs ...ports.OutputInfo) *dragRig {
+func startDragMode(t *testing.T, animated bool, edit func(*domain.Config), outs ...domain.OutputInfo) *dragRig {
 	t.Helper()
 	if animated {
 		return startAnimatedDragRig(t, edit, outs...)
@@ -589,7 +589,7 @@ func dragFixedNoGapZone(t *testing.T, r *dragRig) {
 
 func TestDragAcrossOutputs(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
-		dragAcrossOutputs(t, startDragMode(t, animated, nil, dragOut, ports.OutputInfo{Name: "B", Width: 800, Height: 600}))
+		dragAcrossOutputs(t, startDragMode(t, animated, nil, dragOut, domain.OutputInfo{Name: "B", Width: 800, Height: 600}))
 	})
 }
 

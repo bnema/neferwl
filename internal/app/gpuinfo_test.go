@@ -3,16 +3,18 @@ package app
 import (
 	"errors"
 	"fmt"
-	"github.com/bnema/zerowrap"
 	"testing"
+
+	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/zerowrap"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestOpenPlannedRenderFallback(t *testing.T) {
-	first := ports.GPUInfo{Path: "card0", Render: 1}
-	second := ports.GPUInfo{Path: "card1", Render: 2}
+	first := domain.GPUInfo{Path: "card0", Render: 1}
+	second := domain.GPUInfo{Path: "card1", Render: 2}
 	plans := []cardPlan{{Info: first, Render: true}, {Info: second}}
 	boom := errors.New("unsupported Vulkan")
 	for _, strict := range []bool{false, true} {

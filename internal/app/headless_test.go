@@ -9,7 +9,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // The headless renderer factory tells a real renderer it drives a virtual
@@ -22,12 +22,12 @@ func TestVirtualRendererExportsHDRTargets(t *testing.T) {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer inst.Close()
-	gpu, err := inst.Open(ports.GPUInfo{})
+	gpu, err := inst.Open(domain.GPUInfo{})
 	if err != nil {
 		t.Skipf("Vulkan GPU unavailable: %v", err)
 	}
 	defer gpu.Close()
-	r, err := gpu.NewRenderer(64, 16, ports.RendererOptions{Virtual: true})
+	r, err := gpu.NewRenderer(64, 16, domain.RendererOptions{Virtual: true})
 	if err != nil {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}

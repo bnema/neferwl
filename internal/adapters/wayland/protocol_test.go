@@ -517,8 +517,8 @@ func TestPointerProtocol(t *testing.T) {
 	for _, b := range []uint32{0x112, 0x113, 0x114} {
 		commands <- ports.PointerButtonTo{ID: w.ID, Button: b, Pressed: true, Time: 1 * time.Millisecond}
 	}
-	commands <- ports.PointerAxisTo{ID: w.ID, Axis: ports.PointerAxis{Source: domain.AxisWheel, Vertical: ports.ScrollAxis{Set: true, Value: 15, V120: 120}, Time: 2 * time.Millisecond}}
-	commands <- ports.PointerAxisTo{ID: w.ID, Axis: ports.PointerAxis{Source: domain.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Stop: true}, Time: 3 * time.Millisecond}}
+	commands <- ports.PointerAxisTo{ID: w.ID, Axis: ports.PointerAxis{Source: domain.AxisWheel, Vertical: domain.ScrollAxis{Set: true, Value: 15, V120: 120}, Time: 2 * time.Millisecond}}
+	commands <- ports.PointerAxisTo{ID: w.ID, Axis: ports.PointerAxis{Source: domain.AxisFinger, Horizontal: domain.ScrollAxis{Set: true, Stop: true}, Time: 3 * time.Millisecond}}
 	dispatchUntil(t, c, func() bool {
 		return len(p.enters) > 0 && len(p.buttons) >= 4 && len(p.axes) >= 5
 	})

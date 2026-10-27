@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestListGPUs(t *testing.T) {
@@ -69,7 +69,7 @@ func TestListGPUs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []ports.GPUInfo{
+	want := []domain.GPUInfo{
 		{Path: filepath.Join(dev, "dri/card0"), Primary: 57856, Render: 57985, PCI: "0000:00:02.0", Driver: "i915", Internal: true},
 		{Path: filepath.Join(dev, "dri/card1"), Primary: 57857, Render: 57984, PCI: "0000:03:00.0", Driver: "amdgpu", BootVGA: true},
 		{Path: filepath.Join(dev, "dri/card2"), Primary: 57858, Driver: "udl"},

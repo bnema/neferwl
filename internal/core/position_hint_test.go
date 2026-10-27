@@ -6,8 +6,9 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -21,7 +22,7 @@ func TestPositionHintChangesAndTiming(t *testing.T) {
 		a.mon.Current().MaxColumns = 1
 		a.mon.AddWindow(1)
 		a.mon.AddWindow(2)
-		c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 300, Height: 200})
 		b := c.screens[1]
 		a.mon.Current().Overflow, a.mon.Current().MaxColumns = OverflowCascade, 1
 		a.mon.Current().Focus = 1
@@ -145,7 +146,7 @@ func TestPositionHintMoveWorkspaceDestination(t *testing.T) {
 		c, _ := indicatorCore(t)
 		c.cfg.Focus.PositionHint = true
 		c.cur().mon.AddWindow(1)
-		c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 300, Height: 200})
 		c.updatePositionHints(nil)
 		source := c.cur()
 		moved := source.mon.Current()
@@ -244,7 +245,7 @@ func TestPositionHintScrolledAwayFullscreen(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _ := indicatorCore(t)
 		c.cfg.Focus.PositionHint = true
-		c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 300, Height: 200})
 		a := c.screens[0]
 		w := a.mon.Current()
 		w.Overflow = OverflowScroll
@@ -268,7 +269,7 @@ func TestPositionHintStartupHotplugReload(t *testing.T) {
 		c, _ := indicatorCore(t)
 		c.cfg.Focus.PositionHint = true
 		require.False(t, indicatorScene(t, c).PositionHint.Shown())
-		c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 300, Height: 200})
 		for _, s := range stepScenes(t, c, nil) {
 			require.False(t, s.PositionHint.Shown())
 		}
@@ -341,7 +342,7 @@ func TestPositionHintRunTimerLifecycle(t *testing.T) {
 		c.focusScreen = 1
 		c.updatePositionHints(nil)
 		require.Same(t, timer, c.positionHintTimer.timer)
-		frames := make(chan ports.OutputFrame)
+		frames := make(chan domain.OutputFrame)
 		c.ch.Frames = frames
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
@@ -359,9 +360,9 @@ func TestPositionHintRunTimerLifecycle(t *testing.T) {
 		require.True(t, b.positionHint.fading)
 		require.Nil(t, c.positionHintTimer.timerC)
 		now = now.Add(positionHintFade)
-		frames <- ports.OutputFrame{Output: "A"}
+		frames <- domain.OutputFrame{Output: "A"}
 		synctest.Wait()
-		frames <- ports.OutputFrame{Output: "B"}
+		frames <- domain.OutputFrame{Output: "B"}
 		synctest.Wait()
 		require.False(t, a.positionHint.sample.Shown())
 		require.False(t, b.positionHint.sample.Shown())

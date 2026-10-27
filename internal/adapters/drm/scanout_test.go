@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -240,7 +239,7 @@ func TestModesetSendsScanoutFormats(t *testing.T) {
 		o.scanout, o.device = on, 9
 		o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB, Modifier: tiled}, {Format: fourccNV12, Modifier: tiled}, {Format: fourccP010, Modifier: tiled}}
 		o.sampled = []domain.DMABufFormat{{Format: fourccARGB, Modifier: tiled}, {Format: fourccARGB, Modifier: 0}, {Format: fourccNV12, Modifier: tiled}, {Format: fourccP010, Modifier: tiled}}
-		ch := make(chan ports.OutputFormats, 1)
+		ch := make(chan domain.OutputFormats, 1)
 		o.formats = ch
 		k.EXPECT().createBlob(mock.Anything).Return(99, nil).Once()
 		if err := o.modeset(); err != nil {
@@ -289,7 +288,7 @@ func TestModesetReportsConfirmedHDR(t *testing.T) {
 	o.hdr.cap = hdrCapability{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: 0.005}
 	o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30}, {Format: fourccXRGB}}
 	o.sampled = []domain.DMABufFormat{{Format: fourccXR30}, {Format: fourccXRGB}}
-	ch := make(chan ports.OutputFormats, 2)
+	ch := make(chan domain.OutputFormats, 2)
 	o.formats = ch
 	k.EXPECT().createBlob(mock.Anything).Return(99, nil).Twice()
 	k.EXPECT().destroyBlob(uint32(99)).Return(nil).Once()
@@ -317,7 +316,7 @@ func TestPowerOffWithdrawsHDRAndFormats(t *testing.T) {
 	o.hdr.cap = hdrCapability{MaxLuminance: 1000}
 	o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30}}
 	o.sampled = []domain.DMABufFormat{{Format: fourccXR30}}
-	ch := make(chan ports.OutputFormats, 1)
+	ch := make(chan domain.OutputFormats, 1)
 	o.formats = ch
 	if err := o.powerOff(); err != nil {
 		t.Fatal(err)

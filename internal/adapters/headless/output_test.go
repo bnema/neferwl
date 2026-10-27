@@ -497,8 +497,8 @@ func TestRunPassesLayerContent(t *testing.T) {
 func TestCaptureForcesFreshHeadlessFrame(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		scenes := make(chan domain.Scene, 1)
-		requests := make(chan ports.CaptureRequest, 1)
-		replies := make(chan ports.CaptureDone, 1)
+		requests := make(chan domain.CaptureRequest, 1)
+		replies := make(chan domain.CaptureDone, 1)
 		r, frames := recordingRenderer(t, nil)
 
 		frame := portsmocks.NewMockCaptureFrame(t)
@@ -520,7 +520,7 @@ func TestCaptureForcesFreshHeadlessFrame(t *testing.T) {
 		if err := f.Truncate(16); err != nil {
 			t.Fatal(err)
 		}
-		requests <- ports.CaptureRequest{ID: 1, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Dst: domain.SHMBuffer{File: f}}
+		requests <- domain.CaptureRequest{ID: 1, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Dst: domain.SHMBuffer{File: f}}
 		select {
 		case result := <-replies:
 			if result.Err != nil {
@@ -639,7 +639,7 @@ func TestHeadlessHDRFormatsConfirmed(t *testing.T) {
 					r.EXPECT().ExportTargets(0, []uint64(nil), false).Return(nil, nil).Once()
 				}
 				r.EXPECT().Close().Return().Once()
-				formats := make(chan ports.OutputFormats, 1)
+				formats := make(chan domain.OutputFormats, 1)
 				ctx, cancel := context.WithCancel(context.Background())
 				done := make(chan error, 1)
 				go func() {

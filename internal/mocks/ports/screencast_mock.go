@@ -5,7 +5,7 @@
 package portsmocks
 
 import (
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -46,7 +46,7 @@ func (_m *MockCastSink) EXPECT() *MockCastSink_Expecter {
 }
 
 // Inventory provides a mock function for the type MockCastSink
-func (_mock *MockCastSink) Inventory(castInventory ports.CastInventory) {
+func (_mock *MockCastSink) Inventory(castInventory domain.CastInventory) {
 	_mock.Called(castInventory)
 	return
 }
@@ -57,16 +57,16 @@ type MockCastSink_Inventory_Call struct {
 }
 
 // Inventory is a helper method to define mock.On call
-//   - castInventory ports.CastInventory
+//   - castInventory domain.CastInventory
 func (_e *MockCastSink_Expecter) Inventory(castInventory any) *MockCastSink_Inventory_Call {
 	return &MockCastSink_Inventory_Call{Call: _e.mock.On("Inventory", castInventory)}
 }
 
-func (_c *MockCastSink_Inventory_Call) Run(run func(castInventory ports.CastInventory)) *MockCastSink_Inventory_Call {
+func (_c *MockCastSink_Inventory_Call) Run(run func(castInventory domain.CastInventory)) *MockCastSink_Inventory_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 ports.CastInventory
+		var arg0 domain.CastInventory
 		if args[0] != nil {
-			arg0 = args[0].(ports.CastInventory)
+			arg0 = args[0].(domain.CastInventory)
 		}
 		run(
 			arg0,
@@ -80,13 +80,13 @@ func (_c *MockCastSink_Inventory_Call) Return() *MockCastSink_Inventory_Call {
 	return _c
 }
 
-func (_c *MockCastSink_Inventory_Call) RunAndReturn(run func(castInventory ports.CastInventory)) *MockCastSink_Inventory_Call {
+func (_c *MockCastSink_Inventory_Call) RunAndReturn(run func(castInventory domain.CastInventory)) *MockCastSink_Inventory_Call {
 	_c.Run(run)
 	return _c
 }
 
 // Push provides a mock function for the type MockCastSink
-func (_mock *MockCastSink) Push(castEvent ports.CastEvent) {
+func (_mock *MockCastSink) Push(castEvent domain.CastEvent) {
 	_mock.Called(castEvent)
 	return
 }
@@ -97,16 +97,16 @@ type MockCastSink_Push_Call struct {
 }
 
 // Push is a helper method to define mock.On call
-//   - castEvent ports.CastEvent
+//   - castEvent domain.CastEvent
 func (_e *MockCastSink_Expecter) Push(castEvent any) *MockCastSink_Push_Call {
 	return &MockCastSink_Push_Call{Call: _e.mock.On("Push", castEvent)}
 }
 
-func (_c *MockCastSink_Push_Call) Run(run func(castEvent ports.CastEvent)) *MockCastSink_Push_Call {
+func (_c *MockCastSink_Push_Call) Run(run func(castEvent domain.CastEvent)) *MockCastSink_Push_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 ports.CastEvent
+		var arg0 domain.CastEvent
 		if args[0] != nil {
-			arg0 = args[0].(ports.CastEvent)
+			arg0 = args[0].(domain.CastEvent)
 		}
 		run(
 			arg0,
@@ -120,7 +120,7 @@ func (_c *MockCastSink_Push_Call) Return() *MockCastSink_Push_Call {
 	return _c
 }
 
-func (_c *MockCastSink_Push_Call) RunAndReturn(run func(castEvent ports.CastEvent)) *MockCastSink_Push_Call {
+func (_c *MockCastSink_Push_Call) RunAndReturn(run func(castEvent domain.CastEvent)) *MockCastSink_Push_Call {
 	_c.Run(run)
 	return _c
 }

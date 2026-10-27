@@ -7,7 +7,7 @@ package hints
 import (
 	"context"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -92,26 +92,26 @@ func (_c *mocktargetSource_Close_Call) RunAndReturn(run func() error) *mocktarge
 }
 
 // Targets provides a mock function for the type mocktargetSource
-func (_mock *mocktargetSource) Targets(context1 context.Context, hintWindows []ports.HintWindow, b bool) ([]ports.HintTarget, error) {
+func (_mock *mocktargetSource) Targets(context1 context.Context, hintWindows []domain.HintWindow, b bool) ([]domain.HintTarget, error) {
 	ret := _mock.Called(context1, hintWindows, b)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Targets")
 	}
 
-	var r0 []ports.HintTarget
+	var r0 []domain.HintTarget
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, []ports.HintWindow, bool) ([]ports.HintTarget, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []domain.HintWindow, bool) ([]domain.HintTarget, error)); ok {
 		return returnFunc(context1, hintWindows, b)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, []ports.HintWindow, bool) []ports.HintTarget); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []domain.HintWindow, bool) []domain.HintTarget); ok {
 		r0 = returnFunc(context1, hintWindows, b)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]ports.HintTarget)
+			r0 = ret.Get(0).([]domain.HintTarget)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, []ports.HintWindow, bool) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, []domain.HintWindow, bool) error); ok {
 		r1 = returnFunc(context1, hintWindows, b)
 	} else {
 		r1 = ret.Error(1)
@@ -126,21 +126,21 @@ type mocktargetSource_Targets_Call struct {
 
 // Targets is a helper method to define mock.On call
 //   - context1 context.Context
-//   - hintWindows []ports.HintWindow
+//   - hintWindows []domain.HintWindow
 //   - b bool
 func (_e *mocktargetSource_Expecter) Targets(context1 any, hintWindows any, b any) *mocktargetSource_Targets_Call {
 	return &mocktargetSource_Targets_Call{Call: _e.mock.On("Targets", context1, hintWindows, b)}
 }
 
-func (_c *mocktargetSource_Targets_Call) Run(run func(context1 context.Context, hintWindows []ports.HintWindow, b bool)) *mocktargetSource_Targets_Call {
+func (_c *mocktargetSource_Targets_Call) Run(run func(context1 context.Context, hintWindows []domain.HintWindow, b bool)) *mocktargetSource_Targets_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 []ports.HintWindow
+		var arg1 []domain.HintWindow
 		if args[1] != nil {
-			arg1 = args[1].([]ports.HintWindow)
+			arg1 = args[1].([]domain.HintWindow)
 		}
 		var arg2 bool
 		if args[2] != nil {
@@ -155,12 +155,12 @@ func (_c *mocktargetSource_Targets_Call) Run(run func(context1 context.Context, 
 	return _c
 }
 
-func (_c *mocktargetSource_Targets_Call) Return(hintTargets []ports.HintTarget, err error) *mocktargetSource_Targets_Call {
+func (_c *mocktargetSource_Targets_Call) Return(hintTargets []domain.HintTarget, err error) *mocktargetSource_Targets_Call {
 	_c.Call.Return(hintTargets, err)
 	return _c
 }
 
-func (_c *mocktargetSource_Targets_Call) RunAndReturn(run func(context1 context.Context, hintWindows []ports.HintWindow, b bool) ([]ports.HintTarget, error)) *mocktargetSource_Targets_Call {
+func (_c *mocktargetSource_Targets_Call) RunAndReturn(run func(context1 context.Context, hintWindows []domain.HintWindow, b bool) ([]domain.HintTarget, error)) *mocktargetSource_Targets_Call {
 	_c.Call.Return(run)
 	return _c
 }

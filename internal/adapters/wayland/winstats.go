@@ -136,7 +136,7 @@ func (w *windowStats) bufferFacts(c domain.SurfaceContent, explicitSync, tearing
 }
 
 // flip records only advancing content sequences, but refreshes output facts on every showing.
-func (w *windowStats) flip(f *ports.FlipInfo) {
+func (w *windowStats) flip(f *domain.FlipInfo) {
 	if w.watched == 0 {
 		return
 	}

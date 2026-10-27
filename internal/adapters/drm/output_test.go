@@ -376,15 +376,15 @@ func TestShownBySnapshotAllocations(t *testing.T) {
 func TestReportsKeepEveryFlip(t *testing.T) {
 	o, _, _ := testOutput(t)
 	seen := map[domain.WindowID]uint64{1: 1}
-	o.report(&ports.FlipInfo{Seq: 1}, seen)
+	o.report(&domain.FlipInfo{Seq: 1}, seen)
 	o.report(nil, seen)
-	o.report(&ports.FlipInfo{Seq: 2}, seen)
+	o.report(&domain.FlipInfo{Seq: 2}, seen)
 	o.report(nil, map[domain.WindowID]uint64{1: 3})
 	if o.reports.Len() != 2 || o.reports.Unsent()[0].Flip.Seq != 1 || o.reports.Unsent()[1].Flip.Seq != 2 || o.reports.Unsent()[1].Seen[1] != 3 {
 		t.Fatalf("unsent %+v", o.reports.Unsent())
 	}
 	for i := range 20 {
-		o.report(&ports.FlipInfo{Seq: uint64(10 + i), Shows: map[domain.WindowID]uint64{}}, seen)
+		o.report(&domain.FlipInfo{Seq: uint64(10 + i), Shows: map[domain.WindowID]uint64{}}, seen)
 	}
 	// The wayland sink alone merges flips: the output queue keeps them all.
 	if o.reports.Len() != 22 || o.reports.Unsent()[2].Flip.Merged != 0 {
@@ -848,8 +848,8 @@ func TestCaptureRenderFailureClosesPendingRequest(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		scenes := make(chan domain.Scene, 1)
-		requests := make(chan ports.CaptureRequest)
-		replies := make(chan ports.CaptureDone, 1)
+		requests := make(chan domain.CaptureRequest)
+		replies := make(chan domain.CaptureDone, 1)
 		f, err := os.CreateTemp(t.TempDir(), "capture")
 		if err != nil {
 			t.Fatal(err)
@@ -861,7 +861,7 @@ func TestCaptureRenderFailureClosesPendingRequest(t *testing.T) {
 		}()
 		// The unbuffered handoff proves Run owns the request before any scene.
 		select {
-		case requests <- ports.CaptureRequest{ID: 9, Dst: domain.SHMBuffer{File: f}}:
+		case requests <- domain.CaptureRequest{ID: 9, Dst: domain.SHMBuffer{File: f}}:
 		case <-time.After(2 * time.Second):
 			t.Fatal("output did not accept capture")
 		}
@@ -920,8 +920,8 @@ func TestCaptureForcesDRMComposition(t *testing.T) {
 		k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
 		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
 		scenes := make(chan domain.Scene, 1)
-		requests := make(chan ports.CaptureRequest, 1)
-		replies := make(chan ports.CaptureDone, 1)
+		requests := make(chan domain.CaptureRequest, 1)
+		replies := make(chan domain.CaptureDone, 1)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		setOutputRenderer(t, o, r)
@@ -946,7 +946,7 @@ func TestCaptureForcesDRMComposition(t *testing.T) {
 		if err := f.Truncate(16); err != nil {
 			t.Fatal(err)
 		}
-		requests <- ports.CaptureRequest{ID: 4, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Dst: domain.SHMBuffer{File: f}}
+		requests <- domain.CaptureRequest{ID: 4, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Dst: domain.SHMBuffer{File: f}}
 		select {
 		case result := <-replies:
 			if result.Err != nil {
@@ -988,7 +988,7 @@ func TestRunPanicReportsReadinessError(t *testing.T) {
 		}
 	}()
 	dev := portsmocks.NewMockRenderDevice(t)
-	dev.EXPECT().NewRenderer(o.Width(), o.Height(), ports.RendererOptions{}).RunAndReturn(func(int, int, ports.RendererOptions) (ports.Renderer, error) { panic("renderer panic") }).Once()
+	dev.EXPECT().NewRenderer(o.Width(), o.Height(), domain.RendererOptions{}).RunAndReturn(func(int, int, domain.RendererOptions) (ports.Renderer, error) { panic("renderer panic") }).Once()
 	o.card = &Card{dev: CardDevices{Render: dev}}
 	o.Run(context.Background(), nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
@@ -1240,7 +1240,7 @@ func TestRunKeepsLastContentOfLeavingWindow(t *testing.T) {
 func setOutputRenderer(t *testing.T, o *Output, r ports.Renderer) {
 	t.Helper()
 	dev := portsmocks.NewMockRenderDevice(t)
-	dev.EXPECT().NewRenderer(o.Width(), o.Height(), ports.RendererOptions{}).Return(r, nil).Once()
+	dev.EXPECT().NewRenderer(o.Width(), o.Height(), domain.RendererOptions{}).Return(r, nil).Once()
 	if o.card == nil {
 		o.card = &Card{}
 	}

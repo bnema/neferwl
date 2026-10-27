@@ -5,6 +5,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -172,7 +173,7 @@ func TestLegacyFullscreenRemapAndOutputs(t *testing.T) {
 	})
 	second := func(t *testing.T) (*Core, *screen) {
 		c, _, _ := fadeCore(t)
-		c.addScreen(ports.OutputInfo{Name: "B", Width: 500, Height: 300})
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 500, Height: 300})
 		c.focusScreen = c.screenIndex("B")
 		return c, c.cur()
 	}

@@ -7,10 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bnema/zerobus"
-
 	"github.com/bnema/neferwl/internal/adapters/logging"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/zerobus"
 )
 
 const (
@@ -251,7 +250,7 @@ type appInfo struct {
 
 // winMatch is a window with the frame it was paired with.
 type winMatch struct {
-	win   ports.HintWindow
+	win   domain.HintWindow
 	frame ref
 	fx    int32
 	fy    int32
@@ -259,7 +258,7 @@ type winMatch struct {
 
 // Targets returns clickable targets, clipped to each window unit's region,
 // that are ready within the budget. Coverage is decided by the caller.
-func (s *Source) Targets(ctx context.Context, windows []ports.HintWindow, linksOnly bool) ([]ports.HintTarget, error) {
+func (s *Source) Targets(ctx context.Context, windows []domain.HintWindow, linksOnly bool) ([]domain.HintTarget, error) {
 	deadline := time.Now().Add(budget)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
@@ -364,7 +363,7 @@ func (s *Source) Targets(ctx context.Context, windows []ports.HintWindow, linksO
 	// Pair the windows with the frames, process by process.
 	var matched []winMatch
 	for pid := range wanted {
-		var wins []ports.HintWindow
+		var wins []domain.HintWindow
 		for _, w := range windows {
 			if w.PID == pid {
 				wins = append(wins, w)
@@ -390,7 +389,7 @@ func (s *Source) Targets(ctx context.Context, windows []ports.HintWindow, linksO
 }
 
 // elements reads the clickable elements of the matched frames.
-func (s *Source) elements(do func([]call) []reply, matched []winMatch, linksOnly bool) []ports.HintTarget {
+func (s *Source) elements(do func([]call) []reply, matched []winMatch, linksOnly bool) []domain.HintTarget {
 	calls := make([]call, len(matched))
 	for i, m := range matched {
 		calls[i] = call{op: opMatches, name: m.frame.name, path: m.frame.path, rule: matchRule{linksOnly: linksOnly}}
@@ -422,7 +421,7 @@ func (s *Source) elements(do func([]call) []reply, matched []winMatch, linksOnly
 		}
 	}
 	info := do(calls)
-	var out []ports.HintTarget
+	var out []domain.HintTarget
 	for k, i := range owner {
 		role, ext := info[2*k], info[2*k+1]
 		if role.err == nil && isDocument(role.u) {

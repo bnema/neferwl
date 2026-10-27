@@ -21,7 +21,7 @@ func BenchmarkBorderMotion(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			c.addScreen(ports.OutputInfo{Name: "A", Width: 1920, Height: 1080})
+			c.addScreen(domain.OutputInfo{Name: "A", Width: 1920, Height: 1080})
 			sc := c.cur()
 			w := sc.mon.Current()
 			w.Overflow = OverflowScroll

@@ -8,7 +8,6 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 var errOCRUnavailable = errors.New("hints: OCR unavailable")
@@ -22,7 +21,7 @@ type ocrSource struct {
 func (*ocrSource) kind() domain.HintSource               { return domain.HintSourceOCR }
 func (s *ocrSource) needsFrame(ctx context.Context) bool { return ocrReady(ctx, &s.state) }
 func (*ocrSource) Close() error                          { return nil }
-func (s *ocrSource) scan(ctx context.Context, req ports.HintScanRequest, wins []ports.HintWindow, fr *frame) ([]ports.HintTarget, error) {
+func (s *ocrSource) scan(ctx context.Context, req domain.HintScanRequest, wins []domain.HintWindow, fr *frame) ([]domain.HintTarget, error) {
 	if !ocrReady(ctx, &s.state) {
 		return nil, errOCRUnavailable
 	}
@@ -69,7 +68,7 @@ func (s *ocrSource) scan(ctx context.Context, req ports.HintScanRequest, wins []
 		}
 	}
 	recognize(ctx, &s.state, jobs)
-	var out []ports.HintTarget
+	var out []domain.HintTarget
 	var scanErr error
 	hits := 0
 	for wi, win := range wins {

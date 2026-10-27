@@ -22,7 +22,7 @@ func TestCoreCoveringFloatSceneAndHit(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		c.cur().info = ports.OutputInfo{Name: "OUT", Width: 100, Height: 80}
+		c.cur().info = domain.OutputInfo{Name: "OUT", Width: 100, Height: 80}
 		m := c.cur().mon
 		m.SetOutput(100, 80)
 		w := m.Current()
@@ -86,7 +86,7 @@ func TestCoreOverviewDimsBehind(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		c.cur().info = ports.OutputInfo{Name: "OUT", Width: 100, Height: 80}
+		c.cur().info = domain.OutputInfo{Name: "OUT", Width: 100, Height: 80}
 		m := c.cur().mon
 		m.SetOutput(100, 80)
 		m.Current().AddWindow(1)

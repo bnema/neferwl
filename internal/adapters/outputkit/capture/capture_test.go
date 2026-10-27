@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
 
@@ -17,8 +16,8 @@ func TestFailClosesBeforeReplyAndUsesMonotonic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	replies := make(chan ports.CaptureDone, 1)
-	Fail(context.Background(), ports.CaptureRequest{Dst: domain.SHMBuffer{File: f}}, nil, replies)
+	replies := make(chan domain.CaptureDone, 1)
+	Fail(context.Background(), domain.CaptureRequest{Dst: domain.SHMBuffer{File: f}}, nil, replies)
 	done := <-replies
 	if _, err := f.Stat(); err == nil {
 		t.Fatal("fd open at reply")
@@ -35,13 +34,13 @@ func TestFailClosesBeforeReplyAndUsesMonotonic(t *testing.T) {
 func TestFailCancelledStillDeliversReadyReply(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	replies := make(chan ports.CaptureDone, 1)
+	replies := make(chan domain.CaptureDone, 1)
 	for id := range uint64(100) {
 		f, err := os.CreateTemp(t.TempDir(), "capture")
 		if err != nil {
 			t.Fatal(err)
 		}
-		Fail(ctx, ports.CaptureRequest{ID: id, Dst: domain.SHMBuffer{File: f}}, nil, replies)
+		Fail(ctx, domain.CaptureRequest{ID: id, Dst: domain.SHMBuffer{File: f}}, nil, replies)
 		select {
 		case result := <-replies:
 			if result.ID != id {
@@ -60,14 +59,14 @@ func TestFailCancelledWithFullReplies(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		replies := make(chan ports.CaptureDone, 1)
-		replies <- ports.CaptureDone{}
+		replies := make(chan domain.CaptureDone, 1)
+		replies <- domain.CaptureDone{}
 		f, err := os.CreateTemp(t.TempDir(), "capture")
 		if err != nil {
 			t.Fatal(err)
 		}
 		done := make(chan struct{})
-		go func() { Fail(ctx, ports.CaptureRequest{Dst: domain.SHMBuffer{File: f}}, nil, replies); close(done) }()
+		go func() { Fail(ctx, domain.CaptureRequest{Dst: domain.SHMBuffer{File: f}}, nil, replies); close(done) }()
 		select {
 		case <-done:
 		case <-time.After(2 * time.Second):

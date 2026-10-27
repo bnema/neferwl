@@ -24,7 +24,7 @@ func powerCoreWith(t *testing.T, opts core.Options) (chan ports.InputEvent, chan
 	output := make(chan ports.OutputEvent, 2)
 	commands := make(chan ports.ClientCommand, 64)
 	scenes := make(chan []domain.Scene, 1)
-	c, err := core.New(scrollDefaults(), core.Channels{Input: input, Client: client, Output: output, Commands: commands, Scenes: scenes, Spawn: make(chan ports.SpawnRequest, 4)}, opts)
+	c, err := core.New(scrollDefaults(), core.Channels{Input: input, Client: client, Output: output, Commands: commands, Scenes: scenes, Spawn: make(chan domain.SpawnRequest, 4)}, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,8 +32,8 @@ func powerCoreWith(t *testing.T, opts core.Options) (chan ports.InputEvent, chan
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
 	t.Cleanup(func() { cancel(); receive(t, done) })
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
+	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
 	return input, client, output, commands, scenes
 }
 
@@ -114,7 +114,7 @@ func TestOutputReconnectedWhileOff(t *testing.T) {
 				sceneOf(t, scenes, "OUT-2", func(s domain.Scene) bool { return s.Off })
 				output <- ports.OutputRemoved{Name: "OUT-2"}
 				gone(t, scenes, "OUT-2") // no older scene can answer below
-				output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
+				output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
 				sceneOf(t, scenes, "OUT-2", func(s domain.Scene) bool { return s.Off })
 
 				client <- ports.OutputPower{Output: "OUT-2", On: true}
@@ -130,7 +130,7 @@ func TestOutputReconnectedWhileOff(t *testing.T) {
 				default:
 					t.Fatal("input not handled")
 				}
-				output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
+				output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
 				sceneOf(t, scenes, "OUT-2", func(s domain.Scene) bool { return !s.Off })
 
 			})

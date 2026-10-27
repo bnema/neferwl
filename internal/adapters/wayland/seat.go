@@ -31,7 +31,7 @@ type seatState struct {
 	wheelHeld   [2]float64 // axis value held back with it for pre-v8 clients
 	pointers    map[server.Client][]*wayland.Pointer
 	keyboards   map[server.Client][]*wayland.Keyboard
-	modState    ports.ModState
+	modState    domain.ModState
 	heldKeys    map[uint32]bool
 	grabKeys    map[uint32]bool // pressed through the input method grab
 	keymapFD    int
@@ -402,7 +402,7 @@ func (s *Server) setKeymap(c ports.SetKeymap) {
 	focused := s.seat.focused
 	s.changeFocus(0)
 	s.seat.heldKeys, s.seat.grabKeys = nil, nil
-	s.seat.modState = ports.ModState{}
+	s.seat.modState = domain.ModState{}
 	for _, list := range s.seat.keyboards {
 		for _, k := range list {
 			k.SendKeymap(uint32(wayland.KeyboardKeymapFormatXkbV1), s.seat.keymapFD, s.seat.keymapSize)
@@ -469,7 +469,7 @@ func (st *seatState) wheelSteps(a ports.PointerAxis) (steps [2]int32, values [2]
 	if a.Source != domain.AxisWheel {
 		return steps, values
 	}
-	for i, ax := range [2]ports.ScrollAxis{a.Vertical, a.Horizontal} {
+	for i, ax := range [2]domain.ScrollAxis{a.Vertical, a.Horizontal} {
 		if !ax.Set || ax.V120 == 0 {
 			continue
 		}
@@ -493,7 +493,7 @@ func (st *seatState) wheelSteps(a ports.PointerAxis) (steps [2]int32, values [2]
 // last step), so it never counts smooth and discrete scroll.
 func (s *Server) sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int32, values [2]float64) {
 	v := p.Version()
-	axes := [2]ports.ScrollAxis{a.Vertical, a.Horizontal}
+	axes := [2]domain.ScrollAxis{a.Vertical, a.Horizontal}
 	for i := range axes {
 		if v < 8 && a.Source == domain.AxisWheel && axes[i].V120 != 0 && steps[i] == 0 {
 			axes[i].Set = false
@@ -576,7 +576,7 @@ func (s *Server) changePointerFocus(id domain.WindowID, x, y float64) {
 	s.cancelGesture()
 	// The new client sets its own cursor on enter; until then, the arrow.
 	s.cursorSurface = nil
-	s.setCursor(ports.CursorChange{})
+	s.setCursor(domain.CursorChange{})
 	if surface, pointers, _, _ := s.pointerSurface(s.seat.pointerFocus, 0, 0); surface != nil {
 		for _, p := range pointers {
 			s.serial++

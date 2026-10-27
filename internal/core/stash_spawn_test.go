@@ -23,7 +23,7 @@ func stashSpawnRig(t *testing.T, edit func(*domain.Config)) *multiRig {
 	}, left)
 }
 
-func slotToken(t *testing.T, req ports.SpawnRequest) string {
+func slotToken(t *testing.T, req domain.SpawnRequest) string {
 	t.Helper()
 	if len(req.Env) != 1 || len(req.Env[0]) <= len(ports.SlotEnv)+1 || req.Env[0][:len(ports.SlotEnv)+1] != ports.SlotEnv+"=" {
 		t.Fatalf("no slot token: %v", req.Env)

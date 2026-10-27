@@ -54,7 +54,7 @@ func command(t *testing.T, ch <-chan ports.ClientCommand) ports.ClientCommand {
 type modeLanding struct {
 	t       *testing.T
 	clk     *stepClock
-	frames  chan ports.OutputFrame
+	frames  chan domain.OutputFrame
 	scenes  chan []domain.Scene
 	outputs []string
 	lands   int
@@ -66,7 +66,7 @@ func newLanding(t *testing.T, animated bool, cfg *domain.Config, ch *core.Channe
 	cfg.Animations.On = animated
 	l := &modeLanding{t: t, scenes: ch.Scenes, outputs: outputs}
 	if animated {
-		l.clk, l.frames = newStepClock(t), make(chan ports.OutputFrame)
+		l.clk, l.frames = newStepClock(t), make(chan domain.OutputFrame)
 		opts.Clock, ch.Frames = l.clk.clock, l.frames
 		t.Cleanup(func() {
 			if l.lands == 0 {
@@ -102,9 +102,9 @@ func owner(t *testing.T, animated bool) {
 	client := make(chan ports.ClientEvent, 128)
 	input := make(chan ports.InputEvent, 32)
 	output := make(chan ports.OutputEvent, 8)
-	reload := make(chan ports.ConfigChanged, 8)
+	reload := make(chan domain.ConfigChanged, 8)
 	commands := make(chan ports.ClientCommand, 256)
-	spawn := make(chan ports.SpawnRequest, 8)
+	spawn := make(chan domain.SpawnRequest, 8)
 	scenes := make(chan []domain.Scene, 1)
 	errs := make(chan error, 8)
 	ch := core.Channels{Client: client, Input: input, Output: output, Config: reload, Commands: commands, Spawn: spawn, Scenes: scenes, ConfigErrors: errs}
@@ -118,7 +118,7 @@ func owner(t *testing.T, animated bool) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 	s := scene(t, scenes)
 	if s.OutputWidth != 100 {
 		t.Fatal(s)
@@ -168,7 +168,7 @@ func owner(t *testing.T, animated bool) {
 		<-commands
 	}
 	cfg.Layout.Gaps = 4
-	reload <- ports.ConfigChanged{Config: cfg}
+	reload <- domain.ConfigChanged{Config: cfg}
 	s = l.one(scene(t, scenes))
 	if s.Windows[0].Rect.W != 92 {
 		t.Fatal(s)
@@ -177,7 +177,7 @@ func owner(t *testing.T, animated bool) {
 		t.Fatal(v)
 	}
 	cfg.Layout.MaxColumns = 0
-	reload <- ports.ConfigChanged{Config: cfg}
+	reload <- domain.ConfigChanged{Config: cfg}
 	receive(t, errs)
 	for i := 0; i < 100; i++ {
 		client <- ports.WindowMapped{ID: domain.WindowID(i + 3)}
@@ -298,7 +298,7 @@ func TestPointerFocusAndGrab(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go c.Run(ctx)
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}
 		first := scene(t, scenes).Windows[0].Rect
@@ -314,8 +314,8 @@ func TestPointerFocusAndGrab(t *testing.T) {
 		if v := command(t, commands); v != (ports.PointerMotionTo{ID: 1, X: 2, Y: 3, Time: 1 * time.Millisecond}) {
 			t.Fatal(v)
 		}
-		input <- ports.PointerAxis{Vertical: ports.ScrollAxis{Set: true, Value: 15, V120: 120}}
-		if v := command(t, commands); v != (ports.PointerAxisTo{ID: 1, Axis: ports.PointerAxis{Vertical: ports.ScrollAxis{Set: true, Value: 15, V120: 120}}}) {
+		input <- ports.PointerAxis{Vertical: domain.ScrollAxis{Set: true, Value: 15, V120: 120}}
+		if v := command(t, commands); v != (ports.PointerAxisTo{ID: 1, Axis: ports.PointerAxis{Vertical: domain.ScrollAxis{Set: true, Value: 15, V120: 120}}}) {
 			t.Fatal(v)
 		}
 		input <- ports.PointerButton{Button: 0x110, Pressed: true}
@@ -338,7 +338,7 @@ func TestPointerFocusAndGrab(t *testing.T) {
 		}
 		// Mid-drag off the window, scroll goes to what is under the pointer:
 		// nothing here, not the grab window that got a leave.
-		input <- ports.PointerAxis{Vertical: ports.ScrollAxis{Set: true, Value: 1}}
+		input <- ports.PointerAxis{Vertical: domain.ScrollAxis{Set: true, Value: 1}}
 		input <- ports.PointerButton{Button: 0x110}
 		if v := command(t, commands); v != (ports.PointerButtonTo{ID: 1, Button: 0x110}) {
 			t.Fatal(v)
@@ -367,7 +367,7 @@ func borderInset(t *testing.T, animated bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go c.Run(ctx)
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 	scene(t, scenes)
 	// Alone, the window is borderless and gets the full rect.
 	client <- ports.WindowMapped{ID: 1}
@@ -414,7 +414,7 @@ func TestLayerKeyboardFocus(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go c.Run(ctx)
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}
 		scene(t, scenes)
@@ -430,9 +430,9 @@ func TestLayerKeyboardFocus(t *testing.T) {
 			t.Fatalf("window focus %d", id)
 		}
 		// An on-demand bar does not steal focus; an exclusive launcher does.
-		launcher := ports.LayerSurface{ID: 7, Layer: domain.LayerOverlay, Width: 40, Height: 20, Keyboard: 1}
-		bar := ports.LayerSurface{ID: 6, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 5, Keyboard: 2}
-		client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar, launcher}}
+		launcher := domain.LayerSurface{ID: 7, Layer: domain.LayerOverlay, Width: 40, Height: 20, Keyboard: 1}
+		bar := domain.LayerSurface{ID: 6, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 5, Keyboard: 2}
+		client <- ports.LayerChanged{Layers: []domain.LayerSurface{bar, launcher}}
 		scene(t, scenes)
 		if id := focusOf(); id != 7 {
 			t.Fatalf("layer focus %d", id)
@@ -446,7 +446,7 @@ func TestLayerKeyboardFocus(t *testing.T) {
 				break
 			}
 		}
-		client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar}}
+		client <- ports.LayerChanged{Layers: []domain.LayerSurface{bar}}
 		scene(t, scenes)
 		if id := focusOf(); id != 1 {
 			t.Fatalf("focus not restored: %d", id)
@@ -472,7 +472,7 @@ func TestWorkspaceSwitchAnimated(t *testing.T) {
 // settledScene lands the springs an action started on the single output
 // OUT-1 of a rig with a stepClock and returns its scene; animations off:
 // the scene itself.
-func settledScene(t *testing.T, sc *stepClock, frames chan ports.OutputFrame, scenes chan []domain.Scene, s domain.Scene, mustAnimate bool) domain.Scene {
+func settledScene(t *testing.T, sc *stepClock, frames chan domain.OutputFrame, scenes chan []domain.Scene, s domain.Scene, mustAnimate bool) domain.Scene {
 	t.Helper()
 	if sc == nil {
 		return s
@@ -498,7 +498,7 @@ func workspaceSwitch(t *testing.T, animated bool) {
 	ch := core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}
 	opts := core.Options{}
 	var sc *stepClock
-	frames := make(chan ports.OutputFrame)
+	frames := make(chan domain.OutputFrame)
 	if animated {
 		sc = newStepClock(t)
 		opts.Clock, ch.Frames = sc.clock, frames
@@ -510,7 +510,7 @@ func workspaceSwitch(t *testing.T, animated bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go c.Run(ctx)
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 	scene(t, scenes)
 	client <- ports.WindowMapped{ID: 1}
 	scene(t, scenes)
@@ -563,7 +563,7 @@ func clickAfterWorkspaceSwitch(t *testing.T, animated bool) {
 	ch := core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}
 	opts := core.Options{}
 	var sc *stepClock
-	frames := make(chan ports.OutputFrame)
+	frames := make(chan domain.OutputFrame)
 	if animated {
 		sc = newStepClock(t)
 		opts.Clock, ch.Frames = sc.clock, frames
@@ -575,7 +575,7 @@ func clickAfterWorkspaceSwitch(t *testing.T, animated bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go c.Run(ctx)
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 	scene(t, scenes)
 	client <- ports.WindowMapped{ID: 1}
 	scene(t, scenes)
@@ -660,7 +660,7 @@ func outputScale(t *testing.T, animated bool) {
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
 	output := make(chan ports.OutputEvent, 8)
-	reload := make(chan ports.ConfigChanged, 1)
+	reload := make(chan domain.ConfigChanged, 1)
 	commands := make(chan ports.ClientCommand, 64)
 	scenes := make(chan []domain.Scene, 1)
 	ch := core.Channels{Client: client, Input: input, Output: output, Config: reload, Commands: commands, Scenes: scenes}
@@ -674,7 +674,7 @@ func outputScale(t *testing.T, animated bool) {
 	defer cancel()
 	go c.Run(ctx)
 	// 5120x2160 at scale 2 is 2560x1080 logical.
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "DP-2", Width: 5120, Height: 2160}}
+	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "DP-2", Width: 5120, Height: 2160}}
 	s := scene(t, scenes)
 	if s.Scale != 2 || s.OutputWidth != 2560 || s.OutputHeight != 1080 {
 		t.Fatal(s.Scale, s.OutputWidth, s.OutputHeight)
@@ -719,13 +719,13 @@ func outputScale(t *testing.T, animated bool) {
 		t.Fatal(s.Scale)
 	}
 	cfg.Layout.Gaps = 1
-	reload <- ports.ConfigChanged{Config: cfg}
+	reload <- domain.ConfigChanged{Config: cfg}
 	if s = scene(t, scenes); s.Scale != 2.5 {
 		t.Fatal(s.Scale)
 	}
 	// Changing the config scale wins.
 	cfg.Outputs = []domain.OutputConfig{{Name: "DP-2", Scale: 1.25}}
-	reload <- ports.ConfigChanged{Config: cfg}
+	reload <- domain.ConfigChanged{Config: cfg}
 	if s = scene(t, scenes); s.Scale != 1.25 || s.OutputWidth != 4096 {
 		t.Fatal(s.Scale, s.OutputWidth)
 	}
@@ -743,7 +743,7 @@ func TestPointerWarp(t *testing.T) {
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 64)
 		scenes := make(chan []domain.Scene, 1)
-		constraints := make(chan ports.PointerConstraint, 1)
+		constraints := make(chan domain.PointerConstraint, 1)
 		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes, Constraints: constraints}, core.Options{})
 		if err != nil {
 			t.Fatal(err)
@@ -751,7 +751,7 @@ func TestPointerWarp(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go c.Run(ctx)
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "A", Width: 100, Height: 80}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "A", Width: 100, Height: 80}}
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}
 		r := receive(t, scenes)[0].Windows[0].Rect
@@ -797,7 +797,7 @@ func pointerConstraint(t *testing.T, animated bool) {
 	output := make(chan ports.OutputEvent, 8)
 	commands := make(chan ports.ClientCommand, 64)
 	scenes := make(chan []domain.Scene, 1)
-	constraints := make(chan ports.PointerConstraint, 1)
+	constraints := make(chan domain.PointerConstraint, 1)
 	ch := core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes, Constraints: constraints}
 	opts := core.Options{}
 	l := newLanding(t, animated, &cfg, &ch, &opts, "A", "B")
@@ -808,18 +808,18 @@ func pointerConstraint(t *testing.T, animated bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go c.Run(ctx)
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "A", Width: 100, Height: 80}}
+	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "A", Width: 100, Height: 80}}
 	scene(t, scenes)
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "B", Width: 100, Height: 80}}
+	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "B", Width: 100, Height: 80}}
 	scene(t, scenes)
 	input <- ports.PointerMotion{X: 150, Y: 40}
 	scene(t, scenes) // the pointer moves the focus to B
 	client <- ports.WindowMapped{ID: 1}
 	r := l.land(receive(t, scenes))[1].Windows[0].Rect
 	// The confine region is window-local and clipped to the window.
-	client <- ports.PointerConstrained{ID: 1, PointerConstraint: ports.PointerConstraint{Mode: domain.ConstraintConfine, Rect: domain.Rect{X: 10, Y: 10, W: 1000, H: 20}}}
+	client <- ports.PointerConstrained{ID: 1, PointerConstraint: domain.PointerConstraint{Mode: domain.ConstraintConfine, Rect: domain.Rect{X: 10, Y: 10, W: 1000, H: 20}}}
 	scene(t, scenes)
-	want := ports.PointerConstraint{Mode: domain.ConstraintConfine, Rect: domain.Rect{X: 100 + r.X + 10, Y: r.Y + 10, W: r.W - 10, H: 20}}
+	want := domain.PointerConstraint{Mode: domain.ConstraintConfine, Rect: domain.Rect{X: 100 + r.X + 10, Y: r.Y + 10, W: r.W - 10, H: 20}}
 	// Input gets core's cursor, clamped into the region.
 	if got := receive(t, constraints); got.Mode != want.Mode || got.Rect != want.Rect || got.X != 150 || got.Y != 29 {
 		t.Fatalf("got %+v, want %+v", got, want)
@@ -838,7 +838,7 @@ func pointerConstraint(t *testing.T, animated bool) {
 		}
 	}
 	// A lock keeps the pointer still.
-	client <- ports.PointerConstrained{ID: 1, PointerConstraint: ports.PointerConstraint{Mode: domain.ConstraintLock}}
+	client <- ports.PointerConstrained{ID: 1, PointerConstraint: domain.PointerConstraint{Mode: domain.ConstraintLock}}
 	scene(t, scenes)
 	if got := receive(t, constraints); got.Mode != domain.ConstraintLock {
 		t.Fatalf("lock %+v", got)
@@ -879,11 +879,11 @@ func TestPopupChainDismissOrder(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go c.Run(ctx)
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}
 		scene(t, scenes)
-		pos := ports.Positioner{Width: 10, Height: 10, AnchorRect: domain.Rect{W: 1, H: 1}, Anchor: ports.EdgeBottomRight, Gravity: ports.EdgeBottomRight}
+		pos := domain.Positioner{Width: 10, Height: 10, AnchorRect: domain.Rect{W: 1, H: 1}, Anchor: ports.EdgeBottomRight, Gravity: ports.EdgeBottomRight}
 		for _, v := range []struct{ id, parent domain.WindowID }{{2, 1}, {3, 2}} {
 			client <- ports.PopupRequest{ID: v.id, Parent: v.parent, Positioner: pos, Grab: true}
 			for {
@@ -931,7 +931,7 @@ func TestFloatOverFullscreenHit(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go c.Run(ctx)
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}
 		scene(t, scenes)
@@ -977,7 +977,7 @@ func TestDialogOverFullscreenHit(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go c.Run(ctx)
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}
 		scene(t, scenes)
@@ -1033,7 +1033,7 @@ func fullscreenAtMapIgnored(t *testing.T, animated bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go c.Run(ctx)
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 	scene(t, scenes)
 	client <- ports.WindowMapped{ID: 1}
 	scene(t, scenes)
@@ -1122,7 +1122,7 @@ func externalFullscreenAtMapApplies(t *testing.T, animated bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go c.Run(ctx)
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 	scene(t, scenes)
 	client <- ports.WindowMapped{ID: 1}
 	l.one(scene(t, scenes))
@@ -1270,7 +1270,7 @@ func TestWindowActivateShowsAndFocuses(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go c.Run(ctx)
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}
 		scene(t, scenes)

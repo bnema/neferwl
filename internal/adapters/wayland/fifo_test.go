@@ -172,7 +172,7 @@ func TestMonotonicTimeClamps(t *testing.T) {
 
 // A barrier on an output that flips clears on its next flip.
 func TestTickFifoClearsBarrierOnFlip(t *testing.T) {
-	out := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
+	out := &output{place: domain.OutputPlacement{Info: domain.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
 	s := &Server{outputs: []*output{out}, fifoSurfaces: map[*surface]struct{}{}, lastFlip: map[string]time.Time{}}
 	surf := &surface{server: s, xdg: &xdgSurface{window: &window{last: ports.ConfigureWindow{Output: "DP-2"}}}}
 	now := time.Unix(100, 0)
@@ -394,7 +394,7 @@ func TestGraphReadyMemoizesPredecessors(t *testing.T) {
 }
 
 func TestInvisibleFifoPeriod(t *testing.T) {
-	out := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
+	out := &output{place: domain.OutputPlacement{Info: domain.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
 	s := &Server{outputs: []*output{out}, fifoSurfaces: map[*surface]struct{}{}, lastFlip: map[string]time.Time{}}
 	w := &window{hasLast: true, last: ports.ConfigureWindow{Output: "DP-2"}}
 	surf := &surface{server: s, xdg: &xdgSurface{window: w}}

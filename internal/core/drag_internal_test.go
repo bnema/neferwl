@@ -44,7 +44,7 @@ func dragCore(t *testing.T) *Core {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.cur().info = ports.OutputInfo{Name: "OUT", Width: 1000, Height: 600}
+	c.cur().info = domain.OutputInfo{Name: "OUT", Width: 1000, Height: 600}
 	c.cur().mon.SetOutput(1000, 600)
 	return c
 }

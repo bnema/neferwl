@@ -121,7 +121,7 @@ func (f *screencopyFrame) copy(b *wayland.Buffer, damage bool) {
 		f.res.PostError(uint32(wlr.ZwlrScreencopyFrameV1ErrorInvalidBuffer), "invalid shm buffer")
 		return
 	}
-	id, ok := f.s.requestCapture(f.o, f.region, f.cursor, b, uint32(wayland.ShmFormatXrgb8888), func(done ports.CaptureDone) {
+	id, ok := f.s.requestCapture(f.o, f.region, f.cursor, b, uint32(wayland.ShmFormatXrgb8888), func(done domain.CaptureDone) {
 		if done.Err != nil {
 			f.res.SendFailed()
 			return
@@ -181,7 +181,7 @@ type captureTag struct {
 
 // requestCapture duplicates the pool descriptor, so destroying the wl_buffer
 // cannot invalidate a capture in flight.
-func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b *wayland.Buffer, format uint32, reply func(ports.CaptureDone), life *server.Resource, tag captureTag) (uint64, bool) {
+func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b *wayland.Buffer, format uint32, reply func(domain.CaptureDone), life *server.Resource, tag captureTag) (uint64, bool) {
 	if o == nil || b == nil || s.channels.Captures == nil || s.channels.Captured == nil || s.outputByNameExact(o.name()) != o {
 		return 0, false
 	}
@@ -210,7 +210,7 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 	start := time.Now()
 	taken := tag.taken
 	taken.Session = tag.session
-	s.captureReplies[id] = func(done ports.CaptureDone) {
+	s.captureReplies[id] = func(done domain.CaptureDone) {
 		if done.Err == nil {
 			// Whatever became of the client's frame object, its buffer holds
 			// an image now: the indicator lasts CaptureFlash from here.
@@ -226,7 +226,7 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 			reply(done)
 		}
 	}
-	req := ports.CaptureRequest{ID: id, Output: o.name(), Region: rect, Cursor: cursor, Dst: domain.SHMBuffer{File: os.NewFile(uintptr(fd), "capture"), Offset: buf.offset}, Width: buf.width, Height: buf.height, Stride: buf.stride, Format: buf.format, Session: tag.session, Exclude: tag.exclude, CaptureRevision: tag.revision, Workspace: tag.workspace, Window: tag.window, OffScreen: tag.offscreen, Indicate: true}
+	req := domain.CaptureRequest{ID: id, Output: o.name(), Region: rect, Cursor: cursor, Dst: domain.SHMBuffer{File: os.NewFile(uintptr(fd), "capture"), Offset: buf.offset}, Width: buf.width, Height: buf.height, Stride: buf.stride, Format: buf.format, Session: tag.session, Exclude: tag.exclude, CaptureRevision: tag.revision, Workspace: tag.workspace, Window: tag.window, OffScreen: tag.offscreen, Indicate: true}
 	select {
 	case s.channels.Captures <- req:
 		s.log.Debug().Uint64("id", id).Str("output", o.name()).Stringer("region", rect).Uint32("format", format).Bool("cursor", cursor).Msg("capture requested")
@@ -247,7 +247,7 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 const capturedRingSize = ports.MaxCaptureInflight + 8
 
 // applyCaptured settles one capture reply on the display goroutine.
-func (s *Server) applyCaptured(done ports.CaptureDone) {
+func (s *Server) applyCaptured(done domain.CaptureDone) {
 	delete(s.captureInflight, done.ID)
 	if fn := s.captureReplies[done.ID]; fn != nil {
 		delete(s.captureReplies, done.ID)

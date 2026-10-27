@@ -7,7 +7,6 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/virtualkeyboard"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
 )
@@ -23,8 +22,8 @@ type virtualKeyboard struct {
 	server *Server
 	fd     int // sealed copy of the client keymap, -1 before one
 	size   uint32
-	text   string         // the keymap, compared with the active one
-	mods   ports.ModState // last modifiers request, zero before one
+	text   string          // the keymap, compared with the active one
+	mods   domain.ModState // last modifiers request, zero before one
 	// pressed are keys held on focus; a focus change releases them by leave.
 	pressed      map[uint32]bool
 	focus        domain.WindowID
@@ -162,7 +161,7 @@ func (k *virtualKeyboard) Modifiers(r *virtualkeyboard.ZwpVirtualKeyboardV1, dep
 	if !k.admitted() {
 		return
 	}
-	k.mods = ports.ModState{Depressed: depressed, Latched: latched, Locked: locked, Group: group}
+	k.mods = domain.ModState{Depressed: depressed, Latched: latched, Locked: locked, Group: group}
 	for _, kb := range k.keyboards(r) {
 		kb.SendModifiers(k.server.serial, depressed, latched, locked, group)
 	}
@@ -177,7 +176,7 @@ func (k *virtualKeyboard) admitted() bool {
 	}
 	if state.Protected || state.Generation != k.generation {
 		clear(k.pressed)
-		k.mods = ports.ModState{}
+		k.mods = domain.ModState{}
 		k.focus = 0
 		k.generation = state.Generation
 		k.dropReleases = true

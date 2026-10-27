@@ -19,10 +19,10 @@ type dndRig struct {
 	one, two domain.Rect
 }
 
-func startDnd(t *testing.T, outs ...ports.OutputInfo) *dndRig {
+func startDnd(t *testing.T, outs ...domain.OutputInfo) *dndRig {
 	t.Helper()
 	if len(outs) == 0 {
-		outs = []ports.OutputInfo{dragOut}
+		outs = []domain.OutputInfo{dragOut}
 	}
 	r := startDragRig(t, nil, outs...)
 	r.client <- ports.WindowMapped{ID: 1}
@@ -123,7 +123,7 @@ func TestDataDragSendsNothingToClients(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		d := startDnd(t)
 		d.start(t, 0)
-		d.in(ports.PointerAxis{Vertical: ports.ScrollAxis{Set: true, Value: 1}})
+		d.in(ports.PointerAxis{Vertical: domain.ScrollAxis{Set: true, Value: 1}})
 		d.in(ports.PinchBegin{Fingers: 2, Time: time.Second})
 		d.in(ports.PinchUpdate{Scale: 2, Time: time.Second})
 		d.in(ports.PinchEnd{Time: time.Second})
@@ -333,7 +333,7 @@ func TestDataDragLockCancelsIt(t *testing.T) {
 		d.settle(t)
 		locked := domain.SecurityState{Generation: 1, Protected: true}
 		d.epoch.Store(locked)
-		d.client <- ports.SessionLockChanged{State: locked, Surfaces: []ports.LockSurfacePlacement{{ID: 10, Output: "A", Width: 1000, Height: 600}}}
+		d.client <- ports.SessionLockChanged{State: locked, Surfaces: []domain.LockSurfacePlacement{{ID: 10, Output: "A", Width: 1000, Height: 600}}}
 		set := d.settle(t)
 		if _, ok := windowIn(set, "A", dndIcon); ok {
 			t.Fatal("icon drawn while locked")
@@ -441,7 +441,7 @@ func TestDataDragIconIsLastWindowAtCursor(t *testing.T) {
 
 func TestDataDragIconOnScreenUnderCursor(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		other := ports.OutputInfo{Name: "B", Width: 800, Height: 600}
+		other := domain.OutputInfo{Name: "B", Width: 800, Height: 600}
 		d := startDnd(t, dragOut, other)
 		d.start(t, dndIcon)
 		d.client <- ports.DataDragIcon{ID: dndIcon, X: 2, Y: 3, W: 10, H: 10}
@@ -482,7 +482,7 @@ func TestDataDragNoIconIgnoresIconEvents(t *testing.T) {
 
 func TestDataDragFocusScreenFollowsPointer(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startDragRig(t, nil, dragOut, ports.OutputInfo{Name: "B", Width: 1000, Height: 600})
+		r := startDragRig(t, nil, dragOut, domain.OutputInfo{Name: "B", Width: 1000, Height: 600})
 		r.client <- ports.WindowMapped{ID: 1}
 		r.settle(t)
 		r.moveTo(1500, 300, 1)

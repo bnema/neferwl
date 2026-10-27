@@ -26,23 +26,23 @@ func laterClock(t *testing.T) *portsmocks.MockClock {
 }
 
 func TestArrangeLayers(t *testing.T) {
-	bar := ports.LayerSurface{ID: 1, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Width: 1920, Height: 30, ExclusiveZone: 30}
+	bar := domain.LayerSurface{ID: 1, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Width: 1920, Height: 30, ExclusiveZone: 30}
 	tests := []struct {
 		name   string
-		layers []ports.LayerSurface
+		layers []domain.LayerSurface
 		rects  []domain.Rect
 		usable domain.Rect
 	}{
-		{"top", []ports.LayerSurface{bar}, []domain.Rect{{W: 1920, H: 30}}, domain.Rect{Y: 30, W: 1920, H: 1050}},
-		{"bottom margin", []ports.LayerSurface{{Anchor: ports.AnchorBottom, Width: 100, Height: 20, ExclusiveZone: 20, Margin: [4]int32{0, 0, 5, 0}}}, []domain.Rect{{X: 910, Y: 1055, W: 100, H: 20}}, domain.Rect{W: 1920, H: 1055}},
-		{"left dock", []ports.LayerSurface{{Anchor: ports.AnchorLeft | ports.AnchorTop | ports.AnchorBottom, Width: 40, Height: 1080, ExclusiveZone: 40}}, []domain.Rect{{W: 40, H: 1080}}, domain.Rect{X: 40, W: 1880, H: 1080}},
-		{"center", []ports.LayerSurface{{Width: 100, Height: 40, Layer: domain.LayerOverlay}}, []domain.Rect{{X: 910, Y: 520, W: 100, H: 40}}, domain.Rect{W: 1920, H: 1080}},
-		{"opposing horizontal anchors with margins", []ports.LayerSurface{{Anchor: ports.AnchorLeft | ports.AnchorRight, Width: 100, Height: 20, Margin: [4]int32{0, 30, 0, 10}}}, []domain.Rect{{X: 900, Y: 530, W: 100, H: 20}}, domain.Rect{W: 1920, H: 1080}},
-		{"top only", []ports.LayerSurface{{Anchor: ports.AnchorTop, Width: 100, Height: 20, Margin: [4]int32{7, 0, 0, 0}}}, []domain.Rect{{X: 910, Y: 7, W: 100, H: 20}}, domain.Rect{W: 1920, H: 1080}},
-		{"full span between margins", []ports.LayerSurface{{Anchor: ports.AnchorLeft | ports.AnchorRight | ports.AnchorTop, Height: 20, Margin: [4]int32{7, 30, 0, 10}}}, []domain.Rect{{X: 10, Y: 7, W: 1880, H: 20}}, domain.Rect{W: 1920, H: 1080}},
-		{"opposing vertical anchors with margins", []ports.LayerSurface{{Anchor: ports.AnchorTop | ports.AnchorBottom, Width: 100, Height: 20, Margin: [4]int32{10, 0, 30, 0}}}, []domain.Rect{{X: 910, Y: 520, W: 100, H: 20}}, domain.Rect{W: 1920, H: 1080}},
-		{"minus one", []ports.LayerSurface{bar, {Layer: domain.LayerTop, Anchor: ports.AnchorTop, Width: 100, Height: 20, ExclusiveZone: -1}}, []domain.Rect{{W: 1920, H: 30}, {X: 910, W: 100, H: 20}}, domain.Rect{Y: 30, W: 1920, H: 1050}},
-		{"stack", []ports.LayerSurface{bar, {Layer: domain.LayerTop, Anchor: bar.Anchor, Width: 1920, Height: 20, ExclusiveZone: 20}}, []domain.Rect{{W: 1920, H: 30}, {Y: 30, W: 1920, H: 20}}, domain.Rect{Y: 50, W: 1920, H: 1030}},
+		{"top", []domain.LayerSurface{bar}, []domain.Rect{{W: 1920, H: 30}}, domain.Rect{Y: 30, W: 1920, H: 1050}},
+		{"bottom margin", []domain.LayerSurface{{Anchor: ports.AnchorBottom, Width: 100, Height: 20, ExclusiveZone: 20, Margin: [4]int32{0, 0, 5, 0}}}, []domain.Rect{{X: 910, Y: 1055, W: 100, H: 20}}, domain.Rect{W: 1920, H: 1055}},
+		{"left dock", []domain.LayerSurface{{Anchor: ports.AnchorLeft | ports.AnchorTop | ports.AnchorBottom, Width: 40, Height: 1080, ExclusiveZone: 40}}, []domain.Rect{{W: 40, H: 1080}}, domain.Rect{X: 40, W: 1880, H: 1080}},
+		{"center", []domain.LayerSurface{{Width: 100, Height: 40, Layer: domain.LayerOverlay}}, []domain.Rect{{X: 910, Y: 520, W: 100, H: 40}}, domain.Rect{W: 1920, H: 1080}},
+		{"opposing horizontal anchors with margins", []domain.LayerSurface{{Anchor: ports.AnchorLeft | ports.AnchorRight, Width: 100, Height: 20, Margin: [4]int32{0, 30, 0, 10}}}, []domain.Rect{{X: 900, Y: 530, W: 100, H: 20}}, domain.Rect{W: 1920, H: 1080}},
+		{"top only", []domain.LayerSurface{{Anchor: ports.AnchorTop, Width: 100, Height: 20, Margin: [4]int32{7, 0, 0, 0}}}, []domain.Rect{{X: 910, Y: 7, W: 100, H: 20}}, domain.Rect{W: 1920, H: 1080}},
+		{"full span between margins", []domain.LayerSurface{{Anchor: ports.AnchorLeft | ports.AnchorRight | ports.AnchorTop, Height: 20, Margin: [4]int32{7, 30, 0, 10}}}, []domain.Rect{{X: 10, Y: 7, W: 1880, H: 20}}, domain.Rect{W: 1920, H: 1080}},
+		{"opposing vertical anchors with margins", []domain.LayerSurface{{Anchor: ports.AnchorTop | ports.AnchorBottom, Width: 100, Height: 20, Margin: [4]int32{10, 0, 30, 0}}}, []domain.Rect{{X: 910, Y: 520, W: 100, H: 20}}, domain.Rect{W: 1920, H: 1080}},
+		{"minus one", []domain.LayerSurface{bar, {Layer: domain.LayerTop, Anchor: ports.AnchorTop, Width: 100, Height: 20, ExclusiveZone: -1}}, []domain.Rect{{W: 1920, H: 30}, {X: 910, W: 100, H: 20}}, domain.Rect{Y: 30, W: 1920, H: 1050}},
+		{"stack", []domain.LayerSurface{bar, {Layer: domain.LayerTop, Anchor: bar.Anchor, Width: 1920, Height: 20, ExclusiveZone: 20}}, []domain.Rect{{W: 1920, H: 30}, {Y: 30, W: 1920, H: 20}}, domain.Rect{Y: 50, W: 1920, H: 1030}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -60,7 +60,7 @@ func TestArrangeLayers(t *testing.T) {
 			})
 		})
 	}
-	layers := []ports.LayerSurface{{ID: 1, Layer: domain.LayerOverlay}, {ID: 2, Layer: domain.LayerBottom}, {ID: 3, Layer: domain.LayerBackground}, {ID: 4, Layer: domain.LayerTop}, {ID: 5, Layer: domain.LayerBottom}}
+	layers := []domain.LayerSurface{{ID: 1, Layer: domain.LayerOverlay}, {ID: 2, Layer: domain.LayerBottom}, {ID: 3, Layer: domain.LayerBackground}, {ID: 4, Layer: domain.LayerTop}, {ID: 5, Layer: domain.LayerBottom}}
 	got, _ := arrangeLayers(100, 100, layers)
 	for i, id := range []domain.WindowID{3, 2, 5, 4, 1} {
 		if got[i].ID != id {
@@ -97,15 +97,15 @@ func TestLayerChangedChannels(t *testing.T) {
 				return domain.Scene{}
 			}
 		}
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 1920, Height: 1080}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 1920, Height: 1080}}
 		recv()
 		client <- ports.WindowMapped{ID: 1}
 		before := recv()
 		for len(commands) > 0 {
 			<-commands
 		}
-		bar := ports.LayerSurface{ID: 2, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Width: 1920, Height: 30, ExclusiveZone: 30}
-		client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar}}
+		bar := domain.LayerSurface{ID: 2, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Width: 1920, Height: 30, ExclusiveZone: 30}
+		client <- ports.LayerChanged{Layers: []domain.LayerSurface{bar}}
 		scene := recv()
 		if len(scene.Layers) != 1 || scene.Layers[0].Rect != (domain.Rect{W: 1920, H: 30}) || len(scene.Windows) != 1 || scene.Windows[0].Rect.Y < 30 {
 			t.Fatalf("scene: %v", scene)
@@ -124,7 +124,7 @@ func TestLayerChangedChannels(t *testing.T) {
 			t.Fatal("configure timeout")
 		}
 		scene.Layers[0].Rect.Y = 99
-		client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar}}
+		client <- ports.LayerChanged{Layers: []domain.LayerSurface{bar}}
 		if next := recv(); next.Layers[0].Rect.Y != 0 {
 			t.Fatalf("scene alias: %v", next)
 		}
@@ -219,11 +219,11 @@ func TestFullscreenSceneLayers(t *testing.T) {
 			}
 			return ids
 		}
-		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		recv()
 		client <- ports.WindowMapped{ID: 1}
 		recv()
-		all := []ports.LayerSurface{
+		all := []domain.LayerSurface{
 			{ID: 5, Layer: domain.LayerBackground, Anchor: 15},
 			{ID: 6, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 10},
 			{ID: 7, Layer: domain.LayerOverlay, Width: 20, Height: 10},
@@ -236,7 +236,7 @@ func TestFullscreenSceneLayers(t *testing.T) {
 		if got := layers(recv()); len(got) != 1 || got[0] != 5 {
 			t.Fatalf("fullscreen layers %v, want the background", got)
 		}
-		locker := ports.LayerSurface{ID: 8, Layer: domain.LayerOverlay, Anchor: 15, Keyboard: 1}
+		locker := domain.LayerSurface{ID: 8, Layer: domain.LayerOverlay, Anchor: 15, Keyboard: 1}
 		client <- ports.LayerChanged{Layers: append(all, locker)}
 		if got := layers(recv()); len(got) != 2 || got[1] != 8 {
 			t.Fatalf("fullscreen layers %v, want the background and the locker", got)

@@ -200,12 +200,12 @@ func (l *layerSurface) close() {
 }
 
 func (s *Server) layerChanged() {
-	list := make([]ports.LayerSurface, 0)
+	list := make([]domain.LayerSurface, 0)
 	for _, l := range s.layers {
 		if !l.mapped {
 			continue
 		}
-		v := ports.LayerSurface{ID: l.id, Layer: l.current.layer, Anchor: l.current.anchor, ExclusiveZone: l.current.zone, Margin: l.current.margin, Namespace: l.namespace, Keyboard: l.current.keyboard}
+		v := domain.LayerSurface{ID: l.id, Layer: l.current.layer, Anchor: l.current.anchor, ExclusiveZone: l.current.zone, Margin: l.current.margin, Namespace: l.namespace, Keyboard: l.current.keyboard}
 		if l.capture != nil {
 			// A capture HUD never takes the keyboard.
 			v.Keyboard = 0

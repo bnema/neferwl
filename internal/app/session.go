@@ -193,7 +193,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	if s.hw == nil {
 		traceDamage := logging.Enabled(ctx, "render-damage")
 		s.newRenderer = func(w, h int) (ports.Renderer, error) {
-			return s.gpu.NewRenderer(w, h, ports.RendererOptions{Virtual: true, Readback: opts.ScreenshotRaw, TraceDamage: traceDamage})
+			return s.gpu.NewRenderer(w, h, domain.RendererOptions{Virtual: true, Readback: opts.ScreenshotRaw, TraceDamage: traceDamage})
 		}
 	}
 	return s, nil
@@ -274,7 +274,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 		defer workers.Done()
 		if hw != nil {
 			// Core sends the first layout once DRM reports the outputs.
-			var layout ports.Layout
+			var layout domain.Layout
 			select {
 			case layout = <-p.layouts:
 			case <-ctx.Done():

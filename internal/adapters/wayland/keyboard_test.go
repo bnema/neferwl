@@ -257,7 +257,7 @@ func TestSetModifiersOverrideAndRestore(t *testing.T) {
 	const capsLocked = 2
 	var id domain.WindowID
 	set := make(chan struct{})
-	s.display.Do(func() { s.seat.modState = ports.ModState{Locked: capsLocked}; id = s.seat.focused; close(set) })
+	s.display.Do(func() { s.seat.modState = domain.ModState{Locked: capsLocked}; id = s.seat.focused; close(set) })
 	<-set
 	wait := func() {
 		t.Helper()
@@ -275,14 +275,14 @@ func TestSetModifiersOverrideAndRestore(t *testing.T) {
 	if !slices.Equal(proxy.depress, []uint32{xkbControl | xkbShift}) || !slices.Equal(proxy.locked, []uint32{capsLocked}) {
 		t.Fatalf("override depressed %v locked %v", proxy.depress, proxy.locked)
 	}
-	done := make(chan ports.ModState, 1)
-	commands <- ports.SetModifiers{ID: id, Restore: true, State: ports.ModState{Locked: capsLocked}}
+	done := make(chan domain.ModState, 1)
+	commands <- ports.SetModifiers{ID: id, Restore: true, State: domain.ModState{Locked: capsLocked}}
 	wait()
 	if !slices.Equal(proxy.depress, []uint32{xkbControl | xkbShift, 0}) || !slices.Equal(proxy.locked, []uint32{capsLocked, capsLocked}) {
 		t.Fatalf("restore depressed %v locked %v", proxy.depress, proxy.locked)
 	}
 	s.display.Do(func() { done <- s.seat.modState })
-	if m := <-done; m != (ports.ModState{Locked: capsLocked}) {
+	if m := <-done; m != (domain.ModState{Locked: capsLocked}) {
 		t.Fatalf("seat state changed: %+v", m)
 	}
 }
@@ -295,13 +295,13 @@ func TestSetModifiersRestoreAdoptsCoreState(t *testing.T) {
 	const shiftLatched, capsLocked = 1, 2
 	var id domain.WindowID
 	set := make(chan struct{})
-	s.display.Do(func() { s.seat.modState = ports.ModState{Latched: shiftLatched}; id = s.seat.focused; close(set) })
+	s.display.Do(func() { s.seat.modState = domain.ModState{Latched: shiftLatched}; id = s.seat.focused; close(set) })
 	<-set
 	proxy.depress, proxy.locked = nil, nil
-	want := ports.ModState{Locked: capsLocked} // the latch was consumed
+	want := domain.ModState{Locked: capsLocked} // the latch was consumed
 	commands <- ports.SetModifiers{ID: id, Restore: true, State: want}
 	dispatchUntil(t, target, func() bool { return len(proxy.locked) > 0 })
-	var got ports.ModState
+	var got domain.ModState
 	s.display.Do(func() { got = s.seat.modState })
 	if got != want {
 		t.Fatalf("seat state %+v, want %+v", got, want)

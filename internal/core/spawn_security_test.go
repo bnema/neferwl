@@ -26,9 +26,9 @@ func TestFullSpawnQueueSlotsTerminalsExplicitRemainTransitionSafe(t *testing.T) 
 				gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return epoch.Load().(domain.SecurityState) })
 				c.opts.Security = gate
 				c.syncSecurity()
-				spawn := make(chan ports.SpawnRequest, 1)
+				spawn := make(chan domain.SpawnRequest, 1)
 				c.ch.Spawn = spawn
-				sentinel := ports.SpawnRequest{Argv: []string{"occupied"}}
+				sentinel := domain.SpawnRequest{Argv: []string{"occupied"}}
 				spawn <- sentinel
 				key := slotKey{workspace: "dev", index: 1}
 				c.cfg.Terminal.Command = []string{"terminal"}
@@ -110,8 +110,8 @@ func TestRunStartupDrainsWithoutFurtherOwnerEvents(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := hiddenCaptureCommands(t)
 		c.cfg.Startup = [][]string{{"one"}, {"two"}, {"three"}}
-		spawn := make(chan ports.SpawnRequest, 1)
-		spawn <- ports.SpawnRequest{Argv: []string{"occupied"}}
+		spawn := make(chan domain.SpawnRequest, 1)
+		spawn <- domain.SpawnRequest{Argv: []string{"occupied"}}
 		c.ch.Spawn = spawn
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
@@ -142,7 +142,7 @@ func TestRunStartupPendingDisabledWhileLockedResumesOnUnlockEvent(t *testing.T) 
 		gate := portsmocks.NewMockSessionSecurity(t)
 		gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return epoch.Load().(domain.SecurityState) })
 		c.opts.Security = gate
-		spawn := make(chan ports.SpawnRequest, 1)
+		spawn := make(chan domain.SpawnRequest, 1)
 		c.ch.Spawn = spawn
 		client := make(chan ports.ClientEvent, 1)
 		c.ch.Client = client
@@ -177,7 +177,7 @@ func TestStartupSuccessfulHandoffConsumesDespiteImmediateTransition(t *testing.T
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := hiddenCaptureCommands(t)
 		c.startup = [][]string{{"once"}}
-		spawn := make(chan ports.SpawnRequest, 1)
+		spawn := make(chan domain.SpawnRequest, 1)
 		c.ch.Spawn = spawn
 		var epoch atomic.Value
 		epoch.Store(domain.SecurityState{})
@@ -219,7 +219,7 @@ func TestRunSelectableStartupConsumedOnceAcrossReceiverTransition(t *testing.T) 
 		gate := portsmocks.NewMockSessionSecurity(t)
 		gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return epoch.Load().(domain.SecurityState) })
 		c.opts.Security = gate
-		spawn := make(chan ports.SpawnRequest)
+		spawn := make(chan domain.SpawnRequest)
 		c.ch.Spawn = spawn
 		client := make(chan ports.ClientEvent, 1)
 		c.ch.Client = client

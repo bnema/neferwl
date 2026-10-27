@@ -22,8 +22,8 @@ type outputFeed struct {
 	Scenes   <-chan domain.Scene
 	Contents <-chan *domain.ContentBatch
 	Returns  ports.ContentReturn
-	Cursor   <-chan ports.CursorChange
-	Captures <-chan ports.CaptureRequest
+	Cursor   <-chan domain.CursorChange
+	Captures <-chan domain.CaptureRequest
 	Security <-chan domain.SecurityState
 	Instance domain.OutputInstance
 	StartOff bool
@@ -58,7 +58,7 @@ type outputSet struct {
 	// attach is nil when no wayland server feeds contents (tests).
 	attach         contentAttacher
 	stopped        chan outputStopped
-	captured       chan<- ports.CaptureDone
+	captured       chan<- domain.CaptureDone
 	ctx            context.Context
 	quit           chan struct{} // closed by wait: nobody reads stopped any more
 	security       ports.SessionSecurity
@@ -90,7 +90,7 @@ type runningOutput struct {
 
 // newOutputSet returns a set whose router feeds the outputs from in, until
 // ctx ends or wait stops it.
-func newOutputSet(ctx context.Context, captured chan<- ports.CaptureDone, in outputRoutes) *outputSet {
+func newOutputSet(ctx context.Context, captured chan<- domain.CaptureDone, in outputRoutes) *outputSet {
 	rctx, stopRouter := context.WithCancel(ctx)
 	s := &outputSet{captured: captured, ctx: ctx, outs: map[string]*runningOutput{}, router: newOutputRouter(ctx, captured, in), stopRouter: stopRouter, stopped: make(chan outputStopped), quit: make(chan struct{})}
 	go s.router.run(rctx)
@@ -421,7 +421,7 @@ func (c *cursors) move(output string, x, y float64, motion bool) {
 
 // routeCapture transfers the request to its output or closes it on failure.
 // failQueued fails the captures left in a stopped output's mailbox.
-func failQueued(ctx context.Context, m *mailbox, captured chan<- ports.CaptureDone) {
+func failQueued(ctx context.Context, m *mailbox, captured chan<- domain.CaptureDone) {
 	for {
 		select {
 		case req := <-m.captures:
@@ -434,7 +434,7 @@ func failQueued(ctx context.Context, m *mailbox, captured chan<- ports.CaptureDo
 
 // drainCaptures releases requests left in the app queue. Call it once the
 // producer (the wayland server) has stopped, so none can arrive after it.
-func drainCaptures(ctx context.Context, incoming <-chan ports.CaptureRequest, replies chan<- ports.CaptureDone) {
+func drainCaptures(ctx context.Context, incoming <-chan domain.CaptureRequest, replies chan<- domain.CaptureDone) {
 	for {
 		select {
 		case q, ok := <-incoming:

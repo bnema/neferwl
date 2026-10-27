@@ -11,7 +11,7 @@ import (
 // lockState is the session lock's surfaces and keyboard focus. A new
 // security epoch resets it whole.
 type lockState struct {
-	surfaces []ports.LockSurfacePlacement
+	surfaces []domain.LockSurfacePlacement
 	focus    WindowID
 	pinned   bool // focus was clicked or typed into: it keeps focus
 }
@@ -43,7 +43,7 @@ func (c *Core) syncSecurity() bool {
 	c.lastBorderClick.ws = nil
 	c.pointerAt, c.motionTime = [2]float64{}, 0
 	c.keyboard = keyboard{}
-	c.constrained, c.constraint = ports.PointerConstrained{}, ports.PointerConstraint{}
+	c.constrained, c.constraint = ports.PointerConstrained{}, domain.PointerConstraint{}
 	if c.ch.Constraints != nil {
 		latest(c.ch.Constraints, c.constraint)
 	}
@@ -136,14 +136,14 @@ func (c *Core) applyLockChanged(v ports.SessionLockChanged) bool {
 	return true
 }
 
-func (c *Core) lockSurface(sc *screen) (ports.LockSurfacePlacement, bool) {
+func (c *Core) lockSurface(sc *screen) (domain.LockSurfacePlacement, bool) {
 	o := sc.mon.Output()
 	for _, s := range c.lock.surfaces {
 		if s.ID != 0 && sc.name() != "" && s.Output == sc.name() && s.Width == o.W && s.Height == o.H && o.W > 0 && o.H > 0 {
 			return s, true
 		}
 	}
-	return ports.LockSurfacePlacement{}, false
+	return domain.LockSurfacePlacement{}, false
 }
 
 func (c *Core) validLockID(id WindowID) bool {

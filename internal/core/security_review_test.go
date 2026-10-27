@@ -29,7 +29,7 @@ func reviewReceive[T any](t *testing.T, ch <-chan T) T {
 func TestInputOutputSwitchBackpressureKeepsAdmittedEpoch(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := hiddenCaptureCommands(t)
-		c.addScreen(ports.OutputInfo{Name: "B", Width: 200, Height: 100})
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 200, Height: 100})
 		var state atomic.Value
 		state.Store(domain.SecurityState{})
 		gate := portsmocks.NewMockSessionSecurity(t)
@@ -74,7 +74,7 @@ func TestExactEpochAdmissionPreservesProducerModifierState(t *testing.T) {
 		gate.EXPECT().Snapshot().Return(state)
 		c.opts.Security = gate
 		c.syncSecurity()
-		key := ports.KeyEvent{Keycode: 58, Keysym: "Control_L", Pressed: true, Mods: domain.ModCtrl, State: ports.ModState{Depressed: 1 << 19, Latched: 1 << 21, Locked: 1 << 23, Group: 2}}
+		key := ports.KeyEvent{Keycode: 58, Keysym: "Control_L", Pressed: true, Mods: domain.ModCtrl, State: domain.ModState{Depressed: 1 << 19, Latched: 1 << 21, Locked: 1 << 23, Group: 2}}
 		ev, ok := c.admitInput(ports.SecurityInput{State: state, Event: key})
 		if !ok || ev.(ports.KeyEvent) != key {
 			t.Fatalf("producer state reinterpreted: %+v", ev)
@@ -107,7 +107,7 @@ func TestEpochChangeSuppressesSpawnAndDefersSlots(t *testing.T) {
 		c.opts.Security = gate
 		commands := make(chan ports.ClientCommand, 8)
 		c.ch.Commands = commands
-		spawn := make(chan ports.SpawnRequest, 2)
+		spawn := make(chan domain.SpawnRequest, 2)
 		c.ch.Spawn = spawn
 		err := c.spawnSlots(context.Background(), false)
 		if err != nil {
@@ -153,7 +153,7 @@ func TestTerminalEpochChangeSuppressesSpawnAndRestoresRetry(t *testing.T) {
 		c.opts.Security = gate
 		commands := make(chan ports.ClientCommand, 8)
 		c.ch.Commands = commands
-		spawn := make(chan ports.SpawnRequest, 1)
+		spawn := make(chan domain.SpawnRequest, 1)
 		c.ch.Spawn = spawn
 		err := c.spawnEmpty(context.Background())
 		if err != nil {
@@ -174,7 +174,7 @@ func TestStartupWorkspaceSnapshotHasNoOutputBeforeOutputAdded(t *testing.T) {
 		var cfg domain.Config
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
-		workspaces := make(chan ports.Workspaces, 1)
+		workspaces := make(chan domain.Workspaces, 1)
 		c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Workspaces: workspaces}, Options{})
 		if err != nil {
 			t.Fatal(err)
@@ -184,7 +184,7 @@ func TestStartupWorkspaceSnapshotHasNoOutputBeforeOutputAdded(t *testing.T) {
 		if len(initial.Outputs) != 0 {
 			t.Fatal(initial)
 		}
-		c.addScreen(ports.OutputInfo{Name: "A", Width: 100, Height: 80})
+		c.addScreen(domain.OutputInfo{Name: "A", Width: 100, Height: 80})
 		c.publishWorkspaces()
 		if next := <-workspaces; len(next.Outputs) != 1 {
 			t.Fatal(next)

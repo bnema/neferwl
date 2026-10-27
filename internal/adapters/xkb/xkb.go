@@ -152,7 +152,7 @@ func (k *Keymap) Key(evdevCode uint32, pressed bool, t time.Duration) ports.KeyE
 		layout := k.serializeLayout(k.state, layoutEffective)
 		event.Base = k.levelName(code, layout, 0)
 	}
-	event.State = ports.ModState{
+	event.State = domain.ModState{
 		Depressed: k.serializeMods(k.state, modsDepressed), Latched: k.serializeMods(k.state, modsLatched),
 		Locked: k.serializeMods(k.state, modsLocked), Group: k.serializeLayout(k.state, layoutEffective),
 	}

@@ -37,7 +37,7 @@ const (
 // Run serves requests until ctx is done. It handles one request at a time;
 // a request that arrives meanwhile is answered with ErrBusy. Every request
 // gets exactly one result on results.
-func Run(ctx context.Context, requests <-chan ports.HintScanRequest, captures chan<- ports.CaptureRequest, captured <-chan ports.CaptureDone, results chan<- ports.HintScanResult, opts Options) error {
+func Run(ctx context.Context, requests <-chan domain.HintScanRequest, captures chan<- domain.CaptureRequest, captured <-chan domain.CaptureDone, results chan<- domain.HintScanResult, opts Options) error {
 	return run(ctx, requests, captures, captured, results, captureTimeout, opts)
 }
 
@@ -69,7 +69,7 @@ func (f *frame) String() string {
 	return fmt.Sprintf("frame(stride=%d)", f.stride)
 }
 
-func run(ctx context.Context, requests <-chan ports.HintScanRequest, captures chan<- ports.CaptureRequest, captured <-chan ports.CaptureDone, results chan<- ports.HintScanResult, timeout time.Duration, opts Options) error {
+func run(ctx context.Context, requests <-chan domain.HintScanRequest, captures chan<- domain.CaptureRequest, captured <-chan domain.CaptureDone, results chan<- domain.HintScanResult, timeout time.Duration, opts Options) error {
 	w := &worker{dumpDir: opts.DumpDir, sources: makeSources(opts)}
 	defer func() {
 		for i := len(w.sources) - 1; i >= 0; i-- {
@@ -113,7 +113,7 @@ func (w *worker) dump(ctx context.Context) {
 	}
 }
 
-func send(ctx context.Context, results chan<- ports.HintScanResult, res ports.HintScanResult) bool {
+func send(ctx context.Context, results chan<- domain.HintScanResult, res domain.HintScanResult) bool {
 	select {
 	case results <- res:
 		return true
@@ -122,10 +122,10 @@ func send(ctx context.Context, results chan<- ports.HintScanResult, res ports.Hi
 	}
 }
 
-func (w *worker) serve(ctx context.Context, req ports.HintScanRequest, requests <-chan ports.HintScanRequest, captures chan<- ports.CaptureRequest, captured <-chan ports.CaptureDone, results chan<- ports.HintScanResult, timeout time.Duration) ports.HintScanResult {
+func (w *worker) serve(ctx context.Context, req domain.HintScanRequest, requests <-chan domain.HintScanRequest, captures chan<- domain.CaptureRequest, captured <-chan domain.CaptureDone, results chan<- domain.HintScanResult, timeout time.Duration) domain.HintScanResult {
 	ctx, cancel := context.WithTimeout(ctx, scanBudget)
 	defer cancel()
-	res := ports.HintScanResult{Seq: req.Seq, Output: req.Output}
+	res := domain.HintScanResult{Seq: req.Seq, Output: req.Output}
 	if req.Width <= 0 || req.Height <= 0 || req.Width > maxPixels/req.Height {
 		res.Err = fmt.Errorf("%w: %dx%d", ErrBadRequest, req.Width, req.Height)
 		return res
@@ -159,7 +159,7 @@ func (w *worker) serve(ctx context.Context, req ports.HintScanRequest, requests 
 
 const scanBudget = 6 * time.Second
 
-func (w *worker) capture(ctx context.Context, req ports.HintScanRequest, requests <-chan ports.HintScanRequest, captures chan<- ports.CaptureRequest, captured <-chan ports.CaptureDone, results chan<- ports.HintScanResult, timeout time.Duration) (*frame, error) {
+func (w *worker) capture(ctx context.Context, req domain.HintScanRequest, requests <-chan domain.HintScanRequest, captures chan<- domain.CaptureRequest, captured <-chan domain.CaptureDone, results chan<- domain.HintScanResult, timeout time.Duration) (*frame, error) {
 	// The capture buffer is anonymous mapped memory, outside the Go heap. It
 	// is released once the detector answered, or by the dump job.
 	m := w.alloc(req.Width * req.Height * 4)
@@ -174,7 +174,7 @@ func (w *worker) capture(ctx context.Context, req ports.HintScanRequest, request
 	w.n++
 	id := ports.CaptureIDInternal | w.n
 	stride := req.Width * 4
-	creq := ports.CaptureRequest{
+	creq := domain.CaptureRequest{
 		ID:       id,
 		Output:   req.Output,
 		Region:   image.Rect(0, 0, req.Width, req.Height),
@@ -219,7 +219,7 @@ func (w *worker) capture(ctx context.Context, req ports.HintScanRequest, request
 			return &frame{pix: buf, stride: stride, m: m}, nil
 		case other := <-requests:
 			// The buffer is in use until the capture is done: answer now.
-			busy := ports.HintScanResult{Seq: other.Seq, Output: other.Output, Err: ErrBusy}
+			busy := domain.HintScanResult{Seq: other.Seq, Output: other.Output, Err: ErrBusy}
 			if !send(ctx, results, busy) {
 				abandon()
 				return nil, ctx.Err()
@@ -255,12 +255,12 @@ const maxWorkBoxes = 2000
 // [0,1] or no area is dropped; the others are clamped to the width x height
 // frame (physical), rounded outwards to logical pixels, and dropped when
 // under minTarget on a side.
-func targetsOf(dets []detection, scale float64, width, height int) []ports.HintTarget {
+func targetsOf(dets []detection, scale float64, width, height int) []domain.HintTarget {
 	if scale <= 0 {
 		scale = 1
 	}
 	fw, fh := float64(width), float64(height)
-	out := make([]ports.HintTarget, 0, len(dets))
+	out := make([]domain.HintTarget, 0, len(dets))
 	for _, d := range dets {
 		v := [4]float64{float64(d.x1), float64(d.y1), float64(d.x2), float64(d.y2)}
 		ok := d.score >= 0 && d.score <= 1 // false for NaN too
@@ -278,7 +278,7 @@ func targetsOf(dets []detection, scale float64, width, height int) []ports.HintT
 		if lx2-lx1 < minTarget || ly2-ly1 < minTarget {
 			continue
 		}
-		out = append(out, ports.HintTarget{Rect: domain.Rect{X: lx1, Y: ly1, W: lx2 - lx1, H: ly2 - ly1}, Score: d.score})
+		out = append(out, domain.HintTarget{Rect: domain.Rect{X: lx1, Y: ly1, W: lx2 - lx1, H: ly2 - ly1}, Score: d.score})
 	}
 	return out
 }

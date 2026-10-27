@@ -9,7 +9,6 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
@@ -19,7 +18,7 @@ func TestCopierImportsLinear(t *testing.T) {
 	if !g.syncFD {
 		t.Skip("GPU lacks sync_fd export")
 	}
-	renderer, err := g.NewRenderer(32, 16, ports.RendererOptions{})
+	renderer, err := g.NewRenderer(32, 16, domain.RendererOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +78,7 @@ func TestCopierRoundTrip(t *testing.T) {
 	var rs [2]*Renderer
 	var buffers [2][]domain.DMABuf
 	for i := range rs {
-		renderer, err := g.NewRenderer(32, 16, ports.RendererOptions{})
+		renderer, err := g.NewRenderer(32, 16, domain.RendererOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}

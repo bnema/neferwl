@@ -23,7 +23,7 @@ func BenchmarkRefreshShown(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	c.addScreen(ports.OutputInfo{Name: "A", Width: 3000, Height: 2000})
+	c.addScreen(domain.OutputInfo{Name: "A", Width: 3000, Height: 2000})
 	sc := c.cur()
 	for id := WindowID(1); id <= 30; id++ {
 		sc.mon.AddWindow(id)

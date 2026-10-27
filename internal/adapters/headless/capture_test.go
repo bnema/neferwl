@@ -48,7 +48,7 @@ func sessionCaptureFile(t *testing.T) domain.SHMBuffer {
 
 // runSession drives one frame with the given requests and returns the
 // renderer event order and the replies.
-func runSession(t *testing.T, scene domain.Scene, reqs []ports.CaptureRequest, wantReplies int) ([]string, []ports.CaptureDone) {
+func runSession(t *testing.T, scene domain.Scene, reqs []domain.CaptureRequest, wantReplies int) ([]string, []domain.CaptureDone) {
 	t.Helper()
 	ev := &events{}
 	r := portsmocks.NewMockRenderer(t)
@@ -73,8 +73,8 @@ func runSession(t *testing.T, scene domain.Scene, reqs []ports.CaptureRequest, w
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scenes := make(chan domain.Scene, 1)
-	incoming := make(chan ports.CaptureRequest)
-	replies := make(chan ports.CaptureDone, 8)
+	incoming := make(chan domain.CaptureRequest)
+	replies := make(chan domain.CaptureDone, 8)
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }, Captured: replies}, scenes, nil, nil, nil, incoming)
@@ -86,7 +86,7 @@ func runSession(t *testing.T, scene domain.Scene, reqs []ports.CaptureRequest, w
 		incoming <- q
 	}
 	scenes <- scene
-	var got []ports.CaptureDone
+	var got []domain.CaptureDone
 	for range wantReplies {
 		select {
 		case d := <-replies:
@@ -107,7 +107,7 @@ func sessionScene() domain.Scene {
 
 func TestExcludeCaptureOrderedBeforeDisplayedFrame(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		order, replies := runSession(t, sessionScene(), []ports.CaptureRequest{{ID: 1, Exclude: true, Session: 7}, {ID: 2}}, 2)
+		order, replies := runSession(t, sessionScene(), []domain.CaptureRequest{{ID: 1, Exclude: true, Session: 7}, {ID: 2}}, 2)
 		// The Exclude composition and its copy come first; the displayed frame and
 		// the standard capture (HUD and border included) follow.
 		require.Equal(t, []string{"render:excluded", "begin", "render:full", "begin"}, order)
@@ -121,7 +121,7 @@ func TestExcludeCaptureFailsClosedWithoutMatchingSession(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		scene := sessionScene()
 		scene.Capture = nil
-		order, replies := runSession(t, scene, []ports.CaptureRequest{{ID: 1, Exclude: true, Session: 7}, {ID: 2}}, 2)
+		order, replies := runSession(t, scene, []domain.CaptureRequest{{ID: 1, Exclude: true, Session: 7}, {ID: 2}}, 2)
 		require.Equal(t, []string{"render:full", "begin"}, order) // one frame, the standard capture only
 		byID := map[uint64]error{}
 		for _, d := range replies {
@@ -134,7 +134,7 @@ func TestExcludeCaptureFailsClosedWithoutMatchingSession(t *testing.T) {
 
 func TestStandardCaptureDuringSessionUsesOneComposition(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		order, replies := runSession(t, sessionScene(), []ports.CaptureRequest{{ID: 2}}, 1)
+		order, replies := runSession(t, sessionScene(), []domain.CaptureRequest{{ID: 2}}, 1)
 		require.Equal(t, []string{"render:full", "begin"}, order)
 		require.NoError(t, replies[0].Err)
 	})
@@ -170,8 +170,8 @@ func TestHiddenWorkspaceCaptureUsesChildRenderer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scenes := make(chan domain.Scene, 1)
-	incoming := make(chan ports.CaptureRequest)
-	replies := make(chan ports.CaptureDone, 2)
+	incoming := make(chan domain.CaptureRequest)
+	replies := make(chan domain.CaptureDone, 2)
 	done := make(chan error, 1)
 	var made [2]int
 	sink, presented := presentedSink(t, 4)
@@ -181,7 +181,7 @@ func TestHiddenWorkspaceCaptureUsesChildRenderer(t *testing.T) {
 			NewCaptureRenderer: func(w, h int) (ports.Renderer, error) { made = [2]int{w, h}; return child, nil },
 		}, scenes, nil, nil, nil, incoming)
 	}()
-	q := ports.CaptureRequest{ID: 1, Workspace: 9, OffScreen: true, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
+	q := domain.CaptureRequest{ID: 1, Workspace: 9, OffScreen: true, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
 	incoming <- q
 	scenes <- scene
 	// The owner may report an idle frame before receiving the first scene.
@@ -228,7 +228,7 @@ func TestHiddenWorkspaceCaptureWithoutCaptureSceneFails(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		scene := sessionScene()
 		scene.Capture.Workspace = 9
-		_, replies := runSession(t, scene, []ports.CaptureRequest{{ID: 1, Workspace: 9, OffScreen: true}}, 1)
+		_, replies := runSession(t, scene, []domain.CaptureRequest{{ID: 1, Workspace: 9, OffScreen: true}}, 1)
 		require.ErrorIs(t, replies[0].Err, capture.ErrOffscreenUnavailable)
 	})
 }
@@ -250,14 +250,14 @@ func TestRenderErrorDoesNotAnswerHandedRequestsAgain(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		scenes := make(chan domain.Scene, 1)
-		incoming := make(chan ports.CaptureRequest)
-		replies := make(chan ports.CaptureDone, 8)
+		incoming := make(chan domain.CaptureRequest)
+		replies := make(chan domain.CaptureDone, 8)
 		done := make(chan error, 1)
 		go func() {
 			done <- Run(ctx, Options{Width: 2, Height: 2, Captured: replies,
 				NewRenderer: func(int, int) (ports.Renderer, error) { return display, nil }}, scenes, nil, nil, nil, incoming)
 		}()
-		incoming <- ports.CaptureRequest{ID: 1, Exclude: true, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
+		incoming <- domain.CaptureRequest{ID: 1, Exclude: true, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
 		scenes <- sessionScene()
 		select {
 		case err := <-done:
@@ -281,13 +281,13 @@ func TestStandardCaptureNeverHoldsTheIndicator(t *testing.T) {
 		scene := sessionScene()
 		scene.Capture = nil
 		scene.CaptureIndicators = []domain.CaptureIndicator{{Rect: domain.Rect{W: 2, H: 2}}}
-		order, replies := runSession(t, scene, []ports.CaptureRequest{{ID: 2}}, 1)
+		order, replies := runSession(t, scene, []domain.CaptureRequest{{ID: 2}}, 1)
 		require.Equal(t, []string{"render:excluded", "begin", "render:full"}, order)
 		require.NoError(t, replies[0].Err)
 		// An Exclude request of the session is served from its own excluded frame.
 		scene = sessionScene()
 		scene.CaptureIndicators = []domain.CaptureIndicator{{Rect: domain.Rect{W: 2, H: 2}}}
-		order, replies = runSession(t, scene, []ports.CaptureRequest{{ID: 1, Exclude: true, Session: 7}, {ID: 2}}, 2)
+		order, replies = runSession(t, scene, []domain.CaptureRequest{{ID: 1, Exclude: true, Session: 7}, {ID: 2}}, 2)
 		require.Equal(t, []string{"render:excluded", "begin", "render:excluded", "begin", "render:full"}, order)
 		for _, d := range replies {
 			require.NoError(t, d.Err)
@@ -326,8 +326,8 @@ func TestCaptureWaitsForItsIndicatorScene(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		scenes := make(chan domain.Scene, 2)
-		incoming := make(chan ports.CaptureRequest)
-		replies := make(chan ports.CaptureDone, 4)
+		incoming := make(chan domain.CaptureRequest)
+		replies := make(chan domain.CaptureDone, 4)
 		done := make(chan error, 1)
 		go func() {
 			done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }, Captured: replies}, scenes, nil, nil, nil, incoming)
@@ -337,7 +337,7 @@ func TestCaptureWaitsForItsIndicatorScene(t *testing.T) {
 		synctest.Wait()
 		require.Equal(t, []string{"render:bare"}, ev.get())
 
-		incoming <- ports.CaptureRequest{ID: 1, Indicate: true, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
+		incoming <- domain.CaptureRequest{ID: 1, Indicate: true, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
 		synctest.Wait()
 		select {
 		case d := <-replies:
@@ -373,15 +373,15 @@ func TestCaptureWithoutIndicatorFailsAfterTheBoundedWait(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		scenes := make(chan domain.Scene, 1)
-		incoming := make(chan ports.CaptureRequest)
-		replies := make(chan ports.CaptureDone, 4)
+		incoming := make(chan domain.CaptureRequest)
+		replies := make(chan domain.CaptureDone, 4)
 		done := make(chan error, 1)
 		go func() {
 			done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }, Captured: replies}, scenes, nil, nil, nil, incoming)
 		}()
 		scenes <- domain.Scene{Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2}
 		start := time.Now()
-		incoming <- ports.CaptureRequest{ID: 1, Indicate: true, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
+		incoming <- domain.CaptureRequest{ID: 1, Indicate: true, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
 		select {
 		case d := <-replies:
 			require.ErrorIs(t, d.Err, capture.ErrIndicatorMissing)
@@ -426,16 +426,16 @@ func TestCaptureDeliveredOnlyWhenTheIndicatedFramePresents(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			scenes := make(chan domain.Scene, 1)
-			incoming := make(chan ports.CaptureRequest)
-			replies := make(chan ports.CaptureDone, 4)
+			incoming := make(chan domain.CaptureRequest)
+			replies := make(chan domain.CaptureDone, 4)
 			done := make(chan error, 1)
 			go func() {
 				done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }, Captured: replies}, scenes, nil, nil, nil, incoming)
 			}()
-			incoming <- ports.CaptureRequest{ID: 1, Indicate: true, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
+			incoming <- domain.CaptureRequest{ID: 1, Indicate: true, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
 			scenes <- domain.Scene{Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2, Windows: []domain.SceneWindow{{ID: 1}},
 				CaptureIndicators: []domain.CaptureIndicator{{Rect: domain.Rect{W: 2, H: 2}}}}
-			var d ports.CaptureDone
+			var d domain.CaptureDone
 			select {
 			case d = <-replies:
 			case <-time.After(3 * time.Second):

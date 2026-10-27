@@ -25,8 +25,8 @@ type barrierServer struct {
 	s        *Server
 	gate     *sessionsecurity.Gate
 	changes  chan domain.SecurityState
-	captures chan ports.CaptureRequest
-	captured chan ports.CaptureDone
+	captures chan domain.CaptureRequest
+	captured chan domain.CaptureDone
 	cancel   context.CancelFunc
 	stopped  chan struct{}
 	dir      string
@@ -35,8 +35,8 @@ type barrierServer struct {
 //testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func newBarrierServer(t *testing.T) *barrierServer {
 	t.Helper()
-	h := &barrierServer{gate: &sessionsecurity.Gate{}, changes: make(chan domain.SecurityState, 1), captures: make(chan ports.CaptureRequest, 4), captured: make(chan ports.CaptureDone, 4), stopped: make(chan struct{}), dir: t.TempDir()}
-	layout := ports.Layout{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 2, Height: 2}, Width: 2, Height: 2, Scale: 1}}
+	h := &barrierServer{gate: &sessionsecurity.Gate{}, changes: make(chan domain.SecurityState, 1), captures: make(chan domain.CaptureRequest, 4), captured: make(chan domain.CaptureDone, 4), stopped: make(chan struct{}), dir: t.TempDir()}
+	layout := domain.Layout{{Info: domain.OutputInfo{Name: "HEADLESS-1", Width: 2, Height: 2}, Width: 2, Height: 2, Scale: 1}}
 	var err error
 	h.s, err = New(Options{RuntimeDir: h.dir, Outputs: layout, Security: h.gate, CaptureAllow: allowStore(t, "*\n")}, Channels{SecurityChanges: h.changes, SecurityEvents: make(chan ports.SecurityBackendEvent, 16), Captures: h.captures, Captured: h.captured}, logging.For(context.Background(), "wayland"))
 	if err != nil {
@@ -73,7 +73,7 @@ func TestSessionLockBarrierWaitsForAdmittedCopyAfterFrameDeath(t *testing.T) {
 	defer unix.Close(fd)
 	a := &admissionClient{c: client, wlr: bindVersion(t, client, "zwlr_screencopy_manager_v1", 3), output: output, buf: buffer}
 	frame := a.captureWlr(t)
-	var request ports.CaptureRequest
+	var request domain.CaptureRequest
 	select {
 	case request = <-h.captures:
 	case <-waylandDeadline(2 * time.Second):
@@ -92,7 +92,7 @@ func TestSessionLockBarrierWaitsForAdmittedCopyAfterFrameDeath(t *testing.T) {
 	}).Once()
 	renderer.EXPECT().BeginCapture().Return(pixels, nil).Once()
 	renderer.EXPECT().EndCapture(pixels).Return().Once()
-	pipelineReplies := make(chan ports.CaptureDone, 1)
+	pipelineReplies := make(chan domain.CaptureDone, 1)
 	pipeline := capture.NewPipeline(context.Background(), pipelineReplies)
 	pipeline.Security = h.gate
 	released := false
@@ -106,7 +106,7 @@ func TestSessionLockBarrierWaitsForAdmittedCopyAfterFrameDeath(t *testing.T) {
 		// Once, but cleanup must not format bytes that are now unmapped.
 		pixels.Calls = nil // worker joined; follows capture/pipeline_test.go
 	})
-	pipeline.SubmitScoped(h.gate.Snapshot(), renderer, []ports.CaptureRequest{request})
+	pipeline.SubmitScoped(h.gate.Snapshot(), renderer, []domain.CaptureRequest{request})
 	select {
 	case <-entered:
 	case <-waylandDeadline(2 * time.Second):
@@ -130,7 +130,7 @@ func TestSessionLockBarrierWaitsForAdmittedCopyAfterFrameDeath(t *testing.T) {
 	}
 	close(release)
 	released = true
-	var completion ports.CaptureDone
+	var completion domain.CaptureDone
 	select {
 	case completion = <-pipelineReplies:
 	case <-waylandDeadline(2 * time.Second):
@@ -159,7 +159,7 @@ func TestSessionLockBarrierWaitsForAdmittedCopyAfterFrameDeath(t *testing.T) {
 	processed := make(chan struct{})
 	h.s.display.Do(func() {
 		original := h.s.captureReplies[request.ID]
-		h.s.captureReplies[request.ID] = func(done ports.CaptureDone) {
+		h.s.captureReplies[request.ID] = func(done domain.CaptureDone) {
 			if original != nil {
 				original(done)
 			} // frame destruction removes the wire reply, not credit
