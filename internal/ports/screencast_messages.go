@@ -42,7 +42,7 @@ type CastEvent struct {
 // CastOutput is one output of the inventory.
 type CastOutput struct {
 	Info    OutputInfo
-	Modes   []OutputMode
+	Modes   []domain.OutputMode
 	Current int // index into Modes, -1 when none
 	// X, Y, Width, Height are the logical placement.
 	X, Y, Width, Height int

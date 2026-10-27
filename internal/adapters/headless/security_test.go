@@ -100,7 +100,7 @@ func TestSecurityInitialBlackFenceBeforeLockerAndNoReadback(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := securityReceive(t, proof).(ports.SecurityOutputProof)
-	if p.Proof != (ports.OutputProtection{Generation: 7, Instance: 9, Kind: ports.ProtectionProtectedFrame}) {
+	if p.Proof != (domain.OutputProtection{Generation: 7, Instance: 9, Kind: domain.ProtectionProtectedFrame}) {
 		t.Fatal(p)
 	}
 	securityReceive(t, rendered)
@@ -404,7 +404,7 @@ func TestSecurityOffOutputProofDoesNotRender(t *testing.T) {
 		state.Store(locked)
 		changes <- locked
 		proof := securityReceive(t, proofs).(ports.SecurityOutputProof)
-		if proof.Proof.Kind != ports.ProtectionInactiveOutput || proof.Proof.Generation != 4 || proof.Proof.Instance != 12 {
+		if proof.Proof.Kind != domain.ProtectionInactiveOutput || proof.Proof.Generation != 4 || proof.Proof.Instance != 12 {
 			t.Fatal(proof)
 		}
 		cancel()

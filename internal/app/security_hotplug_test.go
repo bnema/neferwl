@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/wayland/sessionlock"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -54,7 +55,7 @@ func TestSecurityHotplugLifetimeAndProofOrdering(t *testing.T) {
 				t.Error(err)
 			}
 		}()
-		const generation = ports.LockGeneration(41)
+		const generation = domain.LockGeneration(41)
 		set.setSecurity(ports.SecurityState{Generation: generation, Protected: true})
 		var ledger sessionlock.Readiness
 		if !ledger.Begin(generation) || !ledger.BackendBarrier(generation) || !ledger.CaptureBarrier(generation) {
@@ -63,7 +64,7 @@ func TestSecurityHotplugLifetimeAndProofOrdering(t *testing.T) {
 		// Native Close success is independently tested in DRM. Here the real
 		// owner callback synchronizes that affirmative result before the backend
 		// sends removal; mere callback exit never emits removal from outputSet.
-		start := func(closeSuccess bool) (ports.OutputInstance, chan []ports.SecurityBackendEvent, <-chan bool) {
+		start := func(closeSuccess bool) (domain.OutputInstance, chan []ports.SecurityBackendEvent, <-chan bool) {
 			t.Helper()
 			commands := make(chan []ports.SecurityBackendEvent, 1)
 			closed := make(chan bool, 1)
@@ -72,7 +73,7 @@ func TestSecurityHotplugLifetimeAndProofOrdering(t *testing.T) {
 				security, instance := feed.Security, feed.Instance
 				defer func() { closed <- closeSuccess }()
 				state := <-security
-				proof := ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: state.Generation, Instance: instance, Kind: ports.ProtectionProtectedFrame}}
+				proof := ports.SecurityOutputProof{Proof: domain.OutputProtection{Generation: state.Generation, Instance: instance, Kind: domain.ProtectionProtectedFrame}}
 				select {
 				case ownerEvents <- proof:
 				case <-octx.Done():
@@ -112,7 +113,7 @@ func TestSecurityHotplugLifetimeAndProofOrdering(t *testing.T) {
 		old, commands, closed := start(true)
 		// A proof already queued by this owner precedes invalidation, even if the
 		// display reads later. No separate forwarder can replay it after revoke.
-		oldProof := ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: generation, Instance: old, Kind: ports.ProtectionProtectedFrame}}
+		oldProof := ports.SecurityOutputProof{Proof: domain.OutputProtection{Generation: generation, Instance: old, Kind: domain.ProtectionProtectedFrame}}
 		invalid := ports.SecurityOutputInvalidated{Generation: generation, Instance: old}
 		commands <- []ports.SecurityBackendEvent{oldProof, invalid}
 		if got := hotplugEvent(t, events); got != oldProof || !hotplugApply(&ledger, got) {
@@ -159,7 +160,7 @@ func TestSecurityHotplugLifetimeAndProofOrdering(t *testing.T) {
 		if hotplugApply(&ledger, oldProof) || hotplugApply(&ledger, invalid) {
 			t.Fatal("retired lifetime affected replacement")
 		}
-		stale := ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: generation - 1, Instance: replacement, Kind: ports.ProtectionInactiveOutput}}
+		stale := ports.SecurityOutputProof{Proof: domain.OutputProtection{Generation: generation - 1, Instance: replacement, Kind: domain.ProtectionInactiveOutput}}
 		if hotplugApply(&ledger, stale) || !ledger.Ready() {
 			t.Fatal("stale generation overwrote valid replacement proof")
 		}
@@ -206,7 +207,7 @@ func securityOwnerFIFOSaturationDrainsOnNormalStop(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	const generation = ports.LockGeneration(7)
+	const generation = domain.LockGeneration(7)
 	accepted := make(chan int, 40)
 	startDone := make(chan bool, 1)
 	var ownerEvents chan<- ports.SecurityBackendEvent
@@ -216,7 +217,7 @@ func securityOwnerFIFOSaturationDrainsOnNormalStop(t *testing.T) {
 			for i := range 40 {
 				var event ports.SecurityBackendEvent = ports.SecurityOutputInvalidated{Generation: generation, Instance: instance}
 				if i%2 == 0 {
-					event = ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: generation, Instance: instance, Kind: ports.ProtectionProtectedFrame}}
+					event = ports.SecurityOutputProof{Proof: domain.OutputProtection{Generation: generation, Instance: instance, Kind: domain.ProtectionProtectedFrame}}
 				}
 				select {
 				case ownerEvents <- event:
@@ -262,7 +263,7 @@ func securityOwnerFIFOSaturationDrainsOnNormalStop(t *testing.T) {
 		got := hotplugEvent(t, events)
 		var want ports.SecurityBackendEvent = ports.SecurityOutputInvalidated{Generation: generation, Instance: registered.Instance}
 		if i%2 == 0 {
-			want = ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: generation, Instance: registered.Instance, Kind: ports.ProtectionProtectedFrame}}
+			want = ports.SecurityOutputProof{Proof: domain.OutputProtection{Generation: generation, Instance: registered.Instance, Kind: domain.ProtectionProtectedFrame}}
 		}
 		if !reflect.DeepEqual(got, want) || !hotplugApply(&ledger, got) || ledger.Ready() != (i%2 == 0) {
 			t.Fatalf("evidence lost/duplicated/reordered at %d: %+v", i, got)
@@ -306,7 +307,7 @@ func TestSecurityOwnerBufferedEvidenceDrainsAfterFinish(t *testing.T) {
 			startDone <- set.start(ctx, "DP-1", func(octx context.Context, feed outputFeed) error {
 				instance := feed.Instance
 				for i := range 16 {
-					event := ports.SecurityOutputInvalidated{Generation: ports.LockGeneration(i + 1), Instance: instance}
+					event := ports.SecurityOutputInvalidated{Generation: domain.LockGeneration(i + 1), Instance: instance}
 					select {
 					case ownerEvents <- event:
 					case <-octx.Done():
@@ -332,7 +333,7 @@ func TestSecurityOwnerBufferedEvidenceDrainsAfterFinish(t *testing.T) {
 			t.Fatal(err)
 		}
 		for i := range 16 {
-			want := ports.SecurityOutputInvalidated{Generation: ports.LockGeneration(i + 1), Instance: registered.Instance}
+			want := ports.SecurityOutputInvalidated{Generation: domain.LockGeneration(i + 1), Instance: registered.Instance}
 			if got := hotplugEvent(t, events); got != want {
 				t.Fatalf("buffered stopped-owner evidence %d: %+v", i, got)
 			}

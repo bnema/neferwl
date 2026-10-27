@@ -80,7 +80,7 @@ func TestSecurityStuckRecoveryInvalidatesBeforeFreshProof(t *testing.T) {
 			}
 		}
 		initial := receive()
-		if p, ok := initial.(ports.SecurityOutputProof); !ok || p.Proof != (ports.OutputProtection{Generation: 1, Instance: 77, Kind: ports.ProtectionProtectedFrame}) {
+		if p, ok := initial.(ports.SecurityOutputProof); !ok || p.Proof != (domain.OutputProtection{Generation: 1, Instance: 77, Kind: domain.ProtectionProtectedFrame}) {
 			t.Fatalf("initial proof %+v", initial)
 		}
 		scenes <- ports.Scene{Seq: 12, Security: ports.SecurityState{Generation: 1, Protected: true}}

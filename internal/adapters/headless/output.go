@@ -28,7 +28,7 @@ type Options struct {
 	// the snapshot, not the queued notification payload, is authoritative.
 	Security        ports.SessionSecurity
 	SecurityChanges <-chan ports.SecurityState
-	Instance        ports.OutputInstance
+	Instance        domain.OutputInstance
 	SecurityEvents  chan<- ports.SecurityBackendEvent
 	// Cursor, when set, is drawn into screenshots with the image from
 	// LoadCursor at the scene scale and transform. The cursor is drawn in
@@ -165,9 +165,9 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			black := ports.Scene{Security: security, Output: opts.Name, OutputWidth: opts.Width, OutputHeight: opts.Height, Scale: 1, Background: "#000000"}
 			black.Off = inactive
 			scene = black
-			kind := ports.ProtectionInactiveOutput
+			kind := domain.ProtectionInactiveOutput
 			if !inactive {
-				kind = ports.ProtectionProtectedFrame
+				kind = domain.ProtectionProtectedFrame
 				done, err := r.Render(black, nil)
 				if err != nil {
 					return fmt.Errorf("render protection: %w", err)
@@ -184,7 +184,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				continue
 			}
 			if opts.SecurityEvents != nil {
-				proof := ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: security.Generation, Instance: opts.Instance, Kind: kind}}
+				proof := ports.SecurityOutputProof{Proof: domain.OutputProtection{Generation: security.Generation, Instance: opts.Instance, Kind: kind}}
 				select {
 				case opts.SecurityEvents <- proof:
 				case <-ctx.Done():

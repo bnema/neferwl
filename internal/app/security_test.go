@@ -7,6 +7,8 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -19,7 +21,7 @@ func TestSecurityRegistrationBeforeStart(t *testing.T) {
 		set := newOutputSet(ctx, nil, outputRoutes{})
 		set.wireSecurity(outputChannels{securityEvents: events})
 		set.setSecurity(ports.SecurityState{Generation: 7, Protected: true})
-		started := make(chan ports.OutputInstance, 1)
+		started := make(chan domain.OutputInstance, 1)
 		result := make(chan bool, 1)
 		go func() {
 			result <- set.start(ctx, "DP-1", func(ctx context.Context, feed outputFeed) error {
@@ -182,7 +184,7 @@ func TestSecurityInstanceExhaustion(t *testing.T) {
 		set := newOutputSet(context.Background(), nil, outputRoutes{})
 		events := make(chan ports.SecurityBackendEvent, 2)
 		set.wireSecurity(outputChannels{securityEvents: events})
-		set.nextInstance = ^ports.OutputInstance(0) - 1
+		set.nextInstance = ^domain.OutputInstance(0) - 1
 		run := func(ctx context.Context, feed outputFeed) error {
 			<-ctx.Done()
 			return nil
@@ -190,7 +192,7 @@ func TestSecurityInstanceExhaustion(t *testing.T) {
 		if !set.start(context.Background(), "last", run) {
 			t.Fatal("last valid lifetime refused")
 		}
-		if added := (<-events).(ports.SecurityOutputAdded); added.Instance != ^ports.OutputInstance(0) {
+		if added := (<-events).(ports.SecurityOutputAdded); added.Instance != ^domain.OutputInstance(0) {
 			t.Fatalf("last instance: %+v", added)
 		}
 		for range 2 {
@@ -198,7 +200,7 @@ func TestSecurityInstanceExhaustion(t *testing.T) {
 				t.Fatal("exhausted counter launched owner")
 			}
 		}
-		if set.nextInstance != ^ports.OutputInstance(0) || set.startErr == nil {
+		if set.nextInstance != ^domain.OutputInstance(0) || set.startErr == nil {
 			t.Fatal("counter wrapped or error missing")
 		}
 		select {
@@ -231,7 +233,7 @@ func TestSecurityFullEventsAllowLeaseBarrier(t *testing.T) {
 		events <- ports.SecurityBackendBarrier{Generation: 99} // blocked display
 		r := set.outs["DP-1"]
 		first := ports.SecurityOutputInvalidated{Generation: 1, Instance: r.instance}
-		second := ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: 1, Instance: r.instance, Kind: ports.ProtectionProtectedFrame}}
+		second := ports.SecurityOutputProof{Proof: domain.OutputProtection{Generation: 1, Instance: r.instance, Kind: domain.ProtectionProtectedFrame}}
 		ownerEvents <- first
 		ownerEvents <- second
 		card := newMocksecurityLeaseCard(t)

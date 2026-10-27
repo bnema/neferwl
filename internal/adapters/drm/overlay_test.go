@@ -192,7 +192,7 @@ func TestOverlaySkipsPQContent(t *testing.T) {
 	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
 	s, c := overlayScene()
 	pq := c[2]
-	pq.Color = ports.SurfaceColor{TF: ports.ColorTFPQ, Primaries: ports.ColorPrimariesBT2020}
+	pq.Color = domain.SurfaceColor{TF: domain.ColorTFPQ, Primaries: domain.ColorPrimariesBT2020}
 	c[2] = pq
 	if ov, rest := o.overlayFrame(s, c); ov.fb != 0 || len(rest.Windows) != 2 {
 		t.Fatalf("PQ overlay %+v rest %+v", ov, rest.Windows)

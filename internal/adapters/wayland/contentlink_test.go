@@ -28,7 +28,7 @@ func linkServer(t *testing.T) *Server {
 }
 
 func solid(id domain.WindowID) ports.SurfaceContent {
-	return ports.SurfaceContent{ID: id, Solid: &ports.SolidColor{}}
+	return ports.SurfaceContent{ID: id, Solid: &domain.SolidColor{}}
 }
 
 func (s *Server) publish(t *testing.T, contents ...ports.SurfaceContent) {

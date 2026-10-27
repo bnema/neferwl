@@ -205,8 +205,8 @@ func (s *surface) windowID() domain.WindowID {
 }
 
 // outputColor converts the committed protocol description without allocating.
-func (s *surface) outputColor() ports.SurfaceColor {
-	return ports.SurfaceColor{TF: uint8(s.color.TF), Primaries: uint8(s.color.Primaries), MaxCLL: uint16(s.color.MaxCLL), MaxFALL: uint16(s.color.MaxFALL), Coefficients: s.representation.coefficients, Range: s.representation.rangeValue, Chroma: s.representation.chroma}
+func (s *surface) outputColor() domain.SurfaceColor {
+	return domain.SurfaceColor{TF: uint8(s.color.TF), Primaries: uint8(s.color.Primaries), MaxCLL: uint16(s.color.MaxCLL), MaxFALL: uint16(s.color.MaxFALL), Coefficients: s.representation.coefficients, Range: s.representation.rangeValue, Chroma: s.representation.chroma}
 }
 
 func (s *surface) contentWithColor() ports.SurfaceContent {

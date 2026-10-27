@@ -338,15 +338,15 @@ func TestLUT3DIdentityBytes(t *testing.T) {
 }
 
 func TestPlaneColor(t *testing.T) {
-	pq := ports.SurfaceColor{TF: ports.ColorTFPQ, Primaries: ports.ColorPrimariesBT2020}
-	srgb := ports.SurfaceColor{TF: ports.ColorTFSRGB, Primaries: ports.ColorPrimariesSRGB}
-	ext := ports.SurfaceColor{TF: ports.ColorTFExtendedLinear, Primaries: ports.ColorPrimariesSRGB}
-	gamma := ports.SurfaceColor{TF: 10, Primaries: ports.ColorPrimariesSRGB}
-	p3 := ports.SurfaceColor{TF: ports.ColorTFSRGB, Primaries: 7}
+	pq := domain.SurfaceColor{TF: domain.ColorTFPQ, Primaries: domain.ColorPrimariesBT2020}
+	srgb := domain.SurfaceColor{TF: domain.ColorTFSRGB, Primaries: domain.ColorPrimariesSRGB}
+	ext := domain.SurfaceColor{TF: domain.ColorTFExtendedLinear, Primaries: domain.ColorPrimariesSRGB}
+	gamma := domain.SurfaceColor{TF: 10, Primaries: domain.ColorPrimariesSRGB}
+	p3 := domain.SurfaceColor{TF: domain.ColorTFSRGB, Primaries: 7}
 	pipe := &colorPipeline{}
 	for _, tc := range []struct {
 		name   string
-		c      ports.SurfaceColor
+		c      domain.SurfaceColor
 		format uint32
 		opaque bool
 		hdr    bool
@@ -354,15 +354,15 @@ func TestPlaneColor(t *testing.T) {
 		want   colorMode
 		reason string
 	}{
-		{"SDR output, sRGB", ports.SurfaceColor{}, fourccXRGB, true, false, nil, colorBypass, ""},
+		{"SDR output, sRGB", domain.SurfaceColor{}, fourccXRGB, true, false, nil, colorBypass, ""},
 		{"SDR output ignores a pipeline", srgb, fourccXRGB, true, false, pipe, colorBypass, ""},
 		{"SDR output, PQ", pq, fourccXR30, true, false, nil, colorBypass, "sdr_pq_content"},
-		{"SDR output, YUV", ports.SurfaceColor{}, fourccNV12, true, false, nil, colorBypass, "yuv"},
+		{"SDR output, YUV", domain.SurfaceColor{}, fourccNV12, true, false, nil, colorBypass, "yuv"},
 		{"HDR, PQ 10-bit", pq, fourccXR30, true, true, pipe, colorBypass, ""},
 		{"HDR, PQ 10-bit with alpha", pq, fourccAR30, false, true, nil, colorBypass, ""},
 		{"HDR, PQ 8-bit", pq, fourccXRGB, true, true, pipe, colorBypass, "hdr_format"},
 		{"HDR, PQ YUV", pq, fourccP010, true, true, pipe, colorBypass, "yuv"},
-		{"HDR, unspecified colour", ports.SurfaceColor{}, fourccXRGB, true, true, pipe, colorSDRToPQ, ""},
+		{"HDR, unspecified colour", domain.SurfaceColor{}, fourccXRGB, true, true, pipe, colorSDRToPQ, ""},
 		{"HDR, sRGB", srgb, fourccXRGB, true, true, pipe, colorSDRToPQ, ""},
 		{"HDR, sRGB, 10-bit buffer", srgb, fourccXR30, true, true, pipe, colorSDRToPQ, ""},
 		{"HDR, sRGB, no pipeline", srgb, fourccXRGB, true, true, nil, colorBypass, "hdr_sdr_content"},

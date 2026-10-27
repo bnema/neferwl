@@ -7,6 +7,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/singlepixelbuffer"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -49,7 +50,7 @@ func TestSinglePixelBuffer(t *testing.T) {
 		}
 	}
 	got := solid(math.MaxUint32, 0)
-	if got.Width != 1 || got.Height != 1 || !got.Opaque || *got.Solid != (ports.SolidColor{A: 1}) {
+	if got.Width != 1 || got.Height != 1 || !got.Opaque || *got.Solid != (domain.SolidColor{A: 1}) {
 		t.Fatalf("opaque black = %+v solid %+v", got, got.Solid)
 	}
 	got = solid(math.MaxUint32/2, math.MaxUint32/2)

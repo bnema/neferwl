@@ -6,6 +6,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
 	"github.com/bnema/neferwl/internal/adapters/wayland/sessionlock"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -52,7 +53,7 @@ func TestSecurityDuplicatePhysicalLifetimeRequiresConfirmedInactive(t *testing.T
 			}
 			ledger.BackendBarrier(state.Generation)
 			ledger.CaptureBarrier(state.Generation)
-			ledger.Record(ports.OutputProtection{Generation: state.Generation, Instance: primary.Instance, Kind: ports.ProtectionProtectedFrame})
+			ledger.Record(domain.OutputProtection{Generation: state.Generation, Instance: primary.Instance, Kind: domain.ProtectionProtectedFrame})
 			if ledger.Ready() {
 				t.Fatal("primary proof hid duplicate physical output")
 			}
@@ -95,9 +96,9 @@ func TestSecurityDiscardedLifetimeCounterExhaustion(t *testing.T) {
 	events := make(chan ports.SecurityBackendEvent, 2)
 	set := newOutputSet(context.Background(), nil, outputRoutes{})
 	set.wireSecurity(outputChannels{securityEvents: events})
-	set.nextInstance = ^ports.OutputInstance(0) - 1
+	set.nextInstance = ^domain.OutputInstance(0) - 1
 	instance, err := registerDiscardedOutput(set, "DP-1")
-	if err != nil || instance != ^ports.OutputInstance(0) {
+	if err != nil || instance != ^domain.OutputInstance(0) {
 		t.Fatalf("last lifetime: %d %v", instance, err)
 	}
 	if added := (<-events).(ports.SecurityOutputAdded); added.Instance != instance {
@@ -108,7 +109,7 @@ func TestSecurityDiscardedLifetimeCounterExhaustion(t *testing.T) {
 			t.Fatalf("exhaustion: %d %v", instance, err)
 		}
 	}
-	if set.nextInstance != ^ports.OutputInstance(0) {
+	if set.nextInstance != ^domain.OutputInstance(0) {
 		t.Fatal("counter wrapped")
 	}
 	select {

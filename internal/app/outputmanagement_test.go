@@ -8,6 +8,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -18,9 +19,9 @@ type applyRig struct {
 }
 
 func newApplyRig(t *testing.T, headless bool) applyRig {
-	mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
+	mode := domain.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
 	a := newOutputApply(core.NewOutputOverrides(ports.Config{}, headless), logging.For(context.Background(), "app"))
-	a.heads(ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []ports.OutputMode{mode}}}})
+	a.heads(ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}})
 	return applyRig{t, a}
 }
 
@@ -144,9 +145,9 @@ func TestOutputApplyOutbox(t *testing.T) {
 	r.idle()
 	r.a.finished(nil)
 	// Inventory updates while Wayland is not reading: only the latest waits.
-	mode := ports.OutputMode{Width: 1280, Height: 720, RefreshMilli: 60000}
+	mode := domain.OutputMode{Width: 1280, Height: 720, RefreshMilli: 60000}
 	for _, name := range []string{"DP-1", "DP-2"} {
-		r.a.heads(ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: name}, Enabled: true, Current: &mode, Modes: []ports.OutputMode{mode}}}})
+		r.a.heads(ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: name}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}})
 	}
 	headsCh := make(chan ports.OutputHeads, 1)
 	out, heads := r.a.headsOut(headsCh)

@@ -43,7 +43,7 @@ func installSecurity(t *testing.T, s *Server) *atomic.Pointer[ports.SecurityStat
 	return state
 }
 
-func protect(t *testing.T, s *Server, state *atomic.Pointer[ports.SecurityState], generation ports.LockGeneration, protected bool) {
+func protect(t *testing.T, s *Server, state *atomic.Pointer[ports.SecurityState], generation domain.LockGeneration, protected bool) {
 	t.Helper()
 	if !s.display.Do(func() { state.Store(&ports.SecurityState{Generation: generation, Protected: protected}) }) {
 		t.Fatal("display stopped")

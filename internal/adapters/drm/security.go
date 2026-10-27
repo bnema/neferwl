@@ -84,9 +84,9 @@ func (o *Output) prepareSecurity(ctx context.Context, r ports.Renderer) error {
 		return nil
 	}
 	o.securityPrepared = true
-	kind := ports.ProtectionProtectedFrame
+	kind := domain.ProtectionProtectedFrame
 	if o.off {
-		kind = ports.ProtectionInactiveOutput
+		kind = domain.ProtectionInactiveOutput
 	}
 	// Separate non-merging channel; presentation feedback is not evidence.
 	// Backpressure may outlive an epoch. Revalidate on each bounded send
@@ -96,7 +96,7 @@ func (o *Output) prepareSecurity(ctx context.Context, r ports.Renderer) error {
 	}
 	timer := time.NewTimer(time.Millisecond)
 	defer timer.Stop()
-	proof := ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: state.Generation, Instance: o.Instance, Kind: kind}}
+	proof := ports.SecurityOutputProof{Proof: domain.OutputProtection{Generation: state.Generation, Instance: o.Instance, Kind: kind}}
 	for {
 		if o.observeSecurity() || o.securityState != state {
 			return nil

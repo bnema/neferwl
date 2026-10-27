@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/bnema/neferwl/internal/adapters/headless"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
@@ -32,8 +33,8 @@ func runHeadless(ctx context.Context, o headlessOptions, apply *outputApply, ch 
 	inventory := ports.OutputHeads{}
 	for i, size := range o.sizes {
 		name := fmt.Sprintf("HEADLESS-%d", i+1)
-		mode := ports.OutputMode{Width: size[0], Height: size[1], RefreshMilli: 60000, Preferred: true}
-		inventory.Heads = append(inventory.Heads, ports.OutputHead{Info: ports.OutputInfo{Name: name, Width: size[0], Height: size[1], RefreshMilli: 60000}, Modes: []ports.OutputMode{mode}, Current: &mode, Enabled: true})
+		mode := domain.OutputMode{Width: size[0], Height: size[1], RefreshMilli: 60000, Preferred: true}
+		inventory.Heads = append(inventory.Heads, ports.OutputHead{Info: ports.OutputInfo{Name: name, Width: size[0], Height: size[1], RefreshMilli: 60000}, Modes: []domain.OutputMode{mode}, Current: &mode, Enabled: true})
 		dir := o.shots
 		if dir != "" && len(o.sizes) > 1 {
 			dir = filepath.Join(o.shots, name)

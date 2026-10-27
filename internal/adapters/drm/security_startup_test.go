@@ -52,7 +52,7 @@ func TestSecurityProtectedStartupBlackProofAndCaptureRejection(t *testing.T) {
 	}()
 	select {
 	case ev := <-events:
-		if p, ok := ev.(ports.SecurityOutputProof); !ok || p.Proof.Generation != 1 || p.Proof.Instance != 77 || p.Proof.Kind != ports.ProtectionProtectedFrame {
+		if p, ok := ev.(ports.SecurityOutputProof); !ok || p.Proof.Generation != 1 || p.Proof.Instance != 77 || p.Proof.Kind != domain.ProtectionProtectedFrame {
 			t.Fatalf("proof %+v", ev)
 		}
 	case <-ctx.Done():

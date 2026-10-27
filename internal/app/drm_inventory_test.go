@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -22,7 +23,7 @@ func TestRetainedHeadsOnCardReadError(t *testing.T) {
 }
 
 func TestReleasedHeadOnInventoryError(t *testing.T) {
-	mode := ports.OutputMode{Width: 1920, Height: 1080}
+	mode := domain.OutputMode{Width: 1920, Height: 1080}
 	previous := []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode}, {Info: ports.OutputInfo{Name: "HDMI-1"}, Enabled: true, Current: &mode}}
 	// Both a disabled stop and an unsuccessful restart release the old instance.
 	for _, restart := range []bool{false, true} {

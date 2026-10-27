@@ -7,9 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	lockclient "github.com/bnema/go-wayland-bindings/client/extsessionlock"
+
 	core "github.com/bnema/go-wayland-bindings/client/wayland"
 	"github.com/bnema/go-wayland-bindings/server/drmlease"
+
 	serverlock "github.com/bnema/go-wayland-bindings/server/extsessionlock"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/logging"
@@ -78,8 +82,8 @@ func lifecycleAcquire(t *testing.T, c *wlturbo.Display) (*lockclient.ExtSessionL
 	return lock, count
 }
 
-func lifecycleProof(s *Server, state ports.SecurityState, instance ports.OutputInstance) {
-	s.applySecurityEvent(ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: state.Generation, Instance: instance, Kind: ports.ProtectionProtectedFrame}})
+func lifecycleProof(s *Server, state ports.SecurityState, instance domain.OutputInstance) {
+	s.applySecurityEvent(ports.SecurityOutputProof{Proof: domain.OutputProtection{Generation: state.Generation, Instance: instance, Kind: domain.ProtectionProtectedFrame}})
 }
 
 //testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation

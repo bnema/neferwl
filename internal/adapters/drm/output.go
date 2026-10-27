@@ -30,7 +30,7 @@ type Output struct {
 	// Set before Run. The backend owns instance registration and wake routing.
 	Security        ports.SessionSecurity
 	SecurityChanges <-chan ports.SecurityState
-	Instance        ports.OutputInstance
+	Instance        domain.OutputInstance
 	SecurityEvents  chan<- ports.SecurityBackendEvent
 	// Frames, set before Run, tells core a flip of an animating scene
 	// completed (nil: nobody is told). Sends never block.

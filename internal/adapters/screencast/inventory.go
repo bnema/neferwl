@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerobus"
 )
@@ -172,7 +173,7 @@ func (s *Service) encodeNames(e *zerobus.Encoder, o *ports.CastOutput) {
 	e.Str(serial)
 }
 
-func modeID(m ports.OutputMode) string {
+func modeID(m domain.OutputMode) string {
 	return itoa(m.Width) + "x" + itoa(m.Height) + "@" + ftoa(refreshHz(m.RefreshMilli))
 }
 

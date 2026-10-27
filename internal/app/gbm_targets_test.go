@@ -125,7 +125,7 @@ func TestGBMImagesAreRenderTargets(t *testing.T) {
 		{Background: "#ff0000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 32, Y: 16, W: 64, H: 32}}}},
 		{Background: "#00ff00"},
 	}
-	contents := map[domain.WindowID]ports.SurfaceContent{1: {ID: 1, Width: 1, Height: 1, LogicalW: 64, LogicalH: 32, Opaque: true, Solid: &ports.SolidColor{B: 1, A: 1}}}
+	contents := map[domain.WindowID]ports.SurfaceContent{1: {ID: 1, Width: 1, Height: 1, LogicalW: 64, LogicalH: 32, Opaque: true, Solid: &domain.SolidColor{B: 1, A: 1}}}
 	type px struct {
 		x, y int
 		want color.RGBA

@@ -7,6 +7,7 @@ import (
 	"math"
 	"sync/atomic"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -21,7 +22,7 @@ var (
 type Gate struct{ state atomic.Uint64 }
 
 func unpack(state uint64) ports.SecurityState {
-	return ports.SecurityState{Generation: ports.LockGeneration(state >> 1), Protected: state&1 != 0}
+	return ports.SecurityState{Generation: domain.LockGeneration(state >> 1), Protected: state&1 != 0}
 }
 
 func (g *Gate) Snapshot() ports.SecurityState { return unpack(g.state.Load()) }
@@ -40,7 +41,7 @@ func (g *Gate) Engage() (ports.SecurityState, error) {
 	}
 }
 
-func (g *Gate) Release(expected ports.LockGeneration) (ports.SecurityState, error) {
+func (g *Gate) Release(expected domain.LockGeneration) (ports.SecurityState, error) {
 	for {
 		old := g.state.Load()
 		state := unpack(old)

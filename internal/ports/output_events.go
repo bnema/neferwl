@@ -30,18 +30,12 @@ func (i OutputInfo) Key() string {
 	return i.Make + " " + i.Model + " " + i.Serial
 }
 
-// OutputMode describes a connected connector's physical mode.
-type OutputMode struct {
-	Width, Height, RefreshMilli int
-	Preferred                   bool
-}
-
 // OutputHead describes a connected connector even when it is disabled.
 // Current is the active mode; it is nil for disabled or not-yet-running heads.
 type OutputHead struct {
 	Info    OutputInfo
-	Modes   []OutputMode
-	Current *OutputMode
+	Modes   []domain.OutputMode
+	Current *domain.OutputMode
 	Enabled bool
 }
 
@@ -52,7 +46,7 @@ type OutputHeads struct{ Heads []OutputHead }
 type HeadChange struct {
 	Name    string
 	Enabled bool
-	Mode    *OutputMode
+	Mode    *domain.OutputMode
 	Pos     *image.Point
 	Scale   float64
 	// Transform is nil to leave the transform unchanged.

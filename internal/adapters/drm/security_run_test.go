@@ -87,13 +87,13 @@ func TestSecurityRunWakePendingResumeAndOff(t *testing.T) {
 		default:
 		}
 		flips <- eventOf(frame)
-		proof := func(kind ports.ProtectionKind) {
+		proof := func(kind domain.ProtectionKind) {
 			t.Helper()
 			for {
 				select {
 				case ev := <-events:
 					if p, ok := ev.(ports.SecurityOutputProof); ok {
-						if p.Proof != (ports.OutputProtection{Generation: 1, Instance: 77, Kind: kind}) {
+						if p.Proof != (domain.OutputProtection{Generation: 1, Instance: 77, Kind: kind}) {
 							t.Fatalf("proof %+v", p)
 						}
 						return
@@ -103,7 +103,7 @@ func TestSecurityRunWakePendingResumeAndOff(t *testing.T) {
 				}
 			}
 		}
-		proof(ports.ProtectionProtectedFrame)
+		proof(domain.ProtectionProtectedFrame)
 		scenes <- ports.Scene{Seq: 99} // held desktop scene cannot be replayed
 		synctest.Wait()
 		select {
@@ -129,9 +129,9 @@ func TestSecurityRunWakePendingResumeAndOff(t *testing.T) {
 		case <-ctx.Done():
 			t.Fatal("missing resume invalidation")
 		}
-		proof(ports.ProtectionProtectedFrame) // reacquire requires a fresh black transaction
+		proof(domain.ProtectionProtectedFrame) // reacquire requires a fresh black transaction
 		scenes <- ports.Scene{Security: ports.SecurityState{Generation: 1, Protected: true}, Off: true}
-		proof(ports.ProtectionInactiveOutput)
+		proof(domain.ProtectionInactiveOutput)
 		cancel()
 		if err := <-done; err != nil {
 			t.Fatal(err)

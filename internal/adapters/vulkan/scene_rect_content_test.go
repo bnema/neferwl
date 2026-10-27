@@ -18,7 +18,7 @@ func TestSceneContentVsWindowRect(t *testing.T) {
 	walk := func(rect domain.Rect, lw, lh int, geo domain.Rect) []draw {
 		c := ports.SurfaceContent{
 			ID: 1, Width: 1, Height: 1, LogicalW: lw, LogicalH: lh, Geometry: geo,
-			Solid: &ports.SolidColor{R: 1, A: 1}, Opaque: true,
+			Solid: &domain.SolidColor{R: 1, A: 1}, Opaque: true,
 		}
 		s := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: rect}}}
 		contents := map[domain.WindowID]ports.SurfaceContent{1: c}

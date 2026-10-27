@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	wlr "github.com/bnema/go-wayland-bindings/server/wlroutputmanagement"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/ports"
@@ -80,8 +82,8 @@ func outputTestServer(t *testing.T) (*Server, chan ports.OutputHeads, chan ports
 	return s, heads, applies, replies, dir
 }
 func testHead() ports.OutputHeads {
-	mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000, Preferred: true}
-	return ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 1920, Height: 1080, RefreshMilli: 60000}, Modes: []ports.OutputMode{mode}, Current: &mode, Enabled: true}}}
+	mode := domain.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000, Preferred: true}
+	return ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 1920, Height: 1080, RefreshMilli: 60000}, Modes: []domain.OutputMode{mode}, Current: &mode, Enabled: true}}}
 }
 
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)

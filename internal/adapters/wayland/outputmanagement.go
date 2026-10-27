@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	wlr "github.com/bnema/go-wayland-bindings/server/wlroutputmanagement"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
@@ -11,7 +13,7 @@ import (
 
 type managementHead struct {
 	res           *wlr.ZwlrOutputHeadV1
-	modes         map[*server.Resource]ports.OutputMode
+	modes         map[*server.Resource]domain.OutputMode
 	modeResources []*wlr.ZwlrOutputModeV1
 	info          ports.OutputHead
 }
@@ -71,7 +73,7 @@ func (m *outputManager) CreateConfiguration(r *wlr.ZwlrOutputManagerV1, id, seri
 	}
 }
 func (m *outputManager) addHead(info ports.OutputHead) {
-	h := &managementHead{info: info, modes: map[*server.Resource]ports.OutputMode{}}
+	h := &managementHead{info: info, modes: map[*server.Resource]domain.OutputMode{}}
 	res, err := wlr.NewZwlrOutputHeadV1(m.res.Client(), m.res.Version(), 0, managementHeadHandler{})
 	if err != nil {
 		return

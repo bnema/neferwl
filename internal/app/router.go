@@ -6,11 +6,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bnema/zerowrap"
-
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/zerowrap"
 )
 
 // outputRouter feeds the running outputs their scenes, cursor and capture
@@ -67,7 +67,7 @@ type outputRoutes struct {
 
 // mailbox is what the router feeds one output lifetime.
 type mailbox struct {
-	instance ports.OutputInstance
+	instance domain.OutputInstance
 	scenes   chan ports.Scene
 	cursor   chan ports.CursorChange
 	captures chan ports.CaptureRequest
@@ -77,7 +77,7 @@ type mailbox struct {
 	done chan struct{}
 }
 
-func newMailbox(instance ports.OutputInstance, ctx context.Context, stop context.CancelFunc, done chan struct{}) *mailbox {
+func newMailbox(instance domain.OutputInstance, ctx context.Context, stop context.CancelFunc, done chan struct{}) *mailbox {
 	return &mailbox{instance: instance, scenes: make(chan ports.Scene, 1), cursor: make(chan ports.CursorChange, 1), captures: make(chan ports.CaptureRequest, 16), ctx: ctx, stop: stop, done: done}
 }
 
@@ -86,7 +86,7 @@ func newMailbox(instance ports.OutputInstance, ctx context.Context, stop context
 type routerOp struct {
 	name  string
 	add   *mailbox
-	gone  ports.OutputInstance
+	gone  domain.OutputInstance
 	reply chan bool
 }
 
@@ -164,7 +164,7 @@ func (r *outputRouter) register(name string, m *mailbox) bool {
 }
 
 // unregister stops feeding the output lifetime instance of name.
-func (r *outputRouter) unregister(name string, instance ports.OutputInstance) {
+func (r *outputRouter) unregister(name string, instance domain.OutputInstance) {
 	if m := r.outs[name]; m != nil && m.instance == instance {
 		delete(r.outs, name)
 	}
@@ -234,7 +234,7 @@ func (r *outputRouter) add(name string, m *mailbox) (off, ok bool) {
 // remove unregisters the lifetime instance of name and returns once the
 // router no longer feeds it, so its queued captures can be failed. Backend
 // loop only.
-func (r *outputRouter) remove(name string, instance ports.OutputInstance) {
+func (r *outputRouter) remove(name string, instance domain.OutputInstance) {
 	reply := make(chan bool)
 	select {
 	case r.ops <- routerOp{name: name, gone: instance, reply: reply}:

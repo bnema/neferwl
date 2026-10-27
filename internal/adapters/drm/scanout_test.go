@@ -127,7 +127,7 @@ func TestScanoutCandidateClientSubsurface(t *testing.T) {
 	// A single-pixel root is hidden by the opaque dmabuf over it, like an shm
 	// one; alone it is not a dmabuf.
 	solidRoot := root
-	solidRoot.SHM, solidRoot.Solid = nil, &ports.SolidColor{A: 1}
+	solidRoot.SHM, solidRoot.Solid = nil, &domain.SolidColor{A: 1}
 	c, reason = scanoutCandidate(scene, map[domain.WindowID]ports.SurfaceContent{1: solidRoot}, 200, 100, nil)
 	if reason != "" || c.DMABuf != game || c.Solid != nil || c.ID != 1 || c.Seq != 7 {
 		t.Fatalf("solid root with dmabuf child: candidate %+v, reason %q", c, reason)
@@ -270,7 +270,7 @@ func TestHDRScanoutDecision(t *testing.T) {
 		}
 	}
 	check("hdr_sdr_content")
-	c.Color = ports.SurfaceColor{TF: ports.ColorTFPQ, Primaries: ports.ColorPrimariesBT2020}
+	c.Color = domain.SurfaceColor{TF: domain.ColorTFPQ, Primaries: domain.ColorPrimariesBT2020}
 	c.DMABuf.Format = fourccXRGB
 	check("hdr_format")
 	c.DMABuf.Format = fourccP010

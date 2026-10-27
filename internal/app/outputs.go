@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
-
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -25,7 +25,7 @@ type outputFeed struct {
 	Cursor   <-chan ports.CursorChange
 	Captures <-chan ports.CaptureRequest
 	Security <-chan ports.SecurityState
-	Instance ports.OutputInstance
+	Instance domain.OutputInstance
 	StartOff bool
 }
 
@@ -64,7 +64,7 @@ type outputSet struct {
 	security       ports.SessionSecurity
 	securityEvents chan<- ports.SecurityBackendEvent
 	state          ports.SecurityState
-	nextInstance   ports.OutputInstance
+	nextInstance   domain.OutputInstance
 	startErr       error
 	barriers       chan ports.SecurityBackendEvent
 	forwarders     sync.WaitGroup
@@ -73,7 +73,7 @@ type outputSet struct {
 // A stop is tied to a lifetime, never just a reusable connector name.
 type outputStopped struct {
 	name     string
-	instance ports.OutputInstance
+	instance domain.OutputInstance
 }
 
 // runningOutput is one output lifetime: the mailbox the router feeds, and
@@ -100,7 +100,7 @@ func newOutputSet(ctx context.Context, captured chan<- ports.CaptureDone, in out
 // start runs an output in its own goroutine, fed the window contents.
 func (s *outputSet) start(ctx context.Context, name string, run outputRun, wire ...*chan<- ports.SecurityBackendEvent) bool {
 	// Exhaustion is permanent: never wrap to zero or reuse a lifetime.
-	if s.nextInstance == ^ports.OutputInstance(0) {
+	if s.nextInstance == ^domain.OutputInstance(0) {
 		s.startErr = fmt.Errorf("output instance exhausted")
 		return false
 	}

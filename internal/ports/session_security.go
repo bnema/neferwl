@@ -1,12 +1,11 @@
 package ports
 
-// LockGeneration identifies a session transition. Zero is the initial unlocked epoch.
-type LockGeneration uint64
+import "github.com/bnema/neferwl/internal/domain"
 
 // SecurityState is one coherent admission epoch. Generation changes on both
 // acquisition and release so queued work cannot cross a lock transition.
 type SecurityState struct {
-	Generation LockGeneration
+	Generation domain.LockGeneration
 	Protected  bool
 }
 
@@ -21,5 +20,5 @@ type SessionSecurity interface {
 type SessionSecurityController interface {
 	SessionSecurity
 	Engage() (SecurityState, error)
-	Release(expected LockGeneration) (SecurityState, error)
+	Release(expected domain.LockGeneration) (SecurityState, error)
 }

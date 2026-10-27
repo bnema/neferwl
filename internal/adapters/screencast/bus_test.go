@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerobus"
 )
@@ -17,8 +18,8 @@ func testInventory() ports.CastInventory {
 	return ports.CastInventory{
 		Focused: "HEADLESS-1",
 		Outputs: []ports.CastOutput{
-			{Info: ports.OutputInfo{Name: "HEADLESS-2", Make: "Acme", Model: "Two", Width: 32, Height: 32, RefreshMilli: 30000}, Modes: []ports.OutputMode{{Width: 32, Height: 32, RefreshMilli: 30000, Preferred: true}}, Current: 0, X: 64, Width: 32, Height: 32, Scale: 1},
-			{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 64, Height: 32, RefreshMilli: 60000}, Modes: []ports.OutputMode{{Width: 64, Height: 32, RefreshMilli: 60000, Preferred: true}, {Width: 32, Height: 16, RefreshMilli: 60000}}, Current: 0, Width: 64, Height: 32, Scale: 1},
+			{Info: ports.OutputInfo{Name: "HEADLESS-2", Make: "Acme", Model: "Two", Width: 32, Height: 32, RefreshMilli: 30000}, Modes: []domain.OutputMode{{Width: 32, Height: 32, RefreshMilli: 30000, Preferred: true}}, Current: 0, X: 64, Width: 32, Height: 32, Scale: 1},
+			{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 64, Height: 32, RefreshMilli: 60000}, Modes: []domain.OutputMode{{Width: 64, Height: 32, RefreshMilli: 60000, Preferred: true}, {Width: 32, Height: 16, RefreshMilli: 60000}}, Current: 0, Width: 64, Height: 32, Scale: 1},
 		},
 		Windows: []ports.CastWindow{{ID: 7, AppID: "org.example.App", Title: "Hello"}, {ID: 3, AppID: "foot", Title: "sh"}},
 	}

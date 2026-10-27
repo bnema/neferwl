@@ -5,6 +5,7 @@
 package portsmocks
 
 import (
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	mock "github.com/stretchr/testify/mock"
 )
@@ -179,7 +180,7 @@ func (_c *MockSessionSecurityController_Engage_Call) RunAndReturn(run func() (po
 }
 
 // Release provides a mock function for the type MockSessionSecurityController
-func (_mock *MockSessionSecurityController) Release(expected ports.LockGeneration) (ports.SecurityState, error) {
+func (_mock *MockSessionSecurityController) Release(expected domain.LockGeneration) (ports.SecurityState, error) {
 	ret := _mock.Called(expected)
 
 	if len(ret) == 0 {
@@ -188,15 +189,15 @@ func (_mock *MockSessionSecurityController) Release(expected ports.LockGeneratio
 
 	var r0 ports.SecurityState
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(ports.LockGeneration) (ports.SecurityState, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(domain.LockGeneration) (ports.SecurityState, error)); ok {
 		return returnFunc(expected)
 	}
-	if returnFunc, ok := ret.Get(0).(func(ports.LockGeneration) ports.SecurityState); ok {
+	if returnFunc, ok := ret.Get(0).(func(domain.LockGeneration) ports.SecurityState); ok {
 		r0 = returnFunc(expected)
 	} else {
 		r0 = ret.Get(0).(ports.SecurityState)
 	}
-	if returnFunc, ok := ret.Get(1).(func(ports.LockGeneration) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(domain.LockGeneration) error); ok {
 		r1 = returnFunc(expected)
 	} else {
 		r1 = ret.Error(1)
@@ -210,16 +211,16 @@ type MockSessionSecurityController_Release_Call struct {
 }
 
 // Release is a helper method to define mock.On call
-//   - expected ports.LockGeneration
+//   - expected domain.LockGeneration
 func (_e *MockSessionSecurityController_Expecter) Release(expected any) *MockSessionSecurityController_Release_Call {
 	return &MockSessionSecurityController_Release_Call{Call: _e.mock.On("Release", expected)}
 }
 
-func (_c *MockSessionSecurityController_Release_Call) Run(run func(expected ports.LockGeneration)) *MockSessionSecurityController_Release_Call {
+func (_c *MockSessionSecurityController_Release_Call) Run(run func(expected domain.LockGeneration)) *MockSessionSecurityController_Release_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 ports.LockGeneration
+		var arg0 domain.LockGeneration
 		if args[0] != nil {
-			arg0 = args[0].(ports.LockGeneration)
+			arg0 = args[0].(domain.LockGeneration)
 		}
 		run(
 			arg0,
@@ -233,7 +234,7 @@ func (_c *MockSessionSecurityController_Release_Call) Return(securityState ports
 	return _c
 }
 
-func (_c *MockSessionSecurityController_Release_Call) RunAndReturn(run func(expected ports.LockGeneration) (ports.SecurityState, error)) *MockSessionSecurityController_Release_Call {
+func (_c *MockSessionSecurityController_Release_Call) RunAndReturn(run func(expected domain.LockGeneration) (ports.SecurityState, error)) *MockSessionSecurityController_Release_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -11,6 +11,8 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -242,7 +244,7 @@ func TestSessionLockBarrierReservedReleaseAndBlockedSenderShutdown(t *testing.T)
 		// Immutable channel messages exercise the reserved release slot without
 		// fabricating another accepted owner while this one is live.
 		for len(h.s.securityPending) < maxSecurityPending {
-			h.s.requestBackendSecurity(ports.SecurityState{Generation: ports.LockGeneration(100 + len(h.s.securityPending)), Protected: true})
+			h.s.requestBackendSecurity(ports.SecurityState{Generation: domain.LockGeneration(100 + len(h.s.securityPending)), Protected: true})
 		}
 		queued = append(queued, h.s.securityPending...)
 		h.s.applySecurityEvent(ports.SecurityBackendBarrier{Generation: state.Generation})

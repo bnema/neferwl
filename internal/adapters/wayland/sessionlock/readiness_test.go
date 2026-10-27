@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
-func lockProof(generation ports.LockGeneration, instance ports.OutputInstance) ports.OutputProtection {
-	return ports.OutputProtection{Generation: generation, Instance: instance, Kind: ports.ProtectionProtectedFrame}
+func lockProof(generation domain.LockGeneration, instance domain.OutputInstance) domain.OutputProtection {
+	return domain.OutputProtection{Generation: generation, Instance: instance, Kind: domain.ProtectionProtectedFrame}
 }
 
 func requireLockAccepted(t *testing.T, accepted bool) {
@@ -29,7 +29,7 @@ func TestLockReadinessZeroValue(t *testing.T) {
 	var r Readiness
 	requireLockReady(t, &r, false)
 	if r.Begin(0) || r.End(0) || r.Add(0) || r.Remove(0) || r.Remove(99) ||
-		r.Record(ports.OutputProtection{}) || r.Record(lockProof(1, 1)) ||
+		r.Record(domain.OutputProtection{}) || r.Record(lockProof(1, 1)) ||
 		r.BackendBarrier(0) || r.BackendBarrier(1) || r.CaptureBarrier(0) || r.CaptureBarrier(1) {
 		t.Fatal("zero/disengaged ledger accepted invalid input")
 	}
@@ -80,7 +80,7 @@ func TestLockReadinessEveryPrerequisiteInAnyOrder(t *testing.T) {
 							case 0:
 								accepted = r.Record(lockProof(5, 11))
 							case 1:
-								accepted = r.Record(ports.OutputProtection{Generation: 5, Instance: 12, Kind: ports.ProtectionInactiveOutput})
+								accepted = r.Record(domain.OutputProtection{Generation: 5, Instance: 12, Kind: domain.ProtectionInactiveOutput})
 							case 2:
 								accepted = r.BackendBarrier(5)
 							case 3:
@@ -109,7 +109,7 @@ func TestLockReadinessGenerationFencing(t *testing.T) {
 	requireLockAccepted(t, r.BackendBarrier(10))
 	requireLockAccepted(t, r.CaptureBarrier(10))
 	requireLockReady(t, &r, true)
-	for _, generation := range []ports.LockGeneration{0, 9, 10} {
+	for _, generation := range []domain.LockGeneration{0, 9, 10} {
 		if r.Begin(generation) {
 			t.Fatalf("accepted non-increasing generation %d", generation)
 		}
@@ -119,7 +119,7 @@ func TestLockReadinessGenerationFencing(t *testing.T) {
 	// A newer Begin while engaged clears both barriers and every proof.
 	requireLockAccepted(t, r.Begin(11))
 	requireLockReady(t, &r, false)
-	for _, generation := range []ports.LockGeneration{0, 9, 10, 12} {
+	for _, generation := range []domain.LockGeneration{0, 9, 10, 12} {
 		if r.Record(lockProof(generation, 1)) || r.BackendBarrier(generation) || r.CaptureBarrier(generation) || r.End(generation) {
 			t.Fatalf("accepted wrong-generation evidence/End for %d", generation)
 		}
@@ -149,10 +149,10 @@ func TestLockReadinessGenerationFencing(t *testing.T) {
 
 func TestLockReadinessGenerationExhaustionDoesNotWrap(t *testing.T) {
 	var r Readiness
-	maxGeneration := ports.LockGeneration(^uint64(0))
+	maxGeneration := domain.LockGeneration(^uint64(0))
 	requireLockAccepted(t, r.Begin(maxGeneration))
 	requireLockAccepted(t, r.End(maxGeneration))
-	for _, generation := range []ports.LockGeneration{0, 1, maxGeneration} {
+	for _, generation := range []domain.LockGeneration{0, 1, maxGeneration} {
 		if r.Begin(generation) {
 			t.Fatalf("accepted wrapped/reused generation %d", generation)
 		}
@@ -161,15 +161,15 @@ func TestLockReadinessGenerationExhaustionDoesNotWrap(t *testing.T) {
 }
 
 func TestLockReadinessInvalidProofsDoNotCountOrEraseEvidence(t *testing.T) {
-	invalid := []ports.OutputProtection{
+	invalid := []domain.OutputProtection{
 		{},
 		{Generation: 1, Instance: 1},
 		{Generation: 1, Instance: 1, Kind: "submitted-frame"},
 		{Generation: 1, Instance: 1, Kind: "error-gone"},
-		{Generation: 1, Instance: 0, Kind: ports.ProtectionProtectedFrame},
-		{Generation: 1, Instance: 99, Kind: ports.ProtectionProtectedFrame},
-		{Generation: 0, Instance: 1, Kind: ports.ProtectionProtectedFrame},
-		{Generation: 2, Instance: 1, Kind: ports.ProtectionProtectedFrame},
+		{Generation: 1, Instance: 0, Kind: domain.ProtectionProtectedFrame},
+		{Generation: 1, Instance: 99, Kind: domain.ProtectionProtectedFrame},
+		{Generation: 0, Instance: 1, Kind: domain.ProtectionProtectedFrame},
+		{Generation: 2, Instance: 1, Kind: domain.ProtectionProtectedFrame},
 	}
 	var r Readiness
 	requireLockAccepted(t, r.Add(1))

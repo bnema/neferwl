@@ -22,7 +22,7 @@ func securityGate(t *testing.T, o *Output, state *atomic.Uint64) {
 	k := portsmocks.NewMockSessionSecurity(t)
 	k.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState {
 		v := state.Load()
-		return ports.SecurityState{Generation: ports.LockGeneration(v >> 1), Protected: v&1 != 0}
+		return ports.SecurityState{Generation: domain.LockGeneration(v >> 1), Protected: v&1 != 0}
 	})
 	o.Security = k
 	o.Instance = 77
@@ -71,11 +71,11 @@ func TestSecurityPreparationProofAndFailure(t *testing.T) {
 				select {
 				case ev := <-events:
 					proof, ok := ev.(ports.SecurityOutputProof)
-					kind := ports.ProtectionProtectedFrame
+					kind := domain.ProtectionProtectedFrame
 					if stage == "off" {
-						kind = ports.ProtectionInactiveOutput
+						kind = domain.ProtectionInactiveOutput
 					}
-					if !ok || proof.Proof != (ports.OutputProtection{Generation: 1, Instance: 77, Kind: kind}) {
+					if !ok || proof.Proof != (domain.OutputProtection{Generation: 1, Instance: 77, Kind: kind}) {
 						t.Fatalf("proof %+v", ev)
 					}
 				default:

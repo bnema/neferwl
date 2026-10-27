@@ -11,9 +11,9 @@ import (
 
 func TestOutputSettingsDisableAndHeadlessMode(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
+		mode := domain.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
 		state := NewOutputOverrides(ports.Config{}, true)
-		state.heads = ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "HEADLESS-1"}, Enabled: true, Current: &mode, Modes: []ports.OutputMode{mode}}}}
+		state.heads = ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "HEADLESS-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}}
 		if _, err := state.Apply(ports.OutputApply{Heads: []ports.HeadChange{{Name: "HEADLESS-1", Enabled: false}}}); err == nil {
 			t.Fatal("headless disable accepted")
 		}
@@ -30,10 +30,10 @@ func TestOutputSettingsDisableAndHeadlessMode(t *testing.T) {
 // runtime overrides; any other change drops them.
 func TestReloadScaleOnlyKeepsOverrides(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
+		mode := domain.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
 		file := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}}
 		state := NewOutputOverrides(file, false)
-		state.heads = ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []ports.OutputMode{mode}}, {Info: ports.OutputInfo{Name: "DP-2"}, Enabled: true, Current: &mode, Modes: []ports.OutputMode{mode}}}}
+		state.heads = ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}, {Info: ports.OutputInfo{Name: "DP-2"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}}
 		if _, err := state.Apply(ports.OutputApply{Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Pos: &image.Point{X: 100}}, {Name: "DP-2", Enabled: true}}}); err != nil {
 			t.Fatal(err)
 		}
@@ -73,10 +73,10 @@ func TestScaleChangesTransform(t *testing.T) {
 // reload that only changes file scales.
 func TestOutputApplyTransform(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
+		mode := domain.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
 		file := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}}
 		state := NewOutputOverrides(file, false)
-		state.heads = ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []ports.OutputMode{mode}}}}
+		state.heads = ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}}
 		tr := ports.BufferTransform(3)
 		cfg, err := state.Apply(ports.OutputApply{Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Transform: &tr}}})
 		if err != nil {
@@ -108,12 +108,12 @@ func TestOutputApplyTransform(t *testing.T) {
 // override is dropped.
 func TestOutputApplyKeepsFileAnchor(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
+		mode := domain.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
 		anchor := ports.OutputAnchor{Relation: domain.RelationRightOf, To: "DP-1", Offset: 40}
 		file := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-2", Anchor: anchor, ScaleOnly: true}}}
 		o := NewOutputOverrides(file, false)
 		head := func(name string) ports.OutputHead {
-			return ports.OutputHead{Info: ports.OutputInfo{Name: name}, Enabled: true, Current: &mode, Modes: []ports.OutputMode{mode}}
+			return ports.OutputHead{Info: ports.OutputInfo{Name: name}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}
 		}
 		o.heads = ports.OutputHeads{Heads: []ports.OutputHead{head("DP-1"), head("DP-2")}}
 		change := func(name string, x int) ports.HeadChange {

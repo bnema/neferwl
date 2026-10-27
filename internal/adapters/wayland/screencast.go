@@ -481,8 +481,8 @@ func (s *Server) castInventory() ports.CastInventory {
 		if out.Current < 0 {
 			// No head inventory (headless) or the mode is not listed: the
 			// mode the output runs.
-			mode := ports.OutputMode{Width: p.Info.Width, Height: p.Info.Height, RefreshMilli: p.Info.RefreshMilli, Preferred: len(out.Modes) == 0}
-			if out.Current = slices.IndexFunc(out.Modes, func(m ports.OutputMode) bool {
+			mode := domain.OutputMode{Width: p.Info.Width, Height: p.Info.Height, RefreshMilli: p.Info.RefreshMilli, Preferred: len(out.Modes) == 0}
+			if out.Current = slices.IndexFunc(out.Modes, func(m domain.OutputMode) bool {
 				return m.Width == mode.Width && m.Height == mode.Height && m.RefreshMilli == mode.RefreshMilli
 			}); out.Current < 0 {
 				out.Modes, out.Current = append(out.Modes, mode), len(out.Modes)

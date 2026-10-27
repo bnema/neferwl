@@ -185,7 +185,7 @@ func TestRunVideoOnOverlayDoesNotRender(t *testing.T) {
 				t.Error("Run did not stop")
 			}
 		})
-		static := ports.SurfaceContent{ID: 1, Seq: 1, Width: 100, Height: 100, Opaque: true, Solid: &ports.SolidColor{A: 1}}
+		static := ports.SurfaceContent{ID: 1, Seq: 1, Width: 100, Height: 100, Opaque: true, Solid: &domain.SolidColor{A: 1}}
 		video := func(n int) ports.SurfaceContent {
 			return ports.SurfaceContent{ID: 2, Seq: uint64(n), Width: 100, Height: 100, Opaque: true,
 				DMABuf: &ports.DMABuf{ID: uint64(n%3 + 1), Width: 100, Height: 100, Format: fourccXRGB}}
@@ -464,8 +464,8 @@ func TestSubmitFrameOverlayOnlyNeedsSameImage(t *testing.T) {
 			o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
 			s, c := overlayScene()
 			s.Layers = []ports.SceneLayer{{ID: 5, Layer: domain.LayerBottom, Rect: domain.Rect{W: 10, H: 10}}}
-			c[1] = ports.SurfaceContent{ID: 1, Seq: 1, Width: 100, Height: 100, Opaque: true, Solid: &ports.SolidColor{A: 1}}
-			c[5] = ports.SurfaceContent{ID: 5, Seq: 1, Width: 10, Height: 10, Opaque: true, Solid: &ports.SolidColor{A: 1}}
+			c[1] = ports.SurfaceContent{ID: 1, Seq: 1, Width: 100, Height: 100, Opaque: true, Solid: &domain.SolidColor{A: 1}}
+			c[5] = ports.SurfaceContent{ID: 5, Seq: 1, Width: 10, Height: 10, Opaque: true, Solid: &domain.SolidColor{A: 1}}
 			r := portsmocks.NewMockRenderer(t)
 			r.EXPECT().UseTarget(mock.Anything).Return().Twice()
 			var drawn []int

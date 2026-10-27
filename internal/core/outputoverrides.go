@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"slices"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -148,7 +149,7 @@ func (o *OutputOverrides) validate(req ports.OutputApply) error {
 		if o.headless && (change.Enabled != current.Enabled || change.Mode != nil && (current.Current == nil || change.Mode.Width != current.Current.Width || change.Mode.Height != current.Current.Height || change.Mode.RefreshMilli != current.Current.RefreshMilli)) {
 			return fmt.Errorf("headless mode and enabled state are fixed")
 		}
-		if change.Mode != nil && !slices.ContainsFunc(current.Modes, func(m ports.OutputMode) bool {
+		if change.Mode != nil && !slices.ContainsFunc(current.Modes, func(m domain.OutputMode) bool {
 			return m.Width == change.Mode.Width && m.Height == change.Mode.Height && m.RefreshMilli == change.Mode.RefreshMilli
 		}) {
 			return fmt.Errorf("unknown mode on %s", change.Name)

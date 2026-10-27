@@ -1,4 +1,4 @@
-package ports
+package domain
 
 // OutputInstance identifies one output lifetime, not its connector or name.
 // Instances are nonzero and unique for the compositor's lifetime; reconnecting
@@ -27,3 +27,6 @@ type OutputProtection struct {
 	Instance   OutputInstance
 	Kind       ProtectionKind
 }
+
+// LockGeneration identifies a session transition. Zero is the initial unlocked epoch.
+type LockGeneration uint64

@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	cm "github.com/bnema/go-wayland-bindings/server/colormanagement"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/logging"
@@ -115,7 +117,7 @@ func TestColorMesaFlow(t *testing.T) {
 	if before != (SurfaceColor{true, pq, bt2020, 1000, 400}) {
 		t.Fatalf("committed color %+v", before)
 	}
-	var routed ports.SurfaceColor
+	var routed domain.SurfaceColor
 	s.display.Do(func() {
 		for res, surf := range s.surfaces {
 			if res.ID() == wl {
@@ -123,7 +125,7 @@ func TestColorMesaFlow(t *testing.T) {
 			}
 		}
 	})
-	if routed != (ports.SurfaceColor{TF: ports.ColorTFPQ, Primaries: ports.ColorPrimariesBT2020, MaxCLL: 1000, MaxFALL: 400}) {
+	if routed != (domain.SurfaceColor{TF: domain.ColorTFPQ, Primaries: domain.ColorPrimariesBT2020, MaxCLL: 1000, MaxFALL: 400}) {
 		t.Fatalf("routed color %+v", routed)
 	}
 	requestProtocol(t, c, surfaceID, cm.WpColorManagementSurfaceV1RequestUnsetImageDescription)

@@ -34,7 +34,7 @@ func TestSceneSolid(t *testing.T) {
 		}
 		return true
 	}
-	half := &ports.SolidColor{R: 0.25, G: 0.125, B: 0, A: 0.5} // premultiplied
+	half := &domain.SolidColor{R: 0.25, G: 0.125, B: 0, A: 0.5} // premultiplied
 	t.Run("premultiplied", func(t *testing.T) {
 		r := &Renderer{width: 80, height: 60}
 		got := solids(walk(r, ports.SurfaceContent{Solid: half}))
@@ -73,7 +73,7 @@ func TestSceneSolid(t *testing.T) {
 	})
 	t.Run("transparent", func(t *testing.T) {
 		r := &Renderer{width: 80, height: 60}
-		if got := solids(walk(r, ports.SurfaceContent{Solid: &ports.SolidColor{}})); len(got) != 0 {
+		if got := solids(walk(r, ports.SurfaceContent{Solid: &domain.SolidColor{}})); len(got) != 0 {
 			t.Fatalf("draws = %+v", got)
 		}
 		// Fully faded away too.

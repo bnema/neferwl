@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/bnema/neferwl/internal/adapters/fdwait"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
@@ -239,12 +240,12 @@ func (c *Card) ConnectedHeads() ([]ports.OutputHead, error) {
 		}
 		if o := c.outputs[conn.name]; o != nil {
 			h.Info = o.Info()
-			m := ports.OutputMode{Width: o.Width(), Height: o.Height(), RefreshMilli: o.mode.refreshMilli()}
+			m := domain.OutputMode{Width: o.Width(), Height: o.Height(), RefreshMilli: o.mode.refreshMilli()}
 			h.Current = &m
 			h.Enabled = true
 		}
 		for _, m := range conn.modes {
-			h.Modes = append(h.Modes, ports.OutputMode{Width: int(m.HDisplay), Height: int(m.VDisplay), RefreshMilli: m.refreshMilli(), Preferred: m.Type&modeTypePrefered != 0})
+			h.Modes = append(h.Modes, domain.OutputMode{Width: int(m.HDisplay), Height: int(m.VDisplay), RefreshMilli: m.refreshMilli(), Preferred: m.Type&modeTypePrefered != 0})
 		}
 		heads = append(heads, h)
 	}

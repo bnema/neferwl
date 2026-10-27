@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // Plane colour pipelines (DRM_CLIENT_CAP_PLANE_COLOR_PIPELINE).
@@ -282,7 +282,7 @@ func lut3dIdentityBytes(n uint32) []byte {
 // opaque is the surface's Opaque. A buffer already in the output's encoding
 // goes as it is; sRGB goes through the pipeline; anything else gets the reason
 // it is composed.
-func planeColor(c ports.SurfaceColor, format uint32, opaque, hdrOn bool, pipeline *colorPipeline) (colorMode, string) {
+func planeColor(c domain.SurfaceColor, format uint32, opaque, hdrOn bool, pipeline *colorPipeline) (colorMode, string) {
 	switch {
 	case isYUVFormat(format):
 		// With the colour pipeline cap on, the kernel rejects the plane's
@@ -310,9 +310,9 @@ func planeColor(c ports.SurfaceColor, format uint32, opaque, hdrOn bool, pipelin
 
 // isSDRColor reports whether the surface is sRGB, set or unspecified: what the
 // Vulkan path decodes with decodeSRGB. Extended linear and PQ are other encodings.
-func isSDRColor(c ports.SurfaceColor) bool {
+func isSDRColor(c domain.SurfaceColor) bool {
 	if c.IsPQ2020() || c.IsExtendedLinear() {
 		return false
 	}
-	return (c.TF == 0 || c.TF == ports.ColorTFSRGB) && (c.Primaries == 0 || c.Primaries == ports.ColorPrimariesSRGB)
+	return (c.TF == 0 || c.TF == domain.ColorTFSRGB) && (c.Primaries == 0 || c.Primaries == domain.ColorPrimariesSRGB)
 }

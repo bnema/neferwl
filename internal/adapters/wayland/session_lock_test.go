@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	lockclient "github.com/bnema/go-wayland-bindings/client/extsessionlock"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
@@ -81,7 +83,7 @@ func TestSessionLockWaitsForEveryBarrierAndOwnerDeathStaysProtected(t *testing.T
 		s.applySecurityEvent(ports.SecurityOutputAdded{Instance: 1, Output: "OUT-1"})
 		s.applySecurityEvent(ports.SecurityOutputAdded{Instance: 2, Output: "OUT-2"})
 		s.applySecurityEvent(ports.SecurityBackendBarrier{Generation: state.Generation})
-		s.applySecurityEvent(ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: state.Generation, Instance: 1, Kind: ports.ProtectionProtectedFrame}})
+		s.applySecurityEvent(ports.SecurityOutputProof{Proof: domain.OutputProtection{Generation: state.Generation, Instance: 1, Kind: domain.ProtectionProtectedFrame}})
 	}) {
 		t.Fatal("display stopped")
 	}
@@ -92,7 +94,7 @@ func TestSessionLockWaitsForEveryBarrierAndOwnerDeathStaysProtected(t *testing.T
 		t.Fatal("locked without second output proof")
 	}
 	if !s.display.Do(func() {
-		s.applySecurityEvent(ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: state.Generation, Instance: 2, Kind: ports.ProtectionInactiveOutput}})
+		s.applySecurityEvent(ports.SecurityOutputProof{Proof: domain.OutputProtection{Generation: state.Generation, Instance: 2, Kind: domain.ProtectionInactiveOutput}})
 	}) {
 		t.Fatal("display stopped")
 	}

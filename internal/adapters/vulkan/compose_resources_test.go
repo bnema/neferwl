@@ -34,7 +34,7 @@ func TestComposeIndexedMixedResources(t *testing.T) {
 		{ID: 3, Layer: domain.LayerOverlay, Rect: domain.Rect{X: 32, W: 16, H: 16}},
 	}}
 	contents := map[domain.WindowID]ports.SurfaceContent{
-		1: {ID: 1, Width: 64, Height: 16, Opaque: true, DMABuf: yuv, Color: ports.SurfaceColor{Coefficients: 2, Range: 2, Chroma: 1}},
+		1: {ID: 1, Width: 64, Height: 16, Opaque: true, DMABuf: yuv, Color: domain.SurfaceColor{Coefficients: 2, Range: 2, Chroma: 1}},
 		2: shm,
 		3: {ID: 3, Width: 64, Height: 16, Opaque: true, DMABuf: rgb},
 	}

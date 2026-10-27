@@ -22,6 +22,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/sched"
 	"github.com/bnema/neferwl/internal/adapters/seat"
 	"github.com/bnema/neferwl/internal/adapters/watchdog"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
@@ -85,8 +86,8 @@ func revokeSecurityLeases(c securityLeaseCard, finished func(uint32)) error {
 // registerDiscardedOutput accounts for physical output lifetimes that cannot
 // enter connector-name routing. They still require protection just like owners.
 // The same backend-owned counter is used by outputSet.start; no instance reuse.
-func registerDiscardedOutput(set *outputSet, name string) (ports.OutputInstance, error) {
-	if set.nextInstance == ^ports.OutputInstance(0) {
+func registerDiscardedOutput(set *outputSet, name string) (domain.OutputInstance, error) {
+	if set.nextInstance == ^domain.OutputInstance(0) {
 		set.startErr = errors.New("output instance exhausted")
 		return 0, set.startErr
 	}
@@ -100,7 +101,7 @@ func registerDiscardedOutput(set *outputSet, name string) (ports.OutputInstance,
 
 // retireDiscardedOutput consumes only affirmative terminal evidence. A failed
 // close remains in authoritative inventory, even though it has no render owner.
-func retireDiscardedOutput(set *outputSet, instance ports.OutputInstance, inactive bool) error {
+func retireDiscardedOutput(set *outputSet, instance domain.OutputInstance, inactive bool) error {
 	if !inactive {
 		return fmt.Errorf("discarded output %d shutdown inactivity unconfirmed", instance)
 	}

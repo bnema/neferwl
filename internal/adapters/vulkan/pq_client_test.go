@@ -53,7 +53,7 @@ func TestPQClientComposition(t *testing.T) {
 				return [4]byte{byte(packed), byte(packed >> 8), byte(packed >> 16), byte(packed >> 24)}
 			})
 			buf := &ports.DMABuf{ID: uint64(format.Format), Width: 64, Height: 4, Format: format.Format, Planes: []ports.DMABufPlane{{File: f, Stride: 256}}}
-			c := ports.SurfaceContent{ID: 1, Width: 64, Height: 4, Opaque: name[0] == 'X', Color: ports.SurfaceColor{TF: ports.ColorTFPQ, Primaries: ports.ColorPrimariesBT2020}, DMABuf: buf}
+			c := ports.SurfaceContent{ID: 1, Width: 64, Height: 4, Opaque: name[0] == 'X', Color: domain.SurfaceColor{TF: domain.ColorTFPQ, Primaries: domain.ColorPrimariesBT2020}, DMABuf: buf}
 			scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 4}}}}
 			if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: c}); err != nil {
 				t.Fatal(err)

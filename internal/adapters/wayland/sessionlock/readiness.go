@@ -1,6 +1,6 @@
 package sessionlock
 
-import "github.com/bnema/neferwl/internal/ports"
+import "github.com/bnema/neferwl/internal/domain"
 
 // Readiness is pure readiness bookkeeping owned by one goroutine. Its zero
 // value is an empty, disengaged ledger. It must not be copied after first use;
@@ -10,23 +10,23 @@ import "github.com/bnema/neferwl/internal/ports"
 // must be affirmative evidence from the respective owner, never an inference
 // from a failed operation.
 type Readiness struct {
-	generation ports.LockGeneration // high-water mark, retained after End
+	generation domain.LockGeneration // high-water mark, retained after End
 	active     bool
 	backend    bool
 	capture    bool
-	outputs    map[ports.OutputInstance]lockOutputReadiness
+	outputs    map[domain.OutputInstance]lockOutputReadiness
 }
 
 type lockOutputReadiness struct {
 	registered bool
-	proof      ports.ProtectionKind
+	proof      domain.ProtectionKind
 }
 
 // Add registers a new output lifetime before or during a lock. Zero, duplicate
 // and retired IDs are rejected without changing state. A new output has no
 // proof, so adding it while engaged revokes Ready until it is protected. IDs
 // remain as tombstones after Remove to prevent accepting a replaced lifetime.
-func (r *Readiness) Add(instance ports.OutputInstance) bool {
+func (r *Readiness) Add(instance domain.OutputInstance) bool {
 	if instance == 0 {
 		return false
 	}
@@ -34,7 +34,7 @@ func (r *Readiness) Add(instance ports.OutputInstance) bool {
 		return false
 	}
 	if r.outputs == nil {
-		r.outputs = make(map[ports.OutputInstance]lockOutputReadiness)
+		r.outputs = make(map[domain.OutputInstance]lockOutputReadiness)
 	}
 	r.outputs[instance] = lockOutputReadiness{registered: true}
 	return true
@@ -44,7 +44,7 @@ func (r *Readiness) Add(instance ports.OutputInstance) bool {
 // disconnected or inactive. An error (including "gone") is not confirmation.
 // An inactive lifetime that may resume should instead remain registered with
 // an inactive-output proof. Unknown or already retired instances are rejected.
-func (r *Readiness) Remove(instance ports.OutputInstance) bool {
+func (r *Readiness) Remove(instance domain.OutputInstance) bool {
 	output, ok := r.outputs[instance]
 	if !ok || !output.registered {
 		return false
@@ -57,7 +57,7 @@ func (r *Readiness) Remove(instance ports.OutputInstance) bool {
 // clearing every proof and both barriers. Registrations may subsequently
 // change. Generations must increase strictly, even across End; an invalid
 // Begin leaves the current round untouched. Exhaustion must not wrap to zero.
-func (r *Readiness) Begin(generation ports.LockGeneration) bool {
+func (r *Readiness) Begin(generation domain.LockGeneration) bool {
 	if generation == 0 || generation <= r.generation {
 		return false
 	}
@@ -73,7 +73,7 @@ func (r *Readiness) Begin(generation ports.LockGeneration) bool {
 // End clears only the exact active round, retaining inventory and the
 // generation high-water mark. Late End calls cannot cancel a newer round, and
 // late proofs or barriers cannot reactivate an ended round.
-func (r *Readiness) End(generation ports.LockGeneration) bool {
+func (r *Readiness) End(generation domain.LockGeneration) bool {
 	if !r.accepts(generation) {
 		return false
 	}
@@ -88,12 +88,12 @@ func (r *Readiness) End(generation ports.LockGeneration) bool {
 // Record accepts only affirmative protection evidence for a registered
 // lifetime in the exact active generation. Repeated valid proofs are harmless;
 // invalid evidence never overwrites an existing proof.
-func (r *Readiness) Record(proof ports.OutputProtection) bool {
+func (r *Readiness) Record(proof domain.OutputProtection) bool {
 	if !r.accepts(proof.Generation) {
 		return false
 	}
 	switch proof.Kind {
-	case ports.ProtectionProtectedFrame, ports.ProtectionInactiveOutput:
+	case domain.ProtectionProtectedFrame, domain.ProtectionInactiveOutput:
 	default:
 		return false
 	}
@@ -109,7 +109,7 @@ func (r *Readiness) Record(proof ports.OutputProtection) bool {
 // Invalidate revokes a prior proof within the active epoch. A recovered or
 // resumed lifetime must provide fresh affirmative protection, never reuse its
 // earlier presentation. Unknown, retired and stale epochs have no effect.
-func (r *Readiness) Invalidate(generation ports.LockGeneration, instance ports.OutputInstance) bool {
+func (r *Readiness) Invalidate(generation domain.LockGeneration, instance domain.OutputInstance) bool {
 	if !r.accepts(generation) {
 		return false
 	}
@@ -126,7 +126,7 @@ func (r *Readiness) Invalidate(generation ports.LockGeneration, instance ports.O
 // backend leases, and completed security handoff for the active generation.
 // This is required even with zero outputs; an empty local inventory is not an
 // acknowledgement. It does not acknowledge capture memory-copy completion.
-func (r *Readiness) BackendBarrier(generation ports.LockGeneration) bool {
+func (r *Readiness) BackendBarrier(generation domain.LockGeneration) bool {
 	if !r.accepts(generation) {
 		return false
 	}
@@ -137,7 +137,7 @@ func (r *Readiness) BackendBarrier(generation ports.LockGeneration) bool {
 // CaptureBarrier acknowledges that all admitted prelock memory-copy work,
 // including writes to capture FDs, has completed for the active generation.
 // Output protection and backend drainage cannot substitute for this barrier.
-func (r *Readiness) CaptureBarrier(generation ports.LockGeneration) bool {
+func (r *Readiness) CaptureBarrier(generation domain.LockGeneration) bool {
 	if !r.accepts(generation) {
 		return false
 	}
@@ -159,6 +159,6 @@ func (r *Readiness) Ready() bool {
 	return true
 }
 
-func (r *Readiness) accepts(generation ports.LockGeneration) bool {
+func (r *Readiness) accepts(generation domain.LockGeneration) bool {
 	return r.active && generation != 0 && generation == r.generation
 }

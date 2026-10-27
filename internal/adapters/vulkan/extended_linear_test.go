@@ -76,7 +76,7 @@ func TestExtendedLinearClient(t *testing.T) {
 			f := os.NewFile(fd, "fp16-client")
 			defer f.Close()
 			buf := &ports.DMABuf{ID: 164, Width: 64, Height: 16, Format: format.Format, Planes: []ports.DMABufPlane{{File: f, Stride: 512}}}
-			c := ports.SurfaceContent{ID: 1, Width: 64, Height: 16, Opaque: true, DMABuf: buf, Color: ports.SurfaceColor{TF: ports.ColorTFExtendedLinear, Primaries: ports.ColorPrimariesSRGB}}
+			c := ports.SurfaceContent{ID: 1, Width: 64, Height: 16, Opaque: true, DMABuf: buf, Color: domain.SurfaceColor{TF: domain.ColorTFExtendedLinear, Primaries: domain.ColorPrimariesSRGB}}
 			scene := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
 			if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: c}); err != nil {
 				t.Fatal(err)

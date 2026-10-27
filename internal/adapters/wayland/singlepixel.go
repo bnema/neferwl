@@ -29,7 +29,7 @@ func (singlePixelManager) Destroy(*singlepixelbuffer.WpSinglePixelBufferManagerV
 func (m singlePixelManager) CreateU32RgbaBuffer(r *singlepixelbuffer.WpSinglePixelBufferManagerV1, id, red, green, blue, alpha uint32) {
 	unit := func(v uint32) float32 { return float32(float64(v) / math.MaxUint32) }
 	buf := &singlePixelBuffer{
-		color:  ports.SolidColor{R: unit(red), G: unit(green), B: unit(blue), A: unit(alpha)},
+		color:  domain.SolidColor{R: unit(red), G: unit(green), B: unit(blue), A: unit(alpha)},
 		opaque: alpha == math.MaxUint32,
 	}
 	res, err := wayland.NewBuffer(r.Client(), 1, id, buf)
@@ -42,7 +42,7 @@ func (m singlePixelManager) CreateU32RgbaBuffer(r *singlepixelbuffer.WpSinglePix
 // singlePixelBuffer is a wl_buffer of one color. The color is never mutated,
 // so content shares it between commits.
 type singlePixelBuffer struct {
-	color  ports.SolidColor
+	color  domain.SolidColor
 	opaque bool
 }
 

@@ -28,8 +28,8 @@ type virtualKeyboard struct {
 	// pressed are keys held on focus; a focus change releases them by leave.
 	pressed      map[uint32]bool
 	focus        domain.WindowID
-	generation   ports.LockGeneration // epoch of held keys; never release across protection
-	dropReleases bool                 // after an epoch change, ignore releases without a new press
+	generation   domain.LockGeneration // epoch of held keys; never release across protection
+	dropReleases bool                  // after an epoch change, ignore releases without a new press
 }
 
 // registerVirtualKeyboard exposes the global to every client, as wlroots

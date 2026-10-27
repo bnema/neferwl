@@ -4,6 +4,8 @@ import (
 	"image"
 	"math"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	wlr "github.com/bnema/go-wayland-bindings/server/wlroutputmanagement"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
@@ -144,7 +146,7 @@ func (h *headConfiguration) SetCustomMode(r *wlr.ZwlrOutputConfigurationHeadV1, 
 		return
 	}
 	h.unsupported = true
-	h.change.Mode = &ports.OutputMode{Width: int(w), Height: int(height), RefreshMilli: int(refresh)}
+	h.change.Mode = &domain.OutputMode{Width: int(w), Height: int(height), RefreshMilli: int(refresh)}
 }
 func (h *headConfiguration) SetPosition(r *wlr.ZwlrOutputConfigurationHeadV1, x, y int32) {
 	if h.once(&h.positionSet, r) {
