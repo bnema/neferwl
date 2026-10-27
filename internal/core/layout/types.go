@@ -34,6 +34,10 @@ type Column struct {
 	Shares []int
 }
 
+// Selected is the window at the column's Focus index. Like an index
+// expression it panics when Focus is outside Windows.
+func (c Column) Selected() WindowID { return c.Windows[c.Focus] }
+
 // Overflow says what happens past MaxColumns columns: the config name of a
 // layout.
 type Overflow string

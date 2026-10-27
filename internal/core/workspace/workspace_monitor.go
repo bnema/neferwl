@@ -6,7 +6,7 @@ import "github.com/bnema/neferwl/internal/core/layout"
 // index at, or where a new window goes when at < 0. A fullscreen window
 // there is left, so the moved window is seen.
 func (w *Workspace) receive(col layout.Column, at int) {
-	id := col.Windows[col.Focus]
+	id := col.Selected()
 	switch {
 	case at < 0:
 		w.addColumn(col)

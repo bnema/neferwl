@@ -1,6 +1,8 @@
 package workspace
 
 import (
+	"slices"
+
 	"github.com/bnema/neferwl/internal/core/geom"
 	"github.com/bnema/neferwl/internal/core/layout"
 )
@@ -23,6 +25,49 @@ type Border struct {
 	Col, Row int
 	// Rect is the output-local pointer hit zone.
 	Rect Rect
+}
+
+// Sizes is a snapshot of every column's manual width and row shares. It owns
+// its slices, so later resizes do not change it.
+type Sizes struct {
+	cols []layout.Column
+}
+
+// SaveSizes snapshots the column sizes for RestoreSizes.
+func (w *Workspace) SaveSizes() Sizes {
+	s := Sizes{cols: slices.Clone(w.Columns)}
+	for i := range s.cols {
+		s.cols[i].Windows = slices.Clone(s.cols[i].Windows)
+		s.cols[i].Shares = slices.Clone(s.cols[i].Shares)
+	}
+	return s
+}
+
+// SizesValid reports whether the columns still hold the windows of s, in
+// the same order, so RestoreSizes can put the sizes back.
+func (w *Workspace) SizesValid(s Sizes) bool {
+	if len(w.Columns) != len(s.cols) {
+		return false
+	}
+	for i, col := range w.Columns {
+		if !slices.Equal(col.Windows, s.cols[i].Windows) {
+			return false
+		}
+	}
+	return true
+}
+
+// RestoreSizes puts back the span, span stamp and shares of every column
+// saved in s. It returns false and writes nothing when SizesValid fails.
+func (w *Workspace) RestoreSizes(s Sizes) bool {
+	if !w.SizesValid(s) {
+		return false
+	}
+	for i, saved := range s.cols {
+		col := &w.Columns[i]
+		col.Span, col.SpanStamp, col.Shares = saved.Span, saved.SpanStamp, slices.Clone(saved.Shares)
+	}
+	return true
 }
 
 // borderMinWidth is the minimum logical pixel width for a border resize.

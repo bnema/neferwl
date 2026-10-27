@@ -12,7 +12,7 @@ func (w *Workspace) noteFocus() {
 		return
 	}
 	col := w.Columns[w.Focus]
-	id := col.Windows[col.Focus]
+	id := col.Selected()
 	if len(w.recent) > 0 && slices.Contains(col.Windows, w.recent[0]) {
 		w.recent[0] = id
 		return
@@ -40,7 +40,7 @@ func (w *Workspace) SwitchOrder() []WindowID {
 		}
 		seen[i] = true
 		c := w.Columns[i]
-		order = append(order, c.Windows[c.Focus])
+		order = append(order, c.Selected())
 	}
 	add(w.Focus)
 	for _, id := range w.recent {

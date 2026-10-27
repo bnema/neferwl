@@ -383,7 +383,7 @@ func (m *Monitor) ToggleFullscreen() { m.Current().ToggleFullscreen() }
 func (m *Monitor) MoveToWorkspace(i int, column bool) {
 	i = min(max(i, 0), len(m.Workspaces)-1)
 	cur, to := m.Current(), m.Workspaces[i]
-	if to == cur || !MoveFocused(cur, to, column, -1) {
+	if to == cur || !MoveFocused(cur, to, column) {
 		return
 	}
 	if m.followMove {
@@ -529,7 +529,7 @@ func (m *Monitor) SetFollowMove(on bool) { m.followMove = on }
 
 // SetMaxColumns sets the default; named workspaces may override it.
 func (m *Monitor) SetMaxColumns(n int) {
-	m.template.MaxColumns = n
+	m.template.SetMaxColumns(n)
 	m.applyNamed()
 }
 
@@ -592,8 +592,7 @@ func (m *Monitor) SetNamed(specs []NamedWorkspace) {
 	byName := map[string]*Workspace{}
 	for _, w := range m.Workspaces {
 		if _, ok := want[w.Name]; w.Name != "" && !ok {
-			w.Name = ""
-			w.SetSize(0, 0)
+			w.Unname()
 		}
 		if w.Name != "" {
 			byName[w.Name] = w

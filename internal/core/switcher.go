@@ -70,7 +70,7 @@ func (s *switcherState) remove(id, heir WindowID) {
 	}
 	if j := s.ws.ColumnOf(heir); heir != 0 && j >= 0 {
 		col := s.ws.Columns[j]
-		next := col.Windows[col.Focus]
+		next := col.Selected()
 		if size, ok := s.sizes[id]; ok {
 			if _, has := s.sizes[next]; !has {
 				s.sizes[next] = size

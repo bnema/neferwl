@@ -150,7 +150,7 @@ func (w *Workspace) ApplyStack(item StackItem, selected WindowID) {
 				}
 			}
 			c := w.Columns[i]
-			selected = c.Windows[c.Focus]
+			selected = c.Selected()
 		}
 		if selected != 0 {
 			if w.OverviewMaximized() && i != w.Focus {
@@ -165,7 +165,7 @@ func (w *Workspace) ApplyStack(item StackItem, selected WindowID) {
 		}
 		if w.ColumnOf(selected) != i {
 			c := w.Columns[i]
-			selected = c.Windows[c.Focus]
+			selected = c.Selected()
 		}
 		if w.OverviewMaximized() && i != w.Focus {
 			w.TransferMaximization(i)

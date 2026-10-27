@@ -75,8 +75,9 @@ func MoveColumnTo(from, to *Workspace, at int) bool {
 	return true
 }
 
-// MoveFocused transfers the focused column or window to a workspace.
-func MoveFocused(from, to *Workspace, column bool, at int) bool {
+// MoveFocused transfers the focused column or window to a workspace. A moved
+// tile joins the destination at the layout's default position.
+func MoveFocused(from, to *Workspace, column bool) bool {
 	id, ok := from.Focused()
 	if !ok {
 		return false
@@ -105,7 +106,7 @@ func MoveFocused(from, to *Workspace, column bool, at int) bool {
 		if !ok {
 			return false
 		}
-		to.receive(col, at)
+		to.receive(col, -1)
 	}
 	return true
 }
@@ -357,8 +358,9 @@ type OverviewRow struct {
 	Axis layout.Axis
 	// Slot is the row's output-local rectangle along Axis.
 	Slot Rect
-	// Shown, Current and Dim describe row visibility and focus presentation.
-	Shown, Current, Dim bool
+	// Shown and Current describe row visibility and focus presentation; a row
+	// that is not Current is drawn dimmed.
+	Shown, Current bool
 	// Head and Items are the stack's first item and its item count up to 2,
 	// as StackHead returns them. The caller reads them once per frame; they
 	// matter only for a Shown row.
@@ -407,7 +409,7 @@ func (w *Workspace) SaveRow() RowSnapshot {
 	s.Focus, _ = w.Focused()
 	if len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth {
 		c := w.Columns[w.Focus]
-		s.fullWidth = c.Windows[c.Focus]
+		s.fullWidth = c.Selected()
 	}
 	return s
 }
@@ -424,17 +426,17 @@ func (w *Workspace) AppendOverviewRow(dst []Placement, r OverviewRow) ([]Placeme
 		slot.H -= w.pileBand(r.Axis)
 		var tiles []Placement
 		if r.Items == 0 {
-			tiles = w.previewRow(r.Axis, slot, r.Dim, r.Card < 0)
+			tiles = w.previewRow(r.Axis, slot, !r.Current, r.Card < 0)
 		} else if r.Items == 1 {
-			tiles = w.previewItem(r.Head, r.HiddenColumn, r.Axis, slot, r.Dim, r.Card < 0)
+			tiles = w.previewItem(r.Head, r.HiddenColumn, r.Axis, slot, !r.Current, r.Card < 0)
 		} else {
-			tiles = w.stackRow(r.Front, r.Current, r.HiddenColumn, r.Axis, slot, r.Dim, r.Card < 0)
+			tiles = w.stackRow(r.Front, r.Current, r.HiddenColumn, r.Axis, slot, !r.Current, r.Card < 0)
 		}
 		dst = append(dst, tiles...)
 		if r.Card >= 0 {
 			unfolded = true
 		} else {
-			dst = w.pile(dst, r.Axis, slot, r.Dim, -1)
+			dst = w.pile(dst, r.Axis, slot, !r.Current, -1)
 		}
 	}
 	for _, f := range w.Floats {

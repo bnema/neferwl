@@ -331,3 +331,42 @@ func TestSetBorderUndersizedPairReportsStampOnce(t *testing.T) {
 		})
 	}
 }
+
+func TestRestoreSizes(t *testing.T) {
+	w := spanWorkspace(OverflowScroll, 2)
+	w.AddWindow(3)
+	w.Columns[0].Windows = append(w.Columns[0].Windows, 9)
+	w.Columns[0].Shares = []int{4000, 6000}
+	stampSpans(w, 0, 1)
+	saved := w.SaveSizes()
+	spans := [2]int{w.Columns[0].Span, w.Columns[1].Span}
+
+	w.Columns[0].Shares[0] = 1
+	w.Columns[0].Span, w.Columns[0].SpanStamp = 7, 0
+	w.Columns[1].Span = 3
+	if !w.SizesValid(saved) || !w.RestoreSizes(saved) {
+		t.Fatal("restore refused on unchanged windows")
+	}
+	if got := w.Columns[0].Shares; !slices.Equal(got, []int{4000, 6000}) {
+		t.Fatalf("shares = %v", got)
+	}
+	if w.Columns[0].Span != spans[0] || w.Columns[1].Span != spans[1] || w.Columns[0].SpanStamp == 0 {
+		t.Fatalf("spans = %d %d stamp %d", w.Columns[0].Span, w.Columns[1].Span, w.Columns[0].SpanStamp)
+	}
+	w.Columns[0].Shares[0] = 1
+	if !w.RestoreSizes(saved) || w.Columns[0].Shares[0] != 4000 {
+		t.Fatal("restored shares alias the snapshot")
+	}
+
+	// A changed window list leaves the columns untouched.
+	w.Columns[0].Shares[0] = 5
+	w.Columns[1].Windows = append(w.Columns[1].Windows, 8)
+	if w.SizesValid(saved) || w.RestoreSizes(saved) || w.Columns[0].Shares[0] != 5 {
+		t.Fatal("restore wrote after the windows changed")
+	}
+	w.Columns[1].Windows = w.Columns[1].Windows[:1]
+	w.AddWindow(4)
+	if w.SizesValid(saved) || w.RestoreSizes(saved) || w.Columns[0].Shares[0] != 5 {
+		t.Fatal("restore wrote after the column count changed")
+	}
+}

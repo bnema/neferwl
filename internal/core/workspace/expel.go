@@ -34,7 +34,7 @@ func (w *Workspace) ConsumeOrExpel(dir int) bool {
 	}
 	src := w.Focus
 	col := w.Columns[src]
-	id := col.Windows[col.Focus]
+	id := col.Selected()
 	next := src + dir
 	edge := next < 0 || next >= len(w.Columns)
 	switch {

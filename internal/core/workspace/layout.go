@@ -420,7 +420,7 @@ func (w *Workspace) Focused() (WindowID, bool) {
 	if c.Focus < 0 || c.Focus >= len(c.Windows) {
 		return 0, false
 	}
-	return c.Windows[c.Focus], true
+	return c.Selected(), true
 }
 
 // minShare is the smallest row height set-window-height leaves, in basis points.
@@ -454,6 +454,12 @@ func (w *Workspace) SetUsable(r Rect) {
 func (w *Workspace) SetSize(width, height int) {
 	w.size = [2]int{max(width, 0), max(height, 0)}
 	w.fit()
+}
+
+// Unname drops the workspace's name and its configured size.
+func (w *Workspace) Unname() {
+	w.Name = ""
+	w.SetSize(0, 0)
 }
 
 // fit derives the viewport and usable area from the monitor, its reservations

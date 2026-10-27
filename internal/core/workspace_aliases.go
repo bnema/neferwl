@@ -41,6 +41,9 @@ type OverviewRow = workspacedomain.OverviewRow
 // RowSnapshot preserves core's existing caller contract while workspace owns the model.
 type RowSnapshot = workspacedomain.RowSnapshot
 
+// Sizes preserves core's existing caller contract while workspace owns the model.
+type Sizes = workspacedomain.Sizes
+
 // StackItem preserves core's existing caller contract while workspace owns the model.
 type StackItem = workspacedomain.StackItem
 
@@ -231,8 +234,8 @@ func MoveColumnTo(from, to *Workspace, at int) bool {
 }
 
 // MoveFocused forwards the model operation without changing existing core call sites.
-func MoveFocused(from, to *Workspace, column bool, at int) bool {
-	return workspacedomain.MoveFocused(from, to, column, at)
+func MoveFocused(from, to *Workspace, column bool) bool {
+	return workspacedomain.MoveFocused(from, to, column)
 }
 
 // Expel forwards the model operation without changing existing core call sites.

@@ -171,7 +171,7 @@ func (w *Lanes) fullscreenBand(id WindowID) bool {
 		return false
 	}
 	fc := w.Columns[w.Focus]
-	focus := fc.Windows[fc.Focus]
+	focus := fc.Selected()
 	bands := w.bandList()
 	col := bands[b][i-first]
 	nc := col

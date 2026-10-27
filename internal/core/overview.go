@@ -151,7 +151,7 @@ func (m *Monitor) overviewTarget() WindowID {
 		i := w.ColumnOf(item.ID)
 		if i >= 0 {
 			c := w.Columns[i]
-			return c.Windows[c.Focus]
+			return c.Selected()
 		}
 	case StackColumns:
 		i := w.Focus
@@ -166,7 +166,7 @@ func (m *Monitor) overviewTarget() WindowID {
 		}
 		if i >= 0 {
 			c := w.Columns[i]
-			return c.Windows[c.Focus]
+			return c.Selected()
 		}
 	}
 	return 0
@@ -461,7 +461,7 @@ func (m *Monitor) leavePile(w *Workspace) {
 // selectLaneColumn selects column i of w.
 func (m *Monitor) selectLaneColumn(w *Workspace, i int) {
 	w.SelectOverviewColumn(i)
-	m.ov.selected = w.Columns[i].Windows[w.Columns[i].Focus]
+	m.ov.selected = w.Columns[i].Selected()
 	m.ov.selectedAt = i
 }
 
@@ -540,10 +540,10 @@ func (m *Monitor) overviewHorizontal(dx int) {
 			if item.Kind == StackColumns {
 				if w.OverviewMaximized() {
 					i := m.hiddenColumn(w)
-					m.ov.selected, m.ov.selectedAt = w.Columns[i].Windows[w.Columns[i].Focus], i
+					m.ov.selected, m.ov.selectedAt = w.Columns[i].Selected(), i
 				} else {
 					w.SelectOverviewColumn(0)
-					m.ov.selected = w.Columns[0].Windows[w.Columns[0].Focus]
+					m.ov.selected = w.Columns[0].Selected()
 				}
 			}
 		}
@@ -585,7 +585,7 @@ func (m *Monitor) overviewHorizontal(dx int) {
 			return
 		}
 	}
-	m.ov.selected = w.Columns[next].Windows[w.Columns[next].Focus]
+	m.ov.selected = w.Columns[next].Selected()
 	m.ov.selectedAt = next
 	if !w.OverviewMaximized() {
 		// Ordinary group navigation retains its existing scroll-to-selection.
@@ -721,7 +721,7 @@ func (m *Monitor) overviewLayout(result []Placement) []Placement {
 	var unfoldedSlot Rect
 	for w := range m.all() {
 		slot, shown := rows.lookup(w)
-		r := OverviewRow{Axis: axis, Slot: slot, Shown: shown, Current: w == cur, Dim: w != cur, Card: -1, HiddenColumn: -1}
+		r := OverviewRow{Axis: axis, Slot: slot, Shown: shown, Current: w == cur, Card: -1, HiddenColumn: -1}
 		if shown {
 			r.Card = m.cardAt(w)
 			r.Head, r.Items = w.StackHead()
