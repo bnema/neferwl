@@ -694,17 +694,3 @@ func (w *Workspace) Apply(a Action) Effect {
 	}
 	return Effect{}
 }
-
-// moveFloat moves float id from workspace cur to to, as MoveToWorkspace
-// does, focuses it there and keeps it fullscreen.
-func moveFloat(cur, to *Workspace, id WindowID) {
-	fl := cur.Floats[cur.floatIndex(id)]
-	if fl.free && fl.back != nil {
-		fl = fl.rehome()
-	}
-	cur.RemoveWindow(id)
-	to.AddFloating(id, fl.W, fl.H)
-	to.Floats[len(to.Floats)-1] = fl
-	to.Activate(id)
-	to.SetFullscreen(id, true)
-}

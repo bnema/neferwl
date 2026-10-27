@@ -64,48 +64,31 @@ func (w *Workspace) focusedFree() int {
 	return -1
 }
 
-// freeAction runs a move or resize action on the focused free float and
-// reports whether it did: moves shift it by freeNudge, resizes change its
-// size by a share of the usable area.
-func (w *Workspace) freeAction(a Action) bool {
-	i := w.focusedFree()
-	if i < 0 {
-		return false
-	}
+// resizeFree resizes a free float by a share of the usable area.
+func (w *Workspace) resizeFree(i int, width bool, step int) {
 	f := &w.Floats[i]
 	u := w.Usable
-	if axis, step, ok := ResizeArg(a); ok {
-		if u.W <= 0 || u.H <= 0 {
-			return true
-		}
-		// The size is the client's: the border must fit too. A width
-		// step is in cells, a cell being Usable.W/MaxColumns.
-		if axis == ResizeWidth {
-			f.W = max(min(f.W+step*u.W/max(w.MaxColumns, 1), u.W-2*w.border), freeMinSize)
-		} else {
-			f.H = max(min(f.H+u.H*step/100, u.H-2*w.border), freeMinSize)
-		}
-		w.clampFree(f)
-		return true
-	}
-	dx, dy := 0, 0
-	switch a {
-	case ActionMoveColumnLeft:
-		dx = -freeNudge
-	case ActionMoveColumnRight:
-		dx = freeNudge
-	case ActionMoveWindowUp:
-		dy = -freeNudge
-	case ActionMoveWindowDown:
-		dy = freeNudge
-	default:
-		return false
-	}
 	if u.W <= 0 || u.H <= 0 {
-		return true
+		return
+	}
+	// The size is the client's: the border must fit too. A width
+	// step is in cells, a cell being Usable.W/MaxColumns.
+	if width {
+		f.W = max(min(f.W+step*u.W/max(w.MaxColumns, 1), u.W-2*w.border), freeMinSize)
+	} else {
+		f.H = max(min(f.H+u.H*step/100, u.H-2*w.border), freeMinSize)
+	}
+	w.clampFree(f)
+}
+
+// nudgeFree moves a free float by logical pixels inside the usable area.
+func (w *Workspace) nudgeFree(i, dx, dy int) {
+	f := &w.Floats[i]
+	u := w.Usable
+	if u.W <= 0 || u.H <= 0 {
+		return
 	}
 	w.moveFree(f, w.floatRect(*f), dx, dy)
-	return true
 }
 
 // moveFree puts free float f at rect r shifted by dx, dy, kept inside
