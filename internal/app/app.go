@@ -9,6 +9,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/cursors"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/routing"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/adapters/xwayland"
 	"github.com/bnema/neferwl/internal/core"
@@ -135,7 +136,7 @@ func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.Config
 		curs.SetHideAfter(ev.Config.Cursor.HideAfter)
 		if ev.Config.InputDevicesConfig != devCfg {
 			devCfg = ev.Config.InputDevicesConfig
-			latest(deviceConfigs, devCfg) // this goroutine is the only sender
+			routing.Latest(deviceConfigs, devCfg) // this goroutine is the only sender
 		}
 		if layoutChanged || repeatChanged {
 			select {
@@ -171,7 +172,7 @@ func consumeScenes(ctx context.Context, scenes <-chan []domain.Scene, configErro
 				default:
 				}
 			}
-			latest(renderScenes, set) // this goroutine is the only sender
+			routing.Latest(renderScenes, set) // this goroutine is the only sender
 			logScenes(log, set)
 		case err := <-configErrors:
 			configLog.Warn().Err(err).Msg("config rejected")
@@ -222,25 +223,4 @@ func renderNode(dev uint64) string {
 		return ""
 	}
 	return fmt.Sprintf("/dev/dri/renderD%d", unix.Minor(dev))
-}
-
-// latest sends v without blocking and replaces a value the consumer has not
-// read yet: the newest wins. It reports whether it dropped an unread value.
-// Only one goroutine may send on ch; consumers only receive, so the retry
-// after draining cannot find the buffer full again.
-func latest[T any](ch chan T, v T) (replaced bool) {
-	select {
-	case ch <- v:
-	default:
-		select {
-		case <-ch:
-			replaced = true
-		default:
-		}
-		select {
-		case ch <- v:
-		default:
-		}
-	}
-	return replaced
 }

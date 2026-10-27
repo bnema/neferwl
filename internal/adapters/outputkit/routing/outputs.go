@@ -221,7 +221,7 @@ func (s *Set) SetSecurity(state domain.SecurityState) bool {
 	}
 	s.State = state
 	for _, r := range s.Outs {
-		latest(r.Security, state)
+		Latest(r.Security, state)
 	}
 	return true
 }

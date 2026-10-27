@@ -1,6 +1,8 @@
 package routing
 
-func latest[T any](ch chan T, v T) (replaced bool) {
+// Latest sends without blocking, replacing an unread value and reporting whether
+// one was dropped. The channel must have a single sender.
+func Latest[T any](ch chan T, v T) (replaced bool) {
 	select {
 	case ch <- v:
 	default:

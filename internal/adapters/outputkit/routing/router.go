@@ -174,7 +174,7 @@ func (r *Router) SetCursor(c domain.CursorChange) {
 	r.cursor = c
 	r.stats.cursor++
 	for _, m := range r.outs {
-		if latest(m.Cursor, c) {
+		if Latest(m.Cursor, c) {
 			r.stats.cursorReplaced++
 		}
 	}
@@ -190,7 +190,7 @@ func (r *Router) Scenes(set []domain.Scene) {
 		}
 		if m := r.outs[sc.Output]; m != nil {
 			r.stats.scenes++
-			if latest(m.Scenes, sc) {
+			if Latest(m.Scenes, sc) {
 				r.stats.scenesReplaced++
 			}
 		}
