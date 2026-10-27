@@ -70,10 +70,10 @@ func TestListGPUs(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []domain.GPUInfo{
-		{Path: filepath.Join(dev, "dri/card0"), Primary: 57856, Render: 57985, PCI: "0000:00:02.0", Driver: "i915", Internal: true},
-		{Path: filepath.Join(dev, "dri/card1"), Primary: 57857, Render: 57984, PCI: "0000:03:00.0", Driver: "amdgpu", BootVGA: true},
-		{Path: filepath.Join(dev, "dri/card2"), Primary: 57858, Driver: "udl"},
-		{Path: filepath.Join(dev, "dri/card10")},
+		{Name: "card0", Path: filepath.Join(dev, "dri/card0"), Primary: 57856, Render: 57985, PCI: "0000:00:02.0", Driver: "i915", Internal: true},
+		{Name: "card1", Path: filepath.Join(dev, "dri/card1"), Primary: 57857, Render: 57984, PCI: "0000:03:00.0", Driver: "amdgpu", BootVGA: true},
+		{Name: "card2", Path: filepath.Join(dev, "dri/card2"), Primary: 57858, Driver: "udl"},
+		{Name: "card10", Path: filepath.Join(dev, "dri/card10")},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ListGPUs = %+v; want %+v", got, want)

@@ -12,24 +12,12 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// MultiGPU selects how outputs on a different GPU are composed.
-type MultiGPU int
-
-const (
-	// MultiGPUAuto tries direct import, then GPU copy.
-	MultiGPUAuto MultiGPU = iota
-	// MultiGPUDirect permits direct import only.
-	MultiGPUDirect
-	// MultiGPUOff disables cross-GPU outputs.
-	MultiGPUOff
-)
-
 // CardDevices supplies the render device and an optional lazy local copy device.
 type CardDevices struct {
 	Render     ports.RenderDevice
 	RenderCard string
 	Local      func() (ports.RenderDevice, error)
-	Mode       MultiGPU
+	Mode       domain.MultiGPUMode
 }
 
 type outputTransport string
@@ -79,7 +67,7 @@ func (o *Output) crossImages(r ports.Renderer, cause error, skip bool) (imageKin
 			return imagesLinear, nil
 		}
 	}
-	if o.card.dev.Mode == MultiGPUDirect {
+	if o.card.dev.Mode == domain.MultiGPUDirect {
 		o.log.Error().Err(err).Str("card", o.card.info.Path).Str("render_card", o.card.dev.RenderCard).Msg("cross-GPU direct import failed")
 		return imagesLinear, fmt.Errorf("cross-GPU direct import: %w", err)
 	}

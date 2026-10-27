@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/zerowrap"
 
@@ -15,7 +16,7 @@ import (
 func TestOpenPlannedRenderFallback(t *testing.T) {
 	first := domain.GPUInfo{Path: "card0", Render: 1}
 	second := domain.GPUInfo{Path: "card1", Render: 2}
-	plans := []cardPlan{{Info: first, Render: true}, {Info: second}}
+	plans := []core.CardPlan{{Info: first, Render: true}, {Info: second}}
 	boom := errors.New("unsupported Vulkan")
 	for _, strict := range []bool{false, true} {
 		t.Run(fmt.Sprint(strict), func(t *testing.T) {

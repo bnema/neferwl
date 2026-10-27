@@ -163,7 +163,7 @@ func (c *Card) Scan() (added []*Output, removed, replaced []string, err error) {
 		if !c.want.usable(conn) {
 			continue
 		}
-		if c.dev.Local != nil && c.dev.Mode == MultiGPUOff {
+		if c.dev.Local != nil && c.dev.Mode == domain.MultiGPUOff {
 			if !c.offWarned[conn.name] {
 				if c.offWarned == nil {
 					c.offWarned = map[string]bool{}

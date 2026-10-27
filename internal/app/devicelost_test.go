@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"github.com/bnema/neferwl/internal/core"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -12,33 +13,6 @@ import (
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 )
-
-func TestReopenLimiter(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		seconds []int
-		want    []bool
-	}{
-		{"three then refused", []int{0, 10, 20, 30}, []bool{true, true, true, false}},
-		{"expires after 61 seconds", []int{0, 0, 0, 0, 61}, []bool{true, true, true, false, true}},
-		{"inclusive 60 second boundary", []int{0, 0, 0, 60, 61}, []bool{true, true, true, false, true}},
-		{"only expired entries dropped", []int{0, 30, 40, 61, 62, 91}, []bool{true, true, true, true, false, true}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			clock := portsmocks.NewMockClock(t)
-			base := time.Unix(1000, 0)
-			for _, seconds := range tc.seconds {
-				clock.EXPECT().Now().Return(base.Add(time.Duration(seconds) * time.Second)).Once()
-			}
-			l := reopenLimiter{clock: clock}
-			for i, want := range tc.want {
-				if got := l.allow(); got != want {
-					t.Fatalf("attempt %d at %ds: got %v want %v", i, tc.seconds[i], got, want)
-				}
-			}
-		})
-	}
-}
 
 func TestReopenRenderRecovery(t *testing.T) {
 	for _, tc := range []struct {
@@ -54,7 +28,7 @@ func TestReopenRenderRecovery(t *testing.T) {
 				clock := portsmocks.NewMockClock(t)
 				opener := portsmocks.NewMockRenderDeviceOpener(t)
 				info := domain.GPUInfo{Path: "card1"}
-				limiter := reopenLimiter{clock: clock}
+				limiter := core.ReopenLimiter{Clock: clock}
 				current := portsmocks.NewMockRenderDevice(t)
 				var device ports.RenderDevice = current
 				for i, seconds := range tc.seconds {
@@ -111,7 +85,7 @@ func TestReopenRenderFailedAttempts(t *testing.T) {
 	opener.EXPECT().Open(info).Return(nil, openErr).Times(3)
 	old := portsmocks.NewMockRenderDevice(t)
 	old.EXPECT().Close().Return().Once()
-	dev, err := reopenRender(opener, info, old, &reopenLimiter{clock: clock})
+	dev, err := reopenRender(opener, info, old, &core.ReopenLimiter{Clock: clock})
 	if dev != nil || !errors.Is(err, ports.ErrDeviceLost) || !errors.Is(err, openErr) {
 		t.Fatalf("%v %v", dev, err)
 	}

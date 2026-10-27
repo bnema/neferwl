@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/bnema/neferwl/internal/domain"
 	"path"
 	"strings"
 	"sync"
@@ -17,40 +18,25 @@ import (
 // drm subsystem (the kernel sends HOTPLUG=1 on the card). libudev is loaded
 // with purego.
 
-// Hotplug actions reported in HotplugEvent.Action.
-const (
-	HotplugAdd    = "add"
-	HotplugRemove = "remove"
-	HotplugChange = "change"
-)
-
-// HotplugEvent is a DRM uevent the compositor reacts to. Card is the sysname
-// ("card1") of a GPU that was added or removed; it is empty for a connector
-// change (HOTPLUG=1), which only asks for a rescan.
-type HotplugEvent struct {
-	Card   string
-	Action string
-}
-
 // hotplugFromProps classifies an event from its udev properties: ok is false
 // for events the compositor ignores (other subsystems, render nodes, connector
 // devices appearing or disappearing, card changes that are not connector
 // hotplugs). The libudev watcher feeds it property lookups.
-func hotplugFromProps(get func(key string) string) (HotplugEvent, bool) {
+func hotplugFromProps(get func(key string) string) (domain.HotplugEvent, bool) {
 	if get("SUBSYSTEM") != "drm" {
-		return HotplugEvent{}, false
+		return domain.HotplugEvent{}, false
 	}
 	action := get("ACTION")
 	switch action {
-	case HotplugAdd, HotplugRemove, HotplugChange:
+	case "add", "remove", "change":
 	default:
-		return HotplugEvent{}, false
+		return domain.HotplugEvent{}, false
 	}
-	if action == HotplugChange {
+	if action == "change" {
 		if get("HOTPLUG") == "1" {
-			return HotplugEvent{Action: action}, true
+			return domain.HotplugEvent{Action: domain.HotplugConnectorChange}, true
 		}
-		return HotplugEvent{}, false
+		return domain.HotplugEvent{}, false
 	}
 	name := get("DEVNAME")
 	if name == "" {
@@ -58,9 +44,13 @@ func hotplugFromProps(get func(key string) string) (HotplugEvent, bool) {
 	}
 	name = path.Base(name)
 	if !isCardName(name) {
-		return HotplugEvent{}, false
+		return domain.HotplugEvent{}, false
 	}
-	return HotplugEvent{Card: name, Action: action}, true
+	kind := domain.HotplugCardAdd
+	if action == "remove" {
+		kind = domain.HotplugCardRemove
+	}
+	return domain.HotplugEvent{Card: domain.CardName(name), Action: kind}, true
 }
 
 // isCardName reports whether name is "card" followed by digits only: render
@@ -125,7 +115,7 @@ func loadUdev() error {
 // asks for a rescan, so it is dropped when one is already queued. A card
 // add or remove is never dropped: the send blocks until the consumer takes
 // it or ctx ends. It reports whether ev was queued.
-func DeliverHotplug(ctx context.Context, changed chan<- HotplugEvent, ev HotplugEvent) bool {
+func DeliverHotplug(ctx context.Context, changed chan<- domain.HotplugEvent, ev domain.HotplugEvent) bool {
 	if ev.Card == "" {
 		select {
 		case changed <- ev:
@@ -144,7 +134,7 @@ func DeliverHotplug(ctx context.Context, changed chan<- HotplugEvent, ev Hotplug
 
 // WatchHotplug sends every DRM card add or remove and every connector change
 // on changed until ctx ends (see DeliverHotplug for the send policy).
-func WatchHotplug(ctx context.Context, changed chan<- HotplugEvent) error {
+func WatchHotplug(ctx context.Context, changed chan<- domain.HotplugEvent) error {
 	if err := loadUdev(); err != nil {
 		return err
 	}

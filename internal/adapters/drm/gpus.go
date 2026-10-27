@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
 	"golang.org/x/sys/unix"
 )
@@ -52,7 +53,7 @@ func ListGPUs(sysRoot, devRoot string) ([]domain.GPUInfo, error) {
 	for _, c := range cards {
 		path := filepath.Join(class, c.name)
 		device := filepath.Join(path, "device")
-		info := domain.GPUInfo{Path: filepath.Join(devRoot, "dri", c.name), Primary: readGPUDevice(filepath.Join(path, "dev"))}
+		info := domain.GPUInfo{Name: domain.CardName(c.name), Path: filepath.Join(devRoot, "dri", c.name), Primary: readGPUDevice(filepath.Join(path, "dev"))}
 		renders, _ := filepath.Glob(filepath.Join(device, "drm", "renderD*", "dev"))
 		for _, render := range renders {
 			if info.Render = readGPUDevice(render); info.Render != 0 {
@@ -101,4 +102,44 @@ func readGPUDevice(path string) uint64 {
 		return 0
 	}
 	return unix.Mkdev(uint32(maj), uint32(min))
+}
+
+func ResolveDeviceIDs(ids []string) ([]string, error) {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = id
+		if strings.Contains(id, "/") {
+			path, err := filepath.EvalSymlinks(id)
+			if err != nil {
+				return nil, fmt.Errorf("DRM device %q: %w", id, err)
+			}
+			out[i] = path
+		}
+	}
+	return out, nil
+}
+
+// SelectConfig takes the environment value explicitly, keeping precedence
+// testable without reading process-global state. Filesystem resolution is I/O.
+func SelectConfig(cfg domain.Config, envRender string) (core.GPUSelectConfig, error) {
+	var out core.GPUSelectConfig
+	var err error
+	if out.Devices, err = ResolveDeviceIDs(cfg.DRM.Devices); err != nil {
+		return out, err
+	}
+	if out.Ignore, err = ResolveDeviceIDs(cfg.DRM.Ignore); err != nil {
+		return out, err
+	}
+	render := cfg.Render.Device
+	if envRender != "" {
+		render = envRender
+	}
+	if render != "" {
+		ids, err := ResolveDeviceIDs([]string{render})
+		if err != nil {
+			return out, err
+		}
+		out.Render = ids[0]
+	}
+	return out, nil
 }

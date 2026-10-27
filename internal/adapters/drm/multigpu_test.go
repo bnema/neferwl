@@ -20,7 +20,7 @@ func TestMultiGPUOffScan(t *testing.T) {
 	k := newMockkms(t)
 	dev := portsmocks.NewMockRenderDevice(t)
 	opener := portsmocks.NewMockRenderDeviceOpener(t)
-	c := &Card{k: k, info: domain.GPUInfo{Path: "card1"}, dev: CardDevices{Render: dev, Local: func() (ports.RenderDevice, error) { return opener.Open(domain.GPUInfo{}) }, Mode: MultiGPUOff}}
+	c := &Card{k: k, info: domain.GPUInfo{Path: "card1"}, dev: CardDevices{Render: dev, Local: func() (ports.RenderDevice, error) { return opener.Open(domain.GPUInfo{}) }, Mode: domain.MultiGPUOff}}
 	k.EXPECT().resources().Return([]uint32{30}, []uint32{40}, nil).Once()
 	k.EXPECT().connector(uint32(40)).Return(connector{id: 40, name: "DP-1", connected: true}, nil).Once()
 	added, _, _, err := c.Scan()
@@ -34,7 +34,7 @@ func TestMultiGPUDirectImages(t *testing.T) {
 	o.cursor = nil
 	allocator := newMockimageAllocator(t)
 	opener := portsmocks.NewMockRenderDeviceOpener(t)
-	o.card = &Card{alloc: allocator, dev: CardDevices{Mode: MultiGPUDirect, Local: func() (ports.RenderDevice, error) { return opener.Open(domain.GPUInfo{}) }}}
+	o.card = &Card{alloc: allocator, dev: CardDevices{Mode: domain.MultiGPUDirect, Local: func() (ports.RenderDevice, error) { return opener.Open(domain.GPUInfo{}) }}}
 	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB, Modifier: 0}, {Format: fourccXRGB, Modifier: tiledMod}}
 	r := gbmRenderer(t)
 	r.EXPECT().TargetModifiers([]uint64{0}, true).Return([]uint64{0}).Once()
@@ -55,7 +55,7 @@ func TestMultiGPUDirectImages(t *testing.T) {
 }
 
 func TestMultiGPUDirectRefusesFallback(t *testing.T) {
-	for _, mode := range []MultiGPU{MultiGPUDirect} {
+	for _, mode := range []domain.MultiGPUMode{domain.MultiGPUDirect} {
 		o, _, _ := testOutput(t)
 		opener := portsmocks.NewMockRenderDeviceOpener(t)
 		o.card = &Card{dev: CardDevices{Mode: mode, Local: func() (ports.RenderDevice, error) { return opener.Open(domain.GPUInfo{}) }}}
@@ -86,7 +86,7 @@ func TestMultiGPUCopySetup(t *testing.T) {
 			opener := portsmocks.NewMockRenderDeviceOpener(t)
 			copier := portsmocks.NewMockCopier(t)
 			alloc := newMockimageAllocator(t)
-			o.card = &Card{alloc: alloc, dev: CardDevices{Mode: MultiGPUAuto, Local: func() (ports.RenderDevice, error) { return opener.Open(domain.GPUInfo{}) }}}
+			o.card = &Card{alloc: alloc, dev: CardDevices{Mode: domain.MultiGPUAuto, Local: func() (ports.RenderDevice, error) { return opener.Open(domain.GPUInfo{}) }}}
 			// The display card scans out tiled only: GBM must receive these.
 			o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB, Modifier: tiledMod}}
 			opener.EXPECT().Open(domain.GPUInfo{}).Return(local, nil).Once()
@@ -146,7 +146,7 @@ func copyFixture(t *testing.T, mods []domain.DMABufFormat) (*Output, *mockkms, *
 	opener := portsmocks.NewMockRenderDeviceOpener(t)
 	copier := portsmocks.NewMockCopier(t)
 	alloc := newMockimageAllocator(t)
-	o.card = &Card{alloc: alloc, dev: CardDevices{Mode: MultiGPUAuto, Local: func() (ports.RenderDevice, error) { return opener.Open(domain.GPUInfo{}) }}}
+	o.card = &Card{alloc: alloc, dev: CardDevices{Mode: domain.MultiGPUAuto, Local: func() (ports.RenderDevice, error) { return opener.Open(domain.GPUInfo{}) }}}
 	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB, Modifier: tiledMod}}
 	opener.EXPECT().Open(domain.GPUInfo{}).Return(local, nil).Once()
 	local.EXPECT().NewCopier(200, 100).Return(copier, nil).Once()
