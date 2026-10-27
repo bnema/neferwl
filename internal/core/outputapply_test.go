@@ -1,37 +1,34 @@
-package app
+package core
 
 import (
-	"context"
 	"errors"
 	"image"
 	"testing"
 
-	"github.com/bnema/neferwl/internal/adapters/logging"
-	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
 )
 
-// applyRig drives outputApply the way a backend owner loop does.
+// applyRig drives OutputApply the way a backend owner loop does.
 type applyRig struct {
 	t *testing.T
-	a *outputApply
+	a *OutputApply
 }
 
 func newApplyRig(t *testing.T, headless bool) applyRig {
 	mode := domain.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
-	a := newOutputApply(core.NewOutputOverrides(domain.Config{}, headless), logging.For(context.Background(), "app"))
-	a.heads(domain.OutputHeads{Heads: []domain.OutputHead{{Info: domain.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}})
+	a := NewOutputApply(NewOutputOverrides(domain.Config{}, headless))
+	a.Heads(domain.OutputHeads{Heads: []domain.OutputHead{{Info: domain.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}})
 	return applyRig{t, a}
 }
 
 // started returns the configuration the backend must start now.
-func (r applyRig) started() domain.Config {
+func (r applyRig) Started() domain.Config {
 	r.t.Helper()
-	cfg, ok := r.a.next()
+	cfg, ok := r.a.Next()
 	if !ok {
 		r.t.Fatal("no configuration to start")
 	}
-	if _, again := r.a.next(); again {
+	if _, again := r.a.Next(); again {
 		r.t.Fatal("configuration started twice")
 	}
 	return cfg
@@ -39,7 +36,7 @@ func (r applyRig) started() domain.Config {
 
 func (r applyRig) idle() {
 	r.t.Helper()
-	if cfg, ok := r.a.next(); ok {
+	if cfg, ok := r.a.Next(); ok {
 		r.t.Fatalf("unexpected configuration to start: %+v", cfg)
 	}
 }
@@ -47,12 +44,12 @@ func (r applyRig) idle() {
 // core returns the configuration waiting for core, if any.
 func (r applyRig) core() (domain.Config, bool) {
 	ch := make(chan domain.ConfigChanged, 1)
-	out := r.a.configOut(ch)
+	out := r.a.ConfigOut(ch)
 	if out == nil {
 		return domain.Config{}, false
 	}
 	out <- r.a.config
-	r.a.configSent()
+	r.a.ConfigSent()
 	return (<-ch).Config, true
 }
 
@@ -60,12 +57,12 @@ func (r applyRig) replies() []domain.OutputApplied {
 	var got []domain.OutputApplied
 	ch := make(chan domain.OutputApplied, 1)
 	for {
-		out, next := r.a.replyOut(ch)
+		out, next := r.a.ReplyOut(ch)
 		if out == nil {
 			return got
 		}
 		out <- next
-		r.a.replySent()
+		r.a.ReplySent()
 		got = append(got, <-ch)
 	}
 }
@@ -81,21 +78,24 @@ func TestOutputApply(t *testing.T) {
 	}{
 		{"ready", nil},
 		{"ready error rollback", errors.New("modeset failed")},
-		{"timeout rollback", errTimeout},
+		{"timeout rollback", ErrApplyTimeout},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newApplyRig(t, false)
-			r.a.request(moveDP1(1, 100))
+			r.a.Request(moveDP1(1, 100))
 			if cfg, ok := r.core(); !ok || cfg.Outputs[0].Pos.X != 100 {
 				t.Fatalf("core config: %+v", cfg)
 			}
-			if cfg := r.started(); cfg.Outputs[0].Pos.X != 100 {
+			if cfg := r.Started(); cfg.Outputs[0].Pos.X != 100 {
 				t.Fatalf("started: %+v", cfg)
 			}
 			if got := r.replies(); len(got) != 0 {
 				t.Fatalf("replied before backend finished: %+v", got)
 			}
-			r.a.finished(tc.failure)
+			decision := r.a.Finished(tc.failure)
+			if (len(decision.Applied) != 0) != (tc.failure == nil) {
+				t.Fatalf("applied heads: %+v", decision)
+			}
 			if tc.failure != nil {
 				if got := r.replies(); len(got) != 0 {
 					t.Fatalf("replied before rollback: %+v", got)
@@ -103,11 +103,11 @@ func TestOutputApply(t *testing.T) {
 				if cfg, ok := r.core(); !ok || len(cfg.Outputs) != 0 {
 					t.Fatalf("rollback core config: %+v", cfg)
 				}
-				if cfg := r.started(); len(cfg.Outputs) != 0 {
+				if cfg := r.Started(); len(cfg.Outputs) != 0 {
 					t.Fatalf("rollback started: %+v", cfg)
 				}
 				// A failed rollback still answers with the original failure.
-				r.a.finished(errors.New("rollback failed"))
+				r.a.Finished(errors.New("rollback failed"))
 			}
 			r.idle()
 			got := r.replies()
@@ -117,12 +117,12 @@ func TestOutputApply(t *testing.T) {
 			if tc.failure != nil && len(r.a.state.Effective().Outputs) != 0 {
 				t.Fatal("override survived failure")
 			}
-			r.a.reload(domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 1.25}}})
+			r.a.Reload(domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 1.25}}})
 			if cfg, ok := r.core(); !ok || cfg.Outputs[0].Pos != nil || cfg.Outputs[0].Scale != 1.25 {
 				t.Fatalf("reload core config: %+v", cfg)
 			}
-			r.started()
-			r.a.finished(nil)
+			r.Started()
+			r.a.Finished(nil)
 			if got := r.replies(); len(got) != 0 {
 				t.Fatalf("reload replied: %+v", got)
 			}
@@ -134,31 +134,31 @@ func TestOutputApply(t *testing.T) {
 // replies queue in order and core only gets the latest configuration.
 func TestOutputApplyOutbox(t *testing.T) {
 	r := newApplyRig(t, false)
-	r.a.request(moveDP1(1, 100))
-	r.started()
-	r.a.reload(domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 1.5}}})
-	r.a.reload(domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 2}}})
-	r.a.request(domain.OutputApply{ID: 2})
-	r.a.request(domain.OutputApply{ID: 3})
+	r.a.Request(moveDP1(1, 100))
+	r.Started()
+	r.a.Reload(domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 1.5}}})
+	r.a.Reload(domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 2}}})
+	r.a.Request(domain.OutputApply{ID: 2})
+	r.a.Request(domain.OutputApply{ID: 3})
 	// The reloads wait for the running configuration: no overlap.
 	r.idle()
-	r.a.finished(nil)
+	r.a.Finished(nil)
 	// Inventory updates while Wayland is not reading: only the latest waits.
 	mode := domain.OutputMode{Width: 1280, Height: 720, RefreshMilli: 60000}
 	for _, name := range []string{"DP-1", "DP-2"} {
-		r.a.heads(domain.OutputHeads{Heads: []domain.OutputHead{{Info: domain.OutputInfo{Name: name}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}})
+		r.a.Heads(domain.OutputHeads{Heads: []domain.OutputHead{{Info: domain.OutputInfo{Name: name}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}})
 	}
 	headsCh := make(chan domain.OutputHeads, 1)
-	out, heads := r.a.headsOut(headsCh)
+	out, heads := r.a.HeadsOut(headsCh)
 	if out == nil || len(heads.Heads) != 1 || heads.Heads[0].Info.Name != "DP-2" {
 		t.Fatalf("latest heads: %+v", heads)
 	}
 	out <- heads
-	r.a.headsSent()
+	r.a.HeadsSent()
 	if got := <-headsCh; got.Heads[0].Info.Name != "DP-2" {
 		t.Fatalf("delivered heads: %+v", got)
 	}
-	if out, _ := r.a.headsOut(headsCh); out != nil {
+	if out, _ := r.a.HeadsOut(headsCh); out != nil {
 		t.Fatal("heads sent twice")
 	}
 	for i, got := range r.replies() {
@@ -172,7 +172,7 @@ func TestOutputApplyOutbox(t *testing.T) {
 	if _, ok := r.core(); ok {
 		t.Fatal("core config sent twice")
 	}
-	if cfg := r.started(); cfg.Outputs[0].Scale != 2 {
+	if cfg := r.Started(); cfg.Outputs[0].Scale != 2 {
 		t.Fatalf("latest backend config: %+v", cfg)
 	}
 }
@@ -181,23 +181,23 @@ func TestOutputApplyOutbox(t *testing.T) {
 // once, and a late failure of its configuration cannot roll back the reload.
 func TestReloadDuringPendingApply(t *testing.T) {
 	r := newApplyRig(t, false)
-	r.a.request(moveDP1(1, 100))
+	r.a.Request(moveDP1(1, 100))
 	r.core()
-	r.started()
-	r.a.reload(domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 1.5}}})
+	r.Started()
+	r.a.Reload(domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 1.5}}})
 	if cfg, ok := r.core(); !ok || cfg.Outputs[0].Pos != nil {
 		t.Fatalf("override survived reload: %+v", cfg)
 	}
-	if got := r.replies(); len(got) != 1 || got[0].ID != 1 || !errors.Is(got[0].Err, errApplySuperseded) {
+	if got := r.replies(); len(got) != 1 || got[0].ID != 1 || !errors.Is(got[0].Err, ErrApplySuperseded) {
 		t.Fatalf("superseded reply: %+v", got)
 	}
 	// The reload waits for the old configuration, whose failure is dropped.
 	r.idle()
-	r.a.finished(errors.New("old apply failed"))
-	if cfg := r.started(); cfg.Outputs[0].Scale != 1.5 || cfg.Outputs[0].Pos != nil {
+	r.a.Finished(errors.New("old apply failed"))
+	if cfg := r.Started(); cfg.Outputs[0].Scale != 1.5 || cfg.Outputs[0].Pos != nil {
 		t.Fatalf("reload started: %+v", cfg)
 	}
-	r.a.finished(errors.New("reload failed"))
+	r.a.Finished(errors.New("reload failed"))
 	r.idle()
 	if _, ok := r.core(); ok {
 		t.Fatal("failed reload rolled back")
@@ -206,12 +206,12 @@ func TestReloadDuringPendingApply(t *testing.T) {
 		t.Fatalf("reload replied: %+v", got)
 	}
 	// A stray result with nothing running is ignored.
-	r.a.finished(errors.New("stray"))
+	r.a.Finished(errors.New("stray"))
 	r.idle()
 	// The next request is accepted.
-	r.a.request(moveDP1(2, 50))
-	r.started()
-	r.a.finished(nil)
+	r.a.Request(moveDP1(2, 50))
+	r.Started()
+	r.a.Finished(nil)
 	if got := r.replies(); len(got) != 1 || got[0].ID != 2 || got[0].Err != nil {
 		t.Fatalf("next request: %+v", got)
 	}
@@ -220,20 +220,20 @@ func TestReloadDuringPendingApply(t *testing.T) {
 // A reload during a rollback supersedes the failed request.
 func TestReloadDuringRollback(t *testing.T) {
 	r := newApplyRig(t, false)
-	r.a.request(moveDP1(1, 100))
-	r.started()
-	r.a.finished(errors.New("modeset failed"))
-	r.started() // rollback
-	r.a.reload(domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 2}}})
-	if got := r.replies(); len(got) != 1 || !errors.Is(got[0].Err, errApplySuperseded) {
+	r.a.Request(moveDP1(1, 100))
+	r.Started()
+	r.a.Finished(errors.New("modeset failed"))
+	r.Started() // rollback
+	r.a.Reload(domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 2}}})
+	if got := r.replies(); len(got) != 1 || !errors.Is(got[0].Err, ErrApplySuperseded) {
 		t.Fatalf("rollback superseded: %+v", got)
 	}
 	r.idle()
-	r.a.finished(nil) // rollback done
-	if cfg := r.started(); cfg.Outputs[0].Scale != 2 {
+	r.a.Finished(nil) // rollback done
+	if cfg := r.Started(); cfg.Outputs[0].Scale != 2 {
 		t.Fatalf("reload started: %+v", cfg)
 	}
-	r.a.finished(nil)
+	r.a.Finished(nil)
 	if got := r.replies(); len(got) != 0 {
 		t.Fatalf("extra reply: %+v", got)
 	}
@@ -241,8 +241,8 @@ func TestReloadDuringRollback(t *testing.T) {
 
 func TestOutputApplyAnsweredAtOnce(t *testing.T) {
 	r := newApplyRig(t, false)
-	r.a.request(domain.OutputApply{ID: 1, Test: true, Heads: moveDP1(1, 10).Heads})
-	r.a.request(domain.OutputApply{ID: 2, Heads: []domain.HeadChange{{Name: "DP-9", Enabled: true}}})
+	r.a.Request(domain.OutputApply{ID: 1, Test: true, Heads: moveDP1(1, 10).Heads})
+	r.a.Request(domain.OutputApply{ID: 2, Heads: []domain.HeadChange{{Name: "DP-9", Enabled: true}}})
 	r.idle()
 	if _, ok := r.core(); ok {
 		t.Fatal("test or invalid request changed core config")
@@ -251,17 +251,17 @@ func TestOutputApplyAnsweredAtOnce(t *testing.T) {
 	if len(got) != 2 || got[0].ID != 1 || got[0].Err != nil || got[1].ID != 2 || got[1].Err == nil {
 		t.Fatalf("replies: %+v", got)
 	}
-	r.a.request(moveDP1(3, 10))
-	r.a.request(moveDP1(4, 20))
+	r.a.Request(moveDP1(3, 10))
+	r.a.Request(moveDP1(4, 20))
 	if got := r.replies(); len(got) != 1 || got[0].ID != 4 || got[0].Err == nil {
 		t.Fatalf("second request while pending: %+v", got)
 	}
 
 	h := newApplyRig(t, true)
-	h.a.request(domain.OutputApply{ID: 1, Heads: []domain.HeadChange{{Name: "DP-1", Enabled: true, Scale: 2}}})
+	h.a.Request(domain.OutputApply{ID: 1, Heads: []domain.HeadChange{{Name: "DP-1", Enabled: true, Scale: 2}}})
 	var gaps domain.Config
 	gaps.Layout.Gaps = 4
-	h.a.reload(gaps)
+	h.a.Reload(gaps)
 	h.idle()
 	if cfg, ok := h.core(); !ok || cfg.Layout.Gaps != 4 {
 		t.Fatalf("headless core config: %+v", cfg)

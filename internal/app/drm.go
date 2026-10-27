@@ -411,7 +411,7 @@ func (b *drmBackend) close() {
 // output configuration: reloads and protocol requests go through apply, and
 // each configuration is finished when its outputs are ready, fail or time
 // out. It returns when ctx ends, after every output is closed.
-func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) drm.Want, initial domain.Config, apply *outputApply, ch outputChannels, curs *cursors, log zerowrap.Logger) error {
+func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) drm.Want, initial domain.Config, apply *core.OutputApply, ch outputChannels, curs *cursors, log zerowrap.Logger) error {
 	ctx, cancel := context.WithCancel(ctx)
 	var readers sync.WaitGroup
 	// A reader that fails sends at most once; cards come and go, so the
@@ -472,12 +472,12 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 	currentConfig := initial
 	var currentHeads domain.OutputHeads
 	lastHeads := map[*drmCard][]domain.OutputHead{}
-	progress := &applyProgress{completed: map[<-chan error]bool{}}
-	readySources := map[string]<-chan error{}
+	progress := &core.ApplyProgress{}
+	readySources := map[string]domain.OutputInstance{}
 	stopReady := map[string]chan struct{}{}
 	type readyResult struct {
 		name   string
-		source <-chan error
+		source domain.OutputInstance
 		err    error
 	}
 	ready := make(chan readyResult)
@@ -519,13 +519,13 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 		}
 	}
 	var op uint64
-	complete := func(d applyDecision) {
-		if !d.reply {
+	complete := func(d core.ApplyDecision) {
+		if !d.Reply {
 			return
 		}
 		timer.Stop()
 		deadline = nil
-		apply.finished(d.err)
+		logOutputApplied(apply.Finished(d.Err).Applied, log)
 	}
 	publishInventory := func() {
 		var inventory domain.OutputHeads
@@ -538,7 +538,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 			inventory.Heads = append(inventory.Heads, lastHeads[card]...)
 		}
 		currentHeads = inventory
-		apply.heads(inventory)
+		apply.Heads(inventory)
 	}
 	scan := func() {
 		if recovering {
@@ -563,7 +563,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 				if r := set.outs[name]; r != nil && cards[name] == c {
 					if _, ok := stopping[name]; !ok {
 						stopping[name] = restart
-						progress.stopping(name)
+						progress.Stopping(name)
 						r.stop()
 					}
 				}
@@ -608,25 +608,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 				}
 				cards[name] = c
 				outputs[name] = o
-				readySources[name] = o.Ready()
-				if progress.active && !want(currentConfig).Disabled[name] {
-					progress.required[name] = true
-				}
-				source := readySources[name]
-				stopped := make(chan struct{})
-				stopReady[name] = stopped
-				go func() {
-					select {
-					case err := <-source:
-						select {
-						case ready <- readyResult{name, source, err}:
-						case <-ctx.Done():
-						}
-					case <-stopped:
-					case <-ctx.Done():
-					}
-				}()
-				progress.started(name, source)
+
 				if cur := o.Cursor(); cur != nil {
 					curs.set(name, cur)
 				}
@@ -663,17 +645,35 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 					delete(cards, name)
 					delete(outputs, name)
 					delete(readySources, name)
-					delete(progress.ready, name)
-					close(stopped)
+					delete(progress.Ready, name)
 					delete(stopReady, name)
 					curs.set(name, nil)
 					continue
 				}
+				readySources[name] = set.outs[name].instance
+				if progress.Active && !want(currentConfig).Disabled[name] {
+					progress.Required[name] = true
+				}
+				source := readySources[name]
+				stopped := make(chan struct{})
+				stopReady[name] = stopped
+				go func() {
+					select {
+					case err := <-o.Ready():
+						select {
+						case ready <- readyResult{name, source, err}:
+						case <-ctx.Done():
+						}
+					case <-stopped:
+					case <-ctx.Done():
+					}
+				}()
+				progress.Started(name, source)
 				send(ports.OutputAdded{Info: o.Info()})
 			}
 		}
 		publishInventory()
-		complete(progress.scanError(errors.Join(scanErrors...)))
+		complete(progress.ScanError(errors.Join(scanErrors...)))
 		barrier()
 	}
 	// Cards plugged in while the render device is being reopened wait here.
@@ -754,7 +754,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 		b.dying[c] = td
 		for _, n := range names {
 			stopping[n] = false
-			progress.stopping(n)
+			progress.Stopping(n)
 			set.outs[n].stop()
 		}
 		publishInventory()
@@ -787,27 +787,27 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 				required[name] = true
 			}
 		}
-		progress.start(op, required, stopping)
+		progress.Start(op, required, stopping)
 		scan()
-		running := map[string]<-chan error{}
+		running := map[string]domain.OutputInstance{}
 		for name := range set.outs {
 			running[name] = readySources[name]
 		}
-		d := progress.scanned(running)
-		if progress.active {
+		d := progress.Scanned(running)
+		if progress.Active {
 			timer.Reset(applyTimeout)
 			deadline = timer.C()
 		}
 		complete(d)
 	}
 	for {
-		if cfg, ok := apply.next(); ok {
+		if cfg, ok := apply.Next(); ok {
 			configure(cfg)
 			continue
 		}
-		configs, configNext := apply.configOut(ch.configured), apply.config
-		replies, replyNext := apply.replyOut(ch.replies)
-		heads, headsNext := apply.headsOut(ch.heads)
+		configs, configNext := apply.ConfigOut(ch.configured), apply.Config()
+		replies, replyNext := apply.ReplyOut(ch.replies)
+		heads, headsNext := apply.HeadsOut(ch.heads)
 		select {
 		case <-ctx.Done():
 			return set.wait()
@@ -878,12 +878,12 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 			}
 			log.Info().Str("card", string(ev.Card)).Msg("hotplug")
 			scan()
-			if progress.active {
-				running := map[string]<-chan error{}
+			if progress.Active {
+				running := map[string]domain.OutputInstance{}
 				for name := range set.outs {
 					running[name] = readySources[name]
 				}
-				complete(progress.scanned(running))
+				complete(progress.Scanned(running))
 			}
 		case enabled := <-active:
 			seatActive = enabled
@@ -933,19 +933,22 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 				}
 			}
 		case ev := <-ch.reloads:
-			apply.reload(ev.Config)
+			apply.Reload(ev.Config)
 		case req := <-ch.requests:
-			apply.request(req)
+			apply.Request(req)
 		case configs <- configNext:
-			apply.configSent()
+			apply.ConfigSent()
 		case replies <- replyNext:
-			apply.replySent()
+			if replyNext.Err != nil {
+				log.Warn().Err(replyNext.Err).Msg("output configuration failed")
+			}
+			apply.ReplySent()
 		case heads <- headsNext:
-			apply.headsSent()
+			apply.HeadsSent()
 		case result := <-ready:
-			complete(progress.readyEvent(result.name, result.source, readySources[result.name], result.err))
+			complete(progress.ReadyEvent(result.name, result.source, readySources[result.name], result.err))
 		case <-deadline:
-			complete(progress.timeout(op))
+			complete(progress.Timeout(op))
 		case stopped := <-set.stopped:
 			if !set.stoppedCurrent(stopped) {
 				continue
@@ -995,7 +998,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 				for n, c := range cards {
 					if c == card && n != name && set.outs[n] != nil {
 						stopping[n] = false
-						progress.stopping(n)
+						progress.Stopping(n)
 						set.outs[n].stop()
 					}
 				}
@@ -1016,7 +1019,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 				close(stopped)
 				delete(stopReady, name)
 			}
-			stopDecision := progress.stopped(name, source, restart, err)
+			stopDecision := progress.Stopped(name, source, restart, err)
 			if recovering {
 				complete(stopDecision)
 				send(ports.OutputRemoved{Name: name})
@@ -1064,20 +1067,20 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 				// Same connector, new mode: core keeps its screen and
 				// workspaces; OutputAdded updates the size.
 				if set.outs[name] != nil {
-					running := map[string]<-chan error{}
+					running := map[string]domain.OutputInstance{}
 					for n := range set.outs {
 						running[n] = readySources[n]
 					}
-					complete(progress.scanned(running))
+					complete(progress.Scanned(running))
 					continue
 				}
 			}
 			send(ports.OutputRemoved{Name: name})
-			running := map[string]<-chan error{}
+			running := map[string]domain.OutputInstance{}
 			for n := range set.outs {
 				running[n] = readySources[n]
 			}
-			complete(progress.scanned(running))
+			complete(progress.Scanned(running))
 		}
 	}
 }

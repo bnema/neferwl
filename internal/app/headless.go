@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/bnema/neferwl/internal/adapters/headless"
+	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -26,7 +27,7 @@ type headlessOptions struct {
 // are fixed, so apply answers every configuration without backend work.
 //
 // newRenderer is configured for virtual outputs by the session.
-func runHeadless(ctx context.Context, o headlessOptions, apply *outputApply, ch outputChannels, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
+func runHeadless(ctx context.Context, o headlessOptions, apply *core.OutputApply, ch outputChannels, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
 	set := newOutputSet(ctx, ch.captured, ch.routes())
 	set.attach = ch.content
 	set.wireSecurity(ch)
@@ -63,13 +64,13 @@ func runHeadless(ctx context.Context, o headlessOptions, apply *outputApply, ch 
 	if set.state.Protected {
 		set.securityEvent(ports.SecurityBackendBarrier{Generation: set.state.Generation})
 	}
-	apply.heads(inventory)
+	apply.Heads(inventory)
 	// The pointer starts centred on the first output, like libinput's.
 	curs.move("HEADLESS-1", float64(o.sizes[0][0])/2, float64(o.sizes[0][1])/2, false)
 	for {
-		configs, configNext := apply.configOut(ch.configured), apply.config
-		replies, replyNext := apply.replyOut(ch.replies)
-		heads, headsNext := apply.headsOut(ch.heads)
+		configs, configNext := apply.ConfigOut(ch.configured), apply.Config()
+		replies, replyNext := apply.ReplyOut(ch.replies)
+		heads, headsNext := apply.HeadsOut(ch.heads)
 		select {
 		case <-ctx.Done():
 			return set.wait()
@@ -82,15 +83,18 @@ func runHeadless(ctx context.Context, o headlessOptions, apply *outputApply, ch 
 				set.securityEvent(ports.SecurityBackendBarrier{Generation: set.state.Generation})
 			}
 		case ev := <-ch.reloads:
-			apply.reload(ev.Config)
+			apply.Reload(ev.Config)
 		case req := <-ch.requests:
-			apply.request(req)
+			apply.Request(req)
 		case configs <- configNext:
-			apply.configSent()
+			apply.ConfigSent()
 		case replies <- replyNext:
-			apply.replySent()
+			if replyNext.Err != nil {
+				log.Warn().Err(replyNext.Err).Msg("output configuration failed")
+			}
+			apply.ReplySent()
 		case heads <- headsNext:
-			apply.headsSent()
+			apply.HeadsSent()
 		case stopped := <-set.stopped:
 			if !set.stoppedCurrent(stopped) {
 				continue

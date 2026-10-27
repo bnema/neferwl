@@ -5,12 +5,12 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"slices"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/adapters/xwayland"
+	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -89,7 +89,6 @@ const busRetry = 2 * time.Second
 func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.ConfigChanged, out chan<- domain.ConfigChanged, keymaps chan *xkb.Keymap, deviceConfigs chan domain.InputDevicesConfig, curs *cursors, commands chan<- ports.ClientCommand, log zerowrap.Logger) {
 	kb := cur.Keyboard
 	devCfg := cur.InputDevicesConfig
-	hint := cur.Hint
 	for {
 		var ev domain.ConfigChanged
 		select {
@@ -97,19 +96,18 @@ func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.Config
 			return
 		case ev = <-in:
 		}
-		if next := ev.Config; !slices.Equal(next.DRM.Devices, cur.DRM.Devices) || !slices.Equal(next.DRM.Ignore, cur.DRM.Ignore) || next.Render.Device != cur.Render.Device || next.Render.MultiGPU != cur.Render.MultiGPU {
+		baseline := cur
+		baseline.Keyboard = kb
+		plan := core.DiffConfigReload(baseline, ev.Config)
+		if len(plan.RestartOnly) != 0 {
 			log.Warn().Msg("drm.devices, drm.ignore, render.device and render.multi-gpu apply after restart")
 		}
-		// hint.sources, hint.enable, hint.detector, hint.model and hint.threshold are read
-		// at startup: nothing of hint mode starts or stops on a reload.
-		if h := ev.Config.Hint; !slices.Equal(h.Sources, hint.Sources) || h.Enable != hint.Enable || h.Detector != hint.Detector || h.Model != hint.Model || h.Threshold != hint.Threshold {
-			log.Info().Bool("running", hint.Enable).Msg("hint.sources, hint.enable, hint.detector, hint.model and hint.threshold apply after restart")
-			ev.Config.Hint.Enable, ev.Config.Hint.Detector, ev.Config.Hint.Model, ev.Config.Hint.Threshold = hint.Enable, hint.Detector, hint.Model, hint.Threshold
+		if plan.HintRestartOnly {
+			log.Info().Bool("running", cur.Hint.Enable).Msg("hint.sources, hint.enable, hint.detector, hint.model and hint.threshold apply after restart")
 		}
-		ev.Config.Hint.Sources = slices.Clone(hint.Sources)
+		ev.Config = plan.Sanitized
 		next := ev.Config.Keyboard
-		layoutChanged := next.Layout != kb.Layout || next.Variant != kb.Variant || next.Options != kb.Options
-		repeatChanged := next.RepeatRate != kb.RepeatRate || next.RepeatDelay != kb.RepeatDelay
+		layoutChanged, repeatChanged := plan.KeyboardLayoutChanged, plan.RepeatChanged
 		cmd := ports.SetKeymap{RepeatRate: next.RepeatRate, RepeatDelay: next.RepeatDelay}
 		if layoutChanged {
 			km, err := xkb.New(xkb.RMLVO{Layout: next.Layout, Variant: next.Variant, Options: next.Options})
