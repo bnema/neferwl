@@ -1048,7 +1048,7 @@ func overviewWorkspaceOffset(m *Monitor, b *viewShot) rectOffsets {
 	return rectOffsets{y: math.Copysign(float64(area.H)*overviewWorkspaceTravel, float64(settled.Y-previous.Y))}
 }
 
-// leaveOverviewWorkspace retains clipped cards in the existing leaving layer.
+// leaveOverviewWorkspace keeps clipped cards in the leaving layer.
 // Visible neighbor cards keep their normal old-rect retarget and never fade.
 // The hidden cards share a short travel target, without shrinking their content.
 func (c *Core) leaveOverviewWorkspace(b *viewShot, after []Placement, travel rectOffsets, now time.Time) {

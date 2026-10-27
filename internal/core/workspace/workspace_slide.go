@@ -10,7 +10,7 @@ import (
 
 // retarget keeps the view where it is on screen when View moved from
 // before during a landing slide: the slide heads for the new view.
-// Without a landing slide the view moves at once, as it always has.
+// Without a landing slide the view moves at once.
 func (w *Workspace) retarget(before int) {
 	if w.View == before || !w.view.Motion.On {
 		return

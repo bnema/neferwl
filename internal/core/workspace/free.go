@@ -1,7 +1,7 @@
 package workspace
 
 // Free floats: a tile the user floated with toggle-floating (or dragged
-// out, drag.go) floats over the columns at a size and centre core owns.
+// out, core/drag.go) floats over the columns at a size and centre core owns.
 // The centre is a fraction of the usable area, so the window keeps its
 // relative place across stash, workspace and monitor moves.
 

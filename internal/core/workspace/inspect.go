@@ -13,7 +13,7 @@ type Inspection struct {
 	Recent []WindowID
 	// Left is the fullscreen refusal latch.
 	Left WindowID
-	// FloatFocus and StashFocus retain the underlying focus flags.
+	// FloatFocus and StashFocus report the raw focus flags.
 	FloatFocus, StashFocus bool
 	// StashHidden reports that the stash is hidden by user override.
 	StashHidden bool

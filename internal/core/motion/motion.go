@@ -222,7 +222,7 @@ func (s Spring) velocityAt(t time.Duration) float64 {
 
 // Motion is a spring started at a given time; a zero start begins at the
 // first frame. It remains a value, not an interface or a shared animation.
-// The former core motion type is named Motion to distinguish it from this package.
+// It is named Motion to distinguish it from the package name.
 type Motion struct {
 	// Spring is the underlying spring, with velocity in slowed spring time.
 	Spring Spring

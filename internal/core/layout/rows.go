@@ -30,12 +30,12 @@ func StackRectsInto(dst []Rect, r Rect, n, gap int) []Rect {
 }
 
 // RowRects splits column rect r into the rows of c: by c.Shares when they
-// are valid, else equally (stackRects).
+// are valid, else equally (StackRectsInto).
 func RowRects(r Rect, c Column, gap int) []Rect {
 	return RowRectsInto(nil, r, c, gap)
 }
 
-// RowRectsInto appends the rows of rowRects to dst (reset with dst[:0] to
+// RowRectsInto appends the rows of RowRects to dst (reset with dst[:0] to
 // reuse its storage).
 func RowRectsInto(dst []Rect, r Rect, c Column, gap int) []Rect {
 	n := len(c.Windows)

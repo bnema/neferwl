@@ -5,252 +5,258 @@ import (
 	workspacedomain "github.com/bnema/neferwl/internal/core/workspace"
 )
 
-// WindowID retains core's shared window identity value contract.
+// Core names the workspace vocabulary unqualified: Workspace, Action, Rect,
+// the Action values and the cross-workspace operations read the same in every
+// core file. This file is the one place that binds those names to
+// internal/core/workspace. The import alias workspacedomain keeps the package
+// name from clashing with the local variables called workspace.
+
+// WindowID identifies a managed window.
 type WindowID = workspacedomain.WindowID
 
-// Rect retains core's logical geometry value contract.
+// Rect is a logical-pixel rectangle.
 type Rect = workspacedomain.Rect
 
-// Placement retains core's scene-facing geometry contract.
+// Placement describes a window and its presentation geometry.
 type Placement = workspacedomain.Placement
 
-// Workspace preserves core's existing caller contract while workspace owns the model.
+// Workspace is the window, focus and presentation model of one workspace.
 type Workspace = workspacedomain.Workspace
 
-// Float preserves core's existing caller contract while workspace owns the model.
+// Float is a floating window and its client size.
 type Float = workspacedomain.Float
 
-// Border preserves core's existing caller contract while workspace owns the model.
+// Border is an output-local resize hit zone between columns or rows.
 type Border = workspacedomain.Border
 
-// Action preserves core's existing caller contract while workspace owns the model.
+// Action is a bindable compositor action.
 type Action = workspacedomain.Action
 
-// Effect preserves core's existing caller contract while workspace owns the model.
+// Effect is what a workspace action asks of the monitor.
 type Effect = workspacedomain.Effect
 
-// DropSpot preserves core's existing caller contract while workspace owns the model.
+// DropSpot is an output-local drop target.
 type DropSpot = workspacedomain.DropSpot
 
-// DropKind preserves core's existing caller contract while workspace owns the model.
+// DropKind says how a dragged tile joins its destination.
 type DropKind = workspacedomain.DropKind
 
-// OverviewRow preserves core's existing caller contract while workspace owns the model.
+// OverviewRow is the monitor's provisional selection for one overview row.
 type OverviewRow = workspacedomain.OverviewRow
 
-// RowSnapshot preserves core's existing caller contract while workspace owns the model.
+// RowSnapshot is an overview row as first shown, restored on cancel.
 type RowSnapshot = workspacedomain.RowSnapshot
 
-// Sizes preserves core's existing caller contract while workspace owns the model.
+// Sizes is a snapshot of column spans and row shares, restored on cancel.
 type Sizes = workspacedomain.Sizes
 
-// StackItem preserves core's existing caller contract while workspace owns the model.
+// StackItem is one card of an overview row's stack.
 type StackItem = workspacedomain.StackItem
 
-// BorderColumn shares the model value with core dispatch and existing callers.
+// BorderColumn is workspace.BorderColumn.
 const BorderColumn = workspacedomain.BorderColumn
 
-// BorderRow shares the model value with core dispatch and existing callers.
+// BorderRow is workspace.BorderRow.
 const BorderRow = workspacedomain.BorderRow
 
-// ActionSpawnTerminal shares the model value with core dispatch and existing callers.
+// ActionSpawnTerminal is workspace.ActionSpawnTerminal.
 const ActionSpawnTerminal = workspacedomain.ActionSpawnTerminal
 
-// ActionFocusColumnLeft shares the model value with core dispatch and existing callers.
+// ActionFocusColumnLeft is workspace.ActionFocusColumnLeft.
 const ActionFocusColumnLeft = workspacedomain.ActionFocusColumnLeft
 
-// ActionFocusColumnRight shares the model value with core dispatch and existing callers.
+// ActionFocusColumnRight is workspace.ActionFocusColumnRight.
 const ActionFocusColumnRight = workspacedomain.ActionFocusColumnRight
 
-// ActionFocusWindowUp shares the model value with core dispatch and existing callers.
+// ActionFocusWindowUp is workspace.ActionFocusWindowUp.
 const ActionFocusWindowUp = workspacedomain.ActionFocusWindowUp
 
-// ActionFocusWindowDown shares the model value with core dispatch and existing callers.
+// ActionFocusWindowDown is workspace.ActionFocusWindowDown.
 const ActionFocusWindowDown = workspacedomain.ActionFocusWindowDown
 
-// ActionMoveColumnLeft shares the model value with core dispatch and existing callers.
+// ActionMoveColumnLeft is workspace.ActionMoveColumnLeft.
 const ActionMoveColumnLeft = workspacedomain.ActionMoveColumnLeft
 
-// ActionMoveColumnRight shares the model value with core dispatch and existing callers.
+// ActionMoveColumnRight is workspace.ActionMoveColumnRight.
 const ActionMoveColumnRight = workspacedomain.ActionMoveColumnRight
 
-// ActionCycleColumnWidth shares the model value with core dispatch and existing callers.
+// ActionCycleColumnWidth is workspace.ActionCycleColumnWidth.
 const ActionCycleColumnWidth = workspacedomain.ActionCycleColumnWidth
 
-// ActionMaximizeColumn shares the model value with core dispatch and existing callers.
+// ActionMaximizeColumn is workspace.ActionMaximizeColumn.
 const ActionMaximizeColumn = workspacedomain.ActionMaximizeColumn
 
-// ActionToggleFullscreen shares the model value with core dispatch and existing callers.
+// ActionToggleFullscreen is workspace.ActionToggleFullscreen.
 const ActionToggleFullscreen = workspacedomain.ActionToggleFullscreen
 
-// ActionToggleWindowStash shares the model value with core dispatch and existing callers.
+// ActionToggleWindowStash is workspace.ActionToggleWindowStash.
 const ActionToggleWindowStash = workspacedomain.ActionToggleWindowStash
 
-// ActionToggleStashVisible shares the model value with core dispatch and existing callers.
+// ActionToggleStashVisible is workspace.ActionToggleStashVisible.
 const ActionToggleStashVisible = workspacedomain.ActionToggleStashVisible
 
-// ActionToggleOverview shares the model value with core dispatch and existing callers.
+// ActionToggleOverview is workspace.ActionToggleOverview.
 const ActionToggleOverview = workspacedomain.ActionToggleOverview
 
-// ActionCloseWindow shares the model value with core dispatch and existing callers.
+// ActionCloseWindow is workspace.ActionCloseWindow.
 const ActionCloseWindow = workspacedomain.ActionCloseWindow
 
-// ActionQuit shares the model value with core dispatch and existing callers.
+// ActionQuit is workspace.ActionQuit.
 const ActionQuit = workspacedomain.ActionQuit
 
-// ActionFocusWorkspacePrev shares the model value with core dispatch and existing callers.
+// ActionFocusWorkspacePrev is workspace.ActionFocusWorkspacePrev.
 const ActionFocusWorkspacePrev = workspacedomain.ActionFocusWorkspacePrev
 
-// ActionFocusWorkspaceNext shares the model value with core dispatch and existing callers.
+// ActionFocusWorkspaceNext is workspace.ActionFocusWorkspaceNext.
 const ActionFocusWorkspaceNext = workspacedomain.ActionFocusWorkspaceNext
 
-// ActionMoveColumnToWorkspacePrev shares the model value with core dispatch and existing callers.
+// ActionMoveColumnToWorkspacePrev is workspace.ActionMoveColumnToWorkspacePrev.
 const ActionMoveColumnToWorkspacePrev = workspacedomain.ActionMoveColumnToWorkspacePrev
 
-// ActionMoveColumnToWorkspaceNext shares the model value with core dispatch and existing callers.
+// ActionMoveColumnToWorkspaceNext is workspace.ActionMoveColumnToWorkspaceNext.
 const ActionMoveColumnToWorkspaceNext = workspacedomain.ActionMoveColumnToWorkspaceNext
 
-// ActionMoveWindowToWorkspacePrev shares the model value with core dispatch and existing callers.
+// ActionMoveWindowToWorkspacePrev is workspace.ActionMoveWindowToWorkspacePrev.
 const ActionMoveWindowToWorkspacePrev = workspacedomain.ActionMoveWindowToWorkspacePrev
 
-// ActionMoveWindowToWorkspaceNext shares the model value with core dispatch and existing callers.
+// ActionMoveWindowToWorkspaceNext is workspace.ActionMoveWindowToWorkspaceNext.
 const ActionMoveWindowToWorkspaceNext = workspacedomain.ActionMoveWindowToWorkspaceNext
 
-// ActionFocusMonitorLeft shares the model value with core dispatch and existing callers.
+// ActionFocusMonitorLeft is workspace.ActionFocusMonitorLeft.
 const ActionFocusMonitorLeft = workspacedomain.ActionFocusMonitorLeft
 
-// ActionFocusMonitorRight shares the model value with core dispatch and existing callers.
+// ActionFocusMonitorRight is workspace.ActionFocusMonitorRight.
 const ActionFocusMonitorRight = workspacedomain.ActionFocusMonitorRight
 
-// ActionFocusMonitorUp shares the model value with core dispatch and existing callers.
+// ActionFocusMonitorUp is workspace.ActionFocusMonitorUp.
 const ActionFocusMonitorUp = workspacedomain.ActionFocusMonitorUp
 
-// ActionFocusMonitorDown shares the model value with core dispatch and existing callers.
+// ActionFocusMonitorDown is workspace.ActionFocusMonitorDown.
 const ActionFocusMonitorDown = workspacedomain.ActionFocusMonitorDown
 
-// ActionMoveWorkspaceLeft shares the model value with core dispatch and existing callers.
+// ActionMoveWorkspaceLeft is workspace.ActionMoveWorkspaceLeft.
 const ActionMoveWorkspaceLeft = workspacedomain.ActionMoveWorkspaceLeft
 
-// ActionMoveWorkspaceRight shares the model value with core dispatch and existing callers.
+// ActionMoveWorkspaceRight is workspace.ActionMoveWorkspaceRight.
 const ActionMoveWorkspaceRight = workspacedomain.ActionMoveWorkspaceRight
 
-// ActionMoveWorkspaceToMonitorUp shares the model value with core dispatch and existing callers.
+// ActionMoveWorkspaceToMonitorUp is workspace.ActionMoveWorkspaceToMonitorUp.
 const ActionMoveWorkspaceToMonitorUp = workspacedomain.ActionMoveWorkspaceToMonitorUp
 
-// ActionMoveWorkspaceToMonitorDown shares the model value with core dispatch and existing callers.
+// ActionMoveWorkspaceToMonitorDown is workspace.ActionMoveWorkspaceToMonitorDown.
 const ActionMoveWorkspaceToMonitorDown = workspacedomain.ActionMoveWorkspaceToMonitorDown
 
-// ActionScaleUp shares the model value with core dispatch and existing callers.
+// ActionScaleUp is workspace.ActionScaleUp.
 const ActionScaleUp = workspacedomain.ActionScaleUp
 
-// ActionScaleDown shares the model value with core dispatch and existing callers.
+// ActionScaleDown is workspace.ActionScaleDown.
 const ActionScaleDown = workspacedomain.ActionScaleDown
 
-// ActionConsumeOrExpelLeft shares the model value with core dispatch and existing callers.
+// ActionConsumeOrExpelLeft is workspace.ActionConsumeOrExpelLeft.
 const ActionConsumeOrExpelLeft = workspacedomain.ActionConsumeOrExpelLeft
 
-// ActionConsumeOrExpelRight shares the model value with core dispatch and existing callers.
+// ActionConsumeOrExpelRight is workspace.ActionConsumeOrExpelRight.
 const ActionConsumeOrExpelRight = workspacedomain.ActionConsumeOrExpelRight
 
-// ActionMoveWindowUp shares the model value with core dispatch and existing callers.
+// ActionMoveWindowUp is workspace.ActionMoveWindowUp.
 const ActionMoveWindowUp = workspacedomain.ActionMoveWindowUp
 
-// ActionMoveWindowDown shares the model value with core dispatch and existing callers.
+// ActionMoveWindowDown is workspace.ActionMoveWindowDown.
 const ActionMoveWindowDown = workspacedomain.ActionMoveWindowDown
 
-// ActionMoveWorkspacePrev shares the model value with core dispatch and existing callers.
+// ActionMoveWorkspacePrev is workspace.ActionMoveWorkspacePrev.
 const ActionMoveWorkspacePrev = workspacedomain.ActionMoveWorkspacePrev
 
-// ActionMoveWorkspaceNext shares the model value with core dispatch and existing callers.
+// ActionMoveWorkspaceNext is workspace.ActionMoveWorkspaceNext.
 const ActionMoveWorkspaceNext = workspacedomain.ActionMoveWorkspaceNext
 
-// ActionToggleFloating shares the model value with core dispatch and existing callers.
+// ActionToggleFloating is workspace.ActionToggleFloating.
 const ActionToggleFloating = workspacedomain.ActionToggleFloating
 
-// ActionSwitchColumnNext shares the model value with core dispatch and existing callers.
+// ActionSwitchColumnNext is workspace.ActionSwitchColumnNext.
 const ActionSwitchColumnNext = workspacedomain.ActionSwitchColumnNext
 
-// ActionSwitchColumnPrev shares the model value with core dispatch and existing callers.
+// ActionSwitchColumnPrev is workspace.ActionSwitchColumnPrev.
 const ActionSwitchColumnPrev = workspacedomain.ActionSwitchColumnPrev
 
-// ActionHint shares the model value with core dispatch and existing callers.
+// ActionHint is workspace.ActionHint.
 const ActionHint = workspacedomain.ActionHint
 
-// ActionOSDPin shares the model value with core dispatch and existing callers.
+// ActionOSDPin is workspace.ActionOSDPin.
 const ActionOSDPin = workspacedomain.ActionOSDPin
 
-// FocusWorkspace shares the model value with core dispatch and existing callers.
+// FocusWorkspace is workspace.FocusWorkspace.
 const FocusWorkspace = workspacedomain.FocusWorkspace
 
-// MoveColumnToWorkspace shares the model value with core dispatch and existing callers.
+// MoveColumnToWorkspace is workspace.MoveColumnToWorkspace.
 const MoveColumnToWorkspace = workspacedomain.MoveColumnToWorkspace
 
-// DropNone shares the model value with core dispatch and existing callers.
+// DropNone is workspace.DropNone.
 const DropNone = workspacedomain.DropNone
 
-// EdgeAlways shares the model value with core dispatch and existing callers.
+// EdgeAlways is workspace.EdgeAlways.
 const EdgeAlways = workspacedomain.EdgeAlways
 
-// EdgeIfStuck shares the model value with core dispatch and existing callers.
+// EdgeIfStuck is workspace.EdgeIfStuck.
 const EdgeIfStuck = workspacedomain.EdgeIfStuck
 
-// EdgeFirst shares the model value with core dispatch and existing callers.
+// EdgeFirst is workspace.EdgeFirst.
 const EdgeFirst = workspacedomain.EdgeFirst
 
-// StackFloat shares the model value with core dispatch and existing callers.
+// StackFloat is workspace.StackFloat.
 const StackFloat = workspacedomain.StackFloat
 
-// StackColumns shares the model value with core dispatch and existing callers.
+// StackColumns is workspace.StackColumns.
 const StackColumns = workspacedomain.StackColumns
 
-// StackColumn shares the model value with core dispatch and existing callers.
+// StackColumn is workspace.StackColumn.
 const StackColumn = workspacedomain.StackColumn
 
-// ResizeArg forwards the model operation without changing existing core call sites.
+// ResizeArg calls workspace.ResizeArg.
 func ResizeArg(a Action) (axis, step int, ok bool) { return workspacedomain.ResizeArg(a) }
 
-// WorkspaceArg forwards the model operation without changing existing core call sites.
+// WorkspaceArg calls workspace.WorkspaceArg.
 func WorkspaceArg(a Action) (n int, op workspacedomain.WorkspaceOp, ok bool) {
 	return workspacedomain.WorkspaceArg(a)
 }
 
-// NamedArg forwards the model operation without changing existing core call sites.
+// NamedArg calls workspace.NamedArg.
 func NamedArg(a Action) (string, bool) { return workspacedomain.NamedArg(a) }
 
-// SpawnCommands forwards the model operation without changing existing core call sites.
+// SpawnCommands calls workspace.SpawnCommands.
 func SpawnCommands(a Action) ([][]string, bool) { return workspacedomain.SpawnCommands(a) }
 
-// StashCommands forwards the model operation without changing existing core call sites.
+// StashCommands calls workspace.StashCommands.
 func StashCommands(a Action) ([][]string, bool) { return workspacedomain.StashCommands(a) }
 
-// MoveFullscreen forwards the model operation without changing existing core call sites.
+// MoveFullscreen calls workspace.MoveFullscreen.
 func MoveFullscreen(from, to *Workspace, at int) bool {
 	return workspacedomain.MoveFullscreen(from, to, at)
 }
 
-// MoveColumnTo forwards the model operation without changing existing core call sites.
+// MoveColumnTo calls workspace.MoveColumnTo.
 func MoveColumnTo(from, to *Workspace, at int) bool {
 	return workspacedomain.MoveColumnTo(from, to, at)
 }
 
-// MoveFocused forwards the model operation without changing existing core call sites.
+// MoveFocused calls workspace.MoveFocused.
 func MoveFocused(from, to *Workspace, column bool) bool {
 	return workspacedomain.MoveFocused(from, to, column)
 }
 
-// Expel forwards the model operation without changing existing core call sites.
+// Expel calls workspace.Expel.
 func Expel(from, to *Workspace, dir int) bool { return workspacedomain.Expel(from, to, dir) }
 
-// Merge forwards the model operation without changing existing core call sites.
+// Merge calls workspace.Merge.
 func Merge(dst, src *Workspace) { workspacedomain.Merge(dst, src) }
 
-// NewFrom forwards the model operation without changing existing core call sites.
+// NewFrom calls workspace.NewFrom.
 func NewFrom(t *Workspace, id uint64) *Workspace { return workspacedomain.NewFrom(t, id) }
 
-// Drop forwards the model operation without changing existing core call sites.
+// Drop calls workspace.Drop.
 func Drop(src, w *Workspace, id WindowID, t DropSpot) { workspacedomain.Drop(src, w, id, t) }
 
-// NeighborSlot forwards the model operation without changing existing core call sites.
+// NeighborSlot calls workspace.NeighborSlot.
 func NeighborSlot(axis layout.Axis, u, cs Rect, w *Workspace, before bool, spacing int) (slot Rect, gapAt int) {
 	return workspacedomain.NeighborSlot(axis, u, cs, w, before, spacing)
 }

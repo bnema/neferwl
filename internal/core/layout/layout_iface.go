@@ -56,7 +56,7 @@ type Traits interface {
 	// ResetsMaximize reports whether switching layouts clears maximization.
 	ResetsMaximize() bool // switching to this layout unmaximizes every column
 	// OverridesWidth enables dispatch to the engine’s custom column widths.
-	OverridesWidth() bool // columnWidth differs from columnsBase's: generic loops dispatch to it
+	OverridesWidth() bool // ColumnWidth differs from Base's: generic loops dispatch to it
 }
 
 // Shape says how columns group into lanes and how the user moves

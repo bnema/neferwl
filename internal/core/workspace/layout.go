@@ -35,7 +35,7 @@ type Workspace struct {
 	// was invoked. It only orders overview rows; numbering stays unchanged.
 	OverviewAfter *Workspace
 	// recent holds one window per column the user focused, newest first
-	// (switcher.go); columns that went are dropped when read.
+	// (noteFocus, core/switcher.go); columns that went are dropped when read.
 	recent []WindowID
 	// view is the presentation offset, in logical pixels.
 	view motion.Slide
@@ -504,7 +504,7 @@ func (w *Workspace) SetMaxColumns(n int) {
 func (w *Workspace) OverviewArea() Rect { return w.reserved }
 
 // Layout places every window of the workspace in a fresh slice the caller
-// owns. The per-frame paths use layoutInto instead.
+// owns. The per-frame paths use AppendLayout instead.
 func (w *Workspace) Layout() []Placement { return w.AppendLayout(nil) }
 
 // AppendLayout appends the workspace's placements to dst.
@@ -512,7 +512,7 @@ func (w *Workspace) AppendLayout(dst []Placement) []Placement {
 	gap := w.Gap()
 	// The column and row rects live in the workspace's scratch: each is dead
 	// once the placements it feeds are built (owner goroutine only, and
-	// layoutInto does not nest on a workspace).
+	// AppendLayout does not nest on a workspace).
 	w.colBuf = w.columnRectsInto(w.colBuf, false)
 	cols := w.colBuf
 	focusedID, _ := w.Focused()

@@ -394,7 +394,7 @@ func (m *Monitor) MoveToWorkspace(i int, column bool) {
 }
 
 // focusEntry selects the visible window nearest the edge entered from d.
-// Layout order breaks ties; an empty viewport preserves the existing focus.
+// Layout order breaks ties; an empty viewport keeps the focus where it is.
 func (m *Monitor) focusEntry(d direction) {
 	if m.ov.open || m.switcherShown() {
 		return

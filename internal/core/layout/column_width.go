@@ -1,6 +1,6 @@
 package layout
 
-// ScrollSpansValid is the lane validity scrollWidth needs. It costs O(n):
+// ScrollSpansValid is the lane validity ScrollWidth needs. It costs O(n):
 // loops over columns compute it once and pass it down.
 func (w *View) ScrollSpansValid() bool {
 	return !w.Layout.EqualCells() && w.validSpans(0, len(w.Columns)-1)
@@ -18,7 +18,7 @@ type WidthFacts struct {
 	spiral     bool  // past the row, the last slot subdivides
 }
 
-// WidthFactsOf is widthFacts for a view the caller already built.
+// WidthFactsOf is the WidthFacts of a view the caller already built.
 func (w *View) WidthFactsOf() WidthFacts {
 	k := max(w.MaxColumns, 1)
 	return WidthFacts{set: true, spansValid: w.ScrollSpansValid(), laneRow: w.Layout.LaneRow(*w), spiral: w.Layout.Spiral(),
@@ -31,7 +31,7 @@ func (v View) WithFacts() View {
 	return v
 }
 
-// ColumnWidthWith is columnWidthFor with the workspace's width facts given.
+// ColumnWidthWith is the width of column i with the workspace's width facts given.
 func (w *View) ColumnWidthWith(i int, ignoreFullWidth bool, f WidthFacts) int {
 	if width, ok := w.specialWidth(i, ignoreFullWidth); ok {
 		return width

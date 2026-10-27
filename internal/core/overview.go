@@ -588,7 +588,7 @@ func (m *Monitor) overviewHorizontal(dx int) {
 	m.ov.selected = w.Columns[next].Selected()
 	m.ov.selectedAt = next
 	if !w.OverviewMaximized() {
-		// Ordinary group navigation retains its existing scroll-to-selection.
+		// Ordinary group navigation scrolls to the selection.
 		w.SelectOverviewColumn(next)
 	}
 }

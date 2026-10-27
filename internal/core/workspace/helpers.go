@@ -5,7 +5,8 @@ const (
 	dropBandDiv = 4
 	gapPad      = 12
 	edgeScroll  = 32
-	// Overview geometry retains the model's existing presentation ratios.
+	// Overview geometry: the card zoom, the card count and step, the peek step
+	// and the zoom bounds of a row.
 	overviewCardZoom = 0.2
 	overviewCards    = 4
 	overviewCardStep = 8

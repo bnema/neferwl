@@ -91,7 +91,7 @@ const (
 	// Turn the focused tile into a free floating window, or back.
 	ActionToggleFloating Action = "toggle-floating"
 	// Switch to the column used before this one, further back while the
-	// command key is held (switcher.go).
+	// command key is held (core/switcher.go).
 	ActionSwitchColumnNext Action = "switch-column-next"
 	// ActionSwitchColumnPrev is the ActionSwitchColumnPrev action value.
 	ActionSwitchColumnPrev Action = "switch-column-prev"

@@ -21,7 +21,9 @@ const (
 	EdgeFirst
 )
 
-// ColumnEdge preserves fullscreen and floating focus rules at a content edge.
+// ColumnEdge says whether a column move or focus step toward dir crosses to
+// the neighbor monitor, and when: always, only if a pinned fullscreen window
+// blocks the step, or first, before the local focus step.
 func (w *Workspace) ColumnEdge(dir int) EdgeKind {
 	if w.Engine().Bands() && w.Cover() != 0 && w.IsFloat(w.Cover()) && !w.stashOverCover() && !w.coverDialogFocused() {
 		return EdgeAlways
@@ -217,7 +219,7 @@ func (w *Workspace) Inherit(t *Workspace) {
 // SetBorder sets the floating border and reconciles covering floats.
 func (w *Workspace) SetBorder(b int) { w.border = max(b, 0); w.reconcileFloats() }
 
-// SetStash sets the stash width and gap percentages with their existing limits.
+// SetStash sets the stash width and gap percentages clamped to 10-90 and 0-10.
 func (w *Workspace) SetStash(width, gap int) {
 	if width != 0 {
 		width = min(max(width, 10), 90)
