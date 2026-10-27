@@ -24,9 +24,6 @@ const (
 	// swipeDecide is the touchpad distance before the swipe picks its axis
 	// (GNOME Shell's threshold).
 	swipeDecide = 16.0
-	// viewSwipeMovement is the touchpad distance that scrolls the columns by
-	// one usable width.
-	viewSwipeMovement = 1200.0
 	// workspaceSwipeMovement is the touchpad distance that slides one
 	// workspace.
 	workspaceSwipeMovement = 300.0
@@ -104,10 +101,10 @@ func (g *swipeGesture) listChanged(m *Monitor) bool {
 // over it.
 func (g *swipeGesture) columnsChanged(m *Monitor) bool {
 	content, _ := g.ws.Engine().Axes()
-	if m.overviewOpens != g.opens || m.Current() != g.ws || !workspaceSlidable(g.ws) || g.horizontal != (content == layout.Horizontal) {
+	if m.overviewOpens != g.opens || m.Current() != g.ws || !g.ws.Slidable() || g.horizontal != (content == layout.Horizontal) {
 		return true
 	}
-	g.scratch = g.ws.Engine().SnapPoints(g.ws.Snapshot(), g.scratch[:0])
+	g.scratch = g.ws.SnapPoints(g.scratch[:0])
 	return !slices.Equal(g.scratch, g.points)
 }
 
@@ -256,10 +253,10 @@ func (c *Core) decide(g *swipeGesture) {
 		}
 		pos := w.BeginStashDrag()
 		g.snap = motion.NewSnapSwipe(pos, float64(w.StashAt()), 1/stashSwipeMovement, motion.IndexPoints(len(w.Stash)), motion.WorkspaceBand)
-	case g.horizontal == (content == layout.Horizontal) && workspaceSlidable(w):
-		g.mode, g.ws, g.points = swipeColumns, w, w.Engine().SnapPoints(w.Snapshot(), nil)
+	case g.horizontal == (content == layout.Horizontal) && w.Slidable():
+		g.mode, g.ws, g.points = swipeColumns, w, w.SnapPoints(nil)
 		pos := w.BeginColumnsDrag()
-		g.snap = motion.NewSnapSwipe(pos, float64(w.View), workspaceSwipeScale(w), g.points, motion.WorkspaceBand.Scaled(float64(content.Span(w.Usable))))
+		g.snap = motion.NewSnapSwipe(pos, float64(w.View), w.SwipeScale(), g.points, motion.WorkspaceBand.Scaled(float64(content.Span(w.Usable))))
 	case g.horizontal == (workspace == layout.Horizontal) && m.shown == nil:
 		// A landing slide measured in an older list lands at once first.
 		if m.switchList != nil && !slices.Equal(m.switchList, m.Workspaces) {

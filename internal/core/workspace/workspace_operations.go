@@ -23,7 +23,7 @@ const (
 
 // ColumnEdge preserves fullscreen and floating focus rules at a content edge.
 func (w *Workspace) ColumnEdge(dir int) EdgeKind {
-	if w.Engine().Bands() && w.Cover() != 0 && isWorkspaceFloat(w, w.Cover()) && !w.stashOverCover() && !w.coverDialogFocused() {
+	if w.Engine().Bands() && w.Cover() != 0 && w.IsFloat(w.Cover()) && !w.stashOverCover() && !w.coverDialogFocused() {
 		return EdgeAlways
 	}
 	if w.Pinned() && !w.stashOverCover() {

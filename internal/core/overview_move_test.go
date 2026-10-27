@@ -91,7 +91,7 @@ func TestOverviewMoveSelectedUnderFloat(t *testing.T) {
 			t.Fatalf("selection %d", id)
 		}
 		m.Apply(ActionMoveColumnToWorkspaceNext)
-		if !slices.Contains(m.Workspaces[1].AppendWindows(nil), id) || isWorkspaceFloat(m.Workspaces[1], 9) {
+		if !slices.Contains(m.Workspaces[1].AppendWindows(nil), id) || m.Workspaces[1].IsFloat(9) {
 			t.Fatalf("moved the wrong window: %v floats %v", windows(m), m.Workspaces[0].Floats)
 		}
 		// The provisional stack front went with the moved column.

@@ -22,10 +22,6 @@ func threeColumns() *Workspace {
 	return w
 }
 
-func workspaceSlidable(w *Workspace) bool {
-	return w.Engine().Scrolls() && len(w.Columns) > 0 && w.Fullscreen == 0 && !w.OnFloat()
-}
-
 func rc(x, y, w, h int) Rect { return Rect{X: x, Y: y, W: w, H: h} }
 
 func cascadeMovesCore(t *testing.T, n, maxCols int, sides bool) (struct{}, *Workspace) {

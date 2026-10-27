@@ -229,7 +229,7 @@ func (w *Workspace) dropStashOver() {
 // Click focuses the clicked window. A click on a tile behind the shown
 // stash hides the stash, as a click outside a menu closes it.
 func (w *Workspace) Click(id WindowID) {
-	if !w.stashHidden && len(w.Stash) > 0 && !isWorkspaceFloat(w, id) && w.Cover() == 0 {
+	if !w.stashHidden && len(w.Stash) > 0 && !w.IsFloat(id) && w.Cover() == 0 {
 		w.stashHidden = true
 	}
 	w.FocusID(id)

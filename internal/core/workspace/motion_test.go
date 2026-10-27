@@ -22,7 +22,7 @@ func TestSnapFocusWideColumn(t *testing.T) {
 		// Full width with gaps: 780 wide, between 10 and 790. The view
 		// columnX(1)+1 shifts it 1 px left, so it is not fully shown.
 		w.Columns[1].FullWidth = true
-		if !workspaceSlidable(w) {
+		if !w.Slidable() {
 			t.Fatal("the workspace does not scroll")
 		}
 		view := w.columnX(1) - w.Usable.X - w.Gap() + 1

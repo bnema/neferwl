@@ -14,6 +14,8 @@ const (
 	overviewMinZoom  = 0.25
 )
 
-func isWorkspaceFloat(w *Workspace, id WindowID) bool {
+// IsFloat reports whether id is a native floating or stashed window. It is
+// two index lookups and computes no rectangle.
+func (w *Workspace) IsFloat(id WindowID) bool {
 	return w.floatIndex(id) >= 0 || w.StashIndex(id) >= 0
 }

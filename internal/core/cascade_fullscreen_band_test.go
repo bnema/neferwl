@@ -422,7 +422,7 @@ func TestPromotedFullscreenFloatMovesToNeighborMonitor(t *testing.T) {
 			dst := screenWorkspace(c, tc.screen)
 			wantFocus(t, c, tc.screen, 9)
 			wantColumns(t, w, 1, 2)
-			if isWorkspaceFloat(dst, 9) || dst.ColumnOf(9) < 0 || dst.Fullscreen != 9 || w.Fullscreen != 0 {
+			if dst.IsFloat(9) || dst.ColumnOf(9) < 0 || dst.Fullscreen != 9 || w.Fullscreen != 0 {
 				t.Fatalf("destination %+v", dst)
 			}
 		})
@@ -432,11 +432,11 @@ func TestPromotedFullscreenFloatMovesToNeighborMonitor(t *testing.T) {
 func TestUserFloatedToggleFullscreenPromotes(t *testing.T) {
 	_, w := cascadeMovesCore(t, 2, 3, false)
 	w.ToggleFloating()
-	if !isWorkspaceFloat(w, 2) {
+	if !w.IsFloat(2) {
 		t.Fatal("setup not floating")
 	}
 	w.ToggleFullscreen()
-	if isWorkspaceFloat(w, 2) || w.Fullscreen != 2 {
+	if w.IsFloat(2) || w.Fullscreen != 2 {
 		t.Fatal("user float not promoted")
 	}
 	wantBands(t, w, []WindowID{1}, []WindowID{2})

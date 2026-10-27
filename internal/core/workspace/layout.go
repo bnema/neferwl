@@ -380,7 +380,7 @@ func (w *Workspace) ResizeFloating(id WindowID, width, height int) {
 
 // Has reports whether the workspace holds the window.
 func (w *Workspace) Has(id WindowID) bool {
-	if isWorkspaceFloat(w, id) {
+	if w.IsFloat(id) {
 		return true
 	}
 	for _, c := range w.Columns {

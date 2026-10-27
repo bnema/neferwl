@@ -114,7 +114,7 @@ func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 	if on && !w.mayCover(id) {
 		return
 	}
-	if isWorkspaceFloat(w, id) {
+	if w.IsFloat(id) {
 		if w.stashHidden && w.StashIndex(id) >= 0 {
 			// Applied when the stash is shown again.
 			if on {
@@ -140,7 +140,7 @@ func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 	}
 	w.isolate(id)
 	w.Fullscreen = id
-	if !isWorkspaceFloat(w, id) {
+	if !w.IsFloat(id) {
 		w.scroll()
 	}
 }

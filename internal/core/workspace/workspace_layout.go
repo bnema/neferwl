@@ -26,7 +26,7 @@ func (w *Workspace) isolate(id WindowID) bool {
 			}
 		}
 	}
-	if isWorkspaceFloat(w, id) || w.Fullscreen == id {
+	if w.IsFloat(id) || w.Fullscreen == id {
 		return false
 	}
 	return w.Engine().Isolate(w.edit(), id)

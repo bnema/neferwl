@@ -13,7 +13,7 @@ func (w *Workspace) OverviewMaximized() bool {
 	if !w.Engine().MaximizeHides() || len(w.Columns) < 2 || w.Focus < 0 || w.Focus >= len(w.Columns) {
 		return false
 	}
-	if c := w.Cover(); c != 0 && !isWorkspaceFloat(w, c) {
+	if c := w.Cover(); c != 0 && !w.IsFloat(c) {
 		return w.ColumnOf(c) == w.Focus
 	}
 	return w.Columns[w.Focus].FullWidth
@@ -81,7 +81,7 @@ func (w *Workspace) walkStack(yield func(StackItem) bool) {
 			return
 		}
 	}
-	if (c == 0 || isWorkspaceFloat(w, c)) && w.OverviewMaximized() && !yield(StackItem{Kind: StackColumn, ID: w.Columns[w.Focus].Windows[0]}) {
+	if (c == 0 || w.IsFloat(c)) && w.OverviewMaximized() && !yield(StackItem{Kind: StackColumn, ID: w.Columns[w.Focus].Windows[0]}) {
 		return
 	}
 	if columns && !yield(StackItem{Kind: StackColumns}) {

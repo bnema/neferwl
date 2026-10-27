@@ -36,7 +36,7 @@ func (w *Workspace) mayCover(id WindowID) bool {
 // tiled neighbor scroll it off and show the target instead.
 func (w *Workspace) Pinned() bool {
 	c := w.Cover()
-	return c != 0 && (w.Engine().PinsFullscreen() || isWorkspaceFloat(w, c))
+	return c != 0 && (w.Engine().PinsFullscreen() || w.IsFloat(c))
 }
 
 // leaveCover runs a focus move from the covering fullscreen window as if it
@@ -75,7 +75,7 @@ func (w *Workspace) FocusCover() {
 		w.stashFocus, w.floatFocus = true, false
 		return
 	}
-	if isWorkspaceFloat(w, c) {
+	if w.IsFloat(c) {
 		w.FocusID(c)
 		return
 	}
@@ -94,7 +94,7 @@ func (w *Workspace) Cover() WindowID {
 	if w.Fullscreen == 0 {
 		return 0
 	}
-	if isWorkspaceFloat(w, w.Fullscreen) || w.Engine().PinsFullscreen() {
+	if w.IsFloat(w.Fullscreen) || w.Engine().PinsFullscreen() {
 		return w.Fullscreen
 	}
 	// Scroll overflow: only while its column is aligned on the output.

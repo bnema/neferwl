@@ -27,7 +27,7 @@ func TestSwipeStalenessSnapPointsAllocations(t *testing.T) {
 				g := swipeGesture{ws: &w, points: w.Engine().SnapPoints(w.Snapshot(), nil)}
 				g.scratch = w.Engine().SnapPoints(w.Snapshot(), g.scratch[:0])
 				if allocs := testing.AllocsPerRun(50, func() {
-					g.scratch = g.ws.Engine().SnapPoints(g.ws.Snapshot(), g.scratch[:0])
+					g.scratch = g.ws.SnapPoints(g.scratch[:0])
 					if !slices.Equal(g.scratch, g.points) {
 						t.Fatal("points moved")
 					}

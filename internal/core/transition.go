@@ -754,7 +754,7 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 			w.LandStash(c.spring(w.StashSpring(b.stashPos-float64(w.StashAt()), b.stashV), now))
 			return
 		}
-		if w.View == b.settledView || !workspaceSlidable(w) {
+		if w.View == b.settledView || !w.Slidable() {
 			return
 		}
 		// A running landing slide was retargeted by scroll(): its velocity
