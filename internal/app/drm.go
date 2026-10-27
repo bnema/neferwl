@@ -55,19 +55,19 @@ func securitySnapshot(gate ports.SessionSecurity) domain.SecurityState {
 // stay tracked by the card and prevent the later backend barrier.
 func guardedLease(c securityLeaseCard, gate ports.SessionSecurity, connectors []string) (*os.File, uint32, error) {
 	before := securitySnapshot(gate)
-	if before.Protected {
-		return nil, 0, errors.New("session protected")
+	if err := core.LeaseGuard(before, before); err != nil {
+		return nil, 0, err
 	}
 	fd, id, err := c.Lease(connectors)
 	if err != nil {
 		return fd, id, err
 	}
 	after := securitySnapshot(gate)
-	if after.Protected || after.Generation != before.Generation {
+	if err := core.LeaseGuard(before, after); err != nil {
 		if fd != nil {
 			fd.Close()
 		}
-		return nil, 0, errors.Join(errors.New("session transition during lease"), c.Revoke(id))
+		return nil, 0, errors.Join(err, c.Revoke(id))
 	}
 	return fd, id, nil
 }
