@@ -1,4 +1,4 @@
-package app
+package supervisor
 
 import (
 	"context"
@@ -31,8 +31,6 @@ import (
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
 )
-
-var errTimeout = errors.New("timeout")
 
 // securityLeaseCard keeps the native operation and its tracked lease inventory
 // together. A failed revoke must remain in LeaseIDs for the next barrier attempt.
@@ -118,8 +116,8 @@ func retireDiscardedOutput(set *routing.Set, instance domain.OutputInstance, ina
 // applyTimeout bounds how long outputs take to apply a configuration.
 const applyTimeout = 5 * time.Second
 
-// drmBackend is the seat and the cards with at least one usable output.
-type drmBackend struct {
+// Backend is the seat and the cards with at least one usable output.
+type Backend struct {
 	startupConfig domain.Config
 	selectConfig  core.GPUSelectConfig
 	render        ports.RenderDevice
@@ -142,7 +140,7 @@ type drmBackend struct {
 	probes map[string]func()
 }
 
-func (b *drmBackend) addProbe(name string, ping func()) {
+func (b *Backend) addProbe(name string, ping func()) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.probes == nil {
@@ -151,14 +149,14 @@ func (b *drmBackend) addProbe(name string, ping func()) {
 	b.probes[name] = ping
 }
 
-func (b *drmBackend) removeProbe(name string) {
+func (b *Backend) removeProbe(name string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	delete(b.probes, name)
 }
 
 // watchdogProbes lists the running output loops for the watchdog.
-func (b *drmBackend) watchdogProbes() []watchdog.Probe {
+func (b *Backend) WatchdogProbes() []watchdog.Probe {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	out := make([]watchdog.Probe, 0, len(b.probes))
@@ -178,7 +176,7 @@ type seatDisablePreparer interface {
 // the VT switch must not hang on a stuck one.
 const seatDisableTimeout = 100 * time.Millisecond
 
-func (b *drmBackend) addPreparer(p seatDisablePreparer) {
+func (b *Backend) addPreparer(p seatDisablePreparer) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.preparers == nil {
@@ -187,7 +185,7 @@ func (b *drmBackend) addPreparer(p seatDisablePreparer) {
 	b.preparers[p] = struct{}{}
 }
 
-func (b *drmBackend) removePreparer(p seatDisablePreparer) {
+func (b *Backend) removePreparer(p seatDisablePreparer) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	delete(b.preparers, p)
@@ -197,7 +195,7 @@ func (b *drmBackend) removePreparer(p seatDisablePreparer) {
 // disabled and its devices revoked: every running output commits what it
 // must leave behind (planes on Bypass), all in parallel under one bound. A
 // timeout is logged and the disable goes on.
-func (b *drmBackend) prepareSeatDisable() {
+func (b *Backend) prepareSeatDisable() {
 	b.mu.Lock()
 	outs := make([]seatDisablePreparer, 0, len(b.preparers))
 	for p := range b.preparers {
@@ -252,19 +250,9 @@ func releasedHead(heads []domain.OutputHead, name string) []domain.OutputHead {
 	return heads
 }
 
-// safe turns a panic in a hardware goroutine into an error, so the TTY is still restored.
-func safe(name string, fn func() error) (err error) {
-	defer func() {
-		if p := recover(); p != nil {
-			err = fmt.Errorf("%s panic: %v\n%s", name, p, debug.Stack())
-		}
-	}()
-	return fn()
-}
-
 // openDRM opens the seat and every card with a connected display. Outputs
 // are found by the first Scan of each card.
-func openDRM(ctx context.Context, cfg domain.Config, opener ports.RenderDeviceOpener) (*drmBackend, error) {
+func Open(ctx context.Context, cfg domain.Config, opener ports.RenderDeviceOpener) (*Backend, error) {
 	log := logging.For(ctx, "drm")
 	s, err := seat.Open(ctx, logging.For(ctx, "seat"))
 	if err != nil {
@@ -292,7 +280,7 @@ func openDRM(ctx context.Context, cfg domain.Config, opener ports.RenderDeviceOp
 	for _, reason := range sel.Reasons {
 		log.Info().Msg(reason)
 	}
-	b := &drmBackend{startupConfig: cfg, selectConfig: selectConfig, seat: s, clock: clock.System{}, log: log, opener: opener}
+	b := &Backend{startupConfig: cfg, selectConfig: selectConfig, seat: s, clock: clock.System{}, log: log, opener: opener}
 	s.SetBeforeDisable(b.prepareSeatDisable)
 	render, info, err := openPlannedRender(opener, plans, cfg.Render.Device != "" || os.Getenv("NEFERWL_RENDER_DEVICE") != "", log)
 	if err != nil {
@@ -324,7 +312,7 @@ func openDRM(ctx context.Context, cfg domain.Config, opener ports.RenderDeviceOp
 
 // openCard opens one kept card; the render card gets no local device.
 // Startup and GPU hotplug share this path. A failed card leaves no fd.
-func (b *drmBackend) openCard(ctx context.Context, info domain.GPUInfo, mode domain.MultiGPUMode, want drm.Want, traceDamage bool) (*drmCard, error) {
+func (b *Backend) openCard(ctx context.Context, info domain.GPUInfo, mode domain.MultiGPUMode, want drm.Want, traceDamage bool) (*drmCard, error) {
 	path, log := info.Path, b.log
 	fd, err := b.seat.OpenDevice(path)
 	if err != nil {
@@ -386,7 +374,7 @@ func wantFromConfig(cfg domain.Config) drm.Want {
 
 // close releases the cards and the seat so the TTY comes back. Outputs are
 // closed by their goroutines first.
-func (b *drmBackend) close() {
+func (b *Backend) Close() {
 	cards := slices.Clone(b.cards)
 	for c := range b.dying {
 		cards = append(cards, c)
@@ -414,7 +402,13 @@ func (b *drmBackend) close() {
 // output configuration: reloads and protocol requests go through apply, and
 // each configuration is finished when its outputs are ready, fail or time
 // out. It returns when ctx ends, after every output is closed.
-func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) drm.Want, initial domain.Config, apply *core.OutputApply, ch routing.Channels, curs *cursors.Router, log zerowrap.Logger) error {
+func (b *Backend) RunOutputs(ctx context.Context, initial domain.Config, apply *core.OutputApply, ch routing.Channels, curs *cursors.Router, log zerowrap.Logger) error {
+	want := func(cfg domain.Config) drm.Want {
+		w := wantFromConfig(cfg)
+		w.Sampled = b.render.DMABuf().Formats
+		w.TraceFlips = logging.Enabled(ctx, "drm-flip")
+		return w
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	var readers sync.WaitGroup
 	// A reader that fails sends at most once; cards come and go, so the
@@ -1120,7 +1114,7 @@ type readerFailure struct {
 
 // hotplugAdd opens a card that just appeared, or returns nil with the action
 // that explains why not. It runs on the runOutputs goroutine.
-func (b *drmBackend) hotplugAdd(ctx context.Context, name domain.CardName, want drm.Want) (*drmCard, core.HotplugAddAction) {
+func (b *Backend) hotplugAdd(ctx context.Context, name domain.CardName, want drm.Want) (*drmCard, core.HotplugAddAction) {
 	log := b.log
 	cands, err := drm.ListGPUs("/sys", "/dev")
 	if err != nil {
@@ -1178,4 +1172,44 @@ func reopenRender(opener ports.RenderDeviceOpener, info domain.GPUInfo, old port
 		return nil, fmt.Errorf("render device %s: %w: %w", info.Path, ports.ErrDeviceLost, lastErr)
 	}
 	return nil, fmt.Errorf("render device %s: %w", info.Path, ports.ErrDeviceLost)
+}
+
+// safe turns a panic in a hardware goroutine into an error, so the TTY is still restored.
+func safe(name string, fn func() error) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("%s panic: %v\n%s", name, p, debug.Stack())
+		}
+	}()
+	return fn()
+}
+
+func (b *Backend) RenderDevice() ports.RenderDevice { return b.render }
+func (b *Backend) Seat() *seat.Seat                 { return b.seat }
+
+func logOutputApplied(heads []domain.HeadChange, log zerowrap.Logger) {
+	for _, h := range heads {
+		e := log.Info().Str("output", h.Name).Bool("enabled", h.Enabled).Float64("scale", h.Scale)
+		if h.Transform != nil {
+			e = e.Uint8("transform", uint8(*h.Transform))
+		}
+		e.Msg("output configuration applied")
+	}
+}
+
+func openPlannedRender(opener ports.RenderDeviceOpener, plans []core.CardPlan, strict bool, log zerowrap.Logger) (ports.RenderDevice, domain.GPUInfo, error) {
+	ordered := core.RenderOpenOrder(plans, strict)
+	var errs []error
+	for _, info := range ordered {
+		dev, err := opener.Open(info)
+		if err == nil {
+			return dev, info, nil
+		}
+		log.Warn().Err(err).Str("card", info.Path).Msg("render GPU unavailable")
+		errs = append(errs, fmt.Errorf("render card %s: %w", info.Path, err))
+	}
+	if len(errs) == 0 {
+		errs = append(errs, core.ErrNoRenderGPU)
+	}
+	return nil, domain.GPUInfo{}, errors.Join(errs...)
 }

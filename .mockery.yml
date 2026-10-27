@@ -107,17 +107,17 @@ packages:
           dir: internal/adapters/wayland
           pkgname: wayland
           filename: syncobj_device_mock_test.go
-  github.com/bnema/neferwl/internal/app:
+  github.com/bnema/neferwl/internal/adapters/drm/supervisor:
     interfaces:
       securityLeaseCard:
         config:
-          dir: internal/app
-          pkgname: app
+          dir: internal/adapters/drm/supervisor
+          pkgname: supervisor
           filename: securitylease_mock_test.go
       seatDisablePreparer:
         config:
-          dir: internal/app
-          pkgname: app
+          dir: internal/adapters/drm/supervisor
+          pkgname: supervisor
           filename: seatdisable_mock_test.go
   github.com/bnema/neferwl/internal/adapters/statefile:
     interfaces:

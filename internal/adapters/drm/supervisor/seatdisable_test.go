@@ -1,6 +1,7 @@
-package app
+package supervisor
 
 import (
+	"bytes"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -13,7 +14,7 @@ import (
 // Every running output is asked, in parallel, with the bound; an output
 // that has stopped is not.
 func TestPrepareSeatDisableAsksRunningOutputs(t *testing.T) {
-	b := &drmBackend{log: zerowrap.Default()}
+	b := &Backend{log: zerowrap.Default()}
 	a, c, gone := newMockseatDisablePreparer(t), newMockseatDisablePreparer(t), newMockseatDisablePreparer(t)
 	var asked atomic.Int32
 	for _, p := range []*mockseatDisablePreparer{a, c} {
@@ -42,8 +43,8 @@ func TestPrepareSeatDisableWarnsOnlyWhenLate(t *testing.T) {
 		{"one late", []bool{true, false}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			log := &lockedBuffer{}
-			b := &drmBackend{log: zerowrap.New(zerowrap.Config{Format: "json", Output: log})}
+			log := &bytes.Buffer{}
+			b := &Backend{log: zerowrap.New(zerowrap.Config{Format: "json", Output: log})}
 			for _, ack := range tc.acks {
 				p := newMockseatDisablePreparer(t)
 				p.EXPECT().PrepareSeatDisable(mock.Anything).Return(ack).Once()

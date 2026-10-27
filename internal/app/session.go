@@ -13,6 +13,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/drm"
+	"github.com/bnema/neferwl/internal/adapters/drm/supervisor"
 	"github.com/bnema/neferwl/internal/adapters/headless"
 	"github.com/bnema/neferwl/internal/adapters/headlessinput"
 	"github.com/bnema/neferwl/internal/adapters/hints"
@@ -53,7 +54,7 @@ type session struct {
 	sizes    [][2]int
 	path     string
 
-	hw           *drmBackend
+	hw           *supervisor.Backend
 	km           *xkb.Keymap
 	core         *core.Core
 	inst         *vulkan.Instance
@@ -110,10 +111,10 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 		return s, err
 	}
 	if opts.Backend == "drm" {
-		if s.hw, err = openDRM(ctx, opts.Config, s.inst); err != nil {
+		if s.hw, err = supervisor.Open(ctx, opts.Config, s.inst); err != nil {
 			return s, err
 		}
-		s.gpu = s.hw.render
+		s.gpu = s.hw.RenderDevice()
 	} else {
 		cands, listErr := drm.ListGPUs("/sys", "/dev")
 		s.gpu, err = openHeadlessRender(s.inst, cands, listErr, opts.Config, os.Getenv("NEFERWL_RENDER_DEVICE"), logging.For(ctx, "drm"))
@@ -227,7 +228,7 @@ func (s *session) close() {
 // releaseRender releases the backend/device before its Vulkan instance.
 func (s *session) releaseRender() {
 	if s.hw != nil {
-		s.hw.close()
+		s.hw.Close()
 	}
 	if s.hw == nil && s.gpu != nil {
 		s.gpu.Close()
@@ -296,8 +297,8 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 				}
 				return libinput.Run(ctx, libinput.Options{
 					Security:      security,
-					Seat:          hw.seat,
-					SeatName:      hw.seat.Name(),
+					Seat:          hw.Seat(),
+					SeatName:      hw.Seat().Name(),
 					Keymap:        km,
 					Keymaps:       p.keymaps,
 					Layout:        layout,
@@ -305,7 +306,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 					Constraints:   p.constraints,
 					DeviceConfig:  opts.Config.InputDevicesConfig,
 					DeviceConfigs: p.deviceConfigs,
-					Active:        hw.seat.Subscribe(),
+					Active:        hw.Seat().Subscribe(),
 					MoveCursor:    curs.Move,
 					Log:           logging.For(ctx, "input"),
 					LogMotion:     logging.Enabled(ctx, "input-motion"),
@@ -351,7 +352,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 					{Name: "core", Ping: func() { c.Ping(ctx) }},
 				}
 				if hw != nil {
-					probes = append(probes, hw.watchdogProbes()...)
+					probes = append(probes, hw.WatchdogProbes()...)
 				}
 				return probes
 			}, watchdog.Options{Dir: dir, Every: watchdogEvery, Timeout: watchdogTimeout, Log: logging.For(ctx, "app")})
@@ -406,13 +407,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 		apply := core.NewOutputApply(core.NewOutputOverrides(opts.Config, hw == nil))
 		if hw != nil {
 			done <- safe("output", func() error {
-				want := func(cfg domain.Config) drm.Want {
-					w := wantFromConfig(cfg)
-					w.Sampled = hw.render.DMABuf().Formats
-					w.TraceFlips = logging.Enabled(ctx, "drm-flip")
-					return w
-				}
-				return hw.runOutputs(ctx, want, opts.Config, apply, outputIO, curs, logging.For(ctx, "drm"))
+				return hw.RunOutputs(ctx, opts.Config, apply, outputIO, curs, logging.For(ctx, "drm"))
 			})
 			return
 		}
@@ -421,7 +416,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 
 	if hw != nil {
 		workers.Add(1)
-		go func() { defer workers.Done(); done <- safe("seat", func() error { return hw.seat.Run(ctx) }) }()
+		go func() { defer workers.Done(); done <- safe("seat", func() error { return hw.Seat().Run(ctx) }) }()
 	}
 	// Only a real session serves the session bus: headless runs would take
 	// the names from the desktop they run in, unless a test asks (DBus).
