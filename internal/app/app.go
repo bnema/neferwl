@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/cursors"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/adapters/xwayland"
 	"github.com/bnema/neferwl/internal/core"
@@ -86,7 +87,7 @@ const busRetry = 2 * time.Second
 // or mouse change goes to the input goroutine as one InputDevicesConfig; only
 // the newest one waits there. The cursor idle delay goes straight to the
 // cursor router.
-func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.ConfigChanged, out chan<- domain.ConfigChanged, keymaps chan *xkb.Keymap, deviceConfigs chan domain.InputDevicesConfig, curs *cursors, commands chan<- ports.ClientCommand, log zerowrap.Logger) {
+func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.ConfigChanged, out chan<- domain.ConfigChanged, keymaps chan *xkb.Keymap, deviceConfigs chan domain.InputDevicesConfig, curs *cursors.Router, commands chan<- ports.ClientCommand, log zerowrap.Logger) {
 	kb := cur.Keyboard
 	devCfg := cur.InputDevicesConfig
 	for {
@@ -131,7 +132,7 @@ func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.Config
 				}
 			}
 		}
-		curs.setHideAfter(ev.Config.Cursor.HideAfter)
+		curs.SetHideAfter(ev.Config.Cursor.HideAfter)
 		if ev.Config.InputDevicesConfig != devCfg {
 			devCfg = ev.Config.InputDevicesConfig
 			latest(deviceConfigs, devCfg) // this goroutine is the only sender

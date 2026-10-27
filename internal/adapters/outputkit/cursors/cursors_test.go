@@ -1,4 +1,4 @@
-package app
+package cursors
 
 import (
 	"testing"
@@ -14,7 +14,7 @@ const testHideAfter = 5 * time.Second
 // idleRig is a cursor router on a clock the test drives. The first arm
 // creates the timer through AfterFunc (exactly once); later arms Reset it.
 type idleRig struct {
-	c     *cursors
+	c     *Router
 	timer *portsmocks.MockTimer
 	cur   *mockcursor
 	now   time.Time
@@ -30,12 +30,12 @@ func newIdleRig(t *testing.T) *idleRig {
 		r.fire = f
 		return r.timer
 	}).Once()
-	r.c = newCursors(clk, testHideAfter)
+	r.c = New(clk, testHideAfter)
 	r.cur = newMockcursor(t)
 	r.cur.EXPECT().Hide().Once() // a cursor registered before the first move is hidden
-	r.c.set("A", r.cur)
+	r.c.Set("A", r.cur)
 	r.cur.EXPECT().Move(1.0, 1.0).Once()
-	r.c.move("A", 1, 1, true)
+	r.c.Move("A", 1, 1, true)
 	return r
 }
 
@@ -51,7 +51,7 @@ func TestCursorHidesWhenIdleAndShowsOnMotion(t *testing.T) {
 	r.idleHide()
 	r.cur.EXPECT().Move(2.0, 2.0).Once()
 	r.timer.EXPECT().Reset(testHideAfter).Return(false).Once()
-	r.c.move("A", 2, 2, true)
+	r.c.Move("A", 2, 2, true)
 }
 
 // A timer that fires while the pointer kept moving waits for the time left.
@@ -59,7 +59,7 @@ func TestCursorIdleTimerWaitsForTimeLeft(t *testing.T) {
 	r := newIdleRig(t)
 	r.now = r.now.Add(3 * time.Second)
 	r.cur.EXPECT().Move(2.0, 2.0).Once()
-	r.c.move("A", 2, 2, true)
+	r.c.Move("A", 2, 2, true)
 	r.now = r.now.Add(2 * time.Second)
 	r.timer.EXPECT().Reset(3 * time.Second).Return(false).Once()
 	r.fire() // no Hide: only 2s since the last motion
@@ -72,11 +72,11 @@ func TestCursorResyncIsNotMotion(t *testing.T) {
 	r := newIdleRig(t)
 	r.now = r.now.Add(3 * time.Second)
 	r.cur.EXPECT().Move(2.0, 2.0).Once()
-	r.c.move("A", 2, 2, false)
+	r.c.Move("A", 2, 2, false)
 	r.now = r.now.Add(2 * time.Second)
 	r.cur.EXPECT().Hide().Once()
 	r.fire() // 5s after the last motion, only 2s after the resync
-	r.c.move("A", 3, 3, false)
+	r.c.Move("A", 3, 3, false)
 }
 
 // An output that restarts while the cursor is idle-hidden keeps it hidden.
@@ -85,7 +85,7 @@ func TestCursorStaysHiddenOnOutputRestart(t *testing.T) {
 	r.idleHide()
 	next := newMockcursor(t)
 	next.EXPECT().Hide().Once()
-	r.c.set("A", next)
+	r.c.Set("A", next)
 }
 
 func TestCursorHideAfterReload(t *testing.T) {
@@ -93,32 +93,32 @@ func TestCursorHideAfterReload(t *testing.T) {
 		r := newIdleRig(t)
 		r.timer.EXPECT().Stop().Return(true).Once()
 		r.timer.EXPECT().Reset(10 * time.Second).Return(false).Once()
-		r.c.setHideAfter(10 * time.Second)
+		r.c.SetHideAfter(10 * time.Second)
 	})
 	t.Run("hidden", func(t *testing.T) {
 		r := newIdleRig(t)
 		r.idleHide()
 		r.timer.EXPECT().Stop().Return(false).Once()
-		r.c.setHideAfter(10 * time.Second) // no re-arm: nothing to hide
+		r.c.SetHideAfter(10 * time.Second) // no re-arm: nothing to hide
 		next := newMockcursor(t)
 		next.EXPECT().Hide().Once()
-		r.c.set("A", next)
+		r.c.Set("A", next)
 	})
 	t.Run("off", func(t *testing.T) {
 		r := newIdleRig(t)
 		r.timer.EXPECT().Stop().Return(true).Once()
-		r.c.setHideAfter(0)
+		r.c.SetHideAfter(0)
 		r.now = r.now.Add(time.Minute)
 		r.fire() // a fire already under way hides nothing
 		r.cur.EXPECT().Move(2.0, 2.0).Once()
-		r.c.move("A", 2, 2, true) // and motion arms no timer
+		r.c.Move("A", 2, 2, true) // and motion arms no timer
 	})
 }
 
 func TestCursorStopCancelsPendingHide(t *testing.T) {
 	r := newIdleRig(t)
 	r.timer.EXPECT().Stop().Return(true).Once()
-	r.c.stop()
+	r.c.Stop()
 	r.now = r.now.Add(testHideAfter)
 	r.fire() // no Hide
 }

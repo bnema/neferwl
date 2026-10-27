@@ -18,6 +18,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/launcher"
 	"github.com/bnema/neferwl/internal/adapters/libinput"
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/cursors"
 	"github.com/bnema/neferwl/internal/adapters/powerkey"
 	"github.com/bnema/neferwl/internal/adapters/sched"
 	"github.com/bnema/neferwl/internal/adapters/screencast"
@@ -28,6 +29,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/watchdog"
 	"github.com/bnema/neferwl/internal/adapters/wayland"
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
+	"github.com/bnema/neferwl/internal/adapters/xcursor"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/adapters/xwayland"
 	"github.com/bnema/neferwl/internal/core"
@@ -64,7 +66,7 @@ type session struct {
 	statePath    string
 	xdisplay     *xwayland.Display
 	child        *launcher.Launcher
-	curs         *cursors
+	curs         *cursors.Router
 
 	newRenderer func(w, h int) (ports.Renderer, error)
 }
@@ -173,7 +175,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 		return s, err
 	}
 	log.Info().Str("WAYLAND_DISPLAY", s.server.SocketName()).Msg("listening")
-	s.childEnv = launcher.ChildEnv(os.Environ(), s.server.SocketName(), runtimeDir, cursorSize())
+	s.childEnv = launcher.ChildEnv(os.Environ(), s.server.SocketName(), runtimeDir, xcursor.CursorSize())
 	statePath, serr := statefile.Path(runtimeDir, s.server.SocketName())
 	if serr != nil {
 		log.Warn().Err(serr).Msg("state file disabled")
@@ -185,7 +187,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 		s.childEnv = append(s.childEnv, "DISPLAY="+s.xdisplay.Name())
 	}
 	s.child = launcher.New(s.childEnv, s.security, logging.For(ctx, "launcher"))
-	s.curs = newCursors(s.clock, opts.Config.Cursor.HideAfter)
+	s.curs = cursors.New(s.clock, opts.Config.Cursor.HideAfter)
 	s.path = opts.ConfigPath
 	if s.path == "" {
 		s.path = config.DefaultPath()
@@ -213,7 +215,7 @@ func (s *session) abort() {
 // keymap and the wayland server are not here: the input goroutine and
 // Server.Run own them.
 func (s *session) close() {
-	s.curs.stop()
+	s.curs.Stop()
 	if s.xdisplay != nil {
 		s.xdisplay.Close()
 	}
@@ -302,7 +304,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 					DeviceConfig:  opts.Config.InputDevicesConfig,
 					DeviceConfigs: p.deviceConfigs,
 					Active:        hw.seat.Subscribe(),
-					MoveCursor:    curs.move,
+					MoveCursor:    curs.Move,
 					Log:           logging.For(ctx, "input"),
 					LogMotion:     logging.Enabled(ctx, "input-motion"),
 					LogKeys:       logging.Enabled(ctx, "input-keys"),
@@ -310,7 +312,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 			})
 			return
 		}
-		if err := headlessinput.RunSecure(ctx, km, p.keymaps, script, p.input, p.layouts, func(o string, x, y float64) { curs.move(o, x, y, true) }, logging.For(ctx, "input"), security); err != nil && !errors.Is(err, context.Canceled) {
+		if err := headlessinput.RunSecure(ctx, km, p.keymaps, script, p.input, p.layouts, func(o string, x, y float64) { curs.Move(o, x, y, true) }, logging.For(ctx, "input"), security); err != nil && !errors.Is(err, context.Canceled) {
 			select {
 			case done <- err:
 			case <-ctx.Done():

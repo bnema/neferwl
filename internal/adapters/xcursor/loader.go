@@ -1,4 +1,4 @@
-package app
+package xcursor
 
 import (
 	"math"
@@ -6,12 +6,11 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/bnema/neferwl/internal/adapters/xcursor"
 	"github.com/bnema/neferwl/internal/domain"
 )
 
-// cursorSize is XCURSOR_SIZE (logical pixels), 24 by default.
-func cursorSize() int {
+// CursorSize is XCURSOR_SIZE (logical pixels), 24 by default.
+func CursorSize() int {
 	if n, err := strconv.Atoi(os.Getenv("XCURSOR_SIZE")); err == nil && n >= 8 && n <= 256 {
 		return n
 	}
@@ -64,13 +63,13 @@ type themeKey struct {
 	size, limit int
 }
 
-// loadCursor returns the cursor a client asked for at an output scale, at
+// LoadCursor returns the cursor a client asked for at an output scale, at
 // most limit physical pixels on a side: a XCURSOR_THEME shape at
 // XCURSOR_SIZE × scale, the client image resized to the output scale, or
 // an empty image when hidden, then rotated by the output transform t (the
 // cursor plane and the headless cursor are drawn in target space). Unknown
 // shapes fall back to the arrow.
-func loadCursor(c domain.CursorChange, scale float64, t domain.BufferTransform, limit int) (domain.CursorImage, error) {
+func LoadCursor(c domain.CursorChange, scale float64, t domain.BufferTransform, limit int) (domain.CursorImage, error) {
 	img, err := loadCursorUpright(c, scale, limit)
 	if err != nil {
 		return img, err
@@ -103,7 +102,7 @@ func loadCursorUpright(c domain.CursorChange, scale float64, limit int) (domain.
 		return domain.CursorImage{}, nil
 	}
 	if c.Image != nil {
-		img := xcursor.Image{W: c.Image.W, H: c.Image.H, HotX: c.Image.HotX, HotY: c.Image.HotY, Pixels: c.Image.Pixels}
+		img := Image{W: c.Image.W, H: c.Image.H, HotX: c.Image.HotX, HotY: c.Image.HotY, Pixels: c.Image.Pixels}
 		f := scale / float64(max(c.Scale, 1))
 		w, h := int(math.Round(float64(img.W)*f)), int(math.Round(float64(img.H)*f))
 		if big := max(w, h); big > limit {
@@ -116,7 +115,7 @@ func loadCursorUpright(c domain.CursorChange, scale float64, limit int) (domain.
 	if shape == "" {
 		shape = "default"
 	}
-	size := int(math.Round(float64(cursorSize()) * scale))
+	size := int(math.Round(float64(CursorSize()) * scale))
 	key := themeKey{shape, size, limit}
 	themeCursors.Lock()
 	defer themeCursors.Unlock()
@@ -125,10 +124,10 @@ func loadCursorUpright(c domain.CursorChange, scale float64, limit int) (domain.
 	}
 	// The shape is looked up through the whole theme chain before the
 	// arrow: a theme may override only the arrow and inherit the rest.
-	dirs, theme := xcursor.SearchPath(), os.Getenv("XCURSOR_THEME")
-	img, err := xcursor.Load(dirs, theme, append([]string{shape}, legacyCursorNames[shape]...), size)
+	dirs, theme := SearchPath(), os.Getenv("XCURSOR_THEME")
+	img, err := Load(dirs, theme, append([]string{shape}, legacyCursorNames[shape]...), size)
 	if err != nil && shape != "default" {
-		img, err = xcursor.Load(dirs, theme, []string{"default", "left_ptr"}, size)
+		img, err = Load(dirs, theme, []string{"default", "left_ptr"}, size)
 	}
 	if err != nil {
 		return domain.CursorImage{}, err

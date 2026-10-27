@@ -1,4 +1,4 @@
-package app
+package xcursor
 
 import (
 	"encoding/binary"
@@ -61,7 +61,7 @@ func TestLoadCursorShapes(t *testing.T) {
 		// Unknown shapes fall back to the arrow.
 		{domain.CursorChange{Shape: "zoom-in"}, 1},
 	} {
-		img, err := loadCursor(tc.change, 2, 0, 256)
+		img, err := LoadCursor(tc.change, 2, 0, 256)
 		if err != nil {
 			t.Fatal(tc.change, err)
 		}
@@ -73,10 +73,10 @@ func TestLoadCursorShapes(t *testing.T) {
 	if err := os.RemoveAll(dir); err != nil {
 		t.Fatal(err)
 	}
-	if img, err := loadCursor(domain.CursorChange{Shape: "pointer"}, 2, 0, 256); err != nil || img.Pixels[0] != 2 {
+	if img, err := LoadCursor(domain.CursorChange{Shape: "pointer"}, 2, 0, 256); err != nil || img.Pixels[0] != 2 {
 		t.Fatalf("cached: %v", err)
 	}
-	if img, err := loadCursor(domain.CursorChange{Hidden: true}, 1, 0, 256); err != nil || img.W != 0 {
+	if img, err := LoadCursor(domain.CursorChange{Hidden: true}, 1, 0, 256); err != nil || img.W != 0 {
 		t.Fatalf("hidden: %+v %v", img, err)
 	}
 }
@@ -84,16 +84,16 @@ func TestLoadCursorShapes(t *testing.T) {
 // A client cursor drawn at buffer scale 2 is shown at the output scale.
 func TestLoadCursorClientImage(t *testing.T) {
 	src := &domain.CursorImage{W: 4, H: 2, HotX: 2, HotY: 1, Pixels: make([]byte, 4*2*4)}
-	img, err := loadCursor(domain.CursorChange{Image: src, Scale: 2}, 1, 0, 256)
+	img, err := LoadCursor(domain.CursorChange{Image: src, Scale: 2}, 1, 0, 256)
 	if err != nil || img.W != 2 || img.H != 1 || img.HotX != 1 || img.HotY != 0 {
 		t.Fatalf("%+v %v", img, err)
 	}
-	img, err = loadCursor(domain.CursorChange{Image: src, Scale: 2}, 2, 0, 256)
+	img, err = LoadCursor(domain.CursorChange{Image: src, Scale: 2}, 2, 0, 256)
 	if err != nil || img.W != 4 || img.HotX != 2 {
 		t.Fatalf("%+v %v", img, err)
 	}
 	// Bounded by the cursor plane.
-	img, err = loadCursor(domain.CursorChange{Image: src, Scale: 1}, 4, 0, 8)
+	img, err = LoadCursor(domain.CursorChange{Image: src, Scale: 1}, 4, 0, 8)
 	if err != nil || img.W != 8 || img.H != 4 {
 		t.Fatalf("%+v %v", img, err)
 	}
@@ -118,7 +118,7 @@ func TestLoadCursorInheritedShape(t *testing.T) {
 	if err := os.Rename(filepath.Join(dir, "theme", "cursors", "left_ptr"), child); err != nil {
 		t.Fatal(err)
 	}
-	img, err := loadCursor(domain.CursorChange{Shape: "text"}, 1, 0, 256)
+	img, err := LoadCursor(domain.CursorChange{Shape: "text"}, 1, 0, 256)
 	if err != nil || img.Pixels[0] != 3 {
 		t.Fatalf("got arrow instead of the inherited text cursor: %v", err)
 	}

@@ -114,11 +114,6 @@ packages:
           dir: internal/app
           pkgname: app
           filename: securitylease_mock_test.go
-      cursor:
-        config:
-          dir: internal/app
-          pkgname: app
-          filename: cursor_mock_test.go
       seatDisablePreparer:
         config:
           dir: internal/app
@@ -254,3 +249,11 @@ packages:
           dir: internal/adapters/captureallow
           pkgname: captureallow
           filename: watch_installer_mock_test.go
+
+  github.com/bnema/neferwl/internal/adapters/outputkit/cursors:
+    interfaces:
+      cursor:
+        config:
+          dir: internal/adapters/outputkit/cursors
+          pkgname: cursors
+          filename: cursor_mock_test.go

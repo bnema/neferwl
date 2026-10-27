@@ -19,9 +19,11 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/drm"
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/cursors"
 	"github.com/bnema/neferwl/internal/adapters/sched"
 	"github.com/bnema/neferwl/internal/adapters/seat"
 	"github.com/bnema/neferwl/internal/adapters/watchdog"
+	"github.com/bnema/neferwl/internal/adapters/xcursor"
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
@@ -411,7 +413,7 @@ func (b *drmBackend) close() {
 // output configuration: reloads and protocol requests go through apply, and
 // each configuration is finished when its outputs are ready, fail or time
 // out. It returns when ctx ends, after every output is closed.
-func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) drm.Want, initial domain.Config, apply *core.OutputApply, ch outputChannels, curs *cursors, log zerowrap.Logger) error {
+func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) drm.Want, initial domain.Config, apply *core.OutputApply, ch outputChannels, curs *cursors.Router, log zerowrap.Logger) error {
 	ctx, cancel := context.WithCancel(ctx)
 	var readers sync.WaitGroup
 	// A reader that fails sends at most once; cards come and go, so the
@@ -610,7 +612,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 				outputs[name] = o
 
 				if cur := o.Cursor(); cur != nil {
-					curs.set(name, cur)
+					curs.Set(name, cur)
 				}
 				active := b.seat.Subscribe()
 				realtime := currentConfig.Performance.Realtime
@@ -634,7 +636,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 								schedLog.Warn().Err(err).Msg("output scheduling")
 							}
 						}
-						return o.Run(octx, loadCursor, active, feed.Scenes, feed.Contents, feed.Returns, feed.Cursor, ch.presented, feed.Captures, ch.captured)
+						return o.Run(octx, xcursor.LoadCursor, active, feed.Scenes, feed.Contents, feed.Returns, feed.Cursor, ch.presented, feed.Captures, ch.captured)
 					})
 				}, &o.SecurityEvents)
 				if !started {
@@ -647,7 +649,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 					delete(readySources, name)
 					delete(progress.Ready, name)
 					delete(stopReady, name)
-					curs.set(name, nil)
+					curs.Set(name, nil)
 					continue
 				}
 				readySources[name] = set.outs[name].instance
@@ -986,7 +988,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 			}
 			restart := stopping[name]
 			delete(stopping, name)
-			curs.set(name, nil)
+			curs.Set(name, nil)
 			card := cards[name]
 			if card.removed && err != nil {
 				// An unplugged card fails its outputs: that is a stop, not a fault.

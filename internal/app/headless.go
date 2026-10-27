@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 
 	"github.com/bnema/neferwl/internal/adapters/headless"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/cursors"
+	"github.com/bnema/neferwl/internal/adapters/xcursor"
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
@@ -27,7 +29,7 @@ type headlessOptions struct {
 // are fixed, so apply answers every configuration without backend work.
 //
 // newRenderer is configured for virtual outputs by the session.
-func runHeadless(ctx context.Context, o headlessOptions, apply *core.OutputApply, ch outputChannels, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
+func runHeadless(ctx context.Context, o headlessOptions, apply *core.OutputApply, ch outputChannels, curs *cursors.Router, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
 	set := newOutputSet(ctx, ch.captured, ch.routes())
 	set.attach = ch.content
 	set.wireSecurity(ch)
@@ -45,8 +47,8 @@ func runHeadless(ctx context.Context, o headlessOptions, apply *core.OutputApply
 			}
 		}
 		cur := &headless.Cursor{}
-		curs.set(name, cur)
-		opts := headless.Options{Cursor: cur, LoadCursor: loadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: o.hdr, RawHDR: o.raw, Formats: ch.formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.presented, Frames: ch.frames, Captured: ch.captured}
+		curs.Set(name, cur)
+		opts := headless.Options{Cursor: cur, LoadCursor: xcursor.LoadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: o.hdr, RawHDR: o.raw, Formats: ch.formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.presented, Frames: ch.frames, Captured: ch.captured}
 		started := set.start(ctx, name, func(octx context.Context, feed outputFeed) error {
 			opts.Security, opts.SecurityChanges, opts.Instance = ch.security, feed.Security, feed.Instance
 			return headless.Run(octx, opts, feed.Scenes, feed.Contents, feed.Returns, feed.Cursor, feed.Captures)
@@ -66,7 +68,7 @@ func runHeadless(ctx context.Context, o headlessOptions, apply *core.OutputApply
 	}
 	apply.Heads(inventory)
 	// The pointer starts centred on the first output, like libinput's.
-	curs.move("HEADLESS-1", float64(o.sizes[0][0])/2, float64(o.sizes[0][1])/2, false)
+	curs.Move("HEADLESS-1", float64(o.sizes[0][0])/2, float64(o.sizes[0][1])/2, false)
 	for {
 		configs, configNext := apply.ConfigOut(ch.configured), apply.Config()
 		replies, replyNext := apply.ReplyOut(ch.replies)

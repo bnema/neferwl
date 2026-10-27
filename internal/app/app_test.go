@@ -16,6 +16,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/cursors"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
@@ -327,7 +328,7 @@ func TestRelayConfigKeyboard(t *testing.T) {
 	keymaps := make(chan *xkb.Keymap, 1)
 	commands := make(chan ports.ClientCommand, 1)
 	devices := make(chan domain.InputDevicesConfig, 1)
-	go relayConfig(ctx, cur, in, out, keymaps, devices, newCursors(clock.System{}, 0), commands, logging.For(ctx, "config"))
+	go relayConfig(ctx, cur, in, out, keymaps, devices, cursors.New(clock.System{}, 0), commands, logging.For(ctx, "config"))
 
 	next := config.Defaults()
 	next.Background.Color = "#000000"
