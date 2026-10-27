@@ -68,7 +68,7 @@ func openHeadlessRender(opener ports.RenderDeviceOpener, cands []domain.GPUInfo,
 		log.Info().Msg(reason)
 	}
 	dev, _, err := openPlannedRender(opener, decision.Plans, decision.Strict, log)
-	if err != nil && !constrained {
+	if err != nil && decision.FallbackAfterFailure {
 		return fallback(err)
 	}
 	return dev, err
