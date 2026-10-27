@@ -337,3 +337,62 @@ func TestOSDInhibitShownThroughRun(t *testing.T) {
 		})
 	}
 }
+
+// Reload cannot depend on a release quarantined by keymap replacement.
+func TestOSDReloadWhileCmdHeld(t *testing.T) {
+	for _, mode := range []string{"pending", "shown", "pinned"} {
+		t.Run(mode, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				clock := portsmocks.NewMockClock(t)
+				clock.EXPECT().Now().Return(time.Unix(0, 0))
+				timer := portsmocks.NewMockTimer(t)
+				fire := make(chan time.Time, 1)
+				if mode != "pinned" {
+					clock.EXPECT().NewTimer(400 * time.Millisecond).Return(timer).Once()
+					timer.EXPECT().C().Return(fire).Once()
+					timer.EXPECT().Stop().Return(true).Once()
+				}
+				h := newHintConfig(t, core.Options{Clock: clock}, func(cfg *domain.Config) { cfg.Binds["Cmd+p"] = "osd-pin" })
+				if mode == "pinned" {
+					h.input <- ports.KeyEvent{Keysym: "p", Pressed: true, Mods: domain.ModSuper}
+					synctest.Wait()
+					osdOverlay(t, h)
+				}
+				h.input <- ports.KeyEvent{Keysym: "Super_L", Pressed: true, Mods: domain.ModSuper}
+				synctest.Wait()
+				if mode == "shown" {
+					fire <- time.Unix(0, int64(400*time.Millisecond))
+					synctest.Wait()
+					osdOverlay(t, h)
+				}
+				h.config <- domain.ConfigChanged{Config: h.cfg}
+				synctest.Wait()
+				s := <-h.scenes
+				if (len(s[0].Overlays) != 0) != (mode == "pinned") {
+					t.Fatalf("reload overlays: %+v", s[0].Overlays)
+				}
+				// Even a stale timer delivery must not revive a transient panel.
+				fire <- time.Unix(1, 0)
+				synctest.Wait()
+				select {
+				case s := <-h.scenes:
+					t.Fatalf("stale hold published: %+v", s)
+				default:
+				}
+				// A fresh Cmd press, without the old release, must be recognized.
+				if mode != "pinned" {
+					nextTimer := portsmocks.NewMockTimer(t)
+					nextFire := make(chan time.Time, 1)
+					clock.EXPECT().NewTimer(400 * time.Millisecond).Return(nextTimer).Once()
+					nextTimer.EXPECT().C().Return(nextFire).Once()
+					nextTimer.EXPECT().Stop().Return(true).Once()
+					h.input <- ports.KeyEvent{Keysym: "Super_L", Pressed: true, Mods: domain.ModSuper}
+					synctest.Wait()
+					nextFire <- time.Unix(1, 0)
+					synctest.Wait()
+					osdOverlay(t, h)
+				}
+			})
+		})
+	}
+}

@@ -364,6 +364,9 @@ func (c *Core) apply(cfg domain.Config) error {
 	if c.cfg.Hint.Size != cfg.Hint.Size {
 		c.hintCancel()
 	}
+	if c.cfg.Keyboard.CmdKey != cfg.Keyboard.CmdKey {
+		c.osdCancel()
+	}
 	c.cfg = cfg
 	c.binds = binds
 	c.cmdMod = map[string]domain.Mods{"super": domain.ModSuper, "alt": domain.ModAlt, "ctrl": domain.ModCtrl}[cfg.Keyboard.CmdKey]
@@ -1272,8 +1275,9 @@ func (c *Core) Run(ctx context.Context) error {
 				return nil
 			}
 			// A new keymap quarantines held keys: their release never
-			// comes, so no repeat may outlive a reload.
+			// comes, so neither repeat nor OSD recognition may outlive a reload.
 			c.stopRepeat()
+			c.osdCancel()
 			if err := c.apply(ev.Config); err != nil {
 				select {
 				case c.ch.ConfigErrors <- err:

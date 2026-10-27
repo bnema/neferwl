@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
@@ -147,4 +149,23 @@ func TestOSDDrawnOnlyWhereTheTargetIsDrawn(t *testing.T) {
 			t.Errorf("%s: osdDrawn = %v, want %v", name, got, tc.want)
 		}
 	}
+}
+
+func TestOSDCmdChangeResetsRecognition(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, _ := flashCore(t)
+		c.osd.key.key(ports.KeyEvent{Keysym: "Super_L", Pressed: true, Mods: domain.ModSuper}, "super", domain.ModSuper, time.Time{})
+		cfg := c.cfg
+		cfg.Keyboard.CmdKey = "alt"
+		if err := c.apply(cfg); err != nil {
+			t.Fatal(err)
+		}
+		if c.osd.key.holdC != nil || c.osd.key.holdFired() != osdNone {
+			t.Fatal("Cmd change retained hold")
+		}
+		if got := c.osd.key.key(ports.KeyEvent{Keysym: "Alt_L", Pressed: true, Mods: domain.ModAlt}, "alt", domain.ModAlt, time.Time{}); got != osdNone || c.osd.key.holdC == nil {
+			t.Fatal("new modifier not recognized")
+		}
+		c.osdCancel()
+	})
 }
