@@ -77,7 +77,7 @@ func TestCascadeScrollTargetDoesNotMutateState(t *testing.T) {
 		v.MaxColumns = 1
 		w.Engine().ScrollTarget(v)
 		if owner := w.Snapshot(); owner.bandStart(1) {
-			t.Fatal("snapshot scrollTarget changed owner's boundary")
+			t.Fatal("snapshot ScrollTarget changed owner's boundary")
 		}
 
 	})

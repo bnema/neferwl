@@ -3,7 +3,7 @@
 A layout is one file plus one entry in `layoutTable`
 (`internal/core/layout/layout_registry.go`) and the places that name config
 values. `layout.Lanes` (embedded in `workspace.Workspace`) owns the columns and
-calls the layout on its owner goroutine; layouts take no locks and use no ports.
+calls the layout on its owner goroutine; layouts take no locks and use no port interfaces (only the `internal/ports` value types).
 
 ## Add a layout
 
@@ -130,7 +130,7 @@ column (`internal/core/workspace/layout_bench_test.go` benchmarks
 
 Required: `CGO_ENABLED=0 go build ./...`, `make check`, `make race`,
 `make mocks-check`, `staticcheck ./...`, `gofmt -l internal/core` (empty) and
-`CGO_ENABLED=1 go test -race -count=1 -run Alloc ./internal/core/`.
+`CGO_ENABLED=1 go test -race -count=1 -run Alloc ./internal/core/...`.
 
 For end-to-end testing follow [headless.md](headless.md): a throwaway config per
 layout, several windows, focus/move on both axes, grow/shrink, maximize,

@@ -6,7 +6,7 @@ import "slices"
 func (w *Lanes) Maximize(i int) {
 	if i >= 0 && i < len(w.Columns) {
 		w.Columns[i].FullWidth = true
-		id := w.Columns[i].Windows[w.Columns[i].Focus]
+		id := w.Columns[i].Selected()
 		w.Maximized = slices.DeleteFunc(w.Maximized, func(v WindowID) bool { return v == id })
 		w.Maximized = slices.Insert(w.Maximized, 0, id)
 	}

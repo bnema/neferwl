@@ -43,7 +43,7 @@ func TestMoveColumnIsNoOpWhileFloatFocused(t *testing.T) {
 					w := c.cur().mon.Current()
 					kind.setup(t, w)
 					if !w.OnFloat() {
-						t.Fatal("setup: float not focused")
+						t.Fatal("setup: float or stash not focused")
 					}
 					if id, _ := w.Focused(); id != 2 {
 						t.Fatalf("setup: focused window %d, want 2", id)

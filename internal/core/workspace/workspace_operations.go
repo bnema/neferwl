@@ -21,9 +21,10 @@ const (
 	EdgeFirst
 )
 
-// ColumnEdge says whether a column move or focus step toward dir crosses to
-// the neighbor monitor, and when: always, only if a pinned fullscreen window
-// blocks the step, or first, before the local focus step.
+// ColumnEdge says whether a focus-column step toward dir leaves this
+// workspace's content (to the neighbor monitor or workspace): always (EdgeAlways),
+// only if a pinned fullscreen window blocks the step (EdgeIfStuck), or before
+// the local focus step (EdgeFirst). EdgeNone keeps the step local.
 func (w *Workspace) ColumnEdge(dir int) EdgeKind {
 	if w.Engine().Bands() && w.Cover() != 0 && w.IsFloat(w.Cover()) && !w.stashOverCover() && !w.coverDialogFocused() {
 		return EdgeAlways
@@ -80,7 +81,7 @@ func MoveColumnTo(from, to *Workspace, at int) bool {
 }
 
 // MoveFocused transfers the focused column or window to a workspace. A moved
-// tile joins the destination at the layout's default position.
+// column or window joins the destination at the layout's default position.
 func MoveFocused(from, to *Workspace, column bool) bool {
 	id, ok := from.Focused()
 	if !ok {
@@ -222,6 +223,7 @@ func (w *Workspace) Inherit(t *Workspace) {
 func (w *Workspace) SetBorder(b int) { w.border = max(b, 0); w.reconcileFloats() }
 
 // SetStash sets the stash width and gap percentages clamped to 10-90 and 0-10.
+// A width of 0 stays 0 (it is not clamped).
 func (w *Workspace) SetStash(width, gap int) {
 	if width != 0 {
 		width = min(max(width, 10), 90)

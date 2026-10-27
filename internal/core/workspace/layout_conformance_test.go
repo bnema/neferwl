@@ -9,7 +9,7 @@ import (
 )
 
 // testLayouts are layouts only tests know. A test file adds its own from an
-// init function; they reach a Workspace through Workspace.lay and never enter
+// init function; they reach a Workspace through Lanes.Override and never enter
 // the registry.
 var testLayouts []layout.Layout
 
@@ -25,7 +25,7 @@ var conformanceModes = []string{"normal", "maximized", "fullscreen"}
 // conformanceWorkspace is the one fixture of the conformance tables: n columns
 // of two windows (the second focused in its column) in k-column capacity,
 // the focus on column n/2, which is maximized or holds the fullscreen window
-// per mode, scrolled into view. The layout is injected through Workspace.lay.
+// per mode, scrolled into view. The layout is injected through Lanes.Override.
 func conformanceWorkspace(l layout.Layout, k, n int, mode string) *Workspace {
 	w := &Workspace{Lanes: layout.Lanes{Overflow: l.Name(), Override: l, MaxColumns: k, Gaps: 8,
 		Output: Rect{X: 10, Y: 20, W: 1200, H: 900}, Usable: Rect{X: 40, Y: 60, W: 1000, H: 720}}}

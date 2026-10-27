@@ -124,7 +124,7 @@ func TestLayoutIntoMatchesLayout(t *testing.T) {
 			for w := range m.all() {
 				ws := w.Layout()
 				if got := w.AppendLayout(buf[:0]); !slices.Equal(got, ws) {
-					t.Fatalf("%s: workspace layoutInto differs", name)
+					t.Fatalf("%s: workspace AppendLayout differs", name)
 				}
 			}
 		}
@@ -155,13 +155,13 @@ func TestLayoutResultsDoNotAlias(t *testing.T) {
 				modelPreviewTiles(m.Current())
 				modelOverviewZoom(m.Current(), m.overviewAxis())
 			}
-			// layoutInto builds in the caller's buffer, never in a scratch of
+			// AppendLayout builds in the caller's buffer, never in a scratch of
 			// the workspace: with the capacity there it returns that storage.
 			w := m.Current()
 			big := make([]Placement, 0, 2*len(buf)+8)
 			res := w.AppendLayout(big[:0])
 			if len(res) == 0 || &res[0] != &big[:1][0] {
-				t.Fatalf("%s: Workspace.layoutInto did not build in the caller's buffer", name)
+				t.Fatalf("%s: Workspace.AppendLayout did not build in the caller's buffer", name)
 			}
 			if res = m.layoutInto(big); len(res) == 0 || &res[0] != &big[:1][0] {
 				t.Fatalf("%s: Monitor.layoutInto did not build in the caller's buffer", name)
