@@ -1,16 +1,14 @@
 package main_test
 
 import (
-	"bufio"
-	"bytes"
-	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -26,63 +24,95 @@ var domainLayers = map[string][]string{
 	"internal/core/workspace": {"internal/ports", "internal/core/geom", "internal/core/motion", "internal/core/layout"},
 }
 
-// domainForbiddenStd are standard packages domain code must not import.
-var domainForbiddenStd = []string{"context", "log", "log/slog", "os", "os/exec", "net", "sync", "runtime", "unsafe", "syscall"}
+// domainStd are the standard packages domain code may import: pure data
+// structures, formatting of numbers and text, and the time value types. Any
+// other standard package (I/O, logging, concurrency, reflection) fails.
+var domainStd = []string{"cmp", "math", "slices", "strconv", "strings", "time"}
 
 // domainForbiddenTime are the time package functions that read a clock or
 // wait. Domain code takes instants as arguments; the time.Time and
 // time.Duration types stay allowed.
 var domainForbiddenTime = []string{"Now", "Since", "Until", "After", "AfterFunc", "NewTimer", "NewTicker", "Tick", "Sleep"}
 
-// domainPackage is the part of `go list -json` the layer check reads.
-type domainPackage struct {
-	ImportPath string
-	Imports    []string
+// domainFiles lists the non-test Go files of a domain package directory,
+// whatever their build tags or GOOS suffix: go list skips the excluded ones,
+// the directory listing does not.
+func domainFiles(t *testing.T, rel string) []string {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(filepath.FromSlash(rel), "*.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return slices.DeleteFunc(files, func(name string) bool { return strings.HasSuffix(name, "_test.go") })
 }
 
-// TestDomainPackagesImportOnlyLowerLayers checks production imports only:
-// `go list` Imports excludes test files, so tests of domain packages may
-// import testify and the generated mocks.
+// fileImports parses only the import block of one source file.
+func fileImports(t *testing.T, name string) []string {
+	t.Helper()
+	f, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.ImportsOnly|parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parse %s: %v", name, err)
+	}
+	var imports []string
+	for _, imp := range f.Imports {
+		path, err := strconv.Unquote(imp.Path.Value)
+		if err != nil {
+			t.Fatalf("%s: import %s: %v", name, imp.Path.Value, err)
+		}
+		imports = append(imports, path)
+	}
+	return imports
+}
+
+// TestDomainPackagesImportOnlyLowerLayers checks production imports only,
+// parsed from every non-test file so a file excluded by a build tag or GOOS
+// suffix is checked too: tests of domain packages may import testify and the
+// generated mocks.
 func TestDomainPackagesImportOnlyLowerLayers(t *testing.T) {
 	const module = "github.com/bnema/neferwl/"
-	args := []string{"list", "-json=ImportPath,Imports"}
-	for p := range domainLayers {
-		args = append(args, "./"+p)
-	}
-	cmd := exec.Command("go", args...)
-	cmd.Env = append(cmd.Environ(), "CGO_ENABLED=0")
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("go list: %v", err)
-	}
-	seen := 0
-	dec := json.NewDecoder(bufio.NewReader(bytes.NewReader(out)))
-	for dec.More() {
-		var p domainPackage
-		if err := dec.Decode(&p); err != nil {
-			t.Fatalf("decode go list: %v", err)
+	for rel, allowed := range domainLayers {
+		files := domainFiles(t, rel)
+		if len(files) == 0 {
+			t.Errorf("%s: no production files checked", rel)
 		}
-		rel := strings.TrimPrefix(p.ImportPath, module)
-		allowed, ok := domainLayers[rel]
-		if !ok {
-			t.Fatalf("unexpected package %s", p.ImportPath)
-		}
-		seen++
-		for _, imp := range p.Imports {
-			switch {
-			case strings.HasPrefix(imp, module):
-				if dep := strings.TrimPrefix(imp, module); !slices.Contains(allowed, dep) {
-					t.Errorf("%s imports %s; allowed: %v", rel, dep, allowed)
+		for _, name := range files {
+			for _, imp := range fileImports(t, name) {
+				switch {
+				case strings.HasPrefix(imp, module):
+					if dep := strings.TrimPrefix(imp, module); !slices.Contains(allowed, dep) {
+						t.Errorf("%s imports %s; allowed: %v", name, dep, allowed)
+					}
+				case strings.Contains(strings.SplitN(imp, "/", 2)[0], "."):
+					t.Errorf("%s imports third-party %s; domain code uses the standard library only", name, imp)
+				case !slices.Contains(domainStd, imp):
+					t.Errorf("%s imports %s; allowed standard packages: %v", name, imp, domainStd)
 				}
-			case slices.Contains(domainForbiddenStd, imp):
-				t.Errorf("%s imports %s; domain code owns no I/O, logging or concurrency", rel, imp)
-			case strings.Contains(strings.SplitN(imp, "/", 2)[0], "."):
-				t.Errorf("%s imports third-party %s; domain code uses the standard library only", rel, imp)
 			}
 		}
 	}
-	if seen != len(domainLayers) {
-		t.Fatalf("checked %d domain packages, want %d", seen, len(domainLayers))
+}
+
+// TestDomainPackageTreeIsListed fails for a production package nobody
+// classified: every directory with Go files under a domain package is itself
+// in domainLayers or holds generated mocks (its name ends in "mocks").
+func TestDomainPackageTreeIsListed(t *testing.T) {
+	for rel := range domainLayers {
+		err := filepath.WalkDir(filepath.FromSlash(rel), func(path string, d fs.DirEntry, err error) error {
+			if err != nil || !d.IsDir() {
+				return err
+			}
+			dir := filepath.ToSlash(path)
+			if _, listed := domainLayers[dir]; listed || strings.HasSuffix(d.Name(), "mocks") {
+				return nil
+			}
+			if goFiles, _ := filepath.Glob(filepath.Join(path, "*.go")); len(goFiles) > 0 {
+				t.Errorf("%s holds Go files but is neither in domainLayers nor a mocks directory", dir)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -91,16 +121,8 @@ func TestDomainPackagesImportOnlyLowerLayers(t *testing.T) {
 // may use them (inside synctest bubbles, per AGENTS.md).
 func TestDomainPackagesReadNoClock(t *testing.T) {
 	for rel := range domainLayers {
-		files, err := filepath.Glob(filepath.Join(filepath.FromSlash(rel), "*.go"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		checked := 0
+		files := domainFiles(t, rel)
 		for _, name := range files {
-			if strings.HasSuffix(name, "_test.go") {
-				continue
-			}
-			checked++
 			src, err := os.ReadFile(name)
 			if err != nil {
 				t.Fatal(err)
@@ -109,7 +131,7 @@ func TestDomainPackagesReadNoClock(t *testing.T) {
 				t.Errorf("%s: %s; domain code takes instants as arguments and owns no clock or timer", name, bad)
 			}
 		}
-		if checked == 0 {
+		if len(files) == 0 {
 			t.Errorf("%s: no production files checked", rel)
 		}
 	}

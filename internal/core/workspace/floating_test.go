@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"reflect"
 	"slices"
 	"testing"
 	"testing/synctest"
@@ -440,4 +441,31 @@ func placement(w *Workspace, id WindowID) Placement {
 		}
 	}
 	return Placement{}
+}
+
+// RestoreFloat puts the saved float back in place of the live one, and does
+// nothing once that float is gone.
+func TestRestoreFloat(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := workspace()
+		w.AddWindow(1)
+		w.AddFloating(2, 100, 100)
+		saved := w.Floats[w.floatIndex(2)]
+		w.Floats[w.floatIndex(2)].W = 300
+		w.RestoreFloat(saved)
+		if got := w.Floats[w.floatIndex(2)]; got.W != 100 {
+			t.Fatalf("float not restored: %+v", got)
+		}
+
+		w.RemoveWindow(2)
+		before := w.Inspect()
+		columns := slices.Clone(w.Columns)
+		w.RestoreFloat(saved)
+		if len(w.Floats) != 0 || len(w.Stash) != 0 || w.floatIndex(2) >= 0 {
+			t.Fatalf("restoring a gone float changed the workspace: floats %v stash %v", w.Floats, w.Stash)
+		}
+		if got := w.Inspect(); !reflect.DeepEqual(got, before) || !reflect.DeepEqual(w.Columns, columns) {
+			t.Fatalf("restoring a gone float changed the state: %+v, want %+v", got, before)
+		}
+	})
 }

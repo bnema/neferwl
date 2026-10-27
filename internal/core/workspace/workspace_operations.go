@@ -45,7 +45,9 @@ func (w *Workspace) MovableFullscreen() bool {
 
 // MoveFullscreen transfers the focused fullscreen window, keeping its cover.
 // It reports false, moving nothing, when the focused tile's column cannot be
-// taken.
+// taken (takeColumn fails: there are no columns, or a float or stash window
+// has the focus). A caller that checked MovableFullscreen never gets false: it
+// holds for a native float, which skips takeColumn, or for a focused tile.
 func MoveFullscreen(from, to *Workspace, at int) bool {
 	fid, _ := from.Focused()
 	var col layout.Column
