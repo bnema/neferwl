@@ -1,0 +1,19 @@
+package workspace
+
+const (
+	// Drop geometry is measured in output-local logical pixels.
+	dropBandDiv = 4
+	gapPad      = 12
+	edgeScroll  = 32
+	// Overview geometry retains the model's existing presentation ratios.
+	overviewCardZoom = 0.2
+	overviewCards    = 4
+	overviewCardStep = 8
+	overviewPeekStep = 0.07
+	overviewMaxZoom  = 0.6
+	overviewMinZoom  = 0.25
+)
+
+func isWorkspaceFloat(w *Workspace, id WindowID) bool {
+	return w.floatIndex(id) >= 0 || w.StashIndex(id) >= 0
+}

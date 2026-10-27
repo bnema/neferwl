@@ -234,8 +234,8 @@ func TestCascadeLoneFloatAndEmptyWorkspaceStepWorkspace(t *testing.T) {
 		c, m = axisCore(t, false, OverflowCascade, 3)
 		m.Focus(3)
 		m.AddFloating(9, 100, 100)
-		if w := m.Current(); len(w.Columns) != 0 || !w.floatFocus {
-			t.Fatalf("columns %d floatFocus %v, want a lone focused float", len(w.Columns), w.floatFocus)
+		if w := m.Current(); len(w.Columns) != 0 || !w.Inspect().FloatFocus {
+			t.Fatalf("columns %d floatFocus %v, want a lone focused float", len(w.Columns), w.Inspect().FloatFocus)
 		}
 		c.applyAction(tc.a)
 		wantActive(t, m, tc.want)

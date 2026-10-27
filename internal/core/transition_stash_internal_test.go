@@ -46,7 +46,7 @@ func TestStashShowAppears(t *testing.T) {
 		c, ic, sc, cmds := stashRig(t, true)
 		act(c, ic, ActionToggleStashVisible)
 		settleShown(t, c)
-		if !sc.mon.Current().stashHidden {
+		if !sc.mon.Current().Inspect().StashHidden {
 			t.Fatal("setup: the stash is shown")
 		}
 		ic.now = ic.now.Add(5 * time.Second)
@@ -295,10 +295,10 @@ func TestStashNavigationSlides(t *testing.T) {
 		c, ic, sc, cmds := stashRig(t, true)
 		w := sc.mon.Current()
 		w.AddWindow(5)
-		w.stashFocus = false                   // the new tile has the focus, not the stash
+		w.FocusID(5)                           // the new tile has the focus, not the stash
 		c.applyAction(ActionToggleWindowStash) // stash 4 3 2 5: 5 selected, 2 peeks
-		if len(w.Stash) != 4 || w.stashAt != 3 {
-			t.Fatalf("setup: stash %+v at %d", w.Stash, w.stashAt)
+		if len(w.Stash) != 4 || w.StashAt() != 3 {
+			t.Fatalf("setup: stash %+v at %d", w.Stash, w.StashAt())
 		}
 		settleShown(t, c)
 		centre := sceneWindow(t, indicatorScene(t, c), 5).Rect
@@ -310,8 +310,8 @@ func TestStashNavigationSlides(t *testing.T) {
 		if got := sceneWindow(t, s, 3); !got.Hidden {
 			t.Fatalf("window 3 is on screen before the slide: %+v", got)
 		}
-		if len(sc.rects) != 0 || !w.stashView.Motion.On {
-			t.Fatalf("%d rect motions, slide %v: the view slides alone", len(sc.rects), w.stashView.Motion.On)
+		if len(sc.rects) != 0 || !w.Inspect().StashSlide.Motion.On {
+			t.Fatalf("%d rect motions, slide %v: the view slides alone", len(sc.rects), w.Inspect().StashSlide.Motion.On)
 		}
 		if got := frame(t, c, ic, 40*time.Millisecond); !(sceneWindow(t, got, 5).Dim > 0) {
 			t.Fatal("window 5 has no veil mid-slide")
@@ -330,7 +330,7 @@ func TestStashNavigationSlides(t *testing.T) {
 		if got := sceneWindow(t, s, 4); got.Hidden {
 			t.Fatalf("window 4 not at the margin: %+v", got)
 		}
-		if c.animating() || w.stashView.Off != 0 {
+		if c.animating() || w.Inspect().StashSlide.Off != 0 {
 			t.Fatal("still animating")
 		}
 
@@ -424,7 +424,7 @@ func TestStashNavigationChainsFromSlide(t *testing.T) {
 		indicatorScene(t, c)
 		s := frame(t, c, ic, 30*time.Millisecond)
 		last := sceneWindow(t, s, 2)
-		if !c.cur().mon.Current().stashView.Motion.On {
+		if !c.cur().mon.Current().Inspect().StashSlide.Motion.On {
 			t.Fatal("setup: the slide already ended")
 		}
 		// Left again: 4 centred, 3 peeks right, 2 goes off.

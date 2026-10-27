@@ -423,8 +423,8 @@ func TestOverviewPileNavigation(t *testing.T) {
 		}
 		m.OverviewMove(0, -1)
 		m.ToggleOverview()
-		if f, _ := m.Focused(); f != 6 || w.stashHidden || m.ov.open {
-			t.Fatalf("confirm on %d, hidden %v", f, w.stashHidden)
+		if f, _ := m.Focused(); f != 6 || w.Inspect().StashHidden || m.ov.open {
+			t.Fatalf("confirm on %d, hidden %v", f, w.Inspect().StashHidden)
 		}
 		// Right returns to column 1 from any stash card.
 		w.FocusID(1)
@@ -461,7 +461,7 @@ func TestOverviewPilePick(t *testing.T) {
 			t.Fatalf("hit %d", id)
 		}
 		m.OverviewPick(id)
-		if f, _ := m.Focused(); f != 7 || m.Current().stashHidden {
+		if f, _ := m.Focused(); f != 7 || m.Current().Inspect().StashHidden {
 			t.Fatalf("pick on %d", f)
 		}
 
@@ -531,7 +531,7 @@ func TestOverviewFixedOverflowGeometry(t *testing.T) {
 				w.FocusID(6)
 				screen := w.Layout()
 				m.ToggleOverview()
-				if _, span, _ := w.previewTiles(); span != w.Usable.W {
+				if _, span, _ := modelPreviewTiles(w); span != w.Usable.W {
 					t.Fatalf("span %d, usable %d", span, w.Usable.W)
 				}
 				ps := m.Layout()
@@ -643,7 +643,7 @@ func TestOverviewCardAfterBindSwitch(t *testing.T) {
 			t.Fatalf("focused %d after the switch", id)
 		}
 		m.ToggleOverview()
-		if !m.Workspaces[1].stashHidden {
+		if !m.Workspaces[1].Inspect().StashHidden {
 			t.Fatal("the other workspace's stash was shown")
 		}
 
@@ -677,8 +677,8 @@ func TestOverviewPileTinyOutput(t *testing.T) {
 				t.Fatalf("%+v", p)
 			}
 		}
-		if w := m.Current(); w.pileWidth() > 10 {
-			t.Fatalf("pile %d of 30", w.pileWidth())
+		if w := m.Current(); modelPileWidth(w) > 10 {
+			t.Fatalf("pile %d of 30", modelPileWidth(w))
 		}
 
 	})
@@ -693,8 +693,8 @@ func TestOverviewOpensOnFocus(t *testing.T) {
 		w := m.Current()
 		w.ToggleStashVisible()
 		m.ToggleOverview()
-		if at := m.cardAt(w); at != w.stashAt {
-			t.Fatalf("opened on card %d, want the stash's %d", at, w.stashAt)
+		if at := m.cardAt(w); at != w.StashAt() {
+			t.Fatalf("opened on card %d, want the stash's %d", at, w.StashAt())
 		}
 		m.ToggleOverview()
 

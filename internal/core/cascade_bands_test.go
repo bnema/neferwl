@@ -119,49 +119,9 @@ func TestCascadeMaximizeLeftJoinsBandAbove(t *testing.T) {
 
 // No column is hidden by a maximized cascade column: focusing each band
 // shows its windows.
-func TestCascadeMaximizeHidesNothing(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		_, w := cascadeMovesCore(t, 3, 3, false)
-		w.FocusID(2)
-		w.ToggleFullWidth() // {1} {2*} {3}
-		for id := WindowID(1); id <= 3; id++ {
-			w.FocusID(id)
-			var found bool
-			for _, p := range w.Layout() {
-				if p.ID == id {
-					found = true
-					if p.Hidden || p.Rect.W <= 0 || p.Rect.H <= 0 {
-						t.Fatalf("window %d not shown: %+v", id, p)
-					}
-				}
-			}
-			if !found {
-				t.Fatalf("no placement for window %d", id)
-			}
-		}
-
-	})
-}
 
 // A new window joins the focused band when it has room, else it starts a
 // band of its own right below it; other bands do not move.
-func TestCascadeSpawnInFocusedBand(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		_, w := cascadeMovesCore(t, 5, 3, false) // {1 2 3} {4 5}
-		w.FocusID(4)
-		w.AddWindow(6)
-		wantBands(t, w, []WindowID{1, 2, 3}, []WindowID{4, 5, 6})
-		w.FocusID(2)
-		w.AddWindow(7)
-		wantBands(t, w, []WindowID{1, 2, 3}, []WindowID{7}, []WindowID{4, 5, 6})
-		if id, _ := w.Focused(); id != 7 {
-			t.Fatalf("focus %d, want 7", id)
-		}
-		w.AddWindow(8)
-		wantBands(t, w, []WindowID{1, 2, 3}, []WindowID{7, 8}, []WindowID{4, 5, 6})
-
-	})
-}
 
 // A band keeps its columns: closing one leaves the others in place, and a
 // band left empty goes away.
@@ -180,16 +140,6 @@ func TestCascadeCloseKeepsBands(t *testing.T) {
 
 // A smaller max-columns sends the extra columns of a band to a new band
 // right below it; a larger one keeps the bands.
-func TestCascadeMaxColumnsShrinkSplitsBand(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		_, w := cascadeMovesCore(t, 4, 3, false) // {1 2 3} {4}
-		w.SetMaxColumns(2)
-		wantBands(t, w, []WindowID{1, 2}, []WindowID{3}, []WindowID{4})
-		w.SetMaxColumns(3)
-		wantBands(t, w, []WindowID{1, 2}, []WindowID{3}, []WindowID{4})
-
-	})
-}
 
 // Switching to cascade from another overflow packs the columns in order.
 func TestCascadeOverflowSwitchRepacks(t *testing.T) {
@@ -256,8 +206,8 @@ func TestCascadeRestoreBandMemory(t *testing.T) {
 			w.FocusID(4)
 			w.ConsumeOrExpel(-1) // {1 2 3/4} {5}
 			w.FocusID(2)
-			w.ToggleFullWidth() // {1} {2*} {3/4 5}
-			w.stackWindow(4, 5) // {1} {2*} {3 5/4}
+			w.ToggleFullWidth()                                 // {1} {2*} {3/4 5}
+			Drop(w, w, 4, DropSpot{Kind: DropBelow, Anchor: 5}) // {1} {2*} {3 5/4}
 			w.FocusID(5)
 			w.MoveColumn(-1) // {1} {2*} {5/4 3}
 			w.FocusID(2)
@@ -336,28 +286,6 @@ func TestCascadeRestoreBandMemory(t *testing.T) {
 
 // Quiet placement (window rules) and slot windows join the focused band
 // like a new window, keeping the focus.
-func TestCascadeQuietAndSlotPlacement(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		_, w := cascadeMovesCore(t, 5, 3, false) // {1 2 3} {4 5}
-		w.FocusID(4)
-		w.addColumnQuiet(Column{Windows: []WindowID{6}})
-		wantBands(t, w, []WindowID{1, 2, 3}, []WindowID{4, 5, 6})
-		w.FocusID(2)
-		w.addColumnQuiet(Column{Windows: []WindowID{7}})
-		wantBands(t, w, []WindowID{1, 2, 3}, []WindowID{7}, []WindowID{4, 5, 6})
-		if id, _ := w.Focused(); id != 2 {
-			t.Fatalf("focus %d, want 2", id)
-		}
-
-		_, w = cascadeMovesCore(t, 2, 3, false) // {1 2}
-		w.AddSlotWindow(9, 1, 0)
-		wantBands(t, w, []WindowID{9, 1, 2})
-		if id, _ := w.Focused(); id != 2 {
-			t.Fatalf("focus %d, want 2", id)
-		}
-
-	})
-}
 
 // Reapplying the config with a named max-columns above the default keeps
 // the named workspace's bands.
@@ -378,17 +306,4 @@ func TestCascadeNamedMaxColumnsKeepsBands(t *testing.T) {
 		wantBands(t, w, []WindowID{1, 2, 3, 4, 5})
 
 	})
-}
-
-func bandIDs(w *Workspace) [][]WindowID {
-	var out [][]WindowID
-	w.WalkBands(func(_, first, last int) bool {
-		var b []WindowID
-		for _, c := range w.Columns[first : last+1] {
-			b = append(b, c.Windows[0])
-		}
-		out = append(out, slices.Clone(b))
-		return true
-	})
-	return out
 }

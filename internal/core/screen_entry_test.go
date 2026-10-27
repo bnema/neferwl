@@ -1,12 +1,31 @@
 package core
 
 import (
+	"math"
 	"testing"
 	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/ports"
 )
+
+// addFreeFloat quietly adds a 40x40 float below the others and places it,
+// free, with its centre at cx, cy of the usable area: the public path to
+// the free float the user drags there.
+func addFreeFloat(t *testing.T, w *Workspace, id WindowID, cx, cy float64) {
+	t.Helper()
+	w.AddRuleFloat(id, true, 40, 40, true)
+	_, r, ok := w.FloatAt(id)
+	if !ok {
+		t.Fatalf("setup: float %d not added", id)
+	}
+	u := w.Usable
+	x := u.X + int(math.Round(cx*float64(u.W))) - r.W/2
+	y := u.Y + int(math.Round(cy*float64(u.H))) - r.H/2
+	if !w.DragFloat(id, r, 0, x-r.X, y-r.Y, false) {
+		t.Fatalf("setup: float %d not placed", id)
+	}
+}
 
 func TestCrossScreenFocusEntry(t *testing.T) {
 	for _, tc := range []struct {
@@ -31,7 +50,7 @@ func TestCrossScreenFocusEntry(t *testing.T) {
 					for i, pos := range [][2]float64{{.1, .5}, {.9, .5}, {.5, .1}, {.5, .9}} {
 						id := WindowID(i + 4)
 						c.windows.mapped(ports.WindowMapped{ID: id}, clock.now)
-						w.addFloat(Float{ID: id, W: 40, H: 40, free: true, cx: pos[0], cy: pos[1]}, true)
+						addFreeFloat(t, w, id, pos[0], pos[1])
 					}
 					w.FocusID(4)
 					if edge && (tc.d == dirLeft || tc.d == dirRight) {
@@ -66,7 +85,7 @@ func TestCrossScreenFocusEntryIgnoresOffscreenColumns(t *testing.T) {
 			b.mon.AddWindow(id)
 		}
 		// Leave focus at the right end, so the earlier columns are off-screen.
-		w.view.Stop()
+		w.StopColumns()
 		view := b.mon.viewport()
 		var want WindowID
 		best := 0
@@ -100,7 +119,7 @@ func TestCrossScreenNoVisibleWindowPreservesFocus(t *testing.T) {
 		w := b.mon.Current()
 		c.windows.mapped(ports.WindowMapped{ID: 4}, clock.now)
 		b.mon.AddWindow(4)
-		w.view.Off = 2000
+		w.DragColumns(float64(w.View) + (2000))
 		for _, p := range b.mon.Layout() {
 			if b.mon.viewport().shows(p) {
 				t.Fatal("setup: visible window")
@@ -170,7 +189,7 @@ func TestFocusEntryPanelUsesCommonFrameEdge(t *testing.T) {
 		// below the panel. Measured from their own areas (frame for the float,
 		// usable for tiles) instead of the frame edge, the tile would win.
 		w.Gaps = 20
-		w.addFloat(Float{ID: 4, W: 40, H: 40, free: true, cx: .5, cy: 0}, true)
+		addFreeFloat(t, w, 4, .5, 0)
 		view := m.viewport()
 		if view.usable.Y <= view.frame.Y {
 			t.Fatal("setup: missing exclusive top panel")
@@ -205,10 +224,10 @@ func TestCrossScreenFocusEntryResolvesModal(t *testing.T) {
 		for _, id := range []WindowID{4, 5, 6} {
 			c.windows.mapped(ports.WindowMapped{ID: id}, clock.now)
 		}
-		w.addFloat(Float{ID: 4, W: 40, H: 40, free: true, cx: .1, cy: .5}, true)
+		addFreeFloat(t, w, 4, .1, .5)
 		w.AddDialog(5, 4, 40, 40)
 		w.SetModal(5, true)
-		w.addFloat(Float{ID: 6, W: 40, H: 40, free: true, cx: .9, cy: .5}, true)
+		addFreeFloat(t, w, 6, .9, .5)
 		c.applyAction(ActionFocusMonitorRight)
 		if id, _ := b.mon.Focused(); c.cur() != b || id != 5 {
 			t.Fatalf("focus %d, want modal 5", id)
@@ -230,11 +249,11 @@ func TestCrossScreenFocusEntrySkipsDemotedFloat(t *testing.T) {
 		b.mon.AddWindow(4)
 		w.AddFloating(5, 400, 300)
 		w.FocusID(4)
-		if !w.Floats[0].below {
+		if !w.Inspect().Floats[0].Below {
 			t.Fatal("setup: float not demoted")
 		}
 		c.applyAction(ActionFocusMonitorRight)
-		if id, _ := b.mon.Focused(); c.cur() != b || id != 4 || !w.Floats[0].below {
+		if id, _ := b.mon.Focused(); c.cur() != b || id != 4 || !w.Inspect().Floats[0].Below {
 			t.Fatalf("focus %d, floats %+v", id, w.Floats)
 		}
 

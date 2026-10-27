@@ -209,7 +209,7 @@ func TestCapturedWorkspaceStaysCapturedWhileSliding(t *testing.T) {
 		c.capt.sessions = []*capSession{{open: ports.CaptureSessionOpen{ID: 1, Workspace: ws.ID}}}
 		c.popups[10] = &popupState{id: 10, parent: 1, rect: Rect{X: 3, Y: 4, W: 10, H: 8}, mapped: true}
 		c.popupOrder = append(c.popupOrder, 10)
-		ws.view.Motion = motion.NewMotion(motion.ViewSpring(10, 0), time.Time{}, 1)
+		ws.LandColumns(motion.NewMotion(motion.ViewSpring(10, 0), time.Time{}, 1))
 		ctx := context.Background()
 		if err := c.publish(ctx); err != nil {
 			t.Fatal(err)
@@ -223,7 +223,7 @@ func TestCapturedWorkspaceStaysCapturedWhileSliding(t *testing.T) {
 		if v, ok := c.configures.sent[1]; !ok || !v.Captured || v.Visible || v.Activated || v.Width <= 0 {
 			t.Fatalf("window during the slide %+v (sent %v)", v, ok)
 		}
-		ws.view.Motion = motion.Motion{}
+		ws.LandColumns(motion.Motion{})
 		if err := c.publish(ctx); err != nil {
 			t.Fatal(err)
 		}

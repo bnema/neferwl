@@ -152,8 +152,8 @@ func TestLayoutResultsDoNotAlias(t *testing.T) {
 			for range 2 {
 				buf = m.layoutInto(buf)
 				buf = m.Current().AppendLayout(buf[:0])
-				m.Current().previewTiles()
-				m.Current().overviewZoom(m.overviewAxis())
+				modelPreviewTiles(m.Current())
+				modelOverviewZoom(m.Current(), m.overviewAxis())
 			}
 			// layoutInto builds in the caller's buffer, never in a scratch of
 			// the workspace: with the capacity there it returns that storage.
@@ -171,10 +171,10 @@ func TestLayoutResultsDoNotAlias(t *testing.T) {
 			// unchanged.
 			mine := w.AppendLayout(make([]Placement, 0, len(res)))
 			mineKept := slices.Clone(mine)
-			w.overviewZoom(m.overviewAxis())
-			w.peekStep(m.overviewAxis())
-			w.previewTiles()
-			w.columnRects()
+			modelOverviewZoom(w, m.overviewAxis())
+			modelPeekStep(w, m.overviewAxis())
+			modelPreviewTiles(w)
+			modelColumnRects(w)
 			_ = w.Layout()
 			_ = w.AppendLayout(nil)
 			_ = m.Layout()
@@ -236,7 +236,7 @@ func TestPublishedScenesAreNeverMutated(t *testing.T) {
 			var e []expect
 			for _, sc := range c.screens {
 				if sc.name() != "" {
-					e = append(e, expect{sc.name(), sc.mon.Layout(), len(sc.rects) == 0 && !sc.mon.Current().view.Motion.On})
+					e = append(e, expect{sc.name(), sc.mon.Layout(), len(sc.rects) == 0 && !sc.mon.Current().Inspect().ColumnsSlide.Motion.On})
 				}
 			}
 			return e
@@ -285,8 +285,8 @@ func TestPublishedScenesAreNeverMutated(t *testing.T) {
 				continue
 			}
 			ws := sc.mon.Current()
-			ws.view.Motion = c.spring(motion.ViewSpring(100, 0), t0)
-			ws.view.Off = 100
+			ws.LandColumns(c.spring(motion.ViewSpring(100, 0), t0))
+			ws.DragColumns(float64(ws.View) + (100))
 			startRectMotions(c, sc, t0)
 		}
 		for range 12 {

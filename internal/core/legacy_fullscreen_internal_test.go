@@ -231,7 +231,7 @@ func TestLegacyFullscreenNeedsFocusAtFirstSize(t *testing.T) {
 			c.mapWindow(ports.WindowMapped{ID: 1})
 			c.windows.mapped(ports.WindowMapped{ID: 2}, c.now())
 			w := sc.mon.Current()
-			w.addColumnQuiet(Column{Windows: []WindowID{2}})
+			modelAddColumnQuiet(w, Column{Windows: []WindowID{2}})
 			o := sc.rect()
 			c.resizeFloating(ports.WindowResized{ID: 2, Width: o.W, Height: o.H})
 			if w.Fullscreen != 0 {
@@ -250,7 +250,7 @@ func TestLegacyFullscreenNeedsFocusAtFirstSize(t *testing.T) {
 			c.mapWindow(ports.WindowMapped{ID: 1})
 			c.windows.mapped(ports.WindowMapped{ID: 2, Floating: true}, c.now())
 			w := sc.mon.Current()
-			w.addFloat(Float{ID: 2}, true)
+			w.AddRuleFloat(2, true, 0, 0, true)
 			o := sc.rect()
 			c.resizeFloating(ports.WindowResized{ID: 2, Width: o.W, Height: o.H})
 			if w.Fullscreen != 0 {
@@ -321,7 +321,7 @@ func TestLegacyFullscreenCascadeFloatBand(t *testing.T) {
 				if id, _ := w.Focused(); id != 2 || w.Fullscreen != 0 || isWorkspaceFloat(w, 2) || w.Band(w.ColumnOf(2)) != 1 {
 					t.Fatalf("after unset: focus %d fullscreen %d columns %+v floats %+v", id, w.Fullscreen, w.Columns, w.Floats)
 				}
-				if r, ok := w.placed(2); !ok || r.W <= 0 || r.H <= 0 {
+				if r, ok := modelPlaced(w, 2); !ok || r.W <= 0 || r.H <= 0 {
 					t.Fatalf("game not visible: %+v %v", r, ok)
 				}
 

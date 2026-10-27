@@ -16,13 +16,13 @@ func winRule(name, appID string, edit func(*ports.WindowRule)) ports.WindowRule 
 	return r
 }
 
-func ruleOn() *bool  { v := true; return &v }
-func ruleOff() *bool { v := false; return &v }
-
 func declareDev(c *ports.Config) {
 	c.Workspaces = []ports.WorkspaceConfig{{Name: "dev"}}
 	c.Binds["Alt+d"] = "workspace dev"
 }
+
+func ruleOn() *bool  { v := true; return &v }
+func ruleOff() *bool { v := false; return &v }
 
 // mapApp maps a window with an app ID and returns the state once it is in.
 func (r *multiRig) mapApp(t *testing.T, id ports.WindowID, appID string) ports.State {

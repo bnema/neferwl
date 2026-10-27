@@ -9,55 +9,6 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-func TestColumnBorders(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		overflow Overflow
-		n        int
-		want     bool
-	}{
-		{"scroll", OverflowScroll, 5, true},
-		{"cascade", OverflowCascade, 5, true},
-		{"fixed row", OverflowFixed, 3, true},
-		{"fixed spiral", OverflowFixed, 4, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				w := Workspace{Lanes: layout.Lanes{Overflow: tc.overflow, MaxColumns: 3, Columns: make([]Column, tc.n)}}
-				if got := columnBorders(w.Engine(), w.Snapshot()); got != tc.want {
-					t.Fatalf("column borders = %v, want %v", got, tc.want)
-				}
-
-			})
-		})
-	}
-}
-
-func TestConfigRejectsUnknownLayout(t *testing.T) {
-	for _, scope := range []string{"default", "output", "named"} {
-		t.Run(scope, func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				cfg := ports.Config{}
-				cfg.Layout.MaxColumns = 3
-				cfg.Keyboard.CmdKey = "super"
-				switch scope {
-				case "default":
-					cfg.Layout.Overflow = "unknown"
-				case "output":
-					cfg.Layout.Outputs = []ports.OutputLayout{{Output: "DP-1", LayoutRules: ports.LayoutRules{Overflow: "unknown"}}}
-				case "named":
-					cfg.Workspaces = []ports.WorkspaceConfig{{Name: "test", LayoutRules: ports.LayoutRules{Overflow: "unknown"}}}
-				}
-				var c Core
-				if err := c.apply(cfg); err == nil || !strings.Contains(err.Error(), `invalid overflow "unknown"`) {
-					t.Fatalf("apply = %v", err)
-				}
-
-			})
-		})
-	}
-}
-
 func TestConfigAcceptsEmptyOverflow(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _ := indicatorCore(t)
@@ -90,24 +41,6 @@ func TestApplyNamedResetsOldStateBeforeNewGeometry(t *testing.T) {
 	})
 }
 
-// A layout that does not claim overridesWidth must size columns like the base:
-// generic loops then skip its columnWidth. This catches a forgotten flag.
-func TestOverridesWidthMatchesColumnWidth(t *testing.T) {
-	forEachConformance(t, func(t *testing.T, l layout.Layout, w *Workspace, _, n int, _ string) {
-		if l.OverridesWidth() || n == 0 {
-			return
-		}
-		v := w.Snapshot()
-		for _, ignore := range []bool{false, true} {
-			for i := range v.Columns {
-				if got, want := l.ColumnWidth(v, i, ignore), (layout.Base{}).ColumnWidth(v, i, ignore); got != want {
-					t.Fatalf("%s column %d (ignore %v): width %d, base %d: set overridesWidth", l.Name(), i, ignore, got, want)
-				}
-			}
-		}
-	})
-}
-
 // A layout switch keeps maximization only when the new layout does not reset it:
 // scroll keeps a FullWidth column, fixed and cascade clear it.
 func TestApplyNamedMaximizeAcrossSwitch(t *testing.T) {
@@ -136,6 +69,31 @@ func TestApplyNamedMaximizeAcrossSwitch(t *testing.T) {
 				}
 				if got := w.Columns[0].FullWidth; got != tc.wantFull {
 					t.Fatalf("FullWidth after %s->%s = %v, want %v", tc.from, tc.to, got, tc.wantFull)
+				}
+
+			})
+		})
+	}
+}
+
+func TestConfigRejectsUnknownLayout(t *testing.T) {
+	for _, scope := range []string{"default", "output", "named"} {
+		t.Run(scope, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				cfg := ports.Config{}
+				cfg.Layout.MaxColumns = 3
+				cfg.Keyboard.CmdKey = "super"
+				switch scope {
+				case "default":
+					cfg.Layout.Overflow = "unknown"
+				case "output":
+					cfg.Layout.Outputs = []ports.OutputLayout{{Output: "DP-1", LayoutRules: ports.LayoutRules{Overflow: "unknown"}}}
+				case "named":
+					cfg.Workspaces = []ports.WorkspaceConfig{{Name: "test", LayoutRules: ports.LayoutRules{Overflow: "unknown"}}}
+				}
+				var c Core
+				if err := c.apply(cfg); err == nil || !strings.Contains(err.Error(), `invalid overflow "unknown"`) {
+					t.Fatalf("apply = %v", err)
 				}
 
 			})

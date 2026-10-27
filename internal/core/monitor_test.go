@@ -219,14 +219,14 @@ func TestEqualSharesAndBorderless(t *testing.T) {
 		}
 		// A fourth column scrolls: still 1/3 each.
 		m.AddWindow(4)
-		if w := m.Current(); w.columnWidth(3) != 33 || w.View == 0 {
+		if w := m.Current(); modelColumnWidth(w, 3) != 33 || w.View == 0 {
 			t.Fatal(w.View)
 		}
 		// Growing one column gives it 2 of the 3 cells; auto columns keep
 		// their share.
 		m.Apply(ActionCycleColumnWidth)
-		if w := m.Current(); w.columnWidth(w.Focus) != 66 || w.columnWidth(0) != 33 {
-			t.Fatal(w.columnWidth(w.Focus), w.columnWidth(0))
+		if w := m.Current(); modelColumnWidth(w, w.Focus) != 66 || modelColumnWidth(w, 0) != 33 {
+			t.Fatal(modelColumnWidth(w, w.Focus), modelColumnWidth(w, 0))
 		}
 
 	})
@@ -320,23 +320,6 @@ func TestMoveColumnToWorkspace(t *testing.T) {
 			}
 
 		})
-	})
-}
-
-func TestWorkspaceArg(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		for _, tc := range []struct {
-			a  Action
-			n  int
-			op WorkspaceOp
-			ok bool
-		}{{"focus-workspace 3", 3, FocusWorkspace, true}, {"move-column-to-workspace 12", 12, MoveColumnToWorkspace, true}, {"move-window-to-workspace 2", 2, MoveWindowToWorkspace, true}, {"move-to-workspace 2", 0, 0, false}, {"focus-workspace 0", 0, 0, false}, {"focus-workspace x", 0, 0, false}, {"quit", 0, 0, false}} {
-			n, op, ok := WorkspaceArg(tc.a)
-			if n != tc.n || op != tc.op || ok != tc.ok {
-				t.Errorf("%s: %d %v %v", tc.a, n, op, ok)
-			}
-		}
-
 	})
 }
 

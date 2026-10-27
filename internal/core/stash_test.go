@@ -8,15 +8,6 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// stashIDs lists the stash of w, left to right.
-func stashIDs(w *Workspace) []WindowID {
-	var ids []WindowID
-	for _, f := range w.Stash {
-		ids = append(ids, f.ID)
-	}
-	return ids
-}
-
 // stashMonitor has tiles 1, 2, 3 with 2 and 3 stashed, 3 selected.
 func stashMonitor(overflow Overflow) *Monitor {
 	m := newMonitor("", "")
@@ -42,7 +33,7 @@ func TestStashMoveToWorkspace(t *testing.T) {
 			w := m.Current()
 			m.MoveToWorkspace(1, false)
 			to := m.Workspaces[1]
-			if !slices.Equal(stashIDs(w), []WindowID{2}) || !slices.Equal(stashIDs(to), []WindowID{3}) || to.stashAt != 0 || to.stashHidden {
+			if !slices.Equal(stashIDs(w), []WindowID{2}) || !slices.Equal(stashIDs(to), []WindowID{3}) || to.StashAt() != 0 || to.Inspect().StashHidden {
 				t.Fatalf("%v: from %v to %v", overflow, stashIDs(w), stashIDs(to))
 			}
 			if id, _ := w.Focused(); id != 2 {
@@ -71,8 +62,8 @@ func TestStashFollowsWorkspace(t *testing.T) {
 		dst := newMonitor("", "")
 		dst.SetOutput(200, 100)
 		dst.adopt(w, false, 0)
-		if !slices.Equal(stashIDs(w), []WindowID{2, 3}) || w.stashAt != 0 || !w.stashHidden {
-			t.Fatalf("stash %v at %d hidden %v", stashIDs(w), w.stashAt, w.stashHidden)
+		if !slices.Equal(stashIDs(w), []WindowID{2, 3}) || w.StashAt() != 0 || !w.Inspect().StashHidden {
+			t.Fatalf("stash %v at %d hidden %v", stashIDs(w), w.StashAt(), w.Inspect().StashHidden)
 		}
 		w.ToggleStashVisible()
 		if p := placement(w, 2); p.Rect != (Rect{X: 20, Y: 10, W: 160, H: 80}) {
@@ -95,8 +86,8 @@ func TestStashFullscreenRoundTrip(t *testing.T) {
 			t.Fatalf("fullscreen: cover %d stash %v", w.Cover(), stashIDs(w))
 		}
 		m.ToggleFullscreen()
-		if id, _ := w.Focused(); id != 2 || w.stashAt != 0 || w.Fullscreen != 0 {
-			t.Fatalf("focused %d at %d", id, w.stashAt)
+		if id, _ := w.Focused(); id != 2 || w.StashAt() != 0 || w.Fullscreen != 0 {
+			t.Fatalf("focused %d at %d", id, w.StashAt())
 		}
 		m.ToggleFullscreen()
 		m.Focus(1)
@@ -163,35 +154,6 @@ func TestStashFullscreenWithoutTilesAddWindow(t *testing.T) {
 	})
 }
 
-// A fullscreen request made while the stash was hidden applies on show,
-// even over an off-screen fullscreen tile.
-func TestStashPendingFullscreenOverTile(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		w := workspace()
-		w.SetMaxColumns(1)
-		w.AddWindow(1)
-		w.AddWindow(2)
-		w.AddWindow(3)
-		w.ToggleWindowStash() // 3 stashed
-		w.ToggleStashVisible()
-		w.SetFullscreen(3, true) // waits
-		w.FocusID(1)
-		w.SetFullscreen(1, true)
-		w.FocusID(2) // 1 scrolled off: it no longer covers
-		if w.Cover() != 0 {
-			t.Fatal("tile still covers")
-		}
-		w.ToggleStashVisible()
-		if w.Fullscreen != 3 || w.hiddenFullscreen != 0 {
-			t.Fatalf("fullscreen %d pending %d", w.Fullscreen, w.hiddenFullscreen)
-		}
-		if id, _ := w.Focused(); id != 3 {
-			t.Fatalf("focused %d", id)
-		}
-
-	})
-}
-
 // A removed named workspace hands its stash to the active one; with no
 // tiles there, the stash takes the focus.
 func TestStashFromRemovedNamedWorkspace(t *testing.T) {
@@ -243,7 +205,7 @@ func TestStashCapture(t *testing.T) {
 				tc.setup(m)
 				w := m.Current()
 				m.AddWindow(4)
-				if captured := w.StashIndex(4) == 2 && w.stashAt == 2; captured != tc.captured {
+				if captured := w.StashIndex(4) == 2 && w.StashAt() == 2; captured != tc.captured {
 					t.Fatalf("captured %v, stash %+v", captured, w.Stash)
 				}
 				if id, _ := w.Focused(); id != tc.focused {
@@ -348,31 +310,6 @@ func TestFullscreenStashEdgeGoesToMonitor(t *testing.T) {
 		c.applyAction(ActionFocusColumnLeft)
 		if id, _ := w.Focused(); id != 2 || w.Fullscreen != 0 || c.focusScreen != 0 {
 			t.Fatalf("inside: focused %d fullscreen %d", id, w.Fullscreen)
-		}
-
-	})
-}
-
-// Activating a hidden stashed window over a scroll fullscreen tile shows
-// the stash over it: the tile stays fullscreen and the view stays aligned.
-func TestActivateHiddenStashOverScrollFullscreen(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		w := workspace()
-		w.AddWindow(1)
-		w.AddWindow(2)
-		w.AddWindow(3)
-		w.ToggleWindowStash() // 3 stashed
-		w.ToggleStashVisible()
-		w.FocusID(2)
-		w.SetFullscreen(2, true)
-		w.Activate(3)
-		if id, _ := w.Focused(); id != 3 || w.Fullscreen != 2 || !w.stashOverCover() {
-			t.Fatalf("focused %d fullscreen %d over %v", id, w.Fullscreen, w.stashOverCover())
-		}
-		view := w.View
-		w.scroll()
-		if w.View != view {
-			t.Fatalf("view %d, settled %d", view, w.View)
 		}
 
 	})

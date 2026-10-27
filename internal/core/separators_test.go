@@ -185,9 +185,21 @@ func TestSeparatorsScrollUnderSidePanel(t *testing.T) {
 	})
 }
 
-// A cascade band above a bottom panel: the next band starts under the
-// panel, so the focused tile gets no line along the panel, only the one it
-// shares with its band neighbor.
+// With gaps each tile owns four full border sides, including outer edges.
+func TestSeparatorsGaps(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ps := []Placement{{ID: 1, Rect: Rect{X: 0, W: 16, H: 16}, Focused: true}, {ID: 2, Rect: Rect{X: 20, W: 16, H: 16}}}
+		setVisibleNeighbors(ps, 4, bigOutput)
+		seps := separators(ps, 2, 4, whole(bigOutput), true)
+		for _, c := range []px{{14, 2, "lit"}, {14, 13, "lit"}, {0, 8, "lit"}, {8, 0, "lit"}, {8, 15, "lit"}, {20, 8, "gray"}, {35, 8, "gray"}, {28, 0, "gray"}, {28, 15, "gray"}, {17, 8, ""}} {
+			if got := colorAt(seps, c.x, c.y); got != c.want {
+				t.Errorf("(%d,%d) = %q, want %q", c.x, c.y, got, c.want)
+			}
+		}
+
+	})
+}
+
 func TestSeparatorsCascadeBottomPanel(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		w := &Workspace{Lanes: layout.Lanes{Overflow: OverflowCascade, MaxColumns: 2}}
@@ -216,21 +228,6 @@ func TestSeparatorsCascadeBottomPanel(t *testing.T) {
 		}
 		if got := colorAt(seps, 449, 400); got != "gray" {
 			t.Fatalf("shared line (449,400) = %q; %v", got, seps)
-		}
-
-	})
-}
-
-// With gaps each tile owns four full border sides, including outer edges.
-func TestSeparatorsGaps(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		ps := []Placement{{ID: 1, Rect: Rect{X: 0, W: 16, H: 16}, Focused: true}, {ID: 2, Rect: Rect{X: 20, W: 16, H: 16}}}
-		setVisibleNeighbors(ps, 4, bigOutput)
-		seps := separators(ps, 2, 4, whole(bigOutput), true)
-		for _, c := range []px{{14, 2, "lit"}, {14, 13, "lit"}, {0, 8, "lit"}, {8, 0, "lit"}, {8, 15, "lit"}, {20, 8, "gray"}, {35, 8, "gray"}, {28, 0, "gray"}, {28, 15, "gray"}, {17, 8, ""}} {
-			if got := colorAt(seps, c.x, c.y); got != c.want {
-				t.Errorf("(%d,%d) = %q, want %q", c.x, c.y, got, c.want)
-			}
 		}
 
 	})

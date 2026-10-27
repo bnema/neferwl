@@ -33,7 +33,7 @@ func borderCore(t *testing.T, row bool) (*pointerRig, *Workspace) {
 		w.Columns = []Column{{Windows: []WindowID{1, 2}}}
 		w.Focus = 0
 	}
-	rs := w.columnRects()
+	rs := modelColumnRects(w)
 	c.cursorX, c.cursorY = float64(rs[0].X+rs[0].W+w.Gap()/2), 100
 	if row {
 		rows := layout.RowRects(rs[0], w.Columns[0], w.Gap())
@@ -101,7 +101,7 @@ func TestBorderPointerGrab(t *testing.T) {
 					if !slices.ContainsFunc(cmds, func(cmd ports.ClientCommand) bool {
 						v, ok := cmd.(ports.ConfigureWindow)
 						r := after[int(id)-1].Rect
-						return ok && v.ID == id && v.Width == r.W-2*w.border && v.Height == r.H-2*w.border
+						return ok && v.ID == id && v.Width == r.W-2*c.cfg.Border.Width && v.Height == r.H-2*c.cfg.Border.Width
 					}) {
 						t.Fatalf("no live configure for %d: %+v", id, cmds)
 					}
@@ -194,7 +194,7 @@ func TestBorderGrabFloatFallback(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, w := borderCore(t, false)
 		w.AddFloating(3, 200, 200)
-		r := w.floatRect(w.Floats[0])
+		r := modelFloatRect(w, w.Floats[0])
 		c.pointer = 3
 		c.cursorX, c.cursorY = float64(r.X+r.W/2), float64(r.Y+r.H/2)
 		grabButton(t, c, btnRight, true, time.Second)

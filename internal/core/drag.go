@@ -24,9 +24,6 @@ import (
 const (
 	btnLeft  = 0x110
 	btnRight = 0x111
-	// dropBand is the share of a window's height, top and bottom, that
-	// stacks above or below it.
-	dropBandDiv = 4
 	// gapPad is the least half-width of a gap's insert zone, logical px.
 	gapPad = 12
 	// edgeScroll is the distance from the usable edge, logical px, that

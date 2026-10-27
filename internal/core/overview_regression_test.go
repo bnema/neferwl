@@ -30,8 +30,8 @@ func TestOverviewLeaveStashThenVerticalSelectsFront(t *testing.T) {
 			}
 			if accept {
 				m.ToggleOverview()
-				if id, _ := w.Focused(); id != 9 || !w.floatFocus {
-					t.Fatalf("accepted focus %d, stash hidden %v", id, w.stashHidden)
+				if id, _ := w.Focused(); id != 9 || !w.Inspect().FloatFocus {
+					t.Fatalf("accepted focus %d, stash hidden %v", id, w.Inspect().StashHidden)
 				}
 			}
 		}

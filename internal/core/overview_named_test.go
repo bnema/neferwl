@@ -369,7 +369,7 @@ func TestOverviewNamedNeighborPick(t *testing.T) {
 			t.Fatalf("stash hit: %d", id)
 		}
 		m.OverviewPick(id)
-		if m.ov.open || m.Current().Name != "dev" || m.back != back || !m.Current().stashFocused() {
+		if m.ov.open || m.Current().Name != "dev" || m.back != back || !modelStashFocused(m.Current()) {
 			t.Fatal("named stash click did not commit selection and return target")
 		}
 
@@ -448,7 +448,7 @@ func TestOverviewNamedColumnPickClearsStash(t *testing.T) {
 			t.Fatal("expected stash selection")
 		}
 		m.OverviewPick(5)
-		if m.Current().stashFocused() || m.ov.open {
+		if modelStashFocused(m.Current()) || m.ov.open {
 			t.Fatal("column click kept stash selection")
 		}
 		id, _ := m.Focused()

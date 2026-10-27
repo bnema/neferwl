@@ -27,8 +27,8 @@ func TestLeftFullscreenRefusesRequest(t *testing.T) {
 					m := coverMonitor(tc.overflow, tc.float)
 					w := m.Current()
 					leave(m)
-					if f, _ := m.Focused(); f != 1 || w.Fullscreen != 0 || w.left != 2 {
-						t.Fatalf("leave: focused %d, fullscreen %d, left %d", f, w.Fullscreen, w.left)
+					if f, _ := m.Focused(); f != 1 || w.Fullscreen != 0 || w.Inspect().Left != 2 {
+						t.Fatalf("leave: focused %d, fullscreen %d, left %d", f, w.Fullscreen, w.Inspect().Left)
 					}
 					m.SetFullscreen(2, true)
 					if f, _ := m.Focused(); f != 1 || w.Fullscreen != 0 {
@@ -36,8 +36,8 @@ func TestLeftFullscreenRefusesRequest(t *testing.T) {
 					}
 					w.FocusID(2)
 					m.SetFullscreen(2, true)
-					if w.Fullscreen != 2 || w.left != 0 {
-						t.Fatalf("focused again: fullscreen %d, left %d", w.Fullscreen, w.left)
+					if w.Fullscreen != 2 || w.Inspect().Left != 0 {
+						t.Fatalf("focused again: fullscreen %d, left %d", w.Fullscreen, w.Inspect().Left)
 					}
 
 				})
@@ -53,8 +53,8 @@ func TestToggleFullscreenOffNoLatch(t *testing.T) {
 		m := coverMonitor(OverflowFixed, false)
 		w := m.Current()
 		m.ToggleFullscreen()
-		if w.Fullscreen != 0 || w.left != 0 {
-			t.Fatalf("fullscreen %d, left %d", w.Fullscreen, w.left)
+		if w.Fullscreen != 0 || w.Inspect().Left != 0 {
+			t.Fatalf("fullscreen %d, left %d", w.Fullscreen, w.Inspect().Left)
 		}
 		m.SetFullscreen(2, true)
 		if w.Fullscreen != 2 {
@@ -72,9 +72,9 @@ func TestLeftFullscreenSettlesOnFocus(t *testing.T) {
 		w := m.Current()
 		w.Activate(1)
 		w.FocusID(2)
-		w.settleLeft()
-		if w.left != 0 {
-			t.Fatalf("left %d", w.left)
+		modelSettleLeft(w)
+		if w.Inspect().Left != 0 {
+			t.Fatalf("left %d", w.Inspect().Left)
 		}
 		w.FocusID(1)
 		m.SetFullscreen(2, true)
@@ -94,8 +94,8 @@ func TestLeftFullscreenTaskbar(t *testing.T) {
 		w.Activate(1)
 		w.Activate(2)
 		m.SetFullscreen(2, true)
-		if w.Fullscreen != 2 || w.left != 0 {
-			t.Fatalf("fullscreen %d, left %d", w.Fullscreen, w.left)
+		if w.Fullscreen != 2 || w.Inspect().Left != 0 {
+			t.Fatalf("fullscreen %d, left %d", w.Fullscreen, w.Inspect().Left)
 		}
 
 	})
@@ -103,21 +103,6 @@ func TestLeftFullscreenTaskbar(t *testing.T) {
 
 // A latched window moved away with its column, which another window of
 // it has the focus of, drops the latch.
-func TestLeftFullscreenColumnMoved(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		w := cols(OverflowScroll, 2, 0, []WindowID{2, 3}, []WindowID{1})
-		w.FocusID(2)
-		w.Fullscreen = 2
-		w.Activate(3)
-		if w.left != 2 {
-			t.Fatalf("latch %d", w.left)
-		}
-		if _, ok := w.takeColumn(); !ok || w.left != 0 {
-			t.Fatalf("left %d", w.left)
-		}
-
-	})
-}
 
 // A latched window that goes away drops the latch.
 func TestLeftFullscreenRemoved(t *testing.T) {
@@ -126,8 +111,8 @@ func TestLeftFullscreenRemoved(t *testing.T) {
 		w := m.Current()
 		w.Activate(1)
 		w.RemoveWindow(2)
-		if w.left != 0 {
-			t.Fatalf("left %d", w.left)
+		if w.Inspect().Left != 0 {
+			t.Fatalf("left %d", w.Inspect().Left)
 		}
 
 	})

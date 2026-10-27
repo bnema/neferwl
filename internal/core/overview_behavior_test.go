@@ -15,7 +15,7 @@ func TestOverviewVerticalBoundariesAndInputs(t *testing.T) {
 		m := stackMonitor()
 		w := m.Current()
 		m.ToggleOverview()
-		if m.stackFront(w) != (StackItem{StackFloat, 9}) {
+		if m.stackFront(w) != (StackItem{Kind: StackFloat, ID: 9}) {
 			t.Fatal("screen front")
 		}
 		m.overviewFocus(ActionFocusWorkspacePrev)
@@ -56,20 +56,20 @@ func TestOverviewPeekEnvelopeAndSingleCardHorizontal(t *testing.T) {
 		front := previewOf(t, m.Layout(), 7)
 		back := previewOf(t, m.Layout(), 8)
 		step := float64(front.Rect.Y - back.Rect.Y)
-		if step < float64(w.Usable.H)*w.overviewZoom(layout.Vertical)*0.06 {
+		if step < float64(w.Usable.H)*modelOverviewZoom(w, layout.Vertical)*0.06 {
 			t.Fatalf("peek step %.1f", step)
 		}
-		h := w.rowHeight(layout.Vertical)
+		h := modelRowHeight(w, layout.Vertical)
 		y := w.Usable.Y + (w.Usable.H-h)/2
 		if back.Rect.Y < y || front.Rect.Y+front.Rect.H > y+h {
 			t.Fatalf("outside row front %+v back %+v row %d..%d", front, back, y, y+h)
 		}
 		m.OverviewMove(1, 0)
-		if m.stackFront(w) != (StackItem{StackFloat, 7}) {
+		if m.stackFront(w) != (StackItem{Kind: StackFloat, ID: 7}) {
 			t.Fatal("right moved single card")
 		}
 		m.OverviewMove(-1, 0)
-		if m.stackFront(w) != (StackItem{StackFloat, 8}) {
+		if m.stackFront(w) != (StackItem{Kind: StackFloat, ID: 8}) {
 			t.Fatal("left did not send single card behind")
 		}
 		m.CancelOverview()
@@ -133,13 +133,13 @@ func TestOverviewStackMRUAndSize(t *testing.T) {
 		m.OverviewMove(0, -1)
 		m.ToggleOverview()
 		m.ToggleOverview()
-		if got := w.Stack(); !slices.Equal(got, []StackItem{{StackColumn, 1}, {Kind: StackColumns}}) {
+		if got := w.Stack(); !slices.Equal(got, []StackItem{{Kind: StackColumn, ID: 1}, {Kind: StackColumns}}) {
 			t.Fatalf("stack %v", got)
 		}
 		if m.hiddenColumn(w) != 1 {
 			t.Fatalf("MRU preselection %d, want Firefox column", m.hiddenColumn(w))
 		}
-		if p := previewOf(t, m.Layout(), 2); math.Abs(float64(p.Rect.W)-float64(w.columnRectsFor(true)[1].W)*p.Preview) > 1 {
+		if p := previewOf(t, m.Layout(), 2); math.Abs(float64(p.Rect.W)-float64(modelColumnRectsFor(w, true)[1].W)*p.Preview) > 1 {
 			t.Fatalf("prior maximized buffer not fitted to cell: %+v", p)
 		}
 		m.CancelOverview()
@@ -161,7 +161,7 @@ func browsedMonitor(ov Overflow) (*Monitor, *Workspace) {
 	ws2 := m.Workspaces[1]
 	ws2.Overflow = ov
 	ws2.FocusID(5)
-	ws2.scroll()
+	modelScroll(ws2)
 	m.Focus(0)
 	return m, ws2
 }

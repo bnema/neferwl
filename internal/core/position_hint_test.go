@@ -251,7 +251,7 @@ func TestPositionHintScrolledAwayFullscreen(t *testing.T) {
 		a.mon.AddWindow(1)
 		a.mon.AddWindow(2)
 		w.Fullscreen = 1
-		w.View = w.columnX(1)
+		w.View = modelColumnX(w, 1)
 		require.NotZero(t, w.Fullscreen)
 		require.Zero(t, w.Cover())
 		c.focusScreen = 1

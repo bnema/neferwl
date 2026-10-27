@@ -115,8 +115,8 @@ func checkRunning(t *testing.T, c *Core, when string) {
 		if sc.name() == "" {
 			continue
 		}
-		if len(sc.rects) != 6 || !sc.mon.Current().view.Motion.On || len(sc.shown) < 6 {
-			t.Fatalf("%s: rects %d camera %v shown %d", when, len(sc.rects), sc.mon.Current().view.Motion.On, len(sc.shown))
+		if len(sc.rects) != 6 || !sc.mon.Current().Inspect().ColumnsSlide.Motion.On || len(sc.shown) < 6 {
+			t.Fatalf("%s: rects %d camera %v shown %d", when, len(sc.rects), sc.mon.Current().Inspect().ColumnsSlide.Motion.On, len(sc.shown))
 		}
 	}
 }
@@ -133,8 +133,8 @@ func TestPublishAllocations(t *testing.T) {
 				continue
 			}
 			ws := sc.mon.Current()
-			ws.view.Motion = c.spring(motion.ViewSpring(100, 0), t0)
-			ws.view.Off = 100
+			ws.LandColumns(c.spring(motion.ViewSpring(100, 0), t0))
+			ws.DragColumns(float64(ws.View) + (100))
 			startRectMotions(c, sc, t0)
 		}
 		for _, tc := range []struct {
@@ -172,11 +172,11 @@ func TestPublishStashSlideAllocations(t *testing.T) {
 		}
 		sc.arrange()
 		c.refreshShown()
-		ws.stashView.Off = 0.5
-		ws.stashView.Motion = c.spring(ws.StashSpring(0.5, 0), time.Now())
+		ws.DragStash(float64(ws.StashAt()) + (0.5))
+		ws.LandStash(c.spring(ws.StashSpring(0.5, 0), time.Now()))
 		step := publishStep(t, c, nil)
 		step()
-		if !ws.stashView.Motion.On || !ws.StashShown() {
+		if !ws.Inspect().StashSlide.Motion.On || !ws.StashShown() {
 			t.Fatal("setup: no stash slide on screen")
 		}
 		var partial int
@@ -190,7 +190,7 @@ func TestPublishStashSlideAllocations(t *testing.T) {
 		}
 		n := testing.AllocsPerRun(50, step)
 		t.Logf("stash slide allocs per step = %v", n)
-		if !ws.stashView.Motion.On {
+		if !ws.Inspect().StashSlide.Motion.On {
 			t.Fatal("the slide settled during the measure")
 		}
 		if n > publishAllocBudget {
@@ -425,8 +425,8 @@ func TestPublishSubscribersAllocations(t *testing.T) {
 				continue
 			}
 			ws := sc.mon.Current()
-			ws.view.Motion = c.spring(motion.ViewSpring(100, 0), t0)
-			ws.view.Off = 100
+			ws.LandColumns(c.spring(motion.ViewSpring(100, 0), t0))
+			ws.DragColumns(float64(ws.View) + (100))
 			startRectMotions(c, sc, t0)
 		}
 		step := publishStep(t, c, nil)
@@ -512,8 +512,8 @@ func BenchmarkPublishSubscribers(b *testing.B) {
 			continue
 		}
 		ws := sc.mon.Current()
-		ws.view.Motion = c.spring(motion.ViewSpring(100, 0), t0)
-		ws.view.Off = 100
+		ws.LandColumns(c.spring(motion.ViewSpring(100, 0), t0))
+		ws.DragColumns(float64(ws.View) + (100))
 		startRectMotions(c, sc, t0)
 	}
 	ctx := context.Background()

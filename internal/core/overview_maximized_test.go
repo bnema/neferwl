@@ -28,9 +28,9 @@ func TestOverviewMaximizedGeometryAndNavigation(t *testing.T) {
 		m := maximizedOverview()
 		w := m.Current()
 		w.Columns[2].Windows = append(w.Columns[2].Windows, 5)
-		rects := w.hiddenColumnRects()
+		rects := modelHiddenColumnRects(w)
 		m.ToggleOverview()
-		if got := w.Stack(); !slices.Equal(got, []StackItem{{StackColumn, 2}, {Kind: StackColumns}}) {
+		if got := w.Stack(); !slices.Equal(got, []StackItem{{Kind: StackColumn, ID: 2}, {Kind: StackColumns}}) {
 			t.Fatalf("items %v", got)
 		}
 		if p := previewOf(t, m.Layout(), 2); p.Hidden || p.Peek || !p.Focused {
@@ -134,18 +134,18 @@ func TestOverviewMaximizedFloatWrapAndNeighbor(t *testing.T) {
 		m.Current().ToggleFullWidth()
 		m.Focus(0)
 		m.ToggleOverview()
-		if got := w.Stack(); !slices.Equal(got, []StackItem{{StackFloat, 9}, {StackColumn, 2}, {Kind: StackColumns}}) {
+		if got := w.Stack(); !slices.Equal(got, []StackItem{{Kind: StackFloat, ID: 9}, {Kind: StackColumn, ID: 2}, {Kind: StackColumns}}) {
 			t.Fatalf("stack %v", got)
 		}
 		if p, q := previewOf(t, m.Layout(), 10), previewOf(t, m.Layout(), 11); !p.Peek || !q.Peek || p.Focused || q.Focused {
 			t.Fatalf("neighbor %+v %+v", p, q)
 		}
 		m.OverviewMove(0, -1)
-		if m.stackFront(w) != (StackItem{StackColumn, 2}) {
+		if m.stackFront(w) != (StackItem{Kind: StackColumn, ID: 2}) {
 			t.Fatalf("front %v", m.stackFront(w))
 		}
 		m.OverviewMove(0, 1)
-		if m.stackFront(w) != (StackItem{StackFloat, 9}) {
+		if m.stackFront(w) != (StackItem{Kind: StackFloat, ID: 9}) {
 			t.Fatalf("back %v", m.stackFront(w))
 		}
 		m.CancelOverview()
@@ -167,7 +167,7 @@ func TestOverviewMaximizedLeftAndStash(t *testing.T) {
 			t.Fatalf("left should send card behind: %v", m.stackFront(w))
 		}
 		m.OverviewMove(0, 1)
-		if m.stackFront(w) != (StackItem{StackColumn, 2}) {
+		if m.stackFront(w) != (StackItem{Kind: StackColumn, ID: 2}) {
 			t.Fatalf("front %v", m.stackFront(w))
 		}
 		m.CancelOverview()
@@ -300,7 +300,7 @@ func TestOverviewMaximizedPreviewsKeepConfigures(t *testing.T) {
 		for _, p := range w.Layout() {
 			// Hidden clients retain their last unmaximized configure.
 			if p.Hidden {
-				r := w.columnRectsFor(true)[int(p.ID)-1]
+				r := modelColumnRectsFor(w, true)[int(p.ID)-1]
 				p.Rect, p.Hidden = r, false
 			}
 			v, _ := s.next(p, configureTarget{output: "test", client: p.Rect, view: whole(w.Usable)})

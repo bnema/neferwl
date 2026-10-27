@@ -117,7 +117,7 @@ func TestOverviewCoverPickOther(t *testing.T) {
 					if p := placement(w, 2); p.Fullscreen || (p.Hidden && !tc.float) {
 						t.Fatalf("pick %v: left window %+v", pick, p)
 					}
-					if i := w.floatIndex(2); tc.float && (i < 0 || !w.Floats[i].below) {
+					if i := modelFloatIndex(w, 2); tc.float && (i < 0 || !w.Inspect().Floats[i].Below) {
 						t.Fatalf("pick %v: float %+v", pick, w.Floats)
 					}
 				}

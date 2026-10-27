@@ -24,8 +24,8 @@ func TestFullscreenFloatReturnPreservesDialogFocus(t *testing.T) {
 			m.show(w)
 			m.AddFloating(3, 20, 20)
 			m.SetFullscreen(2, false)
-			if id, _ := w.Focused(); id != 3 || !w.floatFocus || w.Floats[len(w.Floats)-1].ID != 3 {
-				t.Fatalf("covering %v: focus %d, float focus %v, floats %+v", covering, id, w.floatFocus, w.Floats)
+			if id, _ := w.Focused(); id != 3 || !w.Inspect().FloatFocus || w.Floats[len(w.Floats)-1].ID != 3 {
+				t.Fatalf("covering %v: focus %d, float focus %v, floats %+v", covering, id, w.Inspect().FloatFocus, w.Floats)
 			}
 		}
 
@@ -43,7 +43,7 @@ func TestDemotedFloatFullscreenUserReturn(t *testing.T) {
 		m.SetFullscreen(2, true)
 		w.FocusCover()
 		m.SetFullscreen(2, false)
-		if id, _ := w.Focused(); id != 2 || !w.floatFocus || w.Floats[0].below {
+		if id, _ := w.Focused(); id != 2 || !w.Inspect().FloatFocus || w.Inspect().Floats[0].Below {
 			t.Fatalf("returned focus %d floats %+v", id, w.Floats)
 		}
 
@@ -59,8 +59,8 @@ func TestSetNamedDemotedFloatKeepsColumnActions(t *testing.T) {
 		m.Current().FocusID(1)
 		m.SetNamed(nil)
 		w := m.Current()
-		if id, _ := w.Focused(); id != 1 || w.OnFloat() || w.floatFocus {
-			t.Fatalf("focus %d float focus %v floats %+v", id, w.floatFocus, w.Floats)
+		if id, _ := w.Focused(); id != 1 || w.OnFloat() || w.Inspect().FloatFocus {
+			t.Fatalf("focus %d float focus %v floats %+v", id, w.Inspect().FloatFocus, w.Floats)
 		}
 		w.ToggleFullWidth()
 		if !w.Columns[w.Focus].FullWidth {

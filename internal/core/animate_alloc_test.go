@@ -22,12 +22,12 @@ func TestAnimateAllocations(t *testing.T) {
 		m.AddWindow(2)
 
 		ws := m.Workspaces[0]
-		ws.view.Motion = c.spring(motion.ViewSpring(100, 0), t0)
-		ws.view.Off = 100
+		ws.LandColumns(c.spring(motion.ViewSpring(100, 0), t0))
+		ws.DragColumns(float64(ws.View) + (100))
 		m.switchView.Motion = c.spring(motion.WorkspaceSpring(100, 0), t0)
 		m.switchView.Off = 100
-		ws.stashView.Motion = c.spring(motion.WorkspaceSpring(0.5, 0), t0)
-		ws.stashView.Off = 0.5
+		ws.LandStash(c.spring(motion.WorkspaceSpring(0.5, 0), t0))
+		ws.DragStash(float64(ws.StashAt()) + (0.5))
 		sc.rects = make(map[WindowID]rectMotion, 20)
 		for i := range 20 {
 			sp := motion.ViewSpring(50, 0)
@@ -63,8 +63,8 @@ func TestAnimateAllocations(t *testing.T) {
 				t.Errorf("animate(%s) allocs = %v, want 0", name, n)
 			}
 		}
-		if !ws.view.Motion.On || !ws.stashView.Motion.On || !m.switchView.Motion.On || len(sc.rects) != 24 {
-			t.Fatalf("motions settled: camera %v switch %v rects %d", ws.view.Motion.On, m.switchView.Motion.On, len(sc.rects))
+		if !ws.Inspect().ColumnsSlide.Motion.On || !ws.Inspect().StashSlide.Motion.On || !m.switchView.Motion.On || len(sc.rects) != 24 {
+			t.Fatalf("motions settled: camera %v switch %v rects %d", ws.Inspect().ColumnsSlide.Motion.On, m.switchView.Motion.On, len(sc.rects))
 		}
 
 	})

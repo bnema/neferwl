@@ -251,7 +251,7 @@ func TestOverviewStackRowChangeResetsRotation(t *testing.T) {
 		}
 		m.OverviewMove(0, -1) // at stack end: workspace above, if present
 		m.OverviewMove(0, 1)
-		if m.stackFront(m.Current()) != (StackItem{StackFloat, 9}) {
+		if m.stackFront(m.Current()) != (StackItem{Kind: StackFloat, ID: 9}) {
 			t.Fatal("row change retained cursor")
 		}
 		m.CancelOverview()

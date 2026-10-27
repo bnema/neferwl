@@ -4,8 +4,6 @@ import (
 	"slices"
 	"testing"
 	"testing/synctest"
-
-	"github.com/bnema/neferwl/internal/core/layout"
 )
 
 // cascadeMovesCore is a core whose focused screen holds a cascade of
@@ -30,15 +28,6 @@ func cascadeMovesCore(t *testing.T, n, maxCols int, sides bool) (*Core, *Workspa
 	return c, w
 }
 
-// columnOrder is the first window of each column, in column order.
-func columnOrder(w *Workspace) []WindowID {
-	var ids []WindowID
-	for _, c := range w.Columns {
-		ids = append(ids, c.Windows[0])
-	}
-	return ids
-}
-
 func screenWorkspace(c *Core, name string) *Workspace {
 	for _, s := range c.screens {
 		if s.name() == name {
@@ -46,27 +35,6 @@ func screenWorkspace(c *Core, name string) *Workspace {
 		}
 	}
 	return nil
-}
-
-func wantColumns(t *testing.T, w *Workspace, want ...WindowID) {
-	t.Helper()
-	if got := columnOrder(w); !slices.Equal(got, want) {
-		t.Fatalf("columns %v, want %v", got, want)
-	}
-}
-
-// wantBands checks the cascade bands, each by the first window of its
-// columns.
-func wantBands(t *testing.T, w *Workspace, want ...[]WindowID) {
-	t.Helper()
-	var got [][]WindowID
-	w.WalkBands(func(_, first, last int) bool {
-		got = append(got, columnOrder(&Workspace{Lanes: layout.Lanes{Columns: w.Columns[first : last+1]}}))
-		return true
-	})
-	if !slices.EqualFunc(got, want, slices.Equal) {
-		t.Fatalf("bands %v, want %v", got, want)
-	}
 }
 
 func wantFocus(t *testing.T, c *Core, screen string, id WindowID) {
@@ -312,7 +280,7 @@ func TestCascadeFloatAtBandEdgeStaysOnMonitor(t *testing.T) {
 		if got := c.cur().name(); got != "M" {
 			t.Fatalf("focused screen %q, want M", got)
 		}
-		if w.floatFocus {
+		if w.Inspect().FloatFocus {
 			t.Fatal("focus still on the float")
 		}
 

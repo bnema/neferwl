@@ -7,18 +7,6 @@ import (
 	"github.com/bnema/neferwl/internal/core/layout"
 )
 
-// cards are the shown stash placements of w in ps, in stash order.
-func shownCards(t *testing.T, w *Workspace, ps []Placement) []Placement {
-	t.Helper()
-	var out []Placement
-	for _, e := range w.Stash {
-		if p := previewOf(t, ps, e.ID); !p.Hidden {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
 // Selected, the cascade pile unfolds into a carousel under the lane: every
 // card side by side, none over another, the selection the only framed one,
 // in the middle. Left and right walk it, wrapping round, without leaving
@@ -413,7 +401,7 @@ func TestOverviewStepSkipsWrappingCarousel(t *testing.T) {
 					ws.Overflow = overflow
 				}
 				m.Focus(0)
-				if !w.stashFocused() {
+				if !modelStashFocused(w) {
 					t.Fatal("setup: the stash does not have the focus")
 				}
 				m.ToggleOverview()

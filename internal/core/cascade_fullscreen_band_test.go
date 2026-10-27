@@ -104,7 +104,7 @@ func TestFullscreenFloatMovesToNeighborMonitor(t *testing.T) {
 			w.SetFullscreen(9, true)
 			c.applyAction(tc.action)
 			dst := screenWorkspace(c, tc.screen)
-			if w.floatIndex(9) >= 0 || dst.floatIndex(9) < 0 || w.Fullscreen != 0 || dst.Fullscreen != 9 {
+			if modelFloatIndex(w, 9) >= 0 || modelFloatIndex(dst, 9) < 0 || w.Fullscreen != 0 || dst.Fullscreen != 9 {
 				t.Fatalf("float on src %v dst %v, fullscreen src %d dst %d", w.Floats, dst.Floats, w.Fullscreen, dst.Fullscreen)
 			}
 			wantFocus(t, c, tc.screen, 9)
@@ -118,7 +118,7 @@ func TestFullscreenFloatNoNeighborStays(t *testing.T) {
 	w.AddDialog(9, 2, 800, 600)
 	w.SetFullscreen(9, true)
 	c.applyAction(ActionMoveColumnLeft)
-	if w.floatIndex(9) < 0 || w.Fullscreen != 9 {
+	if modelFloatIndex(w, 9) < 0 || w.Fullscreen != 9 {
 		t.Fatalf("float moved: %v fullscreen %d", w.Floats, w.Fullscreen)
 	}
 }
@@ -209,16 +209,17 @@ func TestFullscreenMoveEdges(t *testing.T) {
 	})
 	t.Run("source floats promoted", func(t *testing.T) {
 		c, w := cascadeMovesCore(t, 2, 3, true)
-		w.AddFloating(9, 100, 100)
+		w.AddFloating(9, w.Usable.W, w.Usable.H)
 		w.FocusID(2)
 		w.ToggleFullscreen()
-		// A fullscreen keeps a float demoted without it covering the output.
-		w.Floats[0].below = true
-		if len(w.Floats) != 1 || !w.Floats[0].below || w.Fullscreen != 2 {
+		// Demote while covering, then retain the demotion at the saved size
+		// until the transfer reconciles it, as in the original setup.
+		w.Floats[0].W, w.Floats[0].H = 100, 100
+		if len(w.Floats) != 1 || !w.Inspect().Floats[0].Below || w.Fullscreen != 2 {
 			t.Fatalf("setup: float not demoted: %+v", w.Floats)
 		}
 		c.applyAction(ActionMoveColumnRight)
-		if len(w.Floats) != 1 || w.Floats[0].below {
+		if len(w.Floats) != 1 || w.Inspect().Floats[0].Below {
 			t.Fatalf("float still demoted: %+v", w.Floats)
 		}
 	})
@@ -245,7 +246,8 @@ func TestFullscreenMoveDestinations(t *testing.T) {
 		// focused, so it ends fullscreen.
 		c, w := cascadeMovesCore(t, 2, 3, true)
 		dst := screenWorkspace(c, "R")
-		dst.left = 2
+		dst.Fullscreen = 2
+		dst.LeaveCoverFor(0)
 		w.ToggleFullscreen()
 		c.applyAction(ActionMoveColumnRight)
 		wantFocus(t, c, "R", 2)

@@ -3,23 +3,7 @@ package core
 import (
 	"testing"
 	"testing/synctest"
-
-	"github.com/bnema/neferwl/internal/core/layout"
 )
-
-// cacheAgrees checks the Workspace layout cache against the table: the cache
-// is filled and it names the layout layoutFor resolves for the same Overflow.
-func cacheAgrees(t *testing.T, step string, w *Workspace) {
-	t.Helper()
-	want, ok := layout.Lookup(w.Overflow)
-	if !ok {
-		want, _ = layout.Lookup(layout.Default)
-	}
-	if got := w.Engine(); got != want {
-		t.Fatalf("%s: engine %v, want %v for %q", step, got, want, w.Overflow)
-	}
-
-}
 
 // Every production path that changes Overflow keeps the cache in step.
 func TestWorkspaceLayoutCacheFollowsOverflow(t *testing.T) {

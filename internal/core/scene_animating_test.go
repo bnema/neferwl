@@ -26,8 +26,8 @@ func TestSceneAnimatingFollowsSprings(t *testing.T) {
 
 		// A slide starts.
 		w := a.mon.Current()
-		w.view.Off = 100
-		w.view.Motion = motion.NewMotion(motion.ViewSpring(w.view.Off, 0), ic.now, 1)
+		w.DragColumns(float64(w.View) + (100))
+		w.LandColumns(motion.NewMotion(motion.ViewSpring(w.Inspect().ColumnsSlide.Off, 0), ic.now, 1))
 		ic.now = ic.now.Add(10 * time.Millisecond)
 		first := stepScenes(t, c, a)["A"]
 		if !first.Animating {
@@ -85,8 +85,8 @@ func TestSceneAnimatingIsPerOutput(t *testing.T) {
 		b.mon.AddWindow(2)
 		indicatorScene(t, c)
 		w := b.mon.Current()
-		w.view.Off = 100
-		w.view.Motion = motion.NewMotion(motion.ViewSpring(w.view.Off, 0), ic.now, 1)
+		w.DragColumns(float64(w.View) + (100))
+		w.LandColumns(motion.NewMotion(motion.ViewSpring(w.Inspect().ColumnsSlide.Off, 0), ic.now, 1))
 		ic.now = ic.now.Add(10 * time.Millisecond)
 		got := stepScenes(t, c, b)
 		if !got["B"].Animating || got["A"].Animating {
@@ -112,8 +112,8 @@ func TestSettledSceneSameAsPreviousClearsAnimating(t *testing.T) {
 		indicatorScene(t, c)
 
 		w := a.mon.Current()
-		w.view.Off = 100
-		w.view.Motion = motion.NewMotion(motion.ViewSpring(w.view.Off, 0), ic.now, 1)
+		w.DragColumns(float64(w.View) + (100))
+		w.LandColumns(motion.NewMotion(motion.ViewSpring(w.Inspect().ColumnsSlide.Off, 0), ic.now, 1))
 		// Step in 1 ms until the spring settles: the snap settles it once it is
 		// within half a pixel of its target, where the last running scene can
 		// draw the same pixels as the settled one.

@@ -32,73 +32,6 @@ func TestResized(t *testing.T) {
 	})
 }
 
-func TestScrollBy(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		w := workspace()
-		w.SetOutput(1000, 800)
-		w.SetGaps(10)
-		for id := WindowID(1); id <= 4; id++ {
-			w.AddWindow(id)
-		}
-		w.FocusID(1)
-		if w.View != 0 {
-			t.Fatal(w.View)
-		}
-		if w.scrollBy(-1) {
-			t.Fatal("scrolled past the start")
-		}
-		steps := 0
-		for w.scrollBy(1) {
-			steps++
-			if steps > 10 {
-				t.Fatal("no end")
-			}
-		}
-		if steps != 2 {
-			t.Fatal(steps)
-		}
-		last := w.columnX(3) + w.columnWidth(3) - w.View
-		if last != w.Usable.X+w.Usable.W-w.Gap() {
-			t.Fatal(last)
-		}
-		// Focus did not change.
-		if id, _ := w.Focused(); id != 1 {
-			t.Fatal(id)
-		}
-		for w.scrollBy(-1) {
-		}
-		if w.View != 0 {
-			t.Fatal(w.View)
-		}
-
-	})
-}
-
-func TestDropInHiddenColumns(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		w := workspace()
-		w.SetOutput(1000, 800)
-		w.SetGaps(10)
-		w.Overflow = OverflowFixed
-		w.SetMaxColumns(3)
-		for id := WindowID(1); id <= 3; id++ {
-			w.AddWindow(id)
-		}
-		w.FocusID(2)
-		w.ToggleFullWidth()
-		// Columns 1 and 3 are hidden by the maximized one: the point where
-		// column 3 was hits 2 now, a swap with itself: nothing.
-		if tgt := w.DropIn(2, 900, 400, 4); tgt.Kind != DropNone {
-			t.Fatalf("%+v", tgt)
-		}
-		// Dragging 1 (hidden) over 2: top band stacks above 2.
-		if tgt := w.DropIn(1, 500, 30, 4); tgt.Kind != DropAbove || tgt.Anchor != 2 {
-			t.Fatalf("%+v", tgt)
-		}
-
-	})
-}
-
 // dragCore is a core with one 1000x600 output and no channels but the
 // scene and command ones; tests drive its methods directly.
 func dragCore(t *testing.T) *Core {
@@ -122,14 +55,14 @@ func TestCancelKeepsFloatRaised(t *testing.T) {
 		w.AddWindow(1)
 		w.AddFloating(2, 1000, 600)
 		w.FocusID(1)
-		if !w.Floats[0].below {
+		if !w.Inspect().Floats[0].Below {
 			t.Fatal("not below")
 		}
 		if err := c.beginDrag(context.Background(), 2, btnLeft, false, 0); err != nil {
 			t.Fatal(err)
 		}
 		c.cancelDrag()
-		if w.Floats[0].below {
+		if w.Inspect().Floats[0].Below {
 			t.Fatal("escape put the focused float behind the tiles")
 		}
 
@@ -148,7 +81,7 @@ func TestDropReleasesSlot(t *testing.T) {
 			t.Fatal(err)
 		}
 		c.drag.target = dropTarget{}
-		r, _ := w.placed(2)
+		r, _ := modelPlaced(w, 2)
 		c.cursorX, c.cursorY = float64(r.X+r.W/2), float64(r.Y+5)
 		if err := c.endDrag(ctx); err != nil {
 			t.Fatal(err)

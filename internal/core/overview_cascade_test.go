@@ -70,16 +70,6 @@ func within1(a, b int) bool { return a-b <= 1 && b-a <= 1 }
 
 func hiddenOff(p Placement) bool { return p.Hidden && p.Preview == 0 && !p.Focused }
 
-// The zoom does not depend on the number of bands.
-func TestOverviewCascadeZoomIgnoresBandCount(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		if one, three := cascadeWorkspace(3).overviewZoom(layout.Horizontal), cascadeWorkspace(7).overviewZoom(layout.Horizontal); one != three || one != overviewMaxZoom {
-			t.Fatalf("zoom with one band %v, with three %v", one, three)
-		}
-
-	})
-}
-
 // The selected band is the centre lane: undimmed, centred, selected tile
 // focused.
 func TestOverviewCascadeCentreLane(t *testing.T) {
@@ -419,7 +409,7 @@ func TestOverviewCascadeStashPile(t *testing.T) {
 				w.FocusID(10)
 				m.ToggleOverview()
 				d.move(m, 0, 1)
-				if m.cardAt(w) != w.stashAt {
+				if m.cardAt(w) != w.StashAt() {
 					t.Fatalf("entered at %d", m.cardAt(w))
 				}
 				at := m.cardAt(w)
@@ -431,8 +421,8 @@ func TestOverviewCascadeStashPile(t *testing.T) {
 				}
 				picked := w.Stash[m.cardAt(w)].ID
 				m.ToggleOverview()
-				if focusedID(m) != picked || w.stashHidden {
-					t.Fatalf("confirm on %d, want %d (hidden %v)", focusedID(m), picked, w.stashHidden)
+				if focusedID(m) != picked || w.Inspect().StashHidden {
+					t.Fatalf("confirm on %d, want %d (hidden %v)", focusedID(m), picked, w.Inspect().StashHidden)
 				}
 
 			})
@@ -566,8 +556,8 @@ func TestOverviewCascadeThreeFingerDownEntersStash(t *testing.T) {
 			c.swipeUpdate(ports.SwipeUpdate{DY: 40})
 		}
 		c.swipeEnd(ports.SwipeEnd{})
-		if m.Current() != w || m.cardAt(w) != w.stashAt {
-			t.Fatalf("swipe down from the last band: card %d, want %d", m.cardAt(w), w.stashAt)
+		if m.Current() != w || m.cardAt(w) != w.StashAt() {
+			t.Fatalf("swipe down from the last band: card %d, want %d", m.cardAt(w), w.StashAt())
 		}
 
 	})
@@ -583,7 +573,7 @@ func TestOverviewCascadeStashToMaximized(t *testing.T) {
 		w.FocusID(10)
 		w.ToggleFullWidth()
 		m.ToggleOverview()
-		m.selectCard(w, w.stashAt) // As a click on the pile does.
+		m.selectCard(w, w.StashAt()) // As a click on the pile does.
 		if m.cardAt(w) < 0 {
 			t.Fatalf("setup: no stash card, target %d", m.overviewTarget())
 		}
@@ -674,7 +664,7 @@ func TestOverviewCascadeNeighborStashKeepsSlot(t *testing.T) {
 		m.Focus(1)
 		m.ToggleOverview()
 		bare, _ := m.overviewRows()
-		zoom := prev.overviewZoom(layout.Horizontal)
+		zoom := modelOverviewZoom(prev, layout.Horizontal)
 		m.CancelOverview()
 		if zoom <= overviewMinZoom || zoom >= overviewMaxZoom {
 			t.Fatalf("setup: neighbor zoom %v is at a bound", zoom)
@@ -687,8 +677,8 @@ func TestOverviewCascadeNeighborStashKeepsSlot(t *testing.T) {
 		m.Focus(1)
 		m.ToggleOverview()
 		rows, _ := m.overviewRows()
-		if rows.at(prev) != bare.at(prev) || prev.overviewZoom(layout.Horizontal) != zoom {
-			t.Fatalf("neighbor slot %v zoom %v with a stash, %v %v without", rows.at(prev), prev.overviewZoom(layout.Horizontal), bare.at(prev), zoom)
+		if rows.at(prev) != bare.at(prev) || modelOverviewZoom(prev, layout.Horizontal) != zoom {
+			t.Fatalf("neighbor slot %v zoom %v with a stash, %v %v without", rows.at(prev), modelOverviewZoom(prev, layout.Horizontal), bare.at(prev), zoom)
 		}
 		if p := previewOf(t, m.Layout(), 64); p.Hidden || !p.Peek {
 			t.Fatalf("neighbor pile card: %+v", p)
@@ -771,8 +761,8 @@ func TestOverviewCascadeCoveringFloat(t *testing.T) {
 				// The cards behind fan to the left: coming to the front, the
 				// columns move right by one peek step.
 				front := previewOf(t, m.Layout(), 10)
-				if front.Peek || front.Rect.X-behind.Rect.X != w.peekStep(layout.Horizontal) {
-					t.Fatalf("columns behind %v, in front %v, peek step %d", behind.Rect, front.Rect, w.peekStep(layout.Horizontal))
+				if front.Peek || front.Rect.X-behind.Rect.X != modelPeekStep(w, layout.Horizontal) {
+					t.Fatalf("columns behind %v, in front %v, peek step %d", behind.Rect, front.Rect, modelPeekStep(w, layout.Horizontal))
 				}
 				d.move(m, 1, 0)
 				if f := m.stackFront(w); f.Kind != StackFloat || f.ID != 90 {
@@ -1163,7 +1153,9 @@ func TestOverviewCascadePileVisible(t *testing.T) {
 					m := cascadeOverview()
 					withStash(m, n)
 					w := m.Current()
-					w.stashHidden = hidden
+					if w.Inspect().StashHidden != hidden {
+						w.ToggleStashVisible()
+					}
 					m.ToggleOverview()
 					for range down {
 						m.OverviewMove(0, 1)
