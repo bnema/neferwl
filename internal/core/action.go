@@ -255,7 +255,9 @@ func (c *Core) dispatchAction(a Action) Effect {
 			if d == dirLeft {
 				at = len(to.Columns)
 			}
-			MoveFullscreen(w, to, at)
+			if !MoveFullscreen(w, to, at) {
+				return Effect{}
+			}
 			c.focusScreen = i
 			from.mon.normalize()
 			c.cur().mon.normalize()
@@ -268,7 +270,7 @@ func (c *Core) dispatchAction(a Action) Effect {
 			if d == dirLeft {
 				at = len(to.Columns)
 			}
-			if !MoveFocused(w, to, true, at) {
+			if !MoveColumnTo(w, to, at) {
 				return Effect{}
 			}
 			c.focusScreen = i

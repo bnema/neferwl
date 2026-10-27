@@ -255,7 +255,14 @@ func SpawnCommands(a Action) ([][]string, bool) { return workspacedomain.SpawnCo
 func StashCommands(a Action) ([][]string, bool) { return workspacedomain.StashCommands(a) }
 
 // MoveFullscreen forwards the model operation without changing existing core call sites.
-func MoveFullscreen(from, to *Workspace, at int) { workspacedomain.MoveFullscreen(from, to, at) }
+func MoveFullscreen(from, to *Workspace, at int) bool {
+	return workspacedomain.MoveFullscreen(from, to, at)
+}
+
+// MoveColumnTo forwards the model operation without changing existing core call sites.
+func MoveColumnTo(from, to *Workspace, at int) bool {
+	return workspacedomain.MoveColumnTo(from, to, at)
+}
 
 // MoveFocused forwards the model operation without changing existing core call sites.
 func MoveFocused(from, to *Workspace, column bool, at int) bool {
