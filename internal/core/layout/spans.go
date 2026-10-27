@@ -43,10 +43,12 @@ func (w *Lanes) DropStaleSpans() {
 		return
 	}
 	// A nil stale slice does not allocate, so valid lanes cost nothing here.
+	// The loop only reads, so one snapshot serves every lane.
+	v := w.Snapshot()
 	var stale []int
 	for first := 0; first < len(w.Columns); {
-		_, last := w.LaneBounds(w.LaneOf(first))
-		if !w.ValidSpans(first, last) {
+		_, last := v.laneBounds(v.laneOf(first))
+		if !v.validSpans(first, last) {
 			for i := first; i <= last; i++ {
 				stale = append(stale, i)
 			}

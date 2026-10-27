@@ -4,9 +4,12 @@ import "slices"
 
 // markBands freezes the band starts into cascadeState.
 func (w *Lanes) markBands() {
+	// v shares the cascadeState pointer, so SetBandStart writes stay
+	// visible to v.startsBand reads in the next iteration.
+	v := w.Snapshot()
 	n := 0
 	for i := range w.Columns {
-		s := w.startsBand(i, n)
+		s := v.startsBand(i, n)
 		w.SetBandStart(i, s)
 		if s {
 			n = 0

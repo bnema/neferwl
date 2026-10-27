@@ -444,7 +444,7 @@ func (m *Monitor) overviewLane(dy int) {
 // shorter). With a covering float in front it only deselects the card; a
 // stash-only workspace has nothing above the pile, so the card stays.
 func (m *Monitor) leavePile(w *Workspace) {
-	if len(w.Stack()) == 0 {
+	if _, n := w.StackHead(); n == 0 {
 		return
 	}
 	front := m.stackFront(w)

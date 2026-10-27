@@ -375,11 +375,11 @@ type OverviewRow struct {
 // decides whether the columns take the focus back.
 func (w *Workspace) EnterOverview() int {
 	w.FocusCover()
-	front, _ := w.StackHead()
-	if w.floatFocus && len(w.Columns) > 0 && (len(w.Stack()) < 2 || front.Kind == StackColumns) {
+	front, n := w.StackHead()
+	if w.floatFocus && len(w.Columns) > 0 && (n < 2 || front.Kind == StackColumns) {
 		w.floatFocus = false
 	}
-	if len(w.Stash) > 0 && (len(w.Stack()) == 0 || w.stashFocused() && !w.floatFocus) {
+	if len(w.Stash) > 0 && (n == 0 || w.stashFocused() && !w.floatFocus) {
 		return w.stashAt
 	}
 	return -1
