@@ -1,4 +1,4 @@
-package app
+package routing
 
 import (
 	"context"
@@ -18,11 +18,11 @@ import (
 func TestOutputSetAttachesAndDetachesContents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	set := newOutputSet(ctx, nil, outputRoutes{})
+	set := NewSet(ctx, nil, Routes{})
 	events := make(chan ports.SecurityBackendEvent, 4)
-	set.wireSecurity(outputChannels{securityEvents: events})
+	set.WireSecurity(Channels{SecurityEvents: events})
 	attacher := newMockcontentAttacher(t)
-	set.attach = attacher
+	set.Attach = attacher
 	rets := []*portsmocks.MockContentReturn{portsmocks.NewMockContentReturn(t), portsmocks.NewMockContentReturn(t)}
 	feed := make(chan *domain.ContentBatch, 1)
 	var order []string
@@ -32,7 +32,7 @@ func TestOutputSetAttachesAndDetachesContents(t *testing.T) {
 		security domain.SecurityState
 	}
 	started := make(chan seen, 2)
-	run := func(ctx context.Context, feed outputFeed) error {
+	run := func(ctx context.Context, feed Feed) error {
 		contents, returns, security := feed.Contents, feed.Returns, feed.Security
 		started <- seen{contents, returns, <-security}
 		<-ctx.Done()
@@ -55,7 +55,7 @@ func TestOutputSetAttachesAndDetachesContents(t *testing.T) {
 		detached = append(detached, feed)
 	}).Times(2)
 	for round := range 2 {
-		if !set.start(ctx, "DP-1", run) {
+		if !set.Start(ctx, "DP-1", run) {
 			t.Fatal("start failed")
 		}
 		got := <-started
@@ -63,8 +63,8 @@ func TestOutputSetAttachesAndDetachesContents(t *testing.T) {
 			t.Fatalf("round %d: output got another feed", round)
 		}
 		<-events
-		set.outs["DP-1"].stop()
-		if err := set.finish("DP-1"); err != nil {
+		set.Outs["DP-1"].Stop()
+		if err := set.Finish("DP-1"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -88,17 +88,17 @@ func TestOutputSetAttachesAndDetachesContents(t *testing.T) {
 func TestOutputSetWaitDetachesContents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	set := newOutputSet(ctx, nil, outputRoutes{})
+	set := NewSet(ctx, nil, Routes{})
 	attacher := newMockcontentAttacher(t)
-	set.attach = attacher
+	set.Attach = attacher
 	ret := portsmocks.NewMockContentReturn(t)
 	attacher.EXPECT().AttachOutput("A").Return(nil, ret).Once()
 	attacher.EXPECT().DetachOutput(ports.ContentReturn(ret)).Return().Once()
-	set.start(ctx, "A", func(ctx context.Context, feed outputFeed) error {
+	set.Start(ctx, "A", func(ctx context.Context, feed Feed) error {
 		<-ctx.Done()
 		return nil
 	})
-	if err := set.wait(); err != nil {
+	if err := set.Wait(); err != nil {
 		t.Fatal(err)
 	}
 }

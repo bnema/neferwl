@@ -13,12 +13,14 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/drm"
+	"github.com/bnema/neferwl/internal/adapters/headless"
 	"github.com/bnema/neferwl/internal/adapters/headlessinput"
 	"github.com/bnema/neferwl/internal/adapters/hints"
 	"github.com/bnema/neferwl/internal/adapters/launcher"
 	"github.com/bnema/neferwl/internal/adapters/libinput"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/cursors"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/routing"
 	"github.com/bnema/neferwl/internal/adapters/powerkey"
 	"github.com/bnema/neferwl/internal/adapters/sched"
 	"github.com/bnema/neferwl/internal/adapters/screencast"
@@ -364,7 +366,10 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	}()
 	if p.hintScans != nil {
 		workers.Add(2)
-		go func() { defer workers.Done(); routeCaptured(ctx, p.capturedAll, p.captured, p.internalCaptured()) }()
+		go func() {
+			defer workers.Done()
+			routing.RouteCaptured(ctx, p.capturedAll, p.captured, p.internalCaptured())
+		}()
 		go func() {
 			defer workers.Done()
 			// Run only returns when ctx is done: nothing to report.
@@ -411,7 +416,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 			})
 			return
 		}
-		done <- runHeadless(ctx, headlessOptions{sizes: sizes, shots: opts.ScreenshotDir, hdr: opts.HeadlessHDR, raw: opts.ScreenshotRaw}, apply, outputIO, curs, s.newRenderer, logging.For(ctx, "render"))
+		done <- headless.Run(ctx, headless.BackendOptions{Sizes: sizes, Shots: opts.ScreenshotDir, HDR: opts.HeadlessHDR, Raw: opts.ScreenshotRaw}, apply, outputIO, curs, s.newRenderer, logging.For(ctx, "render"))
 	}()
 
 	if hw != nil {
@@ -455,7 +460,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	cancel()
 	workers.Wait()
 	// The wayland server has stopped: no request can be queued any more.
-	drainCaptures(ctx, p.captures, nil)
+	routing.DrainCaptures(ctx, p.captures, nil)
 	// A keymap the input goroutine never took is still ours to free.
 	select {
 	case km := <-p.keymaps:

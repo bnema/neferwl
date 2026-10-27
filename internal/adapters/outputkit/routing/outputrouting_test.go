@@ -1,4 +1,4 @@
-package app
+package routing
 
 import (
 	"context"
@@ -25,12 +25,12 @@ func newRouteInputs() routeInputs {
 	return routeInputs{scenes: make(chan []domain.Scene), cursor: make(chan domain.CursorChange), captures: make(chan domain.CaptureRequest)}
 }
 
-func (in routeInputs) routes() outputRoutes {
-	return outputRoutes{scenes: in.scenes, cursor: in.cursor, captures: in.captures}
+func (in routeInputs) routes() Routes {
+	return Routes{Scenes: in.scenes, Cursor: in.cursor, Captures: in.captures}
 }
 
 // idleRun is an output that runs until stopped.
-func idleRun(ctx context.Context, _ outputFeed) error {
+func idleRun(ctx context.Context, _ Feed) error {
 	<-ctx.Done()
 	return nil
 }
@@ -40,25 +40,25 @@ func TestOutputRouting(t *testing.T) {
 	defer cancel()
 	replies := make(chan domain.CaptureDone, 2)
 	in := newRouteInputs()
-	set := newOutputSet(ctx, replies, in.routes())
+	set := NewSet(ctx, replies, in.routes())
 	for _, name := range []string{"A", "B"} {
-		set.start(ctx, name, idleRun)
-		<-set.outs[name].cursor // initial cursor
+		set.Start(ctx, name, idleRun)
+		<-set.Outs[name].Cursor // initial cursor
 	}
 	in.scenes <- []domain.Scene{{Output: "A", Seq: 1}, {Output: "B", Seq: 2}}
 	in.scenes <- []domain.Scene{{Output: "A", Seq: 3}}
 	in.cursor <- domain.CursorChange{} // the router took both scene sets
-	if got := <-set.outs["A"].scenes; got.Seq != 3 {
+	if got := <-set.Outs["A"].Scenes; got.Seq != 3 {
 		t.Fatalf("A scene: %+v", got)
 	}
-	if got := <-set.outs["B"].scenes; got.Seq != 2 {
+	if got := <-set.Outs["B"].Scenes; got.Seq != 2 {
 		t.Fatalf("B scene: %+v", got)
 	}
 	in.cursor <- domain.CursorChange{Shape: "text"}
 	in.cursor <- domain.CursorChange{Shape: "pointer"}
 	in.scenes <- nil // the router took both cursors
 	for _, name := range []string{"A", "B"} {
-		if got := <-set.outs[name].cursor; got.Shape != "pointer" {
+		if got := <-set.Outs[name].Cursor; got.Shape != "pointer" {
 			t.Fatalf("%s cursor: %+v", name, got)
 		}
 	}
@@ -67,15 +67,15 @@ func TestOutputRouting(t *testing.T) {
 		t.Fatal(err)
 	}
 	in.captures <- domain.CaptureRequest{ID: 7, Output: "B", Dst: domain.SHMBuffer{File: f}}
-	if got := <-set.outs["B"].captures; got.ID != 7 {
+	if got := <-set.Outs["B"].Captures; got.ID != 7 {
 		t.Fatalf("B capture: %+v", got)
 	}
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
-	a := set.outs["A"]
-	a.stop()
-	if err := set.finish("A"); err != nil {
+	a := set.Outs["A"]
+	a.Stop()
+	if err := set.Finish("A"); err != nil {
 		t.Fatal(err)
 	}
 	in.scenes <- []domain.Scene{{Output: "A", Seq: 4}}
@@ -84,11 +84,11 @@ func TestOutputRouting(t *testing.T) {
 		t.Fatalf("removed output capture: %+v", got)
 	}
 	select {
-	case sc := <-a.scenes:
+	case sc := <-a.Scenes:
 		t.Fatalf("removed output fed a scene: %+v", sc)
 	default:
 	}
-	if err := set.wait(); err != nil {
+	if err := set.Wait(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -100,9 +100,9 @@ func TestOutputStartsOffAfterOffScene(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		in := newRouteInputs()
-		set := newOutputSet(ctx, nil, in.routes())
+		set := NewSet(ctx, nil, in.routes())
 		startOff := make(chan bool, 1)
-		run := func(ctx context.Context, feed outputFeed) error {
+		run := func(ctx context.Context, feed Feed) error {
 			startOff <- feed.StartOff
 			<-ctx.Done()
 			return nil
@@ -112,21 +112,21 @@ func TestOutputStartsOffAfterOffScene(t *testing.T) {
 			name string
 			want bool
 		}{{"A", true}, {"B", false}} {
-			set.start(ctx, tc.name, run)
+			set.Start(ctx, tc.name, run)
 			if got := <-startOff; got != tc.want {
 				t.Fatalf("%s start off %v, want %v", tc.name, got, tc.want)
 			}
 		}
 		in.scenes <- []domain.Scene{{Output: "A"}}
-		set.outs["A"].stop()
-		if err := set.finish("A"); err != nil {
+		set.Outs["A"].Stop()
+		if err := set.Finish("A"); err != nil {
 			t.Fatal(err)
 		}
-		set.start(ctx, "A", run)
+		set.Start(ctx, "A", run)
 		if <-startOff {
 			t.Fatal("A starts off after a scene turned it on")
 		}
-		if err := set.wait(); err != nil {
+		if err := set.Wait(); err != nil {
 			t.Fatal(err)
 		}
 
@@ -136,14 +136,14 @@ func TestOutputStartsOffAfterOffScene(t *testing.T) {
 // A late unregister of a previous lifetime never removes its successor.
 func TestRouterUnregisterKeepsNewerLifetime(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := newOutputRouter(context.Background(), nil, outputRoutes{})
-		newer := &mailbox{instance: 2, scenes: make(chan domain.Scene, 1), cursor: make(chan domain.CursorChange, 1)}
-		r.register("A", newer)
-		r.unregister("A", 1)
+		r := NewRouter(context.Background(), nil, Routes{})
+		newer := &Mailbox{Instance: 2, Scenes: make(chan domain.Scene, 1), Cursor: make(chan domain.CursorChange, 1)}
+		r.Register("A", newer)
+		r.Unregister("A", 1)
 		if r.outs["A"] != newer {
 			t.Fatal("stale unregister removed the newer lifetime")
 		}
-		r.unregister("A", 2)
+		r.Unregister("A", 2)
 		if _, ok := r.outs["A"]; ok {
 			t.Fatal("unregister kept the lifetime")
 		}
@@ -159,11 +159,11 @@ func TestBlockedStartDoesNotDelayRouting(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		in := newRouteInputs()
-		set := newOutputSet(ctx, nil, in.routes())
-		set.start(ctx, "A", idleRun)
-		<-set.outs["A"].cursor
+		set := NewSet(ctx, nil, in.routes())
+		set.Start(ctx, "A", idleRun)
+		<-set.Outs["A"].Cursor
 		attacher := newMockcontentAttacher(t)
-		set.attach = attacher
+		set.Attach = attacher
 		release := make(chan struct{})
 		attaching := make(chan struct{})
 		ret := portsmocks.NewMockContentReturn(t)
@@ -174,12 +174,12 @@ func TestBlockedStartDoesNotDelayRouting(t *testing.T) {
 		}).Once()
 		attacher.EXPECT().DetachOutput(mock.Anything).Maybe()
 		releaseB := sync.OnceFunc(func() { close(release) })
-		wait := sync.OnceValue(set.wait)
+		wait := sync.OnceValue(set.Wait)
 		started := make(chan bool, 1)
 		startDone := make(chan struct{})
 		go func() {
 			defer close(startDone)
-			started <- set.start(ctx, "B", idleRun)
+			started <- set.Start(ctx, "B", idleRun)
 		}()
 		// A failed assertion still unblocks and joins B's start.
 		t.Cleanup(func() {
@@ -189,7 +189,7 @@ func TestBlockedStartDoesNotDelayRouting(t *testing.T) {
 			_ = wait()
 		})
 		<-attaching
-		a := set.outs["A"]
+		a := set.Outs["A"]
 		for seq := uint64(1); seq <= 3; seq++ {
 			synctest.Wait()
 			select {
@@ -199,7 +199,7 @@ func TestBlockedStartDoesNotDelayRouting(t *testing.T) {
 			}
 			synctest.Wait()
 			select {
-			case got := <-a.scenes:
+			case got := <-a.Scenes:
 				if got.Seq != seq {
 					t.Fatalf("A scene %d, want %d", got.Seq, seq)
 				}
@@ -213,7 +213,7 @@ func TestBlockedStartDoesNotDelayRouting(t *testing.T) {
 		default:
 			t.Fatal("cursor blocked behind a starting output")
 		}
-		if got := <-a.cursor; got.Shape != "text" {
+		if got := <-a.Cursor; got.Shape != "text" {
 			t.Fatalf("A cursor %+v", got)
 		}
 		releaseB()
@@ -229,20 +229,20 @@ func TestBlockedStartDoesNotDelayRouting(t *testing.T) {
 
 func TestOutputRoutingAllocations(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := newOutputRouter(context.Background(), nil, outputRoutes{})
+		r := NewRouter(context.Background(), nil, Routes{})
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		m := newMailbox(1, ctx, cancel, make(chan struct{}))
-		r.register("A", m)
-		<-m.cursor
+		m := NewMailbox(1, ctx, cancel, make(chan struct{}))
+		r.Register("A", m)
+		<-m.Cursor
 		scenes := []domain.Scene{{Output: "A"}}
 		cursor := domain.CursorChange{Shape: "pointer"}
 		capture := domain.CaptureRequest{Output: "A"}
 		if got := testing.AllocsPerRun(100, func() {
-			r.scenes(scenes)
-			r.setCursor(cursor)
-			r.routeCapture(capture)
-			<-m.captures
+			r.Scenes(scenes)
+			r.SetCursor(cursor)
+			r.RouteCapture(capture)
+			<-m.Captures
 		}); got != 0 {
 			t.Fatalf("routing: %g allocations per run, want 0", got)
 		}

@@ -1,4 +1,4 @@
-package app
+package routing
 
 import (
 	"context"
@@ -8,13 +8,13 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// routeCaptured demultiplexes capture replies from the outputs: replies whose
+// RouteCaptured demultiplexes capture replies from the outputs: replies whose
 // ID carries ports.CaptureIDInternal go to internal, all others to wayland.
 // Both sends give way to ctx. A nil internal means no internal consumer is
 // wired: internal replies are dropped (logged at debug) instead of blocking
 // forever, since nothing would ever receive them. It returns when ctx is done
 // or in is closed.
-func routeCaptured(ctx context.Context, in <-chan domain.CaptureDone, wayland, internal chan<- domain.CaptureDone) {
+func RouteCaptured(ctx context.Context, in <-chan domain.CaptureDone, wayland, internal chan<- domain.CaptureDone) {
 	log := logging.For(ctx, "app")
 	for {
 		select {

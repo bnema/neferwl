@@ -1,4 +1,4 @@
-package app
+package routing
 
 import (
 	"context"
@@ -19,11 +19,11 @@ type leaseInventoryCard interface {
 	ClientFD() (*os.File, error)
 }
 
-// leasePublisher tells wayland which connectors of each card can be leased
+// LeasePublisher tells wayland which connectors of each card can be leased
 // (wp_drm_lease_device_v1), and which leases ended. It keeps one non-master
 // client fd per advertised card and resends an inventory only when it
 // changed. The DRM backend loop owns it.
-type leasePublisher struct {
+type LeasePublisher struct {
 	ctx    context.Context
 	events chan<- ports.LeaseMessage
 	log    zerowrap.Logger
@@ -34,12 +34,12 @@ type leasePublisher struct {
 	last                  map[leaseInventoryCard][]domain.LeaseConnector
 }
 
-func newLeasePublisher(ctx context.Context, events chan<- ports.LeaseMessage, seatActive, protected func() bool, log zerowrap.Logger) *leasePublisher {
-	return &leasePublisher{ctx: ctx, events: events, seatActive: seatActive, protected: protected, log: log, clientFDs: map[leaseInventoryCard]*os.File{}, last: map[leaseInventoryCard][]domain.LeaseConnector{}}
+func NewLeasePublisher(ctx context.Context, events chan<- ports.LeaseMessage, seatActive, protected func() bool, log zerowrap.Logger) *LeasePublisher {
+	return &LeasePublisher{ctx: ctx, events: events, seatActive: seatActive, protected: protected, log: log, clientFDs: map[leaseInventoryCard]*os.File{}, last: map[leaseInventoryCard][]domain.LeaseConnector{}}
 }
 
-// send delivers msg, closing its files when ctx ends first.
-func (p *leasePublisher) send(msg ports.LeaseMessage) {
+// Send delivers msg, closing its files when ctx ends first.
+func (p *LeasePublisher) Send(msg ports.LeaseMessage) {
 	select {
 	case p.events <- msg:
 	case <-p.ctx.Done():
@@ -47,12 +47,12 @@ func (p *leasePublisher) send(msg ports.LeaseMessage) {
 	}
 }
 
-// publish reports the finished leases of c and its leasable connectors. An
+// Publish reports the finished leases of c and its leasable connectors. An
 // inactive seat or a protected session withdraws the inventory; protection
 // always tells wayland so.
-func (p *leasePublisher) publish(c leaseInventoryCard) {
+func (p *LeasePublisher) Publish(c leaseInventoryCard) {
 	for _, id := range c.FinishedLeases() {
-		p.send(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
+		p.Send(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
 	}
 	var next []domain.LeaseConnector
 	if p.seatActive() && !p.protected() {
@@ -60,7 +60,7 @@ func (p *leasePublisher) publish(c leaseInventoryCard) {
 	}
 	if len(next) == 0 {
 		if p.protected() || p.clientFDs[c] != nil {
-			p.send(ports.LeaseConnectors{Card: c.Path()})
+			p.Send(ports.LeaseConnectors{Card: c.Path()})
 		}
 		if p.clientFDs[c] != nil {
 			p.clientFDs[c].Close()
@@ -87,17 +87,17 @@ func (p *leasePublisher) publish(c leaseInventoryCard) {
 		return
 	}
 	p.last[c] = next
-	p.send(ports.LeaseConnectors{Card: c.Path(), Device: os.NewFile(uintptr(fd), c.Path()), Connectors: next})
+	p.Send(ports.LeaseConnectors{Card: c.Path(), Device: os.NewFile(uintptr(fd), c.Path()), Connectors: next})
 }
 
-// forget withdraws c for good (its card was unplugged): finished leases are
+// Forget withdraws c for good (its card was unplugged): finished leases are
 // reported, wayland is told the device has no connectors, the client fd closes.
-func (p *leasePublisher) forget(c leaseInventoryCard) {
+func (p *LeasePublisher) Forget(c leaseInventoryCard) {
 	for _, id := range c.FinishedLeases() {
-		p.send(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
+		p.Send(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
 	}
 	if p.clientFDs[c] != nil || p.protected() {
-		p.send(ports.LeaseConnectors{Card: c.Path()})
+		p.Send(ports.LeaseConnectors{Card: c.Path()})
 	}
 	if p.clientFDs[c] != nil {
 		p.clientFDs[c].Close()
@@ -106,8 +106,8 @@ func (p *leasePublisher) forget(c leaseInventoryCard) {
 	delete(p.last, c)
 }
 
-// close releases the client fds.
-func (p *leasePublisher) close() {
+// Close releases the client fds.
+func (p *LeasePublisher) Close() {
 	for _, f := range p.clientFDs {
 		f.Close()
 	}

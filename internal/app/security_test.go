@@ -7,6 +7,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/adapters/outputkit/routing"
 	"github.com/bnema/neferwl/internal/domain"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
@@ -18,13 +19,13 @@ func TestSecurityRegistrationBeforeStart(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		events := make(chan ports.SecurityBackendEvent)
-		set := newOutputSet(ctx, nil, outputRoutes{})
-		set.wireSecurity(outputChannels{securityEvents: events})
-		set.setSecurity(domain.SecurityState{Generation: 7, Protected: true})
+		set := routing.NewSet(ctx, nil, routing.Routes{})
+		set.WireSecurity(routing.Channels{SecurityEvents: events})
+		set.SetSecurity(domain.SecurityState{Generation: 7, Protected: true})
 		started := make(chan domain.OutputInstance, 1)
 		result := make(chan bool, 1)
 		go func() {
-			result <- set.start(ctx, "DP-1", func(ctx context.Context, feed outputFeed) error {
+			result <- set.Start(ctx, "DP-1", func(ctx context.Context, feed routing.Feed) error {
 				security, instance := feed.Security, feed.Instance
 				state := <-security
 				if state != (domain.SecurityState{Generation: 7, Protected: true}) {
@@ -63,7 +64,7 @@ func TestSecurityRegistrationBeforeStart(t *testing.T) {
 		default:
 			t.Fatal("owner missing startup protection")
 		}
-		if err := set.wait(); err != nil {
+		if err := set.Wait(); err != nil {
 			t.Fatal(err)
 		}
 
@@ -74,36 +75,36 @@ func TestSecurityReplacementAndStaleState(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
 		events := make(chan ports.SecurityBackendEvent, 4)
-		set := newOutputSet(ctx, nil, outputRoutes{})
-		set.wireSecurity(outputChannels{securityEvents: events})
-		run := func(ctx context.Context, feed outputFeed) error {
+		set := routing.NewSet(ctx, nil, routing.Routes{})
+		set.WireSecurity(routing.Channels{SecurityEvents: events})
+		run := func(ctx context.Context, feed routing.Feed) error {
 			<-ctx.Done()
 			return nil
 		}
-		set.start(ctx, "DP-1", run)
+		set.Start(ctx, "DP-1", run)
 		old := (<-events).(ports.SecurityOutputAdded)
-		set.outs["DP-1"].stop()
-		if err := set.finish("DP-1"); err != nil {
+		set.Outs["DP-1"].Stop()
+		if err := set.Finish("DP-1"); err != nil {
 			t.Fatal(err)
 		}
-		set.start(ctx, "DP-1", run)
+		set.Start(ctx, "DP-1", run)
 		replacement := (<-events).(ports.SecurityOutputAdded)
 		if replacement.Instance <= old.Instance {
 			t.Fatal("reused lifetime")
 		}
-		if set.stoppedCurrent(outputStopped{name: "DP-1", instance: old.Instance}) {
+		if set.StoppedCurrent(routing.Stopped{Name: "DP-1", Instance: old.Instance}) {
 			t.Fatal("old stop matches replacement")
 		}
-		set.setSecurity(domain.SecurityState{Generation: 3, Protected: true})
-		set.setSecurity(domain.SecurityState{Generation: 2})
-		if state := <-set.outs["DP-1"].security; state.Generation != 3 || !state.Protected {
+		set.SetSecurity(domain.SecurityState{Generation: 3, Protected: true})
+		set.SetSecurity(domain.SecurityState{Generation: 2})
+		if state := <-set.Outs["DP-1"].Security; state.Generation != 3 || !state.Protected {
 			t.Fatalf("stale transition: %+v", state)
 		}
-		set.setSecurity(domain.SecurityState{Generation: 4})
-		if state := <-set.outs["DP-1"].security; state.Generation != 4 || state.Protected {
+		set.SetSecurity(domain.SecurityState{Generation: 4})
+		if state := <-set.Outs["DP-1"].Security; state.Generation != 4 || state.Protected {
 			t.Fatalf("unlock not forwarded: %+v", state)
 		}
-		if err := set.wait(); err != nil {
+		if err := set.Wait(); err != nil {
 			t.Fatal(err)
 		}
 		select {
@@ -181,26 +182,26 @@ func TestSecurityRevokesAllLeasesAndRetainsFailures(t *testing.T) {
 
 func TestSecurityInstanceExhaustion(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		set := newOutputSet(context.Background(), nil, outputRoutes{})
+		set := routing.NewSet(context.Background(), nil, routing.Routes{})
 		events := make(chan ports.SecurityBackendEvent, 2)
-		set.wireSecurity(outputChannels{securityEvents: events})
-		set.nextInstance = ^domain.OutputInstance(0) - 1
-		run := func(ctx context.Context, feed outputFeed) error {
+		set.WireSecurity(routing.Channels{SecurityEvents: events})
+		set.NextInstance = ^domain.OutputInstance(0) - 1
+		run := func(ctx context.Context, feed routing.Feed) error {
 			<-ctx.Done()
 			return nil
 		}
-		if !set.start(context.Background(), "last", run) {
+		if !set.Start(context.Background(), "last", run) {
 			t.Fatal("last valid lifetime refused")
 		}
 		if added := (<-events).(ports.SecurityOutputAdded); added.Instance != ^domain.OutputInstance(0) {
 			t.Fatalf("last instance: %+v", added)
 		}
 		for range 2 {
-			if set.start(context.Background(), "overflow", run) {
+			if set.Start(context.Background(), "overflow", run) {
 				t.Fatal("exhausted counter launched owner")
 			}
 		}
-		if set.nextInstance != ^domain.OutputInstance(0) || set.startErr == nil {
+		if set.NextInstance != ^domain.OutputInstance(0) || set.StartErr == nil {
 			t.Fatal("counter wrapped or error missing")
 		}
 		select {
@@ -208,7 +209,7 @@ func TestSecurityInstanceExhaustion(t *testing.T) {
 			t.Fatalf("registered overflow: %+v", ev)
 		default:
 		}
-		if err := set.wait(); err == nil {
+		if err := set.Wait(); err == nil {
 			t.Fatal("exhaustion not returned")
 		}
 
@@ -221,19 +222,19 @@ func TestSecurityFullEventsAllowLeaseBarrier(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		set := newOutputSet(ctx, nil, outputRoutes{})
+		set := routing.NewSet(ctx, nil, routing.Routes{})
 		events := make(chan ports.SecurityBackendEvent, 1)
-		set.wireSecurity(outputChannels{securityEvents: events})
+		set.WireSecurity(routing.Channels{SecurityEvents: events})
 		var ownerEvents chan<- ports.SecurityBackendEvent
-		set.start(ctx, "DP-1", func(ctx context.Context, feed outputFeed) error {
+		set.Start(ctx, "DP-1", func(ctx context.Context, feed routing.Feed) error {
 			<-ctx.Done()
 			return nil
 		}, &ownerEvents)
 		<-events                                               // ordered registration
 		events <- ports.SecurityBackendBarrier{Generation: 99} // blocked display
-		r := set.outs["DP-1"]
-		first := ports.SecurityOutputInvalidated{Generation: 1, Instance: r.instance}
-		second := ports.SecurityOutputProof{Proof: domain.OutputProtection{Generation: 1, Instance: r.instance, Kind: domain.ProtectionProtectedFrame}}
+		r := set.Outs["DP-1"]
+		first := ports.SecurityOutputInvalidated{Generation: 1, Instance: r.Instance}
+		second := ports.SecurityOutputProof{Proof: domain.OutputProtection{Generation: 1, Instance: r.Instance, Kind: domain.ProtectionProtectedFrame}}
 		ownerEvents <- first
 		ownerEvents <- second
 		card := newMocksecurityLeaseCard(t)
@@ -242,9 +243,9 @@ func TestSecurityFullEventsAllowLeaseBarrier(t *testing.T) {
 		card.EXPECT().Revoke(uint32(9)).Return(nil).Once()
 		progressed := make(chan error, 1)
 		go func() {
-			set.setSecurity(domain.SecurityState{Generation: 1, Protected: true})
+			set.SetSecurity(domain.SecurityState{Generation: 1, Protected: true})
 			err := revokeSecurityLeases(card, func(uint32) {})
-			set.securityEvent(ports.SecurityBackendBarrier{Generation: 1, Err: err})
+			set.SecurityEvent(ports.SecurityBackendBarrier{Generation: 1, Err: err})
 			progressed <- err
 		}()
 		synctest.Wait()
@@ -273,7 +274,7 @@ func TestSecurityFullEventsAllowLeaseBarrier(t *testing.T) {
 		if len(ownerSequence) != 2 || ownerSequence[0] != first || ownerSequence[1] != second {
 			t.Fatalf("owner order lost: %+v", ownerSequence)
 		}
-		if err := set.wait(); err != nil {
+		if err := set.Wait(); err != nil {
 			t.Fatal(err)
 		}
 

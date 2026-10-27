@@ -1,9 +1,11 @@
-package app
+package routing
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -14,39 +16,39 @@ import (
 
 // statsRegistered returns a router with output A registered and its initial
 // cursor drained.
-func statsRegistered(ctx context.Context, in outputRoutes) (*outputRouter, *mailbox) {
-	r := newOutputRouter(ctx, nil, in)
+func statsRegistered(ctx context.Context, in Routes) (*Router, *Mailbox) {
+	r := NewRouter(ctx, nil, in)
 	mctx, stop := context.WithCancel(ctx)
-	m := newMailbox(1, mctx, stop, make(chan struct{}))
-	r.register("A", m)
-	<-m.cursor
+	m := NewMailbox(1, mctx, stop, make(chan struct{}))
+	r.Register("A", m)
+	<-m.Cursor
 	return r, m
 }
 
 // A scene or cursor sent before the output read the previous one counts as
 // replaced: the output is behind.
 func TestRouterStatsCountReplaced(t *testing.T) {
-	r, m := statsRegistered(t.Context(), outputRoutes{})
-	r.scenes([]domain.Scene{{Output: "A", Seq: 1}})
+	r, m := statsRegistered(t.Context(), Routes{})
+	r.Scenes([]domain.Scene{{Output: "A", Seq: 1}})
 	if r.stats.scenes != 1 || r.stats.scenesReplaced != 0 {
 		t.Fatalf("one scene: %+v", r.stats)
 	}
-	r.scenes([]domain.Scene{{Output: "A", Seq: 2}, {Output: "missing"}})
+	r.Scenes([]domain.Scene{{Output: "A", Seq: 2}, {Output: "missing"}})
 	if r.stats.scenes != 2 || r.stats.scenesReplaced != 1 {
 		t.Fatalf("two scenes unread: %+v", r.stats)
 	}
-	<-m.scenes
-	r.scenes([]domain.Scene{{Output: "A", Seq: 3}})
+	<-m.Scenes
+	r.Scenes([]domain.Scene{{Output: "A", Seq: 3}})
 	if r.stats.scenesReplaced != 1 {
 		t.Fatalf("a drained mailbox is not behind: %+v", r.stats)
 	}
 
-	r.setCursor(domain.CursorChange{Shape: "text"})
-	r.setCursor(domain.CursorChange{Shape: "pointer"})
+	r.SetCursor(domain.CursorChange{Shape: "text"})
+	r.SetCursor(domain.CursorChange{Shape: "pointer"})
 	if r.stats.cursor != 2 || r.stats.cursorReplaced != 1 {
 		t.Fatalf("cursor: %+v", r.stats)
 	}
-	if got := <-m.cursor; got.Shape != "pointer" {
+	if got := <-m.Cursor; got.Shape != "pointer" {
 		t.Fatalf("cursor %+v", got)
 	}
 }
@@ -54,16 +56,16 @@ func TestRouterStatsCountReplaced(t *testing.T) {
 // A full capture queue fails the request fast and counts it.
 func TestRouterStatsCapturesFull(t *testing.T) {
 	replies := make(chan domain.CaptureDone, 2)
-	r, m := statsRegistered(t.Context(), outputRoutes{})
+	r, m := statsRegistered(t.Context(), Routes{})
 	r.captured = replies
-	for id := range uint64(cap(m.captures)) {
-		r.routeCapture(domain.CaptureRequest{ID: id, Output: "A"})
+	for id := range uint64(cap(m.Captures)) {
+		r.RouteCapture(domain.CaptureRequest{ID: id, Output: "A"})
 	}
 	if r.stats.capturesFull != 0 {
 		t.Fatalf("queue not full yet: %+v", r.stats)
 	}
-	r.routeCapture(domain.CaptureRequest{ID: 99, Output: "A"})
-	r.routeCapture(domain.CaptureRequest{ID: 100, Output: "missing"})
+	r.RouteCapture(domain.CaptureRequest{ID: 99, Output: "A"})
+	r.RouteCapture(domain.CaptureRequest{ID: 100, Output: "missing"})
 	if r.stats.capturesFull != 1 {
 		t.Fatalf("captures full: %+v", r.stats)
 	}
@@ -74,9 +76,9 @@ func TestRouterStatsCapturesFull(t *testing.T) {
 
 // The backend loop reports its longest wait on core; shorter ones keep it.
 func TestRouterNoteEventSendKeepsMax(t *testing.T) {
-	r := newOutputRouter(t.Context(), nil, outputRoutes{})
+	r := NewRouter(t.Context(), nil, Routes{})
 	for _, d := range []time.Duration{3 * time.Millisecond, 12 * time.Millisecond, time.Millisecond} {
-		r.noteEventSend(d)
+		r.NoteEventSend(d)
 	}
 	if got := time.Duration(r.eventWait.Load()); got != 12*time.Millisecond {
 		t.Fatalf("max wait %v, want 12ms", got)
@@ -91,13 +93,13 @@ func TestRouterLogsStatsEvery10s(t *testing.T) {
 		log := zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &out})
 		ctx, cancel := context.WithCancel(zerowrap.WithCtx(context.Background(), log))
 		in := newRouteInputs()
-		r := newOutputRouter(ctx, nil, in.routes())
-		go r.run(ctx)
-		m := newMailbox(1, ctx, func() {}, make(chan struct{}))
-		if _, ok := r.add("A", m); !ok {
+		r := NewRouter(ctx, nil, in.routes())
+		go r.Run(ctx)
+		m := NewMailbox(1, ctx, func() {}, make(chan struct{}))
+		if _, ok := r.Add("A", m); !ok {
 			t.Fatal("router stopped")
 		}
-		<-m.cursor
+		<-m.Cursor
 
 		time.Sleep(routerStatsEvery)
 		synctest.Wait()
@@ -110,7 +112,7 @@ func TestRouterLogsStatsEvery10s(t *testing.T) {
 		in.cursor <- domain.CursorChange{Shape: "text"}
 		in.cursor <- domain.CursorChange{Shape: "pointer"}
 		in.scenes <- nil // the router took both cursors
-		r.noteEventSend(1500 * time.Microsecond)
+		r.NoteEventSend(1500 * time.Microsecond)
 		time.Sleep(routerStatsEvery)
 		synctest.Wait()
 
@@ -138,3 +140,16 @@ func TestRouterLogsStatsEvery10s(t *testing.T) {
 		<-r.done
 	})
 }
+
+// lockedBuffer permits the router goroutine to log while its test reads.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+func (b *lockedBuffer) String() string { b.mu.Lock(); defer b.mu.Unlock(); return b.buf.String() }

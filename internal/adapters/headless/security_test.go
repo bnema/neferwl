@@ -82,7 +82,7 @@ func TestSecurityInitialBlackFenceBeforeLockerAndNoReadback(t *testing.T) {
 	done := make(chan error, 1)
 	dir := t.TempDir()
 	go func() {
-		done <- Run(ctx, Options{Security: gate, Instance: 9, SecurityEvents: proof, Width: 2, Height: 2, Name: "H", ScreenshotDir: dir, Cursor: &Cursor{}, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, requests)
+		done <- RunOutput(ctx, Options{Security: gate, Instance: 9, SecurityEvents: proof, Width: 2, Height: 2, Name: "H", ScreenshotDir: dir, Cursor: &Cursor{}, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, requests)
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -155,7 +155,7 @@ func TestSecurityChangesWakeIdleAndRejectQueuedDesktop(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() {
-			done <- Run(ctx, Options{Security: gate, SecurityChanges: changes, Instance: 3, SecurityEvents: proofs, Presented: sink, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
+			done <- RunOutput(ctx, Options{Security: gate, SecurityChanges: changes, Instance: 3, SecurityEvents: proofs, Presented: sink, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
 		}()
 		t.Cleanup(func() {
 			cancel()
@@ -198,7 +198,7 @@ func TestSecurityDedicatedChangeWakesWithoutScene(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() {
-			done <- Run(ctx, Options{Security: gate, SecurityChanges: changes, Instance: 5, SecurityEvents: proof, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, nil)
+			done <- RunOutput(ctx, Options{Security: gate, SecurityChanges: changes, Instance: 5, SecurityEvents: proof, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, nil)
 		}()
 		locked := domain.SecurityState{Generation: 2, Protected: true}
 		state.Store(locked)
@@ -298,7 +298,7 @@ func TestSecurityRawHDRSuppressed(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				done := make(chan error, 1)
 				go func() {
-					done <- Run(ctx, Options{Security: gate, Width: 2, Height: 2, HDR: true, RawHDR: true, ScreenshotDir: dir, Name: "H", Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
+					done <- RunOutput(ctx, Options{Security: gate, Width: 2, Height: 2, HDR: true, RawHDR: true, ScreenshotDir: dir, Name: "H", Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
 				}()
 				// The black protection frame follows the frame under test (or is
 				// the only one): the raw block is over once it is rendered.
@@ -347,7 +347,7 @@ func TestSecurityQueuedCaptureFailedOnceAndProofCancellation(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() {
-			done <- Run(ctx, Options{Security: gate, SecurityChanges: changes, SecurityEvents: proofs, Instance: 4, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, incoming)
+			done <- RunOutput(ctx, Options{Security: gate, SecurityChanges: changes, SecurityEvents: proofs, Instance: 4, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, incoming)
 		}()
 		file, err := os.CreateTemp(t.TempDir(), "queued")
 		if err != nil {
@@ -397,7 +397,7 @@ func TestSecurityOffOutputProofDoesNotRender(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() {
-			done <- Run(ctx, Options{Security: gate, SecurityChanges: changes, SecurityEvents: proofs, Instance: 12, Presented: sink, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
+			done <- RunOutput(ctx, Options{Security: gate, SecurityChanges: changes, SecurityEvents: proofs, Instance: 12, Presented: sink, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
 		}()
 		securityReceive(t, presented) // Off has actually been applied by the owner.
 		locked := domain.SecurityState{Generation: 4, Protected: true}
@@ -457,7 +457,7 @@ func TestSecurityCompletionLeaseRecycledBeforeProtectionRenderFailure(t *testing
 		defer cancel()
 		done := make(chan error, 1)
 		go func() {
-			done <- Run(ctx, Options{Security: gate, Width: 2, Height: 2, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, incoming)
+			done <- RunOutput(ctx, Options{Security: gate, Width: 2, Height: 2, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, incoming)
 		}()
 		file, err := os.CreateTemp(t.TempDir(), "capture")
 		if err != nil {
@@ -510,7 +510,7 @@ func TestSecuritySkippedPNGHasNoFrameIndex(t *testing.T) {
 		defer cancel()
 		done := make(chan error, 1)
 		go func() {
-			done <- Run(ctx, Options{Security: gate, Width: 2, Height: 2, ScreenshotDir: dir, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
+			done <- RunOutput(ctx, Options{Security: gate, Width: 2, Height: 2, ScreenshotDir: dir, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
 		}()
 		securityReceive(t, black)
 		cancel()

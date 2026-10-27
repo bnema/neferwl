@@ -119,16 +119,6 @@ packages:
           dir: internal/app
           pkgname: app
           filename: seatdisable_mock_test.go
-      leaseInventoryCard:
-        config:
-          dir: internal/app
-          pkgname: app
-          filename: leaseinventory_mock_test.go
-      contentAttacher:
-        config:
-          dir: internal/app
-          pkgname: app
-          filename: contentattacher_mock_test.go
   github.com/bnema/neferwl/internal/adapters/statefile:
     interfaces:
       procTree:
@@ -257,3 +247,17 @@ packages:
           dir: internal/adapters/outputkit/cursors
           pkgname: cursors
           filename: cursor_mock_test.go
+
+  github.com/bnema/neferwl/internal/adapters/outputkit/routing:
+    interfaces:
+      leaseInventoryCard:
+        config:
+          dir: internal/adapters/outputkit/routing
+          pkgname: routing
+          filename: leaseinventory_mock_test.go
+      ContentAttacher:
+        config:
+          structname: mockcontentAttacher
+          dir: internal/adapters/outputkit/routing
+          pkgname: routing
+          filename: contentattacher_mock_test.go

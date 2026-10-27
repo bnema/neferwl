@@ -59,7 +59,7 @@ func TestExcludeFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 			defer cancel()
 			done := make(chan error, 1)
 			go func() {
-				done <- Run(ctx, Options{Security: gate, SecurityChanges: changes, SecurityEvents: proofs, Instance: 7, Width: 2, Height: 2, Presented: sink, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, incoming)
+				done <- RunOutput(ctx, Options{Security: gate, SecurityChanges: changes, SecurityEvents: proofs, Instance: 7, Width: 2, Height: 2, Presented: sink, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, incoming)
 			}()
 			dst := sessionCaptureFile(t)
 			incoming <- domain.CaptureRequest{ID: 99, Exclude: true, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: dst}

@@ -1,4 +1,4 @@
-package app
+package routing
 
 import (
 	"context"
@@ -17,12 +17,12 @@ func testOutputSetCursor(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cursors := make(chan domain.CursorChange)
-	set := newOutputSet(context.Background(), nil, outputRoutes{cursor: cursors})
+	set := NewSet(context.Background(), nil, Routes{Cursor: cursors})
 	got := map[string]chan domain.CursorChange{}
-	run := func(name string) outputRun {
+	run := func(name string) Run {
 		got[name] = make(chan domain.CursorChange, 8)
 		out := got[name]
-		return func(ctx context.Context, feed outputFeed) error {
+		return func(ctx context.Context, feed Feed) error {
 			cursor := feed.Cursor
 			for {
 				select {
@@ -46,16 +46,16 @@ func testOutputSetCursor(t *testing.T) {
 			t.Fatalf("%s: no cursor", name)
 		}
 	}
-	set.start(ctx, "A", run("A"))
+	set.Start(ctx, "A", run("A"))
 	expect("A", domain.CursorChange{})
 	cursors <- domain.CursorChange{Shape: "text"}
 	expect("A", domain.CursorChange{Shape: "text"})
-	set.start(ctx, "B", run("B"))
+	set.Start(ctx, "B", run("B"))
 	expect("B", domain.CursorChange{Shape: "text"})
 	cursors <- domain.CursorChange{Hidden: true}
 	expect("A", domain.CursorChange{Hidden: true})
 	expect("B", domain.CursorChange{Hidden: true})
-	if err := set.wait(); err != nil {
+	if err := set.Wait(); err != nil {
 		t.Fatal(err)
 	}
 }

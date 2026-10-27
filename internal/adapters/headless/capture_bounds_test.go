@@ -31,7 +31,7 @@ func TestScreenshotReadbackFailureDoesNotWriteBlackPNG(t *testing.T) {
 		r.EXPECT().Close().Return().Once()
 		done := make(chan error, 1)
 		go func() {
-			done <- Run(ctx, Options{Width: 2, Height: 2, ScreenshotDir: dir, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
+			done <- RunOutput(ctx, Options{Width: 2, Height: 2, ScreenshotDir: dir, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
 		}()
 		select {
 		case <-attempted:
@@ -70,7 +70,7 @@ func TestCaptureBatchBoundedAndRecycledWhileIdle(t *testing.T) {
 		replies := make(chan domain.CaptureDone, capture.MaxRequests+1)
 		done := make(chan error, 1)
 		go func() {
-			done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }, Captured: replies}, scenes, nil, nil, nil, incoming)
+			done <- RunOutput(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }, Captured: replies}, scenes, nil, nil, nil, incoming)
 		}()
 		for i := range capture.MaxRequests + 1 {
 			f, err := os.CreateTemp(t.TempDir(), "capture")

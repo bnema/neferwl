@@ -1,4 +1,4 @@
-package app
+package routing
 
 import (
 	"context"
@@ -18,7 +18,7 @@ func TestCapturedDemux(t *testing.T) {
 		wl := make(chan domain.CaptureDone, 4)
 		internal := make(chan domain.CaptureDone, 4)
 		exited := make(chan struct{})
-		go func() { routeCaptured(ctx, in, wl, internal); close(exited) }()
+		go func() { RouteCaptured(ctx, in, wl, internal); close(exited) }()
 
 		in <- domain.CaptureDone{ID: 7}
 		in <- domain.CaptureDone{ID: ports.CaptureIDInternal | 3}
@@ -44,7 +44,7 @@ func TestCapturedDemuxCancelWhileBlocked(t *testing.T) {
 		in := make(chan domain.CaptureDone, 1)
 		wl := make(chan domain.CaptureDone) // never read
 		exited := make(chan struct{})
-		go func() { routeCaptured(ctx, in, wl, nil); close(exited) }()
+		go func() { RouteCaptured(ctx, in, wl, nil); close(exited) }()
 		in <- domain.CaptureDone{ID: 1}
 		cancel()
 		synctest.Wait()
@@ -63,7 +63,7 @@ func TestCapturedDemuxDropsInternalWithoutConsumer(t *testing.T) {
 		defer cancel()
 		in := make(chan domain.CaptureDone, 2)
 		wl := make(chan domain.CaptureDone, 2)
-		go routeCaptured(ctx, in, wl, nil)
+		go RouteCaptured(ctx, in, wl, nil)
 		in <- domain.CaptureDone{ID: ports.CaptureIDInternal | 1}
 		in <- domain.CaptureDone{ID: 2}
 		require.Equal(t, uint64(2), recvDone(t, wl).ID)

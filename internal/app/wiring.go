@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/bnema/neferwl/internal/adapters/outputkit/routing"
 	"github.com/bnema/neferwl/internal/adapters/wayland"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/core"
@@ -193,26 +194,26 @@ func (p *pipes) wayland() wayland.Channels {
 }
 
 // outputs is the outputs' side (DRM or headless).
-func (p *pipes) outputs(security ports.SessionSecurity, presented ports.PresentationSink, content contentAttacher) outputChannels {
-	return outputChannels{
-		security:        security,
-		securityChanges: p.securityChanges,
-		securityEvents:  p.securityEvents,
-		events:          p.output,
-		scenes:          p.renderScenes,
-		cursorChanges:   p.cursorChanges,
-		presented:       presented,
-		content:         content,
-		frames:          p.frames,
-		captures:        p.captures,
-		captured:        p.capturedAll,
-		formats:         p.outputFormats,
-		heads:           p.outputHeads,
-		leaseRequests:   p.leaseRequests,
-		leaseEvents:     p.leaseEvents,
-		reloads:         p.filtered,
-		configured:      p.configured,
-		requests:        p.applyOutput,
-		replies:         p.appliedOutput,
+func (p *pipes) outputs(security ports.SessionSecurity, presented ports.PresentationSink, content routing.ContentAttacher) routing.Channels {
+	return routing.Channels{
+		Security:        security,
+		SecurityChanges: p.securityChanges,
+		SecurityEvents:  p.securityEvents,
+		Events:          p.output,
+		Scenes:          p.renderScenes,
+		CursorChanges:   p.cursorChanges,
+		Presented:       presented,
+		Content:         content,
+		Frames:          p.frames,
+		Captures:        p.captures,
+		Captured:        p.capturedAll,
+		Formats:         p.outputFormats,
+		Heads:           p.outputHeads,
+		LeaseRequests:   p.leaseRequests,
+		LeaseEvents:     p.leaseEvents,
+		Reloads:         p.filtered,
+		Configured:      p.configured,
+		Requests:        p.applyOutput,
+		Replies:         p.appliedOutput,
 	}
 }

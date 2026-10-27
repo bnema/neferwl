@@ -81,7 +81,7 @@ func TestRun(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() {
-			done <- Run(ctx, Options{Width: 2, Height: 2, ScreenshotDir: dir, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
+			done <- RunOutput(ctx, Options{Width: 2, Height: 2, ScreenshotDir: dir, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
 		}()
 		waitFrames(t, f, 1)
 		if s, c := f.snapshot(); len(s) != 1 || s[0].Seq != 2 || len(c[0]) != 2 {
@@ -153,7 +153,7 @@ func TestHeadlessSameSeqRendersOnce(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() {
-			done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
+			done <- RunOutput(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
 		}()
 		scene := domain.Scene{Seq: 5, OutputWidth: 2, OutputHeight: 2, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 2, H: 2}}}}
 		scenes <- scene
@@ -188,7 +188,7 @@ func TestRunSkipsContentNotShown(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() {
-			done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
+			done <- RunOutput(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
 		}()
 		waitFrames(t, f, 1)
 		contents.send(domain.SurfaceContent{ID: 2, SHM: &domain.SHMBuffer{Pool: 2}})
@@ -213,11 +213,11 @@ func TestErrors(t *testing.T) {
 	expected := errors.New("failure")
 	scenes := make(chan domain.Scene, 1)
 	scenes <- domain.Scene{}
-	if err := Run(context.Background(), Options{NewRenderer: func(int, int) (ports.Renderer, error) { return nil, expected }}, scenes, nil, nil, nil, nil); !errors.Is(err, expected) {
+	if err := RunOutput(context.Background(), Options{NewRenderer: func(int, int) (ports.Renderer, error) { return nil, expected }}, scenes, nil, nil, nil, nil); !errors.Is(err, expected) {
 		t.Fatal(err)
 	}
 	r, _ := recordingRenderer(t, expected)
-	if err := Run(context.Background(), Options{NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil); !errors.Is(err, expected) {
+	if err := RunOutput(context.Background(), Options{NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil); !errors.Is(err, expected) {
 		t.Fatal(err)
 	}
 }
@@ -249,7 +249,7 @@ func TestRunTrimsRendererOnTick(t *testing.T) {
 		var statsLog bytes.Buffer // written by Run's goroutine, read after it ends
 		log := zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &statsLog})
 		go func() {
-			done <- Run(context.Background(), Options{Width: 2, Height: 2, Clock: clk, Log: log, Name: "HEADLESS-1", NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, nil)
+			done <- RunOutput(context.Background(), Options{Width: 2, Height: 2, Clock: clk, Log: log, Name: "HEADLESS-1", NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, nil)
 		}()
 		ticks <- now
 		if got := <-trimmed; !got.Equal(now) {
@@ -481,7 +481,7 @@ func TestRunPassesLayerContent(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() {
-			done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
+			done <- RunOutput(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
 		}()
 		waitFrames(t, f, 1)
 		if s, c := f.snapshot(); len(s[0].Layers) != 1 || c[0][42].SHM == nil {
@@ -509,7 +509,7 @@ func TestCaptureForcesFreshHeadlessFrame(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() {
-			done <- Run(ctx, Options{Width: 2, Height: 2, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, requests)
+			done <- RunOutput(ctx, Options{Width: 2, Height: 2, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, requests)
 		}()
 		scenes <- domain.Scene{Background: "#000000"}
 		waitFrames(t, frames, 1)
@@ -572,7 +572,7 @@ func TestHeadlessRawHDRScreenshot(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() {
-			done <- Run(ctx, Options{Width: 2, Height: 2, HDR: true, RawHDR: true, ScreenshotDir: dir, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
+			done <- RunOutput(ctx, Options{Width: 2, Height: 2, HDR: true, RawHDR: true, ScreenshotDir: dir, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
 		}()
 		select {
 		case <-rendered:
@@ -643,7 +643,7 @@ func TestHeadlessHDRFormatsConfirmed(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				done := make(chan error, 1)
 				go func() {
-					done <- Run(ctx, Options{Width: 2, Height: 2, HDR: true, Name: "HEADLESS-1", Formats: formats, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, nil)
+					done <- RunOutput(ctx, Options{Width: 2, Height: 2, HDR: true, Name: "HEADLESS-1", Formats: formats, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, nil)
 				}()
 				select {
 				case f := <-formats:
@@ -677,7 +677,7 @@ func TestRunAppliesWholeBatch(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() {
-			done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
+			done <- RunOutput(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
 		}()
 		waitFrames(t, f, 1)
 		contents.send(domain.SurfaceContent{ID: 1, Seq: 1, SHM: &domain.SHMBuffer{Pool: 1}}, domain.SurfaceContent{ID: 2, Seq: 1, SHM: &domain.SHMBuffer{Pool: 2}})
@@ -713,7 +713,7 @@ func TestRunFinalizesLastFrameDuration(t *testing.T) {
 		defer cancel()
 		done := make(chan error, 1)
 		go func() {
-			done <- Run(ctx, Options{Width: 2, Height: 2, ScreenshotDir: dir, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
+			done <- RunOutput(ctx, Options{Width: 2, Height: 2, ScreenshotDir: dir, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
 		}()
 		synctest.Wait()
 		initial, err := os.ReadFile(filepath.Join(dir, "frames.ffconcat"))

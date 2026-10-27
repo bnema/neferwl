@@ -7,6 +7,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/outputkit/routing"
 	"github.com/bnema/neferwl/internal/adapters/wayland/sessionlock"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
@@ -48,15 +49,15 @@ func TestSecurityHotplugLifetimeAndProofOrdering(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		events := make(chan ports.SecurityBackendEvent, 8)
-		set := newOutputSet(ctx, nil, outputRoutes{})
-		set.wireSecurity(outputChannels{securityEvents: events})
+		set := routing.NewSet(ctx, nil, routing.Routes{})
+		set.WireSecurity(routing.Channels{SecurityEvents: events})
 		defer func() {
-			if err := set.wait(); err != nil {
+			if err := set.Wait(); err != nil {
 				t.Error(err)
 			}
 		}()
 		const generation = domain.LockGeneration(41)
-		set.setSecurity(domain.SecurityState{Generation: generation, Protected: true})
+		set.SetSecurity(domain.SecurityState{Generation: generation, Protected: true})
 		var ledger sessionlock.Readiness
 		if !ledger.Begin(generation) || !ledger.BackendBarrier(generation) || !ledger.CaptureBarrier(generation) {
 			t.Fatal("could not begin display readiness round")
@@ -69,7 +70,7 @@ func TestSecurityHotplugLifetimeAndProofOrdering(t *testing.T) {
 			commands := make(chan []ports.SecurityBackendEvent, 1)
 			closed := make(chan bool, 1)
 			var ownerEvents chan<- ports.SecurityBackendEvent
-			if !set.start(ctx, "DP-1", func(octx context.Context, feed outputFeed) error {
+			if !set.Start(ctx, "DP-1", func(octx context.Context, feed routing.Feed) error {
 				security, instance := feed.Security, feed.Instance
 				defer func() { closed <- closeSuccess }()
 				state := <-security
@@ -126,16 +127,16 @@ func TestSecurityHotplugLifetimeAndProofOrdering(t *testing.T) {
 		if got := hotplugEvent(t, events); got != oldProof || !hotplugApply(&ledger, got) || !ledger.Ready() {
 			t.Fatal("fresh resume proof did not restore readiness")
 		}
-		set.outs["DP-1"].stop()
+		set.Outs["DP-1"].Stop()
 		select {
-		case stopped := <-set.stopped:
-			if stopped.instance != old || !set.stoppedCurrent(stopped) {
+		case stopped := <-set.Stopped:
+			if stopped.Instance != old || !set.StoppedCurrent(stopped) {
 				t.Fatalf("wrong stopped lifetime: %+v", stopped)
 			}
 		case <-ctx.Done():
 			t.Fatal("owner did not stop")
 		}
-		if err := set.finish("DP-1"); err != nil {
+		if err := set.Finish("DP-1"); err != nil {
 			t.Fatal(err)
 		}
 		if !<-closed {
@@ -146,7 +147,7 @@ func TestSecurityHotplugLifetimeAndProofOrdering(t *testing.T) {
 			t.Fatalf("owner exit forged removal: %+v", got)
 		default:
 		}
-		if !set.securityEvent(ports.SecurityOutputRemoved{Instance: old}) {
+		if !set.SecurityEvent(ports.SecurityOutputRemoved{Instance: old}) {
 			t.Fatal("confirmed removal refused")
 		}
 		removal := hotplugEvent(t, events)
@@ -154,7 +155,7 @@ func TestSecurityHotplugLifetimeAndProofOrdering(t *testing.T) {
 			t.Fatalf("wrong removal: %+v", removal)
 		}
 		replacement, _, replacementClosed := start(false)
-		if replacement <= old || set.stoppedCurrent(outputStopped{name: "DP-1", instance: old}) {
+		if replacement <= old || set.StoppedCurrent(routing.Stopped{Name: "DP-1", Instance: old}) {
 			t.Fatal("same-name replacement reused retired lifetime")
 		}
 		if hotplugApply(&ledger, oldProof) || hotplugApply(&ledger, invalid) {
@@ -167,13 +168,13 @@ func TestSecurityHotplugLifetimeAndProofOrdering(t *testing.T) {
 		if !ledger.Invalidate(generation, replacement) || ledger.Ready() {
 			t.Fatal("replacement invalidation ineffective")
 		}
-		set.outs["DP-1"].stop()
+		set.Outs["DP-1"].Stop()
 		select {
-		case <-set.stopped:
+		case <-set.Stopped:
 		case <-ctx.Done():
 			t.Fatal("replacement stop blocked")
 		}
-		if err := set.finish("DP-1"); err != nil {
+		if err := set.Finish("DP-1"); err != nil {
 			t.Fatal(err)
 		}
 		if <-replacementClosed {
@@ -200,10 +201,10 @@ func securityOwnerFIFOSaturationDrainsOnNormalStop(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	events := make(chan ports.SecurityBackendEvent) // block display after registration
-	set := newOutputSet(ctx, nil, outputRoutes{})
-	set.wireSecurity(outputChannels{securityEvents: events})
+	set := routing.NewSet(ctx, nil, routing.Routes{})
+	set.WireSecurity(routing.Channels{SecurityEvents: events})
 	defer func() {
-		if err := set.wait(); err != nil {
+		if err := set.Wait(); err != nil {
 			t.Error(err)
 		}
 	}()
@@ -212,7 +213,7 @@ func securityOwnerFIFOSaturationDrainsOnNormalStop(t *testing.T) {
 	startDone := make(chan bool, 1)
 	var ownerEvents chan<- ports.SecurityBackendEvent
 	go func() {
-		startDone <- set.start(ctx, "DP-1", func(octx context.Context, feed outputFeed) error {
+		startDone <- set.Start(ctx, "DP-1", func(octx context.Context, feed routing.Feed) error {
 			instance := feed.Instance
 			for i := range 40 {
 				var event ports.SecurityBackendEvent = ports.SecurityOutputInvalidated{Generation: generation, Instance: instance}
@@ -233,7 +234,7 @@ func securityOwnerFIFOSaturationDrainsOnNormalStop(t *testing.T) {
 	if !<-startDone {
 		t.Fatal("start failed")
 	}
-	if cap(set.outs["DP-1"].securityEvents) != 16 {
+	if cap(set.Outs["DP-1"].SecurityEvents) != 16 {
 		t.Fatal("owner evidence FIFO is not bounded to 16")
 	}
 	// Forwarder holds one event plus its 16-slot input. The eighteenth send
@@ -270,14 +271,14 @@ func securityOwnerFIFOSaturationDrainsOnNormalStop(t *testing.T) {
 		}
 	}
 	select {
-	case stopped := <-set.stopped:
-		if !set.stoppedCurrent(stopped) {
+	case stopped := <-set.Stopped:
+		if !set.StoppedCurrent(stopped) {
 			t.Fatal("stop not current")
 		}
 	case <-ctx.Done():
 		t.Fatal("normal owner stop blocked")
 	}
-	if err := set.finish("DP-1"); err != nil {
+	if err := set.Finish("DP-1"); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -294,17 +295,17 @@ func TestSecurityOwnerBufferedEvidenceDrainsAfterFinish(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		events := make(chan ports.SecurityBackendEvent)
-		set := newOutputSet(ctx, nil, outputRoutes{})
-		set.wireSecurity(outputChannels{securityEvents: events})
+		set := routing.NewSet(ctx, nil, routing.Routes{})
+		set.WireSecurity(routing.Channels{SecurityEvents: events})
 		defer func() {
-			if err := set.wait(); err != nil {
+			if err := set.Wait(); err != nil {
 				t.Error(err)
 			}
 		}()
 		startDone := make(chan bool, 1)
 		var ownerEvents chan<- ports.SecurityBackendEvent
 		go func() {
-			startDone <- set.start(ctx, "DP-1", func(octx context.Context, feed outputFeed) error {
+			startDone <- set.Start(ctx, "DP-1", func(octx context.Context, feed routing.Feed) error {
 				instance := feed.Instance
 				for i := range 16 {
 					event := ports.SecurityOutputInvalidated{Generation: domain.LockGeneration(i + 1), Instance: instance}
@@ -322,14 +323,14 @@ func TestSecurityOwnerBufferedEvidenceDrainsAfterFinish(t *testing.T) {
 			t.Fatal("start refused")
 		}
 		select {
-		case stopped := <-set.stopped:
-			if stopped.instance != registered.Instance {
+		case stopped := <-set.Stopped:
+			if stopped.Instance != registered.Instance {
 				t.Fatal("wrong stopped lifetime")
 			}
 		case <-ctx.Done():
 			t.Fatal("buffered owner did not finish")
 		}
-		if err := set.finish("DP-1"); err != nil {
+		if err := set.Finish("DP-1"); err != nil {
 			t.Fatal(err)
 		}
 		for i := range 16 {
@@ -356,14 +357,14 @@ func securityOwnerFIFOSaturationCancelReleasesOwnerAndForwarders(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	events := make(chan ports.SecurityBackendEvent)
-	set := newOutputSet(ctx, nil, outputRoutes{})
-	set.wireSecurity(outputChannels{securityEvents: events})
+	set := routing.NewSet(ctx, nil, routing.Routes{})
+	set.WireSecurity(routing.Channels{SecurityEvents: events})
 	accepted := make(chan int, 40)
 	ownerDone := make(chan struct{})
 	startDone := make(chan bool, 1)
 	var ownerEvents chan<- ports.SecurityBackendEvent
 	go func() {
-		startDone <- set.start(ctx, "DP-1", func(octx context.Context, feed outputFeed) error {
+		startDone <- set.Start(ctx, "DP-1", func(octx context.Context, feed routing.Feed) error {
 			instance := feed.Instance
 			defer close(ownerDone)
 			for i := range 40 {
@@ -395,7 +396,7 @@ func securityOwnerFIFOSaturationCancelReleasesOwnerAndForwarders(t *testing.T) {
 	default:
 	}
 	waitDone := make(chan error, 1)
-	go func() { waitDone <- set.wait() }()
+	go func() { waitDone <- set.Wait() }()
 	select {
 	case err := <-waitDone:
 		if err != nil {
@@ -409,7 +410,7 @@ func securityOwnerFIFOSaturationCancelReleasesOwnerAndForwarders(t *testing.T) {
 	default:
 		t.Fatal("wait returned before producer exited")
 	}
-	if len(set.outs) != 0 {
+	if len(set.Outs) != 0 {
 		t.Fatal("stopped lifetime retained in running set")
 	}
 	// wait includes forwarders.Wait: termination is directly synchronized,

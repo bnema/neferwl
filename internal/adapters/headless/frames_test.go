@@ -22,7 +22,7 @@ func runWithFrames(t *testing.T, size int) (scenes chan domain.Scene, frames cha
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, Name: "HEADLESS-1", Presented: sink, Frames: frames,
+		done <- RunOutput(ctx, Options{Width: 2, Height: 2, Name: "HEADLESS-1", Presented: sink, Frames: frames,
 			NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
 	}()
 	return scenes, frames, rec, func() {

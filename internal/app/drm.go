@@ -20,6 +20,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/drm"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/cursors"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/routing"
 	"github.com/bnema/neferwl/internal/adapters/sched"
 	"github.com/bnema/neferwl/internal/adapters/seat"
 	"github.com/bnema/neferwl/internal/adapters/watchdog"
@@ -89,27 +90,27 @@ func revokeSecurityLeases(c securityLeaseCard, finished func(uint32)) error {
 // registerDiscardedOutput accounts for physical output lifetimes that cannot
 // enter connector-name routing. They still require protection just like owners.
 // The same backend-owned counter is used by outputSet.start; no instance reuse.
-func registerDiscardedOutput(set *outputSet, name string) (domain.OutputInstance, error) {
-	if set.nextInstance == ^domain.OutputInstance(0) {
-		set.startErr = errors.New("output instance exhausted")
-		return 0, set.startErr
+func registerDiscardedOutput(set *routing.Set, name string) (domain.OutputInstance, error) {
+	if set.NextInstance == ^domain.OutputInstance(0) {
+		set.StartErr = errors.New("output instance exhausted")
+		return 0, set.StartErr
 	}
-	set.nextInstance++
-	instance := set.nextInstance
-	if !set.securityEvent(ports.SecurityOutputAdded{Instance: instance, Output: name}) {
-		return instance, set.ctx.Err()
+	set.NextInstance++
+	instance := set.NextInstance
+	if !set.SecurityEvent(ports.SecurityOutputAdded{Instance: instance, Output: name}) {
+		return instance, set.Ctx.Err()
 	}
 	return instance, nil
 }
 
 // retireDiscardedOutput consumes only affirmative terminal evidence. A failed
 // close remains in authoritative inventory, even though it has no render owner.
-func retireDiscardedOutput(set *outputSet, instance domain.OutputInstance, inactive bool) error {
+func retireDiscardedOutput(set *routing.Set, instance domain.OutputInstance, inactive bool) error {
 	if !inactive {
 		return fmt.Errorf("discarded output %d shutdown inactivity unconfirmed", instance)
 	}
-	if !set.securityEvent(ports.SecurityOutputRemoved{Instance: instance}) {
-		return set.ctx.Err()
+	if !set.SecurityEvent(ports.SecurityOutputRemoved{Instance: instance}) {
+		return set.Ctx.Err()
 	}
 	return nil
 }
@@ -413,7 +414,7 @@ func (b *drmBackend) close() {
 // output configuration: reloads and protocol requests go through apply, and
 // each configuration is finished when its outputs are ready, fail or time
 // out. It returns when ctx ends, after every output is closed.
-func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) drm.Want, initial domain.Config, apply *core.OutputApply, ch outputChannels, curs *cursors.Router, log zerowrap.Logger) error {
+func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) drm.Want, initial domain.Config, apply *core.OutputApply, ch routing.Channels, curs *cursors.Router, log zerowrap.Logger) error {
 	ctx, cancel := context.WithCancel(ctx)
 	var readers sync.WaitGroup
 	// A reader that fails sends at most once; cards come and go, so the
@@ -435,21 +436,21 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 		})
 	}
 	for _, c := range b.cards {
-		c.SetFormats(ch.formats)
+		c.SetFormats(ch.Formats)
 		startReader(c)
 	}
 	defer func() { cancel(); readers.Wait() }()
 	active := b.seat.Subscribe()
 	defer b.seat.Unsubscribe(active)
 	seatActive := true // openDRM waits for the first seat enable
-	set := newOutputSet(ctx, ch.captured, ch.routes())
-	set.attach = ch.content
-	set.wireSecurity(ch)
+	set := routing.NewSet(ctx, ch.Captured, ch.Routes())
+	set.Attach = ch.Content
+	set.WireSecurity(ch)
 	limiter := core.ReopenLimiter{Clock: b.clock}
 	recovering := false
-	protected := func() bool { return set.state.Protected || securitySnapshot(ch.security).Protected }
-	leases := newLeasePublisher(ctx, ch.leaseEvents, func() bool { return seatActive }, protected, log)
-	defer leases.close()
+	protected := func() bool { return set.State.Protected || securitySnapshot(ch.Security).Protected }
+	leases := routing.NewLeasePublisher(ctx, ch.LeaseEvents, func() bool { return seatActive }, protected, log)
+	defer leases.Close()
 	hotplug := make(chan domain.HotplugEvent, 8)
 	go func() {
 		if err := safe("hotplug", func() error { return drm.WatchHotplug(ctx, hotplug) }); err != nil {
@@ -463,10 +464,10 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 		// tells whether core holds up the backend loop.
 		start := time.Now()
 		select {
-		case ch.events <- ev:
+		case ch.Events <- ev:
 		case <-ctx.Done():
 		}
-		set.router.noteEventSend(time.Since(start))
+		set.Router.NoteEventSend(time.Since(start))
 	}
 	// stopping holds outputs asked to stop: true when they restart with a
 	// new mode (core keeps the screen), false when they are gone.
@@ -496,24 +497,24 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 	var revokeAttempts int
 	var discardedOutputErr error // first unconfirmed lifetime; inventory retains every instance
 	barrier := func() {
-		if !set.state.Protected {
+		if !set.State.Protected {
 			return
 		}
 		var errs []error
 		for _, c := range b.cards {
 			errs = append(errs, revokeSecurityLeases(c, func(id uint32) {
-				leases.send(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
+				leases.Send(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
 			}))
-			leases.publish(c)
+			leases.Publish(c)
 		}
 		errs = append(errs, discardedOutputErr)
 		err := errors.Join(errs...)
 		// Registration runs synchronously in scan before any barrier. A gate
 		// transition racing native revocation belongs to a later round.
-		if securitySnapshot(ch.security).Generation > set.state.Generation {
+		if securitySnapshot(ch.Security).Generation > set.State.Generation {
 			return
 		}
-		set.securityEvent(ports.SecurityBackendBarrier{Generation: set.state.Generation, Err: err})
+		set.SecurityEvent(ports.SecurityBackendBarrier{Generation: set.State.Generation, Err: err})
 		revokeAttempts++
 		if err != nil && revokeAttempts < 3 {
 			revokeTimer.Reset(time.Second)
@@ -560,13 +561,13 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 				scanErrors = append(scanErrors, fmt.Errorf("scan %s: %w", c.Path(), err))
 				continue
 			}
-			leases.publish(c)
+			leases.Publish(c)
 			stop := func(name string, restart bool) {
-				if r := set.outs[name]; r != nil && cards[name] == c {
+				if r := set.Outs[name]; r != nil && cards[name] == c {
 					if _, ok := stopping[name]; !ok {
 						stopping[name] = restart
 						progress.Stopping(name)
-						r.stop()
+						r.Stop()
 					}
 				}
 			}
@@ -581,7 +582,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 			for _, o := range added {
 				// Every physical lifetime gets the gate before any early exit:
 				// Close must not restore saved desktop, even on a name collision.
-				o.Security, o.Frames = ch.security, ch.frames
+				o.Security, o.Frames = ch.Security, ch.Frames
 				name := o.Info().Name
 				if other := cards[name]; other != nil && other != c {
 					// Core and clients know outputs by connector name.
@@ -616,9 +617,9 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 				}
 				active := b.seat.Subscribe()
 				realtime := currentConfig.Performance.Realtime
-				started := set.start(ctx, name, func(octx context.Context, feed outputFeed) error {
+				started := set.Start(ctx, name, func(octx context.Context, feed routing.Feed) error {
 					defer b.seat.Unsubscribe(active)
-					o.Security, o.SecurityChanges, o.Instance, o.StartOff = ch.security, feed.Security, feed.Instance, feed.StartOff
+					o.Security, o.SecurityChanges, o.Instance, o.StartOff = ch.Security, feed.Security, feed.Instance, feed.StartOff
 					return safe("output "+name, func() error {
 						defer o.Close()
 						b.addPreparer(o)
@@ -636,7 +637,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 								schedLog.Warn().Err(err).Msg("output scheduling")
 							}
 						}
-						return o.Run(octx, xcursor.LoadCursor, active, feed.Scenes, feed.Contents, feed.Returns, feed.Cursor, ch.presented, feed.Captures, ch.captured)
+						return o.Run(octx, xcursor.LoadCursor, active, feed.Scenes, feed.Contents, feed.Returns, feed.Cursor, ch.Presented, feed.Captures, ch.Captured)
 					})
 				}, &o.SecurityEvents)
 				if !started {
@@ -652,7 +653,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 					curs.Set(name, nil)
 					continue
 				}
-				readySources[name] = set.outs[name].instance
+				readySources[name] = set.Outs[name].Instance
 				if progress.Active && !want(currentConfig).Disabled[name] {
 					progress.Required[name] = true
 				}
@@ -691,7 +692,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 		if c == nil {
 			return false
 		}
-		c.SetFormats(ch.formats)
+		c.SetFormats(ch.Formats)
 		b.cards = append(b.cards, c)
 		startReader(c)
 		return true
@@ -740,12 +741,12 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 			if err := c.Revoke(id); err != nil {
 				log.Debug().Err(err).Str("card", c.Path()).Uint32("lease", id).Msg("revoke lease of removed GPU")
 			}
-			leases.send(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
+			leases.Send(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
 		}
-		leases.forget(c)
+		leases.Forget(c)
 		var names []string
 		for n, owner := range cards {
-			if owner == c && set.outs[n] != nil {
+			if owner == c && set.Outs[n] != nil {
 				names = append(names, n)
 			}
 		}
@@ -757,7 +758,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 		for _, n := range names {
 			stopping[n] = false
 			progress.Stopping(n)
-			set.outs[n].stop()
+			set.Outs[n].Stop()
 		}
 		publishInventory()
 		if td.Done() {
@@ -765,8 +766,8 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 		}
 	}
 	scan()
-	if len(set.outs) == 0 {
-		return errors.Join(errors.New("no connected display"), set.wait())
+	if len(set.Outs) == 0 {
+		return errors.Join(errors.New("no connected display"), set.Wait())
 	}
 	// configure starts cfg; complete reports its result to apply. apply
 	// hands out one configuration at a time, and a rollback or reload starts
@@ -784,7 +785,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 				required[h.Info.Name] = true
 			}
 		}
-		for name := range set.outs {
+		for name := range set.Outs {
 			if !w.Disabled[name] {
 				required[name] = true
 			}
@@ -792,7 +793,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 		progress.Start(op, required, stopping)
 		scan()
 		running := map[string]domain.OutputInstance{}
-		for name := range set.outs {
+		for name := range set.Outs {
 			running[name] = readySources[name]
 		}
 		d := progress.Scanned(running)
@@ -807,12 +808,12 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 			configure(cfg)
 			continue
 		}
-		configs, configNext := apply.ConfigOut(ch.configured), apply.Config()
-		replies, replyNext := apply.ReplyOut(ch.replies)
-		heads, headsNext := apply.HeadsOut(ch.heads)
+		configs, configNext := apply.ConfigOut(ch.Configured), apply.Config()
+		replies, replyNext := apply.ReplyOut(ch.Replies)
+		heads, headsNext := apply.HeadsOut(ch.Heads)
 		select {
 		case <-ctx.Done():
-			return set.wait()
+			return set.Wait()
 		case failure := <-readerErr:
 			if failure.card.removed {
 				continue // the card is gone; its outputs are being stopped
@@ -820,7 +821,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 			if path := failure.card.Path(); path == b.renderInfo.Path {
 				if !deviceNodeExists(path) || errors.Is(failure.err, unix.ENODEV) {
 					log.Error().Err(failure.err).Str("card", path).Msg("render GPU removed")
-					return errors.Join(fmt.Errorf("%w: %s: %w", core.ErrRenderGPURemoved, path, failure.err), set.wait())
+					return errors.Join(fmt.Errorf("%w: %s: %w", core.ErrRenderGPURemoved, path, failure.err), set.Wait())
 				}
 			} else if errors.Is(failure.err, unix.ENODEV) {
 				// The device vanished under the reader, possibly before its
@@ -830,27 +831,27 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 				continue
 			}
 			// No more flips on that card: its outputs would freeze.
-			return errors.Join(failure.err, set.wait())
-		case state, ok := <-ch.securityChanges:
+			return errors.Join(failure.err, set.Wait())
+		case state, ok := <-ch.SecurityChanges:
 			if !ok {
-				ch.securityChanges = nil
+				ch.SecurityChanges = nil
 				continue
 			}
-			if state.Generation < set.state.Generation {
+			if state.Generation < set.State.Generation {
 				continue
 			}
-			if set.setSecurity(state) {
+			if set.SetSecurity(state) {
 				revokeAttempts = 0
 			}
 			// start can refresh the gate while scanning; its queued transition
 			// must still receive a barrier even if forwarding already occurred.
 			revokeTimer.Stop()
 			revokeDeadline = nil
-			if set.state.Protected {
+			if set.State.Protected {
 				barrier()
 			} else {
 				for _, c := range b.cards {
-					leases.publish(c)
+					leases.Publish(c)
 				}
 			}
 		case <-revokeDeadline:
@@ -862,7 +863,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 				// Checked even while recovering: the device is not coming back.
 				path := b.renderInfo.Path
 				log.Error().Str("card", path).Msg("render GPU removed")
-				return errors.Join(fmt.Errorf("%w: %s", core.ErrRenderGPURemoved, path), set.wait())
+				return errors.Join(fmt.Errorf("%w: %s", core.ErrRenderGPURemoved, path), set.Wait())
 			case core.HotplugCardAdded:
 				if recovering {
 					// Opening needs the reopened render device.
@@ -882,7 +883,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 			scan()
 			if progress.Active {
 				running := map[string]domain.OutputInstance{}
-				for name := range set.outs {
+				for name := range set.Outs {
 					running[name] = readySources[name]
 				}
 				complete(progress.Scanned(running))
@@ -895,48 +896,48 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 						if err := c.Revoke(id); err != nil {
 							log.Warn().Err(err).Uint32("lease", id).Msg("VT lease revoke")
 						} else {
-							leases.send(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
+							leases.Send(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
 						}
 					}
-					leases.publish(c)
+					leases.Publish(c)
 				}
 			} else {
 				for _, c := range b.cards {
-					leases.publish(c)
+					leases.Publish(c)
 				}
 			}
-		case event := <-ch.leaseRequests:
+		case event := <-ch.LeaseRequests:
 			switch req := event.(type) {
 			case ports.LeaseRequest:
 				reply := ports.LeaseReply{ID: req.ID, Err: fmt.Errorf("unknown card %s", req.Card)}
 				if !seatActive || protected() {
 					reply.Err = errors.New("DRM seat inactive or session protected")
-					leases.send(reply)
+					leases.Send(reply)
 					break
 				}
 				for _, c := range b.cards {
 					if c.Path() == req.Card {
-						reply.FD, reply.LeaseID, reply.Err = guardedLease(c, ch.security, req.Connectors)
-						leases.publish(c)
+						reply.FD, reply.LeaseID, reply.Err = guardedLease(c, ch.Security, req.Connectors)
+						leases.Publish(c)
 						break
 					}
 				}
-				leases.send(reply)
+				leases.Send(reply)
 			case ports.LeaseRevoke:
 				for _, c := range b.cards {
 					if c.Path() == req.Card {
 						if err := c.Revoke(req.LeaseID); err != nil {
 							log.Warn().Err(err).Uint32("lease", req.LeaseID).Msg("revoke lease")
 						} else {
-							leases.publish(c)
+							leases.Publish(c)
 						}
 						break
 					}
 				}
 			}
-		case ev := <-ch.reloads:
+		case ev := <-ch.Reloads:
 			apply.Reload(ev.Config)
-		case req := <-ch.requests:
+		case req := <-ch.Requests:
 			apply.Request(req)
 		case configs <- configNext:
 			apply.ConfigSent()
@@ -951,13 +952,13 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 			complete(progress.ReadyEvent(result.name, result.source, readySources[result.name], result.err))
 		case <-deadline:
 			complete(progress.Timeout(op))
-		case stopped := <-set.stopped:
-			if !set.stoppedCurrent(stopped) {
+		case stopped := <-set.Stopped:
+			if !set.StoppedCurrent(stopped) {
 				continue
 			}
-			name := stopped.name
+			name := stopped.Name
 			output := outputs[name]
-			err := set.finish(name)
+			err := set.Finish(name)
 			// finish observes done after the deferred Close. Only affirmative
 			// terminal KMS inactivity retires this exact lifetime; renderer
 			// errors and missing connector inventory are not physical proof.
@@ -971,19 +972,19 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 				if !output.InactiveOnClose() {
 					log.Info().Str("card", owner.Path()).Str("connector", name).Msg("retiring output of unplugged GPU")
 				}
-				set.securityEvent(ports.SecurityOutputRemoved{Instance: stopped.instance})
+				set.SecurityEvent(ports.SecurityOutputRemoved{Instance: stopped.Instance})
 			}
 			delete(outputs, name)
 			if ctx.Err() != nil {
-				return errors.Join(err, set.wait())
+				return errors.Join(err, set.Wait())
 			}
 			if !recovering && errors.Is(err, ports.ErrDeviceLost) {
 				recovering = true
 				// The backend currently owns one shared render device. Cancel every
 				// consumer first; normal stopped handling joins and retires each lifetime.
-				for n, r := range set.outs {
+				for n, r := range set.Outs {
 					stopping[n] = false
-					r.stop()
+					r.Stop()
 				}
 			}
 			restart := stopping[name]
@@ -998,10 +999,10 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 			if drm.IsLocalDeviceError(err) && card.local != nil {
 				card.localLost = true
 				for n, c := range cards {
-					if c == card && n != name && set.outs[n] != nil {
+					if c == card && n != name && set.Outs[n] != nil {
 						stopping[n] = false
 						progress.Stopping(n)
-						set.outs[n].stop()
+						set.Outs[n].Stop()
 					}
 				}
 			}
@@ -1025,7 +1026,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 			if recovering {
 				complete(stopDecision)
 				send(ports.OutputRemoved{Name: name})
-				if len(set.outs) > 0 {
+				if len(set.Outs) > 0 {
 					continue
 				}
 				old := b.render
@@ -1033,7 +1034,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 				log.Warn().Str("card", b.renderInfo.Path).Msg("render device lost, reopening")
 				next, reopenErr := reopenRender(b.opener, b.renderInfo, old, &limiter)
 				if reopenErr != nil {
-					return errors.Join(reopenErr, set.wait())
+					return errors.Join(reopenErr, set.Wait())
 				}
 				b.render = next
 				if lost := core.LostFormats(b.advertised, next.DMABuf().Formats); lost > 0 {
@@ -1068,9 +1069,9 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 			if restart {
 				// Same connector, new mode: core keeps its screen and
 				// workspaces; OutputAdded updates the size.
-				if set.outs[name] != nil {
+				if set.Outs[name] != nil {
 					running := map[string]domain.OutputInstance{}
-					for n := range set.outs {
+					for n := range set.Outs {
 						running[n] = readySources[n]
 					}
 					complete(progress.Scanned(running))
@@ -1079,7 +1080,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) dr
 			}
 			send(ports.OutputRemoved{Name: name})
 			running := map[string]domain.OutputInstance{}
-			for n := range set.outs {
+			for n := range set.Outs {
 				running[n] = readySources[n]
 			}
 			complete(progress.Scanned(running))

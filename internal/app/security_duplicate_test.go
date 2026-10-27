@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/adapters/outputkit/routing"
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
 	"github.com/bnema/neferwl/internal/adapters/wayland/sessionlock"
 	"github.com/bnema/neferwl/internal/domain"
@@ -26,13 +27,13 @@ func TestSecurityDuplicatePhysicalLifetimeRequiresConfirmedInactive(t *testing.T
 				t.Fatal(err)
 			}
 			events := make(chan ports.SecurityBackendEvent, 4)
-			set := newOutputSet(context.Background(), nil, outputRoutes{})
-			set.wireSecurity(outputChannels{security: gate, securityEvents: events})
-			run := func(ctx context.Context, feed outputFeed) error {
+			set := routing.NewSet(context.Background(), nil, routing.Routes{})
+			set.WireSecurity(routing.Channels{Security: gate, SecurityEvents: events})
+			run := func(ctx context.Context, feed routing.Feed) error {
 				<-ctx.Done()
 				return nil
 			}
-			if !set.start(context.Background(), "DP-1", run) {
+			if !set.Start(context.Background(), "DP-1", run) {
 				t.Fatal("primary output failed to start")
 			}
 			primary := (<-events).(ports.SecurityOutputAdded)
@@ -44,7 +45,7 @@ func TestSecurityDuplicatePhysicalLifetimeRequiresConfirmedInactive(t *testing.T
 			if added.Instance != duplicate || added.Output != primary.Output || duplicate <= primary.Instance {
 				t.Fatalf("duplicate lifetime registration: primary=%+v duplicate=%+v", primary, added)
 			}
-			if len(set.outs) != 1 || set.outs["DP-1"].instance != primary.Instance {
+			if len(set.Outs) != 1 || set.Outs["DP-1"].Instance != primary.Instance {
 				t.Fatal("discarded lifetime replaced routed output")
 			}
 			var ledger sessionlock.Readiness
@@ -85,7 +86,7 @@ func TestSecurityDuplicatePhysicalLifetimeRequiresConfirmedInactive(t *testing.T
 			if !gate.Snapshot().Protected {
 				t.Fatal("discarding duplicate released gate")
 			}
-			if err := set.wait(); err != nil {
+			if err := set.Wait(); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -94,9 +95,9 @@ func TestSecurityDuplicatePhysicalLifetimeRequiresConfirmedInactive(t *testing.T
 
 func TestSecurityDiscardedLifetimeCounterExhaustion(t *testing.T) {
 	events := make(chan ports.SecurityBackendEvent, 2)
-	set := newOutputSet(context.Background(), nil, outputRoutes{})
-	set.wireSecurity(outputChannels{securityEvents: events})
-	set.nextInstance = ^domain.OutputInstance(0) - 1
+	set := routing.NewSet(context.Background(), nil, routing.Routes{})
+	set.WireSecurity(routing.Channels{SecurityEvents: events})
+	set.NextInstance = ^domain.OutputInstance(0) - 1
 	instance, err := registerDiscardedOutput(set, "DP-1")
 	if err != nil || instance != ^domain.OutputInstance(0) {
 		t.Fatalf("last lifetime: %d %v", instance, err)
@@ -109,7 +110,7 @@ func TestSecurityDiscardedLifetimeCounterExhaustion(t *testing.T) {
 			t.Fatalf("exhaustion: %d %v", instance, err)
 		}
 	}
-	if set.nextInstance != ^domain.OutputInstance(0) {
+	if set.NextInstance != ^domain.OutputInstance(0) {
 		t.Fatal("counter wrapped")
 	}
 	select {
@@ -117,7 +118,7 @@ func TestSecurityDiscardedLifetimeCounterExhaustion(t *testing.T) {
 		t.Fatalf("exhaustion registered: %+v", event)
 	default:
 	}
-	if err := set.wait(); err == nil {
+	if err := set.Wait(); err == nil {
 		t.Fatal("exhaustion not retained")
 	}
 }

@@ -1,4 +1,4 @@
-package app
+package routing
 
 import (
 	"context"
@@ -12,12 +12,12 @@ import (
 func TestCaptureUnknownOutputClosesFile(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		replies := make(chan domain.CaptureDone, 1)
-		router := newOutputRouter(context.Background(), replies, outputRoutes{})
+		router := NewRouter(context.Background(), replies, Routes{})
 		f, err := os.CreateTemp(t.TempDir(), "capture")
 		if err != nil {
 			t.Fatal(err)
 		}
-		router.routeCapture(domain.CaptureRequest{ID: 9, Output: "missing", Dst: domain.SHMBuffer{File: f}})
+		router.RouteCapture(domain.CaptureRequest{ID: 9, Output: "missing", Dst: domain.SHMBuffer{File: f}})
 		synctest.Wait()
 		select {
 		case result := <-replies:
@@ -38,17 +38,17 @@ func TestCaptureFullOutputQueueDoesNotBlockRouting(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		replies := make(chan domain.CaptureDone, 1)
-		router := newOutputRouter(ctx, replies, outputRoutes{})
+		router := NewRouter(ctx, replies, Routes{})
 		queued := make(chan domain.CaptureRequest, 1)
 		queued <- domain.CaptureRequest{ID: 1}
-		router.outs["test"] = &mailbox{ctx: ctx, captures: queued, done: make(chan struct{}), stop: func() {}}
+		router.outs["test"] = &Mailbox{Ctx: ctx, Captures: queued, Done: make(chan struct{}), Stop: func() {}}
 		f, err := os.CreateTemp(t.TempDir(), "capture")
 		if err != nil {
 			t.Fatal(err)
 		}
 		routed := make(chan struct{})
 		go func() {
-			router.routeCapture(domain.CaptureRequest{ID: 2, Output: "test", Dst: domain.SHMBuffer{File: f}})
+			router.RouteCapture(domain.CaptureRequest{ID: 2, Output: "test", Dst: domain.SHMBuffer{File: f}})
 			close(routed)
 		}()
 		synctest.Wait()
@@ -77,13 +77,13 @@ func TestStoppedOutputCaptureStillReplies(t *testing.T) {
 	outputCtx, stop := context.WithCancel(ctx)
 	stop()
 	replies := make(chan domain.CaptureDone, 1)
-	router := newOutputRouter(ctx, replies, outputRoutes{})
-	router.outs["test"] = &mailbox{ctx: outputCtx, captures: make(chan domain.CaptureRequest)}
+	router := NewRouter(ctx, replies, Routes{})
+	router.outs["test"] = &Mailbox{Ctx: outputCtx, Captures: make(chan domain.CaptureRequest)}
 	f, err := os.CreateTemp(t.TempDir(), "capture")
 	if err != nil {
 		t.Fatal(err)
 	}
-	router.routeCapture(domain.CaptureRequest{ID: 7, Output: "test", Dst: domain.SHMBuffer{File: f}})
+	router.RouteCapture(domain.CaptureRequest{ID: 7, Output: "test", Dst: domain.SHMBuffer{File: f}})
 	select {
 	case result := <-replies:
 		if result.ID != 7 || result.Err == nil {
@@ -106,7 +106,7 @@ func TestFinishedOutputDrainsCapturesWithReplies(t *testing.T) {
 		t.Fatal(err)
 	}
 	queued <- domain.CaptureRequest{ID: 8, Dst: domain.SHMBuffer{File: f}}
-	failQueued(ctx, &mailbox{captures: queued}, replies)
+	failQueued(ctx, &Mailbox{Captures: queued}, replies)
 	select {
 	case result := <-replies:
 		if result.ID != 8 || result.Err == nil {
@@ -136,7 +136,7 @@ func TestDrainCapturesClosesQueuedFDs(t *testing.T) {
 			}
 		})
 	}
-	drainCaptures(ctx, pending, nil)
+	DrainCaptures(ctx, pending, nil)
 	if len(pending) != 0 {
 		t.Fatal("requests still queued")
 	}
@@ -148,8 +148,8 @@ func TestOutputStopWithFullReplies(t *testing.T) {
 		replies := make(chan domain.CaptureDone, 1)
 		replies <- domain.CaptureDone{}
 		captures := make(chan domain.CaptureRequest)
-		set := newOutputSet(ctx, replies, outputRoutes{captures: captures})
-		set.start(ctx, "test", idleRun)
+		set := NewSet(ctx, replies, Routes{Captures: captures})
+		set.Start(ctx, "test", idleRun)
 		f, err := os.CreateTemp(t.TempDir(), "queued")
 		if err != nil {
 			t.Fatal(err)
@@ -157,7 +157,7 @@ func TestOutputStopWithFullReplies(t *testing.T) {
 		captures <- domain.CaptureRequest{Output: "test", Dst: domain.SHMBuffer{File: f}}
 		cancel()
 		done := make(chan struct{})
-		go func() { _ = set.wait(); close(done) }()
+		go func() { _ = set.Wait(); close(done) }()
 		synctest.Wait()
 		select {
 		case <-done:
