@@ -266,12 +266,11 @@ func Open(ctx context.Context, cfg domain.Config, opener ports.RenderDeviceOpene
 		s.Close()
 		return nil, err
 	}
-	sel, err := core.SelectGPUs(cands, selectConfig)
+	sel, plans, err := selectAndPlanGPUs(gpuPolicy{}, cands, selectConfig)
 	if err != nil {
 		s.Close()
 		return nil, err
 	}
-	plans := core.PlanCards(cands, sel)
 	for _, reason := range sel.Reasons {
 		log.Info().Msg(reason)
 	}
