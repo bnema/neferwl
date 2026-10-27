@@ -34,6 +34,9 @@ var domainStd = []string{"cmp", "math", "slices", "strconv", "strings", "time"}
 // time.Duration types stay allowed.
 var domainForbiddenTime = []string{"Now", "Since", "Until", "After", "AfterFunc", "NewTimer", "NewTicker", "Tick", "Sleep"}
 
+// domainMocks are the generated mock directories under the domain packages.
+var domainMocks = []string{"internal/core/layout/layoutmocks"}
+
 // domainFiles lists the non-test Go files of a domain package directory,
 // whatever their build tags or GOOS suffix: go list skips the excluded ones,
 // the directory listing does not.
@@ -94,7 +97,8 @@ func TestDomainPackagesImportOnlyLowerLayers(t *testing.T) {
 
 // TestDomainPackageTreeIsListed fails for a production package nobody
 // classified: every directory with Go files under a domain package is itself
-// in domainLayers or holds generated mocks (its name ends in "mocks").
+// in domainLayers or is a known generated mock directory (domainMocks) whose
+// files all carry a "// Code generated" header. Test files do not count.
 func TestDomainPackageTreeIsListed(t *testing.T) {
 	for rel := range domainLayers {
 		err := filepath.WalkDir(filepath.FromSlash(rel), func(path string, d fs.DirEntry, err error) error {
@@ -102,11 +106,29 @@ func TestDomainPackageTreeIsListed(t *testing.T) {
 				return err
 			}
 			dir := filepath.ToSlash(path)
-			if _, listed := domainLayers[dir]; listed || strings.HasSuffix(d.Name(), "mocks") {
+			if _, listed := domainLayers[dir]; listed {
 				return nil
 			}
-			if goFiles, _ := filepath.Glob(filepath.Join(path, "*.go")); len(goFiles) > 0 {
-				t.Errorf("%s holds Go files but is neither in domainLayers nor a mocks directory", dir)
+			goFiles, err := filepath.Glob(filepath.Join(path, "*.go"))
+			if err != nil {
+				return err
+			}
+			goFiles = slices.DeleteFunc(goFiles, func(name string) bool { return strings.HasSuffix(name, "_test.go") })
+			if len(goFiles) == 0 {
+				return nil
+			}
+			if !slices.Contains(domainMocks, dir) {
+				t.Errorf("%s holds Go files but is neither in domainLayers nor in domainMocks", dir)
+				return nil
+			}
+			for _, name := range goFiles {
+				src, err := os.ReadFile(name)
+				if err != nil {
+					return err
+				}
+				if !strings.HasPrefix(string(src), "// Code generated") {
+					t.Errorf("%s: file in a mocks directory lacks a \"// Code generated\" header", name)
+				}
 			}
 			return nil
 		})
