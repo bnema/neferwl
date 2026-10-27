@@ -5,15 +5,10 @@ import "slices"
 // Gap clamps requested spacing to the usable viewport.
 func (w *Lanes) Gap() int { return min(w.Gaps, w.Usable.W/2, w.Usable.H/2) }
 
-// StackRects cuts r in n rows with a gap between them; the last row takes
+// StackRectsInto cuts r in n rows with a gap between them and appends them
+// to dst (nil, or reset with dst[:0] to reuse its storage); the last row takes
 // the rounding remainder. Rows past the bottom (gaps taller than r) are
 // clamped to it, like windows stacked in a column.
-func StackRects(r Rect, n, gap int) []Rect {
-	return StackRectsInto(nil, r, n, gap)
-}
-
-// StackRectsInto appends the n rows of stackRects to dst (reset with dst[:0]
-// to reuse its storage).
 func StackRectsInto(dst []Rect, r Rect, n, gap int) []Rect {
 	base := len(dst)
 	dst = slices.Grow(dst, n)[:base+n]

@@ -9,15 +9,6 @@ func (w *Lanes) bandBounds(b int) (int, int) { v := w.Snapshot(); return v.bandB
 // WalkBands visits bands in order until the callback returns false.
 func (w *Lanes) WalkBands(f func(int, int, int) bool) { v := w.Snapshot(); v.walkBands(f) }
 
-// startsBand reports whether a column starts a band of capacity n.
-func (w *Lanes) startsBand(i, n int) bool { v := w.Snapshot(); return v.startsBand(i, n) }
-
-// BandStart reports whether a column has a stored band boundary.
-func (w *Lanes) BandStart(i int) bool { v := w.Snapshot(); return v.bandStart(i) }
-
-// CellWidth returns the width of a column within its lane.
-func (w *Lanes) CellWidth(i int) int { v := w.Snapshot(); return v.cellWidth(i) }
-
 // EqualShare returns one of k equal shares of usable width.
 func (w *Lanes) EqualShare(k int) int { v := w.Snapshot(); return v.equalShare(k) }
 
@@ -40,12 +31,6 @@ func (w *Lanes) LaneNeighbor(d int) int { v := w.Snapshot(); return v.laneNeighb
 func (w *Lanes) ValidSpans(first, last int) bool {
 	v := w.Snapshot()
 	return v.validSpans(first, last)
-}
-
-// HiddenByMaximized reports whether maximization hides column i. It reads
-// the lane fields directly: AppendLayout asks it per column every frame.
-func (w *Lanes) HiddenByMaximized(i int) bool {
-	return w.Engine().MaximizeHides() && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth && i != w.Focus
 }
 
 // FullscreenColumn reports whether column i contains the fullscreen window.

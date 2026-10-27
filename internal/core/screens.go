@@ -624,3 +624,6 @@ func (c *Core) moveWorkspace(d direction) {
 	dst.mon.show(w)
 	c.focusScreen = to
 }
+
+// abs is the absolute value of n.
+func abs(n int) int { return max(n, -n) }

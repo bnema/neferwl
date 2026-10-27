@@ -7,6 +7,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/core/motion"
+	workspacedomain "github.com/bnema/neferwl/internal/core/workspace"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -1097,9 +1098,9 @@ func carouselStep(b *viewShot) int {
 // wrapped reports whether stash card i of a carousel of n cards went round
 // it, from one end to the other, when the selection went from card from to
 // card to: it moved other than the cards that stayed on their side, which
-// all shift by the old selection's move (carouselSlot).
+// all shift by the old selection's move (workspacedomain.CarouselSlot).
 func wrapped(i, from, to, n int, wraps bool) bool {
-	return i >= 0 && carouselSlot(i, to, n, wraps)-carouselSlot(i, from, n, wraps) != carouselSlot(from, to, n, wraps)
+	return i >= 0 && workspacedomain.CarouselSlot(i, to, n, wraps)-workspacedomain.CarouselSlot(i, from, n, wraps) != workspacedomain.CarouselSlot(from, to, n, wraps)
 }
 
 // movedFrom is the shot of the other screen that showed the workspace b's

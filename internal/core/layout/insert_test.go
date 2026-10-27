@@ -30,8 +30,9 @@ func TestCascadeInsertKinds(t *testing.T) {
 				w.SetBandStart(2, true)
 				w.Columns = slices.Insert(w.Columns, 1, Column{Windows: []WindowID{9}})
 				w.ColumnInserted(1, tc.kind)
+				v := w.Snapshot()
 				for i, want := range tc.want {
-					if got := w.BandStart(i); got != want {
+					if got := v.bandStart(i); got != want {
 						t.Fatalf("band start %d = %v, want %v (all: %v)", i, got, want, w.cascadeState().bandStart)
 					}
 				}
@@ -48,7 +49,7 @@ func TestCascadeInsertKinds(t *testing.T) {
 	w.SetBandStart(2, true)
 	w.Columns = slices.Insert(w.Columns, 2, Column{Windows: []WindowID{9}})
 	w.ColumnInserted(2, InsertJoinDisplaced)
-	if !w.BandStart(2) || w.BandStart(3) {
+	if v := w.Snapshot(); !v.bandStart(2) || v.bandStart(3) {
 		t.Fatalf("band starts %v: the new column must take the displaced start", w.cascadeState().bandStart)
 	}
 }

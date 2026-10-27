@@ -52,3 +52,22 @@ func TestBorderZone(t *testing.T) {
 		}
 	}
 }
+
+func TestUnion(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		a, b ports.Rect
+		want ports.Rect
+	}{
+		{"disjoint", ports.Rect{X: 0, Y: 0, W: 10, H: 10}, ports.Rect{X: 20, Y: 30, W: 5, H: 5}, ports.Rect{X: 0, Y: 0, W: 25, H: 35}},
+		{"overlap", ports.Rect{X: 0, Y: 0, W: 10, H: 10}, ports.Rect{X: 5, Y: 5, W: 10, H: 10}, ports.Rect{X: 0, Y: 0, W: 15, H: 15}},
+		{"contained", ports.Rect{X: 0, Y: 0, W: 100, H: 100}, ports.Rect{X: 10, Y: 20, W: 5, H: 5}, ports.Rect{X: 0, Y: 0, W: 100, H: 100}},
+		{"reversed", ports.Rect{X: 20, Y: 30, W: 5, H: 5}, ports.Rect{X: 0, Y: 0, W: 10, H: 10}, ports.Rect{X: 0, Y: 0, W: 25, H: 35}},
+		{"negative origin", ports.Rect{X: -10, Y: -5, W: 4, H: 4}, ports.Rect{X: 2, Y: 3, W: 6, H: 2}, ports.Rect{X: -10, Y: -5, W: 18, H: 10}},
+		{"same", ports.Rect{X: 3, Y: 4, W: 5, H: 6}, ports.Rect{X: 3, Y: 4, W: 5, H: 6}, ports.Rect{X: 3, Y: 4, W: 5, H: 6}},
+	} {
+		if got := Union(tc.a, tc.b); got != tc.want {
+			t.Errorf("%s: Union(%v, %v) = %v, want %v", tc.name, tc.a, tc.b, got, tc.want)
+		}
+	}
+}

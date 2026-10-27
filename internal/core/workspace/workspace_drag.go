@@ -3,6 +3,7 @@ package workspace
 import (
 	"slices"
 
+	"github.com/bnema/neferwl/internal/core/geom"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -41,7 +42,7 @@ func (w *Workspace) DropIn(id WindowID, x, y, t int) DropSpot {
 			continue
 		}
 		if n := len(cols); n > 0 && cols[n-1].index == ci {
-			cols[n-1].rect = union(cols[n-1].rect, p.Rect)
+			cols[n-1].rect = geom.Union(cols[n-1].rect, p.Rect)
 		} else {
 			cols = append(cols, visibleColumn{index: ci, rect: p.Rect})
 		}
@@ -113,7 +114,7 @@ func (w *Workspace) gapDrop(cols []visibleColumn, id WindowID, src int, lone boo
 			mid, at = ref.X+ref.W+w.Gap()/2, cols[i-1].index+1
 		default:
 			a, b := cols[i-1].rect, cols[i].rect
-			ref = union(a, b)
+			ref = geom.Union(a, b)
 			mid, at = (a.X+a.W+b.X)/2, cols[i].index
 		}
 		if x < mid-pad || x >= mid+pad || y < ref.Y || y >= ref.Y+ref.H {
@@ -210,12 +211,6 @@ func resized(r Rect, edges ports.ResizeEdges, dx, dy, least int, u Rect) Rect {
 // contains reports whether r holds the point x, y.
 func contains(r Rect, x, y int) bool {
 	return x >= r.X && x < r.X+r.W && y >= r.Y && y < r.Y+r.H
-}
-
-// union is the smallest rect holding a and b.
-func union(a, b Rect) Rect {
-	x, y := min(a.X, b.X), min(a.Y, b.Y)
-	return Rect{X: x, Y: y, W: max(a.X+a.W, b.X+b.W) - x, H: max(a.Y+a.H, b.Y+b.H) - y}
 }
 
 // outline is the four sides of r, t thick, inside it.

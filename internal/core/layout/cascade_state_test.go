@@ -3,6 +3,7 @@ package layout
 import (
 	"slices"
 	"testing"
+	"testing/synctest"
 )
 
 // Private state invariants belong beside the engine; Workspace tests check the
@@ -61,4 +62,23 @@ func TestCascadeBoundariesFollowColumnEdits(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestCascadeScrollTargetDoesNotMutateState(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := Lanes{Overflow: OverflowCascade, MaxColumns: 2, Usable: Rect{W: 900, H: 600}, Output: Rect{W: 900, H: 600}}
+		for i := range 2 {
+			w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
+			w.ColumnInserted(i, InsertDefault)
+		}
+		w.Focus = 1
+		w.SettleLayout()
+		v := w.Snapshot()
+		v.MaxColumns = 1
+		w.Engine().ScrollTarget(v)
+		if owner := w.Snapshot(); owner.bandStart(1) {
+			t.Fatal("snapshot scrollTarget changed owner's boundary")
+		}
+
+	})
 }

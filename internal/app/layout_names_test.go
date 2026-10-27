@@ -5,16 +5,16 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/adapters/config"
-	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/core/layout"
 )
 
 // The config adapter keeps its own list of overflow values (adapters do not
-// import core): every layout core resolves must parse there without a
+// import core): every layout the layout package resolves must parse there without a
 // warning, and a value no layout has still produces exactly one.
 func TestConfigAcceptsEveryCoreLayout(t *testing.T) {
-	names := core.LayoutNames()
+	names := layout.LayoutNames()
 	if len(names) == 0 {
-		t.Fatal("core lists no layout")
+		t.Fatal("layout lists no layout name")
 	}
 	for _, name := range names {
 		for _, key := range []string{"layout.overflow", "layout.DP-1.overflow"} {

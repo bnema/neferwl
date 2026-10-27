@@ -4,6 +4,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/bnema/neferwl/internal/core/geom"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -172,7 +173,7 @@ func (c *Core) flashRect(target flashTarget, sc *screen) (Rect, int, bool) {
 		}
 		for _, p := range c.flash.layout {
 			if !p.Hidden && slices.Contains(w.Columns[col].Windows, p.ID) {
-				rect = union(rect, c.clientRect(p))
+				rect = geom.Union(rect, c.clientRect(p))
 			}
 		}
 	}

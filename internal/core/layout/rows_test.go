@@ -10,15 +10,15 @@ func TestRowRectsEqualWithoutShares(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := Rect{X: 0, Y: 0, W: 50, H: 103}
 		c := Column{Windows: []WindowID{1, 2, 3}}
-		if !slices.Equal(RowRects(r, c, 5), StackRects(r, 3, 5)) {
+		if !slices.Equal(RowRects(r, c, 5), StackRectsInto(nil, r, 3, 5)) {
 			t.Fatal(RowRects(r, c, 5))
 		}
 		c.Shares = []int{5000, 5000} // wrong length: ignored
-		if !slices.Equal(RowRects(r, c, 5), StackRects(r, 3, 5)) {
+		if !slices.Equal(RowRects(r, c, 5), StackRectsInto(nil, r, 3, 5)) {
 			t.Fatal(RowRects(r, c, 5))
 		}
 		c.Shares = []int{5000, 3000, 3000} // wrong sum: ignored
-		if !slices.Equal(RowRects(r, c, 5), StackRects(r, 3, 5)) {
+		if !slices.Equal(RowRects(r, c, 5), StackRectsInto(nil, r, 3, 5)) {
 			t.Fatal(RowRects(r, c, 5))
 		}
 		c.Shares = []int{5000, 3000, 2000}
@@ -37,7 +37,7 @@ func TestRectHelpersKeepAppendSemantics(t *testing.T) {
 		r := Rect{X: 3, Y: 4, W: 50, H: 103}
 		pre := []Rect{{W: 1}, {W: 2}}
 		got := StackRectsInto(slices.Clone(pre), r, 3, 5)
-		if !slices.Equal(got[:2], pre) || !slices.Equal(got[2:], StackRects(r, 3, 5)) {
+		if !slices.Equal(got[:2], pre) || !slices.Equal(got[2:], StackRectsInto(nil, r, 3, 5)) {
 			t.Fatalf("stackRectsInto: %+v", got)
 		}
 		c := Column{Windows: []WindowID{1, 2, 3}, Shares: []int{5000, 3000, 2000}}

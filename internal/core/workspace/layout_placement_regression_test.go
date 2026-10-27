@@ -70,19 +70,6 @@ func TestCascadeExplicitPlacementUnderIntermediateFullscreen(t *testing.T) {
 	})
 }
 
-func TestCascadeScrollTargetDoesNotMutateState(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		_, w := cascadeMovesCore(t, 2, 2, false)
-		v := w.Snapshot()
-		v.MaxColumns = 1
-		w.Engine().ScrollTarget(v)
-		if w.BandStart(1) {
-			t.Fatal("snapshot scrollTarget changed owner's boundary")
-		}
-
-	})
-}
-
 func TestCascadeCoveredSpawnGoesLast(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		_, w := cascadeMovesCore(t, 4, 2, false)

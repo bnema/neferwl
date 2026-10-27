@@ -114,7 +114,7 @@ func (w *Workspace) pile(dst []Placement, axis layout.Axis, slot Rect, dim bool,
 // vertical one. The selected card at sits on the pile, in the middle; the
 // cards before it come on the left (above), the ones after it on the right
 // (below), in stash order, wrapping round (wrapsCards) with the oldest
-// following the newest (carouselSlot). A wider gap marks that seam. A
+// following the newest (CarouselSlot). A wider gap marks that seam. A
 // carousel that fits the overview area is shifted into it. Longer, one
 // that wraps keeps the selection in the middle; one that does not stops at
 // the area's edges, like a wide row. The cards past the area are hidden,
@@ -155,7 +155,7 @@ func (w *Workspace) unfold(dst []Placement, axis layout.Axis, folded Rect, at in
 	}
 	for i := range w.Stash {
 		r := folded
-		if p := pos(carouselSlot(i, at, n, wraps)) + shift; axis == layout.Vertical {
+		if p := pos(CarouselSlot(i, at, n, wraps)) + shift; axis == layout.Vertical {
 			r.Y = p
 		} else {
 			r.X = p
@@ -501,11 +501,11 @@ func fan(cards [][]Placement, front, maxBehind, maxBefore int,
 	return out
 }
 
-// carouselSlot is the place of stash card i in a carousel of n cards
+// CarouselSlot is the place of stash card i in a carousel of n cards
 // centred on card at: 0 for at, negative on the left (above), positive on
 // the right (below). Wrapping round, the left side takes the extra card of
 // an even count; else the cards keep the stash order.
-func carouselSlot(i, at, n int, wraps bool) int {
+func CarouselSlot(i, at, n int, wraps bool) int {
 	if !wraps {
 		return i - at
 	}
