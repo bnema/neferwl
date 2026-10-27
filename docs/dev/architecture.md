@@ -4,11 +4,14 @@ Most Wayland compositors are written in C (wlroots, Sway, Mutter), C++ (KWin, Hy
 
 ### Package boundaries
 
-- `internal/domain` holds entities and value types and imports only the standard library.
+- `internal/domain` holds entities and value types; it imports only stdlib.
 - `internal/ports` holds interfaces and sealed messages carrying domain values.
-- `internal/core` imports domain and ports for its model and boundary contracts.
+- `internal/core` owns decisions and window state. It imports stdlib, domain, ports and its pure subpackages. Clocks and tokens come through ports; core does not call the wall clock or import `crypto/rand` or `reflect`.
+- Pure core packages take values: `geom` uses domain; `layout` adds geom; `motion` uses domain; `workspace` adds geom, layout and motion. None imports ports.
+- `internal/adapters` performs I/O and delivery. `outputkit/routing` routes scenes, content and leases; `outputkit/cursors` owns cursor delivery and hide timing; `xcursor` loads cursor themes. The headless backend owns virtual output mechanics. `drm/supervisor` owns cards, readers, timers and hardware action execution; security/recovery ordering decisions stay there by design.
+- `internal/app` is the composition root: it constructs adapters, channels and core, starts loops and relays values. `cmd` and `internal/cli` are entrypoints.
 
-The root domain policy test checks domain imports and requires every exported non-interface type in ports to declare an unexported seal method.
+`make check` runs hexcheck with warnings treated as failures and checks adapter sharing against `ADAPTER_LIBS`. The root parser-based policy test enforces pure-package imports, root-core side-effect restrictions and seals on exported non-interface ports types.
 
 ### A compositor is a concurrency problem
 

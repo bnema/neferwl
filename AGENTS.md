@@ -2,6 +2,7 @@
 
 - Use Go 1.27 only; normal builds and tests use CGO_ENABLED=0.
 - Keep a lightweight hexagonal architecture: core imports only stdlib, domain and ports (and its own subpackages). Domain holds entities and value types and imports only stdlib; ports holds interfaces and sealed messages carrying domain values.
+- Decisions belong in core; app is wiring only, and adapters perform I/O. Core uses ports.Clock and ports.TokenSource, never direct wall-clock calls, crypto/rand or reflect. Security/recovery ordering stays in drm/supervisor by design.
 - Owner goroutines own window state; no mutex on window state.
 - Use zerowrap logging with a `component` field on every entry.
 - Run tests with `-race`.
