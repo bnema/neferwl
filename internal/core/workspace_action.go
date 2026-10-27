@@ -1,9 +1,9 @@
 package core
 
-// freeAction runs a move or resize action on the focused free float and
+// ApplyFree runs a move or resize action on the focused free float and
 // reports whether it did: moves shift it by freeNudge, resizes change its
 // size by a share of the usable area.
-func (w *Workspace) freeAction(a Action) bool {
+func (w *Workspace) ApplyFree(a Action) bool {
 	i := w.focusedFree()
 	if i < 0 {
 		return false
