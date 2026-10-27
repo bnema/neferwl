@@ -273,7 +273,7 @@ func (s *Server) updateConstraint() {
 	}
 	var want *constraint
 	if w := s.windows[s.seat.pointerFocus]; w != nil && w.mapped && s.seat.pointerFocus == s.seat.focused {
-		if c := s.constraints[w.xdg.surface]; c != nil && !c.defunct && (c.active || c.contains(w)) {
+		if c := s.constraints[w.xdg.surface]; c != nil && c.surface.wl == s.seat.entered && !c.defunct && (c.active || c.contains(w)) {
 			want = c
 		}
 	}

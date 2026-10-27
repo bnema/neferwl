@@ -286,6 +286,7 @@ func (s *surface) redraw() {
 
 // detach removes a subsurface from its parent and redraws the parent.
 func (s *surface) detach() {
+	s.invalidatePointerTree()
 	p := s.sub.parent
 	if p == nil {
 		return
@@ -312,6 +313,7 @@ func (s *surface) detach() {
 }
 
 func (s *surface) Destroy(*wayland.Surface) {
+	s.invalidatePointerTree()
 	s.destroyed = true
 	for _, fb := range s.next.feedback {
 		discard(fb)
@@ -547,6 +549,7 @@ func (s *surface) applyCommit(u *update) {
 		}
 	}
 	if s.current == nil {
+		s.invalidatePointerTree()
 		s.content, s.has = domain.SurfaceContent{}, false
 	}
 	if fresh || damaged || oldW != s.content.LogicalW || oldH != s.content.LogicalH || oldSource != s.content.Source || oldColor != s.color || oldRepresentation != s.representation || oldTransform != s.content.Transform || oldOpaque != s.content.Opaque || oldOpaqueRect != s.content.OpaqueRect || oldFade != s.content.Fade {

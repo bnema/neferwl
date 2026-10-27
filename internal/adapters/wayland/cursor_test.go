@@ -92,7 +92,7 @@ func TestCursorShapeFollowsPointerFocus(t *testing.T) {
 	if got := nextCursor(t, cursors); got != (domain.CursorChange{Shape: "ew-resize"}) {
 		t.Fatalf("override: %+v", got)
 	}
-	requestProtocol(t, c, device, cursorshape.WpCursorShapeDeviceV1RequestSetShape, uint32(3), uint32(cursorshape.WpCursorShapeDeviceV1ShapeText))
+	requestProtocol(t, c, device, cursorshape.WpCursorShapeDeviceV1RequestSetShape, uint32(2), uint32(cursorshape.WpCursorShapeDeviceV1ShapeText))
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestSetCursorSurface(t *testing.T) {
 	registerProtocol(t, c, surf)
 
 	// A cursor surface without a buffer hides the cursor.
-	requestProtocol(t, c, pointer, wayland.PointerRequestSetCursor, uint32(1), surf, int32(1), int32(0))
+	requestProtocol(t, c, pointer, wayland.PointerRequestSetCursor, uint32(2), surf, int32(1), int32(0))
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestSetCursorSurface(t *testing.T) {
 		t.Fatalf("image: %+v %+v", got, got.Image)
 	}
 	// A null surface hides the cursor.
-	requestProtocol(t, c, pointer, wayland.PointerRequestSetCursor, uint32(1), uint32(0), int32(0), int32(0))
+	requestProtocol(t, c, pointer, wayland.PointerRequestSetCursor, uint32(2), uint32(0), int32(0), int32(0))
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}

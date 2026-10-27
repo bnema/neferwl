@@ -38,18 +38,21 @@ func registerCursorShape(d *server.Display, s *Server) error {
 type cursorShapeManager struct{ server *Server }
 
 func (cursorShapeManager) Destroy(r *cursorshape.WpCursorShapeManagerV1) { r.Destroy() }
-func (m cursorShapeManager) GetPointer(r *cursorshape.WpCursorShapeManagerV1, id uint32, _ *wayland.Pointer) {
-	_, _ = cursorshape.NewWpCursorShapeDeviceV1(r.Client(), r.Version(), id, cursorShapeDevice(m))
+func (m cursorShapeManager) GetPointer(r *cursorshape.WpCursorShapeManagerV1, id uint32, p *wayland.Pointer) {
+	_, _ = cursorshape.NewWpCursorShapeDeviceV1(r.Client(), r.Version(), id, cursorShapeDevice{server: m.server, pointer: p.Resource})
 }
 
 // GetTabletToolV2 is unreachable: neferwl has no tablet global.
 func (cursorShapeManager) GetTabletToolV2(*cursorshape.WpCursorShapeManagerV1, uint32, *tablet.ZwpTabletToolV2) {
 }
 
-type cursorShapeDevice struct{ server *Server }
+type cursorShapeDevice struct {
+	server  *Server
+	pointer *server.Resource
+}
 
 func (cursorShapeDevice) Destroy(r *cursorshape.WpCursorShapeDeviceV1) { r.Destroy() }
-func (d cursorShapeDevice) SetShape(r *cursorshape.WpCursorShapeDeviceV1, _ uint32, shape uint32) {
+func (d cursorShapeDevice) SetShape(r *cursorshape.WpCursorShapeDeviceV1, serial uint32, shape uint32) {
 	last := cursorshape.WpCursorShapeDeviceV1ShapeZoomOut
 	if r.Version() >= 2 {
 		last = cursorshape.WpCursorShapeDeviceV1ShapeAllResize
@@ -59,7 +62,7 @@ func (d cursorShapeDevice) SetShape(r *cursorshape.WpCursorShapeDeviceV1, _ uint
 		return
 	}
 	s := d.server
-	if s.protected() || !s.hasPointerFocus(r.Client()) {
+	if s.protected() || !s.hasPointerFocus(r.Client()) || !s.currentPointerSerial(d.pointer, serial) {
 		return
 	}
 	s.cursorSurface = nil
@@ -68,7 +71,7 @@ func (d cursorShapeDevice) SetShape(r *cursorshape.WpCursorShapeDeviceV1, _ uint
 
 type pointer struct{ server *Server }
 
-func (p pointer) SetCursor(r *wayland.Pointer, _ uint32, surf *wayland.Surface, hotX, hotY int32) {
+func (p pointer) SetCursor(r *wayland.Pointer, serial uint32, surf *wayland.Surface, hotX, hotY int32) {
 	s := p.server
 	if s.protected() {
 		return
@@ -90,7 +93,7 @@ func (p pointer) SetCursor(r *wayland.Pointer, _ uint32, surf *wayland.Surface, 
 			}
 		}
 	}
-	if !s.hasPointerFocus(r.Client()) {
+	if !s.hasPointerFocus(r.Client()) || !s.currentPointerSerial(r.Resource, serial) {
 		return
 	}
 	if state == nil {
@@ -199,4 +202,9 @@ func (s *Server) forwardCursors(ctx context.Context) {
 		case s.channels.Cursors <- c:
 		}
 	}
+}
+
+// currentPointerSerial binds cursor authority to this pointer's current enter.
+func (s *Server) currentPointerSerial(p *server.Resource, serial uint32) bool {
+	return p != nil && p.Alive() && s.seat.entered != nil && serial != 0 && s.seat.enters[p] == serial
 }

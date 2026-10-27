@@ -277,3 +277,68 @@ func TestPointerLockDestroyed(t *testing.T) {
 		t.Fatalf("after destroy %+v", got)
 	}
 }
+
+func TestRootConstraintRequiresEnteredSurface(t *testing.T) {
+	s, events, commands, dir := lifecycleServer(t)
+	c := protocolClient(t, s, dir)
+	w, root, _ := surfaceMapper(t, c, events)()
+	seat := bindVersion(t, c, "wl_seat", 4)
+	p := &surfacePointer{events: make(chan string, 64)}
+	p.SetID(c.AllocateID())
+	registerWireProxy(c, p)
+	requestProtocol(t, c, seat, wayland.SeatRequestGetPointer, p.ID())
+	comp := bindProtocol(t, c, "wl_compositor")
+	subc := bindProtocol(t, c, "wl_subcompositor")
+	child, sub := c.AllocateID(), c.AllocateID()
+	registerProtocol(t, c, child)
+	registerProtocol(t, c, sub)
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, child)
+	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, sub, child, root)
+	requestProtocol(t, c, sub, wayland.SubsurfaceRequestSetPosition, int32(3), int32(4))
+	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, shmBuffer(t, c), int32(0), int32(0))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	commands <- ports.FocusWindow{ID: w.ID}
+	commands <- ports.PointerMotionTo{ID: w.ID, X: .25, Y: .5}
+	recvWire(t, c, "root enter", p.events)
+	recvWire(t, c, "root motion", p.events)
+	manager := bindProtocol(t, c, "zwp_pointer_constraints_v1")
+	confine := c.AllocateID()
+	ce := logProxy(t, c, confine)
+	requestProtocol(t, c, manager, pointerconstraints.ZwpPointerConstraintsV1RequestConfinePointer, confine, root, p.ID(), uint32(0), uint32(pointerconstraints.ZwpPointerConstraintsV1LifetimePersistent))
+	if ev := next(t, c, ce); ev[0] != float64(pointerconstraints.ZwpConfinedPointerV1EventConfined) {
+		t.Fatal(ev)
+	}
+	if got := constrained(t, events); got.ID != w.ID {
+		t.Fatal(got)
+	}
+	commands <- ports.PointerMotionTo{ID: w.ID, X: 3.25, Y: 4.5}
+	if ev := next(t, c, ce); ev[0] != float64(pointerconstraints.ZwpConfinedPointerV1EventUnconfined) {
+		t.Fatal(ev)
+	}
+	if got := constrained(t, events); got.ID != 0 {
+		t.Fatal(got)
+	}
+	requestProtocol(t, c, confine, pointerconstraints.ZwpConfinedPointerV1RequestDestroy)
+	lock := c.AllocateID()
+	le := logProxy(t, c, lock)
+	requestProtocol(t, c, manager, pointerconstraints.ZwpPointerConstraintsV1RequestLockPointer, lock, root, p.ID(), uint32(0), uint32(pointerconstraints.ZwpPointerConstraintsV1LifetimePersistent))
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ev := <-le:
+		t.Fatalf("lock active on child: %v", ev)
+	default:
+	}
+	commands <- ports.PointerMotionTo{ID: w.ID, X: .25, Y: .5}
+	if ev := next(t, c, le); ev[0] != float64(pointerconstraints.ZwpLockedPointerV1EventLocked) {
+		t.Fatal(ev)
+	}
+	if got := constrained(t, events); got.ID != w.ID || got.Mode != domain.ConstraintLock {
+		t.Fatal(got)
+	}
+}

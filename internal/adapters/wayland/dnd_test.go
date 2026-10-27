@@ -35,7 +35,8 @@ type dndDeviceEvents struct {
 	c   *wlturbo.Display
 	log chan dndEvent
 	// offer is the id of the latest data_offer.
-	offer atomic.Uint32
+	offer   atomic.Uint32
+	surface uint32
 }
 
 func (p *dndDeviceEvents) Dispatch(e *wlturbo.Event) {
@@ -46,7 +47,8 @@ func (p *dndDeviceEvents) Dispatch(e *wlturbo.Event) {
 		p.offer.Store(o.ID())
 		registerWireProxy(p.c, o)
 	case uint16(wayland.DataDeviceEventEnter):
-		serial, _ := e.Uint32(), e.Uint32()
+		serial := e.Uint32()
+		p.surface = e.Uint32()
 		x, y := e.Fixed().Float64(), e.Fixed().Float64()
 		p.log <- dndEvent{name: "enter", x: x, y: y, n: e.Uint32() + serial*0}
 	case uint16(wayland.DataDeviceEventLeave):
@@ -1222,5 +1224,66 @@ func TestDataDragMultipleOffersShareAction(t *testing.T) {
 			p.a.expect(t, "cancelled")
 			other.expect(t, "leave")
 		})
+	}
+}
+
+func TestDataDragMotionCrossesSubsurfaces(t *testing.T) {
+	p := newDndPair(t)
+	c := p.b.c
+	subc := bindProtocol(t, c, "wl_subcompositor")
+	add := func(x int32) uint32 {
+		child, sub := c.AllocateID(), c.AllocateID()
+		registerProtocol(t, c, child)
+		registerProtocol(t, c, sub)
+		requestProtocol(t, c, p.b.comp, wayland.CompositorRequestCreateSurface, child)
+		requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, sub, child, p.b.surf)
+		requestProtocol(t, c, sub, wayland.SubsurfaceRequestSetPosition, x, int32(4))
+		requestProtocol(t, c, child, wayland.SurfaceRequestAttach, shmBuffer(t, c), int32(0), int32(0))
+		requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+		requestProtocol(t, c, p.b.surf, wayland.SurfaceRequestCommit)
+		return child
+	}
+	a, b := add(3), add(6)
+	// Disable root input so the gap has no eligible target.
+	reg := c.AllocateID()
+	registerProtocol(t, c, reg)
+	requestProtocol(t, c, p.b.comp, wayland.CompositorRequestCreateRegion, reg)
+	requestProtocol(t, c, p.b.surf, wayland.SurfaceRequestSetInputRegion, reg)
+	requestProtocol(t, c, p.b.surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	p.start(t, 0)
+	dndNextEvent[ports.DataDragStarted](t, p.events)
+	enter := func(surface uint32) uint32 {
+		t.Helper()
+		p.b.expect(t, "offer")
+		p.b.expect(t, "offer")
+		p.b.expect(t, "source_actions")
+		ev := p.b.expect(t, "enter")
+		if ev.x != .25 || ev.y != .5 || ev.n == 0 {
+			t.Fatalf("enter %+v", ev)
+		}
+		if got := p.b.device.surface; got != surface {
+			t.Fatalf("surface %d want %d", got, surface)
+		}
+		return ev.n
+	}
+	p.commands <- ports.DataDragFocus{ID: p.b.window, X: 3.25, Y: 4.5}
+	old := enter(a)
+	p.commands <- ports.DataDragMotion{ID: p.b.window, X: 6.25, Y: 4.5}
+	p.b.expect(t, "leave")
+	if offer := enter(b); offer == old {
+		t.Fatal("offer not replaced")
+	}
+	if ev := p.b.expect(t, "motion"); ev.x != .25 || ev.y != .5 {
+		t.Fatal(ev)
+	}
+	p.commands <- ports.DataDragMotion{ID: p.b.window, X: 5, Y: 4.5}
+	p.b.expect(t, "leave")
+	p.commands <- ports.DataDragMotion{ID: p.b.window, X: 3.25, Y: 4.5}
+	enter(a)
+	if ev := p.b.expect(t, "motion"); ev.x != .25 || ev.y != .5 {
+		t.Fatal(ev)
 	}
 }

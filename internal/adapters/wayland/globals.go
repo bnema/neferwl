@@ -461,7 +461,7 @@ func (h seat) GetPointer(r *wayland.Seat, id uint32) {
 		}
 	}
 	if s.hasPointerFocus(r.Client()) {
-		if surf, _, x, y := s.pointerSurface(s.seat.pointerFocus, s.seat.pointerX, s.seat.pointerY); surf != nil {
+		if surf, _, x, y := s.enteredPointerSurface(); surf != nil {
 			s.serial++
 			s.seat.enters[p.Resource] = s.serial
 			p.SendEnter(s.serial, surf, server.FixedFromFloat(x), server.FixedFromFloat(y))

@@ -19,6 +19,8 @@ import (
 type seatState struct {
 	focused      domain.WindowID
 	pointerFocus domain.WindowID
+	entered      *wayland.Surface
+	buttons      map[uint32]bool
 	// pointerX, pointerY is the pointer as core placed it in pointerFocus;
 	// pointerSurface and surfacePoint turn it into surface coordinates.
 	pointerX, pointerY float64
@@ -104,16 +106,7 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 			}
 			return
 		}
-		if l := s.layers[c.ID]; l != nil && c.ID == s.seat.pointerFocus {
-			s.seat.pointerX, s.seat.pointerY = c.X, c.Y
-			for _, p := range s.layerPointers(l) {
-				s.stampPointer(p, c.Time)
-				p.SendMotion(wireMsec(c.Time), server.FixedFromFloat(c.X), server.FixedFromFloat(c.Y))
-				pointerFrame(p)
-			}
-			return
-		}
-		if w := s.windows[c.ID]; w != nil && c.ID == s.seat.pointerFocus {
+		if w := s.windows[c.ID]; w != nil {
 			if s.relativeMotion(w, c) && s.locked(w) {
 				for _, p := range s.windowPointers(w) {
 					pointerFrame(p)
@@ -123,17 +116,14 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 				// Only relative motion reaches a locked pointer.
 				return
 			}
-			x, y := w.surfacePoint(c.X, c.Y)
+			s.pointerMotionSurface(c)
 			s.seat.pointerX, s.seat.pointerY = c.X, c.Y
 			// A constraint waits for the pointer to enter its region.
 			if s.constraint == nil {
 				s.updateConstraint()
 			}
-			for _, p := range s.windowPointers(w) {
-				s.stampPointer(p, c.Time)
-				p.SendMotion(wireMsec(c.Time), server.FixedFromFloat(x), server.FixedFromFloat(y))
-				pointerFrame(p)
-			}
+		} else if s.layers[c.ID] != nil {
+			s.pointerMotionSurface(c)
 		}
 	case ports.PointerButtonTo:
 		// Releases may target the implicit-grab window after focus has moved.
@@ -142,7 +132,15 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 			// gone.
 			s.seat.grabSerial, s.seat.grabButton = 0, 0
 		}
-		if client, pointers, ok := s.pointerTarget(c.ID); ok {
+		if client, pointers, ok := s.pointerTarget(c.ID); ok && s.seat.entered != nil {
+			if s.seat.buttons == nil {
+				s.seat.buttons = make(map[uint32]bool)
+			}
+			if c.Pressed {
+				s.seat.buttons[c.Button] = true
+			} else {
+				delete(s.seat.buttons, c.Button)
+			}
 			s.serial++
 			state := uint32(0)
 			if c.Pressed {
@@ -156,6 +154,11 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 				s.stampPointer(p, c.Time)
 				p.SendButton(s.serial, wireMsec(c.Time), c.Button, state)
 				pointerFrame(p)
+			}
+			// The final release belongs to the grab, then focus follows the
+			// current position even if the next click arrives without motion.
+			if !c.Pressed && len(s.seat.buttons) == 0 {
+				s.changePointerFocus(s.seat.pointerFocus, s.seat.pointerX, s.seat.pointerY)
 			}
 		}
 	case ports.PointerAxisTo:
@@ -335,15 +338,15 @@ func (s *Server) pointerSurface(id domain.WindowID, x, y float64) (*wayland.Surf
 	if l := s.lockSurfaces[id]; l != nil && !l.closed && l.surface.wl.Alive() {
 		return l.surface.wl, s.clientPointers(l.surface.wl.Client()), x, y
 	}
-	if w := s.windows[id]; w != nil {
-		if surf := w.xdg.surfaceResource(); surf != nil && surf.Resource.Alive() {
+	if w := s.windows[id]; w != nil && w.mapped {
+		if surf := w.xdg.surface.wl; surf != nil && surf.Resource.Alive() {
 			x, y := w.surfacePoint(x, y)
-			return surf, s.windowPointers(w), x, y
+			return s.resolvePointerSurface(surf, s.windowPointers(w), x, y)
 		}
 	}
 	if l := s.layers[id]; l != nil && l.mapped {
-		if surf := l.surfaceResource(); surf != nil {
-			return surf, s.layerPointers(l), x, y
+		if surf := l.surface.wl; surf != nil {
+			return s.resolvePointerSurface(surf, s.layerPointers(l), x, y)
 		}
 	}
 	return nil, nil, 0, 0
@@ -565,10 +568,30 @@ func (s *Server) clientPointers(c server.Client) []*wayland.Pointer {
 	return s.seat.pointers[c]
 }
 func (s *Server) changePointerFocus(id domain.WindowID, x, y float64) {
+	surface, pointers, sx, sy := s.resolvePointerFocus(id, x, y)
+	s.enterPointerSurface(id, x, y, surface, pointers, sx, sy)
+}
+
+// resolvePointerFocus respects core's window selection before sampling the tree.
+func (s *Server) resolvePointerFocus(id domain.WindowID, x, y float64) (*wayland.Surface, []*wayland.Pointer, float64, float64) {
+	if s.security != nil && s.security.Snapshot().Protected && id != 0 && !s.lockInputTarget(id) {
+		return nil, nil, 0, 0
+	}
+	if id != s.seat.pointerFocus {
+		clear(s.seat.buttons)
+	}
+	return s.pointerSurface(id, x, y)
+}
+
+// enterPointerSurface applies a resolved target; motion shares this result.
+func (s *Server) enterPointerSurface(id domain.WindowID, x, y float64, surface *wayland.Surface, pointers []*wayland.Pointer, sx, sy float64) {
 	if s.security != nil && s.security.Snapshot().Protected && id != 0 && !s.lockInputTarget(id) {
 		return
 	}
-	if id == s.seat.pointerFocus {
+	if len(s.seat.buttons) != 0 && s.seat.entered != nil {
+		return
+	}
+	if id == s.seat.pointerFocus && surface == s.seat.entered {
 		return
 	}
 	s.seat.wheelRest, s.seat.wheelHeld = [2]int32{}, [2]float64{}
@@ -577,16 +600,18 @@ func (s *Server) changePointerFocus(id domain.WindowID, x, y float64) {
 	// The new client sets its own cursor on enter; until then, the arrow.
 	s.cursorSurface = nil
 	s.setCursor(domain.CursorChange{})
-	if surface, pointers, _, _ := s.pointerSurface(s.seat.pointerFocus, 0, 0); surface != nil {
-		for _, p := range pointers {
+	if old := s.seat.entered; old != nil && old.Alive() {
+		for _, p := range s.clientPointers(old.Client()) {
 			s.serial++
-			p.SendLeave(s.serial, surface)
+			p.SendLeave(s.serial, old)
 			pointerFrame(p)
 		}
 	}
 	s.seat.pointerFocus = 0
+	s.seat.entered = nil
 	clear(s.seat.enters)
-	if surface, pointers, sx, sy := s.pointerSurface(id, x, y); surface != nil {
+	if surface != nil {
+		s.seat.entered = surface
 		s.seat.pointerFocus, s.seat.pointerX, s.seat.pointerY = id, x, y
 		for _, p := range pointers {
 			s.serial++

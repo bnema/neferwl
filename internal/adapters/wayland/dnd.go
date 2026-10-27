@@ -181,6 +181,7 @@ func (s *Server) startDrag(r *wayland.DataDevice, srcRes *wayland.DataSource, or
 	}
 	s.dnd = d
 	// Core consumes the releases of a drag: the grab ends here.
+	clear(s.seat.buttons)
 	button := s.seat.grabButton
 	s.seat.grabSerial, s.seat.grabButton = 0, 0
 	s.log.Info().Uint64("icon", uint64(d.iconID)).Bool("source", cs != nil).Msg("data drag started")
@@ -199,7 +200,7 @@ func (s *Server) validGrab(origin *wayland.Surface, serial uint32) bool {
 	if serial == 0 || serial != s.seat.grabSerial {
 		return false
 	}
-	focus, _, _, _ := s.pointerSurface(s.seat.pointerFocus, 0, 0)
+	focus := s.seat.entered
 	if focus == nil {
 		return false
 	}
@@ -266,9 +267,13 @@ func (s *Server) applyDrag(cmd ports.ClientCommand) {
 	case ports.DataDragFocus:
 		s.dndFocus(d, c)
 	case ports.DataDragMotion:
-		if t := d.target; t != nil && !s.protected() {
+		if !s.protected() {
 			surf, _, x, y := s.pointerSurface(c.ID, c.X, c.Y)
-			if surf == nil || surf.Resource != t.surface.Resource {
+			if d.target == nil || surf == nil || surf.Resource != d.target.surface.Resource {
+				s.dndFocus(d, ports.DataDragFocus(c))
+			}
+			t := d.target
+			if t == nil {
 				return
 			}
 			for _, dev := range t.devices {
