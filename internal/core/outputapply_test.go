@@ -161,7 +161,11 @@ func TestOutputApplyOutbox(t *testing.T) {
 	if out, _ := r.a.HeadsOut(headsCh); out != nil {
 		t.Fatal("heads sent twice")
 	}
-	for i, got := range r.replies() {
+	replies := r.replies()
+	if len(replies) != 3 {
+		t.Fatalf("replies: got %d, want 3: %+v", len(replies), replies)
+	}
+	for i, got := range replies {
 		if got.ID != uint64(i+1) || got.Err == nil {
 			t.Fatalf("reply %d: %+v", i+1, got)
 		}
