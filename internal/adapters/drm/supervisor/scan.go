@@ -160,6 +160,7 @@ func (run *outputsRun) scan() {
 	run.barrier()
 }
 
+//hexcheck:ignore suspicious-business-logic-in-adapter Reads connected hardware heads and forwards the inventory to core policy.
 func (run *outputsRun) publishInventory() {
 	var inventory domain.OutputHeads
 	for _, card := range run.b.cards {

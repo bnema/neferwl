@@ -57,6 +57,8 @@ func (t *Table) Map() map[domain.WindowID]domain.SurfaceContent { return t.m }
 // Update takes a window's new content. An empty one (the window unmapped)
 // keeps the previous content, without its Acquire fence, while scene draws
 // the window; it drops it otherwise.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter Output-owned buffer retention and acquire-fence delivery mechanics.
 func (t *Table) Update(c domain.SurfaceContent, scene domain.Scene) {
 	if !c.Empty() {
 		t.m[c.ID] = c
@@ -119,6 +121,8 @@ func Shown(scene domain.Scene, id domain.WindowID, kept func(domain.WindowID) bo
 // dirty reports a content of a window scene draws (windows on other outputs
 // or workspaces need no frame). seenChanged reports a window whose seen Seq
 // moved forward: a new report is due.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter Consumes and returns transport batches on the output owner goroutine.
 func (t *Table) Apply(b *domain.ContentBatch, scene domain.Scene, seen map[domain.WindowID]uint64, ret ports.ContentReturn) (dirty, seenChanged bool) {
 	for i := range b.Items {
 		c := b.Items[i]

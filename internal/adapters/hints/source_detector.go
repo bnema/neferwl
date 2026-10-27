@@ -13,6 +13,8 @@ type detectorSource struct{ det detector }
 func (*detectorSource) kind() domain.HintSource         { return domain.HintSourceDetector }
 func (*detectorSource) needsFrame(context.Context) bool { return true }
 func (s *detectorSource) Close() error                  { return s.det.Close() }
+
+//hexcheck:ignore suspicious-business-logic-in-adapter Translates external detector pixels into domain targets at the adapter edge.
 func (s *detectorSource) scan(ctx context.Context, req domain.HintScanRequest, wins []domain.HintWindow, fr *frame) ([]domain.HintTarget, error) {
 	var out []domain.HintTarget
 	var scanErr error

@@ -419,6 +419,8 @@ func (s *surface) queueAndTick() {
 
 // applyCommit makes only the captured update current. Live pending requests
 // remain untouched, even when this update waited behind another commit.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter Applies captured Wayland buffer state on the display owner goroutine.
 func (s *surface) applyCommit(u *update) {
 	oldW, oldH, oldSource, oldTransform := s.content.LogicalW, s.content.LogicalH, s.content.Source, s.content.Transform
 	oldColor, oldRepresentation := s.color, s.representation

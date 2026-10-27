@@ -1,10 +1,11 @@
 version: 1
 components:
+  domain: { role: core, paths: [internal/domain/**] }
   core: { role: core, paths: [internal/core/**] }
   ports: { role: ports, paths: [internal/ports/**] }
   adapters: { role: adapter, paths: [internal/adapters/**] }
-  # app is the composition root: it wires adapters to core, like cmd.
-  entrypoints: { role: entrypoint, paths: [cmd/**, internal/app/**, internal/cli/**] }
+  app: { role: adapter, paths: [internal/app/**] }
+  entrypoints: { role: entrypoint, paths: [cmd/**, internal/cli/**] }
   generated: { role: ignore, paths: [internal/mocks/**] }
 rules:
   no-adapter-imports-in-core: error
@@ -12,6 +13,13 @@ rules:
   no-framework-types-in-core: error
   no-infra-types-in-ports: error
   missing-generated-mock-for-port: error
+  no-usecase-imports-in-core: error
+  no-infra-imports-in-ports: error
+  no-entrypoint-imports-in-adapter: error
+  suspicious-business-logic-in-adapter: warn
+  no-local-fakes-for-ports: error
+  prefer-generated-mocks: warn
+  no-adapter-to-adapter-imports: warn
 mocking:
   generatedMockPaths: [internal/mocks/**]
   generatedMockNamePatterns: ['Mock{{Interface}}', '{{Interface}}Mock']
@@ -70,10 +78,13 @@ allow:
   - rule: suspicious-business-logic-in-adapter
     path: internal/adapters/wayland/server.go
     reason: Display command dispatch validates immutable security epochs before converting port messages to wire events.
+heuristics:
+  # Domain value translation alone is medium confidence; require strong policy evidence.
+  businessLogicMinConfidence: high
 ruleSettings:
   missing-generated-mock-for-port:
     # Sealed message unions are channel data, not ports; tested by sending messages (ADR 005).
-    excludePaths: [internal/ports/client_events.go, internal/ports/client_commands.go, internal/ports/input_events.go, internal/ports/output_events.go, internal/ports/lease.go, internal/ports/session_lock_messages.go, internal/ports/screencast_messages.go, internal/ports/session_backend.go, internal/ports/hint_messages.go]
-  suspicious-business-logic-in-adapter:
-    # app is the composition root; starting core and wiring channels is its job.
-    excludePaths: [internal/app/app.go, internal/app/session.go]
+    excludePaths: [internal/ports/client_events.go, internal/ports/client_commands.go, internal/ports/input_events.go, internal/ports/output_events.go, internal/ports/lease.go, internal/ports/session_backend.go]
+  no-adapter-to-adapter-imports:
+    # Composition root wires concrete adapters; Makefile ADAPTER_LIBS governs adapter sharing.
+    excludePaths: [internal/app/**]

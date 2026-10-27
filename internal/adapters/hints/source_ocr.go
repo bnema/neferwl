@@ -21,6 +21,8 @@ type ocrSource struct {
 func (*ocrSource) kind() domain.HintSource               { return domain.HintSourceOCR }
 func (s *ocrSource) needsFrame(ctx context.Context) bool { return ocrReady(ctx, &s.state) }
 func (*ocrSource) Close() error                          { return nil }
+
+//hexcheck:ignore suspicious-business-logic-in-adapter Owns OCR buffers, cache and external recognition; translates pixel results.
 func (s *ocrSource) scan(ctx context.Context, req domain.HintScanRequest, wins []domain.HintWindow, fr *frame) ([]domain.HintTarget, error) {
 	if !ocrReady(ctx, &s.state) {
 		return nil, errOCRUnavailable

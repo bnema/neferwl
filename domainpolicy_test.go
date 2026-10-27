@@ -18,7 +18,7 @@ func policyFiles(t *testing.T, dir string, check func(string, *ast.File)) {
 		if err != nil {
 			return err
 		}
-		if entry.IsDir() && dir == "internal/ports" && path != dir {
+		if entry.IsDir() && path != dir {
 			return filepath.SkipDir
 		}
 		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
@@ -35,18 +35,85 @@ func policyFiles(t *testing.T, dir string, check func(string, *ast.File)) {
 		t.Fatal(err)
 	}
 }
-func TestDomainImportsOnlyStandardLibrary(t *testing.T) {
-	policyFiles(t, "internal/domain", func(path string, f *ast.File) {
+func TestPurePackageImports(t *testing.T) {
+	const base = "github.com/bnema/neferwl/internal/"
+	for _, rule := range []struct {
+		dir   string
+		allow []string
+	}{
+		{"domain", nil},
+		{"core/geom", []string{"domain"}},
+		{"core/layout", []string{"domain", "core/geom"}},
+		{"core/motion", []string{"domain"}},
+		{"core/workspace", []string{"domain", "core/geom", "core/layout", "core/motion"}},
+	} {
+		t.Run(rule.dir, func(t *testing.T) {
+			policyFiles(t, "internal/"+rule.dir, func(path string, f *ast.File) {
+				for _, imp := range f.Imports {
+					name, err := strconv.Unquote(imp.Path.Value)
+					if err != nil {
+						t.Fatal(err)
+					}
+					allowed := false
+					for _, dep := range rule.allow {
+						allowed = allowed || name == base+dep
+					}
+					if allowed {
+						continue
+					}
+					pkg, err := build.Default.Import(name, "", build.FindOnly)
+					if err != nil || !pkg.Goroot {
+						t.Errorf("%s imports forbidden dependency %s", path, name)
+					}
+				}
+			})
+		})
+	}
+}
+
+func TestRootCoreHasNoDirectSideEffects(t *testing.T) {
+	policyFiles(t, "internal/core", func(path string, f *ast.File) {
+		if filepath.Dir(path) != "internal/core" {
+			return
+		}
+		timeName := ""
 		for _, imp := range f.Imports {
 			name, err := strconv.Unquote(imp.Path.Value)
 			if err != nil {
 				t.Fatal(err)
 			}
-			pkg, err := build.Default.Import(name, "", build.FindOnly)
-			if err != nil || !pkg.Goroot {
-				t.Errorf("%s imports %s; domain imports only the standard library", path, name)
+			switch name {
+			case "crypto/rand", "reflect":
+				t.Errorf("%s imports forbidden dependency %s", path, name)
+			case "time":
+				timeName = "time"
+				if imp.Name != nil {
+					timeName = imp.Name.Name
+				}
+				if timeName == "." {
+					t.Errorf("%s: dot import of time bypasses clock policy", path)
+				}
 			}
 		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			id, ok := sel.X.(*ast.Ident)
+			if !ok || id.Name != timeName {
+				return true
+			}
+			switch sel.Sel.Name {
+			case "Now", "Since", "NewTimer", "After", "Sleep":
+				t.Errorf("%s calls time.%s; use ports.Clock", path, sel.Sel.Name)
+			}
+			return true
+		})
 	})
 }
 func TestPortsExportedTypesAreSealed(t *testing.T) {

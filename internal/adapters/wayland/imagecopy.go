@@ -423,6 +423,8 @@ func (c *captureTarget) follow() (fate targetFate, rect image.Rectangle, ok bool
 
 // applyState takes what core decided; it reports a decision that ends the
 // target (a terminal reason).
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter Emits protocol lifecycle effects from the terminal decision supplied by core.
 func (c *captureTarget) applyState(st ports.CaptureSessionState) (ended bool) {
 	if st.Reason.Terminal() {
 		c.s.log.Info().Uint64("session", c.id).Str("reason", string(st.Reason)).Msg("capture session end")
