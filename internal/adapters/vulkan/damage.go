@@ -100,7 +100,7 @@ func (d *damageRegion) add(r image.Rectangle) {
 
 // window records a window drawn in rect (physical): if its content changed
 // and no finer damage comes (content), the whole rect is redrawn.
-func (d *damageRegion) window(id domain.WindowID, c ports.SurfaceContent, rect image.Rectangle) {
+func (d *damageRegion) window(id domain.WindowID, c domain.SurfaceContent, rect image.Rectangle) {
 	if d.seen[id] {
 		return
 	}
@@ -164,7 +164,7 @@ func (f *fullRedraws) take() fullRedraws {
 // content maps a root surface's buffer damage onto full (where its w×h
 // buffer is drawn), clipped to dst. Scaled buffers filter linearly: one
 // more pixel around each rect. A transformed buffer redraws all of dst.
-func (d *damageRegion) content(id domain.WindowID, c *ports.SurfaceContent, full, dst image.Rectangle) {
+func (d *damageRegion) content(id domain.WindowID, c *domain.SurfaceContent, full, dst image.Rectangle) {
 	if d.held == nil {
 		return
 	}

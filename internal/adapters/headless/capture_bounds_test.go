@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -80,7 +82,7 @@ func TestCaptureBatchBoundedAndRecycledWhileIdle(t *testing.T) {
 				t.Fatal(err)
 			}
 			select {
-			case incoming <- ports.CaptureRequest{ID: uint64(i), Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: ports.SHMBuffer{File: f}}:
+			case incoming <- ports.CaptureRequest{ID: uint64(i), Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: domain.SHMBuffer{File: f}}:
 			case <-time.After(time.Second):
 				t.Fatal("capture admission blocked")
 			}

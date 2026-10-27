@@ -20,7 +20,7 @@ type outputRun func(ctx context.Context, feed outputFeed) error
 // scene (a display reconnecting from deep sleep stays dark).
 type outputFeed struct {
 	Scenes   <-chan ports.Scene
-	Contents <-chan *ports.ContentBatch
+	Contents <-chan *domain.ContentBatch
 	Returns  ports.ContentReturn
 	Cursor   <-chan ports.CursorChange
 	Captures <-chan ports.CaptureRequest
@@ -39,7 +39,7 @@ type outputFeed struct {
 // that feed only, so a stale handle never stops a newer feed of the same
 // name. Detach an output once it stopped.
 type contentAttacher interface {
-	AttachOutput(name string) (<-chan *ports.ContentBatch, ports.ContentReturn)
+	AttachOutput(name string) (<-chan *domain.ContentBatch, ports.ContentReturn)
 	DetachOutput(feed ports.ContentReturn)
 }
 

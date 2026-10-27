@@ -4,6 +4,7 @@ import (
 	"slices"
 	"sync/atomic"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -26,9 +27,9 @@ const batchItems = 8
 type contentLink struct {
 	s    *Server
 	name string
-	in   chan *ports.ContentBatch
-	free chan *ports.ContentBatch
-	cur  *ports.ContentBatch
+	in   chan *domain.ContentBatch
+	free chan *domain.ContentBatch
+	cur  *domain.ContentBatch
 	// pending: cur holds contents that could not be sent yet (the channel is
 	// full, or every batch is out). Return only wakes the display when it is
 	// set, so a steady stream of frames costs the display no extra wake.
@@ -38,7 +39,7 @@ type contentLink struct {
 // Return gives a consumed (reset) batch back and, when contents wait for one,
 // has the display goroutine send them. Safe from any goroutine, also after
 // the link was detached: the batch only goes back to its own link.
-func (l *contentLink) Return(b *ports.ContentBatch) {
+func (l *contentLink) Return(b *domain.ContentBatch) {
 	l.free <- b // never full: the link owns batchesPerLink batches
 	// The display stores pending before it looks at free once more, so
 	// either it sees this batch or this load sees pending.
@@ -48,8 +49,8 @@ func (l *contentLink) Return(b *ports.ContentBatch) {
 }
 
 // add puts c in the batch being filled, replacing the window's earlier
-// content: the output only needs the newest one (see ports.ContentBatch).
-func (l *contentLink) add(c ports.SurfaceContent) {
+// content: the output only needs the newest one (see domain.ContentBatch).
+func (l *contentLink) add(c domain.SurfaceContent) {
 	items := l.cur.Items
 	for i := range items {
 		if items[i].ID == c.ID {
@@ -110,7 +111,7 @@ func (s *Server) flushLinks() {
 // first batch holds the latest content of every live window,
 // so the output starts with all of them drawn. Display goroutine, or before
 // Run.
-func (s *Server) attachOutput(name string) (<-chan *ports.ContentBatch, ports.ContentReturn) {
+func (s *Server) attachOutput(name string) (<-chan *domain.ContentBatch, ports.ContentReturn) {
 	for i, old := range s.links {
 		if old.name == name {
 			s.links = slices.Delete(s.links, i, i+1)
@@ -120,13 +121,13 @@ func (s *Server) attachOutput(name string) (<-chan *ports.ContentBatch, ports.Co
 	l := &contentLink{
 		s:    s,
 		name: name,
-		in:   make(chan *ports.ContentBatch, 1),
-		free: make(chan *ports.ContentBatch, batchesPerLink),
+		in:   make(chan *domain.ContentBatch, 1),
+		free: make(chan *domain.ContentBatch, batchesPerLink),
 	}
 	for range batchesPerLink - 1 {
-		l.free <- &ports.ContentBatch{Items: make([]ports.SurfaceContent, 0, batchItems)}
+		l.free <- &domain.ContentBatch{Items: make([]domain.SurfaceContent, 0, batchItems)}
 	}
-	l.cur = &ports.ContentBatch{Items: make([]ports.SurfaceContent, 0, max(batchItems, len(s.latest)))}
+	l.cur = &domain.ContentBatch{Items: make([]domain.SurfaceContent, 0, max(batchItems, len(s.latest)))}
 	for _, c := range s.latest {
 		l.add(c)
 	}
@@ -156,8 +157,8 @@ func (s *Server) detachOutput(ret ports.ContentReturn) {
 // Attaching a name that already has a feed replaces that feed. Call it from
 // outside the display goroutine. It returns a nil channel and handle when
 // the server is stopped.
-func (s *Server) AttachOutput(name string) (<-chan *ports.ContentBatch, ports.ContentReturn) {
-	var in <-chan *ports.ContentBatch
+func (s *Server) AttachOutput(name string) (<-chan *domain.ContentBatch, ports.ContentReturn) {
+	var in <-chan *domain.ContentBatch
 	var ret ports.ContentReturn
 	if !s.display.Do(func() { in, ret = s.attachOutput(name) }) {
 		return nil, nil

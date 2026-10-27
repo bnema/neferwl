@@ -8,7 +8,6 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // linkServer is a running server with no client, to publish contents on its
@@ -27,11 +26,11 @@ func linkServer(t *testing.T) *Server {
 	return s
 }
 
-func solid(id domain.WindowID) ports.SurfaceContent {
-	return ports.SurfaceContent{ID: id, Solid: &domain.SolidColor{}}
+func solid(id domain.WindowID) domain.SurfaceContent {
+	return domain.SurfaceContent{ID: id, Solid: &domain.SolidColor{}}
 }
 
-func (s *Server) publish(t *testing.T, contents ...ports.SurfaceContent) {
+func (s *Server) publish(t *testing.T, contents ...domain.SurfaceContent) {
 	t.Helper()
 	if !s.display.Do(func() {
 		for _, c := range contents {
@@ -43,7 +42,7 @@ func (s *Server) publish(t *testing.T, contents ...ports.SurfaceContent) {
 }
 
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
-func nextBatch(t *testing.T, in <-chan *ports.ContentBatch) *ports.ContentBatch {
+func nextBatch(t *testing.T, in <-chan *domain.ContentBatch) *domain.ContentBatch {
 	t.Helper()
 	select {
 	case b := <-in:
@@ -57,7 +56,7 @@ func nextBatch(t *testing.T, in <-chan *ports.ContentBatch) *ports.ContentBatch 
 // noBatch asserts that no batch is on the channel once the display goroutine
 // went through everything posted so far (a Return's flush included): sends
 // happen only there, so there is nothing left to wait for.
-func noBatch(t *testing.T, s *Server, in <-chan *ports.ContentBatch) {
+func noBatch(t *testing.T, s *Server, in <-chan *domain.ContentBatch) {
 	t.Helper()
 	s.display.Do(func() {})
 	select {
@@ -108,7 +107,7 @@ func TestContentBatchKeepsLatestPerWindow(t *testing.T) {
 // window and nothing for windows that were emptied.
 func TestContentBatchAttachSeedsLiveWindows(t *testing.T) {
 	s := linkServer(t)
-	s.publish(t, solid(1), solid(2), solid(3), ports.SurfaceContent{ID: 2}, solid(1))
+	s.publish(t, solid(1), solid(2), solid(3), domain.SurfaceContent{ID: 2}, solid(1))
 	in, _ := s.AttachOutput("A")
 	b := nextBatch(t, in)
 	got := map[domain.WindowID]uint64{}
@@ -133,7 +132,7 @@ func TestContentBatchDeliversEmpty(t *testing.T) {
 	b := nextBatch(t, in)
 	b.Reset()
 	ret.Return(b)
-	s.publish(t, ports.SurfaceContent{ID: 1})
+	s.publish(t, domain.SurfaceContent{ID: 1})
 	b = nextBatch(t, in)
 	if len(b.Items) != 1 || b.Items[0].ID != 1 || !b.Items[0].Empty() || b.Items[0].Seq != 2 {
 		t.Fatalf("empty not delivered: %+v", b.Items)
@@ -146,8 +145,8 @@ func TestContentBatchDeliversEmpty(t *testing.T) {
 	// Superseded by an empty before the output looked: the empty wins.
 	b.Reset()
 	ret.Return(b)
-	s.publish(t, solid(1))                              // sent
-	s.publish(t, solid(1), ports.SurfaceContent{ID: 1}) // pending: last one is empty
+	s.publish(t, solid(1))                               // sent
+	s.publish(t, solid(1), domain.SurfaceContent{ID: 1}) // pending: last one is empty
 	first := nextBatch(t, in)
 	first.Reset()
 	ret.Return(first)
@@ -215,13 +214,13 @@ func TestContentBatchCycleAllocations(t *testing.T) {
 	s := &Server{
 		contentSeq: map[domain.WindowID]uint64{},
 		damage:     map[domain.WindowID][]domain.SeqDamage{},
-		latest:     map[domain.WindowID]ports.SurfaceContent{},
+		latest:     map[domain.WindowID]domain.SurfaceContent{},
 	}
 	in, ret := s.attachOutput("A")
 	c := solid(1)
 	other := solid(2)
 	cycle := func() {
-		for _, c := range []ports.SurfaceContent{c, other} {
+		for _, c := range []domain.SurfaceContent{c, other} {
 			s.emitContent(c, damage{full: true})
 			select {
 			case b := <-in:
@@ -250,14 +249,14 @@ func TestContentBatchCycleAllocations(t *testing.T) {
 func TestContentBatchAttachReplaysLargeSet(t *testing.T) {
 	s := linkServer(t)
 	const windows = 100
-	all := make([]ports.SurfaceContent, 0, windows)
+	all := make([]domain.SurfaceContent, 0, windows)
 	for id := 1; id <= windows; id++ {
 		all = append(all, solid(domain.WindowID(id)))
 	}
 	s.publish(t, all...)
-	attached := make(chan (<-chan *ports.ContentBatch), 1)
+	attached := make(chan (<-chan *domain.ContentBatch), 1)
 	go func() { in, _ := s.AttachOutput("A"); attached <- in }()
-	var in <-chan *ports.ContentBatch
+	var in <-chan *domain.ContentBatch
 	select {
 	case in = <-attached:
 	case <-waylandDeadline(2 * time.Second):
@@ -290,7 +289,7 @@ func TestContentBatchHandshakeNeverStrandsContent(t *testing.T) {
 	t.Cleanup(func() { close(stop); <-ended })
 	go func() {
 		defer close(ended)
-		var held []*ports.ContentBatch
+		var held []*domain.ContentBatch
 		giveBack := func(n int) {
 			for ; n > 0 && len(held) > 0; n-- {
 				b := held[0]
@@ -300,7 +299,7 @@ func TestContentBatchHandshakeNeverStrandsContent(t *testing.T) {
 			}
 		}
 		for n := 0; ; n++ {
-			var b *ports.ContentBatch
+			var b *domain.ContentBatch
 			select {
 			case b = <-in:
 			default:

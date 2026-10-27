@@ -73,7 +73,7 @@ func TestProtectedModesetClearsBeforeActivation(t *testing.T) {
 		}
 		return 99, nil
 	}).Once()
-	r.EXPECT().Render(ports.Scene{Seq: 0, Background: "#000000"}, map[domain.WindowID]ports.SurfaceContent(nil)).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(ports.Scene{Seq: 0, Background: "#000000"}, map[domain.WindowID]domain.SurfaceContent(nil)).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		if len(*commits) != 1 {
 			t.Fatalf("clear before disable: %d commits", len(*commits))
 		}
@@ -227,7 +227,7 @@ func TestProtectedModesetCanceled(t *testing.T) {
 			} else {
 				fence, _ = protectionFence(t, false)
 				r.EXPECT().UseTarget(0).Return().Once()
-				r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+				r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 					cancel()
 					return fence, nil
 				}).Once()
@@ -260,7 +260,7 @@ func TestProtectedModesetPreservesPowerOff(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().UseTarget(0).Return().Once()
 	f, _ := protectionFence(t, true)
-	r.EXPECT().Render(ports.Scene{Seq: 0, Background: "#000000"}, map[domain.WindowID]ports.SurfaceContent(nil)).Return(f, nil).Once()
+	r.EXPECT().Render(ports.Scene{Seq: 0, Background: "#000000"}, map[domain.WindowID]domain.SurfaceContent(nil)).Return(f, nil).Once()
 	if err := o.protectedModeset(context.Background(), r); err != nil {
 		t.Fatal(err)
 	}

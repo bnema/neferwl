@@ -226,7 +226,7 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 			reply(done)
 		}
 	}
-	req := ports.CaptureRequest{ID: id, Output: o.name(), Region: rect, Cursor: cursor, Dst: ports.SHMBuffer{File: os.NewFile(uintptr(fd), "capture"), Offset: buf.offset}, Width: buf.width, Height: buf.height, Stride: buf.stride, Format: buf.format, Session: tag.session, Exclude: tag.exclude, CaptureRevision: tag.revision, Workspace: tag.workspace, Window: tag.window, OffScreen: tag.offscreen, Indicate: true}
+	req := ports.CaptureRequest{ID: id, Output: o.name(), Region: rect, Cursor: cursor, Dst: domain.SHMBuffer{File: os.NewFile(uintptr(fd), "capture"), Offset: buf.offset}, Width: buf.width, Height: buf.height, Stride: buf.stride, Format: buf.format, Session: tag.session, Exclude: tag.exclude, CaptureRevision: tag.revision, Workspace: tag.workspace, Window: tag.window, OffScreen: tag.offscreen, Indicate: true}
 	select {
 	case s.channels.Captures <- req:
 		s.log.Debug().Uint64("id", id).Str("output", o.name()).Stringer("region", rect).Uint32("format", format).Bool("cursor", cursor).Msg("capture requested")

@@ -6,7 +6,6 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
 )
@@ -339,7 +338,7 @@ func fileHolds(f *os.File, size int64) bool {
 }
 
 // pool is a wl_shm pool. neferwl never maps it: renderers map the file
-// and read the pixels when they draw (ports.SHMBuffer).
+// and read the pixels when they draw (domain.SHMBuffer).
 type pool struct {
 	id        uint64
 	file      *os.File
@@ -395,7 +394,7 @@ type buffer struct {
 	// stride never change, so every commit sends the same read-only
 	// SHMBuffer. The pool keeps the file open while the buffer lives, which
 	// keeps fd valid.
-	shm *ports.SHMBuffer
+	shm *domain.SHMBuffer
 	fd  int
 }
 
@@ -408,7 +407,7 @@ func (b *buffer) size() (int, int) { return b.width, b.height }
 type clientBuffer interface {
 	// content returns what the renderer draws; false means the client
 	// broke its buffer (a truncated shm file).
-	content(domain.WindowID) (ports.SurfaceContent, bool)
+	content(domain.WindowID) (domain.SurfaceContent, bool)
 	size() (int, int)
 }
 
@@ -427,16 +426,16 @@ func (s *Server) addBuffer(r *wayland.Buffer, b clientBuffer) {
 // content points the renderer at the pool; a file shrunk below the buffer
 // is refused. The size is checked on every call: a client may truncate the
 // file at any time, so it is never cached.
-func (b *buffer) content(id domain.WindowID) (ports.SurfaceContent, bool) {
+func (b *buffer) content(id domain.WindowID) (domain.SurfaceContent, bool) {
 	if b.shm == nil {
-		b.shm = &ports.SHMBuffer{Pool: b.pool.id, File: b.pool.file, Offset: b.offset, Stride: b.stride}
+		b.shm = &domain.SHMBuffer{Pool: b.pool.id, File: b.pool.file, Offset: b.offset, Stride: b.stride}
 		b.fd = int(b.pool.file.Fd())
 	}
 	var st unix.Stat_t
 	if unix.Fstat(b.fd, &st) != nil || st.Size < int64(b.offset+(b.height-1)*b.stride+b.width*4) {
-		return ports.SurfaceContent{}, false
+		return domain.SurfaceContent{}, false
 	}
-	return ports.SurfaceContent{ID: id, Width: b.width, Height: b.height, Opaque: b.format == uint32(wayland.ShmFormatXrgb8888), SHM: b.shm}, true
+	return domain.SurfaceContent{ID: id, Width: b.width, Height: b.height, Opaque: b.format == uint32(wayland.ShmFormatXrgb8888), SHM: b.shm}, true
 }
 
 type seat struct{ server *Server }

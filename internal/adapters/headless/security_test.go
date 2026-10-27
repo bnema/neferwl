@@ -44,7 +44,7 @@ func TestSecurityInitialBlackFenceBeforeLockerAndNoReadback(t *testing.T) {
 	}
 	defer signal.Close()
 	rendered := make(chan ports.Scene, 4)
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, c map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, c map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		if s.Seq == 0 {
 			if s.Background != "#000000" || s.Security != state || len(s.Windows) != 0 || len(s.Layers) != 0 || s.Capture != nil || s.CaptureScene != nil || c != nil {
 				t.Errorf("unsafe initial black: %+v surfaces %v", s, c)
@@ -69,7 +69,7 @@ func TestSecurityInitialBlackFenceBeforeLockerAndNoReadback(t *testing.T) {
 	}
 	defer acquire.Close()
 	defer acquireSignal.Close()
-	contents.send(ports.SurfaceContent{ID: 10, SHM: &ports.SHMBuffer{Pool: 10}, Acquire: acquire})
+	contents.send(domain.SurfaceContent{ID: 10, SHM: &domain.SHMBuffer{Pool: 10}, Acquire: acquire})
 	proof := make(chan ports.SecurityBackendEvent, 4)
 	replies := make(chan ports.CaptureDone, 4)
 	requests := make(chan ports.CaptureRequest, 2)
@@ -77,7 +77,7 @@ func TestSecurityInitialBlackFenceBeforeLockerAndNoReadback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	requests <- ports.CaptureRequest{ID: 44, Dst: ports.SHMBuffer{File: dst}}
+	requests <- ports.CaptureRequest{ID: 44, Dst: domain.SHMBuffer{File: dst}}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	dir := t.TempDir()
@@ -135,7 +135,7 @@ func TestSecurityChangesWakeIdleAndRejectQueuedDesktop(t *testing.T) {
 		r.EXPECT().Close().Return().Once()
 		rendered := make(chan ports.Scene, 4)
 		desktopFinished := make(chan struct{})
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, c map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, c map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			if s.Seq != 0 {
 				rendered <- s
 				<-desktopFinished
@@ -276,9 +276,9 @@ func TestSecurityRawHDRSuppressed(t *testing.T) {
 				}
 				r := portsmocks.NewMockRenderer(t)
 				r.EXPECT().SetHDR(float64(203)).Return().Once()
-				r.EXPECT().ExportTargets(1, []uint64(nil), false).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
+				r.EXPECT().ExportTargets(1, []uint64(nil), false).Return([]domain.DMABuf{{Planes: []domain.DMABufPlane{{File: f}}}}, nil).Once()
 				rendered := make(chan ports.Scene, 4)
-				r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+				r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 					rendered <- s
 					return nil, nil
 				}).Maybe()
@@ -338,7 +338,7 @@ func TestSecurityQueuedCaptureFailedOnceAndProofCancellation(t *testing.T) {
 		r := portsmocks.NewMockRenderer(t)
 		r.EXPECT().Close().Return().Once()
 		black := make(chan struct{})
-		r.EXPECT().Render(mock.Anything, mock.Anything).Run(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) { close(black) }).Return(nil, nil).Once()
+		r.EXPECT().Render(mock.Anything, mock.Anything).Run(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) { close(black) }).Return(nil, nil).Once()
 		incoming := make(chan ports.CaptureRequest)
 		replies := make(chan ports.CaptureDone, 2)
 		changes := make(chan ports.SecurityState, 1)
@@ -354,7 +354,7 @@ func TestSecurityQueuedCaptureFailedOnceAndProofCancellation(t *testing.T) {
 			t.Fatal(err)
 		}
 		select {
-		case incoming <- ports.CaptureRequest{ID: 100, Dst: ports.SHMBuffer{File: file}}:
+		case incoming <- ports.CaptureRequest{ID: 100, Dst: domain.SHMBuffer{File: file}}:
 		case <-time.After(time.Second):
 			t.Fatal("capture not admitted")
 		}
@@ -440,7 +440,7 @@ func TestSecurityCompletionLeaseRecycledBeforeProtectionRenderFailure(t *testing
 		var recycled atomic.Bool
 		r.EXPECT().EndCapture(frame).Run(func(ports.CaptureFrame) { recycled.Store(true) }).Return().Once()
 		failure := errors.New("protection render failed")
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			if s.Seq == 0 {
 				if !recycled.Load() {
 					t.Error("pulled completion lease not recycled before transition")
@@ -466,7 +466,7 @@ func TestSecurityCompletionLeaseRecycledBeforeProtectionRenderFailure(t *testing
 		if err := file.Truncate(16); err != nil {
 			t.Fatal(err)
 		}
-		incoming <- ports.CaptureRequest{ID: 77, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: ports.SHMBuffer{File: file}}
+		incoming <- ports.CaptureRequest{ID: 77, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: domain.SHMBuffer{File: file}}
 		scenes <- ports.Scene{Seq: 1, Scale: 1}
 		securityReceive(t, replies)
 		if err := securityReceive(t, done); !errors.Is(err, failure) {
@@ -493,7 +493,7 @@ func TestSecuritySkippedPNGHasNoFrameIndex(t *testing.T) {
 		})
 		r := portsmocks.NewMockRenderer(t)
 		black := make(chan struct{}, 1)
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			if s.Security.Protected {
 				black <- struct{}{}
 			}

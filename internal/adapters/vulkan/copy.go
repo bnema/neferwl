@@ -62,7 +62,7 @@ func findCopyMemory(g *GPU, bits uint32, props vk.MemoryPropertyFlags) (uint32, 
 	return 0, errors.New("no compatible copy memory type")
 }
 
-func (c *Copier) importImage(b *ports.DMABuf, usage vk.ImageUsageFlags) (*target, error) {
+func (c *Copier) importImage(b *domain.DMABuf, usage vk.ImageUsageFlags) (*target, error) {
 	format, _, known := vkFormat(b.Format)
 	n := len(b.Planes)
 	if !known || isYUVFormat(b.Format) || b.Width != c.width || b.Height != c.height {
@@ -180,7 +180,7 @@ func (c *Copier) SourceModifiers(formats []domain.DMABufFormat) []domain.DMABufF
 	return out
 }
 
-func (c *Copier) importImages(bufs []ports.DMABuf, usage vk.ImageUsageFlags, dst *[]*target) error {
+func (c *Copier) importImages(bufs []domain.DMABuf, usage vk.ImageUsageFlags, dst *[]*target) error {
 	if c.q == nil {
 		return errors.New("copier closed")
 	}
@@ -206,12 +206,12 @@ func (c *Copier) importImages(bufs []ports.DMABuf, usage vk.ImageUsageFlags, dst
 }
 
 // ImportSources replaces the transfer-source imports. The caller retains buffers.
-func (c *Copier) ImportSources(bufs []ports.DMABuf) error {
+func (c *Copier) ImportSources(bufs []domain.DMABuf) error {
 	return c.importImages(bufs, vk.ImageUsageTransferSrcBit, &c.sources)
 }
 
 // ImportTargets replaces the transfer-destination imports.
-func (c *Copier) ImportTargets(bufs []ports.DMABuf) error {
+func (c *Copier) ImportTargets(bufs []domain.DMABuf) error {
 	return c.importImages(bufs, vk.ImageUsageTransferDstBit, &c.targets)
 }
 

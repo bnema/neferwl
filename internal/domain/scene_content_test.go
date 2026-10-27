@@ -1,9 +1,7 @@
-package ports
+package domain
 
 import (
 	"testing"
-
-	"github.com/bnema/neferwl/internal/domain"
 )
 
 // HasBuffer is true for content carrying its own buffer; Empty also looks at
@@ -18,7 +16,7 @@ func TestSurfaceContentHasBufferEmpty(t *testing.T) {
 		{"zero", SurfaceContent{}, false, true},
 		{"shm", SurfaceContent{SHM: &SHMBuffer{}}, true, false},
 		{"dmabuf", SurfaceContent{DMABuf: &DMABuf{}}, true, false},
-		{"solid", SurfaceContent{Solid: &domain.SolidColor{A: 1}}, true, false},
+		{"solid", SurfaceContent{Solid: &SolidColor{A: 1}}, true, false},
 		{"children only", SurfaceContent{Children: []Subsurface{{}}}, false, false},
 	}
 	for _, tt := range tests {

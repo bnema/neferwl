@@ -31,13 +31,13 @@ func overlayOutput(t *testing.T, errs ...error) (*Output, *mockkms, *[]commitRec
 }
 
 // A 1:1 opaque dmabuf window with nothing above goes on the overlay.
-func overlayScene() (ports.Scene, map[domain.WindowID]ports.SurfaceContent) {
+func overlayScene() (ports.Scene, map[domain.WindowID]domain.SurfaceContent) {
 	s := ports.Scene{Seq: 1, Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{
 		{ID: 1, Rect: domain.Rect{W: 100, H: 100}},
 		{ID: 2, Rect: domain.Rect{X: 100, W: 100, H: 100}},
 	}}
-	return s, map[domain.WindowID]ports.SurfaceContent{
-		2: {ID: 2, Width: 100, Height: 100, Opaque: true, DMABuf: &ports.DMABuf{ID: 9, Width: 100, Height: 100, Format: fourccXRGB}},
+	return s, map[domain.WindowID]domain.SurfaceContent{
+		2: {ID: 2, Width: 100, Height: 100, Opaque: true, DMABuf: &domain.DMABuf{ID: 9, Width: 100, Height: 100, Format: fourccXRGB}},
 	}
 }
 
@@ -78,7 +78,7 @@ func TestOverlayTileInset(t *testing.T) {
 	s.OutputHeight = 120
 	s.TileInset = domain.Insets{Bottom: 20}
 	s.Windows = append(s.Windows, ports.SceneWindow{ID: 3, Rect: domain.Rect{Y: 100, W: 100, H: 100}})
-	contents[3] = ports.SurfaceContent{ID: 3, Width: 100, Height: 100, Opaque: true, DMABuf: &ports.DMABuf{ID: 10, Width: 100, Height: 100, Format: fourccXRGB}}
+	contents[3] = domain.SurfaceContent{ID: 3, Width: 100, Height: 100, Opaque: true, DMABuf: &domain.DMABuf{ID: 10, Width: 100, Height: 100, Format: fourccXRGB}}
 	if win, _, _, reason := overlayCandidate(s, contents, false, nil, nil); reason != "" || win.ID != 2 {
 		t.Fatalf("visible tile with one under the panel: %v %q", win.ID, reason)
 	}
@@ -112,7 +112,7 @@ func TestOverlayCandidate(t *testing.T) {
 	if _, _, _, reason := overlayCandidate(ls, lc, false, nil, nil); reason != "overlays" {
 		t.Fatalf("overlays reason %q", reason)
 	}
-	c[2] = ports.SurfaceContent{ID: 2, Width: 100, Height: 100, Opaque: true, DMABuf: &ports.DMABuf{Format: fourccNV12}}
+	c[2] = domain.SurfaceContent{ID: 2, Width: 100, Height: 100, Opaque: true, DMABuf: &domain.DMABuf{Format: fourccNV12}}
 	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "no_candidate" {
 		t.Fatalf("YUV overlay reason %q", reason)
 	}

@@ -182,7 +182,7 @@ func (l *layerSurface) unmap() {
 	l.acked = false
 	l.serials = nil
 	l.shell.server.layerChanged()
-	l.shell.server.emitContent(ports.SurfaceContent{ID: l.id}, damage{full: true})
+	l.shell.server.emitContent(domain.SurfaceContent{ID: l.id}, damage{full: true})
 }
 
 // close tells the client its output is gone; the surface stays unmapped

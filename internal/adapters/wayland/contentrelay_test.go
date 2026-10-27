@@ -4,21 +4,21 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // relayContents attaches an output to s before Run and returns the contents it
 // receives, one by one. It consumes batches like an output does: apply, then
 // Return. The server must not be running yet.
-func relayContents(t *testing.T, s *Server) <-chan ports.SurfaceContent {
+func relayContents(t *testing.T, s *Server) <-chan domain.SurfaceContent {
 	t.Helper()
 	in, ret := s.attachOutput("TEST-1")
-	out := make(chan ports.SurfaceContent, 64)
+	out := make(chan domain.SurfaceContent, 64)
 	stop := make(chan struct{})
 	flush := make(chan chan struct{})
-	relayFlush.Store((<-chan ports.SurfaceContent)(out), flush)
-	t.Cleanup(func() { close(stop); relayFlush.Delete((<-chan ports.SurfaceContent)(out)) })
-	forward := func(b *ports.ContentBatch) bool {
+	relayFlush.Store((<-chan domain.SurfaceContent)(out), flush)
+	t.Cleanup(func() { close(stop); relayFlush.Delete((<-chan domain.SurfaceContent)(out)) })
+	forward := func(b *domain.ContentBatch) bool {
 		for _, c := range b.Items {
 			select {
 			case out <- c:
@@ -65,7 +65,7 @@ var relayFlush sync.Map
 
 // flushRelay returns once the relay forwarded every batch the display sent
 // before the call (the caller already crossed a display.Do barrier).
-func flushRelay(t *testing.T, contents <-chan ports.SurfaceContent) {
+func flushRelay(t *testing.T, contents <-chan domain.SurfaceContent) {
 	t.Helper()
 	f, ok := relayFlush.Load(contents)
 	if !ok {

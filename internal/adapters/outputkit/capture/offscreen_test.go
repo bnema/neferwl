@@ -52,7 +52,7 @@ func TestSubmitHiddenDrawsChildAndRebasesRegion(t *testing.T) {
 	p := NewPipeline(context.Background(), replies)
 	child, _ := childMock(t, 200, 100)
 	var scene ports.Scene
-	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		scene = s
 		return nil, nil
 	}).Once()

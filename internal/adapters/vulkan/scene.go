@@ -14,7 +14,7 @@ import (
 type sceneWalk struct {
 	r        *Renderer
 	s        ports.Scene
-	contents map[domain.WindowID]ports.SurfaceContent
+	contents map[domain.WindowID]domain.SurfaceContent
 	dmg      *damageRegion
 	// scale maps the scene's logical pixels to scene-physical ones.
 	scale float64
@@ -37,7 +37,7 @@ type sceneWalk struct {
 }
 
 // draws walks the scene into quads in paint order.
-func (r *Renderer) draws(s ports.Scene, contents map[domain.WindowID]ports.SurfaceContent, dmg *damageRegion) []draw {
+func (r *Renderer) draws(s ports.Scene, contents map[domain.WindowID]domain.SurfaceContent, dmg *damageRegion) []draw {
 	clear(r.scratchDraws) // release references from longer earlier scenes
 	// The walk stays in scene-physical space (the target's size, swapped for
 	// a rotated output); orient maps the draws to the target afterwards.
@@ -434,12 +434,12 @@ func (w *sceneWalk) popups(overLayers bool) {
 // place draws a surface tree with its window geometry at (x, y) logical,
 // clipped to width×height logical: client shadows fall outside. Every
 // surface of the tree is keyed by its stable surface identity.
-func (w *sceneWalk) place(id domain.WindowID, content *ports.SurfaceContent, x, y, width, height int) {
+func (w *sceneWalk) place(id domain.WindowID, content *domain.SurfaceContent, x, y, width, height int) {
 	clip := image.Rect(x, y, x+width, y+height)
 	// Offsets inside the tree shrink with a zoomed (preview) window.
 	z := w.zoom
 	ox, oy := float64(x)-float64(content.Geometry.X)*z, float64(y)-float64(content.Geometry.Y)*z
-	at := func(ch *ports.Subsurface) (float64, float64) { return ox + float64(ch.X)*z, oy + float64(ch.Y)*z }
+	at := func(ch *domain.Subsurface) (float64, float64) { return ox + float64(ch.X)*z, oy + float64(ch.Y)*z }
 	covers := w.opaqueChildren(content, ox, oy, clip)
 	for i := range content.Children {
 		if ch := &content.Children[i]; ch.Below {
@@ -464,7 +464,7 @@ func (w *sceneWalk) place(id domain.WindowID, content *ports.SurfaceContent, x, 
 // buffer will not draw is left out, so the surface below it still shows: a
 // dmabuf that fails to import (opaqueChildren pre-imports it) or an
 // unreadable shm buffer.
-func (w *sceneWalk) opaqueChildren(content *ports.SurfaceContent, ox, oy float64, clip image.Rectangle) []image.Rectangle {
+func (w *sceneWalk) opaqueChildren(content *domain.SurfaceContent, ox, oy float64, clip image.Rectangle) []image.Rectangle {
 	if w.rounded {
 		return nil
 	}
@@ -492,7 +492,7 @@ func (w *sceneWalk) opaqueChildren(content *ports.SurfaceContent, ox, oy float64
 // opaqueCover is the part of dst (physical, what the surface shows of full)
 // that its OpaqueRect maps to. Edges round inward, so every pixel of it is
 // inside the region; an edge on the surface's own edge stays on dst's.
-func opaqueCover(c *ports.SurfaceContent, full, dst image.Rectangle) image.Rectangle {
+func opaqueCover(c *domain.SurfaceContent, full, dst image.Rectangle) image.Rectangle {
 	lw, lh := c.LogicalW, c.LogicalH
 	if lw <= 0 || lh <= 0 {
 		lw, lh = c.Width, c.Height
@@ -511,7 +511,7 @@ func opaqueCover(c *ports.SurfaceContent, full, dst image.Rectangle) image.Recta
 
 // drawable reports whether the child's buffer will draw. GPU buffer
 // imports are cached, so pre-importing here costs nothing.
-func (w *sceneWalk) drawable(c *ports.SurfaceContent) bool {
+func (w *sceneWalk) drawable(c *domain.SurfaceContent) bool {
 	if c.Solid != nil {
 		return true
 	}
@@ -530,7 +530,7 @@ func (w *sceneWalk) drawable(c *ports.SurfaceContent) bool {
 // surfaceRects gives the physical rect of a surface buffer with its origin
 // at (x, y) logical, shrunk by the walk's zoom, and the part of it clip
 // (logical) shows. ok is false when there is nothing to draw.
-func (w *sceneWalk) surfaceRects(content *ports.SurfaceContent, x, y float64, clip image.Rectangle) (full, dst image.Rectangle, ok bool) {
+func (w *sceneWalk) surfaceRects(content *domain.SurfaceContent, x, y float64, clip image.Rectangle) (full, dst image.Rectangle, ok bool) {
 	lw, lh := content.LogicalW, content.LogicalH
 	if lw <= 0 || lh <= 0 {
 		lw, lh = content.Width, content.Height
@@ -561,7 +561,7 @@ func (w *sceneWalk) surfaceRects(content *ports.SurfaceContent, x, y float64, cl
 // clipped to clip (logical), unless an opaque surface above it (covers,
 // physical) hides all of it: its buffer is then neither copied nor drawn.
 // A cover over only part of it clips the draw to the rest.
-func (w *sceneWalk) surface(content *ports.SurfaceContent, x, y float64, clip image.Rectangle, key shmKey, seq uint64, covers []image.Rectangle, root bool) {
+func (w *sceneWalk) surface(content *domain.SurfaceContent, x, y float64, clip image.Rectangle, key shmKey, seq uint64, covers []image.Rectangle, root bool) {
 	full, dst, ok := w.surfaceRects(content, x, y, clip)
 	if !ok {
 		return
@@ -646,7 +646,7 @@ func (w *sceneWalk) quad(d draw, rect image.Rectangle) {
 
 // content draws the part of a buffer mapped onto full (physical pixels)
 // that dst shows. key names the surface, seq its content.
-func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceContent, key shmKey, seq uint64, root bool) {
+func (w *sceneWalk) content(dst, full image.Rectangle, content *domain.SurfaceContent, key shmKey, seq uint64, root bool) {
 	r := w.r
 	rect := dst
 	if rect.Empty() {
@@ -725,7 +725,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 
 // setContentColor selects only color encodings the protocol accepts, and
 // the surface's fade.
-func (r *Renderer) setContentColor(dr *draw, content *ports.SurfaceContent) {
+func (r *Renderer) setContentColor(dr *draw, content *domain.SurfaceContent) {
 	dr.pc.color[3] = 1 - max(0, min(1, content.Fade))
 	c := content.Color
 	if c.IsPQ2020() {

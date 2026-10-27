@@ -30,7 +30,7 @@ func TestRendererScaledSHMFiltersLinearly(t *testing.T) {
 	c := shmContent(t, 2, 1, 8, px)
 	c.LogicalW, c.LogicalH = 64, 16
 	scene := ports.Scene{Background: "#ff0000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
-	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: *c}); err != nil {
+	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: *c}); err != nil {
 		t.Fatal(err)
 	}
 	got := readPixels(t, r).RGBAAt(32, 8)
@@ -50,7 +50,7 @@ func TestRendererSourceCrop(t *testing.T) {
 	c.LogicalW, c.LogicalH = 16, 8
 	c.Source = [4]float32{1, 0, 2, 1}
 	scene := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 8}}}}
-	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: *c}); err != nil {
+	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: *c}); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
@@ -78,10 +78,10 @@ func TestRendererScaledDMABufFiltersLinearly(t *testing.T) {
 		}
 		return [4]byte{255, 255, 255, 255}
 	})
-	buf := &ports.DMABuf{ID: 3, Width: 64, Height: 1, Format: linear.Format, Planes: []ports.DMABufPlane{{File: f, Stride: 256}}}
+	buf := &domain.DMABuf{ID: 3, Width: 64, Height: 1, Format: linear.Format, Planes: []domain.DMABufPlane{{File: f, Stride: 256}}}
 	scene := ports.Scene{Background: "#ff0000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 128, H: 4}}}}
-	c := ports.SurfaceContent{ID: 1, Width: 64, Height: 1, LogicalW: 128, LogicalH: 4, DMABuf: buf}
-	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: c}); err != nil {
+	c := domain.SurfaceContent{ID: 1, Width: 64, Height: 1, LogicalW: 128, LogicalH: 4, DMABuf: buf}
+	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: c}); err != nil {
 		t.Fatal(err)
 	}
 	// Target x=64 (centre 64.5) maps to buffer 32.25: between texel 31
@@ -122,7 +122,7 @@ func TestRendererSHMCopiedOncePerContent(t *testing.T) {
 	c := solidContent(t, 16, 16, color.RGBA{1, 2, 3, 255})
 	c.ID, c.Seq, c.Version = 1, 1, 1
 	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
-	contents := map[domain.WindowID]ports.SurfaceContent{1: c}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: c}
 	render := func() {
 		t.Helper()
 		done, err := r.Render(scene, contents)
@@ -162,9 +162,9 @@ func TestRendererSkipsOccludedSurface(t *testing.T) {
 	game := solidContent(t, 16, 16, green)
 	game.Surface, game.Version = 2, 1
 	game.Opaque = true
-	root.Children = []ports.Subsurface{{SurfaceContent: game}}
+	root.Children = []domain.Subsurface{{SurfaceContent: game}}
 	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
-	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: root}); err != nil {
+	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: root}); err != nil {
 		t.Fatal(err)
 	}
 	if r.copied != 16*16*4 {
@@ -178,9 +178,9 @@ func TestRendererSkipsOccludedSurface(t *testing.T) {
 	small.Surface, small.Version = 3, 1
 	small.Opaque = true
 	root.Seq = 2
-	root.Children = []ports.Subsurface{{SurfaceContent: small}}
+	root.Children = []domain.Subsurface{{SurfaceContent: small}}
 	r.copied = 0
-	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: root}); err != nil {
+	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: root}); err != nil {
 		t.Fatal(err)
 	}
 	if r.copied != 16*16*4+8*8*4 {
@@ -196,10 +196,10 @@ func TestRendererKeepsSurfaceBelowFailedCover(t *testing.T) {
 	red := color.RGBA{255, 0, 0, 255}
 	root := solidContent(t, 16, 16, red)
 	root.ID, root.Seq = 1, 1
-	bad := &ports.DMABuf{ID: 9, Width: 16, Height: 16, Format: 0xdeadbeef}
-	root.Children = []ports.Subsurface{{SurfaceContent: ports.SurfaceContent{Width: 16, Height: 16, Opaque: true, DMABuf: bad}}}
+	bad := &domain.DMABuf{ID: 9, Width: 16, Height: 16, Format: 0xdeadbeef}
+	root.Children = []domain.Subsurface{{SurfaceContent: domain.SurfaceContent{Width: 16, Height: 16, Opaque: true, DMABuf: bad}}}
 	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
-	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: root}); err != nil {
+	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: root}); err != nil {
 		t.Fatal(err)
 	}
 	if r.copied != 16*16*4 {
@@ -211,7 +211,7 @@ func TestRendererKeepsSurfaceBelowFailedCover(t *testing.T) {
 }
 
 // render draws a frame and closes its fence.
-func render(r *Renderer, s ports.Scene, contents map[domain.WindowID]ports.SurfaceContent) error {
+func render(r *Renderer, s ports.Scene, contents map[domain.WindowID]domain.SurfaceContent) error {
 	done, err := r.Render(s, contents)
 	if done != nil {
 		done.Close()
@@ -240,7 +240,7 @@ func TestRendererSHMDoubleBufferWaitsForReaders(t *testing.T) {
 				t.Fatalf("frame %d already known done before the reuse", readers[0])
 			}
 		}
-		if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: c}); err != nil {
+		if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: c}); err != nil {
 			t.Fatal(err)
 		}
 		readers = append(readers, r.frame)

@@ -32,13 +32,13 @@ import (
 type frames struct {
 	mu       sync.Mutex
 	scenes   []ports.Scene
-	contents []map[domain.WindowID]ports.SurfaceContent
+	contents []map[domain.WindowID]domain.SurfaceContent
 }
 
-func (f *frames) snapshot() ([]ports.Scene, []map[domain.WindowID]ports.SurfaceContent) {
+func (f *frames) snapshot() ([]ports.Scene, []map[domain.WindowID]domain.SurfaceContent) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]ports.Scene(nil), f.scenes...), append([]map[domain.WindowID]ports.SurfaceContent(nil), f.contents...)
+	return append([]ports.Scene(nil), f.scenes...), append([]map[domain.WindowID]domain.SurfaceContent(nil), f.contents...)
 }
 
 // recordingRenderer returns a generated mock whose Render records each frame
@@ -46,7 +46,7 @@ func (f *frames) snapshot() ([]ports.Scene, []map[domain.WindowID]ports.SurfaceC
 func recordingRenderer(t *testing.T, err error) (*portsmocks.MockRenderer, *frames) {
 	r := portsmocks.NewMockRenderer(t)
 	f := &frames{}
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, c map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, c map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.scenes = append(f.scenes, s)
@@ -73,11 +73,11 @@ func TestRun(t *testing.T) {
 		scenes := make(chan ports.Scene, 8)
 		contents := newContentFeed(t, 8)
 		r, f := recordingRenderer(t, nil)
-		contents.send(ports.SurfaceContent{ID: 1, SHM: &ports.SHMBuffer{Pool: 1}})
+		contents.send(domain.SurfaceContent{ID: 1, SHM: &domain.SHMBuffer{Pool: 1}})
 		shown := []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 2, H: 2}}, {ID: 2, Rect: domain.Rect{W: 2, H: 2}}}
 		scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: shown}
 		scenes <- ports.Scene{Seq: 2, OutputWidth: 2, OutputHeight: 2, Windows: shown}
-		contents.send(ports.SurfaceContent{ID: 2, SHM: &ports.SHMBuffer{Pool: 2}})
+		contents.send(domain.SurfaceContent{ID: 2, SHM: &domain.SHMBuffer{Pool: 2}})
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() {
@@ -89,7 +89,7 @@ func TestRun(t *testing.T) {
 		}
 		// An empty content of a window the scene still draws (it unmapped
 		// and fades out) keeps the last one; a scene without it drops it.
-		contents.send(ports.SurfaceContent{ID: 1})
+		contents.send(domain.SurfaceContent{ID: 1})
 		waitFrames(t, f, 2)
 		if _, c := f.snapshot(); len(c) < 2 {
 			t.Fatal("no second frame")
@@ -160,8 +160,8 @@ func TestHeadlessSameSeqRendersOnce(t *testing.T) {
 		waitFrames(t, f, 1)
 		scenes <- scene
 		// Unshown content sends Run round its loop: the held scene is handled.
-		contents.send(ports.SurfaceContent{ID: 99, Seq: 1, SHM: &ports.SHMBuffer{}})
-		contents.send(ports.SurfaceContent{ID: 99, Seq: 2, SHM: &ports.SHMBuffer{}})
+		contents.send(domain.SurfaceContent{ID: 99, Seq: 1, SHM: &domain.SHMBuffer{}})
+		contents.send(domain.SurfaceContent{ID: 99, Seq: 2, SHM: &domain.SHMBuffer{}})
 		if s, _ := f.snapshot(); len(s) != 1 {
 			t.Fatalf("%d frames for a scene with the held Seq", len(s))
 		}
@@ -191,13 +191,13 @@ func TestRunSkipsContentNotShown(t *testing.T) {
 			done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
 		}()
 		waitFrames(t, f, 1)
-		contents.send(ports.SurfaceContent{ID: 2, SHM: &ports.SHMBuffer{Pool: 2}})
-		contents.send(ports.SurfaceContent{ID: 3, SHM: &ports.SHMBuffer{Pool: 3}})
+		contents.send(domain.SurfaceContent{ID: 2, SHM: &domain.SHMBuffer{Pool: 2}})
+		contents.send(domain.SurfaceContent{ID: 3, SHM: &domain.SHMBuffer{Pool: 3}})
 		synctest.Wait()
 		if s, _ := f.snapshot(); len(s) != 1 {
 			t.Fatalf("%d frames for content not shown", len(s))
 		}
-		contents.send(ports.SurfaceContent{ID: 1, SHM: &ports.SHMBuffer{Pool: 1}})
+		contents.send(domain.SurfaceContent{ID: 1, SHM: &domain.SHMBuffer{Pool: 1}})
 		waitFrames(t, f, 2)
 		if _, c := f.snapshot(); c[1][2].SHM == nil {
 			t.Error("content not shown was dropped")
@@ -476,7 +476,7 @@ func TestRunPassesLayerContent(t *testing.T) {
 		contents := newContentFeed(t, 1)
 		layer := ports.SceneLayer{ID: 42, Layer: domain.LayerTop, Rect: domain.Rect{W: 2, H: 2}}
 		scenes <- ports.Scene{Layers: []ports.SceneLayer{layer}}
-		contents.send(ports.SurfaceContent{ID: 42, Width: 1, Height: 1, SHM: &ports.SHMBuffer{Pool: 42, Stride: 4}})
+		contents.send(domain.SurfaceContent{ID: 42, Width: 1, Height: 1, SHM: &domain.SHMBuffer{Pool: 42, Stride: 4}})
 		r, f := recordingRenderer(t, nil)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
@@ -520,7 +520,7 @@ func TestCaptureForcesFreshHeadlessFrame(t *testing.T) {
 		if err := f.Truncate(16); err != nil {
 			t.Fatal(err)
 		}
-		requests <- ports.CaptureRequest{ID: 1, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Dst: ports.SHMBuffer{File: f}}
+		requests <- ports.CaptureRequest{ID: 1, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Dst: domain.SHMBuffer{File: f}}
 		select {
 		case result := <-replies:
 			if result.Err != nil {
@@ -558,9 +558,9 @@ func TestHeadlessRawHDRScreenshot(t *testing.T) {
 		}
 		r := portsmocks.NewMockRenderer(t)
 		r.EXPECT().SetHDR(float64(203)).Return().Once()
-		r.EXPECT().ExportTargets(1, []uint64(nil), false).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
+		r.EXPECT().ExportTargets(1, []uint64(nil), false).Return([]domain.DMABuf{{Planes: []domain.DMABufPlane{{File: f}}}}, nil).Once()
 		rendered := make(chan struct{}, 4)
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			rendered <- struct{}{}
 			return nil, nil
 		}).Maybe()
@@ -627,7 +627,7 @@ func TestHeadlessHDRFormatsConfirmed(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					r.EXPECT().ExportTargets(1, []uint64(nil), false).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
+					r.EXPECT().ExportTargets(1, []uint64(nil), false).Return([]domain.DMABuf{{Planes: []domain.DMABufPlane{{File: f}}}}, nil).Once()
 					t.Cleanup(func() {
 						if _, err := f.Stat(); err == nil {
 							t.Error("exported fd not closed")
@@ -680,7 +680,7 @@ func TestRunAppliesWholeBatch(t *testing.T) {
 			done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
 		}()
 		waitFrames(t, f, 1)
-		contents.send(ports.SurfaceContent{ID: 1, Seq: 1, SHM: &ports.SHMBuffer{Pool: 1}}, ports.SurfaceContent{ID: 2, Seq: 1, SHM: &ports.SHMBuffer{Pool: 2}})
+		contents.send(domain.SurfaceContent{ID: 1, Seq: 1, SHM: &domain.SHMBuffer{Pool: 1}}, domain.SurfaceContent{ID: 2, Seq: 1, SHM: &domain.SHMBuffer{Pool: 2}})
 		waitFrames(t, f, 2)
 		if _, c := f.snapshot(); len(c[1]) != 2 || c[1][1].SHM == nil || c[1][2].SHM == nil {
 			t.Errorf("batch not applied whole: %+v", c[1])

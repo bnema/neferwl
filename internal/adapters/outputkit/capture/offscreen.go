@@ -318,7 +318,7 @@ func childSize(cs *ports.Scene) (w, h int, err error) {
 
 // track records the ceiling of a child render on the next free slot: every
 // window and layer the render drew, with the content Seq it was given.
-func (o *offscreen) track(done *os.File, drawn ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent) {
+func (o *offscreen) track(done *os.File, drawn ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent) {
 	slot := &o.slots[o.nf]
 	if slot.ceil == nil {
 		slot.ceil = make(map[domain.WindowID]uint64, len(drawn.Windows)+len(drawn.Layers))
@@ -341,7 +341,7 @@ func (o *offscreen) track(done *os.File, drawn ports.Scene, surfaces map[domain.
 // must cover the whole child frame; they are rebased to its origin. Anything smaller needs the viewport
 // origin in output coordinates, which the scene does not carry, and fails with
 // ErrOffscreenGeometry.
-func (p *Pipeline) SubmitHidden(s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent, reqs []ports.CaptureRequest) {
+func (p *Pipeline) SubmitHidden(s ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, reqs []ports.CaptureRequest) {
 	fail := func(err error, qs []ports.CaptureRequest) {
 		for _, q := range qs {
 			Fail(p.ctx, q, err, p.replies)

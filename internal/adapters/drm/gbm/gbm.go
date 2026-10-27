@@ -14,7 +14,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/purego"
 	"golang.org/x/sys/unix"
 )
@@ -279,20 +279,20 @@ func (b *Buffer) closeFDs() {
 
 // DMABuf returns the image as a dmabuf with fresh descriptors (the caller
 // closes them); the buffer keeps its own.
-func (b *Buffer) DMABuf() (ports.DMABuf, error) {
+func (b *Buffer) DMABuf() (domain.DMABuf, error) {
 	if b == nil || b.bo == 0 {
-		return ports.DMABuf{}, errors.New("gbm buffer closed")
+		return domain.DMABuf{}, errors.New("gbm buffer closed")
 	}
-	out := ports.DMABuf{Width: b.width, Height: b.height, Format: b.format, Modifier: b.modifier}
+	out := domain.DMABuf{Width: b.width, Height: b.height, Format: b.format, Modifier: b.modifier}
 	for _, p := range b.planes {
 		fd, err := unix.FcntlInt(uintptr(p.fd), unix.F_DUPFD_CLOEXEC, 0)
 		if err != nil {
 			for _, q := range out.Planes {
 				_ = q.File.Close()
 			}
-			return ports.DMABuf{}, fmt.Errorf("duplicate gbm plane fd: %w", err)
+			return domain.DMABuf{}, fmt.Errorf("duplicate gbm plane fd: %w", err)
 		}
-		out.Planes = append(out.Planes, ports.DMABufPlane{File: os.NewFile(uintptr(fd), "neferwl-gbm"), Offset: p.offset, Stride: p.stride})
+		out.Planes = append(out.Planes, domain.DMABufPlane{File: os.NewFile(uintptr(fd), "neferwl-gbm"), Offset: p.offset, Stride: p.stride})
 	}
 	return out, nil
 }

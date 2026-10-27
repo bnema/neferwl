@@ -133,7 +133,7 @@ func TestSceneDimPartialDamage(t *testing.T) {
 		{ID: 2, Floating: true, Rect: domain.Rect{X: 50, W: 20, H: 20}},
 	}}
 	tg := &target{valid: true, sceneSeq: 8, windows: map[domain.WindowID]heldWindow{1: {seq: 1, rect: image.Rect(0, 0, 40, 40)}, 2: {seq: 1, rect: image.Rect(50, 0, 70, 20)}}}
-	contents := map[domain.WindowID]ports.SurfaceContent{1: {Seq: 2}, 2: {Seq: 1}}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: {Seq: 2}, 2: {Seq: 1}}
 	dmg := newDamage(tg, s, image.Rect(0, 0, 80, 60))
 	ds := r.draws(s, contents, dmg)
 	dmg.finish()
@@ -164,7 +164,7 @@ func TestRendererDimBlendAndDamage(t *testing.T) {
 	white.Seq = 1
 	popup := solidContent(t, 8, 8, color.RGBA{255, 255, 255, 255})
 	top := solidContent(t, 8, 8, color.RGBA{255, 255, 255, 255})
-	contents := map[domain.WindowID]ports.SurfaceContent{1: white, 3: popup, 4: top}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: white, 3: popup, 4: top}
 	check := func() {
 		t.Helper()
 		if err := render(r, s, contents); err != nil {
@@ -227,7 +227,7 @@ func TestRendererWindowDimBlendAndDamage(t *testing.T) {
 	peek := solidContent(t, 18, 18, color.RGBA{255, 255, 255, 255})
 	peek.Seq = 1
 	sel := solidContent(t, 18, 18, color.RGBA{255, 255, 255, 255})
-	contents := map[domain.WindowID]ports.SurfaceContent{1: peek, 2: sel}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: peek, 2: sel}
 	grey, white := color.RGBA{128, 128, 128, 255}, color.RGBA{255, 255, 255, 255}
 	if err := render(r, s, contents); err != nil {
 		t.Fatal(err)

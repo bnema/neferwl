@@ -23,7 +23,7 @@ func TestRendererOutputTransform(t *testing.T) {
 		sw, sh := r.sceneSize(tr)
 		c := shmContent(t, 2, 1, 8, px)
 		scene := ports.Scene{Transform: tr, Scale: 1, OutputWidth: sw, OutputHeight: sh, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: win}}}
-		if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: *c}); err != nil {
+		if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: *c}); err != nil {
 			t.Fatal(err)
 		}
 		img := readPixels(t, r)

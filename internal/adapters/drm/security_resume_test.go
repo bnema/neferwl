@@ -46,7 +46,7 @@ func TestSecurityUnlockedResumeUsesOwnerRetry(t *testing.T) {
 				o.SecurityChanges = wake
 				r := portsmocks.NewMockRenderer(t)
 				r.EXPECT().UseTarget(0).Return().Once()
-				r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+				r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 					if s.Seq != 0 || s.Background != "#000000" || len(s.Windows) != 0 {
 						t.Fatal("resume rendered desktop")
 					}

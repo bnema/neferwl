@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -417,13 +419,13 @@ func TestRunProtectedActivationRetriesWithoutStoppingOrEarlyProof(t *testing.T) 
 	events := make(chan ports.SecurityBackendEvent, 32)
 	o.SecurityEvents = events
 	r := portsmocks.NewMockRenderer(t)
-	buf := func() ports.DMABuf {
+	buf := func() domain.DMABuf {
 		f, w := protectionFence(t, false)
 		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	r.EXPECT().Close().Return().Once()

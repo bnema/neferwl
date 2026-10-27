@@ -32,7 +32,7 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 			scene := ports.Scene{Seq: 1, Transform: tc.transform, Scale: 1, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: tc.sceneW, H: tc.sceneH}}}}
 			content := solidContent(t, 8, 8, color.RGBA{R: 255, A: 255})
 			content.ID, content.Surface, content.Seq, content.Version = 1, 1, 1, 1
-			contents := map[domain.WindowID]ports.SurfaceContent{1: content}
+			contents := map[domain.WindowID]domain.SurfaceContent{1: content}
 			frame := func() {
 				if err := render(r, scene, contents); err != nil {
 					t.Fatal(err)
@@ -90,7 +90,7 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 			dc := content
 			dc.Seq, dc.Version = 2, 2
 			dc.DamageHistory = []domain.SeqDamage{{Seq: 2, Rects: []domain.Rect{{X: 1, Y: 1, W: 2, H: 2}}}}
-			pcontents := map[domain.WindowID]ports.SurfaceContent{1: dc}
+			pcontents := map[domain.WindowID]domain.SurfaceContent{1: dc}
 			held := &target{valid: true, sceneSeq: scene.Seq, windows: map[domain.WindowID]heldWindow{1: {seq: 1, rect: image.Rect(0, 0, r.width, r.height)}}}
 			var area image.Rectangle
 			var whole bool
@@ -119,7 +119,7 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 			half := tc.sceneW / 2
 			content2 := solidContent(t, 8, 8, color.RGBA{G: 255, A: 255})
 			content2.ID, content2.Surface, content2.Seq, content2.Version = 2, 2, 1, 1
-			dcontents := map[domain.WindowID]ports.SurfaceContent{1: content, 2: content2}
+			dcontents := map[domain.WindowID]domain.SurfaceContent{1: content, 2: content2}
 			before := ports.Scene{Seq: 200, Transform: tc.transform, Scale: 1, Windows: []ports.SceneWindow{
 				{ID: 1, Rect: domain.Rect{W: half, H: tc.sceneH}},
 				{ID: 2, Rect: domain.Rect{X: half, W: tc.sceneW - half, H: tc.sceneH}},
@@ -170,9 +170,9 @@ func TestRenderSteadyStateDMABufAllocations(t *testing.T) {
 		t.Skipf("linear ARGB8888 not importable")
 	}
 	f := udmabuf(t, 64, 16, func(int, int) [4]byte { return [4]byte{0, 0, 255, 255} })
-	buf := &ports.DMABuf{ID: 7, Width: 64, Height: 16, Format: linear.Format, Planes: []ports.DMABufPlane{{File: f, Stride: 256}}}
+	buf := &domain.DMABuf{ID: 7, Width: 64, Height: 16, Format: linear.Format, Planes: []domain.DMABufPlane{{File: f, Stride: 256}}}
 	scene := ports.Scene{Seq: 1, Background: "#000000", Scale: 1, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: 64, H: 16}}}}
-	contents := map[domain.WindowID]ports.SurfaceContent{1: {ID: 1, Surface: 1, Seq: 1, Version: 1, Width: 64, Height: 16, DMABuf: buf}}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: {ID: 1, Surface: 1, Seq: 1, Version: 1, Width: 64, Height: 16, DMABuf: buf}}
 	frame := func() {
 		if err := render(r, scene, contents); err != nil {
 			t.Fatal(err)
@@ -266,23 +266,23 @@ func TestSceneWalkUnchangedTiledSHM(t *testing.T) {
 	const tiles = 64
 	r := newTestRenderer(t, 128, 128)
 	defer r.Close()
-	root := ports.SurfaceContent{ID: 1, Seq: 1, Surface: 1, Version: 1}
+	root := domain.SurfaceContent{ID: 1, Seq: 1, Surface: 1, Version: 1}
 	for i := range tiles {
 		child := solidContent(t, 8, 8, color.RGBA{R: uint8(i + 1), A: 255})
 		child.ID, child.Seq, child.Surface, child.Version = 1, 1, uint64(i+2), 1
-		root.Children = append(root.Children, ports.Subsurface{X: i % 8 * 8, Y: i / 8 * 8, SurfaceContent: child})
+		root.Children = append(root.Children, domain.Subsurface{X: i % 8 * 8, Y: i / 8 * 8, SurfaceContent: child})
 	}
 	video := solidContent(t, 8, 8, color.RGBA{G: 255, A: 255})
 	video.ID, video.Seq, video.Surface, video.Version = 1, 1, 66, 1
-	root.Children = append(root.Children, ports.Subsurface{X: 80, Y: 0, SurfaceContent: video})
+	root.Children = append(root.Children, domain.Subsurface{X: 80, Y: 0, SurfaceContent: video})
 	scene := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 128, H: 128}}}}
-	contents := map[domain.WindowID]ports.SurfaceContent{1: root}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: root}
 	if err := render(r, scene, contents); err != nil {
 		t.Fatal(err)
 	}
 	walkAllocs := map[int]float64{}
 	for _, count := range []int{16, 64} {
-		contents[1] = ports.SurfaceContent{ID: 1, Seq: root.Seq, Surface: root.Surface, Version: root.Version, Children: root.Children[:count]}
+		contents[1] = domain.SurfaceContent{ID: 1, Seq: root.Seq, Surface: root.Surface, Version: root.Version, Children: root.Children[:count]}
 		walk := func() {
 			dmg := newDamage(&target{}, scene, image.Rect(0, 0, r.width, r.height))
 			_ = r.draws(scene, contents, dmg)

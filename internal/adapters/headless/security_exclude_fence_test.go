@@ -36,7 +36,7 @@ func TestExcludeFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 			rendered := make(chan struct{}, 1)
 			releaseRender := make(chan struct{})
 			failure := errors.New("excluded render failed after submission")
-			r.EXPECT().Render(mock.MatchedBy(func(s ports.Scene) bool { return s.Security == admitted && s.Seq == 0 }), mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+			r.EXPECT().Render(mock.MatchedBy(func(s ports.Scene) bool { return s.Security == admitted && s.Seq == 0 }), mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 				rendered <- struct{}{}
 				<-releaseRender
 				if finish == "render-error" {
@@ -63,7 +63,7 @@ func TestExcludeFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 			}()
 			dst := sessionCaptureFile(t)
 			incoming <- ports.CaptureRequest{ID: 99, Exclude: true, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: dst}
-			contents.send(ports.SurfaceContent{ID: 1, Seq: 8, SHM: &ports.SHMBuffer{Pool: 1}})
+			contents.send(domain.SurfaceContent{ID: 1, Seq: 8, SHM: &domain.SHMBuffer{Pool: 1}})
 			scene := sessionScene()
 			scene.Security = admitted
 			scene.Scale = 1

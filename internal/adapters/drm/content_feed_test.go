@@ -3,8 +3,9 @@ package drm
 import (
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -12,7 +13,7 @@ import (
 // out on ch, and the generated ContentReturn mock checks that each comes back
 // reset.
 type contentFeed struct {
-	ch       chan *ports.ContentBatch
+	ch       chan *domain.ContentBatch
 	ret      *portsmocks.MockContentReturn
 	returned chan struct{}
 }
@@ -20,8 +21,8 @@ type contentFeed struct {
 // newContentFeed makes a feed whose channel holds buffer batches.
 func newContentFeed(t *testing.T, buffer int) *contentFeed {
 	t.Helper()
-	f := &contentFeed{ch: make(chan *ports.ContentBatch, buffer), ret: portsmocks.NewMockContentReturn(t), returned: make(chan struct{}, 64)}
-	f.ret.EXPECT().Return(mock.Anything).Run(func(b *ports.ContentBatch) {
+	f := &contentFeed{ch: make(chan *domain.ContentBatch, buffer), ret: portsmocks.NewMockContentReturn(t), returned: make(chan struct{}, 64)}
+	f.ret.EXPECT().Return(mock.Anything).Run(func(b *domain.ContentBatch) {
 		if len(b.Items) != 0 {
 			t.Errorf("batch returned with %d items, want it reset", len(b.Items))
 		}
@@ -31,9 +32,9 @@ func newContentFeed(t *testing.T, buffer int) *contentFeed {
 }
 
 // send hands the output one batch holding cs.
-func (f *contentFeed) send(cs ...ports.SurfaceContent) {
-	f.ch <- &ports.ContentBatch{Items: cs}
+func (f *contentFeed) send(cs ...domain.SurfaceContent) {
+	f.ch <- &domain.ContentBatch{Items: cs}
 }
 
 // in is the channel Run reads.
-func (f *contentFeed) in() <-chan *ports.ContentBatch { return f.ch }
+func (f *contentFeed) in() <-chan *domain.ContentBatch { return f.ch }

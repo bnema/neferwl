@@ -10,8 +10,6 @@ import (
 	"os"
 	"unsafe"
 
-	"github.com/bnema/neferwl/internal/ports"
-
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
 
@@ -294,7 +292,7 @@ func (r *Renderer) fillDraw(rect image.Rectangle, c [3]uint8) draw {
 // scales the four premultiplied channels. The shader decodes the rgb of a
 // solid on HDR outputs, so there it is pre-encoded such that the decode
 // yields the linear premultiplied color.
-func (r *Renderer) solidDraw(rect image.Rectangle, content *ports.SurfaceContent) draw {
+func (r *Renderer) solidDraw(rect image.Rectangle, content *domain.SurfaceContent) draw {
 	c := *content.Solid
 	if content.Opaque {
 		c.A = 1

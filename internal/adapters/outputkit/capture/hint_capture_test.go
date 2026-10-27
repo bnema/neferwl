@@ -89,7 +89,7 @@ func runFrame(t *testing.T, s ports.Scene, reqs ...ports.CaptureRequest) frameRu
 	var mu sync.Mutex
 	var run frameRun
 	var frames []*portsmocks.MockCaptureFrame
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		run.renders = append(run.renders, drawn(s))

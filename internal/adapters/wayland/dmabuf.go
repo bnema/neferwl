@@ -417,9 +417,9 @@ func (p *params) build(width, height int32, format, flags uint32) (buf *dmabufBu
 		}
 	}
 	p.global.nextID++
-	d := &ports.DMABuf{ID: p.global.nextID, Width: int(width), Height: int(height), Format: format, Modifier: p.modifier}
+	d := &domain.DMABuf{ID: p.global.nextID, Width: int(width), Height: int(height), Format: format, Modifier: p.modifier}
 	for _, pl := range p.planes[:n] {
-		d.Planes = append(d.Planes, ports.DMABufPlane{File: pl.file, Offset: pl.offset, Stride: pl.stride})
+		d.Planes = append(d.Planes, domain.DMABufPlane{File: pl.file, Offset: pl.offset, Stride: pl.stride})
 	}
 	// The buffer owns the files now.
 	p.planes = [maxPlanes]*plane{}
@@ -477,7 +477,7 @@ func (p *params) SetSamplingDevice(r *linuxdmabuf.ZwpLinuxBufferParamsV1, device
 }
 
 // dmabufBuffer is a wl_buffer backed by client GPU memory.
-type dmabufBuffer struct{ buf *ports.DMABuf }
+type dmabufBuffer struct{ buf *domain.DMABuf }
 
 func (*dmabufBuffer) Destroy(*wayland.Buffer) {}
 
@@ -490,9 +490,9 @@ func (b *dmabufBuffer) close() {
 func (b *dmabufBuffer) size() (int, int) { return b.buf.Width, b.buf.Height }
 
 // content hands the renderer the buffer itself: nothing is copied.
-func (b *dmabufBuffer) content(id domain.WindowID) (ports.SurfaceContent, bool) {
+func (b *dmabufBuffer) content(id domain.WindowID) (domain.SurfaceContent, bool) {
 	opaque := b.buf.Format == fourccXRGB || b.buf.Format == fourccXBGR || b.buf.Format == fourccXR30 || b.buf.Format == fourccXB30
-	return ports.SurfaceContent{ID: id, Width: b.buf.Width, Height: b.buf.Height, Opaque: opaque, DMABuf: b.buf}, true
+	return domain.SurfaceContent{ID: id, Width: b.buf.Width, Height: b.buf.Height, Opaque: opaque, DMABuf: b.buf}, true
 }
 
 const (

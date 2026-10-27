@@ -48,7 +48,7 @@ func TestSubmitPlainRendersWithoutIndicatorFirst(t *testing.T) {
 	frame.EXPECT().Done().Return((*os.File)(nil))
 	frame.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.Anything, 8).Return(nil).Once()
 	var rendered []ports.Scene
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		rendered = append(rendered, s)
 		return nil, nil
 	}).Once()
@@ -125,7 +125,7 @@ func TestSubmitPlainServesHintLabelScenesWithoutLabels(t *testing.T) {
 	frame.EXPECT().Done().Return((*os.File)(nil))
 	frame.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.Anything, 8).Return(nil).Once()
 	var rendered []ports.Scene
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		rendered = append(rendered, s)
 		return nil, nil
 	}).Once()

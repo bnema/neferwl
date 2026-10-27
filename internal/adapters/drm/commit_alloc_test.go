@@ -4,7 +4,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
@@ -22,12 +22,12 @@ func mallocsPerRun(runs int, f func()) float64 {
 	return float64(after.Mallocs-before.Mallocs) / float64(runs)
 }
 
-func scanoutAllocsOutput(t *testing.T) (*Output, ports.SurfaceContent) {
+func scanoutAllocsOutput(t *testing.T) (*Output, domain.SurfaceContent) {
 	o, _, _ := testOutput(t)
 	o.cursor.image = true
 	o.cursor.Move(12, 34)
 	o.clientFBs[9] = &clientFB{fbID: 80}
-	return o, ports.SurfaceContent{ID: 1, Width: 200, Height: 100, DMABuf: &ports.DMABuf{ID: 9}}
+	return o, domain.SurfaceContent{ID: 1, Width: 200, Height: 100, DMABuf: &domain.DMABuf{ID: 9}}
 }
 
 // A steady-state direct-scanout commit builds its request, and the flat
@@ -111,7 +111,7 @@ func TestCommitFrameRetryRebuildsRequest(t *testing.T) {
 	o, _, commits := testOutput(t, unix.EINVAL)
 	o.shown, o.vrrOn = 1, true
 	o.clientFBs[9] = &clientFB{fbID: 80}
-	c := ports.SurfaceContent{DMABuf: &ports.DMABuf{ID: 9}, Async: true}
+	c := domain.SurfaceContent{DMABuf: &domain.DMABuf{ID: 9}, Async: true}
 	// The async attempt is refused, then retried synchronously with the
 	// full plane state in the same request object.
 	ok, err := o.commitScanout(80, c, pendingFrame{})

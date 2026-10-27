@@ -7,6 +7,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
@@ -17,7 +18,7 @@ func TestFailClosesBeforeReplyAndUsesMonotonic(t *testing.T) {
 		t.Fatal(err)
 	}
 	replies := make(chan ports.CaptureDone, 1)
-	Fail(context.Background(), ports.CaptureRequest{Dst: ports.SHMBuffer{File: f}}, nil, replies)
+	Fail(context.Background(), ports.CaptureRequest{Dst: domain.SHMBuffer{File: f}}, nil, replies)
 	done := <-replies
 	if _, err := f.Stat(); err == nil {
 		t.Fatal("fd open at reply")
@@ -40,7 +41,7 @@ func TestFailCancelledStillDeliversReadyReply(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		Fail(ctx, ports.CaptureRequest{ID: id, Dst: ports.SHMBuffer{File: f}}, nil, replies)
+		Fail(ctx, ports.CaptureRequest{ID: id, Dst: domain.SHMBuffer{File: f}}, nil, replies)
 		select {
 		case result := <-replies:
 			if result.ID != id {
@@ -66,7 +67,7 @@ func TestFailCancelledWithFullReplies(t *testing.T) {
 			t.Fatal(err)
 		}
 		done := make(chan struct{})
-		go func() { Fail(ctx, ports.CaptureRequest{Dst: ports.SHMBuffer{File: f}}, nil, replies); close(done) }()
+		go func() { Fail(ctx, ports.CaptureRequest{Dst: domain.SHMBuffer{File: f}}, nil, replies); close(done) }()
 		select {
 		case <-done:
 		case <-time.After(2 * time.Second):

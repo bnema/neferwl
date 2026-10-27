@@ -521,7 +521,7 @@ func TestCastFlipDamagesWindowCastAfterCommit(t *testing.T) {
 	h.flip("HEADLESS-1")
 	h.none() // nothing committed since the cast began
 	commit := func() {
-		if !h.s.display.Do(func() { h.s.emitContent(ports.SurfaceContent{ID: w.ID}, damage{full: true}) }) {
+		if !h.s.display.Do(func() { h.s.emitContent(domain.SurfaceContent{ID: w.ID}, damage{full: true}) }) {
 			t.Fatal("display stopped")
 		}
 	}
@@ -585,7 +585,7 @@ func TestCastWindowDamagedByPopupChanges(t *testing.T) {
 		h.none() // the damage consumed the change
 	}
 	content := func(id domain.WindowID) func() {
-		return func() { h.s.emitContent(ports.SurfaceContent{ID: id}, damage{full: true}) }
+		return func() { h.s.emitContent(domain.SurfaceContent{ID: id}, damage{full: true}) }
 	}
 	change("popup commit", content(menu))
 	change("popup commit again", content(menu))
@@ -594,7 +594,7 @@ func TestCastWindowDamagedByPopupChanges(t *testing.T) {
 	change("popup map", func() { h.s.windows[menu].mapped = true; h.s.castCommitted(menu) })
 	change("popup reposition", func() { h.s.castCommitted(menu) })
 	// A window nobody casts leaves the cast alone.
-	if !h.s.display.Do(func() { h.s.emitContent(ports.SurfaceContent{ID: w.ID + 1000}, damage{full: true}) }) {
+	if !h.s.display.Do(func() { h.s.emitContent(domain.SurfaceContent{ID: w.ID + 1000}, damage{full: true}) }) {
 		t.Fatal("display stopped")
 	}
 	h.flip("HEADLESS-1")

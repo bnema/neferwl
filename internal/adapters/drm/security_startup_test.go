@@ -26,15 +26,15 @@ func TestSecurityProtectedStartupBlackProofAndCaptureRejection(t *testing.T) {
 	events := make(chan ports.SecurityBackendEvent, 2)
 	o.SecurityEvents = events
 	r := portsmocks.NewMockRenderer(t)
-	buf := func() ports.DMABuf {
+	buf := func() domain.DMABuf {
 		f, w := protectionFence(t, false)
 		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
-	r.EXPECT().Render(ports.Scene{Background: "#000000"}, map[domain.WindowID]ports.SurfaceContent(nil)).Return(nil, nil).Times(3)
+	r.EXPECT().Render(ports.Scene{Background: "#000000"}, map[domain.WindowID]domain.SurfaceContent(nil)).Return(nil, nil).Times(3)
 	r.EXPECT().Close().Return().Once()
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
 	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
@@ -71,7 +71,7 @@ func TestSecurityProtectedStartupBlackProofAndCaptureRejection(t *testing.T) {
 	mu.Unlock()
 	f, w := protectionFence(t, false)
 	w.Close()
-	captures <- ports.CaptureRequest{ID: 9, Dst: ports.SHMBuffer{File: f}}
+	captures <- ports.CaptureRequest{ID: 9, Dst: domain.SHMBuffer{File: f}}
 	select {
 	case reply := <-captured:
 		if reply.ID != 9 || reply.Err == nil {
@@ -93,19 +93,19 @@ func TestSecurityStartupClearWaitUsesRunContext(t *testing.T) {
 	state.Store(3)
 	securityGate(t, o, &state)
 	r := portsmocks.NewMockRenderer(t)
-	buf := func() ports.DMABuf {
+	buf := func() domain.DMABuf {
 		f, w := protectionFence(t, false)
 		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().ExportTargets(0, []uint64(nil), false).Return(nil, nil).Once()
 	r.EXPECT().UseTarget(0).Return().Once()
 	fence, _ := protectionFence(t, false)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		cancel()
 		return fence, nil
 	}).Once()

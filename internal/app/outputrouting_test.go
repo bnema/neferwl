@@ -7,6 +7,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/stretchr/testify/mock"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
@@ -65,7 +66,7 @@ func TestOutputRouting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in.captures <- ports.CaptureRequest{ID: 7, Output: "B", Dst: ports.SHMBuffer{File: f}}
+	in.captures <- ports.CaptureRequest{ID: 7, Output: "B", Dst: domain.SHMBuffer{File: f}}
 	if got := <-set.outs["B"].captures; got.ID != 7 {
 		t.Fatalf("B capture: %+v", got)
 	}
@@ -166,7 +167,7 @@ func TestBlockedStartDoesNotDelayRouting(t *testing.T) {
 		release := make(chan struct{})
 		attaching := make(chan struct{})
 		ret := portsmocks.NewMockContentReturn(t)
-		attacher.EXPECT().AttachOutput("B").RunAndReturn(func(string) (<-chan *ports.ContentBatch, ports.ContentReturn) {
+		attacher.EXPECT().AttachOutput("B").RunAndReturn(func(string) (<-chan *domain.ContentBatch, ports.ContentReturn) {
 			close(attaching)
 			<-release
 			return nil, ret

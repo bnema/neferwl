@@ -82,17 +82,17 @@ func TestHDRTestCommitFallbackReexportsSDR(t *testing.T) {
 	o.hdr.props = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
 	o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30, Modifier: 0}}
 	r := portsmocks.NewMockRenderer(t)
-	buf := func() ports.DMABuf {
+	buf := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
 		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	var calls []string
 	r.EXPECT().SetHDR(float64(203)).Run(func(float64) { calls = append(calls, "hdr") }).Return().Once()
 	r.EXPECT().SetHDR(float64(0)).Run(func(float64) { calls = append(calls, "sdr") }).Return().Once()
-	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().ExportTargets(0, []uint64(nil), false).Run(func(int, []uint64, bool) { calls = append(calls, "drop") }).Return(nil, nil).Once()
-	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXR30)).Return(70, nil)
@@ -157,13 +157,13 @@ func TestHDRSuccessfulModeset(t *testing.T) {
 	o.hdr.props = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
 	o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30, Modifier: 19}}
 	r := portsmocks.NewMockRenderer(t)
-	buf := func() ports.DMABuf {
+	buf := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
 		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(ports.DefaultSDRBrightness)).Return().Once()
-	r.EXPECT().ExportTargets(2, []uint64{19}, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64{19}, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXR30)).Return(70, nil).Twice()
@@ -198,13 +198,13 @@ func TestHDRBlobReusedAcrossImageSetup(t *testing.T) {
 	o.hdr.props = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
 	o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30, Modifier: 19}}
 	r := portsmocks.NewMockRenderer(t)
-	buf := func() ports.DMABuf {
+	buf := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
 		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(ports.DefaultSDRBrightness)).Return().Twice()
-	r.EXPECT().ExportTargets(2, []uint64{19}, false).RunAndReturn(func(int, []uint64, bool) ([]ports.DMABuf, error) { return []ports.DMABuf{buf(), buf()}, nil }).Twice()
+	r.EXPECT().ExportTargets(2, []uint64{19}, false).RunAndReturn(func(int, []uint64, bool) ([]domain.DMABuf, error) { return []domain.DMABuf{buf(), buf()}, nil }).Twice()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXR30)).Return(70, nil)
@@ -248,13 +248,13 @@ func TestHDRBlobReplacementWaitsForCommit(t *testing.T) {
 	o.hdr.props = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
 	o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30, Modifier: 19}}
 	r := portsmocks.NewMockRenderer(t)
-	buf := func() ports.DMABuf {
+	buf := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
 		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(ports.DefaultSDRBrightness)).Return().Twice()
-	r.EXPECT().ExportTargets(2, []uint64{19}, false).RunAndReturn(func(int, []uint64, bool) ([]ports.DMABuf, error) { return []ports.DMABuf{buf(), buf()}, nil }).Twice()
+	r.EXPECT().ExportTargets(2, []uint64{19}, false).RunAndReturn(func(int, []uint64, bool) ([]domain.DMABuf, error) { return []domain.DMABuf{buf(), buf()}, nil }).Twice()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXR30)).Return(70, nil)

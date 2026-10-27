@@ -255,12 +255,12 @@ func (l *lockSurface) unmap() {
 	}
 	s.current, s.next.buffer, s.hold = nil, nil, syncHold{}
 	s.next.attached = false
-	s.content, s.has = ports.SurfaceContent{}, false
+	s.content, s.has = domain.SurfaceContent{}, false
 	l.mapped, l.closed = false, true
 	l.serials = nil
 	delete(l.server.lockSurfaces, l.id)
 	s.lock, s.role = nil, nil
-	l.server.emitContent(ports.SurfaceContent{ID: l.id}, damage{full: true})
+	l.server.emitContent(domain.SurfaceContent{ID: l.id}, damage{full: true})
 	l.server.lockSurfaceChanged()
 	if l.onUnmap != nil {
 		l.onUnmap(l)

@@ -109,7 +109,7 @@ func TestComposeInstancedBlendAndBatches(t *testing.T) {
 				t.Fatal(err)
 			}
 			scene := ports.Scene{Background: "#000000"}
-			contents := make(map[domain.WindowID]ports.SurfaceContent)
+			contents := make(map[domain.WindowID]domain.SurfaceContent)
 			var reference [3]float64
 			for i := range 7 {
 				id := domain.WindowID(i + 1)

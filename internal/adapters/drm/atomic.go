@@ -11,7 +11,6 @@ import (
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Atomic KMS (ADR 015): every change on screen is one atomic commit. A
@@ -88,7 +87,7 @@ type kms interface {
 	// propEnums returns the enum names of a property with their values.
 	propEnums(prop uint32) (map[string]uint64, error)
 	// addFB imports a single-plane dmabuf as a framebuffer of format.
-	addFB(b *ports.DMABuf, format uint32) (uint32, error)
+	addFB(b *domain.DMABuf, format uint32) (uint32, error)
 	rmFB(id uint32) error
 	// createDumb allocates a width×height 32 bpp dumb buffer; mapDumb maps it
 	// for the CPU (read/write) and unmapDumb releases the mapping;

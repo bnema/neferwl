@@ -70,12 +70,12 @@ type surface struct {
 	inputRects              []domain.Rect
 	sentInput, lastInputAll bool
 	lastInputRects          []domain.Rect
-	content                 ports.SurfaceContent
+	content                 domain.SurfaceContent
 	has                     bool
 	identity                uint64
 	version                 uint64
 	// cachedTree is never modified once returned to emitContent.
-	cachedTree                 []ports.Subsurface
+	cachedTree                 []domain.Subsurface
 	treeDirty                  bool
 	commitFresh, commitSkipped bool
 	queuedScale                int
@@ -209,7 +209,7 @@ func (s *surface) outputColor() domain.SurfaceColor {
 	return domain.SurfaceColor{TF: uint8(s.color.TF), Primaries: uint8(s.color.Primaries), MaxCLL: uint16(s.color.MaxCLL), MaxFALL: uint16(s.color.MaxFALL), Coefficients: s.representation.coefficients, Range: s.representation.rangeValue, Chroma: s.representation.chroma}
 }
 
-func (s *surface) contentWithColor() ports.SurfaceContent {
+func (s *surface) contentWithColor() domain.SurfaceContent {
 	c := s.content
 	c.Surface, c.Version = s.identity, s.version
 	c.Color = s.outputColor()
@@ -219,13 +219,13 @@ func (s *surface) contentWithColor() ports.SurfaceContent {
 }
 
 // tree is the root's content with its subsurfaces flattened.
-func (s *surface) tree(id domain.WindowID) ports.SurfaceContent {
+func (s *surface) tree(id domain.WindowID) domain.SurfaceContent {
 	c := s.contentWithColor()
 	c.ID = id
 	c.ContentType = domain.ContentType(s.contentKind)
 	if s.treeDirty || s.cachedTree == nil {
 		count := s.treeCount()
-		children := make([]ports.Subsurface, 0, count)
+		children := make([]domain.Subsurface, 0, count)
 		for _, item := range s.sub.layout {
 			item.child.appendTree(&children, item.x, item.y, item.below)
 		}
@@ -251,14 +251,14 @@ func (s *surface) treeCount() int {
 
 // appendTree flattens a subsurface at (x, y) from the root: its children
 // below it, itself, then its children above.
-func (s *surface) appendTree(out *[]ports.Subsurface, x, y int, below bool) {
+func (s *surface) appendTree(out *[]domain.Subsurface, x, y int, below bool) {
 	for _, item := range s.sub.layout {
 		if item.below {
 			item.child.appendTree(out, x+item.x, y+item.y, below)
 		}
 	}
 	if s.has {
-		*out = append(*out, ports.Subsurface{X: x, Y: y, Below: below, SurfaceContent: s.contentWithColor()})
+		*out = append(*out, domain.Subsurface{X: x, Y: y, Below: below, SurfaceContent: s.contentWithColor()})
 	}
 	for _, item := range s.sub.layout {
 		if !item.below {
@@ -545,7 +545,7 @@ func (s *surface) applyCommit(u *update) {
 		}
 	}
 	if s.current == nil {
-		s.content, s.has = ports.SurfaceContent{}, false
+		s.content, s.has = domain.SurfaceContent{}, false
 	}
 	if fresh || damaged || oldW != s.content.LogicalW || oldH != s.content.LogicalH || oldSource != s.content.Source || oldColor != s.color || oldRepresentation != s.representation || oldTransform != s.content.Transform || oldOpaque != s.content.Opaque || oldOpaqueRect != s.content.OpaqueRect || oldFade != s.content.Fade {
 		s.version++

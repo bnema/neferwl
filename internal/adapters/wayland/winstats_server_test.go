@@ -13,7 +13,7 @@ import (
 
 func TestWindowStatsRecording(t *testing.T) {
 	var w windowStats
-	c := ports.SurfaceContent{Width: 640, Height: 480}
+	c := domain.SurfaceContent{Width: 640, Height: 480}
 	now := time.Unix(1, 0)
 	w.commit(now, c, false, false)
 	w.flip(&ports.FlipInfo{Shows: map[domain.WindowID]uint64{1: 1}})

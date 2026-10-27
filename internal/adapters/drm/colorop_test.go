@@ -422,9 +422,9 @@ func colorOps(c commitRec) []uint32 {
 	return out
 }
 
-func sdrContent(o *Output) ports.SurfaceContent {
+func sdrContent(o *Output) domain.SurfaceContent {
 	o.clientFBs[9] = &clientFB{fbID: 80}
-	return ports.SurfaceContent{ID: 1, Width: 200, Height: 100, Opaque: true, DMABuf: &ports.DMABuf{ID: 9, Format: fourccXRGB}}
+	return domain.SurfaceContent{ID: 1, Width: 200, Height: 100, Opaque: true, DMABuf: &domain.DMABuf{ID: 9, Format: fourccXRGB}}
 }
 
 func TestColorCommitTransitions(t *testing.T) {
@@ -692,7 +692,7 @@ func refusePipeline(r *atomicReq, _ uint32) error {
 	return nil
 }
 
-func hdrScanoutScene() (ports.Scene, map[domain.WindowID]ports.SurfaceContent) {
+func hdrScanoutScene() (ports.Scene, map[domain.WindowID]domain.SurfaceContent) {
 	s, c := fullscreenScene()
 	return s, c
 }
@@ -1009,7 +1009,7 @@ func TestColorRefusalDoesNotDisableTheCursor(t *testing.T) {
 // is blamed on the pipeline and the hint stays.
 func TestColorRefusalBlamesOnlyColour(t *testing.T) {
 	const pContent = 70
-	setup := func(t *testing.T, rule func(*atomicReq, uint32) error) (*Output, ports.SurfaceContent) {
+	setup := func(t *testing.T, rule func(*atomicReq, uint32) error) (*Output, domain.SurfaceContent) {
 		o, k, _ := colorOutput(t, false, rule)
 		k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(uint32(80), nil).Maybe()
 		o.contentProp, o.contentValues = pContent, [5]uint64{0, 1, 2, 3, 4}

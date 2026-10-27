@@ -58,16 +58,16 @@ func startStuck(t *testing.T, render func() *os.File, errs ...error) *stuckRun {
 	flipped := make(chan flipEvent)
 	o.flipped = flipped // tests send events explicitly
 	r := portsmocks.NewMockRenderer(t)
-	buf := func() ports.DMABuf {
+	buf := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
 		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	var started atomic.Bool
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		if render == nil || !started.Load() {
 			return nil, nil
 		}
@@ -225,7 +225,7 @@ func TestSeenWaitsForRefusedFrameFence(t *testing.T) {
 		time.Sleep(busyRetry)
 		waitFor(t, func() bool { return h.count() == 4 })
 		synctest.Wait()
-		h.contents.send(ports.SurfaceContent{ID: 1, Seq: 7})
+		h.contents.send(domain.SurfaceContent{ID: 1, Seq: 7})
 		<-h.contents.returned
 		// The batch is consumed and the owner has reached its next wait,
 		// including the report attempt. No wall-clock negative assertion.

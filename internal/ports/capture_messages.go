@@ -13,7 +13,7 @@ type CaptureRequest struct {
 	Output                string
 	Region                image.Rectangle // clipped output buffer coordinates
 	Cursor                bool
-	Dst                   SHMBuffer
+	Dst                   domain.SHMBuffer
 	Width, Height, Stride int
 	Format                uint32
 	// Mapped, when set, is the destination instead of Dst.File (nil then):

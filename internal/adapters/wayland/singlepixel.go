@@ -6,13 +6,12 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/singlepixelbuffer"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 )
 
 // wp_single_pixel_buffer_v1: a 1x1 wl_buffer of one color. Clients use it
 // for solid backgrounds and letterbox bars; the renderer draws it as a fill
-// (ports.SurfaceContent.Solid) and no pixels are ever read or imported.
+// (domain.SurfaceContent.Solid) and no pixels are ever read or imported.
 
 func registerSinglePixelBuffer(d *server.Display, s *Server) error {
 	return singlepixelbuffer.NewWpSinglePixelBufferManagerV1Global(d, 1, func(c server.Client, v, id uint32) {
@@ -50,6 +49,6 @@ func (*singlePixelBuffer) Destroy(*wayland.Buffer) {}
 
 func (*singlePixelBuffer) size() (int, int) { return 1, 1 }
 
-func (b *singlePixelBuffer) content(id domain.WindowID) (ports.SurfaceContent, bool) {
-	return ports.SurfaceContent{ID: id, Width: 1, Height: 1, Opaque: b.opaque, Solid: &b.color}, true
+func (b *singlePixelBuffer) content(id domain.WindowID) (domain.SurfaceContent, bool) {
+	return domain.SurfaceContent{ID: id, Width: 1, Height: 1, Opaque: b.opaque, Solid: &b.color}, true
 }

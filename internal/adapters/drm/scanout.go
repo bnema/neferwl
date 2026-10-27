@@ -54,7 +54,7 @@ func fullPlaneRect(w, h int) planeRect {
 	return planeRect{src: [4]uint64{0, 0, uint64(w) << 16, uint64(h) << 16}, crtc: [4]uint64{0, 0, uint64(w), uint64(h)}}
 }
 
-func scanoutRect(c ports.SurfaceContent, w, h int) planeRect {
+func scanoutRect(c domain.SurfaceContent, w, h int) planeRect {
 	r := fullPlaneRect(w, h)
 	r.src = [4]uint64{0, 0, uint64(c.Width) << 16, uint64(c.Height) << 16}
 	if c.Source[2] != 0 {
@@ -90,23 +90,23 @@ func fullscreenShown(s *ports.Scene) bool {
 // kept reports a window drawn from a content its client withdrew (it
 // closed and fades out): the client may already have its buffer back, so
 // it is never put on a plane (nil: none is).
-func scanoutCandidate(s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent, w, h int, kept func(domain.WindowID) bool) (ports.SurfaceContent, string) {
+func scanoutCandidate(s ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, w, h int, kept func(domain.WindowID) bool) (domain.SurfaceContent, string) {
 	// A hardware plane would bypass the compositor-owned flash border.
 	if s.PositionHint.Shown() {
-		return ports.SurfaceContent{}, "position_hint"
+		return domain.SurfaceContent{}, "position_hint"
 	}
 	if s.Outline != nil {
-		return ports.SurfaceContent{}, "selection_outline"
+		return domain.SurfaceContent{}, "selection_outline"
 	}
 	if s.Flash != nil {
-		return ports.SurfaceContent{}, "focus_flash"
+		return domain.SurfaceContent{}, "focus_flash"
 	}
 	if s.Transform != 0 {
 		// The scanout buffer would have to be pre-rotated: rotated outputs compose.
-		return ports.SurfaceContent{}, "output_transform"
+		return domain.SurfaceContent{}, "output_transform"
 	}
 	if s.WorkspaceClip != (domain.Rect{}) && s.WorkspaceClip != (domain.Rect{W: s.OutputWidth, H: s.OutputHeight}) {
-		return ports.SurfaceContent{}, "workspace_clip"
+		return domain.SurfaceContent{}, "workspace_clip"
 	}
 	var full *ports.SceneWindow
 	for i := range s.Windows {
@@ -115,34 +115,34 @@ func scanoutCandidate(s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceC
 			continue
 		}
 		if !win.Fullscreen || !covers(&s, win) || full != nil {
-			return ports.SurfaceContent{}, "other_windows"
+			return domain.SurfaceContent{}, "other_windows"
 		}
 		full = win
 	}
 	if full == nil {
-		return ports.SurfaceContent{}, "no_fullscreen"
+		return domain.SurfaceContent{}, "no_fullscreen"
 	}
 	if kept != nil && kept(full.ID) {
-		return ports.SurfaceContent{}, "leaving"
+		return domain.SurfaceContent{}, "leaving"
 	}
 	if len(s.DropHints) > 0 {
 		// Drag hints are drawn over the window.
-		return ports.SurfaceContent{}, "drop_hint"
+		return domain.SurfaceContent{}, "drop_hint"
 	}
 	if full.Dim > 0 {
 		// Its veil is composed over it: the plane would show it bright.
-		return ports.SurfaceContent{}, "dim"
+		return domain.SurfaceContent{}, "dim"
 	}
 	if full.Radius > 0 || full.Fade > 0 || full.Preview > 0 || full.Zoom > 0 {
 		// A fading or zoomed window is composed: the plane would show it
 		// whole and opaque.
-		return ports.SurfaceContent{}, "window_fade"
+		return domain.SurfaceContent{}, "window_fade"
 	}
 	// Core leaves the layers a fullscreen window hides out of the scene:
 	// one above the windows here is drawn.
 	for _, l := range s.Layers {
 		if l.Layer >= domain.LayerTop && l.Rect.W > 0 && l.Rect.H > 0 {
-			return ports.SurfaceContent{}, "overlay_surface"
+			return domain.SurfaceContent{}, "overlay_surface"
 		}
 	}
 	c := surfaces[full.ID]
@@ -191,7 +191,7 @@ func finiteSource(src [4]float32) bool {
 }
 
 // cropped reports whether a viewport source shows less than the buffer.
-func cropped(c ports.SurfaceContent) bool {
+func cropped(c domain.SurfaceContent) bool {
 	return c.Source[2] != 0 && c.Source != [4]float32{0, 0, float32(c.Width), float32(c.Height)}
 }
 
@@ -201,7 +201,7 @@ func cropped(c ports.SurfaceContent) bool {
 // on the client area. That subsurface hides the root entirely, so it is
 // what the screen shows. The returned content keeps the window's ID and
 // Seq for release and presentation.
-func clientSubsurface(c ports.SurfaceContent) (ports.SurfaceContent, string) {
+func clientSubsurface(c domain.SurfaceContent) (domain.SurfaceContent, string) {
 	if len(c.Children) != 1 {
 		return c, "subsurfaces"
 	}
@@ -225,7 +225,7 @@ func clientSubsurface(c ports.SurfaceContent) (ports.SurfaceContent, string) {
 // scanoutFrame picks a fullscreen client buffer to flip directly. It
 // returns fb 0, with the reason logged on change, when the frame must be
 // composed.
-func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent) (fb uint32, c ports.SurfaceContent, mode colorMode) {
+func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent) (fb uint32, c domain.SurfaceContent, mode colorMode) {
 	reason := "disabled"
 	if o.scanout {
 		c, reason = scanoutCandidate(scene, surfaces, o.Width(), o.Height(), o.kept)
@@ -286,12 +286,12 @@ func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[domain.WindowID]po
 // none; the reason is logged on change. The returned scene's Windows is
 // valid until the next call: it reuses o.restWindows (its consumers, Render,
 // ExcludedScene and the capture tracking, run synchronously before then).
-func (o *Output) overlayFrame(s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent) (overlayWin, ports.Scene) {
+func (o *Output) overlayFrame(s ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent) (overlayWin, ports.Scene) {
 	reason := "no_plane"
 	var ov overlayWin
 	if o.overlay != nil && o.scanout {
 		var w ports.SceneWindow
-		var c ports.SurfaceContent
+		var c domain.SurfaceContent
 		var mode colorMode
 		w, c, mode, reason = overlayCandidate(s, surfaces, o.hdr.on, o.overlay.pipeline, o.kept)
 		if reason == "" && mode != colorBypass {
@@ -334,7 +334,7 @@ func (o *Output) overlayFrame(s ports.Scene, surfaces map[domain.WindowID]ports.
 // frameDecision selects the zero-copy path or the scene to compose.
 type frameDecision struct {
 	fb       uint32
-	content  ports.SurfaceContent
+	content  domain.SurfaceContent
 	rect     planeRect
 	color    colorMode // how the primary plane shows fb
 	overlay  overlayWin
@@ -343,7 +343,7 @@ type frameDecision struct {
 
 // composeFrame chooses overlay or composition after direct scanout cannot commit.
 // The caller owns the returned overlay fence.
-func (o *Output) composeFrame(s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent) frameDecision {
+func (o *Output) composeFrame(s ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent) frameDecision {
 	if time.Now().Before(o.scanoutPausedUntil) {
 		o.setScanoutReason("nomem")
 		o.setOverlayReason("nomem")
@@ -360,7 +360,7 @@ const nomemScanoutPause = 2 * time.Second
 
 // decideFrame tries direct scanout, then overlay, then composition.
 // Captures require composition; the caller owns the returned overlay fence.
-func (o *Output) decideFrame(s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent, capture bool) frameDecision {
+func (o *Output) decideFrame(s ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, capture bool) frameDecision {
 	if capture {
 		o.setScanoutReason("capture")
 		o.setOverlayReason("capture")
@@ -412,19 +412,19 @@ type clientFB struct {
 // scanoutFB returns the framebuffer of a client buffer for the primary
 // plane, importing it on first use. A buffer KMS refuses is remembered
 // with its reason.
-func (o *Output) scanoutFB(b *ports.DMABuf, now time.Time) (uint32, string) {
+func (o *Output) scanoutFB(b *domain.DMABuf, now time.Time) (uint32, string) {
 	return o.planeFB(o.primary, b, now, func(fb *clientFB) *string { return &fb.failed })
 }
 
 // overlayFB is scanoutFB for the overlay plane, with its own formats and
 // refusal reason.
-func (o *Output) overlayFB(b *ports.DMABuf, now time.Time) (uint32, string) {
+func (o *Output) overlayFB(b *domain.DMABuf, now time.Time) (uint32, string) {
 	return o.planeFB(o.overlay, b, now, func(fb *clientFB) *string { return &fb.overlayFailed })
 }
 
 // planeFB imports b once as a framebuffer; reason is the plane's refusal
 // field. Both planes share the framebuffer: they show the same format.
-func (o *Output) planeFB(p *plane, b *ports.DMABuf, now time.Time, reason func(*clientFB) *string) (uint32, string) {
+func (o *Output) planeFB(p *plane, b *domain.DMABuf, now time.Time, reason func(*clientFB) *string) (uint32, string) {
 	fb := o.clientFBs[b.ID]
 	if fb == nil {
 		fb = &clientFB{}
@@ -458,12 +458,12 @@ func (o *Output) planeFB(p *plane, b *ports.DMABuf, now time.Time, reason func(*
 
 // scanoutFormat is the framebuffer format a client buffer is scanned out
 // as on the primary plane (see planeFormat).
-func (o *Output) scanoutFormat(b *ports.DMABuf) (uint32, bool) { return planeFormat(o.primary, b) }
+func (o *Output) scanoutFormat(b *domain.DMABuf) (uint32, bool) { return planeFormat(o.primary, b) }
 
 // planeFormat is the framebuffer format a client buffer shows as on p,
 // when p lists it with the buffer's modifier. Planes here show no alpha:
 // an alpha format goes as its X variant when the plane has that one.
-func planeFormat(p *plane, b *ports.DMABuf) (uint32, bool) {
+func planeFormat(p *plane, b *domain.DMABuf) (uint32, bool) {
 	has := func(f uint32) bool {
 		return slices.Contains(p.formats, domain.DMABufFormat{Format: f, Modifier: b.Modifier})
 	}
@@ -489,7 +489,7 @@ var opaqueVariant = map[uint32]uint32{
 func (o *Output) scanoutFormats(sampled []domain.DMABufFormat) []domain.DMABufFormat {
 	var out []domain.DMABufFormat
 	for _, f := range sampled {
-		b := ports.DMABuf{Format: f.Format, Modifier: f.Modifier}
+		b := domain.DMABuf{Format: f.Format, Modifier: f.Modifier}
 		if _, ok := o.scanoutFormat(&b); ok {
 			out = append(out, f)
 		}
@@ -533,7 +533,7 @@ const (
 // and is shared by every import of the same buffer, so import, ADDFB2 and
 // close run under the lock and the handle is closed right away: the
 // framebuffer keeps its own reference to the buffer.
-func (k kmsDevice) addFB(b *ports.DMABuf, format uint32) (uint32, error) {
+func (k kmsDevice) addFB(b *domain.DMABuf, format uint32) (uint32, error) {
 	raw, err := b.Planes[0].File.SyscallConn()
 	if err != nil {
 		return 0, err

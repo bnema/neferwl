@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
+
 	vk "github.com/bnema/purego-vulkan/vulkan"
 	"golang.org/x/sys/unix"
 )
@@ -52,7 +53,7 @@ type bindImagePlane struct {
 // importYUV uses one multi-planar VkImage. Planes sharing a DMA-BUF use one
 // memory binding; different backing objects need disjoint support. Views
 // always sample the Y and UV planes separately.
-func (r *Renderer) importYUV(b *ports.DMABuf, format vk.Format) (*imported, error) {
+func (r *Renderer) importYUV(b *domain.DMABuf, format vk.Format) (*imported, error) {
 	im := &imported{fd: -1, yuv: true, last: r.frame, fds: [2]int{-1, -1}}
 	disjoint, err := differentBacking(b.Planes)
 	if err != nil {
@@ -159,7 +160,7 @@ func (r *Renderer) importYUV(b *ports.DMABuf, format vk.Format) (*imported, erro
 
 // differentBacking identifies duplicate descriptors of one DMA-BUF by inode.
 // Compare the opened files themselves, not their integer descriptor values.
-func differentBacking(planes []ports.DMABufPlane) (bool, error) {
+func differentBacking(planes []domain.DMABufPlane) (bool, error) {
 	if len(planes) != 2 {
 		return false, fmt.Errorf("expected two DMA-BUF planes")
 	}

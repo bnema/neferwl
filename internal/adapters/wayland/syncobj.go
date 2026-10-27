@@ -10,7 +10,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/linuxdrmsyncobj"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/fdwait"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/purego-libwayland/server"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
@@ -333,7 +333,7 @@ func (sw *syncWaiter) finish(w *syncWait) {
 }
 
 // watchImplicit waits for a dma-buf's exclusive fences without blocking dispatch.
-func (sw *syncWaiter) watchImplicit(b *ports.DMABuf, waits *[4]*syncWait) error {
+func (sw *syncWaiter) watchImplicit(b *domain.DMABuf, waits *[4]*syncWait) error {
 	if sw.stopped() {
 		return unix.EIO
 	}

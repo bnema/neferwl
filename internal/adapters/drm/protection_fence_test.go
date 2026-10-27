@@ -22,7 +22,7 @@ func TestProtectedModesetWaitsForClearFence(t *testing.T) {
 	f, w := protectionFence(t, false)
 	rendered := make(chan struct{})
 	r.EXPECT().UseTarget(0).Return().Once()
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		close(rendered)
 		return f, nil
 	}).Once()

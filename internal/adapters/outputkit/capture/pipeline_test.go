@@ -9,6 +9,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -24,7 +26,7 @@ func pipelineRequest(t *testing.T, id uint64) ports.CaptureRequest {
 	if err := f.Truncate(16); err != nil {
 		t.Fatal(err)
 	}
-	return ports.CaptureRequest{ID: id, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: ports.SHMBuffer{File: f}}
+	return ports.CaptureRequest{ID: id, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: domain.SHMBuffer{File: f}}
 }
 
 //testpolicy:realtime pipeline workers may wait for real pipe fence descriptors

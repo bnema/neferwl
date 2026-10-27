@@ -381,7 +381,7 @@ func (c *Card) allocate(w, h int, format uint32, modifiers []uint64) (imageBuffe
 	return c.alloc.create(w, h, format, modifiers)
 }
 
-func (c *Card) imageDMABuf(img imageBuffer) (ports.DMABuf, error) {
+func (c *Card) imageDMABuf(img imageBuffer) (domain.DMABuf, error) {
 	c.allocMu.Lock()
 	defer c.allocMu.Unlock()
 	return img.dmabuf()

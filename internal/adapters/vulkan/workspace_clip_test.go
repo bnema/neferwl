@@ -17,7 +17,7 @@ func TestTileInsetKeepsBottomPanel(t *testing.T) {
 	red := color.RGBA{255, 0, 0, 255}
 	green := color.RGBA{0, 255, 0, 255}
 	blue := color.RGBA{0, 0, 255, 255}
-	contents := map[domain.WindowID]ports.SurfaceContent{1: solidContent(t, 64, 48, red), 2: solidContent(t, 64, 8, green), 3: solidContent(t, 8, 8, blue)}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: solidContent(t, 64, 48, red), 2: solidContent(t, 64, 8, green), 3: solidContent(t, 8, 8, blue)}
 	scene := ports.Scene{Seq: 1, OutputWidth: 64, OutputHeight: 48, Background: "#000000", TileInset: domain.Insets{Bottom: 8},
 		Border:     ports.Border{Width: 2, Inactive: "#ffffff"},
 		Windows:    []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 48}}},
@@ -56,7 +56,7 @@ func TestTileDamageStopsAtPanel(t *testing.T) {
 	bounds := image.Rect(0, 0, 64, 48)
 	held := &target{valid: true, sceneSeq: scene.Seq, scene: scene, windows: map[domain.WindowID]heldWindow{1: {seq: 1, rect: image.Rect(0, 0, 64, 40)}}}
 	dmg := r.frameDamage(held, scene, bounds)
-	_ = r.draws(scene, map[domain.WindowID]ports.SurfaceContent{1: c}, dmg)
+	_ = r.draws(scene, map[domain.WindowID]domain.SurfaceContent{1: c}, dmg)
 	dmg.finish()
 	if dmg.all() || dmg.area != image.Rect(0, 0, 64, 40) {
 		t.Fatalf("damage %v (all %v), want the tile above the panel", dmg.area, dmg.all())
@@ -68,7 +68,7 @@ func TestWorkspaceClipWindowsPopupsAndLayers(t *testing.T) {
 	defer r.Close()
 	red := color.RGBA{255, 0, 0, 255}
 	green := color.RGBA{0, 255, 0, 255}
-	contents := map[domain.WindowID]ports.SurfaceContent{1: solidContent(t, 64, 48, red), 2: solidContent(t, 8, 8, green)}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: solidContent(t, 64, 48, red), 2: solidContent(t, 8, 8, green)}
 	clip := domain.Rect{X: 16, Y: 12, W: 32, H: 24}
 	scene := ports.Scene{Seq: 1, OutputWidth: 64, OutputHeight: 48, Background: "#000000", WorkspaceClip: clip,
 		Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 48}}},

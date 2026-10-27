@@ -66,22 +66,22 @@ type overlayWin struct {
 //
 // kept is scanoutCandidate's: a window drawn from a withdrawn content is
 // composed, never put on the plane.
-func overlayCandidate(s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent, hdrOn bool, pipeline *colorPipeline, kept func(domain.WindowID) bool) (ports.SceneWindow, ports.SurfaceContent, colorMode, string) {
+func overlayCandidate(s ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, hdrOn bool, pipeline *colorPipeline, kept func(domain.WindowID) bool) (ports.SceneWindow, domain.SurfaceContent, colorMode, string) {
 	// A hardware plane would bypass the compositor-owned flash border.
 	if s.PositionHint.Shown() {
-		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "position_hint"
+		return ports.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "position_hint"
 	}
 	if s.Outline != nil {
-		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "selection_outline"
+		return ports.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "selection_outline"
 	}
 	if s.Flash != nil {
-		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "focus_flash"
+		return ports.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "focus_flash"
 	}
 	if len(s.Overlays) > 0 {
-		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "overlays"
+		return ports.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "overlays"
 	}
 	if s.Transform != 0 {
-		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "output_transform"
+		return ports.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "output_transform"
 	}
 	scale := s.Scale
 	if scale <= 0 {
@@ -117,13 +117,13 @@ func overlayCandidate(s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceC
 		}
 		if pick != nil && w.Rect.Overlaps(pick.Rect) {
 			// Something is drawn over the candidate.
-			return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "window_above"
+			return ports.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "window_above"
 		}
 	}
 	if pick != nil {
 		for i := range s.Windows {
 			if w := &s.Windows[i]; w.Popup && s.Draws(*w) && w.Rect.Overlaps(pick.Rect) {
-				return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "window_above"
+				return ports.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "window_above"
 			}
 		}
 	}
@@ -133,55 +133,55 @@ func overlayCandidate(s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceC
 			// after its close: composed from its kept content.
 			for i := range s.Windows {
 				if w := &s.Windows[i]; s.Draws(*w) && kept(w.ID) {
-					return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "leaving"
+					return ports.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "leaving"
 				}
 			}
 		}
-		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "no_candidate"
+		return ports.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "no_candidate"
 	}
 	if s.Dim > 0 {
 		// The renderer composes the veil (under the first float, or under
 		// every window with DimBehind): a window on the plane would skip it.
-		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "dim"
+		return ports.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "dim"
 	}
 	if len(s.DropHints) > 0 {
 		// Drag hints are drawn over the windows.
-		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "drop_hint"
+		return ports.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "drop_hint"
 	}
 	for _, l := range s.Layers {
 		if l.Layer >= domain.LayerTop && l.Rect.Overlaps(pick.Rect) {
-			return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "layer_above"
+			return ports.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "layer_above"
 		}
 	}
 	if !pick.Fullscreen {
 		if pick.Inset != 0 && s.Border.Width > 0 {
 			// The content sits inside the lines, not at the window's rect.
-			return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "border"
+			return ports.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "border"
 		}
 		for _, sep := range s.Separators {
 			if sep.Rect.Overlaps(pick.Rect) && !linesUnder(s, sep, pick, pickAt) {
 				// The overlay shows the buffer alone; the lines would go
 				// under it.
-				return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "border"
+				return ports.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "border"
 			}
 		}
 	}
 	if clip := s.WorkspaceClip; clip != (domain.Rect{}) && !clip.Contains(pick.Rect) {
 		// The plane cannot apply the workspace's logical viewport crop.
-		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "workspace_clip"
+		return ports.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "workspace_clip"
 	}
 	if a, ok := s.TileArea(); ok && pick.Tile() && !a.Contains(pick.Rect) {
 		// Nor the cut of a tile at a panel.
-		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "tile_clip"
+		return ports.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "tile_clip"
 	}
 	c := surfaces[pick.ID]
 	pw, ph := float64(pick.Rect.W)*scale, float64(pick.Rect.H)*scale
 	if float64(c.Width) != pw || float64(c.Height) != ph || c.Geometry != (domain.Rect{}) && (c.Geometry.X != 0 || c.Geometry.Y != 0) {
-		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "scaled"
+		return ports.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "scaled"
 	}
 	x, y := float64(pick.Rect.X)*scale, float64(pick.Rect.Y)*scale
 	if x != float64(int(x)) || y != float64(int(y)) {
-		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "fractional_position"
+		return ports.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "fractional_position"
 	}
 	return *pick, c, mode, ""
 }

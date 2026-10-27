@@ -16,12 +16,12 @@ func TestSceneContentVsWindowRect(t *testing.T) {
 	// A draw's rect is its corners: x0, y0, x1, y1.
 	// walk returns the content draws: the window's background fill is first.
 	walk := func(rect domain.Rect, lw, lh int, geo domain.Rect) []draw {
-		c := ports.SurfaceContent{
+		c := domain.SurfaceContent{
 			ID: 1, Width: 1, Height: 1, LogicalW: lw, LogicalH: lh, Geometry: geo,
 			Solid: &domain.SolidColor{R: 1, A: 1}, Opaque: true,
 		}
 		s := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: rect}}}
-		contents := map[domain.WindowID]ports.SurfaceContent{1: c}
+		contents := map[domain.WindowID]domain.SurfaceContent{1: c}
 		ds := r.draws(s, contents, newDamage(&target{}, s, image.Rect(0, 0, 80, 60)))
 		if len(ds) < 2 {
 			t.Fatalf("no content draw: %+v", ds)

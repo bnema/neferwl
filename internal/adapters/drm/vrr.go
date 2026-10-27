@@ -72,7 +72,7 @@ func (o *Output) contentProps(req *atomicReq) {
 }
 
 // wantContent chooses a content hint for the only visible fullscreen window.
-func (o *Output) wantContent(s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent) {
+func (o *Output) wantContent(s ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent) {
 	o.contentWanted = o.contentValues[0]
 	var full *ports.SceneWindow
 	for i := range s.Windows {

@@ -42,7 +42,7 @@ func TestRendererRender(t *testing.T) {
 	defer r.Close()
 	bg := color.RGBA{16, 32, 48, 255}
 	wc, c2, fc := color.RGBA{200, 10, 10, 255}, color.RGBA{10, 200, 10, 255}, color.RGBA{10, 10, 200, 255}
-	contents := map[domain.WindowID]ports.SurfaceContent{
+	contents := map[domain.WindowID]domain.SurfaceContent{
 		1: solidContent(t, 64, 48, wc), 2: solidContent(t, 64, 48, c2), 3: solidContent(t, 64, 48, fc),
 	}
 	check := func(s ports.Scene, expected map[image.Point]color.RGBA) {
@@ -95,7 +95,7 @@ func TestRendererFade(t *testing.T) {
 	c.Fade = 0.5
 	c.Opaque = false
 	s := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 48}}}}
-	if err := render(r, s, map[domain.WindowID]ports.SurfaceContent{1: c}); err != nil {
+	if err := render(r, s, map[domain.WindowID]domain.SurfaceContent{1: c}); err != nil {
 		t.Fatal(err)
 	}
 	if got := readPixels(t, r).At(10, 10).(color.RGBA); got.R < 99 || got.R > 101 || got.G != 0 || got.B != 0 {
@@ -112,11 +112,11 @@ func TestRendererContents(t *testing.T) {
 	for i := 0; i < len(pixels); i += 4 {
 		copy(pixels[i:i+4], []byte{0, 0, 255, 255})
 	}
-	render := func(c *ports.SurfaceContent) {
+	render := func(c *domain.SurfaceContent) {
 		t.Helper()
-		var contents map[domain.WindowID]ports.SurfaceContent
+		var contents map[domain.WindowID]domain.SurfaceContent
 		if c != nil {
-			contents = map[domain.WindowID]ports.SurfaceContent{1: *c}
+			contents = map[domain.WindowID]domain.SurfaceContent{1: *c}
 		}
 		if err := render(r, scene, contents); err != nil {
 			t.Fatal(err)
@@ -151,7 +151,7 @@ func TestRendererUploadOrderAndOpaque(t *testing.T) {
 		{ID: 2, Rect: domain.Rect{X: 8, Y: 8, W: 16, H: 16}},
 	}}
 	top := color.RGBA{10, 200, 10, 255}
-	upper := map[domain.WindowID]ports.SurfaceContent{1: solidContent(t, 16, 16, color.RGBA{200, 10, 10, 255}), 2: solidContent(t, 16, 16, top)}
+	upper := map[domain.WindowID]domain.SurfaceContent{1: solidContent(t, 16, 16, color.RGBA{200, 10, 10, 255}), 2: solidContent(t, 16, 16, top)}
 	for id, c := range upper {
 		c.Version = 1 // the opaque buffer below is another commit
 		upper[id] = c
@@ -171,7 +171,7 @@ func TestRendererUploadOrderAndOpaque(t *testing.T) {
 	}
 	opaque := shmContent(t, 16, 16, 64, px)
 	opaque.Opaque = true
-	contents := map[domain.WindowID]ports.SurfaceContent{1: *opaque}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: *opaque}
 	if err := render(r, scene, contents); err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestRendererLayers(t *testing.T) {
 	}
 	layer := shmContent(t, 64, 8, 64*4, red)
 	layer.ID, layer.Opaque = 2, true
-	contents := map[domain.WindowID]ports.SurfaceContent{2: *layer}
+	contents := map[domain.WindowID]domain.SurfaceContent{2: *layer}
 	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 48}}}, Layers: []ports.SceneLayer{{ID: 2, Layer: domain.LayerTop, Rect: domain.Rect{W: 64, H: 8}}}}
 	window := color.RGBA{16, 32, 48, 255} // no buffer yet: background
 	check := func(want color.RGBA) {
@@ -239,7 +239,7 @@ func TestRendererScale(t *testing.T) {
 	s := ports.Scene{Scale: 2, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: 10, H: 10}}}}
 	scaled := shmContent(t, 20, 20, 80, solid(20, 20, red))
 	scaled.ID, scaled.LogicalW, scaled.LogicalH = 1, 10, 10
-	content := map[domain.WindowID]ports.SurfaceContent{1: *scaled}
+	content := map[domain.WindowID]domain.SurfaceContent{1: *scaled}
 	if err := render(r, s, content); err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +300,7 @@ func TestRendererPreview(t *testing.T) {
 	c := shmContent(t, 40, 20, 160, px)
 	c.ID = 1
 	s := ports.Scene{Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: 20, H: 10}, Preview: 0.5}}}
-	if err := render(r, s, map[domain.WindowID]ports.SurfaceContent{1: *c}); err != nil {
+	if err := render(r, s, map[domain.WindowID]domain.SurfaceContent{1: *c}); err != nil {
 		t.Fatal(err)
 	}
 	out := readPixels(t, r)
@@ -331,7 +331,7 @@ func TestRendererPreviewSmooth(t *testing.T) {
 	c := shmContent(t, 80, 40, 320, px)
 	c.ID = 1
 	s := ports.Scene{Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 20, H: 10}, Preview: 0.25}}}
-	if err := render(r, s, map[domain.WindowID]ports.SurfaceContent{1: *c}); err != nil {
+	if err := render(r, s, map[domain.WindowID]domain.SurfaceContent{1: *c}); err != nil {
 		t.Fatal(err)
 	}
 	out := readPixels(t, r)
@@ -343,7 +343,7 @@ func TestRendererPreviewSmooth(t *testing.T) {
 }
 
 // solidContent is a w×h B8G8R8A8 buffer of one color.
-func solidContent(t testing.TB, w, h int, c color.RGBA) ports.SurfaceContent {
+func solidContent(t testing.TB, w, h int, c color.RGBA) domain.SurfaceContent {
 	px := make([]byte, w*h*4)
 	for i := 0; i < len(px); i += 4 {
 		px[i], px[i+1], px[i+2], px[i+3] = c.B, c.G, c.R, 255
@@ -352,7 +352,7 @@ func solidContent(t testing.TB, w, h int, c color.RGBA) ports.SurfaceContent {
 }
 
 // shmContent puts pixels in a memfd pool, like a wl_shm client.
-func shmContent(t testing.TB, w, h, stride int, pixels []byte) *ports.SurfaceContent {
+func shmContent(t testing.TB, w, h, stride int, pixels []byte) *domain.SurfaceContent {
 	t.Helper()
 	fd, err := unix.MemfdCreate("shm-test", unix.MFD_CLOEXEC)
 	if err != nil {
@@ -364,7 +364,7 @@ func shmContent(t testing.TB, w, h, stride int, pixels []byte) *ports.SurfaceCon
 		t.Fatal(err)
 	}
 	shmPools++
-	return &ports.SurfaceContent{Width: w, Height: h, SHM: &ports.SHMBuffer{Pool: shmPools, File: f, Stride: stride}}
+	return &domain.SurfaceContent{Width: w, Height: h, SHM: &domain.SHMBuffer{Pool: shmPools, File: f, Stride: stride}}
 }
 
 // shmPools numbers test pools: a renderer maps each pool ID once.
@@ -389,11 +389,11 @@ func TestRendererGeometryAndSubsurfaces(t *testing.T) {
 	below.Surface, below.Version = 2, 1
 	above := solidContent(t, 4, 4, green)
 	above.Surface, above.Version = 3, 1
-	root.Children = []ports.Subsurface{
+	root.Children = []domain.Subsurface{
 		{X: 3, Y: 3, Below: true, SurfaceContent: below},
 		{X: 5, Y: 5, SurfaceContent: above},
 	}
-	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: root}); err != nil {
+	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: root}); err != nil {
 		t.Fatal(err)
 	}
 	px := readPixels(t, r)
@@ -410,8 +410,8 @@ func TestRendererGeometryAndSubsurfaces(t *testing.T) {
 		}
 	}
 	// A root with no buffer of its own still shows its children.
-	only := ports.SurfaceContent{Children: []ports.Subsurface{{SurfaceContent: solidContent(t, 20, 10, blue)}}}
-	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: only}); err != nil {
+	only := domain.SurfaceContent{Children: []domain.Subsurface{{SurfaceContent: solidContent(t, 20, 10, blue)}}}
+	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: only}); err != nil {
 		t.Fatal(err)
 	}
 	if got := readPixels(t, r).At(20, 15); got != blue {
@@ -426,7 +426,7 @@ func TestRendererTallFill(t *testing.T) {
 	defer r.Close()
 	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 1, Y: 0, W: 6, H: h}}}}
 	wc := color.RGBA{200, 10, 10, 255}
-	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: solidContent(t, 6, h, wc)}); err != nil {
+	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: solidContent(t, 6, h, wc)}); err != nil {
 		t.Fatal(err)
 	}
 	bg := color.RGBA{16, 32, 48, 255}
@@ -466,7 +466,7 @@ func TestRendererAlphaBlend(t *testing.T) {
 	}
 	white := shmContent(t, 32, 48, 32*4, solid(32, 48, [3]uint8{255, 255, 255}))
 	white.Opaque = true
-	contents := map[domain.WindowID]ports.SurfaceContent{
+	contents := map[domain.WindowID]domain.SurfaceContent{
 		1: *white,
 		2: *shmContent(t, 64, 48, 64*4, fill(64, 48, halfRed)),
 		3: *shmContent(t, 16, 8, 16*4, partly),
@@ -512,7 +512,7 @@ func TestRendererSHMKeptWindowDrawsFromCopy(t *testing.T) {
 	scene := ports.Scene{Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
 	c := solidContent(t, 16, 16, color.RGBA{R: 255, A: 255})
 	c.ID, c.Surface, c.Seq, c.Version = 1, 1, 1, 1
-	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: c}); err != nil {
+	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: c}); err != nil {
 		t.Fatal(err)
 	}
 	// Wayland closed the pool; the mapping was dropped meanwhile.
@@ -527,7 +527,7 @@ func TestRendererSHMKeptWindowDrawsFromCopy(t *testing.T) {
 	// The window moves (a fade-out), so it draws again.
 	scene.Seq = 2
 	scene.Windows[0].Rect.X = 4
-	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: c}); err != nil {
+	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: c}); err != nil {
 		t.Fatal(err)
 	}
 	got := readPixels(t, r)

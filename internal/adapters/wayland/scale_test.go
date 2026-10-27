@@ -53,13 +53,13 @@ func (p *surfaceTransformProxy) Dispatch(e *wlturbo.Event) {
 	}
 }
 
-func contentServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, <-chan ports.SurfaceContent, string) {
+func contentServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, <-chan domain.SurfaceContent, string) {
 	t.Helper()
 	return contentServerWith(t, Options{}, logging.For(context.Background(), "wayland"))
 }
 
 // contentServerWith is contentServer with extra options and a logger.
-func contentServerWith(t *testing.T, opts Options, log zerowrap.Logger) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, <-chan ports.SurfaceContent, string) {
+func contentServerWith(t *testing.T, opts Options, log zerowrap.Logger) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, <-chan domain.SurfaceContent, string) {
 	t.Helper()
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)

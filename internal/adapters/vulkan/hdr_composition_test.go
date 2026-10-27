@@ -51,7 +51,7 @@ func hdrTargetAt(t *testing.T, r *Renderer, x, y int) [3]float64 {
 
 // hdrPQScene is a 64×16 XR30 udmabuf client holding 1000-nit neutral, red
 // and blue BT.2020 thirds (x/20), drawn full-output.
-func hdrPQScene(t *testing.T, r *Renderer) (ports.Scene, map[domain.WindowID]ports.SurfaceContent, [3][3]float64) {
+func hdrPQScene(t *testing.T, r *Renderer) (ports.Scene, map[domain.WindowID]domain.SurfaceContent, [3][3]float64) {
 	t.Helper()
 	format := domain.DMABufFormat{Format: fourcc('X', 'R', '3', '0'), Modifier: 0}
 	if !slices.Contains(r.DMABuf().Formats, format) {
@@ -64,10 +64,10 @@ func hdrPQScene(t *testing.T, r *Renderer) (ports.Scene, map[domain.WindowID]por
 		p := b | g<<10 | red<<20
 		return [4]byte{byte(p), byte(p >> 8), byte(p >> 16), byte(p >> 24)}
 	})
-	buf := &ports.DMABuf{ID: 2020, Width: 64, Height: 16, Format: format.Format, Planes: []ports.DMABufPlane{{File: f, Stride: 256}}}
-	c := ports.SurfaceContent{ID: 1, Seq: 1, Width: 64, Height: 16, LogicalW: 64, LogicalH: 16, Opaque: true, DMABuf: buf, Color: domain.SurfaceColor{TF: domain.ColorTFPQ, Primaries: domain.ColorPrimariesBT2020}}
+	buf := &domain.DMABuf{ID: 2020, Width: 64, Height: 16, Format: format.Format, Planes: []domain.DMABufPlane{{File: f, Stride: 256}}}
+	c := domain.SurfaceContent{ID: 1, Seq: 1, Width: 64, Height: 16, LogicalW: 64, LogicalH: 16, Opaque: true, DMABuf: buf, Color: domain.SurfaceColor{TF: domain.ColorTFPQ, Primaries: domain.ColorPrimariesBT2020}}
 	scene := ports.Scene{Seq: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
-	return scene, map[domain.WindowID]ports.SurfaceContent{1: c}, nits
+	return scene, map[domain.WindowID]domain.SurfaceContent{1: c}, nits
 }
 
 // HDRPixels returns the exported PQ target's codes scaled to 16 bits, and
@@ -238,7 +238,7 @@ func TestHDRLinearBlend(t *testing.T) {
 	white := shmContent(t, 64, 16, 64*4, fill(64, 16, [4]byte{128, 128, 128, 128}))
 	black := shmContent(t, 64, 16, 64*4, fill(64, 16, [4]byte{0, 0, 0, 128}))
 	scene := ports.Scene{Background: "#000000", Layers: []ports.SceneLayer{{ID: 1, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 64, H: 16}}, {ID: 2, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 64, H: 16}}}}
-	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: *white, 2: *black}); err != nil {
+	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: *white, 2: *black}); err != nil {
 		t.Fatal(err)
 	}
 	got := hdrTargetAt(t, r, 5, 5)
@@ -285,7 +285,7 @@ func TestHDRSolidColorsMatchPartialRedraw(t *testing.T) {
 			}
 		}
 	}
-	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: content}); err != nil {
+	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: content}); err != nil {
 		t.Fatal(err)
 	}
 	check("full")
@@ -294,7 +294,7 @@ func TestHDRSolidColorsMatchPartialRedraw(t *testing.T) {
 	// repainted there via a solid draw instead of the attachment clear.
 	c := content
 	c.Seq = 2
-	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: c}); err != nil {
+	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: c}); err != nil {
 		t.Fatal(err)
 	}
 	if r.redrawn-before >= r.width*r.height {

@@ -37,13 +37,13 @@ func (e *events) get() []string {
 	return append([]string(nil), e.log...)
 }
 
-func sessionCaptureFile(t *testing.T) ports.SHMBuffer {
+func sessionCaptureFile(t *testing.T) domain.SHMBuffer {
 	t.Helper()
 	f, err := os.CreateTemp(t.TempDir(), "capture")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = f.Close() })
 	require.NoError(t, f.Truncate(16))
-	return ports.SHMBuffer{File: f}
+	return domain.SHMBuffer{File: f}
 }
 
 // runSession drives one frame with the given requests and returns the
@@ -52,7 +52,7 @@ func runSession(t *testing.T, scene ports.Scene, reqs []ports.CaptureRequest, wa
 	t.Helper()
 	ev := &events{}
 	r := portsmocks.NewMockRenderer(t)
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		// Excluded and plain scenes are renumbered 0; the tests' displayed scenes are not.
 		if s.Seq == 0 {
 			ev.add("render:excluded")
@@ -155,7 +155,7 @@ func TestHiddenWorkspaceCaptureUsesChildRenderer(t *testing.T) {
 	frame := portsmocks.NewMockCaptureFrame(t)
 	frame.EXPECT().Done().Return(nil).Maybe()
 	frame.EXPECT().Read(mock.Anything, mock.Anything, 8).Return(nil).Maybe()
-	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		require.Nil(t, s.Capture)
 		require.Len(t, s.Layers, 0, "a workspace rendered off screen has no layers")
 		return read, nil
@@ -303,7 +303,7 @@ func TestCaptureWaitsForItsIndicatorScene(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ev := &events{}
 		r := portsmocks.NewMockRenderer(t)
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			switch {
 			case s.Seq == 0:
 				ev.add("render:plain")
@@ -408,7 +408,7 @@ func TestCaptureDeliveredOnlyWhenTheIndicatedFramePresents(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var reads atomic.Int32
 			r := portsmocks.NewMockRenderer(t)
-			r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+			r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 				if s.Seq != 0 {
 					return nil, tc.render // the indicated frame
 				}

@@ -5,7 +5,8 @@
 package drm
 
 import (
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
+
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -79,22 +80,22 @@ func (_c *mockimageBuffer_close_Call) RunAndReturn(run func()) *mockimageBuffer_
 }
 
 // dmabuf provides a mock function for the type mockimageBuffer
-func (_mock *mockimageBuffer) dmabuf() (ports.DMABuf, error) {
+func (_mock *mockimageBuffer) dmabuf() (domain.DMABuf, error) {
 	ret := _mock.Called()
 
 	if len(ret) == 0 {
 		panic("no return value specified for dmabuf")
 	}
 
-	var r0 ports.DMABuf
+	var r0 domain.DMABuf
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func() (ports.DMABuf, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func() (domain.DMABuf, error)); ok {
 		return returnFunc()
 	}
-	if returnFunc, ok := ret.Get(0).(func() ports.DMABuf); ok {
+	if returnFunc, ok := ret.Get(0).(func() domain.DMABuf); ok {
 		r0 = returnFunc()
 	} else {
-		r0 = ret.Get(0).(ports.DMABuf)
+		r0 = ret.Get(0).(domain.DMABuf)
 	}
 	if returnFunc, ok := ret.Get(1).(func() error); ok {
 		r1 = returnFunc()
@@ -121,12 +122,12 @@ func (_c *mockimageBuffer_dmabuf_Call) Run(run func()) *mockimageBuffer_dmabuf_C
 	return _c
 }
 
-func (_c *mockimageBuffer_dmabuf_Call) Return(dMABuf ports.DMABuf, err error) *mockimageBuffer_dmabuf_Call {
+func (_c *mockimageBuffer_dmabuf_Call) Return(dMABuf domain.DMABuf, err error) *mockimageBuffer_dmabuf_Call {
 	_c.Call.Return(dMABuf, err)
 	return _c
 }
 
-func (_c *mockimageBuffer_dmabuf_Call) RunAndReturn(run func() (ports.DMABuf, error)) *mockimageBuffer_dmabuf_Call {
+func (_c *mockimageBuffer_dmabuf_Call) RunAndReturn(run func() (domain.DMABuf, error)) *mockimageBuffer_dmabuf_Call {
 	_c.Call.Return(run)
 	return _c
 }

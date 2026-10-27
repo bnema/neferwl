@@ -24,7 +24,7 @@ func TestSceneWindowFade(t *testing.T) {
 			},
 			Separators: []ports.Separator{{Rect: domain.Rect{X: 40, W: 1, H: 20}, Window: 2}},
 		}
-		contents := map[domain.WindowID]ports.SurfaceContent{
+		contents := map[domain.WindowID]domain.SurfaceContent{
 			2: {ID: 2, Width: 1, Height: 1, LogicalW: 18, LogicalH: 18, Solid: &domain.SolidColor{R: 1, G: 0.5, B: 0, A: 1}},
 		}
 		// The renderer reuses its draw buffer: each walk's result is kept.
@@ -106,7 +106,7 @@ func TestSceneZoomedFloatOpensFloats(t *testing.T) {
 			},
 		}
 	}
-	contents := map[domain.WindowID]ports.SurfaceContent{
+	contents := map[domain.WindowID]domain.SurfaceContent{
 		2: {ID: 2, Width: 1, Height: 1, LogicalW: 38, LogicalH: 38, Solid: &domain.SolidColor{R: 1, G: 1, B: 1, A: 1}},
 	}
 	walk := func(s ports.Scene) []draw {

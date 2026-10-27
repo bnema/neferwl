@@ -17,7 +17,7 @@ import (
 var linearARGB = domain.DMABufFormat{Format: 'A' | 'R'<<8 | '2'<<16 | '4'<<24}
 
 //testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
-func dmabufServer(t *testing.T, sup domain.DMABufSupport) (*Server, chan ports.ClientEvent, <-chan ports.SurfaceContent, string) {
+func dmabufServer(t *testing.T, sup domain.DMABufSupport) (*Server, chan ports.ClientEvent, <-chan domain.SurfaceContent, string) {
 	t.Helper()
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)

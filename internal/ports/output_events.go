@@ -74,7 +74,7 @@ func (OutputAdded) outputEvent() {}
 
 // OutputPresented carries output → wayland what an output shows and reads.
 // Flip is set when a page flip completed: frame callbacks of the surfaces
-// on it are due. Shown and Queued are the DMABuf IDs scanned out directly
+// on it are due. Shown and Queued are the domain.DMABuf IDs scanned out directly
 // (0: a composed image); Seen is the latest content Seq per window the
 // output finished reading (the GPU is done with it). A replaced client
 // buffer is released once every output that reports has seen a later

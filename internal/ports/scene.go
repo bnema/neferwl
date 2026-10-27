@@ -246,7 +246,7 @@ type SceneWindow struct {
 	// opacity, 0 to 1: a stashed window peeking in. 0 draws nothing.
 	Dim float64
 	// Fade makes the whole window translucent, border and content: 0 is
-	// opaque, 1 invisible (like SurfaceContent.Fade). A window appearing
+	// opaque, 1 invisible (like domain.SurfaceContent.Fade). A window appearing
 	// or leaving animates it; a faded window is composed, never scanned
 	// out.
 	Fade float64

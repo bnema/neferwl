@@ -226,7 +226,7 @@ func (s *Server) dndIconRole(d *dndState, icon *surface) {
 	id := d.iconID
 	d.icon, d.iconID = nil, 0
 	s.emit(ports.DataDragIcon{ID: id})
-	s.emitContent(ports.SurfaceContent{ID: id}, damage{full: true})
+	s.emitContent(domain.SurfaceContent{ID: id}, damage{full: true})
 }
 
 // dndIconCommit follows a commit of the active icon: its offsets add up
@@ -438,7 +438,7 @@ func (s *Server) dndEnd(d *dndState, cancel, ended bool) {
 		d.icon = nil
 	}
 	if d.iconID != 0 {
-		s.emitContent(ports.SurfaceContent{ID: d.iconID}, damage{full: true})
+		s.emitContent(domain.SurfaceContent{ID: d.iconID}, damage{full: true})
 		d.iconID = 0
 	}
 	if ended {

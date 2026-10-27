@@ -25,7 +25,7 @@ func TestComposeIndexedMixedResources(t *testing.T) {
 	if !slices.Contains(r.DMABuf().Formats, domain.DMABufFormat{Format: rgbFormat}) {
 		t.Skip("linear ARGB not importable")
 	}
-	rgb := &ports.DMABuf{ID: 991, Width: 64, Height: 16, Format: rgbFormat, Planes: []ports.DMABufPlane{{File: udmabuf(t, 64, 16, func(int, int) [4]byte { return [4]byte{255, 0, 0, 255} }), Stride: 256}}}
+	rgb := &domain.DMABuf{ID: 991, Width: 64, Height: 16, Format: rgbFormat, Planes: []domain.DMABufPlane{{File: udmabuf(t, 64, 16, func(int, int) [4]byte { return [4]byte{255, 0, 0, 255} }), Stride: 256}}}
 	shm := solidContent(t, 64, 16, color.RGBA{G: 255, A: 255})
 	shm.ID, shm.Seq, shm.Version = 2, 1, 1
 	scene := ports.Scene{Layers: []ports.SceneLayer{
@@ -33,7 +33,7 @@ func TestComposeIndexedMixedResources(t *testing.T) {
 		{ID: 2, Layer: domain.LayerOverlay, Rect: domain.Rect{X: 16, W: 32, H: 16}},
 		{ID: 3, Layer: domain.LayerOverlay, Rect: domain.Rect{X: 32, W: 16, H: 16}},
 	}}
-	contents := map[domain.WindowID]ports.SurfaceContent{
+	contents := map[domain.WindowID]domain.SurfaceContent{
 		1: {ID: 1, Width: 64, Height: 16, Opaque: true, DMABuf: yuv, Color: domain.SurfaceColor{Coefficients: 2, Range: 2, Chroma: 1}},
 		2: shm,
 		3: {ID: 3, Width: 64, Height: 16, Opaque: true, DMABuf: rgb},

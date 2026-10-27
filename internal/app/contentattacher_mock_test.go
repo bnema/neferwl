@@ -5,7 +5,9 @@
 package app
 
 import (
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -46,23 +48,23 @@ func (_m *mockcontentAttacher) EXPECT() *mockcontentAttacher_Expecter {
 }
 
 // AttachOutput provides a mock function for the type mockcontentAttacher
-func (_mock *mockcontentAttacher) AttachOutput(name string) (<-chan *ports.ContentBatch, ports.ContentReturn) {
+func (_mock *mockcontentAttacher) AttachOutput(name string) (<-chan *domain.ContentBatch, ports.ContentReturn) {
 	ret := _mock.Called(name)
 
 	if len(ret) == 0 {
 		panic("no return value specified for AttachOutput")
 	}
 
-	var r0 <-chan *ports.ContentBatch
+	var r0 <-chan *domain.ContentBatch
 	var r1 ports.ContentReturn
-	if returnFunc, ok := ret.Get(0).(func(string) (<-chan *ports.ContentBatch, ports.ContentReturn)); ok {
+	if returnFunc, ok := ret.Get(0).(func(string) (<-chan *domain.ContentBatch, ports.ContentReturn)); ok {
 		return returnFunc(name)
 	}
-	if returnFunc, ok := ret.Get(0).(func(string) <-chan *ports.ContentBatch); ok {
+	if returnFunc, ok := ret.Get(0).(func(string) <-chan *domain.ContentBatch); ok {
 		r0 = returnFunc(name)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(<-chan *ports.ContentBatch)
+			r0 = ret.Get(0).(<-chan *domain.ContentBatch)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(string) ports.ContentReturn); ok {
@@ -99,12 +101,12 @@ func (_c *mockcontentAttacher_AttachOutput_Call) Run(run func(name string)) *moc
 	return _c
 }
 
-func (_c *mockcontentAttacher_AttachOutput_Call) Return(contentBatchCh <-chan *ports.ContentBatch, contentReturn ports.ContentReturn) *mockcontentAttacher_AttachOutput_Call {
+func (_c *mockcontentAttacher_AttachOutput_Call) Return(contentBatchCh <-chan *domain.ContentBatch, contentReturn ports.ContentReturn) *mockcontentAttacher_AttachOutput_Call {
 	_c.Call.Return(contentBatchCh, contentReturn)
 	return _c
 }
 
-func (_c *mockcontentAttacher_AttachOutput_Call) RunAndReturn(run func(name string) (<-chan *ports.ContentBatch, ports.ContentReturn)) *mockcontentAttacher_AttachOutput_Call {
+func (_c *mockcontentAttacher_AttachOutput_Call) RunAndReturn(run func(name string) (<-chan *domain.ContentBatch, ports.ContentReturn)) *mockcontentAttacher_AttachOutput_Call {
 	_c.Call.Return(run)
 	return _c
 }

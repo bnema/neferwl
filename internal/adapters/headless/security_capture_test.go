@@ -44,7 +44,7 @@ func TestScopedCaptureClosesPostRenderAdmissionGap(t *testing.T) {
 				r.EXPECT().Close().Return().Once()
 				frameRendered := make(chan struct{}, 1)
 				proof := make(chan ports.SecurityBackendEvent, 1)
-				r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+				r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 					if s.Security == protected {
 						if s.Seq != 0 || len(s.Windows) != 0 {
 							t.Errorf("bad protection frame %+v", s)
@@ -114,7 +114,7 @@ func TestTransitionDuringHeadlessRenderWaitRetainsFenceAndRejectsCapture(t *test
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().Close().Return().Once()
 	rendered := make(chan struct{}, 1)
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		if s.Security == admitted {
 			epoch.Store(locked)
 			rendered <- struct{}{}

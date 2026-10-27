@@ -151,7 +151,7 @@ func TestKeepHeldUntilChildFenceCompletes(t *testing.T) {
 		Capture:      &ports.SceneCapture{Workspace: 9},
 		CaptureScene: &ports.Scene{OutputWidth: 2, OutputHeight: 2, Scale: 1, Windows: []ports.SceneWindow{{ID: 1}}},
 	}
-	p.SubmitHidden(s, map[domain.WindowID]ports.SurfaceContent{1: {Seq: 5}}, []ports.CaptureRequest{{
+	p.SubmitHidden(s, map[domain.WindowID]domain.SurfaceContent{1: {Seq: 5}}, []ports.CaptureRequest{{
 		ID: 1, Workspace: 9, OffScreen: true, Region: image.Rect(0, 0, 2, 2),
 	}})
 	now := time.Unix(100, 0)

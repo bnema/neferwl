@@ -17,7 +17,7 @@ func TestOrientRoundedWindow(t *testing.T) {
 		s := ports.Scene{Scale: 1, Background: "#ffffff", Border: ports.Border{Width: 3, Active: "#ff8800"},
 			Windows:    []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 9, Y: 13, W: 60, H: 64}, Inset: domain.SideAll, Radius: 10, Dim: 0.5}},
 			Separators: []ports.Separator{{Window: 1, Active: true}}}
-		contents := map[domain.WindowID]ports.SurfaceContent{1: {ID: 1, Width: 1, Height: 1, LogicalW: 54, LogicalH: 58, Solid: &domain.SolidColor{R: 1, A: 1}}}
+		contents := map[domain.WindowID]domain.SurfaceContent{1: {ID: 1, Width: 1, Height: 1, LogicalW: 54, LogicalH: 58, Solid: &domain.SolidColor{R: 1, A: 1}}}
 		ds := r.draws(s, contents, newDamage(&target{}, s, image.Rect(0, 0, sw, sh)))
 		if len(ds) != 4 {
 			t.Fatalf("transform %d: %d draws", transform, len(ds))

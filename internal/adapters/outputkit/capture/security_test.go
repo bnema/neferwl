@@ -55,7 +55,7 @@ func TestSubmitHiddenEngageDuringRenderRejectsCopyRetainsReads(t *testing.T) {
 	f, w, err := os.Pipe()
 	require.NoError(t, err)
 	t.Cleanup(func() { f.Close(); w.Close() })
-	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		engaged.Store(true)
 		return f, nil
 	}).Once()
@@ -63,7 +63,7 @@ func TestSubmitHiddenEngageDuringRenderRejectsCopyRetainsReads(t *testing.T) {
 	p.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
 	s := hiddenScene()
 	s.CaptureScene.Windows = []ports.SceneWindow{{ID: 5}}
-	surfaces := map[domain.WindowID]ports.SurfaceContent{5: {ID: 5, Seq: 8}}
+	surfaces := map[domain.WindowID]domain.SurfaceContent{5: {ID: 5, Seq: 8}}
 	reqs := []ports.CaptureRequest{hiddenRequest(t, 1, image.Rect(0, 0, 200, 100)), hiddenRequest(t, 2, image.Rect(0, 0, 200, 100))}
 	files := []*os.File{reqs[0].Dst.File, reqs[1].Dst.File}
 	p.SubmitHidden(s, surfaces, reqs)

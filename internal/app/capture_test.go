@@ -6,6 +6,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -17,7 +18,7 @@ func TestCaptureUnknownOutputClosesFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		router.routeCapture(ports.CaptureRequest{ID: 9, Output: "missing", Dst: ports.SHMBuffer{File: f}})
+		router.routeCapture(ports.CaptureRequest{ID: 9, Output: "missing", Dst: domain.SHMBuffer{File: f}})
 		synctest.Wait()
 		select {
 		case result := <-replies:
@@ -48,7 +49,7 @@ func TestCaptureFullOutputQueueDoesNotBlockRouting(t *testing.T) {
 		}
 		routed := make(chan struct{})
 		go func() {
-			router.routeCapture(ports.CaptureRequest{ID: 2, Output: "test", Dst: ports.SHMBuffer{File: f}})
+			router.routeCapture(ports.CaptureRequest{ID: 2, Output: "test", Dst: domain.SHMBuffer{File: f}})
 			close(routed)
 		}()
 		synctest.Wait()
@@ -83,7 +84,7 @@ func TestStoppedOutputCaptureStillReplies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	router.routeCapture(ports.CaptureRequest{ID: 7, Output: "test", Dst: ports.SHMBuffer{File: f}})
+	router.routeCapture(ports.CaptureRequest{ID: 7, Output: "test", Dst: domain.SHMBuffer{File: f}})
 	select {
 	case result := <-replies:
 		if result.ID != 7 || result.Err == nil {
@@ -105,7 +106,7 @@ func TestFinishedOutputDrainsCapturesWithReplies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	queued <- ports.CaptureRequest{ID: 8, Dst: ports.SHMBuffer{File: f}}
+	queued <- ports.CaptureRequest{ID: 8, Dst: domain.SHMBuffer{File: f}}
 	failQueued(ctx, &mailbox{captures: queued}, replies)
 	select {
 	case result := <-replies:
@@ -129,7 +130,7 @@ func TestDrainCapturesClosesQueuedFDs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		pending <- ports.CaptureRequest{Dst: ports.SHMBuffer{File: f}}
+		pending <- ports.CaptureRequest{Dst: domain.SHMBuffer{File: f}}
 		t.Cleanup(func() {
 			if _, err := f.Stat(); err == nil {
 				t.Error("queued fd not closed")
@@ -154,7 +155,7 @@ func TestOutputStopWithFullReplies(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		captures <- ports.CaptureRequest{Output: "test", Dst: ports.SHMBuffer{File: f}}
+		captures <- ports.CaptureRequest{Output: "test", Dst: domain.SHMBuffer{File: f}}
 		cancel()
 		done := make(chan struct{})
 		go func() { _ = set.wait(); close(done) }()

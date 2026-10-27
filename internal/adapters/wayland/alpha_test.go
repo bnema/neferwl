@@ -8,13 +8,12 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/alphamodifier"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // contentMatching waits for a content of the window that matches want.
 //
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
-func contentMatching(t *testing.T, contents <-chan ports.SurfaceContent, id domain.WindowID, want func(ports.SurfaceContent) bool) ports.SurfaceContent {
+func contentMatching(t *testing.T, contents <-chan domain.SurfaceContent, id domain.WindowID, want func(domain.SurfaceContent) bool) domain.SurfaceContent {
 	t.Helper()
 	deadline := waylandDeadline(2 * time.Second)
 	for {
@@ -42,7 +41,7 @@ func TestAlphaModifier(t *testing.T) {
 	requestProtocol(t, c, region, wayland.RegionRequestAdd, int32(0), int32(0), int32(1), int32(1))
 	requestProtocol(t, c, surf, wayland.SurfaceRequestSetOpaqueRegion, region)
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
-	contentMatching(t, contents, w.ID, func(c ports.SurfaceContent) bool { return c.Opaque })
+	contentMatching(t, contents, w.ID, func(c domain.SurfaceContent) bool { return c.Opaque })
 
 	manager := bindProtocol(t, c, "wp_alpha_modifier_v1")
 	mod := c.AllocateID()
@@ -50,14 +49,14 @@ func TestAlphaModifier(t *testing.T) {
 	requestProtocol(t, c, manager, alphamodifier.WpAlphaModifierV1RequestGetSurface, mod, surf)
 	requestProtocol(t, c, mod, alphamodifier.WpAlphaModifierSurfaceV1RequestSetMultiplier, uint32(math.MaxUint32/4))
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
-	got := contentMatching(t, contents, w.ID, func(c ports.SurfaceContent) bool { return c.Fade > 0 })
+	got := contentMatching(t, contents, w.ID, func(c domain.SurfaceContent) bool { return c.Fade > 0 })
 	if got.Opaque || math.Abs(float64(got.Fade)-0.75) > 1e-6 {
 		t.Fatalf("faded content %+v", got)
 	}
 
 	requestProtocol(t, c, mod, alphamodifier.WpAlphaModifierSurfaceV1RequestDestroy)
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
-	got = contentMatching(t, contents, w.ID, func(c ports.SurfaceContent) bool { return c.Fade == 0 })
+	got = contentMatching(t, contents, w.ID, func(c domain.SurfaceContent) bool { return c.Fade == 0 })
 	if !got.Opaque {
 		t.Fatalf("restored content %+v", got)
 	}

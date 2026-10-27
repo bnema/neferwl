@@ -42,7 +42,7 @@ func TestTrimFreesUndrawnSHMWithoutRender(t *testing.T) {
 	a.ID, a.Seq, a.Version = 1, 1, 1
 	b := solidContent(t, 16, 16, color.RGBA{0, 0, 255, 255})
 	b.ID, b.Seq, b.Version = 2, 1, 1
-	contents := map[domain.WindowID]ports.SurfaceContent{1: a, 2: b}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: a, 2: b}
 	both := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}, {ID: 2, Rect: domain.Rect{X: 16, W: 16, H: 16}}}}
 	onlyB := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 2, Rect: domain.Rect{X: 16, W: 16, H: 16}}}}
 	if err := render(r, both, contents); err != nil {
@@ -92,7 +92,7 @@ func TestTrimKeepsRecentlyDrawn(t *testing.T) {
 	defer r.Close()
 	a := solidContent(t, 16, 16, color.RGBA{255, 0, 0, 255})
 	a.ID, a.Seq, a.Version = 1, 1, 1
-	contents := map[domain.WindowID]ports.SurfaceContent{1: a}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: a}
 	shown := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
 	empty := ports.Scene{Background: "#000000"}
 	start := time.Unix(1000, 0)
@@ -138,9 +138,9 @@ func TestTrimReleasesUndrawnDMABuf(t *testing.T) {
 		t.Skipf("linear ARGB8888 not importable: %+v", r.DMABuf())
 	}
 	f := udmabuf(t, 64, 16, func(int, int) [4]byte { return [4]byte{0, 0, 255, 255} })
-	buf := &ports.DMABuf{ID: 9, Width: 64, Height: 16, Format: linear.Format, Planes: []ports.DMABufPlane{{File: f, Stride: 256}}}
+	buf := &domain.DMABuf{ID: 9, Width: 64, Height: 16, Format: linear.Format, Planes: []domain.DMABufPlane{{File: f, Stride: 256}}}
 	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
-	contents := map[domain.WindowID]ports.SurfaceContent{1: {ID: 1, Width: 64, Height: 16, DMABuf: buf}}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: {ID: 1, Width: 64, Height: 16, DMABuf: buf}}
 	if err := render(r, scene, contents); err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestTrimPollsFinishedFrames(t *testing.T) {
 func TestTrimFreesHiddenWindowsSooner(t *testing.T) {
 	r := newTestRenderer(t, 48, 32)
 	defer r.Close()
-	contents := map[domain.WindowID]ports.SurfaceContent{}
+	contents := map[domain.WindowID]domain.SurfaceContent{}
 	for id, c := range map[domain.WindowID]color.RGBA{1: {255, 0, 0, 255}, 2: {0, 255, 0, 255}, 3: {0, 0, 255, 255}} {
 		sc := solidContent(t, 16, 16, c)
 		sc.ID, sc.Seq, sc.Version = id, 1, 1

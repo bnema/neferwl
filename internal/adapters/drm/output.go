@@ -953,12 +953,12 @@ func boolValue(b bool) uint64 {
 
 // commitScanout flips a client buffer. It reports false when KMS refused
 // the buffer: the frame must be composed.
-func (o *Output) commitScanout(fb uint32, c ports.SurfaceContent, f pendingFrame) (bool, error) {
+func (o *Output) commitScanout(fb uint32, c domain.SurfaceContent, f pendingFrame) (bool, error) {
 	return o.commitScanoutRect(fb, c, f, fullPlaneRect(o.Width(), o.Height()), colorBypass)
 }
 
 // commitScanoutRect flips a client buffer at rect, shown with colour mode.
-func (o *Output) commitScanoutRect(fb uint32, c ports.SurfaceContent, f pendingFrame, rect planeRect, mode colorMode) (bool, error) {
+func (o *Output) commitScanoutRect(fb uint32, c domain.SurfaceContent, f pendingFrame, rect planeRect, mode colorMode) (bool, error) {
 	cfb := o.clientFBs[c.DMABuf.ID]
 	// Drivers refuse async flips that change the format or modifier: the
 	// flip from the composed image into scanout waits for vblank.
@@ -1113,7 +1113,7 @@ func (o *Output) InactiveOnClose() bool { return o.inactiveOnClose }
 
 // Run renders scenes and commits them until ctx ends. active reports seat
 // enable/disable. What the output shows and read is pushed to reports.
-func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan *ports.ContentBatch, returns ports.ContentReturn, cursor <-chan ports.CursorChange, reports ports.PresentationSink, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) (runErr error) {
+func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan *domain.ContentBatch, returns ports.ContentReturn, cursor <-chan ports.CursorChange, reports ports.PresentationSink, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) (runErr error) {
 	defer func() {
 		p := recover()
 		if p != nil {

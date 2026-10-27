@@ -5,7 +5,8 @@
 package portsmocks
 
 import (
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
+
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -46,7 +47,7 @@ func (_m *MockContentReturn) EXPECT() *MockContentReturn_Expecter {
 }
 
 // Return provides a mock function for the type MockContentReturn
-func (_mock *MockContentReturn) Return(contentBatch *ports.ContentBatch) {
+func (_mock *MockContentReturn) Return(contentBatch *domain.ContentBatch) {
 	_mock.Called(contentBatch)
 	return
 }
@@ -57,16 +58,16 @@ type MockContentReturn_Return_Call struct {
 }
 
 // Return is a helper method to define mock.On call
-//   - contentBatch *ports.ContentBatch
+//   - contentBatch *domain.ContentBatch
 func (_e *MockContentReturn_Expecter) Return(contentBatch any) *MockContentReturn_Return_Call {
 	return &MockContentReturn_Return_Call{Call: _e.mock.On("Return", contentBatch)}
 }
 
-func (_c *MockContentReturn_Return_Call) Run(run func(contentBatch *ports.ContentBatch)) *MockContentReturn_Return_Call {
+func (_c *MockContentReturn_Return_Call) Run(run func(contentBatch *domain.ContentBatch)) *MockContentReturn_Return_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 *ports.ContentBatch
+		var arg0 *domain.ContentBatch
 		if args[0] != nil {
-			arg0 = args[0].(*ports.ContentBatch)
+			arg0 = args[0].(*domain.ContentBatch)
 		}
 		run(
 			arg0,
@@ -80,7 +81,7 @@ func (_c *MockContentReturn_Return_Call) Return() *MockContentReturn_Return_Call
 	return _c
 }
 
-func (_c *MockContentReturn_Return_Call) RunAndReturn(run func(contentBatch *ports.ContentBatch)) *MockContentReturn_Return_Call {
+func (_c *MockContentReturn_Return_Call) RunAndReturn(run func(contentBatch *domain.ContentBatch)) *MockContentReturn_Return_Call {
 	_c.Run(run)
 	return _c
 }

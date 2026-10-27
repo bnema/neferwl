@@ -7,7 +7,8 @@ package drm
 import (
 	"os"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
+
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -48,7 +49,7 @@ func (_m *mockkms) EXPECT() *mockkms_Expecter {
 }
 
 // addFB provides a mock function for the type mockkms
-func (_mock *mockkms) addFB(b *ports.DMABuf, format uint32) (uint32, error) {
+func (_mock *mockkms) addFB(b *domain.DMABuf, format uint32) (uint32, error) {
 	ret := _mock.Called(b, format)
 
 	if len(ret) == 0 {
@@ -57,15 +58,15 @@ func (_mock *mockkms) addFB(b *ports.DMABuf, format uint32) (uint32, error) {
 
 	var r0 uint32
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(*ports.DMABuf, uint32) (uint32, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(*domain.DMABuf, uint32) (uint32, error)); ok {
 		return returnFunc(b, format)
 	}
-	if returnFunc, ok := ret.Get(0).(func(*ports.DMABuf, uint32) uint32); ok {
+	if returnFunc, ok := ret.Get(0).(func(*domain.DMABuf, uint32) uint32); ok {
 		r0 = returnFunc(b, format)
 	} else {
 		r0 = ret.Get(0).(uint32)
 	}
-	if returnFunc, ok := ret.Get(1).(func(*ports.DMABuf, uint32) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(*domain.DMABuf, uint32) error); ok {
 		r1 = returnFunc(b, format)
 	} else {
 		r1 = ret.Error(1)
@@ -79,17 +80,17 @@ type mockkms_addFB_Call struct {
 }
 
 // addFB is a helper method to define mock.On call
-//   - b *ports.DMABuf
+//   - b *domain.DMABuf
 //   - format uint32
 func (_e *mockkms_Expecter) addFB(b any, format any) *mockkms_addFB_Call {
 	return &mockkms_addFB_Call{Call: _e.mock.On("addFB", b, format)}
 }
 
-func (_c *mockkms_addFB_Call) Run(run func(b *ports.DMABuf, format uint32)) *mockkms_addFB_Call {
+func (_c *mockkms_addFB_Call) Run(run func(b *domain.DMABuf, format uint32)) *mockkms_addFB_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 *ports.DMABuf
+		var arg0 *domain.DMABuf
 		if args[0] != nil {
-			arg0 = args[0].(*ports.DMABuf)
+			arg0 = args[0].(*domain.DMABuf)
 		}
 		var arg1 uint32
 		if args[1] != nil {
@@ -108,7 +109,7 @@ func (_c *mockkms_addFB_Call) Return(v uint32, err error) *mockkms_addFB_Call {
 	return _c
 }
 
-func (_c *mockkms_addFB_Call) RunAndReturn(run func(b *ports.DMABuf, format uint32) (uint32, error)) *mockkms_addFB_Call {
+func (_c *mockkms_addFB_Call) RunAndReturn(run func(b *domain.DMABuf, format uint32) (uint32, error)) *mockkms_addFB_Call {
 	_c.Call.Return(run)
 	return _c
 }

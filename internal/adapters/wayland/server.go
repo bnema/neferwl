@@ -255,7 +255,7 @@ type Server struct {
 	// goroutine, as do the outputs' content links (contentlink.go).
 	contentSeq map[domain.WindowID]uint64
 	damage     map[domain.WindowID][]domain.SeqDamage
-	latest     map[domain.WindowID]ports.SurfaceContent
+	latest     map[domain.WindowID]domain.SurfaceContent
 	links      []*contentLink
 	// flushPosted: a flushLinks is posted and has not started (Return).
 	flushPosted  atomic.Bool
@@ -385,7 +385,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		eventReady:         make(chan struct{}, 1),
 		contentSeq:         make(map[domain.WindowID]uint64),
 		damage:             map[domain.WindowID][]domain.SeqDamage{},
-		latest:             make(map[domain.WindowID]ports.SurfaceContent),
+		latest:             make(map[domain.WindowID]domain.SurfaceContent),
 		cursorReady:        make(chan struct{}, 1),
 		dataSources:        map[*server.Resource]*clipSource{},
 		primarySources:     map[*server.Resource]*clipSource{},
@@ -728,7 +728,7 @@ func (s *Server) forward(ctx context.Context) {
 // emitContent publishes a window's content on the display goroutine: it
 // becomes the window's latest content and joins the batch of every attached
 // output (contentlink.go).
-func (s *Server) emitContent(c ports.SurfaceContent, d damage) {
+func (s *Server) emitContent(c domain.SurfaceContent, d damage) {
 	s.contentSeq[c.ID]++
 	c.Seq = s.contentSeq[c.ID]
 	// Published histories are immutable: an output may hold one for as long

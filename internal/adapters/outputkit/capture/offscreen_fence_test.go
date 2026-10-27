@@ -58,7 +58,7 @@ func hiddenSceneWindows(ids ...domain.WindowID) ports.Scene {
 	return s
 }
 
-func submitHiddenOne(t *testing.T, p *Pipeline, s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent, id uint64) {
+func submitHiddenOne(t *testing.T, p *Pipeline, s ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, id uint64) {
 	t.Helper()
 	p.SubmitHidden(s, surfaces, []ports.CaptureRequest{hiddenRequest(t, id, image.Rect(0, 0, 200, 100))})
 }
@@ -106,7 +106,7 @@ func TestTerminalChildFenceClosesPipelineBeforeClearingHolds(t *testing.T) {
 		require.Equal(t, 1, p.off.nf, "hold retained until device closes")
 	}).Once()
 	p.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
-	submitHiddenOne(t, p, hiddenSceneWindows(5), map[domain.WindowID]ports.SurfaceContent{5: {Seq: 2}}, 1)
+	submitHiddenOne(t, p, hiddenSceneWindows(5), map[domain.WindowID]domain.SurfaceContent{5: {Seq: 2}}, 1)
 	_, reads, busy := p.CapHiddenSeen(map[domain.WindowID]uint64{5: 7})
 	require.True(t, busy)
 	require.Equal(t, map[domain.WindowID]uint64{5: 2}, reads)
@@ -142,8 +142,8 @@ func TestCapHiddenSeenPerFenceCeilings(t *testing.T) {
 	defer p.Close(nil)
 
 	// Render 1 drew window 5 (content Seq 2); render 2 drew 5 (Seq 6) and 6 (Seq 3).
-	submitHiddenOne(t, p, hiddenSceneWindows(5), map[domain.WindowID]ports.SurfaceContent{5: {ID: 5, Seq: 2}}, 1)
-	submitHiddenOne(t, p, hiddenSceneWindows(5, 6), map[domain.WindowID]ports.SurfaceContent{5: {ID: 5, Seq: 6}, 6: {ID: 6, Seq: 3}}, 2)
+	submitHiddenOne(t, p, hiddenSceneWindows(5), map[domain.WindowID]domain.SurfaceContent{5: {ID: 5, Seq: 2}}, 1)
+	submitHiddenOne(t, p, hiddenSceneWindows(5, 6), map[domain.WindowID]domain.SurfaceContent{5: {ID: 5, Seq: 6}, 6: {ID: 6, Seq: 3}}, 2)
 
 	// 5 is capped by the lowest ceiling among the unfinished renders that drew
 	// it; 6 by the second; the display's window 1 and an unrelated 9 are free.
@@ -179,7 +179,7 @@ func TestCapHiddenSeenMissingContentCapsToZero(t *testing.T) {
 	f1, _ := fencePipe(t)
 	p, replies, _ := hiddenPipeline(t, f1)
 	defer p.Close(nil)
-	submitHiddenOne(t, p, hiddenSceneWindows(5), map[domain.WindowID]ports.SurfaceContent{}, 1)
+	submitHiddenOne(t, p, hiddenSceneWindows(5), map[domain.WindowID]domain.SurfaceContent{}, 1)
 	got, reads, capped := p.CapHiddenSeen(map[domain.WindowID]uint64{5: 4, 7: 4})
 	require.Equal(t, map[domain.WindowID]uint64{5: 0}, reads)
 	require.True(t, capped)
@@ -191,7 +191,7 @@ func TestCapHiddenSeenNoAllocationInSteadyState(t *testing.T) {
 	f1, _ := fencePipe(t)
 	p, replies, _ := hiddenPipeline(t, f1)
 	defer p.Close(nil)
-	submitHiddenOne(t, p, hiddenSceneWindows(5), map[domain.WindowID]ports.SurfaceContent{5: {ID: 5, Seq: 2}}, 1)
+	submitHiddenOne(t, p, hiddenSceneWindows(5), map[domain.WindowID]domain.SurfaceContent{5: {ID: 5, Seq: 2}}, 1)
 	seen := map[domain.WindowID]uint64{1: 40, 5: 8}
 	p.CapHiddenSeen(seen) // warm the scratch map
 	allocs := testing.AllocsPerRun(100, func() { p.CapHiddenSeen(seen) })

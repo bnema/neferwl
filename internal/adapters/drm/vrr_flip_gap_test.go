@@ -90,13 +90,13 @@ func TestRunWaitsVRRFlipGap(t *testing.T) {
 		flips := make(chan flipEvent, 1)
 		o.flipped = flips
 		r := portsmocks.NewMockRenderer(t)
-		pipeBuf := func() ports.DMABuf {
+		pipeBuf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
 			w.Close()
-			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
 		r.EXPECT().UseTarget(mock.Anything).Return()
 		r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 		r.EXPECT().Close().Return().Once()

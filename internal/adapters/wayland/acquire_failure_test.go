@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
@@ -200,7 +200,7 @@ func TestAcquirePollTerminalFailureRetiresActiveAndAdded(t *testing.T) {
 		t.Fatal("waiter not terminal")
 	}
 	var waits [4]*syncWait
-	if err := sw.watchImplicit(&ports.DMABuf{}, &waits); err == nil {
+	if err := sw.watchImplicit(&domain.DMABuf{}, &waits); err == nil {
 		t.Fatal("new implicit watch accepted")
 	}
 }
@@ -300,7 +300,7 @@ func TestAcquireExportFailurePreservesCurrentContent(t *testing.T) {
 	h.dev.EXPECT().signal(uint32(7), uint64(112)).Return(nil).Once() // observed acquire: safe discarded release
 	drainContents(t, h.s, h.contents)
 	buffer := h.dmabuf()
-	var before ports.SurfaceContent
+	var before domain.SurfaceContent
 	h.s.display.Do(func() { before = h.s.windows[h.win].xdg.surface.content })
 	h.commit(buffer, 111, 112)
 	if got, ok := h.content(50 * time.Millisecond); ok {

@@ -5,19 +5,20 @@ import (
 	"os"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
 
 // gbmBuf is a dmabuf over a closed pipe, as an image buffer hands out.
-func gbmBuf(planes int) ports.DMABuf {
-	b := ports.DMABuf{Modifier: tiledMod}
+func gbmBuf(planes int) domain.DMABuf {
+	b := domain.DMABuf{Modifier: tiledMod}
 	for range planes {
 		f, w, _ := os.Pipe()
 		w.Close()
-		b.Planes = append(b.Planes, ports.DMABufPlane{File: f})
+		b.Planes = append(b.Planes, domain.DMABufPlane{File: f})
 	}
 	return b
 }
@@ -29,7 +30,7 @@ func twoGBMImages(t *testing.T, planes int) (a imageAllocator, closed *int) {
 	closed = new(int)
 	m.EXPECT().create(200, 100, uint32(fourccXRGB), []uint64{tiledMod}).RunAndReturn(func(int, int, uint32, []uint64) (imageBuffer, error) {
 		img := newMockimageBuffer(t)
-		img.EXPECT().dmabuf().RunAndReturn(func() (ports.DMABuf, error) { return gbmBuf(planes), nil })
+		img.EXPECT().dmabuf().RunAndReturn(func() (domain.DMABuf, error) { return gbmBuf(planes), nil })
 		img.EXPECT().close().Run(func() { *closed++ }).Once()
 		return img, nil
 	}).Twice()
@@ -54,7 +55,7 @@ func TestShowImagesAllocatesWithGBMFirst(t *testing.T) {
 	o.card = &Card{alloc: a}
 	r := gbmRenderer(t)
 	r.EXPECT().TargetModifiers([]uint64(nil), false).Return([]uint64{tiledMod}).Once()
-	r.EXPECT().ImportTargets(mock.MatchedBy(func(b []ports.DMABuf) bool { return len(b) == 2 && b[0].Modifier == tiledMod })).Return(nil).Once()
+	r.EXPECT().ImportTargets(mock.MatchedBy(func(b []domain.DMABuf) bool { return len(b) == 2 && b[0].Modifier == tiledMod })).Return(nil).Once()
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
 	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
 	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
@@ -65,7 +66,7 @@ func TestShowImagesAllocatesWithGBMFirst(t *testing.T) {
 	if o.kind != imagesDriver || o.imageMod != tiledMod || len(o.images) != 2 || *closed != 0 {
 		t.Fatalf("kind %d modifier %#x images %d closed %d", o.kind, o.imageMod, len(o.images), *closed)
 	}
-	r.EXPECT().ImportTargets([]ports.DMABuf(nil)).Return(nil).Once()
+	r.EXPECT().ImportTargets([]domain.DMABuf(nil)).Return(nil).Once()
 	o.dropImages(r)
 	if *closed != 2 || o.images != nil || o.fbs != [2]uint32{} {
 		t.Fatalf("closed %d images, %d left, fbs %v", *closed, len(o.images), o.fbs)
@@ -99,7 +100,7 @@ func TestShowImagesFallsBackToVulkanWhenGBMFails(t *testing.T) {
 			img := newMockimageBuffer(t)
 			img.EXPECT().dmabuf().Return(gbmBuf(1), nil).Once()
 			img.EXPECT().close().Return().Once() // freed with the failed attempt
-			r.EXPECT().ImportTargets([]ports.DMABuf(nil)).Return(nil).Once()
+			r.EXPECT().ImportTargets([]domain.DMABuf(nil)).Return(nil).Once()
 			a.EXPECT().create(200, 100, uint32(fourccXRGB), []uint64{tiledMod}).Return(img, nil).Once()
 			a.EXPECT().create(200, 100, uint32(fourccXRGB), []uint64{tiledMod}).Return(nil, errors.New("out of memory")).Once()
 			o.card = &Card{alloc: a}
@@ -111,14 +112,14 @@ func TestShowImagesFallsBackToVulkanWhenGBMFails(t *testing.T) {
 			r.EXPECT().TargetModifiers(mock.Anything, false).Return([]uint64{tiledMod}).Once()
 			r.EXPECT().ImportTargets(mock.Anything).Return(errors.New("explicit layout refused")).Once()
 			// The images made before the refusal go with a renderer drop.
-			r.EXPECT().ImportTargets([]ports.DMABuf(nil)).Return(nil).Once()
+			r.EXPECT().ImportTargets([]domain.DMABuf(nil)).Return(nil).Once()
 		}},
 		"framebuffer refused": {func(t *testing.T, o *Output, k *mockkms, r *portsmocks.MockRenderer) {
 			a, _ := twoGBMImages(t, 1)
 			o.card = &Card{alloc: a}
 			r.EXPECT().TargetModifiers(mock.Anything, false).Return([]uint64{tiledMod}).Once()
 			r.EXPECT().ImportTargets(mock.Anything).Return(nil).Once()
-			r.EXPECT().ImportTargets([]ports.DMABuf(nil)).Return(nil).Once()
+			r.EXPECT().ImportTargets([]domain.DMABuf(nil)).Return(nil).Once()
 			k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(0, unix.EINVAL).Once()
 		}},
 	} {
@@ -127,7 +128,7 @@ func TestShowImagesFallsBackToVulkanWhenGBMFails(t *testing.T) {
 			o.cursor = nil
 			r := gbmRenderer(t)
 			tc.setup(t, o, k, r)
-			r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]ports.DMABuf{gbmBuf(1), gbmBuf(1)}, nil).Once()
+			r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]domain.DMABuf{gbmBuf(1), gbmBuf(1)}, nil).Once()
 			k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Maybe()
 			k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
 			k.EXPECT().createBlob(mock.Anything).Return(99, nil)
@@ -150,8 +151,8 @@ func TestGBMOpenFailureIsRemembered(t *testing.T) {
 	o.cursor = nil
 	o.card = &Card{}
 	r := gbmRenderer(t)
-	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]ports.DMABuf{gbmBuf(2), gbmBuf(2)}, nil).Once()
-	r.EXPECT().ExportTargets(2, []uint64(nil), true).Return([]ports.DMABuf{gbmBuf(1), gbmBuf(1)}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]domain.DMABuf{gbmBuf(2), gbmBuf(2)}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64(nil), true).Return([]domain.DMABuf{gbmBuf(1), gbmBuf(1)}, nil).Once()
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
 	k.EXPECT().rmFB(mock.Anything).Return(nil)
 	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
@@ -173,10 +174,10 @@ func TestShowImagesRefusedGBMImagesTryVulkanOfTheSameKind(t *testing.T) {
 	o.card = &Card{alloc: a}
 	r := gbmRenderer(t)
 	r.EXPECT().TargetModifiers([]uint64(nil), false).Return([]uint64{tiledMod}).Once()
-	r.EXPECT().ImportTargets(mock.MatchedBy(func(b []ports.DMABuf) bool { return len(b) == 2 })).Return(nil).Once()
+	r.EXPECT().ImportTargets(mock.MatchedBy(func(b []domain.DMABuf) bool { return len(b) == 2 })).Return(nil).Once()
 	// The refused GBM images leave no renderer target behind.
-	r.EXPECT().ImportTargets([]ports.DMABuf(nil)).Return(nil).Once()
-	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]ports.DMABuf{gbmBuf(1), gbmBuf(1)}, nil).Once()
+	r.EXPECT().ImportTargets([]domain.DMABuf(nil)).Return(nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]domain.DMABuf{gbmBuf(1), gbmBuf(1)}, nil).Once()
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
 	k.EXPECT().rmFB(mock.Anything).Return(nil)
 	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
@@ -224,8 +225,8 @@ func TestSetupStartsFromCleanState(t *testing.T) {
 	k.EXPECT().rmFB(uint32(71)).Return(nil).Once()
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(80, nil)
 	r := gbmRenderer(t)
-	r.EXPECT().ImportTargets([]ports.DMABuf(nil)).Return(nil).Once()
-	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]ports.DMABuf{gbmBuf(1), gbmBuf(1)}, nil).Once()
+	r.EXPECT().ImportTargets([]domain.DMABuf(nil)).Return(nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]domain.DMABuf{gbmBuf(1), gbmBuf(1)}, nil).Once()
 	if err := o.exportImages(r, nil, false); err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +241,7 @@ func TestCardSharesAllocator(t *testing.T) {
 	closed := 0
 	alloc.EXPECT().create(200, 100, uint32(fourccXRGB), []uint64{tiledMod}).RunAndReturn(func(int, int, uint32, []uint64) (imageBuffer, error) {
 		img := newMockimageBuffer(t)
-		img.EXPECT().dmabuf().RunAndReturn(func() (ports.DMABuf, error) { return gbmBuf(1), nil }).Once()
+		img.EXPECT().dmabuf().RunAndReturn(func() (domain.DMABuf, error) { return gbmBuf(1), nil }).Once()
 		img.EXPECT().close().Run(func() { closed++ }).Once()
 		return img, nil
 	}).Times(4)

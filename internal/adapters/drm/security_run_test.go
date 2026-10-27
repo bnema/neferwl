@@ -31,17 +31,17 @@ func TestSecurityRunWakePendingResumeAndOff(t *testing.T) {
 		o.flipped = flips
 		scenes := make(chan ports.Scene, 2)
 		r := portsmocks.NewMockRenderer(t)
-		buf := func() ports.DMABuf {
+		buf := func() domain.DMABuf {
 			f, w := protectionFence(t, false)
 			w.Close()
-			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 		r.EXPECT().UseTarget(mock.Anything).Return()
 		black := make(chan struct{}, 8)
 		desktop := make(chan struct{}, 2)
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			if s.Seq == 99 {
 				desktop <- struct{}{}
 			} else {

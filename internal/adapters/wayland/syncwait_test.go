@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/zerowrap"
 )
 
@@ -39,7 +39,7 @@ func TestImplicitPollErrorRejectedAndWarnOnce(t *testing.T) {
 	sw.log = zerowrap.New(zerowrap.Config{Output: &output})
 	// An fd number no process can own polls as POLLNVAL; its finalizer
 	// cannot close a reused descriptor.
-	b := &ports.DMABuf{Planes: []ports.DMABufPlane{{File: os.NewFile(uintptr(math.MaxInt32), "invalid")}}}
+	b := &domain.DMABuf{Planes: []domain.DMABufPlane{{File: os.NewFile(uintptr(math.MaxInt32), "invalid")}}}
 	var waits [4]*syncWait
 	for range 2 {
 		if err := sw.watchImplicit(b, &waits); err == nil || waits[0] != nil {
@@ -79,7 +79,7 @@ func TestImplicitPollHangupWakes(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	b := &ports.DMABuf{Planes: []ports.DMABufPlane{{File: r}}}
+	b := &domain.DMABuf{Planes: []domain.DMABufPlane{{File: r}}}
 	var waits [4]*syncWait
 	if err := sw.watchImplicit(b, &waits); err != nil || waits[0] == nil {
 		t.Fatalf("watch: %v", err)
@@ -107,7 +107,7 @@ func TestImplicitWaitAndDrop(t *testing.T) {
 	}
 	defer r.Close()
 	defer wr.Close()
-	b := &ports.DMABuf{Planes: []ports.DMABufPlane{{File: r}}}
+	b := &domain.DMABuf{Planes: []domain.DMABufPlane{{File: r}}}
 	var waits [4]*syncWait
 	err = sw.watchImplicit(b, &waits)
 	if err != nil || waits[0] == nil || sw.fired(waits[0]) {

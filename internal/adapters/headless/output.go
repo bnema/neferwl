@@ -63,7 +63,7 @@ type Options struct {
 // windows it no longer draws.
 const trimEvery = 10 * time.Second
 
-func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents <-chan *ports.ContentBatch, returns ports.ContentReturn, cursor <-chan ports.CursorChange, incoming <-chan ports.CaptureRequest) error {
+func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents <-chan *domain.ContentBatch, returns ports.ContentReturn, cursor <-chan ports.CursorChange, incoming <-chan ports.CaptureRequest) error {
 	r, err := opts.NewRenderer(opts.Width, opts.Height)
 	if err != nil {
 		return fmt.Errorf("create renderer: %w", err)
@@ -208,7 +208,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		// A closed window's last content goes once no scene draws it.
 		table.Prune(scene)
 	}
-	update := func(b *ports.ContentBatch) {
+	update := func(b *domain.ContentBatch) {
 		batchDirty, _ := table.Apply(b, scene, seen, returns)
 		dirty = dirty || batchDirty
 	}
@@ -733,7 +733,7 @@ type flipShows struct {
 }
 
 // of returns the content Seq of the windows scene showed to their client.
-func (f *flipShows) of(scene ports.Scene, contents map[domain.WindowID]ports.SurfaceContent, kept func(domain.WindowID) bool) map[domain.WindowID]uint64 {
+func (f *flipShows) of(scene ports.Scene, contents map[domain.WindowID]domain.SurfaceContent, kept func(domain.WindowID) bool) map[domain.WindowID]uint64 {
 	// A closed window drawn from its kept content is not shown to its
 	// client.
 	return f.snapshot.FromContents(scene, contents, kept)
@@ -743,7 +743,7 @@ func (f *flipShows) of(scene ports.Scene, contents map[domain.WindowID]ports.Sur
 // time (software clock, refresh unknown), so presentation feedback and
 // frame callbacks follow headless frames. The FlipInfo itself is new per
 // flip (the sink counts merges on it); only its Shows is shared.
-func (f *flipShows) flipInfo(scene ports.Scene, contents map[domain.WindowID]ports.SurfaceContent, kept func(domain.WindowID) bool) *ports.FlipInfo {
+func (f *flipShows) flipInfo(scene ports.Scene, contents map[domain.WindowID]domain.SurfaceContent, kept func(domain.WindowID) bool) *ports.FlipInfo {
 	var ts unix.Timespec
 	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
 	return &ports.FlipInfo{When: time.Duration(ts.Nano()), Shows: f.of(scene, contents, kept)}

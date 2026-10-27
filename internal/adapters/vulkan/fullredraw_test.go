@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Each whole-window redraw is counted under its reason, so the stats tell
@@ -15,7 +14,7 @@ func TestFullRedrawReasons(t *testing.T) {
 	held := &target{valid: true, windows: map[domain.WindowID]heldWindow{1: {seq: 1, rect: rect}}}
 	var why fullRedraws
 	d := &damageRegion{held: held, seen: map[domain.WindowID]bool{}, drawn: map[domain.WindowID]heldWindow{}, bound: rect, why: &why}
-	pixels := ports.SurfaceContent{Width: 10, Height: 10, SHM: &ports.SHMBuffer{}}
+	pixels := domain.SurfaceContent{Width: 10, Height: 10, SHM: &domain.SHMBuffer{}}
 
 	known := pixels
 	known.ID, known.Seq = 1, 2

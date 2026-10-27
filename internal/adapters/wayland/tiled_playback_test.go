@@ -78,7 +78,7 @@ func TestHeadlessTiledSHMCallbackAndCopyBudget(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	wait := func() ports.SurfaceContent {
+	wait := func() domain.SurfaceContent {
 		t.Helper()
 		deadline := waylandDeadline(5 * time.Second)
 		for {
@@ -110,9 +110,9 @@ func TestHeadlessTiledSHMCallbackAndCopyBudget(t *testing.T) {
 	}
 	defer r.Close()
 	scene := ports.Scene{Windows: []ports.SceneWindow{{ID: win.ID, Rect: domain.Rect{W: 128, H: 128}}}}
-	render := func(content ports.SurfaceContent) {
+	render := func(content domain.SurfaceContent) {
 		t.Helper()
-		fence, err := r.Render(scene, map[domain.WindowID]ports.SurfaceContent{win.ID: content})
+		fence, err := r.Render(scene, map[domain.WindowID]domain.SurfaceContent{win.ID: content})
 		if fence != nil {
 			_ = fence.Close()
 		}

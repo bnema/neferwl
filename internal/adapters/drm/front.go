@@ -31,7 +31,7 @@ func (f *frontImage) forget() { f.fb = 0 }
 
 // hold records that fb holds s drawn from surfaces. A capture scene is not
 // recorded (SameAs never matches it).
-func (f *frontImage) hold(fb uint32, s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent) {
+func (f *frontImage) hold(fb uint32, s ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent) {
 	if s.Capture != nil || s.CaptureScene != nil {
 		f.forget()
 		return
@@ -49,7 +49,7 @@ func (f *frontImage) hold(fb uint32, s ports.Scene, surfaces map[domain.WindowID
 }
 
 // holds reports whether fb holds exactly what drawing s from surfaces would.
-func (f *frontImage) holds(fb uint32, s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent) bool {
+func (f *frontImage) holds(fb uint32, s ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent) bool {
 	if f.fb == 0 || f.fb != fb || !s.SameAs(f.scene) {
 		return false
 	}
@@ -69,7 +69,7 @@ func (f *frontImage) holds(fb uint32, s ports.Scene, surfaces map[domain.WindowI
 	return true
 }
 
-func appendSeqs(seqs []uint64, s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent) []uint64 {
+func appendSeqs(seqs []uint64, s ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent) []uint64 {
 	seqs = slices.Grow(seqs, len(s.Windows)+len(s.Layers))
 	for _, w := range s.Windows {
 		seqs = append(seqs, surfaces[w.ID].Seq)

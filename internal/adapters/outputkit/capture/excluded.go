@@ -160,7 +160,7 @@ func captured(buf, overlays []ports.Overlay) []ports.Overlay {
 // them before BeginCapture. The render fence is returned, never closed here:
 // the plain render reads client buffers even when the requests are rejected,
 // so the caller owns it (hold or wait it) whatever happened, error included.
-func (p *Pipeline) SubmitPlain(r ports.Renderer, s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent, normal []ports.CaptureRequest) (took bool, done *os.File, err error) {
+func (p *Pipeline) SubmitPlain(r ports.Renderer, s ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, normal []ports.CaptureRequest) (took bool, done *os.File, err error) {
 	if len(normal) == 0 || len(s.CaptureIndicators) == 0 && !hidesOverlays(s) && !s.PositionHint.Shown() {
 		return false, nil, nil
 	}

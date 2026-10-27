@@ -99,10 +99,10 @@ func TestEmitContentAllocations(t *testing.T) {
 	s := &Server{
 		contentSeq: map[domain.WindowID]uint64{},
 		damage:     map[domain.WindowID][]domain.SeqDamage{},
-		latest:     map[domain.WindowID]ports.SurfaceContent{},
+		latest:     map[domain.WindowID]domain.SurfaceContent{},
 	}
-	c := ports.SurfaceContent{ID: 1, Solid: &domain.SolidColor{}}
-	var held []ports.SurfaceContent // readers retaining published histories
+	c := domain.SurfaceContent{ID: 1, Solid: &domain.SolidColor{}}
+	var held []domain.SurfaceContent // readers retaining published histories
 	var snapshots [][]domain.SeqDamage
 	for range 3 * damageHistoryCap {
 		s.emitContent(c, damage{full: true})

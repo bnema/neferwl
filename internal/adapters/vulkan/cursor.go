@@ -6,7 +6,8 @@ import (
 	"os"
 	"unsafe"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
+
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
 
@@ -26,8 +27,8 @@ type cursorImage struct {
 const fourccARGB = 'A' | 'R'<<8 | '2'<<16 | '4'<<24
 
 // CursorBuffers allocates the two cursor images, replacing earlier ones.
-func (r *Renderer) CursorBuffers(size int) ([2]ports.DMABuf, error) {
-	var out [2]ports.DMABuf
+func (r *Renderer) CursorBuffers(size int) ([2]domain.DMABuf, error) {
+	var out [2]domain.DMABuf
 	r.dropCursors()
 	if !r.gpu.dd.HasGetMemoryFdKHR() || len(r.gpu.dmabuf.Formats) == 0 || size <= 0 || size > 512 {
 		return out, errors.New("device cannot export cursor images")
@@ -39,14 +40,14 @@ func (r *Renderer) CursorBuffers(size int) ([2]ports.DMABuf, error) {
 			for _, b := range out[:i] {
 				b.Planes[0].File.Close()
 			}
-			return [2]ports.DMABuf{}, err
+			return [2]domain.DMABuf{}, err
 		}
 		r.cursors[i], out[i] = c, buf
 	}
 	return out, nil
 }
 
-func (r *Renderer) cursorImage(size int) (*cursorImage, ports.DMABuf, error) {
+func (r *Renderer) cursorImage(size int) (*cursorImage, domain.DMABuf, error) {
 	d := r.gpu.dd
 	c := &cursorImage{size: size}
 	ok := false
@@ -62,22 +63,22 @@ func (r *Renderer) cursorImage(size int) (*cursorImage, ports.DMABuf, error) {
 	external := vk.ExternalMemoryImageCreateInfo{SType: vk.StructureTypeExternalMemoryImageCreateInfo, Next: unsafe.Pointer(&list), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: vk.Extent3D{Width: uint32(size), Height: uint32(size), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: vk.ImageUsageTransferSrcBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
 	if err := checked("vkCreateImage(cursor)", d.CreateImage(r.gpu.device, &ii, nil, &c.image)); err != nil {
-		return nil, ports.DMABuf{}, err
+		return nil, domain.DMABuf{}, err
 	}
 	var req vk.MemoryRequirements
 	d.GetImageMemoryRequirements(r.gpu.device, c.image, &req)
 	kind, err := r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit)
 	if err != nil {
-		return nil, ports.DMABuf{}, err
+		return nil, domain.DMABuf{}, err
 	}
 	dedicated := vk.MemoryDedicatedAllocateInfo{SType: vk.StructureTypeMemoryDedicatedAllocateInfo, Image: c.image}
 	export := vk.ExportMemoryAllocateInfo{SType: vk.StructureTypeExportMemoryAllocateInfo, Next: unsafe.Pointer(&dedicated), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&export), AllocationSize: req.Size, MemoryTypeIndex: kind}
 	if err := checked("vkAllocateMemory(cursor)", d.AllocateMemory(r.gpu.device, &alloc, nil, &c.memory)); err != nil {
-		return nil, ports.DMABuf{}, err
+		return nil, domain.DMABuf{}, err
 	}
 	if err := checked("vkBindImageMemory(cursor)", d.BindImageMemory(r.gpu.device, c.image, c.memory, 0)); err != nil {
-		return nil, ports.DMABuf{}, err
+		return nil, domain.DMABuf{}, err
 	}
 	var layout vk.SubresourceLayout
 	sub := vk.ImageSubresource{AspectMask: vk.ImageAspectMemoryPlane0BitEXT}
@@ -85,24 +86,24 @@ func (r *Renderer) cursorImage(size int) (*cursorImage, ports.DMABuf, error) {
 	c.pitch = int(layout.RowPitch)
 	// Cursor planes scan out packed rows from the start of the buffer.
 	if c.pitch != size*4 || layout.Offset != 0 {
-		return nil, ports.DMABuf{}, fmt.Errorf("cursor image layout pitch %d offset %d, want pitch %d offset 0", c.pitch, layout.Offset, size*4)
+		return nil, domain.DMABuf{}, fmt.Errorf("cursor image layout pitch %d offset %d, want pitch %d offset 0", c.pitch, layout.Offset, size*4)
 	}
 	if err := checked("vkMapMemory(cursor)", d.MapMemory(r.gpu.device, c.memory, 0, vk.DeviceSize(req.Size), 0, &c.mapped)); err != nil {
-		return nil, ports.DMABuf{}, err
+		return nil, domain.DMABuf{}, err
 	}
 	c.mapped = unsafe.Add(c.mapped, layout.Offset)
 	clear(unsafe.Slice((*byte)(c.mapped), c.pitch*size))
 	var fd int32
 	get := vk.MemoryGetFdInfoKHR{SType: vk.StructureTypeMemoryGetFDInfoKHR, Memory: c.memory, HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	if err := checked("vkGetMemoryFdKHR(cursor)", d.GetMemoryFdKHR(r.gpu.device, &get, &fd)); err != nil {
-		return nil, ports.DMABuf{}, err
+		return nil, domain.DMABuf{}, err
 	}
 	f := os.NewFile(uintptr(fd), "neferwl-cursor")
 	if f == nil {
-		return nil, ports.DMABuf{}, fmt.Errorf("invalid exported fd %d", fd)
+		return nil, domain.DMABuf{}, fmt.Errorf("invalid exported fd %d", fd)
 	}
 	ok = true
-	return c, ports.DMABuf{Width: size, Height: size, Format: fourccARGB, Modifier: 0, Planes: []ports.DMABufPlane{{File: f, Offset: uint32(layout.Offset), Stride: uint32(layout.RowPitch)}}}, nil
+	return c, domain.DMABuf{Width: size, Height: size, Format: fourccARGB, Modifier: 0, Planes: []domain.DMABufPlane{{File: f, Offset: uint32(layout.Offset), Stride: uint32(layout.RowPitch)}}}, nil
 }
 
 // WriteCursor copies premultiplied ARGB8888 pixels (w×h, w*4 per row)

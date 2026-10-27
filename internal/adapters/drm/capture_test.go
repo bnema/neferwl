@@ -27,7 +27,7 @@ func sessionRequest(t *testing.T, id uint64, exclude bool) ports.CaptureRequest 
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = f.Close() })
 	require.NoError(t, f.Truncate(16))
-	q := ports.CaptureRequest{ID: id, Dst: ports.SHMBuffer{File: f}, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1}
+	q := ports.CaptureRequest{ID: id, Dst: domain.SHMBuffer{File: f}, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1}
 	if exclude {
 		q.Exclude, q.Session, q.CaptureRevision = true, 7, 1
 	}
@@ -47,7 +47,7 @@ func TestSubmitFrameExcludeBeforeDisplayedThenStandard(t *testing.T) {
 	var order []string
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().UseTarget(0).Return().Once()
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		if s.Capture == nil {
 			require.Zero(t, s.Seq)
 			require.Len(t, s.Layers, 0, "excluded HUD layer left out of the excluded frame")
@@ -259,7 +259,7 @@ func TestReportCapsPerWindowWhileChildReads(t *testing.T) {
 	scene := ports.Scene{Scale: 1, OutputWidth: 2, OutputHeight: 2,
 		Capture:      &ports.SceneCapture{Workspace: 9},
 		CaptureScene: &ports.Scene{Scale: 1, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 5, Rect: domain.Rect{W: 2, H: 2}}}}}
-	surfaces := map[domain.WindowID]ports.SurfaceContent{5: {ID: 5, Seq: 2}}
+	surfaces := map[domain.WindowID]domain.SurfaceContent{5: {ID: 5, Seq: 2}}
 	req := sessionRequest(t, 1, false)
 	req.Workspace, req.OffScreen = 9, true
 	req.Region, req.Width, req.Height = image.Rect(0, 0, 2, 2), 2, 2
@@ -339,13 +339,13 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 		o.frame.stuckAfter = 30 * time.Second // the display commit stays in flight
 		o.flipped = make(chan flipEvent)      // no flip event ever
 		display := portsmocks.NewMockRenderer(t)
-		buf := func() ports.DMABuf {
+		buf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
 			w.Close()
-			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		display.EXPECT().SetHDR(float64(0)).Return().Maybe()
-		display.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+		display.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 		display.EXPECT().UseTarget(mock.Anything).Return()
 		display.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 		display.EXPECT().Close().Return().Once()
@@ -385,7 +385,7 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 		}
 		waitFor(t, func() bool { return count() == 2 })
 
-		contents.send(ports.SurfaceContent{ID: 5, Seq: 2, Width: 1, Height: 1, SHM: &ports.SHMBuffer{}})
+		contents.send(domain.SurfaceContent{ID: 5, Seq: 2, Width: 1, Height: 1, SHM: &domain.SHMBuffer{}})
 		// The request waits for the scene; once a display frame is pending no
 		// request is served, so it must be queued before the scene arrives.
 		req := sessionRequest(t, 1, false)
@@ -417,7 +417,7 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 
 		// A newer buffer of a display window arrives while the display commit is
 		// pending: the GPU may still read the older one, so it is not reported.
-		contents.send(ports.SurfaceContent{ID: 1, Seq: 9, Width: 1, Height: 1, SHM: &ports.SHMBuffer{}})
+		contents.send(domain.SurfaceContent{ID: 1, Seq: 9, Width: 1, Height: 1, SHM: &domain.SHMBuffer{}})
 		_, err = writeEnd.Write([]byte{1}) // the child's GPU work finished
 		require.NoError(t, err)
 		lifted := next(func(r ports.OutputPresented) bool { return len(r.ChildReads) == 0 })
@@ -441,10 +441,10 @@ func TestRunCaptureWaitsForItsIndicatorScene(t *testing.T) {
 		o.tearing, o.cursor, o.fbs = false, nil, [2]uint32{}
 		flips := make(chan flipEvent, 4)
 		o.flipped = flips
-		buf := func() ports.DMABuf {
+		buf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
 			w.Close()
-			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		// Only what the renderer draws for scenes after the modeset's black frame.
 		var mu sync.Mutex
@@ -456,9 +456,9 @@ func TestRunCaptureWaitsForItsIndicatorScene(t *testing.T) {
 		}
 		r := portsmocks.NewMockRenderer(t)
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 		r.EXPECT().UseTarget(mock.Anything).Return()
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			switch {
 			case s.OutputWidth == 0:
 				// The modeset's black frame.
@@ -549,14 +549,14 @@ func TestRunCaptureWithoutIndicatorFailsAfterTheBoundedWait(t *testing.T) {
 		o.tearing, o.cursor, o.fbs = false, nil, [2]uint32{}
 		flips := make(chan flipEvent, 2)
 		o.flipped = flips
-		buf := func() ports.DMABuf {
+		buf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
 			w.Close()
-			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r := portsmocks.NewMockRenderer(t)
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 		r.EXPECT().UseTarget(mock.Anything).Return()
 		r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 		r.EXPECT().Close().Return().Once()

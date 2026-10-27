@@ -29,9 +29,9 @@ func TestEmptyContentKeptWhileShown(t *testing.T) {
 	}
 	defer r.Close()
 	defer w.Close()
-	full := ports.SurfaceContent{ID: 1, Seq: 4, Width: 10, Height: 10, DMABuf: &ports.DMABuf{ID: 7}, Acquire: r}
+	full := domain.SurfaceContent{ID: 1, Seq: 4, Width: 10, Height: 10, DMABuf: &domain.DMABuf{ID: 7}, Acquire: r}
 	tb.Update(full, shows(1))
-	tb.Update(ports.SurfaceContent{ID: 1, Seq: 5}, shows(1))
+	tb.Update(domain.SurfaceContent{ID: 1, Seq: 5}, shows(1))
 	kept, ok := tb.Map()[1]
 	if !ok || kept.DMABuf != full.DMABuf || kept.Seq != 4 {
 		t.Fatalf("kept %+v, want the previous content", kept)
@@ -56,15 +56,15 @@ func TestEmptyContentKeptWhileShown(t *testing.T) {
 // An empty content of a window the scene does not draw drops it at once.
 func TestEmptyContentOfUnshownWindowDropped(t *testing.T) {
 	tb := New()
-	tb.Update(ports.SurfaceContent{ID: 1, SHM: &ports.SHMBuffer{Pool: 1}}, shows(1))
-	tb.Update(ports.SurfaceContent{ID: 1}, shows(2))
+	tb.Update(domain.SurfaceContent{ID: 1, SHM: &domain.SHMBuffer{Pool: 1}}, shows(1))
+	tb.Update(domain.SurfaceContent{ID: 1}, shows(2))
 	if _, ok := tb.Map()[1]; ok || tb.Kept(1) {
 		t.Fatal("content of an unshown window kept")
 	}
 	// Hidden counts as not drawn.
-	tb.Update(ports.SurfaceContent{ID: 3, SHM: &ports.SHMBuffer{Pool: 3}}, shows())
+	tb.Update(domain.SurfaceContent{ID: 3, SHM: &domain.SHMBuffer{Pool: 3}}, shows())
 	hidden := ports.Scene{OutputWidth: 100, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 3, Hidden: true, Rect: domain.Rect{W: 10, H: 10}}}}
-	tb.Update(ports.SurfaceContent{ID: 3}, hidden)
+	tb.Update(domain.SurfaceContent{ID: 3}, hidden)
 	if _, ok := tb.Map()[3]; ok {
 		t.Fatal("content of a hidden window kept")
 	}
@@ -74,15 +74,15 @@ func TestEmptyContentOfUnshownWindowDropped(t *testing.T) {
 // client mapped again).
 func TestNewContentReplacesKept(t *testing.T) {
 	tb := New()
-	tb.Update(ports.SurfaceContent{ID: 1, Seq: 1, SHM: &ports.SHMBuffer{Pool: 1}}, shows(1))
-	tb.Update(ports.SurfaceContent{ID: 1, Seq: 2}, shows(1))
-	tb.Update(ports.SurfaceContent{ID: 1, Seq: 3, SHM: &ports.SHMBuffer{Pool: 2}}, shows(1))
+	tb.Update(domain.SurfaceContent{ID: 1, Seq: 1, SHM: &domain.SHMBuffer{Pool: 1}}, shows(1))
+	tb.Update(domain.SurfaceContent{ID: 1, Seq: 2}, shows(1))
+	tb.Update(domain.SurfaceContent{ID: 1, Seq: 3, SHM: &domain.SHMBuffer{Pool: 2}}, shows(1))
 	if c := tb.Map()[1]; c.Seq != 3 || c.SHM.Pool != 2 || tb.Kept(1) {
 		t.Fatalf("after a new content: %+v kept %t", c, tb.Kept(1))
 	}
 	// The map handed out is the table's own: the renderer sees updates.
 	m := tb.Map()
-	tb.Update(ports.SurfaceContent{ID: 2, Seq: 1, SHM: &ports.SHMBuffer{Pool: 9}}, shows(1, 2))
+	tb.Update(domain.SurfaceContent{ID: 2, Seq: 1, SHM: &domain.SHMBuffer{Pool: 9}}, shows(1, 2))
 	if _, ok := m[2]; !ok {
 		t.Fatal("Map is a copy")
 	}
@@ -92,7 +92,7 @@ func TestNewContentReplacesKept(t *testing.T) {
 func TestUpdateAllocations(t *testing.T) {
 	tb := New()
 	s := shows(1, 2)
-	c := ports.SurfaceContent{ID: 1, Seq: 1, SHM: &ports.SHMBuffer{Pool: 1}}
+	c := domain.SurfaceContent{ID: 1, Seq: 1, SHM: &domain.SHMBuffer{Pool: 1}}
 	tb.Update(c, s)
 	if n := testing.AllocsPerRun(100, func() {
 		c.Seq++
@@ -113,10 +113,10 @@ func TestKeptChildrenFencesDroppedOnACopy(t *testing.T) {
 	}
 	defer r.Close()
 	defer w.Close()
-	children := []ports.Subsurface{{SurfaceContent: ports.SurfaceContent{DMABuf: &ports.DMABuf{ID: 2}, Acquire: r}}}
-	full := ports.SurfaceContent{ID: 1, Seq: 1, SHM: &ports.SHMBuffer{Pool: 1}, Children: children}
+	children := []domain.Subsurface{{SurfaceContent: domain.SurfaceContent{DMABuf: &domain.DMABuf{ID: 2}, Acquire: r}}}
+	full := domain.SurfaceContent{ID: 1, Seq: 1, SHM: &domain.SHMBuffer{Pool: 1}, Children: children}
 	tb.Update(full, shows(1))
-	tb.Update(ports.SurfaceContent{ID: 1, Seq: 2}, shows(1))
+	tb.Update(domain.SurfaceContent{ID: 1, Seq: 2}, shows(1))
 	kept := tb.Map()[1]
 	if len(kept.Children) != 1 || kept.Children[0].Acquire != nil || kept.Children[0].DMABuf != children[0].DMABuf {
 		t.Fatalf("kept children %+v", kept.Children)
@@ -136,7 +136,7 @@ func TestShowsSnapshotSkipsKept(t *testing.T) {
 		t.Fatalf("shown from seen %v", got)
 	}
 	var fromContents ShowsSnapshot
-	contents := map[domain.WindowID]ports.SurfaceContent{1: {ID: 1, Seq: 3}, 2: {ID: 2, Seq: 4}, 3: {ID: 3, Seq: 5}}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: {ID: 1, Seq: 3}, 2: {ID: 2, Seq: 4}, 3: {ID: 3, Seq: 5}}
 	got = fromContents.FromContents(shows(1, 2), contents, kept)
 	if len(got) != 1 || got[1] != 3 {
 		t.Fatalf("shown from contents %v", got)
@@ -168,12 +168,12 @@ func TestShowsSnapshotImmutable(t *testing.T) {
 func TestApply(t *testing.T) {
 	tb := New()
 	seen := map[domain.WindowID]uint64{1: 5}
-	b := &ports.ContentBatch{Items: []ports.SurfaceContent{
-		{ID: 1, Seq: 4, SHM: &ports.SHMBuffer{Pool: 1}}, // older than seen
-		{ID: 2, Seq: 1, SHM: &ports.SHMBuffer{Pool: 2}},
+	b := &domain.ContentBatch{Items: []domain.SurfaceContent{
+		{ID: 1, Seq: 4, SHM: &domain.SHMBuffer{Pool: 1}}, // older than seen
+		{ID: 2, Seq: 1, SHM: &domain.SHMBuffer{Pool: 2}},
 	}}
 	ret := portsmocks.NewMockContentReturn(t)
-	ret.EXPECT().Return(b).Run(func(got *ports.ContentBatch) {
+	ret.EXPECT().Return(b).Run(func(got *domain.ContentBatch) {
 		if len(got.Items) != 0 {
 			t.Errorf("batch returned before its reset: %d items", len(got.Items))
 		}
@@ -190,7 +190,7 @@ func TestApply(t *testing.T) {
 	}
 
 	// A window no scene draws and no newer Seq: nothing to do.
-	b = &ports.ContentBatch{Items: []ports.SurfaceContent{{ID: 1, Seq: 5, SHM: &ports.SHMBuffer{Pool: 1}}}}
+	b = &domain.ContentBatch{Items: []domain.SurfaceContent{{ID: 1, Seq: 5, SHM: &domain.SHMBuffer{Pool: 1}}}}
 	ret.EXPECT().Return(b).Once()
 	dirty, changed = tb.Apply(b, shows(2), seen, ret)
 	if dirty || changed {

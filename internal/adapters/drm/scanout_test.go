@@ -13,12 +13,12 @@ import (
 func TestScanoutCandidate(t *testing.T) {
 	full := ports.SceneWindow{ID: 1, Rect: domain.Rect{W: 100, H: 50}, Fullscreen: true}
 	scene := ports.Scene{OutputWidth: 100, OutputHeight: 50, Windows: []ports.SceneWindow{full}}
-	buf := &ports.DMABuf{ID: 9, Width: 200, Height: 100, Format: fourccARGB, Planes: []ports.DMABufPlane{{}}}
-	game := ports.SurfaceContent{ID: 1, Width: 200, Height: 100, LogicalW: 100, LogicalH: 50, DMABuf: buf}
+	buf := &domain.DMABuf{ID: 9, Width: 200, Height: 100, Format: fourccARGB, Planes: []domain.DMABufPlane{{}}}
+	game := domain.SurfaceContent{ID: 1, Width: 200, Height: 100, LogicalW: 100, LogicalH: 50, DMABuf: buf}
 	for _, tc := range []struct {
 		name   string
 		scene  func(s *ports.Scene)
-		cont   func(c *ports.SurfaceContent)
+		cont   func(c *domain.SurfaceContent)
 		reason string
 	}{
 		{"scanout", nil, nil, ""},
@@ -35,7 +35,7 @@ func TestScanoutCandidate(t *testing.T) {
 		{"window fade", func(s *ports.Scene) { s.Windows[0].Fade = 0.5 }, nil, "window_fade"},
 		{"window preview", func(s *ports.Scene) { s.Windows[0].Preview = 0.9 }, nil, "window_fade"},
 		{"window zoom", func(s *ports.Scene) { s.Windows[0].Zoom = 0.9 }, nil, "window_fade"},
-		{"faded", nil, func(c *ports.SurfaceContent) { c.Fade = 0.5 }, "fade"},
+		{"faded", nil, func(c *domain.SurfaceContent) { c.Fade = 0.5 }, "fade"},
 		{"tiled", func(s *ports.Scene) { s.Windows[0].Fullscreen = false }, nil, "other_windows"},
 		{"float above", func(s *ports.Scene) {
 			s.Windows = append(s.Windows, ports.SceneWindow{ID: 2, Rect: domain.Rect{W: 10, H: 10}})
@@ -50,24 +50,24 @@ func TestScanoutCandidate(t *testing.T) {
 		{"background layer", func(s *ports.Scene) {
 			s.Layers = []ports.SceneLayer{{ID: 3, Layer: domain.LayerBackground, Rect: domain.Rect{W: 10, H: 10}}}
 		}, nil, ""},
-		{"shm", nil, func(c *ports.SurfaceContent) { c.DMABuf, c.SHM = nil, &ports.SHMBuffer{} }, "not_dmabuf"},
-		{"subsurface", nil, func(c *ports.SurfaceContent) { c.Children = []ports.Subsurface{{}} }, "subsurfaces"},
-		{"buffer transform", nil, func(c *ports.SurfaceContent) { c.Transform = 2 }, "buffer_transform"},
-		{"scaled", nil, func(c *ports.SurfaceContent) { c.Width = 100 }, ""},
-		{"cropped", nil, func(c *ports.SurfaceContent) { c.Geometry = domain.Rect{X: 5, W: 90, H: 50} }, "geometry_crop"},
-		{"client ignores scale", nil, func(c *ports.SurfaceContent) { c.LogicalW = 200 }, "letterbox"},
-		{"whole geometry", nil, func(c *ports.SurfaceContent) { c.Geometry = domain.Rect{W: 100, H: 50} }, ""},
+		{"shm", nil, func(c *domain.SurfaceContent) { c.DMABuf, c.SHM = nil, &domain.SHMBuffer{} }, "not_dmabuf"},
+		{"subsurface", nil, func(c *domain.SurfaceContent) { c.Children = []domain.Subsurface{{}} }, "subsurfaces"},
+		{"buffer transform", nil, func(c *domain.SurfaceContent) { c.Transform = 2 }, "buffer_transform"},
+		{"scaled", nil, func(c *domain.SurfaceContent) { c.Width = 100 }, ""},
+		{"cropped", nil, func(c *domain.SurfaceContent) { c.Geometry = domain.Rect{X: 5, W: 90, H: 50} }, "geometry_crop"},
+		{"client ignores scale", nil, func(c *domain.SurfaceContent) { c.LogicalW = 200 }, "letterbox"},
+		{"whole geometry", nil, func(c *domain.SurfaceContent) { c.Geometry = domain.Rect{W: 100, H: 50} }, ""},
 		{"wine client subsurface", nil, wineTree(nil), ""},
-		{"client subsurface translucent", nil, wineTree(func(ch *ports.Subsurface) { ch.Opaque = false }), "subsurface_translucent"},
-		{"client subsurface shm", nil, wineTree(func(ch *ports.Subsurface) { ch.DMABuf, ch.SHM = nil, &ports.SHMBuffer{} }), "not_dmabuf"},
-		{"client subsurface offset", nil, wineTree(func(ch *ports.Subsurface) { ch.X = 4 }), "subsurface_offset"},
-		{"client subsurface below root", nil, wineTree(func(ch *ports.Subsurface) { ch.Below = true }), "subsurface_below"},
-		{"client subsurface cropped", nil, wineTree(func(ch *ports.Subsurface) { ch.Source = [4]float32{0, 0, 100, 50} }), ""},
-		{"client subsurface full source", nil, wineTree(func(ch *ports.Subsurface) { ch.Source = [4]float32{0, 0, 200, 100} }), ""},
-		{"root cropped", nil, func(c *ports.SurfaceContent) { c.Source = [4]float32{10, 0, 190, 100} }, ""},
-		{"client subsurface scaled", nil, wineTree(func(ch *ports.Subsurface) { ch.Width = 100 }), ""},
-		{"client subsurface small", nil, wineTree(func(ch *ports.Subsurface) { ch.LogicalW = 90 }), "letterbox"},
-		{"two subsurfaces", nil, func(c *ports.SurfaceContent) {
+		{"client subsurface translucent", nil, wineTree(func(ch *domain.Subsurface) { ch.Opaque = false }), "subsurface_translucent"},
+		{"client subsurface shm", nil, wineTree(func(ch *domain.Subsurface) { ch.DMABuf, ch.SHM = nil, &domain.SHMBuffer{} }), "not_dmabuf"},
+		{"client subsurface offset", nil, wineTree(func(ch *domain.Subsurface) { ch.X = 4 }), "subsurface_offset"},
+		{"client subsurface below root", nil, wineTree(func(ch *domain.Subsurface) { ch.Below = true }), "subsurface_below"},
+		{"client subsurface cropped", nil, wineTree(func(ch *domain.Subsurface) { ch.Source = [4]float32{0, 0, 100, 50} }), ""},
+		{"client subsurface full source", nil, wineTree(func(ch *domain.Subsurface) { ch.Source = [4]float32{0, 0, 200, 100} }), ""},
+		{"root cropped", nil, func(c *domain.SurfaceContent) { c.Source = [4]float32{10, 0, 190, 100} }, ""},
+		{"client subsurface scaled", nil, wineTree(func(ch *domain.Subsurface) { ch.Width = 100 }), ""},
+		{"client subsurface small", nil, wineTree(func(ch *domain.Subsurface) { ch.LogicalW = 90 }), "letterbox"},
+		{"two subsurfaces", nil, func(c *domain.SurfaceContent) {
 			wineTree(nil)(c)
 			c.Children = append(c.Children, c.Children[0])
 		}, "subsurfaces"},
@@ -89,7 +89,7 @@ func TestScanoutCandidate(t *testing.T) {
 					want = "overlays"
 				}
 			}
-			if _, reason := scanoutCandidate(s, map[domain.WindowID]ports.SurfaceContent{1: c}, 200, 100, nil); reason != want {
+			if _, reason := scanoutCandidate(s, map[domain.WindowID]domain.SurfaceContent{1: c}, 200, 100, nil); reason != want {
 				t.Errorf("%s (added overlays=%v): reason %q, want %q", tc.name, overlays, reason, want)
 			}
 		}
@@ -98,15 +98,15 @@ func TestScanoutCandidate(t *testing.T) {
 
 // wineTree turns the test content into Wine's layout: the root is a wl_shm
 // frame and the game is one opaque GPU subsurface over the client area.
-func wineTree(edit func(ch *ports.Subsurface)) func(c *ports.SurfaceContent) {
-	return func(c *ports.SurfaceContent) {
-		ch := ports.Subsurface{SurfaceContent: *c}
+func wineTree(edit func(ch *domain.Subsurface)) func(c *domain.SurfaceContent) {
+	return func(c *domain.SurfaceContent) {
+		ch := domain.Subsurface{SurfaceContent: *c}
 		ch.Opaque = true
 		if edit != nil {
 			edit(&ch)
 		}
-		c.DMABuf, c.SHM = nil, &ports.SHMBuffer{}
-		c.Children = []ports.Subsurface{ch}
+		c.DMABuf, c.SHM = nil, &domain.SHMBuffer{}
+		c.Children = []domain.Subsurface{ch}
 	}
 }
 
@@ -114,12 +114,12 @@ func wineTree(edit func(ch *ports.Subsurface)) func(c *ports.SurfaceContent) {
 // content keeps the window's ID and Seq and takes the subsurface buffer.
 func TestScanoutCandidateClientSubsurface(t *testing.T) {
 	scene := ports.Scene{OutputWidth: 100, OutputHeight: 50, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 100, H: 50}, Fullscreen: true}}}
-	game := &ports.DMABuf{ID: 9, Width: 200, Height: 100, Format: fourccXRGB, Planes: []ports.DMABufPlane{{}}}
+	game := &domain.DMABuf{ID: 9, Width: 200, Height: 100, Format: fourccXRGB, Planes: []domain.DMABufPlane{{}}}
 	acquire := &os.File{}
-	root := ports.SurfaceContent{ID: 1, Seq: 7, Width: 200, Height: 100, LogicalW: 100, LogicalH: 50, SHM: &ports.SHMBuffer{},
+	root := domain.SurfaceContent{ID: 1, Seq: 7, Width: 200, Height: 100, LogicalW: 100, LogicalH: 50, SHM: &domain.SHMBuffer{},
 		Geometry: domain.Rect{W: 100, H: 50},
-		Children: []ports.Subsurface{{SurfaceContent: ports.SurfaceContent{Seq: 3, Width: 200, Height: 100, LogicalW: 100, LogicalH: 50, Opaque: true, DMABuf: game, Async: true, Acquire: acquire}}}}
-	c, reason := scanoutCandidate(scene, map[domain.WindowID]ports.SurfaceContent{1: root}, 200, 100, nil)
+		Children: []domain.Subsurface{{SurfaceContent: domain.SurfaceContent{Seq: 3, Width: 200, Height: 100, LogicalW: 100, LogicalH: 50, Opaque: true, DMABuf: game, Async: true, Acquire: acquire}}}}
+	c, reason := scanoutCandidate(scene, map[domain.WindowID]domain.SurfaceContent{1: root}, 200, 100, nil)
 	if reason != "" || c.DMABuf != game || c.ID != 1 || c.Seq != 7 || !c.Async || c.Acquire != acquire || c.Geometry != (domain.Rect{}) {
 		t.Fatalf("candidate %+v, reason %q", c, reason)
 	}
@@ -128,12 +128,12 @@ func TestScanoutCandidateClientSubsurface(t *testing.T) {
 	// one; alone it is not a dmabuf.
 	solidRoot := root
 	solidRoot.SHM, solidRoot.Solid = nil, &domain.SolidColor{A: 1}
-	c, reason = scanoutCandidate(scene, map[domain.WindowID]ports.SurfaceContent{1: solidRoot}, 200, 100, nil)
+	c, reason = scanoutCandidate(scene, map[domain.WindowID]domain.SurfaceContent{1: solidRoot}, 200, 100, nil)
 	if reason != "" || c.DMABuf != game || c.Solid != nil || c.ID != 1 || c.Seq != 7 {
 		t.Fatalf("solid root with dmabuf child: candidate %+v, reason %q", c, reason)
 	}
 	solidRoot.Children = nil
-	if _, reason = scanoutCandidate(scene, map[domain.WindowID]ports.SurfaceContent{1: solidRoot}, 200, 100, nil); reason != "not_dmabuf" {
+	if _, reason = scanoutCandidate(scene, map[domain.WindowID]domain.SurfaceContent{1: solidRoot}, 200, 100, nil); reason != "not_dmabuf" {
 		t.Fatalf("solid root alone: reason %q, want not_dmabuf", reason)
 	}
 }
@@ -209,7 +209,7 @@ func TestScanoutFormatFollowsInFormats(t *testing.T) {
 		{"modifier not listed", fourccXRGB, 0x0200000000000002, 0, false},
 		{"format not listed", nv12, tiled, 0, false},
 	} {
-		got, ok := o.scanoutFormat(&ports.DMABuf{Format: tc.format, Modifier: tc.mod})
+		got, ok := o.scanoutFormat(&domain.DMABuf{Format: tc.format, Modifier: tc.mod})
 		if ok != tc.ok || ok && got != tc.as {
 			t.Errorf("%s: %#x %v", tc.name, got, ok)
 		}
@@ -220,12 +220,12 @@ func TestScanoutFormatFollowsInFormats(t *testing.T) {
 	}
 	// A buffer not in IN_FORMATS is refused before any import.
 	o.clientFBs = map[uint64]*clientFB{}
-	if fb, reason := o.scanoutFB(&ports.DMABuf{ID: 4, Format: nv12, Modifier: tiled}, time.Now()); fb != 0 || reason != "format" {
+	if fb, reason := o.scanoutFB(&domain.DMABuf{ID: 4, Format: nv12, Modifier: tiled}, time.Now()); fb != 0 || reason != "format" {
 		t.Fatalf("fb %d reason %q", fb, reason)
 	}
 	// A listed one is imported with every plane (addFB builds ADDFB2).
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
-	if fb, reason := o.scanoutFB(&ports.DMABuf{ID: 5, Format: fourccARGB, Modifier: tiled, Planes: []ports.DMABufPlane{{}, {}}}, time.Now()); fb != 88 || reason != "" {
+	if fb, reason := o.scanoutFB(&domain.DMABuf{ID: 5, Format: fourccARGB, Modifier: tiled, Planes: []domain.DMABufPlane{{}, {}}}, time.Now()); fb != 88 || reason != "" {
 		t.Fatalf("fb %d reason %q", fb, reason)
 	}
 }
@@ -261,10 +261,10 @@ func TestHDRScanoutDecision(t *testing.T) {
 	o.hdr.on = true
 	o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30}}
 	scene := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Fullscreen: true, Rect: domain.Rect{W: 200, H: 100}}}}
-	c := ports.SurfaceContent{ID: 1, Width: 200, Height: 100, LogicalW: 200, LogicalH: 100, DMABuf: &ports.DMABuf{ID: 11, Format: fourccXR30}}
+	c := domain.SurfaceContent{ID: 1, Width: 200, Height: 100, LogicalW: 200, LogicalH: 100, DMABuf: &domain.DMABuf{ID: 11, Format: fourccXR30}}
 	check := func(want string) {
 		t.Helper()
-		fb, _, _ := o.scanoutFrame(scene, map[domain.WindowID]ports.SurfaceContent{1: c})
+		fb, _, _ := o.scanoutFrame(scene, map[domain.WindowID]domain.SurfaceContent{1: c})
 		if o.reason != want || (fb != 0) != (want == "") {
 			t.Fatalf("fb %d reason %q, want %q", fb, o.reason, want)
 		}
@@ -343,10 +343,10 @@ func TestPlaneWithoutInFormatsIsLinear(t *testing.T) {
 		t.Fatalf("%v %v", ps, err)
 	}
 	o := &Output{primary: ps[0]}
-	if f, ok := o.scanoutFormat(&ports.DMABuf{Format: fourccARGB}); !ok || f != fourccXRGB {
+	if f, ok := o.scanoutFormat(&domain.DMABuf{Format: fourccARGB}); !ok || f != fourccXRGB {
 		t.Fatalf("linear argb: %#x %v", f, ok)
 	}
-	if _, ok := o.scanoutFormat(&ports.DMABuf{Format: fourccARGB, Modifier: 0x0200000000000001}); ok {
+	if _, ok := o.scanoutFormat(&domain.DMABuf{Format: fourccARGB, Modifier: 0x0200000000000001}); ok {
 		t.Fatal("tiled accepted without IN_FORMATS")
 	}
 }
@@ -368,8 +368,8 @@ func TestFrameDecisionAllocations(t *testing.T) {
 	o, _, _ := testOutput(t)
 	o.scanout = true
 	s := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Fullscreen: true, Rect: domain.Rect{W: 200, H: 100}}}}
-	c := ports.SurfaceContent{ID: 1, Width: 200, Height: 100, LogicalW: 200, LogicalH: 100, DMABuf: &ports.DMABuf{ID: 17, Format: fourccXRGB}}
-	surfaces := map[domain.WindowID]ports.SurfaceContent{1: c}
+	c := domain.SurfaceContent{ID: 1, Width: 200, Height: 100, LogicalW: 200, LogicalH: 100, DMABuf: &domain.DMABuf{ID: 17, Format: fourccXRGB}}
+	surfaces := map[domain.WindowID]domain.SurfaceContent{1: c}
 	o.clientFBs[17] = &clientFB{fbID: 77}
 	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	for _, tc := range []struct {

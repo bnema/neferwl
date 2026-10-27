@@ -5,7 +5,6 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/outputkit/surfaces"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // A window drawn from a content its client withdrew (it closed and fades
@@ -22,7 +21,7 @@ func TestLeavingWindowNeverOnAPlane(t *testing.T) {
 		table.Update(c[2], s)
 		// Window 2 unmaps: its empty content keeps the last one, Acquire
 		// dropped, while the scene lists it.
-		table.Update(ports.SurfaceContent{ID: 2}, s)
+		table.Update(domain.SurfaceContent{ID: 2}, s)
 		if !table.Kept(2) {
 			t.Fatal("setup: content not kept")
 		}
@@ -54,7 +53,7 @@ func TestLeavingWindowNeverOnAPlane(t *testing.T) {
 		if _, reason := scanoutCandidate(s, table.Map(), 200, 100, table.Kept); reason != "" {
 			t.Fatalf("control: reason %q", reason)
 		}
-		table.Update(ports.SurfaceContent{ID: id}, s)
+		table.Update(domain.SurfaceContent{ID: id}, s)
 		if _, reason := scanoutCandidate(s, table.Map(), 200, 100, table.Kept); reason != "leaving" {
 			t.Fatalf("scanout reason %q, want leaving", reason)
 		}
@@ -76,7 +75,7 @@ func TestLeavingWindowNeverOnAPlane(t *testing.T) {
 		if shows := o.shownBy(s, seen); shows[2] != 3 {
 			t.Fatalf("control: shows %v", shows)
 		}
-		table.Update(ports.SurfaceContent{ID: 2, Seq: 4}, s)
+		table.Update(domain.SurfaceContent{ID: 2, Seq: 4}, s)
 		seen[2] = 4
 		if shows := o.shownBy(s, seen); len(shows) != 0 {
 			t.Fatalf("a leaving window is reported shown: %v", shows)

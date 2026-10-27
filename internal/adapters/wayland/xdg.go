@@ -211,7 +211,7 @@ func (w *window) unmap() {
 	w.xdg.serials = nil
 	w.xdg.server.emit(ports.WindowUnmapped{ID: w.id})
 	w.xdg.server.syncInhibitors()
-	w.xdg.server.emitContent(ports.SurfaceContent{ID: w.id}, damage{full: true})
+	w.xdg.server.emitContent(domain.SurfaceContent{ID: w.id}, damage{full: true})
 }
 func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 	if x.window != nil {

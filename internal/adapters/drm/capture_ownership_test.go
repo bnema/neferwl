@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -33,7 +35,7 @@ func TestCaptureOwnershipTransferredBeforeCommitPanic(t *testing.T) {
 	if err := f.Truncate(16); err != nil {
 		t.Fatal(err)
 	}
-	requests := []ports.CaptureRequest{{ID: 1, Dst: ports.SHMBuffer{File: f}, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1}}
+	requests := []ports.CaptureRequest{{ID: 1, Dst: domain.SHMBuffer{File: f}, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1}}
 	replies := make(chan ports.CaptureDone, 2)
 	pipeline := capture.NewPipeline(context.Background(), replies)
 	func() {

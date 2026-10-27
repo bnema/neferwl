@@ -18,7 +18,7 @@ import (
 // nextContent waits for a content of window id.
 //
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
-func nextContent(t *testing.T, contents <-chan ports.SurfaceContent, id domain.WindowID) time.Time {
+func nextContent(t *testing.T, contents <-chan domain.SurfaceContent, id domain.WindowID) time.Time {
 	t.Helper()
 	deadline := waylandDeadline(2 * time.Second)
 wait:
@@ -65,7 +65,7 @@ func shmBufferSized(t *testing.T, c *wlturbo.Display, w, h int32) uint32 {
 // drainContents discards the content already relayed. The relay runs on the
 // display goroutine, so a display.Do barrier orders every earlier emission
 // before the non-blocking drain.
-func drainContents(t *testing.T, s *Server, contents <-chan ports.SurfaceContent) {
+func drainContents(t *testing.T, s *Server, contents <-chan domain.SurfaceContent) {
 	t.Helper()
 	if !s.display.Do(func() {}) {
 		t.Fatal("display stopped")

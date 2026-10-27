@@ -185,7 +185,7 @@ func (o *Output) copyImages(r ports.Renderer) (err error) {
 	}
 	// Local import capability supplies candidates; ExportTargets authoritatively
 	// intersects render exportability. Prefer cross-vendor LINEAR before tiling.
-	var sources []ports.DMABuf
+	var sources []domain.DMABuf
 	if slices.Contains(mods, uint64(0)) {
 		sources, err = r.ExportTargets(len(o.fbs), []uint64{0}, false)
 	}
@@ -203,7 +203,7 @@ func (o *Output) copyImages(r ports.Renderer) (err error) {
 	if err = copier.ImportSources(sources); err != nil {
 		return localDeviceError{err}
 	}
-	var bufs []ports.DMABuf
+	var bufs []domain.DMABuf
 	defer func() { closeBufs(bufs) }()
 	scanoutMods := o.primaryModifiers(o.imageFormat())
 	for range o.fbs {

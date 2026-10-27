@@ -66,7 +66,7 @@ func TestSubmitFrameOverlayRefusedComposesAll(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().UseTarget(0).Return().Once()
 	var drawn []int
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		drawn = append(drawn, len(s.Windows))
 		return nil, nil
 	}).Twice()
@@ -119,11 +119,11 @@ func TestSubmitFrameRenderError(t *testing.T) {
 	}
 }
 
-func fullscreenScene() (ports.Scene, map[domain.WindowID]ports.SurfaceContent) {
+func fullscreenScene() (ports.Scene, map[domain.WindowID]domain.SurfaceContent) {
 	s := ports.Scene{Seq: 1, Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{
 		{ID: 1, Rect: domain.Rect{W: 200, H: 100}, Fullscreen: true},
 	}}
-	return s, map[domain.WindowID]ports.SurfaceContent{
-		1: {ID: 1, Width: 200, Height: 100, LogicalW: 200, LogicalH: 100, Opaque: true, DMABuf: &ports.DMABuf{ID: 9, Width: 200, Height: 100, Format: fourccXRGB}},
+	return s, map[domain.WindowID]domain.SurfaceContent{
+		1: {ID: 1, Width: 200, Height: 100, LogicalW: 200, LogicalH: 100, Opaque: true, DMABuf: &domain.DMABuf{ID: 9, Width: 200, Height: 100, Format: fourccXRGB}},
 	}
 }

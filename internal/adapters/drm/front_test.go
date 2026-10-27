@@ -20,7 +20,7 @@ import (
 // overlayFrames submits the overlay scene once (composed), then with the
 // overlay window's next buffers: the frames after the first only flip the
 // overlay buffer.
-func overlayFrames(t *testing.T, o *Output, r *portsmocks.MockRenderer, s ports.Scene, c map[domain.WindowID]ports.SurfaceContent, frames int) {
+func overlayFrames(t *testing.T, o *Output, r *portsmocks.MockRenderer, s ports.Scene, c map[domain.WindowID]domain.SurfaceContent, frames int) {
 	t.Helper()
 	for i := range frames {
 		win := c[2]
@@ -41,7 +41,7 @@ func overlayFrames(t *testing.T, o *Output, r *portsmocks.MockRenderer, s ports.
 func TestSubmitFrameOverlayOnlySkipsRender(t *testing.T) {
 	o, k, commits := overlayOutput(t)
 	o.cursor, o.vrrProp = nil, 0
-	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).RunAndReturn(func(b *ports.DMABuf, _ uint32) (uint32, error) {
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).RunAndReturn(func(b *domain.DMABuf, _ uint32) (uint32, error) {
 		return uint32(80 + b.ID), nil
 	}).Times(4)
 	o.overlay.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
@@ -125,25 +125,25 @@ func TestRunVideoOnOverlayDoesNotRender(t *testing.T) {
 		flips := make(chan flipEvent, 1)
 		o.flipped = flips
 		r := portsmocks.NewMockRenderer(t)
-		pipeBuf := func() ports.DMABuf {
+		pipeBuf := func() domain.DMABuf {
 			f, w, err := os.Pipe()
 			if err != nil {
 				t.Fatal(err)
 			}
 			w.Close()
-			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
 		r.EXPECT().UseTarget(mock.Anything).Return()
 		var renders atomic.Int32
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			renders.Add(1)
 			return nil, nil
 		})
 		r.EXPECT().Close().Return().Once()
 		var images atomic.Uint32
-		k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).RunAndReturn(func(b *ports.DMABuf, _ uint32) (uint32, error) {
+		k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).RunAndReturn(func(b *domain.DMABuf, _ uint32) (uint32, error) {
 			if b.ID == 0 {
 				return 70 + images.Add(1) - 1, nil // the output images
 			}
@@ -185,10 +185,10 @@ func TestRunVideoOnOverlayDoesNotRender(t *testing.T) {
 				t.Error("Run did not stop")
 			}
 		})
-		static := ports.SurfaceContent{ID: 1, Seq: 1, Width: 100, Height: 100, Opaque: true, Solid: &domain.SolidColor{A: 1}}
-		video := func(n int) ports.SurfaceContent {
-			return ports.SurfaceContent{ID: 2, Seq: uint64(n), Width: 100, Height: 100, Opaque: true,
-				DMABuf: &ports.DMABuf{ID: uint64(n%3 + 1), Width: 100, Height: 100, Format: fourccXRGB}}
+		static := domain.SurfaceContent{ID: 1, Seq: 1, Width: 100, Height: 100, Opaque: true, Solid: &domain.SolidColor{A: 1}}
+		video := func(n int) domain.SurfaceContent {
+			return domain.SurfaceContent{ID: 2, Seq: uint64(n), Width: 100, Height: 100, Opaque: true,
+				DMABuf: &domain.DMABuf{ID: uint64(n%3 + 1), Width: 100, Height: 100, Format: fourccXRGB}}
 		}
 		contents.send(static, video(1))
 		scenes <- ports.Scene{Seq: 1, Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{
@@ -299,14 +299,14 @@ func TestSubmitFrameOverlayOnlyRefused(t *testing.T) {
 			o.stray = []*plane{{id: tOverlay, typ: planeOverlay, props: props, zposValue: 2, formats: []domain.DMABufFormat{{Format: fourccXRGB}}}}
 			o.pickOverlay()
 			o.cursor, o.vrrProp = nil, 0
-			k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).RunAndReturn(func(b *ports.DMABuf, _ uint32) (uint32, error) {
+			k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).RunAndReturn(func(b *domain.DMABuf, _ uint32) (uint32, error) {
 				return uint32(80 + b.ID), nil
 			})
 			s, c := overlayScene()
 			r := portsmocks.NewMockRenderer(t)
 			r.EXPECT().UseTarget(mock.Anything).Return()
 			var drawn []int
-			r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+			r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 				drawn = append(drawn, len(s.Windows))
 				return nil, nil
 			})
@@ -434,26 +434,26 @@ func TestOverlayProbeCached(t *testing.T) {
 // Anything but the overlay window changing composes: another window's
 // content, the scene, or an image drawn by another path.
 func TestSubmitFrameOverlayOnlyNeedsSameImage(t *testing.T) {
-	for name, edit := range map[string]func(o *Output, s *ports.Scene, c map[domain.WindowID]ports.SurfaceContent){
-		"other window content": func(_ *Output, _ *ports.Scene, c map[domain.WindowID]ports.SurfaceContent) {
+	for name, edit := range map[string]func(o *Output, s *ports.Scene, c map[domain.WindowID]domain.SurfaceContent){
+		"other window content": func(_ *Output, _ *ports.Scene, c map[domain.WindowID]domain.SurfaceContent) {
 			w := c[1]
 			w.Seq++
 			c[1] = w
 		},
-		"scene": func(_ *Output, s *ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) {
+		"scene": func(_ *Output, s *ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) {
 			s.Background = "#ffffff"
 		},
-		"image forgotten": func(o *Output, _ *ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) {
+		"image forgotten": func(o *Output, _ *ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) {
 			o.front.forget()
 		},
-		"layer content": func(_ *Output, _ *ports.Scene, c map[domain.WindowID]ports.SurfaceContent) {
+		"layer content": func(_ *Output, _ *ports.Scene, c map[domain.WindowID]domain.SurfaceContent) {
 			l := c[5]
 			l.Seq++
 			c[5] = l
 		},
 		// The scene's slices rewritten in place by their owner: what the
 		// image holds is a copy.
-		"scene slice rewritten": func(_ *Output, s *ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) {
+		"scene slice rewritten": func(_ *Output, s *ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) {
 			s.Windows[0].Rect.W = 90
 		},
 	} {
@@ -464,12 +464,12 @@ func TestSubmitFrameOverlayOnlyNeedsSameImage(t *testing.T) {
 			o.overlay.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 			s, c := overlayScene()
 			s.Layers = []ports.SceneLayer{{ID: 5, Layer: domain.LayerBottom, Rect: domain.Rect{W: 10, H: 10}}}
-			c[1] = ports.SurfaceContent{ID: 1, Seq: 1, Width: 100, Height: 100, Opaque: true, Solid: &domain.SolidColor{A: 1}}
-			c[5] = ports.SurfaceContent{ID: 5, Seq: 1, Width: 10, Height: 10, Opaque: true, Solid: &domain.SolidColor{A: 1}}
+			c[1] = domain.SurfaceContent{ID: 1, Seq: 1, Width: 100, Height: 100, Opaque: true, Solid: &domain.SolidColor{A: 1}}
+			c[5] = domain.SurfaceContent{ID: 5, Seq: 1, Width: 10, Height: 10, Opaque: true, Solid: &domain.SolidColor{A: 1}}
 			r := portsmocks.NewMockRenderer(t)
 			r.EXPECT().UseTarget(mock.Anything).Return().Twice()
 			var drawn []int
-			r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+			r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 				drawn = append(drawn, len(s.Windows))
 				return nil, nil
 			}).Twice()

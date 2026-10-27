@@ -41,7 +41,7 @@ func TestMultiGPUDirectImages(t *testing.T) {
 	r.EXPECT().ImportTargets(mock.Anything).Return(nil).Once()
 	allocator.EXPECT().create(200, 100, uint32(fourccXRGB), []uint64{0}).RunAndReturn(func(int, int, uint32, []uint64) (imageBuffer, error) {
 		img := newMockimageBuffer(t)
-		img.EXPECT().dmabuf().RunAndReturn(func() (ports.DMABuf, error) { b := gbmBuf(1); b.Modifier = 0; return b, nil }).Once()
+		img.EXPECT().dmabuf().RunAndReturn(func() (domain.DMABuf, error) { b := gbmBuf(1); b.Modifier = 0; return b, nil }).Once()
 		img.EXPECT().close().Return().Once()
 		return img, nil
 	}).Twice()
@@ -95,14 +95,14 @@ func TestMultiGPUCopySetup(t *testing.T) {
 			local.EXPECT().DMABuf().Return(domain.DMABufSupport{Formats: formats}).Once()
 			copier.EXPECT().SourceModifiers(formats).Return(formats).Once()
 			r := gbmRenderer(t)
-			sources := []ports.DMABuf{gbmBuf(1), gbmBuf(1)}
+			sources := []domain.DMABuf{gbmBuf(1), gbmBuf(1)}
 			r.EXPECT().ExportTargets(2, []uint64{0}, false).Return(sources, nil).Once()
 			copier.EXPECT().ImportSources(sources).Return(nil).Once()
 			closed := false
 			copier.EXPECT().Close().Run(func() { closed = true }).Once()
 			alloc.EXPECT().create(200, 100, uint32(fourccXRGB), []uint64{tiledMod}).RunAndReturn(func(int, int, uint32, []uint64) (imageBuffer, error) {
 				img := newMockimageBuffer(t)
-				img.EXPECT().dmabuf().RunAndReturn(func() (ports.DMABuf, error) { return gbmBuf(1), nil }).Once()
+				img.EXPECT().dmabuf().RunAndReturn(func() (domain.DMABuf, error) { return gbmBuf(1), nil }).Once()
 				img.EXPECT().close().Run(func() {
 					if !closed {
 						t.Error("image freed before copier")
@@ -159,7 +159,7 @@ func TestMultiGPUCopySourceModifiers(t *testing.T) {
 	t.Run("no LINEAR", func(t *testing.T) {
 		mods := []domain.DMABufFormat{{Format: fourccXRGB, Modifier: tiledMod}}
 		o, _, r, copier, _ := copyFixture(t, mods)
-		r.EXPECT().ExportTargets(2, []uint64{tiledMod}, false).Return([]ports.DMABuf{gbmBuf(1), gbmBuf(1)}, nil).Once()
+		r.EXPECT().ExportTargets(2, []uint64{tiledMod}, false).Return([]domain.DMABuf{gbmBuf(1), gbmBuf(1)}, nil).Once()
 		copier.EXPECT().ImportSources(mock.Anything).Return(ports.ErrDeviceLost).Once()
 		copier.EXPECT().Close().Return().Once()
 		r.EXPECT().ExportTargets(0, []uint64(nil), false).Return(nil, nil).Once()
@@ -183,13 +183,13 @@ func TestMultiGPUCopyShowFailureRestores(t *testing.T) {
 	mods := []domain.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
 	o, k, r, copier, alloc := copyFixture(t, mods)
 	o.transport = transportDirect
-	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]ports.DMABuf{gbmBuf(1), gbmBuf(1)}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]domain.DMABuf{gbmBuf(1), gbmBuf(1)}, nil).Once()
 	copier.EXPECT().ImportSources(mock.Anything).Return(nil).Once()
 	copier.EXPECT().ImportTargets(mock.Anything).Return(nil).Once()
 	freed := 0
 	alloc.EXPECT().create(200, 100, uint32(fourccXRGB), []uint64{tiledMod}).RunAndReturn(func(int, int, uint32, []uint64) (imageBuffer, error) {
 		img := newMockimageBuffer(t)
-		img.EXPECT().dmabuf().RunAndReturn(func() (ports.DMABuf, error) { return gbmBuf(1), nil }).Once()
+		img.EXPECT().dmabuf().RunAndReturn(func() (domain.DMABuf, error) { return gbmBuf(1), nil }).Once()
 		img.EXPECT().close().Run(func() { freed++ }).Once()
 		return img, nil
 	}).Twice()

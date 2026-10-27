@@ -47,13 +47,13 @@ func (p *feedbackEvents) Dispatch(e *wlturbo.Event) {
 }
 
 // presentServer is a server whose flips the test sends.
-func presentServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, <-chan ports.SurfaceContent, ports.PresentationSink, string) {
+func presentServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, <-chan domain.SurfaceContent, ports.PresentationSink, string) {
 	t.Helper()
 	return presentServerOn(t, testOutputs)
 }
 
 // presentServerOn is presentServer with its own output layout.
-func presentServerOn(t *testing.T, layout ports.Layout) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, <-chan ports.SurfaceContent, ports.PresentationSink, string) {
+func presentServerOn(t *testing.T, layout ports.Layout) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, <-chan domain.SurfaceContent, ports.PresentationSink, string) {
 	t.Helper()
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)

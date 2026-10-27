@@ -7,13 +7,12 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/tearingcontrol"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // asyncContent waits for a content of window id with the given hint.
 //
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
-func asyncContent(t *testing.T, contents <-chan ports.SurfaceContent, id domain.WindowID, async bool) {
+func asyncContent(t *testing.T, contents <-chan domain.SurfaceContent, id domain.WindowID, async bool) {
 	t.Helper()
 	deadline := waylandDeadline(2 * time.Second)
 	for {

@@ -59,7 +59,7 @@ func TestExportTargets(t *testing.T) {
 		t.Skipf("modifier %#x not importable", b.Modifier)
 	}
 	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 32}}}}
-	contents := map[domain.WindowID]ports.SurfaceContent{1: {ID: 1, Width: 64, Height: 32, Opaque: true, DMABuf: &b}}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: {ID: 1, Width: 64, Height: 32, Opaque: true, DMABuf: &b}}
 	if err := render(viewer, scene, contents); err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestFilterModifiersKeepsMultiPlane(t *testing.T) {
 func TestExportTargetsPlanes(t *testing.T) {
 	r := newTestRenderer(t, 64, 32)
 	defer r.Close()
-	closeAll := func(bufs []ports.DMABuf) {
+	closeAll := func(bufs []domain.DMABuf) {
 		for _, b := range bufs {
 			for _, p := range b.Planes {
 				p.File.Close()
@@ -369,14 +369,14 @@ func TestSameDMABuf(t *testing.T) {
 	one, other := pipeFile(t), pipeFile(t)
 	for _, tc := range []struct {
 		name   string
-		planes []ports.DMABufPlane
+		planes []domain.DMABufPlane
 		ok     bool
 	}{
-		{"one plane", []ports.DMABufPlane{{File: one}}, true},
-		{"same file twice", []ports.DMABufPlane{{File: one}, {File: one}}, true},
-		{"two files", []ports.DMABufPlane{{File: one}, {File: other}}, false},
-		{"third plane elsewhere", []ports.DMABufPlane{{File: one}, {File: one}, {File: other}}, false},
-		{"no file", []ports.DMABufPlane{{File: one}, {}}, false},
+		{"one plane", []domain.DMABufPlane{{File: one}}, true},
+		{"same file twice", []domain.DMABufPlane{{File: one}, {File: one}}, true},
+		{"two files", []domain.DMABufPlane{{File: one}, {File: other}}, false},
+		{"third plane elsewhere", []domain.DMABufPlane{{File: one}, {File: one}, {File: other}}, false},
+		{"no file", []domain.DMABufPlane{{File: one}, {}}, false},
 	} {
 		err := sameDMABuf(tc.planes)
 		if (err == nil) != tc.ok {
@@ -433,27 +433,27 @@ func TestImportTargetsRefusesMismatchedImages(t *testing.T) {
 	if !found {
 		t.Skip("no importable one-plane target modifier")
 	}
-	good := func() ports.DMABuf {
-		return ports.DMABuf{Width: 64, Height: 32, Format: fourccXRGB, Modifier: single, Planes: []ports.DMABufPlane{{File: pipeFile(t)}}}
+	good := func() domain.DMABuf {
+		return domain.DMABuf{Width: 64, Height: 32, Format: fourccXRGB, Modifier: single, Planes: []domain.DMABufPlane{{File: pipeFile(t)}}}
 	}
 	for _, tc := range []struct {
 		name   string
-		mutate func(*ports.DMABuf)
+		mutate func(*domain.DMABuf)
 		want   error
 	}{
-		{"width", func(b *ports.DMABuf) { b.Width = 65 }, errImageGeometry},
-		{"height", func(b *ports.DMABuf) { b.Height = 31 }, errImageGeometry},
-		{"format", func(b *ports.DMABuf) { b.Format = fourccXR30 }, errImageGeometry},
-		{"unknown modifier", func(b *ports.DMABuf) { b.Modifier = 0x1234567 }, errImageModifier},
-		{"no planes", func(b *ports.DMABuf) { b.Planes = nil }, errImagePlanes},
-		{"too many planes", func(b *ports.DMABuf) {
-			b.Planes = append(b.Planes, ports.DMABufPlane{File: pipeFile(t)})
+		{"width", func(b *domain.DMABuf) { b.Width = 65 }, errImageGeometry},
+		{"height", func(b *domain.DMABuf) { b.Height = 31 }, errImageGeometry},
+		{"format", func(b *domain.DMABuf) { b.Format = fourccXR30 }, errImageGeometry},
+		{"unknown modifier", func(b *domain.DMABuf) { b.Modifier = 0x1234567 }, errImageModifier},
+		{"no planes", func(b *domain.DMABuf) { b.Planes = nil }, errImagePlanes},
+		{"too many planes", func(b *domain.DMABuf) {
+			b.Planes = append(b.Planes, domain.DMABufPlane{File: pipeFile(t)})
 		}, errImagePlanes},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			b := good()
 			tc.mutate(&b)
-			err := r.ImportTargets([]ports.DMABuf{b})
+			err := r.ImportTargets([]domain.DMABuf{b})
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("error %v, want %v", err, tc.want)
 			}
@@ -471,7 +471,7 @@ func TestImportTargetsRefusesMismatchedImages(t *testing.T) {
 		defer closeBufs(exported)
 		bad := good()
 		bad.Width = 1
-		err = r.ImportTargets([]ports.DMABuf{exported[0], bad})
+		err = r.ImportTargets([]domain.DMABuf{exported[0], bad})
 		if !errors.Is(err, errImageGeometry) {
 			t.Fatalf("error %v, want the second image's geometry refusal", err)
 		}
@@ -499,15 +499,15 @@ func TestImportTargetsRefusesMismatchedImages(t *testing.T) {
 		b.Modifier = multi
 		b.Planes = nil
 		for range r.gpu.modPlanes[multi] {
-			b.Planes = append(b.Planes, ports.DMABufPlane{File: pipeFile(t)})
+			b.Planes = append(b.Planes, domain.DMABufPlane{File: pipeFile(t)})
 		}
-		if err := r.ImportTargets([]ports.DMABuf{b}); !errors.Is(err, errImageDMABuf) {
+		if err := r.ImportTargets([]domain.DMABuf{b}); !errors.Is(err, errImageDMABuf) {
 			t.Fatalf("error %v", err)
 		}
 	})
 }
 
-func closeBufs(bufs []ports.DMABuf) {
+func closeBufs(bufs []domain.DMABuf) {
 	for _, b := range bufs {
 		for _, p := range b.Planes {
 			p.File.Close()

@@ -7,7 +7,6 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
 
@@ -55,7 +54,7 @@ func TestDamageHistory(t *testing.T) {
 		registerProtocol(t, c, b)
 		requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, b, int32(i*16*16*4), int32(16), int32(16), int32(64), uint32(0))
 	}
-	next := func() ports.SurfaceContent {
+	next := func() domain.SurfaceContent {
 		t.Helper()
 		if err := c.Roundtrip(); err != nil {
 			t.Fatal(err)

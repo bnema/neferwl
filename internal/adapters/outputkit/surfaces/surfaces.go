@@ -40,24 +40,24 @@ import (
 // the frame that first drew it waited on them, and wayland closes them
 // when the buffers are released.
 type Table struct {
-	m map[domain.WindowID]ports.SurfaceContent
+	m map[domain.WindowID]domain.SurfaceContent
 	// kept are the windows drawn from a content their client withdrew.
 	kept map[domain.WindowID]struct{}
 }
 
 // New returns an empty table.
 func New() *Table {
-	return &Table{m: make(map[domain.WindowID]ports.SurfaceContent), kept: make(map[domain.WindowID]struct{})}
+	return &Table{m: make(map[domain.WindowID]domain.SurfaceContent), kept: make(map[domain.WindowID]struct{})}
 }
 
 // Map is the contents the renderer draws from. It is the table's own map:
 // read it, never keep it across an Update or Prune.
-func (t *Table) Map() map[domain.WindowID]ports.SurfaceContent { return t.m }
+func (t *Table) Map() map[domain.WindowID]domain.SurfaceContent { return t.m }
 
 // Update takes a window's new content. An empty one (the window unmapped)
 // keeps the previous content, without its Acquire fence, while scene draws
 // the window; it drops it otherwise.
-func (t *Table) Update(c ports.SurfaceContent, scene ports.Scene) {
+func (t *Table) Update(c domain.SurfaceContent, scene ports.Scene) {
 	if !c.Empty() {
 		t.m[c.ID] = c
 		delete(t.kept, c.ID)
@@ -73,7 +73,7 @@ func (t *Table) Update(c ports.SurfaceContent, scene ports.Scene) {
 	if len(prev.Children) > 0 {
 		// The slice is shared with wayland's publication: copy before
 		// zeroing (one allocation per unmap).
-		children := make([]ports.Subsurface, len(prev.Children))
+		children := make([]domain.Subsurface, len(prev.Children))
 		copy(children, prev.Children)
 		for i := range children {
 			children[i].Acquire = nil
@@ -113,13 +113,13 @@ func Shown(scene ports.Scene, id domain.WindowID, kept func(domain.WindowID) boo
 // Apply takes every content of b into the table, as the output's owner does
 // when it receives a batch: Update per item against scene, seen advanced to
 // the highest Seq per window, then the batch reset and handed back through
-// ret. Reset-then-return is the ownership rule of ports.ContentBatch; b is
+// ret. Reset-then-return is the ownership rule of domain.ContentBatch; b is
 // not the caller's after Apply.
 //
 // dirty reports a content of a window scene draws (windows on other outputs
 // or workspaces need no frame). seenChanged reports a window whose seen Seq
 // moved forward: a new report is due.
-func (t *Table) Apply(b *ports.ContentBatch, scene ports.Scene, seen map[domain.WindowID]uint64, ret ports.ContentReturn) (dirty, seenChanged bool) {
+func (t *Table) Apply(b *domain.ContentBatch, scene ports.Scene, seen map[domain.WindowID]uint64, ret ports.ContentReturn) (dirty, seenChanged bool) {
 	for i := range b.Items {
 		c := b.Items[i]
 		t.Update(c, scene)
@@ -159,7 +159,7 @@ func (s *ShowsSnapshot) FromSeen(scene ports.Scene, seen map[domain.WindowID]uin
 // FromContents returns the windows of contents that scene showed to their
 // client (Shown), at their content Seq. The result is shared with earlier
 // flips of the same content: never modify it.
-func (s *ShowsSnapshot) FromContents(scene ports.Scene, contents map[domain.WindowID]ports.SurfaceContent, kept func(domain.WindowID) bool) map[domain.WindowID]uint64 {
+func (s *ShowsSnapshot) FromContents(scene ports.Scene, contents map[domain.WindowID]domain.SurfaceContent, kept func(domain.WindowID) bool) map[domain.WindowID]uint64 {
 	s.begin()
 	for id, c := range contents {
 		if Shown(scene, id, kept) {

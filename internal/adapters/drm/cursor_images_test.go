@@ -6,8 +6,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
@@ -36,8 +37,8 @@ func dumbFree(k *mockkms) {
 	k.EXPECT().unmapDumb(mock.Anything).Return(nil).Twice()
 }
 
-func rendererBufs(t *testing.T) [2]ports.DMABuf {
-	var b [2]ports.DMABuf
+func rendererBufs(t *testing.T) [2]domain.DMABuf {
+	var b [2]domain.DMABuf
 	for i := range b {
 		f, w, err := os.Pipe()
 		if err != nil {
@@ -47,7 +48,7 @@ func rendererBufs(t *testing.T) [2]ports.DMABuf {
 		if err := w.Close(); err != nil {
 			t.Fatal(err)
 		}
-		b[i] = ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		b[i] = domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	return b
 }
@@ -133,7 +134,7 @@ func TestCursorSetupFallsBackToRenderer(t *testing.T) {
 func TestCursorSetupFailsWithoutAllocators(t *testing.T) {
 	k, r := newMockkms(t), portsmocks.NewMockRenderer(t)
 	k.EXPECT().createDumb(tSide, tSide).Return(dumbBuffer{}, unix.ENOSYS).Once()
-	r.EXPECT().CursorBuffers(tSide).Return([2]ports.DMABuf{}, errors.New("no export")).Once()
+	r.EXPECT().CursorBuffers(tSide).Return([2]domain.DMABuf{}, errors.New("no export")).Once()
 	c := newCursor(&plane{}, tSide)
 	dumbErr, err := c.setup(k, r)
 	if dumbErr == nil || err == nil || c.imgs != nil || c.fbs != [2]uint32{} {
@@ -158,7 +159,7 @@ func TestRendererCursorReleasesOnFailure(t *testing.T) {
 	assertPlanesClosed(t, bufs)
 }
 
-func assertPlanesClosed(t *testing.T, bufs [2]ports.DMABuf) {
+func assertPlanesClosed(t *testing.T, bufs [2]domain.DMABuf) {
 	t.Helper()
 	for i, b := range bufs {
 		for j, p := range b.Planes {
@@ -473,7 +474,7 @@ func TestCursorFallbackFailureGoesOff(t *testing.T) {
 				t.Fatal(err)
 			}
 			if mode == "allocation" {
-				r.EXPECT().CursorBuffers(tSide).Return([2]ports.DMABuf{}, errors.New("allocation failed")).Once()
+				r.EXPECT().CursorBuffers(tSide).Return([2]domain.DMABuf{}, errors.New("allocation failed")).Once()
 			} else {
 				dumbFree(k)
 				rendererOK(t, k, r)

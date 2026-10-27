@@ -22,16 +22,16 @@ func TestRunOutputPower(t *testing.T) {
 		flips := make(chan flipEvent, 1)
 		o.flipped = flips
 		r := portsmocks.NewMockRenderer(t)
-		buf := func() ports.DMABuf {
+		buf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
 			w.Close()
-			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 		r.EXPECT().UseTarget(mock.Anything).Return()
 		renders := make(chan struct{}, 8)
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			renders <- struct{}{}
 			return nil, nil
 		})
@@ -133,16 +133,16 @@ func TestRunOutputStartOff(t *testing.T) {
 		ready := make(chan error, 1)
 		o.ready = ready
 		r := portsmocks.NewMockRenderer(t)
-		buf := func() ports.DMABuf {
+		buf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
 			w.Close()
-			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 		r.EXPECT().UseTarget(mock.Anything).Return().Maybe()
 		renders := make(chan struct{}, 8)
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			renders <- struct{}{}
 			return nil, nil
 		}).Maybe()

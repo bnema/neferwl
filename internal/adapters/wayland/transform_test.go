@@ -8,7 +8,6 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
 )
@@ -18,7 +17,7 @@ import (
 type transformClient struct {
 	c                  *wlturbo.Display
 	comp, surf, vp, bf uint32
-	contents           <-chan ports.SurfaceContent
+	contents           <-chan domain.SurfaceContent
 }
 
 func newTransformClient(t *testing.T) transformClient {
@@ -88,7 +87,7 @@ func newTransformClient(t *testing.T) transformClient {
 // next returns the next published content with a buffer.
 //
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
-func (tc transformClient) next(t *testing.T) ports.SurfaceContent {
+func (tc transformClient) next(t *testing.T) domain.SurfaceContent {
 	t.Helper()
 	deadline := waylandDeadline(2 * time.Second)
 	for {

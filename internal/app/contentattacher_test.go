@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/stretchr/testify/mock"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
@@ -23,10 +24,10 @@ func TestOutputSetAttachesAndDetachesContents(t *testing.T) {
 	attacher := newMockcontentAttacher(t)
 	set.attach = attacher
 	rets := []*portsmocks.MockContentReturn{portsmocks.NewMockContentReturn(t), portsmocks.NewMockContentReturn(t)}
-	feed := make(chan *ports.ContentBatch, 1)
+	feed := make(chan *domain.ContentBatch, 1)
 	var order []string
 	type seen struct {
-		contents <-chan *ports.ContentBatch
+		contents <-chan *domain.ContentBatch
 		returns  ports.ContentReturn
 		security ports.SecurityState
 	}
@@ -38,7 +39,7 @@ func TestOutputSetAttachesAndDetachesContents(t *testing.T) {
 		return nil
 	}
 	attaches := 0
-	attacher.EXPECT().AttachOutput("DP-1").RunAndReturn(func(string) (<-chan *ports.ContentBatch, ports.ContentReturn) {
+	attacher.EXPECT().AttachOutput("DP-1").RunAndReturn(func(string) (<-chan *domain.ContentBatch, ports.ContentReturn) {
 		order = append(order, "attach")
 		ret := rets[attaches]
 		attaches++
@@ -58,7 +59,7 @@ func TestOutputSetAttachesAndDetachesContents(t *testing.T) {
 			t.Fatal("start failed")
 		}
 		got := <-started
-		if got.contents != (<-chan *ports.ContentBatch)(feed) || got.returns != ports.ContentReturn(rets[round]) {
+		if got.contents != (<-chan *domain.ContentBatch)(feed) || got.returns != ports.ContentReturn(rets[round]) {
 			t.Fatalf("round %d: output got another feed", round)
 		}
 		<-events

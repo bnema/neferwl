@@ -8,7 +8,6 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/overlaydraw"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 
 	vk "github.com/bnema/purego-vulkan/vulkan"
 	"golang.org/x/sys/unix"
@@ -35,7 +34,7 @@ type mapping struct {
 
 // shmPixels returns the pool bytes of a buffer, mapping the pool once and
 // again when it grew past the mapping.
-func (r *Renderer) shmPixels(b *ports.SHMBuffer, end int) ([]byte, error) {
+func (r *Renderer) shmPixels(b *domain.SHMBuffer, end int) ([]byte, error) {
 	if m := r.pools[b.Pool]; m != nil {
 		if end <= len(m.data) {
 			m.last = r.frame

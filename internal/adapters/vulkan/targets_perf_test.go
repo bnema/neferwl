@@ -41,7 +41,7 @@ func BenchmarkComposeFullTarget(b *testing.B) {
 				}
 			}()
 			ww := w / 2
-			contents := map[domain.WindowID]ports.SurfaceContent{}
+			contents := map[domain.WindowID]domain.SurfaceContent{}
 			for i, c := range []color.RGBA{{R: 200, A: 255}, {G: 200, A: 255}, {B: 200, A: 255}} {
 				content := solidContent(b, ww, h, c)
 				content.ID, content.Surface, content.Seq, content.Version = domain.WindowID(i+1), uint64(i+1), 1, 1

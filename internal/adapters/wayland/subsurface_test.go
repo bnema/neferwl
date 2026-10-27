@@ -9,7 +9,6 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
 
@@ -545,7 +544,7 @@ func TestSubsurfaceContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := mapped(t, events, 2*time.Second)
-	var got ports.SurfaceContent
+	var got domain.SurfaceContent
 	deadline := waylandDeadline(2 * time.Second)
 	for got.ID == 0 {
 		select {

@@ -8,7 +8,6 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/singlepixelbuffer"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // A single-pixel buffer reaches the renderer as a 1x1 solid color, opaque
@@ -27,7 +26,7 @@ func TestSinglePixelBuffer(t *testing.T) {
 		t.Fatal(err)
 	}
 	w, surf, _ := surfaceMapper(t, c, events)()
-	solid := func(alpha uint32, red uint32) ports.SurfaceContent {
+	solid := func(alpha uint32, red uint32) domain.SurfaceContent {
 		t.Helper()
 		buf := c.AllocateID()
 		registerProtocol(t, c, buf)

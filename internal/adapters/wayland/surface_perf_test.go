@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // TestEffectiveInputEmptyTreeAllocations guards against a heap-allocated
@@ -68,10 +68,10 @@ func TestTiledCommitPublishAllocations(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			root := &surface{server: srv, content: ports.SurfaceContent{Width: 1, Height: 1}, has: true, identity: 1}
+			root := &surface{server: srv, content: domain.SurfaceContent{Width: 1, Height: 1}, has: true, identity: 1}
 			root.xdg = &xdgSurface{window: &window{id: 1, mapped: true}}
 			for i := range count {
-				child := &surface{server: srv, has: true, content: ports.SurfaceContent{Width: 1, Height: 1}, identity: uint64(i + 2)}
+				child := &surface{server: srv, has: true, content: domain.SurfaceContent{Width: 1, Height: 1}, identity: uint64(i + 2)}
 				child.sub.parent = root
 				root.sub.children = append(root.sub.children, child)
 				root.sub.layout = append(root.sub.layout, childLayout{child: child, x: i})

@@ -60,7 +60,7 @@ const fourccXR30 = 'X' | 'R'<<8 | '3'<<16 | '0'<<24
 // the previous ones; n = 0 only drops them (back to the internal image).
 // singlePlane keeps only one-plane modifiers (no DCC metadata planes), for
 // displays that refuse the multi-plane framebuffers of the others.
-func (r *Renderer) ExportTargets(n int, modifiers []uint64, singlePlane bool) ([]ports.DMABuf, error) {
+func (r *Renderer) ExportTargets(n int, modifiers []uint64, singlePlane bool) ([]domain.DMABuf, error) {
 	r.dropTargets()
 	if n > 0 && r.hdrNits > 0 && r.hdr.pipeline == 0 {
 		return nil, fmt.Errorf("HDR transform unavailable: %w", r.hdrError)
@@ -78,7 +78,7 @@ func (r *Renderer) ExportTargets(n int, modifiers []uint64, singlePlane bool) ([
 		}
 		return nil, errors.New("no XRGB2101010 modifier both the device and the display accept")
 	}
-	var out []ports.DMABuf
+	var out []domain.DMABuf
 	for range n {
 		t, buf, err := r.exportTarget(mods)
 		if err != nil {
@@ -103,7 +103,7 @@ func (r *Renderer) ExportTargets(n int, modifiers []uint64, singlePlane bool) ([
 // renderer imports duplicates. Each buffer must have the renderer's size and
 // target format and a modifier from TargetModifiers. A refusal (the driver
 // rejecting the explicit layout) returns an error and leaves no targets.
-func (r *Renderer) ImportTargets(bufs []ports.DMABuf) error {
+func (r *Renderer) ImportTargets(bufs []domain.DMABuf) error {
 	r.dropTargets()
 	if len(bufs) == 0 {
 		return nil
@@ -317,7 +317,7 @@ func exportUsage(format vk.Format, readback bool) vk.ImageUsageFlags {
 }
 
 // exportTarget creates one exported image with a modifier from mods.
-func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
+func (r *Renderer) exportTarget(mods []uint64) (*target, domain.DMABuf, error) {
 	d := r.gpu.dd
 	t := &target{exported: true, layout: vk.ImageLayoutUndefined}
 	format, fourcc := r.targetFormat()
@@ -331,26 +331,26 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 	external := vk.ExternalMemoryImageCreateInfo{SType: vk.StructureTypeExternalMemoryImageCreateInfo, Next: unsafe.Pointer(&list), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: format, Extent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: exportUsage(format, r.hdrReadback), SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
 	if err := checked("vkCreateImage(target)", d.CreateImage(r.gpu.device, &ii, nil, &t.image)); err != nil {
-		return nil, ports.DMABuf{}, err
+		return nil, domain.DMABuf{}, err
 	}
 	var req vk.MemoryRequirements
 	d.GetImageMemoryRequirements(r.gpu.device, t.image, &req)
 	kind, err := r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyDeviceLocalBit)
 	if err != nil {
-		return nil, ports.DMABuf{}, err
+		return nil, domain.DMABuf{}, err
 	}
 	dedicated := vk.MemoryDedicatedAllocateInfo{SType: vk.StructureTypeMemoryDedicatedAllocateInfo, Image: t.image}
 	export := vk.ExportMemoryAllocateInfo{SType: vk.StructureTypeExportMemoryAllocateInfo, Next: unsafe.Pointer(&dedicated), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&export), AllocationSize: req.Size, MemoryTypeIndex: kind}
 	if err := checked("vkAllocateMemory(target)", d.AllocateMemory(r.gpu.device, &alloc, nil, &t.memory)); err != nil {
-		return nil, ports.DMABuf{}, err
+		return nil, domain.DMABuf{}, err
 	}
 	if err := checked("vkBindImageMemory(target)", d.BindImageMemory(r.gpu.device, t.image, t.memory, 0)); err != nil {
-		return nil, ports.DMABuf{}, err
+		return nil, domain.DMABuf{}, err
 	}
 	props := vk.ImageDrmFormatModifierPropertiesEXT{SType: vk.StructureTypeImageDRMFormatModifierPropertiesEXT}
 	if err := checked("vkGetImageDrmFormatModifierPropertiesEXT", d.GetImageDrmFormatModifierPropertiesEXT(r.gpu.device, t.image, &props)); err != nil {
-		return nil, ports.DMABuf{}, err
+		return nil, domain.DMABuf{}, err
 	}
 	planeCount, _ := r.gpu.modifierPlanes(props.DrmFormatModifier)
 	n := min(max(planeCount, 1), maxModifierPlanes)
@@ -361,16 +361,16 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 	}
 	t.view, err = r.imageView(t.image, format)
 	if err != nil {
-		return nil, ports.DMABuf{}, err
+		return nil, domain.DMABuf{}, err
 	}
 	var fd int32
 	get := vk.MemoryGetFdInfoKHR{SType: vk.StructureTypeMemoryGetFDInfoKHR, Memory: t.memory, HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	if err := checked("vkGetMemoryFdKHR", d.GetMemoryFdKHR(r.gpu.device, &get, &fd)); err != nil {
-		return nil, ports.DMABuf{}, err
+		return nil, domain.DMABuf{}, err
 	}
 	// Every plane owns its file: the planes share the one memory object,
 	// so planes 1.. are duplicates of the exported fd.
-	planes := make([]ports.DMABufPlane, 0, n)
+	planes := make([]domain.DMABufPlane, 0, n)
 	closePlanes := func() {
 		for _, p := range planes {
 			_ = p.File.Close()
@@ -378,19 +378,19 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 	}
 	first := os.NewFile(uintptr(fd), "neferwl-target")
 	if first == nil {
-		return nil, ports.DMABuf{}, fmt.Errorf("invalid exported fd %d", fd)
+		return nil, domain.DMABuf{}, fmt.Errorf("invalid exported fd %d", fd)
 	}
-	planes = append(planes, ports.DMABufPlane{File: first, Offset: uint32(layouts[0].Offset), Stride: uint32(layouts[0].RowPitch)})
+	planes = append(planes, domain.DMABufPlane{File: first, Offset: uint32(layouts[0].Offset), Stride: uint32(layouts[0].RowPitch)})
 	for i := uint32(1); i < n; i++ {
 		dup, err := dupFile(first)
 		if err != nil {
 			closePlanes()
-			return nil, ports.DMABuf{}, fmt.Errorf("duplicate exported fd for plane %d: %w", i, err)
+			return nil, domain.DMABuf{}, fmt.Errorf("duplicate exported fd for plane %d: %w", i, err)
 		}
-		planes = append(planes, ports.DMABufPlane{File: os.NewFile(uintptr(dup), "neferwl-target"), Offset: uint32(layouts[i].Offset), Stride: uint32(layouts[i].RowPitch)})
+		planes = append(planes, domain.DMABufPlane{File: os.NewFile(uintptr(dup), "neferwl-target"), Offset: uint32(layouts[i].Offset), Stride: uint32(layouts[i].RowPitch)})
 	}
 	r.log.Debug().Uint64("modifier", props.DrmFormatModifier).Uint32("planes", n).Msg("render target exported")
-	buf := ports.DMABuf{Width: r.width, Height: r.height, Format: fourcc, Modifier: props.DrmFormatModifier, Planes: planes}
+	buf := domain.DMABuf{Width: r.width, Height: r.height, Format: fourcc, Modifier: props.DrmFormatModifier, Planes: planes}
 	ok = true
 	return t, buf, nil
 }
@@ -435,7 +435,7 @@ var (
 // importTarget makes a target of an image allocated outside the renderer.
 // The target is shared with the display like an exported one: frames
 // acquire it from and release it to the foreign queue family.
-func (r *Renderer) importTarget(b *ports.DMABuf) (*target, error) {
+func (r *Renderer) importTarget(b *domain.DMABuf) (*target, error) {
 	d := r.gpu.dd
 	format, fourcc := r.targetFormat()
 	n := len(b.Planes)
@@ -515,7 +515,7 @@ func (r *Renderer) importTarget(b *ports.DMABuf) (*target, error) {
 // sameDMABuf fails unless every plane file is the same dmabuf (same device
 // and inode): the target is imported from the first plane's memory only, so
 // planes in other buffers would read the wrong memory.
-func sameDMABuf(planes []ports.DMABufPlane) error {
+func sameDMABuf(planes []domain.DMABufPlane) error {
 	var first unix.Stat_t
 	for i, p := range planes {
 		fd, err := dupFile(p.File)

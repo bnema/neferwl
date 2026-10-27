@@ -13,7 +13,7 @@ import (
 
 // damagedContent writes px into the content's pool (the client drawing
 // into the same buffer) and records the damage of the new Seq.
-func damagedContent(t *testing.T, f *os.File, base ports.SurfaceContent, seq uint64, px []byte, hist []domain.SeqDamage) ports.SurfaceContent {
+func damagedContent(t *testing.T, f *os.File, base domain.SurfaceContent, seq uint64, px []byte, hist []domain.SeqDamage) domain.SurfaceContent {
 	t.Helper()
 	if _, err := f.WriteAt(px, 0); err != nil {
 		t.Fatal(err)
@@ -70,10 +70,10 @@ func damageMatchesFullRedraw(t *testing.T, tr, out domain.BufferTransform) {
 	scene := ports.Scene{Seq: 5, Transform: out, OutputWidth: 64, OutputHeight: 48, Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: w, H: h}}}}
 	hist := []domain.SeqDamage{{Seq: 1, Full: true}}
 	c := damagedContent(t, f, *base, 1, pixels, hist)
-	step := func(i int, c ports.SurfaceContent) {
+	step := func(i int, c domain.SurfaceContent) {
 		t.Helper()
 		damaged.UseTarget(i % 2)
-		contents := map[domain.WindowID]ports.SurfaceContent{1: c}
+		contents := map[domain.WindowID]domain.SurfaceContent{1: c}
 		if err := render(damaged, scene, contents); err != nil {
 			t.Fatal(err)
 		}
@@ -122,7 +122,7 @@ func TestRendererDamageWindowLeftOutAndBack(t *testing.T) {
 	damaged, full := newR(), newR()
 	c := solidContent(t, 16, 16, color.RGBA{200, 10, 10, 255})
 	c.ID, c.Seq = 1, 1
-	contents := map[domain.WindowID]ports.SurfaceContent{1: c}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: c}
 	with := ports.Scene{Seq: 9, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: 16, H: 16}}}}
 	without := with
 	without.Windows = nil

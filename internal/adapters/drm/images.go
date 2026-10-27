@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -229,7 +230,7 @@ func (o *Output) primaryModifiers(format uint32) []uint64 {
 
 // closeBufs closes every plane file of bufs. The callers own them: the
 // renderer and the framebuffers keep their own references to the memory.
-func closeBufs(bufs []ports.DMABuf) {
+func closeBufs(bufs []domain.DMABuf) {
 	for _, b := range bufs {
 		for _, p := range b.Planes {
 			_ = p.File.Close()
@@ -259,7 +260,7 @@ func (o *Output) exportImages(r ports.Renderer, mods []uint64, singlePlane bool)
 // showBufs makes framebuffers of the output images bufs (already the
 // renderer's targets), clears them and records their layout. The caller
 // closes the plane files and drops the images on error.
-func (o *Output) showBufs(r ports.Renderer, bufs []ports.DMABuf, alloc string) error {
+func (o *Output) showBufs(r ports.Renderer, bufs []domain.DMABuf, alloc string) error {
 	o.planes, o.imageMod = 0, 0
 	for i := range bufs {
 		if n := len(bufs[i].Planes); n == 0 || n > maxFBPlanes {
@@ -322,7 +323,7 @@ func (o *Output) gbmImages(r ports.Renderer, mods []uint64, singlePlane bool) (e
 	if len(usable) == 0 {
 		return errors.New("no modifier both the plane and the renderer accept for GBM images")
 	}
-	var bufs []ports.DMABuf
+	var bufs []domain.DMABuf
 	defer func() {
 		closeBufs(bufs)
 		if err != nil {

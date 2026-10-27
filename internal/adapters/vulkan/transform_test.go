@@ -38,7 +38,7 @@ func TestRendererBufferTransform(t *testing.T) {
 			sw, sh := tr.Size(bw, bh)
 			c.Transform, c.LogicalW, c.LogicalH = tr, sw, sh
 			scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: sw, H: sh}}}}
-			if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: *c}); err != nil {
+			if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: *c}); err != nil {
 				t.Fatal(err)
 			}
 			for y := range sh {

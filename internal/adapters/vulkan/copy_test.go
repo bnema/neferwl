@@ -77,7 +77,7 @@ func TestCopierRoundTrip(t *testing.T) {
 		t.Skip("GPU lacks sync_fd export")
 	}
 	var rs [2]*Renderer
-	var buffers [2][]ports.DMABuf
+	var buffers [2][]domain.DMABuf
 	for i := range rs {
 		renderer, err := g.NewRenderer(32, 16, ports.RendererOptions{})
 		if err != nil {
@@ -165,7 +165,7 @@ func TestCopierRoundTrip(t *testing.T) {
 }
 
 // Check advertised capabilities first; import failures remain fatal once supported.
-func requireCopyImports(t *testing.T, c *Copier, bufs []ports.DMABuf) {
+func requireCopyImports(t *testing.T, c *Copier, bufs []domain.DMABuf) {
 	t.Helper()
 	for _, b := range bufs {
 		format, _, _ := vkFormat(b.Format)

@@ -2,7 +2,7 @@ package drm
 
 import (
 	"github.com/bnema/neferwl/internal/adapters/drm/gbm"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // imageAllocator makes the output images with the display driver's own
@@ -18,7 +18,7 @@ type imageAllocator interface {
 // imageBuffer is one allocated image, kept alive while it is shown.
 type imageBuffer interface {
 	// dmabuf returns the image with fresh descriptors the caller closes.
-	dmabuf() (ports.DMABuf, error)
+	dmabuf() (domain.DMABuf, error)
 	close()
 }
 
@@ -46,5 +46,5 @@ func (a gbmAllocator) close() { a.dev.Close() }
 
 type gbmImage struct{ b *gbm.Buffer }
 
-func (i gbmImage) dmabuf() (ports.DMABuf, error) { return i.b.DMABuf() }
-func (i gbmImage) close()                        { i.b.Close() }
+func (i gbmImage) dmabuf() (domain.DMABuf, error) { return i.b.DMABuf() }
+func (i gbmImage) close()                         { i.b.Close() }

@@ -113,7 +113,7 @@ type windowStats struct {
 }
 
 // commit records a fresh root buffer and its presentation hints.
-func (w *windowStats) commit(now time.Time, c ports.SurfaceContent, explicitSync, tearing bool) {
+func (w *windowStats) commit(now time.Time, c domain.SurfaceContent, explicitSync, tearing bool) {
 	if w.watched == 0 {
 		return
 	}
@@ -125,7 +125,7 @@ func (w *windowStats) commit(now time.Time, c ports.SurfaceContent, explicitSync
 }
 
 // bufferFacts refreshes committed buffer facts without recording a frame time.
-func (w *windowStats) bufferFacts(c ports.SurfaceContent, explicitSync, tearing bool) {
+func (w *windowStats) bufferFacts(c domain.SurfaceContent, explicitSync, tearing bool) {
 	w.facts.Width, w.facts.Height = c.Width, c.Height
 	w.facts.DMABuf = c.DMABuf != nil
 	w.facts.Format, w.facts.Modifier = 0, 0

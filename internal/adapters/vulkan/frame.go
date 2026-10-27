@@ -226,7 +226,7 @@ func (r *Renderer) idle() {
 // Render draws a frame into the current target. done is signalled when
 // the GPU finished it; nil when the device cannot export a sync file,
 // then the frame is finished on return.
-func (r *Renderer) Render(s ports.Scene, contents map[domain.WindowID]ports.SurfaceContent) (done *os.File, err error) {
+func (r *Renderer) Render(s ports.Scene, contents map[domain.WindowID]domain.SurfaceContent) (done *os.File, err error) {
 	// A frame that fails before its submit keeps its number: objects it
 	// touched are freed once a later frame completes (never early).
 	r.frame++

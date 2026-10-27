@@ -334,7 +334,7 @@ func sceneDeltaMatchesFullRedraw(t *testing.T, tc deltaCase, reuse bool) {
 	red.ID, red.Surface, red.Seq, red.Version = 1, 1, 1, 1
 	green := solidContent(t, 8, 8, color.RGBA{G: 255, A: 255})
 	green.ID, green.Surface, green.Seq, green.Version = 2, 2, 1, 1
-	contents := map[domain.WindowID]ports.SurfaceContent{1: red, 2: green}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: red, 2: green}
 	shared := make([]ports.SceneWindow, 2)
 	sharedSeps := make([]ports.Separator, 1)
 	var partial int

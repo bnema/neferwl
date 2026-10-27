@@ -49,7 +49,7 @@ type syncHarness struct {
 	s           *Server
 	c           *wlturbo.Display
 	dev         *mocksyncobjDevice
-	contents    <-chan ports.SurfaceContent
+	contents    <-chan domain.SurfaceContent
 	presented   ports.PresentationSink
 	surf        uint32
 	syncSurf    uint32
@@ -208,7 +208,7 @@ func (h *syncHarness) commit(buf uint32, acquire, release uint64) {
 // content waits for a DMABuf content of the window.
 //
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
-func (h *syncHarness) content(wait time.Duration) (ports.SurfaceContent, bool) {
+func (h *syncHarness) content(wait time.Duration) (domain.SurfaceContent, bool) {
 	deadline := waylandDeadline(wait)
 	for {
 		select {
@@ -217,7 +217,7 @@ func (h *syncHarness) content(wait time.Duration) (ports.SurfaceContent, bool) {
 				return c, true
 			}
 		case <-deadline:
-			return ports.SurfaceContent{}, false
+			return domain.SurfaceContent{}, false
 		}
 	}
 }

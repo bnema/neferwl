@@ -284,23 +284,23 @@ func (_c *MockRenderer_Close_Call) RunAndReturn(run func()) *MockRenderer_Close_
 }
 
 // CursorBuffers provides a mock function for the type MockRenderer
-func (_mock *MockRenderer) CursorBuffers(size int) ([2]ports.DMABuf, error) {
+func (_mock *MockRenderer) CursorBuffers(size int) ([2]domain.DMABuf, error) {
 	ret := _mock.Called(size)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CursorBuffers")
 	}
 
-	var r0 [2]ports.DMABuf
+	var r0 [2]domain.DMABuf
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(int) ([2]ports.DMABuf, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(int) ([2]domain.DMABuf, error)); ok {
 		return returnFunc(size)
 	}
-	if returnFunc, ok := ret.Get(0).(func(int) [2]ports.DMABuf); ok {
+	if returnFunc, ok := ret.Get(0).(func(int) [2]domain.DMABuf); ok {
 		r0 = returnFunc(size)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([2]ports.DMABuf)
+			r0 = ret.Get(0).([2]domain.DMABuf)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(int) error); ok {
@@ -335,12 +335,12 @@ func (_c *MockRenderer_CursorBuffers_Call) Run(run func(size int)) *MockRenderer
 	return _c
 }
 
-func (_c *MockRenderer_CursorBuffers_Call) Return(dMABufs [2]ports.DMABuf, err error) *MockRenderer_CursorBuffers_Call {
+func (_c *MockRenderer_CursorBuffers_Call) Return(dMABufs [2]domain.DMABuf, err error) *MockRenderer_CursorBuffers_Call {
 	_c.Call.Return(dMABufs, err)
 	return _c
 }
 
-func (_c *MockRenderer_CursorBuffers_Call) RunAndReturn(run func(size int) ([2]ports.DMABuf, error)) *MockRenderer_CursorBuffers_Call {
+func (_c *MockRenderer_CursorBuffers_Call) RunAndReturn(run func(size int) ([2]domain.DMABuf, error)) *MockRenderer_CursorBuffers_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -386,23 +386,23 @@ func (_c *MockRenderer_EndCapture_Call) RunAndReturn(run func(captureFrame ports
 }
 
 // ExportTargets provides a mock function for the type MockRenderer
-func (_mock *MockRenderer) ExportTargets(n int, modifiers []uint64, singlePlane bool) ([]ports.DMABuf, error) {
+func (_mock *MockRenderer) ExportTargets(n int, modifiers []uint64, singlePlane bool) ([]domain.DMABuf, error) {
 	ret := _mock.Called(n, modifiers, singlePlane)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ExportTargets")
 	}
 
-	var r0 []ports.DMABuf
+	var r0 []domain.DMABuf
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(int, []uint64, bool) ([]ports.DMABuf, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(int, []uint64, bool) ([]domain.DMABuf, error)); ok {
 		return returnFunc(n, modifiers, singlePlane)
 	}
-	if returnFunc, ok := ret.Get(0).(func(int, []uint64, bool) []ports.DMABuf); ok {
+	if returnFunc, ok := ret.Get(0).(func(int, []uint64, bool) []domain.DMABuf); ok {
 		r0 = returnFunc(n, modifiers, singlePlane)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]ports.DMABuf)
+			r0 = ret.Get(0).([]domain.DMABuf)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(int, []uint64, bool) error); ok {
@@ -449,12 +449,12 @@ func (_c *MockRenderer_ExportTargets_Call) Run(run func(n int, modifiers []uint6
 	return _c
 }
 
-func (_c *MockRenderer_ExportTargets_Call) Return(dMABufs []ports.DMABuf, err error) *MockRenderer_ExportTargets_Call {
+func (_c *MockRenderer_ExportTargets_Call) Return(dMABufs []domain.DMABuf, err error) *MockRenderer_ExportTargets_Call {
 	_c.Call.Return(dMABufs, err)
 	return _c
 }
 
-func (_c *MockRenderer_ExportTargets_Call) RunAndReturn(run func(n int, modifiers []uint64, singlePlane bool) ([]ports.DMABuf, error)) *MockRenderer_ExportTargets_Call {
+func (_c *MockRenderer_ExportTargets_Call) RunAndReturn(run func(n int, modifiers []uint64, singlePlane bool) ([]domain.DMABuf, error)) *MockRenderer_ExportTargets_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -506,7 +506,7 @@ func (_c *MockRenderer_HDRPixels_Call) RunAndReturn(run func() *image.RGBA64) *M
 }
 
 // ImportTargets provides a mock function for the type MockRenderer
-func (_mock *MockRenderer) ImportTargets(bufs []ports.DMABuf) error {
+func (_mock *MockRenderer) ImportTargets(bufs []domain.DMABuf) error {
 	ret := _mock.Called(bufs)
 
 	if len(ret) == 0 {
@@ -514,7 +514,7 @@ func (_mock *MockRenderer) ImportTargets(bufs []ports.DMABuf) error {
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func([]ports.DMABuf) error); ok {
+	if returnFunc, ok := ret.Get(0).(func([]domain.DMABuf) error); ok {
 		r0 = returnFunc(bufs)
 	} else {
 		r0 = ret.Error(0)
@@ -528,16 +528,16 @@ type MockRenderer_ImportTargets_Call struct {
 }
 
 // ImportTargets is a helper method to define mock.On call
-//   - bufs []ports.DMABuf
+//   - bufs []domain.DMABuf
 func (_e *MockRenderer_Expecter) ImportTargets(bufs any) *MockRenderer_ImportTargets_Call {
 	return &MockRenderer_ImportTargets_Call{Call: _e.mock.On("ImportTargets", bufs)}
 }
 
-func (_c *MockRenderer_ImportTargets_Call) Run(run func(bufs []ports.DMABuf)) *MockRenderer_ImportTargets_Call {
+func (_c *MockRenderer_ImportTargets_Call) Run(run func(bufs []domain.DMABuf)) *MockRenderer_ImportTargets_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 []ports.DMABuf
+		var arg0 []domain.DMABuf
 		if args[0] != nil {
-			arg0 = args[0].([]ports.DMABuf)
+			arg0 = args[0].([]domain.DMABuf)
 		}
 		run(
 			arg0,
@@ -551,7 +551,7 @@ func (_c *MockRenderer_ImportTargets_Call) Return(err error) *MockRenderer_Impor
 	return _c
 }
 
-func (_c *MockRenderer_ImportTargets_Call) RunAndReturn(run func(bufs []ports.DMABuf) error) *MockRenderer_ImportTargets_Call {
+func (_c *MockRenderer_ImportTargets_Call) RunAndReturn(run func(bufs []domain.DMABuf) error) *MockRenderer_ImportTargets_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -603,7 +603,7 @@ func (_c *MockRenderer_Pixels_Call) RunAndReturn(run func() *image.RGBA) *MockRe
 }
 
 // Render provides a mock function for the type MockRenderer
-func (_mock *MockRenderer) Render(scene ports.Scene, windowIDToSurfaceContent map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+func (_mock *MockRenderer) Render(scene ports.Scene, windowIDToSurfaceContent map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 	ret := _mock.Called(scene, windowIDToSurfaceContent)
 
 	if len(ret) == 0 {
@@ -612,17 +612,17 @@ func (_mock *MockRenderer) Render(scene ports.Scene, windowIDToSurfaceContent ma
 
 	var r0 *os.File
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error)); ok {
 		return returnFunc(scene, windowIDToSurfaceContent)
 	}
-	if returnFunc, ok := ret.Get(0).(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) *os.File); ok {
+	if returnFunc, ok := ret.Get(0).(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) *os.File); ok {
 		r0 = returnFunc(scene, windowIDToSurfaceContent)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*os.File)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) error); ok {
 		r1 = returnFunc(scene, windowIDToSurfaceContent)
 	} else {
 		r1 = ret.Error(1)
@@ -637,20 +637,20 @@ type MockRenderer_Render_Call struct {
 
 // Render is a helper method to define mock.On call
 //   - scene ports.Scene
-//   - windowIDToSurfaceContent map[domain.WindowID]ports.SurfaceContent
+//   - windowIDToSurfaceContent map[domain.WindowID]domain.SurfaceContent
 func (_e *MockRenderer_Expecter) Render(scene any, windowIDToSurfaceContent any) *MockRenderer_Render_Call {
 	return &MockRenderer_Render_Call{Call: _e.mock.On("Render", scene, windowIDToSurfaceContent)}
 }
 
-func (_c *MockRenderer_Render_Call) Run(run func(scene ports.Scene, windowIDToSurfaceContent map[domain.WindowID]ports.SurfaceContent)) *MockRenderer_Render_Call {
+func (_c *MockRenderer_Render_Call) Run(run func(scene ports.Scene, windowIDToSurfaceContent map[domain.WindowID]domain.SurfaceContent)) *MockRenderer_Render_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 ports.Scene
 		if args[0] != nil {
 			arg0 = args[0].(ports.Scene)
 		}
-		var arg1 map[domain.WindowID]ports.SurfaceContent
+		var arg1 map[domain.WindowID]domain.SurfaceContent
 		if args[1] != nil {
-			arg1 = args[1].(map[domain.WindowID]ports.SurfaceContent)
+			arg1 = args[1].(map[domain.WindowID]domain.SurfaceContent)
 		}
 		run(
 			arg0,
@@ -665,7 +665,7 @@ func (_c *MockRenderer_Render_Call) Return(done *os.File, err error) *MockRender
 	return _c
 }
 
-func (_c *MockRenderer_Render_Call) RunAndReturn(run func(scene ports.Scene, windowIDToSurfaceContent map[domain.WindowID]ports.SurfaceContent) (*os.File, error)) *MockRenderer_Render_Call {
+func (_c *MockRenderer_Render_Call) RunAndReturn(run func(scene ports.Scene, windowIDToSurfaceContent map[domain.WindowID]domain.SurfaceContent) (*os.File, error)) *MockRenderer_Render_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1699,7 +1699,7 @@ func (_c *MockCopier_Copy_Call) RunAndReturn(run func(src int, dst int, acquire 
 }
 
 // ImportSources provides a mock function for the type MockCopier
-func (_mock *MockCopier) ImportSources(bufs []ports.DMABuf) error {
+func (_mock *MockCopier) ImportSources(bufs []domain.DMABuf) error {
 	ret := _mock.Called(bufs)
 
 	if len(ret) == 0 {
@@ -1707,7 +1707,7 @@ func (_mock *MockCopier) ImportSources(bufs []ports.DMABuf) error {
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func([]ports.DMABuf) error); ok {
+	if returnFunc, ok := ret.Get(0).(func([]domain.DMABuf) error); ok {
 		r0 = returnFunc(bufs)
 	} else {
 		r0 = ret.Error(0)
@@ -1721,16 +1721,16 @@ type MockCopier_ImportSources_Call struct {
 }
 
 // ImportSources is a helper method to define mock.On call
-//   - bufs []ports.DMABuf
+//   - bufs []domain.DMABuf
 func (_e *MockCopier_Expecter) ImportSources(bufs any) *MockCopier_ImportSources_Call {
 	return &MockCopier_ImportSources_Call{Call: _e.mock.On("ImportSources", bufs)}
 }
 
-func (_c *MockCopier_ImportSources_Call) Run(run func(bufs []ports.DMABuf)) *MockCopier_ImportSources_Call {
+func (_c *MockCopier_ImportSources_Call) Run(run func(bufs []domain.DMABuf)) *MockCopier_ImportSources_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 []ports.DMABuf
+		var arg0 []domain.DMABuf
 		if args[0] != nil {
-			arg0 = args[0].([]ports.DMABuf)
+			arg0 = args[0].([]domain.DMABuf)
 		}
 		run(
 			arg0,
@@ -1744,13 +1744,13 @@ func (_c *MockCopier_ImportSources_Call) Return(err error) *MockCopier_ImportSou
 	return _c
 }
 
-func (_c *MockCopier_ImportSources_Call) RunAndReturn(run func(bufs []ports.DMABuf) error) *MockCopier_ImportSources_Call {
+func (_c *MockCopier_ImportSources_Call) RunAndReturn(run func(bufs []domain.DMABuf) error) *MockCopier_ImportSources_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // ImportTargets provides a mock function for the type MockCopier
-func (_mock *MockCopier) ImportTargets(bufs []ports.DMABuf) error {
+func (_mock *MockCopier) ImportTargets(bufs []domain.DMABuf) error {
 	ret := _mock.Called(bufs)
 
 	if len(ret) == 0 {
@@ -1758,7 +1758,7 @@ func (_mock *MockCopier) ImportTargets(bufs []ports.DMABuf) error {
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func([]ports.DMABuf) error); ok {
+	if returnFunc, ok := ret.Get(0).(func([]domain.DMABuf) error); ok {
 		r0 = returnFunc(bufs)
 	} else {
 		r0 = ret.Error(0)
@@ -1772,16 +1772,16 @@ type MockCopier_ImportTargets_Call struct {
 }
 
 // ImportTargets is a helper method to define mock.On call
-//   - bufs []ports.DMABuf
+//   - bufs []domain.DMABuf
 func (_e *MockCopier_Expecter) ImportTargets(bufs any) *MockCopier_ImportTargets_Call {
 	return &MockCopier_ImportTargets_Call{Call: _e.mock.On("ImportTargets", bufs)}
 }
 
-func (_c *MockCopier_ImportTargets_Call) Run(run func(bufs []ports.DMABuf)) *MockCopier_ImportTargets_Call {
+func (_c *MockCopier_ImportTargets_Call) Run(run func(bufs []domain.DMABuf)) *MockCopier_ImportTargets_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 []ports.DMABuf
+		var arg0 []domain.DMABuf
 		if args[0] != nil {
-			arg0 = args[0].([]ports.DMABuf)
+			arg0 = args[0].([]domain.DMABuf)
 		}
 		run(
 			arg0,
@@ -1795,7 +1795,7 @@ func (_c *MockCopier_ImportTargets_Call) Return(err error) *MockCopier_ImportTar
 	return _c
 }
 
-func (_c *MockCopier_ImportTargets_Call) RunAndReturn(run func(bufs []ports.DMABuf) error) *MockCopier_ImportTargets_Call {
+func (_c *MockCopier_ImportTargets_Call) RunAndReturn(run func(bufs []domain.DMABuf) error) *MockCopier_ImportTargets_Call {
 	_c.Call.Return(run)
 	return _c
 }

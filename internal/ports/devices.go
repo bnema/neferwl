@@ -47,7 +47,7 @@ type Renderer interface {
 	SetHDR(sdrNits float64)
 	// Render draws the scene. done is a sync file signalled when the GPU
 	// finished the frame (nil: already finished); the caller closes it.
-	Render(Scene, map[domain.WindowID]SurfaceContent) (done *os.File, err error)
+	Render(Scene, map[domain.WindowID]domain.SurfaceContent) (done *os.File, err error)
 	// ExportTargets allocates n images of the renderer's size that the
 	// display can scan out, with one of the given XRGB8888 (SDR) or
 	// XRGB2101010 (HDR) modifiers (none: any the device exports),
@@ -55,7 +55,7 @@ type Renderer interface {
 	// planes (DCC metadata), each plane owning its file. singlePlane
 	// restricts the choice to one-plane modifiers.
 	// n = 0 drops the targets.
-	ExportTargets(n int, modifiers []uint64, singlePlane bool) ([]DMABuf, error)
+	ExportTargets(n int, modifiers []uint64, singlePlane bool) ([]domain.DMABuf, error)
 	// TargetModifiers lists the modifiers an image allocated outside the
 	// renderer (by the display's allocator) can have to be imported as a
 	// target: those the device renders into and imports for the XRGB8888
@@ -71,12 +71,12 @@ type Renderer interface {
 	// refused. The caller keeps its files and must keep the memory alive
 	// while the targets are in use. An error leaves the renderer without
 	// targets.
-	ImportTargets(bufs []DMABuf) error
+	ImportTargets(bufs []domain.DMABuf) error
 	// UseTarget selects the exported image the next Render draws into.
 	UseTarget(i int)
 	// CursorBuffers allocates two linear ARGB8888 images of size×size the
 	// display can show on its cursor plane, and returns them as dmabufs.
-	CursorBuffers(size int) ([2]DMABuf, error)
+	CursorBuffers(size int) ([2]domain.DMABuf, error)
 	// WriteCursor fills cursor image i with premultiplied ARGB8888 pixels
 	// (w×h, w*4 per row), cropped to the image and cleared around it.
 	WriteCursor(i int, pixels []byte, w, h int) error
@@ -148,8 +148,8 @@ type RenderDeviceOpener interface {
 // Copier copies a rendered image from another GPU into a scanout buffer, on
 // the display GPU. One goroutine owns it.
 type Copier interface {
-	ImportSources(bufs []DMABuf) error
-	ImportTargets(bufs []DMABuf) error
+	ImportSources(bufs []domain.DMABuf) error
+	ImportTargets(bufs []domain.DMABuf) error
 	SourceModifiers(formats []domain.DMABufFormat) []domain.DMABufFormat // what it can sample
 	Copy(src, dst int, acquire *os.File) (done *os.File, err error)
 	Close()

@@ -110,7 +110,7 @@ func TestCursorRefusedDoesNotBlameScanoutBuffer(t *testing.T) {
 	o.cursor.image = true
 	o.cursor.Move(5, 5)
 	o.clientFBs[9] = &clientFB{fbID: 80}
-	direct, err := o.commitScanout(80, ports.SurfaceContent{DMABuf: &ports.DMABuf{ID: 9}}, pendingFrame{})
+	direct, err := o.commitScanout(80, domain.SurfaceContent{DMABuf: &domain.DMABuf{ID: 9}}, pendingFrame{})
 	if err != nil || !direct || o.clientFBs[9].failed != "" {
 		t.Fatalf("direct=%v err=%v failed=%q", direct, err, o.clientFBs[9].failed)
 	}
@@ -126,30 +126,30 @@ func TestShowImagesTestsBeforeModeset(t *testing.T) {
 	o, k, commits := testOutput(t, unix.EINVAL, unix.EINVAL)
 	o.cursor = nil
 	r := portsmocks.NewMockRenderer(t)
-	buf := func() ports.DMABuf {
-		var b ports.DMABuf
+	buf := func() domain.DMABuf {
+		var b domain.DMABuf
 		for range 2 {
 			f, w, _ := os.Pipe()
 			w.Close()
-			b.Planes = append(b.Planes, ports.DMABufPlane{File: f})
+			b.Planes = append(b.Planes, domain.DMABufPlane{File: f})
 		}
 		b.Modifier = tiledMod
 		return b
 	}
-	linear := func() ports.DMABuf {
+	linear := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
 		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
-	tiled1 := func() ports.DMABuf {
+	tiled1 := func() domain.DMABuf {
 		b := linear()
 		b.Modifier = tiledMod
 		return b
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
-	r.EXPECT().ExportTargets(2, []uint64(nil), true).Return([]ports.DMABuf{tiled1(), tiled1()}, nil).Once()
-	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]ports.DMABuf{linear(), linear()}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64(nil), true).Return([]domain.DMABuf{tiled1(), tiled1()}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]domain.DMABuf{linear(), linear()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
@@ -180,20 +180,20 @@ func TestShowImagesRetriesSinglePlaneBeforeLinear(t *testing.T) {
 	o, k, _ := testOutput(t, unix.EINVAL)
 	o.cursor = nil
 	var files []*os.File
-	buf := func(planes int) ports.DMABuf {
-		b := ports.DMABuf{Modifier: tiledMod}
+	buf := func(planes int) domain.DMABuf {
+		b := domain.DMABuf{Modifier: tiledMod}
 		for range planes {
 			f, w, _ := os.Pipe()
 			w.Close()
 			files = append(files, f)
-			b.Planes = append(b.Planes, ports.DMABufPlane{File: f})
+			b.Planes = append(b.Planes, domain.DMABufPlane{File: f})
 		}
 		return b
 	}
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]ports.DMABuf{buf(3), buf(3)}, nil).Once()
-	r.EXPECT().ExportTargets(2, []uint64(nil), true).Return([]ports.DMABuf{buf(1), buf(1)}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]domain.DMABuf{buf(3), buf(3)}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64(nil), true).Return([]domain.DMABuf{buf(1), buf(1)}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
@@ -229,14 +229,14 @@ func TestShowImagesOffersThePrimaryPlanesXRGBModifiers(t *testing.T) {
 		{Format: fourccXRGB, Modifier: dccListed}, {Format: fourccXR30, Modifier: other},
 		{Format: fourccXRGB, Modifier: tiled}, {Format: fourccXRGB, Modifier: 0},
 	}
-	buf := func() ports.DMABuf {
+	buf := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
 		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, []uint64{dccListed, tiled, 0}, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64{dccListed, tiled, 0}, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
@@ -258,16 +258,16 @@ func TestShowImagesNoCommonModifierFallsBackWithThePlanesList(t *testing.T) {
 	o, k, _ := testOutput(t)
 	o.cursor = nil
 	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB, Modifier: listed}, {Format: fourccXRGB, Modifier: 0}}
-	buf := func() ports.DMABuf {
+	buf := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
 		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 	none := errors.New("no XRGB8888 modifier both the device and the display accept")
 	r.EXPECT().ExportTargets(2, []uint64{listed, 0}, false).Return(nil, none).Once()
-	r.EXPECT().ExportTargets(2, []uint64{listed, 0}, true).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64{listed, 0}, true).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
@@ -293,8 +293,8 @@ func TestShowImagesLinearOnlyPlaneExportsLinearFirst(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 	// No ExportTargets(..., true) and no second call: the mock fails on them.
-	r.EXPECT().ExportTargets(2, []uint64{0}, false).RunAndReturn(func(int, []uint64, bool) ([]ports.DMABuf, error) {
-		return []ports.DMABuf{linearBuf(), linearBuf()}, nil
+	r.EXPECT().ExportTargets(2, []uint64{0}, false).RunAndReturn(func(int, []uint64, bool) ([]domain.DMABuf, error) {
+		return []domain.DMABuf{linearBuf(), linearBuf()}, nil
 	}).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
@@ -317,8 +317,8 @@ func TestShowImagesRefusedLinearImagesAreNotExportedAgain(t *testing.T) {
 	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, []uint64{0}, false).RunAndReturn(func(int, []uint64, bool) ([]ports.DMABuf, error) {
-		return []ports.DMABuf{linearBuf(), linearBuf()}, nil
+	r.EXPECT().ExportTargets(2, []uint64{0}, false).RunAndReturn(func(int, []uint64, bool) ([]domain.DMABuf, error) {
+		return []domain.DMABuf{linearBuf(), linearBuf()}, nil
 	}).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
@@ -336,10 +336,10 @@ func TestShowImagesRefusedLinearImagesAreNotExportedAgain(t *testing.T) {
 }
 
 // linearBuf is a one-plane linear dmabuf over a closed pipe.
-func linearBuf() ports.DMABuf {
+func linearBuf() domain.DMABuf {
 	f, w, _ := os.Pipe()
 	w.Close()
-	return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+	return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 }
 
 // Refused driver images that already had one plane are not retried as
@@ -347,20 +347,20 @@ func linearBuf() ports.DMABuf {
 func TestShowImagesSkipsSinglePlaneWhenDriverImagesHadOnePlane(t *testing.T) {
 	o, k, commits := testOutput(t, unix.EINVAL)
 	o.cursor = nil
-	buf := func() ports.DMABuf {
+	buf := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
 		w.Close()
-		return ports.DMABuf{Modifier: tiledMod, Planes: []ports.DMABufPlane{{File: f}}}
+		return domain.DMABuf{Modifier: tiledMod, Planes: []domain.DMABufPlane{{File: f}}}
 	}
-	linear := func() ports.DMABuf {
+	linear := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
 		w.Close()
-		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
-	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]ports.DMABuf{linear(), linear()}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]domain.DMABuf{linear(), linear()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
@@ -382,13 +382,13 @@ func TestEnableAfterStartAwayModesetsOnce(t *testing.T) {
 		o, k, commits, commitMu := testOutputMu(t)
 		o.cursor, o.tearing, o.fbs = nil, false, [2]uint32{}
 		r := portsmocks.NewMockRenderer(t)
-		buf := func() ports.DMABuf {
+		buf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
 			w.Close()
-			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 		r.EXPECT().UseTarget(mock.Anything).Return()
 		r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 		r.EXPECT().Close().Return().Once()
@@ -484,15 +484,15 @@ func TestRunReportsSeenAfterCursorCommit(t *testing.T) {
 		flips := make(chan flipEvent, 1)
 		o.flipped = flips
 		r := portsmocks.NewMockRenderer(t)
-		buf := func() ports.DMABuf {
+		buf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
 			w.Close()
-			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
-		r.EXPECT().CursorBuffers(64).Return([2]ports.DMABuf{buf(), buf()}, nil).Once()
+		r.EXPECT().CursorBuffers(64).Return([2]domain.DMABuf{buf(), buf()}, nil).Once()
 		r.EXPECT().WriteCursor(mock.Anything, mock.Anything, 1, 1).Return(nil)
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 		r.EXPECT().UseTarget(mock.Anything).Return()
 		r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 		r.EXPECT().Close().Return().Once()
@@ -534,7 +534,7 @@ func TestRunReportsSeenAfterCursorCommit(t *testing.T) {
 		var cur commitRec
 		waitFor(t, func() bool { var ok bool; cur, ok = last(userState); return ok })
 		// A window this output does not show commits while the cursor flies.
-		contents.send(ports.SurfaceContent{ID: 7, Seq: 2, SHM: &ports.SHMBuffer{}})
+		contents.send(domain.SurfaceContent{ID: 7, Seq: 2, SHM: &domain.SHMBuffer{}})
 		synctest.Wait()
 		flips <- eventOf(cur)
 		select {
@@ -583,15 +583,15 @@ func TestRunClosesFrameFences(t *testing.T) {
 		flips := make(chan flipEvent, 1)
 		o.flipped = flips
 		r := portsmocks.NewMockRenderer(t)
-		buf := func() ports.DMABuf {
+		buf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
 			w.Close()
-			return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 		r.EXPECT().UseTarget(mock.Anything).Return()
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			f, w, _ := os.Pipe()
 			_, _ = w.Write([]byte{1})
 			w.Close()

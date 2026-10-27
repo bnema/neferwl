@@ -7,7 +7,6 @@ import (
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 
 	vk "github.com/bnema/purego-vulkan/vulkan"
 	"golang.org/x/sys/unix"
@@ -210,7 +209,7 @@ type imported struct {
 const importTTL = 120
 
 // importDMABuf returns the image of a client buffer, importing it once.
-func (r *Renderer) importDMABuf(b *ports.DMABuf) (*imported, error) {
+func (r *Renderer) importDMABuf(b *domain.DMABuf) (*imported, error) {
 	if im := r.imports[b.ID]; im != nil {
 		im.last = r.frame
 		return im, nil
