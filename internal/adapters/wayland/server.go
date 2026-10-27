@@ -84,7 +84,7 @@ type Channels struct {
 	// never block the backend; standalone tests may use smaller channels.
 	Captures chan<- domain.CaptureRequest
 	Captured <-chan domain.CaptureDone
-	// CastCommands carries the screencast adapter's commands (ports.CastCommand);
+	// CastCommands carries the screencast adapter's commands (domain.CastCommand);
 	// they are applied in order on the display goroutine. Nil serves no casts.
 	CastCommands <-chan domain.CastCommand
 	// OutputFormats are the outputs' direct scanout formats, offered in
@@ -205,7 +205,7 @@ type Server struct {
 	// frameFire is dueFrames' result slice, reused across ticks.
 	frameFire []string
 	// held buffers wait until no output reads them (release.go); reports
-	// are the outputs' latest ports.OutputPresented.
+	// are the outputs' latest domain.OutputPresented.
 	held []heldBuffer
 	// heldLive is releaseHeld's scratch (display goroutine only).
 	heldLive []domain.OutputPresented

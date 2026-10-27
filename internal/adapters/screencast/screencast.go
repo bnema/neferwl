@@ -4,7 +4,7 @@
 // org.gnome.Shell.Introspect, org.gnome.Shell.Screenshot) so that
 // xdg-desktop-portal-gnome can offer monitor and window sharing and
 // screenshots. A cast is a PipeWire Video/Source node whose frames the
-// wayland server renders into the node's buffers (ports.CastCommand), and a
+// wayland server renders into the node's buffers (domain.CastCommand), and a
 // screenshot is taken by running nefercap.
 //
 // One owner goroutine, locked to its OS thread, owns all state: the D-Bus

@@ -13,12 +13,12 @@ import (
 )
 
 // Screencast. The screencast adapter (a D-Bus service that feeds PipeWire
-// streams) drives casts through ports.CastCommand on Channels.CastCommands
+// streams) drives casts through domain.CastCommand on Channels.CastCommands
 // and hears back through Options.Casts (ports.CastSink). A cast is a capture
 // target registered with core like an ext-image-copy-capture session
 // (ports.CaptureSessionOpen), so the capture indicator stays on while it
 // lives, but its frames are written straight into the PipeWire buffer the
-// adapter lends (ports.CaptureRequest.Mapped) and it has no wayland client:
+// adapter lends (domain.CaptureRequest.Mapped) and it has no wayland client:
 // the adapter checked its caller, so casts bypass mayCapture, not protected().
 //
 // Everything here runs on the display goroutine, which owns the casts. The

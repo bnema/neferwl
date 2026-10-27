@@ -18,7 +18,7 @@ import (
 // any, the global is not advertised and clients use wl_shm. Surface
 // feedback also offers, first, a scanout tranche while the surface's
 // window is fullscreen on an output that reported scanout formats
-// (ports.OutputFormats): a buffer allocated from it can be flipped to the
+// (domain.OutputFormats): a buffer allocated from it can be flipped to the
 // display with no composition. From v6 the renderer tranche carries the
 // sampling flag, the format table is sent once per feedback object (it never
 // changes; wayland-protocols main lets compositors skip an unchanged

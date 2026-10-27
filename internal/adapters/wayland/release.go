@@ -11,7 +11,7 @@ import (
 // samples them when it draws, and an output scanning out a client buffer
 // (ADR 006) shows it until the next flip. A replaced wl_buffer therefore
 // goes back to the client (release) only when the output showing its
-// window reports (ports.OutputPresented) that it has a later content of
+// window reports (domain.OutputPresented) that it has a later content of
 // that window and neither shows nor queues the buffer. Outputs keep only
 // the latest content of a window, so they never draw an older buffer
 // again. heldTimeout guards against an output that stopped reporting
