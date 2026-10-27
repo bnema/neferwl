@@ -69,15 +69,15 @@ func (w *Lanes) Snapshot() View {
 	return View{Columns: w.Columns, Focus: w.Focus, View: w.View, MaxColumns: w.MaxColumns, Usable: w.Usable, Output: w.Output, Gap: w.Gap(), Fullscreen: w.Fullscreen, State: w.state(), Layout: w.Engine()}
 }
 
-// LaneOf is the lane of column i in the overview: its band, or the only
+// laneOf is the lane of column i in the overview: its band, or the only
 // lane of a layout that does not wrap.
-func (w *View) LaneOf(i int) int {
+func (w *View) laneOf(i int) int {
 	return w.Layout.LaneOf(*w, i)
 }
 
-// LaneBounds is the range of columns of a lane, first > last when the lane
+// laneBounds is the range of columns of a lane, first > last when the lane
 // does not exist. A layout that does not wrap has the whole row as lane 0.
-func (w *View) LaneBounds(lane int) (first, last int) {
+func (w *View) laneBounds(lane int) (first, last int) {
 	return w.Layout.LaneBounds(*w, lane)
 }
 
@@ -88,8 +88,8 @@ func (w *Lanes) LeavesLane(i int) bool {
 	return i < 0 || i >= len(w.Columns) || w.LaneOf(i) != w.LaneOf(w.Focus)
 }
 
-// LaneNeighbor is the closest column to the focus in the lane d lanes away,
+// laneNeighbor is the closest column to the focus in the lane d lanes away,
 // the focus's offset in its lane kept; -1 past the first or last lane.
-func (w *View) LaneNeighbor(d int) int {
+func (w *View) laneNeighbor(d int) int {
 	return w.Layout.LaneNeighbor(*w, d)
 }

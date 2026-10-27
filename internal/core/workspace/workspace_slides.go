@@ -61,6 +61,10 @@ func (w *Workspace) LandStash(m motion.Motion) { w.stashView.Motion = m }
 // StopColumns settles the drawn columns at the workspace's view.
 func (w *Workspace) StopColumns() { w.view.Stop() }
 
+// ResetView scrolls the columns back to view 0, leaving any running slide
+// alone; pair it with StopColumns to settle the drawn columns there.
+func (w *Workspace) ResetView() { w.View = 0 }
+
 // StopStash settles the drawn stash at the selected window.
 func (w *Workspace) StopStash() { w.stashView.Stop() }
 

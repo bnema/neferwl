@@ -122,7 +122,7 @@ func (Base) ScrollTarget(v View) int {
 	vf := v.WithFacts()
 	left := vf.ColumnX(w.Focus) - w.View
 	width := vf.Layout.ColumnWidth(vf, w.Focus, false)
-	if w.FullscreenColumn(w.Focus) {
+	if w.fullscreenColumn(w.Focus) {
 		w.View += left - w.Output.X
 		return w.View
 	}

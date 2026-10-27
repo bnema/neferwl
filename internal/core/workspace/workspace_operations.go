@@ -340,6 +340,17 @@ func Drop(src, w *Workspace, id WindowID, t DropSpot) {
 	}
 }
 
+// FocusRow focuses window row of column col, as a click on it does.
+func (w *Workspace) FocusRow(col, row int) { w.Columns[col].Focus = row }
+
+// RestoreFloat puts f back in the place of the float with the same ID. It
+// does nothing when that float is gone.
+func (w *Workspace) RestoreFloat(f Float) {
+	if i := w.floatIndex(f.ID); i >= 0 {
+		w.Floats[i] = f
+	}
+}
+
 // OverviewRow supplies the monitor's provisional selection for one model row.
 type OverviewRow struct {
 	// Axis and Slot place the row in output-local coordinates.
@@ -347,18 +358,23 @@ type OverviewRow struct {
 	Slot Rect
 	// Shown, Current and Dim describe row visibility and focus presentation.
 	Shown, Current, Dim bool
+	// Head and Items are the stack's first item and its item count up to 2,
+	// as StackHead returns them. The caller reads them once per frame; they
+	// matter only for a Shown row.
+	Head  StackItem
+	Items int
 	// Front is the monitor's provisional front stack item.
 	Front StackItem
 	// HiddenColumn and Card are provisional column and stash selections.
 	HiddenColumn, Card int
 }
 
-// EnterOverview focuses the cover and returns an initially selected stash card.
-func (w *Workspace) EnterOverview(front StackItem) int {
+// EnterOverview focuses the cover and returns an initially selected stash
+// card, or -1. No provisional front is chosen yet, so the stack's first item
+// decides whether the columns take the focus back.
+func (w *Workspace) EnterOverview() int {
 	w.FocusCover()
-	if front == (StackItem{}) {
-		front, _ = w.StackHead()
-	}
+	front, _ := w.StackHead()
 	if w.floatFocus && len(w.Columns) > 0 && (len(w.Stack()) < 2 || front.Kind == StackColumns) {
 		w.floatFocus = false
 	}
@@ -405,12 +421,11 @@ func (w *Workspace) AppendOverviewRow(dst []Placement, r OverviewRow) ([]Placeme
 	if r.Shown {
 		slot := r.Slot
 		slot.H -= w.pileBand(r.Axis)
-		first, n := w.StackHead()
 		var tiles []Placement
-		if n == 0 {
+		if r.Items == 0 {
 			tiles = w.previewRow(r.Axis, slot, r.Dim, r.Card < 0)
-		} else if n == 1 {
-			tiles = w.previewItem(first, r.HiddenColumn, r.Axis, slot, r.Dim, r.Card < 0)
+		} else if r.Items == 1 {
+			tiles = w.previewItem(r.Head, r.HiddenColumn, r.Axis, slot, r.Dim, r.Card < 0)
 		} else {
 			tiles = w.stackRow(r.Front, r.Current, r.HiddenColumn, r.Axis, slot, r.Dim, r.Card < 0)
 		}

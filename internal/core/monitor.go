@@ -565,7 +565,7 @@ func (m *Monitor) applyNamed() {
 		// scrolls back to the focus along the new one.
 		if content, _ := w.Engine().Axes(); content != axis {
 			w.StopColumns()
-			w.View = 0
+			w.ResetView()
 		}
 		// One call with the effective value: a passing smaller one would
 		// split cascade bands for good.

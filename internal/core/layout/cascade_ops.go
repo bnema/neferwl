@@ -6,7 +6,7 @@ import "slices"
 func (w *Lanes) markBands() {
 	n := 0
 	for i := range w.Columns {
-		s := w.StartsBand(i, n)
+		s := w.startsBand(i, n)
 		w.SetBandStart(i, s)
 		if s {
 			n = 0
@@ -92,7 +92,7 @@ func (w Edit) shiftBand(lo, hi, dir, at int) bool {
 	if w.Band(hi) != b {
 		return false
 	}
-	first, last := w.BandBounds(b)
+	first, last := w.bandBounds(b)
 	if lo == first && hi == last && (b+dir < 0 || b+dir > w.Band(len(w.Columns)-1)) {
 		return false // Alone at the outer band: nothing to cross.
 	}
@@ -125,7 +125,7 @@ func columnIDs(cols []Column) [][]WindowID {
 // band below (sendBand), and the column remembers them for restoreBand.
 func (w Edit) isolateBand() {
 	b := w.Band(w.Focus)
-	first, last := w.BandBounds(b)
+	first, last := w.bandBounds(b)
 	if first == last {
 		return
 	}
@@ -163,7 +163,7 @@ func (w *Lanes) fullscreenBand(id WindowID) bool {
 		return false
 	}
 	b := w.Band(i)
-	first, last := w.BandBounds(b)
+	first, last := w.bandBounds(b)
 	if len(w.Columns[i].Windows) == 1 && first == last {
 		return false
 	}
@@ -206,7 +206,7 @@ func (w *Lanes) fullscreenBand(id WindowID) bool {
 // rightmost goes to the band below; from the last column, the leftmost
 // goes to the band above, at its right end. The column remembers it.
 func (w Edit) pushNeighbor() {
-	first, last := w.BandBounds(w.Band(w.Focus))
+	first, last := w.bandBounds(w.Band(w.Focus))
 	if first == last {
 		return
 	}

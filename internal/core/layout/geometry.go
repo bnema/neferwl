@@ -11,7 +11,7 @@ func scrollSnapPoints(v View, dst []float64) []float64 {
 	g := w.gap()
 	minX, maxX := w.Usable.X+g, w.Usable.X+w.Usable.W-g
 	last := len(w.Columns) - 1
-	xs, widths := w.ColumnEdges()
+	xs, widths := w.columnEdges()
 	lo := xs[0] - minX
 	hi := max(xs[last]+widths[last]-maxX, lo)
 	views := make([]int, 0, 2*len(w.Columns))
@@ -64,7 +64,7 @@ func scrollSnapFocus(v View, view int, forward bool) (focus int) {
 
 	g := w.gap()
 	minX, maxX := w.Usable.X+g, w.Usable.X+w.Usable.W-g
-	xs, widths := w.ColumnEdges()
+	xs, widths := w.columnEdges()
 	full := func(i int) bool {
 		x := xs[i] - view
 		return x >= minX && x+widths[i] <= maxX

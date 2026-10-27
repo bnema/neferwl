@@ -47,22 +47,22 @@ func (w *View) specialWidth(i int, ignoreFullWidth bool) (int, bool) {
 	if w.Columns[i].FullWidth && !ignoreFullWidth {
 		return max(w.Usable.W-2*w.gap(), 0), true
 	}
-	if w.FullscreenColumn(i) {
+	if w.fullscreenColumn(i) {
 		return w.Output.W, true
 	}
 	return 0, false
 }
 
-// LaneRow reports whether the columns share one row of cells: fixed
+// laneRow reports whether the columns share one row of cells: fixed
 // overflow up to MaxColumns of them. Past that the spiral applies and
 // cells are ignored.
-func (w *View) LaneRow() bool {
+func (w *View) laneRow() bool {
 	return w.Layout.LaneRow(*w)
 }
 
-// InSpiral reports whether the spiral applies: more columns than the row
+// inSpiral reports whether the spiral applies: more columns than the row
 // holds, in a layout that subdivides its last slot.
-func (w *View) InSpiral() bool { return w.Layout.Spiral() && !w.LaneRow() }
+func (w *View) inSpiral() bool { return w.Layout.Spiral() && !w.laneRow() }
 
 // ScrollWidth is the width of column i when it is sized on its own: auto
 // columns share the usable width as the visible ones would, the others take
@@ -84,10 +84,10 @@ func (w *View) ScrollWidth(i int, f WidthFacts) int {
 	return max(c*int(f.slot)+(c-1)*w.gap(), 0)
 }
 
-// ColumnEdges returns the x and width of every column in one pass, the
+// columnEdges returns the x and width of every column in one pass, the
 // prefix sums columnX(i) and columnWidth(i) would each recompute in O(i).
 // Both slices share one backing array. Widths come from the layout.
-func (w *View) ColumnEdges() (xs, widths []int) {
+func (w *View) columnEdges() (xs, widths []int) {
 	n := len(w.Columns)
 	buf := make([]int, 2*n)
 	xs, widths = buf[:n:n], buf[n:]

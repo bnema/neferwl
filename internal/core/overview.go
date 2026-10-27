@@ -104,7 +104,7 @@ func (m *Monitor) selectRow() {
 	m.ov.selected, m.ov.selectedAt = 0, -1
 	w := m.Current()
 	// A fullscreen window has the focus: its card is in front.
-	if at := w.EnterOverview(StackItem{}); at >= 0 {
+	if at := w.EnterOverview(); at >= 0 {
 		m.selectCard(w, at)
 	}
 }
@@ -613,7 +613,7 @@ func (m *Monitor) OverviewPick(id WindowID) {
 			// column records it in the maximize history.
 			for j, v := range w.Columns[i].Windows {
 				if v == id {
-					w.Columns[i].Focus = j
+					w.FocusRow(i, j)
 					break
 				}
 			}
@@ -724,7 +724,8 @@ func (m *Monitor) overviewLayout(result []Placement) []Placement {
 		r := OverviewRow{Axis: axis, Slot: slot, Shown: shown, Current: w == cur, Dim: w != cur, Card: -1, HiddenColumn: -1}
 		if shown {
 			r.Card = m.cardAt(w)
-			_, n := w.StackHead()
+			r.Head, r.Items = w.StackHead()
+			n := r.Items
 			if n > 1 && r.Current {
 				r.Front = m.stackFront(w)
 			}

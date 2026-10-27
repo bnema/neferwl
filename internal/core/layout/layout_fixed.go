@@ -96,7 +96,7 @@ func (fixedLayout) PreviewTiles(v View, dst []Placement, rowBuf []Rect) ([]Place
 	rowBuf = rects[len(rects):cap(rects)]
 	var sel Rect
 	for i, c := range v.Columns {
-		if w.HiddenByMaximized(i) {
+		if w.hiddenByMaximized(i) {
 			for _, id := range c.Windows {
 				dst = append(dst, Placement{ID: id, Hidden: true})
 			}

@@ -12,10 +12,10 @@ func (w *Lanes) Maximize(i int) {
 	}
 }
 
-// HiddenByMaximized reports whether the maximized focused column hides
+// hiddenByMaximized reports whether the maximized focused column hides
 // column i on screen: in fixed overflow it hides the rest of the row. A
 // maximized cascade column has its band to itself, so it hides nothing.
-func (w *View) HiddenByMaximized(i int) bool {
+func (w *View) hiddenByMaximized(i int) bool {
 	return w.Layout.MaximizeHides() && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth && i != w.Focus
 }
 

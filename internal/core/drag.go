@@ -227,9 +227,7 @@ func (c *Core) cancelDrag() {
 	d := c.drag
 	if d.float {
 		if _, w := c.screenOf(d.id); w != nil {
-			if i := slices.IndexFunc(w.Floats, func(f Float) bool { return f.ID == d.id }); i >= 0 {
-				w.Floats[i] = d.from
-			}
+			w.RestoreFloat(d.from)
 		}
 	}
 	c.abortDrag()

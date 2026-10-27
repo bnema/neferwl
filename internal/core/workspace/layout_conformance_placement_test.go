@@ -30,7 +30,9 @@ func TestLayoutPlacementConformance(t *testing.T) {
 								}
 								keys[c.Key] = true
 							}
-
+							if n, ok := w.BandStartCount(); ok && n != len(w.Columns) {
+								t.Fatalf("boundaries %d, columns %d", n, len(w.Columns))
+							}
 						}
 						check()
 						for focus := 0; focus < max(n, 1); focus++ {

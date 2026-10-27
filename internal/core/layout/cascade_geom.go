@@ -11,7 +11,7 @@ func (w *View) cascadeBands() (n, spacing int) {
 // (the whole row in fixed overflow) share the usable width by their cells,
 // auto columns sharing what the others leave, so a lone column fills it.
 func (w *View) cellWidth(i int) int {
-	first, last := w.LaneBounds(w.LaneOf(i))
+	first, last := w.laneBounds(w.laneOf(i))
 	S, u, sum := w.laneStats(first, last)
 	return w.laneWidth(i, first, last, S, u, sum, w.validSpans(first, last))
 }

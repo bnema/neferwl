@@ -76,7 +76,7 @@ func (cascadeLayout) SnapFocus(v View, view int, forward bool) int {
 		return -1
 	}
 	b := min(max(view/max(w.Usable.H, 1), 0), w.band(len(w.Columns)-1))
-	return w.LaneNeighbor(b - w.band(w.Focus))
+	return w.laneNeighbor(b - w.band(w.Focus))
 }
 
 // LaneOf returns the lane containing a column.
@@ -190,7 +190,7 @@ func (cascadeLayout) MoveLane(w Edit, dir int) bool {
 	if len(w.Columns) == 0 {
 		return false
 	}
-	first, _ := w.BandBounds(w.Band(w.Focus))
+	first, _ := w.bandBounds(w.Band(w.Focus))
 	return w.shiftBand(w.Focus, w.Focus, dir, w.Focus-first)
 }
 
@@ -235,6 +235,18 @@ func (w *Lanes) cascadeState() *cascadeState {
 func (w *View) bandStart(i int) bool {
 	s, ok := w.State.(*cascadeState)
 	return ok && i >= 0 && i < len(s.bandStart) && s.bandStart[i]
+}
+
+// BandStartCount reports how many band boundaries the cascade state stores,
+// and false when the workspace holds no cascade state. It is a read-only
+// diagnostic for tests of the invariant that one boundary exists per column;
+// it never builds the state.
+func (w *Lanes) BandStartCount() (n int, ok bool) {
+	s, ok := w.lstate.(*cascadeState)
+	if !ok {
+		return 0, false
+	}
+	return len(s.bandStart), true
 }
 
 // SetBandStart sets an explicit cascade boundary for column i. Other layouts

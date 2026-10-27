@@ -57,7 +57,7 @@ func shrinkCells(w *Lanes) {
 // focused column; cycle returns an uneven lane to equal cells at the end.
 // Only lanes sized by cells in one row grow.
 func growLane(w *Lanes, cycle bool) {
-	if !w.LaneRow() {
+	if !w.laneRow() {
 		return
 	}
 	first, last := w.LaneBounds(w.LaneOf(w.Focus))
@@ -103,7 +103,7 @@ func (w *Lanes) growLaneCell(first, last int) bool {
 // neighbor in the lane (the left one at the lane's end). A column never goes
 // below one cell.
 func shrinkLane(w *Lanes) {
-	if !w.LaneRow() {
+	if !w.laneRow() {
 		return
 	}
 	first, last := w.LaneBounds(w.LaneOf(w.Focus))

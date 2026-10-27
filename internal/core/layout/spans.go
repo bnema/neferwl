@@ -4,7 +4,7 @@ package layout
 // a positive span and the same nonzero identity, with no members elsewhere
 // in the workspace. Equal-cell lanes must also sum to 10000 basis points.
 func (w *View) validSpans(first, last int) bool {
-	if first > last || w.InSpiral() {
+	if first > last || w.inSpiral() {
 		return false
 	}
 	stamp := w.Columns[first].SpanStamp

@@ -7,8 +7,8 @@ func (w *Lanes) FullscreenHides() bool {
 	return w.Fullscreen != 0 && (w.Engine().PinsFullscreen() || w.FullscreenColumn(w.Focus))
 }
 
-// FullscreenColumn reports whether column i contains the fullscreen window.
-func (w *View) FullscreenColumn(i int) bool {
+// fullscreenColumn reports whether column i contains the fullscreen window.
+func (w *View) fullscreenColumn(i int) bool {
 	return fullscreenColumn(w.Columns[i], w.Fullscreen)
 }
 
