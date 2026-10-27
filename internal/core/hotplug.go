@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 
 	"github.com/bnema/neferwl/internal/domain"
@@ -57,10 +58,9 @@ const (
 // card of the same name has finished. A failed open is not retried.
 func (a HotplugAddAction) RetryAfterTeardown() bool { return a == HotplugAddDying }
 
-// PlanHotplugAdd applies the startup allow/ignore filter to a card that just
-// appeared. The render GPU never changes at runtime, so the selector's own
-// render choice is not used: every added card is a non-render card. existing
-// and dying are DRM card names.
+// PlanHotplugAdd checks only the added card against the retained allow/ignore
+// identifiers. Unlike startup selection, unrelated identifiers may be absent and
+// no render GPU is selected. existing and dying are DRM card names.
 func PlanHotplugAdd(cands []domain.GPUInfo, card domain.CardName, cfg GPUSelectConfig, existing, dying []domain.CardName) (domain.GPUInfo, HotplugAddAction, domain.GPUSelection, error) {
 	i := slices.IndexFunc(cands, func(g domain.GPUInfo) bool { return g.Name == card })
 	if i < 0 {
@@ -73,14 +73,27 @@ func PlanHotplugAdd(cands []domain.GPUInfo, card domain.CardName, cfg GPUSelectC
 	case slices.Contains(dying, card):
 		return info, HotplugAddDying, domain.GPUSelection{}, nil
 	}
-	sel, err := SelectGPUs(cands, cfg)
-	if err != nil {
-		return info, HotplugAddIgnored, sel, err
+	matches := func(ids []string) bool {
+		return slices.ContainsFunc(ids, func(id string) bool { return matchesGPU(info, id) })
 	}
-	if !slices.Contains(sel.Keep, i) {
-		return info, HotplugAddIgnored, sel, nil
+	sel := domain.GPUSelection{Render: -1}
+	reason := "all devices"
+	action := HotplugAddOpen
+	switch {
+	case matches(cfg.Ignore):
+		action, reason = HotplugAddIgnored, "ignore"
+	case len(cfg.Devices) != 0 && !matches(cfg.Devices):
+		action, reason = HotplugAddIgnored, "not in devices"
+	case len(cfg.Devices) != 0:
+		reason = "devices"
 	}
-	return info, HotplugAddOpen, sel, nil
+	decision := "ignore"
+	if action == HotplugAddOpen {
+		decision = "keep"
+		sel.Keep = []int{i}
+	}
+	sel.Reasons = []string{fmt.Sprintf("%s GPU %s (%s): %s", decision, info.Name, info.PCI, reason)}
+	return info, action, sel, nil
 }
 
 // CardTeardown tracks an unplugged card until the outputs it owned have all

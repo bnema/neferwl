@@ -54,7 +54,7 @@ func TestHotplugPlanAdd(t *testing.T) {
 		{"not in allow list", "card2", domain.Config{DRM: drmConfig([]string{"0000:03:00.0"}, nil)}, "", nil, nil, HotplugAddIgnored, false},
 		{"in allow list", "card2", domain.Config{DRM: drmConfig([]string{"0000:03:00.0", "0000:04:00.0"}, nil)}, "", nil, nil, HotplugAddOpen, false},
 		{"other card ignored does not matter", "card2", domain.Config{DRM: drmConfig(nil, []string{"0000:03:00.0"})}, "", nil, nil, HotplugAddOpen, false},
-		{"selection error ignores the card", "card2", domain.Config{DRM: drmConfig(nil, []string{"0000:09:00.0"})}, "", nil, nil, HotplugAddIgnored, true},
+		{"absent unrelated ignore identifier", "card2", domain.Config{DRM: drmConfig(nil, []string{"0000:09:00.0"})}, "", nil, nil, HotplugAddOpen, false},
 		{"render env pointing elsewhere is fine", "card2", domain.Config{}, "0000:00:02.0", nil, nil, HotplugAddOpen, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -127,5 +127,23 @@ func TestHotplugRetireOnStop(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, RetireOnStop(tc.inactiveOnClose, tc.removed, tc.nodeExists))
 		})
+	}
+}
+
+// An unplugged ignored GPU must not prevent a secondary GPU from returning.
+func TestHotplugAbsentCandidates(t *testing.T) {
+	a := domain.GPUInfo{Name: "card0", PCI: "0000:01:00.0", Render: 1}
+	b := domain.GPUInfo{Name: "card1", PCI: "0000:02:00.0", Render: 2}
+	c := domain.GPUInfo{Name: "card2", PCI: "0000:03:00.0"}
+	cfg := GPUSelectConfig{Devices: []string{a.PCI, b.PCI, c.PCI}, Ignore: []string{b.PCI}, Render: a.PCI}
+	_, err := SelectGPUs([]domain.GPUInfo{a, b, c}, cfg)
+	assert.NoError(t, err)
+	_, err = SelectGPUs([]domain.GPUInfo{a, c}, cfg)
+	assert.Error(t, err, "startup must still reject absent identifiers")
+	for _, candidates := range [][]domain.GPUInfo{{a, c}, {c}} {
+		_, action, sel, err := PlanHotplugAdd(candidates, c.Name, cfg, nil, nil)
+		assert.NoError(t, err)
+		assert.Equal(t, HotplugAddOpen, action)
+		assert.Equal(t, -1, sel.Render, "hotplug must not select a render GPU")
 	}
 }
