@@ -496,7 +496,6 @@ func (w *Workspace) SetMaxColumns(n int) {
 // workspace's own geometry, scaled uniformly.
 func (w *Workspace) OverviewArea() Rect { return w.reserved }
 
-// Gap is the effective spacing in pixels.
 // Layout places every window of the workspace in a fresh slice the caller
 // owns. The per-frame paths use layoutInto instead.
 func (w *Workspace) Layout() []Placement { return w.AppendLayout(nil) }

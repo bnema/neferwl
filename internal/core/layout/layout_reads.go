@@ -42,11 +42,16 @@ func (w *Lanes) ValidSpans(first, last int) bool {
 	return v.validSpans(first, last)
 }
 
-// HiddenByMaximized reports whether maximization hides column i.
-func (w *Lanes) HiddenByMaximized(i int) bool { v := w.Snapshot(); return v.HiddenByMaximized(i) }
+// HiddenByMaximized reports whether maximization hides column i. It reads
+// the lane fields directly: AppendLayout asks it per column every frame.
+func (w *Lanes) HiddenByMaximized(i int) bool {
+	return w.Engine().MaximizeHides() && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth && i != w.Focus
+}
 
 // FullscreenColumn reports whether column i contains the fullscreen window.
-func (w *Lanes) FullscreenColumn(i int) bool { v := w.Snapshot(); return v.FullscreenColumn(i) }
+// It reads the lane fields directly: AppendLayout asks it per column every
+// frame, and a Snapshot per call would copy the whole View.
+func (w *Lanes) FullscreenColumn(i int) bool { return fullscreenColumn(w.Columns[i], w.Fullscreen) }
 
 // ColumnEdges returns unscrolled positions and widths in one pass.
 func (w *Lanes) ColumnEdges() ([]int, []int) { v := w.Snapshot(); return v.ColumnEdges() }
