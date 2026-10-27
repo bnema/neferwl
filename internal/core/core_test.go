@@ -110,7 +110,7 @@ func owner(t *testing.T, animated bool) {
 	ch := core.Channels{Client: client, Input: input, Output: output, Config: reload, Commands: commands, Spawn: spawn, Scenes: scenes, ConfigErrors: errs}
 	opts := core.Options{}
 	l := newLanding(t, animated, &cfg, &ch, &opts, "OUT-1")
-	c, err := core.New(cfg, ch, opts)
+	c, err := core.New(cfg, ch, testOptions(t, opts))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,11 +190,11 @@ func owner(t *testing.T, animated bool) {
 func TestCancelAndSceneCapacity(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		cfg := scrollDefaults()
-		if _, err := core.New(cfg, core.Channels{Scenes: make(chan []domain.Scene, 2)}, core.Options{}); err == nil {
+		if _, err := core.New(cfg, core.Channels{Scenes: make(chan []domain.Scene, 2)}, testOptions(t, core.Options{})); err == nil {
 			t.Fatal("capacity")
 		}
 		ctx, cancel := context.WithCancel(context.Background())
-		c, err := core.New(cfg, core.Channels{Scenes: make(chan []domain.Scene, 1)}, core.Options{})
+		c, err := core.New(cfg, core.Channels{Scenes: make(chan []domain.Scene, 1)}, testOptions(t, core.Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -215,7 +215,7 @@ func TestKeyPressState(t *testing.T) {
 		input := make(chan ports.InputEvent, 8)
 		commands := make(chan ports.ClientCommand, 16)
 		scenes := make(chan []domain.Scene, 1)
-		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Commands: commands, Scenes: scenes}, core.Options{})
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Commands: commands, Scenes: scenes}, testOptions(t, core.Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -258,7 +258,7 @@ func TestBoundReleaseSwallowed(t *testing.T) {
 		client := make(chan ports.ClientEvent, 2)
 		commands := make(chan ports.ClientCommand, 8)
 		scenes := make(chan []domain.Scene, 1)
-		c, err := core.New(cfg, core.Channels{Input: input, Client: client, Commands: commands, Scenes: scenes}, core.Options{})
+		c, err := core.New(cfg, core.Channels{Input: input, Client: client, Commands: commands, Scenes: scenes}, testOptions(t, core.Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -291,7 +291,7 @@ func TestPointerFocusAndGrab(t *testing.T) {
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 64)
 		scenes := make(chan []domain.Scene, 1)
-		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, testOptions(t, core.Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -360,7 +360,7 @@ func borderInset(t *testing.T, animated bool) {
 	ch := core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}
 	opts := core.Options{}
 	l := newLanding(t, animated, &cfg, &ch, &opts, "OUT-1")
-	c, err := core.New(cfg, ch, opts)
+	c, err := core.New(cfg, ch, testOptions(t, opts))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +407,7 @@ func TestLayerKeyboardFocus(t *testing.T) {
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 64)
 		scenes := make(chan []domain.Scene, 1)
-		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, testOptions(t, core.Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -503,7 +503,7 @@ func workspaceSwitch(t *testing.T, animated bool) {
 		sc = newStepClock(t)
 		opts.Clock, ch.Frames = sc.clock, frames
 	}
-	c, err := core.New(cfg, ch, opts)
+	c, err := core.New(cfg, ch, testOptions(t, opts))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -568,7 +568,7 @@ func clickAfterWorkspaceSwitch(t *testing.T, animated bool) {
 		sc = newStepClock(t)
 		opts.Clock, ch.Frames = sc.clock, frames
 	}
-	c, err := core.New(cfg, ch, opts)
+	c, err := core.New(cfg, ch, testOptions(t, opts))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -624,7 +624,7 @@ func TestShiftReleasedFirst(t *testing.T) {
 		client := make(chan ports.ClientEvent, 2)
 		commands := make(chan ports.ClientCommand, 16)
 		scenes := make(chan []domain.Scene, 1)
-		c, err := core.New(cfg, core.Channels{Input: input, Client: client, Commands: commands, Scenes: scenes}, core.Options{})
+		c, err := core.New(cfg, core.Channels{Input: input, Client: client, Commands: commands, Scenes: scenes}, testOptions(t, core.Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -666,7 +666,7 @@ func outputScale(t *testing.T, animated bool) {
 	ch := core.Channels{Client: client, Input: input, Output: output, Config: reload, Commands: commands, Scenes: scenes}
 	opts := core.Options{}
 	l := newLanding(t, animated, &cfg, &ch, &opts, "DP-2")
-	c, err := core.New(cfg, ch, opts)
+	c, err := core.New(cfg, ch, testOptions(t, opts))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -744,7 +744,7 @@ func TestPointerWarp(t *testing.T) {
 		commands := make(chan ports.ClientCommand, 64)
 		scenes := make(chan []domain.Scene, 1)
 		constraints := make(chan domain.PointerConstraint, 1)
-		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes, Constraints: constraints}, core.Options{})
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes, Constraints: constraints}, testOptions(t, core.Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -801,7 +801,7 @@ func pointerConstraint(t *testing.T, animated bool) {
 	ch := core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes, Constraints: constraints}
 	opts := core.Options{}
 	l := newLanding(t, animated, &cfg, &ch, &opts, "A", "B")
-	c, err := core.New(cfg, ch, opts)
+	c, err := core.New(cfg, ch, testOptions(t, opts))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -872,7 +872,7 @@ func TestPopupChainDismissOrder(t *testing.T) {
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 64)
 		scenes := make(chan []domain.Scene, 1)
-		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, testOptions(t, core.Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -924,7 +924,7 @@ func TestFloatOverFullscreenHit(t *testing.T) {
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 64)
 		scenes := make(chan []domain.Scene, 1)
-		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{Clock: steppingClock(t)})
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, testOptions(t, core.Options{Clock: steppingClock(t)}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -970,7 +970,7 @@ func TestDialogOverFullscreenHit(t *testing.T) {
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 64)
 		scenes := make(chan []domain.Scene, 1)
-		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{Clock: steppingClock(t)})
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, testOptions(t, core.Options{Clock: steppingClock(t)}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1026,7 +1026,7 @@ func fullscreenAtMapIgnored(t *testing.T, animated bool) {
 		clk = newStepClock(t)
 		opts.Clock = clk.clock
 	}
-	c, err := core.New(cfg, ch, opts)
+	c, err := core.New(cfg, ch, testOptions(t, opts))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1115,7 +1115,7 @@ func externalFullscreenAtMapApplies(t *testing.T, animated bool) {
 	if l.clk == nil {
 		opts.Clock = newStepClock(t).clock
 	}
-	c, err := core.New(cfg, ch, opts)
+	c, err := core.New(cfg, ch, testOptions(t, opts))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1263,7 +1263,7 @@ func TestWindowActivateShowsAndFocuses(t *testing.T) {
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 64)
 		scenes := make(chan []domain.Scene, 1)
-		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, testOptions(t, core.Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}

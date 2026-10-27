@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	systemclock "github.com/bnema/neferwl/internal/adapters/clock"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
@@ -17,7 +18,7 @@ func BenchmarkBorderMotion(b *testing.B) {
 			cfg.Keyboard.CmdKey = "super"
 			cfg.Layout.MaxColumns = 3
 			scenes, cmds := make(chan []domain.Scene, 1), make(chan ports.ClientCommand, 1024)
-			c, err := New(cfg, Channels{Scenes: scenes, Commands: cmds}, Options{})
+			c, err := New(cfg, Channels{Scenes: scenes, Commands: cmds}, testOptions(b, Options{Clock: systemclock.System{}}))
 			if err != nil {
 				b.Fatal(err)
 			}

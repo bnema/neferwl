@@ -90,7 +90,7 @@ func (k *osdKey) key(ev ports.KeyEvent, id string, cmd domain.Mods, now time.Tim
 		k.second = k.tapPending && gap >= 0 && gap <= osdDoubleTapGap
 		k.tapPending = false
 		if !k.pin {
-			k.timer = newPortTimer(k.clock, osdHoldDelay)
+			k.timer = k.clock.NewTimer(osdHoldDelay)
 			k.holdC = k.timer.C()
 		}
 		return osdNone

@@ -18,6 +18,7 @@ import (
 // owner would stall keyboard, scenes and frame wakes behind it, so the owner
 // queues and the sender goroutine does the blocking send.
 type outbox struct {
+	now func() time.Time
 	// wake is signalled (never blocking) after each push.
 	wake chan struct{}
 
@@ -37,8 +38,7 @@ type outbox struct {
 	// never interleave (the sender, or flush without one).
 	sendMu sync.Mutex
 	// stats are guarded by mu, reset by takeStats. Their times come from
-	// the system clock, not core's: they measure real waits, and the sender
-	// must not step a test clock.
+	// injected clock, shared with core.
 	stats CommandStats
 }
 
@@ -95,8 +95,8 @@ func (o *outbox) backlog() uint64 {
 	return o.pushed - o.sent
 }
 
-func newOutbox() outbox {
-	return outbox{wake: make(chan struct{}, 1), progress: make(chan struct{}, 1)}
+func newOutbox(clock ports.Clock) outbox {
+	return outbox{now: clock.Now, wake: make(chan struct{}, 1), progress: make(chan struct{}, 1)}
 }
 
 // command returns what the sender delivers.
@@ -141,7 +141,7 @@ func (o *outbox) push(out chan<- ports.ClientCommand, v ports.ClientCommand, sta
 		}
 	}
 	// Only a queued command pays for the clock read.
-	e.at = time.Now()
+	e.at = o.now()
 	if n := len(o.queue); n > 0 && e.isMotion {
 		last := &o.queue[n-1]
 		if last.isMotion && last.motion.ID == e.motion.ID && last.secured == secured && last.state == state {
@@ -180,7 +180,7 @@ func (o *outbox) flush(ctx context.Context, out chan<- ports.ClientCommand, seq 
 	var start time.Time
 	defer func() {
 		if !start.IsZero() {
-			w := time.Since(start)
+			w := o.now().Sub(start)
 			o.mu.Lock()
 			o.stats.MaxFlushWait = max(o.stats.MaxFlushWait, w)
 			o.mu.Unlock()
@@ -194,7 +194,7 @@ func (o *outbox) flush(ctx context.Context, out chan<- ports.ClientCommand, seq 
 			return nil
 		}
 		if start.IsZero() {
-			start = time.Now()
+			start = o.now()
 		}
 		if !running {
 			o.sendMu.Lock()
@@ -294,7 +294,7 @@ func (o *outbox) deliver(ctx context.Context, out chan<- ports.ClientCommand, ba
 		case <-ctx.Done():
 			return false
 		}
-		wait = max(wait, time.Since(batch[i].at))
+		wait = max(wait, o.now().Sub(batch[i].at))
 	}
 	o.mu.Lock()
 	o.stats.MaxQueueWait = max(o.stats.MaxQueueWait, wait)

@@ -34,7 +34,7 @@ func startOutboxRig(t *testing.T, commandCap int) *outboxRig {
 		commands: make(chan ports.ClientCommand, commandCap),
 		scenes:   make(chan []domain.Scene, 1),
 	}
-	c, err := core.New(cfg, core.Channels{Input: r.input, Client: r.client, Output: r.output, Commands: r.commands, Scenes: r.scenes}, core.Options{})
+	c, err := core.New(cfg, core.Channels{Input: r.input, Client: r.client, Output: r.output, Commands: r.commands, Scenes: r.scenes}, testOptions(t, core.Options{}))
 	if err != nil {
 		t.Fatal(err)
 	}

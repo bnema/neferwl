@@ -50,7 +50,7 @@ func startSwipeOn(t *testing.T, edit func(*domain.Config), outs ...domain.Output
 		output: make(chan ports.OutputEvent, 4), reload: make(chan domain.ConfigChanged, 4),
 		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []domain.Scene, 1), spawn: make(chan domain.SpawnRequest, 16), state: make(chan domain.State, 1), cfg: cfg,
 	}
-	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Spawn: r.spawn, State: r.state, Frames: r.frames}, core.Options{Clock: r.clk.clock})
+	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Spawn: r.spawn, State: r.state, Frames: r.frames}, testOptions(t, core.Options{Clock: r.clk.clock}))
 	if err != nil {
 		t.Fatal(err)
 	}

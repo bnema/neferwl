@@ -28,7 +28,7 @@ func hiddenCaptureCommands(t *testing.T) (*Core, *Workspace, chan ports.ClientCo
 	cfg.Layout.MaxColumns = 2
 	cfg.Border.Width = 2
 	cfg.Background.Color = "#102030"
-	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Commands: commands}, Options{})
+	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Commands: commands}, testOptions(t, Options{}))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -16,6 +16,54 @@ mocking:
   generatedMockPaths: [internal/mocks/**]
   generatedMockNamePatterns: ['Mock{{Interface}}', '{{Interface}}Mock']
 allow:
+  - rule: no-adapter-imports-in-core
+    path: internal/core/layout_bench_test.go
+    reason: Benchmark uses production clock to exclude mock bookkeeping from measured allocations.
+  - rule: prefer-generated-mocks
+    path: internal/core/layout_bench_test.go
+    reason: Benchmark uses production clock to exclude mock bookkeeping from measured allocations.
+  - rule: no-adapter-imports-in-core
+    path: internal/core/refresh_bench_test.go
+    reason: Benchmark uses production clock to exclude mock bookkeeping from measured allocations.
+  - rule: prefer-generated-mocks
+    path: internal/core/refresh_bench_test.go
+    reason: Benchmark uses production clock to exclude mock bookkeeping from measured allocations.
+  - rule: no-adapter-imports-in-core
+    path: internal/core/capindicator_test.go
+    reason: Production clock adapter measures allocation budgets without generated mock bookkeeping; functional timing tests use generated mocks.
+  - rule: no-adapter-imports-in-core
+    path: internal/core/flash_test.go
+    reason: Production clock adapter measures allocation budgets without generated mock bookkeeping; functional timing tests use generated mocks.
+  - rule: no-adapter-imports-in-core
+    path: internal/core/outbox_test.go
+    reason: Production clock adapter measures allocation budgets without generated mock bookkeeping; functional timing tests use generated mocks.
+  - rule: no-adapter-imports-in-core
+    path: internal/core/overview_switch_alloc_test.go
+    reason: Production clock adapter measures allocation budgets without generated mock bookkeeping; functional timing tests use generated mocks.
+  - rule: no-adapter-imports-in-core
+    path: internal/core/publish_alloc_test.go
+    reason: Production clock adapter measures allocation budgets without generated mock bookkeeping; functional timing tests use generated mocks.
+  - rule: no-adapter-imports-in-core
+    path: internal/core/test_dependencies_test.go
+    reason: Production clock adapter measures allocation budgets without generated mock bookkeeping; functional timing tests use generated mocks.
+  - rule: prefer-generated-mocks
+    path: internal/core/capindicator_test.go
+    reason: Production clock adapter measures allocation budgets without generated mock bookkeeping; functional timing tests use generated mocks.
+  - rule: prefer-generated-mocks
+    path: internal/core/flash_test.go
+    reason: Production clock adapter measures allocation budgets without generated mock bookkeeping; functional timing tests use generated mocks.
+  - rule: prefer-generated-mocks
+    path: internal/core/outbox_test.go
+    reason: Production clock adapter measures allocation budgets without generated mock bookkeeping; functional timing tests use generated mocks.
+  - rule: prefer-generated-mocks
+    path: internal/core/overview_switch_alloc_test.go
+    reason: Production clock adapter measures allocation budgets without generated mock bookkeeping; functional timing tests use generated mocks.
+  - rule: prefer-generated-mocks
+    path: internal/core/publish_alloc_test.go
+    reason: Production clock adapter measures allocation budgets without generated mock bookkeeping; functional timing tests use generated mocks.
+  - rule: prefer-generated-mocks
+    path: internal/core/test_dependencies_test.go
+    reason: Production clock adapter measures allocation budgets without generated mock bookkeeping; functional timing tests use generated mocks.
   - rule: suspicious-business-logic-in-adapter
     path: internal/adapters/wayland/seat.go
     reason: Seat dispatch resolves live Wayland targets and enforces protected input delivery at the display owner.

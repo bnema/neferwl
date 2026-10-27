@@ -74,7 +74,7 @@ func startSlotsMode(t *testing.T, animated *bool, numbered ...bool) *slotRig {
 			}
 		})
 	}
-	c, err := core.New(cfg, ch, opts)
+	c, err := core.New(cfg, ch, testOptions(t, opts))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,7 +456,7 @@ func TestStartupCommands(t *testing.T) {
 		cfg := scrollDefaults()
 		cfg.Startup = [][]string{{"wl-paste", "--watch", "cliphist", "store"}, {"waybar"}}
 		spawn := make(chan domain.SpawnRequest, 4)
-		c, err := core.New(cfg, core.Channels{Client: make(chan ports.ClientEvent), Input: make(chan ports.InputEvent), Output: make(chan ports.OutputEvent), Config: make(chan domain.ConfigChanged), Commands: make(chan ports.ClientCommand, 16), Spawn: spawn, Scenes: make(chan []domain.Scene, 1), ConfigErrors: make(chan error, 1)}, core.Options{})
+		c, err := core.New(cfg, core.Channels{Client: make(chan ports.ClientEvent), Input: make(chan ports.InputEvent), Output: make(chan ports.OutputEvent), Config: make(chan domain.ConfigChanged), Commands: make(chan ports.ClientCommand, 16), Spawn: spawn, Scenes: make(chan []domain.Scene, 1), ConfigErrors: make(chan error, 1)}, testOptions(t, core.Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -483,7 +483,7 @@ func TestSpawnBindSeveralCommands(t *testing.T) {
 		output := make(chan ports.OutputEvent, 1)
 		scenes := make(chan []domain.Scene, 1)
 		spawn := make(chan domain.SpawnRequest, 4)
-		c, err := core.New(cfg, core.Channels{Client: make(chan ports.ClientEvent), Input: input, Output: output, Config: make(chan domain.ConfigChanged), Commands: make(chan ports.ClientCommand, 16), Spawn: spawn, Scenes: scenes, ConfigErrors: make(chan error, 1)}, core.Options{})
+		c, err := core.New(cfg, core.Channels{Client: make(chan ports.ClientEvent), Input: input, Output: output, Config: make(chan domain.ConfigChanged), Commands: make(chan ports.ClientCommand, 16), Spawn: spawn, Scenes: scenes, ConfigErrors: make(chan error, 1)}, testOptions(t, core.Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}

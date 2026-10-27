@@ -58,7 +58,7 @@ func startRigWith(t *testing.T, opts core.Options, edit func(*domain.Config), ou
 		output: make(chan ports.OutputEvent, 4), reload: make(chan domain.ConfigChanged, 4),
 		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []domain.Scene, 1), spawn: make(chan domain.SpawnRequest, 16), state: make(chan domain.State, 1), cfg: cfg,
 	}
-	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Spawn: r.spawn, State: r.state}, opts)
+	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Spawn: r.spawn, State: r.state}, testOptions(t, opts))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -684,7 +684,7 @@ func TestFirstTerminalFollowsSetOutputs(t *testing.T) {
 		output := make(chan ports.OutputEvent, 1)
 		scenes := make(chan []domain.Scene, 1)
 		state := make(chan domain.State, 1)
-		c, err := core.New(cfg, core.Channels{Output: output, Commands: commands, Spawn: spawn, Scenes: scenes, State: state}, core.Options{Terminal: true})
+		c, err := core.New(cfg, core.Channels{Output: output, Commands: commands, Spawn: spawn, Scenes: scenes, State: state}, testOptions(t, core.Options{Terminal: true}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -728,7 +728,7 @@ func TestFirstTerminalLayoutWaitCancels(t *testing.T) {
 		output := make(chan ports.OutputEvent, 1)
 		scenes := make(chan []domain.Scene, 1)
 		state := make(chan domain.State, 1)
-		c, err := core.New(cfg, core.Channels{Output: output, Commands: commands, Spawn: spawn, Scenes: scenes, State: state}, core.Options{Terminal: true})
+		c, err := core.New(cfg, core.Channels{Output: output, Commands: commands, Spawn: spawn, Scenes: scenes, State: state}, testOptions(t, core.Options{Terminal: true}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -761,7 +761,7 @@ func TestFirstTerminalSpawnFollowsDeliveredLayout(t *testing.T) {
 		output := make(chan ports.OutputEvent, 1)
 		scenes := make(chan []domain.Scene, 1)
 		state := make(chan domain.State, 1)
-		c, err := core.New(scrollDefaults(), core.Channels{Output: output, Commands: commands, Spawn: spawn, Scenes: scenes, State: state}, core.Options{Terminal: true})
+		c, err := core.New(scrollDefaults(), core.Channels{Output: output, Commands: commands, Spawn: spawn, Scenes: scenes, State: state}, testOptions(t, core.Options{Terminal: true}))
 		if err != nil {
 			t.Fatal(err)
 		}

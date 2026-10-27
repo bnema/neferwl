@@ -1,6 +1,7 @@
 package core
 
 import (
+	systemclock "github.com/bnema/neferwl/internal/adapters/clock"
 	"reflect"
 	"testing"
 	"testing/synctest"
@@ -138,7 +139,7 @@ func TestOverviewWorkspaceAnimatedFrameAllocations(t *testing.T) {
 		// are randomly dropped under -race. That bookkeeping is not frame work.
 		// Animation still receives the fixed fixture time below, so warmup and
 		// repetitions cannot settle the in-flight cards.
-		c.opts.Clock = nil
+		c.opts.Clock = systemclock.System{}
 		c.animate(ic.now, nil)
 		checkFrame(indicatorScene(t, c))
 		var last domain.Scene

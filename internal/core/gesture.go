@@ -626,7 +626,7 @@ func (c *Core) frameFallback() time.Duration {
 func (c *Core) armFrame() {
 	d := c.frameFallback()
 	if c.frameTimer == nil {
-		c.frameTimer = newPortTimer(c.opts.Clock, d)
+		c.frameTimer = c.opts.Clock.NewTimer(d)
 	} else {
 		c.frameTimer.Stop()
 		c.frameTimer.Reset(d)

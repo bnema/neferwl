@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	clock "github.com/bnema/neferwl/internal/adapters/clock"
 	"slices"
 	"testing"
 	"testing/synctest"
@@ -31,7 +32,7 @@ func takeAll(o *outbox) []ports.ClientCommand {
 // latest, the deltas add up. Everything else keeps its place.
 func TestOutboxMergesAdjacentMotionOnly(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		o := newOutbox()
+		o := newOutbox(testClock(t))
 		// Nobody receives, so every command queues.
 		out := make(chan ports.ClientCommand)
 		push := func(v ports.ClientCommand) { o.push(out, v, domain.SecurityState{}, false) }
@@ -59,7 +60,7 @@ func TestOutboxMergesAdjacentMotionOnly(t *testing.T) {
 // Wrapped motions merge only under an identical owner envelope, and keep it.
 func TestOutboxMergesSecuredMotionPerEnvelope(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		o := newOutbox()
+		o := newOutbox(testClock(t))
 		out := make(chan ports.ClientCommand)
 		a := domain.SecurityState{Generation: 1}
 		b := domain.SecurityState{Generation: 2}
@@ -79,7 +80,7 @@ func TestOutboxMergesSecuredMotionPerEnvelope(t *testing.T) {
 // With room in the channel and nothing queued, a command goes straight out.
 func TestOutboxSendsDirectlyWhileDisplayKeepsUp(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		o := newOutbox()
+		o := newOutbox(testClock(t))
 		out := make(chan ports.ClientCommand, 4)
 		o.push(out, ports.PointerMotionTo{ID: 1, DX: 1}, domain.SecurityState{}, false)
 		o.push(out, ports.PointerMotionTo{ID: 1, DX: 2}, domain.SecurityState{}, false)
@@ -98,7 +99,7 @@ func TestOutboxSendsDirectlyWhileDisplayKeepsUp(t *testing.T) {
 func TestOutboxIsBounded(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		out := make(chan ports.ClientCommand)
-		c := &Core{out: newOutbox(), ch: Channels{Commands: out}}
+		c := &Core{out: newOutbox(testClock(t)), ch: Channels{Commands: out}}
 		c.out.start()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -138,7 +139,7 @@ func TestOutboxIsBounded(t *testing.T) {
 // batches are recycled and flush's progress signal is reused.
 func TestOutboxQueuedDeliveryAllocations(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		o := newOutbox()
+		o := newOutbox(clock.System{})
 		full := make(chan ports.ClientCommand, 1)
 		full <- ports.FocusWindow{}
 		sink := make(chan ports.ClientCommand, 8)
@@ -172,7 +173,7 @@ func TestOutboxQueuedDeliveryAllocations(t *testing.T) {
 // long the first queued command waited for the channel and core in flush.
 func TestOutboxStats(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		o := newOutbox()
+		o := newOutbox(testClock(t))
 		out := make(chan ports.ClientCommand, 1)
 		ctx := context.Background()
 		var none domain.SecurityState
@@ -203,7 +204,7 @@ func TestOutboxStats(t *testing.T) {
 // waiting, not the ones already out: the wait is per entry.
 func TestOutboxQueueWaitIsPerEntry(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		o := newOutbox()
+		o := newOutbox(testClock(t))
 		out := make(chan ports.ClientCommand)
 		var none domain.SecurityState
 		o.push(out, ports.FocusWindow{ID: 1}, none, false) // queued at 0
@@ -228,7 +229,7 @@ func TestOutboxQueueWaitIsPerEntry(t *testing.T) {
 // when it has taken the queue into its private delivery batch.
 func TestOutboxStatsSampleOutstandingBacklog(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		o := newOutbox()
+		o := newOutbox(testClock(t))
 		out := make(chan ports.ClientCommand)
 		for range outboxLimit {
 			o.push(out, ports.FocusWindow{ID: 1}, domain.SecurityState{}, false)

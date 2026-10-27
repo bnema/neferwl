@@ -1,7 +1,6 @@
 package core
 
 import (
-	"crypto/rand"
 	"slices"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 // spawnPlacement owns pending SlotEnv claims. Slot and terminal retry decisions
 // remain with their respective policies; only this registry mints and claims tokens.
 type spawnPlacement struct {
+	tokens  ports.TokenSource
 	pending map[string]spawnTarget
 	slots   map[slotKey]string
 }
@@ -37,13 +37,13 @@ type spawnTarget struct {
 	at   time.Time
 }
 
-func newSpawnPlacement() spawnPlacement {
-	return spawnPlacement{pending: make(map[string]spawnTarget), slots: make(map[slotKey]string)}
+func newSpawnPlacement(tokens ports.TokenSource) spawnPlacement {
+	return spawnPlacement{tokens: tokens, pending: make(map[string]spawnTarget), slots: make(map[slotKey]string)}
 }
 
 // request mints a token and records its pending destination.
 func (p *spawnPlacement) request(argv []string, target spawnTarget) domain.SpawnRequest {
-	token := rand.Text()
+	token := p.tokens.Token()
 	p.pending[token] = target
 	if target.kind == spawnSlot {
 		p.slots[target.slot] = token

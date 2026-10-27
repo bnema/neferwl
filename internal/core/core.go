@@ -61,8 +61,10 @@ type Channels struct {
 type Options struct {
 	// Security is the defensive session gate; nil preserves standalone operation.
 	Security ports.SessionSecurity
-	// Clock supplies every core timestamp and timer; nil uses the system clock.
+	// Clock supplies every core timestamp and timer; it is required.
 	Clock ports.Clock
+	// Tokens supplies unique spawn placement tokens; it is required.
+	Tokens ports.TokenSource
 	// Terminal enables automatic terminal opening according to terminal.auto-open.
 	Terminal bool
 	// HintDisabled, when set, is called the first time the hint action runs
@@ -423,11 +425,17 @@ func (c *Core) spawnSlots(ctx context.Context, shown bool) error {
 	return nil
 }
 func New(cfg domain.Config, ch Channels, opts Options) (*Core, error) {
+	if opts.Clock == nil {
+		return nil, fmt.Errorf("clock is required")
+	}
+	if opts.Tokens == nil {
+		return nil, fmt.Errorf("tokens are required")
+	}
 	if cap(ch.Scenes) != 1 || (ch.Layouts != nil && cap(ch.Layouts) != 1) || (ch.Constraints != nil && cap(ch.Constraints) != 1) || (ch.State != nil && cap(ch.State) != 1) || (ch.Workspaces != nil && cap(ch.Workspaces) != 1) {
 		return nil, fmt.Errorf("scenes, layouts, constraints, state and workspaces must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{inputKeys: map[string]bool{}, slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, ch: ch, opts: opts, pressed: map[string]bool{}, buttons: map[uint32]bool{}, swallow: map[uint32]bool{}, configures: newConfigures(), ping: make(chan chan struct{}), out: newOutbox()}
+	c := &Core{inputKeys: map[string]bool{}, slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(opts.Tokens), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, ch: ch, opts: opts, pressed: map[string]bool{}, buttons: map[uint32]bool{}, swallow: map[uint32]bool{}, configures: newConfigures(), ping: make(chan chan struct{}), out: newOutbox(opts.Clock)}
 	c.screens = []*screen{{mon: newMonitorWithIDs("", "", &c.nextWorkspaceID), scale: 1, cfgScale: 1}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
@@ -435,34 +443,13 @@ func New(cfg domain.Config, ch Channels, opts Options) (*Core, error) {
 	return c, nil
 }
 
-// newTimer makes a timer on clock, or the system timer when clock is nil.
+// newTimer makes a timer on the required clock.
 func newTimer(clock ports.Clock, d time.Duration) (<-chan time.Time, func() bool) {
-	t := newPortTimer(clock, d)
+	t := clock.NewTimer(d)
 	return t.C(), t.Stop
 }
 
-// newPortTimer makes a ports.Timer on clock, or on the system clock when
-// clock is nil.
-func newPortTimer(clock ports.Clock, d time.Duration) ports.Timer {
-	if clock != nil {
-		return clock.NewTimer(d)
-	}
-	return sysTimer{time.NewTimer(d)}
-}
-
-// sysTimer is a time.Timer as a ports.Timer.
-type sysTimer struct{ t *time.Timer }
-
-func (t sysTimer) C() <-chan time.Time        { return t.t.C }
-func (t sysTimer) Stop() bool                 { return t.t.Stop() }
-func (t sysTimer) Reset(d time.Duration) bool { return t.t.Reset(d) }
-
-func (c *Core) now() time.Time {
-	if c.opts.Clock != nil {
-		return c.opts.Clock.Now()
-	}
-	return time.Now()
-}
+func (c *Core) now() time.Time { return c.opts.Clock.Now() }
 
 // command queues v for the wayland goroutine and never blocks: a busy
 // display must not stall keyboard, scenes or frame wakes. The sender

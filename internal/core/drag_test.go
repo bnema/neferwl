@@ -85,7 +85,7 @@ func newDragRig(t *testing.T, animated bool, edit func(*domain.Config), outs ...
 			}
 		})
 	}
-	c, err := core.New(cfg, ch, opts)
+	c, err := core.New(cfg, ch, testOptions(t, opts))
 	if err != nil {
 		t.Fatal(err)
 	}

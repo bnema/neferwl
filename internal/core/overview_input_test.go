@@ -20,7 +20,7 @@ func TestOverviewLauncherKeepsKeys(t *testing.T) {
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 256)
 		scenes := make(chan []domain.Scene, 1)
-		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, testOptions(t, core.Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -76,7 +76,7 @@ func TestOverviewFocusBindsNavigate(t *testing.T) {
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 256)
 		scenes := make(chan []domain.Scene, 1)
-		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, testOptions(t, core.Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -130,7 +130,7 @@ func TestOverviewCloseBindTargetsPreview(t *testing.T) {
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 256)
 		scenes := make(chan []domain.Scene, 1)
-		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, testOptions(t, core.Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -208,7 +208,7 @@ func TestOverviewThreeFingerNavigation(t *testing.T) {
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 256)
 		scenes := make(chan []domain.Scene, 1)
-		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, testOptions(t, core.Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}

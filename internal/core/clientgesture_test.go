@@ -250,7 +250,7 @@ func TestGesturesRefusedWhileLocked(t *testing.T) {
 			commands: make(chan ports.ClientCommand, 256), scenes: make(chan []domain.Scene, 1),
 		}
 		cfg := scrollDefaults()
-		c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Constraints: make(chan domain.PointerConstraint, 1)}, core.Options{Security: gate})
+		c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Constraints: make(chan domain.PointerConstraint, 1)}, testOptions(t, core.Options{Security: gate}))
 		if err != nil {
 			t.Fatal(err)
 		}

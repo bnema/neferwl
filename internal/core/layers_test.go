@@ -78,7 +78,7 @@ func TestLayerChangedChannels(t *testing.T) {
 		cfg := domain.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
-		c, err := New(cfg, Channels{Client: client, Output: output, Commands: commands, Scenes: scenes}, Options{})
+		c, err := New(cfg, Channels{Client: client, Output: output, Commands: commands, Scenes: scenes}, testOptions(t, Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -189,7 +189,7 @@ func TestFullscreenSceneLayers(t *testing.T) {
 		cfg := domain.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
-		c, err := New(cfg, Channels{Client: client, Output: output, Commands: commands, Scenes: scenes}, Options{Clock: laterClock(t)})
+		c, err := New(cfg, Channels{Client: client, Output: output, Commands: commands, Scenes: scenes}, testOptions(t, Options{Clock: laterClock(t)}))
 		if err != nil {
 			t.Fatal(err)
 		}

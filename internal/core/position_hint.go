@@ -159,7 +159,7 @@ func (c *Core) armPositionHintTimer() {
 	}
 	d := max(earliest.Sub(c.now()), time.Nanosecond)
 	if t.timer == nil {
-		t.timer = newPortTimer(c.opts.Clock, d)
+		t.timer = c.opts.Clock.NewTimer(d)
 	} else {
 		t.timer.Reset(d)
 	}

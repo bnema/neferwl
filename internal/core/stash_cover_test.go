@@ -19,7 +19,7 @@ func stashCoverCore(t *testing.T, overflow Overflow, float bool) (*Core, *Worksp
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.Overflow = string(overflow)
 	cfg.Layout.MaxColumns = 2
-	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1)}, Options{})
+	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1)}, testOptions(t, Options{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -411,7 +411,7 @@ func TestCoreActivateStashKeepsGameConfigure(t *testing.T) {
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
 		commands := make(chan ports.ClientCommand, 256)
-		c, err := New(cfg, Channels{Commands: commands, Scenes: make(chan []domain.Scene, 1)}, Options{})
+		c, err := New(cfg, Channels{Commands: commands, Scenes: make(chan []domain.Scene, 1)}, testOptions(t, Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}

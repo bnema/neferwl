@@ -2,7 +2,9 @@ package domain
 
 import (
 	"image"
+	"maps"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -313,3 +315,83 @@ const (
 	RelationAbove
 	RelationBelow
 )
+
+// Equal reports value equality. Nil and empty collections are equivalent.
+// Pointer-valued configuration is compared by its value, not its address.
+func (c Config) Equal(o Config) bool {
+	if !slices.Equal(c.Terminal.Command, o.Terminal.Command) ||
+		!slices.EqualFunc(c.Startup, o.Startup, slices.Equal[[]string]) ||
+		!slices.Equal(c.Layout.Outputs, o.Layout.Outputs) ||
+		!slices.Equal(c.Hint.Sources, o.Hint.Sources) ||
+		!slices.EqualFunc(c.Workspaces, o.Workspaces, workspaceConfigEqual) ||
+		!slices.EqualFunc(c.Rules, o.Rules, windowRuleEqual) ||
+		!slices.EqualFunc(c.Outputs, o.Outputs, outputConfigEqual) ||
+		!maps.Equal(c.Binds, o.Binds) ||
+		!slices.Equal(c.DRM.Devices, o.DRM.Devices) ||
+		!slices.Equal(c.DRM.Ignore, o.DRM.Ignore) ||
+		!slices.Equal(c.Log.Debug, o.Log.Debug) {
+		return false
+	}
+	// Compare scalar groups and the scalar parts of collection-bearing groups.
+	return c.Keyboard == o.Keyboard && c.Terminal.AutoOpen == o.Terminal.AutoOpen &&
+		c.Xwayland == o.Xwayland && c.Background == o.Background && c.Floating == o.Floating &&
+		c.Stash == o.Stash && c.Border == o.Border && c.Layout.Gaps == o.Layout.Gaps &&
+		c.Layout.LayoutRules == o.Layout.LayoutRules && c.InputDevicesConfig == o.InputDevicesConfig &&
+		c.Cursor == o.Cursor && c.Animations == o.Animations && c.Focus == o.Focus && c.OSD == o.OSD &&
+		hintConfigScalars(c) == hintConfigScalars(o) && c.Render == o.Render &&
+		c.Performance == o.Performance && c.Log.Level == o.Log.Level
+}
+
+func hintConfigScalars(c Config) struct {
+	Enable, LinksOnly, Capture              bool
+	TextClick                               Mods
+	Size                                    float64
+	Background, Foreground, Detector, Model string
+	Threshold                               float64
+} {
+	return struct {
+		Enable, LinksOnly, Capture              bool
+		TextClick                               Mods
+		Size                                    float64
+		Background, Foreground, Detector, Model string
+		Threshold                               float64
+	}{c.Hint.Enable, c.Hint.LinksOnly, c.Hint.Capture, c.Hint.TextClick, c.Hint.Size,
+		c.Hint.Background, c.Hint.Foreground, c.Hint.Detector, c.Hint.Model, c.Hint.Threshold}
+}
+
+func workspaceConfigEqual(a, b WorkspaceConfig) bool {
+	return a.Name == b.Name && a.Monitor == b.Monitor && a.Size == b.Size &&
+		a.LayoutRules == b.LayoutRules && slices.EqualFunc(a.Slots, b.Slots, func(a, b SlotConfig) bool {
+		return a.Index == b.Index && a.Cells == b.Cells && slices.Equal(a.Argv, b.Argv)
+	})
+}
+
+func windowRuleEqual(a, b WindowRule) bool {
+	if (a.AppID == nil) != (b.AppID == nil) {
+		return false
+	}
+	if a.AppID != nil && a.AppID.String() != b.AppID.String() {
+		return false
+	}
+	if !equalPointer(a.Floating, b.Floating) {
+		return false
+	}
+	a.AppID, b.AppID = nil, nil
+	a.Floating, b.Floating = nil, nil
+	return a == b
+}
+
+func outputConfigEqual(a, b OutputConfig) bool {
+	if !equalPointer(a.Pos, b.Pos) {
+		return false
+	}
+	a.Pos, b.Pos = nil, nil
+	return a == b
+}
+
+func equalPointer[T comparable](a, b *T) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}

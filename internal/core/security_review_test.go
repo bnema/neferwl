@@ -175,7 +175,7 @@ func TestStartupWorkspaceSnapshotHasNoOutputBeforeOutputAdded(t *testing.T) {
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
 		workspaces := make(chan domain.Workspaces, 1)
-		c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Workspaces: workspaces}, Options{})
+		c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Workspaces: workspaces}, testOptions(t, Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}

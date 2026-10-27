@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	systemclock "github.com/bnema/neferwl/internal/adapters/clock"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -529,7 +530,7 @@ func BenchmarkFlashSceneBuild(b *testing.B) {
 	cfg.Focus.Flash = true
 	cfg.Focus.FlashOpacity = 0.8
 	cfg.Focus.FlashDuration = time.Hour
-	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1)}, Options{})
+	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1)}, testOptions(b, Options{Clock: systemclock.System{}}))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -588,7 +589,7 @@ func TestFlashPendingTimerStopped(t *testing.T) {
 				c.opts.Clock = strictClock
 				c.requestFlash(flashWindow, 3)
 				// Only the pending flash timer belongs to the strict clock.
-				c.opts.Clock = nil
+				c.opts.Clock = systemclock.System{}
 				switch reason {
 				case "replacement":
 					c.requestFlash(flashWindow, 2)
@@ -762,7 +763,7 @@ func TestFlashGeometryRevalidationAllocations(t *testing.T) {
 				c, clock := flashCore(t)
 				startFlash(t, c, clock, level, 3)
 				// Measure production work, not the generated clock mock's call log.
-				c.opts.Clock = nil
+				c.opts.Clock = systemclock.System{}
 				c.flash.start = time.Now()
 				c.cfg.Focus.FlashDuration = time.Hour
 				c.advanceFlash(nil) // warm owner-owned layout scratch

@@ -24,7 +24,7 @@ func powerCoreWith(t *testing.T, opts core.Options) (chan ports.InputEvent, chan
 	output := make(chan ports.OutputEvent, 2)
 	commands := make(chan ports.ClientCommand, 64)
 	scenes := make(chan []domain.Scene, 1)
-	c, err := core.New(scrollDefaults(), core.Channels{Input: input, Client: client, Output: output, Commands: commands, Scenes: scenes, Spawn: make(chan domain.SpawnRequest, 4)}, opts)
+	c, err := core.New(scrollDefaults(), core.Channels{Input: input, Client: client, Output: output, Commands: commands, Scenes: scenes, Spawn: make(chan domain.SpawnRequest, 4)}, testOptions(t, opts))
 	if err != nil {
 		t.Fatal(err)
 	}

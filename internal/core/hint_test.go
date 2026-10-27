@@ -59,7 +59,7 @@ func newHintConfig(t *testing.T, opts core.Options, edit func(*domain.Config)) *
 		hints: make(chan domain.HintScanResult),
 	}
 	ch := core.Channels{Config: h.config, Client: h.client, Input: h.input, Output: h.output, Commands: h.commands, Scenes: h.scenes, HintScans: h.scans, Hints: h.hints}
-	c, err := core.New(cfg, ch, opts)
+	c, err := core.New(cfg, ch, testOptions(t, opts))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestHintRequestNilScansIsNoop(t *testing.T) {
 		output := make(chan ports.OutputEvent, 4)
 		commands := make(chan ports.ClientCommand, 32)
 		scenes := make(chan []domain.Scene, 1)
-		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, testOptions(t, core.Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -836,7 +836,7 @@ func TestHintDisabledNotesOnce(t *testing.T) {
 			scenes:   make(chan []domain.Scene, 1),
 		}
 		ch := core.Channels{Client: h.client, Input: h.input, Output: h.output, Commands: h.commands, Scenes: h.scenes}
-		c, err := core.New(cfg, ch, core.Options{HintDisabled: func() { noted.Add(1) }})
+		c, err := core.New(cfg, ch, testOptions(t, core.Options{HintDisabled: func() { noted.Add(1) }}))
 		if err != nil {
 			t.Fatal(err)
 		}

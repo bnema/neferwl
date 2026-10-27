@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	clock "github.com/bnema/neferwl/internal/adapters/clock"
 	"reflect"
 	"slices"
 	"testing"
@@ -41,7 +42,7 @@ const (
 )
 
 // publishRig is a Core on the real clock (a mock clock would count its own
-// bookkeeping; the fallback timer is then the system one) with screens
+// bookkeeping; its frame timer is also the production one) with screens
 // screens of six windows each. The Slowdown cap keeps every motion running
 // for seconds, so none settles during a measure even under -race or load.
 func publishRig(t testing.TB, screens int) *Core {
@@ -52,7 +53,7 @@ func publishRig(t testing.TB, screens int) *Core {
 	cfg.Border.Width = 2
 	cfg.Animations.On = true
 	cfg.Animations.Slowdown = 10
-	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Commands: make(chan ports.ClientCommand, 64)}, Options{})
+	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Commands: make(chan ports.ClientCommand, 64)}, testOptions(t, Options{Clock: clock.System{}}))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -73,7 +73,7 @@ func (c *Core) startRepeat(key ports.KeyEvent, action Action) {
 	r := &c.repeat
 	r.held, r.mods, r.action, r.key = heldKey(key), key.Mods, action, key
 	r.overview = c.cur().mon.ov.open
-	r.timer = newPortTimer(c.opts.Clock, repeatDelay)
+	r.timer = c.opts.Clock.NewTimer(repeatDelay)
 	c.repeatC = r.timer.C()
 }
 

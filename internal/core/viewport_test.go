@@ -52,7 +52,7 @@ func viewportCore(t *testing.T, layout func(*domain.Config), usable Rect) (*Core
 	layout(&cfg)
 	commands := make(chan ports.ClientCommand, 256)
 	scenes := make(chan []domain.Scene, 1)
-	c, err := New(cfg, Channels{Commands: commands, Scenes: scenes}, Options{})
+	c, err := New(cfg, Channels{Commands: commands, Scenes: scenes}, testOptions(t, Options{}))
 	if err != nil {
 		t.Fatal(err)
 	}

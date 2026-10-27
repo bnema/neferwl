@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	systemclock "github.com/bnema/neferwl/internal/adapters/clock"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -48,7 +49,7 @@ func indicatorCoreWith(t *testing.T, commands chan ports.ClientCommand) (*Core, 
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 2
 	cfg.Border.Width = 0
-	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Commands: commands}, Options{Clock: clock})
+	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Commands: commands}, testOptions(t, Options{Clock: clock}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +264,7 @@ func TestCaptureIndicatorNoAllocationWhenIdle(t *testing.T) {
 		}
 		// A live flash, steady state, allocates nothing either (measured on the
 		// system clock: the generated clock mock allocates on every call).
-		c.opts.Clock = nil
+		c.opts.Clock = systemclock.System{}
 		c.captureFrame(ports.CaptureFrameTaken{Output: "A"})
 		if n := testing.AllocsPerRun(100, func() { c.captureExpire(); c.armCaptureTimer() }); n != 0 {
 			t.Fatalf("%v allocations keeping a flash", n)
@@ -335,7 +336,7 @@ func TestCaptureIndicatorInflatesThinTargets(t *testing.T) {
 func TestCaptureRecordingPublishAllocations(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _ := indicatorCore(t)
-		c.opts.Clock = nil
+		c.opts.Clock = systemclock.System{}
 		cmds := make(chan ports.ClientCommand, 64)
 		c.ch.Commands = cmds
 		c.captureOpen(ports.CaptureSessionOpen{ID: 1, Output: "A", Region: Rect{X: 10, Y: 10, W: 50, H: 40}})

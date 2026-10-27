@@ -30,7 +30,7 @@ func stashSpawnCore(t *testing.T, commands chan ports.ClientCommand, spawn chan 
 	var cfg domain.Config
 	cfg.Keyboard.CmdKey = "alt"
 	cfg.Layout.MaxColumns = 2
-	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Commands: commands, Spawn: spawn}, Options{Clock: clock})
+	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Commands: commands, Spawn: spawn}, testOptions(t, Options{Clock: clock}))
 	if err != nil {
 		t.Fatal(err)
 	}

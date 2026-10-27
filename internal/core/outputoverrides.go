@@ -5,7 +5,6 @@ import (
 	"image"
 	"maps"
 	"math"
-	"reflect"
 	"slices"
 
 	"github.com/bnema/neferwl/internal/domain"
@@ -112,7 +111,7 @@ func scaleChanges(old, cur domain.Config) (map[string]float64, bool) {
 		})
 		return c
 	}
-	if !reflect.DeepEqual(strip(old), strip(cur)) {
+	if !strip(old).Equal(strip(cur)) {
 		return nil, false
 	}
 	scales := map[string]float64{}

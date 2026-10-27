@@ -122,7 +122,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	s.p = newPipes(s.hw != nil, opts.Config.Hint.Enable)
 	// core() carries channels only; the gate, clock and terminal flag are
 	// explicit core.Options.
-	if s.core, err = core.New(opts.Config, s.p.core(), core.Options{Security: s.security, Clock: s.clock, Terminal: !opts.NoTerminal, HintDisabled: hintDisabledNote(ctx)}); err != nil {
+	if s.core, err = core.New(opts.Config, s.p.core(), core.Options{Security: s.security, Clock: s.clock, Tokens: launcher.Tokens{}, Terminal: !opts.NoTerminal, HintDisabled: hintDisabledNote(ctx)}); err != nil {
 		return s, err
 	}
 	if s.km, err = xkb.New(xkb.RMLVO{Layout: opts.Config.Keyboard.Layout, Variant: opts.Config.Keyboard.Variant, Options: opts.Config.Keyboard.Options}); err != nil {
