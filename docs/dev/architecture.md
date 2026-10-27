@@ -11,7 +11,7 @@ Most Wayland compositors are written in C (wlroots, Sway, Mutter), C++ (KWin, Hy
 - `internal/adapters` performs I/O and delivery. `outputkit/routing` routes scenes, content and leases; `outputkit/cursors` owns cursor delivery and hide timing; `xcursor` loads cursor themes. The headless backend owns virtual output mechanics. `drm/supervisor` owns cards, readers, timers and hardware action execution; security/recovery ordering decisions stay there by design.
 - `internal/app` is the composition root: it constructs adapters, channels and core, starts loops and relays values. `cmd` and `internal/cli` are entrypoints.
 
-`make check` runs hexcheck with warnings treated as failures and checks adapter sharing against `ADAPTER_LIBS`. The root parser-based policy test enforces pure-package imports, root-core side-effect restrictions and seals on exported non-interface ports types.
+`make check` runs hexcheck with warnings treated as failures and checks adapter sharing against the shared-library allowlist in `domainpolicy_test.go`. The root parser-based policy test enforces pure-package imports, root-core side-effect restrictions and seals on exported non-interface ports types.
 
 ### A compositor is a concurrency problem
 

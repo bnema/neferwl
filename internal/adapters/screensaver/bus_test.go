@@ -110,3 +110,30 @@ func TestRunCanceledDuringStartup(t *testing.T) {
 		}
 	})
 }
+
+func TestRunIdleReadInterruptedByCancellation(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		b := newMockbus(t)
+		closed := make(chan struct{})
+		b.EXPECT().AddMatch("type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg2=''").Return(nil).Once()
+		b.EXPECT().RequestName(busName, uint32(zerobus.NameFlagDoNotQueue)).Return(uint32(zerobus.NamePrimaryOwner), nil).Once()
+		// No raw connection is needed when there are no owner deadlines.
+		b.EXPECT().SyscallConn().Return(nil, nil).Once()
+		b.EXPECT().ReadMessage().RunAndReturn(func() (*zerobus.Message, error) {
+			<-closed
+			return nil, zerobus.ErrClosed
+		}).Once()
+		b.EXPECT().Close().RunAndReturn(func() error { close(closed); return nil }).Once()
+		b.EXPECT().Close().Return(nil).Once()
+		s := Service{conn: b, log: logging.For(ctx, "screensaver")}
+		done := make(chan error, 1)
+		go func() { done <- s.Run(ctx, Reports{}) }()
+		synctest.Wait()
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
+}

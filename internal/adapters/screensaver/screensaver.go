@@ -155,7 +155,9 @@ func (s *Service) Run(ctx context.Context, reports Reports) (err error) {
 				}
 			}
 		}
-		if !s.conn.Buffered() {
+		// Without owner deadlines, ReadMessage can block until traffic arrives;
+		// the cancellation watcher closes the connection to interrupt it.
+		if len(checks) > 0 && !s.conn.Buffered() {
 			n := 0
 			var pollErr error
 			err := raw.Control(func(fd uintptr) {

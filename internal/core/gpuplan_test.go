@@ -63,6 +63,8 @@ func TestPlanHeadlessRender(t *testing.T) {
 		{name: "constrained empty", constrained: true, choice: HeadlessFail, wantErr: true},
 		{name: "unknown identifier", cands: []domain.GPUInfo{gpu}, cfg: GPUSelectConfig{Render: "unknown"}, constrained: true, choice: HeadlessFail, wantErr: true},
 		{name: "selection", cands: []domain.GPUInfo{gpu}, choice: HeadlessUseSelection},
+		{name: "device constrained selection", cands: []domain.GPUInfo{gpu}, cfg: GPUSelectConfig{Devices: []string{gpu.PCI}}, constrained: true, choice: HeadlessUseSelection},
+		{name: "ignore constrained selection", cands: []domain.GPUInfo{gpu, {Path: "/dev/dri/card1"}}, cfg: GPUSelectConfig{Ignore: []string{"/dev/dri/card1"}}, constrained: true, choice: HeadlessUseSelection},
 		{name: "strict selection", cands: []domain.GPUInfo{gpu}, cfg: GPUSelectConfig{Render: gpu.PCI}, constrained: true, choice: HeadlessUseSelection},
 		{name: "explicit without discovery", listErr: boom, cfg: GPUSelectConfig{Render: "/dev/dri/renderD128"}, constrained: true, choice: HeadlessUseExplicitRenderNode},
 		{name: "explicit matched", cands: []domain.GPUInfo{gpu}, cfg: GPUSelectConfig{Render: "/dev/dri/renderD128"}, constrained: true, matched: true, choice: HeadlessUseSelection},
@@ -75,6 +77,9 @@ func TestPlanHeadlessRender(t *testing.T) {
 			}
 			if tc.listErr != nil && tc.choice != HeadlessUseExplicitRenderNode && !errors.Is(got.Err, tc.listErr) {
 				t.Fatal(got.Err)
+			}
+			if got.FallbackAfterFailure != (tc.choice == HeadlessUseSelection && !tc.constrained) {
+				t.Fatalf("fallback after failure: %+v", got)
 			}
 			if got.Choice == HeadlessUseSelection {
 				if len(got.Plans) != 1 || got.Plans[0].Info != gpu || !got.Plans[0].Render || got.Strict != (tc.cfg.Render != "") || len(got.Reasons) == 0 {

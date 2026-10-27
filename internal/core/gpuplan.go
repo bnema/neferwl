@@ -49,11 +49,13 @@ const (
 )
 
 type HeadlessRenderDecision struct {
-	Choice  HeadlessRenderChoice
-	Plans   []CardPlan
-	Strict  bool
-	Reasons []string
-	Err     error
+	Choice HeadlessRenderChoice
+	Plans  []CardPlan
+	Strict bool
+	// FallbackAfterFailure permits unspecified Vulkan selection if opening Plans fails.
+	FallbackAfterFailure bool
+	Reasons              []string
+	Err                  error
 }
 
 // PlanHeadlessRender decides discovery policy without probing device nodes.
@@ -78,7 +80,7 @@ func PlanHeadlessRender(cands []domain.GPUInfo, listErr error, cfg GPUSelectConf
 		}
 		return HeadlessRenderDecision{Choice: HeadlessFail, Err: err}
 	}
-	return HeadlessRenderDecision{Choice: HeadlessUseSelection, Plans: PlanCards(cands, sel), Strict: cfg.Render != "", Reasons: sel.Reasons}
+	return HeadlessRenderDecision{Choice: HeadlessUseSelection, Plans: PlanCards(cands, sel), Strict: cfg.Render != "", FallbackAfterFailure: !constrained, Reasons: sel.Reasons}
 }
 
 // MatchesGPU matches a pre-resolved identifier, including a render node dev_t.
