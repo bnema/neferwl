@@ -2,6 +2,14 @@
 
 Most Wayland compositors are written in C (wlroots, Sway, Mutter), C++ (KWin, Hyprland, gamescope) or Rust (niri, COSMIC). The usual objection to Go is the garbage collector. It is a fair one, so here is how NeferWL deals with it, and why Go turns out to fit a compositor well.
 
+### Package boundaries
+
+- `internal/domain` holds entities and value types and imports only the standard library.
+- `internal/ports` holds interfaces and sealed messages carrying domain values.
+- `internal/core` imports domain and ports for its model and boundary contracts.
+
+The root domain policy test checks domain imports and requires every exported non-interface type in ports to declare an unexported seal method.
+
 ### A compositor is a concurrency problem
 
 A compositor sits in the middle of many independent streams that never stop: keyboard and pointer events, client requests and buffer commits, one vblank and page-flip cycle per monitor, frame fences from the GPU, presentation feedback, screen captures, config reloads, hotplug, idle and lock state. None of them should wait on another. A slow client must not delay a flip, and rendering must not delay input.

@@ -1,2 +1,3 @@
-// Package ports defines boundary interfaces and channel message types.
+// Package ports defines boundary interfaces and sealed channel messages carrying
+// internal/domain entities and value types.
 package ports

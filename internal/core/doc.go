@@ -1,11 +1,11 @@
 // Package core is the compositor's application service. Core runs as the
 // owner goroutine of window state: it consumes port events, applies the
 // domain model and publishes scenes and client commands. It depends only on
-// the standard library, internal/ports and the domain packages below.
+// the standard library, internal/domain, internal/ports and its subpackages.
 //
-// The domain model lives in subpackages, each importing only the standard
-// library, the value types of internal/ports and the packages listed before
-// it (enforced by the root domainpolicy test):
+// Entities and value types live in internal/domain, which imports only the
+// standard library. Ports defines interfaces and sealed messages carrying those
+// values. Core applies the model through these subpackages:
 //
 //   - geom: placement values and geometry helpers (scales, border zones).
 //   - motion: springs, swipe tracking, snap swipes and presentation slides.

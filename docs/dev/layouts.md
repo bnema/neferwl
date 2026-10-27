@@ -3,7 +3,7 @@
 A layout is one file plus one entry in `layoutTable`
 (`internal/core/layout/layout_registry.go`) and the places that name config
 values. `layout.Lanes` (embedded in `workspace.Workspace`) owns the columns and
-calls the layout on its owner goroutine; layouts take no locks and use no port interfaces (only the `internal/ports` value types).
+calls the layout on its owner goroutine; layouts take no locks and use no port interfaces (only the `internal/domain` value types).
 
 ## Add a layout
 
@@ -17,7 +17,7 @@ calls the layout on its owner goroutine; layouts take no locks and use no port i
 3. Name the config value where core cannot be imported:
    - `setLayoutRule` in `internal/adapters/config/config.go` (turns a bad value
      into a warning and keeps loading);
-   - the `LayoutRules` and `WorkspaceState` comments in `internal/ports`;
+   - the `LayoutRules` and `WorkspaceState` comments in `internal/domain`;
    - `README.md` and the `layout.overflow` rows of `docs/config.md`;
    - `examples/config`.
    `TestConfigAcceptsEveryCoreLayout` (`internal/app`) fails until the config

@@ -1,7 +1,7 @@
 # Repository rules
 
 - Use Go 1.27 only; normal builds and tests use CGO_ENABLED=0.
-- Keep a lightweight hexagonal architecture: core imports only stdlib and ports.
+- Keep a lightweight hexagonal architecture: core imports only stdlib, domain and ports (and its own subpackages). Domain holds entities and value types and imports only stdlib; ports holds interfaces and sealed messages carrying domain values.
 - Owner goroutines own window state; no mutex on window state.
 - Use zerowrap logging with a `component` field on every entry.
 - Run tests with `-race`.
