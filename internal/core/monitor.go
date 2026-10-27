@@ -140,11 +140,7 @@ func (m *Monitor) take(w *Workspace) {
 // (clamped above the trailing empty workspace). It takes this monitor's
 // output-wide settings and does not change what is on screen.
 func (m *Monitor) adopt(w *Workspace, hidden bool, pos int) {
-	w.Gaps = m.template.Gaps
-	w.border = m.template.border
-	w.stashWidth, w.stashGap = m.template.stashWidth, m.template.stashGap
-	w.SetOutput(m.template.Output.W, m.template.Output.H)
-	w.SetUsable(m.template.Usable)
+	w.Inherit(&m.template)
 	if hidden {
 		m.hidden = append(m.hidden, w)
 	} else {
@@ -174,19 +170,7 @@ func (m *Monitor) Current() *Workspace {
 	return m.Workspaces[m.Active]
 }
 
-func (m *Monitor) newWorkspace() *Workspace {
-	w := m.template
-	w.colBuf, w.rowBuf, w.tileBuf, w.zoomBuf = nil, nil, nil, nil
-	w.Columns, w.Floats, w.Maximized, w.floatFocus, w.home = nil, nil, nil, false, ""
-	w.overviewAfter = nil
-	// The template's layout state is its own: sharing it would leak cascade
-	// bands between workspaces. The new one builds its state on first use.
-	w.DropState()
-	w.Stash, w.stashAt, w.stashFocus, w.stashHidden, w.hiddenFullscreen = nil, 0, false, false, 0
-	(*m.nextID)++
-	w.ID = *m.nextID
-	return &w
-}
+func (m *Monitor) newWorkspace() *Workspace { (*m.nextID)++; return NewFrom(&m.template, *m.nextID) }
 
 // normalize keeps one trailing empty unnamed workspace and drops other empty
 // unnamed ones that are not active. The active workspace never changes.
@@ -356,7 +340,7 @@ func (m *Monitor) addWindow(id WindowID, cells int) {
 		return
 	}
 	if w := m.Current(); !m.stashCapture || !w.captureStash(id) {
-		w.addWindow(id, cells)
+		w.AddTile(id, cells, false)
 	}
 	m.normalize()
 }
@@ -399,39 +383,8 @@ func (m *Monitor) ToggleFullscreen() { m.Current().ToggleFullscreen() }
 func (m *Monitor) MoveToWorkspace(i int, column bool) {
 	i = min(max(i, 0), len(m.Workspaces)-1)
 	cur, to := m.Current(), m.Workspaces[i]
-	id, ok := cur.Focused()
-	if !ok || to == cur {
+	if to == cur || !MoveFocused(cur, to, column, -1) {
 		return
-	}
-	if f := cur.floatIndex(id); f >= 0 {
-		fl := cur.Floats[f]
-		if fl.free && fl.back != nil {
-			// Its column place is on this workspace.
-			fl = fl.rehome()
-		}
-		cur.RemoveWindow(id)
-		to.AddFloating(id, fl.W, fl.H)
-		to.Floats[len(to.Floats)-1] = fl
-		// As receive: a fullscreen window would hide it.
-		to.Activate(id)
-	} else if f := cur.stashIndex(id); f >= 0 {
-		// It joins the end of the stash there, shown and selected.
-		fl := cur.Stash[f].rehome()
-		cur.RemoveWindow(id)
-		to.addStash(fl)
-		to.Activate(id)
-	} else {
-		col := Column{Windows: []WindowID{id}}
-		ok := true
-		if column {
-			col, ok = cur.takeColumn()
-		} else {
-			_, ok = cur.takeWindow()
-		}
-		if !ok {
-			return
-		}
-		to.receive(col, -1)
 	}
 	if m.followMove {
 		m.Active = i
@@ -554,17 +507,14 @@ func (m *Monitor) SetOutput(width, height int) {
 func (m *Monitor) SetUsable(r Rect) { m.each(func(w *Workspace) { w.SetUsable(r) }) }
 func (m *Monitor) SetGaps(g int)    { m.each(func(w *Workspace) { w.SetGaps(g) }) }
 func (m *Monitor) SetBorder(b int) {
-	m.each(func(w *Workspace) { w.border = max(b, 0); w.reconcileFloats() })
+	m.each(func(w *Workspace) { w.SetBorder(b) })
 }
 
 // SetStash sets the width of a stashed window (stash.width; 0 is the
 // default) and the space between it and its neighbors (stash.gap), in
 // percent of the usable width.
 func (m *Monitor) SetStash(width, gap int) {
-	if width != 0 {
-		width = min(max(width, 10), 90)
-	}
-	m.each(func(w *Workspace) { w.stashWidth, w.stashGap = width, min(max(gap, 0), 10) })
+	m.each(func(w *Workspace) { w.SetStash(width, gap) })
 }
 
 // SetStashCapture makes new windows join the shown stash (stash.capture).
@@ -659,22 +609,7 @@ func (m *Monitor) SetNamed(specs []NamedWorkspace) {
 		if w == cur {
 			cur = nil
 		}
-		for _, c := range w.Columns {
-			for _, id := range c.Windows {
-				m.Workspaces[m.Active].AddWindow(id)
-			}
-		}
-		for _, f := range w.Floats {
-			if f.free && f.back != nil {
-				f = f.rehome()
-			}
-			m.Workspaces[m.Active].AddFloating(f.ID, f.W, f.H)
-			m.Workspaces[m.Active].Floats[len(m.Workspaces[m.Active].Floats)-1] = f
-		}
-		m.Workspaces[m.Active].reconcileFloats()
-		for _, f := range w.Stash {
-			m.Workspaces[m.Active].Stash = append(m.Workspaces[m.Active].Stash, f.rehome())
-		}
+		Merge(m.Workspaces[m.Active], w)
 	}
 	m.hidden = hidden
 	m.named = append([]NamedWorkspace(nil), specs...)

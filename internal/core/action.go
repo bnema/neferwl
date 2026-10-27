@@ -367,14 +367,15 @@ func (c *Core) dispatchAction(a Action) Effect {
 		// A fullscreen float has no column in its band. Horizontal moves
 		// use the existing workspace/monitor edge order; only up/down may
 		// reveal the tiles below.
-		if w.Engine().Bands() && w.cover() != 0 && w.isFloat(w.cover()) && !w.stashOverCover() && !w.coverDialogFocused() {
+		edge := w.ColumnEdge(dir)
+		if edge == EdgeAlways {
 			c.edgeFocus(layout.Horizontal, dir, d)
 			return Effect{}
 		}
 		// A covering fullscreen window is left for the window on that side;
 		// with none (the workspace, band or stash edge), the move goes past
 		// the edge (see edgeFocus) and fullscreen stays.
-		if w.pinned() && !w.stashOverCover() {
+		if edge == EdgeIfStuck {
 			if !w.FocusColumn(dir) {
 				c.edgeFocus(layout.Horizontal, dir, d)
 			}
@@ -383,8 +384,7 @@ func (c *Core) dispatchAction(a Action) Effect {
 		// The first move from a float stays here unless nothing is under it:
 		// a native float leaves for the stash or the columns, and the stash
 		// keeps the focus at its ends.
-		edge := w.LeavesLane(w.columnToward(dir)) && (!w.onFloat() || w.floatFocus && !w.canLeaveFloat())
-		if edge && c.edgeFocus(layout.Horizontal, dir, d) {
+		if edge == EdgeFirst && c.edgeFocus(layout.Horizontal, dir, d) {
 			return Effect{}
 		}
 	case ActionFocusWindowUp, ActionFocusWindowDown:
@@ -417,12 +417,10 @@ func (c *Core) dispatchAction(a Action) Effect {
 		if i < 0 {
 			return Effect{}
 		}
-		id, ok := from.mon.Current().takeWindow()
-		if !ok {
+		if !Expel(from.mon.Current(), c.screens[i].mon.Current(), dir) {
 			return Effect{}
 		}
 		c.focusScreen = i
-		c.cur().mon.Current().expelTo(id, dir)
 		from.mon.normalize()
 		c.cur().mon.normalize()
 		return Effect{}
@@ -440,47 +438,33 @@ func (c *Core) dispatchAction(a Action) Effect {
 		// screen at once and stays fullscreen there; with no screen,
 		// nothing moves.
 		i := c.neighbor(d)
-		if fid, ok := w.Focused(); ok && w.Fullscreen == fid && (w.floatIndex(fid) >= 0 || !w.onFloat()) {
+		if w.MovableFullscreen() {
 			if i < 0 {
 				return Effect{}
 			}
-			var col Column
-			if w.floatIndex(fid) < 0 {
-				if col, ok = w.takeColumn(); !ok {
-					return Effect{}
-				}
-			}
-			w.reconcileFloats() // floats the fullscreen kept demoted show again
 			from := c.cur()
-			c.focusScreen = i
-			to := c.cur().mon.Current()
-			if len(col.Windows) == 0 {
-				moveFloat(w, to, fid)
-			} else {
-				at := 0
-				if d == dirLeft {
-					at = len(to.Columns)
-				}
-				to.receive(col, at)
-				to.SetFullscreen(fid, true)
+			to := c.screens[i].mon.Current()
+			at := 0
+			if d == dirLeft {
+				at = len(to.Columns)
 			}
+			MoveFullscreen(w, to, at)
+			c.focusScreen = i
 			from.mon.normalize()
 			c.cur().mon.normalize()
 			return Effect{}
 		}
 		if i >= 0 && w.LeavesLane(w.Focus+dir) {
-			col, ok := w.takeColumn()
-			if !ok {
-				return Effect{}
-			}
 			from := c.cur()
-			c.focusScreen = i
-			to := c.cur().mon.Current()
+			to := c.screens[i].mon.Current()
 			at := 0
 			if d == dirLeft {
 				at = len(to.Columns)
 			}
-			to.receive(col, at)
+			if !MoveFocused(w, to, true, at) {
+				return Effect{}
+			}
+			c.focusScreen = i
 			from.mon.normalize()
 			c.cur().mon.normalize()
 			return Effect{}

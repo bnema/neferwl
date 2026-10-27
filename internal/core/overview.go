@@ -93,16 +93,7 @@ func (m *Monitor) remember(w *Workspace) {
 	if m.ov.rows == nil {
 		m.ov.rows = make(map[*Workspace]rowSnapshot)
 	}
-	s := rowSnapshot{
-		floats:    append([]Float(nil), w.Floats...),
-		maximized: slices.Clone(w.Maximized),
-	}
-	s.focus, _ = w.Focused()
-	if len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth {
-		c := w.Columns[w.Focus]
-		s.fullWidth = c.Windows[c.Focus]
-	}
-	m.ov.rows[w] = s
+	m.ov.rows[w] = w.SaveRow()
 }
 
 // selectRow resets provisional stack and stash selection for a new row.
@@ -114,11 +105,12 @@ func (m *Monitor) selectRow() {
 	w := m.Current()
 	// A fullscreen window has the focus: its card is in front.
 	w.focusCover()
-	if w.floatFocus && len(w.Columns) > 0 && (len(w.stack()) < 2 || m.stackFront(w).kind == stackColumns) {
-		w.floatFocus = false
+	front := stackItem{}
+	if w.floatFocus && len(w.Columns) > 0 && len(w.stack()) >= 2 {
+		front = m.stackFront(w)
 	}
-	if len(w.Stash) > 0 && (len(w.stack()) == 0 || w.stashFocused() && !w.floatFocus) {
-		m.selectCard(w, w.stashAt)
+	if at := w.EnterOverview(front); at >= 0 {
+		m.selectCard(w, at)
 	}
 }
 
@@ -215,10 +207,7 @@ func (m *Monitor) overviewMoveTo(a Action) {
 	if m.card() != 0 || id == 0 || !ok || m.Workspaces[i] == cur {
 		return
 	}
-	if cur.pinned() && id != cur.cover() {
-		// Focused reports the covering window while it covers.
-		cur.leaveFullscreen()
-	}
+	cur.LeaveCoverFor(id)
 	cur.FocusID(id)
 	m.MoveToWorkspace(i, column)
 	// The row that received the window keeps it focused on close.
@@ -235,21 +224,15 @@ func (m *Monitor) overviewMoveTo(a Action) {
 func (m *Monitor) closeOverview() {
 	w := m.Current()
 	front, target := m.stackFront(w), m.overviewTarget()
-	if w.pinned() && target != w.cover() {
-		w.leaveFullscreen()
-	}
+	w.LeaveCoverFor(target)
 	if i := m.cardAt(w); i >= 0 {
-		if w.hiddenFullscreen != w.Stash[i].ID {
-			w.hiddenFullscreen = 0
-		}
-		w.stashAt = i
-		w.showStash()
+		w.ShowStashAt(i)
 	} else if front != (stackItem{}) {
 		w.apply(front, target)
 	}
 	for r, s := range m.ov.rows {
 		if r != w && m.has(r) {
-			restoreRow(r, s)
+			r.RestoreRow(s)
 		}
 	}
 	m.ov = overviewState{}
@@ -264,7 +247,7 @@ func (m *Monitor) CancelOverview() {
 	}
 	for r, s := range m.ov.rows {
 		if m.has(r) {
-			restoreRow(r, s)
+			r.RestoreRow(s)
 		}
 	}
 	m.back = m.ov.back
@@ -621,11 +604,8 @@ func (m *Monitor) OverviewPick(id WindowID) {
 	if w == nil {
 		return
 	}
-	if w.floatIndex(id) >= 0 && w.stashIndex(id) < 0 {
-		i := w.floatIndex(id)
-		if !w.coversFloat(w.Floats[i]) && !(id == w.cover() && w.pinned()) {
-			return
-		}
+	if !w.Pickable(id) {
+		return
 	}
 	m.showOverview(w)
 	m.clearCard()
@@ -699,10 +679,10 @@ func (m *Monitor) overviewRows() (overviewSlots, []ports.Separator) {
 	axis := m.overviewAxis()
 	var cs Rect
 	if axis == layout.Horizontal {
-		row := cur.rowWidth(axis)
+		row := cur.RowSpan(axis)
 		cs = Rect{X: u.X + (u.W-row)/2, Y: u.Y, W: row, H: u.H}
 	} else {
-		hc := cur.rowHeight(axis)
+		hc := cur.RowSpan(axis)
 		cs = Rect{X: u.X, Y: u.Y + (u.H-hc)/2, W: u.W, H: hc}
 	}
 	var rows overviewSlots
@@ -746,30 +726,25 @@ func (m *Monitor) overviewLayout(result []Placement) []Placement {
 	var unfoldedSlot Rect
 	for w := range m.all() {
 		slot, shown := rows.lookup(w)
+		r := OverviewRow{Axis: axis, Slot: slot, Shown: shown, Current: w == cur, Dim: w != cur, Card: -1, HiddenColumn: -1}
 		if shown {
-			// The pile band goes under the row: the row is centred
-			// with it.
-			slot.H -= w.pileBand(axis)
-			at := m.cardAt(w)
-			result = append(result, m.stackRow(w, axis, slot, w != cur, at < 0)...)
-			if at >= 0 {
-				unfolded, unfoldedSlot = w, slot
-			} else {
-				result = w.pile(result, axis, slot, w != cur, -1)
+			r.Card = m.cardAt(w)
+			_, n := w.stackHead()
+			if n > 1 && r.Current {
+				r.Front = m.stackFront(w)
+			}
+			if n > 0 && w.overviewMaximized() {
+				r.HiddenColumn = m.hiddenColumn(w)
 			}
 		}
-		for _, f := range w.Floats {
-			if _, drawn := w.itemOf(f.ID); !shown || !drawn {
-				result = append(result, Placement{ID: f.ID, Hidden: true})
-			}
-		}
-		if !shown {
-			// Columns and stash only: the floats were listed above.
-			result = w.appendHidden(result, false)
+		var unfold bool
+		result, unfold = w.AppendOverviewRow(result, r)
+		if unfold {
+			unfolded, unfoldedSlot = w, slot
 		}
 	}
 	if unfolded != nil {
-		result = unfolded.pile(result, axis, unfoldedSlot, false, m.cardAt(unfolded))
+		result = unfolded.AppendPile(result, axis, unfoldedSlot, false, m.cardAt(unfolded))
 	}
 	return result
 }

@@ -172,19 +172,9 @@ func (c *Core) dragMotion(ctx context.Context, at time.Duration) error {
 	}
 	dx, dy := int(c.cursorX-d.start[0]), int(c.cursorY-d.start[1])
 	if d.float {
-		i := w.floatIndex(d.id)
-		if i < 0 {
+		if !w.DragFloat(d.id, d.rect, d.edges, dx, dy, d.resize) {
 			c.abortDrag()
 			return c.publish(ctx)
-		}
-		f := &w.Floats[i]
-		w.makeFree(f)
-		if d.resize {
-			r := resized(d.rect, d.edges, dx, dy, 2*w.border+freeMinSize, w.Usable)
-			f.W, f.H = r.W-2*w.border, r.H-2*w.border
-			w.moveFree(f, r, 0, 0)
-		} else {
-			w.moveFree(f, d.rect, dx, dy)
 		}
 		return c.publish(ctx)
 	}
@@ -273,69 +263,7 @@ func (c *Core) drop(id WindowID, t dropTarget) {
 	if from == nil || t.ws == nil || src.ColumnOf(id) < 0 {
 		return
 	}
-	w := t.ws
-	ci := src.ColumnOf(id)
-	lone := len(src.Columns[ci].Windows) == 1
-	if t.kind == dropSwap && w == src && lone {
-		to := w.ColumnOf(t.anchor)
-		// Their fields move with them, as MoveColumn.
-		w.Columns[ci], w.Columns[to] = w.Columns[to], w.Columns[ci]
-		// Layout state keyed by position stays at its index.
-		w.FocusID(id)
-	} else {
-		cells := 0
-		if lone {
-			cells = src.Columns[ci].Cells
-		}
-		srcIndex := ci
-		src.dropSlotOf(id)
-		src.RemoveWindow(id)
-		col := Column{Windows: []WindowID{id}, Cells: cells}
-		switch t.kind {
-		case dropAbove, dropBelow:
-			ai := w.ColumnOf(t.anchor)
-			if ai < 0 {
-				w.receive(col, -1)
-				break
-			}
-			tc := &w.Columns[ai]
-			row := slices.Index(tc.Windows, t.anchor)
-			if t.kind == dropBelow {
-				row++
-			}
-			if row == 0 {
-				// The slot follows the first window.
-				tc.Slot = 0
-			}
-			tc.Windows = slices.Insert(tc.Windows, row, id)
-			tc.Shares = nil
-			w.Activate(id)
-		default:
-			at, anchorCol := len(w.Columns), -1
-			if t.anchor != 0 {
-				if ai := w.ColumnOf(t.anchor); ai >= 0 {
-					at, anchorCol = ai, ai
-					// A stacked window dropped on a column right of its
-					// own lands after it.
-					if t.kind == dropSwap && w == src && ai >= srcIndex {
-						at = ai + 1
-					}
-				}
-			}
-			if w.full() {
-				// No room for a column: it joins the outlined one.
-				i := min(at, len(w.Columns)-1)
-				if anchorCol >= 0 {
-					i = anchorCol
-				}
-				w.Columns[i].Windows = append(w.Columns[i].Windows, id)
-				w.Columns[i].Shares = nil
-				w.Activate(id)
-			} else {
-				w.receive(col, at)
-			}
-		}
-	}
+	Drop(src, t.ws, id, workspaceDrop{kind: t.kind, anchor: t.anchor, hints: t.hints})
 	from.mon.normalize()
 	t.screen.mon.normalize()
 	c.focusScreen = c.screenIndex(t.screen.name())
@@ -351,20 +279,8 @@ func (c *Core) edgeScroll(t time.Duration) bool {
 	}
 	sc := c.screens[i]
 	w := sc.mon.Current()
-	if !w.scrollsRow() || len(w.Columns) == 0 || w.pinned() {
-		return false
-	}
 	lx := int(c.cursorX) - sc.x
-	dir := 0
-	switch {
-	case lx < w.Usable.X+edgeScroll:
-		dir = -1
-	case lx >= w.Usable.X+w.Usable.W-edgeScroll:
-		dir = 1
-	default:
-		return false
-	}
-	if !w.scrollBy(dir) {
+	if !w.EdgeScroll(lx) {
 		return false
 	}
 	c.drag.scrolled = max(t, 1)

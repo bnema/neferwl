@@ -644,11 +644,8 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 	for _, sc := range c.screens {
 		// The overview's selection is provisional: it focuses nothing yet.
 		if !sc.mon.ov.open {
-			sc.mon.Current().settleLeft()
-		}
-		// A switcher's selection is provisional too.
-		if !sc.mon.previewing() {
-			sc.mon.Current().noteFocus()
+			// A switcher's selection is provisional too.
+			sc.mon.Current().Settle(!sc.mon.previewing())
 		}
 	}
 	if c.pgrab != nil && !c.pgrab.valid() {

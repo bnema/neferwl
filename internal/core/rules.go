@@ -136,9 +136,9 @@ func (c *Core) placeByRule(v ports.WindowMapped, eff ruleEffect) {
 	case float:
 		// A window that already floats keeps the size it maps with; a tile
 		// floated by a rule becomes a free float, core sizing it.
-		w.addFloat(w.ruleFloat(v.ID, v.Floating, v.Width, v.Height), quiet)
+		w.AddRuleFloat(v.ID, v.Floating, v.Width, v.Height, quiet)
 	case quiet:
-		w.addColumnQuiet(Column{Windows: []WindowID{v.ID}, Cells: eff.cells})
+		w.AddTile(v.ID, eff.cells, true)
 	default:
 		sc.mon.addWindow(v.ID, eff.cells)
 		return

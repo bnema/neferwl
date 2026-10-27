@@ -116,7 +116,7 @@ func (g *swipeGesture) columnsChanged(m *Monitor) bool {
 // overview opened over it.
 func (g *swipeGesture) stashChanged(m *Monitor) bool {
 	w := g.ws
-	return m.overviewOpens != g.opens || m.Current() != w || !w.stashFocused() || w.floatFocus || !w.stashShown() || w.stashAt != g.home ||
+	return m.overviewOpens != g.opens || m.Current() != w || !w.StashSwipeable() || w.stashAt != g.home ||
 		!slices.EqualFunc(w.Stash, g.ids, func(f Float, id WindowID) bool { return f.ID == id })
 }
 
@@ -248,7 +248,7 @@ func (c *Core) decide(g *swipeGesture) {
 		// With animations off nothing slides: the swipe runs a
 		// focus action when the fingers lift.
 		g.mode, g.snap = swipeDiscrete, motion.NewStepSwipe()
-	case g.horizontal && w.stashFocused() && !w.floatFocus && w.stashShown():
+	case g.horizontal && w.StashSwipeable():
 		g.mode, g.ws, g.home = swipeStash, w, w.stashAt
 		g.ids = make([]WindowID, 0, len(w.Stash))
 		for _, f := range w.Stash {
@@ -307,15 +307,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 		target, velocity := g.snap.End(e.Cancelled, e.Time)
 		if !e.Cancelled {
 			view := int(math.Round(target))
-			focus := w.snapFocus(view, target >= shown)
-			if focus != w.Focus && w.Engine().MaximizeHides() {
-				w.Unmaximize()
-			}
-			changed := w.Focus != focus
-			w.Focus = focus
-			w.View = view
-			// A column wider than the view aligns as focus moves align it.
-			w.scroll()
+			changed := w.LandSwipe(view, target >= shown)
 			c.focusScreen = c.screenIndex(g.screen.name())
 			c.keyboard.takeBack()
 			if changed {
@@ -476,7 +468,7 @@ func (c *Core) swipeStash(g *swipeGesture, now time.Time) (shown bool, spawn *Wo
 		return false, nil
 	}
 	w := g.screen.mon.Current()
-	hidden, over := w.stashHidden, w.stashOver
+	hidden, over := w.StashVisibility()
 	shots := c.snapshot(now)
 	c.keyboard.takeBack()
 	effect := c.applyAction(ActionToggleStashVisible)
@@ -484,7 +476,8 @@ func (c *Core) swipeStash(g *swipeGesture, now time.Time) (shown bool, spawn *Wo
 	if effect.Spawn {
 		return false, w
 	}
-	return w.stashHidden != hidden || w.stashOver != over, nil
+	afterHidden, afterOver := w.StashVisibility()
+	return afterHidden != hidden || afterOver != over, nil
 }
 
 // swipedWorkspace is the workspace on the swipe's screen, or nil without
