@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -738,10 +739,10 @@ output.DP-5.offset = 7
 		t.Fatal(w)
 	}
 	want := map[string]ports.OutputAnchor{
-		"DP-2": {Relation: ports.RelationRightOf, To: "DP-1", Offset: 180},
-		"DP-3": {Relation: ports.RelationLeftOf, To: "DP-1", Offset: -40},
-		"DP-4": {Relation: ports.RelationAbove, To: "DP-1"},
-		"DP-5": {Relation: ports.RelationBelow, To: "DP-1", Offset: 7},
+		"DP-2": {Relation: domain.RelationRightOf, To: "DP-1", Offset: 180},
+		"DP-3": {Relation: domain.RelationLeftOf, To: "DP-1", Offset: -40},
+		"DP-4": {Relation: domain.RelationAbove, To: "DP-1"},
+		"DP-5": {Relation: domain.RelationBelow, To: "DP-1", Offset: 7},
 	}
 	if len(c.Outputs) != len(want) {
 		t.Fatalf("%+v", c.Outputs)
@@ -789,7 +790,7 @@ func TestOutputRelationOverride(t *testing.T) {
 	if len(w) != 1 || w[0].Line != 2 || !strings.Contains(w[0].Msg, "overrides line 1") {
 		t.Fatalf("warnings %v", w)
 	}
-	if got := c.Outputs[0].Anchor; got != (ports.OutputAnchor{Relation: ports.RelationBelow, To: "DP-3"}) {
+	if got := c.Outputs[0].Anchor; got != (ports.OutputAnchor{Relation: domain.RelationBelow, To: "DP-3"}) {
 		t.Fatalf("%+v", got)
 	}
 }
@@ -834,7 +835,7 @@ func TestOutputRelationWarnings(t *testing.T) {
 			}
 			var got []string
 			for _, o := range c.Outputs {
-				if o.Anchor.Relation != ports.RelationNone {
+				if o.Anchor.Relation != domain.RelationNone {
 					got = append(got, o.Name)
 				}
 			}
@@ -881,7 +882,7 @@ func TestOutputModeLineKeepsAnchor(t *testing.T) {
 		t.Fatal(w)
 	}
 	o := c.Outputs[0]
-	if o.Mode != "1920x1080" || o.Anchor != (ports.OutputAnchor{Relation: ports.RelationRightOf, To: "DP-1", Offset: 50}) {
+	if o.Mode != "1920x1080" || o.Anchor != (ports.OutputAnchor{Relation: domain.RelationRightOf, To: "DP-1", Offset: 50}) {
 		t.Fatalf("%+v", o)
 	}
 }
@@ -1143,7 +1144,7 @@ func TestBorderRadius(t *testing.T) {
 
 func TestHintSources(t *testing.T) {
 	defaults := Defaults()
-	if !reflect.DeepEqual(defaults.Hint.Sources, []ports.HintSource{ports.HintSourceATSPI, ports.HintSourceOCR}) || defaults.Hint.LinksOnly || defaults.Hint.TextClick != ports.ModCtrl|ports.ModShift {
+	if !reflect.DeepEqual(defaults.Hint.Sources, []domain.HintSource{domain.HintSourceATSPI, domain.HintSourceOCR}) || defaults.Hint.LinksOnly || defaults.Hint.TextClick != domain.ModCtrl|domain.ModShift {
 		t.Fatal(defaults.Hint)
 	}
 	c0, w0 := parseString(t, "hint.targets = clickable\nhint.text-click = none\n")
@@ -1153,11 +1154,11 @@ func TestHintSources(t *testing.T) {
 
 	for _, tc := range []struct {
 		value string
-		want  []ports.HintSource
+		want  []domain.HintSource
 		bad   bool
 	}{
-		{"", []ports.HintSource{ports.HintSourceATSPI, ports.HintSourceOCR}, false},
-		{" Detector, ATSPI, ocr ", []ports.HintSource{ports.HintSourceDetector, ports.HintSourceATSPI, ports.HintSourceOCR}, false},
+		{"", []domain.HintSource{domain.HintSourceATSPI, domain.HintSourceOCR}, false},
+		{" Detector, ATSPI, ocr ", []domain.HintSource{domain.HintSourceDetector, domain.HintSourceATSPI, domain.HintSourceOCR}, false},
 		{"ocr,ocr", nil, true}, {"other", nil, true}, {",", nil, true}, {"ocr,", nil, true},
 	} {
 		t.Run(tc.value, func(t *testing.T) {
@@ -1172,7 +1173,7 @@ func TestHintSources(t *testing.T) {
 		})
 	}
 	c, w := parseString(t, "hint.targets = links\nhint.text-click = ctrl+shift\n")
-	if len(w) != 0 || !c.Hint.LinksOnly || c.Hint.TextClick != ports.ModCtrl|ports.ModShift {
+	if len(w) != 0 || !c.Hint.LinksOnly || c.Hint.TextClick != domain.ModCtrl|domain.ModShift {
 		t.Fatal(c.Hint, w)
 	}
 	for _, line := range []string{"hint.targets = bad", "hint.text-click = ctrl+ctrl", "hint.text-click = ctrl+bad"} {

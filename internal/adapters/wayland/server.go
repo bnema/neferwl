@@ -8,15 +8,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bnema/go-wayland-bindings/server/relativepointer"
-
 	"github.com/bnema/go-wayland-bindings/server/fractionalscale"
 	"github.com/bnema/go-wayland-bindings/server/inputtimestamps"
+	"github.com/bnema/go-wayland-bindings/server/relativepointer"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/wayland/sessionlock"
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 	"github.com/bnema/zerowrap"
@@ -110,7 +110,7 @@ type Server struct {
 	securityWake       chan struct{}
 	sessionLock        *sessionLock
 	lockReadiness      sessionlock.Readiness
-	lockSurfaces       map[ports.WindowID]*lockSurface
+	lockSurfaces       map[domain.WindowID]*lockSurface
 	leaseDevices       map[string]*leaseDevice
 	pendingLeases      map[uint64]*leaseObject
 	pendingLeaseCards  map[uint64]string
@@ -235,9 +235,9 @@ type Server struct {
 	colorFeedbacks    map[*colorFeedback]struct{}
 	serial            uint32
 	ctx               context.Context
-	windows           map[ports.WindowID]*window
-	layers            map[ports.WindowID]*layerSurface
-	nextWindow        ports.WindowID
+	windows           map[domain.WindowID]*window
+	layers            map[domain.WindowID]*layerSurface
+	nextWindow        domain.WindowID
 	nextPool          uint64
 	nextSurface       uint64
 	// seat is the keyboard and pointer state (seat.go).
@@ -253,9 +253,9 @@ type Server struct {
 	// contentSeq counts each window's contents and damage is its recent
 	// damage; latest is its current content. All three belong to the display
 	// goroutine, as do the outputs' content links (contentlink.go).
-	contentSeq map[ports.WindowID]uint64
-	damage     map[ports.WindowID][]ports.SeqDamage
-	latest     map[ports.WindowID]ports.SurfaceContent
+	contentSeq map[domain.WindowID]uint64
+	damage     map[domain.WindowID][]ports.SeqDamage
+	latest     map[domain.WindowID]ports.SurfaceContent
 	links      []*contentLink
 	// flushPosted: a flushLinks is posted and has not started (Return).
 	flushPosted  atomic.Bool
@@ -272,7 +272,7 @@ type Server struct {
 	// inhibitors are the live inhibitor objects (inhibit.go);
 	// shortcutWindows and idleWindows what core was told.
 	inhibitors                   []*inhibitor
-	shortcutWindows, idleWindows map[ports.WindowID]bool
+	shortcutWindows, idleWindows map[domain.WindowID]bool
 	// busInhibited is the last IdleInhibited value (idle.go).
 	busInhibited bool
 	// idleNotes and powers are the idle notifications and output power
@@ -379,13 +379,13 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		channels:           ch,
 		surfaces:           make(map[*server.Resource]*surface),
 		buffers:            make(map[*server.Resource]clientBuffer),
-		windows:            make(map[ports.WindowID]*window),
-		layers:             make(map[ports.WindowID]*layerSurface),
+		windows:            make(map[domain.WindowID]*window),
+		layers:             make(map[domain.WindowID]*layerSurface),
 		nextWindow:         1,
 		eventReady:         make(chan struct{}, 1),
-		contentSeq:         make(map[ports.WindowID]uint64),
-		damage:             map[ports.WindowID][]ports.SeqDamage{},
-		latest:             make(map[ports.WindowID]ports.SurfaceContent),
+		contentSeq:         make(map[domain.WindowID]uint64),
+		damage:             map[domain.WindowID][]ports.SeqDamage{},
+		latest:             make(map[domain.WindowID]ports.SurfaceContent),
 		cursorReady:        make(chan struct{}, 1),
 		dataSources:        map[*server.Resource]*clipSource{},
 		primarySources:     map[*server.Resource]*clipSource{},

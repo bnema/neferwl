@@ -1,11 +1,13 @@
 package ports
 
+import "github.com/bnema/neferwl/internal/domain"
+
 // ClientEvent carries wayland → core notifications.
 type ClientEvent interface{ clientEvent() }
 
 // WindowMapped carries wayland → core mapping.
 type WindowMapped struct {
-	ID    WindowID
+	ID    domain.WindowID
 	AppID string
 	// Slot is the SlotEnv value of the client process, empty if none.
 	Slot string
@@ -15,7 +17,7 @@ type WindowMapped struct {
 	// its engine, "" when not sandboxed.
 	Sandbox string
 	// ContentType is the root surface's committed content hint at map time.
-	ContentType ContentType
+	ContentType domain.ContentType
 	// Xwayland is set when the client belongs to the X11 satellite session.
 	Xwayland bool
 	// Floating windows are dialogs (a parent) or fixed-size windows such
@@ -26,7 +28,7 @@ type WindowMapped struct {
 	// Parent is the window a dialog belongs to (xdg_toplevel.set_parent or
 	// xdg-foreign), 0 when none. A dialog of a fullscreen window shows over
 	// it.
-	Parent WindowID
+	Parent domain.WindowID
 	// Remap is set when the toplevel mapped before and was unmapped (a tray
 	// app restored): window rules only place its first map.
 	Remap bool
@@ -44,15 +46,15 @@ func (WindowMapped) clientEvent() {}
 // InputRegionChanged replaces the surface-local hit area for a mapped surface.
 // All means the full hit rectangle; otherwise Rects is the exact union.
 type InputRegionChanged struct {
-	ID    WindowID
+	ID    domain.WindowID
 	All   bool
-	Rects []Rect
+	Rects []domain.Rect
 }
 
 func (InputRegionChanged) clientEvent() {}
 
 // WindowUnmapped carries wayland → core removal.
-type WindowUnmapped struct{ ID WindowID }
+type WindowUnmapped struct{ ID domain.WindowID }
 
 func (WindowUnmapped) clientEvent() {}
 
@@ -60,7 +62,7 @@ func (WindowUnmapped) clientEvent() {}
 // or stops asking for all keys, compositor binds included, while it has
 // keyboard focus (zwp_keyboard_shortcuts_inhibit_v1).
 type ShortcutsInhibit struct {
-	Window WindowID
+	Window domain.WindowID
 	Active bool
 }
 
@@ -69,7 +71,7 @@ func (ShortcutsInhibit) clientEvent() {}
 // IdleInhibit carries wayland → core that a window keeps (Active) or
 // stops keeping the session from going idle (zwp_idle_inhibit_v1).
 type IdleInhibit struct {
-	Window WindowID
+	Window domain.WindowID
 	Active bool
 }
 
@@ -84,24 +86,13 @@ type OutputPower struct {
 
 func (OutputPower) clientEvent() {}
 
-// ResizeEdges are the window edges a pointer resize moves, as bit flags
-// (the xdg_toplevel resize_edge values).
-type ResizeEdges uint32
-
-const (
-	ResizeTop    ResizeEdges = 1
-	ResizeBottom ResizeEdges = 2
-	ResizeLeft   ResizeEdges = 4
-	ResizeRight  ResizeEdges = 8
-)
-
 // WindowMoveRequest carries wayland → core xdg_toplevel move and resize
 // requests answering the client's current press: core starts a pointer
 // drag of the window with the held button.
 type WindowMoveRequest struct {
-	ID     WindowID
+	ID     domain.WindowID
 	Resize bool
-	Edges  ResizeEdges
+	Edges  domain.ResizeEdges
 }
 
 func (WindowMoveRequest) clientEvent() {}
@@ -110,7 +101,7 @@ func (WindowMoveRequest) clientEvent() {}
 // External is set when another client (a taskbar, through foreign
 // toplevel) asks for it, not the window itself.
 type WindowFullscreenRequest struct {
-	ID         WindowID
+	ID         domain.WindowID
 	Fullscreen bool
 	External   bool
 }
@@ -119,13 +110,13 @@ func (WindowFullscreenRequest) clientEvent() {}
 
 // WindowActivate carries wayland → core a valid xdg-activation request:
 // show the window's workspace and focus it.
-type WindowActivate struct{ ID WindowID }
+type WindowActivate struct{ ID domain.WindowID }
 
 func (WindowActivate) clientEvent() {}
 
 // WindowAppID carries wayland → core an app ID set after the window mapped.
 type WindowAppID struct {
-	ID    WindowID
+	ID    domain.WindowID
 	AppID string
 }
 
@@ -133,8 +124,8 @@ func (WindowAppID) clientEvent() {}
 
 // WindowContentType carries wayland → core a content hint changed after map.
 type WindowContentType struct {
-	ID   WindowID
-	Type ContentType
+	ID   domain.WindowID
+	Type domain.ContentType
 }
 
 func (WindowContentType) clientEvent() {}
@@ -142,14 +133,14 @@ func (WindowContentType) clientEvent() {}
 // WindowParent carries the new parent of a mapped dialog (0: none), after
 // set_parent or an xdg-foreign import changed or ended the relationship.
 type WindowParent struct {
-	ID, Parent WindowID
+	ID, Parent domain.WindowID
 }
 
 func (WindowParent) clientEvent() {}
 
 // WindowModal carries a mapped dialog's new modal state (xdg_dialog_v1).
 type WindowModal struct {
-	ID    WindowID
+	ID    domain.WindowID
 	Modal bool
 }
 
@@ -157,7 +148,7 @@ func (WindowModal) clientEvent() {}
 
 // WindowResized carries wayland → core the new size of a floating window.
 type WindowResized struct {
-	ID            WindowID
+	ID            domain.WindowID
 	Width, Height int
 }
 

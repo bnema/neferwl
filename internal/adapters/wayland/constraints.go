@@ -7,6 +7,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/pointerwarp"
 	"github.com/bnema/go-wayland-bindings/server/relativepointer"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 )
@@ -100,8 +101,8 @@ type constraint struct {
 	surface    *surface
 	lock       *pointerconstraints.ZwpLockedPointerV1
 	confine    *pointerconstraints.ZwpConfinedPointerV1
-	region     ports.Rect
-	pending    *ports.Rect // set_region waiting for the surface commit
+	region     domain.Rect
+	pending    *domain.Rect // set_region waiting for the surface commit
 	persistent bool
 	active     bool
 	defunct    bool // a oneshot constraint that was deactivated
@@ -165,14 +166,14 @@ func (m constraintManager) create(r *pointerconstraints.ZwpPointerConstraintsV1,
 }
 
 // regionBox copies a region: the protocol reads it at request time.
-func (s *Server) regionBox(reg *wayland.Region) ports.Rect {
+func (s *Server) regionBox(reg *wayland.Region) domain.Rect {
 	if reg == nil || reg.Resource == nil {
-		return ports.Rect{}
+		return domain.Rect{}
 	}
 	if g := s.regions[reg.Resource]; g != nil {
 		return g.boxRect()
 	}
-	return ports.Rect{}
+	return domain.Rect{}
 }
 
 type lockHandler struct{ c *constraint }
@@ -203,7 +204,7 @@ func (h confineHandler) SetRegion(_ *pointerconstraints.ZwpConfinedPointerV1, re
 
 // commitConstraint applies this commit's captured region after its geometry;
 // later set_region requests remain pending. Core receives window-local state.
-func (s *surface) commitConstraint(c *constraint, region *ports.Rect, geometry bool) {
+func (s *surface) commitConstraint(c *constraint, region *domain.Rect, geometry bool) {
 	if c == nil || s.server.constraints[s] != c {
 		if !geometry {
 			return
@@ -302,9 +303,9 @@ func (s *Server) emitConstraint(c *constraint) {
 	if x == nil || x.window == nil {
 		return
 	}
-	mode := ports.ConstraintConfine
+	mode := domain.ConstraintConfine
 	if c.lock != nil {
-		mode = ports.ConstraintLock
+		mode = domain.ConstraintLock
 	}
 	r := c.region
 	if r.W > 0 && r.H > 0 {
@@ -313,9 +314,9 @@ func (s *Server) emitConstraint(c *constraint) {
 	}
 	// Core supports one confinement rect, so this bounds the intersection;
 	// contains uses the exact input region to decide activation.
-	if mode == ports.ConstraintConfine {
+	if mode == domain.ConstraintConfine {
 		if all, rects := c.surface.effectiveInput(); !all {
-			var box ports.Rect
+			var box domain.Rect
 			for _, input := range rects {
 				if r.W > 0 && r.H > 0 {
 					input = intersectRect(input, r)
@@ -327,7 +328,7 @@ func (s *Server) emitConstraint(c *constraint) {
 					box = input
 				} else {
 					x0, y0 := min(box.X, input.X), min(box.Y, input.Y)
-					box = ports.Rect{X: x0, Y: y0, W: max(box.X+box.W, input.X+input.W) - x0, H: max(box.Y+box.H, input.Y+input.H) - y0}
+					box = domain.Rect{X: x0, Y: y0, W: max(box.X+box.W, input.X+input.W) - x0, H: max(box.Y+box.H, input.Y+input.H) - y0}
 				}
 			}
 			r = box

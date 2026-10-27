@@ -6,6 +6,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/virtualkeyboard"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
@@ -26,7 +27,7 @@ type virtualKeyboard struct {
 	mods   ports.ModState // last modifiers request, zero before one
 	// pressed are keys held on focus; a focus change releases them by leave.
 	pressed      map[uint32]bool
-	focus        ports.WindowID
+	focus        domain.WindowID
 	generation   ports.LockGeneration // epoch of held keys; never release across protection
 	dropReleases bool                 // after an epoch change, ignore releases without a new press
 }

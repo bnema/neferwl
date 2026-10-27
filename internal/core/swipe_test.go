@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -72,7 +73,7 @@ func (r *swipeRig) advance(d time.Duration) {
 // the neighbours' re-flow) so the scene is the settled one: the tests of a
 // swipe rig look at what the map leaves. The entrance itself is checked on
 // the raw multiRig.mapWindow (TestMap*).
-func (r *swipeRig) mapWindow(t *testing.T, id ports.WindowID) []ports.Scene {
+func (r *swipeRig) mapWindow(t *testing.T, id domain.WindowID) []ports.Scene {
 	t.Helper()
 	set := r.multiRig.mapWindow(t, id)
 	if landed, ok := r.settleAll(t, r.outs...); ok {
@@ -147,24 +148,24 @@ func (r *swipeRig) workspaces(t *testing.T) {
 // the next step begins from the settled view.
 func (r *swipeRig) keySettled(t *testing.T, sym string) {
 	t.Helper()
-	r.key(t, sym, ports.ModAlt)
+	r.key(t, sym, domain.ModAlt)
 	if r.cfg.Animations.On {
 		r.settle(t)
 	}
 }
 
-func rectOf(s ports.Scene, id ports.WindowID) (ports.Rect, bool) {
+func rectOf(s ports.Scene, id domain.WindowID) (domain.Rect, bool) {
 	for _, w := range s.Windows {
 		if w.ID == id && !w.Hidden {
 			return w.Rect, true
 		}
 	}
-	return ports.Rect{}, false
+	return domain.Rect{}, false
 }
 
-func (r *swipeRig) focused(t *testing.T) ports.WindowID {
+func (r *swipeRig) focused(t *testing.T) domain.WindowID {
 	t.Helper()
-	var id ports.WindowID
+	var id domain.WindowID
 	for len(r.commands) > 0 {
 		if v, ok := (<-r.commands).(ports.FocusWindow); ok {
 			id = v.ID
@@ -178,7 +179,7 @@ func (r *swipeRig) focused(t *testing.T) ports.WindowID {
 func threeColumns(t *testing.T, r *swipeRig) ports.Scene {
 	t.Helper()
 	var s []ports.Scene
-	for id := ports.WindowID(1); id <= 3; id++ {
+	for id := domain.WindowID(1); id <= 3; id++ {
 		s = r.mapWindow(t, id)
 	}
 	return s[0]
@@ -356,8 +357,8 @@ func TestKeyDuringSlideRetargets(t *testing.T) {
 		s := r.flick(t, 10, -40, 0)
 		landing, _ := rectOf(s, 2)
 		// Back to column 3: the view heads there from where it is, no jump.
-		r.key(t, "Right", ports.ModAlt)
-		s = r.key(t, "Right", ports.ModAlt)[0]
+		r.key(t, "Right", domain.ModAlt)
+		s = r.key(t, "Right", domain.ModAlt)[0]
 		if got, _ := rectOf(s, 2); got.X != landing.X {
 			t.Fatalf("view jumped from %d to %d", landing.X, got.X)
 		}
@@ -407,10 +408,10 @@ func TestSwipeLandingKeepsViewWhenEmptyWorkspaceDrops(t *testing.T) {
 		// 1 on the first workspace, 2 on the third; the second is empty and
 		// active, so leaving it drops it and renumbers the third.
 		r.mapWindow(t, 1)
-		r.key(t, "Next", ports.ModAlt)
-		r.key(t, "Next", ports.ModAlt)
+		r.key(t, "Next", domain.ModAlt)
+		r.key(t, "Next", domain.ModAlt)
 		r.mapWindow(t, 2)
-		r.key(t, "Prior", ports.ModAlt)
+		r.key(t, "Prior", domain.ModAlt)
 		r.begin()
 		var s ports.Scene
 		for range 4 {
@@ -439,7 +440,7 @@ func TestSwipeDropsWhenWorkspacesChange(t *testing.T) {
 		r.begin()
 		r.move(t, 0, 30)
 		// A key switches workspace mid-swipe: the swipe lets go at once.
-		s := r.key(t, "Next", ports.ModAlt)[0]
+		s := r.key(t, "Next", domain.ModAlt)[0]
 		if got, ok := rectOf(s, 2); !ok || got.Y == 0 {
 			t.Fatalf("workspace 2 at %v %t after the key, want the old position", got, ok)
 		}
@@ -515,8 +516,8 @@ func TestSwipeIgnoredAfterSwitchingAwayAndBack(t *testing.T) {
 		before, _ := rectOf(threeColumns(t, r), 2)
 		r.begin()
 		r.move(t, -30, 0)
-		r.key(t, "Next", ports.ModAlt)
-		r.key(t, "Prior", ports.ModAlt)
+		r.key(t, "Next", domain.ModAlt)
+		r.key(t, "Prior", domain.ModAlt)
 		// The same workspace is back, but the swipe was let go.
 		r.at += 8 * time.Millisecond
 		r.input <- ports.SwipeUpdate{DX: -30, Time: r.at}
@@ -544,7 +545,7 @@ func TestSwipeKeptWhenAnotherOutputSwitchesWorkspace(t *testing.T) {
 		// The pointer goes to DP-2 and a bind switches its workspace.
 		r.input <- ports.PointerMotion{X: 1000, Y: 300}
 		scene(t, r.scenes)
-		r.key(t, "Next", ports.ModAlt)
+		r.key(t, "Next", domain.ModAlt)
 		// DP-2 slides to its other workspace on its own flips.
 		r.advance(5 * time.Second)
 		r.frames <- ports.OutputFrame{Output: "DP-2"}
@@ -554,7 +555,7 @@ func TestSwipeKeptWhenAnotherOutputSwitchesWorkspace(t *testing.T) {
 			}
 		}
 		// The swipe on DP-1 still follows the fingers.
-		var got ports.Rect
+		var got domain.Rect
 		for _, sc := range receiveMove(t, r, -570) {
 			if sc.Output == wide.Name {
 				got, _ = rectOf(sc, 2)
@@ -637,8 +638,8 @@ func TestSwipeInOverview(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, nil)
 		threeColumns(t, r)
-		opened := r.key(t, "o", ports.ModAlt)[0]
-		selected := func(s ports.Scene) ports.WindowID {
+		opened := r.key(t, "o", domain.ModAlt)[0]
+		selected := func(s ports.Scene) domain.WindowID {
 			for _, w := range s.Windows {
 				if w.Focused && w.Preview > 0 {
 					return w.ID
@@ -742,7 +743,7 @@ func (r *swipeRig) four(t *testing.T, dx, dy float64, n int) ports.Scene {
 func stashedThird(t *testing.T, r *swipeRig) ports.Scene {
 	t.Helper()
 	threeColumns(t, r)
-	s := r.key(t, "s", ports.ModAlt|ports.ModShift)[0]
+	s := r.key(t, "s", domain.ModAlt|domain.ModShift)[0]
 	if r.cfg.Animations.On {
 		s = r.settle(t)
 	}
@@ -822,7 +823,7 @@ func TestFourFingerSwipeUpOpensOverviewWithoutShownStash(t *testing.T) {
 			r := startSwipe(t, nil)
 			if name == "hidden" {
 				stashedThird(t, r)
-				r.key(t, "s", ports.ModAlt)
+				r.key(t, "s", domain.ModAlt)
 				r.settle(t)
 			} else {
 				threeColumns(t, r)
@@ -842,11 +843,11 @@ func TestFourFingerSwipeUpHidesStashOverCover(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, nil)
 		stashedThird(t, r)
-		r.key(t, "s", ports.ModAlt) // hide
+		r.key(t, "s", domain.ModAlt) // hide
 		r.settle(t)
-		r.key(t, "f", ports.ModAlt|ports.ModShift)
+		r.key(t, "f", domain.ModAlt|domain.ModShift)
 		r.settleAll(t, r.outs...)
-		shown := r.key(t, "s", ports.ModAlt)[0] // show over the cover
+		shown := r.key(t, "s", domain.ModAlt)[0] // show over the cover
 		sc, _ := r.settleAll(t, r.outs...)
 		if len(sc) == 0 {
 			sc = []ports.Scene{shown}
@@ -896,7 +897,7 @@ func TestFourFingerSwipeDownInOverviewKeepsStash(t *testing.T) {
 			r := startSwipe(t, nil)
 			stashedThird(t, r)
 			if hidden {
-				r.key(t, "s", ports.ModAlt)
+				r.key(t, "s", domain.ModAlt)
 				r.settle(t)
 			}
 			r.four(t, 0, -40, 10)
@@ -926,7 +927,7 @@ func TestOverviewOpenedMidSwipeDropsIt(t *testing.T) {
 			r.begin()
 			r.move(t, -40, 0)
 			r.move(t, -40, 0)
-			r.key(t, "o", ports.ModAlt)
+			r.key(t, "o", domain.ModAlt)
 			// s is the latest scene.
 			var s ports.Scene
 			if closeFirst {
@@ -961,7 +962,7 @@ func TestOverviewOpenedMidSwipeDropsIt(t *testing.T) {
 			}) {
 				t.Fatalf("closeFirst=%v: the scene never settled: %+v", closeFirst, s.Windows)
 			}
-			for _, id := range []ports.WindowID{1, 2, 3} {
+			for _, id := range []domain.WindowID{1, 2, 3} {
 				before, _ := rectOf(settled, id)
 				if after, _ := rectOf(s, id); before != after {
 					t.Fatalf("closeFirst=%v: window %d moved: %+v then %+v", closeFirst, id, before, after)
@@ -977,12 +978,12 @@ func TestOverviewOpenedMidSwipeDropsIt(t *testing.T) {
 func TestSwipeHardFlickMovesOneWorkspace(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, nil)
-		for id := ports.WindowID(1); id <= 4; id++ {
+		for id := domain.WindowID(1); id <= 4; id++ {
 			r.mapWindow(t, id)
-			r.key(t, "Next", ports.ModAlt)
+			r.key(t, "Next", domain.ModAlt)
 		}
 		for range 4 {
-			r.key(t, "Prior", ports.ModAlt)
+			r.key(t, "Prior", domain.ModAlt)
 		}
 		r.flick(t, 20, 0, 60)
 		s := r.settle(t)
@@ -997,7 +998,7 @@ func TestSwipeHardFlickMovesOneWorkspace(t *testing.T) {
 func TestSwipeHardFlickMovesOneColumn(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, nil)
-		for id := ports.WindowID(1); id <= 5; id++ {
+		for id := domain.WindowID(1); id <= 5; id++ {
 			r.mapWindow(t, id)
 		}
 		// The view shows 4 and 5; a hard flick left shows 3 and 4, not 1.
@@ -1017,8 +1018,8 @@ func TestOverviewScrollStopOnOtherOutput(t *testing.T) {
 		r := startSwipe(t, nil)
 		threeColumns(t, r)
 		r.plug(t, ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000})
-		r.key(t, "o", ports.ModAlt)
-		selected := func(s ports.Scene) ports.WindowID {
+		r.key(t, "o", domain.ModAlt)
+		selected := func(s ports.Scene) domain.WindowID {
 			for _, w := range s.Windows {
 				if w.Focused && w.Preview > 0 {
 					return w.ID
@@ -1026,7 +1027,7 @@ func TestOverviewScrollStopOnOtherOutput(t *testing.T) {
 			}
 			return 0
 		}
-		on := func(id ports.WindowID) func(ports.Scene) bool {
+		on := func(id domain.WindowID) func(ports.Scene) bool {
 			return func(s ports.Scene) bool { return s.Output == wide.Name && selected(s) == id }
 		}
 		finger := func(dx float64) ports.SwipeUpdate {
@@ -1054,7 +1055,7 @@ func TestSwipeOutputResizedMidSwipe(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		smaller := ports.OutputInfo{Name: wide.Name, Width: 600, Height: 600, RefreshMilli: 60000}
 		four := func(r *swipeRig) {
-			for id := ports.WindowID(1); id <= 4; id++ {
+			for id := domain.WindowID(1); id <= 4; id++ {
 				r.mapWindow(t, id)
 			}
 		}
@@ -1073,7 +1074,7 @@ func TestSwipeOutputResizedMidSwipe(t *testing.T) {
 		scene(t, r.scenes)
 		// The first update after the resize lets go: the slide stops.
 		s := r.move(t, -40, 0)
-		for _, id := range []ports.WindowID{1, 2, 3, 4} {
+		for _, id := range []domain.WindowID{1, 2, 3, 4} {
 			w, _ := rectOf(want, id)
 			if got, _ := rectOf(s, id); got != w {
 				t.Fatalf("window %d at %+v after the next update, want %+v", id, got, w)
@@ -1084,7 +1085,7 @@ func TestSwipeOutputResizedMidSwipe(t *testing.T) {
 			r.input <- ports.SwipeUpdate{DX: -40, Time: r.at}
 		}
 		s = r.end(t, false)
-		for _, id := range []ports.WindowID{1, 2, 3, 4} {
+		for _, id := range []domain.WindowID{1, 2, 3, 4} {
 			w, _ := rectOf(want, id)
 			if got, _ := rectOf(s, id); got != w {
 				t.Fatalf("window %d at %+v, want %+v as without the swipe", id, got, w)
@@ -1113,7 +1114,7 @@ func TestSwipeWindowMappedMidSwipe(t *testing.T) {
 		r.at += 8 * time.Millisecond
 		r.input <- ports.SwipeUpdate{DX: -40, Time: r.at}
 		s := r.end(t, false)
-		for _, id := range []ports.WindowID{1, 2, 3, 4} {
+		for _, id := range []domain.WindowID{1, 2, 3, 4} {
 			w, _ := rectOf(want, id)
 			if got, _ := rectOf(s, id); got != w {
 				t.Fatalf("window %d at %+v, want %+v as without the swipe", id, got, w)
@@ -1128,12 +1129,12 @@ func TestSwipeWindowMappedMidSwipe(t *testing.T) {
 func TestSwipeRetargetKeepsVelocity(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, nil)
-		for id := ports.WindowID(1); id <= 4; id++ {
+		for id := domain.WindowID(1); id <= 4; id++ {
 			r.mapWindow(t, id)
 		}
 		// Focus on 4, the view shows 3 and 4. Go back to the first column.
 		for range 3 {
-			r.key(t, "Left", ports.ModAlt)
+			r.key(t, "Left", domain.ModAlt)
 		}
 		r.settle(t)
 		// A flick toward the right lands on a later column: the view moves
@@ -1147,7 +1148,7 @@ func TestSwipeRetargetKeepsVelocity(t *testing.T) {
 		if prev.X >= 0 {
 			t.Fatalf("view did not move right: column 1 at %d", prev.X)
 		}
-		r.key(t, "Right", ports.ModAlt)
+		r.key(t, "Right", domain.ModAlt)
 		// The retargeted spring keeps the speed of the landing: the view moves
 		// on from the first frame and never goes back.
 		for i := range 2 {

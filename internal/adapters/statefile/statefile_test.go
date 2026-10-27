@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
@@ -163,7 +164,7 @@ func TestWorkspaceGeometryFields(t *testing.T) {
 	ids := workspaceid.WithPrefix("0a1b2c3d")
 	st := fromPorts(ports.State{Workspaces: []ports.WorkspaceState{
 		{ID: 7, Number: 2, Name: "web", Output: "DP-2", Visible: true, Overflow: "fixed", Columns: []ports.ColumnState{
-			{Rect: ports.Rect{X: 10, Y: 20, W: 300, H: 400}, Windows: []ports.TileState{{ID: 5, Rect: ports.Rect{X: 11, Y: 21, W: 298, H: 198}}}},
+			{Rect: domain.Rect{X: 10, Y: 20, W: 300, H: 400}, Windows: []ports.TileState{{ID: 5, Rect: domain.Rect{X: 11, Y: 21, W: 298, H: 198}}}},
 		}},
 		{ID: 8, Output: "DP-2"},
 	}}, ids)

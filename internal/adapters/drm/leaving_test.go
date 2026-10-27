@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/adapters/outputkit/surfaces"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -71,7 +72,7 @@ func TestLeavingWindowNeverOnAPlane(t *testing.T) {
 		o.kept = table.Kept
 		s, c := overlayScene()
 		table.Update(c[2], s)
-		seen := map[ports.WindowID]uint64{2: 3}
+		seen := map[domain.WindowID]uint64{2: 3}
 		if shows := o.shownBy(s, seen); shows[2] != 3 {
 			t.Fatalf("control: shows %v", shows)
 		}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-pipewire/pipewire"
 	"github.com/bnema/zerobus"
@@ -80,10 +81,10 @@ func (p *producer) none() {
 func (p *producer) streaming() {
 	p.t.Helper()
 	p.s.pump(p.st, p.now)
-	if c := p.cmd(); c.Kind != ports.CastOpen || c.ID != 1 || c.Output != "HEADLESS-1" {
+	if c := p.cmd(); c.Kind != domain.CastOpen || c.ID != 1 || c.Output != "HEADLESS-1" {
 		p.t.Fatalf("open %+v", c)
 	}
-	p.s.onCastEvent(&ports.CastEvent{Kind: ports.CastSize, ID: 1, Width: 64, Height: 32})
+	p.s.onCastEvent(&ports.CastEvent{Kind: domain.CastSize, ID: 1, Width: 64, Height: 32})
 	p.core.EXPECT().NewVideoSource(mock.Anything, mock.Anything).RunAndReturn(
 		func(cfg pipewire.VideoConfig, h pipewire.VideoHandler) (videoSource, error) {
 			if cfg.Width != 64 || cfg.Height != 32 || cfg.MaxFPS != 60 {
@@ -127,14 +128,14 @@ func TestPacingForcesFirstFrameThenWaitsForDamage(t *testing.T) {
 	p.src.EXPECT().Dequeue().Return(p.buf).Once()
 	p.s.pump(p.st, p.now)
 	c := p.cmd()
-	if c.Kind != ports.CastFrame || c.Buf != 3 || c.Stride != 256 || c.Width != 64 || c.Height != 32 || c.Format != shmXRGB8888 || len(c.Data) != 64*32*4 || &c.Data[0] != &p.buf.Data[0] {
+	if c.Kind != domain.CastFrame || c.Buf != 3 || c.Stride != 256 || c.Width != 64 || c.Height != 32 || c.Format != shmXRGB8888 || len(c.Data) != 64*32*4 || &c.Data[0] != &p.buf.Data[0] {
 		t.Fatalf("frame %+v", c)
 	}
 	// Done: queued, then triggered, in that order.
 	var order []string
 	p.src.EXPECT().Queue(p.buf, uint64(1), mock.Anything, false).Run(func(*pipewire.VideoBuffer, uint64, time.Duration, bool) { order = append(order, "queue") }).Once()
 	p.src.EXPECT().Trigger().Run(func() { order = append(order, "trigger") }).Once()
-	p.s.onCastEvent(&ports.CastEvent{Kind: ports.CastFrameDone, ID: 1, Buf: 3, Time: time.Unix(5, 0)})
+	p.s.onCastEvent(&ports.CastEvent{Kind: domain.CastFrameDone, ID: 1, Buf: 3, Time: time.Unix(5, 0)})
 	if len(order) != 2 || order[0] != "queue" || order[1] != "trigger" {
 		t.Fatalf("order %v", order)
 	}
@@ -154,8 +155,8 @@ func TestPacingOnePerInterval(t *testing.T) {
 	p.cmd()
 	p.src.EXPECT().Queue(mock.Anything, mock.Anything, mock.Anything, false).Return().Once()
 	p.src.EXPECT().Trigger().Return().Once()
-	p.s.onCastEvent(&ports.CastEvent{Kind: ports.CastFrameDone, ID: 1, Buf: 3})
-	p.s.onCastEvent(&ports.CastEvent{Kind: ports.CastDamage, ID: 1})
+	p.s.onCastEvent(&ports.CastEvent{Kind: domain.CastFrameDone, ID: 1, Buf: 3})
+	p.s.onCastEvent(&ports.CastEvent{Kind: domain.CastDamage, ID: 1})
 	p.now = p.now.Add(5 * time.Millisecond)
 	p.s.pumpAll(p.now)
 	p.none()
@@ -164,7 +165,7 @@ func TestPacingOnePerInterval(t *testing.T) {
 	}
 	p.now = p.now.Add(12 * time.Millisecond)
 	p.s.pumpAll(p.now)
-	if c := p.cmd(); c.Kind != ports.CastFrame {
+	if c := p.cmd(); c.Kind != domain.CastFrame {
 		t.Fatalf("%+v", c)
 	}
 	if got := p.s.timeout(); got != -1 {
@@ -179,11 +180,11 @@ func TestResizeWaitsForInflightFrame(t *testing.T) {
 	p.src.EXPECT().Dequeue().Return(p.buf).Once()
 	p.s.pump(p.st, p.now)
 	p.cmd()
-	p.s.onCastEvent(&ports.CastEvent{Kind: ports.CastSize, ID: 1, Width: 32, Height: 16})
+	p.s.onCastEvent(&ports.CastEvent{Kind: domain.CastSize, ID: 1, Width: 32, Height: 16})
 	p.s.pump(p.st, p.now) // Resize is not expected while the frame is in flight
 	p.src.EXPECT().Resize(32, 16).Return(nil).Once()
 	p.src.EXPECT().Release(p.buf).Return().Once()
-	p.s.onCastEvent(&ports.CastEvent{Kind: ports.CastFrameDone, ID: 1, Buf: 3, Err: ports.ErrCaptureTransient})
+	p.s.onCastEvent(&ports.CastEvent{Kind: domain.CastFrameDone, ID: 1, Buf: 3, Err: ports.ErrCaptureTransient})
 	p.s.pump(p.st, p.now)
 	// No frame until the new format is negotiated.
 	p.now = p.now.Add(time.Second)
@@ -199,10 +200,10 @@ func TestFrameErrorsReleaseAndStop(t *testing.T) {
 	p.src.EXPECT().Release(p.buf).Return()
 	for i := range maxFrameErrors {
 		p.s.pump(p.st, p.now)
-		if c := p.cmd(); c.Kind != ports.CastFrame {
+		if c := p.cmd(); c.Kind != domain.CastFrame {
 			t.Fatalf("frame %d: %+v", i, c)
 		}
-		p.s.onCastEvent(&ports.CastEvent{Kind: ports.CastFrameDone, ID: 1, Buf: 3, Err: errTest})
+		p.s.onCastEvent(&ports.CastEvent{Kind: domain.CastFrameDone, ID: 1, Buf: 3, Err: errTest})
 		p.now = p.now.Add(time.Second)
 	}
 	if !p.st.closing || !p.s.sessions[0].dying {
@@ -210,7 +211,7 @@ func TestFrameErrorsReleaseAndStop(t *testing.T) {
 	}
 	p.src.EXPECT().Destroy().Return().Once()
 	p.s.pump(p.st, p.now)
-	if c := p.cmd(); c.Kind != ports.CastClose || c.ID != 1 {
+	if c := p.cmd(); c.Kind != domain.CastClose || c.ID != 1 {
 		t.Fatalf("%+v", c)
 	}
 	if p.st.used {
@@ -228,7 +229,7 @@ func TestTeardownWaitsForFrameDone(t *testing.T) {
 	p.cmd()
 	p.s.closeSession(p.st.sess, true)
 	p.s.pump(p.st, p.now)
-	if c := p.cmd(); c.Kind != ports.CastClose {
+	if c := p.cmd(); c.Kind != domain.CastClose {
 		t.Fatalf("%+v", c)
 	}
 	p.s.pump(p.st, p.now)
@@ -238,7 +239,7 @@ func TestTeardownWaitsForFrameDone(t *testing.T) {
 	}
 	p.src.EXPECT().Release(p.buf).Return().Once()
 	p.src.EXPECT().Destroy().Return().Once()
-	p.s.onCastEvent(&ports.CastEvent{Kind: ports.CastFrameDone, ID: 1, Buf: 3})
+	p.s.onCastEvent(&ports.CastEvent{Kind: domain.CastFrameDone, ID: 1, Buf: 3})
 	p.s.pump(p.st, p.now)
 	p.s.reap()
 	if p.st.used || p.s.sessions[0].used {
@@ -258,7 +259,7 @@ func TestCastStoppedClosesSession(t *testing.T) {
 			return &zerobus.Encoder{}
 		}).Once()
 	p.bus.EXPECT().Send().Return(1, nil).Once()
-	p.s.onCastEvent(&ports.CastEvent{Kind: ports.CastStopped, ID: 1, Reason: ports.CaptureReasonWindowGone})
+	p.s.onCastEvent(&ports.CastEvent{Kind: domain.CastStopped, ID: 1, Reason: domain.CaptureReasonWindowGone})
 	if member != "Closed" {
 		t.Fatal("Closed not signalled")
 	}
@@ -297,8 +298,8 @@ func TestCastProducerAllocations(t *testing.T) {
 	st.pwState, st.w, st.h, st.fw, st.fh, st.haveSize = pipewire.StreamStateStreaming, 64, 32, 64, 32, true
 	cmds := p.cmds
 	b := p.buf
-	damage := ports.CastEvent{Kind: ports.CastDamage, ID: 1}
-	done := ports.CastEvent{Kind: ports.CastFrameDone, ID: 1, Buf: b.Index, Time: time.Unix(5, 0)}
+	damage := ports.CastEvent{Kind: domain.CastDamage, ID: 1}
+	done := ports.CastEvent{Kind: domain.CastFrameDone, ID: 1, Buf: b.Index, Time: time.Unix(5, 0)}
 	now := p.now
 	cycle := func() {
 		p.s.Push(damage)
@@ -335,16 +336,16 @@ func TestPausedNodeGetsNoFramesAndSessionStays(t *testing.T) {
 	p.streaming()
 	p.src.EXPECT().Dequeue().Return(p.buf).Twice()
 	p.s.pump(p.st, p.now)
-	if c := p.cmd(); c.Kind != ports.CastFrame {
+	if c := p.cmd(); c.Kind != domain.CastFrame {
 		t.Fatalf("%+v", c)
 	}
 	// Paused with the frame in flight: it is given back, not queued (no
 	// Queue or Trigger expectation).
 	p.st.h2.StateChanged(pipewire.StreamStatePaused, 42, "")
 	p.src.EXPECT().Release(p.buf).Return().Once()
-	p.s.onCastEvent(&ports.CastEvent{Kind: ports.CastFrameDone, ID: 1, Buf: 3, Time: time.Unix(5, 0)})
+	p.s.onCastEvent(&ports.CastEvent{Kind: domain.CastFrameDone, ID: 1, Buf: 3, Time: time.Unix(5, 0)})
 	for range 5 {
-		p.s.onCastEvent(&ports.CastEvent{Kind: ports.CastDamage, ID: 1})
+		p.s.onCastEvent(&ports.CastEvent{Kind: domain.CastDamage, ID: 1})
 		p.now = p.now.Add(time.Second)
 		p.s.pumpAll(p.now) // Dequeue is not expected a second time while paused
 		p.none()
@@ -358,7 +359,7 @@ func TestPausedNodeGetsNoFramesAndSessionStays(t *testing.T) {
 	// A consumer is back: the picture goes out at once, damage or not.
 	p.st.h2.StateChanged(pipewire.StreamStateStreaming, 42, "")
 	p.s.pumpAll(p.now)
-	if c := p.cmd(); c.Kind != ports.CastFrame {
+	if c := p.cmd(); c.Kind != domain.CastFrame {
 		t.Fatalf("no frame after the node streams again: %+v", c)
 	}
 }
@@ -372,7 +373,7 @@ func TestShutdownClosesStreams(t *testing.T) {
 	p.src.EXPECT().Destroy().Run(func() { order = append(order, "destroy") }).Once()
 	p.core.EXPECT().Close().Run(func() { order = append(order, "close") }).Once()
 	p.s.shutdown(context.Background())
-	if c := p.cmd(); c.Kind != ports.CastClose || c.ID != 1 {
+	if c := p.cmd(); c.Kind != domain.CastClose || c.ID != 1 {
 		t.Fatalf("%+v", c)
 	}
 	if len(order) != 2 || order[0] != "destroy" || order[1] != "close" || p.s.pwc != nil {
@@ -387,12 +388,12 @@ func TestShutdownClosesStreams(t *testing.T) {
 func TestShutdownClosesStreamWithoutSource(t *testing.T) {
 	p := newProducer(t)
 	p.s.pump(p.st, p.now)
-	if c := p.cmd(); c.Kind != ports.CastOpen {
+	if c := p.cmd(); c.Kind != domain.CastOpen {
 		t.Fatalf("%+v", c)
 	}
 	p.core.EXPECT().Close().Return().Once()
 	p.s.shutdown(context.Background())
-	if c := p.cmd(); c.Kind != ports.CastClose || c.ID != 1 {
+	if c := p.cmd(); c.Kind != domain.CastClose || c.ID != 1 {
 		t.Fatalf("%+v", c)
 	}
 	if p.st.used {
@@ -427,14 +428,14 @@ func TestShutdownWaitsForFrameInFlight(t *testing.T) {
 		go func() { defer close(done); p.s.shutdown(context.Background()) }()
 		select {
 		case c := <-p.cmds:
-			if c.Kind != ports.CastClose {
+			if c.Kind != domain.CastClose {
 				t.Errorf("%+v", c)
 			}
 		case <-time.After(5 * time.Second):
 			t.Fatal("no CastClose")
 		}
 		delivered.Store(true)
-		p.s.Push(ports.CastEvent{Kind: ports.CastFrameDone, ID: 1, Buf: 3})
+		p.s.Push(ports.CastEvent{Kind: domain.CastFrameDone, ID: 1, Buf: 3})
 		select {
 		case <-done:
 		case <-time.After(5 * time.Second):
@@ -463,7 +464,7 @@ func TestShutdownTimeoutKeepsHandlerStateAndFreesTable(t *testing.T) {
 		stopped, stop := context.WithCancel(context.Background())
 		stop()
 		p.s.shutdown(stopped) // no Destroy, Release or Close is expected
-		if c := p.cmd(); c.Kind != ports.CastClose {
+		if c := p.cmd(); c.Kind != domain.CastClose {
 			t.Fatalf("%+v", c)
 		}
 		if p.s.sessions == old {

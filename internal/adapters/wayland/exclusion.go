@@ -7,6 +7,8 @@ import (
 	"os"
 	"slices"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
@@ -177,7 +179,7 @@ func (m *exclusionManager) AttachSurface(r *imagecapture.NeferwlCaptureExclusion
 	case state.kind != roleLayer || l == nil:
 		r.PostError(uint32(imagecapture.NeferwlCaptureExclusionManagerV1ErrorSurfaceRole), "not a layer surface")
 		return
-	case l.pending.layer != ports.LayerTop && l.pending.layer != ports.LayerOverlay:
+	case l.pending.layer != domain.LayerTop && l.pending.layer != domain.LayerOverlay:
 		r.PostError(uint32(imagecapture.NeferwlCaptureExclusionManagerV1ErrorInvalidLayer), "layer must be top or overlay")
 		return
 	case l.pending.keyboard == 1:
@@ -244,7 +246,7 @@ func (ex *exclusion) end(notify bool) {
 
 // confirm sends attached to the attachments core now lists: only then is it
 // safe for the client to show the layer.
-func (ex *exclusion) confirm(listed []ports.WindowID) {
+func (ex *exclusion) confirm(listed []domain.WindowID) {
 	for _, a := range ex.attached {
 		if !a.confirmed && slices.Contains(listed, a.layer.id) {
 			a.confirmed = true

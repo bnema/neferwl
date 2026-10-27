@@ -8,7 +8,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/contenttype"
 	"github.com/bnema/go-wayland-bindings/server/fifo"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
 )
@@ -154,16 +154,16 @@ func monotonicTime(sec uint64, nsec int64) time.Time {
 // content_type_v1
 
 // windowContentType translates the protocol hint into the port's enum.
-func windowContentType(kind uint32) ports.ContentType {
+func windowContentType(kind uint32) domain.ContentType {
 	switch kind {
 	case uint32(contenttype.WpContentTypeV1TypePhoto):
-		return ports.ContentPhoto
+		return domain.ContentPhoto
 	case uint32(contenttype.WpContentTypeV1TypeVideo):
-		return ports.ContentVideo
+		return domain.ContentVideo
 	case uint32(contenttype.WpContentTypeV1TypeGame):
-		return ports.ContentGame
+		return domain.ContentGame
 	default:
-		return ports.ContentNone
+		return domain.ContentNone
 	}
 }
 
@@ -227,9 +227,9 @@ type update struct {
 	prev            *update
 	synced, bound   bool
 	xdg             *xdgSurface
-	geometry        ports.Rect
+	geometry        domain.Rect
 	cons            *constraint
-	region          *ports.Rect
+	region          *domain.Rect
 	layer           *layerSurface
 	layerNext       layerState
 	lockAck         lockConfigure

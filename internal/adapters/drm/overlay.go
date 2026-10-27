@@ -5,6 +5,7 @@ import (
 	"os"
 	"slices"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
@@ -45,11 +46,11 @@ func (p *plane) zpos() (uint64, bool) {
 // overlayWin is the window on the overlay plane: its buffer and where it
 // shows, in physical pixels.
 type overlayWin struct {
-	id   ports.WindowID
+	id   domain.WindowID
 	fb   uint32
 	buf  uint64
-	rect ports.Rect // CRTC rect
-	w, h int        // buffer size
+	rect domain.Rect // CRTC rect
+	w, h int         // buffer size
 	// color is how the plane's colour pipeline shows the buffer.
 	color colorUse
 	// acquire is the client's explicit-sync fence, a duplicate owned by
@@ -65,7 +66,7 @@ type overlayWin struct {
 //
 // kept is scanoutCandidate's: a window drawn from a withdrawn content is
 // composed, never put on the plane.
-func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, hdrOn bool, pipeline *colorPipeline, kept func(ports.WindowID) bool) (ports.SceneWindow, ports.SurfaceContent, colorMode, string) {
+func overlayCandidate(s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent, hdrOn bool, pipeline *colorPipeline, kept func(domain.WindowID) bool) (ports.SceneWindow, ports.SurfaceContent, colorMode, string) {
 	// A hardware plane would bypass the compositor-owned flash border.
 	if s.PositionHint.Shown() {
 		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "position_hint"
@@ -148,7 +149,7 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "drop_hint"
 	}
 	for _, l := range s.Layers {
-		if l.Layer >= ports.LayerTop && l.Rect.Overlaps(pick.Rect) {
+		if l.Layer >= domain.LayerTop && l.Rect.Overlaps(pick.Rect) {
 			return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "layer_above"
 		}
 	}
@@ -165,7 +166,7 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 			}
 		}
 	}
-	if clip := s.WorkspaceClip; clip != (ports.Rect{}) && !clip.Contains(pick.Rect) {
+	if clip := s.WorkspaceClip; clip != (domain.Rect{}) && !clip.Contains(pick.Rect) {
 		// The plane cannot apply the workspace's logical viewport crop.
 		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "workspace_clip"
 	}
@@ -175,7 +176,7 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	}
 	c := surfaces[pick.ID]
 	pw, ph := float64(pick.Rect.W)*scale, float64(pick.Rect.H)*scale
-	if float64(c.Width) != pw || float64(c.Height) != ph || c.Geometry != (ports.Rect{}) && (c.Geometry.X != 0 || c.Geometry.Y != 0) {
+	if float64(c.Width) != pw || float64(c.Height) != ph || c.Geometry != (domain.Rect{}) && (c.Geometry.X != 0 || c.Geometry.Y != 0) {
 		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "scaled"
 	}
 	x, y := float64(pick.Rect.X)*scale, float64(pick.Rect.Y)*scale
@@ -280,7 +281,7 @@ func (o *Output) forgetOverlayProbes() { clear(o.overlayPassed[:]) }
 // overlayProbe is what an overlay probe depends on, fences aside.
 type overlayProbe struct {
 	primary, overlay uint32
-	rect             ports.Rect
+	rect             domain.Rect
 	w, h             int
 	color            colorUse
 	cursor           cursorState

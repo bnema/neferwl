@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -66,13 +67,13 @@ func damageMatchesFullRedraw(t *testing.T, tr, out ports.BufferTransform) {
 	base := shmContent(t, w, h, w*4, pixels)
 	base.ID, base.Transform = 1, tr
 	f := base.SHM.File
-	scene := ports.Scene{Seq: 5, Transform: out, OutputWidth: 64, OutputHeight: 48, Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 4, Y: 4, W: w, H: h}}}}
+	scene := ports.Scene{Seq: 5, Transform: out, OutputWidth: 64, OutputHeight: 48, Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: w, H: h}}}}
 	hist := []ports.SeqDamage{{Seq: 1, Full: true}}
 	c := damagedContent(t, f, *base, 1, pixels, hist)
 	step := func(i int, c ports.SurfaceContent) {
 		t.Helper()
 		damaged.UseTarget(i % 2)
-		contents := map[ports.WindowID]ports.SurfaceContent{1: c}
+		contents := map[domain.WindowID]ports.SurfaceContent{1: c}
 		if err := render(damaged, scene, contents); err != nil {
 			t.Fatal(err)
 		}
@@ -90,11 +91,11 @@ func damageMatchesFullRedraw(t *testing.T, tr, out ports.BufferTransform) {
 	// so its next frame redraws the union of both.
 	for i, d := range []struct {
 		col  color.RGBA
-		rect ports.Rect
-	}{{color.RGBA{255, 0, 0, 255}, ports.Rect{X: 2, Y: 2, W: 4, H: 4}}, {color.RGBA{0, 255, 0, 255}, ports.Rect{X: 20, Y: 10, W: 3, H: 5}}} {
+		rect domain.Rect
+	}{{color.RGBA{255, 0, 0, 255}, domain.Rect{X: 2, Y: 2, W: 4, H: 4}}, {color.RGBA{0, 255, 0, 255}, domain.Rect{X: 20, Y: 10, W: 3, H: 5}}} {
 		seq := uint64(2 + i)
 		px(d.col, d.rect.X, d.rect.Y, d.rect.X+d.rect.W, d.rect.Y+d.rect.H, pixels)
-		hist = append(hist, ports.SeqDamage{Seq: seq, Rects: []ports.Rect{d.rect}})
+		hist = append(hist, ports.SeqDamage{Seq: seq, Rects: []domain.Rect{d.rect}})
 		c = damagedContent(t, f, *base, seq, pixels, hist)
 	}
 	step(2, c)
@@ -103,7 +104,7 @@ func damageMatchesFullRedraw(t *testing.T, tr, out ports.BufferTransform) {
 	}
 	// Render, skip (no frame), render: target 1 is two contents behind.
 	px(color.RGBA{0, 0, 255, 255}, 0, 30, 2, 32, pixels)
-	hist = append(hist, ports.SeqDamage{Seq: 4, Rects: []ports.Rect{{Y: 30, W: 2, H: 2}}})
+	hist = append(hist, ports.SeqDamage{Seq: 4, Rects: []domain.Rect{{Y: 30, W: 2, H: 2}}})
 	c = damagedContent(t, f, *base, 4, pixels, hist)
 	step(3, c)
 	step(4, c)
@@ -121,8 +122,8 @@ func TestRendererDamageWindowLeftOutAndBack(t *testing.T) {
 	damaged, full := newR(), newR()
 	c := solidContent(t, 16, 16, color.RGBA{200, 10, 10, 255})
 	c.ID, c.Seq = 1, 1
-	contents := map[ports.WindowID]ports.SurfaceContent{1: c}
-	with := ports.Scene{Seq: 9, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 4, Y: 4, W: 16, H: 16}}}}
+	contents := map[domain.WindowID]ports.SurfaceContent{1: c}
+	with := ports.Scene{Seq: 9, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: 16, H: 16}}}}
 	without := with
 	without.Windows = nil
 	check := func(s ports.Scene, what string) {

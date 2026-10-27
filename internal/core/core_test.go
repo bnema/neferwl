@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -125,7 +126,7 @@ func owner(t *testing.T, animated bool) {
 	client <- ports.WindowMapped{ID: 1}
 	s = l.one(scene(t, scenes))
 	// A single column fills the usable width.
-	if len(s.Windows) != 1 || s.Windows[0].Rect.W != 84 || s.Windows[0].Inset != ports.SideAll {
+	if len(s.Windows) != 1 || s.Windows[0].Rect.W != 84 || s.Windows[0].Inset != domain.SideAll {
 		t.Fatal(s)
 	}
 	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 84, Height: 64, Activated: true, Output: "OUT-1", Visible: true}) {
@@ -146,17 +147,17 @@ func owner(t *testing.T, animated bool) {
 	if len(commands) != 0 {
 		t.Fatal("duplicate configure")
 	}
-	input <- ports.KeyEvent{Keysym: "Return", Mods: ports.ModAlt, Pressed: true}
+	input <- ports.KeyEvent{Keysym: "Return", Mods: domain.ModAlt, Pressed: true}
 	scene(t, scenes)
 	if v := receive(t, spawn); len(v.Argv) != 1 || v.Argv[0] != "foot" {
 		t.Fatal(v)
 	}
-	input <- ports.KeyEvent{Keysym: "Return", Mods: ports.ModAlt}
+	input <- ports.KeyEvent{Keysym: "Return", Mods: domain.ModAlt}
 	input <- ports.KeyEvent{Keysym: "x", Pressed: true}
 	if v := command(t, commands); v != (ports.ForwardKey{ID: 2, Key: ports.KeyEvent{Keysym: "x", Pressed: true}}) {
 		t.Fatal(v)
 	}
-	input <- ports.KeyEvent{Keysym: "Q", Mods: ports.ModAlt, Pressed: true}
+	input <- ports.KeyEvent{Keysym: "Q", Mods: domain.ModAlt, Pressed: true}
 	scene(t, scenes)
 	if v := command(t, commands); v != (ports.CloseWindow{ID: 2}) {
 		t.Fatal(v)
@@ -179,9 +180,9 @@ func owner(t *testing.T, animated bool) {
 	reload <- ports.ConfigChanged{Config: cfg}
 	receive(t, errs)
 	for i := 0; i < 100; i++ {
-		client <- ports.WindowMapped{ID: ports.WindowID(i + 3)}
+		client <- ports.WindowMapped{ID: domain.WindowID(i + 3)}
 	}
-	input <- ports.KeyEvent{Keysym: "BackSpace", Mods: ports.ModCtrl | ports.ModAlt, Pressed: true}
+	input <- ports.KeyEvent{Keysym: "BackSpace", Mods: domain.ModCtrl | domain.ModAlt, Pressed: true}
 	if err := receive(t, done); !errors.Is(err, core.ErrQuit) {
 		t.Fatal(err)
 	}
@@ -226,10 +227,10 @@ func TestKeyPressState(t *testing.T) {
 		scene(t, scenes)
 		command(t, commands)
 		command(t, commands)
-		press := ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper, Pressed: true}
+		press := ports.KeyEvent{Keysym: "Left", Mods: domain.ModSuper, Pressed: true}
 		input <- press
 		scene(t, scenes)
-		input <- ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper}
+		input <- ports.KeyEvent{Keysym: "Left", Mods: domain.ModSuper}
 		input <- ports.KeyEvent{Keysym: "Left", Pressed: true}
 		if v := command(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "Left", Pressed: true}}) {
 			t.Fatal(v)
@@ -269,7 +270,7 @@ func TestBoundReleaseSwallowed(t *testing.T) {
 		scene(t, scenes)
 		command(t, commands)
 		command(t, commands)
-		input <- ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper, Pressed: true}
+		input <- ports.KeyEvent{Keysym: "Left", Mods: domain.ModSuper, Pressed: true}
 		scene(t, scenes)
 		input <- ports.KeyEvent{Keysym: "Left"}
 		input <- ports.KeyEvent{Keysym: "x", Pressed: true}
@@ -379,7 +380,7 @@ func borderInset(t *testing.T, animated bool) {
 	client <- ports.WindowMapped{ID: 2}
 	s := l.one(scene(t, scenes))
 	r = s.Windows[1].Rect
-	if s.Windows[0].Inset != ports.SideRight || s.Windows[1].Inset != 0 || len(s.Separators) == 0 {
+	if s.Windows[0].Inset != domain.SideRight || s.Windows[1].Inset != 0 || len(s.Separators) == 0 {
 		t.Fatal(s)
 	}
 	want := ports.ConfigureWindow{ID: 1, Width: s.Windows[0].Rect.W - 2, Height: r.H, Activated: false, Output: "OUT-1", Visible: true}
@@ -417,7 +418,7 @@ func TestLayerKeyboardFocus(t *testing.T) {
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}
 		scene(t, scenes)
-		focusOf := func() ports.WindowID {
+		focusOf := func() domain.WindowID {
 			t.Helper()
 			for {
 				if v, ok := command(t, commands).(ports.FocusWindow); ok {
@@ -429,8 +430,8 @@ func TestLayerKeyboardFocus(t *testing.T) {
 			t.Fatalf("window focus %d", id)
 		}
 		// An on-demand bar does not steal focus; an exclusive launcher does.
-		launcher := ports.LayerSurface{ID: 7, Layer: ports.LayerOverlay, Width: 40, Height: 20, Keyboard: 1}
-		bar := ports.LayerSurface{ID: 6, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 5, Keyboard: 2}
+		launcher := ports.LayerSurface{ID: 7, Layer: domain.LayerOverlay, Width: 40, Height: 20, Keyboard: 1}
+		bar := ports.LayerSurface{ID: 6, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 5, Keyboard: 2}
 		client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar, launcher}}
 		scene(t, scenes)
 		if id := focusOf(); id != 7 {
@@ -517,7 +518,7 @@ func workspaceSwitch(t *testing.T, animated bool) {
 		<-commands
 	}
 	// AZERTY: the 2 key prints eacute; the default bind is on its physical key (code 3).
-	input <- ports.KeyEvent{Keysym: "eacute", Base: "eacute", Keycode: 3, Mods: ports.ModSuper, Pressed: true}
+	input <- ports.KeyEvent{Keysym: "eacute", Base: "eacute", Keycode: 3, Mods: domain.ModSuper, Pressed: true}
 	s := settledScene(t, sc, frames, scenes, scene(t, scenes), animated)
 	if len(s.Windows) != 1 || !s.Windows[0].Hidden {
 		t.Fatal(s)
@@ -587,7 +588,7 @@ func clickAfterWorkspaceSwitch(t *testing.T, animated bool) {
 		<-commands
 	}
 	// Cmd+2 hides window 1; the pointer must leave it.
-	input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModSuper, Pressed: true}
+	input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: domain.ModSuper, Pressed: true}
 	settledScene(t, sc, frames, scenes, scene(t, scenes), animated)
 	var cleared bool
 	for len(commands) > 0 {
@@ -636,10 +637,10 @@ func TestShiftReleasedFirst(t *testing.T) {
 			<-commands
 		}
 		// US Cmd+Shift+1 prints exclam; the physical key (code 2) matches move-column-to-workspace 1.
-		input <- ports.KeyEvent{Keysym: "exclam", Base: "1", Keycode: 2, Mods: ports.ModSuper | ports.ModShift, Pressed: true}
+		input <- ports.KeyEvent{Keysym: "exclam", Base: "1", Keycode: 2, Mods: domain.ModSuper | domain.ModShift, Pressed: true}
 		scene(t, scenes)
 		// Shift goes up first, so the release reports "1": still swallowed.
-		input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: ports.ModSuper}
+		input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: domain.ModSuper}
 		input <- ports.KeyEvent{Keysym: "x", Keycode: 45, Pressed: true}
 		if v := command(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "x", Keycode: 45, Pressed: true}}) {
 			t.Fatal(v)
@@ -701,19 +702,19 @@ func outputScale(t *testing.T, animated bool) {
 		t.Fatal(v)
 	}
 	// Cmd+- steps down through the clean scales of 5120x2160: 2 → 5/3.
-	input <- ports.KeyEvent{Keysym: "minus", Keycode: 12, Mods: ports.ModSuper, Pressed: true}
+	input <- ports.KeyEvent{Keysym: "minus", Keycode: 12, Mods: domain.ModSuper, Pressed: true}
 	s = scene(t, scenes)
 	if s.Scale != 5.0/3 || s.OutputWidth != 3072 || s.OutputHeight != 1296 {
 		t.Fatal(s.Scale, s.OutputWidth, s.OutputHeight)
 	}
-	input <- ports.KeyEvent{Keysym: "minus", Keycode: 12, Mods: ports.ModSuper}
-	input <- ports.KeyEvent{Keysym: "equal", Keycode: 13, Mods: ports.ModSuper, Pressed: true}
+	input <- ports.KeyEvent{Keysym: "minus", Keycode: 12, Mods: domain.ModSuper}
+	input <- ports.KeyEvent{Keysym: "equal", Keycode: 13, Mods: domain.ModSuper, Pressed: true}
 	if s = scene(t, scenes); s.Scale != 2 {
 		t.Fatal(s.Scale)
 	}
 	// A reload that keeps the config scale keeps the live one too.
-	input <- ports.KeyEvent{Keysym: "equal", Keycode: 13, Mods: ports.ModSuper}
-	input <- ports.KeyEvent{Keysym: "equal", Keycode: 13, Mods: ports.ModSuper, Pressed: true}
+	input <- ports.KeyEvent{Keysym: "equal", Keycode: 13, Mods: domain.ModSuper}
+	input <- ports.KeyEvent{Keysym: "equal", Keycode: 13, Mods: domain.ModSuper, Pressed: true}
 	if s = scene(t, scenes); s.Scale != 2.5 {
 		t.Fatal(s.Scale)
 	}
@@ -816,9 +817,9 @@ func pointerConstraint(t *testing.T, animated bool) {
 	client <- ports.WindowMapped{ID: 1}
 	r := l.land(receive(t, scenes))[1].Windows[0].Rect
 	// The confine region is window-local and clipped to the window.
-	client <- ports.PointerConstrained{ID: 1, PointerConstraint: ports.PointerConstraint{Mode: ports.ConstraintConfine, Rect: ports.Rect{X: 10, Y: 10, W: 1000, H: 20}}}
+	client <- ports.PointerConstrained{ID: 1, PointerConstraint: ports.PointerConstraint{Mode: domain.ConstraintConfine, Rect: domain.Rect{X: 10, Y: 10, W: 1000, H: 20}}}
 	scene(t, scenes)
-	want := ports.PointerConstraint{Mode: ports.ConstraintConfine, Rect: ports.Rect{X: 100 + r.X + 10, Y: r.Y + 10, W: r.W - 10, H: 20}}
+	want := ports.PointerConstraint{Mode: domain.ConstraintConfine, Rect: domain.Rect{X: 100 + r.X + 10, Y: r.Y + 10, W: r.W - 10, H: 20}}
 	// Input gets core's cursor, clamped into the region.
 	if got := receive(t, constraints); got.Mode != want.Mode || got.Rect != want.Rect || got.X != 150 || got.Y != 29 {
 		t.Fatalf("got %+v, want %+v", got, want)
@@ -837,9 +838,9 @@ func pointerConstraint(t *testing.T, animated bool) {
 		}
 	}
 	// A lock keeps the pointer still.
-	client <- ports.PointerConstrained{ID: 1, PointerConstraint: ports.PointerConstraint{Mode: ports.ConstraintLock}}
+	client <- ports.PointerConstrained{ID: 1, PointerConstraint: ports.PointerConstraint{Mode: domain.ConstraintLock}}
 	scene(t, scenes)
-	if got := receive(t, constraints); got.Mode != ports.ConstraintLock {
+	if got := receive(t, constraints); got.Mode != domain.ConstraintLock {
 		t.Fatalf("lock %+v", got)
 	}
 	for len(commands) > 0 {
@@ -856,7 +857,7 @@ func pointerConstraint(t *testing.T, animated bool) {
 	}
 	client <- ports.PointerConstrained{}
 	scene(t, scenes)
-	if got := receive(t, constraints); got.Mode != ports.ConstraintNone {
+	if got := receive(t, constraints); got.Mode != domain.ConstraintNone {
 		t.Fatalf("release %+v", got)
 	}
 }
@@ -882,8 +883,8 @@ func TestPopupChainDismissOrder(t *testing.T) {
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}
 		scene(t, scenes)
-		pos := ports.Positioner{Width: 10, Height: 10, AnchorRect: ports.Rect{W: 1, H: 1}, Anchor: ports.EdgeBottomRight, Gravity: ports.EdgeBottomRight}
-		for _, v := range []struct{ id, parent ports.WindowID }{{2, 1}, {3, 2}} {
+		pos := ports.Positioner{Width: 10, Height: 10, AnchorRect: domain.Rect{W: 1, H: 1}, Anchor: ports.EdgeBottomRight, Gravity: ports.EdgeBottomRight}
+		for _, v := range []struct{ id, parent domain.WindowID }{{2, 1}, {3, 2}} {
 			client <- ports.PopupRequest{ID: v.id, Parent: v.parent, Positioner: pos, Grab: true}
 			for {
 				if cp, ok := command(t, commands).(ports.ConfigurePopup); ok && cp.ID == v.id {
@@ -899,7 +900,7 @@ func TestPopupChainDismissOrder(t *testing.T) {
 		// The window's far corner is outside both popups.
 		input <- ports.PointerMotion{X: 90, Y: 70}
 		input <- ports.PointerButton{Button: 0x110, Pressed: true}
-		var closed []ports.WindowID
+		var closed []domain.WindowID
 		for len(closed) < 2 {
 			if v, ok := command(t, commands).(ports.ClosePopup); ok {
 				closed = append(closed, v.ID)
@@ -1072,17 +1073,17 @@ func TestFixedFullscreenArrivalWaits(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
 		r.mapWindow(t, 1)
-		r.key(t, "f", ports.ModAlt|ports.ModShift)
+		r.key(t, "f", domain.ModAlt|domain.ModShift)
 		set := r.mapWindow(t, 2)
 		for len(r.commands) > 0 {
 			<-r.commands
 		}
-		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
+		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []domain.WindowID{1}) || focused != 1 {
 			t.Fatal("game disturbed:", got, focused)
 		}
 		r.client <- ports.WindowActivate{ID: 2}
 		set = receive(t, r.scenes)
-		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1, 2}) || focused != 2 {
+		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []domain.WindowID{1, 2}) || focused != 2 {
 			t.Fatal("after activate:", got, focused)
 		}
 		for {
@@ -1090,9 +1091,9 @@ func TestFixedFullscreenArrivalWaits(t *testing.T) {
 				break
 			}
 		}
-		r.key(t, "Left", ports.ModAlt)
-		set = r.key(t, "f", ports.ModAlt|ports.ModShift)
-		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
+		r.key(t, "Left", domain.ModAlt)
+		set = r.key(t, "f", domain.ModAlt|domain.ModShift)
+		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []domain.WindowID{1}) || focused != 1 {
 			t.Fatal("game again:", got, focused)
 		}
 
@@ -1141,19 +1142,19 @@ func TestExternalFullscreenFocusesFixed(t *testing.T) {
 		r.mapWindow(t, 2)
 		r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
 		set := receive(t, r.scenes)
-		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
+		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []domain.WindowID{1}) || focused != 1 {
 			t.Fatal("taskbar fullscreen:", got, focused)
 		}
 		// Over another covering window too: it leaves fullscreen.
 		r.client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true, External: true}
 		set = receive(t, r.scenes)
-		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{2}) || focused != 2 {
+		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []domain.WindowID{2}) || focused != 2 {
 			t.Fatal("taskbar fullscreen over another:", got, focused)
 		}
 		// Leaving from the taskbar keeps the focus.
 		r.client <- ports.WindowFullscreenRequest{ID: 2, External: true}
 		set = receive(t, r.scenes)
-		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1, 2}) || focused != 2 {
+		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []domain.WindowID{1, 2}) || focused != 2 {
 			t.Fatal("taskbar leave:", got, focused)
 		}
 
@@ -1166,8 +1167,8 @@ func TestExternalFullscreenOffScreen(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left, right)
 		r.mapWindow(t, 1)
-		r.key(t, "Next", ports.ModAlt|ports.ModShift) // 1 to workspace 2, not followed
-		r.key(t, "Right", ports.ModAlt|ports.ModCtrl) // focus DP-2
+		r.key(t, "Next", domain.ModAlt|domain.ModShift) // 1 to workspace 2, not followed
+		r.key(t, "Right", domain.ModAlt|domain.ModCtrl) // focus DP-2
 		r.mapWindow(t, 2)
 		r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
 		set := receive(t, r.scenes)
@@ -1196,13 +1197,13 @@ func TestExternalFullscreenInOverview(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
 		r.mapWindow(t, 1)
-		r.key(t, "Next", ports.ModAlt|ports.ModShift) // 1 to workspace 2
+		r.key(t, "Next", domain.ModAlt|domain.ModShift) // 1 to workspace 2
 		r.mapWindow(t, 2)
-		r.key(t, "o", ports.ModAlt)
+		r.key(t, "o", domain.ModAlt)
 		r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
 		receive(t, r.scenes)
-		set := r.key(t, "o", ports.ModAlt)
-		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
+		set := r.key(t, "o", domain.ModAlt)
+		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []domain.WindowID{1}) || focused != 1 {
 			t.Fatal("after the overview:", got, focused)
 		}
 
@@ -1216,13 +1217,13 @@ func TestFocusWindowDownKeepsFullscreen(t *testing.T) {
 		r := startLanding(t, animated, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
 		r.mapLanded(t, 1)
 		r.mapLanded(t, 2)
-		r.keyLanded(t, "f", ports.ModAlt|ports.ModShift)
-		set := r.keyLanded(t, "Down", ports.ModAlt)
+		r.keyLanded(t, "f", domain.ModAlt|domain.ModShift)
+		set := r.keyLanded(t, "Down", domain.ModAlt)
 		if got, _ := windowsOf(set, "DP-1"); len(got) != 0 {
 			t.Fatal("still on the first workspace:", got)
 		}
-		set = r.keyLanded(t, "Up", ports.ModAlt)
-		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{2}) || focused != 2 {
+		set = r.keyLanded(t, "Up", domain.ModAlt)
+		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []domain.WindowID{2}) || focused != 2 {
 			t.Fatal("fullscreen lost:", got, focused)
 		}
 	})
@@ -1274,11 +1275,11 @@ func TestWindowActivateShowsAndFocuses(t *testing.T) {
 		client <- ports.WindowMapped{ID: 1}
 		scene(t, scenes)
 		// Window 2 opens on workspace 2, then the user goes back to 1.
-		input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModSuper, Pressed: true}
+		input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: domain.ModSuper, Pressed: true}
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 2}
 		scene(t, scenes)
-		input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: ports.ModSuper, Pressed: true}
+		input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: domain.ModSuper, Pressed: true}
 		visible := func(sc ports.Scene) (shown []ports.SceneWindow) {
 			for _, w := range sc.Windows {
 				if !w.Hidden {

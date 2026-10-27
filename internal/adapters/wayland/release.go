@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -26,7 +27,7 @@ type heldBuffer struct {
 	// sync is the buffer's explicit-sync state: its release point is
 	// signalled instead of wl_buffer.release.
 	sync   syncHold
-	window ports.WindowID
+	window domain.WindowID
 	id     uint64 // DMABuf ID, 0 for wl_shm
 	after  uint64 // the window's content Seq when the buffer was replaced
 	at     time.Time

@@ -1,14 +1,15 @@
 package wayland
 
 import (
-	"github.com/bnema/zerowrap"
 	"testing"
 	"time"
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
+	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
 )
 
@@ -108,10 +109,10 @@ func TestHeadlessTiledSHMCallbackAndCopyBudget(t *testing.T) {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer r.Close()
-	scene := ports.Scene{Windows: []ports.SceneWindow{{ID: win.ID, Rect: ports.Rect{W: 128, H: 128}}}}
+	scene := ports.Scene{Windows: []ports.SceneWindow{{ID: win.ID, Rect: domain.Rect{W: 128, H: 128}}}}
 	render := func(content ports.SurfaceContent) {
 		t.Helper()
-		fence, err := r.Render(scene, map[ports.WindowID]ports.SurfaceContent{win.ID: content})
+		fence, err := r.Render(scene, map[domain.WindowID]ports.SurfaceContent{win.ID: content})
 		if fence != nil {
 			_ = fence.Close()
 		}

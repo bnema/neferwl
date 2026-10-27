@@ -11,7 +11,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/wlrlayershell"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/purego-libwayland/server"
 )
 
@@ -22,23 +22,23 @@ func TestCapturedCommitKeepsLaterRequests(t *testing.T) {
 	surf := &surface{server: srv, xdg: &xdgSurface{}}
 	cons := &constraint{surface: surf}
 	srv.constraints[surf] = cons
-	firstRegion := &ports.Rect{W: 2}
+	firstRegion := &domain.Rect{W: 2}
 	cons.pending = firstRegion
 	surf.next.scale, surf.next.async, surf.next.kind = 2, true, 1
-	surf.xdg.pendingGeometry = ports.Rect{W: 10}
+	surf.xdg.pendingGeometry = domain.Rect{W: 10}
 	surf.next.inputSet, surf.next.inputAll = true, true
-	surf.next.damage = []ports.Rect{{W: 2}}
+	surf.next.damage = []domain.Rect{{W: 2}}
 	surf.next.barrier = true
 	surf.queueUpdate()
 
-	laterRegion := &ports.Rect{W: 3}
+	laterRegion := &domain.Rect{W: 3}
 	cons.pending = laterRegion
 	surf.next.scale, surf.next.async, surf.next.kind = 3, false, 2
 	surf.sub.pendingLayout = []childLayout{{x: 7}}
-	surf.xdg.pendingGeometry = ports.Rect{W: 20}
+	surf.xdg.pendingGeometry = domain.Rect{W: 20}
 	surf.next.inputSet, surf.next.inputAll = true, false
-	surf.next.inputRects = []ports.Rect{{W: 3}}
-	surf.next.damage = []ports.Rect{{W: 3}}
+	surf.next.inputRects = []domain.Rect{{W: 3}}
+	surf.next.damage = []domain.Rect{{W: 3}}
 	surf.next.barrier = true
 	laterTime := time.Now().Add(time.Second)
 	surf.next.at = laterTime
@@ -167,7 +167,7 @@ func TestCapturedLayerKeepsLaterRequests(t *testing.T) {
 	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, id)
 	registerProtocol(t, c, id)
 	layerID := c.AllocateID()
-	requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, layerID, id, uint32(0), uint32(ports.LayerTop), "captured")
+	requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, layerID, id, uint32(0), uint32(domain.LayerTop), "captured")
 	registerProtocol(t, c, layerID)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -236,7 +236,7 @@ func TestQueuedDestructionDropsUpdates(t *testing.T) {
 				} else if kind == "layer" {
 					shell := bindProtocol(t, c, "zwlr_layer_shell_v1")
 					objectID = c.AllocateID()
-					requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, objectID, surfID, uint32(0), uint32(ports.LayerTop), "drop")
+					requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, objectID, surfID, uint32(0), uint32(domain.LayerTop), "drop")
 					registerProtocol(t, c, objectID)
 					requestProtocol(t, c, objectID, wlrlayershell.ZwlrLayerSurfaceV1RequestSetSize, uint32(1), uint32(1))
 				} else if kind == "buffer" {
@@ -250,7 +250,7 @@ func TestQueuedDestructionDropsUpdates(t *testing.T) {
 				for _, surf := range s.surfaces {
 					if surf.wl != nil && surf.wl.ID() == surfID {
 						surf.next.scale = 3
-						surf.next.damage = []ports.Rect{{W: 3}}
+						surf.next.damage = []domain.Rect{{W: 3}}
 						if kind == "viewport" {
 							surf.viewport.SetDestination(surf.viewport.resource, 2, 2)
 						}
@@ -314,7 +314,7 @@ func TestQueuedDestructionDropsUpdates(t *testing.T) {
 // A dropped update must be cleared before a different surface reuses it.
 func TestDroppedUpdateRecycledWithoutState(t *testing.T) {
 	srv := &Server{fifoSurfaces: map[*surface]struct{}{}}
-	old := &surface{server: srv, next: pendingCommit{scale: 2, barrier: true, damage: []ports.Rect{{W: 2}}}}
+	old := &surface{server: srv, next: pendingCommit{scale: 2, barrier: true, damage: []domain.Rect{{W: 2}}}}
 	old.queueUpdate()
 	old.destroyed = true
 	old.dropQueue()
@@ -399,9 +399,9 @@ func TestTakePendingKeepsStickyState(t *testing.T) {
 	surf := &surface{server: srv}
 	all := pendingCommit{
 		buffer: &wayland.Buffer{}, attached: true, scale: 2, transform: 1,
-		opaque: []ports.Rect{{W: 1}}, opaqueSet: true, inputAll: true, inputSet: true, inputRects: []ports.Rect{{W: 1}},
+		opaque: []domain.Rect{{W: 1}}, opaqueSet: true, inputAll: true, inputSet: true, inputRects: []domain.Rect{{W: 1}},
 		callbacks: []*wayland.Callback{{}}, async: true, color: SurfaceColor{Set: true}, representation: surfaceRepresentation{alpha: 1}, kind: 3,
-		barrier: true, wait: true, at: time.Unix(1, 0), damage: []ports.Rect{{W: 1}}, bufDamage: []ports.Rect{{W: 1}},
+		barrier: true, wait: true, at: time.Unix(1, 0), damage: []domain.Rect{{W: 1}}, bufDamage: []domain.Rect{{W: 1}},
 		feedback: []*presentationtime.WpPresentationFeedback{{}}, sync: &commitSync{},
 	}
 	surf.next = all

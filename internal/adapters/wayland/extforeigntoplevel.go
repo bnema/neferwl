@@ -4,8 +4,9 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	ext "github.com/bnema/go-wayland-bindings/server/extforeigntoplevellist"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 )
 
@@ -19,14 +20,14 @@ type extToplevelList struct {
 	s       *Server
 	res     *ext.ExtForeignToplevelListV1
 	stopped bool
-	handles map[ports.WindowID]*extToplevelHandle
+	handles map[domain.WindowID]*extToplevelHandle
 }
 
 // extToplevelHandle is one window seen by one list, with what it was last
 // sent so that only changes go out.
 type extToplevelHandle struct {
 	res          *ext.ExtForeignToplevelHandleV1
-	window       ports.WindowID
+	window       domain.WindowID
 	gen          uint32 // the window's mapping it was made for
 	closed       bool
 	title, appID string
@@ -37,13 +38,13 @@ func (extToplevelHandle) Destroy(*ext.ExtForeignToplevelHandleV1) {}
 // toplevelIdentifier is the ext-foreign-toplevel identifier of a window's
 // mapping: window IDs are never reused and a remap counts a new mapping, so
 // neither is the identifier.
-func toplevelIdentifier(id ports.WindowID, gen uint32) string {
+func toplevelIdentifier(id domain.WindowID, gen uint32) string {
 	return "neferwl-" + strconv.FormatUint(uint64(id), 10) + "-" + strconv.FormatUint(uint64(gen), 10)
 }
 
 func registerExtForeignToplevel(d *server.Display, s *Server) error {
 	return ext.NewExtForeignToplevelListV1Global(d, 1, func(c server.Client, v, id uint32) {
-		l := &extToplevelList{s: s, handles: map[ports.WindowID]*extToplevelHandle{}}
+		l := &extToplevelList{s: s, handles: map[domain.WindowID]*extToplevelHandle{}}
 		r, err := ext.NewExtForeignToplevelListV1(c, int32(v), id, l)
 		if err != nil {
 			return
@@ -69,8 +70,8 @@ func (l *extToplevelList) Stop(*ext.ExtForeignToplevelListV1) {
 func (*extToplevelList) Destroy(*ext.ExtForeignToplevelListV1) {}
 
 // mappedToplevels lists the mapped toplevels, by ID.
-func (s *Server) mappedToplevels() []ports.WindowID {
-	ids := make([]ports.WindowID, 0, len(s.windows))
+func (s *Server) mappedToplevels() []domain.WindowID {
+	ids := make([]domain.WindowID, 0, len(s.windows))
 	for id, w := range s.windows {
 		if w.toplevel != nil && w.mapped {
 			ids = append(ids, id)
@@ -127,7 +128,7 @@ func (l *extToplevelList) refresh(w *window) {
 
 // closed sends closed for a window; like wlr-foreign-toplevel, a close
 // during session protection is sent at the unlock.
-func (l *extToplevelList) closed(id ports.WindowID) {
+func (l *extToplevelList) closed(id domain.WindowID) {
 	h := l.handles[id]
 	if h == nil {
 		return
@@ -144,7 +145,7 @@ func (l *extToplevelList) closed(id ports.WindowID) {
 
 // extHandleWindow is the window mapping behind an
 // ext_foreign_toplevel_handle_v1 of any list, while it is open.
-func (s *Server) extHandleWindow(res *server.Resource) (ports.WindowID, uint32, bool) {
+func (s *Server) extHandleWindow(res *server.Resource) (domain.WindowID, uint32, bool) {
 	for _, l := range s.extToplevelLists {
 		for id, h := range l.handles {
 			if h.res.Resource == res && !h.closed {

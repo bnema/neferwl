@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/bnema/neferwl/internal/core/geom"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -109,7 +110,7 @@ func (s *screen) setScale(v float64) {
 
 // arrange places the layer surfaces and gives workspaces the usable area.
 func (s *screen) arrange() {
-	var usable ports.Rect
+	var usable domain.Rect
 	o := s.mon.Output()
 	s.placed, usable = arrangeLayers(o.W, o.H, s.layers)
 	s.mon.SetUsable(usable)

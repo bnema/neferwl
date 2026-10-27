@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -36,8 +38,8 @@ func TestOSDKey(t *testing.T) {
 	}
 	for _, cmd := range []struct {
 		sym string
-		mod ports.Mods
-	}{{"Super_L", ports.ModSuper}, {"Super_R", ports.ModSuper}, {"Alt_L", ports.ModAlt}, {"Alt_R", ports.ModAlt}, {"Control_L", ports.ModCtrl}, {"Control_R", ports.ModCtrl}} {
+		mod domain.Mods
+	}{{"Super_L", domain.ModSuper}, {"Super_R", domain.ModSuper}, {"Alt_L", domain.ModAlt}, {"Alt_R", domain.ModAlt}, {"Control_L", domain.ModCtrl}, {"Control_R", domain.ModCtrl}} {
 		for _, tt := range tests {
 			t.Run(cmd.sym+"/"+tt.name, func(t *testing.T) {
 				clock := portsmocks.NewMockClock(t)

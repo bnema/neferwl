@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -127,7 +128,7 @@ func TestOSDTearingLineSeparatesAskedFromTorn(t *testing.T) {
 
 func TestOSDDrawnOnlyWhereTheTargetIsDrawn(t *testing.T) {
 	out := ports.Scene{OutputWidth: 1920, OutputHeight: 1080}
-	shown := ports.SceneWindow{ID: 7, Rect: ports.Rect{W: 800, H: 600}}
+	shown := ports.SceneWindow{ID: 7, Rect: domain.Rect{W: 800, H: 600}}
 	for name, tc := range map[string]struct {
 		windows []ports.SceneWindow
 		want    bool

@@ -3,12 +3,12 @@ package drm
 import (
 	"testing"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestDropHintsBlockPlanes(t *testing.T) {
 	s, c := overlayScene()
-	s.DropHints = []ports.Rect{{X: 10, W: 4, H: 100}}
+	s.DropHints = []domain.Rect{{X: 10, W: 4, H: 100}}
 	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "drop_hint" {
 		t.Fatalf("overlay reason %q", reason)
 	}
@@ -16,7 +16,7 @@ func TestDropHintsBlockPlanes(t *testing.T) {
 	if _, reason := scanoutCandidate(fs, fc, 200, 100, nil); reason == "drop_hint" {
 		t.Fatal("no hints, still refused")
 	}
-	fs.DropHints = []ports.Rect{{X: 10, W: 4, H: 100}}
+	fs.DropHints = []domain.Rect{{X: 10, W: 4, H: 100}}
 	if _, reason := scanoutCandidate(fs, fc, 200, 100, nil); reason != "drop_hint" {
 		t.Fatalf("scanout reason %q", reason)
 	}

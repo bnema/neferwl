@@ -1,6 +1,9 @@
 package atspi
 
-import "github.com/bnema/neferwl/internal/ports"
+import (
+	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
+)
 
 // AT-SPI constants (atspi-constants.h). The role ids are the AtspiRole enum
 // values; the state ids are bit indices of the state set.
@@ -99,11 +102,11 @@ func isWindowRole(role uint32) bool {
 }
 
 // kindOf maps a role to the hint kind: links are links, the rest buttons.
-func kindOf(role uint32) ports.HintKind {
+func kindOf(role uint32) domain.HintKind {
 	if role == roleLink {
-		return ports.HintLink
+		return domain.HintLink
 	}
-	return ports.HintButton
+	return domain.HintButton
 }
 
 // frameInfo is a showing top-level window of an app.
@@ -194,10 +197,10 @@ func toTarget(win ports.HintWindow, fx, fy int32, e element) (ports.HintTarget, 
 	if e.w <= 0 || e.h <= 0 {
 		return ports.HintTarget{}, false
 	}
-	r := ports.Rect{X: win.Rect.X + int(e.x-fx), Y: win.Rect.Y + int(e.y-fy), W: int(e.w), H: int(e.h)}
+	r := domain.Rect{X: win.Rect.X + int(e.x-fx), Y: win.Rect.Y + int(e.y-fy), W: int(e.w), H: int(e.h)}
 	// A target crossing disjoint rectangles cannot be represented by one Rect.
 	// Keep the largest intersection (stable region order breaks ties).
-	var clipped ports.Rect
+	var clipped domain.Rect
 	for i := -1; i < len(win.Popups); i++ {
 		area := win.Rect
 		if i >= 0 {
@@ -206,13 +209,13 @@ func toTarget(win ports.HintWindow, fx, fy int32, e element) (ports.HintTarget, 
 		x0, y0 := max(r.X, area.X), max(r.Y, area.Y)
 		x1, y1 := min(r.X+r.W, area.X+area.W), min(r.Y+r.H, area.Y+area.H)
 		if x1 > x0 && y1 > y0 && (x1-x0)*(y1-y0) > clipped.W*clipped.H {
-			clipped = ports.Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}
+			clipped = domain.Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}
 		}
 	}
 	if clipped.W == 0 {
 		return ports.HintTarget{}, false
 	}
-	return ports.HintTarget{Rect: clipped, Kind: kindOf(e.role), Source: ports.HintSourceATSPI, Score: 1, Window: win.ID}, true
+	return ports.HintTarget{Rect: clipped, Kind: kindOf(e.role), Source: domain.HintSourceATSPI, Score: 1, Window: win.ID}, true
 }
 
 func isDocument(role uint32) bool { return role == roleDocumentFrame || role == roleDocumentWeb }

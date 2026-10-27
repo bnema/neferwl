@@ -11,16 +11,16 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/corewake"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/surfaces"
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
+	"golang.org/x/sys/unix"
 )
 
 type Options struct {
@@ -130,7 +130,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	var want ports.CursorChange
 	cursorScale := -1.0 // not loaded yet
 	var cursorTransform ports.BufferTransform
-	seen := map[ports.WindowID]uint64{}
+	seen := map[domain.WindowID]uint64{}
 	// reports queues what the output read; every report is pushed to the
 	// sink at once (Push never blocks), so it holds one at most.
 	var reports presented.Queue
@@ -717,7 +717,7 @@ func linkPNGSecure(src, dst string, img image.Image, security ports.SessionSecur
 
 // report queues what the output read, with flip for a drawn frame, and
 // pushes it to the sink.
-func (opts Options) report(q *presented.Queue, flip *ports.FlipInfo, seen map[ports.WindowID]uint64) {
+func (opts Options) report(q *presented.Queue, flip *ports.FlipInfo, seen map[domain.WindowID]uint64) {
 	if opts.Presented == nil {
 		return
 	}
@@ -733,7 +733,7 @@ type flipShows struct {
 }
 
 // of returns the content Seq of the windows scene showed to their client.
-func (f *flipShows) of(scene ports.Scene, contents map[ports.WindowID]ports.SurfaceContent, kept func(ports.WindowID) bool) map[ports.WindowID]uint64 {
+func (f *flipShows) of(scene ports.Scene, contents map[domain.WindowID]ports.SurfaceContent, kept func(domain.WindowID) bool) map[domain.WindowID]uint64 {
 	// A closed window drawn from its kept content is not shown to its
 	// client.
 	return f.snapshot.FromContents(scene, contents, kept)
@@ -743,7 +743,7 @@ func (f *flipShows) of(scene ports.Scene, contents map[ports.WindowID]ports.Surf
 // time (software clock, refresh unknown), so presentation feedback and
 // frame callbacks follow headless frames. The FlipInfo itself is new per
 // flip (the sink counts merges on it); only its Shows is shared.
-func (f *flipShows) flipInfo(scene ports.Scene, contents map[ports.WindowID]ports.SurfaceContent, kept func(ports.WindowID) bool) *ports.FlipInfo {
+func (f *flipShows) flipInfo(scene ports.Scene, contents map[domain.WindowID]ports.SurfaceContent, kept func(domain.WindowID) bool) *ports.FlipInfo {
 	var ts unix.Timespec
 	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
 	return &ports.FlipInfo{When: time.Duration(ts.Nano()), Shows: f.of(scene, contents, kept)}

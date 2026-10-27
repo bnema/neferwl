@@ -8,10 +8,10 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // TestSceneFieldCount fails when Scene gains or loses a field: sceneDelta
@@ -37,14 +37,14 @@ func deltaScene(seq uint64, ws ...ports.SceneWindow) ports.Scene {
 	return ports.Scene{Seq: seq, OutputWidth: 1000, OutputHeight: 500, Scale: 1, Background: "#000000", Windows: ws}
 }
 
-func win(id ports.WindowID, x, y, w, h int) ports.SceneWindow {
-	return ports.SceneWindow{ID: id, Rect: ports.Rect{X: x, Y: y, W: w, H: h}}
+func win(id domain.WindowID, x, y, w, h int) ports.SceneWindow {
+	return ports.SceneWindow{ID: id, Rect: domain.Rect{X: x, Y: y, W: w, H: h}}
 }
 
 // held is a target that holds s after a full frame of its windows.
 func held(s ports.Scene) *target {
 	tg := &target{}
-	tg.hold(s, &damageRegion{drawn: map[ports.WindowID]heldWindow{}})
+	tg.hold(s, &damageRegion{drawn: map[domain.WindowID]heldWindow{}})
 	return tg
 }
 
@@ -91,7 +91,7 @@ func TestDamageDeltaFullRedraws(t *testing.T) {
 			s.Windows = []ports.SceneWindow{win(1, 0, 0, 600, 500), win(2, 600, 0, 400, 500)}
 			s.Windows[0].Rect.X = 50
 		},
-		"layer":          func(s *ports.Scene) { s.Layers = []ports.SceneLayer{{ID: 9, Rect: ports.Rect{W: 10, H: 10}}} },
+		"layer":          func(s *ports.Scene) { s.Layers = []ports.SceneLayer{{ID: 9, Rect: domain.Rect{W: 10, H: 10}}} },
 		"output":         func(s *ports.Scene) { s.Output = "DP-2" },
 		"size":           func(s *ports.Scene) { s.OutputWidth = 999 },
 		"scale":          func(s *ports.Scene) { s.Scale = 2 },
@@ -99,12 +99,12 @@ func TestDamageDeltaFullRedraws(t *testing.T) {
 		"off":            func(s *ports.Scene) { s.Off = true },
 		"background":     func(s *ports.Scene) { s.Background = "#111111" },
 		"border":         func(s *ports.Scene) { s.Border.Width = 2 },
-		"workspace clip": func(s *ports.Scene) { s.WorkspaceClip = ports.Rect{W: 10, H: 10} },
-		"tile inset":     func(s *ports.Scene) { s.TileInset = ports.Insets{Bottom: 10} },
+		"workspace clip": func(s *ports.Scene) { s.WorkspaceClip = domain.Rect{W: 10, H: 10} },
+		"tile inset":     func(s *ports.Scene) { s.TileInset = domain.Insets{Bottom: 10} },
 		"dim":            func(s *ports.Scene) { s.Dim = 0.5 },
 		"dim behind":     func(s *ports.Scene) { s.DimBehind = true },
-		"drop hints":     func(s *ports.Scene) { s.DropHints = []ports.Rect{{W: 5, H: 5}} },
-		"indicators":     func(s *ports.Scene) { s.CaptureIndicators = []ports.CaptureIndicator{{Rect: ports.Rect{W: 5, H: 5}}} },
+		"drop hints":     func(s *ports.Scene) { s.DropHints = []domain.Rect{{W: 5, H: 5}} },
+		"indicators":     func(s *ports.Scene) { s.CaptureIndicators = []ports.CaptureIndicator{{Rect: domain.Rect{W: 5, H: 5}}} },
 		"capture":        func(s *ports.Scene) { s.Capture = &ports.SceneCapture{} },
 		"capture scene":  func(s *ports.Scene) { s.CaptureScene = &ports.Scene{} },
 		"security":       func(s *ports.Scene) { s.Security.Protected = true },
@@ -129,7 +129,7 @@ func TestDamageDeltaFullRedraws(t *testing.T) {
 }
 
 func TestDamageDeltaSeparators(t *testing.T) {
-	sep := func(x int) ports.Separator { return ports.Separator{Rect: ports.Rect{X: x, W: 2, H: 500}} }
+	sep := func(x int) ports.Separator { return ports.Separator{Rect: domain.Rect{X: x, W: 2, H: 500}} }
 	a, b := sep(100), sep(200)
 	old := deltaScene(1, win(1, 0, 0, 500, 500))
 	old.Separators = []ports.Separator{a, b}
@@ -160,12 +160,12 @@ func TestSceneDeltaAllocations(t *testing.T) {
 	old := deltaScene(1, win(1, 0, 0, 300, 500), win(2, 300, 0, 300, 500), win(3, 600, 0, 400, 500))
 	cur := deltaScene(2, win(1, 0, 0, 300, 500), win(2, 300, 0, 300, 500), win(3, 600, 0, 380, 500))
 	for i := range seps {
-		s := ports.Separator{Rect: ports.Rect{X: i * 10, W: 2, H: 500}}
+		s := ports.Separator{Rect: domain.Rect{X: i * 10, W: 2, H: 500}}
 		old.Separators = append(old.Separators, s)
 		cur.Separators = append(cur.Separators, s)
 	}
 	cur.Separators[5].Active = true
-	phys := func(r ports.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
+	phys := func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
 	var area image.Rectangle
 	var ok bool
 	allocs := testing.AllocsPerRun(50, func() { area, ok = sceneDelta(old, cur, phys, 1<<30) })
@@ -187,8 +187,8 @@ func TestSceneDeltaAllocations(t *testing.T) {
 // adds both rects, a rotated list adds nothing, a duplicated line that
 // replaces another adds both, a line added or dropped adds that line.
 func TestSceneDeltaSeparators(t *testing.T) {
-	phys := func(r ports.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
-	line := func(x int) ports.Separator { return ports.Separator{Rect: ports.Rect{X: x, W: 2, H: 10}} }
+	phys := func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
+	line := func(x int) ports.Separator { return ports.Separator{Rect: domain.Rect{X: x, W: 2, H: 10}} }
 	a, b, c := line(0), line(100), line(200)
 	assert.True(t, separatorDelta([]ports.Separator{a, b}, []ports.Separator{a, b}, phys).Empty())
 	assert.Equal(t, image.Rect(100, 0, 202, 10), separatorDelta([]ports.Separator{a, b}, []ports.Separator{a, c}, phys))
@@ -201,9 +201,9 @@ func TestSceneDeltaSeparators(t *testing.T) {
 // The paint order splits at the first window that opens the floats: when
 // that window changes, the whole output is redrawn.
 func TestSceneDeltaFloatsStartMoves(t *testing.T) {
-	phys := func(r ports.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
-	tile := func(id ports.WindowID, x int) ports.SceneWindow { return win(id, x, 0, 100, 100) }
-	float := func(id ports.WindowID, x int) ports.SceneWindow {
+	phys := func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
+	tile := func(id domain.WindowID, x int) ports.SceneWindow { return win(id, x, 0, 100, 100) }
+	float := func(id domain.WindowID, x int) ports.SceneWindow {
 		w := win(id, x, 0, 100, 100)
 		w.Floating = true
 		return w
@@ -239,17 +239,17 @@ func TestSceneDeltaFloatsStartMoves(t *testing.T) {
 // target holds.
 func TestTargetHoldCopiesSlices(t *testing.T) {
 	ws := []ports.SceneWindow{win(1, 0, 0, 100, 100), win(2, 100, 0, 100, 100)}
-	seps := []ports.Separator{{Rect: ports.Rect{X: 100, W: 2, H: 100}}}
-	layers := []ports.SceneLayer{{ID: 9, Rect: ports.Rect{W: 10, H: 10}}}
-	hints := []ports.Rect{{W: 5, H: 5}}
-	marks := []ports.CaptureIndicator{{Rect: ports.Rect{W: 5, H: 5}}}
+	seps := []ports.Separator{{Rect: domain.Rect{X: 100, W: 2, H: 100}}}
+	layers := []ports.SceneLayer{{ID: 9, Rect: domain.Rect{W: 10, H: 10}}}
+	hints := []domain.Rect{{W: 5, H: 5}}
+	marks := []ports.CaptureIndicator{{Rect: domain.Rect{W: 5, H: 5}}}
 	s := deltaScene(1)
 	s.Windows, s.Separators, s.Layers, s.DropHints, s.CaptureIndicators = ws, seps, layers, hints, marks
 	tg := &target{}
-	d := &damageRegion{drawn: map[ports.WindowID]heldWindow{}}
+	d := &damageRegion{drawn: map[domain.WindowID]heldWindow{}}
 	tg.hold(s, d)
 	ws[1].Rect.X, seps[0].Rect.X, layers[0].ID, hints[0].W, marks[0].Rect.W = 150, 150, 8, 6, 6
-	phys := func(r ports.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
+	phys := func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
 	// Compared with the mutated slices as the new scene, the held copy
 	// differs in each; with a held reference nothing would differ.
 	cur := s
@@ -281,7 +281,7 @@ func (c deltaCase) scene(seq uint64, i, w2 int, windows []ports.SceneWindow, sep
 	if c.windowDim && i%3 == 0 {
 		windows[0].Dim = 0.5
 	}
-	seps[0] = ports.Separator{Rect: ports.Rect{X: 20, W: 1, H: 48}}
+	seps[0] = ports.Separator{Rect: domain.Rect{X: 20, W: 1, H: 48}}
 	return ports.Scene{Seq: seq, Transform: c.out, OutputWidth: 64, OutputHeight: 48, Scale: c.scale, Background: "#101010",
 		Dim: c.sceneDim, Windows: windows, Separators: seps}
 }
@@ -334,7 +334,7 @@ func sceneDeltaMatchesFullRedraw(t *testing.T, tc deltaCase, reuse bool) {
 	red.ID, red.Surface, red.Seq, red.Version = 1, 1, 1, 1
 	green := solidContent(t, 8, 8, color.RGBA{G: 255, A: 255})
 	green.ID, green.Surface, green.Seq, green.Version = 2, 2, 1, 1
-	contents := map[ports.WindowID]ports.SurfaceContent{1: red, 2: green}
+	contents := map[domain.WindowID]ports.SurfaceContent{1: red, 2: green}
 	shared := make([]ports.SceneWindow, 2)
 	sharedSeps := make([]ports.Separator, 1)
 	var partial int
@@ -406,12 +406,12 @@ func TestDamageDeltaFadeAndLeavingEntry(t *testing.T) {
 }
 
 func TestSceneDeltaFlashRectDamage(t *testing.T) {
-	a := &ports.FocusFlash{Rect: ports.Rect{X: 10, Y: 20, W: 100, H: 80}, Width: 3, Color: "#ff0000", Alpha: 1}
+	a := &ports.FocusFlash{Rect: domain.Rect{X: 10, Y: 20, W: 100, H: 80}, Width: 3, Color: "#ff0000", Alpha: 1}
 	faded := *a
 	faded.Alpha = 0.5
 	moved := faded
 	moved.Rect.X = 150
-	phys := func(r ports.Rect) image.Rectangle { return image.Rect(r.X*2, r.Y*2, (r.X+r.W)*2, (r.Y+r.H)*2) }
+	phys := func(r domain.Rect) image.Rectangle { return image.Rect(r.X*2, r.Y*2, (r.X+r.W)*2, (r.Y+r.H)*2) }
 	for _, tc := range []struct {
 		name     string
 		old, cur *ports.FocusFlash
@@ -438,7 +438,7 @@ func TestSceneDeltaFlashRectDamage(t *testing.T) {
 }
 
 func TestDamageSelectionOutlineDelta(t *testing.T) {
-	a := &ports.SelectionOutline{Rect: ports.Rect{X: 10, Y: 10, W: 40, H: 30}, Width: 2, Radius: 10, Active: true}
+	a := &ports.SelectionOutline{Rect: domain.Rect{X: 10, Y: 10, W: 40, H: 30}, Width: 2, Radius: 10, Active: true}
 	b := *a
 	b.Rect.X = 60
 	wider, rounder := *a, *a
@@ -447,7 +447,7 @@ func TestDamageSelectionOutlineDelta(t *testing.T) {
 	for _, pair := range [][2]*ports.SelectionOutline{{nil, a}, {a, nil}, {a, &b}, {a, &wider}, {a, &rounder}, {a, a}} {
 		old, cur := deltaScene(1), deltaScene(2)
 		old.Outline, cur.Outline = pair[0], pair[1]
-		area, ok := sceneDelta(old, cur, func(r ports.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }, 500000)
+		area, ok := sceneDelta(old, cur, func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }, 500000)
 		require.True(t, ok)
 		var want image.Rectangle
 		if pair[0] != pair[1] {

@@ -15,9 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/stretchr/testify/mock"
-
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestTextLink(t *testing.T) {
@@ -55,7 +54,7 @@ func TestParseTSV(t *testing.T) {
 func TestJoinedOCRLink(t *testing.T) {
 	words := []OCRWord{{Text: "https:/", Rect: image.Rect(20, 20, 90, 40)}, {Text: "/example.org", Rect: image.Rect(91, 20, 200, 40)}}
 	got := textLinks(words, 2)
-	if len(got) != 1 || got[0].Source != ports.HintSourceOCR || got[0].Kind != ports.HintLink || got[0].Score != 1 || got[0].Rect != (ports.Rect{X: 10, Y: 10, W: 90, H: 10}) {
+	if len(got) != 1 || got[0].Source != domain.HintSourceOCR || got[0].Kind != domain.HintLink || got[0].Score != 1 || got[0].Rect != (domain.Rect{X: 10, Y: 10, W: 90, H: 10}) {
 		t.Fatal(got)
 	}
 }

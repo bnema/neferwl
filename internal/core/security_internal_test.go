@@ -6,6 +6,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -20,12 +22,12 @@ func TestProtectedDropsPrivateOffscreenCaptureAndDesktopEffects(t *testing.T) {
 		c.captureOpen(ports.CaptureSessionOpen{ID: 7, Workspace: ws.ID})
 		c.captureExclusionBegin(ports.CaptureExclusionBegin{Session: 7})
 		c.capt.flashes = []capFlash{{target: capTarget{output: "A"}, until: c.now().Add(time.Hour)}}
-		c.screens[0].layers = []ports.LayerSurface{{ID: 50, Layer: ports.LayerOverlay, Keyboard: 1}}
+		c.screens[0].layers = []ports.LayerSurface{{ID: 50, Layer: domain.LayerOverlay, Keyboard: 1}}
 		c.pressed["password"] = true
 		c.buttons[0x110] = true
 		c.pointer, c.grab = 1, 1
 		c.keyboard = keyboard{layer: 50, sent: 1, inhibiting: 1}
-		c.constrained = ports.PointerConstrained{ID: 1, Mode: ports.ConstraintLock}
+		c.constrained = ports.PointerConstrained{ID: 1, Mode: domain.ConstraintLock}
 		c.swipe = &swipeGesture{}
 		if err := c.publish(context.Background()); err != nil {
 			t.Fatal(err)

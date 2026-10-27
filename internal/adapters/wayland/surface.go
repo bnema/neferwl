@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/bnema/go-wayland-bindings/server/presentationtime"
-
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/wlrlayershell"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/rs/zerolog"
 )
@@ -43,7 +43,7 @@ type surface struct {
 	// the current buffer's own opacity (x formats).
 	bufferScale  int
 	transform    ports.BufferTransform
-	opaque       []ports.Rect
+	opaque       []domain.Rect
 	formatOpaque bool
 	kind         roleKind
 	xdg          *xdgSurface
@@ -67,9 +67,9 @@ type surface struct {
 	// content is the last content built from this surface's own buffer;
 	// has is false while no buffer is attached.
 	inputAll                bool
-	inputRects              []ports.Rect
+	inputRects              []domain.Rect
 	sentInput, lastInputAll bool
-	lastInputRects          []ports.Rect
+	lastInputRects          []domain.Rect
 	content                 ports.SurfaceContent
 	has                     bool
 	identity                uint64
@@ -125,10 +125,10 @@ type pendingCommit struct {
 	scale     int
 	transform ports.BufferTransform
 	// opaque and the input region are set by their requests (the Set flags).
-	opaque             []ports.Rect
+	opaque             []domain.Rect
 	opaqueSet          bool
 	inputAll, inputSet bool
-	inputRects         []ports.Rect
+	inputRects         []domain.Rect
 	callbacks          []*wayland.Callback
 	async              bool
 	color              SurfaceColor
@@ -144,7 +144,7 @@ type pendingCommit struct {
 	// them.
 	dx, dy int32
 	// damage is in surface (logical) pixels, bufDamage in buffer pixels.
-	damage, bufDamage []ports.Rect
+	damage, bufDamage []domain.Rect
 	// feedback are wp_presentation feedbacks for this commit.
 	feedback []*presentationtime.WpPresentationFeedback
 	// sync is the commit's explicit-sync points, with the wait for its
@@ -162,7 +162,7 @@ type commitSync struct {
 // damage is what one commit changed in a surface's buffer.
 type damage struct {
 	full  bool
-	rects []ports.Rect
+	rects []domain.Rect
 }
 
 // maxDamageRects bounds one commit's rects: past it the commit is full.
@@ -188,7 +188,7 @@ func (s *surface) root() *surface {
 }
 
 // windowID is the mapped window or layer the surface draws, or 0.
-func (s *surface) windowID() ports.WindowID {
+func (s *surface) windowID() domain.WindowID {
 	if s.xdg != nil && s.xdg.window != nil && s.xdg.window.mapped {
 		return s.xdg.window.id
 	}
@@ -219,10 +219,10 @@ func (s *surface) contentWithColor() ports.SurfaceContent {
 }
 
 // tree is the root's content with its subsurfaces flattened.
-func (s *surface) tree(id ports.WindowID) ports.SurfaceContent {
+func (s *surface) tree(id domain.WindowID) ports.SurfaceContent {
 	c := s.contentWithColor()
 	c.ID = id
-	c.ContentType = ports.ContentType(s.contentKind)
+	c.ContentType = domain.ContentType(s.contentKind)
 	if s.treeDirty || s.cachedTree == nil {
 		count := s.treeCount()
 		children := make([]ports.Subsurface, 0, count)
@@ -600,12 +600,12 @@ func (s *surface) applyCommit(u *update) {
 }
 func (s *surface) Damage(_ *wayland.Surface, x, y, w, h int32) {
 	if w > 0 && h > 0 && len(s.next.damage) <= maxDamageRects {
-		s.next.damage = append(s.next.damage, ports.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)})
+		s.next.damage = append(s.next.damage, domain.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)})
 	}
 }
 func (s *surface) DamageBuffer(_ *wayland.Surface, x, y, w, h int32) {
 	if w > 0 && h > 0 && len(s.next.bufDamage) <= maxDamageRects {
-		s.next.bufDamage = append(s.next.bufDamage, ports.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)})
+		s.next.bufDamage = append(s.next.bufDamage, domain.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)})
 	}
 }
 
@@ -655,11 +655,11 @@ func (s *surface) mapDamage(u *update, fresh, resized bool, bw, bh int) {
 		return
 	}
 	lw, lh := s.logicalSize(bw, bh)
-	d := damage{rects: make([]ports.Rect, 0, len(surf)+len(buf))}
+	d := damage{rects: make([]domain.Rect, 0, len(surf)+len(buf))}
 	bounds := image.Rect(0, 0, bw, bh)
 	add := func(r image.Rectangle) {
 		if r = r.Intersect(bounds); !r.Empty() {
-			d.rects = append(d.rects, ports.Rect{X: r.Min.X, Y: r.Min.Y, W: r.Dx(), H: r.Dy()})
+			d.rects = append(d.rects, domain.Rect{X: r.Min.X, Y: r.Min.Y, W: r.Dx(), H: r.Dy()})
 		}
 	}
 	for _, r := range buf {
@@ -711,7 +711,7 @@ func (s *surface) SetBufferTransform(r *wayland.Surface, v int32) {
 // opaqueCovers reports whether the committed opaque region covers the whole
 // w×h surface. A partial region is ignored: it is only an optimization hint.
 func (s *surface) opaqueCovers(w, h int) bool {
-	return w > 0 && h > 0 && covers(s.opaque, ports.Rect{W: w, H: h})
+	return w > 0 && h > 0 && covers(s.opaque, domain.Rect{W: w, H: h})
 }
 
 // opaqueRect is the largest rect of the committed opaque region inside the
@@ -719,15 +719,15 @@ func (s *surface) opaqueCovers(w, h int) bool {
 // faded: clients often leave an edge out of a region that covers nearly
 // all of the surface (a 983×1230 region on a 984×1231 surface). The zero
 // Rect means none.
-func (s *surface) opaqueRect(opaque bool, w, h int, fade float32) ports.Rect {
-	var best ports.Rect
+func (s *surface) opaqueRect(opaque bool, w, h int, fade float32) domain.Rect {
+	var best domain.Rect
 	if opaque || fade != 0 || w <= 0 || h <= 0 {
 		return best
 	}
 	for _, r := range s.opaque {
 		x0, y0, x1, y1 := max(r.X, 0), max(r.Y, 0), min(r.X+r.W, w), min(r.Y+r.H, h)
 		if x1 > x0 && y1 > y0 && (x1-x0)*(y1-y0) > best.W*best.H {
-			best = ports.Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}
+			best = domain.Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}
 		}
 	}
 	return best
@@ -738,7 +738,7 @@ const maxCoverRects = 16
 
 // covers reports whether the union of rects contains all of r. It tests
 // one point per cell of the grid the rect edges draw.
-func covers(rects []ports.Rect, r ports.Rect) bool {
+func covers(rects []domain.Rect, r domain.Rect) bool {
 	if len(rects) == 0 || len(rects) > maxCoverRects {
 		return false
 	}
@@ -766,7 +766,7 @@ func covers(rects []ports.Rect, r ports.Rect) bool {
 				continue
 			}
 			x, y := xs[i-1], ys[j-1]
-			if !slices.ContainsFunc(rects, func(c ports.Rect) bool {
+			if !slices.ContainsFunc(rects, func(c domain.Rect) bool {
 				return x >= c.X && x < c.X+c.W && y >= c.Y && y < c.Y+c.H
 			}) {
 				return false

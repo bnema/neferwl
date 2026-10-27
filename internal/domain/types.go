@@ -1,4 +1,4 @@
-package ports
+package domain
 
 // WindowID identifies a window.
 type WindowID uint64

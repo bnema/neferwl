@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/require"
 )
 
 func TestHintPipesOffByDefault(t *testing.T) {
@@ -38,11 +38,11 @@ func TestHintOffStartsNoHintGoroutine(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		enable  bool
-		sources []ports.HintSource
+		sources []domain.HintSource
 	}{
 		{name: "off"},
-		{name: "detector", enable: true, sources: []ports.HintSource{ports.HintSourceDetector}},
-		{name: "atspi-ocr", enable: true, sources: []ports.HintSource{ports.HintSourceATSPI, ports.HintSourceOCR}},
+		{name: "detector", enable: true, sources: []domain.HintSource{domain.HintSourceDetector}},
+		{name: "atspi-ocr", enable: true, sources: []domain.HintSource{domain.HintSourceATSPI, domain.HintSourceOCR}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
@@ -84,14 +84,14 @@ func TestHintOffStartsNoHintGoroutine(t *testing.T) {
 }
 
 func TestHintOptionsOnlyConstructsListedATSPI(t *testing.T) {
-	for _, sources := range [][]ports.HintSource{
-		{ports.HintSourceDetector}, {ports.HintSourceATSPI, ports.HintSourceOCR},
+	for _, sources := range [][]domain.HintSource{
+		{domain.HintSourceDetector}, {domain.HintSourceATSPI, domain.HintSourceOCR},
 	} {
 		cfg := config.Defaults()
 		cfg.Hint.Sources = sources
 		opts := hintOptions(context.Background(), cfg)
 		require.Equal(t, sources, opts.Sources)
-		if sources[0] == ports.HintSourceDetector {
+		if sources[0] == domain.HintSourceDetector {
 			require.Nil(t, opts.ATSPI)
 		} else {
 			require.NotNil(t, opts.ATSPI)
@@ -109,15 +109,15 @@ func TestRelayConfigKeepsStartupHintEnable(t *testing.T) {
 	go relayConfig(ctx, cur, in, out, make(chan *xkb.Keymap, 1), make(chan ports.InputDevicesConfig, 1), newCursors(clock.System{}, 0), make(chan ports.ClientCommand, 1), logging.For(ctx, "config"))
 	next := config.Defaults()
 	next.Hint.Enable = true
-	next.Hint.Sources = []ports.HintSource{ports.HintSourceDetector}
+	next.Hint.Sources = []domain.HintSource{domain.HintSourceDetector}
 	next.Hint.LinksOnly = true
-	next.Hint.TextClick = ports.ModAlt
+	next.Hint.TextClick = domain.ModAlt
 	in <- ports.ConfigChanged{Config: next}
 	got := (<-out).Config.Hint
 	require.False(t, got.Enable)
 	require.Equal(t, cur.Hint.Sources, got.Sources)
 	require.True(t, got.LinksOnly)
-	require.Equal(t, ports.ModAlt, got.TextClick)
+	require.Equal(t, domain.ModAlt, got.TextClick)
 }
 
 func TestRelayConfigKeepsStartupHintDetector(t *testing.T) {

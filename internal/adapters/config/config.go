@@ -1,4 +1,5 @@
 // Package config reads the flat `key = value` config file (ADR 012).
+
 package config
 
 import (
@@ -20,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/bnema/kvconf"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -167,8 +169,8 @@ func Defaults() ports.Config {
 	c.Terminal.AutoOpen = "first"
 	// Hint mode is experimental: off unless the config turns it on.
 	c.Hint.Enable = false
-	c.Hint.Sources = []ports.HintSource{ports.HintSourceATSPI, ports.HintSourceOCR}
-	c.Hint.TextClick = ports.ModCtrl | ports.ModShift
+	c.Hint.Sources = []domain.HintSource{domain.HintSourceATSPI, domain.HintSourceOCR}
+	c.Hint.TextClick = domain.ModCtrl | domain.ModShift
 	c.Hint.Detector = defaultHintDetector
 	c.Hint.Model = defaultHintModel()
 	c.Xwayland = "xwayland-satellite"
@@ -272,23 +274,23 @@ const maxOutputOffset = 65536
 // outputRelations lists the relation suffixes, tried in order.
 var outputRelations = [...]struct {
 	suffix string
-	rel    ports.OutputRelation
+	rel    domain.OutputRelation
 }{
-	{".right-of", ports.RelationRightOf},
-	{".left-of", ports.RelationLeftOf},
-	{".above", ports.RelationAbove},
-	{".below", ports.RelationBelow},
+	{".right-of", domain.RelationRightOf},
+	{".left-of", domain.RelationLeftOf},
+	{".above", domain.RelationAbove},
+	{".below", domain.RelationBelow},
 }
 
 // outputRelation splits "<output>.right-of" (left-of, above, below) into the
 // relation and the output name.
-func outputRelation(name string) (ports.OutputRelation, string, bool) {
+func outputRelation(name string) (domain.OutputRelation, string, bool) {
 	for _, r := range outputRelations {
 		if base, ok := strings.CutSuffix(name, r.suffix); ok {
 			return r.rel, base, true
 		}
 	}
-	return ports.RelationNone, "", false
+	return domain.RelationNone, "", false
 }
 
 // checkOutputAnchors warns about an offset without a relation, then drops the
@@ -299,7 +301,7 @@ func outputRelation(name string) (ports.OutputRelation, string, bool) {
 func checkOutputAnchors(outputs []ports.OutputConfig, relKeys map[string]string, offsetLines, seen map[string]int) []Warning {
 	var warnings []Warning
 	for _, o := range outputs {
-		if line, ok := offsetLines[o.Name]; ok && o.Anchor.Relation == ports.RelationNone {
+		if line, ok := offsetLines[o.Name]; ok && o.Anchor.Relation == domain.RelationNone {
 			warnings = append(warnings, Warning{Line: line, Msg: fmt.Sprintf("output.%s.offset: ignored without a relation (right-of, left-of, above, below)", o.Name)})
 		}
 	}
@@ -310,7 +312,7 @@ func checkOutputAnchors(outputs []ports.OutputConfig, relKeys map[string]string,
 	var cycle []*ports.OutputConfig
 	for i := range outputs {
 		for cur, steps := &outputs[i], 0; steps <= len(outputs); steps++ {
-			if cur.Anchor.Relation == ports.RelationNone {
+			if cur.Anchor.Relation == domain.RelationNone {
 				break
 			}
 			if cur = byName[cur.Anchor.To]; cur == nil {
@@ -325,11 +327,11 @@ func checkOutputAnchors(outputs []ports.OutputConfig, relKeys map[string]string,
 	for _, o := range cycle {
 		key := relKeys[o.Name]
 		warnings = append(warnings, Warning{Line: seen[key], Msg: fmt.Sprintf("%s: relation cycle, ignored", key)})
-		o.Anchor.Relation, o.Anchor.To = ports.RelationNone, ""
+		o.Anchor.Relation, o.Anchor.To = domain.RelationNone, ""
 	}
 	// Two outputs with the same relation, reference and offset overlap.
 	for i, o := range outputs {
-		if o.Anchor.Relation == ports.RelationNone {
+		if o.Anchor.Relation == domain.RelationNone {
 			continue
 		}
 		for _, prev := range outputs[:i] {
@@ -923,19 +925,19 @@ func set(c *ports.Config, key, v string) error {
 		}
 		c.Hint.TextClick = m
 	case "hint.sources":
-		sources := []ports.HintSource{ports.HintSourceATSPI, ports.HintSourceOCR}
+		sources := []domain.HintSource{domain.HintSourceATSPI, domain.HintSourceOCR}
 		if v != "" {
 			sources = nil
-			seen := map[ports.HintSource]bool{}
+			seen := map[domain.HintSource]bool{}
 			for _, name := range strings.Split(v, ",") {
-				var source ports.HintSource
+				var source domain.HintSource
 				switch strings.ToLower(strings.TrimSpace(name)) {
 				case "atspi":
-					source = ports.HintSourceATSPI
+					source = domain.HintSourceATSPI
 				case "ocr":
-					source = ports.HintSourceOCR
+					source = domain.HintSourceOCR
 				case "detector":
-					source = ports.HintSourceDetector
+					source = domain.HintSourceDetector
 				default:
 					return fmt.Errorf("unknown hint source %q", name)
 				}
@@ -1607,22 +1609,22 @@ func cells(s string) (int, bool) {
 // parseTextClick parses hint.text-click: `+`-separated modifier names as in
 // binds, or none. cmd is an alias of super here (it is not resolved through
 // keyboard.cmd, so the result does not depend on key order).
-func parseTextClick(v string) (ports.Mods, error) {
+func parseTextClick(v string) (domain.Mods, error) {
 	if strings.ToLower(v) == "none" {
 		return 0, nil
 	}
-	var mods ports.Mods
+	var mods domain.Mods
 	for _, p := range strings.Split(v, "+") {
-		var m ports.Mods
+		var m domain.Mods
 		switch strings.ToLower(strings.TrimSpace(p)) {
 		case "shift":
-			m = ports.ModShift
+			m = domain.ModShift
 		case "ctrl":
-			m = ports.ModCtrl
+			m = domain.ModCtrl
 		case "alt":
-			m = ports.ModAlt
+			m = domain.ModAlt
 		case "super", "cmd":
-			m = ports.ModSuper
+			m = domain.ModSuper
 		default:
 			return 0, fmt.Errorf("unknown modifier %q (use shift, ctrl, alt, super or cmd joined by +, or none)", p)
 		}

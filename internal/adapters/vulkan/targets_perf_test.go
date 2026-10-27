@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -40,18 +41,18 @@ func BenchmarkComposeFullTarget(b *testing.B) {
 				}
 			}()
 			ww := w / 2
-			contents := map[ports.WindowID]ports.SurfaceContent{}
+			contents := map[domain.WindowID]ports.SurfaceContent{}
 			for i, c := range []color.RGBA{{R: 200, A: 255}, {G: 200, A: 255}, {B: 200, A: 255}} {
 				content := solidContent(b, ww, h, c)
-				content.ID, content.Surface, content.Seq, content.Version = ports.WindowID(i+1), uint64(i+1), 1, 1
+				content.ID, content.Surface, content.Seq, content.Version = domain.WindowID(i+1), uint64(i+1), 1, 1
 				contents[content.ID] = content
 			}
 			scene := func(i int) ports.Scene {
 				x := i % 64
 				return ports.Scene{Seq: uint64(i + 1), Scale: 1, Background: "#101010", Windows: []ports.SceneWindow{
-					{ID: 1, Rect: ports.Rect{X: x - ww, W: ww, H: h}},
-					{ID: 2, Rect: ports.Rect{X: x, W: ww, H: h}},
-					{ID: 3, Rect: ports.Rect{X: x + ww, W: ww, H: h}},
+					{ID: 1, Rect: domain.Rect{X: x - ww, W: ww, H: h}},
+					{ID: 2, Rect: domain.Rect{X: x, W: ww, H: h}},
+					{ID: 3, Rect: domain.Rect{X: x + ww, W: ww, H: h}},
 				}}
 			}
 			frame := func(i int) {

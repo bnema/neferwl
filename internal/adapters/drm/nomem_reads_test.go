@@ -8,6 +8,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -29,7 +31,7 @@ func TestNoMemRetriesReapSignalledReads(t *testing.T) {
 		pending := o.readFences[0]
 		r := portsmocks.NewMockRenderer(t)
 		r.EXPECT().UseTarget(0).Return()
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 			f, w := fencePipe(t)
 			if _, err := w.Write([]byte{1}); err != nil {
 				t.Fatal(err)

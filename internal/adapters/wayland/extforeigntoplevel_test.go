@@ -4,9 +4,13 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	ext "github.com/bnema/go-wayland-bindings/server/extforeigntoplevellist"
+
 	source "github.com/bnema/go-wayland-bindings/server/extimagecapturesource"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+
 	xdgshell "github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
@@ -127,7 +131,7 @@ func TestWindowCaptureSource(t *testing.T) {
 	if open.Window != win.ID || open.Workspace != 0 || open.Output != "" {
 		t.Fatalf("open %+v", open)
 	}
-	h.send(ports.CaptureSessionState{ID: open.ID, Output: "HEADLESS-1", Rect: ports.Rect{W: 3, H: 2}, Hidden: true, Active: true})
+	h.send(ports.CaptureSessionState{ID: open.ID, Output: "HEADLESS-1", Rect: domain.Rect{W: 3, H: 2}, Hidden: true, Active: true})
 	h.settle(t, cc)
 	cc.extFrame(t, session, 3, 2)
 	r := receiveCapture(t, h.captures)

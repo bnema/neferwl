@@ -6,6 +6,7 @@ import (
 	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/core/layout"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -100,7 +101,7 @@ func TestSeparatorsSkip(t *testing.T) {
 
 func TestSeparatorsFloat(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		float := Placement{ID: 1, Rect: Rect{X: 10, Y: 10, W: 20, H: 20}, Floating: true, Focused: true, Inset: ports.SideAll}
+		float := Placement{ID: 1, Rect: Rect{X: 10, Y: 10, W: 20, H: 20}, Floating: true, Focused: true, Inset: domain.SideAll}
 		seps := separators([]Placement{float}, 2, 0, whole(bigOutput), true)
 		if seps[0].Window != 1 {
 			t.Fatal("float border not tied to its window:", seps)
@@ -126,15 +127,15 @@ func TestSeparatorsScroll(t *testing.T) {
 			m.AddWindow(id)
 		}
 		w := m.Current()
-		insets := func() map[WindowID]ports.Sides {
-			got := map[WindowID]ports.Sides{}
+		insets := func() map[WindowID]domain.Sides {
+			got := map[WindowID]domain.Sides{}
 			for _, p := range w.Layout() {
 				got[p.ID] = p.Inset
 			}
 			return got
 		}
 		before := insets()
-		if before[1] != 0 || before[3]&ports.SideRight != 0 {
+		if before[1] != 0 || before[3]&domain.SideRight != 0 {
 			t.Fatalf("scrolled tiles reserve off-output lines: %v", before)
 		}
 		if w.View == 0 {
@@ -142,7 +143,7 @@ func TestSeparatorsScroll(t *testing.T) {
 		}
 		m.Apply(ActionFocusColumnLeft)
 		m.Apply(ActionFocusColumnLeft)
-		if after := insets(); reflect.DeepEqual(before, after) || after[1]&ports.SideRight == 0 || after[3] != 0 {
+		if after := insets(); reflect.DeepEqual(before, after) || after[1]&domain.SideRight == 0 || after[3] != 0 {
 			t.Fatalf("expected visible borders to change with the view: %v then %v", before, after)
 		}
 		out := Rect{W: 100, H: 80}
@@ -177,7 +178,7 @@ func TestSeparatorsScrollUnderSidePanel(t *testing.T) {
 			if ps[0].Neighbors != 0 {
 				t.Fatalf("gap %d: tile under the panel: neighbors %04b, want none", gap, ps[0].Neighbors)
 			}
-			if ps[1].Neighbors != ports.SideRight {
+			if ps[1].Neighbors != domain.SideRight {
 				t.Fatalf("gap %d: tile at the panel: neighbors %04b, want right only", gap, ps[1].Neighbors)
 			}
 		}
@@ -210,7 +211,7 @@ func TestSeparatorsCascadeBottomPanel(t *testing.T) {
 		}
 		w.FocusID(1)
 		ps := w.Layout()
-		if p := previewOf(t, ps, 1); p.Neighbors != ports.SideRight {
+		if p := previewOf(t, ps, 1); p.Neighbors != domain.SideRight {
 			t.Fatalf("neighbors %04b, want right only", p.Neighbors)
 		}
 		seps := separators(ps, 2, 0, viewport{frame: w.Output, usable: w.Usable}, true)

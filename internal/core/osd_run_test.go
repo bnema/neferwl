@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -34,12 +36,12 @@ func TestOSDHoldThroughRun(t *testing.T) {
 		timer.EXPECT().C().Return(fire).Once()
 		timer.EXPECT().Stop().Return(true).Once()
 		h := newHint(t, core.Options{Clock: clock})
-		h.input <- ports.KeyEvent{Keysym: "Super_L", Pressed: true, Mods: ports.ModSuper}
+		h.input <- ports.KeyEvent{Keysym: "Super_L", Pressed: true, Mods: domain.ModSuper}
 		synctest.Wait()
 		fire <- time.Unix(0, int64(400*time.Millisecond))
 		synctest.Wait()
 		o := osdOverlay(t, h)
-		if o.Window != 1 || o.Rect != (ports.Rect{Y: 12}) || o.Kind != ports.OverlayPanel || o.Anchor != ports.AnchorTopCenter || o.Capture || o.Panel == nil {
+		if o.Window != 1 || o.Rect != (domain.Rect{Y: 12}) || o.Kind != domain.OverlayPanel || o.Anchor != domain.AnchorTopCenter || o.Capture || o.Panel == nil {
 			t.Fatalf("overlay: %+v", o)
 		}
 		if !strings.Contains(o.Panel.Lines[0], "org.test.app") {
@@ -73,7 +75,7 @@ func TestOSDPinThroughRun(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := newHintConfig(t, core.Options{}, func(cfg *ports.Config) { cfg.Binds["Cmd+p"] = "osd-pin" })
 		tap := func() {
-			h.input <- ports.KeyEvent{Keysym: "Super_L", Pressed: true, Mods: ports.ModSuper}
+			h.input <- ports.KeyEvent{Keysym: "Super_L", Pressed: true, Mods: domain.ModSuper}
 			synctest.Wait()
 			h.input <- ports.KeyEvent{Keysym: "Super_L"}
 			synctest.Wait()
@@ -97,7 +99,7 @@ func TestOSDPinThroughRun(t *testing.T) {
 		if len(s[0].Overlays) != 0 {
 			t.Fatal("unpin retained overlay")
 		}
-		h.input <- ports.KeyEvent{Keysym: "p", Base: "p", Pressed: true, Mods: ports.ModSuper}
+		h.input <- ports.KeyEvent{Keysym: "p", Base: "p", Pressed: true, Mods: domain.ModSuper}
 		synctest.Wait()
 		osdOverlay(t, h)
 	})
@@ -113,7 +115,7 @@ func TestOSDSuppressedThroughRun(t *testing.T) {
 					synctest.Wait()
 					h.drain()
 				}
-				h.input <- ports.KeyEvent{Keysym: "Super_L", Pressed: true, Mods: ports.ModSuper}
+				h.input <- ports.KeyEvent{Keysym: "Super_L", Pressed: true, Mods: domain.ModSuper}
 				synctest.Wait()
 				h.input <- ports.KeyEvent{Keysym: "Super_L"}
 				synctest.Wait()
@@ -152,7 +154,7 @@ func TestOSDPinnedSecurityTransitionThroughRun(t *testing.T) {
 				gate := portsmocks.NewMockSessionSecurity(t)
 				gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return epoch.Load().(ports.SecurityState) })
 				h := newHintConfig(t, core.Options{Security: gate}, func(cfg *ports.Config) { cfg.Binds["Cmd+p"] = "osd-pin" })
-				h.press("p", ports.ModSuper)
+				h.press("p", domain.ModSuper)
 				h.release("p", 0)
 				synctest.Wait()
 				osdOverlay(t, h)
@@ -180,7 +182,7 @@ func TestOSDPinnedSecurityTransitionThroughRun(t *testing.T) {
 				epoch.Store(h.state)
 				h.client <- ports.SessionLockChanged{State: h.state}
 				synctest.Wait()
-				h.press("p", ports.ModSuper)
+				h.press("p", domain.ModSuper)
 				h.release("p", 0)
 				synctest.Wait()
 				osdOverlay(t, h)
@@ -198,7 +200,7 @@ func TestOSDPinnedEmptyFocusThroughRun(t *testing.T) {
 					cfg.Binds["Cmd+n"] = "focus-workspace-next"
 					cfg.Binds["Cmd+b"] = "focus-workspace-prev"
 				})
-				h.press("p", ports.ModSuper)
+				h.press("p", domain.ModSuper)
 				h.release("p", 0)
 				synctest.Wait()
 				osdOverlay(t, h)
@@ -212,7 +214,7 @@ func TestOSDPinnedEmptyFocusThroughRun(t *testing.T) {
 				if unmap {
 					h.client <- ports.WindowUnmapped{ID: 1}
 				} else {
-					h.press("n", ports.ModSuper)
+					h.press("n", domain.ModSuper)
 					h.release("n", 0)
 				}
 				synctest.Wait()
@@ -237,7 +239,7 @@ func TestOSDPinnedEmptyFocusThroughRun(t *testing.T) {
 							t.Fatalf("unexpected watch: %+v", v)
 						}
 					}
-					h.press("b", ports.ModSuper)
+					h.press("b", domain.ModSuper)
 					h.release("b", 0)
 					synctest.Wait()
 					for len(h.scenes) > 1 {
@@ -257,8 +259,8 @@ func TestOSDCmdBindReleaseThroughRun(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := newHintConfig(t, core.Options{}, func(cfg *ports.Config) { cfg.Binds["Cmd+h"] = "close-window" })
 		for _, ev := range []ports.KeyEvent{
-			{Keysym: "Super_L", Pressed: true, Mods: ports.ModSuper},
-			{Keysym: "h", Base: "h", Pressed: true, Mods: ports.ModSuper},
+			{Keysym: "Super_L", Pressed: true, Mods: domain.ModSuper},
+			{Keysym: "h", Base: "h", Pressed: true, Mods: domain.ModSuper},
 			{Keysym: "Super_L"},
 			{Keysym: "h", Base: "h"},
 		} {
@@ -297,14 +299,14 @@ func TestOSDInhibitShownThroughRun(t *testing.T) {
 				timer.EXPECT().C().Return(fire).Once()
 				timer.EXPECT().Stop().Return(true).Once()
 				h := newHintConfig(t, core.Options{Clock: clock}, func(cfg *ports.Config) { cfg.Binds["Cmd+p"] = "osd-pin" })
-				h.input <- ports.KeyEvent{Keysym: "Super_L", Pressed: true, Mods: ports.ModSuper}
+				h.input <- ports.KeyEvent{Keysym: "Super_L", Pressed: true, Mods: domain.ModSuper}
 				synctest.Wait()
 				fire <- time.Unix(0, int64(400*time.Millisecond))
 				synctest.Wait()
 				osdOverlay(t, h)
 				next(t, h.commands, func(v ports.WatchStats) bool { return v.Window == 1 })
 				if pinned {
-					h.press("p", ports.ModSuper)
+					h.press("p", domain.ModSuper)
 					synctest.Wait()
 					osdOverlay(t, h)
 				}

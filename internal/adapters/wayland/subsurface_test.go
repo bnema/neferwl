@@ -8,6 +8,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/viewporter"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
@@ -553,7 +554,7 @@ func TestSubsurfaceContent(t *testing.T) {
 			t.Fatal("no content")
 		}
 	}
-	if got.ID != w.ID || got.Width != 4 || got.Geometry != (ports.Rect{X: 1, Y: 1, W: 2, H: 2}) {
+	if got.ID != w.ID || got.Width != 4 || got.Geometry != (domain.Rect{X: 1, Y: 1, W: 2, H: 2}) {
 		t.Fatalf("root %+v", got)
 	}
 	if len(got.Children) != 1 || got.Children[0].X != 1 || got.Children[0].Y != 2 || got.Children[0].Width != 2 || got.Children[0].Below {

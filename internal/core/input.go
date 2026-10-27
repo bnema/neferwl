@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/bnema/neferwl/internal/core/geom"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -32,7 +33,7 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 			return nil
 		}
 		if forwardsSwipe(v.Fingers) {
-			return c.gestureBegin(ctx, ports.GestureSwipe, v.Fingers, v.Time)
+			return c.gestureBegin(ctx, domain.GestureSwipe, v.Fingers, v.Time)
 		}
 		if err := c.gestureAbort(ctx, v.Time); err != nil {
 			return err
@@ -43,7 +44,7 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 		return nil
 	case ports.SwipeUpdate:
 		if c.gesture.on {
-			return c.gestureUpdate(ctx, ports.GestureUpdateTo{Kind: ports.GestureSwipe, DX: v.AccelDX, DY: v.AccelDY, Time: v.Time})
+			return c.gestureUpdate(ctx, ports.GestureUpdateTo{Kind: domain.GestureSwipe, DX: v.AccelDX, DY: v.AccelDY, Time: v.Time})
 		}
 		before := c.cur().mon.Current()
 		if c.swipeUpdate(v) {
@@ -51,8 +52,8 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 		}
 		return nil
 	case ports.SwipeEnd:
-		if c.gesture.on && c.gesture.kind == ports.GestureSwipe {
-			return c.gestureEnd(ctx, ports.GestureSwipe, v.Cancelled, v.Time)
+		if c.gesture.on && c.gesture.kind == domain.GestureSwipe {
+			return c.gestureEnd(ctx, domain.GestureSwipe, v.Cancelled, v.Time)
 		}
 		shown, spawn := c.swipeEnd(v)
 		if spawn != nil {
@@ -63,15 +64,15 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 		}
 		return c.slid(ctx, shown)
 	case ports.PinchBegin:
-		return c.gestureBegin(ctx, ports.GesturePinch, v.Fingers, v.Time)
+		return c.gestureBegin(ctx, domain.GesturePinch, v.Fingers, v.Time)
 	case ports.PinchUpdate:
-		return c.gestureUpdate(ctx, ports.GestureUpdateTo{Kind: ports.GesturePinch, DX: v.DX, DY: v.DY, Scale: v.Scale, Rotation: v.Rotation, Time: v.Time})
+		return c.gestureUpdate(ctx, ports.GestureUpdateTo{Kind: domain.GesturePinch, DX: v.DX, DY: v.DY, Scale: v.Scale, Rotation: v.Rotation, Time: v.Time})
 	case ports.PinchEnd:
-		return c.gestureEnd(ctx, ports.GesturePinch, v.Cancelled, v.Time)
+		return c.gestureEnd(ctx, domain.GesturePinch, v.Cancelled, v.Time)
 	case ports.HoldBegin:
-		return c.gestureBegin(ctx, ports.GestureHold, v.Fingers, v.Time)
+		return c.gestureBegin(ctx, domain.GestureHold, v.Fingers, v.Time)
 	case ports.HoldEnd:
-		return c.gestureEnd(ctx, ports.GestureHold, v.Cancelled, v.Time)
+		return c.gestureEnd(ctx, domain.GestureHold, v.Cancelled, v.Time)
 	case ports.KeyEvent:
 		return c.keyEvent(ctx, v)
 	}
@@ -81,7 +82,7 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 func (c *Core) pointerMotion(ctx context.Context, v ports.PointerMotion) error {
 	c.motionTime = v.Time
 	// A locked pointer stays still; relative motion still flows.
-	if c.constraint.Mode != ports.ConstraintLock {
+	if c.constraint.Mode != domain.ConstraintLock {
 		c.cursorX, c.cursorY = c.constraint.Clamp(c.clampPointer(c.cursorX, c.cursorY, v.X, v.Y))
 	}
 	// The focused screen follows the pointer, so new windows
@@ -255,7 +256,7 @@ func (c *Core) pointerAxis(ctx context.Context, v ports.PointerAxis) error {
 	c.scrollStop(v)
 	// Only wheel/continuous scrolling navigates the overview.
 	// Two-finger scrolling belongs to clients, never to navigation.
-	if v.Source != ports.AxisFinger && c.cur().mon.ov.open && !c.overviewKeyboardTaken() {
+	if v.Source != domain.AxisFinger && c.cur().mon.ov.open && !c.overviewKeyboardTaken() {
 		// overviewScroll owns which scrolls step; the shot costs no
 		// allocation once warm.
 		now := c.now()

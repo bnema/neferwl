@@ -4,6 +4,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -17,7 +18,7 @@ func TestSceneSeqKeptWhenNothingChanged(t *testing.T) {
 			t.Fatal("scene without Seq")
 		}
 		// Focus-column-left at the left edge changes nothing but still publishes.
-		again := r.key(t, "Left", ports.ModAlt)[0]
+		again := r.key(t, "Left", domain.ModAlt)[0]
 		if again.Seq != first.Seq || !again.SameAs(first) {
 			t.Fatalf("Seq %d, want the held %d", again.Seq, first.Seq)
 		}
@@ -40,7 +41,7 @@ func TestAnimatingKeyGetsFreshSeq(t *testing.T) {
 		// setup returns the scene before the key.
 		setup func(*testing.T, *swipeRig) ports.Scene
 		sym   string
-		mods  ports.Mods
+		mods  domain.Mods
 		// same: the key's scene draws what the previous one did.
 		same bool
 	}{
@@ -50,12 +51,12 @@ func TestAnimatingKeyGetsFreshSeq(t *testing.T) {
 		},
 			func(t *testing.T, r *swipeRig) ports.Scene {
 				twoColumns(t, r)
-				return r.key(t, "Left", ports.ModAlt)[0]
-			}, "Right", ports.ModAlt | ports.ModCtrl, true},
+				return r.key(t, "Left", domain.ModAlt)[0]
+			}, "Right", domain.ModAlt | domain.ModCtrl, true},
 		{"focus scroll", nil, func(t *testing.T, r *swipeRig) ports.Scene {
 			threeColumns(t, r)
-			return r.key(t, "Left", ports.ModAlt)[0] // 2 is on screen: no scroll
-		}, "Left", ports.ModAlt, false},
+			return r.key(t, "Left", domain.ModAlt)[0] // 2 is on screen: no scroll
+		}, "Left", domain.ModAlt, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -80,9 +81,9 @@ func TestNoOpKeyKeepsSeqWithAnimationsOn(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, nil)
 		threeColumns(t, r)
-		first := r.key(t, "Right", ports.ModAlt)[0] // 3 is the last column
+		first := r.key(t, "Right", domain.ModAlt)[0] // 3 is the last column
 		for range 2 {
-			if s := r.key(t, "Right", ports.ModAlt)[0]; s.Seq != first.Seq || !s.SameAs(first) {
+			if s := r.key(t, "Right", domain.ModAlt)[0]; s.Seq != first.Seq || !s.SameAs(first) {
 				t.Fatalf("Seq %d on a key at the edge, want the held %d", s.Seq, first.Seq)
 			}
 		}

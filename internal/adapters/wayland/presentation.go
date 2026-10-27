@@ -5,6 +5,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/presentationtime"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
@@ -30,7 +31,7 @@ type graphFeedback struct {
 type feedbackWait struct {
 	fb   *presentationtime.WpPresentationFeedback
 	surf *surface
-	win  ports.WindowID
+	win  domain.WindowID
 	seq  uint64
 	at   time.Time
 	// replaced is the window content Seq of the surface's next commit (0:

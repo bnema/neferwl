@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/bnema/neferwl/internal/core/layout"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -71,9 +72,9 @@ func (c *Core) stateInto(st ports.State) ports.State {
 				v := ports.WindowState{ID: id, AppID: rec.client.AppID, PID: rec.client.PID, Sandbox: rec.client.Sandbox, ContentType: contentTypeName(rec.client.ContentType), Xwayland: rec.client.Xwayland, Output: s.name(), Workspace: n, WorkspaceID: w.ID, WorkspaceName: w.Name, Visible: shown[id], IdleInhibit: rec.idleInhibit, ShortcutsInhibited: rec.inhibitShortcuts, Floating: w.IsFloat(id), Fullscreen: w.Fullscreen == id}
 				if c.constrained.ID == id {
 					switch c.constrained.Mode {
-					case ports.ConstraintLock:
+					case domain.ConstraintLock:
 						v.PointerConstraint = constraintLocked
-					case ports.ConstraintConfine:
+					case domain.ConstraintConfine:
 						v.PointerConstraint = constraintConfined
 					}
 				}
@@ -99,13 +100,13 @@ func (c *Core) stateInto(st ports.State) ports.State {
 }
 
 // contentTypeName returns the script-facing hint without allocating.
-func contentTypeName(kind ports.ContentType) string {
+func contentTypeName(kind domain.ContentType) string {
 	switch kind {
-	case ports.ContentPhoto:
+	case domain.ContentPhoto:
 		return contentPhoto
-	case ports.ContentVideo:
+	case domain.ContentVideo:
 		return contentVideo
-	case ports.ContentGame:
+	case domain.ContentGame:
 		return contentGame
 	default:
 		return ""

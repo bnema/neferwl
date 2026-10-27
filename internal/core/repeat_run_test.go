@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -39,7 +40,7 @@ func repeatRig(t *testing.T) rig {
 	go func() { done <- c.Run(ctx) }()
 	t.Cleanup(func() { cancel(); <-done })
 	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 500, Height: 100}}
-	for id := ports.WindowID(1); id <= 5; id++ {
+	for id := domain.WindowID(1); id <= 5; id++ {
 		client <- ports.WindowMapped{ID: id}
 	}
 	synctest.Wait()
@@ -60,7 +61,7 @@ func drain(commands chan ports.ClientCommand) (focus, activity int) {
 	return focus, activity
 }
 
-var cmdLeft = ports.KeyEvent{Keysym: "Left", Keycode: 113, Mods: ports.ModSuper, Pressed: true}
+var cmdLeft = ports.KeyEvent{Keysym: "Left", Keycode: 113, Mods: domain.ModSuper, Pressed: true}
 
 // Through Run: a held cmd+Left repeats on its timer and each repeat reports
 // user activity, so idle timers do not fire while a key is held.
@@ -95,7 +96,7 @@ func TestRepeatStopsThroughRun(t *testing.T) {
 		// The new keymap may swallow the release.
 		{"config reload", func(r rig) { r.reload <- ports.ConfigChanged{Config: r.cfg} }},
 		{"launcher takes the keyboard", func(r rig) {
-			r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{{ID: 9, Layer: ports.LayerOverlay, Width: 100, Height: 40, Keyboard: 1}}}
+			r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{{ID: 9, Layer: domain.LayerOverlay, Width: 100, Height: 40, Keyboard: 1}}}
 		}},
 		{"window inhibits shortcuts", func(r rig) { r.client <- ports.ShortcutsInhibit{Window: 4, Active: true} }},
 	} {

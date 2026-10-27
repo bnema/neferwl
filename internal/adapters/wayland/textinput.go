@@ -4,6 +4,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/inputmethod"
 	"github.com/bnema/go-wayland-bindings/server/textinput"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 )
@@ -24,7 +25,7 @@ type textState struct {
 	hasSurrounding bool
 	cause          uint32
 	hint, purpose  uint32
-	rect           ports.Rect
+	rect           domain.Rect
 	hasRect        bool
 }
 
@@ -107,7 +108,7 @@ func (t *textInput) SetContentType(_ *textinput.ZwpTextInputV3, hint, purpose ui
 }
 
 func (t *textInput) SetCursorRectangle(_ *textinput.ZwpTextInputV3, x, y, w, h int32) {
-	t.pending.rect, t.pending.hasRect = ports.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)}, true
+	t.pending.rect, t.pending.hasRect = domain.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)}, true
 }
 
 // Commit applies the pending state. Every commit counts for the done

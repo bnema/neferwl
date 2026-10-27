@@ -6,6 +6,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -147,13 +149,13 @@ func both(t *testing.T, body func(t *testing.T, animated bool)) {
 }
 
 // keyLanded presses a key and returns the settled scene set.
-func (r *landRig) keyLanded(t *testing.T, sym string, mods ports.Mods) []ports.Scene {
+func (r *landRig) keyLanded(t *testing.T, sym string, mods domain.Mods) []ports.Scene {
 	t.Helper()
 	return r.land(r.key(t, sym, mods))
 }
 
 // mapLanded maps a window and returns the settled scene set.
-func (r *landRig) mapLanded(t *testing.T, id ports.WindowID) []ports.Scene {
+func (r *landRig) mapLanded(t *testing.T, id domain.WindowID) []ports.Scene {
 	t.Helper()
 	return r.land(r.mapWindow(t, id))
 }

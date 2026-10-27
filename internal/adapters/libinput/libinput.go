@@ -1,4 +1,5 @@
 // Package libinput reads keyboards and pointers through libinput's udev backend.
+
 package libinput
 
 import (
@@ -12,6 +13,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/fdwait"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego"
 	"github.com/bnema/zerowrap"
@@ -574,44 +576,44 @@ func (s *inputState) release() {
 // ignored until it ends, so core never sees two streams interleaved.
 type gestures struct {
 	owner uintptr
-	kind  ports.GestureKind
+	kind  domain.GestureKind
 }
 
-func (g *gestures) begin(dev uintptr, kind ports.GestureKind, fingers int, at time.Duration) ports.InputEvent {
+func (g *gestures) begin(dev uintptr, kind domain.GestureKind, fingers int, at time.Duration) ports.InputEvent {
 	if dev == 0 || fingers <= 0 || g.owner != 0 {
 		return nil
 	}
 	g.owner, g.kind = dev, kind
 	switch kind {
-	case ports.GesturePinch:
+	case domain.GesturePinch:
 		return ports.PinchBegin{Fingers: fingers, Time: at}
-	case ports.GestureHold:
+	case domain.GestureHold:
 		return ports.HoldBegin{Fingers: fingers, Time: at}
 	}
 	return ports.SwipeBegin{Fingers: fingers, Time: at}
 }
 
 // running reports whether dev has a gesture of the given kind in progress.
-func (g *gestures) running(dev uintptr, kind ports.GestureKind) bool {
+func (g *gestures) running(dev uintptr, kind domain.GestureKind) bool {
 	return dev != 0 && g.owner == dev && g.kind == kind
 }
 
 func (g *gestures) swipeUpdate(dev uintptr, dx, dy, accelDX, accelDY float64, at time.Duration) ports.InputEvent {
-	if !g.running(dev, ports.GestureSwipe) {
+	if !g.running(dev, domain.GestureSwipe) {
 		return nil
 	}
 	return ports.SwipeUpdate{DX: dx, DY: dy, AccelDX: accelDX, AccelDY: accelDY, Time: at}
 }
 
 func (g *gestures) pinchUpdate(dev uintptr, dx, dy, scale, rotation float64, at time.Duration) ports.InputEvent {
-	if !g.running(dev, ports.GesturePinch) {
+	if !g.running(dev, domain.GesturePinch) {
 		return nil
 	}
 	return ports.PinchUpdate{DX: dx, DY: dy, Scale: scale, Rotation: rotation, Time: at}
 }
 
 // end finishes the gesture of the given kind on dev.
-func (g *gestures) end(dev uintptr, kind ports.GestureKind, cancelled bool, at time.Duration) ports.InputEvent {
+func (g *gestures) end(dev uintptr, kind domain.GestureKind, cancelled bool, at time.Duration) ports.InputEvent {
 	if !g.running(dev, kind) {
 		return nil
 	}
@@ -629,9 +631,9 @@ func (g *gestures) abort(dev uintptr) ports.InputEvent {
 func (g *gestures) finish(cancelled bool, at time.Duration) ports.InputEvent {
 	g.owner = 0
 	switch g.kind {
-	case ports.GesturePinch:
+	case domain.GesturePinch:
 		return ports.PinchEnd{Cancelled: cancelled, Time: at}
-	case ports.GestureHold:
+	case domain.GestureHold:
 		return ports.HoldEnd{Cancelled: cancelled, Time: at}
 	}
 	return ports.SwipeEnd{Cancelled: cancelled, Time: at}
@@ -685,11 +687,11 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 		return in.gestures.abort(dev), nil
 	case evSwipeBegin, evPinchBegin, evHoldBegin:
 		ge := gestureEvent(ev)
-		kind := ports.GestureSwipe
+		kind := domain.GestureSwipe
 		if eventType(ev) == evPinchBegin {
-			kind = ports.GesturePinch
+			kind = domain.GesturePinch
 		} else if eventType(ev) == evHoldBegin {
-			kind = ports.GestureHold
+			kind = domain.GestureHold
 		}
 		return in.gestures.begin(eventDevice(ev), kind, int(gestureFingers(ge)), usec(gestureUsec(ge))), nil
 	case evSwipeUpdate:
@@ -700,13 +702,13 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 		return in.gestures.pinchUpdate(eventDevice(ev), gestureAccelDX(ge), gestureAccelDY(ge), gestureScale(ge), gestureAngle(ge), usec(gestureUsec(ge))), nil
 	case evSwipeEnd:
 		ge := gestureEvent(ev)
-		return in.gestures.end(eventDevice(ev), ports.GestureSwipe, gestureCanceled(ge) != 0, usec(gestureUsec(ge))), nil
+		return in.gestures.end(eventDevice(ev), domain.GestureSwipe, gestureCanceled(ge) != 0, usec(gestureUsec(ge))), nil
 	case evPinchEnd:
 		ge := gestureEvent(ev)
-		return in.gestures.end(eventDevice(ev), ports.GesturePinch, gestureCanceled(ge) != 0, usec(gestureUsec(ge))), nil
+		return in.gestures.end(eventDevice(ev), domain.GesturePinch, gestureCanceled(ge) != 0, usec(gestureUsec(ge))), nil
 	case evHoldEnd:
 		ge := gestureEvent(ev)
-		return in.gestures.end(eventDevice(ev), ports.GestureHold, gestureCanceled(ge) != 0, usec(gestureUsec(ge))), nil
+		return in.gestures.end(eventDevice(ev), domain.GestureHold, gestureCanceled(ge) != 0, usec(gestureUsec(ge))), nil
 	case evKeyboardKey:
 		k := keyboardEvent(ev)
 		code, pressed := keyboardKey(k), keyboardState(k) == 1
@@ -726,7 +728,7 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 		pe := pointerEvent(ev)
 		now := usec(pointerUsec(pe))
 		b := p.bounds()
-		if p.constraint.Mode == ports.ConstraintLock {
+		if p.constraint.Mode == domain.ConstraintLock {
 			return ports.PointerMotion{X: p.x, Y: p.y, Time: now}, nil
 		}
 		x, y := p.set(float64(b.X)+pointerAbsX(pe, uint32(b.W)), float64(b.Y)+pointerAbsY(pe, uint32(b.H)))
@@ -740,7 +742,7 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 	case evScrollWheel, evScrollFinger, evScrollCont:
 		pe := pointerEvent(ev)
 		// The three scroll events follow each other as the sources do.
-		source := ports.AxisSource(eventType(ev) - evScrollWheel)
+		source := domain.AxisSource(eventType(ev) - evScrollWheel)
 		a := ports.PointerAxis{Source: source, Time: usec(pointerUsec(pe))}
 		// libinput axis 0 is vertical, 1 horizontal, as in wl_pointer.
 		for i, s := range []*ports.ScrollAxis{&a.Vertical, &a.Horizontal} {
@@ -748,11 +750,11 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 				continue
 			}
 			s.Set, s.Value = true, scrollValue(pe, uint32(i))
-			if source == ports.AxisFinger {
+			if source == domain.AxisFinger {
 				// Two-finger scroll is the touchpad's only scroll source.
 				s.Value *= in.cfg.Touchpad.ScrollFactor
 			}
-			if source == ports.AxisWheel {
+			if source == domain.AxisWheel {
 				s.V120 = int32(scrollV120(pe, uint32(i)))
 			} else {
 				s.Stop = s.Value == 0
@@ -819,7 +821,7 @@ func hotkey(ke ports.KeyEvent, protected bool) (hotkeyAction, int) {
 			return hotkeyVT, n
 		}
 	}
-	if ke.Mods&(ports.ModCtrl|ports.ModAlt) != ports.ModCtrl|ports.ModAlt {
+	if ke.Mods&(domain.ModCtrl|domain.ModAlt) != domain.ModCtrl|domain.ModAlt {
 		return hotkeyNone, 0
 	}
 	switch {
@@ -882,7 +884,7 @@ func (p *pointer) scale() float64 {
 func (p *pointer) move(dx, dy float64) ports.PointerMotion {
 	s := p.scale()
 	dx, dy = dx/s, dy/s
-	if p.constraint.Mode != ports.ConstraintLock {
+	if p.constraint.Mode != domain.ConstraintLock {
 		p.set(p.x+dx, p.y+dy)
 	}
 	return ports.PointerMotion{X: p.x, Y: p.y, DX: dx, DY: dy}
@@ -898,7 +900,7 @@ func (p *pointer) set(x, y float64) (float64, float64) {
 // the pointer to core's cursor, which stood still meanwhile; a confined
 // pointer moves inside. A warp moves it to core's cursor.
 func (p *pointer) constrain(c ports.PointerConstraint) {
-	if c.Warp || c.Mode == ports.ConstraintLock || p.constraint.Mode == ports.ConstraintLock {
+	if c.Warp || c.Mode == domain.ConstraintLock || p.constraint.Mode == domain.ConstraintLock {
 		p.x, p.y = p.layout.Clamp(c.X, c.Y, c.X, c.Y)
 	}
 	p.constraint = c
@@ -906,8 +908,8 @@ func (p *pointer) constrain(c ports.PointerConstraint) {
 }
 
 // bounds is the rectangle holding every output.
-func (p *pointer) bounds() ports.Rect {
-	var r ports.Rect
+func (p *pointer) bounds() domain.Rect {
+	var r domain.Rect
 	for _, o := range p.layout {
 		r.W = max(r.W, o.X+o.Width)
 		r.H = max(r.H, o.Y+o.Height)

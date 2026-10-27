@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -16,12 +17,12 @@ func TestTileInsetKeepsBottomPanel(t *testing.T) {
 	red := color.RGBA{255, 0, 0, 255}
 	green := color.RGBA{0, 255, 0, 255}
 	blue := color.RGBA{0, 0, 255, 255}
-	contents := map[ports.WindowID]ports.SurfaceContent{1: solidContent(t, 64, 48, red), 2: solidContent(t, 64, 8, green), 3: solidContent(t, 8, 8, blue)}
-	scene := ports.Scene{Seq: 1, OutputWidth: 64, OutputHeight: 48, Background: "#000000", TileInset: ports.Insets{Bottom: 8},
+	contents := map[domain.WindowID]ports.SurfaceContent{1: solidContent(t, 64, 48, red), 2: solidContent(t, 64, 8, green), 3: solidContent(t, 8, 8, blue)}
+	scene := ports.Scene{Seq: 1, OutputWidth: 64, OutputHeight: 48, Background: "#000000", TileInset: domain.Insets{Bottom: 8},
 		Border:     ports.Border{Width: 2, Inactive: "#ffffff"},
-		Windows:    []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 48}}},
-		Separators: []ports.Separator{{Rect: ports.Rect{X: 30, W: 2, H: 48}}},
-		Layers:     []ports.SceneLayer{{ID: 2, Rect: ports.Rect{Y: 40, W: 64, H: 8}, Layer: ports.LayerBottom}},
+		Windows:    []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 48}}},
+		Separators: []ports.Separator{{Rect: domain.Rect{X: 30, W: 2, H: 48}}},
+		Layers:     []ports.SceneLayer{{ID: 2, Rect: domain.Rect{Y: 40, W: 64, H: 8}, Layer: domain.LayerBottom}},
 	}
 	if err := render(r, scene, contents); err != nil {
 		t.Fatal(err)
@@ -34,7 +35,7 @@ func TestTileInsetKeepsBottomPanel(t *testing.T) {
 		}
 	}
 	scene.Seq++
-	scene.Windows = []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 48}}, {ID: 3, Rect: ports.Rect{Y: 40, W: 8, H: 8}, Floating: true}}
+	scene.Windows = []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 48}}, {ID: 3, Rect: domain.Rect{Y: 40, W: 8, H: 8}, Floating: true}}
 	if err := render(r, scene, contents); err != nil {
 		t.Fatal(err)
 	}
@@ -48,14 +49,14 @@ func TestTileInsetKeepsBottomPanel(t *testing.T) {
 func TestTileDamageStopsAtPanel(t *testing.T) {
 	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
-	scene := ports.Scene{Seq: 1, Scale: 1, OutputWidth: 64, OutputHeight: 48, Background: "#000000", TileInset: ports.Insets{Bottom: 8},
-		Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 48}}}}
+	scene := ports.Scene{Seq: 1, Scale: 1, OutputWidth: 64, OutputHeight: 48, Background: "#000000", TileInset: domain.Insets{Bottom: 8},
+		Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 48}}}}
 	c := solidContent(t, 64, 48, color.RGBA{255, 0, 0, 255})
 	c.ID, c.Seq = 1, 2 // the target holds Seq 1, with no damage history
 	bounds := image.Rect(0, 0, 64, 48)
-	held := &target{valid: true, sceneSeq: scene.Seq, scene: scene, windows: map[ports.WindowID]heldWindow{1: {seq: 1, rect: image.Rect(0, 0, 64, 40)}}}
+	held := &target{valid: true, sceneSeq: scene.Seq, scene: scene, windows: map[domain.WindowID]heldWindow{1: {seq: 1, rect: image.Rect(0, 0, 64, 40)}}}
 	dmg := r.frameDamage(held, scene, bounds)
-	_ = r.draws(scene, map[ports.WindowID]ports.SurfaceContent{1: c}, dmg)
+	_ = r.draws(scene, map[domain.WindowID]ports.SurfaceContent{1: c}, dmg)
 	dmg.finish()
 	if dmg.all() || dmg.area != image.Rect(0, 0, 64, 40) {
 		t.Fatalf("damage %v (all %v), want the tile above the panel", dmg.area, dmg.all())
@@ -67,11 +68,11 @@ func TestWorkspaceClipWindowsPopupsAndLayers(t *testing.T) {
 	defer r.Close()
 	red := color.RGBA{255, 0, 0, 255}
 	green := color.RGBA{0, 255, 0, 255}
-	contents := map[ports.WindowID]ports.SurfaceContent{1: solidContent(t, 64, 48, red), 2: solidContent(t, 8, 8, green)}
-	clip := ports.Rect{X: 16, Y: 12, W: 32, H: 24}
+	contents := map[domain.WindowID]ports.SurfaceContent{1: solidContent(t, 64, 48, red), 2: solidContent(t, 8, 8, green)}
+	clip := domain.Rect{X: 16, Y: 12, W: 32, H: 24}
 	scene := ports.Scene{Seq: 1, OutputWidth: 64, OutputHeight: 48, Background: "#000000", WorkspaceClip: clip,
-		Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 48}}},
-		Layers:  []ports.SceneLayer{{ID: 2, Rect: ports.Rect{W: 8, H: 8}, Layer: ports.LayerTop}},
+		Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 48}}},
+		Layers:  []ports.SceneLayer{{ID: 2, Rect: domain.Rect{W: 8, H: 8}, Layer: domain.LayerTop}},
 	}
 	if err := render(r, scene, contents); err != nil {
 		t.Fatal(err)
@@ -99,7 +100,7 @@ func TestWorkspaceClipWindowsPopupsAndLayers(t *testing.T) {
 	// A popup from a workspace surface is clipped too; input popups over
 	// layers retain output-wide bounds.
 	scene.Seq++
-	scene.Windows = []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 48}, Popup: true}}
+	scene.Windows = []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 48}, Popup: true}}
 	if err := render(r, scene, contents); err != nil {
 		t.Fatal(err)
 	}
@@ -110,17 +111,17 @@ func TestWorkspaceClipWindowsPopupsAndLayers(t *testing.T) {
 	// Scenes are immutable snapshots (the target holds the previous one):
 	// a changed window goes in a fresh slice, as core publishes it.
 	scene.Seq++
-	scene.Windows = []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 48}, Popup: true, OverLayers: true}}
+	scene.Windows = []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 48}, Popup: true, OverLayers: true}}
 	if err := render(r, scene, contents); err != nil {
 		t.Fatal(err)
 	}
 	if got := readPixels(t, r).RGBAAt(10, 10); got != red {
 		t.Fatalf("output-wide popup clipped: %v", got)
 	}
-	scene.Windows = []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 48}, Popup: true}}
+	scene.Windows = []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 48}, Popup: true}}
 	// Switching back to inherited geometry repaints the margins.
 	scene.Seq++
-	scene.WorkspaceClip = ports.Rect{}
+	scene.WorkspaceClip = domain.Rect{}
 	if err := render(r, scene, contents); err != nil {
 		t.Fatal(err)
 	}

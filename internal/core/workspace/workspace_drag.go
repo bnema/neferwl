@@ -4,7 +4,7 @@ import (
 	"slices"
 
 	"github.com/bnema/neferwl/internal/core/geom"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // DropSpot is an output-local model target, without screen ownership.
@@ -191,18 +191,18 @@ type visibleColumn struct {
 
 // resized is r with the edges moved by dx, dy, at least min wide and
 // high, inside area u.
-func resized(r Rect, edges ports.ResizeEdges, dx, dy, least int, u Rect) Rect {
+func resized(r Rect, edges domain.ResizeEdges, dx, dy, least int, u Rect) Rect {
 	left, top, right, bottom := r.X, r.Y, r.X+r.W, r.Y+r.H
-	if edges&ports.ResizeLeft != 0 {
+	if edges&domain.ResizeLeft != 0 {
 		left = min(max(left+dx, u.X), right-least)
 	}
-	if edges&ports.ResizeRight != 0 {
+	if edges&domain.ResizeRight != 0 {
 		right = max(min(right+dx, u.X+u.W), left+least)
 	}
-	if edges&ports.ResizeTop != 0 {
+	if edges&domain.ResizeTop != 0 {
 		top = min(max(top+dy, u.Y), bottom-least)
 	}
-	if edges&ports.ResizeBottom != 0 {
+	if edges&domain.ResizeBottom != 0 {
 		bottom = max(min(bottom+dy, u.Y+u.H), top+least)
 	}
 	return Rect{X: left, Y: top, W: right - left, H: bottom - top}

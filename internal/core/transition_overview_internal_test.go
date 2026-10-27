@@ -8,6 +8,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -58,7 +59,7 @@ func contentScale(w ports.SceneWindow) float64 {
 
 // checkContent fails unless the content scale the renderer will use draws
 // the content at the frame's size (within rounding) and never magnifies it.
-func checkContent(t *testing.T, w ports.SceneWindow, full ports.Rect, when string) {
+func checkContent(t *testing.T, w ports.SceneWindow, full domain.Rect, when string) {
 	t.Helper()
 	k := contentScale(w)
 	if k <= 0 || k > 1 {
@@ -79,7 +80,7 @@ func checkContent(t *testing.T, w ports.SceneWindow, full ports.Rect, when strin
 func TestOverviewOpenCloseAnimatesCards(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, ic, sc := overviewRig(t)
-		full := map[WindowID]ports.Rect{}
+		full := map[WindowID]domain.Rect{}
 		for _, id := range []WindowID{1, 2} {
 			full[id] = sceneWindow(t, indicatorScene(t, c), id).Rect
 		}

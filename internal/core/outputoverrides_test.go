@@ -5,6 +5,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -108,7 +109,7 @@ func TestOutputApplyTransform(t *testing.T) {
 func TestOutputApplyKeepsFileAnchor(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
-		anchor := ports.OutputAnchor{Relation: ports.RelationRightOf, To: "DP-1", Offset: 40}
+		anchor := ports.OutputAnchor{Relation: domain.RelationRightOf, To: "DP-1", Offset: 40}
 		file := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-2", Anchor: anchor, ScaleOnly: true}}}
 		o := NewOutputOverrides(file, false)
 		head := func(name string) ports.OutputHead {

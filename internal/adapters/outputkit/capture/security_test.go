@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -53,7 +55,7 @@ func TestSubmitHiddenEngageDuringRenderRejectsCopyRetainsReads(t *testing.T) {
 	f, w, err := os.Pipe()
 	require.NoError(t, err)
 	t.Cleanup(func() { f.Close(); w.Close() })
-	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 		engaged.Store(true)
 		return f, nil
 	}).Once()
@@ -61,13 +63,13 @@ func TestSubmitHiddenEngageDuringRenderRejectsCopyRetainsReads(t *testing.T) {
 	p.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
 	s := hiddenScene()
 	s.CaptureScene.Windows = []ports.SceneWindow{{ID: 5}}
-	surfaces := map[ports.WindowID]ports.SurfaceContent{5: {ID: 5, Seq: 8}}
+	surfaces := map[domain.WindowID]ports.SurfaceContent{5: {ID: 5, Seq: 8}}
 	reqs := []ports.CaptureRequest{hiddenRequest(t, 1, image.Rect(0, 0, 200, 100)), hiddenRequest(t, 2, image.Rect(0, 0, 200, 100))}
 	files := []*os.File{reqs[0].Dst.File, reqs[1].Dst.File}
 	p.SubmitHidden(s, surfaces, reqs)
 	child.AssertNotCalled(t, "BeginCapture")
 	require.True(t, p.HiddenReading(), "rejected native capture still owns GPU reads")
-	seen, reads, limited := p.CapHiddenSeen(map[ports.WindowID]uint64{5: 9})
+	seen, reads, limited := p.CapHiddenSeen(map[domain.WindowID]uint64{5: 9})
 	require.True(t, limited)
 	require.Equal(t, uint64(8), seen[5])
 	require.Equal(t, uint64(8), reads[5])

@@ -7,6 +7,7 @@ import (
 	"image"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -18,7 +19,7 @@ type ocrSource struct {
 	seed  maphash.Seed
 }
 
-func (*ocrSource) kind() ports.HintSource                { return ports.HintSourceOCR }
+func (*ocrSource) kind() domain.HintSource               { return domain.HintSourceOCR }
 func (s *ocrSource) needsFrame(ctx context.Context) bool { return ocrReady(ctx, &s.state) }
 func (*ocrSource) Close() error                          { return nil }
 func (s *ocrSource) scan(ctx context.Context, req ports.HintScanRequest, wins []ports.HintWindow, fr *frame) ([]ports.HintTarget, error) {

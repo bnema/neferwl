@@ -1,11 +1,15 @@
 package ports
 
-import "slices"
+import (
+	"slices"
+
+	"github.com/bnema/neferwl/internal/domain"
+)
 
 // SelectionOutline is a selection ring outside a preview. Rect and Radius
 // describe its outer edge; Radius zero denotes square corners.
 type SelectionOutline struct {
-	Rect   Rect
+	Rect   domain.Rect
 	Width  int
 	Radius int
 	Active bool
@@ -36,14 +40,14 @@ type Scene struct {
 	// WorkspaceClip bounds workspace windows, their popups and separators
 	// in logical output coordinates. Zero inherits the full output. Layers
 	// remain output-wide; overview previews do not use this clip.
-	WorkspaceClip Rect
+	WorkspaceClip domain.Rect
 	// TileInset is what exclusive layers (panels) and a workspace size
 	// override take from the output's edges: tiles (SceneWindow.Tile) and
 	// their lines are drawn only in what is left, the usable area
 	// (TileArea). A tile is never drawn over a panel, whatever its layer;
 	// insets covering the output leave no tile drawn. Zero: the usable
 	// area is the whole output (and the overview, capture scenes).
-	TileInset Insets
+	TileInset domain.Insets
 	// Dim darkens the background, bottom layers and tiles (tile lines
 	// included) inside WorkspaceClip when set, with black at this opacity,
 	// 0 to 1, under the first
@@ -60,7 +64,7 @@ type Scene struct {
 	// DropHints show where a dragged tile lands, filled with Border.Active
 	// over the windows of the workspace, under the top layers. Only the
 	// output under the pointer has them, during a drag.
-	DropHints []Rect
+	DropHints []domain.Rect
 	// Layers are the shown layer surfaces, drawn in slice order: background
 	// and bottom before windows, top and overlay after. Core leaves out
 	// those a fullscreen window hides (all but the background and a surface
@@ -142,7 +146,7 @@ func (s Scene) SameAs(o Scene) bool {
 // Shows reports whether the scene draws the surface of id: only its
 // content changes need a new frame. A window scrolled off the output is
 // not drawn (Draws).
-func (s Scene) Shows(id WindowID) bool {
+func (s Scene) Shows(id domain.WindowID) bool {
 	for _, w := range s.Windows {
 		if w.ID == id && s.Draws(w) {
 			return true
@@ -160,10 +164,10 @@ func (s Scene) Shows(id WindowID) bool {
 // inside WorkspaceClip (OverLayers popups remain output-wide) and, for a
 // tile, inside TileArea.
 func (s Scene) Draws(w SceneWindow) bool {
-	if w.Hidden || !w.Rect.Overlaps(Rect{W: s.OutputWidth, H: s.OutputHeight}) {
+	if w.Hidden || !w.Rect.Overlaps(domain.Rect{W: s.OutputWidth, H: s.OutputHeight}) {
 		return false
 	}
-	if !w.OverLayers && s.WorkspaceClip != (Rect{}) && !w.Rect.Overlaps(s.WorkspaceClip) {
+	if !w.OverLayers && s.WorkspaceClip != (domain.Rect{}) && !w.Rect.Overlaps(s.WorkspaceClip) {
 		return false
 	}
 	if a, ok := s.TileArea(); ok && w.Tile() {
@@ -175,12 +179,12 @@ func (s Scene) Draws(w SceneWindow) bool {
 // TileArea is where tiles are drawn: the output minus TileInset, empty
 // when the panels cover it. ok is false when TileInset is zero: tiles are
 // not clipped beyond the output and WorkspaceClip.
-func (s Scene) TileArea() (r Rect, ok bool) {
+func (s Scene) TileArea() (r domain.Rect, ok bool) {
 	in := s.TileInset
-	if in == (Insets{}) {
-		return Rect{}, false
+	if in == (domain.Insets{}) {
+		return domain.Rect{}, false
 	}
-	return Rect{X: in.Left, Y: in.Top, W: max(s.OutputWidth-in.Left-in.Right, 0), H: max(s.OutputHeight-in.Top-in.Bottom, 0)}, true
+	return domain.Rect{X: in.Left, Y: in.Top, W: max(s.OutputWidth-in.Left-in.Right, 0), H: max(s.OutputHeight-in.Top-in.Bottom, 0)}, true
 }
 
 // Border carries the window border style; colors are #rrggbb, "" skips
@@ -198,16 +202,16 @@ type Border struct {
 // mark the focused window and use Border.Active, others Border.Inactive.
 // Window owns the border (floats and tiles with gaps); 0 for shared tile lines.
 type Separator struct {
-	Rect   Rect
+	Rect   domain.Rect
 	Active bool
-	Window WindowID
+	Window domain.WindowID
 }
 
 // SceneLayer carries core → renderer layer surface placement.
 type SceneLayer struct {
-	ID    WindowID
-	Layer Layer
-	Rect  Rect
+	ID    domain.WindowID
+	Layer domain.Layer
+	Rect  domain.Rect
 }
 
 // FocusFlash is a brief inner border marking the entity an action just
@@ -215,7 +219,7 @@ type SceneLayer struct {
 // pixels, Width the border width inside it, Color #rrggbb and Alpha its
 // opacity at this frame (0 to 1).
 type FocusFlash struct {
-	Rect  Rect
+	Rect  domain.Rect
 	Width int
 	// Radius is the target's corner radius in logical pixels (0 = square),
 	// the same as SceneWindow.Radius; the border follows it.
@@ -229,12 +233,12 @@ type SceneWindow struct {
 	// Radius rounds the window corners in logical pixels; zero is square.
 	// Core sets Border.Radius here for floats and tiles with gaps.
 	Radius                      int
-	ID                          WindowID
-	Rect                        Rect
+	ID                          domain.WindowID
+	Rect                        domain.Rect
 	Focused, Fullscreen, Hidden bool
 	// Inset sides carry a separator line inside Rect: the client is drawn
 	// inside it.
-	Inset Sides
+	Inset domain.Sides
 	// Floating windows draw at their placed size. Below marks a native
 	// covering float behind the column group.
 	Floating, Below bool

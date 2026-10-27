@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
+
 	wlr "github.com/bnema/go-wayland-bindings/server/wlrscreencopy"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
@@ -149,18 +151,18 @@ func (s *Server) validCaptureBuffer(b *wayland.Buffer, rect image.Rectangle, for
 // logicalRegion is a physical region of an output as the logical rectangle
 // core marks: zero for the whole output, else the region's bounds rounded
 // outwards to logical pixels.
-func logicalRegion(o *output, phys image.Rectangle) ports.Rect {
+func logicalRegion(o *output, phys image.Rectangle) domain.Rect {
 	scale := o.place.Scale
 	if scale <= 0 {
 		scale = 1
 	}
 	if phys == image.Rect(0, 0, o.place.Info.Width, o.place.Info.Height) {
-		return ports.Rect{}
+		return domain.Rect{}
 	}
 	phys = o.place.Transform.Invert().RectToBuffer(phys, o.place.Info.Width, o.place.Info.Height)
 	x0, y0 := int(math.Floor(float64(phys.Min.X)/scale)), int(math.Floor(float64(phys.Min.Y)/scale))
 	x1, y1 := int(math.Ceil(float64(phys.Max.X)/scale)), int(math.Ceil(float64(phys.Max.Y)/scale))
-	return ports.Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}
+	return domain.Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}
 }
 
 // captureTag says what a capture is for the renderer: the registered session
@@ -172,7 +174,7 @@ type captureTag struct {
 	exclude   bool
 	revision  uint64
 	workspace uint64
-	window    ports.WindowID
+	window    domain.WindowID
 	offscreen bool
 	taken     ports.CaptureFrameTaken
 }

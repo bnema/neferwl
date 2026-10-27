@@ -4,14 +4,16 @@ import (
 	"os"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-func shows(ids ...ports.WindowID) ports.Scene {
+func shows(ids ...domain.WindowID) ports.Scene {
 	s := ports.Scene{OutputWidth: 100, OutputHeight: 100}
 	for _, id := range ids {
-		s.Windows = append(s.Windows, ports.SceneWindow{ID: id, Rect: ports.Rect{W: 10, H: 10}})
+		s.Windows = append(s.Windows, ports.SceneWindow{ID: id, Rect: domain.Rect{W: 10, H: 10}})
 	}
 	return s
 }
@@ -61,7 +63,7 @@ func TestEmptyContentOfUnshownWindowDropped(t *testing.T) {
 	}
 	// Hidden counts as not drawn.
 	tb.Update(ports.SurfaceContent{ID: 3, SHM: &ports.SHMBuffer{Pool: 3}}, shows())
-	hidden := ports.Scene{OutputWidth: 100, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 3, Hidden: true, Rect: ports.Rect{W: 10, H: 10}}}}
+	hidden := ports.Scene{OutputWidth: 100, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 3, Hidden: true, Rect: domain.Rect{W: 10, H: 10}}}}
 	tb.Update(ports.SurfaceContent{ID: 3}, hidden)
 	if _, ok := tb.Map()[3]; ok {
 		t.Fatal("content of a hidden window kept")
@@ -127,14 +129,14 @@ func TestKeptChildrenFencesDroppedOnACopy(t *testing.T) {
 // Both backends report a window shown only when the scene draws it and its
 // content is not kept.
 func TestShowsSnapshotSkipsKept(t *testing.T) {
-	kept := func(id ports.WindowID) bool { return id == 2 }
+	kept := func(id domain.WindowID) bool { return id == 2 }
 	var snap ShowsSnapshot
-	got := snap.FromSeen(shows(1, 2), map[ports.WindowID]uint64{1: 3, 2: 4, 3: 5}, kept)
+	got := snap.FromSeen(shows(1, 2), map[domain.WindowID]uint64{1: 3, 2: 4, 3: 5}, kept)
 	if len(got) != 1 || got[1] != 3 {
 		t.Fatalf("shown from seen %v", got)
 	}
 	var fromContents ShowsSnapshot
-	contents := map[ports.WindowID]ports.SurfaceContent{1: {ID: 1, Seq: 3}, 2: {ID: 2, Seq: 4}, 3: {ID: 3, Seq: 5}}
+	contents := map[domain.WindowID]ports.SurfaceContent{1: {ID: 1, Seq: 3}, 2: {ID: 2, Seq: 4}, 3: {ID: 3, Seq: 5}}
 	got = fromContents.FromContents(shows(1, 2), contents, kept)
 	if len(got) != 1 || got[1] != 3 {
 		t.Fatalf("shown from contents %v", got)
@@ -149,7 +151,7 @@ func TestShowsSnapshotSkipsKept(t *testing.T) {
 func TestShowsSnapshotImmutable(t *testing.T) {
 	var snap ShowsSnapshot
 	scene := shows(1)
-	seen := map[ports.WindowID]uint64{1: 1, 2: 2}
+	seen := map[domain.WindowID]uint64{1: 1, 2: 2}
 	first := snap.FromSeen(scene, seen, nil)
 	if allocs := testing.AllocsPerRun(100, func() { snap.FromSeen(scene, seen, nil) }); allocs != 0 {
 		t.Errorf("unchanged shows: %.1f allocs, want 0", allocs)
@@ -165,7 +167,7 @@ func TestShowsSnapshotImmutable(t *testing.T) {
 // frame or a report, then resets the batch before giving it back.
 func TestApply(t *testing.T) {
 	tb := New()
-	seen := map[ports.WindowID]uint64{1: 5}
+	seen := map[domain.WindowID]uint64{1: 5}
 	b := &ports.ContentBatch{Items: []ports.SurfaceContent{
 		{ID: 1, Seq: 4, SHM: &ports.SHMBuffer{Pool: 1}}, // older than seen
 		{ID: 2, Seq: 1, SHM: &ports.SHMBuffer{Pool: 2}},

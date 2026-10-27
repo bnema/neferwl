@@ -3,6 +3,7 @@ package wayland
 import (
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -48,7 +49,7 @@ func TestWheelSteps(t *testing.T) {
 	if wheel(-180, 0) != [2]int32{-1, 0} || values[0] != -22.5 {
 		t.Fatal("after reversal", values)
 	}
-	if steps, _ := s.seat.wheelSteps(ports.PointerAxis{Source: ports.AxisFinger, Vertical: ports.ScrollAxis{Set: true, V120: 240}}); steps != [2]int32{} {
+	if steps, _ := s.seat.wheelSteps(ports.PointerAxis{Source: domain.AxisFinger, Vertical: ports.ScrollAxis{Set: true, V120: 240}}); steps != [2]int32{} {
 		t.Fatal("finger scroll made discrete steps")
 	}
 }

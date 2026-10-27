@@ -8,6 +8,7 @@ import (
 	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -137,8 +138,8 @@ func noSpawn(t *testing.T, ch <-chan ports.SpawnRequest) {
 // press sends Alt+key and waits for the scene it publishes.
 func (r *slotRig) press(t *testing.T, key string) ports.Scene {
 	t.Helper()
-	r.input <- ports.KeyEvent{Keysym: key, Mods: ports.ModAlt, Pressed: true}
-	r.input <- ports.KeyEvent{Keysym: key, Mods: ports.ModAlt}
+	r.input <- ports.KeyEvent{Keysym: key, Mods: domain.ModAlt, Pressed: true}
+	r.input <- ports.KeyEvent{Keysym: key, Mods: domain.ModAlt}
 	return scene(t, r.scenes)
 }
 
@@ -175,8 +176,8 @@ func sceneMatch(t *testing.T, ch <-chan []ports.Scene, ok func(ports.Scene) bool
 	}
 }
 
-func visible(s ports.Scene) map[ports.WindowID]ports.Rect {
-	m := map[ports.WindowID]ports.Rect{}
+func visible(s ports.Scene) map[domain.WindowID]domain.Rect {
+	m := map[domain.WindowID]domain.Rect{}
 	for _, w := range s.Windows {
 		if !w.Hidden {
 			m[w.ID] = w.Rect
@@ -259,8 +260,8 @@ func slotRefilledOnlyWhenShown(t *testing.T, r *slotRig) {
 	r.client <- ports.WindowUnmapped{ID: 3} // foot exits
 	sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 1 })
 	noSpawn(t, r.spawn) // nothing relaunches on its own
-	r.input <- ports.KeyEvent{Keysym: "d", Mods: ports.ModAlt, Pressed: true}
-	r.input <- ports.KeyEvent{Keysym: "d", Mods: ports.ModAlt}
+	r.input <- ports.KeyEvent{Keysym: "d", Mods: domain.ModAlt, Pressed: true}
+	r.input <- ports.KeyEvent{Keysym: "d", Mods: domain.ModAlt}
 	again := receive(t, r.spawn)
 	if !slices.Equal(again.Argv, []string{"foot"}) || token(t, again) == token(t, foot) {
 		t.Fatal(again)
@@ -286,7 +287,7 @@ func TestSlotExtraWindowsAreNormal(t *testing.T) {
 		r.client <- ports.WindowMapped{ID: 5, Slot: token(t, code)}
 		r.client <- ports.WindowMapped{ID: 6, Slot: "unknown"}
 		s := sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 3 })
-		if got := visible(s); len(got) != 2 || got[5] == (ports.Rect{}) || got[6] == (ports.Rect{}) {
+		if got := visible(s); len(got) != 2 || got[5] == (domain.Rect{}) || got[6] == (domain.Rect{}) {
 			t.Fatalf("extra windows not on the workspace on screen: %v", got)
 		}
 
@@ -322,11 +323,11 @@ func TestSlotReload(t *testing.T) {
 		// opens as a normal window on workspace 1, on screen.
 		r.client <- ports.WindowMapped{ID: 3, Slot: token(t, foot)}
 		s := sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 2 })
-		if got := visible(s); len(got) != 1 || got[3] == (ports.Rect{}) {
+		if got := visible(s); len(got) != 1 || got[3] == (domain.Rect{}) {
 			t.Fatal(got)
 		}
-		r.input <- ports.KeyEvent{Keysym: "d", Mods: ports.ModAlt, Pressed: true}
-		r.input <- ports.KeyEvent{Keysym: "d", Mods: ports.ModAlt}
+		r.input <- ports.KeyEvent{Keysym: "d", Mods: domain.ModAlt, Pressed: true}
+		r.input <- ports.KeyEvent{Keysym: "d", Mods: domain.ModAlt}
 		s = sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(visible(s)) == 1 })
 		if got := visible(s); got[2].W != 50 {
 			t.Fatal(got)
@@ -410,7 +411,7 @@ func TestSlotOldTokenIsNormal(t *testing.T) {
 		r.client <- ports.WindowUnmapped{ID: 3}
 		r.client <- ports.WindowMapped{ID: 9, Slot: token(t, foot)}
 		s := sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(visible(s)) == 1 })
-		if got := visible(s); got[9] == (ports.Rect{}) {
+		if got := visible(s); got[9] == (domain.Rect{}) {
 			t.Fatalf("old-token window hidden in the slot: %v", got)
 		}
 
@@ -437,7 +438,7 @@ func pendingSlotRespawnedOnSecondShow(t *testing.T, r *slotRig) {
 	}
 	r.client <- ports.WindowMapped{ID: 7, Slot: token(t, foot)}
 	s := sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 2 })
-	if got := visible(s); got[7] == (ports.Rect{}) {
+	if got := visible(s); got[7] == (domain.Rect{}) {
 		t.Fatalf("stale-token window not placed as a normal one: %v", got)
 	}
 	r.client <- ports.WindowMapped{ID: 8, Slot: token(t, again)}
@@ -492,7 +493,7 @@ func TestSpawnBindSeveralCommands(t *testing.T) {
 		defer func() { cancel(); <-done }()
 		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
-		input <- ports.KeyEvent{Keysym: "p", Mods: ports.ModAlt, Pressed: true}
+		input <- ports.KeyEvent{Keysym: "p", Mods: domain.ModAlt, Pressed: true}
 		for _, want := range [][]string{{"grim", "-g", "x"}, {"notify-send", "done"}} {
 			if got := receive(t, spawn); !slices.Equal(got.Argv, want) {
 				t.Fatalf("spawned %q, want %q", got.Argv, want)
@@ -509,8 +510,8 @@ func TestSlotKeptWhileFullscreen(t *testing.T) {
 		r := startSlots(t, true, true)
 		r.fill(t)
 		r.press(t, "d") // on dev, focus on code (slot 1)
-		r.input <- ports.KeyEvent{Keysym: "f", Mods: ports.ModAlt | ports.ModShift, Pressed: true}
-		r.input <- ports.KeyEvent{Keysym: "f", Mods: ports.ModAlt | ports.ModShift}
+		r.input <- ports.KeyEvent{Keysym: "f", Mods: domain.ModAlt | domain.ModShift, Pressed: true}
+		r.input <- ports.KeyEvent{Keysym: "f", Mods: domain.ModAlt | domain.ModShift}
 		scene(t, r.scenes)
 		r.press(t, "d") // leave and show dev while code is away
 		r.press(t, "d")

@@ -9,6 +9,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/presentationtime"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
@@ -145,8 +146,8 @@ func TestPresentationFeedback(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	flip := func(when time.Duration, seq uint64, shows uint64, zero ports.WindowID) {
-		presented.Push(ports.OutputPresented{Output: "HEADLESS-1", Flip: &ports.FlipInfo{When: when, Seq: seq, Refresh: time.Second / 60, ZeroCopy: zero, HardwareClock: true, Shows: map[ports.WindowID]uint64{w.ID: shows}}})
+	flip := func(when time.Duration, seq uint64, shows uint64, zero domain.WindowID) {
+		presented.Push(ports.OutputPresented{Output: "HEADLESS-1", Flip: &ports.FlipInfo{When: when, Seq: seq, Refresh: time.Second / 60, ZeroCopy: zero, HardwareClock: true, Shows: map[domain.WindowID]uint64{w.ID: shows}}})
 	}
 	// With no flip, hiding must discard a waiting feedback immediately.
 	hidden := feedback()

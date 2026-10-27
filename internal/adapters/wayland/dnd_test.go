@@ -10,6 +10,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
@@ -110,7 +111,7 @@ type dndClient struct {
 	comp    uint32
 	shm     uint32
 	surf    uint32
-	window  ports.WindowID
+	window  domain.WindowID
 	log     chan dndEvent
 }
 
@@ -330,7 +331,7 @@ func dndNoEvent[T ports.ClientEvent](t *testing.T, s *Server, events <-chan port
 	t.Helper()
 	// Callers have observed completion of the triggering request/command.
 	// Put a marker behind its emitted events, including the forwarding queue.
-	marker := ports.WindowResized{ID: ^ports.WindowID(0)}
+	marker := ports.WindowResized{ID: ^domain.WindowID(0)}
 	if !s.display.Do(func() { s.emit(marker) }) {
 		t.Fatal("display stopped")
 	}
@@ -752,7 +753,7 @@ func TestDataDragOfferDestroyedBeforeFinish(t *testing.T) {
 }
 
 // iconContent reports whether the server still holds content for id.
-func iconContent(t *testing.T, s *Server, id ports.WindowID) bool {
+func iconContent(t *testing.T, s *Server, id domain.WindowID) bool {
 	t.Helper()
 	var ok bool
 	if !s.display.Do(func() { _, ok = s.latest[id] }) {

@@ -3,6 +3,7 @@ package screencast
 import (
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-pipewire/pipewire"
 )
@@ -72,9 +73,9 @@ func (s *Service) onCastEvent(ev *ports.CastEvent) {
 		return
 	}
 	switch ev.Kind {
-	case ports.CastDamage:
+	case domain.CastDamage:
 		st.dirty = true
-	case ports.CastSize:
+	case domain.CastSize:
 		if st.closing {
 			return
 		}
@@ -85,9 +86,9 @@ func (s *Service) onCastEvent(ev *ports.CastEvent) {
 		if st.src != nil {
 			st.needResize = true
 		}
-	case ports.CastFrameDone:
+	case domain.CastFrameDone:
 		s.frameDone(st, ev)
-	case ports.CastStopped:
+	case domain.CastStopped:
 		st.stopped, st.needClose = true, false
 		if st.inflight {
 			// Wayland orders CastStopped after the frame's CastFrameDone.
@@ -205,7 +206,7 @@ func (s *Service) pump(st *stream, now time.Time) {
 		return
 	}
 	if st.needOpen {
-		cmd := ports.CastCommand{Kind: ports.CastOpen, ID: st.cast, Output: st.output, Window: st.window, Cursor: st.cursor}
+		cmd := ports.CastCommand{Kind: domain.CastOpen, ID: st.cast, Output: st.output, Window: st.window, Cursor: st.cursor}
 		if !s.sendCmd(cmd) {
 			s.wait(retryOpen)
 			return
@@ -306,7 +307,7 @@ func (s *Service) issueFrame(st *stream, b *pipewire.VideoBuffer, now time.Time)
 		s.wait(st.interval())
 		return false
 	}
-	cmd := ports.CastCommand{Kind: ports.CastFrame, ID: st.cast, Buf: b.Index, Data: b.Data, Stride: b.Stride, Width: b.Width, Height: b.Height, Format: shmFormat(b.Format)}
+	cmd := ports.CastCommand{Kind: domain.CastFrame, ID: st.cast, Buf: b.Index, Data: b.Data, Stride: b.Stride, Width: b.Width, Height: b.Height, Format: shmFormat(b.Format)}
 	if !s.sendCmd(cmd) {
 		s.wait(st.interval())
 		return false
@@ -322,7 +323,7 @@ func (s *Service) issueFrame(st *stream, b *pipewire.VideoBuffer, now time.Time)
 // but the slot is kept until it is.
 func (s *Service) pumpClosing(st *stream) {
 	if st.needClose {
-		if s.sendCmd(ports.CastCommand{Kind: ports.CastClose, ID: st.cast}) {
+		if s.sendCmd(ports.CastCommand{Kind: domain.CastClose, ID: st.cast}) {
 			st.needClose = false
 		} else {
 			s.wait(retryOpen)

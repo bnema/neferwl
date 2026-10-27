@@ -3,6 +3,8 @@ package ports
 import (
 	"image"
 	"time"
+
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // OutputEvent carries output → core notifications.
@@ -87,11 +89,11 @@ type OutputPresented struct {
 	Output        string
 	Flip          *FlipInfo
 	Shown, Queued uint64
-	Seen          map[WindowID]uint64
+	Seen          map[domain.WindowID]uint64
 	// ChildReads is the oldest content Seq per window still read by a child
 	// renderer on a separate device. Unlike Seen, these holds never time out:
 	// they end only with a completed render or device shutdown.
-	ChildReads map[WindowID]uint64
+	ChildReads map[domain.WindowID]uint64
 }
 
 // PresentationSink receives output → wayland reports. Push never blocks;
@@ -135,7 +137,7 @@ type FlipInfo struct {
 	When     time.Duration
 	Seq      uint64
 	Refresh  time.Duration
-	ZeroCopy WindowID
+	ZeroCopy domain.WindowID
 	Async    bool
 	// ScanoutReason and OverlayReason: why direct scanout and the overlay
 	// plane were refused for this frame ("" when used, or on outputs that do
@@ -146,7 +148,7 @@ type FlipInfo struct {
 	ScanoutReason, OverlayReason string
 	HardwareClock                bool
 	Merged                       int
-	Shows                        map[WindowID]uint64
+	Shows                        map[domain.WindowID]uint64
 }
 
 // OutputFrame carries output → core a completed flip of an animating scene

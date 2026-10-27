@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
@@ -18,7 +19,7 @@ import (
 func TestReleaseHeldAllocations(t *testing.T) {
 	out := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
 	s := &Server{outputs: []*output{out}, reports: map[string]ports.OutputPresented{}}
-	reports := []ports.OutputPresented{{Output: "DP-2", Seen: map[ports.WindowID]uint64{1: 1}}}
+	reports := []ports.OutputPresented{{Output: "DP-2", Seen: map[domain.WindowID]uint64{1: 1}}}
 	now := time.Unix(100, 0)
 	s.releaseHeld(now, reports)
 	if allocs := testing.AllocsPerRun(100, func() { s.releaseHeld(now, reports) }); allocs != 0 {
@@ -96,9 +97,9 @@ func TestCommitSyncStorageIsPerUpdate(t *testing.T) {
 
 func TestEmitContentAllocations(t *testing.T) {
 	s := &Server{
-		contentSeq: map[ports.WindowID]uint64{},
-		damage:     map[ports.WindowID][]ports.SeqDamage{},
-		latest:     map[ports.WindowID]ports.SurfaceContent{},
+		contentSeq: map[domain.WindowID]uint64{},
+		damage:     map[domain.WindowID][]ports.SeqDamage{},
+		latest:     map[domain.WindowID]ports.SurfaceContent{},
 	}
 	c := ports.SurfaceContent{ID: 1, Solid: &ports.SolidColor{}}
 	var held []ports.SurfaceContent // readers retaining published histories

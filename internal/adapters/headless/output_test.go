@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -30,13 +32,13 @@ import (
 type frames struct {
 	mu       sync.Mutex
 	scenes   []ports.Scene
-	contents []map[ports.WindowID]ports.SurfaceContent
+	contents []map[domain.WindowID]ports.SurfaceContent
 }
 
-func (f *frames) snapshot() ([]ports.Scene, []map[ports.WindowID]ports.SurfaceContent) {
+func (f *frames) snapshot() ([]ports.Scene, []map[domain.WindowID]ports.SurfaceContent) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]ports.Scene(nil), f.scenes...), append([]map[ports.WindowID]ports.SurfaceContent(nil), f.contents...)
+	return append([]ports.Scene(nil), f.scenes...), append([]map[domain.WindowID]ports.SurfaceContent(nil), f.contents...)
 }
 
 // recordingRenderer returns a generated mock whose Render records each frame
@@ -44,7 +46,7 @@ func (f *frames) snapshot() ([]ports.Scene, []map[ports.WindowID]ports.SurfaceCo
 func recordingRenderer(t *testing.T, err error) (*portsmocks.MockRenderer, *frames) {
 	r := portsmocks.NewMockRenderer(t)
 	f := &frames{}
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, c map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, c map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.scenes = append(f.scenes, s)
@@ -72,7 +74,7 @@ func TestRun(t *testing.T) {
 		contents := newContentFeed(t, 8)
 		r, f := recordingRenderer(t, nil)
 		contents.send(ports.SurfaceContent{ID: 1, SHM: &ports.SHMBuffer{Pool: 1}})
-		shown := []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}, {ID: 2, Rect: ports.Rect{W: 2, H: 2}}}
+		shown := []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 2, H: 2}}, {ID: 2, Rect: domain.Rect{W: 2, H: 2}}}
 		scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: shown}
 		scenes <- ports.Scene{Seq: 2, OutputWidth: 2, OutputHeight: 2, Windows: shown}
 		contents.send(ports.SurfaceContent{ID: 2, SHM: &ports.SHMBuffer{Pool: 2}})
@@ -153,7 +155,7 @@ func TestHeadlessSameSeqRendersOnce(t *testing.T) {
 		go func() {
 			done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
 		}()
-		scene := ports.Scene{Seq: 5, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}}}
+		scene := ports.Scene{Seq: 5, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 2, H: 2}}}}
 		scenes <- scene
 		waitFrames(t, f, 1)
 		scenes <- scene
@@ -181,7 +183,7 @@ func TestRunSkipsContentNotShown(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		scenes := make(chan ports.Scene, 1)
 		contents := newContentFeed(t, 2)
-		scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}, {ID: 3, Hidden: true}}}
+		scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 2, H: 2}}, {ID: 3, Hidden: true}}}
 		r, f := recordingRenderer(t, nil)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
@@ -472,7 +474,7 @@ func TestRunPassesLayerContent(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		scenes := make(chan ports.Scene, 1)
 		contents := newContentFeed(t, 1)
-		layer := ports.SceneLayer{ID: 42, Layer: ports.LayerTop, Rect: ports.Rect{W: 2, H: 2}}
+		layer := ports.SceneLayer{ID: 42, Layer: domain.LayerTop, Rect: domain.Rect{W: 2, H: 2}}
 		scenes <- ports.Scene{Layers: []ports.SceneLayer{layer}}
 		contents.send(ports.SurfaceContent{ID: 42, Width: 1, Height: 1, SHM: &ports.SHMBuffer{Pool: 42, Stride: 4}})
 		r, f := recordingRenderer(t, nil)
@@ -558,7 +560,7 @@ func TestHeadlessRawHDRScreenshot(t *testing.T) {
 		r.EXPECT().SetHDR(float64(203)).Return().Once()
 		r.EXPECT().ExportTargets(1, []uint64(nil), false).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
 		rendered := make(chan struct{}, 4)
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 			rendered <- struct{}{}
 			return nil, nil
 		}).Maybe()
@@ -669,7 +671,7 @@ func TestRunAppliesWholeBatch(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		scenes := make(chan ports.Scene, 1)
 		contents := newContentFeed(t, 1)
-		shown := []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}, {ID: 2, Rect: ports.Rect{W: 2, H: 2}}}
+		shown := []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 2, H: 2}}, {ID: 2, Rect: domain.Rect{W: 2, H: 2}}}
 		scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: shown}
 		r, f := recordingRenderer(t, nil)
 		ctx, cancel := context.WithCancel(context.Background())

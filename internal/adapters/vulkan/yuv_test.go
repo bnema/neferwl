@@ -8,6 +8,7 @@ import (
 	"testing"
 	"unsafe"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
@@ -129,8 +130,8 @@ func TestYUVComposition(t *testing.T) {
 			if tc.hdr {
 				c.Color.TF, c.Color.Primaries = ports.ColorTFPQ, ports.ColorPrimariesBT2020
 			}
-			scene := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 16}}}}
-			if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: c}); err != nil {
+			scene := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
+			if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: c}); err != nil {
 				t.Fatal(err)
 			}
 			if tc.hdr {
@@ -175,8 +176,8 @@ func TestYUVSourceCropEdges(t *testing.T) {
 		t.Skipf("linear NV12 not importable")
 	}
 	c := ports.SurfaceContent{ID: 1, Width: 64, Height: 16, LogicalW: 64, LogicalH: 16, Source: [4]float32{0, 4, 64, 8}, Opaque: true, DMABuf: b, Color: ports.SurfaceColor{Coefficients: 2, Range: 2, Chroma: 1}}
-	scene := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 16}}}}
-	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: c}); err != nil {
+	scene := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
+	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: c}); err != nil {
 		t.Fatal(err)
 	}
 	for _, y := range []int{0, 1, 8, 15} {

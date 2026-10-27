@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -50,7 +52,7 @@ func runSession(t *testing.T, scene ports.Scene, reqs []ports.CaptureRequest, wa
 	t.Helper()
 	ev := &events{}
 	r := portsmocks.NewMockRenderer(t)
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 		// Excluded and plain scenes are renumbered 0; the tests' displayed scenes are not.
 		if s.Seq == 0 {
 			ev.add("render:excluded")
@@ -99,8 +101,8 @@ func runSession(t *testing.T, scene ports.Scene, reqs []ports.CaptureRequest, wa
 }
 
 func sessionScene() ports.Scene {
-	return ports.Scene{Seq: 2, Windows: []ports.SceneWindow{{ID: 1}}, Layers: []ports.SceneLayer{{ID: 10, Layer: ports.LayerTop}},
-		Capture: &ports.SceneCapture{Session: 7, Revision: 1, Excluded: []ports.WindowID{10}}}
+	return ports.Scene{Seq: 2, Windows: []ports.SceneWindow{{ID: 1}}, Layers: []ports.SceneLayer{{ID: 10, Layer: domain.LayerTop}},
+		Capture: &ports.SceneCapture{Session: 7, Revision: 1, Excluded: []domain.WindowID{10}}}
 }
 
 func TestExcludeCaptureOrderedBeforeDisplayedFrame(t *testing.T) {
@@ -153,7 +155,7 @@ func TestHiddenWorkspaceCaptureUsesChildRenderer(t *testing.T) {
 	frame := portsmocks.NewMockCaptureFrame(t)
 	frame.EXPECT().Done().Return(nil).Maybe()
 	frame.EXPECT().Read(mock.Anything, mock.Anything, 8).Return(nil).Maybe()
-	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 		require.Nil(t, s.Capture)
 		require.Len(t, s.Layers, 0, "a workspace rendered off screen has no layers")
 		return read, nil
@@ -189,7 +191,7 @@ waitHold:
 		select {
 		case report := <-presented:
 			if len(report.ChildReads) > 0 {
-				require.Equal(t, map[ports.WindowID]uint64{5: 0}, report.ChildReads, "hold published before waiting")
+				require.Equal(t, map[domain.WindowID]uint64{5: 0}, report.ChildReads, "hold published before waiting")
 				break waitHold
 			}
 		case <-deadline:
@@ -278,13 +280,13 @@ func TestStandardCaptureNeverHoldsTheIndicator(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		scene := sessionScene()
 		scene.Capture = nil
-		scene.CaptureIndicators = []ports.CaptureIndicator{{Rect: ports.Rect{W: 2, H: 2}}}
+		scene.CaptureIndicators = []ports.CaptureIndicator{{Rect: domain.Rect{W: 2, H: 2}}}
 		order, replies := runSession(t, scene, []ports.CaptureRequest{{ID: 2}}, 1)
 		require.Equal(t, []string{"render:excluded", "begin", "render:full"}, order)
 		require.NoError(t, replies[0].Err)
 		// An Exclude request of the session is served from its own excluded frame.
 		scene = sessionScene()
-		scene.CaptureIndicators = []ports.CaptureIndicator{{Rect: ports.Rect{W: 2, H: 2}}}
+		scene.CaptureIndicators = []ports.CaptureIndicator{{Rect: domain.Rect{W: 2, H: 2}}}
 		order, replies = runSession(t, scene, []ports.CaptureRequest{{ID: 1, Exclude: true, Session: 7}, {ID: 2}}, 2)
 		require.Equal(t, []string{"render:excluded", "begin", "render:excluded", "begin", "render:full"}, order)
 		for _, d := range replies {
@@ -301,7 +303,7 @@ func TestCaptureWaitsForItsIndicatorScene(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ev := &events{}
 		r := portsmocks.NewMockRenderer(t)
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 			switch {
 			case s.Seq == 0:
 				ev.add("render:plain")
@@ -346,7 +348,7 @@ func TestCaptureWaitsForItsIndicatorScene(t *testing.T) {
 
 		indicated := bare
 		indicated.Seq = 3
-		indicated.CaptureIndicators = []ports.CaptureIndicator{{Rect: ports.Rect{W: 2, H: 2}}}
+		indicated.CaptureIndicators = []ports.CaptureIndicator{{Rect: domain.Rect{W: 2, H: 2}}}
 		scenes <- indicated
 		select {
 		case d := <-replies:
@@ -406,7 +408,7 @@ func TestCaptureDeliveredOnlyWhenTheIndicatedFramePresents(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var reads atomic.Int32
 			r := portsmocks.NewMockRenderer(t)
-			r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+			r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 				if s.Seq != 0 {
 					return nil, tc.render // the indicated frame
 				}
@@ -432,7 +434,7 @@ func TestCaptureDeliveredOnlyWhenTheIndicatedFramePresents(t *testing.T) {
 			}()
 			incoming <- ports.CaptureRequest{ID: 1, Indicate: true, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
 			scenes <- ports.Scene{Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1}},
-				CaptureIndicators: []ports.CaptureIndicator{{Rect: ports.Rect{W: 2, H: 2}}}}
+				CaptureIndicators: []ports.CaptureIndicator{{Rect: domain.Rect{W: 2, H: 2}}}}
 			var d ports.CaptureDone
 			select {
 			case d = <-replies:

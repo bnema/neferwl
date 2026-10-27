@@ -11,6 +11,8 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/fifo"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -64,7 +66,7 @@ func TestKeepHeld(t *testing.T) {
 	dma := heldBuffer{window: 1, id: 7, after: 5, at: now}
 	shm := heldBuffer{window: 1, after: 5, at: now}
 	out := func(shown, queued, seq uint64) ports.OutputPresented {
-		return ports.OutputPresented{Shown: shown, Queued: queued, Seen: map[ports.WindowID]uint64{1: seq}}
+		return ports.OutputPresented{Shown: shown, Queued: queued, Seen: map[domain.WindowID]uint64{1: seq}}
 	}
 	type R = []ports.OutputPresented
 	for _, tc := range []struct {
@@ -99,8 +101,8 @@ func TestKeepHeld(t *testing.T) {
 func TestKeepHeldChildReadsBeyondTimeout(t *testing.T) {
 	now := time.Unix(100, 0)
 	report := ports.OutputPresented{
-		Seen:       map[ports.WindowID]uint64{1: 20, 2: 20},
-		ChildReads: map[ports.WindowID]uint64{1: 5},
+		Seen:       map[domain.WindowID]uint64{1: 20, 2: 20},
+		ChildReads: map[domain.WindowID]uint64{1: 5},
 	}
 	for _, id := range []uint64{0, 7} { // SHM / explicit points only, and dmabuf
 		h := heldBuffer{window: 1, id: id, after: 5, at: now}
@@ -149,12 +151,12 @@ func TestKeepHeldUntilChildFenceCompletes(t *testing.T) {
 		Capture:      &ports.SceneCapture{Workspace: 9},
 		CaptureScene: &ports.Scene{OutputWidth: 2, OutputHeight: 2, Scale: 1, Windows: []ports.SceneWindow{{ID: 1}}},
 	}
-	p.SubmitHidden(s, map[ports.WindowID]ports.SurfaceContent{1: {Seq: 5}}, []ports.CaptureRequest{{
+	p.SubmitHidden(s, map[domain.WindowID]ports.SurfaceContent{1: {Seq: 5}}, []ports.CaptureRequest{{
 		ID: 1, Workspace: 9, OffScreen: true, Region: image.Rect(0, 0, 2, 2),
 	}})
 	now := time.Unix(100, 0)
 	h := heldBuffer{window: 1, after: 5, at: now}
-	seen := map[ports.WindowID]uint64{1: 5}
+	seen := map[domain.WindowID]uint64{1: 5}
 	got, reads, pending := p.CapHiddenSeen(seen)
 	require.True(t, pending)
 	require.Equal(t, seen, got)
@@ -265,7 +267,7 @@ func TestHeldBufferRequeuedBeforeOutputAck(t *testing.T) {
 		if len(surf.queue) != 1 || surf.queue[0].buffer == nil || sameBuffer(surf.queue[0].buffer, surf.current) || len(s.held) == 0 {
 			t.Errorf("expected replaced buffer and queued reuse: queue=%d held=%d", len(surf.queue), len(s.held))
 		}
-		s.reports["HEADLESS-1"] = ports.OutputPresented{Output: "HEADLESS-1", Seen: map[ports.WindowID]uint64{w.ID: ^uint64(0)}}
+		s.reports["HEADLESS-1"] = ports.OutputPresented{Output: "HEADLESS-1", Seen: map[domain.WindowID]uint64{w.ID: ^uint64(0)}}
 		s.releaseHeld(time.Now(), nil)
 		if len(s.held) == 0 {
 			t.Error("released held buffer despite queued reuse")

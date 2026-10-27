@@ -12,6 +12,8 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -155,7 +157,7 @@ func TestSecureScriptSnapshotsBeforeKeyTranslation(t *testing.T) {
 	security.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState {
 		// The first emitted event presses Shift. If snapshot happened after
 		// km.Key, the live keymap would already contain the Shift modifier.
-		if ev := km.Key(30, false, 0); ev.Mods&ports.ModShift != 0 {
+		if ev := km.Key(30, false, 0); ev.Mods&domain.ModShift != 0 {
 			t.Error("snapshot taken after key translation updated Shift")
 		}
 		return state

@@ -3,6 +3,7 @@ package core
 import (
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -55,13 +56,13 @@ func (k *osdKey) stopHold() {
 }
 
 // osdCmdKey recognizes either physical side of the configured modifier.
-func osdCmdKey(sym string, cmd ports.Mods) bool {
+func osdCmdKey(sym string, cmd domain.Mods) bool {
 	switch cmd {
-	case ports.ModSuper:
+	case domain.ModSuper:
 		return sym == "Super_L" || sym == "Super_R"
-	case ports.ModAlt:
+	case domain.ModAlt:
 		return sym == "Alt_L" || sym == "Alt_R"
-	case ports.ModCtrl:
+	case domain.ModCtrl:
 		return sym == "Control_L" || sym == "Control_R"
 	}
 	return false
@@ -69,7 +70,7 @@ func osdCmdKey(sym string, cmd ports.Mods) bool {
 
 // key consumes a transition at the owner's clock time. XKB Mods is the state
 // after the transition: cmd is normally absent on its own release.
-func (k *osdKey) key(ev ports.KeyEvent, id string, cmd ports.Mods, now time.Time) osdKeyResult {
+func (k *osdKey) key(ev ports.KeyEvent, id string, cmd domain.Mods, now time.Time) osdKeyResult {
 	if k.held == nil {
 		k.held = make(map[string]bool)
 	}

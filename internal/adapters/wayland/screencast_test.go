@@ -10,6 +10,8 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -107,7 +109,7 @@ func (h *castHarness) sync() {
 // next is the next event pushed to the sink, which must have that kind.
 //
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
-func (h *castHarness) next(kind ports.CastEventKind) ports.CastEvent {
+func (h *castHarness) next(kind domain.CastEventKind) ports.CastEvent {
 	h.t.Helper()
 	select {
 	case ev := <-h.got:
@@ -129,10 +131,10 @@ func (h *castHarness) nextCastFrameDone() ports.CastEvent {
 	for {
 		select {
 		case ev := <-h.got:
-			if ev.Kind == ports.CastFrameDone {
+			if ev.Kind == domain.CastFrameDone {
 				return ev
 			}
-			if ev.Kind != ports.CastDamage {
+			if ev.Kind != domain.CastDamage {
 				h.t.Fatalf("unexpected event %+v", ev)
 			}
 		case <-timer.C:
@@ -203,8 +205,8 @@ func (h *castHarness) complete(req ports.CaptureRequest, err error) {
 
 func (h *castHarness) open(id uint64, output string) (ports.CastEvent, uint64) {
 	h.t.Helper()
-	h.casts <- ports.CastCommand{Kind: ports.CastOpen, ID: id, Output: output, Cursor: true}
-	size := h.next(ports.CastSize)
+	h.casts <- ports.CastCommand{Kind: domain.CastOpen, ID: id, Output: output, Cursor: true}
+	size := h.next(domain.CastSize)
 	return size, castClientEvent[ports.CaptureSessionOpen](h).ID
 }
 
@@ -221,7 +223,7 @@ func (h *castHarness) state(core uint64, st ports.CaptureSessionState) {
 }
 
 func castFrame(id uint64, buf int, data []byte, w, hgt int) ports.CastCommand {
-	return ports.CastCommand{Kind: ports.CastFrame, ID: id, Buf: buf, Data: data, Stride: w * 4, Width: w, Height: hgt, Format: 1}
+	return ports.CastCommand{Kind: domain.CastFrame, ID: id, Buf: buf, Data: data, Stride: w * 4, Width: w, Height: hgt, Format: 1}
 }
 
 func (h *castHarness) flip(output string) {
@@ -253,14 +255,14 @@ func TestCastOpenSizeFrameDone(t *testing.T) {
 		t.Fatalf("taken %+v", taken)
 	}
 	h.complete(req, nil)
-	done := h.next(ports.CastFrameDone)
+	done := h.next(domain.CastFrameDone)
 	if done.ID != 7 || done.Buf != 3 || done.Err != nil || !done.Time.Equal(time.Unix(5, 6)) {
 		t.Fatalf("done %+v", done)
 	}
 	// Later frames are not indicated again: the cast keeps the indicator on.
 	h.casts <- castFrame(7, 4, data, 64, 32)
 	h.complete(h.request(), nil)
-	if done = h.next(ports.CastFrameDone); done.Buf != 4 || done.Err != nil {
+	if done = h.next(domain.CastFrameDone); done.Buf != 4 || done.Err != nil {
 		t.Fatalf("second done %+v", done)
 	}
 	h.sync()
@@ -272,14 +274,14 @@ func TestCastOpenSizeFrameDone(t *testing.T) {
 		}
 	}
 	// CastClose ends the cast without a reply and tells core.
-	h.casts <- ports.CastCommand{Kind: ports.CastClose, ID: 7}
+	h.casts <- ports.CastCommand{Kind: domain.CastClose, ID: 7}
 	if c := castClientEvent[ports.CaptureSessionClose](h); c.ID != core {
 		t.Fatalf("close %+v", c)
 	}
 	h.none()
 	// A frame for a closed cast gives its buffer back.
 	h.casts <- castFrame(7, 5, data, 64, 32)
-	if done = h.next(ports.CastFrameDone); done.Buf != 5 || done.Err == nil {
+	if done = h.next(domain.CastFrameDone); done.Buf != 5 || done.Err == nil {
 		t.Fatalf("frame of a closed cast: %+v", done)
 	}
 }
@@ -287,21 +289,21 @@ func TestCastOpenSizeFrameDone(t *testing.T) {
 // A target that is missing refuses the cast.
 func TestCastOpenRefused(t *testing.T) {
 	h := newCastHarness(t, true)
-	h.casts <- ports.CastCommand{Kind: ports.CastOpen, ID: 1, Output: "NOPE-1"}
-	if ev := h.next(ports.CastStopped); ev.ID != 1 || ev.Err == nil {
+	h.casts <- ports.CastCommand{Kind: domain.CastOpen, ID: 1, Output: "NOPE-1"}
+	if ev := h.next(domain.CastStopped); ev.ID != 1 || ev.Err == nil {
 		t.Fatalf("stopped %+v", ev)
 	}
-	h.casts <- ports.CastCommand{Kind: ports.CastOpen, ID: 2, Window: 99}
-	if ev := h.next(ports.CastStopped); ev.ID != 2 || ev.Reason != ports.CaptureReasonWindowGone {
+	h.casts <- ports.CastCommand{Kind: domain.CastOpen, ID: 2, Window: 99}
+	if ev := h.next(domain.CastStopped); ev.ID != 2 || ev.Reason != domain.CaptureReasonWindowGone {
 		t.Fatalf("stopped %+v", ev)
 	}
 	for id := uint64(10); id < 10+maxCasts+1; id++ {
-		h.casts <- ports.CastCommand{Kind: ports.CastOpen, ID: id, Output: "HEADLESS-1"}
+		h.casts <- ports.CastCommand{Kind: domain.CastOpen, ID: id, Output: "HEADLESS-1"}
 	}
 	for range maxCasts {
-		h.next(ports.CastSize)
+		h.next(domain.CastSize)
 	}
-	if ev := h.next(ports.CastStopped); ev.ID != 10+maxCasts || !errors.Is(ev.Err, errCastLimit) {
+	if ev := h.next(domain.CastStopped); ev.ID != 10+maxCasts || !errors.Is(ev.Err, errCastLimit) {
 		t.Fatalf("over the limit: %+v", ev)
 	}
 }
@@ -314,8 +316,8 @@ func TestCastWindowCloseStops(t *testing.T) {
 	registerProtocol(t, c, xdg)
 	top := xdg + 1
 	placeWindow(t, h.s, h.commands, w, "HEADLESS-1")
-	h.casts <- ports.CastCommand{Kind: ports.CastOpen, ID: 4, Window: w.ID}
-	if size := h.next(ports.CastSize); size.ID != 4 || size.Width != 100 || size.Height != 100 {
+	h.casts <- ports.CastCommand{Kind: domain.CastOpen, ID: 4, Window: w.ID}
+	if size := h.next(domain.CastSize); size.ID != 4 || size.Width != 100 || size.Height != 100 {
 		t.Fatalf("size %+v", size)
 	}
 	core := castClientEvent[ports.CaptureSessionOpen](h)
@@ -324,8 +326,8 @@ func TestCastWindowCloseStops(t *testing.T) {
 	}
 	requestProtocol(t, c, top, xdgshell.ToplevelRequestDestroy)
 	roundtrip(t, c)
-	ev := h.next(ports.CastStopped)
-	if ev.ID != 4 || ev.Reason != ports.CaptureReasonWindowGone {
+	ev := h.next(domain.CastStopped)
+	if ev.ID != 4 || ev.Reason != domain.CaptureReasonWindowGone {
 		t.Fatalf("stopped %+v", ev)
 	}
 	if cl := castClientEvent[ports.CaptureSessionClose](h); cl.ID != core.ID {
@@ -349,14 +351,14 @@ func TestCastSessionLockStops(t *testing.T) {
 	// The capture still writes into the lent buffer: its reply comes first.
 	h.none()
 	h.complete(req, nil)
-	if done := h.next(ports.CastFrameDone); done.Buf != 0 || !errors.Is(done.Err, errCastStopped) {
+	if done := h.next(domain.CastFrameDone); done.Buf != 0 || !errors.Is(done.Err, errCastStopped) {
 		t.Fatalf("done %+v", done)
 	}
-	if ev := h.next(ports.CastStopped); ev.ID != 1 || !errors.Is(ev.Err, errCastProtected) {
+	if ev := h.next(domain.CastStopped); ev.ID != 1 || !errors.Is(ev.Err, errCastProtected) {
 		t.Fatalf("stopped %+v", ev)
 	}
-	h.casts <- ports.CastCommand{Kind: ports.CastOpen, ID: 2, Output: "HEADLESS-1"}
-	if ev := h.next(ports.CastStopped); ev.ID != 2 || !errors.Is(ev.Err, errCastProtected) {
+	h.casts <- ports.CastCommand{Kind: domain.CastOpen, ID: 2, Output: "HEADLESS-1"}
+	if ev := h.next(domain.CastStopped); ev.ID != 2 || !errors.Is(ev.Err, errCastProtected) {
 		t.Fatalf("open under lock: %+v", ev)
 	}
 }
@@ -378,16 +380,16 @@ func TestCastOutputUnplugStops(t *testing.T) {
 	}
 	h.none()
 	h.complete(req, nil)
-	if done := h.next(ports.CastFrameDone); done.ID != 1 || done.Buf != 9 || done.Err == nil {
+	if done := h.next(domain.CastFrameDone); done.ID != 1 || done.Buf != 9 || done.Err == nil {
 		t.Fatalf("a frame written for a dead cast must not be queued: %+v", done)
 	}
-	if ev := h.next(ports.CastStopped); ev.ID != 1 || ev.Reason != ports.CaptureReasonOutputGone {
+	if ev := h.next(domain.CastStopped); ev.ID != 1 || ev.Reason != domain.CaptureReasonOutputGone {
 		t.Fatalf("stopped %+v", ev)
 	}
 	// The cast on the other output lives.
 	h.casts <- castFrame(2, 1, make([]byte, 32*32*4), 32, 32)
 	h.complete(h.request(), nil)
-	if done := h.next(ports.CastFrameDone); done.ID != 2 || done.Err != nil {
+	if done := h.next(domain.CastFrameDone); done.ID != 2 || done.Err != nil {
 		t.Fatalf("done %+v", done)
 	}
 }
@@ -399,17 +401,17 @@ func TestCastSizeChange(t *testing.T) {
 	bigger := ports.Layout{castLayout[0], castLayout[1]}
 	bigger[0].Info.Width, bigger[0].Info.Height, bigger[0].Width, bigger[0].Height = 128, 64, 128, 64
 	h.commands <- ports.SetOutputs{Outputs: bigger, Focused: "HEADLESS-1"}
-	if size := h.next(ports.CastSize); size.Width != 128 || size.Height != 64 {
+	if size := h.next(domain.CastSize); size.Width != 128 || size.Height != 64 {
 		t.Fatalf("size %+v", size)
 	}
 	h.casts <- castFrame(1, 2, make([]byte, 64*32*4), 64, 32)
-	if done := h.next(ports.CastFrameDone); done.Buf != 2 || !errors.Is(done.Err, errCastSize) {
+	if done := h.next(domain.CastFrameDone); done.Buf != 2 || !errors.Is(done.Err, errCastSize) {
 		t.Fatalf("done %+v", done)
 	}
 	h.noRequest(20 * time.Millisecond)
 	h.casts <- castFrame(1, 2, make([]byte, 128*64*4), 128, 64)
 	h.complete(h.request(), nil)
-	if done := h.next(ports.CastFrameDone); done.Err != nil {
+	if done := h.next(domain.CastFrameDone); done.Err != nil {
 		t.Fatalf("done %+v", done)
 	}
 }
@@ -431,7 +433,7 @@ func TestCastTransientRetry(t *testing.T) {
 		t.Fatalf("retry %+v after %v", retried, time.Since(start))
 	}
 	h.complete(retried, nil)
-	if done := h.next(ports.CastFrameDone); done.Err != nil {
+	if done := h.next(domain.CastFrameDone); done.Err != nil {
 		t.Fatalf("done %+v", done)
 	}
 
@@ -445,7 +447,7 @@ func TestCastTransientRetry(t *testing.T) {
 			h.complete(req, ports.ErrCaptureBusy)
 			continue
 		case ev := <-h.got:
-			if ev.Kind != ports.CastFrameDone || ev.Buf != 1 || !errors.Is(ev.Err, ports.ErrCaptureTransient) {
+			if ev.Kind != domain.CastFrameDone || ev.Buf != 1 || !errors.Is(ev.Err, ports.ErrCaptureTransient) {
 				t.Fatalf("event %+v", ev)
 			}
 		case <-waylandDeadline(5 * time.Second):
@@ -467,12 +469,12 @@ func TestCastWaitsForActiveState(t *testing.T) {
 	h.noRequest(60 * time.Millisecond)
 	h.commands <- ports.CaptureSessionState{ID: core, Output: "HEADLESS-1", Active: true}
 	h.complete(h.request(), nil)
-	if done := h.next(ports.CastFrameDone); done.Err != nil {
+	if done := h.next(domain.CastFrameDone); done.Err != nil {
 		t.Fatalf("done %+v", done)
 	}
 	// A terminal decision of core ends the cast without telling core.
-	h.commands <- ports.CaptureSessionState{ID: core, Reason: ports.CaptureReasonOutputGone}
-	if ev := h.next(ports.CastStopped); ev.Reason != ports.CaptureReasonOutputGone {
+	h.commands <- ports.CaptureSessionState{ID: core, Reason: domain.CaptureReasonOutputGone}
+	if ev := h.next(domain.CastStopped); ev.Reason != domain.CaptureReasonOutputGone {
 		t.Fatalf("stopped %+v", ev)
 	}
 	h.sync()
@@ -489,20 +491,20 @@ func TestCastFlipDamagesOutputCast(t *testing.T) {
 	h.open(1, "HEADLESS-1")
 	h.open(2, "HEADLESS-2")
 	h.flip("HEADLESS-1")
-	ev := h.next(ports.CastDamage)
+	ev := h.next(domain.CastDamage)
 	if ev.ID != 1 || !ev.Time.Equal(time.Unix(3, 0)) {
 		t.Fatalf("damage %+v", ev)
 	}
 	h.none()
 	h.flip("HEADLESS-2")
-	if ev = h.next(ports.CastDamage); ev.ID != 2 {
+	if ev = h.next(domain.CastDamage); ev.ID != 2 {
 		t.Fatalf("damage %+v", ev)
 	}
 	// Every flip damages an output cast, committed or not.
 	h.flip("HEADLESS-1")
 	h.flip("HEADLESS-1")
-	h.next(ports.CastDamage)
-	h.next(ports.CastDamage)
+	h.next(domain.CastDamage)
+	h.next(domain.CastDamage)
 	h.none()
 }
 
@@ -513,8 +515,8 @@ func TestCastFlipDamagesWindowCastAfterCommit(t *testing.T) {
 	c := protocolClient(t, h.s, h.dir)
 	w, _, _ := surfaceMapper(t, c, h.events)()
 	placeWindow(t, h.s, h.commands, w, "HEADLESS-1")
-	h.casts <- ports.CastCommand{Kind: ports.CastOpen, ID: 1, Window: w.ID}
-	h.next(ports.CastSize)
+	h.casts <- ports.CastCommand{Kind: domain.CastOpen, ID: 1, Window: w.ID}
+	h.next(domain.CastSize)
 
 	h.flip("HEADLESS-1")
 	h.none() // nothing committed since the cast began
@@ -527,7 +529,7 @@ func TestCastFlipDamagesWindowCastAfterCommit(t *testing.T) {
 	h.flip("HEADLESS-2")
 	h.none() // not the window's output
 	h.flip("HEADLESS-1")
-	if ev := h.next(ports.CastDamage); ev.ID != 1 {
+	if ev := h.next(domain.CastDamage); ev.ID != 1 {
 		t.Fatalf("damage %+v", ev)
 	}
 	h.flip("HEADLESS-1")
@@ -535,7 +537,7 @@ func TestCastFlipDamagesWindowCastAfterCommit(t *testing.T) {
 	commit()
 	commit()
 	h.flip("HEADLESS-1")
-	h.next(ports.CastDamage)
+	h.next(domain.CastDamage)
 	h.none() // two commits, one damage
 }
 
@@ -548,10 +550,10 @@ func TestCastWindowDamagedByPopupChanges(t *testing.T) {
 	c := protocolClient(t, h.s, h.dir)
 	w, _, _ := surfaceMapper(t, c, h.events)()
 	placeWindow(t, h.s, h.commands, w, "HEADLESS-1")
-	h.casts <- ports.CastCommand{Kind: ports.CastOpen, ID: 1, Window: w.ID}
-	h.next(ports.CastSize)
+	h.casts <- ports.CastCommand{Kind: domain.CastOpen, ID: 1, Window: w.ID}
+	h.next(domain.CastSize)
 
-	var menu, sub ports.WindowID
+	var menu, sub domain.WindowID
 	if !h.s.display.Do(func() {
 		top := h.s.windows[w.ID]
 		m := &window{id: h.s.nextWindow, xdg: top.xdg, mapped: true}
@@ -576,13 +578,13 @@ func TestCastWindowDamagedByPopupChanges(t *testing.T) {
 			t.Fatal("display stopped")
 		}
 		h.flip("HEADLESS-1")
-		if ev := h.next(ports.CastDamage); ev.ID != 1 {
+		if ev := h.next(domain.CastDamage); ev.ID != 1 {
 			t.Fatalf("%s: damage %+v", name, ev)
 		}
 		h.flip("HEADLESS-1")
 		h.none() // the damage consumed the change
 	}
-	content := func(id ports.WindowID) func() {
+	content := func(id domain.WindowID) func() {
 		return func() { h.s.emitContent(ports.SurfaceContent{ID: id}, damage{full: true}) }
 	}
 	change("popup commit", content(menu))
@@ -717,7 +719,7 @@ func TestCastFrameAllocations(t *testing.T) {
 	}
 	h := newCastHarness(t, false)
 	s := h.s
-	s.castRing.Push(ports.CastCommand{Kind: ports.CastOpen, ID: 1, Output: "HEADLESS-1"})
+	s.castRing.Push(ports.CastCommand{Kind: domain.CastOpen, ID: 1, Output: "HEADLESS-1"})
 	core := castClientEvent[ports.CaptureSessionOpen](h).ID
 	data := make([]byte, 64*32*4)
 	frame := castFrame(1, 0, data, 64, 32)

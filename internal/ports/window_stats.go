@@ -1,10 +1,12 @@
 package ports
 
+import "github.com/bnema/neferwl/internal/domain"
+
 // WindowStats carries wayland → core the frame statistics of the watched
 // window (WatchStats). It is comparable. FPS figures are over the frames
 // recorded so far (at most StatsFrames); 0 when fewer than two frames.
 type WindowStats struct {
-	Window WindowID
+	Window domain.WindowID
 	// Client frames are root-surface commits; shown frames are flips that
 	// showed a new commit of the window.
 	ClientFPS, ShownFPS float32

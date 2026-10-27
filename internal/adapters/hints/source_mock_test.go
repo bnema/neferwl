@@ -7,6 +7,7 @@ package hints
 import (
 	"context"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	mock "github.com/stretchr/testify/mock"
 )
@@ -92,18 +93,18 @@ func (_c *mocksource_Close_Call) RunAndReturn(run func() error) *mocksource_Clos
 }
 
 // kind provides a mock function for the type mocksource
-func (_mock *mocksource) kind() ports.HintSource {
+func (_mock *mocksource) kind() domain.HintSource {
 	ret := _mock.Called()
 
 	if len(ret) == 0 {
 		panic("no return value specified for kind")
 	}
 
-	var r0 ports.HintSource
-	if returnFunc, ok := ret.Get(0).(func() ports.HintSource); ok {
+	var r0 domain.HintSource
+	if returnFunc, ok := ret.Get(0).(func() domain.HintSource); ok {
 		r0 = returnFunc()
 	} else {
-		r0 = ret.Get(0).(ports.HintSource)
+		r0 = ret.Get(0).(domain.HintSource)
 	}
 	return r0
 }
@@ -125,12 +126,12 @@ func (_c *mocksource_kind_Call) Run(run func()) *mocksource_kind_Call {
 	return _c
 }
 
-func (_c *mocksource_kind_Call) Return(hintSource ports.HintSource) *mocksource_kind_Call {
+func (_c *mocksource_kind_Call) Return(hintSource domain.HintSource) *mocksource_kind_Call {
 	_c.Call.Return(hintSource)
 	return _c
 }
 
-func (_c *mocksource_kind_Call) RunAndReturn(run func() ports.HintSource) *mocksource_kind_Call {
+func (_c *mocksource_kind_Call) RunAndReturn(run func() domain.HintSource) *mocksource_kind_Call {
 	_c.Call.Return(run)
 	return _c
 }

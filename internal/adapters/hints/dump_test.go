@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/stretchr/testify/mock"
 	"image"
 	"image/color"
 	"image/png"
@@ -13,9 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // An existing dump directory is made private, and a symlink at a file name is
@@ -49,10 +49,10 @@ func TestWriteDumpPrivate(t *testing.T) {
 func TestDumpSourcesAndCrops(t *testing.T) {
 	dir := t.TempDir()
 	j := &dumpJob{when: time.Now(), req: ports.HintScanRequest{Output: "test", Width: 80, Height: 80, Scale: 2}, stride: 320, pix: make([]byte, 80*80*4)}
-	for i, source := range []ports.HintSource{ports.HintSourceATSPI, ports.HintSourceOCR, ports.HintSourceDetector} {
-		j.targets = append(j.targets, ports.HintTarget{Source: source, Kind: ports.HintLink, Window: 1, Score: 1, Rect: ports.Rect{X: 3 + i*10, Y: 3, W: 5, H: 5}})
+	for i, source := range []domain.HintSource{domain.HintSourceATSPI, domain.HintSourceOCR, domain.HintSourceDetector} {
+		j.targets = append(j.targets, ports.HintTarget{Source: source, Kind: domain.HintLink, Window: 1, Score: 1, Rect: domain.Rect{X: 3 + i*10, Y: 3, W: 5, H: 5}})
 	}
-	j.stages = []scanStage{{Source: "ocr", Windows: []ports.WindowID{1}, Targets: 1, MS: 2, Covered: []ports.WindowID{1}, Crops: []scanCrop{{Window: 1, Source: "ocr", Rect: image.Rect(1, 1, 78, 78), Popups: []image.Rectangle{image.Rect(50, 50, 60, 60)}, Covered: true}}}}
+	j.stages = []scanStage{{Source: "ocr", Windows: []domain.WindowID{1}, Targets: 1, MS: 2, Covered: []domain.WindowID{1}, Crops: []scanCrop{{Window: 1, Source: "ocr", Rect: image.Rect(1, 1, 78, 78), Popups: []image.Rectangle{image.Rect(50, 50, 60, 60)}, Covered: true}}}}
 	require.NoError(t, writeDump(dir, j))
 	files, err := filepath.Glob(filepath.Join(dir, "*.json"))
 	require.NoError(t, err)
@@ -74,16 +74,16 @@ func TestDumpSourcesAndCrops(t *testing.T) {
 		require.Equal(t, target.Window, meta.Targets[i].Window)
 		require.Equal(t, sourceColor(target.Source), color.RGBAModel.Convert(img.At((3+i*10)*2, 6)))
 	}
-	require.NotEqual(t, sourceColor(ports.HintSourceOCR), boxColor)
+	require.NotEqual(t, sourceColor(domain.HintSourceOCR), boxColor)
 }
 
 func TestDumpStageRecordsPartialCoverageAndError(t *testing.T) {
 	s := newMocksource(t)
 	s.EXPECT().needsFrame(mock.Anything).Return(false)
-	s.EXPECT().kind().Return(ports.HintSourceATSPI)
-	wins := []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 20, H: 20}, Popups: []ports.Rect{{X: 20, W: 10, H: 10}}}, {ID: 2, Rect: ports.Rect{X: 40, W: 20, H: 20}}}
+	s.EXPECT().kind().Return(domain.HintSourceATSPI)
+	wins := []ports.HintWindow{{ID: 1, Rect: domain.Rect{W: 20, H: 20}, Popups: []domain.Rect{{X: 20, W: 10, H: 10}}}, {ID: 2, Rect: domain.Rect{X: 40, W: 20, H: 20}}}
 	req := ports.HintScanRequest{Width: 100, Height: 80, Scale: 2, Windows: wins}
-	s.EXPECT().scan(mock.Anything, req, wins, (*frame)(nil)).Return([]ports.HintTarget{{Window: 1, Source: ports.HintSourceATSPI}}, errors.New("partial")).Once()
+	s.EXPECT().scan(mock.Anything, req, wins, (*frame)(nil)).Return([]ports.HintTarget{{Window: 1, Source: domain.HintSourceATSPI}}, errors.New("partial")).Once()
 	w := worker{sources: []source{s}, dumpDir: t.TempDir()}
 	captures := make(chan ports.CaptureRequest, 1)
 	captured := make(chan ports.CaptureDone, 1)
@@ -94,8 +94,8 @@ func TestDumpStageRecordsPartialCoverageAndError(t *testing.T) {
 	defer w.pending.m.unmap()
 	require.Len(t, w.pending.stages, 1)
 	stage := w.pending.stages[0]
-	require.Equal(t, []ports.WindowID{1, 2}, stage.Windows)
-	require.Equal(t, []ports.WindowID{1}, stage.Covered)
+	require.Equal(t, []domain.WindowID{1, 2}, stage.Windows)
+	require.Equal(t, []domain.WindowID{1}, stage.Covered)
 	require.Equal(t, "partial", stage.Err)
 	require.True(t, stage.Crops[0].Covered)
 	require.False(t, stage.Crops[1].Covered)

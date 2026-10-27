@@ -1,5 +1,7 @@
 package ports
 
+import "github.com/bnema/neferwl/internal/domain"
+
 // Popup anchors and gravities, as xdg_positioner values.
 const (
 	EdgeNone uint32 = iota
@@ -28,7 +30,7 @@ const (
 // towards Gravity. Adjust says how core may move it to stay on screen.
 type Positioner struct {
 	Width, Height    int
-	AnchorRect       Rect
+	AnchorRect       domain.Rect
 	Anchor, Gravity  uint32
 	OffsetX, OffsetY int
 	Adjust           uint32
@@ -39,7 +41,7 @@ type Positioner struct {
 // Token). Parent is a window or popup. Grab popups take the keyboard and
 // close on a click elsewhere.
 type PopupRequest struct {
-	ID, Parent WindowID
+	ID, Parent domain.WindowID
 	Positioner Positioner
 	Grab       bool
 	Reposition bool
@@ -50,6 +52,6 @@ func (PopupRequest) clientEvent() {}
 
 // PopupMapped carries wayland → core a placed popup that now has content.
 // It ends with WindowUnmapped.
-type PopupMapped struct{ ID WindowID }
+type PopupMapped struct{ ID domain.WindowID }
 
 func (PopupMapped) clientEvent() {}

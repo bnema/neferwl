@@ -6,6 +6,7 @@ import (
 	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -32,11 +33,11 @@ func TestOverviewLauncherKeepsKeys(t *testing.T) {
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 2}
 		scene(t, scenes)
-		input <- ports.KeyEvent{Keysym: "o", Mods: ports.ModSuper, Pressed: true}
+		input <- ports.KeyEvent{Keysym: "o", Mods: domain.ModSuper, Pressed: true}
 		sceneMatch(t, scenes, func(s ports.Scene) bool { return len(s.Windows) == 2 && s.Windows[0].Preview > 0 })
-		input <- ports.KeyEvent{Keysym: "o", Mods: ports.ModSuper}
+		input <- ports.KeyEvent{Keysym: "o", Mods: domain.ModSuper}
 
-		launcher := ports.LayerSurface{ID: 7, Layer: ports.LayerOverlay, Width: 100, Height: 40, Keyboard: 1}
+		launcher := ports.LayerSurface{ID: 7, Layer: domain.LayerOverlay, Width: 100, Height: 40, Keyboard: 1}
 		client <- ports.LayerChanged{Layers: []ports.LayerSurface{launcher}}
 		scene(t, scenes)
 		for len(commands) > 0 {
@@ -84,13 +85,13 @@ func TestOverviewFocusBindsNavigate(t *testing.T) {
 		go c.Run(ctx)
 		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 300, Height: 200}}
 		scene(t, scenes)
-		for id := ports.WindowID(1); id <= 2; id++ {
+		for id := domain.WindowID(1); id <= 2; id++ {
 			client <- ports.WindowMapped{ID: id}
 			scene(t, scenes)
 		}
 		client <- ports.WindowMapped{ID: 9, Floating: true, Width: 300, Height: 200}
 		scene(t, scenes)
-		focused := func(id ports.WindowID) func(ports.Scene) bool {
+		focused := func(id domain.WindowID) func(ports.Scene) bool {
 			return func(s ports.Scene) bool {
 				for _, w := range s.Windows {
 					if w.ID == id && w.Focused && w.Preview > 0 && w.Dim == 0 {
@@ -101,8 +102,8 @@ func TestOverviewFocusBindsNavigate(t *testing.T) {
 			}
 		}
 		press := func(key string) {
-			input <- ports.KeyEvent{Keysym: key, Mods: ports.ModSuper, Pressed: true}
-			input <- ports.KeyEvent{Keysym: key, Mods: ports.ModSuper}
+			input <- ports.KeyEvent{Keysym: key, Mods: domain.ModSuper, Pressed: true}
+			input <- ports.KeyEvent{Keysym: key, Mods: domain.ModSuper}
 		}
 		press("o")
 		sceneMatch(t, scenes, focused(9))
@@ -138,17 +139,17 @@ func TestOverviewCloseBindTargetsPreview(t *testing.T) {
 		go c.Run(ctx)
 		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 300, Height: 200}}
 		scene(t, scenes)
-		for _, id := range []ports.WindowID{1, 2} {
+		for _, id := range []domain.WindowID{1, 2} {
 			client <- ports.WindowMapped{ID: id}
 			scene(t, scenes)
 		}
 		client <- ports.WindowMapped{ID: 9, Floating: true, Width: 300, Height: 200}
 		scene(t, scenes)
-		press := func(key string, mods ports.Mods) {
+		press := func(key string, mods domain.Mods) {
 			input <- ports.KeyEvent{Keysym: key, Mods: mods, Pressed: true}
 			input <- ports.KeyEvent{Keysym: key, Mods: mods}
 		}
-		press("o", ports.ModSuper)
+		press("o", domain.ModSuper)
 		sceneMatch(t, scenes, func(s ports.Scene) bool {
 			for _, w := range s.Windows {
 				if w.ID == 9 && w.Focused && w.Preview > 0 {
@@ -166,7 +167,7 @@ func TestOverviewCloseBindTargetsPreview(t *testing.T) {
 			}
 			return false
 		})
-		press("q", ports.ModSuper)
+		press("q", domain.ModSuper)
 		if got := next(t, commands, anyOf[ports.CloseWindow]); got.ID != 2 {
 			t.Fatalf("close target %d, want preview 2", got.ID)
 		}
@@ -179,7 +180,7 @@ func TestFloatOnlyMonitorDirectionalExit(t *testing.T) {
 		for _, dir := range []int{-1, 1} {
 			r := startMulti(t, nil, left, right)
 			if dir < 0 {
-				r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+				r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
 			}
 			r.client <- ports.WindowMapped{ID: 9, Floating: true, Width: 20, Height: 20}
 			receive(t, r.scenes)
@@ -188,7 +189,7 @@ func TestFloatOnlyMonitorDirectionalExit(t *testing.T) {
 			if dir < 0 {
 				key, want = "Left", left.Name
 			}
-			r.key(t, key, ports.ModAlt)
+			r.key(t, key, domain.ModAlt)
 			out := lastOutputs(t, r.commands)
 			if out.Focused != want {
 				t.Fatalf("direction %d: focused output %q, want %q", dir, out.Focused, want)
@@ -216,11 +217,11 @@ func TestOverviewThreeFingerNavigation(t *testing.T) {
 		go c.Run(ctx)
 		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 300, Height: 200}}
 		scene(t, scenes)
-		for id := ports.WindowID(1); id <= 3; id++ {
+		for id := domain.WindowID(1); id <= 3; id++ {
 			client <- ports.WindowMapped{ID: id}
 			scene(t, scenes)
 		}
-		focused := func(id ports.WindowID) func(ports.Scene) bool {
+		focused := func(id domain.WindowID) func(ports.Scene) bool {
 			return func(s ports.Scene) bool {
 				for _, w := range s.Windows {
 					if w.ID == id && w.Focused && w.Preview > 0 {
@@ -230,9 +231,9 @@ func TestOverviewThreeFingerNavigation(t *testing.T) {
 				return false
 			}
 		}
-		input <- ports.KeyEvent{Keysym: "o", Mods: ports.ModSuper, Pressed: true}
+		input <- ports.KeyEvent{Keysym: "o", Mods: domain.ModSuper, Pressed: true}
 		sceneMatch(t, scenes, focused(3))
-		input <- ports.KeyEvent{Keysym: "o", Mods: ports.ModSuper}
+		input <- ports.KeyEvent{Keysym: "o", Mods: domain.ModSuper}
 		finger := func(dx, dy float64) ports.SwipeUpdate {
 			return ports.SwipeUpdate{DX: dx, DY: dy}
 		}
@@ -258,7 +259,7 @@ func TestOverviewThreeFingerNavigation(t *testing.T) {
 		input <- ports.SwipeBegin{Fingers: 3}
 		// A wheel notch down has nowhere to go (no workspace below with
 		// windows); a finger scroll left moves on.
-		input <- ports.PointerAxis{Source: ports.AxisWheel, Vertical: ports.ScrollAxis{Set: true, Value: 15, V120: 120}}
+		input <- ports.PointerAxis{Source: domain.AxisWheel, Vertical: ports.ScrollAxis{Set: true, Value: 15, V120: 120}}
 		input <- finger(-70, 0)
 		sceneMatch(t, scenes, focused(1))
 

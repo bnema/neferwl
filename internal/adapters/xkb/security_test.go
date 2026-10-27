@@ -3,6 +3,7 @@ package xkb
 import (
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -47,7 +48,7 @@ func TestSecurityEpochQuarantinesHeldKeysAcrossAcquireAndRelease(t *testing.T) {
 		suppressedKey(t, k, code, false, unlocked)
 	}
 	secureKey(t, k, 125, true, unlocked)
-	if ev := secureKey(t, k, 16, true, unlocked); ev.Mods&ports.ModSuper == 0 || ev.State.Depressed == 0 {
+	if ev := secureKey(t, k, 16, true, unlocked); ev.Mods&domain.ModSuper == 0 || ev.State.Depressed == 0 {
 		t.Fatalf("fresh desktop Super broken: %+v", ev)
 	}
 }
@@ -95,7 +96,7 @@ func TestSecurityEpochUsesActualRemappedModifiers(t *testing.T) {
 	secureKey(t, k, 16, false, locked)
 	suppressedKey(t, k, 58, false, locked)
 	secureKey(t, k, 58, true, locked)
-	if ev := secureKey(t, k, 16, true, locked); ev.Mods&ports.ModCtrl == 0 || ev.State.Depressed == 0 {
+	if ev := secureKey(t, k, 16, true, locked); ev.Mods&domain.ModCtrl == 0 || ev.State.Depressed == 0 {
 		t.Fatalf("fresh remapped Control broken: %+v", ev)
 	}
 	secureKey(t, k, 16, false, locked)
@@ -113,7 +114,7 @@ func TestSecurityEpochAltGrAndAltReleaseOrder(t *testing.T) {
 		locked := ports.SecurityState{Generation: 1, Protected: true}
 		secureKey(t, k, 100, true, locked) // ISO_Level3_Shift, not guessed Alt
 		secureKey(t, k, 56, true, locked)
-		if ev := secureKey(t, k, 11, true, locked); ev.Keysym != "at" || ev.Mods&ports.ModAlt == 0 || ev.State.Depressed == 0 {
+		if ev := secureKey(t, k, 11, true, locked); ev.Keysym != "at" || ev.Mods&domain.ModAlt == 0 || ev.State.Depressed == 0 {
 			t.Fatalf("fresh AltGr+Alt not mapped by XKB: %+v", ev)
 		}
 		secureKey(t, k, 11, false, locked)
@@ -138,7 +139,7 @@ func TestKeymapReplacementRetainsQuarantine(t *testing.T) {
 	}
 	suppressedKey(t, next, 125, false, locked)
 	secureKey(t, next, 125, true, locked)
-	if ev := secureKey(t, next, 30, true, locked); ev.Mods&ports.ModSuper == 0 {
+	if ev := secureKey(t, next, 30, true, locked); ev.Mods&domain.ModSuper == 0 {
 		t.Fatalf("fresh key after replacement broken: %+v", ev)
 	}
 }

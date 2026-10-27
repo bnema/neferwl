@@ -5,6 +5,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/extsessionlock"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 )
@@ -245,7 +246,7 @@ func (s *Server) applySecurityEvent(event ports.SecurityBackendEvent) {
 	s.maybeLocked()
 }
 
-func (s *Server) lockInputTarget(id ports.WindowID) bool {
+func (s *Server) lockInputTarget(id domain.WindowID) bool {
 	l := s.sessionLock
 	if l == nil || !l.locked {
 		return false

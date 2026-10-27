@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
@@ -30,19 +31,19 @@ func overlayOutput(t *testing.T, errs ...error) (*Output, *mockkms, *[]commitRec
 }
 
 // A 1:1 opaque dmabuf window with nothing above goes on the overlay.
-func overlayScene() (ports.Scene, map[ports.WindowID]ports.SurfaceContent) {
+func overlayScene() (ports.Scene, map[domain.WindowID]ports.SurfaceContent) {
 	s := ports.Scene{Seq: 1, Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{
-		{ID: 1, Rect: ports.Rect{W: 100, H: 100}},
-		{ID: 2, Rect: ports.Rect{X: 100, W: 100, H: 100}},
+		{ID: 1, Rect: domain.Rect{W: 100, H: 100}},
+		{ID: 2, Rect: domain.Rect{X: 100, W: 100, H: 100}},
 	}}
-	return s, map[ports.WindowID]ports.SurfaceContent{
+	return s, map[domain.WindowID]ports.SurfaceContent{
 		2: {ID: 2, Width: 100, Height: 100, Opaque: true, DMABuf: &ports.DMABuf{ID: 9, Width: 100, Height: 100, Format: fourccXRGB}},
 	}
 }
 
 func TestScanoutWorkspaceClipCannotBeBypassed(t *testing.T) {
 	s, contents := fullscreenScene()
-	s.WorkspaceClip = ports.Rect{X: 50, W: 100, H: 100}
+	s.WorkspaceClip = domain.Rect{X: 50, W: 100, H: 100}
 	if _, reason := scanoutCandidate(s, contents, 200, 100, nil); reason != "workspace_clip" {
 		t.Fatalf("fullscreen bypassed clip: %q", reason)
 	}
@@ -53,11 +54,11 @@ func TestScanoutWorkspaceClipCannotBeBypassed(t *testing.T) {
 
 func TestOverlayWorkspaceClip(t *testing.T) {
 	s, contents := overlayScene()
-	s.WorkspaceClip = ports.Rect{X: 50, W: 100, H: 100}
+	s.WorkspaceClip = domain.Rect{X: 50, W: 100, H: 100}
 	if _, _, _, reason := overlayCandidate(s, contents, false, nil, nil); reason != "workspace_clip" {
 		t.Fatalf("overflowing workspace overlay: %q", reason)
 	}
-	s.WorkspaceClip = ports.Rect{X: 100, W: 100, H: 100}
+	s.WorkspaceClip = domain.Rect{X: 100, W: 100, H: 100}
 	if win, _, _, reason := overlayCandidate(s, contents, false, nil, nil); reason != "" || win.ID != 2 {
 		t.Fatalf("contained workspace overlay: %v %q", win.ID, reason)
 	}
@@ -68,15 +69,15 @@ func TestOverlayWorkspaceClip(t *testing.T) {
 // neither takes the plane nor blocks the visible tile.
 func TestOverlayTileInset(t *testing.T) {
 	s, contents := overlayScene()
-	s.TileInset = ports.Insets{Bottom: 20}
+	s.TileInset = domain.Insets{Bottom: 20}
 	if _, _, _, reason := overlayCandidate(s, contents, false, nil, nil); reason != "tile_clip" {
 		t.Fatalf("tile under a panel on the overlay: %q", reason)
 	}
 	// The next cascade band starts under the panel.
 	s, contents = overlayScene()
 	s.OutputHeight = 120
-	s.TileInset = ports.Insets{Bottom: 20}
-	s.Windows = append(s.Windows, ports.SceneWindow{ID: 3, Rect: ports.Rect{Y: 100, W: 100, H: 100}})
+	s.TileInset = domain.Insets{Bottom: 20}
+	s.Windows = append(s.Windows, ports.SceneWindow{ID: 3, Rect: domain.Rect{Y: 100, W: 100, H: 100}})
 	contents[3] = ports.SurfaceContent{ID: 3, Width: 100, Height: 100, Opaque: true, DMABuf: &ports.DMABuf{ID: 10, Width: 100, Height: 100, Format: fourccXRGB}}
 	if win, _, _, reason := overlayCandidate(s, contents, false, nil, nil); reason != "" || win.ID != 2 {
 		t.Fatalf("visible tile with one under the panel: %v %q", win.ID, reason)
@@ -87,8 +88,8 @@ func TestOverlayTileInset(t *testing.T) {
 // the scene does not draw (no room left by the panels).
 func TestScanoutIgnoresUndrawnTile(t *testing.T) {
 	s, contents := fullscreenScene()
-	s.TileInset = ports.Insets{Bottom: 100}
-	s.Windows = append([]ports.SceneWindow{{ID: 2, Rect: ports.Rect{W: 200, H: 100}}}, s.Windows...)
+	s.TileInset = domain.Insets{Bottom: 100}
+	s.Windows = append([]ports.SceneWindow{{ID: 2, Rect: domain.Rect{W: 200, H: 100}}}, s.Windows...)
 	if _, reason := scanoutCandidate(s, contents, 200, 100, nil); reason != "" {
 		t.Fatalf("undrawn tile blocked scanout: %q", reason)
 	}
@@ -107,7 +108,7 @@ func TestOverlayCandidate(t *testing.T) {
 	}
 	// Compositor overlays are composed over the windows.
 	ls, lc := overlayScene()
-	ls.Overlays = []ports.Overlay{{ID: 1, Seq: 1, Kind: ports.OverlayLabel, Text: "f"}}
+	ls.Overlays = []ports.Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Text: "f"}}
 	if _, _, _, reason := overlayCandidate(ls, lc, false, nil, nil); reason != "overlays" {
 		t.Fatalf("overlays reason %q", reason)
 	}
@@ -124,7 +125,7 @@ func TestOverlayCandidate(t *testing.T) {
 		t.Fatalf("transformed overlay reason %q", reason)
 	}
 	_, c = overlayScene()
-	s.Windows = append(s.Windows, ports.SceneWindow{ID: 3, Rect: ports.Rect{X: 150, W: 10, H: 10}})
+	s.Windows = append(s.Windows, ports.SceneWindow{ID: 3, Rect: domain.Rect{X: 150, W: 10, H: 10}})
 	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "window_above" {
 		t.Fatalf("reason %q", reason)
 	}
@@ -134,7 +135,7 @@ func TestOverlayCandidate(t *testing.T) {
 		t.Fatalf("reason %q", reason)
 	}
 	s, _ = overlayScene()
-	s.Layers = []ports.SceneLayer{{ID: 5, Layer: ports.LayerOverlay, Rect: ports.Rect{X: 150, W: 5, H: 5}}}
+	s.Layers = []ports.SceneLayer{{ID: 5, Layer: domain.LayerOverlay, Rect: domain.Rect{X: 150, W: 5, H: 5}}}
 	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "layer_above" {
 		t.Fatalf("reason %q", reason)
 	}
@@ -254,18 +255,18 @@ func TestOverlayTestRefusedFallsBack(t *testing.T) {
 // overlay; a bordered window does too.
 func TestOverlayPopupAndBorder(t *testing.T) {
 	s, c := overlayScene()
-	s.Windows = append([]ports.SceneWindow{{ID: 7, Popup: true, Rect: ports.Rect{X: 120, W: 5, H: 5}}}, s.Windows...)
+	s.Windows = append([]ports.SceneWindow{{ID: 7, Popup: true, Rect: domain.Rect{X: 120, W: 5, H: 5}}}, s.Windows...)
 	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "window_above" {
 		t.Fatalf("popup: %q", reason)
 	}
 	s, _ = overlayScene()
-	s.Separators = []ports.Separator{{Rect: ports.Rect{X: 100, W: 2, H: 100}}}
+	s.Separators = []ports.Separator{{Rect: domain.Rect{X: 100, W: 2, H: 100}}}
 	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "border" {
 		t.Fatalf("border: %q", reason)
 	}
 	s, _ = overlayScene()
 	s.Border.Width = 2
-	s.Windows[1].Inset = ports.SideLeft
+	s.Windows[1].Inset = domain.SideLeft
 	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "border" {
 		t.Fatalf("inset content: %q", reason)
 	}
@@ -277,7 +278,7 @@ func TestOverlayPopupAndBorder(t *testing.T) {
 func TestOverlayFloatOverLines(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
-		sep    ports.WindowID
+		sep    domain.WindowID
 		below  bool
 		reason string
 	}{
@@ -290,8 +291,8 @@ func TestOverlayFloatOverLines(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s, c := overlayScene()
 			s.Windows[1].Floating, s.Windows[1].Below = true, tc.below
-			s.Windows = append(s.Windows, ports.SceneWindow{ID: 3, Floating: true, Rect: ports.Rect{W: 10, H: 10}})
-			s.Separators = []ports.Separator{{Rect: ports.Rect{X: 150, W: 2, H: 100}, Window: tc.sep}}
+			s.Windows = append(s.Windows, ports.SceneWindow{ID: 3, Floating: true, Rect: domain.Rect{W: 10, H: 10}})
+			s.Separators = []ports.Separator{{Rect: domain.Rect{X: 150, W: 2, H: 100}, Window: tc.sep}}
 			if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != tc.reason {
 				t.Fatalf("reason %q, want %q", reason, tc.reason)
 			}
@@ -304,20 +305,20 @@ func TestOverlayFloatOverLines(t *testing.T) {
 // candidate leave it on the overlay.
 func TestOverlayIgnoresWhatDoesNotCoverIt(t *testing.T) {
 	s, c := overlayScene()
-	s.Layers = []ports.SceneLayer{{ID: 5, Layer: ports.LayerTop, Rect: ports.Rect{W: 100, H: 10}}}
+	s.Layers = []ports.SceneLayer{{ID: 5, Layer: domain.LayerTop, Rect: domain.Rect{W: 100, H: 10}}}
 	s.Windows = append(s.Windows,
-		ports.SceneWindow{ID: 7, Popup: true, Rect: ports.Rect{X: 10, Y: 10, W: 20, H: 20}},
-		ports.SceneWindow{ID: 8, Floating: true, Rect: ports.Rect{X: 40, Y: 40, W: 20, H: 20}})
-	s.Separators = []ports.Separator{{Rect: ports.Rect{X: 98, W: 2, H: 100}, Window: 1}}
+		ports.SceneWindow{ID: 7, Popup: true, Rect: domain.Rect{X: 10, Y: 10, W: 20, H: 20}},
+		ports.SceneWindow{ID: 8, Floating: true, Rect: domain.Rect{X: 40, Y: 40, W: 20, H: 20}})
+	s.Separators = []ports.Separator{{Rect: domain.Rect{X: 98, W: 2, H: 100}, Window: 1}}
 	if w, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "" || w.ID != 2 {
 		t.Fatalf("candidate %v %q", w.ID, reason)
 	}
 	// Touching edges do not cover it.
-	s.Layers[0].Rect = ports.Rect{W: 100, H: 100}
+	s.Layers[0].Rect = domain.Rect{W: 100, H: 100}
 	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "" {
 		t.Fatalf("adjacent layer: %q", reason)
 	}
-	s.Layers[0].Rect = ports.Rect{W: 101, H: 10}
+	s.Layers[0].Rect = domain.Rect{W: 101, H: 10}
 	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "layer_above" {
 		t.Fatalf("overlapping layer: %q", reason)
 	}
@@ -326,10 +327,10 @@ func TestOverlayIgnoresWhatDoesNotCoverIt(t *testing.T) {
 // Draw order decides: a window listed before the candidate is under it, one
 // after is over it; a popup is over it wherever it is listed, unless hidden.
 func TestOverlayStackingOrder(t *testing.T) {
-	under := ports.SceneWindow{ID: 8, Floating: true, Below: true, Rect: ports.Rect{X: 120, W: 20, H: 20}}
+	under := ports.SceneWindow{ID: 8, Floating: true, Below: true, Rect: domain.Rect{X: 120, W: 20, H: 20}}
 	over := under
 	over.Below = false
-	popup := ports.SceneWindow{ID: 7, Popup: true, Rect: ports.Rect{X: 120, W: 20, H: 20}}
+	popup := ports.SceneWindow{ID: 7, Popup: true, Rect: domain.Rect{X: 120, W: 20, H: 20}}
 	for name, tc := range map[string]struct {
 		edit func(*ports.Scene)
 		want string

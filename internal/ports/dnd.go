@@ -1,6 +1,10 @@
 package ports
 
-import "time"
+import (
+	"time"
+
+	"github.com/bnema/neferwl/internal/domain"
+)
 
 // Data drag and drop (wl_data_device.start_drag). Wayland validates the
 // client's request and tells core; core owns the pointer during the drag:
@@ -15,7 +19,7 @@ import "time"
 // DataDragCancel when it refuses the drag.
 type DataDragStarted struct {
 	Button uint32
-	Icon   WindowID
+	Icon   domain.WindowID
 }
 
 func (DataDragStarted) clientEvent() {}
@@ -24,7 +28,7 @@ func (DataDragStarted) clientEvent() {}
 // commit: its top left corner relative to the cursor hotspot, and its
 // size, in logical pixels. W or H 0 hides it.
 type DataDragIcon struct {
-	ID         WindowID
+	ID         domain.WindowID
 	X, Y, W, H int
 }
 
@@ -40,7 +44,7 @@ func (DataDragEnded) clientEvent() {}
 // during a drag (0: none), at surface-local X, Y: the old target gets
 // leave, the new one enter with an offer.
 type DataDragFocus struct {
-	ID   WindowID
+	ID   domain.WindowID
 	X, Y float64
 	Time time.Duration
 }
@@ -50,7 +54,7 @@ func (DataDragFocus) clientCommand() {}
 // DataDragMotion carries core → wayland the pointer over the drag target,
 // in its surface coordinates.
 type DataDragMotion struct {
-	ID   WindowID
+	ID   domain.WindowID
 	X, Y float64
 	Time time.Duration
 }

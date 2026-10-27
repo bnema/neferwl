@@ -1,4 +1,5 @@
 // Package hints finds clickable targets using ordered accessibility, OCR and
+
 // detector sources, capturing pixels only when a listed source needs them.
 package hints
 
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -42,7 +44,7 @@ func Run(ctx context.Context, requests <-chan ports.HintScanRequest, captures ch
 type worker struct {
 	stages  []scanStage
 	sources []source
-	warned  map[ports.HintSource]bool
+	warned  map[domain.HintSource]bool
 	n       uint64
 	dumpDir string
 	pending *dumpJob
@@ -276,7 +278,7 @@ func targetsOf(dets []detection, scale float64, width, height int) []ports.HintT
 		if lx2-lx1 < minTarget || ly2-ly1 < minTarget {
 			continue
 		}
-		out = append(out, ports.HintTarget{Rect: ports.Rect{X: lx1, Y: ly1, W: lx2 - lx1, H: ly2 - ly1}, Score: d.score})
+		out = append(out, ports.HintTarget{Rect: domain.Rect{X: lx1, Y: ly1, W: lx2 - lx1, H: ly2 - ly1}, Score: d.score})
 	}
 	return out
 }

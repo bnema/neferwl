@@ -6,7 +6,7 @@ import (
 	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/core/layout"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // With gaps and a width that does not divide evenly, the columns of a
@@ -83,7 +83,7 @@ func TestCascadeSidePanel(t *testing.T) {
 		// The panel edge at x=100 is no shared line: column 1 has only its
 		// right neighbor.
 		w.FocusID(1)
-		if p := previewOf(t, w.Layout(), 1); p.Neighbors != ports.SideRight {
+		if p := previewOf(t, w.Layout(), 1); p.Neighbors != domain.SideRight {
 			t.Fatalf("neighbors %04b, want right only", p.Neighbors)
 		}
 

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -29,7 +31,7 @@ func TestRunOutputPower(t *testing.T) {
 		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 		r.EXPECT().UseTarget(mock.Anything).Return()
 		renders := make(chan struct{}, 8)
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 			renders <- struct{}{}
 			return nil, nil
 		})
@@ -140,7 +142,7 @@ func TestRunOutputStartOff(t *testing.T) {
 		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 		r.EXPECT().UseTarget(mock.Anything).Return().Maybe()
 		renders := make(chan struct{}, 8)
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 			renders <- struct{}{}
 			return nil, nil
 		}).Maybe()

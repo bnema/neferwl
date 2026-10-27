@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -113,8 +115,8 @@ func TestScaleBindReportsScale(t *testing.T) {
 		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "DP-2", Width: 5120, Height: 2160}}
 		scene(t, scenes)
 		press := func(sym string, code uint32) {
-			input <- ports.KeyEvent{Keysym: sym, Keycode: code, Mods: ports.ModSuper, Pressed: true}
-			input <- ports.KeyEvent{Keysym: sym, Keycode: code, Mods: ports.ModSuper}
+			input <- ports.KeyEvent{Keysym: sym, Keycode: code, Mods: domain.ModSuper, Pressed: true}
+			input <- ports.KeyEvent{Keysym: sym, Keycode: code, Mods: domain.ModSuper}
 		}
 		press("minus", 12) // already at 1
 		press("equal", 13)

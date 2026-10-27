@@ -1,10 +1,12 @@
 // Package presented queues the OutputPresented reports an output owner sends
+
 // to wayland: what the output read, held and flipped.
 package presented
 
 import (
 	"maps"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -18,7 +20,7 @@ import (
 // allocates nothing.
 type Queue struct {
 	unsent      []ports.OutputPresented
-	seen, reads map[ports.WindowID]uint64
+	seen, reads map[domain.WindowID]uint64
 }
 
 // Push queues r. Its Seen and ChildReads may be the caller's scratch maps:
@@ -60,7 +62,7 @@ func Merge(old, next *ports.FlipInfo) {
 			cloned = true
 		}
 		if next.Shows == nil {
-			next.Shows = make(map[ports.WindowID]uint64)
+			next.Shows = make(map[domain.WindowID]uint64)
 		}
 		next.Shows[id] = seq
 	}
@@ -83,7 +85,7 @@ func (q *Queue) Len() int { return len(q.unsent) }
 func (q *Queue) Unsent() []ports.OutputPresented { return q.unsent }
 
 // Seen is the Seen snapshot of the last pushed report.
-func (q *Queue) Seen() map[ports.WindowID]uint64 { return q.seen }
+func (q *Queue) Seen() map[domain.WindowID]uint64 { return q.seen }
 
 // Reset drops queued reports, e.g. when a security epoch makes them stale.
 // Snapshots stay: they may be shared with reports already sent.

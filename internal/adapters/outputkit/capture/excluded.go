@@ -5,6 +5,7 @@ import (
 	"os"
 	"slices"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -63,7 +64,7 @@ type excluder struct {
 // displayed scene draws it, or the hidden workspace of a capture does (its
 // child render and the reads it releases). Flips and Shown still count the
 // displayed scene only.
-func Shows(s ports.Scene, id ports.WindowID) bool {
+func Shows(s ports.Scene, id domain.WindowID) bool {
 	return s.Shows(id) || s.CaptureScene != nil && s.CaptureScene.Shows(id)
 }
 
@@ -159,7 +160,7 @@ func captured(buf, overlays []ports.Overlay) []ports.Overlay {
 // them before BeginCapture. The render fence is returned, never closed here:
 // the plain render reads client buffers even when the requests are rejected,
 // so the caller owns it (hold or wait it) whatever happened, error included.
-func (p *Pipeline) SubmitPlain(r ports.Renderer, s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, normal []ports.CaptureRequest) (took bool, done *os.File, err error) {
+func (p *Pipeline) SubmitPlain(r ports.Renderer, s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent, normal []ports.CaptureRequest) (took bool, done *os.File, err error) {
 	if len(normal) == 0 || len(s.CaptureIndicators) == 0 && !hidesOverlays(s) && !s.PositionHint.Shown() {
 		return false, nil, nil
 	}
@@ -175,7 +176,7 @@ func (p *Pipeline) SubmitPlain(r ports.Renderer, s ports.Scene, surfaces map[por
 // scene returns s without the excluded windows
 // (popups included) and layers. The result is valid until the next call.
 func (c *excluder) scene(s ports.Scene) ports.Scene {
-	var ex []ports.WindowID
+	var ex []domain.WindowID
 	if s.Capture != nil {
 		ex = s.Capture.Excluded
 	}

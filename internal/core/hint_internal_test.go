@@ -5,6 +5,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
@@ -24,10 +25,10 @@ func TestHintLabelGeometry(t *testing.T) {
 			bounds := sc.rect()
 			// Corner separation exceeds label width, but right-edge clamping folds
 			// the second label back over the first.
-			a := hintTarget{rect: ports.Rect{X: bounds.W - w - 1, Y: bounds.H - h - 1}, score: 1}
-			b := hintTarget{rect: ports.Rect{X: bounds.W - 1, Y: bounds.H - 1}, score: .5}
+			a := hintTarget{rect: domain.Rect{X: bounds.W - w - 1, Y: bounds.H - h - 1}, score: 1}
+			b := hintTarget{rect: domain.Rect{X: bounds.W - 1, Y: bounds.H - 1}, score: .5}
 			require.Len(t, c.hintSpread(sc, []hintTarget{a, b}), 1)
-			b.rect = ports.Rect{X: 0, Y: 0}
+			b.rect = domain.Rect{X: 0, Y: 0}
 			require.Len(t, c.hintSpread(sc, []hintTarget{a, b}), 2)
 		}
 
@@ -42,7 +43,7 @@ func TestHintSpreadBudget(t *testing.T) {
 		c := &Core{}
 		ts := make([]hintTarget, 4*hintMaxTargets+10)
 		for i := range ts {
-			ts[i] = hintTarget{rect: ports.Rect{X: 100 + i*100, Y: 100}, score: float32(i)}
+			ts[i] = hintTarget{rect: domain.Rect{X: 100 + i*100, Y: 100}, score: float32(i)}
 		}
 		got := c.hintSpread(sc, ts)
 		require.Len(t, got, 4*hintMaxTargets)

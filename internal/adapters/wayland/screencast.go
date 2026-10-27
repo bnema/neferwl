@@ -7,6 +7,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
@@ -71,7 +72,7 @@ type castSession struct {
 	// ending: the cast ended while a capture still wrote into the adapter's
 	// buffer; CastStopped follows its reply.
 	ending, announce bool
-	endReason        ports.CaptureReason
+	endReason        domain.CaptureReason
 	endErr           error
 }
 
@@ -95,9 +96,9 @@ func (s *Server) pushCast(ev ports.CastEvent) {
 // applyCast runs one command of the adapter on the display goroutine.
 func (s *Server) applyCast(cmd ports.CastCommand) {
 	switch cmd.Kind {
-	case ports.CastOpen:
+	case domain.CastOpen:
 		s.openCast(cmd)
-	case ports.CastFrame:
+	case domain.CastFrame:
 		c := s.castSessions[cmd.ID]
 		switch {
 		case c == nil:
@@ -109,9 +110,9 @@ func (s *Server) applyCast(cmd ports.CastCommand) {
 			c.deadline = s.clock.Now().Add(captureRetryFor)
 			c.attempt()
 		}
-	case ports.CastClose:
+	case domain.CastClose:
 		if c := s.castSessions[cmd.ID]; c != nil {
-			c.end(ports.CaptureReasonNone, nil, true, false)
+			c.end(domain.CaptureReasonNone, nil, true, false)
 		}
 	}
 }
@@ -119,13 +120,13 @@ func (s *Server) applyCast(cmd ports.CastCommand) {
 // refuseCastFrame answers a frame no cast takes, so the adapter gets its
 // buffer back.
 func (s *Server) refuseCastFrame(cmd ports.CastCommand, err error) {
-	s.pushCast(ports.CastEvent{Kind: ports.CastFrameDone, ID: cmd.ID, Buf: cmd.Buf, Err: err})
+	s.pushCast(ports.CastEvent{Kind: domain.CastFrameDone, ID: cmd.ID, Buf: cmd.Buf, Err: err})
 }
 
 // refuseCast ends a cast that never began.
-func (s *Server) refuseCast(id uint64, reason ports.CaptureReason, err error) {
+func (s *Server) refuseCast(id uint64, reason domain.CaptureReason, err error) {
 	s.log.Info().Uint64("cast", id).Str("reason", string(reason)).Err(err).Msg("cast refused")
-	s.pushCast(ports.CastEvent{Kind: ports.CastStopped, ID: id, Reason: reason, Err: err})
+	s.pushCast(ports.CastEvent{Kind: domain.CastStopped, ID: id, Reason: reason, Err: err})
 }
 
 // openCast registers a cast with core and tells the adapter its size.
@@ -135,17 +136,17 @@ func (s *Server) openCast(cmd ports.CastCommand) {
 		s.log.Warn().Uint64("cast", cmd.ID).Msg("cast open: duplicate ID ignored")
 		return
 	case len(s.castSessions) >= maxCasts:
-		s.refuseCast(cmd.ID, ports.CaptureReasonNone, errCastLimit)
+		s.refuseCast(cmd.ID, domain.CaptureReasonNone, errCastLimit)
 		return
 	case s.protected():
-		s.refuseCast(cmd.ID, ports.CaptureReasonNone, errCastProtected)
+		s.refuseCast(cmd.ID, domain.CaptureReasonNone, errCastProtected)
 		return
 	}
 	src := &captureSource{kind: srcDead}
 	open := ports.CaptureSessionOpen{}
-	gone := ports.CaptureReasonOutputGone
+	gone := domain.CaptureReasonOutputGone
 	if cmd.Window != 0 {
-		gone = ports.CaptureReasonWindowGone
+		gone = domain.CaptureReasonWindowGone
 		if w := s.windows[cmd.Window]; w != nil && w.mapped && w.toplevel != nil {
 			src = &captureSource{kind: srcWindow, window: cmd.Window, gen: w.gen}
 			open.Window = cmd.Window
@@ -172,7 +173,7 @@ func (s *Server) openCast(cmd ports.CastCommand) {
 	s.castSessions[cmd.ID], s.castByCore[c.id] = c, c
 	s.emit(open)
 	s.log.Info().Uint64("cast", cmd.ID).Uint64("session", c.id).Int("w", c.size.X).Int("h", c.size.Y).Msg("cast open")
-	c.push(ports.CastEvent{Kind: ports.CastSize, Width: c.size.X, Height: c.size.Y})
+	c.push(ports.CastEvent{Kind: domain.CastSize, Width: c.size.X, Height: c.size.Y})
 }
 
 // state applies what core decided about the cast.
@@ -193,13 +194,13 @@ func (c *castSession) refresh() {
 	fate, rect, ok := c.follow()
 	switch {
 	case fate == targetWorkspaceGone:
-		c.end(ports.CaptureReasonWorkspaceGone, nil, true, true)
+		c.end(domain.CaptureReasonWorkspaceGone, nil, true, true)
 	case fate == targetEmpty:
 		c.s.log.Info().Uint64("cast", c.cast).Msg("cast end: target empty")
-		c.end(ports.CaptureReasonOutputGone, nil, true, true)
+		c.end(domain.CaptureReasonOutputGone, nil, true, true)
 	case ok && image.Pt(rect.Dx(), rect.Dy()) != c.size:
 		c.size = image.Pt(rect.Dx(), rect.Dy())
-		c.push(ports.CastEvent{Kind: ports.CastSize, Width: c.size.X, Height: c.size.Y})
+		c.push(ports.CastEvent{Kind: domain.CastSize, Width: c.size.X, Height: c.size.Y})
 	}
 }
 
@@ -208,7 +209,7 @@ func (c *castSession) refresh() {
 // for its own CastClose). A capture that still writes into the adapter's
 // buffer finishes first: its CastFrameDone, then CastStopped, so CastStopped
 // means the buffers are the adapter's again.
-func (c *castSession) end(reason ports.CaptureReason, err error, notify, announce bool) {
+func (c *castSession) end(reason domain.CaptureReason, err error, notify, announce bool) {
 	if c.stopped {
 		return
 	}
@@ -236,14 +237,14 @@ func (c *castSession) end(reason ports.CaptureReason, err error, notify, announc
 // finish tells the adapter the cast is over.
 func (c *castSession) finish() {
 	if c.announce {
-		c.push(ports.CastEvent{Kind: ports.CastStopped, Reason: c.endReason, Err: c.endErr})
+		c.push(ports.CastEvent{Kind: domain.CastStopped, Reason: c.endReason, Err: c.endErr})
 	}
 }
 
 // frameDone answers the frame the adapter waits for.
 func (c *castSession) frameDone(err error, at time.Time) {
 	c.waiting = false
-	c.push(ports.CastEvent{Kind: ports.CastFrameDone, Buf: c.frame.Buf, Err: err, Time: at})
+	c.push(ports.CastEvent{Kind: domain.CastFrameDone, Buf: c.frame.Buf, Err: err, Time: at})
 	c.frame = ports.CastCommand{}
 }
 
@@ -274,7 +275,7 @@ func (c *castSession) retry(why error) {
 func (c *castSession) attempt() {
 	s := c.s
 	if s.protected() {
-		c.end(ports.CaptureReasonNone, errCastProtected, true, true)
+		c.end(domain.CaptureReasonNone, errCastProtected, true, true)
 		return
 	}
 	o, rect, hidden, ok := c.geometry()
@@ -380,7 +381,7 @@ func (s *Server) castFlip(output string, f *ports.FlipInfo) {
 			at = flipTime(f)
 		}
 		c.dirty = false
-		c.push(ports.CastEvent{Kind: ports.CastDamage, Time: at})
+		c.push(ports.CastEvent{Kind: domain.CastDamage, Time: at})
 	}
 }
 
@@ -400,7 +401,7 @@ func flipTime(f *ports.FlipInfo) time.Time {
 // is drawn with its toplevel (captureWindowScene), so its commits, map,
 // unmap and reposition mark the casts of the toplevel it hangs from, found
 // through the same parent chain as toplevelRoot.
-func (s *Server) castCommitted(id ports.WindowID) {
+func (s *Server) castCommitted(id domain.WindowID) {
 	if len(s.castSessions) == 0 {
 		return
 	}

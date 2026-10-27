@@ -7,6 +7,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/core/motion"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -166,7 +167,7 @@ func (c *Core) swipeUpdate(u ports.SwipeUpdate) bool {
 		}
 		now := c.now()
 		shots := c.snapshot(now)
-		changed := m.overviewScroll(ports.PointerAxis{Source: ports.AxisFinger,
+		changed := m.overviewScroll(ports.PointerAxis{Source: domain.AxisFinger,
 			Horizontal: ports.ScrollAxis{Set: true, Value: u.DX * c.swipeSign()},
 			Vertical:   ports.ScrollAxis{Set: true, Value: u.DY * c.swipeSign()}})
 		if changed {

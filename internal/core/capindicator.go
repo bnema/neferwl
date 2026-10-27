@@ -4,6 +4,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -47,7 +48,7 @@ func (c *Core) captureFrame(v ports.CaptureFrameTaken) bool {
 		s.recording, changed = true, true
 	}
 	t := capTarget{output: v.Output, workspace: v.Workspace, window: v.Window, rect: v.Region}
-	if _, reason := c.capResolve(t); reason != ports.CaptureReasonNone {
+	if _, reason := c.capResolve(t); reason != domain.CaptureReasonNone {
 		// Nothing of the target is left on screen to mark.
 		return changed
 	}
@@ -181,7 +182,7 @@ func (c *Core) captureIndicators(sc *screen) []ports.CaptureIndicator {
 	out := c.capt.marks[:0]
 	add := func(t capTarget) {
 		r, reason := c.capResolve(t)
-		if reason != ports.CaptureReasonNone || r.sc != sc {
+		if reason != domain.CaptureReasonNone || r.sc != sc {
 			return
 		}
 		o := sc.mon.Output()

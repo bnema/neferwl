@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -26,7 +27,7 @@ func linkServer(t *testing.T) *Server {
 	return s
 }
 
-func solid(id ports.WindowID) ports.SurfaceContent {
+func solid(id domain.WindowID) ports.SurfaceContent {
 	return ports.SurfaceContent{ID: id, Solid: &ports.SolidColor{}}
 }
 
@@ -110,7 +111,7 @@ func TestContentBatchAttachSeedsLiveWindows(t *testing.T) {
 	s.publish(t, solid(1), solid(2), solid(3), ports.SurfaceContent{ID: 2}, solid(1))
 	in, _ := s.AttachOutput("A")
 	b := nextBatch(t, in)
-	got := map[ports.WindowID]uint64{}
+	got := map[domain.WindowID]uint64{}
 	for _, c := range b.Items {
 		got[c.ID] = c.Seq
 	}
@@ -212,9 +213,9 @@ func TestDetachOldHandleKeepsReplacedLink(t *testing.T) {
 // keeps up.
 func TestContentBatchCycleAllocations(t *testing.T) {
 	s := &Server{
-		contentSeq: map[ports.WindowID]uint64{},
-		damage:     map[ports.WindowID][]ports.SeqDamage{},
-		latest:     map[ports.WindowID]ports.SurfaceContent{},
+		contentSeq: map[domain.WindowID]uint64{},
+		damage:     map[domain.WindowID][]ports.SeqDamage{},
+		latest:     map[domain.WindowID]ports.SurfaceContent{},
 	}
 	in, ret := s.attachOutput("A")
 	c := solid(1)
@@ -251,7 +252,7 @@ func TestContentBatchAttachReplaysLargeSet(t *testing.T) {
 	const windows = 100
 	all := make([]ports.SurfaceContent, 0, windows)
 	for id := 1; id <= windows; id++ {
-		all = append(all, solid(ports.WindowID(id)))
+		all = append(all, solid(domain.WindowID(id)))
 	}
 	s.publish(t, all...)
 	attached := make(chan (<-chan *ports.ContentBatch), 1)
@@ -263,7 +264,7 @@ func TestContentBatchAttachReplaysLargeSet(t *testing.T) {
 		t.Fatal("AttachOutput waits for the output to read")
 	}
 	b := nextBatch(t, in)
-	ids := map[ports.WindowID]struct{}{}
+	ids := map[domain.WindowID]struct{}{}
 	for _, c := range b.Items {
 		ids[c.ID] = struct{}{}
 	}
@@ -333,7 +334,7 @@ func TestContentBatchHandshakeNeverStrandsContent(t *testing.T) {
 	var want [windows + 1]uint64
 	s.display.Do(func() {
 		for id := 1; id <= windows; id++ {
-			want[id] = s.contentSeq[ports.WindowID(id)]
+			want[id] = s.contentSeq[domain.WindowID(id)]
 		}
 	})
 	deadline := waylandDeadline(5 * time.Second)
@@ -363,7 +364,7 @@ func TestContentBatchHandshakeNeverStrandsContent(t *testing.T) {
 func (s *Server) publishRound(windows int) {
 	s.display.Do(func() {
 		for id := 1; id <= windows; id++ {
-			s.emitContent(solid(ports.WindowID(id)), damage{full: true})
+			s.emitContent(solid(domain.WindowID(id)), damage{full: true})
 		}
 	})
 }

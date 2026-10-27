@@ -5,7 +5,7 @@ import (
 	"testing"
 	"testing/synctest"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func monitor() *Monitor {
@@ -214,7 +214,7 @@ func TestEqualSharesAndBorderless(t *testing.T) {
 		m.AddWindow(2)
 		m.AddWindow(3)
 		p = m.Layout()
-		if p[0].Rect.W != 33 || p[1].Rect.W != 33 || p[2].Rect.W != 33 || p[0].Neighbors != ports.SideRight || p[0].Inset != ports.SideRight {
+		if p[0].Rect.W != 33 || p[1].Rect.W != 33 || p[2].Rect.W != 33 || p[0].Neighbors != domain.SideRight || p[0].Inset != domain.SideRight {
 			t.Fatal(p)
 		}
 		// A fourth column scrolls: still 1/3 each.

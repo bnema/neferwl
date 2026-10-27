@@ -8,6 +8,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/extdatacontrol"
 	"github.com/bnema/go-wayland-bindings/server/primaryselection"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
@@ -61,7 +62,7 @@ type clipClient struct {
 	c       *wlturbo.Display
 	manager uint32
 	device  *clipEvents
-	window  ports.WindowID
+	window  domain.WindowID
 }
 
 func newClipClient(t *testing.T, s *Server, dir string, events chan ports.ClientEvent) *clipClient {

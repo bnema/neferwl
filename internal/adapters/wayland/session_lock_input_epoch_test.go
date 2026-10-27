@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	core "github.com/bnema/go-wayland-bindings/client/wayland"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/logging"
@@ -63,7 +65,7 @@ func inputEpochKeyboard(t *testing.T, c *wlturbo.Display) *core.Keyboard {
 	return keyboard
 }
 
-func inputEpochCommitLocker(t *testing.T, s *Server, c *wlturbo.Display, lockSurface *core.Surface, ack func(uint32) error, onConfigure func(func(uint32, uint32, uint32))) (ports.WindowID, lockConfigure) {
+func inputEpochCommitLocker(t *testing.T, s *Server, c *wlturbo.Display, lockSurface *core.Surface, ack func(uint32) error, onConfigure func(func(uint32, uint32, uint32))) (domain.WindowID, lockConfigure) {
 	t.Helper()
 	var cfg lockConfigure
 	onConfigure(func(serial, w, h uint32) { cfg = lockConfigure{serial: serial, width: int(w), height: int(h)} })
@@ -78,7 +80,7 @@ func inputEpochCommitLocker(t *testing.T, s *Server, c *wlturbo.Display, lockSur
 	requestProtocol(t, c, lockSurface.ID(), wayland.SurfaceRequestAttach, shmBuffer(t, c), int32(0), int32(0))
 	requestProtocol(t, c, lockSurface.ID(), wayland.SurfaceRequestCommit)
 	roundtrip(t, c)
-	var id ports.WindowID
+	var id domain.WindowID
 	s.display.Do(func() {
 		surf := s.surfaceOf(findTestSurface(s, lockSurface.ID()))
 		if surf == nil || surf.lock == nil || !surf.lock.mapped {
@@ -96,7 +98,7 @@ func inputEpochCommitLocker(t *testing.T, s *Server, c *wlturbo.Display, lockSur
 //testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func inputEpochLockEvents(t *testing.T, s *Server, events <-chan ports.ClientEvent) []ports.SessionLockChanged {
 	t.Helper()
-	const marker ports.WindowID = ^ports.WindowID(0)
+	const marker domain.WindowID = ^domain.WindowID(0)
 	if !s.display.Do(func() { s.emit(ports.WindowAppID{ID: marker, AppID: "input-epoch-marker"}) }) {
 		t.Fatal("display stopped")
 	}

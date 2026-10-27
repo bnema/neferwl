@@ -6,6 +6,7 @@ import (
 	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/core/layout"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -182,7 +183,7 @@ func TestFocusEntryDuringWorkspaceSlide(t *testing.T) {
 func TestFocusEntryPanelUsesCommonFrameEdge(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _ := flashCore(t)
-		c.setLayers([]ports.LayerSurface{{ID: 90, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 50, ExclusiveZone: 50}})
+		c.setLayers([]ports.LayerSurface{{ID: 90, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 50, ExclusiveZone: 50}})
 		m := c.cur().mon
 		w := m.Current()
 		// Entering from above: the float sits above the tiles, which start a gap

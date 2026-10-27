@@ -5,6 +5,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -15,9 +16,9 @@ func TestOverviewTwoFingerDoesNotNavigate(t *testing.T) {
 		m.ToggleOverview()
 		w, card := m.Current(), m.cardAt(m.Current())
 		for _, axis := range []ports.PointerAxis{
-			{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Value: 1000}},
-			{Source: ports.AxisFinger, Vertical: ports.ScrollAxis{Set: true, Value: 1000}},
-			{Source: ports.AxisFinger, Vertical: ports.ScrollAxis{Stop: true}},
+			{Source: domain.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Value: 1000}},
+			{Source: domain.AxisFinger, Vertical: ports.ScrollAxis{Set: true, Value: 1000}},
+			{Source: domain.AxisFinger, Vertical: ports.ScrollAxis{Stop: true}},
 		} {
 			if err := c.handleInput(context.Background(), axis); err != nil {
 				t.Fatal(err)

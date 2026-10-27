@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -65,7 +67,7 @@ func (r *captureRig) sceneWith(t *testing.T, want bool) ports.Scene {
 	}
 }
 
-func (r *captureRig) layer(id ports.WindowID, layer ports.Layer, keyboard uint32) ports.LayerSurface {
+func (r *captureRig) layer(id domain.WindowID, layer domain.Layer, keyboard uint32) ports.LayerSurface {
 	return ports.LayerSurface{ID: id, Layer: layer, Anchor: ports.AnchorTop | ports.AnchorLeft, Width: 10, Height: 10, Output: "OUT-1", Keyboard: keyboard}
 }
 
@@ -92,9 +94,9 @@ func (r *captureRig) excludedScene(t *testing.T, n int) ports.Scene {
 func TestCaptureSessionOutputTarget(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := captureCore(t)
-		r.client <- ports.CaptureSessionOpen{ID: 1, Output: "OUT-1", Region: ports.Rect{X: -10, Y: 10, W: 50, H: 200}}
+		r.client <- ports.CaptureSessionOpen{ID: 1, Output: "OUT-1", Region: domain.Rect{X: -10, Y: 10, W: 50, H: 200}}
 		st := r.state(t)
-		if !st.Active || st.Hidden || st.Workspace != 0 || st.Output != "OUT-1" || st.Rect != (ports.Rect{X: 0, Y: 10, W: 40, H: 70}) {
+		if !st.Active || st.Hidden || st.Workspace != 0 || st.Output != "OUT-1" || st.Rect != (domain.Rect{X: 0, Y: 10, W: 40, H: 70}) {
 			t.Fatalf("state %+v", st)
 		}
 		// Without an exclusion the scene carries no exclusion and no hidden workspace.
@@ -105,7 +107,7 @@ func TestCaptureSessionOutputTarget(t *testing.T) {
 		r.sceneWith(t, false)
 		// A zero region is the whole output.
 		r.client <- ports.CaptureSessionOpen{ID: 2, Output: "OUT-1"}
-		if st := r.state(t); st.Rect != (ports.Rect{W: 100, H: 80}) {
+		if st := r.state(t); st.Rect != (domain.Rect{W: 100, H: 80}) {
 			t.Fatalf("state %+v", st)
 		}
 
@@ -118,7 +120,7 @@ func TestCaptureSessionWorkspaceTarget(t *testing.T) {
 		r.client <- ports.WindowMapped{ID: 1}
 		scene(t, r.scenes)
 		ws := receive(t, r.workspaces).Outputs[0].Workspaces
-		if ws[0].Frame != (ports.Rect{W: 100, H: 80}) {
+		if ws[0].Frame != (domain.Rect{W: 100, H: 80}) {
 			t.Fatalf("frame %+v", ws[0])
 		}
 		r.client <- ports.CaptureSessionOpen{ID: 1, Workspace: ws[0].ID}
@@ -132,7 +134,7 @@ func TestCaptureSessionWorkspaceTarget(t *testing.T) {
 		r.sceneWith(t, false)
 		// A workspace that does not exist ends the session.
 		r.client <- ports.CaptureSessionOpen{ID: 2, Workspace: 9999}
-		if st := r.state(t); st.Active || st.Reason != ports.CaptureReasonWorkspaceGone || !st.Reason.Terminal() {
+		if st := r.state(t); st.Active || st.Reason != domain.CaptureReasonWorkspaceGone || !st.Reason.Terminal() {
 			t.Fatalf("state %+v", st)
 		}
 
@@ -174,11 +176,11 @@ func TestCaptureSessionTerminalReasons(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := captureCore(t)
 		r.client <- ports.CaptureSessionOpen{ID: 1, Output: "NOPE"}
-		if st := r.state(t); st.Reason != ports.CaptureReasonOutputGone || st.Active {
+		if st := r.state(t); st.Reason != domain.CaptureReasonOutputGone || st.Active {
 			t.Fatalf("state %+v", st)
 		}
-		r.client <- ports.CaptureSessionOpen{ID: 2, Output: "OUT-1", Region: ports.Rect{X: 500, Y: 500, W: 5, H: 5}}
-		if st := r.state(t); st.Reason != ports.CaptureReasonInvalidRegion {
+		r.client <- ports.CaptureSessionOpen{ID: 2, Output: "OUT-1", Region: domain.Rect{X: 500, Y: 500, W: 5, H: 5}}
+		if st := r.state(t); st.Reason != domain.CaptureReasonInvalidRegion {
 			t.Fatalf("state %+v", st)
 		}
 		// An unplugged output ends the session.
@@ -188,7 +190,7 @@ func TestCaptureSessionTerminalReasons(t *testing.T) {
 		}
 		r.output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
 		r.output <- ports.OutputRemoved{Name: "OUT-1"}
-		if st := r.state(t); st.ID != 3 || st.Reason != ports.CaptureReasonOutputGone {
+		if st := r.state(t); st.ID != 3 || st.Reason != domain.CaptureReasonOutputGone {
 			t.Fatalf("state %+v", st)
 		}
 		r.sceneWith(t, false)
@@ -201,13 +203,13 @@ func TestCaptureSessionsAreIndependent(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := captureCore(t)
 		r.client <- ports.CaptureSessionOpen{ID: 1, Output: "OUT-1"}
-		r.client <- ports.CaptureSessionOpen{ID: 2, Output: "OUT-1", Region: ports.Rect{W: 10, H: 10}}
+		r.client <- ports.CaptureSessionOpen{ID: 2, Output: "OUT-1", Region: domain.Rect{W: 10, H: 10}}
 		got := map[uint64]ports.CaptureSessionState{}
 		for len(got) < 2 {
 			st := r.state(t)
 			got[st.ID] = st
 		}
-		if !got[1].Active || !got[2].Active || got[2].Rect != (ports.Rect{W: 10, H: 10}) {
+		if !got[1].Active || !got[2].Active || got[2].Rect != (domain.Rect{W: 10, H: 10}) {
 			t.Fatalf("states %+v", got)
 		}
 		r.client <- ports.CaptureSessionClose{ID: 1}
@@ -227,7 +229,7 @@ func TestCaptureExclusionLayersOverFullscreen(t *testing.T) {
 		scene(t, r.scenes)
 		r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
 		scene(t, r.scenes)
-		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, ports.LayerOverlay, 0), r.layer(11, ports.LayerTop, 0)}}
+		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, domain.LayerOverlay, 0), r.layer(11, domain.LayerTop, 0)}}
 		if s := scene(t, r.scenes); len(s.Layers) != 0 {
 			t.Fatalf("fullscreen should hide layers: %+v", s.Layers)
 		}
@@ -235,7 +237,7 @@ func TestCaptureExclusionLayersOverFullscreen(t *testing.T) {
 		r.client <- ports.CaptureExclusionBegin{Session: 1}
 		r.client <- ports.CaptureExclusionLayer{Session: 1, Layer: 10, Attached: true}
 		r.client <- ports.CaptureExclusionLayer{Session: 1, Layer: 10, Attached: true} // duplicate
-		r.client <- ports.PopupRequest{ID: 20, Parent: 10, Positioner: ports.Positioner{Width: 5, Height: 5, AnchorRect: ports.Rect{W: 1, H: 1}}}
+		r.client <- ports.PopupRequest{ID: 20, Parent: 10, Positioner: ports.Positioner{Width: 5, Height: 5, AnchorRect: domain.Rect{W: 1, H: 1}}}
 		r.client <- ports.PopupMapped{ID: 20}
 		s := r.excludedScene(t, 2)
 		if s.Capture.Session != 1 || s.Capture.Excluded[0] != 10 || s.Capture.Excluded[1] != 20 {
@@ -313,7 +315,7 @@ func TestCaptureExclusionEndKeepsListedLayersExcluded(t *testing.T) {
 		scene(t, r.scenes)
 		r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
 		scene(t, r.scenes)
-		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, ports.LayerOverlay, 0)}}
+		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, domain.LayerOverlay, 0)}}
 		scene(t, r.scenes)
 		r.client <- ports.CaptureSessionOpen{ID: 1, Output: "OUT-1"}
 		r.client <- ports.CaptureExclusionBegin{Session: 1}
@@ -357,7 +359,7 @@ func TestCaptureExclusionLayerBounds(t *testing.T) {
 		r := captureCore(t)
 		r.client <- ports.CaptureSessionOpen{ID: 1, Output: "OUT-1"}
 		r.client <- ports.CaptureExclusionBegin{Session: 1}
-		for id := ports.WindowID(1); id <= ports.MaxExclusionLayers+3; id++ {
+		for id := domain.WindowID(1); id <= ports.MaxExclusionLayers+3; id++ {
 			r.client <- ports.CaptureExclusionLayer{Session: 1, Layer: id, Attached: true}
 		}
 		s := r.excludedScene(t, ports.MaxExclusionLayers)
@@ -378,7 +380,7 @@ func TestCaptureExclusionLayerBounds(t *testing.T) {
 func TestCaptureExclusionTooManyExcluded(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := captureCore(t)
-		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, ports.LayerOverlay, 0)}}
+		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, domain.LayerOverlay, 0)}}
 		scene(t, r.scenes)
 		r.client <- ports.CaptureSessionOpen{ID: 1, Output: "OUT-1"}
 		r.client <- ports.CaptureExclusionBegin{Session: 1}
@@ -387,15 +389,15 @@ func TestCaptureExclusionTooManyExcluded(t *testing.T) {
 		go func() {
 			// Drain the commands while the popups are sent.
 			for cmd := range r.commands {
-				if st, ok := cmd.(ports.CaptureSessionState); ok && st.Reason == ports.CaptureReasonTooManyExcluded {
+				if st, ok := cmd.(ports.CaptureSessionState); ok && st.Reason == domain.CaptureReasonTooManyExcluded {
 					close(stopped)
 					return
 				}
 			}
 		}()
 		for i := range ports.MaxCaptureExcluded {
-			r.client <- ports.PopupRequest{ID: ports.WindowID(100 + i), Parent: 10, Positioner: ports.Positioner{Width: 5, Height: 5, AnchorRect: ports.Rect{W: 1, H: 1}}}
-			r.client <- ports.PopupMapped{ID: ports.WindowID(100 + i)}
+			r.client <- ports.PopupRequest{ID: domain.WindowID(100 + i), Parent: 10, Positioner: ports.Positioner{Width: 5, Height: 5, AnchorRect: domain.Rect{W: 1, H: 1}}}
+			r.client <- ports.PopupMapped{ID: domain.WindowID(100 + i)}
 		}
 		synctest.Wait()
 		select {
@@ -412,14 +414,14 @@ func TestCaptureExclusionTooManyExcluded(t *testing.T) {
 func TestCaptureExclusionKeyboardClamp(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := captureCore(t)
-		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, ports.LayerOverlay, 0), r.layer(11, ports.LayerOverlay, 0)}}
+		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, domain.LayerOverlay, 0), r.layer(11, domain.LayerOverlay, 0)}}
 		scene(t, r.scenes)
 		r.client <- ports.CaptureSessionOpen{ID: 1, Output: "OUT-1"}
 		r.client <- ports.CaptureExclusionBegin{Session: 1}
 		r.client <- ports.CaptureExclusionLayer{Session: 1, Layer: 10, Attached: true}
 		r.excludedScene(t, 1)
 		r.drainCommands()
-		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, ports.LayerOverlay, 1), r.layer(11, ports.LayerOverlay, 1)}}
+		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, domain.LayerOverlay, 1), r.layer(11, domain.LayerOverlay, 1)}}
 		scene(t, r.scenes)
 		for {
 			if f, ok := receive(t, r.commands).(ports.FocusWindow); ok {
@@ -437,7 +439,7 @@ func TestCaptureExclusionKeyboardClamp(t *testing.T) {
 func TestCaptureExclusionKeyboardNone(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := captureCore(t)
-		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, ports.LayerOverlay, 2), r.layer(11, ports.LayerOverlay, 2)}}
+		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, domain.LayerOverlay, 2), r.layer(11, domain.LayerOverlay, 2)}}
 		scene(t, r.scenes)
 		r.client <- ports.CaptureSessionOpen{ID: 1, Output: "OUT-1"}
 		r.client <- ports.CaptureExclusionBegin{Session: 1}
@@ -511,7 +513,7 @@ func TestCaptureExclusionRevisionFence(t *testing.T) {
 func TestCaptureExclusionDetachRetains(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := captureCore(t)
-		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, ports.LayerOverlay, 0)}}
+		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, domain.LayerOverlay, 0)}}
 		scene(t, r.scenes)
 		r.client <- ports.CaptureSessionOpen{ID: 1, Output: "OUT-1"}
 		r.client <- ports.CaptureExclusionBegin{Session: 1}
@@ -532,7 +534,7 @@ func TestCaptureExclusionDetachRetains(t *testing.T) {
 func TestCaptureExclusionUnmapThenDetach(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := captureCore(t)
-		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, ports.LayerOverlay, 0)}}
+		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, domain.LayerOverlay, 0)}}
 		scene(t, r.scenes)
 		r.client <- ports.CaptureSessionOpen{ID: 1, Output: "OUT-1"}
 		r.client <- ports.CaptureExclusionBegin{Session: 1}
@@ -580,8 +582,8 @@ func TestCaptureFrameFlashRunsOnTheCoreClock(t *testing.T) {
 		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
 		// A wlr-screencopy frame: no session.
-		client <- ports.CaptureFrameTaken{Output: "OUT-1", Region: ports.Rect{X: 10, Y: 10, W: 20, H: 20}}
-		if s := scene(t, scenes); len(s.CaptureIndicators) != 1 || s.CaptureIndicators[0].Rect != (ports.Rect{X: 10, Y: 10, W: 20, H: 20}) || s.CaptureIndicators[0].Pill {
+		client <- ports.CaptureFrameTaken{Output: "OUT-1", Region: domain.Rect{X: 10, Y: 10, W: 20, H: 20}}
+		if s := scene(t, scenes); len(s.CaptureIndicators) != 1 || s.CaptureIndicators[0].Rect != (domain.Rect{X: 10, Y: 10, W: 20, H: 20}) || s.CaptureIndicators[0].Pill {
 			t.Fatalf("indicators %+v", s.CaptureIndicators)
 		}
 		now.Store(1)
@@ -594,8 +596,8 @@ func TestCaptureFrameFlashRunsOnTheCoreClock(t *testing.T) {
 }
 
 // popupIDs lists the popups of a scene.
-func popupIDs(s ports.Scene) []ports.WindowID {
-	var ids []ports.WindowID
+func popupIDs(s ports.Scene) []domain.WindowID {
+	var ids []domain.WindowID
 	for _, w := range s.Windows {
 		if w.Popup {
 			ids = append(ids, w.ID)
@@ -610,11 +612,11 @@ func popupIDs(s ports.Scene) []ports.WindowID {
 func TestCaptureExclusionPopupOfHUDLayerNeverLeaksWhenTheExclusionEnds(t *testing.T) {
 	setup := func(t *testing.T) *captureRig {
 		r := captureCore(t)
-		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, ports.LayerOverlay, 0)}}
+		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, domain.LayerOverlay, 0)}}
 		r.client <- ports.CaptureSessionOpen{ID: 1, Output: "OUT-1"}
 		r.client <- ports.CaptureExclusionBegin{Session: 1}
 		r.client <- ports.CaptureExclusionLayer{Session: 1, Layer: 10, Attached: true}
-		r.client <- ports.PopupRequest{ID: 20, Parent: 10, Positioner: ports.Positioner{Width: 5, Height: 5, AnchorRect: ports.Rect{W: 1, H: 1}}}
+		r.client <- ports.PopupRequest{ID: 20, Parent: 10, Positioner: ports.Positioner{Width: 5, Height: 5, AnchorRect: domain.Rect{W: 1, H: 1}}}
 		r.client <- ports.PopupMapped{ID: 20}
 		for {
 			s := r.excludedScene(t, 2)

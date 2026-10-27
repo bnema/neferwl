@@ -8,6 +8,8 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -50,7 +52,7 @@ func TestSubmitHiddenDrawsChildAndRebasesRegion(t *testing.T) {
 	p := NewPipeline(context.Background(), replies)
 	child, _ := childMock(t, 200, 100)
 	var scene ports.Scene
-	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 		scene = s
 		return nil, nil
 	}).Once()

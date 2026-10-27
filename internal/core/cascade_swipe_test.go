@@ -5,6 +5,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -12,7 +13,7 @@ func TestCascadeSwipeAxes(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, func(c *ports.Config) { c.Layout.Overflow = "cascade"; c.Layout.MaxColumns = 3 })
 		for i := 1; i <= 7; i++ {
-			r.mapWindow(t, ports.WindowID(i))
+			r.mapWindow(t, domain.WindowID(i))
 		}
 		r.begin()
 		s := r.move(t, 0, -400)
@@ -38,7 +39,7 @@ func TestCascadeDiscreteSwipeRevealsBand(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, func(c *ports.Config) { c.Layout.Overflow = "cascade"; c.Layout.MaxColumns = 3; c.Animations.On = false })
 		for i := 1; i <= 4; i++ {
-			r.mapWindow(t, ports.WindowID(i))
+			r.mapWindow(t, domain.WindowID(i))
 		}
 		r.begin()
 		for range 10 {

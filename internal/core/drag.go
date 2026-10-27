@@ -5,6 +5,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -48,7 +49,7 @@ type dragState struct {
 	id     WindowID
 	button uint32
 	resize bool
-	edges  ports.ResizeEdges
+	edges  domain.ResizeEdges
 	// start is the cursor at the press, global; from is the float as it
 	// was, restored by Escape; rect is its place then.
 	start  [2]float64
@@ -96,9 +97,9 @@ func (c *Core) startDrag(ctx context.Context, v ports.PointerButton) (bool, erro
 	if v.Button == btnRight && !floating {
 		return false, nil
 	}
-	var edges ports.ResizeEdges
+	var edges domain.ResizeEdges
 	if v.Button == btnRight {
-		edges = ports.ResizeRight | ports.ResizeBottom
+		edges = domain.ResizeRight | domain.ResizeBottom
 	}
 	return true, c.beginDrag(ctx, id, v.Button, v.Button == btnRight, edges)
 }
@@ -140,7 +141,7 @@ func (c *Core) clientDrag(ctx context.Context, v ports.WindowMoveRequest) error 
 	return c.beginDrag(ctx, v.ID, button, v.Resize, v.Edges)
 }
 
-func (c *Core) beginDrag(ctx context.Context, id WindowID, button uint32, resize bool, edges ports.ResizeEdges) error {
+func (c *Core) beginDrag(ctx context.Context, id WindowID, button uint32, resize bool, edges domain.ResizeEdges) error {
 	if err := c.dismissGrabs(ctx, id); err != nil {
 		return err
 	}

@@ -10,6 +10,8 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/fifo"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
@@ -147,10 +149,10 @@ func (p *presentSink) fill() {
 	}
 }
 
-func flipOf(seq uint64, shows ...ports.WindowID) *ports.FlipInfo {
+func flipOf(seq uint64, shows ...domain.WindowID) *ports.FlipInfo {
 	f := &ports.FlipInfo{Seq: seq}
 	if len(shows) > 0 {
-		f.Shows = map[ports.WindowID]uint64{}
+		f.Shows = map[domain.WindowID]uint64{}
 		for _, id := range shows {
 			f.Shows[id] = seq
 		}

@@ -6,6 +6,8 @@ import (
 	"slices"
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
+
 	wlr "github.com/bnema/go-wayland-bindings/server/wlrforeigntoplevelmanagement"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
@@ -19,7 +21,7 @@ import (
 type toplevelManager struct {
 	s       *Server
 	res     *wlr.ZwlrForeignToplevelManagerV1
-	handles map[ports.WindowID]*toplevelHandle
+	handles map[domain.WindowID]*toplevelHandle
 }
 
 // toplevelHandle is one window seen by one manager, with what it was last
@@ -34,7 +36,7 @@ type toplevelHandle struct {
 
 func registerForeignToplevel(d *server.Display, s *Server) error {
 	return wlr.NewZwlrForeignToplevelManagerV1Global(d, 3, func(c server.Client, v, id uint32) {
-		m := &toplevelManager{s: s, handles: map[ports.WindowID]*toplevelHandle{}}
+		m := &toplevelManager{s: s, handles: map[domain.WindowID]*toplevelHandle{}}
 		r, err := wlr.NewZwlrForeignToplevelManagerV1(c, int32(v), id, m)
 		if err != nil {
 			return
@@ -42,7 +44,7 @@ func registerForeignToplevel(d *server.Display, s *Server) error {
 		m.res = r
 		s.toplevelManagers = append(s.toplevelManagers, m)
 		r.OnDestroy = func() { s.toplevelManagers = removeItem(s.toplevelManagers, m) }
-		ids := make([]ports.WindowID, 0, len(s.windows))
+		ids := make([]domain.WindowID, 0, len(s.windows))
 		for id, w := range s.windows {
 			if w.toplevel != nil && w.mapped {
 				ids = append(ids, id)
@@ -109,7 +111,7 @@ func (m *toplevelManager) refresh(w *window) {
 }
 
 // closed sends closed for w; the client then destroys the handle.
-func (m *toplevelManager) closed(id ports.WindowID) {
+func (m *toplevelManager) closed(id domain.WindowID) {
 	h := m.handles[id]
 	if h == nil {
 		return
@@ -198,7 +200,7 @@ func (s *Server) toplevelChanged(w *window) {
 }
 
 // toplevelClosed tells every manager that w unmapped.
-func (s *Server) toplevelClosed(id ports.WindowID) {
+func (s *Server) toplevelClosed(id domain.WindowID) {
 	for _, m := range s.toplevelManagers {
 		m.closed(id)
 	}
@@ -245,7 +247,7 @@ func (s *Server) refreshToplevels() {
 // handle are ignored.
 type toplevelRequests struct {
 	s      *Server
-	id     ports.WindowID
+	id     domain.WindowID
 	closed bool
 }
 

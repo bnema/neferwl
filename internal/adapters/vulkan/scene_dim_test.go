@@ -6,6 +6,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -16,14 +17,14 @@ func TestSceneDimOrder(t *testing.T) {
 	s := ports.Scene{
 		Dim: 0.4, Border: ports.Border{Active: "#ffffff"},
 		Windows: []ports.SceneWindow{
-			{ID: 1, Rect: ports.Rect{W: 20, H: 20}},
-			{ID: 2, Floating: true, Hidden: true, Rect: ports.Rect{W: 20, H: 20}},
-			{ID: 3, Floating: true, Popup: true, Rect: ports.Rect{W: 20, H: 20}},
-			{ID: 4, Floating: true, Rect: ports.Rect{W: 0, H: 20}},
-			{ID: 5, Floating: true, Rect: ports.Rect{X: 30, W: 20, H: 20}},
-			{ID: 6, Floating: true, Rect: ports.Rect{X: 50, W: 20, H: 20}},
+			{ID: 1, Rect: domain.Rect{W: 20, H: 20}},
+			{ID: 2, Floating: true, Hidden: true, Rect: domain.Rect{W: 20, H: 20}},
+			{ID: 3, Floating: true, Popup: true, Rect: domain.Rect{W: 20, H: 20}},
+			{ID: 4, Floating: true, Rect: domain.Rect{W: 0, H: 20}},
+			{ID: 5, Floating: true, Rect: domain.Rect{X: 30, W: 20, H: 20}},
+			{ID: 6, Floating: true, Rect: domain.Rect{X: 50, W: 20, H: 20}},
 		},
-		Separators: []ports.Separator{{Rect: ports.Rect{W: 80, H: 1}, Active: true}},
+		Separators: []ports.Separator{{Rect: domain.Rect{W: 80, H: 1}, Active: true}},
 	}
 	walk := func(s ports.Scene) []draw {
 		return r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 80, 60)))
@@ -69,8 +70,8 @@ func TestSceneDimOrder(t *testing.T) {
 func TestSceneDimBehind(t *testing.T) {
 	r := &Renderer{width: 80, height: 60}
 	s := ports.Scene{Dim: 0.3, DimBehind: true, Windows: []ports.SceneWindow{
-		{ID: 1, Preview: 0.5, Rect: ports.Rect{X: 10, W: 20, H: 20}},
-		{ID: 2, Floating: true, Rect: ports.Rect{X: 40, W: 20, H: 20}},
+		{ID: 1, Preview: 0.5, Rect: domain.Rect{X: 10, W: 20, H: 20}},
+		{ID: 2, Floating: true, Rect: domain.Rect{X: 40, W: 20, H: 20}},
 	}}
 	ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 80, 60)))
 	if len(ds) != 3 { // veil, two windows
@@ -90,10 +91,10 @@ func TestSceneWindowDim(t *testing.T) {
 	r := &Renderer{width: 80, height: 60}
 	s := ports.Scene{Border: ports.Border{Width: 1, Inactive: "#ffffff"},
 		Windows: []ports.SceneWindow{
-			{ID: 1, Floating: true, Dim: 0.5, Inset: ports.SideAll, Rect: ports.Rect{X: -10, W: 20, H: 20}},
-			{ID: 2, Floating: true, Inset: ports.SideAll, Rect: ports.Rect{X: 20, W: 20, H: 20}},
+			{ID: 1, Floating: true, Dim: 0.5, Inset: domain.SideAll, Rect: domain.Rect{X: -10, W: 20, H: 20}},
+			{ID: 2, Floating: true, Inset: domain.SideAll, Rect: domain.Rect{X: 20, W: 20, H: 20}},
 		},
-		Separators: []ports.Separator{{Window: 1, Rect: ports.Rect{X: -10, W: 20, H: 1}}},
+		Separators: []ports.Separator{{Window: 1, Rect: domain.Rect{X: -10, W: 20, H: 1}}},
 	}
 	ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 80, 60)))
 	// Window 1, its border, its veil (clipped to the output), window 2.
@@ -128,11 +129,11 @@ func TestDimAlpha(t *testing.T) {
 func TestSceneDimPartialDamage(t *testing.T) {
 	r := &Renderer{width: 80, height: 60}
 	s := ports.Scene{Seq: 8, Dim: 0.5, Windows: []ports.SceneWindow{
-		{ID: 1, Rect: ports.Rect{W: 40, H: 40}},
-		{ID: 2, Floating: true, Rect: ports.Rect{X: 50, W: 20, H: 20}},
+		{ID: 1, Rect: domain.Rect{W: 40, H: 40}},
+		{ID: 2, Floating: true, Rect: domain.Rect{X: 50, W: 20, H: 20}},
 	}}
-	tg := &target{valid: true, sceneSeq: 8, windows: map[ports.WindowID]heldWindow{1: {seq: 1, rect: image.Rect(0, 0, 40, 40)}, 2: {seq: 1, rect: image.Rect(50, 0, 70, 20)}}}
-	contents := map[ports.WindowID]ports.SurfaceContent{1: {Seq: 2}, 2: {Seq: 1}}
+	tg := &target{valid: true, sceneSeq: 8, windows: map[domain.WindowID]heldWindow{1: {seq: 1, rect: image.Rect(0, 0, 40, 40)}, 2: {seq: 1, rect: image.Rect(50, 0, 70, 20)}}}
+	contents := map[domain.WindowID]ports.SurfaceContent{1: {Seq: 2}, 2: {Seq: 1}}
 	dmg := newDamage(tg, s, image.Rect(0, 0, 80, 60))
 	ds := r.draws(s, contents, dmg)
 	dmg.finish()
@@ -153,17 +154,17 @@ func TestRendererDimBlendAndDamage(t *testing.T) {
 	defer r.Close()
 	s := ports.Scene{Seq: 10, Background: "#ffffff", Dim: 0.5,
 		Windows: []ports.SceneWindow{
-			{ID: 1, Rect: ports.Rect{W: 20, H: 20}},
-			{ID: 2, Floating: true, Rect: ports.Rect{X: 30, W: 10, H: 10}},
-			{ID: 3, Popup: true, Rect: ports.Rect{X: 42, W: 8, H: 8}},
+			{ID: 1, Rect: domain.Rect{W: 20, H: 20}},
+			{ID: 2, Floating: true, Rect: domain.Rect{X: 30, W: 10, H: 10}},
+			{ID: 3, Popup: true, Rect: domain.Rect{X: 42, W: 8, H: 8}},
 		},
-		Layers: []ports.SceneLayer{{ID: 4, Layer: ports.LayerTop, Rect: ports.Rect{X: 52, W: 8, H: 8}}},
+		Layers: []ports.SceneLayer{{ID: 4, Layer: domain.LayerTop, Rect: domain.Rect{X: 52, W: 8, H: 8}}},
 	}
 	white := solidContent(t, 20, 20, color.RGBA{255, 255, 255, 255})
 	white.Seq = 1
 	popup := solidContent(t, 8, 8, color.RGBA{255, 255, 255, 255})
 	top := solidContent(t, 8, 8, color.RGBA{255, 255, 255, 255})
-	contents := map[ports.WindowID]ports.SurfaceContent{1: white, 3: popup, 4: top}
+	contents := map[domain.WindowID]ports.SurfaceContent{1: white, 3: popup, 4: top}
 	check := func() {
 		t.Helper()
 		if err := render(r, s, contents); err != nil {
@@ -194,7 +195,7 @@ func TestRendererDimBlendAndDamage(t *testing.T) {
 		}
 	}
 	white.Seq, white.Version = 2, 2
-	white.DamageHistory = []ports.SeqDamage{{Seq: 1, Full: true}, {Seq: 2, Rects: []ports.Rect{{X: 2, Y: 2, W: 3, H: 3}}}}
+	white.DamageHistory = []ports.SeqDamage{{Seq: 1, Full: true}, {Seq: 2, Rects: []domain.Rect{{X: 2, Y: 2, W: 3, H: 3}}}}
 	contents[1] = white
 	before := r.redrawn
 	if err := render(r, s, contents); err != nil {
@@ -215,18 +216,18 @@ func TestRendererWindowDimBlendAndDamage(t *testing.T) {
 	defer r.Close()
 	s := ports.Scene{Seq: 20, Background: "#ffffff", Border: ports.Border{Width: 1, Inactive: "#ffffff"},
 		Windows: []ports.SceneWindow{
-			{ID: 1, Floating: true, Dim: 0.5, Inset: ports.SideAll, Rect: ports.Rect{W: 20, H: 20}},
-			{ID: 2, Floating: true, Inset: ports.SideAll, Rect: ports.Rect{X: 30, W: 20, H: 20}},
+			{ID: 1, Floating: true, Dim: 0.5, Inset: domain.SideAll, Rect: domain.Rect{W: 20, H: 20}},
+			{ID: 2, Floating: true, Inset: domain.SideAll, Rect: domain.Rect{X: 30, W: 20, H: 20}},
 		},
 		Separators: []ports.Separator{
-			{Window: 1, Rect: ports.Rect{W: 20, H: 1}},
-			{Window: 2, Rect: ports.Rect{X: 30, W: 20, H: 1}},
+			{Window: 1, Rect: domain.Rect{W: 20, H: 1}},
+			{Window: 2, Rect: domain.Rect{X: 30, W: 20, H: 1}},
 		},
 	}
 	peek := solidContent(t, 18, 18, color.RGBA{255, 255, 255, 255})
 	peek.Seq = 1
 	sel := solidContent(t, 18, 18, color.RGBA{255, 255, 255, 255})
-	contents := map[ports.WindowID]ports.SurfaceContent{1: peek, 2: sel}
+	contents := map[domain.WindowID]ports.SurfaceContent{1: peek, 2: sel}
 	grey, white := color.RGBA{128, 128, 128, 255}, color.RGBA{255, 255, 255, 255}
 	if err := render(r, s, contents); err != nil {
 		t.Fatal(err)
@@ -244,7 +245,7 @@ func TestRendererWindowDimBlendAndDamage(t *testing.T) {
 		t.Fatal(err)
 	}
 	peek.Seq, peek.Version = 2, 2
-	peek.DamageHistory = []ports.SeqDamage{{Seq: 1, Full: true}, {Seq: 2, Rects: []ports.Rect{{X: 3, Y: 3, W: 1, H: 1}}}}
+	peek.DamageHistory = []ports.SeqDamage{{Seq: 1, Full: true}, {Seq: 2, Rects: []domain.Rect{{X: 3, Y: 3, W: 1, H: 1}}}}
 	contents[1] = peek
 	if err := render(r, s, contents); err != nil {
 		t.Fatal(err)

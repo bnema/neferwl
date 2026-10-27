@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/bnema/neferwl/internal/core/layout"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -864,7 +865,7 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 	if a.Vertical.Stop || a.Horizontal.Stop {
 		return false
 	}
-	finger := a.Source == ports.AxisFinger
+	finger := a.Source == domain.AxisFinger
 	if finger && m.ov.scrolled {
 		return false
 	}
@@ -881,7 +882,7 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 	add := func(acc *float64, ax ports.ScrollAxis) {
 		switch {
 		case !ax.Set:
-		case a.Source == ports.AxisWheel:
+		case a.Source == domain.AxisWheel:
 			*acc += float64(ax.V120) / 120 * overviewScrollStep
 		default:
 			*acc += ax.Value

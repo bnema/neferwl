@@ -3,7 +3,7 @@ package screencast
 import (
 	"time"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/purego-pipewire/pipewire"
 	"github.com/bnema/zerobus"
 )
@@ -20,7 +20,7 @@ type stream struct {
 
 	// Target.
 	output string
-	window ports.WindowID
+	window domain.WindowID
 	cursor bool
 	maxFPS int
 	// Stream.Parameters: position and size in the compositor space.

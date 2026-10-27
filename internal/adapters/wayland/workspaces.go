@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/binary"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	ext "github.com/bnema/go-wayland-bindings/server/extworkspace"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
@@ -161,7 +163,7 @@ type workspaceFrame struct {
 	handle *server.Resource
 	id     uint64
 	sent   bool
-	last   ports.Rect
+	last   domain.Rect
 }
 
 func (*workspaceFrame) Destroy(*imagecapture.NeferwlWorkspaceFrameV1) {}

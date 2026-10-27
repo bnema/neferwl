@@ -2,14 +2,14 @@ package layout
 
 import (
 	"github.com/bnema/neferwl/internal/core/geom"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // WindowID identifies a window without owning a client connection.
-type WindowID = ports.WindowID
+type WindowID = domain.WindowID
 
 // Rect is a logical-pixel rectangle.
-type Rect = ports.Rect
+type Rect = domain.Rect
 
 // Placement describes a window's presentation geometry.
 type Placement = geom.Placement

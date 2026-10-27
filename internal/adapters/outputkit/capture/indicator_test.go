@@ -6,6 +6,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -15,7 +17,7 @@ import (
 func indicatorScene() ports.Scene {
 	s := excludedTestScene()
 	s.Capture = nil
-	s.CaptureIndicators = []ports.CaptureIndicator{{Rect: ports.Rect{W: 10, H: 10}}, {Pill: true, Rect: ports.Rect{X: 1, Y: 1, W: 3, H: 3}}}
+	s.CaptureIndicators = []ports.CaptureIndicator{{Rect: domain.Rect{W: 10, H: 10}}, {Pill: true, Rect: domain.Rect{X: 1, Y: 1, W: 3, H: 3}}}
 	return s
 }
 
@@ -46,7 +48,7 @@ func TestSubmitPlainRendersWithoutIndicatorFirst(t *testing.T) {
 	frame.EXPECT().Done().Return((*os.File)(nil))
 	frame.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.Anything, 8).Return(nil).Once()
 	var rendered []ports.Scene
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 		rendered = append(rendered, s)
 		return nil, nil
 	}).Once()
@@ -123,7 +125,7 @@ func TestSubmitPlainServesHintLabelScenesWithoutLabels(t *testing.T) {
 	frame.EXPECT().Done().Return((*os.File)(nil))
 	frame.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.Anything, 8).Return(nil).Once()
 	var rendered []ports.Scene
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 		rendered = append(rendered, s)
 		return nil, nil
 	}).Once()
@@ -131,7 +133,7 @@ func TestSubmitPlainServesHintLabelScenesWithoutLabels(t *testing.T) {
 	r.EXPECT().EndCapture(frame).Return().Once()
 	s := excludedTestScene()
 	s.Capture = nil
-	s.Overlays = []ports.Overlay{{ID: 1, Seq: 1, Kind: ports.OverlayLabel, Text: "f"}}
+	s.Overlays = []ports.Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Text: "f"}}
 	reqs := []ports.CaptureRequest{pipelineRequest(t, 1)}
 	require.False(t, reqs[0].Indicate)
 	took, done, err := p.SubmitPlain(r, s, nil, reqs)

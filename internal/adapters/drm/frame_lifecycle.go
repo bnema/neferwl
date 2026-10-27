@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -43,14 +44,14 @@ type pendingFrame struct {
 	security ports.SecurityState // admission epoch checked again at KMS boundary
 	frame    bool
 	queued   uint64
-	zeroCopy ports.WindowID // window shown without composition
+	zeroCopy domain.WindowID // window shown without composition
 	async    bool
 	// scanoutReason and overlayReason are the refusal reasons of the frame,
 	// taken at commit: a later frame may decide differently before the flip.
 	scanoutReason, overlayReason string
 	// animating: the scene shows a running animation; its flip wakes core.
 	animating bool
-	shows     map[ports.WindowID]uint64
+	shows     map[domain.WindowID]uint64
 	// fences are duplicates of the fences the commit waits on, owned until
 	// the commit ends. composed is set when the frame was rendered.
 	fences   []*os.File

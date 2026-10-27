@@ -5,6 +5,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -25,18 +26,18 @@ func ruleOn() *bool  { v := true; return &v }
 func ruleOff() *bool { v := false; return &v }
 
 // mapApp maps a window with an app ID and returns the state once it is in.
-func (r *multiRig) mapApp(t *testing.T, id ports.WindowID, appID string) ports.State {
+func (r *multiRig) mapApp(t *testing.T, id domain.WindowID, appID string) ports.State {
 	t.Helper()
 	r.client <- ports.WindowMapped{ID: id, AppID: appID}
 	return r.stateWith(t, id)
 }
 
-func (r *multiRig) stateWith(t *testing.T, id ports.WindowID) ports.State {
+func (r *multiRig) stateWith(t *testing.T, id domain.WindowID) ports.State {
 	t.Helper()
 	return stateAfter(t, r.state, func(st ports.State) bool { return stWindow(st, id) != nil })
 }
 
-func stWindow(st ports.State, id ports.WindowID) *ports.WindowState {
+func stWindow(st ports.State, id domain.WindowID) *ports.WindowState {
 	for i := range st.Windows {
 		if st.Windows[i].ID == id {
 			return &st.Windows[i]
@@ -45,7 +46,7 @@ func stWindow(st ports.State, id ports.WindowID) *ports.WindowState {
 	return nil
 }
 
-func stFocus(st ports.State) ports.WindowID {
+func stFocus(st ports.State) domain.WindowID {
 	if st.Window == nil {
 		return 0
 	}
@@ -108,7 +109,7 @@ func TestRuleNamedWorkspaceKeepsFocusAndView(t *testing.T) {
 			t.Fatalf("rule moved focus or view: %+v", st)
 		}
 		// The workspace shows its window when the user goes there.
-		r.key(t, "d", ports.ModAlt)
+		r.key(t, "d", domain.ModAlt)
 		st = stateAfter(t, r.state, func(st ports.State) bool { return stOutput(st, "DP-1").Workspace == "dev" })
 		if stFocus(st) != 2 {
 			t.Fatalf("dev window not focused on arrival: %d", stFocus(st))
@@ -128,7 +129,7 @@ func TestRuleNamedWorkspaceFloat(t *testing.T) {
 		if w := stWindow(st, 2); w.WorkspaceName != "dev" || !w.Floating || stFocus(st) != 1 {
 			t.Fatalf("%+v focus %d", w, stFocus(st))
 		}
-		r.key(t, "d", ports.ModAlt)
+		r.key(t, "d", domain.ModAlt)
 		st = stateAfter(t, r.state, func(st ports.State) bool { return stOutput(st, "DP-1").Workspace == "dev" })
 		if stFocus(st) != 2 {
 			t.Fatalf("quiet float not focused on arrival: %d", stFocus(st))
@@ -198,7 +199,7 @@ func TestRuleMonitor(t *testing.T) {
 				r := startMulti(t, func(c *ports.Config) {
 					c.Rules = []ports.WindowRule{winRule("m", "chat", func(r *ports.WindowRule) { r.Monitor = mon })}
 				}, left, right)
-				r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
+				r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
 				before := r.mapApp(t, 1, "term")
 				if before.Output != "DP-1" {
 					t.Fatalf("focused %s", before.Output)
@@ -222,9 +223,9 @@ func TestRuleMonitorWithNumberedWorkspace(t *testing.T) {
 		r := startMulti(t, func(c *ports.Config) {
 			c.Rules = []ports.WindowRule{winRule("m", "chat", func(r *ports.WindowRule) { r.Monitor = "DP-2"; r.Workspace = "2" })}
 		}, left, right)
-		r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+		r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
 		r.mapApp(t, 3, "term") // DP-2 gets a window, so a second workspace
-		r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
+		r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
 		r.mapApp(t, 1, "term")
 		st := r.mapApp(t, 2, "chat")
 		if w := stWindow(st, 2); w.Output != "DP-2" || w.Workspace != 2 || st.Output != "DP-1" || stFocus(st) != 1 || stOutput(st, "DP-2").Active != 1 {
@@ -239,7 +240,7 @@ func TestRuleDisconnectedMonitorFallsBack(t *testing.T) {
 		r := startMulti(t, func(c *ports.Config) {
 			c.Rules = []ports.WindowRule{winRule("m", "chat", func(r *ports.WindowRule) { r.Monitor = "HDMI-9" })}
 		}, left, right)
-		r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
+		r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
 		r.mapApp(t, 1, "term")
 		st := r.mapApp(t, 2, "chat")
 		if w := stWindow(st, 2); w.Output != "DP-1" || stFocus(st) != 2 {
@@ -258,11 +259,11 @@ func TestRulesMerge(t *testing.T) {
 				winRule("chat", "chat", func(r *ports.WindowRule) { r.Cells = 2 }),
 			}
 		}, left, right)
-		r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
+		r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
 		r.client <- ports.WindowMapped{ID: 1, AppID: "chat"}
 		r.client <- ports.WindowMapped{ID: 2, AppID: "term"}
 		set := sceneMatch2(t, r, func(s ports.Scene) bool { return s.Output == "DP-2" && len(s.Windows) == 2 })
-		got := map[ports.WindowID]int{}
+		got := map[domain.WindowID]int{}
 		for _, w := range set.Windows {
 			got[w.ID] = w.Rect.W
 		}
@@ -337,7 +338,7 @@ func TestDialogStaysOverParentDespiteRules(t *testing.T) {
 		if w := stWindow(st, 1); w.WorkspaceName != "dev" {
 			t.Fatalf("parent: %+v", w)
 		}
-		r.key(t, "d", ports.ModAlt)
+		r.key(t, "d", domain.ModAlt)
 		stateAfter(t, r.state, func(st ports.State) bool { return stOutput(st, "DP-1").Workspace == "dev" })
 		r.client <- ports.WindowMapped{ID: 2, AppID: "term", Floating: true, Width: 30, Height: 30, Parent: 1}
 		st = r.stateWith(t, 2)

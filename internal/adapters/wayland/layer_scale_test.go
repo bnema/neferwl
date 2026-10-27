@@ -6,6 +6,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/fractionalscale"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/wlrlayershell"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 )
@@ -94,7 +95,7 @@ func TestLayerTargetScaleBeforeConfigure(t *testing.T) {
 			lp := &layerScaleOrderProxy{layer: true, events: events}
 			lp.SetID(layer)
 			registerWireProxy(c, lp)
-			requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, layer, surf, out, uint32(ports.LayerOverlay), "scale-test")
+			requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, layer, surf, out, uint32(domain.LayerOverlay), "scale-test")
 			requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestSetAnchor, uint32(15))
 			requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestSetSize, uint32(0), uint32(0))
 			requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)

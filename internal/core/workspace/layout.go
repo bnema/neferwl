@@ -8,14 +8,14 @@ import (
 	"github.com/bnema/neferwl/internal/core/geom"
 	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/core/motion"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // WindowID identifies a managed window.
-type WindowID = ports.WindowID
+type WindowID = domain.WindowID
 
 // Rect is a logical-pixel rectangle.
-type Rect = ports.Rect
+type Rect = domain.Rect
 
 // Placement describes a window and its presentation geometry.
 // It aliases geom.Placement so the model's API spells it without importing
@@ -587,7 +587,7 @@ func (w *Workspace) AppendLayout(dst []Placement) []Placement {
 			// A covering fullscreen window hides every float but the
 			// dialogs over it (overCover): the others show again when it
 			// leaves fullscreen.
-			p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Below: below, Focused: f.ID == focusedID, Inset: ports.SideAll, Hidden: cover != 0 && f.ID != cover && !dialog}
+			p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Below: below, Focused: f.ID == focusedID, Inset: domain.SideAll, Hidden: cover != 0 && f.ID != cover && !dialog}
 			if p.Hidden {
 				p.Rect = Rect{}
 				result = append(result, p)
@@ -636,20 +636,20 @@ func setVisibleNeighbors(tiles []Placement, gap int, area Rect) {
 			// Only count a shared edge strictly within the area.
 			switch {
 			case r.X+r.W+gap == b.X && overlap(r.Y, r.Y+r.H, b.Y, b.Y+b.H) && r.X+r.W > area.X && r.X+r.W < area.X+area.W:
-				a.Neighbors |= ports.SideRight
+				a.Neighbors |= domain.SideRight
 			case b.X+b.W+gap == r.X && overlap(r.Y, r.Y+r.H, b.Y, b.Y+b.H) && r.X > area.X && r.X < area.X+area.W:
-				a.Neighbors |= ports.SideLeft
+				a.Neighbors |= domain.SideLeft
 			case r.Y+r.H+gap == b.Y && overlap(r.X, r.X+r.W, b.X, b.X+b.W) && r.Y+r.H > area.Y && r.Y+r.H < area.Y+area.H:
-				a.Neighbors |= ports.SideBottom
+				a.Neighbors |= domain.SideBottom
 			case b.Y+b.H+gap == r.Y && overlap(r.X, r.X+r.W, b.X, b.X+b.W) && r.Y > area.Y && r.Y < area.Y+area.H:
-				a.Neighbors |= ports.SideTop
+				a.Neighbors |= domain.SideTop
 			}
 		}
 		a.Inset = a.Neighbors
 		if gap == 0 {
-			a.Inset &= ports.SideRight | ports.SideBottom
+			a.Inset &= domain.SideRight | domain.SideBottom
 		} else {
-			a.Inset = ports.SideAll
+			a.Inset = domain.SideAll
 		}
 	}
 }

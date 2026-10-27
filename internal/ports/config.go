@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // DefaultSDRBrightness is the BT.2408 SDR reference white in HDR, in nits.
@@ -41,22 +43,11 @@ type OutputConfig struct {
 	ScaleOnly     bool
 }
 
-// OutputRelation is the side of another output where an output is placed.
-type OutputRelation uint8
-
-const (
-	RelationNone OutputRelation = iota
-	RelationRightOf
-	RelationLeftOf
-	RelationAbove
-	RelationBelow
-)
-
 // OutputAnchor places an output against another connected one, named by To.
 // Offset is in logical pixels, along the shared edge: y for right-of and
 // left-of (positive is down), x for above and below (positive is right).
 type OutputAnchor struct {
-	Relation OutputRelation
+	Relation domain.OutputRelation
 	To       string
 	Offset   int
 }
@@ -176,9 +167,9 @@ type Config struct {
 		// Enable turns the experimental hint mode on (hint.enable). It is
 		// read at startup: a reload keeps the startup value.
 		Enable    bool
-		Sources   []HintSource // ordered startup-only chain
-		LinksOnly bool         // hint.targets
-		TextClick Mods         // hint.text-click
+		Sources   []domain.HintSource // ordered startup-only chain
+		LinksOnly bool                // hint.targets
+		TextClick domain.Mods         // hint.text-click
 		// Capture shows the labels in the captures requested by Wayland
 		// clients (hint.capture); the compositor's own scans never see them.
 		Capture                bool

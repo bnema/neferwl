@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/bnema/neferwl/internal/core/layout"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -77,7 +78,7 @@ type Options struct {
 const fullscreenGrace = time.Second
 
 type binding struct {
-	mods ports.Mods
+	mods domain.Mods
 	key  string
 }
 type Core struct {
@@ -123,8 +124,8 @@ type Core struct {
 	dataDrag         *dataDragState
 	swallow          map[uint32]bool
 	lastButton       uint32
-	mods             ports.Mods
-	cmdMod           ports.Mods
+	mods             domain.Mods
+	cmdMod           domain.Mods
 	cursorX, cursorY float64 // global, logical
 	pointerOutput    string  // output under the pointer at the last motion
 	// constrained is the constraint wayland activated; constraint is it
@@ -231,25 +232,25 @@ func parseBind(s, cmd string) (binding, error) {
 		return b, fmt.Errorf("invalid bind %q", s)
 	}
 	for _, p := range parts[:len(parts)-1] {
-		var m ports.Mods
+		var m domain.Mods
 		switch p {
 		case "Cmd":
 			switch cmd {
 			case "super":
-				m = ports.ModSuper
+				m = domain.ModSuper
 			case "alt":
-				m = ports.ModAlt
+				m = domain.ModAlt
 			case "ctrl":
-				m = ports.ModCtrl
+				m = domain.ModCtrl
 			}
 		case "Shift":
-			m = ports.ModShift
+			m = domain.ModShift
 		case "Ctrl":
-			m = ports.ModCtrl
+			m = domain.ModCtrl
 		case "Alt":
-			m = ports.ModAlt
+			m = domain.ModAlt
 		case "Super":
-			m = ports.ModSuper
+			m = domain.ModSuper
 		}
 		if m == 0 || b.mods&m != 0 {
 			return b, fmt.Errorf("invalid bind %q", s)
@@ -363,7 +364,7 @@ func (c *Core) apply(cfg ports.Config) error {
 	}
 	c.cfg = cfg
 	c.binds = binds
-	c.cmdMod = map[string]ports.Mods{"super": ports.ModSuper, "alt": ports.ModAlt, "ctrl": ports.ModCtrl}[cfg.Keyboard.CmdKey]
+	c.cmdMod = map[string]domain.Mods{"super": domain.ModSuper, "alt": domain.ModAlt, "ctrl": domain.ModCtrl}[cfg.Keyboard.CmdKey]
 	c.specs, c.rules = named, rules
 	c.toSpawn = append(c.toSpawn, c.updateSlots(specs)...)
 	c.named()
@@ -574,7 +575,7 @@ func (c *Core) keyboardFocus() WindowID {
 	var exclusive WindowID
 	for _, sc := range c.screens {
 		for _, l := range sc.layers {
-			if l.Keyboard == 1 && (l.Layer == ports.LayerTop || l.Layer == ports.LayerOverlay) && l.ID > exclusive {
+			if l.Keyboard == 1 && (l.Layer == domain.LayerTop || l.Layer == domain.LayerOverlay) && l.ID > exclusive {
 				exclusive = l.ID
 			}
 		}
@@ -920,7 +921,7 @@ func (c *Core) warpPointer(ctx context.Context, v ports.PointerWarp) error {
 		latest(c.ch.Constraints, g)
 	}
 	// A locked pointer moved: the client knows where it put it.
-	if c.constraint.Mode == ports.ConstraintLock {
+	if c.constraint.Mode == domain.ConstraintLock {
 		return nil
 	}
 	return c.rehit(ctx)

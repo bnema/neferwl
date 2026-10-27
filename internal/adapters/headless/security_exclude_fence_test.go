@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -34,7 +36,7 @@ func TestExcludeFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 			rendered := make(chan struct{}, 1)
 			releaseRender := make(chan struct{})
 			failure := errors.New("excluded render failed after submission")
-			r.EXPECT().Render(mock.MatchedBy(func(s ports.Scene) bool { return s.Security == admitted && s.Seq == 0 }), mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+			r.EXPECT().Render(mock.MatchedBy(func(s ports.Scene) bool { return s.Security == admitted && s.Seq == 0 }), mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 				rendered <- struct{}{}
 				<-releaseRender
 				if finish == "render-error" {

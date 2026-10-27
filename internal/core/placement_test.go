@@ -6,19 +6,20 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestPlaceOutputs(t *testing.T) {
 	at := func(x, y int) *image.Point { return &image.Point{X: x, Y: y} }
-	rel := func(r ports.OutputRelation, to string, off int) ports.OutputAnchor {
+	rel := func(r domain.OutputRelation, to string, off int) ports.OutputAnchor {
 		return ports.OutputAnchor{Relation: r, To: to, Offset: off}
 	}
 	const (
-		rightOf = ports.RelationRightOf
-		leftOf  = ports.RelationLeftOf
-		above   = ports.RelationAbove
-		below   = ports.RelationBelow
+		rightOf = domain.RelationRightOf
+		leftOf  = domain.RelationLeftOf
+		above   = domain.RelationAbove
+		below   = domain.RelationBelow
 	)
 	tests := []struct {
 		name  string

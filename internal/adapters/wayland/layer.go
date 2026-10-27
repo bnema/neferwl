@@ -6,6 +6,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/wlrlayershell"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 )
@@ -16,13 +17,13 @@ type layerState struct {
 	zone                  int32
 	margin                [4]int32
 	keyboard              uint32
-	layer                 ports.Layer
+	layer                 domain.Layer
 }
 type layerSurface struct {
 	resource                  *wlrlayershell.ZwlrLayerSurfaceV1
 	shell                     layerShell
 	surface                   *surface
-	id                        ports.WindowID
+	id                        domain.WindowID
 	namespace                 string
 	pending, current          layerState
 	configured, acked, mapped bool
@@ -63,7 +64,7 @@ func (h layerShell) GetLayerSurface(r *wlrlayershell.ZwlrLayerShellV1, id uint32
 		out = h.server.outputByName("")
 	}
 	l := &layerSurface{shell: h, surface: state, id: h.server.nextWindow, namespace: namespace, output: out}
-	l.pending.layer = ports.Layer(layer)
+	l.pending.layer = domain.Layer(layer)
 	resource, err := wlrlayershell.NewZwlrLayerSurfaceV1(r.Client(), r.Version(), id, l)
 	if err != nil {
 		return
@@ -160,7 +161,7 @@ func (l *layerSurface) SetLayer(r *wlrlayershell.ZwlrLayerSurfaceV1, v uint32) {
 		r.PostError(uint32(wlrlayershell.ZwlrLayerSurfaceV1ErrorInvalidSurfaceState), "invalid layer")
 		return
 	}
-	l.pending.layer = ports.Layer(v)
+	l.pending.layer = domain.Layer(v)
 }
 
 // Exclusive edge is not implemented; layer-shell is capped at v4.
@@ -261,7 +262,7 @@ func (l *layerSurface) commitState(p layerState, buffer bool) {
 	}
 	if l.capture != nil {
 		p.keyboard = 0
-		if p.layer != ports.LayerTop && p.layer != ports.LayerOverlay {
+		if p.layer != domain.LayerTop && p.layer != domain.LayerOverlay {
 			// Only top and overlay layers may be attached: closing unmaps the
 			// surface (its LayerChanged is queued first), then it is detached,
 			// so core keeps it excluded until it is gone.

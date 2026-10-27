@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -116,7 +118,7 @@ func send[T any](ch chan T, v T) {
 
 // barrier is a window no test maps: a resize of it changes nothing but
 // makes core publish.
-const barrier ports.WindowID = 1 << 30
+const barrier domain.WindowID = 1 << 30
 
 // settle returns the scene set once core handled every event sent so
 // far. The second barrier is taken only after the first one published. An
@@ -168,7 +170,7 @@ func pointerSent(cmds []ports.ClientCommand) []ports.ClientCommand {
 	return out
 }
 
-func dragRect(t *testing.T, set []ports.Scene, output string, id ports.WindowID) ports.Rect {
+func dragRect(t *testing.T, set []ports.Scene, output string, id domain.WindowID) domain.Rect {
 	t.Helper()
 	w, ok := windowIn(set, output, id)
 	if !ok {
@@ -187,7 +189,7 @@ func dragScene(set []ports.Scene, output string) ports.Scene {
 }
 
 // columns lists the tiles left to right by x, then top to bottom.
-func columnsOf(set []ports.Scene, output string) [][]ports.WindowID {
+func columnsOf(set []ports.Scene, output string) [][]domain.WindowID {
 	s := dragScene(set, output)
 	var wins []ports.SceneWindow
 	for _, w := range s.Windows {
@@ -201,7 +203,7 @@ func columnsOf(set []ports.Scene, output string) [][]ports.WindowID {
 		}
 		return a.Rect.Y - b.Rect.Y
 	})
-	var out [][]ports.WindowID
+	var out [][]domain.WindowID
 	lastX := -1 << 30
 	for _, w := range wins {
 		if w.Rect.X != lastX {
@@ -219,7 +221,7 @@ func (r *dragRig) moveTo(x, y float64, msec uint32) {
 	r.in(ports.PointerMotion{X: x, Y: y, Time: time.Duration(msec) * time.Millisecond})
 }
 
-func (r *dragRig) press(t *testing.T, button uint32, mods ports.Mods) {
+func (r *dragRig) press(t *testing.T, button uint32, mods domain.Mods) {
 	t.Helper()
 	if mods != 0 {
 		r.in(ports.KeyEvent{Keysym: "Super_L", Mods: mods, Pressed: true})
@@ -237,7 +239,7 @@ func TestCmdDragMovesFloatWithoutClientEvents(t *testing.T) {
 		r.moveTo(float64(f.X+10), float64(f.Y+10), 1)
 		r.settle(t)
 		r.drain()
-		r.press(t, 0x110, ports.ModSuper)
+		r.press(t, 0x110, domain.ModSuper)
 		r.moveTo(float64(f.X+60), float64(f.Y+40), 2)
 		set = r.settle(t)
 		got := dragRect(t, set, "A", 2)
@@ -288,17 +290,17 @@ func TestDragEscapeRestoresFloat(t *testing.T) {
 		f := dragRect(t, r.settle(t), "A", 2)
 		r.moveTo(float64(f.X+10), float64(f.Y+10), 1)
 		r.settle(t)
-		r.press(t, 0x111, ports.ModSuper)
+		r.press(t, 0x111, domain.ModSuper)
 		r.moveTo(float64(f.X+110), float64(f.Y+60), 2)
 		if got := dragRect(t, r.settle(t), "A", 2); got.W != f.W+100 || got.H != f.H+50 || got.X != f.X {
 			t.Fatalf("resize: %+v from %+v", got, f)
 		}
 		r.drain()
-		r.in(ports.KeyEvent{Keysym: "Escape", Mods: ports.ModSuper, Pressed: true})
+		r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper, Pressed: true})
 		if got := dragRect(t, r.settle(t), "A", 2); got != f {
 			t.Fatalf("escape: %+v, want %+v", got, f)
 		}
-		r.in(ports.KeyEvent{Keysym: "Escape", Mods: ports.ModSuper})
+		r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper})
 		r.in(ports.PointerButton{Button: 0x111})
 		r.settle(t)
 		for _, v := range pointerSent(r.drain()) {
@@ -315,19 +317,19 @@ func TestDragTileZonesAndHints(t *testing.T) {
 }
 
 func dragTileZonesAndHints(t *testing.T, r *dragRig) {
-	for id := ports.WindowID(1); id <= 3; id++ {
+	for id := domain.WindowID(1); id <= 3; id++ {
 		r.client <- ports.WindowMapped{ID: id}
 		r.settle(t)
 	}
 	set := r.settle(t)
-	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{1}, {2}, {3}}, slices.Equal) {
+	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]domain.WindowID{{1}, {2}, {3}}, slices.Equal) {
 		t.Fatal(got)
 	}
 	a, c := dragRect(t, set, "A", 1), dragRect(t, set, "A", 3)
 	// Drag 1 onto the bottom band of 3: it stacks below 3.
 	r.moveTo(float64(a.X+a.W/2), float64(a.Y+a.H/2), 1)
 	r.settle(t)
-	r.press(t, 0x110, ports.ModSuper)
+	r.press(t, 0x110, domain.ModSuper)
 	r.moveTo(float64(c.X+c.W/2), float64(c.Y+c.H-5), 2)
 	set = r.settle(t)
 	hints := dragScene(set, "A").DropHints
@@ -335,14 +337,14 @@ func dragTileZonesAndHints(t *testing.T, r *dragRig) {
 		t.Fatalf("hints %+v", hints)
 	}
 	// Tiles do not move until the drop.
-	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{1}, {2}, {3}}, slices.Equal) {
+	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]domain.WindowID{{1}, {2}, {3}}, slices.Equal) {
 		t.Fatal(got)
 	}
 	// The drop itself must run a spring: the guard counts from here.
 	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	set = r.settle(t)
-	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{2}, {3, 1}}, slices.Equal) {
+	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]domain.WindowID{{2}, {3, 1}}, slices.Equal) {
 		t.Fatal(got)
 	}
 	if len(dragScene(set, "A").DropHints) != 0 {
@@ -363,7 +365,7 @@ func dragTileZonesAndHints(t *testing.T, r *dragRig) {
 	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	set = r.settle(t)
-	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{1}, {2}, {3}}, slices.Equal) {
+	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]domain.WindowID{{1}, {2}, {3}}, slices.Equal) {
 		t.Fatal(got)
 	}
 	// Lone 3 on the centre of 2: the columns swap.
@@ -377,7 +379,7 @@ func dragTileZonesAndHints(t *testing.T, r *dragRig) {
 	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	set = r.settle(t)
-	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{1}, {3}, {2}}, slices.Equal) {
+	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]domain.WindowID{{1}, {3}, {2}}, slices.Equal) {
 		t.Fatal(got)
 	}
 	// Escape mid tile drag: nothing moves, no hints.
@@ -390,9 +392,9 @@ func dragTileZonesAndHints(t *testing.T, r *dragRig) {
 	if len(dragScene(r.settle(t), "A").DropHints) == 0 {
 		t.Fatal("no hint")
 	}
-	r.in(ports.KeyEvent{Keysym: "Escape", Mods: ports.ModSuper, Pressed: true})
+	r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper, Pressed: true})
 	set = r.settle(t)
-	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{1}, {3}, {2}}, slices.Equal) || len(dragScene(set, "A").DropHints) != 0 {
+	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]domain.WindowID{{1}, {3}, {2}}, slices.Equal) || len(dragScene(set, "A").DropHints) != 0 {
 		t.Fatal(got, dragScene(set, "A").DropHints)
 	}
 }
@@ -419,35 +421,35 @@ func TestDragTileGapInsert(t *testing.T) {
 }
 
 func dragTileGapInsert(t *testing.T, r *dragRig) {
-	for id := ports.WindowID(1); id <= 3; id++ {
+	for id := domain.WindowID(1); id <= 3; id++ {
 		r.client <- ports.WindowMapped{ID: id}
 		r.settle(t)
 	}
 	r.client <- ports.WindowMapped{ID: 4}
 	r.settle(t)
 	// Stack 4 under 3 with the keyboard, then put 4 between 1 and 2.
-	r.in(ports.KeyEvent{Keysym: "bracketleft", Mods: ports.ModSuper, Pressed: true})
-	r.in(ports.KeyEvent{Keysym: "bracketleft", Mods: ports.ModSuper})
-	r.in(ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper, Pressed: true})
-	r.in(ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper})
-	r.in(ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper, Pressed: true})
-	r.in(ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper})
+	r.in(ports.KeyEvent{Keysym: "bracketleft", Mods: domain.ModSuper, Pressed: true})
+	r.in(ports.KeyEvent{Keysym: "bracketleft", Mods: domain.ModSuper})
+	r.in(ports.KeyEvent{Keysym: "Left", Mods: domain.ModSuper, Pressed: true})
+	r.in(ports.KeyEvent{Keysym: "Left", Mods: domain.ModSuper})
+	r.in(ports.KeyEvent{Keysym: "Left", Mods: domain.ModSuper, Pressed: true})
+	r.in(ports.KeyEvent{Keysym: "Left", Mods: domain.ModSuper})
 	set := r.settle(t)
-	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{1}, {2}, {3, 4}}, slices.Equal) {
+	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]domain.WindowID{{1}, {2}, {3, 4}}, slices.Equal) {
 		t.Fatal(got)
 	}
 	one, two, four := dragRect(t, set, "A", 1), dragRect(t, set, "A", 2), dragRect(t, set, "A", 4)
 	gapX := (one.X + one.W + two.X) / 2
 	r.moveTo(float64(four.X+four.W/2), float64(four.Y+four.H/2), 1)
 	r.settle(t)
-	r.press(t, 0x110, ports.ModSuper)
+	r.press(t, 0x110, domain.ModSuper)
 	r.moveTo(float64(gapX), float64(one.Y+one.H/2), 2)
 	hints := dragScene(r.settle(t), "A").DropHints
 	if len(hints) != 1 || hints[0].H != one.H || hints[0].X+hints[0].W/2 != gapX {
 		t.Fatalf("gap hint %+v", hints)
 	}
 	r.in(ports.PointerButton{Button: 0x110})
-	if got := columnsOf(r.settle(t), "A"); !slices.EqualFunc(got[:2], [][]ports.WindowID{{1}, {4}}, slices.Equal) {
+	if got := columnsOf(r.settle(t), "A"); !slices.EqualFunc(got[:2], [][]domain.WindowID{{1}, {4}}, slices.Equal) {
 		t.Fatal(got)
 	}
 }
@@ -475,7 +477,7 @@ func (r *dragRig) release(t *testing.T) []ports.Scene {
 func TestDragDropTileSlides(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
 		r := startDragMode(t, animated, func(c *ports.Config) { c.Layout.MaxColumns = 3 }, dragOut)
-		for id := ports.WindowID(1); id <= 3; id++ {
+		for id := domain.WindowID(1); id <= 3; id++ {
 			r.client <- ports.WindowMapped{ID: id}
 			r.settle(t)
 		}
@@ -483,7 +485,7 @@ func TestDragDropTileSlides(t *testing.T) {
 		one0, two0, three0 := dragRect(t, set, "A", 1), dragRect(t, set, "A", 2), dragRect(t, set, "A", 3)
 		r.moveTo(float64(one0.X+one0.W/2), float64(one0.Y+one0.H/2), 1)
 		r.settle(t)
-		r.press(t, 0x110, ports.ModSuper)
+		r.press(t, 0x110, domain.ModSuper)
 		// The bottom band of 3: 1 stacks below it.
 		r.moveTo(float64(three0.X+three0.W/2), float64(three0.Y+three0.H-5), 2)
 		set = r.settle(t)
@@ -496,7 +498,7 @@ func TestDragDropTileSlides(t *testing.T) {
 			t.Fatal("hints left")
 		}
 		if !animated {
-			if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{2}, {3, 1}}, slices.Equal) {
+			if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]domain.WindowID{{2}, {3, 1}}, slices.Equal) {
 				t.Fatal(got)
 			}
 			// Instant: the scene right after the drop is the settled one.
@@ -507,7 +509,7 @@ func TestDragDropTileSlides(t *testing.T) {
 		}
 		// Right after the release the windows are still where the drag
 		// scene drew them.
-		for id, want := range map[ports.WindowID]ports.Rect{1: one0, 2: two0, 3: three0} {
+		for id, want := range map[domain.WindowID]domain.Rect{1: one0, 2: two0, 3: three0} {
 			if got := dragRect(t, set, "A", id); got != want {
 				t.Fatalf("window %d at %+v right after the drop, want its old %+v", id, got, want)
 			}
@@ -527,11 +529,11 @@ func TestDragDropTileSlides(t *testing.T) {
 			t.Fatalf("neighbour 2 did not start moving: %+v", got2)
 		}
 		set = r.settle(t)
-		if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{2}, {3, 1}}, slices.Equal) {
+		if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]domain.WindowID{{2}, {3, 1}}, slices.Equal) {
 			t.Fatal(got)
 		}
-		want := map[ports.WindowID]ports.Rect{}
-		for id := ports.WindowID(1); id <= 3; id++ {
+		want := map[domain.WindowID]domain.Rect{}
+		for id := domain.WindowID(1); id <= 3; id++ {
 			want[id] = dragRect(t, set, "A", id)
 		}
 		if want[1].Y <= want[3].Y || want[1].X != want[3].X {
@@ -539,7 +541,7 @@ func TestDragDropTileSlides(t *testing.T) {
 		}
 		// A window is configured at most once by the drop, to its settled
 		// size, never to a size along the slide; the dropped tile always.
-		sizes := map[ports.WindowID][][2]int{}
+		sizes := map[domain.WindowID][][2]int{}
 		for _, v := range r.drain() {
 			if v, ok := v.(ports.ConfigureWindow); ok {
 				sizes[v.ID] = append(sizes[v.ID], [2]int{v.Width, v.Height})
@@ -561,7 +563,7 @@ func TestDragFixedNoGapZone(t *testing.T) {
 }
 
 func dragFixedNoGapZone(t *testing.T, r *dragRig) {
-	for id := ports.WindowID(1); id <= 2; id++ {
+	for id := domain.WindowID(1); id <= 2; id++ {
 		r.client <- ports.WindowMapped{ID: id}
 		r.settle(t)
 	}
@@ -569,7 +571,7 @@ func dragFixedNoGapZone(t *testing.T, r *dragRig) {
 	one, two := dragRect(t, set, "A", 1), dragRect(t, set, "A", 2)
 	r.moveTo(float64(one.X+one.W/2), float64(one.Y+one.H/2), 1)
 	r.settle(t)
-	r.press(t, 0x110, ports.ModSuper)
+	r.press(t, 0x110, domain.ModSuper)
 	r.moveTo(float64((one.X+one.W+two.X)/2), float64(one.Y+one.H/2), 2)
 	if hints := dragScene(r.settle(t), "A").DropHints; len(hints) != 0 {
 		t.Fatalf("fixed gap hint %+v", hints)
@@ -580,7 +582,7 @@ func dragFixedNoGapZone(t *testing.T, r *dragRig) {
 	// The drop itself must run a spring: the guard counts from here.
 	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
-	if got := columnsOf(r.settle(t), "A"); !slices.EqualFunc(got, [][]ports.WindowID{{1, 2}}, slices.Equal) {
+	if got := columnsOf(r.settle(t), "A"); !slices.EqualFunc(got, [][]domain.WindowID{{1, 2}}, slices.Equal) {
 		t.Fatal(got)
 	}
 }
@@ -606,7 +608,7 @@ func dragAcrossOutputs(t *testing.T, r *dragRig) {
 	one := dragRect(t, set, "A", 1)
 	r.moveTo(float64(one.X+one.W/2), float64(one.Y+one.H/2), 2)
 	r.settle(t)
-	r.press(t, 0x110, ports.ModSuper)
+	r.press(t, 0x110, domain.ModSuper)
 	r.moveTo(1400, 300, 3)
 	set = r.settle(t)
 	if len(dragScene(set, "B").DropHints) == 0 || len(dragScene(set, "A").DropHints) != 0 {
@@ -663,7 +665,7 @@ func TestLockClearsDrag(t *testing.T) {
 		one, two := dragRect(t, set, "A", 1), dragRect(t, set, "A", 2)
 		r.moveTo(float64(one.X+one.W/2), float64(one.Y+one.H/2), 1)
 		r.settle(t)
-		r.press(t, 0x110, ports.ModSuper)
+		r.press(t, 0x110, domain.ModSuper)
 		r.moveTo(float64(two.X+two.W/2), float64(two.Y+5), 2)
 		if len(dragScene(r.settle(t), "A").DropHints) == 0 {
 			t.Fatal("no hint")
@@ -681,7 +683,7 @@ func TestLockClearsDrag(t *testing.T) {
 		r.settle(t)
 		r.in(ports.PointerButton{Button: 0x110})
 		set = r.settle(t)
-		if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{1}, {2}}, slices.Equal) {
+		if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]domain.WindowID{{1}, {2}}, slices.Equal) {
 			t.Fatal(got)
 		}
 
@@ -693,14 +695,14 @@ func TestDragEdgeScroll(t *testing.T) {
 }
 
 func dragEdgeScroll(t *testing.T, r *dragRig) {
-	for id := ports.WindowID(1); id <= 4; id++ {
+	for id := domain.WindowID(1); id <= 4; id++ {
 		r.client <- ports.WindowMapped{ID: id}
 		r.settle(t)
 	}
 	// Back to the first column: 3 and 4 are off screen to the right.
 	for range 3 {
-		r.in(ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper, Pressed: true})
-		r.in(ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper})
+		r.in(ports.KeyEvent{Keysym: "Left", Mods: domain.ModSuper, Pressed: true})
+		r.in(ports.KeyEvent{Keysym: "Left", Mods: domain.ModSuper})
 	}
 	set := r.settle(t)
 	one := dragRect(t, set, "A", 1)
@@ -709,7 +711,7 @@ func dragEdgeScroll(t *testing.T, r *dragRig) {
 	}
 	r.moveTo(float64(one.X+one.W/2), float64(one.Y+one.H/2), 1000)
 	r.settle(t)
-	r.press(t, 0x110, ports.ModSuper)
+	r.press(t, 0x110, domain.ModSuper)
 	r.moveTo(995, 300, 1001)
 	first := dragRect(t, r.settle(t), "A", 1)
 	if first.X >= one.X {
@@ -729,7 +731,7 @@ func dragEdgeScroll(t *testing.T, r *dragRig) {
 	if got := dragRect(t, r.settle(t), "A", 1); second.X >= first.X || got != end {
 		t.Fatalf("first %+v second %+v end %+v got %+v", first, second, end, got)
 	}
-	r.in(ports.KeyEvent{Keysym: "Escape", Mods: ports.ModSuper, Pressed: true})
+	r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper, Pressed: true})
 	r.settle(t)
 }
 
@@ -740,7 +742,7 @@ func TestDragFullFixedStacksInOutlinedColumn(t *testing.T) {
 }
 
 func dragFullFixedStacksInOutlinedColumn(t *testing.T, r *dragRig) {
-	for id := ports.WindowID(1); id <= 3; id++ {
+	for id := domain.WindowID(1); id <= 3; id++ {
 		r.client <- ports.WindowMapped{ID: id}
 		r.settle(t)
 	}
@@ -752,14 +754,14 @@ func dragFullFixedStacksInOutlinedColumn(t *testing.T, r *dragRig) {
 	four := dragRect(t, set, "A", 4)
 	r.moveTo(float64(four.X+four.W/2), float64(four.Y+four.H/2), 1)
 	r.settle(t)
-	r.press(t, 0x110, ports.ModSuper)
+	r.press(t, 0x110, domain.ModSuper)
 	r.moveTo(float64(one.X+one.W/2), float64(one.Y+3), 2)
 	r.settle(t)
 	// The drop itself must run a spring: the guard counts from here.
 	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	set = r.settle(t)
-	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{4, 1}, {2}, {3}}, slices.Equal) {
+	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]domain.WindowID{{4, 1}, {2}, {3}}, slices.Equal) {
 		t.Fatal(got)
 	}
 	one, two = dragRect(t, set, "A", 1), dragRect(t, set, "A", 2)
@@ -771,7 +773,7 @@ func dragFullFixedStacksInOutlinedColumn(t *testing.T, r *dragRig) {
 	// The drop itself must run a spring: the guard counts from here.
 	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
-	if got := columnsOf(r.settle(t), "A"); !slices.EqualFunc(got, [][]ports.WindowID{{4}, {2, 1}, {3}}, slices.Equal) {
+	if got := columnsOf(r.settle(t), "A"); !slices.EqualFunc(got, [][]domain.WindowID{{4}, {2, 1}, {3}}, slices.Equal) {
 		t.Fatal(got)
 	}
 }
@@ -784,9 +786,9 @@ func TestPressAfterCancelGrabs(t *testing.T) {
 		f := dragRect(t, r.settle(t), "A", 2)
 		r.moveTo(float64(f.X+10), float64(f.Y+10), 1)
 		r.settle(t)
-		r.press(t, 0x110, ports.ModSuper)
-		r.in(ports.KeyEvent{Keysym: "Escape", Mods: ports.ModSuper, Pressed: true})
-		r.in(ports.KeyEvent{Keysym: "Escape", Mods: ports.ModSuper})
+		r.press(t, 0x110, domain.ModSuper)
+		r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper, Pressed: true})
+		r.in(ports.KeyEvent{Keysym: "Escape", Mods: domain.ModSuper})
 		r.in(ports.KeyEvent{Keysym: "Super_L"})
 		r.settle(t)
 		r.drain()
@@ -855,13 +857,13 @@ func TestEdgeScrollPublishesWithoutTarget(t *testing.T) {
 }
 
 func edgeScrollPublishesWithoutTarget(t *testing.T, r *dragRig) {
-	for id := ports.WindowID(1); id <= 4; id++ {
+	for id := domain.WindowID(1); id <= 4; id++ {
 		r.client <- ports.WindowMapped{ID: id}
 		r.settle(t)
 	}
 	for range 3 {
-		r.in(ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper, Pressed: true})
-		r.in(ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper})
+		r.in(ports.KeyEvent{Keysym: "Left", Mods: domain.ModSuper, Pressed: true})
+		r.in(ports.KeyEvent{Keysym: "Left", Mods: domain.ModSuper})
 	}
 	// Drag 2 into the top gap, then along it to the right edge: no drop
 	// target before or after, but the view scrolls.
@@ -872,7 +874,7 @@ func edgeScrollPublishesWithoutTarget(t *testing.T, r *dragRig) {
 	}
 	r.moveTo(float64(two.X+two.W/2), float64(two.Y+two.H/2), 1000)
 	r.settle(t)
-	r.press(t, 0x110, ports.ModSuper)
+	r.press(t, 0x110, domain.ModSuper)
 	r.moveTo(float64(two.X+two.W/2), 5, 1001)
 	if hints := dragScene(r.settle(t), "A").DropHints; len(hints) != 0 {
 		t.Fatalf("hint in the gap %+v", hints)
@@ -900,7 +902,7 @@ func TestModsFollowKeys(t *testing.T) {
 		r.moveTo(float64(f.X+10), float64(f.Y+10), 1)
 		r.settle(t)
 		// Super pressed then released: a click is a plain click again.
-		r.in(ports.KeyEvent{Keysym: "Super_L", Mods: ports.ModSuper, Pressed: true})
+		r.in(ports.KeyEvent{Keysym: "Super_L", Mods: domain.ModSuper, Pressed: true})
 		r.in(ports.KeyEvent{Keysym: "Super_L"})
 		r.settle(t)
 		r.drain()

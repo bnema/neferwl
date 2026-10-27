@@ -14,7 +14,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/outputkit/corewake"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/surfaces"
-
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
@@ -43,7 +43,7 @@ type Output struct {
 	// kept reports a window drawn from a content its client withdrew (it
 	// closed and fades out; surfaces.Table.Kept): composed only, never on
 	// a plane, never reported shown. Set by Run; nil before.
-	kept func(ports.WindowID) bool
+	kept func(domain.WindowID) bool
 
 	k       kms
 	flipped <-chan flipEvent // commit events of this CRTC, from Card.ReadEvents
@@ -103,7 +103,7 @@ type Output struct {
 	// workspace was given, window by window, while it may still read (its
 	// device is not ordered with the display's fences). capped is set when
 	// the last report had child reads: it is repeated until they finish.
-	capHidden func(map[ports.WindowID]uint64) (map[ports.WindowID]uint64, map[ports.WindowID]uint64, bool)
+	capHidden func(map[domain.WindowID]uint64) (map[domain.WindowID]uint64, map[domain.WindowID]uint64, bool)
 	capped    bool
 	// readFences are fences of frames rendered but not committed: the
 	// GPU may still read client buffers until they signal, so what was
@@ -122,7 +122,7 @@ type Output struct {
 	// Last immutable shows snapshot sent in a flip. Never mutate it: wayland
 	// may still be reading a prior report on another goroutine.
 	shows               surfaces.ShowsSnapshot
-	directShowsSnapshot map[ports.WindowID]uint64
+	directShowsSnapshot map[domain.WindowID]uint64
 	// Tearing (ADR 006): async commits of scanned-out buffers that ask for
 	// them, when the card has DRM_CAP_ATOMIC_ASYNC_PAGE_FLIP. asyncFence
 	// is set when an async commit may carry IN_FENCE_FD (probed once).
@@ -1229,7 +1229,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 	// seen is the latest content Seq per window. It is reported only while
 	// no frame is in flight: then the GPU has finished every frame that
 	// read older buffers (the kernel waited for their fence to flip).
-	seen := map[ports.WindowID]uint64{}
+	seen := map[domain.WindowID]uint64{}
 	reportDirty := false
 	var cursorWake <-chan struct{}
 	if o.cursor != nil {
@@ -1772,7 +1772,7 @@ func (o *Output) flipDone(ev flipEvent, f pendingFrame, start time.Time, ours, t
 // completed handles the event of the pending commit: a flipped frame is
 // reported with its kernel timestamp. It reports false for an event of
 // another commit, which is dropped.
-func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
+func (o *Output) completed(ev flipEvent, seen map[domain.WindowID]uint64) bool {
 	// Only a commit of ours is traced: not a stale event, nor the end of
 	// an EBUSY wait. Its fences are read before flip closes them.
 	ours := o.frame.ours(ev.user)

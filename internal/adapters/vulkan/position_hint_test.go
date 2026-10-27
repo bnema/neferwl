@@ -1,11 +1,13 @@
 package vulkan
 
 import (
-	"github.com/bnema/neferwl/internal/ports"
-	"github.com/stretchr/testify/require"
 	"image"
 	"math"
 	"testing"
+
+	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPositionHintGeometryDamageAllocations(t *testing.T) {
@@ -26,7 +28,7 @@ func TestPositionHintGeometryDamageAllocations(t *testing.T) {
 		require.Zero(t, testing.AllocsPerRun(100, func() { r.draws(s, nil, dmg) }))
 		old := s
 		old.PositionHint = ports.PositionHint{}
-		phys := func(b ports.Rect) image.Rectangle { return w.physRect(b.X, b.Y, b.W, b.H) }
+		phys := func(b domain.Rect) image.Rectangle { return w.physRect(b.X, b.Y, b.W, b.H) }
 		got, ok := sceneDelta(old, s, phys, r.width*r.height)
 		require.True(t, ok)
 		require.Equal(t, want, got)
@@ -39,7 +41,7 @@ func TestPositionHintGeometryDamageAllocations(t *testing.T) {
 
 func TestPositionHintDamageTransitions(t *testing.T) {
 	base := ports.Scene{Scale: 1, OutputWidth: 640, OutputHeight: 480, PositionHint: ports.PositionHint{Opacity: 1, Columns: 2, Counts: [16]uint8{2, 1}}}
-	phys := func(r ports.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
+	phys := func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
 	bounds := func(s ports.Scene) image.Rectangle { return phys(s.PositionHint.Bounds(s.OutputWidth, s.OutputHeight)) }
 	t.Run("disappear", func(t *testing.T) {
 		cur := base

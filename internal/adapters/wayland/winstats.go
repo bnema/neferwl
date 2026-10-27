@@ -4,6 +4,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -100,7 +101,7 @@ func lowFPS(sorted []uint32, k int) float32 {
 
 // windowStats belongs to the display goroutine and tracks one window.
 type windowStats struct {
-	watched       ports.WindowID
+	watched       domain.WindowID
 	gen           uint64
 	timer         ports.Timer
 	client, shown frameRing
@@ -156,7 +157,7 @@ func (w *windowStats) flip(f *ports.FlipInfo) {
 }
 
 // watchStats replaces the watched window and invalidates pending timer callbacks.
-func (s *Server) watchStats(id ports.WindowID) {
+func (s *Server) watchStats(id domain.WindowID) {
 	w := s.windows[id]
 	if w == nil || !w.mapped {
 		id = 0

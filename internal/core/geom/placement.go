@@ -1,13 +1,13 @@
 package geom
 
-import "github.com/bnema/neferwl/internal/ports"
+import "github.com/bnema/neferwl/internal/domain"
 
 // Placement describes a window and its presentation geometry.
 type Placement struct {
 	// ID is the window the placement is for.
-	ID ports.WindowID
+	ID domain.WindowID
 	// Rect is the window's rectangle in output-local logical pixels.
-	Rect ports.Rect
+	Rect domain.Rect
 	// Fullscreen marks the window as the workspace's fullscreen window.
 	Fullscreen bool
 	// Focused marks the window that has the keyboard focus.
@@ -35,7 +35,7 @@ type Placement struct {
 	// Inset reserves room for drawn lines: all sides of a float; all sides
 	// of a tile with gaps; only the right and bottom shared sides of a tile
 	// without gaps.
-	Neighbors, Inset ports.Sides
+	Neighbors, Inset domain.Sides
 	// Leaving marks a window that closed or hid but is still drawn while
 	// it fades out (transition.go). It stays Hidden, so input, focus,
 	// popups and configures ignore it; only the scene shows it.

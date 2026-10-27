@@ -1,46 +1,20 @@
 package ports
 
-// HintSource identifies the source of a target; config determines chain order.
-type HintSource uint8
-
-const (
-	HintSourceATSPI HintSource = iota + 1
-	HintSourceOCR
-	HintSourceDetector
-)
-
-func (s HintSource) String() string {
-	switch s {
-	case HintSourceATSPI:
-		return "atspi"
-	case HintSourceOCR:
-		return "ocr"
-	case HintSourceDetector:
-		return "detector"
-	}
-	return ""
-}
-
-type HintKind uint8
-
-const (
-	HintLink HintKind = iota
-	HintButton
-)
+import "github.com/bnema/neferwl/internal/domain"
 
 // HintWindow is a toplevel and its mapped popups, output-local and logical.
 type HintWindow struct {
-	ID      WindowID
+	ID      domain.WindowID
 	PID     int
 	AppID   string
-	Rect    Rect
-	Popups  []Rect
+	Rect    domain.Rect
+	Popups  []domain.Rect
 	Focused bool
 }
 
-func (w HintWindow) Region() []Rect { return append([]Rect{w.Rect}, w.Popups...) }
-func (w HintWindow) Bounds() Rect {
-	var b Rect
+func (w HintWindow) Region() []domain.Rect { return append([]domain.Rect{w.Rect}, w.Popups...) }
+func (w HintWindow) Bounds() domain.Rect {
+	var b domain.Rect
 	for i := -1; i < len(w.Popups); i++ {
 		r := w.Rect
 		if i >= 0 {
@@ -54,7 +28,7 @@ func (w HintWindow) Bounds() Rect {
 			continue
 		}
 		x, y := min(b.X, r.X), min(b.Y, r.Y)
-		b = Rect{X: x, Y: y, W: max(b.X+b.W, r.X+r.W) - x, H: max(b.Y+b.H, r.Y+r.H) - y}
+		b = domain.Rect{X: x, Y: y, W: max(b.X+b.W, r.X+r.W) - x, H: max(b.Y+b.H, r.Y+r.H) - y}
 	}
 	return b
 }
@@ -86,11 +60,11 @@ type HintScanRequest struct {
 
 // HintTarget is a clickable region found in a frame.
 type HintTarget struct {
-	Rect   Rect    // logical, output-local
-	Score  float32 // detector confidence, 0 to 1; 1 for AT-SPI and OCR
-	Kind   HintKind
-	Source HintSource
-	Window WindowID // toplevel unit ID
+	Rect   domain.Rect // logical, output-local
+	Score  float32     // detector confidence, 0 to 1; 1 for AT-SPI and OCR
+	Kind   domain.HintKind
+	Source domain.HintSource
+	Window domain.WindowID // toplevel unit ID
 }
 
 // HintScanResult answers a HintScanRequest. Core owns Targets.

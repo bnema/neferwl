@@ -7,6 +7,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -50,7 +51,7 @@ func hdrTargetAt(t *testing.T, r *Renderer, x, y int) [3]float64 {
 
 // hdrPQScene is a 64×16 XR30 udmabuf client holding 1000-nit neutral, red
 // and blue BT.2020 thirds (x/20), drawn full-output.
-func hdrPQScene(t *testing.T, r *Renderer) (ports.Scene, map[ports.WindowID]ports.SurfaceContent, [3][3]float64) {
+func hdrPQScene(t *testing.T, r *Renderer) (ports.Scene, map[domain.WindowID]ports.SurfaceContent, [3][3]float64) {
 	t.Helper()
 	format := ports.DMABufFormat{Format: fourcc('X', 'R', '3', '0'), Modifier: 0}
 	if !slices.Contains(r.DMABuf().Formats, format) {
@@ -65,8 +66,8 @@ func hdrPQScene(t *testing.T, r *Renderer) (ports.Scene, map[ports.WindowID]port
 	})
 	buf := &ports.DMABuf{ID: 2020, Width: 64, Height: 16, Format: format.Format, Planes: []ports.DMABufPlane{{File: f, Stride: 256}}}
 	c := ports.SurfaceContent{ID: 1, Seq: 1, Width: 64, Height: 16, LogicalW: 64, LogicalH: 16, Opaque: true, DMABuf: buf, Color: ports.SurfaceColor{TF: ports.ColorTFPQ, Primaries: ports.ColorPrimariesBT2020}}
-	scene := ports.Scene{Seq: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 16}}}}
-	return scene, map[ports.WindowID]ports.SurfaceContent{1: c}, nits
+	scene := ports.Scene{Seq: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
+	return scene, map[domain.WindowID]ports.SurfaceContent{1: c}, nits
 }
 
 // HDRPixels returns the exported PQ target's codes scaled to 16 bits, and
@@ -236,8 +237,8 @@ func TestHDRLinearBlend(t *testing.T) {
 	// Two translucent SDR overlays over black: half white then half black.
 	white := shmContent(t, 64, 16, 64*4, fill(64, 16, [4]byte{128, 128, 128, 128}))
 	black := shmContent(t, 64, 16, 64*4, fill(64, 16, [4]byte{0, 0, 0, 128}))
-	scene := ports.Scene{Background: "#000000", Layers: []ports.SceneLayer{{ID: 1, Layer: ports.LayerOverlay, Rect: ports.Rect{W: 64, H: 16}}, {ID: 2, Layer: ports.LayerOverlay, Rect: ports.Rect{W: 64, H: 16}}}}
-	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: *white, 2: *black}); err != nil {
+	scene := ports.Scene{Background: "#000000", Layers: []ports.SceneLayer{{ID: 1, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 64, H: 16}}, {ID: 2, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 64, H: 16}}}}
+	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: *white, 2: *black}); err != nil {
 		t.Fatal(err)
 	}
 	got := hdrTargetAt(t, r, 5, 5)
@@ -253,7 +254,7 @@ func TestHDRSolidColorsMatchPartialRedraw(t *testing.T) {
 	r := hdrTestRenderer(t)
 	const background = "#804020"
 	const border = "#4080c0"
-	scene := ports.Scene{Seq: 1, Background: background, Border: ports.Border{Active: border}, Separators: []ports.Separator{{Rect: ports.Rect{X: 16, Y: 2, W: 2, H: 12}, Active: true}}, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 20, Y: 2, W: 28, H: 12}}}}
+	scene := ports.Scene{Seq: 1, Background: background, Border: ports.Border{Active: border}, Separators: []ports.Separator{{Rect: domain.Rect{X: 16, Y: 2, W: 2, H: 12}, Active: true}}, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 20, Y: 2, W: 28, H: 12}}}}
 	// The window body is a solid fill; the separator is another solid draw.
 	content := solidContent(t, 28, 12, color.RGBA{128, 64, 32, 255})
 	content.ID, content.Seq = 1, 1
@@ -284,7 +285,7 @@ func TestHDRSolidColorsMatchPartialRedraw(t *testing.T) {
 			}
 		}
 	}
-	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: content}); err != nil {
+	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: content}); err != nil {
 		t.Fatal(err)
 	}
 	check("full")
@@ -293,7 +294,7 @@ func TestHDRSolidColorsMatchPartialRedraw(t *testing.T) {
 	// repainted there via a solid draw instead of the attachment clear.
 	c := content
 	c.Seq = 2
-	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: c}); err != nil {
+	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: c}); err != nil {
 		t.Fatal(err)
 	}
 	if r.redrawn-before >= r.width*r.height {

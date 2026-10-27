@@ -1,6 +1,10 @@
 package ports
 
-import "time"
+import (
+	"time"
+
+	"github.com/bnema/neferwl/internal/domain"
+)
 
 // ClientCommand carries core → wayland commands.
 type ClientCommand interface{ clientCommand() }
@@ -8,7 +12,7 @@ type ClientCommand interface{ clientCommand() }
 // ShortcutsInhibitState carries core → wayland whether a window's
 // shortcuts inhibitor is in effect (it has keyboard focus).
 type ShortcutsInhibitState struct {
-	Window WindowID
+	Window domain.WindowID
 	Active bool
 }
 
@@ -28,7 +32,7 @@ const ActivityInterval = 100 * time.Millisecond
 // ConfigureWindow carries core → wayland geometry and state. Output is the
 // connector showing the window, empty while it is hidden.
 type ConfigureWindow struct {
-	ID                    WindowID
+	ID                    domain.WindowID
 	Width, Height         int
 	Fullscreen, Activated bool
 	// Floating windows are not tiled: no tiled states.
@@ -121,20 +125,20 @@ type SetOutputs struct {
 func (SetOutputs) clientCommand() {}
 
 // CloseWindow carries core → wayland close requests.
-type CloseWindow struct{ ID WindowID }
+type CloseWindow struct{ ID domain.WindowID }
 
 func (CloseWindow) clientCommand() {}
 
 // FocusWindow carries core → wayland keyboard focus (0 means none).
-type FocusWindow struct{ ID WindowID }
+type FocusWindow struct{ ID domain.WindowID }
 
 func (FocusWindow) clientCommand() {}
 
 // ConfigurePopup carries core → wayland a popup's place, relative to its
 // parent's window geometry. Reposition answers a reposition request.
 type ConfigurePopup struct {
-	ID         WindowID
-	Rect       Rect
+	ID         domain.WindowID
+	Rect       domain.Rect
 	Reposition bool
 	Token      uint32
 }
@@ -142,13 +146,13 @@ type ConfigurePopup struct {
 func (ConfigurePopup) clientCommand() {}
 
 // ClosePopup carries core → wayland a popup to dismiss (popup_done).
-type ClosePopup struct{ ID WindowID }
+type ClosePopup struct{ ID domain.WindowID }
 
 func (ClosePopup) clientCommand() {}
 
 // PointerFocus changes the pointer surface; ID 0 clears focus. Coordinates are surface-local.
 type PointerFocus struct {
-	ID   WindowID
+	ID   domain.WindowID
 	X, Y float64
 }
 
@@ -158,7 +162,7 @@ func (PointerFocus) clientCommand() {}
 // window coordinates. The deltas and Time feed zwp_relative_pointer_v1;
 // While the window locks the pointer, wayland sends only relative motion.
 type PointerMotionTo struct {
-	ID                   WindowID
+	ID                   domain.WindowID
 	X, Y                 float64
 	DX, DY               float64
 	UnaccelDX, UnaccelDY float64
@@ -169,7 +173,7 @@ type PointerMotionTo struct {
 func (PointerMotionTo) clientCommand() {}
 
 type PointerButtonTo struct {
-	ID      WindowID
+	ID      domain.WindowID
 	Button  uint32
 	Pressed bool
 	// Grab marks the press that starts the implicit grab: no other button
@@ -183,28 +187,18 @@ func (PointerButtonTo) clientCommand() {}
 
 // PointerAxisTo sends a scroll frame to a window.
 type PointerAxisTo struct {
-	ID   WindowID
+	ID   domain.WindowID
 	Axis PointerAxis
 }
 
 func (PointerAxisTo) clientCommand() {}
 
-// GestureKind is a touchpad gesture a client can receive
-// (zwp_pointer_gestures_v1).
-type GestureKind uint8
-
-const (
-	GestureSwipe GestureKind = iota
-	GesturePinch
-	GestureHold
-)
-
 // GestureBeginTo starts a gesture on a window with the pointer focus.
 // Wayland assigns the serial. Time is the device timestamp
 // (CLOCK_MONOTONIC), like the updates and the end of the gesture.
 type GestureBeginTo struct {
-	ID      WindowID
-	Kind    GestureKind
+	ID      domain.WindowID
+	Kind    domain.GestureKind
 	Fingers int
 	Time    time.Duration
 }
@@ -215,8 +209,8 @@ func (GestureBeginTo) clientCommand() {}
 // centre's movement; Scale and Rotation are only for a pinch (see
 // PinchUpdate). A hold has no updates.
 type GestureUpdateTo struct {
-	ID       WindowID
-	Kind     GestureKind
+	ID       domain.WindowID
+	Kind     domain.GestureKind
 	DX, DY   float64
 	Scale    float64
 	Rotation float64
@@ -230,8 +224,8 @@ func (GestureUpdateTo) clientCommand() {}
 // or the device cancelled it. Ending a gesture that is not running does
 // nothing.
 type GestureEndTo struct {
-	ID        WindowID
-	Kind      GestureKind
+	ID        domain.WindowID
+	Kind      domain.GestureKind
 	Cancelled bool
 	Time      time.Duration
 }
@@ -240,7 +234,7 @@ func (GestureEndTo) clientCommand() {}
 
 // ForwardKey carries core → wayland unbound keys.
 type ForwardKey struct {
-	ID  WindowID
+	ID  domain.WindowID
 	Key KeyEvent
 }
 
@@ -290,8 +284,8 @@ type SpawnRequest struct {
 // state. Mods 0 with Restore true sends the real modifier state again: State
 // is that state as core last saw it, which the seat adopts.
 type SetModifiers struct {
-	ID      WindowID
-	Mods    Mods
+	ID      domain.WindowID
+	Mods    domain.Mods
 	Restore bool
 	State   ModState
 }
@@ -307,7 +301,7 @@ func (CursorOverride) clientCommand() {}
 
 // WatchStats carries core → wayland the window whose frame statistics
 // wayland reports (WindowStats) every StatsInterval; 0 stops reporting.
-type WatchStats struct{ Window WindowID }
+type WatchStats struct{ Window domain.WindowID }
 
 func (WatchStats) clientCommand() {}
 

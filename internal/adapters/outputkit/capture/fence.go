@@ -6,6 +6,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -78,7 +79,7 @@ func IndicatorShown(s ports.Scene, q ports.CaptureRequest) bool {
 // way wayland projects a logical target (rounded outwards). An edge of m on an
 // output edge extends to it: the output size is not always a multiple of the
 // scale.
-func covers(s ports.Scene, m ports.Rect, r image.Rectangle) bool {
+func covers(s ports.Scene, m domain.Rect, r image.Rectangle) bool {
 	scale := s.Scale
 	if scale <= 0 {
 		scale = 1

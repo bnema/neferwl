@@ -6,16 +6,17 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-const dndIcon ports.WindowID = 900
+const dndIcon domain.WindowID = 900
 
 // dndRig is a drag rig with tiles 1 and 2 side by side and the pointer
 // on 1 with its button held, as a client that is about to start_drag.
 type dndRig struct {
 	*dragRig
-	one, two ports.Rect
+	one, two domain.Rect
 }
 
 func startDnd(t *testing.T, outs ...ports.OutputInfo) *dndRig {
@@ -50,7 +51,7 @@ func dataDragCommands(cmds []ports.ClientCommand) []ports.ClientCommand {
 	return out
 }
 
-func (d *dndRig) start(t *testing.T, icon ports.WindowID) []ports.ClientCommand {
+func (d *dndRig) start(t *testing.T, icon domain.WindowID) []ports.ClientCommand {
 	t.Helper()
 	d.client <- ports.DataDragStarted{Button: 0x110, Icon: icon}
 	d.settle(t)
@@ -154,7 +155,7 @@ func TestDataDragKeyboardKeepsForwarding(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		d := startDnd(t)
 		d.start(t, 0)
-		d.in(ports.KeyEvent{Keysym: "Shift_L", Keycode: 42, Pressed: true, Mods: ports.ModShift})
+		d.in(ports.KeyEvent{Keysym: "Shift_L", Keycode: 42, Pressed: true, Mods: domain.ModShift})
 		d.in(ports.KeyEvent{Keysym: "Shift_L", Keycode: 42})
 		d.settle(t)
 		n := 0
@@ -251,7 +252,7 @@ func TestDataDragRefused(t *testing.T) {
 			one := dragRect(t, set, "A", 1)
 			r.moveTo(float64(one.X+20), float64(one.Y+30), 1)
 			r.settle(t)
-			r.press(t, 0x110, ports.ModSuper)
+			r.press(t, 0x110, domain.ModSuper)
 			r.settle(t)
 			r.drain()
 			r.client <- ports.DataDragStarted{Button: 0x110}
@@ -390,7 +391,7 @@ func TestDataDragIconIsLastWindowAtCursor(t *testing.T) {
 		set := d.settle(t)
 		s := dragScene(set, "A")
 		last := s.Windows[len(s.Windows)-1]
-		want := ports.SceneWindow{ID: dndIcon, Rect: ports.Rect{X: cx - 4, Y: cy - 6, W: 32, H: 24}, Popup: true, OverLayers: true}
+		want := ports.SceneWindow{ID: dndIcon, Rect: domain.Rect{X: cx - 4, Y: cy - 6, W: 32, H: 24}, Popup: true, OverLayers: true}
 		if last != want {
 			t.Fatalf("last window %+v, want %+v", last, want)
 		}
@@ -453,7 +454,7 @@ func TestDataDragIconOnScreenUnderCursor(t *testing.T) {
 		if !ok {
 			t.Fatal("no icon on B")
 		}
-		if w.Rect != (ports.Rect{X: 102, Y: 53, W: 10, H: 10}) {
+		if w.Rect != (domain.Rect{X: 102, Y: 53, W: 10, H: 10}) {
 			t.Fatalf("icon %+v", w.Rect)
 		}
 
@@ -525,8 +526,8 @@ func TestDataDragFollowsWorkspaceSwitchUnderStillCursor(t *testing.T) {
 		d.drain()
 		// cmd+2 shows an empty workspace under the still cursor: the target
 		// leaves, and the release drops on nothing.
-		d.in(ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModSuper, Pressed: true})
-		d.in(ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModSuper})
+		d.in(ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: domain.ModSuper, Pressed: true})
+		d.in(ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: domain.ModSuper})
 		d.settle(t)
 		got := dataDragCommands(d.drain())
 		if !slices.Contains(got, ports.ClientCommand(ports.DataDragFocus{Time: 3 * time.Millisecond})) {
@@ -554,12 +555,12 @@ func TestDataDragTargetMovedUnderStillCursor(t *testing.T) {
 		// Over 2, focused by a click-free keyboard move, then cmd+f maximizes
 		// its column: still the target under the cursor, at another point.
 		d.moveTo(float64(d.two.X+d.two.W-20), float64(d.two.Y+30), 2)
-		d.in(ports.KeyEvent{Keysym: "l", Keycode: 38, Mods: ports.ModSuper, Pressed: true})
-		d.in(ports.KeyEvent{Keysym: "l", Keycode: 38, Mods: ports.ModSuper})
+		d.in(ports.KeyEvent{Keysym: "l", Keycode: 38, Mods: domain.ModSuper, Pressed: true})
+		d.in(ports.KeyEvent{Keysym: "l", Keycode: 38, Mods: domain.ModSuper})
 		d.settle(t)
 		d.drain()
-		d.in(ports.KeyEvent{Keysym: "f", Keycode: 33, Mods: ports.ModSuper, Pressed: true})
-		d.in(ports.KeyEvent{Keysym: "f", Keycode: 33, Mods: ports.ModSuper})
+		d.in(ports.KeyEvent{Keysym: "f", Keycode: 33, Mods: domain.ModSuper, Pressed: true})
+		d.in(ports.KeyEvent{Keysym: "f", Keycode: 33, Mods: domain.ModSuper})
 		set := d.settle(t)
 		wide := dragRect(t, set, dragOut.Name, 2)
 		if wide.X == d.two.X {
@@ -600,12 +601,12 @@ func TestDataDragEscapeCancelsOverSwitcher(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		d := startDnd(t)
 		d.start(t, 0)
-		d.in(ports.KeyEvent{Keysym: "Super_L", Keycode: 125, Mods: ports.ModSuper, Pressed: true})
-		d.in(ports.KeyEvent{Keysym: "Tab", Keycode: 15, Mods: ports.ModSuper, Pressed: true})
-		d.in(ports.KeyEvent{Keysym: "Tab", Keycode: 15, Mods: ports.ModSuper})
+		d.in(ports.KeyEvent{Keysym: "Super_L", Keycode: 125, Mods: domain.ModSuper, Pressed: true})
+		d.in(ports.KeyEvent{Keysym: "Tab", Keycode: 15, Mods: domain.ModSuper, Pressed: true})
+		d.in(ports.KeyEvent{Keysym: "Tab", Keycode: 15, Mods: domain.ModSuper})
 		d.settle(t)
 		d.drain()
-		d.in(ports.KeyEvent{Keysym: "Escape", Keycode: 1, Mods: ports.ModSuper, Pressed: true})
+		d.in(ports.KeyEvent{Keysym: "Escape", Keycode: 1, Mods: domain.ModSuper, Pressed: true})
 		d.settle(t)
 		got := dataDragCommands(d.drain())
 		if len(got) == 0 || got[0] != (ports.DataDragCancel{}) {

@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -31,16 +33,16 @@ func (f hintFrame) scene() ports.Scene {
 	s := excludedTestScene()
 	s.Capture = nil
 	if f.exclusion {
-		s.Capture = &ports.SceneCapture{Session: 7, Excluded: []ports.WindowID{10, 20}}
+		s.Capture = &ports.SceneCapture{Session: 7, Excluded: []domain.WindowID{10, 20}}
 	}
 	if f.unshown {
-		s.Capture = &ports.SceneCapture{Session: 7, Excluded: []ports.WindowID{99}}
+		s.Capture = &ports.SceneCapture{Session: 7, Excluded: []domain.WindowID{99}}
 	}
 	if f.labels {
-		s.Overlays = []ports.Overlay{{ID: 1, Seq: 1, Kind: ports.OverlayLabel, Capture: f.capture, Text: "f"}}
+		s.Overlays = []ports.Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Capture: f.capture, Text: "f"}}
 	}
 	if f.indicator {
-		s.CaptureIndicators = []ports.CaptureIndicator{{Rect: ports.Rect{W: 10, H: 10}}}
+		s.CaptureIndicators = []ports.CaptureIndicator{{Rect: domain.Rect{W: 10, H: 10}}}
 	}
 	if f.posHint {
 		s.PositionHint = ports.PositionHint{Opacity: 1, Columns: 1}
@@ -87,7 +89,7 @@ func runFrame(t *testing.T, s ports.Scene, reqs ...ports.CaptureRequest) frameRu
 	var mu sync.Mutex
 	var run frameRun
 	var frames []*portsmocks.MockCaptureFrame
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		run.renders = append(run.renders, drawn(s))
@@ -311,8 +313,8 @@ func TestSplitNoAllocHintCapture(t *testing.T) {
 // caller's overlays are left untouched.
 func TestPlainKeepsOnlyCaptureOverlays(t *testing.T) {
 	in := []ports.Overlay{
-		{ID: 1, Seq: 1, Kind: ports.OverlayLabel, Capture: true, Text: "a"},
-		{ID: 2, Seq: 1, Kind: ports.OverlayLabel, Text: "b"},
+		{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Capture: true, Text: "a"},
+		{ID: 2, Seq: 1, Kind: domain.OverlayLabel, Text: "b"},
 	}
 	want := append([]ports.Overlay(nil), in...)
 	s := excludedTestScene()

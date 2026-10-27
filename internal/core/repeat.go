@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -23,7 +24,7 @@ type keyRepeat struct {
 	// held is the physical key (heldKey); mods the modifiers it was
 	// pressed with: a change stops the repeat.
 	held string
-	mods ports.Mods
+	mods domain.Mods
 	// action is the bind it repeats; key the overview key, when action is
 	// empty.
 	action Action

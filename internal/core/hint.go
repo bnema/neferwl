@@ -6,6 +6,7 @@ import (
 	"math"
 	"slices"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -37,13 +38,13 @@ type hintTarget struct {
 	window WindowID
 	source hintSourceGeom // source window and its request-time client geometry
 	label  string
-	rect   ports.Rect
+	rect   domain.Rect
 	text   bool
 }
 
 type hintSourceGeom struct {
 	id   WindowID
-	rect ports.Rect
+	rect domain.Rect
 }
 
 // overlayIDHint is the overlay ID namespace of hint labels: their IDs are
@@ -145,7 +146,7 @@ func (c *Core) hintWindows(sc *screen) []ports.HintWindow {
 // button (swallowed ones included: they stay in c.buttons), a window or data
 // drag, or the column switcher.
 func (c *Core) hintPointerBusy() bool {
-	return c.constraint.Mode != ports.ConstraintNone || c.constrained.Mode != ports.ConstraintNone ||
+	return c.constraint.Mode != domain.ConstraintNone || c.constrained.Mode != domain.ConstraintNone ||
 		c.grab != 0 || len(c.buttons) > 0 || c.pointerBusy() || c.dataDrag != nil || c.switching()
 }
 
@@ -193,7 +194,7 @@ func (c *Core) hintResult(res ports.HintScanResult) bool {
 		if !ok {
 			continue
 		}
-		kept = append(kept, hintTarget{x: x, y: y, window: id, source: source, rect: t.Rect, score: t.Score, text: t.Source == ports.HintSourceOCR})
+		kept = append(kept, hintTarget{x: x, y: y, window: id, source: source, rect: t.Rect, score: t.Score, text: t.Source == domain.HintSourceOCR})
 	}
 	if len(kept) == 0 {
 		c.hintCancel()
@@ -235,10 +236,10 @@ func (c *Core) hintLabelSize(sc *screen) (w, h int) {
 
 // hintLabelRect mirrors the renderer's outside top-left anchor and output
 // clamping, in output-local logical coordinates.
-func hintLabelRect(sc *screen, target ports.Rect, lw, lh int) ports.Rect {
+func hintLabelRect(sc *screen, target domain.Rect, lw, lh int) domain.Rect {
 	bounds := sc.rect()
 	inset := int(math.Round(0.25 * float64(lh)))
-	return ports.Rect{X: min(max(target.X-lw+inset, 0), bounds.W-lw), Y: min(max(target.Y-lh+inset, 0), bounds.H-lh), W: lw, H: lh}
+	return domain.Rect{X: min(max(target.X-lw+inset, 0), bounds.W-lw), Y: min(max(target.Y-lh+inset, 0), bounds.H-lh), W: lw, H: lh}
 }
 
 // hintSpread drops targets whose output-clamped label rectangles intersect.
@@ -262,7 +263,7 @@ func (c *Core) hintSpread(sc *screen, ts []hintTarget) []hintTarget {
 		order[i] = ts[index]
 	}
 	kept := order[:0]
-	rects := make([]ports.Rect, 0, len(order))
+	rects := make([]domain.Rect, 0, len(order))
 	for _, t := range order {
 		clash := false
 		a := hintLabelRect(sc, t.rect, lw, lh)
@@ -438,9 +439,9 @@ func (c *Core) hintOverlays(sc *screen) []ports.Overlay {
 		out = append(out, ports.Overlay{
 			ID:      overlayIDHint | uint64(i+1),
 			Seq:     h.gen<<16 | uint64(len(h.typed)),
-			Kind:    ports.OverlayLabel,
-			Anchor:  ports.AnchorOutsideTopLeft,
-			Rect:    ports.Rect{X: t.rect.X, Y: t.rect.Y},
+			Kind:    domain.OverlayLabel,
+			Anchor:  domain.AnchorOutsideTopLeft,
+			Rect:    domain.Rect{X: t.rect.X, Y: t.rect.Y},
 			Capture: c.cfg.Hint.Capture,
 			Style:   ports.OverlayStyle{Size: c.cfg.Hint.Size, Background: c.cfg.Hint.Background, Foreground: c.cfg.Hint.Foreground},
 			Text:    t.label,
@@ -451,7 +452,7 @@ func (c *Core) hintOverlays(sc *screen) []ports.Overlay {
 }
 
 // hintMods reads the reloadable OCR modifiers at click time.
-func (c *Core) hintMods(t hintTarget) ports.Mods {
+func (c *Core) hintMods(t hintTarget) domain.Mods {
 	if !t.text {
 		return 0
 	}

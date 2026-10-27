@@ -3,6 +3,7 @@ package drm
 import (
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -71,7 +72,7 @@ func (o *Output) contentProps(req *atomicReq) {
 }
 
 // wantContent chooses a content hint for the only visible fullscreen window.
-func (o *Output) wantContent(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) {
+func (o *Output) wantContent(s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent) {
 	o.contentWanted = o.contentValues[0]
 	var full *ports.SceneWindow
 	for i := range s.Windows {
@@ -88,11 +89,11 @@ func (o *Output) wantContent(s ports.Scene, surfaces map[ports.WindowID]ports.Su
 		return
 	}
 	switch surfaces[full.ID].ContentType {
-	case ports.ContentPhoto:
+	case domain.ContentPhoto:
 		o.contentWanted = o.contentValues[2]
-	case ports.ContentVideo:
+	case domain.ContentVideo:
 		o.contentWanted = o.contentValues[3]
-	case ports.ContentGame:
+	case domain.ContentGame:
 		o.contentWanted = o.contentValues[4]
 	}
 }

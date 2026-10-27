@@ -6,6 +6,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/extsessionlock"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -21,7 +22,7 @@ type lockSurface struct {
 	server         *Server
 	surface        *surface
 	output         *output
-	id             ports.WindowID
+	id             domain.WindowID
 	serials        []lockConfigure
 	ack            lockConfigure
 	mapped, closed bool
@@ -51,7 +52,7 @@ func (s *Server) newLockSurface(r *extsessionlock.ExtSessionLockV1, id uint32, s
 	s.nextWindow++
 	surf.kind, surf.lock, surf.role = roleSessionLock, l, l.commit
 	if s.lockSurfaces == nil {
-		s.lockSurfaces = make(map[ports.WindowID]*lockSurface)
+		s.lockSurfaces = make(map[domain.WindowID]*lockSurface)
 	}
 	s.lockSurfaces[l.id] = l
 	s.lockSurfaceChanged()

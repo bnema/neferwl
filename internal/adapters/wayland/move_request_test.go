@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/neferwl/internal/ports"
-
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
+	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
 )
@@ -104,7 +104,7 @@ func TestToplevelMoveRequest(t *testing.T) {
 			got = append(got, v)
 		}
 	}
-	if got[0] != (ports.WindowMoveRequest{ID: w.ID}) || got[1] != (ports.WindowMoveRequest{ID: w.ID, Resize: true, Edges: ports.ResizeBottom | ports.ResizeLeft}) {
+	if got[0] != (ports.WindowMoveRequest{ID: w.ID}) || got[1] != (ports.WindowMoveRequest{ID: w.ID, Resize: true, Edges: domain.ResizeBottom | domain.ResizeLeft}) {
 		t.Fatalf("%+v", got)
 	}
 	select {

@@ -3,13 +3,13 @@ package hints
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/require"
 )
 
 func tg(x, y, w, h int, score float32) ports.HintTarget {
-	return ports.HintTarget{Rect: ports.Rect{X: x, Y: y, W: w, H: h}, Score: score}
+	return ports.HintTarget{Rect: domain.Rect{X: x, Y: y, W: w, H: h}, Score: score}
 }
 
 func TestMergeTargets(t *testing.T) {

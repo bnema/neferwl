@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"github.com/bnema/neferwl/internal/adapters/overlaydraw"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -24,8 +25,8 @@ func (w *sceneWalk) overlays() {
 func (w *sceneWalk) overlay(o ports.Overlay, anchor, clip image.Rectangle, outputWidth int) {
 	r := w.r
 	switch o.Kind {
-	case ports.OverlayLabel:
-	case ports.OverlayPanel:
+	case domain.OverlayLabel:
+	case domain.OverlayPanel:
 		if o.Panel == nil {
 			return
 		}
@@ -35,13 +36,13 @@ func (w *sceneWalk) overlay(o ports.Overlay, anchor, clip image.Rectangle, outpu
 	bg, fg := overlaydraw.Colors(w.s.Border.Active, o.Style.Background, o.Style.Foreground)
 	style := overlaydraw.Style{FontPx: overlaydraw.FontPixels(w.s.Physical.Width, w.s.Physical.Height, w.s.Physical.MMWidth, w.s.Physical.MMHeight, w.scale, o.Style.Size), Background: bg, Foreground: fg}
 	key := shmKey{overlay: o.ID, scale: w.scale, style: style}
-	if o.Kind == ports.OverlayPanel {
+	if o.Kind == domain.OverlayPanel {
 		key.maxWidth = max(1, outputWidth-2*w.phys(24))
 	}
 	var pix []byte
 	var lw, lh int
 	var c *shmCopy
-	if o.Kind == ports.OverlayPanel {
+	if o.Kind == domain.OverlayPanel {
 		// SHM already records dimensions for each cached sequence: check it
 		// before touching the panel's reusable CPU raster.
 		if surface := r.shm[key]; surface != nil {
@@ -75,14 +76,14 @@ func (w *sceneWalk) overlay(o ports.Overlay, anchor, clip image.Rectangle, outpu
 	inset := int(math.Round(0.25 * float64(lh)))
 	x := min(max(w.phys(o.Rect.X)-lw+inset, w.bounds.Min.X), max(w.bounds.Max.X-lw, w.bounds.Min.X))
 	y := min(max(w.phys(o.Rect.Y)-lh+inset, w.bounds.Min.Y), max(w.bounds.Max.Y-lh, w.bounds.Min.Y))
-	if o.Anchor == ports.AnchorTopCenter {
+	if o.Anchor == domain.AnchorTopCenter {
 		x = min(max((w.bounds.Dx()-lw)/2+w.bounds.Min.X, w.bounds.Min.X), max(w.bounds.Max.X-lw, w.bounds.Min.X))
 		y = min(max(w.phys(o.Rect.Y), w.bounds.Min.Y), max(w.bounds.Max.Y-lh, w.bounds.Min.Y))
 	}
 	if o.Window != 0 {
 		x = anchor.Min.X + w.phys(o.Rect.X) - lw + inset
 		y = anchor.Min.Y + w.phys(o.Rect.Y) - lh + inset
-		if o.Anchor == ports.AnchorTopCenter {
+		if o.Anchor == domain.AnchorTopCenter {
 			x = anchor.Min.X + (anchor.Dx()-lw)/2
 			y = anchor.Min.Y + w.phys(o.Rect.Y)
 		}

@@ -4,7 +4,7 @@ import (
 	"slices"
 
 	"github.com/bnema/neferwl/internal/core/layout"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // EdgeKind describes when column navigation should visit another workspace.
@@ -250,7 +250,7 @@ func (w *Workspace) ShowStashAt(i int) {
 }
 
 // DragFloat moves or resizes a native float within the usable area.
-func (w *Workspace) DragFloat(id WindowID, from Rect, edges ports.ResizeEdges, dx, dy int, resize bool) bool {
+func (w *Workspace) DragFloat(id WindowID, from Rect, edges domain.ResizeEdges, dx, dy int, resize bool) bool {
 	i := w.floatIndex(id)
 	if i < 0 {
 		return false

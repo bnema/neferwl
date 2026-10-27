@@ -1,5 +1,7 @@
 package ports
 
+import "github.com/bnema/neferwl/internal/domain"
+
 // SessionLockChanged carries display-owned protection changes to core. The
 // defensive gate is engaged before this event is queued. Unlock also changes
 // the generation. A dead owner leaves Protected true and no surfaces.
@@ -10,7 +12,7 @@ type SessionLockChanged struct {
 
 // LockSurfacePlacement is a validated mapped lock role, never a desktop window.
 type LockSurfacePlacement struct {
-	ID            WindowID
+	ID            domain.WindowID
 	Output        string
 	Width, Height int
 }

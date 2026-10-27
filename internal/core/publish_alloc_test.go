@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core/motion"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -305,8 +306,8 @@ func TestPublishOverviewAllocations(t *testing.T) {
 	t.Run("switcher", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			c := publishRig(t, 1)
-			c.cmdMod = ports.ModSuper
-			c.mods = ports.ModSuper
+			c.cmdMod = domain.ModSuper
+			c.mods = domain.ModSuper
 			sc := c.cur()
 			m := sc.mon
 			m.SetMaxColumns(3)

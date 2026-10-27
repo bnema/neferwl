@@ -7,8 +7,12 @@ import (
 	"time"
 
 	"github.com/bnema/go-wayland-bindings/server/extforeigntoplevellist"
+	"github.com/bnema/neferwl/internal/domain"
+
 	source "github.com/bnema/go-wayland-bindings/server/extimagecapturesource"
+
 	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
+
 	extworkspace "github.com/bnema/go-wayland-bindings/server/extworkspace"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
@@ -38,8 +42,8 @@ type captureSource struct {
 	output    *output
 	region    image.Rectangle // output-local logical, srcRegion
 	workspace uint64
-	window    ports.WindowID // srcWindow
-	gen       uint32         // srcWindow: its mapping; a remap kills the source
+	window    domain.WindowID // srcWindow
+	gen       uint32          // srcWindow: its mapping; a remap kills the source
 }
 
 func registerImageCopy(d *server.Display, s *Server) error {
@@ -104,19 +108,19 @@ func (m toplevelCaptureSource) CreateSource(r *source.ExtForeignToplevelImageCap
 }
 
 // windowCaptureGone stops the sessions of a window that unmapped or closed.
-func (s *Server) windowCaptureGone(id ports.WindowID) {
+func (s *Server) windowCaptureGone(id domain.WindowID) {
 	for c := range s.captureSessions {
 		if c.src != nil && c.src.kind == srcWindow && c.src.window == id {
 			if c.id != 0 {
-				s.log.Info().Uint64("session", c.id).Str("reason", string(ports.CaptureReasonWindowGone)).Msg("capture session end")
+				s.log.Info().Uint64("session", c.id).Str("reason", string(domain.CaptureReasonWindowGone)).Msg("capture session end")
 			}
 			c.end(true, true)
 		}
 	}
 	for _, c := range s.castSessions {
 		if c.src.kind == srcWindow && c.src.window == id {
-			s.log.Info().Uint64("cast", c.cast).Str("reason", string(ports.CaptureReasonWindowGone)).Msg("cast end")
-			c.end(ports.CaptureReasonWindowGone, nil, true, true)
+			s.log.Info().Uint64("cast", c.cast).Str("reason", string(domain.CaptureReasonWindowGone)).Msg("cast end")
+			c.end(domain.CaptureReasonWindowGone, nil, true, true)
 		}
 	}
 }
@@ -211,7 +215,7 @@ func (m copyCaptureManager) CreateSession(r *ext.ExtImageCopyCaptureManagerV1, i
 	case srcOutput:
 		open.Output = cs.output.name()
 	case srcRegion:
-		open.Output, open.Region = cs.output.name(), ports.Rect{X: cs.region.Min.X, Y: cs.region.Min.Y, W: cs.region.Dx(), H: cs.region.Dy()}
+		open.Output, open.Region = cs.output.name(), domain.Rect{X: cs.region.Min.X, Y: cs.region.Min.Y, W: cs.region.Dx(), H: cs.region.Dy()}
 	case srcWorkspace:
 		open.Workspace = cs.workspace
 	case srcWindow:
@@ -324,8 +328,8 @@ func (c *captureTarget) geometry() (o *output, rect image.Rectangle, hidden, ok 
 		return o, rect, false, !rect.Empty()
 	case srcWorkspace:
 		var name string
-		var frame ports.Rect
-		if c.haveState && c.st.Reason == ports.CaptureReasonNone {
+		var frame domain.Rect
+		if c.haveState && c.st.Reason == domain.CaptureReasonNone {
 			name, frame, hidden = c.st.Output, c.st.Rect, c.st.Hidden
 		} else {
 			out, w, found := c.s.workspaceInfo(src.workspace)
@@ -354,13 +358,13 @@ func (c *captureTarget) geometry() (o *output, rect image.Rectangle, hidden, ok 
 		if w == nil || !w.mapped || w.toplevel == nil || w.gen != src.gen {
 			return nil, image.Rectangle{}, false, false
 		}
-		name, size := w.last.Output, ports.Rect{W: w.last.Width, H: w.last.Height}
-		if c.haveState && c.st.Reason == ports.CaptureReasonNone {
+		name, size := w.last.Output, domain.Rect{W: w.last.Width, H: w.last.Height}
+		if c.haveState && c.st.Reason == domain.CaptureReasonNone {
 			name, size = c.st.Output, c.st.Rect
 		}
 		if size.W <= 0 || size.H <= 0 {
 			if gw, gh := w.size(); gw > 0 && gh > 0 {
-				size = ports.Rect{W: gw, H: gh}
+				size = domain.Rect{W: gw, H: gh}
 			}
 		}
 		o = c.s.outputByNameExact(name)
@@ -438,7 +442,7 @@ func (c *captureSession) refresh() {
 	fate, rect, ok := c.follow()
 	switch {
 	case fate == targetWorkspaceGone:
-		c.s.log.Info().Uint64("session", c.id).Str("reason", string(ports.CaptureReasonWorkspaceGone)).Msg("capture session end")
+		c.s.log.Info().Uint64("session", c.id).Str("reason", string(domain.CaptureReasonWorkspaceGone)).Msg("capture session end")
 		c.end(true, true)
 	case fate == targetEmpty:
 		c.s.log.Info().Uint64("session", c.id).Msg("capture session end: target empty")
@@ -470,7 +474,7 @@ func (s *Server) endCaptureSessions() {
 	}
 	for _, c := range s.castSessions {
 		s.log.Info().Uint64("cast", c.cast).Str("reason", "session-protected").Msg("cast end")
-		c.end(ports.CaptureReasonNone, errCastProtected, true, true)
+		c.end(domain.CaptureReasonNone, errCastProtected, true, true)
 	}
 	s.castInventoryChanged()
 }
@@ -480,14 +484,14 @@ func (s *Server) endCaptureSessions() {
 func (s *Server) outputGone(o *output) {
 	for c := range s.captureSessions {
 		if c.src != nil && c.src.output == o && (c.src.kind == srcOutput || c.src.kind == srcRegion) {
-			s.log.Info().Uint64("session", c.id).Str("reason", string(ports.CaptureReasonOutputGone)).Msg("capture session end")
+			s.log.Info().Uint64("session", c.id).Str("reason", string(domain.CaptureReasonOutputGone)).Msg("capture session end")
 			c.end(true, true)
 		}
 	}
 	for _, c := range s.castSessions {
 		if c.src.kind == srcOutput && c.src.output == o {
-			s.log.Info().Uint64("cast", c.cast).Str("reason", string(ports.CaptureReasonOutputGone)).Msg("cast end")
-			c.end(ports.CaptureReasonOutputGone, nil, true, true)
+			s.log.Info().Uint64("cast", c.cast).Str("reason", string(domain.CaptureReasonOutputGone)).Msg("cast end")
+			c.end(domain.CaptureReasonOutputGone, nil, true, true)
 		}
 	}
 }
@@ -544,7 +548,7 @@ func (c *captureTarget) targetTag(hidden bool) (t captureTag) {
 		t.taken = ports.CaptureFrameTaken{Output: c.src.output.name()}
 	case srcRegion:
 		r := c.src.region
-		t.taken = ports.CaptureFrameTaken{Output: c.src.output.name(), Region: ports.Rect{X: r.Min.X, Y: r.Min.Y, W: r.Dx(), H: r.Dy()}}
+		t.taken = ports.CaptureFrameTaken{Output: c.src.output.name(), Region: domain.Rect{X: r.Min.X, Y: r.Min.Y, W: r.Dx(), H: r.Dy()}}
 	case srcWorkspace:
 		t.taken = ports.CaptureFrameTaken{Workspace: c.src.workspace}
 	case srcWindow:

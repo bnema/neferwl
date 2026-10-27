@@ -1,4 +1,5 @@
 // Package xkb provides a cgo-free libxkbcommon keymap and keyboard state.
+
 package xkb
 
 import (
@@ -7,6 +8,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego"
 )
@@ -156,8 +158,8 @@ func (k *Keymap) Key(evdevCode uint32, pressed bool, t time.Duration) ports.KeyE
 	}
 	for _, mod := range []struct {
 		name string
-		flag ports.Mods
-	}{{"Shift", ports.ModShift}, {"Control", ports.ModCtrl}, {"Mod1", ports.ModAlt}, {"Mod4", ports.ModSuper}} {
+		flag domain.Mods
+	}{{"Shift", domain.ModShift}, {"Control", domain.ModCtrl}, {"Mod1", domain.ModAlt}, {"Mod4", domain.ModSuper}} {
 		b := append([]byte(mod.name), 0)
 		if k.modActive(k.state, &b[0], modsEffective) > 0 {
 			event.Mods |= mod.flag

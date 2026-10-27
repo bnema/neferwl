@@ -3,12 +3,13 @@ package core
 import (
 	"sort"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
 // arrangeLayers places exclusive surfaces first, then sorts the resulting scene by layer.
-func arrangeLayers(outW, outH int, layers []ports.LayerSurface) (placed []ports.SceneLayer, usable ports.Rect) {
-	full := ports.Rect{W: max(outW, 0), H: max(outH, 0)}
+func arrangeLayers(outW, outH int, layers []ports.LayerSurface) (placed []ports.SceneLayer, usable domain.Rect) {
+	full := domain.Rect{W: max(outW, 0), H: max(outH, 0)}
 	usable = full
 	for pass := 0; pass < 2; pass++ {
 		for _, s := range layers {
@@ -46,7 +47,7 @@ func arrangeLayers(outW, outH int, layers []ports.LayerSurface) (placed []ports.
 			case ports.AnchorBottom:
 				y = bounds.Y + bounds.H - h - bottom
 			}
-			placed = append(placed, ports.SceneLayer{ID: s.ID, Layer: s.Layer, Rect: ports.Rect{X: x, Y: y, W: w, H: h}})
+			placed = append(placed, ports.SceneLayer{ID: s.ID, Layer: s.Layer, Rect: domain.Rect{X: x, Y: y, W: w, H: h}})
 			if s.ExclusiveZone <= 0 {
 				continue
 			}
@@ -99,7 +100,7 @@ func hasFullscreen(sc *screen) bool {
 // keyboard exclusively (a locker, a launcher) still shows: it has the
 // keyboard and must be seen.
 func shown(sc *screen, l ports.SceneLayer) bool {
-	return l.Layer == ports.LayerBackground || !hasFullscreen(sc) || sc.exclusiveKeyboard(l.ID) || sc.capture[l.ID]
+	return l.Layer == domain.LayerBackground || !hasFullscreen(sc) || sc.exclusiveKeyboard(l.ID) || sc.capture[l.ID]
 }
 
 // exclusiveKeyboard reports whether layer surface id takes the keyboard
@@ -130,7 +131,7 @@ func (c *Core) layerAt(sc *screen, lx, ly float64, above bool) (WindowID, float6
 	for i := len(sc.placed) - 1; i >= 0; i-- {
 		l := sc.placed[i]
 		r := l.Rect
-		if (l.Layer >= ports.LayerTop) != above || !shown(sc, l) || r.W <= 0 || r.H <= 0 {
+		if (l.Layer >= domain.LayerTop) != above || !shown(sc, l) || r.W <= 0 || r.H <= 0 {
 			continue
 		}
 		if lx >= float64(r.X) && lx < float64(r.X+r.W) && ly >= float64(r.Y) && ly < float64(r.Y+r.H) && c.acceptsInput(l.ID, lx-float64(r.X), ly-float64(r.Y)) {

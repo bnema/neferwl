@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -32,7 +34,7 @@ func TestSecurityProtectedStartupBlackProofAndCaptureRejection(t *testing.T) {
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
-	r.EXPECT().Render(ports.Scene{Background: "#000000"}, map[ports.WindowID]ports.SurfaceContent(nil)).Return(nil, nil).Times(3)
+	r.EXPECT().Render(ports.Scene{Background: "#000000"}, map[domain.WindowID]ports.SurfaceContent(nil)).Return(nil, nil).Times(3)
 	r.EXPECT().Close().Return().Once()
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
 	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
@@ -103,7 +105,7 @@ func TestSecurityStartupClearWaitUsesRunContext(t *testing.T) {
 	fence, _ := protectionFence(t, false)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 		cancel()
 		return fence, nil
 	}).Once()

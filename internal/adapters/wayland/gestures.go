@@ -5,6 +5,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/pointergestures"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 )
@@ -34,14 +35,14 @@ func (g *gestureObject) alive() bool {
 	return false
 }
 
-func (g *gestureObject) kind() ports.GestureKind {
+func (g *gestureObject) kind() domain.GestureKind {
 	switch {
 	case g.pinch != nil:
-		return ports.GesturePinch
+		return domain.GesturePinch
 	case g.hold != nil:
-		return ports.GestureHold
+		return domain.GestureHold
 	}
-	return ports.GestureSwipe
+	return domain.GestureSwipe
 }
 
 func (g *gestureObject) begin(serial uint32, at uint32, surf *wayland.Surface, fingers uint32) {
@@ -81,8 +82,8 @@ func (g *gestureObject) end(serial uint32, at uint32, cancelled int32) {
 // begin are the ones that get the rest, even when a client makes more
 // meanwhile.
 type activeGesture struct {
-	id   ports.WindowID
-	kind ports.GestureKind
+	id   domain.WindowID
+	kind domain.GestureKind
 	objs []*gestureObject
 	// at is the latest device time sent, for a cancellation.
 	at time.Duration

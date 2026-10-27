@@ -5,6 +5,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -37,7 +38,7 @@ func (r *swipeRig) published() ([]ports.Scene, bool) {
 	}
 }
 
-func focusedID(s ports.Scene) ports.WindowID {
+func focusedID(s ports.Scene) domain.WindowID {
 	for _, w := range s.Windows {
 		if w.Focused {
 			return w.ID

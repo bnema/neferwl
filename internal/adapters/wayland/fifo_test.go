@@ -9,6 +9,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/fifo"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
@@ -17,7 +18,7 @@ import (
 // nextContent waits for a content of window id.
 //
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
-func nextContent(t *testing.T, contents <-chan ports.SurfaceContent, id ports.WindowID) time.Time {
+func nextContent(t *testing.T, contents <-chan ports.SurfaceContent, id domain.WindowID) time.Time {
 	t.Helper()
 	deadline := waylandDeadline(2 * time.Second)
 wait:
@@ -243,11 +244,11 @@ func TestWindowContentType(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		kind uint32
-		want ports.ContentType
+		want domain.ContentType
 	}{
-		{"photo", uint32(contenttype.WpContentTypeV1TypePhoto), ports.ContentPhoto},
-		{"video", uint32(contenttype.WpContentTypeV1TypeVideo), ports.ContentVideo},
-		{"game", uint32(contenttype.WpContentTypeV1TypeGame), ports.ContentGame},
+		{"photo", uint32(contenttype.WpContentTypeV1TypePhoto), domain.ContentPhoto},
+		{"video", uint32(contenttype.WpContentTypeV1TypeVideo), domain.ContentVideo},
+		{"game", uint32(contenttype.WpContentTypeV1TypeGame), domain.ContentGame},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, events, _, _, dir := contentServer(t)
@@ -314,7 +315,7 @@ func TestWindowContentType(t *testing.T) {
 					t.Fatal(err)
 				}
 				var want []ports.WindowContentType
-				if kind != tc.kind || w.ContentType == ports.ContentNone {
+				if kind != tc.kind || w.ContentType == domain.ContentNone {
 					want = []ports.WindowContentType{{ID: w.ID, Type: windowContentType(kind)}}
 				}
 				check(want)

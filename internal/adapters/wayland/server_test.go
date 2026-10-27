@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/neferwl/internal/ports"
-
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 //testpolicy:realtime real external Wayland client process on the display socket (Server.Run on libwayland epoll)
@@ -235,7 +235,7 @@ func mapped(t *testing.T, events <-chan ports.ClientEvent, duration time.Duratio
 	}
 	return w
 }
-func unmapped(t *testing.T, events <-chan ports.ClientEvent, id ports.WindowID) {
+func unmapped(t *testing.T, events <-chan ports.ClientEvent, id domain.WindowID) {
 	t.Helper()
 	ev := waitEvent(t, events, 3*time.Second)
 	w, ok := ev.(ports.WindowUnmapped)

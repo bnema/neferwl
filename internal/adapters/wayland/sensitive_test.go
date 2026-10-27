@@ -6,7 +6,10 @@ import (
 	"time"
 
 	"github.com/bnema/go-wayland-bindings/server/cursorshape"
+	"github.com/bnema/neferwl/internal/domain"
+
 	wlr "github.com/bnema/go-wayland-bindings/server/wlrforeigntoplevelmanagement"
+
 	screencopy "github.com/bnema/go-wayland-bindings/server/wlrscreencopy"
 	"github.com/bnema/go-wayland-bindings/server/xdgactivation"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
@@ -14,11 +17,13 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
 
 	source "github.com/bnema/go-wayland-bindings/server/extimagecapturesource"
+
 	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
 	"github.com/bnema/go-wayland-bindings/server/inputmethod"
 	"github.com/bnema/go-wayland-bindings/server/textinput"
 	"github.com/bnema/go-wayland-bindings/server/virtualkeyboard"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
@@ -235,7 +240,7 @@ func TestProtectedCapture(t *testing.T) {
 	h := newCaptureHarness(t)
 	state := installSecurity(t, h.s)
 	owner, session, open, _, token := h.exclusionOwner(t)
-	h.send(ports.CaptureSessionState{ID: open.ID, Output: "HEADLESS-1", Rect: ports.Rect{W: 4, H: 4}, Active: true, Exclusion: true, Revision: 1})
+	h.send(ports.CaptureSessionState{ID: open.ID, Output: "HEADLESS-1", Rect: domain.Rect{W: 4, H: 4}, Active: true, Exclusion: true, Revision: 1})
 	h.settle(t, owner)
 	// Unprotected, the same frame is admitted (positive control).
 	owner.extFrame(t, session, 4, 4)
@@ -244,7 +249,7 @@ func TestProtectedCapture(t *testing.T) {
 		t.Fatalf("owner capture not excluded: %+v", accepted)
 	}
 	h.captured <- ports.CaptureDone{ID: accepted.ID, Output: accepted.Output, Time: time.Now()}
-	hd := h.hud(t, ports.LayerTop, 0)
+	hd := h.hud(t, domain.LayerTop, 0)
 	protect(t, h.s, state, 1, true)
 	if !eventsInclude(owner.extFrame(t, session, 4, 4), frameFailed) {
 		t.Fatal("protected ext frame not failed")

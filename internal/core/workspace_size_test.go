@@ -4,6 +4,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -15,7 +16,7 @@ var ultrawide = ports.OutputInfo{Name: "DP-3", Make: "Acme", Model: "W", Serial:
 func sizedRig(t *testing.T, overflow string, edit func(*ports.Config)) (*multiRig, ports.Scene) {
 	t.Helper()
 	r := startMulti(t, sizedConfig(overflow, edit), ultrawide)
-	return r, r.key(t, "w", ports.ModAlt)[0]
+	return r, r.key(t, "w", domain.ModAlt)[0]
 }
 
 // sizedLanding is sizedRig with animations forced on or off; the scene it
@@ -23,12 +24,12 @@ func sizedRig(t *testing.T, overflow string, edit func(*ports.Config)) (*multiRi
 func sizedLanding(t *testing.T, animated bool, overflow string, edit func(*ports.Config)) (*landRig, ports.Scene) {
 	t.Helper()
 	r := startLanding(t, animated, sizedConfig(overflow, edit), ultrawide)
-	return r, r.keyLanded(t, "w", ports.ModAlt)[0]
+	return r, r.keyLanded(t, "w", domain.ModAlt)[0]
 }
 
-var frame = ports.Rect{X: 760, Y: 180, W: 1920, H: 1080}
+var frame = domain.Rect{X: 760, Y: 180, W: 1920, H: 1080}
 
-func within(r, o ports.Rect) bool {
+func within(r, o domain.Rect) bool {
 	return r.X >= o.X && r.Y >= o.Y && r.X+r.W <= o.X+o.W && r.Y+r.H <= o.Y+o.H
 }
 
@@ -36,7 +37,7 @@ func TestWorkspaceSizeInheritsByDefault(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
 		r := startLanding(t, animated, func(c *ports.Config) { c.Layout.Gaps = 0 }, ultrawide)
 		set := r.mapLanded(t, 1)
-		if set[0].WorkspaceClip != (ports.Rect{}) || set[0].Windows[0].Rect != (ports.Rect{W: 3440, H: 1440}) {
+		if set[0].WorkspaceClip != (domain.Rect{}) || set[0].Windows[0].Rect != (domain.Rect{W: 3440, H: 1440}) {
 			t.Fatalf("%+v", set[0])
 		}
 	})
@@ -59,7 +60,7 @@ func TestWorkspaceSizeFixedColumnsFillFrame(t *testing.T) {
 func workspaceSizeFixedColumnsFillFrame(t *testing.T, r *landRig) {
 	r.mapLanded(t, 1)
 	s := r.mapLanded(t, 2)[0]
-	for i, want := range []ports.Rect{{X: 760, Y: 180, W: 960, H: 1080}, {X: 1720, Y: 180, W: 960, H: 1080}} {
+	for i, want := range []domain.Rect{{X: 760, Y: 180, W: 960, H: 1080}, {X: 1720, Y: 180, W: 960, H: 1080}} {
 		if s.Windows[i].Rect != want {
 			t.Fatalf("%d: %+v", i, s.Windows[i])
 		}
@@ -71,7 +72,7 @@ func TestWorkspaceSizeFullscreenFillsFrame(t *testing.T) {
 		r, _ := sizedLanding(t, animated, "scroll", nil)
 		r.mapLanded(t, 1)
 		r.mapLanded(t, 2)
-		s := r.keyLanded(t, "f", ports.ModAlt|ports.ModShift)[0]
+		s := r.keyLanded(t, "f", domain.ModAlt|domain.ModShift)[0]
 		full := 0
 		for _, w := range s.Windows {
 			if w.Fullscreen {
@@ -92,7 +93,7 @@ func TestWorkspaceSizeFixedFullscreenKeepsFrame(t *testing.T) {
 		r, _ := sizedLanding(t, animated, "fixed", nil)
 		r.mapLanded(t, 1)
 		r.mapLanded(t, 2)
-		s := r.keyLanded(t, "f", ports.ModAlt|ports.ModShift)[0]
+		s := r.keyLanded(t, "f", domain.ModAlt|domain.ModShift)[0]
 		if s.WorkspaceClip != frame {
 			t.Fatalf("fullscreen clip %+v", s.WorkspaceClip)
 		}
@@ -109,7 +110,7 @@ func TestWorkspaceSizeFixedFullscreenKeepsFrame(t *testing.T) {
 		}
 		cfg.Workspaces = []ports.WorkspaceConfig{{Name: "focus", LayoutRules: ports.LayoutRules{Overflow: "fixed"}}}
 		r.reload <- ports.ConfigChanged{Config: cfg}
-		if s := r.land(receive(t, r.scenes))[0]; s.WorkspaceClip != (ports.Rect{}) {
+		if s := r.land(receive(t, r.scenes))[0]; s.WorkspaceClip != (domain.Rect{}) {
 			t.Fatalf("after size removal %+v", s.WorkspaceClip)
 		}
 	})
@@ -158,7 +159,7 @@ func TestWorkspaceSizeFractionalScaleUnchanged(t *testing.T) {
 		})
 		s := r.mapWindow(t, 1)[0]
 		// The monitor is 1720x720 logical; a 1920x1080 workspace clamps to it.
-		if s.OutputWidth != 1720 || s.OutputHeight != 720 || s.Scale != 2 || s.WorkspaceClip != (ports.Rect{}) {
+		if s.OutputWidth != 1720 || s.OutputHeight != 720 || s.Scale != 2 || s.WorkspaceClip != (domain.Rect{}) {
 			t.Fatalf("%dx%d scale %v clip %+v", s.OutputWidth, s.OutputHeight, s.Scale, s.WorkspaceClip)
 		}
 
@@ -220,7 +221,7 @@ func workspaceSizeScrollColumnsStayInFrame(t *testing.T, r *landRig) {
 	}
 	// Focused column (last) ends at the frame's right edge, half the frame wide.
 	last := s.Windows[2].Rect
-	if last != (ports.Rect{X: 1720, Y: 180, W: 960, H: 1080}) {
+	if last != (domain.Rect{X: 1720, Y: 180, W: 960, H: 1080}) {
 		t.Fatal(last)
 	}
 }
@@ -230,14 +231,14 @@ func workspaceSizeReloadAndRemoval(t *testing.T, r *landRig) {
 	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "focus", Size: [2]int{1000, 600}}}
 	r.reload <- ports.ConfigChanged{Config: cfg}
 	s := receive(t, r.scenes)[0]
-	if want := (ports.Rect{X: 1220, Y: 420, W: 1000, H: 600}); s.WorkspaceClip != want || s.Windows[0].Rect != want {
+	if want := (domain.Rect{X: 1220, Y: 420, W: 1000, H: 600}); s.WorkspaceClip != want || s.Windows[0].Rect != want {
 		t.Fatalf("%+v %+v", s.WorkspaceClip, s.Windows[0])
 	}
 	// Larger than the monitor clamps to it: no clip, no invisible area.
 	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "focus", Size: [2]int{9000, 9000}}}
 	r.reload <- ports.ConfigChanged{Config: cfg}
 	s = receive(t, r.scenes)[0]
-	if s.WorkspaceClip != (ports.Rect{}) || s.Windows[0].Rect != (ports.Rect{W: 3440, H: 1440}) {
+	if s.WorkspaceClip != (domain.Rect{}) || s.Windows[0].Rect != (domain.Rect{W: 3440, H: 1440}) {
 		t.Fatalf("%+v %+v", s.WorkspaceClip, s.Windows[0])
 	}
 	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "focus", Size: [2]int{1920, 1080}}}
@@ -247,7 +248,7 @@ func workspaceSizeReloadAndRemoval(t *testing.T, r *landRig) {
 	}
 	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "focus"}}
 	r.reload <- ports.ConfigChanged{Config: cfg}
-	if s = receive(t, r.scenes)[0]; s.WorkspaceClip != (ports.Rect{}) || s.Windows[0].Rect != (ports.Rect{W: 3440, H: 1440}) {
+	if s = receive(t, r.scenes)[0]; s.WorkspaceClip != (domain.Rect{}) || s.Windows[0].Rect != (domain.Rect{W: 3440, H: 1440}) {
 		t.Fatalf("%+v %+v", s.WorkspaceClip, s.Windows[0])
 	}
 }
@@ -257,7 +258,7 @@ func workspaceSizeFollowsOutputResize(t *testing.T, r *landRig) {
 	smaller.Width, smaller.Height = 1600, 900
 	s := r.land(r.plug(t, smaller))[0]
 	// 1920x1080 no longer fits: it clamps to the monitor.
-	if s.WorkspaceClip != (ports.Rect{}) || s.Windows[0].Rect != (ports.Rect{W: 1600, H: 900}) {
+	if s.WorkspaceClip != (domain.Rect{}) || s.Windows[0].Rect != (domain.Rect{W: 1600, H: 900}) {
 		t.Fatalf("%+v %+v", s.WorkspaceClip, s.Windows[0])
 	}
 	s = r.land(r.plug(t, ultrawide))[0]
@@ -267,7 +268,7 @@ func workspaceSizeFollowsOutputResize(t *testing.T, r *landRig) {
 }
 func workspaceSizeReservedZoneIntersectsFrame(t *testing.T, r *landRig) {
 	// A bar inside the top of the monitor but above the frame reserves nothing of it.
-	bar := ports.LayerSurface{ID: 9, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 100, ExclusiveZone: 100}
+	bar := ports.LayerSurface{ID: 9, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 100, ExclusiveZone: 100}
 	r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar}}
 	receive(t, r.scenes)
 	s := r.mapLanded(t, 1)[0]
@@ -278,7 +279,7 @@ func workspaceSizeReservedZoneIntersectsFrame(t *testing.T, r *landRig) {
 	bar.Height, bar.ExclusiveZone = 300, 300
 	r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar}}
 	s = receive(t, r.scenes)[0]
-	if want := (ports.Rect{X: 760, Y: 300, W: 1920, H: 960}); s.Windows[0].Rect != want || s.WorkspaceClip != frame {
+	if want := (domain.Rect{X: 760, Y: 300, W: 1920, H: 960}); s.Windows[0].Rect != want || s.WorkspaceClip != frame {
 		t.Fatalf("%+v clip %+v", s.Windows[0], s.WorkspaceClip)
 	}
 }

@@ -3,6 +3,7 @@ package core
 import (
 	"image"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -33,7 +34,7 @@ func placeOutputs(items []placeItem) []image.Point {
 			left--
 		}
 	}
-	anchored := func(i int) bool { return !done[i] && items[i].anchor.Relation != ports.RelationNone }
+	anchored := func(i int) bool { return !done[i] && items[i].anchor.Relation != domain.RelationNone }
 	for left > 0 {
 		for progress := true; progress; {
 			progress = false
@@ -77,11 +78,11 @@ func placeOutputs(items []placeItem) []image.Point {
 func relativeTo(it, ref placeItem, at image.Point) image.Point {
 	off := it.anchor.Offset
 	switch it.anchor.Relation {
-	case ports.RelationRightOf:
+	case domain.RelationRightOf:
 		return image.Point{X: at.X + ref.w, Y: at.Y + off}
-	case ports.RelationLeftOf:
+	case domain.RelationLeftOf:
 		return image.Point{X: at.X - it.w, Y: at.Y + off}
-	case ports.RelationAbove:
+	case domain.RelationAbove:
 		return image.Point{X: at.X + off, Y: at.Y - it.h}
 	default: // RelationBelow
 		return image.Point{X: at.X + off, Y: at.Y + ref.h}

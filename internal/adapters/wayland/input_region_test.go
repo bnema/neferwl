@@ -9,6 +9,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/pointerconstraints"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
@@ -35,7 +36,7 @@ func TestInputRegionCommitCopySubtractAndReset(t *testing.T) {
 	requestProtocol(t, c, reg, wayland.RegionRequestSubtract, int32(0), int32(0), int32(1), int32(1))
 	requestProtocol(t, c, reg, wayland.RegionRequestDestroy)
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
-	if got := inputChanged(t, events); got.ID != w.ID || len(got.Rects) != 1 || got.Rects[0] != (ports.Rect{W: 1, H: 1}) {
+	if got := inputChanged(t, events); got.ID != w.ID || len(got.Rects) != 1 || got.Rects[0] != (domain.Rect{W: 1, H: 1}) {
 		t.Fatalf("copied region: %+v", got)
 	}
 	empty := c.AllocateID()
@@ -57,7 +58,7 @@ func TestRegionSubtractSplits(t *testing.T) {
 	g := &region{}
 	g.Add(nil, 0, 0, 10, 10)
 	g.Subtract(nil, 2, 2, 6, 6)
-	if len(g.rects) != 4 || g.boxRect() != (ports.Rect{W: 10, H: 10}) {
+	if len(g.rects) != 4 || g.boxRect() != (domain.Rect{W: 10, H: 10}) {
 		t.Fatalf("subtract: %+v", g.rects)
 	}
 }
@@ -105,7 +106,7 @@ func TestSubsurfaceInputRegionOwnCommitAndOffset(t *testing.T) {
 	if len(got.Rects) == 1 {
 		got = inputChanged(t, events)
 	}
-	if got.ID != w.ID || len(got.Rects) != 2 || got.Rects[1] != (ports.Rect{X: 3, Y: 4, W: 4, H: 4}) {
+	if got.ID != w.ID || len(got.Rects) != 2 || got.Rects[1] != (domain.Rect{X: 3, Y: 4, W: 4, H: 4}) {
 		t.Fatalf("default child input: %+v", got)
 	}
 	reg := c.AllocateID()
@@ -123,7 +124,7 @@ func TestSubsurfaceInputRegionOwnCommitAndOffset(t *testing.T) {
 		t.Fatal(err)
 	}
 	got = inputChanged(t, events)
-	if got.ID != w.ID || len(got.Rects) != 2 || got.Rects[1] != (ports.Rect{X: 4, Y: 5, W: 3, H: 3}) {
+	if got.ID != w.ID || len(got.Rects) != 2 || got.Rects[1] != (domain.Rect{X: 4, Y: 5, W: 3, H: 3}) {
 		t.Fatalf("committed child input: %+v", got)
 	}
 }
@@ -158,7 +159,7 @@ func TestConstraintIntersectsInputRegion(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	if got := constrained(t, events); got.Rect != (ports.Rect{W: 1, H: 1}) {
+	if got := constrained(t, events); got.Rect != (domain.Rect{W: 1, H: 1}) {
 		t.Fatalf("constraint intersection: %+v", got)
 	}
 }
@@ -214,7 +215,7 @@ func TestInputRegionResentAfterRemap(t *testing.T) {
 	if got := mapped(t, events, 2*time.Second); got.ID != w.ID {
 		t.Fatalf("remapped: %+v", got)
 	}
-	if got := inputChanged(t, events); got.ID != w.ID || got.All || len(got.Rects) != 1 || got.Rects[0] != (ports.Rect{W: 1, H: 1}) {
+	if got := inputChanged(t, events); got.ID != w.ID || got.All || len(got.Rects) != 1 || got.Rects[0] != (domain.Rect{W: 1, H: 1}) {
 		t.Fatalf("remap input: %+v", got)
 	}
 }
@@ -225,11 +226,11 @@ func TestRegionOverlappingAddsSubtractUnion(t *testing.T) {
 	g.Add(nil, 2, 2, 6, 6)
 	g.Subtract(nil, 3, 3, 2, 2)
 	for _, r := range g.rects {
-		if intersectRect(r, ports.Rect{X: 3, Y: 3, W: 2, H: 2}).W != 0 {
+		if intersectRect(r, domain.Rect{X: 3, Y: 3, W: 2, H: 2}).W != 0 {
 			t.Fatalf("subtracted overlap remains: %+v", g.rects)
 		}
 	}
-	if g.boxRect() != (ports.Rect{W: 8, H: 8}) {
+	if g.boxRect() != (domain.Rect{W: 8, H: 8}) {
 		t.Fatalf("outer region changed: %+v", g.rects)
 	}
 }
@@ -321,7 +322,7 @@ func TestFifoQueuedInputRegionsApplyInOrder(t *testing.T) {
 	}
 	first := inputChanged(t, events)
 	second := inputChanged(t, events)
-	if first.ID != w.ID || len(first.Rects) != 1 || first.Rects[0] != (ports.Rect{W: 1, H: 1}) || second.ID != w.ID || second.All || len(second.Rects) != 0 {
+	if first.ID != w.ID || len(first.Rects) != 1 || first.Rects[0] != (domain.Rect{W: 1, H: 1}) || second.ID != w.ID || second.All || len(second.Rects) != 0 {
 		t.Fatalf("queued input order: first %+v, second %+v", first, second)
 	}
 }

@@ -7,7 +7,9 @@ import (
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/adapters/overlaydraw"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+
 	vk "github.com/bnema/purego-vulkan/vulkan"
 	"golang.org/x/sys/unix"
 )
@@ -28,7 +30,7 @@ type mapping struct {
 	last uint64
 	// win is the window that last drew from the pool (0: none known), for
 	// Trim's shorter TTL of hidden windows.
-	win ports.WindowID
+	win domain.WindowID
 }
 
 // shmPixels returns the pool bytes of a buffer, mapping the pool once and
@@ -161,7 +163,7 @@ func (r *Renderer) freeGPUBuffer(b *gpuBuffer) {
 
 // shmKey identifies a surface independently of its position in a tree.
 type shmKey struct {
-	win     ports.WindowID
+	win     domain.WindowID
 	surface uint64
 	// overlay identifies a compositor-drawn overlay (overlays.go). Its ID is
 	// never zero, and win and surface are zero, so client keys cannot collide.
@@ -215,7 +217,7 @@ func (r *Renderer) shmCached(key shmKey, st shmState) *shmCopy {
 // holding it (shmCached). A buffer holding an older content of the same
 // size gets only what changed since (damage, in buffer pixels; false:
 // everything).
-func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, offset, stride int, damage func(since uint64) ([]ports.Rect, bool)) (*shmCopy, error) {
+func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, offset, stride int, damage func(since uint64) ([]domain.Rect, bool)) (*shmCopy, error) {
 	s := r.shm[key]
 	if s == nil {
 		s = &shmSurface{}
@@ -248,7 +250,7 @@ func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, offset, st
 	}
 	dst := unsafe.Slice((*byte)(c.gpu.mapped), size)
 	row := st.w * 4
-	rects := []ports.Rect{{W: st.w, H: st.h}}
+	rects := []domain.Rect{{W: st.w, H: st.h}}
 	if c.valid && c.holds.w == st.w && c.holds.h == st.h && damage != nil {
 		if d, ok := damage(c.holds.windowSeq); ok {
 			rects = d
@@ -307,7 +309,7 @@ const maxDisjointRects = 64
 // no pixel in two of them. Past maxDisjointRects pieces it appends their
 // bounding box instead: some undamaged pixels are copied again. It reuses
 // dst's capacity.
-func disjointRects(dst []image.Rectangle, rects []ports.Rect, w, h int) []image.Rectangle {
+func disjointRects(dst []image.Rectangle, rects []domain.Rect, w, h int) []image.Rectangle {
 	bounds := image.Rect(0, 0, w, h)
 	start := len(dst)
 	for _, rc := range rects {

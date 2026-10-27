@@ -6,6 +6,7 @@ import (
 	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -91,7 +92,7 @@ func TestWorkspaceSnapshotsAndActivation(t *testing.T) {
 		// Move the populated workspace right; its ID follows it.
 		client <- ports.WorkspaceActivate{IDs: []uint64{id}}
 		receive(t, snapshots)
-		input <- ports.KeyEvent{Keysym: "Right", Mods: ports.ModSuper | ports.ModCtrl | ports.ModShift, Pressed: true}
+		input <- ports.KeyEvent{Keysym: "Right", Mods: domain.ModSuper | domain.ModCtrl | domain.ModShift, Pressed: true}
 		move := receive(t, snapshots)
 		found := false
 		for _, w := range move.Outputs[1].Workspaces {
@@ -157,13 +158,13 @@ func TestMoveWorkspaceReordersSnapshot(t *testing.T) {
 		}
 		client <- ports.WindowMapped{ID: 1}
 		until(func(ws []ports.WorkspaceInfo) bool { return len(ws) >= 2 })
-		input <- ports.KeyEvent{Keysym: "Next", Mods: ports.ModSuper, Pressed: true}
+		input <- ports.KeyEvent{Keysym: "Next", Mods: domain.ModSuper, Pressed: true}
 		until(func(ws []ports.WorkspaceInfo) bool { return ws[1].Active })
 		client <- ports.WindowMapped{ID: 2}
 		ws := until(func(ws []ports.WorkspaceInfo) bool { return len(ws) >= 3 && ws[1].Active })
 		before := ports.Workspaces{Outputs: []ports.WorkspaceOutput{{Workspaces: ws}}}
 		first, second := before.Outputs[0].Workspaces[0].ID, before.Outputs[0].Workspaces[1].ID
-		input <- ports.KeyEvent{Keysym: "Up", Mods: ports.ModSuper | ports.ModCtrl | ports.ModShift, Pressed: true}
+		input <- ports.KeyEvent{Keysym: "Up", Mods: domain.ModSuper | domain.ModCtrl | domain.ModShift, Pressed: true}
 		ws = until(func(ws []ports.WorkspaceInfo) bool { return ws[0].Active })
 		if ws[0].ID != second || ws[1].ID != first || !ws[0].Active || ws[0].Index != 0 || ws[1].Index != 1 {
 			t.Fatalf("%+v", ws)

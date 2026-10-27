@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core/layout"
+	"github.com/bnema/neferwl/internal/domain"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
@@ -39,7 +40,7 @@ func borderCore(t *testing.T, row bool) (*pointerRig, *Workspace) {
 		rows := layout.RowRects(rs[0], w.Columns[0], w.Gap())
 		c.cursorX, c.cursorY = 100, float64(rows[0].Y+rows[0].H+w.Gap()/2)
 	}
-	c.mods = ports.ModSuper
+	c.mods = domain.ModSuper
 	return c, w
 }
 

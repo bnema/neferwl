@@ -7,6 +7,7 @@ import (
 	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -57,7 +58,7 @@ func shortcutsInhibit(t *testing.T) {
 	if v := commandOf[ports.ShortcutsInhibitState](t, commands); v != (ports.ShortcutsInhibitState{Window: 1, Active: true}) {
 		t.Fatal(v)
 	}
-	bound := ports.KeyEvent{Keysym: "Return", Mods: ports.ModSuper, Pressed: true}
+	bound := ports.KeyEvent{Keysym: "Return", Mods: domain.ModSuper, Pressed: true}
 	input <- bound
 	if v := commandOf[ports.ForwardKey](t, commands); v != (ports.ForwardKey{ID: 1, Key: bound}) {
 		t.Fatal(v)
@@ -81,9 +82,9 @@ func shortcutsInhibit(t *testing.T) {
 	// So do shortcuts inhibition and the pointer constraint.
 	client <- ports.ShortcutsInhibit{Window: 2, Active: true}
 	waitState(t, state, "shortcuts inhibited", func(w ports.WindowState) bool { return w.ID == 2 && w.ShortcutsInhibited })
-	client <- ports.PointerConstrained{ID: 2, PointerConstraint: ports.PointerConstraint{Mode: ports.ConstraintLock}}
+	client <- ports.PointerConstrained{ID: 2, PointerConstraint: ports.PointerConstraint{Mode: domain.ConstraintLock}}
 	waitState(t, state, "locked", func(w ports.WindowState) bool { return w.ID == 2 && w.PointerConstraint == "locked" })
-	client <- ports.PointerConstrained{ID: 2, PointerConstraint: ports.PointerConstraint{Mode: ports.ConstraintConfine}}
+	client <- ports.PointerConstrained{ID: 2, PointerConstraint: ports.PointerConstraint{Mode: domain.ConstraintConfine}}
 	waitState(t, state, "confined", func(w ports.WindowState) bool { return w.ID == 2 && w.PointerConstraint == "confined" })
 	client <- ports.PointerConstrained{}
 	waitState(t, state, "unconstrained", func(w ports.WindowState) bool { return w.ID == 2 && w.PointerConstraint == "" })
@@ -128,7 +129,7 @@ func TestShortcutsInhibitDropsBoundRelease(t *testing.T) {
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}
 		scene(t, scenes)
-		press := ports.KeyEvent{Keysym: "Return", Keycode: 36, Mods: ports.ModSuper, Pressed: true}
+		press := ports.KeyEvent{Keysym: "Return", Keycode: 36, Mods: domain.ModSuper, Pressed: true}
 		input <- press
 		receive(t, spawn)
 		client <- ports.ShortcutsInhibit{Window: 1, Active: true}

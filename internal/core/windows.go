@@ -3,6 +3,7 @@ package core
 import (
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -74,7 +75,7 @@ func (r *windowRegistry) setAppID(id WindowID, appID string) {
 }
 
 // setContentType updates the content hint of a mapped window only.
-func (r *windowRegistry) setContentType(id WindowID, kind ports.ContentType) {
+func (r *windowRegistry) setContentType(id WindowID, kind domain.ContentType) {
 	if rec := r.records[id]; rec != nil && rec.client.ID != 0 {
 		rec.client.ContentType = kind
 	}

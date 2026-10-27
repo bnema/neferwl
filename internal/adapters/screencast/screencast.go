@@ -1,4 +1,5 @@
 // Package screencast serves the GNOME screen cast and screenshot D-Bus
+
 // interfaces (org.gnome.Mutter.ScreenCast, org.gnome.Mutter.DisplayConfig,
 // org.gnome.Shell.Introspect, org.gnome.Shell.Screenshot) so that
 // xdg-desktop-portal-gnome can offer monitor and window sharing and
@@ -24,6 +25,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/fdwait"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerobus"
 	"github.com/bnema/zerowrap"
@@ -161,7 +163,7 @@ func (s *Service) SetEnv(env []string) { s.env = env }
 // Push queues an event of the wayland server for the owner. It never blocks.
 func (s *Service) Push(ev ports.CastEvent) {
 	s.mu.Lock()
-	if ev.Kind == ports.CastDamage && len(s.queue) >= sinkCap {
+	if ev.Kind == domain.CastDamage && len(s.queue) >= sinkCap {
 		s.lost = true
 	} else {
 		s.queue = append(s.queue, ev)

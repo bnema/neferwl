@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -25,7 +26,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		// Tiles stop at the panels; the overview lays out previews over
 		// the whole output.
 		u := view.usable
-		scene.TileInset = ports.Insets{Top: u.Y, Left: u.X, Right: o.W - u.X - u.W, Bottom: o.H - u.Y - u.H}
+		scene.TileInset = domain.Insets{Top: u.Y, Left: u.X, Right: o.W - u.X - u.W, Bottom: o.H - u.Y - u.H}
 	}
 	var real map[WindowID]Placement
 	if sc.mon.previewing() {
@@ -130,7 +131,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		// Only where the target is drawn: an overlay nothing draws would
 		// still refuse direct scanout on this output.
 		if osdDrawn(scene, c.osd.window) {
-			scene.Overlays = append(scene.Overlays, ports.Overlay{Window: c.osd.window, ID: overlayIDOSD, Seq: c.osd.seq, Kind: ports.OverlayPanel, Anchor: ports.AnchorTopCenter, Rect: ports.Rect{Y: 12}, Style: osdStyle, Panel: c.osd.panel})
+			scene.Overlays = append(scene.Overlays, ports.Overlay{Window: c.osd.window, ID: overlayIDOSD, Seq: c.osd.seq, Kind: domain.OverlayPanel, Anchor: domain.AnchorTopCenter, Rect: domain.Rect{Y: 12}, Style: osdStyle, Panel: c.osd.panel})
 		}
 	}
 	scene.Physical = ports.OutputPhysical{Width: sc.info.Width, Height: sc.info.Height, MMWidth: sc.info.PhysicalW, MMHeight: sc.info.PhysicalH}

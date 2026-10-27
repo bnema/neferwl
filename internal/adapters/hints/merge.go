@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"slices"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -16,10 +17,10 @@ const (
 	nestRatio = 0.85
 )
 
-func area(r ports.Rect) int { return r.W * r.H }
+func area(r domain.Rect) int { return r.W * r.H }
 
 // interArea is the area of the intersection of a and b.
-func interArea(a, b ports.Rect) int {
+func interArea(a, b domain.Rect) int {
 	w := min(a.X+a.W, b.X+b.W) - max(a.X, b.X)
 	h := min(a.Y+a.H, b.Y+b.H) - max(a.Y, b.Y)
 	if w <= 0 || h <= 0 {
@@ -30,7 +31,7 @@ func interArea(a, b ports.Rect) int {
 
 // nested reports whether the smaller of a and b lies for at least nestRatio
 // inside the other.
-func nested(a, b ports.Rect) bool {
+func nested(a, b domain.Rect) bool {
 	return float64(interArea(a, b)) >= nestRatio*float64(min(area(a), area(b)))
 }
 

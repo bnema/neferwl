@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func newTest(t *testing.T, layout string) *Keymap {
@@ -31,11 +31,11 @@ func TestKeymap(t *testing.T) {
 	}
 	k.Key(30, false, 0)
 	k.Key(42, true, 0)
-	if ev := k.Key(30, true, 0); ev.Keysym != "A" || ev.Mods&ports.ModShift == 0 || ev.State.Depressed == 0 {
+	if ev := k.Key(30, true, 0); ev.Keysym != "A" || ev.Mods&domain.ModShift == 0 || ev.State.Depressed == 0 {
 		t.Fatalf("shift A: %+v", ev)
 	}
 	k.Key(42, false, 0)
-	if ev := k.Key(30, false, 0); ev.Mods&ports.ModShift != 0 {
+	if ev := k.Key(30, false, 0); ev.Mods&domain.ModShift != 0 {
 		t.Fatalf("shift release: %+v", ev)
 	}
 	for _, tt := range []struct {

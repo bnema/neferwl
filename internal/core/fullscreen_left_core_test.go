@@ -5,6 +5,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -32,7 +33,7 @@ func TestCoreLeftFullscreenLatch(t *testing.T) {
 			for range commands {
 			}
 		}()
-		full := func() ports.WindowID {
+		full := func() domain.WindowID {
 			t.Helper()
 			synctest.Wait()
 			select {

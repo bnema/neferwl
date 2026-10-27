@@ -5,12 +5,13 @@ import (
 	"errors"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
 type detectorSource struct{ det detector }
 
-func (*detectorSource) kind() ports.HintSource          { return ports.HintSourceDetector }
+func (*detectorSource) kind() domain.HintSource         { return domain.HintSourceDetector }
 func (*detectorSource) needsFrame(context.Context) bool { return true }
 func (s *detectorSource) Close() error                  { return s.det.Close() }
 func (s *detectorSource) scan(ctx context.Context, req ports.HintScanRequest, wins []ports.HintWindow, fr *frame) ([]ports.HintTarget, error) {
@@ -56,7 +57,7 @@ func (s *detectorSource) scan(ctx context.Context, req ports.HintScanRequest, wi
 			if !win.Contains(t.Rect.X+t.Rect.W/2, t.Rect.Y+t.Rect.H/2) {
 				continue
 			}
-			t.Source, t.Kind, t.Window = ports.HintSourceDetector, ports.HintButton, win.ID
+			t.Source, t.Kind, t.Window = domain.HintSourceDetector, domain.HintButton, win.ID
 			out = append(out, t)
 		}
 	}

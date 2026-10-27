@@ -6,6 +6,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/wlrlayershell"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 )
@@ -131,7 +132,7 @@ func TestOutputHotplugAndLayerOutput(t *testing.T) {
 	proxy := &closedProxy{configured: make(chan [3]uint32, 2), closed: make(chan struct{})}
 	proxy.SetID(layer)
 	registerWireProxy(c, proxy)
-	requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, layer, surf, out, uint32(ports.LayerTop), "bar")
+	requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, layer, surf, out, uint32(domain.LayerTop), "bar")
 	requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestSetAnchor, uint32(13))
 	requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestSetSize, uint32(0), uint32(30))
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)

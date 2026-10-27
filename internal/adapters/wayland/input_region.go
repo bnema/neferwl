@@ -4,22 +4,23 @@ import (
 	"slices"
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
 // intersectRect returns the overlap of two half-open rectangles.
-func intersectRect(a, b ports.Rect) ports.Rect {
+func intersectRect(a, b domain.Rect) domain.Rect {
 	x, y := max(a.X, b.X), max(a.Y, b.Y)
 	x2, y2 := min(a.X+a.W, b.X+b.W), min(a.Y+a.H, b.Y+b.H)
 	if x2 <= x || y2 <= y {
-		return ports.Rect{}
+		return domain.Rect{}
 	}
-	return ports.Rect{X: x, Y: y, W: x2 - x, H: y2 - y}
+	return domain.Rect{X: x, Y: y, W: x2 - x, H: y2 - y}
 }
 
-func (g *region) boxRect() ports.Rect {
+func (g *region) boxRect() domain.Rect {
 	if len(g.rects) == 0 {
-		return ports.Rect{}
+		return domain.Rect{}
 	}
 	x, y := g.rects[0].X, g.rects[0].Y
 	x2, y2 := x+g.rects[0].W, y+g.rects[0].H
@@ -29,11 +30,11 @@ func (g *region) boxRect() ports.Rect {
 		x2 = max(x2, r.X+r.W)
 		y2 = max(y2, r.Y+r.H)
 	}
-	return ports.Rect{X: x, Y: y, W: x2 - x, H: y2 - y}
+	return domain.Rect{X: x, Y: y, W: x2 - x, H: y2 - y}
 }
 
 // effectiveInput includes all committed, bounded subsurface regions.
-func (s *surface) effectiveInput() (bool, []ports.Rect) {
+func (s *surface) effectiveInput() (bool, []domain.Rect) {
 	if s.inputAll && len(s.sub.children) == 0 {
 		return true, nil
 	}
@@ -49,12 +50,12 @@ func (s *surface) effectiveInput() (bool, []ports.Rect) {
 
 // appendEffectiveInput walks the committed tree without a per-call recursive
 // closure. The returned slice belongs to the caller (emitInput publishes it).
-func (s *surface) appendEffectiveInput(rects []ports.Rect, x, y int) []ports.Rect {
+func (s *surface) appendEffectiveInput(rects []domain.Rect, x, y int) []domain.Rect {
 	if s.has {
-		bounds := ports.Rect{W: s.content.LogicalW, H: s.content.LogicalH}
+		bounds := domain.Rect{W: s.content.LogicalW, H: s.content.LogicalH}
 		if s.inputAll {
 			if bounds.W > 0 && bounds.H > 0 {
-				rects = append(rects, ports.Rect{X: x, Y: y, W: bounds.W, H: bounds.H})
+				rects = append(rects, domain.Rect{X: x, Y: y, W: bounds.W, H: bounds.H})
 			}
 		} else {
 			for _, r := range s.inputRects {

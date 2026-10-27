@@ -5,6 +5,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -27,7 +28,7 @@ func TestFlipAdvancesOnlyItsOutput(t *testing.T) {
 		r.plug(t, second)
 		r.input <- ports.PointerMotion{X: 1000, Y: 300}
 		scene(t, r.scenes)
-		for id := ports.WindowID(4); id <= 6; id++ {
+		for id := domain.WindowID(4); id <= 6; id++ {
 			r.mapWindow(t, id)
 		}
 		// A running landing on each output.

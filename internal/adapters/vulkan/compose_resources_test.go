@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -28,11 +29,11 @@ func TestComposeIndexedMixedResources(t *testing.T) {
 	shm := solidContent(t, 64, 16, color.RGBA{G: 255, A: 255})
 	shm.ID, shm.Seq, shm.Version = 2, 1, 1
 	scene := ports.Scene{Layers: []ports.SceneLayer{
-		{ID: 1, Layer: ports.LayerOverlay, Rect: ports.Rect{W: 64, H: 16}},
-		{ID: 2, Layer: ports.LayerOverlay, Rect: ports.Rect{X: 16, W: 32, H: 16}},
-		{ID: 3, Layer: ports.LayerOverlay, Rect: ports.Rect{X: 32, W: 16, H: 16}},
+		{ID: 1, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 64, H: 16}},
+		{ID: 2, Layer: domain.LayerOverlay, Rect: domain.Rect{X: 16, W: 32, H: 16}},
+		{ID: 3, Layer: domain.LayerOverlay, Rect: domain.Rect{X: 32, W: 16, H: 16}},
 	}}
-	contents := map[ports.WindowID]ports.SurfaceContent{
+	contents := map[domain.WindowID]ports.SurfaceContent{
 		1: {ID: 1, Width: 64, Height: 16, Opaque: true, DMABuf: yuv, Color: ports.SurfaceColor{Coefficients: 2, Range: 2, Chroma: 1}},
 		2: shm,
 		3: {ID: 3, Width: 64, Height: 16, Opaque: true, DMABuf: rgb},

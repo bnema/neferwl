@@ -15,6 +15,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/linuxdrmsyncobj"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	"github.com/stretchr/testify/mock"
@@ -53,7 +54,7 @@ type syncHarness struct {
 	surf        uint32
 	syncSurf    uint32
 	timeline    uint32
-	win         ports.WindowID
+	win         domain.WindowID
 	mu          sync.Mutex
 	efds        map[uint64]int // eventfd by acquire point
 	signalReady chan struct{}
@@ -302,7 +303,7 @@ func TestSyncobjAcquireAndRelease(t *testing.T) {
 		t.Fatal("acquire fence closed before release")
 	}
 	// The output read the second content: the first buffer is released.
-	h.presented.Push(ports.OutputPresented{Output: "HEADLESS-1", Seen: map[ports.WindowID]uint64{h.win: second.Seq}})
+	h.presented.Push(ports.OutputPresented{Output: "HEADLESS-1", Seen: map[domain.WindowID]uint64{h.win: second.Seq}})
 	select {
 	case <-h.signalReady:
 	case <-waylandDeadline(2 * time.Second):

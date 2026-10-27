@@ -6,6 +6,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -820,7 +822,7 @@ func TestFlashFollowsInnerBorderAndRadius(t *testing.T) {
 				}
 				if test.level == flashWindow && test.gaps > 0 {
 					for _, p := range c.cur().mon.Layout() {
-						if p.ID == id && (p.Inset != ports.SideAll || c.flash.rect.W != p.Rect.W-6 || c.flash.rect.H != p.Rect.H-6) {
+						if p.ID == id && (p.Inset != domain.SideAll || c.flash.rect.W != p.Rect.W-6 || c.flash.rect.H != p.Rect.H-6) {
 							t.Fatalf("tile %+v not inset by 3 on all sides: %+v", p, c.flash.rect)
 						}
 					}

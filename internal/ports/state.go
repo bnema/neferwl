@@ -1,5 +1,7 @@
 package ports
 
+import "github.com/bnema/neferwl/internal/domain"
+
 // State carries core → state publisher a snapshot of what is on screen, for
 // scripts (bars, status lines). Workspace numbers count from 1.
 type State struct {
@@ -27,14 +29,14 @@ type WorkspaceState struct {
 
 // ColumnState is one column and its tiled windows.
 type ColumnState struct {
-	Rect    Rect        // column area, view offset applied (may be off-screen)
+	Rect    domain.Rect // column area, view offset applied (may be off-screen)
 	Windows []TileState // top to bottom
 }
 
 // TileState is one tiled window and its settled rectangle.
 type TileState struct {
-	ID   WindowID
-	Rect Rect
+	ID   domain.WindowID
+	Rect domain.Rect
 }
 
 // OutputState is one output: its workspace on screen and how many numbered
@@ -50,7 +52,7 @@ type OutputState struct {
 
 // WindowState is one mapped window and where it is.
 type WindowState struct {
-	ID     WindowID
+	ID     domain.WindowID
 	AppID  string
 	PID    int
 	Output string

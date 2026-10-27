@@ -18,10 +18,11 @@ import (
 // domain packages listed below it. Nothing else from this module, and no
 // context: domain code owns no event loop.
 var domainLayers = map[string][]string{
-	"internal/core/geom":      {"internal/ports"},
-	"internal/core/motion":    {"internal/ports", "internal/core/geom"},
-	"internal/core/layout":    {"internal/ports", "internal/core/geom"},
-	"internal/core/workspace": {"internal/ports", "internal/core/geom", "internal/core/motion", "internal/core/layout"},
+	"internal/domain":         {},
+	"internal/core/geom":      {"internal/domain", "internal/ports"},
+	"internal/core/motion":    {"internal/domain", "internal/ports", "internal/core/geom"},
+	"internal/core/layout":    {"internal/domain", "internal/ports", "internal/core/geom"},
+	"internal/core/workspace": {"internal/domain", "internal/ports", "internal/core/geom", "internal/core/motion", "internal/core/layout"},
 }
 
 // domainStd are the standard packages domain code may import: pure data

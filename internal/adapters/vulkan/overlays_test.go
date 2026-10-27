@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/bnema/neferwl/internal/adapters/overlaydraw"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/require"
 )
 
 func TestOverlaysDrawnAfterIndicators(t *testing.T) {
@@ -20,10 +20,10 @@ func TestOverlaysDrawnAfterIndicators(t *testing.T) {
 	defer r.Close()
 	for _, scale := range []int{1, 2} {
 		s := ports.Scene{Scale: float64(scale),
-			CaptureIndicators: []ports.CaptureIndicator{{Rect: ports.Rect{W: 64, H: 64}}},
+			CaptureIndicators: []ports.CaptureIndicator{{Rect: domain.Rect{W: 64, H: 64}}},
 			Overlays: []ports.Overlay{
-				{ID: 1, Seq: 1, Kind: ports.OverlayLabel, Anchor: ports.AnchorOutsideTopLeft, Rect: ports.Rect{X: 80, Y: 90}, Text: "f"},
-				{ID: 2, Seq: 1, Kind: ports.OverlayLabel, Anchor: ports.AnchorOutsideTopLeft, Rect: ports.Rect{X: 100, Y: 110}, Text: "jk", Typed: 1},
+				{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Anchor: domain.AnchorOutsideTopLeft, Rect: domain.Rect{X: 80, Y: 90}, Text: "f"},
+				{ID: 2, Seq: 1, Kind: domain.OverlayLabel, Anchor: domain.AnchorOutsideTopLeft, Rect: domain.Rect{X: 100, Y: 110}, Text: "jk", Typed: 1},
 			}}
 		bare := s
 		bare.Overlays = nil
@@ -48,7 +48,7 @@ func TestOverlaysAnchoredAndClampedAtTopLeft(t *testing.T) {
 	r := newTestRenderer(t, 128, 128)
 	defer r.Close()
 	// A target at the origin puts the anchor off-screen: clamped to 0,0.
-	s := ports.Scene{Scale: 1, Overlays: []ports.Overlay{{ID: 1, Seq: 1, Kind: ports.OverlayLabel, Anchor: ports.AnchorOutsideTopLeft, Rect: ports.Rect{X: 0, Y: 0}, Text: "f"}, {ID: 2, Seq: 1, Kind: ports.OverlayLabel, Anchor: ports.AnchorOutsideTopLeft, Rect: ports.Rect{X: 60, Y: 60}, Text: "f"}}}
+	s := ports.Scene{Scale: 1, Overlays: []ports.Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Anchor: domain.AnchorOutsideTopLeft, Rect: domain.Rect{X: 0, Y: 0}, Text: "f"}, {ID: 2, Seq: 1, Kind: domain.OverlayLabel, Anchor: domain.AnchorOutsideTopLeft, Rect: domain.Rect{X: 60, Y: 60}, Text: "f"}}}
 	ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 128, 128)))
 	require.Len(t, ds, 2)
 	require.Equal(t, int32(0), ds[0].pc.rect[0])
@@ -64,14 +64,14 @@ func TestOverlaysAbsentDrawNothing(t *testing.T) {
 	r := &Renderer{width: 64, height: 64}
 	s := ports.Scene{Scale: 1}
 	require.Empty(t, r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 64, 64))))
-	s.Overlays = []ports.Overlay{{ID: 1, Kind: ports.OverlayKind(255), Text: "ignored"}}
+	s.Overlays = []ports.Overlay{{ID: 1, Kind: domain.OverlayKind(255), Text: "ignored"}}
 	require.Empty(t, r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 64, 64))))
 }
 
 func TestOverlaysClampedInsideOutput(t *testing.T) {
 	r := newTestRenderer(t, 128, 128)
 	defer r.Close()
-	s := ports.Scene{Scale: 1, Overlays: []ports.Overlay{{ID: 1, Seq: 1, Kind: ports.OverlayLabel, Anchor: ports.AnchorOutsideTopLeft, Rect: ports.Rect{X: 127, Y: 127}, Text: "ff"}}}
+	s := ports.Scene{Scale: 1, Overlays: []ports.Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Anchor: domain.AnchorOutsideTopLeft, Rect: domain.Rect{X: 127, Y: 127}, Text: "ff"}}}
 	s.Overlays[0].Style.Size = 40
 	ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 128, 128)))
 	require.Len(t, ds, 1)
@@ -82,7 +82,7 @@ func TestOverlaysClampedInsideOutput(t *testing.T) {
 func TestOverlaysRenderAndUploadOnce(t *testing.T) {
 	r := newTestRenderer(t, 128, 128)
 	defer r.Close()
-	s := ports.Scene{Scale: 1, Seq: 1, Overlays: []ports.Overlay{{ID: 1, Seq: 1, Kind: ports.OverlayLabel, Anchor: ports.AnchorOutsideTopLeft, Rect: ports.Rect{X: 4, Y: 4}, Text: "fj"}}}
+	s := ports.Scene{Scale: 1, Seq: 1, Overlays: []ports.Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Anchor: domain.AnchorOutsideTopLeft, Rect: domain.Rect{X: 4, Y: 4}, Text: "fj"}}}
 	require.NoError(t, render(r, s, nil))
 	first := r.copied
 	require.Positive(t, first)
@@ -101,14 +101,14 @@ func TestOverlaysRenderAndUploadOnce(t *testing.T) {
 }
 
 func TestOverlaySceneDeltaOnlyOverlaysChange(t *testing.T) {
-	phys := func(r ports.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
+	phys := func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
 	base := ports.Scene{Scale: 1, OutputWidth: 100, OutputHeight: 100}
 	with := base
-	with.Overlays = []ports.Overlay{{ID: 1, Seq: 1, Kind: ports.OverlayLabel, Anchor: ports.AnchorOutsideTopLeft, Rect: ports.Rect{X: 1, Y: 1}, Text: "f"}}
+	with.Overlays = []ports.Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Anchor: domain.AnchorOutsideTopLeft, Rect: domain.Rect{X: 1, Y: 1}, Text: "f"}}
 	_, ok := sceneDelta(base, with, phys, 1<<30)
 	require.False(t, ok, "labels appearing redraw the output")
 	typed := with
-	typed.Overlays = []ports.Overlay{{ID: 1, Seq: 1, Kind: ports.OverlayLabel, Anchor: ports.AnchorOutsideTopLeft, Rect: ports.Rect{X: 1, Y: 1}, Text: "f", Typed: 1}}
+	typed.Overlays = []ports.Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Anchor: domain.AnchorOutsideTopLeft, Rect: domain.Rect{X: 1, Y: 1}, Text: "f", Typed: 1}}
 	_, ok = sceneDelta(with, typed, phys, 1<<30)
 	require.False(t, ok)
 	_, ok = sceneDelta(with, with, phys, 1<<30)
@@ -116,27 +116,27 @@ func TestOverlaySceneDeltaOnlyOverlaysChange(t *testing.T) {
 }
 
 func TestOverlaysHeldByTarget(t *testing.T) {
-	s := ports.Scene{Seq: 1, Overlays: []ports.Overlay{{ID: 1, Seq: 1, Kind: ports.OverlayLabel, Text: "f"}}}
+	s := ports.Scene{Seq: 1, Overlays: []ports.Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Text: "f"}}}
 	tg := &target{}
-	tg.hold(s, &damageRegion{drawn: map[ports.WindowID]heldWindow{}})
+	tg.hold(s, &damageRegion{drawn: map[domain.WindowID]heldWindow{}})
 	s.Overlays[0].Text = "j"
 	require.Equal(t, "f", tg.scene.Overlays[0].Text, "the held scene owns its labels")
 }
 
 func TestOverlayStyleChangesSceneDamage(t *testing.T) {
-	old := ports.Scene{Scale: 1, Overlays: []ports.Overlay{{ID: 1, Seq: 1, Kind: ports.OverlayLabel, Text: "f"}}}
+	old := ports.Scene{Scale: 1, Overlays: []ports.Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Text: "f"}}}
 	changed := old
 	changed.Overlays = append([]ports.Overlay(nil), old.Overlays...)
 	changed.Overlays[0].Style.Size = 24
 	require.False(t, old.SameAs(changed))
-	_, partial := sceneDelta(old, changed, func(r ports.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }, 10)
+	_, partial := sceneDelta(old, changed, func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }, 10)
 	require.False(t, partial)
 }
 
 func TestOverlaySequenceReusesSurface(t *testing.T) {
 	r := newTestRenderer(t, 128, 128)
 	defer r.Close()
-	s := ports.Scene{Scale: 1, Seq: 1, Overlays: []ports.Overlay{{ID: 42, Seq: 1, Kind: ports.OverlayLabel, Anchor: ports.AnchorOutsideTopLeft, Rect: ports.Rect{X: 40, Y: 40}, Text: "fj"}}}
+	s := ports.Scene{Scale: 1, Seq: 1, Overlays: []ports.Overlay{{ID: 42, Seq: 1, Kind: domain.OverlayLabel, Anchor: domain.AnchorOutsideTopLeft, Rect: domain.Rect{X: 40, Y: 40}, Text: "fj"}}}
 	require.NoError(t, render(r, s, nil))
 	first := r.copied
 	require.Positive(t, first)
@@ -164,14 +164,14 @@ func TestPhysicalChangesSceneDamage(t *testing.T) {
 	old := ports.Scene{Scale: 1}
 	changed := old
 	changed.Physical.MMWidth = 300
-	_, partial := sceneDelta(old, changed, func(r ports.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }, 10)
+	_, partial := sceneDelta(old, changed, func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }, 10)
 	require.False(t, partial)
 }
 
 func TestPanelOverlaySequenceAndRetirement(t *testing.T) {
 	r := newTestRenderer(t, 512, 256)
 	defer r.Close()
-	s := ports.Scene{Scale: 1, Seq: 1, Overlays: []ports.Overlay{{ID: 42, Seq: 1, Kind: ports.OverlayPanel, Anchor: ports.AnchorTopCenter, Rect: ports.Rect{X: 500, Y: 8}, Panel: &ports.PanelContent{Lines: [4]string{"frame time", "16 ms"}, Graph: [ports.StatsGraph]uint16{16000}}}}}
+	s := ports.Scene{Scale: 1, Seq: 1, Overlays: []ports.Overlay{{ID: 42, Seq: 1, Kind: domain.OverlayPanel, Anchor: domain.AnchorTopCenter, Rect: domain.Rect{X: 500, Y: 8}, Panel: &ports.PanelContent{Lines: [4]string{"frame time", "16 ms"}, Graph: [ports.StatsGraph]uint16{16000}}}}}
 	ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 512, 256)))
 	require.Len(t, ds, 1)
 	d := ds[0]
@@ -216,7 +216,7 @@ func TestPanelOverlaySequenceAndRetirement(t *testing.T) {
 func TestPanelOverlayNilAndClamped(t *testing.T) {
 	r := newTestRenderer(t, 512, 256)
 	defer r.Close()
-	s := ports.Scene{Scale: 2, Overlays: []ports.Overlay{{ID: 1, Seq: 1, Kind: ports.OverlayPanel, Anchor: ports.AnchorTopCenter}}}
+	s := ports.Scene{Scale: 2, Overlays: []ports.Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayPanel, Anchor: domain.AnchorTopCenter}}}
 	bounds := image.Rect(0, 0, 512, 256)
 	require.Empty(t, r.draws(s, nil, newDamage(&target{}, s, bounds)))
 	for _, y := range []int{-100, 1000} {
@@ -234,7 +234,7 @@ func TestPanelOverlayNilAndClamped(t *testing.T) {
 func TestPanelOverlayBlends(t *testing.T) {
 	r := newTestRenderer(t, 256, 128)
 	defer r.Close()
-	s := ports.Scene{Scale: 1, Background: "#0000ff", Overlays: []ports.Overlay{{ID: 1, Seq: 1, Kind: ports.OverlayPanel, Anchor: ports.AnchorTopCenter, Panel: &ports.PanelContent{Lines: [4]string{"panel"}}}}}
+	s := ports.Scene{Scale: 1, Background: "#0000ff", Overlays: []ports.Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayPanel, Anchor: domain.AnchorTopCenter, Panel: &ports.PanelContent{Lines: [4]string{"panel"}}}}}
 	s.Overlays[0].Style.Background = "#000000"
 	ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 256, 128)))
 	require.Len(t, ds, 1)
@@ -252,7 +252,7 @@ func TestPanelOverlayBlends(t *testing.T) {
 func TestPanelOverlayWidthLimitCache(t *testing.T) {
 	r := newTestRenderer(t, 512, 256)
 	defer r.Close()
-	s := ports.Scene{Scale: 1, Overlays: []ports.Overlay{{ID: 42, Seq: 1, Kind: ports.OverlayPanel, Panel: &ports.PanelContent{Lines: [4]string{strings.Repeat("app", 100)}}}}}
+	s := ports.Scene{Scale: 1, Overlays: []ports.Overlay{{ID: 42, Seq: 1, Kind: domain.OverlayPanel, Panel: &ports.PanelContent{Lines: [4]string{strings.Repeat("app", 100)}}}}}
 	for _, width := range []int{512, 128} {
 		bounds := image.Rect(0, 0, width, 256)
 		walk := sceneWalk{r: r, s: s, scale: 1, bounds: bounds}
@@ -301,7 +301,7 @@ func TestPanelRetirementSharedKeys(t *testing.T) {
 func TestAttachedPanelPlacementAndCache(t *testing.T) {
 	r := newTestRenderer(t, 512, 256)
 	defer r.Close()
-	s := ports.Scene{Scale: 1, Background: "#0000ff", Windows: []ports.SceneWindow{{ID: 7, Rect: ports.Rect{X: 40, Y: 20, W: 300, H: 220}}}, Overlays: []ports.Overlay{{ID: 42, Window: 7, Seq: 1, Kind: ports.OverlayPanel, Anchor: ports.AnchorTopCenter, Rect: ports.Rect{Y: 12}, Style: ports.OverlayStyle{Background: "#000000"}, Panel: &ports.PanelContent{Lines: [4]string{"panel"}}}}}
+	s := ports.Scene{Scale: 1, Background: "#0000ff", Windows: []ports.SceneWindow{{ID: 7, Rect: domain.Rect{X: 40, Y: 20, W: 300, H: 220}}}, Overlays: []ports.Overlay{{ID: 42, Window: 7, Seq: 1, Kind: domain.OverlayPanel, Anchor: domain.AnchorTopCenter, Rect: domain.Rect{Y: 12}, Style: ports.OverlayStyle{Background: "#000000"}, Panel: &ports.PanelContent{Lines: [4]string{"panel"}}}}}
 	bounds := image.Rect(0, 0, 512, 256)
 	draws := func() []draw { return r.draws(s, nil, newDamage(&target{}, s, bounds)) }
 	ds := draws()
@@ -336,12 +336,12 @@ func TestAttachedPanelPlacementAndCache(t *testing.T) {
 	require.Zero(t, allocs)
 	t.Logf("attached panel cache hit: %.0f allocations", allocs)
 	// A later window paints over the panel, not underneath a global pass.
-	s.Windows = append(s.Windows, ports.SceneWindow{ID: 8, Rect: ports.Rect{W: 512, H: 256}})
+	s.Windows = append(s.Windows, ports.SceneWindow{ID: 8, Rect: domain.Rect{W: 512, H: 256}})
 	require.NoError(t, render(r, s, nil))
 	require.Equal(t, color.RGBA{0, 0, 255, 255}, readPixels(t, r).RGBAAt(180, 60))
 	s.Windows = nil
 	require.Empty(t, draws(), "absent target must not draw")
-	for _, win := range []ports.SceneWindow{{ID: 7, Hidden: true, Rect: ports.Rect{W: 512, H: 256}}, {ID: 7, Preview: 0.5, Rect: ports.Rect{W: 512, H: 256}}} {
+	for _, win := range []ports.SceneWindow{{ID: 7, Hidden: true, Rect: domain.Rect{W: 512, H: 256}}, {ID: 7, Preview: 0.5, Rect: domain.Rect{W: 512, H: 256}}} {
 		s.Windows = []ports.SceneWindow{win}
 		for _, d := range draws() {
 			require.Nil(t, d.shm, "hidden/preview target must not draw its panel")

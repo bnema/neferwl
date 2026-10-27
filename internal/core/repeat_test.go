@@ -4,6 +4,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -42,7 +43,7 @@ func repeatCore(t *testing.T) (*Core, *indicatorClock) {
 	return c, ic
 }
 
-func key(sym string, code uint32, mods ports.Mods, pressed bool) ports.KeyEvent {
+func key(sym string, code uint32, mods domain.Mods, pressed bool) ports.KeyEvent {
 	return ports.KeyEvent{Keysym: sym, Keycode: code, Mods: mods, Pressed: pressed}
 }
 
@@ -63,7 +64,7 @@ func TestHeldBindRepeats(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, ic := repeatCore(t)
 		before := len(ic.timers)
-		sendKeys(t, c, key("h", keyH, ports.ModSuper, true))
+		sendKeys(t, c, key("h", keyH, domain.ModSuper, true))
 		if focusedID(c.cur().mon) != 3 {
 			t.Fatalf("press: focus %d, want 3", focusedID(c.cur().mon))
 		}
@@ -78,7 +79,7 @@ func TestHeldBindRepeats(t *testing.T) {
 		if r := ic.resets[len(ic.resets)-1]; r != repeatInterval {
 			t.Fatalf("next repeat in %v, want %v", r, repeatInterval)
 		}
-		sendKeys(t, c, key("h", keyH, ports.ModSuper, false))
+		sendKeys(t, c, key("h", keyH, domain.ModSuper, false))
 		if c.repeatC != nil || c.repeat.timer != nil {
 			t.Fatal("release did not stop the repeat")
 		}
@@ -90,7 +91,7 @@ func TestHeldBindRepeats(t *testing.T) {
 func TestHeldToggleDoesNotRepeat(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _ := repeatCore(t)
-		sendKeys(t, c, key("f", keyF, ports.ModSuper, true))
+		sendKeys(t, c, key("f", keyF, domain.ModSuper, true))
 		if c.repeatC != nil {
 			t.Fatal("toggle-fullscreen repeats")
 		}
@@ -113,15 +114,15 @@ func TestHeldToggleDoesNotRepeat(t *testing.T) {
 func TestRepeatStopsOnKeyOrModifierChange(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _ := repeatCore(t)
-		sendKeys(t, c, key("h", keyH, ports.ModSuper, true))
+		sendKeys(t, c, key("h", keyH, domain.ModSuper, true))
 		sendKeys(t, c, key("Super_L", keySuper, 0, false))
 		if c.repeatC != nil {
 			t.Fatal("releasing Cmd did not stop the repeat")
 		}
 		sendKeys(t, c, key("h", keyH, 0, false))
 
-		sendKeys(t, c, key("h", keyH, ports.ModSuper, true))
-		sendKeys(t, c, key("Shift_L", keyShift, ports.ModSuper|ports.ModShift, true))
+		sendKeys(t, c, key("h", keyH, domain.ModSuper, true))
+		sendKeys(t, c, key("Shift_L", keyShift, domain.ModSuper|domain.ModShift, true))
 		if c.repeatC != nil {
 			t.Fatal("pressing Shift did not stop the repeat")
 		}
@@ -160,16 +161,16 @@ func TestOverviewHeldKeyRepeats(t *testing.T) {
 
 		// Cmd+Left, a bind, repeats in the overview too.
 		m.selectCard(w, 3)
-		sendKeys(t, c, key("Left", keyLeft, ports.ModSuper, true))
+		sendKeys(t, c, key("Left", keyLeft, domain.ModSuper, true))
 		tick(t, c)
 		if m.cardAt(w) != 1 {
 			t.Fatalf("Cmd+Left held: card %d, want 1", m.cardAt(w))
 		}
-		sendKeys(t, c, key("Left", keyLeft, ports.ModSuper, false))
+		sendKeys(t, c, key("Left", keyLeft, domain.ModSuper, false))
 
 		// The overview closing ends a repeat, of an overview key or a bind:
 		// Cmd+Left would go on in the layout.
-		for _, mods := range []ports.Mods{0, ports.ModSuper} {
+		for _, mods := range []domain.Mods{0, domain.ModSuper} {
 			if !m.ov.open {
 				m.ToggleOverview()
 			}

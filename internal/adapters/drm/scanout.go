@@ -8,6 +8,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
@@ -66,7 +67,7 @@ func scanoutRect(c ports.SurfaceContent, w, h int) planeRect {
 
 // covers reports whether win fills the output of scene s.
 func covers(s *ports.Scene, win *ports.SceneWindow) bool {
-	return (s.WorkspaceClip == (ports.Rect{}) || s.WorkspaceClip == (ports.Rect{W: s.OutputWidth, H: s.OutputHeight})) &&
+	return (s.WorkspaceClip == (domain.Rect{}) || s.WorkspaceClip == (domain.Rect{W: s.OutputWidth, H: s.OutputHeight})) &&
 		win.Rect.X == 0 && win.Rect.Y == 0 && win.Rect.W == s.OutputWidth && win.Rect.H == s.OutputHeight
 }
 
@@ -89,7 +90,7 @@ func fullscreenShown(s *ports.Scene) bool {
 // kept reports a window drawn from a content its client withdrew (it
 // closed and fades out): the client may already have its buffer back, so
 // it is never put on a plane (nil: none is).
-func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, w, h int, kept func(ports.WindowID) bool) (ports.SurfaceContent, string) {
+func scanoutCandidate(s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent, w, h int, kept func(domain.WindowID) bool) (ports.SurfaceContent, string) {
 	// A hardware plane would bypass the compositor-owned flash border.
 	if s.PositionHint.Shown() {
 		return ports.SurfaceContent{}, "position_hint"
@@ -104,7 +105,7 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		// The scanout buffer would have to be pre-rotated: rotated outputs compose.
 		return ports.SurfaceContent{}, "output_transform"
 	}
-	if s.WorkspaceClip != (ports.Rect{}) && s.WorkspaceClip != (ports.Rect{W: s.OutputWidth, H: s.OutputHeight}) {
+	if s.WorkspaceClip != (domain.Rect{}) && s.WorkspaceClip != (domain.Rect{W: s.OutputWidth, H: s.OutputHeight}) {
 		return ports.SurfaceContent{}, "workspace_clip"
 	}
 	var full *ports.SceneWindow
@@ -140,7 +141,7 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	// Core leaves the layers a fullscreen window hides out of the scene:
 	// one above the windows here is drawn.
 	for _, l := range s.Layers {
-		if l.Layer >= ports.LayerTop && l.Rect.W > 0 && l.Rect.H > 0 {
+		if l.Layer >= domain.LayerTop && l.Rect.W > 0 && l.Rect.H > 0 {
 			return ports.SurfaceContent{}, "overlay_surface"
 		}
 	}
@@ -166,7 +167,7 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		return c, "letterbox"
 	case c.Width <= 0 || c.Height <= 0 || c.Source[2] < 0 || c.Source[3] < 0 || !finiteSource(c.Source):
 		return c, "source_crop"
-	case c.Geometry != (ports.Rect{}) && (c.Geometry.X != 0 || c.Geometry.Y != 0 || c.Geometry.W != c.LogicalW || c.Geometry.H != c.LogicalH):
+	case c.Geometry != (domain.Rect{}) && (c.Geometry.X != 0 || c.Geometry.Y != 0 || c.Geometry.W != c.LogicalW || c.Geometry.H != c.LogicalH):
 		return c, "geometry_crop"
 	}
 	if c.Source[2] != 0 && (c.Source[0] < 0 || c.Source[1] < 0 || c.Source[2] <= 0 || c.Source[3] <= 0 || c.Source[0]+c.Source[2] > float32(c.Width) || c.Source[1]+c.Source[3] > float32(c.Height)) {
@@ -217,14 +218,14 @@ func clientSubsurface(c ports.SurfaceContent) (ports.SurfaceContent, string) {
 		return c, "subsurface_offset"
 	}
 	out := ch.SurfaceContent
-	out.ID, out.Seq, out.Geometry = c.ID, c.Seq, ports.Rect{}
+	out.ID, out.Seq, out.Geometry = c.ID, c.Seq, domain.Rect{}
 	return out, ""
 }
 
 // scanoutFrame picks a fullscreen client buffer to flip directly. It
 // returns fb 0, with the reason logged on change, when the frame must be
 // composed.
-func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) (fb uint32, c ports.SurfaceContent, mode colorMode) {
+func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent) (fb uint32, c ports.SurfaceContent, mode colorMode) {
 	reason := "disabled"
 	if o.scanout {
 		c, reason = scanoutCandidate(scene, surfaces, o.Width(), o.Height(), o.kept)
@@ -285,7 +286,7 @@ func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[ports.WindowID]por
 // none; the reason is logged on change. The returned scene's Windows is
 // valid until the next call: it reuses o.restWindows (its consumers, Render,
 // ExcludedScene and the capture tracking, run synchronously before then).
-func (o *Output) overlayFrame(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) (overlayWin, ports.Scene) {
+func (o *Output) overlayFrame(s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent) (overlayWin, ports.Scene) {
 	reason := "no_plane"
 	var ov overlayWin
 	if o.overlay != nil && o.scanout {
@@ -309,7 +310,7 @@ func (o *Output) overlayFrame(s ports.Scene, surfaces map[ports.WindowID]ports.S
 					scale = 1
 				}
 				ov = overlayWin{id: w.ID, fb: fb, buf: c.DMABuf.ID, w: c.Width, h: c.Height,
-					rect:    ports.Rect{X: int(float64(w.Rect.X) * scale), Y: int(float64(w.Rect.Y) * scale), W: c.Width, H: c.Height},
+					rect:    domain.Rect{X: int(float64(w.Rect.X) * scale), Y: int(float64(w.Rect.Y) * scale), W: c.Width, H: c.Height},
 					acquire: dupFence(c.Acquire), color: colorUse{mode: mode, format: c.DMABuf.Format}}
 			}
 		}
@@ -342,7 +343,7 @@ type frameDecision struct {
 
 // composeFrame chooses overlay or composition after direct scanout cannot commit.
 // The caller owns the returned overlay fence.
-func (o *Output) composeFrame(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) frameDecision {
+func (o *Output) composeFrame(s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent) frameDecision {
 	if time.Now().Before(o.scanoutPausedUntil) {
 		o.setScanoutReason("nomem")
 		o.setOverlayReason("nomem")
@@ -359,7 +360,7 @@ const nomemScanoutPause = 2 * time.Second
 
 // decideFrame tries direct scanout, then overlay, then composition.
 // Captures require composition; the caller owns the returned overlay fence.
-func (o *Output) decideFrame(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, capture bool) frameDecision {
+func (o *Output) decideFrame(s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent, capture bool) frameDecision {
 	if capture {
 		o.setScanoutReason("capture")
 		o.setOverlayReason("capture")

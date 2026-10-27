@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -37,11 +38,11 @@ type dumpJob struct {
 }
 
 type dumpTarget struct {
-	Source string         `json:"source"`
-	Kind   string         `json:"kind"`
-	Window ports.WindowID `json:"window"`
-	Rect   [4]int         `json:"rect"` // x1, y1, x2, y2, logical output-local
-	Score  float32        `json:"score"`
+	Source string          `json:"source"`
+	Kind   string          `json:"kind"`
+	Window domain.WindowID `json:"window"`
+	Rect   [4]int          `json:"rect"` // x1, y1, x2, y2, logical output-local
+	Score  float32         `json:"score"`
 }
 
 type dumpMeta struct {
@@ -120,7 +121,7 @@ func writeDump(dir string, j *dumpJob) error {
 	}
 	for _, t := range j.targets {
 		kind := "button"
-		if t.Kind == ports.HintLink {
+		if t.Kind == domain.HintLink {
 			kind = "link"
 		}
 		meta.Targets = append(meta.Targets, dumpTarget{Source: t.Source.String(), Kind: kind, Window: t.Window, Rect: [4]int{t.Rect.X, t.Rect.Y, t.Rect.X + t.Rect.W, t.Rect.Y + t.Rect.H}, Score: t.Score})
@@ -259,11 +260,11 @@ func prune(dir string, keep int) error {
 }
 
 // Source colours remain distinct even when sources report the same target kind.
-func sourceColor(source ports.HintSource) color.RGBA {
+func sourceColor(source domain.HintSource) color.RGBA {
 	switch source {
-	case ports.HintSourceATSPI:
+	case domain.HintSourceATSPI:
 		return color.RGBA{0xff, 0, 0xff, 0xff}
-	case ports.HintSourceOCR:
+	case domain.HintSourceOCR:
 		return color.RGBA{0, 0xb0, 0xff, 0xff}
 	default:
 		return boxColor

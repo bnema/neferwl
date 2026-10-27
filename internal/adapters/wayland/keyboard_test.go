@@ -12,6 +12,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
@@ -254,7 +255,7 @@ func TestSetModifiersOverrideAndRestore(t *testing.T) {
 	s, events, commands, dir := keyboardServer(t)
 	target, proxy := focusedTarget(t, s, events, commands, dir)
 	const capsLocked = 2
-	var id ports.WindowID
+	var id domain.WindowID
 	set := make(chan struct{})
 	s.display.Do(func() { s.seat.modState = ports.ModState{Locked: capsLocked}; id = s.seat.focused; close(set) })
 	<-set
@@ -264,12 +265,12 @@ func TestSetModifiersOverrideAndRestore(t *testing.T) {
 	}
 
 	proxy.depress, proxy.locked = nil, nil
-	commands <- ports.SetModifiers{ID: id + 100, Mods: ports.ModCtrl}
+	commands <- ports.SetModifiers{ID: id + 100, Mods: domain.ModCtrl}
 	wait()
 	if len(proxy.depress) != 0 {
 		t.Fatalf("unfocused window got modifiers %v", proxy.depress)
 	}
-	commands <- ports.SetModifiers{ID: id, Mods: ports.ModCtrl | ports.ModShift}
+	commands <- ports.SetModifiers{ID: id, Mods: domain.ModCtrl | domain.ModShift}
 	wait()
 	if !slices.Equal(proxy.depress, []uint32{xkbControl | xkbShift}) || !slices.Equal(proxy.locked, []uint32{capsLocked}) {
 		t.Fatalf("override depressed %v locked %v", proxy.depress, proxy.locked)
@@ -292,7 +293,7 @@ func TestSetModifiersRestoreAdoptsCoreState(t *testing.T) {
 	s, events, commands, dir := keyboardServer(t)
 	target, proxy := focusedTarget(t, s, events, commands, dir)
 	const shiftLatched, capsLocked = 1, 2
-	var id ports.WindowID
+	var id domain.WindowID
 	set := make(chan struct{})
 	s.display.Do(func() { s.seat.modState = ports.ModState{Latched: shiftLatched}; id = s.seat.focused; close(set) })
 	<-set

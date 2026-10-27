@@ -10,12 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	source "github.com/bnema/go-wayland-bindings/server/extimagecapturesource"
+
 	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/adapters/peerexe"
 	"github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
@@ -409,7 +411,7 @@ func TestCaptureAllowlistExclusionAttach(t *testing.T) {
 		o.CaptureAllow, o.peer = allowStore(t, "/usr/bin/nefercap\n"), peer
 	})
 	_, _, _, _, token := h.exclusionOwner(t)
-	hd := h.hud(t, ports.LayerOverlay, 2)
+	hd := h.hud(t, domain.LayerOverlay, 2)
 	att := hd.attach(t, token)
 	expectAttachment(t, hd.c, att, imagecapture.NeferwlCaptureLayerV1EventFailed, int64(imagecapture.NeferwlCaptureLayerV1FailureUnauthorized))
 }

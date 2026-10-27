@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
@@ -650,7 +651,7 @@ func TestCRTCColorClearedOnModesetAndClose(t *testing.T) {
 func TestColorOverlayTransitions(t *testing.T) {
 	o, _, commits := colorOutput(t, true, nil)
 	o.clientFBs[9] = &clientFB{fbID: 88}
-	ov := overlayWin{id: 2, fb: 88, buf: 9, w: 100, h: 100, rect: ports.Rect{X: 100, W: 100, H: 100}, color: colorUse{mode: colorSDRToPQ, format: fourccXRGB}}
+	ov := overlayWin{id: 2, fb: 88, buf: 9, w: 100, h: 100, rect: domain.Rect{X: 100, W: 100, H: 100}, color: colorUse{mode: colorSDRToPQ, format: fourccXRGB}}
 	if err := o.commitWith(70, nil, false, false, pendingFrame{}, ov); err != nil {
 		t.Fatal(err)
 	}
@@ -691,7 +692,7 @@ func refusePipeline(r *atomicReq, _ uint32) error {
 	return nil
 }
 
-func hdrScanoutScene() (ports.Scene, map[ports.WindowID]ports.SurfaceContent) {
+func hdrScanoutScene() (ports.Scene, map[domain.WindowID]ports.SurfaceContent) {
 	s, c := fullscreenScene()
 	return s, c
 }

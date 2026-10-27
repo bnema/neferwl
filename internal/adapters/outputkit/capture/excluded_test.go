@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
@@ -14,8 +15,8 @@ func excludedTestScene() ports.Scene {
 		Windows: []ports.SceneWindow{
 			{ID: 1}, {ID: 20, Popup: true, OverLayers: true}, {ID: 21, Popup: true, OverLayers: true}, {ID: 3},
 		},
-		Layers:  []ports.SceneLayer{{ID: 10, Layer: ports.LayerTop}, {ID: 11, Layer: ports.LayerTop}, {ID: 12, Layer: ports.LayerOverlay}},
-		Capture: &ports.SceneCapture{Session: 7, Excluded: []ports.WindowID{10, 20}},
+		Layers:  []ports.SceneLayer{{ID: 10, Layer: domain.LayerTop}, {ID: 11, Layer: domain.LayerTop}, {ID: 12, Layer: domain.LayerOverlay}},
+		Capture: &ports.SceneCapture{Session: 7, Excluded: []domain.WindowID{10, 20}},
 	}
 }
 
@@ -34,7 +35,7 @@ func TestExcludedSceneDropsOnlyExcluded(t *testing.T) {
 	require.Nil(t, c.Capture)
 	require.Zero(t, c.Seq)
 	require.Equal(t, []ports.SceneWindow{{ID: 1}, {ID: 21, Popup: true, OverLayers: true}, {ID: 3}}, c.Windows)
-	require.Equal(t, []ports.SceneLayer{{ID: 11, Layer: ports.LayerTop}, {ID: 12, Layer: ports.LayerOverlay}}, c.Layers)
+	require.Equal(t, []ports.SceneLayer{{ID: 11, Layer: domain.LayerTop}, {ID: 12, Layer: domain.LayerOverlay}}, c.Layers)
 	// The displayed scene is not mutated.
 	require.Len(t, s.Windows, 4)
 	require.Len(t, s.Layers, 3)
@@ -107,7 +108,7 @@ func TestSplitNoSecondCompositionWhenNothingExcludedIsShown(t *testing.T) {
 	p := NewPipeline(context.Background(), make(chan ports.CaptureDone, 1))
 	defer p.Close(nil)
 	s := excludedTestScene()
-	s.Capture.Excluded = []ports.WindowID{99}
+	s.Capture.Excluded = []domain.WindowID{99}
 	normal, excluded, _ := p.Split(s, []ports.CaptureRequest{{ID: 1, Exclude: true, Session: 7}, {ID: 2}})
 	require.Len(t, normal, 2)
 	require.Empty(t, excluded)

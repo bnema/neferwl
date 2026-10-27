@@ -8,13 +8,15 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/xkb"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
 
 func TestHotkey(t *testing.T) {
-	ca := ports.ModCtrl | ports.ModAlt
+	ca := domain.ModCtrl | domain.ModAlt
 	for _, tc := range []struct {
 		name   string
 		ev     ports.KeyEvent
@@ -23,7 +25,7 @@ func TestHotkey(t *testing.T) {
 	}{
 		{"ctrl alt backspace", ports.KeyEvent{Keysym: "BackSpace", Keycode: 14, Mods: ca, Pressed: true}, hotkeyQuit, 0},
 		{"release ignored", ports.KeyEvent{Keysym: "BackSpace", Keycode: 14, Mods: ca}, hotkeyNone, 0},
-		{"ctrl only", ports.KeyEvent{Keysym: "BackSpace", Keycode: 14, Mods: ports.ModCtrl, Pressed: true}, hotkeyNone, 0},
+		{"ctrl only", ports.KeyEvent{Keysym: "BackSpace", Keycode: 14, Mods: domain.ModCtrl, Pressed: true}, hotkeyNone, 0},
 		{"xkb vt sym", ports.KeyEvent{Keysym: "XF86Switch_VT_3", Keycode: 61, Mods: ca, Pressed: true}, hotkeyVT, 3},
 		{"ctrl alt f2 raw", ports.KeyEvent{Keysym: "F2", Keycode: 60, Mods: ca, Pressed: true}, hotkeyVT, 2},
 		{"ctrl alt f12 raw", ports.KeyEvent{Keysym: "F12", Keycode: 88, Mods: ca, Pressed: true}, hotkeyVT, 12},
@@ -45,21 +47,21 @@ func TestHotkey(t *testing.T) {
 func TestGesturesIgnoreSecondTouchpad(t *testing.T) {
 	var g gestures
 	const pad, other = 1, 2
-	g.begin(pad, ports.GestureSwipe, 3, time.Second)
-	if ev := g.begin(other, ports.GestureSwipe, 3, time.Second); ev != nil {
+	g.begin(pad, domain.GestureSwipe, 3, time.Second)
+	if ev := g.begin(other, domain.GestureSwipe, 3, time.Second); ev != nil {
 		t.Fatalf("second touchpad began: %v", ev)
 	}
 	if ev := g.swipeUpdate(other, 1, 1, 1, 1, time.Second); ev != nil {
 		t.Fatalf("second touchpad moved: %v", ev)
 	}
-	if ev := g.end(other, ports.GestureSwipe, false, time.Second); ev != nil {
+	if ev := g.end(other, domain.GestureSwipe, false, time.Second); ev != nil {
 		t.Fatalf("second touchpad ended the swipe: %v", ev)
 	}
 	if ev := g.swipeUpdate(pad, 1, 1, 1, 1, 2*time.Second); ev == nil {
 		t.Fatal("first touchpad lost its swipe")
 	}
-	g.end(pad, ports.GestureSwipe, false, 3*time.Second)
-	if ev := g.begin(other, ports.GestureSwipe, 3, 4*time.Second); ev == nil {
+	g.end(pad, domain.GestureSwipe, false, 3*time.Second)
+	if ev := g.begin(other, domain.GestureSwipe, 3, 4*time.Second); ev == nil {
 		t.Fatal("second touchpad cannot swipe after the first ended")
 	}
 }
@@ -67,25 +69,25 @@ func TestGesturesIgnoreSecondTouchpad(t *testing.T) {
 func TestGesturesStreamSwipe(t *testing.T) {
 	var g gestures
 	const pad, other = 1, 2
-	if ev := g.begin(pad, ports.GestureSwipe, 0, time.Second); ev != nil {
+	if ev := g.begin(pad, domain.GestureSwipe, 0, time.Second); ev != nil {
 		t.Fatalf("no fingers: %v", ev)
 	}
 	if ev := g.swipeUpdate(pad, 1, 1, 1, 1, time.Second); ev != nil {
 		t.Fatalf("update without a swipe: %v", ev)
 	}
-	if ev := g.begin(pad, ports.GestureSwipe, 3, time.Second); ev != (ports.SwipeBegin{Fingers: 3, Time: time.Second}) {
+	if ev := g.begin(pad, domain.GestureSwipe, 3, time.Second); ev != (ports.SwipeBegin{Fingers: 3, Time: time.Second}) {
 		t.Fatalf("begin: %v", ev)
 	}
 	if ev := g.swipeUpdate(pad, -3, 2, -6, 4, 2*time.Second); ev != (ports.SwipeUpdate{DX: -3, DY: 2, AccelDX: -6, AccelDY: 4, Time: 2 * time.Second}) {
 		t.Fatalf("update: %v", ev)
 	}
-	if ev := g.end(other, ports.GestureSwipe, false, 0); ev != nil {
+	if ev := g.end(other, domain.GestureSwipe, false, 0); ev != nil {
 		t.Fatalf("end on another device: %v", ev)
 	}
-	if ev := g.end(pad, ports.GestureSwipe, true, 3*time.Second); ev != (ports.SwipeEnd{Cancelled: true, Time: 3 * time.Second}) {
+	if ev := g.end(pad, domain.GestureSwipe, true, 3*time.Second); ev != (ports.SwipeEnd{Cancelled: true, Time: 3 * time.Second}) {
 		t.Fatalf("end: %v", ev)
 	}
-	if ev := g.end(pad, ports.GestureSwipe, false, 0); ev != nil {
+	if ev := g.end(pad, domain.GestureSwipe, false, 0); ev != nil {
 		t.Fatalf("second end: %v", ev)
 	}
 }
@@ -94,10 +96,10 @@ func TestGesturesStreamSwipe(t *testing.T) {
 func TestGesturesStreamAnyFingerCount(t *testing.T) {
 	for _, fingers := range []int{2, 3, 4, 5} {
 		var g gestures
-		if ev := g.begin(1, ports.GestureSwipe, fingers, time.Second); ev != (ports.SwipeBegin{Fingers: fingers, Time: time.Second}) {
+		if ev := g.begin(1, domain.GestureSwipe, fingers, time.Second); ev != (ports.SwipeBegin{Fingers: fingers, Time: time.Second}) {
 			t.Fatalf("%d fingers: %v", fingers, ev)
 		}
-		if ev := g.begin(1, ports.GestureSwipe, 5, time.Second); ev != nil {
+		if ev := g.begin(1, domain.GestureSwipe, 5, time.Second); ev != nil {
 			t.Fatalf("a second swipe began during a swipe: %v", ev)
 		}
 	}
@@ -106,20 +108,20 @@ func TestGesturesStreamAnyFingerCount(t *testing.T) {
 func TestGesturesStreamPinch(t *testing.T) {
 	var g gestures
 	const pad = 1
-	if ev := g.begin(pad, ports.GesturePinch, 2, time.Second); ev != (ports.PinchBegin{Fingers: 2, Time: time.Second}) {
+	if ev := g.begin(pad, domain.GesturePinch, 2, time.Second); ev != (ports.PinchBegin{Fingers: 2, Time: time.Second}) {
 		t.Fatalf("begin: %v", ev)
 	}
 	if ev := g.swipeUpdate(pad, 1, 1, 1, 1, time.Second); ev != nil {
 		t.Fatalf("swipe update during a pinch: %v", ev)
 	}
-	if ev := g.end(pad, ports.GestureHold, false, time.Second); ev != nil {
+	if ev := g.end(pad, domain.GestureHold, false, time.Second); ev != nil {
 		t.Fatalf("hold end during a pinch: %v", ev)
 	}
 	want := ports.PinchUpdate{DX: 1, DY: -2, Scale: 1.5, Rotation: -10, Time: 2 * time.Second}
 	if ev := g.pinchUpdate(pad, 1, -2, 1.5, -10, 2*time.Second); ev != want {
 		t.Fatalf("update: %v", ev)
 	}
-	if ev := g.end(pad, ports.GesturePinch, false, 3*time.Second); ev != (ports.PinchEnd{Time: 3 * time.Second}) {
+	if ev := g.end(pad, domain.GesturePinch, false, 3*time.Second); ev != (ports.PinchEnd{Time: 3 * time.Second}) {
 		t.Fatalf("end: %v", ev)
 	}
 	if ev := g.pinchUpdate(pad, 1, 1, 1, 0, 4*time.Second); ev != nil {
@@ -130,23 +132,23 @@ func TestGesturesStreamPinch(t *testing.T) {
 func TestGesturesStreamHold(t *testing.T) {
 	var g gestures
 	const pad = 1
-	if ev := g.begin(pad, ports.GestureHold, 3, time.Second); ev != (ports.HoldBegin{Fingers: 3, Time: time.Second}) {
+	if ev := g.begin(pad, domain.GestureHold, 3, time.Second); ev != (ports.HoldBegin{Fingers: 3, Time: time.Second}) {
 		t.Fatalf("begin: %v", ev)
 	}
-	if ev := g.begin(pad, ports.GesturePinch, 2, time.Second); ev != nil {
+	if ev := g.begin(pad, domain.GesturePinch, 2, time.Second); ev != nil {
 		t.Fatalf("pinch began during a hold: %v", ev)
 	}
-	if ev := g.end(pad, ports.GestureHold, true, 2*time.Second); ev != (ports.HoldEnd{Cancelled: true, Time: 2 * time.Second}) {
+	if ev := g.end(pad, domain.GestureHold, true, 2*time.Second); ev != (ports.HoldEnd{Cancelled: true, Time: 2 * time.Second}) {
 		t.Fatalf("end: %v", ev)
 	}
 }
 
 // A device that goes during a gesture ends it cancelled, whatever its kind.
 func TestGesturesAbortOnRemoval(t *testing.T) {
-	for kind, want := range map[ports.GestureKind]ports.InputEvent{
-		ports.GestureSwipe: ports.SwipeEnd{Cancelled: true},
-		ports.GesturePinch: ports.PinchEnd{Cancelled: true},
-		ports.GestureHold:  ports.HoldEnd{Cancelled: true},
+	for kind, want := range map[domain.GestureKind]ports.InputEvent{
+		domain.GestureSwipe: ports.SwipeEnd{Cancelled: true},
+		domain.GesturePinch: ports.PinchEnd{Cancelled: true},
+		domain.GestureHold:  ports.HoldEnd{Cancelled: true},
 	} {
 		var g gestures
 		g.begin(1, kind, 3, time.Second)
@@ -220,12 +222,12 @@ func TestPointerStartsOnPrimary(t *testing.T) {
 
 func TestPointerConstraints(t *testing.T) {
 	p := newPointer(ports.Layout{{Info: ports.OutputInfo{Name: "A"}, Width: 100, Height: 100, Scale: 1}})
-	p.constrain(ports.PointerConstraint{Mode: ports.ConstraintLock, X: 50, Y: 50})
+	p.constrain(ports.PointerConstraint{Mode: domain.ConstraintLock, X: 50, Y: 50})
 	if m := p.move(10, -5); m.X != 50 || m.Y != 50 || m.DX != 10 || m.DY != -5 {
 		t.Fatalf("locked: %+v", m)
 	}
 	// Confining moves the pointer inside, then keeps it there.
-	p.constrain(ports.PointerConstraint{Mode: ports.ConstraintConfine, Rect: ports.Rect{X: 60, Y: 10, W: 20, H: 20}, X: 50, Y: 50})
+	p.constrain(ports.PointerConstraint{Mode: domain.ConstraintConfine, Rect: domain.Rect{X: 60, Y: 10, W: 20, H: 20}, X: 50, Y: 50})
 	if p.x != 60 || p.y != 29 {
 		t.Fatal(p.x, p.y)
 	}
@@ -237,7 +239,7 @@ func TestPointerConstraints(t *testing.T) {
 		t.Fatalf("free: %+v", m)
 	}
 	// A lock takes core's cursor position, and so does its release.
-	p.constrain(ports.PointerConstraint{Mode: ports.ConstraintLock, X: 20, Y: 30})
+	p.constrain(ports.PointerConstraint{Mode: domain.ConstraintLock, X: 20, Y: 30})
 	if p.x != 20 || p.y != 30 {
 		t.Fatal(p.x, p.y)
 	}
@@ -254,7 +256,7 @@ func TestPointerConstraints(t *testing.T) {
 }
 
 func TestProtectedKeyboardPolicy(t *testing.T) {
-	ca := ports.ModCtrl | ports.ModAlt
+	ca := domain.ModCtrl | domain.ModAlt
 	for _, key := range []ports.KeyEvent{
 		{Keysym: "credential-secret", Base: "raw-secret", Keycode: 424242, Pressed: true},
 		{Keysym: "credential-secret", Keycode: 424242},
@@ -283,7 +285,7 @@ func TestProtectedKeyboardPolicy(t *testing.T) {
 }
 
 func TestKeyboardPolicyUnlockedAndVT(t *testing.T) {
-	ca := ports.ModCtrl | ports.ModAlt
+	ca := domain.ModCtrl | domain.ModAlt
 	for _, protected := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unlocked", true: "protected"}[protected], func(t *testing.T) {
 			var buf bytes.Buffer

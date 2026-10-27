@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -356,7 +357,7 @@ func textLinks(words []OCRWord, scale float64) []ports.HintTarget {
 		}
 		x, y := int(math.Floor(float64(rect.Min.X)/scale)), int(math.Floor(float64(rect.Min.Y)/scale))
 		right, bottom := int(math.Ceil(float64(rect.Max.X)/scale)), int(math.Ceil(float64(rect.Max.Y)/scale))
-		out = append(out, ports.HintTarget{Kind: ports.HintLink, Source: ports.HintSourceOCR, Score: 1, Rect: ports.Rect{X: x, Y: y, W: right - x, H: bottom - y}})
+		out = append(out, ports.HintTarget{Kind: domain.HintLink, Source: domain.HintSourceOCR, Score: 1, Rect: domain.Rect{X: x, Y: y, W: right - x, H: bottom - y}})
 		urls = append(urls, rect)
 	}
 	return append(out, underlinedLinks(words, urls, scale)...)
@@ -522,7 +523,7 @@ func duplicateWord(words []OCRWord, word OCRWord) bool {
 // bandKey identifies one OCR band of a window on an output.
 type bandKey struct {
 	output string
-	window ports.WindowID
+	window domain.WindowID
 	band   int
 	bands  int
 }
@@ -536,7 +537,7 @@ type bandCache struct {
 }
 
 // windowCrop rounds outwards in physical pixels, then intersects the output.
-func windowCrop(r ports.Rect, scale float64, width, height int) image.Rectangle {
+func windowCrop(r domain.Rect, scale float64, width, height int) image.Rectangle {
 	if scale <= 0 {
 		scale = 1
 	}

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -14,15 +15,15 @@ func TestResized(t *testing.T) {
 		u := Rect{W: 1000, H: 800}
 		r := Rect{X: 100, Y: 100, W: 300, H: 200}
 		for _, tc := range []struct {
-			edges  ports.ResizeEdges
+			edges  domain.ResizeEdges
 			dx, dy int
 			want   Rect
 		}{
-			{ports.ResizeRight | ports.ResizeBottom, 50, 20, Rect{X: 100, Y: 100, W: 350, H: 220}},
-			{ports.ResizeLeft | ports.ResizeTop, 50, 20, Rect{X: 150, Y: 120, W: 250, H: 180}},
-			{ports.ResizeLeft, -500, 0, Rect{X: 0, Y: 100, W: 400, H: 200}},
-			{ports.ResizeRight, -1000, 0, Rect{X: 100, Y: 100, W: 64, H: 200}},
-			{ports.ResizeBottom, 0, 2000, Rect{X: 100, Y: 100, W: 300, H: 700}},
+			{domain.ResizeRight | domain.ResizeBottom, 50, 20, Rect{X: 100, Y: 100, W: 350, H: 220}},
+			{domain.ResizeLeft | domain.ResizeTop, 50, 20, Rect{X: 150, Y: 120, W: 250, H: 180}},
+			{domain.ResizeLeft, -500, 0, Rect{X: 0, Y: 100, W: 400, H: 200}},
+			{domain.ResizeRight, -1000, 0, Rect{X: 100, Y: 100, W: 64, H: 200}},
+			{domain.ResizeBottom, 0, 2000, Rect{X: 100, Y: 100, W: 300, H: 700}},
 		} {
 			if got := resized(r, tc.edges, tc.dx, tc.dy, 64, u); got != tc.want {
 				t.Errorf("%v %d,%d: %+v, want %+v", tc.edges, tc.dx, tc.dy, got, tc.want)

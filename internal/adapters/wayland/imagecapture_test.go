@@ -10,14 +10,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	source "github.com/bnema/go-wayland-bindings/server/extimagecapturesource"
+
 	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
+
 	extws "github.com/bnema/go-wayland-bindings/server/extworkspace"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/wlrlayershell"
+
 	wlr "github.com/bnema/go-wayland-bindings/server/wlrscreencopy"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
@@ -359,7 +365,7 @@ func (h *captureHarness) open(t *testing.T) ports.CaptureSessionOpen {
 
 // active is the state core sends for a live session on the whole output.
 func active(id uint64) ports.CaptureSessionState {
-	return ports.CaptureSessionState{ID: id, Output: "HEADLESS-1", Rect: ports.Rect{W: 4, H: 4}, Active: true}
+	return ports.CaptureSessionState{ID: id, Output: "HEADLESS-1", Rect: domain.Rect{W: 4, H: 4}, Active: true}
 }
 
 func TestTrustedPeer(t *testing.T) {
@@ -390,7 +396,7 @@ func TestOutputSessionRegistersAndClose(t *testing.T) {
 		t.Fatalf("size %dx%d", w, hh)
 	}
 	open := h.open(t)
-	if open.ID == 0 || open.Output != "HEADLESS-1" || open.Workspace != 0 || open.Region != (ports.Rect{}) {
+	if open.ID == 0 || open.Output != "HEADLESS-1" || open.Workspace != 0 || open.Region != (domain.Rect{}) {
 		t.Fatalf("open %+v", open)
 	}
 	requestProtocol(t, cc.c, session, ext.ExtImageCopyCaptureSessionV1RequestDestroy)
@@ -410,7 +416,7 @@ func TestRegionSourceConstraintsFollowScale(t *testing.T) {
 		t.Fatalf("size %dx%d", w, hh)
 	}
 	open := h.open(t)
-	if open.Output != "HEADLESS-1" || open.Region != (ports.Rect{X: 1, Y: 1, W: 2, H: 2}) {
+	if open.Output != "HEADLESS-1" || open.Region != (domain.Rect{X: 1, Y: 1, W: 2, H: 2}) {
 		t.Fatalf("open %+v", open)
 	}
 	// Clipped: a rectangle past the output edge.
@@ -566,8 +572,8 @@ func (h *captureHarness) snapshot(t *testing.T, ws ...ports.WorkspaceInfo) {
 func TestWorkspaceSourceSessionLifecycle(t *testing.T) {
 	h := newCaptureHarness(t)
 	h.snapshot(t,
-		ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: ports.Rect{W: 4, H: 4}},
-		ports.WorkspaceInfo{ID: 43, Name: "2", Hidden: true, Index: 1, Frame: ports.Rect{W: 3, H: 2}},
+		ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 4, H: 4}},
+		ports.WorkspaceInfo{ID: 43, Name: "2", Hidden: true, Index: 1, Frame: domain.Rect{W: 3, H: 2}},
 	)
 	cc := h.client(t)
 	handles := h.handles(t, cc, 2)
@@ -589,11 +595,11 @@ func TestWorkspaceSourceSessionLifecycle(t *testing.T) {
 		t.Fatalf("open %+v", open)
 	}
 	// Core resizes the frame: new constraints, once.
-	h.send(ports.CaptureSessionState{ID: open.ID, Output: "HEADLESS-1", Rect: ports.Rect{W: 2, H: 2}, Workspace: 43, Hidden: true, Active: true})
+	h.send(ports.CaptureSessionState{ID: open.ID, Output: "HEADLESS-1", Rect: domain.Rect{W: 2, H: 2}, Workspace: 43, Hidden: true, Active: true})
 	if w, hh := constraints(t, cc, ev); w != 2 || hh != 2 {
 		t.Fatalf("resized %dx%d", w, hh)
 	}
-	h.send(ports.CaptureSessionState{ID: open.ID, Output: "HEADLESS-1", Rect: ports.Rect{W: 2, H: 2}, Workspace: 43, Hidden: true, Active: true, Revision: 0})
+	h.send(ports.CaptureSessionState{ID: open.ID, Output: "HEADLESS-1", Rect: domain.Rect{W: 2, H: 2}, Workspace: 43, Hidden: true, Active: true, Revision: 0})
 	h.settle(t, cc)
 	noSession(t, cc, ev)
 	// A frame asks for the off-screen workspace, whole.
@@ -603,7 +609,7 @@ func TestWorkspaceSourceSessionLifecycle(t *testing.T) {
 		t.Fatalf("request %+v", r)
 	}
 	// Removing workspace 43 stops its session at once; the other lives on.
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: ports.Rect{W: 4, H: 4}})
+	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 4, H: 4}})
 	if g := nextSession(t, cc, ev); g[0] != evStopped {
 		t.Fatalf("event %v", g)
 	}
@@ -616,7 +622,7 @@ func TestWorkspaceSourceSessionLifecycle(t *testing.T) {
 // A handle that is already removed gives a source whose sessions stop at once.
 func TestWorkspaceSourceOfRemovedHandleStops(t *testing.T) {
 	h := newCaptureHarness(t)
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: ports.Rect{W: 4, H: 4}})
+	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 4, H: 4}})
 	cc := h.client(t)
 	handles := h.handles(t, cc, 1)
 	h.snapshot(t)
@@ -631,13 +637,13 @@ func TestWorkspaceSourceOfRemovedHandleStops(t *testing.T) {
 // decimal id, so a source made before stays valid.
 func TestWorkspaceSourceSurvivesConfiguredRename(t *testing.T) {
 	h := newCaptureHarness(t)
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: ports.Rect{W: 4, H: 4}})
+	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 4, H: 4}})
 	cc := h.client(t)
 	handles := h.handles(t, cc, 1)
 	_, ev := cc.session(t, cc.workspaceSource(t, handles[0]))
 	constraints(t, cc, ev)
 	h.open(t)
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "dev", Configured: "dev", Active: true, Frame: ports.Rect{W: 4, H: 4}})
+	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "dev", Configured: "dev", Active: true, Frame: domain.Rect{W: 4, H: 4}})
 	h.settle(t, cc)
 	noSession(t, cc, ev)
 	select {
@@ -696,8 +702,8 @@ func noFrame(t *testing.T, ch chan [4]int32) {
 func TestWorkspaceFrameEvents(t *testing.T) {
 	h := newCaptureHarness(t)
 	h.snapshot(t,
-		ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: ports.Rect{X: 1, Y: 0, W: 2, H: 4}},
-		ports.WorkspaceInfo{ID: 43, Name: "2", Hidden: true, Index: 1, Frame: ports.Rect{W: 3, H: 2}},
+		ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{X: 1, Y: 0, W: 2, H: 4}},
+		ports.WorkspaceInfo{ID: 43, Name: "2", Hidden: true, Index: 1, Frame: domain.Rect{W: 3, H: 2}},
 	)
 	cc := h.client(t)
 	handles := h.handles(t, cc, 2)
@@ -707,21 +713,21 @@ func TestWorkspaceFrameEvents(t *testing.T) {
 	wantFrame(t, off, [4]int32{0, 0, 3, 2})
 	// Unchanged snapshot: nothing. A change: once, to the right object.
 	h.snapshot(t,
-		ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: ports.Rect{X: 1, Y: 0, W: 2, H: 4}},
-		ports.WorkspaceInfo{ID: 43, Name: "2", Hidden: true, Index: 1, Frame: ports.Rect{X: 1, Y: 1, W: 2, H: 2}},
+		ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{X: 1, Y: 0, W: 2, H: 4}},
+		ports.WorkspaceInfo{ID: 43, Name: "2", Hidden: true, Index: 1, Frame: domain.Rect{X: 1, Y: 1, W: 2, H: 2}},
 	)
 	h.settle(t, cc)
 	noFrame(t, on)
 	wantFrame(t, off, [4]int32{1, 1, 2, 2})
 	noFrame(t, off)
 	// Removal sends nothing; a handle removed before the request sends nothing.
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: ports.Rect{X: 1, Y: 0, W: 2, H: 4}})
+	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{X: 1, Y: 0, W: 2, H: 4}})
 	h.settle(t, cc)
 	noFrame(t, off)
 	_, gone := cc.workspaceFrame(t, handles[1])
 	noFrame(t, gone)
 	// A configured rename replaces the handle: the old object goes quiet.
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "dev", Configured: "dev", Active: true, Frame: ports.Rect{W: 4, H: 4}})
+	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "dev", Configured: "dev", Active: true, Frame: domain.Rect{W: 4, H: 4}})
 	h.settle(t, cc)
 	noFrame(t, on)
 }
@@ -738,19 +744,19 @@ func TestWorkspaceFrameSessionLock(t *testing.T) {
 			t.Fatal("display stopped")
 		}
 	}
-	info := func(r ports.Rect) ports.WorkspaceInfo {
+	info := func(r domain.Rect) ports.WorkspaceInfo {
 		return ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: r}
 	}
 	t.Run("change while locked", func(t *testing.T) {
 		h := newCaptureHarness(t)
-		h.snapshot(t, info(ports.Rect{W: 2, H: 2}))
+		h.snapshot(t, info(domain.Rect{W: 2, H: 2}))
 		cc := h.client(t)
 		handles := h.handles(t, cc, 1)
 		_, ev := cc.workspaceFrame(t, handles[0])
 		wantFrame(t, ev, [4]int32{0, 0, 2, 2})
 		state := installSecurity(t, h.s)
 		protect(t, h.s, state, 1, true)
-		h.snapshot(t, info(ports.Rect{X: 1, Y: 1, W: 3, H: 3}))
+		h.snapshot(t, info(domain.Rect{X: 1, Y: 1, W: 3, H: 3}))
 		h.settle(t, cc)
 		noFrame(t, ev)
 		unlock(t, h, state)
@@ -760,15 +766,15 @@ func TestWorkspaceFrameSessionLock(t *testing.T) {
 	})
 	t.Run("no change while locked", func(t *testing.T) {
 		h := newCaptureHarness(t)
-		h.snapshot(t, info(ports.Rect{W: 2, H: 2}))
+		h.snapshot(t, info(domain.Rect{W: 2, H: 2}))
 		cc := h.client(t)
 		handles := h.handles(t, cc, 1)
 		_, ev := cc.workspaceFrame(t, handles[0])
 		wantFrame(t, ev, [4]int32{0, 0, 2, 2})
 		state := installSecurity(t, h.s)
 		protect(t, h.s, state, 1, true)
-		h.snapshot(t, info(ports.Rect{X: 1, Y: 1, W: 3, H: 3}))
-		h.snapshot(t, info(ports.Rect{W: 2, H: 2}))
+		h.snapshot(t, info(domain.Rect{X: 1, Y: 1, W: 3, H: 3}))
+		h.snapshot(t, info(domain.Rect{W: 2, H: 2}))
 		h.settle(t, cc)
 		unlock(t, h, state)
 		cc.roundtrip(t)
@@ -776,7 +782,7 @@ func TestWorkspaceFrameSessionLock(t *testing.T) {
 	})
 	t.Run("get while locked", func(t *testing.T) {
 		h := newCaptureHarness(t)
-		h.snapshot(t, info(ports.Rect{W: 2, H: 2}))
+		h.snapshot(t, info(domain.Rect{W: 2, H: 2}))
 		cc := h.client(t)
 		handles := h.handles(t, cc, 1)
 		state := installSecurity(t, h.s)
@@ -795,7 +801,7 @@ func TestWorkspaceFrameSessionLock(t *testing.T) {
 // sent to it afterwards.
 func TestWorkspaceFrameDestroyRemovesObject(t *testing.T) {
 	h := newCaptureHarness(t)
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: ports.Rect{W: 2, H: 2}})
+	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 2, H: 2}})
 	cc := h.client(t)
 	handles := h.handles(t, cc, 1)
 	count := func() (n int) {
@@ -812,7 +818,7 @@ func TestWorkspaceFrameDestroyRemovesObject(t *testing.T) {
 	if n := count(); n != 0 {
 		t.Fatalf("%d frame objects after destroy, want 0", n)
 	}
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: ports.Rect{W: 3, H: 3}})
+	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 3, H: 3}})
 	h.settle(t, cc)
 	noFrame(t, ev)
 }
@@ -885,7 +891,7 @@ func TestExclusionOnStoppedSession(t *testing.T) {
 	session2, sev := cc.session(t, cc.outputSource(t))
 	constraints(t, cc, sev)
 	open := h.open(t)
-	h.send(ports.CaptureSessionState{ID: open.ID, Reason: ports.CaptureReasonOutputGone})
+	h.send(ports.CaptureSessionState{ID: open.ID, Reason: domain.CaptureReasonOutputGone})
 	if g := nextSession(t, cc, sev); g[0] != evStopped {
 		t.Fatalf("event %v", g)
 	}
@@ -913,7 +919,7 @@ func TestExclusionAlreadyExcluded(t *testing.T) {
 func TestExclusionDestroyFreesTheSlot(t *testing.T) {
 	h := newCaptureHarness(t)
 	cc, session, open, _, _ := h.exclusionOwner(t)
-	h.send(ports.CaptureSessionState{ID: open.ID, Output: "HEADLESS-1", Rect: ports.Rect{W: 4, H: 4}, Active: true, Exclusion: true, Revision: 1})
+	h.send(ports.CaptureSessionState{ID: open.ID, Output: "HEADLESS-1", Rect: domain.Rect{W: 4, H: 4}, Active: true, Exclusion: true, Revision: 1})
 	h.settle(t, cc)
 	var excl uint32
 	h.s.display.Do(func() { excl = h.s.excl.res.ID() })
@@ -941,7 +947,7 @@ func TestExclusionFrameTagging(t *testing.T) {
 	}
 	noCapture(t, h.captures)
 	// Once core confirms it, the held frame is served, tagged.
-	h.send(ports.CaptureSessionState{ID: open.ID, Output: "HEADLESS-1", Rect: ports.Rect{W: 4, H: 4}, Active: true, Exclusion: true, Revision: 9})
+	h.send(ports.CaptureSessionState{ID: open.ID, Output: "HEADLESS-1", Rect: domain.Rect{W: 4, H: 4}, Active: true, Exclusion: true, Revision: 9})
 	h.settle(t, owner)
 	r := receiveCapture(t, h.captures)
 	if !r.Exclude || r.Session != open.ID || r.CaptureRevision != 9 {
@@ -1053,12 +1059,12 @@ type hud struct {
 	surface, layer uint32
 }
 
-func (h *captureHarness) hud(t *testing.T, layer ports.Layer, keyboard uint32) *hud {
+func (h *captureHarness) hud(t *testing.T, layer domain.Layer, keyboard uint32) *hud {
 	t.Helper()
 	return h.hudVersion(t, layer, keyboard, 1)
 }
 
-func (h *captureHarness) hudVersion(t *testing.T, layer ports.Layer, keyboard, shellVersion uint32) *hud {
+func (h *captureHarness) hudVersion(t *testing.T, layer domain.Layer, keyboard, shellVersion uint32) *hud {
 	t.Helper()
 	pc := h.client(t)
 	comp := bindProtocol(t, pc.c, "wl_compositor")
@@ -1144,7 +1150,7 @@ func nextEvent[T ports.ClientEvent](t *testing.T, ch chan ports.ClientEvent) T {
 func TestExclusionAttach(t *testing.T) {
 	h := newCaptureHarness(t)
 	_, _, open, _, token := h.exclusionOwner(t)
-	hd := h.hud(t, ports.LayerOverlay, 2)
+	hd := h.hud(t, domain.LayerOverlay, 2)
 	// A wrong token fails that attachment without touching the exclusion.
 	bad := hd.attach(t, strings.Repeat("0", 64))
 	expectAttachment(t, hd.c, bad, imagecapture.NeferwlCaptureLayerV1EventFailed, int64(imagecapture.NeferwlCaptureLayerV1FailureUnknownToken))
@@ -1158,7 +1164,7 @@ func TestExclusionAttach(t *testing.T) {
 	st.Exclusion, st.Revision = true, 2
 	h.send(st)
 	noMessage(t, hd.c, good) // a state that does not list the layer confirms nothing
-	st.Revision, st.Layers = 3, []ports.WindowID{layer.Layer}
+	st.Revision, st.Layers = 3, []domain.WindowID{layer.Layer}
 	h.send(st)
 	expectAttachment(t, hd.c, good, imagecapture.NeferwlCaptureLayerV1EventAttached)
 	// Attaching the same surface again fails on its own object.
@@ -1182,7 +1188,7 @@ func TestExclusionTokenDeadAfterEnd(t *testing.T) {
 	owner, session, _, _, token := h.exclusionOwner(t)
 	requestProtocol(t, owner.c, session, ext.ExtImageCopyCaptureSessionV1RequestDestroy)
 	owner.roundtrip(t)
-	hd := h.hud(t, ports.LayerOverlay, 0)
+	hd := h.hud(t, domain.LayerOverlay, 0)
 	att := hd.attach(t, token)
 	expectAttachment(t, hd.c, att, imagecapture.NeferwlCaptureLayerV1EventFailed, int64(imagecapture.NeferwlCaptureLayerV1FailureUnknownToken))
 }
@@ -1192,11 +1198,11 @@ func TestExclusionTokenDeadAfterEnd(t *testing.T) {
 func TestExclusionDetachOrdering(t *testing.T) {
 	h := newCaptureHarness(t)
 	_, _, open, _, token := h.exclusionOwner(t)
-	hd := h.hud(t, ports.LayerTop, 0)
+	hd := h.hud(t, domain.LayerTop, 0)
 	att := hd.attach(t, token)
 	layer := nextEvent[ports.CaptureExclusionLayer](t, h.events)
 	st := active(open.ID)
-	st.Exclusion, st.Revision, st.Layers = true, 2, []ports.WindowID{layer.Layer}
+	st.Exclusion, st.Revision, st.Layers = true, 2, []domain.WindowID{layer.Layer}
 	h.send(st)
 	expectAttachment(t, hd.c, att, imagecapture.NeferwlCaptureLayerV1EventAttached)
 	mapLayer(t, hd)
@@ -1253,7 +1259,7 @@ func mapLayer(t *testing.T, hd *hud) {
 func TestExclusionEndClosesLayers(t *testing.T) {
 	h := newCaptureHarness(t)
 	owner, session, open, _, token := h.exclusionOwner(t)
-	hd := h.hud(t, ports.LayerOverlay, 0)
+	hd := h.hud(t, domain.LayerOverlay, 0)
 	closed := make(chan sessionMsg, 4)
 	lp := &layerClosedProxy{msgs: closed}
 	lp.SetID(hd.layer)
@@ -1261,7 +1267,7 @@ func TestExclusionEndClosesLayers(t *testing.T) {
 	confirmed := hd.attach(t, token)
 	layer := nextEvent[ports.CaptureExclusionLayer](t, h.events)
 	st := active(open.ID)
-	st.Exclusion, st.Revision, st.Layers = true, 2, []ports.WindowID{layer.Layer}
+	st.Exclusion, st.Revision, st.Layers = true, 2, []domain.WindowID{layer.Layer}
 	h.send(st)
 	expectAttachment(t, hd.c, confirmed, imagecapture.NeferwlCaptureLayerV1EventAttached)
 	pending := hd.attachSurfaceNew(t, token)
@@ -1296,7 +1302,7 @@ func (hd *hud) attachSurfaceNew(t *testing.T, token string) chan sessionMsg {
 	surf, l := hd.c.AllocateID(), hd.c.AllocateID()
 	requestProtocol(t, hd.c, comp, wayland.CompositorRequestCreateSurface, surf)
 	registerProtocol(t, hd.c, surf)
-	requestProtocol(t, hd.c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, l, surf, hd.output, uint32(ports.LayerTop), "hud2")
+	requestProtocol(t, hd.c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, l, surf, hd.output, uint32(domain.LayerTop), "hud2")
 	registerProtocol(t, hd.c, l)
 	return hd.attachSurface(t, token, surf)
 }
@@ -1304,13 +1310,13 @@ func (hd *hud) attachSurfaceNew(t *testing.T, token string) chan sessionMsg {
 func TestExclusionAttachRefusals(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
-		layer    ports.Layer
+		layer    domain.Layer
 		keyboard uint32
 		code     uint32
 	}{
-		{"background layer", ports.LayerBackground, 0, uint32(imagecapture.NeferwlCaptureExclusionManagerV1ErrorInvalidLayer)},
-		{"bottom layer", ports.LayerBottom, 0, uint32(imagecapture.NeferwlCaptureExclusionManagerV1ErrorInvalidLayer)},
-		{"exclusive keyboard", ports.LayerTop, 1, uint32(imagecapture.NeferwlCaptureExclusionManagerV1ErrorExclusiveKeyboard)},
+		{"background layer", domain.LayerBackground, 0, uint32(imagecapture.NeferwlCaptureExclusionManagerV1ErrorInvalidLayer)},
+		{"bottom layer", domain.LayerBottom, 0, uint32(imagecapture.NeferwlCaptureExclusionManagerV1ErrorInvalidLayer)},
+		{"exclusive keyboard", domain.LayerTop, 1, uint32(imagecapture.NeferwlCaptureExclusionManagerV1ErrorExclusiveKeyboard)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newCaptureHarness(t)
@@ -1331,7 +1337,7 @@ func TestExclusionAttachRefusals(t *testing.T) {
 func TestExclusionAttachLimit(t *testing.T) {
 	h := newCaptureHarness(t)
 	_, _, _, _, token := h.exclusionOwner(t)
-	hd := h.hud(t, ports.LayerTop, 0)
+	hd := h.hud(t, domain.LayerTop, 0)
 	hd.attach(t, token)
 	for i := 1; i < ports.MaxExclusionLayers; i++ {
 		hd.attachSurfaceNew(t, token)
@@ -1364,11 +1370,11 @@ func TestExclusionAttachLimit(t *testing.T) {
 func TestExclusionLayerMovedBelowTop(t *testing.T) {
 	h := newCaptureHarness(t)
 	_, _, open, _, token := h.exclusionOwner(t)
-	hd := h.hudVersion(t, ports.LayerTop, 0, 2)
+	hd := h.hudVersion(t, domain.LayerTop, 0, 2)
 	att := hd.attach(t, token)
 	layer := nextEvent[ports.CaptureExclusionLayer](t, h.events)
 	st := active(open.ID)
-	st.Exclusion, st.Revision, st.Layers = true, 2, []ports.WindowID{layer.Layer}
+	st.Exclusion, st.Revision, st.Layers = true, 2, []domain.WindowID{layer.Layer}
 	h.send(st)
 	expectAttachment(t, hd.c, att, imagecapture.NeferwlCaptureLayerV1EventAttached)
 	mapLayer(t, hd)
@@ -1379,7 +1385,7 @@ func TestExclusionLayerMovedBelowTop(t *testing.T) {
 	lp := &layerClosedProxy{msgs: closed}
 	lp.SetID(hd.layer)
 	registerWireProxy(hd.c, lp)
-	requestProtocol(t, hd.c, hd.layer, wlrlayershell.ZwlrLayerSurfaceV1RequestSetLayer, uint32(ports.LayerBottom))
+	requestProtocol(t, hd.c, hd.layer, wlrlayershell.ZwlrLayerSurfaceV1RequestSetLayer, uint32(domain.LayerBottom))
 	requestProtocol(t, hd.c, hd.surface, wayland.SurfaceRequestCommit)
 	if err := hd.c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -1412,11 +1418,11 @@ func TestExclusionLayerMovedBelowTop(t *testing.T) {
 func TestExclusionLayerKeyboardNone(t *testing.T) {
 	h := newCaptureHarness(t)
 	_, _, open, _, token := h.exclusionOwner(t)
-	hd := h.hud(t, ports.LayerOverlay, 2) // on demand before the attach
+	hd := h.hud(t, domain.LayerOverlay, 2) // on demand before the attach
 	att := hd.attach(t, token)
 	layer := nextEvent[ports.CaptureExclusionLayer](t, h.events)
 	st := active(open.ID)
-	st.Exclusion, st.Revision, st.Layers = true, 2, []ports.WindowID{layer.Layer}
+	st.Exclusion, st.Revision, st.Layers = true, 2, []domain.WindowID{layer.Layer}
 	h.send(st)
 	expectAttachment(t, hd.c, att, imagecapture.NeferwlCaptureLayerV1EventAttached)
 	requestProtocol(t, hd.c, hd.layer, wlrlayershell.ZwlrLayerSurfaceV1RequestSetKeyboardInteractivity, uint32(2)) // and after
@@ -1438,7 +1444,7 @@ func (h *captureHarness) frameTaken(t *testing.T) ports.CaptureFrameTaken {
 // with the target the client asked for.
 func TestEveryCaptureFrameIsReportedToCore(t *testing.T) {
 	h := newCaptureHarness(t)
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: ports.Rect{W: 4, H: 4}})
+	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 4, H: 4}})
 	cc := h.client(t)
 	// wlr-screencopy, whole output.
 	cc.wlrFrame(t)
@@ -1465,7 +1471,7 @@ func TestEveryCaptureFrameIsReportedToCore(t *testing.T) {
 	open = h.open(t)
 	cc.extFrame(t, session, 2, 2)
 	receiveCapture(t, h.captures)
-	if got := h.frameTaken(t); got != (ports.CaptureFrameTaken{Session: open.ID, Output: "HEADLESS-1", Region: ports.Rect{X: 1, Y: 1, W: 2, H: 2}}) {
+	if got := h.frameTaken(t); got != (ports.CaptureFrameTaken{Session: open.ID, Output: "HEADLESS-1", Region: domain.Rect{X: 1, Y: 1, W: 2, H: 2}}) {
 		t.Fatalf("ext region frame reported %+v", got)
 	}
 	// ext workspace source.
@@ -1484,7 +1490,7 @@ func TestEveryCaptureFrameIsReportedToCore(t *testing.T) {
 // is on screen, whatever protocol or source made it.
 func TestEveryCaptureRequestAsksForItsIndicator(t *testing.T) {
 	h := newCaptureHarness(t)
-	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: ports.Rect{W: 4, H: 4}})
+	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: domain.Rect{W: 4, H: 4}})
 	cc := h.client(t)
 	cc.wlrFrame(t)
 	if r := receiveCapture(t, h.captures); !r.Indicate {
@@ -1530,11 +1536,11 @@ func TestLogicalRegion(t *testing.T) {
 	o := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Width: 8, Height: 8}, Scale: 2}}
 	for _, tc := range []struct {
 		phys image.Rectangle
-		want ports.Rect
+		want domain.Rect
 	}{
-		{image.Rect(0, 0, 8, 8), ports.Rect{}},
-		{image.Rect(2, 2, 6, 4), ports.Rect{X: 1, Y: 1, W: 2, H: 1}},
-		{image.Rect(1, 1, 5, 3), ports.Rect{X: 0, Y: 0, W: 3, H: 2}}, // rounded outwards
+		{image.Rect(0, 0, 8, 8), domain.Rect{}},
+		{image.Rect(2, 2, 6, 4), domain.Rect{X: 1, Y: 1, W: 2, H: 1}},
+		{image.Rect(1, 1, 5, 3), domain.Rect{X: 0, Y: 0, W: 3, H: 2}}, // rounded outwards
 	} {
 		if got := logicalRegion(o, tc.phys); got != tc.want {
 			t.Errorf("%v: %+v, want %+v", tc.phys, got, tc.want)

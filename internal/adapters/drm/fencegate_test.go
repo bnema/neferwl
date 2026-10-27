@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
@@ -232,7 +233,7 @@ func TestPendingClientFenceComposes(t *testing.T) {
 			s, c := fullscreenScene()
 			content := c[1]
 			content.Acquire = fence
-			fb, _, _ := o.scanoutFrame(s, map[ports.WindowID]ports.SurfaceContent{1: content})
+			fb, _, _ := o.scanoutFrame(s, map[domain.WindowID]ports.SurfaceContent{1: content})
 			return fb != 0
 		}},
 		{"overlay", func(o *Output) string { return o.overlayReason }, func(t *testing.T, o *Output, k *mockkms, fence *os.File) bool {
@@ -240,7 +241,7 @@ func TestPendingClientFenceComposes(t *testing.T) {
 			s, c := overlayScene()
 			content := c[2]
 			content.Acquire = fence
-			ov, _ := o.overlayFrame(s, map[ports.WindowID]ports.SurfaceContent{2: content})
+			ov, _ := o.overlayFrame(s, map[domain.WindowID]ports.SurfaceContent{2: content})
 			ov.close()
 			return ov.fb != 0
 		}},

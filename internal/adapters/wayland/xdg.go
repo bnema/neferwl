@@ -5,6 +5,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 )
@@ -66,7 +67,7 @@ func (p *positioner) SetAnchorRect(r *xdgshell.Positioner, x, y, w, h int32) {
 		r.PostError(uint32(xdgshell.PositionerErrorInvalidInput), "anchor rect size must not be negative")
 		return
 	}
-	p.p.AnchorRect, p.anchorSet = ports.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)}, true
+	p.p.AnchorRect, p.anchorSet = domain.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)}, true
 }
 func (p *positioner) SetAnchor(r *xdgshell.Positioner, v uint32) {
 	if v > ports.EdgeBottomRight {
@@ -117,7 +118,7 @@ type xdgSurface struct {
 	serials    []uint32
 	// geometry is the committed window geometry: the visible window inside
 	// client shadows. Empty means the whole surface.
-	geometry, pendingGeometry ports.Rect
+	geometry, pendingGeometry domain.Rect
 }
 
 func (x *xdgSurface) Destroy(r *xdgshell.Surface) {
@@ -128,7 +129,7 @@ func (x *xdgSurface) Destroy(r *xdgshell.Surface) {
 
 // window is an xdg_toplevel, or an xdg_popup when popup is set.
 type window struct {
-	id           ports.WindowID
+	id           domain.WindowID
 	toplevel     *xdgshell.Toplevel
 	popup        *popup
 	xdg          *xdgSurface
@@ -249,7 +250,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 			}
 			// Its size comes with the commit, in WindowResized (afterCommit).
 			w.floating = w.floats()
-			var parent ports.WindowID
+			var parent domain.WindowID
 			if w.parent != nil && w.parent.mapped {
 				parent = w.parent.id
 			}
@@ -283,7 +284,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 		x.configured = false
 		x.acked = false
 		x.serials = nil
-		x.geometry, x.pendingGeometry = ports.Rect{}, ports.Rect{}
+		x.geometry, x.pendingGeometry = domain.Rect{}, domain.Rect{}
 	}
 }
 func (x *xdgSurface) GetPopup(r *xdgshell.Surface, id uint32, parent *xdgshell.Surface, pos *xdgshell.Positioner) {
@@ -301,7 +302,7 @@ func (x *xdgSurface) SetWindowGeometry(r *xdgshell.Surface, gx, gy, gw, gh int32
 		r.PostError(uint32(xdgshell.SurfaceErrorInvalidSize), "invalid window geometry")
 		return
 	}
-	x.pendingGeometry = ports.Rect{X: int(gx), Y: int(gy), W: int(gw), H: int(gh)}
+	x.pendingGeometry = domain.Rect{X: int(gx), Y: int(gy), W: int(gw), H: int(gh)}
 	id := uint64(0)
 	if x.window != nil {
 		id = uint64(x.window.id)
@@ -344,7 +345,7 @@ func (w *window) setParent(p *window) {
 	if !w.mapped {
 		return
 	}
-	var id ports.WindowID
+	var id domain.WindowID
 	if p != nil && p.mapped {
 		id = p.id
 	}
@@ -383,9 +384,9 @@ func (t top) Resize(r *xdgshell.Toplevel, _ *wayland.Seat, serial, edges uint32)
 		r.PostError(uint32(xdgshell.ToplevelErrorInvalidResizeEdge), "invalid resize edge")
 		return
 	}
-	t.moveRequest(r, serial, true, ports.ResizeEdges(edges))
+	t.moveRequest(r, serial, true, domain.ResizeEdges(edges))
 }
-func (t top) moveRequest(r *xdgshell.Toplevel, serial uint32, resize bool, edges ports.ResizeEdges) {
+func (t top) moveRequest(r *xdgshell.Toplevel, serial uint32, resize bool, edges domain.ResizeEdges) {
 	s := t.w.xdg.server
 	if !t.w.mapped || serial != s.seat.press || s.seat.pressClient != r.Client() {
 		return

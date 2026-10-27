@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -33,8 +35,8 @@ func sessionRequest(t *testing.T, id uint64, exclude bool) ports.CaptureRequest 
 }
 
 func drmSessionScene() ports.Scene {
-	return ports.Scene{Seq: 4, Windows: []ports.SceneWindow{{ID: 1}}, Layers: []ports.SceneLayer{{ID: 10, Layer: ports.LayerTop}},
-		Capture: &ports.SceneCapture{Session: 7, Revision: 1, Excluded: []ports.WindowID{10}}}
+	return ports.Scene{Seq: 4, Windows: []ports.SceneWindow{{ID: 1}}, Layers: []ports.SceneLayer{{ID: 10, Layer: domain.LayerTop}},
+		Capture: &ports.SceneCapture{Session: 7, Revision: 1, Excluded: []domain.WindowID{10}}}
 }
 
 // The excluded frame is drawn and copied before the displayed frame, on the
@@ -45,7 +47,7 @@ func TestSubmitFrameExcludeBeforeDisplayedThenStandard(t *testing.T) {
 	var order []string
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().UseTarget(0).Return().Once()
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 		if s.Capture == nil {
 			require.Zero(t, s.Seq)
 			require.Len(t, s.Layers, 0, "excluded HUD layer left out of the excluded frame")
@@ -165,7 +167,7 @@ func TestCaptureStateKeepsDirectScanout(t *testing.T) {
 	}{
 		{"no session", nil},
 		{"session", &ports.SceneCapture{Shown: 3}},
-		{"exclusion", &ports.SceneCapture{Session: 7, Revision: 1, Excluded: []ports.WindowID{10}}},
+		{"exclusion", &ports.SceneCapture{Session: 7, Revision: 1, Excluded: []domain.WindowID{10}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			o, k, _ := testOutput(t)
@@ -177,7 +179,7 @@ func TestCaptureStateKeepsDirectScanout(t *testing.T) {
 			k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
 			pipeline := capture.NewPipeline(context.Background(), nil)
 			defer pipeline.Close(r)
-			direct, err := o.submitFrame(context.Background(), r, s, c, map[ports.WindowID]uint64{}, nil, pipeline)
+			direct, err := o.submitFrame(context.Background(), r, s, c, map[domain.WindowID]uint64{}, nil, pipeline)
 			require.NoError(t, err)
 			require.True(t, direct)
 		})
@@ -256,19 +258,19 @@ func TestReportCapsPerWindowWhileChildReads(t *testing.T) {
 	o.capHidden = pipeline.CapHiddenSeen
 	scene := ports.Scene{Scale: 1, OutputWidth: 2, OutputHeight: 2,
 		Capture:      &ports.SceneCapture{Workspace: 9},
-		CaptureScene: &ports.Scene{Scale: 1, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 5, Rect: ports.Rect{W: 2, H: 2}}}}}
-	surfaces := map[ports.WindowID]ports.SurfaceContent{5: {ID: 5, Seq: 2}}
+		CaptureScene: &ports.Scene{Scale: 1, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 5, Rect: domain.Rect{W: 2, H: 2}}}}}
+	surfaces := map[domain.WindowID]ports.SurfaceContent{5: {ID: 5, Seq: 2}}
 	req := sessionRequest(t, 1, false)
 	req.Workspace, req.OffScreen = 9, true
 	req.Region, req.Width, req.Height = image.Rect(0, 0, 2, 2), 2, 2
 	pipeline.SubmitHidden(scene, surfaces, []ports.CaptureRequest{req})
 
-	seen := map[ports.WindowID]uint64{1: 9, 5: 7} // window 1 belongs to the display
+	seen := map[domain.WindowID]uint64{1: 9, 5: 7} // window 1 belongs to the display
 	o.report(nil, seen)
 	require.True(t, o.capped, "an outstanding child read is reported repeatedly")
-	require.Equal(t, map[ports.WindowID]uint64{1: 9, 5: 2}, o.reports.Unsent()[0].Seen)
+	require.Equal(t, map[domain.WindowID]uint64{1: 9, 5: 2}, o.reports.Unsent()[0].Seen)
 	require.Equal(t, uint64(7), seen[5], "the caller's map is untouched")
-	require.Equal(t, map[ports.WindowID]uint64{5: 2}, o.reports.Unsent()[0].ChildReads)
+	require.Equal(t, map[domain.WindowID]uint64{5: 2}, o.reports.Unsent()[0].ChildReads)
 	previous := o.reports.Unsent()[0].ChildReads
 	allocs := testing.AllocsPerRun(100, func() { o.report(nil, seen) })
 	require.LessOrEqual(t, allocs, float64(1), "only the fence poll may allocate")
@@ -278,9 +280,9 @@ func TestReportCapsPerWindowWhileChildReads(t *testing.T) {
 	require.NoError(t, err)
 	o.report(nil, seen)
 	require.False(t, o.capped)
-	require.Equal(t, map[ports.WindowID]uint64{1: 9, 5: 7}, o.reports.Unsent()[0].Seen, "limit lifted")
+	require.Equal(t, map[domain.WindowID]uint64{1: 9, 5: 7}, o.reports.Unsent()[0].Seen, "limit lifted")
 	require.Empty(t, o.reports.Unsent()[0].ChildReads)
-	require.Equal(t, map[ports.WindowID]uint64{5: 2}, previous, "sent snapshot remains immutable")
+	require.Equal(t, map[domain.WindowID]uint64{5: 2}, previous, "sent snapshot remains immutable")
 	pipeline.Close(nil)
 }
 
@@ -310,16 +312,16 @@ func TestHiddenWorkspaceChildKeepsDirectScanout(t *testing.T) {
 	o.capHidden = pipeline.CapHiddenSeen
 	s, c := fullscreenScene()
 	s.Capture = &ports.SceneCapture{Workspace: 9}
-	s.CaptureScene = &ports.Scene{Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 5, Rect: ports.Rect{W: 200, H: 100}}}}
+	s.CaptureScene = &ports.Scene{Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 5, Rect: domain.Rect{W: 200, H: 100}}}}
 	req := sessionRequest(t, 1, false)
 	req.Workspace, req.OffScreen = 9, true
 	req.Region, req.Width, req.Height, req.Stride = image.Rect(0, 0, 200, 100), 200, 100, 800
 	require.NoError(t, req.Dst.File.Truncate(800*100))
-	direct, err := o.submitFrame(context.Background(), display, s, c, map[ports.WindowID]uint64{}, []ports.CaptureRequest{req}, pipeline)
+	direct, err := o.submitFrame(context.Background(), display, s, c, map[domain.WindowID]uint64{}, []ports.CaptureRequest{req}, pipeline)
 	require.NoError(t, err)
 	require.True(t, direct, "the displayed fullscreen window stays scanned out")
 	require.True(t, o.frame.pendingCommit(), "display flip has not completed")
-	require.Equal(t, map[ports.WindowID]uint64{5: 0}, o.reports.Unsent()[0].ChildReads, "child hold published before the display flip")
+	require.Equal(t, map[domain.WindowID]uint64{5: 0}, o.reports.Unsent()[0].ChildReads, "child hold published before the display flip")
 	require.Empty(t, o.reports.Unsent()[0].Seen, "display reads are not advanced early")
 	require.NoError(t, (<-replies).Err)
 	_, err = writeEnd.Write([]byte{1})
@@ -393,7 +395,7 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 		captures <- req
 		scenes <- ports.Scene{Seq: 1, Scale: 1, OutputWidth: 200, OutputHeight: 100,
 			Capture:      &ports.SceneCapture{Workspace: 9},
-			CaptureScene: &ports.Scene{Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 5, Rect: ports.Rect{W: 200, H: 100}}}}}
+			CaptureScene: &ports.Scene{Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 5, Rect: domain.Rect{W: 200, H: 100}}}}}
 
 		next := func(match func(ports.OutputPresented) bool) ports.OutputPresented {
 			t.Helper()
@@ -410,7 +412,7 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 			}
 		}
 		held := next(func(r ports.OutputPresented) bool { return len(r.ChildReads) > 0 })
-		require.Equal(t, map[ports.WindowID]uint64{5: 2}, held.ChildReads)
+		require.Equal(t, map[domain.WindowID]uint64{5: 2}, held.ChildReads)
 		require.Equal(t, 3, count(), "display frame committed, never completes")
 
 		// A newer buffer of a display window arrives while the display commit is
@@ -420,7 +422,7 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 		require.NoError(t, err)
 		lifted := next(func(r ports.OutputPresented) bool { return len(r.ChildReads) == 0 })
 		require.Empty(t, lifted.ChildReads)
-		require.NotContains(t, lifted.Seen, ports.WindowID(1), "display Seen does not advance while its commit is pending: only the child hold is lifted")
+		require.NotContains(t, lifted.Seen, domain.WindowID(1), "display Seen does not advance while its commit is pending: only the child hold is lifted")
 		require.Nil(t, lifted.Flip)
 		require.Equal(t, 3, count(), "no extra commit")
 		require.NoError(t, (<-captured).Err)
@@ -456,7 +458,7 @@ func TestRunCaptureWaitsForItsIndicatorScene(t *testing.T) {
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 		r.EXPECT().UseTarget(mock.Anything).Return()
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 			switch {
 			case s.OutputWidth == 0:
 				// The modeset's black frame.
@@ -521,7 +523,7 @@ func TestRunCaptureWaitsForItsIndicatorScene(t *testing.T) {
 
 		indicated := bare
 		indicated.Seq = 2
-		indicated.CaptureIndicators = []ports.CaptureIndicator{{Rect: ports.Rect{W: 2, H: 2}}}
+		indicated.CaptureIndicators = []ports.CaptureIndicator{{Rect: domain.Rect{W: 2, H: 2}}}
 		scenes <- indicated
 		waitFor(t, func() bool { return count() == 4 })
 		select {
@@ -601,7 +603,7 @@ func TestRunCaptureWithoutIndicatorFailsAfterTheBoundedWait(t *testing.T) {
 
 func indicatedScene() ports.Scene {
 	return ports.Scene{Seq: 4, OutputWidth: 200, OutputHeight: 100, Scale: 1, Windows: []ports.SceneWindow{{ID: 1}},
-		CaptureIndicators: []ports.CaptureIndicator{{Rect: ports.Rect{W: 200, H: 100}}}}
+		CaptureIndicators: []ports.CaptureIndicator{{Rect: domain.Rect{W: 200, H: 100}}}}
 }
 
 // A capture is delivered only when the frame that carries its indicator is

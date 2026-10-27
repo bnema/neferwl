@@ -3,6 +3,8 @@ package ports
 import (
 	"image"
 	"time"
+
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // CaptureRequest transfers ownership of Dst.File to the output goroutine.
@@ -44,7 +46,7 @@ type CaptureRequest struct {
 	// Window is not 0 for the capture of a window: always OffScreen, served
 	// whole from Scene.CaptureScene, and failed unless the scene's
 	// Capture.Window is Window.
-	Window WindowID
+	Window domain.WindowID
 	// Indicate is set by wayland on every capture it requests: core shows the
 	// capture indicator for it (CaptureFrameTaken), and the output owner
 	// serves the request only from a scene that shows the mark it needs (a

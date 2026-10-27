@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core/layout"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -38,7 +39,7 @@ func TestOverviewStashInputNavigation(t *testing.T) {
 						}
 						send(ports.SwipeEnd{Time: at})
 					case "wheel":
-						m.overviewScroll(ports.PointerAxis{Source: ports.AxisWheel,
+						m.overviewScroll(ports.PointerAxis{Source: domain.AxisWheel,
 							Horizontal: ports.ScrollAxis{Set: dx != 0, Value: float64(dx) * 70, V120: int32(dx * 120)},
 							Vertical:   ports.ScrollAxis{Set: dy != 0, Value: float64(dy) * 70, V120: int32(dy * 120)}})
 						c.scrollStop(ports.PointerAxis{Vertical: ports.ScrollAxis{Stop: true}})

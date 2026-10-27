@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -21,7 +23,7 @@ func TestSecurityEngageDuringExcludeRenderRejectsCaptureTransfer(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
 	f, _ := protectionFence(t, false)
 	r.EXPECT().UseTarget(0).Return().Once()
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 		state.Store(3)
 		return f, nil
 	}).Once()

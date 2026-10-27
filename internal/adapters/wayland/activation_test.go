@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/bnema/go-wayland-bindings/server/xdgactivation"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 )
@@ -34,7 +35,7 @@ func newToken(t *testing.T, c *wlturbo.Display, manager uint32, serialSeat ...ui
 }
 
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
-func activated(t *testing.T, events <-chan ports.ClientEvent, want ports.WindowID) {
+func activated(t *testing.T, events <-chan ports.ClientEvent, want domain.WindowID) {
 	t.Helper()
 	deadline := waylandDeadline(2 * time.Second)
 	for {
@@ -179,10 +180,10 @@ func TestActivationTokenCommittedTwice(t *testing.T) {
 }
 
 // waitFocus waits until the display goroutine has applied a focus change.
-func waitFocus(t *testing.T, s *Server, commands chan<- ports.ClientCommand, id ports.WindowID) {
+func waitFocus(t *testing.T, s *Server, commands chan<- ports.ClientCommand, id domain.WindowID) {
 	t.Helper()
 	flushCommands(t, s, commands)
-	var got ports.WindowID
+	var got domain.WindowID
 	s.display.Do(func() { got = s.seat.focused })
 	if got != id {
 		t.Fatalf("focus %d, want %d", got, id)

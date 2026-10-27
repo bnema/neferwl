@@ -5,6 +5,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/singlepixelbuffer"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 )
@@ -49,6 +50,6 @@ func (*singlePixelBuffer) Destroy(*wayland.Buffer) {}
 
 func (*singlePixelBuffer) size() (int, int) { return 1, 1 }
 
-func (b *singlePixelBuffer) content(id ports.WindowID) (ports.SurfaceContent, bool) {
+func (b *singlePixelBuffer) content(id domain.WindowID) (ports.SurfaceContent, bool) {
 	return ports.SurfaceContent{ID: id, Width: 1, Height: 1, Opaque: b.opaque, Solid: &b.color}, true
 }

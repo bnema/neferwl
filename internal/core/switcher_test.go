@@ -8,6 +8,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -169,15 +171,15 @@ func requireClosed(t *testing.T, c *Core) {
 	}
 }
 
-func tab(mods ports.Mods, pressed bool) ports.KeyEvent {
+func tab(mods domain.Mods, pressed bool) ports.KeyEvent {
 	return ports.KeyEvent{Keysym: "Tab", Keycode: keyTab, Mods: mods, Pressed: pressed}
 }
 
 func shiftTab(pressed bool) ports.KeyEvent {
-	return ports.KeyEvent{Keysym: "ISO_Left_Tab", Base: "Tab", Keycode: keyTab, Mods: ports.ModSuper | ports.ModShift, Pressed: pressed}
+	return ports.KeyEvent{Keysym: "ISO_Left_Tab", Base: "Tab", Keycode: keyTab, Mods: domain.ModSuper | domain.ModShift, Pressed: pressed}
 }
 
-func superKey(mods ports.Mods, pressed bool) ports.KeyEvent {
+func superKey(mods domain.Mods, pressed bool) ports.KeyEvent {
 	return ports.KeyEvent{Keysym: "Super_L", Keycode: keySuper, Mods: mods, Pressed: pressed}
 }
 
@@ -354,7 +356,7 @@ func TestSwitchCommitIgnoresGoneWindowAndOtherWorkspace(t *testing.T) {
 func TestSwitchStepOpensOnPreviousColumnAndCycles(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, ic, _ := switcherCore(t, 3)
-		c.mods = ports.ModSuper
+		c.mods = domain.ModSuper
 		before := switcherFocus(c)
 		if err := c.runBind(context.Background(), ActionSwitchColumnNext); err != nil {
 			t.Fatal(err)
@@ -416,7 +418,7 @@ func TestSwitchWithoutCmdCommitsAtOnce(t *testing.T) {
 func TestSwitchIgnoredWithOneColumnOrOverview(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := switcherCore(t, 1)
-		c.mods = ports.ModSuper
+		c.mods = domain.ModSuper
 		bind(t, c, ActionSwitchColumnNext)
 		requireClosed(t, c)
 		c, _, _ = switcherCore(t, 3)
@@ -443,9 +445,9 @@ func TestSwitchQuickTapSwapsWithoutCards(t *testing.T) {
 		tap := func() {
 			t.Helper()
 			sendKeys(t, c,
-				superKey(ports.ModSuper, true),
-				tab(ports.ModSuper, true),
-				tab(ports.ModSuper, false),
+				superKey(domain.ModSuper, true),
+				tab(domain.ModSuper, true),
+				tab(domain.ModSuper, false),
 				superKey(0, false),
 			)
 			for len(c.ch.Scenes) > 0 {
@@ -472,7 +474,7 @@ func TestSwitchHoldCommitsOnReleaseAndForwardsIt(t *testing.T) {
 		c, _, cmds := switcherCore(t, 3)
 		start := switcherFocus(c)
 		order := c.cur().mon.Current().SwitchOrder()
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true), tab(ports.ModSuper, false))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true), tab(domain.ModSuper, false))
 		if switcherFocus(c) != start || c.cur().mon.sw.ws == nil {
 			t.Fatal("focus moved or switcher closed before the release")
 		}
@@ -496,9 +498,9 @@ func TestSwitchEscapeCancelsAndIsNotForwarded(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, cmds := switcherCore(t, 3)
 		start := switcherFocus(c)
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true), tab(ports.ModSuper, false))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true), tab(domain.ModSuper, false))
 		forwarded(cmds)
-		esc := ports.KeyEvent{Keysym: "Escape", Keycode: 1, Mods: ports.ModSuper, Pressed: true}
+		esc := ports.KeyEvent{Keysym: "Escape", Keycode: 1, Mods: domain.ModSuper, Pressed: true}
 		sendKeys(t, c, esc)
 		esc.Pressed = false
 		sendKeys(t, c, esc, superKey(0, false))
@@ -519,8 +521,8 @@ func TestSwitchAnotherBindCancelsThenRuns(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := switcherCore(t, 3)
 		start := switcherFocus(c)
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
-		sendKeys(t, c, ports.KeyEvent{Keysym: "f", Keycode: 33, Mods: ports.ModSuper, Pressed: true})
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
+		sendKeys(t, c, ports.KeyEvent{Keysym: "f", Keycode: 33, Mods: domain.ModSuper, Pressed: true})
 		requireClosed(t, c)
 		if switcherFocus(c) != start {
 			t.Fatalf("focus %d moved", switcherFocus(c))
@@ -535,12 +537,12 @@ func TestSwitchAnotherBindCancelsThenRuns(t *testing.T) {
 func TestSwitchShiftTabGoesBackward(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := switcherCore(t, 3)
-		sendKeys(t, c, superKey(ports.ModSuper, true), shiftTab(true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), shiftTab(true))
 		sw := c.cur().mon.sw
 		if sw.ws == nil || sw.at != len(sw.order)-1 {
 			t.Fatalf("open %v at %d of %d", sw.ws != nil, sw.at, len(sw.order))
 		}
-		sendKeys(t, c, shiftTab(false), tab(ports.ModSuper, true))
+		sendKeys(t, c, shiftTab(false), tab(domain.ModSuper, true))
 		if c.cur().mon.sw.at != 0 {
 			t.Fatalf("at %d, want 0 after next", c.cur().mon.sw.at)
 		}
@@ -552,7 +554,7 @@ func TestSwitchSwipeBeginCancels(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := switcherCore(t, 3)
 		start := switcherFocus(c)
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		c.swipeBegin(ports.SwipeBegin{Fingers: 3})
 		requireClosed(t, c)
 		if switcherFocus(c) != start {
@@ -570,7 +572,7 @@ func TestSwitchSecurityChangeCancels(t *testing.T) {
 		gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return state }).Maybe()
 		c.opts.Security = gate
 		start := switcherFocus(c)
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		state = ports.SecurityState{Generation: 2}
 		if !c.syncSecurity() {
 			t.Fatal("security change not seen")
@@ -592,7 +594,7 @@ func TestSwitchCmdKeyFollowsConfig(t *testing.T) {
 			t.Fatal(err)
 		}
 		order := c.cur().mon.Current().SwitchOrder()
-		sendKeys(t, c, tab(ports.ModAlt, true))
+		sendKeys(t, c, tab(domain.ModAlt, true))
 		if c.cur().mon.sw.ws == nil {
 			t.Fatal("Alt+Tab did not open the switcher")
 		}
@@ -615,7 +617,7 @@ func TestSwitcherLayoutCards(t *testing.T) {
 		c.cur().mon.Current().GrowColumn(false)
 		indicatorScene(t, c)
 		area := c.cur().mon.Current().OverviewArea()
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		if s := indicatorScene(t, c); len(scenePreviews(s)) != 0 || c.cur().mon.sw.shown {
 			t.Fatalf("cards before the delay: %+v", s.Windows)
 		}
@@ -676,7 +678,7 @@ func TestSwitcherLayoutCards(t *testing.T) {
 		if s.Dim != 0.4 {
 			t.Fatalf("dim %v", s.Dim)
 		}
-		if s.TileInset != (ports.Insets{}) {
+		if s.TileInset != (domain.Insets{}) {
 			t.Fatalf("tile inset %+v", s.TileInset)
 		}
 		for _, w := range s.Windows {
@@ -705,7 +707,7 @@ func TestSwitcherLayoutHidesOtherWindowsOfColumns(t *testing.T) {
 		if len(w.Columns) != 3 || modelColumnWindows(w) != 4 || len(w.Floats) != 1 {
 			t.Fatalf("setup: %d columns, %d windows, %d floats", len(w.Columns), modelColumnWindows(w), len(w.Floats))
 		}
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		c.switcherTick()
 		s := indicatorScene(t, c)
 		reps := map[WindowID]bool{}
@@ -743,7 +745,7 @@ func TestSwitcherShownIsAPreview(t *testing.T) {
 		c.cfg.Animations.On = true
 		m := c.cur().mon
 		// A bar reserves the top of the output: tiles stop below it.
-		c.setLayers([]ports.LayerSurface{{ID: 90, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Width: 300, Height: 20, ExclusiveZone: 20}})
+		c.setLayers([]ports.LayerSurface{{ID: 90, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Width: 300, Height: 20, ExclusiveZone: 20}})
 		if s := indicatorScene(t, c); s.TileInset.Top != 20 {
 			t.Fatalf("setup: tile inset %+v, want the bar's 20", s.TileInset)
 		}
@@ -751,7 +753,7 @@ func TestSwitcherShownIsAPreview(t *testing.T) {
 		for id, v := range c.configures.sent {
 			sizes[id] = v
 		}
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		c.switcherTick()
 		indicatorScene(t, c)
 		// The cards fly in, and the motions survive a publish.
@@ -785,7 +787,7 @@ func TestSwitcherShownIsAPreview(t *testing.T) {
 				t.Fatalf("window %d configured %dx%d under its card, was %dx%d", id, got.Width, got.Height, sizes[id].Width, sizes[id].Height)
 			}
 		}
-		if s.TileInset != (ports.Insets{}) {
+		if s.TileInset != (domain.Insets{}) {
 			t.Fatalf("tile inset %+v while the cards show", s.TileInset)
 		}
 		// The pointer finds no window under a card.
@@ -844,7 +846,7 @@ func TestSwitcherShownPreviewPredicates(t *testing.T) {
 		}
 		read := func() state {
 			r, reason := c.capResolve(capTarget{workspace: w.ID})
-			if reason != ports.CaptureReasonNone {
+			if reason != domain.CaptureReasonNone {
 				t.Fatalf("capture target: %v", reason)
 			}
 			var shown uint64
@@ -856,7 +858,7 @@ func TestSwitcherShownPreviewPredicates(t *testing.T) {
 		if got, want := read(), (state{false, true, false, w.ID}); got != want {
 			t.Fatalf("closed: %+v, want %+v", got, want)
 		}
-		c.mods = ports.ModSuper
+		c.mods = domain.ModSuper
 		bind(t, c, ActionSwitchColumnNext)
 		c.switcherTick()
 		if !m.switcherShown() {
@@ -877,7 +879,7 @@ func TestSwitcherCardOfUnconfiguredWindowKeepsRealSize(t *testing.T) {
 		m := c.cur().mon
 		id := m.Current().SwitchOrder()[1]
 		c.configures.forget(id) // the card falls back to the usable size
-		c.mods = ports.ModSuper
+		c.mods = domain.ModSuper
 		bind(t, c, ActionSwitchColumnNext)
 		c.configures.forget(id) // the bind's publish configured it again
 		c.switcherTick()
@@ -902,7 +904,7 @@ func TestSwitcherShownDoesNotNoteFocus(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := switcherCore(t, 3)
 		w := c.cur().mon.Current()
-		c.mods = ports.ModSuper
+		c.mods = domain.ModSuper
 		bind(t, c, ActionSwitchColumnNext)
 		c.switcherTick()
 		before := slices.Clone(w.Inspect().Recent)
@@ -928,7 +930,7 @@ func TestSwitcherShowDropsMotionsOfHiddenWindows(t *testing.T) {
 		if _, ok := sc.rects[4]; !ok {
 			t.Fatal("setup: no entrance motion for window 4")
 		}
-		c.mods = ports.ModSuper
+		c.mods = domain.ModSuper
 		bind(t, c, ActionSwitchColumnNext)
 		if _, ok := sc.rects[4]; !ok {
 			t.Fatal("setup: motion dropped by the bind")
@@ -945,14 +947,14 @@ func TestSwitcherCardsKeepKeysOnRealFocus(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, cmds := switcherCore(t, 3)
 		focus := switcherFocus(c)
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		c.switcherTick()
 		indicatorScene(t, c)
 		forwarded(cmds)
 		if c.keyboardFocus() != focus {
 			t.Fatalf("keyboard focus %d, want %d", c.keyboardFocus(), focus)
 		}
-		sendKeys(t, c, ports.KeyEvent{Keysym: "x", Keycode: 45, Mods: ports.ModSuper, Pressed: true})
+		sendKeys(t, c, ports.KeyEvent{Keysym: "x", Keycode: 45, Mods: domain.ModSuper, Pressed: true})
 		// An unbound key goes to the real focus (Cmd+x has no bind here).
 		fk := forwarded(cmds)
 		if len(fk) != 1 || fk[0].ID != focus || fk[0].Key.Keysym != "x" {
@@ -978,7 +980,7 @@ func cardCenter(t *testing.T, c *Core, id WindowID) (float64, float64) {
 func TestSwitcherClickOnCardCommits(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, cmds := switcherCore(t, 3)
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		c.switcherTick()
 		indicatorScene(t, c)
 		target := c.cur().mon.sw.order[2]
@@ -1009,7 +1011,7 @@ func TestSwitcherClickOnMovingCardCommits(t *testing.T) {
 		c, ic, _ := switcherCore(t, 3)
 		c.cfg.Animations.On = true
 		sc := c.cur()
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		c.switcherTick()
 		indicatorScene(t, c)
 		ic.now = ic.now.Add(16 * time.Millisecond)
@@ -1051,7 +1053,7 @@ func TestSwitcherClickOnMovingCardCommits(t *testing.T) {
 func TestSwitcherTickAfterCancelDoesNothing(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := switcherCore(t, 3)
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		if !c.switching() {
 			t.Fatal("setup: no switcher open")
 		}
@@ -1068,7 +1070,7 @@ func TestSwitcherClickElsewhereCancels(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := switcherCore(t, 3)
 		start := switcherFocus(c)
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		c.switcherTick()
 		indicatorScene(t, c)
 		c.cursorX, c.cursorY = 1, 1
@@ -1087,7 +1089,7 @@ func TestSwitcherPressBeforeCardsCancelsAndContinues(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := switcherCore(t, 3)
 		start := switcherFocus(c)
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		handled, err := c.switcherClick(context.Background(), 0x110)
 		if err != nil || handled {
 			t.Fatalf("handled %v err %v", handled, err)
@@ -1105,7 +1107,7 @@ func TestSwitcherPressBeforeCardsCancelsAndContinues(t *testing.T) {
 func TestSwitcherClosingSelectedWindowKeepsSelectionValid(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := switcherCore(t, 3)
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		c.switcherTick()
 		sw := &c.cur().mon.sw
 		gone := sw.order[sw.at]
@@ -1131,7 +1133,7 @@ func TestSwitcherClosingSelectedWindowKeepsSelectionValid(t *testing.T) {
 func TestSwitcherClosingBeforeSelectionKeepsCard(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := switcherCore(t, 4)
-		c.mods = ports.ModSuper
+		c.mods = domain.ModSuper
 		bind(t, c, ActionSwitchColumnNext)
 		sw := &c.cur().mon.sw
 		if sw.at != 1 || len(sw.order) != 4 {
@@ -1156,7 +1158,7 @@ func TestSwitcherClosingBeforeSelectionKeepsCard(t *testing.T) {
 func TestSwitcherClosingDownToOneColumnClosesIt(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := switcherCore(t, 2)
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		c.switcherTick()
 		c.cur().mon.RemoveWindow(c.cur().mon.sw.order[1])
 		if sw := c.cur().mon.sw; sw.ws != nil || sw.shown {
@@ -1180,7 +1182,7 @@ func TestSwitcherOutputRemovalCancels(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := switcherCore(t, 3)
 		c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		c.switcherTick()
 		sc := c.switcher.sc
 		if sc == nil {
@@ -1210,7 +1212,7 @@ func TestSwitcherFocusMovingToAnotherOutputReopensThere(t *testing.T) {
 			c.screens[c.screenIndex("B")].mon.AddWindow(id)
 		}
 		indicatorScene(t, c)
-		c.mods = ports.ModSuper
+		c.mods = domain.ModSuper
 		bind(t, c, ActionSwitchColumnNext)
 		if c.switcher.sc != first {
 			t.Fatal("switcher not on the focused screen")
@@ -1234,7 +1236,7 @@ func TestSwitcherAnimatedHoldAndCommit(t *testing.T) {
 		c, ic, _ := switcherCore(t, 3)
 		c.cfg.Animations.On = true
 		target := c.cur().mon.Current().SwitchOrder()[1]
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		c.switcherTick()
 		if err := c.publish(context.Background()); err != nil {
 			t.Fatal(err)
@@ -1285,7 +1287,7 @@ func twoWorkspaces(t *testing.T) (*Core, *Workspace) {
 func TestSwitcherShownDropsWhenAnotherWorkspaceComesOnScreen(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, other := twoWorkspaces(t)
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		c.switcherTick()
 		if s := indicatorScene(t, c); len(scenePreviews(s)) != 3 {
 			t.Fatalf("cards not shown: %+v", s.Windows)
@@ -1317,7 +1319,7 @@ func TestSwitcherShownDropsWhenAnotherWorkspaceComesOnScreen(t *testing.T) {
 			t.Fatal("workspace windows not laid out")
 		}
 		// The next switch opens fresh on the new workspace.
-		c.mods = ports.ModSuper
+		c.mods = domain.ModSuper
 		bind(t, c, ActionSwitchColumnNext)
 		if sw := m.sw; sw.ws == nil || sw.ws != other || sw.at != 1 {
 			t.Fatalf("open %v on other %v at %d", sw.ws != nil, sw.ws == other, sw.at)
@@ -1329,14 +1331,14 @@ func TestSwitcherShownDropsWhenAnotherWorkspaceComesOnScreen(t *testing.T) {
 func TestSwitcherStepOnStaleWorkspaceOpensFresh(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, other := twoWorkspaces(t)
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		c.switcherTick()
 		// Shown on screen, then the workspace changes with no publish between.
 		c.cur().mon.show(other)
 		if c.cur().mon.previewing() {
 			t.Fatal("stale cards still count as previews")
 		}
-		sendKeys(t, c, tab(ports.ModSuper, true))
+		sendKeys(t, c, tab(domain.ModSuper, true))
 		sw := c.cur().mon.sw
 		if sw.ws == nil || sw.ws != other || sw.shown || sw.at != 1 {
 			t.Fatalf("open %v on other %v shown %v at %d", sw.ws != nil, sw.ws == other, sw.shown, sw.at)
@@ -1358,7 +1360,7 @@ func TestSwitcherStepOnStaleWorkspaceOpensFresh(t *testing.T) {
 func TestSwitcherTickOnStaleWorkspaceCancels(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, other := twoWorkspaces(t)
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		m := c.cur().mon
 		if m.sw.ws == nil {
 			t.Fatal("switcher not open")
@@ -1379,12 +1381,12 @@ func TestSwitchIgnoredDuringDrag(t *testing.T) {
 		d := &dragState{id: start, button: btnLeft}
 		c.drag = d
 		c.buttons[btnLeft] = true
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		requireClosed(t, c)
 		if c.drag != d || switcherFocus(c) != start {
 			t.Fatal("drag disturbed")
 		}
-		sendKeys(t, c, ports.KeyEvent{Keysym: "Escape", Keycode: 1, Mods: ports.ModSuper, Pressed: true})
+		sendKeys(t, c, ports.KeyEvent{Keysym: "Escape", Keycode: 1, Mods: domain.ModSuper, Pressed: true})
 		if c.drag != nil {
 			t.Fatal("Escape did not cancel the drag")
 		}
@@ -1398,7 +1400,7 @@ func TestSwitchBindOverShownCardsFliesBack(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, ic, _ := switcherCore(t, 3)
 		c.cfg.Animations.On = true
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		c.switcherTick()
 		for range 200 {
 			ic.now = ic.now.Add(16 * time.Millisecond)
@@ -1487,7 +1489,7 @@ func TestSwitchCommitFocusesTileUnderFloat(t *testing.T) {
 			t.Fatal("float not focused")
 		}
 		tile := w.Columns[w.Focus].Windows[0]
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		bind(t, c, ActionSwitchColumnPrev) // back to card 0: the column under the float
 		if m.sw.at != 0 || m.sw.order[0] != tile {
 			t.Fatalf("at %d order %v", m.sw.at, m.sw.order)
@@ -1505,7 +1507,7 @@ func TestSwitchCommitFollowsToItsOutput(t *testing.T) {
 		c, _, _ := switcherCore(t, 3)
 		c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
 		first := c.focusScreen
-		sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
 		want := c.cur().mon.sw.order[1]
 		// The pointer crosses to the other output meanwhile.
 		c.focusScreen = c.screenIndex("B")

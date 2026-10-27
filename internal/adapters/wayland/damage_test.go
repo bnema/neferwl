@@ -6,6 +6,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
@@ -87,7 +88,7 @@ func TestDamageHistory(t *testing.T) {
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
 	second := next()
 	got, ok := second.DamageSince(first.Seq)
-	want := []ports.Rect{{X: 2, Y: 3, W: 4, H: 5}, {X: 14, Y: 14, W: 2, H: 2}}
+	want := []domain.Rect{{X: 2, Y: 3, W: 4, H: 5}, {X: 14, Y: 14, W: 2, H: 2}}
 	if !ok || len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("damage %v %v", got, ok)
 	}
@@ -123,7 +124,7 @@ func TestDamageHistory(t *testing.T) {
 	requestProtocol(t, c, surf, wayland.SurfaceRequestDamageBuffer, int32(1), int32(1), int32(2), int32(2))
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
 	fourth := next()
-	if got, ok := fourth.DamageSince(third.Seq); !ok || len(got) != 1 || got[0] != (ports.Rect{X: 1, Y: 1, W: 2, H: 2}) {
+	if got, ok := fourth.DamageSince(third.Seq); !ok || len(got) != 1 || got[0] != (domain.Rect{X: 1, Y: 1, W: 2, H: 2}) {
 		t.Fatalf("empty subsurface: damage %v %v", got, ok)
 	}
 	// A synced child drawn, then hidden by a null attach the parent's

@@ -1,5 +1,7 @@
 package ports
 
+import "github.com/bnema/neferwl/internal/domain"
+
 // WorkspaceActivate requests showing workspaces by stable ID, in commit order.
 // Core applies the entire batch before publishing a new state.
 type WorkspaceActivate struct{ IDs []uint64 }
@@ -21,5 +23,5 @@ type WorkspaceInfo struct {
 	// Frame is the workspace viewport in output-local logical pixels
 	// (Monitor.Frame geometry: the whole output unless the workspace has a
 	// size override). It is where a capture session of it lies.
-	Frame Rect
+	Frame domain.Rect
 }

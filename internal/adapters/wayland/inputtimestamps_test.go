@@ -9,6 +9,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/inputtimestamps"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 )
@@ -172,8 +173,8 @@ func TestInputTimestampsPointer(t *testing.T) {
 
 	commands <- ports.PointerMotionTo{ID: w.ID, X: 0, Y: 0, Time: 2*time.Second + time.Millisecond}
 	commands <- ports.PointerButtonTo{ID: w.ID, Button: 0x110, Pressed: true, Time: 3 * time.Second}
-	commands <- ports.PointerAxisTo{ID: w.ID, Axis: ports.PointerAxis{Source: ports.AxisFinger, Vertical: ports.ScrollAxis{Set: true, Value: 5}, Time: 4 * time.Second}}
-	commands <- ports.PointerAxisTo{ID: w.ID, Axis: ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Stop: true}, Time: 5 * time.Second}}
+	commands <- ports.PointerAxisTo{ID: w.ID, Axis: ports.PointerAxis{Source: domain.AxisFinger, Vertical: ports.ScrollAxis{Set: true, Value: 5}, Time: 4 * time.Second}}
+	commands <- ports.PointerAxisTo{ID: w.ID, Axis: ports.PointerAxis{Source: domain.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Stop: true}, Time: 5 * time.Second}}
 	got := log.wait(t, c, 8)
 	want := []string{
 		"ts 0 2 1000000", "motion 2001",

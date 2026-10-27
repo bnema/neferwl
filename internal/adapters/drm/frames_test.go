@@ -3,6 +3,7 @@ package drm
 import (
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
@@ -32,7 +33,7 @@ func TestCompletedFrames(t *testing.T) {
 				frames = make(chan ports.OutputFrame, tt.buffer)
 				o.Frames = frames
 			}
-			seen := map[ports.WindowID]uint64{}
+			seen := map[domain.WindowID]uint64{}
 			for i, animating := range tt.animating {
 				require.NoError(t, o.commitFrame(70, nil, false, false, pendingFrame{animating: animating}))
 				require.True(t, o.completed(eventOf((*commits)[i]), seen))

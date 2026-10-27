@@ -4,6 +4,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -20,7 +21,7 @@ func outputScene(t *testing.T, set []ports.Scene, name string) ports.Scene {
 }
 
 // scenePreview returns window id's overview preview in s.
-func scenePreview(s ports.Scene, id ports.WindowID) (ports.SceneWindow, bool) {
+func scenePreview(s ports.Scene, id domain.WindowID) (ports.SceneWindow, bool) {
 	for _, w := range s.Windows {
 		if w.ID == id && w.Preview > 0 {
 			return w, true
@@ -56,11 +57,11 @@ func TestOverviewCoreClickPicksOnPointerOutput(t *testing.T) {
 
 func overviewClickPicksOnPointerOutput(t *testing.T, r *landRig) {
 	r.mapLanded(t, 1)
-	r.keyLanded(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.keyLanded(t, "Right", domain.ModAlt|domain.ModCtrl)
 	r.mapLanded(t, 2)
 	r.mapLanded(t, 3)
 	// Settled: a card still fading in takes no click.
-	set := r.keyLanded(t, "o", ports.ModAlt)
+	set := r.keyLanded(t, "o", domain.ModAlt)
 	p, ok := scenePreview(outputScene(t, set, "DP-2"), 2)
 	if !ok {
 		t.Fatal("no preview of window 2 on DP-2")
@@ -98,7 +99,7 @@ func overviewClickOutsidePreview(t *testing.T, r *landRig) {
 	r.mapWindow(t, 2)
 	// The cards settle where the overview lays them out: the opening
 	// animation starts them at the windows' own rects.
-	set := r.keyLanded(t, "o", ports.ModAlt)
+	set := r.keyLanded(t, "o", domain.ModAlt)
 	for _, w := range set[0].Windows {
 		if w.Preview > 0 && w.Rect.X <= 1 && w.Rect.Y <= 1 && w.Rect.X+w.Rect.W > 1 && w.Rect.Y+w.Rect.H > 1 {
 			t.Fatalf("(1, 1) is inside preview %+v", w)
@@ -131,7 +132,7 @@ func TestOverviewCoreEscapeRestoresFocus(t *testing.T) {
 		r.mapWindow(t, 1)
 		r.mapWindow(t, 2)
 		r.mapWindow(t, 3)
-		r.key(t, "o", ports.ModAlt)
+		r.key(t, "o", domain.ModAlt)
 		r.key(t, "h", 0)
 		set := r.key(t, "h", 0)
 		if p, ok := scenePreview(set[0], 1); !ok || !p.Focused {
@@ -158,9 +159,9 @@ func TestOverviewCoreMoveBind(t *testing.T) {
 		r.mapWindow(t, 1)
 		r.mapWindow(t, 2)
 		r.mapWindow(t, 3)
-		r.key(t, "o", ports.ModAlt)
+		r.key(t, "o", domain.ModAlt)
 		r.key(t, "h", 0)
-		if set := r.key(t, "Next", ports.ModAlt|ports.ModShift); !hasPreview(set[0]) {
+		if set := r.key(t, "Next", domain.ModAlt|domain.ModShift); !hasPreview(set[0]) {
 			t.Fatal("overview closed")
 		}
 		r.key(t, "Escape", 0)

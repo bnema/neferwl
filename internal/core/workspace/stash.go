@@ -7,7 +7,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/core/motion"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // The stash is a workspace's strip of windows set aside with
@@ -260,7 +260,7 @@ func (w *Workspace) appendStash(out []Placement, focusedID, cover WindowID) []Pl
 	pitch := w.stashPitch(fw)
 	shift := int(math.Round(w.stashView.Off * float64(pitch)))
 	for i, f := range w.Stash {
-		p := Placement{ID: f.ID, Floating: true, Focused: f.ID == focusedID, Inset: ports.SideAll}
+		p := Placement{ID: f.ID, Floating: true, Focused: f.ID == focusedID, Inset: domain.SideAll}
 		d := i - w.stashAt
 		r := Rect{X: center.X + d*pitch - shift, Y: center.Y, W: fw, H: fh}
 		switch {

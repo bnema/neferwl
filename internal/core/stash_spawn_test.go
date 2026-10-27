@@ -6,6 +6,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -30,7 +31,7 @@ func slotToken(t *testing.T, req ports.SpawnRequest) string {
 	return req.Env[0][len(ports.SlotEnv)+1:]
 }
 
-func sceneWindow(set []ports.Scene, id ports.WindowID) (ports.SceneWindow, bool) {
+func sceneWindow(set []ports.Scene, id domain.WindowID) (ports.SceneWindow, bool) {
 	for _, s := range set {
 		for _, w := range s.Windows {
 			if w.ID == id {
@@ -48,19 +49,19 @@ func TestStashBindOpensWindowInStash(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := stashSpawnRig(t, nil)
 		r.mapWindow(t, 1)
-		r.key(t, "f", ports.ModAlt|ports.ModCtrl|ports.ModShift)
+		r.key(t, "f", domain.ModAlt|domain.ModCtrl|domain.ModShift)
 		req := receive(t, r.spawn)
 		if !slices.Equal(req.Argv, []string{"firefox", "--new-window"}) {
 			t.Fatalf("argv %v", req.Argv)
 		}
 		token := slotToken(t, req)
-		r.key(t, "Next", ports.ModAlt) // focus moves to workspace 2
+		r.key(t, "Next", domain.ModAlt) // focus moves to workspace 2
 		r.client <- ports.WindowMapped{ID: 2, Slot: token}
 		set := receive(t, r.scenes)
 		if w, ok := sceneWindow(set, 2); ok && !w.Hidden {
 			t.Fatalf("window shown on the workspace the user moved to: %+v", w)
 		}
-		set = r.key(t, "Prior", ports.ModAlt)
+		set = r.key(t, "Prior", domain.ModAlt)
 		w, ok := sceneWindow(set, 2)
 		if !ok || w.Hidden || !w.Floating || !w.Focused {
 			t.Fatalf("stashed window %+v", w)
@@ -69,7 +70,7 @@ func TestStashBindOpensWindowInStash(t *testing.T) {
 			t.Fatal("tile kept the focus")
 		}
 		// Unstashing tiles it as a column of its own.
-		set = r.key(t, "s", ports.ModAlt|ports.ModShift)
+		set = r.key(t, "s", domain.ModAlt|domain.ModShift)
 		if w, ok := sceneWindow(set, 2); !ok || w.Floating || w.Hidden || !w.Focused {
 			t.Fatalf("unstashed window %+v", w)
 		}
@@ -83,7 +84,7 @@ func TestStashBindOpensWindowInStash(t *testing.T) {
 func TestStashBindRunsEveryCommand(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := stashSpawnRig(t, func(c *ports.Config) { c.Binds["Alt+Ctrl+Shift+f"] = "stash one; two" })
-		r.key(t, "f", ports.ModAlt|ports.ModCtrl|ports.ModShift)
+		r.key(t, "f", domain.ModAlt|domain.ModCtrl|domain.ModShift)
 		a, b := receive(t, r.spawn), receive(t, r.spawn)
 		if a.Argv[0] != "one" || b.Argv[0] != "two" || slotToken(t, a) == slotToken(t, b) {
 			t.Fatal(a, b)
@@ -98,13 +99,13 @@ func TestToggleEmptyStashOpensTerminal(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := stashSpawnRig(t, nil)
 		r.mapWindow(t, 1)
-		r.key(t, "s", ports.ModAlt)
+		r.key(t, "s", domain.ModAlt)
 		req := receive(t, r.spawn)
 		if len(req.Argv) != 1 || req.Argv[0] != "foot" {
 			t.Fatalf("argv %v", req.Argv)
 		}
 		token := slotToken(t, req)
-		r.key(t, "s", ports.ModAlt)
+		r.key(t, "s", domain.ModAlt)
 		if len(r.spawn) != 0 {
 			t.Fatal("second terminal while the first is awaited")
 		}
@@ -114,7 +115,7 @@ func TestToggleEmptyStashOpensTerminal(t *testing.T) {
 			t.Fatalf("terminal %+v", w)
 		}
 		// The stash has a window now: the toggle hides it, no spawn.
-		set = r.key(t, "s", ports.ModAlt)
+		set = r.key(t, "s", domain.ModAlt)
 		if w, _ := sceneWindow(set, 2); !w.Hidden {
 			t.Fatalf("stash not hidden: %+v", w)
 		}
@@ -130,9 +131,9 @@ func TestToggleNonEmptyStashDoesNotSpawn(t *testing.T) {
 		r := stashSpawnRig(t, nil)
 		r.mapWindow(t, 1)
 		r.mapWindow(t, 2)
-		r.key(t, "s", ports.ModAlt|ports.ModShift) // 2 stashed
-		r.key(t, "s", ports.ModAlt)
-		r.key(t, "s", ports.ModAlt)
+		r.key(t, "s", domain.ModAlt|domain.ModShift) // 2 stashed
+		r.key(t, "s", domain.ModAlt)
+		r.key(t, "s", domain.ModAlt)
 		if len(r.spawn) != 0 {
 			t.Fatal("spawned for a non-empty stash")
 		}
@@ -144,13 +145,13 @@ func TestToggleEmptyStashRespectsOption(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := stashSpawnRig(t, func(c *ports.Config) { c.Stash.SpawnTerminal = false })
 		r.mapWindow(t, 1)
-		r.key(t, "s", ports.ModAlt)
+		r.key(t, "s", domain.ModAlt)
 		if len(r.spawn) != 0 {
 			t.Fatal("spawned with stash.spawn-terminal off")
 		}
 		r = stashSpawnRig(t, func(c *ports.Config) { c.Terminal.Command = nil })
 		r.mapWindow(t, 1)
-		r.key(t, "s", ports.ModAlt)
+		r.key(t, "s", domain.ModAlt)
 		if len(r.spawn) != 0 {
 			t.Fatal("spawned without a terminal command")
 		}
@@ -162,8 +163,8 @@ func TestToggleEmptyStashInOverviewDoesNotSpawn(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := stashSpawnRig(t, nil)
 		r.mapWindow(t, 1)
-		r.key(t, "o", ports.ModAlt)
-		r.key(t, "s", ports.ModAlt)
+		r.key(t, "o", domain.ModAlt)
+		r.key(t, "s", domain.ModAlt)
 		if len(r.spawn) != 0 {
 			t.Fatal("spawned from the overview")
 		}

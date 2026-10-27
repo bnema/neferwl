@@ -1,14 +1,6 @@
 package ports
 
-// Layer is a wlr-layer-shell stacking layer.
-type Layer uint32
-
-const (
-	LayerBackground Layer = iota
-	LayerBottom
-	LayerTop
-	LayerOverlay
-)
+import "github.com/bnema/neferwl/internal/domain"
 
 // Anchor edges, as in zwlr_layer_surface_v1.anchor.
 const (
@@ -22,8 +14,8 @@ const (
 // Height are the committed surface size in logical pixels. Margin is top, right, bottom, left.
 // IDs share the WindowID space with windows and never collide.
 type LayerSurface struct {
-	ID            WindowID
-	Layer         Layer
+	ID            domain.WindowID
+	Layer         domain.Layer
 	Anchor        uint32
 	ExclusiveZone int32
 	Margin        [4]int32

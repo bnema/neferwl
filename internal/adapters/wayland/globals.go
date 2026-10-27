@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
@@ -272,27 +273,27 @@ func (s subsurface) restack(r *wayland.Subsurface, sibling *wayland.Surface, abo
 }
 
 // region stores the exact union of added rectangles.
-type region struct{ rects []ports.Rect }
+type region struct{ rects []domain.Rect }
 
 func (*region) Destroy(*wayland.Region) {}
 func (g *region) Add(_ *wayland.Region, x, y, w, h int32) {
 	if w > 0 && h > 0 {
-		g.rects = append(g.rects, ports.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)})
+		g.rects = append(g.rects, domain.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)})
 	}
 }
 func (g *region) Subtract(_ *wayland.Region, x, y, w, h int32) {
 	if w <= 0 || h <= 0 {
 		return
 	}
-	cut := ports.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)}
-	var out []ports.Rect
+	cut := domain.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)}
+	var out []domain.Rect
 	for _, r := range g.rects {
 		i := intersectRect(r, cut)
 		if i.W == 0 {
 			out = append(out, r)
 			continue
 		}
-		for _, piece := range []ports.Rect{
+		for _, piece := range []domain.Rect{
 			{X: r.X, Y: r.Y, W: r.W, H: i.Y - r.Y},
 			{X: r.X, Y: i.Y + i.H, W: r.W, H: r.Y + r.H - i.Y - i.H},
 			{X: r.X, Y: i.Y, W: i.X - r.X, H: i.H},
@@ -407,7 +408,7 @@ func (b *buffer) size() (int, int) { return b.width, b.height }
 type clientBuffer interface {
 	// content returns what the renderer draws; false means the client
 	// broke its buffer (a truncated shm file).
-	content(ports.WindowID) (ports.SurfaceContent, bool)
+	content(domain.WindowID) (ports.SurfaceContent, bool)
 	size() (int, int)
 }
 
@@ -426,7 +427,7 @@ func (s *Server) addBuffer(r *wayland.Buffer, b clientBuffer) {
 // content points the renderer at the pool; a file shrunk below the buffer
 // is refused. The size is checked on every call: a client may truncate the
 // file at any time, so it is never cached.
-func (b *buffer) content(id ports.WindowID) (ports.SurfaceContent, bool) {
+func (b *buffer) content(id domain.WindowID) (ports.SurfaceContent, bool) {
 	if b.shm == nil {
 		b.shm = &ports.SHMBuffer{Pool: b.pool.id, File: b.pool.file, Offset: b.offset, Stride: b.stride}
 		b.fd = int(b.pool.file.Fd())

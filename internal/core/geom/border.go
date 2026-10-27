@@ -1,6 +1,6 @@
 package geom
 
-import "github.com/bnema/neferwl/internal/ports"
+import "github.com/bnema/neferwl/internal/domain"
 
 // BorderZone returns the origin and size of a padded zone between two edges.
 func BorderZone(a, b, pad int) (int, int) {
@@ -10,7 +10,7 @@ func BorderZone(a, b, pad int) (int, int) {
 }
 
 // Union is the smallest rect holding a and b.
-func Union(a, b ports.Rect) ports.Rect {
+func Union(a, b domain.Rect) domain.Rect {
 	x, y := min(a.X, b.X), min(a.Y, b.Y)
-	return ports.Rect{X: x, Y: y, W: max(a.X+a.W, b.X+b.W) - x, H: max(a.Y+a.H, b.Y+b.H) - y}
+	return domain.Rect{X: x, Y: y, W: max(a.X+a.W, b.X+b.W) - x, H: max(a.Y+a.H, b.Y+b.H) - y}
 }

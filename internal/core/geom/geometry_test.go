@@ -3,7 +3,7 @@ package geom
 import (
 	"testing"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestLogical(t *testing.T) {
@@ -24,7 +24,7 @@ func TestLogical(t *testing.T) {
 }
 
 func TestPlacementPeeking(t *testing.T) {
-	p := Placement{ID: ports.WindowID(7), Rect: ports.Rect{X: 1, Y: 2, W: 30, H: 40}, Focused: true}
+	p := Placement{ID: domain.WindowID(7), Rect: domain.Rect{X: 1, Y: 2, W: 30, H: 40}, Focused: true}
 	want := p
 	want.Peek, want.Veil = true, 0.4
 	p.Peeking(0.4)
@@ -56,15 +56,15 @@ func TestBorderZone(t *testing.T) {
 func TestUnion(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		a, b ports.Rect
-		want ports.Rect
+		a, b domain.Rect
+		want domain.Rect
 	}{
-		{"disjoint", ports.Rect{X: 0, Y: 0, W: 10, H: 10}, ports.Rect{X: 20, Y: 30, W: 5, H: 5}, ports.Rect{X: 0, Y: 0, W: 25, H: 35}},
-		{"overlap", ports.Rect{X: 0, Y: 0, W: 10, H: 10}, ports.Rect{X: 5, Y: 5, W: 10, H: 10}, ports.Rect{X: 0, Y: 0, W: 15, H: 15}},
-		{"contained", ports.Rect{X: 0, Y: 0, W: 100, H: 100}, ports.Rect{X: 10, Y: 20, W: 5, H: 5}, ports.Rect{X: 0, Y: 0, W: 100, H: 100}},
-		{"reversed", ports.Rect{X: 20, Y: 30, W: 5, H: 5}, ports.Rect{X: 0, Y: 0, W: 10, H: 10}, ports.Rect{X: 0, Y: 0, W: 25, H: 35}},
-		{"negative origin", ports.Rect{X: -10, Y: -5, W: 4, H: 4}, ports.Rect{X: 2, Y: 3, W: 6, H: 2}, ports.Rect{X: -10, Y: -5, W: 18, H: 10}},
-		{"same", ports.Rect{X: 3, Y: 4, W: 5, H: 6}, ports.Rect{X: 3, Y: 4, W: 5, H: 6}, ports.Rect{X: 3, Y: 4, W: 5, H: 6}},
+		{"disjoint", domain.Rect{X: 0, Y: 0, W: 10, H: 10}, domain.Rect{X: 20, Y: 30, W: 5, H: 5}, domain.Rect{X: 0, Y: 0, W: 25, H: 35}},
+		{"overlap", domain.Rect{X: 0, Y: 0, W: 10, H: 10}, domain.Rect{X: 5, Y: 5, W: 10, H: 10}, domain.Rect{X: 0, Y: 0, W: 15, H: 15}},
+		{"contained", domain.Rect{X: 0, Y: 0, W: 100, H: 100}, domain.Rect{X: 10, Y: 20, W: 5, H: 5}, domain.Rect{X: 0, Y: 0, W: 100, H: 100}},
+		{"reversed", domain.Rect{X: 20, Y: 30, W: 5, H: 5}, domain.Rect{X: 0, Y: 0, W: 10, H: 10}, domain.Rect{X: 0, Y: 0, W: 25, H: 35}},
+		{"negative origin", domain.Rect{X: -10, Y: -5, W: 4, H: 4}, domain.Rect{X: 2, Y: 3, W: 6, H: 2}, domain.Rect{X: -10, Y: -5, W: 18, H: 10}},
+		{"same", domain.Rect{X: 3, Y: 4, W: 5, H: 6}, domain.Rect{X: 3, Y: 4, W: 5, H: 6}, domain.Rect{X: 3, Y: 4, W: 5, H: 6}},
 	} {
 		if got := Union(tc.a, tc.b); got != tc.want {
 			t.Errorf("%s: Union(%v, %v) = %v, want %v", tc.name, tc.a, tc.b, got, tc.want)

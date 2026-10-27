@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
@@ -36,7 +37,7 @@ type dndState struct {
 	// icon is the icon surface (nil: none or destroyed); iconID is the
 	// window ID core knows it by (0: none).
 	icon   *surface
-	iconID ports.WindowID
+	iconID domain.WindowID
 	// iconX, iconY is the icon's top left corner relative to the cursor:
 	// the offsets of its commits add up. iconSent is the last geometry sent.
 	iconX, iconY int

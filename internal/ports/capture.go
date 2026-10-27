@@ -1,6 +1,10 @@
 package ports
 
-import "time"
+import (
+	"time"
+
+	"github.com/bnema/neferwl/internal/domain"
+)
 
 // Capture sessions, exclusion and workspace sources.
 //
@@ -36,24 +40,6 @@ const (
 	CaptureFlash = time.Second
 )
 
-// CaptureReason says why a registered session ends. The zero value is none.
-type CaptureReason string
-
-const (
-	CaptureReasonNone CaptureReason = ""
-	// Every reason ends the session: core forgets it and wayland stops it.
-	CaptureReasonOutputGone    CaptureReason = "output-gone"
-	CaptureReasonWorkspaceGone CaptureReason = "workspace-gone"
-	CaptureReasonInvalidRegion CaptureReason = "invalid-region" // nothing of the region is left on the output
-	CaptureReasonWindowGone    CaptureReason = "window-gone"
-	// TooManyExcluded: the attached layers and their popups exceed
-	// MaxCaptureExcluded; a capture could not leave them all out (fail closed).
-	CaptureReasonTooManyExcluded CaptureReason = "too-many-excluded"
-)
-
-// Terminal reports whether a state with this reason ends the session.
-func (r CaptureReason) Terminal() bool { return r != CaptureReasonNone }
-
 // CaptureSessionOpen carries wayland → core a new ext-image-copy-capture
 // session. Its target is an output (Workspace 0), whole when Region is zero,
 // else the part of it in Region (output-local logical pixels, clipped), or a
@@ -65,8 +51,8 @@ type CaptureSessionOpen struct {
 	ID        uint64
 	Output    string
 	Workspace uint64
-	Window    WindowID
-	Region    Rect
+	Window    domain.WindowID
+	Region    domain.Rect
 }
 
 func (CaptureSessionOpen) clientEvent() {}
@@ -89,8 +75,8 @@ type CaptureFrameTaken struct {
 	Session   uint64
 	Output    string
 	Workspace uint64
-	Window    WindowID
-	Region    Rect
+	Window    domain.WindowID
+	Region    domain.Rect
 }
 
 func (CaptureFrameTaken) clientEvent() {}
@@ -108,7 +94,7 @@ func (CaptureExclusionBegin) clientEvent() {}
 // exclusively; at most MaxExclusionLayers are attached.
 type CaptureExclusionLayer struct {
 	Session  uint64
-	Layer    WindowID
+	Layer    domain.WindowID
 	Attached bool
 }
 
@@ -149,14 +135,14 @@ func (CaptureExclusionEnd) clientEvent() {}
 type CaptureSessionState struct {
 	ID        uint64
 	Output    string
-	Rect      Rect
+	Rect      domain.Rect
 	Workspace uint64
 	Hidden    bool
 	Active    bool
-	Reason    CaptureReason
+	Reason    domain.CaptureReason
 	Exclusion bool
 	Revision  uint64
-	Layers    []WindowID
+	Layers    []domain.WindowID
 }
 
 func (CaptureSessionState) clientCommand() {}
@@ -178,10 +164,10 @@ func (CaptureSessionState) clientCommand() {}
 type SceneCapture struct {
 	Shown     uint64
 	Session   uint64
-	Excluded  []WindowID
+	Excluded  []domain.WindowID
 	Revision  uint64
 	Workspace uint64
-	Window    WindowID
+	Window    domain.WindowID
 }
 
 // CaptureIndicator carries core → renderer one mark of a capture on an
@@ -198,7 +184,7 @@ type SceneCapture struct {
 // 1-pixel target would have nothing to draw. With Pill it marks a target
 // that is not on screen: Rect is the pill square, a rounded one.
 type CaptureIndicator struct {
-	Rect Rect
+	Rect domain.Rect
 	Pill bool
 }
 

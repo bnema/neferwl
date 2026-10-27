@@ -8,7 +8,9 @@ import (
 	"slices"
 	"unsafe"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+
 	vk "github.com/bnema/purego-vulkan/vulkan"
 	"golang.org/x/sys/unix"
 )
@@ -42,10 +44,10 @@ type target struct {
 	heldWindows    []ports.SceneWindow
 	heldSeparators []ports.Separator
 	heldLayers     []ports.SceneLayer
-	heldHints      []ports.Rect
+	heldHints      []domain.Rect
 	heldIndicators []ports.CaptureIndicator
 	heldOverlays   []ports.Overlay
-	windows        map[ports.WindowID]heldWindow
+	windows        map[domain.WindowID]heldWindow
 }
 
 // fourccXRGB is DRM_FORMAT_XRGB8888: B8G8R8A8 in memory, alpha ignored.

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"image"
+	"image/color"
 	"math"
 	"os"
 	"slices"
@@ -12,10 +13,10 @@ import (
 	"testing"
 	"unsafe"
 
-	"image/color"
-
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+
 	vk "github.com/bnema/purego-vulkan/vulkan"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
@@ -619,8 +620,8 @@ func TestCaptureHDRNaNInf(t *testing.T) {
 	f := udmabuf16(t, 64, 16, texel)
 	buf := &ports.DMABuf{ID: 165, Width: 64, Height: 16, Format: format.Format, Planes: []ports.DMABufPlane{{File: f, Stride: 512}}}
 	c := ports.SurfaceContent{ID: 1, Width: 64, Height: 16, Opaque: true, DMABuf: buf, Color: ports.SurfaceColor{TF: ports.ColorTFExtendedLinear, Primaries: ports.ColorPrimariesSRGB}}
-	scene := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 16}}}}
-	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: c}); err != nil {
+	scene := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
+	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: c}); err != nil {
 		t.Fatal(err)
 	}
 	img := readPixels(t, r)

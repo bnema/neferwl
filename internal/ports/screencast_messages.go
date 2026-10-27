@@ -1,31 +1,22 @@
 package ports
 
-import "time"
+import (
+	"time"
+
+	"github.com/bnema/neferwl/internal/domain"
+)
 
 // The cast messages are concrete structs, not sealed interfaces, so a send
 // on a channel never boxes them (zero allocation per frame).
 
-// CastCommandKind selects the CastCommand fields in use.
-type CastCommandKind uint8
-
-const (
-	// CastOpen starts cast ID on Output or Window.
-	CastOpen CastCommandKind = iota + 1
-	// CastFrame asks for one frame into buffer Buf.
-	CastFrame
-	// CastClose ends cast ID. Wayland sends no CastStopped for it; a frame
-	// still in flight is answered with its CastFrameDone as usual.
-	CastClose
-)
-
 // CastCommand carries screencast → wayland: open or close a cast, or request
 // one frame into a PipeWire buffer.
 type CastCommand struct {
-	Kind CastCommandKind
+	Kind domain.CastCommandKind
 	ID   uint64
 	// CastOpen: the target. A window cast sets Window and leaves Output empty.
 	Output string
-	Window WindowID
+	Window domain.WindowID
 	Cursor bool
 	// CastFrame: Buf is the buffer slot. Data is the buffer's mapping,
 	// borrowed until the CastFrameDone of Buf: the sender neither reuses nor
@@ -37,31 +28,15 @@ type CastCommand struct {
 	Format        uint32 // wl_shm format
 }
 
-// CastEventKind selects the CastEvent fields in use.
-type CastEventKind uint8
-
-const (
-	// CastSize: the target is now Width x Height; the stream must renegotiate.
-	CastSize CastEventKind = iota + 1
-	// CastDamage: the target changed and a frame may be requested. Time is
-	// the flip time.
-	CastDamage
-	// CastFrameDone: the frame into Buf finished. Err is nil when Data holds
-	// a complete image; Time is the capture time.
-	CastFrameDone
-	// CastStopped: the cast ended (Reason, Err); no event follows.
-	CastStopped
-)
-
 // CastEvent carries wayland → screencast through CastSink.Push.
 type CastEvent struct {
-	Kind          CastEventKind
+	Kind          domain.CastEventKind
 	ID            uint64
 	Width, Height int
 	Buf           int
 	Err           error
 	Time          time.Time
-	Reason        CaptureReason
+	Reason        domain.CaptureReason
 }
 
 // CastOutput is one output of the inventory.
@@ -77,7 +52,7 @@ type CastOutput struct {
 
 // CastWindow is one window of the inventory.
 type CastWindow struct {
-	ID           WindowID
+	ID           domain.WindowID
 	AppID, Title string
 }
 

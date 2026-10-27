@@ -11,6 +11,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/textinput"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
@@ -78,7 +79,7 @@ type textApp struct {
 	c        *wlturbo.Display
 	ti, surf uint32
 	top      uint32
-	window   ports.WindowID
+	window   domain.WindowID
 	log      *imeLog
 	keys     *eventsProxy
 }

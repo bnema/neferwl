@@ -8,7 +8,9 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
 
@@ -56,8 +58,8 @@ func TestExportTargets(t *testing.T) {
 	if !importable {
 		t.Skipf("modifier %#x not importable", b.Modifier)
 	}
-	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 32}}}}
-	contents := map[ports.WindowID]ports.SurfaceContent{1: {ID: 1, Width: 64, Height: 32, Opaque: true, DMABuf: &b}}
+	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 32}}}}
+	contents := map[domain.WindowID]ports.SurfaceContent{1: {ID: 1, Width: 64, Height: 32, Opaque: true, DMABuf: &b}}
 	if err := render(viewer, scene, contents); err != nil {
 		t.Fatal(err)
 	}

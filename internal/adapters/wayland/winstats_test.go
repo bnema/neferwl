@@ -3,9 +3,9 @@ package wayland
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/assert"
 )
 
 func statsRingOf(samples ...uint32) *frameRing {
@@ -129,7 +129,7 @@ func TestFrameRingSummaryAllocs(t *testing.T) {
 func TestWindowStatsScanoutReasons(t *testing.T) {
 	w := windowStats{watched: 1}
 	for _, reason := range []string{"overlays", "other_windows", "no_fullscreen", ""} {
-		f := ports.FlipInfo{Shows: map[ports.WindowID]uint64{1: 1}, ScanoutReason: reason, OverlayReason: "overlays"}
+		f := ports.FlipInfo{Shows: map[domain.WindowID]uint64{1: 1}, ScanoutReason: reason, OverlayReason: "overlays"}
 		if reason == "" {
 			f.ZeroCopy = 1
 		}

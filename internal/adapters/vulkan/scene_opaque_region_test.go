@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -20,7 +21,7 @@ func opaqueRegionContent(t testing.TB, w, h int) ports.SurfaceContent {
 	child := solidContent(t, w, h, color.RGBA{G: 255, A: 255})
 	child.Surface, child.Version = 2, 1
 	child.LogicalW, child.LogicalH = w, h
-	child.OpaqueRect = ports.Rect{W: w - 1, H: h - 1}
+	child.OpaqueRect = domain.Rect{W: w - 1, H: h - 1}
 	root.Children = []ports.Subsurface{{SurfaceContent: child}}
 	return root
 }
@@ -43,8 +44,8 @@ func drawRects(ds []draw) []image.Rectangle {
 func TestSceneOpaqueRegionClipsRoot(t *testing.T) {
 	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
-	scene := ports.Scene{Seq: 1, Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 20, H: 12}}}}
-	contents := map[ports.WindowID]ports.SurfaceContent{1: opaqueRegionContent(t, 20, 12)}
+	scene := ports.Scene{Seq: 1, Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 20, H: 12}}}}
+	contents := map[domain.WindowID]ports.SurfaceContent{1: opaqueRegionContent(t, 20, 12)}
 	ds := r.draws(scene, contents, newDamage(r.target(), scene, image.Rect(0, 0, 64, 48)))
 	want := []image.Rectangle{
 		// The root: the strip under the last row, then the one right of the
@@ -74,9 +75,9 @@ func TestSceneOpaqueChildSkipsRoot(t *testing.T) {
 	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	root := opaqueRegionContent(t, 20, 12)
-	root.Children[0].Opaque, root.Children[0].OpaqueRect = true, ports.Rect{}
-	scene := ports.Scene{Seq: 1, Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 20, H: 12}}}}
-	ds := r.draws(scene, map[ports.WindowID]ports.SurfaceContent{1: root}, newDamage(r.target(), scene, image.Rect(0, 0, 64, 48)))
+	root.Children[0].Opaque, root.Children[0].OpaqueRect = true, domain.Rect{}
+	scene := ports.Scene{Seq: 1, Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 20, H: 12}}}}
+	ds := r.draws(scene, map[domain.WindowID]ports.SurfaceContent{1: root}, newDamage(r.target(), scene, image.Rect(0, 0, 64, 48)))
 	if got, want := drawRects(ds), []image.Rectangle{image.Rect(0, 0, 20, 12)}; !sameRects(got, want) {
 		t.Fatalf("draws %v, want %v", got, want)
 	}
@@ -90,7 +91,7 @@ func TestRendererOpaqueRegionStripsKeepRoot(t *testing.T) {
 	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	const w, h = 20, 12
-	scene := ports.Scene{Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: w, H: h}}}}
+	scene := ports.Scene{Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: w, H: h}}}}
 	root := opaqueRegionContent(t, w, h)
 	// A 2x root with a gradient, to see a wrong strip mapping; a child
 	// that is green but for a transparent last row and column.
@@ -110,14 +111,14 @@ func TestRendererOpaqueRegionStripsKeepRoot(t *testing.T) {
 		}
 	}
 	root.Children[0].SHM = shmContent(t, w, h, w*4, cp).SHM
-	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: root}); err != nil {
+	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: root}); err != nil {
 		t.Fatal(err)
 	}
 	with := readPixels(t, r)
 	alone := root
 	alone.Children = nil
 	alone.Seq, alone.Version = 2, 2
-	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: alone}); err != nil {
+	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: alone}); err != nil {
 		t.Fatal(err)
 	}
 	without := readPixels(t, r)
@@ -138,18 +139,18 @@ func TestRendererOpaqueRegionStripsKeepRoot(t *testing.T) {
 // opaqueCover maps the opaque rect onto the physical rect of the surface,
 // rounding inward, clipped to what shows.
 func TestOpaqueCover(t *testing.T) {
-	c := ports.SurfaceContent{LogicalW: 984, LogicalH: 1231, OpaqueRect: ports.Rect{W: 983, H: 1230}}
+	c := ports.SurfaceContent{LogicalW: 984, LogicalH: 1231, OpaqueRect: domain.Rect{W: 983, H: 1230}}
 	for _, tc := range []struct {
 		name      string
 		full, dst image.Rectangle
-		rect      ports.Rect
+		rect      domain.Rect
 		want      image.Rectangle
 	}{
 		{"scale 1.3", image.Rect(0, 0, 1279, 1600), image.Rect(0, 0, 1279, 1600), c.OpaqueRect, image.Rect(0, 0, 1277, 1598)},
 		{"offset", image.Rect(10, 20, 1289, 1620), image.Rect(10, 20, 1289, 1620), c.OpaqueRect, image.Rect(10, 20, 1287, 1618)},
 		{"clipped", image.Rect(0, 0, 1279, 1600), image.Rect(0, 0, 100, 100), c.OpaqueRect, image.Rect(0, 0, 100, 100)},
-		{"inner rect", image.Rect(0, 0, 984, 1231), image.Rect(0, 0, 984, 1231), ports.Rect{X: 4, Y: 8, W: 100, H: 200}, image.Rect(4, 8, 104, 208)},
-		{"outside", image.Rect(0, 0, 984, 1231), image.Rect(0, 0, 3, 3), ports.Rect{X: 4, Y: 8, W: 100, H: 200}, image.Rectangle{}},
+		{"inner rect", image.Rect(0, 0, 984, 1231), image.Rect(0, 0, 984, 1231), domain.Rect{X: 4, Y: 8, W: 100, H: 200}, image.Rect(4, 8, 104, 208)},
+		{"outside", image.Rect(0, 0, 984, 1231), image.Rect(0, 0, 3, 3), domain.Rect{X: 4, Y: 8, W: 100, H: 200}, image.Rectangle{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c.OpaqueRect = tc.rect
@@ -166,8 +167,8 @@ func TestOpaqueCover(t *testing.T) {
 func TestSceneOpaqueRegionAllocations(t *testing.T) {
 	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
-	scene := ports.Scene{Seq: 1, Scale: 1.5, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 20, H: 12}}}}
-	contents := map[ports.WindowID]ports.SurfaceContent{1: opaqueRegionContent(t, 20, 12)}
+	scene := ports.Scene{Seq: 1, Scale: 1.5, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 20, H: 12}}}}
+	contents := map[domain.WindowID]ports.SurfaceContent{1: opaqueRegionContent(t, 20, 12)}
 	bounds := image.Rect(0, 0, 64, 48)
 	frame := func() { _ = r.draws(scene, contents, r.frameDamage(r.target(), scene, bounds)) }
 	frame()
@@ -188,11 +189,11 @@ func BenchmarkComposeOpaqueRegionChild(b *testing.B) {
 	for _, tc := range []struct {
 		name   string
 		opaque bool
-		rect   ports.Rect
+		rect   domain.Rect
 	}{
-		{"none", false, ports.Rect{}},
-		{"short", false, ports.Rect{W: lw - 1, H: lh - 1}},
-		{"whole", true, ports.Rect{}},
+		{"none", false, domain.Rect{}},
+		{"short", false, domain.Rect{W: lw - 1, H: lh - 1}},
+		{"whole", true, domain.Rect{}},
 	} {
 		b.Run(tc.name, func(b *testing.B) {
 			r := newTestRenderer(b, w, h)
@@ -211,10 +212,10 @@ func BenchmarkComposeOpaqueRegionChild(b *testing.B) {
 			root.LogicalW, root.LogicalH = lw, lh
 			root.Opaque = true
 			root.Children = []ports.Subsurface{{SurfaceContent: page}}
-			contents := map[ports.WindowID]ports.SurfaceContent{1: root}
+			contents := map[domain.WindowID]ports.SurfaceContent{1: root}
 			frame := func(i int) {
 				x := i % 64
-				scene := ports.Scene{Seq: uint64(i + 1), Scale: 1.3, Background: "#101010", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: x, W: lw, H: lh}}}}
+				scene := ports.Scene{Seq: uint64(i + 1), Scale: 1.3, Background: "#101010", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: x, W: lw, H: lh}}}}
 				if err := render(r, scene, contents); err != nil {
 					b.Fatal(err)
 				}
@@ -256,10 +257,10 @@ func TestSceneSplitIsBounded(t *testing.T) {
 	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	const w, h = 60, 40
-	scene := ports.Scene{Seq: 1, Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: w, H: h}}}}
+	scene := ports.Scene{Seq: 1, Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: w, H: h}}}}
 	full := image.Rect(0, 0, w, h)
 	for _, n := range []int{1, maxSplitCovers, maxSplitCovers + 1, 40} {
-		contents := map[ports.WindowID]ports.SurfaceContent{1: crossingCovers(t, w, h, n)}
+		contents := map[domain.WindowID]ports.SurfaceContent{1: crossingCovers(t, w, h, n)}
 		ds := r.draws(scene, contents, newDamage(r.target(), scene, image.Rect(0, 0, 64, 48)))
 		rects := drawRects(ds)
 		root := len(rects) - n // the children draw once each, after the root
@@ -288,9 +289,9 @@ func TestRendererSplitBoundKeepsRoot(t *testing.T) {
 	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	const w, h, n = 60, 40, 40
-	scene := ports.Scene{Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: w, H: h}}}}
+	scene := ports.Scene{Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: w, H: h}}}}
 	root := crossingCovers(t, w, h, n)
-	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: root}); err != nil {
+	if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: root}); err != nil {
 		t.Fatal(err)
 	}
 	got := readPixels(t, r)

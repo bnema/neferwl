@@ -5,12 +5,13 @@ import (
 	"errors"
 	"math"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
 type atspiSource struct{ targets targetSource }
 
-func (*atspiSource) kind() ports.HintSource          { return ports.HintSourceATSPI }
+func (*atspiSource) kind() domain.HintSource         { return domain.HintSourceATSPI }
 func (*atspiSource) needsFrame(context.Context) bool { return false }
 func (s *atspiSource) Close() error {
 	if s.targets == nil {
@@ -30,7 +31,7 @@ func (s *atspiSource) scan(ctx context.Context, req ports.HintScanRequest, wins 
 	width, height := int(math.Ceil(float64(req.Width)/scale)), int(math.Ceil(float64(req.Height)/scale))
 	out := targets[:0]
 	for _, t := range targets {
-		if req.LinksOnly && t.Kind != ports.HintLink {
+		if req.LinksOnly && t.Kind != domain.HintLink {
 			continue
 		}
 		x1, y1 := max(0, t.Rect.X), max(0, t.Rect.Y)
@@ -38,7 +39,7 @@ func (s *atspiSource) scan(ctx context.Context, req ports.HintScanRequest, wins 
 		if x2 <= x1 || y2 <= y1 {
 			continue
 		}
-		t.Rect = ports.Rect{X: x1, Y: y1, W: x2 - x1, H: y2 - y1}
+		t.Rect = domain.Rect{X: x1, Y: y1, W: x2 - x1, H: y2 - y1}
 		out = append(out, t)
 	}
 	return out, err

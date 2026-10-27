@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestStateDelay(t *testing.T) {
@@ -120,7 +120,7 @@ func TestCompletionRecordsVblank(t *testing.T) {
 	}
 	ev := eventOf((*commits)[0])
 	ev.when = 5 * time.Second
-	if !o.completed(ev, map[ports.WindowID]uint64{}) || o.lastVblankAt != ev.when {
+	if !o.completed(ev, map[domain.WindowID]uint64{}) || o.lastVblankAt != ev.when {
 		t.Fatalf("vblank %v, want %v", o.lastVblankAt, ev.when)
 	}
 	o.noteVblank(pendingFrame{async: true}, 6*time.Second)

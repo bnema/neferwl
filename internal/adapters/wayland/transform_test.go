@@ -7,6 +7,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/viewporter"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
@@ -111,7 +112,7 @@ func (tc transformClient) commit(t *testing.T) {
 }
 
 // region creates a wl_region holding rects.
-func (tc transformClient) region(t *testing.T, rects ...ports.Rect) uint32 {
+func (tc transformClient) region(t *testing.T, rects ...domain.Rect) uint32 {
 	t.Helper()
 	id := tc.c.AllocateID()
 	registerProtocol(t, tc.c, id)
@@ -155,7 +156,7 @@ func TestBufferTransformInvalid(t *testing.T) {
 // partial or NULL region does not. The region applies on commit.
 func TestOpaqueRegionContent(t *testing.T) {
 	tc := newTransformClient(t)
-	half := tc.region(t, ports.Rect{W: 15, H: 20})
+	half := tc.region(t, domain.Rect{W: 15, H: 20})
 	requestProtocol(t, tc.c, tc.surf, wayland.SurfaceRequestSetOpaqueRegion, half)
 	requestProtocol(t, tc.c, tc.surf, wayland.SurfaceRequestDamage, int32(0), int32(0), int32(1), int32(1))
 	tc.commit(t)
@@ -163,16 +164,16 @@ func TestOpaqueRegionContent(t *testing.T) {
 	if prev.Opaque {
 		t.Fatalf("partial region made the surface opaque: %+v", prev)
 	}
-	if want := (ports.Rect{W: 15, H: 20}); prev.OpaqueRect != want {
+	if want := (domain.Rect{W: 15, H: 20}); prev.OpaqueRect != want {
 		t.Fatalf("partial region: OpaqueRect %v, want %v", prev.OpaqueRect, want)
 	}
 	// Two halves cover the whole surface, even through a larger rect.
 	// Opacity changes blending everywhere: the commit damages it all.
-	whole := tc.region(t, ports.Rect{W: 15, H: 20}, ports.Rect{X: 15, W: 100, H: 20})
+	whole := tc.region(t, domain.Rect{W: 15, H: 20}, domain.Rect{X: 15, W: 100, H: 20})
 	requestProtocol(t, tc.c, tc.surf, wayland.SurfaceRequestSetOpaqueRegion, whole)
 	tc.commit(t)
 	got := tc.next(t)
-	if !got.Opaque || got.OpaqueRect != (ports.Rect{}) {
+	if !got.Opaque || got.OpaqueRect != (domain.Rect{}) {
 		t.Fatalf("covering region: %+v", got)
 	}
 	if rects, ok := got.DamageSince(prev.Seq); ok {
@@ -191,15 +192,15 @@ func TestOpaqueRegionContent(t *testing.T) {
 	}
 	requestProtocol(t, tc.c, tc.surf, wayland.SurfaceRequestSetOpaqueRegion, uint32(0))
 	tc.commit(t)
-	if got := tc.next(t); got.Opaque || got.OpaqueRect != (ports.Rect{}) {
+	if got := tc.next(t); got.Opaque || got.OpaqueRect != (domain.Rect{}) {
 		t.Fatalf("NULL region: %+v", got)
 	}
 	// A region one pixel short of the surface (what Firefox sets) is not
 	// opaque, but its rect is reported.
-	short := tc.region(t, ports.Rect{W: 29, H: 19})
+	short := tc.region(t, domain.Rect{W: 29, H: 19})
 	requestProtocol(t, tc.c, tc.surf, wayland.SurfaceRequestSetOpaqueRegion, short)
 	tc.commit(t)
-	if got := tc.next(t); got.Opaque || got.OpaqueRect != (ports.Rect{W: 29, H: 19}) {
+	if got := tc.next(t); got.Opaque || got.OpaqueRect != (domain.Rect{W: 29, H: 19}) {
 		t.Fatalf("short region: %+v", got)
 	}
 }
@@ -209,20 +210,20 @@ func TestOpaqueRegionContent(t *testing.T) {
 func TestOpaqueRect(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
-		region []ports.Rect
+		region []domain.Rect
 		opaque bool
 		w, h   int
 		fade   float32
-		want   ports.Rect
+		want   domain.Rect
 	}{
-		{"none", nil, false, 10, 10, 0, ports.Rect{}},
-		{"one pixel short", []ports.Rect{{W: 983, H: 1230}}, false, 984, 1231, 0, ports.Rect{W: 983, H: 1230}},
-		{"clipped to the surface", []ports.Rect{{X: -5, Y: 2, W: 100, H: 100}}, false, 10, 10, 0, ports.Rect{Y: 2, W: 10, H: 8}},
-		{"largest of several", []ports.Rect{{W: 2, H: 2}, {X: 3, Y: 3, W: 5, H: 4}}, false, 10, 10, 0, ports.Rect{X: 3, Y: 3, W: 5, H: 4}},
-		{"outside", []ports.Rect{{X: 10, W: 5, H: 5}}, false, 10, 10, 0, ports.Rect{}},
-		{"wholly opaque", []ports.Rect{{W: 9, H: 9}}, true, 10, 10, 0, ports.Rect{}},
-		{"faded", []ports.Rect{{W: 9, H: 9}}, false, 10, 10, 0.5, ports.Rect{}},
-		{"no size", []ports.Rect{{W: 9, H: 9}}, false, 0, 0, 0, ports.Rect{}},
+		{"none", nil, false, 10, 10, 0, domain.Rect{}},
+		{"one pixel short", []domain.Rect{{W: 983, H: 1230}}, false, 984, 1231, 0, domain.Rect{W: 983, H: 1230}},
+		{"clipped to the surface", []domain.Rect{{X: -5, Y: 2, W: 100, H: 100}}, false, 10, 10, 0, domain.Rect{Y: 2, W: 10, H: 8}},
+		{"largest of several", []domain.Rect{{W: 2, H: 2}, {X: 3, Y: 3, W: 5, H: 4}}, false, 10, 10, 0, domain.Rect{X: 3, Y: 3, W: 5, H: 4}},
+		{"outside", []domain.Rect{{X: 10, W: 5, H: 5}}, false, 10, 10, 0, domain.Rect{}},
+		{"wholly opaque", []domain.Rect{{W: 9, H: 9}}, true, 10, 10, 0, domain.Rect{}},
+		{"faded", []domain.Rect{{W: 9, H: 9}}, false, 10, 10, 0.5, domain.Rect{}},
+		{"no size", []domain.Rect{{W: 9, H: 9}}, false, 0, 0, 0, domain.Rect{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &surface{opaque: tc.region}
@@ -239,7 +240,7 @@ func TestCapturedTransformAndOpaqueKeepLaterRequests(t *testing.T) {
 	srv := &Server{fifoSurfaces: map[*surface]struct{}{}, constraints: map[*surface]*constraint{}}
 	surf := &surface{server: srv}
 	surf.next.transform = 1
-	surf.next.opaque, surf.next.opaqueSet = []ports.Rect{{W: 4, H: 4}}, true
+	surf.next.opaque, surf.next.opaqueSet = []domain.Rect{{W: 4, H: 4}}, true
 	surf.queueUpdate()
 	surf.next.transform = 2
 	surf.next.opaque, surf.next.opaqueSet = nil, true
@@ -258,20 +259,20 @@ func TestCapturedTransformAndOpaqueKeepLaterRequests(t *testing.T) {
 }
 
 func TestCovers(t *testing.T) {
-	r := ports.Rect{W: 10, H: 10}
+	r := domain.Rect{W: 10, H: 10}
 	for _, tc := range []struct {
 		name  string
-		rects []ports.Rect
+		rects []domain.Rect
 		want  bool
 	}{
 		{"empty", nil, false},
-		{"exact", []ports.Rect{{W: 10, H: 10}}, true},
-		{"larger", []ports.Rect{{X: -5, Y: -5, W: 30, H: 30}}, true},
-		{"two halves", []ports.Rect{{W: 5, H: 10}, {X: 5, W: 5, H: 10}}, true},
-		{"gap", []ports.Rect{{W: 4, H: 10}, {X: 5, W: 5, H: 10}}, false},
-		{"hole", []ports.Rect{{W: 10, H: 4}, {Y: 6, W: 10, H: 4}, {Y: 4, W: 4, H: 2}, {X: 5, Y: 4, W: 5, H: 2}}, false},
-		{"four quarters", []ports.Rect{{W: 5, H: 5}, {X: 5, W: 5, H: 5}, {Y: 5, W: 5, H: 5}, {X: 5, Y: 5, W: 5, H: 5}}, true},
-		{"too many", make([]ports.Rect, maxCoverRects+1), false},
+		{"exact", []domain.Rect{{W: 10, H: 10}}, true},
+		{"larger", []domain.Rect{{X: -5, Y: -5, W: 30, H: 30}}, true},
+		{"two halves", []domain.Rect{{W: 5, H: 10}, {X: 5, W: 5, H: 10}}, true},
+		{"gap", []domain.Rect{{W: 4, H: 10}, {X: 5, W: 5, H: 10}}, false},
+		{"hole", []domain.Rect{{W: 10, H: 4}, {Y: 6, W: 10, H: 4}, {Y: 4, W: 4, H: 2}, {X: 5, Y: 4, W: 5, H: 2}}, false},
+		{"four quarters", []domain.Rect{{W: 5, H: 5}, {X: 5, W: 5, H: 5}, {Y: 5, W: 5, H: 5}, {X: 5, Y: 5, W: 5, H: 5}}, true},
+		{"too many", make([]domain.Rect, maxCoverRects+1), false},
 	} {
 		if got := covers(tc.rects, r); got != tc.want {
 			t.Errorf("%s: %v, want %v", tc.name, got, tc.want)

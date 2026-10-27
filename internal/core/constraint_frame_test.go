@@ -5,6 +5,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -41,7 +42,7 @@ func TestConstraintRegionUsesFullClientOrigin(t *testing.T) {
 		if !ok || full != (Rect{X: 1075, Y: 50, W: 50, H: 100}) || vis != (Rect{X: 1100, Y: 50, W: 25, H: 100}) {
 			t.Fatalf("full %+v visible %+v %v", full, vis, ok)
 		}
-		c.constrained = ports.PointerConstrained{ID: 2, PointerConstraint: ports.PointerConstraint{Mode: ports.ConstraintConfine, Rect: Rect{X: 30, Y: 10, W: 20, H: 20}}}
+		c.constrained = ports.PointerConstrained{ID: 2, PointerConstraint: ports.PointerConstraint{Mode: domain.ConstraintConfine, Rect: Rect{X: 30, Y: 10, W: 20, H: 20}}}
 		c.resolveConstraint()
 		// Local x 30..50 is global 1105..1125, all inside the visible part.
 		if want := (Rect{X: 1105, Y: 60, W: 20, H: 20}); c.constraint.Rect != want {

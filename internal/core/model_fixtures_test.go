@@ -6,7 +6,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/core/layout/layoutmocks"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -211,36 +211,36 @@ func setVisibleNeighbors(tiles []Placement, gap int, area Rect) {
 			// Only count a shared edge strictly within the area.
 			switch {
 			case r.X+r.W+gap == b.X && overlap(r.Y, r.Y+r.H, b.Y, b.Y+b.H) && r.X+r.W > area.X && r.X+r.W < area.X+area.W:
-				a.Neighbors |= ports.SideRight
+				a.Neighbors |= domain.SideRight
 			case b.X+b.W+gap == r.X && overlap(r.Y, r.Y+r.H, b.Y, b.Y+b.H) && r.X > area.X && r.X < area.X+area.W:
-				a.Neighbors |= ports.SideLeft
+				a.Neighbors |= domain.SideLeft
 			case r.Y+r.H+gap == b.Y && overlap(r.X, r.X+r.W, b.X, b.X+b.W) && r.Y+r.H > area.Y && r.Y+r.H < area.Y+area.H:
-				a.Neighbors |= ports.SideBottom
+				a.Neighbors |= domain.SideBottom
 			case b.Y+b.H+gap == r.Y && overlap(r.X, r.X+r.W, b.X, b.X+b.W) && r.Y > area.Y && r.Y < area.Y+area.H:
-				a.Neighbors |= ports.SideTop
+				a.Neighbors |= domain.SideTop
 			}
 		}
 		a.Inset = a.Neighbors
 		if gap == 0 {
-			a.Inset &= ports.SideRight | ports.SideBottom
+			a.Inset &= domain.SideRight | domain.SideBottom
 		} else {
-			a.Inset = ports.SideAll
+			a.Inset = domain.SideAll
 		}
 	}
 }
 
-func resized(r Rect, edges ports.ResizeEdges, dx, dy, least int, u Rect) Rect {
+func resized(r Rect, edges domain.ResizeEdges, dx, dy, least int, u Rect) Rect {
 	left, top, right, bottom := r.X, r.Y, r.X+r.W, r.Y+r.H
-	if edges&ports.ResizeLeft != 0 {
+	if edges&domain.ResizeLeft != 0 {
 		left = min(max(left+dx, u.X), right-least)
 	}
-	if edges&ports.ResizeRight != 0 {
+	if edges&domain.ResizeRight != 0 {
 		right = max(min(right+dx, u.X+u.W), left+least)
 	}
-	if edges&ports.ResizeTop != 0 {
+	if edges&domain.ResizeTop != 0 {
 		top = min(max(top+dy, u.Y), bottom-least)
 	}
-	if edges&ports.ResizeBottom != 0 {
+	if edges&domain.ResizeBottom != 0 {
 		bottom = max(min(bottom+dy, u.Y+u.H), top+least)
 	}
 	return Rect{X: left, Y: top, W: right - left, H: bottom - top}

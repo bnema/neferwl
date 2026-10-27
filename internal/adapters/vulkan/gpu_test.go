@@ -7,7 +7,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+
 	vk "github.com/bnema/purego-vulkan/vulkan"
 	"golang.org/x/sys/unix"
 )
@@ -102,8 +104,8 @@ func TestTwoRenderersShareGPU(t *testing.T) {
 	}
 	c := solidContent(t, 16, 16, color.RGBA{1, 2, 3, 255})
 	c.ID, c.Seq, c.Version = 1, 1, 1
-	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}}}}
-	contents := map[ports.WindowID]ports.SurfaceContent{1: c}
+	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
+	contents := map[domain.WindowID]ports.SurfaceContent{1: c}
 	for frame := range 10 {
 		scene.Seq = uint64(frame + 1)
 		for i, r := range rs {

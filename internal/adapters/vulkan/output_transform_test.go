@@ -5,6 +5,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -17,12 +18,12 @@ func TestRendererOutputTransform(t *testing.T) {
 	defer r.Close()
 	red, green := color.RGBA{255, 0, 0, 255}, color.RGBA{0, 255, 0, 255}
 	px := []byte{0, 0, 255, 255, 0, 255, 0, 255} // BGRA: red, green
-	win := ports.Rect{X: 1, Y: 0, W: 2, H: 1}
+	win := domain.Rect{X: 1, Y: 0, W: 2, H: 1}
 	for tr := ports.BufferTransform(0); tr < 8; tr++ {
 		sw, sh := r.sceneSize(tr)
 		c := shmContent(t, 2, 1, 8, px)
 		scene := ports.Scene{Transform: tr, Scale: 1, OutputWidth: sw, OutputHeight: sh, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: win}}}
-		if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: *c}); err != nil {
+		if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: *c}); err != nil {
 			t.Fatal(err)
 		}
 		img := readPixels(t, r)

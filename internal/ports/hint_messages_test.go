@@ -3,14 +3,16 @@ package ports
 import (
 	"reflect"
 	"testing"
+
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestHintWindowRegion(t *testing.T) {
-	w := HintWindow{Rect: Rect{X: 10, Y: 10, W: 20, H: 20}, Popups: []Rect{{X: 40, Y: 0, W: 10, H: 15}, {X: -5, Y: 35, W: 10, H: 10}}}
-	if !reflect.DeepEqual(w.Region(), []Rect{w.Rect, w.Popups[0], w.Popups[1]}) {
+	w := HintWindow{Rect: domain.Rect{X: 10, Y: 10, W: 20, H: 20}, Popups: []domain.Rect{{X: 40, Y: 0, W: 10, H: 15}, {X: -5, Y: 35, W: 10, H: 10}}}
+	if !reflect.DeepEqual(w.Region(), []domain.Rect{w.Rect, w.Popups[0], w.Popups[1]}) {
 		t.Fatal(w.Region())
 	}
-	if got := w.Bounds(); got != (Rect{X: -5, Y: 0, W: 55, H: 45}) {
+	if got := w.Bounds(); got != (domain.Rect{X: -5, Y: 0, W: 55, H: 45}) {
 		t.Fatal(got)
 	}
 	for _, tc := range []struct {
@@ -27,12 +29,7 @@ func TestHintWindowRegion(t *testing.T) {
 	if w.Rect.X != 10 || w.Popups[0].X != 40 {
 		t.Fatal("region aliases window")
 	}
-	if (HintWindow{}).Bounds() != (Rect{}) || (HintWindow{}).Contains(0, 0) {
+	if (HintWindow{}).Bounds() != (domain.Rect{}) || (HintWindow{}).Contains(0, 0) {
 		t.Fatal("empty window")
-	}
-	for s, want := range map[HintSource]string{0: "", HintSourceATSPI: "atspi", HintSourceOCR: "ocr", HintSourceDetector: "detector"} {
-		if s.String() != want {
-			t.Fatal(s)
-		}
 	}
 }

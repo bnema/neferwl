@@ -6,6 +6,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -110,7 +111,7 @@ func TestConfigureVisibleCascadeUnderPanel(t *testing.T) {
 			t.Fatal("window under the panel left the scene")
 		}
 		// It is cut at the panel and takes no pointer there.
-		if scene.TileInset != (ports.Insets{Bottom: 20}) {
+		if scene.TileInset != (domain.Insets{Bottom: 20}) {
 			t.Fatalf("tile inset %+v, want the panel's", scene.TileInset)
 		}
 		if id, _, _ := c.hit(10, 70); id != 0 {
@@ -131,7 +132,7 @@ func TestConfigureVisibleCascadeUnderPanel(t *testing.T) {
 		c.popupOrder = slices.DeleteFunc(c.popupOrder, func(id WindowID) bool { return id == 10 })
 		// The overview lays previews over the whole output: no inset.
 		m.ToggleOverview()
-		if s := check(nil); s.TileInset != (ports.Insets{}) {
+		if s := check(nil); s.TileInset != (domain.Insets{}) {
 			t.Fatalf("tile inset %+v in the overview", s.TileInset)
 		}
 		m.ToggleOverview()

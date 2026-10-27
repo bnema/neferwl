@@ -1,4 +1,5 @@
 // Package surfaces keeps the latest content of every window for an output's
+
 // renderer, and the last content of a window that closed while the scene
 // still draws it.
 package surfaces
@@ -7,6 +8,7 @@ import (
 	"maps"
 
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -38,19 +40,19 @@ import (
 // the frame that first drew it waited on them, and wayland closes them
 // when the buffers are released.
 type Table struct {
-	m map[ports.WindowID]ports.SurfaceContent
+	m map[domain.WindowID]ports.SurfaceContent
 	// kept are the windows drawn from a content their client withdrew.
-	kept map[ports.WindowID]struct{}
+	kept map[domain.WindowID]struct{}
 }
 
 // New returns an empty table.
 func New() *Table {
-	return &Table{m: make(map[ports.WindowID]ports.SurfaceContent), kept: make(map[ports.WindowID]struct{})}
+	return &Table{m: make(map[domain.WindowID]ports.SurfaceContent), kept: make(map[domain.WindowID]struct{})}
 }
 
 // Map is the contents the renderer draws from. It is the table's own map:
 // read it, never keep it across an Update or Prune.
-func (t *Table) Map() map[ports.WindowID]ports.SurfaceContent { return t.m }
+func (t *Table) Map() map[domain.WindowID]ports.SurfaceContent { return t.m }
 
 // Update takes a window's new content. An empty one (the window unmapped)
 // keeps the previous content, without its Acquire fence, while scene draws
@@ -96,7 +98,7 @@ func (t *Table) Prune(scene ports.Scene) {
 // Kept reports whether id is drawn from a content its client withdrew: a
 // buffer the client may have got back. Outputs compose it only: no plane
 // scans it out, no capture or presentation report counts it as shown.
-func (t *Table) Kept(id ports.WindowID) bool {
+func (t *Table) Kept(id domain.WindowID) bool {
 	_, ok := t.kept[id]
 	return ok
 }
@@ -104,7 +106,7 @@ func (t *Table) Kept(id ports.WindowID) bool {
 // Shown is the presentation rule both output backends report with: id was
 // shown to its client when scene draws it and its content is not kept. A
 // nil kept counts nothing as kept.
-func Shown(scene ports.Scene, id ports.WindowID, kept func(ports.WindowID) bool) bool {
+func Shown(scene ports.Scene, id domain.WindowID, kept func(domain.WindowID) bool) bool {
 	return scene.Shows(id) && (kept == nil || !kept(id))
 }
 
@@ -117,7 +119,7 @@ func Shown(scene ports.Scene, id ports.WindowID, kept func(ports.WindowID) bool)
 // dirty reports a content of a window scene draws (windows on other outputs
 // or workspaces need no frame). seenChanged reports a window whose seen Seq
 // moved forward: a new report is due.
-func (t *Table) Apply(b *ports.ContentBatch, scene ports.Scene, seen map[ports.WindowID]uint64, ret ports.ContentReturn) (dirty, seenChanged bool) {
+func (t *Table) Apply(b *ports.ContentBatch, scene ports.Scene, seen map[domain.WindowID]uint64, ret ports.ContentReturn) (dirty, seenChanged bool) {
 	for i := range b.Items {
 		c := b.Items[i]
 		t.Update(c, scene)
@@ -138,13 +140,13 @@ func (t *Table) Apply(b *ports.ContentBatch, scene ports.Scene, seen map[ports.W
 // map is never sent and a snapshot is replaced by a clone only when it
 // changed. The zero value is ready; an unchanged result allocates nothing.
 type ShowsSnapshot struct {
-	scratch, snapshot map[ports.WindowID]uint64
+	scratch, snapshot map[domain.WindowID]uint64
 }
 
 // FromSeen returns the windows of seen that scene showed to their client
 // (Shown), at their seen Seq. The result is shared with earlier flips of the
 // same content: never modify it.
-func (s *ShowsSnapshot) FromSeen(scene ports.Scene, seen map[ports.WindowID]uint64, kept func(ports.WindowID) bool) map[ports.WindowID]uint64 {
+func (s *ShowsSnapshot) FromSeen(scene ports.Scene, seen map[domain.WindowID]uint64, kept func(domain.WindowID) bool) map[domain.WindowID]uint64 {
 	s.begin()
 	for id, seq := range seen {
 		if Shown(scene, id, kept) {
@@ -157,7 +159,7 @@ func (s *ShowsSnapshot) FromSeen(scene ports.Scene, seen map[ports.WindowID]uint
 // FromContents returns the windows of contents that scene showed to their
 // client (Shown), at their content Seq. The result is shared with earlier
 // flips of the same content: never modify it.
-func (s *ShowsSnapshot) FromContents(scene ports.Scene, contents map[ports.WindowID]ports.SurfaceContent, kept func(ports.WindowID) bool) map[ports.WindowID]uint64 {
+func (s *ShowsSnapshot) FromContents(scene ports.Scene, contents map[domain.WindowID]ports.SurfaceContent, kept func(domain.WindowID) bool) map[domain.WindowID]uint64 {
 	s.begin()
 	for id, c := range contents {
 		if Shown(scene, id, kept) {
@@ -169,12 +171,12 @@ func (s *ShowsSnapshot) FromContents(scene ports.Scene, contents map[ports.Windo
 
 func (s *ShowsSnapshot) begin() {
 	if s.scratch == nil {
-		s.scratch = make(map[ports.WindowID]uint64)
+		s.scratch = make(map[domain.WindowID]uint64)
 	}
 	clear(s.scratch)
 }
 
-func (s *ShowsSnapshot) settle() map[ports.WindowID]uint64 {
+func (s *ShowsSnapshot) settle() map[domain.WindowID]uint64 {
 	if s.snapshot == nil || !maps.Equal(s.snapshot, s.scratch) {
 		s.snapshot = maps.Clone(s.scratch)
 	}

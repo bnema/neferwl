@@ -4,6 +4,8 @@ import (
 	"image"
 	"math"
 	"os"
+
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // SurfaceColor is the committed encoding of a surface. Zero means sRGB.
@@ -34,16 +36,6 @@ func (c SurfaceColor) IsExtendedLinear() bool {
 	return c.TF == ColorTFExtendedLinear && c.Primaries == ColorPrimariesSRGB
 }
 
-// ContentType is the committed wp_content_type_v1 hint.
-type ContentType uint8
-
-const (
-	ContentNone ContentType = iota
-	ContentPhoto
-	ContentVideo
-	ContentGame
-)
-
 // SurfaceContent carries wayland → output the latest committed content of a
 // window: SHM, a client shared-memory buffer, DMABuf, a GPU buffer, or
 // Solid, a single-pixel buffer. Renderers read them in place and never modify
@@ -53,8 +45,8 @@ const (
 // Geometry is the part of the surface that is the window (xdg window
 // geometry), the rest being client shadows.
 type SurfaceContent struct {
-	ID          WindowID
-	ContentType ContentType
+	ID          domain.WindowID
+	ContentType domain.ContentType
 	// Surface is a never-reused wl_surface identity; Version identifies its
 	// applied buffer content independently of the window publication Seq.
 	Surface, Version uint64
@@ -75,7 +67,7 @@ type SurfaceContent struct {
 	// that is not wholly Opaque, in logical pixels from the surface origin:
 	// the pixels there ignore alpha too, so the surfaces below it are hidden
 	// by it. Empty when there is none or while Fade is set.
-	OpaqueRect Rect
+	OpaqueRect domain.Rect
 	// Fade is how much wp_alpha_modifier_v1 fades the surface: 0 none,
 	// 1 invisible. Its opacity is multiplied by 1-Fade.
 	Fade   float32
@@ -89,7 +81,7 @@ type SurfaceContent struct {
 	Children []Subsurface
 	// Geometry is in logical pixels from the surface origin; empty means
 	// the whole surface.
-	Geometry Rect
+	Geometry domain.Rect
 	// Async asks for tearing presentation (wp_tearing_control_v1); outputs
 	// honour it only in direct scanout.
 	Async bool
@@ -189,12 +181,12 @@ func (t BufferTransform) RectToBuffer(r image.Rectangle, w, h int) image.Rectang
 type SeqDamage struct {
 	Seq   uint64
 	Full  bool
-	Rects []Rect
+	Rects []domain.Rect
 }
 
 // DamageSince is the union of changes after content seq up to this one,
 // and false when the history does not reach back to seq (redraw all).
-func (c SurfaceContent) DamageSince(seq uint64) ([]Rect, bool) {
+func (c SurfaceContent) DamageSince(seq uint64) ([]domain.Rect, bool) {
 	out, ok := c.AppendDamageSince(nil, seq)
 	if !ok {
 		return nil, false
@@ -205,7 +197,7 @@ func (c SurfaceContent) DamageSince(seq uint64) ([]Rect, bool) {
 // AppendDamageSince is DamageSince appending to dst, so a caller reusing
 // its slice allocates nothing. When the history does not reach back to seq
 // it returns dst unchanged and false.
-func (c SurfaceContent) AppendDamageSince(dst []Rect, seq uint64) ([]Rect, bool) {
+func (c SurfaceContent) AppendDamageSince(dst []domain.Rect, seq uint64) ([]domain.Rect, bool) {
 	if seq >= c.Seq {
 		return dst, true
 	}

@@ -3,10 +3,11 @@ package core_test
 import (
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-func windowIn(set []ports.Scene, output string, id ports.WindowID) (ports.SceneWindow, bool) {
+func windowIn(set []ports.Scene, output string, id domain.WindowID) (ports.SceneWindow, bool) {
 	for _, s := range set {
 		if s.Output != output {
 			continue
@@ -25,18 +26,18 @@ func TestFreeFloatKeepsPlaceAcrossMonitors(t *testing.T) {
 		r := startLanding(t, animated, func(c *ports.Config) { c.Layout.Gaps = 0 }, left, right)
 		r.mapLanded(t, 1)
 		r.mapLanded(t, 2)
-		r.keyLanded(t, "space", ports.ModAlt|ports.ModShift)
+		r.keyLanded(t, "space", domain.ModAlt|domain.ModShift)
 		// Nudge left twice: 100 px left of centre on a 200 px output stops at
 		// the edge.
-		r.keyLanded(t, "Left", ports.ModAlt|ports.ModShift)
-		set := r.keyLanded(t, "Left", ports.ModAlt|ports.ModShift)
+		r.keyLanded(t, "Left", domain.ModAlt|domain.ModShift)
+		set := r.keyLanded(t, "Left", domain.ModAlt|domain.ModShift)
 		before, ok := windowIn(set, "DP-1", 2)
 		if !ok || !before.Floating || before.Rect.X != 0 {
 			t.Fatalf("%+v", before)
 		}
 		// The workspace moves to the 400x200 output: the centre keeps its
 		// fractions of the usable area (1/4, 1/2), the size stays.
-		set = r.keyLanded(t, "Right", ports.ModAlt|ports.ModCtrl|ports.ModShift)
+		set = r.keyLanded(t, "Right", domain.ModAlt|domain.ModCtrl|domain.ModShift)
 		after, ok := windowIn(set, "DP-2", 2)
 		if !ok || after.Rect.W != before.Rect.W || after.Rect.X+after.Rect.W/2 != 100 || after.Rect.Y+after.Rect.H/2 != 100 {
 			t.Fatalf("%+v", after)

@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/bnema/zerowrap"
 	"image"
+
+	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/zerowrap"
+
 	_ "image/png"
 	"math"
 	"os"
@@ -17,11 +20,10 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
-
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 type harness struct {
@@ -43,7 +45,7 @@ func startCapturing(t *testing.T, timeout time.Duration) *harness {
 func startWith(t *testing.T, timeout time.Duration, opts Options) *harness {
 	t.Helper()
 	if len(opts.Sources) == 0 {
-		opts.Sources = []ports.HintSource{ports.HintSourceDetector}
+		opts.Sources = []domain.HintSource{domain.HintSourceDetector}
 	}
 	if opts.detector == nil {
 		// Tests of the capture flow do not care what the detector finds.
@@ -81,12 +83,12 @@ func TestHintScan(t *testing.T) {
 		creq := <-h.captures
 		h.captured <- ports.CaptureDone{ID: creq.ID, Output: creq.Output}
 	}()
-	h.requests <- ports.HintScanRequest{Seq: 7, Output: "HEADLESS-1", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 32}}}}
+	h.requests <- ports.HintScanRequest{Seq: 7, Output: "HEADLESS-1", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 32}}}}
 	res := <-h.results
 	require.NoError(t, res.Err)
 	require.Equal(t, uint64(7), res.Seq)
 	require.Equal(t, "HEADLESS-1", res.Output)
-	require.Equal(t, []ports.HintTarget{{Rect: ports.Rect{X: 10, Y: 20, W: 40, H: 10}, Score: 0.8, Source: ports.HintSourceDetector, Kind: ports.HintButton, Window: 1}}, res.Targets)
+	require.Equal(t, []ports.HintTarget{{Rect: domain.Rect{X: 10, Y: 20, W: 40, H: 10}, Score: 0.8, Source: domain.HintSourceDetector, Kind: domain.HintButton, Window: 1}}, res.Targets)
 	require.Equal(t, 64, got.crop.Dx())
 	require.Equal(t, 32, got.crop.Dy())
 	require.Equal(t, 64*4, got.stride)
@@ -96,7 +98,7 @@ func TestTargetsOf(t *testing.T) {
 	nan := float32(math.NaN())
 	inf := float32(math.Inf(1))
 	r := func(x, y, w, h int, score float32) []ports.HintTarget {
-		return []ports.HintTarget{{Rect: ports.Rect{X: x, Y: y, W: w, H: h}, Score: score}}
+		return []ports.HintTarget{{Rect: domain.Rect{X: x, Y: y, W: w, H: h}, Score: score}}
 	}
 	for _, tc := range []struct {
 		name  string
@@ -153,7 +155,7 @@ func TestHintDetectorErrorPassesScan(t *testing.T) {
 			creq := <-h.captures
 			h.captured <- ports.CaptureDone{ID: creq.ID, Output: creq.Output}
 		}()
-		h.requests <- ports.HintScanRequest{Seq: uint64(i + 1), Output: "o", Width: 16, Height: 16, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}}}}
+		h.requests <- ports.HintScanRequest{Seq: uint64(i + 1), Output: "o", Width: 16, Height: 16, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
 		res := <-h.results
 		require.NoError(t, res.Err)
 	}
@@ -168,7 +170,7 @@ func TestHintRequestShape(t *testing.T) {
 		h.captured <- ports.CaptureDone{ID: creq.ID + 1}                  // another ID: ignored
 		h.captured <- ports.CaptureDone{ID: creq.ID, Output: creq.Output} // blank frame
 	}()
-	h.requests <- ports.HintScanRequest{Seq: 1, Output: "o", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 32}}}}
+	h.requests <- ports.HintScanRequest{Seq: 1, Output: "o", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 32}}}}
 	res := <-h.results
 	require.NoError(t, res.Err)
 	creq := <-got
@@ -187,7 +189,7 @@ func TestHintCaptureError(t *testing.T) {
 		creq := <-h.captures
 		h.captured <- ports.CaptureDone{ID: creq.ID, Err: boom}
 	}()
-	h.requests <- ports.HintScanRequest{Seq: 3, Output: "o", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 32}}}}
+	h.requests <- ports.HintScanRequest{Seq: 3, Output: "o", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 32}}}}
 	res := <-h.results
 	require.ErrorIs(t, res.Err, boom)
 	require.Equal(t, uint64(3), res.Seq)
@@ -196,7 +198,7 @@ func TestHintCaptureError(t *testing.T) {
 
 func TestHintTimeout(t *testing.T) {
 	h := startCapturing(t, 50*time.Millisecond)
-	h.requests <- ports.HintScanRequest{Seq: 4, Output: "o", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 32}}}}
+	h.requests <- ports.HintScanRequest{Seq: 4, Output: "o", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 32}}}}
 	res := <-h.results
 	require.ErrorIs(t, res.Err, ErrTimeout)
 	require.Equal(t, uint64(4), res.Seq)
@@ -204,9 +206,9 @@ func TestHintTimeout(t *testing.T) {
 
 func TestHintBusy(t *testing.T) {
 	h := startCapturing(t, 5*time.Second)
-	h.requests <- ports.HintScanRequest{Seq: 1, Output: "o", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 32}}}}
+	h.requests <- ports.HintScanRequest{Seq: 1, Output: "o", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 32}}}}
 	creq := <-h.captures
-	h.requests <- ports.HintScanRequest{Seq: 2, Output: "o", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 32}}}}
+	h.requests <- ports.HintScanRequest{Seq: 2, Output: "o", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 32}}}}
 	res := <-h.results
 	require.ErrorIs(t, res.Err, ErrBusy)
 	require.Equal(t, uint64(2), res.Seq)
@@ -301,7 +303,7 @@ func scanOnce(t *testing.T, h *harness, seq uint64) ports.HintScanResult {
 		}
 		h.captured <- ports.CaptureDone{ID: creq.ID, Output: creq.Output}
 	}()
-	h.requests <- ports.HintScanRequest{Seq: seq, Output: "HEADLESS-1", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 32}}}}
+	h.requests <- ports.HintScanRequest{Seq: seq, Output: "HEADLESS-1", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 32}}}}
 	res := <-h.results
 	require.NoError(t, res.Err)
 	return res
@@ -412,7 +414,7 @@ func TestWorkerHoldsNoFrameAfterScan(t *testing.T) {
 			creq := <-captures
 			captured <- ports.CaptureDone{ID: creq.ID, Output: creq.Output}
 		}()
-		req := ports.HintScanRequest{Output: "o", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 32}}}}
+		req := ports.HintScanRequest{Output: "o", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 32}}}}
 		res := w.serve(context.Background(), req, make(chan ports.HintScanRequest), captures, captured, make(chan ports.HintScanResult, 1), 5*time.Second)
 		require.NoError(t, res.Err)
 		if dumpDir == "" {
@@ -433,7 +435,7 @@ func TestTimedOutCaptureIsReleasedWhenDone(t *testing.T) {
 	w := &worker{dumpDir: t.TempDir()}
 	captures := make(chan ports.CaptureRequest, 1)
 	captured := make(chan ports.CaptureDone, 1)
-	req := ports.HintScanRequest{Output: "o", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 32}}}}
+	req := ports.HintScanRequest{Output: "o", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 32}}}}
 	res := w.serve(context.Background(), req, make(chan ports.HintScanRequest), captures, captured, make(chan ports.HintScanResult, 1), 20*time.Millisecond)
 	require.ErrorIs(t, res.Err, ErrTimeout)
 	creq := <-captures
@@ -448,7 +450,7 @@ func TestTimedOutCaptureIsReleasedWhenDone(t *testing.T) {
 func TestHintLateCaptureReaped(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := startCapturing(t, 50*time.Millisecond)
-		h.requests <- ports.HintScanRequest{Seq: 1, Output: "o", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 32}}}}
+		h.requests <- ports.HintScanRequest{Seq: 1, Output: "o", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 32}}}}
 		creq := <-h.captures
 		res := <-h.results
 		require.ErrorIs(t, res.Err, ErrTimeout)
@@ -469,7 +471,7 @@ func TestScanLogsRawAndPreparedCounts(t *testing.T) {
 	var out bytes.Buffer // scan logs synchronously on this goroutine
 	ctx := zerowrap.WithCtx(context.Background(), zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &out}))
 	s := &detectorSource{det: det}
-	_, err := s.scan(ctx, ports.HintScanRequest{Width: 100, Height: 100, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 100, H: 100}}}}, []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 100, H: 100}}}, &frame{m: &mapping{}})
+	_, err := s.scan(ctx, ports.HintScanRequest{Width: 100, Height: 100, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: domain.Rect{W: 100, H: 100}}}}, []ports.HintWindow{{ID: 1, Rect: domain.Rect{W: 100, H: 100}}}, &frame{m: &mapping{}})
 	require.NoError(t, err)
 	var fields map[string]any
 	require.NoError(t, json.Unmarshal(out.Bytes(), &fields))

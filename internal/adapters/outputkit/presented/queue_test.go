@@ -4,20 +4,22 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-func ptr(m map[ports.WindowID]uint64) uintptr { return reflect.ValueOf(m).Pointer() }
+func ptr(m map[domain.WindowID]uint64) uintptr { return reflect.ValueOf(m).Pointer() }
 
 // An unchanged publication reuses its immutable snapshots; a change clones,
 // and earlier reports keep their maps.
 func TestQueueSnapshotsCloneOnlyOnChange(t *testing.T) {
 	var q Queue
-	seen := map[ports.WindowID]uint64{1: 4, 5: 7}
-	reads := map[ports.WindowID]uint64{5: 2}
+	seen := map[domain.WindowID]uint64{1: 4, 5: 7}
+	reads := map[domain.WindowID]uint64{5: 2}
 	q.Push(ports.OutputPresented{Output: "A", Seen: seen, ChildReads: reads})
 	first := q.Unsent()[0]
 	require.Equal(t, seen, first.Seen)
@@ -36,19 +38,19 @@ func TestQueueSnapshotsCloneOnlyOnChange(t *testing.T) {
 	reads[5] = 3
 	q.Push(ports.OutputPresented{Output: "A", Seen: seen, ChildReads: reads})
 	changed := q.Unsent()[0]
-	require.Equal(t, map[ports.WindowID]uint64{5: 3}, changed.ChildReads)
-	require.Equal(t, map[ports.WindowID]uint64{5: 2}, first.ChildReads, "sent snapshot stays immutable")
+	require.Equal(t, map[domain.WindowID]uint64{5: 3}, changed.ChildReads)
+	require.Equal(t, map[domain.WindowID]uint64{5: 2}, first.ChildReads, "sent snapshot stays immutable")
 	require.Equal(t, ptr(first.Seen), ptr(changed.Seen), "seen still unchanged")
 }
 
 // Flip-less reports fold into the newest one and keep its flip; flips queue.
 func TestQueueKeepsEveryFlip(t *testing.T) {
 	var q Queue
-	seen := map[ports.WindowID]uint64{1: 1}
+	seen := map[domain.WindowID]uint64{1: 1}
 	q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: 1}, Seen: seen})
 	q.Push(ports.OutputPresented{Seen: seen})
 	q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: 2}, Seen: seen})
-	q.Push(ports.OutputPresented{Seen: map[ports.WindowID]uint64{1: 3}})
+	q.Push(ports.OutputPresented{Seen: map[domain.WindowID]uint64{1: 3}})
 	u := q.Unsent()
 	require.Len(t, u, 2)
 	require.Equal(t, uint64(1), u[0].Flip.Seq)
@@ -59,15 +61,15 @@ func TestQueueKeepsEveryFlip(t *testing.T) {
 // Merge folds a flip into the next: counted as merged and its shown windows
 // carried, without mutating a shared Shows snapshot.
 func TestMergeCarriesShowsWithoutMutatingSharedSnapshot(t *testing.T) {
-	shared := map[ports.WindowID]uint64{2: 5}
-	old := &ports.FlipInfo{Seq: 1, Merged: 2, Shows: map[ports.WindowID]uint64{1: 4}, ScanoutReason: "nomem", OverlayReason: "no_plane"}
+	shared := map[domain.WindowID]uint64{2: 5}
+	old := &ports.FlipInfo{Seq: 1, Merged: 2, Shows: map[domain.WindowID]uint64{1: 4}, ScanoutReason: "nomem", OverlayReason: "no_plane"}
 	next := &ports.FlipInfo{Seq: 2, Shows: shared, ScanoutReason: "flip_refused"}
 	Merge(old, next)
 	require.Equal(t, "flip_refused", next.ScanoutReason, "newest reasons kept")
 	require.Empty(t, next.OverlayReason)
 	require.Equal(t, 3, next.Merged)
-	require.Equal(t, map[ports.WindowID]uint64{1: 4, 2: 5}, next.Shows)
-	require.Equal(t, map[ports.WindowID]uint64{2: 5}, shared, "shared snapshot untouched")
+	require.Equal(t, map[domain.WindowID]uint64{1: 4, 2: 5}, next.Shows)
+	require.Equal(t, map[domain.WindowID]uint64{2: 5}, shared, "shared snapshot untouched")
 }
 
 // The queue never merges flips: every flip of a turn is pushed to the sink.

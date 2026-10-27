@@ -8,6 +8,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -39,7 +41,7 @@ func TestSecurityRunWakePendingResumeAndOff(t *testing.T) {
 		r.EXPECT().UseTarget(mock.Anything).Return()
 		black := make(chan struct{}, 8)
 		desktop := make(chan struct{}, 2)
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 			if s.Seq == 99 {
 				desktop <- struct{}{}
 			} else {

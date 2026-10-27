@@ -5,6 +5,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -134,31 +135,31 @@ type capResolved struct {
 }
 
 // capResolve locates a target. A zero reason is success.
-func (c *Core) capResolve(t capTarget) (capResolved, ports.CaptureReason) {
+func (c *Core) capResolve(t capTarget) (capResolved, domain.CaptureReason) {
 	var r capResolved
 	if t.window != 0 {
 		sc, w := c.screenOf(t.window)
 		if w == nil || sc.name() == "" {
-			return r, ports.CaptureReasonWindowGone
+			return r, domain.CaptureReasonWindowGone
 		}
 		r.sc, r.ws, r.hidden, r.size = sc, w, true, c.windowSize(w, t.window)
 		if vs, vr, ok := c.windowRect(t.window); ok && vs == sc {
 			r.rect, r.visible = vr, true
 		}
-		return r, ports.CaptureReasonNone
+		return r, domain.CaptureReasonNone
 	}
 	if t.workspace != 0 {
 		sc, w := c.workspaceByID(t.workspace)
 		if w == nil || sc.name() == "" {
-			return r, ports.CaptureReasonWorkspaceGone
+			return r, domain.CaptureReasonWorkspaceGone
 		}
 		r.sc, r.ws, r.rect = sc, w, w.Output
 		r.hidden = sc.mon.Current() != w || sc.mon.previewing()
-		return r, ports.CaptureReasonNone
+		return r, domain.CaptureReasonNone
 	}
 	i := c.screenIndex(t.output)
 	if i < 0 || t.output == "" {
-		return r, ports.CaptureReasonOutputGone
+		return r, domain.CaptureReasonOutputGone
 	}
 	r.sc = c.screens[i]
 	r.rect = r.sc.mon.Output()
@@ -166,9 +167,9 @@ func (c *Core) capResolve(t capTarget) (capResolved, ports.CaptureReason) {
 		r.rect = intersect(r.rect, t.rect)
 	}
 	if r.rect.W <= 0 || r.rect.H <= 0 {
-		return r, ports.CaptureReasonInvalidRegion
+		return r, domain.CaptureReasonInvalidRegion
 	}
-	return r, ports.CaptureReasonNone
+	return r, domain.CaptureReasonNone
 }
 
 // captureOpen registers a session.
@@ -360,7 +361,7 @@ func (c *Core) captureEvaluate(ctx context.Context) (*capView, error) {
 		st := ports.CaptureSessionState{ID: s.open.ID}
 		r, reason := c.capResolve(s.target())
 		switch {
-		case reason != ports.CaptureReasonNone:
+		case reason != domain.CaptureReasonNone:
 		case s.open.Window != 0:
 			// A window is always rendered off screen, alone at its size.
 			st.Output, st.Rect, st.Hidden = r.sc.name(), r.size, true
@@ -378,7 +379,7 @@ func (c *Core) captureEvaluate(ctx context.Context) (*capView, error) {
 		}
 		st.Reason = reason
 		states = append(states, st)
-		if reason != ports.CaptureReasonNone {
+		if reason != domain.CaptureReasonNone {
 			if err := c.command(ctx, st); err != nil {
 				c.capt.sessions = append(alive, c.capt.sessions[i:]...)
 				return nil, err
@@ -398,7 +399,7 @@ func (c *Core) captureEvaluate(ctx context.Context) (*capView, error) {
 		ex := c.captureExcluded(e)
 		if len(ex) > ports.MaxCaptureExcluded {
 			// Fail closed: the session cannot leave them all out.
-			st := ports.CaptureSessionState{ID: e.session, Reason: ports.CaptureReasonTooManyExcluded}
+			st := ports.CaptureSessionState{ID: e.session, Reason: domain.CaptureReasonTooManyExcluded}
 			if err := c.command(ctx, st); err != nil {
 				return nil, err
 			}

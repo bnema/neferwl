@@ -7,6 +7,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -72,7 +73,7 @@ func TestSameCaptureStateComparesEveryField(t *testing.T) {
 		base := ports.CaptureSessionState{}
 		for _, v := range []ports.CaptureSessionState{
 			{ID: 1}, {Output: "A"}, {Rect: Rect{W: 1}}, {Workspace: 1}, {Hidden: true}, {Active: true},
-			{Reason: ports.CaptureReasonOutputGone}, {Exclusion: true}, {Revision: 1}, {Layers: []WindowID{1}},
+			{Reason: domain.CaptureReasonOutputGone}, {Exclusion: true}, {Revision: 1}, {Layers: []WindowID{1}},
 		} {
 			if sameCaptureState(base, v) {
 				t.Fatalf("a change of %+v is not seen", v)

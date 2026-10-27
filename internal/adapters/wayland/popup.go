@@ -3,6 +3,7 @@ package wayland
 import (
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 )
@@ -89,14 +90,14 @@ func (s *Server) newPopup(x *xdgSurface, r *xdgshell.Surface, id uint32, parentX
 		x.window = nil
 		x.surface.role = nil
 		x.configured, x.acked, x.serials = false, false, nil
-		x.geometry, x.pendingGeometry = ports.Rect{}, ports.Rect{}
+		x.geometry, x.pendingGeometry = domain.Rect{}, domain.Rect{}
 	}
 }
 
 func (*popup) Destroy(*xdgshell.Popup) {}
 
 // parentID is the window or layer surface the popup hangs from, 0 if none.
-func (p *popup) parentID() ports.WindowID {
+func (p *popup) parentID() domain.WindowID {
 	switch {
 	case p.parent != nil:
 		return p.parent.id

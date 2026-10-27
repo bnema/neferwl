@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/zerowrap"
 	"github.com/stretchr/testify/mock"
 )
@@ -19,7 +19,7 @@ func TestTraceFlipsOnlyOurCommit(t *testing.T) {
 	o.traceFlips = true
 	var log bytes.Buffer
 	o.log = zerowrap.New(zerowrap.Config{Level: "debug", Format: "json", Output: &log})
-	seen := map[ports.WindowID]uint64{}
+	seen := map[domain.WindowID]uint64{}
 	flips := func() int { return strings.Count(log.String(), `"message":"flip"`) }
 
 	if err := o.commitFrame(70, nil, false, false, pendingFrame{}); err != nil {

@@ -7,6 +7,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -250,7 +251,7 @@ func TestStashNavigationChainsPeekDim(t *testing.T) {
 func TestOverviewPileScalesFromStash(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, ic, sc, _ := stashRig(t, true)
-		from := map[WindowID]ports.Rect{}
+		from := map[WindowID]domain.Rect{}
 		s := indicatorScene(t, c)
 		for _, id := range []WindowID{2, 3} {
 			from[id] = sceneWindow(t, s, id).Rect

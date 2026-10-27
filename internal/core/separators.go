@@ -1,6 +1,9 @@
 package core
 
-import "github.com/bnema/neferwl/internal/ports"
+import (
+	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
+)
 
 // Two modes. Without gaps (gap 0), borders are tmux-style lines (like tmux
 // screen-redraw.c): lines separate visible panes, never outline a lone tile
@@ -17,7 +20,7 @@ import "github.com/bnema/neferwl/internal/ports"
 // focused output's focused window can light lines; keyboard grabs by popups
 // and layers do not change the underlying window's visual focus.
 
-var sides = [...]ports.Sides{ports.SideLeft, ports.SideRight, ports.SideTop, ports.SideBottom}
+var sides = [...]domain.Sides{domain.SideLeft, domain.SideRight, domain.SideTop, domain.SideBottom}
 
 // separators are the lines of the windows seen in v, each clipped to its
 // window's area, inactive ones first so active ones draw over them. lit
@@ -84,7 +87,7 @@ func separators(ps []Placement, width, gap int, v viewport, lit bool) []ports.Se
 	}
 	f := focused
 	for _, s := range sides {
-		var line ports.Rect
+		var line domain.Rect
 		switch {
 		case f.Neighbors&s != 0 && f.Inset&s != 0:
 			line = strip(f.Rect, s, 0, width)
@@ -109,14 +112,14 @@ func separators(ps []Placement, width, gap int, v viewport, lit bool) []ports.Se
 
 // strip is the b-wide strip along side s of r: inside r when out is 0,
 // else just outside it (the neighbor's line).
-func strip(r Rect, s ports.Sides, out, b int) Rect {
+func strip(r Rect, s domain.Sides, out, b int) Rect {
 	b = min(b, max(r.W/2, out), max(r.H/2, out))
 	switch s {
-	case ports.SideLeft:
+	case domain.SideLeft:
 		return Rect{X: r.X - out, Y: r.Y, W: b, H: r.H}
-	case ports.SideRight:
+	case domain.SideRight:
 		return Rect{X: r.X + r.W - b + out, Y: r.Y, W: b, H: r.H}
-	case ports.SideTop:
+	case domain.SideTop:
 		return Rect{X: r.X, Y: r.Y - out, W: r.W, H: b}
 	}
 	return Rect{X: r.X, Y: r.Y + r.H - b + out, W: r.W, H: b}
@@ -124,21 +127,21 @@ func strip(r Rect, s ports.Sides, out, b int) Rect {
 
 // closeCorners runs a line along side s of p b further at each end where
 // the crossing line lies outside p (a neighbor's), so lit lines meet.
-func closeCorners(line Rect, p Placement, s ports.Sides, b int) Rect {
-	outside := func(s ports.Sides) bool { return p.Neighbors&s != 0 && p.Inset&s == 0 }
-	if s == ports.SideLeft || s == ports.SideRight {
-		if outside(ports.SideTop) {
+func closeCorners(line Rect, p Placement, s domain.Sides, b int) Rect {
+	outside := func(s domain.Sides) bool { return p.Neighbors&s != 0 && p.Inset&s == 0 }
+	if s == domain.SideLeft || s == domain.SideRight {
+		if outside(domain.SideTop) {
 			line.Y, line.H = line.Y-b, line.H+b
 		}
-		if outside(ports.SideBottom) {
+		if outside(domain.SideBottom) {
 			line.H += b
 		}
 		return line
 	}
-	if outside(ports.SideLeft) {
+	if outside(domain.SideLeft) {
 		line.X, line.W = line.X-b, line.W+b
 	}
-	if outside(ports.SideRight) {
+	if outside(domain.SideRight) {
 		line.W += b
 	}
 	return line
@@ -146,15 +149,15 @@ func closeCorners(line Rect, p Placement, s ports.Sides, b int) Rect {
 
 // half keeps the half of a line owned by the tile on side s of it: the
 // first half for the left or top tile, else the second.
-func half(r Rect, s ports.Sides) Rect {
+func half(r Rect, s domain.Sides) Rect {
 	switch s {
-	case ports.SideRight:
+	case domain.SideRight:
 		r.H /= 2
-	case ports.SideLeft:
+	case domain.SideLeft:
 		r.Y, r.H = r.Y+r.H/2, r.H-r.H/2
-	case ports.SideBottom:
+	case domain.SideBottom:
 		r.W /= 2
-	case ports.SideTop:
+	case domain.SideTop:
 		r.X, r.W = r.X+r.W/2, r.W-r.W/2
 	}
 	return r

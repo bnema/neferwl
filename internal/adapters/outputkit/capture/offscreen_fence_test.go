@@ -6,6 +6,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -47,7 +49,7 @@ func hiddenPipeline(t *testing.T, fences ...*os.File) (*Pipeline, chan ports.Cap
 	return p, replies, child
 }
 
-func hiddenSceneWindows(ids ...ports.WindowID) ports.Scene {
+func hiddenSceneWindows(ids ...domain.WindowID) ports.Scene {
 	s := hiddenScene()
 	s.CaptureScene.Windows, s.CaptureScene.Layers = nil, nil
 	for _, id := range ids {
@@ -56,7 +58,7 @@ func hiddenSceneWindows(ids ...ports.WindowID) ports.Scene {
 	return s
 }
 
-func submitHiddenOne(t *testing.T, p *Pipeline, s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, id uint64) {
+func submitHiddenOne(t *testing.T, p *Pipeline, s ports.Scene, surfaces map[domain.WindowID]ports.SurfaceContent, id uint64) {
 	t.Helper()
 	p.SubmitHidden(s, surfaces, []ports.CaptureRequest{hiddenRequest(t, id, image.Rect(0, 0, 200, 100))})
 }
@@ -104,15 +106,15 @@ func TestTerminalChildFenceClosesPipelineBeforeClearingHolds(t *testing.T) {
 		require.Equal(t, 1, p.off.nf, "hold retained until device closes")
 	}).Once()
 	p.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
-	submitHiddenOne(t, p, hiddenSceneWindows(5), map[ports.WindowID]ports.SurfaceContent{5: {Seq: 2}}, 1)
-	_, reads, busy := p.CapHiddenSeen(map[ports.WindowID]uint64{5: 7})
+	submitHiddenOne(t, p, hiddenSceneWindows(5), map[domain.WindowID]ports.SurfaceContent{5: {Seq: 2}}, 1)
+	_, reads, busy := p.CapHiddenSeen(map[domain.WindowID]uint64{5: 7})
 	require.True(t, busy)
-	require.Equal(t, map[ports.WindowID]uint64{5: 2}, reads)
+	require.Equal(t, map[domain.WindowID]uint64{5: 2}, reads)
 	require.NoError(t, read.Close()) // write end now polls POLLERR
 	p.Retire(ports.Scene{})          // session end must not wait forever on the error
 	require.Nil(t, p.off.r, "failed device closed")
 	require.Nil(t, p.HiddenCompleted(), "failed worker joined")
-	seen := map[ports.WindowID]uint64{5: 7}
+	seen := map[domain.WindowID]uint64{5: 7}
 	got, reads, busy := p.CapHiddenSeen(seen)
 	require.False(t, busy)
 	require.Empty(t, reads, "closed device lifts non-expiring holds")
@@ -140,24 +142,24 @@ func TestCapHiddenSeenPerFenceCeilings(t *testing.T) {
 	defer p.Close(nil)
 
 	// Render 1 drew window 5 (content Seq 2); render 2 drew 5 (Seq 6) and 6 (Seq 3).
-	submitHiddenOne(t, p, hiddenSceneWindows(5), map[ports.WindowID]ports.SurfaceContent{5: {ID: 5, Seq: 2}}, 1)
-	submitHiddenOne(t, p, hiddenSceneWindows(5, 6), map[ports.WindowID]ports.SurfaceContent{5: {ID: 5, Seq: 6}, 6: {ID: 6, Seq: 3}}, 2)
+	submitHiddenOne(t, p, hiddenSceneWindows(5), map[domain.WindowID]ports.SurfaceContent{5: {ID: 5, Seq: 2}}, 1)
+	submitHiddenOne(t, p, hiddenSceneWindows(5, 6), map[domain.WindowID]ports.SurfaceContent{5: {ID: 5, Seq: 6}, 6: {ID: 6, Seq: 3}}, 2)
 
 	// 5 is capped by the lowest ceiling among the unfinished renders that drew
 	// it; 6 by the second; the display's window 1 and an unrelated 9 are free.
-	seen := map[ports.WindowID]uint64{1: 40, 5: 8, 6: 8, 9: 50}
+	seen := map[domain.WindowID]uint64{1: 40, 5: 8, 6: 8, 9: 50}
 	got, reads, capped := p.CapHiddenSeen(seen)
-	require.Equal(t, map[ports.WindowID]uint64{5: 2, 6: 3}, reads)
+	require.Equal(t, map[domain.WindowID]uint64{5: 2, 6: 3}, reads)
 	require.True(t, capped)
-	require.Equal(t, map[ports.WindowID]uint64{1: 40, 5: 2, 6: 3, 9: 50}, got)
+	require.Equal(t, map[domain.WindowID]uint64{1: 40, 5: 2, 6: 3, 9: 50}, got)
 	require.Equal(t, uint64(8), seen[5], "input untouched")
 
 	// Render 1 finishes: window 5 is now limited by render 2 only.
 	signalFence(t, w1)
 	got, reads, capped = p.CapHiddenSeen(seen)
-	require.Equal(t, map[ports.WindowID]uint64{5: 6, 6: 3}, reads)
+	require.Equal(t, map[domain.WindowID]uint64{5: 6, 6: 3}, reads)
 	require.True(t, capped)
-	require.Equal(t, map[ports.WindowID]uint64{1: 40, 5: 6, 6: 3, 9: 50}, got)
+	require.Equal(t, map[domain.WindowID]uint64{1: 40, 5: 6, 6: 3, 9: 50}, got)
 
 	// A window the earlier render never saw is not capped by it: a display
 	// window that is new to the child releases at once.
@@ -177,11 +179,11 @@ func TestCapHiddenSeenMissingContentCapsToZero(t *testing.T) {
 	f1, _ := fencePipe(t)
 	p, replies, _ := hiddenPipeline(t, f1)
 	defer p.Close(nil)
-	submitHiddenOne(t, p, hiddenSceneWindows(5), map[ports.WindowID]ports.SurfaceContent{}, 1)
-	got, reads, capped := p.CapHiddenSeen(map[ports.WindowID]uint64{5: 4, 7: 4})
-	require.Equal(t, map[ports.WindowID]uint64{5: 0}, reads)
+	submitHiddenOne(t, p, hiddenSceneWindows(5), map[domain.WindowID]ports.SurfaceContent{}, 1)
+	got, reads, capped := p.CapHiddenSeen(map[domain.WindowID]uint64{5: 4, 7: 4})
+	require.Equal(t, map[domain.WindowID]uint64{5: 0}, reads)
 	require.True(t, capped)
-	require.Equal(t, map[ports.WindowID]uint64{5: 0, 7: 4}, got)
+	require.Equal(t, map[domain.WindowID]uint64{5: 0, 7: 4}, got)
 	awaitCapture(t, replies)
 }
 
@@ -189,8 +191,8 @@ func TestCapHiddenSeenNoAllocationInSteadyState(t *testing.T) {
 	f1, _ := fencePipe(t)
 	p, replies, _ := hiddenPipeline(t, f1)
 	defer p.Close(nil)
-	submitHiddenOne(t, p, hiddenSceneWindows(5), map[ports.WindowID]ports.SurfaceContent{5: {ID: 5, Seq: 2}}, 1)
-	seen := map[ports.WindowID]uint64{1: 40, 5: 8}
+	submitHiddenOne(t, p, hiddenSceneWindows(5), map[domain.WindowID]ports.SurfaceContent{5: {ID: 5, Seq: 2}}, 1)
+	seen := map[domain.WindowID]uint64{1: 40, 5: 8}
 	p.CapHiddenSeen(seen) // warm the scratch map
 	allocs := testing.AllocsPerRun(100, func() { p.CapHiddenSeen(seen) })
 	require.LessOrEqual(t, allocs, float64(1), "only the poll descriptor may allocate")

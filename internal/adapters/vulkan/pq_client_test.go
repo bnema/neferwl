@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -53,8 +54,8 @@ func TestPQClientComposition(t *testing.T) {
 			})
 			buf := &ports.DMABuf{ID: uint64(format.Format), Width: 64, Height: 4, Format: format.Format, Planes: []ports.DMABufPlane{{File: f, Stride: 256}}}
 			c := ports.SurfaceContent{ID: 1, Width: 64, Height: 4, Opaque: name[0] == 'X', Color: ports.SurfaceColor{TF: ports.ColorTFPQ, Primaries: ports.ColorPrimariesBT2020}, DMABuf: buf}
-			scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 4}}}}
-			if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: c}); err != nil {
+			scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 4}}}}
+			if err := render(r, scene, map[domain.WindowID]ports.SurfaceContent{1: c}); err != nil {
 				t.Fatal(err)
 			}
 			for i, s := range samples {

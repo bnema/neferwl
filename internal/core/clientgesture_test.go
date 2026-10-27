@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -66,9 +68,9 @@ func TestPinchGoesToPointerFocus(t *testing.T) {
 		r.input <- ports.PinchUpdate{DX: 1, DY: -2, Scale: 1.25, Rotation: 5, Time: 2 * time.Second}
 		r.input <- ports.PinchEnd{Time: 3 * time.Second}
 		for _, want := range []ports.ClientCommand{
-			ports.GestureBeginTo{ID: 1, Kind: ports.GesturePinch, Fingers: 2, Time: time.Second},
-			ports.GestureUpdateTo{ID: 1, Kind: ports.GesturePinch, DX: 1, DY: -2, Scale: 1.25, Rotation: 5, Time: 2 * time.Second},
-			ports.GestureEndTo{ID: 1, Kind: ports.GesturePinch, Time: 3 * time.Second},
+			ports.GestureBeginTo{ID: 1, Kind: domain.GesturePinch, Fingers: 2, Time: time.Second},
+			ports.GestureUpdateTo{ID: 1, Kind: domain.GesturePinch, DX: 1, DY: -2, Scale: 1.25, Rotation: 5, Time: 2 * time.Second},
+			ports.GestureEndTo{ID: 1, Kind: domain.GesturePinch, Time: 3 * time.Second},
 		} {
 			if v := pointerCommand(t, r.commands); v != want {
 				t.Fatalf("got %#v, want %#v", v, want)
@@ -88,7 +90,7 @@ func TestGestureEndWithoutTime(t *testing.T) {
 		r.input <- ports.PinchEnd{Cancelled: true}
 		pointerCommand(t, r.commands)
 		pointerCommand(t, r.commands)
-		if v := pointerCommand(t, r.commands); v != (ports.GestureEndTo{ID: 1, Kind: ports.GesturePinch, Cancelled: true, Time: 2 * time.Second}) {
+		if v := pointerCommand(t, r.commands); v != (ports.GestureEndTo{ID: 1, Kind: domain.GesturePinch, Cancelled: true, Time: 2 * time.Second}) {
 			t.Fatal(v)
 		}
 
@@ -100,10 +102,10 @@ func TestHoldGoesToPointerFocus(t *testing.T) {
 		r := gestureRig(t)
 		r.input <- ports.HoldBegin{Fingers: 3, Time: time.Second}
 		r.input <- ports.HoldEnd{Cancelled: true, Time: 2 * time.Second}
-		if v := pointerCommand(t, r.commands); v != (ports.GestureBeginTo{ID: 1, Kind: ports.GestureHold, Fingers: 3, Time: time.Second}) {
+		if v := pointerCommand(t, r.commands); v != (ports.GestureBeginTo{ID: 1, Kind: domain.GestureHold, Fingers: 3, Time: time.Second}) {
 			t.Fatal(v)
 		}
-		if v := pointerCommand(t, r.commands); v != (ports.GestureEndTo{ID: 1, Kind: ports.GestureHold, Cancelled: true, Time: 2 * time.Second}) {
+		if v := pointerCommand(t, r.commands); v != (ports.GestureEndTo{ID: 1, Kind: domain.GestureHold, Cancelled: true, Time: 2 * time.Second}) {
 			t.Fatal(v)
 		}
 
@@ -121,9 +123,9 @@ func TestSwipeFingerCounts(t *testing.T) {
 			r.input <- ports.SwipeUpdate{DX: 3, DY: 4, AccelDX: 6, AccelDY: 8, Time: 2 * time.Second}
 			r.input <- ports.SwipeEnd{Time: 3 * time.Second}
 			for _, want := range []ports.ClientCommand{
-				ports.GestureBeginTo{ID: 1, Kind: ports.GestureSwipe, Fingers: fingers, Time: time.Second},
-				ports.GestureUpdateTo{ID: 1, Kind: ports.GestureSwipe, DX: 6, DY: 8, Time: 2 * time.Second},
-				ports.GestureEndTo{ID: 1, Kind: ports.GestureSwipe, Time: 3 * time.Second},
+				ports.GestureBeginTo{ID: 1, Kind: domain.GestureSwipe, Fingers: fingers, Time: time.Second},
+				ports.GestureUpdateTo{ID: 1, Kind: domain.GestureSwipe, DX: 6, DY: 8, Time: 2 * time.Second},
+				ports.GestureEndTo{ID: 1, Kind: domain.GestureSwipe, Time: 3 * time.Second},
 			} {
 				if v := pointerCommand(t, r.commands); v != want {
 					t.Fatalf("%d fingers: got %#v, want %#v", fingers, v, want)
@@ -171,15 +173,15 @@ func TestGestureCancelledOnFocusChange(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := gestureRig(t)
 		r.input <- ports.PinchBegin{Fingers: 2, Time: time.Second}
-		if v := pointerCommand(t, r.commands); v != (ports.GestureBeginTo{ID: 1, Kind: ports.GesturePinch, Fingers: 2, Time: time.Second}) {
+		if v := pointerCommand(t, r.commands); v != (ports.GestureBeginTo{ID: 1, Kind: domain.GesturePinch, Fingers: 2, Time: time.Second}) {
 			t.Fatal(v)
 		}
 		r.input <- ports.PinchUpdate{Scale: 1.1, Time: 2 * time.Second}
-		if v := pointerCommand(t, r.commands); v != (ports.GestureUpdateTo{ID: 1, Kind: ports.GesturePinch, Scale: 1.1, Time: 2 * time.Second}) {
+		if v := pointerCommand(t, r.commands); v != (ports.GestureUpdateTo{ID: 1, Kind: domain.GesturePinch, Scale: 1.1, Time: 2 * time.Second}) {
 			t.Fatal(v)
 		}
 		r.input <- ports.PointerMotion{X: 300, Y: 50}
-		if v := pointerCommand(t, r.commands); v != (ports.GestureEndTo{ID: 1, Kind: ports.GesturePinch, Cancelled: true, Time: 2 * time.Second}) {
+		if v := pointerCommand(t, r.commands); v != (ports.GestureEndTo{ID: 1, Kind: domain.GesturePinch, Cancelled: true, Time: 2 * time.Second}) {
 			t.Fatal(v)
 		}
 		if v := pointerCommand(t, r.commands); v != (ports.PointerFocus{}) {
@@ -201,11 +203,11 @@ func TestGestureCancelledOnUnmap(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := gestureRig(t)
 		r.input <- ports.HoldBegin{Fingers: 3, Time: time.Second}
-		if v := pointerCommand(t, r.commands); v != (ports.GestureBeginTo{ID: 1, Kind: ports.GestureHold, Fingers: 3, Time: time.Second}) {
+		if v := pointerCommand(t, r.commands); v != (ports.GestureBeginTo{ID: 1, Kind: domain.GestureHold, Fingers: 3, Time: time.Second}) {
 			t.Fatal(v)
 		}
 		r.client <- ports.WindowUnmapped{ID: 1}
-		if v := pointerCommand(t, r.commands); v != (ports.GestureEndTo{ID: 1, Kind: ports.GestureHold, Cancelled: true, Time: time.Second}) {
+		if v := pointerCommand(t, r.commands); v != (ports.GestureEndTo{ID: 1, Kind: domain.GestureHold, Cancelled: true, Time: time.Second}) {
 			t.Fatal(v)
 		}
 		if v := pointerCommand(t, r.commands); v != (ports.PointerFocus{}) {
@@ -222,9 +224,9 @@ func TestGestureBeginEndsPrevious(t *testing.T) {
 		r.input <- ports.PinchBegin{Fingers: 2, Time: time.Second}
 		r.input <- ports.HoldBegin{Fingers: 3, Time: 2 * time.Second}
 		for _, want := range []ports.ClientCommand{
-			ports.GestureBeginTo{ID: 1, Kind: ports.GesturePinch, Fingers: 2, Time: time.Second},
-			ports.GestureEndTo{ID: 1, Kind: ports.GesturePinch, Cancelled: true, Time: 2 * time.Second},
-			ports.GestureBeginTo{ID: 1, Kind: ports.GestureHold, Fingers: 3, Time: 2 * time.Second},
+			ports.GestureBeginTo{ID: 1, Kind: domain.GesturePinch, Fingers: 2, Time: time.Second},
+			ports.GestureEndTo{ID: 1, Kind: domain.GesturePinch, Cancelled: true, Time: 2 * time.Second},
+			ports.GestureBeginTo{ID: 1, Kind: domain.GestureHold, Fingers: 3, Time: 2 * time.Second},
 		} {
 			if v := pointerCommand(t, r.commands); v != want {
 				t.Fatalf("got %#v, want %#v", v, want)
@@ -266,7 +268,7 @@ func TestGesturesRefusedWhileLocked(t *testing.T) {
 		for _, want := range []ports.ClientCommand{
 			ports.PointerFocus{ID: 1, X: 50, Y: 50},
 			ports.PointerMotionTo{ID: 1, X: 50, Y: 50},
-			ports.GestureBeginTo{ID: 1, Kind: ports.GesturePinch, Fingers: 2, Time: time.Second},
+			ports.GestureBeginTo{ID: 1, Kind: domain.GesturePinch, Fingers: 2, Time: time.Second},
 		} {
 			if v := unwrap(t, r.commands, unlocked); v != want {
 				t.Fatalf("got %#v, want %#v", v, want)

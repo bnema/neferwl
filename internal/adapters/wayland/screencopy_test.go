@@ -10,10 +10,13 @@ import (
 	"testing"
 	"time"
 
-	source "github.com/bnema/go-wayland-bindings/server/extimagecapturesource"
-	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
+	"github.com/bnema/neferwl/internal/domain"
 
+	source "github.com/bnema/go-wayland-bindings/server/extimagecapturesource"
+
+	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+
 	wlr "github.com/bnema/go-wayland-bindings/server/wlrscreencopy"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/ports"
@@ -48,10 +51,10 @@ func TestCaptureRegionTransform(t *testing.T) {
 	if want := image.Rect(0, 90, 20, 100); got != want {
 		t.Fatalf("captureRegion %v, want %v", got, want)
 	}
-	if back := logicalRegion(o, got); back != (ports.Rect{X: 0, Y: 0, W: 10, H: 20}) {
+	if back := logicalRegion(o, got); back != (domain.Rect{X: 0, Y: 0, W: 10, H: 20}) {
 		t.Fatalf("logicalRegion %+v", back)
 	}
-	if full := logicalRegion(o, image.Rect(0, 0, 200, 100)); full != (ports.Rect{}) {
+	if full := logicalRegion(o, image.Rect(0, 0, 200, 100)); full != (domain.Rect{}) {
 		t.Fatalf("full target %+v", full)
 	}
 }

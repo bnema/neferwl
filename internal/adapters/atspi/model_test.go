@@ -3,29 +3,29 @@ package atspi
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/require"
 )
 
 func TestToTargetConvertsWindowCoordinates(t *testing.T) {
-	win := ports.Rect{X: 100, Y: 50, W: 800, H: 600}
+	win := domain.Rect{X: 100, Y: 50, W: 800, H: 600}
 	// The frame origin (fx, fy) is subtracted: toolkit offsets cancel out.
 	got, ok := toTarget(ports.HintWindow{Rect: win}, 10, 20, element{role: roleLink, x: 110, y: 120, w: 40, h: 16})
 	require.True(t, ok)
-	require.Equal(t, ports.HintTarget{Rect: ports.Rect{X: 200, Y: 150, W: 40, H: 16}, Kind: ports.HintLink, Source: ports.HintSourceATSPI, Score: 1}, got)
+	require.Equal(t, ports.HintTarget{Rect: domain.Rect{X: 200, Y: 150, W: 40, H: 16}, Kind: domain.HintLink, Source: domain.HintSourceATSPI, Score: 1}, got)
 }
 
 func TestToTargetClipsToWindow(t *testing.T) {
-	win := ports.Rect{X: 100, Y: 50, W: 200, H: 100}
+	win := domain.Rect{X: 100, Y: 50, W: 200, H: 100}
 	got, ok := toTarget(ports.HintWindow{Rect: win}, 0, 0, element{role: rolePushButton, x: 180, y: 90, w: 60, h: 30})
 	require.True(t, ok)
-	require.Equal(t, ports.Rect{X: 280, Y: 140, W: 20, H: 10}, got.Rect)
-	require.Equal(t, ports.HintButton, got.Kind)
+	require.Equal(t, domain.Rect{X: 280, Y: 140, W: 20, H: 10}, got.Rect)
+	require.Equal(t, domain.HintButton, got.Kind)
 }
 
 func TestToTargetDropsEmptyAndOutside(t *testing.T) {
-	win := ports.Rect{X: 0, Y: 0, W: 100, H: 100}
+	win := domain.Rect{X: 0, Y: 0, W: 100, H: 100}
 	for name, e := range map[string]element{
 		"zero width":  {role: roleLink, x: 1, y: 1, w: 0, h: 10},
 		"neg height":  {role: roleLink, x: 1, y: 1, w: 10, h: -1},
@@ -39,9 +39,9 @@ func TestToTargetDropsEmptyAndOutside(t *testing.T) {
 }
 
 func TestRoleKindMapping(t *testing.T) {
-	require.Equal(t, ports.HintLink, kindOf(roleLink))
+	require.Equal(t, domain.HintLink, kindOf(roleLink))
 	for _, r := range []uint32{rolePushButton, roleToggleButton, roleCheckBox, roleRadioButton, roleMenuItem, rolePageTab, roleComboBox} {
-		require.Equal(t, ports.HintButton, kindOf(r), r)
+		require.Equal(t, domain.HintButton, kindOf(r), r)
 		require.True(t, isClickable(r, false), r)
 		require.False(t, isClickable(r, true), r)
 	}
@@ -61,8 +61,8 @@ func TestRoleAndStateBits(t *testing.T) {
 
 func wins(ws ...ports.HintWindow) []ports.HintWindow { return ws }
 
-func win(id ports.WindowID, w, h int, focused bool) ports.HintWindow {
-	return ports.HintWindow{ID: id, PID: 1, Rect: ports.Rect{W: w, H: h}, Focused: focused}
+func win(id domain.WindowID, w, h int, focused bool) ports.HintWindow {
+	return ports.HintWindow{ID: id, PID: 1, Rect: domain.Rect{W: w, H: h}, Focused: focused}
 }
 
 func TestMatchFramesSingle(t *testing.T) {

@@ -7,9 +7,9 @@ import (
 	"os/exec"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/require"
 )
 
 // canvas is a synthetic grayscale band: bg everywhere, ink for text.
@@ -73,10 +73,10 @@ func TestUnderline(t *testing.T) {
 				c.underline(10, 50, 32)
 				got := scanUnder(c, w)
 				require.Len(t, got, 1)
-				require.Equal(t, ports.HintLink, got[0].Kind)
-				require.Equal(t, ports.HintSourceOCR, got[0].Source)
+				require.Equal(t, domain.HintLink, got[0].Kind)
+				require.Equal(t, domain.HintSourceOCR, got[0].Source)
 				require.Equal(t, float32(1), got[0].Score)
-				require.Equal(t, ports.WindowID(0), got[0].Window)
+				require.Equal(t, domain.WindowID(0), got[0].Window)
 				require.Equal(t, 10, got[0].Rect.X)
 
 				c = mk()
@@ -141,7 +141,7 @@ func TestUnderlinedURLIsOneTextTarget(t *testing.T) {
 	c.underline(10, 110, 32)
 	got := scanUnder(c, w)
 	require.Len(t, got, 1)
-	require.Equal(t, ports.HintSourceOCR, got[0].Source)
+	require.Equal(t, domain.HintSourceOCR, got[0].Source)
 }
 
 // ocrTestdata reads the words of a testdata image with the real tesseract.
@@ -213,7 +213,7 @@ func TestUnderlineOnBrowserTestdata(t *testing.T) {
 // and an input box, which must yield nothing.
 func TestUnderlineOnRealRender(t *testing.T) {
 	_, words := ocrTestdata(t, "underline.png")
-	near := func(r ports.Rect, x0, y0, x1, y1 int) bool {
+	near := func(r domain.Rect, x0, y0, x1, y1 int) bool {
 		const tol = 8
 		abs := func(v int) int { return max(v, -v) }
 		return abs(r.X-x0) <= tol && abs(r.Y-y0) <= tol && abs(r.X+r.W-x1) <= tol && abs(r.Y+r.H-y1) <= tol

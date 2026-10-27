@@ -4,6 +4,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/idleinhibit"
 	"github.com/bnema/go-wayland-bindings/server/keyboardshortcutsinhibit"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 )
@@ -18,7 +19,7 @@ import (
 type inhibitor struct {
 	surf     *surface
 	shortcut *keyboardshortcutsinhibit.ZwpKeyboardShortcutsInhibitorV1 // nil: idle
-	window   ports.WindowID                                            // reported to core (0: not yet)
+	window   domain.WindowID                                           // reported to core (0: not yet)
 	active   bool                                                      // shortcuts: last state sent
 }
 
@@ -106,7 +107,7 @@ func (s *Server) removeInhibitor(in *inhibitor) {
 // each kind, after any change: an inhibitor added or removed, a window
 // mapped or unmapped.
 func (s *Server) syncInhibitors() {
-	shortcuts, idle := map[ports.WindowID]bool{}, map[ports.WindowID]bool{}
+	shortcuts, idle := map[domain.WindowID]bool{}, map[domain.WindowID]bool{}
 	for _, in := range s.inhibitors {
 		in.window = 0
 		if in.surf != nil && !in.surf.destroyed {
@@ -133,8 +134,8 @@ func (s *Server) syncInhibitors() {
 }
 
 // diffSets is the membership changes from old to cur.
-func diffSets(old, cur map[ports.WindowID]bool) map[ports.WindowID]bool {
-	out := map[ports.WindowID]bool{}
+func diffSets(old, cur map[domain.WindowID]bool) map[domain.WindowID]bool {
+	out := map[domain.WindowID]bool{}
 	for id := range cur {
 		if !old[id] {
 			out[id] = true

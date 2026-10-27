@@ -7,6 +7,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -82,7 +84,7 @@ func TestProtectedModesetDisableSendsInactiveFormats(t *testing.T) {
 			defer cancel()
 			if stage != "disable-failure" {
 				r.EXPECT().UseTarget(0).Return().Once()
-				r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+				r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 					// Disable feedback must precede GPU writes, not just return.
 					select {
 					case f := <-feedback:

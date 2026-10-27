@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -19,7 +20,7 @@ import (
 // it never reaches the compositor or another window.
 type clientGesture struct {
 	on   bool
-	kind ports.GestureKind
+	kind domain.GestureKind
 	// id is the window that got the begin; 0 once cancelled or when none had
 	// the pointer.
 	id WindowID
@@ -33,7 +34,7 @@ func forwardsSwipe(fingers int) bool { return fingers != 3 && fingers != 4 }
 
 // gestureBegin starts forwarding a gesture to the window with the pointer
 // focus. One still running (its end was lost) ends cancelled first.
-func (c *Core) gestureBegin(ctx context.Context, kind ports.GestureKind, fingers int, at time.Duration) error {
+func (c *Core) gestureBegin(ctx context.Context, kind domain.GestureKind, fingers int, at time.Duration) error {
 	if err := c.gestureAbort(ctx, at); err != nil {
 		return err
 	}
@@ -64,7 +65,7 @@ func (c *Core) gestureUpdate(ctx context.Context, u ports.GestureUpdateTo) error
 }
 
 // gestureEnd ends the forwarded gesture of that kind.
-func (c *Core) gestureEnd(ctx context.Context, kind ports.GestureKind, cancelled bool, at time.Duration) error {
+func (c *Core) gestureEnd(ctx context.Context, kind domain.GestureKind, cancelled bool, at time.Duration) error {
 	g := c.gesture
 	if !g.on || g.kind != kind {
 		return nil

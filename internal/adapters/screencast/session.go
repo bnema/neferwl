@@ -3,6 +3,7 @@ package screencast
 import (
 	"strconv"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -114,12 +115,12 @@ func (s *Service) record(req *request, sess *session) {
 	}
 	*st = stream{used: true, sess: sess, cursor: req.cursor != 0, maxFPS: defaultFPS, pwState: -2}
 	if req.method == mRecordWindow {
-		if !s.haveWindow(ports.WindowID(req.window)) {
+		if !s.haveWindow(domain.WindowID(req.window)) {
 			*st = stream{}
 			s.replyErr(req, errInvalidArgs, "no such window")
 			return
 		}
-		st.window = ports.WindowID(req.window)
+		st.window = domain.WindowID(req.window)
 		// A window moves and resizes: the stream carries no position.
 		st.px, st.py, st.pw, st.ph = 0, 0, 1, 1
 	} else {
@@ -201,7 +202,7 @@ func (s *Service) outputByName(name string) *ports.CastOutput {
 	return nil
 }
 
-func (s *Service) haveWindow(id ports.WindowID) bool {
+func (s *Service) haveWindow(id domain.WindowID) bool {
 	for i := range s.inv.Windows {
 		if s.inv.Windows[i].ID == id {
 			return true

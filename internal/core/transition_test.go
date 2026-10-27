@@ -6,11 +6,12 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
 // xOf is the X of window id in s, shown or not.
-func xOf(t *testing.T, s ports.Scene, id ports.WindowID) int {
+func xOf(t *testing.T, s ports.Scene, id domain.WindowID) int {
 	t.Helper()
 	for _, w := range s.Windows {
 		if w.ID == id {
@@ -25,11 +26,11 @@ func xOf(t *testing.T, s ports.Scene, id ports.WindowID) int {
 // first column, settled: the view is at 0.
 func fourColumns(t *testing.T, r *swipeRig) {
 	t.Helper()
-	for id := ports.WindowID(1); id <= 4; id++ {
+	for id := domain.WindowID(1); id <= 4; id++ {
 		r.mapWindow(t, id)
 	}
 	for range 3 {
-		r.key(t, "Left", ports.ModAlt)
+		r.key(t, "Left", domain.ModAlt)
 	}
 	if r.cfg.Animations.On {
 		r.settle(t)
@@ -42,11 +43,11 @@ func TestKeyScrollTransition(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, nil)
 		threeColumns(t, r)
-		r.key(t, "Left", ports.ModAlt)
-		r.key(t, "Left", ports.ModAlt)
+		r.key(t, "Left", domain.ModAlt)
+		r.key(t, "Left", domain.ModAlt)
 		r.settle(t)
-		r.key(t, "Right", ports.ModAlt) // 2 is on screen: nothing scrolls
-		s := r.key(t, "Right", ports.ModAlt)[0]
+		r.key(t, "Right", domain.ModAlt) // 2 is on screen: nothing scrolls
+		s := r.key(t, "Right", domain.ModAlt)[0]
 		if got := xOf(t, s, 1); got != 0 {
 			t.Fatalf("column 1 at %d right after the key, want the old 0", got)
 		}
@@ -66,10 +67,10 @@ func TestChainedKeysNeverJumpBack(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, nil)
 		fourColumns(t, r)
-		r.key(t, "Right", ports.ModAlt)
-		r.key(t, "Right", ports.ModAlt)
+		r.key(t, "Right", domain.ModAlt)
+		r.key(t, "Right", domain.ModAlt)
 		prev := xOf(t, r.frame(t, 16*time.Millisecond), 1)
-		r.key(t, "Right", ports.ModAlt)
+		r.key(t, "Right", domain.ModAlt)
 		for i := range 40 {
 			got := xOf(t, r.frame(t, 16*time.Millisecond), 1)
 			if got > prev {
@@ -89,7 +90,7 @@ func TestWorkspaceKeyTransition(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, nil)
 		r.workspaces(t)
-		s := r.key(t, "Next", ports.ModAlt)[0]
+		s := r.key(t, "Next", domain.ModAlt)[0]
 		if got, ok := rectOf(s, 1); !ok || got.Y != 0 {
 			t.Fatalf("workspace 1 at %+v (shown %t) right after the key, want the old position", got, ok)
 		}
@@ -115,9 +116,9 @@ func TestChainedWorkspaceKeysKeepSliding(t *testing.T) {
 		r.mapWindow(t, 3)
 		r.keySettled(t, "Prior")
 		r.keySettled(t, "Prior")
-		r.key(t, "Next", ports.ModAlt)
+		r.key(t, "Next", domain.ModAlt)
 		r.frame(t, 16*time.Millisecond)
-		r.key(t, "Next", ports.ModAlt)
+		r.key(t, "Next", domain.ModAlt)
 		if got, ok := rectOf(r.settle(t), 3); !ok || got.Y != 0 {
 			t.Fatalf("workspace 3 at %+v (shown %t) settled", got, ok)
 		}
@@ -129,15 +130,15 @@ func TestAnimationsOffKeysLandAtOnce(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, animationsOff)
 		fourColumns(t, r)
-		r.key(t, "Right", ports.ModAlt)
-		if got := xOf(t, r.key(t, "Right", ports.ModAlt)[0], 1); got != -400 {
+		r.key(t, "Right", domain.ModAlt)
+		if got := xOf(t, r.key(t, "Right", domain.ModAlt)[0], 1); got != -400 {
 			t.Fatalf("column 1 at %d right after the key, want -400", got)
 		}
 		r.noFrameScene(t)
 
 		r = startSwipe(t, animationsOff)
 		r.workspaces(t)
-		s := r.key(t, "Next", ports.ModAlt)[0]
+		s := r.key(t, "Next", domain.ModAlt)[0]
 		if got, ok := rectOf(s, 2); !ok || got.Y != 0 {
 			t.Fatalf("workspace 2 at %+v (shown %t) right after the key, want the settled rect", got, ok)
 		}
@@ -154,21 +155,21 @@ func TestNoTransitionWithOverview(t *testing.T) {
 		name string
 		// open is what the overview shows before the keys of the bind.
 		sym  string
-		mods ports.Mods
+		mods domain.Mods
 	}{
 		{"open and close", "", 0},
-		{"focus bind while open", "Left", ports.ModAlt},
-		{"workspace bind while open", "Next", ports.ModAlt},
+		{"focus bind while open", "Left", domain.ModAlt},
+		{"workspace bind while open", "Next", domain.ModAlt},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				r := startSwipe(t, nil)
 				fourColumns(t, r)
-				r.key(t, "Right", ports.ModAlt) // 2 is on screen: no scroll
-				r.keySettled(t, "Right")        // the view scrolls away from 0
+				r.key(t, "Right", domain.ModAlt) // 2 is on screen: no scroll
+				r.keySettled(t, "Right")         // the view scrolls away from 0
 				r.keySettled(t, "Right")
 				// settleAll: a bind that moves nothing starts no spring.
-				r.key(t, "o", ports.ModAlt)
+				r.key(t, "o", domain.ModAlt)
 				r.settleAll(t, wide.Name)
 				r.noFrameScene(t)
 				if tc.sym != "" {
@@ -176,7 +177,7 @@ func TestNoTransitionWithOverview(t *testing.T) {
 					r.settleAll(t, wide.Name)
 					r.noFrameScene(t)
 				}
-				r.key(t, "o", ports.ModAlt)
+				r.key(t, "o", domain.ModAlt)
 				r.settleAll(t, wide.Name)
 				r.noFrameScene(t)
 
@@ -209,7 +210,7 @@ func TestMovedWorkspaceSlidesInOnDestination(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r, other := movedRig(t, nil)
 		twoColumns(t, r)
-		set := r.key(t, "Right", ports.ModAlt|ports.ModCtrl|ports.ModShift)
+		set := r.key(t, "Right", domain.ModAlt|domain.ModCtrl|domain.ModShift)
 		dst := outScene(t, set, other.Name)
 		// DP-2 starts at x=800: the source's 0 and 400 are -800 and -400 there.
 		if got1, got2 := rectNow(t, dst, 1), rectNow(t, dst, 2); got1.X != -800 || got2.X != -400 {
@@ -220,7 +221,7 @@ func TestMovedWorkspaceSlidesInOnDestination(t *testing.T) {
 			t.Fatal("no frame while the windows slide")
 		}
 		dst = outScene(t, set, other.Name)
-		for id, end := range map[ports.WindowID]int{1: 0, 2: 400} {
+		for id, end := range map[domain.WindowID]int{1: 0, 2: 400} {
 			if got := rectNow(t, dst, id).X; got <= end-800 || got >= end {
 				t.Fatalf("window %d at %d on the first frame, want between %d and %d", id, got, end-800, end)
 			}
@@ -241,7 +242,7 @@ func TestMovedWorkspaceSourceSwitchRule(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r, other := movedRig(t, nil)
 		r.workspaces(t) // window 1 on the first workspace, 2 on the second
-		set := r.key(t, "Right", ports.ModAlt|ports.ModCtrl|ports.ModShift)
+		set := r.key(t, "Right", domain.ModAlt|domain.ModCtrl|domain.ModShift)
 		src := outScene(t, set, wide.Name)
 		// The second workspace was below the moved one: it slides up from there.
 		if got := rectNow(t, src, 2).Y; got != 600 {
@@ -269,7 +270,7 @@ func TestMovedWorkspaceSourceWithoutNeighbourIsInstant(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r, other := movedRig(t, nil)
 		twoColumns(t, r)
-		set := r.key(t, "Right", ports.ModAlt|ports.ModCtrl|ports.ModShift)
+		set := r.key(t, "Right", domain.ModAlt|domain.ModCtrl|domain.ModShift)
 		if n := len(outScene(t, set, wide.Name).Windows); n != 0 {
 			t.Fatalf("source draws %d windows right after the key, want none", n)
 		}
@@ -289,7 +290,7 @@ func TestMovedWorkspaceOffIsInstant(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r, other := movedRig(t, animationsOff)
 		twoColumns(t, r)
-		set := r.key(t, "Right", ports.ModAlt|ports.ModCtrl|ports.ModShift)
+		set := r.key(t, "Right", domain.ModAlt|domain.ModCtrl|domain.ModShift)
 		dst := outScene(t, set, other.Name)
 		if got1, got2 := rectNow(t, dst, 1), rectNow(t, dst, 2); got1.X != 0 || got2.X != 400 {
 			t.Fatalf("1 at %+v and 2 at %+v right after the key, want the settled rects", got1, got2)
@@ -306,14 +307,14 @@ func TestMovedBackWorkspaceHasNoSwitchSlide(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r, other := movedRig(t, nil)
 		twoColumns(t, r)
-		r.key(t, "Right", ports.ModAlt|ports.ModCtrl|ports.ModShift)
+		r.key(t, "Right", domain.ModAlt|domain.ModCtrl|domain.ModShift)
 		// Within the first spring: the source is still sliding.
 		if _, ok := r.clk.flip(t, r.frames, r.scenes, 16*time.Millisecond, wide.Name, other.Name); !ok {
 			t.Fatal("no frame while the windows slide")
 		}
-		set := r.key(t, "Left", ports.ModAlt|ports.ModCtrl|ports.ModShift)
+		set := r.key(t, "Left", domain.ModAlt|domain.ModCtrl|domain.ModShift)
 		dst := outScene(t, set, wide.Name)
-		for id := ports.WindowID(1); id <= 2; id++ {
+		for id := domain.WindowID(1); id <= 2; id++ {
 			if got := rectNow(t, dst, id); got.Y != 0 {
 				t.Fatalf("window %d at %+v right after moving back, want y=0 (no vertical slide)", id, got)
 			}
@@ -323,14 +324,14 @@ func TestMovedBackWorkspaceHasNoSwitchSlide(t *testing.T) {
 			t.Fatal("no frame while the windows slide back")
 		}
 		dst = outScene(t, set, wide.Name)
-		for id := ports.WindowID(1); id <= 2; id++ {
+		for id := domain.WindowID(1); id <= 2; id++ {
 			if got := rectNow(t, dst, id); got.Y != 0 {
 				t.Fatalf("window %d at %+v on the first frame, want y=0 (rects slide only)", id, got)
 			}
 		}
 		set, _ = r.settleAll(t, wide.Name, other.Name)
 		dst = outScene(t, set, wide.Name)
-		if got1, got2 := rectNow(t, dst, 1), rectNow(t, dst, 2); got1 != (ports.Rect{W: 400, H: 600}) || got2 != (ports.Rect{X: 400, W: 400, H: 600}) {
+		if got1, got2 := rectNow(t, dst, 1), rectNow(t, dst, 2); got1 != (domain.Rect{W: 400, H: 600}) || got2 != (domain.Rect{X: 400, W: 400, H: 600}) {
 			t.Fatalf("settled 1 at %+v and 2 at %+v", got1, got2)
 		}
 		r.noFrameScene(t, wide.Name, other.Name)
@@ -348,19 +349,19 @@ func TestMovedWorkspaceStartsFromSourceGeometry(t *testing.T) {
 		dst          ports.OutputInfo
 		anchor       ports.OutputAnchor
 		key          string
-		start, final [2]ports.Rect
+		start, final [2]domain.Rect
 	}{
 		{
 			name: "right same size", dst: ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000},
-			anchor: ports.OutputAnchor{Relation: ports.RelationRightOf, To: "DP-1"}, key: "Right",
-			start: [2]ports.Rect{{X: -800, W: 400, H: 600}, {X: -400, W: 400, H: 600}},
-			final: [2]ports.Rect{{W: 400, H: 600}, {X: 400, W: 400, H: 600}},
+			anchor: ports.OutputAnchor{Relation: domain.RelationRightOf, To: "DP-1"}, key: "Right",
+			start: [2]domain.Rect{{X: -800, W: 400, H: 600}, {X: -400, W: 400, H: 600}},
+			final: [2]domain.Rect{{W: 400, H: 600}, {X: 400, W: 400, H: 600}},
 		},
 		{
 			name: "below larger", dst: big,
-			anchor: ports.OutputAnchor{Relation: ports.RelationBelow, To: "DP-1"}, key: "Down",
-			start: [2]ports.Rect{{Y: -600, W: 400, H: 600}, {X: 400, Y: -600, W: 400, H: 600}},
-			final: [2]ports.Rect{{W: 512, H: 768}, {X: 512, W: 512, H: 768}},
+			anchor: ports.OutputAnchor{Relation: domain.RelationBelow, To: "DP-1"}, key: "Down",
+			start: [2]domain.Rect{{Y: -600, W: 400, H: 600}, {X: 400, Y: -600, W: 400, H: 600}},
+			final: [2]domain.Rect{{W: 512, H: 768}, {X: 512, W: 512, H: 768}},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -370,8 +371,8 @@ func TestMovedWorkspaceStartsFromSourceGeometry(t *testing.T) {
 					c.Binds["Cmd+Ctrl+Shift+Down"] = string(core.ActionMoveWorkspaceToMonitorDown)
 				}, wide, tc.dst)
 				twoColumns(t, r)
-				dst := outScene(t, r.key(t, tc.key, ports.ModAlt|ports.ModCtrl|ports.ModShift), tc.dst.Name)
-				for i, id := range []ports.WindowID{1, 2} {
+				dst := outScene(t, r.key(t, tc.key, domain.ModAlt|domain.ModCtrl|domain.ModShift), tc.dst.Name)
+				for i, id := range []domain.WindowID{1, 2} {
 					if got := rectNow(t, dst, id); got != tc.start[i] {
 						t.Fatalf("window %d starts at %+v, want %+v", id, got, tc.start[i])
 					}
@@ -385,7 +386,7 @@ func TestMovedWorkspaceStartsFromSourceGeometry(t *testing.T) {
 				}
 				set, _ = r.settleAll(t, wide.Name, tc.dst.Name)
 				dst = outScene(t, set, tc.dst.Name)
-				for i, id := range []ports.WindowID{1, 2} {
+				for i, id := range []domain.WindowID{1, 2} {
 					if got := rectNow(t, dst, id); got != tc.final[i] {
 						t.Fatalf("window %d settles at %+v, want %+v", id, got, tc.final[i])
 					}
@@ -405,13 +406,13 @@ func TestPulledNamedWorkspaceSlidesIn(t *testing.T) {
 			c.Binds["Alt+w"] = "workspace web"
 		})
 		// web shows on DP-2 with a window, then DP-1 pulls it.
-		r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
-		r.key(t, "w", ports.ModAlt)
+		r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
+		r.key(t, "w", domain.ModAlt)
 		r.settleAll(t, wide.Name, other.Name)
 		r.mapWindow(t, 1)
 		r.settleAll(t, wide.Name, other.Name)
-		r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
-		set := r.key(t, "w", ports.ModAlt)
+		r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
+		set := r.key(t, "w", domain.ModAlt)
 		if got := rectNow(t, outScene(t, set, wide.Name), 1); got.X != 800 {
 			t.Fatalf("window 1 at %+v right after the pull, want x=800 (where DP-2 drew it)", got)
 		}
@@ -423,7 +424,7 @@ func TestPulledNamedWorkspaceSlidesIn(t *testing.T) {
 			t.Fatalf("window 1 at x=%d on the first frame, want between 0 and 800", got)
 		}
 		set, _ = r.settleAll(t, wide.Name, other.Name)
-		if got := rectNow(t, outScene(t, set, wide.Name), 1); got != (ports.Rect{W: 800, H: 600}) {
+		if got := rectNow(t, outScene(t, set, wide.Name), 1); got != (domain.Rect{W: 800, H: 600}) {
 			t.Fatalf("settled at %+v", got)
 		}
 
@@ -435,14 +436,14 @@ func TestFocusMonitorHasNoMotion(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r, other := movedRig(t, nil)
 		twoColumns(t, r)
-		r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+		r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
 		r.noFrameScene(t, wide.Name, other.Name)
 
 	})
 }
 
 // rectNow is the rect of window id in s; it must be in the scene.
-func rectNow(t *testing.T, s ports.Scene, id ports.WindowID) ports.Rect {
+func rectNow(t *testing.T, s ports.Scene, id domain.WindowID) domain.Rect {
 	t.Helper()
 	r, ok := rectOf(s, id)
 	if !ok {
@@ -464,7 +465,7 @@ func TestMoveColumnRectTransition(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, nil)
 		twoColumns(t, r)
-		s := r.key(t, "Left", ports.ModAlt|ports.ModShift)[0]
+		s := r.key(t, "Left", domain.ModAlt|domain.ModShift)[0]
 		if got1, got2 := rectNow(t, s, 1), rectNow(t, s, 2); got1.X != 0 || got2.X != 400 {
 			t.Fatalf("right after the key 1 at %+v and 2 at %+v, want the old 0 and 400", got1, got2)
 		}
@@ -489,11 +490,11 @@ func TestMoveColumnThatScrollsKeepsCameraFrame(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, nil)
 		fourColumns(t, r)
-		r.key(t, "Right", ports.ModAlt|ports.ModShift)
+		r.key(t, "Right", domain.ModAlt|domain.ModShift)
 		r.settle(t) // order 2 1 3 4, view 0
-		s := r.key(t, "Right", ports.ModAlt|ports.ModShift)[0]
+		s := r.key(t, "Right", domain.ModAlt|domain.ModShift)[0]
 		// Order 2 3 1 4; the view scrolls by 400 to show column 1.
-		for id, want := range map[ports.WindowID]int{2: 0, 1: 400, 3: 800} {
+		for id, want := range map[domain.WindowID]int{2: 0, 1: 400, 3: 800} {
 			if got := rectNow(t, s, id).X; got != want {
 				t.Fatalf("window %d at %d right after the key, want the old %d", id, got, want)
 			}
@@ -519,7 +520,7 @@ func TestMoveColumnThatScrollsKeepsCameraFrame(t *testing.T) {
 				break
 			}
 		}
-		for id, want := range map[ports.WindowID]int{2: -400, 3: 0, 1: 400} {
+		for id, want := range map[domain.WindowID]int{2: -400, 3: 0, 1: 400} {
 			if got := rectNow(t, s, id).X; got != want {
 				t.Fatalf("window %d at %d settled, want %d", id, got, want)
 			}
@@ -537,11 +538,11 @@ func TestSetColumnWidthRectTransition(t *testing.T) {
 			c.Binds["Cmd+Ctrl+Right"] = "set-column-width +1"
 		})
 		twoColumns(t, r)
-		r.key(t, "Left", ports.ModAlt) // focus window 1: both columns fit, no scroll
+		r.key(t, "Left", domain.ModAlt) // focus window 1: both columns fit, no scroll
 		for len(r.commands) > 0 {
 			<-r.commands
 		}
-		mods := ports.ModAlt | ports.ModCtrl
+		mods := domain.ModAlt | domain.ModCtrl
 		s := r.key(t, "Right", mods)[0]
 		if got := rectNow(t, s, 1); got.W != 400 {
 			t.Fatalf("window 1 is %d wide right after the key, want the old 400", got.W)
@@ -584,7 +585,7 @@ func TestPointerHitsShownRectMidTransition(t *testing.T) {
 		twoColumns(t, r)
 		// Window 2 (focused) moves to the left half, 1 to the right; drawn, 1
 		// still holds the left half for now.
-		s := r.key(t, "Left", ports.ModAlt|ports.ModShift)[0]
+		s := r.key(t, "Left", domain.ModAlt|domain.ModShift)[0]
 		if got := rectNow(t, s, 1).X; got != 0 {
 			t.Fatalf("window 1 at %d right after the key, want the old 0", got)
 		}
@@ -606,7 +607,7 @@ func TestFullscreenRectTransition(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, nil)
 		twoColumns(t, r)
-		s := r.key(t, "f", ports.ModAlt|ports.ModShift)[0]
+		s := r.key(t, "f", domain.ModAlt|domain.ModShift)[0]
 		if got := rectNow(t, s, 2); got.W != 400 {
 			t.Fatalf("window 2 is %d wide right after the key, want the old 400", got.W)
 		}
@@ -614,7 +615,7 @@ func TestFullscreenRectTransition(t *testing.T) {
 		if got.W <= 400 || got.W >= 800 {
 			t.Fatalf("window 2 is %d wide on the first frame, want between 400 and 800", got.W)
 		}
-		if got := rectNow(t, r.settle(t), 2); got != (ports.Rect{W: 800, H: 600}) {
+		if got := rectNow(t, r.settle(t), 2); got != (domain.Rect{W: 800, H: 600}) {
 			t.Fatalf("window 2 at %+v settled, want the output", got)
 		}
 
@@ -626,7 +627,7 @@ func TestAnimationsOffRectsLandAtOnce(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, animationsOff)
 		twoColumns(t, r)
-		s := r.key(t, "Left", ports.ModAlt|ports.ModShift)[0]
+		s := r.key(t, "Left", domain.ModAlt|domain.ModShift)[0]
 		if got1, got2 := rectNow(t, s, 1), rectNow(t, s, 2); got1.X != 400 || got2.X != 0 {
 			t.Fatalf("1 at %+v and 2 at %+v right after the key, want the final 400 and 0", got1, got2)
 		}
@@ -641,10 +642,10 @@ func TestChainedMovesStartFromShownRects(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, nil)
 		twoColumns(t, r)
-		r.key(t, "Left", ports.ModAlt|ports.ModShift)
+		r.key(t, "Left", domain.ModAlt|domain.ModShift)
 		mid := r.frame(t, 16*time.Millisecond)
-		s := r.key(t, "Right", ports.ModAlt|ports.ModShift)[0]
-		for _, id := range []ports.WindowID{1, 2} {
+		s := r.key(t, "Right", domain.ModAlt|domain.ModShift)[0]
+		for _, id := range []domain.WindowID{1, 2} {
 			if got, want := rectNow(t, s, id), rectNow(t, mid, id); got != want {
 				t.Fatalf("window %d at %+v right after the second key, want the shown %+v", id, got, want)
 			}
@@ -669,7 +670,7 @@ func TestClickFocusTransition(t *testing.T) {
 		threeColumns(t, r)
 		// Column 3 grows from 1 to 3 cells of 200 px: column 2 sticks out 66 px
 		// on the left.
-		r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+		r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
 		if got := xOf(t, r.settle(t), 2); got != -66 {
 			t.Fatalf("column 2 at %d, want -66", got)
 		}
@@ -700,7 +701,7 @@ func TestDiscreteSwipeTransition(t *testing.T) {
 		r := startSwipe(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" })
 		r.mapWindow(t, 1)
 		r.mapWindow(t, 2)
-		r.key(t, "f", ports.ModAlt) // maximize window 2
+		r.key(t, "f", domain.ModAlt) // maximize window 2
 		if got := rectNow(t, r.settle(t), 2); got.W != 800 {
 			t.Fatalf("window 2 is %d wide, want maximized 800", got.W)
 		}
@@ -741,7 +742,7 @@ func TestUnmapMidRectMotion(t *testing.T) {
 				r := startSwipe(t, tt.edit)
 				threeColumns(t, r)
 				// 3, focused, swaps with 2: both move.
-				mid := r.key(t, "Left", ports.ModAlt|ports.ModShift)[0]
+				mid := r.key(t, "Left", domain.ModAlt|domain.ModShift)[0]
 				if tt.edit == nil {
 					// Off: the swap is instant, a flip draws no new scene.
 					mid = r.frame(t, 16*time.Millisecond)
@@ -794,7 +795,7 @@ func TestUnmapMidRectMotion(t *testing.T) {
 }
 
 // listedIn is the scene window id, shown or not.
-func listedIn(s ports.Scene, id ports.WindowID) (ports.SceneWindow, bool) {
+func listedIn(s ports.Scene, id domain.WindowID) (ports.SceneWindow, bool) {
 	for _, w := range s.Windows {
 		if w.ID == id {
 			return w, true

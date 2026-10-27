@@ -9,6 +9,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -58,10 +59,10 @@ func TestScript(t *testing.T) {
 				if tt.codes != nil && ev.Keycode != tt.codes[i] {
 					t.Errorf("code %d: %d", i, ev.Keycode)
 				}
-				if tt.line == "key Super+Return" && i == 1 && ev.Mods&ports.ModSuper == 0 {
+				if tt.line == "key Super+Return" && i == 1 && ev.Mods&domain.ModSuper == 0 {
 					t.Error("Return missing Super")
 				}
-				if tt.line == "key Super+Return" && i == 3 && ev.Mods&ports.ModSuper != 0 {
+				if tt.line == "key Super+Return" && i == 3 && ev.Mods&domain.ModSuper != 0 {
 					t.Error("Super not released")
 				}
 			}
@@ -87,7 +88,7 @@ func TestModifierAcrossMouseActions(t *testing.T) {
 		t.Fatal(len(input))
 	}
 	press := (<-input).(ports.KeyEvent)
-	if !press.Pressed || press.Mods&ports.ModSuper == 0 {
+	if !press.Pressed || press.Mods&domain.ModSuper == 0 {
 		t.Fatal(press)
 	}
 	if _, ok := (<-input).(ports.PointerMotion); !ok {
@@ -105,7 +106,7 @@ func TestModifierAcrossMouseActions(t *testing.T) {
 		t.Fatal(up)
 	}
 	release := (<-input).(ports.KeyEvent)
-	if release.Pressed || release.Mods&ports.ModSuper != 0 {
+	if release.Pressed || release.Mods&domain.ModSuper != 0 {
 		t.Fatal(release)
 	}
 }
@@ -145,7 +146,7 @@ func TestHoldKeepsKeyDown(t *testing.T) {
 			{"Super_L", false, false},
 		} {
 			ev := (<-input).(ports.KeyEvent)
-			if ev.Keysym != want.name || ev.Pressed != want.pressed || (ev.Mods&ports.ModSuper != 0) != want.super {
+			if ev.Keysym != want.name || ev.Pressed != want.pressed || (ev.Mods&domain.ModSuper != 0) != want.super {
 				t.Errorf("event %d: %s pressed=%v mods=%v, want %s pressed=%v super=%v", i, ev.Keysym, ev.Pressed, ev.Mods, want.name, want.pressed, want.super)
 			}
 		}

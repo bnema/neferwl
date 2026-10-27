@@ -7,6 +7,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/inputtimestamps"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
@@ -16,8 +17,8 @@ import (
 // bound keyboards and pointers, the keymap they carry, and the last press.
 // It belongs to the display goroutine.
 type seatState struct {
-	focused      ports.WindowID
-	pointerFocus ports.WindowID
+	focused      domain.WindowID
+	pointerFocus domain.WindowID
 	// pointerX, pointerY is the pointer as core placed it in pointerFocus;
 	// pointerSurface and surfacePoint turn it into surface coordinates.
 	pointerX, pointerY float64
@@ -61,7 +62,7 @@ type seatState struct {
 // applyInput delivers a core input command to the focused client.
 func (s *Server) applyInput(cmd ports.ClientCommand) {
 	if s.security != nil && s.security.Snapshot().Protected {
-		var target ports.WindowID
+		var target domain.WindowID
 		switch c := cmd.(type) {
 		case ports.SetKeymap:
 			// Configuration updates do not authorize normal-client input.
@@ -233,12 +234,12 @@ const (
 )
 
 // depressedMask maps core modifier flags to xkb depressed masks.
-func depressedMask(m ports.Mods) uint32 {
+func depressedMask(m domain.Mods) uint32 {
 	var d uint32
 	for _, f := range []struct {
-		flag ports.Mods
+		flag domain.Mods
 		mask uint32
-	}{{ports.ModShift, xkbShift}, {ports.ModCtrl, xkbControl}, {ports.ModAlt, xkbMod1}, {ports.ModSuper, xkbMod4}} {
+	}{{domain.ModShift, xkbShift}, {domain.ModCtrl, xkbControl}, {domain.ModAlt, xkbMod1}, {domain.ModSuper, xkbMod4}} {
 		if m&f.flag != 0 {
 			d |= f.mask
 		}
@@ -294,7 +295,7 @@ func (s *Server) clientKeyboards(c server.Client) []*wayland.Keyboard {
 }
 
 // focusTarget resolves a window or layer ID to its wl_surface and keyboards.
-func (s *Server) focusTarget(id ports.WindowID) (*wayland.Surface, []*wayland.Keyboard) {
+func (s *Server) focusTarget(id domain.WindowID) (*wayland.Surface, []*wayland.Keyboard) {
 	if l := s.lockSurfaces[id]; l != nil && !l.closed && l.surface.wl.Alive() {
 		// Outgoing leaves also resolve a role whose OnDestroy resource is
 		// already dead. Admission is enforced before entering or delivering.
@@ -315,7 +316,7 @@ func (s *Server) focusTarget(id ports.WindowID) (*wayland.Surface, []*wayland.Ke
 
 // pointerTarget resolves a mapped window or layer ID to its client and
 // live pointers.
-func (s *Server) pointerTarget(id ports.WindowID) (server.Client, []*wayland.Pointer, bool) {
+func (s *Server) pointerTarget(id domain.WindowID) (server.Client, []*wayland.Pointer, bool) {
 	if l := s.lockSurfaces[id]; l != nil && s.lockInputTarget(id) {
 		return l.resource.Client(), s.clientPointers(l.resource.Client()), true
 	}
@@ -330,7 +331,7 @@ func (s *Server) pointerTarget(id ports.WindowID) (server.Client, []*wayland.Poi
 
 // pointerSurface is the wl_surface of a mapped window or layer and the
 // point in its surface coordinates.
-func (s *Server) pointerSurface(id ports.WindowID, x, y float64) (*wayland.Surface, []*wayland.Pointer, float64, float64) {
+func (s *Server) pointerSurface(id domain.WindowID, x, y float64) (*wayland.Surface, []*wayland.Pointer, float64, float64) {
 	if l := s.lockSurfaces[id]; l != nil && !l.closed && l.surface.wl.Alive() {
 		return l.surface.wl, s.clientPointers(l.surface.wl.Client()), x, y
 	}
@@ -420,7 +421,7 @@ func (s *Server) sendModifiers(k *wayland.Keyboard) {
 	k.SendModifiers(s.serial, m.Depressed, m.Latched, m.Locked, m.Group)
 }
 
-func (s *Server) changeFocus(id ports.WindowID) {
+func (s *Server) changeFocus(id domain.WindowID) {
 	if s.security != nil && s.security.Snapshot().Protected && id != 0 && !s.lockInputTarget(id) {
 		return
 	}
@@ -465,7 +466,7 @@ func (s *Server) changeFocus(id ports.WindowID) {
 // wheelHeld keeps the axis value of the frames without a step; values is
 // what a pre-v8 client gets with a step: the held value plus this frame's.
 func (st *seatState) wheelSteps(a ports.PointerAxis) (steps [2]int32, values [2]float64) {
-	if a.Source != ports.AxisWheel {
+	if a.Source != domain.AxisWheel {
 		return steps, values
 	}
 	for i, ax := range [2]ports.ScrollAxis{a.Vertical, a.Horizontal} {
@@ -494,7 +495,7 @@ func (s *Server) sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int3
 	v := p.Version()
 	axes := [2]ports.ScrollAxis{a.Vertical, a.Horizontal}
 	for i := range axes {
-		if v < 8 && a.Source == ports.AxisWheel && axes[i].V120 != 0 && steps[i] == 0 {
+		if v < 8 && a.Source == domain.AxisWheel && axes[i].V120 != 0 && steps[i] == 0 {
 			axes[i].Set = false
 		}
 	}
@@ -516,7 +517,7 @@ func (s *Server) sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int3
 			continue
 		}
 		value := ax.Value
-		if a.Source == ports.AxisWheel && ax.V120 != 0 {
+		if a.Source == domain.AxisWheel && ax.V120 != 0 {
 			switch {
 			case v >= 8:
 				p.SendAxisValue120(uint32(axis), ax.V120)
@@ -563,7 +564,7 @@ func (s *Server) layerPointers(l *layerSurface) []*wayland.Pointer {
 func (s *Server) clientPointers(c server.Client) []*wayland.Pointer {
 	return s.seat.pointers[c]
 }
-func (s *Server) changePointerFocus(id ports.WindowID, x, y float64) {
+func (s *Server) changePointerFocus(id domain.WindowID, x, y float64) {
 	if s.security != nil && s.security.Snapshot().Protected && id != 0 && !s.lockInputTarget(id) {
 		return
 	}

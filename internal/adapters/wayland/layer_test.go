@@ -10,6 +10,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/wlrlayershell"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
@@ -33,7 +34,7 @@ func layerProtocol(t *testing.T, c *wlturbo.Display) (uint32, uint32) {
 	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
 	registerProtocol(t, c, surf)
 	layer := c.AllocateID()
-	requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, layer, surf, uint32(0), uint32(ports.LayerTop), "test")
+	requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, layer, surf, uint32(0), uint32(domain.LayerTop), "test")
 	return surf, layer
 }
 func TestLayerInvalidSize(t *testing.T) {
@@ -177,7 +178,7 @@ func TestLayerAlreadyConstructed(t *testing.T) {
 				requestProtocol(t, c, sub, wayland.SubcompositorRequestGetSubsurface, id, surf, parent)
 			}
 			id := c.AllocateID()
-			requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, id, surf, uint32(0), uint32(ports.LayerTop), "test")
+			requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, id, surf, uint32(0), uint32(domain.LayerTop), "test")
 			expectProtocolError(t, c, shell, uint32(wlrlayershell.ZwlrLayerShellV1ErrorAlreadyConstructed))
 		})
 	}
@@ -196,7 +197,7 @@ func TestLayerRecreateOnSameSurface(t *testing.T) {
 	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, uint32(0), int32(0), int32(0))
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
 	again := c.AllocateID()
-	requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, again, surf, uint32(0), uint32(ports.LayerOverlay), "test")
+	requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, again, surf, uint32(0), uint32(domain.LayerOverlay), "test")
 	requestProtocol(t, c, again, wlrlayershell.ZwlrLayerSurfaceV1RequestSetSize, uint32(10), uint32(10))
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
 	if err := c.Roundtrip(); err != nil {

@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -46,7 +48,7 @@ func TestSecurityPreparationProofAndFailure(t *testing.T) {
 				o.frame.begin(pendingFrame{fences: []*os.File{f}}, time.Now())
 			} else if stage != "disable" {
 				r.EXPECT().UseTarget(0).Return().Once()
-				r.EXPECT().Render(ports.Scene{Background: "#000000"}, map[ports.WindowID]ports.SurfaceContent(nil)).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+				r.EXPECT().Render(ports.Scene{Background: "#000000"}, map[domain.WindowID]ports.SurfaceContent(nil)).RunAndReturn(func(ports.Scene, map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 					if stage == "changed" {
 						state.Store(5)
 					}
@@ -122,7 +124,7 @@ func TestSecurityProtectedCompositionDetachesCursorAndOverlay(t *testing.T) {
 	s.CaptureScene = &ports.Scene{}
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().UseTarget(0).Return().Once()
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(scene ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(scene ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 		if scene.CaptureScene != nil {
 			t.Fatal("hidden capture crossed protected path")
 		}

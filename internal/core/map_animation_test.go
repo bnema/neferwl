@@ -5,6 +5,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -41,7 +42,7 @@ func TestMapAnimates(t *testing.T) {
 		if got := rectNow(t, end, 1).W; got != 400 {
 			t.Fatalf("settled neighbour is %d wide", got)
 		}
-		configures := map[ports.WindowID]int{}
+		configures := map[domain.WindowID]int{}
 		for len(r.commands) > 0 {
 			if v, ok := (<-r.commands).(ports.ConfigureWindow); ok {
 				configures[v.ID]++
@@ -113,7 +114,7 @@ func TestMapFullscreenRequestWithinGraceKeepsEntrance(t *testing.T) {
 	})
 }
 
-func windowOf(t *testing.T, s ports.Scene, id ports.WindowID) ports.SceneWindow {
+func windowOf(t *testing.T, s ports.Scene, id domain.WindowID) ports.SceneWindow {
 	t.Helper()
 	for _, w := range s.Windows {
 		if w.ID == id {

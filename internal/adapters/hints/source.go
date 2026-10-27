@@ -6,13 +6,14 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Options tunes Run.
 type Options struct {
 	// Sources is the startup-only ordered chain. Only listed sources exist.
-	Sources []ports.HintSource
+	Sources []domain.HintSource
 	// ATSPI supplies the accessibility source when listed.
 	ATSPI targetSource
 	// Command is the nefer-hints binary: a path, or a name looked up in PATH.
@@ -33,7 +34,7 @@ type Options struct {
 // source is owned by the worker. Initialization is deferred to its first scan.
 // Returned targets have Source and Window set; errors preserve partial targets.
 type source interface {
-	kind() ports.HintSource
+	kind() domain.HintSource
 	needsFrame(context.Context) bool
 	scan(context.Context, ports.HintScanRequest, []ports.HintWindow, *frame) ([]ports.HintTarget, error)
 	Close() error
@@ -43,11 +44,11 @@ func makeSources(opts Options) []source {
 	var out []source
 	for _, kind := range opts.Sources {
 		switch kind {
-		case ports.HintSourceATSPI:
+		case domain.HintSourceATSPI:
 			out = append(out, &atspiSource{targets: opts.ATSPI})
-		case ports.HintSourceOCR:
+		case domain.HintSourceOCR:
 			out = append(out, &ocrSource{})
-		case ports.HintSourceDetector:
+		case domain.HintSourceDetector:
 			det := opts.detector
 			if det == nil {
 				det = newProcDetector(opts.Command, opts.ModelDir, opts.Threshold)
@@ -60,17 +61,17 @@ func makeSources(opts Options) []source {
 
 // scanStage records only metadata; it never retains captured pixels.
 type scanStage struct {
-	Source  string           `json:"source"`
-	Windows []ports.WindowID `json:"windows"`
-	Targets int              `json:"targets"`
-	MS      float64          `json:"ms"`
-	Err     string           `json:"err,omitempty"`
-	Covered []ports.WindowID `json:"covered"`
-	Crops   []scanCrop       `json:"crops"`
+	Source  string            `json:"source"`
+	Windows []domain.WindowID `json:"windows"`
+	Targets int               `json:"targets"`
+	MS      float64           `json:"ms"`
+	Err     string            `json:"err,omitempty"`
+	Covered []domain.WindowID `json:"covered"`
+	Crops   []scanCrop        `json:"crops"`
 }
 
 type scanCrop struct {
-	Window  ports.WindowID    `json:"window"`
+	Window  domain.WindowID   `json:"window"`
 	Source  string            `json:"source"`
 	Rect    image.Rectangle   `json:"rect"`
 	Popups  []image.Rectangle `json:"popups"`
@@ -80,7 +81,7 @@ type scanCrop struct {
 // chain covers a unit only after a stage returns at least one target in it.
 func (w *worker) chain(ctx context.Context, req ports.HintScanRequest, capture func() (*frame, error)) ([]ports.HintTarget, error) {
 	w.stages = nil
-	covered := make(map[ports.WindowID]bool)
+	covered := make(map[domain.WindowID]bool)
 	var out []ports.HintTarget
 	var fr *frame
 	var err error
@@ -91,7 +92,7 @@ func (w *worker) chain(ctx context.Context, req ports.HintScanRequest, capture f
 		}
 	}
 	for _, s := range w.sources {
-		if req.LinksOnly && s.kind() == ports.HintSourceDetector {
+		if req.LinksOnly && s.kind() == domain.HintSourceDetector {
 			continue
 		}
 		var wins []ports.HintWindow
@@ -122,7 +123,7 @@ func (w *worker) chain(ctx context.Context, req ports.HintScanRequest, capture f
 		log := logging.For(ctx, "hints")
 		if err != nil {
 			if w.warned == nil {
-				w.warned = make(map[ports.HintSource]bool)
+				w.warned = make(map[domain.HintSource]bool)
 			}
 			if !w.warned[s.kind()] {
 				log.Warn().Err(err).Str("source", s.kind().String()).Msg("hint source failed")

@@ -6,7 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+
 	vk "github.com/bnema/purego-vulkan/vulkan"
 	"golang.org/x/sys/unix"
 )
@@ -40,9 +42,9 @@ func TestTrimFreesUndrawnSHMWithoutRender(t *testing.T) {
 	a.ID, a.Seq, a.Version = 1, 1, 1
 	b := solidContent(t, 16, 16, color.RGBA{0, 0, 255, 255})
 	b.ID, b.Seq, b.Version = 2, 1, 1
-	contents := map[ports.WindowID]ports.SurfaceContent{1: a, 2: b}
-	both := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}}, {ID: 2, Rect: ports.Rect{X: 16, W: 16, H: 16}}}}
-	onlyB := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 2, Rect: ports.Rect{X: 16, W: 16, H: 16}}}}
+	contents := map[domain.WindowID]ports.SurfaceContent{1: a, 2: b}
+	both := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}, {ID: 2, Rect: domain.Rect{X: 16, W: 16, H: 16}}}}
+	onlyB := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 2, Rect: domain.Rect{X: 16, W: 16, H: 16}}}}
 	if err := render(r, both, contents); err != nil {
 		t.Fatal(err)
 	}
@@ -90,8 +92,8 @@ func TestTrimKeepsRecentlyDrawn(t *testing.T) {
 	defer r.Close()
 	a := solidContent(t, 16, 16, color.RGBA{255, 0, 0, 255})
 	a.ID, a.Seq, a.Version = 1, 1, 1
-	contents := map[ports.WindowID]ports.SurfaceContent{1: a}
-	shown := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}}}}
+	contents := map[domain.WindowID]ports.SurfaceContent{1: a}
+	shown := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
 	empty := ports.Scene{Background: "#000000"}
 	start := time.Unix(1000, 0)
 	if err := render(r, shown, contents); err != nil {
@@ -137,8 +139,8 @@ func TestTrimReleasesUndrawnDMABuf(t *testing.T) {
 	}
 	f := udmabuf(t, 64, 16, func(int, int) [4]byte { return [4]byte{0, 0, 255, 255} })
 	buf := &ports.DMABuf{ID: 9, Width: 64, Height: 16, Format: linear.Format, Planes: []ports.DMABufPlane{{File: f, Stride: 256}}}
-	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 16}}}}
-	contents := map[ports.WindowID]ports.SurfaceContent{1: {ID: 1, Width: 64, Height: 16, DMABuf: buf}}
+	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
+	contents := map[domain.WindowID]ports.SurfaceContent{1: {ID: 1, Width: 64, Height: 16, DMABuf: buf}}
 	if err := render(r, scene, contents); err != nil {
 		t.Fatal(err)
 	}
@@ -206,13 +208,13 @@ func TestTrimPollsFinishedFrames(t *testing.T) {
 func TestTrimFreesHiddenWindowsSooner(t *testing.T) {
 	r := newTestRenderer(t, 48, 32)
 	defer r.Close()
-	contents := map[ports.WindowID]ports.SurfaceContent{}
-	for id, c := range map[ports.WindowID]color.RGBA{1: {255, 0, 0, 255}, 2: {0, 255, 0, 255}, 3: {0, 0, 255, 255}} {
+	contents := map[domain.WindowID]ports.SurfaceContent{}
+	for id, c := range map[domain.WindowID]color.RGBA{1: {255, 0, 0, 255}, 2: {0, 255, 0, 255}, 3: {0, 0, 255, 255}} {
 		sc := solidContent(t, 16, 16, c)
 		sc.ID, sc.Seq, sc.Version = id, 1, 1
 		contents[id] = sc
 	}
-	rect := func(i int) ports.Rect { return ports.Rect{X: 16 * i, W: 16, H: 16} }
+	rect := func(i int) domain.Rect { return domain.Rect{X: 16 * i, W: 16, H: 16} }
 	all := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: rect(0)}, {ID: 2, Rect: rect(1)}, {ID: 3, Rect: rect(2)}}}
 	// 1 left the scene, 2 is hidden, 3 stays on screen.
 	away := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 2, Rect: rect(1), Hidden: true}, {ID: 3, Rect: rect(2)}}}

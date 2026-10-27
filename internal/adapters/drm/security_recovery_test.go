@@ -8,6 +8,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -39,7 +41,7 @@ func TestSecurityStuckRecoveryInvalidatesBeforeFreshProof(t *testing.T) {
 		fence, signal := protectionFence(t, false)
 		var renderedOnce atomic.Bool
 		rendered := make(chan struct{}, 1)
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]ports.SurfaceContent) (*os.File, error) {
 			if s.Seq == 12 {
 				if renderedOnce.CompareAndSwap(false, true) {
 					select {

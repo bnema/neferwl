@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 	"github.com/stretchr/testify/mock"
@@ -15,11 +16,11 @@ func TestScaledScanoutRectAndCachedRefusal(t *testing.T) {
 	o.cursor = nil
 	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
 	o.clientFBs[9] = &clientFB{fbID: 87}
-	s := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 200, H: 100}, Fullscreen: true}}}
+	s := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 200, H: 100}, Fullscreen: true}}}
 	c := ports.SurfaceContent{ID: 1, Width: 100, Height: 50, LogicalW: 200, LogicalH: 100, Source: [4]float32{5, 2, 90, 46}, DMABuf: &ports.DMABuf{ID: 9, Format: fourccXRGB}}
 	var log bytes.Buffer
 	o.renderLog = zerowrap.New(zerowrap.Config{Output: &log})
-	surfaces := map[ports.WindowID]ports.SurfaceContent{1: c}
+	surfaces := map[domain.WindowID]ports.SurfaceContent{1: c}
 	if fb, _, _ := o.scanoutFrame(s, surfaces); fb != 0 || o.reason != "scale_refused" {
 		t.Fatalf("fb %d reason %s", fb, o.reason)
 	}
@@ -49,9 +50,9 @@ func TestModesetInvalidatesScaleDecision(t *testing.T) {
 	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
 	fb := &clientFB{fbID: 87}
 	o.clientFBs[9] = fb
-	s := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 200, H: 100}, Fullscreen: true}}}
+	s := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 200, H: 100}, Fullscreen: true}}}
 	c := ports.SurfaceContent{ID: 1, Width: 100, Height: 50, LogicalW: 200, LogicalH: 100, DMABuf: &ports.DMABuf{ID: 9, Format: fourccXRGB}}
-	contents := map[ports.WindowID]ports.SurfaceContent{1: c}
+	contents := map[domain.WindowID]ports.SurfaceContent{1: c}
 	if got, _, _ := o.scanoutFrame(s, contents); got != 87 || len(*commits) != 1 || !fb.scaleTestedOK {
 		t.Fatalf("initial scale: %d, commits: %d", got, len(*commits))
 	}
@@ -72,8 +73,8 @@ func TestContentTypeFrameAndReset(t *testing.T) {
 	o.cursor = nil
 	o.contentProp = 81
 	o.contentValues = [5]uint64{0, 1, 2, 3, 4}
-	s := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 200, H: 100}, Fullscreen: true}}}
-	o.wantContent(s, map[ports.WindowID]ports.SurfaceContent{1: {ContentType: ports.ContentGame}})
+	s := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 200, H: 100}, Fullscreen: true}}}
+	o.wantContent(s, map[domain.WindowID]ports.SurfaceContent{1: {ContentType: domain.ContentGame}})
 	for i := 0; i < 2; i++ {
 		if err := o.commitFrame(70, nil, false, false, pendingFrame{}); err != nil {
 			t.Fatal(err)
@@ -93,7 +94,7 @@ func TestContentTypeFrameAndReset(t *testing.T) {
 		t.Fatalf("reset hint: %d %v", v, ok)
 	}
 	o.contentProp = 0
-	o.wantContent(s, map[ports.WindowID]ports.SurfaceContent{1: {ContentType: ports.ContentGame}})
+	o.wantContent(s, map[domain.WindowID]ports.SurfaceContent{1: {ContentType: domain.ContentGame}})
 	if err := o.commitFrame(70, nil, false, false, pendingFrame{}); err != nil {
 		t.Fatal(err)
 	}

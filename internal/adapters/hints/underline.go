@@ -5,6 +5,7 @@ import (
 	"math"
 	"sort"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -240,7 +241,7 @@ func underlinedLinks(words []OCRWord, urls []image.Rectangle, scale float64) []p
 		}
 		x, y := int(math.Floor(float64(rect.Min.X)/scale)), int(math.Floor(float64(rect.Min.Y)/scale))
 		right, bottom := int(math.Ceil(float64(rect.Max.X)/scale)), int(math.Ceil(float64(rect.Max.Y)/scale))
-		out = append(out, ports.HintTarget{Kind: ports.HintLink, Source: ports.HintSourceOCR, Score: 1, Rect: ports.Rect{X: x, Y: y, W: right - x, H: bottom - y}})
+		out = append(out, ports.HintTarget{Kind: domain.HintLink, Source: domain.HintSourceOCR, Score: 1, Rect: domain.Rect{X: x, Y: y, W: right - x, H: bottom - y}})
 	}
 	return out
 }

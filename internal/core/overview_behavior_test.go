@@ -7,6 +7,7 @@ import (
 	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/core/layout"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -38,7 +39,7 @@ func TestOverviewVerticalBoundariesAndInputs(t *testing.T) {
 		if m.Active != 0 || m.stackFront(w).Kind != StackFloat {
 			t.Fatal("row change kept stack cursor")
 		}
-		if !m.overviewScroll(ports.PointerAxis{Source: ports.AxisWheel, Vertical: ports.ScrollAxis{Set: true, V120: -120}}) || m.stackFront(w).Kind != StackColumns {
+		if !m.overviewScroll(ports.PointerAxis{Source: domain.AxisWheel, Vertical: ports.ScrollAxis{Set: true, V120: -120}}) || m.stackFront(w).Kind != StackColumns {
 			t.Fatal("wheel did not visit card")
 		}
 		m.CancelOverview()

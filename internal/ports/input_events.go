@@ -1,15 +1,9 @@
 package ports
 
-import "time"
+import (
+	"time"
 
-// Mods carries input → core modifier flags.
-type Mods uint8
-
-const (
-	ModShift Mods = 1 << iota
-	ModCtrl
-	ModAlt
-	ModSuper
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // InputEvent carries input → core notifications.
@@ -24,7 +18,7 @@ type KeyEvent struct {
 	// Base is the key's unshifted keysym in the active layout, so Cmd+Shift+1
 	// still matches a cmd+shift+1 bind although it prints exclam.
 	Base    string
-	Mods    Mods
+	Mods    domain.Mods
 	Pressed bool
 	Time    time.Duration
 	Keycode uint32
@@ -59,15 +53,6 @@ type PointerButton struct {
 
 func (PointerButton) inputEvent() {}
 
-// AxisSource tells how a scroll was made; values match wl_pointer.axis_source.
-type AxisSource uint8
-
-const (
-	AxisWheel AxisSource = iota
-	AxisFinger
-	AxisContinuous
-)
-
 // ScrollAxis is one scroll direction in a pointer frame. Value is in
 // surface pixels; V120 counts wheel detents in 1/120 steps (wheel only).
 // Stop ends a finger or continuous scroll on this axis.
@@ -81,7 +66,7 @@ type ScrollAxis struct {
 // PointerAxis is one scroll frame: Vertical, then Horizontal. Time is the
 // device timestamp (CLOCK_MONOTONIC).
 type PointerAxis struct {
-	Source               AxisSource
+	Source               domain.AxisSource
 	Vertical, Horizontal ScrollAxis
 	Time                 time.Duration
 }

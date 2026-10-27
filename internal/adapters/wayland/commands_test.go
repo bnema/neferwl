@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
@@ -88,7 +89,7 @@ func TestCommandRingMergesWhenFull(t *testing.T) {
 	s.display.Post(func() { close(stalled); <-release.ch })
 	<-stalled
 	for i := range commandRingSize - 1 {
-		r.Push(queue(ports.PointerFocus{ID: ports.WindowID(i)}))
+		r.Push(queue(ports.PointerFocus{ID: domain.WindowID(i)}))
 	}
 	done := make(chan struct{})
 	go func() {
@@ -145,7 +146,7 @@ func TestForwarderDrainsWhileDisplayBusy(t *testing.T) {
 		defer close(sent)
 		for i := range total {
 			select {
-			case cmds <- ports.PointerFocus{ID: ports.WindowID(i + 1)}:
+			case cmds <- ports.PointerFocus{ID: domain.WindowID(i + 1)}:
 				if i+1 == commandRingSize+1+cap(cmds) {
 					close(filled)
 				}

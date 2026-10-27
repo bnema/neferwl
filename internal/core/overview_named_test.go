@@ -6,6 +6,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -493,7 +494,7 @@ func TestOverviewNamedScrollAndSwipe(t *testing.T) {
 			t.Fatal("swipe did not cross groups")
 		}
 		m.overviewFocus(ActionFocusColumnRight)
-		m.overviewScroll(ports.PointerAxis{Source: ports.AxisWheel, Vertical: ports.ScrollAxis{Set: true, V120: 120}})
+		m.overviewScroll(ports.PointerAxis{Source: domain.AxisWheel, Vertical: ports.ScrollAxis{Set: true, V120: 120}})
 		if m.Current().Name != "game" {
 			t.Fatal("scroll did not reach next named workspace")
 		}

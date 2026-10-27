@@ -8,6 +8,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/linuxdmabuf"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
@@ -489,7 +490,7 @@ func (b *dmabufBuffer) close() {
 func (b *dmabufBuffer) size() (int, int) { return b.buf.Width, b.buf.Height }
 
 // content hands the renderer the buffer itself: nothing is copied.
-func (b *dmabufBuffer) content(id ports.WindowID) (ports.SurfaceContent, bool) {
+func (b *dmabufBuffer) content(id domain.WindowID) (ports.SurfaceContent, bool) {
 	opaque := b.buf.Format == fourccXRGB || b.buf.Format == fourccXBGR || b.buf.Format == fourccXR30 || b.buf.Format == fourccXB30
 	return ports.SurfaceContent{ID: id, Width: b.buf.Width, Height: b.buf.Height, Opaque: opaque, DMABuf: b.buf}, true
 }

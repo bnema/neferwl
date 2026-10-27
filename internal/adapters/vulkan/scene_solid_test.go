@@ -5,6 +5,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -14,8 +15,8 @@ func TestSceneSolid(t *testing.T) {
 	walk := func(r *Renderer, c ports.SurfaceContent) []draw {
 		c.ID = 1
 		c.Width, c.Height, c.LogicalW, c.LogicalH = 1, 1, 20, 20
-		s := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 20, H: 20}}}}
-		contents := map[ports.WindowID]ports.SurfaceContent{1: c}
+		s := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 20, H: 20}}}}
+		contents := map[domain.WindowID]ports.SurfaceContent{1: c}
 		return r.draws(s, contents, newDamage(&target{}, s, image.Rect(0, 0, 80, 60)))
 	}
 	// The window's own background fill comes first; the content follows.

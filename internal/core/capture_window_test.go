@@ -4,6 +4,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -31,7 +32,7 @@ func TestCaptureWindowSession(t *testing.T) {
 			t.Fatalf("capture %+v scene %v", s.Capture, s.CaptureScene)
 		}
 		c := s.CaptureScene
-		if c.OutputWidth != st.Rect.W || c.OutputHeight != st.Rect.H || len(c.Windows) != 1 || c.Windows[0].ID != 1 || c.Windows[0].Rect != (ports.Rect{W: st.Rect.W, H: st.Rect.H}) {
+		if c.OutputWidth != st.Rect.W || c.OutputHeight != st.Rect.H || len(c.Windows) != 1 || c.Windows[0].ID != 1 || c.Windows[0].Rect != (domain.Rect{W: st.Rect.W, H: st.Rect.H}) {
 			t.Fatalf("window scene %+v", c)
 		}
 
@@ -55,11 +56,11 @@ func TestCaptureWindowSession(t *testing.T) {
 		// The window goes: the session ends with window-gone.
 		r.client <- ports.WindowUnmapped{ID: 1}
 		for {
-			if st = r.state(t); st.Reason != ports.CaptureReasonNone {
+			if st = r.state(t); st.Reason != domain.CaptureReasonNone {
 				break
 			}
 		}
-		if st.Reason != ports.CaptureReasonWindowGone {
+		if st.Reason != domain.CaptureReasonWindowGone {
 			t.Fatalf("end %+v", st)
 		}
 

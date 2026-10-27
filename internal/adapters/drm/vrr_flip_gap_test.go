@@ -7,6 +7,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -44,7 +46,7 @@ func TestStartFlipGap(t *testing.T) {
 func TestStateCommitKeepsFlipGap(t *testing.T) {
 	o, _, commits := testOutput(t)
 	o.vrrFlipGap, o.vrrOn, o.vrrGame = time.Hour, true, true
-	seen := map[ports.WindowID]uint64{}
+	seen := map[domain.WindowID]uint64{}
 	if err := o.commitFrame(70, nil, false, true, pendingFrame{}); err != nil {
 		t.Fatal(err)
 	}
@@ -122,8 +124,8 @@ func TestRunWaitsVRRFlipGap(t *testing.T) {
 		}()
 		// A composed fullscreen window: a game frame under VRR.
 		game := ports.Scene{OutputWidth: 200, OutputHeight: 100,
-			Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 200, H: 100}, Fullscreen: true}},
-			Layers:  []ports.SceneLayer{{ID: 5, Layer: ports.LayerOverlay, Rect: ports.Rect{W: 10, H: 10}}}}
+			Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 200, H: 100}, Fullscreen: true}},
+			Layers:  []ports.SceneLayer{{ID: 5, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 10, H: 10}}}}
 		scenes <- game
 		waitFor(t, func() bool { _, n := frames(); return n == 1 })
 		last, _ := frames()

@@ -3,7 +3,9 @@ package vulkan
 import (
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+
 	vk "github.com/bnema/purego-vulkan/vulkan"
 	"golang.org/x/sys/unix"
 )
@@ -56,7 +58,7 @@ func (r *Renderer) Trim(now time.Time) error {
 			cutoff = r.marks[i].frame
 			r.marks = append(r.marks[:0], r.marks[i:]...)
 		}
-		stale := func(last uint64, win ports.WindowID) bool {
+		stale := func(last uint64, win domain.WindowID) bool {
 			if last >= r.frame {
 				return false
 			}

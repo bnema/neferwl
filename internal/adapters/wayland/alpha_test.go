@@ -7,13 +7,14 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/alphamodifier"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
 // contentMatching waits for a content of the window that matches want.
 //
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
-func contentMatching(t *testing.T, contents <-chan ports.SurfaceContent, id ports.WindowID, want func(ports.SurfaceContent) bool) ports.SurfaceContent {
+func contentMatching(t *testing.T, contents <-chan ports.SurfaceContent, id domain.WindowID, want func(ports.SurfaceContent) bool) ports.SurfaceContent {
 	t.Helper()
 	deadline := waylandDeadline(2 * time.Second)
 	for {

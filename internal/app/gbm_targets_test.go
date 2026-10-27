@@ -1,7 +1,6 @@
 package app
 
 import (
-	"github.com/bnema/zerowrap"
 	"image/color"
 	"os"
 	"path/filepath"
@@ -9,7 +8,9 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/drm/gbm"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
 )
 
@@ -121,10 +122,10 @@ func TestGBMImagesAreRenderTargets(t *testing.T) {
 
 	// Target 0: red background with a blue window; target 1: green.
 	scenes := []ports.Scene{
-		{Background: "#ff0000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 32, Y: 16, W: 64, H: 32}}}},
+		{Background: "#ff0000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 32, Y: 16, W: 64, H: 32}}}},
 		{Background: "#00ff00"},
 	}
-	contents := map[ports.WindowID]ports.SurfaceContent{1: {ID: 1, Width: 1, Height: 1, LogicalW: 64, LogicalH: 32, Opaque: true, Solid: &ports.SolidColor{B: 1, A: 1}}}
+	contents := map[domain.WindowID]ports.SurfaceContent{1: {ID: 1, Width: 1, Height: 1, LogicalW: 64, LogicalH: 32, Opaque: true, Solid: &ports.SolidColor{B: 1, A: 1}}}
 	type px struct {
 		x, y int
 		want color.RGBA

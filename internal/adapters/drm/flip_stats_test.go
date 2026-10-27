@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/zerowrap"
 )
 
@@ -104,7 +104,7 @@ func TestFlipGapEndReachesNextFrame(t *testing.T) {
 	o, _, commits := testOutput(t)
 	o.cursor = nil
 	o.vrrFlipGap, o.vrrOn, o.vrrGame = 2*time.Millisecond, true, true
-	seen := map[ports.WindowID]uint64{}
+	seen := map[domain.WindowID]uint64{}
 	if err := o.commitFrame(70, nil, false, true, pendingFrame{}); err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestCompletedKeepsLastFlipWithoutTrace(t *testing.T) {
 	if err := o.commitFrame(70, nil, false, false, pendingFrame{}); err != nil {
 		t.Fatal(err)
 	}
-	if !o.completed(flipEvent{crtc: tCrtc, user: (*commits)[0].user, when: 5 * time.Second}, map[ports.WindowID]uint64{}) {
+	if !o.completed(flipEvent{crtc: tCrtc, user: (*commits)[0].user, when: 5 * time.Second}, map[domain.WindowID]uint64{}) {
 		t.Fatal("not completed")
 	}
 	if o.lastFlipAt != 5*time.Second {
@@ -206,7 +206,7 @@ func TestCompletedKeepsLastFlipWithoutTrace(t *testing.T) {
 func TestCompletedReadLatencyOnlyOurCommit(t *testing.T) {
 	o, _, commits := testOutput(t)
 	o.cursor = nil
-	seen := map[ports.WindowID]uint64{}
+	seen := map[domain.WindowID]uint64{}
 	if err := o.commitFrame(70, nil, false, false, pendingFrame{}); err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestCompletedTracesFlipInterval(t *testing.T) {
 	}
 	when := monotonic()
 	o.lastFlipAt = when - 10*time.Millisecond
-	if !o.completed(flipEvent{crtc: tCrtc, user: (*commits)[0].user, when: when}, map[ports.WindowID]uint64{}) {
+	if !o.completed(flipEvent{crtc: tCrtc, user: (*commits)[0].user, when: when}, map[domain.WindowID]uint64{}) {
 		t.Fatal("not completed")
 	}
 	if !strings.Contains(log.String(), `"flip_interval_ms":10`) || o.lastFlipAt != when {

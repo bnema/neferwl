@@ -3,6 +3,7 @@ package capture
 import (
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
@@ -13,10 +14,10 @@ import (
 func TestShowsCountsHiddenWorkspace(t *testing.T) {
 	s := ports.Scene{
 		OutputWidth: 100, OutputHeight: 50,
-		Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 100, H: 50}}},
+		Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 100, H: 50}}},
 		CaptureScene: &ports.Scene{
 			OutputWidth: 100, OutputHeight: 50,
-			Windows: []ports.SceneWindow{{ID: 5, Rect: ports.Rect{W: 100, H: 50}}},
+			Windows: []ports.SceneWindow{{ID: 5, Rect: domain.Rect{W: 100, H: 50}}},
 		},
 	}
 	require.True(t, Shows(s, 1), "displayed window")

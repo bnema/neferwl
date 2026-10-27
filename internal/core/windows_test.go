@@ -5,6 +5,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -14,7 +15,7 @@ func TestWindowRegistryDropForgetsEverything(t *testing.T) {
 		now := time.Unix(10, 0)
 		r.mapped(ports.WindowMapped{ID: 1, AppID: "a", PID: 7}, now)
 		r.setAppID(1, "b")
-		r.setRegion(ports.InputRegionChanged{ID: 1, Rects: []ports.Rect{{W: 1, H: 1}}})
+		r.setRegion(ports.InputRegionChanged{ID: 1, Rects: []domain.Rect{{W: 1, H: 1}}})
 		r.setInhibitShortcuts(1, true)
 		r.setIdleInhibit(1, true)
 		rec := r.lookup(1)
@@ -50,8 +51,8 @@ func TestWindowRegistryAppIDNeedsMap(t *testing.T) {
 func TestWindowRegistryLayerGone(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newWindowRegistry()
-		r.setRegion(ports.InputRegionChanged{ID: 2, Rects: []ports.Rect{{W: 1, H: 1}}})
-		r.setRegion(ports.InputRegionChanged{ID: 3, Rects: []ports.Rect{{W: 1, H: 1}}})
+		r.setRegion(ports.InputRegionChanged{ID: 2, Rects: []domain.Rect{{W: 1, H: 1}}})
+		r.setRegion(ports.InputRegionChanged{ID: 3, Rects: []domain.Rect{{W: 1, H: 1}}})
 		r.setIdleInhibit(3, true)
 		r.layerGone(2)
 		r.layerGone(3)

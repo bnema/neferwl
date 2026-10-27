@@ -5,6 +5,7 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -13,7 +14,7 @@ import (
 type sceneWalk struct {
 	r        *Renderer
 	s        ports.Scene
-	contents map[ports.WindowID]ports.SurfaceContent
+	contents map[domain.WindowID]ports.SurfaceContent
 	dmg      *damageRegion
 	// scale maps the scene's logical pixels to scene-physical ones.
 	scale float64
@@ -36,7 +37,7 @@ type sceneWalk struct {
 }
 
 // draws walks the scene into quads in paint order.
-func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.SurfaceContent, dmg *damageRegion) []draw {
+func (r *Renderer) draws(s ports.Scene, contents map[domain.WindowID]ports.SurfaceContent, dmg *damageRegion) []draw {
 	clear(r.scratchDraws) // release references from longer earlier scenes
 	// The walk stays in scene-physical space (the target's size, swapped for
 	// a rotated output); orient maps the draws to the target afterwards.
@@ -48,7 +49,7 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 	}
 	w.layers(false)
 	outputBounds := w.bounds
-	if s.WorkspaceClip != (ports.Rect{}) {
+	if s.WorkspaceClip != (domain.Rect{}) {
 		c := s.WorkspaceClip
 		w.bounds = w.bounds.Intersect(w.physRect(c.X, c.Y, c.W, c.H))
 	}
@@ -90,7 +91,7 @@ func (w *sceneWalk) focusFlash() {
 
 // roundedInnerBorder draws the flash as one rounded ring: the target rect with
 // radius, minus a hole inset by b with radius max(radius-b, 0).
-func (w *sceneWalk) roundedInnerBorder(t ports.Rect, b, radius int, col [3]uint8) {
+func (w *sceneWalk) roundedInnerBorder(t domain.Rect, b, radius int, col [3]uint8) {
 	outer := w.physRect(t.X, t.Y, t.W, t.H)
 	r := float32(math.Round(float64(radius) * w.scale))
 	dr := w.fillRounded(outer, col, r)
@@ -105,7 +106,7 @@ func (w *sceneWalk) roundedInnerBorder(t ports.Rect, b, radius int, col [3]uint8
 }
 
 // innerBorder draws four non-overlapping strips, or fills a thin target.
-func (w *sceneWalk) innerBorder(t ports.Rect, b int, col [3]uint8) {
+func (w *sceneWalk) innerBorder(t domain.Rect, b int, col [3]uint8) {
 	if b <= 0 {
 		w.fill(w.physRect(t.X, t.Y, t.W, t.H), col)
 		return
@@ -221,7 +222,7 @@ func (w *sceneWalk) dim(rect image.Rectangle, alpha float64) {
 // window.
 func (w *sceneWalk) layers(afterWindows bool) {
 	for _, layer := range w.s.Layers {
-		if (layer.Layer >= ports.LayerTop) != afterWindows || layer.Rect.W <= 0 || layer.Rect.H <= 0 {
+		if (layer.Layer >= domain.LayerTop) != afterWindows || layer.Rect.W <= 0 || layer.Rect.H <= 0 {
 			continue
 		}
 		content := w.contents[layer.ID]
@@ -286,7 +287,7 @@ func (w *sceneWalk) windows() {
 			w.bounds = w.tileBounds
 		}
 		// Content sits inside the border; core sized the client to match.
-		b, inset := 0, ports.Sides(0)
+		b, inset := 0, domain.Sides(0)
 		if !win.Fullscreen {
 			b, inset = w.s.Border.Width, win.Inset
 		}
@@ -387,7 +388,7 @@ func (w *sceneWalk) tileSeparators() {
 
 // ringColor is the border color of the window id's lines: the inactive one,
 // or the active one when any of its lines is active; "" without lines.
-func (w *sceneWalk) ringColor(id ports.WindowID) string {
+func (w *sceneWalk) ringColor(id domain.WindowID) string {
 	col := ""
 	for _, sep := range w.s.Separators {
 		if sep.Window != id {
@@ -403,7 +404,7 @@ func (w *sceneWalk) ringColor(id ports.WindowID) string {
 
 // separators draws a window's border lines in order, active lines over
 // inactive ones.
-func (w *sceneWalk) separators(id ports.WindowID) {
+func (w *sceneWalk) separators(id domain.WindowID) {
 	for _, sep := range w.s.Separators {
 		if sep.Window != id {
 			continue
@@ -433,7 +434,7 @@ func (w *sceneWalk) popups(overLayers bool) {
 // place draws a surface tree with its window geometry at (x, y) logical,
 // clipped to width×height logical: client shadows fall outside. Every
 // surface of the tree is keyed by its stable surface identity.
-func (w *sceneWalk) place(id ports.WindowID, content *ports.SurfaceContent, x, y, width, height int) {
+func (w *sceneWalk) place(id domain.WindowID, content *ports.SurfaceContent, x, y, width, height int) {
 	clip := image.Rect(x, y, x+width, y+height)
 	// Offsets inside the tree shrink with a zoomed (preview) window.
 	z := w.zoom
@@ -706,7 +707,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 		}
 		r.pools[b.Pool].win = key.win
 		// Damage history is the root surface's: children copy in full.
-		var damage func(uint64) ([]ports.Rect, bool)
+		var damage func(uint64) ([]domain.Rect, bool)
 		if root {
 			damage = content.DamageSince
 		}

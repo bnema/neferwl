@@ -5,6 +5,7 @@ import (
 	"math"
 	"slices"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -22,11 +23,11 @@ import (
 type damageRegion struct {
 	held  *target // nil: redraw everything
 	area  image.Rectangle
-	seen  map[ports.WindowID]bool
+	seen  map[domain.WindowID]bool
 	bound image.Rectangle
-	drawn map[ports.WindowID]heldWindow
+	drawn map[domain.WindowID]heldWindow
 	// rects is scratch for a content's damage rects (reused across frames).
-	rects []ports.Rect
+	rects []domain.Rect
 	// why counts the reasons of full redraws (the renderer's; nil: none).
 	why *fullRedraws
 }
@@ -38,7 +39,7 @@ type heldWindow struct {
 }
 
 func newDamage(tg *target, s ports.Scene, bounds image.Rectangle) *damageRegion {
-	d := &damageRegion{seen: map[ports.WindowID]bool{}, bound: bounds, drawn: map[ports.WindowID]heldWindow{}}
+	d := &damageRegion{seen: map[domain.WindowID]bool{}, bound: bounds, drawn: map[domain.WindowID]heldWindow{}}
 	d.hold(tg, s)
 	return d
 }
@@ -59,7 +60,7 @@ func (d *damageRegion) hold(tg *target, s ports.Scene) {
 	if scale <= 0 {
 		scale = 1
 	}
-	phys := func(r ports.Rect) image.Rectangle {
+	phys := func(r domain.Rect) image.Rectangle {
 		p := func(v int) int { return int(math.Round(float64(v) * scale)) }
 		return image.Rect(p(r.X), p(r.Y), p(r.X+r.W), p(r.Y+r.H)).Intersect(d.bound)
 	}
@@ -76,11 +77,11 @@ func (d *damageRegion) hold(tg *target, s ports.Scene) {
 // target's previous map after hold, so a target never observes mutations.
 func (r *Renderer) frameDamage(tg *target, s ports.Scene, bounds image.Rectangle) *damageRegion {
 	if r.damageSeen == nil {
-		r.damageSeen = make(map[ports.WindowID]bool)
+		r.damageSeen = make(map[domain.WindowID]bool)
 	}
 	clear(r.damageSeen)
 	if r.damageDrawn == nil {
-		r.damageDrawn = make(map[ports.WindowID]heldWindow)
+		r.damageDrawn = make(map[domain.WindowID]heldWindow)
 	}
 	clear(r.damageDrawn)
 	r.damage = damageRegion{seen: r.damageSeen, drawn: r.damageDrawn, bound: bounds, rects: r.damage.rects[:0], why: &r.fullRedraws}
@@ -99,7 +100,7 @@ func (d *damageRegion) add(r image.Rectangle) {
 
 // window records a window drawn in rect (physical): if its content changed
 // and no finer damage comes (content), the whole rect is redrawn.
-func (d *damageRegion) window(id ports.WindowID, c ports.SurfaceContent, rect image.Rectangle) {
+func (d *damageRegion) window(id domain.WindowID, c ports.SurfaceContent, rect image.Rectangle) {
 	if d.seen[id] {
 		return
 	}
@@ -163,7 +164,7 @@ func (f *fullRedraws) take() fullRedraws {
 // content maps a root surface's buffer damage onto full (where its w×h
 // buffer is drawn), clipped to dst. Scaled buffers filter linearly: one
 // more pixel around each rect. A transformed buffer redraws all of dst.
-func (d *damageRegion) content(id ports.WindowID, c *ports.SurfaceContent, full, dst image.Rectangle) {
+func (d *damageRegion) content(id domain.WindowID, c *ports.SurfaceContent, full, dst image.Rectangle) {
 	if d.held == nil {
 		return
 	}
@@ -269,7 +270,7 @@ var (
 // new SceneWindow field is checked by TestSceneWindowFieldCount.
 // Scene.Animating is not compared: it schedules the next frame, it draws
 // nothing.
-func sceneDelta(old, cur ports.Scene, phys func(ports.Rect) image.Rectangle, limit int) (image.Rectangle, bool) {
+func sceneDelta(old, cur ports.Scene, phys func(domain.Rect) image.Rectangle, limit int) (image.Rectangle, bool) {
 	if old.Security != cur.Security || old.Output != cur.Output ||
 		old.OutputWidth != cur.OutputWidth || old.OutputHeight != cur.OutputHeight ||
 		old.Scale != cur.Scale || old.Transform != cur.Transform || old.Off != cur.Off ||
@@ -336,7 +337,7 @@ func sceneDelta(old, cur ports.Scene, phys func(ports.Rect) image.Rectangle, lim
 // differ by index are counted in the other list (a focus change lights a
 // few lines, not all). Lists of different lengths (a line scrolled on or
 // off) count every line.
-func separatorDelta(old, cur []ports.Separator, phys func(ports.Rect) image.Rectangle) image.Rectangle {
+func separatorDelta(old, cur []ports.Separator, phys func(domain.Rect) image.Rectangle) image.Rectangle {
 	var area image.Rectangle
 	if slices.Equal(old, cur) {
 		return area

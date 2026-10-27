@@ -4,7 +4,7 @@ import (
 	"testing"
 	"testing/synctest"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestFreeFloatMovesAcrossWorkspaces(t *testing.T) {
@@ -20,7 +20,7 @@ func TestFreeFloatMovesAcrossWorkspaces(t *testing.T) {
 			t.Fatal("float missing")
 		}
 		// Resize through the real drag path so the requested centre fits.
-		w.DragFloat(2, r, ports.ResizeRight|ports.ResizeBottom, 100-r.W, 100-r.H, true)
+		w.DragFloat(2, r, domain.ResizeRight|domain.ResizeBottom, 100-r.W, 100-r.H, true)
 		_, r, _ = w.FloatAt(2)
 		w.DragFloat(2, r, 0, 200-(r.X+r.W/2), 640-(r.Y+r.H/2), false)
 		m.MoveToWorkspace(1, false)

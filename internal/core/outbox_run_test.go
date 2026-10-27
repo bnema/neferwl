@@ -6,6 +6,7 @@ import (
 	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -88,7 +89,7 @@ func TestCommandsNeverBlockCore(t *testing.T) {
 			// Each send returns only once Run is back in its select.
 			r.input <- ports.PointerMotion{X: 500 + float64(i%100), Y: 200, DX: 1, DY: 2, UnaccelDX: 3, UnaccelDY: 4}
 		}
-		r.input <- ports.KeyEvent{Keysym: "minus", Keycode: 12, Mods: ports.ModSuper, Pressed: true}
+		r.input <- ports.KeyEvent{Keysym: "minus", Keycode: 12, Mods: domain.ModSuper, Pressed: true}
 		synctest.Wait()
 		select {
 		case set := <-r.scenes:

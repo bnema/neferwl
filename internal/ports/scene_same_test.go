@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -17,16 +18,16 @@ func sameSceneBase() Scene {
 		Scale:        1,
 		Background:   "#000000",
 		Border:       Border{Width: 2, Active: "#ffffff", Inactive: "#222222"},
-		Windows:      []SceneWindow{{ID: 1, Rect: Rect{X: 1, W: 10, H: 10}}},
-		Separators:   []Separator{{Rect: Rect{W: 1, H: 10}}},
-		DropHints:    []Rect{{W: 5, H: 5}},
-		Layers:       []SceneLayer{{ID: 9, Rect: Rect{W: 100, H: 5}}},
-		Capture:      &SceneCapture{Shown: 1, Excluded: []WindowID{3}},
+		Windows:      []SceneWindow{{ID: 1, Rect: domain.Rect{X: 1, W: 10, H: 10}}},
+		Separators:   []Separator{{Rect: domain.Rect{W: 1, H: 10}}},
+		DropHints:    []domain.Rect{{W: 5, H: 5}},
+		Layers:       []SceneLayer{{ID: 9, Rect: domain.Rect{W: 100, H: 5}}},
+		Capture:      &SceneCapture{Shown: 1, Excluded: []domain.WindowID{3}},
 
-		Outline:           &SelectionOutline{Rect: Rect{W: 20, H: 10}, Width: 2, Radius: 8, Active: true},
-		Flash:             &FocusFlash{Rect: Rect{W: 20, H: 10}, Width: 2, Color: "#ff0000", Alpha: 0.6},
-		CaptureIndicators: []CaptureIndicator{{Rect: Rect{W: 4, H: 4}}},
-		Overlays:          []Overlay{{ID: 1, Seq: 1, Kind: OverlayLabel, Anchor: AnchorOutsideTopLeft, Text: "fj"}},
+		Outline:           &SelectionOutline{Rect: domain.Rect{W: 20, H: 10}, Width: 2, Radius: 8, Active: true},
+		Flash:             &FocusFlash{Rect: domain.Rect{W: 20, H: 10}, Width: 2, Color: "#ff0000", Alpha: 0.6},
+		CaptureIndicators: []CaptureIndicator{{Rect: domain.Rect{W: 4, H: 4}}},
+		Overlays:          []Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Anchor: domain.AnchorOutsideTopLeft, Text: "fj"}},
 		Physical:          OutputPhysical{Width: 100, Height: 50, MMWidth: 40, MMHeight: 20},
 	}
 }

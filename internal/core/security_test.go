@@ -7,6 +7,8 @@ import (
 	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -50,7 +52,7 @@ func TestSecurityOwnerAdversarialQueues(t *testing.T) {
 		// must block it regardless of which channel select chooses next.
 		locked := ports.SecurityState{Generation: 1, Protected: true}
 		epoch.Store(locked)
-		input <- ports.SecurityInput{State: ports.SecurityState{}, Event: ports.KeyEvent{Keysym: "q", Mods: ports.ModSuper, Pressed: true}}
+		input <- ports.SecurityInput{State: ports.SecurityState{}, Event: ports.KeyEvent{Keysym: "q", Mods: domain.ModSuper, Pressed: true}}
 		s := sceneMatch(t, scenes, func(s ports.Scene) bool { return s.Security == locked })
 		assertProtected(t, s)
 		if len(s.Windows) != 0 {
@@ -66,7 +68,7 @@ func TestSecurityOwnerAdversarialQueues(t *testing.T) {
 		// Raw input is refused even in the initial unlocked epoch when wired;
 		// stale, raw, bind and swipe events must not activate desktop behavior.
 		input <- ports.KeyEvent{Keysym: "raw", Pressed: true}
-		input <- ports.SecurityInput{State: locked, Event: ports.KeyEvent{Keysym: "q", Mods: ports.ModSuper, Pressed: true}}
+		input <- ports.SecurityInput{State: locked, Event: ports.KeyEvent{Keysym: "q", Mods: domain.ModSuper, Pressed: true}}
 		input <- ports.SecurityInput{State: locked, Event: ports.SwipeBegin{Fingers: 3}}
 		input <- ports.SecurityInput{State: locked, Event: ports.KeyEvent{Keysym: "password", Keycode: 30, Pressed: true}}
 		expectKey(t, commands, locked, 10, "password")
@@ -115,17 +117,17 @@ func TestSecurityOwnerAdversarialQueues(t *testing.T) {
 
 func assertProtected(t *testing.T, s ports.Scene) {
 	t.Helper()
-	if !s.Security.Protected || s.Background != "#000000" || s.Capture != nil || s.CaptureScene != nil || len(s.Layers) != 0 || len(s.Separators) != 0 || s.Border.Width != 0 || s.Dim != 0 || s.WorkspaceClip != (ports.Rect{}) {
+	if !s.Security.Protected || s.Background != "#000000" || s.Capture != nil || s.CaptureScene != nil || len(s.Layers) != 0 || len(s.Separators) != 0 || s.Border.Width != 0 || s.Dim != 0 || s.WorkspaceClip != (domain.Rect{}) {
 		t.Fatalf("unsafe scene: %+v", s)
 	}
 	for _, w := range s.Windows {
-		if !w.Fullscreen || w.Hidden || w.Popup || w.Rect != (ports.Rect{W: s.OutputWidth, H: s.OutputHeight}) {
+		if !w.Fullscreen || w.Hidden || w.Popup || w.Rect != (domain.Rect{W: s.OutputWidth, H: s.OutputHeight}) {
 			t.Fatalf("unsafe role: %+v", w)
 		}
 	}
 }
 
-func expectKey(t *testing.T, ch <-chan ports.ClientCommand, state ports.SecurityState, id ports.WindowID, name string) {
+func expectKey(t *testing.T, ch <-chan ports.ClientCommand, state ports.SecurityState, id domain.WindowID, name string) {
 	t.Helper()
 	for {
 		wrapped, ok := receive(t, ch).(ports.SecurityCommand)

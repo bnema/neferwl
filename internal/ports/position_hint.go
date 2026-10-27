@@ -1,5 +1,7 @@
 package ports
 
+import "github.com/bnema/neferwl/internal/domain"
+
 const (
 	PositionHintMaxColumns = 16
 	PositionHintMaxRows    = 16
@@ -25,9 +27,9 @@ type PositionHint struct {
 func (h PositionHint) Shown() bool { return h.Opacity > 0 && h.Columns > 0 }
 
 // Bounds is the hint's logical output-local background rectangle.
-func (h PositionHint) Bounds(width, height int) Rect {
+func (h PositionHint) Bounds(width, height int) domain.Rect {
 	if !h.Shown() {
-		return Rect{}
+		return domain.Rect{}
 	}
 	cols, rows := min(int(h.Columns), PositionHintMaxColumns), 1
 	for _, n := range h.Counts[:cols] {
@@ -35,5 +37,5 @@ func (h PositionHint) Bounds(width, height int) Rect {
 	}
 	w := 2*PositionHintPadding + cols*PositionHintDiameter + (cols-1)*PositionHintGap
 	ht := 2*PositionHintPadding + rows*PositionHintDiameter + (rows-1)*PositionHintGap
-	return Rect{X: (width - w) / 2, Y: height - PositionHintBottom - ht, W: w, H: ht}
+	return domain.Rect{X: (width - w) / 2, Y: height - PositionHintBottom - ht, W: w, H: ht}
 }

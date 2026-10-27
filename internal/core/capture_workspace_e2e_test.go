@@ -4,11 +4,12 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
 // configureOf returns the next ConfigureWindow of id, skipping other commands.
-func (r *captureRig) configureOf(t *testing.T, id ports.WindowID) ports.ConfigureWindow {
+func (r *captureRig) configureOf(t *testing.T, id domain.WindowID) ports.ConfigureWindow {
 	t.Helper()
 	for {
 		if v, ok := receive(t, r.commands).(ports.ConfigureWindow); ok && v.ID == id {

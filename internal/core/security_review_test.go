@@ -7,6 +7,8 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -72,7 +74,7 @@ func TestExactEpochAdmissionPreservesProducerModifierState(t *testing.T) {
 		gate.EXPECT().Snapshot().Return(state)
 		c.opts.Security = gate
 		c.syncSecurity()
-		key := ports.KeyEvent{Keycode: 58, Keysym: "Control_L", Pressed: true, Mods: ports.ModCtrl, State: ports.ModState{Depressed: 1 << 19, Latched: 1 << 21, Locked: 1 << 23, Group: 2}}
+		key := ports.KeyEvent{Keycode: 58, Keysym: "Control_L", Pressed: true, Mods: domain.ModCtrl, State: ports.ModState{Depressed: 1 << 19, Latched: 1 << 21, Locked: 1 << 23, Group: 2}}
 		ev, ok := c.admitInput(ports.SecurityInput{State: state, Event: key})
 		if !ok || ev.(ports.KeyEvent) != key {
 			t.Fatalf("producer state reinterpreted: %+v", ev)
