@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -15,7 +16,7 @@ func BenchmarkBorderMotion(b *testing.B) {
 			var cfg ports.Config
 			cfg.Keyboard.CmdKey = "super"
 			cfg.Layout.MaxColumns = 3
-			scenes, cmds := make(chan []ports.Scene, 1), make(chan ports.ClientCommand, 1024)
+			scenes, cmds := make(chan []domain.Scene, 1), make(chan ports.ClientCommand, 1024)
 			c, err := New(cfg, Channels{Scenes: scenes, Commands: cmds}, Options{})
 			if err != nil {
 				b.Fatal(err)

@@ -44,7 +44,7 @@ func TestCaptureOwnershipTransferredBeforeCommitPanic(t *testing.T) {
 				t.Fatalf("panic %v", p)
 			}
 		}()
-		_, _ = o.submitFrame(context.Background(), r, ports.Scene{Seq: 1}, nil, nil, requests, pipeline)
+		_, _ = o.submitFrame(context.Background(), r, domain.Scene{Seq: 1}, nil, nil, requests, pipeline)
 	}()
 	pipeline.Close(r)
 	if requests[0].ID != 0 || requests[0].Dst.File != nil {

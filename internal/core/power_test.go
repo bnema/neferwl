@@ -8,21 +8,22 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-func powerCore(t *testing.T) (chan ports.InputEvent, chan ports.ClientEvent, chan ports.OutputEvent, chan ports.ClientCommand, chan []ports.Scene) {
+func powerCore(t *testing.T) (chan ports.InputEvent, chan ports.ClientEvent, chan ports.OutputEvent, chan ports.ClientCommand, chan []domain.Scene) {
 	t.Helper()
 	return powerCoreWith(t, core.Options{})
 }
 
-func powerCoreWith(t *testing.T, opts core.Options) (chan ports.InputEvent, chan ports.ClientEvent, chan ports.OutputEvent, chan ports.ClientCommand, chan []ports.Scene) {
+func powerCoreWith(t *testing.T, opts core.Options) (chan ports.InputEvent, chan ports.ClientEvent, chan ports.OutputEvent, chan ports.ClientCommand, chan []domain.Scene) {
 	t.Helper()
 	input := make(chan ports.InputEvent, 4)
 	client := make(chan ports.ClientEvent, 4)
 	output := make(chan ports.OutputEvent, 2)
 	commands := make(chan ports.ClientCommand, 64)
-	scenes := make(chan []ports.Scene, 1)
+	scenes := make(chan []domain.Scene, 1)
 	c, err := core.New(scrollDefaults(), core.Channels{Input: input, Client: client, Output: output, Commands: commands, Scenes: scenes, Spawn: make(chan ports.SpawnRequest, 4)}, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +38,7 @@ func powerCoreWith(t *testing.T, opts core.Options) (chan ports.InputEvent, chan
 }
 
 // sceneOf waits for a scene set in which pred holds for the named output.
-func sceneOf(t *testing.T, scenes <-chan []ports.Scene, name string, pred func(ports.Scene) bool) {
+func sceneOf(t *testing.T, scenes <-chan []domain.Scene, name string, pred func(domain.Scene) bool) {
 	t.Helper()
 	for {
 		synctest.Wait()
@@ -59,16 +60,16 @@ func sceneOf(t *testing.T, scenes <-chan []ports.Scene, name string, pred func(p
 func TestOutputPower(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		_, client, _, commands, scenes := powerCore(t)
-		sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
+		sceneOf(t, scenes, "OUT-2", func(s domain.Scene) bool { return !s.Off })
 		client <- ports.OutputPower{Output: "OUT-2", On: false}
-		sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
+		sceneOf(t, scenes, "OUT-2", func(s domain.Scene) bool { return s.Off })
 		for {
 			if v := commandOf[ports.SetOutputs](t, commands); slices.Equal(v.Off, []string{"OUT-2"}) {
 				break
 			}
 		}
 		client <- ports.OutputPower{Output: "OUT-2", On: true}
-		sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
+		sceneOf(t, scenes, "OUT-2", func(s domain.Scene) bool { return !s.Off })
 		for {
 			if v := commandOf[ports.SetOutputs](t, commands); len(v.Off) == 0 {
 				break
@@ -76,7 +77,7 @@ func TestOutputPower(t *testing.T) {
 		}
 		// Unknown outputs are ignored.
 		client <- ports.OutputPower{Output: "NOPE", On: false}
-		sceneOf(t, scenes, "OUT-1", func(s ports.Scene) bool { return !s.Off })
+		sceneOf(t, scenes, "OUT-1", func(s domain.Scene) bool { return !s.Off })
 
 	})
 }
@@ -104,22 +105,22 @@ func TestOutputReconnectedWhileOff(t *testing.T) {
 						}
 					}
 				}()
-				sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
+				sceneOf(t, scenes, "OUT-2", func(s domain.Scene) bool { return !s.Off })
 				if alone {
 					output <- ports.OutputRemoved{Name: "OUT-1"}
 					gone(t, scenes, "OUT-1")
 				}
 				client <- ports.OutputPower{Output: "OUT-2", On: false}
-				sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
+				sceneOf(t, scenes, "OUT-2", func(s domain.Scene) bool { return s.Off })
 				output <- ports.OutputRemoved{Name: "OUT-2"}
 				gone(t, scenes, "OUT-2") // no older scene can answer below
 				output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
-				sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
+				sceneOf(t, scenes, "OUT-2", func(s domain.Scene) bool { return s.Off })
 
 				client <- ports.OutputPower{Output: "OUT-2", On: true}
-				sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
+				sceneOf(t, scenes, "OUT-2", func(s domain.Scene) bool { return !s.Off })
 				client <- ports.OutputPower{Output: "OUT-2", On: false}
-				sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
+				sceneOf(t, scenes, "OUT-2", func(s domain.Scene) bool { return s.Off })
 				output <- ports.OutputRemoved{Name: "OUT-2"}
 				gone(t, scenes, "OUT-2")
 				input <- ports.PointerMotion{X: 1, Y: 1}
@@ -130,7 +131,7 @@ func TestOutputReconnectedWhileOff(t *testing.T) {
 					t.Fatal("input not handled")
 				}
 				output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
-				sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
+				sceneOf(t, scenes, "OUT-2", func(s domain.Scene) bool { return !s.Off })
 
 			})
 		})
@@ -138,13 +139,13 @@ func TestOutputReconnectedWhileOff(t *testing.T) {
 }
 
 // gone waits for a scene set without the named output.
-func gone(t *testing.T, scenes <-chan []ports.Scene, name string) {
+func gone(t *testing.T, scenes <-chan []domain.Scene, name string) {
 	t.Helper()
 	for {
 		synctest.Wait()
 		select {
 		case set := <-scenes:
-			if !slices.ContainsFunc(set, func(s ports.Scene) bool { return s.Output == name }) {
+			if !slices.ContainsFunc(set, func(s domain.Scene) bool { return s.Output == name }) {
 				return
 			}
 		default:

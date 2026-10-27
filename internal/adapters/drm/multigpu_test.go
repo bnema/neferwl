@@ -250,7 +250,7 @@ func TestMultiGPUCopyFrameFence(t *testing.T) {
 				copyErr = ports.ErrDeviceLost
 			}
 			copier.EXPECT().Copy(0, 0, renderFence).Return(copyFence, copyErr).Once()
-			_, err = o.submitFrame(context.Background(), r, ports.Scene{Seq: 1}, nil, nil, nil, nil)
+			_, err = o.submitFrame(context.Background(), r, domain.Scene{Seq: 1}, nil, nil, nil, nil)
 			// The render fence is consumed by the copy either way.
 			if _, serr := renderFence.Stat(); serr == nil {
 				t.Fatal("render fence left open")
@@ -306,7 +306,7 @@ func TestMultiGPUCopyCommitFailureWaitsForCopy(t *testing.T) {
 	copier.EXPECT().Copy(0, 0, (*os.File)(nil)).Return(copyFence, nil).Once()
 	result := make(chan error, 1)
 	go func() {
-		_, err := o.submitFrame(context.Background(), r, ports.Scene{Seq: 1}, nil, nil, nil, nil)
+		_, err := o.submitFrame(context.Background(), r, domain.Scene{Seq: 1}, nil, nil, nil, nil)
 		result <- err
 	}()
 	<-committed
@@ -359,7 +359,7 @@ func TestMultiGPUCopyCPUFence(t *testing.T) {
 		r.EXPECT().UseTarget(0).Return().Once()
 		r.EXPECT().Render(mock.Anything, mock.Anything).Return(renderFence, nil).Once()
 		copier.EXPECT().Copy(0, 0, renderFence).Return(copied, nil).Once()
-		_, err = o.submitFrame(context.Background(), r, ports.Scene{Seq: 1}, nil, nil, nil, nil)
+		_, err = o.submitFrame(context.Background(), r, domain.Scene{Seq: 1}, nil, nil, nil, nil)
 		if err != nil || len(*commits) != 1 || o.flipStats.fenceTimeouts != 0 {
 			t.Fatalf("%v commits %d timeouts %d", err, len(*commits), o.flipStats.fenceTimeouts)
 		}
@@ -388,7 +388,7 @@ func TestDirectFrameNeverCopies(t *testing.T) {
 			r := portsmocks.NewMockRenderer(t)
 			r.EXPECT().UseTarget(0).Return().Once()
 			r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
-			if _, err := o.submitFrame(context.Background(), r, ports.Scene{Seq: 1}, nil, nil, nil, nil); err != nil {
+			if _, err := o.submitFrame(context.Background(), r, domain.Scene{Seq: 1}, nil, nil, nil, nil); err != nil {
 				t.Fatal(err)
 			}
 			copier.AssertNotCalled(t, "Copy", mock.Anything, mock.Anything, mock.Anything)

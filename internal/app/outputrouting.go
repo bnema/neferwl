@@ -1,6 +1,9 @@
 package app
 
-import "github.com/bnema/neferwl/internal/ports"
+import (
+	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
+)
 
 // outputChannels is the shared app-to-backend wiring. The backend loop remains
 // the sole owner of outputSet and outputApply. Security producers use bounded
@@ -9,12 +12,12 @@ import "github.com/bnema/neferwl/internal/ports"
 // heads, configured and replies are fed from the outputApply outbox.
 type outputChannels struct {
 	security        ports.SessionSecurity
-	securityChanges <-chan ports.SecurityState
+	securityChanges <-chan domain.SecurityState
 	securityEvents  chan<- ports.SecurityBackendEvent
 	leaseRequests   <-chan ports.LeaseMessage
 	leaseEvents     chan<- ports.LeaseMessage
 	events          chan<- ports.OutputEvent
-	scenes          <-chan []ports.Scene
+	scenes          <-chan []domain.Scene
 	content         contentAttacher
 	cursorChanges   <-chan ports.CursorChange
 	presented       ports.PresentationSink

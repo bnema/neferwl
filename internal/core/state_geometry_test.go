@@ -4,6 +4,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -16,7 +17,7 @@ func TestStateWorkspaceGeometry(t *testing.T) {
 		cfg.Layout.Overflow = "fixed"
 		cfg.Layout.MaxColumns = 2
 		cfg.Layout.Gaps = 10
-		c, err := New(cfg, Channels{Commands: make(chan ports.ClientCommand, 16), Scenes: make(chan []ports.Scene, 1)}, Options{})
+		c, err := New(cfg, Channels{Commands: make(chan ports.ClientCommand, 16), Scenes: make(chan []domain.Scene, 1)}, Options{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -78,7 +79,7 @@ func TestStateWorkspaceChange(t *testing.T) {
 		cfg := ports.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
-		c, err := New(cfg, Channels{Commands: make(chan ports.ClientCommand, 16), Scenes: make(chan []ports.Scene, 1)}, Options{})
+		c, err := New(cfg, Channels{Commands: make(chan ports.ClientCommand, 16), Scenes: make(chan []domain.Scene, 1)}, Options{})
 		if err != nil {
 			t.Fatal(err)
 		}

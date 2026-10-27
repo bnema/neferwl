@@ -4,7 +4,6 @@ import (
 	"slices"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // frontImage is what the output image last committed by a composed frame
@@ -16,14 +15,14 @@ import (
 // it.
 type frontImage struct {
 	fb    uint32 // 0: unknown
-	scene ports.Scene
+	scene domain.Scene
 	seqs  []uint64 // Seq of each window, then each layer, of scene
 	// Backing arrays of scene's slices, reused across frames.
-	windows    []ports.SceneWindow
-	separators []ports.Separator
-	layers     []ports.SceneLayer
+	windows    []domain.SceneWindow
+	separators []domain.Separator
+	layers     []domain.SceneLayer
 	hints      []domain.Rect
-	indicators []ports.CaptureIndicator
+	indicators []domain.CaptureIndicator
 }
 
 // forget drops the image's contents: the next frame composes.
@@ -31,7 +30,7 @@ func (f *frontImage) forget() { f.fb = 0 }
 
 // hold records that fb holds s drawn from surfaces. A capture scene is not
 // recorded (SameAs never matches it).
-func (f *frontImage) hold(fb uint32, s ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent) {
+func (f *frontImage) hold(fb uint32, s domain.Scene, surfaces map[domain.WindowID]domain.SurfaceContent) {
 	if s.Capture != nil || s.CaptureScene != nil {
 		f.forget()
 		return
@@ -49,7 +48,7 @@ func (f *frontImage) hold(fb uint32, s ports.Scene, surfaces map[domain.WindowID
 }
 
 // holds reports whether fb holds exactly what drawing s from surfaces would.
-func (f *frontImage) holds(fb uint32, s ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent) bool {
+func (f *frontImage) holds(fb uint32, s domain.Scene, surfaces map[domain.WindowID]domain.SurfaceContent) bool {
 	if f.fb == 0 || f.fb != fb || !s.SameAs(f.scene) {
 		return false
 	}
@@ -69,7 +68,7 @@ func (f *frontImage) holds(fb uint32, s ports.Scene, surfaces map[domain.WindowI
 	return true
 }
 
-func appendSeqs(seqs []uint64, s ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent) []uint64 {
+func appendSeqs(seqs []uint64, s domain.Scene, surfaces map[domain.WindowID]domain.SurfaceContent) []uint64 {
 	seqs = slices.Grow(seqs, len(s.Windows)+len(s.Layers))
 	for _, w := range s.Windows {
 		seqs = append(seqs, surfaces[w.ID].Seq)

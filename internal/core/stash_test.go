@@ -5,6 +5,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -283,7 +284,7 @@ func TestFullscreenStashEdgeGoesToMonitor(t *testing.T) {
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
 		cfg.Layout.Overflow = string(OverflowFixed)
-		c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1)}, Options{})
+		c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1)}, Options{})
 		if err != nil {
 			t.Fatal(err)
 		}

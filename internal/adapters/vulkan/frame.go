@@ -10,7 +10,6 @@ import (
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
@@ -226,7 +225,7 @@ func (r *Renderer) idle() {
 // Render draws a frame into the current target. done is signalled when
 // the GPU finished it; nil when the device cannot export a sync file,
 // then the frame is finished on return.
-func (r *Renderer) Render(s ports.Scene, contents map[domain.WindowID]domain.SurfaceContent) (done *os.File, err error) {
+func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.SurfaceContent) (done *os.File, err error) {
 	// A frame that fails before its submit keeps its number: objects it
 	// touched are freed once a later frame completes (never early).
 	r.frame++
@@ -482,7 +481,7 @@ func (r *Renderer) oneShot(record func(vk.CommandBuffer)) error {
 
 // Clear draws a background-only frame and waits for it.
 func (r *Renderer) Clear(rgb [3]uint8) error {
-	done, err := r.Render(ports.Scene{Background: fmt.Sprintf("#%02x%02x%02x", rgb[0], rgb[1], rgb[2])}, nil)
+	done, err := r.Render(domain.Scene{Background: fmt.Sprintf("#%02x%02x%02x", rgb[0], rgb[1], rgb[2])}, nil)
 	if done != nil {
 		done.Close()
 	}

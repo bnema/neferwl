@@ -5,7 +5,6 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/outputkit/surfaces"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // A window drawn from a content its client withdrew (closed, fading out) is
@@ -13,7 +12,7 @@ import (
 func TestFlipInfoSkipsKeptContent(t *testing.T) {
 	var shows flipShows
 	table := surfaces.New()
-	s := ports.Scene{OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 2, H: 2}}, {ID: 2, Rect: domain.Rect{W: 1, H: 1}}}}
+	s := domain.Scene{OutputWidth: 2, OutputHeight: 2, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 2, H: 2}}, {ID: 2, Rect: domain.Rect{W: 1, H: 1}}}}
 	table.Update(domain.SurfaceContent{ID: 1, Seq: 3, SHM: &domain.SHMBuffer{Pool: 1}}, s)
 	table.Update(domain.SurfaceContent{ID: 2, Seq: 1, SHM: &domain.SHMBuffer{Pool: 2}}, s)
 	if f := shows.flipInfo(s, table.Map(), table.Kept); f.Shows[1] != 3 || f.Shows[2] != 1 {

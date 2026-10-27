@@ -147,9 +147,9 @@ func TestKeepHeldUntilChildFenceCompletes(t *testing.T) {
 	p := capture.NewPipeline(context.Background(), make(chan ports.CaptureDone, 1))
 	defer p.Close(nil)
 	p.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
-	s := ports.Scene{
-		Capture:      &ports.SceneCapture{Workspace: 9},
-		CaptureScene: &ports.Scene{OutputWidth: 2, OutputHeight: 2, Scale: 1, Windows: []ports.SceneWindow{{ID: 1}}},
+	s := domain.Scene{
+		Capture:      &domain.SceneCapture{Workspace: 9},
+		CaptureScene: &domain.Scene{OutputWidth: 2, OutputHeight: 2, Scale: 1, Windows: []domain.SceneWindow{{ID: 1}}},
 	}
 	p.SubmitHidden(s, map[domain.WindowID]domain.SurfaceContent{1: {Seq: 5}}, []ports.CaptureRequest{{
 		ID: 1, Workspace: 9, OffScreen: true, Region: image.Rect(0, 0, 2, 2),

@@ -8,6 +8,8 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -40,8 +42,8 @@ func TestSpawnAdmissionRequiresCurrentUnlockedEpoch(t *testing.T) {
 func TestSpawnRechecksBeforeProcessStart(t *testing.T) {
 	ctx := context.Background()
 	security := portsmocks.NewMockSessionSecurity(t)
-	security.EXPECT().Snapshot().Return(ports.SecurityState{}).Once()
-	security.EXPECT().Snapshot().Return(ports.SecurityState{Generation: 1, Protected: true}).Once()
+	security.EXPECT().Snapshot().Return(domain.SecurityState{}).Once()
+	security.EXPECT().Snapshot().Return(domain.SecurityState{Generation: 1, Protected: true}).Once()
 	l := New([]string{"PATH=/bin"}, security, logging.For(ctx, "launcher"))
 	result := filepath.Join(t.TempDir(), "must-not-exist")
 	requests := make(chan ports.SpawnRequest, 1)

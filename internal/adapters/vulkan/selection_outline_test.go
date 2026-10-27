@@ -6,14 +6,13 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
 
 func TestSelectionOutlineRoundedRing(t *testing.T) {
 	for _, scale := range []int{1, 2} {
 		r := &Renderer{width: 128, height: 128}
-		s := ports.Scene{Scale: float64(scale), Border: ports.Border{Active: "#00ff00"}, Outline: &ports.SelectionOutline{Rect: domain.Rect{X: 8, Y: 4, W: 40, H: 30}, Width: 3, Radius: 11, Active: true}}
+		s := domain.Scene{Scale: float64(scale), Border: domain.Border{Active: "#00ff00"}, Outline: &domain.SelectionOutline{Rect: domain.Rect{X: 8, Y: 4, W: 40, H: 30}, Width: 3, Radius: 11, Active: true}}
 		ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 128, 128)))
 		require.Len(t, ds, 1)
 		d := ds[0]

@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 func hdrTestRenderer(t *testing.T) *Renderer {
@@ -51,7 +50,7 @@ func hdrTargetAt(t *testing.T, r *Renderer, x, y int) [3]float64 {
 
 // hdrPQScene is a 64×16 XR30 udmabuf client holding 1000-nit neutral, red
 // and blue BT.2020 thirds (x/20), drawn full-output.
-func hdrPQScene(t *testing.T, r *Renderer) (ports.Scene, map[domain.WindowID]domain.SurfaceContent, [3][3]float64) {
+func hdrPQScene(t *testing.T, r *Renderer) (domain.Scene, map[domain.WindowID]domain.SurfaceContent, [3][3]float64) {
 	t.Helper()
 	format := domain.DMABufFormat{Format: fourcc('X', 'R', '3', '0'), Modifier: 0}
 	if !slices.Contains(r.DMABuf().Formats, format) {
@@ -66,7 +65,7 @@ func hdrPQScene(t *testing.T, r *Renderer) (ports.Scene, map[domain.WindowID]dom
 	})
 	buf := &domain.DMABuf{ID: 2020, Width: 64, Height: 16, Format: format.Format, Planes: []domain.DMABufPlane{{File: f, Stride: 256}}}
 	c := domain.SurfaceContent{ID: 1, Seq: 1, Width: 64, Height: 16, LogicalW: 64, LogicalH: 16, Opaque: true, DMABuf: buf, Color: domain.SurfaceColor{TF: domain.ColorTFPQ, Primaries: domain.ColorPrimariesBT2020}}
-	scene := ports.Scene{Seq: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
+	scene := domain.Scene{Seq: 1, Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
 	return scene, map[domain.WindowID]domain.SurfaceContent{1: c}, nits
 }
 
@@ -115,7 +114,7 @@ func TestHDRPixels(t *testing.T) {
 		t.Skipf("no HDR target: %v", err)
 	}
 	defer bufs[0].Planes[0].File.Close()
-	if err := render(plain, ports.Scene{Background: "#ffffff"}, nil); err != nil {
+	if err := render(plain, domain.Scene{Background: "#ffffff"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if plain.HDRPixels() != nil {
@@ -123,7 +122,7 @@ func TestHDRPixels(t *testing.T) {
 	}
 	sdr := newTestRenderer(t, 64, 4)
 	defer sdr.Close()
-	if err := render(sdr, ports.Scene{Background: "#ffffff"}, nil); err != nil {
+	if err := render(sdr, domain.Scene{Background: "#ffffff"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if sdr.HDRPixels() != nil {
@@ -237,7 +236,7 @@ func TestHDRLinearBlend(t *testing.T) {
 	// Two translucent SDR overlays over black: half white then half black.
 	white := shmContent(t, 64, 16, 64*4, fill(64, 16, [4]byte{128, 128, 128, 128}))
 	black := shmContent(t, 64, 16, 64*4, fill(64, 16, [4]byte{0, 0, 0, 128}))
-	scene := ports.Scene{Background: "#000000", Layers: []ports.SceneLayer{{ID: 1, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 64, H: 16}}, {ID: 2, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 64, H: 16}}}}
+	scene := domain.Scene{Background: "#000000", Layers: []domain.SceneLayer{{ID: 1, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 64, H: 16}}, {ID: 2, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 64, H: 16}}}}
 	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: *white, 2: *black}); err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +253,7 @@ func TestHDRSolidColorsMatchPartialRedraw(t *testing.T) {
 	r := hdrTestRenderer(t)
 	const background = "#804020"
 	const border = "#4080c0"
-	scene := ports.Scene{Seq: 1, Background: background, Border: ports.Border{Active: border}, Separators: []ports.Separator{{Rect: domain.Rect{X: 16, Y: 2, W: 2, H: 12}, Active: true}}, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 20, Y: 2, W: 28, H: 12}}}}
+	scene := domain.Scene{Seq: 1, Background: background, Border: domain.Border{Active: border}, Separators: []domain.Separator{{Rect: domain.Rect{X: 16, Y: 2, W: 2, H: 12}, Active: true}}, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: 20, Y: 2, W: 28, H: 12}}}}
 	// The window body is a solid fill; the separator is another solid draw.
 	content := solidContent(t, 28, 12, color.RGBA{128, 64, 32, 255})
 	content.ID, content.Seq = 1, 1

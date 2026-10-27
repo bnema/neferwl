@@ -32,7 +32,7 @@ type Keymap struct {
 	stateUnref         func(uintptr)
 	stateNew           func(uintptr) uintptr
 	// Secure tracking belongs to the same producer goroutine as native state.
-	epoch             ports.SecurityState
+	epoch             domain.SecurityState
 	epochSet          bool
 	held, quarantined map[uint32]bool
 	keymapString      func(uintptr, uint32) unsafe.Pointer
@@ -173,7 +173,7 @@ func (k *Keymap) Key(evdevCode uint32, pressed bool, t time.Duration) ports.KeyE
 // new security epoch. Keys physically held across a transition are suppressed
 // (including repeats and their eventual release), never replayed into XKB.
 // On reset failure no event is translated against the old native state.
-func (k *Keymap) KeySecure(code uint32, pressed bool, t time.Duration, epoch ports.SecurityState) (ports.KeyEvent, bool, error) {
+func (k *Keymap) KeySecure(code uint32, pressed bool, t time.Duration, epoch domain.SecurityState) (ports.KeyEvent, bool, error) {
 	if !k.epochSet || k.epoch != epoch {
 		next := k.stateNew(k.mapPtr)
 		if next == 0 {

@@ -277,7 +277,7 @@ func TestDataDragRefused(t *testing.T) {
 	t.Run("locked", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			d := startDnd(t)
-			locked := ports.SecurityState{Generation: 1, Protected: true}
+			locked := domain.SecurityState{Generation: 1, Protected: true}
 			d.epoch.Store(locked)
 			d.client <- ports.SessionLockChanged{State: locked}
 			d.settle(t)
@@ -331,7 +331,7 @@ func TestDataDragLockCancelsIt(t *testing.T) {
 		d.start(t, dndIcon)
 		d.client <- ports.DataDragIcon{ID: dndIcon, W: 16, H: 16}
 		d.settle(t)
-		locked := ports.SecurityState{Generation: 1, Protected: true}
+		locked := domain.SecurityState{Generation: 1, Protected: true}
 		d.epoch.Store(locked)
 		d.client <- ports.SessionLockChanged{State: locked, Surfaces: []ports.LockSurfacePlacement{{ID: 10, Output: "A", Width: 1000, Height: 600}}}
 		set := d.settle(t)
@@ -348,7 +348,7 @@ func TestDataDragLockCancelsIt(t *testing.T) {
 			}
 		}
 		// After the unlock, the old drag is gone: plain pointer events.
-		unlocked := ports.SecurityState{Generation: 2}
+		unlocked := domain.SecurityState{Generation: 2}
 		d.epoch.Store(unlocked)
 		d.client <- ports.SessionLockChanged{State: unlocked}
 		d.settle(t)
@@ -391,7 +391,7 @@ func TestDataDragIconIsLastWindowAtCursor(t *testing.T) {
 		set := d.settle(t)
 		s := dragScene(set, "A")
 		last := s.Windows[len(s.Windows)-1]
-		want := ports.SceneWindow{ID: dndIcon, Rect: domain.Rect{X: cx - 4, Y: cy - 6, W: 32, H: 24}, Popup: true, OverLayers: true}
+		want := domain.SceneWindow{ID: dndIcon, Rect: domain.Rect{X: cx - 4, Y: cy - 6, W: 32, H: 24}, Popup: true, OverLayers: true}
 		if last != want {
 			t.Fatalf("last window %+v, want %+v", last, want)
 		}

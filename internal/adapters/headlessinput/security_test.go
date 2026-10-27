@@ -31,7 +31,7 @@ func TestSecureScriptSnapshotsEveryInputKind(t *testing.T) {
 	close(script)
 	input := make(chan ports.InputEvent, 32)
 	security := portsmocks.NewMockSessionSecurity(t)
-	state := ports.SecurityState{Generation: 7, Protected: true}
+	state := domain.SecurityState{Generation: 7, Protected: true}
 	security.EXPECT().Snapshot().Return(state)
 	if err := RunSecure(context.Background(), km, nil, script, input, nil, nil, logging.For(context.Background(), "input"), security); err != nil {
 		t.Fatal(err)
@@ -100,7 +100,7 @@ func TestSecureScriptDiagnosticsRedactProtectedPayloads(t *testing.T) {
 				t.Skip(err)
 			}
 			security := portsmocks.NewMockSessionSecurity(t)
-			security.EXPECT().Snapshot().Return(ports.SecurityState{Generation: 1, Protected: protected}).Times(len(lines))
+			security.EXPECT().Snapshot().Return(domain.SecurityState{Generation: 1, Protected: protected}).Times(len(lines))
 			var buf securityLogBuffer
 			log := zerowrap.Logger{Logger: zerowrap.New(zerowrap.Config{Level: "debug", Format: "json", Output: &buf}).With().Str("component", "input").Logger()}
 			script := make(chan string, len(lines))
@@ -153,8 +153,8 @@ func TestSecureScriptSnapshotsBeforeKeyTranslation(t *testing.T) {
 		t.Skip(err)
 	}
 	security := portsmocks.NewMockSessionSecurity(t)
-	state := ports.SecurityState{Generation: 7, Protected: true}
-	security.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState {
+	state := domain.SecurityState{Generation: 7, Protected: true}
+	security.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState {
 		// The first emitted event presses Shift. If snapshot happened after
 		// km.Key, the live keymap would already contain the Shift modifier.
 		if ev := km.Key(30, false, 0); ev.Mods&domain.ModShift != 0 {
@@ -187,19 +187,19 @@ func TestSecureScriptBlockedSendPreservesProductionSnapshot(t *testing.T) {
 			if err != nil {
 				t.Skip(err)
 			}
-			original := ports.SecurityState{Generation: 1, Protected: true}
-			changed := ports.SecurityState{Generation: 2}
+			original := domain.SecurityState{Generation: 1, Protected: true}
+			changed := domain.SecurityState{Generation: 2}
 			security := portsmocks.NewMockSessionSecurity(t)
-			var current atomic.Pointer[ports.SecurityState]
+			var current atomic.Pointer[domain.SecurityState]
 			current.Store(&original)
 			produced := make(chan struct{})
-			security.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState {
+			security.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState {
 				state := *current.Load()
 				close(produced)
 				return state
 			}).Once()
 			if line == "key a" {
-				security.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return *current.Load() }).Once()
+				security.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return *current.Load() }).Once()
 			}
 			script := make(chan string, 1)
 			script <- line
@@ -243,8 +243,8 @@ func TestSecureScriptQuarantinesModifierAcrossTransition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	initial := ports.SecurityState{}
-	locked := ports.SecurityState{Generation: 1, Protected: true}
+	initial := domain.SecurityState{}
+	locked := domain.SecurityState{Generation: 1, Protected: true}
 	security := portsmocks.NewMockSessionSecurity(t)
 	security.EXPECT().Snapshot().Return(initial).Once()  // Super down
 	security.EXPECT().Snapshot().Return(locked).Times(5) // q down/up, held Super up, fresh q down/up

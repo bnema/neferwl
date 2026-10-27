@@ -31,7 +31,7 @@ func TestLayerPointerPopupAndFocus(t *testing.T) {
 		input := make(chan ports.InputEvent, 8)
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 256)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
 		if err != nil {
 			t.Fatal(err)
@@ -73,7 +73,7 @@ func TestLayerPointerPopupAndFocus(t *testing.T) {
 			t.Fatalf("popup rect %+v", cp.Rect)
 		}
 		client <- ports.PopupMapped{ID: 9}
-		sceneMatch(t, scenes, func(sc ports.Scene) bool {
+		sceneMatch(t, scenes, func(sc domain.Scene) bool {
 			w := sc.Windows[len(sc.Windows)-1]
 			return w.Popup && w.ID == 9 && w.Rect == (domain.Rect{X: 70, Y: 10, W: 30, H: 20})
 		})
@@ -153,7 +153,7 @@ func TestWindowPopupUnderOverlay(t *testing.T) {
 		input := make(chan ports.InputEvent, 8)
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 256)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
 		if err != nil {
 			t.Fatal(err)
@@ -168,7 +168,7 @@ func TestWindowPopupUnderOverlay(t *testing.T) {
 		client <- ports.PopupRequest{ID: 9, Parent: 1, Positioner: ports.Positioner{Width: 30, Height: 20, AnchorRect: domain.Rect{X: 0, Y: 0, W: 10, H: 10}}}
 		next(t, commands, func(v ports.ConfigurePopup) bool { return v.ID == 9 })
 		client <- ports.PopupMapped{ID: 9}
-		sc := sceneMatch(t, scenes, func(sc ports.Scene) bool { return len(sc.Windows) == 2 })
+		sc := sceneMatch(t, scenes, func(sc domain.Scene) bool { return len(sc.Windows) == 2 })
 		if w := sc.Windows[1]; !w.Popup || w.OverLayers {
 			t.Fatalf("window popup %+v", w)
 		}
@@ -193,7 +193,7 @@ func TestLayerHitOrder(t *testing.T) {
 		input := make(chan ports.InputEvent, 8)
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 256)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{Clock: steppingClock(t)})
 		if err != nil {
 			t.Fatal(err)
@@ -242,7 +242,7 @@ func TestLayerFocusAcrossOutputs(t *testing.T) {
 		input := make(chan ports.InputEvent, 8)
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 256)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
 		if err != nil {
 			t.Fatal(err)
@@ -293,7 +293,7 @@ func TestLayerInputRegionPassThrough(t *testing.T) {
 		input := make(chan ports.InputEvent, 16)
 		output := make(chan ports.OutputEvent, 16)
 		commands := make(chan ports.ClientCommand, 256)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
 		if err != nil {
 			t.Fatal(err)
@@ -341,7 +341,7 @@ func TestRemovedLayerInputRegionCleared(t *testing.T) {
 		input := make(chan ports.InputEvent, 16)
 		output := make(chan ports.OutputEvent, 16)
 		commands := make(chan ports.ClientCommand, 256)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
 		if err != nil {
 			t.Fatal(err)
@@ -386,7 +386,7 @@ func TestPopupInputRegionPassesThroughToWindow(t *testing.T) {
 		input := make(chan ports.InputEvent, 16)
 		output := make(chan ports.OutputEvent, 16)
 		commands := make(chan ports.ClientCommand, 256)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
 		if err != nil {
 			t.Fatal(err)
@@ -401,7 +401,7 @@ func TestPopupInputRegionPassesThroughToWindow(t *testing.T) {
 		client <- ports.PopupRequest{ID: 9, Parent: 1, Positioner: ports.Positioner{Width: 30, Height: 20, AnchorRect: domain.Rect{X: 10, Y: 10, W: 10, H: 10}}}
 		next(t, commands, func(v ports.ConfigurePopup) bool { return v.ID == 9 })
 		client <- ports.PopupMapped{ID: 9}
-		sc := sceneMatch(t, scenes, func(sc ports.Scene) bool { return len(sc.Windows) == 2 })
+		sc := sceneMatch(t, scenes, func(sc domain.Scene) bool { return len(sc.Windows) == 2 })
 		client <- ports.InputRegionChanged{ID: 9, Rects: []domain.Rect{{X: 10, Y: 0, W: 20, H: 20}}}
 		scene(t, scenes)
 		popup := sc.Windows[1].Rect
@@ -426,7 +426,7 @@ func TestHiddenGrabPopupLosesKeyboard(t *testing.T) {
 		client := make(chan ports.ClientEvent, 8)
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 64)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		c, err := core.New(cfg, core.Channels{Client: client, Output: output, Commands: commands, Scenes: scenes}, core.Options{Clock: steppingClock(t)})
 		if err != nil {
 			t.Fatal(err)

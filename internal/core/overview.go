@@ -668,7 +668,7 @@ func (s *overviewSlots) lookup(w *Workspace) (Rect, bool) {
 // horizontal. Horizontal axis: full-height slots as wide as their content,
 // stack peeks included (the stash pile takes a band of the slot), the current one
 // centred; the rule is vertical, in the spacing between two slots.
-func (m *Monitor) overviewRows() (overviewSlots, []ports.Separator) {
+func (m *Monitor) overviewRows() (overviewSlots, []domain.Separator) {
 	cur := m.Current()
 	u := cur.OverviewArea()
 	gap := max(1, u.H*3/100)

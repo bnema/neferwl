@@ -5,6 +5,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -17,7 +18,7 @@ func TestConfigureVisible(t *testing.T) {
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 1
 		commands := make(chan ports.ClientCommand, 256)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		c, err := New(cfg, Channels{Commands: commands, Scenes: scenes}, Options{})
 		if err != nil {
 			t.Fatal(err)

@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestOrientRoundedWindow(t *testing.T) {
@@ -14,9 +13,9 @@ func TestOrientRoundedWindow(t *testing.T) {
 		sw, sh := r.sceneSize(transform)
 		outer := image.Rect(9, 13, 69, 77)
 		body := outer.Inset(3)
-		s := ports.Scene{Scale: 1, Background: "#ffffff", Border: ports.Border{Width: 3, Active: "#ff8800"},
-			Windows:    []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 9, Y: 13, W: 60, H: 64}, Inset: domain.SideAll, Radius: 10, Dim: 0.5}},
-			Separators: []ports.Separator{{Window: 1, Active: true}}}
+		s := domain.Scene{Scale: 1, Background: "#ffffff", Border: domain.Border{Width: 3, Active: "#ff8800"},
+			Windows:    []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: 9, Y: 13, W: 60, H: 64}, Inset: domain.SideAll, Radius: 10, Dim: 0.5}},
+			Separators: []domain.Separator{{Window: 1, Active: true}}}
 		contents := map[domain.WindowID]domain.SurfaceContent{1: {ID: 1, Width: 1, Height: 1, LogicalW: 54, LogicalH: 58, Solid: &domain.SolidColor{R: 1, A: 1}}}
 		ds := r.draws(s, contents, newDamage(&target{}, s, image.Rect(0, 0, sw, sh)))
 		if len(ds) != 4 {

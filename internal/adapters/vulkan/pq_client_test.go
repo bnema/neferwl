@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // A PQ 2101010 client is decoded before the SDR intermediate, which clips
@@ -54,7 +53,7 @@ func TestPQClientComposition(t *testing.T) {
 			})
 			buf := &domain.DMABuf{ID: uint64(format.Format), Width: 64, Height: 4, Format: format.Format, Planes: []domain.DMABufPlane{{File: f, Stride: 256}}}
 			c := domain.SurfaceContent{ID: 1, Width: 64, Height: 4, Opaque: name[0] == 'X', Color: domain.SurfaceColor{TF: domain.ColorTFPQ, Primaries: domain.ColorPrimariesBT2020}, DMABuf: buf}
-			scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 4}}}}
+			scene := domain.Scene{Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 4}}}}
 			if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: c}); err != nil {
 				t.Fatal(err)
 			}

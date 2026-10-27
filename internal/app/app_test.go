@@ -94,7 +94,7 @@ func TestQuitJoinsWorkers(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), NoTerminal: true}, func(input chan<- ports.InputEvent) {
-			input <- ports.SecurityInput{State: ports.SecurityState{}, Event: ports.KeyEvent{Keysym: "BackSpace", Mods: domain.ModCtrl | domain.ModAlt, Pressed: true}}
+			input <- ports.SecurityInput{State: domain.SecurityState{}, Event: ports.KeyEvent{Keysym: "BackSpace", Mods: domain.ModCtrl | domain.ModAlt, Pressed: true}}
 		})
 	}()
 	select {
@@ -123,7 +123,7 @@ func headlessSpawnClose(t *testing.T, animated bool) {
 	cfg := config.Defaults()
 	cfg.Terminal.Command = []string{"weston-simple-shm"}
 	cfg.Animations.On = animated
-	scenes := make(chan []ports.Scene, 4096)
+	scenes := make(chan []domain.Scene, 4096)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	inputReady := make(chan chan<- ports.InputEvent, 1)
@@ -148,7 +148,7 @@ func headlessSpawnClose(t *testing.T, animated bool) {
 			t.Error("Run did not stop")
 		}
 	}()
-	input <- ports.SecurityInput{State: ports.SecurityState{}, Event: ports.KeyEvent{Keysym: "Return", Mods: domain.ModSuper, Pressed: true}}
+	input <- ports.SecurityInput{State: domain.SecurityState{}, Event: ports.KeyEvent{Keysym: "Return", Mods: domain.ModSuper, Pressed: true}}
 	waitScene := func(count int, timeout time.Duration) {
 		t.Helper()
 		timer := time.NewTimer(timeout)
@@ -178,7 +178,7 @@ func headlessSpawnClose(t *testing.T, animated bool) {
 		}
 	}
 	waitScene(1, 10*time.Second)
-	input <- ports.SecurityInput{State: ports.SecurityState{}, Event: ports.KeyEvent{Keysym: "q", Mods: domain.ModSuper, Pressed: true}}
+	input <- ports.SecurityInput{State: domain.SecurityState{}, Event: ports.KeyEvent{Keysym: "q", Mods: domain.ModSuper, Pressed: true}}
 	waitScene(0, 5*time.Second)
 }
 
@@ -252,8 +252,8 @@ func headlessPointerClickFocus(t *testing.T, animated bool) {
 	cfg.Animations.On = animated
 	// The tap drops a scene it has no room for: a collector keeps up with
 	// the animation frames.
-	scenes := make(chan []ports.Scene, 128)
-	var got [][]ports.Scene
+	scenes := make(chan []domain.Scene, 128)
+	var got [][]domain.Scene
 	stop := make(chan struct{})
 	collected := make(chan struct{})
 	go func() {
@@ -406,7 +406,7 @@ func TestRelayConfigKeyboard(t *testing.T) {
 
 func TestHeadlessTwoOutputs(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-	scenes := make(chan []ports.Scene, 64)
+	scenes := make(chan []domain.Scene, 64)
 	shots := t.TempDir()
 	err := Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), NoTerminal: true, ScreenshotDir: shots, Sizes: [][2]int{{640, 480}, {320, 240}}, Timeout: 2 * time.Second, testScenes: scenes})
 	if err != nil {
@@ -415,7 +415,7 @@ func TestHeadlessTwoOutputs(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
-	var last []ports.Scene
+	var last []domain.Scene
 	for len(scenes) > 0 {
 		last = <-scenes
 	}

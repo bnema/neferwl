@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // damagedContent writes px into the content's pool (the client drawing
@@ -67,7 +66,7 @@ func damageMatchesFullRedraw(t *testing.T, tr, out domain.BufferTransform) {
 	base := shmContent(t, w, h, w*4, pixels)
 	base.ID, base.Transform = 1, tr
 	f := base.SHM.File
-	scene := ports.Scene{Seq: 5, Transform: out, OutputWidth: 64, OutputHeight: 48, Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: w, H: h}}}}
+	scene := domain.Scene{Seq: 5, Transform: out, OutputWidth: 64, OutputHeight: 48, Scale: 1, Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: w, H: h}}}}
 	hist := []domain.SeqDamage{{Seq: 1, Full: true}}
 	c := damagedContent(t, f, *base, 1, pixels, hist)
 	step := func(i int, c domain.SurfaceContent) {
@@ -77,7 +76,7 @@ func damageMatchesFullRedraw(t *testing.T, tr, out domain.BufferTransform) {
 		if err := render(damaged, scene, contents); err != nil {
 			t.Fatal(err)
 		}
-		if err := render(full, ports.Scene{Transform: out, OutputWidth: 64, OutputHeight: 48, Scale: 1, Background: scene.Background, Windows: scene.Windows}, contents); err != nil {
+		if err := render(full, domain.Scene{Transform: out, OutputWidth: 64, OutputHeight: 48, Scale: 1, Background: scene.Background, Windows: scene.Windows}, contents); err != nil {
 			t.Fatal(err)
 		}
 		if a, b := readPixels(t, damaged), readPixels(t, full); !bytes.Equal(a.Pix, b.Pix) {
@@ -123,10 +122,10 @@ func TestRendererDamageWindowLeftOutAndBack(t *testing.T) {
 	c := solidContent(t, 16, 16, color.RGBA{200, 10, 10, 255})
 	c.ID, c.Seq = 1, 1
 	contents := map[domain.WindowID]domain.SurfaceContent{1: c}
-	with := ports.Scene{Seq: 9, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: 16, H: 16}}}}
+	with := domain.Scene{Seq: 9, Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: 16, H: 16}}}}
 	without := with
 	without.Windows = nil
-	check := func(s ports.Scene, what string) {
+	check := func(s domain.Scene, what string) {
 		t.Helper()
 		if err := render(damaged, s, contents); err != nil {
 			t.Fatal(err)

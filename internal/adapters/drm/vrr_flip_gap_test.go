@@ -10,7 +10,6 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -115,7 +114,7 @@ func TestRunWaitsVRRFlipGap(t *testing.T) {
 			}
 			return last, n
 		}
-		scenes := make(chan ports.Scene, 1)
+		scenes := make(chan domain.Scene, 1)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		setOutputRenderer(t, o, r)
@@ -123,9 +122,9 @@ func TestRunWaitsVRRFlipGap(t *testing.T) {
 			done <- o.Run(ctx, nil, make(chan bool), scenes, nil, nil, nil, discardSink(t), nil, nil)
 		}()
 		// A composed fullscreen window: a game frame under VRR.
-		game := ports.Scene{OutputWidth: 200, OutputHeight: 100,
-			Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 200, H: 100}, Fullscreen: true}},
-			Layers:  []ports.SceneLayer{{ID: 5, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 10, H: 10}}}}
+		game := domain.Scene{OutputWidth: 200, OutputHeight: 100,
+			Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 200, H: 100}, Fullscreen: true}},
+			Layers:  []domain.SceneLayer{{ID: 5, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 10, H: 10}}}}
 		scenes <- game
 		waitFor(t, func() bool { _, n := frames(); return n == 1 })
 		last, _ := frames()

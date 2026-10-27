@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // TestRenderSteadyStateAllocations measures the cost of a small stable scene,
@@ -29,7 +28,7 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newTestRenderer(t, tc.tw, tc.th)
 			defer r.Close()
-			scene := ports.Scene{Seq: 1, Transform: tc.transform, Scale: 1, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: tc.sceneW, H: tc.sceneH}}}}
+			scene := domain.Scene{Seq: 1, Transform: tc.transform, Scale: 1, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: tc.sceneW, H: tc.sceneH}}}}
 			content := solidContent(t, 8, 8, color.RGBA{R: 255, A: 255})
 			content.ID, content.Surface, content.Seq, content.Version = 1, 1, 1, 1
 			contents := map[domain.WindowID]domain.SurfaceContent{1: content}
@@ -44,11 +43,11 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 			// our code guarantees is that it does not grow with the scene.
 			t.Logf("small steady-state Render: %.1f allocs/frame (syncFD path: %v)", testing.AllocsPerRun(20, frame), r.syncFD)
 			renderAllocs := func(windows int) float64 {
-				var scenes [4]ports.Scene
+				var scenes [4]domain.Scene
 				for i := range scenes {
-					scenes[i] = ports.Scene{Seq: uint64(1000 + windows*10 + i), Transform: tc.transform, Scale: 1}
+					scenes[i] = domain.Scene{Seq: uint64(1000 + windows*10 + i), Transform: tc.transform, Scale: 1}
 					for w := range windows {
-						scenes[i].Windows = append(scenes[i].Windows, ports.SceneWindow{ID: 1, Rect: domain.Rect{X: i + w%2, W: tc.sceneW - 4, H: tc.sceneH - 4}})
+						scenes[i].Windows = append(scenes[i].Windows, domain.SceneWindow{ID: 1, Rect: domain.Rect{X: i + w%2, W: tc.sceneW - 4, H: tc.sceneH - 4}})
 					}
 				}
 				n := 0
@@ -67,9 +66,9 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 			// A moving window: scenes are prebuilt (core allocates them, not
 			// the renderer), each with a fresh Seq, so every frame draws
 			// everything again. The draw building must not allocate.
-			var moving [4]ports.Scene
+			var moving [4]domain.Scene
 			for i := range moving {
-				moving[i] = ports.Scene{Seq: uint64(100 + i), Transform: tc.transform, Scale: 1, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: i, W: tc.sceneW - 4, H: tc.sceneH - 4}}}}
+				moving[i] = domain.Scene{Seq: uint64(100 + i), Transform: tc.transform, Scale: 1, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: i, W: tc.sceneW - 4, H: tc.sceneH - 4}}}}
 			}
 			bounds := image.Rect(0, 0, r.width, r.height)
 			n := 0
@@ -120,13 +119,13 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 			content2 := solidContent(t, 8, 8, color.RGBA{G: 255, A: 255})
 			content2.ID, content2.Surface, content2.Seq, content2.Version = 2, 2, 1, 1
 			dcontents := map[domain.WindowID]domain.SurfaceContent{1: content, 2: content2}
-			before := ports.Scene{Seq: 200, Transform: tc.transform, Scale: 1, Windows: []ports.SceneWindow{
+			before := domain.Scene{Seq: 200, Transform: tc.transform, Scale: 1, Windows: []domain.SceneWindow{
 				{ID: 1, Rect: domain.Rect{W: half, H: tc.sceneH}},
 				{ID: 2, Rect: domain.Rect{X: half, W: tc.sceneW - half, H: tc.sceneH}},
 			}}
 			moved := before
 			moved.Seq = 201
-			moved.Windows = []ports.SceneWindow{before.Windows[0], {ID: 2, Rect: domain.Rect{X: half + 1, W: tc.sceneW - half - 1, H: tc.sceneH}}}
+			moved.Windows = []domain.SceneWindow{before.Windows[0], {ID: 2, Rect: domain.Rect{X: half + 1, W: tc.sceneW - half - 1, H: tc.sceneH}}}
 			full := image.Rect(0, 0, r.width, r.height)
 			held = &target{valid: true, sceneSeq: before.Seq, scene: before, windows: map[domain.WindowID]heldWindow{
 				1: {seq: 1, rect: image.Rect(0, 0, half, tc.sceneH)},
@@ -171,7 +170,7 @@ func TestRenderSteadyStateDMABufAllocations(t *testing.T) {
 	}
 	f := udmabuf(t, 64, 16, func(int, int) [4]byte { return [4]byte{0, 0, 255, 255} })
 	buf := &domain.DMABuf{ID: 7, Width: 64, Height: 16, Format: linear.Format, Planes: []domain.DMABufPlane{{File: f, Stride: 256}}}
-	scene := ports.Scene{Seq: 1, Background: "#000000", Scale: 1, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: 64, H: 16}}}}
+	scene := domain.Scene{Seq: 1, Background: "#000000", Scale: 1, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: 64, H: 16}}}}
 	contents := map[domain.WindowID]domain.SurfaceContent{1: {ID: 1, Surface: 1, Seq: 1, Version: 1, Width: 64, Height: 16, DMABuf: buf}}
 	frame := func() {
 		if err := render(r, scene, contents); err != nil {
@@ -183,11 +182,11 @@ func TestRenderSteadyStateDMABufAllocations(t *testing.T) {
 		t.Fatalf("imports %d: the frame does not take the dmabuf path", len(r.imports))
 	}
 	// Each new scene Seq draws the dmabuf again, with its barriers.
-	var moving [4]ports.Scene
+	var moving [4]domain.Scene
 	for i := range moving {
 		moving[i] = scene
 		moving[i].Seq = uint64(10 + i)
-		moving[i].Windows = []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4 + i, Y: 4, W: 64, H: 16}}}
+		moving[i].Windows = []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4 + i, Y: 4, W: 64, H: 16}}}
 	}
 	n := 0
 	moved := func() {
@@ -275,7 +274,7 @@ func TestSceneWalkUnchangedTiledSHM(t *testing.T) {
 	video := solidContent(t, 8, 8, color.RGBA{G: 255, A: 255})
 	video.ID, video.Seq, video.Surface, video.Version = 1, 1, 66, 1
 	root.Children = append(root.Children, domain.Subsurface{X: 80, Y: 0, SurfaceContent: video})
-	scene := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 128, H: 128}}}}
+	scene := domain.Scene{Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 128, H: 128}}}}
 	contents := map[domain.WindowID]domain.SurfaceContent{1: root}
 	if err := render(r, scene, contents); err != nil {
 		t.Fatal(err)

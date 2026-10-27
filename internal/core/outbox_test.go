@@ -7,6 +7,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -33,7 +34,7 @@ func TestOutboxMergesAdjacentMotionOnly(t *testing.T) {
 		o := newOutbox()
 		// Nobody receives, so every command queues.
 		out := make(chan ports.ClientCommand)
-		push := func(v ports.ClientCommand) { o.push(out, v, ports.SecurityState{}, false) }
+		push := func(v ports.ClientCommand) { o.push(out, v, domain.SecurityState{}, false) }
 		push(ports.PointerMotionTo{ID: 1, X: 1, Y: 1, DX: 1, DY: 2, UnaccelDX: 3, UnaccelDY: 4})
 		push(ports.PointerMotionTo{ID: 1, X: 2, Y: 2, DX: 10, DY: 20, UnaccelDX: 30, UnaccelDY: 40})
 		push(ports.PointerButtonTo{ID: 1, Button: 0x110, Pressed: true})
@@ -60,12 +61,12 @@ func TestOutboxMergesSecuredMotionPerEnvelope(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		o := newOutbox()
 		out := make(chan ports.ClientCommand)
-		a := ports.SecurityState{Generation: 1}
-		b := ports.SecurityState{Generation: 2}
+		a := domain.SecurityState{Generation: 1}
+		b := domain.SecurityState{Generation: 2}
 		o.push(out, ports.PointerMotionTo{ID: 1, X: 1, DX: 1}, a, true)
 		o.push(out, ports.PointerMotionTo{ID: 1, X: 2, DX: 2}, a, true)
 		o.push(out, ports.PointerMotionTo{ID: 1, X: 3, DX: 4}, b, true)
-		o.push(out, ports.PointerMotionTo{ID: 1, X: 4, DX: 8}, ports.SecurityState{}, false)
+		o.push(out, ports.PointerMotionTo{ID: 1, X: 4, DX: 8}, domain.SecurityState{}, false)
 		wantOutbox(t, takeAll(&o),
 			ports.SecurityCommand{State: a, Command: ports.PointerMotionTo{ID: 1, X: 2, DX: 3}},
 			ports.SecurityCommand{State: b, Command: ports.PointerMotionTo{ID: 1, X: 3, DX: 4}},
@@ -80,8 +81,8 @@ func TestOutboxSendsDirectlyWhileDisplayKeepsUp(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		o := newOutbox()
 		out := make(chan ports.ClientCommand, 4)
-		o.push(out, ports.PointerMotionTo{ID: 1, DX: 1}, ports.SecurityState{}, false)
-		o.push(out, ports.PointerMotionTo{ID: 1, DX: 2}, ports.SecurityState{}, false)
+		o.push(out, ports.PointerMotionTo{ID: 1, DX: 1}, domain.SecurityState{}, false)
+		o.push(out, ports.PointerMotionTo{ID: 1, DX: 2}, domain.SecurityState{}, false)
 		if len(out) != 2 {
 			t.Fatalf("%d commands sent, want 2 unmerged", len(out))
 		}
@@ -142,7 +143,7 @@ func TestOutboxQueuedDeliveryAllocations(t *testing.T) {
 		full <- ports.FocusWindow{}
 		sink := make(chan ports.ClientCommand, 8)
 		var cmd ports.ClientCommand = ports.FocusWindow{ID: 1}
-		var state ports.SecurityState
+		var state domain.SecurityState
 		ctx := context.Background()
 		cycle := func() {
 			// full has no room: push queues, even for a secured command.
@@ -174,7 +175,7 @@ func TestOutboxStats(t *testing.T) {
 		o := newOutbox()
 		out := make(chan ports.ClientCommand, 1)
 		ctx := context.Background()
-		var none ports.SecurityState
+		var none domain.SecurityState
 		o.push(out, ports.FocusWindow{ID: 1}, none, false) // direct: room
 		o.push(out, ports.PointerMotionTo{ID: 1, DX: 1}, none, false)
 		time.Sleep(5 * time.Millisecond)
@@ -204,7 +205,7 @@ func TestOutboxQueueWaitIsPerEntry(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		o := newOutbox()
 		out := make(chan ports.ClientCommand)
-		var none ports.SecurityState
+		var none domain.SecurityState
 		o.push(out, ports.FocusWindow{ID: 1}, none, false) // queued at 0
 		time.Sleep(9 * time.Millisecond)
 		o.push(out, ports.FocusWindow{ID: 2}, none, false) // queued at 9 ms
@@ -230,7 +231,7 @@ func TestOutboxStatsSampleOutstandingBacklog(t *testing.T) {
 		o := newOutbox()
 		out := make(chan ports.ClientCommand)
 		for range outboxLimit {
-			o.push(out, ports.FocusWindow{ID: 1}, ports.SecurityState{}, false)
+			o.push(out, ports.FocusWindow{ID: 1}, domain.SecurityState{}, false)
 		}
 		batch := o.take()
 		for range 2 {

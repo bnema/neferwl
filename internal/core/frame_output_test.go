@@ -9,13 +9,13 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-func sceneFor(set []ports.Scene, output string) ports.Scene {
+func sceneFor(set []domain.Scene, output string) domain.Scene {
 	for _, s := range set {
 		if s.Output == output {
 			return s
 		}
 	}
-	return ports.Scene{}
+	return domain.Scene{}
 }
 
 // A page flip of one output advances only that output's springs: the other

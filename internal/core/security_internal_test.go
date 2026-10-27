@@ -15,9 +15,9 @@ import (
 func TestProtectedDropsPrivateOffscreenCaptureAndDesktopEffects(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, ws, commands := hiddenCaptureCommands(t)
-		state := ports.SecurityState{Generation: 1, Protected: true}
+		state := domain.SecurityState{Generation: 1, Protected: true}
 		gate := portsmocks.NewMockSessionSecurity(t)
-		gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return state })
+		gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return state })
 		c.opts.Security = gate
 		c.captureOpen(ports.CaptureSessionOpen{ID: 7, Workspace: ws.ID})
 		c.captureExclusionBegin(ports.CaptureExclusionBegin{Session: 7})
@@ -65,7 +65,7 @@ func TestProtectedDropsPrivateOffscreenCaptureAndDesktopEffects(t *testing.T) {
 		c.buttons[0x110] = true
 		c.pointer, c.grab = 10, 10
 		c.keyboard = keyboard{sent: 10}
-		state = ports.SecurityState{Generation: 2}
+		state = domain.SecurityState{Generation: 2}
 		if !c.syncSecurity() || len(c.inputKeys) != 0 || c.grab != 0 || c.keyboard.sent != 0 || len(c.lock.surfaces) != 0 {
 			t.Fatal("release did not reset input ownership")
 		}
@@ -96,9 +96,9 @@ func TestLockFocusMovesToFocusedOutputSurfaceUntilPinned(t *testing.T) {
 				c, _, _ := hiddenCaptureCommands(t)
 				c.addScreen(ports.OutputInfo{Name: "B", Width: 400, Height: 300})
 				c.focusScreen = c.screenIndex("B")
-				state := ports.SecurityState{Generation: 1, Protected: true}
+				state := domain.SecurityState{Generation: 1, Protected: true}
 				gate := portsmocks.NewMockSessionSecurity(t)
-				gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return state })
+				gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return state })
 				c.opts.Security = gate
 				c.syncSecurity()
 				ctx := context.Background()
@@ -135,7 +135,7 @@ func TestWiredZeroEpochRejectsRawInputAndCommandKeepsOwnerEpoch(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, commands := hiddenCaptureCommands(t)
 		gate := portsmocks.NewMockSessionSecurity(t)
-		next := ports.SecurityState{Generation: 1, Protected: true}
+		next := domain.SecurityState{Generation: 1, Protected: true}
 		gate.EXPECT().Snapshot().Return(next)
 		c.opts.Security = gate
 		if _, ok := c.admitInput(ports.KeyEvent{Pressed: true}); ok {
@@ -149,7 +149,7 @@ func TestWiredZeroEpochRejectsRawInputAndCommandKeepsOwnerEpoch(t *testing.T) {
 			t.Fatal(err)
 		}
 		v := (<-commands).(ports.SecurityCommand)
-		if v.State != (ports.SecurityState{}) {
+		if v.State != (domain.SecurityState{}) {
 			t.Fatalf("relabeled stale command: %+v", v)
 		}
 		c.syncSecurity()
@@ -168,11 +168,11 @@ func TestProtectedFullscreenRequestAnswered(t *testing.T) {
 		p := Placement{ID: 1, Rect: Rect{W: 10, H: 10}}
 		v, _ := c.configures.next(p, configureTarget{})
 		c.configures.mark(v)
-		c.security = ports.SecurityState{Generation: 1, Protected: true}
+		c.security = domain.SecurityState{Generation: 1, Protected: true}
 		if !c.blockProtected(ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}) {
 			t.Fatal("fullscreen request allowed while locked")
 		}
-		c.security = ports.SecurityState{Generation: 2}
+		c.security = domain.SecurityState{Generation: 2}
 		if _, send := c.configures.next(p, configureTarget{}); !send {
 			t.Fatal("locked request not answered")
 		}

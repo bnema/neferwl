@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core/geom"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 type flashLevel uint8
@@ -35,8 +35,8 @@ type focusFlash struct {
 	start      time.Time
 	value      float64 // Retained between this output's own flips.
 	lastStarts map[flashTarget]time.Time
-	layout     []Placement       // Owner scratch, never shared with a published scene.
-	published  *ports.FocusFlash // Immutable last sample, reused when unchanged.
+	layout     []Placement        // Owner scratch, never shared with a published scene.
+	published  *domain.FocusFlash // Immutable last sample, reused when unchanged.
 }
 
 func (c *Core) flashOn() bool { return c.animOn() && c.cfg.Focus.Flash && !c.protectionRequested() }
@@ -180,7 +180,7 @@ func (c *Core) flashRect(target flashTarget, sc *screen) (Rect, int, bool) {
 	return rect, radius, true
 }
 
-func (c *Core) flashFor(sc *screen) *ports.FocusFlash {
+func (c *Core) flashFor(sc *screen) *domain.FocusFlash {
 	f := &c.flash
 	if !c.flashing(sc) {
 		return nil
@@ -189,10 +189,10 @@ func (c *Core) flashFor(sc *screen) *ports.FocusFlash {
 	if color == "" {
 		color = c.cfg.Border.Active
 	}
-	sample := ports.FocusFlash{Rect: f.rect, Width: c.cfg.Focus.FlashWidth, Radius: f.radius, Color: color, Alpha: f.value}
+	sample := domain.FocusFlash{Rect: f.rect, Width: c.cfg.Focus.FlashWidth, Radius: f.radius, Color: color, Alpha: f.value}
 	if f.published == nil || *f.published != sample {
 		// Allocate only for a changed sample; sample itself stays on the stack.
-		published := new(ports.FocusFlash)
+		published := new(domain.FocusFlash)
 		*published = sample
 		f.published = published
 	}

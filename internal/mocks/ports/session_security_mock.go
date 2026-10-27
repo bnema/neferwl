@@ -6,7 +6,6 @@ package portsmocks
 
 import (
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -47,18 +46,18 @@ func (_m *MockSessionSecurity) EXPECT() *MockSessionSecurity_Expecter {
 }
 
 // Snapshot provides a mock function for the type MockSessionSecurity
-func (_mock *MockSessionSecurity) Snapshot() ports.SecurityState {
+func (_mock *MockSessionSecurity) Snapshot() domain.SecurityState {
 	ret := _mock.Called()
 
 	if len(ret) == 0 {
 		panic("no return value specified for Snapshot")
 	}
 
-	var r0 ports.SecurityState
-	if returnFunc, ok := ret.Get(0).(func() ports.SecurityState); ok {
+	var r0 domain.SecurityState
+	if returnFunc, ok := ret.Get(0).(func() domain.SecurityState); ok {
 		r0 = returnFunc()
 	} else {
-		r0 = ret.Get(0).(ports.SecurityState)
+		r0 = ret.Get(0).(domain.SecurityState)
 	}
 	return r0
 }
@@ -80,12 +79,12 @@ func (_c *MockSessionSecurity_Snapshot_Call) Run(run func()) *MockSessionSecurit
 	return _c
 }
 
-func (_c *MockSessionSecurity_Snapshot_Call) Return(securityState ports.SecurityState) *MockSessionSecurity_Snapshot_Call {
+func (_c *MockSessionSecurity_Snapshot_Call) Return(securityState domain.SecurityState) *MockSessionSecurity_Snapshot_Call {
 	_c.Call.Return(securityState)
 	return _c
 }
 
-func (_c *MockSessionSecurity_Snapshot_Call) RunAndReturn(run func() ports.SecurityState) *MockSessionSecurity_Snapshot_Call {
+func (_c *MockSessionSecurity_Snapshot_Call) RunAndReturn(run func() domain.SecurityState) *MockSessionSecurity_Snapshot_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -127,22 +126,22 @@ func (_m *MockSessionSecurityController) EXPECT() *MockSessionSecurityController
 }
 
 // Engage provides a mock function for the type MockSessionSecurityController
-func (_mock *MockSessionSecurityController) Engage() (ports.SecurityState, error) {
+func (_mock *MockSessionSecurityController) Engage() (domain.SecurityState, error) {
 	ret := _mock.Called()
 
 	if len(ret) == 0 {
 		panic("no return value specified for Engage")
 	}
 
-	var r0 ports.SecurityState
+	var r0 domain.SecurityState
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func() (ports.SecurityState, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func() (domain.SecurityState, error)); ok {
 		return returnFunc()
 	}
-	if returnFunc, ok := ret.Get(0).(func() ports.SecurityState); ok {
+	if returnFunc, ok := ret.Get(0).(func() domain.SecurityState); ok {
 		r0 = returnFunc()
 	} else {
-		r0 = ret.Get(0).(ports.SecurityState)
+		r0 = ret.Get(0).(domain.SecurityState)
 	}
 	if returnFunc, ok := ret.Get(1).(func() error); ok {
 		r1 = returnFunc()
@@ -169,33 +168,33 @@ func (_c *MockSessionSecurityController_Engage_Call) Run(run func()) *MockSessio
 	return _c
 }
 
-func (_c *MockSessionSecurityController_Engage_Call) Return(securityState ports.SecurityState, err error) *MockSessionSecurityController_Engage_Call {
+func (_c *MockSessionSecurityController_Engage_Call) Return(securityState domain.SecurityState, err error) *MockSessionSecurityController_Engage_Call {
 	_c.Call.Return(securityState, err)
 	return _c
 }
 
-func (_c *MockSessionSecurityController_Engage_Call) RunAndReturn(run func() (ports.SecurityState, error)) *MockSessionSecurityController_Engage_Call {
+func (_c *MockSessionSecurityController_Engage_Call) RunAndReturn(run func() (domain.SecurityState, error)) *MockSessionSecurityController_Engage_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // Release provides a mock function for the type MockSessionSecurityController
-func (_mock *MockSessionSecurityController) Release(expected domain.LockGeneration) (ports.SecurityState, error) {
+func (_mock *MockSessionSecurityController) Release(expected domain.LockGeneration) (domain.SecurityState, error) {
 	ret := _mock.Called(expected)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Release")
 	}
 
-	var r0 ports.SecurityState
+	var r0 domain.SecurityState
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(domain.LockGeneration) (ports.SecurityState, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(domain.LockGeneration) (domain.SecurityState, error)); ok {
 		return returnFunc(expected)
 	}
-	if returnFunc, ok := ret.Get(0).(func(domain.LockGeneration) ports.SecurityState); ok {
+	if returnFunc, ok := ret.Get(0).(func(domain.LockGeneration) domain.SecurityState); ok {
 		r0 = returnFunc(expected)
 	} else {
-		r0 = ret.Get(0).(ports.SecurityState)
+		r0 = ret.Get(0).(domain.SecurityState)
 	}
 	if returnFunc, ok := ret.Get(1).(func(domain.LockGeneration) error); ok {
 		r1 = returnFunc(expected)
@@ -229,29 +228,29 @@ func (_c *MockSessionSecurityController_Release_Call) Run(run func(expected doma
 	return _c
 }
 
-func (_c *MockSessionSecurityController_Release_Call) Return(securityState ports.SecurityState, err error) *MockSessionSecurityController_Release_Call {
+func (_c *MockSessionSecurityController_Release_Call) Return(securityState domain.SecurityState, err error) *MockSessionSecurityController_Release_Call {
 	_c.Call.Return(securityState, err)
 	return _c
 }
 
-func (_c *MockSessionSecurityController_Release_Call) RunAndReturn(run func(expected domain.LockGeneration) (ports.SecurityState, error)) *MockSessionSecurityController_Release_Call {
+func (_c *MockSessionSecurityController_Release_Call) RunAndReturn(run func(expected domain.LockGeneration) (domain.SecurityState, error)) *MockSessionSecurityController_Release_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // Snapshot provides a mock function for the type MockSessionSecurityController
-func (_mock *MockSessionSecurityController) Snapshot() ports.SecurityState {
+func (_mock *MockSessionSecurityController) Snapshot() domain.SecurityState {
 	ret := _mock.Called()
 
 	if len(ret) == 0 {
 		panic("no return value specified for Snapshot")
 	}
 
-	var r0 ports.SecurityState
-	if returnFunc, ok := ret.Get(0).(func() ports.SecurityState); ok {
+	var r0 domain.SecurityState
+	if returnFunc, ok := ret.Get(0).(func() domain.SecurityState); ok {
 		r0 = returnFunc()
 	} else {
-		r0 = ret.Get(0).(ports.SecurityState)
+		r0 = ret.Get(0).(domain.SecurityState)
 	}
 	return r0
 }
@@ -273,12 +272,12 @@ func (_c *MockSessionSecurityController_Snapshot_Call) Run(run func()) *MockSess
 	return _c
 }
 
-func (_c *MockSessionSecurityController_Snapshot_Call) Return(securityState ports.SecurityState) *MockSessionSecurityController_Snapshot_Call {
+func (_c *MockSessionSecurityController_Snapshot_Call) Return(securityState domain.SecurityState) *MockSessionSecurityController_Snapshot_Call {
 	_c.Call.Return(securityState)
 	return _c
 }
 
-func (_c *MockSessionSecurityController_Snapshot_Call) RunAndReturn(run func() ports.SecurityState) *MockSessionSecurityController_Snapshot_Call {
+func (_c *MockSessionSecurityController_Snapshot_Call) RunAndReturn(run func() domain.SecurityState) *MockSessionSecurityController_Snapshot_Call {
 	_c.Call.Return(run)
 	return _c
 }

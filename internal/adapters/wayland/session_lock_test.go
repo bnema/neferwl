@@ -15,10 +15,10 @@ import (
 )
 
 //testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
-func lockManagerServer(t *testing.T) (*Server, *sessionsecurity.Gate, chan ports.SecurityState, chan ports.SecurityBackendEvent, string) {
+func lockManagerServer(t *testing.T) (*Server, *sessionsecurity.Gate, chan domain.SecurityState, chan ports.SecurityBackendEvent, string) {
 	t.Helper()
 	gate := &sessionsecurity.Gate{}
-	changes := make(chan ports.SecurityState, 1)
+	changes := make(chan domain.SecurityState, 1)
 	events := make(chan ports.SecurityBackendEvent, 16)
 	dir := t.TempDir()
 	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, Security: gate}, Channels{SecurityChanges: changes, SecurityEvents: events}, logging.For(context.Background(), "wayland"))
@@ -70,7 +70,7 @@ func TestSessionLockWaitsForEveryBarrierAndOwnerDeathStaysProtected(t *testing.T
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	var state ports.SecurityState
+	var state domain.SecurityState
 	select {
 	case state = <-changes:
 	case <-waylandDeadline(2 * time.Second):

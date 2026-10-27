@@ -21,12 +21,12 @@ type hintHarness struct {
 	client   chan ports.ClientEvent
 	output   chan ports.OutputEvent
 	commands chan ports.ClientCommand
-	scenes   chan []ports.Scene
+	scenes   chan []domain.Scene
 	scans    chan ports.HintScanRequest
 	hints    chan ports.HintScanResult
 	win      domain.Rect // window 1, output-local
 	// state is the security state input is stamped with.
-	state  ports.SecurityState
+	state  domain.SecurityState
 	config chan ports.ConfigChanged
 	cfg    ports.Config
 }
@@ -53,7 +53,7 @@ func newHintConfig(t *testing.T, opts core.Options, edit func(*ports.Config)) *h
 		client:   make(chan ports.ClientEvent, 32),
 		output:   make(chan ports.OutputEvent, 8),
 		commands: make(chan ports.ClientCommand, 256),
-		scenes:   make(chan []ports.Scene, 1),
+		scenes:   make(chan []domain.Scene, 1),
 		scans:    make(chan ports.HintScanRequest, 1),
 		// Unbuffered: a send returns once core took the result.
 		hints: make(chan ports.HintScanResult),
@@ -110,7 +110,7 @@ func (h *hintHarness) start() ports.HintScanRequest {
 }
 
 // show starts hint mode and answers with targets, returning the next scene.
-func (h *hintHarness) show(targets ...ports.HintTarget) ports.Scene {
+func (h *hintHarness) show(targets ...ports.HintTarget) domain.Scene {
 	h.t.Helper()
 	req := h.start()
 	h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: targets}
@@ -119,7 +119,7 @@ func (h *hintHarness) show(targets ...ports.HintTarget) ports.Scene {
 
 // until returns the first scene, from the next one on, that satisfies ok:
 // the bind press and other input publish scenes before the one waited for.
-func (h *hintHarness) until(ok func(ports.Scene) bool) ports.Scene {
+func (h *hintHarness) until(ok func(domain.Scene) bool) domain.Scene {
 	h.t.Helper()
 	for {
 		if s := scene(h.t, h.scenes); ok(s) {
@@ -129,9 +129,9 @@ func (h *hintHarness) until(ok func(ports.Scene) bool) ports.Scene {
 }
 
 // labelled waits for a scene with n labels, all typed with typed letters.
-func (h *hintHarness) labelled(n, typed int) ports.Scene {
+func (h *hintHarness) labelled(n, typed int) domain.Scene {
 	h.t.Helper()
-	return h.until(func(s ports.Scene) bool {
+	return h.until(func(s domain.Scene) bool {
 		return len(s.Overlays) == n && (n == 0 || s.Overlays[0].Typed == typed)
 	})
 }
@@ -169,7 +169,7 @@ func TestHintRequestNilScansIsNoop(t *testing.T) {
 		client := make(chan ports.ClientEvent, 4)
 		output := make(chan ports.OutputEvent, 4)
 		commands := make(chan ports.ClientCommand, 32)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
 		if err != nil {
 			t.Fatal(err)
@@ -190,17 +190,17 @@ func TestHintRequestNilScansIsNoop(t *testing.T) {
 
 func TestHintRefusedWhenProtected(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		var state atomic.Pointer[ports.SecurityState]
-		state.Store(&ports.SecurityState{})
+		var state atomic.Pointer[domain.SecurityState]
+		state.Store(&domain.SecurityState{})
 		gate := portsmocks.NewMockSessionSecurity(t)
-		gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return *state.Load() }).Maybe()
+		gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return *state.Load() }).Maybe()
 		h := newHint(t, core.Options{Security: gate})
 		// Hint mode shown, then the session locks: the labels go away.
 		h.show(h.inside(0))
-		state.Store(&ports.SecurityState{Generation: 2, Protected: true})
+		state.Store(&domain.SecurityState{Generation: 2, Protected: true})
 		h.state = *state.Load()
 		h.client <- ports.WindowMapped{ID: 2}
-		s := h.until(func(s ports.Scene) bool { return s.Security.Protected })
+		s := h.until(func(s domain.Scene) bool { return s.Security.Protected })
 		if len(s.Overlays) != 0 {
 			t.Fatalf("labels while protected %+v", s.Overlays)
 		}
@@ -452,7 +452,7 @@ func TestHintWindowMovedAborts(t *testing.T) {
 		// The window closes before the label is typed: the click must not go
 		// anywhere.
 		h.client <- ports.WindowUnmapped{ID: 1}
-		h.until(func(s ports.Scene) bool { return len(s.Windows) == 0 })
+		h.until(func(s domain.Scene) bool { return len(s.Windows) == 0 })
 		h.drain()
 		h.press("f", 0)
 		// With no window left a key goes nowhere; the next bind press, answered
@@ -545,7 +545,7 @@ func TestHintClickWithBindModifierHeld(t *testing.T) {
 func (h *hintHarness) constrain(mode domain.ConstraintMode, r domain.Rect) {
 	h.client <- ports.PointerConstrained{ID: 1, PointerConstraint: ports.PointerConstraint{Mode: mode, Rect: r}}
 	h.client <- ports.WindowMapped{ID: 1} // a publish after the event
-	h.until(func(ports.Scene) bool { return true })
+	h.until(func(domain.Scene) bool { return true })
 }
 
 func TestHintRefusedWithPointerConstraint(t *testing.T) {
@@ -650,7 +650,7 @@ func TestHintMappedWindowMovedAborts(t *testing.T) {
 		tg := ports.HintTarget{Window: 1, Source: domain.HintSourceDetector, Rect: domain.Rect{X: h.win.X + h.win.W - 50, Y: h.win.Y + 10, W: 40, H: 10}}
 		h.show(tg)
 		h.client <- ports.WindowMapped{ID: 2}
-		s := h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 && len(s.Overlays) <= 1 })
+		s := h.until(func(s domain.Scene) bool { return len(s.Windows) == 2 && len(s.Overlays) <= 1 })
 		if s.Windows[0].Rect == h.win {
 			t.Fatalf("window 1 did not move: %+v", s.Windows)
 		}
@@ -725,7 +725,7 @@ func TestHintResultDroppedWhenWindowMoved(t *testing.T) {
 		req := h.start()
 		tg := h.inside(0)
 		h.client <- ports.WindowMapped{ID: 2}
-		h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
+		h.until(func(s domain.Scene) bool { return len(s.Windows) == 2 })
 		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
 		// Whatever window now covers the target was not scanned: no labels.
 		if s := h.labelled(0, 0); len(s.Overlays) != 0 {
@@ -741,7 +741,7 @@ func TestHintResultDroppedForUnseenWindow(t *testing.T) {
 		h := newHint(t, core.Options{})
 		req := h.start()
 		h.client <- ports.WindowMapped{ID: 2}
-		s := h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
+		s := h.until(func(s domain.Scene) bool { return len(s.Windows) == 2 })
 		var tg ports.HintTarget
 		for _, w := range s.Windows {
 			if w.ID == 2 {
@@ -788,7 +788,7 @@ func TestHintClickFocusesWindowFirst(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := newHint(t, core.Options{})
 		h.client <- ports.WindowMapped{ID: 2}
-		s := h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
+		s := h.until(func(s domain.Scene) bool { return len(s.Windows) == 2 })
 		var r domain.Rect
 		for _, w := range s.Windows {
 			if w.ID == 1 {
@@ -833,7 +833,7 @@ func TestHintDisabledNotesOnce(t *testing.T) {
 			client:   make(chan ports.ClientEvent, 32),
 			output:   make(chan ports.OutputEvent, 8),
 			commands: make(chan ports.ClientCommand, 256),
-			scenes:   make(chan []ports.Scene, 1),
+			scenes:   make(chan []domain.Scene, 1),
 		}
 		ch := core.Channels{Client: h.client, Input: h.input, Output: h.output, Commands: h.commands, Scenes: h.scenes}
 		c, err := core.New(cfg, ch, core.Options{HintDisabled: func() { noted.Add(1) }})
@@ -873,7 +873,7 @@ func TestHintRejectsResizedSource(t *testing.T) {
 						h.labelled(1, 0)
 					}
 					h.client <- ports.WindowMapped{ID: 2}
-					s := h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
+					s := h.until(func(s domain.Scene) bool { return len(s.Windows) == 2 })
 					var resized domain.Rect
 					for _, w := range s.Windows {
 						if w.ID == 1 {
@@ -964,7 +964,7 @@ func TestHintSizeReloadCancelsShownHints(t *testing.T) {
 		cfg := h.cfg
 		cfg.Hint.Size = 40
 		h.config <- ports.ConfigChanged{Config: cfg}
-		h.until(func(s ports.Scene) bool { return len(s.Overlays) == 0 })
+		h.until(func(s domain.Scene) bool { return len(s.Overlays) == 0 })
 		s := h.show(h.inside(0))
 		if len(s.Overlays) == 0 {
 			t.Fatal("no overlays")
@@ -1025,12 +1025,12 @@ func TestHintRequestPopupUnits(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := newHintConfig(t, core.Options{}, func(c *ports.Config) { c.Hint.LinksOnly = true })
 		h.client <- ports.WindowMapped{ID: 2}
-		h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
+		h.until(func(s domain.Scene) bool { return len(s.Windows) == 2 })
 		popupRects := map[domain.WindowID]domain.Rect{}
 		for _, p := range []struct{ id, parent domain.WindowID }{{10, 1}, {11, 10}, {20, 2}} {
 			h.client <- ports.PopupRequest{ID: p.id, Parent: p.parent, Positioner: ports.Positioner{Width: 30, Height: 20, AnchorRect: domain.Rect{W: 1, H: 1}}}
 			h.client <- ports.PopupMapped{ID: p.id}
-			h.until(func(s ports.Scene) bool {
+			h.until(func(s domain.Scene) bool {
 				for _, w := range s.Windows {
 					if w.ID == p.id {
 						popupRects[p.id] = w.Rect

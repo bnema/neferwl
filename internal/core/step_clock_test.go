@@ -55,7 +55,7 @@ func (s *stepClock) advance(d time.Duration) {
 // is handled and the scene channel holds the result. One is sent first too,
 // and a scene left over from earlier events is dropped, so a scene found
 // afterwards is the flips' own.
-func (s *stepClock) flip(t *testing.T, frames chan ports.OutputFrame, scenes chan []ports.Scene, d time.Duration, outputs ...string) ([]ports.Scene, bool) {
+func (s *stepClock) flip(t *testing.T, frames chan ports.OutputFrame, scenes chan []domain.Scene, d time.Duration, outputs ...string) ([]domain.Scene, bool) {
 	t.Helper()
 	send(frames, ports.OutputFrame{Output: "sync"})
 	select {
@@ -76,7 +76,7 @@ func (s *stepClock) flip(t *testing.T, frames chan ports.OutputFrame, scenes cha
 }
 
 // settle is flip past every spring.
-func (s *stepClock) settle(t *testing.T, frames chan ports.OutputFrame, scenes chan []ports.Scene, outputs ...string) ([]ports.Scene, bool) {
+func (s *stepClock) settle(t *testing.T, frames chan ports.OutputFrame, scenes chan []domain.Scene, outputs ...string) ([]domain.Scene, bool) {
 	t.Helper()
 	return s.flip(t, frames, scenes, 5*time.Second, outputs...)
 }
@@ -88,7 +88,7 @@ func (s *stepClock) settle(t *testing.T, frames chan ports.OutputFrame, scenes c
 // its meaning and the on variant asserts the same settled facts.
 type landRig struct {
 	*multiRig
-	land func([]ports.Scene) []ports.Scene
+	land func([]domain.Scene) []domain.Scene
 	// lands counts the settles that found a spring running.
 	lands *int
 }
@@ -104,7 +104,7 @@ func startLanding(t *testing.T, animated bool, edit func(*ports.Config), outs ..
 			}
 			c.Animations.On = false
 		}, outs...)
-		return &landRig{multiRig: r, land: func(set []ports.Scene) []ports.Scene { return set }, lands: new(int)}
+		return &landRig{multiRig: r, land: func(set []domain.Scene) []domain.Scene { return set }, lands: new(int)}
 	}
 	defaults := altCmdDefaults()
 	r := startSwipeOn(t, func(c *ports.Config) {
@@ -121,7 +121,7 @@ func startLanding(t *testing.T, animated bool, edit func(*ports.Config), outs ..
 			t.Error("no spring ever ran: the animations-on variant checked nothing")
 		}
 	})
-	return &landRig{multiRig: r.multiRig, lands: lands, land: func(set []ports.Scene) []ports.Scene {
+	return &landRig{multiRig: r.multiRig, lands: lands, land: func(set []domain.Scene) []domain.Scene {
 		landed, ok := r.settleAll(t, r.outs...)
 		if !ok {
 			return set
@@ -149,13 +149,13 @@ func both(t *testing.T, body func(t *testing.T, animated bool)) {
 }
 
 // keyLanded presses a key and returns the settled scene set.
-func (r *landRig) keyLanded(t *testing.T, sym string, mods domain.Mods) []ports.Scene {
+func (r *landRig) keyLanded(t *testing.T, sym string, mods domain.Mods) []domain.Scene {
 	t.Helper()
 	return r.land(r.key(t, sym, mods))
 }
 
 // mapLanded maps a window and returns the settled scene set.
-func (r *landRig) mapLanded(t *testing.T, id domain.WindowID) []ports.Scene {
+func (r *landRig) mapLanded(t *testing.T, id domain.WindowID) []domain.Scene {
 	t.Helper()
 	return r.land(r.mapWindow(t, id))
 }

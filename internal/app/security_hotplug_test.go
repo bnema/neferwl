@@ -56,7 +56,7 @@ func TestSecurityHotplugLifetimeAndProofOrdering(t *testing.T) {
 			}
 		}()
 		const generation = domain.LockGeneration(41)
-		set.setSecurity(ports.SecurityState{Generation: generation, Protected: true})
+		set.setSecurity(domain.SecurityState{Generation: generation, Protected: true})
 		var ledger sessionlock.Readiness
 		if !ledger.Begin(generation) || !ledger.BackendBarrier(generation) || !ledger.CaptureBarrier(generation) {
 			t.Fatal("could not begin display readiness round")

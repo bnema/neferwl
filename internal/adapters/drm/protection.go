@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
@@ -174,7 +175,7 @@ func (o *Output) protectedModeset(ctx context.Context, r ports.Renderer) error {
 		return err
 	}
 	r.UseTarget(o.back)
-	fence, err := r.Render(ports.Scene{Seq: 0, Background: "#000000"}, nil)
+	fence, err := r.Render(domain.Scene{Seq: 0, Background: "#000000"}, nil)
 	if err != nil {
 		if fence != nil {
 			fence.Close()

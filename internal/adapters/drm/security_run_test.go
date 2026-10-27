@@ -24,12 +24,12 @@ func TestSecurityRunWakePendingResumeAndOff(t *testing.T) {
 		securityGate(t, o, &state)
 		events := make(chan ports.SecurityBackendEvent, 8)
 		o.SecurityEvents = events
-		wake := make(chan ports.SecurityState, 1)
+		wake := make(chan domain.SecurityState, 1)
 		o.SecurityChanges = wake
 		active := make(chan bool, 2)
 		flips := make(chan flipEvent, 2)
 		o.flipped = flips
-		scenes := make(chan ports.Scene, 2)
+		scenes := make(chan domain.Scene, 2)
 		r := portsmocks.NewMockRenderer(t)
 		buf := func() domain.DMABuf {
 			f, w := protectionFence(t, false)
@@ -41,7 +41,7 @@ func TestSecurityRunWakePendingResumeAndOff(t *testing.T) {
 		r.EXPECT().UseTarget(mock.Anything).Return()
 		black := make(chan struct{}, 8)
 		desktop := make(chan struct{}, 2)
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s domain.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			if s.Seq == 99 {
 				desktop <- struct{}{}
 			} else {
@@ -60,7 +60,7 @@ func TestSecurityRunWakePendingResumeAndOff(t *testing.T) {
 		go func() {
 			done <- o.Run(ctx, nil, active, scenes, nil, nil, nil, discardSink(t), nil, nil)
 		}()
-		scenes <- ports.Scene{Seq: 99, Scale: 1}
+		scenes <- domain.Scene{Seq: 99, Scale: 1}
 		select {
 		case <-desktop:
 		case <-ctx.Done():
@@ -79,7 +79,7 @@ func TestSecurityRunWakePendingResumeAndOff(t *testing.T) {
 			return false
 		})
 		state.Store(3)
-		wake <- ports.SecurityState{} // stale payload: read gate, not payload
+		wake <- domain.SecurityState{} // stale payload: read gate, not payload
 		synctest.Wait()
 		select {
 		case ev := <-events:
@@ -104,7 +104,7 @@ func TestSecurityRunWakePendingResumeAndOff(t *testing.T) {
 			}
 		}
 		proof(domain.ProtectionProtectedFrame)
-		scenes <- ports.Scene{Seq: 99} // held desktop scene cannot be replayed
+		scenes <- domain.Scene{Seq: 99} // held desktop scene cannot be replayed
 		synctest.Wait()
 		select {
 		case <-desktop:
@@ -130,7 +130,7 @@ func TestSecurityRunWakePendingResumeAndOff(t *testing.T) {
 			t.Fatal("missing resume invalidation")
 		}
 		proof(domain.ProtectionProtectedFrame) // reacquire requires a fresh black transaction
-		scenes <- ports.Scene{Security: ports.SecurityState{Generation: 1, Protected: true}, Off: true}
+		scenes <- domain.Scene{Security: domain.SecurityState{Generation: 1, Protected: true}, Off: true}
 		proof(domain.ProtectionInactiveOutput)
 		cancel()
 		if err := <-done; err != nil {

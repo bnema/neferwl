@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
@@ -39,7 +38,7 @@ func TestExportTargets(t *testing.T) {
 	colors := []string{"#ff0000", "#0000ff"}
 	for i, c := range colors {
 		r.UseTarget(i)
-		if err := render(r, ports.Scene{Background: c}, nil); err != nil {
+		if err := render(r, domain.Scene{Background: c}, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -58,7 +57,7 @@ func TestExportTargets(t *testing.T) {
 	if !importable {
 		t.Skipf("modifier %#x not importable", b.Modifier)
 	}
-	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 32}}}}
+	scene := domain.Scene{Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 32}}}}
 	contents := map[domain.WindowID]domain.SurfaceContent{1: {ID: 1, Width: 64, Height: 32, Opaque: true, DMABuf: &b}}
 	if err := render(viewer, scene, contents); err != nil {
 		t.Fatal(err)
@@ -94,7 +93,7 @@ func TestHDRExportTarget(t *testing.T) {
 
 	// A real second frame with an unchanged scene must retain the internal
 	// image and use a partial-damage load from its actual prior layout.
-	scene := ports.Scene{Seq: 1, Background: "#ffffff"}
+	scene := domain.Scene{Seq: 1, Background: "#ffffff"}
 	for _, tc := range []struct {
 		bg  string
 		rgb [3]float64
@@ -262,7 +261,7 @@ func TestExportTargetsPlanes(t *testing.T) {
 		want color.RGBA
 	}{{"#ff0000", color.RGBA{255, 0, 0, 255}}, {"#0000ff", color.RGBA{0, 0, 255, 255}}} {
 		r.UseTarget(i)
-		if err := render(r, ports.Scene{Background: tc.bg}, nil); err != nil {
+		if err := render(r, domain.Scene{Background: tc.bg}, nil); err != nil {
 			t.Fatal(err)
 		}
 		if got := readPixels(t, r).At(3, 3); got != tc.want {

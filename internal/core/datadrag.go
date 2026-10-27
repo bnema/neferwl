@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -211,11 +212,11 @@ func (i dataDragIcon) visible() bool { return i.id != 0 && i.w > 0 && i.h > 0 }
 
 // dataDragIconOn is the icon as a window of screen sc (index i) when the
 // cursor is on it.
-func (c *Core) dataDragIconOn(i int, sc *screen) (ports.SceneWindow, bool) {
+func (c *Core) dataDragIconOn(i int, sc *screen) (domain.SceneWindow, bool) {
 	d := c.dataDrag
 	if d == nil || !d.icon.visible() || c.screenAt(c.cursorX, c.cursorY) != i {
-		return ports.SceneWindow{}, false
+		return domain.SceneWindow{}, false
 	}
 	x, y := int(c.cursorX)-sc.x+d.icon.x, int(c.cursorY)-sc.y+d.icon.y
-	return ports.SceneWindow{ID: d.icon.id, Rect: Rect{X: x, Y: y, W: d.icon.w, H: d.icon.h}, Popup: true, OverLayers: true}, true
+	return domain.SceneWindow{ID: d.icon.id, Rect: Rect{X: x, Y: y, W: d.icon.w, H: d.icon.h}, Popup: true, OverLayers: true}, true
 }

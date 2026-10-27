@@ -1,6 +1,6 @@
 package core
 
-import "github.com/bnema/neferwl/internal/ports"
+import "github.com/bnema/neferwl/internal/domain"
 
 // Window capture: a session of one window (CaptureSessionOpen.Window) renders
 // it off screen, alone, at its client size, wherever it is: on screen, on
@@ -47,18 +47,18 @@ func (c *Core) popupOffset(id WindowID) Rect {
 
 // captureWindowScene is the window of v drawn for capture only: a scene of its
 // client size with the window at the origin and its mapped popups over it.
-func (c *Core) captureWindowScene(v *capView, seq uint64) *ports.Scene {
+func (c *Core) captureWindowScene(v *capView, seq uint64) *domain.Scene {
 	sz := v.windowSz
-	s := &ports.Scene{
+	s := &domain.Scene{
 		Security: c.security,
 		Output:   v.windowScr.name(), Seq: seq, OutputWidth: sz.W, OutputHeight: sz.H, WorkspaceClip: Rect{W: sz.W, H: sz.H},
 		Scale: v.windowScr.scale, Background: c.cfg.Background.Color,
-		Border:  ports.Border{Radius: c.cfg.Border.Radius, Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive},
-		Windows: []ports.SceneWindow{{ID: v.window, Rect: Rect{W: sz.W, H: sz.H}, Fullscreen: true}},
+		Border:  domain.Border{Radius: c.cfg.Border.Radius, Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive},
+		Windows: []domain.SceneWindow{{ID: v.window, Rect: Rect{W: sz.W, H: sz.H}, Fullscreen: true}},
 	}
 	for _, id := range c.popupOrder {
 		if p := c.popups[id]; p != nil && p.mapped && c.popupRoot(id) == v.window {
-			s.Windows = append(s.Windows, ports.SceneWindow{ID: id, Rect: c.popupOffset(id), Popup: true})
+			s.Windows = append(s.Windows, domain.SceneWindow{ID: id, Rect: c.popupOffset(id), Popup: true})
 		}
 	}
 	return s

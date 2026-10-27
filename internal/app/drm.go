@@ -39,9 +39,9 @@ type securityLeaseCard interface {
 	Revoke(uint32) error
 }
 
-func securitySnapshot(gate ports.SessionSecurity) ports.SecurityState {
+func securitySnapshot(gate ports.SessionSecurity) domain.SecurityState {
 	if gate == nil {
-		return ports.SecurityState{}
+		return domain.SecurityState{}
 	}
 	return gate.Snapshot()
 }

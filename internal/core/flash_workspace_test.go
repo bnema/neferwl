@@ -7,6 +7,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -368,20 +369,20 @@ func TestFlashOverviewSelectFlashesOnce(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		start int // numbered workspace shown when the overview opens
-		pick  func(*testing.T, *Core, ports.Scene)
+		pick  func(*testing.T, *Core, domain.Scene)
 		want  WindowID
 	}{
-		{"return key", 0, func(t *testing.T, c *Core, _ ports.Scene) {
+		{"return key", 0, func(t *testing.T, c *Core, _ domain.Scene) {
 			c.applyAction(ActionFocusWorkspaceNext)
 			if err := c.keyEvent(context.Background(), ports.KeyEvent{Keysym: "Return", Pressed: true}); err != nil {
 				t.Fatal(err)
 			}
 		}, 4},
-		{"toggle bind", 0, func(t *testing.T, c *Core, _ ports.Scene) {
+		{"toggle bind", 0, func(t *testing.T, c *Core, _ domain.Scene) {
 			c.applyAction(ActionFocusWorkspaceNext)
 			c.applyAction(ActionToggleOverview)
 		}, 4},
-		{"click", 0, func(t *testing.T, c *Core, _ ports.Scene) {
+		{"click", 0, func(t *testing.T, c *Core, _ domain.Scene) {
 			// The selection moves to the second workspace; its cards then
 			// take the click.
 			c.applyAction(ActionFocusWorkspaceNext)

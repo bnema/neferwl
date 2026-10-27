@@ -40,7 +40,7 @@ func dragCore(t *testing.T) *Core {
 	cfg := ports.Config{}
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 3
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Commands: make(chan ports.ClientCommand, 1024)}, Options{})
+	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Commands: make(chan ports.ClientCommand, 1024)}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

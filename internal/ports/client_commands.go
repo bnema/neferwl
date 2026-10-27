@@ -272,7 +272,7 @@ type CursorChange struct {
 type SpawnRequest struct {
 	// Security retains the admitting owner epoch through launcher backpressure.
 	// A wired launcher rejects stale or protected requests before execution.
-	Security SecurityState
+	Security domain.SecurityState
 	Argv     []string
 	// Env adds KEY=value entries to the child environment.
 	Env []string

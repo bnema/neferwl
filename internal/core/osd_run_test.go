@@ -14,7 +14,7 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-func osdOverlay(t *testing.T, h *hintHarness) ports.Overlay {
+func osdOverlay(t *testing.T, h *hintHarness) domain.Overlay {
 	t.Helper()
 	s := <-h.scenes
 	for _, o := range s[0].Overlays {
@@ -23,7 +23,7 @@ func osdOverlay(t *testing.T, h *hintHarness) ports.Overlay {
 		}
 	}
 	t.Fatal("missing OSD")
-	return ports.Overlay{}
+	return domain.Overlay{}
 }
 
 func TestOSDHoldThroughRun(t *testing.T) {
@@ -150,9 +150,9 @@ func TestOSDPinnedSecurityTransitionThroughRun(t *testing.T) {
 		t.Run(map[bool]string{true: "lock", false: "epoch"}[protected], func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				var epoch atomic.Value
-				epoch.Store(ports.SecurityState{})
+				epoch.Store(domain.SecurityState{})
 				gate := portsmocks.NewMockSessionSecurity(t)
-				gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return epoch.Load().(ports.SecurityState) })
+				gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return epoch.Load().(domain.SecurityState) })
 				h := newHintConfig(t, core.Options{Security: gate}, func(cfg *ports.Config) { cfg.Binds["Cmd+p"] = "osd-pin" })
 				h.press("p", domain.ModSuper)
 				h.release("p", 0)
@@ -162,7 +162,7 @@ func TestOSDPinnedSecurityTransitionThroughRun(t *testing.T) {
 					watch, ok := v.Command.(ports.WatchStats)
 					return ok && watch.Window == 1
 				})
-				state := ports.SecurityState{Generation: 1, Protected: protected}
+				state := domain.SecurityState{Generation: 1, Protected: protected}
 				epoch.Store(state)
 				h.client <- ports.SessionLockChanged{State: state}
 				synctest.Wait()
@@ -178,7 +178,7 @@ func TestOSDPinnedSecurityTransitionThroughRun(t *testing.T) {
 					return v.State == state && ok && watch.Window == 0
 				})
 				// A fresh pin must show, not toggle an old retained pin off.
-				h.state = ports.SecurityState{Generation: 2}
+				h.state = domain.SecurityState{Generation: 2}
 				epoch.Store(h.state)
 				h.client <- ports.SessionLockChanged{State: h.state}
 				synctest.Wait()

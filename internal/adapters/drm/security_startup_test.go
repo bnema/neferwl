@@ -34,15 +34,15 @@ func TestSecurityProtectedStartupBlackProofAndCaptureRejection(t *testing.T) {
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
-	r.EXPECT().Render(ports.Scene{Background: "#000000"}, map[domain.WindowID]domain.SurfaceContent(nil)).Return(nil, nil).Times(3)
+	r.EXPECT().Render(domain.Scene{Background: "#000000"}, map[domain.WindowID]domain.SurfaceContent(nil)).Return(nil, nil).Times(3)
 	r.EXPECT().Close().Return().Once()
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
 	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
 	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
 	captures := make(chan ports.CaptureRequest, 1)
 	captured := make(chan ports.CaptureDone, 1)
-	scenes := make(chan ports.Scene, 1)
-	scenes <- ports.Scene{Seq: 99} // never render stale desktop after startup
+	scenes := make(chan domain.Scene, 1)
+	scenes <- domain.Scene{Seq: 99} // never render stale desktop after startup
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
@@ -105,7 +105,7 @@ func TestSecurityStartupClearWaitUsesRunContext(t *testing.T) {
 	fence, _ := protectionFence(t, false)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		cancel()
 		return fence, nil
 	}).Once()

@@ -6,6 +6,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -18,7 +19,7 @@ func TestSlotClaimWithoutWorkspace(t *testing.T) {
 		cfg := ports.Config{}
 		cfg.Keyboard.CmdKey = "alt"
 		cfg.Layout.MaxColumns = 1
-		c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1)}, Options{})
+		c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1)}, Options{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -42,7 +43,7 @@ func TestExpiredTerminalTokenMapsNormally(t *testing.T) {
 		cfg := ports.Config{}
 		cfg.Keyboard.CmdKey = "alt"
 		cfg.Layout.MaxColumns = 1
-		c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1)}, Options{})
+		c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1)}, Options{})
 		if err != nil {
 			t.Fatal(err)
 		}

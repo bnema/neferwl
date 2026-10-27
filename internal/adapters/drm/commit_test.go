@@ -516,7 +516,7 @@ func TestRunReportsSeenAfterCursorCommit(t *testing.T) {
 			}
 			return commitRec{}, false
 		}
-		scenes := make(chan ports.Scene, 1)
+		scenes := make(chan domain.Scene, 1)
 		contents := newContentFeed(t, 1)
 		sink, presented := presentedSink(t, 8)
 		ctx, cancel := context.WithCancel(context.Background())
@@ -525,7 +525,7 @@ func TestRunReportsSeenAfterCursorCommit(t *testing.T) {
 		go func() {
 			done <- o.Run(ctx, load, make(chan bool), scenes, contents.in(), contents.ret, nil, sink, nil, nil)
 		}()
-		scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1}
+		scenes <- domain.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1}
 		var frame commitRec
 		waitFor(t, func() bool { var ok bool; frame, ok = last(userFrame); return ok })
 		flips <- eventOf(frame)
@@ -591,7 +591,7 @@ func TestRunClosesFrameFences(t *testing.T) {
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 		r.EXPECT().UseTarget(mock.Anything).Return()
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			f, w, _ := os.Pipe()
 			_, _ = w.Write([]byte{1})
 			w.Close()
@@ -604,7 +604,7 @@ func TestRunClosesFrameFences(t *testing.T) {
 		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
 		before := fds()
 		active := make(chan bool, 1)
-		scenes := make(chan ports.Scene, 1)
+		scenes := make(chan domain.Scene, 1)
 		sink, _ := presentedSink(t, 4*rounds)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
@@ -625,7 +625,7 @@ func TestRunClosesFrameFences(t *testing.T) {
 		waitFor(t, func() bool { return count() == 2 })
 		for i := range rounds {
 			n := count()
-			scenes <- ports.Scene{Seq: uint64(i)}
+			scenes <- domain.Scene{Seq: uint64(i)}
 			switch i % 3 {
 			case 0:
 				waitFor(t, func() bool { return count() == n+1 })

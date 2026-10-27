@@ -7,13 +7,12 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
-func shows(ids ...domain.WindowID) ports.Scene {
-	s := ports.Scene{OutputWidth: 100, OutputHeight: 100}
+func shows(ids ...domain.WindowID) domain.Scene {
+	s := domain.Scene{OutputWidth: 100, OutputHeight: 100}
 	for _, id := range ids {
-		s.Windows = append(s.Windows, ports.SceneWindow{ID: id, Rect: domain.Rect{W: 10, H: 10}})
+		s.Windows = append(s.Windows, domain.SceneWindow{ID: id, Rect: domain.Rect{W: 10, H: 10}})
 	}
 	return s
 }
@@ -63,7 +62,7 @@ func TestEmptyContentOfUnshownWindowDropped(t *testing.T) {
 	}
 	// Hidden counts as not drawn.
 	tb.Update(domain.SurfaceContent{ID: 3, SHM: &domain.SHMBuffer{Pool: 3}}, shows())
-	hidden := ports.Scene{OutputWidth: 100, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 3, Hidden: true, Rect: domain.Rect{W: 10, H: 10}}}}
+	hidden := domain.Scene{OutputWidth: 100, OutputHeight: 100, Windows: []domain.SceneWindow{{ID: 3, Hidden: true, Rect: domain.Rect{W: 10, H: 10}}}}
 	tb.Update(domain.SurfaceContent{ID: 3}, hidden)
 	if _, ok := tb.Map()[3]; ok {
 		t.Fatal("content of a hidden window kept")

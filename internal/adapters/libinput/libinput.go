@@ -652,21 +652,21 @@ func translate(ev uintptr, opts Options, p *pointer, in *inputState) (ports.Inpu
 	return secureInput(out, opts.Security, state), err
 }
 
-func securitySnapshot(security ports.SessionSecurity) ports.SecurityState {
+func securitySnapshot(security ports.SessionSecurity) domain.SecurityState {
 	if security != nil {
 		return security.Snapshot()
 	}
-	return ports.SecurityState{}
+	return domain.SecurityState{}
 }
 
-func secureInput(ev ports.InputEvent, security ports.SessionSecurity, state ports.SecurityState) ports.InputEvent {
+func secureInput(ev ports.InputEvent, security ports.SessionSecurity, state domain.SecurityState) ports.InputEvent {
 	if ev == nil || security == nil {
 		return ev
 	}
 	return ports.SecurityInput{State: state, Event: ev}
 }
 
-func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state ports.SecurityState) (ports.InputEvent, error) {
+func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state domain.SecurityState) (ports.InputEvent, error) {
 	log := opts.Log
 	switch eventType(ev) {
 	case evDeviceAdded:
@@ -768,7 +768,7 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 
 // translateKeyboard applies the production epoch before native translation.
 // Quarantined events never reach logging, reserved hotkeys or core.
-func translateKeyboard(code uint32, pressed bool, t time.Duration, opts Options, state ports.SecurityState) (ports.InputEvent, error) {
+func translateKeyboard(code uint32, pressed bool, t time.Duration, opts Options, state domain.SecurityState) (ports.InputEvent, error) {
 	var ke ports.KeyEvent
 	if opts.Security != nil {
 		var deliver bool
@@ -786,7 +786,7 @@ func translateKeyboard(code uint32, pressed bool, t time.Duration, opts Options,
 // translateKey applies the keyboard policy without native calls. One coherent
 // snapshot governs both logging and reserved hotkeys; protected keys still go
 // to core for the locker. VT switching is allowed and does not release the lock.
-func translateKey(ke ports.KeyEvent, opts Options, security ports.SecurityState) (ports.InputEvent, error) {
+func translateKey(ke ports.KeyEvent, opts Options, security domain.SecurityState) (ports.InputEvent, error) {
 	if opts.LogKeys && !security.Protected {
 		opts.Log.Debug().Uint32("code", ke.Keycode).Str("keysym", ke.Keysym).Bool("pressed", ke.Pressed).Uint8("mods", uint8(ke.Mods)).Msg("key")
 	}

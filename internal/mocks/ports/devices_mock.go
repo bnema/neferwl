@@ -603,7 +603,7 @@ func (_c *MockRenderer_Pixels_Call) RunAndReturn(run func() *image.RGBA) *MockRe
 }
 
 // Render provides a mock function for the type MockRenderer
-func (_mock *MockRenderer) Render(scene ports.Scene, windowIDToSurfaceContent map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+func (_mock *MockRenderer) Render(scene domain.Scene, windowIDToSurfaceContent map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 	ret := _mock.Called(scene, windowIDToSurfaceContent)
 
 	if len(ret) == 0 {
@@ -612,17 +612,17 @@ func (_mock *MockRenderer) Render(scene ports.Scene, windowIDToSurfaceContent ma
 
 	var r0 *os.File
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error)); ok {
 		return returnFunc(scene, windowIDToSurfaceContent)
 	}
-	if returnFunc, ok := ret.Get(0).(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) *os.File); ok {
+	if returnFunc, ok := ret.Get(0).(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) *os.File); ok {
 		r0 = returnFunc(scene, windowIDToSurfaceContent)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*os.File)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) error); ok {
 		r1 = returnFunc(scene, windowIDToSurfaceContent)
 	} else {
 		r1 = ret.Error(1)
@@ -636,17 +636,17 @@ type MockRenderer_Render_Call struct {
 }
 
 // Render is a helper method to define mock.On call
-//   - scene ports.Scene
+//   - scene domain.Scene
 //   - windowIDToSurfaceContent map[domain.WindowID]domain.SurfaceContent
 func (_e *MockRenderer_Expecter) Render(scene any, windowIDToSurfaceContent any) *MockRenderer_Render_Call {
 	return &MockRenderer_Render_Call{Call: _e.mock.On("Render", scene, windowIDToSurfaceContent)}
 }
 
-func (_c *MockRenderer_Render_Call) Run(run func(scene ports.Scene, windowIDToSurfaceContent map[domain.WindowID]domain.SurfaceContent)) *MockRenderer_Render_Call {
+func (_c *MockRenderer_Render_Call) Run(run func(scene domain.Scene, windowIDToSurfaceContent map[domain.WindowID]domain.SurfaceContent)) *MockRenderer_Render_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 ports.Scene
+		var arg0 domain.Scene
 		if args[0] != nil {
-			arg0 = args[0].(ports.Scene)
+			arg0 = args[0].(domain.Scene)
 		}
 		var arg1 map[domain.WindowID]domain.SurfaceContent
 		if args[1] != nil {
@@ -665,7 +665,7 @@ func (_c *MockRenderer_Render_Call) Return(done *os.File, err error) *MockRender
 	return _c
 }
 
-func (_c *MockRenderer_Render_Call) RunAndReturn(run func(scene ports.Scene, windowIDToSurfaceContent map[domain.WindowID]domain.SurfaceContent) (*os.File, error)) *MockRenderer_Render_Call {
+func (_c *MockRenderer_Render_Call) RunAndReturn(run func(scene domain.Scene, windowIDToSurfaceContent map[domain.WindowID]domain.SurfaceContent) (*os.File, error)) *MockRenderer_Render_Call {
 	_c.Call.Return(run)
 	return _c
 }

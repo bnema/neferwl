@@ -20,8 +20,8 @@ type dragRig struct {
 	input    chan ports.InputEvent
 	output   chan ports.OutputEvent
 	commands chan ports.ClientCommand
-	scenes   chan []ports.Scene
-	last     []ports.Scene
+	scenes   chan []domain.Scene
+	last     []domain.Scene
 	epoch    *atomic.Value
 	// With a clock the test moves (animated rigs), frames carries the page
 	// flips and outputs lists the plugged ones: settle lands every spring
@@ -63,15 +63,15 @@ func newDragRig(t *testing.T, animated bool, edit func(*ports.Config), outs ...p
 		edit(&cfg)
 	}
 	epoch := &atomic.Value{}
-	epoch.Store(ports.SecurityState{})
+	epoch.Store(domain.SecurityState{})
 	gate := portsmocks.NewMockSessionSecurity(t)
-	gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return epoch.Load().(ports.SecurityState) }).Maybe()
+	gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return epoch.Load().(domain.SecurityState) }).Maybe()
 	// Unbuffered: a send returns once core took the event, so it handled
 	// every event sent before (settle relies on it).
 	r := &dragRig{
 		client: make(chan ports.ClientEvent), input: make(chan ports.InputEvent),
 		output: make(chan ports.OutputEvent), commands: make(chan ports.ClientCommand, 4096),
-		scenes: make(chan []ports.Scene, 1), epoch: epoch,
+		scenes: make(chan []domain.Scene, 1), epoch: epoch,
 	}
 	ch := core.Channels{Client: r.client, Input: r.input, Output: r.output, Commands: r.commands, Scenes: r.scenes}
 	opts := core.Options{Security: gate}
@@ -103,7 +103,7 @@ func newDragRig(t *testing.T, animated bool, edit func(*ports.Config), outs ...p
 
 // in sends a raw input event; the gate is on, so it is wrapped.
 func (r *dragRig) in(ev ports.InputEvent) {
-	send(r.input, ports.InputEvent(ports.SecurityInput{State: r.epoch.Load().(ports.SecurityState), Event: ev}))
+	send(r.input, ports.InputEvent(ports.SecurityInput{State: r.epoch.Load().(domain.SecurityState), Event: ev}))
 }
 
 // send fails the test binary fast instead of hanging when core is stuck.
@@ -124,7 +124,7 @@ const barrier domain.WindowID = 1 << 30
 // far. The second barrier is taken only after the first one published. An
 // animated rig first moves its clock past every spring and flips each
 // output, so the set is the settled one.
-func (r *dragRig) settle(t *testing.T) []ports.Scene {
+func (r *dragRig) settle(t *testing.T) []domain.Scene {
 	t.Helper()
 	if r.frames != nil {
 		if _, ok := r.clock.settle(t, r.frames, r.scenes, r.outputs...); ok {
@@ -170,7 +170,7 @@ func pointerSent(cmds []ports.ClientCommand) []ports.ClientCommand {
 	return out
 }
 
-func dragRect(t *testing.T, set []ports.Scene, output string, id domain.WindowID) domain.Rect {
+func dragRect(t *testing.T, set []domain.Scene, output string, id domain.WindowID) domain.Rect {
 	t.Helper()
 	w, ok := windowIn(set, output, id)
 	if !ok {
@@ -179,25 +179,25 @@ func dragRect(t *testing.T, set []ports.Scene, output string, id domain.WindowID
 	return w.Rect
 }
 
-func dragScene(set []ports.Scene, output string) ports.Scene {
+func dragScene(set []domain.Scene, output string) domain.Scene {
 	for _, s := range set {
 		if s.Output == output {
 			return s
 		}
 	}
-	return ports.Scene{}
+	return domain.Scene{}
 }
 
 // columns lists the tiles left to right by x, then top to bottom.
-func columnsOf(set []ports.Scene, output string) [][]domain.WindowID {
+func columnsOf(set []domain.Scene, output string) [][]domain.WindowID {
 	s := dragScene(set, output)
-	var wins []ports.SceneWindow
+	var wins []domain.SceneWindow
 	for _, w := range s.Windows {
 		if !w.Hidden && !w.Floating && !w.Popup {
 			wins = append(wins, w)
 		}
 	}
-	slices.SortFunc(wins, func(a, b ports.SceneWindow) int {
+	slices.SortFunc(wins, func(a, b domain.SceneWindow) int {
 		if a.Rect.X != b.Rect.X {
 			return a.Rect.X - b.Rect.X
 		}
@@ -456,7 +456,7 @@ func dragTileGapInsert(t *testing.T, r *dragRig) {
 
 // release sends the button release and returns the scene set core
 // publishes for it, without moving the clock (settle would).
-func (r *dragRig) release(t *testing.T) []ports.Scene {
+func (r *dragRig) release(t *testing.T) []domain.Scene {
 	t.Helper()
 	r.in(ports.PointerButton{Button: 0x110})
 	send(r.client, ports.ClientEvent(ports.WindowResized{ID: barrier}))
@@ -670,14 +670,14 @@ func TestLockClearsDrag(t *testing.T) {
 		if len(dragScene(r.settle(t), "A").DropHints) == 0 {
 			t.Fatal("no hint")
 		}
-		locked := ports.SecurityState{Generation: 1, Protected: true}
+		locked := domain.SecurityState{Generation: 1, Protected: true}
 		r.epoch.Store(locked)
 		r.client <- ports.SessionLockChanged{State: locked}
 		set = r.settle(t)
 		if len(dragScene(set, "A").DropHints) != 0 {
 			t.Fatal("hints while locked")
 		}
-		unlocked := ports.SecurityState{Generation: 2}
+		unlocked := domain.SecurityState{Generation: 2}
 		r.epoch.Store(unlocked)
 		r.client <- ports.SessionLockChanged{State: unlocked}
 		r.settle(t)

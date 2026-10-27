@@ -3,7 +3,7 @@ package vulkan
 import (
 	"image"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func (w *sceneWalk) positionHint() {
@@ -14,23 +14,23 @@ func (w *sceneWalk) positionHint() {
 	b := h.Bounds(w.s.OutputWidth, w.s.OutputHeight)
 	alpha := w.alpha
 	w.alpha = h.Opacity * 0.8
-	w.hintRound(w.physRect(b.X, b.Y, b.W, b.H), w.phys(ports.PositionHintRadius), [3]uint8{30, 30, 38})
+	w.hintRound(w.physRect(b.X, b.Y, b.W, b.H), w.phys(domain.PositionHintRadius), [3]uint8{30, 30, 38})
 	// The active dot is white, opaque and larger, whatever border.active is:
 	// a grey accent must not blend it into the other dots of its column.
-	for col := range min(int(h.Columns), ports.PositionHintMaxColumns) {
-		for row := range min(int(h.Counts[col]), ports.PositionHintMaxRows) {
-			color, opacity, d := [3]uint8{190, 190, 200}, float32(0.2), ports.PositionHintDiameter
+	for col := range min(int(h.Columns), domain.PositionHintMaxColumns) {
+		for row := range min(int(h.Counts[col]), domain.PositionHintMaxRows) {
+			color, opacity, d := [3]uint8{190, 190, 200}, float32(0.2), domain.PositionHintDiameter
 			if !h.Vertical && col == int(h.ActiveCol) {
 				opacity = 0.45
 			}
 			if col == int(h.ActiveCol) && row == int(h.ActiveRow) {
-				color, opacity, d = [3]uint8{255, 255, 255}, 1, ports.PositionHintActiveDiameter
+				color, opacity, d = [3]uint8{255, 255, 255}, 1, domain.PositionHintActiveDiameter
 			}
 			w.alpha = h.Opacity * opacity
 			// Every dot is centered in its PositionHintDiameter cell.
-			inset := (ports.PositionHintDiameter - d) / 2
-			x := b.X + ports.PositionHintPadding + col*(ports.PositionHintDiameter+ports.PositionHintGap) + inset
-			y := b.Y + ports.PositionHintPadding + row*(ports.PositionHintDiameter+ports.PositionHintGap) + inset
+			inset := (domain.PositionHintDiameter - d) / 2
+			x := b.X + domain.PositionHintPadding + col*(domain.PositionHintDiameter+domain.PositionHintGap) + inset
+			y := b.Y + domain.PositionHintPadding + row*(domain.PositionHintDiameter+domain.PositionHintGap) + inset
 			w.hintRound(w.physRect(x, y, d, d), w.phys(d)/2, color)
 		}
 	}

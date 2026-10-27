@@ -52,7 +52,7 @@ func publishRig(t testing.TB, screens int) *Core {
 	cfg.Border.Width = 2
 	cfg.Animations.On = true
 	cfg.Animations.Slowdown = 10
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Commands: make(chan ports.ClientCommand, 64)}, Options{})
+	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Commands: make(chan ports.ClientCommand, 64)}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

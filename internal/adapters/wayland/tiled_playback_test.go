@@ -109,7 +109,7 @@ func TestHeadlessTiledSHMCallbackAndCopyBudget(t *testing.T) {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer r.Close()
-	scene := ports.Scene{Windows: []ports.SceneWindow{{ID: win.ID, Rect: domain.Rect{W: 128, H: 128}}}}
+	scene := domain.Scene{Windows: []domain.SceneWindow{{ID: win.ID, Rect: domain.Rect{W: 128, H: 128}}}}
 	render := func(content domain.SurfaceContent) {
 		t.Helper()
 		fence, err := r.Render(scene, map[domain.WindowID]domain.SurfaceContent{win.ID: content})

@@ -6,15 +6,16 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
 
 // runWithFrames runs an output with a frames channel of the given size and
 // returns what it needs to feed scenes and stop it.
-func runWithFrames(t *testing.T, size int) (scenes chan ports.Scene, frames chan ports.OutputFrame, f *frames, stop func()) {
+func runWithFrames(t *testing.T, size int) (scenes chan domain.Scene, frames chan ports.OutputFrame, f *frames, stop func()) {
 	t.Helper()
-	scenes = make(chan ports.Scene, 8)
+	scenes = make(chan domain.Scene, 8)
 	frames = make(chan ports.OutputFrame, size)
 	r, rec := recordingRenderer(t, nil)
 	sink, _ := presentedSink(t, 16)
@@ -37,7 +38,7 @@ func TestAnimatingSceneSendsFrame(t *testing.T) {
 		scenes, frames, rec, stop := runWithFrames(t, 4)
 		defer stop()
 
-		scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Animating: true}
+		scenes <- domain.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Animating: true}
 		select {
 		case got := <-frames:
 			require.Equal(t, ports.OutputFrame{Output: "HEADLESS-1"}, got)
@@ -46,12 +47,12 @@ func TestAnimatingSceneSendsFrame(t *testing.T) {
 		}
 
 		// The scene an animation settles on: drawn, nobody woken.
-		scenes <- ports.Scene{Seq: 2, OutputWidth: 2, OutputHeight: 2}
+		scenes <- domain.Scene{Seq: 2, OutputWidth: 2, OutputHeight: 2}
 		waitFrames(t, rec, 2)
 		// A third scene is drawn after the settled one (the owner handles scenes
 		// in order): had the settled frame woken core, its frame precedes the
 		// third's in the channel.
-		scenes <- ports.Scene{Seq: 3, OutputWidth: 2, OutputHeight: 2}
+		scenes <- domain.Scene{Seq: 3, OutputWidth: 2, OutputHeight: 2}
 		waitFrames(t, rec, 3)
 		require.Empty(t, frames)
 	})
@@ -63,7 +64,7 @@ func TestAnimatingFramesNeverBlock(t *testing.T) {
 		scenes, frames, rec, stop := runWithFrames(t, 1)
 		defer stop()
 		for seq := uint64(1); seq <= 3; seq++ {
-			scenes <- ports.Scene{Seq: seq, OutputWidth: 2, OutputHeight: 2, Animating: true}
+			scenes <- domain.Scene{Seq: seq, OutputWidth: 2, OutputHeight: 2, Animating: true}
 			waitFrames(t, rec, int(seq))
 		}
 		require.Len(t, frames, 1)

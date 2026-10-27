@@ -9,14 +9,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func excludedTestScene() ports.Scene {
-	return ports.Scene{
+func excludedTestScene() domain.Scene {
+	return domain.Scene{
 		Seq: 5,
-		Windows: []ports.SceneWindow{
+		Windows: []domain.SceneWindow{
 			{ID: 1}, {ID: 20, Popup: true, OverLayers: true}, {ID: 21, Popup: true, OverLayers: true}, {ID: 3},
 		},
-		Layers:  []ports.SceneLayer{{ID: 10, Layer: domain.LayerTop}, {ID: 11, Layer: domain.LayerTop}, {ID: 12, Layer: domain.LayerOverlay}},
-		Capture: &ports.SceneCapture{Session: 7, Excluded: []domain.WindowID{10, 20}},
+		Layers:  []domain.SceneLayer{{ID: 10, Layer: domain.LayerTop}, {ID: 11, Layer: domain.LayerTop}, {ID: 12, Layer: domain.LayerOverlay}},
+		Capture: &domain.SceneCapture{Session: 7, Excluded: []domain.WindowID{10, 20}},
 	}
 }
 
@@ -34,8 +34,8 @@ func TestExcludedSceneDropsOnlyExcluded(t *testing.T) {
 	c := p.ExcludedScene(s)
 	require.Nil(t, c.Capture)
 	require.Zero(t, c.Seq)
-	require.Equal(t, []ports.SceneWindow{{ID: 1}, {ID: 21, Popup: true, OverLayers: true}, {ID: 3}}, c.Windows)
-	require.Equal(t, []ports.SceneLayer{{ID: 11, Layer: domain.LayerTop}, {ID: 12, Layer: domain.LayerOverlay}}, c.Layers)
+	require.Equal(t, []domain.SceneWindow{{ID: 1}, {ID: 21, Popup: true, OverLayers: true}, {ID: 3}}, c.Windows)
+	require.Equal(t, []domain.SceneLayer{{ID: 11, Layer: domain.LayerTop}, {ID: 12, Layer: domain.LayerOverlay}}, c.Layers)
 	// The displayed scene is not mutated.
 	require.Len(t, s.Windows, 4)
 	require.Len(t, s.Layers, 3)
@@ -46,7 +46,7 @@ func TestExcludedSceneDropsOnlyExcluded(t *testing.T) {
 func TestSplitNoAlloc(t *testing.T) {
 	p := NewPipeline(context.Background(), make(chan ports.CaptureDone, 1))
 	defer p.Close(nil)
-	for name, s := range map[string]ports.Scene{"no capture": {Windows: excludedTestScene().Windows}, "exclusion": excludedTestScene()} {
+	for name, s := range map[string]domain.Scene{"no capture": {Windows: excludedTestScene().Windows}, "exclusion": excludedTestScene()} {
 		reqs := make([]ports.CaptureRequest, 3)
 		for i := range reqs {
 			reqs[i].ID = uint64(i + 1)
@@ -149,7 +149,7 @@ func TestSplitWorkspaceMovedFailsClosed(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 8)
 	p := NewPipeline(context.Background(), replies)
 	defer p.Close(nil)
-	s := ports.Scene{Capture: &ports.SceneCapture{Shown: 3, Workspace: 4}}
+	s := domain.Scene{Capture: &domain.SceneCapture{Shown: 3, Workspace: 4}}
 	reqs := []ports.CaptureRequest{
 		{ID: 1, Workspace: 3},                  // on screen, still shown
 		{ID: 2, Workspace: 4, OffScreen: true}, // off screen, still rendered
@@ -170,7 +170,7 @@ func TestSplitWorkspaceMovedFailsClosed(t *testing.T) {
 	}
 	require.Equal(t, map[uint64]bool{3: true, 4: true, 5: true}, failed)
 	// Without any capture state no workspace request is served.
-	normal, _, hidden = p.Split(ports.Scene{}, []ports.CaptureRequest{{ID: 7, Workspace: 3}})
+	normal, _, hidden = p.Split(domain.Scene{}, []ports.CaptureRequest{{ID: 7, Workspace: 3}})
 	require.Empty(t, normal)
 	require.Empty(t, hidden)
 	require.ErrorIs(t, awaitCapture(t, replies).Err, ErrWorkspaceMoved)
@@ -182,7 +182,7 @@ func TestSplitWindowFailsClosed(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 8)
 	p := NewPipeline(context.Background(), replies)
 	defer p.Close(nil)
-	s := ports.Scene{Capture: &ports.SceneCapture{Window: 7}}
+	s := domain.Scene{Capture: &domain.SceneCapture{Window: 7}}
 	reqs := []ports.CaptureRequest{
 		{ID: 1, Window: 7, OffScreen: true}, // rendered
 		{ID: 2, Window: 8, OffScreen: true}, // another window
@@ -198,12 +198,12 @@ func TestSplitWindowFailsClosed(t *testing.T) {
 }
 
 func TestPositionHintRemovedFromPlainCapture(t *testing.T) {
-	s := ports.Scene{PositionHint: ports.PositionHint{Opacity: 1, Columns: 1, Counts: [16]uint8{1}}}
+	s := domain.Scene{PositionHint: domain.PositionHint{Opacity: 1, Columns: 1, Counts: [16]uint8{1}}}
 	require.True(t, s.PositionHint.Shown())
 	require.False(t, plain(s).PositionHint.Shown())
 	p := NewPipeline(context.Background(), make(chan ports.CaptureDone, 1))
 	defer p.Close(nil)
-	s.Capture = &ports.SceneCapture{Session: 7}
+	s.Capture = &domain.SceneCapture{Session: 7}
 	normal, excluded, _ := p.Split(s, []ports.CaptureRequest{{ID: 1, Exclude: true, Session: 7}})
 	require.Empty(t, normal)
 	require.Len(t, excluded, 1)

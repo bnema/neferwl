@@ -55,21 +55,21 @@ var ErrWorkspaceMoved = fmt.Errorf("%w: captured workspace is not where the requ
 // excluded layers and popups. Its scratch slices are reused,
 // so a warmed output allocates nothing.
 type excluder struct {
-	windows  []ports.SceneWindow
-	layers   []ports.SceneLayer
-	overlays []ports.Overlay
+	windows  []domain.SceneWindow
+	layers   []domain.SceneLayer
+	overlays []domain.Overlay
 }
 
 // Shows reports whether a content change of id needs a new frame: the
 // displayed scene draws it, or the hidden workspace of a capture does (its
 // child render and the reads it releases). Flips and Shown still count the
 // displayed scene only.
-func Shows(s ports.Scene, id domain.WindowID) bool {
+func Shows(s domain.Scene, id domain.WindowID) bool {
 	return s.Shows(id) || s.CaptureScene != nil && s.CaptureScene.Shows(id)
 }
 
 // excludedShown reports whether the scene draws an excluded surface.
-func excludedShown(s ports.Scene) bool {
+func excludedShown(s domain.Scene) bool {
 	c := s.Capture
 	if c == nil || len(c.Excluded) == 0 {
 		return false
@@ -89,7 +89,7 @@ func excludedShown(s ports.Scene) bool {
 
 // keepsOverlays reports whether the scene has overlays that client captures
 // keep (Overlay.Capture): the frames derived for captures keep them.
-func keepsOverlays(s ports.Scene) bool {
+func keepsOverlays(s domain.Scene) bool {
 	for _, o := range s.Overlays {
 		if o.Capture {
 			return true
@@ -100,7 +100,7 @@ func keepsOverlays(s ports.Scene) bool {
 
 // hidesOverlays reports whether the scene has overlays that client captures
 // must not show (those without Overlay.Capture).
-func hidesOverlays(s ports.Scene) bool {
+func hidesOverlays(s domain.Scene) bool {
 	for _, o := range s.Overlays {
 		if !o.Capture {
 			return true
@@ -117,20 +117,20 @@ func internal(q ports.CaptureRequest) bool { return q.ID&ports.CaptureIDInternal
 // (Overlay.Capture) in a new slice, never the caller's backing array. Seq is 0
 // so the renderer redraws the whole target instead of reusing a displayed
 // frame.
-func plain(s ports.Scene) ports.Scene { return plainInto(s, nil) }
+func plain(s domain.Scene) domain.Scene { return plainInto(s, nil) }
 
 // plainInto is plain with the kept overlays appended to buf[:0], which must
 // not alias s.Overlays.
-func plainInto(s ports.Scene, buf []ports.Overlay) ports.Scene {
+func plainInto(s domain.Scene, buf []domain.Overlay) domain.Scene {
 	s.Capture, s.CaptureIndicators, s.Seq = nil, nil, 0
 	s.Overlays = captured(buf, s.Overlays)
-	s.PositionHint = ports.PositionHint{}
+	s.PositionHint = domain.PositionHint{}
 	return s
 }
 
 // captured returns the overlays with Capture, appended to buf[:0]; nil when
 // none.
-func captured(buf, overlays []ports.Overlay) []ports.Overlay {
+func captured(buf, overlays []domain.Overlay) []domain.Overlay {
 	kept := buf[:0]
 	for _, o := range overlays {
 		if o.Capture {
@@ -160,7 +160,7 @@ func captured(buf, overlays []ports.Overlay) []ports.Overlay {
 // them before BeginCapture. The render fence is returned, never closed here:
 // the plain render reads client buffers even when the requests are rejected,
 // so the caller owns it (hold or wait it) whatever happened, error included.
-func (p *Pipeline) SubmitPlain(r ports.Renderer, s ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, normal []ports.CaptureRequest) (took bool, done *os.File, err error) {
+func (p *Pipeline) SubmitPlain(r ports.Renderer, s domain.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, normal []ports.CaptureRequest) (took bool, done *os.File, err error) {
 	if len(normal) == 0 || len(s.CaptureIndicators) == 0 && !hidesOverlays(s) && !s.PositionHint.Shown() {
 		return false, nil, nil
 	}
@@ -175,7 +175,7 @@ func (p *Pipeline) SubmitPlain(r ports.Renderer, s ports.Scene, surfaces map[dom
 
 // scene returns s without the excluded windows
 // (popups included) and layers. The result is valid until the next call.
-func (c *excluder) scene(s ports.Scene) ports.Scene {
+func (c *excluder) scene(s domain.Scene) domain.Scene {
 	var ex []domain.WindowID
 	if s.Capture != nil {
 		ex = s.Capture.Excluded
@@ -204,7 +204,7 @@ func (c *excluder) scene(s ports.Scene) ports.Scene {
 }
 
 // ExcludedScene is the scene of Exclude captures: no excluded surface; see Split. Valid until the next call.
-func (p *Pipeline) ExcludedScene(s ports.Scene) ports.Scene { return p.excl.scene(s) }
+func (p *Pipeline) ExcludedScene(s domain.Scene) domain.Scene { return p.excl.scene(s) }
 
 // Split answers or orders the requests of one output frame, in place. No
 // allocation. Requests that cannot be served are failed and removed:
@@ -227,7 +227,7 @@ func (p *Pipeline) ExcludedScene(s ports.Scene) ports.Scene { return p.excl.scen
 //     (OffScreen), served from CaptureScene (see SubmitHidden); they come last.
 //
 // The entries past the groups are zeroed.
-func (p *Pipeline) Split(s ports.Scene, reqs []ports.CaptureRequest) (normal, excluded, hidden []ports.CaptureRequest) {
+func (p *Pipeline) Split(s domain.Scene, reqs []ports.CaptureRequest) (normal, excluded, hidden []ports.CaptureRequest) {
 	n := 0
 	for _, q := range reqs {
 		var err error

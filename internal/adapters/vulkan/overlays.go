@@ -6,7 +6,6 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/overlaydraw"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // overlays draws scene overlays over everything, after the capture
@@ -22,7 +21,7 @@ func (w *sceneWalk) overlays() {
 
 // overlay places a cached raster relative to anchor, clipping its GPU quad
 // without changing the raster dimensions or cache key.
-func (w *sceneWalk) overlay(o ports.Overlay, anchor, clip image.Rectangle, outputWidth int) {
+func (w *sceneWalk) overlay(o domain.Overlay, anchor, clip image.Rectangle, outputWidth int) {
 	r := w.r
 	switch o.Kind {
 	case domain.OverlayLabel:

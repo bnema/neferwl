@@ -11,6 +11,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/adapters/xwayland"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
@@ -43,7 +44,7 @@ type Options struct {
 	Sizes [][2]int
 	// Run closes Script on shutdown; the reader goroutine exits after Close.
 	Script     io.ReadCloser
-	testScenes chan<- []ports.Scene
+	testScenes chan<- []domain.Scene
 	// captureAllowPath replaces the fixed allowlist path (tests).
 	captureAllowPath string
 	// captureAllowOwner is the uid that must own that file (tests use their
@@ -157,7 +158,7 @@ func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigCh
 	}
 }
 
-func consumeScenes(ctx context.Context, scenes <-chan []ports.Scene, configErrors <-chan error, tap chan<- []ports.Scene, renderScenes chan []ports.Scene) {
+func consumeScenes(ctx context.Context, scenes <-chan []domain.Scene, configErrors <-chan error, tap chan<- []domain.Scene, renderScenes chan []domain.Scene) {
 	log := logging.For(ctx, "core")
 	configLog := logging.For(ctx, "config")
 	for {
@@ -181,7 +182,7 @@ func consumeScenes(ctx context.Context, scenes <-chan []ports.Scene, configError
 
 // logScenes logs each scene at debug level. The rect strings are built only
 // when debug is on: at the default level a frame costs no allocation here.
-func logScenes(log zerowrap.Logger, set []ports.Scene) {
+func logScenes(log zerowrap.Logger, set []domain.Scene) {
 	for _, s := range set {
 		ev := log.Debug()
 		if !ev.Enabled() {

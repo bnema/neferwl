@@ -18,7 +18,7 @@ type outboxRig struct {
 	client   chan ports.ClientEvent
 	output   chan ports.OutputEvent
 	commands chan ports.ClientCommand
-	scenes   chan []ports.Scene
+	scenes   chan []domain.Scene
 }
 
 func startOutboxRig(t *testing.T, commandCap int) *outboxRig {
@@ -32,7 +32,7 @@ func startOutboxRig(t *testing.T, commandCap int) *outboxRig {
 		client:   make(chan ports.ClientEvent),
 		output:   make(chan ports.OutputEvent),
 		commands: make(chan ports.ClientCommand, commandCap),
-		scenes:   make(chan []ports.Scene, 1),
+		scenes:   make(chan []domain.Scene, 1),
 	}
 	c, err := core.New(cfg, core.Channels{Input: r.input, Client: r.client, Output: r.output, Commands: r.commands, Scenes: r.scenes}, core.Options{})
 	if err != nil {

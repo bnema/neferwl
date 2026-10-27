@@ -160,7 +160,7 @@ func TestOverviewNamedAnchorSurvivesReplug(t *testing.T) {
 		cfg.Layout.MaxColumns = 3
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Workspaces = []ports.WorkspaceConfig{{Name: "dev", Monitor: "OUT-1"}}
-		c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1)}, Options{})
+		c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1)}, Options{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -462,7 +462,7 @@ func TestOverviewNamedColumnPickClearsStash(t *testing.T) {
 
 func TestOverviewNamedDividerPublished(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		cfg := ports.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 3

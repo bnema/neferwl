@@ -26,7 +26,7 @@ func statsRepeat(us uint32, n int) []uint32 {
 
 func TestFrameRingSummary(t *testing.T) {
 	spike := append(statsRepeat(10000, 999), 50000)
-	wrapped := append(statsRepeat(50000, 500), statsRepeat(10000, ports.StatsFrames)...)
+	wrapped := append(statsRepeat(50000, 500), statsRepeat(10000, domain.StatsFrames)...)
 	capped := []uint32{70000, 100000, 20000}
 
 	tests := []struct {
@@ -34,7 +34,7 @@ func TestFrameRingSummary(t *testing.T) {
 		samples []uint32
 		want    frameSummary
 		fps     float32
-		graph   func(g *[ports.StatsGraph]uint16)
+		graph   func(g *[domain.StatsGraph]uint16)
 	}{
 		{name: "empty"},
 		{
@@ -42,7 +42,7 @@ func TestFrameRingSummary(t *testing.T) {
 			samples: statsRepeat(10000, 200),
 			want:    frameSummary{Avg: 100, Min: 100, Max: 100, Low1: 100, Low01: 100},
 			fps:     100,
-			graph: func(g *[ports.StatsGraph]uint16) {
+			graph: func(g *[domain.StatsGraph]uint16) {
 				for i := range g {
 					g[i] = 10000
 				}
@@ -58,11 +58,11 @@ func TestFrameRingSummary(t *testing.T) {
 				Low01: 20,
 			},
 			fps: float32(1e6 / (float64(999*10000+50000) / 1000)),
-			graph: func(g *[ports.StatsGraph]uint16) {
+			graph: func(g *[domain.StatsGraph]uint16) {
 				for i := range g {
 					g[i] = 10000
 				}
-				g[ports.StatsGraph-1] = 50000
+				g[domain.StatsGraph-1] = 50000
 			},
 		},
 		{
@@ -70,7 +70,7 @@ func TestFrameRingSummary(t *testing.T) {
 			samples: wrapped,
 			want:    frameSummary{Avg: 100, Min: 100, Max: 100, Low1: 100, Low01: 100},
 			fps:     100,
-			graph: func(g *[ports.StatsGraph]uint16) {
+			graph: func(g *[domain.StatsGraph]uint16) {
 				for i := range g {
 					g[i] = 10000
 				}
@@ -84,10 +84,10 @@ func TestFrameRingSummary(t *testing.T) {
 				Min: 10, Max: 50, Low1: 10, Low01: 10,
 			},
 			fps: float32(1e6 / (190000.0 / 3)),
-			graph: func(g *[ports.StatsGraph]uint16) {
-				g[ports.StatsGraph-3] = 65535
-				g[ports.StatsGraph-2] = 65535
-				g[ports.StatsGraph-1] = 20000
+			graph: func(g *[domain.StatsGraph]uint16) {
+				g[domain.StatsGraph-3] = 65535
+				g[domain.StatsGraph-2] = 65535
+				g[domain.StatsGraph-1] = 20000
 			},
 		},
 		{name: "zero ignored", samples: []uint32{0, 0}},
@@ -99,7 +99,7 @@ func TestFrameRingSummary(t *testing.T) {
 			if tt.graph != nil {
 				tt.graph(&want.Graph)
 			}
-			var scratch [ports.StatsFrames]uint32
+			var scratch [domain.StatsFrames]uint32
 			assert.Equal(t, want, r.summary(&scratch))
 			assert.Equal(t, tt.fps, r.fps())
 		})
@@ -107,22 +107,22 @@ func TestFrameRingSummary(t *testing.T) {
 }
 
 func TestFrameRingWrapHoldsLast1024(t *testing.T) {
-	r := statsRingOf(append(statsRepeat(50000, 500), statsRepeat(10000, ports.StatsFrames)...)...)
-	assert.Equal(t, ports.StatsFrames, r.n)
+	r := statsRingOf(append(statsRepeat(50000, 500), statsRepeat(10000, domain.StatsFrames)...)...)
+	assert.Equal(t, domain.StatsFrames, r.n)
 }
 
 func TestFrameRingCapOrder(t *testing.T) {
 	// 70000 and 100000 exceed uint16: capped; 20000 stays.
 	r := statsRingOf(70000, 100000, 20000)
-	var scratch [ports.StatsFrames]uint32
+	var scratch [domain.StatsFrames]uint32
 	s := r.summary(&scratch)
-	assert.Equal(t, [3]uint16{65535, 65535, 20000}, [3]uint16(s.Graph[ports.StatsGraph-3:]))
+	assert.Equal(t, [3]uint16{65535, 65535, 20000}, [3]uint16(s.Graph[domain.StatsGraph-3:]))
 	assert.Zero(t, s.Graph[0])
 }
 
 func TestFrameRingSummaryAllocs(t *testing.T) {
 	r := statsRingOf(statsRepeat(12000, 3000)...)
-	var scratch [ports.StatsFrames]uint32
+	var scratch [domain.StatsFrames]uint32
 	assert.Zero(t, testing.AllocsPerRun(100, func() { _ = r.summary(&scratch) }))
 }
 

@@ -2,7 +2,6 @@ package core
 
 import (
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Two modes. Without gaps (gap 0), borders are tmux-style lines (like tmux
@@ -25,12 +24,12 @@ var sides = [...]domain.Sides{domain.SideLeft, domain.SideRight, domain.SideTop,
 // separators are the lines of the windows seen in v, each clipped to its
 // window's area, inactive ones first so active ones draw over them. lit
 // says whether the focused tile shows focus (only on the focused output).
-func separators(ps []Placement, width, gap int, v viewport, lit bool) []ports.Separator {
+func separators(ps []Placement, width, gap int, v viewport, lit bool) []domain.Separator {
 	if width <= 0 {
 		return nil
 	}
 	o := v.frame
-	var out []ports.Separator
+	var out []domain.Separator
 	add := func(p *Placement, r Rect, active bool) {
 		// A line cannot belong to a scrolled-off window, bleed onto
 		// another output or, for a tile, over a panel, even when a
@@ -49,9 +48,9 @@ func separators(ps []Placement, width, gap int, v viewport, lit bool) []ports.Se
 		if out == nil {
 			// One line per side of every tile, and the focused one's four
 			// lit lines: the common case grows no further.
-			out = make([]ports.Separator, 0, 4*len(ps)+4)
+			out = make([]domain.Separator, 0, 4*len(ps)+4)
 		}
-		out = append(out, ports.Separator{Rect: r, Active: active, Window: id})
+		out = append(out, domain.Separator{Rect: r, Active: active, Window: id})
 	}
 	var focused *Placement
 	tiles := 0

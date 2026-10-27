@@ -4,6 +4,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/wayland"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -11,7 +12,7 @@ import (
 // them all, with their buffer sizes; core, wayland and outputs hand each
 // side the ends it uses.
 type pipes struct {
-	securityChanges chan ports.SecurityState
+	securityChanges chan domain.SecurityState
 	securityEvents  chan ports.SecurityBackendEvent
 
 	client   chan ports.ClientEvent
@@ -21,8 +22,8 @@ type pipes struct {
 	spawn    chan ports.SpawnRequest
 
 	// Capacity 1: each holds the latest value its sender published.
-	scenes        chan []ports.Scene
-	renderScenes  chan []ports.Scene
+	scenes        chan []domain.Scene
+	renderScenes  chan []domain.Scene
 	layouts       chan ports.Layout
 	constraints   chan ports.PointerConstraint
 	states        chan ports.State
@@ -85,7 +86,7 @@ type pipes struct {
 // of hint mode is allocated.
 func newPipes(realSession, hint bool) *pipes {
 	p := &pipes{
-		securityChanges: make(chan ports.SecurityState, 8),
+		securityChanges: make(chan domain.SecurityState, 8),
 		securityEvents:  make(chan ports.SecurityBackendEvent, 64),
 
 		client:   make(chan ports.ClientEvent, 32),
@@ -94,8 +95,8 @@ func newPipes(realSession, hint bool) *pipes {
 		commands: make(chan ports.ClientCommand, 32),
 		spawn:    make(chan ports.SpawnRequest, 32),
 
-		scenes:        make(chan []ports.Scene, 1),
-		renderScenes:  make(chan []ports.Scene, 1),
+		scenes:        make(chan []domain.Scene, 1),
+		renderScenes:  make(chan []domain.Scene, 1),
 		layouts:       make(chan ports.Layout, 1),
 		constraints:   make(chan ports.PointerConstraint, 1),
 		states:        make(chan ports.State, 1),

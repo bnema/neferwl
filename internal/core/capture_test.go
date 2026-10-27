@@ -19,7 +19,7 @@ type captureRig struct {
 	client     chan ports.ClientEvent
 	output     chan ports.OutputEvent
 	commands   chan ports.ClientCommand
-	scenes     chan []ports.Scene
+	scenes     chan []domain.Scene
 	workspaces chan ports.Workspaces
 }
 
@@ -32,7 +32,7 @@ func captureCore(t *testing.T) *captureRig {
 		client:     make(chan ports.ClientEvent, 16),
 		output:     make(chan ports.OutputEvent, 8),
 		commands:   make(chan ports.ClientCommand, 64),
-		scenes:     make(chan []ports.Scene, 1),
+		scenes:     make(chan []domain.Scene, 1),
 		workspaces: make(chan ports.Workspaces, 1),
 	}
 	c, err := core.New(cfg, core.Channels{Client: r.client, Output: r.output, Commands: r.commands, Scenes: r.scenes, Workspaces: r.workspaces}, core.Options{})
@@ -58,7 +58,7 @@ func (r *captureRig) state(t *testing.T) ports.CaptureSessionState {
 }
 
 // sceneWith returns the next scene whose capture presence equals want.
-func (r *captureRig) sceneWith(t *testing.T, want bool) ports.Scene {
+func (r *captureRig) sceneWith(t *testing.T, want bool) domain.Scene {
 	t.Helper()
 	for {
 		if s := scene(t, r.scenes); (s.Capture != nil) == want {
@@ -82,7 +82,7 @@ func (r *captureRig) drainCommands() {
 }
 
 // excludedScene waits for a scene whose exclusion list has n entries.
-func (r *captureRig) excludedScene(t *testing.T, n int) ports.Scene {
+func (r *captureRig) excludedScene(t *testing.T, n int) domain.Scene {
 	t.Helper()
 	for {
 		if s := r.sceneWith(t, true); len(s.Capture.Excluded) == n {
@@ -359,18 +359,18 @@ func TestCaptureExclusionLayerBounds(t *testing.T) {
 		r := captureCore(t)
 		r.client <- ports.CaptureSessionOpen{ID: 1, Output: "OUT-1"}
 		r.client <- ports.CaptureExclusionBegin{Session: 1}
-		for id := domain.WindowID(1); id <= ports.MaxExclusionLayers+3; id++ {
+		for id := domain.WindowID(1); id <= domain.MaxExclusionLayers+3; id++ {
 			r.client <- ports.CaptureExclusionLayer{Session: 1, Layer: id, Attached: true}
 		}
-		s := r.excludedScene(t, ports.MaxExclusionLayers)
+		s := r.excludedScene(t, domain.MaxExclusionLayers)
 		for _, id := range s.Capture.Excluded {
-			if id > ports.MaxExclusionLayers {
+			if id > domain.MaxExclusionLayers {
 				t.Fatalf("excluded %v", s.Capture.Excluded)
 			}
 		}
 		// Detaching removes one.
 		r.client <- ports.CaptureExclusionLayer{Session: 1, Layer: 1}
-		r.excludedScene(t, ports.MaxExclusionLayers-1)
+		r.excludedScene(t, domain.MaxExclusionLayers-1)
 
 	})
 }
@@ -395,7 +395,7 @@ func TestCaptureExclusionTooManyExcluded(t *testing.T) {
 				}
 			}
 		}()
-		for i := range ports.MaxCaptureExcluded {
+		for i := range domain.MaxCaptureExcluded {
 			r.client <- ports.PopupRequest{ID: domain.WindowID(100 + i), Parent: 10, Positioner: ports.Positioner{Width: 5, Height: 5, AnchorRect: domain.Rect{W: 1, H: 1}}}
 			r.client <- ports.PopupMapped{ID: domain.WindowID(100 + i)}
 		}
@@ -481,7 +481,7 @@ func TestCaptureExclusionRevisionFence(t *testing.T) {
 		if st.Revision != 2 || len(st.Layers) != 1 || st.Layers[0] != 10 {
 			t.Fatalf("state after attach %+v", st)
 		}
-		var s ports.Scene
+		var s domain.Scene
 		for {
 			if s = r.sceneWith(t, true); s.Capture.Revision == 2 {
 				break
@@ -568,10 +568,10 @@ func TestCaptureFrameFlashRunsOnTheCoreClock(t *testing.T) {
 		var now atomic.Int64
 		clock := portsmocks.NewMockClock(t)
 		clock.EXPECT().Now().RunAndReturn(func() time.Time { return time.Unix(now.Load(), 0) }).Maybe()
-		clock.EXPECT().NewTimer(ports.CaptureFlash).Return(timer).Once()
+		clock.EXPECT().NewTimer(domain.CaptureFlash).Return(timer).Once()
 		client := make(chan ports.ClientEvent, 4)
 		output := make(chan ports.OutputEvent, 4)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		c, err := core.New(cfg, core.Channels{Client: client, Output: output, Commands: make(chan ports.ClientCommand, 64), Scenes: scenes}, core.Options{Clock: clock})
 		if err != nil {
 			t.Fatal(err)
@@ -596,7 +596,7 @@ func TestCaptureFrameFlashRunsOnTheCoreClock(t *testing.T) {
 }
 
 // popupIDs lists the popups of a scene.
-func popupIDs(s ports.Scene) []domain.WindowID {
+func popupIDs(s domain.Scene) []domain.WindowID {
 	var ids []domain.WindowID
 	for _, w := range s.Windows {
 		if w.Popup {

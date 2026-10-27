@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 )
@@ -24,7 +25,7 @@ const commandRingSize = 256
 type queuedCommand struct {
 	cmd    ports.ClientCommand
 	motion ports.PointerMotionTo // valid if isMotion
-	state  ports.SecurityState   // envelope state, valid if enveloped
+	state  domain.SecurityState  // envelope state, valid if enveloped
 	// isMotion: cmd is a PointerMotionTo, bare or directly inside a
 	// SecurityCommand (then enveloped is set).
 	isMotion, enveloped bool

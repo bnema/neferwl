@@ -7,6 +7,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -173,7 +174,7 @@ func TestMapExceptions(t *testing.T) {
 			sc := c.cur()
 			c.mapWindow(ports.WindowMapped{ID: 1})
 			c.stopAnimations() // the first window's own entrance
-			c.security = ports.SecurityState{Generation: 1, Protected: true}
+			c.security = domain.SecurityState{Generation: 1, Protected: true}
 			c.mapWindow(ports.WindowMapped{ID: 2})
 			if len(sc.rects) != 0 || c.animating() {
 				t.Fatalf("a window mapped under a session lock animated: %+v", sc.rects)

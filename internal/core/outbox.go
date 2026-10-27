@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -70,7 +71,7 @@ func (o *outbox) takeStats() CommandStats {
 type outCmd struct {
 	cmd ports.ClientCommand
 	// state is the owner envelope; secured is false without a security gate.
-	state   ports.SecurityState
+	state   domain.SecurityState
 	secured bool
 	// motion is cmd when it is a pointer motion. merged means cmd is stale
 	// and motion carries the sum.
@@ -119,7 +120,7 @@ func (o *outCmd) command() ports.ClientCommand {
 // buttons, focus, keys and gestures depend on their order.
 //
 // It returns the entry's sequence number, for flush.
-func (o *outbox) push(out chan<- ports.ClientCommand, v ports.ClientCommand, state ports.SecurityState, secured bool) uint64 {
+func (o *outbox) push(out chan<- ports.ClientCommand, v ports.ClientCommand, state domain.SecurityState, secured bool) uint64 {
 	e := outCmd{cmd: v, state: state, secured: secured}
 	e.motion, e.isMotion = v.(ports.PointerMotionTo)
 	o.mu.Lock()

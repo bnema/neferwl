@@ -114,7 +114,7 @@ func TestMapFullscreenRequestWithinGraceKeepsEntrance(t *testing.T) {
 	})
 }
 
-func windowOf(t *testing.T, s ports.Scene, id domain.WindowID) ports.SceneWindow {
+func windowOf(t *testing.T, s domain.Scene, id domain.WindowID) domain.SceneWindow {
 	t.Helper()
 	for _, w := range s.Windows {
 		if w.ID == id {
@@ -122,5 +122,5 @@ func windowOf(t *testing.T, s ports.Scene, id domain.WindowID) ports.SceneWindow
 		}
 	}
 	t.Fatalf("window %d not in %+v", id, s.Windows)
-	return ports.SceneWindow{}
+	return domain.SceneWindow{}
 }

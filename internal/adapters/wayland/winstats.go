@@ -8,9 +8,9 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// frameRing keeps the last ports.StatsFrames frame times in microseconds.
+// frameRing keeps the last domain.StatsFrames frame times in microseconds.
 type frameRing struct {
-	buf  [ports.StatsFrames]uint32
+	buf  [domain.StatsFrames]uint32
 	n    int // samples held, ≤ len(buf)
 	head int // next write index
 }
@@ -18,7 +18,7 @@ type frameRing struct {
 // frameSummary is the statistics of a frameRing; FPS figures are client FPS.
 type frameSummary struct {
 	Avg, Min, Max, Low1, Low01 float32
-	Graph                      [ports.StatsGraph]uint16
+	Graph                      [domain.StatsGraph]uint16
 }
 
 // push records a frame time; 0 µs is ignored.
@@ -53,11 +53,11 @@ func meanFPS(sum uint64, count int) float32 {
 	return float32(1e6 * float64(count) / float64(sum))
 }
 
-// summary fills avg/min/max/low1/low01 FPS and the last ports.StatsGraph
+// summary fills avg/min/max/low1/low01 FPS and the last domain.StatsGraph
 // frame times (oldest first, capped at 65535 µs, zero-padded at the front
 // when fewer samples). scratch is reused for sorting; it must hold
-// ports.StatsFrames values.
-func (r *frameRing) summary(scratch *[ports.StatsFrames]uint32) frameSummary {
+// domain.StatsFrames values.
+func (r *frameRing) summary(scratch *[domain.StatsFrames]uint32) frameSummary {
 	var s frameSummary
 	if r.n == 0 {
 		return s
@@ -68,8 +68,8 @@ func (r *frameRing) summary(scratch *[ports.StatsFrames]uint32) frameSummary {
 	for i := range n {
 		scratch[i] = r.buf[(start+i)%len(r.buf)]
 	}
-	for i := range ports.StatsGraph {
-		k := n - ports.StatsGraph + i
+	for i := range domain.StatsGraph {
+		k := n - domain.StatsGraph + i
 		if k < 0 {
 			continue
 		}
@@ -109,7 +109,7 @@ type windowStats struct {
 	lastShown     time.Duration
 	lastShownSeq  uint64
 	facts         ports.WindowStats
-	scratch       [ports.StatsFrames]uint32
+	scratch       [domain.StatsFrames]uint32
 }
 
 // commit records a fresh root buffer and its presentation hints.

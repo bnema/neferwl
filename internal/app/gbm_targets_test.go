@@ -121,8 +121,8 @@ func TestGBMImagesAreRenderTargets(t *testing.T) {
 	t.Log("Vulkan import of the GBM images succeeded")
 
 	// Target 0: red background with a blue window; target 1: green.
-	scenes := []ports.Scene{
-		{Background: "#ff0000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 32, Y: 16, W: 64, H: 32}}}},
+	scenes := []domain.Scene{
+		{Background: "#ff0000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: 32, Y: 16, W: 64, H: 32}}}},
 		{Background: "#00ff00"},
 	}
 	contents := map[domain.WindowID]domain.SurfaceContent{1: {ID: 1, Width: 1, Height: 1, LogicalW: 64, LogicalH: 32, Opaque: true, Solid: &domain.SolidColor{B: 1, A: 1}}}

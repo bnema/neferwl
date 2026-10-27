@@ -48,7 +48,7 @@ func startSwipeOn(t *testing.T, edit func(*ports.Config), outs ...ports.OutputIn
 	r.multiRig = &multiRig{
 		client: make(chan ports.ClientEvent, 16), input: make(chan ports.InputEvent, 64),
 		output: make(chan ports.OutputEvent, 4), reload: make(chan ports.ConfigChanged, 4),
-		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []ports.Scene, 1), spawn: make(chan ports.SpawnRequest, 16), state: make(chan ports.State, 1), cfg: cfg,
+		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []domain.Scene, 1), spawn: make(chan ports.SpawnRequest, 16), state: make(chan ports.State, 1), cfg: cfg,
 	}
 	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Spawn: r.spawn, State: r.state, Frames: r.frames}, core.Options{Clock: r.clk.clock})
 	if err != nil {
@@ -73,7 +73,7 @@ func (r *swipeRig) advance(d time.Duration) {
 // the neighbours' re-flow) so the scene is the settled one: the tests of a
 // swipe rig look at what the map leaves. The entrance itself is checked on
 // the raw multiRig.mapWindow (TestMap*).
-func (r *swipeRig) mapWindow(t *testing.T, id domain.WindowID) []ports.Scene {
+func (r *swipeRig) mapWindow(t *testing.T, id domain.WindowID) []domain.Scene {
 	t.Helper()
 	set := r.multiRig.mapWindow(t, id)
 	if landed, ok := r.settleAll(t, r.outs...); ok {
@@ -89,21 +89,21 @@ func (r *swipeRig) begin() {
 }
 
 // move sends one swipe update and returns the scene it produced.
-func (r *swipeRig) move(t *testing.T, dx, dy float64) ports.Scene {
+func (r *swipeRig) move(t *testing.T, dx, dy float64) domain.Scene {
 	t.Helper()
 	r.at += 8 * time.Millisecond
 	r.input <- ports.SwipeUpdate{DX: dx, DY: dy, Time: r.at}
 	return scene(t, r.scenes)
 }
 
-func (r *swipeRig) end(t *testing.T, cancelled bool) ports.Scene {
+func (r *swipeRig) end(t *testing.T, cancelled bool) domain.Scene {
 	t.Helper()
 	r.input <- ports.SwipeEnd{Cancelled: cancelled, Time: r.at}
 	return scene(t, r.scenes)
 }
 
 // frame moves the clock by d, sends a flip and returns the next scene.
-func (r *swipeRig) frame(t *testing.T, d time.Duration) ports.Scene {
+func (r *swipeRig) frame(t *testing.T, d time.Duration) domain.Scene {
 	t.Helper()
 	r.advance(d)
 	r.frames <- ports.OutputFrame{Output: wide.Name}
@@ -111,21 +111,21 @@ func (r *swipeRig) frame(t *testing.T, d time.Duration) ports.Scene {
 }
 
 // settle moves the clock past any spring and returns the settled scene.
-func (r *swipeRig) settle(t *testing.T) ports.Scene {
+func (r *swipeRig) settle(t *testing.T) domain.Scene {
 	t.Helper()
 	return r.frame(t, 5*time.Second)
 }
 
 // settleAll moves the clock past every spring, flips the outputs and
 // returns the scene set that results (ok false: nothing was animating).
-func (r *swipeRig) settleAll(t *testing.T, outputs ...string) ([]ports.Scene, bool) {
+func (r *swipeRig) settleAll(t *testing.T, outputs ...string) ([]domain.Scene, bool) {
 	t.Helper()
 	return r.clk.settle(t, r.frames, r.scenes, outputs...)
 }
 
 // flick sends a quick swipe of n updates of (dx, dy) and lifts the
 // fingers; it returns the scene right after the lift.
-func (r *swipeRig) flick(t *testing.T, n int, dx, dy float64) ports.Scene {
+func (r *swipeRig) flick(t *testing.T, n int, dx, dy float64) domain.Scene {
 	t.Helper()
 	r.begin()
 	for range n {
@@ -154,7 +154,7 @@ func (r *swipeRig) keySettled(t *testing.T, sym string) {
 	}
 }
 
-func rectOf(s ports.Scene, id domain.WindowID) (domain.Rect, bool) {
+func rectOf(s domain.Scene, id domain.WindowID) (domain.Rect, bool) {
 	for _, w := range s.Windows {
 		if w.ID == id && !w.Hidden {
 			return w.Rect, true
@@ -176,9 +176,9 @@ func (r *swipeRig) focused(t *testing.T) domain.WindowID {
 
 // threeColumns maps three windows of half the width; the view shows 2
 // and 3, with 3 focused. It returns the last scene.
-func threeColumns(t *testing.T, r *swipeRig) ports.Scene {
+func threeColumns(t *testing.T, r *swipeRig) domain.Scene {
 	t.Helper()
-	var s []ports.Scene
+	var s []domain.Scene
 	for id := domain.WindowID(1); id <= 3; id++ {
 		s = r.mapWindow(t, id)
 	}
@@ -380,7 +380,7 @@ func TestSwipeFromEmptyWorkspaceLandsWithoutJump(t *testing.T) {
 		r.keySettled(t, "Next")
 		r.keySettled(t, "Next")
 		r.begin()
-		var s ports.Scene
+		var s domain.Scene
 		for range 6 {
 			s = r.move(t, 0, -40)
 		}
@@ -413,7 +413,7 @@ func TestSwipeLandingKeepsViewWhenEmptyWorkspaceDrops(t *testing.T) {
 		r.mapWindow(t, 2)
 		r.key(t, "Prior", domain.ModAlt)
 		r.begin()
-		var s ports.Scene
+		var s domain.Scene
 		for range 4 {
 			s = r.move(t, 0, 20)
 		}
@@ -570,7 +570,7 @@ func TestSwipeKeptWhenAnotherOutputSwitchesWorkspace(t *testing.T) {
 }
 
 // receiveMove sends one swipe update and returns every output's scene.
-func receiveMove(t *testing.T, r *swipeRig, dx float64) []ports.Scene {
+func receiveMove(t *testing.T, r *swipeRig, dx float64) []domain.Scene {
 	t.Helper()
 	r.at += 8 * time.Millisecond
 	r.input <- ports.SwipeUpdate{DX: dx, Time: r.at}
@@ -639,7 +639,7 @@ func TestSwipeInOverview(t *testing.T) {
 		r := startSwipe(t, nil)
 		threeColumns(t, r)
 		opened := r.key(t, "o", domain.ModAlt)[0]
-		selected := func(s ports.Scene) domain.WindowID {
+		selected := func(s domain.Scene) domain.WindowID {
 			for _, w := range s.Windows {
 				if w.Focused && w.Preview > 0 {
 					return w.ID
@@ -652,7 +652,7 @@ func TestSwipeInOverview(t *testing.T) {
 			r.at += 8 * time.Millisecond
 			r.input <- ports.SwipeUpdate{DX: -40, Time: r.at}
 		}
-		sceneMatch(t, r.scenes, func(s ports.Scene) bool { return selected(s) == 2 })
+		sceneMatch(t, r.scenes, func(s domain.Scene) bool { return selected(s) == 2 })
 		s := r.end(t, false)
 		if id := selected(s); id != 2 {
 			t.Fatalf("selected %d after a left swipe, want 2", id)
@@ -683,7 +683,7 @@ func TestFourFingerSwipeOverview(t *testing.T) {
 		for _, natural := range []bool{false, true} {
 			r := startSwipe(t, func(c *ports.Config) { c.Touchpad.NaturalScroll = natural })
 			threeColumns(t, r)
-			four := func(dx, dy float64, n int) ports.Scene {
+			four := func(dx, dy float64, n int) domain.Scene {
 				r.at += time.Second
 				r.input <- ports.SwipeBegin{Fingers: 4, Time: r.at}
 				for range n {
@@ -692,7 +692,7 @@ func TestFourFingerSwipeOverview(t *testing.T) {
 				}
 				return r.end(t, false)
 			}
-			inOverview := func(s ports.Scene) bool {
+			inOverview := func(s domain.Scene) bool {
 				for _, w := range s.Windows {
 					if w.Preview > 0 {
 						return true
@@ -727,7 +727,7 @@ func TestFourFingerSwipeOverview(t *testing.T) {
 
 // four lifts a four-finger swipe of n updates of (dx, dy) after the
 // fingers went down, and returns the scene right after the lift.
-func (r *swipeRig) four(t *testing.T, dx, dy float64, n int) ports.Scene {
+func (r *swipeRig) four(t *testing.T, dx, dy float64, n int) domain.Scene {
 	t.Helper()
 	r.at += time.Second
 	r.input <- ports.SwipeBegin{Fingers: 4, Time: r.at}
@@ -740,7 +740,7 @@ func (r *swipeRig) four(t *testing.T, dx, dy float64, n int) ports.Scene {
 
 // stashedThird maps three windows and stashes the third (shown, focused),
 // settled.
-func stashedThird(t *testing.T, r *swipeRig) ports.Scene {
+func stashedThird(t *testing.T, r *swipeRig) domain.Scene {
 	t.Helper()
 	threeColumns(t, r)
 	s := r.key(t, "s", domain.ModAlt|domain.ModShift)[0]
@@ -811,7 +811,7 @@ func TestFourFingerSwipeUpHidesShownStash(t *testing.T) {
 // With the stash hidden or empty a swipe up opens the overview.
 func TestFourFingerSwipeUpOpensOverviewWithoutShownStash(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		inOverview := func(s ports.Scene) bool {
+		inOverview := func(s domain.Scene) bool {
 			for _, w := range s.Windows {
 				if w.Preview > 0 {
 					return true
@@ -850,7 +850,7 @@ func TestFourFingerSwipeUpHidesStashOverCover(t *testing.T) {
 		shown := r.key(t, "s", domain.ModAlt)[0] // show over the cover
 		sc, _ := r.settleAll(t, r.outs...)
 		if len(sc) == 0 {
-			sc = []ports.Scene{shown}
+			sc = []domain.Scene{shown}
 		}
 		if w := windowOf(t, sc[0], 3); w.Hidden {
 			t.Fatalf("setup: the stash is hidden over the cover: %+v", w)
@@ -929,7 +929,7 @@ func TestOverviewOpenedMidSwipeDropsIt(t *testing.T) {
 			r.move(t, -40, 0)
 			r.key(t, "o", domain.ModAlt)
 			// s is the latest scene.
-			var s ports.Scene
+			var s domain.Scene
 			if closeFirst {
 				s = r.key(t, "Escape", 0)[0]
 			}
@@ -956,7 +956,7 @@ func TestOverviewOpenedMidSwipeDropsIt(t *testing.T) {
 				}
 				s = set[0]
 			}
-			if len(s.Windows) == 0 || slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool {
+			if len(s.Windows) == 0 || slices.ContainsFunc(s.Windows, func(w domain.SceneWindow) bool {
 				// Neither a card nor a window still zooming back.
 				return w.Preview > 0 || w.Zoom > 0 || w.Fade > 0
 			}) {
@@ -1019,7 +1019,7 @@ func TestOverviewScrollStopOnOtherOutput(t *testing.T) {
 		threeColumns(t, r)
 		r.plug(t, ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000})
 		r.key(t, "o", domain.ModAlt)
-		selected := func(s ports.Scene) domain.WindowID {
+		selected := func(s domain.Scene) domain.WindowID {
 			for _, w := range s.Windows {
 				if w.Focused && w.Preview > 0 {
 					return w.ID
@@ -1027,8 +1027,8 @@ func TestOverviewScrollStopOnOtherOutput(t *testing.T) {
 			}
 			return 0
 		}
-		on := func(id domain.WindowID) func(ports.Scene) bool {
-			return func(s ports.Scene) bool { return s.Output == wide.Name && selected(s) == id }
+		on := func(id domain.WindowID) func(domain.Scene) bool {
+			return func(s domain.Scene) bool { return s.Output == wide.Name && selected(s) == id }
 		}
 		finger := func(dx float64) ports.SwipeUpdate {
 			return ports.SwipeUpdate{DX: dx}

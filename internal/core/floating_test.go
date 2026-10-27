@@ -5,6 +5,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -41,7 +42,7 @@ func TestFloatingSceneDimAndConfigure(t *testing.T) {
 		cfg.Floating.Dim = 0.3
 		cfg.Border.Width = 2
 		commands := make(chan ports.ClientCommand, 128)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		c, err := New(cfg, Channels{Commands: commands, Scenes: scenes}, Options{})
 		if err != nil {
 			t.Fatal(err)

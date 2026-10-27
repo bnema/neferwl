@@ -31,7 +31,7 @@ func (o *Output) observeSecurity() bool {
 	return true
 }
 
-func (o *Output) sceneCurrent(scene ports.Scene) bool {
+func (o *Output) sceneCurrent(scene domain.Scene) bool {
 	o.observeSecurity()
 	return o.Security == nil || scene.Security == o.securityState
 }
@@ -116,7 +116,7 @@ func (o *Output) prepareSecurity(ctx context.Context, r ports.Renderer) error {
 // Locker content is composed only after black preparation for this epoch.
 // They never wake core: the pendingFrame has no animating flag, so core falls
 // back to its frame timer while a lock is up. This is intentional.
-func (o *Output) submitProtectedFrame(ctx context.Context, r ports.Renderer, scene ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, seen map[domain.WindowID]uint64) error {
+func (o *Output) submitProtectedFrame(ctx context.Context, r ports.Renderer, scene domain.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, seen map[domain.WindowID]uint64) error {
 	if !o.securityPrepared || !o.sceneCurrent(scene) {
 		return errSecurityScene
 	}

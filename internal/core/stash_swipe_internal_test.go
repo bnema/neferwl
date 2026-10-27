@@ -6,6 +6,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -297,7 +299,7 @@ func TestStashSwipeSecurityLockSettlesTheStash(t *testing.T) {
 			t.Fatal("setup: the stash did not follow")
 		}
 		gate := portsmocks.NewMockSessionSecurity(t)
-		gate.EXPECT().Snapshot().Return(ports.SecurityState{Generation: 1, Protected: true})
+		gate.EXPECT().Snapshot().Return(domain.SecurityState{Generation: 1, Protected: true})
 		s.c.opts.Security = gate
 		if !s.c.syncSecurity() {
 			t.Fatal("the lock was not taken")

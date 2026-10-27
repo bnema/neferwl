@@ -352,7 +352,7 @@ func TestReportSeenAllocations(t *testing.T) {
 
 func TestShownBySnapshotAllocations(t *testing.T) {
 	o := &Output{}
-	s := ports.Scene{OutputWidth: 10, OutputHeight: 10, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 10, H: 10}}}}
+	s := domain.Scene{OutputWidth: 10, OutputHeight: 10, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 10, H: 10}}}}
 	seen := map[domain.WindowID]uint64{1: 1, 2: 2}
 	previous := o.shownBy(s, seen)
 	if allocs := testing.AllocsPerRun(100, func() { o.shownBy(s, seen) }); allocs != 0 {
@@ -502,14 +502,14 @@ func TestVRRKeptWhileFullscreenComposed(t *testing.T) {
 // commits do not draw frames.
 func TestVRRHiddenGameOnlyHolds(t *testing.T) {
 	o, _, _ := testOutput(t)
-	game := ports.SceneWindow{ID: 1, Rect: domain.Rect{W: 100, H: 50}, Fullscreen: true}
-	shown := ports.Scene{OutputWidth: 100, OutputHeight: 50, Windows: []ports.SceneWindow{game}}
+	game := domain.SceneWindow{ID: 1, Rect: domain.Rect{W: 100, H: 50}, Fullscreen: true}
+	shown := domain.Scene{OutputWidth: 100, OutputHeight: 50, Windows: []domain.SceneWindow{game}}
 	o.vrrOn = true
 	if !o.wantVRR(fullscreenShown(&shown)) {
 		t.Fatal("VRR off while the game is shown")
 	}
 	game.Hidden, game.Rect = true, domain.Rect{}
-	left := ports.Scene{OutputWidth: 100, OutputHeight: 50, Windows: []ports.SceneWindow{game, {ID: 2, Rect: domain.Rect{W: 100, H: 50}}}}
+	left := domain.Scene{OutputWidth: 100, OutputHeight: 50, Windows: []domain.SceneWindow{game, {ID: 2, Rect: domain.Rect{W: 100, H: 50}}}}
 	if fullscreenShown(&left) || left.Shows(1) {
 		t.Fatal("hidden game still drives frames")
 	}
@@ -598,7 +598,7 @@ func TestRunReportsSeenAfterFlip(t *testing.T) {
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
 		r.EXPECT().UseTarget(mock.Anything).Return()
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			f, w, _ := os.Pipe()
 			_, _ = w.Write([]byte{1}) // readable: signalled
 			w.Close()
@@ -623,7 +623,7 @@ func TestRunReportsSeenAfterFlip(t *testing.T) {
 			}
 			return n
 		}
-		scenes := make(chan ports.Scene, 1)
+		scenes := make(chan domain.Scene, 1)
 		contents := newContentFeed(t, 1)
 		sink, presented := presentedSink(t, 8)
 		ctx, cancel := context.WithCancel(context.Background())
@@ -632,7 +632,7 @@ func TestRunReportsSeenAfterFlip(t *testing.T) {
 		go func() {
 			done <- o.Run(ctx, nil, make(chan bool), scenes, contents.in(), contents.ret, nil, sink, nil, nil)
 		}()
-		scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 10, H: 10}}}}
+		scenes <- domain.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 10, H: 10}}}}
 		waitFor(t, func() bool { return frameCommits() == 1 })
 		// Frame 1 is in flight: content 3 replaces what it may be reading.
 		// One batch carries two windows: both are applied and the batch goes
@@ -712,23 +712,23 @@ func TestRunComposedFullscreenKeepsVRR(t *testing.T) {
 			}
 			return last, n
 		}
-		scenes := make(chan ports.Scene, 1)
+		scenes := make(chan domain.Scene, 1)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		setOutputRenderer(t, o, r)
 		go func() {
 			done <- o.Run(ctx, nil, make(chan bool), scenes, nil, nil, nil, discardSink(t), nil, nil)
 		}()
-		scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100,
-			Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 200, H: 100}, Fullscreen: true}},
-			Layers:  []ports.SceneLayer{{ID: 5, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 10, H: 10}}}}
+		scenes <- domain.Scene{OutputWidth: 200, OutputHeight: 100,
+			Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 200, H: 100}, Fullscreen: true}},
+			Layers:  []domain.SceneLayer{{ID: 5, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 10, H: 10}}}}
 		waitFor(t, func() bool { _, n := lastFrame(); return n == 1 })
 		last, _ := lastFrame()
 		if v, ok := last.req.value(tCrtc, pVRR); !ok || v != 1 {
 			t.Fatalf("composed fullscreen frame VRR %d %v", v, ok)
 		}
 		flips <- flipEvent{crtc: tCrtc, user: last.user, when: time.Second, seq: 1}
-		scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 100, H: 100}}}}
+		scenes <- domain.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 100, H: 100}}}}
 		waitFor(t, func() bool { _, n := lastFrame(); return n == 2 })
 		last, _ = lastFrame()
 		if v, _ := last.req.value(tCrtc, pVRR); v != 1 {
@@ -838,8 +838,8 @@ func TestCaptureRenderFailureClosesPendingRequest(t *testing.T) {
 			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{makeBuf(), makeBuf()}, nil).Once()
-		r.EXPECT().Render(ports.Scene{Background: "#000000"}, mock.Anything).Return(nil, nil).Twice()
-		r.EXPECT().Render(mock.MatchedBy(func(s ports.Scene) bool { return s.Background != "#000000" }), mock.Anything).Return(nil, boom).Once()
+		r.EXPECT().Render(domain.Scene{Background: "#000000"}, mock.Anything).Return(nil, nil).Twice()
+		r.EXPECT().Render(mock.MatchedBy(func(s domain.Scene) bool { return s.Background != "#000000" }), mock.Anything).Return(nil, boom).Once()
 		r.EXPECT().Close().Return().Once()
 		k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
 		k.EXPECT().createBlob(mock.Anything).Return(99, nil)
@@ -847,7 +847,7 @@ func TestCaptureRenderFailureClosesPendingRequest(t *testing.T) {
 		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		scenes := make(chan ports.Scene, 1)
+		scenes := make(chan domain.Scene, 1)
 		requests := make(chan ports.CaptureRequest)
 		replies := make(chan ports.CaptureDone, 1)
 		f, err := os.CreateTemp(t.TempDir(), "capture")
@@ -865,7 +865,7 @@ func TestCaptureRenderFailureClosesPendingRequest(t *testing.T) {
 		case <-time.After(2 * time.Second):
 			t.Fatal("output did not accept capture")
 		}
-		scenes <- ports.Scene{Seq: 1, Scale: 1}
+		scenes <- domain.Scene{Seq: 1, Scale: 1}
 		select {
 		case err := <-done:
 			if !errors.Is(err, boom) {
@@ -904,8 +904,8 @@ func TestCaptureForcesDRMComposition(t *testing.T) {
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe() // SDR output
 		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{makeBuf(), makeBuf()}, nil).Once()
 		r.EXPECT().UseTarget(mock.Anything).Return()
-		rendered := make(chan ports.Scene, 3)
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+		rendered := make(chan domain.Scene, 3)
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s domain.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			rendered <- s
 			return nil, nil
 		})
@@ -919,7 +919,7 @@ func TestCaptureForcesDRMComposition(t *testing.T) {
 		k.EXPECT().createBlob(mock.Anything).Return(99, nil)
 		k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
 		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
-		scenes := make(chan ports.Scene, 1)
+		scenes := make(chan domain.Scene, 1)
 		requests := make(chan ports.CaptureRequest, 1)
 		replies := make(chan ports.CaptureDone, 1)
 		ctx, cancel := context.WithCancel(context.Background())
@@ -928,7 +928,7 @@ func TestCaptureForcesDRMComposition(t *testing.T) {
 		go func() {
 			done <- o.Run(ctx, nil, nil, scenes, nil, nil, nil, discardSink(t), requests, replies)
 		}()
-		scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Background: "#000000"}
+		scenes <- domain.Scene{OutputWidth: 200, OutputHeight: 100, Background: "#000000"}
 		select {
 		case <-rendered:
 		case <-time.After(2 * time.Second):
@@ -999,10 +999,10 @@ func TestRunPanicReportsReadinessError(t *testing.T) {
 // loop did with the first.
 type stampRun struct {
 	o           *Output
-	scenes      chan ports.Scene
+	scenes      chan domain.Scene
 	contents    *contentFeed
 	flips       chan flipEvent
-	wake        chan ports.SecurityState
+	wake        chan domain.SecurityState
 	state       *atomic.Uint64
 	frameCommit func() int
 	lastCommit  func() commitRec
@@ -1012,7 +1012,7 @@ type stampRun struct {
 func startStampRun(t *testing.T) *stampRun {
 	o, k, commits, commitMu := testOutputMu(t)
 	o.cursor, o.tearing = nil, false
-	sr := &stampRun{o: o, scenes: make(chan ports.Scene), contents: newContentFeed(t, 0), flips: make(chan flipEvent, 1), wake: make(chan ports.SecurityState, 1), state: &atomic.Uint64{}}
+	sr := &stampRun{o: o, scenes: make(chan domain.Scene), contents: newContentFeed(t, 0), flips: make(chan flipEvent, 1), wake: make(chan domain.SecurityState, 1), state: &atomic.Uint64{}}
 	o.flipped = sr.flips
 	securityGate(t, o, sr.state)
 	o.SecurityChanges = sr.wake
@@ -1068,7 +1068,7 @@ func startStampRun(t *testing.T) *stampRun {
 func TestRunStampsWhenFrameWasWanted(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		sr := startStampRun(t)
-		scene := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 10, H: 10}}}}
+		scene := domain.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 10, H: 10}}}}
 		sr.scenes <- scene
 		waitFor(t, func() bool { return sr.frameCommit() == 1 })
 		// Frame 1 is in flight: a new scene arrives and waits.
@@ -1096,7 +1096,7 @@ func TestRunStampsWhenFrameWasWanted(t *testing.T) {
 func TestRunSecurityResetClearsWantedAt(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		sr := startStampRun(t)
-		scene := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 10, H: 10}}}}
+		scene := domain.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 10, H: 10}}}}
 		sr.scenes <- scene
 		waitFor(t, func() bool { return sr.frameCommit() == 1 })
 		scene.Seq = 2
@@ -1104,7 +1104,7 @@ func TestRunSecurityResetClearsWantedAt(t *testing.T) {
 		sr.contents.send(domain.SurfaceContent{ID: 1, Seq: 1, SHM: &domain.SHMBuffer{}}) // stamped by now
 		// A new security generation, not protected.
 		sr.state.Store(2)
-		sr.wake <- ports.SecurityState{}
+		sr.wake <- domain.SecurityState{}
 		sr.contents.send(domain.SurfaceContent{ID: 1, Seq: 2, SHM: &domain.SHMBuffer{}}) // Run went round and reset
 		sr.stop()
 		if sr.o.wantedAt != 0 {
@@ -1118,7 +1118,7 @@ func TestRunSecurityResetClearsWantedAt(t *testing.T) {
 func TestOutputSameSeqRendersOnce(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		sr := startStampRun(t)
-		scene := ports.Scene{Seq: 5, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 10, H: 10}}}}
+		scene := domain.Scene{Seq: 5, OutputWidth: 200, OutputHeight: 100, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 10, H: 10}}}}
 		sr.scenes <- scene
 		waitFor(t, func() bool { return sr.frameCommit() == 1 })
 		sr.flips <- flipEvent{crtc: tCrtc, user: sr.lastCommit().user, when: time.Second, seq: 1}
@@ -1164,7 +1164,7 @@ func TestRunKeepsLastContentOfLeavingWindow(t *testing.T) {
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
 		r.EXPECT().UseTarget(mock.Anything).Return()
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, c map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s domain.Scene, c map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			mu.Lock()
 			last, lastSeq = maps.Clone(c), s.Seq
 			mu.Unlock()
@@ -1192,7 +1192,7 @@ func TestRunKeepsLastContentOfLeavingWindow(t *testing.T) {
 			})
 			return c, ok
 		}
-		scenes := make(chan ports.Scene, 1)
+		scenes := make(chan domain.Scene, 1)
 		contents := newContentFeed(t, 1)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
@@ -1203,11 +1203,11 @@ func TestRunKeepsLastContentOfLeavingWindow(t *testing.T) {
 		acq, acqW, _ := os.Pipe()
 		defer acq.Close()
 		defer acqW.Close()
-		win := ports.SceneWindow{ID: 1, Rect: domain.Rect{W: 10, H: 10}}
+		win := domain.SceneWindow{ID: 1, Rect: domain.Rect{W: 10, H: 10}}
 		full := domain.SurfaceContent{ID: 1, Seq: 1, Width: 10, Height: 10, DMABuf: &domain.DMABuf{ID: 5, Planes: []domain.DMABufPlane{{}}}, Acquire: acq}
 		contents.send(full)
 		synctest.Wait() // apply content before the first scene can commit
-		scenes <- ports.Scene{Seq: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{win}}
+		scenes <- domain.Scene{Seq: 1, OutputWidth: 200, OutputHeight: 100, Windows: []domain.SceneWindow{win}}
 		drawn(1, func(c domain.SurfaceContent, ok bool) bool { return ok && c.Acquire == acq })
 		flip()
 		// The window unmaps: its empty content arrives before the scene that
@@ -1220,13 +1220,13 @@ func TestRunKeepsLastContentOfLeavingWindow(t *testing.T) {
 		flip()
 		// A leaving frame: still drawn from the kept content.
 		win.Fade = 0.5
-		scenes <- ports.Scene{Seq: 2, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{win}}
+		scenes <- domain.Scene{Seq: 2, OutputWidth: 200, OutputHeight: 100, Windows: []domain.SceneWindow{win}}
 		if c, ok := drawn(2, func(domain.SurfaceContent, bool) bool { return true }); !ok || c.DMABuf != full.DMABuf {
 			t.Fatalf("the leaving frame drew %+v (ok %t), want the kept content", c, ok)
 		}
 		flip()
 		// The scene no longer lists it: gone.
-		scenes <- ports.Scene{Seq: 3, OutputWidth: 200, OutputHeight: 100}
+		scenes <- domain.Scene{Seq: 3, OutputWidth: 200, OutputHeight: 100}
 		if c, ok := drawn(3, func(domain.SurfaceContent, bool) bool { return true }); ok {
 			t.Fatalf("the kept content %+v survived a scene without the window", c)
 		}

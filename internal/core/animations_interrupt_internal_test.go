@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core/motion"
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -43,9 +45,9 @@ func movingRects(t *testing.T, c *Core, ic *indicatorClock, sc *screen) {
 func TestSessionLockMidRectMotion(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, ic := indicatorCore(t)
-		state := ports.SecurityState{}
+		state := domain.SecurityState{}
 		gate := portsmocks.NewMockSessionSecurity(t)
-		gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return state })
+		gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return state })
 		c.opts.Security = gate
 		sc := c.cur()
 		movingRects(t, c, ic, sc)
@@ -54,7 +56,7 @@ func TestSessionLockMidRectMotion(t *testing.T) {
 		}
 		seq := sc.last.Seq
 
-		state = ports.SecurityState{Generation: 1, Protected: true}
+		state = domain.SecurityState{Generation: 1, Protected: true}
 		if err := c.publish(context.Background()); err != nil {
 			t.Fatal(err)
 		}
@@ -70,7 +72,7 @@ func TestSessionLockMidRectMotion(t *testing.T) {
 		}
 
 		// Unlocked: the windows are where the move left them, nothing runs.
-		state = ports.SecurityState{Generation: 2}
+		state = domain.SecurityState{Generation: 2}
 		s := indicatorScene(t, c)
 		if s.Seq <= locked.Seq {
 			t.Fatalf("unlocked scene Seq %d reuses the locked one %d", s.Seq, locked.Seq)
@@ -165,7 +167,7 @@ func TestLastOutputUnplugMidRectMotion(t *testing.T) {
 		if settled.Seq <= gone.Seq {
 			t.Fatalf("scene after the replug reuses Seq %d (placeholder %d)", settled.Seq, gone.Seq)
 		}
-		x := func(s ports.Scene, id WindowID) int {
+		x := func(s domain.Scene, id WindowID) int {
 			for _, w := range s.Windows {
 				if w.ID == id {
 					return w.Rect.X

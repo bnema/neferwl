@@ -195,7 +195,7 @@ func (p *Pipeline) WaitHidden(ctx context.Context) error {
 // Retire closes the child once the scene no longer carries CaptureScene and
 // nothing of it is in flight. Call it when a frame is prepared, when a child
 // lease is recycled and on the idle housekeeping tick.
-func (p *Pipeline) Retire(s ports.Scene) {
+func (p *Pipeline) Retire(s domain.Scene) {
 	if p != nil && p.off != nil && s.CaptureScene == nil && p.off.r != nil && !p.off.busy() {
 		p.off.close()
 	}
@@ -304,7 +304,7 @@ func (o *offscreen) close() {
 
 // childSize is the physical child image: the workspace frame at the scene
 // scale, rounded up.
-func childSize(cs *ports.Scene) (w, h int, err error) {
+func childSize(cs *domain.Scene) (w, h int, err error) {
 	scale := cs.Scale
 	if scale <= 0 {
 		scale = 1
@@ -318,7 +318,7 @@ func childSize(cs *ports.Scene) (w, h int, err error) {
 
 // track records the ceiling of a child render on the next free slot: every
 // window and layer the render drew, with the content Seq it was given.
-func (o *offscreen) track(done *os.File, drawn ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent) {
+func (o *offscreen) track(done *os.File, drawn domain.Scene, surfaces map[domain.WindowID]domain.SurfaceContent) {
 	slot := &o.slots[o.nf]
 	if slot.ceil == nil {
 		slot.ceil = make(map[domain.WindowID]uint64, len(drawn.Windows)+len(drawn.Layers))
@@ -341,7 +341,7 @@ func (o *offscreen) track(done *os.File, drawn ports.Scene, surfaces map[domain.
 // must cover the whole child frame; they are rebased to its origin. Anything smaller needs the viewport
 // origin in output coordinates, which the scene does not carry, and fails with
 // ErrOffscreenGeometry.
-func (p *Pipeline) SubmitHidden(s ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, reqs []ports.CaptureRequest) {
+func (p *Pipeline) SubmitHidden(s domain.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, reqs []ports.CaptureRequest) {
 	fail := func(err error, qs []ports.CaptureRequest) {
 		for _, q := range qs {
 			Fail(p.ctx, q, err, p.replies)

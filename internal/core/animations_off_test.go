@@ -28,7 +28,7 @@ func (r *swipeRig) stillMoves(t *testing.T, n int, dx, dy float64) {
 // far, if any. A flip that names no output is a barrier: core handles its
 // events in order and publishes before taking the next one, so once the
 // send returns every earlier event is handled.
-func (r *swipeRig) published() ([]ports.Scene, bool) {
+func (r *swipeRig) published() ([]domain.Scene, bool) {
 	send(r.frames, ports.OutputFrame{Output: "sync"})
 	select {
 	case s := <-r.scenes:
@@ -38,7 +38,7 @@ func (r *swipeRig) published() ([]ports.Scene, bool) {
 	}
 }
 
-func focusedID(s ports.Scene) domain.WindowID {
+func focusedID(s domain.Scene) domain.WindowID {
 	for _, w := range s.Windows {
 		if w.Focused {
 			return w.ID

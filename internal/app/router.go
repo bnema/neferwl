@@ -60,7 +60,7 @@ type routerStats struct {
 // outputRoutes are the router's inputs: core's scenes, wayland's cursor and
 // capture requests.
 type outputRoutes struct {
-	scenes   <-chan []ports.Scene
+	scenes   <-chan []domain.Scene
 	cursor   <-chan ports.CursorChange
 	captures <-chan ports.CaptureRequest
 }
@@ -68,7 +68,7 @@ type outputRoutes struct {
 // mailbox is what the router feeds one output lifetime.
 type mailbox struct {
 	instance domain.OutputInstance
-	scenes   chan ports.Scene
+	scenes   chan domain.Scene
 	cursor   chan ports.CursorChange
 	captures chan ports.CaptureRequest
 	// ctx ends and done closes with the output; stop cancels it.
@@ -78,7 +78,7 @@ type mailbox struct {
 }
 
 func newMailbox(instance domain.OutputInstance, ctx context.Context, stop context.CancelFunc, done chan struct{}) *mailbox {
-	return &mailbox{instance: instance, scenes: make(chan ports.Scene, 1), cursor: make(chan ports.CursorChange, 1), captures: make(chan ports.CaptureRequest, 16), ctx: ctx, stop: stop, done: done}
+	return &mailbox{instance: instance, scenes: make(chan domain.Scene, 1), cursor: make(chan ports.CursorChange, 1), captures: make(chan ports.CaptureRequest, 16), ctx: ctx, stop: stop, done: done}
 }
 
 // routerOp registers (add set) or unregisters an output. reply carries the
@@ -182,7 +182,7 @@ func (r *outputRouter) setCursor(c ports.CursorChange) {
 }
 
 // scenes routes each scene to its output, replacing an unread one.
-func (r *outputRouter) scenes(set []ports.Scene) {
+func (r *outputRouter) scenes(set []domain.Scene) {
 	for _, sc := range set {
 		if sc.Off {
 			r.off[sc.Output] = true

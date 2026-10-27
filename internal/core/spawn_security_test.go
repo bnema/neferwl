@@ -6,6 +6,8 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -19,9 +21,9 @@ func TestFullSpawnQueueSlotsTerminalsExplicitRemainTransitionSafe(t *testing.T) 
 				c.cur().mon.RemoveWindow(1)
 				c.cur().mon.RemoveWindow(2)
 				var epoch atomic.Value
-				epoch.Store(ports.SecurityState{Generation: 2})
+				epoch.Store(domain.SecurityState{Generation: 2})
 				gate := portsmocks.NewMockSessionSecurity(t)
-				gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return epoch.Load().(ports.SecurityState) })
+				gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return epoch.Load().(domain.SecurityState) })
 				c.opts.Security = gate
 				c.syncSecurity()
 				spawn := make(chan ports.SpawnRequest, 1)
@@ -72,7 +74,7 @@ func TestFullSpawnQueueSlotsTerminalsExplicitRemainTransitionSafe(t *testing.T) 
 				}
 				// A full queue never prevents the owner from adopting protection. Empty
 				// it only after transition; no path may enqueue in the protected epoch.
-				epoch.Store(ports.SecurityState{Generation: 3, Protected: true})
+				epoch.Store(domain.SecurityState{Generation: 3, Protected: true})
 				c.syncSecurity()
 				<-spawn
 				if err := attempt(); err != nil {
@@ -81,17 +83,17 @@ func TestFullSpawnQueueSlotsTerminalsExplicitRemainTransitionSafe(t *testing.T) 
 				if len(spawn) != 0 {
 					t.Fatal("protected spawn enqueued")
 				}
-				epoch.Store(ports.SecurityState{Generation: 4})
+				epoch.Store(domain.SecurityState{Generation: 4})
 				c.syncSecurity()
 				if err := attempt(); err != nil {
 					t.Fatal(err)
 				}
 				req := reviewReceive(t, spawn)
-				if req.Security != (ports.SecurityState{Generation: 4}) {
+				if req.Security != (domain.SecurityState{Generation: 4}) {
 					t.Fatalf("missing owner stamp: %+v", req)
 				}
 				// Queued requests retain admission generation, not a later gate value.
-				epoch.Store(ports.SecurityState{Generation: 5, Protected: true})
+				epoch.Store(domain.SecurityState{Generation: 5, Protected: true})
 				if req.Security.Generation != 4 {
 					t.Fatal("queued request relabeled")
 				}
@@ -135,10 +137,10 @@ func TestRunStartupPendingDisabledWhileLockedResumesOnUnlockEvent(t *testing.T) 
 		c, _, _ := hiddenCaptureCommands(t)
 		c.cfg.Startup = [][]string{{"one"}, {"two"}, {"three"}}
 		var epoch atomic.Value
-		locked := ports.SecurityState{Generation: 1, Protected: true}
+		locked := domain.SecurityState{Generation: 1, Protected: true}
 		epoch.Store(locked)
 		gate := portsmocks.NewMockSessionSecurity(t)
-		gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return epoch.Load().(ports.SecurityState) })
+		gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return epoch.Load().(domain.SecurityState) })
 		c.opts.Security = gate
 		spawn := make(chan ports.SpawnRequest, 1)
 		c.ch.Spawn = spawn
@@ -154,7 +156,7 @@ func TestRunStartupPendingDisabledWhileLockedResumesOnUnlockEvent(t *testing.T) 
 			t.Fatalf("locked startup sent: %+v", req)
 		default:
 		}
-		unlocked := ports.SecurityState{Generation: 2}
+		unlocked := domain.SecurityState{Generation: 2}
 		epoch.Store(unlocked)
 		client <- ports.SessionLockChanged{State: unlocked}
 		for _, want := range []string{"one", "two", "three"} {
@@ -178,13 +180,13 @@ func TestStartupSuccessfulHandoffConsumesDespiteImmediateTransition(t *testing.T
 		spawn := make(chan ports.SpawnRequest, 1)
 		c.ch.Spawn = spawn
 		var epoch atomic.Value
-		epoch.Store(ports.SecurityState{})
+		epoch.Store(domain.SecurityState{})
 		gate := portsmocks.NewMockSessionSecurity(t)
-		gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState {
+		gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState {
 			if len(spawn) != 0 {
-				epoch.Store(ports.SecurityState{Generation: 1, Protected: true})
+				epoch.Store(domain.SecurityState{Generation: 1, Protected: true})
 			}
-			return epoch.Load().(ports.SecurityState)
+			return epoch.Load().(domain.SecurityState)
 		})
 		c.opts.Security = gate
 		c.spawnStartup(context.Background())
@@ -194,9 +196,9 @@ func TestStartupSuccessfulHandoffConsumesDespiteImmediateTransition(t *testing.T
 		if !gate.Snapshot().Protected {
 			t.Fatal("test did not engage gate after handoff")
 		}
-		epoch.Store(ports.SecurityState{Generation: 2})
+		epoch.Store(domain.SecurityState{Generation: 2})
 		req := <-spawn
-		if req.Argv[0] != "once" || req.Security != (ports.SecurityState{}) {
+		if req.Argv[0] != "once" || req.Security != (domain.SecurityState{}) {
 			t.Fatal(req)
 		}
 		c.syncSecurity()
@@ -213,9 +215,9 @@ func TestRunSelectableStartupConsumedOnceAcrossReceiverTransition(t *testing.T) 
 		c, _, _ := hiddenCaptureCommands(t)
 		c.cfg.Startup = [][]string{{"once"}}
 		var epoch atomic.Value
-		epoch.Store(ports.SecurityState{})
+		epoch.Store(domain.SecurityState{})
 		gate := portsmocks.NewMockSessionSecurity(t)
-		gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return epoch.Load().(ports.SecurityState) })
+		gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return epoch.Load().(domain.SecurityState) })
 		c.opts.Security = gate
 		spawn := make(chan ports.SpawnRequest)
 		c.ch.Spawn = spawn
@@ -228,11 +230,11 @@ func TestRunSelectableStartupConsumedOnceAcrossReceiverTransition(t *testing.T) 
 		if req.Argv[0] != "once" {
 			t.Fatal(req)
 		}
-		locked := ports.SecurityState{Generation: 1, Protected: true}
+		locked := domain.SecurityState{Generation: 1, Protected: true}
 		epoch.Store(locked)
 		client <- ports.SessionLockChanged{State: locked}
 		reviewReceive(t, c.ch.Scenes)
-		unlocked := ports.SecurityState{Generation: 2}
+		unlocked := domain.SecurityState{Generation: 2}
 		epoch.Store(unlocked)
 		client <- ports.SessionLockChanged{State: unlocked}
 		for {

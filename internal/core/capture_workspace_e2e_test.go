@@ -47,7 +47,7 @@ func TestCaptureSessionSurvivesWorkspaceSwitch(t *testing.T) {
 		}
 
 		r.client <- ports.WorkspaceActivate{IDs: []uint64{ws[1].ID}}
-		var off ports.Scene
+		var off domain.Scene
 		for {
 			off = scene(t, r.scenes)
 			if off.CaptureScene != nil {
@@ -76,7 +76,7 @@ func TestCaptureSessionSurvivesWorkspaceSwitch(t *testing.T) {
 
 		// Stopping the session hides the window for real again.
 		r.client <- ports.CaptureSessionClose{ID: 1}
-		var after ports.Scene
+		var after domain.Scene
 		for {
 			if after = scene(t, r.scenes); after.Capture == nil {
 				break

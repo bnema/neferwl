@@ -53,7 +53,7 @@ func TestCaptureLastFrameRegion(t *testing.T) {
 	if _, err := r.BeginCapture(); err == nil {
 		t.Fatal("capture before any frame accepted")
 	}
-	if err := render(r, ports.Scene{Background: "#123456"}, nil); err != nil {
+	if err := render(r, domain.Scene{Background: "#123456"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if r.captures != nil {
@@ -101,7 +101,7 @@ func TestCaptureLastFrameRegion(t *testing.T) {
 func TestCaptureSlotsBounded(t *testing.T) {
 	r := newTestRenderer(t, 8, 8)
 	defer r.Close()
-	if err := render(r, ports.Scene{Background: "#ff0000"}, nil); err != nil {
+	if err := render(r, domain.Scene{Background: "#ff0000"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	leaseAll := func() (leased []ports.CaptureFrame) {
@@ -155,7 +155,7 @@ func TestCaptureSlotsBounded(t *testing.T) {
 func TestCaptureReturnedSlotWaitsForFence(t *testing.T) {
 	r := newTestRenderer(t, 8, 8)
 	defer r.Close()
-	if err := render(r, ports.Scene{Background: "#00ff00"}, nil); err != nil {
+	if err := render(r, domain.Scene{Background: "#00ff00"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	a := captureWait(t, r)
@@ -200,7 +200,7 @@ func TestCaptureWithoutSyncFileExport(t *testing.T) {
 	r := newTestRenderer(t, 8, 8)
 	defer r.Close()
 	r.syncFD = false
-	if err := render(r, ports.Scene{Background: "#123456"}, nil); err != nil {
+	if err := render(r, domain.Scene{Background: "#123456"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.BeginCapture(); err == nil || !strings.Contains(err.Error(), "sync file export") {
@@ -292,7 +292,7 @@ func TestCaptureCurve(t *testing.T) {
 func TestCaptureLeaseReused(t *testing.T) {
 	r := newTestRenderer(t, 8, 8)
 	defer r.Close()
-	if err := render(r, ports.Scene{Background: "#0000ff"}, nil); err != nil {
+	if err := render(r, domain.Scene{Background: "#0000ff"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	first := captureWait(t, r)
@@ -358,7 +358,7 @@ func TestCaptureCycleAllocations(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r := tc.new(t)
 			requireCaptureSync(t, r)
-			if err := render(r, ports.Scene{Seq: 1, Background: "#3060c0"}, nil); err != nil {
+			if err := render(r, domain.Scene{Seq: 1, Background: "#3060c0"}, nil); err != nil {
 				t.Fatal(err)
 			}
 			dst := make([]byte, 16*8*4)
@@ -471,7 +471,7 @@ func TestCaptureSyncFileOwnership(t *testing.T) {
 			r.Close()
 		}
 	}()
-	if err := render(r, ports.Scene{Background: "#00ff00"}, nil); err != nil {
+	if err := render(r, domain.Scene{Background: "#00ff00"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	before := openFDs(t)
@@ -518,7 +518,7 @@ func TestCaptureExportFailureKeepsSlotPending(t *testing.T) {
 	r := newTestRenderer(t, 8, 8)
 	defer r.Close()
 	requireCaptureSync(t, r)
-	if err := render(r, ports.Scene{Background: "#00ff00"}, nil); err != nil {
+	if err := render(r, domain.Scene{Background: "#00ff00"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	m := newMockcaptureSync(t)
@@ -578,7 +578,7 @@ func TestCaptureExportFailureKeepsSlotPending(t *testing.T) {
 func TestCapturePollErrorPropagates(t *testing.T) {
 	r := newTestRenderer(t, 8, 8)
 	defer r.Close()
-	if err := render(r, ports.Scene{Background: "#00ff00"}, nil); err != nil {
+	if err := render(r, domain.Scene{Background: "#00ff00"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	a := captureWait(t, r)
@@ -620,7 +620,7 @@ func TestCaptureHDRNaNInf(t *testing.T) {
 	f := udmabuf16(t, 64, 16, texel)
 	buf := &domain.DMABuf{ID: 165, Width: 64, Height: 16, Format: format.Format, Planes: []domain.DMABufPlane{{File: f, Stride: 512}}}
 	c := domain.SurfaceContent{ID: 1, Width: 64, Height: 16, Opaque: true, DMABuf: buf, Color: domain.SurfaceColor{TF: domain.ColorTFExtendedLinear, Primaries: domain.ColorPrimariesSRGB}}
-	scene := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
+	scene := domain.Scene{Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
 	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: c}); err != nil {
 		t.Fatal(err)
 	}
@@ -697,7 +697,7 @@ func udmabuf16(t *testing.T, w, h int, v func(x int) uint16) *os.File {
 // round-trips SDR → HDR → SDR within the capture curve's tolerance.
 func TestCaptureSurvivesHDRToggle(t *testing.T) {
 	r := hdrTestRenderer(t) // HDR, exported target
-	scene := ports.Scene{Seq: 1, Background: "#c08040"}
+	scene := domain.Scene{Seq: 1, Background: "#c08040"}
 	if err := render(r, scene, nil); err != nil {
 		t.Fatal(err)
 	}

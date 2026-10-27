@@ -9,7 +9,6 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -31,7 +30,7 @@ func TestRunOutputPower(t *testing.T) {
 		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 		r.EXPECT().UseTarget(mock.Anything).Return()
 		renders := make(chan struct{}, 8)
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			renders <- struct{}{}
 			return nil, nil
 		})
@@ -46,7 +45,7 @@ func TestRunOutputPower(t *testing.T) {
 			return append([]commitRec(nil), *commits...)
 		}
 		active := func(c commitRec) (uint64, bool) { return c.req.value(tCrtc, pActive) }
-		scenes := make(chan ports.Scene, 1)
+		scenes := make(chan domain.Scene, 1)
 		vt := make(chan bool)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
@@ -54,7 +53,7 @@ func TestRunOutputPower(t *testing.T) {
 		go func() {
 			done <- o.Run(ctx, nil, vt, scenes, nil, nil, nil, discardSink(t), nil, nil)
 		}()
-		on := ports.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1}
+		on := domain.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1}
 		scenes <- on
 		<-renders
 		var frame commitRec
@@ -142,7 +141,7 @@ func TestRunOutputStartOff(t *testing.T) {
 		r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 		r.EXPECT().UseTarget(mock.Anything).Return().Maybe()
 		renders := make(chan struct{}, 8)
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			renders <- struct{}{}
 			return nil, nil
 		}).Maybe()
@@ -172,7 +171,7 @@ func TestRunOutputStartOff(t *testing.T) {
 			}
 			return false
 		}
-		scenes := make(chan ports.Scene, 1)
+		scenes := make(chan domain.Scene, 1)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		setOutputRenderer(t, o, r)
@@ -185,7 +184,7 @@ func TestRunOutputStartOff(t *testing.T) {
 		for len(renders) > 0 { // the images are cleared at setup
 			<-renders
 		}
-		off := ports.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1, Off: true}
+		off := domain.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1, Off: true}
 		scenes <- off
 		synctest.Wait()
 		if lit(snapshot()) {

@@ -7,7 +7,6 @@ package app
 import (
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-
 	mock "github.com/stretchr/testify/mock"
 )
 

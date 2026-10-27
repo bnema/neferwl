@@ -9,7 +9,6 @@ import (
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
 
@@ -78,7 +77,7 @@ func TestRendererImportsDMABuf(t *testing.T) {
 		return [4]byte{255, 0, 0, 255}
 	})
 	buf := &domain.DMABuf{ID: 7, Width: 64, Height: 16, Format: linear.Format, Planes: []domain.DMABufPlane{{File: f, Stride: 256}}}
-	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: 64, H: 16}}}}
+	scene := domain.Scene{Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: 64, H: 16}}}}
 	contents := map[domain.WindowID]domain.SurfaceContent{1: {ID: 1, Width: 64, Height: 16, DMABuf: buf}}
 	if err := render(r, scene, contents); err != nil {
 		t.Fatal(err)
@@ -139,7 +138,7 @@ func TestRendererSubsurfaceAcquire(t *testing.T) {
 	defer w.Close()
 	child := domain.SurfaceContent{ID: 1, Width: 64, Height: 16, Acquire: fence,
 		DMABuf: &domain.DMABuf{ID: 8, Width: 64, Height: 16, Format: linear.Format, Planes: []domain.DMABufPlane{{File: f, Stride: 256}}}}
-	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
+	scene := domain.Scene{Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
 	contents := map[domain.WindowID]domain.SurfaceContent{1: {ID: 1, Width: 64, Height: 16, Children: []domain.Subsurface{{SurfaceContent: child}}}}
 	ds := r.draws(scene, contents, newDamage(r.target(), scene, image.Rect(0, 0, 80, 32)))
 	for _, d := range ds {

@@ -267,7 +267,7 @@ func TestBorderGrabSecurityReset(t *testing.T) {
 		grabButton(t, c, btnRight, true, time.Second)
 		grabCommands(c)
 		gate := portsmocks.NewMockSessionSecurity(t)
-		gate.EXPECT().Snapshot().Return(ports.SecurityState{Generation: 1, Protected: true})
+		gate.EXPECT().Snapshot().Return(domain.SecurityState{Generation: 1, Protected: true})
 		c.opts.Security = gate
 		if !c.syncSecurity() || c.pgrab != nil {
 			t.Fatal("grab survived protection")

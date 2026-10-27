@@ -55,10 +55,10 @@ func TestHDRModesetPropertiesAndPlaneRefusal(t *testing.T) {
 		}
 	}
 	o.hdr.on = true
-	if fb, _, _ := o.scanoutFrame(ports.Scene{}, nil); fb != 0 || o.reason != "no_fullscreen" {
+	if fb, _, _ := o.scanoutFrame(domain.Scene{}, nil); fb != 0 || o.reason != "no_fullscreen" {
 		t.Fatalf("scanout: fb %d reason %q", fb, o.reason)
 	}
-	if ov, _ := o.overlayFrame(ports.Scene{}, nil); ov.fb != 0 || o.overlayReason != "no_plane" {
+	if ov, _ := o.overlayFrame(domain.Scene{}, nil); ov.fb != 0 || o.overlayReason != "no_plane" {
 		t.Fatalf("overlay: fb %d reason %q", ov.fb, o.overlayReason)
 	}
 	// Colorspace property without a Default enum must not receive invented 0.

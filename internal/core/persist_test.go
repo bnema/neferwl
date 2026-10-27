@@ -104,7 +104,7 @@ func TestScaleBindReportsScale(t *testing.T) {
 		input := make(chan ports.InputEvent, 8)
 		output := make(chan ports.OutputEvent, 8)
 		scales := make(chan ports.ScaleChanged, 8)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		c, err := core.New(cfg, core.Channels{Input: input, Output: output, Commands: make(chan ports.ClientCommand, 64), Scenes: scenes, Scales: scales}, core.Options{})
 		if err != nil {
 			t.Fatal(err)

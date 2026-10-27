@@ -6,17 +6,16 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
 
 func TestFocusFlashGeometryAlphaAndOrder(t *testing.T) {
 	for _, scale := range []int{1, 2} {
 		r := &Renderer{width: 128, height: 128}
-		s := ports.Scene{Scale: float64(scale), Border: ports.Border{Active: "#00ff00"},
-			Separators:        []ports.Separator{{Rect: domain.Rect{W: 2, H: 20}, Active: true}},
-			Flash:             &ports.FocusFlash{Rect: domain.Rect{X: 8, Y: 4, W: 16, H: 8}, Width: 2, Color: "#ff0000", Alpha: 0.5},
-			CaptureIndicators: []ports.CaptureIndicator{{Rect: domain.Rect{W: 64, H: 64}}}}
+		s := domain.Scene{Scale: float64(scale), Border: domain.Border{Active: "#00ff00"},
+			Separators:        []domain.Separator{{Rect: domain.Rect{W: 2, H: 20}, Active: true}},
+			Flash:             &domain.FocusFlash{Rect: domain.Rect{X: 8, Y: 4, W: 16, H: 8}, Width: 2, Color: "#ff0000", Alpha: 0.5},
+			CaptureIndicators: []domain.CaptureIndicator{{Rect: domain.Rect{W: 64, H: 64}}}}
 		ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 128, 128)))
 		require.Len(t, ds, 9)
 		require.Equal(t, [4]float32{0, 1, 0, 1}, ds[0].pc.color)
@@ -35,12 +34,12 @@ func TestFocusFlashGeometryAlphaAndOrder(t *testing.T) {
 
 func TestFocusFlashAbsentEmptyAndThin(t *testing.T) {
 	r := &Renderer{width: 64, height: 64}
-	for _, f := range []*ports.FocusFlash{nil, {Alpha: 0}, {Alpha: -1}, {Alpha: 1, Rect: domain.Rect{W: 0, H: 10}}} {
-		s := ports.Scene{Scale: 1, Flash: f}
+	for _, f := range []*domain.FocusFlash{nil, {Alpha: 0}, {Alpha: -1}, {Alpha: 1, Rect: domain.Rect{W: 0, H: 10}}} {
+		s := domain.Scene{Scale: 1, Flash: f}
 		require.Empty(t, r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 64, 64))))
 	}
 	for _, width := range []int{0, 8} {
-		s := ports.Scene{Scale: 1, Flash: &ports.FocusFlash{Alpha: 1, Width: width, Rect: domain.Rect{X: 2, Y: 3, W: 1, H: 10}}}
+		s := domain.Scene{Scale: 1, Flash: &domain.FocusFlash{Alpha: 1, Width: width, Rect: domain.Rect{X: 2, Y: 3, W: 1, H: 10}}}
 		ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 64, 64)))
 		require.Len(t, ds, 1)
 		require.Equal(t, [4]int32{2, 3, 3, 13}, ds[0].pc.rect)
@@ -50,8 +49,8 @@ func TestFocusFlashAbsentEmptyAndThin(t *testing.T) {
 func TestFocusFlashRoundedRing(t *testing.T) {
 	for _, scale := range []int{1, 2} {
 		r := &Renderer{width: 128, height: 128}
-		s := ports.Scene{Scale: float64(scale),
-			Flash: &ports.FocusFlash{Rect: domain.Rect{X: 8, Y: 4, W: 40, H: 30}, Width: 3, Radius: 11, Color: "#ff0000", Alpha: 0.5}}
+		s := domain.Scene{Scale: float64(scale),
+			Flash: &domain.FocusFlash{Rect: domain.Rect{X: 8, Y: 4, W: 40, H: 30}, Width: 3, Radius: 11, Color: "#ff0000", Alpha: 0.5}}
 		ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 128, 128)))
 		require.Len(t, ds, 1)
 		d := ds[0]
@@ -66,7 +65,7 @@ func TestFocusFlashRoundedRing(t *testing.T) {
 
 func TestFocusFlashZeroRadiusStaysSquare(t *testing.T) {
 	r := &Renderer{width: 64, height: 64}
-	s := ports.Scene{Scale: 1, Flash: &ports.FocusFlash{Rect: domain.Rect{X: 8, Y: 4, W: 16, H: 8}, Width: 2, Color: "#ff0000", Alpha: 1}}
+	s := domain.Scene{Scale: 1, Flash: &domain.FocusFlash{Rect: domain.Rect{X: 8, Y: 4, W: 16, H: 8}, Width: 2, Color: "#ff0000", Alpha: 1}}
 	ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 64, 64)))
 	require.Len(t, ds, 4)
 	for _, d := range ds {

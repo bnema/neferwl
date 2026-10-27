@@ -47,7 +47,7 @@ type Renderer interface {
 	SetHDR(sdrNits float64)
 	// Render draws the scene. done is a sync file signalled when the GPU
 	// finished the frame (nil: already finished); the caller closes it.
-	Render(Scene, map[domain.WindowID]domain.SurfaceContent) (done *os.File, err error)
+	Render(domain.Scene, map[domain.WindowID]domain.SurfaceContent) (done *os.File, err error)
 	// ExportTargets allocates n images of the renderer's size that the
 	// display can scan out, with one of the given XRGB8888 (SDR) or
 	// XRGB2101010 (HDR) modifiers (none: any the device exports),

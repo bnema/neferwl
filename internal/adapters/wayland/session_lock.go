@@ -15,7 +15,7 @@ import (
 type sessionLock struct {
 	s        *Server
 	res      *extsessionlock.ExtSessionLockV1
-	state    ports.SecurityState
+	state    domain.SecurityState
 	locked   bool
 	surfaces map[*output]*lockSurface
 }
@@ -158,7 +158,7 @@ func (s *Server) resetProtectionInput() {
 // Acquire checks this bound before engaging; release retains a reserved slot.
 const maxSecurityPending = 16
 
-func (s *Server) requestBackendSecurity(state ports.SecurityState) {
+func (s *Server) requestBackendSecurity(state domain.SecurityState) {
 	s.securityPending = append(s.securityPending, state)
 	select {
 	case s.securityWake <- struct{}{}:
@@ -170,7 +170,7 @@ func (s *Server) requestBackendSecurity(state ports.SecurityState) {
 // dispatch. Queue mutation is always on the display owner, not this goroutine.
 func (s *Server) forwardBackendSecurity(ctx context.Context) {
 	for {
-		var state ports.SecurityState
+		var state domain.SecurityState
 		var pending bool
 		if !s.display.Do(func() {
 			if len(s.securityPending) != 0 {
@@ -199,7 +199,7 @@ func (s *Server) forwardBackendSecurity(ctx context.Context) {
 		if !s.display.Do(func() {
 			// Only this sender pops; appending on display preserves the head.
 			if len(s.securityPending) != 0 && s.securityPending[0] == state {
-				s.securityPending[0] = ports.SecurityState{}
+				s.securityPending[0] = domain.SecurityState{}
 				s.securityPending = s.securityPending[1:]
 			}
 		}) {

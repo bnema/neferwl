@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
 
@@ -12,12 +11,12 @@ import (
 // (its child render and the reads it releases); the displayed scene alone
 // would say no.
 func TestShowsCountsHiddenWorkspace(t *testing.T) {
-	s := ports.Scene{
+	s := domain.Scene{
 		OutputWidth: 100, OutputHeight: 50,
-		Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 100, H: 50}}},
-		CaptureScene: &ports.Scene{
+		Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 100, H: 50}}},
+		CaptureScene: &domain.Scene{
 			OutputWidth: 100, OutputHeight: 50,
-			Windows: []ports.SceneWindow{{ID: 5, Rect: domain.Rect{W: 100, H: 50}}},
+			Windows: []domain.SceneWindow{{ID: 5, Rect: domain.Rect{W: 100, H: 50}}},
 		},
 	}
 	require.True(t, Shows(s, 1), "displayed window")

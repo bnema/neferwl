@@ -222,7 +222,7 @@ func TestCommandForwardAllocations(t *testing.T) {
 	r := newCommandRing(s.display, func(queuedCommand) {})
 	var button ports.ClientCommand = ports.PointerButtonTo{ID: 1, Button: 272, Pressed: true}
 	var motion ports.ClientCommand = ports.PointerMotionTo{ID: 1, DX: 1}
-	state := ports.SecurityState{Generation: 2, Protected: true}
+	state := domain.SecurityState{Generation: 2, Protected: true}
 	var wrapped ports.ClientCommand = ports.SecurityCommand{State: state, Command: ports.PointerMotionTo{ID: 1, DX: 1}}
 	ran := make(chan struct{}, 1)
 	marker := func() { ran <- struct{}{} }

@@ -20,14 +20,14 @@ func TestSecurityRegistrationBeforeStart(t *testing.T) {
 		events := make(chan ports.SecurityBackendEvent)
 		set := newOutputSet(ctx, nil, outputRoutes{})
 		set.wireSecurity(outputChannels{securityEvents: events})
-		set.setSecurity(ports.SecurityState{Generation: 7, Protected: true})
+		set.setSecurity(domain.SecurityState{Generation: 7, Protected: true})
 		started := make(chan domain.OutputInstance, 1)
 		result := make(chan bool, 1)
 		go func() {
 			result <- set.start(ctx, "DP-1", func(ctx context.Context, feed outputFeed) error {
 				security, instance := feed.Security, feed.Instance
 				state := <-security
-				if state != (ports.SecurityState{Generation: 7, Protected: true}) {
+				if state != (domain.SecurityState{Generation: 7, Protected: true}) {
 					return errors.New("missing startup protection")
 				}
 				started <- instance
@@ -94,12 +94,12 @@ func TestSecurityReplacementAndStaleState(t *testing.T) {
 		if set.stoppedCurrent(outputStopped{name: "DP-1", instance: old.Instance}) {
 			t.Fatal("old stop matches replacement")
 		}
-		set.setSecurity(ports.SecurityState{Generation: 3, Protected: true})
-		set.setSecurity(ports.SecurityState{Generation: 2})
+		set.setSecurity(domain.SecurityState{Generation: 3, Protected: true})
+		set.setSecurity(domain.SecurityState{Generation: 2})
 		if state := <-set.outs["DP-1"].security; state.Generation != 3 || !state.Protected {
 			t.Fatalf("stale transition: %+v", state)
 		}
-		set.setSecurity(ports.SecurityState{Generation: 4})
+		set.setSecurity(domain.SecurityState{Generation: 4})
 		if state := <-set.outs["DP-1"].security; state.Generation != 4 || state.Protected {
 			t.Fatalf("unlock not forwarded: %+v", state)
 		}
@@ -118,7 +118,7 @@ func TestSecurityReplacementAndStaleState(t *testing.T) {
 func TestGuardedLeaseRejectsProtected(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		gate := portsmocks.NewMockSessionSecurity(t)
-		gate.EXPECT().Snapshot().Return(ports.SecurityState{Generation: 1, Protected: true}).Once()
+		gate.EXPECT().Snapshot().Return(domain.SecurityState{Generation: 1, Protected: true}).Once()
 		card := newMocksecurityLeaseCard(t)
 		fd, id, err := guardedLease(card, gate, []string{"DP-1"})
 		if fd != nil || id != 0 || err == nil {
@@ -136,8 +136,8 @@ func TestGuardedLeaseCrossingTransition(t *testing.T) {
 				t.Fatal(err)
 			}
 			gate := portsmocks.NewMockSessionSecurity(t)
-			gate.EXPECT().Snapshot().Return(ports.SecurityState{}).Once()
-			gate.EXPECT().Snapshot().Return(ports.SecurityState{Generation: 1, Protected: true}).Once()
+			gate.EXPECT().Snapshot().Return(domain.SecurityState{}).Once()
+			gate.EXPECT().Snapshot().Return(domain.SecurityState{Generation: 1, Protected: true}).Once()
 			card := newMocksecurityLeaseCard(t)
 			card.EXPECT().Lease([]string{"DP-1"}).Return(fd, uint32(12), nil).Once()
 			card.EXPECT().Revoke(uint32(12)).Return(revokeErr).Once()
@@ -242,7 +242,7 @@ func TestSecurityFullEventsAllowLeaseBarrier(t *testing.T) {
 		card.EXPECT().Revoke(uint32(9)).Return(nil).Once()
 		progressed := make(chan error, 1)
 		go func() {
-			set.setSecurity(ports.SecurityState{Generation: 1, Protected: true})
+			set.setSecurity(domain.SecurityState{Generation: 1, Protected: true})
 			err := revokeSecurityLeases(card, func(uint32) {})
 			set.securityEvent(ports.SecurityBackendBarrier{Generation: 1, Err: err})
 			progressed <- err

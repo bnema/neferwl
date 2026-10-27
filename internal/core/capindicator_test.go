@@ -6,6 +6,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -46,7 +48,7 @@ func indicatorCoreWith(t *testing.T, commands chan ports.ClientCommand) (*Core, 
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 2
 	cfg.Border.Width = 0
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Commands: commands}, Options{Clock: clock})
+	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Commands: commands}, Options{Clock: clock})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +56,7 @@ func indicatorCoreWith(t *testing.T, commands chan ports.ClientCommand) (*Core, 
 	return c, ic
 }
 
-func indicatorScene(t *testing.T, c *Core) ports.Scene {
+func indicatorScene(t *testing.T, c *Core) domain.Scene {
 	t.Helper()
 	if err := c.publish(context.Background()); err != nil {
 		t.Fatal(err)
@@ -72,12 +74,12 @@ func TestCaptureIndicatorFlashLastsOneSecond(t *testing.T) {
 		if !c.captureFrame(ports.CaptureFrameTaken{Output: "A"}) {
 			t.Fatal("first frame shows nothing new")
 		}
-		want := []ports.CaptureIndicator{{Rect: Rect{W: 300, H: 200}}}
+		want := []domain.CaptureIndicator{{Rect: Rect{W: 300, H: 200}}}
 		if s := indicatorScene(t, c); len(s.CaptureIndicators) != 1 || s.CaptureIndicators[0] != want[0] {
 			t.Fatalf("indicators %+v", s.CaptureIndicators)
 		}
-		if len(ic.timers) != 1 || ic.timers[0] != ports.CaptureFlash {
-			t.Fatalf("timers %v, want one of %v", ic.timers, ports.CaptureFlash)
+		if len(ic.timers) != 1 || ic.timers[0] != domain.CaptureFlash {
+			t.Fatalf("timers %v, want one of %v", ic.timers, domain.CaptureFlash)
 		}
 		// A frame later extends the flash without a new scene.
 		ic.now = ic.now.Add(600 * time.Millisecond)
@@ -117,9 +119,9 @@ func TestCaptureIndicatorFlashLastsOneSecond(t *testing.T) {
 func TestCaptureIndicatorFlashClearedByProtectionAndWorksAfterUnlock(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, ic := indicatorCore(t)
-		state := ports.SecurityState{Generation: 1}
+		state := domain.SecurityState{Generation: 1}
 		gate := portsmocks.NewMockSessionSecurity(t)
-		gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return state }).Maybe()
+		gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return state }).Maybe()
 		c.opts.Security = gate
 		if !c.captureFrame(ports.CaptureFrameTaken{Output: "A"}) {
 			t.Fatal("first frame shows nothing new")
@@ -127,7 +129,7 @@ func TestCaptureIndicatorFlashClearedByProtectionAndWorksAfterUnlock(t *testing.
 		if len(c.capt.flashes) != 1 || c.capt.timerStop == nil {
 			t.Fatalf("flash %d, timer armed %v", len(c.capt.flashes), c.capt.timerStop != nil)
 		}
-		state = ports.SecurityState{Generation: 2, Protected: true}
+		state = domain.SecurityState{Generation: 2, Protected: true}
 		if !c.syncSecurity() {
 			t.Fatal("protection not engaged")
 		}
@@ -139,7 +141,7 @@ func TestCaptureIndicatorFlashClearedByProtectionAndWorksAfterUnlock(t *testing.
 		}
 		// The clock passes the old deadline: nothing comes back after the unlock.
 		ic.now = ic.now.Add(2 * time.Second)
-		state = ports.SecurityState{Generation: 3}
+		state = domain.SecurityState{Generation: 3}
 		if !c.syncSecurity() {
 			t.Fatal("protection not released")
 		}
@@ -156,7 +158,7 @@ func TestCaptureIndicatorFlashClearedByProtectionAndWorksAfterUnlock(t *testing.
 		if len(ic.timers) != timers+1 || c.capt.timerStop == nil {
 			t.Fatalf("timer not re-armed after the unlock: %v", ic.timers)
 		}
-		ic.now = ic.now.Add(ports.CaptureFlash)
+		ic.now = ic.now.Add(domain.CaptureFlash)
 		if !c.captureFlashTick() {
 			t.Fatal("flash did not end after the unlock")
 		}
@@ -225,7 +227,7 @@ func TestCaptureIndicatorHiddenWorkspacePill(t *testing.T) {
 		c.captureOpen(ports.CaptureSessionOpen{ID: 1, Workspace: ws.ID})
 		c.captureFrame(ports.CaptureFrameTaken{Session: 1, Workspace: ws.ID})
 		s := indicatorScene(t, c)
-		pill := ports.CaptureIndicator{Pill: true, Rect: Rect{X: 300 - ports.CapturePillInset - ports.CapturePillSize, Y: ports.CapturePillInset, W: ports.CapturePillSize, H: ports.CapturePillSize}}
+		pill := domain.CaptureIndicator{Pill: true, Rect: Rect{X: 300 - domain.CapturePillInset - domain.CapturePillSize, Y: domain.CapturePillInset, W: domain.CapturePillSize, H: domain.CapturePillSize}}
 		if len(s.CaptureIndicators) != 1 || s.CaptureIndicators[0] != pill {
 			t.Fatalf("indicators %+v, want %+v", s.CaptureIndicators, pill)
 		}
@@ -289,7 +291,7 @@ func TestCaptureIndicatorMissingForAnUnresolvableTarget(t *testing.T) {
 }
 
 // A target thinner than the border would have nothing to draw: core lists a
-// mark at least ports.MinCaptureMark wide and tall around it, inside the
+// mark at least domain.MinCaptureMark wide and tall around it, inside the
 // output; an output smaller than that is marked whole.
 func TestCaptureIndicatorInflatesThinTargets(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -392,7 +394,7 @@ func TestCaptureIndicatorPillFitsTheOutput(t *testing.T) {
 			if got != tc.want {
 				t.Fatalf("%s: pill %+v, want %+v", tc.name, got, tc.want)
 			}
-			m := ports.CaptureIndicator{Pill: true, Rect: got}
+			m := domain.CaptureIndicator{Pill: true, Rect: got}
 			if !m.DrawableIn(tc.out.W, tc.out.H) {
 				t.Fatalf("%s: pill %+v not drawable in %+v", tc.name, got, tc.out)
 			}

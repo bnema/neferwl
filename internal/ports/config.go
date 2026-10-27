@@ -112,9 +112,9 @@ type Config struct {
 		Capture       bool
 		SpawnTerminal bool
 	}
-	// Border is drawn inside the window edge; Width 0 disables it. Radius is
+	// domain.Border is drawn inside the window edge; Width 0 disables it. Radius is
 	// in logical pixels, >= 0 (at most 64 from the file): it rounds floats
-	// always and tiles when gaps > 0; the renderer uses SceneWindow.Radius.
+	// always and tiles when gaps > 0; the renderer uses domain.SceneWindow.Radius.
 	Border struct {
 		Radius   int
 		Width    int
@@ -148,7 +148,7 @@ type Config struct {
 		// (window or column). FlashWidth is in logical pixels (1 to 8),
 		// FlashOpacity the starting opacity (0.1 to 1), FlashDuration the fade
 		// (50ms to 1s, not scaled by Animations.Slowdown), FlashColor #rrggbb or
-		// empty for Border.Active.
+		// empty for domain.Border.Active.
 		PositionHint  bool
 		Flash         bool
 		FlashWidth    int
@@ -174,7 +174,7 @@ type Config struct {
 		// clients (hint.capture); the compositor's own scans never see them.
 		Capture                bool
 		Size                   float64 // logical pixels; zero selects automatic density sizing
-		Background, Foreground string  // empty derives from Border.Active
+		Background, Foreground string  // empty derives from domain.Border.Active
 		// Detector is the nefer-hints binary (hint.detector): a path, or a
 		// name looked up in PATH. Model is the directory of its model files
 		// (hint.model), with a leading ~/ already expanded. Threshold is the

@@ -29,7 +29,7 @@ func TestOutputSetAttachesAndDetachesContents(t *testing.T) {
 	type seen struct {
 		contents <-chan *domain.ContentBatch
 		returns  ports.ContentReturn
-		security ports.SecurityState
+		security domain.SecurityState
 	}
 	started := make(chan seen, 2)
 	run := func(ctx context.Context, feed outputFeed) error {

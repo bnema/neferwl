@@ -26,10 +26,10 @@ import (
 // A real display with capture completion wiring established before Run starts.
 //
 //testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
-func lifecycleLockServer(t *testing.T, leaseRequests ...chan ports.LeaseMessage) (*Server, *sessionsecurity.Gate, chan ports.SecurityState, chan ports.CaptureDone, string) {
+func lifecycleLockServer(t *testing.T, leaseRequests ...chan ports.LeaseMessage) (*Server, *sessionsecurity.Gate, chan domain.SecurityState, chan ports.CaptureDone, string) {
 	t.Helper()
 	gate := &sessionsecurity.Gate{}
-	changes := make(chan ports.SecurityState, 16)
+	changes := make(chan domain.SecurityState, 16)
 	captured := make(chan ports.CaptureDone, 16)
 	dir := t.TempDir()
 	channels := Channels{SecurityChanges: changes, SecurityEvents: make(chan ports.SecurityBackendEvent, 16), Captured: captured}
@@ -59,14 +59,14 @@ func lifecycleLockServer(t *testing.T, leaseRequests ...chan ports.LeaseMessage)
 }
 
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
-func lifecycleTransition(t *testing.T, changes <-chan ports.SecurityState) ports.SecurityState {
+func lifecycleTransition(t *testing.T, changes <-chan domain.SecurityState) domain.SecurityState {
 	t.Helper()
 	select {
 	case state := <-changes:
 		return state
 	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("missing security transition")
-		return ports.SecurityState{}
+		return domain.SecurityState{}
 	}
 }
 
@@ -82,7 +82,7 @@ func lifecycleAcquire(t *testing.T, c *wlturbo.Display) (*lockclient.ExtSessionL
 	return lock, count
 }
 
-func lifecycleProof(s *Server, state ports.SecurityState, instance domain.OutputInstance) {
+func lifecycleProof(s *Server, state domain.SecurityState, instance domain.OutputInstance) {
 	s.applySecurityEvent(ports.SecurityOutputProof{Proof: domain.OutputProtection{Generation: state.Generation, Instance: instance, Kind: domain.ProtectionProtectedFrame}})
 }
 
@@ -98,7 +98,7 @@ func TestSessionLockLifecycleCaptureCompletionAndProofEpoch(t *testing.T) {
 	state := lifecycleTransition(t, changes)
 	s.display.Do(func() {
 		s.applySecurityEvent(ports.SecurityBackendBarrier{Generation: state.Generation})
-		lifecycleProof(s, ports.SecurityState{Generation: state.Generation + 1}, 1)
+		lifecycleProof(s, domain.SecurityState{Generation: state.Generation + 1}, 1)
 		lifecycleProof(s, state, 99) // unregistered output must not satisfy inventory
 		lifecycleProof(s, state, 1)
 		if s.sessionLock.locked {
@@ -519,7 +519,7 @@ func TestSessionLockLifecycleRoleUnmapSendsSeatLeaves(t *testing.T) {
 func TestSessionLockLifecycleBackendOutboxPreservesBlockedTransitions(t *testing.T) {
 	s, gate, changes, _, dir := lockManagerServer(t)
 	// Fill the backend channel before any transition; display remains responsive.
-	sentinel := ports.SecurityState{Generation: 999}
+	sentinel := domain.SecurityState{Generation: 999}
 	changes <- sentinel
 	c := protocolClient(t, s, dir)
 	lock, locked := lifecycleAcquire(t, c)

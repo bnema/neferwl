@@ -15,7 +15,7 @@ import (
 func TestNoMemRetriesWithoutModeset(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := startStuck(t, nil, unix.ENOMEM, unix.ENOMEM, nil)
-		h.scenes <- ports.Scene{Seq: 1}
+		h.scenes <- domain.Scene{Seq: 1}
 		synctest.Wait()
 		for _, delay := range []time.Duration{nomemRetryMin, 2 * nomemRetryMin} {
 			select {
@@ -63,7 +63,7 @@ func TestLastingNoMemKeepsOutput(t *testing.T) {
 			errs[i] = unix.ENOMEM
 		}
 		h := startStuck(t, nil, errs...)
-		h.scenes <- ports.Scene{Seq: 1}
+		h.scenes <- domain.Scene{Seq: 1}
 		synctest.Wait()
 		for i := range 19 {
 			time.Sleep(min(nomemRetryMax, nomemRetryMin*time.Duration(1<<min(i, 7))))
@@ -89,12 +89,12 @@ func TestLastingNoMemKeepsOutput(t *testing.T) {
 func TestNoMemModesetRetries(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		h := startStuck(t, nil, nil, unix.ENOMEM, nil)
-		h.scenes <- ports.Scene{Seq: 1, Off: true}
+		h.scenes <- domain.Scene{Seq: 1, Off: true}
 		synctest.Wait()
 		if h.count() != 3 {
 			t.Fatal("power off did not commit")
 		}
-		h.scenes <- ports.Scene{Seq: 2}
+		h.scenes <- domain.Scene{Seq: 2}
 		synctest.Wait()
 		time.Sleep(nomemRetryMin)
 		synctest.Wait()

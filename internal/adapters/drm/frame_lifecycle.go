@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // frameLifecycle is owned by Output.Run. KMS and the event reader do not
@@ -41,7 +40,7 @@ const (
 
 // pendingFrame is what the pending frame commit shows.
 type pendingFrame struct {
-	security ports.SecurityState // admission epoch checked again at KMS boundary
+	security domain.SecurityState // admission epoch checked again at KMS boundary
 	frame    bool
 	queued   uint64
 	zeroCopy domain.WindowID // window shown without composition

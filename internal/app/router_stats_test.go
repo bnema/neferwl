@@ -8,9 +8,9 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/bnema/zerowrap"
-
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/zerowrap"
 )
 
 // statsRegistered returns a router with output A registered and its initial
@@ -28,16 +28,16 @@ func statsRegistered(ctx context.Context, in outputRoutes) (*outputRouter, *mail
 // replaced: the output is behind.
 func TestRouterStatsCountReplaced(t *testing.T) {
 	r, m := statsRegistered(t.Context(), outputRoutes{})
-	r.scenes([]ports.Scene{{Output: "A", Seq: 1}})
+	r.scenes([]domain.Scene{{Output: "A", Seq: 1}})
 	if r.stats.scenes != 1 || r.stats.scenesReplaced != 0 {
 		t.Fatalf("one scene: %+v", r.stats)
 	}
-	r.scenes([]ports.Scene{{Output: "A", Seq: 2}, {Output: "missing"}})
+	r.scenes([]domain.Scene{{Output: "A", Seq: 2}, {Output: "missing"}})
 	if r.stats.scenes != 2 || r.stats.scenesReplaced != 1 {
 		t.Fatalf("two scenes unread: %+v", r.stats)
 	}
 	<-m.scenes
-	r.scenes([]ports.Scene{{Output: "A", Seq: 3}})
+	r.scenes([]domain.Scene{{Output: "A", Seq: 3}})
 	if r.stats.scenesReplaced != 1 {
 		t.Fatalf("a drained mailbox is not behind: %+v", r.stats)
 	}
@@ -106,8 +106,8 @@ func TestRouterLogsStatsEvery10s(t *testing.T) {
 			t.Fatalf("idle router logged: %s", got)
 		}
 
-		in.scenes <- []ports.Scene{{Output: "A", Seq: 1}}
-		in.scenes <- []ports.Scene{{Output: "A", Seq: 2}}
+		in.scenes <- []domain.Scene{{Output: "A", Seq: 1}}
+		in.scenes <- []domain.Scene{{Output: "A", Seq: 2}}
 		in.cursor <- ports.CursorChange{Shape: "text"}
 		in.cursor <- ports.CursorChange{Shape: "pointer"}
 		in.scenes <- nil // the router took both cursors

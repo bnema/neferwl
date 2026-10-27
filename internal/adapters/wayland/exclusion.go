@@ -191,7 +191,7 @@ func (m *exclusionManager) AttachSurface(r *imagecapture.NeferwlCaptureExclusion
 	case l.capture != nil:
 		att.fail(imagecapture.NeferwlCaptureLayerV1FailureAlreadyAttached)
 		return
-	case len(ex.layers) >= ports.MaxExclusionLayers:
+	case len(ex.layers) >= domain.MaxExclusionLayers:
 		att.fail(imagecapture.NeferwlCaptureLayerV1FailureTooManyLayers)
 		return
 	}

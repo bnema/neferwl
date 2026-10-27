@@ -115,7 +115,7 @@ func TestCopierRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	rs[0].UseTarget(0)
-	acquire, err := rs[0].Render(ports.Scene{Background: "#123456"}, nil)
+	acquire, err := rs[0].Render(domain.Scene{Background: "#123456"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestCopierRoundTrip(t *testing.T) {
 	}
 	// Initialize B's target/readback bookkeeping without using it after copy.
 	rs[1].UseTarget(0)
-	if err := render(rs[1], ports.Scene{Background: "#000000"}, nil); err != nil {
+	if err := render(rs[1], domain.Scene{Background: "#000000"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := rs[1].waitOwnIdle(); err != nil {

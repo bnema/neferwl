@@ -18,7 +18,7 @@ import (
 )
 
 func TestSubmitScopedRejectsChangedAndProtectedEpoch(t *testing.T) {
-	for _, state := range []ports.SecurityState{{Generation: 4}, {Generation: 3, Protected: true}} {
+	for _, state := range []domain.SecurityState{{Generation: 4}, {Generation: 3, Protected: true}} {
 		t.Run(fmt.Sprintf("generation-%d-protected-%v", state.Generation, state.Protected), func(t *testing.T) {
 			replies := make(chan ports.CaptureDone, 2)
 			p := NewPipeline(context.Background(), replies)
@@ -28,7 +28,7 @@ func TestSubmitScopedRejectsChangedAndProtectedEpoch(t *testing.T) {
 			r := portsmocks.NewMockRenderer(t)
 			q := pipelineRequest(t, 1)
 			file := q.Dst.File
-			p.SubmitScoped(ports.SecurityState{Generation: 3}, r, []ports.CaptureRequest{q})
+			p.SubmitScoped(domain.SecurityState{Generation: 3}, r, []ports.CaptureRequest{q})
 			p.Close(r)
 			require.Len(t, replies, 1)
 			require.ErrorIs(t, (<-replies).Err, ErrSecurityState)
@@ -44,25 +44,25 @@ func TestSubmitHiddenEngageDuringRenderRejectsCopyRetainsReads(t *testing.T) {
 	p := NewPipeline(context.Background(), replies)
 	security := portsmocks.NewMockSessionSecurity(t)
 	var engaged atomic.Bool
-	security.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState {
+	security.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState {
 		if engaged.Load() {
-			return ports.SecurityState{Generation: 1, Protected: true}
+			return domain.SecurityState{Generation: 1, Protected: true}
 		}
-		return ports.SecurityState{}
+		return domain.SecurityState{}
 	})
 	p.Security = security
 	child := portsmocks.NewMockRenderer(t)
 	f, w, err := os.Pipe()
 	require.NoError(t, err)
 	t.Cleanup(func() { f.Close(); w.Close() })
-	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		engaged.Store(true)
 		return f, nil
 	}).Once()
 	child.EXPECT().Close().Return().Once()
 	p.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
 	s := hiddenScene()
-	s.CaptureScene.Windows = []ports.SceneWindow{{ID: 5}}
+	s.CaptureScene.Windows = []domain.SceneWindow{{ID: 5}}
 	surfaces := map[domain.WindowID]domain.SurfaceContent{5: {ID: 5, Seq: 8}}
 	reqs := []ports.CaptureRequest{hiddenRequest(t, 1, image.Rect(0, 0, 200, 100)), hiddenRequest(t, 2, image.Rect(0, 0, 200, 100))}
 	files := []*os.File{reqs[0].Dst.File, reqs[1].Dst.File}

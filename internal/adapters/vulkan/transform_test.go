@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Every wl_output.transform draws the buffer through its inverse: each
@@ -37,7 +36,7 @@ func TestRendererBufferTransform(t *testing.T) {
 			}
 			sw, sh := tr.Size(bw, bh)
 			c.Transform, c.LogicalW, c.LogicalH = tr, sw, sh
-			scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: sw, H: sh}}}}
+			scene := domain.Scene{Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: sw, H: sh}}}}
 			if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: *c}); err != nil {
 				t.Fatal(err)
 			}

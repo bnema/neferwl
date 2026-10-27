@@ -67,7 +67,7 @@ type Options struct {
 type Channels struct {
 	// SecurityChanges requests ordered backend protection/release. The
 	// backend echoes actual inventory/proofs/barriers on SecurityEvents.
-	SecurityChanges chan<- ports.SecurityState
+	SecurityChanges chan<- domain.SecurityState
 	SecurityEvents  <-chan ports.SecurityBackendEvent
 	LeaseRequests   chan<- ports.LeaseMessage
 	LeaseEvents     <-chan ports.LeaseMessage
@@ -106,7 +106,7 @@ type Server struct {
 	x11Client          ports.X11Clients
 	security           ports.SessionSecurity
 	securityController ports.SessionSecurityController
-	securityPending    []ports.SecurityState // display-owned ordered backend outbox
+	securityPending    []domain.SecurityState // display-owned ordered backend outbox
 	securityWake       chan struct{}
 	sessionLock        *sessionLock
 	lockReadiness      sessionlock.Readiness

@@ -5,11 +5,10 @@ import (
 	"slices"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // sceneFor builds the scene of screen i and sends the configures it sizes.
-func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, capture *capView) (scene ports.Scene, err error) {
+func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, capture *capView) (scene domain.Scene, err error) {
 	o := sc.mon.Output()
 	// view.frame is the viewport of the workspace on screen: the whole
 	// output unless it has a size override (never in the overview).
@@ -21,7 +20,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 	// layout is what is drawn; settled (same indexes) is where the
 	// windows are going, and alone sizes the configures.
 	layout, settled := sc.shown, sc.settledLayout
-	scene = ports.Scene{Security: c.security, Output: sc.name(), OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Radius: c.cfg.Border.Radius, Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0, len(layout)+len(c.popupOrder)+1), Layers: shownLayers(sc)}
+	scene = domain.Scene{Security: c.security, Output: sc.name(), OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: domain.Border{Radius: c.cfg.Border.Radius, Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]domain.SceneWindow, 0, len(layout)+len(c.popupOrder)+1), Layers: shownLayers(sc)}
 	if !sc.mon.previewing() {
 		// Tiles stop at the panels; the overview lays out previews over
 		// the whole output.
@@ -56,9 +55,9 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		// Frame the selection and separate numbered and named row groups.
 		// The scene's own slice (immutable once sent), sized for both.
 		_, dividers := sc.mon.overviewRows()
-		var seps []ports.Separator
+		var seps []domain.Separator
 		if len(dividers) > 0 {
-			seps = append(make([]ports.Separator, 0, len(dividers)+outlineLines), dividers...)
+			seps = append(make([]domain.Separator, 0, len(dividers)+outlineLines), dividers...)
 		}
 		scene.Separators, scene.Outline = overviewOutline(seps, layout, max(c.cfg.Border.Width, 2), sc.mon.Current().Gap(), c.cfg.Border.Radius)
 	} else if sc.mon.switcherShown() {
@@ -72,7 +71,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		ps := settled[k]
 		// Only the focused output has an activated window.
 		focused := p.Focused && i == c.focusScreen
-		sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview, Fade: p.Fade}
+		sw := domain.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview, Fade: p.Fade}
 		sw.Radius = windowRadius(p, sc.mon.Current().Gap(), c.cfg.Border.Radius)
 		if p.Zoom > 0 && (p.Zoom < 1 || p.Preview > 0) {
 			// A scale motion: the content follows the drawn size. A
@@ -113,7 +112,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		cp, t := c.captureConfigure(sc, ps, t)
 		if v, send := c.configures.nextWithCapture(ps, t, cp); send {
 			if err := c.command(ctx, v); err != nil {
-				return ports.Scene{}, err
+				return domain.Scene{}, err
 			}
 			c.configures.mark(v)
 		}
@@ -131,10 +130,10 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		// Only where the target is drawn: an overlay nothing draws would
 		// still refuse direct scanout on this output.
 		if osdDrawn(scene, c.osd.window) {
-			scene.Overlays = append(scene.Overlays, ports.Overlay{Window: c.osd.window, ID: overlayIDOSD, Seq: c.osd.seq, Kind: domain.OverlayPanel, Anchor: domain.AnchorTopCenter, Rect: domain.Rect{Y: 12}, Style: osdStyle, Panel: c.osd.panel})
+			scene.Overlays = append(scene.Overlays, domain.Overlay{Window: c.osd.window, ID: overlayIDOSD, Seq: c.osd.seq, Kind: domain.OverlayPanel, Anchor: domain.AnchorTopCenter, Rect: domain.Rect{Y: 12}, Style: osdStyle, Panel: c.osd.panel})
 		}
 	}
-	scene.Physical = ports.OutputPhysical{Width: sc.info.Width, Height: sc.info.Height, MMWidth: sc.info.PhysicalW, MMHeight: sc.info.PhysicalH}
+	scene.Physical = domain.OutputPhysical{Width: sc.info.Width, Height: sc.info.Height, MMWidth: sc.info.PhysicalW, MMHeight: sc.info.PhysicalH}
 	scene.Capture = c.captureSceneFor(sc, capture)
 	// The springs of this frame are advanced: a scene shown while one still
 	// runs wakes core when it flips; the one a spring settles on does not.

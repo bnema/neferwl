@@ -19,7 +19,7 @@ func TestOverviewLauncherKeepsKeys(t *testing.T) {
 		input := make(chan ports.InputEvent, 8)
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 256)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
 		if err != nil {
 			t.Fatal(err)
@@ -34,7 +34,7 @@ func TestOverviewLauncherKeepsKeys(t *testing.T) {
 		client <- ports.WindowMapped{ID: 2}
 		scene(t, scenes)
 		input <- ports.KeyEvent{Keysym: "o", Mods: domain.ModSuper, Pressed: true}
-		sceneMatch(t, scenes, func(s ports.Scene) bool { return len(s.Windows) == 2 && s.Windows[0].Preview > 0 })
+		sceneMatch(t, scenes, func(s domain.Scene) bool { return len(s.Windows) == 2 && s.Windows[0].Preview > 0 })
 		input <- ports.KeyEvent{Keysym: "o", Mods: domain.ModSuper}
 
 		launcher := ports.LayerSurface{ID: 7, Layer: domain.LayerOverlay, Width: 100, Height: 40, Keyboard: 1}
@@ -53,7 +53,7 @@ func TestOverviewLauncherKeepsKeys(t *testing.T) {
 		client <- ports.LayerChanged{}
 		scene(t, scenes)
 		input <- ports.KeyEvent{Keysym: "h", Pressed: true}
-		sceneMatch(t, scenes, func(s ports.Scene) bool {
+		sceneMatch(t, scenes, func(s domain.Scene) bool {
 			for _, w := range s.Windows {
 				if w.ID == 1 && w.Focused && w.Preview > 0 {
 					return true
@@ -75,7 +75,7 @@ func TestOverviewFocusBindsNavigate(t *testing.T) {
 		input := make(chan ports.InputEvent, 8)
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 256)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
 		if err != nil {
 			t.Fatal(err)
@@ -91,8 +91,8 @@ func TestOverviewFocusBindsNavigate(t *testing.T) {
 		}
 		client <- ports.WindowMapped{ID: 9, Floating: true, Width: 300, Height: 200}
 		scene(t, scenes)
-		focused := func(id domain.WindowID) func(ports.Scene) bool {
-			return func(s ports.Scene) bool {
+		focused := func(id domain.WindowID) func(domain.Scene) bool {
+			return func(s domain.Scene) bool {
 				for _, w := range s.Windows {
 					if w.ID == id && w.Focused && w.Preview > 0 && w.Dim == 0 {
 						return true
@@ -129,7 +129,7 @@ func TestOverviewCloseBindTargetsPreview(t *testing.T) {
 		input := make(chan ports.InputEvent, 8)
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 256)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
 		if err != nil {
 			t.Fatal(err)
@@ -150,7 +150,7 @@ func TestOverviewCloseBindTargetsPreview(t *testing.T) {
 			input <- ports.KeyEvent{Keysym: key, Mods: mods}
 		}
 		press("o", domain.ModSuper)
-		sceneMatch(t, scenes, func(s ports.Scene) bool {
+		sceneMatch(t, scenes, func(s domain.Scene) bool {
 			for _, w := range s.Windows {
 				if w.ID == 9 && w.Focused && w.Preview > 0 {
 					return true
@@ -159,7 +159,7 @@ func TestOverviewCloseBindTargetsPreview(t *testing.T) {
 			return false
 		})
 		press("Up", 0)
-		sceneMatch(t, scenes, func(s ports.Scene) bool {
+		sceneMatch(t, scenes, func(s domain.Scene) bool {
 			for _, w := range s.Windows {
 				if w.ID == 2 && w.Focused && w.Preview > 0 {
 					return true
@@ -207,7 +207,7 @@ func TestOverviewThreeFingerNavigation(t *testing.T) {
 		input := make(chan ports.InputEvent, 8)
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 256)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, core.Options{})
 		if err != nil {
 			t.Fatal(err)
@@ -221,8 +221,8 @@ func TestOverviewThreeFingerNavigation(t *testing.T) {
 			client <- ports.WindowMapped{ID: id}
 			scene(t, scenes)
 		}
-		focused := func(id domain.WindowID) func(ports.Scene) bool {
-			return func(s ports.Scene) bool {
+		focused := func(id domain.WindowID) func(domain.Scene) bool {
+			return func(s domain.Scene) bool {
 				for _, w := range s.Windows {
 					if w.ID == id && w.Focused && w.Preview > 0 {
 						return true

@@ -31,21 +31,21 @@ import (
 
 // installSecurity uses the canonical generated mock, with coherent atomic
 // snapshots; transitions are serialized through the real DISPLAY loop.
-func installSecurity(t *testing.T, s *Server) *atomic.Pointer[ports.SecurityState] {
+func installSecurity(t *testing.T, s *Server) *atomic.Pointer[domain.SecurityState] {
 	t.Helper()
-	state := &atomic.Pointer[ports.SecurityState]{}
-	state.Store(&ports.SecurityState{})
+	state := &atomic.Pointer[domain.SecurityState]{}
+	state.Store(&domain.SecurityState{})
 	security := portsmocks.NewMockSessionSecurity(t)
-	security.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return *state.Load() }).Maybe()
+	security.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return *state.Load() }).Maybe()
 	if !s.display.Do(func() { s.security = security }) {
 		t.Fatal("display stopped")
 	}
 	return state
 }
 
-func protect(t *testing.T, s *Server, state *atomic.Pointer[ports.SecurityState], generation domain.LockGeneration, protected bool) {
+func protect(t *testing.T, s *Server, state *atomic.Pointer[domain.SecurityState], generation domain.LockGeneration, protected bool) {
 	t.Helper()
-	if !s.display.Do(func() { state.Store(&ports.SecurityState{Generation: generation, Protected: protected}) }) {
+	if !s.display.Do(func() { state.Store(&domain.SecurityState{Generation: generation, Protected: protected}) }) {
 		t.Fatal("display stopped")
 	}
 }
@@ -291,7 +291,7 @@ func TestSessionLockEndsCaptureSessions(t *testing.T) {
 	gate := &sessionsecurity.Gate{}
 	h := newCaptureHarnessWith(t, func(o *Options, c *Channels) {
 		o.Security = gate
-		c.SecurityChanges = make(chan ports.SecurityState, 1)
+		c.SecurityChanges = make(chan domain.SecurityState, 1)
 		c.SecurityEvents = make(chan ports.SecurityBackendEvent, 16)
 	})
 	owner, session, open, msgs, _ := h.exclusionOwner(t)

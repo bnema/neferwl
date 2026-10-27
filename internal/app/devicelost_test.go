@@ -2,11 +2,13 @@ package app
 
 import (
 	"errors"
-	"github.com/bnema/neferwl/internal/ports"
-	"github.com/stretchr/testify/mock"
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/mock"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 )
@@ -64,7 +66,7 @@ func TestReopenRenderRecovery(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					_, err = renderer.Render(ports.Scene{}, nil)
+					_, err = renderer.Render(domain.Scene{}, nil)
 					if !errors.Is(err, ports.ErrDeviceLost) {
 						t.Fatal(err)
 					}

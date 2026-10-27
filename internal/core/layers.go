@@ -8,7 +8,7 @@ import (
 )
 
 // arrangeLayers places exclusive surfaces first, then sorts the resulting scene by layer.
-func arrangeLayers(outW, outH int, layers []ports.LayerSurface) (placed []ports.SceneLayer, usable domain.Rect) {
+func arrangeLayers(outW, outH int, layers []ports.LayerSurface) (placed []domain.SceneLayer, usable domain.Rect) {
 	full := domain.Rect{W: max(outW, 0), H: max(outH, 0)}
 	usable = full
 	for pass := 0; pass < 2; pass++ {
@@ -47,7 +47,7 @@ func arrangeLayers(outW, outH int, layers []ports.LayerSurface) (placed []ports.
 			case ports.AnchorBottom:
 				y = bounds.Y + bounds.H - h - bottom
 			}
-			placed = append(placed, ports.SceneLayer{ID: s.ID, Layer: s.Layer, Rect: domain.Rect{X: x, Y: y, W: w, H: h}})
+			placed = append(placed, domain.SceneLayer{ID: s.ID, Layer: s.Layer, Rect: domain.Rect{X: x, Y: y, W: w, H: h}})
 			if s.ExclusiveZone <= 0 {
 				continue
 			}
@@ -76,7 +76,7 @@ func arrangeLayers(outW, outH int, layers []ports.LayerSurface) (placed []ports.
 }
 
 // layerOf finds a placed layer surface by ID.
-func (c *Core) layerOf(id WindowID) (*screen, ports.SceneLayer, bool) {
+func (c *Core) layerOf(id WindowID) (*screen, domain.SceneLayer, bool) {
 	for _, sc := range c.screens {
 		for _, l := range sc.placed {
 			if l.ID == id {
@@ -84,7 +84,7 @@ func (c *Core) layerOf(id WindowID) (*screen, ports.SceneLayer, bool) {
 			}
 		}
 	}
-	return nil, ports.SceneLayer{}, false
+	return nil, domain.SceneLayer{}, false
 }
 
 // hasFullscreen reports whether a fullscreen window covers the screen. In
@@ -99,7 +99,7 @@ func hasFullscreen(sc *screen) bool {
 // notifications), so the output can scan it out. A surface taking the
 // keyboard exclusively (a locker, a launcher) still shows: it has the
 // keyboard and must be seen.
-func shown(sc *screen, l ports.SceneLayer) bool {
+func shown(sc *screen, l domain.SceneLayer) bool {
 	return l.Layer == domain.LayerBackground || !hasFullscreen(sc) || sc.exclusiveKeyboard(l.ID) || sc.capture[l.ID]
 }
 
@@ -115,8 +115,8 @@ func (sc *screen) exclusiveKeyboard(id WindowID) bool {
 }
 
 // shownLayers are the placed layer surfaces drawn on the screen.
-func shownLayers(sc *screen) []ports.SceneLayer {
-	out := make([]ports.SceneLayer, 0, len(sc.placed))
+func shownLayers(sc *screen) []domain.SceneLayer {
+	out := make([]domain.SceneLayer, 0, len(sc.placed))
 	for _, l := range sc.placed {
 		if shown(sc, l) {
 			out = append(out, l)

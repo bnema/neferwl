@@ -890,7 +890,7 @@ func lockedPair(t *testing.T) (*dndPair, string) {
 	events := make(chan ports.ClientEvent, 128)
 	commands := make(chan ports.ClientCommand, 32)
 	dir := t.TempDir()
-	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, Security: gate, Keymap: keymapText(t)}, Channels{Events: events, Commands: commands, SecurityChanges: make(chan ports.SecurityState, 16), SecurityEvents: make(chan ports.SecurityBackendEvent, 16)}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, Security: gate, Keymap: keymapText(t)}, Channels{Events: events, Commands: commands, SecurityChanges: make(chan domain.SecurityState, 16), SecurityEvents: make(chan ports.SecurityBackendEvent, 16)}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}

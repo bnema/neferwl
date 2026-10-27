@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
 
@@ -45,7 +44,7 @@ func TestRendererRender(t *testing.T) {
 	contents := map[domain.WindowID]domain.SurfaceContent{
 		1: solidContent(t, 64, 48, wc), 2: solidContent(t, 64, 48, c2), 3: solidContent(t, 64, 48, fc),
 	}
-	check := func(s ports.Scene, expected map[image.Point]color.RGBA) {
+	check := func(s domain.Scene, expected map[image.Point]color.RGBA) {
 		t.Helper()
 		if err := render(r, s, contents); err != nil {
 			t.Fatal(err)
@@ -58,11 +57,11 @@ func TestRendererRender(t *testing.T) {
 	}
 	// The client sits inside its inset sides; separators are drawn over
 	// the windows in order, with the border colors.
-	win := ports.SceneWindow{ID: 1, Rect: domain.Rect{X: 8, Y: 8, W: 16, H: 16}, Inset: domain.SideAll}
+	win := domain.SceneWindow{ID: 1, Rect: domain.Rect{X: 8, Y: 8, W: 16, H: 16}, Inset: domain.SideAll}
 	gray, lit := color.RGBA{0x31, 0x32, 0x44, 255}, color.RGBA{0xb4, 0xbe, 0xfe, 255}
-	s := ports.Scene{Background: "#102030", Border: ports.Border{Width: 2, Active: "#b4befe", Inactive: "#313244"}, Windows: []ports.SceneWindow{win}}
+	s := domain.Scene{Background: "#102030", Border: domain.Border{Width: 2, Active: "#b4befe", Inactive: "#313244"}, Windows: []domain.SceneWindow{win}}
 	check(s, map[image.Point]color.RGBA{{0, 0}: bg, {9, 9}: bg, {10, 10}: wc, {16, 16}: wc, {21, 21}: wc, {22, 22}: bg, {24, 24}: bg})
-	s.Separators = []ports.Separator{
+	s.Separators = []domain.Separator{
 		{Rect: domain.Rect{X: 8, Y: 8, W: 16, H: 2}},
 		{Rect: domain.Rect{X: 8, Y: 8, W: 8, H: 2}, Active: true},
 	}
@@ -70,18 +69,18 @@ func TestRendererRender(t *testing.T) {
 	s.Border.Inactive = ""
 	check(s, map[image.Point]color.RGBA{{9, 9}: lit, {16, 9}: bg})
 	// A float covers the tile lines; its own border is drawn with it.
-	s.Windows = []ports.SceneWindow{win, {ID: 3, Rect: domain.Rect{X: 12, Y: 4, W: 8, H: 8}, Floating: true, Inset: domain.SideAll}}
-	s.Separators = []ports.Separator{
+	s.Windows = []domain.SceneWindow{win, {ID: 3, Rect: domain.Rect{X: 12, Y: 4, W: 8, H: 8}, Floating: true, Inset: domain.SideAll}}
+	s.Separators = []domain.Separator{
 		{Rect: domain.Rect{X: 8, Y: 8, W: 16, H: 2}, Active: true},
 		{Rect: domain.Rect{X: 12, Y: 4, W: 8, H: 1}, Active: true, Window: 3},
 	}
 	check(s, map[image.Point]color.RGBA{{9, 9}: lit, {14, 9}: fc, {14, 4}: lit})
-	s.Windows = []ports.SceneWindow{win}
+	s.Windows = []domain.SceneWindow{win}
 	s.Separators, s.Border.Inactive = nil, "#313244"
 	s.Windows[0].Fullscreen = true
 	check(s, map[image.Point]color.RGBA{{9, 9}: wc})
 	s.Windows[0].Fullscreen = false
-	s.Windows[0] = ports.SceneWindow{ID: 2, Rect: domain.Rect{X: -10, Y: 0, W: 20, H: 10}}
+	s.Windows[0] = domain.SceneWindow{ID: 2, Rect: domain.Rect{X: -10, Y: 0, W: 20, H: 10}}
 	check(s, map[image.Point]color.RGBA{{5, 5}: c2, {15, 5}: bg})
 	s.Windows[0].Hidden = true
 	check(s, map[image.Point]color.RGBA{{5, 5}: bg})
@@ -94,7 +93,7 @@ func TestRendererFade(t *testing.T) {
 	c := solidContent(t, 64, 48, color.RGBA{200, 0, 0, 255})
 	c.Fade = 0.5
 	c.Opaque = false
-	s := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 48}}}}
+	s := domain.Scene{Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 48}}}}
 	if err := render(r, s, map[domain.WindowID]domain.SurfaceContent{1: c}); err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +106,7 @@ func TestRendererContents(t *testing.T) {
 	r := newTestRenderer(t, 64, 48)
 	defer r.Close()
 	bg := color.RGBA{16, 32, 48, 255}
-	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 8, Y: 8, W: 20, H: 10}}}}
+	scene := domain.Scene{Background: "#102030", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: 8, Y: 8, W: 20, H: 10}}}}
 	pixels := make([]byte, 4*2*4)
 	for i := 0; i < len(pixels); i += 4 {
 		copy(pixels[i:i+4], []byte{0, 0, 255, 255})
@@ -146,7 +145,7 @@ func TestRendererContents(t *testing.T) {
 func TestRendererUploadOrderAndOpaque(t *testing.T) {
 	r := newTestRenderer(t, 32, 32)
 	defer r.Close()
-	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{
+	scene := domain.Scene{Background: "#102030", Windows: []domain.SceneWindow{
 		{ID: 1, Rect: domain.Rect{X: 2, Y: 2, W: 16, H: 16}},
 		{ID: 2, Rect: domain.Rect{X: 8, Y: 8, W: 16, H: 16}},
 	}}
@@ -162,9 +161,9 @@ func TestRendererUploadOrderAndOpaque(t *testing.T) {
 	if got, want := readPixels(t, r).RGBAAt(10, 10), top; got != want {
 		t.Errorf("overlap = %v, want %v", got, want)
 	}
-	scene.Border = ports.Border{Width: 4, Active: "#ffffff"}
-	scene.Windows = []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 2, Y: 2, W: 16, H: 16}, Focused: true, Inset: domain.SideAll}}
-	scene.Separators = []ports.Separator{{Rect: domain.Rect{X: 2, Y: 2, W: 16, H: 4}, Active: true}}
+	scene.Border = domain.Border{Width: 4, Active: "#ffffff"}
+	scene.Windows = []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: 2, Y: 2, W: 16, H: 16}, Focused: true, Inset: domain.SideAll}}
+	scene.Separators = []domain.Separator{{Rect: domain.Rect{X: 2, Y: 2, W: 16, H: 4}, Active: true}}
 	px := make([]byte, 16*16*4)
 	for i := 0; i < len(px); i += 4 {
 		copy(px[i:i+4], []byte{3, 5, 7, 0})
@@ -195,7 +194,7 @@ func TestRendererLayers(t *testing.T) {
 	layer := shmContent(t, 64, 8, 64*4, red)
 	layer.ID, layer.Opaque = 2, true
 	contents := map[domain.WindowID]domain.SurfaceContent{2: *layer}
-	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 48}}}, Layers: []ports.SceneLayer{{ID: 2, Layer: domain.LayerTop, Rect: domain.Rect{W: 64, H: 8}}}}
+	scene := domain.Scene{Background: "#102030", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 48}}}, Layers: []domain.SceneLayer{{ID: 2, Layer: domain.LayerTop, Rect: domain.Rect{W: 64, H: 8}}}}
 	window := color.RGBA{16, 32, 48, 255} // no buffer yet: background
 	check := func(want color.RGBA) {
 		t.Helper()
@@ -236,7 +235,7 @@ func TestRendererScale(t *testing.T) {
 	red := [3]uint8{200, 0, 0}
 	// Scale 2: a 10x10 logical window at (4,4) covers physical (8,8)-(28,28);
 	// its 20x20 buffer (fractional client) is copied 1:1.
-	s := ports.Scene{Scale: 2, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: 10, H: 10}}}}
+	s := domain.Scene{Scale: 2, Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: 10, H: 10}}}}
 	scaled := shmContent(t, 20, 20, 80, solid(20, 20, red))
 	scaled.ID, scaled.LogicalW, scaled.LogicalH = 1, 10, 10
 	content := map[domain.WindowID]domain.SurfaceContent{1: *scaled}
@@ -299,7 +298,7 @@ func TestRendererPreview(t *testing.T) {
 	}
 	c := shmContent(t, 40, 20, 160, px)
 	c.ID = 1
-	s := ports.Scene{Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: 20, H: 10}, Preview: 0.5}}}
+	s := domain.Scene{Scale: 1, Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: 20, H: 10}, Preview: 0.5}}}
 	if err := render(r, s, map[domain.WindowID]domain.SurfaceContent{1: *c}); err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +329,7 @@ func TestRendererPreviewSmooth(t *testing.T) {
 	}
 	c := shmContent(t, 80, 40, 320, px)
 	c.ID = 1
-	s := ports.Scene{Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 20, H: 10}, Preview: 0.25}}}
+	s := domain.Scene{Scale: 1, Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 20, H: 10}, Preview: 0.25}}}
 	if err := render(r, s, map[domain.WindowID]domain.SurfaceContent{1: *c}); err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +377,7 @@ func TestRendererGeometryAndSubsurfaces(t *testing.T) {
 	defer r.Close()
 	red, green, blue := color.RGBA{255, 0, 0, 255}, color.RGBA{0, 255, 0, 255}, color.RGBA{0, 0, 255, 255}
 	bg := color.RGBA{16, 32, 48, 255}
-	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 10, Y: 10, W: 20, H: 10}}}}
+	scene := domain.Scene{Background: "#102030", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: 10, Y: 10, W: 20, H: 10}}}}
 	// A 30×20 surface whose window is the 20×10 at (5, 5): a 5px shadow.
 	root := solidContent(t, 30, 20, red)
 	root.Surface, root.Version = 1, 1
@@ -424,7 +423,7 @@ func TestRendererTallFill(t *testing.T) {
 	h := 135
 	r := newTestRenderer(t, 8, h)
 	defer r.Close()
-	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 1, Y: 0, W: 6, H: h}}}}
+	scene := domain.Scene{Background: "#102030", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: 1, Y: 0, W: 6, H: h}}}}
 	wc := color.RGBA{200, 10, 10, 255}
 	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: solidContent(t, 6, h, wc)}); err != nil {
 		t.Fatal(err)
@@ -472,9 +471,9 @@ func TestRendererAlphaBlend(t *testing.T) {
 		3: *shmContent(t, 16, 8, 16*4, partly),
 		4: *shmContent(t, 16, 8, 16*4, fill(16, 8, halfBlue)),
 	}
-	scene := ports.Scene{Background: "#000000",
-		Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 32, H: 48}}},
-		Layers: []ports.SceneLayer{
+	scene := domain.Scene{Background: "#000000",
+		Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 32, H: 48}}},
+		Layers: []domain.SceneLayer{
 			{ID: 2, Layer: domain.LayerBottom, Rect: domain.Rect{W: 64, H: 48}},
 			{ID: 3, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 16, H: 8}},
 			{ID: 4, Layer: domain.LayerOverlay, Rect: domain.Rect{X: 8, W: 16, H: 8}},
@@ -509,7 +508,7 @@ func TestRendererAlphaBlend(t *testing.T) {
 func TestRendererSHMKeptWindowDrawsFromCopy(t *testing.T) {
 	r := newTestRenderer(t, 32, 32)
 	defer r.Close()
-	scene := ports.Scene{Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
+	scene := domain.Scene{Scale: 1, Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
 	c := solidContent(t, 16, 16, color.RGBA{R: 255, A: 255})
 	c.ID, c.Surface, c.Seq, c.Version = 1, 1, 1, 1
 	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: c}); err != nil {

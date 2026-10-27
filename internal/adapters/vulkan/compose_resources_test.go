@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // A mixed resource table must select SHM pixels, RGB images, and both YUV
@@ -28,7 +27,7 @@ func TestComposeIndexedMixedResources(t *testing.T) {
 	rgb := &domain.DMABuf{ID: 991, Width: 64, Height: 16, Format: rgbFormat, Planes: []domain.DMABufPlane{{File: udmabuf(t, 64, 16, func(int, int) [4]byte { return [4]byte{255, 0, 0, 255} }), Stride: 256}}}
 	shm := solidContent(t, 64, 16, color.RGBA{G: 255, A: 255})
 	shm.ID, shm.Seq, shm.Version = 2, 1, 1
-	scene := ports.Scene{Layers: []ports.SceneLayer{
+	scene := domain.Scene{Layers: []domain.SceneLayer{
 		{ID: 1, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 64, H: 16}},
 		{ID: 2, Layer: domain.LayerOverlay, Rect: domain.Rect{X: 16, W: 32, H: 16}},
 		{ID: 3, Layer: domain.LayerOverlay, Rect: domain.Rect{X: 32, W: 16, H: 16}},

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core/motion"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -18,7 +19,7 @@ func BenchmarkRefreshShown(b *testing.B) {
 	cfg.Layout.MaxColumns = 4
 	cfg.Animations.On = true
 	cfg.Animations.Slowdown = 10
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Commands: make(chan ports.ClientCommand, 64)}, Options{})
+	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Commands: make(chan ports.ClientCommand, 64)}, Options{})
 	if err != nil {
 		b.Fatal(err)
 	}

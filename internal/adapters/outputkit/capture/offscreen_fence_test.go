@@ -49,16 +49,16 @@ func hiddenPipeline(t *testing.T, fences ...*os.File) (*Pipeline, chan ports.Cap
 	return p, replies, child
 }
 
-func hiddenSceneWindows(ids ...domain.WindowID) ports.Scene {
+func hiddenSceneWindows(ids ...domain.WindowID) domain.Scene {
 	s := hiddenScene()
 	s.CaptureScene.Windows, s.CaptureScene.Layers = nil, nil
 	for _, id := range ids {
-		s.CaptureScene.Windows = append(s.CaptureScene.Windows, ports.SceneWindow{ID: id})
+		s.CaptureScene.Windows = append(s.CaptureScene.Windows, domain.SceneWindow{ID: id})
 	}
 	return s
 }
 
-func submitHiddenOne(t *testing.T, p *Pipeline, s ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, id uint64) {
+func submitHiddenOne(t *testing.T, p *Pipeline, s domain.Scene, surfaces map[domain.WindowID]domain.SurfaceContent, id uint64) {
 	t.Helper()
 	p.SubmitHidden(s, surfaces, []ports.CaptureRequest{hiddenRequest(t, id, image.Rect(0, 0, 200, 100))})
 }
@@ -111,7 +111,7 @@ func TestTerminalChildFenceClosesPipelineBeforeClearingHolds(t *testing.T) {
 	require.True(t, busy)
 	require.Equal(t, map[domain.WindowID]uint64{5: 2}, reads)
 	require.NoError(t, read.Close()) // write end now polls POLLERR
-	p.Retire(ports.Scene{})          // session end must not wait forever on the error
+	p.Retire(domain.Scene{})         // session end must not wait forever on the error
 	require.Nil(t, p.off.r, "failed device closed")
 	require.Nil(t, p.HiddenCompleted(), "failed worker joined")
 	seen := map[domain.WindowID]uint64{5: 7}
@@ -246,13 +246,13 @@ func TestRetireClosesIdleChildOnce(t *testing.T) {
 	p.RecycleHidden(<-p.HiddenCompleted())
 
 	// The fence is still pending: the child stays.
-	p.Retire(ports.Scene{})
+	p.Retire(domain.Scene{})
 	require.NotNil(t, p.off.r)
 	signalFence(t, w1)
-	p.Retire(ports.Scene{})
+	p.Retire(domain.Scene{})
 	require.Nil(t, p.off.r, "closed once idle")
 	require.Nil(t, p.HiddenCompleted(), "no child, no channel")
-	p.Retire(ports.Scene{}) // nothing left to close
+	p.Retire(domain.Scene{}) // nothing left to close
 	p.Close(nil)
 }
 

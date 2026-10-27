@@ -7,6 +7,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -19,9 +20,9 @@ func fadeCore(t *testing.T) (*Core, *indicatorClock, chan ports.ClientCommand) {
 	return c, ic, cmds
 }
 
-func sceneWindow(t *testing.T, s ports.Scene, id WindowID) ports.SceneWindow {
+func sceneWindow(t *testing.T, s domain.Scene, id WindowID) domain.SceneWindow {
 	t.Helper()
-	i := slices.IndexFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == id })
+	i := slices.IndexFunc(s.Windows, func(w domain.SceneWindow) bool { return w.ID == id })
 	if i < 0 {
 		t.Fatalf("window %d not in the scene: %+v", id, s.Windows)
 	}
@@ -177,7 +178,7 @@ func TestLeavingEntryLifecycle(t *testing.T) {
 		ic.now = ic.now.Add(5 * time.Second)
 		c.animate(ic.now, nil)
 		s = indicatorScene(t, c)
-		if slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 }) {
+		if slices.ContainsFunc(s.Windows, func(w domain.SceneWindow) bool { return w.ID == 2 }) {
 			t.Fatalf("the leaving window is still in the scene: %+v", s.Windows)
 		}
 		if len(sc.rects) != 0 || c.animating() || len(sc.shown) != len(sc.settledLayout) {
@@ -362,7 +363,7 @@ func TestLeavingPaintOrder(t *testing.T) {
 		sc.mon.RemoveWindow(2)
 		c.leaveFrom(sc, tile, nil, ic.now)
 		s := indicatorScene(t, c)
-		order := func(s ports.Scene) []WindowID {
+		order := func(s domain.Scene) []WindowID {
 			ids := make([]WindowID, 0, len(s.Windows))
 			for _, w := range s.Windows {
 				ids = append(ids, w.ID)

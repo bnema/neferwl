@@ -3,7 +3,7 @@ package core
 import (
 	"slices"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // captureWorkspace is the workspace a capture session renders off screen
@@ -140,7 +140,7 @@ func (c *Core) popupRect(id WindowID) (sc *screen, r Rect, physical, ok bool) {
 // size of its viewport, whose windows and lines are rebased on the viewport
 // origin. It has no layers and no capture of its own. nil without a
 // captured workspace.
-func (c *Core) captureScene(seq uint64) *ports.Scene {
+func (c *Core) captureScene(seq uint64) *domain.Scene {
 	cw := &c.configures.cw
 	if !cw.active() {
 		return nil
@@ -149,17 +149,17 @@ func (c *Core) captureScene(seq uint64) *ports.Scene {
 	// The capture image has no panels: all of it is seen.
 	view := whole(f)
 	rebase := func(r Rect) Rect { r.X, r.Y = r.X-f.X, r.Y-f.Y; return r }
-	s := &ports.Scene{
+	s := &domain.Scene{
 		Security: c.security,
 		Output:   cw.sc.name(), Seq: seq, OutputWidth: f.W, OutputHeight: f.H, WorkspaceClip: Rect{W: f.W, H: f.H},
 		Scale: cw.sc.scale, Background: c.cfg.Background.Color,
-		Border:  ports.Border{Radius: c.cfg.Border.Radius, Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive},
-		Windows: make([]ports.SceneWindow, 0, len(cw.placements)),
+		Border:  domain.Border{Radius: c.cfg.Border.Radius, Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive},
+		Windows: make([]domain.SceneWindow, 0, len(cw.placements)),
 		Dim:     floatDim(cw.placements, view, c.cfg.Floating.Dim),
 	}
 	// A hidden workspace lights nothing: its focus is not shown.
 	for _, p := range cw.placements {
-		w := ports.SceneWindow{ID: p.ID, Focused: false, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview}
+		w := domain.SceneWindow{ID: p.ID, Focused: false, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview}
 		w.Radius = windowRadius(p, cw.ws.Gap(), c.cfg.Border.Radius)
 		if !p.Hidden {
 			w.Rect = rebase(p.Rect)
@@ -177,7 +177,7 @@ func (c *Core) captureScene(seq uint64) *ports.Scene {
 			continue
 		}
 		if _, r, ok := c.captureRect(id); ok {
-			s.Windows = append(s.Windows, ports.SceneWindow{ID: id, Rect: rebase(r), Popup: true})
+			s.Windows = append(s.Windows, domain.SceneWindow{ID: id, Rect: rebase(r), Popup: true})
 		}
 	}
 	return s

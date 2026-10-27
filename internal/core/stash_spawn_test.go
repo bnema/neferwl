@@ -31,7 +31,7 @@ func slotToken(t *testing.T, req ports.SpawnRequest) string {
 	return req.Env[0][len(ports.SlotEnv)+1:]
 }
 
-func sceneWindow(set []ports.Scene, id domain.WindowID) (ports.SceneWindow, bool) {
+func sceneWindow(set []domain.Scene, id domain.WindowID) (domain.SceneWindow, bool) {
 	for _, s := range set {
 		for _, w := range s.Windows {
 			if w.ID == id {
@@ -39,7 +39,7 @@ func sceneWindow(set []ports.Scene, id domain.WindowID) (ports.SceneWindow, bool
 			}
 		}
 	}
-	return ports.SceneWindow{}, false
+	return domain.SceneWindow{}, false
 }
 
 // The window of a stash bind opens in the stash of the workspace the key
@@ -215,7 +215,7 @@ func TestFourFingerSwipeEmptyStashDoesNotRefillSlots(t *testing.T) {
 		r.fill(t)
 		r.press(t, "d") // dev on screen, its slots filled
 		r.client <- ports.WindowUnmapped{ID: 2}
-		sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 1 })
+		sceneMatch(t, r.scenes, func(s domain.Scene) bool { return len(s.Windows) == 1 })
 		noSpawn(t, r.spawn) // nothing relaunches on its own
 		var at time.Duration
 		r.input <- ports.SwipeBegin{Fingers: 4, Time: at}

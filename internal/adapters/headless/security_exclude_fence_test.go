@@ -20,12 +20,12 @@ import (
 func TestExcludeFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 	for _, finish := range []string{"signal", "cancel", "render-error"} {
 		t.Run(finish, func(t *testing.T) {
-			admitted := ports.SecurityState{Generation: 2}
-			protected := ports.SecurityState{Generation: 3, Protected: true}
+			admitted := domain.SecurityState{Generation: 2}
+			protected := domain.SecurityState{Generation: 3, Protected: true}
 			var epoch atomic.Value
 			epoch.Store(admitted)
 			gate := portsmocks.NewMockSessionSecurity(t)
-			gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return epoch.Load().(ports.SecurityState) })
+			gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return epoch.Load().(domain.SecurityState) })
 			fence, signal, err := os.Pipe()
 			if err != nil {
 				t.Fatal(err)
@@ -36,7 +36,7 @@ func TestExcludeFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 			rendered := make(chan struct{}, 1)
 			releaseRender := make(chan struct{})
 			failure := errors.New("excluded render failed after submission")
-			r.EXPECT().Render(mock.MatchedBy(func(s ports.Scene) bool { return s.Security == admitted && s.Seq == 0 }), mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+			r.EXPECT().Render(mock.MatchedBy(func(s domain.Scene) bool { return s.Security == admitted && s.Seq == 0 }), mock.Anything).RunAndReturn(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 				rendered <- struct{}{}
 				<-releaseRender
 				if finish == "render-error" {
@@ -45,16 +45,16 @@ func TestExcludeFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 				return fence, nil
 			}).Once()
 			if finish == "signal" {
-				r.EXPECT().Render(mock.MatchedBy(func(s ports.Scene) bool { return s.Security == protected && s.Seq == 0 }), mock.Anything).Return(nil, nil).Once()
+				r.EXPECT().Render(mock.MatchedBy(func(s domain.Scene) bool { return s.Security == protected && s.Seq == 0 }), mock.Anything).Return(nil, nil).Once()
 			}
 			// Native capture and Pixels have no expectations; neither is admitted.
-			scenes := make(chan ports.Scene, 2)
+			scenes := make(chan domain.Scene, 2)
 			contents := newContentFeed(t, 1)
 			incoming := make(chan ports.CaptureRequest)
 			sink, presented := presentedSink(t, 8)
 			proofs := make(chan ports.SecurityBackendEvent, 2)
 			replies := make(chan ports.CaptureDone, 2)
-			changes := make(chan ports.SecurityState, 1)
+			changes := make(chan domain.SecurityState, 1)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			done := make(chan error, 1)
@@ -77,7 +77,7 @@ func TestExcludeFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 				<-presented
 			}
 			epoch.Store(protected)
-			scenes <- ports.Scene{Security: protected, Off: true}
+			scenes <- domain.Scene{Security: protected, Off: true}
 			changes <- protected
 			close(releaseRender)
 			// A bounded observation interval catches the original immediate fence

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -40,7 +41,7 @@ func (r *Requests) Len() int { return len(r.List) }
 // Admit takes q for the next frame, or fails it with refuse when that is not
 // nil, or when the batch is full. It reports whether q needs a new frame: its
 // indicator is already on the current scene.
-func (r *Requests) Admit(q ports.CaptureRequest, refuse error, scene ports.Scene, haveScene bool) (redraw bool) {
+func (r *Requests) Admit(q ports.CaptureRequest, refuse error, scene domain.Scene, haveScene bool) (redraw bool) {
 	if refuse == nil && len(r.List) == cap(r.List) {
 		refuse = ErrBatchFull
 	}

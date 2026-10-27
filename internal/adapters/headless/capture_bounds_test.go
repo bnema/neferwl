@@ -20,8 +20,8 @@ func TestScreenshotReadbackFailureDoesNotWriteBlackPNG(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := portsmocks.NewMockRenderer(t)
 		r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
-		scenes := make(chan ports.Scene, 1)
-		scenes <- ports.Scene{Seq: 1, Scale: 1}
+		scenes := make(chan domain.Scene, 1)
+		scenes <- domain.Scene{Seq: 1, Scale: 1}
 		dir := t.TempDir()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -66,7 +66,7 @@ func TestCaptureBatchBoundedAndRecycledWhileIdle(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		incoming := make(chan ports.CaptureRequest)
-		scenes := make(chan ports.Scene)
+		scenes := make(chan domain.Scene)
 		replies := make(chan ports.CaptureDone, capture.MaxRequests+1)
 		done := make(chan error, 1)
 		go func() {
@@ -95,7 +95,7 @@ func TestCaptureBatchBoundedAndRecycledWhileIdle(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatal("batch overflow not answered")
 		}
-		scenes <- ports.Scene{Seq: 1, Scale: 1}
+		scenes <- domain.Scene{Seq: 1, Scale: 1}
 		for range capture.MaxRequests {
 			select {
 			case result := <-replies:

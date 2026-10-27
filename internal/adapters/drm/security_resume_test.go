@@ -42,11 +42,11 @@ func TestSecurityUnlockedResumeUsesOwnerRetry(t *testing.T) {
 				o.SecurityEvents = events
 				active := make(chan bool, 2)
 				active <- false // retain existing images; first modeset is resume
-				wake := make(chan ports.SecurityState, 1)
+				wake := make(chan domain.SecurityState, 1)
 				o.SecurityChanges = wake
 				r := portsmocks.NewMockRenderer(t)
 				r.EXPECT().UseTarget(0).Return().Once()
-				r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+				r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s domain.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 					if s.Seq != 0 || s.Background != "#000000" || len(s.Windows) != 0 {
 						t.Fatal("resume rendered desktop")
 					}
@@ -71,7 +71,7 @@ func TestSecurityUnlockedResumeUsesOwnerRetry(t *testing.T) {
 				active <- true
 				if stage == "master-loss" {
 					waitFor(t, func() bool { mu.Lock(); defer mu.Unlock(); return len(*commits) >= 1 })
-					wake <- ports.SecurityState{}
+					wake <- domain.SecurityState{}
 					// The seat reported active before master came back: the owner
 					// retries the protected modeset itself, with no second seat
 					// event. The proof below must follow that successful retry.

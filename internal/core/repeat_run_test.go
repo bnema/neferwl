@@ -31,7 +31,7 @@ func repeatRig(t *testing.T) rig {
 	commands := make(chan ports.ClientCommand, 256)
 	cfg := scrollDefaults()
 	cfg.Layout.MaxColumns = 5
-	c, err := core.New(cfg, core.Channels{Input: input, Client: client, Output: output, Config: reload, ConfigErrors: make(chan error, 1), Commands: commands, Scenes: make(chan []ports.Scene, 1), Spawn: make(chan ports.SpawnRequest, 4)}, core.Options{})
+	c, err := core.New(cfg, core.Channels{Input: input, Client: client, Output: output, Config: reload, ConfigErrors: make(chan error, 1), Commands: commands, Scenes: make(chan []domain.Scene, 1), Spawn: make(chan ports.SpawnRequest, 4)}, core.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

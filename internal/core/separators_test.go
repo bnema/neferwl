@@ -7,7 +7,6 @@ import (
 
 	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // tiles lays out rects edge to edge (no gap) with focus on index f.
@@ -25,7 +24,7 @@ var bigOutput = Rect{W: 1000, H: 1000}
 
 // colorAt is what the renderer shows at (x, y): the last separator over
 // it wins. "" is no line.
-func colorAt(seps []ports.Separator, x, y int) string {
+func colorAt(seps []domain.Separator, x, y int) string {
 	got := ""
 	for _, s := range seps {
 		r := s.Rect

@@ -26,7 +26,7 @@ type CaptureRequest struct {
 	// with Exclude.
 	Session uint64
 	// Exclude asks for a capture without the exclusion's HUD layers and
-	// popups (SceneCapture.Excluded). Wayland sets it, with Session and
+	// popups (domain.SceneCapture.Excluded). Wayland sets it, with Session and
 	// CaptureRevision, only on requests of the session that owns the
 	// exclusion. A renderer fails such a request unless its scene's
 	// Capture.Session is Session and Capture.Revision at least
@@ -37,14 +37,14 @@ type CaptureRequest struct {
 	// (OffScreen false) it is an ordinary region of the displayed frame, and
 	// fails unless the scene's Capture.Shown is Workspace. OffScreen is set
 	// when the workspace was not on screen when the request was made: it is
-	// served from Scene.CaptureScene, whole (Region is the whole child
+	// served from domain.Scene.CaptureScene, whole (Region is the whole child
 	// image), and fails unless the scene's Capture.Workspace is Workspace.
 	// Either way a workspace that moved since fails instead of returning
 	// another crop.
 	Workspace uint64
 	OffScreen bool
 	// Window is not 0 for the capture of a window: always OffScreen, served
-	// whole from Scene.CaptureScene, and failed unless the scene's
+	// whole from domain.Scene.CaptureScene, and failed unless the scene's
 	// Capture.Window is Window.
 	Window domain.WindowID
 	// Indicate is set by wayland on every capture it requests: core shows the

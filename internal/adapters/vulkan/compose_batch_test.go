@@ -8,7 +8,6 @@ import (
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
@@ -108,7 +107,7 @@ func TestComposeInstancedBlendAndBatches(t *testing.T) {
 			if err := r.createComposer(); err != nil {
 				t.Fatal(err)
 			}
-			scene := ports.Scene{Background: "#000000"}
+			scene := domain.Scene{Background: "#000000"}
 			contents := make(map[domain.WindowID]domain.SurfaceContent)
 			var reference [3]float64
 			for i := range 7 {
@@ -120,7 +119,7 @@ func TestComposeInstancedBlendAndBatches(t *testing.T) {
 				c := *shmContent(t, 16, 16, 64, fill(16, 16, pixel))
 				c.ID, c.Seq, c.Version = id, 1, 1
 				contents[id] = c
-				scene.Layers = append(scene.Layers, ports.SceneLayer{ID: id, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 16, H: 16}})
+				scene.Layers = append(scene.Layers, domain.SceneLayer{ID: id, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 16, H: 16}})
 			}
 			for range 4 {
 				if err := render(r, scene, contents); err != nil {

@@ -146,7 +146,7 @@ type FlipInfo struct {
 }
 
 // OutputFrame carries output → core a completed flip of an animating scene
-// (Scene.Animating): the next frame is due. Sends never block; a full
+// (domain.Scene.Animating): the next frame is due. Sends never block; a full
 // channel drops it.
 type OutputFrame struct{ Output string }
 

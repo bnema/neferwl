@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core/layout"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -21,7 +22,7 @@ type positionHintState struct {
 	start       time.Time
 	live        bool
 	fading      bool
-	sample      ports.PositionHint
+	sample      domain.PositionHint
 }
 
 type positionHintTimer struct {
@@ -39,7 +40,7 @@ func (c *Core) updatePositionHints(only *screen) {
 		// baseline until closing, so accept compares against entry and cancel
 		// cannot announce intermediate browsing positions.
 		if sc.mon.ov.open {
-			h.live, h.sample = false, ports.PositionHint{}
+			h.live, h.sample = false, domain.PositionHint{}
 			continue
 		}
 		// Disabled hints skip the band walk; dropping the baseline keeps a
@@ -64,7 +65,7 @@ func (c *Core) updatePositionHints(only *screen) {
 		}
 		h.workspace, h.band, h.focused, h.initialized = w, band, focused, true
 		if c.protectionRequested() || w.Cover() != 0 {
-			h.live, h.sample = false, ports.PositionHint{}
+			h.live, h.sample = false, domain.PositionHint{}
 			continue
 		}
 		if changed {
@@ -81,7 +82,7 @@ func (c *Core) updatePositionHints(only *screen) {
 		h.fading = elapsed >= positionHintHold
 		if h.fading {
 			if !c.animOn() || elapsed >= positionHintHold+positionHintFade {
-				h.live, h.sample = false, ports.PositionHint{}
+				h.live, h.sample = false, domain.PositionHint{}
 				continue
 			}
 			opacity = 1 - float32(elapsed-positionHintHold)/float32(positionHintFade)
@@ -96,8 +97,8 @@ func (c *Core) updatePositionHints(only *screen) {
 // spares), then configured hidden named workspaces. Unlike overview cards,
 // these remain addressable even when empty. Window the list at its active
 // entry when it exceeds the cap. Bands stay top-aligned; excess rows clamp.
-func positionHintGrid(m *Monitor) ports.PositionHint {
-	h := ports.PositionHint{Vertical: m.overviewAxis() == layout.Vertical}
+func positionHintGrid(m *Monitor) domain.PositionHint {
+	h := domain.PositionHint{Vertical: m.overviewAxis() == layout.Vertical}
 	active, total := 0, 0
 	for w := range m.all() {
 		if w == m.Current() {
@@ -105,9 +106,9 @@ func positionHintGrid(m *Monitor) ports.PositionHint {
 		}
 		total++
 	}
-	cap := ports.PositionHintMaxColumns
+	cap := domain.PositionHintMaxColumns
 	if h.Vertical {
-		cap = ports.PositionHintMaxRows
+		cap = domain.PositionHintMaxRows
 	}
 	first := max(0, active-cap+1)
 	if h.Vertical {
@@ -123,12 +124,12 @@ func positionHintGrid(m *Monitor) ports.PositionHint {
 			if content.Span(w.Usable) <= 0 {
 				n = 1
 			}
-			h.Counts[i-first] = uint8(min(n, ports.PositionHintMaxRows))
+			h.Counts[i-first] = uint8(min(n, domain.PositionHintMaxRows))
 		}
 		i++
 	}
 	w := m.Current()
-	h.ActiveRow = uint8(min(w.LaneOf(w.Focus), ports.PositionHintMaxRows-1))
+	h.ActiveRow = uint8(min(w.LaneOf(w.Focus), domain.PositionHintMaxRows-1))
 	return h
 }
 

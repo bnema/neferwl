@@ -84,7 +84,7 @@ func TestProtectedModesetDisableSendsInactiveFormats(t *testing.T) {
 			defer cancel()
 			if stage != "disable-failure" {
 				r.EXPECT().UseTarget(0).Return().Once()
-				r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+				r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 					// Disable feedback must precede GPU writes, not just return.
 					select {
 					case f := <-feedback:

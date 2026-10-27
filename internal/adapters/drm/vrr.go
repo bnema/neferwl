@@ -17,7 +17,7 @@ func (o *Output) probeAsync(r ports.Renderer) {
 	}
 	o.asyncProbed = true
 	r.UseTarget(o.back)
-	done, err := r.Render(ports.Scene{Background: "#000000"}, nil)
+	done, err := r.Render(domain.Scene{Background: "#000000"}, nil)
 	if err != nil {
 		return
 	}
@@ -72,9 +72,9 @@ func (o *Output) contentProps(req *atomicReq) {
 }
 
 // wantContent chooses a content hint for the only visible fullscreen window.
-func (o *Output) wantContent(s ports.Scene, surfaces map[domain.WindowID]domain.SurfaceContent) {
+func (o *Output) wantContent(s domain.Scene, surfaces map[domain.WindowID]domain.SurfaceContent) {
 	o.contentWanted = o.contentValues[0]
-	var full *ports.SceneWindow
+	var full *domain.SceneWindow
 	for i := range s.Windows {
 		w := &s.Windows[i]
 		if !s.Draws(*w) {

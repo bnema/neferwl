@@ -39,7 +39,7 @@ func TestAnimatingKeyGetsFreshSeq(t *testing.T) {
 		name string
 		edit func(*ports.Config)
 		// setup returns the scene before the key.
-		setup func(*testing.T, *swipeRig) ports.Scene
+		setup func(*testing.T, *swipeRig) domain.Scene
 		sym   string
 		mods  domain.Mods
 		// same: the key's scene draws what the previous one did.
@@ -49,11 +49,11 @@ func TestAnimatingKeyGetsFreshSeq(t *testing.T) {
 			c.Layout.MaxColumns = 4
 			c.Binds["Cmd+Ctrl+Right"] = "set-column-width +1"
 		},
-			func(t *testing.T, r *swipeRig) ports.Scene {
+			func(t *testing.T, r *swipeRig) domain.Scene {
 				twoColumns(t, r)
 				return r.key(t, "Left", domain.ModAlt)[0]
 			}, "Right", domain.ModAlt | domain.ModCtrl, true},
-		{"focus scroll", nil, func(t *testing.T, r *swipeRig) ports.Scene {
+		{"focus scroll", nil, func(t *testing.T, r *swipeRig) domain.Scene {
 			threeColumns(t, r)
 			return r.key(t, "Left", domain.ModAlt)[0] // 2 is on screen: no scroll
 		}, "Left", domain.ModAlt, false},

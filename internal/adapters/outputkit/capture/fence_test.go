@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func fenceScene(scale float64, w, h int, marks ...ports.CaptureIndicator) ports.Scene {
-	return ports.Scene{Scale: scale, OutputWidth: w, OutputHeight: h, CaptureIndicators: marks}
+func fenceScene(scale float64, w, h int, marks ...domain.CaptureIndicator) domain.Scene {
+	return domain.Scene{Scale: scale, OutputWidth: w, OutputHeight: h, CaptureIndicators: marks}
 }
 
 func fenceRequest(id uint64, region image.Rectangle, since time.Time) ports.CaptureRequest {
@@ -24,11 +24,11 @@ func fenceRequest(id uint64, region image.Rectangle, since time.Time) ports.Capt
 // capture only. Requests that ask for none need none.
 func TestIndicatorShown(t *testing.T) {
 	whole := image.Rect(0, 0, 200, 100)
-	border := func(r domain.Rect) ports.CaptureIndicator { return ports.CaptureIndicator{Rect: r} }
-	pill := ports.CaptureIndicator{Pill: true, Rect: domain.Rect{X: 180, Y: 8, W: 12, H: 12}}
+	border := func(r domain.Rect) domain.CaptureIndicator { return domain.CaptureIndicator{Rect: r} }
+	pill := domain.CaptureIndicator{Pill: true, Rect: domain.Rect{X: 180, Y: 8, W: 12, H: 12}}
 	for _, tc := range []struct {
 		name  string
-		scene ports.Scene
+		scene domain.Scene
 		req   ports.CaptureRequest
 		want  bool
 	}{
@@ -46,10 +46,10 @@ func TestIndicatorShown(t *testing.T) {
 		{"undrawable thin border shows nothing", fenceScene(1, 200, 100, border(domain.Rect{X: 10, Y: 10, W: 1, H: 20})), fenceRequest(1, image.Rect(10, 10, 11, 30), time.Time{}), false},
 		{"undrawable flat border shows nothing", fenceScene(1, 200, 100, border(domain.Rect{X: 10, Y: 10, W: 20, H: 1})), fenceRequest(1, image.Rect(10, 10, 30, 11), time.Time{}), false},
 		{"smallest drawable border", fenceScene(1, 200, 100, border(domain.Rect{X: 10, Y: 10, W: 2, H: 2})), fenceRequest(1, image.Rect(10, 10, 12, 12), time.Time{}), true},
-		{"pill cut by a short output shows nothing", fenceScene(1, 200, 8, ports.CaptureIndicator{Pill: true, Rect: domain.Rect{X: 180, Y: 8, W: 12, H: 12}}), ports.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, false},
-		{"pill partly outside shows nothing", fenceScene(1, 200, 100, ports.CaptureIndicator{Pill: true, Rect: domain.Rect{X: 195, Y: 8, W: 12, H: 12}}), ports.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, false},
-		{"whole-output pill of a tiny output", fenceScene(1, 200, 8, ports.CaptureIndicator{Pill: true, Rect: domain.Rect{W: 200, H: 8}}), ports.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, true},
-		{"empty pill shows nothing", fenceScene(1, 200, 100, ports.CaptureIndicator{Pill: true}), ports.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, false},
+		{"pill cut by a short output shows nothing", fenceScene(1, 200, 8, domain.CaptureIndicator{Pill: true, Rect: domain.Rect{X: 180, Y: 8, W: 12, H: 12}}), ports.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, false},
+		{"pill partly outside shows nothing", fenceScene(1, 200, 100, domain.CaptureIndicator{Pill: true, Rect: domain.Rect{X: 195, Y: 8, W: 12, H: 12}}), ports.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, false},
+		{"whole-output pill of a tiny output", fenceScene(1, 200, 8, domain.CaptureIndicator{Pill: true, Rect: domain.Rect{W: 200, H: 8}}), ports.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, true},
+		{"empty pill shows nothing", fenceScene(1, 200, 100, domain.CaptureIndicator{Pill: true}), ports.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, false},
 		{"off-screen needs the pill", fenceScene(1, 200, 100, pill), ports.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, true},
 		{"off-screen border is not its mark", fenceScene(1, 200, 100, border(domain.Rect{W: 200, H: 100})), ports.CaptureRequest{ID: 1, Indicate: true, OffScreen: true, Workspace: 3, Region: whole}, false},
 	} {
@@ -66,7 +66,7 @@ func TestExpireFailsOnlyTheRequestsWhoseIndicatorNeverCame(t *testing.T) {
 	p := NewPipeline(context.Background(), replies)
 	defer p.Close(nil)
 	now := time.Unix(100, 0)
-	s := fenceScene(1, 200, 100, ports.CaptureIndicator{Rect: domain.Rect{W: 200, H: 100}})
+	s := fenceScene(1, 200, 100, domain.CaptureIndicator{Rect: domain.Rect{W: 200, H: 100}})
 	shown := fenceRequest(1, image.Rect(0, 0, 200, 100), now.Add(-time.Hour))
 	late := fenceRequest(2, image.Rect(0, 0, 200, 100), now.Add(-time.Hour))
 	late.OffScreen = true
@@ -95,7 +95,7 @@ func TestHoldSplitsByIndicator(t *testing.T) {
 	defer p.Close(nil)
 	now := time.Unix(100, 0)
 	none := fenceScene(1, 200, 100)
-	with := fenceScene(1, 200, 100, ports.CaptureIndicator{Rect: domain.Rect{W: 200, H: 100}})
+	with := fenceScene(1, 200, 100, domain.CaptureIndicator{Rect: domain.Rect{W: 200, H: 100}})
 	a := fenceRequest(1, image.Rect(0, 0, 200, 100), now)
 	b := fenceRequest(2, image.Rect(0, 0, 200, 100), now)
 	reqs := []ports.CaptureRequest{a, b}
@@ -113,7 +113,7 @@ func TestHoldSplitsByIndicator(t *testing.T) {
 // Waiting keeps what was neither handed over nor shown.
 func TestWaitingKeepsOnlyHeldRequests(t *testing.T) {
 	now := time.Unix(100, 0)
-	with := fenceScene(1, 200, 100, ports.CaptureIndicator{Rect: domain.Rect{W: 200, H: 100}})
+	with := fenceScene(1, 200, 100, domain.CaptureIndicator{Rect: domain.Rect{W: 200, H: 100}})
 	held := fenceRequest(3, image.Rect(0, 0, 200, 100), now)
 	held.OffScreen = true
 	reqs := []ports.CaptureRequest{{}, held, fenceRequest(4, image.Rect(0, 0, 200, 100), now)}
@@ -135,13 +135,13 @@ func TestHeldRequestAcrossScaleAndModeChange(t *testing.T) {
 	now := time.Unix(100, 0)
 	region := image.Rect(10, 10, 30, 30) // physical, asked at scale 1
 	q := fenceRequest(1, region, now)
-	border := func(r domain.Rect) ports.CaptureIndicator { return ports.CaptureIndicator{Rect: r} }
+	border := func(r domain.Rect) domain.CaptureIndicator { return domain.CaptureIndicator{Rect: r} }
 	old := fenceScene(1, 200, 100, border(domain.Rect{X: 10, Y: 10, W: 20, H: 20}))
 	require.True(t, IndicatorShown(old, q))
 
 	for _, tc := range []struct {
 		name  string
-		scene ports.Scene
+		scene domain.Scene
 		shown bool
 	}{
 		{"scale doubled, mark of the old logical region", fenceScene(2, 200, 100, border(domain.Rect{X: 10, Y: 10, W: 20, H: 20})), false},

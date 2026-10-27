@@ -293,7 +293,7 @@ func (o *Output) clearImages(r ports.Renderer) error {
 	for i := range o.fbs {
 		r.UseTarget(i)
 		var done *os.File
-		done, err = r.Render(ports.Scene{Background: "#000000"}, nil)
+		done, err = r.Render(domain.Scene{Background: "#000000"}, nil)
 		if err == nil {
 			done, err = o.copyFence(i, done)
 		}

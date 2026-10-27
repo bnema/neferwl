@@ -16,14 +16,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func hiddenScene() ports.Scene {
-	return ports.Scene{
-		Scale: 2, OutputWidth: 100, OutputHeight: 50, Windows: []ports.SceneWindow{{ID: 1}},
-		Capture: &ports.SceneCapture{Workspace: 9},
-		CaptureScene: &ports.Scene{
+func hiddenScene() domain.Scene {
+	return domain.Scene{
+		Scale: 2, OutputWidth: 100, OutputHeight: 50, Windows: []domain.SceneWindow{{ID: 1}},
+		Capture: &domain.SceneCapture{Workspace: 9},
+		CaptureScene: &domain.Scene{
 			OutputWidth: 100, OutputHeight: 50, Scale: 2, Seq: 9,
-			Windows: []ports.SceneWindow{{ID: 5}, {ID: 10, Popup: true}},
-			Layers:  []ports.SceneLayer{{ID: 10}, {ID: 11}},
+			Windows: []domain.SceneWindow{{ID: 5}, {ID: 10, Popup: true}},
+			Layers:  []domain.SceneLayer{{ID: 10}, {ID: 11}},
 		},
 	}
 }
@@ -51,8 +51,8 @@ func TestSubmitHiddenDrawsChildAndRebasesRegion(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 4)
 	p := NewPipeline(context.Background(), replies)
 	child, _ := childMock(t, 200, 100)
-	var scene ports.Scene
-	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+	var scene domain.Scene
+	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s domain.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		scene = s
 		return nil, nil
 	}).Once()
@@ -63,8 +63,8 @@ func TestSubmitHiddenDrawsChildAndRebasesRegion(t *testing.T) {
 	require.Equal(t, [2]int{200, 100}, made, "child image is the frame in physical pixels")
 	require.Nil(t, scene.Capture)
 	require.Zero(t, scene.Seq)
-	require.Equal(t, []ports.SceneWindow{{ID: 5}, {ID: 10, Popup: true}}, scene.Windows)
-	require.Equal(t, []ports.SceneLayer{{ID: 10}, {ID: 11}}, scene.Layers)
+	require.Equal(t, []domain.SceneWindow{{ID: 5}, {ID: 10, Popup: true}}, scene.Windows)
+	require.Equal(t, []domain.SceneLayer{{ID: 10}, {ID: 11}}, scene.Layers)
 	require.NoError(t, awaitCapture(t, replies).Err)
 	p.Close(nil)
 }
@@ -72,13 +72,13 @@ func TestSubmitHiddenDrawsChildAndRebasesRegion(t *testing.T) {
 func TestSubmitHiddenFailsClosed(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		edit func(*ports.Scene)
+		edit func(*domain.Scene)
 		want error
 	}{
-		{"output off", func(s *ports.Scene) { s.Off = true }, nil},
-		{"no hidden workspace in the scene", func(s *ports.Scene) { s.Capture.Workspace = 0 }, ErrOffscreenUnavailable},
-		{"frame too large", func(s *ports.Scene) { s.CaptureScene.OutputWidth = 20000 }, ErrOffscreenGeometry},
-		{"frame empty", func(s *ports.Scene) { s.CaptureScene.OutputWidth = 0 }, ErrOffscreenGeometry},
+		{"output off", func(s *domain.Scene) { s.Off = true }, nil},
+		{"no hidden workspace in the scene", func(s *domain.Scene) { s.Capture.Workspace = 0 }, ErrOffscreenUnavailable},
+		{"frame too large", func(s *domain.Scene) { s.CaptureScene.OutputWidth = 20000 }, ErrOffscreenGeometry},
+		{"frame empty", func(s *domain.Scene) { s.CaptureScene.OutputWidth = 0 }, ErrOffscreenGeometry},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			replies := make(chan ports.CaptureDone, 2)
@@ -178,7 +178,7 @@ func TestSubmitHiddenChildClosesWhenSessionEnds(t *testing.T) {
 	// Wait for the worker to hand the lease back, then the session ends.
 	b := <-p.HiddenCompleted()
 	p.RecycleHidden(b)
-	p.Retire(ports.Scene{})
+	p.Retire(domain.Scene{})
 	require.Nil(t, p.off.r, "child closed once the scene has no CaptureScene")
 	p.Close(nil)
 }
@@ -186,7 +186,7 @@ func TestSubmitHiddenChildClosesWhenSessionEnds(t *testing.T) {
 func TestHiddenNilPipelineSafe(t *testing.T) {
 	var p *Pipeline
 	require.False(t, p.HiddenReading())
-	p.Retire(ports.Scene{})
+	p.Retire(domain.Scene{})
 }
 
 // A window is drawn by the child like a hidden workspace; another window or
@@ -199,7 +199,7 @@ func TestSubmitHiddenWindow(t *testing.T) {
 	made := 0
 	p.EnableOffscreen(func(w, h int) (ports.Renderer, error) { made++; return child, nil })
 	s := hiddenScene()
-	s.Capture = &ports.SceneCapture{Window: 5}
+	s.Capture = &domain.SceneCapture{Window: 5}
 	q := hiddenRequest(t, 1, image.Rect(0, 0, 200, 100))
 	q.Workspace, q.Window = 0, 5
 	p.SubmitHidden(s, nil, []ports.CaptureRequest{q})

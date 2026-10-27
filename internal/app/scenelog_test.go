@@ -5,14 +5,13 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
 
-func logTestScenes() []ports.Scene {
-	return []ports.Scene{{
+func logTestScenes() []domain.Scene {
+	return []domain.Scene{{
 		Output: "A", Seq: 7, OutputWidth: 1920, OutputHeight: 1080, Scale: 1,
-		Windows: []ports.SceneWindow{
+		Windows: []domain.SceneWindow{
 			{ID: 1, Rect: domain.Rect{X: 10, Y: 20, W: 300, H: 200}},
 			{ID: 2, Rect: domain.Rect{X: 5, Y: 6, W: 7, H: 8}},
 		},

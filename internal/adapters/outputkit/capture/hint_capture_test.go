@@ -29,30 +29,30 @@ type hintFrame struct {
 	unshown   bool // ... hiding a surface the scene does not draw
 }
 
-func (f hintFrame) scene() ports.Scene {
+func (f hintFrame) scene() domain.Scene {
 	s := excludedTestScene()
 	s.Capture = nil
 	if f.exclusion {
-		s.Capture = &ports.SceneCapture{Session: 7, Excluded: []domain.WindowID{10, 20}}
+		s.Capture = &domain.SceneCapture{Session: 7, Excluded: []domain.WindowID{10, 20}}
 	}
 	if f.unshown {
-		s.Capture = &ports.SceneCapture{Session: 7, Excluded: []domain.WindowID{99}}
+		s.Capture = &domain.SceneCapture{Session: 7, Excluded: []domain.WindowID{99}}
 	}
 	if f.labels {
-		s.Overlays = []ports.Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Capture: f.capture, Text: "f"}}
+		s.Overlays = []domain.Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Capture: f.capture, Text: "f"}}
 	}
 	if f.indicator {
-		s.CaptureIndicators = []ports.CaptureIndicator{{Rect: domain.Rect{W: 10, H: 10}}}
+		s.CaptureIndicators = []domain.CaptureIndicator{{Rect: domain.Rect{W: 10, H: 10}}}
 	}
 	if f.posHint {
-		s.PositionHint = ports.PositionHint{Opacity: 1, Columns: 1}
+		s.PositionHint = domain.PositionHint{Opacity: 1, Columns: 1}
 	}
 	return s
 }
 
 // drawn names what a rendered scene shows: its labels, indicator and
 // position hint, and "excluded" when the excluded layers are gone.
-func drawn(s ports.Scene) string {
+func drawn(s domain.Scene) string {
 	var parts []string
 	if len(s.Overlays) > 0 {
 		parts = append(parts, "labels")
@@ -81,7 +81,7 @@ type frameRun struct {
 
 // runFrame serves the requests the way the outputs do: Split, SubmitPlain,
 // the excluded frame, then the displayed frame and what still reads it.
-func runFrame(t *testing.T, s ports.Scene, reqs ...ports.CaptureRequest) frameRun {
+func runFrame(t *testing.T, s domain.Scene, reqs ...ports.CaptureRequest) frameRun {
 	t.Helper()
 	replies := make(chan ports.CaptureDone, len(reqs))
 	p := NewPipeline(context.Background(), replies)
@@ -89,7 +89,7 @@ func runFrame(t *testing.T, s ports.Scene, reqs ...ports.CaptureRequest) frameRu
 	var mu sync.Mutex
 	var run frameRun
 	var frames []*portsmocks.MockCaptureFrame
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s domain.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		run.renders = append(run.renders, drawn(s))
@@ -312,18 +312,18 @@ func TestSplitNoAllocHintCapture(t *testing.T) {
 // plain keeps exactly the overlays marked Capture, in a new slice: the
 // caller's overlays are left untouched.
 func TestPlainKeepsOnlyCaptureOverlays(t *testing.T) {
-	in := []ports.Overlay{
+	in := []domain.Overlay{
 		{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Capture: true, Text: "a"},
 		{ID: 2, Seq: 1, Kind: domain.OverlayLabel, Text: "b"},
 	}
-	want := append([]ports.Overlay(nil), in...)
+	want := append([]domain.Overlay(nil), in...)
 	s := excludedTestScene()
 	s.Overlays = in
 
 	require.True(t, keepsOverlays(s))
 	require.True(t, hidesOverlays(s))
 	got := plain(s)
-	require.Equal(t, []ports.Overlay{want[0]}, got.Overlays)
+	require.Equal(t, []domain.Overlay{want[0]}, got.Overlays)
 	require.Equal(t, want, in)
 	require.Equal(t, want, s.Overlays)
 

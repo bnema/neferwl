@@ -7,7 +7,7 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-func windowIn(set []ports.Scene, output string, id domain.WindowID) (ports.SceneWindow, bool) {
+func windowIn(set []domain.Scene, output string, id domain.WindowID) (domain.SceneWindow, bool) {
 	for _, s := range set {
 		if s.Output != output {
 			continue
@@ -18,7 +18,7 @@ func windowIn(set []ports.Scene, output string, id domain.WindowID) (ports.Scene
 			}
 		}
 	}
-	return ports.SceneWindow{}, false
+	return domain.SceneWindow{}, false
 }
 
 func TestFreeFloatKeepsPlaceAcrossMonitors(t *testing.T) {

@@ -19,8 +19,8 @@ import (
 // order of arrival is kept.
 func TestCommandRingCollapsesMotionInOrder(t *testing.T) {
 	s, _, _, _, _, _ := presentServer(t)
-	locked := ports.SecurityState{Generation: 2, Protected: true}
-	unlocked := ports.SecurityState{Generation: 3}
+	locked := domain.SecurityState{Generation: 2, Protected: true}
+	unlocked := domain.SecurityState{Generation: 3}
 	var got []ports.ClientCommand // display goroutine only
 	r := newCommandRing(s.display, func(q queuedCommand) { got = append(got, q.command()) })
 	release := make(chan struct{})

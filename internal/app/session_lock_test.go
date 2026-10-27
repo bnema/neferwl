@@ -4,16 +4,21 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/bnema/zerowrap"
 	"io"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/zerowrap"
+
 	lockclient "github.com/bnema/go-wayland-bindings/client/extsessionlock"
+
 	clientcore "github.com/bnema/go-wayland-bindings/client/wayland"
+
 	captureclient "github.com/bnema/go-wayland-bindings/client/wlrscreencopy"
+
 	clientxdg "github.com/bnema/go-wayland-bindings/client/xdgshell"
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
@@ -37,7 +42,7 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 	if err := os.WriteFile(allowPath, []byte("*\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	scenes := make(chan []ports.Scene, 128)
+	scenes := make(chan []domain.Scene, 128)
 	script, writer := io.Pipe()
 	defer writer.Close()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -71,7 +76,7 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	waitScenes := func(what string, accept func([]ports.Scene) bool) []ports.Scene {
+	waitScenes := func(what string, accept func([]domain.Scene) bool) []domain.Scene {
 		t.Helper()
 		timer := time.NewTimer(5 * time.Second)
 		defer timer.Stop()
@@ -89,7 +94,7 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 			}
 		}
 	}
-	waitScenes("initial outputs", func(set []ports.Scene) bool { return len(set) == 2 })
+	waitScenes("initial outputs", func(set []domain.Scene) bool { return len(set) == 2 })
 	sockets, err := filepath.Glob(filepath.Join(runtime, "wayland-*[0-9]"))
 	check(err)
 	if len(sockets) != 1 {
@@ -239,7 +244,7 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 	}
 	locker := connect()
 	lock := acquire(locker) // deliberately no locker surfaces or buffers yet
-	protected := waitScenes("protected black", func(set []ports.Scene) bool {
+	protected := waitScenes("protected black", func(set []domain.Scene) bool {
 		if len(set) != 2 {
 			return false
 		}
@@ -322,7 +327,7 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 	denyCapture()
 	replacement := connect()
 	takeover := acquire(replacement)
-	newer := waitScenes("takeover protection", func(set []ports.Scene) bool {
+	newer := waitScenes("takeover protection", func(set []domain.Scene) bool {
 		return len(set) == 2 && set[0].Security.Protected && set[1].Security.Protected && set[0].Security.Generation > generation
 	})
 	if newer[0].Security.Generation != newer[1].Security.Generation {
@@ -330,7 +335,7 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 	}
 	check(takeover.UnlockAndDestroy())
 	check(replacement.Roundtrip())
-	waitScenes("unlocked desktop", func(set []ports.Scene) bool {
+	waitScenes("unlocked desktop", func(set []domain.Scene) bool {
 		return len(set) == 2 && !set[0].Security.Protected && !set[1].Security.Protected && set[0].Security.Generation > newer[0].Security.Generation
 	})
 	until(desktop, "restored desktop focus", func() bool { return focused == surface.ID() })

@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 
 	vk "github.com/bnema/purego-vulkan/vulkan"
 	"golang.org/x/sys/unix"
@@ -134,7 +133,7 @@ func (r *Renderer) poll() error {
 
 // noteHidden records the windows s lists as Hidden: they are not drawn, so
 // Trim frees their copies after hiddenTTL instead of idleTTL.
-func (r *Renderer) noteHidden(s ports.Scene) {
+func (r *Renderer) noteHidden(s domain.Scene) {
 	clear(r.hidden)
 	for _, w := range s.Windows {
 		if w.Hidden && !w.Popup {

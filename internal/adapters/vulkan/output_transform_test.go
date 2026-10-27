@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // The target of a rotated output holds the scene transformed by ToBuffer:
@@ -22,7 +21,7 @@ func TestRendererOutputTransform(t *testing.T) {
 	for tr := domain.BufferTransform(0); tr < 8; tr++ {
 		sw, sh := r.sceneSize(tr)
 		c := shmContent(t, 2, 1, 8, px)
-		scene := ports.Scene{Transform: tr, Scale: 1, OutputWidth: sw, OutputHeight: sh, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: win}}}
+		scene := domain.Scene{Transform: tr, Scale: 1, OutputWidth: sw, OutputHeight: sh, Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: win}}}
 		if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: *c}); err != nil {
 			t.Fatal(err)
 		}

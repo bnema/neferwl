@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // A window's Fade scales its body fill, its own border lines, its dim and
@@ -16,13 +15,13 @@ import (
 func TestSceneWindowFade(t *testing.T) {
 	near := func(a, b float32) bool { return math.Abs(float64(a-b)) < 1e-6 }
 	walk := func(r *Renderer, fade float64) []draw {
-		s := ports.Scene{
-			Background: "#ffffff", Dim: 0, Border: ports.Border{Width: 1, Active: "#ffffff", Inactive: "#808080"},
-			Windows: []ports.SceneWindow{
+		s := domain.Scene{
+			Background: "#ffffff", Dim: 0, Border: domain.Border{Width: 1, Active: "#ffffff", Inactive: "#808080"},
+			Windows: []domain.SceneWindow{
 				{ID: 1, Rect: domain.Rect{W: 40, H: 60}},
 				{ID: 2, Floating: true, Rect: domain.Rect{X: 40, W: 20, H: 20}, Inset: domain.SideLeft | domain.SideRight | domain.SideTop | domain.SideBottom, Fade: fade, Dim: 0.5},
 			},
-			Separators: []ports.Separator{{Rect: domain.Rect{X: 40, W: 1, H: 20}, Window: 2}},
+			Separators: []domain.Separator{{Rect: domain.Rect{X: 40, W: 1, H: 20}, Window: 2}},
 		}
 		contents := map[domain.WindowID]domain.SurfaceContent{
 			2: {ID: 2, Width: 1, Height: 1, LogicalW: 18, LogicalH: 18, Solid: &domain.SolidColor{R: 1, G: 0.5, B: 0, A: 1}},
@@ -62,7 +61,7 @@ func TestSceneWindowFade(t *testing.T) {
 		t.Fatalf("faded-out draws = %+v, want the tile only", gone)
 	}
 	// A second window after the faded one draws at full alpha.
-	s := ports.Scene{Background: "#ffffff", Windows: []ports.SceneWindow{
+	s := domain.Scene{Background: "#ffffff", Windows: []domain.SceneWindow{
 		{ID: 1, Rect: domain.Rect{W: 40, H: 60}, Fade: 0.25},
 		{ID: 2, Rect: domain.Rect{X: 40, W: 40, H: 60}},
 	}}
@@ -76,7 +75,7 @@ func TestSceneWindowFade(t *testing.T) {
 // yields the faded linear premultiplied color.
 func TestSceneWindowFadeHDR(t *testing.T) {
 	r := &Renderer{width: 80, height: 60, hdrNits: 203}
-	s := ports.Scene{Background: "#ffffff", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 40, H: 60}, Fade: 0.5}}}
+	s := domain.Scene{Background: "#ffffff", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 40, H: 60}, Fade: 0.5}}}
 	ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 80, 60)))
 	if len(ds) != 1 {
 		t.Fatalf("draws = %d", len(ds))
@@ -93,14 +92,14 @@ func TestSceneWindowFadeHDR(t *testing.T) {
 // exactly as for the same float unzoomed; only its content draw shrinks.
 func TestSceneZoomedFloatOpensFloats(t *testing.T) {
 	r := &Renderer{width: 80, height: 60}
-	scene := func(zoom float64) ports.Scene {
-		return ports.Scene{
-			Dim: 0.4, Background: "#000000", Border: ports.Border{Width: 1, Active: "#ffffff", Inactive: "#808080"},
-			Windows: []ports.SceneWindow{
+	scene := func(zoom float64) domain.Scene {
+		return domain.Scene{
+			Dim: 0.4, Background: "#000000", Border: domain.Border{Width: 1, Active: "#ffffff", Inactive: "#808080"},
+			Windows: []domain.SceneWindow{
 				{ID: 1, Rect: domain.Rect{W: 80, H: 60}},
 				{ID: 2, Floating: true, Rect: domain.Rect{X: 20, Y: 10, W: 40, H: 40}, Inset: domain.SideAll, Fade: 0.5, Zoom: zoom},
 			},
-			Separators: []ports.Separator{
+			Separators: []domain.Separator{
 				{Rect: domain.Rect{X: 40, W: 1, H: 60}},
 				{Rect: domain.Rect{X: 20, Y: 10, W: 1, H: 40}, Window: 2},
 			},
@@ -109,7 +108,7 @@ func TestSceneZoomedFloatOpensFloats(t *testing.T) {
 	contents := map[domain.WindowID]domain.SurfaceContent{
 		2: {ID: 2, Width: 1, Height: 1, LogicalW: 38, LogicalH: 38, Solid: &domain.SolidColor{R: 1, G: 1, B: 1, A: 1}},
 	}
-	walk := func(s ports.Scene) []draw {
+	walk := func(s domain.Scene) []draw {
 		return slices.Clone(r.draws(s, contents, newDamage(&target{}, s, image.Rect(0, 0, 80, 60))))
 	}
 	plain, zoomed := walk(scene(0)), walk(scene(0.9))
@@ -145,9 +144,9 @@ func TestSceneZoomedFloatOpensFloats(t *testing.T) {
 
 func TestRoundedWindowDraws(t *testing.T) {
 	r := &Renderer{width: 80, height: 60}
-	s := ports.Scene{Scale: 1, Background: "#ffffff", Border: ports.Border{Width: 3, Active: "#ff8800", Inactive: "#888888"},
-		Windows:    []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 8, Y: 8, W: 40, H: 40}, Inset: domain.SideAll, Radius: 10, Dim: 0.5}},
-		Separators: []ports.Separator{{Window: 1, Active: true}}}
+	s := domain.Scene{Scale: 1, Background: "#ffffff", Border: domain.Border{Width: 3, Active: "#ff8800", Inactive: "#888888"},
+		Windows:    []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: 8, Y: 8, W: 40, H: 40}, Inset: domain.SideAll, Radius: 10, Dim: 0.5}},
+		Separators: []domain.Separator{{Window: 1, Active: true}}}
 	ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 80, 60)))
 	if len(ds) != 3 {
 		t.Fatalf("draws %d", len(ds))
@@ -174,9 +173,9 @@ func TestRoundedWindowDraws(t *testing.T) {
 func TestRoundedRingHoleFadedVersusOpaque(t *testing.T) {
 	r := &Renderer{width: 80, height: 60}
 	ring := func(fade float64) draw {
-		s := ports.Scene{Scale: 1, Background: "#ffffff", Border: ports.Border{Width: 3, Active: "#ff8800", Inactive: "#888888"},
-			Windows:    []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 8, Y: 8, W: 40, H: 40}, Inset: domain.SideAll, Radius: 10, Fade: fade}},
-			Separators: []ports.Separator{{Window: 1, Active: true}}}
+		s := domain.Scene{Scale: 1, Background: "#ffffff", Border: domain.Border{Width: 3, Active: "#ff8800", Inactive: "#888888"},
+			Windows:    []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: 8, Y: 8, W: 40, H: 40}, Inset: domain.SideAll, Radius: 10, Fade: fade}},
+			Separators: []domain.Separator{{Window: 1, Active: true}}}
 		ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 80, 60)))
 		if len(ds) == 0 || ds[0].pc.misc[1]&flagRing == 0 {
 			t.Fatalf("fade %v: no ring: %+v", fade, ds)

@@ -6,7 +6,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/core/motion"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // Monitor owns an ordered list of workspaces for one output (ADR 011). Numbers
@@ -55,7 +55,7 @@ type Monitor struct {
 	// dividers), reused and never handed out past the call.
 	ovNamed    []*Workspace
 	ovList     []*Workspace
-	ovDividers [2]ports.Separator
+	ovDividers [2]domain.Separator
 	// ov holds the overview selection and its Escape snapshot.
 	ov overviewState
 	// sw is the column switcher (switcher.go).

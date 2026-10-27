@@ -127,19 +127,19 @@ func TestOSDTearingLineSeparatesAskedFromTorn(t *testing.T) {
 }
 
 func TestOSDDrawnOnlyWhereTheTargetIsDrawn(t *testing.T) {
-	out := ports.Scene{OutputWidth: 1920, OutputHeight: 1080}
-	shown := ports.SceneWindow{ID: 7, Rect: domain.Rect{W: 800, H: 600}}
+	out := domain.Scene{OutputWidth: 1920, OutputHeight: 1080}
+	shown := domain.SceneWindow{ID: 7, Rect: domain.Rect{W: 800, H: 600}}
 	for name, tc := range map[string]struct {
-		windows []ports.SceneWindow
+		windows []domain.SceneWindow
 		want    bool
 	}{
-		"drawn":            {[]ports.SceneWindow{shown}, true},
-		"absent":           {[]ports.SceneWindow{{ID: 8, Rect: shown.Rect}}, false},
-		"hidden workspace": {[]ports.SceneWindow{{ID: 7}}, false},
-		"hidden":           {[]ports.SceneWindow{{ID: 7, Rect: shown.Rect, Hidden: true}}, false},
-		"preview":          {[]ports.SceneWindow{{ID: 7, Rect: shown.Rect, Preview: .5}}, false},
-		"zooming":          {[]ports.SceneWindow{{ID: 7, Rect: shown.Rect, Zoom: .9}}, false},
-		"faded out":        {[]ports.SceneWindow{{ID: 7, Rect: shown.Rect, Fade: 1}}, false},
+		"drawn":            {[]domain.SceneWindow{shown}, true},
+		"absent":           {[]domain.SceneWindow{{ID: 8, Rect: shown.Rect}}, false},
+		"hidden workspace": {[]domain.SceneWindow{{ID: 7}}, false},
+		"hidden":           {[]domain.SceneWindow{{ID: 7, Rect: shown.Rect, Hidden: true}}, false},
+		"preview":          {[]domain.SceneWindow{{ID: 7, Rect: shown.Rect, Preview: .5}}, false},
+		"zooming":          {[]domain.SceneWindow{{ID: 7, Rect: shown.Rect, Zoom: .9}}, false},
+		"faded out":        {[]domain.SceneWindow{{ID: 7, Rect: shown.Rect, Fade: 1}}, false},
 	} {
 		s := out
 		s.Windows = tc.windows

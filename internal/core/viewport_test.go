@@ -45,13 +45,13 @@ func TestViewportShows(t *testing.T) {
 // viewportCore is a core with one 100x80 output whose usable area is
 // usable, publishing into the returned check: it asserts what each
 // window's configure and the state snapshot say about its visibility.
-func viewportCore(t *testing.T, layout func(*ports.Config), usable Rect) (*Core, func(map[WindowID]bool) ports.Scene) {
+func viewportCore(t *testing.T, layout func(*ports.Config), usable Rect) (*Core, func(map[WindowID]bool) domain.Scene) {
 	t.Helper()
 	cfg := ports.Config{}
 	cfg.Keyboard.CmdKey = "super"
 	layout(&cfg)
 	commands := make(chan ports.ClientCommand, 256)
-	scenes := make(chan []ports.Scene, 1)
+	scenes := make(chan []domain.Scene, 1)
 	c, err := New(cfg, Channels{Commands: commands, Scenes: scenes}, Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func viewportCore(t *testing.T, layout func(*ports.Config), usable Rect) (*Core,
 	c.addScreen(ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80})
 	c.cur().mon.SetUsable(usable)
 	sent := map[WindowID]ports.ConfigureWindow{}
-	check := func(want map[WindowID]bool) ports.Scene {
+	check := func(want map[WindowID]bool) domain.Scene {
 		t.Helper()
 		if err := c.publish(context.Background()); err != nil {
 			t.Fatal(err)

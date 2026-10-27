@@ -6,8 +6,9 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Trigger budget includes snapshot, transition, animate and refreshing the
@@ -114,7 +115,7 @@ func TestOverviewWorkspaceAnimatedFrameAllocations(t *testing.T) {
 		if !want.Animating || !c.animating() {
 			t.Fatal("fixture frame is not animating")
 		}
-		checkFrame := func(got ports.Scene) {
+		checkFrame := func(got domain.Scene) {
 			t.Helper()
 			// Seq is publication identity, not rendered content. Compare every
 			// other field, including Animating, windows, rects and separators.
@@ -140,7 +141,7 @@ func TestOverviewWorkspaceAnimatedFrameAllocations(t *testing.T) {
 		c.opts.Clock = nil
 		c.animate(ic.now, nil)
 		checkFrame(indicatorScene(t, c))
-		var last ports.Scene
+		var last domain.Scene
 		n := testing.AllocsPerRun(50, func() {
 			c.animate(ic.now, nil)
 			last = indicatorScene(t, c)

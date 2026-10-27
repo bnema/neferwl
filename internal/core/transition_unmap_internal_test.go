@@ -8,6 +8,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -82,7 +84,7 @@ func TestUnmapTiledLeavesAndReflows(t *testing.T) {
 		ic.now = ic.now.Add(5 * time.Second)
 		c.animate(ic.now, nil)
 		s = indicatorScene(t, c)
-		if slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 }) {
+		if slices.ContainsFunc(s.Windows, func(w domain.SceneWindow) bool { return w.ID == 2 }) {
 			t.Fatalf("the closed window is still in the scene: %+v", s.Windows)
 		}
 		if w := sceneWindow(t, s, 1); w.Rect != settled1.Rect {
@@ -123,7 +125,7 @@ func TestUnmapFloatingLeaves(t *testing.T) {
 		}
 		ic.now = ic.now.Add(5 * time.Second)
 		c.animate(ic.now, nil)
-		if s := indicatorScene(t, c); slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 }) {
+		if s := indicatorScene(t, c); slices.ContainsFunc(s.Windows, func(w domain.SceneWindow) bool { return w.ID == 2 }) {
 			t.Fatalf("the closed float is still in the scene: %+v", s.Windows)
 		}
 
@@ -157,7 +159,7 @@ func TestUnmapMidMotionLeavesFromDrawn(t *testing.T) {
 		}
 		ic.now = ic.now.Add(5 * time.Second)
 		c.animate(ic.now, nil)
-		if s := indicatorScene(t, c); slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 3 }) || len(sc.rects) != 0 {
+		if s := indicatorScene(t, c); slices.ContainsFunc(s.Windows, func(w domain.SceneWindow) bool { return w.ID == 3 }) || len(sc.rects) != 0 {
 			t.Fatalf("the closed window is still there: %+v", s.Windows)
 		}
 
@@ -214,7 +216,7 @@ func TestUnmapWhileStashHidesOrdersDeterministically(t *testing.T) {
 		ic.now = ic.now.Add(5 * time.Second)
 		c.animate(ic.now, nil)
 		s := indicatorScene(t, c)
-		if slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 5 }) || len(sc.rects) != 0 {
+		if slices.ContainsFunc(s.Windows, func(w domain.SceneWindow) bool { return w.ID == 5 }) || len(sc.rects) != 0 {
 			t.Fatalf("after the settle: %+v", s.Windows)
 		}
 		if ids := drainConfigures(cmds); slices.Contains(ids, 5) {
@@ -234,7 +236,7 @@ func TestUnmapOffIsInstant(t *testing.T) {
 		indicatorScene(t, c)
 		c.unmapWindow(ports.WindowUnmapped{ID: 2})
 		s := indicatorScene(t, c)
-		if slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 }) || len(sc.rects) != 0 || c.animating() {
+		if slices.ContainsFunc(s.Windows, func(w domain.SceneWindow) bool { return w.ID == 2 }) || len(sc.rects) != 0 || c.animating() {
 			t.Fatalf("an unmap animated with animations off: %+v", s.Windows)
 		}
 		if w := sceneWindow(t, s, 1); w.Rect != settledOf(t, sc, 1).Rect {
@@ -251,7 +253,7 @@ func TestUnmapExceptions(t *testing.T) {
 	gone := func(t *testing.T, c *Core, sc *screen, id WindowID) {
 		t.Helper()
 		s := indicatorScene(t, c)
-		if slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == id }) || len(sc.rects) != 0 {
+		if slices.ContainsFunc(s.Windows, func(w domain.SceneWindow) bool { return w.ID == id }) || len(sc.rects) != 0 {
 			t.Fatalf("window %d left something behind: %+v rects %+v", id, s.Windows, sc.rects)
 		}
 		if _, w := c.screenOf(id); w != nil {
@@ -282,7 +284,7 @@ func TestUnmapExceptions(t *testing.T) {
 	t.Run("session lock", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			c, _, _, sc := twoSettled(t)
-			c.security = ports.SecurityState{Generation: 1, Protected: true}
+			c.security = domain.SecurityState{Generation: 1, Protected: true}
 			c.unmapWindow(ports.WindowUnmapped{ID: 2})
 			if len(sc.rects) != 0 || c.animating() {
 				t.Fatalf("an unmap under a session lock animated: %+v", sc.rects)
@@ -323,14 +325,14 @@ func TestUnmapLeavingDroppedByInterruptions(t *testing.T) {
 		t.Helper()
 		c, ic, _, sc := twoSettled(t)
 		c.unmapWindow(ports.WindowUnmapped{ID: 2})
-		if s := indicatorScene(t, c); !slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 }) {
+		if s := indicatorScene(t, c); !slices.ContainsFunc(s.Windows, func(w domain.SceneWindow) bool { return w.ID == 2 }) {
 			t.Fatal("no leaving entry")
 		}
 		return c, ic, sc
 	}
-	gone := func(t *testing.T, c *Core, sc *screen, s ports.Scene) {
+	gone := func(t *testing.T, c *Core, sc *screen, s domain.Scene) {
 		t.Helper()
-		if slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 }) {
+		if slices.ContainsFunc(s.Windows, func(w domain.SceneWindow) bool { return w.ID == 2 }) {
 			t.Fatalf("the leaving entry survived: %+v", s.Windows)
 		}
 		// Other motions may run (the overview's cards): none for 2.
@@ -341,9 +343,9 @@ func TestUnmapLeavingDroppedByInterruptions(t *testing.T) {
 	t.Run("session lock", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			c, _, sc := leaving(t)
-			state := ports.SecurityState{Generation: 1, Protected: true}
+			state := domain.SecurityState{Generation: 1, Protected: true}
 			gate := portsmocks.NewMockSessionSecurity(t)
-			gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return state })
+			gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return state })
 			c.opts.Security = gate
 			if err := c.publish(context.Background()); err != nil {
 				t.Fatal(err)
@@ -352,7 +354,7 @@ func TestUnmapLeavingDroppedByInterruptions(t *testing.T) {
 			if len(locked.Windows) != 0 || len(sc.rects) != 0 || c.animating() {
 				t.Fatalf("locked scene %+v rects %d animating %t", locked.Windows, len(sc.rects), c.animating())
 			}
-			state = ports.SecurityState{Generation: 2}
+			state = domain.SecurityState{Generation: 2}
 			gone(t, c, sc, indicatorScene(t, c))
 
 		})
@@ -484,7 +486,7 @@ func TestUnmapDuringStashHideKeepsTheFade(t *testing.T) {
 		ic.now = ic.now.Add(5 * time.Second)
 		c.animate(ic.now, nil)
 		s = indicatorScene(t, c)
-		if slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 }) || len(sc.rects) != 0 {
+		if slices.ContainsFunc(s.Windows, func(w domain.SceneWindow) bool { return w.ID == 2 }) || len(sc.rects) != 0 {
 			t.Fatalf("after the settle: %+v", s.Windows)
 		}
 

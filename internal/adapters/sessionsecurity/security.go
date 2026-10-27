@@ -21,14 +21,14 @@ var (
 // Only the display owner calls Engage and Release.
 type Gate struct{ state atomic.Uint64 }
 
-func unpack(state uint64) ports.SecurityState {
-	return ports.SecurityState{Generation: domain.LockGeneration(state >> 1), Protected: state&1 != 0}
+func unpack(state uint64) domain.SecurityState {
+	return domain.SecurityState{Generation: domain.LockGeneration(state >> 1), Protected: state&1 != 0}
 }
 
-func (g *Gate) Snapshot() ports.SecurityState { return unpack(g.state.Load()) }
+func (g *Gate) Snapshot() domain.SecurityState { return unpack(g.state.Load()) }
 
 // Engage creates a new protected generation, including orphan-owner takeover.
-func (g *Gate) Engage() (ports.SecurityState, error) {
+func (g *Gate) Engage() (domain.SecurityState, error) {
 	for {
 		old := g.state.Load()
 		if old>>1 == math.MaxUint64>>1 {
@@ -41,7 +41,7 @@ func (g *Gate) Engage() (ports.SecurityState, error) {
 	}
 }
 
-func (g *Gate) Release(expected domain.LockGeneration) (ports.SecurityState, error) {
+func (g *Gate) Release(expected domain.LockGeneration) (domain.SecurityState, error) {
 	for {
 		old := g.state.Load()
 		state := unpack(old)

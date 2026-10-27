@@ -13,7 +13,7 @@ var ultrawide = ports.OutputInfo{Name: "DP-3", Make: "Acme", Model: "W", Serial:
 // sizedRig runs an ultrawide with the named workspace "focus" (1920x1080)
 // bound to Alt+w, and shows it. The animations setting is the default's
 // unless edit changes it.
-func sizedRig(t *testing.T, overflow string, edit func(*ports.Config)) (*multiRig, ports.Scene) {
+func sizedRig(t *testing.T, overflow string, edit func(*ports.Config)) (*multiRig, domain.Scene) {
 	t.Helper()
 	r := startMulti(t, sizedConfig(overflow, edit), ultrawide)
 	return r, r.key(t, "w", domain.ModAlt)[0]
@@ -21,7 +21,7 @@ func sizedRig(t *testing.T, overflow string, edit func(*ports.Config)) (*multiRi
 
 // sizedLanding is sizedRig with animations forced on or off; the scene it
 // returns and every keyLanded and mapLanded of the rig are settled.
-func sizedLanding(t *testing.T, animated bool, overflow string, edit func(*ports.Config)) (*landRig, ports.Scene) {
+func sizedLanding(t *testing.T, animated bool, overflow string, edit func(*ports.Config)) (*landRig, domain.Scene) {
 	t.Helper()
 	r := startLanding(t, animated, sizedConfig(overflow, edit), ultrawide)
 	return r, r.keyLanded(t, "w", domain.ModAlt)[0]

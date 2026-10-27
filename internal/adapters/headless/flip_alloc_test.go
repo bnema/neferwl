@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
 
@@ -12,7 +11,7 @@ import (
 // change, and a changed one never mutates what an earlier flip handed out.
 func TestFlipShowsAllocations(t *testing.T) {
 	var f flipShows
-	scene := ports.Scene{OutputWidth: 10, OutputHeight: 10, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 10, H: 10}}}}
+	scene := domain.Scene{OutputWidth: 10, OutputHeight: 10, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 10, H: 10}}}}
 	contents := map[domain.WindowID]domain.SurfaceContent{1: {ID: 1, Seq: 1}, 2: {ID: 2, Seq: 2}}
 	first := f.flipInfo(scene, contents, nil)
 	require.Equal(t, map[domain.WindowID]uint64{1: 1}, first.Shows)

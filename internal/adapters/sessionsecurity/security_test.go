@@ -6,12 +6,12 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestGateTransitionOwnership(t *testing.T) {
 	var g Gate
-	if got := g.Snapshot(); got != (ports.SecurityState{}) {
+	if got := g.Snapshot(); got != (domain.SecurityState{}) {
 		t.Fatalf("zero state %v", got)
 	}
 	first, err := g.Engage()

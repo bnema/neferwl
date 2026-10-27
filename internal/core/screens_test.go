@@ -20,7 +20,7 @@ type multiRig struct {
 	output   chan ports.OutputEvent
 	reload   chan ports.ConfigChanged
 	commands chan ports.ClientCommand
-	scenes   chan []ports.Scene
+	scenes   chan []domain.Scene
 	spawn    chan ports.SpawnRequest
 	state    chan ports.State
 	cfg      ports.Config
@@ -56,7 +56,7 @@ func startRigWith(t *testing.T, opts core.Options, edit func(*ports.Config), out
 	r := &multiRig{
 		client: make(chan ports.ClientEvent, 16), input: make(chan ports.InputEvent, 16),
 		output: make(chan ports.OutputEvent, 4), reload: make(chan ports.ConfigChanged, 4),
-		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []ports.Scene, 1), spawn: make(chan ports.SpawnRequest, 16), state: make(chan ports.State, 1), cfg: cfg,
+		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []domain.Scene, 1), spawn: make(chan ports.SpawnRequest, 16), state: make(chan ports.State, 1), cfg: cfg,
 	}
 	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Spawn: r.spawn, State: r.state}, opts)
 	if err != nil {
@@ -72,13 +72,13 @@ func startRigWith(t *testing.T, opts core.Options, edit func(*ports.Config), out
 	return r
 }
 
-func (r *multiRig) plug(t *testing.T, o ports.OutputInfo) []ports.Scene {
+func (r *multiRig) plug(t *testing.T, o ports.OutputInfo) []domain.Scene {
 	t.Helper()
 	r.output <- ports.OutputAdded{Info: o}
 	return receive(t, r.scenes)
 }
 
-func (r *multiRig) key(t *testing.T, sym string, mods domain.Mods) []ports.Scene {
+func (r *multiRig) key(t *testing.T, sym string, mods domain.Mods) []domain.Scene {
 	t.Helper()
 	r.input <- ports.KeyEvent{Keysym: sym, Mods: mods, Pressed: true}
 	s := receive(t, r.scenes)
@@ -86,14 +86,14 @@ func (r *multiRig) key(t *testing.T, sym string, mods domain.Mods) []ports.Scene
 	return s
 }
 
-func (r *multiRig) mapWindow(t *testing.T, id domain.WindowID) []ports.Scene {
+func (r *multiRig) mapWindow(t *testing.T, id domain.WindowID) []domain.Scene {
 	t.Helper()
 	r.client <- ports.WindowMapped{ID: id}
 	return receive(t, r.scenes)
 }
 
 // shown returns the visible window IDs of each output, by connector.
-func shown(set []ports.Scene) map[string][]domain.WindowID {
+func shown(set []domain.Scene) map[string][]domain.WindowID {
 	out := map[string][]domain.WindowID{}
 	for _, s := range set {
 		out[s.Output] = []domain.WindowID{}
@@ -149,7 +149,7 @@ func TestLayoutPerOutput(t *testing.T) {
 func layoutPerOutput(t *testing.T, r *landRig) {
 	r.mapLanded(t, 1)
 	r.keyLanded(t, "Right", domain.ModAlt|domain.ModCtrl)
-	var set []ports.Scene
+	var set []domain.Scene
 	for id := domain.WindowID(2); id <= 6; id++ {
 		set = r.mapLanded(t, id)
 	}
@@ -169,7 +169,7 @@ func layoutPerOutput(t *testing.T, r *landRig) {
 }
 
 // widths returns the window widths on one output.
-func widths(set []ports.Scene, output string) []int {
+func widths(set []domain.Scene, output string) []int {
 	var out []int
 	for _, s := range set {
 		for _, w := range s.Windows {
@@ -682,7 +682,7 @@ func TestFirstTerminalFollowsSetOutputs(t *testing.T) {
 		// queue tests ordering without requiring core to wait for this reader.
 		spawn := make(chan ports.SpawnRequest, 1)
 		output := make(chan ports.OutputEvent, 1)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		state := make(chan ports.State, 1)
 		c, err := core.New(cfg, core.Channels{Output: output, Commands: commands, Spawn: spawn, Scenes: scenes, State: state}, core.Options{Terminal: true})
 		if err != nil {
@@ -726,7 +726,7 @@ func TestFirstTerminalLayoutWaitCancels(t *testing.T) {
 		// queue tests ordering without requiring core to wait for this reader.
 		spawn := make(chan ports.SpawnRequest, 1)
 		output := make(chan ports.OutputEvent, 1)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		state := make(chan ports.State, 1)
 		c, err := core.New(cfg, core.Channels{Output: output, Commands: commands, Spawn: spawn, Scenes: scenes, State: state}, core.Options{Terminal: true})
 		if err != nil {
@@ -759,7 +759,7 @@ func TestFirstTerminalSpawnFollowsDeliveredLayout(t *testing.T) {
 		commands := make(chan ports.ClientCommand)
 		spawn := make(chan ports.SpawnRequest, 1)
 		output := make(chan ports.OutputEvent, 1)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		state := make(chan ports.State, 1)
 		c, err := core.New(scrollDefaults(), core.Channels{Output: output, Commands: commands, Spawn: spawn, Scenes: scenes, State: state}, core.Options{Terminal: true})
 		if err != nil {
@@ -1086,7 +1086,7 @@ func TestMoveColumnOntoFullscreenStaysVisible(t *testing.T) {
 
 // windowsOf lists the tiled windows of an output in scene order, with the
 // focused one.
-func windowsOf(set []ports.Scene, out string) (ids []domain.WindowID, focused domain.WindowID) {
+func windowsOf(set []domain.Scene, out string) (ids []domain.WindowID, focused domain.WindowID) {
 	for _, s := range set {
 		if s.Output != out {
 			continue
@@ -1273,7 +1273,7 @@ func stashEndToEnd(t *testing.T, r *landRig) {
 	r.keyLanded(t, "Left", domain.ModAlt) // tiles: from 2 to 1
 	sc = r.keyLanded(t, "s", domain.ModAlt|domain.ModShift)
 	// Stash 3 1: 1 selected in the middle, 3 peeking left, dimmed.
-	var peek, sel ports.SceneWindow
+	var peek, sel domain.SceneWindow
 	for _, w := range sc[0].Windows {
 		switch w.ID {
 		case 3:

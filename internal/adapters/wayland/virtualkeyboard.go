@@ -171,7 +171,7 @@ func (k *virtualKeyboard) Modifiers(r *virtualkeyboard.ZwpVirtualKeyboardV1, dep
 // admitted forgets old held state even if protection began and ended between
 // this keyboard's requests. Snapshot is coherent; DISPLAY owns admission.
 func (k *virtualKeyboard) admitted() bool {
-	state := ports.SecurityState{}
+	state := domain.SecurityState{}
 	if k.server.security != nil {
 		state = k.server.security.Snapshot()
 	}

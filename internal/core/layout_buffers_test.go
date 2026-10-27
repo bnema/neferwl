@@ -10,7 +10,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/core/motion"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // layoutVariants builds monitors covering the layout paths that use scratch:
@@ -204,7 +204,7 @@ func TestLayoutResultsDoNotAlias(t *testing.T) {
 	})
 }
 
-func cloneScene(s ports.Scene) ports.Scene {
+func cloneScene(s domain.Scene) domain.Scene {
 	s.Windows = slices.Clone(s.Windows)
 	s.Separators = slices.Clone(s.Separators)
 	s.DropHints = slices.Clone(s.DropHints)
@@ -220,7 +220,7 @@ func cloneScene(s ports.Scene) ports.Scene {
 // -race it also catches a later publish writing what a sent scene reads.
 func TestPublishedScenesAreNeverMutated(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		type kept struct{ sent, copy ports.Scene }
+		type kept struct{ sent, copy domain.Scene }
 		var all []kept
 		// fresh is every screen's layout as a fresh Layout() gives it, taken
 		// before a step: the scene it publishes lists the same windows in the
@@ -241,7 +241,7 @@ func TestPublishedScenesAreNeverMutated(t *testing.T) {
 			}
 			return e
 		}
-		check := func(set []ports.Scene, want []expect, frame int) {
+		check := func(set []domain.Scene, want []expect, frame int) {
 			t.Helper()
 			if len(set) != len(want) {
 				t.Fatalf("frame %d: %d scenes, %d screens", frame, len(set), len(want))

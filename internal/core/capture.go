@@ -36,7 +36,7 @@ type captureState struct {
 	// scratch, states and marks are reused by every publish.
 	scratch capView
 	states  []ports.CaptureSessionState
-	marks   []ports.CaptureIndicator
+	marks   []domain.CaptureIndicator
 }
 
 func (s *captureState) session(id uint64) *capSession {
@@ -78,7 +78,7 @@ func (s *capSession) target() capTarget {
 // capExclusion is the one live exclusion.
 type capExclusion struct {
 	session uint64
-	layers  []WindowID // attached layer surfaces, at most ports.MaxExclusionLayers
+	layers  []WindowID // attached layer surfaces, at most domain.MaxExclusionLayers
 	// retained are detached layer surfaces still listed by a screen: they
 	// stay excluded until a LayerChanged stops listing them, so a HUD that
 	// is destroyed is never captured during its last frame.
@@ -211,7 +211,7 @@ func (c *Core) captureExclusionLayer(v ports.CaptureExclusionLayer) {
 	}
 	i := slices.Index(e.layers, v.Layer)
 	switch {
-	case v.Attached && i < 0 && len(e.layers) < ports.MaxExclusionLayers:
+	case v.Attached && i < 0 && len(e.layers) < domain.MaxExclusionLayers:
 		e.layers = append(e.layers, v.Layer)
 		e.keep = nil
 		c.clampCaptureKeyboard()
@@ -397,7 +397,7 @@ func (c *Core) captureEvaluate(ctx context.Context) (*capView, error) {
 	// Exclusion.
 	if e := c.capt.excl; e != nil {
 		ex := c.captureExcluded(e)
-		if len(ex) > ports.MaxCaptureExcluded {
+		if len(ex) > domain.MaxCaptureExcluded {
 			// Fail closed: the session cannot leave them all out.
 			st := ports.CaptureSessionState{ID: e.session, Reason: domain.CaptureReasonTooManyExcluded}
 			if err := c.command(ctx, st); err != nil {
@@ -463,11 +463,11 @@ func sameCaptureState(a, b ports.CaptureSessionState) bool {
 
 // captureSceneFor is the capture state of one screen's scene; nil when
 // there is no session. Shown is the workspace drawn as itself on screen.
-func (c *Core) captureSceneFor(sc *screen, v *capView) *ports.SceneCapture {
+func (c *Core) captureSceneFor(sc *screen, v *capView) *domain.SceneCapture {
 	if v == nil || len(c.capt.sessions) == 0 && v.exclusion == nil {
 		return nil
 	}
-	want := ports.SceneCapture{}
+	want := domain.SceneCapture{}
 	if !sc.mon.previewing() {
 		want.Shown = sc.mon.Current().ID
 	}

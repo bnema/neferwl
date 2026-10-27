@@ -15,7 +15,7 @@ import (
 //
 //   - a session that produced a frame (CaptureFrameTaken with a Session)
 //     marks its target for as long as it lives;
-//   - every captured frame marks its target for ports.CaptureFlash after it
+//   - every captured frame marks its target for domain.CaptureFlash after it
 //     (a flash), so a one-shot screenshot shows for that long and periodic
 //     captures stay visible;
 //   - a target drawn on screen (output, region, workspace frame) gets a
@@ -55,10 +55,10 @@ func (c *Core) captureFrame(v ports.CaptureFrameTaken) bool {
 	return c.capt.flash(t, c.now(), c.opts.Clock) || changed
 }
 
-// flash marks t until ports.CaptureFlash after now and arms the timer. It
+// flash marks t until domain.CaptureFlash after now and arms the timer. It
 // reports whether a new mark shows; extending one does not.
 func (s *captureState) flash(t capTarget, now time.Time, clock ports.Clock) bool {
-	until := now.Add(ports.CaptureFlash)
+	until := now.Add(domain.CaptureFlash)
 	defer s.armTimer(now, clock)
 	for i := range s.flashes {
 		if s.flashes[i].target == t {
@@ -174,7 +174,7 @@ func (c *Core) stopCaptureTimer() { c.capt.stopTimer() }
 // none. The slice is immutable once published and shared with the next scene
 // of the screen while the marks are the same; it is cloned only when they
 // change, so a steady recording allocates nothing.
-func (c *Core) captureIndicators(sc *screen) []ports.CaptureIndicator {
+func (c *Core) captureIndicators(sc *screen) []domain.CaptureIndicator {
 	if c.capt.idle() {
 		sc.capMarks = nil
 		return nil
@@ -186,7 +186,7 @@ func (c *Core) captureIndicators(sc *screen) []ports.CaptureIndicator {
 			return
 		}
 		o := sc.mon.Output()
-		mark := func(m ports.CaptureIndicator) {
+		mark := func(m domain.CaptureIndicator) {
 			if !slices.Contains(out, m) {
 				out = append(out, m)
 			}
@@ -195,14 +195,14 @@ func (c *Core) captureIndicators(sc *screen) []ports.CaptureIndicator {
 		case t.window != 0:
 			// A window is rendered off screen, so its frames need the pill;
 			// while it is on screen it is outlined too.
-			mark(ports.CaptureIndicator{Pill: true, Rect: pillRect(o)})
+			mark(domain.CaptureIndicator{Pill: true, Rect: pillRect(o)})
 			if r.visible {
-				mark(ports.CaptureIndicator{Rect: thickenMark(r.rect, o)})
+				mark(domain.CaptureIndicator{Rect: thickenMark(r.rect, o)})
 			}
 		case r.hidden:
-			mark(ports.CaptureIndicator{Pill: true, Rect: pillRect(o)})
+			mark(domain.CaptureIndicator{Pill: true, Rect: pillRect(o)})
 		default:
-			mark(ports.CaptureIndicator{Rect: thickenMark(r.rect, o)})
+			mark(domain.CaptureIndicator{Rect: thickenMark(r.rect, o)})
 		}
 	}
 	for _, s := range c.capt.sessions {
@@ -223,21 +223,21 @@ func (c *Core) captureIndicators(sc *screen) []ports.CaptureIndicator {
 	return sc.capMarks
 }
 
-// thickenMark inflates a mark to at least ports.MinCaptureMark on each side,
+// thickenMark inflates a mark to at least domain.MinCaptureMark on each side,
 // around the target and clamped to the output (a target one logical pixel
 // wide gets a border with something to draw; the border then covers the
 // target whole). An output smaller than that is marked whole.
 func thickenMark(r, out Rect) Rect {
 	grow := func(pos, size, lo, span int) (int, int) {
-		if size >= ports.MinCaptureMark {
+		if size >= domain.MinCaptureMark {
 			return pos, size
 		}
-		if span <= ports.MinCaptureMark {
+		if span <= domain.MinCaptureMark {
 			return lo, span
 		}
-		pos -= (ports.MinCaptureMark - size) / 2
-		pos = min(max(pos, lo), lo+span-ports.MinCaptureMark)
-		return pos, ports.MinCaptureMark
+		pos -= (domain.MinCaptureMark - size) / 2
+		pos = min(max(pos, lo), lo+span-domain.MinCaptureMark)
+		return pos, domain.MinCaptureMark
 	}
 	r.X, r.W = grow(r.X, r.W, 0, out.W)
 	r.Y, r.H = grow(r.Y, r.H, 0, out.H)
@@ -248,7 +248,7 @@ func thickenMark(r, out Rect) Rect {
 // whole inside it: an output too small for the pill (clamped to the output it
 // would be cut) is filled whole instead, so the mark is never empty.
 func pillRect(o Rect) Rect {
-	r := Rect{X: max(o.W-ports.CapturePillInset-ports.CapturePillSize, 0), Y: ports.CapturePillInset, W: ports.CapturePillSize, H: ports.CapturePillSize}
+	r := Rect{X: max(o.W-domain.CapturePillInset-domain.CapturePillSize, 0), Y: domain.CapturePillInset, W: domain.CapturePillSize, H: domain.CapturePillSize}
 	if in := intersect(r, Rect{W: o.W, H: o.H}); in != r {
 		return Rect{W: o.W, H: o.H}
 	}

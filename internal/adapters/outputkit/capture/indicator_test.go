@@ -14,10 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func indicatorScene() ports.Scene {
+func indicatorScene() domain.Scene {
 	s := excludedTestScene()
 	s.Capture = nil
-	s.CaptureIndicators = []ports.CaptureIndicator{{Rect: domain.Rect{W: 10, H: 10}}, {Pill: true, Rect: domain.Rect{X: 1, Y: 1, W: 3, H: 3}}}
+	s.CaptureIndicators = []domain.CaptureIndicator{{Rect: domain.Rect{W: 10, H: 10}}, {Pill: true, Rect: domain.Rect{X: 1, Y: 1, W: 3, H: 3}}}
 	return s
 }
 
@@ -47,8 +47,8 @@ func TestSubmitPlainRendersWithoutIndicatorFirst(t *testing.T) {
 	frame := portsmocks.NewMockCaptureFrame(t)
 	frame.EXPECT().Done().Return((*os.File)(nil))
 	frame.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.Anything, 8).Return(nil).Once()
-	var rendered []ports.Scene
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+	var rendered []domain.Scene
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s domain.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		rendered = append(rendered, s)
 		return nil, nil
 	}).Once()
@@ -92,7 +92,7 @@ func TestSubmitPlainIdleCostsNothing(t *testing.T) {
 // protected its plain frame is never copied, and the requests fail with the
 // security error, closed, exactly once.
 func TestSubmitPlainRejectsProtectedEpoch(t *testing.T) {
-	locked := ports.SecurityState{Generation: 3, Protected: true}
+	locked := domain.SecurityState{Generation: 3, Protected: true}
 	replies := make(chan ports.CaptureDone, 2)
 	p := NewPipeline(context.Background(), replies)
 	security := portsmocks.NewMockSessionSecurity(t)
@@ -124,8 +124,8 @@ func TestSubmitPlainServesHintLabelScenesWithoutLabels(t *testing.T) {
 	frame := portsmocks.NewMockCaptureFrame(t)
 	frame.EXPECT().Done().Return((*os.File)(nil))
 	frame.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.Anything, 8).Return(nil).Once()
-	var rendered []ports.Scene
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+	var rendered []domain.Scene
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s domain.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		rendered = append(rendered, s)
 		return nil, nil
 	}).Once()
@@ -133,7 +133,7 @@ func TestSubmitPlainServesHintLabelScenesWithoutLabels(t *testing.T) {
 	r.EXPECT().EndCapture(frame).Return().Once()
 	s := excludedTestScene()
 	s.Capture = nil
-	s.Overlays = []ports.Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Text: "f"}}
+	s.Overlays = []domain.Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Text: "f"}}
 	reqs := []ports.CaptureRequest{pipelineRequest(t, 1)}
 	require.False(t, reqs[0].Indicate)
 	took, done, err := p.SubmitPlain(r, s, nil, reqs)
@@ -148,7 +148,7 @@ func TestSubmitPlainServesHintLabelScenesWithoutLabels(t *testing.T) {
 	frame.Calls = nil
 
 	withSession := s
-	withSession.Capture = &ports.SceneCapture{Session: 7}
+	withSession.Capture = &domain.SceneCapture{Session: 7}
 	normal, excluded, _ := p.Split(withSession, []ports.CaptureRequest{{ID: 2, Exclude: true, Session: 7}})
 	require.Empty(t, normal)
 	require.Equal(t, []uint64{2}, ids(excluded), "labels force the Exclude request to the excluded scene")

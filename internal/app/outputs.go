@@ -19,12 +19,12 @@ type outputRun func(ctx context.Context, feed outputFeed) error
 // latest scene for its name turned it off: it starts off until core's first
 // scene (a display reconnecting from deep sleep stays dark).
 type outputFeed struct {
-	Scenes   <-chan ports.Scene
+	Scenes   <-chan domain.Scene
 	Contents <-chan *domain.ContentBatch
 	Returns  ports.ContentReturn
 	Cursor   <-chan ports.CursorChange
 	Captures <-chan ports.CaptureRequest
-	Security <-chan ports.SecurityState
+	Security <-chan domain.SecurityState
 	Instance domain.OutputInstance
 	StartOff bool
 }
@@ -63,7 +63,7 @@ type outputSet struct {
 	quit           chan struct{} // closed by wait: nobody reads stopped any more
 	security       ports.SessionSecurity
 	securityEvents chan<- ports.SecurityBackendEvent
-	state          ports.SecurityState
+	state          domain.SecurityState
 	nextInstance   domain.OutputInstance
 	startErr       error
 	barriers       chan ports.SecurityBackendEvent
@@ -80,7 +80,7 @@ type outputStopped struct {
 // what the backend loop owns.
 type runningOutput struct {
 	*mailbox
-	security       chan ports.SecurityState
+	security       chan domain.SecurityState
 	securityEvents chan ports.SecurityBackendEvent
 	err            error
 	// feed is the content feed AttachOutput returned (nil: none), the handle
@@ -114,7 +114,7 @@ func (s *outputSet) start(ctx context.Context, name string, run outputRun, wire 
 		s.setSecurity(s.security.Snapshot())
 	}
 	octx, stop := context.WithCancel(ctx)
-	r := &runningOutput{mailbox: newMailbox(instance, octx, stop, make(chan struct{})), security: make(chan ports.SecurityState, 1)}
+	r := &runningOutput{mailbox: newMailbox(instance, octx, stop, make(chan struct{})), security: make(chan domain.SecurityState, 1)}
 	r.security <- s.state // available before any content replay
 	r.securityEvents = s.forwardSecurity()
 	for _, destination := range wire {
@@ -211,7 +211,7 @@ func (s *outputSet) forwardSecurity() chan ports.SecurityBackendEvent {
 	return incoming
 }
 
-func (s *outputSet) setSecurity(state ports.SecurityState) bool {
+func (s *outputSet) setSecurity(state domain.SecurityState) bool {
 	if s.security != nil {
 		if newest := s.security.Snapshot(); newest.Generation > state.Generation {
 			state = newest

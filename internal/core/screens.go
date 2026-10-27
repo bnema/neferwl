@@ -23,17 +23,17 @@ type screen struct {
 	x, y      int  // logical origin in the global layout
 	off       bool // turned off by a client (output power management)
 	layers    []ports.LayerSurface
-	placed    []ports.SceneLayer
+	placed    []domain.SceneLayer
 	// capture holds the attached layers of the capture exclusion: shown over
 	// a fullscreen window (capture.go).
 	capture map[WindowID]bool
 	// capScene and capMarks are what the last scene carried (Capture and
 	// CaptureIndicators): immutable, shared by the next one while unchanged.
-	capScene *ports.SceneCapture
-	capMarks []ports.CaptureIndicator
+	capScene *domain.SceneCapture
+	capMarks []domain.CaptureIndicator
 	// last is the scene published for this screen: an identical next one
 	// keeps its Seq (Scene.SameAs). Zero after a protected publish.
-	last ports.Scene
+	last domain.Scene
 	// settledLayout is the monitor's layout as of the last publish: what
 	// configures are sized from. shown is the same with the rect motions applied: what is
 	// drawn and hit-tested. They are the same slice while no rect motion

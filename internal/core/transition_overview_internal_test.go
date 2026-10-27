@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // overviewRig is indicatorCore with animations on, windows 1 and 2 in two
@@ -38,7 +37,7 @@ func toggleOverview(c *Core, sc *screen, now time.Time) {
 }
 
 // frame moves the clock by d, steps the springs and returns the scene.
-func frame(t *testing.T, c *Core, ic *indicatorClock, d time.Duration) ports.Scene {
+func frame(t *testing.T, c *Core, ic *indicatorClock, d time.Duration) domain.Scene {
 	t.Helper()
 	ic.now = ic.now.Add(d)
 	c.animate(ic.now, nil)
@@ -47,7 +46,7 @@ func frame(t *testing.T, c *Core, ic *indicatorClock, d time.Duration) ports.Sce
 
 // contentScale is the scale the renderer draws the window's content at:
 // Zoom, else Preview, else 1 (vulkan walk).
-func contentScale(w ports.SceneWindow) float64 {
+func contentScale(w domain.SceneWindow) float64 {
 	if w.Zoom > 0 {
 		return w.Zoom
 	}
@@ -59,7 +58,7 @@ func contentScale(w ports.SceneWindow) float64 {
 
 // checkContent fails unless the content scale the renderer will use draws
 // the content at the frame's size (within rounding) and never magnifies it.
-func checkContent(t *testing.T, w ports.SceneWindow, full domain.Rect, when string) {
+func checkContent(t *testing.T, w domain.SceneWindow, full domain.Rect, when string) {
 	t.Helper()
 	k := contentScale(w)
 	if k <= 0 || k > 1 {
@@ -212,7 +211,7 @@ func TestOverviewNavigationAnimates(t *testing.T) {
 		c, ic, sc := overviewRig(t)
 		toggleOverview(c, sc, ic.now)
 		s := frame(t, c, ic, 5*time.Second)
-		before := map[WindowID]ports.SceneWindow{}
+		before := map[WindowID]domain.SceneWindow{}
 		for _, w := range s.Windows {
 			before[w.ID] = w
 		}

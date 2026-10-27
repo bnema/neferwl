@@ -7,10 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	client "github.com/bnema/go-wayland-bindings/client/wlroutputmanagement"
+
 	wlr "github.com/bnema/go-wayland-bindings/server/wlroutputmanagement"
 	"github.com/bnema/neferwl/internal/adapters/config"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 )
 
@@ -21,7 +23,7 @@ import (
 func TestHeadlessOutputManagementEndToEnd(t *testing.T) {
 	runtime := t.TempDir()
 	t.Setenv("XDG_RUNTIME_DIR", runtime)
-	scenes := make(chan []ports.Scene, 64)
+	scenes := make(chan []domain.Scene, 64)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
@@ -47,7 +49,7 @@ func TestHeadlessOutputManagementEndToEnd(t *testing.T) {
 		}
 	})
 	// The first scene means the Wayland socket exists.
-	scene := func(want func(ports.Scene) bool) {
+	scene := func(want func(domain.Scene) bool) {
 		t.Helper()
 		deadline := time.After(5 * time.Second)
 		for {
@@ -67,7 +69,7 @@ func TestHeadlessOutputManagementEndToEnd(t *testing.T) {
 			}
 		}
 	}
-	scene(func(s ports.Scene) bool { return s.Scale == 1 })
+	scene(func(s domain.Scene) bool { return s.Scale == 1 })
 	sockets, _ := filepath.Glob(filepath.Join(runtime, "wayland-*[0-9]"))
 	if len(sockets) != 1 {
 		t.Fatalf("sockets: %v", sockets)
@@ -156,7 +158,7 @@ func TestHeadlessOutputManagementEndToEnd(t *testing.T) {
 	if got != int(wlr.ZwlrOutputConfigurationV1EventSucceeded) {
 		t.Fatalf("scale 2: event %d", got)
 	}
-	scene(func(s ports.Scene) bool { return s.Scale == 2 })
+	scene(func(s domain.Scene) bool { return s.Scale == 2 })
 	roundtrip(func() bool { return serial != initialSerial })
 	got = configure(func(cfg *client.OutputConfiguration) *client.OutputConfigurationHead {
 		if err := cfg.DisableHead(head); err != nil {

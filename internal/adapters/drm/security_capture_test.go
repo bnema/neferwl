@@ -23,7 +23,7 @@ func TestSecurityEngageDuringExcludeRenderRejectsCaptureTransfer(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
 	f, _ := protectionFence(t, false)
 	r.EXPECT().UseTarget(0).Return().Once()
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		state.Store(3)
 		return f, nil
 	}).Once()
@@ -71,8 +71,8 @@ func TestSecurityHiddenAdmissionRechecksBeforeNativeStart(t *testing.T) {
 	o, _, _ := testOutput(t)
 	o.cursor = nil
 	security := portsmocks.NewMockSessionSecurity(t)
-	security.EXPECT().Snapshot().Return(ports.SecurityState{}).Once()
-	security.EXPECT().Snapshot().Return(ports.SecurityState{Generation: 1, Protected: true})
+	security.EXPECT().Snapshot().Return(domain.SecurityState{}).Once()
+	security.EXPECT().Snapshot().Return(domain.SecurityState{Generation: 1, Protected: true})
 	o.Security = security
 	r := portsmocks.NewMockRenderer(t)
 	child := portsmocks.NewMockRenderer(t)
@@ -83,7 +83,7 @@ func TestSecurityHiddenAdmissionRechecksBeforeNativeStart(t *testing.T) {
 		return child, nil
 	})
 	s := drmSessionScene()
-	s.CaptureScene = &ports.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1}
+	s.CaptureScene = &domain.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1}
 	requests := []ports.CaptureRequest{sessionRequest(t, 1, true)}
 	file := requests[0].Dst.File
 	_, err := o.submitFrame(context.Background(), r, s, nil, nil, requests, pipeline)

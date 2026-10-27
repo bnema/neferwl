@@ -10,7 +10,6 @@ import (
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
 
@@ -77,7 +76,7 @@ func TestExtendedLinearClient(t *testing.T) {
 			defer f.Close()
 			buf := &domain.DMABuf{ID: 164, Width: 64, Height: 16, Format: format.Format, Planes: []domain.DMABufPlane{{File: f, Stride: 512}}}
 			c := domain.SurfaceContent{ID: 1, Width: 64, Height: 16, Opaque: true, DMABuf: buf, Color: domain.SurfaceColor{TF: domain.ColorTFExtendedLinear, Primaries: domain.ColorPrimariesSRGB}}
-			scene := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
+			scene := domain.Scene{Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
 			if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: c}); err != nil {
 				t.Fatal(err)
 			}

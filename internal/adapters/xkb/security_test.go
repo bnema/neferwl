@@ -7,7 +7,7 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-func secureKey(t *testing.T, k *Keymap, code uint32, down bool, state ports.SecurityState) ports.KeyEvent {
+func secureKey(t *testing.T, k *Keymap, code uint32, down bool, state domain.SecurityState) ports.KeyEvent {
 	t.Helper()
 	ev, deliver, err := k.KeySecure(code, down, 123, state)
 	if err != nil || !deliver {
@@ -16,7 +16,7 @@ func secureKey(t *testing.T, k *Keymap, code uint32, down bool, state ports.Secu
 	return ev
 }
 
-func suppressedKey(t *testing.T, k *Keymap, code uint32, down bool, state ports.SecurityState) {
+func suppressedKey(t *testing.T, k *Keymap, code uint32, down bool, state domain.SecurityState) {
 	t.Helper()
 	ev, deliver, err := k.KeySecure(code, down, 123, state)
 	if err != nil || deliver || ev != (ports.KeyEvent{}) {
@@ -26,9 +26,9 @@ func suppressedKey(t *testing.T, k *Keymap, code uint32, down bool, state ports.
 
 func TestSecurityEpochQuarantinesHeldKeysAcrossAcquireAndRelease(t *testing.T) {
 	k := newTest(t, "us")
-	initial := ports.SecurityState{}
-	locked := ports.SecurityState{Generation: 1, Protected: true}
-	unlocked := ports.SecurityState{Generation: 2}
+	initial := domain.SecurityState{}
+	locked := domain.SecurityState{Generation: 1, Protected: true}
+	unlocked := domain.SecurityState{Generation: 2}
 	for _, code := range []uint32{125, 42, 29, 56, 30} {
 		secureKey(t, k, code, true, initial)
 	}
@@ -55,8 +55,8 @@ func TestSecurityEpochQuarantinesHeldKeysAcrossAcquireAndRelease(t *testing.T) {
 
 func TestSecurityEpochResetsLocksButFreshCapsAndNumLockWork(t *testing.T) {
 	k := newTest(t, "us")
-	initial := ports.SecurityState{}
-	locked := ports.SecurityState{Generation: 1, Protected: true}
+	initial := domain.SecurityState{}
+	locked := domain.SecurityState{Generation: 1, Protected: true}
 	for _, code := range []uint32{58, 69} {
 		secureKey(t, k, code, true, initial)
 		secureKey(t, k, code, false, initial)
@@ -88,7 +88,7 @@ func TestSecurityEpochUsesActualRemappedModifiers(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer k.Close()
-	initial, locked := ports.SecurityState{}, ports.SecurityState{Generation: 1, Protected: true}
+	initial, locked := domain.SecurityState{}, domain.SecurityState{Generation: 1, Protected: true}
 	secureKey(t, k, 58, true, initial) // physical Caps is Control in this map
 	if ev := secureKey(t, k, 16, true, locked); ev.Mods != 0 || ev.State != (ports.ModState{}) {
 		t.Fatalf("remapped inherited Control leaked: %+v", ev)
@@ -111,7 +111,7 @@ func TestSecurityEpochUsesActualRemappedModifiers(t *testing.T) {
 func TestSecurityEpochAltGrAndAltReleaseOrder(t *testing.T) {
 	for _, releases := range [][]uint32{{100, 56}, {56, 100}} {
 		k := newTest(t, "fr")
-		locked := ports.SecurityState{Generation: 1, Protected: true}
+		locked := domain.SecurityState{Generation: 1, Protected: true}
 		secureKey(t, k, 100, true, locked) // ISO_Level3_Shift, not guessed Alt
 		secureKey(t, k, 56, true, locked)
 		if ev := secureKey(t, k, 11, true, locked); ev.Keysym != "at" || ev.Mods&domain.ModAlt == 0 || ev.State.Depressed == 0 {
@@ -129,7 +129,7 @@ func TestSecurityEpochAltGrAndAltReleaseOrder(t *testing.T) {
 
 func TestKeymapReplacementRetainsQuarantine(t *testing.T) {
 	previous := newTest(t, "us")
-	locked := ports.SecurityState{Generation: 1, Protected: true}
+	locked := domain.SecurityState{Generation: 1, Protected: true}
 	secureKey(t, previous, 125, true, locked)
 	next := newTest(t, "fr")
 	next.QuarantineFrom(previous)
@@ -146,8 +146,8 @@ func TestKeymapReplacementRetainsQuarantine(t *testing.T) {
 
 func TestSecurityStateChangeResetsAltGrAndAltWithoutMaskInference(t *testing.T) {
 	k := newTest(t, "fr")
-	initial := ports.SecurityState{}
-	locked := ports.SecurityState{Generation: 1, Protected: true}
+	initial := domain.SecurityState{}
+	locked := domain.SecurityState{Generation: 1, Protected: true}
 	secureKey(t, k, 100, true, initial)
 	secureKey(t, k, 56, true, initial)
 	if ev := secureKey(t, k, 11, true, locked); ev.Keysym != "agrave" || ev.Mods != 0 || ev.State != (ports.ModState{}) {

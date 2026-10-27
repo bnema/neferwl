@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // A window under a presentation-only rect transition shows a rect that differs from its content
@@ -20,7 +19,7 @@ func TestSceneContentVsWindowRect(t *testing.T) {
 			ID: 1, Width: 1, Height: 1, LogicalW: lw, LogicalH: lh, Geometry: geo,
 			Solid: &domain.SolidColor{R: 1, A: 1}, Opaque: true,
 		}
-		s := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: rect}}}
+		s := domain.Scene{Windows: []domain.SceneWindow{{ID: 1, Rect: rect}}}
 		contents := map[domain.WindowID]domain.SurfaceContent{1: c}
 		ds := r.draws(s, contents, newDamage(&target{}, s, image.Rect(0, 0, 80, 60)))
 		if len(ds) < 2 {

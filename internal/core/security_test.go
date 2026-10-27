@@ -16,15 +16,15 @@ import (
 func TestSecurityOwnerAdversarialQueues(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var epoch atomic.Value
-		epoch.Store(ports.SecurityState{})
+		epoch.Store(domain.SecurityState{})
 		gate := portsmocks.NewMockSessionSecurity(t)
-		gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return epoch.Load().(ports.SecurityState) })
+		gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return epoch.Load().(domain.SecurityState) })
 		client := make(chan ports.ClientEvent, 32)
 		input := make(chan ports.InputEvent, 32)
 		output := make(chan ports.OutputEvent, 8)
 		reload := make(chan ports.ConfigChanged, 8)
 		commands := make(chan ports.ClientCommand, 256)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		spawn := make(chan ports.SpawnRequest, 8)
 		constraints := make(chan ports.PointerConstraint, 1)
 		cfg := scrollDefaults()
@@ -50,20 +50,20 @@ func TestSecurityOwnerAdversarialQueues(t *testing.T) {
 		scene(t, scenes)
 		// A pre-lock key is queued BEFORE any SessionLockChanged event. The gate
 		// must block it regardless of which channel select chooses next.
-		locked := ports.SecurityState{Generation: 1, Protected: true}
+		locked := domain.SecurityState{Generation: 1, Protected: true}
 		epoch.Store(locked)
-		input <- ports.SecurityInput{State: ports.SecurityState{}, Event: ports.KeyEvent{Keysym: "q", Mods: domain.ModSuper, Pressed: true}}
-		s := sceneMatch(t, scenes, func(s ports.Scene) bool { return s.Security == locked })
+		input <- ports.SecurityInput{State: domain.SecurityState{}, Event: ports.KeyEvent{Keysym: "q", Mods: domain.ModSuper, Pressed: true}}
+		s := sceneMatch(t, scenes, func(s domain.Scene) bool { return s.Security == locked })
 		assertProtected(t, s)
 		if len(s.Windows) != 0 {
 			t.Fatal(s)
 		}
 		receive(t, constraints)
 		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "B", Width: 200, Height: 100}}
-		sceneMatch(t, scenes, func(s ports.Scene) bool { return s.Security == locked })
+		sceneMatch(t, scenes, func(s domain.Scene) bool { return s.Security == locked })
 		surfaces := []ports.LockSurfacePlacement{{ID: 10, Output: "A", Width: 300, Height: 200}, {ID: 20, Output: "B", Width: 200, Height: 100}}
 		client <- ports.SessionLockChanged{State: locked, Surfaces: surfaces}
-		s = sceneMatch(t, scenes, func(s ports.Scene) bool { return len(s.Windows) == 1 && s.Windows[0].ID == 10 })
+		s = sceneMatch(t, scenes, func(s domain.Scene) bool { return len(s.Windows) == 1 && s.Windows[0].ID == 10 })
 		assertProtected(t, s)
 		// Raw input is refused even in the initial unlocked epoch when wired;
 		// stale, raw, bind and swipe events must not activate desktop behavior.
@@ -78,9 +78,9 @@ func TestSecurityOwnerAdversarialQueues(t *testing.T) {
 		expectKey(t, commands, locked, 20, "clicked")
 		// Stale surfaces cannot replace the current lock roles. Invalid logical
 		// dimensions and unknown outputs never become drawn/input targets.
-		client <- ports.SessionLockChanged{State: ports.SecurityState{}, Surfaces: []ports.LockSurfacePlacement{{ID: 1, Output: "A", Width: 300, Height: 200}}}
+		client <- ports.SessionLockChanged{State: domain.SecurityState{}, Surfaces: []ports.LockSurfacePlacement{{ID: 1, Output: "A", Width: 300, Height: 200}}}
 		client <- ports.SessionLockChanged{State: locked, Surfaces: append(surfaces, ports.LockSurfacePlacement{ID: 99, Output: "unknown", Width: 300, Height: 200})}
-		s = sceneMatch(t, scenes, func(s ports.Scene) bool { return len(s.Windows) == 1 && s.Windows[0].ID == 10 })
+		s = sceneMatch(t, scenes, func(s domain.Scene) bool { return len(s.Windows) == 1 && s.Windows[0].ID == 10 })
 		assertProtected(t, s)
 		cfg.Terminal.AutoOpen = "always"
 		cfg.Startup = [][]string{{"must-not-start"}}
@@ -101,13 +101,13 @@ func TestSecurityOwnerAdversarialQueues(t *testing.T) {
 		}
 		// Unlock discards all presses/grabs, including a password press with no
 		// corresponding release until AFTER the transition.
-		unlocked := ports.SecurityState{Generation: 2}
+		unlocked := domain.SecurityState{Generation: 2}
 		epoch.Store(unlocked)
 		input <- ports.SecurityInput{State: locked, Event: ports.KeyEvent{Keysym: "stale-password", Pressed: true}}
 		input <- ports.SecurityInput{State: unlocked, Event: ports.KeyEvent{Keysym: "password", Keycode: 30, Pressed: false}}
 		input <- ports.SecurityInput{State: unlocked, Event: ports.KeyEvent{Keysym: "desktop", Pressed: true}}
 		expectKey(t, commands, unlocked, 1, "desktop")
-		s = sceneMatch(t, scenes, func(s ports.Scene) bool { return s.Security == unlocked })
+		s = sceneMatch(t, scenes, func(s domain.Scene) bool { return s.Security == unlocked })
 		if len(s.Windows) == 0 || s.Windows[0].ID != 1 {
 			t.Fatal(s)
 		}
@@ -115,7 +115,7 @@ func TestSecurityOwnerAdversarialQueues(t *testing.T) {
 	})
 }
 
-func assertProtected(t *testing.T, s ports.Scene) {
+func assertProtected(t *testing.T, s domain.Scene) {
 	t.Helper()
 	if !s.Security.Protected || s.Background != "#000000" || s.Capture != nil || s.CaptureScene != nil || len(s.Layers) != 0 || len(s.Separators) != 0 || s.Border.Width != 0 || s.Dim != 0 || s.WorkspaceClip != (domain.Rect{}) {
 		t.Fatalf("unsafe scene: %+v", s)
@@ -127,7 +127,7 @@ func assertProtected(t *testing.T, s ports.Scene) {
 	}
 }
 
-func expectKey(t *testing.T, ch <-chan ports.ClientCommand, state ports.SecurityState, id domain.WindowID, name string) {
+func expectKey(t *testing.T, ch <-chan ports.ClientCommand, state domain.SecurityState, id domain.WindowID, name string) {
 	t.Helper()
 	for {
 		wrapped, ok := receive(t, ch).(ports.SecurityCommand)

@@ -74,7 +74,7 @@ func TestLayerChangedChannels(t *testing.T) {
 		client := make(chan ports.ClientEvent)
 		output := make(chan ports.OutputEvent)
 		commands := make(chan ports.ClientCommand, 16)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		cfg := ports.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
@@ -86,7 +86,7 @@ func TestLayerChangedChannels(t *testing.T) {
 		defer cancel()
 		done := make(chan struct{})
 		go func() { defer close(done); _ = c.Run(ctx) }()
-		recv := func() ports.Scene {
+		recv := func() domain.Scene {
 			t.Helper()
 			synctest.Wait()
 			select {
@@ -94,7 +94,7 @@ func TestLayerChangedChannels(t *testing.T) {
 				return s[0]
 			default:
 				t.Fatal("scene timeout")
-				return ports.Scene{}
+				return domain.Scene{}
 			}
 		}
 		output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 1920, Height: 1080}}
@@ -144,7 +144,7 @@ func TestScrolledOffFullscreenShowsLayers(t *testing.T) {
 		m.SetFullscreen(1, true)
 		m.AddWindow(2)
 		sc := &screen{mon: m}
-		bar := ports.SceneLayer{ID: 6, Layer: domain.LayerTop}
+		bar := domain.SceneLayer{ID: 6, Layer: domain.LayerTop}
 		if shown(sc, bar) {
 			t.Fatal("bar shown over fullscreen")
 		}
@@ -164,7 +164,7 @@ func TestOverviewOverFullscreenShowsLayers(t *testing.T) {
 		m.AddWindow(1)
 		m.SetFullscreen(1, true)
 		sc := &screen{mon: m}
-		bar := ports.SceneLayer{ID: 6, Layer: domain.LayerTop}
+		bar := domain.SceneLayer{ID: 6, Layer: domain.LayerTop}
 		m.ToggleOverview()
 		if !shown(sc, bar) {
 			t.Fatal("bar hidden in the overview")
@@ -185,7 +185,7 @@ func TestFullscreenSceneLayers(t *testing.T) {
 		client := make(chan ports.ClientEvent)
 		output := make(chan ports.OutputEvent)
 		commands := make(chan ports.ClientCommand, 64)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		cfg := ports.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
@@ -201,7 +201,7 @@ func TestFullscreenSceneLayers(t *testing.T) {
 			for range commands {
 			}
 		}()
-		recv := func() ports.Scene {
+		recv := func() domain.Scene {
 			t.Helper()
 			synctest.Wait()
 			select {
@@ -209,10 +209,10 @@ func TestFullscreenSceneLayers(t *testing.T) {
 				return s[0]
 			default:
 				t.Fatal("scene timeout")
-				return ports.Scene{}
+				return domain.Scene{}
 			}
 		}
-		layers := func(s ports.Scene) []domain.WindowID {
+		layers := func(s domain.Scene) []domain.WindowID {
 			var ids []domain.WindowID
 			for _, l := range s.Layers {
 				ids = append(ids, l.ID)

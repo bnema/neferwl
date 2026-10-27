@@ -6,7 +6,6 @@ package drm
 
 import (
 	"github.com/bnema/neferwl/internal/domain"
-
 	mock "github.com/stretchr/testify/mock"
 )
 

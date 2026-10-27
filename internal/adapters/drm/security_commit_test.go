@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestSecurityFinalCommitSnapshotRejectsEngage(t *testing.T) {
@@ -15,7 +15,7 @@ func TestSecurityFinalCommitSnapshotRejectsEngage(t *testing.T) {
 	// The frame was admitted in unlocked generation zero; before the final
 	// commit boundary a lock engages. No client fence is handed to KMS.
 	state.Store(3)
-	err := o.commitWith(70, nil, true, true, pendingFrame{security: ports.SecurityState{}}, overlayWin{})
+	err := o.commitWith(70, nil, true, true, pendingFrame{security: domain.SecurityState{}}, overlayWin{})
 	if !errors.Is(err, errSecurityScene) || len(*commits) != 0 || !o.protected {
 		t.Fatalf("obsolete commit admitted: %v commits=%d", err, len(*commits))
 	}

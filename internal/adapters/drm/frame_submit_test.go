@@ -9,7 +9,6 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
@@ -66,7 +65,7 @@ func TestSubmitFrameOverlayRefusedComposesAll(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().UseTarget(0).Return().Once()
 	var drawn []int
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s domain.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		drawn = append(drawn, len(s.Windows))
 		return nil, nil
 	}).Twice()
@@ -109,7 +108,7 @@ func TestSubmitFrameRenderError(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().UseTarget(0).Return().Once()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, boom).Once()
-	_, err := o.submitFrame(context.Background(), r, ports.Scene{Seq: 1}, nil, map[domain.WindowID]uint64{}, nil, nil)
+	_, err := o.submitFrame(context.Background(), r, domain.Scene{Seq: 1}, nil, map[domain.WindowID]uint64{}, nil, nil)
 	var fatal renderError
 	if !errors.As(err, &fatal) || !errors.Is(err, boom) {
 		t.Fatalf("err %v", err)
@@ -119,8 +118,8 @@ func TestSubmitFrameRenderError(t *testing.T) {
 	}
 }
 
-func fullscreenScene() (ports.Scene, map[domain.WindowID]domain.SurfaceContent) {
-	s := ports.Scene{Seq: 1, Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{
+func fullscreenScene() (domain.Scene, map[domain.WindowID]domain.SurfaceContent) {
+	s := domain.Scene{Seq: 1, Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []domain.SceneWindow{
 		{ID: 1, Rect: domain.Rect{W: 200, H: 100}, Fullscreen: true},
 	}}
 	return s, map[domain.WindowID]domain.SurfaceContent{

@@ -31,14 +31,14 @@ func TestInputOutputSwitchBackpressureKeepsAdmittedEpoch(t *testing.T) {
 		c, _, _ := hiddenCaptureCommands(t)
 		c.addScreen(ports.OutputInfo{Name: "B", Width: 200, Height: 100})
 		var state atomic.Value
-		state.Store(ports.SecurityState{})
+		state.Store(domain.SecurityState{})
 		gate := portsmocks.NewMockSessionSecurity(t)
 		var calls atomic.Int32
-		gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState {
-			v := state.Load().(ports.SecurityState)
+		gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState {
+			v := state.Load().(domain.SecurityState)
 			if calls.Add(1) == 2 {
 				// The epoch changes right after the check that admits the command.
-				state.Store(ports.SecurityState{Generation: 2})
+				state.Store(domain.SecurityState{Generation: 2})
 			}
 			return v
 		})
@@ -48,13 +48,13 @@ func TestInputOutputSwitchBackpressureKeepsAdmittedEpoch(t *testing.T) {
 		c.ch.Commands = commands
 		err := c.handleInput(context.Background(), ports.PointerMotion{X: 350, Y: 30})
 		cmd := reviewReceive(t, commands).(ports.SecurityCommand)
-		if cmd.State != (ports.SecurityState{}) {
+		if cmd.State != (domain.SecurityState{}) {
 			t.Fatalf("old handler adopted new epoch: %+v", cmd)
 		}
 		if !errors.Is(err, errSecurityChanged) {
 			t.Fatalf("handler not aborted: %v", err)
 		}
-		if c.security != (ports.SecurityState{}) {
+		if c.security != (domain.SecurityState{}) {
 			t.Fatal("publish adopted generation mid-input")
 		}
 		select {
@@ -69,7 +69,7 @@ func TestInputOutputSwitchBackpressureKeepsAdmittedEpoch(t *testing.T) {
 func TestExactEpochAdmissionPreservesProducerModifierState(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := hiddenCaptureCommands(t)
-		state := ports.SecurityState{Generation: 2}
+		state := domain.SecurityState{Generation: 2}
 		gate := portsmocks.NewMockSessionSecurity(t)
 		gate.EXPECT().Snapshot().Return(state)
 		c.opts.Security = gate
@@ -79,7 +79,7 @@ func TestExactEpochAdmissionPreservesProducerModifierState(t *testing.T) {
 		if !ok || ev.(ports.KeyEvent) != key {
 			t.Fatalf("producer state reinterpreted: %+v", ev)
 		}
-		if _, ok := c.admitInput(ports.SecurityInput{State: ports.SecurityState{Generation: 1}, Event: key}); ok {
+		if _, ok := c.admitInput(ports.SecurityInput{State: domain.SecurityState{Generation: 1}, Event: key}); ok {
 			t.Fatal("stale producer epoch admitted")
 		}
 
@@ -93,14 +93,14 @@ func TestEpochChangeSuppressesSpawnAndDefersSlots(t *testing.T) {
 		c.slots[key] = &slotState{argv: []string{"terminal"}}
 		c.toSpawn = []slotKey{key}
 		var state atomic.Value
-		state.Store(ports.SecurityState{})
+		state.Store(domain.SecurityState{})
 		gate := portsmocks.NewMockSessionSecurity(t)
 		var calls atomic.Int32
-		gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState {
-			v := state.Load().(ports.SecurityState)
+		gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState {
+			v := state.Load().(domain.SecurityState)
 			if calls.Add(1) == 2 {
 				// The gate locks right after the check that admits the slot.
-				state.Store(ports.SecurityState{Generation: 1, Protected: true})
+				state.Store(domain.SecurityState{Generation: 1, Protected: true})
 			}
 			return v
 		})
@@ -118,7 +118,7 @@ func TestEpochChangeSuppressesSpawnAndDefersSlots(t *testing.T) {
 		}
 		// Retry after unlock, with a real buffered command sink.
 		c.ch.Commands = make(chan ports.ClientCommand, 8)
-		state.Store(ports.SecurityState{Generation: 2})
+		state.Store(domain.SecurityState{Generation: 2})
 		c.syncSecurity()
 		if err := c.spawnSlots(context.Background(), false); err != nil {
 			t.Fatal(err)
@@ -139,14 +139,14 @@ func TestTerminalEpochChangeSuppressesSpawnAndRestoresRetry(t *testing.T) {
 		c.cfg.Terminal.AutoOpen = "always"
 		c.cfg.Terminal.Command = []string{"terminal"}
 		var state atomic.Value
-		state.Store(ports.SecurityState{})
+		state.Store(domain.SecurityState{})
 		gate := portsmocks.NewMockSessionSecurity(t)
 		var calls atomic.Int32
-		gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState {
-			v := state.Load().(ports.SecurityState)
+		gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState {
+			v := state.Load().(domain.SecurityState)
 			if calls.Add(1) == 1 {
 				// The gate locks right after the check that admits the spawn.
-				state.Store(ports.SecurityState{Generation: 1, Protected: true})
+				state.Store(domain.SecurityState{Generation: 1, Protected: true})
 			}
 			return v
 		})
@@ -175,7 +175,7 @@ func TestStartupWorkspaceSnapshotHasNoOutputBeforeOutputAdded(t *testing.T) {
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
 		workspaces := make(chan ports.Workspaces, 1)
-		c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Workspaces: workspaces}, Options{})
+		c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Workspaces: workspaces}, Options{})
 		if err != nil {
 			t.Fatal(err)
 		}

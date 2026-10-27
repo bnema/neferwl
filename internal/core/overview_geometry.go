@@ -4,17 +4,17 @@ import (
 	"slices"
 
 	"github.com/bnema/neferwl/internal/core/layout"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // overviewDivider is the inactive rule across axis at pos, inset from the
 // edges of u.
-func overviewDivider(axis layout.Axis, u Rect, pos int) ports.Separator {
+func overviewDivider(axis layout.Axis, u Rect, pos int) domain.Separator {
 	if axis == layout.Horizontal {
-		return ports.Separator{Rect: Rect{X: pos, Y: u.Y + u.H*4/100, W: 1, H: u.H * 92 / 100}}
+		return domain.Separator{Rect: Rect{X: pos, Y: u.Y + u.H*4/100, W: 1, H: u.H * 92 / 100}}
 	}
 	margin := u.W * 4 / 100
-	return ports.Separator{Rect: Rect{X: u.X + margin, Y: pos, W: u.W - 2*margin, H: 1}}
+	return domain.Separator{Rect: Rect{X: u.X + margin, Y: pos, W: u.W - 2*margin, H: 1}}
 }
 
 // overviewOutline frames the selected preview with active lines of width
@@ -26,7 +26,7 @@ func overviewDivider(axis layout.Axis, u Rect, pos int) ports.Separator {
 // past its length) so the scene's separators are allocated once.
 // overviewOutline uses a rounded ring only for uncut frames. Stash cuts retain
 // the square strips so the frame never draws across the cards.
-func overviewOutline(dst []ports.Separator, layout []Placement, b, gap, radius int) ([]ports.Separator, *ports.SelectionOutline) {
+func overviewOutline(dst []domain.Separator, layout []Placement, b, gap, radius int) ([]domain.Separator, *domain.SelectionOutline) {
 	sel := -1
 	for i, p := range layout {
 		if p.Preview > 0 && p.Focused && !p.Hidden && (sel < 0 || p.Card && !layout[sel].Card) {
@@ -53,12 +53,12 @@ func overviewOutline(dst []ports.Separator, layout []Placement, b, gap, radius i
 		}
 	}
 	if radius := windowRadius(layout[sel], gap, radius); !cut && radius > 0 {
-		return dst, &ports.SelectionOutline{Rect: Rect{X: r.X - b, Y: r.Y - b, W: r.W + 2*b, H: r.H + 2*b}, Width: b, Radius: radius + b, Active: true}
+		return dst, &domain.SelectionOutline{Rect: Rect{X: r.X - b, Y: r.Y - b, W: r.W + 2*b, H: r.H + 2*b}, Width: b, Radius: radius + b, Active: true}
 	}
 	dst = slices.Grow(dst, outlineLines)
 	if !cut {
 		for _, e := range edges {
-			dst = append(dst, ports.Separator{Rect: e, Active: true})
+			dst = append(dst, domain.Separator{Rect: e, Active: true})
 		}
 		return dst, nil
 	}
@@ -73,7 +73,7 @@ func overviewOutline(dst []ports.Separator, layout []Placement, b, gap, radius i
 	}
 	for _, e := range edges {
 		for _, piece := range subtractRects(pieceBuf[:0], e, cards) {
-			dst = append(dst, ports.Separator{Rect: piece, Active: true})
+			dst = append(dst, domain.Separator{Rect: piece, Active: true})
 		}
 	}
 	return dst, nil

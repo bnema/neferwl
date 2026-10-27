@@ -200,9 +200,9 @@ func sendKeys(t *testing.T, c *Core, keys ...ports.KeyEvent) {
 }
 
 // lastScene returns the latest published scene.
-func lastScene(t *testing.T, c *Core) ports.Scene {
+func lastScene(t *testing.T, c *Core) domain.Scene {
 	t.Helper()
-	var s []ports.Scene
+	var s []domain.Scene
 	for len(c.ch.Scenes) > 0 {
 		s = <-c.ch.Scenes
 	}
@@ -228,8 +228,8 @@ func forwarded(ch <-chan ports.ClientCommand) []ports.ForwardKey {
 	return out
 }
 
-func scenePreviews(s ports.Scene) []ports.SceneWindow {
-	var out []ports.SceneWindow
+func scenePreviews(s domain.Scene) []domain.SceneWindow {
+	var out []domain.SceneWindow
 	for _, w := range s.Windows {
 		if w.Preview > 0 {
 			out = append(out, w)
@@ -567,13 +567,13 @@ func TestSwitchSwipeBeginCancels(t *testing.T) {
 func TestSwitchSecurityChangeCancels(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := switcherCore(t, 3)
-		state := ports.SecurityState{Generation: 1}
+		state := domain.SecurityState{Generation: 1}
 		gate := portsmocks.NewMockSessionSecurity(t)
-		gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return state }).Maybe()
+		gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return state }).Maybe()
 		c.opts.Security = gate
 		start := switcherFocus(c)
 		sendKeys(t, c, superKey(domain.ModSuper, true), tab(domain.ModSuper, true))
-		state = ports.SecurityState{Generation: 2}
+		state = domain.SecurityState{Generation: 2}
 		if !c.syncSecurity() {
 			t.Fatal("security change not seen")
 		}

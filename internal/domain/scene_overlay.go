@@ -1,6 +1,4 @@
-package ports
-
-import "github.com/bnema/neferwl/internal/domain"
+package domain
 
 // OverlayStyle carries reloadable overlay settings.
 type OverlayStyle struct {
@@ -19,12 +17,12 @@ type Overlay struct {
 	// right after its content in stacking order, clipped to it and faded with
 	// it. Rect is relative to its top-left. If the window is not drawn in the
 	// scene, neither is the overlay.
-	Window domain.WindowID
+	Window WindowID
 	ID     uint64
 	Seq    uint64
-	Kind   domain.OverlayKind
-	Anchor domain.OverlayAnchor
-	Rect   domain.Rect // logical, output-local (window-local when attached); W and H may be 0: sized from content
+	Kind   OverlayKind
+	Anchor OverlayAnchor
+	Rect   Rect // logical, output-local (window-local when attached); W and H may be 0: sized from content
 	// Capture keeps the overlay in captures requested by Wayland clients.
 	// Captures requested by the compositor itself never contain overlays.
 	Capture bool

@@ -7,6 +7,7 @@ import (
 	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -32,7 +33,7 @@ func TestDefaultBindsAccepted(t *testing.T) {
 			if cmd == "alt" {
 				cfg = altCmdDefaults()
 			}
-			if _, err := core.New(cfg, core.Channels{Scenes: make(chan []ports.Scene, 1)}, core.Options{}); err != nil {
+			if _, err := core.New(cfg, core.Channels{Scenes: make(chan []domain.Scene, 1)}, core.Options{}); err != nil {
 				t.Fatalf("cmd=%s: %v", cmd, err)
 			}
 		}

@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -20,7 +19,7 @@ func TestSceneFieldCount(t *testing.T) {
 	// 25 with Animating, which sceneDelta intentionally ignores: it only
 	// schedules the next frame, it draws nothing.
 	const fields = 27
-	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(ports.Scene{}))),
+	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(domain.Scene{}))),
 		"Scene fields changed: check sceneDelta (a field it does not compare must force a full redraw or be covered), then this count")
 }
 
@@ -29,20 +28,20 @@ func TestSceneFieldCount(t *testing.T) {
 // as long as it only changes where or how that window draws (inside Rect).
 func TestSceneWindowFieldCount(t *testing.T) {
 	const fields = 15
-	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(ports.SceneWindow{}))),
+	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(domain.SceneWindow{}))),
 		"SceneWindow fields changed: check sceneDelta (a field that draws outside Rect needs its own rule), then this count")
 }
 
-func deltaScene(seq uint64, ws ...ports.SceneWindow) ports.Scene {
-	return ports.Scene{Seq: seq, OutputWidth: 1000, OutputHeight: 500, Scale: 1, Background: "#000000", Windows: ws}
+func deltaScene(seq uint64, ws ...domain.SceneWindow) domain.Scene {
+	return domain.Scene{Seq: seq, OutputWidth: 1000, OutputHeight: 500, Scale: 1, Background: "#000000", Windows: ws}
 }
 
-func win(id domain.WindowID, x, y, w, h int) ports.SceneWindow {
-	return ports.SceneWindow{ID: id, Rect: domain.Rect{X: x, Y: y, W: w, H: h}}
+func win(id domain.WindowID, x, y, w, h int) domain.SceneWindow {
+	return domain.SceneWindow{ID: id, Rect: domain.Rect{X: x, Y: y, W: w, H: h}}
 }
 
 // held is a target that holds s after a full frame of its windows.
-func held(s ports.Scene) *target {
+func held(s domain.Scene) *target {
 	tg := &target{}
 	tg.hold(s, &damageRegion{drawn: map[domain.WindowID]heldWindow{}})
 	return tg
@@ -82,35 +81,37 @@ func TestDamageDeltaWindowFieldChange(t *testing.T) {
 }
 
 func TestDamageDeltaFullRedraws(t *testing.T) {
-	base := func() ports.Scene {
+	base := func() domain.Scene {
 		return deltaScene(1, win(1, 0, 0, 100, 100), win(2, 100, 0, 100, 100))
 	}
 	bounds := image.Rect(0, 0, 1000, 500)
-	for name, mod := range map[string]func(*ports.Scene){
-		"camera shift over half": func(s *ports.Scene) {
-			s.Windows = []ports.SceneWindow{win(1, 0, 0, 600, 500), win(2, 600, 0, 400, 500)}
+	for name, mod := range map[string]func(*domain.Scene){
+		"camera shift over half": func(s *domain.Scene) {
+			s.Windows = []domain.SceneWindow{win(1, 0, 0, 600, 500), win(2, 600, 0, 400, 500)}
 			s.Windows[0].Rect.X = 50
 		},
-		"layer":          func(s *ports.Scene) { s.Layers = []ports.SceneLayer{{ID: 9, Rect: domain.Rect{W: 10, H: 10}}} },
-		"output":         func(s *ports.Scene) { s.Output = "DP-2" },
-		"size":           func(s *ports.Scene) { s.OutputWidth = 999 },
-		"scale":          func(s *ports.Scene) { s.Scale = 2 },
-		"transform":      func(s *ports.Scene) { s.Transform = 1 },
-		"off":            func(s *ports.Scene) { s.Off = true },
-		"background":     func(s *ports.Scene) { s.Background = "#111111" },
-		"border":         func(s *ports.Scene) { s.Border.Width = 2 },
-		"workspace clip": func(s *ports.Scene) { s.WorkspaceClip = domain.Rect{W: 10, H: 10} },
-		"tile inset":     func(s *ports.Scene) { s.TileInset = domain.Insets{Bottom: 10} },
-		"dim":            func(s *ports.Scene) { s.Dim = 0.5 },
-		"dim behind":     func(s *ports.Scene) { s.DimBehind = true },
-		"drop hints":     func(s *ports.Scene) { s.DropHints = []domain.Rect{{W: 5, H: 5}} },
-		"indicators":     func(s *ports.Scene) { s.CaptureIndicators = []ports.CaptureIndicator{{Rect: domain.Rect{W: 5, H: 5}}} },
-		"capture":        func(s *ports.Scene) { s.Capture = &ports.SceneCapture{} },
-		"capture scene":  func(s *ports.Scene) { s.CaptureScene = &ports.Scene{} },
-		"security":       func(s *ports.Scene) { s.Security.Protected = true },
-		"window count":   func(s *ports.Scene) { s.Windows = s.Windows[:1] },
-		"window order":   func(s *ports.Scene) { s.Windows[0], s.Windows[1] = s.Windows[1], s.Windows[0] },
-		"window id":      func(s *ports.Scene) { s.Windows[1].ID = 7 },
+		"layer":          func(s *domain.Scene) { s.Layers = []domain.SceneLayer{{ID: 9, Rect: domain.Rect{W: 10, H: 10}}} },
+		"output":         func(s *domain.Scene) { s.Output = "DP-2" },
+		"size":           func(s *domain.Scene) { s.OutputWidth = 999 },
+		"scale":          func(s *domain.Scene) { s.Scale = 2 },
+		"transform":      func(s *domain.Scene) { s.Transform = 1 },
+		"off":            func(s *domain.Scene) { s.Off = true },
+		"background":     func(s *domain.Scene) { s.Background = "#111111" },
+		"border":         func(s *domain.Scene) { s.Border.Width = 2 },
+		"workspace clip": func(s *domain.Scene) { s.WorkspaceClip = domain.Rect{W: 10, H: 10} },
+		"tile inset":     func(s *domain.Scene) { s.TileInset = domain.Insets{Bottom: 10} },
+		"dim":            func(s *domain.Scene) { s.Dim = 0.5 },
+		"dim behind":     func(s *domain.Scene) { s.DimBehind = true },
+		"drop hints":     func(s *domain.Scene) { s.DropHints = []domain.Rect{{W: 5, H: 5}} },
+		"indicators": func(s *domain.Scene) {
+			s.CaptureIndicators = []domain.CaptureIndicator{{Rect: domain.Rect{W: 5, H: 5}}}
+		},
+		"capture":       func(s *domain.Scene) { s.Capture = &domain.SceneCapture{} },
+		"capture scene": func(s *domain.Scene) { s.CaptureScene = &domain.Scene{} },
+		"security":      func(s *domain.Scene) { s.Security.Protected = true },
+		"window count":  func(s *domain.Scene) { s.Windows = s.Windows[:1] },
+		"window order":  func(s *domain.Scene) { s.Windows[0], s.Windows[1] = s.Windows[1], s.Windows[0] },
+		"window id":     func(s *domain.Scene) { s.Windows[1].ID = 7 },
 	} {
 		t.Run(name, func(t *testing.T) {
 			cur := base()
@@ -129,24 +130,24 @@ func TestDamageDeltaFullRedraws(t *testing.T) {
 }
 
 func TestDamageDeltaSeparators(t *testing.T) {
-	sep := func(x int) ports.Separator { return ports.Separator{Rect: domain.Rect{X: x, W: 2, H: 500}} }
+	sep := func(x int) domain.Separator { return domain.Separator{Rect: domain.Rect{X: x, W: 2, H: 500}} }
 	a, b := sep(100), sep(200)
 	old := deltaScene(1, win(1, 0, 0, 500, 500))
-	old.Separators = []ports.Separator{a, b}
+	old.Separators = []domain.Separator{a, b}
 	cur := deltaScene(2, win(1, 0, 0, 500, 500))
-	cur.Separators = []ports.Separator{a, sep(250)}
+	cur.Separators = []domain.Separator{a, sep(250)}
 	d := newDamage(held(old), cur, image.Rect(0, 0, 1000, 500))
 	require.False(t, d.all())
 	assert.Equal(t, image.Rect(200, 0, 252, 500), d.area)
 
 	// Same lines, another order: nothing differs by value.
-	cur.Separators = []ports.Separator{b, a}
+	cur.Separators = []domain.Separator{b, a}
 	d = newDamage(held(old), cur, image.Rect(0, 0, 1000, 500))
 	require.False(t, d.all())
 	assert.True(t, d.area.Empty())
 
 	// A line that turns active is a different value.
-	cur.Separators = []ports.Separator{a, {Rect: b.Rect, Active: true}}
+	cur.Separators = []domain.Separator{a, {Rect: b.Rect, Active: true}}
 	d = newDamage(held(old), cur, image.Rect(0, 0, 1000, 500))
 	require.False(t, d.all())
 	assert.Equal(t, image.Rect(200, 0, 202, 500), d.area)
@@ -160,7 +161,7 @@ func TestSceneDeltaAllocations(t *testing.T) {
 	old := deltaScene(1, win(1, 0, 0, 300, 500), win(2, 300, 0, 300, 500), win(3, 600, 0, 400, 500))
 	cur := deltaScene(2, win(1, 0, 0, 300, 500), win(2, 300, 0, 300, 500), win(3, 600, 0, 380, 500))
 	for i := range seps {
-		s := ports.Separator{Rect: domain.Rect{X: i * 10, W: 2, H: 500}}
+		s := domain.Separator{Rect: domain.Rect{X: i * 10, W: 2, H: 500}}
 		old.Separators = append(old.Separators, s)
 		cur.Separators = append(cur.Separators, s)
 	}
@@ -188,61 +189,61 @@ func TestSceneDeltaAllocations(t *testing.T) {
 // replaces another adds both, a line added or dropped adds that line.
 func TestSceneDeltaSeparators(t *testing.T) {
 	phys := func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
-	line := func(x int) ports.Separator { return ports.Separator{Rect: domain.Rect{X: x, W: 2, H: 10}} }
+	line := func(x int) domain.Separator { return domain.Separator{Rect: domain.Rect{X: x, W: 2, H: 10}} }
 	a, b, c := line(0), line(100), line(200)
-	assert.True(t, separatorDelta([]ports.Separator{a, b}, []ports.Separator{a, b}, phys).Empty())
-	assert.Equal(t, image.Rect(100, 0, 202, 10), separatorDelta([]ports.Separator{a, b}, []ports.Separator{a, c}, phys))
-	assert.True(t, separatorDelta([]ports.Separator{a, b, c}, []ports.Separator{b, c, a}, phys).Empty())
-	assert.Equal(t, image.Rect(0, 0, 102, 10), separatorDelta([]ports.Separator{a, b, c}, []ports.Separator{a, a, c}, phys))
-	assert.Equal(t, image.Rect(200, 0, 202, 10), separatorDelta([]ports.Separator{a, b}, []ports.Separator{a, b, c}, phys))
-	assert.Equal(t, image.Rect(0, 0, 2, 10), separatorDelta([]ports.Separator{a, b, c}, []ports.Separator{b, c}, phys))
+	assert.True(t, separatorDelta([]domain.Separator{a, b}, []domain.Separator{a, b}, phys).Empty())
+	assert.Equal(t, image.Rect(100, 0, 202, 10), separatorDelta([]domain.Separator{a, b}, []domain.Separator{a, c}, phys))
+	assert.True(t, separatorDelta([]domain.Separator{a, b, c}, []domain.Separator{b, c, a}, phys).Empty())
+	assert.Equal(t, image.Rect(0, 0, 102, 10), separatorDelta([]domain.Separator{a, b, c}, []domain.Separator{a, a, c}, phys))
+	assert.Equal(t, image.Rect(200, 0, 202, 10), separatorDelta([]domain.Separator{a, b}, []domain.Separator{a, b, c}, phys))
+	assert.Equal(t, image.Rect(0, 0, 2, 10), separatorDelta([]domain.Separator{a, b, c}, []domain.Separator{b, c}, phys))
 }
 
 // The paint order splits at the first window that opens the floats: when
 // that window changes, the whole output is redrawn.
 func TestSceneDeltaFloatsStartMoves(t *testing.T) {
 	phys := func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
-	tile := func(id domain.WindowID, x int) ports.SceneWindow { return win(id, x, 0, 100, 100) }
-	float := func(id domain.WindowID, x int) ports.SceneWindow {
+	tile := func(id domain.WindowID, x int) domain.SceneWindow { return win(id, x, 0, 100, 100) }
+	float := func(id domain.WindowID, x int) domain.SceneWindow {
 		w := win(id, x, 0, 100, 100)
 		w.Floating = true
 		return w
 	}
-	delta := func(a, b []ports.SceneWindow) bool {
+	delta := func(a, b []domain.SceneWindow) bool {
 		_, ok := sceneDelta(deltaScene(1, a...), deltaScene(2, b...), phys, 1<<30)
 		return ok
 	}
 	// A tile becomes a float: the tile lines and the veil move under it.
-	assert.False(t, delta([]ports.SceneWindow{tile(1, 0), tile(2, 100)}, []ports.SceneWindow{tile(1, 0), float(2, 100)}))
+	assert.False(t, delta([]domain.SceneWindow{tile(1, 0), tile(2, 100)}, []domain.SceneWindow{tile(1, 0), float(2, 100)}))
 	// The first float moves in the list.
-	assert.False(t, delta([]ports.SceneWindow{float(1, 0), float(2, 100)}, []ports.SceneWindow{tile(1, 0), float(2, 100)}))
+	assert.False(t, delta([]domain.SceneWindow{float(1, 0), float(2, 100)}, []domain.SceneWindow{tile(1, 0), float(2, 100)}))
 	// A hidden or popup float opens nothing; showing it does.
 	hidden := float(2, 100)
 	hidden.Hidden = true
-	assert.False(t, delta([]ports.SceneWindow{tile(1, 0), hidden}, []ports.SceneWindow{tile(1, 0), float(2, 100)}))
+	assert.False(t, delta([]domain.SceneWindow{tile(1, 0), hidden}, []domain.SceneWindow{tile(1, 0), float(2, 100)}))
 	popup := float(2, 100)
 	popup.Popup = true
-	assert.False(t, delta([]ports.SceneWindow{tile(1, 0), popup}, []ports.SceneWindow{tile(1, 0), float(2, 100)}))
+	assert.False(t, delta([]domain.SceneWindow{tile(1, 0), popup}, []domain.SceneWindow{tile(1, 0), float(2, 100)}))
 	// A below float or an overview preview does not open the floats.
 	below := float(2, 100)
 	below.Below = true
-	assert.True(t, delta([]ports.SceneWindow{tile(1, 0), tile(2, 100)}, []ports.SceneWindow{tile(1, 0), below}))
+	assert.True(t, delta([]domain.SceneWindow{tile(1, 0), tile(2, 100)}, []domain.SceneWindow{tile(1, 0), below}))
 	preview := float(2, 100)
 	preview.Preview = 0.5
-	assert.True(t, delta([]ports.SceneWindow{tile(1, 0), tile(2, 100)}, []ports.SceneWindow{tile(1, 0), preview}))
+	assert.True(t, delta([]domain.SceneWindow{tile(1, 0), tile(2, 100)}, []domain.SceneWindow{tile(1, 0), preview}))
 	// The same first float with another rect stays a delta.
-	assert.True(t, delta([]ports.SceneWindow{tile(1, 0), float(2, 100)}, []ports.SceneWindow{tile(1, 0), float(2, 130)}))
+	assert.True(t, delta([]domain.SceneWindow{tile(1, 0), float(2, 100)}, []domain.SceneWindow{tile(1, 0), float(2, 130)}))
 }
 
 // The target keeps its own copy of the compared slices: a caller reusing
 // its slices in place (DRM overlay frames, capture) must not change what the
 // target holds.
 func TestTargetHoldCopiesSlices(t *testing.T) {
-	ws := []ports.SceneWindow{win(1, 0, 0, 100, 100), win(2, 100, 0, 100, 100)}
-	seps := []ports.Separator{{Rect: domain.Rect{X: 100, W: 2, H: 100}}}
-	layers := []ports.SceneLayer{{ID: 9, Rect: domain.Rect{W: 10, H: 10}}}
+	ws := []domain.SceneWindow{win(1, 0, 0, 100, 100), win(2, 100, 0, 100, 100)}
+	seps := []domain.Separator{{Rect: domain.Rect{X: 100, W: 2, H: 100}}}
+	layers := []domain.SceneLayer{{ID: 9, Rect: domain.Rect{W: 10, H: 10}}}
 	hints := []domain.Rect{{W: 5, H: 5}}
-	marks := []ports.CaptureIndicator{{Rect: domain.Rect{W: 5, H: 5}}}
+	marks := []domain.CaptureIndicator{{Rect: domain.Rect{W: 5, H: 5}}}
 	s := deltaScene(1)
 	s.Windows, s.Separators, s.Layers, s.DropHints, s.CaptureIndicators = ws, seps, layers, hints, marks
 	tg := &target{}
@@ -275,14 +276,14 @@ type deltaCase struct {
 	windowDim bool // window 1 is dimmed on some frames
 }
 
-func (c deltaCase) scene(seq uint64, i, w2 int, windows []ports.SceneWindow, seps []ports.Separator) ports.Scene {
+func (c deltaCase) scene(seq uint64, i, w2 int, windows []domain.SceneWindow, seps []domain.Separator) domain.Scene {
 	windows[0], windows[1] = win(1, 0, 0, 20, 48), win(2, 20, 0, w2, 48)
 	windows[1].Floating = c.floating
 	if c.windowDim && i%3 == 0 {
 		windows[0].Dim = 0.5
 	}
-	seps[0] = ports.Separator{Rect: domain.Rect{X: 20, W: 1, H: 48}}
-	return ports.Scene{Seq: seq, Transform: c.out, OutputWidth: 64, OutputHeight: 48, Scale: c.scale, Background: "#101010",
+	seps[0] = domain.Separator{Rect: domain.Rect{X: 20, W: 1, H: 48}}
+	return domain.Scene{Seq: seq, Transform: c.out, OutputWidth: 64, OutputHeight: 48, Scale: c.scale, Background: "#101010",
 		Dim: c.sceneDim, Windows: windows, Separators: seps}
 }
 
@@ -335,13 +336,13 @@ func sceneDeltaMatchesFullRedraw(t *testing.T, tc deltaCase, reuse bool) {
 	green := solidContent(t, 8, 8, color.RGBA{G: 255, A: 255})
 	green.ID, green.Surface, green.Seq, green.Version = 2, 2, 1, 1
 	contents := map[domain.WindowID]domain.SurfaceContent{1: red, 2: green}
-	shared := make([]ports.SceneWindow, 2)
-	sharedSeps := make([]ports.Separator, 1)
+	shared := make([]domain.SceneWindow, 2)
+	sharedSeps := make([]domain.Separator, 1)
 	var partial int
 	for i, w2 := range []int{20, 20, 30, 24, 24, 40, 20, 22} {
 		windows, seps := shared, sharedSeps
 		if !reuse {
-			windows, seps = make([]ports.SceneWindow, 2), make([]ports.Separator, 1)
+			windows, seps = make([]domain.SceneWindow, 2), make([]domain.Separator, 1)
 		}
 		if reuse {
 			clear(windows)
@@ -406,7 +407,7 @@ func TestDamageDeltaFadeAndLeavingEntry(t *testing.T) {
 }
 
 func TestSceneDeltaFlashRectDamage(t *testing.T) {
-	a := &ports.FocusFlash{Rect: domain.Rect{X: 10, Y: 20, W: 100, H: 80}, Width: 3, Color: "#ff0000", Alpha: 1}
+	a := &domain.FocusFlash{Rect: domain.Rect{X: 10, Y: 20, W: 100, H: 80}, Width: 3, Color: "#ff0000", Alpha: 1}
 	faded := *a
 	faded.Alpha = 0.5
 	moved := faded
@@ -414,7 +415,7 @@ func TestSceneDeltaFlashRectDamage(t *testing.T) {
 	phys := func(r domain.Rect) image.Rectangle { return image.Rect(r.X*2, r.Y*2, (r.X+r.W)*2, (r.Y+r.H)*2) }
 	for _, tc := range []struct {
 		name     string
-		old, cur *ports.FocusFlash
+		old, cur *domain.FocusFlash
 		want     image.Rectangle
 	}{
 		{"appears", nil, a, phys(a.Rect)},
@@ -438,13 +439,13 @@ func TestSceneDeltaFlashRectDamage(t *testing.T) {
 }
 
 func TestDamageSelectionOutlineDelta(t *testing.T) {
-	a := &ports.SelectionOutline{Rect: domain.Rect{X: 10, Y: 10, W: 40, H: 30}, Width: 2, Radius: 10, Active: true}
+	a := &domain.SelectionOutline{Rect: domain.Rect{X: 10, Y: 10, W: 40, H: 30}, Width: 2, Radius: 10, Active: true}
 	b := *a
 	b.Rect.X = 60
 	wider, rounder := *a, *a
 	wider.Width++
 	rounder.Radius++
-	for _, pair := range [][2]*ports.SelectionOutline{{nil, a}, {a, nil}, {a, &b}, {a, &wider}, {a, &rounder}, {a, a}} {
+	for _, pair := range [][2]*domain.SelectionOutline{{nil, a}, {a, nil}, {a, &b}, {a, &wider}, {a, &rounder}, {a, a}} {
 		old, cur := deltaScene(1), deltaScene(2)
 		old.Outline, cur.Outline = pair[0], pair[1]
 		area, ok := sceneDelta(old, cur, func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }, 500000)

@@ -426,24 +426,24 @@ func (c *Core) hintClickable(t hintTarget) bool {
 
 // hintOverlays are the labels to draw on sc as generic overlays: those still
 // matching what was typed. Nil unless sc is the hint output.
-func (c *Core) hintOverlays(sc *screen) []ports.Overlay {
+func (c *Core) hintOverlays(sc *screen) []domain.Overlay {
 	h := &c.hint
 	if h.phase != hintShown || sc.name() != h.output {
 		return nil
 	}
-	var out []ports.Overlay
+	var out []domain.Overlay
 	for i, t := range h.targets {
 		if len(t.label) < len(h.typed) || t.label[:len(h.typed)] != h.typed {
 			continue
 		}
-		out = append(out, ports.Overlay{
+		out = append(out, domain.Overlay{
 			ID:      overlayIDHint | uint64(i+1),
 			Seq:     h.gen<<16 | uint64(len(h.typed)),
 			Kind:    domain.OverlayLabel,
 			Anchor:  domain.AnchorOutsideTopLeft,
 			Rect:    domain.Rect{X: t.rect.X, Y: t.rect.Y},
 			Capture: c.cfg.Hint.Capture,
-			Style:   ports.OverlayStyle{Size: c.cfg.Hint.Size, Background: c.cfg.Hint.Background, Foreground: c.cfg.Hint.Foreground},
+			Style:   domain.OverlayStyle{Size: c.cfg.Hint.Size, Background: c.cfg.Hint.Background, Foreground: c.cfg.Hint.Foreground},
 			Text:    t.label,
 			Typed:   len(h.typed),
 		})

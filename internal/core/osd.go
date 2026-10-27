@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -12,7 +13,7 @@ const overlayIDOSD = 1 << 61
 // osdStyle keeps the panel dark whatever the border colour: the panel is
 // translucent, so a mid-tone background would leave the derived ink with too
 // little contrast over dark content.
-var osdStyle = ports.OverlayStyle{Background: "#1c1c1c"}
+var osdStyle = domain.OverlayStyle{Background: "#1c1c1c"}
 
 // osd is the owner's window information overlay state.
 type osd struct {
@@ -22,7 +23,7 @@ type osd struct {
 	watched       WindowID // last WatchStats sent; window can be cleared by unmap
 	stats         ports.WindowStats
 	seq           uint64
-	panel         *ports.PanelContent
+	panel         *domain.PanelContent
 	buf           []byte
 }
 
@@ -95,7 +96,7 @@ func (c *Core) osdWatch(ctx context.Context) error {
 	c.osd.stats = ports.WindowStats{}
 	c.osd.panel = nil
 	if target != 0 {
-		c.osd.panel = &ports.PanelContent{Lines: [4]string{c.windows.lookup(target).client.AppID, "waiting for frames..."}}
+		c.osd.panel = &domain.PanelContent{Lines: [4]string{c.windows.lookup(target).client.AppID, "waiting for frames..."}}
 	}
 	c.osd.seq++
 	return nil
@@ -103,7 +104,7 @@ func (c *Core) osdWatch(ctx context.Context) error {
 
 // osdDrawn reports whether the scene draws the OSD target window at its
 // size, the only case where the renderer draws the attached panel.
-func osdDrawn(s ports.Scene, id WindowID) bool {
+func osdDrawn(s domain.Scene, id WindowID) bool {
 	if id == 0 {
 		return false
 	}
@@ -138,7 +139,7 @@ func osdOn(v bool) string {
 // osdPanel creates immutable content; scratch bytes never escape to a scene.
 func (c *Core) osdPanel(v ports.WindowStats) {
 	o := &c.osd
-	p := &ports.PanelContent{Graph: v.Frametimes}
+	p := &domain.PanelContent{Graph: v.Frametimes}
 	b := append(o.buf[:0], c.windows.lookup(v.Window).client.AppID...)
 	b = append(b, " / "...)
 	b = strconv.AppendInt(b, int64(v.Width), 10)

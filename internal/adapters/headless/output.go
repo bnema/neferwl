@@ -27,7 +27,7 @@ type Options struct {
 	// Security is the defensive gate. SecurityChanges wakes an idle owner;
 	// the snapshot, not the queued notification payload, is authoritative.
 	Security        ports.SessionSecurity
-	SecurityChanges <-chan ports.SecurityState
+	SecurityChanges <-chan domain.SecurityState
 	Instance        domain.OutputInstance
 	SecurityEvents  chan<- ports.SecurityBackendEvent
 	// Cursor, when set, is drawn into screenshots with the image from
@@ -63,7 +63,7 @@ type Options struct {
 // windows it no longer draws.
 const trimEvery = 10 * time.Second
 
-func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents <-chan *domain.ContentBatch, returns ports.ContentReturn, cursor <-chan ports.CursorChange, incoming <-chan ports.CaptureRequest) error {
+func Run(ctx context.Context, opts Options, scenes <-chan domain.Scene, contents <-chan *domain.ContentBatch, returns ports.ContentReturn, cursor <-chan ports.CursorChange, incoming <-chan ports.CaptureRequest) error {
 	r, err := opts.NewRenderer(opts.Width, opts.Height)
 	if err != nil {
 		return fmt.Errorf("create renderer: %w", err)
@@ -95,7 +95,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	}
 	table := surfaces.New()
 	drawn := table.Map()
-	var scene ports.Scene
+	var scene domain.Scene
 	haveScene, dirty := false, false
 	frame := 0
 	var index *os.File
@@ -135,7 +135,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	// sink at once (Push never blocks), so it holds one at most.
 	var reports presented.Queue
 	var shows flipShows
-	var security ports.SecurityState
+	var security domain.SecurityState
 	securityKnown := false
 	failRequests := func(reason error) {
 		// Whatever this frame had handed to a worker is failed with it.
@@ -162,7 +162,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			if !security.Protected {
 				continue
 			}
-			black := ports.Scene{Security: security, Output: opts.Name, OutputWidth: opts.Width, OutputHeight: opts.Height, Scale: 1, Background: "#000000"}
+			black := domain.Scene{Security: security, Output: opts.Name, OutputWidth: opts.Width, OutputHeight: opts.Height, Scale: 1, Background: "#000000"}
 			black.Off = inactive
 			scene = black
 			kind := domain.ProtectionInactiveOutput
@@ -196,7 +196,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			failRequests(capture.ErrSessionProtected)
 		}
 	}
-	acceptScene := func(s ports.Scene) {
+	acceptScene := func(s domain.Scene) {
 		if opts.Security != nil && (s.Security != security || s.Security != opts.Security.Snapshot()) {
 			return
 		}
@@ -637,7 +637,7 @@ func (opts Options) protected() bool {
 	return opts.Security != nil && opts.Security.Snapshot().Protected
 }
 
-func writePNGSecure(path string, img image.Image, security ports.SessionSecurity, state ports.SecurityState) error {
+func writePNGSecure(path string, img image.Image, security ports.SessionSecurity, state domain.SecurityState) error {
 	_, err := writePNGSecureResult(path, img, security, state)
 	return err
 }
@@ -660,12 +660,12 @@ func (p *pngBuffers) Put(b *png.EncoderBuffer) { p.pool.Put(b) }
 
 // gated reports whether a screenshot must not be published: the session is
 // protected, or its security state is no longer the one the frame was drawn in.
-func gated(security ports.SessionSecurity, state ports.SecurityState) bool {
+func gated(security ports.SessionSecurity, state domain.SecurityState) bool {
 	return security != nil && (state.Protected || security.Snapshot() != state)
 }
 
 // writePNGSecureResult distinguishes a security skip from a published PNG.
-func writePNGSecureResult(path string, img image.Image, security ports.SessionSecurity, state ports.SecurityState) (bool, error) {
+func writePNGSecureResult(path string, img image.Image, security ports.SessionSecurity, state domain.SecurityState) (bool, error) {
 	if gated(security, state) {
 		return false, nil
 	}
@@ -696,7 +696,7 @@ func writePNGSecureResult(path string, img image.Image, security ports.SessionSe
 // never modified after they are published, which makes the shared file safe.
 // It gates on security like writePNGSecureResult, and falls back to encoding
 // img where the file system cannot link.
-func linkPNGSecure(src, dst string, img image.Image, security ports.SessionSecurity, state ports.SecurityState) (bool, error) {
+func linkPNGSecure(src, dst string, img image.Image, security ports.SessionSecurity, state domain.SecurityState) (bool, error) {
 	if gated(security, state) {
 		return false, nil
 	}
@@ -733,7 +733,7 @@ type flipShows struct {
 }
 
 // of returns the content Seq of the windows scene showed to their client.
-func (f *flipShows) of(scene ports.Scene, contents map[domain.WindowID]domain.SurfaceContent, kept func(domain.WindowID) bool) map[domain.WindowID]uint64 {
+func (f *flipShows) of(scene domain.Scene, contents map[domain.WindowID]domain.SurfaceContent, kept func(domain.WindowID) bool) map[domain.WindowID]uint64 {
 	// A closed window drawn from its kept content is not shown to its
 	// client.
 	return f.snapshot.FromContents(scene, contents, kept)
@@ -743,7 +743,7 @@ func (f *flipShows) of(scene ports.Scene, contents map[domain.WindowID]domain.Su
 // time (software clock, refresh unknown), so presentation feedback and
 // frame callbacks follow headless frames. The FlipInfo itself is new per
 // flip (the sink counts merges on it); only its Shows is shared.
-func (f *flipShows) flipInfo(scene ports.Scene, contents map[domain.WindowID]domain.SurfaceContent, kept func(domain.WindowID) bool) *ports.FlipInfo {
+func (f *flipShows) flipInfo(scene domain.Scene, contents map[domain.WindowID]domain.SurfaceContent, kept func(domain.WindowID) bool) *ports.FlipInfo {
 	var ts unix.Timespec
 	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
 	return &ports.FlipInfo{When: time.Duration(ts.Nano()), Shows: f.of(scene, contents, kept)}

@@ -24,7 +24,7 @@ import (
 type barrierServer struct {
 	s        *Server
 	gate     *sessionsecurity.Gate
-	changes  chan ports.SecurityState
+	changes  chan domain.SecurityState
 	captures chan ports.CaptureRequest
 	captured chan ports.CaptureDone
 	cancel   context.CancelFunc
@@ -35,7 +35,7 @@ type barrierServer struct {
 //testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
 func newBarrierServer(t *testing.T) *barrierServer {
 	t.Helper()
-	h := &barrierServer{gate: &sessionsecurity.Gate{}, changes: make(chan ports.SecurityState, 1), captures: make(chan ports.CaptureRequest, 4), captured: make(chan ports.CaptureDone, 4), stopped: make(chan struct{}), dir: t.TempDir()}
+	h := &barrierServer{gate: &sessionsecurity.Gate{}, changes: make(chan domain.SecurityState, 1), captures: make(chan ports.CaptureRequest, 4), captured: make(chan ports.CaptureDone, 4), stopped: make(chan struct{}), dir: t.TempDir()}
 	layout := ports.Layout{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 2, Height: 2}, Width: 2, Height: 2, Scale: 1}}
 	var err error
 	h.s, err = New(Options{RuntimeDir: h.dir, Outputs: layout, Security: h.gate, CaptureAllow: allowStore(t, "*\n")}, Channels{SecurityChanges: h.changes, SecurityEvents: make(chan ports.SecurityBackendEvent, 16), Captures: h.captures, Captured: h.captured}, logging.For(context.Background(), "wayland"))
@@ -193,7 +193,7 @@ func TestSessionLockBarrierWaitsForAdmittedCopyAfterFrameDeath(t *testing.T) {
 //testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSessionLockBarrierTakeoverSaturationRefusesWithoutGenerationChange(t *testing.T) {
 	h := newBarrierServer(t)
-	sentinel := ports.SecurityState{Generation: 999}
+	sentinel := domain.SecurityState{Generation: 999}
 	h.changes <- sentinel // authoritative backend stalled for the whole churn
 	for i := 0; i < maxSecurityPending; i++ {
 		client := protocolClient(t, h.s, h.dir)
@@ -234,17 +234,17 @@ func TestSessionLockBarrierTakeoverSaturationRefusesWithoutGenerationChange(t *t
 //testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSessionLockBarrierReservedReleaseAndBlockedSenderShutdown(t *testing.T) {
 	h := newBarrierServer(t)
-	sentinel := ports.SecurityState{Generation: 999}
+	sentinel := domain.SecurityState{Generation: 999}
 	h.changes <- sentinel
 	client := protocolClient(t, h.s, h.dir)
 	lock, locked := lifecycleAcquire(t, client)
 	state := h.gate.Snapshot()
-	var queued []ports.SecurityState
+	var queued []domain.SecurityState
 	h.s.display.Do(func() {
 		// Immutable channel messages exercise the reserved release slot without
 		// fabricating another accepted owner while this one is live.
 		for len(h.s.securityPending) < maxSecurityPending {
-			h.s.requestBackendSecurity(ports.SecurityState{Generation: domain.LockGeneration(100 + len(h.s.securityPending)), Protected: true})
+			h.s.requestBackendSecurity(domain.SecurityState{Generation: domain.LockGeneration(100 + len(h.s.securityPending)), Protected: true})
 		}
 		queued = append(queued, h.s.securityPending...)
 		h.s.applySecurityEvent(ports.SecurityBackendBarrier{Generation: state.Generation})
@@ -274,7 +274,7 @@ func TestSessionLockBarrierReservedReleaseAndBlockedSenderShutdown(t *testing.T)
 	// Block another transition and cancel the real server. Run joins the sender;
 	// successful return proves it did not leak in a blocked channel send.
 	h.changes <- sentinel
-	h.s.display.Do(func() { h.s.requestBackendSecurity(ports.SecurityState{Generation: 777, Protected: true}) })
+	h.s.display.Do(func() { h.s.requestBackendSecurity(domain.SecurityState{Generation: 777, Protected: true}) })
 	h.cancel()
 	select {
 	case <-h.stopped:

@@ -11,7 +11,7 @@ import (
 )
 
 // xOf is the X of window id in s, shown or not.
-func xOf(t *testing.T, s ports.Scene, id domain.WindowID) int {
+func xOf(t *testing.T, s domain.Scene, id domain.WindowID) int {
 	t.Helper()
 	for _, w := range s.Windows {
 		if w.ID == id {
@@ -193,7 +193,7 @@ func movedRig(t *testing.T, edit func(*ports.Config)) (*swipeRig, ports.OutputIn
 	return startSwipeOn(t, edit, wide, other), other
 }
 
-func outScene(t *testing.T, set []ports.Scene, output string) ports.Scene {
+func outScene(t *testing.T, set []domain.Scene, output string) domain.Scene {
 	t.Helper()
 	for _, s := range set {
 		if s.Output == output {
@@ -201,7 +201,7 @@ func outScene(t *testing.T, set []ports.Scene, output string) ports.Scene {
 		}
 	}
 	t.Fatalf("no scene for %s", output)
-	return ports.Scene{}
+	return domain.Scene{}
 }
 
 // A workspace that goes to another monitor slides in on it from where the
@@ -443,7 +443,7 @@ func TestFocusMonitorHasNoMotion(t *testing.T) {
 }
 
 // rectNow is the rect of window id in s; it must be in the scene.
-func rectNow(t *testing.T, s ports.Scene, id domain.WindowID) domain.Rect {
+func rectNow(t *testing.T, s domain.Scene, id domain.WindowID) domain.Rect {
 	t.Helper()
 	r, ok := rectOf(s, id)
 	if !ok {
@@ -453,7 +453,7 @@ func rectNow(t *testing.T, s ports.Scene, id domain.WindowID) domain.Rect {
 }
 
 // twoColumns maps two windows: 1 on the left half, 2 on the right, focused.
-func twoColumns(t *testing.T, r *swipeRig) ports.Scene {
+func twoColumns(t *testing.T, r *swipeRig) domain.Scene {
 	t.Helper()
 	r.mapWindow(t, 1)
 	return r.mapWindow(t, 2)[0]
@@ -795,11 +795,11 @@ func TestUnmapMidRectMotion(t *testing.T) {
 }
 
 // listedIn is the scene window id, shown or not.
-func listedIn(s ports.Scene, id domain.WindowID) (ports.SceneWindow, bool) {
+func listedIn(s domain.Scene, id domain.WindowID) (domain.SceneWindow, bool) {
 	for _, w := range s.Windows {
 		if w.ID == id {
 			return w, true
 		}
 	}
-	return ports.SceneWindow{}, false
+	return domain.SceneWindow{}, false
 }

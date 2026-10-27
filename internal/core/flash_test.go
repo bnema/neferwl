@@ -343,23 +343,23 @@ func TestFlashLockClearsPendingAndRunning(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		for _, running := range []bool{false, true} {
 			c, clock := flashCore(t)
-			state := ports.SecurityState{}
+			state := domain.SecurityState{}
 			gate := portsmocks.NewMockSessionSecurity(t)
-			gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return state })
+			gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return state })
 			c.opts.Security = gate
 			if running {
 				startFlash(t, c, clock, flashWindow, 3)
 			} else {
 				c.requestFlash(flashWindow, 3)
 			}
-			state = ports.SecurityState{Generation: 1, Protected: true}
+			state = domain.SecurityState{Generation: 1, Protected: true}
 			if !c.syncSecurity() {
 				t.Fatal("security did not change")
 			}
 			if c.flash.pending != nil || c.flash.running != nil || c.flash.timerC != nil {
 				t.Fatal("lock retained flash")
 			}
-			state = ports.SecurityState{Generation: 2}
+			state = domain.SecurityState{Generation: 2}
 			c.syncSecurity()
 			if indicatorScene(t, c).Flash != nil || c.flash.pending != nil {
 				t.Fatal("unlock requested flash")
@@ -529,7 +529,7 @@ func BenchmarkFlashSceneBuild(b *testing.B) {
 	cfg.Focus.Flash = true
 	cfg.Focus.FlashOpacity = 0.8
 	cfg.Focus.FlashDuration = time.Hour
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1)}, Options{})
+	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1)}, Options{})
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -595,7 +595,7 @@ func TestFlashPendingTimerStopped(t *testing.T) {
 					c.stopFlash()
 				case "security":
 					gate := portsmocks.NewMockSessionSecurity(t)
-					gate.EXPECT().Snapshot().Return(ports.SecurityState{Generation: 1, Protected: true})
+					gate.EXPECT().Snapshot().Return(domain.SecurityState{Generation: 1, Protected: true})
 					c.opts.Security = gate
 					c.syncSecurity()
 				case "run exit":

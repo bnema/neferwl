@@ -6,14 +6,13 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
 
 func TestPositionHintGeometryDamageAllocations(t *testing.T) {
 	for _, scale := range []float64{1, 1.5, 2} {
 		r := &Renderer{width: int(640 * scale), height: int(480 * scale)}
-		s := ports.Scene{OutputWidth: 640, OutputHeight: 480, Scale: scale, Border: ports.Border{Active: "#abcdef"}, PositionHint: ports.PositionHint{Opacity: 1, Columns: 2, Counts: [16]uint8{2, 1}, ActiveRow: 1}}
+		s := domain.Scene{OutputWidth: 640, OutputHeight: 480, Scale: scale, Border: domain.Border{Active: "#abcdef"}, PositionHint: domain.PositionHint{Opacity: 1, Columns: 2, Counts: [16]uint8{2, 1}, ActiveRow: 1}}
 		dmg := newDamage(&target{}, s, image.Rect(0, 0, r.width, r.height))
 		draws := r.draws(s, nil, dmg)
 		require.NotEmpty(t, draws)
@@ -27,7 +26,7 @@ func TestPositionHintGeometryDamageAllocations(t *testing.T) {
 		require.Equal(t, want, area)
 		require.Zero(t, testing.AllocsPerRun(100, func() { r.draws(s, nil, dmg) }))
 		old := s
-		old.PositionHint = ports.PositionHint{}
+		old.PositionHint = domain.PositionHint{}
 		phys := func(b domain.Rect) image.Rectangle { return w.physRect(b.X, b.Y, b.W, b.H) }
 		got, ok := sceneDelta(old, s, phys, r.width*r.height)
 		require.True(t, ok)
@@ -40,12 +39,14 @@ func TestPositionHintGeometryDamageAllocations(t *testing.T) {
 }
 
 func TestPositionHintDamageTransitions(t *testing.T) {
-	base := ports.Scene{Scale: 1, OutputWidth: 640, OutputHeight: 480, PositionHint: ports.PositionHint{Opacity: 1, Columns: 2, Counts: [16]uint8{2, 1}}}
+	base := domain.Scene{Scale: 1, OutputWidth: 640, OutputHeight: 480, PositionHint: domain.PositionHint{Opacity: 1, Columns: 2, Counts: [16]uint8{2, 1}}}
 	phys := func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
-	bounds := func(s ports.Scene) image.Rectangle { return phys(s.PositionHint.Bounds(s.OutputWidth, s.OutputHeight)) }
+	bounds := func(s domain.Scene) image.Rectangle {
+		return phys(s.PositionHint.Bounds(s.OutputWidth, s.OutputHeight))
+	}
 	t.Run("disappear", func(t *testing.T) {
 		cur := base
-		cur.PositionHint = ports.PositionHint{}
+		cur.PositionHint = domain.PositionHint{}
 		got, ok := sceneDelta(base, cur, phys, 640*480)
 		require.True(t, ok)
 		require.Equal(t, bounds(base), got)
@@ -77,7 +78,7 @@ func TestPositionHintRoundedQuads(t *testing.T) {
 	for _, scale := range []float64{1, 2} {
 		r := &Renderer{width: int(640 * scale), height: int(480 * scale)}
 		h := hintGrid(3, 2)
-		s := ports.Scene{OutputWidth: 640, OutputHeight: 480, Scale: scale, PositionHint: h}
+		s := domain.Scene{OutputWidth: 640, OutputHeight: 480, Scale: scale, PositionHint: h}
 		dmg := newDamage(&target{}, s, image.Rect(0, 0, r.width, r.height))
 		draws := r.draws(s, nil, dmg)
 		require.Len(t, draws, 1+6)
@@ -90,18 +91,18 @@ func TestPositionHintRoundedQuads(t *testing.T) {
 			require.Equal(t, roundRect(image.Rect(int(d.pc.rect[0]), int(d.pc.rect[1]), int(d.pc.rect[2]), int(d.pc.rect[3]))), d.round)
 		}
 		require.Equal(t, pill, image.Rect(int(draws[0].pc.rect[0]), int(draws[0].pc.rect[1]), int(draws[0].pc.rect[2]), int(draws[0].pc.rect[3])))
-		require.Equal(t, float32(w.phys(ports.PositionHintRadius)), math.Float32frombits(draws[0].radii[0]))
+		require.Equal(t, float32(w.phys(domain.PositionHintRadius)), math.Float32frombits(draws[0].radii[0]))
 		// Active dot (col 1,row 1) is the larger one: radius = phys(active diameter)/2.
 		active := draws[1+1*2+1]
-		require.Equal(t, float32(w.phys(ports.PositionHintActiveDiameter)/2), math.Float32frombits(active.radii[0]))
+		require.Equal(t, float32(w.phys(domain.PositionHintActiveDiameter)/2), math.Float32frombits(active.radii[0]))
 		other := draws[1]
-		require.Equal(t, float32(w.phys(ports.PositionHintDiameter)/2), math.Float32frombits(other.radii[0]))
+		require.Equal(t, float32(w.phys(domain.PositionHintDiameter)/2), math.Float32frombits(other.radii[0]))
 	}
 }
 
 func TestPositionHintRoundedOrient(t *testing.T) {
 	r := &Renderer{width: 640, height: 480}
-	s := ports.Scene{OutputWidth: 640, OutputHeight: 480, Scale: 1, PositionHint: hintGrid(2, 2)}
+	s := domain.Scene{OutputWidth: 640, OutputHeight: 480, Scale: 1, PositionHint: hintGrid(2, 2)}
 	dmg := newDamage(&target{}, s, image.Rect(0, 0, r.width, r.height))
 	ds := r.draws(s, nil, dmg)
 	r.orient(ds, domain.BufferTransform(1))
@@ -147,7 +148,7 @@ func TestPositionHintRoundedRotatedOrient(t *testing.T) {
 	for transform := domain.BufferTransform(1); transform < 8; transform++ {
 		r := &Renderer{width: 640, height: 480}
 		sw, sh := r.sceneSize(transform)
-		s := ports.Scene{OutputWidth: sw, OutputHeight: sh, Scale: 1, Transform: transform, PositionHint: hintGrid(2, 2)}
+		s := domain.Scene{OutputWidth: sw, OutputHeight: sh, Scale: 1, Transform: transform, PositionHint: hintGrid(2, 2)}
 		ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, sw, sh)))
 		require.Len(t, ds, 1+4)
 		sceneRects := make([]image.Rectangle, len(ds))

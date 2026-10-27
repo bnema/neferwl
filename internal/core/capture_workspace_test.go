@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core/motion"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -27,7 +28,7 @@ func hiddenCaptureCommands(t *testing.T) (*Core, *Workspace, chan ports.ClientCo
 	cfg.Layout.MaxColumns = 2
 	cfg.Border.Width = 2
 	cfg.Background.Color = "#102030"
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Commands: commands}, Options{})
+	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Commands: commands}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +115,7 @@ func TestCaptureSceneRebasesOnViewport(t *testing.T) {
 		if s.Capture != nil || s.CaptureScene != nil || len(s.Layers) != 0 || s.Background != "#102030" || s.Border.Width != 2 {
 			t.Fatalf("capture scene must be flat, layerless and use the normal config: %+v", s)
 		}
-		byID := map[WindowID]ports.SceneWindow{}
+		byID := map[WindowID]domain.SceneWindow{}
 		for _, w := range s.Windows {
 			byID[w.ID] = w
 		}

@@ -27,14 +27,14 @@ func TestScopedCaptureClosesPostRenderAdmissionGap(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				admitted := ports.SecurityState{Generation: 2}
-				protected := ports.SecurityState{Generation: 3, Protected: true}
+				admitted := domain.SecurityState{Generation: 2}
+				protected := domain.SecurityState{Generation: 3, Protected: true}
 				var state atomic.Value
 				state.Store(admitted)
 				var arm atomic.Bool
 				gate := portsmocks.NewMockSessionSecurity(t)
-				gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState {
-					before := state.Load().(ports.SecurityState)
+				gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState {
+					before := state.Load().(domain.SecurityState)
 					if arm.CompareAndSwap(true, false) {
 						state.Store(protected)
 					}
@@ -44,7 +44,7 @@ func TestScopedCaptureClosesPostRenderAdmissionGap(t *testing.T) {
 				r.EXPECT().Close().Return().Once()
 				frameRendered := make(chan struct{}, 1)
 				proof := make(chan ports.SecurityBackendEvent, 1)
-				r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+				r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s domain.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 					if s.Security == protected {
 						if s.Seq != 0 || len(s.Windows) != 0 {
 							t.Errorf("bad protection frame %+v", s)
@@ -61,7 +61,7 @@ func TestScopedCaptureClosesPostRenderAdmissionGap(t *testing.T) {
 				// BeginCapture has no expectation: any native export fails the test.
 				ctx, cancel := context.WithCancel(context.Background())
 				done := make(chan error, 1)
-				scenes := make(chan ports.Scene, 1)
+				scenes := make(chan domain.Scene, 1)
 				incoming := make(chan ports.CaptureRequest)
 				replies := make(chan ports.CaptureDone, 2)
 				go func() {
@@ -69,7 +69,7 @@ func TestScopedCaptureClosesPostRenderAdmissionGap(t *testing.T) {
 				}()
 				dst := sessionCaptureFile(t)
 				incoming <- ports.CaptureRequest{ID: 91, Exclude: excluded, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: dst}
-				scene := ports.Scene{Security: admitted, Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2}
+				scene := domain.Scene{Security: admitted, Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2}
 				if excluded {
 					scene = sessionScene()
 					scene.Security = admitted
@@ -100,12 +100,12 @@ func TestScopedCaptureClosesPostRenderAdmissionGap(t *testing.T) {
 }
 
 func TestTransitionDuringHeadlessRenderWaitRetainsFenceAndRejectsCapture(t *testing.T) {
-	admitted := ports.SecurityState{Generation: 2}
-	locked := ports.SecurityState{Generation: 3, Protected: true}
+	admitted := domain.SecurityState{Generation: 2}
+	locked := domain.SecurityState{Generation: 3, Protected: true}
 	var epoch atomic.Value
 	epoch.Store(admitted)
 	gate := portsmocks.NewMockSessionSecurity(t)
-	gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return epoch.Load().(ports.SecurityState) })
+	gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return epoch.Load().(domain.SecurityState) })
 	fence, signal, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -114,7 +114,7 @@ func TestTransitionDuringHeadlessRenderWaitRetainsFenceAndRejectsCapture(t *test
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().Close().Return().Once()
 	rendered := make(chan struct{}, 1)
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s domain.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		if s.Security == admitted {
 			epoch.Store(locked)
 			rendered <- struct{}{}
@@ -122,7 +122,7 @@ func TestTransitionDuringHeadlessRenderWaitRetainsFenceAndRejectsCapture(t *test
 		}
 		return nil, nil
 	}).Twice()
-	scenes := make(chan ports.Scene, 1)
+	scenes := make(chan domain.Scene, 1)
 	incoming := make(chan ports.CaptureRequest)
 	replies := make(chan ports.CaptureDone, 2)
 	proof := make(chan ports.SecurityBackendEvent, 1)
@@ -133,7 +133,7 @@ func TestTransitionDuringHeadlessRenderWaitRetainsFenceAndRejectsCapture(t *test
 	}()
 	dst := sessionCaptureFile(t)
 	incoming <- ports.CaptureRequest{ID: 92, Dst: dst}
-	scenes <- ports.Scene{Security: admitted, Seq: 2}
+	scenes <- domain.Scene{Security: admitted, Seq: 2}
 	securityReceive(t, rendered)
 	if _, err := fence.Stat(); err != nil {
 		t.Fatal("pending renderer read fence closed early")

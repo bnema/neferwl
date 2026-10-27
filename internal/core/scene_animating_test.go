@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core/motion"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -61,12 +62,12 @@ func TestSceneAnimatingFollowsSprings(t *testing.T) {
 }
 
 // stepScenes steps only the screen and returns the scene of each output.
-func stepScenes(t *testing.T, c *Core, only *screen) map[string]ports.Scene {
+func stepScenes(t *testing.T, c *Core, only *screen) map[string]domain.Scene {
 	t.Helper()
 	if err := c.step(context.Background(), only); err != nil {
 		t.Fatal(err)
 	}
-	out := map[string]ports.Scene{}
+	out := map[string]domain.Scene{}
 	for _, s := range <-c.ch.Scenes {
 		out[s.Output] = s
 	}
@@ -118,7 +119,7 @@ func TestSettledSceneSameAsPreviousClearsAnimating(t *testing.T) {
 		// within half a pixel of its target, where the last running scene can
 		// draw the same pixels as the settled one.
 		start := ic.now
-		var running, settled ports.Scene
+		var running, settled domain.Scene
 		for ms := 1; ; ms++ {
 			if ms > 2000 {
 				t.Fatal("the spring never settles")

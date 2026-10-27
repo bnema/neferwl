@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/bnema/neferwl/internal/adapters/xkb"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
@@ -26,13 +27,13 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 // RunSecure snapshots the protection epoch before each event enters the input
 // queue. Scripts are a headless test transport, never an unlock authority.
 func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script <-chan string, input chan<- ports.InputEvent, layouts <-chan ports.Layout, moveCursor func(output string, x, y float64), log zerowrap.Logger, security ports.SessionSecurity) error {
-	snapshot := func() ports.SecurityState {
+	snapshot := func() domain.SecurityState {
 		if security != nil {
 			return security.Snapshot()
 		}
-		return ports.SecurityState{}
+		return domain.SecurityState{}
 	}
-	stamp := func(ev ports.InputEvent, state ports.SecurityState) ports.InputEvent {
+	stamp := func(ev ports.InputEvent, state domain.SecurityState) ports.InputEvent {
 		if security == nil {
 			return ev
 		}

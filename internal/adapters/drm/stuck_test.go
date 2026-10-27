@@ -23,7 +23,7 @@ import (
 func runStuck(t *testing.T, n int, errs ...error) []commitRec {
 	t.Helper()
 	h := startStuck(t, nil, errs...)
-	h.scenes <- ports.Scene{Seq: 1}
+	h.scenes <- domain.Scene{Seq: 1}
 	synctest.Wait()
 	// One lost-event recovery period plus the supplied busy retries.
 	//testpolicy:sleep advance fake time through missing-event recovery and retries
@@ -35,7 +35,7 @@ func runStuck(t *testing.T, n int, errs ...error) []commitRec {
 // stuckRun is an output run by startStuck.
 type stuckRun struct {
 	t         *testing.T
-	scenes    chan ports.Scene
+	scenes    chan domain.Scene
 	contents  *contentFeed
 	active    chan bool
 	presented chan ports.OutputPresented
@@ -67,7 +67,7 @@ func startStuck(t *testing.T, render func() *os.File, errs ...error) *stuckRun {
 	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	var started atomic.Bool
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		if render == nil || !started.Load() {
 			return nil, nil
 		}
@@ -80,7 +80,7 @@ func startStuck(t *testing.T, render func() *os.File, errs ...error) *stuckRun {
 	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
 	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
 	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
-	h := &stuckRun{t: t, scenes: make(chan ports.Scene, 1), contents: newContentFeed(t, 1), active: make(chan bool, 1), presented: nil}
+	h := &stuckRun{t: t, scenes: make(chan domain.Scene, 1), contents: newContentFeed(t, 1), active: make(chan bool, 1), presented: nil}
 	h.sink, h.presented = presentedSink(t, 64)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -187,7 +187,7 @@ func TestUnsignalledFenceDelaysRecovery(t *testing.T) {
 			mu.Unlock()
 			return f
 		})
-		h.scenes <- ports.Scene{Seq: 1}
+		h.scenes <- domain.Scene{Seq: 1}
 		waitFor(t, func() bool { return h.count() == 3 })
 		time.Sleep(3 * 200 * time.Millisecond)
 		synctest.Wait()
@@ -218,7 +218,7 @@ func TestSeenWaitsForRefusedFrameFence(t *testing.T) {
 			mu.Unlock()
 			return f
 		}, unix.EBUSY, unix.EACCES)
-		h.scenes <- ports.Scene{Seq: 1}
+		h.scenes <- domain.Scene{Seq: 1}
 		// Drive the EBUSY retry, then let the owner finish the EACCES path
 		// before publishing content.
 		synctest.Wait()

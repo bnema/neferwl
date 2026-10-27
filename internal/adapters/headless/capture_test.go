@@ -48,11 +48,11 @@ func sessionCaptureFile(t *testing.T) domain.SHMBuffer {
 
 // runSession drives one frame with the given requests and returns the
 // renderer event order and the replies.
-func runSession(t *testing.T, scene ports.Scene, reqs []ports.CaptureRequest, wantReplies int) ([]string, []ports.CaptureDone) {
+func runSession(t *testing.T, scene domain.Scene, reqs []ports.CaptureRequest, wantReplies int) ([]string, []ports.CaptureDone) {
 	t.Helper()
 	ev := &events{}
 	r := portsmocks.NewMockRenderer(t)
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s domain.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		// Excluded and plain scenes are renumbered 0; the tests' displayed scenes are not.
 		if s.Seq == 0 {
 			ev.add("render:excluded")
@@ -72,7 +72,7 @@ func runSession(t *testing.T, scene ports.Scene, reqs []ports.CaptureRequest, wa
 	r.EXPECT().Close().Return().Once()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	scenes := make(chan ports.Scene, 1)
+	scenes := make(chan domain.Scene, 1)
 	incoming := make(chan ports.CaptureRequest)
 	replies := make(chan ports.CaptureDone, 8)
 	done := make(chan error, 1)
@@ -100,9 +100,9 @@ func runSession(t *testing.T, scene ports.Scene, reqs []ports.CaptureRequest, wa
 	return ev.get(), got
 }
 
-func sessionScene() ports.Scene {
-	return ports.Scene{Seq: 2, Windows: []ports.SceneWindow{{ID: 1}}, Layers: []ports.SceneLayer{{ID: 10, Layer: domain.LayerTop}},
-		Capture: &ports.SceneCapture{Session: 7, Revision: 1, Excluded: []domain.WindowID{10}}}
+func sessionScene() domain.Scene {
+	return domain.Scene{Seq: 2, Windows: []domain.SceneWindow{{ID: 1}}, Layers: []domain.SceneLayer{{ID: 10, Layer: domain.LayerTop}},
+		Capture: &domain.SceneCapture{Session: 7, Revision: 1, Excluded: []domain.WindowID{10}}}
 }
 
 func TestExcludeCaptureOrderedBeforeDisplayedFrame(t *testing.T) {
@@ -155,7 +155,7 @@ func TestHiddenWorkspaceCaptureUsesChildRenderer(t *testing.T) {
 	frame := portsmocks.NewMockCaptureFrame(t)
 	frame.EXPECT().Done().Return(nil).Maybe()
 	frame.EXPECT().Read(mock.Anything, mock.Anything, 8).Return(nil).Maybe()
-	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s domain.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		require.Nil(t, s.Capture)
 		require.Len(t, s.Layers, 0, "a workspace rendered off screen has no layers")
 		return read, nil
@@ -166,10 +166,10 @@ func TestHiddenWorkspaceCaptureUsesChildRenderer(t *testing.T) {
 	scene := sessionScene()
 	scene.OutputWidth, scene.OutputHeight, scene.Scale = 2, 2, 1
 	scene.Capture.Workspace = 9
-	scene.CaptureScene = &ports.Scene{OutputWidth: 2, OutputHeight: 2, Scale: 1, Windows: []ports.SceneWindow{{ID: 5}}}
+	scene.CaptureScene = &domain.Scene{OutputWidth: 2, OutputHeight: 2, Scale: 1, Windows: []domain.SceneWindow{{ID: 5}}}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	scenes := make(chan ports.Scene, 1)
+	scenes := make(chan domain.Scene, 1)
 	incoming := make(chan ports.CaptureRequest)
 	replies := make(chan ports.CaptureDone, 2)
 	done := make(chan error, 1)
@@ -239,8 +239,8 @@ func TestRenderErrorDoesNotAnswerHandedRequestsAgain(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		display := portsmocks.NewMockRenderer(t)
 		boom := errors.New("boom")
-		display.EXPECT().Render(mock.MatchedBy(func(s ports.Scene) bool { return s.Seq == 0 }), mock.Anything).Return(nil, nil).Once() // excluded frame
-		display.EXPECT().Render(mock.MatchedBy(func(s ports.Scene) bool { return s.Seq != 0 }), mock.Anything).Return(nil, boom).Once()
+		display.EXPECT().Render(mock.MatchedBy(func(s domain.Scene) bool { return s.Seq == 0 }), mock.Anything).Return(nil, nil).Once() // excluded frame
+		display.EXPECT().Render(mock.MatchedBy(func(s domain.Scene) bool { return s.Seq != 0 }), mock.Anything).Return(nil, boom).Once()
 		frame := portsmocks.NewMockCaptureFrame(t)
 		frame.EXPECT().Done().Return(nil).Maybe()
 		frame.EXPECT().Read(mock.Anything, mock.Anything, 8).Return(nil).Maybe()
@@ -249,7 +249,7 @@ func TestRenderErrorDoesNotAnswerHandedRequestsAgain(t *testing.T) {
 		display.EXPECT().Close().Return().Once()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		scenes := make(chan ports.Scene, 1)
+		scenes := make(chan domain.Scene, 1)
 		incoming := make(chan ports.CaptureRequest)
 		replies := make(chan ports.CaptureDone, 8)
 		done := make(chan error, 1)
@@ -280,13 +280,13 @@ func TestStandardCaptureNeverHoldsTheIndicator(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		scene := sessionScene()
 		scene.Capture = nil
-		scene.CaptureIndicators = []ports.CaptureIndicator{{Rect: domain.Rect{W: 2, H: 2}}}
+		scene.CaptureIndicators = []domain.CaptureIndicator{{Rect: domain.Rect{W: 2, H: 2}}}
 		order, replies := runSession(t, scene, []ports.CaptureRequest{{ID: 2}}, 1)
 		require.Equal(t, []string{"render:excluded", "begin", "render:full"}, order)
 		require.NoError(t, replies[0].Err)
 		// An Exclude request of the session is served from its own excluded frame.
 		scene = sessionScene()
-		scene.CaptureIndicators = []ports.CaptureIndicator{{Rect: domain.Rect{W: 2, H: 2}}}
+		scene.CaptureIndicators = []domain.CaptureIndicator{{Rect: domain.Rect{W: 2, H: 2}}}
 		order, replies = runSession(t, scene, []ports.CaptureRequest{{ID: 1, Exclude: true, Session: 7}, {ID: 2}}, 2)
 		require.Equal(t, []string{"render:excluded", "begin", "render:excluded", "begin", "render:full"}, order)
 		for _, d := range replies {
@@ -303,7 +303,7 @@ func TestCaptureWaitsForItsIndicatorScene(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ev := &events{}
 		r := portsmocks.NewMockRenderer(t)
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s domain.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			switch {
 			case s.Seq == 0:
 				ev.add("render:plain")
@@ -325,14 +325,14 @@ func TestCaptureWaitsForItsIndicatorScene(t *testing.T) {
 		r.EXPECT().Close().Return().Once()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		scenes := make(chan ports.Scene, 2)
+		scenes := make(chan domain.Scene, 2)
 		incoming := make(chan ports.CaptureRequest)
 		replies := make(chan ports.CaptureDone, 4)
 		done := make(chan error, 1)
 		go func() {
 			done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }, Captured: replies}, scenes, nil, nil, nil, incoming)
 		}()
-		bare := ports.Scene{Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1}}}
+		bare := domain.Scene{Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2, Windows: []domain.SceneWindow{{ID: 1}}}
 		scenes <- bare
 		synctest.Wait()
 		require.Equal(t, []string{"render:bare"}, ev.get())
@@ -348,7 +348,7 @@ func TestCaptureWaitsForItsIndicatorScene(t *testing.T) {
 
 		indicated := bare
 		indicated.Seq = 3
-		indicated.CaptureIndicators = []ports.CaptureIndicator{{Rect: domain.Rect{W: 2, H: 2}}}
+		indicated.CaptureIndicators = []domain.CaptureIndicator{{Rect: domain.Rect{W: 2, H: 2}}}
 		scenes <- indicated
 		select {
 		case d := <-replies:
@@ -372,14 +372,14 @@ func TestCaptureWithoutIndicatorFailsAfterTheBoundedWait(t *testing.T) {
 		r.EXPECT().Close().Return().Once()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		scenes := make(chan ports.Scene, 1)
+		scenes := make(chan domain.Scene, 1)
 		incoming := make(chan ports.CaptureRequest)
 		replies := make(chan ports.CaptureDone, 4)
 		done := make(chan error, 1)
 		go func() {
 			done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }, Captured: replies}, scenes, nil, nil, nil, incoming)
 		}()
-		scenes <- ports.Scene{Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2}
+		scenes <- domain.Scene{Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2}
 		start := time.Now()
 		incoming <- ports.CaptureRequest{ID: 1, Indicate: true, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
 		select {
@@ -408,7 +408,7 @@ func TestCaptureDeliveredOnlyWhenTheIndicatedFramePresents(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var reads atomic.Int32
 			r := portsmocks.NewMockRenderer(t)
-			r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+			r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s domain.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 				if s.Seq != 0 {
 					return nil, tc.render // the indicated frame
 				}
@@ -425,7 +425,7 @@ func TestCaptureDeliveredOnlyWhenTheIndicatedFramePresents(t *testing.T) {
 			r.EXPECT().Close().Return().Once()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			scenes := make(chan ports.Scene, 1)
+			scenes := make(chan domain.Scene, 1)
 			incoming := make(chan ports.CaptureRequest)
 			replies := make(chan ports.CaptureDone, 4)
 			done := make(chan error, 1)
@@ -433,8 +433,8 @@ func TestCaptureDeliveredOnlyWhenTheIndicatedFramePresents(t *testing.T) {
 				done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }, Captured: replies}, scenes, nil, nil, nil, incoming)
 			}()
 			incoming <- ports.CaptureRequest{ID: 1, Indicate: true, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
-			scenes <- ports.Scene{Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1}},
-				CaptureIndicators: []ports.CaptureIndicator{{Rect: domain.Rect{W: 2, H: 2}}}}
+			scenes <- domain.Scene{Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2, Windows: []domain.SceneWindow{{ID: 1}},
+				CaptureIndicators: []domain.CaptureIndicator{{Rect: domain.Rect{W: 2, H: 2}}}}
 			var d ports.CaptureDone
 			select {
 			case d = <-replies:

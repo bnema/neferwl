@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
@@ -12,7 +13,7 @@ func TestRequestsAdmitRefuseAndFull(t *testing.T) {
 	replies := make(chan ports.CaptureDone, MaxRequests+2)
 	var r Requests
 	r.Init(context.Background(), replies)
-	scene := ports.Scene{OutputWidth: 10, OutputHeight: 10}
+	scene := domain.Scene{OutputWidth: 10, OutputHeight: 10}
 
 	require.False(t, r.Admit(ports.CaptureRequest{ID: 1}, ErrOutputOff, scene, true))
 	require.ErrorIs(t, (<-replies).Err, ErrOutputOff)
@@ -36,8 +37,8 @@ func TestRequestsFailPendingSkipsHanded(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 4)
 	var r Requests
 	r.Init(context.Background(), replies)
-	r.Admit(ports.CaptureRequest{ID: 1}, nil, ports.Scene{}, false)
-	r.Admit(ports.CaptureRequest{ID: 2}, nil, ports.Scene{}, false)
+	r.Admit(ports.CaptureRequest{ID: 1}, nil, domain.Scene{}, false)
+	r.Admit(ports.CaptureRequest{ID: 2}, nil, domain.Scene{}, false)
 	r.List[0] = ports.CaptureRequest{} // handed to the worker
 	r.FailPending(ErrEpochChanged)
 	require.Zero(t, r.Len())
@@ -51,8 +52,8 @@ func TestRequestsStopDrainsIncoming(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 4)
 	var r Requests
 	r.Init(context.Background(), replies)
-	r.Admit(ports.CaptureRequest{ID: 1}, nil, ports.Scene{}, false)
-	r.Admit(ports.CaptureRequest{ID: 3}, nil, ports.Scene{}, false)
+	r.Admit(ports.CaptureRequest{ID: 1}, nil, domain.Scene{}, false)
+	r.Admit(ports.CaptureRequest{ID: 3}, nil, domain.Scene{}, false)
 	r.List[1] = ports.CaptureRequest{} // handed to the pipeline
 	incoming := make(chan ports.CaptureRequest, 2)
 	incoming <- ports.CaptureRequest{ID: 2}

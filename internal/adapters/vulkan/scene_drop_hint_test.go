@@ -5,18 +5,17 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestSceneDropHintsOrder(t *testing.T) {
 	r := &Renderer{width: 80, height: 60}
-	s := ports.Scene{
-		Border: ports.Border{Active: "#ff0000"},
-		Windows: []ports.SceneWindow{
+	s := domain.Scene{
+		Border: domain.Border{Active: "#ff0000"},
+		Windows: []domain.SceneWindow{
 			{ID: 1, Rect: domain.Rect{W: 40, H: 60}},
 			{ID: 2, Floating: true, Rect: domain.Rect{X: 50, W: 20, H: 20}},
 		},
-		Layers:    []ports.SceneLayer{{ID: 9, Layer: domain.LayerTop, Rect: domain.Rect{W: 80, H: 5}}},
+		Layers:    []domain.SceneLayer{{ID: 9, Layer: domain.LayerTop, Rect: domain.Rect{W: 80, H: 5}}},
 		DropHints: []domain.Rect{{X: 38, W: 4, H: 60}, {W: 0, H: 10}},
 	}
 	got := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 80, 60)))

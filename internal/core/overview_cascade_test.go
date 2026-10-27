@@ -1316,7 +1316,7 @@ func TestOverviewOutlineRoundedAllocations(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ps := []Placement{{Rect: Rect{X: 20, Y: 20, W: 100, H: 80}, Preview: 0.5, Focused: true, Floating: true}}
 		// Keep the returned outline alive so its one snapshot allocation is counted.
-		var outline *ports.SelectionOutline
+		var outline *domain.SelectionOutline
 		n := testing.AllocsPerRun(50, func() {
 			_, outline = overviewOutline(nil, ps, 2, 0, 12)
 		})

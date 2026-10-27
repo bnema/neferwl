@@ -29,13 +29,13 @@ import (
 type Output struct {
 	// Set before Run. The backend owns instance registration and wake routing.
 	Security        ports.SessionSecurity
-	SecurityChanges <-chan ports.SecurityState
+	SecurityChanges <-chan domain.SecurityState
 	Instance        domain.OutputInstance
 	SecurityEvents  chan<- ports.SecurityBackendEvent
 	// Frames, set before Run, tells core a flip of an animating scene
 	// completed (nil: nobody is told). Sends never block.
 	Frames           chan<- ports.OutputFrame
-	securityState    ports.SecurityState
+	securityState    domain.SecurityState
 	securityPrepared bool
 	securityInvalid  bool
 	inactiveOnClose  bool            // affirmative terminal KMS result, owned by Close
@@ -150,7 +150,7 @@ type Output struct {
 	// overlay and colour probes).
 	frameReq, stateReq, withoutReq, probeReq atomicReq
 	// restWindows is overlayFrame's scene windows, valid until its next call.
-	restWindows []ports.SceneWindow
+	restWindows []domain.SceneWindow
 	// front is what the output image on screen holds (front.go).
 	front frontImage
 	// overlayPassed are the last overlay probes KMS took (testOverlay):
@@ -1113,7 +1113,7 @@ func (o *Output) InactiveOnClose() bool { return o.inactiveOnClose }
 
 // Run renders scenes and commits them until ctx ends. active reports seat
 // enable/disable. What the output shows and read is pushed to reports.
-func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan *domain.ContentBatch, returns ports.ContentReturn, cursor <-chan ports.CursorChange, reports ports.PresentationSink, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) (runErr error) {
+func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan bool, scenes <-chan domain.Scene, contents <-chan *domain.ContentBatch, returns ports.ContentReturn, cursor <-chan ports.CursorChange, reports ports.PresentationSink, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) (runErr error) {
 	defer func() {
 		p := recover()
 		if p != nil {
@@ -1173,7 +1173,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 	table := surfaces.New()
 	drawn := table.Map()
 	o.kept = table.Kept
-	var scene ports.Scene
+	var scene domain.Scene
 	haveScene, dirty := false, false
 	var want ports.CursorChange
 	cursorScale := -1.0 // not loaded yet
@@ -1296,7 +1296,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 	}
 	for {
 		if o.observeSecurity() || haveScene && !o.sceneCurrent(scene) {
-			scene, haveScene, dirty = ports.Scene{}, false, false
+			scene, haveScene, dirty = domain.Scene{}, false, false
 			o.wantedAt = 0
 			want, cursorScale, cursorTransform = ports.CursorChange{}, -1, 0
 			if o.cursor != nil {

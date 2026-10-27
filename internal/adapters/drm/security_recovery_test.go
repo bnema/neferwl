@@ -41,7 +41,7 @@ func TestSecurityStuckRecoveryInvalidatesBeforeFreshProof(t *testing.T) {
 		fence, signal := protectionFence(t, false)
 		var renderedOnce atomic.Bool
 		rendered := make(chan struct{}, 1)
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s domain.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			if s.Seq == 12 {
 				if renderedOnce.CompareAndSwap(false, true) {
 					select {
@@ -63,7 +63,7 @@ func TestSecurityStuckRecoveryInvalidatesBeforeFreshProof(t *testing.T) {
 		k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		scenes := make(chan ports.Scene, 1)
+		scenes := make(chan domain.Scene, 1)
 		done := make(chan error, 1)
 		setOutputRenderer(t, o, r)
 		go func() {
@@ -83,7 +83,7 @@ func TestSecurityStuckRecoveryInvalidatesBeforeFreshProof(t *testing.T) {
 		if p, ok := initial.(ports.SecurityOutputProof); !ok || p.Proof != (domain.OutputProtection{Generation: 1, Instance: 77, Kind: domain.ProtectionProtectedFrame}) {
 			t.Fatalf("initial proof %+v", initial)
 		}
-		scenes <- ports.Scene{Seq: 12, Security: ports.SecurityState{Generation: 1, Protected: true}}
+		scenes <- domain.Scene{Seq: 12, Security: domain.SecurityState{Generation: 1, Protected: true}}
 		select {
 		case <-rendered:
 		case <-ctx.Done():

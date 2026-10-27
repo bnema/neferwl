@@ -9,7 +9,6 @@ import (
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 
 	vk "github.com/bnema/purego-vulkan/vulkan"
 	"golang.org/x/sys/unix"
@@ -40,13 +39,13 @@ type target struct {
 	// into the target's own buffers, copied by hold.
 	valid          bool
 	sceneSeq       uint64
-	scene          ports.Scene
-	heldWindows    []ports.SceneWindow
-	heldSeparators []ports.Separator
-	heldLayers     []ports.SceneLayer
+	scene          domain.Scene
+	heldWindows    []domain.SceneWindow
+	heldSeparators []domain.Separator
+	heldLayers     []domain.SceneLayer
 	heldHints      []domain.Rect
-	heldIndicators []ports.CaptureIndicator
-	heldOverlays   []ports.Overlay
+	heldIndicators []domain.CaptureIndicator
+	heldOverlays   []domain.Overlay
 	windows        map[domain.WindowID]heldWindow
 }
 

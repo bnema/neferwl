@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -125,7 +126,7 @@ func (p *Pipeline) EndGate(err error) {
 
 // SubmitScoped consumes requests with explicit immutable scene admission. The
 // final gate read precedes BeginCapture, not the render that produced pixels.
-func (p *Pipeline) SubmitScoped(state ports.SecurityState, r ports.Renderer, requests []ports.CaptureRequest) {
+func (p *Pipeline) SubmitScoped(state domain.SecurityState, r ports.Renderer, requests []ports.CaptureRequest) {
 	if len(requests) == 0 {
 		return
 	}
@@ -168,7 +169,7 @@ func (p *Pipeline) SubmitScoped(state ports.SecurityState, r ports.Renderer, req
 	p.jobs <- b
 }
 
-func (p *Pipeline) captureAllowed(state ports.SecurityState) bool {
+func (p *Pipeline) captureAllowed(state domain.SecurityState) bool {
 	return p.Security == nil || !state.Protected && p.Security.Snapshot() == state
 }
 

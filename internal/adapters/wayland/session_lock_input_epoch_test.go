@@ -20,10 +20,10 @@ import (
 // This fixture wires real channel ports before starting the display owner.
 //
 //testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
-func inputEpochLockServer(t *testing.T) (*Server, *sessionsecurity.Gate, chan ports.SecurityState, chan ports.ClientEvent, string) {
+func inputEpochLockServer(t *testing.T) (*Server, *sessionsecurity.Gate, chan domain.SecurityState, chan ports.ClientEvent, string) {
 	t.Helper()
 	gate := &sessionsecurity.Gate{}
-	changes := make(chan ports.SecurityState, 16)
+	changes := make(chan domain.SecurityState, 16)
 	events := make(chan ports.ClientEvent, 128)
 	dir := t.TempDir()
 	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, Security: gate, Keymap: keymapText(t)}, Channels{Events: events, SecurityChanges: changes, SecurityEvents: make(chan ports.SecurityBackendEvent, 16)}, logging.For(context.Background(), "wayland"))

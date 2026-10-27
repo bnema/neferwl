@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
@@ -692,7 +691,7 @@ func refusePipeline(r *atomicReq, _ uint32) error {
 	return nil
 }
 
-func hdrScanoutScene() (ports.Scene, map[domain.WindowID]domain.SurfaceContent) {
+func hdrScanoutScene() (domain.Scene, map[domain.WindowID]domain.SurfaceContent) {
 	s, c := fullscreenScene()
 	return s, c
 }

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // BenchmarkComposeFullTarget composes a full-redraw frame (three windows
@@ -47,9 +46,9 @@ func BenchmarkComposeFullTarget(b *testing.B) {
 				content.ID, content.Surface, content.Seq, content.Version = domain.WindowID(i+1), uint64(i+1), 1, 1
 				contents[content.ID] = content
 			}
-			scene := func(i int) ports.Scene {
+			scene := func(i int) domain.Scene {
 				x := i % 64
-				return ports.Scene{Seq: uint64(i + 1), Scale: 1, Background: "#101010", Windows: []ports.SceneWindow{
+				return domain.Scene{Seq: uint64(i + 1), Scale: 1, Background: "#101010", Windows: []domain.SceneWindow{
 					{ID: 1, Rect: domain.Rect{X: x - ww, W: ww, H: h}},
 					{ID: 2, Rect: domain.Rect{X: x, W: ww, H: h}},
 					{ID: 3, Rect: domain.Rect{X: x + ww, W: ww, H: h}},

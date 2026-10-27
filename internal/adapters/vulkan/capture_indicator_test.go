@@ -5,17 +5,16 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
 
-func indicatorScene(m ...ports.CaptureIndicator) ports.Scene {
-	return ports.Scene{Seq: 1, Scale: 1, Background: "#101010", CaptureIndicators: m}
+func indicatorScene(m ...domain.CaptureIndicator) domain.Scene {
+	return domain.Scene{Seq: 1, Scale: 1, Background: "#101010", CaptureIndicators: m}
 }
 
 // indicatorDraws walks s and returns the physical rects drawn, all in the
 // indicator red.
-func indicatorDraws(t *testing.T, r *Renderer, s ports.Scene) []image.Rectangle {
+func indicatorDraws(t *testing.T, r *Renderer, s domain.Scene) []image.Rectangle {
 	t.Helper()
 	var out []image.Rectangle
 	for _, d := range r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, r.width, r.height))) {
@@ -26,7 +25,7 @@ func indicatorDraws(t *testing.T, r *Renderer, s ports.Scene) []image.Rectangle 
 }
 
 func TestCaptureIndicatorBorderGeometryLogicalScaled(t *testing.T) {
-	target := ports.CaptureIndicator{Rect: domain.Rect{X: 8, Y: 4, W: 16, H: 8}}
+	target := domain.CaptureIndicator{Rect: domain.Rect{X: 8, Y: 4, W: 16, H: 8}}
 	for _, tc := range []struct {
 		scale float64
 		want  []image.Rectangle
@@ -41,13 +40,13 @@ func TestCaptureIndicatorBorderGeometryLogicalScaled(t *testing.T) {
 	}
 	// On the output edge the border is still inside the output.
 	r := &Renderer{width: 64, height: 64}
-	got := indicatorDraws(t, r, indicatorScene(ports.CaptureIndicator{Rect: domain.Rect{W: 64, H: 64}}))
+	got := indicatorDraws(t, r, indicatorScene(domain.CaptureIndicator{Rect: domain.Rect{W: 64, H: 64}}))
 	require.Equal(t, []image.Rectangle{image.Rect(0, 0, 64, 2), image.Rect(0, 62, 64, 64), image.Rect(0, 2, 2, 62), image.Rect(62, 2, 64, 62)}, got)
 	// A target thinner than the border is clamped: no overdraw.
-	got = indicatorDraws(t, r, indicatorScene(ports.CaptureIndicator{Rect: domain.Rect{X: 4, Y: 4, W: 10, H: 2}}))
+	got = indicatorDraws(t, r, indicatorScene(domain.CaptureIndicator{Rect: domain.Rect{X: 4, Y: 4, W: 10, H: 2}}))
 	require.Equal(t, []image.Rectangle{image.Rect(4, 4, 14, 5), image.Rect(4, 5, 14, 6)}, got)
 	// Union of several targets, in order.
-	got = indicatorDraws(t, r, indicatorScene(ports.CaptureIndicator{Rect: domain.Rect{W: 10, H: 10}}, ports.CaptureIndicator{Rect: domain.Rect{X: 20, W: 10, H: 10}}))
+	got = indicatorDraws(t, r, indicatorScene(domain.CaptureIndicator{Rect: domain.Rect{W: 10, H: 10}}, domain.CaptureIndicator{Rect: domain.Rect{X: 20, W: 10, H: 10}}))
 	require.Len(t, got, 8)
 }
 
@@ -55,18 +54,18 @@ func TestCaptureIndicatorBorderGeometryLogicalScaled(t *testing.T) {
 // tall (an output that small, core inflates the others) is filled whole.
 func TestCaptureIndicatorThinMarkStillDraws(t *testing.T) {
 	r := &Renderer{width: 64, height: 64}
-	got := indicatorDraws(t, r, indicatorScene(ports.CaptureIndicator{Rect: domain.Rect{X: 10, Y: 4, W: 1, H: 20}}))
+	got := indicatorDraws(t, r, indicatorScene(domain.CaptureIndicator{Rect: domain.Rect{X: 10, Y: 4, W: 1, H: 20}}))
 	require.Equal(t, []image.Rectangle{image.Rect(10, 4, 11, 24)}, got, "W=1")
-	got = indicatorDraws(t, r, indicatorScene(ports.CaptureIndicator{Rect: domain.Rect{X: 4, Y: 10, W: 20, H: 1}}))
+	got = indicatorDraws(t, r, indicatorScene(domain.CaptureIndicator{Rect: domain.Rect{X: 4, Y: 10, W: 20, H: 1}}))
 	require.Equal(t, []image.Rectangle{image.Rect(4, 10, 24, 11)}, got, "H=1")
-	s := indicatorScene(ports.CaptureIndicator{Rect: domain.Rect{X: 5, Y: 5, W: 1, H: 1}})
+	s := indicatorScene(domain.CaptureIndicator{Rect: domain.Rect{X: 5, Y: 5, W: 1, H: 1}})
 	s.Scale = 2
 	require.Equal(t, []image.Rectangle{image.Rect(10, 10, 12, 12)}, indicatorDraws(t, &Renderer{width: 128, height: 128}, s))
 }
 
 func TestCaptureIndicatorPill(t *testing.T) {
 	r := &Renderer{width: 64, height: 64}
-	pill := ports.CaptureIndicator{Pill: true, Rect: domain.Rect{X: 44, Y: 8, W: 12, H: 12}}
+	pill := domain.CaptureIndicator{Pill: true, Rect: domain.Rect{X: 44, Y: 8, W: 12, H: 12}}
 	got := indicatorDraws(t, r, indicatorScene(pill))
 	// Three bands: the corners are cut, the middle is the full width.
 	require.Equal(t, []image.Rectangle{image.Rect(46, 8, 54, 11), image.Rect(44, 11, 56, 17), image.Rect(46, 17, 54, 20)}, got)
@@ -82,13 +81,13 @@ func TestCaptureIndicatorIdleAndAllocs(t *testing.T) {
 	r := &Renderer{width: 64, height: 64}
 	s := indicatorScene()
 	require.Empty(t, r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 64, 64))))
-	walk := func(s ports.Scene) float64 {
+	walk := func(s domain.Scene) float64 {
 		dmg := newDamage(&target{}, s, image.Rect(0, 0, 64, 64))
 		r.draws(s, nil, dmg)
 		return testing.AllocsPerRun(50, func() { r.draws(s, nil, dmg) })
 	}
 	idle := walk(s)
-	with := walk(indicatorScene(ports.CaptureIndicator{Rect: domain.Rect{W: 64, H: 64}}, ports.CaptureIndicator{Pill: true, Rect: domain.Rect{X: 44, Y: 8, W: 12, H: 12}}))
+	with := walk(indicatorScene(domain.CaptureIndicator{Rect: domain.Rect{W: 64, H: 64}}, domain.CaptureIndicator{Pill: true, Rect: domain.Rect{X: 44, Y: 8, W: 12, H: 12}}))
 	t.Logf("r.draws allocations: idle %.0f, with indicators %.0f", idle, with)
 	require.LessOrEqual(t, with, idle, "indicator draws allocate")
 }

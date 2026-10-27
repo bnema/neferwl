@@ -262,7 +262,7 @@ func TestRulesMerge(t *testing.T) {
 		r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
 		r.client <- ports.WindowMapped{ID: 1, AppID: "chat"}
 		r.client <- ports.WindowMapped{ID: 2, AppID: "term"}
-		set := sceneMatch2(t, r, func(s ports.Scene) bool { return s.Output == "DP-2" && len(s.Windows) == 2 })
+		set := sceneMatch2(t, r, func(s domain.Scene) bool { return s.Output == "DP-2" && len(s.Windows) == 2 })
 		got := map[domain.WindowID]int{}
 		for _, w := range set.Windows {
 			got[w.ID] = w.Rect.W
@@ -276,7 +276,7 @@ func TestRulesMerge(t *testing.T) {
 }
 
 // sceneMatch2 waits for a scene of the multi rig that ok accepts.
-func sceneMatch2(t *testing.T, r *multiRig, ok func(ports.Scene) bool) ports.Scene {
+func sceneMatch2(t *testing.T, r *multiRig, ok func(domain.Scene) bool) domain.Scene {
 	t.Helper()
 	for range 50 {
 		for _, s := range receive(t, r.scenes) {
@@ -286,7 +286,7 @@ func sceneMatch2(t *testing.T, r *multiRig, ok func(ports.Scene) bool) ports.Sce
 		}
 	}
 	t.Fatal("no matching scene")
-	return ports.Scene{}
+	return domain.Scene{}
 }
 
 func TestRuleWidthOnCurrentWorkspace(t *testing.T) {
@@ -296,7 +296,7 @@ func TestRuleWidthOnCurrentWorkspace(t *testing.T) {
 			c.Rules = []ports.WindowRule{winRule("w", "wide", func(r *ports.WindowRule) { r.Cells = 2 })}
 		}, left)
 		r.client <- ports.WindowMapped{ID: 1, AppID: "wide"}
-		s := sceneMatch2(t, r, func(s ports.Scene) bool { return len(s.Windows) == 1 })
+		s := sceneMatch2(t, r, func(s domain.Scene) bool { return len(s.Windows) == 1 })
 		if s.Windows[0].Rect.W != 100 {
 			t.Fatalf("width %d", s.Windows[0].Rect.W)
 		}
@@ -463,7 +463,7 @@ func TestRuleWidthWithFixedOverflow(t *testing.T) {
 		}, left)
 		r.client <- ports.WindowMapped{ID: 1, AppID: "term"}
 		r.client <- ports.WindowMapped{ID: 2, AppID: "wide"}
-		s := sceneMatch2(t, r, func(s ports.Scene) bool { return len(s.Windows) == 2 })
+		s := sceneMatch2(t, r, func(s domain.Scene) bool { return len(s.Windows) == 2 })
 		if s.Windows[0].Rect.W != 50 || s.Windows[1].Rect.W != 150 {
 			t.Fatalf("%+v", s.Windows)
 		}

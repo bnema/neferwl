@@ -104,7 +104,7 @@ func TestTwoRenderersShareGPU(t *testing.T) {
 	}
 	c := solidContent(t, 16, 16, color.RGBA{1, 2, 3, 255})
 	c.ID, c.Seq, c.Version = 1, 1, 1
-	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
+	scene := domain.Scene{Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
 	contents := map[domain.WindowID]domain.SurfaceContent{1: c}
 	for frame := range 10 {
 		scene.Seq = uint64(frame + 1)
@@ -171,7 +171,7 @@ func TestConcurrentRendererTargets(t *testing.T) {
 				}
 			}()
 			for frame := range 3 {
-				if err := render(r, ports.Scene{Seq: uint64(frame + 1), Background: "#102030"}, nil); err != nil {
+				if err := render(r, domain.Scene{Seq: uint64(frame + 1), Background: "#102030"}, nil); err != nil {
 					errs <- err
 					return
 				}

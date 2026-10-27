@@ -16,13 +16,13 @@ import (
 
 // routeInputs are the router's input channels, as wired in production.
 type routeInputs struct {
-	scenes   chan []ports.Scene
+	scenes   chan []domain.Scene
 	cursor   chan ports.CursorChange
 	captures chan ports.CaptureRequest
 }
 
 func newRouteInputs() routeInputs {
-	return routeInputs{scenes: make(chan []ports.Scene), cursor: make(chan ports.CursorChange), captures: make(chan ports.CaptureRequest)}
+	return routeInputs{scenes: make(chan []domain.Scene), cursor: make(chan ports.CursorChange), captures: make(chan ports.CaptureRequest)}
 }
 
 func (in routeInputs) routes() outputRoutes {
@@ -45,8 +45,8 @@ func TestOutputRouting(t *testing.T) {
 		set.start(ctx, name, idleRun)
 		<-set.outs[name].cursor // initial cursor
 	}
-	in.scenes <- []ports.Scene{{Output: "A", Seq: 1}, {Output: "B", Seq: 2}}
-	in.scenes <- []ports.Scene{{Output: "A", Seq: 3}}
+	in.scenes <- []domain.Scene{{Output: "A", Seq: 1}, {Output: "B", Seq: 2}}
+	in.scenes <- []domain.Scene{{Output: "A", Seq: 3}}
 	in.cursor <- ports.CursorChange{} // the router took both scene sets
 	if got := <-set.outs["A"].scenes; got.Seq != 3 {
 		t.Fatalf("A scene: %+v", got)
@@ -78,7 +78,7 @@ func TestOutputRouting(t *testing.T) {
 	if err := set.finish("A"); err != nil {
 		t.Fatal(err)
 	}
-	in.scenes <- []ports.Scene{{Output: "A", Seq: 4}}
+	in.scenes <- []domain.Scene{{Output: "A", Seq: 4}}
 	in.captures <- ports.CaptureRequest{ID: 8, Output: "A"}
 	if got := <-replies; got.ID != 8 || got.Err == nil {
 		t.Fatalf("removed output capture: %+v", got)
@@ -107,7 +107,7 @@ func TestOutputStartsOffAfterOffScene(t *testing.T) {
 			<-ctx.Done()
 			return nil
 		}
-		in.scenes <- []ports.Scene{{Output: "A", Off: true}, {Output: "B"}}
+		in.scenes <- []domain.Scene{{Output: "A", Off: true}, {Output: "B"}}
 		for _, tc := range []struct {
 			name string
 			want bool
@@ -117,7 +117,7 @@ func TestOutputStartsOffAfterOffScene(t *testing.T) {
 				t.Fatalf("%s start off %v, want %v", tc.name, got, tc.want)
 			}
 		}
-		in.scenes <- []ports.Scene{{Output: "A"}}
+		in.scenes <- []domain.Scene{{Output: "A"}}
 		set.outs["A"].stop()
 		if err := set.finish("A"); err != nil {
 			t.Fatal(err)
@@ -137,7 +137,7 @@ func TestOutputStartsOffAfterOffScene(t *testing.T) {
 func TestRouterUnregisterKeepsNewerLifetime(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newOutputRouter(context.Background(), nil, outputRoutes{})
-		newer := &mailbox{instance: 2, scenes: make(chan ports.Scene, 1), cursor: make(chan ports.CursorChange, 1)}
+		newer := &mailbox{instance: 2, scenes: make(chan domain.Scene, 1), cursor: make(chan ports.CursorChange, 1)}
 		r.register("A", newer)
 		r.unregister("A", 1)
 		if r.outs["A"] != newer {
@@ -193,7 +193,7 @@ func TestBlockedStartDoesNotDelayRouting(t *testing.T) {
 		for seq := uint64(1); seq <= 3; seq++ {
 			synctest.Wait()
 			select {
-			case in.scenes <- []ports.Scene{{Output: "A", Seq: seq}}:
+			case in.scenes <- []domain.Scene{{Output: "A", Seq: seq}}:
 			default:
 				t.Fatal("router blocked behind a starting output")
 			}
@@ -235,7 +235,7 @@ func TestOutputRoutingAllocations(t *testing.T) {
 		m := newMailbox(1, ctx, cancel, make(chan struct{}))
 		r.register("A", m)
 		<-m.cursor
-		scenes := []ports.Scene{{Output: "A"}}
+		scenes := []domain.Scene{{Output: "A"}}
 		cursor := ports.CursorChange{Shape: "pointer"}
 		capture := ports.CaptureRequest{Output: "A"}
 		if got := testing.AllocsPerRun(100, func() {

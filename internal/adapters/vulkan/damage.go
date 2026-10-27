@@ -6,7 +6,6 @@ import (
 	"slices"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Damage: an output target keeps what it holds (scene Seq, each window's
@@ -38,7 +37,7 @@ type heldWindow struct {
 	rect image.Rectangle
 }
 
-func newDamage(tg *target, s ports.Scene, bounds image.Rectangle) *damageRegion {
+func newDamage(tg *target, s domain.Scene, bounds image.Rectangle) *damageRegion {
 	d := &damageRegion{seen: map[domain.WindowID]bool{}, bound: bounds, drawn: map[domain.WindowID]heldWindow{}}
 	d.hold(tg, s)
 	return d
@@ -47,7 +46,7 @@ func newDamage(tg *target, s ports.Scene, bounds image.Rectangle) *damageRegion 
 // hold decides what the target keeps. Seq 0 is a scene core did not
 // number (setup, tests): redraw all. The same Seq keeps everything; a new
 // one keeps all but what sceneDelta finds changed.
-func (d *damageRegion) hold(tg *target, s ports.Scene) {
+func (d *damageRegion) hold(tg *target, s domain.Scene) {
 	if !tg.valid || s.Seq == 0 {
 		d.why.count(fullTarget)
 		return
@@ -75,7 +74,7 @@ func (d *damageRegion) hold(tg *target, s ports.Scene) {
 
 // frameDamage reuses the bookkeeping maps. drawn is swapped with the
 // target's previous map after hold, so a target never observes mutations.
-func (r *Renderer) frameDamage(tg *target, s ports.Scene, bounds image.Rectangle) *damageRegion {
+func (r *Renderer) frameDamage(tg *target, s domain.Scene, bounds image.Rectangle) *damageRegion {
 	if r.damageSeen == nil {
 		r.damageSeen = make(map[domain.WindowID]bool)
 	}
@@ -233,7 +232,7 @@ func (d *damageRegion) clip(ds []draw) []draw {
 // it drew, and the scene with its compared slices copied into the target's
 // buffers (zero allocations once they are large enough): the caller may
 // rewrite its slices in place later.
-func (tg *target) hold(s ports.Scene, d *damageRegion) {
+func (tg *target) hold(s domain.Scene, d *damageRegion) {
 	tg.heldWindows = append(tg.heldWindows[:0], s.Windows...)
 	tg.heldSeparators = append(tg.heldSeparators[:0], s.Separators...)
 	tg.heldLayers = append(tg.heldLayers[:0], s.Layers...)
@@ -256,8 +255,8 @@ func (tg *target) hold(s ports.Scene, d *damageRegion) {
 }
 
 var (
-	heldCapture      ports.SceneCapture
-	heldCaptureScene ports.Scene
+	heldCapture      domain.SceneCapture
+	heldCaptureScene domain.Scene
 )
 
 // sceneDelta is the region (physical, through phys) where cur differs from
@@ -270,7 +269,7 @@ var (
 // new SceneWindow field is checked by TestSceneWindowFieldCount.
 // Scene.Animating is not compared: it schedules the next frame, it draws
 // nothing.
-func sceneDelta(old, cur ports.Scene, phys func(domain.Rect) image.Rectangle, limit int) (image.Rectangle, bool) {
+func sceneDelta(old, cur domain.Scene, phys func(domain.Rect) image.Rectangle, limit int) (image.Rectangle, bool) {
 	if old.Security != cur.Security || old.Output != cur.Output ||
 		old.OutputWidth != cur.OutputWidth || old.OutputHeight != cur.OutputHeight ||
 		old.Scale != cur.Scale || old.Transform != cur.Transform || old.Off != cur.Off ||
@@ -337,7 +336,7 @@ func sceneDelta(old, cur ports.Scene, phys func(domain.Rect) image.Rectangle, li
 // differ by index are counted in the other list (a focus change lights a
 // few lines, not all). Lists of different lengths (a line scrolled on or
 // off) count every line.
-func separatorDelta(old, cur []ports.Separator, phys func(domain.Rect) image.Rectangle) image.Rectangle {
+func separatorDelta(old, cur []domain.Separator, phys func(domain.Rect) image.Rectangle) image.Rectangle {
 	var area image.Rectangle
 	if slices.Equal(old, cur) {
 		return area
@@ -369,7 +368,7 @@ func separatorDelta(old, cur []ports.Separator, phys func(domain.Rect) image.Rec
 	return area
 }
 
-func countSeparator(list []ports.Separator, sep ports.Separator) int {
+func countSeparator(list []domain.Separator, sep domain.Separator) int {
 	n := 0
 	for _, o := range list {
 		if o == sep {

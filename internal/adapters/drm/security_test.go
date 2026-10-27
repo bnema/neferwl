@@ -20,9 +20,9 @@ import (
 // test state so transitions can race with the output owner without data races.
 func securityGate(t *testing.T, o *Output, state *atomic.Uint64) {
 	k := portsmocks.NewMockSessionSecurity(t)
-	k.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState {
+	k.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState {
 		v := state.Load()
-		return ports.SecurityState{Generation: domain.LockGeneration(v >> 1), Protected: v&1 != 0}
+		return domain.SecurityState{Generation: domain.LockGeneration(v >> 1), Protected: v&1 != 0}
 	})
 	o.Security = k
 	o.Instance = 77
@@ -48,7 +48,7 @@ func TestSecurityPreparationProofAndFailure(t *testing.T) {
 				o.frame.begin(pendingFrame{fences: []*os.File{f}}, time.Now())
 			} else if stage != "disable" {
 				r.EXPECT().UseTarget(0).Return().Once()
-				r.EXPECT().Render(ports.Scene{Background: "#000000"}, map[domain.WindowID]domain.SurfaceContent(nil)).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+				r.EXPECT().Render(domain.Scene{Background: "#000000"}, map[domain.WindowID]domain.SurfaceContent(nil)).RunAndReturn(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 					if stage == "changed" {
 						state.Store(5)
 					}
@@ -97,11 +97,11 @@ func TestSecurityRejectsStaleAcquireReleaseScenes(t *testing.T) {
 	securityGate(t, o, &state)
 	r := portsmocks.NewMockRenderer(t)
 	state.Store(3)
-	if _, err := o.submitFrame(context.Background(), r, ports.Scene{}, nil, nil, nil, nil); !errors.Is(err, errSecurityScene) {
+	if _, err := o.submitFrame(context.Background(), r, domain.Scene{}, nil, nil, nil, nil); !errors.Is(err, errSecurityScene) {
 		t.Fatalf("old desktop admitted: %v", err)
 	}
 	state.Store(4)
-	if _, err := o.submitFrame(context.Background(), r, ports.Scene{Security: ports.SecurityState{Generation: 1, Protected: true}}, nil, nil, nil, nil); !errors.Is(err, errSecurityScene) {
+	if _, err := o.submitFrame(context.Background(), r, domain.Scene{Security: domain.SecurityState{Generation: 1, Protected: true}}, nil, nil, nil, nil); !errors.Is(err, errSecurityScene) {
 		t.Fatalf("old lock admitted on release: %v", err)
 	}
 	if len(*commits) != 0 {
@@ -120,11 +120,11 @@ func TestSecurityProtectedCompositionDetachesCursorAndOverlay(t *testing.T) {
 	o.cursor.Move(8, 8)
 	o.overlay = &plane{id: tOverlay, props: planeProps}
 	s, c := fullscreenScene()
-	s.Security = ports.SecurityState{Generation: 1, Protected: true}
-	s.CaptureScene = &ports.Scene{}
+	s.Security = domain.SecurityState{Generation: 1, Protected: true}
+	s.CaptureScene = &domain.Scene{}
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().UseTarget(0).Return().Once()
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(scene ports.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(scene domain.Scene, _ map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		if scene.CaptureScene != nil {
 			t.Fatal("hidden capture crossed protected path")
 		}

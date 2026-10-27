@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
@@ -76,8 +77,8 @@ func (f *forwarder) push(ev ports.InputEvent) {
 
 // queuedMotion exposes only motion, retaining its exact production epoch.
 // Raw and stamped events never coalesce with each other or across transitions.
-func queuedMotion(ev ports.InputEvent) (ports.PointerMotion, ports.SecurityState, bool, bool) {
-	var state ports.SecurityState
+func queuedMotion(ev ports.InputEvent) (ports.PointerMotion, domain.SecurityState, bool, bool) {
+	var state domain.SecurityState
 	wrapped := false
 	if secure, ok := ev.(ports.SecurityInput); ok {
 		state, ev, wrapped = secure.State, secure.Event, true

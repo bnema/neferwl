@@ -51,7 +51,7 @@ func TestBorderSceneInvariantsAnimated(t *testing.T) {
 						c.Layout.Gaps = gap
 					}, left, right)
 					moved := 0
-					borderScenario(t, r.multiRig, gap, func(set []ports.Scene) []ports.Scene {
+					borderScenario(t, r.multiRig, gap, func(set []domain.Scene) []domain.Scene {
 						settled, ok := r.settleAll(t, left.Name, right.Name)
 						if !ok {
 							return set
@@ -82,7 +82,7 @@ func TestBorderSceneInvariantsAnimated(t *testing.T) {
 // itself when nothing animated) with the full ones. One step in four skips
 // the settling, so the next action starts mid-transition; the last step
 // always settles.
-func borderScenario(t *testing.T, r *multiRig, gap int, settle func([]ports.Scene) []ports.Scene) {
+func borderScenario(t *testing.T, r *multiRig, gap int, settle func([]domain.Scene) []domain.Scene) {
 	t.Helper()
 	rng := rand.New(rand.NewSource(20260928))
 	var ids []domain.WindowID
@@ -103,7 +103,7 @@ func borderScenario(t *testing.T, r *multiRig, gap int, settle func([]ports.Scen
 	}
 	const steps = 180
 	for step := range steps {
-		var scenes []ports.Scene
+		var scenes []domain.Scene
 		switch {
 		case len(ids) < 2 || rng.Intn(5) == 0 && len(ids) < 12:
 			scenes = r.mapWindow(t, next)
@@ -131,12 +131,12 @@ func borderScenario(t *testing.T, r *multiRig, gap int, settle func([]ports.Scen
 
 // sameRects reports whether two scene sets draw every window at the same
 // rect.
-func sameRects(a, b []ports.Scene) bool {
+func sameRects(a, b []domain.Scene) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	for i := range a {
-		if !slices.EqualFunc(a[i].Windows, b[i].Windows, func(x, y ports.SceneWindow) bool { return x.ID == y.ID && x.Rect == y.Rect }) {
+		if !slices.EqualFunc(a[i].Windows, b[i].Windows, func(x, y domain.SceneWindow) bool { return x.ID == y.ID && x.Rect == y.Rect }) {
 			return false
 		}
 	}
@@ -146,7 +146,7 @@ func sameRects(a, b []ports.Scene) bool {
 // checkBorderScenesMoving is what holds for a scene published while
 // windows still move: every separator lies inside its output and belongs
 // to a window that is shown, and at most one window is focused.
-func checkBorderScenesMoving(t *testing.T, step int, scenes []ports.Scene) {
+func checkBorderScenesMoving(t *testing.T, step int, scenes []domain.Scene) {
 	t.Helper()
 	focused := 0
 	for _, s := range scenes {
@@ -156,7 +156,7 @@ func checkBorderScenesMoving(t *testing.T, step int, scenes []ports.Scene) {
 			if r.W <= 0 || r.H <= 0 || r.X < 0 || r.Y < 0 || r.X+r.W > o.W || r.Y+r.H > o.H {
 				t.Fatalf("step %d %s (moving): line outside output: %+v; scene %+v", step, s.Output, sep, s)
 			}
-			if sep.Window != 0 && !slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == sep.Window && !w.Hidden }) {
+			if sep.Window != 0 && !slices.ContainsFunc(s.Windows, func(w domain.SceneWindow) bool { return w.ID == sep.Window && !w.Hidden }) {
 				t.Fatalf("step %d %s (moving): line belongs to a hidden or absent window: %+v; scene %+v", step, s.Output, sep, s)
 			}
 		}
@@ -171,7 +171,7 @@ func checkBorderScenesMoving(t *testing.T, step int, scenes []ports.Scene) {
 	}
 }
 
-func checkBorderScenes(t *testing.T, step, gap int, scenes []ports.Scene) {
+func checkBorderScenes(t *testing.T, step, gap int, scenes []domain.Scene) {
 	t.Helper()
 	focused := 0
 	for _, s := range scenes {
@@ -187,10 +187,10 @@ func checkBorderScenes(t *testing.T, step, gap int, scenes []ports.Scene) {
 	}
 }
 
-func checkBorderScene(t *testing.T, step, gap int, s ports.Scene) {
+func checkBorderScene(t *testing.T, step, gap int, s domain.Scene) {
 	t.Helper()
 	o := domain.Rect{W: s.OutputWidth, H: s.OutputHeight}
-	var focus *ports.SceneWindow
+	var focus *domain.SceneWindow
 	tiles := 0
 	for i := range s.Windows {
 		w := &s.Windows[i]
@@ -260,7 +260,7 @@ func checkBorderScene(t *testing.T, step, gap int, s ports.Scene) {
 
 // neighborSides are the sides of tile w facing another visible tile across
 // gap, with the shared edge strictly inside the output.
-func neighborSides(s ports.Scene, w ports.SceneWindow, gap int) domain.Sides {
+func neighborSides(s domain.Scene, w domain.SceneWindow, gap int) domain.Sides {
 	o := domain.Rect{W: s.OutputWidth, H: s.OutputHeight}
 	var sides domain.Sides
 	for _, other := range s.Windows {
@@ -286,7 +286,7 @@ func neighborSides(s ports.Scene, w ports.SceneWindow, gap int) domain.Sides {
 
 // wantInset is the exact inset of a visible tile: all sides with gaps,
 // only the right and bottom shared-line owner sides without.
-func wantInset(s ports.Scene, w ports.SceneWindow, gap int) domain.Sides {
+func wantInset(s domain.Scene, w domain.SceneWindow, gap int) domain.Sides {
 	if gap > 0 {
 		return domain.SideAll
 	}

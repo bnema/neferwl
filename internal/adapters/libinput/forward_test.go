@@ -9,6 +9,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 	"github.com/rs/zerolog"
@@ -144,7 +145,7 @@ func (l *lockedBuffer) String() string {
 }
 
 func TestForwarderSecurityMotionEpochs(t *testing.T) {
-	states := []ports.SecurityState{
+	states := []domain.SecurityState{
 		{Generation: 1}, {Generation: 2, Protected: true}, {Generation: 3},
 		{Generation: 3, Protected: true}, // exact state, not just generation
 	}

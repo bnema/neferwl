@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -349,15 +350,15 @@ func (c *Core) onLayer(id WindowID) bool {
 }
 
 // scenePopups are the mapped popups on a screen, bottom to top.
-func (c *Core) scenePopups(sc *screen) []ports.SceneWindow {
-	var out []ports.SceneWindow
+func (c *Core) scenePopups(sc *screen) []domain.SceneWindow {
+	var out []domain.SceneWindow
 	for _, id := range c.popupOrder {
 		p := c.popups[id]
 		if p == nil || !p.mapped {
 			continue
 		}
 		if s, r, ok := c.windowRect(id); ok && s == sc {
-			out = append(out, ports.SceneWindow{ID: id, Rect: r, Popup: true, OverLayers: c.onLayer(c.popupRoot(id))})
+			out = append(out, domain.SceneWindow{ID: id, Rect: r, Popup: true, OverLayers: c.onLayer(c.popupRoot(id))})
 		}
 	}
 	return out

@@ -11,44 +11,44 @@ import (
 )
 
 func TestScanoutCandidate(t *testing.T) {
-	full := ports.SceneWindow{ID: 1, Rect: domain.Rect{W: 100, H: 50}, Fullscreen: true}
-	scene := ports.Scene{OutputWidth: 100, OutputHeight: 50, Windows: []ports.SceneWindow{full}}
+	full := domain.SceneWindow{ID: 1, Rect: domain.Rect{W: 100, H: 50}, Fullscreen: true}
+	scene := domain.Scene{OutputWidth: 100, OutputHeight: 50, Windows: []domain.SceneWindow{full}}
 	buf := &domain.DMABuf{ID: 9, Width: 200, Height: 100, Format: fourccARGB, Planes: []domain.DMABufPlane{{}}}
 	game := domain.SurfaceContent{ID: 1, Width: 200, Height: 100, LogicalW: 100, LogicalH: 50, DMABuf: buf}
 	for _, tc := range []struct {
 		name   string
-		scene  func(s *ports.Scene)
+		scene  func(s *domain.Scene)
 		cont   func(c *domain.SurfaceContent)
 		reason string
 	}{
 		{"scanout", nil, nil, ""},
-		{"hidden others ignored", func(s *ports.Scene) {
-			s.Windows = append(s.Windows, ports.SceneWindow{ID: 2, Hidden: true})
+		{"hidden others ignored", func(s *domain.Scene) {
+			s.Windows = append(s.Windows, domain.SceneWindow{ID: 2, Hidden: true})
 		}, nil, ""},
-		{"no window", func(s *ports.Scene) { s.Windows = nil }, nil, "no_fullscreen"},
-		{"rotated output", func(s *ports.Scene) { s.Transform = 1 }, nil, "output_transform"},
-		{"overlays", func(s *ports.Scene) {
-			s.Overlays = []ports.Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Text: "f"}}
+		{"no window", func(s *domain.Scene) { s.Windows = nil }, nil, "no_fullscreen"},
+		{"rotated output", func(s *domain.Scene) { s.Transform = 1 }, nil, "output_transform"},
+		{"overlays", func(s *domain.Scene) {
+			s.Overlays = []domain.Overlay{{ID: 1, Seq: 1, Kind: domain.OverlayLabel, Text: "f"}}
 		}, nil, "overlays"},
-		{"dimmed", func(s *ports.Scene) { s.Windows[0].Dim = 0.5 }, nil, "dim"},
-		{"rounded", func(s *ports.Scene) { s.Windows[0].Radius = 10 }, nil, "window_fade"},
-		{"window fade", func(s *ports.Scene) { s.Windows[0].Fade = 0.5 }, nil, "window_fade"},
-		{"window preview", func(s *ports.Scene) { s.Windows[0].Preview = 0.9 }, nil, "window_fade"},
-		{"window zoom", func(s *ports.Scene) { s.Windows[0].Zoom = 0.9 }, nil, "window_fade"},
+		{"dimmed", func(s *domain.Scene) { s.Windows[0].Dim = 0.5 }, nil, "dim"},
+		{"rounded", func(s *domain.Scene) { s.Windows[0].Radius = 10 }, nil, "window_fade"},
+		{"window fade", func(s *domain.Scene) { s.Windows[0].Fade = 0.5 }, nil, "window_fade"},
+		{"window preview", func(s *domain.Scene) { s.Windows[0].Preview = 0.9 }, nil, "window_fade"},
+		{"window zoom", func(s *domain.Scene) { s.Windows[0].Zoom = 0.9 }, nil, "window_fade"},
 		{"faded", nil, func(c *domain.SurfaceContent) { c.Fade = 0.5 }, "fade"},
-		{"tiled", func(s *ports.Scene) { s.Windows[0].Fullscreen = false }, nil, "other_windows"},
-		{"float above", func(s *ports.Scene) {
-			s.Windows = append(s.Windows, ports.SceneWindow{ID: 2, Rect: domain.Rect{W: 10, H: 10}})
+		{"tiled", func(s *domain.Scene) { s.Windows[0].Fullscreen = false }, nil, "other_windows"},
+		{"float above", func(s *domain.Scene) {
+			s.Windows = append(s.Windows, domain.SceneWindow{ID: 2, Rect: domain.Rect{W: 10, H: 10}})
 		}, nil, "other_windows"},
-		{"not covering", func(s *ports.Scene) { s.Windows[0].Rect.W = 90 }, nil, "other_windows"},
-		{"overlay layer", func(s *ports.Scene) {
-			s.Layers = []ports.SceneLayer{{ID: 3, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 10, H: 10}}}
+		{"not covering", func(s *domain.Scene) { s.Windows[0].Rect.W = 90 }, nil, "other_windows"},
+		{"overlay layer", func(s *domain.Scene) {
+			s.Layers = []domain.SceneLayer{{ID: 3, Layer: domain.LayerOverlay, Rect: domain.Rect{W: 10, H: 10}}}
 		}, nil, "overlay_surface"},
-		{"top layer", func(s *ports.Scene) {
-			s.Layers = []ports.SceneLayer{{ID: 3, Layer: domain.LayerTop, Rect: domain.Rect{W: 10, H: 10}}}
+		{"top layer", func(s *domain.Scene) {
+			s.Layers = []domain.SceneLayer{{ID: 3, Layer: domain.LayerTop, Rect: domain.Rect{W: 10, H: 10}}}
 		}, nil, "overlay_surface"},
-		{"background layer", func(s *ports.Scene) {
-			s.Layers = []ports.SceneLayer{{ID: 3, Layer: domain.LayerBackground, Rect: domain.Rect{W: 10, H: 10}}}
+		{"background layer", func(s *domain.Scene) {
+			s.Layers = []domain.SceneLayer{{ID: 3, Layer: domain.LayerBackground, Rect: domain.Rect{W: 10, H: 10}}}
 		}, nil, ""},
 		{"shm", nil, func(c *domain.SurfaceContent) { c.DMABuf, c.SHM = nil, &domain.SHMBuffer{} }, "not_dmabuf"},
 		{"subsurface", nil, func(c *domain.SurfaceContent) { c.Children = []domain.Subsurface{{}} }, "subsurfaces"},
@@ -73,7 +73,7 @@ func TestScanoutCandidate(t *testing.T) {
 		}, "subsurfaces"},
 	} {
 		s := scene
-		s.Windows = append([]ports.SceneWindow(nil), scene.Windows...)
+		s.Windows = append([]domain.SceneWindow(nil), scene.Windows...)
 		c := game
 		if tc.scene != nil {
 			tc.scene(&s)
@@ -84,7 +84,7 @@ func TestScanoutCandidate(t *testing.T) {
 		for _, overlays := range []bool{false, true} {
 			want := tc.reason
 			if overlays {
-				s.Overlays = []ports.Overlay{{ID: 1}}
+				s.Overlays = []domain.Overlay{{ID: 1}}
 				if want == "" {
 					want = "overlays"
 				}
@@ -113,7 +113,7 @@ func wineTree(edit func(ch *domain.Subsurface)) func(c *domain.SurfaceContent) {
 // Wine's game subsurface is scanned out in place of the window: the
 // content keeps the window's ID and Seq and takes the subsurface buffer.
 func TestScanoutCandidateClientSubsurface(t *testing.T) {
-	scene := ports.Scene{OutputWidth: 100, OutputHeight: 50, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 100, H: 50}, Fullscreen: true}}}
+	scene := domain.Scene{OutputWidth: 100, OutputHeight: 50, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 100, H: 50}, Fullscreen: true}}}
 	game := &domain.DMABuf{ID: 9, Width: 200, Height: 100, Format: fourccXRGB, Planes: []domain.DMABufPlane{{}}}
 	acquire := &os.File{}
 	root := domain.SurfaceContent{ID: 1, Seq: 7, Width: 200, Height: 100, LogicalW: 100, LogicalH: 50, SHM: &domain.SHMBuffer{},
@@ -141,20 +141,20 @@ func TestScanoutCandidateClientSubsurface(t *testing.T) {
 // VRR follows a visible fullscreen window covering the output, even
 // when other windows or layers force composition.
 func TestFullscreenShown(t *testing.T) {
-	full := ports.SceneWindow{ID: 1, Rect: domain.Rect{W: 100, H: 50}, Fullscreen: true}
+	full := domain.SceneWindow{ID: 1, Rect: domain.Rect{W: 100, H: 50}, Fullscreen: true}
 	for _, tc := range []struct {
 		name string
-		wins []ports.SceneWindow
+		wins []domain.SceneWindow
 		want bool
 	}{
-		{"fullscreen", []ports.SceneWindow{full}, true},
-		{"with dialog above", []ports.SceneWindow{full, {ID: 2, Rect: domain.Rect{W: 10, H: 10}, Floating: true}}, true},
-		{"hidden", []ports.SceneWindow{{ID: 1, Rect: full.Rect, Fullscreen: true, Hidden: true}}, false},
-		{"off screen", []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 100, W: 100, H: 50}, Fullscreen: true}}, false},
-		{"tiled covering", []ports.SceneWindow{{ID: 1, Rect: full.Rect}}, false},
+		{"fullscreen", []domain.SceneWindow{full}, true},
+		{"with dialog above", []domain.SceneWindow{full, {ID: 2, Rect: domain.Rect{W: 10, H: 10}, Floating: true}}, true},
+		{"hidden", []domain.SceneWindow{{ID: 1, Rect: full.Rect, Fullscreen: true, Hidden: true}}, false},
+		{"off screen", []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: 100, W: 100, H: 50}, Fullscreen: true}}, false},
+		{"tiled covering", []domain.SceneWindow{{ID: 1, Rect: full.Rect}}, false},
 		{"none", nil, false},
 	} {
-		s := ports.Scene{OutputWidth: 100, OutputHeight: 50, Windows: tc.wins}
+		s := domain.Scene{OutputWidth: 100, OutputHeight: 50, Windows: tc.wins}
 		if got := fullscreenShown(&s); got != tc.want {
 			t.Errorf("%s: %v, want %v", tc.name, got, tc.want)
 		}
@@ -179,12 +179,12 @@ func BenchmarkFullscreenShown(b *testing.B) {
 
 // tiledFullscreenScene is 64 tiled windows with the fullscreen one last
 // (worst case for the walk).
-func tiledFullscreenScene() ports.Scene {
-	s := ports.Scene{OutputWidth: 3840, OutputHeight: 2160}
+func tiledFullscreenScene() domain.Scene {
+	s := domain.Scene{OutputWidth: 3840, OutputHeight: 2160}
 	for i := range 64 {
-		s.Windows = append(s.Windows, ports.SceneWindow{ID: domain.WindowID(i + 1), Rect: domain.Rect{X: i * 60, W: 60, H: 2160}})
+		s.Windows = append(s.Windows, domain.SceneWindow{ID: domain.WindowID(i + 1), Rect: domain.Rect{X: i * 60, W: 60, H: 2160}})
 	}
-	s.Windows = append(s.Windows, ports.SceneWindow{ID: 99, Rect: domain.Rect{W: 3840, H: 2160}, Fullscreen: true})
+	s.Windows = append(s.Windows, domain.SceneWindow{ID: 99, Rect: domain.Rect{W: 3840, H: 2160}, Fullscreen: true})
 	return s
 }
 
@@ -260,7 +260,7 @@ func TestHDRScanoutDecision(t *testing.T) {
 	o, k, _ := testOutput(t)
 	o.hdr.on = true
 	o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30}}
-	scene := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Fullscreen: true, Rect: domain.Rect{W: 200, H: 100}}}}
+	scene := domain.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []domain.SceneWindow{{ID: 1, Fullscreen: true, Rect: domain.Rect{W: 200, H: 100}}}}
 	c := domain.SurfaceContent{ID: 1, Width: 200, Height: 100, LogicalW: 200, LogicalH: 100, DMABuf: &domain.DMABuf{ID: 11, Format: fourccXR30}}
 	check := func(want string) {
 		t.Helper()
@@ -355,7 +355,7 @@ func TestPlaneWithoutInFormatsIsLinear(t *testing.T) {
 // a window on another workspace, hidden or scrolled off the output is
 // discarded, not presented.
 func TestShownByScene(t *testing.T) {
-	s := ports.Scene{OutputWidth: 10, OutputHeight: 10, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 5, W: 10, H: 10}}, {ID: 2, Hidden: true}, {ID: 3, Rect: domain.Rect{X: 10, W: 10, H: 10}}}, Layers: []ports.SceneLayer{{ID: 5}}}
+	s := domain.Scene{OutputWidth: 10, OutputHeight: 10, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: 5, W: 10, H: 10}}, {ID: 2, Hidden: true}, {ID: 3, Rect: domain.Rect{X: 10, W: 10, H: 10}}}, Layers: []domain.SceneLayer{{ID: 5}}}
 	got := (&Output{}).shownBy(s, map[domain.WindowID]uint64{1: 3, 2: 4, 3: 8, 5: 6, 9: 7})
 	if len(got) != 2 || got[1] != 3 || got[5] != 6 {
 		t.Fatalf("shows %v", got)
@@ -367,7 +367,7 @@ func TestShownByScene(t *testing.T) {
 func TestFrameDecisionAllocations(t *testing.T) {
 	o, _, _ := testOutput(t)
 	o.scanout = true
-	s := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Fullscreen: true, Rect: domain.Rect{W: 200, H: 100}}}}
+	s := domain.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []domain.SceneWindow{{ID: 1, Fullscreen: true, Rect: domain.Rect{W: 200, H: 100}}}}
 	c := domain.SurfaceContent{ID: 1, Width: 200, Height: 100, LogicalW: 200, LogicalH: 100, DMABuf: &domain.DMABuf{ID: 17, Format: fourccXRGB}}
 	surfaces := map[domain.WindowID]domain.SurfaceContent{1: c}
 	o.clientFBs[17] = &clientFB{fbID: 77}

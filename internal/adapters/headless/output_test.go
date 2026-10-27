@@ -31,14 +31,14 @@ import (
 // frames records what the mocked renderer is asked to draw.
 type frames struct {
 	mu       sync.Mutex
-	scenes   []ports.Scene
+	scenes   []domain.Scene
 	contents []map[domain.WindowID]domain.SurfaceContent
 }
 
-func (f *frames) snapshot() ([]ports.Scene, []map[domain.WindowID]domain.SurfaceContent) {
+func (f *frames) snapshot() ([]domain.Scene, []map[domain.WindowID]domain.SurfaceContent) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]ports.Scene(nil), f.scenes...), append([]map[domain.WindowID]domain.SurfaceContent(nil), f.contents...)
+	return append([]domain.Scene(nil), f.scenes...), append([]map[domain.WindowID]domain.SurfaceContent(nil), f.contents...)
 }
 
 // recordingRenderer returns a generated mock whose Render records each frame
@@ -46,7 +46,7 @@ func (f *frames) snapshot() ([]ports.Scene, []map[domain.WindowID]domain.Surface
 func recordingRenderer(t *testing.T, err error) (*portsmocks.MockRenderer, *frames) {
 	r := portsmocks.NewMockRenderer(t)
 	f := &frames{}
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, c map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s domain.Scene, c map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.scenes = append(f.scenes, s)
@@ -70,13 +70,13 @@ func waitFrames(t *testing.T, f *frames, n int) {
 func TestRun(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		dir := t.TempDir()
-		scenes := make(chan ports.Scene, 8)
+		scenes := make(chan domain.Scene, 8)
 		contents := newContentFeed(t, 8)
 		r, f := recordingRenderer(t, nil)
 		contents.send(domain.SurfaceContent{ID: 1, SHM: &domain.SHMBuffer{Pool: 1}})
-		shown := []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 2, H: 2}}, {ID: 2, Rect: domain.Rect{W: 2, H: 2}}}
-		scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: shown}
-		scenes <- ports.Scene{Seq: 2, OutputWidth: 2, OutputHeight: 2, Windows: shown}
+		shown := []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 2, H: 2}}, {ID: 2, Rect: domain.Rect{W: 2, H: 2}}}
+		scenes <- domain.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: shown}
+		scenes <- domain.Scene{Seq: 2, OutputWidth: 2, OutputHeight: 2, Windows: shown}
 		contents.send(domain.SurfaceContent{ID: 2, SHM: &domain.SHMBuffer{Pool: 2}})
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
@@ -96,7 +96,7 @@ func TestRun(t *testing.T) {
 		} else if kept, ok := c[1][1]; !ok || kept.SHM == nil || kept.SHM.Pool != 1 {
 			t.Errorf("content of the shown window dropped on its empty content: %+v", c[1])
 		}
-		scenes <- ports.Scene{Seq: 3, OutputWidth: 2, OutputHeight: 2, Windows: shown[1:]}
+		scenes <- domain.Scene{Seq: 3, OutputWidth: 2, OutputHeight: 2, Windows: shown[1:]}
 		waitFrames(t, f, 3)
 		if _, c := f.snapshot(); len(c) < 3 {
 			t.Fatal("no third frame")
@@ -147,7 +147,7 @@ func TestRun(t *testing.T) {
 // A scene whose Seq the output already holds is not drawn again.
 func TestHeadlessSameSeqRendersOnce(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		scenes := make(chan ports.Scene)
+		scenes := make(chan domain.Scene)
 		contents := newContentFeed(t, 0)
 		r, f := recordingRenderer(t, nil)
 		ctx, cancel := context.WithCancel(context.Background())
@@ -155,7 +155,7 @@ func TestHeadlessSameSeqRendersOnce(t *testing.T) {
 		go func() {
 			done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
 		}()
-		scene := ports.Scene{Seq: 5, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 2, H: 2}}}}
+		scene := domain.Scene{Seq: 5, OutputWidth: 2, OutputHeight: 2, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 2, H: 2}}}}
 		scenes <- scene
 		waitFrames(t, f, 1)
 		scenes <- scene
@@ -181,9 +181,9 @@ func TestHeadlessSameSeqRendersOnce(t *testing.T) {
 // Content of a window the output does not show draws no frame.
 func TestRunSkipsContentNotShown(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		scenes := make(chan ports.Scene, 1)
+		scenes := make(chan domain.Scene, 1)
 		contents := newContentFeed(t, 2)
-		scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 2, H: 2}}, {ID: 3, Hidden: true}}}
+		scenes <- domain.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 2, H: 2}}, {ID: 3, Hidden: true}}}
 		r, f := recordingRenderer(t, nil)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
@@ -211,8 +211,8 @@ func TestRunSkipsContentNotShown(t *testing.T) {
 
 func TestErrors(t *testing.T) {
 	expected := errors.New("failure")
-	scenes := make(chan ports.Scene, 1)
-	scenes <- ports.Scene{}
+	scenes := make(chan domain.Scene, 1)
+	scenes <- domain.Scene{}
 	if err := Run(context.Background(), Options{NewRenderer: func(int, int) (ports.Renderer, error) { return nil, expected }}, scenes, nil, nil, nil, nil); !errors.Is(err, expected) {
 		t.Fatal(err)
 	}
@@ -283,14 +283,14 @@ func TestLinkPNGSecure(t *testing.T) {
 		img.Pix[i] = byte(i * 7)
 	}
 	frame, latest := filepath.Join(dir, "frame-000001.png"), filepath.Join(dir, "latest.png")
-	if err := writePNGSecure(frame, img, nil, ports.SecurityState{}); err != nil {
+	if err := writePNGSecure(frame, img, nil, domain.SecurityState{}); err != nil {
 		t.Fatal(err)
 	}
 	// An older latest.png is replaced.
 	if err := os.WriteFile(latest, []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if written, err := linkPNGSecure(frame, latest, img, nil, ports.SecurityState{}); err != nil || !written {
+	if written, err := linkPNGSecure(frame, latest, img, nil, domain.SecurityState{}); err != nil || !written {
 		t.Fatalf("link = %v, %v", written, err)
 	}
 	a, err := os.ReadFile(frame)
@@ -340,13 +340,13 @@ func TestLinkPNGSecure(t *testing.T) {
 // is encoded instead.
 func TestLinkPNGSecureSkipsAndFallsBack(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
-	good := ports.SecurityState{Generation: 1}
+	good := domain.SecurityState{Generation: 1}
 	// frameIn writes the frame to link and returns its directory and path.
 	frameIn := func(t *testing.T) (string, string) {
 		t.Helper()
 		dir := t.TempDir()
 		frame := filepath.Join(dir, "frame-000001.png")
-		if err := writePNGSecure(frame, img, nil, ports.SecurityState{}); err != nil {
+		if err := writePNGSecure(frame, img, nil, domain.SecurityState{}); err != nil {
 			t.Fatal(err)
 		}
 		return dir, frame
@@ -363,7 +363,7 @@ func TestLinkPNGSecureSkipsAndFallsBack(t *testing.T) {
 		dir, frame := frameIn(t)
 		// A protected state is refused without reading the live snapshot.
 		gate := portsmocks.NewMockSessionSecurity(t)
-		if written, err := linkPNGSecure(frame, filepath.Join(dir, "latest.png"), img, gate, ports.SecurityState{Generation: 1, Protected: true}); err != nil || written {
+		if written, err := linkPNGSecure(frame, filepath.Join(dir, "latest.png"), img, gate, domain.SecurityState{Generation: 1, Protected: true}); err != nil || written {
 			t.Fatalf("link = %v, %v", written, err)
 		}
 		onlyFrame(t, dir)
@@ -371,7 +371,7 @@ func TestLinkPNGSecureSkipsAndFallsBack(t *testing.T) {
 	t.Run("protected snapshot", func(t *testing.T) {
 		dir, frame := frameIn(t)
 		gate := portsmocks.NewMockSessionSecurity(t)
-		gate.EXPECT().Snapshot().Return(ports.SecurityState{Generation: 1, Protected: true})
+		gate.EXPECT().Snapshot().Return(domain.SecurityState{Generation: 1, Protected: true})
 		if written, err := linkPNGSecure(frame, filepath.Join(dir, "latest.png"), img, gate, good); err != nil || written {
 			t.Fatalf("link = %v, %v", written, err)
 		}
@@ -381,7 +381,7 @@ func TestLinkPNGSecureSkipsAndFallsBack(t *testing.T) {
 		dir, frame := frameIn(t)
 		gate := portsmocks.NewMockSessionSecurity(t)
 		gate.EXPECT().Snapshot().Return(good).Once()
-		gate.EXPECT().Snapshot().Return(ports.SecurityState{Generation: 2}).Once()
+		gate.EXPECT().Snapshot().Return(domain.SecurityState{Generation: 2}).Once()
 		if written, err := linkPNGSecure(frame, filepath.Join(dir, "latest.png"), img, gate, good); err != nil || written {
 			t.Fatalf("link = %v, %v", written, err)
 		}
@@ -394,7 +394,7 @@ func TestLinkPNGSecureSkipsAndFallsBack(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(latest, "keep"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if written, err := linkPNGSecure(frame, latest, img, nil, ports.SecurityState{}); err == nil || written {
+		if written, err := linkPNGSecure(frame, latest, img, nil, domain.SecurityState{}); err == nil || written {
 			t.Fatalf("link = %v, %v; want an error", written, err)
 		}
 		if _, err := os.Stat(latest + ".tmp"); !os.IsNotExist(err) {
@@ -407,7 +407,7 @@ func TestLinkPNGSecureSkipsAndFallsBack(t *testing.T) {
 	t.Run("no source file", func(t *testing.T) {
 		dir := t.TempDir()
 		latest := filepath.Join(dir, "latest.png")
-		if written, err := linkPNGSecure(filepath.Join(dir, "missing.png"), latest, img, nil, ports.SecurityState{}); err != nil || !written {
+		if written, err := linkPNGSecure(filepath.Join(dir, "missing.png"), latest, img, nil, domain.SecurityState{}); err != nil || !written {
 			t.Fatalf("link = %v, %v", written, err)
 		}
 		fi, err := os.Stat(latest)
@@ -449,7 +449,7 @@ func TestWritePNGAtomic(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
 	for _, name := range []string{"frame-000001.png", "latest.png"} {
 		path := filepath.Join(dir, name)
-		if err := writePNGSecure(path, img, nil, ports.SecurityState{}); err != nil {
+		if err := writePNGSecure(path, img, nil, domain.SecurityState{}); err != nil {
 			t.Fatal(err)
 		}
 		f, err := os.Open(path)
@@ -472,10 +472,10 @@ func TestWritePNGAtomic(t *testing.T) {
 
 func TestRunPassesLayerContent(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		scenes := make(chan ports.Scene, 1)
+		scenes := make(chan domain.Scene, 1)
 		contents := newContentFeed(t, 1)
-		layer := ports.SceneLayer{ID: 42, Layer: domain.LayerTop, Rect: domain.Rect{W: 2, H: 2}}
-		scenes <- ports.Scene{Layers: []ports.SceneLayer{layer}}
+		layer := domain.SceneLayer{ID: 42, Layer: domain.LayerTop, Rect: domain.Rect{W: 2, H: 2}}
+		scenes <- domain.Scene{Layers: []domain.SceneLayer{layer}}
 		contents.send(domain.SurfaceContent{ID: 42, Width: 1, Height: 1, SHM: &domain.SHMBuffer{Pool: 42, Stride: 4}})
 		r, f := recordingRenderer(t, nil)
 		ctx, cancel := context.WithCancel(context.Background())
@@ -496,7 +496,7 @@ func TestRunPassesLayerContent(t *testing.T) {
 
 func TestCaptureForcesFreshHeadlessFrame(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		scenes := make(chan ports.Scene, 1)
+		scenes := make(chan domain.Scene, 1)
 		requests := make(chan ports.CaptureRequest, 1)
 		replies := make(chan ports.CaptureDone, 1)
 		r, frames := recordingRenderer(t, nil)
@@ -511,7 +511,7 @@ func TestCaptureForcesFreshHeadlessFrame(t *testing.T) {
 		go func() {
 			done <- Run(ctx, Options{Width: 2, Height: 2, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, requests)
 		}()
-		scenes <- ports.Scene{Background: "#000000"}
+		scenes <- domain.Scene{Background: "#000000"}
 		waitFrames(t, frames, 1)
 		f, err := os.CreateTemp(t.TempDir(), "shot")
 		if err != nil {
@@ -560,15 +560,15 @@ func TestHeadlessRawHDRScreenshot(t *testing.T) {
 		r.EXPECT().SetHDR(float64(203)).Return().Once()
 		r.EXPECT().ExportTargets(1, []uint64(nil), false).Return([]domain.DMABuf{{Planes: []domain.DMABufPlane{{File: f}}}}, nil).Once()
 		rendered := make(chan struct{}, 4)
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			rendered <- struct{}{}
 			return nil, nil
 		}).Maybe()
 		r.EXPECT().Pixels().Return(image.NewRGBA(image.Rect(0, 0, 2, 2))).Maybe()
 		r.EXPECT().HDRPixels().Return(want).Maybe()
 		r.EXPECT().Close().Return().Once()
-		scenes := make(chan ports.Scene, 1)
-		scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2}
+		scenes := make(chan domain.Scene, 1)
+		scenes <- domain.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2}
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() {
@@ -669,10 +669,10 @@ func TestHeadlessHDRFormatsConfirmed(t *testing.T) {
 // goes back to wayland reset and exactly once.
 func TestRunAppliesWholeBatch(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		scenes := make(chan ports.Scene, 1)
+		scenes := make(chan domain.Scene, 1)
 		contents := newContentFeed(t, 1)
-		shown := []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 2, H: 2}}, {ID: 2, Rect: domain.Rect{W: 2, H: 2}}}
-		scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: shown}
+		shown := []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 2, H: 2}}, {ID: 2, Rect: domain.Rect{W: 2, H: 2}}}
+		scenes <- domain.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: shown}
 		r, f := recordingRenderer(t, nil)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
@@ -706,8 +706,8 @@ func TestRunAppliesWholeBatch(t *testing.T) {
 func TestRunFinalizesLastFrameDuration(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		dir := t.TempDir()
-		scenes := make(chan ports.Scene, 1)
-		scenes <- ports.Scene{Seq: 1}
+		scenes := make(chan domain.Scene, 1)
+		scenes <- domain.Scene{Seq: 1}
 		r, _ := recordingRenderer(t, nil)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()

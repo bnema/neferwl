@@ -12,7 +12,7 @@ import (
 
 func TestWorkspaceChannelCapacity(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		_, err := core.New(scrollDefaults(), core.Channels{Scenes: make(chan []ports.Scene, 1), Workspaces: make(chan ports.Workspaces, 2)}, core.Options{})
+		_, err := core.New(scrollDefaults(), core.Channels{Scenes: make(chan []domain.Scene, 1), Workspaces: make(chan ports.Workspaces, 2)}, core.Options{})
 		if err == nil {
 			t.Fatal("expected capacity-1 validation")
 		}
@@ -29,7 +29,7 @@ func TestWorkspaceSnapshotsAndActivation(t *testing.T) {
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 32)
 		snapshots := make(chan ports.Workspaces, 1)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		state := make(chan ports.State, 1)
 		spawn := make(chan ports.SpawnRequest, 8)
 		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Workspaces: snapshots, State: state, Scenes: scenes, Spawn: spawn}, core.Options{})
@@ -119,7 +119,7 @@ func TestMoveWorkspaceReordersSnapshot(t *testing.T) {
 		input := make(chan ports.InputEvent, 8)
 		output := make(chan ports.OutputEvent, 8)
 		snapshots := make(chan ports.Workspaces, 1)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		spawn := make(chan ports.SpawnRequest, 8)
 		commands := make(chan ports.ClientCommand, 32)
 		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Workspaces: snapshots, Scenes: scenes, Spawn: spawn}, core.Options{})

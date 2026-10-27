@@ -266,7 +266,7 @@ func TestProtectedKeyboardPolicy(t *testing.T) {
 		t.Run(key.Keysym, func(t *testing.T) {
 			var buf bytes.Buffer
 			security := portsmocks.NewMockSessionSecurity(t)
-			state := ports.SecurityState{Generation: 7, Protected: true}
+			state := domain.SecurityState{Generation: 7, Protected: true}
 			security.EXPECT().Snapshot().Return(state).Once()
 			opts := Options{Security: security, LogKeys: true, Log: zerowrap.New(zerowrap.Config{Level: "debug", Format: "json", Output: &buf})}
 			produced := securitySnapshot(opts.Security)
@@ -290,7 +290,7 @@ func TestKeyboardPolicyUnlockedAndVT(t *testing.T) {
 		t.Run(map[bool]string{false: "unlocked", true: "protected"}[protected], func(t *testing.T) {
 			var buf bytes.Buffer
 			security := portsmocks.NewMockSessionSecurity(t)
-			state := ports.SecurityState{Generation: 9, Protected: protected}
+			state := domain.SecurityState{Generation: 9, Protected: protected}
 			security.EXPECT().Snapshot().Return(state).Once()
 			seat := portsmocks.NewMockSeat(t)
 			seat.EXPECT().SwitchVT(2).Once()
@@ -323,8 +323,8 @@ func TestKeyboardPolicyUnlockedAndVT(t *testing.T) {
 
 func TestSecurityInputAllKindsProductionEpoch(t *testing.T) {
 	security := portsmocks.NewMockSessionSecurity(t)
-	old := ports.SecurityState{Generation: 11, Protected: true}
-	newState := ports.SecurityState{Generation: 12}
+	old := domain.SecurityState{Generation: 11, Protected: true}
+	newState := domain.SecurityState{Generation: 12}
 	events := []ports.InputEvent{
 		ports.KeyEvent{Keysym: "secret", Pressed: true}, ports.PointerMotion{X: 1},
 		ports.PointerButton{Button: 272}, ports.PointerAxis{},
@@ -357,9 +357,9 @@ func TestKeyboardProducerQuarantinesBeforeHotkeysAndLogging(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer km.Close()
-	initial := ports.SecurityState{}
-	locked := ports.SecurityState{Generation: 1, Protected: true}
-	unlocked := ports.SecurityState{Generation: 2}
+	initial := domain.SecurityState{}
+	locked := domain.SecurityState{Generation: 1, Protected: true}
+	unlocked := domain.SecurityState{Generation: 2}
 	security := portsmocks.NewMockSessionSecurity(t)
 	security.EXPECT().Snapshot().Return(initial).Times(3)
 	security.EXPECT().Snapshot().Return(locked).Times(4)

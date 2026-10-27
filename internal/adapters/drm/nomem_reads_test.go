@@ -11,7 +11,6 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
@@ -31,7 +30,7 @@ func TestNoMemRetriesReapSignalledReads(t *testing.T) {
 		pending := o.readFences[0]
 		r := portsmocks.NewMockRenderer(t)
 		r.EXPECT().UseTarget(0).Return()
-		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
+		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			f, w := fencePipe(t)
 			if _, err := w.Write([]byte{1}); err != nil {
 				t.Fatal(err)
@@ -41,7 +40,7 @@ func TestNoMemRetriesReapSignalledReads(t *testing.T) {
 		enabled := true
 		var previous *os.File
 		for range errs {
-			_, err := o.submitFrame(context.Background(), r, ports.Scene{Seq: 1}, nil, nil, nil, nil)
+			_, err := o.submitFrame(context.Background(), r, domain.Scene{Seq: 1}, nil, nil, nil, nil)
 			if !errors.Is(err, unix.ENOMEM) || !o.commitFailed(err, &enabled) {
 				t.Fatalf("refusal: %v", err)
 			}

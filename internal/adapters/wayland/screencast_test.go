@@ -39,7 +39,7 @@ type castHarness struct {
 	casts    chan ports.CastCommand
 	got      chan ports.CastEvent
 	invs     chan ports.CastInventory
-	changes  chan ports.SecurityState
+	changes  chan domain.SecurityState
 }
 
 // newCastHarness starts the server; withSink false leaves Options.Casts nil
@@ -58,7 +58,7 @@ func newCastHarness(t *testing.T, withSink bool) *castHarness {
 		casts:    make(chan ports.CastCommand, 16),
 		got:      make(chan ports.CastEvent, 4096),
 		invs:     make(chan ports.CastInventory, 64),
-		changes:  make(chan ports.SecurityState, 16),
+		changes:  make(chan domain.SecurityState, 16),
 	}
 	opts := Options{RuntimeDir: h.dir, Outputs: castLayout, Security: &sessionsecurity.Gate{}}
 	if withSink {

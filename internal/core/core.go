@@ -29,7 +29,7 @@ type Channels struct {
 	Config   <-chan ports.ConfigChanged
 	Commands chan<- ports.ClientCommand
 	Spawn    chan<- ports.SpawnRequest
-	Scenes   chan []ports.Scene
+	Scenes   chan []domain.Scene
 	// Layouts, when set, receives the output layout whenever it changes,
 	// latest first (capacity 1, drained like Scenes). Input and cursors use it.
 	Layouts chan ports.Layout
@@ -89,7 +89,7 @@ type Core struct {
 	// workspace while overviewReal is filled) and by state(); never retained.
 	realBuf         []Placement
 	scratch         publishScratch
-	security        ports.SecurityState
+	security        domain.SecurityState
 	lock            lockState
 	inputKeys       map[string]bool
 	inputActive     bool
@@ -501,7 +501,7 @@ func (c *Core) queue(ctx context.Context, v ports.ClientCommand) (uint64, error)
 }
 
 // clientRect is the placement minus the border on its inset sides.
-// The renderer applies the same inset (ports.Border).
+// The renderer applies the same inset (domain.Border).
 func (c *Core) clientRect(p Placement) Rect {
 	if p.Fullscreen {
 		return p.Rect
@@ -679,7 +679,7 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 		return err
 	}
 	c.advanceFlash(only)
-	scenes := make([]ports.Scene, 0, len(c.screens))
+	scenes := make([]domain.Scene, 0, len(c.screens))
 	// Before the first output (and after the last is unplugged) the
 	// placeholder's scene has no output name: no renderer draws it.
 	for i, sc := range c.screens {

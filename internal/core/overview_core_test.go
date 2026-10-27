@@ -9,7 +9,7 @@ import (
 )
 
 // outputScene returns the scene of the named output in set.
-func outputScene(t *testing.T, set []ports.Scene, name string) ports.Scene {
+func outputScene(t *testing.T, set []domain.Scene, name string) domain.Scene {
 	t.Helper()
 	for _, s := range set {
 		if s.Output == name {
@@ -17,20 +17,20 @@ func outputScene(t *testing.T, set []ports.Scene, name string) ports.Scene {
 		}
 	}
 	t.Fatalf("no scene for %s", name)
-	return ports.Scene{}
+	return domain.Scene{}
 }
 
 // scenePreview returns window id's overview preview in s.
-func scenePreview(s ports.Scene, id domain.WindowID) (ports.SceneWindow, bool) {
+func scenePreview(s domain.Scene, id domain.WindowID) (domain.SceneWindow, bool) {
 	for _, w := range s.Windows {
 		if w.ID == id && w.Preview > 0 {
 			return w, true
 		}
 	}
-	return ports.SceneWindow{}, false
+	return domain.SceneWindow{}, false
 }
 
-func hasPreview(s ports.Scene) bool {
+func hasPreview(s domain.Scene) bool {
 	for _, w := range s.Windows {
 		if w.Preview > 0 {
 			return true

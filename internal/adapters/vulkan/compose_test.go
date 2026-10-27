@@ -11,7 +11,6 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // near reports whether two colors are within tol per channel.
@@ -29,7 +28,7 @@ func TestRendererScaledSHMFiltersLinearly(t *testing.T) {
 	px := []byte{0, 0, 0, 255, 255, 255, 255, 255}
 	c := shmContent(t, 2, 1, 8, px)
 	c.LogicalW, c.LogicalH = 64, 16
-	scene := ports.Scene{Background: "#ff0000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
+	scene := domain.Scene{Background: "#ff0000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
 	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: *c}); err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +48,7 @@ func TestRendererSourceCrop(t *testing.T) {
 	c := shmContent(t, 4, 1, 16, px)
 	c.LogicalW, c.LogicalH = 16, 8
 	c.Source = [4]float32{1, 0, 2, 1}
-	scene := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 8}}}}
+	scene := domain.Scene{Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 8}}}}
 	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: *c}); err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +78,7 @@ func TestRendererScaledDMABufFiltersLinearly(t *testing.T) {
 		return [4]byte{255, 255, 255, 255}
 	})
 	buf := &domain.DMABuf{ID: 3, Width: 64, Height: 1, Format: linear.Format, Planes: []domain.DMABufPlane{{File: f, Stride: 256}}}
-	scene := ports.Scene{Background: "#ff0000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 128, H: 4}}}}
+	scene := domain.Scene{Background: "#ff0000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 128, H: 4}}}}
 	c := domain.SurfaceContent{ID: 1, Width: 64, Height: 1, LogicalW: 128, LogicalH: 4, DMABuf: buf}
 	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: c}); err != nil {
 		t.Fatal(err)
@@ -100,7 +99,7 @@ func TestRendererReturnsDoneFence(t *testing.T) {
 	if !r.syncFD {
 		t.Skip("device cannot export sync files")
 	}
-	done, err := r.Render(ports.Scene{Background: "#102030"}, nil)
+	done, err := r.Render(domain.Scene{Background: "#102030"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +120,7 @@ func TestRendererSHMCopiedOncePerContent(t *testing.T) {
 	defer r.Close()
 	c := solidContent(t, 16, 16, color.RGBA{1, 2, 3, 255})
 	c.ID, c.Seq, c.Version = 1, 1, 1
-	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
+	scene := domain.Scene{Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
 	contents := map[domain.WindowID]domain.SurfaceContent{1: c}
 	render := func() {
 		t.Helper()
@@ -163,7 +162,7 @@ func TestRendererSkipsOccludedSurface(t *testing.T) {
 	game.Surface, game.Version = 2, 1
 	game.Opaque = true
 	root.Children = []domain.Subsurface{{SurfaceContent: game}}
-	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
+	scene := domain.Scene{Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
 	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: root}); err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +197,7 @@ func TestRendererKeepsSurfaceBelowFailedCover(t *testing.T) {
 	root.ID, root.Seq = 1, 1
 	bad := &domain.DMABuf{ID: 9, Width: 16, Height: 16, Format: 0xdeadbeef}
 	root.Children = []domain.Subsurface{{SurfaceContent: domain.SurfaceContent{Width: 16, Height: 16, Opaque: true, DMABuf: bad}}}
-	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
+	scene := domain.Scene{Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
 	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: root}); err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +210,7 @@ func TestRendererKeepsSurfaceBelowFailedCover(t *testing.T) {
 }
 
 // render draws a frame and closes its fence.
-func render(r *Renderer, s ports.Scene, contents map[domain.WindowID]domain.SurfaceContent) error {
+func render(r *Renderer, s domain.Scene, contents map[domain.WindowID]domain.SurfaceContent) error {
 	done, err := r.Render(s, contents)
 	if done != nil {
 		done.Close()
@@ -229,7 +228,7 @@ func TestRendererSHMDoubleBufferWaitsForReaders(t *testing.T) {
 	if !r.syncFD {
 		t.Skip("frames are finished on return without sync files")
 	}
-	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
+	scene := domain.Scene{Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 16, H: 16}}}}
 	var readers []uint64
 	for seq := uint64(1); seq <= 3; seq++ {
 		c := solidContent(t, 16, 16, color.RGBA{uint8(seq * 60), 0, 0, 255})
@@ -259,7 +258,7 @@ func TestRendererSHMDoubleBufferWaitsForReaders(t *testing.T) {
 func TestRendererImportsAcquireFence(t *testing.T) {
 	r := newTestRenderer(t, 8, 8)
 	defer r.Close()
-	done, err := r.Render(ports.Scene{Background: "#000000"}, nil)
+	done, err := r.Render(domain.Scene{Background: "#000000"}, nil)
 	if err != nil || done == nil {
 		t.Skipf("no sync file: %v", err)
 	}

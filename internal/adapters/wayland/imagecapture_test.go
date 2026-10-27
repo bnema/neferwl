@@ -737,7 +737,7 @@ func TestWorkspaceFrameEvents(t *testing.T) {
 // once, and only if it changed.
 func TestWorkspaceFrameSessionLock(t *testing.T) {
 	// unlock leaves protection the way the session-lock unlock does.
-	unlock := func(t *testing.T, h *captureHarness, state *atomic.Pointer[ports.SecurityState]) {
+	unlock := func(t *testing.T, h *captureHarness, state *atomic.Pointer[domain.SecurityState]) {
 		t.Helper()
 		protect(t, h.s, state, 2, false)
 		if !h.s.display.Do(func() { h.s.updateWorkspaceManagers(h.s.workspaceSnapshot) }) {
@@ -1339,13 +1339,13 @@ func TestExclusionAttachLimit(t *testing.T) {
 	_, _, _, _, token := h.exclusionOwner(t)
 	hd := h.hud(t, domain.LayerTop, 0)
 	hd.attach(t, token)
-	for i := 1; i < ports.MaxExclusionLayers; i++ {
+	for i := 1; i < domain.MaxExclusionLayers; i++ {
 		hd.attachSurfaceNew(t, token)
 	}
 	over := hd.attachSurfaceNew(t, token)
 	expectAttachment(t, hd.c, over, imagecapture.NeferwlCaptureLayerV1EventFailed, int64(imagecapture.NeferwlCaptureLayerV1FailureTooManyLayers))
 	// Events reach core through a forwarding goroutine: wait for each.
-	for range ports.MaxExclusionLayers {
+	for range domain.MaxExclusionLayers {
 		if l := nextEvent[ports.CaptureExclusionLayer](t, h.events); !l.Attached {
 			t.Fatalf("detach %+v", l)
 		}

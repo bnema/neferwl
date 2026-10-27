@@ -17,7 +17,7 @@ func TestCoreLeftFullscreenLatch(t *testing.T) {
 		client := make(chan ports.ClientEvent)
 		output := make(chan ports.OutputEvent)
 		commands := make(chan ports.ClientCommand, 64)
-		scenes := make(chan []ports.Scene, 1)
+		scenes := make(chan []domain.Scene, 1)
 		cfg := ports.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2

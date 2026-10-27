@@ -21,7 +21,7 @@ func (o *Output) report(flip *ports.FlipInfo, seen map[domain.WindowID]uint64) {
 // shownBy returns an immutable snapshot of the content Seq of drawn windows
 // (see surfaces.ShowsSnapshot). A closed window drawn from its kept content is
 // not shown to its client: the empty content has no frame to present.
-func (o *Output) shownBy(s ports.Scene, seen map[domain.WindowID]uint64) map[domain.WindowID]uint64 {
+func (o *Output) shownBy(s domain.Scene, seen map[domain.WindowID]uint64) map[domain.WindowID]uint64 {
 	return o.shows.FromSeen(s, seen, o.kept)
 }
 

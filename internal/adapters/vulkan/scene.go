@@ -6,23 +6,22 @@ import (
 	"strconv"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // sceneWalk turns one scene into quads in paint order, copying new wl_shm
 // content into GPU buffers on the way. It lives for one frame.
 type sceneWalk struct {
 	r        *Renderer
-	s        ports.Scene
+	s        domain.Scene
 	contents map[domain.WindowID]domain.SurfaceContent
 	dmg      *damageRegion
 	// scale maps the scene's logical pixels to scene-physical ones.
 	scale float64
 	// zoom shrinks the surfaces of the window being placed: an overview
-	// preview (ports.SceneWindow.Preview); 1 otherwise.
+	// preview (domain.SceneWindow.Preview); 1 otherwise.
 	zoom float64
 	// alpha is the opacity of the window being drawn, 1 - its Fade
-	// (ports.SceneWindow.Fade): its fills, lines and surfaces are scaled by
+	// (domain.SceneWindow.Fade): its fills, lines and surfaces are scaled by
 	// it (premultiplied); 1 otherwise.
 	alpha float32
 	// rounded marks the window being drawn as rounded: it suppresses
@@ -37,7 +36,7 @@ type sceneWalk struct {
 }
 
 // draws walks the scene into quads in paint order.
-func (r *Renderer) draws(s ports.Scene, contents map[domain.WindowID]domain.SurfaceContent, dmg *damageRegion) []draw {
+func (r *Renderer) draws(s domain.Scene, contents map[domain.WindowID]domain.SurfaceContent, dmg *damageRegion) []draw {
 	clear(r.scratchDraws) // release references from longer earlier scenes
 	// The walk stays in scene-physical space (the target's size, swapped for
 	// a rotated output); orient maps the draws to the target afterwards.
@@ -118,7 +117,7 @@ func (w *sceneWalk) innerBorder(t domain.Rect, b int, col [3]uint8) {
 }
 
 // captureIndicators draws the compositor's capture indicator over everything
-// (ports.CaptureIndicator). The border is four fills on the inside edge of the
+// (domain.CaptureIndicator). The border is four fills on the inside edge of the
 // target, so it stays visible on a monitor edge; the pill is a small rounded
 // square. Sizes are logical like the rest of the scene and scale with it. A
 // scene without indicators draws nothing: captures are rendered from scenes
@@ -127,7 +126,7 @@ func (w *sceneWalk) captureIndicators() {
 	if len(w.s.CaptureIndicators) == 0 {
 		return
 	}
-	col := parseColor(ports.CaptureBorderColor)
+	col := parseColor(domain.CaptureBorderColor)
 	for _, m := range w.s.CaptureIndicators {
 		t := m.Rect
 		if t.W <= 0 || t.H <= 0 {
@@ -137,11 +136,11 @@ func (w *sceneWalk) captureIndicators() {
 			w.pill(w.physRect(t.X, t.Y, t.W, t.H), col)
 			continue
 		}
-		w.innerBorder(t, ports.CaptureBorderOf(t.W, t.H), col)
+		w.innerBorder(t, domain.CaptureBorderOf(t.W, t.H), col)
 	}
 }
 
-// dropHints fills where a dragged tile would land (ports.Scene.DropHints),
+// dropHints fills where a dragged tile would land (domain.Scene.DropHints),
 // in the active border color, over the workspace's windows.
 func (w *sceneWalk) dropHints() {
 	if len(w.s.DropHints) == 0 {
@@ -158,7 +157,7 @@ func (w *sceneWalk) dropHints() {
 // pill fills a rounded square (physical pixels) with three rects: a full
 // middle and two bands narrowed by the corner radius.
 func (w *sceneWalk) pill(r image.Rectangle, c [3]uint8) {
-	rad := min(w.phys(ports.CapturePillRadius), r.Dx()/2, r.Dy()/2)
+	rad := min(w.phys(domain.CapturePillRadius), r.Dx()/2, r.Dy()/2)
 	if rad <= 0 {
 		w.fill(r, c)
 		return
@@ -233,20 +232,20 @@ func (w *sceneWalk) layers(afterWindows bool) {
 
 // drawsAsWindow reports whether windows() paints win as a window (not
 // hidden, a popup or empty).
-func drawsAsWindow(win ports.SceneWindow) bool {
+func drawsAsWindow(win domain.SceneWindow) bool {
 	return !win.Hidden && !win.Popup && win.Rect.W > 0 && win.Rect.H > 0
 }
 
 // opensFloats reports whether win, once reached, closes the tiles: the tile
 // lines and the dim veil are painted under it (an overview preview of a
 // float is not one).
-func opensFloats(win ports.SceneWindow) bool {
+func opensFloats(win domain.SceneWindow) bool {
 	return !win.Below && win.Floating && win.Preview == 0
 }
 
 // floatsStart is the index of the first window that opens the floats in s,
 // or -1 when none does: where windows() splits its paint order.
-func floatsStart(s ports.Scene) int {
+func floatsStart(s domain.Scene) int {
 	for i, win := range s.Windows {
 		if drawsAsWindow(win) && opensFloats(win) {
 			return i
