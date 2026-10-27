@@ -60,16 +60,7 @@ func (run *outputsRun) onStopped(stopped routing.Stopped) (error, bool) {
 		run.log.Info().Err(err).Str("connector", name).Msg("output of removed GPU stopped")
 		err = nil
 	}
-	if drm.IsLocalDeviceError(err) && card.local != nil {
-		card.localLost = true
-		for n, c := range run.cards {
-			if c == card && n != name && run.set.Outs[n] != nil {
-				run.stopping[n] = false
-				run.progress.Stopping(n)
-				run.set.Outs[n].Stop()
-			}
-		}
-	}
+	run.stopLocalDeviceUsers(card, name, err)
 	card.Release(name)
 	run.lastHeads[card] = releasedHead(run.lastHeads[card], name)
 	delete(run.cards, name)
@@ -148,4 +139,20 @@ func (run *outputsRun) onStopped(stopped routing.Stopped) (error, bool) {
 	}
 	run.complete(run.progress.Scanned(running))
 	return nil, false
+}
+
+// stopLocalDeviceUsers starts card-wide teardown only for affirmative device
+// loss. Ordinary copier capability/import refusals leave sibling users alone.
+func (run *outputsRun) stopLocalDeviceUsers(card *drmCard, name string, err error) {
+	if !drm.IsLocalDeviceError(err) || card.local == nil {
+		return
+	}
+	card.localLost = true
+	for n, c := range run.cards {
+		if c == card && n != name && run.set.Outs[n] != nil {
+			run.stopping[n] = false
+			run.progress.Stopping(n)
+			run.set.Outs[n].Stop()
+		}
+	}
 }

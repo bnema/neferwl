@@ -164,13 +164,23 @@ func (p *Pipeline) SubmitPlain(r ports.Renderer, s domain.Scene, surfaces map[do
 	if len(normal) == 0 || len(s.CaptureIndicators) == 0 && !hidesOverlays(s) && !s.PositionHint.Shown() {
 		return false, nil, nil
 	}
-	done, err = r.Render(plain(s), surfaces)
+	done, err = r.Render(p.plainScene(s), surfaces)
 	if err != nil {
 		return false, done, err
 	}
 	p.SubmitScoped(s.Security, r, normal)
 	clear(normal)
 	return true, done, nil
+}
+
+// plainScene derives a plain frame using owner-only scratch, separate from
+// the excluded scene's storage and never aliased with the input scene.
+func (p *Pipeline) plainScene(s domain.Scene) domain.Scene {
+	s = plainInto(s, p.plainOverlays)
+	if s.Overlays != nil {
+		p.plainOverlays = s.Overlays[:0]
+	}
+	return s
 }
 
 // scene returns s without the excluded windows

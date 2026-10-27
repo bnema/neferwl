@@ -48,12 +48,13 @@ type Pipeline struct {
 	batches   [pipelineSlots]batch
 	// gating is set between BeginGate and EndGate; held are the batches
 	// submitted meanwhile, waiting for their verdict. Owner only.
-	gating bool
-	held   [pipelineSlots]*batch
-	nheld  int
-	excl   excluder // scratch of ExcludedScene, owner only
-	off    *offscreen
-	worker sync.WaitGroup
+	gating        bool
+	held          [pipelineSlots]*batch
+	nheld         int
+	excl          excluder         // scratch of ExcludedScene, owner only
+	plainOverlays []domain.Overlay // scratch of SubmitPlain, owner only
+	off           *offscreen
+	worker        sync.WaitGroup
 }
 
 func NewPipeline(ctx context.Context, replies chan<- domain.CaptureDone) *Pipeline {

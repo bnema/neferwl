@@ -153,3 +153,27 @@ func TestSubmitPlainServesHintLabelScenesWithoutLabels(t *testing.T) {
 	require.Equal(t, []uint64{2}, ids(excluded), "labels force the Exclude request to the excluded scene")
 	require.Nil(t, p.ExcludedScene(s).Overlays)
 }
+
+// Measure the scene derivation used by SubmitPlain separately from Mockery's
+// renderer bookkeeping and asynchronous capture submission allocations.
+func TestPlainSceneWarmedRetainedOverlayNoAlloc(t *testing.T) {
+	p := &Pipeline{}
+	s := indicatorScene()
+	s.Overlays = []domain.Overlay{{ID: 1, Capture: false}, {ID: 2, Capture: true, Text: "retained"}}
+	plain := p.plainScene(s)
+	require.Nil(t, plain.CaptureIndicators)
+	require.Equal(t, []domain.Overlay{s.Overlays[1]}, plain.Overlays)
+	plain.Overlays[0].Text = "changed"
+	require.Equal(t, "retained", s.Overlays[1].Text, "scratch must not alias the displayed scene")
+	require.Len(t, s.CaptureIndicators, 2)
+	if n := testing.AllocsPerRun(100, func() { _ = p.plainScene(s) }); n != 0 {
+		t.Fatalf("plain scene allocated %v times per frame", n)
+	}
+	// Empty frames must not discard the warmed capacity.
+	empty := s
+	empty.Overlays = nil
+	require.Nil(t, p.plainScene(empty).Overlays)
+	if n := testing.AllocsPerRun(100, func() { _ = p.plainScene(s) }); n != 0 {
+		t.Fatalf("plain scene lost warmed storage: %v allocations", n)
+	}
+}
