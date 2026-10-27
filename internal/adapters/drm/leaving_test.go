@@ -15,7 +15,7 @@ import (
 func TestLeavingWindowNeverOnAPlane(t *testing.T) {
 	t.Run("overlay plane, a single leaving tile", func(t *testing.T) {
 		o, _, _ := overlayOutput(t)
-		o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+		o.overlay.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 		table := surfaces.New()
 		o.kept = table.Kept
 		s, c := overlayScene()

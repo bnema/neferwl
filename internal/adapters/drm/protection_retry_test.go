@@ -268,7 +268,7 @@ func TestProtectedShowImagesHDRKeepsHDRForKMSErrors(t *testing.T) {
 			o.hdr.cap = hdrCapability{Capable: true}
 			o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: 203}
 			o.hdr.props = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
-			o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30, Modifier: 0}}
+			o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30, Modifier: 0}}
 			if errno == nil {
 				o.primary.props = map[string]uint32{"CRTC_ID": pCrtcID} // incomplete: detach fails
 			}

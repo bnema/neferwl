@@ -31,7 +31,7 @@ type Scene struct {
 	// Transform is how the output target holds this scene
 	// (wl_output.transform); 0 for capture child scenes. OutputWidth and
 	// OutputHeight are already in the transformed (logical) orientation.
-	Transform BufferTransform
+	Transform domain.BufferTransform
 	// Off turns the display off (output power management): nothing is
 	// drawn until a scene without it.
 	Off        bool

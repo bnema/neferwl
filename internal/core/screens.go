@@ -18,7 +18,7 @@ type screen struct {
 	scale, cfgScale float64
 	// transform is how the physical target holds the screen's logical
 	// output (output.<name>.transform); 90/270 swap width and height.
-	transform ports.BufferTransform
+	transform domain.BufferTransform
 	primary   bool
 	x, y      int  // logical origin in the global layout
 	off       bool // turned off by a client (output power management)
@@ -258,7 +258,7 @@ func (c *Core) configScale(name string) float64 {
 }
 
 // configTransform is output.<name>.transform, else 0.
-func (c *Core) configTransform(name string) ports.BufferTransform {
+func (c *Core) configTransform(name string) domain.BufferTransform {
 	o, _ := c.outputConfig(name)
 	return o.Transform
 }

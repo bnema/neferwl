@@ -19,7 +19,7 @@ import (
 func TestRenderSteadyStateAllocations(t *testing.T) {
 	for _, tc := range []struct {
 		name           string
-		transform      ports.BufferTransform
+		transform      domain.BufferTransform
 		tw, th         int
 		sceneW, sceneH int
 	}{
@@ -89,7 +89,7 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 			// every run is damaged.
 			dc := content
 			dc.Seq, dc.Version = 2, 2
-			dc.DamageHistory = []ports.SeqDamage{{Seq: 2, Rects: []domain.Rect{{X: 1, Y: 1, W: 2, H: 2}}}}
+			dc.DamageHistory = []domain.SeqDamage{{Seq: 2, Rects: []domain.Rect{{X: 1, Y: 1, W: 2, H: 2}}}}
 			pcontents := map[domain.WindowID]ports.SurfaceContent{1: dc}
 			held := &target{valid: true, sceneSeq: scene.Seq, windows: map[domain.WindowID]heldWindow{1: {seq: 1, rect: image.Rect(0, 0, r.width, r.height)}}}
 			var area image.Rectangle
@@ -165,7 +165,7 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 func TestRenderSteadyStateDMABufAllocations(t *testing.T) {
 	r := newTestRenderer(t, 80, 32)
 	defer r.Close()
-	linear := ports.DMABufFormat{Format: fourcc('A', 'R', '2', '4'), Modifier: 0}
+	linear := domain.DMABufFormat{Format: fourcc('A', 'R', '2', '4'), Modifier: 0}
 	if !slices.Contains(r.DMABuf().Formats, linear) {
 		t.Skipf("linear ARGB8888 not importable")
 	}

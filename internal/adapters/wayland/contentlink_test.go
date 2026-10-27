@@ -214,7 +214,7 @@ func TestDetachOldHandleKeepsReplacedLink(t *testing.T) {
 func TestContentBatchCycleAllocations(t *testing.T) {
 	s := &Server{
 		contentSeq: map[domain.WindowID]uint64{},
-		damage:     map[domain.WindowID][]ports.SeqDamage{},
+		damage:     map[domain.WindowID][]domain.SeqDamage{},
 		latest:     map[domain.WindowID]ports.SurfaceContent{},
 	}
 	in, ret := s.attachOutput("A")

@@ -198,7 +198,7 @@ func BenchmarkComposeOpaqueRegionChild(b *testing.B) {
 		b.Run(tc.name, func(b *testing.B) {
 			r := newTestRenderer(b, w, h)
 			defer r.Close()
-			linear := ports.DMABufFormat{Format: fourcc('A', 'R', '2', '4'), Modifier: 0}
+			linear := domain.DMABufFormat{Format: fourcc('A', 'R', '2', '4'), Modifier: 0}
 			if !slices.Contains(r.DMABuf().Formats, linear) {
 				b.Skipf("linear ARGB8888 not importable")
 			}

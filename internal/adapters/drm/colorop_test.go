@@ -391,10 +391,10 @@ func colorOutput(t *testing.T, overlay bool, rule func(*atomicReq, uint32) error
 	props := maps0(planeProps)
 	props["zpos"] = pZpos
 	o.primary.props = props
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	colorPlane(k, o.primary, pColorPipe, opBase, amdgpuChain)
 	if overlay {
-		ov := &plane{id: tOverlay, typ: planeOverlay, props: props, zposValue: 2, formats: []ports.DMABufFormat{{Format: fourccXRGB}}}
+		ov := &plane{id: tOverlay, typ: planeOverlay, props: props, zposValue: 2, formats: []domain.DMABufFormat{{Format: fourccXRGB}}}
 		colorPlane(k, ov, pColorPipeOverlay, opBase+20, amdgpuChain)
 		o.stray = []*plane{ov}
 		o.pickOverlay()
@@ -905,7 +905,7 @@ func TestSetupColor(t *testing.T) {
 				props["zpos"] = pZpos
 				o.primary.props = props
 				colorPlane(k, o.primary, pColorPipe, opBase, tc.primary)
-				ov := &plane{id: tOverlay, typ: planeOverlay, props: props, zposValue: 2, formats: []ports.DMABufFormat{{Format: fourccXRGB}}}
+				ov := &plane{id: tOverlay, typ: planeOverlay, props: props, zposValue: 2, formats: []domain.DMABufFormat{{Format: fourccXRGB}}}
 				colorPlane(k, ov, pColorPipeOverlay, opBase+20, tc.overlay)
 				o.stray = []*plane{ov}
 				o.pickOverlay()

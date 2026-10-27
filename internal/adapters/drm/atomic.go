@@ -10,6 +10,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -322,7 +323,7 @@ type plane struct {
 	id, typ uint32
 	props   map[string]uint32
 	crtc    uint32 // CRTC_ID when read
-	formats []ports.DMABufFormat
+	formats []domain.DMABufFormat
 	// pipeline is the colour pipeline the plane offers for SDR content on
 	// an HDR output (colorop.go); nil: none. colorApplied is the mode the
 	// plane was last committed with, valid while colorKnown.
@@ -370,8 +371,8 @@ func readPlanes(k kms, pipe int) ([]*plane, error) {
 
 // planeFormats is a plane's IN_FORMATS list, or every GETPLANE format with
 // modifier 0 when the plane has no IN_FORMATS.
-func planeFormats(k kms, props map[string][2]uint64, fallback []uint32) []ports.DMABufFormat {
-	var out []ports.DMABufFormat
+func planeFormats(k kms, props map[string][2]uint64, fallback []uint32) []domain.DMABufFormat {
+	var out []domain.DMABufFormat
 	if blob := uint32(props["IN_FORMATS"][1]); blob != 0 {
 		if data, err := k.getBlob(blob); err == nil {
 			out = parseInFormats(data)
@@ -379,7 +380,7 @@ func planeFormats(k kms, props map[string][2]uint64, fallback []uint32) []ports.
 	}
 	if out == nil {
 		for _, f := range fallback {
-			out = append(out, ports.DMABufFormat{Format: f})
+			out = append(out, domain.DMABufFormat{Format: f})
 		}
 	}
 	return out
@@ -387,7 +388,7 @@ func planeFormats(k kms, props map[string][2]uint64, fallback []uint32) []ports.
 
 // parseInFormats decodes an IN_FORMATS blob (struct drm_format_modifier_blob)
 // into format and modifier pairs.
-func parseInFormats(b []byte) []ports.DMABufFormat {
+func parseInFormats(b []byte) []domain.DMABufFormat {
 	if len(b) < 24 {
 		return nil
 	}
@@ -397,7 +398,7 @@ func parseInFormats(b []byte) []ports.DMABufFormat {
 	if fo < 0 || fo+nf*4 > len(b) || mo < 0 || mo+nm*24 > len(b) {
 		return nil
 	}
-	var out []ports.DMABufFormat
+	var out []domain.DMABufFormat
 	for m := range nm {
 		e := b[mo+m*24:]
 		mask, offset, mod := le.Uint64(e), int(le.Uint32(e[8:])), le.Uint64(e[16:])
@@ -406,7 +407,7 @@ func parseInFormats(b []byte) []ports.DMABufFormat {
 			if mask&(1<<bit) == 0 || i >= nf {
 				continue
 			}
-			out = append(out, ports.DMABufFormat{Format: le.Uint32(b[fo+i*4:]), Modifier: mod})
+			out = append(out, domain.DMABufFormat{Format: le.Uint32(b[fo+i*4:]), Modifier: mod})
 		}
 	}
 	return out

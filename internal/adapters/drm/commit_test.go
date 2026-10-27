@@ -225,7 +225,7 @@ func TestShowImagesOffersThePrimaryPlanesXRGBModifiers(t *testing.T) {
 	const dccListed, tiled, other = 0x200000000563b03, 0x200000000401b03, 0x200000000401903
 	o, k, _ := testOutput(t)
 	o.cursor = nil
-	o.primary.formats = []ports.DMABufFormat{
+	o.primary.formats = []domain.DMABufFormat{
 		{Format: fourccXRGB, Modifier: dccListed}, {Format: fourccXR30, Modifier: other},
 		{Format: fourccXRGB, Modifier: tiled}, {Format: fourccXRGB, Modifier: 0},
 	}
@@ -257,7 +257,7 @@ func TestShowImagesNoCommonModifierFallsBackWithThePlanesList(t *testing.T) {
 	const listed = 0x200000000563b03
 	o, k, _ := testOutput(t)
 	o.cursor = nil
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: listed}, {Format: fourccXRGB, Modifier: 0}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB, Modifier: listed}, {Format: fourccXRGB, Modifier: 0}}
 	buf := func() ports.DMABuf {
 		f, w, _ := os.Pipe()
 		w.Close()
@@ -289,7 +289,7 @@ func TestShowImagesLinearOnlyPlaneExportsLinearFirst(t *testing.T) {
 	o, k, commits := testOutput(t)
 	o.fbs = [2]uint32{} // the first setup of a run: no image yet
 	o.cursor = nil
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 	// No ExportTargets(..., true) and no second call: the mock fails on them.
@@ -314,7 +314,7 @@ func TestShowImagesLinearOnlyPlaneExportsLinearFirst(t *testing.T) {
 func TestShowImagesRefusedLinearImagesAreNotExportedAgain(t *testing.T) {
 	o, k, commits := testOutput(t, unix.EINVAL)
 	o.cursor = nil
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 	r.EXPECT().ExportTargets(2, []uint64{0}, false).RunAndReturn(func(int, []uint64, bool) ([]ports.DMABuf, error) {
@@ -466,7 +466,7 @@ func TestCursorOffSkipsLoads(t *testing.T) {
 	o, _, _ := testOutput(t)
 	o.cursor.off = true
 	loaded := false
-	o.setCursor(func(ports.CursorChange, float64, ports.BufferTransform, int) (ports.CursorImage, error) {
+	o.setCursor(func(ports.CursorChange, float64, domain.BufferTransform, int) (ports.CursorImage, error) {
 		loaded = true
 		return ports.CursorImage{}, nil
 	}, ports.CursorChange{}, 1, 0)
@@ -503,7 +503,7 @@ func TestRunReportsSeenAfterCursorCommit(t *testing.T) {
 		k.EXPECT().createBlob(mock.Anything).Return(99, nil)
 		k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
 		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
-		load := func(ports.CursorChange, float64, ports.BufferTransform, int) (ports.CursorImage, error) {
+		load := func(ports.CursorChange, float64, domain.BufferTransform, int) (ports.CursorImage, error) {
 			return ports.CursorImage{Pixels: []byte{1, 2, 3, 4}, W: 1, H: 1}, nil
 		}
 		last := func(kind uint64) (commitRec, bool) {

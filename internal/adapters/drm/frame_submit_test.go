@@ -18,7 +18,7 @@ import (
 func TestSubmitFrameScanout(t *testing.T) {
 	o, k, commits := testOutput(t)
 	o.cursor = nil
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
 	s, c := fullscreenScene()
 	r := portsmocks.NewMockRenderer(t)
@@ -38,7 +38,7 @@ func TestSubmitFrameScanout(t *testing.T) {
 func TestSubmitFrameScanoutRefusedComposes(t *testing.T) {
 	o, k, commits := testOutput(t, unix.EINVAL)
 	o.cursor, o.tearing, o.vrrProp = nil, false, 0
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
 	s, c := fullscreenScene()
 	r := portsmocks.NewMockRenderer(t)
@@ -61,7 +61,7 @@ func TestSubmitFrameOverlayRefusedComposesAll(t *testing.T) {
 	o, k, commits := overlayOutput(t, unix.EINVAL)
 	o.cursor = nil
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
-	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.overlay.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	s, c := overlayScene()
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().UseTarget(0).Return().Once()
@@ -89,7 +89,7 @@ func TestSubmitFrameOverlayCommitRefusedDropsOverlay(t *testing.T) {
 	o, k, _ := overlayOutput(t, nil, unix.EINVAL)
 	o.cursor, o.vrrProp = nil, 0
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
-	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.overlay.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	s, c := overlayScene()
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().UseTarget(0).Return().Once()

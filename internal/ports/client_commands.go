@@ -60,7 +60,7 @@ type OutputPlacement struct {
 	X, Y, Width, Height int
 	Scale               float64
 	// Transform is how the target holds the scene (wl_output.transform).
-	Transform BufferTransform
+	Transform domain.BufferTransform
 	// Primary is output.<name>.primary: the pointer starts on it.
 	Primary bool
 }

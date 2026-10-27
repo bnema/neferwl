@@ -194,7 +194,7 @@ func tiledFullscreenScene() ports.Scene {
 func TestScanoutFormatFollowsInFormats(t *testing.T) {
 	const tiled = 0x0200000000000001
 	o, k, _ := testOutput(t)
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: tiled}, {Format: fourccXRGB, Modifier: 0}, {Format: fourccXR30, Modifier: tiled}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB, Modifier: tiled}, {Format: fourccXRGB, Modifier: 0}, {Format: fourccXR30, Modifier: tiled}}
 	nv12 := uint32('N' | 'V'<<8 | '1'<<16 | '2'<<24)
 	for _, tc := range []struct {
 		name   string
@@ -214,7 +214,7 @@ func TestScanoutFormatFollowsInFormats(t *testing.T) {
 			t.Errorf("%s: %#x %v", tc.name, got, ok)
 		}
 	}
-	sampled := []ports.DMABufFormat{{Format: fourccARGB, Modifier: tiled}, {Format: fourccARGB, Modifier: 0x0200000000000002}, {Format: nv12, Modifier: tiled}}
+	sampled := []domain.DMABufFormat{{Format: fourccARGB, Modifier: tiled}, {Format: fourccARGB, Modifier: 0x0200000000000002}, {Format: nv12, Modifier: tiled}}
 	if got := o.scanoutFormats(sampled); len(got) != 1 || got[0] != sampled[0] {
 		t.Fatalf("tranche %v", got)
 	}
@@ -238,8 +238,8 @@ func TestModesetSendsScanoutFormats(t *testing.T) {
 		o, k, _ := testOutput(t)
 		o.cursor = nil
 		o.scanout, o.device = on, 9
-		o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: tiled}, {Format: fourccNV12, Modifier: tiled}, {Format: fourccP010, Modifier: tiled}}
-		o.sampled = []ports.DMABufFormat{{Format: fourccARGB, Modifier: tiled}, {Format: fourccARGB, Modifier: 0}, {Format: fourccNV12, Modifier: tiled}, {Format: fourccP010, Modifier: tiled}}
+		o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB, Modifier: tiled}, {Format: fourccNV12, Modifier: tiled}, {Format: fourccP010, Modifier: tiled}}
+		o.sampled = []domain.DMABufFormat{{Format: fourccARGB, Modifier: tiled}, {Format: fourccARGB, Modifier: 0}, {Format: fourccNV12, Modifier: tiled}, {Format: fourccP010, Modifier: tiled}}
 		ch := make(chan ports.OutputFormats, 1)
 		o.formats = ch
 		k.EXPECT().createBlob(mock.Anything).Return(99, nil).Once()
@@ -259,7 +259,7 @@ func TestModesetSendsScanoutFormats(t *testing.T) {
 func TestHDRScanoutDecision(t *testing.T) {
 	o, k, _ := testOutput(t)
 	o.hdr.on = true
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30}}
 	scene := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Fullscreen: true, Rect: domain.Rect{W: 200, H: 100}}}}
 	c := ports.SurfaceContent{ID: 1, Width: 200, Height: 100, LogicalW: 200, LogicalH: 100, DMABuf: &ports.DMABuf{ID: 11, Format: fourccXR30}}
 	check := func(want string) {
@@ -287,8 +287,8 @@ func TestModesetReportsConfirmedHDR(t *testing.T) {
 	o.cursor = nil
 	o.hdr.on = true
 	o.hdr.cap = hdrCapability{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: 0.005}
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30}, {Format: fourccXRGB}}
-	o.sampled = []ports.DMABufFormat{{Format: fourccXR30}, {Format: fourccXRGB}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30}, {Format: fourccXRGB}}
+	o.sampled = []domain.DMABufFormat{{Format: fourccXR30}, {Format: fourccXRGB}}
 	ch := make(chan ports.OutputFormats, 2)
 	o.formats = ch
 	k.EXPECT().createBlob(mock.Anything).Return(99, nil).Twice()
@@ -315,8 +315,8 @@ func TestPowerOffWithdrawsHDRAndFormats(t *testing.T) {
 	o.cursor = nil
 	o.hdr.on, o.scanout = true, true
 	o.hdr.cap = hdrCapability{MaxLuminance: 1000}
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30}}
-	o.sampled = []ports.DMABufFormat{{Format: fourccXR30}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30}}
+	o.sampled = []domain.DMABufFormat{{Format: fourccXR30}}
 	ch := make(chan ports.OutputFormats, 1)
 	o.formats = ch
 	if err := o.powerOff(); err != nil {
@@ -371,7 +371,7 @@ func TestFrameDecisionAllocations(t *testing.T) {
 	c := ports.SurfaceContent{ID: 1, Width: 200, Height: 100, LogicalW: 200, LogicalH: 100, DMABuf: &ports.DMABuf{ID: 17, Format: fourccXRGB}}
 	surfaces := map[domain.WindowID]ports.SurfaceContent{1: c}
 	o.clientFBs[17] = &clientFB{fbID: 77}
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	for _, tc := range []struct {
 		name       string
 		capture    bool
@@ -411,7 +411,7 @@ func TestFrameDecisionAllocations(t *testing.T) {
 	// the output's window slice.
 	t.Run("overlay", func(t *testing.T) {
 		o, _, _ := overlayOutput(t)
-		o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+		o.overlay.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 		s, surfaces := overlayScene()
 		o.clientFBs[9] = &clientFB{fbID: 88}
 		d := o.decideFrame(s, surfaces, false)
@@ -433,7 +433,7 @@ func TestFrameDecisionAllocations(t *testing.T) {
 
 func TestFrameDecisionOverlayFallback(t *testing.T) {
 	o, k, _ := overlayOutput(t)
-	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.overlay.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	s, surfaces := overlayScene()
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
 	d := o.decideFrame(s, surfaces, false)

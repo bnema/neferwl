@@ -8,15 +8,16 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/linuxdmabuf"
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
-var linearARGB = ports.DMABufFormat{Format: 'A' | 'R'<<8 | '2'<<16 | '4'<<24}
+var linearARGB = domain.DMABufFormat{Format: 'A' | 'R'<<8 | '2'<<16 | '4'<<24}
 
 //testpolicy:realtime Server.Run waits on its libwayland epoll fd through the netpoller and Do/Post wake it with an eventfd; that wait is not durably blocked, so synctest.Wait hangs even with no client socket (verified)
-func dmabufServer(t *testing.T, sup ports.DMABufSupport) (*Server, chan ports.ClientEvent, <-chan ports.SurfaceContent, string) {
+func dmabufServer(t *testing.T, sup domain.DMABufSupport) (*Server, chan ports.ClientEvent, <-chan ports.SurfaceContent, string) {
 	t.Helper()
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
@@ -45,7 +46,7 @@ func dmabufServer(t *testing.T, sup ports.DMABufSupport) (*Server, chan ports.Cl
 
 // Without renderer formats there is no linux-dmabuf global.
 func TestNoDMABufWithoutFormats(t *testing.T) {
-	s, _, _, dir := dmabufServer(t, ports.DMABufSupport{})
+	s, _, _, dir := dmabufServer(t, domain.DMABufSupport{})
 	c := protocolClient(t, s, dir)
 	if _, ok := c.Registry().FindGlobal("zwp_linux_dmabuf_v1"); ok {
 		t.Fatal("zwp_linux_dmabuf_v1 advertised")
@@ -62,7 +63,7 @@ func (p *paramsProxy) Dispatch(e *wlturbo.Event) { p.result <- e.Opcode }
 // An unadvertised format is a protocol error from v4 and `failed` before; a
 // plane past the end of its file is a protocol error.
 func TestDMABufParams(t *testing.T) {
-	s, _, _, dir := dmabufServer(t, ports.DMABufSupport{Formats: []ports.DMABufFormat{linearARGB}})
+	s, _, _, dir := dmabufServer(t, domain.DMABufSupport{Formats: []domain.DMABufFormat{linearARGB}})
 	c := protocolClient(t, s, dir)
 	g, ok := c.Registry().FindGlobal("zwp_linux_dmabuf_v1")
 	if !ok || g.Version != dmabufVersion {
@@ -151,7 +152,7 @@ func TestDMABufParamsUnadvertised(t *testing.T) {
 // server does not list, on a fresh connection bound at the given version.
 func createNV12(t *testing.T, version uint32, immed bool, flags uint32) (*wlturbo.Display, uint32, *paramsProxy) {
 	t.Helper()
-	s, _, _, dir := dmabufServer(t, ports.DMABufSupport{Formats: []ports.DMABufFormat{linearARGB}})
+	s, _, _, dir := dmabufServer(t, domain.DMABufSupport{Formats: []domain.DMABufFormat{linearARGB}})
 	c := protocolClient(t, s, dir)
 	dm := bindVersion(t, c, "zwp_linux_dmabuf_v1", version)
 	fd, err := unix.MemfdCreate("fake-dmabuf", 0)
@@ -180,7 +181,7 @@ func createNV12(t *testing.T, version uint32, immed bool, flags uint32) (*wlturb
 
 // set_sampling_device takes an 8-byte dev_t, before the params are used.
 func TestDMABufSamplingDevice(t *testing.T) {
-	s, _, _, dir := dmabufServer(t, ports.DMABufSupport{Formats: []ports.DMABufFormat{linearARGB}})
+	s, _, _, dir := dmabufServer(t, domain.DMABufSupport{Formats: []domain.DMABufFormat{linearARGB}})
 	fd, err := unix.MemfdCreate("fake-dmabuf", 0)
 	if err != nil {
 		t.Fatal(err)
@@ -241,7 +242,7 @@ func TestDMABufSamplingDevice(t *testing.T) {
 
 // A reused params object is a protocol error.
 func TestDMABufParamsReuse(t *testing.T) {
-	s, _, _, dir := dmabufServer(t, ports.DMABufSupport{Formats: []ports.DMABufFormat{linearARGB}})
+	s, _, _, dir := dmabufServer(t, domain.DMABufSupport{Formats: []domain.DMABufFormat{linearARGB}})
 	c := protocolClient(t, s, dir)
 	g, _ := c.Registry().FindGlobal("zwp_linux_dmabuf_v1")
 	dm, err := bindWireID(c, g.Name, g.Interface, dmabufVersion)
@@ -283,8 +284,8 @@ func TestWestonDMABuf(t *testing.T) {
 	}
 	// Linear buffers: every GPU allocates them, and the client picks from
 	// what it is offered.
-	xrgb := ports.DMABufFormat{Format: fourccXRGB}
-	s, events, contents, dir := dmabufServer(t, ports.DMABufSupport{Formats: []ports.DMABufFormat{linearARGB, xrgb}})
+	xrgb := domain.DMABufFormat{Format: fourccXRGB}
+	s, events, contents, dir := dmabufServer(t, domain.DMABufSupport{Formats: []domain.DMABufFormat{linearARGB, xrgb}})
 	_, _, output := lifecycleClient(t, tool, s, dir, nil)
 	w := mapped(t, events, 5*time.Second)
 	deadline := waylandDeadline(5 * time.Second)
@@ -358,7 +359,7 @@ type scanoutHarness struct {
 	formats  chan ports.OutputFormats
 }
 
-func newScanoutHarness(t *testing.T, sup ports.DMABufSupport, version uint32) *scanoutHarness {
+func newScanoutHarness(t *testing.T, sup domain.DMABufSupport, version uint32) *scanoutHarness {
 	t.Helper()
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
@@ -399,8 +400,8 @@ func (h *scanoutHarness) next(what string) round {
 // v6 the table comes once, main_device never, and the renderer tranche is
 // flagged for sampling.
 func TestDMABufScanoutTranche(t *testing.T) {
-	tiled := ports.DMABufFormat{Format: linearARGB.Format, Modifier: 0x0200000000000001}
-	sup := ports.DMABufSupport{Device: 1, Formats: []ports.DMABufFormat{linearARGB, tiled}}
+	tiled := domain.DMABufFormat{Format: linearARGB.Format, Modifier: 0x0200000000000001}
+	sup := domain.DMABufSupport{Device: 1, Formats: []domain.DMABufFormat{linearARGB, tiled}}
 	h := newScanoutHarness(t, sup, dmabufVersion)
 	c, s, w, fb, commands, formats := h.c, h.s, h.w, h.fb, h.commands, h.formats
 	scanout := uint32(linuxdmabuf.ZwpLinuxDmabufFeedbackV1TrancheFlagsScanout)
@@ -408,7 +409,7 @@ func TestDMABufScanoutTranche(t *testing.T) {
 	if r := h.next("initial"); len(r.tranches) != 1 || r.tranches[0].flags != sampling || len(r.tranches[0].indices) != 2 || r.tables != 1 || r.mainDevices != 0 {
 		t.Fatalf("tiled window: %+v", r)
 	}
-	formats <- ports.OutputFormats{Output: "HEADLESS-1", Device: 7, Formats: []ports.DMABufFormat{tiled}}
+	formats <- ports.OutputFormats{Output: "HEADLESS-1", Device: 7, Formats: []domain.DMABufFormat{tiled}}
 	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1", Visible: true}
 	r := h.next("fullscreen")
 	for len(r.tranches) == 1 { // the formats may land after the configure
@@ -456,8 +457,8 @@ func TestDMABufScanoutTranche(t *testing.T) {
 // A v4 client keeps the whole feedback on every round: table, main device,
 // and an unflagged renderer tranche.
 func TestDMABufFeedbackV4(t *testing.T) {
-	tiled := ports.DMABufFormat{Format: linearARGB.Format, Modifier: 0x0200000000000001}
-	sup := ports.DMABufSupport{Device: 1, Formats: []ports.DMABufFormat{linearARGB, tiled}}
+	tiled := domain.DMABufFormat{Format: linearARGB.Format, Modifier: 0x0200000000000001}
+	sup := domain.DMABufSupport{Device: 1, Formats: []domain.DMABufFormat{linearARGB, tiled}}
 	h := newScanoutHarness(t, sup, 4)
 	check := func(what string, r round, tranches int) {
 		t.Helper()
@@ -466,7 +467,7 @@ func TestDMABufFeedbackV4(t *testing.T) {
 		}
 	}
 	check("initial", h.next("initial"), 1)
-	h.formats <- ports.OutputFormats{Output: "HEADLESS-1", Device: 7, Formats: []ports.DMABufFormat{tiled}}
+	h.formats <- ports.OutputFormats{Output: "HEADLESS-1", Device: 7, Formats: []domain.DMABufFormat{tiled}}
 	h.commands <- ports.ConfigureWindow{ID: h.w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1", Visible: true}
 	r := h.next("fullscreen")
 	for len(r.tranches) == 1 { // the formats may land after the configure
@@ -483,8 +484,8 @@ func TestDMABufFeedbackV4(t *testing.T) {
 func testDMABufGlobal(s *Server, f ports.OutputFormats) *dmabufGlobal {
 	g := &dmabufGlobal{
 		server:  s,
-		support: ports.DMABufSupport{Formats: []ports.DMABufFormat{linearARGB}},
-		index:   map[ports.DMABufFormat]uint16{linearARGB: 0},
+		support: domain.DMABufSupport{Formats: []domain.DMABufFormat{linearARGB}},
+		index:   map[domain.DMABufFormat]uint16{linearARGB: 0},
 		scanout: map[string]scanoutOffer{},
 	}
 	g.scanout[f.Output] = g.offer(f)
@@ -511,7 +512,7 @@ func TestFullscreenOutput(t *testing.T) {
 		{"invisible", windowSurface(func(w *window) { w.last.Visible = false }), "", false},
 		{"visible fullscreen", windowSurface(func(*window) {}), "DP-2", true},
 	}
-	g := testDMABufGlobal(&Server{}, ports.OutputFormats{Output: "DP-2", Formats: []ports.DMABufFormat{linearARGB}})
+	g := testDMABufGlobal(&Server{}, ports.OutputFormats{Output: "DP-2", Formats: []domain.DMABufFormat{linearARGB}})
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			if out, ok := g.fullscreenOutput(tc.surf); out != tc.out || ok != tc.ok {
@@ -525,7 +526,7 @@ func TestInvisibleScanoutOffer(t *testing.T) {
 	w := &window{hasLast: true, last: ports.ConfigureWindow{Fullscreen: true, Output: "DP-2", Visible: true}}
 	surf := &surface{xdg: &xdgSurface{window: w}}
 	s := &Server{}
-	g := testDMABufGlobal(s, ports.OutputFormats{Output: "DP-2", Formats: []ports.DMABufFormat{linearARGB}})
+	g := testDMABufGlobal(s, ports.OutputFormats{Output: "DP-2", Formats: []domain.DMABufFormat{linearARGB}})
 	if _, ok := g.scanoutFor(surf); !ok {
 		t.Fatal("no visible scanout")
 	}
@@ -554,7 +555,7 @@ func TestPopupFeedbackFollowsToplevel(t *testing.T) {
 	if toplevelRoot(pop) != top {
 		t.Fatal("popup does not resolve to its toplevel")
 	}
-	g := testDMABufGlobal(&Server{}, ports.OutputFormats{Output: "DP-2", Formats: []ports.DMABufFormat{linearARGB}})
+	g := testDMABufGlobal(&Server{}, ports.OutputFormats{Output: "DP-2", Formats: []domain.DMABufFormat{linearARGB}})
 	if _, ok := g.scanoutFor(pop); !ok {
 		t.Fatal("popup of a visible fullscreen window has no offer")
 	}

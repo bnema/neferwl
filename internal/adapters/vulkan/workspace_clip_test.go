@@ -86,7 +86,7 @@ func TestWorkspaceClipWindowsPopupsAndLayers(t *testing.T) {
 	// Content-only damage at the same scene sequence must remain clipped.
 	changed := contents[1]
 	changed.Seq++
-	changed.DamageHistory = []ports.SeqDamage{{Seq: changed.Seq, Full: true}}
+	changed.DamageHistory = []domain.SeqDamage{{Seq: changed.Seq, Full: true}}
 	if _, err := changed.SHM.File.WriteAt([]byte{255, 255, 255, 255}, 0); err != nil {
 		t.Fatal(err)
 	}

@@ -32,7 +32,7 @@ type OutputConfig struct {
 	Off   bool
 	Scale float64
 	// Transform is output.<name>.transform; logical size swaps for 90/270.
-	Transform BufferTransform
+	Transform domain.BufferTransform
 	// Pos is an explicit logical placement set at runtime; nil uses Anchor, else automatic layout.
 	Pos *image.Point
 	// Anchor places the output against another connected one.

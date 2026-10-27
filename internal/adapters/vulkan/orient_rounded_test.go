@@ -9,7 +9,7 @@ import (
 )
 
 func TestOrientRoundedWindow(t *testing.T) {
-	for transform := ports.BufferTransform(0); transform < 8; transform++ {
+	for transform := domain.BufferTransform(0); transform < 8; transform++ {
 		r := &Renderer{width: 120, height: 90}
 		sw, sh := r.sceneSize(transform)
 		outer := image.Rect(9, 13, 69, 77)

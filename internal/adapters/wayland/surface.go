@@ -42,7 +42,7 @@ type surface struct {
 	// bufferScale, transform and opaque are committed state. formatOpaque is
 	// the current buffer's own opacity (x formats).
 	bufferScale  int
-	transform    ports.BufferTransform
+	transform    domain.BufferTransform
 	opaque       []domain.Rect
 	formatOpaque bool
 	kind         roleKind
@@ -63,7 +63,7 @@ type surface struct {
 	scale float64
 	// prefTransform is the last preferred buffer transform sent (wl_surface
 	// v6+); zero (normal) is the protocol default.
-	prefTransform ports.BufferTransform
+	prefTransform domain.BufferTransform
 	// content is the last content built from this surface's own buffer;
 	// has is false while no buffer is attached.
 	inputAll                bool
@@ -123,7 +123,7 @@ type pendingCommit struct {
 	attached bool
 	// scale is set by set_buffer_scale, transform by set_buffer_transform.
 	scale     int
-	transform ports.BufferTransform
+	transform domain.BufferTransform
 	// opaque and the input region are set by their requests (the Set flags).
 	opaque             []domain.Rect
 	opaqueSet          bool
@@ -705,7 +705,7 @@ func (s *surface) SetBufferTransform(r *wayland.Surface, v int32) {
 		r.PostError(uint32(wayland.SurfaceErrorInvalidTransform), "invalid buffer transform")
 		return
 	}
-	s.next.transform = ports.BufferTransform(v)
+	s.next.transform = domain.BufferTransform(v)
 }
 
 // opaqueCovers reports whether the committed opaque region covers the whole

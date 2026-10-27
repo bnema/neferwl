@@ -6,7 +6,9 @@ import (
 	"slices"
 	"unsafe"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+
 	vk "github.com/bnema/purego-vulkan/vulkan"
 	"golang.org/x/sys/unix"
 )
@@ -99,8 +101,8 @@ func cstring(b []byte) string {
 // probeDMABuf lists the sampled fourcc/modifier pairs supported by the GPU.
 // Multi-planar formats require mutable per-plane views; disjoint binding is
 // optional and only used when the device supports it and planes differ.
-func (g *GPU) probeDMABuf(physical vk.PhysicalDevice) ports.DMABufSupport {
-	var sup ports.DMABufSupport
+func (g *GPU) probeDMABuf(physical vk.PhysicalDevice) domain.DMABufSupport {
+	var sup domain.DMABufSupport
 	drm := vk.PhysicalDeviceDrmPropertiesEXT{SType: vk.StructureTypePhysicalDeviceDRMPropertiesEXT}
 	props := vk.PhysicalDeviceProperties2{SType: vk.StructureTypePhysicalDeviceProperties2, Next: unsafe.Pointer(&drm)}
 	g.inst.id.GetPhysicalDeviceProperties2(physical, &props)
@@ -127,7 +129,7 @@ func (g *GPU) probeDMABuf(physical vk.PhysicalDevice) ports.DMABufSupport {
 				continue
 			}
 			if g.importable(physical, f.format, m.DrmFormatModifier, isYUVFormat(f.fourcc), false) {
-				sup.Formats = append(sup.Formats, ports.DMABufFormat{Format: f.fourcc, Modifier: m.DrmFormatModifier})
+				sup.Formats = append(sup.Formats, domain.DMABufFormat{Format: f.fourcc, Modifier: m.DrmFormatModifier})
 			}
 		}
 	}
@@ -184,7 +186,7 @@ func (g *GPU) importable(physical vk.PhysicalDevice, format vk.Format, modifier 
 }
 
 // DMABuf reports the formats this renderer imports.
-func (r *Renderer) DMABuf() ports.DMABufSupport { return r.gpu.dmabuf }
+func (r *Renderer) DMABuf() domain.DMABufSupport { return r.gpu.dmabuf }
 
 // imported is a client dmabuf bound to a VkImage and its sampled views.
 type imported struct {

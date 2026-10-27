@@ -28,7 +28,7 @@ var domainLayers = map[string][]string{
 // domainStd are the standard packages domain code may import: pure data
 // structures, formatting of numbers and text, and the time value types. Any
 // other standard package (I/O, logging, concurrency, reflection) fails.
-var domainStd = []string{"cmp", "math", "slices", "strconv", "strings", "time"}
+var domainStd = []string{"cmp", "image", "math", "slices", "strconv", "strings", "time"}
 
 // domainForbiddenTime are the time package functions that read a clock or
 // wait. Domain code takes instants as arguments; the time.Time and

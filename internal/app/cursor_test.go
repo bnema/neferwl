@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -143,7 +144,7 @@ func TestRotateCursor(t *testing.T) {
 	if &img.Pixels[0] == &got.Pixels[0] || img.Pixels[0] != 0 || img.W != 3 {
 		t.Fatal("source modified")
 	}
-	for tr := ports.BufferTransform(1); tr < 8; tr++ {
+	for tr := domain.BufferTransform(1); tr < 8; tr++ {
 		img.HotX, img.HotY = 2, 1
 		got := rotateCursor(img, tr)
 		for y := range 2 {

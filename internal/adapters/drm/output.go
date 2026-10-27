@@ -221,7 +221,7 @@ type Output struct {
 	// formats receives the direct scanout formats after each modeset;
 	// sampled and device are what they are built from (Want).
 	formats   chan<- ports.OutputFormats
-	sampled   []ports.DMABufFormat
+	sampled   []domain.DMABufFormat
 	device    uint64
 	ready     chan error // first successful modeset, or a startup failure
 	readySent bool
@@ -233,7 +233,7 @@ func (o *Output) Ready() <-chan error { return o.ready }
 // CursorLoader returns the image of a cursor at an output scale, already
 // rotated by the output transform t (the cursor plane is not rotated by the
 // hardware), at most limit pixels on a side; an empty image hides the cursor.
-type CursorLoader func(c ports.CursorChange, scale float64, t ports.BufferTransform, limit int) (ports.CursorImage, error)
+type CursorLoader func(c ports.CursorChange, scale float64, t domain.BufferTransform, limit int) (ports.CursorImage, error)
 
 // newOutput reads the CRTC's planes and properties for a connector on crtc.
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
@@ -1177,7 +1177,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 	haveScene, dirty := false, false
 	var want ports.CursorChange
 	cursorScale := -1.0 // not loaded yet
-	var cursorTransform ports.BufferTransform
+	var cursorTransform domain.BufferTransform
 	frame := 0
 	var requests capture.Requests
 	ctx, cancelCaptures := context.WithCancel(ctx)
@@ -1818,7 +1818,7 @@ func (o *Output) wakeCore() { corewake.Send(o.Frames, o.conn.name) }
 
 // setCursor loads a cursor for scale and output transform t into the cursor
 // images.
-func (o *Output) setCursor(load CursorLoader, c ports.CursorChange, scale float64, t ports.BufferTransform) {
+func (o *Output) setCursor(load CursorLoader, c ports.CursorChange, scale float64, t domain.BufferTransform) {
 	o.observeSecurity()
 	if o.protected || o.cursor.off {
 		return

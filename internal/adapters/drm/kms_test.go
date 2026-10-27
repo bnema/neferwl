@@ -7,7 +7,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestStructSizesMatchIoctls(t *testing.T) {
@@ -147,7 +147,7 @@ func TestParseInFormats(t *testing.T) {
 	le.PutUint64(b[64:], 0b010)
 	le.PutUint64(b[80:], 0x0200000000000001)
 	got := parseInFormats(b)
-	want := []ports.DMABufFormat{{Format: fourccXRGB}, {Format: 0x3432564e}, {Format: fourccARGB, Modifier: 0x0200000000000001}}
+	want := []domain.DMABufFormat{{Format: fourccXRGB}, {Format: 0x3432564e}, {Format: fourccARGB, Modifier: 0x0200000000000001}}
 	if !slices.Equal(got, want) {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}

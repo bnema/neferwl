@@ -1,6 +1,8 @@
 package vulkan
 
 import (
+	"github.com/bnema/neferwl/internal/domain"
+
 	_ "embed"
 	"encoding/binary"
 	"image"
@@ -9,6 +11,7 @@ import (
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/ports"
+
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
 
@@ -350,7 +353,7 @@ func dimAlpha(alpha float64, hdr bool) float64 {
 // contentDraw draws the visible rect of a w×h buffer mapped onto full
 // (target pixels) through the inverse of its buffer transform t. exact: the
 // buffer is drawn at its size.
-func (r *Renderer) contentDraw(rect, full image.Rectangle, w, h int, source [4]float32, t ports.BufferTransform, mode uint32, opaque bool) draw {
+func (r *Renderer) contentDraw(rect, full image.Rectangle, w, h int, source [4]float32, t domain.BufferTransform, mode uint32, opaque bool) draw {
 	var dr draw
 	if source[2] <= 0 {
 		source = [4]float32{0, 0, float32(w), float32(h)}

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/bnema/go-wayland-bindings/server/linuxdmabuf"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"golang.org/x/sys/unix"
 )
 
@@ -25,7 +25,7 @@ func TestYUVParams(t *testing.T) {
 		{name: "P010 short chroma", format: fourccP010, two: true, short: true, errCode: uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorOutOfBounds)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s, _, _, dir := dmabufServer(t, ports.DMABufSupport{Formats: []ports.DMABufFormat{{Format: fourccNV12}, {Format: fourccP010}}})
+			s, _, _, dir := dmabufServer(t, domain.DMABufSupport{Formats: []domain.DMABufFormat{{Format: fourccNV12}, {Format: fourccP010}}})
 			c := protocolClient(t, s, dir)
 			dm := bindVersion(t, c, "zwp_linux_dmabuf_v1", 4)
 			p := c.AllocateID()

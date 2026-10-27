@@ -98,17 +98,17 @@ func TestCommitSyncStorageIsPerUpdate(t *testing.T) {
 func TestEmitContentAllocations(t *testing.T) {
 	s := &Server{
 		contentSeq: map[domain.WindowID]uint64{},
-		damage:     map[domain.WindowID][]ports.SeqDamage{},
+		damage:     map[domain.WindowID][]domain.SeqDamage{},
 		latest:     map[domain.WindowID]ports.SurfaceContent{},
 	}
 	c := ports.SurfaceContent{ID: 1, Solid: &domain.SolidColor{}}
 	var held []ports.SurfaceContent // readers retaining published histories
-	var snapshots [][]ports.SeqDamage
+	var snapshots [][]domain.SeqDamage
 	for range 3 * damageHistoryCap {
 		s.emitContent(c, damage{full: true})
 		got := s.latest[1]
 		held = append(held, got)
-		snapshots = append(snapshots, append([]ports.SeqDamage(nil), got.DamageHistory...))
+		snapshots = append(snapshots, append([]domain.SeqDamage(nil), got.DamageHistory...))
 	}
 	for i, h := range held {
 		// A published history never changes, nor can its owner append to it.

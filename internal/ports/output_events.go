@@ -50,7 +50,7 @@ type HeadChange struct {
 	Pos     *image.Point
 	Scale   float64
 	// Transform is nil to leave the transform unchanged.
-	Transform *BufferTransform
+	Transform *domain.BufferTransform
 }
 
 // OutputApply asks the app owner to validate or apply a runtime configuration.
@@ -107,7 +107,7 @@ type PresentationSink interface{ Push(OutputPresented) }
 type OutputFormats struct {
 	Output  string
 	Device  uint64
-	Formats []DMABufFormat
+	Formats []domain.DMABufFormat
 	HDR     *OutputHDR
 }
 

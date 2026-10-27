@@ -19,7 +19,7 @@ func TestFullRedrawReasons(t *testing.T) {
 
 	known := pixels
 	known.ID, known.Seq = 1, 2
-	known.DamageHistory = []ports.SeqDamage{{Seq: 2, Rects: []domain.Rect{{W: 1, H: 1}}}}
+	known.DamageHistory = []domain.SeqDamage{{Seq: 2, Rects: []domain.Rect{{W: 1, H: 1}}}}
 	d.window(1, known, rect)
 	if why != (fullRedraws{}) {
 		t.Fatalf("partial damage counted as full: %v", why)
@@ -28,7 +28,7 @@ func TestFullRedrawReasons(t *testing.T) {
 	d.seen = map[domain.WindowID]bool{}
 	gap := pixels
 	gap.ID, gap.Seq = 1, 9
-	gap.DamageHistory = []ports.SeqDamage{{Seq: 9, Rects: []domain.Rect{{W: 1, H: 1}}}}
+	gap.DamageHistory = []domain.SeqDamage{{Seq: 9, Rects: []domain.Rect{{W: 1, H: 1}}}}
 	d.window(1, gap, rect)
 	d.window(2, gap, rect)
 	if why[fullHistory] != 1 || why[fullNewWindow] != 1 {

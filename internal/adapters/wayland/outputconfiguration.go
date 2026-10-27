@@ -161,7 +161,7 @@ func (h *headConfiguration) SetTransform(r *wlr.ZwlrOutputConfigurationHeadV1, v
 		r.PostError(uint32(wlr.ZwlrOutputConfigurationHeadV1ErrorInvalidTransform), "invalid transform")
 		return
 	}
-	t := ports.BufferTransform(v)
+	t := domain.BufferTransform(v)
 	h.change.Transform = &t
 }
 func (h *headConfiguration) SetScale(r *wlr.ZwlrOutputConfigurationHeadV1, v server.Fixed) {

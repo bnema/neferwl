@@ -31,6 +31,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/adapters/xwayland"
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
@@ -53,7 +54,7 @@ type session struct {
 	core         *core.Core
 	inst         *vulkan.Instance
 	gpu          ports.RenderDevice
-	dmabuf       ports.DMABufSupport
+	dmabuf       domain.DMABufSupport
 	hintOpts     hints.Options
 	wsIDs        *workspaceid.IDs
 	captureAllow *captureallow.Store

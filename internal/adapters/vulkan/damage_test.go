@@ -13,7 +13,7 @@ import (
 
 // damagedContent writes px into the content's pool (the client drawing
 // into the same buffer) and records the damage of the new Seq.
-func damagedContent(t *testing.T, f *os.File, base ports.SurfaceContent, seq uint64, px []byte, hist []ports.SeqDamage) ports.SurfaceContent {
+func damagedContent(t *testing.T, f *os.File, base ports.SurfaceContent, seq uint64, px []byte, hist []domain.SeqDamage) ports.SurfaceContent {
 	t.Helper()
 	if _, err := f.WriteAt(px, 0); err != nil {
 		t.Fatal(err)
@@ -27,11 +27,11 @@ func damagedContent(t *testing.T, f *os.File, base ports.SurfaceContent, seq uin
 // ages (A then B, then one render) and with shm double buffers
 // (render, skip, render).
 func TestRendererDamageMatchesFullRedraw(t *testing.T) {
-	for _, tr := range []ports.BufferTransform{0, 1, 6} {
+	for _, tr := range []domain.BufferTransform{0, 1, 6} {
 		t.Run(fmt.Sprintf("transform %d", tr), func(t *testing.T) { damageMatchesFullRedraw(t, tr, 0) })
 	}
 	// A rotated or flipped output composes the scene into its target.
-	for _, out := range []ports.BufferTransform{1, 6} {
+	for _, out := range []domain.BufferTransform{1, 6} {
 		t.Run(fmt.Sprintf("output transform %d", out), func(t *testing.T) { damageMatchesFullRedraw(t, 0, out) })
 	}
 }
@@ -39,7 +39,7 @@ func TestRendererDamageMatchesFullRedraw(t *testing.T) {
 // damageMatchesFullRedraw checks partial frames of a window whose buffer
 // carries transform tr against full redraws, on an output with transform
 // out (its scene is 64×48; a rotated output's target is 48×64).
-func damageMatchesFullRedraw(t *testing.T, tr, out ports.BufferTransform) {
+func damageMatchesFullRedraw(t *testing.T, tr, out domain.BufferTransform) {
 	const w, h = 32, 32
 	tw, th := out.Size(64, 48)
 	newR := func() *Renderer {
@@ -68,7 +68,7 @@ func damageMatchesFullRedraw(t *testing.T, tr, out ports.BufferTransform) {
 	base.ID, base.Transform = 1, tr
 	f := base.SHM.File
 	scene := ports.Scene{Seq: 5, Transform: out, OutputWidth: 64, OutputHeight: 48, Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{X: 4, Y: 4, W: w, H: h}}}}
-	hist := []ports.SeqDamage{{Seq: 1, Full: true}}
+	hist := []domain.SeqDamage{{Seq: 1, Full: true}}
 	c := damagedContent(t, f, *base, 1, pixels, hist)
 	step := func(i int, c ports.SurfaceContent) {
 		t.Helper()
@@ -95,7 +95,7 @@ func damageMatchesFullRedraw(t *testing.T, tr, out ports.BufferTransform) {
 	}{{color.RGBA{255, 0, 0, 255}, domain.Rect{X: 2, Y: 2, W: 4, H: 4}}, {color.RGBA{0, 255, 0, 255}, domain.Rect{X: 20, Y: 10, W: 3, H: 5}}} {
 		seq := uint64(2 + i)
 		px(d.col, d.rect.X, d.rect.Y, d.rect.X+d.rect.W, d.rect.Y+d.rect.H, pixels)
-		hist = append(hist, ports.SeqDamage{Seq: seq, Rects: []domain.Rect{d.rect}})
+		hist = append(hist, domain.SeqDamage{Seq: seq, Rects: []domain.Rect{d.rect}})
 		c = damagedContent(t, f, *base, seq, pixels, hist)
 	}
 	step(2, c)
@@ -104,7 +104,7 @@ func damageMatchesFullRedraw(t *testing.T, tr, out ports.BufferTransform) {
 	}
 	// Render, skip (no frame), render: target 1 is two contents behind.
 	px(color.RGBA{0, 0, 255, 255}, 0, 30, 2, 32, pixels)
-	hist = append(hist, ports.SeqDamage{Seq: 4, Rects: []domain.Rect{{Y: 30, W: 2, H: 2}}})
+	hist = append(hist, domain.SeqDamage{Seq: 4, Rects: []domain.Rect{{Y: 30, W: 2, H: 2}}})
 	c = damagedContent(t, f, *base, 4, pixels, hist)
 	step(3, c)
 	step(4, c)

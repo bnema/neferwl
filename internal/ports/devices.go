@@ -135,7 +135,7 @@ type GPUInfo struct {
 type RenderDevice interface {
 	NewRenderer(w, h int, o RendererOptions) (Renderer, error)
 	NewCopier(w, h int) (Copier, error)
-	DMABuf() DMABufSupport
+	DMABuf() domain.DMABufSupport
 	Node() (primary, render uint64)
 	Close()
 }
@@ -150,7 +150,7 @@ type RenderDeviceOpener interface {
 type Copier interface {
 	ImportSources(bufs []DMABuf) error
 	ImportTargets(bufs []DMABuf) error
-	SourceModifiers(formats []DMABufFormat) []DMABufFormat // what it can sample
+	SourceModifiers(formats []domain.DMABufFormat) []domain.DMABufFormat // what it can sample
 	Copy(src, dst int, acquire *os.File) (done *os.File, err error)
 	Close()
 }

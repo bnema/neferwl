@@ -44,7 +44,7 @@ func TestSubmitFrameOverlayOnlySkipsRender(t *testing.T) {
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).RunAndReturn(func(b *ports.DMABuf, _ uint32) (uint32, error) {
 		return uint32(80 + b.ID), nil
 	}).Times(4)
-	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.overlay.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	s, c := overlayScene()
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().UseTarget(0).Return().Once()
@@ -88,7 +88,7 @@ func TestSubmitFrameOverlayOnlyWaitsForHeldReads(t *testing.T) {
 	o, k, _ := overlayOutput(t)
 	o.cursor, o.vrrProp = nil, 0
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Maybe()
-	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.overlay.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	s, c := overlayScene()
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().UseTarget(mock.Anything).Return().Twice()
@@ -119,7 +119,7 @@ func TestRunVideoOnOverlayDoesNotRender(t *testing.T) {
 			props[n] = v
 		}
 		o.primary.props = props
-		o.stray = []*plane{{id: tOverlay, typ: planeOverlay, props: props, zposValue: 2, formats: []ports.DMABufFormat{{Format: fourccXRGB}}}}
+		o.stray = []*plane{{id: tOverlay, typ: planeOverlay, props: props, zposValue: 2, formats: []domain.DMABufFormat{{Format: fourccXRGB}}}}
 		o.primary.formats = nil
 		o.pickOverlay()
 		flips := make(chan flipEvent, 1)
@@ -296,7 +296,7 @@ func TestSubmitFrameOverlayOnlyRefused(t *testing.T) {
 				props[n] = v
 			}
 			o.primary.props, o.primary.formats = props, nil
-			o.stray = []*plane{{id: tOverlay, typ: planeOverlay, props: props, zposValue: 2, formats: []ports.DMABufFormat{{Format: fourccXRGB}}}}
+			o.stray = []*plane{{id: tOverlay, typ: planeOverlay, props: props, zposValue: 2, formats: []domain.DMABufFormat{{Format: fourccXRGB}}}}
 			o.pickOverlay()
 			o.cursor, o.vrrProp = nil, 0
 			k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).RunAndReturn(func(b *ports.DMABuf, _ uint32) (uint32, error) {
@@ -380,7 +380,7 @@ func TestOverlayProbeCached(t *testing.T) {
 	o.cursor.image = true
 	o.cursor.Move(10, 10)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
-	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.overlay.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	s, c := overlayScene()
 	ov, _ := o.overlayFrame(s, c)
 	for range 3 {
@@ -461,7 +461,7 @@ func TestSubmitFrameOverlayOnlyNeedsSameImage(t *testing.T) {
 			o, k, _ := overlayOutput(t)
 			o.cursor, o.vrrProp = nil, 0
 			k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Maybe()
-			o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+			o.overlay.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 			s, c := overlayScene()
 			s.Layers = []ports.SceneLayer{{ID: 5, Layer: domain.LayerBottom, Rect: domain.Rect{W: 10, H: 10}}}
 			c[1] = ports.SurfaceContent{ID: 1, Seq: 1, Width: 100, Height: 100, Opaque: true, Solid: &domain.SolidColor{A: 1}}

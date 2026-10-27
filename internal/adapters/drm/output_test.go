@@ -527,7 +527,7 @@ func TestVRRHiddenGameOnlyHolds(t *testing.T) {
 func TestVRRRefusedKeepsOverlay(t *testing.T) {
 	o, k, commits := overlayOutput(t, unix.EINVAL)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
-	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.overlay.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	s, c := overlayScene()
 	ov, _ := o.overlayFrame(s, c)
 	if ov.fb == 0 {
@@ -1256,7 +1256,7 @@ func TestAllPlaneFormats(t *testing.T) {
 	k.EXPECT().objProps(uint32(2), uint32(objPlane)).Return(map[string][2]uint64{}, nil)
 	k.EXPECT().objProps(uint32(3), uint32(objPlane)).Return(nil, unix.EINVAL)
 	got := allPlaneFormats(k)
-	want := []ports.DMABufFormat{{Format: 10}, {Format: 11}, {Format: 12}}
+	want := []domain.DMABufFormat{{Format: 10}, {Format: 11}, {Format: 12}}
 	if !slices.Equal(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}

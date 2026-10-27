@@ -24,7 +24,7 @@ func TestExtendedLinearClient(t *testing.T) {
 				r = newTestRenderer(t, 64, 16)
 				defer r.Close()
 			}
-			format := ports.DMABufFormat{Format: fourcc('A', 'B', '4', 'H'), Modifier: 0}
+			format := domain.DMABufFormat{Format: fourcc('A', 'B', '4', 'H'), Modifier: 0}
 			if !slices.Contains(r.DMABuf().Formats, format) {
 				t.Skip("ABGR16161616F linear import unavailable")
 			}

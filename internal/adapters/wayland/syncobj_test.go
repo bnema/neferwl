@@ -104,7 +104,7 @@ func newSyncHarness(t *testing.T) *syncHarness {
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
 	commands := make(chan ports.ClientCommand, 16)
-	sup := ports.DMABufSupport{Formats: []ports.DMABufFormat{linearARGB}}
+	sup := domain.DMABufSupport{Formats: []domain.DMABufFormat{linearARGB}}
 	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, DMABuf: sup, syncDev: h.dev}, Channels{Events: events, Commands: commands}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)

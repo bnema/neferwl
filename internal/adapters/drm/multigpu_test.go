@@ -9,6 +9,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -33,7 +35,7 @@ func TestMultiGPUDirectImages(t *testing.T) {
 	allocator := newMockimageAllocator(t)
 	opener := portsmocks.NewMockRenderDeviceOpener(t)
 	o.card = &Card{alloc: allocator, dev: CardDevices{Mode: MultiGPUDirect, Local: func() (ports.RenderDevice, error) { return opener.Open(ports.GPUInfo{}) }}}
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: 0}, {Format: fourccXRGB, Modifier: tiledMod}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB, Modifier: 0}, {Format: fourccXRGB, Modifier: tiledMod}}
 	r := gbmRenderer(t)
 	r.EXPECT().TargetModifiers([]uint64{0}, true).Return([]uint64{0}).Once()
 	r.EXPECT().ImportTargets(mock.Anything).Return(nil).Once()
@@ -86,11 +88,11 @@ func TestMultiGPUCopySetup(t *testing.T) {
 			alloc := newMockimageAllocator(t)
 			o.card = &Card{alloc: alloc, dev: CardDevices{Mode: MultiGPUAuto, Local: func() (ports.RenderDevice, error) { return opener.Open(ports.GPUInfo{}) }}}
 			// The display card scans out tiled only: GBM must receive these.
-			o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: tiledMod}}
+			o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB, Modifier: tiledMod}}
 			opener.EXPECT().Open(ports.GPUInfo{}).Return(local, nil).Once()
 			local.EXPECT().NewCopier(200, 100).Return(copier, nil).Once()
-			formats := []ports.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
-			local.EXPECT().DMABuf().Return(ports.DMABufSupport{Formats: formats}).Once()
+			formats := []domain.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
+			local.EXPECT().DMABuf().Return(domain.DMABufSupport{Formats: formats}).Once()
 			copier.EXPECT().SourceModifiers(formats).Return(formats).Once()
 			r := gbmRenderer(t)
 			sources := []ports.DMABuf{gbmBuf(1), gbmBuf(1)}
@@ -136,7 +138,7 @@ func TestMultiGPUCopySetup(t *testing.T) {
 
 // copyFixture is an output on a cross-GPU card whose local device offers
 // a copier that accepts the given source modifiers.
-func copyFixture(t *testing.T, mods []ports.DMABufFormat) (*Output, *mockkms, *portsmocks.MockRenderer, *portsmocks.MockCopier, *mockimageAllocator) {
+func copyFixture(t *testing.T, mods []domain.DMABufFormat) (*Output, *mockkms, *portsmocks.MockRenderer, *portsmocks.MockCopier, *mockimageAllocator) {
 	o, k, _ := testOutput(t)
 	o.cursor = nil
 	o.fbs = [2]uint32{}
@@ -145,17 +147,17 @@ func copyFixture(t *testing.T, mods []ports.DMABufFormat) (*Output, *mockkms, *p
 	copier := portsmocks.NewMockCopier(t)
 	alloc := newMockimageAllocator(t)
 	o.card = &Card{alloc: alloc, dev: CardDevices{Mode: MultiGPUAuto, Local: func() (ports.RenderDevice, error) { return opener.Open(ports.GPUInfo{}) }}}
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: tiledMod}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB, Modifier: tiledMod}}
 	opener.EXPECT().Open(ports.GPUInfo{}).Return(local, nil).Once()
 	local.EXPECT().NewCopier(200, 100).Return(copier, nil).Once()
-	local.EXPECT().DMABuf().Return(ports.DMABufSupport{Formats: mods}).Once()
+	local.EXPECT().DMABuf().Return(domain.DMABufSupport{Formats: mods}).Once()
 	copier.EXPECT().SourceModifiers(mods).Return(mods).Once()
 	return o, k, gbmRenderer(t), copier, alloc
 }
 
 func TestMultiGPUCopySourceModifiers(t *testing.T) {
 	t.Run("no LINEAR", func(t *testing.T) {
-		mods := []ports.DMABufFormat{{Format: fourccXRGB, Modifier: tiledMod}}
+		mods := []domain.DMABufFormat{{Format: fourccXRGB, Modifier: tiledMod}}
 		o, _, r, copier, _ := copyFixture(t, mods)
 		r.EXPECT().ExportTargets(2, []uint64{tiledMod}, false).Return([]ports.DMABuf{gbmBuf(1), gbmBuf(1)}, nil).Once()
 		copier.EXPECT().ImportSources(mock.Anything).Return(ports.ErrDeviceLost).Once()
@@ -166,7 +168,7 @@ func TestMultiGPUCopySourceModifiers(t *testing.T) {
 		}
 	})
 	t.Run("LINEAR only is not retried", func(t *testing.T) {
-		mods := []ports.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
+		mods := []domain.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
 		o, _, r, copier, _ := copyFixture(t, mods)
 		r.EXPECT().ExportTargets(2, []uint64{0}, false).Return(nil, errors.New("not exportable")).Once()
 		copier.EXPECT().Close().Return().Once()
@@ -178,7 +180,7 @@ func TestMultiGPUCopySourceModifiers(t *testing.T) {
 }
 
 func TestMultiGPUCopyShowFailureRestores(t *testing.T) {
-	mods := []ports.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
+	mods := []domain.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
 	o, k, r, copier, alloc := copyFixture(t, mods)
 	o.transport = transportDirect
 	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]ports.DMABuf{gbmBuf(1), gbmBuf(1)}, nil).Once()

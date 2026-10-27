@@ -482,7 +482,7 @@ func TestSubsurfaceDesyncFlushesOnlyEffectiveTransition(t *testing.T) {
 //
 //testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSubsurfaceContent(t *testing.T) {
-	s, events, contents, dir := dmabufServer(t, ports.DMABufSupport{})
+	s, events, contents, dir := dmabufServer(t, domain.DMABufSupport{})
 	c := protocolClient(t, s, dir)
 	comp := bindProtocol(t, c, "wl_compositor")
 	subc := bindProtocol(t, c, "wl_subcompositor")
@@ -580,7 +580,7 @@ func TestSubsurfaceContent(t *testing.T) {
 
 // A surface cannot become a subsurface of its own child.
 func TestSubsurfaceLoop(t *testing.T) {
-	s, _, _, dir := dmabufServer(t, ports.DMABufSupport{})
+	s, _, _, dir := dmabufServer(t, domain.DMABufSupport{})
 	c := protocolClient(t, s, dir)
 	comp := bindProtocol(t, c, "wl_compositor")
 	subc := bindProtocol(t, c, "wl_subcompositor")
@@ -598,7 +598,7 @@ func TestSubsurfaceLoop(t *testing.T) {
 // A wl_subsurface outlives its parent: the surface keeps its role, so a
 // second get_subsurface is bad_surface.
 func TestSubsurfaceRoleOutlivesParent(t *testing.T) {
-	s, _, _, dir := dmabufServer(t, ports.DMABufSupport{})
+	s, _, _, dir := dmabufServer(t, domain.DMABufSupport{})
 	c := protocolClient(t, s, dir)
 	comp := bindProtocol(t, c, "wl_compositor")
 	subc := bindProtocol(t, c, "wl_subcompositor")

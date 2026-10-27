@@ -27,7 +27,7 @@ func TestRendererBufferTransform(t *testing.T) {
 		}
 	}
 	for _, crop := range []bool{false, true} {
-		for tr := ports.BufferTransform(0); tr < 8; tr++ {
+		for tr := domain.BufferTransform(0); tr < 8; tr++ {
 			c := shmContent(t, 3, 2, 12, px)
 			// Crop: the buffer's right 2×2 pixels.
 			bx0, bw, bh := 0, 3, 2

@@ -2,15 +2,19 @@ package vulkan
 
 import (
 	"fmt"
+
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego"
-	vk "github.com/bnema/purego-vulkan/vulkan"
-	"github.com/bnema/zerowrap"
-	"golang.org/x/sys/unix"
+
 	"runtime"
 	"sync"
 	"time"
 	"unsafe"
+
+	vk "github.com/bnema/purego-vulkan/vulkan"
+	"github.com/bnema/zerowrap"
+	"golang.org/x/sys/unix"
 )
 
 // GPU owns a logical device and the queues shared by its renderers.
@@ -24,7 +28,7 @@ type GPU struct {
 	maxRange      int
 	queuePriority string
 	deviceInfo    DeviceInfo
-	dmabuf        ports.DMABufSupport
+	dmabuf        domain.DMABufSupport
 	// Export modifier lists are computed before OpenGPU returns and immutable afterwards.
 	renderMods, hdrMods []uint64
 	hdrReadbackMods     []uint64 // Immutable transfer-source export list, computed at open.
@@ -183,7 +187,7 @@ func (g *GPU) initDevice(physical vk.PhysicalDevice, family, n uint32, start tim
 }
 
 // DMABuf returns the formats probed once for this device.
-func (g *GPU) DMABuf() ports.DMABufSupport { return g.dmabuf }
+func (g *GPU) DMABuf() domain.DMABufSupport { return g.dmabuf }
 
 // Node returns the primary and render device numbers, or zero when absent.
 func (g *GPU) Node() (primary, render uint64) {

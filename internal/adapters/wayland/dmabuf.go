@@ -15,7 +15,7 @@ import (
 )
 
 // linux-dmabuf v6: clients hand GPU buffers to the renderer without copies.
-// The formats are those the renderer imports (ports.DMABufSupport); without
+// The formats are those the renderer imports (domain.DMABufSupport); without
 // any, the global is not advertised and clients use wl_shm. Surface
 // feedback also offers, first, a scanout tranche while the surface's
 // window is fullscreen on an output that reported scanout formats
@@ -37,7 +37,7 @@ const dmabufVersion = 6
 // maxPlanes is the protocol limit (DRM planes).
 const maxPlanes = 4
 
-func registerDMABuf(d *server.Display, s *Server, sup ports.DMABufSupport) error {
+func registerDMABuf(d *server.Display, s *Server, sup domain.DMABufSupport) error {
 	if len(sup.Formats) == 0 {
 		return nil
 	}
@@ -45,7 +45,7 @@ func registerDMABuf(d *server.Display, s *Server, sup ports.DMABufSupport) error
 	if err != nil {
 		return err
 	}
-	index := make(map[ports.DMABufFormat]uint16, len(sup.Formats))
+	index := make(map[domain.DMABufFormat]uint16, len(sup.Formats))
 	rendererIndices := make([]byte, 2*len(sup.Formats))
 	for i, f := range sup.Formats {
 		if _, dup := index[f]; !dup {
@@ -81,7 +81,7 @@ func registerDMABuf(d *server.Display, s *Server, sup ports.DMABufSupport) error
 
 // formatTable is the shared memfd of 16-byte entries (u32 format, 4 bytes
 // padding, u64 modifier) feedback clients map read-only.
-func formatTable(formats []ports.DMABufFormat) (*os.File, error) {
+func formatTable(formats []domain.DMABufFormat) (*os.File, error) {
 	data := make([]byte, 16*len(formats))
 	for i, f := range formats {
 		binary.NativeEndian.PutUint32(data[i*16:], f.Format)
@@ -106,7 +106,7 @@ func formatTable(formats []ports.DMABufFormat) (*os.File, error) {
 
 type dmabufGlobal struct {
 	server  *Server
-	support ports.DMABufSupport
+	support domain.DMABufSupport
 	table   *os.File
 	nextID  uint64
 	// mainDev is the renderer device, and rendererIndices the u16 table
@@ -115,7 +115,7 @@ type dmabufGlobal struct {
 	mainDev         []byte
 	rendererIndices []byte
 	// index maps a supported format to its position in the table.
-	index map[ports.DMABufFormat]uint16
+	index map[domain.DMABufFormat]uint16
 	// scanout are the outputs' direct scanout offers by output name.
 	scanout map[string]scanoutOffer
 	// feedbacks are the live feedback objects and their state.
@@ -373,7 +373,7 @@ func (p *params) build(width, height int32, format, flags uint32) (buf *dmabufBu
 	if flags != 0 {
 		return nil, true, true
 	}
-	if want := (ports.DMABufFormat{Format: format, Modifier: p.modifier}); !slices.Contains(p.global.support.Formats, want) {
+	if want := (domain.DMABufFormat{Format: format, Modifier: p.modifier}); !slices.Contains(p.global.support.Formats, want) {
 		if r.Version() >= 4 {
 			r.PostError(uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorInvalidFormat), "format and modifier not advertised")
 			return nil, false, false

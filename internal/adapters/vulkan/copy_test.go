@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
 
@@ -51,7 +53,7 @@ func TestCopierImportsLinear(t *testing.T) {
 		t.Fatal(err)
 	}
 	mods := c.SourceModifiers(g.DMABuf().Formats)
-	linear := ports.DMABufFormat{Format: bufs[0].Format, Modifier: 0}
+	linear := domain.DMABufFormat{Format: bufs[0].Format, Modifier: 0}
 	if len(mods) == 0 || !slices.Contains(mods, linear) {
 		t.Skipf("LINEAR source modifier absent: %v", mods)
 	}

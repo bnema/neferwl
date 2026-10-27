@@ -14,7 +14,7 @@ import (
 func TestScaledScanoutRectAndCachedRefusal(t *testing.T) {
 	o, _, commits := testOutput(t, unix.EINVAL)
 	o.cursor = nil
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	o.clientFBs[9] = &clientFB{fbID: 87}
 	s := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 200, H: 100}, Fullscreen: true}}}
 	c := ports.SurfaceContent{ID: 1, Width: 100, Height: 50, LogicalW: 200, LogicalH: 100, Source: [4]float32{5, 2, 90, 46}, DMABuf: &ports.DMABuf{ID: 9, Format: fourccXRGB}}
@@ -47,7 +47,7 @@ func TestScaledScanoutRectAndCachedRefusal(t *testing.T) {
 func TestModesetInvalidatesScaleDecision(t *testing.T) {
 	o, k, commits := testOutput(t)
 	o.cursor = nil
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	fb := &clientFB{fbID: 87}
 	o.clientFBs[9] = fb
 	s := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: domain.Rect{W: 200, H: 100}, Fullscreen: true}}}

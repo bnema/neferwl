@@ -16,7 +16,7 @@ import (
 //
 //testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestSinglePixelBuffer(t *testing.T) {
-	s, events, contents, dir := dmabufServer(t, ports.DMABufSupport{})
+	s, events, contents, dir := dmabufServer(t, domain.DMABufSupport{})
 	c := protocolClient(t, s, dir)
 	g, ok := c.Registry().FindGlobal("wp_single_pixel_buffer_manager_v1")
 	if !ok || g.Version != 1 {

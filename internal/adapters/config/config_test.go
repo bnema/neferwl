@@ -765,7 +765,7 @@ func TestOutputTransform(t *testing.T) {
 		t.Fatalf("%v %+v", w, c.Outputs)
 	}
 	for i, o := range c.Outputs {
-		if o.Transform != ports.BufferTransform(i) || !o.ScaleOnly {
+		if o.Transform != domain.BufferTransform(i) || !o.ScaleOnly {
 			t.Fatalf("%s: %+v", names[i], o)
 		}
 	}

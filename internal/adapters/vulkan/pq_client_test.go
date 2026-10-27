@@ -27,7 +27,7 @@ func TestPQClientComposition(t *testing.T) {
 	}
 	for _, name := range [][4]byte{{'X', 'R', '3', '0'}, {'X', 'B', '3', '0'}, {'A', 'B', '3', '0'}} {
 		t.Run(string(name[:]), func(t *testing.T) {
-			format := ports.DMABufFormat{Format: fourcc(name[0], name[1], name[2], name[3]), Modifier: 0}
+			format := domain.DMABufFormat{Format: fourcc(name[0], name[1], name[2], name[3]), Modifier: 0}
 			if !slices.Contains(r.DMABuf().Formats, format) {
 				t.Skipf("linear %s unavailable", name)
 			}

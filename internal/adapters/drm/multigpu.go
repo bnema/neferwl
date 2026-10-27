@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -166,7 +167,7 @@ func (o *Output) copyImages(r ports.Renderer) (err error) {
 			_, _ = r.ExportTargets(0, nil, false)
 		}
 	}()
-	var candidates []ports.DMABufFormat
+	var candidates []domain.DMABufFormat
 	for _, f := range local.DMABuf().Formats {
 		if f.Format == o.imageFormat() {
 			candidates = append(candidates, f)

@@ -189,7 +189,7 @@ func TestOverlayCandidate(t *testing.T) {
 // renderer's tone mapping.
 func TestOverlaySkipsPQContent(t *testing.T) {
 	o, _, _ := overlayOutput(t)
-	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.overlay.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	s, c := overlayScene()
 	pq := c[2]
 	pq.Color = domain.SurfaceColor{TF: domain.ColorTFPQ, Primaries: domain.ColorPrimariesBT2020}
@@ -204,7 +204,7 @@ func TestOverlaySkipsPQContent(t *testing.T) {
 func TestOverlayChosen(t *testing.T) {
 	o, k, commits := overlayOutput(t)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
-	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.overlay.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	s, c := overlayScene()
 	ov, rest := o.overlayFrame(s, c)
 	if ov.fb != 88 || len(rest.Windows) != 1 || rest.Windows[0].ID != 1 {
@@ -232,7 +232,7 @@ func TestOverlayChosen(t *testing.T) {
 func TestOverlayTestRefusedFallsBack(t *testing.T) {
 	o, k, _ := overlayOutput(t, unix.EINVAL)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
-	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.overlay.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	s, c := overlayScene()
 	ov, _ := o.overlayFrame(s, c)
 	if o.testOverlay(70, ov) {
@@ -245,7 +245,7 @@ func TestOverlayTestRefusedFallsBack(t *testing.T) {
 		t.Fatal("refused buffer tried again")
 	}
 	// The overlay's refusal does not bar direct scanout of the buffer.
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	if fb, reason := o.scanoutFB(c[2].DMABuf, time.Now()); fb != 88 || reason != "" {
 		t.Fatalf("scanout after overlay refusal: %d %q", fb, reason)
 	}
@@ -358,7 +358,7 @@ func TestOverlayStackingOrder(t *testing.T) {
 func TestOverlayCursorConflictDropsOverlay(t *testing.T) {
 	o, k, _ := overlayOutput(t, nil, unix.EINVAL)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
-	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.overlay.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	s, c := overlayScene()
 	ov, _ := o.overlayFrame(s, c)
 	if err := o.commitWith(70, nil, false, false, pendingFrame{}, ov); err != nil {
@@ -380,7 +380,7 @@ func TestOverlayCursorConflictDropsOverlay(t *testing.T) {
 func TestOverlayCarriesAcquireFence(t *testing.T) {
 	o, k, commits := overlayOutput(t)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
-	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.overlay.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	s, c := overlayScene()
 	r, w, err := os.Pipe()
 	if err != nil {

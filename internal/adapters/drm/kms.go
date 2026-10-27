@@ -7,7 +7,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"golang.org/x/sys/unix"
 )
 
@@ -106,7 +106,7 @@ type Want struct {
 	NoVRR bool
 	// Sampled are the dmabuf formats the renderer composes: direct
 	// scanout is offered only for those, so a refused buffer still draws.
-	Sampled []ports.DMABufFormat
+	Sampled []domain.DMABufFormat
 	// Device is the KMS device (dev_t) offered in scanout tranches.
 	Device uint64
 	// TraceFlips logs each frame and commit completion with its timing

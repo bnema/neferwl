@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -50,7 +51,7 @@ func reopenRender(opener ports.RenderDeviceOpener, info ports.GPUInfo, old ports
 	return nil, fmt.Errorf("render device %s: %w", info.Path, ports.ErrDeviceLost)
 }
 
-func lostFormats(advertised, current []ports.DMABufFormat) int {
+func lostFormats(advertised, current []domain.DMABufFormat) int {
 	lost := 0
 	for _, a := range advertised {
 		found := false

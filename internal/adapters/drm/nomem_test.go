@@ -6,6 +6,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
@@ -120,7 +121,7 @@ func TestScanoutNoMemComposes(t *testing.T) {
 		s, surfaces := fullscreenScene()
 		c := surfaces[1]
 		o.clientFBs[9] = &clientFB{fbID: 80}
-		o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+		o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 		direct, err := o.commitScanoutRect(80, c, pendingFrame{}, fullPlaneRect(200, 100), colorBypass)
 		if direct || err != nil || o.reason != "nomem" || o.clientFBs[9].failed != "" {
 			t.Fatalf("direct=%v err=%v reason=%q failed=%q", direct, err, o.reason, o.clientFBs[9].failed)

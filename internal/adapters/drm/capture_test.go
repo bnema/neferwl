@@ -172,7 +172,7 @@ func TestCaptureStateKeepsDirectScanout(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			o, k, _ := testOutput(t)
 			o.cursor, o.tearing, o.vrrProp = nil, false, 0
-			o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+			o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 			r := portsmocks.NewMockRenderer(t)
 			s, c := fullscreenScene()
 			s.Capture = tc.capture
@@ -292,7 +292,7 @@ func TestReportCapsPerWindowWhileChildReads(t *testing.T) {
 func TestHiddenWorkspaceChildKeepsDirectScanout(t *testing.T) {
 	o, k, _ := testOutput(t)
 	o.cursor, o.tearing, o.vrrProp = nil, false, 0
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
 	readEnd, writeEnd, err := os.Pipe()
 	require.NoError(t, err)

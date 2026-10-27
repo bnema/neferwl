@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/bnema/neferwl/internal/adapters/xcursor"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -70,7 +71,7 @@ type themeKey struct {
 // an empty image when hidden, then rotated by the output transform t (the
 // cursor plane and the headless cursor are drawn in target space). Unknown
 // shapes fall back to the arrow.
-func loadCursor(c ports.CursorChange, scale float64, t ports.BufferTransform, limit int) (ports.CursorImage, error) {
+func loadCursor(c ports.CursorChange, scale float64, t domain.BufferTransform, limit int) (ports.CursorImage, error) {
 	img, err := loadCursorUpright(c, scale, limit)
 	if err != nil {
 		return img, err
@@ -80,7 +81,7 @@ func loadCursor(c ports.CursorChange, scale float64, t ports.BufferTransform, li
 
 // rotateCursor returns img as an output with transform t holds it, hotspot
 // included. It never modifies img (theme images are cached).
-func rotateCursor(img ports.CursorImage, t ports.BufferTransform) ports.CursorImage {
+func rotateCursor(img ports.CursorImage, t domain.BufferTransform) ports.CursorImage {
 	if t == 0 || img.W <= 0 || img.H <= 0 || len(img.Pixels) < img.W*img.H*4 {
 		return img
 	}

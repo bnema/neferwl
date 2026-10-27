@@ -229,7 +229,7 @@ func TestPendingClientFenceComposes(t *testing.T) {
 		decide func(t *testing.T, o *Output, k *mockkms, fence *os.File) bool
 	}{
 		{"primary scanout", func(o *Output) string { return o.reason }, func(t *testing.T, o *Output, k *mockkms, fence *os.File) bool {
-			o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+			o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 			s, c := fullscreenScene()
 			content := c[1]
 			content.Acquire = fence
@@ -237,7 +237,7 @@ func TestPendingClientFenceComposes(t *testing.T) {
 			return fb != 0
 		}},
 		{"overlay", func(o *Output) string { return o.overlayReason }, func(t *testing.T, o *Output, k *mockkms, fence *os.File) bool {
-			o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+			o.overlay.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
 			s, c := overlayScene()
 			content := c[2]
 			content.Acquire = fence

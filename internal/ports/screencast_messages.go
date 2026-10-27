@@ -47,7 +47,7 @@ type CastOutput struct {
 	// X, Y, Width, Height are the logical placement.
 	X, Y, Width, Height int
 	Scale               float64
-	Transform           BufferTransform
+	Transform           domain.BufferTransform
 }
 
 // CastWindow is one window of the inventory.

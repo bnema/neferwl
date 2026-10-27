@@ -269,7 +269,7 @@ func TestTargetHoldCopiesSlices(t *testing.T) {
 type deltaCase struct {
 	name      string
 	scale     float64
-	out       ports.BufferTransform
+	out       domain.BufferTransform
 	sceneDim  float64
 	floating  bool // window 2 is a float: the veil and tile lines go under it
 	windowDim bool // window 1 is dimmed on some frames

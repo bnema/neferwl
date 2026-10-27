@@ -65,7 +65,7 @@ func udmabuf(t testing.TB, w, h int, fill func(x, y int) [4]byte) *os.File {
 func TestRendererImportsDMABuf(t *testing.T) {
 	r := newTestRenderer(t, 80, 32)
 	defer r.Close()
-	linear := ports.DMABufFormat{Format: fourcc('A', 'R', '2', '4'), Modifier: 0}
+	linear := domain.DMABufFormat{Format: fourcc('A', 'R', '2', '4'), Modifier: 0}
 	if !slices.Contains(r.DMABuf().Formats, linear) {
 		t.Skipf("linear ARGB8888 not importable: %+v", r.DMABuf())
 	}
@@ -129,7 +129,7 @@ func TestTenBitDMABufFormats(t *testing.T) {
 func TestRendererSubsurfaceAcquire(t *testing.T) {
 	r := newTestRenderer(t, 80, 32)
 	defer r.Close()
-	linear := ports.DMABufFormat{Format: fourcc('A', 'R', '2', '4'), Modifier: 0}
+	linear := domain.DMABufFormat{Format: fourcc('A', 'R', '2', '4'), Modifier: 0}
 	if !slices.Contains(r.DMABuf().Formats, linear) {
 		t.Skipf("linear ARGB8888 not importable: %+v", r.DMABuf())
 	}

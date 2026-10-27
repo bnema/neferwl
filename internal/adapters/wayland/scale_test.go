@@ -11,6 +11,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	"github.com/bnema/zerowrap"
@@ -86,7 +87,7 @@ func contentServerWith(t *testing.T, opts Options, log zerowrap.Logger) (*Server
 func TestPreferredBufferTransform(t *testing.T) {
 	s, _, _, _, dir := contentServer(t)
 	info := testOutputs[0].Info
-	setOutputs := func(tr ports.BufferTransform, scale float64) {
+	setOutputs := func(tr domain.BufferTransform, scale float64) {
 		if !s.display.Do(func() {
 			s.setOutputs(ports.SetOutputs{Outputs: ports.Layout{{Info: info, Width: info.Height, Height: info.Width, Scale: scale, Transform: tr}}})
 		}) {

@@ -104,7 +104,7 @@ func TestPositionHintRoundedOrient(t *testing.T) {
 	s := ports.Scene{OutputWidth: 640, OutputHeight: 480, Scale: 1, PositionHint: hintGrid(2, 2)}
 	dmg := newDamage(&target{}, s, image.Rect(0, 0, r.width, r.height))
 	ds := r.draws(s, nil, dmg)
-	r.orient(ds, ports.BufferTransform(1))
+	r.orient(ds, domain.BufferTransform(1))
 	for _, d := range ds {
 		require.Equal(t, roundRect(image.Rect(int(d.pc.rect[0]), int(d.pc.rect[1]), int(d.pc.rect[2]), int(d.pc.rect[3]))), d.round)
 	}
@@ -144,7 +144,7 @@ func TestHintRoundDraws(t *testing.T) {
 }
 
 func TestPositionHintRoundedRotatedOrient(t *testing.T) {
-	for transform := ports.BufferTransform(1); transform < 8; transform++ {
+	for transform := domain.BufferTransform(1); transform < 8; transform++ {
 		r := &Renderer{width: 640, height: 480}
 		sw, sh := r.sceneSize(transform)
 		s := ports.Scene{OutputWidth: sw, OutputHeight: sh, Scale: 1, Transform: transform, PositionHint: hintGrid(2, 2)}

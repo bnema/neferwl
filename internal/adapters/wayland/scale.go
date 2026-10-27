@@ -6,7 +6,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/fractionalscale"
 	"github.com/bnema/go-wayland-bindings/server/viewporter"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/purego-libwayland/server"
 )
 
@@ -80,7 +80,7 @@ func (surf *surface) sendScale() {
 	// The hint lets the client render in the output's orientation (rotated
 	// outputs are always composed). Normal is the protocol default, so it is
 	// sent only on change; cursor buffers must stay untransformed.
-	var t ports.BufferTransform
+	var t domain.BufferTransform
 	if o != nil {
 		t = o.place.Transform
 	}

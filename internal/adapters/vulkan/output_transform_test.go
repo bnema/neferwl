@@ -19,7 +19,7 @@ func TestRendererOutputTransform(t *testing.T) {
 	red, green := color.RGBA{255, 0, 0, 255}, color.RGBA{0, 255, 0, 255}
 	px := []byte{0, 0, 255, 255, 0, 255, 0, 255} // BGRA: red, green
 	win := domain.Rect{X: 1, Y: 0, W: 2, H: 1}
-	for tr := ports.BufferTransform(0); tr < 8; tr++ {
+	for tr := domain.BufferTransform(0); tr < 8; tr++ {
 		sw, sh := r.sceneSize(tr)
 		c := shmContent(t, 2, 1, 8, px)
 		scene := ports.Scene{Transform: tr, Scale: 1, OutputWidth: sw, OutputHeight: sh, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: win}}}

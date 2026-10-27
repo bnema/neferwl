@@ -6,6 +6,8 @@ import (
 	"testing"
 	"unsafe"
 
+	"github.com/bnema/neferwl/internal/domain"
+
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -78,7 +80,7 @@ func TestHDRTestCommitFallbackReexportsSDR(t *testing.T) {
 	o.hdr.cap = hdrCapability{Capable: true}
 	o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: 203}
 	o.hdr.props = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30, Modifier: 0}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30, Modifier: 0}}
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() ports.DMABuf {
 		f, w, _ := os.Pipe()
@@ -153,7 +155,7 @@ func TestHDRSuccessfulModeset(t *testing.T) {
 	o.hdr.cap = hdrCapability{Capable: true}
 	o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: ports.DefaultSDRBrightness}
 	o.hdr.props = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30, Modifier: 19}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30, Modifier: 19}}
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() ports.DMABuf {
 		f, w, _ := os.Pipe()
@@ -194,7 +196,7 @@ func TestHDRBlobReusedAcrossImageSetup(t *testing.T) {
 	o.hdr.cap = hdrCapability{Capable: true}
 	o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: ports.DefaultSDRBrightness}
 	o.hdr.props = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30, Modifier: 19}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30, Modifier: 19}}
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() ports.DMABuf {
 		f, w, _ := os.Pipe()
@@ -244,7 +246,7 @@ func TestHDRBlobReplacementWaitsForCommit(t *testing.T) {
 	o.hdr.cap = hdrCapability{Capable: true}
 	o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: ports.DefaultSDRBrightness}
 	o.hdr.props = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30, Modifier: 19}}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30, Modifier: 19}}
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() ports.DMABuf {
 		f, w, _ := os.Pipe()

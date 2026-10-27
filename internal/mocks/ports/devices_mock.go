@@ -1219,18 +1219,18 @@ func (_c *MockRenderDevice_Close_Call) RunAndReturn(run func()) *MockRenderDevic
 }
 
 // DMABuf provides a mock function for the type MockRenderDevice
-func (_mock *MockRenderDevice) DMABuf() ports.DMABufSupport {
+func (_mock *MockRenderDevice) DMABuf() domain.DMABufSupport {
 	ret := _mock.Called()
 
 	if len(ret) == 0 {
 		panic("no return value specified for DMABuf")
 	}
 
-	var r0 ports.DMABufSupport
-	if returnFunc, ok := ret.Get(0).(func() ports.DMABufSupport); ok {
+	var r0 domain.DMABufSupport
+	if returnFunc, ok := ret.Get(0).(func() domain.DMABufSupport); ok {
 		r0 = returnFunc()
 	} else {
-		r0 = ret.Get(0).(ports.DMABufSupport)
+		r0 = ret.Get(0).(domain.DMABufSupport)
 	}
 	return r0
 }
@@ -1252,12 +1252,12 @@ func (_c *MockRenderDevice_DMABuf_Call) Run(run func()) *MockRenderDevice_DMABuf
 	return _c
 }
 
-func (_c *MockRenderDevice_DMABuf_Call) Return(dMABufSupport ports.DMABufSupport) *MockRenderDevice_DMABuf_Call {
+func (_c *MockRenderDevice_DMABuf_Call) Return(dMABufSupport domain.DMABufSupport) *MockRenderDevice_DMABuf_Call {
 	_c.Call.Return(dMABufSupport)
 	return _c
 }
 
-func (_c *MockRenderDevice_DMABuf_Call) RunAndReturn(run func() ports.DMABufSupport) *MockRenderDevice_DMABuf_Call {
+func (_c *MockRenderDevice_DMABuf_Call) RunAndReturn(run func() domain.DMABufSupport) *MockRenderDevice_DMABuf_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1801,19 +1801,19 @@ func (_c *MockCopier_ImportTargets_Call) RunAndReturn(run func(bufs []ports.DMAB
 }
 
 // SourceModifiers provides a mock function for the type MockCopier
-func (_mock *MockCopier) SourceModifiers(formats []ports.DMABufFormat) []ports.DMABufFormat {
+func (_mock *MockCopier) SourceModifiers(formats []domain.DMABufFormat) []domain.DMABufFormat {
 	ret := _mock.Called(formats)
 
 	if len(ret) == 0 {
 		panic("no return value specified for SourceModifiers")
 	}
 
-	var r0 []ports.DMABufFormat
-	if returnFunc, ok := ret.Get(0).(func([]ports.DMABufFormat) []ports.DMABufFormat); ok {
+	var r0 []domain.DMABufFormat
+	if returnFunc, ok := ret.Get(0).(func([]domain.DMABufFormat) []domain.DMABufFormat); ok {
 		r0 = returnFunc(formats)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]ports.DMABufFormat)
+			r0 = ret.Get(0).([]domain.DMABufFormat)
 		}
 	}
 	return r0
@@ -1825,16 +1825,16 @@ type MockCopier_SourceModifiers_Call struct {
 }
 
 // SourceModifiers is a helper method to define mock.On call
-//   - formats []ports.DMABufFormat
+//   - formats []domain.DMABufFormat
 func (_e *MockCopier_Expecter) SourceModifiers(formats any) *MockCopier_SourceModifiers_Call {
 	return &MockCopier_SourceModifiers_Call{Call: _e.mock.On("SourceModifiers", formats)}
 }
 
-func (_c *MockCopier_SourceModifiers_Call) Run(run func(formats []ports.DMABufFormat)) *MockCopier_SourceModifiers_Call {
+func (_c *MockCopier_SourceModifiers_Call) Run(run func(formats []domain.DMABufFormat)) *MockCopier_SourceModifiers_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 []ports.DMABufFormat
+		var arg0 []domain.DMABufFormat
 		if args[0] != nil {
-			arg0 = args[0].([]ports.DMABufFormat)
+			arg0 = args[0].([]domain.DMABufFormat)
 		}
 		run(
 			arg0,
@@ -1843,12 +1843,12 @@ func (_c *MockCopier_SourceModifiers_Call) Run(run func(formats []ports.DMABufFo
 	return _c
 }
 
-func (_c *MockCopier_SourceModifiers_Call) Return(dMABufFormats []ports.DMABufFormat) *MockCopier_SourceModifiers_Call {
+func (_c *MockCopier_SourceModifiers_Call) Return(dMABufFormats []domain.DMABufFormat) *MockCopier_SourceModifiers_Call {
 	_c.Call.Return(dMABufFormats)
 	return _c
 }
 
-func (_c *MockCopier_SourceModifiers_Call) RunAndReturn(run func(formats []ports.DMABufFormat) []ports.DMABufFormat) *MockCopier_SourceModifiers_Call {
+func (_c *MockCopier_SourceModifiers_Call) RunAndReturn(run func(formats []domain.DMABufFormat) []domain.DMABufFormat) *MockCopier_SourceModifiers_Call {
 	_c.Call.Return(run)
 	return _c
 }

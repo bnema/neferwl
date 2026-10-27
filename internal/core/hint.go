@@ -75,7 +75,7 @@ type hintGeom struct {
 	w, h          int // logical size
 	width, height int // buffer size, physical pixels
 	scale         float64
-	transform     ports.BufferTransform
+	transform     domain.BufferTransform
 }
 
 func (sc *screen) hintGeom() hintGeom {

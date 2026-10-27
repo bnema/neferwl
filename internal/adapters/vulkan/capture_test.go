@@ -603,7 +603,7 @@ func TestCapturePollErrorPropagates(t *testing.T) {
 // the negative one to black, on the GPU as in captureSDR.
 func TestCaptureHDRNaNInf(t *testing.T) {
 	r := hdrTestRenderer(t)
-	format := ports.DMABufFormat{Format: fourcc('A', 'B', '4', 'H'), Modifier: 0}
+	format := domain.DMABufFormat{Format: fourcc('A', 'B', '4', 'H'), Modifier: 0}
 	if !slices.Contains(r.DMABuf().Formats, format) {
 		t.Skip("ABGR16161616F linear import unavailable")
 	}

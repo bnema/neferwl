@@ -77,7 +77,7 @@ func TestOutputApplyTransform(t *testing.T) {
 		file := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}}
 		state := NewOutputOverrides(file, false)
 		state.heads = ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}}
-		tr := ports.BufferTransform(3)
+		tr := domain.BufferTransform(3)
 		cfg, err := state.Apply(ports.OutputApply{Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Transform: &tr}}})
 		if err != nil {
 			t.Fatal(err)
@@ -95,7 +95,7 @@ func TestOutputApplyTransform(t *testing.T) {
 		if err != nil || cfg.Outputs[0].Transform != 3 {
 			t.Fatalf("unset transform changed: %+v, %v", cfg.Outputs, err)
 		}
-		bad := ports.BufferTransform(8)
+		bad := domain.BufferTransform(8)
 		if _, err := state.Apply(ports.OutputApply{Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Transform: &bad}}}); err == nil {
 			t.Fatal("transform 8 accepted")
 		}

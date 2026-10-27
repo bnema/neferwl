@@ -195,7 +195,7 @@ func TestRendererDimBlendAndDamage(t *testing.T) {
 		}
 	}
 	white.Seq, white.Version = 2, 2
-	white.DamageHistory = []ports.SeqDamage{{Seq: 1, Full: true}, {Seq: 2, Rects: []domain.Rect{{X: 2, Y: 2, W: 3, H: 3}}}}
+	white.DamageHistory = []domain.SeqDamage{{Seq: 1, Full: true}, {Seq: 2, Rects: []domain.Rect{{X: 2, Y: 2, W: 3, H: 3}}}}
 	contents[1] = white
 	before := r.redrawn
 	if err := render(r, s, contents); err != nil {
@@ -245,7 +245,7 @@ func TestRendererWindowDimBlendAndDamage(t *testing.T) {
 		t.Fatal(err)
 	}
 	peek.Seq, peek.Version = 2, 2
-	peek.DamageHistory = []ports.SeqDamage{{Seq: 1, Full: true}, {Seq: 2, Rects: []domain.Rect{{X: 3, Y: 3, W: 1, H: 1}}}}
+	peek.DamageHistory = []domain.SeqDamage{{Seq: 1, Full: true}, {Seq: 2, Rects: []domain.Rect{{X: 3, Y: 3, W: 1, H: 1}}}}
 	contents[1] = peek
 	if err := render(r, s, contents); err != nil {
 		t.Fatal(err)

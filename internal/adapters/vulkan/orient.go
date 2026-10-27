@@ -3,12 +3,12 @@ package vulkan
 import (
 	"image"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // sceneSize is the size of a scene in scene-physical pixels: the target's,
 // swapped when the output transform t rotates by 90 or 270 degrees.
-func (r *Renderer) sceneSize(t ports.BufferTransform) (int, int) {
+func (r *Renderer) sceneSize(t domain.BufferTransform) (int, int) {
 	return t.Size(r.width, r.height)
 }
 
@@ -26,7 +26,7 @@ func (r *Renderer) sceneSize(t ports.BufferTransform) (int, int) {
 // It runs once per frame, after damage clipping, and before any consumer of
 // the target: HDR composition (hdrOwn is target-sized and recordHDR reads the
 // already-oriented target) and the capture and Pixels paths stay unchanged.
-func (r *Renderer) orient(ds []draw, t ports.BufferTransform) {
+func (r *Renderer) orient(ds []draw, t domain.BufferTransform) {
 	if t == 0 {
 		return
 	}

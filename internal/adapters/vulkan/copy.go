@@ -7,7 +7,9 @@ import (
 	"os"
 	"unsafe"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+
 	vk "github.com/bnema/purego-vulkan/vulkan"
 	"golang.org/x/sys/unix"
 )
@@ -152,8 +154,8 @@ func (g *GPU) copyImportable(format vk.Format, modifier uint64, usage vk.ImageUs
 }
 
 // SourceModifiers returns importable RGB modifiers supporting transfer/blit sources.
-func (c *Copier) SourceModifiers(formats []ports.DMABufFormat) []ports.DMABufFormat {
-	var out []ports.DMABufFormat
+func (c *Copier) SourceModifiers(formats []domain.DMABufFormat) []domain.DMABufFormat {
+	var out []domain.DMABufFormat
 	for _, f := range formats {
 		format, _, ok := vkFormat(f.Format)
 		if !ok || isYUVFormat(f.Format) {

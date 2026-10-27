@@ -33,7 +33,7 @@ type Card struct {
 	renderLog zerowrap.Logger
 	crtcs     []uint32
 	// scanoutFormats are read once by OpenCard.
-	scanoutFormats []ports.DMABufFormat
+	scanoutFormats []domain.DMABufFormat
 	// outputs by connector name; owned by the goroutine that calls Scan.
 	outputs map[string]*Output
 	// offWarned: connectors whose multi-GPU off warning was logged; owned
@@ -90,13 +90,13 @@ func OpenCard(fd int, info ports.GPUInfo, dev CardDevices, want Want, log, rende
 
 // allPlaneFormats is the union of every plane's IN_FORMATS (deduplicated,
 // in plane order); planes that cannot be read are skipped.
-func allPlaneFormats(k kms) []ports.DMABufFormat {
+func allPlaneFormats(k kms) []domain.DMABufFormat {
 	res, err := k.planes()
 	if err != nil {
 		return nil
 	}
-	seen := map[ports.DMABufFormat]bool{}
-	var out []ports.DMABufFormat
+	seen := map[domain.DMABufFormat]bool{}
+	var out []domain.DMABufFormat
 	for _, r := range res {
 		props, err := k.objProps(r.id, objPlane)
 		if err != nil {
@@ -114,7 +114,7 @@ func allPlaneFormats(k kms) []ports.DMABufFormat {
 
 // ScanoutFormats is the union of every plane's IN_FORMATS, read by OpenCard:
 // the formats a client can allocate for this card's display engine.
-func (c *Card) ScanoutFormats() []ports.DMABufFormat { return c.scanoutFormats }
+func (c *Card) ScanoutFormats() []domain.DMABufFormat { return c.scanoutFormats }
 
 // Path is the device path, e.g. /dev/dri/card1.
 func (c *Card) Path() string { return c.info.Path }

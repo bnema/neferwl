@@ -6,7 +6,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/serverdecoration"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/wlturbo"
 )
 
@@ -23,7 +23,7 @@ func (p *kdeModeProxy) Dispatch(e *wlturbo.Event) { p.modes <- e.Uint32() }
 //
 //testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestKDEDecorationAcknowledgesMode(t *testing.T) {
-	s, _, _, dir := dmabufServer(t, ports.DMABufSupport{})
+	s, _, _, dir := dmabufServer(t, domain.DMABufSupport{})
 	c := protocolClient(t, s, dir)
 	comp := bindProtocol(t, c, "wl_compositor")
 	mgr := bindProtocol(t, c, "org_kde_kwin_server_decoration_manager")

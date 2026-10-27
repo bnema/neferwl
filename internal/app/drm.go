@@ -120,7 +120,7 @@ type drmBackend struct {
 	render        ports.RenderDevice
 	opener        ports.RenderDeviceOpener
 	renderInfo    ports.GPUInfo
-	advertised    []ports.DMABufFormat
+	advertised    []domain.DMABufFormat
 	seat          *seat.Seat
 	cards         []*drmCard
 	// dying holds unplugged cards until their outputs are stopped. Only the
@@ -289,7 +289,7 @@ func openDRM(ctx context.Context, cfg ports.Config, opener ports.RenderDeviceOpe
 		return nil, err
 	}
 	b.render, b.renderInfo = render, info
-	b.advertised = append([]ports.DMABufFormat(nil), render.DMABuf().Formats...)
+	b.advertised = append([]domain.DMABufFormat(nil), render.DMABuf().Formats...)
 	want.Sampled = render.DMABuf().Formats
 	var errs []error
 	for _, p := range plans {

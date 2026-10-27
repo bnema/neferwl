@@ -117,7 +117,7 @@ func TestYUVComposition(t *testing.T) {
 				defer r.Close()
 			}
 			b := yuvTestBuffer(t, tc.p010, tc.y, tc.u, tc.v)
-			if !slices.Contains(r.DMABuf().Formats, ports.DMABufFormat{Format: b.Format}) {
+			if !slices.Contains(r.DMABuf().Formats, domain.DMABufFormat{Format: b.Format}) {
 				t.Skipf("linear YUV %#x not importable", b.Format)
 			}
 			if distinct, err := differentBacking(b.Planes); err != nil || distinct {
@@ -172,7 +172,7 @@ func TestYUVSourceCropEdges(t *testing.T) {
 	r := newTestRenderer(t, 64, 16)
 	defer r.Close()
 	b := yuvTestBuffer(t, false, 235, 128, 128, [3]int{16, 16, 240})
-	if !slices.Contains(r.DMABuf().Formats, ports.DMABufFormat{Format: b.Format}) {
+	if !slices.Contains(r.DMABuf().Formats, domain.DMABufFormat{Format: b.Format}) {
 		t.Skipf("linear NV12 not importable")
 	}
 	c := ports.SurfaceContent{ID: 1, Width: 64, Height: 16, LogicalW: 64, LogicalH: 16, Source: [4]float32{0, 4, 64, 8}, Opaque: true, DMABuf: b, Color: domain.SurfaceColor{Coefficients: 2, Range: 2, Chroma: 1}}

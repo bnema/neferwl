@@ -34,7 +34,7 @@ type Options struct {
 	// LoadCursor at the scene scale and transform. The cursor is drawn in
 	// target space: the image comes rotated and Move takes target pixels.
 	Cursor        *Cursor
-	LoadCursor    func(c ports.CursorChange, scale float64, t ports.BufferTransform, limit int) (ports.CursorImage, error)
+	LoadCursor    func(c ports.CursorChange, scale float64, t domain.BufferTransform, limit int) (ports.CursorImage, error)
 	Width, Height int
 	ScreenshotDir string
 	HDR           bool // virtual HDR output for protocol testing only
@@ -129,7 +129,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	}()
 	var want ports.CursorChange
 	cursorScale := -1.0 // not loaded yet
-	var cursorTransform ports.BufferTransform
+	var cursorTransform domain.BufferTransform
 	seen := map[domain.WindowID]uint64{}
 	// reports queues what the output read; every report is pushed to the
 	// sink at once (Push never blocks), so it holds one at most.

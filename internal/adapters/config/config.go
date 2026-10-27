@@ -1530,7 +1530,7 @@ func keysym(k string) (string, error) {
 }
 
 // parseTransform accepts the wl_output.transform names.
-func parseTransform(v string) (ports.BufferTransform, error) {
+func parseTransform(v string) (domain.BufferTransform, error) {
 	switch v {
 	case "normal":
 		return 0, nil

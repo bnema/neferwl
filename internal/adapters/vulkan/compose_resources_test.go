@@ -18,11 +18,11 @@ func TestComposeIndexedMixedResources(t *testing.T) {
 		t.Skip("nonuniform indexing of three resources unavailable")
 	}
 	yuv := yuvTestBuffer(t, false, 63, 102, 240)
-	if !slices.Contains(r.DMABuf().Formats, ports.DMABufFormat{Format: yuv.Format}) {
+	if !slices.Contains(r.DMABuf().Formats, domain.DMABufFormat{Format: yuv.Format}) {
 		t.Skip("linear NV12 not importable")
 	}
 	rgbFormat := fourcc('A', 'R', '2', '4')
-	if !slices.Contains(r.DMABuf().Formats, ports.DMABufFormat{Format: rgbFormat}) {
+	if !slices.Contains(r.DMABuf().Formats, domain.DMABufFormat{Format: rgbFormat}) {
 		t.Skip("linear ARGB not importable")
 	}
 	rgb := &ports.DMABuf{ID: 991, Width: 64, Height: 16, Format: rgbFormat, Planes: []ports.DMABufPlane{{File: udmabuf(t, 64, 16, func(int, int) [4]byte { return [4]byte{255, 0, 0, 255} }), Stride: 256}}}

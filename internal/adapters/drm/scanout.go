@@ -465,7 +465,7 @@ func (o *Output) scanoutFormat(b *ports.DMABuf) (uint32, bool) { return planeFor
 // an alpha format goes as its X variant when the plane has that one.
 func planeFormat(p *plane, b *ports.DMABuf) (uint32, bool) {
 	has := func(f uint32) bool {
-		return slices.Contains(p.formats, ports.DMABufFormat{Format: f, Modifier: b.Modifier})
+		return slices.Contains(p.formats, domain.DMABufFormat{Format: f, Modifier: b.Modifier})
 	}
 	if x, ok := opaqueVariant[b.Format]; ok && has(x) {
 		return x, true
@@ -486,8 +486,8 @@ var opaqueVariant = map[uint32]uint32{
 // scanoutFormats are the formats a buffer can be scanned out with: in the
 // primary plane's IN_FORMATS (directly or as its opaque variant) and
 // composable by the renderer.
-func (o *Output) scanoutFormats(sampled []ports.DMABufFormat) []ports.DMABufFormat {
-	var out []ports.DMABufFormat
+func (o *Output) scanoutFormats(sampled []domain.DMABufFormat) []domain.DMABufFormat {
+	var out []domain.DMABufFormat
 	for _, f := range sampled {
 		b := ports.DMABuf{Format: f.Format, Modifier: f.Modifier}
 		if _, ok := o.scanoutFormat(&b); ok {

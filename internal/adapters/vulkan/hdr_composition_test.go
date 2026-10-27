@@ -53,7 +53,7 @@ func hdrTargetAt(t *testing.T, r *Renderer, x, y int) [3]float64 {
 // and blue BT.2020 thirds (x/20), drawn full-output.
 func hdrPQScene(t *testing.T, r *Renderer) (ports.Scene, map[domain.WindowID]ports.SurfaceContent, [3][3]float64) {
 	t.Helper()
-	format := ports.DMABufFormat{Format: fourcc('X', 'R', '3', '0'), Modifier: 0}
+	format := domain.DMABufFormat{Format: fourcc('X', 'R', '3', '0'), Modifier: 0}
 	if !slices.Contains(r.DMABuf().Formats, format) {
 		t.Skip("linear XR30 import unavailable")
 	}

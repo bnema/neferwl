@@ -133,7 +133,7 @@ func TestTrimKeepsRecentlyDrawn(t *testing.T) {
 func TestTrimReleasesUndrawnDMABuf(t *testing.T) {
 	r := newTestRenderer(t, 80, 32)
 	defer r.Close()
-	linear := ports.DMABufFormat{Format: fourcc('A', 'R', '2', '4'), Modifier: 0}
+	linear := domain.DMABufFormat{Format: fourcc('A', 'R', '2', '4'), Modifier: 0}
 	if !slices.Contains(r.DMABuf().Formats, linear) {
 		t.Skipf("linear ARGB8888 not importable: %+v", r.DMABuf())
 	}

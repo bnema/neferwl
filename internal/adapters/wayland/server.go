@@ -32,7 +32,7 @@ type Options struct {
 	X11Clients ports.X11Clients
 	Outputs    ports.Layout
 	// DMABuf is what the renderer imports; empty disables linux-dmabuf.
-	DMABuf ports.DMABufSupport
+	DMABuf domain.DMABufSupport
 	// SyncobjNode is the render node (/dev/dri/renderD*) timeline
 	// syncobjs are imported on; empty or without timeline support, no
 	// explicit sync is offered.
@@ -254,7 +254,7 @@ type Server struct {
 	// damage; latest is its current content. All three belong to the display
 	// goroutine, as do the outputs' content links (contentlink.go).
 	contentSeq map[domain.WindowID]uint64
-	damage     map[domain.WindowID][]ports.SeqDamage
+	damage     map[domain.WindowID][]domain.SeqDamage
 	latest     map[domain.WindowID]ports.SurfaceContent
 	links      []*contentLink
 	// flushPosted: a flushLinks is posted and has not started (Return).
@@ -384,7 +384,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		nextWindow:         1,
 		eventReady:         make(chan struct{}, 1),
 		contentSeq:         make(map[domain.WindowID]uint64),
-		damage:             map[domain.WindowID][]ports.SeqDamage{},
+		damage:             map[domain.WindowID][]domain.SeqDamage{},
 		latest:             make(map[domain.WindowID]ports.SurfaceContent),
 		cursorReady:        make(chan struct{}, 1),
 		dataSources:        map[*server.Resource]*clipSource{},
@@ -741,11 +741,11 @@ func (s *Server) emitContent(c ports.SurfaceContent, d damage) {
 		old = old[len(old)-damageHistory+1:]
 	}
 	if len(old) == cap(old) {
-		grown := make([]ports.SeqDamage, len(old), damageHistoryCap)
+		grown := make([]domain.SeqDamage, len(old), damageHistoryCap)
 		copy(grown, old)
 		old = grown
 	}
-	h := append(old, ports.SeqDamage{Seq: c.Seq, Full: d.full, Rects: d.rects})
+	h := append(old, domain.SeqDamage{Seq: c.Seq, Full: d.full, Rects: d.rects})
 	c.DamageHistory = h[:len(h):len(h)]
 	if c.Empty() {
 		delete(s.damage, c.ID)
