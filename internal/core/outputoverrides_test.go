@@ -159,3 +159,17 @@ func TestOutputApplyKeepsFileAnchor(t *testing.T) {
 
 	})
 }
+
+func TestFirstScaleOnlyEntryClearsOverrides(t *testing.T) {
+	file := domain.Config{}
+	state := NewOutputOverrides(file, false)
+	state.overrides["DP-1"] = domain.OutputConfig{Name: "DP-1", Pos: &image.Point{X: 100}}
+	scaled := domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 1.5, ScaleOnly: true, SDRBrightness: domain.DefaultSDRBrightness}}}
+	if _, only := scaleChanges(file, scaled); only {
+		t.Fatal("nil outputs must differ from non-nil empty stripped outputs")
+	}
+	cfg := state.Reload(scaled)
+	if len(state.Snapshot()) != 0 || len(cfg.Outputs) != 1 || cfg.Outputs[0].Pos != nil || cfg.Outputs[0].Scale != 1.5 {
+		t.Fatalf("reload retained overrides: %+v", cfg.Outputs)
+	}
+}

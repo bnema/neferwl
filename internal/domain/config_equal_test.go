@@ -99,7 +99,21 @@ func TestConfigEqualNestedValues(t *testing.T) {
 	}
 	var empty Config
 	populated := Config{Binds: map[string]string{}, Startup: [][]string{}, Outputs: []OutputConfig{}}
-	if !empty.Equal(populated) {
-		t.Fatal("nil and empty collections differ")
+	if empty.Equal(populated) {
+		t.Fatal("nil and empty collections must differ")
+	}
+}
+
+func TestConfigEqualNilAndEmptyNestedCollections(t *testing.T) {
+	pairs := [][2]Config{
+		{{Startup: [][]string{nil}}, {Startup: [][]string{{}}}},
+		{{Workspaces: []WorkspaceConfig{{}}}, {Workspaces: []WorkspaceConfig{{Slots: []SlotConfig{}}}}},
+		{{Workspaces: []WorkspaceConfig{{Slots: []SlotConfig{{}}}}}, {Workspaces: []WorkspaceConfig{{Slots: []SlotConfig{{Argv: []string{}}}}}}},
+		{{}, {Binds: map[string]string{}}},
+	}
+	for _, pair := range pairs {
+		if pair[0].Equal(pair[1]) || pair[1].Equal(pair[0]) {
+			t.Fatal("nil and empty collections must differ")
+		}
 	}
 }

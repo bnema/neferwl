@@ -3,6 +3,7 @@ package domain
 import (
 	"image"
 	"maps"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -316,20 +317,20 @@ const (
 	RelationBelow
 )
 
-// Equal reports value equality. Nil and empty collections are equivalent.
+// Equal reports value equality. Nil and empty collections are distinct.
 // Pointer-valued configuration is compared by its value, not its address.
 func (c Config) Equal(o Config) bool {
-	if !slices.Equal(c.Terminal.Command, o.Terminal.Command) ||
-		!slices.EqualFunc(c.Startup, o.Startup, slices.Equal[[]string]) ||
-		!slices.Equal(c.Layout.Outputs, o.Layout.Outputs) ||
-		!slices.Equal(c.Hint.Sources, o.Hint.Sources) ||
-		!slices.EqualFunc(c.Workspaces, o.Workspaces, workspaceConfigEqual) ||
-		!slices.EqualFunc(c.Rules, o.Rules, windowRuleEqual) ||
-		!slices.EqualFunc(c.Outputs, o.Outputs, outputConfigEqual) ||
-		!maps.Equal(c.Binds, o.Binds) ||
-		!slices.Equal(c.DRM.Devices, o.DRM.Devices) ||
-		!slices.Equal(c.DRM.Ignore, o.DRM.Ignore) ||
-		!slices.Equal(c.Log.Debug, o.Log.Debug) {
+	if !equalSlice(c.Terminal.Command, o.Terminal.Command) ||
+		!equalSliceFunc(c.Startup, o.Startup, equalSlice[[]string]) ||
+		!equalSlice(c.Layout.Outputs, o.Layout.Outputs) ||
+		!equalSlice(c.Hint.Sources, o.Hint.Sources) ||
+		!equalSliceFunc(c.Workspaces, o.Workspaces, workspaceConfigEqual) ||
+		!equalSliceFunc(c.Rules, o.Rules, windowRuleEqual) ||
+		!equalSliceFunc(c.Outputs, o.Outputs, outputConfigEqual) ||
+		((c.Binds == nil) != (o.Binds == nil) || !maps.Equal(c.Binds, o.Binds)) ||
+		!equalSlice(c.DRM.Devices, o.DRM.Devices) ||
+		!equalSlice(c.DRM.Ignore, o.DRM.Ignore) ||
+		!equalSlice(c.Log.Debug, o.Log.Debug) {
 		return false
 	}
 	// Compare scalar groups and the scalar parts of collection-bearing groups.
@@ -361,8 +362,8 @@ func hintConfigScalars(c Config) struct {
 
 func workspaceConfigEqual(a, b WorkspaceConfig) bool {
 	return a.Name == b.Name && a.Monitor == b.Monitor && a.Size == b.Size &&
-		a.LayoutRules == b.LayoutRules && slices.EqualFunc(a.Slots, b.Slots, func(a, b SlotConfig) bool {
-		return a.Index == b.Index && a.Cells == b.Cells && slices.Equal(a.Argv, b.Argv)
+		a.LayoutRules == b.LayoutRules && equalSliceFunc(a.Slots, b.Slots, func(a, b SlotConfig) bool {
+		return a.Index == b.Index && a.Cells == b.Cells && equalSlice(a.Argv, b.Argv)
 	})
 }
 
@@ -370,7 +371,7 @@ func windowRuleEqual(a, b WindowRule) bool {
 	if (a.AppID == nil) != (b.AppID == nil) {
 		return false
 	}
-	if a.AppID != nil && a.AppID.String() != b.AppID.String() {
+	if a.AppID != nil && !reflect.DeepEqual(a.AppID, b.AppID) {
 		return false
 	}
 	if !equalPointer(a.Floating, b.Floating) {
@@ -394,4 +395,11 @@ func equalPointer[T comparable](a, b *T) bool {
 		return a == b
 	}
 	return *a == *b
+}
+
+func equalSlice[S ~[]E, E comparable](a, b S) bool {
+	return (a == nil) == (b == nil) && slices.Equal(a, b)
+}
+func equalSliceFunc[S ~[]E, E any](a, b S, equal func(E, E) bool) bool {
+	return (a == nil) == (b == nil) && slices.EqualFunc(a, b, equal)
 }
