@@ -44,7 +44,7 @@ func (run *outputsRun) loop() error {
 			run.apply.ConfigSent()
 		case replies <- replyNext:
 			if replyNext.Err != nil {
-				run.log.Warn().Err(replyNext.Err).Msg("output configuration failed")
+				run.appLog.Warn().Err(replyNext.Err).Msg("output configuration failed")
 			}
 			run.apply.ReplySent()
 		case heads <- headsNext:

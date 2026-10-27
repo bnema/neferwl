@@ -14,7 +14,7 @@ func (run *outputsRun) complete(d core.ApplyDecision) {
 	}
 	run.timer.Stop()
 	run.deadline = nil
-	logOutputApplied(run.apply.Finished(d.Err).Applied, run.log)
+	logOutputApplied(run.apply.Finished(d.Err).Applied, run.appLog)
 }
 
 func (run *outputsRun) configure(cfg domain.Config) {

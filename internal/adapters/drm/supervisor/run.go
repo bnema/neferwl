@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/drm"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/cursors"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/routing"
 	"github.com/bnema/neferwl/internal/core"
@@ -22,7 +23,7 @@ import (
 // each configuration is finished when its outputs are ready, fail or time
 // out. It returns when ctx ends, after every output is closed.
 func (b *Backend) RunOutputs(ctx context.Context, initial domain.Config, apply *core.OutputApply, ch routing.Channels, curs *cursors.Router, log zerowrap.Logger) error {
-	run := outputsRun{b: b, ctx: ctx, apply: apply, ch: ch, curs: curs, log: log}
+	run := outputsRun{b: b, ctx: ctx, apply: apply, ch: ch, curs: curs, log: log, appLog: logging.For(ctx, "app")}
 	run.ctx, run.cancel = context.WithCancel(run.ctx)
 	// A reader that fails sends at most once; cards come and go, so the
 	// buffer is generous and a full one drops (the first failure ends the run).
@@ -83,6 +84,7 @@ type outputsRun struct {
 	ch                 routing.Channels
 	curs               *cursors.Router
 	log                zerowrap.Logger
+	appLog             zerowrap.Logger
 	apply              *core.OutputApply
 	readers            sync.WaitGroup
 	readerErr          chan readerFailure
