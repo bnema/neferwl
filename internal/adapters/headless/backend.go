@@ -29,6 +29,8 @@ type BackendOptions struct {
 // are fixed, so apply answers every configuration without backend work.
 //
 // newRenderer is configured for virtual outputs by the session.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter wires virtual output owners and forwards apply messages to core; preserves registration before the no-lease security barrier
 func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch routing.Channels, curs *cursors.Router, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
 	set := routing.NewSet(ctx, ch.Captured, ch.Routes())
 	set.Attach = ch.Content

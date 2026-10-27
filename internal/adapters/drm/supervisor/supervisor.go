@@ -478,6 +478,8 @@ func (b *Backend) hotplugAdd(ctx context.Context, name domain.CardName, want drm
 }
 
 // reopenRender closes the old device once and charges every open attempt.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter closes and opens native render devices in order; core ReopenLimiter owns the retry budget
 func reopenRender(opener ports.RenderDeviceOpener, info domain.GPUInfo, old ports.RenderDevice, limiter *core.ReopenLimiter) (ports.RenderDevice, error) {
 	if old != nil {
 		old.Close()

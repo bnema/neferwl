@@ -355,6 +355,7 @@ func (d *procDetector) start(ctx context.Context) error {
 	return nil
 }
 
+//hexcheck:ignore suspicious-business-logic-in-adapter manages child-process I/O, deadlines and broken-transport cleanup; detector results are passed through
 func (d *procDetector) Detect(ctx context.Context, f detFrame) ([]detection, error) {
 	if d.proc == nil {
 		if err := d.start(ctx); err != nil {

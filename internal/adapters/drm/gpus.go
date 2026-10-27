@@ -104,6 +104,7 @@ func readGPUDevice(path string) uint64 {
 	return unix.Mkdev(uint32(maj), uint32(min))
 }
 
+//hexcheck:ignore suspicious-business-logic-in-adapter resolves filesystem symlinks for path IDs and passes PCI IDs through; no GPU selection policy
 func ResolveDeviceIDs(ids []string) ([]string, error) {
 	out := make([]string, len(ids))
 	for i, id := range ids {
@@ -121,6 +122,8 @@ func ResolveDeviceIDs(ids []string) ([]string, error) {
 
 // SelectConfig takes the environment value explicitly, keeping precedence
 // testable without reading process-global state. Filesystem resolution is I/O.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter resolves device paths and propagates filesystem errors; render precedence is decided in core
 func SelectConfig(cfg domain.Config, envRender string) (core.GPUSelectConfig, error) {
 	var out core.GPUSelectConfig
 	var err error
@@ -130,10 +133,7 @@ func SelectConfig(cfg domain.Config, envRender string) (core.GPUSelectConfig, er
 	if out.Ignore, err = ResolveDeviceIDs(cfg.DRM.Ignore); err != nil {
 		return out, err
 	}
-	render := cfg.Render.Device
-	if envRender != "" {
-		render = envRender
-	}
+	render := core.RenderDeviceID(cfg.Render.Device, envRender)
 	if render != "" {
 		ids, err := ResolveDeviceIDs([]string{render})
 		if err != nil {

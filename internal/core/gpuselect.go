@@ -19,6 +19,15 @@ type GPUSelectConfig struct {
 	Render  string // The caller resolves configuration/environment precedence.
 }
 
+// RenderDeviceID applies the environment override before the adapter resolves
+// the chosen ID. An overridden configuration path need not exist.
+func RenderDeviceID(configured, environment string) string {
+	if environment != "" {
+		return environment
+	}
+	return configured
+}
+
 // SelectGPUs chooses cards and a render GPU without opening devices or resolving symlinks.
 // Candidate order breaks ties and is preserved in Keep.
 func SelectGPUs(c []domain.GPUInfo, cfg GPUSelectConfig) (domain.GPUSelection, error) {

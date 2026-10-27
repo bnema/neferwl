@@ -11,6 +11,23 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 )
 
+func TestRenderDeviceID(t *testing.T) {
+	for _, tt := range []struct {
+		name, configured, environment, want string
+	}{
+		{name: "default"},
+		{name: "configured", configured: "/dev/dri/card0", want: "/dev/dri/card0"},
+		{name: "environment", environment: "03:00.0", want: "03:00.0"},
+		{name: "override before resolution", configured: "/missing/card", environment: "03:00.0", want: "03:00.0"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := core.RenderDeviceID(tt.configured, tt.environment); got != tt.want {
+				t.Fatalf("RenderDeviceID = %q; want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSelectGPUs(t *testing.T) {
 	candidates := []domain.GPUInfo{
 		{Path: "/dev/dri/card0", PCI: "0000:00:02.0", Render: 226<<8 | 128, Internal: true, Driver: "i915"},
