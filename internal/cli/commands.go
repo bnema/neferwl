@@ -11,7 +11,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/statefile"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 var validateConfigCmd = Command{
@@ -45,7 +45,7 @@ var validateConfigCmd = Command{
 
 // loadConfig reads the config at path, or the XDG default when path is
 // empty; a missing default file gives the defaults. It returns the path read.
-func loadConfig(path string) (string, ports.Config, []config.Warning, error) {
+func loadConfig(path string) (string, domain.Config, []config.Warning, error) {
 	if path == "" {
 		cfg, warnings, err := config.LoadDefault()
 		return config.DefaultPath(), cfg, warnings, err

@@ -522,7 +522,7 @@ func TestFlashCooldownRemembersEveryTarget(t *testing.T) {
 
 // BenchmarkFlashSceneBuild includes revalidation and immutable scene creation.
 func BenchmarkFlashSceneBuild(b *testing.B) {
-	var cfg ports.Config
+	var cfg domain.Config
 	cfg.Layout.MaxColumns = 2
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Animations.On = true

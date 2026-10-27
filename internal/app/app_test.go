@@ -326,7 +326,7 @@ func TestRelayConfigKeyboard(t *testing.T) {
 	out := make(chan ports.ConfigChanged, 1)
 	keymaps := make(chan *xkb.Keymap, 1)
 	commands := make(chan ports.ClientCommand, 1)
-	devices := make(chan ports.InputDevicesConfig, 1)
+	devices := make(chan domain.InputDevicesConfig, 1)
 	go relayConfig(ctx, cur, in, out, keymaps, devices, newCursors(clock.System{}, 0), commands, logging.For(ctx, "config"))
 
 	next := config.Defaults()
@@ -353,7 +353,7 @@ func TestRelayConfigKeyboard(t *testing.T) {
 	next.Mouse.AccelSpeed = 0.25
 	in <- ports.ConfigChanged{Config: next}
 	<-out
-	want := ports.InputDevicesConfig{Touchpad: next.Touchpad, Mouse: next.Mouse}
+	want := domain.InputDevicesConfig{Touchpad: next.Touchpad, Mouse: next.Mouse}
 	if d := <-devices; d != want || len(devices) != 0 {
 		t.Fatalf("devices: %+v, want %+v", d, want)
 	}

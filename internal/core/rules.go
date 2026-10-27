@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/bnema/neferwl/internal/core/layout"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -43,7 +44,7 @@ type ruleEffect struct {
 	cells     int // zero: automatic
 }
 
-func parseRules(rs []ports.WindowRule) ([]rule, error) {
+func parseRules(rs []domain.WindowRule) ([]rule, error) {
 	out := make([]rule, 0, len(rs))
 	for _, r := range rs {
 		if r.AppID == nil {

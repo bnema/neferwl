@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestGPUDefaults(t *testing.T) {
-	for _, c := range []ports.Config{Defaults(), func() ports.Config {
+	for _, c := range []domain.Config{Defaults(), func() domain.Config {
 		c, w := parseString(t, "")
 		if len(w) != 0 {
 			t.Fatal(w)

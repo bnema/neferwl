@@ -18,7 +18,7 @@ func TestBorderSceneInvariants(t *testing.T) {
 		for _, gap := range []int{0, 6} {
 			t.Run(overflow+map[int]string{0: "-flush", 6: "-gaps"}[gap], func(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
-					r := startMulti(t, func(c *ports.Config) {
+					r := startMulti(t, func(c *domain.Config) {
 						c.Animations.On = false
 						c.Border.Width = 2
 						c.Layout.MaxColumns = 3
@@ -43,7 +43,7 @@ func TestBorderSceneInvariantsAnimated(t *testing.T) {
 		for _, gap := range []int{0, 6} {
 			t.Run(overflow+map[int]string{0: "-flush", 6: "-gaps"}[gap], func(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
-					r := startSwipeOn(t, func(c *ports.Config) {
+					r := startSwipeOn(t, func(c *domain.Config) {
 						c.Animations.On = true
 						c.Border.Width = 2
 						c.Layout.MaxColumns = 3
@@ -301,7 +301,7 @@ func wantInset(s domain.Scene, w domain.SceneWindow, gap int) domain.Sides {
 // comes back, neither the old output nor the new one has a shared line.
 func TestBorderMoveBackAlone(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
+		r := startMulti(t, func(c *domain.Config) {
 			c.Border.Width = 2
 			c.Layout.MaxColumns = 3
 			c.Layout.Overflow = "fixed"
@@ -323,7 +323,7 @@ func TestBorderRadiusScene(t *testing.T) {
 	for _, gap := range []int{0, 8} {
 		t.Run(map[int]string{0: "flush", 8: "gaps"}[gap], func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				r := startMulti(t, func(c *ports.Config) { c.Animations.On = false; c.Layout.Gaps = gap; c.Border.Radius = 10 }, left, right)
+				r := startMulti(t, func(c *domain.Config) { c.Animations.On = false; c.Layout.Gaps = gap; c.Border.Radius = 10 }, left, right)
 				scenes := r.mapWindow(t, 1)
 				for _, s := range scenes {
 					for _, w := range s.Windows {
@@ -364,7 +364,7 @@ func TestBorderRadiusScene(t *testing.T) {
 // new radius.
 func TestReloadBorderRadiusRepublishes(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) { c.Animations.On = false; c.Layout.Gaps = 8; c.Border.Radius = 4 }, left)
+		r := startMulti(t, func(c *domain.Config) { c.Animations.On = false; c.Layout.Gaps = 8; c.Border.Radius = 4 }, left)
 		r.mapWindow(t, 1)
 		cfg := r.cfg
 		cfg.Border.Radius = 12

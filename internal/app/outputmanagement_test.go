@@ -20,13 +20,13 @@ type applyRig struct {
 
 func newApplyRig(t *testing.T, headless bool) applyRig {
 	mode := domain.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
-	a := newOutputApply(core.NewOutputOverrides(ports.Config{}, headless), logging.For(context.Background(), "app"))
+	a := newOutputApply(core.NewOutputOverrides(domain.Config{}, headless), logging.For(context.Background(), "app"))
 	a.heads(ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}})
 	return applyRig{t, a}
 }
 
 // started returns the configuration the backend must start now.
-func (r applyRig) started() ports.Config {
+func (r applyRig) started() domain.Config {
 	r.t.Helper()
 	cfg, ok := r.a.next()
 	if !ok {
@@ -46,11 +46,11 @@ func (r applyRig) idle() {
 }
 
 // core returns the configuration waiting for core, if any.
-func (r applyRig) core() (ports.Config, bool) {
+func (r applyRig) core() (domain.Config, bool) {
 	ch := make(chan ports.ConfigChanged, 1)
 	out := r.a.configOut(ch)
 	if out == nil {
-		return ports.Config{}, false
+		return domain.Config{}, false
 	}
 	out <- r.a.config
 	r.a.configSent()
@@ -118,7 +118,7 @@ func TestOutputApply(t *testing.T) {
 			if tc.failure != nil && len(r.a.state.Effective().Outputs) != 0 {
 				t.Fatal("override survived failure")
 			}
-			r.a.reload(ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 1.25}}})
+			r.a.reload(domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 1.25}}})
 			if cfg, ok := r.core(); !ok || cfg.Outputs[0].Pos != nil || cfg.Outputs[0].Scale != 1.25 {
 				t.Fatalf("reload core config: %+v", cfg)
 			}
@@ -137,8 +137,8 @@ func TestOutputApplyOutbox(t *testing.T) {
 	r := newApplyRig(t, false)
 	r.a.request(moveDP1(1, 100))
 	r.started()
-	r.a.reload(ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 1.5}}})
-	r.a.reload(ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}})
+	r.a.reload(domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 1.5}}})
+	r.a.reload(domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 2}}})
 	r.a.request(ports.OutputApply{ID: 2})
 	r.a.request(ports.OutputApply{ID: 3})
 	// The reloads wait for the running configuration: no overlap.
@@ -185,7 +185,7 @@ func TestReloadDuringPendingApply(t *testing.T) {
 	r.a.request(moveDP1(1, 100))
 	r.core()
 	r.started()
-	r.a.reload(ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 1.5}}})
+	r.a.reload(domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 1.5}}})
 	if cfg, ok := r.core(); !ok || cfg.Outputs[0].Pos != nil {
 		t.Fatalf("override survived reload: %+v", cfg)
 	}
@@ -225,7 +225,7 @@ func TestReloadDuringRollback(t *testing.T) {
 	r.started()
 	r.a.finished(errors.New("modeset failed"))
 	r.started() // rollback
-	r.a.reload(ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}})
+	r.a.reload(domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 2}}})
 	if got := r.replies(); len(got) != 1 || !errors.Is(got[0].Err, errApplySuperseded) {
 		t.Fatalf("rollback superseded: %+v", got)
 	}
@@ -260,7 +260,7 @@ func TestOutputApplyAnsweredAtOnce(t *testing.T) {
 
 	h := newApplyRig(t, true)
 	h.a.request(ports.OutputApply{ID: 1, Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Scale: 2}}})
-	var gaps ports.Config
+	var gaps domain.Config
 	gaps.Layout.Gaps = 4
 	h.a.reload(gaps)
 	h.idle()

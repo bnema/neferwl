@@ -61,7 +61,7 @@ type modeLanding struct {
 }
 
 // newLanding sets cfg's animations and, when on, the clock of opts and flips of ch.
-func newLanding(t *testing.T, animated bool, cfg *ports.Config, ch *core.Channels, opts *core.Options, outputs ...string) *modeLanding {
+func newLanding(t *testing.T, animated bool, cfg *domain.Config, ch *core.Channels, opts *core.Options, outputs ...string) *modeLanding {
 	t.Helper()
 	cfg.Animations.On = animated
 	l := &modeLanding{t: t, scenes: ch.Scenes, outputs: outputs}
@@ -654,7 +654,7 @@ func TestOutputScale(t *testing.T) { both(t, outputScale) }
 func outputScale(t *testing.T, animated bool) {
 	cfg := scrollDefaults()
 	cfg.Border.Width = 0
-	cfg.Outputs = []ports.OutputConfig{{Name: "DP-2", Scale: 2}}
+	cfg.Outputs = []domain.OutputConfig{{Name: "DP-2", Scale: 2}}
 	cfg.Binds["Cmd+equal"] = "scale-up"
 	cfg.Binds["Cmd+minus"] = "scale-down"
 	client := make(chan ports.ClientEvent, 8)
@@ -724,7 +724,7 @@ func outputScale(t *testing.T, animated bool) {
 		t.Fatal(s.Scale)
 	}
 	// Changing the config scale wins.
-	cfg.Outputs = []ports.OutputConfig{{Name: "DP-2", Scale: 1.25}}
+	cfg.Outputs = []domain.OutputConfig{{Name: "DP-2", Scale: 1.25}}
 	reload <- ports.ConfigChanged{Config: cfg}
 	if s = scene(t, scenes); s.Scale != 1.25 || s.OutputWidth != 4096 {
 		t.Fatal(s.Scale, s.OutputWidth)
@@ -1071,7 +1071,7 @@ func fullscreenAtMapIgnored(t *testing.T, animated bool) {
 // a focus move back to the game and the bind make it fullscreen again.
 func TestFixedFullscreenArrivalWaits(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+		r := startMulti(t, func(c *domain.Config) { c.Layout.Overflow = "fixed" }, left)
 		r.mapWindow(t, 1)
 		r.key(t, "f", domain.ModAlt|domain.ModShift)
 		set := r.mapWindow(t, 2)
@@ -1137,7 +1137,7 @@ func externalFullscreenAtMapApplies(t *testing.T, animated bool) {
 // the user's choice: the window takes the focus and covers the screen.
 func TestExternalFullscreenFocusesFixed(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+		r := startMulti(t, func(c *domain.Config) { c.Layout.Overflow = "fixed" }, left)
 		r.mapWindow(t, 1)
 		r.mapWindow(t, 2)
 		r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
@@ -1165,7 +1165,7 @@ func TestExternalFullscreenFocusesFixed(t *testing.T) {
 // output, brings it on screen with the focus, as an activation.
 func TestExternalFullscreenOffScreen(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left, right)
+		r := startMulti(t, func(c *domain.Config) { c.Layout.Overflow = "fixed" }, left, right)
 		r.mapWindow(t, 1)
 		r.key(t, "Next", domain.ModAlt|domain.ModShift) // 1 to workspace 2, not followed
 		r.key(t, "Right", domain.ModAlt|domain.ModCtrl) // focus DP-2
@@ -1195,7 +1195,7 @@ func TestExternalFullscreenOffScreen(t *testing.T) {
 // selects its row: closing the overview lands on it, fullscreen.
 func TestExternalFullscreenInOverview(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+		r := startMulti(t, func(c *domain.Config) { c.Layout.Overflow = "fixed" }, left)
 		r.mapWindow(t, 1)
 		r.key(t, "Next", domain.ModAlt|domain.ModShift) // 1 to workspace 2
 		r.mapWindow(t, 2)
@@ -1214,7 +1214,7 @@ func TestExternalFullscreenInOverview(t *testing.T) {
 // goes to the next workspace and fullscreen stays.
 func TestFocusWindowDownKeepsFullscreen(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
-		r := startLanding(t, animated, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+		r := startLanding(t, animated, func(c *domain.Config) { c.Layout.Overflow = "fixed" }, left)
 		r.mapLanded(t, 1)
 		r.mapLanded(t, 2)
 		r.keyLanded(t, "f", domain.ModAlt|domain.ModShift)
@@ -1233,7 +1233,7 @@ func TestFocusWindowDownKeepsFullscreen(t *testing.T) {
 // wait for it (xdg-shell).
 func TestRefusedFullscreenConfigured(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+		r := startMulti(t, func(c *domain.Config) { c.Layout.Overflow = "fixed" }, left)
 		r.mapWindow(t, 1)
 		r.mapWindow(t, 2)
 		for len(r.commands) > 0 {

@@ -12,7 +12,7 @@ import (
 func TestOutputSettingsDisableAndHeadlessMode(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		mode := domain.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
-		state := NewOutputOverrides(ports.Config{}, true)
+		state := NewOutputOverrides(domain.Config{}, true)
 		state.heads = ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "HEADLESS-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}}
 		if _, err := state.Apply(ports.OutputApply{Heads: []ports.HeadChange{{Name: "HEADLESS-1", Enabled: false}}}); err == nil {
 			t.Fatal("headless disable accepted")
@@ -31,14 +31,14 @@ func TestOutputSettingsDisableAndHeadlessMode(t *testing.T) {
 func TestReloadScaleOnlyKeepsOverrides(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		mode := domain.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
-		file := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}}
+		file := domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 2}}}
 		state := NewOutputOverrides(file, false)
 		state.heads = ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}, {Info: ports.OutputInfo{Name: "DP-2"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}}
 		if _, err := state.Apply(ports.OutputApply{Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Pos: &image.Point{X: 100}}, {Name: "DP-2", Enabled: true}}}); err != nil {
 			t.Fatal(err)
 		}
 		scaled := file
-		scaled.Outputs = []ports.OutputConfig{{Name: "DP-1", Scale: 1.5}, {Name: "DP-2", Scale: 1.25, ScaleOnly: true, SDRBrightness: ports.DefaultSDRBrightness}}
+		scaled.Outputs = []domain.OutputConfig{{Name: "DP-1", Scale: 1.5}, {Name: "DP-2", Scale: 1.25, ScaleOnly: true, SDRBrightness: domain.DefaultSDRBrightness}}
 		cfg := state.Reload(scaled)
 		if len(cfg.Outputs) != 2 || cfg.Outputs[0].Pos == nil || cfg.Outputs[0].Scale != 1.5 || cfg.Outputs[1].Scale != 1.25 {
 			t.Fatalf("scale-only reload: %+v", cfg.Outputs)
@@ -55,8 +55,8 @@ func TestReloadScaleOnlyKeepsOverrides(t *testing.T) {
 // A transform change takes the full reload path; a scale change alone does not.
 func TestScaleChangesTransform(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		old := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}}
-		cur := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2, Transform: 1}}}
+		old := domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 2}}}
+		cur := domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 2, Transform: 1}}}
 		if _, only := scaleChanges(old, cur); only {
 			t.Fatal("a transform change must take the full reload path")
 		}
@@ -74,7 +74,7 @@ func TestScaleChangesTransform(t *testing.T) {
 func TestOutputApplyTransform(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		mode := domain.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
-		file := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}}
+		file := domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 2}}}
 		state := NewOutputOverrides(file, false)
 		state.heads = ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}}
 		tr := domain.BufferTransform(3)
@@ -85,7 +85,7 @@ func TestOutputApplyTransform(t *testing.T) {
 		if len(cfg.Outputs) != 1 || cfg.Outputs[0].Transform != 3 {
 			t.Fatalf("applied transform: %+v", cfg.Outputs)
 		}
-		scaled := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 1.5}}}
+		scaled := domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 1.5}}}
 		cfg = state.Reload(scaled)
 		if cfg.Outputs[0].Transform != 3 || cfg.Outputs[0].Scale != 1.5 {
 			t.Fatalf("scale reload lost the runtime transform: %+v", cfg.Outputs)
@@ -109,8 +109,8 @@ func TestOutputApplyTransform(t *testing.T) {
 func TestOutputApplyKeepsFileAnchor(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		mode := domain.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
-		anchor := ports.OutputAnchor{Relation: domain.RelationRightOf, To: "DP-1", Offset: 40}
-		file := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-2", Anchor: anchor, ScaleOnly: true}}}
+		anchor := domain.OutputAnchor{Relation: domain.RelationRightOf, To: "DP-1", Offset: 40}
+		file := domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-2", Anchor: anchor, ScaleOnly: true}}}
 		o := NewOutputOverrides(file, false)
 		head := func(name string) ports.OutputHead {
 			return ports.OutputHead{Info: ports.OutputInfo{Name: name}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}
@@ -119,9 +119,9 @@ func TestOutputApplyKeepsFileAnchor(t *testing.T) {
 		change := func(name string, x int) ports.HeadChange {
 			return ports.HeadChange{Name: name, Enabled: true, Pos: &image.Point{X: x}}
 		}
-		byName := func(cfg ports.Config, name string) ports.OutputConfig {
+		byName := func(cfg domain.Config, name string) domain.OutputConfig {
 			t.Helper()
-			var found []ports.OutputConfig
+			var found []domain.OutputConfig
 			for _, v := range cfg.Outputs {
 				if v.Name == name {
 					found = append(found, v)

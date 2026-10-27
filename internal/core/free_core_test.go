@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 func windowIn(set []domain.Scene, output string, id domain.WindowID) (domain.SceneWindow, bool) {
@@ -23,7 +22,7 @@ func windowIn(set []domain.Scene, output string, id domain.WindowID) (domain.Sce
 
 func TestFreeFloatKeepsPlaceAcrossMonitors(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
-		r := startLanding(t, animated, func(c *ports.Config) { c.Layout.Gaps = 0 }, left, right)
+		r := startLanding(t, animated, func(c *domain.Config) { c.Layout.Gaps = 0 }, left, right)
 		r.mapLanded(t, 1)
 		r.mapLanded(t, 2)
 		r.keyLanded(t, "space", domain.ModAlt|domain.ModShift)

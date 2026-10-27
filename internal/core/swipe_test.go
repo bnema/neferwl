@@ -26,13 +26,13 @@ type swipeRig struct {
 
 var wide = ports.OutputInfo{Name: "DP-1", Width: 800, Height: 600, RefreshMilli: 60000}
 
-func startSwipe(t *testing.T, edit func(*ports.Config)) *swipeRig {
+func startSwipe(t *testing.T, edit func(*domain.Config)) *swipeRig {
 	t.Helper()
 	return startSwipeOn(t, edit, wide)
 }
 
 // startSwipeOn is startSwipe with the given outputs plugged in order.
-func startSwipeOn(t *testing.T, edit func(*ports.Config), outs ...ports.OutputInfo) *swipeRig {
+func startSwipeOn(t *testing.T, edit func(*domain.Config), outs ...ports.OutputInfo) *swipeRig {
 	t.Helper()
 	cfg := altCmdDefaults()
 	cfg.Border.Width = 0
@@ -48,7 +48,7 @@ func startSwipeOn(t *testing.T, edit func(*ports.Config), outs ...ports.OutputIn
 	r.multiRig = &multiRig{
 		client: make(chan ports.ClientEvent, 16), input: make(chan ports.InputEvent, 64),
 		output: make(chan ports.OutputEvent, 4), reload: make(chan ports.ConfigChanged, 4),
-		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []domain.Scene, 1), spawn: make(chan ports.SpawnRequest, 16), state: make(chan ports.State, 1), cfg: cfg,
+		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []domain.Scene, 1), spawn: make(chan ports.SpawnRequest, 16), state: make(chan domain.State, 1), cfg: cfg,
 	}
 	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Spawn: r.spawn, State: r.state, Frames: r.frames}, core.Options{Clock: r.clk.clock})
 	if err != nil {
@@ -248,7 +248,7 @@ func TestSwipeFlickLandsOnColumnWithSpring(t *testing.T) {
 func TestSwipeNaturalScrollInverts(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		for _, natural := range []bool{false, true} {
-			r := startSwipe(t, func(c *ports.Config) { c.Touchpad.NaturalScroll = natural })
+			r := startSwipe(t, func(c *domain.Config) { c.Touchpad.NaturalScroll = natural })
 			threeColumns(t, r)
 			dx := -40.0
 			if natural {
@@ -315,7 +315,7 @@ func TestSwipeWorkspaceCancelReturns(t *testing.T) {
 
 func TestSwipeFixedOverflowRunsFocusAction(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startSwipe(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" })
+		r := startSwipe(t, func(c *domain.Config) { c.Layout.Overflow = "fixed" })
 		r.mapWindow(t, 1)
 		r.mapWindow(t, 2)
 		r.focused(t)
@@ -335,7 +335,7 @@ func TestSwipeFixedOverflowRunsFocusAction(t *testing.T) {
 
 func TestSwipeShortSwipeDoesNothingInFixedOverflow(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startSwipe(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" })
+		r := startSwipe(t, func(c *domain.Config) { c.Layout.Overflow = "fixed" })
 		r.mapWindow(t, 1)
 		r.mapWindow(t, 2)
 		r.focused(t)
@@ -579,7 +579,7 @@ func receiveMove(t *testing.T, r *swipeRig, dx float64) []domain.Scene {
 
 func TestDiscreteSwipeSkippedWhenPointerChangesOutput(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startSwipe(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" })
+		r := startSwipe(t, func(c *domain.Config) { c.Layout.Overflow = "fixed" })
 		r.mapWindow(t, 1)
 		r.mapWindow(t, 2)
 		r.plug(t, ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000})
@@ -681,7 +681,7 @@ func TestSwipeInOverview(t *testing.T) {
 func TestFourFingerSwipeOverview(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		for _, natural := range []bool{false, true} {
-			r := startSwipe(t, func(c *ports.Config) { c.Touchpad.NaturalScroll = natural })
+			r := startSwipe(t, func(c *domain.Config) { c.Touchpad.NaturalScroll = natural })
 			threeColumns(t, r)
 			four := func(dx, dy float64, n int) domain.Scene {
 				r.at += time.Second

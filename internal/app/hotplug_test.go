@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/bnema/neferwl/internal/adapters/drm"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -40,23 +41,23 @@ func TestHotplugPlanAdd(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		card     string
-		cfg      ports.Config
+		cfg      domain.Config
 		env      string
 		existing []string
 		dying    []string
 		want     hotplugAddAction
 		wantErr  bool
 	}{
-		{"all devices kept", "card2", ports.Config{}, "", []string{"/dev/dri/card0", "/dev/dri/card1"}, nil, hotplugAddOpen, false},
-		{"duplicate add", "card2", ports.Config{}, "", []string{"/dev/dri/card2"}, nil, hotplugAddExisting, false},
-		{"still dying", "card2", ports.Config{}, "", nil, []string{"/dev/dri/card2"}, hotplugAddDying, false},
-		{"not listed yet", "card7", ports.Config{}, "", nil, nil, hotplugAddUnknown, false},
-		{"ignored by pci", "card2", ports.Config{DRM: drmConfig(nil, []string{"0000:04:00.0"})}, "", nil, nil, hotplugAddIgnored, false},
-		{"not in allow list", "card2", ports.Config{DRM: drmConfig([]string{"0000:03:00.0"}, nil)}, "", nil, nil, hotplugAddIgnored, false},
-		{"in allow list", "card2", ports.Config{DRM: drmConfig([]string{"0000:03:00.0", "0000:04:00.0"}, nil)}, "", nil, nil, hotplugAddOpen, false},
-		{"other card ignored does not matter", "card2", ports.Config{DRM: drmConfig(nil, []string{"0000:03:00.0"})}, "", nil, nil, hotplugAddOpen, false},
-		{"selection error ignores the card", "card2", ports.Config{DRM: drmConfig(nil, []string{"0000:09:00.0"})}, "", nil, nil, hotplugAddIgnored, true},
-		{"render env pointing elsewhere is fine", "card2", ports.Config{}, "0000:00:02.0", nil, nil, hotplugAddOpen, false},
+		{"all devices kept", "card2", domain.Config{}, "", []string{"/dev/dri/card0", "/dev/dri/card1"}, nil, hotplugAddOpen, false},
+		{"duplicate add", "card2", domain.Config{}, "", []string{"/dev/dri/card2"}, nil, hotplugAddExisting, false},
+		{"still dying", "card2", domain.Config{}, "", nil, []string{"/dev/dri/card2"}, hotplugAddDying, false},
+		{"not listed yet", "card7", domain.Config{}, "", nil, nil, hotplugAddUnknown, false},
+		{"ignored by pci", "card2", domain.Config{DRM: drmConfig(nil, []string{"0000:04:00.0"})}, "", nil, nil, hotplugAddIgnored, false},
+		{"not in allow list", "card2", domain.Config{DRM: drmConfig([]string{"0000:03:00.0"}, nil)}, "", nil, nil, hotplugAddIgnored, false},
+		{"in allow list", "card2", domain.Config{DRM: drmConfig([]string{"0000:03:00.0", "0000:04:00.0"}, nil)}, "", nil, nil, hotplugAddOpen, false},
+		{"other card ignored does not matter", "card2", domain.Config{DRM: drmConfig(nil, []string{"0000:03:00.0"})}, "", nil, nil, hotplugAddOpen, false},
+		{"selection error ignores the card", "card2", domain.Config{DRM: drmConfig(nil, []string{"0000:09:00.0"})}, "", nil, nil, hotplugAddIgnored, true},
+		{"render env pointing elsewhere is fine", "card2", domain.Config{}, "0000:00:02.0", nil, nil, hotplugAddOpen, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			info, got, _, err := planHotplugAdd(cands, tc.card, tc.cfg, tc.env, tc.existing, tc.dying)

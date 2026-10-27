@@ -9,16 +9,16 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-func winRule(name, appID string, edit func(*ports.WindowRule)) ports.WindowRule {
-	r := ports.WindowRule{Name: name, AppID: regexp.MustCompile("^(?:" + appID + ")$")}
+func winRule(name, appID string, edit func(*domain.WindowRule)) domain.WindowRule {
+	r := domain.WindowRule{Name: name, AppID: regexp.MustCompile("^(?:" + appID + ")$")}
 	if edit != nil {
 		edit(&r)
 	}
 	return r
 }
 
-func declareDev(c *ports.Config) {
-	c.Workspaces = []ports.WorkspaceConfig{{Name: "dev"}}
+func declareDev(c *domain.Config) {
+	c.Workspaces = []domain.WorkspaceConfig{{Name: "dev"}}
 	c.Binds["Alt+d"] = "workspace dev"
 }
 
@@ -26,18 +26,18 @@ func ruleOn() *bool  { v := true; return &v }
 func ruleOff() *bool { v := false; return &v }
 
 // mapApp maps a window with an app ID and returns the state once it is in.
-func (r *multiRig) mapApp(t *testing.T, id domain.WindowID, appID string) ports.State {
+func (r *multiRig) mapApp(t *testing.T, id domain.WindowID, appID string) domain.State {
 	t.Helper()
 	r.client <- ports.WindowMapped{ID: id, AppID: appID}
 	return r.stateWith(t, id)
 }
 
-func (r *multiRig) stateWith(t *testing.T, id domain.WindowID) ports.State {
+func (r *multiRig) stateWith(t *testing.T, id domain.WindowID) domain.State {
 	t.Helper()
-	return stateAfter(t, r.state, func(st ports.State) bool { return stWindow(st, id) != nil })
+	return stateAfter(t, r.state, func(st domain.State) bool { return stWindow(st, id) != nil })
 }
 
-func stWindow(st ports.State, id domain.WindowID) *ports.WindowState {
+func stWindow(st domain.State, id domain.WindowID) *domain.WindowState {
 	for i := range st.Windows {
 		if st.Windows[i].ID == id {
 			return &st.Windows[i]
@@ -46,28 +46,28 @@ func stWindow(st ports.State, id domain.WindowID) *ports.WindowState {
 	return nil
 }
 
-func stFocus(st ports.State) domain.WindowID {
+func stFocus(st domain.State) domain.WindowID {
 	if st.Window == nil {
 		return 0
 	}
 	return st.Window.ID
 }
 
-func stOutput(st ports.State, name string) ports.OutputState {
+func stOutput(st domain.State, name string) domain.OutputState {
 	for _, o := range st.Outputs {
 		if o.Name == name {
 			return o
 		}
 	}
-	return ports.OutputState{}
+	return domain.OutputState{}
 }
 
 func TestRuleFloatingOnAndOff(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Rules = []ports.WindowRule{
-				winRule("float", "calc", func(r *ports.WindowRule) { r.Floating = ruleOn() }),
-				winRule("tile", "splash", func(r *ports.WindowRule) { r.Floating = ruleOff() }),
+		r := startMulti(t, func(c *domain.Config) {
+			c.Rules = []domain.WindowRule{
+				winRule("float", "calc", func(r *domain.WindowRule) { r.Floating = ruleOn() }),
+				winRule("tile", "splash", func(r *domain.WindowRule) { r.Floating = ruleOff() }),
 			}
 		}, left)
 		r.mapApp(t, 1, "term")
@@ -95,9 +95,9 @@ func TestRuleFloatingOnAndOff(t *testing.T) {
 
 func TestRuleNamedWorkspaceKeepsFocusAndView(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
+		r := startMulti(t, func(c *domain.Config) {
 			declareDev(c)
-			c.Rules = []ports.WindowRule{winRule("dev", "code", func(r *ports.WindowRule) { r.Workspace = "dev" })}
+			c.Rules = []domain.WindowRule{winRule("dev", "code", func(r *domain.WindowRule) { r.Workspace = "dev" })}
 		}, left)
 		r.mapApp(t, 1, "term")
 		st := r.mapApp(t, 2, "code")
@@ -110,7 +110,7 @@ func TestRuleNamedWorkspaceKeepsFocusAndView(t *testing.T) {
 		}
 		// The workspace shows its window when the user goes there.
 		r.key(t, "d", domain.ModAlt)
-		st = stateAfter(t, r.state, func(st ports.State) bool { return stOutput(st, "DP-1").Workspace == "dev" })
+		st = stateAfter(t, r.state, func(st domain.State) bool { return stOutput(st, "DP-1").Workspace == "dev" })
 		if stFocus(st) != 2 {
 			t.Fatalf("dev window not focused on arrival: %d", stFocus(st))
 		}
@@ -120,9 +120,9 @@ func TestRuleNamedWorkspaceKeepsFocusAndView(t *testing.T) {
 
 func TestRuleNamedWorkspaceFloat(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
+		r := startMulti(t, func(c *domain.Config) {
 			declareDev(c)
-			c.Rules = []ports.WindowRule{winRule("dev", "code", func(r *ports.WindowRule) { r.Workspace = "dev"; r.Floating = ruleOn() })}
+			c.Rules = []domain.WindowRule{winRule("dev", "code", func(r *domain.WindowRule) { r.Workspace = "dev"; r.Floating = ruleOn() })}
 		}, left)
 		r.mapApp(t, 1, "term")
 		st := r.mapApp(t, 2, "code")
@@ -130,7 +130,7 @@ func TestRuleNamedWorkspaceFloat(t *testing.T) {
 			t.Fatalf("%+v focus %d", w, stFocus(st))
 		}
 		r.key(t, "d", domain.ModAlt)
-		st = stateAfter(t, r.state, func(st ports.State) bool { return stOutput(st, "DP-1").Workspace == "dev" })
+		st = stateAfter(t, r.state, func(st domain.State) bool { return stOutput(st, "DP-1").Workspace == "dev" })
 		if stFocus(st) != 2 {
 			t.Fatalf("quiet float not focused on arrival: %d", stFocus(st))
 		}
@@ -140,8 +140,8 @@ func TestRuleNamedWorkspaceFloat(t *testing.T) {
 
 func TestRuleUndeclaredWorkspaceFallsBack(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Rules = []ports.WindowRule{winRule("x", "code", func(r *ports.WindowRule) { r.Workspace = "nope" })}
+		r := startMulti(t, func(c *domain.Config) {
+			c.Rules = []domain.WindowRule{winRule("x", "code", func(r *domain.WindowRule) { r.Workspace = "nope" })}
 		}, left)
 		r.mapApp(t, 1, "term")
 		st := r.mapApp(t, 2, "code")
@@ -154,10 +154,10 @@ func TestRuleUndeclaredWorkspaceFallsBack(t *testing.T) {
 
 func TestRuleNumberedWorkspace(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Rules = []ports.WindowRule{
-				winRule("two", "two", func(r *ports.WindowRule) { r.Workspace = "2" }),
-				winRule("far", "far", func(r *ports.WindowRule) { r.Workspace = "9" }),
+		r := startMulti(t, func(c *domain.Config) {
+			c.Rules = []domain.WindowRule{
+				winRule("two", "two", func(r *domain.WindowRule) { r.Workspace = "2" }),
+				winRule("far", "far", func(r *domain.WindowRule) { r.Workspace = "9" }),
 			}
 		}, left)
 		r.mapApp(t, 1, "term")
@@ -180,8 +180,8 @@ func TestRuleNumberedWorkspace(t *testing.T) {
 
 func TestRuleNumberOnCurrentWorkspaceActsAsNormalMap(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Rules = []ports.WindowRule{winRule("one", "term", func(r *ports.WindowRule) { r.Workspace = "1" })}
+		r := startMulti(t, func(c *domain.Config) {
+			c.Rules = []domain.WindowRule{winRule("one", "term", func(r *domain.WindowRule) { r.Workspace = "1" })}
 		}, left)
 		r.mapApp(t, 1, "other")
 		st := r.mapApp(t, 2, "term")
@@ -196,8 +196,8 @@ func TestRuleMonitor(t *testing.T) {
 	for _, mon := range []string{"DP-2", "Acme B 2"} {
 		t.Run(mon, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				r := startMulti(t, func(c *ports.Config) {
-					c.Rules = []ports.WindowRule{winRule("m", "chat", func(r *ports.WindowRule) { r.Monitor = mon })}
+				r := startMulti(t, func(c *domain.Config) {
+					c.Rules = []domain.WindowRule{winRule("m", "chat", func(r *domain.WindowRule) { r.Monitor = mon })}
 				}, left, right)
 				r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
 				before := r.mapApp(t, 1, "term")
@@ -220,8 +220,8 @@ func TestRuleMonitor(t *testing.T) {
 
 func TestRuleMonitorWithNumberedWorkspace(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Rules = []ports.WindowRule{winRule("m", "chat", func(r *ports.WindowRule) { r.Monitor = "DP-2"; r.Workspace = "2" })}
+		r := startMulti(t, func(c *domain.Config) {
+			c.Rules = []domain.WindowRule{winRule("m", "chat", func(r *domain.WindowRule) { r.Monitor = "DP-2"; r.Workspace = "2" })}
 		}, left, right)
 		r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
 		r.mapApp(t, 3, "term") // DP-2 gets a window, so a second workspace
@@ -237,8 +237,8 @@ func TestRuleMonitorWithNumberedWorkspace(t *testing.T) {
 
 func TestRuleDisconnectedMonitorFallsBack(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Rules = []ports.WindowRule{winRule("m", "chat", func(r *ports.WindowRule) { r.Monitor = "HDMI-9" })}
+		r := startMulti(t, func(c *domain.Config) {
+			c.Rules = []domain.WindowRule{winRule("m", "chat", func(r *domain.WindowRule) { r.Monitor = "HDMI-9" })}
 		}, left, right)
 		r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
 		r.mapApp(t, 1, "term")
@@ -252,11 +252,11 @@ func TestRuleDisconnectedMonitorFallsBack(t *testing.T) {
 
 func TestRulesMerge(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
+		r := startMulti(t, func(c *domain.Config) {
 			c.Layout.MaxColumns = 4
-			c.Rules = []ports.WindowRule{
-				winRule("all", ".*", func(r *ports.WindowRule) { r.Monitor = "DP-2"; r.Cells = 1 }),
-				winRule("chat", "chat", func(r *ports.WindowRule) { r.Cells = 2 }),
+			c.Rules = []domain.WindowRule{
+				winRule("all", ".*", func(r *domain.WindowRule) { r.Monitor = "DP-2"; r.Cells = 1 }),
+				winRule("chat", "chat", func(r *domain.WindowRule) { r.Cells = 2 }),
 			}
 		}, left, right)
 		r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
@@ -291,9 +291,9 @@ func sceneMatch2(t *testing.T, r *multiRig, ok func(domain.Scene) bool) domain.S
 
 func TestRuleWidthOnCurrentWorkspace(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
+		r := startMulti(t, func(c *domain.Config) {
 			c.Layout.MaxColumns = 4
-			c.Rules = []ports.WindowRule{winRule("w", "wide", func(r *ports.WindowRule) { r.Cells = 2 })}
+			c.Rules = []domain.WindowRule{winRule("w", "wide", func(r *domain.WindowRule) { r.Cells = 2 })}
 		}, left)
 		r.client <- ports.WindowMapped{ID: 1, AppID: "wide"}
 		s := sceneMatch2(t, r, func(s domain.Scene) bool { return len(s.Windows) == 1 })
@@ -306,10 +306,10 @@ func TestRuleWidthOnCurrentWorkspace(t *testing.T) {
 
 func TestSlotWinsOverRule(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Workspaces = []ports.WorkspaceConfig{{Name: "dev", Slots: []ports.SlotConfig{{Index: 1, Cells: 2, Argv: []string{"code"}}}}}
+		r := startMulti(t, func(c *domain.Config) {
+			c.Workspaces = []domain.WorkspaceConfig{{Name: "dev", Slots: []domain.SlotConfig{{Index: 1, Cells: 2, Argv: []string{"code"}}}}}
 			c.Binds["Alt+d"] = "workspace dev"
-			c.Rules = []ports.WindowRule{winRule("x", "code", func(r *ports.WindowRule) { r.Workspace = "1"; r.Floating = ruleOn() })}
+			c.Rules = []domain.WindowRule{winRule("x", "code", func(r *domain.WindowRule) { r.Workspace = "1"; r.Floating = ruleOn() })}
 		}, left)
 		req := receive(t, r.spawn)
 		var slot string
@@ -329,9 +329,9 @@ func TestSlotWinsOverRule(t *testing.T) {
 
 func TestDialogStaysOverParentDespiteRules(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
+		r := startMulti(t, func(c *domain.Config) {
 			declareDev(c)
-			c.Rules = []ports.WindowRule{winRule("x", ".*", func(r *ports.WindowRule) { r.Workspace = "dev"; r.Floating = ruleOff() })}
+			c.Rules = []domain.WindowRule{winRule("x", ".*", func(r *domain.WindowRule) { r.Workspace = "dev"; r.Floating = ruleOff() })}
 		}, left)
 		r.client <- ports.WindowMapped{ID: 1, AppID: "term"}
 		st := r.stateWith(t, 1)
@@ -339,7 +339,7 @@ func TestDialogStaysOverParentDespiteRules(t *testing.T) {
 			t.Fatalf("parent: %+v", w)
 		}
 		r.key(t, "d", domain.ModAlt)
-		stateAfter(t, r.state, func(st ports.State) bool { return stOutput(st, "DP-1").Workspace == "dev" })
+		stateAfter(t, r.state, func(st domain.State) bool { return stOutput(st, "DP-1").Workspace == "dev" })
 		r.client <- ports.WindowMapped{ID: 2, AppID: "term", Floating: true, Width: 30, Height: 30, Parent: 1}
 		st = r.stateWith(t, 2)
 		if w := stWindow(st, 2); w.WorkspaceName != "dev" || !w.Floating {
@@ -356,9 +356,9 @@ func TestDialogStaysOverParentDespiteRules(t *testing.T) {
 
 func TestAppIDChangeAfterMapMovesNothing(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
+		r := startMulti(t, func(c *domain.Config) {
 			declareDev(c)
-			c.Rules = []ports.WindowRule{winRule("dev", "code", func(r *ports.WindowRule) { r.Workspace = "dev" })}
+			c.Rules = []domain.WindowRule{winRule("dev", "code", func(r *domain.WindowRule) { r.Workspace = "dev" })}
 		}, left)
 		r.mapApp(t, 1, "")
 		r.client <- ports.WindowAppID{ID: 1, AppID: "code"}
@@ -372,9 +372,9 @@ func TestAppIDChangeAfterMapMovesNothing(t *testing.T) {
 
 func TestRemapKeepsPlace(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
+		r := startMulti(t, func(c *domain.Config) {
 			declareDev(c)
-			c.Rules = []ports.WindowRule{winRule("dev", "code", func(r *ports.WindowRule) { r.Workspace = "dev" })}
+			c.Rules = []domain.WindowRule{winRule("dev", "code", func(r *domain.WindowRule) { r.Workspace = "dev" })}
 		}, left)
 		r.mapApp(t, 1, "term")
 		r.client <- ports.WindowMapped{ID: 1, AppID: "code"}
@@ -389,15 +389,15 @@ func TestRemapKeepsPlace(t *testing.T) {
 // any other window: on the workspace the user looks at, not its rule's.
 func TestRuleSkipsRemapAfterUnmap(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
+		r := startMulti(t, func(c *domain.Config) {
 			declareDev(c)
-			c.Rules = []ports.WindowRule{winRule("dev", "discord", func(r *ports.WindowRule) { r.Workspace = "dev" })}
+			c.Rules = []domain.WindowRule{winRule("dev", "discord", func(r *domain.WindowRule) { r.Workspace = "dev" })}
 		}, left)
 		if w := stWindow(r.mapApp(t, 1, "discord"), 1); w.WorkspaceName != "dev" {
 			t.Fatalf("first map not placed by the rule: %+v", w)
 		}
 		r.client <- ports.WindowUnmapped{ID: 1}
-		stateAfter(t, r.state, func(st ports.State) bool { return stWindow(st, 1) == nil })
+		stateAfter(t, r.state, func(st domain.State) bool { return stWindow(st, 1) == nil })
 		r.client <- ports.WindowMapped{ID: 1, AppID: "discord", Remap: true}
 		st := r.stateWith(t, 1)
 		if w := stWindow(st, 1); w.WorkspaceName != "" || w.Workspace != 1 || stFocus(st) != 1 {
@@ -409,13 +409,13 @@ func TestRuleSkipsRemapAfterUnmap(t *testing.T) {
 
 func TestRuleReloadAffectsFutureMapsOnly(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
+		r := startMulti(t, func(c *domain.Config) {
 			declareDev(c)
-			c.Rules = []ports.WindowRule{winRule("dev", "code", func(r *ports.WindowRule) { r.Workspace = "dev" })}
+			c.Rules = []domain.WindowRule{winRule("dev", "code", func(r *domain.WindowRule) { r.Workspace = "dev" })}
 		}, left)
 		r.mapApp(t, 1, "code")
 		cfg := r.cfg
-		cfg.Rules = []ports.WindowRule{winRule("fl", "code", func(r *ports.WindowRule) { r.Floating = ruleOn() })}
+		cfg.Rules = []domain.WindowRule{winRule("fl", "code", func(r *domain.WindowRule) { r.Floating = ruleOn() })}
 		r.reload <- ports.ConfigChanged{Config: cfg}
 		// Handled in order with the map below.
 		st := r.mapApp(t, 2, "code")
@@ -431,12 +431,12 @@ func TestRuleReloadAffectsFutureMapsOnly(t *testing.T) {
 
 func TestRuleQuietPlacementWithAnimations(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
+		r := startMulti(t, func(c *domain.Config) {
 			declareDev(c)
 			c.Animations.On = true
-			c.Rules = []ports.WindowRule{
-				winRule("dev", "code", func(r *ports.WindowRule) { r.Workspace = "dev" }),
-				winRule("fl", "calc", func(r *ports.WindowRule) { r.Floating = ruleOn() }),
+			c.Rules = []domain.WindowRule{
+				winRule("dev", "code", func(r *domain.WindowRule) { r.Workspace = "dev" }),
+				winRule("fl", "calc", func(r *domain.WindowRule) { r.Floating = ruleOn() }),
 			}
 		}, left)
 		r.mapApp(t, 1, "term")
@@ -456,10 +456,10 @@ func TestRuleQuietPlacementWithAnimations(t *testing.T) {
 // the wide one leaves.
 func TestRuleWidthWithFixedOverflow(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
+		r := startMulti(t, func(c *domain.Config) {
 			c.Layout.MaxColumns = 4
 			c.Layout.Overflow = "fixed"
-			c.Rules = []ports.WindowRule{winRule("w", "wide", func(r *ports.WindowRule) { r.Cells = 3 })}
+			c.Rules = []domain.WindowRule{winRule("w", "wide", func(r *domain.WindowRule) { r.Cells = 3 })}
 		}, left)
 		r.client <- ports.WindowMapped{ID: 1, AppID: "term"}
 		r.client <- ports.WindowMapped{ID: 2, AppID: "wide"}

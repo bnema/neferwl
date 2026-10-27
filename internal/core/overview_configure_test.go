@@ -13,7 +13,7 @@ import (
 // placement on the output is hidden. Its last configure must not be resized.
 func TestOverviewNeighborPreviewKeepsHiddenConfigureSize(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		cfg := ports.Config{}
+		cfg := domain.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 3
 		commands := make(chan ports.ClientCommand, 256)
@@ -72,7 +72,7 @@ func TestOverviewNeighborPreviewKeepsHiddenConfigureSize(t *testing.T) {
 
 func TestOverviewConfigureUsesRealLayoutAfterMaximize(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		cfg := ports.Config{}
+		cfg := domain.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.Overflow = "fixed"
 		cfg.Layout.MaxColumns = 3

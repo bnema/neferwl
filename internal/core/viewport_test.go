@@ -45,9 +45,9 @@ func TestViewportShows(t *testing.T) {
 // viewportCore is a core with one 100x80 output whose usable area is
 // usable, publishing into the returned check: it asserts what each
 // window's configure and the state snapshot say about its visibility.
-func viewportCore(t *testing.T, layout func(*ports.Config), usable Rect) (*Core, func(map[WindowID]bool) domain.Scene) {
+func viewportCore(t *testing.T, layout func(*domain.Config), usable Rect) (*Core, func(map[WindowID]bool) domain.Scene) {
 	t.Helper()
-	cfg := ports.Config{}
+	cfg := domain.Config{}
 	cfg.Keyboard.CmdKey = "super"
 	layout(&cfg)
 	commands := make(chan ports.ClientCommand, 256)
@@ -92,7 +92,7 @@ func viewportCore(t *testing.T, layout func(*ports.Config), usable Rect) (*Core,
 // scene still carries them.
 func TestConfigureVisibleCascadeUnderPanel(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		c, check := viewportCore(t, func(cfg *ports.Config) {
+		c, check := viewportCore(t, func(cfg *domain.Config) {
 			cfg.Layout.Overflow = "cascade"
 			cfg.Layout.MaxColumns = 2
 		}, Rect{W: 100, H: 60})
@@ -155,7 +155,7 @@ func TestConfigureVisibleCascadeUnderPanel(t *testing.T) {
 // rule matches core's.
 func TestTileStopsAtPanel(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		c, check := viewportCore(t, func(cfg *ports.Config) {
+		c, check := viewportCore(t, func(cfg *domain.Config) {
 			cfg.Layout.MaxColumns = 2
 			cfg.Border.Width = 2
 		}, Rect{W: 100, H: 60})
@@ -198,7 +198,7 @@ func TestTileStopsAtPanel(t *testing.T) {
 // Panels that leave no room draw no tile, a leaving one included.
 func TestNoUsableAreaDrawsNoTile(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		c, check := viewportCore(t, func(cfg *ports.Config) { cfg.Layout.MaxColumns = 1 }, Rect{})
+		c, check := viewportCore(t, func(cfg *domain.Config) { cfg.Layout.MaxColumns = 1 }, Rect{})
 		c.cur().mon.AddWindow(1)
 		scene := check(map[WindowID]bool{1: false})
 		if scene.Draws(scene.Windows[0]) {
@@ -222,7 +222,7 @@ func TestNoUsableAreaDrawsNoTile(t *testing.T) {
 // usable area, inside its viewport.
 func TestTileAreaSizedWorkspace(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		c, check := viewportCore(t, func(cfg *ports.Config) { cfg.Layout.MaxColumns = 1 }, Rect{W: 100, H: 70})
+		c, check := viewportCore(t, func(cfg *domain.Config) { cfg.Layout.MaxColumns = 1 }, Rect{W: 100, H: 70})
 		m := c.cur().mon
 		m.Current().SetSize(60, 80)
 		m.AddWindow(1)
@@ -238,7 +238,7 @@ func TestTileAreaSizedWorkspace(t *testing.T) {
 // A column scrolled under a left panel is not seen.
 func TestConfigureVisibleScrollUnderSidePanel(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		c, check := viewportCore(t, func(cfg *ports.Config) {
+		c, check := viewportCore(t, func(cfg *domain.Config) {
 			cfg.Layout.MaxColumns = 1
 		}, Rect{X: 20, W: 80, H: 80})
 		m := c.cur().mon

@@ -156,7 +156,7 @@ type OutputRemoved struct{ Name string }
 func (OutputRemoved) outputEvent() {}
 
 // ConfigChanged carries config → core reloads.
-type ConfigChanged struct{ Config Config }
+type ConfigChanged struct{ Config domain.Config }
 
 // ScaleChanged carries core → persistence a scale set by a scale bind.
 type ScaleChanged struct {

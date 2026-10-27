@@ -12,7 +12,7 @@ import (
 // floats report 0, 0.
 func TestStateColumnRow(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		cfg := ports.Config{}
+		cfg := domain.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 1
 		c, err := New(cfg, Channels{Commands: make(chan ports.ClientCommand, 16), Scenes: make(chan []domain.Scene, 1)}, Options{})

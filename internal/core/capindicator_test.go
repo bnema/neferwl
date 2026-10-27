@@ -44,7 +44,7 @@ func indicatorCoreWith(t *testing.T, commands chan ports.ClientCommand) (*Core, 
 		}).Maybe()
 		return timer
 	}).Maybe()
-	var cfg ports.Config
+	var cfg domain.Config
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 2
 	cfg.Border.Width = 0

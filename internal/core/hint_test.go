@@ -28,17 +28,17 @@ type hintHarness struct {
 	// state is the security state input is stamped with.
 	state  domain.SecurityState
 	config chan ports.ConfigChanged
-	cfg    ports.Config
+	cfg    domain.Config
 }
 
 // newHint starts a core with one 1000x800 output "OUT-1" and window 1 mapped.
 func newHint(t *testing.T, opts core.Options) *hintHarness {
 	t.Helper()
-	return newHintConfig(t, opts, func(*ports.Config) {})
+	return newHintConfig(t, opts, func(*domain.Config) {})
 }
 
 // newHintConfig is newHint with the config edited by edit.
-func newHintConfig(t *testing.T, opts core.Options, edit func(*ports.Config)) *hintHarness {
+func newHintConfig(t *testing.T, opts core.Options, edit func(*domain.Config)) *hintHarness {
 	t.Helper()
 	cfg := scrollDefaults()
 	edit(&cfg)
@@ -907,7 +907,7 @@ func TestHintRejectsResizedSource(t *testing.T) {
 func TestHintCaptureReachesScene(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		for _, on := range []bool{false, true} {
-			h := newHintConfig(t, core.Options{}, func(cfg *ports.Config) { cfg.Hint.Capture = on })
+			h := newHintConfig(t, core.Options{}, func(cfg *domain.Config) { cfg.Hint.Capture = on })
 			s := h.show(h.inside(0))
 			if len(s.Overlays) == 0 {
 				t.Fatal("no overlays")
@@ -982,7 +982,7 @@ func TestHintSourceClickModifiers(t *testing.T) {
 	for _, source := range []domain.HintSource{domain.HintSourceATSPI, domain.HintSourceOCR, domain.HintSourceDetector} {
 		t.Run(source.String(), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				h := newHintConfig(t, core.Options{}, func(c *ports.Config) { c.Hint.TextClick = domain.ModCtrl | domain.ModShift })
+				h := newHintConfig(t, core.Options{}, func(c *domain.Config) { c.Hint.TextClick = domain.ModCtrl | domain.ModShift })
 				tg := h.inside(0)
 				tg.Source = source
 				h.show(tg)
@@ -1023,7 +1023,7 @@ func TestHintDropsWrongWindow(t *testing.T) {
 }
 func TestHintRequestPopupUnits(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		h := newHintConfig(t, core.Options{}, func(c *ports.Config) { c.Hint.LinksOnly = true })
+		h := newHintConfig(t, core.Options{}, func(c *domain.Config) { c.Hint.LinksOnly = true })
 		h.client <- ports.WindowMapped{ID: 2}
 		h.until(func(s domain.Scene) bool { return len(s.Windows) == 2 })
 		popupRects := map[domain.WindowID]domain.Rect{}

@@ -168,8 +168,8 @@ func TestGesturesAbortOnRemoval(t *testing.T) {
 }
 
 func TestAccelProfile(t *testing.T) {
-	if accelProfile(ports.AccelFlat) != 1 || accelProfile(ports.AccelAdaptive) != 2 {
-		t.Fatal(accelProfile(ports.AccelFlat), accelProfile(ports.AccelAdaptive))
+	if accelProfile(domain.AccelFlat) != 1 || accelProfile(domain.AccelAdaptive) != 2 {
+		t.Fatal(accelProfile(domain.AccelFlat), accelProfile(domain.AccelAdaptive))
 	}
 }
 

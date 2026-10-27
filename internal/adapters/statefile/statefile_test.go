@@ -14,7 +14,6 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
 
@@ -38,12 +37,12 @@ func TestRunWritesAndRemoves(t *testing.T) {
 		if err := os.WriteFile(path, []byte(`{"output":"stale"}`), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		states := make(chan ports.State, 1)
+		states := make(chan domain.State, 1)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() { done <- Run(ctx, path, states, workspaceid.WithPrefix("0a1b2c3d"), zerowrap.Default()) }()
-		focused := ports.WindowState{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: 9, Visible: true}
-		states <- ports.State{Output: "DP-2", Outputs: []ports.OutputState{{Name: "DP-2", Active: 1, Count: 1, WorkspaceID: 9}}, Window: &focused, Windows: []ports.WindowState{focused}}
+		focused := domain.WindowState{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: 9, Visible: true}
+		states <- domain.State{Output: "DP-2", Outputs: []domain.OutputState{{Name: "DP-2", Active: 1, Count: 1, WorkspaceID: 9}}, Window: &focused, Windows: []domain.WindowState{focused}}
 		want := State{Output: "DP-2", Outputs: []Output{{Name: "DP-2", Active: 1, Count: 1, WorkspaceID: "0a1b2c3d-9"}}, Window: &Window{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true}, Windows: []Window{{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true}}, Workspaces: []Workspace{}}
 		synctest.Wait()
 		got, err := Read(path)
@@ -66,7 +65,7 @@ func TestRunWritesAndRemoves(t *testing.T) {
 
 // Stash and cell fields reach the file with their script-facing names.
 func TestWindowScriptFields(t *testing.T) {
-	got := window(ports.WindowState{ID: 3, Floating: true, Fullscreen: true, StashIndex: 2, StashCount: 4, Column: 5, Row: 6, Hidden: true, IdleInhibit: true, ShortcutsInhibited: true, PointerConstraint: "locked", Sandbox: "org.example.App", ContentType: "video", Xwayland: true}, workspaceid.WithPrefix("0a1b2c3d"))
+	got := window(domain.WindowState{ID: 3, Floating: true, Fullscreen: true, StashIndex: 2, StashCount: 4, Column: 5, Row: 6, Hidden: true, IdleInhibit: true, ShortcutsInhibited: true, PointerConstraint: "locked", Sandbox: "org.example.App", ContentType: "video", Xwayland: true}, workspaceid.WithPrefix("0a1b2c3d"))
 	if !got.Floating || !got.Fullscreen || got.StashIndex != 2 || got.StashCount != 4 || got.Column != 5 || got.Row != 6 || !got.Hidden || !got.IdleInhibit || !got.ShortcutsInhibited || got.PointerConstraint != "locked" || got.Sandbox != "org.example.App" || got.ContentType != "video" || !got.Xwayland {
 		t.Fatalf("%+v", got)
 	}
@@ -143,9 +142,9 @@ func TestLinuxProcTreeParent(t *testing.T) {
 // after the launch prefix and its core ID: the string of ext_workspace_handle_v1.
 func TestWorkspaceIDStrings(t *testing.T) {
 	ids := workspaceid.WithPrefix("0a1b2c3d")
-	st := fromPorts(ports.State{
-		Outputs: []ports.OutputState{{Name: "DP-2", Workspace: "web", WorkspaceID: 7}, {Name: "DP-3", WorkspaceID: 8}},
-		Windows: []ports.WindowState{{ID: 1, WorkspaceID: 7, WorkspaceName: "web"}, {ID: 2, WorkspaceID: 8}},
+	st := fromPorts(domain.State{
+		Outputs: []domain.OutputState{{Name: "DP-2", Workspace: "web", WorkspaceID: 7}, {Name: "DP-3", WorkspaceID: 8}},
+		Windows: []domain.WindowState{{ID: 1, WorkspaceID: 7, WorkspaceName: "web"}, {ID: 2, WorkspaceID: 8}},
 	}, ids)
 	if st.Outputs[0].WorkspaceID != "name:web" || st.Outputs[1].WorkspaceID != "0a1b2c3d-8" {
 		t.Fatalf("outputs %+v", st.Outputs)
@@ -162,9 +161,9 @@ func TestWorkspaceIDStrings(t *testing.T) {
 // Workspaces reach the file with their script-facing names.
 func TestWorkspaceGeometryFields(t *testing.T) {
 	ids := workspaceid.WithPrefix("0a1b2c3d")
-	st := fromPorts(ports.State{Workspaces: []ports.WorkspaceState{
-		{ID: 7, Number: 2, Name: "web", Output: "DP-2", Visible: true, Overflow: "fixed", Columns: []ports.ColumnState{
-			{Rect: domain.Rect{X: 10, Y: 20, W: 300, H: 400}, Windows: []ports.TileState{{ID: 5, Rect: domain.Rect{X: 11, Y: 21, W: 298, H: 198}}}},
+	st := fromPorts(domain.State{Workspaces: []domain.WorkspaceState{
+		{ID: 7, Number: 2, Name: "web", Output: "DP-2", Visible: true, Overflow: "fixed", Columns: []domain.ColumnState{
+			{Rect: domain.Rect{X: 10, Y: 20, W: 300, H: 400}, Windows: []domain.TileState{{ID: 5, Rect: domain.Rect{X: 11, Y: 21, W: 298, H: 198}}}},
 		}},
 		{ID: 8, Output: "DP-2"},
 	}}, ids)
@@ -194,7 +193,7 @@ func TestWorkspaceGeometryFields(t *testing.T) {
 func TestRunRateLimit(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "s", "wayland-9.json")
-		states := make(chan ports.State)
+		states := make(chan domain.State)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() { done <- Run(ctx, path, states, workspaceid.WithPrefix("0a1b2c3d"), zerowrap.Default()) }()
@@ -207,7 +206,7 @@ func TestRunRateLimit(t *testing.T) {
 			}
 			return st.Output
 		}
-		send := func(name string) { states <- ports.State{Output: name} }
+		send := func(name string) { states <- domain.State{Output: name} }
 
 		send("a")
 		if got := output(); got != "a" {

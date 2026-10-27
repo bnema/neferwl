@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/bnema/neferwl/internal/core/layout"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -42,7 +43,7 @@ type slotSpec struct {
 	cells int
 }
 
-func parseSlots(ws []ports.WorkspaceConfig) ([]slotSpec, error) {
+func parseSlots(ws []domain.WorkspaceConfig) ([]slotSpec, error) {
 	var specs []slotSpec
 	for _, w := range ws {
 		for _, s := range w.Slots {

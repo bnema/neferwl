@@ -12,10 +12,9 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
-func parseString(t *testing.T, s string) (ports.Config, []Warning) {
+func parseString(t *testing.T, s string) (domain.Config, []Warning) {
 	t.Helper()
 	c, w, err := Parse(strings.NewReader(s))
 	if err != nil {
@@ -164,7 +163,7 @@ func TestTouchpadTap(t *testing.T) {
 
 func TestTouchpadSpeed(t *testing.T) {
 	d := Defaults().Touchpad
-	if d.AccelSpeed != 0 || d.AccelProfile != ports.AccelAdaptive || d.ScrollFactor != 1 {
+	if d.AccelSpeed != 0 || d.AccelProfile != domain.AccelAdaptive || d.ScrollFactor != 1 {
 		t.Fatal(d)
 	}
 	c, w := parseString(t, "touchpad.scroll-factor = 0.5\n")
@@ -184,17 +183,17 @@ func TestTouchpadSpeed(t *testing.T) {
 
 func TestPointerKeys(t *testing.T) {
 	d := Defaults()
-	if d.Mouse != (ports.PointerConfig{AccelProfile: ports.AccelAdaptive}) {
+	if d.Mouse != (domain.PointerConfig{AccelProfile: domain.AccelAdaptive}) {
 		t.Fatal(d.Mouse)
 	}
 	if d.Touchpad.LeftHanded || d.Touchpad.NaturalScroll {
 		t.Fatal(d.Touchpad)
 	}
-	touchpad := func(c ports.Config) ports.PointerConfig { return c.Touchpad.PointerConfig }
-	mouse := func(c ports.Config) ports.PointerConfig { return c.Mouse }
+	touchpad := func(c domain.Config) domain.PointerConfig { return c.Touchpad.PointerConfig }
+	mouse := func(c domain.Config) domain.PointerConfig { return c.Mouse }
 	for _, tc := range []struct {
 		prefix         string
-		pointer, other func(ports.Config) ports.PointerConfig
+		pointer, other func(domain.Config) domain.PointerConfig
 	}{
 		{"touchpad", touchpad, mouse},
 		{"mouse", mouse, touchpad},
@@ -202,12 +201,12 @@ func TestPointerKeys(t *testing.T) {
 		t.Run(tc.prefix, func(t *testing.T) {
 			prefix := tc.prefix
 			c, w := parseString(t, prefix+".natural-scroll = on\n"+prefix+".left-handed = on\n"+prefix+".accel-speed = -0.5\n"+prefix+".accel-profile = flat\n")
-			want := ports.PointerConfig{NaturalScroll: true, LeftHanded: true, AccelSpeed: -0.5, AccelProfile: ports.AccelFlat}
+			want := domain.PointerConfig{NaturalScroll: true, LeftHanded: true, AccelSpeed: -0.5, AccelProfile: domain.AccelFlat}
 			if tc.pointer(c) != want || len(w) != 0 {
 				t.Errorf("%+v %v", tc.pointer(c), w)
 			}
 			// The other device keeps its defaults.
-			if other := tc.other(c); other != (ports.PointerConfig{AccelProfile: ports.AccelAdaptive}) {
+			if other := tc.other(c); other != (domain.PointerConfig{AccelProfile: domain.AccelAdaptive}) {
 				t.Errorf("leaked into the other device: %+v", other)
 			}
 			for _, bad := range []string{
@@ -496,7 +495,7 @@ bind.cmd+w = workspace
 bind.cmd+x = workspace typo
 workspace.lost.monitor = DP-1
 `)
-	want := []ports.WorkspaceConfig{
+	want := []domain.WorkspaceConfig{
 		{Name: "dev", Monitor: "DP-2", MaxColumns: 3},
 		{Name: "web", Overflow: "scroll"},
 		{Name: "lost", Monitor: "DP-1"},
@@ -524,7 +523,7 @@ layout.LG Electronics 27GR95UM 123.overflow = scroll
 layout.DP-2.overflow = spiral
 layout.DP-2.color = red
 `)
-	want := []ports.OutputLayout{
+	want := []domain.OutputLayout{
 		{Output: "HDMI-A-1", MaxColumns: 3, Overflow: "fixed"},
 		{Output: "LG Electronics 27GR95UM 123", Overflow: "scroll"},
 	}
@@ -561,7 +560,7 @@ workspace.dev.column.8 = 0, foot
 workspace.dev.column.9 = 17, foot
 bind.cmd+d = workspace dev
 `)
-	want := []ports.SlotConfig{
+	want := []domain.SlotConfig{
 		{Index: 1, Cells: 3, Argv: []string{"code", "--new-window"}},
 		{Index: 2, Cells: 16, Argv: []string{"kitty"}},
 	}
@@ -738,7 +737,7 @@ output.DP-5.offset = 7
 	if len(w) != 0 {
 		t.Fatal(w)
 	}
-	want := map[string]ports.OutputAnchor{
+	want := map[string]domain.OutputAnchor{
 		"DP-2": {Relation: domain.RelationRightOf, To: "DP-1", Offset: 180},
 		"DP-3": {Relation: domain.RelationLeftOf, To: "DP-1", Offset: -40},
 		"DP-4": {Relation: domain.RelationAbove, To: "DP-1"},
@@ -790,7 +789,7 @@ func TestOutputRelationOverride(t *testing.T) {
 	if len(w) != 1 || w[0].Line != 2 || !strings.Contains(w[0].Msg, "overrides line 1") {
 		t.Fatalf("warnings %v", w)
 	}
-	if got := c.Outputs[0].Anchor; got != (ports.OutputAnchor{Relation: domain.RelationBelow, To: "DP-3"}) {
+	if got := c.Outputs[0].Anchor; got != (domain.OutputAnchor{Relation: domain.RelationBelow, To: "DP-3"}) {
 		t.Fatalf("%+v", got)
 	}
 }
@@ -882,7 +881,7 @@ func TestOutputModeLineKeepsAnchor(t *testing.T) {
 		t.Fatal(w)
 	}
 	o := c.Outputs[0]
-	if o.Mode != "1920x1080" || o.Anchor != (ports.OutputAnchor{Relation: domain.RelationRightOf, To: "DP-1", Offset: 50}) {
+	if o.Mode != "1920x1080" || o.Anchor != (domain.OutputAnchor{Relation: domain.RelationRightOf, To: "DP-1", Offset: 50}) {
 		t.Fatalf("%+v", o)
 	}
 }
@@ -890,13 +889,13 @@ func TestOutputModeLineKeepsAnchor(t *testing.T) {
 func TestFileSyntax(t *testing.T) {
 	for _, tc := range []struct {
 		name, in string
-		check    func(t *testing.T, c ports.Config)
+		check    func(t *testing.T, c domain.Config)
 		warnings []string
 	}{
 		{
 			name: "invalid UTF-8 costs a warning, not the file",
 			in:   "# caf\xe9\nborder.width = 5\n",
-			check: func(t *testing.T, c ports.Config) {
+			check: func(t *testing.T, c domain.Config) {
 				if c.Border.Width != 5 {
 					t.Fatalf("border.width = %d", c.Border.Width)
 				}
@@ -906,7 +905,7 @@ func TestFileSyntax(t *testing.T) {
 		{
 			name: "output name with spaces",
 			in:   "output.LG Electronics 27GR95UM.scale = 1.5\n",
-			check: func(t *testing.T, c ports.Config) {
+			check: func(t *testing.T, c domain.Config) {
 				if len(c.Outputs) != 1 || c.Outputs[0].Name != "LG Electronics 27GR95UM" || c.Outputs[0].Scale != 1.5 {
 					t.Fatalf("%+v", c.Outputs)
 				}
@@ -916,7 +915,7 @@ func TestFileSyntax(t *testing.T) {
 			// A '#' inside a quoted word is kept, as a shell would.
 			name: "comment after a quoted word",
 			in:   "startup = notify-send \"a # b\" # note\n",
-			check: func(t *testing.T, c ports.Config) {
+			check: func(t *testing.T, c domain.Config) {
 				if !reflect.DeepEqual(c.Startup, [][]string{{"notify-send", `"a`, "#", `b"`}}) {
 					t.Fatalf("startup: %q", c.Startup)
 				}

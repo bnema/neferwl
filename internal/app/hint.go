@@ -9,14 +9,13 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/hints"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // hintOptions builds the hint worker options from the configuration (read at
 // startup) and, when NEFERWL_HINT_DEBUG is "1", the dump directory of scanned
 // frames, $XDG_STATE_HOME/neferwl/hints. The detector process only starts at
 // the first scan.
-func hintOptions(ctx context.Context, cfg ports.Config) hints.Options {
+func hintOptions(ctx context.Context, cfg domain.Config) hints.Options {
 	opts := hintDump(ctx)
 	opts.Sources = append([]domain.HintSource(nil), cfg.Hint.Sources...)
 	for _, kind := range opts.Sources {

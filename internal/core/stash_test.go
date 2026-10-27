@@ -280,7 +280,7 @@ func TestStashWidth(t *testing.T) {
 // leaves fullscreen for the next stashed window.
 func TestFullscreenStashEdgeGoesToMonitor(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		cfg := ports.Config{}
+		cfg := domain.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
 		cfg.Layout.Overflow = string(OverflowFixed)

@@ -222,8 +222,8 @@ type Options struct {
 	// DeviceConfig is the initial config: Touchpad for touchpads, Mouse for
 	// the other pointers (mice, trackballs, trackpoints); other devices are
 	// left alone. DeviceConfigs replaces it live, on the devices already added.
-	DeviceConfig  ports.InputDevicesConfig
-	DeviceConfigs <-chan ports.InputDevicesConfig
+	DeviceConfig  domain.InputDevicesConfig
+	DeviceConfigs <-chan domain.InputDevicesConfig
 	Active        <-chan bool
 	// MoveCursor, when set, places the hardware cursor as soon as motion is
 	// read, before core sees the event: the output under the pointer and
@@ -419,7 +419,7 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 // the touchpads. dev applies the config to libinput; it is a zero-size
 // type, so storing it in the interface allocates nothing.
 type inputState struct {
-	cfg      ports.InputDevicesConfig
+	cfg      domain.InputDevicesConfig
 	dev      deviceConfig
 	devices  map[uintptr]bool
 	gestures gestures
@@ -440,7 +440,7 @@ type deviceConfig interface {
 	Name(dev uintptr) string
 	SetNaturalScroll(dev uintptr, on bool) error
 	// SetAccel sets the pointer speed and, when the device offers it, the
-	// profile (ports.AccelFlat or ports.AccelAdaptive).
+	// profile (domain.AccelFlat or domain.AccelAdaptive).
 	SetAccel(dev uintptr, speed float64, profile string) error
 	SetLeftHanded(dev uintptr, on bool) error
 	// SetTap enables tap to click, with one finger left, two right, three
@@ -532,7 +532,7 @@ func (s *inputState) configure(dev uintptr, log zerowrap.Logger) {
 }
 
 // applyPointer applies the settings touchpads and mice share.
-func (s *inputState) applyPointer(dev uintptr, c ports.PointerConfig, log zerowrap.Logger) {
+func (s *inputState) applyPointer(dev uintptr, c domain.PointerConfig, log zerowrap.Logger) {
 	s.check(dev, "natural scroll", s.dev.SetNaturalScroll(dev, c.NaturalScroll), log)
 	s.check(dev, "accel", s.dev.SetAccel(dev, c.AccelSpeed, c.AccelProfile), log)
 	s.check(dev, "left handed", s.dev.SetLeftHanded(dev, c.LeftHanded), log)
@@ -548,7 +548,7 @@ func (s *inputState) check(dev uintptr, setting string, err error, log zerowrap.
 // accelProfile is the libinput accel profile bit: LIBINPUT_CONFIG_ACCEL_
 // PROFILE_FLAT (1) or _ADAPTIVE (2).
 func accelProfile(name string) uint32 {
-	if name == ports.AccelFlat {
+	if name == domain.AccelFlat {
 		return 1
 	}
 	return 2

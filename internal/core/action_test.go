@@ -8,12 +8,11 @@ import (
 
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // altCmdDefaults is the default config with keyboard.cmd = alt. The loader
 // drops binds that use both cmd and alt then; so does this helper.
-func altCmdDefaults() ports.Config {
+func altCmdDefaults() domain.Config {
 	cfg := scrollDefaults()
 	cfg.Keyboard.CmdKey = "alt"
 	for combo := range cfg.Binds {

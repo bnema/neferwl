@@ -40,7 +40,7 @@ type Channels struct {
 	ConfigErrors chan<- error
 	// State, when set, receives a snapshot for scripts whenever it changes,
 	// latest first (capacity 1, drained like Scenes).
-	State      chan ports.State
+	State      chan domain.State
 	Workspaces chan ports.Workspaces
 	// Scales, when set, receives each scale a scale bind sets, to persist it.
 	// Core does not wait: a full channel drops the change.
@@ -97,7 +97,7 @@ type Core struct {
 	nextWorkspaceID uint64
 	ch              Channels
 	opts            Options
-	cfg             ports.Config
+	cfg             domain.Config
 	screens         []*screen
 	focusScreen     int
 	// offGone names outputs unplugged while turned off: a display that
@@ -201,7 +201,7 @@ type Core struct {
 // snapshots each publish: owner goroutine storage, never sent (a snapshot
 // is copied out of it when it changed).
 type publishScratch struct {
-	state      ports.State
+	state      domain.State
 	workspaces ports.Workspaces
 	shown      map[WindowID]bool
 	ids        []WindowID
@@ -215,7 +215,7 @@ type publishScratch struct {
 type sentCache struct {
 	outputs    ports.SetOutputs
 	outputsSeq uint64 // last successfully queued output layout
-	state      ports.State
+	state      domain.State
 	workspaces ports.Workspaces
 }
 
@@ -259,7 +259,7 @@ func parseBind(s, cmd string) (binding, error) {
 	}
 	return b, nil
 }
-func (c *Core) apply(cfg ports.Config) error {
+func (c *Core) apply(cfg domain.Config) error {
 	if cfg.Layout.MaxColumns < 1 {
 		return fmt.Errorf("invalid max columns")
 	}
@@ -422,7 +422,7 @@ func (c *Core) spawnSlots(ctx context.Context, shown bool) error {
 	}
 	return nil
 }
-func New(cfg ports.Config, ch Channels, opts Options) (*Core, error) {
+func New(cfg domain.Config, ch Channels, opts Options) (*Core, error) {
 	if cap(ch.Scenes) != 1 || (ch.Layouts != nil && cap(ch.Layouts) != 1) || (ch.Constraints != nil && cap(ch.Constraints) != 1) || (ch.State != nil && cap(ch.State) != 1) || (ch.Workspaces != nil && cap(ch.Workspaces) != 1) {
 		return nil, fmt.Errorf("scenes, layouts, constraints, state and workspaces must have capacity 1")
 	}

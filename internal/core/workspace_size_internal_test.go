@@ -111,7 +111,7 @@ func TestOverviewIgnoresWorkspaceSize(t *testing.T) {
 // viewport, offset by the screen; a client wholly outside has none.
 func TestShownClientRectIsClippedToFrame(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		var cfg ports.Config
+		var cfg domain.Config
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
 		c := newSizedCore(t, cfg)
@@ -139,10 +139,10 @@ func TestShownClientRectIsClippedToFrame(t *testing.T) {
 // its connected home, allocates nothing to find it.
 func TestBringNamedLookupAllocations(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		var cfg ports.Config
+		var cfg domain.Config
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
-		cfg.Workspaces = []ports.WorkspaceConfig{{Name: "s"}, {Name: "h", Monitor: "A"}}
+		cfg.Workspaces = []domain.WorkspaceConfig{{Name: "s"}, {Name: "h", Monitor: "A"}}
 		c := newSizedCore(t, cfg)
 		c.addScreen(ports.OutputInfo{Name: "A", Width: 300, Height: 200})
 		c.addScreen(ports.OutputInfo{Name: "B", Width: 600, Height: 400})
@@ -154,9 +154,9 @@ func TestBringNamedLookupAllocations(t *testing.T) {
 }
 
 // newSizedCore returns a core with buffered output channels and no outputs.
-func newSizedCore(t *testing.T, cfg ports.Config) *Core {
+func newSizedCore(t *testing.T, cfg domain.Config) *Core {
 	t.Helper()
-	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Layouts: make(chan ports.Layout, 1), Constraints: make(chan ports.PointerConstraint, 1), State: make(chan ports.State, 1), Workspaces: make(chan ports.Workspaces, 1)}, Options{})
+	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Layouts: make(chan ports.Layout, 1), Constraints: make(chan ports.PointerConstraint, 1), State: make(chan domain.State, 1), Workspaces: make(chan ports.Workspaces, 1)}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

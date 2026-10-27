@@ -12,9 +12,9 @@ import (
 
 // stashSpawnRig has a stash bind on Alt+f and, as in the defaults, foot as
 // the terminal. Tiles map without any automatic terminal.
-func stashSpawnRig(t *testing.T, edit func(*ports.Config)) *multiRig {
+func stashSpawnRig(t *testing.T, edit func(*domain.Config)) *multiRig {
 	t.Helper()
-	return startMulti(t, func(c *ports.Config) {
+	return startMulti(t, func(c *domain.Config) {
 		c.Binds["Alt+Ctrl+Shift+f"] = "stash firefox --new-window"
 		c.Stash.Capture = false
 		if edit != nil {
@@ -83,7 +83,7 @@ func TestStashBindOpensWindowInStash(t *testing.T) {
 
 func TestStashBindRunsEveryCommand(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := stashSpawnRig(t, func(c *ports.Config) { c.Binds["Alt+Ctrl+Shift+f"] = "stash one; two" })
+		r := stashSpawnRig(t, func(c *domain.Config) { c.Binds["Alt+Ctrl+Shift+f"] = "stash one; two" })
 		r.key(t, "f", domain.ModAlt|domain.ModCtrl|domain.ModShift)
 		a, b := receive(t, r.spawn), receive(t, r.spawn)
 		if a.Argv[0] != "one" || b.Argv[0] != "two" || slotToken(t, a) == slotToken(t, b) {
@@ -143,13 +143,13 @@ func TestToggleNonEmptyStashDoesNotSpawn(t *testing.T) {
 
 func TestToggleEmptyStashRespectsOption(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := stashSpawnRig(t, func(c *ports.Config) { c.Stash.SpawnTerminal = false })
+		r := stashSpawnRig(t, func(c *domain.Config) { c.Stash.SpawnTerminal = false })
 		r.mapWindow(t, 1)
 		r.key(t, "s", domain.ModAlt)
 		if len(r.spawn) != 0 {
 			t.Fatal("spawned with stash.spawn-terminal off")
 		}
-		r = stashSpawnRig(t, func(c *ports.Config) { c.Terminal.Command = nil })
+		r = stashSpawnRig(t, func(c *domain.Config) { c.Terminal.Command = nil })
 		r.mapWindow(t, 1)
 		r.key(t, "s", domain.ModAlt)
 		if len(r.spawn) != 0 {
@@ -177,7 +177,7 @@ func TestToggleEmptyStashInOverviewDoesNotSpawn(t *testing.T) {
 // one is awaited, and the window that maps lands in the stash.
 func TestFourFingerSwipeEmptyStashOpensTerminal(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startSwipe(t, func(c *ports.Config) { c.Stash.SpawnTerminal = true })
+		r := startSwipe(t, func(c *domain.Config) { c.Stash.SpawnTerminal = true })
 		r.four(t, 0, 40, 10)
 		req := receive(t, r.spawn)
 		if len(req.Argv) != 1 || req.Argv[0] != "foot" {
@@ -198,7 +198,7 @@ func TestFourFingerSwipeEmptyStashOpensTerminal(t *testing.T) {
 
 func TestFourFingerSwipeEmptyStashRespectsOption(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startSwipe(t, func(c *ports.Config) { c.Stash.SpawnTerminal = false })
+		r := startSwipe(t, func(c *domain.Config) { c.Stash.SpawnTerminal = false })
 		r.four(t, 0, 40, 10)
 		if len(r.spawn) != 0 {
 			t.Fatal("spawned with stash.spawn-terminal off")

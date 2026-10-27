@@ -46,7 +46,7 @@ const (
 // for seconds, so none settles during a measure even under -race or load.
 func publishRig(t testing.TB, screens int) *Core {
 	t.Helper()
-	var cfg ports.Config
+	var cfg domain.Config
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 2
 	cfg.Border.Width = 2
@@ -418,7 +418,7 @@ func TestPublishLeavingAllocations(t *testing.T) {
 func TestPublishSubscribersAllocations(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c := publishRig(t, 2)
-		c.ch.State = make(chan ports.State, 1)
+		c.ch.State = make(chan domain.State, 1)
 		c.ch.Workspaces = make(chan ports.Workspaces, 1)
 		t0 := time.Now()
 		for _, sc := range c.screens {
@@ -470,7 +470,7 @@ func TestPublishSubscribersAllocations(t *testing.T) {
 			t.Error("the sent output layout shares the scratch")
 		}
 		// And a later change leaves them as they were.
-		want := ports.State{Output: st.Output, Outputs: slices.Clone(st.Outputs), Windows: slices.Clone(st.Windows), Workspaces: cloneState(st).Workspaces}
+		want := domain.State{Output: st.Output, Outputs: slices.Clone(st.Outputs), Windows: slices.Clone(st.Windows), Workspaces: cloneState(st).Workspaces}
 		w := *st.Window
 		want.Window = &w
 		c.windows.setIdleInhibit(st.Windows[0].ID, true)
@@ -505,7 +505,7 @@ func inSlice[T any](p *T, s []T) bool {
 // the state and workspace subscribers attached.
 func BenchmarkPublishSubscribers(b *testing.B) {
 	c := publishRig(b, 2)
-	c.ch.State = make(chan ports.State, 1)
+	c.ch.State = make(chan domain.State, 1)
 	c.ch.Workspaces = make(chan ports.Workspaces, 1)
 	t0 := time.Now()
 	for _, sc := range c.screens {

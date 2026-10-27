@@ -116,7 +116,7 @@ const applyTimeout = 5 * time.Second
 
 // drmBackend is the seat and the cards with at least one usable output.
 type drmBackend struct {
-	startupConfig ports.Config
+	startupConfig domain.Config
 	render        ports.RenderDevice
 	opener        ports.RenderDeviceOpener
 	renderInfo    ports.GPUInfo
@@ -259,7 +259,7 @@ func safe(name string, fn func() error) (err error) {
 
 // openDRM opens the seat and every card with a connected display. Outputs
 // are found by the first Scan of each card.
-func openDRM(ctx context.Context, cfg ports.Config, opener ports.RenderDeviceOpener) (*drmBackend, error) {
+func openDRM(ctx context.Context, cfg domain.Config, opener ports.RenderDeviceOpener) (*drmBackend, error) {
 	log := logging.For(ctx, "drm")
 	s, err := seat.Open(ctx, logging.For(ctx, "seat"))
 	if err != nil {
@@ -351,13 +351,13 @@ func (b *drmBackend) openCard(ctx context.Context, info ports.GPUInfo, mode drm.
 }
 
 // wantFromConfig turns output.<name> and render.* entries into connector choices.
-func wantFromConfig(cfg ports.Config) drm.Want {
+func wantFromConfig(cfg domain.Config) drm.Want {
 	r := cfg.Render
 	want := drm.Want{Disabled: map[string]bool{}, Modes: map[string][3]float64{}, HDR: map[string]drm.HDRSettings{}, NoScanout: !r.DirectScanout, NoTearing: !r.Tearing, NoVRR: !r.VRR, VRRFlipGap: r.VRRFlipGap}
 	for _, o := range cfg.Outputs {
 		nits := o.SDRBrightness
 		if nits == 0 {
-			nits = ports.DefaultSDRBrightness
+			nits = domain.DefaultSDRBrightness
 		}
 		want.HDR[o.Name] = drm.HDRSettings{Enabled: o.HDR, SDRBrightness: nits}
 		if o.Off {
@@ -403,7 +403,7 @@ func (b *drmBackend) close() {
 // output configuration: reloads and protocol requests go through apply, and
 // each configuration is finished when its outputs are ready, fail or time
 // out. It returns when ctx ends, after every output is closed.
-func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm.Want, initial ports.Config, apply *outputApply, ch outputChannels, curs *cursors, log zerowrap.Logger) error {
+func (b *drmBackend) runOutputs(ctx context.Context, want func(domain.Config) drm.Want, initial domain.Config, apply *outputApply, ch outputChannels, curs *cursors, log zerowrap.Logger) error {
 	ctx, cancel := context.WithCancel(ctx)
 	var readers sync.WaitGroup
 	// A reader that fails sends at most once; cards come and go, so the
@@ -761,7 +761,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	// configure starts cfg; complete reports its result to apply. apply
 	// hands out one configuration at a time, and a rollback or reload starts
 	// on a later iteration, never inside scan or another configure.
-	configure := func(cfg ports.Config) {
+	configure := func(cfg domain.Config) {
 		currentConfig = cfg
 		op++
 		timer.Stop()

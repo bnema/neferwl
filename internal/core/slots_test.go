@@ -20,7 +20,7 @@ type slotRig struct {
 	scenes     chan []domain.Scene
 	workspaces chan ports.Workspaces
 	errs       chan error
-	cfg        ports.Config
+	cfg        domain.Config
 	// With animations on and a clock the test moves (startSlotsMode),
 	// land flips the output past every spring.
 	clk    *stepClock
@@ -48,7 +48,7 @@ func startSlotsMode(t *testing.T, animated *bool, numbered ...bool) *slotRig {
 	cfg.Border.Width = 0
 	// A cell is a tenth of the width: the slots take 7 and 3 cells.
 	cfg.Layout.MaxColumns = 10
-	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "dev", Slots: []ports.SlotConfig{
+	cfg.Workspaces = []domain.WorkspaceConfig{{Name: "dev", Slots: []domain.SlotConfig{
 		{Index: 1, Cells: 7, Argv: []string{"code"}},
 		{Index: 2, Cells: 3, Argv: []string{"foot"}},
 	}}}
@@ -302,12 +302,12 @@ func TestSlotReload(t *testing.T) {
 		sceneMatch(t, r.scenes, func(s domain.Scene) bool { return len(s.Windows) == 1 })
 		cfg := r.cfg
 		ws := cfg.Workspaces[0]
-		ws.Slots = []ports.SlotConfig{
+		ws.Slots = []domain.SlotConfig{
 			{Index: 1, Cells: 5, Argv: []string{"code"}},  // width change only
 			{Index: 2, Cells: 3, Argv: []string{"kitty"}}, // empty slot, new command
 			{Index: 3, Cells: 2, Argv: []string{"btop"}},  // new slot
 		}
-		cfg.Workspaces = []ports.WorkspaceConfig{ws}
+		cfg.Workspaces = []domain.WorkspaceConfig{ws}
 		r.reload <- ports.ConfigChanged{Config: cfg}
 		var argv []string
 		for range 2 {
@@ -335,7 +335,7 @@ func TestSlotReload(t *testing.T) {
 		noSpawn(t, r.spawn) // kitty and btop are still starting
 		// Dropping the workspace's slots spawns nothing and keeps the window.
 		ws.Slots = nil
-		cfg.Workspaces = []ports.WorkspaceConfig{ws}
+		cfg.Workspaces = []domain.WorkspaceConfig{ws}
 		r.reload <- ports.ConfigChanged{Config: cfg}
 		scene(t, r.scenes)
 		noSpawn(t, r.spawn)
@@ -350,8 +350,8 @@ func TestInvalidSlotWidthRejected(t *testing.T) {
 		receive(t, r.spawn)
 		cfg := r.cfg
 		ws := cfg.Workspaces[0]
-		ws.Slots = []ports.SlotConfig{{Index: 1, Cells: 17, Argv: []string{"x"}}}
-		cfg.Workspaces = []ports.WorkspaceConfig{ws}
+		ws.Slots = []domain.SlotConfig{{Index: 1, Cells: 17, Argv: []string{"x"}}}
+		cfg.Workspaces = []domain.WorkspaceConfig{ws}
 		r.reload <- ports.ConfigChanged{Config: cfg}
 		if err := receive(t, r.errs); err == nil {
 			t.Fatal("no error")
@@ -370,8 +370,8 @@ func TestSlotReloadWhileShownSpawnsOnce(t *testing.T) {
 		r.press(t, "d")
 		cfg := r.cfg
 		ws := cfg.Workspaces[0]
-		ws.Slots = append(ws.Slots, ports.SlotConfig{Index: 3, Cells: 2, Argv: []string{"btop"}})
-		cfg.Workspaces = []ports.WorkspaceConfig{ws}
+		ws.Slots = append(ws.Slots, domain.SlotConfig{Index: 3, Cells: 2, Argv: []string{"btop"}})
+		cfg.Workspaces = []domain.WorkspaceConfig{ws}
 		r.reload <- ports.ConfigChanged{Config: cfg}
 		if v := receive(t, r.spawn); v.Argv[0] != "btop" {
 			t.Fatal(v)

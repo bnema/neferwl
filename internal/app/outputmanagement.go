@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
@@ -23,12 +24,12 @@ type outputApply struct {
 	// running is set while the backend applies a configuration. The next
 	// one waits in start until it finishes: configurations never overlap.
 	running bool
-	start   ports.Config
+	start   domain.Config
 	pending bool
 	// req is the request behind the backend work; nil for a reload or after
 	// a reload superseded it.
 	req      *ports.OutputApply
-	previous map[string]ports.OutputConfig
+	previous map[string]domain.OutputConfig
 	rollback bool
 	failure  error
 	// config is the latest effective configuration core has not received.
@@ -45,7 +46,7 @@ func newOutputApply(state *core.OutputOverrides, log zerowrap.Logger) *outputApp
 
 // reload replaces the file configuration and supersedes the pending request.
 // Only the latest reload needs backend work.
-func (a *outputApply) reload(file ports.Config) {
+func (a *outputApply) reload(file domain.Config) {
 	cfg := a.state.Reload(file)
 	a.setConfig(cfg)
 	if a.req != nil {
@@ -88,12 +89,12 @@ func (a *outputApply) request(req ports.OutputApply) {
 
 // next returns the configuration the backend must start now, once. It
 // returns nothing while the backend applies the previous one.
-func (a *outputApply) next() (ports.Config, bool) {
+func (a *outputApply) next() (domain.Config, bool) {
 	if a.running || !a.pending {
-		return ports.Config{}, false
+		return domain.Config{}, false
 	}
 	cfg := a.start
-	a.start, a.pending, a.running = ports.Config{}, false, true
+	a.start, a.pending, a.running = domain.Config{}, false, true
 	return cfg, true
 }
 
@@ -138,11 +139,11 @@ func (a *outputApply) finished(err error) {
 }
 
 // due replaces the configuration waiting to start: only the latest counts.
-func (a *outputApply) due(cfg ports.Config) {
+func (a *outputApply) due(cfg domain.Config) {
 	a.start, a.pending = cfg, true
 }
 
-func (a *outputApply) setConfig(cfg ports.Config) {
+func (a *outputApply) setConfig(cfg domain.Config) {
 	a.config = ports.ConfigChanged{Config: cfg}
 	a.publish = true
 }

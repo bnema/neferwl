@@ -7,13 +7,12 @@ import (
 	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestPlaceOutputs(t *testing.T) {
 	at := func(x, y int) *image.Point { return &image.Point{X: x, Y: y} }
-	rel := func(r domain.OutputRelation, to string, off int) ports.OutputAnchor {
-		return ports.OutputAnchor{Relation: r, To: to, Offset: off}
+	rel := func(r domain.OutputRelation, to string, off int) domain.OutputAnchor {
+		return domain.OutputAnchor{Relation: r, To: to, Offset: off}
 	}
 	const (
 		rightOf = domain.RelationRightOf

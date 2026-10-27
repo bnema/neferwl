@@ -5,7 +5,6 @@ import (
 	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // A publish that changes nothing on an output keeps that output's Seq, so
@@ -37,7 +36,7 @@ func TestSceneSeqKeptWhenNothingChanged(t *testing.T) {
 func TestAnimatingKeyGetsFreshSeq(t *testing.T) {
 	tests := []struct {
 		name string
-		edit func(*ports.Config)
+		edit func(*domain.Config)
 		// setup returns the scene before the key.
 		setup func(*testing.T, *swipeRig) domain.Scene
 		sym   string
@@ -45,7 +44,7 @@ func TestAnimatingKeyGetsFreshSeq(t *testing.T) {
 		// same: the key's scene draws what the previous one did.
 		same bool
 	}{
-		{"width change", func(c *ports.Config) {
+		{"width change", func(c *domain.Config) {
 			c.Layout.MaxColumns = 4
 			c.Binds["Cmd+Ctrl+Right"] = "set-column-width +1"
 		},

@@ -6,7 +6,6 @@ import (
 
 	"github.com/bnema/neferwl/internal/core/layout"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // publishState sends the script-facing snapshot when it changed. It is
@@ -27,12 +26,12 @@ func (c *Core) publishState() {
 }
 
 // state is a fresh snapshot, the caller's to keep.
-func (c *Core) state() ports.State { return cloneState(c.stateInto(ports.State{})) }
+func (c *Core) state() domain.State { return cloneState(c.stateInto(domain.State{})) }
 
 // stateInto builds the snapshot in st's storage: the result aliases it and
 // its Window points into its Windows. The placeholder screen is not an
 // output.
-func (c *Core) stateInto(st ports.State) ports.State {
+func (c *Core) stateInto(st domain.State) domain.State {
 	st.Output, st.Window = c.cur().name(), nil
 	st.Outputs, st.Windows = st.Outputs[:0], st.Windows[:0]
 	// Workspaces keep their Columns storage across calls (see workspaceInto).
@@ -48,7 +47,7 @@ func (c *Core) stateInto(st ports.State) ports.State {
 		}
 		m := s.mon
 		cur := m.Current()
-		o := ports.OutputState{Name: s.name(), Count: numbered(m), Workspace: cur.Name, WorkspaceID: cur.ID}
+		o := domain.OutputState{Name: s.name(), Count: numbered(m), Workspace: cur.Name, WorkspaceID: cur.ID}
 		if i := indexOf(m.Workspaces, cur); i >= 0 {
 			o.Active = i + 1
 		}
@@ -69,7 +68,7 @@ func (c *Core) stateInto(st ports.State) ports.State {
 			c.scratch.ids = w.AppendWindows(c.scratch.ids[:0])
 			for _, id := range c.scratch.ids {
 				rec := c.windows.lookup(id)
-				v := ports.WindowState{ID: id, AppID: rec.client.AppID, PID: rec.client.PID, Sandbox: rec.client.Sandbox, ContentType: contentTypeName(rec.client.ContentType), Xwayland: rec.client.Xwayland, Output: s.name(), Workspace: n, WorkspaceID: w.ID, WorkspaceName: w.Name, Visible: shown[id], IdleInhibit: rec.idleInhibit, ShortcutsInhibited: rec.inhibitShortcuts, Floating: w.IsFloat(id), Fullscreen: w.Fullscreen == id}
+				v := domain.WindowState{ID: id, AppID: rec.client.AppID, PID: rec.client.PID, Sandbox: rec.client.Sandbox, ContentType: contentTypeName(rec.client.ContentType), Xwayland: rec.client.Xwayland, Output: s.name(), Workspace: n, WorkspaceID: w.ID, WorkspaceName: w.Name, Visible: shown[id], IdleInhibit: rec.idleInhibit, ShortcutsInhibited: rec.inhibitShortcuts, Floating: w.IsFloat(id), Fullscreen: w.Fullscreen == id}
 				if c.constrained.ID == id {
 					switch c.constrained.Mode {
 					case domain.ConstraintLock:
@@ -90,7 +89,7 @@ func (c *Core) stateInto(st ports.State) ports.State {
 		}
 	}
 	st.Workspaces = st.Workspaces[:nws]
-	slices.SortFunc(st.Windows, func(a, b ports.WindowState) int { return cmp.Compare(a.ID, b.ID) })
+	slices.SortFunc(st.Windows, func(a, b domain.WindowState) int { return cmp.Compare(a.ID, b.ID) })
 	for i := range st.Windows {
 		if st.Windows[i].ID == focus && focus != 0 {
 			st.Window = &st.Windows[i]
@@ -119,7 +118,7 @@ const (
 	contentGame  = "game"
 )
 
-// Values of ports.WindowState.PointerConstraint.
+// Values of domain.WindowState.PointerConstraint.
 const (
 	constraintLocked   = "locked"
 	constraintConfined = "confined"
@@ -128,21 +127,21 @@ const (
 // workspaceInto fills ws[i] (appended when ws is shorter) with w's settled
 // geometry, reusing the storage the element held: no slide, fade or zoom,
 // floats and the stash left out. A fullscreen tiled window covers the output.
-func (c *Core) workspaceInto(ws []ports.WorkspaceState, i int, w *Workspace, output string, number int, visible bool) []ports.WorkspaceState {
+func (c *Core) workspaceInto(ws []domain.WorkspaceState, i int, w *Workspace, output string, number int, visible bool) []domain.WorkspaceState {
 	if i < cap(ws) {
 		ws = ws[:i+1]
 	} else {
-		ws = append(ws, ports.WorkspaceState{})
+		ws = append(ws, domain.WorkspaceState{})
 	}
 	v := &ws[i]
 	cols := v.Columns[:0]
-	*v = ports.WorkspaceState{ID: w.ID, Number: number, Name: w.Name, Output: output, Visible: visible, Overflow: string(w.Overflow)}
+	*v = domain.WorkspaceState{ID: w.ID, Number: number, Name: w.Name, Output: output, Visible: visible, Overflow: string(w.Overflow)}
 	c.scratch.rects = w.Engine().ColumnRects(w.Snapshot(), c.scratch.rects, layout.RectOpts{})
 	for ci, col := range w.Columns {
 		if ci < cap(cols) {
 			cols = cols[:ci+1]
 		} else {
-			cols = append(cols, ports.ColumnState{})
+			cols = append(cols, domain.ColumnState{})
 		}
 		cv := &cols[ci]
 		tiles := cv.Windows[:0]
@@ -153,19 +152,19 @@ func (c *Core) workspaceInto(ws []ports.WorkspaceState, i int, w *Workspace, out
 			if w.Fullscreen == id {
 				tr = w.Output
 			}
-			tiles = append(tiles, ports.TileState{ID: id, Rect: tr})
+			tiles = append(tiles, domain.TileState{ID: id, Rect: tr})
 		}
-		*cv = ports.ColumnState{Rect: r, Windows: tiles}
+		*cv = domain.ColumnState{Rect: r, Windows: tiles}
 	}
 	v.Columns = cols
 	return ws
 }
 
-func sameState(a, b ports.State) bool {
+func sameState(a, b domain.State) bool {
 	return a.Output == b.Output && slices.Equal(a.Outputs, b.Outputs) && slices.Equal(a.Windows, b.Windows) &&
-		slices.EqualFunc(a.Workspaces, b.Workspaces, func(x, y ports.WorkspaceState) bool {
+		slices.EqualFunc(a.Workspaces, b.Workspaces, func(x, y domain.WorkspaceState) bool {
 			return x.ID == y.ID && x.Number == y.Number && x.Name == y.Name && x.Output == y.Output && x.Visible == y.Visible && x.Overflow == y.Overflow &&
-				slices.EqualFunc(x.Columns, y.Columns, func(p, q ports.ColumnState) bool {
+				slices.EqualFunc(x.Columns, y.Columns, func(p, q domain.ColumnState) bool {
 					return p.Rect == q.Rect && slices.Equal(p.Windows, q.Windows)
 				})
 		}) &&
@@ -174,14 +173,14 @@ func sameState(a, b ports.State) bool {
 
 // cloneState copies st out of the scratch: empty lists stay non-nil (JSON
 // []), and Window is its own copy.
-func cloneState(st ports.State) ports.State {
-	out := ports.State{Output: st.Output, Outputs: append([]ports.OutputState{}, st.Outputs...), Windows: append([]ports.WindowState{}, st.Windows...)}
-	out.Workspaces = make([]ports.WorkspaceState, len(st.Workspaces))
+func cloneState(st domain.State) domain.State {
+	out := domain.State{Output: st.Output, Outputs: append([]domain.OutputState{}, st.Outputs...), Windows: append([]domain.WindowState{}, st.Windows...)}
+	out.Workspaces = make([]domain.WorkspaceState, len(st.Workspaces))
 	for i, w := range st.Workspaces {
 		out.Workspaces[i] = w
-		out.Workspaces[i].Columns = make([]ports.ColumnState, len(w.Columns))
+		out.Workspaces[i].Columns = make([]domain.ColumnState, len(w.Columns))
 		for j, col := range w.Columns {
-			out.Workspaces[i].Columns[j] = ports.ColumnState{Rect: col.Rect, Windows: append([]ports.TileState{}, col.Windows...)}
+			out.Workspaces[i].Columns[j] = domain.ColumnState{Rect: col.Rect, Windows: append([]domain.TileState{}, col.Windows...)}
 		}
 	}
 	if st.Window != nil {

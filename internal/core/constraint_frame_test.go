@@ -14,10 +14,10 @@ import (
 // 100..125 shows.
 func partlyShown(t *testing.T) *Core {
 	t.Helper()
-	var cfg ports.Config
+	var cfg domain.Config
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 2
-	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Layouts: make(chan ports.Layout, 1), Constraints: make(chan ports.PointerConstraint, 1), State: make(chan ports.State, 1), Workspaces: make(chan ports.Workspaces, 1), Commands: make(chan ports.ClientCommand, 16)}, Options{})
+	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Layouts: make(chan ports.Layout, 1), Constraints: make(chan ports.PointerConstraint, 1), State: make(chan domain.State, 1), Workspaces: make(chan ports.Workspaces, 1), Commands: make(chan ports.ClientCommand, 16)}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

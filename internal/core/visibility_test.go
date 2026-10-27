@@ -14,7 +14,7 @@ import (
 // are not visible, and keep their size and output.
 func TestConfigureVisible(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		cfg := ports.Config{}
+		cfg := domain.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 1
 		commands := make(chan ports.ClientCommand, 256)

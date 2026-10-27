@@ -3,13 +3,15 @@ package app
 import (
 	"errors"
 	"fmt"
-	"github.com/bnema/zerowrap"
-	"golang.org/x/sys/unix"
 	"path/filepath"
 	"strings"
 
+	"github.com/bnema/zerowrap"
+	"golang.org/x/sys/unix"
+
 	"github.com/bnema/neferwl/internal/adapters/drm"
 	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -44,7 +46,7 @@ func resolveIDs(ids []string) ([]string, error) {
 
 // gpuSelectConfig takes the environment value explicitly, keeping precedence
 // testable without reading process-global state. Filesystem resolution is I/O.
-func gpuSelectConfig(cfg ports.Config, envRender string) (core.GPUSelectConfig, error) {
+func gpuSelectConfig(cfg domain.Config, envRender string) (core.GPUSelectConfig, error) {
 	var out core.GPUSelectConfig
 	var err error
 	if out.Devices, err = resolveIDs(cfg.DRM.Devices); err != nil {
@@ -79,7 +81,7 @@ func multiGPUMode(value string) drm.MultiGPU {
 	}
 }
 
-func selectGPUPlans(cands []ports.GPUInfo, cfg ports.Config, env string) ([]cardPlan, ports.GPUSelection, error) {
+func selectGPUPlans(cands []ports.GPUInfo, cfg domain.Config, env string) ([]cardPlan, ports.GPUSelection, error) {
 	config, err := gpuSelectConfig(cfg, env)
 	if err != nil {
 		return nil, ports.GPUSelection{}, err
@@ -121,7 +123,7 @@ func openPlannedRender(opener ports.RenderDeviceOpener, plans []cardPlan, strict
 }
 
 // openHeadlessRender tolerates missing DRM discovery only without constraints.
-func openHeadlessRender(opener ports.RenderDeviceOpener, cands []ports.GPUInfo, listErr error, cfg ports.Config, env string, log zerowrap.Logger) (ports.RenderDevice, error) {
+func openHeadlessRender(opener ports.RenderDeviceOpener, cands []ports.GPUInfo, listErr error, cfg domain.Config, env string, log zerowrap.Logger) (ports.RenderDevice, error) {
 	constrained := len(cfg.DRM.Devices) > 0 || len(cfg.DRM.Ignore) > 0 || cfg.Render.Device != "" || env != ""
 	fallback := func(reason error) (ports.RenderDevice, error) {
 		log.Info().Err(reason).Msg("render GPU: first usable Vulkan device (headless discovery fallback)")

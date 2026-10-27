@@ -11,7 +11,7 @@ import (
 
 func TestCoreCoveringFloatSceneAndHit(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		cfg := ports.Config{}
+		cfg := domain.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
 		cfg.Border.Width = 2
@@ -77,7 +77,7 @@ func TestCoreCoveringFloatSceneAndHit(t *testing.T) {
 // The overview darkens the wallpaper behind its previews, tiles only too.
 func TestCoreOverviewDimsBehind(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		cfg := ports.Config{}
+		cfg := domain.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
 		cfg.Floating.Dim = 0.3

@@ -22,8 +22,8 @@ type multiRig struct {
 	commands chan ports.ClientCommand
 	scenes   chan []domain.Scene
 	spawn    chan ports.SpawnRequest
-	state    chan ports.State
-	cfg      ports.Config
+	state    chan domain.State
+	cfg      domain.Config
 }
 
 var (
@@ -34,19 +34,19 @@ var (
 
 // startMulti runs core with Alt as Cmd, no border and no gaps, and plugs
 // the given outputs in order.
-func startMulti(t *testing.T, edit func(*ports.Config), outs ...ports.OutputInfo) *multiRig {
+func startMulti(t *testing.T, edit func(*domain.Config), outs ...ports.OutputInfo) *multiRig {
 	t.Helper()
 	return startRig(t, false, edit, outs...)
 }
 
 // startRig is startMulti; terminal enables the configured automatic-open policy.
-func startRig(t *testing.T, terminal bool, edit func(*ports.Config), outs ...ports.OutputInfo) *multiRig {
+func startRig(t *testing.T, terminal bool, edit func(*domain.Config), outs ...ports.OutputInfo) *multiRig {
 	t.Helper()
 	return startRigWith(t, core.Options{Terminal: terminal}, edit, outs...)
 }
 
 // startRigWith is startRig with explicit core options.
-func startRigWith(t *testing.T, opts core.Options, edit func(*ports.Config), outs ...ports.OutputInfo) *multiRig {
+func startRigWith(t *testing.T, opts core.Options, edit func(*domain.Config), outs ...ports.OutputInfo) *multiRig {
 	t.Helper()
 	cfg := altCmdDefaults()
 	cfg.Border.Width = 0
@@ -56,7 +56,7 @@ func startRigWith(t *testing.T, opts core.Options, edit func(*ports.Config), out
 	r := &multiRig{
 		client: make(chan ports.ClientEvent, 16), input: make(chan ports.InputEvent, 16),
 		output: make(chan ports.OutputEvent, 4), reload: make(chan ports.ConfigChanged, 4),
-		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []domain.Scene, 1), spawn: make(chan ports.SpawnRequest, 16), state: make(chan ports.State, 1), cfg: cfg,
+		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []domain.Scene, 1), spawn: make(chan ports.SpawnRequest, 16), state: make(chan domain.State, 1), cfg: cfg,
 	}
 	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Spawn: r.spawn, State: r.state}, opts)
 	if err != nil {
@@ -123,8 +123,8 @@ func lastOutputs(t *testing.T, ch chan ports.ClientCommand) ports.SetOutputs {
 
 func TestOutputsLeftToRight(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Outputs = []ports.OutputConfig{{Name: "DP-2", Scale: 2}, {Name: "DP-1"}}
+		r := startMulti(t, func(c *domain.Config) {
+			c.Outputs = []domain.OutputConfig{{Name: "DP-2", Scale: 2}, {Name: "DP-1"}}
 		}, left, right)
 		out := lastOutputs(t, r.commands)
 		// Config order wins: DP-2 (200x100 logical at scale 2), then DP-1.
@@ -138,9 +138,9 @@ func TestOutputsLeftToRight(t *testing.T) {
 
 func TestLayoutPerOutput(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
-		r := startLanding(t, animated, func(c *ports.Config) {
+		r := startLanding(t, animated, func(c *domain.Config) {
 			c.Layout.MaxColumns = 2
-			c.Layout.Outputs = []ports.OutputLayout{{Output: "Acme B 2", MaxColumns: 4, Overflow: "fixed"}}
+			c.Layout.Outputs = []domain.OutputLayout{{Output: "Acme B 2", MaxColumns: 4, Overflow: "fixed"}}
 		}, left, right)
 		layoutPerOutput(t, r)
 	})
@@ -183,9 +183,9 @@ func widths(set []domain.Scene, output string) []int {
 
 func TestLayoutPerOutputFollowsMonitorAndReload(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
-		r := startLanding(t, animated, func(c *ports.Config) {
+		r := startLanding(t, animated, func(c *domain.Config) {
 			c.Layout.MaxColumns = 1
-			c.Layout.Outputs = []ports.OutputLayout{{Output: "Acme B 2", LayoutRules: ports.LayoutRules{MaxColumns: 2}}}
+			c.Layout.Outputs = []domain.OutputLayout{{Output: "Acme B 2", LayoutRules: domain.LayoutRules{MaxColumns: 2}}}
 		}, right)
 		layoutPerOutputFollowsMonitorAndReload(t, r)
 	})
@@ -214,8 +214,8 @@ func layoutPerOutputFollowsMonitorAndReload(t *testing.T, r *landRig) {
 
 func TestExplicitOutputPositionAndAutomaticFallback(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Outputs = []ports.OutputConfig{{Name: "DP-1"}, {Name: "DP-2", Pos: &image.Point{X: 100, Y: 40}}}
+		r := startMulti(t, func(c *domain.Config) {
+			c.Outputs = []domain.OutputConfig{{Name: "DP-1"}, {Name: "DP-2", Pos: &image.Point{X: 100, Y: 40}}}
 		}, left, right)
 		out := lastOutputs(t, r.commands)
 		if len(out.Outputs) != 2 || out.Outputs[0].X != 500 || out.Outputs[0].Y != 0 || out.Outputs[1].X != 100 || out.Outputs[1].Y != 40 {
@@ -234,11 +234,11 @@ func TestExplicitOutputPositionAndAutomaticFallback(t *testing.T) {
 
 func TestRelativeOutputPlacement(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Outputs = []ports.OutputConfig{
+		r := startMulti(t, func(c *domain.Config) {
+			c.Outputs = []domain.OutputConfig{
 				{Name: "DP-1"},
-				{Name: "DP-2", Anchor: ports.OutputAnchor{Relation: domain.RelationBelow, To: "DP-1", Offset: 30}},
-				{Name: "DP-3", Anchor: ports.OutputAnchor{Relation: domain.RelationRightOf, To: "DP-2", Offset: -10}},
+				{Name: "DP-2", Anchor: domain.OutputAnchor{Relation: domain.RelationBelow, To: "DP-1", Offset: 30}},
+				{Name: "DP-3", Anchor: domain.OutputAnchor{Relation: domain.RelationRightOf, To: "DP-2", Offset: -10}},
 			}
 		}, left, right, third)
 		positions := func() [][2]int {
@@ -273,8 +273,8 @@ func TestRelativeOutputPlacement(t *testing.T) {
 
 func TestRelativeOutputWithoutReferenceIsAutomatic(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Outputs = []ports.OutputConfig{{Name: "DP-2", Anchor: ports.OutputAnchor{Relation: domain.RelationRightOf, To: "DP-1", Offset: 25}}}
+		r := startMulti(t, func(c *domain.Config) {
+			c.Outputs = []domain.OutputConfig{{Name: "DP-2", Anchor: domain.OutputAnchor{Relation: domain.RelationRightOf, To: "DP-1", Offset: 25}}}
 		}, right)
 		if out := lastOutputs(t, r.commands).Outputs; len(out) != 1 || out[0].X != 0 || out[0].Y != 0 {
 			t.Fatalf("without reference: %+v", out)
@@ -398,10 +398,10 @@ func TestMoveWorkspaceToMonitor(t *testing.T) {
 
 func TestMonitorActionsFollowGeometry(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Outputs = []ports.OutputConfig{
+		r := startMulti(t, func(c *domain.Config) {
+			c.Outputs = []domain.OutputConfig{
 				{Name: "DP-1"},
-				{Name: "DP-2", Anchor: ports.OutputAnchor{Relation: domain.RelationBelow, To: "DP-1"}},
+				{Name: "DP-2", Anchor: domain.OutputAnchor{Relation: domain.RelationBelow, To: "DP-1"}},
 			}
 			// Without a default bind; these replace move-workspace-prev/next.
 			c.Binds["Cmd+Ctrl+Shift+Up"] = string(core.ActionMoveWorkspaceToMonitorUp)
@@ -499,8 +499,8 @@ func TestReplugReturnsHiddenGuestAtOnce(t *testing.T) {
 
 func TestNamedWorkspaceHomeChangeAppliesLive(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Workspaces = []ports.WorkspaceConfig{{Name: "web", Monitor: "DP-1"}}
+		r := startMulti(t, func(c *domain.Config) {
+			c.Workspaces = []domain.WorkspaceConfig{{Name: "web", Monitor: "DP-1"}}
 			c.Binds["Alt+w"] = "workspace web"
 		}, left, right)
 		r.key(t, "w", domain.ModAlt)
@@ -519,8 +519,8 @@ func TestNamedWorkspaceHomeChangeAppliesLive(t *testing.T) {
 
 func TestNamedWorkspaceOnItsMonitor(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Workspaces = []ports.WorkspaceConfig{{Name: "web", Monitor: "DP-2"}}
+		r := startMulti(t, func(c *domain.Config) {
+			c.Workspaces = []domain.WorkspaceConfig{{Name: "web", Monitor: "DP-2"}}
 			c.Binds["Alt+w"] = "workspace web"
 		}, left)
 		// DP-2 is not plugged: web lives on DP-1 as a guest.
@@ -558,7 +558,7 @@ func TestLayersStayOnTheirOutput(t *testing.T) {
 
 func TestScaleBindTargetsFocusedOutput(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) { c.Binds["Alt+equal"] = "scale-up" }, left, right)
+		r := startMulti(t, func(c *domain.Config) { c.Binds["Alt+equal"] = "scale-up" }, left, right)
 		r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
 		set := r.key(t, "equal", domain.ModAlt)
 		if set[0].Scale != 1 || set[1].Scale == 1 {
@@ -610,8 +610,8 @@ func TestModeChangeKeepsScreen(t *testing.T) {
 
 func TestPrimaryOutputGetsFocusAtStartup(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Outputs = []ports.OutputConfig{{Name: "DP-1"}, {Name: "DP-2", Primary: true}}
+		r := startMulti(t, func(c *domain.Config) {
+			c.Outputs = []domain.OutputConfig{{Name: "DP-1"}, {Name: "DP-2", Primary: true}}
 		}, left, right)
 		out := lastOutputs(t, r.commands)
 		// Placed right of DP-1, but focused.
@@ -683,7 +683,7 @@ func TestFirstTerminalFollowsSetOutputs(t *testing.T) {
 		spawn := make(chan ports.SpawnRequest, 1)
 		output := make(chan ports.OutputEvent, 1)
 		scenes := make(chan []domain.Scene, 1)
-		state := make(chan ports.State, 1)
+		state := make(chan domain.State, 1)
 		c, err := core.New(cfg, core.Channels{Output: output, Commands: commands, Spawn: spawn, Scenes: scenes, State: state}, core.Options{Terminal: true})
 		if err != nil {
 			t.Fatal(err)
@@ -727,7 +727,7 @@ func TestFirstTerminalLayoutWaitCancels(t *testing.T) {
 		spawn := make(chan ports.SpawnRequest, 1)
 		output := make(chan ports.OutputEvent, 1)
 		scenes := make(chan []domain.Scene, 1)
-		state := make(chan ports.State, 1)
+		state := make(chan domain.State, 1)
 		c, err := core.New(cfg, core.Channels{Output: output, Commands: commands, Spawn: spawn, Scenes: scenes, State: state}, core.Options{Terminal: true})
 		if err != nil {
 			t.Fatal(err)
@@ -760,7 +760,7 @@ func TestFirstTerminalSpawnFollowsDeliveredLayout(t *testing.T) {
 		spawn := make(chan ports.SpawnRequest, 1)
 		output := make(chan ports.OutputEvent, 1)
 		scenes := make(chan []domain.Scene, 1)
-		state := make(chan ports.State, 1)
+		state := make(chan domain.State, 1)
 		c, err := core.New(scrollDefaults(), core.Channels{Output: output, Commands: commands, Spawn: spawn, Scenes: scenes, State: state}, core.Options{Terminal: true})
 		if err != nil {
 			t.Fatal(err)
@@ -804,7 +804,7 @@ func TestTerminalAutoOpenFirstOnly(t *testing.T) {
 
 func TestTerminalAutoOpenOff(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startRig(t, true, func(c *ports.Config) { c.Terminal.AutoOpen = "off" }, left)
+		r := startRig(t, true, func(c *domain.Config) { c.Terminal.AutoOpen = "off" }, left)
 		if len(r.spawn) != 0 {
 			t.Fatal("opened a terminal with auto-open off")
 		}
@@ -860,7 +860,7 @@ func TestTerminalAutoOpenFirstSurvivesReloadBeforeOutput(t *testing.T) {
 
 func TestTerminalAutoOpenAllThenFirstDoesNotOpenAgain(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startRig(t, true, func(c *ports.Config) { c.Terminal.AutoOpen = "all" }, left)
+		r := startRig(t, true, func(c *domain.Config) { c.Terminal.AutoOpen = "all" }, left)
 		req := receive(t, r.spawn)
 		token := req.Env[0][len(ports.SlotEnv)+1:]
 		r.client <- ports.WindowMapped{ID: 1, Slot: token}
@@ -879,7 +879,7 @@ func TestTerminalAutoOpenAllThenFirstDoesNotOpenAgain(t *testing.T) {
 
 func TestEmptyWorkspaceGetsTerminal(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startRig(t, true, func(c *ports.Config) { c.Terminal.AutoOpen = "all" }, left, right)
+		r := startRig(t, true, func(c *domain.Config) { c.Terminal.AutoOpen = "all" }, left, right)
 		// One terminal per output, each tagged for its workspace.
 		var reqs []ports.SpawnRequest
 		for len(reqs) < 2 {
@@ -915,7 +915,7 @@ func TestEmptyWorkspaceGetsTerminal(t *testing.T) {
 func TestTerminalRetryFollowsClock(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		clk := newStepClock(t)
-		r := startRigWith(t, core.Options{Terminal: true, Clock: clk.clock}, func(c *ports.Config) { c.Terminal.AutoOpen = "all" }, left)
+		r := startRigWith(t, core.Options{Terminal: true, Clock: clk.clock}, func(c *domain.Config) { c.Terminal.AutoOpen = "all" }, left)
 		first := receive(t, r.spawn)
 		r.client <- ports.WindowMapped{ID: 1, Slot: token(t, first)}
 		receive(t, r.scenes)
@@ -994,19 +994,19 @@ func TestStateSnapshot(t *testing.T) {
 		for len(st.Windows) < 2 {
 			st = receive(t, r.state)
 		}
-		want := ports.State{
+		want := domain.State{
 			Output:  "DP-2",
-			Outputs: []ports.OutputState{{Name: "DP-1", Active: 1, Count: 1, WorkspaceID: 1}, {Name: "DP-2", Active: 1, Count: 1, WorkspaceID: 2}},
-			Windows: []ports.WindowState{
+			Outputs: []domain.OutputState{{Name: "DP-1", Active: 1, Count: 1, WorkspaceID: 1}, {Name: "DP-2", Active: 1, Count: 1, WorkspaceID: 2}},
+			Windows: []domain.WindowState{
 				{ID: 1, AppID: "foot", PID: 100, Output: "DP-1", Workspace: 1, WorkspaceID: 1, Visible: true, Column: 1, Row: 1},
 				{ID: 2, AppID: "firefox", PID: 200, Sandbox: "org.mozilla.firefox", Xwayland: true, Output: "DP-2", Workspace: 1, WorkspaceID: 2, Visible: true, Column: 1, Row: 1},
 			},
 		}
-		want.Workspaces = []ports.WorkspaceState{
-			{ID: 1, Number: 1, Output: "DP-1", Visible: true, Overflow: "scroll", Columns: []ports.ColumnState{{Rect: domain.Rect{W: 200, H: 100}, Windows: []ports.TileState{{ID: 1, Rect: domain.Rect{W: 200, H: 100}}}}}},
-			{ID: 3, Number: 2, Output: "DP-1", Overflow: "scroll", Columns: []ports.ColumnState{}},
-			{ID: 2, Number: 1, Output: "DP-2", Visible: true, Overflow: "scroll", Columns: []ports.ColumnState{{Rect: domain.Rect{W: 400, H: 200}, Windows: []ports.TileState{{ID: 2, Rect: domain.Rect{W: 400, H: 200}}}}}},
-			{ID: 4, Number: 2, Output: "DP-2", Overflow: "scroll", Columns: []ports.ColumnState{}},
+		want.Workspaces = []domain.WorkspaceState{
+			{ID: 1, Number: 1, Output: "DP-1", Visible: true, Overflow: "scroll", Columns: []domain.ColumnState{{Rect: domain.Rect{W: 200, H: 100}, Windows: []domain.TileState{{ID: 1, Rect: domain.Rect{W: 200, H: 100}}}}}},
+			{ID: 3, Number: 2, Output: "DP-1", Overflow: "scroll", Columns: []domain.ColumnState{}},
+			{ID: 2, Number: 1, Output: "DP-2", Visible: true, Overflow: "scroll", Columns: []domain.ColumnState{{Rect: domain.Rect{W: 400, H: 200}, Windows: []domain.TileState{{ID: 2, Rect: domain.Rect{W: 400, H: 200}}}}}},
+			{ID: 4, Number: 2, Output: "DP-2", Overflow: "scroll", Columns: []domain.ColumnState{}},
 		}
 		want.Window = &want.Windows[1]
 		if !reflect.DeepEqual(st, want) {
@@ -1025,8 +1025,8 @@ func TestStateSnapshot(t *testing.T) {
 
 func TestStateFollowsAppIDAndHiddenWorkspace(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Workspaces = []ports.WorkspaceConfig{{Name: "notes"}}
+		r := startMulti(t, func(c *domain.Config) {
+			c.Workspaces = []domain.WorkspaceConfig{{Name: "notes"}}
 			c.Binds["Alt+n"] = "workspace notes"
 		}, left)
 		r.client <- ports.WindowMapped{ID: 1, PID: 100}
@@ -1064,7 +1064,7 @@ func TestStateFollowsAppIDAndHiddenWorkspace(t *testing.T) {
 
 func TestMoveColumnOntoFullscreenStaysVisible(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left, right)
+		r := startMulti(t, func(c *domain.Config) { c.Layout.Overflow = "fixed" }, left, right)
 		r.mapWindow(t, 1)
 		r.mapWindow(t, 2)
 		// Window 2 goes to DP-2, alone, and goes fullscreen in place.
@@ -1105,7 +1105,7 @@ func windowsOf(set []domain.Scene, out string) (ids []domain.WindowID, focused d
 
 func TestExpelCrossesToFullNeighbor(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left, right)
+		r := startMulti(t, func(c *domain.Config) { c.Layout.Overflow = "fixed" }, left, right)
 		// DP-1 (max 2): [1] [2] [3] in the spiral; consume 3 left gives
 		// [1] [2 3], focus on 3 at the bottom of the edge column.
 		r.mapWindow(t, 1)
@@ -1147,7 +1147,7 @@ func TestExpelCrossesToFullNeighbor(t *testing.T) {
 
 func TestExpelOntoFixedFullscreenLeavesIt(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left, right)
+		r := startMulti(t, func(c *domain.Config) { c.Layout.Overflow = "fixed" }, left, right)
 		// DP-1: [1] [2 3], focus on 3.
 		r.mapWindow(t, 1)
 		r.mapWindow(t, 2)
@@ -1173,8 +1173,8 @@ func TestExpelOntoFixedFullscreenLeavesIt(t *testing.T) {
 
 func TestExplicitOverlappingPositionsAndNegativeY(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Outputs = []ports.OutputConfig{{Name: "DP-1", Pos: &image.Point{X: 20, Y: -120}}, {Name: "DP-2", Pos: &image.Point{X: 20, Y: -120}}}
+		r := startMulti(t, func(c *domain.Config) {
+			c.Outputs = []domain.OutputConfig{{Name: "DP-1", Pos: &image.Point{X: 20, Y: -120}}, {Name: "DP-2", Pos: &image.Point{X: 20, Y: -120}}}
 		}, left, right)
 		out := lastOutputs(t, r.commands)
 		if len(out.Outputs) != 2 || out.Outputs[0].Info.Name != "DP-1" || out.Outputs[1].Info.Name != "DP-2" {
@@ -1193,7 +1193,7 @@ func TestTerminalTokenClaimedOnce(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		// Plug DP-1 first so its request is unambiguously first. Then plug
 		// DP-2 and focus it before either window maps.
-		r := startRig(t, true, func(c *ports.Config) { c.Terminal.AutoOpen = "all" }, left)
+		r := startRig(t, true, func(c *domain.Config) { c.Terminal.AutoOpen = "all" }, left)
 		first := receive(t, r.spawn)
 		r.plug(t, right)
 		second := receive(t, r.spawn)
@@ -1255,7 +1255,7 @@ func TestFocusColumnFromFloatStaysOnMonitor(t *testing.T) {
 // tells the stash and whether it is hidden.
 func TestStashEndToEnd(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
-		r := startLanding(t, animated, func(c *ports.Config) { c.Stash.Gap, c.Stash.Dim = 0, 0.5 }, left)
+		r := startLanding(t, animated, func(c *domain.Config) { c.Stash.Gap, c.Stash.Dim = 0, 0.5 }, left)
 		stashEndToEnd(t, r)
 	})
 }
@@ -1302,7 +1302,7 @@ func stashEndToEnd(t *testing.T, r *landRig) {
 	for st.Window == nil || st.Window.ID != 3 {
 		st = receive(t, r.state)
 	}
-	byID := map[domain.WindowID]ports.WindowState{}
+	byID := map[domain.WindowID]domain.WindowState{}
 	for _, w := range st.Windows {
 		byID[w.ID] = w
 	}
@@ -1327,7 +1327,7 @@ func stashEndToEnd(t *testing.T, r *landRig) {
 
 // stateAfter waits for the published state that ok accepts, or fails:
 // snapshots from before an event may still be queued.
-func stateAfter(t *testing.T, ch <-chan ports.State, ok func(ports.State) bool) ports.State {
+func stateAfter(t *testing.T, ch <-chan domain.State, ok func(domain.State) bool) domain.State {
 	t.Helper()
 	for {
 		synctest.Wait()
@@ -1338,7 +1338,7 @@ func stateAfter(t *testing.T, ch <-chan ports.State, ok func(ports.State) bool) 
 			}
 		default:
 			t.Fatal("no matching state")
-			return ports.State{}
+			return domain.State{}
 		}
 	}
 }
@@ -1357,7 +1357,7 @@ func TestStashKeepsFocusAtEdges(t *testing.T) {
 		}
 		// A marker after the keys: its state follows theirs.
 		r.mapWindow(t, 9)
-		st := stateAfter(t, r.state, func(st ports.State) bool { return len(st.Windows) == 3 })
+		st := stateAfter(t, r.state, func(st domain.State) bool { return len(st.Windows) == 3 })
 		if st.Output != "DP-1" || st.Outputs[0].Active != 1 {
 			t.Fatalf("output %s active %d", st.Output, st.Outputs[0].Active)
 		}
@@ -1372,7 +1372,7 @@ func TestBindsOnDialogOverFullscreen(t *testing.T) {
 	for _, overflow := range []string{"scroll", "fixed"} {
 		t.Run(overflow, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = overflow }, left, right)
+				r := startMulti(t, func(c *domain.Config) { c.Layout.Overflow = overflow }, left, right)
 				r.key(t, "Left", domain.ModAlt|domain.ModCtrl) // DP-1
 				r.mapWindow(t, 1)
 				r.mapWindow(t, 2)
@@ -1380,7 +1380,7 @@ func TestBindsOnDialogOverFullscreen(t *testing.T) {
 				r.key(t, "f", domain.ModAlt|domain.ModShift) // 1 fullscreen
 				r.client <- ports.WindowMapped{ID: 9, Floating: true, Width: 10, Height: 10, Parent: 1}
 				receive(t, r.scenes)
-				st := stateAfter(t, r.state, func(st ports.State) bool { return st.Window != nil && st.Window.ID == 9 })
+				st := stateAfter(t, r.state, func(st domain.State) bool { return st.Window != nil && st.Window.ID == 9 })
 				if st.Window.ID != 9 {
 					t.Fatalf("focus %+v, want the dialog", st.Window)
 				}
@@ -1398,7 +1398,7 @@ func TestBindsOnDialogOverFullscreen(t *testing.T) {
 					}
 				}
 				scenes := r.key(t, "Right", domain.ModAlt)
-				st = stateAfter(t, r.state, func(st ports.State) bool { return st.Window != nil && st.Window.ID != 9 })
+				st = stateAfter(t, r.state, func(st domain.State) bool { return st.Window != nil && st.Window.ID != 9 })
 				if st.Window.ID != 1 {
 					t.Fatalf("focus %+v, want the fullscreen window", st.Window)
 				}
@@ -1437,7 +1437,7 @@ func TestDialogFocusStaysOnMonitor(t *testing.T) {
 		r.client <- ports.WindowMapped{ID: 3, Floating: true, Width: 10, Height: 10}
 		receive(t, r.scenes)
 		r.key(t, "Right", domain.ModAlt)
-		st := stateAfter(t, r.state, func(st ports.State) bool { return st.Window == nil || st.Window.ID != 3 })
+		st := stateAfter(t, r.state, func(st domain.State) bool { return st.Window == nil || st.Window.ID != 3 })
 		if st.Output != "DP-1" || st.Window == nil || st.Window.ID != 1 {
 			t.Fatalf("output %s window %+v", st.Output, st.Window)
 		}
@@ -1450,7 +1450,7 @@ func TestDialogFocusStaysOnMonitor(t *testing.T) {
 func TestStashHidesOnBackgroundClick(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
 		// Gap 10 at 80%: no peeks, the margins show the tile behind.
-		stashHidesOnBackgroundClick(t, startLanding(t, animated, func(c *ports.Config) { c.Stash.Gap = 10 }, left))
+		stashHidesOnBackgroundClick(t, startLanding(t, animated, func(c *domain.Config) { c.Stash.Gap = 10 }, left))
 	})
 }
 
@@ -1460,7 +1460,7 @@ func stashHidesOnBackgroundClick(t *testing.T, r *landRig) {
 	r.keyLanded(t, "s", domain.ModAlt|domain.ModShift) // 2 stashed and focused, over tile 1
 	r.input <- ports.PointerMotion{X: 5, Y: 50}
 	r.input <- ports.PointerButton{Button: 0x110, Pressed: true}
-	st := stateAfter(t, r.state, func(st ports.State) bool { return st.Window != nil && st.Window.ID == 1 })
+	st := stateAfter(t, r.state, func(st domain.State) bool { return st.Window != nil && st.Window.ID == 1 })
 	for _, w := range st.Windows {
 		if w.ID == 2 && !w.Hidden {
 			t.Fatalf("stash still shown: %+v", w)
@@ -1472,7 +1472,7 @@ func stashHidesOnBackgroundClick(t *testing.T, r *landRig) {
 func TestStashThinPeekClick(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		// 200 wide, 80%: a 20px margin, 18px of gap, 2px of the peek.
-		r := startMulti(t, func(c *ports.Config) { c.Stash.Gap, c.Border.Width = 9, 4 }, left)
+		r := startMulti(t, func(c *domain.Config) { c.Stash.Gap, c.Border.Width = 9, 4 }, left)
 		r.mapWindow(t, 1)
 		r.mapWindow(t, 2)
 		r.key(t, "s", domain.ModAlt|domain.ModShift) // 2 stashed
@@ -1494,8 +1494,8 @@ func TestStashThinPeekClick(t *testing.T) {
 
 func TestNamedWorkspaceWithoutHomeFollowsFocus(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Workspaces = []ports.WorkspaceConfig{{Name: "web"}}
+		r := startMulti(t, func(c *domain.Config) {
+			c.Workspaces = []domain.WorkspaceConfig{{Name: "web"}}
 			c.Binds["Alt+w"] = "workspace web"
 		}, left, right)
 		// Called from DP-2, web comes to DP-2.
@@ -1518,8 +1518,8 @@ func TestNamedWorkspaceWithoutHomeFollowsFocus(t *testing.T) {
 
 func TestNamedWorkspaceWithHomeFocusesIt(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Workspaces = []ports.WorkspaceConfig{{Name: "web", Monitor: "DP-1"}}
+		r := startMulti(t, func(c *domain.Config) {
+			c.Workspaces = []domain.WorkspaceConfig{{Name: "web", Monitor: "DP-1"}}
 			c.Binds["Alt+w"] = "workspace web"
 		}, left, right)
 		r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
@@ -1534,8 +1534,8 @@ func TestNamedWorkspaceWithHomeFocusesIt(t *testing.T) {
 
 func TestNamedGuestFollowsFocusAndReturnsHome(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Workspaces = []ports.WorkspaceConfig{{Name: "web", Monitor: "DP-3"}}
+		r := startMulti(t, func(c *domain.Config) {
+			c.Workspaces = []domain.WorkspaceConfig{{Name: "web", Monitor: "DP-3"}}
 			c.Binds["Alt+w"] = "workspace web"
 		}, left, right)
 		// DP-3 is not plugged: web follows the focus to DP-2.
@@ -1560,8 +1560,8 @@ func TestNamedGuestFollowsFocusAndReturnsHome(t *testing.T) {
 
 func TestNamedGuestOnScreenGoesHomeOnBind(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Workspaces = []ports.WorkspaceConfig{{Name: "web", Monitor: "DP-3"}}
+		r := startMulti(t, func(c *domain.Config) {
+			c.Workspaces = []domain.WorkspaceConfig{{Name: "web", Monitor: "DP-3"}}
 			c.Binds["Alt+w"] = "workspace web"
 		}, left, right)
 		r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
@@ -1578,8 +1578,8 @@ func TestNamedGuestOnScreenGoesHomeOnBind(t *testing.T) {
 
 func TestNamedOnScreenAtHomeStaysOnBindFromElsewhere(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Workspaces = []ports.WorkspaceConfig{{Name: "web", Monitor: "DP-1"}}
+		r := startMulti(t, func(c *domain.Config) {
+			c.Workspaces = []domain.WorkspaceConfig{{Name: "web", Monitor: "DP-1"}}
 			c.Binds["Alt+w"] = "workspace web"
 		}, left, right)
 		r.key(t, "w", domain.ModAlt)
@@ -1601,7 +1601,7 @@ func TestNamedOnScreenAtHomeStaysOnBindFromElsewhere(t *testing.T) {
 // monitor and the window stays fullscreen.
 func TestFocusColumnLeavesFullscreenBeforeMonitor(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left, right)
+		r := startMulti(t, func(c *domain.Config) { c.Layout.Overflow = "fixed" }, left, right)
 		r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
 		r.mapWindow(t, 1)
 		r.mapWindow(t, 2)
@@ -1643,8 +1643,8 @@ func focusedOutput(r *multiRig, current string) string {
 // the next one in configuration order.
 func TestFocusColumnEdgeFollowsGeometryNotConfigOrder(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Outputs = []ports.OutputConfig{
+		r := startMulti(t, func(c *domain.Config) {
+			c.Outputs = []domain.OutputConfig{
 				{Name: "DP-1", Pos: &image.Point{X: 500, Y: 0}},
 				{Name: "DP-2", Pos: &image.Point{X: 0, Y: 0}},
 			}
@@ -1671,10 +1671,10 @@ func TestFocusColumnEdgeFollowsGeometryNotConfigOrder(t *testing.T) {
 // With the outputs stacked, a column edge has no neighbor on its side.
 func TestFocusColumnEdgeStaysOnStackedOutputs(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Outputs = []ports.OutputConfig{
+		r := startMulti(t, func(c *domain.Config) {
+			c.Outputs = []domain.OutputConfig{
 				{Name: "DP-1"},
-				{Name: "DP-2", Anchor: ports.OutputAnchor{Relation: domain.RelationBelow, To: "DP-1"}},
+				{Name: "DP-2", Anchor: domain.OutputAnchor{Relation: domain.RelationBelow, To: "DP-1"}},
 			}
 		}, left, right)
 		r.mapWindow(t, 1)
@@ -1713,8 +1713,8 @@ func TestPoweredOffScreenStaysNeighbor(t *testing.T) {
 
 func TestRotatedOutputLayout(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Outputs = []ports.OutputConfig{{Name: left.Name, Transform: 1}}
+		r := startMulti(t, func(c *domain.Config) {
+			c.Outputs = []domain.OutputConfig{{Name: left.Name, Transform: 1}}
 		}, left, right)
 		out := lastOutputs(t, r.commands)
 		if len(out.Outputs) != 2 {
@@ -1749,10 +1749,10 @@ func TestRotatedOutputLayout(t *testing.T) {
 
 func TestRotatedOutputNeighbor(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
-			c.Outputs = []ports.OutputConfig{
+		r := startMulti(t, func(c *domain.Config) {
+			c.Outputs = []domain.OutputConfig{
 				{Name: "DP-1", Transform: 1},
-				{Name: "DP-2", Anchor: ports.OutputAnchor{Relation: domain.RelationBelow, To: "DP-1"}},
+				{Name: "DP-2", Anchor: domain.OutputAnchor{Relation: domain.RelationBelow, To: "DP-1"}},
 			}
 		}, left, right)
 		out := lastOutputs(t, r.commands)
@@ -1770,9 +1770,9 @@ func TestRotatedOutputNeighbor(t *testing.T) {
 
 func TestTransformReload(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startMulti(t, func(c *ports.Config) {
+		r := startMulti(t, func(c *domain.Config) {
 			c.Binds["Alt+equal"] = "scale-up"
-			c.Outputs = []ports.OutputConfig{{Name: "DP-1"}, {Name: "DP-2"}}
+			c.Outputs = []domain.OutputConfig{{Name: "DP-1"}, {Name: "DP-2"}}
 		}, left, right)
 		// Scale DP-2 (focus follows the key to it) with the bind first.
 		r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
@@ -1821,8 +1821,8 @@ func TestTransformReload(t *testing.T) {
 // an output.
 func TestTransformReloadClampsPointer(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
-		transformReloadClampsPointer(t, startLanding(t, animated, func(c *ports.Config) {
-			c.Outputs = []ports.OutputConfig{{Name: "DP-1"}, {Name: "DP-2"}}
+		transformReloadClampsPointer(t, startLanding(t, animated, func(c *domain.Config) {
+			c.Outputs = []domain.OutputConfig{{Name: "DP-1"}, {Name: "DP-2"}}
 		}, left, right))
 	})
 }
@@ -1867,7 +1867,7 @@ func TestStateReportsFullscreen(t *testing.T) {
 		r.mapWindow(t, 1)
 		r.mapWindow(t, 2)
 		r.key(t, "f", domain.ModAlt|domain.ModShift) // 2 fullscreen
-		st := stateAfter(t, r.state, func(st ports.State) bool {
+		st := stateAfter(t, r.state, func(st domain.State) bool {
 			for _, w := range st.Windows {
 				if w.Fullscreen {
 					return true

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/zerowrap"
 )
 
@@ -17,8 +17,8 @@ const (
 
 // Every shared field differs between the two, so a mixed-up route fails.
 var (
-	padCfg   = ports.TouchpadConfig{PointerConfig: ports.PointerConfig{NaturalScroll: true, AccelSpeed: 0.5, AccelProfile: ports.AccelFlat}, Tap: true}
-	mouseCfg = ports.PointerConfig{AccelSpeed: -0.25, AccelProfile: ports.AccelAdaptive, LeftHanded: true}
+	padCfg   = domain.TouchpadConfig{PointerConfig: domain.PointerConfig{NaturalScroll: true, AccelSpeed: 0.5, AccelProfile: domain.AccelFlat}, Tap: true}
+	mouseCfg = domain.PointerConfig{AccelSpeed: -0.25, AccelProfile: domain.AccelAdaptive, LeftHanded: true}
 )
 
 // newState returns an input state over a device config mock, and a logger
@@ -28,7 +28,7 @@ func newState(t *testing.T) (*inputState, *mockdeviceConfig, zerowrap.Logger, *b
 	dev := newMockdeviceConfig(t)
 	buf := &bytes.Buffer{}
 	log := zerowrap.New(zerowrap.Config{Level: "debug", Format: "json", Output: buf}).WithField("component", "input")
-	return &inputState{cfg: ports.InputDevicesConfig{Touchpad: padCfg, Mouse: mouseCfg}, dev: dev}, dev, log, buf
+	return &inputState{cfg: domain.InputDevicesConfig{Touchpad: padCfg, Mouse: mouseCfg}, dev: dev}, dev, log, buf
 }
 
 func TestConfigure(t *testing.T) {
@@ -40,7 +40,7 @@ func TestConfigure(t *testing.T) {
 		{"touchpad", testPad, func(m *mockdeviceConfig) {
 			m.EXPECT().IsTouchpad(testPad).Return(true)
 			m.EXPECT().SetNaturalScroll(testPad, true).Return(nil).Once()
-			m.EXPECT().SetAccel(testPad, 0.5, ports.AccelFlat).Return(nil).Once()
+			m.EXPECT().SetAccel(testPad, 0.5, domain.AccelFlat).Return(nil).Once()
 			m.EXPECT().SetLeftHanded(testPad, false).Return(nil).Once()
 			m.EXPECT().SetTap(testPad, true).Return(nil).Once()
 		}},
@@ -50,7 +50,7 @@ func TestConfigure(t *testing.T) {
 			m.EXPECT().IsTouchpad(testMouse).Return(false)
 			m.EXPECT().IsPointer(testMouse).Return(true)
 			m.EXPECT().SetNaturalScroll(testMouse, false).Return(nil).Once()
-			m.EXPECT().SetAccel(testMouse, -0.25, ports.AccelAdaptive).Return(nil).Once()
+			m.EXPECT().SetAccel(testMouse, -0.25, domain.AccelAdaptive).Return(nil).Once()
 			m.EXPECT().SetLeftHanded(testMouse, true).Return(nil).Once()
 		}},
 		{"keyboard", testKeyboard, func(m *mockdeviceConfig) {
@@ -97,7 +97,7 @@ func TestConfigureRejectedSettingLogsAndContinues(t *testing.T) {
 	dev.EXPECT().IsTouchpad(testPad).Return(true)
 	dev.EXPECT().SetNaturalScroll(testPad, true).Return(errRejected).Once()
 	dev.EXPECT().Name(testPad).Return("Synaptics").Once()
-	dev.EXPECT().SetAccel(testPad, 0.5, ports.AccelFlat).Return(nil).Once()
+	dev.EXPECT().SetAccel(testPad, 0.5, domain.AccelFlat).Return(nil).Once()
 	dev.EXPECT().SetLeftHanded(testPad, false).Return(nil).Once()
 	dev.EXPECT().SetTap(testPad, true).Return(nil).Once()
 	in.configure(testPad, log)

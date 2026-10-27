@@ -40,7 +40,7 @@ func shortcutsInhibit(t *testing.T) {
 	commands := make(chan ports.ClientCommand, 64)
 	scenes := make(chan []domain.Scene, 1)
 	spawn := make(chan ports.SpawnRequest, 4)
-	state := make(chan ports.State, 1)
+	state := make(chan domain.State, 1)
 	output := make(chan ports.OutputEvent, 1)
 	c, err := core.New(cfg, core.Channels{Input: input, Client: client, Output: output, Commands: commands, Scenes: scenes, Spawn: spawn, State: state}, core.Options{})
 	if err != nil {
@@ -78,20 +78,20 @@ func shortcutsInhibit(t *testing.T) {
 	receive(t, spawn)
 	// Idle inhibitors show in the state.
 	client <- ports.IdleInhibit{Window: 2, Active: true}
-	waitState(t, state, "idle inhibit", func(w ports.WindowState) bool { return w.ID == 2 && w.IdleInhibit })
+	waitState(t, state, "idle inhibit", func(w domain.WindowState) bool { return w.ID == 2 && w.IdleInhibit })
 	// So do shortcuts inhibition and the pointer constraint.
 	client <- ports.ShortcutsInhibit{Window: 2, Active: true}
-	waitState(t, state, "shortcuts inhibited", func(w ports.WindowState) bool { return w.ID == 2 && w.ShortcutsInhibited })
+	waitState(t, state, "shortcuts inhibited", func(w domain.WindowState) bool { return w.ID == 2 && w.ShortcutsInhibited })
 	client <- ports.PointerConstrained{ID: 2, PointerConstraint: ports.PointerConstraint{Mode: domain.ConstraintLock}}
-	waitState(t, state, "locked", func(w ports.WindowState) bool { return w.ID == 2 && w.PointerConstraint == "locked" })
+	waitState(t, state, "locked", func(w domain.WindowState) bool { return w.ID == 2 && w.PointerConstraint == "locked" })
 	client <- ports.PointerConstrained{ID: 2, PointerConstraint: ports.PointerConstraint{Mode: domain.ConstraintConfine}}
-	waitState(t, state, "confined", func(w ports.WindowState) bool { return w.ID == 2 && w.PointerConstraint == "confined" })
+	waitState(t, state, "confined", func(w domain.WindowState) bool { return w.ID == 2 && w.PointerConstraint == "confined" })
 	client <- ports.PointerConstrained{}
-	waitState(t, state, "unconstrained", func(w ports.WindowState) bool { return w.ID == 2 && w.PointerConstraint == "" })
+	waitState(t, state, "unconstrained", func(w domain.WindowState) bool { return w.ID == 2 && w.PointerConstraint == "" })
 }
 
 // waitState drains published states until one has a window matching ok.
-func waitState(t *testing.T, state <-chan ports.State, what string, ok func(ports.WindowState) bool) {
+func waitState(t *testing.T, state <-chan domain.State, what string, ok func(domain.WindowState) bool) {
 	t.Helper()
 	for {
 		synctest.Wait()

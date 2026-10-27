@@ -15,7 +15,7 @@ import (
 // float 4 with float set.
 func stashCoverCore(t *testing.T, overflow Overflow, float bool) (*Core, *Workspace, WindowID) {
 	t.Helper()
-	cfg := ports.Config{}
+	cfg := domain.Config{}
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.Overflow = string(overflow)
 	cfg.Layout.MaxColumns = 2
@@ -407,7 +407,7 @@ func TestOverCoverDialogLoop(t *testing.T) {
 // configure fullscreen at the output size.
 func TestCoreActivateStashKeepsGameConfigure(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		cfg := ports.Config{}
+		cfg := domain.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
 		commands := make(chan ports.ClientCommand, 256)

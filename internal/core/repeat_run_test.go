@@ -17,7 +17,7 @@ type rig struct {
 	client   chan ports.ClientEvent
 	reload   chan ports.ConfigChanged
 	commands chan ports.ClientCommand
-	cfg      ports.Config
+	cfg      domain.Config
 }
 
 // repeatRig runs a Core with five windows in a row on one output, the last

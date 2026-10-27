@@ -156,10 +156,10 @@ func TestOverviewNamedAnchorSurvivesConfigAndMonitorMove(t *testing.T) {
 
 func TestOverviewNamedAnchorSurvivesReplug(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		cfg := ports.Config{}
+		cfg := domain.Config{}
 		cfg.Layout.MaxColumns = 3
 		cfg.Keyboard.CmdKey = "super"
-		cfg.Workspaces = []ports.WorkspaceConfig{{Name: "dev", Monitor: "OUT-1"}}
+		cfg.Workspaces = []domain.WorkspaceConfig{{Name: "dev", Monitor: "OUT-1"}}
 		c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1)}, Options{})
 		if err != nil {
 			t.Fatal(err)
@@ -463,7 +463,7 @@ func TestOverviewNamedColumnPickClearsStash(t *testing.T) {
 func TestOverviewNamedDividerPublished(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		scenes := make(chan []domain.Scene, 1)
-		cfg := ports.Config{}
+		cfg := domain.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 3
 		c, err := New(cfg, Channels{Commands: make(chan ports.ClientCommand, 256), Scenes: scenes}, Options{})

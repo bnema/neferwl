@@ -13,7 +13,7 @@ import (
 func BenchmarkBorderMotion(b *testing.B) {
 	for _, mode := range []string{"moving", "same"} {
 		b.Run(mode, func(b *testing.B) {
-			var cfg ports.Config
+			var cfg domain.Config
 			cfg.Keyboard.CmdKey = "super"
 			cfg.Layout.MaxColumns = 3
 			scenes, cmds := make(chan []domain.Scene, 1), make(chan ports.ClientCommand, 1024)

@@ -351,7 +351,7 @@ func (c *Card) ReadEvents(ctx context.Context) error {
 
 func normalizedHDRSettings(settings HDRSettings) HDRSettings {
 	if settings.SDRBrightness == 0 {
-		settings.SDRBrightness = ports.DefaultSDRBrightness
+		settings.SDRBrightness = domain.DefaultSDRBrightness
 	}
 	return settings
 }

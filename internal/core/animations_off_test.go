@@ -9,7 +9,7 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-func animationsOff(c *ports.Config) { c.Animations.On = false }
+func animationsOff(c *domain.Config) { c.Animations.On = false }
 
 // stillMoves sends n swipe updates of (dx, dy) and expects no scene: with
 // animations off the view does not follow the fingers.
@@ -139,7 +139,7 @@ func (r *swipeRig) noFrameScene(t *testing.T, outputs ...string) {
 // time since the lift.
 func landing(t *testing.T, slowdown float64, after ...time.Duration) []int {
 	t.Helper()
-	r := startSwipe(t, func(c *ports.Config) { c.Animations.Slowdown = slowdown })
+	r := startSwipe(t, func(c *domain.Config) { c.Animations.Slowdown = slowdown })
 	threeColumns(t, r)
 	r.flick(t, 10, -40, 0)
 	var xs []int

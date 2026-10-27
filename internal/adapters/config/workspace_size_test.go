@@ -3,7 +3,7 @@ package config
 import (
 	"testing"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestWorkspaceSize(t *testing.T) {
@@ -23,7 +23,7 @@ func TestWorkspaceSize(t *testing.T) {
 		{"999999999999999999999x1080", [2]int{}, false},
 	} {
 		t.Run(tc.value, func(t *testing.T) {
-			var ws ports.WorkspaceConfig
+			var ws domain.WorkspaceConfig
 			err := setWorkspace(&ws, "size", tc.value)
 			if (err == nil) != tc.valid || ws.Size != tc.want {
 				t.Fatalf("size %v, err %v; want %v valid=%v", ws.Size, err, tc.want, tc.valid)

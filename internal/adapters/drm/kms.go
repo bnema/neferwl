@@ -91,7 +91,7 @@ type connector struct {
 
 var connectorTypes = map[uint32]string{1: "VGA", 2: "DVI-I", 3: "DVI-D", 10: "DP", 11: "HDMI-A", 12: "HDMI-B", 7: "LVDS", 14: "eDP", 15: "Virtual", 16: "DSI", 17: "DPI", 20: "USB"}
 
-// Want configures connectors; see ports.OutputConfig.
+// Want configures connectors; see domain.OutputConfig.
 type Want struct {
 	Disabled map[string]bool
 	// Modes maps a connector to W, H and Hz (0: highest refresh at W x H).

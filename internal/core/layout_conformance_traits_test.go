@@ -6,7 +6,7 @@ import (
 	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/core/layout"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestConfigAcceptsEmptyOverflow(t *testing.T) {
@@ -14,8 +14,8 @@ func TestConfigAcceptsEmptyOverflow(t *testing.T) {
 		c, _ := indicatorCore(t)
 		cfg := c.cfg
 		cfg.Layout.Overflow = ""
-		cfg.Layout.Outputs = []ports.OutputLayout{{Output: "DP-1"}}
-		cfg.Workspaces = []ports.WorkspaceConfig{{Name: "test"}}
+		cfg.Layout.Outputs = []domain.OutputLayout{{Output: "DP-1"}}
+		cfg.Workspaces = []domain.WorkspaceConfig{{Name: "test"}}
 		if err := c.apply(cfg); err != nil {
 			t.Fatalf("empty overflow must validate in every scope: %v", err)
 		}
@@ -80,16 +80,16 @@ func TestConfigRejectsUnknownLayout(t *testing.T) {
 	for _, scope := range []string{"default", "output", "named"} {
 		t.Run(scope, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				cfg := ports.Config{}
+				cfg := domain.Config{}
 				cfg.Layout.MaxColumns = 3
 				cfg.Keyboard.CmdKey = "super"
 				switch scope {
 				case "default":
 					cfg.Layout.Overflow = "unknown"
 				case "output":
-					cfg.Layout.Outputs = []ports.OutputLayout{{Output: "DP-1", LayoutRules: ports.LayoutRules{Overflow: "unknown"}}}
+					cfg.Layout.Outputs = []domain.OutputLayout{{Output: "DP-1", LayoutRules: domain.LayoutRules{Overflow: "unknown"}}}
 				case "named":
-					cfg.Workspaces = []ports.WorkspaceConfig{{Name: "test", LayoutRules: ports.LayoutRules{Overflow: "unknown"}}}
+					cfg.Workspaces = []domain.WorkspaceConfig{{Name: "test", LayoutRules: domain.LayoutRules{Overflow: "unknown"}}}
 				}
 				var c Core
 				if err := c.apply(cfg); err == nil || !strings.Contains(err.Error(), `invalid overflow "unknown"`) {

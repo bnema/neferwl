@@ -95,10 +95,10 @@ type landRig struct {
 
 // startLanding runs core on the given outputs (gaps and terminal policy as
 // in startMulti) with animations on or off.
-func startLanding(t *testing.T, animated bool, edit func(*ports.Config), outs ...ports.OutputInfo) *landRig {
+func startLanding(t *testing.T, animated bool, edit func(*domain.Config), outs ...ports.OutputInfo) *landRig {
 	t.Helper()
 	if !animated {
-		r := startMulti(t, func(c *ports.Config) {
+		r := startMulti(t, func(c *domain.Config) {
 			if edit != nil {
 				edit(c)
 			}
@@ -107,7 +107,7 @@ func startLanding(t *testing.T, animated bool, edit func(*ports.Config), outs ..
 		return &landRig{multiRig: r, land: func(set []domain.Scene) []domain.Scene { return set }, lands: new(int)}
 	}
 	defaults := altCmdDefaults()
-	r := startSwipeOn(t, func(c *ports.Config) {
+	r := startSwipeOn(t, func(c *domain.Config) {
 		c.Layout.Gaps, c.Terminal.AutoOpen = defaults.Layout.Gaps, defaults.Terminal.AutoOpen
 		if edit != nil {
 			edit(c)

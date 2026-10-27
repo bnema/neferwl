@@ -75,7 +75,7 @@ func TestLayerChangedChannels(t *testing.T) {
 		output := make(chan ports.OutputEvent)
 		commands := make(chan ports.ClientCommand, 16)
 		scenes := make(chan []domain.Scene, 1)
-		cfg := ports.Config{}
+		cfg := domain.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
 		c, err := New(cfg, Channels{Client: client, Output: output, Commands: commands, Scenes: scenes}, Options{})
@@ -186,7 +186,7 @@ func TestFullscreenSceneLayers(t *testing.T) {
 		output := make(chan ports.OutputEvent)
 		commands := make(chan ports.ClientCommand, 64)
 		scenes := make(chan []domain.Scene, 1)
-		cfg := ports.Config{}
+		cfg := domain.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
 		c, err := New(cfg, Channels{Client: client, Output: output, Commands: commands, Scenes: scenes}, Options{Clock: laterClock(t)})

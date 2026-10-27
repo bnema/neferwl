@@ -106,7 +106,7 @@ func TestRelayConfigKeepsStartupHintEnable(t *testing.T) {
 	cur := config.Defaults()
 	in := make(chan ports.ConfigChanged, 1)
 	out := make(chan ports.ConfigChanged, 1)
-	go relayConfig(ctx, cur, in, out, make(chan *xkb.Keymap, 1), make(chan ports.InputDevicesConfig, 1), newCursors(clock.System{}, 0), make(chan ports.ClientCommand, 1), logging.For(ctx, "config"))
+	go relayConfig(ctx, cur, in, out, make(chan *xkb.Keymap, 1), make(chan domain.InputDevicesConfig, 1), newCursors(clock.System{}, 0), make(chan ports.ClientCommand, 1), logging.For(ctx, "config"))
 	next := config.Defaults()
 	next.Hint.Enable = true
 	next.Hint.Sources = []domain.HintSource{domain.HintSourceDetector}
@@ -126,7 +126,7 @@ func TestRelayConfigKeepsStartupHintDetector(t *testing.T) {
 	cur := config.Defaults()
 	in := make(chan ports.ConfigChanged, 1)
 	out := make(chan ports.ConfigChanged, 1)
-	go relayConfig(ctx, cur, in, out, make(chan *xkb.Keymap, 1), make(chan ports.InputDevicesConfig, 1), newCursors(clock.System{}, 0), make(chan ports.ClientCommand, 1), logging.For(ctx, "config"))
+	go relayConfig(ctx, cur, in, out, make(chan *xkb.Keymap, 1), make(chan domain.InputDevicesConfig, 1), newCursors(clock.System{}, 0), make(chan ports.ClientCommand, 1), logging.For(ctx, "config"))
 	next := config.Defaults()
 	next.Hint.Detector, next.Hint.Model, next.Hint.Threshold = "/other/nh", "/other/models", 0.5
 	in <- ports.ConfigChanged{Config: next}

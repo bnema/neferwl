@@ -13,7 +13,7 @@ var ultrawide = ports.OutputInfo{Name: "DP-3", Make: "Acme", Model: "W", Serial:
 // sizedRig runs an ultrawide with the named workspace "focus" (1920x1080)
 // bound to Alt+w, and shows it. The animations setting is the default's
 // unless edit changes it.
-func sizedRig(t *testing.T, overflow string, edit func(*ports.Config)) (*multiRig, domain.Scene) {
+func sizedRig(t *testing.T, overflow string, edit func(*domain.Config)) (*multiRig, domain.Scene) {
 	t.Helper()
 	r := startMulti(t, sizedConfig(overflow, edit), ultrawide)
 	return r, r.key(t, "w", domain.ModAlt)[0]
@@ -21,7 +21,7 @@ func sizedRig(t *testing.T, overflow string, edit func(*ports.Config)) (*multiRi
 
 // sizedLanding is sizedRig with animations forced on or off; the scene it
 // returns and every keyLanded and mapLanded of the rig are settled.
-func sizedLanding(t *testing.T, animated bool, overflow string, edit func(*ports.Config)) (*landRig, domain.Scene) {
+func sizedLanding(t *testing.T, animated bool, overflow string, edit func(*domain.Config)) (*landRig, domain.Scene) {
 	t.Helper()
 	r := startLanding(t, animated, sizedConfig(overflow, edit), ultrawide)
 	return r, r.keyLanded(t, "w", domain.ModAlt)[0]
@@ -35,7 +35,7 @@ func within(r, o domain.Rect) bool {
 
 func TestWorkspaceSizeInheritsByDefault(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
-		r := startLanding(t, animated, func(c *ports.Config) { c.Layout.Gaps = 0 }, ultrawide)
+		r := startLanding(t, animated, func(c *domain.Config) { c.Layout.Gaps = 0 }, ultrawide)
 		set := r.mapLanded(t, 1)
 		if set[0].WorkspaceClip != (domain.Rect{}) || set[0].Windows[0].Rect != (domain.Rect{W: 3440, H: 1440}) {
 			t.Fatalf("%+v", set[0])
@@ -108,7 +108,7 @@ func TestWorkspaceSizeFixedFullscreenKeepsFrame(t *testing.T) {
 		if s := r.land(receive(t, r.scenes))[0]; s.WorkspaceClip != frame {
 			t.Fatalf("after reload %+v", s.WorkspaceClip)
 		}
-		cfg.Workspaces = []ports.WorkspaceConfig{{Name: "focus", LayoutRules: ports.LayoutRules{Overflow: "fixed"}}}
+		cfg.Workspaces = []domain.WorkspaceConfig{{Name: "focus", LayoutRules: domain.LayoutRules{Overflow: "fixed"}}}
 		r.reload <- ports.ConfigChanged{Config: cfg}
 		if s := r.land(receive(t, r.scenes))[0]; s.WorkspaceClip != (domain.Rect{}) {
 			t.Fatalf("after size removal %+v", s.WorkspaceClip)
@@ -154,8 +154,8 @@ func TestWorkspaceSizeReservedZoneIntersectsFrame(t *testing.T) {
 
 func TestWorkspaceSizeFractionalScaleUnchanged(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r, _ := sizedRig(t, "scroll", func(c *ports.Config) {
-			c.Outputs = []ports.OutputConfig{{Name: "DP-3", Scale: 2}}
+		r, _ := sizedRig(t, "scroll", func(c *domain.Config) {
+			c.Outputs = []domain.OutputConfig{{Name: "DP-3", Scale: 2}}
 		})
 		s := r.mapWindow(t, 1)[0]
 		// The monitor is 1720x720 logical; a 1920x1080 workspace clamps to it.
@@ -193,11 +193,11 @@ func TestWorkspaceSizeInputOutsideFrame(t *testing.T) {
 	})
 }
 
-func sizedConfig(overflow string, edit func(*ports.Config)) func(*ports.Config) {
-	return func(c *ports.Config) {
+func sizedConfig(overflow string, edit func(*domain.Config)) func(*domain.Config) {
+	return func(c *domain.Config) {
 		c.Layout.Gaps = 0
 		c.Layout.MaxColumns = 2
-		c.Workspaces = []ports.WorkspaceConfig{{Name: "focus", Size: [2]int{1920, 1080}, LayoutRules: ports.LayoutRules{Overflow: overflow}}}
+		c.Workspaces = []domain.WorkspaceConfig{{Name: "focus", Size: [2]int{1920, 1080}, LayoutRules: domain.LayoutRules{Overflow: overflow}}}
 		c.Binds["Alt+w"] = "workspace focus"
 		if edit != nil {
 			edit(c)
@@ -228,25 +228,25 @@ func workspaceSizeScrollColumnsStayInFrame(t *testing.T, r *landRig) {
 func workspaceSizeReloadAndRemoval(t *testing.T, r *landRig) {
 	r.mapLanded(t, 1)
 	cfg := r.cfg
-	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "focus", Size: [2]int{1000, 600}}}
+	cfg.Workspaces = []domain.WorkspaceConfig{{Name: "focus", Size: [2]int{1000, 600}}}
 	r.reload <- ports.ConfigChanged{Config: cfg}
 	s := receive(t, r.scenes)[0]
 	if want := (domain.Rect{X: 1220, Y: 420, W: 1000, H: 600}); s.WorkspaceClip != want || s.Windows[0].Rect != want {
 		t.Fatalf("%+v %+v", s.WorkspaceClip, s.Windows[0])
 	}
 	// Larger than the monitor clamps to it: no clip, no invisible area.
-	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "focus", Size: [2]int{9000, 9000}}}
+	cfg.Workspaces = []domain.WorkspaceConfig{{Name: "focus", Size: [2]int{9000, 9000}}}
 	r.reload <- ports.ConfigChanged{Config: cfg}
 	s = receive(t, r.scenes)[0]
 	if s.WorkspaceClip != (domain.Rect{}) || s.Windows[0].Rect != (domain.Rect{W: 3440, H: 1440}) {
 		t.Fatalf("%+v %+v", s.WorkspaceClip, s.Windows[0])
 	}
-	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "focus", Size: [2]int{1920, 1080}}}
+	cfg.Workspaces = []domain.WorkspaceConfig{{Name: "focus", Size: [2]int{1920, 1080}}}
 	r.reload <- ports.ConfigChanged{Config: cfg}
 	if s = receive(t, r.scenes)[0]; s.WorkspaceClip != frame {
 		t.Fatal(s.WorkspaceClip)
 	}
-	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "focus"}}
+	cfg.Workspaces = []domain.WorkspaceConfig{{Name: "focus"}}
 	r.reload <- ports.ConfigChanged{Config: cfg}
 	if s = receive(t, r.scenes)[0]; s.WorkspaceClip != (domain.Rect{}) || s.Windows[0].Rect != (domain.Rect{W: 3440, H: 1440}) {
 		t.Fatalf("%+v %+v", s.WorkspaceClip, s.Windows[0])

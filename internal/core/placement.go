@@ -4,7 +4,6 @@ import (
 	"image"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // placeItem is one output to place: its connector name, logical size, the
@@ -15,7 +14,7 @@ type placeItem struct {
 	name   string
 	w, h   int
 	pos    *image.Point
-	anchor ports.OutputAnchor
+	anchor domain.OutputAnchor
 }
 
 // placeOutputs returns the logical origin of every item, in item order.

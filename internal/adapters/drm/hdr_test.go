@@ -9,7 +9,6 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
@@ -130,14 +129,14 @@ func TestHDRTestCommitFallbackReexportsSDR(t *testing.T) {
 }
 
 func TestHDRSettingsRestartComparison(t *testing.T) {
-	current := HDRSettings{Enabled: true, SDRBrightness: ports.DefaultSDRBrightness}
+	current := HDRSettings{Enabled: true, SDRBrightness: domain.DefaultSDRBrightness}
 	for _, tc := range []struct {
 		settings HDRSettings
 		restart  bool
 	}{
 		{HDRSettings{Enabled: true}, false},
 		{HDRSettings{Enabled: true, SDRBrightness: 350}, true},
-		{HDRSettings{SDRBrightness: ports.DefaultSDRBrightness}, true},
+		{HDRSettings{SDRBrightness: domain.DefaultSDRBrightness}, true},
 	} {
 		if restart := outputNeedsRestart(&Output{hdr: hdrState{settings: current}}, modeInfo{}, tc.settings); restart != tc.restart {
 			t.Fatalf("settings %+v: restart %t, want %t", tc.settings, restart, tc.restart)
@@ -153,7 +152,7 @@ func TestHDRSuccessfulModeset(t *testing.T) {
 	o.fbs = [2]uint32{} // the first setup of a run: no image yet
 	o.cursor = nil
 	o.hdr.cap = hdrCapability{Capable: true}
-	o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: ports.DefaultSDRBrightness}
+	o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: domain.DefaultSDRBrightness}
 	o.hdr.props = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
 	o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30, Modifier: 19}}
 	r := portsmocks.NewMockRenderer(t)
@@ -162,7 +161,7 @@ func TestHDRSuccessfulModeset(t *testing.T) {
 		w.Close()
 		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
-	r.EXPECT().SetHDR(float64(ports.DefaultSDRBrightness)).Return().Once()
+	r.EXPECT().SetHDR(float64(domain.DefaultSDRBrightness)).Return().Once()
 	r.EXPECT().ExportTargets(2, []uint64{19}, false).Return([]domain.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
@@ -194,7 +193,7 @@ func TestHDRBlobReusedAcrossImageSetup(t *testing.T) {
 	o, k, commits := testOutput(t)
 	o.cursor = nil
 	o.hdr.cap = hdrCapability{Capable: true}
-	o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: ports.DefaultSDRBrightness}
+	o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: domain.DefaultSDRBrightness}
 	o.hdr.props = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
 	o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30, Modifier: 19}}
 	r := portsmocks.NewMockRenderer(t)
@@ -203,7 +202,7 @@ func TestHDRBlobReusedAcrossImageSetup(t *testing.T) {
 		w.Close()
 		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
-	r.EXPECT().SetHDR(float64(ports.DefaultSDRBrightness)).Return().Twice()
+	r.EXPECT().SetHDR(float64(domain.DefaultSDRBrightness)).Return().Twice()
 	r.EXPECT().ExportTargets(2, []uint64{19}, false).RunAndReturn(func(int, []uint64, bool) ([]domain.DMABuf, error) { return []domain.DMABuf{buf(), buf()}, nil }).Twice()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
@@ -244,7 +243,7 @@ func TestHDRBlobReplacementWaitsForCommit(t *testing.T) {
 	o, k, _ := testOutput(t)
 	o.cursor = nil
 	o.hdr.cap = hdrCapability{Capable: true}
-	o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: ports.DefaultSDRBrightness}
+	o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: domain.DefaultSDRBrightness}
 	o.hdr.props = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
 	o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30, Modifier: 19}}
 	r := portsmocks.NewMockRenderer(t)
@@ -253,7 +252,7 @@ func TestHDRBlobReplacementWaitsForCommit(t *testing.T) {
 		w.Close()
 		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
-	r.EXPECT().SetHDR(float64(ports.DefaultSDRBrightness)).Return().Twice()
+	r.EXPECT().SetHDR(float64(domain.DefaultSDRBrightness)).Return().Twice()
 	r.EXPECT().ExportTargets(2, []uint64{19}, false).RunAndReturn(func(int, []uint64, bool) ([]domain.DMABuf, error) { return []domain.DMABuf{buf(), buf()}, nil }).Twice()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)

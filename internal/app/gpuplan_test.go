@@ -2,13 +2,15 @@ package app
 
 import (
 	"errors"
-	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/zerowrap"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/bnema/neferwl/internal/domain"
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
+	"github.com/bnema/zerowrap"
 
 	"github.com/bnema/neferwl/internal/adapters/drm"
 	"github.com/bnema/neferwl/internal/ports"
@@ -54,7 +56,7 @@ func TestResolveIDs(t *testing.T) {
 }
 
 func TestSelectConfig(t *testing.T) {
-	cfg := ports.Config{}
+	cfg := domain.Config{}
 	cfg.DRM.Devices = []string{"0000:03:00.0"}
 	cfg.DRM.Ignore = []string{"04:00.0"}
 	cfg.Render.Device = "03:00.0"
@@ -74,7 +76,7 @@ func TestSelectConfig(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing")
 	for _, field := range []string{"devices", "ignore", "render", "env"} {
 		t.Run(field, func(t *testing.T) {
-			c := ports.Config{}
+			c := domain.Config{}
 			env := ""
 			switch field {
 			case "devices":
@@ -109,7 +111,7 @@ func TestMultiGPUMode(t *testing.T) {
 }
 
 func TestGPUSelectionErrorBeforePlan(t *testing.T) {
-	cfg := ports.Config{}
+	cfg := domain.Config{}
 	cfg.DRM.Ignore = []string{"unknown-device"}
 	plans, _, err := selectGPUPlans([]ports.GPUInfo{{Path: "card0", Render: 1}}, cfg, "")
 	if err == nil || !strings.Contains(err.Error(), `unknown DRM device "unknown-device"`) || plans != nil {
@@ -125,7 +127,7 @@ func TestOpenHeadlessRenderDiscovery(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			opener := portsmocks.NewMockRenderDeviceOpener(t)
 			dev := portsmocks.NewMockRenderDevice(t)
-			cfg := ports.Config{}
+			cfg := domain.Config{}
 			var c []ports.GPUInfo
 			var listErr error
 			fail := strings.HasPrefix(name, "constrained")

@@ -11,7 +11,7 @@ import (
 
 func TestCascadeSwipeAxes(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startSwipe(t, func(c *ports.Config) { c.Layout.Overflow = "cascade"; c.Layout.MaxColumns = 3 })
+		r := startSwipe(t, func(c *domain.Config) { c.Layout.Overflow = "cascade"; c.Layout.MaxColumns = 3 })
 		for i := 1; i <= 7; i++ {
 			r.mapWindow(t, domain.WindowID(i))
 		}
@@ -37,7 +37,11 @@ func TestCascadeSwipeAxes(t *testing.T) {
 
 func TestCascadeDiscreteSwipeRevealsBand(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startSwipe(t, func(c *ports.Config) { c.Layout.Overflow = "cascade"; c.Layout.MaxColumns = 3; c.Animations.On = false })
+		r := startSwipe(t, func(c *domain.Config) {
+			c.Layout.Overflow = "cascade"
+			c.Layout.MaxColumns = 3
+			c.Animations.On = false
+		})
 		for i := 1; i <= 4; i++ {
 			r.mapWindow(t, domain.WindowID(i))
 		}

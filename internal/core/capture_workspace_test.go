@@ -23,7 +23,7 @@ func hiddenCapture(t *testing.T) (*Core, *Workspace) {
 func hiddenCaptureCommands(t *testing.T) (*Core, *Workspace, chan ports.ClientCommand) {
 	t.Helper()
 	commands := make(chan ports.ClientCommand, 64)
-	var cfg ports.Config
+	var cfg domain.Config
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 2
 	cfg.Border.Width = 2

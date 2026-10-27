@@ -26,11 +26,11 @@ type pipes struct {
 	renderScenes  chan []domain.Scene
 	layouts       chan ports.Layout
 	constraints   chan ports.PointerConstraint
-	states        chan ports.State
+	states        chan domain.State
 	workspaces    chan ports.Workspaces
 	cursorChanges chan ports.CursorChange
 	keymaps       chan *xkb.Keymap
-	deviceConfigs chan ports.InputDevicesConfig
+	deviceConfigs chan domain.InputDevicesConfig
 
 	// Configuration: watched from the file, filtered by relayConfig, then
 	// configured (overrides included) by outputs for core.
@@ -99,11 +99,11 @@ func newPipes(realSession, hint bool) *pipes {
 		renderScenes:  make(chan []domain.Scene, 1),
 		layouts:       make(chan ports.Layout, 1),
 		constraints:   make(chan ports.PointerConstraint, 1),
-		states:        make(chan ports.State, 1),
+		states:        make(chan domain.State, 1),
 		workspaces:    make(chan ports.Workspaces, 1),
 		cursorChanges: make(chan ports.CursorChange, 1),
 		keymaps:       make(chan *xkb.Keymap, 1),
-		deviceConfigs: make(chan ports.InputDevicesConfig, 1),
+		deviceConfigs: make(chan domain.InputDevicesConfig, 1),
 
 		watched:      make(chan ports.ConfigChanged, 8),
 		filtered:     make(chan ports.ConfigChanged, 8),

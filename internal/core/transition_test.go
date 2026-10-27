@@ -187,7 +187,7 @@ func TestNoTransitionWithOverview(t *testing.T) {
 }
 
 // movedRig plugs a second 800x600 output right of the first.
-func movedRig(t *testing.T, edit func(*ports.Config)) (*swipeRig, ports.OutputInfo) {
+func movedRig(t *testing.T, edit func(*domain.Config)) (*swipeRig, ports.OutputInfo) {
 	t.Helper()
 	other := ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000}
 	return startSwipeOn(t, edit, wide, other), other
@@ -347,27 +347,27 @@ func TestMovedWorkspaceStartsFromSourceGeometry(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
 		dst          ports.OutputInfo
-		anchor       ports.OutputAnchor
+		anchor       domain.OutputAnchor
 		key          string
 		start, final [2]domain.Rect
 	}{
 		{
 			name: "right same size", dst: ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000},
-			anchor: ports.OutputAnchor{Relation: domain.RelationRightOf, To: "DP-1"}, key: "Right",
+			anchor: domain.OutputAnchor{Relation: domain.RelationRightOf, To: "DP-1"}, key: "Right",
 			start: [2]domain.Rect{{X: -800, W: 400, H: 600}, {X: -400, W: 400, H: 600}},
 			final: [2]domain.Rect{{W: 400, H: 600}, {X: 400, W: 400, H: 600}},
 		},
 		{
 			name: "below larger", dst: big,
-			anchor: ports.OutputAnchor{Relation: domain.RelationBelow, To: "DP-1"}, key: "Down",
+			anchor: domain.OutputAnchor{Relation: domain.RelationBelow, To: "DP-1"}, key: "Down",
 			start: [2]domain.Rect{{Y: -600, W: 400, H: 600}, {X: 400, Y: -600, W: 400, H: 600}},
 			final: [2]domain.Rect{{W: 512, H: 768}, {X: 512, W: 512, H: 768}},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				r := startSwipeOn(t, func(c *ports.Config) {
-					c.Outputs = []ports.OutputConfig{{Name: "DP-1"}, {Name: "DP-2", Anchor: tc.anchor}}
+				r := startSwipeOn(t, func(c *domain.Config) {
+					c.Outputs = []domain.OutputConfig{{Name: "DP-1"}, {Name: "DP-2", Anchor: tc.anchor}}
 					c.Binds["Cmd+Ctrl+Shift+Down"] = string(core.ActionMoveWorkspaceToMonitorDown)
 				}, wide, tc.dst)
 				twoColumns(t, r)
@@ -401,8 +401,8 @@ func TestMovedWorkspaceStartsFromSourceGeometry(t *testing.T) {
 // moves like a monitor move: its windows slide in from the source.
 func TestPulledNamedWorkspaceSlidesIn(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r, other := movedRig(t, func(c *ports.Config) {
-			c.Workspaces = []ports.WorkspaceConfig{{Name: "web"}}
+		r, other := movedRig(t, func(c *domain.Config) {
+			c.Workspaces = []domain.WorkspaceConfig{{Name: "web"}}
 			c.Binds["Alt+w"] = "workspace web"
 		})
 		// web shows on DP-2 with a window, then DP-1 pulls it.
@@ -533,7 +533,7 @@ func TestMoveColumnThatScrollsKeepsCameraFrame(t *testing.T) {
 // the final size.
 func TestSetColumnWidthRectTransition(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startSwipe(t, func(c *ports.Config) {
+		r := startSwipe(t, func(c *domain.Config) {
 			c.Layout.MaxColumns = 4
 			c.Binds["Cmd+Ctrl+Right"] = "set-column-width +1"
 		})
@@ -663,7 +663,7 @@ func TestChainedMovesStartFromShownRects(t *testing.T) {
 // the settled scene the new one.
 func TestClickFocusTransition(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startSwipe(t, func(c *ports.Config) {
+		r := startSwipe(t, func(c *domain.Config) {
 			c.Layout.MaxColumns = 4
 			c.Binds["Cmd+Ctrl+Right"] = "set-column-width +2"
 		})
@@ -698,7 +698,7 @@ func TestClickFocusTransition(t *testing.T) {
 // through a rect motion: the scene right after the lift shows the old rects.
 func TestDiscreteSwipeTransition(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := startSwipe(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" })
+		r := startSwipe(t, func(c *domain.Config) { c.Layout.Overflow = "fixed" })
 		r.mapWindow(t, 1)
 		r.mapWindow(t, 2)
 		r.key(t, "f", domain.ModAlt) // maximize window 2
@@ -735,7 +735,7 @@ func TestDiscreteSwipeTransition(t *testing.T) {
 func TestUnmapMidRectMotion(t *testing.T) {
 	for _, tt := range []struct {
 		name string
-		edit func(*ports.Config)
+		edit func(*domain.Config)
 	}{{"on", nil}, {"off", animationsOff}} {
 		t.Run(tt.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {

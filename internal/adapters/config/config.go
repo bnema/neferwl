@@ -22,7 +22,6 @@ import (
 
 	"github.com/bnema/kvconf"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // maxVRRFlipGap bounds render.vrr-flip-gap below one refresh of a slow
@@ -157,8 +156,8 @@ func DefaultPath() string {
 	return filepath.Join(base, "neferwl", "config")
 }
 
-func Defaults() ports.Config {
-	var c ports.Config
+func Defaults() domain.Config {
+	var c domain.Config
 	c.Keyboard.RepeatRate = 25
 	c.Keyboard.RepeatDelay = 600
 	c.Keyboard.CmdKey = "super"
@@ -187,9 +186,9 @@ func Defaults() ports.Config {
 	c.Layout.MaxColumns = 2
 	c.Layout.Overflow = "cascade"
 	c.Touchpad.Tap = true
-	c.Touchpad.AccelProfile = ports.AccelAdaptive
+	c.Touchpad.AccelProfile = domain.AccelAdaptive
 	c.Touchpad.ScrollFactor = 1
-	c.Mouse.AccelProfile = ports.AccelAdaptive
+	c.Mouse.AccelProfile = domain.AccelAdaptive
 	c.Cursor.HideAfter = 5 * time.Second
 	// Animations are experimental: off unless the config turns them on.
 	c.Animations.On = false
@@ -241,7 +240,7 @@ func Defaults() ports.Config {
 }
 
 // LoadDefault loads DefaultPath; a missing file means defaults.
-func LoadDefault() (ports.Config, []Warning, error) {
+func LoadDefault() (domain.Config, []Warning, error) {
 	c, w, err := Load(DefaultPath())
 	if errors.Is(err, fs.ErrNotExist) {
 		return Defaults(), nil, nil
@@ -250,7 +249,7 @@ func LoadDefault() (ports.Config, []Warning, error) {
 }
 
 // Load reads a config file. The error is only for I/O; bad lines become warnings.
-func Load(path string) (ports.Config, []Warning, error) {
+func Load(path string) (domain.Config, []Warning, error) {
 	c, _, w, err := loadFile(path)
 	if err != nil {
 		return Defaults(), nil, err
@@ -259,10 +258,10 @@ func Load(path string) (ports.Config, []Warning, error) {
 }
 
 // loadFile reads path without blocking on a FIFO or device, then parses it.
-func loadFile(path string) (ports.Config, map[string]string, []Warning, error) {
+func loadFile(path string) (domain.Config, map[string]string, []Warning, error) {
 	data, err := kvconf.ReadFile(path, kvconf.Options{MaxBytes: -1})
 	if err != nil {
-		return ports.Config{}, nil, nil, err
+		return domain.Config{}, nil, nil, err
 	}
 	return parseBytes(data)
 }
@@ -298,18 +297,18 @@ func outputRelation(name string) (domain.OutputRelation, string, bool) {
 // and warns about outputs sharing the same relation, reference and offset.
 // Core places a cycle automatically anyway; runtime overrides never create
 // relations, so this is the only place to detect them.
-func checkOutputAnchors(outputs []ports.OutputConfig, relKeys map[string]string, offsetLines, seen map[string]int) []Warning {
+func checkOutputAnchors(outputs []domain.OutputConfig, relKeys map[string]string, offsetLines, seen map[string]int) []Warning {
 	var warnings []Warning
 	for _, o := range outputs {
 		if line, ok := offsetLines[o.Name]; ok && o.Anchor.Relation == domain.RelationNone {
 			warnings = append(warnings, Warning{Line: line, Msg: fmt.Sprintf("output.%s.offset: ignored without a relation (right-of, left-of, above, below)", o.Name)})
 		}
 	}
-	byName := make(map[string]*ports.OutputConfig, len(outputs))
+	byName := make(map[string]*domain.OutputConfig, len(outputs))
 	for i := range outputs {
 		byName[outputs[i].Name] = &outputs[i]
 	}
-	var cycle []*ports.OutputConfig
+	var cycle []*domain.OutputConfig
 	for i := range outputs {
 		for cur, steps := &outputs[i], 0; steps <= len(outputs); steps++ {
 			if cur.Anchor.Relation == domain.RelationNone {
@@ -345,7 +344,7 @@ func checkOutputAnchors(outputs []ports.OutputConfig, relKeys map[string]string,
 }
 
 // Parse reads `key = value` lines on top of the defaults.
-func Parse(r io.Reader) (ports.Config, []Warning, error) {
+func Parse(r io.Reader) (domain.Config, []Warning, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return Defaults(), nil, err
@@ -356,7 +355,7 @@ func Parse(r io.Reader) (ports.Config, []Warning, error) {
 
 // parseBytes also returns the effective key/value pairs, used to log what
 // changed on reload.
-func parseBytes(data []byte) (ports.Config, map[string]string, []Warning, error) {
+func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error) {
 	c := Defaults()
 	var warnings []Warning
 	raw := map[string]string{}
@@ -425,12 +424,12 @@ func parseBytes(data []byte) (ports.Config, map[string]string, []Warning, error)
 			raw[key] = value
 		}
 		if name, ok := strings.CutPrefix(key, "output."); ok {
-			entry := func() *ports.OutputConfig {
+			entry := func() *domain.OutputConfig {
 				if i, ok := outputs[name]; ok {
 					return &c.Outputs[i]
 				}
 				outputs[name] = len(c.Outputs)
-				c.Outputs = append(c.Outputs, ports.OutputConfig{Name: name, ScaleOnly: true, SDRBrightness: ports.DefaultSDRBrightness})
+				c.Outputs = append(c.Outputs, domain.OutputConfig{Name: name, ScaleOnly: true, SDRBrightness: domain.DefaultSDRBrightness})
 				return &c.Outputs[len(c.Outputs)-1]
 			}
 			if base, ok := strings.CutSuffix(name, ".primary"); ok {
@@ -524,7 +523,7 @@ func parseBytes(data []byte) (ports.Config, map[string]string, []Warning, error)
 				entry().Transform = t
 				continue
 			}
-			o := ports.OutputConfig{Name: name}
+			o := domain.OutputConfig{Name: name}
 			if value == "off" {
 				o.Off = true
 			} else if _, _, _, err := ParseMode(value); err != nil {
@@ -545,7 +544,7 @@ func parseBytes(data []byte) (ports.Config, map[string]string, []Warning, error)
 				warn("%s: workspace name must be letters, digits, - or _", key)
 				continue
 			}
-			var ws ports.WorkspaceConfig
+			var ws domain.WorkspaceConfig
 			if i, ok := workspaces[name]; ok {
 				ws = c.Workspaces[i]
 			}
@@ -571,7 +570,7 @@ func parseBytes(data []byte) (ports.Config, map[string]string, []Warning, error)
 			}
 			e := rules[name]
 			if e == nil {
-				e = &ruleEntry{rule: ports.WindowRule{Name: name}, line: n}
+				e = &ruleEntry{rule: domain.WindowRule{Name: name}, line: n}
 				rules[name] = e
 				ruleOrder = append(ruleOrder, e)
 			}
@@ -697,7 +696,7 @@ func expandCmd(combo, cmd string) (string, error) {
 }
 
 // set applies one scalar key. Unknown keys and invalid values are errors.
-func set(c *ports.Config, key, v string) error {
+func set(c *domain.Config, key, v string) error {
 	switch key {
 	case "keyboard.layout":
 		c.Keyboard.Layout = v
@@ -715,7 +714,7 @@ func set(c *ports.Config, key, v string) error {
 		}
 		c.Keyboard.CmdKey = v
 	case "startup":
-		commands := ports.SplitCommands(v)
+		commands := domain.SplitCommands(v)
 		if len(commands) == 0 {
 			return fmt.Errorf("must not be empty")
 		}
@@ -1089,7 +1088,7 @@ func set(c *ports.Config, key, v string) error {
 // parsePointerKey applies one pointer key shared by touchpads and mice, with
 // the touchpad. or mouse. prefix already removed. Touchpad-only keys are
 // handled before; anything else is unknown. On an error p is left unchanged.
-func parsePointerKey(key, v string, p *ports.PointerConfig) error {
+func parsePointerKey(key, v string, p *domain.PointerConfig) error {
 	switch key {
 	case "natural-scroll":
 		b, err := onOff(v)
@@ -1110,7 +1109,7 @@ func parsePointerKey(key, v string, p *ports.PointerConfig) error {
 		}
 		p.AccelSpeed = s
 	case "accel-profile":
-		if v != ports.AccelAdaptive && v != ports.AccelFlat {
+		if v != domain.AccelAdaptive && v != domain.AccelFlat {
 			return fmt.Errorf("must be adaptive or flat")
 		}
 		p.AccelProfile = v
@@ -1121,9 +1120,9 @@ func parsePointerKey(key, v string, p *ports.PointerConfig) error {
 }
 
 // setOutputLayout applies one layout.<output>.<field> key.
-func setOutputLayout(c *ports.Config, output, field, v string) error {
-	i := slices.IndexFunc(c.Layout.Outputs, func(o ports.OutputLayout) bool { return o.Output == output })
-	o := ports.OutputLayout{Output: output}
+func setOutputLayout(c *domain.Config, output, field, v string) error {
+	i := slices.IndexFunc(c.Layout.Outputs, func(o domain.OutputLayout) bool { return o.Output == output })
+	o := domain.OutputLayout{Output: output}
 	if i >= 0 {
 		o = c.Layout.Outputs[i]
 	}
@@ -1140,7 +1139,7 @@ func setOutputLayout(c *ports.Config, output, field, v string) error {
 
 // setLayoutRule applies max-columns or overflow, for layout.*,
 // layout.<output>.* and workspace.<name>.*.
-func setLayoutRule(r *ports.LayoutRules, field, v string) error {
+func setLayoutRule(r *domain.LayoutRules, field, v string) error {
 	switch field {
 	case "max-columns":
 		return positive(&r.MaxColumns, v, 16)
@@ -1156,7 +1155,7 @@ func setLayoutRule(r *ports.LayoutRules, field, v string) error {
 
 // checkWorkspaceBinds warns about a `workspace <name>` bind to an undeclared
 // workspace (it does nothing) and a named workspace no bind reaches.
-func checkWorkspaceBinds(c ports.Config, seen map[string]int) []Warning {
+func checkWorkspaceBinds(c domain.Config, seen map[string]int) []Warning {
 	declared := map[string]bool{}
 	for _, w := range c.Workspaces {
 		declared[w.Name] = true
@@ -1201,7 +1200,7 @@ var workspaceName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // ruleEntry is a rule.<name>.* group while the file is read.
 type ruleEntry struct {
-	rule ports.WindowRule
+	rule domain.WindowRule
 	line int // of its first key
 	// dropped is set by an invalid value with no valid one before it: the
 	// whole rule is ignored.
@@ -1211,7 +1210,7 @@ type ruleEntry struct {
 var errUnknownRuleField = errors.New("unknown key (app-id, floating, workspace, monitor, width)")
 
 // setRule applies one rule.<name>.<field> key.
-func setRule(r *ports.WindowRule, field, v string) error {
+func setRule(r *domain.WindowRule, field, v string) error {
 	switch field {
 	case "app-id":
 		if v == "" {
@@ -1268,8 +1267,8 @@ const maxRuleWorkspace = 1000
 // finishRules keeps the valid rules in file order, warning about those
 // without an app-id (dropped) and about named workspaces nobody declared
 // (kept: core falls back to the default place).
-func finishRules(entries []*ruleEntry, workspaces []ports.WorkspaceConfig, seen map[string]int) ([]ports.WindowRule, []Warning) {
-	var rules []ports.WindowRule
+func finishRules(entries []*ruleEntry, workspaces []domain.WorkspaceConfig, seen map[string]int) ([]domain.WindowRule, []Warning) {
+	var rules []domain.WindowRule
 	var warnings []Warning
 	for _, e := range entries {
 		if e.dropped {
@@ -1280,7 +1279,7 @@ func finishRules(entries []*ruleEntry, workspaces []ports.WorkspaceConfig, seen 
 			continue
 		}
 		if w := e.rule.Workspace; w != "" {
-			if _, err := strconv.Atoi(w); err != nil && !slices.ContainsFunc(workspaces, func(c ports.WorkspaceConfig) bool { return c.Name == w }) {
+			if _, err := strconv.Atoi(w); err != nil && !slices.ContainsFunc(workspaces, func(c domain.WorkspaceConfig) bool { return c.Name == w }) {
 				warnings = append(warnings, Warning{Line: seen["rule."+e.rule.Name+".workspace"], Msg: fmt.Sprintf("rule.%s.workspace: no workspace.%s.* declared", e.rule.Name, w)})
 			}
 		}
@@ -1290,7 +1289,7 @@ func finishRules(entries []*ruleEntry, workspaces []ports.WorkspaceConfig, seen 
 }
 
 // setWorkspace applies one workspace.<name>.<field> key.
-func setWorkspace(w *ports.WorkspaceConfig, field, v string) error {
+func setWorkspace(w *domain.WorkspaceConfig, field, v string) error {
 	switch field {
 	case "monitor":
 		if v == "" {
@@ -1325,7 +1324,7 @@ func setWorkspace(w *ports.WorkspaceConfig, field, v string) error {
 		if !ok || len(argv) == 0 {
 			return fmt.Errorf("must be <cells>, <command> like 2, foot (cells from 1 to 16)")
 		}
-		slot := ports.SlotConfig{Index: index, Cells: count, Argv: argv}
+		slot := domain.SlotConfig{Index: index, Cells: count, Argv: argv}
 		i := sort.Search(len(w.Slots), func(i int) bool { return w.Slots[i].Index >= index })
 		if i < len(w.Slots) && w.Slots[i].Index == index {
 			w.Slots[i] = slot
@@ -1375,13 +1374,13 @@ func splitList(v string) []string {
 
 func checkAction(v string) error {
 	if rest, ok := strings.CutPrefix(v, "spawn "); ok {
-		if len(ports.SplitCommands(rest)) == 0 {
+		if len(domain.SplitCommands(rest)) == 0 {
 			return fmt.Errorf("spawn needs a command")
 		}
 		return nil
 	}
 	if rest, ok := strings.CutPrefix(v, "stash "); ok {
-		if len(ports.SplitCommands(rest)) == 0 {
+		if len(domain.SplitCommands(rest)) == 0 {
 			return fmt.Errorf("stash needs a command")
 		}
 		return nil

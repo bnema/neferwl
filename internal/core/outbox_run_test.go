@@ -25,7 +25,7 @@ func startOutboxRig(t *testing.T, commandCap int) *outboxRig {
 	t.Helper()
 	cfg := scrollDefaults()
 	cfg.Border.Width = 0
-	cfg.Outputs = []ports.OutputConfig{{Name: "DP-2", Scale: 2}}
+	cfg.Outputs = []domain.OutputConfig{{Name: "DP-2", Scale: 2}}
 	cfg.Binds["Cmd+minus"] = "scale-down"
 	r := &outboxRig{
 		input:    make(chan ports.InputEvent),

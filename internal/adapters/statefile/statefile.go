@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/zerowrap"
 )
 
@@ -129,7 +129,7 @@ type Window struct {
 	Hidden bool `json:"hidden"`
 }
 
-func fromPorts(st ports.State, ids *workspaceid.IDs) State {
+func fromPorts(st domain.State, ids *workspaceid.IDs) State {
 	out := State{Output: st.Output, Outputs: make([]Output, 0, len(st.Outputs)), Windows: make([]Window, 0, len(st.Windows)), Workspaces: make([]Workspace, 0, len(st.Workspaces))}
 	for _, o := range st.Outputs {
 		out.Outputs = append(out.Outputs, Output{Name: o.Name, Active: o.Active, Count: o.Count, Workspace: o.Workspace, WorkspaceID: ids.ID(o.WorkspaceID, o.Workspace)})
@@ -155,7 +155,7 @@ func fromPorts(st ports.State, ids *workspaceid.IDs) State {
 	return out
 }
 
-func window(w ports.WindowState, ids *workspaceid.IDs) Window {
+func window(w domain.WindowState, ids *workspaceid.IDs) Window {
 	return Window{ID: uint64(w.ID), AppID: w.AppID, PID: w.PID, Sandbox: w.Sandbox, ContentType: w.ContentType, Xwayland: w.Xwayland, Output: w.Output, Workspace: w.Workspace, WorkspaceID: ids.ID(w.WorkspaceID, w.WorkspaceName), Visible: w.Visible, IdleInhibit: w.IdleInhibit, ShortcutsInhibited: w.ShortcutsInhibited, PointerConstraint: w.PointerConstraint, Floating: w.Floating, Fullscreen: w.Fullscreen, StashIndex: w.StashIndex, StashCount: w.StashCount, Column: w.Column, Row: w.Row, Hidden: w.Hidden}
 }
 
@@ -166,14 +166,14 @@ const writeInterval = time.Second
 // the file: a stale state must not outlive the session. It writes at most
 // once per writeInterval: a state after a quiet interval is written at once,
 // others are coalesced and the latest is written when the interval ends.
-func Run(ctx context.Context, path string, states <-chan ports.State, ids *workspaceid.IDs, log zerowrap.Logger) error {
+func Run(ctx context.Context, path string, states <-chan domain.State, ids *workspaceid.IDs, log zerowrap.Logger) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	// A file left by a crashed session on this socket is not ours.
 	_ = os.Remove(path)
 	defer os.Remove(path)
-	flush := func(st ports.State) {
+	flush := func(st domain.State) {
 		if err := write(path, fromPorts(st, ids)); err != nil {
 			// Scripts lose their state; the session goes on.
 			log.Warn().Err(err).Str("path", path).Msg("write state")
@@ -184,7 +184,7 @@ func Run(ctx context.Context, path string, states <-chan ports.State, ids *works
 	<-timer.C
 	var (
 		last    time.Time
-		pending ports.State
+		pending domain.State
 		waiting bool
 	)
 	for {
@@ -210,7 +210,7 @@ func Run(ctx context.Context, path string, states <-chan ports.State, ids *works
 		case <-due:
 			waiting = false
 			flush(pending)
-			pending = ports.State{}
+			pending = domain.State{}
 			last = time.Now()
 		}
 	}

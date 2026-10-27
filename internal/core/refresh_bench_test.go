@@ -14,7 +14,7 @@ import (
 // matching the motions to the layout every frame. The layout is built in the
 // screen's reused buffers: 0 allocs/op (33 before).
 func BenchmarkRefreshShown(b *testing.B) {
-	var cfg ports.Config
+	var cfg domain.Config
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 4
 	cfg.Animations.On = true

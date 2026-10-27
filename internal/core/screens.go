@@ -144,14 +144,14 @@ func (c *Core) order() {
 // outputIndex is the position of the output.<name> entry in the config, or
 // -1; names are unique in the config.
 func (c *Core) outputIndex(name string) int {
-	return slices.IndexFunc(c.cfg.Outputs, func(o ports.OutputConfig) bool { return o.Name == name })
+	return slices.IndexFunc(c.cfg.Outputs, func(o domain.OutputConfig) bool { return o.Name == name })
 }
 
 // outputConfig returns the output.<name> entry.
-func (c *Core) outputConfig(name string) (ports.OutputConfig, bool) {
+func (c *Core) outputConfig(name string) (domain.OutputConfig, bool) {
 	i := c.outputIndex(name)
 	if i < 0 {
-		return ports.OutputConfig{}, false
+		return domain.OutputConfig{}, false
 	}
 	return c.cfg.Outputs[i], true
 }

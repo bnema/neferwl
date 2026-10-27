@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/bnema/neferwl/internal/core/layout"
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // Action describes the workspace action contract.
@@ -203,7 +203,7 @@ func NamedArg(a Action) (string, bool) {
 }
 
 // spawnPrefix starts a bind action that runs commands: "spawn fuzzel --flag".
-// They are split by ports.SplitCommands; there is no shell.
+// They are split by domain.SplitCommands; there is no shell.
 const spawnPrefix = "spawn "
 
 // SpawnCommands returns the commands of a "spawn <cmd>[; <cmd>...]" action.
@@ -221,7 +221,7 @@ func prefixedCommands(a Action, prefix string) ([][]string, bool) {
 	if !ok {
 		return nil, false
 	}
-	commands := ports.SplitCommands(rest)
+	commands := domain.SplitCommands(rest)
 	return commands, len(commands) > 0
 }
 

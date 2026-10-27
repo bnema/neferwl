@@ -36,7 +36,7 @@ func TestHiddenFloatFullscreenRequest(t *testing.T) {
 
 func TestFloatingSceneDimAndConfigure(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		cfg := ports.Config{}
+		cfg := domain.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
 		cfg.Floating.Dim = 0.3

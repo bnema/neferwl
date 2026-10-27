@@ -23,14 +23,14 @@ func TestWorkspaceChannelCapacity(t *testing.T) {
 func TestWorkspaceSnapshotsAndActivation(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		cfg := scrollDefaults()
-		cfg.Workspaces = append(cfg.Workspaces, ports.WorkspaceConfig{Name: "dev"})
+		cfg.Workspaces = append(cfg.Workspaces, domain.WorkspaceConfig{Name: "dev"})
 		client := make(chan ports.ClientEvent, 16)
 		input := make(chan ports.InputEvent, 8)
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 32)
 		snapshots := make(chan ports.Workspaces, 1)
 		scenes := make(chan []domain.Scene, 1)
-		state := make(chan ports.State, 1)
+		state := make(chan domain.State, 1)
 		spawn := make(chan ports.SpawnRequest, 8)
 		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Workspaces: snapshots, State: state, Scenes: scenes, Spawn: spawn}, core.Options{})
 		if err != nil {

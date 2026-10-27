@@ -73,7 +73,7 @@ func TestOSDHoldThroughRun(t *testing.T) {
 
 func TestOSDPinThroughRun(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		h := newHintConfig(t, core.Options{}, func(cfg *ports.Config) { cfg.Binds["Cmd+p"] = "osd-pin" })
+		h := newHintConfig(t, core.Options{}, func(cfg *domain.Config) { cfg.Binds["Cmd+p"] = "osd-pin" })
 		tap := func() {
 			h.input <- ports.KeyEvent{Keysym: "Super_L", Pressed: true, Mods: domain.ModSuper}
 			synctest.Wait()
@@ -109,7 +109,7 @@ func TestOSDSuppressedThroughRun(t *testing.T) {
 	for _, inhibited := range []bool{false, true} {
 		t.Run(map[bool]string{false: "disabled", true: "inhibited"}[inhibited], func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				h := newHintConfig(t, core.Options{}, func(cfg *ports.Config) { cfg.OSD.Enable = inhibited })
+				h := newHintConfig(t, core.Options{}, func(cfg *domain.Config) { cfg.OSD.Enable = inhibited })
 				if inhibited {
 					h.client <- ports.ShortcutsInhibit{Window: 1, Active: true}
 					synctest.Wait()
@@ -153,7 +153,7 @@ func TestOSDPinnedSecurityTransitionThroughRun(t *testing.T) {
 				epoch.Store(domain.SecurityState{})
 				gate := portsmocks.NewMockSessionSecurity(t)
 				gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return epoch.Load().(domain.SecurityState) })
-				h := newHintConfig(t, core.Options{Security: gate}, func(cfg *ports.Config) { cfg.Binds["Cmd+p"] = "osd-pin" })
+				h := newHintConfig(t, core.Options{Security: gate}, func(cfg *domain.Config) { cfg.Binds["Cmd+p"] = "osd-pin" })
 				h.press("p", domain.ModSuper)
 				h.release("p", 0)
 				synctest.Wait()
@@ -195,7 +195,7 @@ func TestOSDPinnedEmptyFocusThroughRun(t *testing.T) {
 	for _, unmap := range []bool{true, false} {
 		t.Run(map[bool]string{true: "unmap", false: "empty-workspace"}[unmap], func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				h := newHintConfig(t, core.Options{}, func(cfg *ports.Config) {
+				h := newHintConfig(t, core.Options{}, func(cfg *domain.Config) {
 					cfg.Binds["Cmd+p"] = "osd-pin"
 					cfg.Binds["Cmd+n"] = "focus-workspace-next"
 					cfg.Binds["Cmd+b"] = "focus-workspace-prev"
@@ -257,7 +257,7 @@ func TestOSDPinnedEmptyFocusThroughRun(t *testing.T) {
 
 func TestOSDCmdBindReleaseThroughRun(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		h := newHintConfig(t, core.Options{}, func(cfg *ports.Config) { cfg.Binds["Cmd+h"] = "close-window" })
+		h := newHintConfig(t, core.Options{}, func(cfg *domain.Config) { cfg.Binds["Cmd+h"] = "close-window" })
 		for _, ev := range []ports.KeyEvent{
 			{Keysym: "Super_L", Pressed: true, Mods: domain.ModSuper},
 			{Keysym: "h", Base: "h", Pressed: true, Mods: domain.ModSuper},
@@ -298,7 +298,7 @@ func TestOSDInhibitShownThroughRun(t *testing.T) {
 				clock.EXPECT().NewTimer(400 * time.Millisecond).Return(timer).Once()
 				timer.EXPECT().C().Return(fire).Once()
 				timer.EXPECT().Stop().Return(true).Once()
-				h := newHintConfig(t, core.Options{Clock: clock}, func(cfg *ports.Config) { cfg.Binds["Cmd+p"] = "osd-pin" })
+				h := newHintConfig(t, core.Options{Clock: clock}, func(cfg *domain.Config) { cfg.Binds["Cmd+p"] = "osd-pin" })
 				h.input <- ports.KeyEvent{Keysym: "Super_L", Pressed: true, Mods: domain.ModSuper}
 				synctest.Wait()
 				fire <- time.Unix(0, int64(400*time.Millisecond))

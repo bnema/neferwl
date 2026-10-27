@@ -16,16 +16,16 @@ import (
 // management on top of the file configuration, which is never mutated. Its
 // owner is the backend loop; it is not safe for concurrent use.
 type OutputOverrides struct {
-	file      ports.Config
-	overrides map[string]ports.OutputConfig
+	file      domain.Config
+	overrides map[string]domain.OutputConfig
 	heads     ports.OutputHeads
 	headless  bool
 }
 
 // NewOutputOverrides starts with no override. Headless outputs keep their
 // mode and enabled state.
-func NewOutputOverrides(file ports.Config, headless bool) *OutputOverrides {
-	return &OutputOverrides{file: file, headless: headless, overrides: map[string]ports.OutputConfig{}}
+func NewOutputOverrides(file domain.Config, headless bool) *OutputOverrides {
+	return &OutputOverrides{file: file, headless: headless, overrides: map[string]domain.OutputConfig{}}
 }
 
 // Headless reports whether the outputs are headless.
@@ -38,21 +38,21 @@ func (o *OutputOverrides) Heads() ports.OutputHeads { return o.heads }
 func (o *OutputOverrides) SetHeads(heads ports.OutputHeads) { o.heads = heads }
 
 // Snapshot copies the current overrides for a later Restore.
-func (o *OutputOverrides) Snapshot() map[string]ports.OutputConfig {
-	previous := make(map[string]ports.OutputConfig, len(o.overrides))
+func (o *OutputOverrides) Snapshot() map[string]domain.OutputConfig {
+	previous := make(map[string]domain.OutputConfig, len(o.overrides))
 	maps.Copy(previous, o.overrides)
 	return previous
 }
 
 // Restore puts back overrides taken by Snapshot and returns the effective
 // configuration.
-func (o *OutputOverrides) Restore(previous map[string]ports.OutputConfig) ports.Config {
+func (o *OutputOverrides) Restore(previous map[string]domain.OutputConfig) domain.Config {
 	o.overrides = previous
 	return o.Effective()
 }
 
 // Effective is the file configuration with the overrides applied.
-func (o *OutputOverrides) Effective() ports.Config {
+func (o *OutputOverrides) Effective() domain.Config {
 	cfg := o.file
 	cfg.Outputs = slices.Clone(o.file.Outputs)
 	// Preserve file order and backend connection order; map iteration would
@@ -62,7 +62,7 @@ func (o *OutputOverrides) Effective() ports.Config {
 		if !ok {
 			continue
 		}
-		index := slices.IndexFunc(cfg.Outputs, func(v ports.OutputConfig) bool { return v.Name == head.Info.Name })
+		index := slices.IndexFunc(cfg.Outputs, func(v domain.OutputConfig) bool { return v.Name == head.Info.Name })
 		if index < 0 {
 			cfg.Outputs = append(cfg.Outputs, entry)
 		} else {
@@ -75,7 +75,7 @@ func (o *OutputOverrides) Effective() ports.Config {
 // Reload replaces the file configuration. Runtime overrides are dropped,
 // unless only output scales changed (a saved scale bind): then they stay and
 // take the new file scales.
-func (o *OutputOverrides) Reload(file ports.Config) ports.Config {
+func (o *OutputOverrides) Reload(file domain.Config) domain.Config {
 	scales, onlyScales := scaleChanges(o.file, file)
 	o.file = file
 	if !onlyScales {
@@ -93,8 +93,8 @@ func (o *OutputOverrides) Reload(file ports.Config) ports.Config {
 
 // scaleChanges lists the output scales that differ from old to cur, and
 // reports whether nothing else differs.
-func scaleChanges(old, cur ports.Config) (map[string]float64, bool) {
-	scaleOf := func(c ports.Config, name string) float64 {
+func scaleChanges(old, cur domain.Config) (map[string]float64, bool) {
+	scaleOf := func(c domain.Config, name string) float64 {
 		for _, o := range c.Outputs {
 			if o.Name == name {
 				return o.Scale
@@ -103,13 +103,13 @@ func scaleChanges(old, cur ports.Config) (map[string]float64, bool) {
 		return 0
 	}
 	// Without scales, an output.<name>.scale-only entry is empty: drop it.
-	strip := func(c ports.Config) ports.Config {
+	strip := func(c domain.Config) domain.Config {
 		c.Outputs = slices.Clone(c.Outputs)
 		for i := range c.Outputs {
 			c.Outputs[i].Scale = 0
 		}
-		c.Outputs = slices.DeleteFunc(c.Outputs, func(o ports.OutputConfig) bool {
-			return o == ports.OutputConfig{Name: o.Name, ScaleOnly: true, SDRBrightness: ports.DefaultSDRBrightness}
+		c.Outputs = slices.DeleteFunc(c.Outputs, func(o domain.OutputConfig) bool {
+			return o == domain.OutputConfig{Name: o.Name, ScaleOnly: true, SDRBrightness: domain.DefaultSDRBrightness}
 		})
 		return c
 	}
@@ -161,9 +161,9 @@ func (o *OutputOverrides) validate(req ports.OutputApply) error {
 // Apply validates a request against the inventory and, unless it is a
 // test, records its changes as overrides. It returns the effective
 // configuration.
-func (o *OutputOverrides) Apply(req ports.OutputApply) (ports.Config, error) {
+func (o *OutputOverrides) Apply(req ports.OutputApply) (domain.Config, error) {
 	if err := o.validate(req); err != nil {
-		return ports.Config{}, err
+		return domain.Config{}, err
 	}
 	if req.Test {
 		return o.Effective(), nil
@@ -171,7 +171,7 @@ func (o *OutputOverrides) Apply(req ports.OutputApply) (ports.Config, error) {
 	for _, h := range req.Heads {
 		entry, ok := o.overrides[h.Name]
 		if !ok {
-			index := slices.IndexFunc(o.file.Outputs, func(v ports.OutputConfig) bool { return v.Name == h.Name })
+			index := slices.IndexFunc(o.file.Outputs, func(v domain.OutputConfig) bool { return v.Name == h.Name })
 			if index >= 0 {
 				entry = o.file.Outputs[index]
 			} else {

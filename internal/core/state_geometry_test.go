@@ -12,7 +12,7 @@ import (
 // rectangles; only the workspace on screen is visible.
 func TestStateWorkspaceGeometry(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		cfg := ports.Config{}
+		cfg := domain.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.Overflow = "fixed"
 		cfg.Layout.MaxColumns = 2
@@ -38,9 +38,9 @@ func TestStateWorkspaceGeometry(t *testing.T) {
 		if ws.ID != shown.ID || ws.Number != 1 || ws.Output != "OUT-1" || !ws.Visible || ws.Overflow != "fixed" {
 			t.Fatalf("%+v", ws)
 		}
-		want := []ports.ColumnState{
-			{Rect: Rect{X: 10, Y: 10, W: 485, H: 780}, Windows: []ports.TileState{{ID: 1, Rect: Rect{X: 10, Y: 10, W: 485, H: 780}}}},
-			{Rect: Rect{X: 505, Y: 10, W: 485, H: 780}, Windows: []ports.TileState{{ID: 2, Rect: Rect{X: 505, Y: 10, W: 485, H: 385}}, {ID: 3, Rect: Rect{X: 505, Y: 405, W: 485, H: 385}}}},
+		want := []domain.ColumnState{
+			{Rect: Rect{X: 10, Y: 10, W: 485, H: 780}, Windows: []domain.TileState{{ID: 1, Rect: Rect{X: 10, Y: 10, W: 485, H: 780}}}},
+			{Rect: Rect{X: 505, Y: 10, W: 485, H: 780}, Windows: []domain.TileState{{ID: 2, Rect: Rect{X: 505, Y: 10, W: 485, H: 385}}, {ID: 3, Rect: Rect{X: 505, Y: 405, W: 485, H: 385}}}},
 		}
 		if len(ws.Columns) != len(want) {
 			t.Fatalf("%+v", ws.Columns)
@@ -76,7 +76,7 @@ func TestStateWorkspaceGeometry(t *testing.T) {
 // A change of geometry is a change of state; an unchanged one is not.
 func TestStateWorkspaceChange(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		cfg := ports.Config{}
+		cfg := domain.Config{}
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
 		c, err := New(cfg, Channels{Commands: make(chan ports.ClientCommand, 16), Scenes: make(chan []domain.Scene, 1)}, Options{})

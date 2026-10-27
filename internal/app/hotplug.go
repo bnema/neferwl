@@ -9,6 +9,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/drm"
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -66,7 +67,7 @@ func (a hotplugAddAction) retryAfterTeardown() bool { return a == hotplugAddDyin
 // appeared. The render GPU never changes at runtime, so the selector's own
 // render choice is not used: every added card is a non-render card. existing
 // and dying are device paths (/dev/dri/cardN).
-func planHotplugAdd(cands []ports.GPUInfo, card string, cfg ports.Config, env string, existing, dying []string) (ports.GPUInfo, hotplugAddAction, ports.GPUSelection, error) {
+func planHotplugAdd(cands []ports.GPUInfo, card string, cfg domain.Config, env string, existing, dying []string) (ports.GPUInfo, hotplugAddAction, ports.GPUSelection, error) {
 	path := filepath.Join("/dev/dri", card)
 	i := slices.IndexFunc(cands, func(g ports.GPUInfo) bool { return filepath.Base(g.Path) == card })
 	if i < 0 {

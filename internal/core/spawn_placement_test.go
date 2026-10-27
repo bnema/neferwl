@@ -16,7 +16,7 @@ func TestSlotClaimWithoutWorkspace(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		// A config message would remove both the workspace and its slot.
 		// Exercise the registry's missing-destination branch directly instead.
-		cfg := ports.Config{}
+		cfg := domain.Config{}
 		cfg.Keyboard.CmdKey = "alt"
 		cfg.Layout.MaxColumns = 1
 		c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1)}, Options{})
@@ -40,7 +40,7 @@ func TestSlotClaimWithoutWorkspace(t *testing.T) {
 
 func TestExpiredTerminalTokenMapsNormally(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		cfg := ports.Config{}
+		cfg := domain.Config{}
 		cfg.Keyboard.CmdKey = "alt"
 		cfg.Layout.MaxColumns = 1
 		c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1)}, Options{})

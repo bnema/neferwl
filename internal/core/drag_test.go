@@ -35,7 +35,7 @@ type dragRig struct {
 
 // startDrag runs core with Super as Cmd, no border, 10 px gaps, and
 // the given outputs. edit may change the config.
-func startDragRig(t *testing.T, edit func(*ports.Config), outs ...ports.OutputInfo) *dragRig {
+func startDragRig(t *testing.T, edit func(*domain.Config), outs ...ports.OutputInfo) *dragRig {
 	t.Helper()
 	return newDragRig(t, false, edit, outs...)
 }
@@ -43,9 +43,9 @@ func startDragRig(t *testing.T, edit func(*ports.Config), outs ...ports.OutputIn
 // startAnimatedDragRig is startDragRig with animations on and a clock the
 // test moves: settle moves it past every spring and sends the page flips,
 // so the scene it returns is the settled one, deterministically.
-func startAnimatedDragRig(t *testing.T, edit func(*ports.Config), outs ...ports.OutputInfo) *dragRig {
+func startAnimatedDragRig(t *testing.T, edit func(*domain.Config), outs ...ports.OutputInfo) *dragRig {
 	t.Helper()
-	return newDragRig(t, true, func(c *ports.Config) {
+	return newDragRig(t, true, func(c *domain.Config) {
 		c.Animations.On = true
 		if edit != nil {
 			edit(c)
@@ -53,7 +53,7 @@ func startAnimatedDragRig(t *testing.T, edit func(*ports.Config), outs ...ports.
 	}, outs...)
 }
 
-func newDragRig(t *testing.T, animated bool, edit func(*ports.Config), outs ...ports.OutputInfo) *dragRig {
+func newDragRig(t *testing.T, animated bool, edit func(*domain.Config), outs ...ports.OutputInfo) *dragRig {
 	t.Helper()
 	cfg := scrollDefaults()
 	cfg.Border.Width = 0
@@ -312,7 +312,7 @@ func TestDragEscapeRestoresFloat(t *testing.T) {
 
 func TestDragTileZonesAndHints(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
-		dragTileZonesAndHints(t, startDragMode(t, animated, func(c *ports.Config) { c.Layout.MaxColumns = 3 }, dragOut))
+		dragTileZonesAndHints(t, startDragMode(t, animated, func(c *domain.Config) { c.Layout.MaxColumns = 3 }, dragOut))
 	})
 }
 
@@ -401,12 +401,12 @@ func dragTileZonesAndHints(t *testing.T, r *dragRig) {
 
 // startDragMode is the drag rig with animations off, or on and landed by
 // settle.
-func startDragMode(t *testing.T, animated bool, edit func(*ports.Config), outs ...ports.OutputInfo) *dragRig {
+func startDragMode(t *testing.T, animated bool, edit func(*domain.Config), outs ...ports.OutputInfo) *dragRig {
 	t.Helper()
 	if animated {
 		return startAnimatedDragRig(t, edit, outs...)
 	}
-	return startDragRig(t, func(c *ports.Config) {
+	return startDragRig(t, func(c *domain.Config) {
 		if edit != nil {
 			edit(c)
 		}
@@ -416,7 +416,7 @@ func startDragMode(t *testing.T, animated bool, edit func(*ports.Config), outs .
 
 func TestDragTileGapInsert(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
-		dragTileGapInsert(t, startDragMode(t, animated, func(c *ports.Config) { c.Layout.MaxColumns = 3 }, dragOut))
+		dragTileGapInsert(t, startDragMode(t, animated, func(c *domain.Config) { c.Layout.MaxColumns = 3 }, dragOut))
 	})
 }
 
@@ -476,7 +476,7 @@ func (r *dragRig) release(t *testing.T) []domain.Scene {
 // drop is instant.
 func TestDragDropTileSlides(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
-		r := startDragMode(t, animated, func(c *ports.Config) { c.Layout.MaxColumns = 3 }, dragOut)
+		r := startDragMode(t, animated, func(c *domain.Config) { c.Layout.MaxColumns = 3 }, dragOut)
 		for id := domain.WindowID(1); id <= 3; id++ {
 			r.client <- ports.WindowMapped{ID: id}
 			r.settle(t)
@@ -558,7 +558,7 @@ func TestDragDropTileSlides(t *testing.T) {
 
 func TestDragFixedNoGapZone(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
-		dragFixedNoGapZone(t, startDragMode(t, animated, func(c *ports.Config) { c.Layout.MaxColumns = 3; c.Layout.Overflow = "fixed" }, dragOut))
+		dragFixedNoGapZone(t, startDragMode(t, animated, func(c *domain.Config) { c.Layout.MaxColumns = 3; c.Layout.Overflow = "fixed" }, dragOut))
 	})
 }
 
@@ -737,7 +737,7 @@ func dragEdgeScroll(t *testing.T, r *dragRig) {
 
 func TestDragFullFixedStacksInOutlinedColumn(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
-		dragFullFixedStacksInOutlinedColumn(t, startDragMode(t, animated, func(c *ports.Config) { c.Layout.MaxColumns = 3; c.Layout.Overflow = "fixed" }, dragOut))
+		dragFullFixedStacksInOutlinedColumn(t, startDragMode(t, animated, func(c *domain.Config) { c.Layout.MaxColumns = 3; c.Layout.Overflow = "fixed" }, dragOut))
 	})
 }
 

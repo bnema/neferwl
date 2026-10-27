@@ -37,7 +37,7 @@ func TestResized(t *testing.T) {
 // scene and command ones; tests drive its methods directly.
 func dragCore(t *testing.T) *Core {
 	t.Helper()
-	cfg := ports.Config{}
+	cfg := domain.Config{}
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 3
 	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Commands: make(chan ports.ClientCommand, 1024)}, Options{})

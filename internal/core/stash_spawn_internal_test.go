@@ -27,7 +27,7 @@ func fixedClock(t *testing.T, now *time.Time) ports.Clock {
 
 func stashSpawnCore(t *testing.T, commands chan ports.ClientCommand, spawn chan ports.SpawnRequest, clock ports.Clock) *Core {
 	t.Helper()
-	var cfg ports.Config
+	var cfg domain.Config
 	cfg.Keyboard.CmdKey = "alt"
 	cfg.Layout.MaxColumns = 2
 	c, err := New(cfg, Channels{Scenes: make(chan []domain.Scene, 1), Commands: commands, Spawn: spawn}, Options{Clock: clock})

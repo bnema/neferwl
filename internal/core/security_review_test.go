@@ -171,7 +171,7 @@ func TestTerminalEpochChangeSuppressesSpawnAndRestoresRetry(t *testing.T) {
 // the empty snapshot contract without intentionally panicking a test runner.
 func TestStartupWorkspaceSnapshotHasNoOutputBeforeOutputAdded(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		var cfg ports.Config
+		var cfg domain.Config
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
 		workspaces := make(chan ports.Workspaces, 1)
