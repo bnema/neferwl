@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -275,7 +276,7 @@ func (s *Service) acquire() error {
 		if i == 0 && s.pwc == nil {
 			continue
 		}
-		code, err := s.conn.RequestName(name, zerobus.NameFlagDoNotQueue)
+		code, err := s.requestName(name)
 		if err != nil {
 			return err
 		}
@@ -291,6 +292,41 @@ func (s *Service) acquire() error {
 		return errors.New("no D-Bus name acquired")
 	}
 	return nil
+}
+
+// requestName waits for a name reply while dispatching all other messages.
+// Unlike Conn.RequestName (which uses Call with a nil Handle), this shares
+// the normal owner dispatch path. Handlers only Send, never make nested Calls,
+// and decode requests before the next read reuses the receive buffer.
+func (s *Service) requestName(name string) (uint32, error) {
+	e, serial := s.conn.NewMethodCall(busDaemon, busDaemonPath, busDaemon, "RequestName", "su")
+	e.Str(name)
+	e.Uint32(zerobus.NameFlagDoNotQueue)
+	if _, err := s.conn.Send(); err != nil {
+		return 0, err
+	}
+	for {
+		m, err := s.conn.ReadMessage()
+		if err != nil {
+			return 0, err
+		}
+		if m.ReplySerial == serial && (m.Type == zerobus.TypeMethodReturn || m.Type == zerobus.TypeError) {
+			if m.Type == zerobus.TypeError {
+				replyErr := &zerobus.Error{Name: strings.Clone(m.ErrorName)}
+				if strings.HasPrefix(m.Signature, "s") {
+					replyErr.Message = strings.Clone(m.Body().Str())
+				}
+				return 0, replyErr
+			}
+			r := m.Body()
+			code := r.Uint32()
+			return code, r.Err()
+		}
+		s.onMessage(m)
+		if s.fatal != nil {
+			return 0, s.fatal
+		}
+	}
 }
 
 // loop waits for the bus, PipeWire and other goroutines and serves them.

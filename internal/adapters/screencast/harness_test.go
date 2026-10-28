@@ -301,10 +301,8 @@ func (h *svcHarness) waitName(c *zerobus.Conn, name string) {
 	}
 }
 
-// waitServing waits until the service finished taking its names. It takes
-// them one by one, and while it waits for the reply to a request it drops
-// every other message, so a call made once an earlier name is owned can be
-// lost. nameScreenshot is the last one it takes.
+// waitServing waits until all name requests have completed, for tests that
+// inspect which names are absent. Calls on early names need only waitName.
 func (h *svcHarness) waitServing(c *zerobus.Conn) {
 	h.t.Helper()
 	h.waitName(c, nameScreenshot)

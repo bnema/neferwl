@@ -11,6 +11,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/zerobus"
+	"github.com/stretchr/testify/mock"
 )
 
 func testInventory() domain.CastInventory {
@@ -284,7 +285,7 @@ func TestDisallowedCallerGetsAccessDenied(t *testing.T) {
 func TestPolicyChangeApplies(t *testing.T) {
 	h := newSvcHarness(t, harnessOpts{allow: captureallow.Closed()})
 	c := h.client()
-	h.waitServing(c)
+	h.waitName(c, nameIntrospect)
 	if name, _ := callErr(t, c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
 		t.Fatalf("closed policy: %q", name)
 	}
@@ -313,7 +314,7 @@ func TestPidMismatchIsRefused(t *testing.T) {
 	h := newSvcHarness(t, harnessOpts{})
 	h.peers.exePid = func(open int) int { return open + 1 }
 	c := h.client()
-	h.waitServing(c)
+	h.waitName(c, nameIntrospect)
 	if name, _ := callErr(t, c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
 		t.Fatalf("pid mismatch: %q", name)
 	}
@@ -323,7 +324,7 @@ func TestPidfdOpenFailureIsRefused(t *testing.T) {
 	h := newSvcHarness(t, harnessOpts{})
 	h.peers.openErr = errors.New("no such process")
 	c := h.client()
-	h.waitServing(c)
+	h.waitName(c, nameIntrospect)
 	if name, _ := callErr(t, c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
 		t.Fatalf("pidfd_open failure: %q", name)
 	}
@@ -624,7 +625,6 @@ func TestInventorySignalsGoToAllowedPeersOnly(t *testing.T) {
 	for _, n := range []string{nameDisplayConfig, nameIntrospect} {
 		h.waitName(allowed, n)
 	}
-	h.waitServing(allowed)
 	rule := "type='signal',path='" + pathIntrospect + "'"
 	rule2 := "type='signal',path='" + pathDisplayConfig + "'"
 	for _, x := range []*zerobus.Conn{allowed, denied, gone} {
@@ -713,7 +713,7 @@ func TestDeniedCallersDoNotExhaustTheCache(t *testing.T) {
 		return "/usr/bin/grim"
 	}
 	c0 := h.client()
-	h.waitServing(c0)
+	h.waitName(c0, nameIntrospect)
 	for i := range denied {
 		x := h.client()
 		if name, _ := callErr(t, x, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
@@ -747,7 +747,7 @@ func TestDeniedCallersDoNotExhaustTheCache(t *testing.T) {
 func TestBusLossClosesCallerPidfds(t *testing.T) {
 	h := newSvcHarness(t, harnessOpts{})
 	c := h.client()
-	h.waitServing(c)
+	h.waitName(c, nameIntrospect)
 	if name, _ := callErr(t, c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != "" {
 		t.Fatal(name)
 	}
@@ -761,5 +761,138 @@ func TestBusLossClosesCallerPidfds(t *testing.T) {
 	h.peers.waitClosed(t, 0)
 	if !pidfdClosed(opened[0]) {
 		t.Fatal("pidfd of a cached caller survives the bus loss")
+	}
+}
+
+// A call triggered by an early name must be dispatched while acquire waits
+// for the final RequestName, not consumed by a synchronous Call's nil handler.
+func TestCallDuringNameAcquisition(t *testing.T) {
+	addr, _ := startBus(t)
+	client, err := zerobus.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	server, err := zerobus.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	defer boundIO(t, "name acquisition", func() { _ = server.Close(); _ = client.Close() })()
+	if err := client.AddMatch("type='signal',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0='" + nameIntrospect + "'"); err != nil {
+		t.Fatal(err)
+	}
+	s := New(captureallow.Builtin, nil, testLog(&logBuf{}))
+	defer s.poller.Close()
+	// Authentication is orthogonal; this peer has already been checked.
+	s.callers[0] = caller{state: callerKnown, name: client.UniqueName(), exe: "/usr/bin/grim"}
+	b := newMockbus(t)
+	s.conn = b
+	b.EXPECT().AddMatch(mock.Anything).RunAndReturn(server.AddMatch).Once()
+	var serial uint32
+	requests := 0
+	var queued *zerobus.Message
+	b.EXPECT().NewMethodCall(busDaemon, busDaemonPath, busDaemon, "RequestName", "su").RunAndReturn(func(dest, path, iface, member, sig string) (*zerobus.Encoder, uint32) {
+		requests++
+		if requests == 3 { // ScreenCast is skipped without PipeWire.
+			for {
+				m, err := client.ReadMessage()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if m.Member == "NameOwnerChanged" {
+					break
+				}
+			}
+			client.NewCall(nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "")
+			var err error
+			serial, err = client.Send()
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Receive the routed call before sending the final RequestName. Return
+			// it on the next read so dispatch during that wait is deterministic.
+			for {
+				incoming, err := server.ReadMessage()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if incoming.Type == zerobus.TypeMethodCall {
+					queued = incoming
+					break
+				}
+			}
+		}
+		return server.NewMethodCall(dest, path, iface, member, sig)
+	}).Times(3)
+	b.EXPECT().Send().RunAndReturn(server.Send)
+	b.EXPECT().ReadMessage().RunAndReturn(func() (*zerobus.Message, error) {
+		if queued != nil {
+			m := queued
+			queued = nil
+			return m, nil
+		}
+		return server.ReadMessage()
+	})
+	b.EXPECT().NewReply(mock.Anything, mock.Anything).RunAndReturn(server.NewReply).Once()
+	if err := s.acquire(); err != nil {
+		t.Fatal(err)
+	}
+	if !s.owns[1] || !s.owns[2] || !s.owns[3] {
+		t.Fatalf("owned names: %v", s.owns)
+	}
+	for {
+		m, err := client.ReadMessage()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m.ReplySerial != serial {
+			continue
+		}
+		if m.Type != zerobus.TypeMethodReturn || m.Signature != "a{ta{sv}}" {
+			t.Fatalf("GetWindows reply: type %d signature %q", m.Type, m.Signature)
+		}
+		break
+	}
+}
+
+func TestRequestNameErrorMessage(t *testing.T) {
+	addr, _ := startBus(t)
+	server, err := zerobus.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	defer boundIO(t, "invalid name reply", func() { _ = server.Close() })()
+	// Compare the same daemon error with zerobus's synchronous decoder.
+	_, wantErr := server.RequestName("invalid", zerobus.NameFlagDoNotQueue)
+	var want *zerobus.Error
+	if !errors.As(wantErr, &want) || want.Message == "" {
+		t.Fatalf("expected daemon error with message: %v", wantErr)
+	}
+	s := &Service{conn: server}
+	_, gotErr := s.requestName("invalid")
+	var got *zerobus.Error
+	if !errors.As(gotErr, &got) {
+		t.Fatalf("expected D-Bus error: %v", gotErr)
+	}
+	if got.Name != want.Name || got.Message != want.Message {
+		t.Fatalf("error = %#v, want %#v", got, want)
+	}
+}
+
+func TestAcquireConnectionClosedAfterUnrelatedReply(t *testing.T) {
+	// No sockets or timing: a generated mock supplies the unrelated reply and
+	// the closed transport, in order. Neither may be mistaken for our reply.
+	b := newMockbus(t)
+	s := &Service{conn: b}
+	b.EXPECT().AddMatch(mock.Anything).Return(nil).Once()
+	encoder := new(zerobus.Encoder)
+	b.EXPECT().NewMethodCall(busDaemon, busDaemonPath, busDaemon, "RequestName", "su").Return(encoder, uint32(42)).Once()
+	b.EXPECT().Send().Return(uint32(42), nil).Once()
+	first := b.EXPECT().ReadMessage().Return(&zerobus.Message{Type: zerobus.TypeMethodReturn, Sender: busDaemon, ReplySerial: 41}, nil).Once()
+	b.EXPECT().ReadMessage().Return(nil, zerobus.ErrClosed).Once().NotBefore(first)
+	if err := s.acquire(); !errors.Is(err, zerobus.ErrClosed) {
+		t.Fatalf("acquire error: %v", err)
 	}
 }

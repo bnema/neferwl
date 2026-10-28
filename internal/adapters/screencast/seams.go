@@ -16,8 +16,8 @@ import (
 )
 
 // bus is the part of a zerobus connection the service uses. Only Send and
-// ReadMessage are used after startup: a connection has one encoder and one
-// receive buffer, so Call and Handle are off limits.
+// ReadMessage drive requests, including name acquisition: a connection has
+// one encoder and one receive buffer, so Call and Handle are off limits.
 type bus interface {
 	NewReply(m *zerobus.Message, sig string) *zerobus.Encoder
 	NewError(m *zerobus.Message, name, sig string) *zerobus.Encoder
