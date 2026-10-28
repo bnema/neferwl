@@ -129,28 +129,28 @@ func (c *Core) pointerMotion(ctx context.Context, v ports.PointerMotion) error {
 	return nil
 }
 
-// clickFocus focuses the window id and its output the way a click on it
-// does, unless it already has the keyboard.
-func (c *Core) clickFocus(ctx context.Context, id WindowID) error {
+// focusPointer focuses the window id and its output the way a click on it
+// does, unless it already has the keyboard. flash controls focus feedback.
+func (c *Core) focusPointer(ctx context.Context, id WindowID, flash bool) error {
 	s, w := c.screenOf(id)
 	if s == nil || w != s.mon.Current() || (c.keyboard.sent == id && s == c.cur()) {
 		return nil
 	}
 	now := c.now()
 	before := c.snapshot(now)
-	c.focusClick(s, w, id)
+	c.focusClick(s, w, id, flash)
 	c.transition(before, now)
 	return c.publish(ctx)
 }
 
 // focusClick raises the clicked window and focuses its output. Modal dialogs
 // can take the parent's focus, so flash the resolved focus, not the click target.
-func (c *Core) focusClick(s *screen, w *Workspace, id WindowID) {
+func (c *Core) focusClick(s *screen, w *Workspace, id WindowID, flash bool) {
 	before, _ := c.cur().mon.Focused()
 	w.Click(id)
 	c.focusScreen = c.screenIndex(s.name())
 	after, _ := c.cur().mon.Focused()
-	if after != 0 && after != before {
+	if flash && after != 0 && after != before {
 		c.requestFlash(flashWindow, after)
 	}
 }
@@ -241,7 +241,7 @@ func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {
 		}
 		// A click focuses the window and its output.
 		if v.Pressed {
-			if err := c.clickFocus(ctx, id); err != nil {
+			if err := c.focusPointer(ctx, id, true); err != nil {
 				return err
 			}
 		}

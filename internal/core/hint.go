@@ -384,7 +384,7 @@ func (c *Core) hintClick(ctx context.Context, t hintTarget) (err error) {
 	if !c.hintClickable(t) {
 		return nil
 	}
-	if err := c.clickFocus(ctx, t.window); err != nil {
+	if err := c.focusPointer(ctx, t.window, true); err != nil {
 		return err
 	}
 	// The physical modifiers (bind's Super, Ctrl, Shift) must not reach the

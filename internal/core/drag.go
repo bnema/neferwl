@@ -150,7 +150,7 @@ func (c *Core) beginDrag(ctx context.Context, id WindowID, button uint32, resize
 		return nil
 	}
 	// Click raises a float above the columns: Escape keeps that.
-	c.focusClick(s, w, id)
+	c.focusClick(s, w, id, true)
 	d := &dragState{id: id, button: button, resize: resize, edges: edges, start: [2]float64{c.cursorX, c.cursorY}}
 	if f, r, ok := w.FloatAt(id); ok {
 		d.float, d.from, d.rect = true, f, r
