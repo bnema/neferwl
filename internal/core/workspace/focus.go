@@ -47,6 +47,38 @@ func (w *Workspace) FocusID(id WindowID) bool {
 	return false
 }
 
+// HoverFocusable reports whether focusing id by pointer hover leaves the
+// stacking and visibility unchanged: hover never hides the stash nor sends
+// floats behind the columns.
+func (w *Workspace) HoverFocusable(id WindowID) bool {
+	if w.floatIndex(id) >= 0 {
+		return true
+	}
+	if w.StashIndex(id) >= 0 {
+		return !w.stashHidden
+	}
+	found := false
+	for i := range w.Columns {
+		for _, v := range w.Columns[i].Windows {
+			if v == id {
+				found = true
+			}
+		}
+	}
+	if !found {
+		return false
+	}
+	if !w.stashHidden && len(w.Stash) > 0 && w.Cover() == 0 {
+		return false
+	}
+	for i := range w.Floats {
+		if !w.Floats[i].below && w.coversFloat(w.Floats[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 // FocusColumn moves focus to the column on that side. From a covering
 // fullscreen window it leaves fullscreen for the window there (leaveCover);
 // false means it stays, with no window on that side.
