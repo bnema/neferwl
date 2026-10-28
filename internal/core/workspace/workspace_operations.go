@@ -198,20 +198,29 @@ func (w *Workspace) AddRuleFloat(id WindowID, floating bool, width, height int, 
 	w.addFloat(w.ruleFloat(id, floating, width, height), quiet)
 }
 
-// NewFrom creates an empty workspace using the template's settings.
+// NewFrom creates an empty workspace with the template's settings only:
+// output geometry and reservations, gaps, border, stash sizes, column
+// count and layout. Every per-workspace state starts fresh; a new field
+// starts empty unless it is added here. Output and Usable are copied as
+// the monitor size and reservations: the template never has a
+// per-workspace size.
 func NewFrom(t *Workspace, id uint64) *Workspace {
-	w := *t
-	w.colBuf, w.rowBuf, w.tileBuf, w.zoomBuf = nil, nil, nil, nil
-	w.Columns, w.Floats, w.Maximized, w.floatFocus, w.Home = nil, nil, nil, false, ""
-	w.OverviewAfter = nil
-	w.DropState()
-	w.Stash, w.stashAt, w.stashFocus, w.stashHidden, w.hiddenFullscreen = nil, 0, false, false, 0
-	w.ID = id
-	return &w
+	w := &Workspace{
+		Lanes:      layout.Lanes{Override: t.Override, Gaps: t.Gaps, MaxColumns: t.MaxColumns, Output: t.Output, Usable: t.Usable},
+		ID:         id,
+		monitor:    t.monitor,
+		reserved:   t.reserved,
+		border:     t.border,
+		stashWidth: t.stashWidth,
+		stashGap:   t.stashGap,
+	}
+	w.SetOverflow(t.Overflow)
+	return w
 }
 
 // Inherit adopts the output-wide settings without changing workspace identity.
 func (w *Workspace) Inherit(t *Workspace) {
+	// t.Output and t.Usable are read as the monitor size and reservations: the template has no size.
 	w.Gaps = t.Gaps
 	w.border = t.border
 	w.stashWidth, w.stashGap = t.stashWidth, t.stashGap
