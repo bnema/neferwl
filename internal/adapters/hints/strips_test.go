@@ -105,6 +105,7 @@ func readStrips(ctx context.Context, img *image.RGBA, lines []image.Rectangle, w
 				for _, off := range s.offsets {
 					if center.In(off.packed) {
 						r := w.Rect.Sub(off.packed.Min)
+						w.Line += i << 16
 						w.Rect = image.Rect(r.Min.X/off.factor, r.Min.Y/off.factor, (r.Max.X+off.factor-1)/off.factor, (r.Max.Y+off.factor-1)/off.factor).Add(off.source.Min)
 						results[i] = append(results[i], w)
 						break

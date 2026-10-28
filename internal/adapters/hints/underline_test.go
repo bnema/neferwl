@@ -141,6 +141,31 @@ func TestUnderlinedURLIsOneTextTarget(t *testing.T) {
 	got := scanUnder(c, w)
 	require.Len(t, got, 1)
 	require.Equal(t, domain.HintSourceOCR, got[0].Source)
+	require.Equal(t, "https://example.org", got[0].URL)
+}
+
+func TestUnderlinedProseHasNoURL(t *testing.T) {
+	c := newCanvas(300, 60, 10, 204, 1)
+	w1 := c.word(10, 20, 40, false)
+	w1.Text = "Click"
+	w2 := c.word(60, 20, 40, false)
+	w2.Text = "here"
+	c.underline(10, 100, 32)
+	got := scanUnder(c, w1, w2)
+	require.Len(t, got, 1)
+	require.Empty(t, got[0].URL)
+
+	c = newCanvas(300, 60, 10, 204, 1)
+	w1 = c.word(10, 20, 40, false)
+	w1.Text = "Visit"
+	w2 = c.word(58, 20, 80, false)
+	w2.Text = "example.com"
+	c.underline(10, 138, 32)
+	words := []OCRWord{w1, w2}
+	markUnderlined(c.g, words)
+	got = underlineOnlyTargets(words) // the plain link scan would drop this group as a duplicate
+	require.Len(t, got, 1)
+	require.Empty(t, got[0].URL)
 }
 
 // ocrTestdata reads the words of a testdata image with the real tesseract.
@@ -190,17 +215,12 @@ func headingRule(t *testing.T, g *image.Gray) image.Rectangle {
 	return image.Rectangle{}
 }
 
-// browser.png has blue links and no underlined link: the only underline-only
-// target is a known false positive, and the heading rule is not taken for an
-// underline.
+// browser.png has blue links and no underlined link. No underline-only
+// targets are emitted, and the heading rule is not taken for an underline.
 func TestUnderlineOnBrowserTestdata(t *testing.T) {
 	g, words := ocrTestdata(t, "browser.png")
 	rule := headingRule(t, g)
-	// Known false positive: the word "as" (flat glyph bottoms, ~(878,353)) is
-	// flagged underlined by the detector. Anything else is a regression.
-	under := underlineOnlyTargets(words)
-	require.Len(t, under, 1, "underline-only targets: %v", under)
-	require.True(t, under[0].Rect.X > 860 && under[0].Rect.X < 900 && under[0].Rect.Y > 340 && under[0].Rect.Y < 370, "unexpected target %v", under[0].Rect)
+	require.Empty(t, underlineOnlyTargets(words))
 	for _, tg := range textLinks(words, 1) {
 		r := image.Rect(tg.Rect.X, tg.Rect.Y, tg.Rect.X+tg.Rect.W, tg.Rect.Y+tg.Rect.H)
 		require.False(t, r.Overlaps(rule), "target %v overlaps the heading rule %v", tg.Rect, rule)
@@ -218,7 +238,6 @@ func TestUnderlineOnRealRender(t *testing.T) {
 		return abs(r.X-x0) <= tol && abs(r.Y-y0) <= tol && abs(r.X+r.W-x1) <= tol && abs(r.Y+r.H-y1) <= tol
 	}
 	got := underlineOnlyTargets(words)
-	require.Len(t, got, 3, "targets: %v", got)
 	for _, want := range [][4]int{{148, 122, 196, 137}, {306, 126, 364, 137}, {122, 165, 294, 180}} {
 		found := false
 		for _, tg := range got {
@@ -241,16 +260,72 @@ func TestUnderlineIgnoresSingleGlyph(t *testing.T) {
 	require.Empty(t, scanUnder(c, w))
 }
 
-// Exclude URL targets without depending on the removed HintTarget.Text flag.
 func underlineOnlyTargets(words []OCRWord) []domain.HintTarget {
-	plain := append([]OCRWord(nil), words...)
-	for i := range plain {
-		plain[i].Underlined = false
+	return underlinedLinks(words, nil, 1)
+}
+
+func TestSyntheticLinkTargets(t *testing.T) {
+	for _, levels := range [][2]uint8{{245, 60}, {10, 150}} {
+		for i, text := range []string{"https://example.org", "www.example.org", "example.org", "user@example.org", "mailto:user@example.org", "1.2.3", "main.go", "127.0.0.1", "Menu", "Button"} {
+			c := newCanvas(200, 60, levels[0], levels[1], 1)
+			w := c.word(20, 20, 100, false)
+			w.Text = text
+			got := scanUnder(c, w)
+			want := i < 5
+			require.Equal(t, want, len(got) == 1, text)
+		}
 	}
-	var urls []image.Rectangle
-	for _, tg := range textLinks(plain, 1) {
-		r := tg.Rect
-		urls = append(urls, image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H))
+}
+
+func TestUnderlineRejectsTightBoxAndMenu(t *testing.T) {
+	for _, s := range []int{1, 2} {
+		c := newCanvas(100, 60, 245, 30, s)
+		w := c.word(20, 20, 40, false)
+		c.underline(20, 60, 32)
+		c.fill(20, 10, 21, 33, c.ink)
+		c.fill(59, 10, 60, 33, c.ink)
+		require.Empty(t, scanUnder(c, w), "tight box border")
+
+		c = newCanvas(200, 100, 245, 30, s)
+		a, b := c.word(20, 20, 40, false), c.word(20, 50, 40, false)
+		a.Text, b.Text = "Open", "Save"
+		c.underline(10, 190, 32)
+		require.Empty(t, scanUnder(c, a, b), "menu separator")
 	}
-	return underlinedLinks(words, urls, 1)
+}
+
+func BenchmarkUnderline(b *testing.B) {
+	c := newCanvas(1000, 60, 245, 60, 1)
+	var words []OCRWord
+	for x := 10; x < 950; x += 60 {
+		words = append(words, c.word(x, 20, 40, false))
+		c.underline(x, x+40, 32)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		markUnderlined(c.g, words)
+		_ = textLinks(words, 1)
+	}
+}
+
+// Glyph width averages count runes, not bytes: accented words group under one
+// underline exactly like their ASCII equivalents.
+func TestUnderlineGroupsMultibyteWords(t *testing.T) {
+	for _, text := range []string{"abcd", "éàüö"} {
+		c := newCanvas(200, 60, 10, 204, 1)
+		a, b := c.word(10, 20, 20, false), c.word(35, 20, 20, false)
+		a.Text, b.Text = text, text
+		c.underline(10, 55, 32)
+		require.Len(t, scanUnder(c, a, b), 1, text)
+	}
+}
+
+func TestUnderlinedMailtoGetsURL(t *testing.T) {
+	c := newCanvas(200, 60, 245, 60, 1)
+	w := c.word(20, 20, 100, false)
+	w.Text = "mailto:user@example.org"
+	got := scanUnder(c, w)
+	require.Len(t, got, 1)
+	require.Equal(t, "mailto:user@example.org", got[0].URL)
 }

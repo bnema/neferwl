@@ -82,7 +82,7 @@ func TestDoDecodesMatchesPipelined(t *testing.T) {
 				for r.More(end) {
 					roles = append(roles, r.Int32())
 				}
-				ok := r.Err() == nil && len(states) == 2 && states[0] == 1<<25|1<<30 && len(roles) == 5 && uint32(roles[2]) == 1<<24|1<<18|1<<31
+				ok := r.Err() == nil && len(states) == 2 && states[0] == 1<<25|1<<30 && len(roles) == 5 && uint32(roles[2]) == 1<<24
 				if !ok {
 					app.NewError(req, "org.test.Error.BadRule", "s").Str("bad rule")
 					_, _ = app.Send()

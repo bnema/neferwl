@@ -13,7 +13,7 @@ import (
 // Hint mode: the hint action asks the scanner (HintScans) for the clickable
 // targets in the last frame of the focused output, labels the ones that sit
 // over a managed window, grabs the keyboard for the label letters, and clicks
-// the centre of the target whose label was typed. Everything here runs on the
+// the centre of the target whose label was typed, or opens its URL. Everything here runs on the
 // owner goroutine.
 
 // hintAlphabet orders the label letters: home row first.
@@ -40,6 +40,7 @@ type hintTarget struct {
 	label  string
 	rect   domain.Rect
 	text   bool
+	url    string // validated OCR link, opened instead of clicked
 }
 
 type hintSourceGeom struct {
@@ -194,7 +195,11 @@ func (c *Core) hintResult(res domain.HintScanResult) bool {
 		if !ok {
 			continue
 		}
-		kept = append(kept, hintTarget{x: x, y: y, window: id, source: source, rect: t.Rect, score: t.Score, text: t.Source == domain.HintSourceOCR})
+		ht := hintTarget{x: x, y: y, window: id, source: source, rect: t.Rect, score: t.Score, text: t.Source == domain.HintSourceOCR}
+		if t.Source == domain.HintSourceOCR && domain.ValidHintURL(t.URL) {
+			ht.url = t.URL
+		}
+		kept = append(kept, ht)
 	}
 	if len(kept) == 0 {
 		c.hintCancel()
@@ -367,7 +372,37 @@ func (c *Core) hintKey(ctx context.Context, key ports.KeyEvent) (bool, error) {
 		h.typed = typed
 		return true, c.publish(ctx)
 	}
-	return true, c.hintClick(ctx, *match)
+	return true, c.hintSelect(ctx, *match)
+}
+
+// hintOpener is the program that opens a URL target.
+const hintOpener = "xdg-open"
+
+// hintSelect opens the target's URL when it has one, else clicks it.
+func (c *Core) hintSelect(ctx context.Context, t hintTarget) error {
+	if t.url != "" {
+		return c.hintOpen(ctx, t)
+	}
+	return c.hintClick(ctx, t)
+}
+
+// hintOpen ends hint mode and hands the target's URL to the opener, provided
+// the session is unprotected and the same window is still under the target.
+// It never focuses, clicks or touches modifiers, and does not log the URL.
+func (c *Core) hintOpen(ctx context.Context, t hintTarget) error {
+	c.hintCancel()
+	if err := c.publish(ctx); err != nil {
+		return err
+	}
+	if c.protectionRequested() || !c.hintTargetCurrent(t) {
+		return nil
+	}
+	// A full launcher queue suppresses the open rather than blocking.
+	c.trySpawn(ctx, domain.SpawnRequest{Argv: []string{hintOpener, t.url}})
+	if c.inputEpochChanged() {
+		return errSecurityChanged
+	}
+	return nil
 }
 
 // hintClick ends hint mode and left-clicks the target's centre, provided the
@@ -419,6 +454,12 @@ func (c *Core) hintClickable(t hintTarget) bool {
 	if c.security.Protected || c.hintPointerBusy() {
 		return false
 	}
+	return c.hintTargetCurrent(t)
+}
+
+// hintTargetCurrent reports whether the selected window is still under the
+// target's centre with its request-time geometry.
+func (c *Core) hintTargetCurrent(t hintTarget) bool {
 	id, _, _ := c.hit(t.x, t.y)
 	sc, _ := c.screenOf(t.source.id)
 	return id == t.window && sc != nil && c.hintSourceUnchanged(sc, t.source)

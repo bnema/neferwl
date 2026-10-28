@@ -21,7 +21,7 @@ https://github.com/user-attachments/assets/1ff42ce5-47b3-4cf8-a3a7-5fc5abde4af1
 - **Games:** direct scanout, VRR, tearing, explicit sync and [HDR](docs/config.md#hdr) give games the whole GPU instead of spending it on composition; see [Performance](docs/performance.md).
 - **Overview:** `cmd+o` or a four-finger swipe up shows live workspace previews. Select a window with the keyboard, touchpad or mouse; see [Overview](docs/config.md#overview).
 - **Stash:** `cmd+s` toggles a floating strip of windows set aside for the current workspace; `cmd+shift+s` moves a window into or out of it. See [Stash](docs/config.md#stash).
-- **Hint mode:** click what is on screen by typing its label, without reaching for the mouse; targets come from an ordered chain of accessibility, OCR and optional `nefer-hints` detection. Enable experimental `hint.enable` and add a bind; see [Hint mode](docs/config.md#hint-mode).
+- **Hint mode:** click what is on screen by typing its label, without reaching for the mouse; targets come from an ordered chain of accessibility, OCR (URL-like text and underlined links only) and optional `nefer-hints` detection. Enable experimental `hint.enable` and add a bind; see [Hint mode](docs/config.md#hint-mode).
 - **Animations:** short, cheap and off by default. Opt in with experimental `animations = on`; see [Configuration](docs/config.md#keys).
 
 Written in Go, without cgo. Each piece of state has one owner goroutine, connected to the others by channels; hot paths reuse memory and client buffers stay off the Go heap. See [Architecture](docs/dev/architecture.md) for the concurrency model, the GC strategy and the reusable Go libraries.

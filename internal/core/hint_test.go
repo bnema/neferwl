@@ -23,6 +23,7 @@ type hintHarness struct {
 	commands chan ports.ClientCommand
 	scenes   chan []domain.Scene
 	scans    chan domain.HintScanRequest
+	spawns   chan domain.SpawnRequest
 	hints    chan domain.HintScanResult
 	win      domain.Rect // window 1, output-local
 	// state is the security state input is stamped with.
@@ -56,9 +57,10 @@ func newHintConfig(t *testing.T, opts core.Options, edit func(*domain.Config)) *
 		scenes:   make(chan []domain.Scene, 1),
 		scans:    make(chan domain.HintScanRequest, 1),
 		// Unbuffered: a send returns once core took the result.
-		hints: make(chan domain.HintScanResult),
+		hints:  make(chan domain.HintScanResult),
+		spawns: make(chan domain.SpawnRequest, 1),
 	}
-	ch := core.Channels{Config: h.config, Client: h.client, Input: h.input, Output: h.output, Commands: h.commands, Scenes: h.scenes, HintScans: h.scans, Hints: h.hints}
+	ch := core.Channels{Config: h.config, Client: h.client, Input: h.input, Output: h.output, Commands: h.commands, Scenes: h.scenes, HintScans: h.scans, Hints: h.hints, Spawn: h.spawns}
 	c, err := core.New(cfg, ch, testOptions(t, opts))
 	if err != nil {
 		t.Fatal(err)
@@ -1144,6 +1146,158 @@ func TestScenePhysicalFromOutputInfo(t *testing.T) {
 		p := s.Physical
 		if p.Width == 0 || p.Height == 0 {
 			t.Fatalf("physical %+v", p)
+		}
+	})
+}
+
+const testHintURL = "https://example.org/a"
+
+func (h *hintHarness) urlTarget(source domain.HintSource, url string) domain.HintTarget {
+	tg := h.inside(0)
+	tg.Source, tg.URL = source, url
+	return tg
+}
+
+// spawned returns the spawn requests queued, after a barrier.
+func (h *hintHarness) spawned() []domain.SpawnRequest {
+	h.barrier()
+	var out []domain.SpawnRequest
+	for {
+		select {
+		case r := <-h.spawns:
+			out = append(out, r)
+		default:
+			return out
+		}
+	}
+}
+
+func TestHintOpensOCRURL(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		h.show(h.urlTarget(domain.HintSourceOCR, testHintURL))
+		h.drain()
+		h.press("f", 0)
+		s := h.labelled(0, 0)
+		if len(s.Overlays) != 0 {
+			t.Fatalf("labels after open %+v", s.Overlays)
+		}
+		if got := commandKinds(h.commandsSent()); len(got) != 0 {
+			t.Fatalf("commands %v", got)
+		}
+		got := h.spawned()
+		if len(got) != 1 || !slices.Equal(got[0].Argv, []string{"xdg-open", testHintURL}) {
+			t.Fatalf("spawns %+v", got)
+		}
+	})
+}
+
+func TestHintOCRWithoutURLClicks(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := newHintConfig(t, core.Options{}, func(c *domain.Config) { c.Hint.TextClick = domain.ModCtrl })
+		h.show(h.urlTarget(domain.HintSourceOCR, ""))
+		h.drain()
+		h.press("f", 0)
+		got := commandKinds(h.commandsSent())
+		want := []string{"mods:" + fmt.Sprint(domain.ModCtrl), "motion", "press", "release", "mods:restore"}
+		if !slices.Equal(got, want) {
+			t.Fatalf("commands %v, want %v", got, want)
+		}
+		if sp := h.spawned(); len(sp) != 0 {
+			t.Fatalf("spawns %+v", sp)
+		}
+	})
+}
+
+func TestHintURLIgnoredUnlessValidOCR(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		source domain.HintSource
+		url    string
+	}{
+		{"atspi", domain.HintSourceATSPI, testHintURL},
+		{"invalid", domain.HintSourceOCR, "file:///x"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				h := newHint(t, core.Options{})
+				h.show(h.urlTarget(tc.source, tc.url))
+				h.drain()
+				h.press("f", 0)
+				if got := commandKinds(h.commandsSent()); !slices.Contains(got, "press") {
+					t.Fatalf("no click: %v", got)
+				}
+				if sp := h.spawned(); len(sp) != 0 {
+					t.Fatalf("spawns %+v", sp)
+				}
+			})
+		})
+	}
+}
+
+func TestHintNoOpenWhenProtected(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var state atomic.Pointer[domain.SecurityState]
+		state.Store(&domain.SecurityState{})
+		gate := portsmocks.NewMockSessionSecurity(t)
+		gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return *state.Load() }).Maybe()
+		h := newHint(t, core.Options{Security: gate})
+		h.show(h.urlTarget(domain.HintSourceOCR, testHintURL))
+		state.Store(&domain.SecurityState{Generation: 2, Protected: true})
+		h.state = *state.Load()
+		h.client <- ports.WindowMapped{ID: 2}
+		h.until(func(s domain.Scene) bool { return s.Security.Protected })
+		h.press("f", 0)
+		// Protected sessions forward no marker key: wait for quiescence.
+		synctest.Wait()
+		select {
+		case r := <-h.spawns:
+			t.Fatalf("spawn while protected %+v", r)
+		default:
+		}
+	})
+}
+
+func TestHintNoOpenWhenWindowMoved(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		tg := domain.HintTarget{Window: 1, Source: domain.HintSourceOCR, URL: testHintURL, Rect: domain.Rect{X: h.win.X + h.win.W - 50, Y: h.win.Y + 10, W: 40, H: 10}}
+		h.show(tg)
+		h.client <- ports.WindowMapped{ID: 2}
+		h.until(func(s domain.Scene) bool { return len(s.Windows) == 2 && len(s.Overlays) <= 1 })
+		h.drain()
+		h.press("f", 0)
+		if sp := h.spawned(); len(sp) != 0 {
+			t.Fatalf("spawns %+v", sp)
+		}
+	})
+}
+
+func TestHintOpensWithButtonHeld(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		h.show(h.urlTarget(domain.HintSourceOCR, testHintURL))
+		h.pressReal()
+		h.press("f", 0)
+		if p, r := h.buttonsSent(); p+r != 0 {
+			t.Fatalf("synthetic click: %d presses, %d releases", p, r)
+		}
+		if sp := h.spawned(); len(sp) != 1 {
+			t.Fatalf("spawns %+v", sp)
+		}
+	})
+}
+
+func TestHintOpenFullSpawnQueueDoesNotBlock(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := newHint(t, core.Options{})
+		h.spawns <- domain.SpawnRequest{Argv: []string{"filler"}}
+		h.show(h.urlTarget(domain.HintSourceOCR, testHintURL))
+		h.press("f", 0)
+		h.labelled(0, 0)
+		synctest.Wait()
+		if sp := h.spawned(); len(sp) != 1 || sp[0].Argv[0] != "filler" {
+			t.Fatalf("spawns %+v", sp)
 		}
 	})
 }

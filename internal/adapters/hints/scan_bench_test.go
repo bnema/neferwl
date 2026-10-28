@@ -18,6 +18,8 @@ func BenchmarkScan(b *testing.B) {
 	ctx := context.Background()
 	img := image.NewGray(image.Rect(0, 0, w, h))
 	if os.Getenv("NEFERWL_HINT_BENCH_PGM") == "0" {
+		old := rawPGM
+		b.Cleanup(func() { rawPGM = old })
 		rawPGM = false
 	}
 	b.ReportAllocs()

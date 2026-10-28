@@ -93,6 +93,10 @@ type HintTarget struct {
 	Kind   HintKind
 	Source HintSource
 	Window WindowID // toplevel unit ID
+
+	// URL, when set, is the validated link the target shows (see ValidHintURL).
+	// Only OCR targets carry one; selecting such a target opens it instead of clicking.
+	URL string
 }
 
 // HintScanResult answers a HintScanRequest. Core owns Targets.

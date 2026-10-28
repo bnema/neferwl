@@ -31,12 +31,30 @@ type Options struct {
 }
 
 // source is owned by the worker. Initialization is deferred to its first scan.
-// Returned targets have Source and Window set; errors preserve partial targets.
+// Returned targets have Source and Window set; errors preserve explicit partial coverage.
 type source interface {
 	kind() domain.HintSource
 	needsFrame(context.Context) bool
-	scan(context.Context, domain.HintScanRequest, []domain.HintWindow, *frame) ([]domain.HintTarget, error)
+	scan(context.Context, domain.HintScanRequest, []domain.HintWindow, *frame) (scanResult, error)
 	Close() error
+}
+
+type scanResult struct {
+	Targets []domain.HintTarget
+	Covered []domain.WindowID
+}
+
+// targetCoverage preserves pixel sources' target-based coverage semantics.
+func targetCoverage(targets []domain.HintTarget) scanResult {
+	result := scanResult{Targets: targets}
+	seen := make(map[domain.WindowID]bool)
+	for _, t := range targets {
+		if !seen[t.Window] {
+			result.Covered = append(result.Covered, t.Window)
+			seen[t.Window] = true
+		}
+	}
+	return result
 }
 
 func makeSources(opts Options) []source {
@@ -77,7 +95,7 @@ type scanCrop struct {
 	Covered bool              `json:"covered"`
 }
 
-// chain covers a unit only after a stage returns at least one target in it.
+// chain skips units explicitly covered by an earlier source, even on partial errors.
 func (w *worker) chain(ctx context.Context, req domain.HintScanRequest, capture func() (*frame, error)) ([]domain.HintTarget, error) {
 	w.stages = nil
 	covered := make(map[domain.WindowID]bool)
@@ -118,7 +136,7 @@ func (w *worker) chain(ctx context.Context, req domain.HintScanRequest, capture 
 		if !needsFrame {
 			input = nil
 		}
-		targets, err := s.scan(ctx, req, wins, input)
+		result, err := s.scan(ctx, req, wins, input)
 		log := logging.For(ctx, "hints")
 		if err != nil {
 			if w.warned == nil {
@@ -131,9 +149,10 @@ func (w *worker) chain(ctx context.Context, req domain.HintScanRequest, capture 
 				log.Debug().Err(err).Str("source", s.kind().String()).Msg("hint source failed")
 			}
 		}
-		for _, t := range targets {
-			covered[t.Window] = true
+		for _, id := range result.Covered {
+			covered[id] = true
 		}
+		targets := result.Targets
 		if w.dumpDir != "" {
 			stage := scanStage{Source: s.kind().String(), Targets: len(targets), MS: ms(time.Since(start))}
 			if err != nil {

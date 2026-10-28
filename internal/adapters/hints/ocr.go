@@ -10,18 +10,17 @@ import (
 	"image/png"
 	"io"
 	"math"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
@@ -32,12 +31,14 @@ type OCRWord struct {
 	Text       string          `json:"text"`
 	Rect       image.Rectangle `json:"rect"`
 	Confidence float64         `json:"confidence"`
-	// Underlined is set when a thin line runs under the word. UnderL and
-	// UnderR are the x extent of that line (crop-local), which can reach the
-	// neighbouring words of one underlined link.
+	// Underlined is set when a thin line runs under the word. UnderR is the
+	// right end of that line (crop-local), which can reach the neighbouring
+	// words of one underlined link.
 	Underlined bool `json:"underlined,omitempty"`
-	UnderL     int  `json:"under_l,omitempty"`
 	UnderR     int  `json:"under_r,omitempty"`
+	// Line identifies the Tesseract text line of the word within a scan of a
+	// window: band<<16 | ordinal. Words of one line share it.
+	Line int `json:"line"`
 }
 
 var languageWarning sync.Once
@@ -90,6 +91,8 @@ func discoverLanguage(ctx context.Context, binary string, runner languageRunner,
 
 func parseTSV(data []byte, offset image.Point) ([]OCRWord, error) {
 	var words []OCRWord
+	var last [3]int
+	ord := 0
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	scanner.Buffer(make([]byte, 4096), 1024*1024)
 	for scanner.Scan() {
@@ -112,8 +115,20 @@ func parseTSV(data []byte, offset image.Point) ([]OCRWord, error) {
 		if values[2] <= 0 || values[3] <= 0 || strings.TrimSpace(fields[11]) == "" {
 			continue
 		}
+		var id [3]int
+		for i := range id {
+			v, err := strconv.Atoi(fields[2+i])
+			if err != nil {
+				return nil, fmt.Errorf("OCR TSV line number: %w", err)
+			}
+			id[i] = v
+		}
+		if ord == 0 || id != last {
+			ord++
+			last = id
+		}
 		r := image.Rect(values[0], values[1], values[0]+values[2], values[1]+values[3]).Add(offset)
-		words = append(words, OCRWord{Text: fields[11], Rect: r, Confidence: conf})
+		words = append(words, OCRWord{Text: fields[11], Rect: r, Confidence: conf, Line: ord})
 	}
 	return words, scanner.Err()
 }
@@ -159,6 +174,13 @@ func ocrReady(ctx context.Context, st *ocrState) bool {
 	return true
 }
 
+const (
+	// bandContext is the extra pixel margin read above and below a band for context.
+	bandContext = 40
+	// smallTextHeight is the median word height (px) under which a band is re-read upscaled 2x.
+	smallTextHeight = 12
+)
+
 // band is a horizontal slice of a window crop recognized by one tesseract
 // process. It reads rows [top,bottom) and owns the words centred in
 // [ownTop,ownBottom); the margin only supplies context.
@@ -173,7 +195,7 @@ func bandsOf(height int) []band {
 	bands := make([]band, 0, max(n, 0))
 	for i := range n {
 		ownTop, ownBottom := i*height/n, (i+1)*height/n
-		bands = append(bands, band{idx: i, n: n, top: max(0, ownTop-40), bottom: min(height, ownBottom+40), ownTop: ownTop, ownBottom: ownBottom})
+		bands = append(bands, band{idx: i, n: n, top: max(0, ownTop-bandContext), bottom: min(height, ownBottom+bandContext), ownTop: ownTop, ownBottom: ownBottom})
 	}
 	return bands
 }
@@ -217,7 +239,7 @@ func readBand(ctx context.Context, st *ocrState, j *bandJob) ([]OCRWord, error) 
 		}
 	}
 	sort.Ints(heights)
-	if len(heights) > 0 && heights[len(heights)/2] < 12 {
+	if len(heights) > 0 && heights[len(heights)/2] < smallTextHeight {
 		words, err = recognizeBand(ctx, st.binary, st.lang, upscaleBand(j.gray))
 		if err != nil {
 			return nil, err
@@ -228,46 +250,37 @@ func readBand(ctx context.Context, st *ocrState, j *bandJob) ([]OCRWord, error) 
 		}
 	}
 	markUnderlined(j.gray, words)
-	owned := words[:0]
-	for _, word := range words {
-		// Overlap supplies context, but each word belongs to exactly one band.
-		word.Rect = word.Rect.Add(image.Pt(0, j.ext.Min.Y))
-		if center := (word.Rect.Min.Y + word.Rect.Max.Y) / 2; center >= j.own[0] && center < j.own[1] {
-			owned = append(owned, word)
-		}
+	// TSV line numbers restart per band and per read.
+	for i := range words {
+		words[i].Line = j.key.band<<16 | words[i].Line
 	}
-	// Cache only retained words, not the discarded overlap or its text references.
-	// Clone of an empty non-nil slice can still reference the original array.
-	if len(owned) == 0 {
-		return nil, nil
-	}
-	return slices.Clone(owned), nil
+	// ownLines returns a fresh slice holding only retained words, so the cache
+	// never references the discarded overlap.
+	return ownLines(words, j.ext.Min.Y, j.own), nil
 }
 
-// readWords recognizes the words of img, a window crop, in parallel bands.
-func readWords(ctx context.Context, img *image.Gray) ([]OCRWord, int, error) {
-	st := &ocrState{}
-	if err := st.resolve(ctx); err != nil {
-		return nil, 0, err
+// ownLines shifts band-local words by extMinY to crop coordinates and keeps
+// the whole lines whose median word centre lies in own. Overlap supplies
+// context, but each line belongs to exactly one band.
+func ownLines(words []OCRWord, extMinY int, own [2]int) []OCRWord {
+	centres := map[int][]int{}
+	for _, w := range words {
+		centres[w.Line] = append(centres[w.Line], (w.Rect.Min.Y+w.Rect.Max.Y)/2+extMinY)
 	}
-	var jobs []*bandJob
-	for _, b := range bandsOf(img.Bounds().Dy()) {
-		ext := image.Rect(0, b.top, img.Bounds().Dx(), b.bottom)
-		jobs = append(jobs, &bandJob{ext: ext, own: [2]int{b.ownTop, b.ownBottom}, gray: img.SubImage(ext).(*image.Gray)})
+	owned := map[int]bool{}
+	for line, c := range centres {
+		sort.Ints(c)
+		m := c[len(c)/2]
+		owned[line] = m >= own[0] && m < own[1]
 	}
-	recognize(ctx, st, jobs)
-	var words []OCRWord
-	for _, j := range jobs {
-		if j.err != nil {
-			return nil, len(jobs), j.err
-		}
-		for _, word := range j.words {
-			if !duplicateWord(words, word) {
-				words = append(words, word)
-			}
+	var out []OCRWord
+	for _, w := range words {
+		if owned[w.Line] {
+			w.Rect = w.Rect.Add(image.Pt(0, extMinY))
+			out = append(out, w)
 		}
 	}
-	return words, len(jobs), nil
+	return out
 }
 
 // The link patterns compile on the first OCR link check, not at process
@@ -275,89 +288,241 @@ func readWords(ctx context.Context, img *image.Gray) ([]OCRWord, int, error) {
 var domainPattern = sync.OnceValue(func() *regexp.Regexp {
 	return regexp.MustCompile(`(?i)^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+([a-z]{2,24})(?::[0-9]+)?(?:[/?#]\S*)?$`)
 })
-var schemePattern = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`(?i)^(?:https?|htps|file|ftp):/{1,2}\S+$`) })
+var schemePattern = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`(?i)^(?:https?://|(?:file|ftp):/{1,2})\S+$`)
+})
 var emailPattern = sync.OnceValue(func() *regexp.Regexp {
 	return regexp.MustCompile(`(?i)^[a-z0-9.!#$%&'*+/=?^_` + "`" + `{|}~-]+@(?:[a-z0-9-]+\.)+[a-z]{2,24}$`)
 })
-var fileExtensions = sync.OnceValue(func() []string {
-	return strings.Fields("go md txt toml json yaml yml rs py js ts sh c h png jpg log conf lock mod sum html css")
-})
 
-func isTextLink(text string) bool {
-	text = strings.Trim(text, "()[]<>.,;:'\"")
-	if schemePattern().MatchString(text) || (strings.HasPrefix(strings.ToLower(text), "www.") && len(text) > 4) || emailPattern().MatchString(text) {
-		return true
+// fileExtensions lists the final dot-separated labels that name files, not
+// domains. A bare "main.go" or "README.md" is syntactically a valid
+// domain.tld, so these labels are rejected to avoid hinting file names.
+// Matching is case-insensitive.
+var fileExtensions = map[string]bool{
+	"go": true, "md": true, "txt": true, "toml": true, "json": true, "yaml": true,
+	"yml": true, "rs": true, "py": true, "js": true, "ts": true, "sh": true,
+	"c": true, "h": true, "png": true, "jpg": true, "log": true, "conf": true,
+	"lock": true, "mod": true, "sum": true, "html": true, "css": true,
+}
+
+// linkTrim is the punctuation trimmed around a candidate link.
+const linkTrim = "()[]<>.,;:'\""
+
+// linkForm is the kind of link a candidate token looks like.
+type linkForm int
+
+const (
+	formNone   linkForm = iota // not a link
+	formScheme                 // http(s)://..., file:..., ftp:...
+	formWWW                    // www.x
+	formEmail                  // user@host.tld
+	formMailto                 // mailto:user@host.tld
+	formBare                   // domain.tld[/path]
+)
+
+// classifyLink decides which supported form text has, if any. Malformed
+// schemes (https:/x, htps://x) are not links.
+func classifyLink(text string) linkForm {
+	switch {
+	case schemePattern().MatchString(text):
+		return formScheme
+	case len(text) > 4 && strings.EqualFold(text[:4], "www."):
+		return formWWW
+	case len(text) > 7 && strings.EqualFold(text[:7], "mailto:"):
+		return formMailto
+	case emailPattern().MatchString(text):
+		return formEmail
 	}
-	host := text
-	if h, _, err := net.SplitHostPort(text); err == nil {
-		host = h
+	if m := domainPattern().FindStringSubmatch(text); m != nil && !fileExtensions[strings.ToLower(m[1])] {
+		return formBare
 	}
-	if ip := net.ParseIP(host); ip != nil && ip.To4() != nil {
-		return true
+	return formNone
+}
+
+// normalizeLink turns a classified candidate into the URL to open.
+func normalizeLink(text string, form linkForm) string {
+	switch form {
+	case formScheme, formMailto:
+		scheme, rest, _ := strings.Cut(text, ":")
+		return strings.ToLower(scheme) + ":" + rest
+	case formWWW, formBare:
+		return "https://" + text
+	case formEmail:
+		return "mailto:" + text
 	}
-	m := domainPattern().FindStringSubmatch(text)
-	if m == nil {
+	return ""
+}
+
+// trimLink trims linkTrim punctuation around text, but keeps a trailing ")"
+// that balances an opening one and a trailing "]" closing an IPv6 literal.
+func trimLink(text string) string {
+	text = strings.TrimLeft(text, linkTrim)
+	for text != "" {
+		last := text[len(text)-1]
+		if strings.IndexByte(linkTrim, last) < 0 {
+			break
+		}
+		if last == ')' && strings.Count(text, "(") >= strings.Count(text, ")") {
+			break
+		}
+		if last == ']' && strings.Contains(text, "[") {
+			break
+		}
+		text = text[:len(text)-1]
+	}
+	return text
+}
+
+// linkSpan is where trimLink's result sits in text.
+func linkSpan(text string) (start, end int) {
+	start = len(text) - len(strings.TrimLeft(text, linkTrim))
+	return start, start + len(trimLink(text))
+}
+
+// linkURL reports whether text looks like a link and, when it does, the
+// normalized URL to open; url is empty when the link is not openable.
+func linkURL(text string) (url string, link bool) {
+	start, end := linkSpan(text)
+	text = text[start:end]
+	form := classifyLink(text)
+	if form == formNone {
+		return "", false
+	}
+	url = normalizeLink(text, form)
+	if !domain.ValidHintURL(url) {
+		url = ""
+	}
+	return url, true
+}
+
+// touching reports whether word box b directly follows a on the same
+// baseline, close enough to be part of the same token.
+func touching(a, b image.Rectangle) bool {
+	if b.Min.X < a.Max.X-2 {
 		return false
 	}
-	for _, ext := range fileExtensions() {
-		if strings.EqualFold(m[1], ext) {
-			return false
+	if b.Min.X-a.Max.X > max(3, min(a.Dy(), b.Dy())/5) {
+		return false
+	}
+	return sameBaseline(a, b, a.Dy())
+}
+
+// sameBaseline reports whether the bottoms of a and b are within the
+// baseline tolerance for text of height h.
+func sameBaseline(a, b image.Rectangle, h int) bool {
+	return abs(b.Max.Y-a.Max.Y) <= max(3, h/3)
+}
+
+// logicalRect converts a pixel box to the enclosing logical rectangle.
+func logicalRect(r image.Rectangle, scale float64) domain.Rect {
+	x, y := int(math.Floor(float64(r.Min.X)/scale)), int(math.Floor(float64(r.Min.Y)/scale))
+	right, bottom := int(math.Ceil(float64(r.Max.X)/scale)), int(math.Ceil(float64(r.Max.Y)/scale))
+	return domain.Rect{X: x, Y: y, W: right - x, H: bottom - y}
+}
+
+// urlJoiners are the characters that tie OCR words of one link together even
+// across a gap: Tesseract often splits "www . example . org" into words.
+const urlJoiners = ".:/@"
+
+// joinerToken reports whether s is made only of urlJoiners.
+func joinerToken(s string) bool {
+	return s != "" && strings.Trim(s, urlJoiners) == ""
+}
+
+// glued reports whether consecutive words a and b may belong to one link.
+func glued(a, b string) bool {
+	if joinerToken(a) || joinerToken(b) {
+		return true
+	}
+	if a == "" || b == "" {
+		return false
+	}
+	la, _ := utf8.DecodeLastRuneInString(a)
+	fb, _ := utf8.DecodeRuneInString(b)
+	return strings.ContainsRune(urlJoiners, la) && strings.ContainsRune(urlJoiners, fb)
+}
+
+// linkRect is the box of the words of one link. Joiner tokens (dots) have
+// unreliable heights, so the Y extent is clamped to the median-ish top and
+// bottom of the other words.
+func linkRect(words []OCRWord) image.Rectangle {
+	var union image.Rectangle
+	var tops, bottoms []int
+	for _, w := range words {
+		union = union.Union(w.Rect)
+		if !joinerToken(w.Text) {
+			tops = append(tops, w.Rect.Min.Y)
+			bottoms = append(bottoms, w.Rect.Max.Y)
 		}
 	}
-	return true
+	if len(tops) == 0 {
+		return union
+	}
+	sort.Ints(tops)
+	sort.Ints(bottoms)
+	r := union.Intersect(image.Rect(union.Min.X, tops[(len(tops)-1)/2], union.Max.X, bottoms[len(bottoms)/2]))
+	if r.Empty() {
+		return union
+	}
+	return r
 }
 
 func textLinks(words []OCRWord, scale float64) []domain.HintTarget {
 	if scale <= 0 {
 		scale = 1
 	}
-	words = append([]OCRWord(nil), words...)
-	sort.Slice(words, func(i, j int) bool {
-		if words[i].Rect.Min.Y != words[j].Rect.Min.Y {
-			return words[i].Rect.Min.Y < words[j].Rect.Min.Y
+	var order []int
+	lines := map[int][]OCRWord{}
+	for _, w := range words {
+		if _, ok := lines[w.Line]; !ok {
+			order = append(order, w.Line)
 		}
-		return words[i].Rect.Min.X < words[j].Rect.Min.X
-	})
+		lines[w.Line] = append(lines[w.Line], w)
+	}
 	var out []domain.HintTarget
 	var urls []image.Rectangle // boxes of the URL targets, in pixels
-	used := make([]bool, len(words))
-	for i, word := range words {
-		if used[i] {
-			continue
+	emit := func(group []OCRWord) bool {
+		var text string
+		var starts []int
+		for _, w := range group {
+			starts = append(starts, len(text))
+			text += w.Text
 		}
-		text, rect := word.Text, word.Rect
-		// Grow only touching words on the same baseline; ordinary prose is not joined.
-		for {
-			next := -1
-			for j, candidate := range words {
-				if j == i || used[j] || candidate.Rect.Min.X < rect.Max.X-2 {
-					continue
-				}
-				gap := candidate.Rect.Min.X - rect.Max.X
-				if gap > max(3, min(rect.Dy(), candidate.Rect.Dy())/5) {
-					continue
-				}
-				if abs(candidate.Rect.Max.Y-rect.Max.Y) > max(3, rect.Dy()/3) {
-					continue
-				}
-				if next < 0 || candidate.Rect.Min.X < words[next].Rect.Min.X {
-					next = j
-				}
+		url, link := linkURL(text)
+		if !link {
+			return false
+		}
+		start, end := linkSpan(text)
+		var set []OCRWord
+		for i, w := range group {
+			if starts[i] < end && starts[i]+len(w.Text) > start {
+				set = append(set, w)
 			}
-			if next < 0 {
-				break
-			}
-			text += words[next].Text
-			rect = rect.Union(words[next].Rect)
-			used[next] = true
 		}
-		if !isTextLink(text) {
-			continue
+		if len(set) == 0 {
+			return false
 		}
-		x, y := int(math.Floor(float64(rect.Min.X)/scale)), int(math.Floor(float64(rect.Min.Y)/scale))
-		right, bottom := int(math.Ceil(float64(rect.Max.X)/scale)), int(math.Ceil(float64(rect.Max.Y)/scale))
-		out = append(out, domain.HintTarget{Kind: domain.HintLink, Source: domain.HintSourceOCR, Score: 1, Rect: domain.Rect{X: x, Y: y, W: right - x, H: bottom - y}})
+		rect := linkRect(set)
+		out = append(out, domain.HintTarget{Kind: domain.HintLink, Source: domain.HintSourceOCR, Score: 1, URL: url, Rect: logicalRect(rect, scale)})
 		urls = append(urls, rect)
+		return true
+	}
+	for _, id := range order {
+		lw := lines[id]
+		for i := 0; i < len(lw); {
+			k := i + 1
+			for k < len(lw) && glued(lw[k-1].Text, lw[k].Text) {
+				k++
+			}
+			run := lw[i:k]
+			if !emit(run) && len(run) > 1 {
+				for _, w := range run {
+					emit([]OCRWord{w})
+				}
+			}
+			i = k
+		}
 	}
 	return append(out, underlinedLinks(words, urls, scale)...)
 }
@@ -375,9 +540,6 @@ func overlap(a, b image.Rectangle) float64 {
 		return 0
 	}
 	return float64(intersection.Dx()*intersection.Dy()) / float64(area)
-}
-func targetRect(t domain.HintTarget) image.Rectangle {
-	return image.Rect(t.Rect.X, t.Rect.Y, t.Rect.X+t.Rect.W, t.Rect.Y+t.Rect.H)
 }
 func recognizeBand(ctx context.Context, binary, lang string, img image.Image) ([]OCRWord, error) {
 	return recognizeImage(ctx, binary, lang, img, "11", false)
@@ -570,10 +732,4 @@ func cropGray(buf []byte, stride int, r image.Rectangle, dst []byte) *image.Gray
 		}
 	}
 	return img
-}
-
-// targetSource reads accessibility targets; coverage belongs to the chain.
-type targetSource interface {
-	Targets(context.Context, []domain.HintWindow, bool) ([]domain.HintTarget, error)
-	Close() error
 }

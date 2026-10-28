@@ -29,15 +29,14 @@ const (
 	stateWords = 2 // int32 words of a state set in a MatchRule
 
 	// AtspiCollectionMatchType and AtspiCollectionSortOrder values.
-	matchAll       = 1
-	matchAny       = 2
-	sortCanonical  = 1
-	matchCount     = 500
-	maxDepth       = 30
-	maxWalkNodes   = 3000
-	maxFrames      = 32
-	sizeTolerance  = 40
-	maxMatchesRead = matchCount
+	matchAll      = 1
+	matchAny      = 2
+	sortCanonical = 1
+	matchCount    = 500
+	maxDepth      = 30
+	maxWalkNodes  = 3000
+	maxFrames     = 32
+	sizeTolerance = 40
 )
 
 // clickableRoles are the roles that become hint targets.
@@ -47,14 +46,14 @@ var clickableRoles = []uint32{
 }
 
 // matchRule is the Collection query: showing and visible objects of the
-// clickable roles (only links when linksOnly), plus web documents for coverage.
+// clickable roles (only links when linksOnly). Frame matching supplies coverage.
 type matchRule struct{ linksOnly bool }
 
 func (r matchRule) roles() []uint32 {
 	if r.linksOnly {
-		return []uint32{roleLink, roleDocumentFrame, roleDocumentWeb}
+		return []uint32{roleLink}
 	}
-	return append(append([]uint32(nil), clickableRoles...), roleDocumentFrame, roleDocumentWeb)
+	return clickableRoles
 }
 
 // roleBits packs role ids into the bit set of a MatchRule: bit id%32 of word

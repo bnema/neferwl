@@ -83,7 +83,7 @@ func TestDumpStageRecordsPartialCoverageAndError(t *testing.T) {
 	s.EXPECT().kind().Return(domain.HintSourceATSPI)
 	wins := []domain.HintWindow{{ID: 1, Rect: domain.Rect{W: 20, H: 20}, Popups: []domain.Rect{{X: 20, W: 10, H: 10}}}, {ID: 2, Rect: domain.Rect{X: 40, W: 20, H: 20}}}
 	req := domain.HintScanRequest{Width: 100, Height: 80, Scale: 2, Windows: wins}
-	s.EXPECT().scan(mock.Anything, req, wins, (*frame)(nil)).Return([]domain.HintTarget{{Window: 1, Source: domain.HintSourceATSPI}}, errors.New("partial")).Once()
+	s.EXPECT().scan(mock.Anything, req, wins, (*frame)(nil)).Return(scanResult{Targets: []domain.HintTarget{{Window: 1, Source: domain.HintSourceATSPI}}, Covered: []domain.WindowID{1}}, errors.New("partial")).Once()
 	w := worker{sources: []source{s}, dumpDir: t.TempDir()}
 	captures := make(chan domain.CaptureRequest, 1)
 	captured := make(chan domain.CaptureDone, 1)

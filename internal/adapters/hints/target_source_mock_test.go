@@ -92,7 +92,7 @@ func (_c *mocktargetSource_Close_Call) RunAndReturn(run func() error) *mocktarge
 }
 
 // Targets provides a mock function for the type mocktargetSource
-func (_mock *mocktargetSource) Targets(context1 context.Context, hintWindows []domain.HintWindow, b bool) ([]domain.HintTarget, error) {
+func (_mock *mocktargetSource) Targets(context1 context.Context, hintWindows []domain.HintWindow, b bool) ([]domain.HintTarget, []domain.WindowID, error) {
 	ret := _mock.Called(context1, hintWindows, b)
 
 	if len(ret) == 0 {
@@ -100,8 +100,9 @@ func (_mock *mocktargetSource) Targets(context1 context.Context, hintWindows []d
 	}
 
 	var r0 []domain.HintTarget
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, []domain.HintWindow, bool) ([]domain.HintTarget, error)); ok {
+	var r1 []domain.WindowID
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []domain.HintWindow, bool) ([]domain.HintTarget, []domain.WindowID, error)); ok {
 		return returnFunc(context1, hintWindows, b)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, []domain.HintWindow, bool) []domain.HintTarget); ok {
@@ -111,12 +112,19 @@ func (_mock *mocktargetSource) Targets(context1 context.Context, hintWindows []d
 			r0 = ret.Get(0).([]domain.HintTarget)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, []domain.HintWindow, bool) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, []domain.HintWindow, bool) []domain.WindowID); ok {
 		r1 = returnFunc(context1, hintWindows, b)
 	} else {
-		r1 = ret.Error(1)
+		if ret.Get(1) != nil {
+			r1 = ret.Get(1).([]domain.WindowID)
+		}
 	}
-	return r0, r1
+	if returnFunc, ok := ret.Get(2).(func(context.Context, []domain.HintWindow, bool) error); ok {
+		r2 = returnFunc(context1, hintWindows, b)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
 }
 
 // mocktargetSource_Targets_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Targets'
@@ -155,12 +163,12 @@ func (_c *mocktargetSource_Targets_Call) Run(run func(context1 context.Context, 
 	return _c
 }
 
-func (_c *mocktargetSource_Targets_Call) Return(hintTargets []domain.HintTarget, err error) *mocktargetSource_Targets_Call {
-	_c.Call.Return(hintTargets, err)
+func (_c *mocktargetSource_Targets_Call) Return(hintTargets []domain.HintTarget, windowIDs []domain.WindowID, err error) *mocktargetSource_Targets_Call {
+	_c.Call.Return(hintTargets, windowIDs, err)
 	return _c
 }
 
-func (_c *mocktargetSource_Targets_Call) RunAndReturn(run func(context1 context.Context, hintWindows []domain.HintWindow, b bool) ([]domain.HintTarget, error)) *mocktargetSource_Targets_Call {
+func (_c *mocktargetSource_Targets_Call) RunAndReturn(run func(context1 context.Context, hintWindows []domain.HintWindow, b bool) ([]domain.HintTarget, []domain.WindowID, error)) *mocktargetSource_Targets_Call {
 	_c.Call.Return(run)
 	return _c
 }

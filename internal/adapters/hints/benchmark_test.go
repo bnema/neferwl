@@ -28,12 +28,18 @@ func TestFrameBenchmark(t *testing.T) {
 	}
 	// Settings under test: NEFERWL_HINT_BENCH_WORKERS=<n>, NEFERWL_HINT_BENCH_PNG=speed|none.
 	if v, _ := strconv.Atoi(os.Getenv("NEFERWL_HINT_BENCH_WORKERS")); v > 0 {
+		old := ocrWorkers
+		t.Cleanup(func() { ocrWorkers = old })
 		ocrWorkers = v
 	}
 	if os.Getenv("NEFERWL_HINT_BENCH_PGM") == "0" {
+		old := rawPGM
+		t.Cleanup(func() { rawPGM = old })
 		rawPGM = false
 	}
 	if os.Getenv("NEFERWL_HINT_BENCH_PNG") == "none" {
+		old := pngLevel
+		t.Cleanup(func() { pngLevel = old })
 		pngLevel = png.NoCompression
 	}
 	for i, file := range files {

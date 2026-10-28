@@ -37,22 +37,22 @@ func TestChainOrderCoverageAndLazyCapture(t *testing.T) {
 			if mode == "error" || mode == "partial-error" {
 				stageErr = errors.New("source failed")
 			}
-			first := a.EXPECT().scan(mock.Anything, req, wins, (*frame)(nil)).Return(targets, stageErr).Once()
+			first := a.EXPECT().scan(mock.Anything, req, wins, (*frame)(nil)).Return(targetCoverage(targets), stageErr).Once()
 			if mode != "covered" {
 				remaining := wins
 				if mode == "partial-error" || mode == "partial" {
 					remaining = wins[1:]
 				}
 				var seen *frame
-				second := b.EXPECT().scan(mock.Anything, req, remaining, mock.Anything).RunAndReturn(func(_ context.Context, _ domain.HintScanRequest, _ []domain.HintWindow, fr *frame) ([]domain.HintTarget, error) {
+				second := b.EXPECT().scan(mock.Anything, req, remaining, mock.Anything).RunAndReturn(func(_ context.Context, _ domain.HintScanRequest, _ []domain.HintWindow, fr *frame) (scanResult, error) {
 					require.NotNil(t, fr)
 					seen = fr
-					return nil, nil // zero targets leaves every window for stage three
+					return scanResult{}, nil // zero targets leaves every window for stage three
 				}).Once()
 				second.NotBefore(first)
-				third := c.EXPECT().scan(mock.Anything, req, remaining, mock.Anything).RunAndReturn(func(_ context.Context, _ domain.HintScanRequest, _ []domain.HintWindow, fr *frame) ([]domain.HintTarget, error) {
+				third := c.EXPECT().scan(mock.Anything, req, remaining, mock.Anything).RunAndReturn(func(_ context.Context, _ domain.HintScanRequest, _ []domain.HintWindow, fr *frame) (scanResult, error) {
 					require.Same(t, seen, fr)
-					return []domain.HintTarget{{Window: remaining[0].ID, Source: domain.HintSourceDetector}}, nil
+					return targetCoverage([]domain.HintTarget{{Window: remaining[0].ID, Source: domain.HintSourceDetector}}), nil
 				}).Once()
 				third.NotBefore(second)
 			}
@@ -73,14 +73,15 @@ func TestChainOrderCoverageAndLazyCapture(t *testing.T) {
 	}
 }
 
-func TestATSPIChainCoverageUsesFilteredTargets(t *testing.T) {
+func TestATSPICoverageSurvivesFilteredTargets(t *testing.T) {
 	tr := newMocktargetSource(t)
 	wins := []domain.HintWindow{{ID: 1}}
-	tr.EXPECT().Targets(mock.Anything, wins, true).Return([]domain.HintTarget{{Window: 1, Kind: domain.HintButton}}, nil).Once()
+	tr.EXPECT().Targets(mock.Anything, wins, true).Return([]domain.HintTarget{{Window: 1, Kind: domain.HintButton}}, []domain.WindowID{1}, nil).Once()
 	s := atspiSource{targets: tr}
 	targets, err := s.scan(context.Background(), domain.HintScanRequest{LinksOnly: true}, wins, nil)
 	require.NoError(t, err)
-	require.Empty(t, targets)
+	require.Empty(t, targets.Targets)
+	require.Equal(t, []domain.WindowID{1}, targets.Covered)
 }
 
 func TestDetectorWindowCropPopupUnion(t *testing.T) {
@@ -104,7 +105,7 @@ func TestDetectorWindowCropPopupUnion(t *testing.T) {
 	require.ElementsMatch(t, []domain.HintTarget{
 		{Window: 7, Source: domain.HintSourceDetector, Kind: domain.HintButton, Score: .9, Rect: domain.Rect{X: 20, Y: 10, W: 10, H: 10}},
 		{Window: 7, Source: domain.HintSourceDetector, Kind: domain.HintButton, Score: .9, Rect: domain.Rect{X: 70, Y: 30, W: 20, H: 20}},
-	}, out)
+	}, out.Targets)
 }
 
 func TestDetectorDropSkipsRemainingWindows(t *testing.T) {
@@ -120,10 +121,10 @@ func TestDetectorDropSkipsRemainingWindows(t *testing.T) {
 			out, gotErr := s.scan(context.Background(), domain.HintScanRequest{Width: 40, Height: 20, Scale: 1}, wins, &frame{})
 			require.ErrorIs(t, gotErr, err)
 			if errors.Is(err, errDetector) {
-				require.Len(t, out, 1)
-				require.Equal(t, domain.WindowID(2), out[0].Window)
+				require.Len(t, out.Targets, 1)
+				require.Equal(t, domain.WindowID(2), out.Targets[0].Window)
 			} else {
-				require.Empty(t, out)
+				require.Empty(t, out.Targets)
 			}
 		})
 	}
@@ -148,7 +149,7 @@ func TestChainCaptureFailureDiscardsEarlierTargets(t *testing.T) {
 	req := domain.HintScanRequest{Width: 40, Height: 40, Windows: wins}
 	a.EXPECT().needsFrame(mock.Anything).Return(false)
 	a.EXPECT().kind().Return(domain.HintSourceATSPI)
-	a.EXPECT().scan(mock.Anything, req, wins, (*frame)(nil)).Return([]domain.HintTarget{{Window: 1}}, nil).Once()
+	a.EXPECT().scan(mock.Anything, req, wins, (*frame)(nil)).Return(scanResult{Targets: []domain.HintTarget{{Window: 1}}, Covered: []domain.WindowID{1}}, nil).Once()
 	b.EXPECT().needsFrame(mock.Anything).Return(true)
 	w := worker{sources: []source{a, b}}
 	captures := make(chan domain.CaptureRequest, 1)
@@ -167,12 +168,12 @@ func TestOffOutputATSPITargetDoesNotCoverWindow(t *testing.T) {
 			wins := []domain.HintWindow{{ID: 1, Rect: domain.Rect{X: -100, W: 150, H: 80}}}
 			req := domain.HintScanRequest{Width: 100, Height: 80, Scale: scale, Windows: wins}
 			tr := newMocktargetSource(t)
-			tr.EXPECT().Targets(mock.Anything, wins, false).Return([]domain.HintTarget{{Window: 1, Source: domain.HintSourceATSPI, Rect: domain.Rect{X: -90, Y: 10, W: 20, H: 20}}, {Window: 1, Source: domain.HintSourceATSPI, Rect: domain.Rect{X: 100, Y: 10, W: 20, H: 20}}}, nil).Once()
+			tr.EXPECT().Targets(mock.Anything, wins, false).Return([]domain.HintTarget{{Window: 1, Source: domain.HintSourceATSPI, Rect: domain.Rect{X: -90, Y: 10, W: 20, H: 20}}, {Window: 1, Source: domain.HintSourceATSPI, Rect: domain.Rect{X: 100, Y: 10, W: 20, H: 20}}}, nil, nil).Once()
 			fallback := newMocksource(t)
 			fallback.EXPECT().needsFrame(mock.Anything).Return(false)
 			fallback.EXPECT().kind().Return(domain.HintSourceOCR)
 			want := []domain.HintTarget{{Window: 1, Source: domain.HintSourceOCR}}
-			fallback.EXPECT().scan(mock.Anything, req, wins, (*frame)(nil)).Return(want, nil).Once()
+			fallback.EXPECT().scan(mock.Anything, req, wins, (*frame)(nil)).Return(targetCoverage(want), nil).Once()
 			w := worker{sources: []source{&atspiSource{targets: tr}, fallback}}
 			res := w.serve(context.Background(), req, nil, nil, nil, nil, time.Second)
 			require.NoError(t, res.Err)
@@ -184,12 +185,12 @@ func TestOffOutputATSPITargetDoesNotCoverWindow(t *testing.T) {
 func TestATSPITargetClippedToLogicalOutput(t *testing.T) {
 	tr := newMocktargetSource(t)
 	req := domain.HintScanRequest{Width: 100, Height: 80, Scale: 2}
-	tr.EXPECT().Targets(mock.Anything, []domain.HintWindow(nil), false).Return([]domain.HintTarget{{Rect: domain.Rect{X: -5, Y: 30, W: 70, H: 20}}}, nil)
+	tr.EXPECT().Targets(mock.Anything, []domain.HintWindow(nil), false).Return([]domain.HintTarget{{Rect: domain.Rect{X: -5, Y: 30, W: 70, H: 20}}}, nil, nil)
 	s := atspiSource{targets: tr}
 	targets, err := s.scan(context.Background(), req, nil, nil)
 	require.NoError(t, err)
-	require.Len(t, targets, 1)
-	require.Equal(t, domain.Rect{X: 0, Y: 30, W: 50, H: 10}, targets[0].Rect)
+	require.Len(t, targets.Targets, 1)
+	require.Equal(t, domain.Rect{X: 0, Y: 30, W: 50, H: 10}, targets.Targets[0].Rect)
 }
 
 func TestChainUnavailableOCRDoesNotCapture(t *testing.T) {
@@ -208,4 +209,38 @@ func TestDetectorLinksOnlyDoesNotCapture(t *testing.T) {
 	targets, err := w.chain(context.Background(), domain.HintScanRequest{LinksOnly: true, Windows: []domain.HintWindow{{ID: 1}}}, nil)
 	require.NoError(t, err)
 	require.Empty(t, targets)
+}
+
+func TestChainExplicitATSPICoverage(t *testing.T) {
+	for _, mode := range []string{"matched-empty", "unmatched", "partial-error"} {
+		t.Run(mode, func(t *testing.T) {
+			wins := []domain.HintWindow{{ID: 1}, {ID: 2}}
+			req := domain.HintScanRequest{Windows: wins}
+			tr := newMocktargetSource(t)
+			var targets []domain.HintTarget
+			var covered []domain.WindowID
+			var scanErr error
+			remaining := wins
+			if mode == "matched-empty" {
+				covered = []domain.WindowID{1, 2}
+				remaining = nil
+			}
+			if mode == "partial-error" {
+				targets = []domain.HintTarget{{Window: 2}} // targets do not imply coverage
+				covered = []domain.WindowID{1}
+				scanErr = errors.New("partial")
+				remaining = wins[1:]
+			}
+			tr.EXPECT().Targets(mock.Anything, wins, false).Return(targets, covered, scanErr).Once()
+			fallback := newMocksource(t)
+			if len(remaining) > 0 {
+				fallback.EXPECT().needsFrame(mock.Anything).Return(false)
+				fallback.EXPECT().kind().Return(domain.HintSourceOCR)
+				fallback.EXPECT().scan(mock.Anything, req, remaining, (*frame)(nil)).Return(scanResult{}, nil).Once()
+			}
+			w := worker{sources: []source{&atspiSource{targets: tr}, fallback}}
+			_, err := w.chain(context.Background(), req, func() (*frame, error) { t.Fatal("unexpected capture"); return nil, nil })
+			require.NoError(t, err)
+		})
+	}
 }

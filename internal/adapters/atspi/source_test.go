@@ -74,7 +74,7 @@ func TestTargetsCoversWindowAndConverts(t *testing.T) {
 		{ID: 1, PID: 77, Rect: domain.Rect{X: 100, Y: 200, W: 800, H: 600}, Focused: true},
 		{ID: 2, PID: 5, Rect: domain.Rect{X: 0, Y: 0, W: 50, H: 50}},
 	}
-	targets, err := s.Targets(context.Background(), windows, false)
+	targets, _, err := s.Targets(context.Background(), windows, false)
 	require.NoError(t, err)
 	require.Equal(t, []domain.HintTarget{
 		{Rect: domain.Rect{X: 110, Y: 300, W: 50, H: 16}, Kind: domain.HintLink, Window: 1, Source: domain.HintSourceATSPI, Score: 1},
@@ -90,7 +90,7 @@ func TestTargetsLinksOnlyDropsButtons(t *testing.T) {
 		map[string][4]int32{"/a": {14, 130, 50, 16}, "/b": {104, 230, 20, 20}},
 		map[string]uint32{"/a": roleLink, "/b": rolePushButton}, false))
 	s := &Source{tr: tr}
-	targets, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1, PID: 77, Rect: domain.Rect{W: 800, H: 600}}}, true)
+	targets, _, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1, PID: 77, Rect: domain.Rect{W: 800, H: 600}}}, true)
 	require.NoError(t, err)
 	require.Len(t, targets, 1)
 	require.Equal(t, domain.HintLink, targets[0].Kind)
@@ -104,7 +104,7 @@ func TestTargetsWalkWithoutCollection(t *testing.T) {
 		map[string][4]int32{"/a": {14, 130, 50, 16}},
 		map[string]uint32{"/a": roleLink}, true))
 	s := &Source{tr: tr}
-	targets, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1, PID: 77, Rect: domain.Rect{W: 800, H: 600}}}, false)
+	targets, _, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1, PID: 77, Rect: domain.Rect{W: 800, H: 600}}}, false)
 	require.NoError(t, err)
 	require.Len(t, targets, 1)
 }
@@ -113,14 +113,14 @@ func TestTargetsNoPIDMatchCoversNothing(t *testing.T) {
 	tr := newMocktransport(t)
 	tr.EXPECT().Do(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(answerTree([4]int32{}, nil, nil, nil, false))
 	s := &Source{tr: tr}
-	targets, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1, PID: 1234, Rect: domain.Rect{W: 8, H: 6}}}, false)
+	targets, _, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1, PID: 1234, Rect: domain.Rect{W: 8, H: 6}}}, false)
 	require.NoError(t, err)
 	require.Empty(t, targets)
 }
 
 func TestTargetsWithoutPIDsAsksNothing(t *testing.T) {
 	s := &Source{tr: newMocktransport(t)}
-	targets, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1, Rect: domain.Rect{W: 8, H: 6}}}, false)
+	targets, _, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1, Rect: domain.Rect{W: 8, H: 6}}}, false)
 	require.NoError(t, err)
 	require.Empty(t, targets)
 }
@@ -133,7 +133,7 @@ func TestDocumentsAreNotTargets(t *testing.T) {
 				tr.EXPECT().Do(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(answerTree(
 					[4]int32{0, 0, 800, 600}, []ref{{":1.5", "/a"}}, map[string][4]int32{"/a": {10, 20, 30, 40}}, map[string]uint32{"/a": role}, !collection))
 				s := &Source{tr: tr}
-				targets, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1, PID: 77, Rect: domain.Rect{W: 800, H: 600}}}, false)
+				targets, _, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1, PID: 77, Rect: domain.Rect{W: 800, H: 600}}}, false)
 				require.NoError(t, err)
 				if isDocument(role) {
 					require.Empty(t, targets)
@@ -157,7 +157,7 @@ func TestConnectsLazilyOnFirstTargets(t *testing.T) {
 		c.EXPECT().Connect(mock.Anything).Return(tr, nil).Once()
 		s := &Source{dial: c}
 		for range 2 {
-			targets, err := s.Targets(context.Background(), oneWindow, false)
+			targets, _, err := s.Targets(context.Background(), oneWindow, false)
 			require.NoError(t, err)
 			require.Len(t, targets, 1)
 		}
@@ -167,7 +167,7 @@ func TestConnectsLazilyOnFirstTargets(t *testing.T) {
 // Without PIDs nothing is asked and nothing is connected.
 func TestNoConnectWithoutWindows(t *testing.T) {
 	s := &Source{dial: newMockconnector(t)}
-	_, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1}}, false)
+	_, _, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1}}, false)
 	require.NoError(t, err)
 }
 
@@ -179,7 +179,7 @@ func TestConnectRetriesWithBackoff(t *testing.T) {
 		c.EXPECT().Connect(mock.Anything).Return(nil, errors.New("down")).Once()
 		s := &Source{dial: c}
 		for range 3 {
-			targets, err := s.Targets(context.Background(), oneWindow, false)
+			targets, _, err := s.Targets(context.Background(), oneWindow, false)
 			require.NoError(t, err)
 			require.Empty(t, targets)
 		}
@@ -188,7 +188,7 @@ func TestConnectRetriesWithBackoff(t *testing.T) {
 			[4]int32{0, 0, 800, 600}, []ref{{":1.5", "/a"}}, map[string][4]int32{"/a": {1, 1, 9, 9}}, map[string]uint32{"/a": roleLink}, false))
 		c.EXPECT().Connect(mock.Anything).Return(tr, nil).Once()
 		s.retryAt = time.Now().Add(-time.Second)
-		targets, err := s.Targets(context.Background(), oneWindow, false)
+		targets, _, err := s.Targets(context.Background(), oneWindow, false)
 		require.NoError(t, err)
 		require.Len(t, targets, 1)
 	})
@@ -209,10 +209,10 @@ func TestBrokenConnectionIsDropped(t *testing.T) {
 	c := newMockconnector(t)
 	c.EXPECT().Connect(mock.Anything).Return(tr, nil).Once()
 	s := &Source{dial: c}
-	_, err := s.Targets(context.Background(), oneWindow, false)
+	_, _, err := s.Targets(context.Background(), oneWindow, false)
 	require.Error(t, err)
 	require.Nil(t, s.tr)
-	targets, err := s.Targets(context.Background(), oneWindow, false)
+	targets, _, err := s.Targets(context.Background(), oneWindow, false)
 	require.NoError(t, err)
 	require.Empty(t, targets) // backoff: no new attempt yet
 }
@@ -241,20 +241,20 @@ func TestConnectIsBoundedAndNotDoubled(t *testing.T) {
 		c := blockedConnector(t, release, tr, nil, 1)
 		s := &Source{dial: c, wait: testWait}
 		t0 := time.Now()
-		targets, err := s.Targets(context.Background(), oneWindow, false)
+		targets, _, err := s.Targets(context.Background(), oneWindow, false)
 		require.NoError(t, err)
 		require.Empty(t, targets)
 		require.Less(t, time.Since(t0), testWait+200*time.Millisecond)
 		require.NotNil(t, s.attempt)
 		// Still in flight: no second Connect (Times(1)), and no blocking.
-		targets, err = s.Targets(context.Background(), oneWindow, false)
+		targets, _, err = s.Targets(context.Background(), oneWindow, false)
 		require.NoError(t, err)
 		require.Empty(t, targets)
 		// It connects late: the next call uses it.
 		close(release)
 		synctest.Wait()
 		require.Len(t, s.attempt, 1)
-		targets, err = s.Targets(context.Background(), oneWindow, false)
+		targets, _, err = s.Targets(context.Background(), oneWindow, false)
 		require.NoError(t, err)
 		require.Len(t, targets, 1)
 		require.Nil(t, s.attempt)
@@ -275,23 +275,23 @@ func TestAbandonedAttemptErrorBacksOff(t *testing.T) {
 		}).Once()
 		c.EXPECT().Connect(mock.Anything).Return(tr, nil).Once()
 		s := &Source{dial: c, wait: testWait}
-		targets, err := s.Targets(context.Background(), oneWindow, false)
+		targets, _, err := s.Targets(context.Background(), oneWindow, false)
 		require.NoError(t, err)
 		require.Empty(t, targets)
 		close(release)
 		synctest.Wait()
 		require.Len(t, s.attempt, 1)
 		// The error is collected; the backoff runs from its finish time.
-		targets, err = s.Targets(context.Background(), oneWindow, false)
+		targets, _, err = s.Targets(context.Background(), oneWindow, false)
 		require.NoError(t, err)
 		require.Empty(t, targets)
 		require.Nil(t, s.attempt)
 		require.WithinDuration(t, time.Now().Add(retryEvery), s.retryAt, time.Second)
-		targets, err = s.Targets(context.Background(), oneWindow, false) // backoff: no Connect
+		targets, _, err = s.Targets(context.Background(), oneWindow, false) // backoff: no Connect
 		require.NoError(t, err)
 		require.Empty(t, targets)
 		s.retryAt = time.Now().Add(-time.Second)
-		targets, err = s.Targets(context.Background(), oneWindow, false)
+		targets, _, err = s.Targets(context.Background(), oneWindow, false)
 		require.NoError(t, err)
 		require.Len(t, targets, 1)
 	})
@@ -307,7 +307,7 @@ func TestCloseReapsLateTransport(t *testing.T) {
 		tr.EXPECT().Close().RunAndReturn(func() error { close(closed); return nil }).Once()
 		c := blockedConnector(t, release, tr, nil, 1)
 		s := &Source{dial: c, wait: testWait}
-		_, err := s.Targets(context.Background(), oneWindow, false)
+		_, _, err := s.Targets(context.Background(), oneWindow, false)
 		require.NoError(t, err)
 		require.NoError(t, s.Close())
 		close(release)
@@ -316,7 +316,7 @@ func TestCloseReapsLateTransport(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatal("late transport not closed")
 		}
-		targets, err := s.Targets(context.Background(), oneWindow, false)
+		targets, _, err := s.Targets(context.Background(), oneWindow, false)
 		require.NoError(t, err)
 		require.Empty(t, targets)
 		require.NoError(t, s.Close()) // idempotent
@@ -369,7 +369,7 @@ func TestTargetsPopupRegion(t *testing.T) {
 		map[string][4]int32{"/popup": {810, 20, 40, 20}, "/outside": {950, 20, 40, 20}},
 		map[string]uint32{"/popup": roleLink, "/outside": roleLink}, false))
 	s := &Source{tr: tr}
-	targets, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 7, PID: 77,
+	targets, _, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 7, PID: 77,
 		Rect: domain.Rect{W: 800, H: 600}, Popups: []domain.Rect{{X: 800, Y: 10, W: 100, H: 100}}}}, false)
 	require.NoError(t, err)
 	require.Equal(t, []domain.HintTarget{{Rect: domain.Rect{X: 810, Y: 20, W: 40, H: 20}, Kind: domain.HintLink, Source: domain.HintSourceATSPI, Score: 1, Window: 7}}, targets)
@@ -400,4 +400,41 @@ func TestFinishCancellationDoesNotWarnOrBackoff(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMatchedEmptyFrameCoverage(t *testing.T) {
+	for _, pid := range []int{77, 123} {
+		t.Run(fmt.Sprint(pid), func(t *testing.T) {
+			tr := newMocktransport(t)
+			tr.EXPECT().Do(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(answerTree([4]int32{0, 0, 800, 600}, nil, nil, nil, false))
+			s := Source{tr: tr}
+			targets, covered, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1, PID: pid}}, false)
+			require.NoError(t, err)
+			require.Empty(t, targets)
+			if pid == 77 {
+				require.Equal(t, []domain.WindowID{1}, covered)
+			} else {
+				require.Empty(t, covered)
+			}
+		})
+	}
+}
+
+func TestErroredMatchedFrameIsNotCovered(t *testing.T) {
+	tr := newMocktransport(t)
+	tree := answerTree([4]int32{0, 0, 800, 600}, nil, nil, nil, false)
+	tr.EXPECT().Do(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(d time.Time, timeout time.Duration, calls []call) []reply {
+		replies := tree(d, timeout, calls)
+		for i, c := range calls {
+			if c.op == opMatches {
+				replies[i].err = errors.New("read failed")
+			}
+		}
+		return replies
+	})
+	s := Source{tr: tr}
+	targets, covered, err := s.Targets(context.Background(), []domain.HintWindow{{ID: 1, PID: 77}}, false)
+	require.Error(t, err)
+	require.Empty(t, targets)
+	require.Empty(t, covered)
 }

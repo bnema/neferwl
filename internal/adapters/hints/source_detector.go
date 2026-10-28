@@ -15,7 +15,7 @@ func (*detectorSource) needsFrame(context.Context) bool { return true }
 func (s *detectorSource) Close() error                  { return s.det.Close() }
 
 //hexcheck:ignore suspicious-business-logic-in-adapter Translates external detector pixels into domain targets at the adapter edge.
-func (s *detectorSource) scan(ctx context.Context, req domain.HintScanRequest, wins []domain.HintWindow, fr *frame) ([]domain.HintTarget, error) {
+func (s *detectorSource) scan(ctx context.Context, req domain.HintScanRequest, wins []domain.HintWindow, fr *frame) (scanResult, error) {
 	var out []domain.HintTarget
 	var scanErr error
 	scale := req.Scale
@@ -64,5 +64,5 @@ func (s *detectorSource) scan(ctx context.Context, req domain.HintScanRequest, w
 	}
 	log := logging.For(ctx, "hints")
 	log.Info().Int("raw_boxes", raw).Int("prepared_boxes", prepared).Msg("hint detector scan")
-	return out, scanErr
+	return targetCoverage(out), scanErr
 }

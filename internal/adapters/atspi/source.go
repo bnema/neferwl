@@ -257,8 +257,8 @@ type winMatch struct {
 }
 
 // Targets returns clickable targets, clipped to each window unit's region,
-// that are ready within the budget. Coverage is decided by the caller.
-func (s *Source) Targets(ctx context.Context, windows []domain.HintWindow, linksOnly bool) ([]domain.HintTarget, error) {
+// that are ready within the budget, and readable windows with matched frames.
+func (s *Source) Targets(ctx context.Context, windows []domain.HintWindow, linksOnly bool) ([]domain.HintTarget, []domain.WindowID, error) {
 	deadline := time.Now().Add(budget)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
@@ -270,11 +270,11 @@ func (s *Source) Targets(ctx context.Context, windows []domain.HintWindow, links
 		}
 	}
 	if len(wanted) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	tr := s.ensure(ctx)
 	if tr == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	broken := false
 	do := func(calls []call) []reply {
@@ -303,9 +303,9 @@ func (s *Source) Targets(ctx context.Context, windows []domain.HintWindow, links
 	rep := do([]call{{op: opChildren, name: registryName, path: registryRoot}})
 	if len(rep) == 0 || rep[0].err != nil {
 		if len(rep) > 0 {
-			return nil, fmt.Errorf("atspi: registry: %w", rep[0].err)
+			return nil, nil, fmt.Errorf("atspi: registry: %w", rep[0].err)
 		}
-		return nil, nil
+		return nil, nil, nil
 	}
 	apps := rep[0].refs
 	calls := make([]call, len(apps))
@@ -382,10 +382,31 @@ func (s *Source) Targets(ctx context.Context, windows []domain.HintWindow, links
 		}
 	}
 
-	targets := s.elements(do, matched, linksOnly)
+	var targets []domain.HintTarget
+	var covered []domain.WindowID
+	var scanErr error
+	for _, m := range matched {
+		var windowErr error
+		read := func(calls []call) []reply {
+			replies := do(calls)
+			for i, r := range replies {
+				var be *busError
+				// Collection may be absent; elements falls back to walking the frame.
+				if r.err != nil && !(calls[i].op == opMatches && errors.As(r.err, &be)) {
+					windowErr = errors.Join(windowErr, r.err)
+				}
+			}
+			return replies
+		}
+		targets = append(targets, s.elements(read, []winMatch{m}, linksOnly)...)
+		if windowErr == nil && ctx.Err() == nil {
+			covered = append(covered, m.win.ID)
+		}
+		scanErr = errors.Join(scanErr, windowErr)
+	}
 	log := logging.For(ctx, "atspi")
 	log.Debug().Int("apps", len(kept)).Int("frames", len(frames)).Int("windows", len(matched)).Int("targets", len(targets)).Msg("atspi targets")
-	return targets, nil
+	return targets, covered, scanErr
 }
 
 // elements reads the clickable elements of the matched frames.
@@ -424,9 +445,6 @@ func (s *Source) elements(do func([]call) []reply, matched []winMatch, linksOnly
 	var out []domain.HintTarget
 	for k, i := range owner {
 		role, ext := info[2*k], info[2*k+1]
-		if role.err == nil && isDocument(role.u) {
-			continue
-		}
 		if role.err != nil || ext.err != nil || !isClickable(role.u, linksOnly) {
 			continue
 		}
@@ -464,7 +482,7 @@ func (s *Source) walk(do func([]call) []reply, root ref, linksOnly bool) []ref {
 			if state.err == nil && !hasState(state.state, stateShowing) {
 				continue
 			}
-			if role.err == nil && (isClickable(role.u, linksOnly) || isDocument(role.u)) && state.err == nil && hasState(state.state, stateVisible) {
+			if role.err == nil && isClickable(role.u, linksOnly) && state.err == nil && hasState(state.state, stateVisible) {
 				out = append(out, n)
 			}
 			if ch.err == nil {

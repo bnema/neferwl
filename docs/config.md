@@ -64,7 +64,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `hint.enable` | `off` | Turn on the experimental [hint mode](#hint-mode) (restart required) |
 | `hint.sources` | `atspi, ocr` | Ordered distinct sources: `atspi`, `ocr`, `detector` (restart required); empty resets the default |
 | `hint.targets` | `clickable` | `links` filters AT-SPI targets to links; reload applies to the next scan |
-| `hint.text-click` | `Ctrl+Shift` | Modifiers for OCR clicks only; `none` sends a plain click; reload applies at click time |
+| `hint.text-click` | `Ctrl+Shift` | Modifiers for clicks on OCR targets without an openable URL; `none` sends a plain click; reload applies at click time |
 | `hint.detector` | `nefer-hints` | The [hint mode](#hint-mode) detector binary: a path, or a name looked up in `PATH` (restart required) |
 | `hint.model` | `$XDG_DATA_HOME/nefer-hints/models` | Directory of the detector's model files; `~/.local/share/nefer-hints/models` when `XDG_DATA_HOME` is unset; a leading `~/` is expanded (restart required) |
 | `hint.threshold` | model default | Optional minimum detection score override, 0.01 to 0.99; unset or empty uses the model’s own threshold (`model.json`), else the runner default. Lower finds more targets and more false ones (restart required) |
@@ -292,7 +292,7 @@ bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
 | `toggle-stash-visible` | Show or hide the stash |
 | `toggle-overview` | Open or close the [overview](#overview) |
 | `osd-pin` | Toggle the pinned [window info overlay](#window-info-overlay) |
-| `hint` | Label the clickable elements on the focused screen, then click the one you type ([hint mode](#hint-mode)) |
+| `hint` | Label the clickable elements on the focused screen, then click the one you type; OCR URLs open with `xdg-open` ([hint mode](#hint-mode)) |
 | `switch-column-next` / `-prev` | Switch to the previously used column. Hold `cmd` and press again to go further back |
 | `maximize-column` | Toggle full width for the focused column |
 | `cycle-column-width` | Grow the focused column by one [cell](#column-widths), then back to equal widths |
@@ -429,7 +429,13 @@ their size follows the screen's pixel density when `hint.size = auto`.
 `hint.size` also accepts a text size from 6 to 72 logical pixels. Changing it
 on reload cancels the shown labels; the next `hint` scan uses the new size.
 Each label sits just outside
-the top-left corner of its target. OCR clicks use `hint.text-click`; other sources use plain left clicks.
+the top-left corner of its target. OCR targets whose text is an http, https or mailto URL open in the default
+handler with `xdg-open` instead of being clicked; `www.` and bare domains become
+`https://…`, and emails become `mailto:…`. Other OCR targets, including `file:`
+and `ftp:` text, are clicked with `hint.text-click`; other sources use plain left clicks.
+An OCR misread opens the misread URL, and an underlined link opens its visible
+text, not its real href. This needs `xdg-open` in `PATH`; failures are logged
+under `component=launcher`.
 
 Labels are not part of screenshots and screencasts by default. With
 `hint.capture = on` they appear in the captures that Wayland clients request
@@ -440,15 +446,16 @@ A reload applies `hint.capture` to the next frame.
 ### Where targets come from
 
 `hint.sources` is an ordered chain of distinct sources, defaulting to `atspi, ocr`.
-Each window is a unit together with its mapped popups. A source covers a unit
-only when it returns at least one target; zero targets or an error passes the
-unit to the next source. Only listed sources start, lazily on their first scan.
+Each window is a unit together with its mapped popups. AT-SPI covers a unit when its accessible frame is matched and readable, even
+when it has no actionable targets. Unmatched or failed units pass to the next
+source. OCR and detector cover a unit only when they return at least one target.
+On partial errors, only explicitly reported covered units are skipped. Only listed sources start, lazily on their first scan.
 The chain is startup-only: restart after changing it.
 
 | Source | Apps | Accuracy | Speed |
 |---|---|---|---|
 | `atspi` | Accessible browsers, GTK, Qt, Electron | Exact app-reported links and controls | Usually milliseconds |
-| `ocr` | Terminals and other text-heavy apps | Best-effort visible URLs; small text can be misread | Usually hundreds of milliseconds |
+| `ocr` | Terminals and other text-heavy apps | Best-effort URL-like text and underlined links only; small text can be misread | Usually hundreds of milliseconds |
 | `detector` | Any app | Pixel-based clickable boxes; may miss or invent targets | Model/device dependent; one request per window |
 
 OCR and detector read a crop bounding the window and its popups, not the whole
@@ -462,9 +469,14 @@ a dropped detector process skips the remaining windows until the next scan.
   apps already running may need restarting. Chromium needs
   `--force-renderer-accessibility`, Electron `ACCESSIBILITY_ENABLED=1`, and Qt
   `QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1`. A session D-Bus is required.
-- **OCR:** install `tesseract` and English language data (`tesseract-data-eng`).
+- **OCR:** targets URL-like text (schemes, `www.`, domains and email addresses)
+  and underlined text, not generic words, menus, buttons or icons. Bare IPv4
+  addresses, version numbers and common source-file names are not targets; an
+  explicit URL scheme still makes an address clickable. Thin lines must match
+  the text baseline and width; separators and box borders are rejected. Install `tesseract` and English language data (`tesseract-data-eng`).
   Missing tesseract disables OCR for the process lifetime. `hint.text-click`
-  supplies modifiers for OCR clicks (default `Ctrl+Shift`); accessibility and
+  supplies modifiers for OCR clicks on targets without an openable URL (default
+  `Ctrl+Shift`); OCR URLs open with `xdg-open`, and accessibility and
   detector targets receive plain clicks. Both this setting and `hint.targets`
   apply on reload.
 - **Detector:** install `nefer-hints` in `PATH` or set `hint.detector` to its

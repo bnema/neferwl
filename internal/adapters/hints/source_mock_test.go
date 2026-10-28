@@ -187,24 +187,22 @@ func (_c *mocksource_needsFrame_Call) RunAndReturn(run func(context1 context.Con
 }
 
 // scan provides a mock function for the type mocksource
-func (_mock *mocksource) scan(context1 context.Context, hintScanRequest domain.HintScanRequest, hintWindows []domain.HintWindow, frameMoqParam *frame) ([]domain.HintTarget, error) {
+func (_mock *mocksource) scan(context1 context.Context, hintScanRequest domain.HintScanRequest, hintWindows []domain.HintWindow, frameMoqParam *frame) (scanResult, error) {
 	ret := _mock.Called(context1, hintScanRequest, hintWindows, frameMoqParam)
 
 	if len(ret) == 0 {
 		panic("no return value specified for scan")
 	}
 
-	var r0 []domain.HintTarget
+	var r0 scanResult
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.HintScanRequest, []domain.HintWindow, *frame) ([]domain.HintTarget, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.HintScanRequest, []domain.HintWindow, *frame) (scanResult, error)); ok {
 		return returnFunc(context1, hintScanRequest, hintWindows, frameMoqParam)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.HintScanRequest, []domain.HintWindow, *frame) []domain.HintTarget); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, domain.HintScanRequest, []domain.HintWindow, *frame) scanResult); ok {
 		r0 = returnFunc(context1, hintScanRequest, hintWindows, frameMoqParam)
 	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]domain.HintTarget)
-		}
+		r0 = ret.Get(0).(scanResult)
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, domain.HintScanRequest, []domain.HintWindow, *frame) error); ok {
 		r1 = returnFunc(context1, hintScanRequest, hintWindows, frameMoqParam)
@@ -256,12 +254,12 @@ func (_c *mocksource_scan_Call) Run(run func(context1 context.Context, hintScanR
 	return _c
 }
 
-func (_c *mocksource_scan_Call) Return(hintTargets []domain.HintTarget, err error) *mocksource_scan_Call {
-	_c.Call.Return(hintTargets, err)
+func (_c *mocksource_scan_Call) Return(scanResultMoqParam scanResult, err error) *mocksource_scan_Call {
+	_c.Call.Return(scanResultMoqParam, err)
 	return _c
 }
 
-func (_c *mocksource_scan_Call) RunAndReturn(run func(context1 context.Context, hintScanRequest domain.HintScanRequest, hintWindows []domain.HintWindow, frameMoqParam *frame) ([]domain.HintTarget, error)) *mocksource_scan_Call {
+func (_c *mocksource_scan_Call) RunAndReturn(run func(context1 context.Context, hintScanRequest domain.HintScanRequest, hintWindows []domain.HintWindow, frameMoqParam *frame) (scanResult, error)) *mocksource_scan_Call {
 	_c.Call.Return(run)
 	return _c
 }

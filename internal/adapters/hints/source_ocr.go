@@ -23,9 +23,9 @@ func (s *ocrSource) needsFrame(ctx context.Context) bool { return ocrReady(ctx, 
 func (*ocrSource) Close() error                          { return nil }
 
 //hexcheck:ignore suspicious-business-logic-in-adapter Owns OCR buffers, cache and external recognition; translates pixel results.
-func (s *ocrSource) scan(ctx context.Context, req domain.HintScanRequest, wins []domain.HintWindow, fr *frame) ([]domain.HintTarget, error) {
+func (s *ocrSource) scan(ctx context.Context, req domain.HintScanRequest, wins []domain.HintWindow, fr *frame) (scanResult, error) {
 	if !ocrReady(ctx, &s.state) {
-		return nil, errOCRUnavailable
+		return scanResult{}, errOCRUnavailable
 	}
 	if s.seed == (maphash.Seed{}) {
 		s.seed = maphash.MakeSeed()
@@ -96,7 +96,6 @@ func (s *ocrSource) scan(ctx context.Context, req domain.HintScanRequest, wins [
 			for _, word := range j.words {
 				word.Rect = word.Rect.Add(crops[wi].Min)
 				if word.Underlined {
-					word.UnderL += crops[wi].Min.X
 					word.UnderR += crops[wi].Min.X
 				}
 				if !duplicateWord(words, word) {
@@ -117,5 +116,5 @@ func (s *ocrSource) scan(ctx context.Context, req domain.HintScanRequest, wins [
 	s.cache = next
 	log := logging.For(ctx, "hints")
 	log.Debug().Int("ocr_px", pixels).Int("ocr_bands", len(jobs)).Int("band_hits", hits).Msg("hint OCR scan")
-	return out, scanErr
+	return targetCoverage(out), scanErr
 }

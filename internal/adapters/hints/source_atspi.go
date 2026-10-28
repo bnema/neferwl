@@ -8,6 +8,12 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 )
 
+// targetSource reports accessibility targets and windows with readable matched frames.
+type targetSource interface {
+	Targets(context.Context, []domain.HintWindow, bool) ([]domain.HintTarget, []domain.WindowID, error)
+	Close() error
+}
+
 type atspiSource struct{ targets targetSource }
 
 func (*atspiSource) kind() domain.HintSource         { return domain.HintSourceATSPI }
@@ -18,11 +24,11 @@ func (s *atspiSource) Close() error {
 	}
 	return s.targets.Close()
 }
-func (s *atspiSource) scan(ctx context.Context, req domain.HintScanRequest, wins []domain.HintWindow, _ *frame) ([]domain.HintTarget, error) {
+func (s *atspiSource) scan(ctx context.Context, req domain.HintScanRequest, wins []domain.HintWindow, _ *frame) (scanResult, error) {
 	if s.targets == nil {
-		return nil, errors.New("hints: accessibility source unavailable")
+		return scanResult{}, errors.New("hints: accessibility source unavailable")
 	}
-	targets, err := s.targets.Targets(ctx, wins, req.LinksOnly)
+	targets, covered, err := s.targets.Targets(ctx, wins, req.LinksOnly)
 	scale := req.Scale
 	if scale <= 0 {
 		scale = 1
@@ -41,5 +47,5 @@ func (s *atspiSource) scan(ctx context.Context, req domain.HintScanRequest, wins
 		t.Rect = domain.Rect{X: x1, Y: y1, W: x2 - x1, H: y2 - y1}
 		out = append(out, t)
 	}
-	return out, err
+	return scanResult{Targets: out, Covered: covered}, err
 }

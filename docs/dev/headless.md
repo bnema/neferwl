@@ -125,7 +125,9 @@ env -u NEFERWL_STATE -u NEFERWL_SLOT XDG_STATE_HOME="$T/state" \
 All clients and state queries must run inside that wrapper shell so they share
 its session bus as well as its Wayland display. Logs are in
 `$T/state/neferwl/runs/headless/latest.log`.
-Prepare `$T/page.html` with local links before running. Arrange both windows
+Prepare `$T/page.html` with underlined local links before running. OCR detects
+URL-like text without an underline and underlined link text; ordinary menu
+labels, buttons, separators and box borders do not produce OCR targets. Arrange both windows
 visibly; open a menu if possible.
 Script `sleep 8s`, `key Super+g`, `sleep 4s`, then `type <visible label>`.
 Check screenshots before and after the click; a local link changing the page
@@ -145,3 +147,27 @@ An AT-SPI registry activation failure is a failed accessibility check, not proof
 of correct mixed-source coverage. Check that the session registry is running.
 Also test a missing detector binary (scan completes without labels) and duplicate
 sources (startup rejects `hint.sources = ocr, ocr`).
+
+## OCR URL opening
+
+OCR targets with an http, https or mailto URL run `xdg-open` instead of a click. The recipe builds the binary, writes a minimal config and input script, and puts a fake `xdg-open` first in `PATH`. It needs the hint prerequisites listed above.
+
+```sh
+T=$(mktemp -d); mkdir "$T/bin"
+CGO_ENABLED=0 go build -o "$T/neferwl" ./cmd/neferwl
+printf '#!/bin/sh\nfor a in "$@"; do echo "$a" >>%s/opened; done\n' "$T" >"$T/bin/xdg-open"
+printf '#!/bin/sh\nprintf https://example.com; exec sleep 60\n' >"$T/show.sh"
+chmod +x "$T/bin/xdg-open" "$T/show.sh"
+cat >"$T/config" <<EOF
+hint.enable = on
+hint.capture = on
+hint.sources = atspi, ocr
+bind.cmd+g = hint
+bind.cmd+u = spawn foot -o main.font=monospace:size=28 $T/show.sh
+EOF
+printf 'sleep 1s\nkey Super+u\nsleep 4s\nkey Super+g\nsleep 4s\n' >"$T/input"
+env -u NEFERWL_STATE -u NEFERWL_SLOT PATH="$T/bin:$PATH" "$T/neferwl" --backend=headless \
+  --config "$T/config" --no-xwayland --screenshot "$T/shots" --input "$T/input" --timeout 20s
+```
+
+The input script opens a large-font foot showing `https://example.com` and runs `hint`. Read the label from the screenshot, then append `type <label>` and a `sleep 2s` to `$T/input` and run again. `$T/opened` then holds exactly `https://example.com`. A `file:` target is clicked and leaves it empty. Launcher failures are in the log under `component=launcher`.

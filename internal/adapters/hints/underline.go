@@ -2,20 +2,34 @@ package hints
 
 import (
 	"image"
-	"math"
 	"sort"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/bnema/neferwl/internal/domain"
+)
+
+const (
+	// underlineMinContrast and underlineMaxContrast clamp the ink/2 threshold used to tell line pixels from background.
+	underlineMinContrast = 20
+	underlineMaxContrast = 40
+	// underlineSearchPct is the search depth below a word, in percent of its height.
+	underlineSearchPct = 35
+	// underlineRowCoveragePct is the share of the word width a row must cover to count as line.
+	underlineRowCoveragePct = 85
+	// underlineThicknessDiv gives the maximum line thickness as word height / this (at least 2 px).
+	underlineThicknessDiv = 6
+	// underlineBorderPct is the share of the word height a vertical stroke above a line end must reach to reject it as a border.
+	underlineBorderPct = 75
 )
 
 // underlineCandidate is a word with a thin line under it.
 type underlineCandidate struct {
 	word     int
-	row      int // the line's row
 	from, to int // x extent of the continuous line through the word
 }
 
-// markUnderlined sets Underlined, UnderL and UnderR on the words of a band
+// markUnderlined sets Underlined and UnderR on the words of a band
 // that have a thin line under them. words are in the coordinates of g.
 // Lines that run on far beyond the word (rules, table borders, input boxes)
 // do not count, unless the extension is made of underlined words too.
@@ -28,7 +42,7 @@ func markUnderlined(src *image.Gray, words []OCRWord) {
 	for i, w := range words {
 		// A single glyph, or a box narrower than tall, has a flat bottom
 		// stroke (8, L, 2) that is not an underline.
-		if len([]rune(w.Text)) < 2 || w.Rect.Dx() < w.Rect.Dy() {
+		if utf8.RuneCountInString(w.Text) < 2 || w.Rect.Dx() < w.Rect.Dy() {
 			continue
 		}
 		if c, ok := underlineOf(g, w.Rect); ok {
@@ -43,7 +57,7 @@ func markUnderlined(src *image.Gray, words []OCRWord) {
 			(c.to-w.Rect.Max.X > h && !underlineCovered(words, cands, c, 1)) {
 			continue
 		}
-		words[c.word].Underlined, words[c.word].UnderL, words[c.word].UnderR = true, c.from, c.to
+		words[c.word].Underlined, words[c.word].UnderR = true, c.to
 	}
 }
 
@@ -64,7 +78,7 @@ func underlineCovered(words []OCRWord, cands []underlineCandidate, c underlineCa
 		next := -1
 		for _, o := range cands {
 			r := words[o.word].Rect
-			if abs(r.Max.Y-w.Max.Y) > max(3, h/3) {
+			if !sameBaseline(w, r, h) {
 				continue
 			}
 			var gap, reach int
@@ -96,13 +110,13 @@ func underlineOf(g *image.Gray, r image.Rectangle) (underlineCandidate, bool) {
 		return underlineCandidate{}, false
 	}
 	bg, ink := contrastOf(g, box)
-	thr := min(40, max(20, ink/2))
+	thr := min(underlineMaxContrast, max(underlineMinContrast, ink/2))
 	if ink < thr+10 {
 		return underlineCandidate{}, false
 	}
-	top := max(b.Min.Y, r.Max.Y-(h*15+99)/100)
-	bottom := min(b.Max.Y, r.Max.Y+(h*35+99)/100+1)
-	maxThick := max(2, h/6)
+	top := max(b.Min.Y, r.Max.Y)
+	bottom := min(b.Max.Y, r.Max.Y+(h*underlineSearchPct+99)/100+1)
+	maxThick := max(2, h/underlineThicknessDiv)
 	rowOK := func(y int) bool {
 		row := g.Pix[(y-g.Rect.Min.Y)*g.Stride:]
 		n := 0
@@ -111,7 +125,7 @@ func underlineOf(g *image.Gray, r image.Rectangle) (underlineCandidate, bool) {
 				n++
 			}
 		}
-		return n*100 >= box.Dx()*85
+		return n*100 >= box.Dx()*underlineRowCoveragePct
 	}
 	thick, first := 0, 0
 	for y := top; y <= bottom; y++ {
@@ -136,7 +150,22 @@ func underlineOf(g *image.Gray, r image.Rectangle) (underlineCandidate, bool) {
 			for to < b.Max.X && on(to) {
 				to++
 			}
-			return underlineCandidate{row: row, from: from, to: to}, true
+			// A vertical stroke at either end identifies a box/table border.
+			// Look above the line, away from its own thickness.
+			for _, x := range []int{from, to - 1} {
+				n := 0
+				for y := first - 1; y >= max(b.Min.Y, first-h); y-- {
+					if abs(int(g.GrayAt(x, y).Y)-bg) >= thr {
+						n++
+					} else {
+						break
+					}
+				}
+				if n*100 >= h*underlineBorderPct {
+					return underlineCandidate{}, false
+				}
+			}
+			return underlineCandidate{from: from, to: to}, true
 		}
 	}
 	return underlineCandidate{}, false
@@ -185,8 +214,8 @@ func contrastOf(g *image.Gray, box image.Rectangle) (bg, ink int) {
 }
 
 // underlinedLinks returns the targets for underlined words, joining the
-// words of one continuous underline. A group that overlaps a URL target (in
-// pixels) is left to it. Coordinates are scaled to logical.
+// words of one continuous underline, excluding groups already covered by URL
+// targets. Coordinates are scaled to logical.
 func underlinedLinks(words []OCRWord, urls []image.Rectangle, scale float64) []domain.HintTarget {
 	var us []OCRWord
 	for _, w := range words {
@@ -203,30 +232,35 @@ func underlinedLinks(words []OCRWord, urls []image.Rectangle, scale float64) []d
 		}
 		used[i] = true
 		rect, last := us[i].Rect, us[i]
-		chars, width := len(last.Text), last.Rect.Dx()
+		chars, width := utf8.RuneCountInString(last.Text), last.Rect.Dx()
+		text := last.Text
 		for {
 			next := -1
 			for j := range us {
 				c := us[j]
-				if used[j] || c.Rect.Min.X < rect.Max.X-2 || abs(c.Rect.Max.Y-last.Rect.Max.Y) > max(3, rect.Dy()/3) {
+				if used[j] || c.Rect.Min.X < rect.Max.X-2 || !sameBaseline(last.Rect, c.Rect, rect.Dy()) {
 					continue
 				}
-				avg := float64(width+c.Rect.Dx()) / float64(max(1, chars+len(c.Text)))
+				avg := float64(width+c.Rect.Dx()) / float64(max(1, chars+utf8.RuneCountInString(c.Text)))
 				gap := c.Rect.Min.X - rect.Max.X
 				if float64(gap) > 1.2*avg || c.Rect.Min.X > last.UnderR+2 {
 					continue
 				}
-				if next < 0 || c.Rect.Min.X < us[next].Rect.Min.X {
-					next = j
-				}
+				next = j // us is sorted by x: the first eligible word is the leftmost
+				break
 			}
 			if next < 0 {
 				break
 			}
 			used[next] = true
+			if touching(rect, us[next].Rect) {
+				text += us[next].Text
+			} else {
+				text += " " + us[next].Text
+			}
 			last = us[next]
 			rect = rect.Union(last.Rect)
-			chars += len(last.Text)
+			chars += utf8.RuneCountInString(last.Text)
 			width += last.Rect.Dx()
 		}
 		dup := false
@@ -238,9 +272,11 @@ func underlinedLinks(words []OCRWord, urls []image.Rectangle, scale float64) []d
 		if dup {
 			continue
 		}
-		x, y := int(math.Floor(float64(rect.Min.X)/scale)), int(math.Floor(float64(rect.Min.Y)/scale))
-		right, bottom := int(math.Ceil(float64(rect.Max.X)/scale)), int(math.Ceil(float64(rect.Max.Y)/scale))
-		out = append(out, domain.HintTarget{Kind: domain.HintLink, Source: domain.HintSourceOCR, Score: 1, Rect: domain.Rect{X: x, Y: y, W: right - x, H: bottom - y}})
+		url := ""
+		if !strings.Contains(text, " ") {
+			url, _ = linkURL(text)
+		}
+		out = append(out, domain.HintTarget{Kind: domain.HintLink, Source: domain.HintSourceOCR, Score: 1, URL: url, Rect: logicalRect(rect, scale)})
 	}
 	return out
 }
