@@ -423,6 +423,45 @@ func TestFlashTileDrop(t *testing.T) {
 	})
 }
 
+// Hover focus (focus.follow-mouse) flashes the window it focuses, like a click.
+func TestFlashHoverFocus(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, _ := flashCore(t)
+		c.cfg.Focus.FollowMouse = true
+		ctx := context.Background()
+		indicatorScene(t, c)
+		focused, _ := c.cur().mon.Focused()
+		var from, to WindowID
+		for _, p := range c.cur().mon.Layout() {
+			if x, y := hoverPoint(t, c, p.ID); p.Hidden || p.Rect.W <= 0 || x < 0 || y < 0 {
+				continue
+			} else if hit, _, _ := c.hit(x, y); hit != p.ID {
+				continue
+			}
+			if p.ID == focused {
+				from = p.ID
+			} else if to == 0 {
+				to = p.ID
+			}
+		}
+		if from == 0 || to == 0 {
+			t.Fatalf("need two visible windows, focused %d", focused)
+		}
+		for _, id := range []WindowID{from, to} {
+			x, y := hoverPoint(t, c, id)
+			if err := c.pointerMotion(ctx, ports.PointerMotion{X: x, Y: y}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if f, _ := c.cur().mon.Focused(); f != to {
+			t.Fatalf("focus %d want %d", f, to)
+		}
+		if c.flash.pending == nil || c.flash.pending.window != to {
+			t.Fatalf("flash %+v want window %d", c.flash.pending, to)
+		}
+	})
+}
+
 func TestFlashNoImplicitFocusTriggers(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _ := flashCore(t)

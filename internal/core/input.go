@@ -131,7 +131,7 @@ func (c *Core) pointerMotion(ctx context.Context, v ports.PointerMotion) error {
 	}
 	if entered {
 		sent := c.keyboard.sent
-		if err := c.focusPointer(ctx, id, false); err != nil {
+		if err := c.focusPointer(ctx, id, true); err != nil {
 			return err
 		}
 		if c.keyboard.sent != sent {

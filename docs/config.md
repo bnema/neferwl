@@ -118,7 +118,7 @@ flashes that workspace's focused window once, after the slide settles: the
 `focus-workspace`, prev/next and named `workspace` binds, a focus bind that
 crosses the workspace edge, a move bind with `focus.follow-move`, a committed
 three-finger swipe and an overview pick. A cancelled swipe and an empty
-workspace do not flash. Mouse focus does not trigger a flash. A window flashes
+workspace do not flash. A click or hover focus (`focus.follow-mouse`) flashes the window it focuses. A window flashes
 at most once per second, so a quick switch A→B→A may skip the second flash.
 It runs when `animations = on`.
 

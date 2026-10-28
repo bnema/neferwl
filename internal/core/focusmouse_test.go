@@ -71,9 +71,6 @@ func TestHoverFocusMotion(t *testing.T) {
 				if !on && len(ids) != 0 {
 					t.Fatalf("disabled focus commands %v", ids)
 				}
-				if c.flash.pending != nil {
-					t.Fatal("hover flashed")
-				}
 				// Same-window motion must not publish or send keyboard focus again.
 				for len(c.ch.Scenes) > 0 {
 					<-c.ch.Scenes
