@@ -51,6 +51,35 @@ func TestHoverFocusable(t *testing.T) {
 	}
 }
 
+// Hover onto the cover under a stash shown over it must not drop the stash,
+// whether the cover is a tile or a native float.
+func TestHoverFocusableStashOverCover(t *testing.T) {
+	for _, float := range []bool{false, true} {
+		w := workspace()
+		w.AddWindow(1)
+		w.AddWindow(3)
+		w.ToggleWindowStash() // 3 stashed
+		w.ToggleStashVisible()
+		cover := WindowID(1)
+		if float {
+			cover = 2
+			w.AddFloating(2, 20, 20)
+		}
+		w.FocusID(cover)
+		w.SetFullscreen(cover, true)
+		w.Activate(3)
+		if w.Cover() != cover || !w.stashOverCover() {
+			t.Fatalf("float=%v: cover %d over %v", float, w.Cover(), w.stashOverCover())
+		}
+		if w.HoverFocusable(cover) {
+			t.Fatalf("float=%v: cover hover focusable over shown stash", float)
+		}
+		if !w.HoverFocusable(3) {
+			t.Fatalf("float=%v: stash window not hover focusable", float)
+		}
+	}
+}
+
 func TestHoverFocusableNoAlloc(t *testing.T) {
 	w := workspace()
 	w.AddWindow(1)

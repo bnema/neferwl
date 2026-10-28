@@ -51,8 +51,10 @@ func (w *Workspace) FocusID(id WindowID) bool {
 // stacking and visibility unchanged: hover never hides the stash nor sends
 // floats behind the columns.
 func (w *Workspace) HoverFocusable(id WindowID) bool {
-	if w.floatIndex(id) >= 0 {
-		return true
+	if i := w.floatIndex(id); i >= 0 {
+		// Focusing a float drops the stash shown over the cover unless
+		// it is a dialog kept over the cover (FocusID).
+		return !w.stashOverCover() || w.overCover(w.Floats[i])
 	}
 	if w.StashIndex(id) >= 0 {
 		return !w.stashHidden
@@ -68,7 +70,8 @@ func (w *Workspace) HoverFocusable(id WindowID) bool {
 	if !found {
 		return false
 	}
-	if !w.stashHidden && len(w.Stash) > 0 && w.Cover() == 0 {
+	// Click hides a shown stash; FocusID drops one shown over the cover.
+	if w.StashShown() {
 		return false
 	}
 	for i := range w.Floats {
