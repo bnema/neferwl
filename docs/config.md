@@ -53,6 +53,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `animations` | `off` | **Experimental.** Animate layout changes and make swipes follow the fingers |
 | `animations.speed` | `normal` | `slow`, `normal`, `fast`, or a factor from `0.1` to `10` |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
+| `focus.follow-mouse` | `off` | Focus the window the pointer moves into; a keyboard focus change holds until the pointer enters another window |
 | `focus.position-hint` | `on` | Show workspace/band dots near the output bottom for 600ms after a position change, then fade for 150ms (no fade with animations off); hidden in overview, fullscreen and session lock; never captured |
 | `focus.flash` | `on` | Briefly draw an inner border, inside the window border, on the window or column an action changed |
 | `focus.flash-width` | `2` | Flash border width in logical pixels, `1` to `8` |

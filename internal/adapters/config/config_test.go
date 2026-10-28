@@ -29,7 +29,7 @@ func TestDefaultsAndLoad(t *testing.T) {
 	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 79 || d.Layout.MaxColumns != 2 || d.Floating.Dim != 0.3 {
 		t.Fatalf("defaults: %+v", d)
 	}
-	if d.Binds["Cmd+s"] != "toggle-stash-visible" || d.Binds["Cmd+Shift+s"] != "toggle-window-stash" || d.Binds["Cmd+o"] != "toggle-overview" || d.Binds["Cmd+f"] != "maximize-column" || d.Binds["Cmd+Shift+f"] != "toggle-fullscreen" || d.Binds["Cmd+Shift+h"] != "move-column-left" || d.Binds["Cmd+j"] != "focus-window-down" || d.Binds["Cmd+Shift+code:2"] != "move-column-to-workspace 1" || d.Focus.FollowMove {
+	if d.Binds["Cmd+s"] != "toggle-stash-visible" || d.Binds["Cmd+Shift+s"] != "toggle-window-stash" || d.Binds["Cmd+o"] != "toggle-overview" || d.Binds["Cmd+f"] != "maximize-column" || d.Binds["Cmd+Shift+f"] != "toggle-fullscreen" || d.Binds["Cmd+Shift+h"] != "move-column-left" || d.Binds["Cmd+j"] != "focus-window-down" || d.Binds["Cmd+Shift+code:2"] != "move-column-to-workspace 1" || d.Focus.FollowMove || d.Focus.FollowMouse {
 		t.Fatal(d.Binds)
 	}
 	if d.Binds["Cmd+Shift+Up"] != "move-window-up" || d.Binds["Cmd+Shift+j"] != "move-window-down" || d.Binds["Alt+Cmd+Left"] != "set-column-width -1" || d.Binds["Alt+Cmd+l"] != "set-column-width +1" || d.Binds["Alt+Cmd+k"] != "set-window-height -10%" || d.Binds["Cmd+Ctrl+Shift+Down"] != "move-workspace-next" || d.Binds["Cmd+Ctrl+Shift+k"] != "move-workspace-prev" || d.Binds["Cmd+Shift+space"] != "toggle-floating" {
@@ -76,6 +76,17 @@ func TestFollowMove(t *testing.T) {
 	}
 	c, w = parseString(t, "focus.follow-move = yes\n")
 	if c.Focus.FollowMove || len(w) != 1 {
+		t.Fatal(c.Focus, w)
+	}
+}
+
+func TestFollowMouse(t *testing.T) {
+	c, w := parseString(t, "focus.follow-mouse = on\n")
+	if !c.Focus.FollowMouse || len(w) != 0 {
+		t.Fatal(c.Focus, w)
+	}
+	c, w = parseString(t, "focus.follow-mouse = yes\n")
+	if c.Focus.FollowMouse || len(w) != 1 {
 		t.Fatal(c.Focus, w)
 	}
 }

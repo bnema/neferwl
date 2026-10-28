@@ -145,6 +145,9 @@ type Config struct {
 		// FollowMove shows the target workspace after a column or window
 		// moves to it.
 		FollowMove bool
+		// FollowMouse focuses the window the pointer moves into; keyboard
+		// focus changes hold until the pointer enters another window.
+		FollowMouse bool
 		// Flash briefly draws an inner border on the entity an action changed
 		// (window or column). FlashWidth is in logical pixels (1 to 8),
 		// FlashOpacity the starting opacity (0.1 to 1), FlashDuration the fade

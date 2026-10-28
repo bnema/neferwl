@@ -859,6 +859,12 @@ func set(c *domain.Config, key, v string) error {
 			return err
 		}
 		c.Focus.FollowMove = b
+	case "focus.follow-mouse":
+		b, err := onOff(v)
+		if err != nil {
+			return err
+		}
+		c.Focus.FollowMouse = b
 	case "focus.position-hint":
 		b, err := onOff(v)
 		if err != nil {
