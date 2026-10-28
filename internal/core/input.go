@@ -80,6 +80,7 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 }
 
 func (c *Core) pointerMotion(ctx context.Context, v ports.PointerMotion) error {
+	px, py := c.cursorX, c.cursorY
 	c.motionTime = v.Time
 	// A locked pointer stays still; relative motion still flows.
 	if c.constraint.Mode != domain.ConstraintLock {
@@ -113,8 +114,10 @@ func (c *Core) pointerMotion(ctx context.Context, v ports.PointerMotion) error {
 		return c.dataDragMotion(ctx, v.Time)
 	}
 	id, x, y := c.hit(c.cursorX, c.cursorY)
+	entered := false
 	// Layout changes are intentionally re-hit-tested only on motion.
 	if id != c.pointer {
+		entered = c.hoverEntry(id, px, py)
 		c.pointer = id
 		if err := c.pointerFocus(ctx, ports.PointerFocus{ID: id, X: x, Y: y}); err != nil {
 			return err
@@ -124,6 +127,15 @@ func (c *Core) pointerMotion(ctx context.Context, v ports.PointerMotion) error {
 	if id != 0 {
 		if err := c.command(ctx, ports.PointerMotionTo{ID: id, X: x, Y: y, DX: v.DX, DY: v.DY, UnaccelDX: v.UnaccelDX, UnaccelDY: v.UnaccelDY, Time: v.Time}); err != nil {
 			return err
+		}
+	}
+	if entered {
+		sent := c.keyboard.sent
+		if err := c.focusPointer(ctx, id, false); err != nil {
+			return err
+		}
+		if c.keyboard.sent != sent {
+			return c.rehit(ctx)
 		}
 	}
 	return nil
@@ -140,7 +152,10 @@ func (c *Core) focusPointer(ctx context.Context, id WindowID, flash bool) error 
 	before := c.snapshot(now)
 	c.focusClick(s, w, id, flash)
 	c.transition(before, now)
-	return c.publish(ctx)
+	c.focusByPointer = true
+	err := c.publish(ctx)
+	c.focusByPointer = false
+	return err
 }
 
 // focusClick raises the clicked window and focuses its output. Modal dialogs

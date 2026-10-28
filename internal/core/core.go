@@ -104,13 +104,16 @@ type Core struct {
 	focusScreen     int
 	// offGone names outputs unplugged while turned off: a display that
 	// reconnects from deep sleep comes back off, until the next input.
-	offGone    map[string]bool
-	binds      map[binding]Action
-	pressed    map[string]bool
-	configures configures
-	pointer    WindowID
-	grab       WindowID
-	buttons    map[uint32]bool
+	offGone        map[string]bool
+	binds          map[binding]Action
+	pressed        map[string]bool
+	configures     configures
+	pointer        WindowID
+	hoverLocked    bool     // a non-pointer focus change holds hover focus
+	hoverLock      WindowID // window under the cursor when the hold started; hover onto it stays ignored
+	focusByPointer bool     // set while focusPointer publishes, so syncFocus does not arm the hold
+	grab           WindowID
+	buttons        map[uint32]bool
 	// drag is the pointer drag in progress (drag.go); swallow holds the
 	// buttons whose release no client must see. mods are the modifiers
 	// held, cmdMod the one keyboard.cmd names. lastButton is the latest
@@ -368,6 +371,9 @@ func (c *Core) apply(cfg domain.Config) error {
 		c.osdCancel()
 	}
 	c.cfg = cfg
+	if !cfg.Focus.FollowMouse {
+		c.hoverLocked, c.hoverLock = false, 0
+	}
 	c.binds = binds
 	c.cmdMod = map[string]domain.Mods{"super": domain.ModSuper, "alt": domain.ModAlt, "ctrl": domain.ModCtrl}[cfg.Keyboard.CmdKey]
 	c.specs, c.rules = named, rules
@@ -773,6 +779,9 @@ func (c *Core) rehit(ctx context.Context) error {
 	}
 	id, x, y := c.hit(c.cursorX, c.cursorY)
 	if id != c.pointer {
+		if c.hoverLocked {
+			c.hoverLock = id
+		}
 		c.pointer, c.pointerAt = id, [2]float64{x, y}
 		return c.pointerFocus(ctx, ports.PointerFocus{ID: id, X: x, Y: y})
 	}
@@ -943,6 +952,9 @@ func (c *Core) syncOutputs(ctx context.Context) error {
 func (c *Core) syncFocus(ctx context.Context, focus WindowID) error {
 	if focus == c.keyboard.sent {
 		return nil
+	}
+	if !c.focusByPointer {
+		c.hoverLocked, c.hoverLock = true, c.pointer
 	}
 	if err := c.command(ctx, ports.FocusWindow{ID: focus}); err != nil {
 		return err
