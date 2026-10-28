@@ -197,15 +197,7 @@ packages:
       pkgname: layoutmocks
       filename: '{{.InterfaceName}}_mock.go'
     interfaces:
-      Traits:
-      Shape:
-      Geometry:
-      LaneSet:
-      Navigator:
-      Placer:
-      Sizer:
       State:
-      Overview:
       Layout:
 
   github.com/bnema/neferwl/internal/adapters/atspi:
