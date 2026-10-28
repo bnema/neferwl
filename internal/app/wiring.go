@@ -42,6 +42,8 @@ type pipes struct {
 	// scales is nil outside a real session: headless runs never touch the
 	// config file.
 	scales chan domain.ScaleChanged
+	// binds carries bind dispatch records to the debug log.
+	binds chan domain.InputTrace
 
 	// Outputs report to wayland through its presentation sink and, for each
 	// flip of an animating scene (Scene.Animating), tell core (frames) to
@@ -112,6 +114,7 @@ func newPipes(realSession, hint bool) *pipes {
 		configErrors: make(chan error, 8),
 
 		frames: make(chan domain.OutputFrame, 8),
+		binds:  make(chan domain.InputTrace, 32),
 
 		captures: make(chan domain.CaptureRequest, ports.MaxCaptureInflight),
 		captured: make(chan domain.CaptureDone, ports.MaxCaptureInflight),
@@ -160,6 +163,7 @@ func (p *pipes) core() core.Channels {
 		Workspaces:   p.workspaces,
 		ConfigErrors: p.configErrors,
 		Scales:       p.scales,
+		Binds:        p.binds,
 		Frames:       p.frames,
 		HintScans:    p.hintScans,
 		Hints:        p.hintResults,

@@ -49,6 +49,7 @@ The recording and poster replace `docs/media/demo.mp4` and `docs/media/demo.png`
 | `sleep 1s` | Wait |
 | `move <x> <y>` | Move the pointer, in output coordinates |
 | `click [left\|right\|middle]`, `down <button>`, `up <button>` | Mouse buttons |
+| `vt away`, `vt back` | Simulate a VT switch: the keys and modifiers held are forgotten and the seat goes inactive, then active again |
 | `swipe up\|down\|left\|right` | Three-finger flick |
 | `swipe4 up\|down` | Four-finger flick |
 

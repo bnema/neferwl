@@ -135,3 +135,15 @@ func (PinchUpdate) inputEvent() {}
 func (PinchEnd) inputEvent()    {}
 func (HoldBegin) inputEvent()   {}
 func (HoldEnd) inputEvent()     {}
+
+// SeatChanged reports that the seat went inactive (Active false: a VT switch
+// away) or active again. The producer has already dropped its own key and
+// gesture state; core resets the input state it derived from the stream.
+// Core admits it in any security epoch. State is the modifier state the
+// producer kept through its reset (locked modifiers and group, nothing held).
+type SeatChanged struct {
+	Active bool
+	State  domain.ModState
+}
+
+func (SeatChanged) inputEvent() {}

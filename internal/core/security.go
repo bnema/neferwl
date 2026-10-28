@@ -234,6 +234,16 @@ func (c *Core) publishProtected(ctx context.Context) error {
 }
 
 func (c *Core) admitInput(ev ports.InputEvent) (ports.InputEvent, bool) {
+	// The seat lifecycle drops state; it grants no input, so any epoch may
+	// carry it.
+	if v, ok := ev.(ports.SeatChanged); ok {
+		return v, true
+	}
+	if v, ok := ev.(ports.SecurityInput); ok {
+		if s, ok := v.Event.(ports.SeatChanged); ok {
+			return s, true
+		}
+	}
 	if v, ok := ev.(ports.SecurityInput); ok {
 		if v.State != c.security || v.Event == nil {
 			return nil, false

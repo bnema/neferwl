@@ -45,6 +45,10 @@ type Channels struct {
 	// Scales, when set, receives each scale a scale bind sets, to persist it.
 	// Core does not wait: a full channel drops the change.
 	Scales chan<- domain.ScaleChanged
+	// Binds, when set, receives a record of each action input runs and of
+	// each seat input reset, for the debug log. Core does not wait: a full
+	// channel drops the record.
+	Binds chan<- domain.InputTrace
 	// Frames, when set, carries the outputs' reports of each flip of an
 	// animating scene (Scene.Animating): a running slide moves one step per
 	// report. Without them it moves on a timer.
@@ -133,6 +137,10 @@ type Core struct {
 	cmdMod           domain.Mods
 	cursorX, cursorY float64 // global, logical
 	pointerOutput    string  // output under the pointer at the last motion
+	// bindCombo and bindSource describe what triggers the next runBind, for
+	// its trace.
+	bindCombo  string
+	bindSource domain.BindSource
 	// constrained is the constraint wayland activated; constraint is it
 	// resolved to global coordinates, as last sent to input.
 	constrained ports.PointerConstrained

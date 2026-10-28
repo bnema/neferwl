@@ -398,7 +398,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	}
 	go func() {
 		defer workers.Done()
-		consumeScenes(ctx, p.scenes, p.configErrors, opts.testScenes, p.renderScenes)
+		consumeScenes(ctx, p.scenes, p.configErrors, p.binds, opts.testScenes, p.renderScenes)
 	}()
 
 	go func() {

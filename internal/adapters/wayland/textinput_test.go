@@ -518,3 +518,31 @@ func TestInertInputMethodPopupIgnored(t *testing.T) {
 	settle(t, inert.c)
 	expectEvents(t, "inert", inert.log.take())
 }
+
+// A reset releases the keys an input-method grab holds and sends it the kept
+// modifier state, so the grab does not keep a modifier held through it.
+func TestKeyboardResetReleasesInputMethodGrab(t *testing.T) {
+	s, events, commands, dir := keyboardServer(t)
+	app := newTextApp(t, s, events, commands, dir)
+	ime := newIMEApp(t, s, dir)
+	_, grab := ime.grab(t)
+	settle(t, ime.c)
+	grab.take()
+	const superDepressed = 64
+	commands <- ports.ForwardKey{ID: app.window, Key: ports.KeyEvent{Keycode: 125, Pressed: true, Time: 7 * time.Millisecond, State: domain.ModState{Depressed: superDepressed}}}
+	until(t, "grab did not get Super", func() bool { return len(grab.events) == 2 }, ime.c)
+	grab.take()
+	commands <- ports.KeyboardReset{State: domain.ModState{Locked: 2, Group: 1}}
+	until(t, "grab did not get the reset", func() bool { return len(grab.events) == 2 }, ime.c)
+	if !strings.HasSuffix(grab.events[0], " 0 125 0") {
+		t.Fatalf("grab key %q, want a release of 125", grab.events[0])
+	}
+	if !strings.HasPrefix(grab.events[1], "modifiers ") || !strings.HasSuffix(grab.events[1], " 0 0 2 1") {
+		t.Fatalf("grab modifiers %q, want 0 0 2 1", grab.events[1])
+	}
+	var held int
+	s.display.Do(func() { held = len(s.seat.grabKeys) })
+	if held != 0 {
+		t.Fatalf("%d grab keys still tracked", held)
+	}
+}

@@ -158,7 +158,7 @@ func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.Config
 	}
 }
 
-func consumeScenes(ctx context.Context, scenes <-chan []domain.Scene, configErrors <-chan error, tap chan<- []domain.Scene, renderScenes chan []domain.Scene) {
+func consumeScenes(ctx context.Context, scenes <-chan []domain.Scene, configErrors <-chan error, binds <-chan domain.InputTrace, tap chan<- []domain.Scene, renderScenes chan []domain.Scene) {
 	log := logging.For(ctx, "core")
 	configLog := logging.For(ctx, "config")
 	for {
@@ -174,9 +174,27 @@ func consumeScenes(ctx context.Context, scenes <-chan []domain.Scene, configErro
 			}
 			routing.Latest(renderScenes, set) // this goroutine is the only sender
 			logScenes(log, set)
+		case t := <-binds:
+			logInputTrace(log, t)
 		case err := <-configErrors:
 			configLog.Warn().Err(err).Msg("config rejected")
 		}
+	}
+}
+
+// logInputTrace logs a bind dispatch or a seat input reset at debug level.
+// It carries the bind combo only, never typed text.
+func logInputTrace(log zerowrap.Logger, t domain.InputTrace) {
+	ev := log.Debug()
+	if !ev.Enabled() {
+		return
+	}
+	switch v := t.(type) {
+	case domain.BindDispatched:
+		ev.Str("combo", v.Combo).Str("action", v.Action).Str("output", v.Output).Str("output_after", v.OutputAfter).
+			Int("workspace_before", v.WorkspaceBefore).Int("workspace_after", v.WorkspaceAfter).Str("source", string(v.Source)).Msg("bind dispatched")
+	case domain.SeatInputReset:
+		ev.Int("keys", v.Keys).Int("mods", v.Mods).Int("buttons", v.Buttons).Msg("seat input reset")
 	}
 }
 

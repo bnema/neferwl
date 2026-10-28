@@ -3,6 +3,7 @@
 package xkb
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 	"time"
@@ -18,6 +19,7 @@ const (
 	modsLatched
 	modsLocked
 	modsEffective
+	layoutLocked    = 1 << 6
 	layoutEffective = 1 << 7
 )
 
@@ -45,6 +47,7 @@ type Keymap struct {
 	serializeMods   func(uintptr, uint32) uint32
 	serializeLayout func(uintptr, uint32) uint32
 	modActive       func(uintptr, *byte, uint32) int32
+	updateMask      func(uintptr, uint32, uint32, uint32, uint32, uint32, uint32) uint32
 	minCode         func(uintptr) uint32
 	maxCode         func(uintptr) uint32
 	symsLevel       func(uintptr, uint32, uint32, uint32, *unsafe.Pointer) int32
@@ -84,6 +87,7 @@ func New(names RMLVO) (_ *Keymap, err error) {
 	bind(&k.serializeMods, "state_serialize_mods")
 	bind(&k.serializeLayout, "state_serialize_layout")
 	bind(&k.modActive, "state_mod_name_is_active")
+	bind(&k.updateMask, "state_update_mask")
 	bind(&k.minCode, "keymap_min_keycode")
 	bind(&k.maxCode, "keymap_max_keycode")
 	bind(&k.symsLevel, "keymap_key_get_syms_by_level")
@@ -175,8 +179,7 @@ func (k *Keymap) Key(evdevCode uint32, pressed bool, t time.Duration) ports.KeyE
 // On reset failure no event is translated against the old native state.
 func (k *Keymap) KeySecure(code uint32, pressed bool, t time.Duration, epoch domain.SecurityState) (ports.KeyEvent, bool, error) {
 	if !k.epochSet || k.epoch != epoch {
-		next := k.stateNew(k.mapPtr)
-		if next == 0 {
+		if err := k.reset(false); err != nil {
 			// Even a failed translation must remember physical presses so a
 			// later successful reset cannot admit their repeats.
 			if k.held == nil {
@@ -187,19 +190,9 @@ func (k *Keymap) KeySecure(code uint32, pressed bool, t time.Duration, epoch dom
 			} else {
 				delete(k.held, code)
 			}
-			return ports.KeyEvent{}, false, fmt.Errorf("xkb_state_new failed during security reset")
+			return ports.KeyEvent{}, false, fmt.Errorf("%w during security reset", err)
 		}
-		old := k.state
-		k.state = next
-		k.stateUnref(old)
 		k.epoch, k.epochSet = epoch, true
-		if k.held == nil {
-			k.held = make(map[uint32]bool)
-		}
-		k.quarantined = make(map[uint32]bool, len(k.held))
-		for held := range k.held {
-			k.quarantined[held] = true
-		}
 	}
 	blocked := k.quarantined[code]
 	if pressed {
@@ -212,6 +205,46 @@ func (k *Keymap) KeySecure(code uint32, pressed bool, t time.Duration, epoch dom
 		return ports.KeyEvent{}, false, nil
 	}
 	return k.Key(code, pressed, t), true, nil
+}
+
+// reset replaces the native state with a fresh one and quarantines every
+// physically held key, so their repeats and releases are suppressed. With
+// keepLocks the locked modifiers and locked layout group (CapsLock, NumLock)
+// are applied again on the fresh state. The epoch is left alone.
+func (k *Keymap) reset(keepLocks bool) error {
+	next := k.stateNew(k.mapPtr)
+	if next == 0 {
+		return errors.New("xkb_state_new failed")
+	}
+	if keepLocks {
+		k.updateMask(next, 0, 0, k.serializeMods(k.state, modsLocked), 0, 0, k.serializeLayout(k.state, layoutLocked))
+	}
+	old := k.state
+	k.state = next
+	k.stateUnref(old)
+	if k.held == nil {
+		k.held = make(map[uint32]bool)
+	}
+	k.quarantined = make(map[uint32]bool, len(k.held))
+	for held := range k.held {
+		k.quarantined[held] = true
+	}
+	return nil
+}
+
+// ResetSeat drops the modifier state and quarantines the keys held, for a
+// seat that went inactive or came back: the releases that follow are
+// suppressed and no key stays logically pressed. Locked modifiers and the
+// locked layout survive. The security epoch is unchanged. It returns the
+// modifier state left, for the consumers of the stream to adopt.
+func (k *Keymap) ResetSeat() (domain.ModState, error) {
+	if err := k.reset(true); err != nil {
+		return domain.ModState{}, err
+	}
+	return domain.ModState{
+		Depressed: k.serializeMods(k.state, modsDepressed), Latched: k.serializeMods(k.state, modsLatched),
+		Locked: k.serializeMods(k.state, modsLocked), Group: k.serializeLayout(k.state, layoutEffective),
+	}, nil
 }
 
 // QuarantineFrom transfers physical held-key tracking when a producer replaces

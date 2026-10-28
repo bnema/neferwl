@@ -179,6 +179,8 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 		s.endGesture(c)
 	case ports.SetKeymap:
 		s.setKeymap(c)
+	case ports.KeyboardReset:
+		s.resetKeyboard(c.State)
 	case ports.FocusWindow:
 		if s.seat.focused != c.ID {
 			s.changeFocus(c.ID)
@@ -417,6 +419,27 @@ func (s *Server) setKeymap(c ports.SetKeymap) {
 	s.sendGrabKeymap(true)
 	s.changeFocus(focused)
 	s.log.Info().Uint32("size", size).Int("rate", s.seat.repeatRate).Int("delay", s.seat.repeatDelay).Msg("keymap updated")
+}
+
+// resetKeyboard forgets the held keys and modifiers: the focused client gets
+// leave, then enter with no keys and modifiers 0.
+// An input-method grab gets a release for each key it holds and the kept
+// state first; the seat then adopts that state (locked modifiers and group
+// survive), so the first key after the reset is read against it.
+func (s *Server) resetKeyboard(kept domain.ModState) {
+	if g := s.grab(); g != nil && !s.protected() {
+		for code := range s.seat.grabKeys {
+			s.serial++
+			g.res.SendKey(s.serial, 0, code, 0)
+		}
+		s.serial++
+		g.res.SendModifiers(s.serial, kept.Depressed, kept.Latched, kept.Locked, kept.Group)
+	}
+	focused := s.seat.focused
+	s.changeFocus(0)
+	s.seat.heldKeys, s.seat.grabKeys = nil, nil
+	s.seat.modState = kept
+	s.changeFocus(focused)
 }
 
 func (s *Server) sendModifiers(k *wayland.Keyboard) {

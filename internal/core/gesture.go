@@ -335,8 +335,10 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 		off := cur - float64(idx)
 		landed := m.Current()
 		if idx != m.Active {
+			mark := c.markBind()
 			m.Focus(idx)
 			shown = true
+			c.emitBind(mark, swipeCombo(g.fingers), "swipe-workspace", domain.BindSourceGesture)
 		}
 		if !e.Cancelled {
 			c.focusScreen = c.screenIndex(g.screen.name())
@@ -375,7 +377,9 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 				a = ActionFocusColumnLeft
 			}
 			c.keyboard.takeBack()
+			mark := c.markBind()
 			c.applyAction(a)
+			c.emitBind(mark, swipeCombo(g.fingers), string(a), domain.BindSourceGesture)
 		}
 		w.DragStash(drawn)
 		if c.animOn() {
@@ -444,11 +448,13 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 		before := c.cur().mon.Current()
 		shots := c.snapshot(now)
 		c.keyboard.takeBack()
+		mark := c.markBind()
 		if w.Engine().LaneGestures() && !workspace {
 			w.FocusLane(step)
 		} else {
 			c.applyAction(a)
 		}
+		c.emitBind(mark, swipeCombo(g.fingers), string(a), domain.BindSourceGesture)
 		c.transition(shots, now)
 		return c.cur().mon.Current() != before, nil
 	}
@@ -469,7 +475,9 @@ func (c *Core) swipeStash(g *swipeGesture, now time.Time) (shown bool, spawn *Wo
 	hidden, over := w.StashVisibility()
 	shots := c.snapshot(now)
 	c.keyboard.takeBack()
+	mark := c.markBind()
 	effect := c.applyAction(ActionToggleStashVisible)
+	c.emitBind(mark, swipeCombo(g.fingers), string(ActionToggleStashVisible), domain.BindSourceGesture)
 	c.transition(shots, now)
 	if effect.Spawn {
 		return false, w

@@ -166,3 +166,44 @@ func TestSecurityStateChangeResetsAltGrAndAltWithoutMaskInference(t *testing.T) 
 	}
 	suppressedKey(t, k, 100, false, changed)
 }
+
+func TestResetSeatDropsModifiersAndSuppressesHeldReleases(t *testing.T) {
+	k := newTest(t, "us")
+	state := domain.SecurityState{Generation: 3}
+	secureKey(t, k, 125, true, state)
+	if _, err := k.ResetSeat(); err != nil {
+		t.Fatal(err)
+	}
+	if k.epoch != state || !k.epochSet {
+		t.Fatalf("epoch changed by ResetSeat: %+v set=%v", k.epoch, k.epochSet)
+	}
+	if ev := secureKey(t, k, 106, true, state); ev.Mods != 0 || ev.State != (domain.ModState{}) {
+		t.Fatalf("Super survived the reset: %+v", ev)
+	}
+	secureKey(t, k, 106, false, state)
+	suppressedKey(t, k, 125, false, state)
+	// A key pressed after the reset is not suppressed on release.
+	secureKey(t, k, 125, true, state)
+	if ev := secureKey(t, k, 106, true, state); ev.Mods&domain.ModSuper == 0 {
+		t.Fatalf("fresh Super lost: %+v", ev)
+	}
+}
+
+func TestResetSeatKeepsLockedModifiers(t *testing.T) {
+	k := newTest(t, "us")
+	state := domain.SecurityState{}
+	secureKey(t, k, 58, true, state)
+	secureKey(t, k, 58, false, state)
+	secureKey(t, k, 125, true, state)
+	kept, err := k.ResetSeat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kept.Locked == 0 || kept.Depressed != 0 {
+		t.Fatalf("ResetSeat state %+v: want CapsLock locked, nothing depressed", kept)
+	}
+	ev := secureKey(t, k, 30, true, state)
+	if ev.State.Locked == 0 || ev.State.Depressed != 0 || ev.Mods != 0 || ev.Keysym != "A" {
+		t.Fatalf("CapsLock lost or Super kept: %+v", ev)
+	}
+}

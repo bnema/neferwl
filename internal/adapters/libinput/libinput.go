@@ -253,11 +253,51 @@ func (c control) discard() {
 	}
 }
 
+// seatControl is libinput's seat side: suspend releases the devices when the
+// seat goes inactive, resume reopens them. libinputSeat is the real one;
+// tests use its Mockery mock.
+type seatControl interface {
+	Suspend(li uintptr)
+	Resume(li uintptr)
+}
+
+// libinputSeat implements seatControl over the libinput functions.
+type libinputSeat struct{}
+
+func (libinputSeat) Suspend(li uintptr) { suspend(li) }
+func (libinputSeat) Resume(li uintptr)  { resume(li) }
+
+// applySeat applies a seat change on Run's goroutine. Going inactive, the keys
+// held and the gesture in progress are dropped here and core is told in
+// order, through the same forwarder as the events: no key event or gesture
+// end of the old session follows, so nothing stays pressed. Coming back, the
+// keys are dropped again, for those pressed while inactive, and core hears
+// of it before the first event that follows.
+func applySeat(on bool, sc seatControl, li uintptr, opts *Options, in *inputState, fwd *forwarder) {
+	state := securitySnapshot(opts.Security)
+	if on {
+		sc.Resume(li)
+	} else {
+		sc.Suspend(li)
+	}
+	kept, err := opts.Keymap.ResetSeat()
+	if err != nil {
+		opts.Log.Warn().Err(err).Msg("keymap reset failed")
+	}
+	if !on && in.gestures.owner != 0 {
+		if end := in.gestures.abort(in.gestures.owner); end != nil {
+			fwd.push(secureInput(end, opts.Security, state))
+		}
+	}
+	fwd.push(secureInput(ports.SeatChanged{Active: on, State: kept}, opts.Security, state))
+	opts.Log.Info().Bool("active", on).Msg("input")
+}
+
 // relayControls hands the control messages of opts to Run on controls,
 // waking its poll for each, until ctx ends. It only reads the channels of
 // opts; the controls run on Run's goroutine, the only one to touch p, in, li
 // and opts.Keymap.
-func relayControls(ctx context.Context, opts *Options, p *pointer, in *inputState, li uintptr, controls chan<- control, wake func()) {
+func relayControls(ctx context.Context, opts *Options, p *pointer, in *inputState, li uintptr, fwd *forwarder, controls chan<- control, wake func()) {
 	for {
 		var c control
 		var f func()
@@ -265,14 +305,7 @@ func relayControls(ctx context.Context, opts *Options, p *pointer, in *inputStat
 		case <-ctx.Done():
 			return
 		case on := <-opts.Active:
-			f = func() {
-				if on {
-					resume(li)
-				} else {
-					suspend(li)
-				}
-				opts.Log.Info().Bool("active", on).Msg("input")
-			}
+			f = func() { applySeat(on, libinputSeat{}, li, opts, in, fwd) }
 		case km := <-opts.Keymaps:
 			c.keymap = km
 			f = func() {
@@ -363,7 +396,7 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 	// Control messages wake the poll instead of a polling timeout; they are
 	// applied on this goroutine, which owns libinput.
 	controls := make(chan control, 8)
-	fwdDone.Go(func() { relayControls(fwdCtx, &opts, p, in, li, controls, waiter.Wake) })
+	fwdDone.Go(func() { relayControls(fwdCtx, &opts, p, in, li, fwd, controls, waiter.Wake) })
 	defer func() {
 		stopFwd()
 		fwdDone.Wait()

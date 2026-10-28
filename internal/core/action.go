@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/bnema/neferwl/internal/core/layout"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // monitorDirection returns the direction of the neighbor screen targeted by
@@ -290,6 +291,15 @@ func (c *Core) dispatchAction(a Action) Effect {
 // Callers keep local content navigation and decide which layout axes may
 // cross monitors.
 func (c *Core) edgeFocus(axis layout.Axis, dir int, d direction) bool {
+	mark := c.markBind()
+	moved := c.edgeFocusMove(axis, dir, d)
+	if moved {
+		c.emitBind(mark, "", "edge-focus", domain.BindSourceEdge)
+	}
+	return moved
+}
+
+func (c *Core) edgeFocusMove(axis layout.Axis, dir int, d direction) bool {
 	m := c.cur().mon
 	i := c.neighbor(d)
 	if monitorFirst := axis == layout.Horizontal && i >= 0; !monitorFirst {

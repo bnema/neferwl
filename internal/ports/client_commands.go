@@ -188,6 +188,15 @@ type SetKeymap struct {
 
 func (SetKeymap) clientCommand() {}
 
+// KeyboardReset carries core → wayland the loss of the seat's key state (a VT
+// switch): held keys and modifiers are forgotten, an input-method grab gets
+// the releases, and the focused client sees leave, then enter with no keys.
+// State is the authoritative modifier state after the reset: the locked
+// modifiers and group the keymap kept (CapsLock, NumLock), nothing held.
+type KeyboardReset struct{ State domain.ModState }
+
+func (KeyboardReset) clientCommand() {}
+
 // SetModifiers carries core → wayland a temporary modifier override for the
 // focused window's keyboards: Mods are sent as depressed modifiers (mapped
 // to the current keymap's masks), latched/locked/group kept from the real

@@ -191,6 +191,22 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 				}
 				continue
 			}
+			// vt away/back stands in for a VT switch: the keymap forgets the keys
+			// held and core hears of the seat change, as from libinput.
+			if len(fields) > 0 && fields[0] == "vt" {
+				if len(fields) != 2 || (fields[1] != "away" && fields[1] != "back") {
+					warnInput("line", line, "invalid vt")
+					continue
+				}
+				kept, err := km.ResetSeat()
+				if err != nil {
+					return err
+				}
+				if err := sendPointer(ports.SeatChanged{Active: fields[1] == "back", State: kept}); err != nil {
+					return err
+				}
+				continue
+			}
 			if len(fields) > 0 && fields[0] == "move" {
 				if len(fields) == 3 {
 					x, ex := strconv.ParseFloat(fields[1], 64)

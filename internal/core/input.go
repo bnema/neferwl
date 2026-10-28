@@ -14,6 +14,9 @@ import (
 func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 	c.inputActive = true
 	defer func() { c.inputActive = false }()
+	if v, ok := ev.(ports.SeatChanged); ok {
+		return c.seatChanged(ctx, v)
+	}
 	if c.security.Protected {
 		if err := c.protectedInput(ctx, ev); err != nil {
 			return err
@@ -261,10 +264,28 @@ func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {
 			}
 		}
 	}
+	if id == 0 && v.Pressed {
+		if err := c.focusEmptyOutput(ctx); err != nil {
+			return err
+		}
+	}
 	if c.held() == 0 {
 		c.grab = 0
 	}
 	return nil
+}
+
+// focusEmptyOutput makes the output under the cursor the focused one after a
+// click on no window: the click goes to the desktop of that output. Motion
+// never does this, so keyboard moves to another output stick.
+func (c *Core) focusEmptyOutput(ctx context.Context) error {
+	i := c.screenAt(c.cursorX, c.cursorY)
+	if i < 0 || i == c.focusScreen {
+		return nil
+	}
+	c.focusScreen = i
+	c.pointerOutput = c.screens[i].name()
+	return c.publish(ctx)
 }
 
 func (c *Core) pointerAxis(ctx context.Context, v ports.PointerAxis) error {
@@ -423,6 +444,7 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 			if repeats(action) {
 				c.startRepeat(key, action)
 			}
+			c.bindCombo, c.bindSource = c.comboOf(key), domain.BindSourceKey
 			return c.runBind(ctx, action)
 		}
 		c.pressed[held] = false
@@ -437,6 +459,10 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 
 // runBind runs the action of a bound key press.
 func (c *Core) runBind(ctx context.Context, action Action) error {
+	if c.ch.Binds != nil {
+		defer c.traceBind(string(action), c.bindCombo, c.bindSource)()
+	}
+	c.bindCombo, c.bindSource = "", ""
 	if action == ActionScaleUp || action == ActionScaleDown {
 		return c.scaleBind(ctx, action)
 	}

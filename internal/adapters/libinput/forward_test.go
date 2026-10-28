@@ -9,6 +9,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -177,5 +178,51 @@ func TestForwarderSecurityMotionEpochs(t *testing.T) {
 	s := f.take()
 	if s.Motions != 4002 || s.Coalesced != 3996 {
 		t.Fatalf("stats %+v", s)
+	}
+}
+
+// A seat change drops the keys and the gesture in progress and reaches core
+// in order, after the events already queued and before the next ones.
+func TestApplySeatPushesSeatChangedInOrder(t *testing.T) {
+	km, err := xkb.New(xkb.RMLVO{Layout: "us"})
+	if err != nil {
+		t.Skip(err)
+	}
+	opts := &Options{Keymap: km, Log: zerowrap.Default()}
+	defer opts.Keymap.Close()
+	in := &inputState{}
+	in.gestures.begin(7, domain.GestureSwipe, 4, 0)
+	fwd := newForwarder(zerowrap.Default())
+	fwd.push(ports.PointerButton{Button: 272, Pressed: true})
+
+	sc := newMockseatControl(t)
+	var order []string
+	sc.EXPECT().Suspend(uintptr(5)).Run(func(uintptr) { order = append(order, "suspend") }).Once()
+	sc.EXPECT().Resume(uintptr(5)).Run(func(uintptr) { order = append(order, "resume") }).Once()
+	applySeat(false, sc, 5, opts, in, fwd)
+	applySeat(true, sc, 5, opts, in, fwd)
+	fwd.push(ports.PointerButton{Button: 272})
+
+	want := []ports.InputEvent{
+		ports.PointerButton{Button: 272, Pressed: true},
+		ports.SwipeEnd{Cancelled: true},
+		ports.SeatChanged{Active: false},
+		ports.SeatChanged{Active: true},
+		ports.PointerButton{Button: 272},
+	}
+	for i, w := range want {
+		got, ok := fwd.pop()
+		if !ok || got != w {
+			t.Fatalf("event %d: got %#v, want %#v", i, got, w)
+		}
+	}
+	if _, ok := fwd.pop(); ok {
+		t.Fatal("extra event queued")
+	}
+	if in.gestures.owner != 0 {
+		t.Fatal("gesture still owned after the seat went inactive")
+	}
+	if len(order) != 2 || order[0] != "suspend" || order[1] != "resume" {
+		t.Fatalf("seat control order %v", order)
 	}
 }

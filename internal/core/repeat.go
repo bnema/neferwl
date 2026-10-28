@@ -135,5 +135,6 @@ func (c *Core) repeatTick(ctx context.Context) error {
 		return c.publish(ctx)
 	}
 	c.repeat.timer.Reset(repeatInterval)
+	c.bindCombo, c.bindSource = c.comboOf(r.key), domain.BindSourceRepeat
 	return c.runBind(ctx, r.action)
 }

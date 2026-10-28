@@ -137,12 +137,19 @@ type eventsProxy struct {
 	locked  []uint32      // locked modifiers of each modifiers event
 	depress []uint32      // depressed modifiers of each modifiers event
 	repeat  chan struct{} // optional protocol barrier notification
+	enters  [][]byte      // keys array of each enter event
 }
 
 func (p *eventsProxy) Dispatch(e *wlturbo.Event) {
 	p.opcodes = append(p.opcodes, e.Opcode)
 	if e.Opcode == uint16(wayland.KeyboardEventRepeatInfo) && p.repeat != nil {
 		p.repeat <- struct{}{}
+	}
+	if e.Opcode == uint16(wayland.KeyboardEventEnter) {
+		e.Uint32() // serial
+		e.Uint32() // surface
+		p.enters = append(p.enters, slices.Clone(e.Array()))
+		return
 	}
 	if e.Opcode == uint16(wayland.KeyboardEventModifiers) {
 		e.Uint32() // serial
@@ -351,4 +358,69 @@ func syncCommands(t *testing.T, s *Server, commands chan<- ports.ClientCommand, 
 	<-p.repeat
 	requestProtocol(t, c, id, wayland.KeyboardRequestRelease)
 	roundtrip(t, c)
+}
+
+// KeyboardReset forgets the held keys and modifiers: the focused client gets
+// leave, then enter with no keys, then modifiers 0.
+func TestKeyboardResetLeavesAndReentersEmpty(t *testing.T) {
+	s, events, commands, dir := keyboardServer(t)
+	target, proxy := focusedTarget(t, s, events, commands, dir)
+	var id domain.WindowID
+	s.display.Do(func() { id = s.seat.focused })
+	const shift = 1
+	commands <- ports.ForwardKey{ID: id, Key: ports.KeyEvent{Keycode: 30, Pressed: true, State: domain.ModState{Depressed: shift}}}
+	syncCommands(t, s, commands, target)
+	proxy.opcodes, proxy.enters, proxy.depress, proxy.locked = nil, nil, nil, nil
+	commands <- ports.KeyboardReset{}
+	syncCommands(t, s, commands, target)
+	roundtrip(t, target)
+	leave, enter, mods := uint16(wayland.KeyboardEventLeave), uint16(wayland.KeyboardEventEnter), uint16(wayland.KeyboardEventModifiers)
+	if !slices.Equal(proxy.opcodes, []uint16{leave, enter, mods}) {
+		t.Fatalf("events %v, want leave, enter, modifiers", proxy.opcodes)
+	}
+	if len(proxy.enters) != 1 || len(proxy.enters[0]) != 0 {
+		t.Fatalf("enter carried keys: %v", proxy.enters)
+	}
+	if !slices.Equal(proxy.depress, []uint32{0}) || !slices.Equal(proxy.locked, []uint32{0}) {
+		t.Fatalf("modifiers depressed %v locked %v, want 0", proxy.depress, proxy.locked)
+	}
+	var held int
+	s.display.Do(func() { held = len(s.seat.heldKeys) })
+	if held != 0 {
+		t.Fatalf("%d keys still held", held)
+	}
+}
+
+// The state a reset keeps (CapsLock, a non-default group) reaches the focused
+// client on enter and becomes the seat's, so the first key after the reset is
+// read against it.
+func TestKeyboardResetCarriesLockedState(t *testing.T) {
+	s, events, commands, dir := keyboardServer(t)
+	target, proxy := focusedTarget(t, s, events, commands, dir)
+	var id domain.WindowID
+	s.display.Do(func() { id = s.seat.focused })
+	kept := domain.ModState{Locked: 2, Group: 1}
+	proxy.depress, proxy.locked = nil, nil
+	commands <- ports.KeyboardReset{State: kept}
+	commands <- ports.ForwardKey{ID: id, Key: ports.KeyEvent{Keycode: 30, Pressed: true, State: kept}}
+	syncCommands(t, s, commands, target)
+	roundtrip(t, target)
+	if !slices.Equal(proxy.locked, []uint32{2}) {
+		t.Fatalf("client modifiers locked %v, want [2] once, before the key", proxy.locked)
+	}
+	k, m := uint16(wayland.KeyboardEventKey), uint16(wayland.KeyboardEventModifiers)
+	var last []uint16
+	for _, op := range proxy.opcodes {
+		if op == k || op == m {
+			last = append(last, op)
+		}
+	}
+	if !slices.Equal(last, []uint16{m, k}) {
+		t.Fatalf("order %v, want modifiers then key", last)
+	}
+	var got domain.ModState
+	s.display.Do(func() { got = s.seat.modState })
+	if got != kept {
+		t.Fatalf("seat state %+v, want %+v", got, kept)
+	}
 }

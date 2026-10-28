@@ -68,6 +68,11 @@ packages:
           dir: internal/adapters/libinput
           pkgname: libinput
           filename: device_config_mock_test.go
+      seatControl:
+        config:
+          dir: internal/adapters/libinput
+          pkgname: libinput
+          filename: seat_control_mock_test.go
   github.com/bnema/neferwl/internal/adapters/vulkan:
     interfaces:
       captureSync:

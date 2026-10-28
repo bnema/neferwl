@@ -232,3 +232,25 @@ func TestMoveCursorTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestScriptVT(t *testing.T) {
+	km, err := xkb.New(xkb.RMLVO{Layout: "us"})
+	if err != nil {
+		if strings.Contains(err.Error(), "libxkbcommon.so.0") {
+			t.Skip(err)
+		}
+		t.Fatal(err)
+	}
+	script := make(chan string, 4)
+	for _, l := range []string{"vt away", "vt back", "vt sideways", "vt"} {
+		script <- l
+	}
+	close(script)
+	input := make(chan ports.InputEvent, 8)
+	if err := Run(context.Background(), km, nil, script, input, nil, nil, logging.For(context.Background(), "input")); err != nil {
+		t.Fatal(err)
+	}
+	if len(input) != 2 || <-input != (ports.SeatChanged{Active: false}) || <-input != (ports.SeatChanged{Active: true}) {
+		t.Fatal("want SeatChanged false, then true, and nothing for the invalid lines")
+	}
+}
