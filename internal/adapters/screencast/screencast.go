@@ -17,6 +17,7 @@ package screencast
 import (
 	"context"
 	"errors"
+	"fmt"
 	"runtime"
 	"strings"
 	"sync"
@@ -95,14 +96,15 @@ type Service struct {
 	shotRes shotResult
 
 	// Owner state.
-	ctx     context.Context // the attempt's: it ends with the attempt
-	conn    bus
-	pwc     videoCore
-	owns    [4]bool // nameScreenCast, nameDisplayConfig, nameIntrospect, nameScreenshot
-	inv     domain.CastInventory
-	haveInv bool
-	callers [maxCallers]caller
-	pending [maxPending]pending
+	ctx       context.Context // the attempt's: it ends with the attempt
+	conn      bus
+	connClose sync.Once
+	pwc       videoCore
+	owns      [4]bool // nameScreenCast, nameDisplayConfig, nameIntrospect, nameScreenshot
+	inv       domain.CastInventory
+	haveInv   bool
+	callers   [maxCallers]caller
+	pending   [maxPending]pending
 	// sessions is a pointer so that a shutdown at process exit that had to
 	// leave a PipeWire source behind can abandon the table: the source's
 	// handler still points into it, so it is never reset or reused.
@@ -237,11 +239,12 @@ func (s *Service) attempt(parent context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = conn.Close() }()
+
 	// The screenshot job of this attempt ends with it.
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	s.reset(ctx, conn)
+	defer s.closeBus()
 	if s.pwc, err = s.pw.Open(); err != nil {
 		s.pwc = nil
 		s.log.Warn().Err(err).Msg("PipeWire unavailable: screen casting is not offered")
@@ -256,6 +259,7 @@ func (s *Service) attempt(parent context.Context) (err error) {
 // reset clears the owner state of a previous attempt.
 func (s *Service) reset(ctx context.Context, conn bus) {
 	s.ctx, s.conn, s.fatal = ctx, conn, nil
+	s.connClose = sync.Once{}
 	s.owns = [4]bool{}
 	s.haveInv = false
 	s.callers = [maxCallers]caller{}
@@ -264,8 +268,32 @@ func (s *Service) reset(ctx context.Context, conn bus) {
 	s.shot = shotState{}
 }
 
+// closeBus shares cancellation and owner cleanup without closing twice.
+func (s *Service) closeBus() {
+	s.connClose.Do(func() { _ = s.conn.Close() })
+}
+
 // acquire watches departures and takes the names.
-func (s *Service) acquire() error {
+func (s *Service) acquire() (err error) {
+	// zerobus permits Close concurrently with a blocked read. Join a callback
+	// that has started before handing the connection back to the owner.
+	done := make(chan struct{})
+	stop := context.AfterFunc(s.ctx, func() {
+		defer close(done)
+		s.closeBus()
+	})
+	defer func() {
+		if !stop() {
+			<-done
+		}
+		if ctxErr := s.ctx.Err(); ctxErr != nil {
+			err = fmt.Errorf("acquire D-Bus names: %w", ctxErr)
+		}
+	}()
+	if err := s.ctx.Err(); err != nil {
+		return err
+	}
+
 	rule := "type='signal',sender='" + busDaemon + "',interface='" + busDaemon + "',member='NameOwnerChanged',arg2=''"
 	if err := s.conn.AddMatch(rule); err != nil {
 		return err

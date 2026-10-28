@@ -1,6 +1,7 @@
 package screencast
 
 import (
+	"context"
 	"errors"
 	"os"
 	"slices"
@@ -788,6 +789,7 @@ func TestCallDuringNameAcquisition(t *testing.T) {
 	s.callers[0] = caller{state: callerKnown, name: client.UniqueName(), exe: "/usr/bin/grim"}
 	b := newMockbus(t)
 	s.conn = b
+	s.ctx = context.Background()
 	b.EXPECT().AddMatch(mock.Anything).RunAndReturn(server.AddMatch).Once()
 	var serial uint32
 	requests := 0
@@ -885,7 +887,7 @@ func TestAcquireConnectionClosedAfterUnrelatedReply(t *testing.T) {
 	// No sockets or timing: a generated mock supplies the unrelated reply and
 	// the closed transport, in order. Neither may be mistaken for our reply.
 	b := newMockbus(t)
-	s := &Service{conn: b}
+	s := &Service{conn: b, ctx: context.Background()}
 	b.EXPECT().AddMatch(mock.Anything).Return(nil).Once()
 	encoder := new(zerobus.Encoder)
 	b.EXPECT().NewMethodCall(busDaemon, busDaemonPath, busDaemon, "RequestName", "su").Return(encoder, uint32(42)).Once()
