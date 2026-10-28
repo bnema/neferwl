@@ -110,7 +110,7 @@ type Core struct {
 	configures     configures
 	pointer        WindowID
 	hoverLocked    bool     // a non-pointer focus change holds hover focus
-	hoverLock      WindowID // window under the cursor when the hold started; hover onto it stays ignored
+	hoverLock      WindowID // hover target the hold ignores: the window under the cursor, retargeted when layout changes what lies there
 	focusByPointer bool     // set while focusPointer publishes, so syncFocus does not arm the hold
 	grab           WindowID
 	buttons        map[uint32]bool

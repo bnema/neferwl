@@ -30,10 +30,21 @@ func TestHoverAllocations(t *testing.T) {
 		if on != off {
 			t.Fatalf("hover added allocations: off=%g on=%g", off, on)
 		}
+		// Rejected entry: the previous point is in window 6 itself.
 		n := testing.AllocsPerRun(100, func() { c.hoverEntry(6, x, y) })
-		t.Logf("hoverEntry=%g", n)
+		t.Logf("hoverEntry slid-in=%g", n)
 		if n != 0 {
-			t.Fatalf("hoverEntry allocated %g", n)
+			t.Fatalf("hoverEntry (slid-in) allocated %g", n)
+		}
+		// Accepted entry: the previous point is in window 5.
+		px, py := hoverPoint(t, c, 5)
+		if !c.hoverEntry(6, px, py) {
+			t.Fatal("entry from window 5 into 6 rejected")
+		}
+		n = testing.AllocsPerRun(100, func() { c.hoverEntry(6, px, py) })
+		t.Logf("hoverEntry accepted=%g", n)
+		if n != 0 {
+			t.Fatalf("hoverEntry (accepted) allocated %g", n)
 		}
 	})
 }
