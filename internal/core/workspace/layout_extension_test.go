@@ -26,10 +26,15 @@ func init() {
 }
 
 func extensionLayout(name Overflow, st layout.State) *layoutmocks.MockLayout {
+	return extensionLayoutWith(name, func() layout.State { return st })
+}
+
+// extensionLayoutWith is extensionLayout with newState answering each NewState call.
+func extensionLayoutWith(name Overflow, newState func() layout.State) *layoutmocks.MockLayout {
 	l := &layoutmocks.MockLayout{}
 	base := layout.Base{}
 	l.EXPECT().Name().Return(name)
-	l.EXPECT().NewState().Return(st)
+	l.EXPECT().NewState().RunAndReturn(newState)
 	l.EXPECT().PinsFullscreen().Return(name == overflowTrail)
 	l.EXPECT().OverridesWidth().Return(name == overflowLadder)
 	l.EXPECT().ColumnWidth(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(v layout.View, i int, ignore bool) int {
