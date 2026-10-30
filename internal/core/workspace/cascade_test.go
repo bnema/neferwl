@@ -223,14 +223,13 @@ func TestCascadeCovers(t *testing.T) {
 	})
 }
 
-// Band changes keep a maximized column maximized: it has its own band.
+// Focus changes and insertions in other bands preserve maximization.
 func TestCascadeKeepsMaximizationOnBandChanges(t *testing.T) {
 	for _, move := range []struct {
 		name string
 		run  func(*Workspace)
 	}{
 		{"focus", func(w *Workspace) { w.FocusWindow(1) }},
-		{"append", func(w *Workspace) { w.AddWindow(5) }},
 		{"insert", func(w *Workspace) { w.insertColumn(4, Column{Windows: []WindowID{5}}) }},
 	} {
 		t.Run(move.name, func(t *testing.T) {
@@ -346,5 +345,37 @@ func TestCascadeStashRestoreKeepsMaximization(t *testing.T) {
 			t.Fatal("restore into another band dropped the maximization")
 		}
 
+	})
+}
+
+func TestCascadeSpawnJoinsMaximizedBand(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := cascadeWorkspace(2)
+		w.FocusID(2)
+		w.ToggleFullWidth()
+		w.AddWindow(3)
+		if w.Band(w.ColumnOf(2)) != w.Band(w.ColumnOf(3)) || w.Columns[w.ColumnOf(2)].FullWidth || len(w.Maximized) != 0 {
+			t.Fatalf("spawn did not join and unmaximize: %+v", w.Columns)
+		}
+		w.AddWindow(4)
+		w.AddWindow(5)
+		if w.Band(w.ColumnOf(4)) == w.Band(w.ColumnOf(5)) {
+			t.Fatal("spawn joined a full band")
+		}
+	})
+}
+
+func TestCascadeCoveredSpawnPreservesUnrelatedMaximization(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := cascadeWorkspace(2)
+		w.MaxColumns = 1
+		w.FocusID(2)
+		w.ToggleFullWidth()
+		w.FocusID(1)
+		w.ToggleFullscreen()
+		w.AddWindow(3)
+		if !w.Columns[w.ColumnOf(2)].FullWidth || !slices.Contains(w.Maximized, WindowID(2)) {
+			t.Fatalf("covered spawn cleared unrelated maximization: %+v, MRU %v", w.Columns, w.Maximized)
+		}
 	})
 }

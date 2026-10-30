@@ -82,3 +82,31 @@ func TestCascadeScrollTargetDoesNotMutateState(t *testing.T) {
 
 	})
 }
+
+func TestCascadeJoinClearsMaximizationHistory(t *testing.T) {
+	for _, moved := range []bool{false, true} {
+		w := Lanes{Overflow: OverflowCascade, MaxColumns: 3,
+			Columns: []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{2}}}}
+		w.SettleLayout()
+		w.SetBandStart(1, true)
+		i := 0
+		if moved {
+			i = 1
+		}
+		w.Maximize(i)
+		history := w.cascadeCol(w.Columns[i])
+		history.pushedUp, history.pushedDown = [][]WindowID{{3}}, [][]WindowID{{4}}
+		w.Focus = 1
+		if !w.Engine().MoveLane(Edit{Lanes: &w, Focused: 2}, -1) {
+			t.Fatal("column did not move")
+		}
+		if w.Band(1) != 0 || len(w.Maximized) != 0 || len(history.pushedUp)+len(history.pushedDown) != 0 {
+			t.Fatalf("join retained band/history: %+v, %+v", w, history)
+		}
+		for _, c := range w.Columns {
+			if c.FullWidth {
+				t.Fatal("join retained maximization")
+			}
+		}
+	}
+}

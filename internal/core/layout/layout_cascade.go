@@ -168,13 +168,10 @@ func (cascadeLayout) SpawnAt(v View) (int, InsertKind) {
 	}
 	first, last := v.Layout.LaneBounds(v, v.Layout.LaneOf(v, v.Focus))
 	full := last-first+1 >= max(v.MaxColumns, 1)
-	for _, c := range v.Columns[first : last+1] {
-		full = full || c.FullWidth
-	}
 	if full {
 		return last + 1, InsertNewLane
 	}
-	return last + 1, InsertDefault
+	return last + 1, InsertJoinBand
 }
 
 // MoveAllowed reports whether columns may swap positions.
@@ -271,6 +268,11 @@ func (w *Lanes) cascadeCol(c Column) *cascadeCol {
 
 // Inserted updates band boundaries and consumes cascade carries.
 func (s *cascadeState) Inserted(w *Lanes, at int, kind InsertKind, carry any) any {
+	// SpawnAt appends to the focused band when it has room. Clear its
+	// maximized neighbor before startsBand can split the new column off.
+	if kind == InsertJoinBand && at > 0 {
+		w.clearJoinedMaximization(w.Columns[at-1 : at])
+	}
 	for len(s.bandStart) < len(w.Columns)-1 {
 		s.bandStart = append(s.bandStart, false)
 	}

@@ -15,6 +15,7 @@ func TestCascadeInsertKinds(t *testing.T) {
 		want []bool // band starts after inserting at 1, before: [true, false, true]
 	}{
 		{"default", InsertDefault, []bool{true, false, false, true}},
+		{"join band", InsertJoinBand, []bool{true, false, false, true}},
 		{"new lane", InsertNewLane, []bool{true, true, false, true}},
 		{"join displaced", InsertJoinDisplaced, []bool{true, false, false, true}},
 	} {
@@ -51,5 +52,20 @@ func TestCascadeInsertKinds(t *testing.T) {
 	w.ColumnInserted(2, InsertJoinDisplaced)
 	if v := w.Snapshot(); !v.bandStart(2) || v.bandStart(3) {
 		t.Fatalf("band starts %v: the new column must take the displaced start", w.cascadeState().bandStart)
+	}
+}
+
+func TestCascadeDefaultInsertionPreservesMaximizationHistory(t *testing.T) {
+	w := Lanes{Overflow: OverflowCascade, MaxColumns: 1,
+		Columns: []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{2}}}}
+	w.SettleLayout()
+	w.Maximize(1)
+	history := w.cascadeCol(w.Columns[1])
+	history.pushedUp, history.pushedDown = [][]WindowID{{4}}, [][]WindowID{{5}}
+	w.Columns = append(w.Columns, Column{Windows: []WindowID{3}})
+	w.ColumnInserted(2, InsertDefault)
+	if !w.Columns[1].FullWidth || !slices.Equal(w.Maximized, []WindowID{2}) ||
+		!slices.Equal(history.pushedUp[0], []WindowID{4}) || !slices.Equal(history.pushedDown[0], []WindowID{5}) {
+		t.Fatalf("default insertion changed maximization/history: %+v, %+v", w, history)
 	}
 }

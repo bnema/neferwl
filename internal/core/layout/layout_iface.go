@@ -117,6 +117,8 @@ const (
 	InsertNewLane // it starts a lane of its own
 	// InsertJoinDisplaced inherits the displaced column’s lane position.
 	InsertJoinDisplaced // it takes the lane position of the column it displaces
+	// InsertJoinBand appends a spawn to a band whose capacity was checked.
+	InsertJoinBand
 )
 
 // Placer decides where columns and windows go.

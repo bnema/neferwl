@@ -50,14 +50,26 @@ func (w *Lanes) setBands(bands [][]Column, focus WindowID) {
 	}
 }
 
-// fits reports whether cols can join band b: it has room for them and
-// neither side holds a maximized column, which keeps a band to itself.
-func (w *Lanes) fits(bands [][]Column, b int, cols []Column) bool {
-	if b < 0 || b >= len(bands) || len(bands[b])+len(cols) > max(w.MaxColumns, 1) {
-		return false
+// clearJoinedMaximization forgets maximization without restoring pushed columns:
+// an explicit join replaces that arrangement.
+func (w *Lanes) clearJoinedMaximization(cols []Column) {
+	for i := range cols {
+		c := &cols[i]
+		if !c.FullWidth {
+			continue
+		}
+		c.FullWidth = false
+		w.Maximized = slices.DeleteFunc(w.Maximized, func(id WindowID) bool {
+			return slices.Contains(c.Windows, id)
+		})
+		s := w.cascadeCol(*c)
+		s.pushedUp, s.pushedDown = nil, nil
 	}
-	full := func(c Column) bool { return c.FullWidth }
-	return !slices.ContainsFunc(bands[b], full) && !slices.ContainsFunc(cols, full)
+}
+
+// fits reports whether cols can join band b without exceeding its capacity.
+func (w *Lanes) fits(bands [][]Column, b int, cols []Column) bool {
+	return b >= 0 && b < len(bands) && len(bands[b])+len(cols) <= max(w.MaxColumns, 1)
 }
 
 // sendBand moves cols, already taken out of band b, to the band dir away:
@@ -78,6 +90,8 @@ func (w *Lanes) sendBand(bands [][]Column, b, dir, at int, cols []Column) [][]Co
 		}
 	}
 	if w.fits(bands, t, cols) {
+		w.clearJoinedMaximization(bands[t])
+		w.clearJoinedMaximization(cols)
 		at = min(max(at, 0), len(bands[t]))
 		bands[t] = slices.Insert(bands[t], at, cols...)
 		return bands

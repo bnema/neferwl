@@ -216,8 +216,7 @@ func TestCascadeMoveWindowDropsEmptyBand(t *testing.T) {
 	})
 }
 
-// A maximized column keeps its band to itself: moving it, or moving a
-// column toward it, makes a new band; repeating the move passes it.
+// Joining a band clears maximization on either side.
 func TestCascadeMoveWindowAndMaximizedBand(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
@@ -227,11 +226,11 @@ func TestCascadeMoveWindowAndMaximizedBand(t *testing.T) {
 		want       [][]WindowID
 	}{
 		// After maximizing 2: {1} {2*} {3 4}.
-		{"maximized down", 4, 2, 2, ActionMoveWindowDown, [][]WindowID{{1}, {3, 4}, {2}}},
-		{"maximized up", 4, 2, 2, ActionMoveWindowUp, [][]WindowID{{2}, {1}, {3, 4}}},
+		{"maximized down", 4, 2, 2, ActionMoveWindowDown, [][]WindowID{{1}, {2, 3, 4}}},
+		{"maximized up", 4, 2, 2, ActionMoveWindowUp, [][]WindowID{{2, 1}, {3, 4}}},
 		// After maximizing 4: {1 2 3} {4*} {5}.
-		{"into maximized below", 5, 4, 3, ActionMoveWindowDown, [][]WindowID{{1, 2}, {3}, {4}, {5}}},
-		{"into maximized above", 5, 4, 5, ActionMoveWindowUp, [][]WindowID{{1, 2, 3}, {5}, {4}}},
+		{"into maximized below", 5, 4, 3, ActionMoveWindowDown, [][]WindowID{{1, 2}, {4, 3}, {5}}},
+		{"into maximized above", 5, 4, 5, ActionMoveWindowUp, [][]WindowID{{1, 2, 3}, {5, 4}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -242,8 +241,8 @@ func TestCascadeMoveWindowAndMaximizedBand(t *testing.T) {
 				c.applyAction(tc.action)
 				wantBands(t, w, tc.want...)
 				wantFocus(t, c, "M", tc.focus)
-				if !w.Columns[w.ColumnOf(tc.max)].FullWidth {
-					t.Fatal("maximization lost")
+				if w.Columns[w.ColumnOf(tc.max)].FullWidth {
+					t.Fatal("maximization retained")
 				}
 
 			})
