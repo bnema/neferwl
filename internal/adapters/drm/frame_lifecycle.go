@@ -40,11 +40,13 @@ const (
 
 // pendingFrame is what the pending frame commit shows.
 type pendingFrame struct {
-	security domain.SecurityState // admission epoch checked again at KMS boundary
-	frame    bool
-	queued   uint64
-	zeroCopy domain.WindowID // window shown without composition
-	async    bool
+	security     domain.SecurityState // admission epoch checked again at KMS boundary
+	frame        bool
+	queued       uint64
+	zeroCopy     domain.WindowID // window shown without composition
+	async        bool
+	variableRate bool
+	refresh      time.Duration
 	// scanoutReason and overlayReason are the refusal reasons of the frame,
 	// taken at commit: a later frame may decide differently before the flip.
 	scanoutReason, overlayReason string

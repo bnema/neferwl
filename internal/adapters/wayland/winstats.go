@@ -151,7 +151,7 @@ func (w *windowStats) flip(f *domain.FlipInfo) {
 		w.lastShown, w.lastShownSeq = f.When, seq
 	}
 	w.facts.Scanout = f.ZeroCopy == w.watched
-	w.facts.VRR = f.Refresh == 0 && f.HardwareClock
+	w.facts.VRR = f.VariableRate
 	w.facts.Async = f.Async
 	w.facts.ScanoutReason, w.facts.OverlayReason = f.ScanoutReason, f.OverlayReason
 }

@@ -306,6 +306,24 @@ func TestFlipReportsTimestampAndShownFrame(t *testing.T) {
 	}
 }
 
+// VRR feedback records the committed frame, not a later output state.
+func TestFlipReportsCommittedVariableRate(t *testing.T) {
+	o, _, commits := testOutput(t)
+	o.mode.Clock, o.mode.HTotal, o.mode.VTotal = 0, 0, 0
+	if err := o.commitFrame(70, nil, false, true, pendingFrame{}); err != nil {
+		t.Fatal(err)
+	}
+	o.setVRR(false)
+	o.completed(flipEvent{user: (*commits)[0].user, when: 5 * time.Second, seq: 11}, nil)
+	if o.reports.Len() != 1 {
+		t.Fatalf("reports %d", o.reports.Len())
+	}
+	f := o.reports.Unsent()[0].Flip
+	if f == nil || !f.VariableRate || f.Refresh != time.Second/60 {
+		t.Fatalf("flip %+v", f)
+	}
+}
+
 // A flip reports the refusal reasons of the frame it completes, not those
 // of a later decision, and "" when the path was used.
 func TestFlipReportsRefusalReasons(t *testing.T) {

@@ -71,8 +71,31 @@ func presentServerOn(t *testing.T, layout domain.Layout) (*Server, chan ports.Cl
 	return s, events, commands, contents, s.Presentation(), dir
 }
 
-//testpolicy:realtime real Wayland unix socket between the display loop and a wlturbo client; kernel readiness is not a durably blocked bubble operation
 func TestPresentationFeedback(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		version  uint32
+		variable bool
+		async    bool
+		refresh  time.Duration
+		flag     uint32
+	}{
+		{"v2 fixed", 2, false, false, time.Second / 60, 0},
+		{"v2 variable", 2, true, false, time.Second / 60, 0},
+		{"v3 fixed", 3, false, false, time.Second / 60, 0x10},
+		{"v3 variable", 3, true, false, time.Second / 60, 0x20},
+		{"v3 unknown", 3, false, false, 0, 0},
+		{"v3 async fixed", 3, false, true, time.Second / 60, 0},
+		{"v3 async variable", 3, true, true, time.Second / 60, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testPresentationFeedback(t, tc.version, tc.variable, tc.async, tc.refresh, tc.flag)
+		})
+	}
+}
+
+//testpolicy:realtime real Wayland socket feedback delivery
+func testPresentationFeedback(t *testing.T, version uint32, variable, async bool, refresh time.Duration, rateFlag uint32) {
 	s, events, commands, contents, presented, dir := presentServer(t)
 	c := protocolClient(t, s, dir)
 	w, surf, xdg := surfaceMapper(t, c, events)()
@@ -85,7 +108,7 @@ func TestPresentationFeedback(t *testing.T) {
 		}
 	})
 	registerProtocol(t, c, bindProtocol(t, c, "wl_output"))
-	pres := bindProtocol(t, c, "wp_presentation")
+	pres := bindVersion(t, c, "wp_presentation", version)
 	registerProtocol(t, c, pres)
 	// Drain contents so seqs are known.
 	lastSeq := func() uint64 {
@@ -147,7 +170,7 @@ func TestPresentationFeedback(t *testing.T) {
 		}
 	}
 	flip := func(when time.Duration, seq uint64, shows uint64, zero domain.WindowID) {
-		presented.Push(domain.OutputPresented{Output: "HEADLESS-1", Flip: &domain.FlipInfo{When: when, Seq: seq, Refresh: time.Second / 60, ZeroCopy: zero, HardwareClock: true, Shows: map[domain.WindowID]uint64{w.ID: shows}}})
+		presented.Push(domain.OutputPresented{Output: "HEADLESS-1", Flip: &domain.FlipInfo{When: when, Seq: seq, Refresh: refresh, VariableRate: variable, Async: async, ZeroCopy: zero, HardwareClock: true, Shows: map[domain.WindowID]uint64{w.ID: shows}}})
 	}
 	// With no flip, hiding must discard a waiting feedback immediately.
 	hidden := feedback()
@@ -172,10 +195,18 @@ func TestPresentationFeedback(t *testing.T) {
 	seqA := lastSeq()
 	flip(5*time.Second+7, 42, seqA, w.ID)
 	ev := answer(a, "presented")
-	if ev.discarded || ev.when != 5*time.Second+7 || ev.seq != 42 || ev.refresh != uint32(time.Second/60) || ev.syncOutputs != 1 {
+	wantRefresh := refresh
+	if version < 3 && variable {
+		wantRefresh = 0
+	}
+	if ev.discarded || ev.when != 5*time.Second+7 || ev.seq != 42 || ev.refresh != uint32(wantRefresh) || ev.syncOutputs != 1 {
 		t.Fatalf("presented %+v", ev)
 	}
 	want := uint32(presentationtime.WpPresentationFeedbackKindVsync | presentationtime.WpPresentationFeedbackKindHwClock | presentationtime.WpPresentationFeedbackKindHwCompletion | presentationtime.WpPresentationFeedbackKindZeroCopy)
+	if async {
+		want &^= uint32(presentationtime.WpPresentationFeedbackKindVsync)
+	}
+	want |= rateFlag
 	if ev.flags != want {
 		t.Fatalf("flags %#x want %#x", ev.flags, want)
 	}

@@ -17,7 +17,7 @@ import (
 // A content replaced before any flip showed it, a destroyed surface or a
 // surface on no output is discarded.
 
-const presentationVersion = 2
+const presentationVersion = 3
 
 // feedbackWait is a committed feedback: presented once a flip on the
 // surface's output shows content seq of window win.
@@ -171,8 +171,19 @@ func (s *Server) sendPresented(w feedbackWait, o *output, f *domain.FlipInfo, ex
 	if f.ZeroCopy != 0 && f.ZeroCopy == w.win {
 		flags |= uint32(presentationtime.WpPresentationFeedbackKindZeroCopy)
 	}
+	refresh := f.Refresh
+	if w.fb.Version() >= 3 {
+		if !f.Async && f.VariableRate {
+			flags |= uint32(presentationtime.WpPresentationFeedbackKindVariableRate)
+		} else if !f.Async && refresh > 0 {
+			flags |= uint32(presentationtime.WpPresentationFeedbackKindFixedRate)
+		}
+	} else if f.VariableRate {
+		// Before v3, a variable refresh period is reported as unknown.
+		refresh = 0
+	}
 	sec, nsec := uint64(f.When/time.Second), uint32(f.When%time.Second)
-	w.fb.SendPresented(uint32(sec>>32), uint32(sec), nsec, uint32(f.Refresh), uint32(f.Seq>>32), uint32(f.Seq), flags)
+	w.fb.SendPresented(uint32(sec>>32), uint32(sec), nsec, uint32(refresh), uint32(f.Seq>>32), uint32(f.Seq), flags)
 	w.fb.Destroy()
 }
 

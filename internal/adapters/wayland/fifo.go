@@ -343,7 +343,7 @@ func (s *surface) tooEarly(at, now time.Time) bool {
 func (s *Server) nextRefresh(name string, now time.Time) time.Time {
 	p := s.outputPeriod(name)
 	f, ok := s.flips[name]
-	if !ok || f.When <= 0 || f.Refresh <= 0 {
+	if !ok || f.When <= 0 || f.Refresh <= 0 || f.VariableRate {
 		return now.Add(p)
 	}
 	mono := monotonic(now)

@@ -37,7 +37,7 @@ func TestWindowStatsRecording(t *testing.T) {
 	if w.facts.ScanoutReason != "composition" || w.facts.OverlayReason != "busy" {
 		t.Fatal("missing reasons")
 	}
-	w.flip(&domain.FlipInfo{Shows: map[domain.WindowID]uint64{1: 3}, ZeroCopy: 1, HardwareClock: true})
+	w.flip(&domain.FlipInfo{Shows: map[domain.WindowID]uint64{1: 3}, ZeroCopy: 1, HardwareClock: true, VariableRate: true, Refresh: time.Second / 60})
 	if !w.facts.Scanout || !w.facts.VRR {
 		t.Fatal("missing scanout/VRR")
 	}
@@ -138,7 +138,7 @@ func TestWatchStatsFlips(t *testing.T) {
 	w, _, _ := surfaceMapper(t, c, events)()
 	sink := s.Presentation()
 	push := func(seq uint64, when time.Duration) {
-		sink.Push(domain.OutputPresented{Output: "HEADLESS-1", Flip: &domain.FlipInfo{When: when, Shows: map[domain.WindowID]uint64{w.ID: seq}, ZeroCopy: w.ID, HardwareClock: true, OverlayReason: "occupied"}})
+		sink.Push(domain.OutputPresented{Output: "HEADLESS-1", Flip: &domain.FlipInfo{When: when, Shows: map[domain.WindowID]uint64{w.ID: seq}, ZeroCopy: w.ID, HardwareClock: true, VariableRate: true, OverlayReason: "occupied"}})
 		s.display.Do(func() {})
 	}
 	push(1, 0)

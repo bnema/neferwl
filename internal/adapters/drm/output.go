@@ -802,6 +802,7 @@ func (o *Output) commitRect(fb uint32, fence *os.File, async bool, vrr bool, f p
 	}
 	o.stateAt = time.Time{}
 	f.frame, f.async = true, async
+	f.variableRate, f.refresh = o.vrrOn, o.nominalPeriod()
 	f.scanoutReason, f.overlayReason = o.reason, o.overlayReason
 	f.wantedAt, o.wantedAt = o.wantedAt, 0
 	f.gapEnd, o.flipGapAt = o.flipGapAt, 0
@@ -1805,7 +1806,7 @@ func (o *Output) completed(ev flipEvent, seen map[domain.WindowID]uint64) bool {
 	if o.queued == f.queued {
 		o.queued = 0
 	}
-	o.report(&domain.FlipInfo{When: ev.when, Seq: uint64(ev.seq), Refresh: o.refreshPeriod(), ZeroCopy: f.zeroCopy, Async: f.async, ScanoutReason: f.scanoutReason, OverlayReason: f.overlayReason, HardwareClock: true, Shows: f.shows}, seen)
+	o.report(&domain.FlipInfo{When: ev.when, Seq: uint64(ev.seq), Refresh: f.refresh, VariableRate: f.variableRate, ZeroCopy: f.zeroCopy, Async: f.async, ScanoutReason: f.scanoutReason, OverlayReason: f.overlayReason, HardwareClock: true, Shows: f.shows}, seen)
 	if f.animating {
 		o.wakeCore()
 	}
