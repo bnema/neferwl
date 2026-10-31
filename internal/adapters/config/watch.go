@@ -6,9 +6,9 @@ import (
 	"io/fs"
 	"time"
 
-	"github.com/bnema/kvconf"
+	"bnema.dev/kvconf"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 // reloadDebounce is the quiet time after a change before the file is read:

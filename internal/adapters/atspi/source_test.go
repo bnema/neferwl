@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )

@@ -5,7 +5,7 @@ import (
 	"math"
 	"strconv"
 
-	"github.com/bnema/kvconf"
+	"bnema.dev/kvconf"
 )
 
 // ScaleStore writes output.<name>.scale into the config file, preserving

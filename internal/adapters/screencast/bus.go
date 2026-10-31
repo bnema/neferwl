@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bnema/zerobus"
+	"bnema.dev/zerobus"
 )
 
 // Object paths, interfaces and errors of the served contract.

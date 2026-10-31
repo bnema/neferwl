@@ -11,7 +11,7 @@ import (
 	wlr "github.com/bnema/go-wayland-bindings/server/wlrforeigntoplevelmanagement"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/wlturbo"
+	"bnema.dev/wlturbo"
 )
 
 // toplevelManagerEvents registers a handle proxy for each announced toplevel.

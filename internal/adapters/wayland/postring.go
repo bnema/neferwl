@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bnema/purego-libwayland/server"
+	"bnema.dev/purego-libwayland/server"
 )
 
 // postRing carries values from producer goroutines to the display goroutine

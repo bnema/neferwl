@@ -4,14 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/bnema/zerobus"
+	"bnema.dev/zerobus"
 	"github.com/stretchr/testify/require"
 )
 

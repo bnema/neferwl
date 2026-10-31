@@ -3,7 +3,7 @@ package wayland
 import (
 	"github.com/bnema/go-wayland-bindings/server/colorrepresentation"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
-	"github.com/bnema/purego-libwayland/server"
+	"bnema.dev/purego-libwayland/server"
 )
 
 // The absent YUV representation defaults to BT.709 limited, type 0 chroma.

@@ -8,7 +8,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wlrlayershell"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/wlturbo"
+	"bnema.dev/wlturbo"
 )
 
 var second = domain.OutputPlacement{Info: domain.OutputInfo{Name: "HEADLESS-2", Width: 1280, Height: 1024}, X: 1920, Width: 1280, Height: 1024, Scale: 1}

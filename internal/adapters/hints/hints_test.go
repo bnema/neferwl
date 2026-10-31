@@ -9,7 +9,7 @@ import (
 	"image"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 
 	_ "image/png"
 	"math"

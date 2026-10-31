@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 

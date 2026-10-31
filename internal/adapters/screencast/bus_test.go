@@ -11,7 +11,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/zerobus"
+	"bnema.dev/zerobus"
 	"github.com/stretchr/testify/mock"
 )
 

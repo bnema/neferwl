@@ -11,8 +11,8 @@ import (
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/adapters/fdwait"
-	"github.com/bnema/purego"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/purego"
+	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 

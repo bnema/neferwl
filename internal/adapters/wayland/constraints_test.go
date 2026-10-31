@@ -11,7 +11,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/wlturbo"
+	"bnema.dev/wlturbo"
 )
 
 // eventLog records the opcodes (and first fixed args) a proxy receives.

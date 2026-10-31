@@ -4,7 +4,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/xdgdialog"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/server"
+	"bnema.dev/purego-libwayland/server"
 )
 
 // xdg-dialog: a client marks a toplevel as modal for its parent (a "Save

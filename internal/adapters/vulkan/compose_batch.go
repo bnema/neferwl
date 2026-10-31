@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"unsafe"
 
-	vk "github.com/bnema/purego-vulkan/vulkan"
+	vk "bnema.dev/purego-vulkan/vulkan"
 )
 
 // Bound descriptor-table work and memory even on devices with huge limits.

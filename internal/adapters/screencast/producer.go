@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/purego-pipewire/pipewire"
+	"bnema.dev/purego-pipewire/pipewire"
 )
 
 // The producer turns wayland's damage into PipeWire frames, one stream at a

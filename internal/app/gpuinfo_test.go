@@ -7,7 +7,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"

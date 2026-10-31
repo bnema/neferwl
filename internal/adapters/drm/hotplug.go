@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	"github.com/bnema/neferwl/internal/adapters/fdwait"
-	"github.com/bnema/purego"
+	"bnema.dev/purego"
 	"golang.org/x/sys/unix"
 )
 

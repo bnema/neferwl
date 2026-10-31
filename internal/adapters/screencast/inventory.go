@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/zerobus"
+	"bnema.dev/zerobus"
 )
 
 // applyInventory takes the outputs and windows wayland published. The

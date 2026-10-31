@@ -3,7 +3,7 @@ package seat
 import (
 	"testing"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 // A seat disable lets the outputs reset the planes first, and only then

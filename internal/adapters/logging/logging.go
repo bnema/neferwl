@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/diode"
 	"golang.org/x/term"

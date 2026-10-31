@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 func TestSyncWaitAlreadySignalled(t *testing.T) {

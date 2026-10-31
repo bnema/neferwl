@@ -6,7 +6,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/singlepixelbuffer"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/purego-libwayland/server"
+	"bnema.dev/purego-libwayland/server"
 )
 
 // wp_single_pixel_buffer_v1: a 1x1 wl_buffer of one color. Clients use it

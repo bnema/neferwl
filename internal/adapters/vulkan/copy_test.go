@@ -10,7 +10,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"github.com/bnema/neferwl/internal/domain"
 
-	vk "github.com/bnema/purego-vulkan/vulkan"
+	vk "bnema.dev/purego-vulkan/vulkan"
 )
 
 func TestCopierImportsLinear(t *testing.T) {

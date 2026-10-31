@@ -8,7 +8,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/drmlease"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/server"
+	"bnema.dev/purego-libwayland/server"
 	"golang.org/x/sys/unix"
 )
 

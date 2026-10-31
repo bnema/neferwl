@@ -3,7 +3,7 @@ package vulkan
 import (
 	"unsafe"
 
-	vk "github.com/bnema/purego-vulkan/vulkan"
+	vk "bnema.dev/purego-vulkan/vulkan"
 )
 
 // VkPhysicalDeviceDescriptorIndexingFeatures is absent from the bindings.

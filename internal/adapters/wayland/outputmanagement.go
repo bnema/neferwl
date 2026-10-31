@@ -7,7 +7,7 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	wlr "github.com/bnema/go-wayland-bindings/server/wlroutputmanagement"
-	"github.com/bnema/purego-libwayland/server"
+	"bnema.dev/purego-libwayland/server"
 )
 
 type managementHead struct {

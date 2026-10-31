@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 
 	lockclient "github.com/bnema/go-wayland-bindings/client/extsessionlock"
 
@@ -22,7 +22,7 @@ import (
 	clientxdg "github.com/bnema/go-wayland-bindings/client/xdgshell"
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
-	"github.com/bnema/wlturbo"
+	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 

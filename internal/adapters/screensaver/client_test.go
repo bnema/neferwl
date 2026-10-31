@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/zerobus"
+	"bnema.dev/zerobus"
 )
 
 type testClient struct {

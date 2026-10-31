@@ -8,7 +8,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/wlroutputpowermanagement"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/server"
+	"bnema.dev/purego-libwayland/server"
 )
 
 // Idle and output power. ext_idle_notifier_v1: each notification has its

@@ -11,7 +11,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/wlturbo"
+	"bnema.dev/wlturbo"
 	"github.com/stretchr/testify/mock"
 )
 

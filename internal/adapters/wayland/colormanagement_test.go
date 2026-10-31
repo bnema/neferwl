@@ -9,7 +9,7 @@ import (
 	cm "github.com/bnema/go-wayland-bindings/server/colormanagement"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/logging"
-	"github.com/bnema/wlturbo"
+	"bnema.dev/wlturbo"
 )
 
 type colorEvent struct {

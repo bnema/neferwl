@@ -5,15 +5,15 @@ import (
 
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego"
+	"bnema.dev/purego"
 
 	"runtime"
 	"sync"
 	"time"
 	"unsafe"
 
-	vk "github.com/bnema/purego-vulkan/vulkan"
-	"github.com/bnema/zerowrap"
+	vk "bnema.dev/purego-vulkan/vulkan"
+	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 

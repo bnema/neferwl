@@ -16,7 +16,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 // Env names the state file in the environment of processes neferwl starts.

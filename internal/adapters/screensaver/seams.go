@@ -3,7 +3,7 @@ package screensaver
 import (
 	"syscall"
 
-	"github.com/bnema/zerobus"
+	"bnema.dev/zerobus"
 )
 
 // bus is the connection owned by Run. Startup helpers are used before the

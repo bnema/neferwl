@@ -7,7 +7,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/serverdecoration"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/wlturbo"
+	"bnema.dev/wlturbo"
 )
 
 type kdeModeProxy struct {

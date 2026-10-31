@@ -7,7 +7,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/idleinhibit"
 	"github.com/bnema/go-wayland-bindings/server/keyboardshortcutsinhibit"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/wlturbo"
+	"bnema.dev/wlturbo"
 )
 
 type inhibitorProxy struct {

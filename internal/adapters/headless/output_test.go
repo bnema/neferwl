@@ -24,7 +24,7 @@ import (
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 	"github.com/stretchr/testify/mock"
 )
 

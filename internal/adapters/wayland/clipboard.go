@@ -4,7 +4,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/extdatacontrol"
 	"github.com/bnema/go-wayland-bindings/server/primaryselection"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
-	"github.com/bnema/purego-libwayland/server"
+	"bnema.dev/purego-libwayland/server"
 	"golang.org/x/sys/unix"
 )
 

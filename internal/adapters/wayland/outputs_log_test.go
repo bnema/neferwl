@@ -6,7 +6,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 // The layout from core moves outputs after they were added at the startup

@@ -12,7 +12,7 @@ import (
 	extimagecopycapture "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
 	extworkspace "github.com/bnema/go-wayland-bindings/server/extworkspace"
 	wayland "github.com/bnema/go-wayland-bindings/server/wayland"
-	"github.com/bnema/purego-libwayland/server"
+	"bnema.dev/purego-libwayland/server"
 	"runtime"
 )
 

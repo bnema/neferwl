@@ -1,6 +1,6 @@
 package powerkey
 
-import "github.com/bnema/zerobus"
+import "bnema.dev/zerobus"
 
 type bus interface {
 	UnixFDs() bool

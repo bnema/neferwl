@@ -3,15 +3,15 @@ module github.com/bnema/neferwl
 go 1.27
 
 require (
-	github.com/bnema/go-wayland-bindings v0.3.0
-	github.com/bnema/kvconf v0.1.2
-	github.com/bnema/purego v0.13.0-bnema.2
-	github.com/bnema/purego-libwayland v0.12.0
-	github.com/bnema/purego-pipewire v0.2.0
-	github.com/bnema/purego-vulkan v0.6.0
-	github.com/bnema/wlturbo v0.6.2
-	github.com/bnema/zerobus v0.4.0
-	github.com/bnema/zerowrap v1.4.1
+	bnema.dev/kvconf v0.2.0
+	bnema.dev/purego v0.13.0-bnema.3
+	bnema.dev/purego-libwayland v0.13.0
+	bnema.dev/purego-pipewire v0.4.0
+	bnema.dev/purego-vulkan v0.7.0
+	bnema.dev/wlturbo v0.7.0
+	bnema.dev/zerobus v0.6.0
+	bnema.dev/zerowrap v1.5.0
+	github.com/bnema/go-wayland-bindings v0.3.1
 	github.com/rs/zerolog v1.35.1
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/image v0.47.0

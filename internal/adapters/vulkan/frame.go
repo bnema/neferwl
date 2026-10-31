@@ -11,7 +11,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/domain"
 
-	vk "github.com/bnema/purego-vulkan/vulkan"
+	vk "bnema.dev/purego-vulkan/vulkan"
 )
 
 // Frames are recorded into a ring of slots, one per frame in flight. The

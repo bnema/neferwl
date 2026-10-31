@@ -14,8 +14,8 @@ import (
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/wlturbo"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/wlturbo"
+	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 

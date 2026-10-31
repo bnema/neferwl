@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/peerexe"
-	"github.com/bnema/purego-pipewire/pipewire"
-	"github.com/bnema/zerobus"
+	"bnema.dev/purego-pipewire/pipewire"
+	"bnema.dev/zerobus"
 )
 
 // bus is the part of a zerobus connection the service uses. Only Send and

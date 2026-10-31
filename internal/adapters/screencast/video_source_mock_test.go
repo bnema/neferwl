@@ -7,7 +7,7 @@ package screencast
 import (
 	"time"
 
-	"github.com/bnema/purego-pipewire/pipewire"
+	"bnema.dev/purego-pipewire/pipewire"
 	mock "github.com/stretchr/testify/mock"
 )
 

@@ -15,7 +15,7 @@ import (
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/purego"
+	"bnema.dev/purego"
 	"golang.org/x/sys/unix"
 )
 

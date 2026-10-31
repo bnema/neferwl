@@ -26,8 +26,8 @@ import (
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/server"
-	"github.com/bnema/wlturbo"
+	"bnema.dev/purego-libwayland/server"
+	"bnema.dev/wlturbo"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )

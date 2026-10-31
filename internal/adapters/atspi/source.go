@@ -9,7 +9,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/zerobus"
+	"bnema.dev/zerobus"
 )
 
 const (

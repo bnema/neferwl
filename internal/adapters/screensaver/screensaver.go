@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/busretry"
-	"github.com/bnema/zerobus"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerobus"
+	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 

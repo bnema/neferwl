@@ -8,7 +8,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/domain"
 
-	vk "github.com/bnema/purego-vulkan/vulkan"
+	vk "bnema.dev/purego-vulkan/vulkan"
 )
 
 // Cursor images for the display's cursor plane: two linear B8G8R8A8

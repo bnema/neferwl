@@ -97,8 +97,8 @@ import (
 	wire_xdgoutput "github.com/bnema/go-wayland-bindings/server/xdgoutput"
 	wire_xdgshell "github.com/bnema/go-wayland-bindings/server/xdgshell"
 	wire_imagecapture "github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
-	"github.com/bnema/purego-libwayland/server"
-	"github.com/bnema/wlturbo"
+	"bnema.dev/purego-libwayland/server"
+	"bnema.dev/wlturbo"
 )
 
 type wireSignature interface{ EventSignature(uint16) (string, bool) }

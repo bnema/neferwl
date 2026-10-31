@@ -11,8 +11,8 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-pipewire/pipewire"
-	"github.com/bnema/zerobus"
+	"bnema.dev/purego-pipewire/pipewire"
+	"bnema.dev/zerobus"
 	"github.com/stretchr/testify/mock"
 )
 

@@ -7,7 +7,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/tablet"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/purego-libwayland/server"
+	"bnema.dev/purego-libwayland/server"
 )
 
 // The client under the pointer picks the cursor: a theme shape

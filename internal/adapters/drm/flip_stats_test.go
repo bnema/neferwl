@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 const period60 = 16_666_666 * time.Nanosecond // modeInfo{VRefresh: 60}

@@ -4,8 +4,8 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/purego-pipewire/pipewire"
-	"github.com/bnema/zerobus"
+	"bnema.dev/purego-pipewire/pipewire"
+	"bnema.dev/zerobus"
 )
 
 // stream is one cast of a session: a PipeWire node fed with frames that the

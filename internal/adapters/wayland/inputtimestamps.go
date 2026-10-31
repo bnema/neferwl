@@ -6,7 +6,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/inputtimestamps"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
-	"github.com/bnema/purego-libwayland/server"
+	"bnema.dev/purego-libwayland/server"
 )
 
 // zwp_input_timestamps_v1: a client subscribes a wl_keyboard or wl_pointer

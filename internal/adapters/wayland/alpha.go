@@ -5,7 +5,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/alphamodifier"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
-	"github.com/bnema/purego-libwayland/server"
+	"bnema.dev/purego-libwayland/server"
 )
 
 // wp_alpha_modifier_v1: a client fades a whole surface (Wine's layered

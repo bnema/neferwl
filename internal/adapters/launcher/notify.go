@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 // Notifier shows desktop notifications with notify-send, so any

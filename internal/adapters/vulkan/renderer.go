@@ -10,9 +10,9 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/overlaydraw"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 
-	vk "github.com/bnema/purego-vulkan/vulkan"
+	vk "bnema.dev/purego-vulkan/vulkan"
 )
 
 // DeviceInfo describes the selected Vulkan device and its startup cost.

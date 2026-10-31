@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
-	"github.com/bnema/zerobus"
+	"bnema.dev/zerobus"
 	"github.com/stretchr/testify/mock"
 )
 

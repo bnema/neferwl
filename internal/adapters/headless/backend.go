@@ -13,7 +13,7 @@ import (
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 // BackendOptions are the settings of the virtual outputs.

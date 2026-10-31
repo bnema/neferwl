@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/core"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 // commandStatsEvery is how often the command outbox counters are logged,

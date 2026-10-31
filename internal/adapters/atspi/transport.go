@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bnema/zerobus"
+	"bnema.dev/zerobus"
 	"golang.org/x/sys/unix"
 )
 

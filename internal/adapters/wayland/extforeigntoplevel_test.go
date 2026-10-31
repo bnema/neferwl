@@ -13,7 +13,7 @@ import (
 
 	xdgshell "github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/wlturbo"
+	"bnema.dev/wlturbo"
 )
 
 // extListEvents registers a handle proxy for each announced toplevel.

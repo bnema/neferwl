@@ -7,7 +7,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 // forwarder decouples reading libinput from core. libinput keeps reading

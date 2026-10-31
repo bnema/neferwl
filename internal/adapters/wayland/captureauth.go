@@ -6,7 +6,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/adapters/peerexe"
-	"github.com/bnema/purego-libwayland/server"
+	"bnema.dev/purego-libwayland/server"
 )
 
 // mayCapture is the one place that decides whether a client may capture the

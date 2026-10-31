@@ -5,7 +5,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgdecoration"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
-	"github.com/bnema/purego-libwayland/server"
+	"bnema.dev/purego-libwayland/server"
 )
 
 // Server-side decorations: neferwl draws the border, so clients must not draw

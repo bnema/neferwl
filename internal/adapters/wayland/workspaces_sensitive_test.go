@@ -8,7 +8,7 @@ import (
 
 	ext "github.com/bnema/go-wayland-bindings/server/extworkspace"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/wlturbo"
+	"bnema.dev/wlturbo"
 )
 
 // protectedWorkspaceEvents is a real wire client recorder. Child inventory

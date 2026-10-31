@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/zerobus"
+	"bnema.dev/zerobus"
 	"github.com/stretchr/testify/mock"
 )
 

@@ -5,7 +5,7 @@
 package powerkey
 
 import (
-	"github.com/bnema/zerobus"
+	"bnema.dev/zerobus"
 	mock "github.com/stretchr/testify/mock"
 )
 

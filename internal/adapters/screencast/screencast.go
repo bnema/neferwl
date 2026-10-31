@@ -29,8 +29,8 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/fdwait"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/zerobus"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerobus"
+	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 

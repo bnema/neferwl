@@ -7,7 +7,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/xdgactivation"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/wlturbo"
+	"bnema.dev/wlturbo"
 )
 
 // tokenProxy receives an xdg_activation_token_v1.done token.

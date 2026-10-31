@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 // Probe asks an owner loop to run an empty task: Ping returns once the

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/purego-pipewire/pipewire"
+	"bnema.dev/purego-pipewire/pipewire"
 	"github.com/stretchr/testify/mock"
 )
 

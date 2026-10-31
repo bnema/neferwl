@@ -10,7 +10,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/wlrlayershell"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
-	"github.com/bnema/wlturbo"
+	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 

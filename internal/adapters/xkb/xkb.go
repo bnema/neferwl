@@ -11,7 +11,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego"
+	"bnema.dev/purego"
 )
 
 const (

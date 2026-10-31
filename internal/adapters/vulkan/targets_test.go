@@ -10,7 +10,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/domain"
 
-	vk "github.com/bnema/purego-vulkan/vulkan"
+	vk "bnema.dev/purego-vulkan/vulkan"
 )
 
 // Frames drawn into exported targets reach their dmabufs: another renderer

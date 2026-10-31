@@ -16,7 +16,7 @@ import (
 	clientcore "github.com/bnema/go-wayland-bindings/client/wayland"
 	clientxdg "github.com/bnema/go-wayland-bindings/client/xdgshell"
 	"github.com/bnema/neferwl/internal/adapters/config"
-	"github.com/bnema/wlturbo"
+	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 

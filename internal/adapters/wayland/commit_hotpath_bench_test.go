@@ -10,7 +10,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/viewporter"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/logging"
-	"github.com/bnema/wlturbo"
+	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 

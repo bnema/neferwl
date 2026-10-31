@@ -3,7 +3,7 @@ package wayland
 import (
 	"github.com/bnema/go-wayland-bindings/server/tearingcontrol"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
-	"github.com/bnema/purego-libwayland/server"
+	"bnema.dev/purego-libwayland/server"
 )
 
 // Tearing control: a surface asks for async presentation. Outputs honour it

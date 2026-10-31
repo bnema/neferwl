@@ -20,7 +20,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/bnema/kvconf"
+	"bnema.dev/kvconf"
 	"github.com/bnema/neferwl/internal/domain"
 )
 

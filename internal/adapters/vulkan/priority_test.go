@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	vk "github.com/bnema/purego-vulkan/vulkan"
+	vk "bnema.dev/purego-vulkan/vulkan"
 )
 
 func TestPriorityAttempts(t *testing.T) {

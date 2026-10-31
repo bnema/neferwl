@@ -7,7 +7,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/domain"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 func TestOpenHeadlessRenderDiscovery(t *testing.T) {

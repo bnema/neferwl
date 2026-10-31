@@ -8,7 +8,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 // maxDelay bounds the delay between attempts.

@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 // sessionVars are the displays D-Bus and systemd user services (portals,

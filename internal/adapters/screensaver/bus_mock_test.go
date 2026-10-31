@@ -7,7 +7,7 @@ package screensaver
 import (
 	"syscall"
 
-	"github.com/bnema/zerobus"
+	"bnema.dev/zerobus"
 	mock "github.com/stretchr/testify/mock"
 )
 

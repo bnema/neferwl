@@ -9,7 +9,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/xdgoutput"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/server"
+	"bnema.dev/purego-libwayland/server"
 )
 
 // setOutputHDR records confirmed DRM state independently of the core layout.

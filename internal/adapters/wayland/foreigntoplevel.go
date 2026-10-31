@@ -10,7 +10,7 @@ import (
 
 	wlr "github.com/bnema/go-wayland-bindings/server/wlrforeigntoplevelmanagement"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/server"
+	"bnema.dev/purego-libwayland/server"
 )
 
 // wlr-foreign-toplevel-management lists mapped toplevels for taskbars and

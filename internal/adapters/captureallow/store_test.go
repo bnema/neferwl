@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )

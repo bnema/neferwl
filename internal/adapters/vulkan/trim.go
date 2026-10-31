@@ -5,7 +5,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/domain"
 
-	vk "github.com/bnema/purego-vulkan/vulkan"
+	vk "bnema.dev/purego-vulkan/vulkan"
 	"golang.org/x/sys/unix"
 )
 

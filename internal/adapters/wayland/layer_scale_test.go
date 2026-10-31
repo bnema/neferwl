@@ -8,7 +8,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wlrlayershell"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/wlturbo"
+	"bnema.dev/wlturbo"
 )
 
 // layerScaleOrderProxy is a real protocol client recording fractional-scale

@@ -11,8 +11,8 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/fdwait"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/purego-libwayland/server"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/purego-libwayland/server"
+	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 

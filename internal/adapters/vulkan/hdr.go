@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"unsafe"
 
-	vk "github.com/bnema/purego-vulkan/vulkan"
+	vk "bnema.dev/purego-vulkan/vulkan"
 )
 
 var (

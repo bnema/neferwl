@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bnema/kvconf"
+	"bnema.dev/kvconf"
 )
 
 func TestRulesInFileOrder(t *testing.T) {

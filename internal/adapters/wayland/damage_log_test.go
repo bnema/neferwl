@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 )
 
 // --debug=wayland-damage logs one "client damage" entry per fresh commit

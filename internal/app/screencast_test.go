@@ -18,7 +18,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/zerobus"
+	"bnema.dev/zerobus"
 )
 
 // The screencast tests need a session bus of their own (run them under

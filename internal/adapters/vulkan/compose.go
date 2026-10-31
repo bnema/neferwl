@@ -10,7 +10,7 @@ import (
 	"os"
 	"unsafe"
 
-	vk "github.com/bnema/purego-vulkan/vulkan"
+	vk "bnema.dev/purego-vulkan/vulkan"
 )
 
 // Composition draws quads in paint order inside one dynamic rendering

@@ -13,7 +13,7 @@ import (
 
 	wlr "github.com/bnema/go-wayland-bindings/server/wlroutputmanagement"
 	"github.com/bnema/neferwl/internal/adapters/config"
-	"github.com/bnema/wlturbo"
+	"bnema.dev/wlturbo"
 )
 
 // A wlr-output-management client goes through Wayland, the headless owner

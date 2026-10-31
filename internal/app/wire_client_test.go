@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"github.com/bnema/wlturbo"
+	"bnema.dev/wlturbo"
 )
 
 // bindTestClient uses the generated real client proxy so context, version,

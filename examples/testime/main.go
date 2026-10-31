@@ -15,7 +15,7 @@ import (
 	clientime "github.com/bnema/go-wayland-bindings/client/inputmethod"
 	clientcore "github.com/bnema/go-wayland-bindings/client/wayland"
 	"github.com/bnema/go-wayland-bindings/server/inputmethod"
-	"github.com/bnema/wlturbo"
+	"bnema.dev/wlturbo"
 )
 
 func main() {

@@ -9,7 +9,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/drm/gbm"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
 	"github.com/bnema/neferwl/internal/domain"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 

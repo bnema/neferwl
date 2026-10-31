@@ -3,7 +3,7 @@ package screencast
 import (
 	"os"
 
-	"github.com/bnema/zerobus"
+	"bnema.dev/zerobus"
 )
 
 // The caller check proves which executable a D-Bus peer runs, with the pidfd

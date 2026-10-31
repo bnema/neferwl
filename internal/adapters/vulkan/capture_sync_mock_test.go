@@ -5,7 +5,7 @@
 package vulkan
 
 import (
-	"github.com/bnema/purego-vulkan/vulkan"
+	"bnema.dev/purego-vulkan/vulkan"
 	mock "github.com/stretchr/testify/mock"
 )
 

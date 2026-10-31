@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
-	"github.com/bnema/zerobus"
+	"bnema.dev/zerobus"
 )
 
 // privateBus starts a dbus-daemon of its own, so tests never touch the
