@@ -104,8 +104,10 @@ func startXwaylandWith(t *testing.T, sizes [][2]int, mutate func(*domain.Config)
 	}
 	t.Cleanup(func() { unix.Close(fd) })
 	watchDone := make(chan struct{})
-	t.Cleanup(func() { close(watchDone) })
+	watchExited := make(chan struct{})
+	t.Cleanup(func() { close(watchDone); <-watchExited })
 	go func() {
+		defer close(watchExited)
 		var b [16384]byte
 		for {
 			select {
@@ -115,6 +117,9 @@ func startXwaylandWith(t *testing.T, sizes [][2]int, mutate func(*domain.Config)
 			}
 			fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
 			n, err := unix.Poll(fds, 100)
+			if err == unix.EINTR {
+				continue
+			}
 			if err != nil {
 				return
 			}
