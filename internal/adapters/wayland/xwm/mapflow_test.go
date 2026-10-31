@@ -3,11 +3,11 @@ package xwm
 import (
 	"context"
 	"encoding/binary"
+	"github.com/bnema/neferwl/internal/domain"
 	"testing"
 
 	"bnema.dev/xturbo"
 	"bnema.dev/xturbo/xproto"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -20,7 +20,7 @@ type harness struct {
 	h *mockhost
 
 	ready map[uint32]WindowInfo // by xid, filled by Ready
-	next  ports.WindowID
+	next  domain.WindowID
 }
 
 func newHarness(t *testing.T, mutate func(p *xpeer)) *harness {
@@ -100,9 +100,9 @@ func (hs *harness) count(match func(r xpeerReq) bool) int {
 
 func (hs *harness) waitMap(win uint32) {
 	hs.t.Helper()
-	readUntil(hs.t, hs.x, func() bool {
-		return hs.count(func(r xpeerReq) bool { return r.major == opMapWindow && r.u32(4) == win }) > 0
-	})
+	hs.x.onReadable()
+	hs.p.waitReq(0, func(r xpeerReq) bool { return r.major == opMapWindow && r.u32(4) == win })
+
 }
 
 func TestMapFlowBatchesRequestsAndReadyFiresOnce(t *testing.T) {
@@ -110,6 +110,7 @@ func TestMapFlowBatchesRequestsAndReadyFiresOnce(t *testing.T) {
 	const win = 0x500001
 	hs.classic(win)
 	hs.create(win)
+	require.NoError(t, hs.x.conn.Sync(&hs.x.h))
 	base := len(hs.p.requests())
 
 	hs.p.holdReplies()
@@ -138,6 +139,7 @@ func TestMapFlowBatchesRequestsAndReadyFiresOnce(t *testing.T) {
 	info := hs.ready[win]
 	require.Equal(t, WindowInfo{PID: 4242, Title: "net title", AppID: "Class"}, info, "_NET_WM_NAME wins, class is the second string")
 
+	require.NoError(t, hs.x.conn.Sync(&hs.x.h))
 	state, ok := hs.p.prop(win, "WM_STATE")
 	require.True(t, ok)
 	require.Equal(t, []uint32{1, 0}, atomsOf(state))
@@ -276,6 +278,7 @@ func TestMapFlowNoXResAsksNothing(t *testing.T) {
 	x, err := Boot(context.Background(), fd, testLog())
 	require.NoError(t, err)
 	t.Cleanup(x.CloseConn)
+	xTestPeers.Store(x, p)
 	h := newMockhost(t)
 	src := newMockfdSource(t)
 	src.EXPECT().Remove().Maybe()
@@ -426,11 +429,14 @@ func TestPropertyUnwatchedAtomAsksNothing(t *testing.T) {
 	const win = 0x500001
 	hs.classic(win)
 	hs.mapAndWait(win)
+	require.NoError(t, hs.x.conn.Sync(&hs.x.h))
 	n := len(hs.p.requests())
+	before := hs.x.Stats().Events
 	hs.p.propertyNotify(win, hs.p.atom("_MOTIF_WM_HINTS"), false)
 	hs.p.propertyNotify(0x999999, hs.p.atom("_NET_WM_NAME"), false) // unknown window
-	readUntil(t, hs.x, func() bool { return hs.x.Stats().Events >= 2 })
-	require.Len(t, hs.p.requests(), n)
+	readUntil(t, hs.x, func() bool { return hs.x.Stats().Events >= before+2 })
+	require.NoError(t, hs.x.conn.Sync(&hs.x.h))
+	require.Len(t, hs.p.requests(), n+1)
 }
 
 // Pairing.
@@ -604,8 +610,10 @@ func TestUnmapDissociatesAndRemapRereadsProperties(t *testing.T) {
 		v, ok := hs.p.prop(win, "WM_STATE")
 		return ok && len(v.data) == 8 && binary.LittleEndian.Uint32(v.data) == 0
 	})
+	require.NoError(t, hs.x.conn.Sync(&hs.x.h))
 	_, ok := hs.p.prop(win, "_NET_WM_STATE")
 	require.False(t, ok, "_NET_WM_STATE deleted")
+	require.NoError(t, hs.x.conn.Sync(&hs.x.h))
 	list, _ := hs.p.prop(peerRoot, "_NET_CLIENT_LIST")
 	require.Empty(t, list.data)
 
@@ -616,6 +624,7 @@ func TestUnmapDissociatesAndRemapRereadsProperties(t *testing.T) {
 	hs.p.mapRequest(win)
 	readUntil(t, hs.x, func() bool { _, ok := hs.ready[win]; return ok })
 	require.Equal(t, n+propCount, hs.count(func(q xpeerReq) bool { return q.major == opGetProperty && q.u32(4) == win }))
+	require.NoError(t, hs.x.conn.Sync(&hs.x.h))
 	list, _ = hs.p.prop(peerRoot, "_NET_CLIENT_LIST")
 	require.Equal(t, []uint32{win}, atomsOf(list))
 }
@@ -680,6 +689,7 @@ func TestReparentAwayFromRootRemovesManagedWindow(t *testing.T) {
 	hs.h.EXPECT().Dissociate(s, true).Once()
 	hs.p.reparentNotify(win, 0x600000)
 	readUntil(t, hs.x, func() bool { return hs.x.tab.lookup(win) == 0 })
+	require.NoError(t, hs.x.conn.Sync(&hs.x.h))
 	list, _ := hs.p.prop(peerRoot, "_NET_CLIENT_LIST")
 	require.Empty(t, list.data)
 	require.Zero(t, hs.x.tab.n)
@@ -739,7 +749,7 @@ func TestAttachMapsWindowsRequestedBeforeAttach(t *testing.T) {
 	post, _ := newPost()
 	var got WindowInfo
 	done := false
-	h.EXPECT().Created(mock.Anything, uint32(win)).Return(ports.WindowID(1)).Once()
+	h.EXPECT().Created(mock.Anything, uint32(win)).Return(domain.WindowID(1)).Once()
 	h.EXPECT().Ready(mock.Anything, mock.Anything).Run(func(_ Slot, i WindowInfo) { got, done = i, true }).Once()
 	x.attach(src, h, post)
 	readUntil(t, x, func() bool { return done })
@@ -790,7 +800,7 @@ func TestMapFlowReadyFiresOnLastReplyInAnyOrder(t *testing.T) {
 
 func TestMapFlowWholeOutputRectSetsHint(t *testing.T) {
 	hs := newHarness(t, nil)
-	hs.x.space.Set(ports.Layout{out(0, 0, 1920, 1080), out(1920, 0, 1280, 1024)})
+	hs.x.space.Set(domain.Layout{out(0, 0, 1920, 1080), out(1920, 0, 1280, 1024)})
 	const win = 0x500001
 	hs.classic(win)
 	s := hs.create(win)

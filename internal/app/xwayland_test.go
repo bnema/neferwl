@@ -9,7 +9,10 @@ package app
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
+	"github.com/bnema/neferwl/internal/domain"
+	"golang.org/x/sys/unix"
 	"image"
 	"image/png"
 	"io"
@@ -23,17 +26,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/statefile"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 const (
 	xwaylandTimeout      = 10 * time.Second
 	xwaylandW, xwaylandH = 640, 360
 )
+
+var xwaylandPublications sync.Map // test -> notification from real output/filesystem I/O
 
 var displayRe = regexp.MustCompile(`"DISPLAY":"(:\d+)"`)
 
@@ -60,7 +64,9 @@ func startXwayland(t *testing.T) *xwaylandEnv {
 
 // startXwaylandWith is startXwayland with the given headless outputs, left to
 // right, and an optional change to the default config.
-func startXwaylandWith(t *testing.T, sizes [][2]int, mutate func(*ports.Config)) *xwaylandEnv {
+//
+//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
+func startXwaylandWith(t *testing.T, sizes [][2]int, mutate func(*domain.Config)) *xwaylandEnv {
 	t.Helper()
 	if _, err := exec.LookPath("Xwayland"); err != nil {
 		t.Skip("Xwayland not on PATH")
@@ -79,10 +85,58 @@ func startXwaylandWith(t *testing.T, sizes [][2]int, mutate func(*ports.Config))
 	bin := buildProbe(t)
 
 	script, scriptW := io.Pipe()
-	logs := &lockedBuffer{}
+	changes := make(chan struct{}, 1)
+	xwaylandPublications.Store(t, changes)
+	t.Cleanup(func() { xwaylandPublications.Delete(t) })
+	logs := &lockedBuffer{changed: changes}
+	fd, err := unix.InotifyInit1(unix.IN_CLOEXEC | unix.IN_NONBLOCK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateDir := filepath.Join(runtime, "neferwl")
+	if err := os.MkdirAll(stateDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{runtime, stateDir, shots} {
+		if _, err := unix.InotifyAddWatch(fd, dir, unix.IN_CREATE|unix.IN_CLOSE_WRITE|unix.IN_MOVED_TO); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { unix.Close(fd) })
+	watchDone := make(chan struct{})
+	t.Cleanup(func() { close(watchDone) })
+	go func() {
+		var b [16384]byte
+		for {
+			select {
+			case <-watchDone:
+				return
+			default:
+			}
+			fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
+			n, err := unix.Poll(fds, 100)
+			if err != nil {
+				return
+			}
+			if n == 0 {
+				continue
+			}
+			if _, err := unix.Read(fd, b[:]); err != nil {
+				if err == unix.EAGAIN || err == unix.EINTR {
+					continue
+				}
+				return
+			}
+			select {
+			case changes <- struct{}{}:
+			default:
+			}
+		}
+	}()
+
 	ctx, cancel := context.WithCancel(zerowrap.WithCtx(context.Background(), zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: logs})))
 	cfg := config.Defaults()
-	cfg.Xwayland = ports.XwaylandConfig{Backend: ports.XwaylandBuiltin, Binary: "Xwayland", XSettings: true}
+	cfg.Xwayland = domain.XwaylandConfig{Backend: domain.XwaylandBuiltin, Binary: "Xwayland", XSettings: true}
 	if mutate != nil {
 		mutate(&cfg)
 	}
@@ -127,6 +181,8 @@ func startXwaylandWith(t *testing.T, sizes [][2]int, mutate func(*ports.Config))
 // TestXwaylandProbe: an X11 client is managed by the built-in XWM. It shows
 // up in the state with its class and pid, is drawn, tiles next to a second
 // one, receives focus and is closed by the close-window bind.
+//
+//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
 func TestXwaylandProbe(t *testing.T) {
 	e := startXwayland(t)
 	bin, display, statePath, shots, scriptW := e.bin, e.display, e.statePath, e.shots, e.script
@@ -205,9 +261,12 @@ func buildProbe(t *testing.T) string {
 
 // startProbe starts x11probe on display, with X11 as its only display
 // server, and stops it when the test ends.
+//
+//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
 func startProbe(t *testing.T, bin, display string, args ...string) *probe {
 	t.Helper()
-	p := &probe{out: &lockedBuffer{}, waited: make(chan error, 1)}
+	changes := publicationChanges(t)
+	p := &probe{out: &lockedBuffer{changed: changes}, waited: make(chan error, 1)}
 	p.cmd = exec.Command(bin, args...)
 	p.cmd.Env = append(envWithout("DISPLAY", "WAYLAND_DISPLAY", "NEFERWL_STATE", "NEFERWL_SLOT"), "DISPLAY="+display)
 	p.cmd.Stdout = p.out
@@ -247,11 +306,17 @@ next:
 	return env
 }
 
-// until polls cond every 20 ms and fails the test after xwaylandTimeout.
+// until waits for real process output or filesystem publication before rechecking.
+//
+//testpolicy:realtime waits on real compositor output and inotify publications
 func until(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	for deadline := time.Now().Add(xwaylandTimeout); !cond(); time.Sleep(20 * time.Millisecond) {
-		if time.Now().After(deadline) {
+	changes := publicationChanges(t)
+	deadline := time.After(xwaylandTimeout)
+	for !cond() {
+		select {
+		case <-changes:
+		case <-deadline:
 			t.Fatalf("timeout waiting for %s", what)
 		}
 	}
@@ -426,7 +491,7 @@ func windowOf(st statefile.State, pid int) (statefile.Window, bool) {
 // ignored (the grace, current policy).
 func TestXwaylandFullscreen(t *testing.T) {
 	// Gaps make a tile visibly smaller than the output.
-	e := startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *ports.Config) { c.Layout.Gaps = 20 })
+	e := startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *domain.Config) { c.Layout.Gaps = 20 })
 	shot := filepath.Join(e.shots, "latest.png")
 	corner := image.Rect(0, 0, 4, 4)
 	p := startProbe(t, e.bin, e.display, "-fullscreen", "-fullscreen-delay", "2s")
@@ -463,7 +528,7 @@ func TestXwaylandFullscreenOff(t *testing.T) {
 // column of its own, focused, beside the tiled window already open. This is
 // the state it maps with, not a request: the grace does not apply.
 func TestXwaylandInitialFullscreen(t *testing.T) {
-	e := startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *ports.Config) { c.Layout.Gaps = 20 })
+	e := startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *domain.Config) { c.Layout.Gaps = 20 })
 	shot := filepath.Join(e.shots, "latest.png")
 	first := startProbe(t, e.bin, e.display, "-class", "First", "-size", "200x100")
 	until(t, "first tiled", func() bool {
@@ -495,7 +560,12 @@ func TestXwaylandFullscreenGrace(t *testing.T) {
 		return len(st.Windows) == 1 && func() bool { _, ok := tileRect(st, st.Windows[0].ID); return ok }()
 	})
 	// Stay inside the grace, then check it is still not fullscreen.
-	time.Sleep(500 * time.Millisecond)
+	if _, err := e.script.Write([]byte("sleep 500ms\n")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.script.Write([]byte("sleep 0s\n")); err != nil {
+		t.Fatal(err)
+	}
 	st := readState(e.statePath)
 	if _, ok := tileRect(st, st.Windows[0].ID); !ok {
 		t.Error("window went fullscreen inside the grace")
@@ -508,6 +578,8 @@ func TestXwaylandFullscreenGrace(t *testing.T) {
 // TestXwaylandKeyboardGrab: while a fullscreen, focused X11 client holds the
 // keyboard grab the close bind does not fire; after it leaves fullscreen the
 // binds work again.
+//
+//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
 func TestXwaylandKeyboardGrab(t *testing.T) {
 	e := startXwayland(t)
 	p := startProbe(t, e.bin, e.display, "-fullscreen", "-fullscreen-delay", "1500ms", "-fullscreen-off", "2500ms", "-keyboard-grab")
@@ -540,6 +612,8 @@ func TestXwaylandKeyboardGrab(t *testing.T) {
 
 // TestXwaylandKeyboardGrabWindowed: a grab on a windowed client does not lock
 // the binds.
+//
+//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
 func TestXwaylandKeyboardGrabWindowed(t *testing.T) {
 	e := startXwayland(t)
 	p := startProbe(t, e.bin, e.display, "-keyboard-grab")
@@ -586,12 +660,15 @@ func TestXwaylandOutputHint(t *testing.T) {
 // the way it matches a Wayland app ID (steam_app_<id> from Proton).
 func TestXwaylandClassRule(t *testing.T) {
 	yes := true
-	e := startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *ports.Config) {
-		c.Rules = append(c.Rules, ports.WindowRule{Name: "games", AppID: regexp.MustCompile(`^steam_app_\d+$`), Floating: &yes})
+	e := startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *domain.Config) {
+		c.Rules = append(c.Rules, domain.WindowRule{Name: "games", AppID: regexp.MustCompile(`^steam_app_\d+$`), Floating: &yes})
 	})
 	startProbe(t, e.bin, e.display, "-class", "steam_app_413150")
 	until(t, "floating steam_app window", func() bool {
 		st := readState(e.statePath)
+		if len(st.Windows) == 1 {
+			t.Logf("rule state: %+v", st.Windows[0])
+		}
 		return len(st.Windows) == 1 && st.Windows[0].AppID == "steam_app_413150" && st.Windows[0].Floating
 	})
 	startProbe(t, e.bin, e.display, "-class", "Other")
@@ -612,6 +689,8 @@ func waylandEnv() []string {
 }
 
 // runProbe runs a one-shot x11probe mode and returns its stdout.
+//
+//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
 func runProbe(t *testing.T, e *xwaylandEnv, args ...string) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), xwaylandTimeout)
@@ -659,6 +738,8 @@ func wlCopy(t *testing.T, data string, args ...string) {
 }
 
 // wlPaste returns what wl-paste prints, and whether it succeeded.
+//
+//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
 func wlPaste(args ...string) (string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), xwaylandTimeout)
 	defer cancel()
@@ -772,8 +853,8 @@ func TestXwaylandXSettings(t *testing.T) {
 // DPI stays 96 even on a scale-2 output.
 func TestXwaylandXSettingsScale2AnnouncesScale1(t *testing.T) {
 	cursorTheme(t, 24)
-	e := startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *ports.Config) {
-		c.Outputs = append(c.Outputs, ports.OutputConfig{Name: "HEADLESS-1", Scale: 2, ScaleOnly: true})
+	e := startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *domain.Config) {
+		c.Outputs = append(c.Outputs, domain.OutputConfig{Name: "HEADLESS-1", Scale: 2, ScaleOnly: true})
 	})
 	var got string
 	until(t, "XSETTINGS owner", func() bool { got = runProbe(t, e, "-xsettings"); return got != "xsettings none" })
@@ -787,7 +868,7 @@ func TestXwaylandXSettingsScale2AnnouncesScale1(t *testing.T) {
 
 // TestXwaylandXSettingsOff: xwayland.xsettings = off leaves no manager.
 func TestXwaylandXSettingsOff(t *testing.T) {
-	e := startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *ports.Config) { c.Xwayland.XSettings = false })
+	e := startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *domain.Config) { c.Xwayland.XSettings = false })
 	// A mapped window proves the XWM is up before the absence is checked.
 	p := startProbe(t, e.bin, e.display)
 	until(t, "probe mapped", func() bool { return strings.Contains(p.out.String(), "mapped ") })
@@ -805,4 +886,54 @@ func TestXwaylandRootCursor(t *testing.T) {
 	if got := runProbe(t, e, "-root-cursor"); got != "cursor 32x32" {
 		t.Errorf("-root-cursor = %q, want cursor 32x32", got)
 	}
+}
+
+// themeCursor writes a one-image Xcursor file of side size under
+// dir/theme/cursors/name, every pixel set to px.
+func themeCursor(t *testing.T, dir, name string, size int, px byte) {
+	t.Helper()
+	le := binary.LittleEndian
+	out := le.AppendUint32([]byte("Xcur"), 16)
+	out = le.AppendUint32(out, 0x10000)
+	out = le.AppendUint32(out, 1)
+	for _, v := range []int{0xfffd0002, size, 28, 36, 0xfffd0002, size, 1, size, size, 0, 0, 0} {
+		out = le.AppendUint32(out, uint32(v))
+	}
+	for range size * size * 4 {
+		out = append(out, px)
+	}
+	path := filepath.Join(dir, "theme", "cursors", name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, out, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func publicationChanges(t *testing.T) chan struct{} {
+	var changes any
+	var ok bool
+	name := t.Name()
+	for {
+		xwaylandPublications.Range(func(k, v any) bool {
+			if k.(*testing.T).Name() == name {
+				changes, ok = v, true
+				return false
+			}
+			return true
+		})
+		if ok {
+			break
+		}
+		i := strings.LastIndex(name, "/")
+		if i < 0 {
+			break
+		}
+		name = name[:i]
+	}
+	if !ok {
+		t.Fatal("missing publication observer")
+	}
+	return changes.(chan struct{})
 }

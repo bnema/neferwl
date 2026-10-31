@@ -2,15 +2,15 @@ package xwm
 
 import (
 	"encoding/binary"
+	"github.com/bnema/neferwl/internal/domain"
 	"testing"
 
 	"bnema.dev/xturbo"
 	"bnema.dev/xturbo/xproto"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
 
-func layoutOf(os ...ports.OutputPlacement) ports.Layout { return ports.Layout(os) }
+func layoutOf(os ...domain.OutputPlacement) domain.Layout { return domain.Layout(os) }
 
 func rootConfigureNotify(win uint32, x, y int16, w, h uint16) xturbo.Event {
 	ev := xturbo.Event{Kind: xproto.KindConfigureNotify}
@@ -69,7 +69,7 @@ func TestSetLayoutRepositionsPlacedWindows(t *testing.T) {
 
 func TestSetLayoutWarnsOnceWhenOutputsDropped(t *testing.T) {
 	x, _, _, _, _ := attached(t)
-	var l ports.Layout
+	var l domain.Layout
 	for i := 0; i < maxRegions+2; i++ {
 		l = append(l, out(i*100, 0, 100, 100))
 	}

@@ -2,7 +2,7 @@ package xwm
 
 import (
 	"encoding/binary"
-	"runtime"
+	"github.com/bnema/neferwl/internal/domain"
 	"testing"
 	"time"
 
@@ -15,7 +15,7 @@ import (
 // newWin makes a ready managed window known to the XWM and the mocked host.
 func newWin(t *testing.T, x *XWM, p *xpeer, h *mockhost, xid uint32) Slot {
 	t.Helper()
-	h.EXPECT().Created(mock.Anything, xid).Return(ports.WindowID(xid)).Once()
+	h.EXPECT().Created(mock.Anything, xid).Return(domain.WindowID(xid)).Once()
 	p.createNotify(xid, false)
 	readUntil(t, x, func() bool { return x.tab.lookup(xid) != 0 })
 	s := x.tab.lookup(xid)
@@ -258,7 +258,7 @@ func TestDirtyQueueNeverGrows(t *testing.T) {
 	const base = 0x600000
 	for i := 0; i < 3*c0; i++ { // each round leaves a stale entry behind
 		xid := uint32(base + i)
-		h.EXPECT().Created(mock.Anything, xid).Return(ports.WindowID(1)).Once()
+		h.EXPECT().Created(mock.Anything, xid).Return(domain.WindowID(1)).Once()
 		p.createNotify(xid, false)
 		readUntil(t, x, func() bool { return x.tab.lookup(xid) != 0 })
 		s := x.tab.lookup(xid)
@@ -506,6 +506,7 @@ func TestCloseWindow(t *testing.T) {
 // Allocation guards. The peer sinks requests so the connection never blocks;
 // its goroutine is idle in the sink loop before measuring.
 
+//testpolicy:realtime waits for the real X11 peer to consume a sink marker
 func sinkPeer(t *testing.T, x *XWM, p *xpeer) {
 	t.Helper()
 	// Everything written after sink.Store(true) is discarded, so one marker
@@ -517,13 +518,14 @@ func sinkPeer(t *testing.T, x *XWM, p *xpeer) {
 	p.sink.Store(true)
 	xproto.GetInputFocus(x.conn.Buf())
 	require.NoError(t, x.conn.Flush())
-	deadline := time.Now().Add(30 * time.Second) // failure guard only: the wait is event driven
 	for p.discarded.Load() == before {
-		if time.Now().After(deadline) {
-			t.Fatal("xpeer: sink marker never discarded")
+		select {
+		case <-p.discardedEvent:
+		case <-time.After(5 * time.Second):
+			t.Fatal("sink marker never discarded")
 		}
-		runtime.Gosched()
 	}
+
 	x.src = nil // no source: write backpressure would not allocate either
 	x.post = func(func()) {}
 	x.warnedRing = true // the sink never answers: Expect slots stay used

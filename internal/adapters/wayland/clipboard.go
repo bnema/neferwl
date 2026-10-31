@@ -1,10 +1,10 @@
 package wayland
 
 import (
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/extdatacontrol"
 	"github.com/bnema/go-wayland-bindings/server/primaryselection"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
-	"bnema.dev/purego-libwayland/server"
 	"golang.org/x/sys/unix"
 )
 

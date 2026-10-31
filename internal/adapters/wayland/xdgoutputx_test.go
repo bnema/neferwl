@@ -1,12 +1,13 @@
 package wayland
 
 import (
+	"github.com/bnema/neferwl/internal/domain"
 	"slices"
 	"testing"
 
+	"bnema.dev/purego-libwayland/server"
+	"bnema.dev/wlturbo"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/server"
-	"github.com/bnema/wlturbo"
 )
 
 // xdgPosProxy records the logical_position events of one zxdg_output_v1.
@@ -75,10 +76,10 @@ func lastPositions(ps []*xdgPosProxy) [][2]int32 {
 }
 
 func twoOutputs(ax int) ports.SetOutputs {
-	mk := func(name string, x int) ports.OutputPlacement {
-		return ports.OutputPlacement{Info: ports.OutputInfo{Name: name, Width: 1920, Height: 1080}, X: x, Y: 0, Width: 1920, Height: 1080, Scale: 1}
+	mk := func(name string, x int) domain.OutputPlacement {
+		return domain.OutputPlacement{Info: domain.OutputInfo{Name: name, Width: 1920, Height: 1080}, X: x, Y: 0, Width: 1920, Height: 1080, Scale: 1}
 	}
-	return ports.SetOutputs{Outputs: ports.Layout{mk("A", ax), mk("B", 0)}}
+	return ports.SetOutputs{Outputs: domain.Layout{mk("A", ax), mk("B", 0)}}
 }
 
 // Xwayland gets X-space positions (layout top-left is 0,0) and re-receives
@@ -110,7 +111,7 @@ func TestXwaylandPrivateXDGOutput(t *testing.T) {
 	}
 	// Hotplug: a third output on the right grows the extents.
 	third := twoOutputs(-3840)
-	third.Outputs = append(third.Outputs, ports.OutputPlacement{Info: ports.OutputInfo{Name: "C", Width: 1920, Height: 1080}, X: 1920, Width: 1920, Height: 1080, Scale: 1})
+	third.Outputs = append(third.Outputs, domain.OutputPlacement{Info: domain.OutputInfo{Name: "C", Width: 1920, Height: 1080}, X: 1920, Width: 1920, Height: 1080, Scale: 1})
 	applyOutputs(t, r.s, r.commands, third)
 	if err := r.xc.Roundtrip(); err != nil {
 		t.Fatal(err)

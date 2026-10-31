@@ -127,13 +127,13 @@ func TestLeftFullscreenRestoredOnFocus(t *testing.T) {
 			m := coverMonitor(tc.overflow, tc.float)
 			w := m.Current()
 			w.Activate(1)
-			if w.fullscreen != 0 || w.left != 2 {
-				t.Fatalf("leave: fullscreen %d, left %d", w.fullscreen, w.left)
+			if w.Fullscreen != 0 || w.Inspect().Left != 2 {
+				t.Fatalf("leave: fullscreen %d, left %d", w.Fullscreen, w.Inspect().Left)
 			}
 			w.Activate(2)
-			w.settleLeft()
-			if w.fullscreen != 2 || w.left != 0 {
-				t.Fatalf("back: fullscreen %d, left %d", w.fullscreen, w.left)
+			w.Settle(false)
+			if w.Fullscreen != 2 || w.Inspect().Left != 0 {
+				t.Fatalf("back: fullscreen %d, left %d", w.Fullscreen, w.Inspect().Left)
 			}
 		})
 	}
@@ -142,7 +142,7 @@ func TestLeftFullscreenRestoredOnFocus(t *testing.T) {
 func TestSettleLeftAllocs(t *testing.T) {
 	m := coverMonitor(OverflowScroll, false)
 	w := m.Current()
-	if n := testing.AllocsPerRun(100, w.settleLeft); n != 0 {
+	if n := testing.AllocsPerRun(100, func() { w.Settle(false) }); n != 0 {
 		t.Fatalf("settleLeft allocs %v", n)
 	}
 }

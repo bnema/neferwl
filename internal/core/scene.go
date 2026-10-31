@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"github.com/bnema/neferwl/internal/ports"
 	"slices"
 
 	"github.com/bnema/neferwl/internal/domain"
@@ -121,7 +122,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 			at := Rect{X: sc.x + cr.X, Y: sc.y + cr.Y}
 			if old, ok := c.placed[p.ID]; !ok || old != at {
 				if err := c.command(ctx, ports.PlaceWindow{ID: p.ID, X: at.X, Y: at.Y}); err != nil {
-					return ports.Scene{}, err
+					return domain.Scene{}, err
 				}
 				c.placed[p.ID] = at
 			}

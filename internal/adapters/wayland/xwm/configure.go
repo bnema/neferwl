@@ -1,6 +1,7 @@
 package xwm
 
 import (
+	"github.com/bnema/neferwl/internal/domain"
 	"math"
 
 	"bnema.dev/xturbo"
@@ -102,7 +103,7 @@ func (x *XWM) toX(r *record) (px, py int32) {
 // SetLayout installs the output layout that X coordinates derive from. When it
 // changes, placed managed windows are repositioned and mapped override windows
 // are re-reported in layout coordinates. Display goroutine only.
-func (x *XWM) SetLayout(l ports.Layout) {
+func (x *XWM) SetLayout(l domain.Layout) {
 	if x.closed {
 		return
 	}

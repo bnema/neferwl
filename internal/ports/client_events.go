@@ -73,7 +73,7 @@ func (WindowUnmapped) clientEvent() {}
 // shows. The rect is its place in the layout (logical coordinates). NoInput
 // windows (tooltips, drag icons, notifications) never take the pointer.
 type UnmanagedMapped struct {
-	ID                  WindowID
+	ID                  domain.WindowID
 	X, Y, Width, Height int
 	NoInput             bool
 }
@@ -83,14 +83,14 @@ func (UnmanagedMapped) clientEvent() {}
 // UnmanagedMoved carries wayland → core a move and/or resize of a mapped
 // unmanaged window.
 type UnmanagedMoved struct {
-	ID                  WindowID
+	ID                  domain.WindowID
 	X, Y, Width, Height int
 }
 
 func (UnmanagedMoved) clientEvent() {}
 
 // UnmanagedUnmapped carries wayland → core that an unmanaged window is gone.
-type UnmanagedUnmapped struct{ ID WindowID }
+type UnmanagedUnmapped struct{ ID domain.WindowID }
 
 func (UnmanagedUnmapped) clientEvent() {}
 

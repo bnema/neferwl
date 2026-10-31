@@ -1,13 +1,13 @@
 package xwm
 
-import "github.com/bnema/neferwl/internal/ports"
+import "github.com/bnema/neferwl/internal/domain"
 
 const maxRegions = 16
 
 // Region is one output's part of the layout and where it is in X space.
 // X = layout - Origin.
 type Region struct {
-	Layout, X ports.Rect // logical layout rect; X rect in X pixels
+	Layout, X domain.Rect // logical layout rect; X rect in X pixels
 }
 
 // Space maps layout coordinates (which may be negative) to X coordinates
@@ -29,7 +29,7 @@ func (s *Space) Origin() (ox, oy int) { return s.ox, s.oy }
 func (s *Space) Dropped() int { return s.dropped }
 
 // Set recomputes the mapping and reports whether it changed.
-func (s *Space) Set(l ports.Layout) bool {
+func (s *Space) Set(l domain.Layout) bool {
 	var next Space
 	n := len(l)
 	if n > maxRegions {
@@ -56,8 +56,8 @@ func (s *Space) Set(l ports.Layout) bool {
 	for i := 0; i < n; i++ {
 		o := l[i]
 		next.regions[i] = Region{
-			Layout: ports.Rect{X: o.X, Y: o.Y, W: o.Width, H: o.Height},
-			X:      ports.Rect{X: o.X - next.ox, Y: o.Y - next.oy, W: o.Width, H: o.Height},
+			Layout: domain.Rect{X: o.X, Y: o.Y, W: o.Width, H: o.Height},
+			X:      domain.Rect{X: o.X - next.ox, Y: o.Y - next.oy, W: o.Width, H: o.Height},
 		}
 	}
 	next.w, next.h = maxX-next.ox, maxY-next.oy

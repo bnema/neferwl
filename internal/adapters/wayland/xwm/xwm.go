@@ -1,5 +1,3 @@
-//lint:file-ignore U1000 refocus and listsDirty are used by the focus and configure flows
-
 // Package xwm is the built-in X11 window manager for Xwayland: it speaks the
 // X protocol over the -wm socket with xturbo and reports managed windows to
 // the Wayland server through the unexported host interface.
@@ -14,20 +12,19 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/bnema/neferwl/internal/domain"
 	"io"
 	"os"
 	"time"
 
+	"bnema.dev/purego-libwayland/server"
 	"bnema.dev/xturbo"
 	"bnema.dev/xturbo/composite"
 	"bnema.dev/xturbo/res"
 	"bnema.dev/xturbo/xfixes"
 	"bnema.dev/xturbo/xproto"
-	"github.com/bnema/purego-libwayland/server"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
-
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 var (
@@ -90,7 +87,7 @@ type XWM struct {
 	unpaired   [unpairedCap]struct{ serial, surface uint64 }
 	unpairedN  int
 
-	cfg ports.XwaylandSettings
+	cfg domain.XwaylandSettings
 	xs  xsettings // XSETTINGS manager and root cursor (xsettings.go, cursor.go)
 
 	space       *Space // layout <-> X coordinates, shared with the host
@@ -168,11 +165,11 @@ func (x *XWM) setProp32(win uint32, prop int, typ xproto.Atom, vals []uint32) {
 // Boot gives up promptly when ctx ends (the Xwayland process died or the run
 // was cancelled). log is scoped by the caller with logging.For(ctx, "xwm").
 func Boot(ctx context.Context, wmFD int, log zerowrap.Logger) (*XWM, error) {
-	return BootSettings(ctx, wmFD, log, ports.XwaylandSettings{})
+	return BootSettings(ctx, wmFD, log, domain.XwaylandSettings{})
 }
 
 // BootSettings is Boot with the XSETTINGS manager and the root cursor of cfg.
-func BootSettings(ctx context.Context, wmFD int, log zerowrap.Logger, cfg ports.XwaylandSettings) (*XWM, error) {
+func BootSettings(ctx context.Context, wmFD int, log zerowrap.Logger, cfg domain.XwaylandSettings) (*XWM, error) {
 	// The watcher shuts the socket down when ctx ends, which wakes any blocked
 	// handshake, Sync or InternAtoms. It holds its own duplicate so a shutdown
 	// can never reach a descriptor number reused after Boot closed wmFD.
@@ -208,7 +205,7 @@ func BootSettings(ctx context.Context, wmFD int, log zerowrap.Logger, cfg ports.
 	return x, err
 }
 
-func boot(wmFD int, log zerowrap.Logger, cfg ports.XwaylandSettings) (*XWM, error) {
+func boot(wmFD int, log zerowrap.Logger, cfg domain.XwaylandSettings) (*XWM, error) {
 	conn, err := xturbo.NewConn(wmFD)
 	if err != nil {
 		return nil, fmt.Errorf("xwm: connect: %w", err)

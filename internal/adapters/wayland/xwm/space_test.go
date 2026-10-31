@@ -1,28 +1,27 @@
 package xwm
 
 import (
+	"github.com/bnema/neferwl/internal/domain"
 	"testing"
-
-	"github.com/bnema/neferwl/internal/ports"
 )
 
-func out(x, y, w, h int) ports.OutputPlacement {
-	return ports.OutputPlacement{X: x, Y: y, Width: w, Height: h, Scale: 1}
+func out(x, y, w, h int) domain.OutputPlacement {
+	return domain.OutputPlacement{X: x, Y: y, Width: w, Height: h, Scale: 1}
 }
 
 func TestSpaceLayouts(t *testing.T) {
 	tests := []struct {
 		name         string
-		l            ports.Layout
+		l            domain.Layout
 		w, h         int
 		lx, ly, x, y int
 	}{
-		{"single", ports.Layout{out(0, 0, 1920, 1080)}, 1920, 1080, 10, 20, 10, 20},
-		{"side by side", ports.Layout{out(0, 0, 1920, 1080), out(1920, 0, 1280, 1024)}, 3200, 1080, 2000, 5, 2000, 5},
-		{"left-of negative origin", ports.Layout{out(-640, 0, 640, 480), out(0, 0, 1920, 1080)}, 2560, 1080, -630, 20, 10, 20},
-		{"above", ports.Layout{out(0, -500, 800, 500), out(0, 0, 800, 600)}, 800, 1100, 3, -400, 3, 100},
-		{"below", ports.Layout{out(0, 0, 800, 600), out(0, 600, 800, 400)}, 800, 1000, 3, 700, 3, 700},
-		{"hole nearest", ports.Layout{out(0, 0, 100, 100), out(300, 0, 100, 100)}, 400, 100, 120, 10, 120, 10},
+		{"single", domain.Layout{out(0, 0, 1920, 1080)}, 1920, 1080, 10, 20, 10, 20},
+		{"side by side", domain.Layout{out(0, 0, 1920, 1080), out(1920, 0, 1280, 1024)}, 3200, 1080, 2000, 5, 2000, 5},
+		{"left-of negative origin", domain.Layout{out(-640, 0, 640, 480), out(0, 0, 1920, 1080)}, 2560, 1080, -630, 20, 10, 20},
+		{"above", domain.Layout{out(0, -500, 800, 500), out(0, 0, 800, 600)}, 800, 1100, 3, -400, 3, 100},
+		{"below", domain.Layout{out(0, 0, 800, 600), out(0, 600, 800, 400)}, 800, 1000, 3, 700, 3, 700},
+		{"hole nearest", domain.Layout{out(0, 0, 100, 100), out(300, 0, 100, 100)}, 400, 100, 120, 10, 120, 10},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -52,14 +51,14 @@ func TestSpaceEmptyAndOrigin(t *testing.T) {
 	if x, y := s.ToX(5, 6); x != 5 || y != 6 {
 		t.Fatalf("empty ToX = %d,%d", x, y)
 	}
-	s.Set(ports.Layout{out(-640, -20, 640, 480), out(0, 0, 1920, 1080)})
+	s.Set(domain.Layout{out(-640, -20, 640, 480), out(0, 0, 1920, 1080)})
 	if ox, oy := s.Origin(); ox != -640 || oy != -20 {
 		t.Fatalf("origin = %d,%d", ox, oy)
 	}
 }
 
 func TestSpaceSeventeenOutputs(t *testing.T) {
-	l := make(ports.Layout, 17)
+	l := make(domain.Layout, 17)
 	for i := range l {
 		l[i] = out(i*100, 0, 100, 100)
 	}
@@ -77,7 +76,7 @@ func TestSpaceSeventeenOutputs(t *testing.T) {
 }
 
 func TestSpaceAllocations(t *testing.T) {
-	l := ports.Layout{out(-640, 0, 640, 480), out(0, 0, 1920, 1080)}
+	l := domain.Layout{out(-640, 0, 640, 480), out(0, 0, 1920, 1080)}
 	var s Space
 	s.Set(l)
 	n := testing.AllocsPerRun(100, func() {
@@ -95,7 +94,7 @@ func TestSpaceAllocations(t *testing.T) {
 
 func TestSpaceWholeOutputMatchesPlace(t *testing.T) {
 	var s Space
-	s.Set(ports.Layout{out(-640, 0, 640, 480), out(0, 0, 1920, 1080)})
+	s.Set(domain.Layout{out(-640, 0, 640, 480), out(0, 0, 1920, 1080)})
 	lx, ly, ok := s.WholeOutput(0, 0, 640, 480)
 	if !ok || lx != -640 || ly != 0 {
 		t.Fatalf("WholeOutput = %d,%d,%v", lx, ly, ok)

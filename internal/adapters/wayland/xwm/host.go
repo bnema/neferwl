@@ -1,9 +1,8 @@
 package xwm
 
 import (
+	"github.com/bnema/neferwl/internal/domain"
 	"time"
-
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Slot is the XWM's window slot: table index + 1, stable until the window is
@@ -32,8 +31,8 @@ type WindowInfo struct {
 // (only passed when changed).
 type host interface {
 	// Created: a managed (non-override-redirect) X window is known; the host
-	// allocates a ports.WindowID and returns it. Not yet mapped.
-	Created(slot Slot, xid uint32) ports.WindowID
+	// allocates a domain.WindowID and returns it. Not yet mapped.
+	Created(slot Slot, xid uint32) domain.WindowID
 	// Ready: properties read and MapWindow issued; the surface may still be
 	// missing. Info is copied by the host.
 	Ready(slot Slot, info WindowInfo)

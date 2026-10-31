@@ -2,6 +2,7 @@ package xwm
 
 import (
 	"encoding/binary"
+	"github.com/bnema/neferwl/internal/domain"
 	"testing"
 
 	"bnema.dev/xturbo"
@@ -117,7 +118,7 @@ func TestStaleRepliesOfPreviousMapAreDropped(t *testing.T) {
 	hs.x.onReply(&xturbo.Reply{Kind: kindGeom, Args: [4]uint32{oldTag}, Raw: rep})
 	require.EqualValues(t, propCount+1, hs.x.Stats().Stale)
 	require.False(t, hs.x.tab.rec(s).ready)
-	require.Equal(t, propMaskAll&^propClientIDs, hs.x.tab.rec(s).pending, "the new map still awaits its own replies")
+	require.Equal(t, (uint16(propGeom<<1-1))&^propClientIDs, hs.x.tab.rec(s).pending, "the new map still awaits its own replies")
 }
 
 func TestGetGeometryBadDrawableIsNotReady(t *testing.T) {
@@ -210,7 +211,7 @@ func TestUnmapAndConfigureBeforeAttach(t *testing.T) {
 	post, _ := newPost()
 	var got WindowInfo
 	done := false
-	h.EXPECT().Created(mock.Anything, mock.Anything).Return(ports.WindowID(1)).Twice()
+	h.EXPECT().Created(mock.Anything, mock.Anything).Return(domain.WindowID(1)).Twice()
 	h.EXPECT().Ready(mock.Anything, mock.Anything).Run(func(_ Slot, i WindowInfo) { got, done = i, true }).Once()
 	x.attach(src, h, post)
 	readUntil(t, x, func() bool { return done })
@@ -228,3 +229,5 @@ func (hs *harness) notifyWMName(win uint32) {
 	hs.p.propertyNotify(win, uint32(xproto.AtomWmName), false)
 	readUntil(hs.t, hs.x, func() bool { return hs.x.Stats().Replies > before })
 }
+
+const propMaskAll uint16 = propGeom<<1 - 1

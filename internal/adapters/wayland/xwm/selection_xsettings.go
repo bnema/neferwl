@@ -120,8 +120,8 @@ func (x *XWM) onSelOwnerReply(r *xturbo.Reply) {
 	}
 }
 
-// onSelectionClear: another client took _XSETTINGS_S0.
-func (x *XWM) onSelectionClear(ev *xturbo.Event) {
+// onXSettingsClear: another client took _XSETTINGS_S0.
+func (x *XWM) onXSettingsClear(ev *xturbo.Event) {
 	e := xproto.SelectionClearEvent(xproto.SelectionClearOf(ev))
 	if x.xs.active && uint32(e.Owner()) == x.xs.win && uint32(e.Selection()) == x.atoms[atomXSettingsS0] {
 		x.xs.active = false

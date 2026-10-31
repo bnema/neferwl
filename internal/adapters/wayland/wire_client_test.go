@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"bnema.dev/purego-libwayland/server"
+	"bnema.dev/wlturbo"
 	client_alphamodifier "github.com/bnema/go-wayland-bindings/client/alphamodifier"
 	client_colormanagement "github.com/bnema/go-wayland-bindings/client/colormanagement"
 	client_colorrepresentation "github.com/bnema/go-wayland-bindings/client/colorrepresentation"
@@ -99,8 +101,6 @@ import (
 	wire_xwaylandkeyboardgrab "github.com/bnema/go-wayland-bindings/server/xwaylandkeyboardgrab"
 	wire_xwaylandshell "github.com/bnema/go-wayland-bindings/server/xwaylandshell"
 	wire_imagecapture "github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
-	"bnema.dev/purego-libwayland/server"
-	"bnema.dev/wlturbo"
 )
 
 type wireSignature interface{ EventSignature(uint16) (string, bool) }

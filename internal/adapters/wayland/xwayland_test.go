@@ -3,6 +3,7 @@ package wayland
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"bnema.dev/purego-libwayland/server"
 	"golang.org/x/sys/unix"
@@ -29,12 +30,14 @@ func assertFDClosed(t *testing.T, fd int) {
 	}
 }
 
+//testpolicy:realtime waits for destruction on real Wayland sockets
 func TestAttachXwaylandLifecycle(t *testing.T) {
 	h := newAdmissionHarness(t, 1)
 	wl := xwaylandPair(t)
 	h.s.AttachXwayland(wl[0])
 	var first server.Client
-	h.s.display.Do(func() { first = h.s.xwayland.client })
+	firstGone := make(chan struct{})
+	h.s.display.Do(func() { first = h.s.xwayland.client; first.OnDestroy(func() { close(firstGone) }) })
 	if first == (server.Client{}) {
 		t.Fatal("client not recorded")
 	}
@@ -42,22 +45,32 @@ func TestAttachXwaylandLifecycle(t *testing.T) {
 	h.s.AttachXwayland(wl2[0])
 	unix.Close(wl[1])
 	wl[1] = -1 // Old client's destroy must not clear the new record.
-	waitTrue(t, "old client destroyed", func() bool {
-		_, err := unix.FcntlInt(uintptr(wl[0]), unix.F_GETFD, 0)
-		return errors.Is(err, unix.EBADF)
-	})
+	select {
+	case <-firstGone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("old client not destroyed")
+	}
+
 	h.s.display.Do(func() {
 		if h.s.xwayland.client == (server.Client{}) || h.s.xwayland.client == first {
 			t.Error("replacement lost")
 		}
 	})
+	secondGone := make(chan struct{})
+	h.s.display.Do(func() { h.s.xwayland.client.OnDestroy(func() { close(secondGone) }) })
 	unix.Close(wl2[1])
 	wl2[1] = -1
-	waitTrue(t, "Xwayland disconnected", func() bool {
-		clear := false
-		h.s.display.Do(func() { clear = h.s.xwayland.client == (server.Client{}) })
-		return clear
+	select {
+	case <-secondGone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Xwayland not disconnected")
+	}
+	h.s.display.Do(func() {
+		if h.s.xwayland.client != (server.Client{}) {
+			t.Error("client not cleared")
+		}
 	})
+
 }
 
 func TestAttachXwaylandFailureClosesFDs(t *testing.T) {

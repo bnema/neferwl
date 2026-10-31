@@ -929,7 +929,7 @@ func TestFloatOverFullscreenHit(t *testing.T) {
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 64)
 		scenes := make(chan []domain.Scene, 1)
-		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, testOptions(t, core.Options{Clock: steppingClock(t)}))
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, testOptions(t, testOptions(t, core.Options{Clock: steppingClock(t)})))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -975,7 +975,7 @@ func TestDialogOverFullscreenHit(t *testing.T) {
 		output := make(chan ports.OutputEvent, 8)
 		commands := make(chan ports.ClientCommand, 64)
 		scenes := make(chan []domain.Scene, 1)
-		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, testOptions(t, core.Options{Clock: steppingClock(t)}))
+		c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}, testOptions(t, testOptions(t, core.Options{Clock: steppingClock(t)})))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1322,37 +1322,39 @@ func TestMappedFullscreenHonoured(t *testing.T) {
 		rule bool
 	}{{"fixed size", false}, {"floating rule", true}} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := scrollDefaults()
-			cfg.Border.Width = 0
-			if tc.rule {
-				on := true
-				cfg.Rules = []ports.WindowRule{{AppID: regexp.MustCompile("^game$"), Floating: &on}}
-			}
-			client := make(chan ports.ClientEvent, 8)
-			output := make(chan ports.OutputEvent, 8)
-			commands := make(chan ports.ClientCommand, 64)
-			scenes := make(chan []ports.Scene, 1)
-			c, err := core.New(cfg, core.Channels{Client: client, Input: make(chan ports.InputEvent, 8), Output: output, Commands: commands, Scenes: scenes}, core.Options{Clock: steppingClock(t)})
-			if err != nil {
-				t.Fatal(err)
-			}
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			go c.Run(ctx)
-			output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
-			scene(t, scenes)
-			client <- ports.WindowMapped{ID: 1}
-			scene(t, scenes)
-			client <- ports.WindowMapped{ID: 2, AppID: "game", Floating: true, Width: 100, Height: 80, Fullscreen: true}
-			s := scene(t, scenes)
-			for !slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 && w.Fullscreen && w.Focused && !w.Hidden }) {
-				s = scene(t, scenes)
-			}
-			for _, w := range s.Windows {
-				if w.ID == 2 && (w.Rect.W != 100 || w.Rect.H != 80) {
-					t.Fatalf("fullscreen rect %+v, want the output", w.Rect)
+			synctest.Test(t, func(t *testing.T) {
+				cfg := scrollDefaults()
+				cfg.Border.Width = 0
+				if tc.rule {
+					on := true
+					cfg.Rules = []domain.WindowRule{{AppID: regexp.MustCompile("^game$"), Floating: &on}}
 				}
-			}
+				client := make(chan ports.ClientEvent, 8)
+				output := make(chan ports.OutputEvent, 8)
+				commands := make(chan ports.ClientCommand, 64)
+				scenes := make(chan []domain.Scene, 1)
+				c, err := core.New(cfg, core.Channels{Client: client, Input: make(chan ports.InputEvent, 8), Output: output, Commands: commands, Scenes: scenes}, testOptions(t, core.Options{Clock: steppingClock(t)}))
+				if err != nil {
+					t.Fatal(err)
+				}
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				go c.Run(ctx)
+				output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+				scene(t, scenes)
+				client <- ports.WindowMapped{ID: 1}
+				scene(t, scenes)
+				client <- ports.WindowMapped{ID: 2, AppID: "game", Floating: true, Width: 100, Height: 80, Fullscreen: true}
+				s := scene(t, scenes)
+				for !slices.ContainsFunc(s.Windows, func(w domain.SceneWindow) bool { return w.ID == 2 && w.Fullscreen && w.Focused && !w.Hidden }) {
+					s = scene(t, scenes)
+				}
+				for _, w := range s.Windows {
+					if w.ID == 2 && (w.Rect.W != 100 || w.Rect.H != 80) {
+						t.Fatalf("fullscreen rect %+v, want the output", w.Rect)
+					}
+				}
+			})
 		})
 	}
 }

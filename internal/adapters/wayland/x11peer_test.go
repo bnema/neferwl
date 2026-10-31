@@ -25,6 +25,7 @@ type x11Peer struct {
 	nextAtom uint32
 	props    map[uint32]map[uint32][]byte // window -> atom -> typed data (type, format, data)
 	propMeta map[uint32]map[uint32][2]uint32
+	changed  chan struct{}
 	done     chan struct{}
 }
 
@@ -52,7 +53,7 @@ func startX11Peer(t *testing.T) (int, *x11Peer) {
 	}
 	p := &x11Peer{
 		t: t, f: os.NewFile(uintptr(fds[1]), "x11peer"), atoms: map[string]uint32{}, nextAtom: 1000,
-		props: map[uint32]map[uint32][]byte{}, propMeta: map[uint32]map[uint32][2]uint32{}, done: make(chan struct{}),
+		props: map[uint32]map[uint32][]byte{}, propMeta: map[uint32]map[uint32][2]uint32{}, changed: make(chan struct{}, 1), done: make(chan struct{}),
 	}
 	t.Cleanup(func() { p.f.Close(); <-p.done })
 	go p.serve()
@@ -109,6 +110,10 @@ func (p *x11Peer) serve() {
 		p.seq++
 		r := x11Req{h[0], h[1], raw}
 		p.reqs = append(p.reqs, r)
+		select {
+		case p.changed <- struct{}{}:
+		default:
+		}
 		p.answer(r, raw[len(raw)-len(rest):])
 		p.mu.Unlock()
 	}
@@ -315,18 +320,24 @@ func (p *x11Peer) requests() []x11Req {
 }
 
 // waitReq waits for a request after the first skip ones that satisfies match.
+//
+//testpolicy:realtime waits for real X11 socket requests
 func (p *x11Peer) waitReq(skip int, match func(x11Req) bool) (x11Req, int) {
 	p.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	deadline := time.After(5 * time.Second)
+	for {
 		reqs := p.requests()
 		for i := skip; i < len(reqs); i++ {
 			if match(reqs[i]) {
 				return reqs[i], i + 1
 			}
 		}
-		time.Sleep(time.Millisecond)
+		select {
+		case <-p.changed:
+		case <-deadline:
+			p.t.Fatal("request not received")
+			return x11Req{}, 0
+		}
 	}
-	p.t.Fatal("x11 peer: expected request never arrived")
-	return x11Req{}, 0
+
 }

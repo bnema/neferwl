@@ -6,8 +6,8 @@ import (
 
 	"github.com/bnema/neferwl/internal/domain"
 
-	ext "github.com/bnema/go-wayland-bindings/server/extforeigntoplevellist"
 	"bnema.dev/purego-libwayland/server"
+	ext "github.com/bnema/go-wayland-bindings/server/extforeigntoplevellist"
 )
 
 // ext-foreign-toplevel-list lists mapped toplevels, read-only: title, app_id

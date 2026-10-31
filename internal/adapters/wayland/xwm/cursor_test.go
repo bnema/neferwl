@@ -1,9 +1,9 @@
 package xwm
 
 import (
+	"github.com/bnema/neferwl/internal/domain"
 	"testing"
 
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
 
@@ -13,7 +13,7 @@ func rootCursorExts() map[string]xpeerExt {
 	return e
 }
 
-func bootCursor(t *testing.T, exts map[string]xpeerExt, mutate func(*xpeer), cfg ports.XwaylandSettings) (*XWM, *xpeer) {
+func bootCursor(t *testing.T, exts map[string]xpeerExt, mutate func(*xpeer), cfg domain.XwaylandSettings) (*XWM, *xpeer) {
 	t.Helper()
 	fd, p := startXPeer(t, exts)
 	if mutate != nil {
@@ -22,11 +22,12 @@ func bootCursor(t *testing.T, exts map[string]xpeerExt, mutate func(*xpeer), cfg
 	x, err := BootSettings(t.Context(), fd, testLog(), cfg)
 	require.NoError(t, err)
 	t.Cleanup(x.CloseConn)
+	xTestPeers.Store(x, p)
 	return x, p
 }
 
-func cursorCfg() ports.XwaylandSettings {
-	return ports.XwaylandSettings{RootCursor: true, Cursor: ports.CursorImage{W: 2, H: 2, HotX: 1, HotY: 0, Pixels: make([]byte, 16)}}
+func cursorCfg() domain.XwaylandSettings {
+	return domain.XwaylandSettings{RootCursor: true, Cursor: domain.CursorImage{W: 2, H: 2, HotX: 1, HotY: 0, Pixels: make([]byte, 16)}}
 }
 
 func TestRootCursorRequests(t *testing.T) {
@@ -80,7 +81,7 @@ func TestRootCursorFallbackWithoutARGB(t *testing.T) {
 }
 
 func TestRootCursorOff(t *testing.T) {
-	_, p := bootCursor(t, rootCursorExts(), nil, ports.XwaylandSettings{})
+	_, p := bootCursor(t, rootCursorExts(), nil, domain.XwaylandSettings{})
 	require.Zero(t, p.count(94, nil))
 	require.Zero(t, p.count(53, nil))
 }

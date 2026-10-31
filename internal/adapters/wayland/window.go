@@ -1,9 +1,9 @@
 package wayland
 
 import (
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
-	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/server"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // Role-independent accessors of a window. Code outside xdg.go goes through
@@ -55,11 +55,11 @@ func (w *window) client() server.Client {
 }
 
 // geometry is the committed window geometry; empty means the whole surface.
-func (w *window) geometry() ports.Rect {
+func (w *window) geometry() domain.Rect {
 	if w.xdg != nil {
 		return w.xdg.geometry
 	}
-	return ports.Rect{}
+	return domain.Rect{}
 }
 
 // sendConfigure sends w.last to the client.
@@ -95,7 +95,10 @@ func (w *window) toplevelAlive() bool {
 func (w *window) surfaceResource() *wayland.Surface {
 	switch {
 	case w.xdg != nil:
-		return w.xdg.surfaceResource()
+		if surf := w.xdg.surface; surf != nil && surf.wl != nil && surf.wl.Resource.Alive() {
+			return surf.wl
+		}
+		return nil
 	case w.x11 != nil && w.alive():
 		return w.x11.surface.wl
 	}

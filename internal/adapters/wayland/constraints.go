@@ -3,13 +3,13 @@ package wayland
 import (
 	"time"
 
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/pointerconstraints"
 	"github.com/bnema/go-wayland-bindings/server/pointerwarp"
 	"github.com/bnema/go-wayland-bindings/server/relativepointer"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/purego-libwayland/server"
 )
 
 func registerPointerConstraints(d *server.Display, s *Server) error {

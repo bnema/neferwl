@@ -3,15 +3,15 @@ package xwm
 import (
 	"context"
 	"encoding/binary"
+	"github.com/bnema/neferwl/internal/domain"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 )
 
-func bootSettings(t *testing.T, cfg ports.XwaylandSettings, mutate func(p *xpeer)) (*XWM, *xpeer) {
+func bootSettings(t *testing.T, cfg domain.XwaylandSettings, mutate func(p *xpeer)) (*XWM, *xpeer) {
 	t.Helper()
 	fd, p := startXPeer(t, fullPeerExts())
 	if mutate != nil {
@@ -20,6 +20,7 @@ func bootSettings(t *testing.T, cfg ports.XwaylandSettings, mutate func(p *xpeer
 	x, err := BootSettings(context.Background(), fd, testLog(), cfg)
 	require.NoError(t, err)
 	t.Cleanup(x.CloseConn)
+	xTestPeers.Store(x, p)
 	return x, p
 }
 
@@ -81,7 +82,7 @@ func TestXSettingsEncode(t *testing.T) {
 }
 
 func TestXSettingsOwnership(t *testing.T) {
-	x, p := bootSettings(t, ports.XwaylandSettings{XSettings: true, CursorTheme: "Adw", CursorSize: 32}, nil)
+	x, p := bootSettings(t, domain.XwaylandSettings{XSettings: true, CursorTheme: "Adw", CursorSize: 32}, nil)
 	win := x.xs.win
 	require.NotZero(t, win)
 	s0, mgr := p.atom("_XSETTINGS_S0"), p.atom("MANAGER")
@@ -119,7 +120,7 @@ func TestXSettingsOwnership(t *testing.T) {
 
 func TestXSettingsExistingOwner(t *testing.T) {
 	var s0 uint32
-	x, p := bootSettings(t, ports.XwaylandSettings{XSettings: true}, func(p *xpeer) {
+	x, p := bootSettings(t, domain.XwaylandSettings{XSettings: true}, func(p *xpeer) {
 		p.selOwner = map[uint32]uint32{}
 		// atoms are assigned on intern: pre-assign through a known name.
 		p.nextAtom++
@@ -134,7 +135,7 @@ func TestXSettingsExistingOwner(t *testing.T) {
 }
 
 func TestXSettingsOff(t *testing.T) {
-	_, p := bootSettings(t, ports.XwaylandSettings{XSettings: false, CursorSize: 24}, nil)
+	_, p := bootSettings(t, domain.XwaylandSettings{XSettings: false, CursorSize: 24}, nil)
 	s0 := p.atom("_XSETTINGS_S0")
 	require.Zero(t, p.count(opSetSelectionOwner, func(r xpeerReq) bool { return r.u32(8) == s0 && s0 != 0 }))
 	require.Zero(t, p.count(opGetSelectionOwner, nil))
@@ -164,7 +165,7 @@ func decodeSettings(t *testing.T, b []byte) (uint32, map[string]uint32) {
 }
 
 func TestXSettingsSerial(t *testing.T) {
-	x, p := bootSettings(t, ports.XwaylandSettings{XSettings: true, CursorSize: 24}, nil)
+	x, p := bootSettings(t, domain.XwaylandSettings{XSettings: true, CursorSize: 24}, nil)
 	win := x.xs.win
 	props := func() int {
 		return p.count(opChangeProperty, func(r xpeerReq) bool { return r.u32(4) == win })
@@ -173,7 +174,7 @@ func TestXSettingsSerial(t *testing.T) {
 	// Layout changes (any scale) and identical settings write nothing.
 	for _, scale := range []float64{1, 2} {
 		var sp Space
-		sp.Set(ports.Layout{{Width: 100, Height: 100, Scale: scale}})
+		sp.Set(domain.Layout{{Width: 100, Height: 100, Scale: scale}})
 		x.space = &sp
 		x.LayoutChanged(true)
 		require.NoError(t, x.conn.Flush())
@@ -207,12 +208,12 @@ func TestXSettingsSerial(t *testing.T) {
 }
 
 func TestXSettingsNoChangeAllocations(t *testing.T) {
-	x, _ := bootSettings(t, ports.XwaylandSettings{XSettings: true, CursorTheme: "Adw", CursorSize: 24}, nil)
+	x, _ := bootSettings(t, domain.XwaylandSettings{XSettings: true, CursorTheme: "Adw", CursorSize: 24}, nil)
 	var sp Space
-	sp.Set(ports.Layout{{Width: 100, Height: 100, Scale: 1}})
+	sp.Set(domain.Layout{{Width: 100, Height: 100, Scale: 1}})
 	x.space = &sp
 	x.LayoutChanged(true)
-	l := ports.Layout{{Width: 100, Height: 100, Scale: 2}}
+	l := domain.Layout{{Width: 100, Height: 100, Scale: 2}}
 	n := testing.AllocsPerRun(100, func() {
 		sp.Set(l)
 		x.LayoutChanged(false)
@@ -223,7 +224,7 @@ func TestXSettingsNoChangeAllocations(t *testing.T) {
 
 // The XSETTINGS manager window is never adopted as a client window.
 func TestXSettingsWindowNotAdopted(t *testing.T) {
-	x, p := bootSettings(t, ports.XwaylandSettings{XSettings: true}, nil)
+	x, p := bootSettings(t, domain.XwaylandSettings{XSettings: true}, nil)
 	h := newMockhost(t)
 	post, _ := newPost()
 	x.attach(newMockfdSource(t), h, post)

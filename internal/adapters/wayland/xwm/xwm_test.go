@@ -3,14 +3,16 @@ package xwm
 import (
 	"context"
 	"encoding/binary"
+	"github.com/bnema/neferwl/internal/domain"
+	"golang.org/x/sys/unix"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"bnema.dev/xturbo/xproto"
-	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/zerowrap"
+	"bnema.dev/zerowrap"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -27,6 +29,7 @@ func bootPeer(t *testing.T, mutate func(p *xpeer)) (*XWM, *xpeer) {
 	x, err := Boot(context.Background(), fd, testLog())
 	require.NoError(t, err)
 	t.Cleanup(x.CloseConn)
+	xTestPeers.Store(x, p)
 	return x, p
 }
 
@@ -185,15 +188,25 @@ func TestBootExistingWindows(t *testing.T) {
 }
 
 // readUntil dispatches the socket until cond holds.
+var xTestPeers sync.Map
+
+//testpolicy:realtime waits for real X11 protocol replies and peer request progress
 func readUntil(t *testing.T, x *XWM, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.After(5 * time.Second)
+	peer, _ := xTestPeers.Load(x)
+	p := peer.(*xpeer)
 	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatal("condition never held")
-		}
 		x.onReadable()
-		time.Sleep(time.Millisecond)
+		if cond() {
+			return
+		}
+		// The peer signals after replying too: queued replies and outbound effects are both observable.
+		select {
+		case <-p.changed:
+		case <-deadline:
+			t.Fatal("X11 condition never held")
+		}
 	}
 }
 
@@ -209,10 +222,10 @@ func TestAttachAnnouncesWindowsFoundAtBoot(t *testing.T) {
 	})
 	h := newMockhost(t)
 	src := newMockfdSource(t)
-	h.EXPECT().Created(x.tab.lookup(0x400001), uint32(0x400001)).Return(ports.WindowID(7)).Once()
+	h.EXPECT().Created(x.tab.lookup(0x400001), uint32(0x400001)).Return(domain.WindowID(7)).Once()
 	post, _ := newPost()
 	x.attach(src, h, post)
-	require.Equal(t, ports.WindowID(7), x.tab.rec(x.tab.lookup(0x400001)).id)
+	require.Equal(t, domain.WindowID(7), x.tab.rec(x.tab.lookup(0x400001)).id)
 }
 
 func attached(t *testing.T) (*XWM, *xpeer, *mockhost, *mockfdSource, *[]func()) {
@@ -228,12 +241,12 @@ func attached(t *testing.T) (*XWM, *xpeer, *mockhost, *mockfdSource, *[]func()) 
 func TestCreateAndDestroyManaged(t *testing.T) {
 	x, p, h, src, _ := attached(t)
 	const win = 0x500001
-	h.EXPECT().Created(mock.Anything, uint32(win)).Return(ports.WindowID(3)).Once()
+	h.EXPECT().Created(mock.Anything, uint32(win)).Return(domain.WindowID(3)).Once()
 	p.createNotify(win, false)
 	readUntil(t, x, func() bool { return x.tab.lookup(win) != 0 })
 	s := x.tab.lookup(win)
 	require.Equal(t, kindManaged, x.tab.rec(s).kind)
-	require.Equal(t, ports.WindowID(3), x.tab.rec(s).id)
+	require.Equal(t, domain.WindowID(3), x.tab.rec(s).id)
 
 	// The window is watched for property and focus changes.
 	req, _ := p.waitReq(0, func(r xpeerReq) bool { return r.major == opChangeWindowAttributes && r.u32(4) == win })
@@ -270,7 +283,7 @@ func TestOverrideRedirectNeverReachesHost(t *testing.T) {
 func TestCloseDissociatesEverything(t *testing.T) {
 	x, p, h, src, _ := attached(t)
 	for _, win := range []uint32{0x500001, 0x500002} {
-		h.EXPECT().Created(mock.Anything, win).Return(ports.WindowID(win)).Once()
+		h.EXPECT().Created(mock.Anything, win).Return(domain.WindowID(win)).Once()
 		p.createNotify(win, false)
 	}
 	p.createNotify(0x500003, true)
@@ -286,7 +299,7 @@ func TestCloseDissociatesEverything(t *testing.T) {
 
 func TestEOFClosesXWM(t *testing.T) {
 	x, p, h, src, _ := attached(t)
-	h.EXPECT().Created(mock.Anything, uint32(0x500001)).Return(ports.WindowID(1)).Once()
+	h.EXPECT().Created(mock.Anything, uint32(0x500001)).Return(domain.WindowID(1)).Once()
 	p.createNotify(0x500001, false)
 	readUntil(t, x, func() bool { return x.tab.lookup(0x500001) != 0 })
 	h.EXPECT().Dissociate(x.tab.lookup(0x500001), true).Once()
@@ -324,21 +337,20 @@ func TestWriteBackpressure(t *testing.T) {
 	drained := false
 	src.EXPECT().SetWritable(false).RunAndReturn(func(bool) error { drained = true; return nil }).Once()
 	p.resume()
-	deadline := time.Now().Add(10 * time.Second)
 	for !drained {
-		require.True(t, time.Now().Before(deadline), "never drained")
+		waitSocket(t, x.conn.Fd(), unix.POLLOUT)
 		x.onWritable()
-		time.Sleep(time.Millisecond)
 	}
 	require.False(t, x.writable)
 }
 
 func TestFlushWithNothingQueuedSendsNothing(t *testing.T) {
 	x, p, _, _, _ := attached(t)
+	require.NoError(t, x.conn.Sync(&x.h))
 	n := len(p.requests())
 	x.flush()
-	time.Sleep(20 * time.Millisecond)
-	require.Len(t, p.requests(), n, "nothing queued, nothing sent")
+	require.NoError(t, x.conn.Sync(&x.h))
+	require.Len(t, p.requests(), n+1, "nothing queued, nothing sent")
 }
 
 // bootOnlyFiles run only from boot() (XSETTINGS manager, root cursor).

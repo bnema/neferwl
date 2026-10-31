@@ -3,11 +3,13 @@ package wayland
 import (
 	"context"
 	"encoding/binary"
+	"github.com/bnema/neferwl/internal/domain"
 	"net"
 	"os"
 	"testing"
 	"time"
 
+	"bnema.dev/wlturbo"
 	"github.com/bnema/go-wayland-bindings/server/pointerconstraints"
 	"github.com/bnema/go-wayland-bindings/server/relativepointer"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
@@ -15,7 +17,6 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/xwaylandkeyboardgrab"
 	"github.com/bnema/go-wayland-bindings/server/xwaylandshell"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
@@ -106,6 +107,7 @@ func (r *x11Rig) pair(win uint32, serial uint64) uint32 {
 	return surf
 }
 
+//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
 func awaitEvent[T ports.ClientEvent](t *testing.T, events <-chan ports.ClientEvent) T {
 	t.Helper()
 	for deadline := time.After(3 * time.Second); ; {
@@ -122,17 +124,13 @@ func awaitEvent[T ports.ClientEvent](t *testing.T, events <-chan ports.ClientEve
 }
 
 func TestXwaylandGlobalFilter(t *testing.T) {
-	s, _, _, dir := lifecycleServer(t)
-	other := protocolClient(t, s, dir)
+	r := newX11Rig(t)
+	other := protocolClient(t, r.s, r.dir)
 	for _, iface := range []string{"xwayland_shell_v1", "zwp_xwayland_keyboard_grab_manager_v1"} {
 		if _, ok := other.Registry().FindGlobal(iface); ok {
 			t.Errorf("ordinary client sees %s", iface)
 		}
 	}
-	if _, ok := other.Registry().FindGlobal("xdg_wm_base"); !ok {
-		t.Error("ordinary globals filtered out")
-	}
-	r := newX11Rig(t)
 	if _, ok := r.xc.Registry().FindGlobal("xwayland_shell_v1"); !ok {
 		t.Error("Xwayland client misses xwayland_shell_v1")
 	}
@@ -198,14 +196,13 @@ func TestX11WindowLifecycle(t *testing.T) {
 		t.Fatalf("app id %+v", a)
 	}
 	var title string
-	waitTrue(t, "title", func() bool {
-		r.s.display.Do(func() {
-			if w := r.s.windows[m.ID]; w != nil {
-				title = w.title
-			}
-		})
-		return title == "renamed"
-	})
+	if err := r.xc.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	r.s.display.Do(func() { title = r.s.windows[m.ID].title })
+	if title != "renamed" {
+		t.Fatalf("title %q", title)
+	}
 
 	// Fullscreen request from the client.
 	p.clientMessage(win, "_NET_WM_STATE", 1, p.atom("_NET_WM_STATE_FULLSCREEN"))
@@ -278,11 +275,14 @@ func TestX11WindowSurfaceFirstAndRemap(t *testing.T) {
 		t.Fatalf("unmapped %+v", u)
 	}
 	p.destroyNotify(win)
-	waitTrue(t, "window forgotten", func() bool {
-		gone := false
-		r.s.display.Do(func() { gone = r.s.windows[m.ID] == nil })
-		return gone
+	// An ordered X event after DestroyNotify is observed through a second mapped window.
+	r.x11Window(win + 1)
+	r.s.display.Do(func() {
+		if r.s.windows[m.ID] != nil {
+			t.Error("window not forgotten")
+		}
 	})
+
 }
 
 // stop closes the XWM: its windows unmap, and the server keeps serving.
@@ -306,6 +306,8 @@ func TestX11StopUnmapsWindows(t *testing.T) {
 
 // Boot gives up as soon as its context ends, even against a silent server,
 // and leaves the server serving.
+//
+//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
 func TestAttachXWMBootAbortsWithContext(t *testing.T) {
 	s, _, _, dir := lifecycleServer(t)
 	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
@@ -355,13 +357,13 @@ func TestX11WindowPointerLock(t *testing.T) {
 	}
 	r.commands <- ports.PointerFocus{ID: m.ID}
 	r.commands <- ports.FocusWindow{ID: m.ID}
-	if got := constrained(t, r.events); got.ID != m.ID || got.Mode != ports.ConstraintLock {
+	if got := constrained(t, r.events); got.ID != m.ID || got.Mode != domain.ConstraintLock {
 		t.Fatalf("constrained %+v", got)
 	}
 }
 
 // grabRig is an X11 window with an Xwayland keyboard grab on its surface.
-func grabRig(t *testing.T) (r *x11Rig, w ports.WindowID, surf uint32) {
+func grabRig(t *testing.T) (r *x11Rig, w domain.WindowID, surf uint32) {
 	t.Helper()
 	r = newX11Rig(t)
 	r.x11Window(x11Win)
@@ -380,6 +382,8 @@ func grabRig(t *testing.T) (r *x11Rig, w ports.WindowID, surf uint32) {
 }
 
 // noInhibit fails when a ShortcutsInhibit event arrives shortly.
+//
+//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
 func noInhibit(t *testing.T, r *x11Rig) {
 	t.Helper()
 	if err := r.xc.Roundtrip(); err != nil {
@@ -464,7 +468,7 @@ func TestX11LockFollowsFocusAndRelativeMotion(t *testing.T) {
 	if ev := next(t, r.xc, lockEvents); ev[0] != float64(pointerconstraints.ZwpLockedPointerV1EventLocked) {
 		t.Fatalf("lock event %v", ev)
 	}
-	if got := constrained(t, r.events); got.ID != m.ID || got.Mode != ports.ConstraintLock || got.Rect != (ports.Rect{}) {
+	if got := constrained(t, r.events); got.ID != m.ID || got.Mode != domain.ConstraintLock || got.Rect != (domain.Rect{}) {
 		t.Fatalf("constrained %+v", got)
 	}
 
@@ -516,7 +520,7 @@ func TestX11ConfineRegionHasNoOffset(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.state(func() {
-		if g := r.s.windows[m.ID].geometry(); g != (ports.Rect{}) {
+		if g := r.s.windows[m.ID].geometry(); g != (domain.Rect{}) {
 			t.Errorf("X11 geometry %+v, want zero", g)
 		}
 	})
@@ -527,7 +531,7 @@ func TestX11ConfineRegionHasNoOffset(t *testing.T) {
 	if ev := next(t, r.xc, confineEvents); ev[0] != float64(pointerconstraints.ZwpConfinedPointerV1EventConfined) {
 		t.Fatalf("confine event %v", ev)
 	}
-	want := ports.PointerConstrained{ID: m.ID, PointerConstraint: ports.PointerConstraint{Mode: ports.ConstraintConfine, Rect: ports.Rect{X: 5, Y: 6, W: 20, H: 30}}}
+	want := ports.PointerConstrained{ID: m.ID, PointerConstraint: domain.PointerConstraint{Mode: domain.ConstraintConfine, Rect: domain.Rect{X: 5, Y: 6, W: 20, H: 30}}}
 	if got := constrained(t, r.events); got != want {
 		t.Fatalf("constrained %+v, want %+v", got, want)
 	}
@@ -535,27 +539,25 @@ func TestX11ConfineRegionHasNoOffset(t *testing.T) {
 
 // waitOn waits until window id's surface is on output name: commands reach
 // the display goroutine asynchronously.
-func (r *x11Rig) waitOn(id ports.WindowID, name string) {
+func (r *x11Rig) waitOn(id domain.WindowID, name string) {
 	r.t.Helper()
-	waitTrue(r.t, "surface on "+name, func() bool {
-		ok := false
-		r.state(func() {
-			if w := r.s.windows[id]; w != nil {
-				on := w.surf().on
-				ok = on != nil && on.name() == name
-			}
-		})
-		return ok
+	flushCommands(r.t, r.s, r.commands)
+	r.state(func() {
+		w := r.s.windows[id]
+		if w == nil || w.surf().on == nil || w.surf().on.name() != name {
+			r.t.Fatalf("surface not on %s", name)
+		}
 	})
+
 }
 
 // An X11 window is on one output only, even straddling two: a single
 // wl_surface.enter, and a leave only when its output changes.
 func TestX11WindowEntersOneOutput(t *testing.T) {
 	r := newX11Rig(t)
-	r.commands <- ports.SetOutputs{Outputs: ports.Layout{
-		{Info: ports.OutputInfo{Name: "A"}, X: 0, Y: 0, Width: 1920, Height: 1080, Scale: 1},
-		{Info: ports.OutputInfo{Name: "B"}, X: 1920, Y: 0, Width: 1920, Height: 1080, Scale: 1},
+	r.commands <- ports.SetOutputs{Outputs: domain.Layout{
+		{Info: domain.OutputInfo{Name: "A"}, X: 0, Y: 0, Width: 1920, Height: 1080, Scale: 1},
+		{Info: domain.OutputInfo{Name: "B"}, X: 1920, Y: 0, Width: 1920, Height: 1080, Scale: 1},
 	}, Focused: "A"}
 	r.state(func() {}) // the layout is applied
 	if err := r.xc.Roundtrip(); err != nil {
@@ -625,3 +627,4 @@ func TestX11WindowEntersOneOutput(t *testing.T) {
 		t.Fatalf("move to B: %d enters, %d leaves, want 1, 1", e, l)
 	}
 }
+

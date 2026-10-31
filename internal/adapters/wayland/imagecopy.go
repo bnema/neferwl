@@ -13,11 +13,11 @@ import (
 
 	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
 
+	"bnema.dev/purego-libwayland/server"
 	extworkspace "github.com/bnema/go-wayland-bindings/server/extworkspace"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/purego-libwayland/server"
 )
 
 // ext-image-copy-capture with three kinds of source: an output (the standard

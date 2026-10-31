@@ -57,7 +57,7 @@ type Options struct {
 	Casts ports.CastSink
 	// Xwayland is what the built-in XWM publishes to X11 clients
 	// (XSETTINGS, root cursor); the zero value publishes nothing.
-	Xwayland ports.XwaylandSettings
+	Xwayland domain.XwaylandSettings
 	// LogDamage logs the damage of every fresh client commit at debug level
 	// (--debug=wayland-damage).
 	LogDamage bool
@@ -173,19 +173,19 @@ type Server struct {
 	// securityDone, captured by each listener at commit, is signalled when that
 	// listener goroutine has exited and closed its descriptors. Sends never
 	// block.
-	securityCreated chan<- server.Client
-	securityDone    chan<- struct{}
-	display         *server.Display
-	env             procEnv
-	name            string
-	cleanup         func()
-	log             zerowrap.Logger
-	logDamage       bool
-	channels        Channels
-	xwayland        xwaylandClient
-	xwm             *xwm.XWM
-	x11Slots        map[xwm.Slot]*window
-xdgPublic, xdgPrivate *server.Global
+	securityCreated       chan<- server.Client
+	securityDone          chan<- struct{}
+	display               *server.Display
+	env                   procEnv
+	name                  string
+	cleanup               func()
+	log                   zerowrap.Logger
+	logDamage             bool
+	channels              Channels
+	xwayland              xwaylandClient
+	xwm                   *xwm.XWM
+	x11Slots              map[xwm.Slot]*window
+	xdgPublic, xdgPrivate *server.Global
 	// awaiting holds frame callbacks by output name, due at its next
 	// frame (frameDue, or its page flip).
 	awaiting    map[string][]*wayland.Callback
@@ -283,7 +283,7 @@ xdgPublic, xdgPrivate *server.Global
 	// inhibitors are the live inhibitor objects (inhibit.go);
 	// shortcutWindows and idleWindows what core was told.
 	inhibitors                   []*inhibitor
-	xgrab                        *xwaylandGrab  // Xwayland keyboard grab (xwaylandgrab.go)
+	xgrab                        *xwaylandGrab   // Xwayland keyboard grab (xwaylandgrab.go)
 	xgrabbed                     domain.WindowID // window the grab inhibits for
 	shortcutWindows, idleWindows map[domain.WindowID]bool
 	// busInhibited is the last IdleInhibited value (idle.go).
@@ -305,7 +305,7 @@ xdgPublic, xdgPrivate *server.Global
 	workspaceIDs      *workspaceid.IDs
 	outputHeads       domain.OutputHeads
 	outputPlaces      domain.Layout
-	xsettings         ports.XwaylandSettings
+	xsettings         domain.XwaylandSettings
 	xspace            xwm.Space // the one layout <-> X mapping, shared with the XWM
 	managementSerial  uint32
 	nextOutputApply   uint64

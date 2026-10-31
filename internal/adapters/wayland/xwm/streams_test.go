@@ -2,13 +2,13 @@ package xwm
 
 import (
 	"encoding/hex"
+	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strings"
 	"testing"
-	"time"
 
 	"bnema.dev/xturbo/xproto"
 	"github.com/stretchr/testify/require"
@@ -154,15 +154,12 @@ func replay(t *testing.T, k streamKind) (mallocs uint64, hs *harness) {
 	x.post = func(func()) {}
 	base := x.Stats().Events + x.Stats().Replies
 	drive := func(until uint64) {
-		deadline := time.Now().Add(10 * time.Second)
 		for x.Stats().Events+x.Stats().Replies < until {
-			if time.Now().After(deadline) { // no formatting arguments: boxing them would count as mallocs
-				t.Fatal("stream stalled")
-			}
+
 			before := x.Stats().Events + x.Stats().Replies
 			x.onReadable()
 			if x.Stats().Events+x.Stats().Replies == before {
-				runtime.Gosched()
+				waitSocket(t, x.conn.Fd(), unix.POLLIN)
 			}
 		}
 	}

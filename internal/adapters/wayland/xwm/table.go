@@ -1,11 +1,8 @@
-//lint:file-ignore U1000 pend, sent and stateSent are used by the configure flow
-
 package xwm
 
 import (
+	"github.com/bnema/neferwl/internal/domain"
 	"math/bits"
-
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Record kinds.
@@ -37,7 +34,7 @@ type ovRect struct{ x, y, w, h int32 }
 // heap data.
 type record struct {
 	xid  uint32
-	id   ports.WindowID
+	id   domain.WindowID
 	kind uint8
 	gen  uint16 // bumped on insert; stale Expect replies are told apart by it
 

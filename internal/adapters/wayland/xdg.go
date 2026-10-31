@@ -449,10 +449,10 @@ func (w *window) afterCommit() {
 		// the window is on.
 		if fw, fh := w.size(); !w.sized && fw > 0 && fh > 0 {
 			w.sized = true
-			if !w.xdg.server.outputSized(fw, fh) {
+			if !w.srv().outputSized(fw, fh) {
 				return
 			}
-			w.xdg.server.emit(ports.WindowResized{ID: w.id, Width: fw, Height: fh})
+			w.srv().emit(ports.WindowResized{ID: w.id, Width: fw, Height: fh})
 		}
 		return
 	}
@@ -488,15 +488,6 @@ func (w *window) size() (int, int) {
 func (w *window) surfacePoint(x, y float64) (float64, float64) {
 	g := w.geometry()
 	return x + float64(g.X), y + float64(g.Y)
-}
-
-func (x *xdgSurface) surfaceResource() *wayland.Surface {
-	for resource, state := range x.server.surfaces {
-		if state == x.surface && resource.Alive() {
-			return wayland.WrapSurface(resource)
-		}
-	}
-	return nil
 }
 
 // outputSized reports whether an output has the logical size w×h.

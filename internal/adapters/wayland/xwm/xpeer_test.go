@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"io"
 	"os"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -98,8 +97,11 @@ type xpeer struct {
 	parked, reading atomic.Bool // peer state: at the closed gate / blocked in the header read
 	sink            atomic.Bool // discard requests without recording or allocating
 	// discarded counts requests fully dropped in sink mode.
-	discarded atomic.Uint64
-	done      chan struct{}
+	discarded      atomic.Uint64
+	changed        chan struct{}
+	parkedEvent    chan struct{}
+	discardedEvent chan struct{}
+	done           chan struct{}
 }
 
 func fullPeerExts() map[string]xpeerExt {
@@ -125,7 +127,7 @@ func startXPeer(t *testing.T, exts map[string]xpeerExt) (int, *xpeer) {
 		exts: exts, atoms: map[string]uint32{}, nextAtom: 1000,
 		props: map[uint32]map[uint32]xpeerProp{}, geoms: map[uint32]xpeerGeom{}, attrs: map[uint32][2]byte{},
 		pids: map[uint32]uint32{}, bad: map[uint32]bool{},
-		done: make(chan struct{}),
+		parkedEvent: make(chan struct{}, 1), discardedEvent: make(chan struct{}, 1), changed: make(chan struct{}, 1), done: make(chan struct{}),
 	}
 	open := make(chan struct{})
 	close(open)
@@ -171,6 +173,10 @@ func (p *xpeer) serve() {
 		case <-*p.gate.Load():
 		default:
 			p.parked.Store(true)
+			select {
+			case p.parkedEvent <- struct{}{}:
+			default:
+			}
 			<-*p.gate.Load()
 			p.parked.Store(false)
 		}
@@ -187,6 +193,10 @@ func (p *xpeer) serve() {
 				return
 			}
 			p.discarded.Add(1)
+			select {
+			case p.discardedEvent <- struct{}{}:
+			default:
+			}
 			continue
 		}
 		var h [4]byte
@@ -210,7 +220,15 @@ func (p *xpeer) serve() {
 		p.seq++
 		r := xpeerReq{p.seq, h[0], h[1], raw}
 		p.reqs = append(p.reqs, r)
+		select {
+		case p.changed <- struct{}{}:
+		default:
+		}
 		p.answer(r, raw[len(raw)-len(rest):])
+		select {
+		case p.changed <- struct{}{}:
+		default:
+		}
 		p.mu.Unlock()
 	}
 }
@@ -472,20 +490,26 @@ func (p *xpeer) requests() []xpeerReq {
 
 // waitReq waits for a request satisfying match among those after the first
 // skip requests, and returns it with the new count.
+//
+//testpolicy:realtime waits for requests on a real X11 socket
 func (p *xpeer) waitReq(skip int, match func(xpeerReq) bool) (xpeerReq, int) {
 	p.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	deadline := time.After(5 * time.Second)
+	for {
 		reqs := p.requests()
 		for i := skip; i < len(reqs); i++ {
 			if match(reqs[i]) {
 				return reqs[i], i + 1
 			}
 		}
-		time.Sleep(time.Millisecond)
+		select {
+		case <-p.changed:
+		case <-deadline:
+			p.t.Fatal("peer: expected request never arrived")
+			return xpeerReq{}, 0
+		}
 	}
-	p.t.Fatal("xpeer: expected request never arrived")
-	return xpeerReq{}, 0
+
 }
 
 func (p *xpeer) atom(name string) uint32 {
@@ -542,10 +566,14 @@ func (p *xpeer) pause() {
 // waitParked waits until the peer goroutine is parked at the closed gate. A
 // peer blocked in its header read only gets there after one more request, so
 // the caller must have one in flight (or be sure it is parked already).
+//
+//testpolicy:realtime waits for the real socket reader to park
 func (p *xpeer) waitParked() {
 	p.t.Helper()
-	for !p.parked.Load() {
-		runtime.Gosched()
+	select {
+	case <-p.parkedEvent:
+	case <-time.After(5 * time.Second):
+		p.t.Fatal("peer did not park")
 	}
 }
 

@@ -7,7 +7,7 @@ package xwm
 import (
 	"time"
 
-	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -199,18 +199,18 @@ func (_c *mockhost_Associate_Call) RunAndReturn(run func(slot Slot, surfaceID ui
 }
 
 // Created provides a mock function for the type mockhost
-func (_mock *mockhost) Created(slot Slot, xid uint32) ports.WindowID {
+func (_mock *mockhost) Created(slot Slot, xid uint32) domain.WindowID {
 	ret := _mock.Called(slot, xid)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Created")
 	}
 
-	var r0 ports.WindowID
-	if returnFunc, ok := ret.Get(0).(func(Slot, uint32) ports.WindowID); ok {
+	var r0 domain.WindowID
+	if returnFunc, ok := ret.Get(0).(func(Slot, uint32) domain.WindowID); ok {
 		r0 = returnFunc(slot, xid)
 	} else {
-		r0 = ret.Get(0).(ports.WindowID)
+		r0 = ret.Get(0).(domain.WindowID)
 	}
 	return r0
 }
@@ -245,12 +245,12 @@ func (_c *mockhost_Created_Call) Run(run func(slot Slot, xid uint32)) *mockhost_
 	return _c
 }
 
-func (_c *mockhost_Created_Call) Return(windowID ports.WindowID) *mockhost_Created_Call {
+func (_c *mockhost_Created_Call) Return(windowID domain.WindowID) *mockhost_Created_Call {
 	_c.Call.Return(windowID)
 	return _c
 }
 
-func (_c *mockhost_Created_Call) RunAndReturn(run func(slot Slot, xid uint32) ports.WindowID) *mockhost_Created_Call {
+func (_c *mockhost_Created_Call) RunAndReturn(run func(slot Slot, xid uint32) domain.WindowID) *mockhost_Created_Call {
 	_c.Call.Return(run)
 	return _c
 }

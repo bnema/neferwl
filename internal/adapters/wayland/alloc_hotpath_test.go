@@ -251,7 +251,7 @@ func TestCommandForwardAllocations(t *testing.T) {
 // A settled grab (none, or unchanged) is re-checked at every focus and
 // configure without allocating.
 func TestKeyboardGrabSyncAllocations(t *testing.T) {
-	s := &Server{windows: map[ports.WindowID]*window{}}
+	s := &Server{windows: map[domain.WindowID]*window{}}
 	if n := testing.AllocsPerRun(100, s.syncKeyboardGrab); n != 0 {
 		t.Fatalf("%v allocs", n)
 	}

@@ -1,12 +1,12 @@
 package wayland
 
 import (
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/idleinhibit"
 	"github.com/bnema/go-wayland-bindings/server/keyboardshortcutsinhibit"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/purego-libwayland/server"
 )
 
 // Inhibitors. keyboard-shortcuts-inhibit: a window asks for every key,

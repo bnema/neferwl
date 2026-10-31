@@ -236,12 +236,7 @@ func (x *XWM) onDestroyNotify(ev *xturbo.Event) {
 	if s == 0 {
 		return
 	}
-	x.dropWindow(s)
-	if r := x.tab.rec(s); r.kind == kindManaged && r.id != 0 && x.host != nil {
-		r.id = 0
-		x.host.Dissociate(s, true)
-	}
-	x.tab.remove(s)
+	x.forgetWindow(s)
 }
 
 // onTreeReply (boot): record every existing child and ask for its attributes.

@@ -1,13 +1,14 @@
 package wayland
 
 import (
+	"github.com/bnema/neferwl/internal/domain"
 	"time"
 
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xwaylandshell"
 	"github.com/bnema/neferwl/internal/adapters/wayland/xwm"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/server"
 )
 
 // x11Window is the X11 role of a window: the XWM slot, the window's X id and
@@ -25,7 +26,7 @@ type x11Window struct {
 	// pointer off it.
 	override bool
 	noInput  bool
-	rect     ports.Rect
+	rect     domain.Rect
 }
 
 // xwaylandRestricted are the globals only the Xwayland client may see.
@@ -168,7 +169,7 @@ type hostImpl struct{ s *Server }
 
 func (h hostImpl) window(slot xwm.Slot) *window { return h.s.x11Slots[slot] }
 
-func (h hostImpl) Created(slot xwm.Slot, xid uint32) ports.WindowID {
+func (h hostImpl) Created(slot xwm.Slot, xid uint32) domain.WindowID {
 	s := h.s
 	w := &window{id: s.nextWindow}
 	w.x11 = &x11Window{server: s, slot: slot, xid: xid}
@@ -301,13 +302,19 @@ func (x *x11Window) tryMap() {
 	}
 	s := x.server
 	w.mapped = true
+	// X11 readiness may follow its first buffer commit. Account for that size
+	// now, before a compositor Configure can resize it to the output.
+	w.sized = false
+	if fw, fh := w.size(); fw > 0 && fh > 0 {
+		w.sized = true
+	}
 	w.gen++
 	w.floating = x.info.Floating
 	w.floatW, w.floatH = 0, 0
 	if w.floating {
 		w.floatW, w.floatH = x.info.Width, x.info.Height
 	}
-	var parent ports.WindowID
+	var parent domain.WindowID
 	if w.parent != nil && w.parent.mapped {
 		parent = w.parent.id
 	}
@@ -338,7 +345,7 @@ func (h hostImpl) OverrideMapped(slot xwm.Slot, xid uint32, surfaceID uint64, x,
 		h.OverrideGone(slot)
 	}
 	win := &window{id: s.nextWindow}
-	win.x11 = &x11Window{server: s, slot: slot, xid: xid, override: true, noInput: noInput, rect: ports.Rect{X: x, Y: y, W: w, H: h2}}
+	win.x11 = &x11Window{server: s, slot: slot, xid: xid, override: true, noInput: noInput, rect: domain.Rect{X: x, Y: y, W: w, H: h2}}
 	s.nextWindow++
 	s.windows[win.id] = win
 	s.x11Slots[slot] = win
@@ -366,7 +373,7 @@ func (h hostImpl) OverrideMoved(slot xwm.Slot, x, y, w, h2 int) {
 	if win == nil || win.x11 == nil || !win.x11.override {
 		return
 	}
-	r := ports.Rect{X: x, Y: y, W: w, H: h2}
+	r := domain.Rect{X: x, Y: y, W: w, H: h2}
 	if r == win.x11.rect {
 		return
 	}
@@ -442,7 +449,7 @@ func (x *x11Window) hide() {
 	w.mapped = false
 	x.surface.resetInputEmission()
 	s.emit(ports.UnmanagedUnmapped{ID: w.id})
-	s.emitContent(ports.SurfaceContent{ID: w.id}, damage{full: true})
+	s.emitContent(domain.SurfaceContent{ID: w.id}, damage{full: true})
 }
 
 // isOverride reports whether w is an override-redirect X11 window.

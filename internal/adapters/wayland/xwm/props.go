@@ -31,8 +31,6 @@ const (
 const (
 	propGeom      uint16 = 1 << propCount
 	propClientIDs uint16 = propGeom << 1
-	// propMaskAll is what a map waits for: every property and the geometry.
-	propMaskAll uint16 = propGeom<<1 - 1
 )
 
 // WM_NORMAL_HINTS flags and WM_HINTS flags.
@@ -224,6 +222,7 @@ func (x *XWM) applyProp(s Slot, idx int, format uint8, val []byte) {
 				rec.maxW, rec.maxH = int32(word(val, 7)), int32(word(val, 8))
 			}
 		}
+		x.classify(rec)
 	case propProtocols:
 		rec.deleteWindow, rec.takeFocus = false, false
 		for i := 0; i+4 <= len(val); i += 4 {
@@ -243,6 +242,7 @@ func (x *XWM) applyProp(s Slot, idx int, format uint8, val []byte) {
 			return
 		}
 		rec.transient = t
+		x.classify(rec)
 		if rec.ready {
 			x.host.Parent(s, x.managedSlot(t))
 		}
@@ -254,6 +254,7 @@ func (x *XWM) applyProp(s Slot, idx int, format uint8, val []byte) {
 				break
 			}
 		}
+		x.classify(rec)
 	case propState:
 		var modal, fs bool
 		for i := 0; i+4 <= len(val); i += 4 {
@@ -323,6 +324,13 @@ func floatingType(t uint8) bool {
 		return true
 	}
 	return false
+}
+
+// classify sets rec.floating, the single source of truth: a dialog-like
+// window type, a transient for a managed window, or a fixed size.
+func (x *XWM) classify(rec *record) {
+	fixed := rec.minW > 0 && rec.minH > 0 && rec.minW == rec.maxW && rec.minH == rec.maxH
+	rec.floating = floatingType(rec.wtype) || x.managedSlot(rec.transient) != 0 || fixed
 }
 
 // managedSlot returns the slot of the managed window xid, or 0.

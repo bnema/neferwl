@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"github.com/bnema/neferwl/internal/domain"
 	"slices"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -81,7 +82,7 @@ func (c *Core) unmanagedScreen(u *unmanagedState) *screen {
 
 // sceneUnmanaged appends the unmanaged windows shown on sc, bottom to top,
 // drawn as popups over the layers. They are hidden while sc previews.
-func (c *Core) sceneUnmanaged(out []ports.SceneWindow, sc *screen) []ports.SceneWindow {
+func (c *Core) sceneUnmanaged(out []domain.SceneWindow, sc *screen) []domain.SceneWindow {
 	if len(c.unmanagedOrder) == 0 || sc.mon.previewing() {
 		return out
 	}
@@ -92,7 +93,7 @@ func (c *Core) sceneUnmanaged(out []ports.SceneWindow, sc *screen) []ports.Scene
 		}
 		r := u.rect
 		r.X, r.Y = r.X-sc.x, r.Y-sc.y
-		out = append(out, ports.SceneWindow{ID: id, Rect: r, Popup: true, OverLayers: true})
+		out = append(out, domain.SceneWindow{ID: id, Rect: r, Popup: true, OverLayers: true})
 	}
 	return out
 }
@@ -100,7 +101,7 @@ func (c *Core) sceneUnmanaged(out []ports.SceneWindow, sc *screen) []ports.Scene
 // unmanagedAt is the topmost unmanaged window taking the pointer at the
 // screen-local point. None while the pointer is locked or the screen previews.
 func (c *Core) unmanagedAt(sc *screen, lx, ly float64) (WindowID, float64, float64) {
-	if len(c.unmanagedOrder) == 0 || c.constraint.Mode == ports.ConstraintLock || sc.mon.previewing() {
+	if len(c.unmanagedOrder) == 0 || c.constraint.Mode == domain.ConstraintLock || sc.mon.previewing() {
 		return 0, 0, 0
 	}
 	for i := len(c.unmanagedOrder) - 1; i >= 0; i-- {

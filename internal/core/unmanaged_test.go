@@ -2,12 +2,13 @@ package core
 
 import (
 	"context"
+	"github.com/bnema/neferwl/internal/domain"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-func unmanagedScene(t *testing.T, c *Core, i int) ports.Scene {
+func unmanagedScene(t *testing.T, c *Core, i int) domain.Scene {
 	t.Helper()
 	s, err := c.sceneFor(context.Background(), i, c.screens[i], nil, nil)
 	if err != nil {
@@ -77,7 +78,7 @@ func TestUnmanagedHit(t *testing.T) {
 	if id, _, _ := c.hit(345, 35); id == 100 {
 		t.Fatal("outside the input region")
 	}
-	c.constraint.Mode = ports.ConstraintLock
+	c.constraint.Mode = domain.ConstraintLock
 	if id, _, _ := c.hit(325, 35); id == 101 {
 		t.Fatal("locked pointer must not move to an unmanaged window")
 	}

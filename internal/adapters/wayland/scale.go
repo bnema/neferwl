@@ -3,11 +3,11 @@ package wayland
 import (
 	"math"
 
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/fractionalscale"
 	"github.com/bnema/go-wayland-bindings/server/viewporter"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
-	"bnema.dev/purego-libwayland/server"
 )
 
 // Surfaces follow the output of their window or layer (the focused output

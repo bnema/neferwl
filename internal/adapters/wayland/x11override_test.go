@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"github.com/bnema/neferwl/internal/domain"
 	"testing"
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
@@ -72,9 +73,9 @@ func TestOverrideSurfaceDestroyUnmaps(t *testing.T) {
 
 func TestOverrideTakesPointerAndOutput(t *testing.T) {
 	r := newX11Rig(t)
-	r.commands <- ports.SetOutputs{Outputs: ports.Layout{
-		{Info: ports.OutputInfo{Name: "A"}, X: 0, Y: 0, Width: 1920, Height: 1080, Scale: 1},
-		{Info: ports.OutputInfo{Name: "B"}, X: 1920, Y: 0, Width: 1920, Height: 1080, Scale: 1},
+	r.commands <- ports.SetOutputs{Outputs: domain.Layout{
+		{Info: domain.OutputInfo{Name: "A"}, X: 0, Y: 0, Width: 1920, Height: 1080, Scale: 1},
+		{Info: domain.OutputInfo{Name: "B"}, X: 1920, Y: 0, Width: 1920, Height: 1080, Scale: 1},
 	}, Focused: "A"}
 	r.overrideWindow(ovWin, 100, 10, x11Serial)
 	m := awaitEvent[ports.UnmanagedMapped](t, r.events)
@@ -97,8 +98,8 @@ func TestOverrideTakesPointerAndOutput(t *testing.T) {
 }
 
 func TestOverrideMovedUnchangedAllocations(t *testing.T) {
-	s := &Server{windows: map[ports.WindowID]*window{}, x11Slots: map[xwm.Slot]*window{}}
-	w := &window{id: 1, x11: &x11Window{override: true, rect: ports.Rect{X: 1, Y: 2, W: 3, H: 4}}}
+	s := &Server{windows: map[domain.WindowID]*window{}, x11Slots: map[xwm.Slot]*window{}}
+	w := &window{id: 1, x11: &x11Window{override: true, rect: domain.Rect{X: 1, Y: 2, W: 3, H: 4}}}
 	s.x11Slots[1] = w
 	h := hostImpl{s}
 	if n := testing.AllocsPerRun(1000, func() { h.OverrideMoved(1, 1, 2, 3, 4) }); n != 0 {

@@ -4,9 +4,9 @@ import (
 	"os"
 	"slices"
 
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
-	"bnema.dev/purego-libwayland/server"
 	"golang.org/x/sys/unix"
 )
 

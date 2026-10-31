@@ -37,6 +37,8 @@ func receiveVia(t *testing.T, cc *clipClient, offer uint32, mime string) int {
 // An X selection reaches the focused client and not the others, is replaced
 // when a Wayland client copies (and is then not read back from X), and is
 // never read while the session is protected.
+//
+//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
 func TestXSelectionReachesWaylandClients(t *testing.T) {
 	s, events, commands, dir := keyboardServer(t)
 	state := installSecurity(t, s)
@@ -106,6 +108,8 @@ func TestXSelectionReachesWaylandClients(t *testing.T) {
 }
 
 // A Wayland client's text selection is read for X through a pipe it fills.
+//
+//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
 func TestXSelectionReadFromWayland(t *testing.T) {
 	s, events, commands, dir := keyboardServer(t)
 	xm := newMockxwmSelection(t)

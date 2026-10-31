@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
-	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
@@ -401,6 +400,7 @@ func TestStarterSelection(t *testing.T) {
 	}
 }
 
+//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
 func TestRunCallsStarter(t *testing.T) {
 	d, err := Open(testOptions(t, "unused"))
 	if err != nil {
@@ -495,7 +495,7 @@ func readyScript(t *testing.T, dir string, ready bool, tail string) (bin, marker
 func runBuiltin(t *testing.T, ctx context.Context, ready bool, tail string, attachWM func(ctx context.Context, wmFD int)) (events []string) {
 	t.Helper()
 	opts := testOptions(t, "")
-	opts.Backend = ports.XwaylandBuiltin
+	opts.Backend = domain.XwaylandBuiltin
 	var marker string
 	opts.Binary, marker = readyScript(t, opts.TmpDir, ready, tail)
 	exists := func() bool { _, err := os.Stat(marker); return err == nil }
@@ -539,7 +539,7 @@ func TestBuiltinAttachWMAfterReadiness(t *testing.T) {
 				}
 				unix.Close(wmFD)
 				if tc.cancel {
-					go func() { time.Sleep(200 * time.Millisecond); cancel() }()
+					go cancel()
 				}
 			})
 			if got := strings.Join(events, ","); got != "attach,attachWM,stop,returned" {
@@ -559,6 +559,8 @@ func TestBuiltinNoAttachWMWithoutReadiness(t *testing.T) {
 
 // The AttachWM context ends when the process dies, so a bootstrap against a
 // dead Xwayland gives up at once instead of waiting out its handshake.
+//
+//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
 func TestBuiltinAttachWMContextEndsWithProcess(t *testing.T) {
 	ended := make(chan error, 1)
 	start := time.Now()

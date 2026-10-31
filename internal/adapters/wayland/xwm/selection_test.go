@@ -54,6 +54,7 @@ func pumpReq(t *testing.T, x *XWM, p *xpeer, skip int, match func(xpeerReq) bool
 		return false
 	})
 	return found, next
+
 }
 
 func TestSelectionBoot(t *testing.T) {
@@ -525,14 +526,14 @@ func TestSelectionWaylandToXINCR(t *testing.T) {
 
 	// The first fill is a whole chunk: INCR is announced.
 	var got []byte
-	deadline := time.Now().Add(5 * time.Second)
 	for !r.x.sel.out[0].incr {
-		require.True(t, time.Now().Before(deadline), "INCR never announced")
 		r.x.onReadable()
 		if onR != nil && r.x.sel.out[0].state == outActive {
 			onR()
 		}
-		time.Sleep(time.Millisecond)
+		if !r.x.sel.out[0].incr {
+			waitSocket(t, r.x.sel.out[0].fd, unix.POLLIN)
+		}
 	}
 	require.Equal(t, r.data, sentNotify(t, r))
 	v, _ := r.p.prop(reqWin, "_NEFERWL_DATA")
@@ -547,8 +548,8 @@ func TestSelectionWaylandToXINCR(t *testing.T) {
 		// The requestor deletes the property: the next chunk goes out.
 		r.p.propertyNotify(reqWin, r.data, true)
 		before := len(r.p.requests())
-		if onR != nil {
-			time.Sleep(time.Millisecond)
+		if onR != nil && r.x.sel.out[0].state != outFree && r.x.sel.out[0].n < chunk && !r.x.sel.out[0].eof {
+			waitSocket(t, r.x.sel.out[0].fd, unix.POLLIN)
 		}
 		var cp xpeerProp
 		readUntil(t, r.x, func() bool {
@@ -692,11 +693,8 @@ func TestSelectionStaleTargetsAfterWaylandOwner(t *testing.T) {
 	readUntil(t, x, func() bool { return x.Stats().Events > ev })
 	x.flush()
 	require.True(t, x.sel.st[SelClipboard].ours)
-	for i := 0; i < 20; i++ { // let any (wrong) GetProperty round trip finish
-		x.onReadable()
-		x.flush()
-		time.Sleep(time.Millisecond)
-	}
+	require.NoError(t, x.conn.Sync(&x.h))
+
 	require.Zero(t, getProps(p, 0, x.selWin), "the stale TARGETS reply is not fetched")
 	_ = h
 }
@@ -766,7 +764,7 @@ func TestSelectionCloseDoesNotStartQueued(t *testing.T) {
 	_, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
 	r.x.selClose()
 	r.x.flush()
-	time.Sleep(50 * time.Millisecond)
+	require.NoError(t, r.x.conn.Sync(&r.x.h))
 	cs := 0
 	for _, q := range since(r.p, r.skip, 24) {
 		cs++

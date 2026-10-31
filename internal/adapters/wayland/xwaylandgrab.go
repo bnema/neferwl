@@ -1,10 +1,10 @@
 package wayland
 
 import (
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xwaylandkeyboardgrab"
-	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/server"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // zwp_xwayland_keyboard_grab_v1. Xwayland asks for it when an X client
@@ -62,7 +62,7 @@ type xwaylandGrabHandler struct{}
 func (xwaylandGrabHandler) Destroy(*xwaylandkeyboardgrab.ZwpXwaylandKeyboardGrabV1) {}
 
 // xgrabWindow is the window whose grab is in effect (0: none).
-func (s *Server) xgrabWindow() ports.WindowID {
+func (s *Server) xgrabWindow() domain.WindowID {
 	g := s.xgrab
 	if g == nil || g.surf == nil || g.surf.destroyed || !g.res.Resource.Alive() {
 		return 0
