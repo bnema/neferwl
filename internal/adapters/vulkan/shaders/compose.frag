@@ -12,6 +12,7 @@ layout(location = 0) in Parameters {
     flat vec4 map;
     flat vec4 mapy;
     flat vec4 color;
+    flat vec4 expand;
     flat vec4 crop;
     flat uvec4 buf;
     flat uvec4 misc;

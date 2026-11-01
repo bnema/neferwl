@@ -11,7 +11,7 @@ import (
 // Bound descriptor-table work and memory even on devices with huge limits.
 const maxComposeResources = 64
 
-// instanceDraw matches Draw in compose.vert (std430, 160-byte stride).
+// instanceDraw matches Draw in compose.vert (std430, 176-byte stride).
 type instanceDraw struct {
 	pc                drawParameters
 	resource          [4]uint32

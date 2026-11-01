@@ -60,13 +60,14 @@ const (
 
 // drawParameters is the parameter portion of the shaders' std430 Draw.
 type drawParameters struct {
-	rect  [4]int32
-	mapv  [4]float32
-	mapy  [4]float32
-	color [4]float32
-	crop  [4]float32
-	buf   [4]uint32
-	misc  [4]uint32
+	rect   [4]int32
+	mapv   [4]float32
+	mapy   [4]float32
+	color  [4]float32
+	expand [4]float32
+	crop   [4]float32
+	buf    [4]uint32
+	misc   [4]uint32
 }
 
 // draw is one quad of a frame.

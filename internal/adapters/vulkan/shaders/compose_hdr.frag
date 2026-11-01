@@ -12,6 +12,7 @@ layout(location = 0) in Parameters {
     flat vec4 map;
     flat vec4 mapy;
     flat vec4 color;
+    flat vec4 expand;
     flat vec4 crop;
     flat uvec4 buf;
     flat uvec4 misc;
@@ -55,6 +56,22 @@ const uint flagRing = 256u;
 // The HDR composition target holds linear BT.709 in SDR-white units.
 vec3 decodeSRGB(vec3 v) {
     return mix(v / 12.92, pow((v + 0.055) / 1.055, vec3(2.4)), greaterThan(v, vec3(0.04045)));
+}
+// Mirror SDRExpansionCurve.Apply/ApplyRGB on straight (unpremultiplied)
+// linear RGB. main re-premultiplies afterwards, before opacity and coverage.
+vec3 expandSDR(vec3 v) {
+    vec3 rgb = d.expand.w == 1.0 ? decodeSRGB(v) : pow(v, vec3(2.2));
+    float m = max(rgb.r, max(rgb.g, rgb.b));
+    if (m <= 0.0) return rgb;
+    float y = min(m, 1.0);
+    float outY;
+    if (y <= d.expand.x || d.expand.y == 1.0) outY = y;
+    else if (y == 1.0) outY = d.expand.y;
+    else {
+        float t = y - d.expand.x;
+        outY = y + d.expand.z * t * t;
+    }
+    return rgb * (outY / m);
 }
 vec3 pqToLinear709(vec3 v, float whiteNits) {
     vec3 p = pow(clamp(v, 0.0, 1.0), vec3(32.0 / 2523.0));
@@ -156,7 +173,7 @@ void main() {
         // Keep negative and above-white values in fp16 until the HDR pass.
         vec3 v = c.rgb / c.a;
         vec3 linearRGB = (d.misc.y & flagPQ) != 0u ? pqToLinear709(v, d.color.x) :
-            (d.misc.y & flagExtendedLinear) != 0u ? v * (80.0 / d.color.x) : decodeSRGB(v);
+            (d.misc.y & flagExtendedLinear) != 0u ? v * (80.0 / d.color.x) : (d.expand.y > 1.0 ? expandSDR(v) : decodeSRGB(v));
         c.rgb = linearRGB * c.a;
     }
     if (d.misc.x != modeSolid) {

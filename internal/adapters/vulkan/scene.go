@@ -20,6 +20,8 @@ type sceneWalk struct {
 	// zoom shrinks the surfaces of the window being placed: an overview
 	// preview (domain.SceneWindow.Preview); 1 otherwise.
 	zoom float64
+	// expand applies only while placing an HDR window's surface tree.
+	expand [4]float32
 	// alpha is the opacity of the window being drawn, 1 - its Fade
 	// (domain.SceneWindow.Fade): its fills, lines and surfaces are scaled by
 	// it (premultiplied); 1 otherwise.
@@ -329,7 +331,11 @@ func (w *sceneWalk) windows() {
 			} else if win.Preview > 0 {
 				w.zoom = win.Preview
 			}
+			if w.r.hdrNits > 0 && win.SDRExpansion.Active() {
+				w.expand = win.SDRExpansion.Params()
+			}
 			w.place(win.ID, &content, c.X, c.Y, c.W, c.H)
+			w.expand = [4]float32{}
 			w.zoom = 1
 		}
 		if win.Radius > 0 {
@@ -575,6 +581,11 @@ func (w *sceneWalk) surface(content *domain.SurfaceContent, x, y float64, clip i
 	}
 	n := len(w.draws)
 	w.content(dst, full, content, key, seq, root)
+	for i := n; i < len(w.draws); i++ {
+		if w.draws[i].pc.misc[0] != modeSolid {
+			w.draws[i].pc.expand = w.expand
+		}
+	}
 	if len(w.draws) == n+1 && len(covers) > 0 {
 		// The quad's mapping comes from full: only its rect shrinks.
 		d := w.draws[n]
