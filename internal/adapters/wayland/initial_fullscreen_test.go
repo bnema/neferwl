@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 )
 
@@ -86,4 +87,35 @@ func TestInitialFullscreenConfigure(t *testing.T) {
 	// Dispatch may consume just one event; closing the client also releases it.
 	_ = c.Close()
 	<-done
+}
+
+func TestInitialFullscreenNotReplayedOnRemap(t *testing.T) {
+	s, events, dir := outputSizedServer(t, 800, 600)
+	c := protocolClient(t, s, dir)
+	comp := bindProtocol(t, c, "wl_compositor")
+	wm := bindProtocol(t, c, "xdg_wm_base")
+	buffer := shmBuffer(t, c)
+	surf, xdg, serials := xdgWindow(t, c, comp, wm, buffer, func(xdg uint32) {
+		top := c.AllocateID()
+		registerProtocol(t, c, top)
+		requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetToplevel, top)
+		requestProtocol(t, c, top, xdgshell.ToplevelRequestSetFullscreen, uint32(0))
+	})
+	ackAndAttach(t, c, surf, xdg, buffer, serials)
+	first := mapped(t, events, 2*time.Second)
+	if !first.Fullscreen || first.Remap {
+		t.Fatalf("first map: %+v", first)
+	}
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, uint32(0), int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	unmapped(t, events, first.ID)
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	ackAndAttach(t, c, surf, xdg, buffer, serials)
+	next := mapped(t, events, 2*time.Second)
+	if next.ID != first.ID || !next.Remap || next.Fullscreen {
+		t.Fatalf("remap replayed fullscreen: %+v", next)
+	}
 }
