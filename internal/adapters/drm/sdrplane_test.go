@@ -74,3 +74,27 @@ func TestSDRPlaneGateDecisionAndTransitionLog(t *testing.T) {
 		t.Fatalf("got %d refusal logs: %s", n, log.String())
 	}
 }
+
+func TestSDRExpansionRefusesPlanes(t *testing.T) {
+	for _, optIn := range []string{"", "1"} {
+		t.Run("sdr_plane="+optIn, func(t *testing.T) {
+			t.Setenv("NEFERWL_DRM_SDR_PLANE", optIn)
+			o, _, _ := colorOutput(t, true, nil)
+			c := sdrContent(o)
+			c.LogicalW, c.LogicalH = 200, 100
+			s := domain.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []domain.SceneWindow{{ID: 1, Fullscreen: true, Rect: domain.Rect{W: 200, H: 100}}}}
+			surfaces := map[domain.WindowID]domain.SurfaceContent{1: c}
+			for _, intensity := range []float64{0, 0.5} {
+				s.Windows[0].SDRExpansion = (domain.SDRExpansion{Intensity: intensity, PeakNits: 604, SDRWhiteNits: 203}).Curve()
+				d := o.decideFrame(s, surfaces, false)
+				if intensity > 0 {
+					if d.fb != 0 || d.overlay.fb != 0 || o.reason != "sdr_expansion" || o.overlayReason != "sdr_expansion" {
+						t.Fatalf("expanded decision=%+v reasons=%q/%q", d, o.reason, o.overlayReason)
+					}
+				} else if optIn == "1" && (d.fb != 80 || d.color != colorSDRToPQ) {
+					t.Fatalf("inactive expansion prevented scanout: %+v", d)
+				}
+			}
+		})
+	}
+}
