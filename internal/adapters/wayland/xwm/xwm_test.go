@@ -291,6 +291,9 @@ func TestCloseDissociatesEverything(t *testing.T) {
 	h.EXPECT().Dissociate(x.tab.lookup(0x500001), true).Once()
 	h.EXPECT().Dissociate(x.tab.lookup(0x500002), true).Once()
 	src.EXPECT().Remove().Once()
+	for kind := range x.sel.st {
+		h.EXPECT().SelectionOwned(kind, []string(nil)).Once()
+	}
 	x.Close()
 	x.Close() // idempotent
 	require.True(t, x.closed)
@@ -304,6 +307,9 @@ func TestEOFClosesXWM(t *testing.T) {
 	readUntil(t, x, func() bool { return x.tab.lookup(0x500001) != 0 })
 	h.EXPECT().Dissociate(x.tab.lookup(0x500001), true).Once()
 	src.EXPECT().Remove().Once()
+	for kind := range x.sel.st {
+		h.EXPECT().SelectionOwned(kind, []string(nil)).Once()
+	}
 	p.hangup()
 	readUntil(t, x, func() bool { return x.closed })
 }

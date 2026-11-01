@@ -124,6 +124,9 @@ func (s *Server) installXWM(x *xwm.XWM) {
 
 // teardownXWM closes the window manager, dropping its windows. Idempotent.
 func (s *Server) teardownXWM() {
+	for kind := range s.xsel {
+		s.setXSelection(kind, nil)
+	}
 	if x := s.xwm; x != nil {
 		s.xwm, s.xwmSel = nil, nil
 		x.Close()

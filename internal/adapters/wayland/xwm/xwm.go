@@ -408,6 +408,10 @@ func (x *XWM) Close() {
 		x.src = nil
 	}
 	if x.host != nil {
+		for kind := range x.sel.st {
+			x.host.SelectionOwned(kind, nil)
+			x.sel.st[kind].owner = 0
+		}
 		for i := range x.tab.recs {
 			r := &x.tab.recs[i]
 			switch {

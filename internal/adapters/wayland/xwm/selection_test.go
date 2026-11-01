@@ -841,3 +841,23 @@ func TestSelectionRequestorEventMaskOwnership(t *testing.T) {
 		}
 	}
 }
+
+func TestSelectionConnectionLossWithdrawsOwners(t *testing.T) {
+	for _, connectionFailure := range []bool{false, true} {
+		t.Run(fmt.Sprint(connectionFailure), func(t *testing.T) {
+			x, p, h, src, _ := attached(t)
+			src.EXPECT().Remove().Once()
+			for kind := range x.sel.st {
+				x.sel.st[kind].owner = 0x500001
+				h.EXPECT().SelectionOwned(kind, []string(nil)).Once()
+			}
+			if connectionFailure {
+				require.NoError(t, unix.Shutdown(int(p.f.Fd()), unix.SHUT_RDWR))
+				readUntil(t, x, func() bool { return x.closed })
+			} else {
+				x.Close()
+			}
+			x.Close() // idempotent
+		})
+	}
+}

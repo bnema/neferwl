@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -148,4 +149,56 @@ func TestXSelectionReadFromWayland(t *testing.T) {
 			t.Error("unoffered mime readable")
 		}
 	})
+}
+
+func TestXSelectionTeardown(t *testing.T) {
+	for _, replaced := range []bool{false, true} {
+		t.Run(fmt.Sprint(replaced), func(t *testing.T) {
+			s, events, commands, dir := keyboardServer(t)
+			a := newClipClient(t, s, dir, events)
+			a.focus(t, commands)
+			var old [2]*clipSource
+			onDisplay(t, s, func() {
+				for kind := range s.xsel {
+					s.setXSelection(kind, []string{"text/plain"})
+					old[kind] = s.xsel[kind]
+				}
+			})
+			if id, ok := a.selection(t); !ok || id == 0 {
+				t.Fatal("missing X selection")
+			}
+			if replaced {
+				a.copy(t)
+				if id, ok := a.selection(t); !ok || id == 0 {
+					t.Fatal("missing Wayland selection")
+				}
+			}
+			var keep *clipSource
+			onDisplay(t, s, func() {
+				keep = s.selections[selClipboard]
+				s.teardownXWM()
+				s.teardownXWM()
+				for kind := range s.xsel {
+					if s.xsel[kind] != nil || old[kind].alive() {
+						t.Error("X source still alive")
+					}
+					want := (*clipSource)(nil)
+					if replaced && kind == selClipboard {
+						want = keep
+					}
+					if s.selections[kind] != want {
+						t.Errorf("selection %d changed incorrectly", kind)
+					}
+				}
+			})
+			id, ok := a.selection(t)
+			if replaced {
+				if ok && id == 0 {
+					t.Fatal("Wayland replacement cleared")
+				}
+			} else if !ok || id != 0 {
+				t.Fatal("X selection removal not announced")
+			}
+		})
+	}
 }

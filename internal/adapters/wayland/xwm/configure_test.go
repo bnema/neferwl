@@ -278,6 +278,9 @@ func TestPublicCommandsIgnoredWhenClosed(t *testing.T) {
 	s := newWin(t, x, p, h, win)
 	h.EXPECT().Dissociate(s, true).Once()
 	src.EXPECT().Remove().Once()
+	for kind := range x.sel.st {
+		h.EXPECT().SelectionOwned(kind, []string(nil)).Once()
+	}
 	x.Close()
 	require.NotPanics(t, func() {
 		x.Configure(s, ports.ConfigureWindow{Width: 1, Height: 1})
