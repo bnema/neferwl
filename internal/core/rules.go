@@ -11,10 +11,10 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// Window rules (rule.<name>.* keys): the app ID of a window that maps for
-// the first time picks its place. Rules are evaluated once, at the first
-// map, in spawnPlacement.place; a later app ID change, a re-map or a config
-// reload moves nothing.
+// Window rules (rule.<name>.* keys) merge placement and SDR expansion settings.
+// Placement applies once, at the first map, in spawnPlacement.place; a later
+// app ID change, a re-map or a config reload moves nothing. SDR expansion
+// fields are retained for eligibility policy and do not affect placement.
 //
 // A rule never moves the user (ADR 011): it does not take the focus and does
 // not change which workspace or monitor is shown or focused. A window sent to
@@ -24,6 +24,11 @@ import (
 
 // rule is one parsed window rule.
 type rule struct {
+	sdrExpand          *domain.SDRExpandRule
+	sdrExpandIntensity *float64
+	sdrExpandPeak      *float64
+	sdrDecode          *domain.SDRDecode
+
 	appID    *regexp.Regexp
 	floating *bool
 	// number is the 1-based numbered workspace; workspace the name of a
@@ -37,6 +42,11 @@ type rule struct {
 // ruleEffect is the merge of every rule matching a window: per field, the
 // last rule in config order that sets it wins.
 type ruleEffect struct {
+	sdrExpand          *domain.SDRExpandRule
+	sdrExpandIntensity *float64
+	sdrExpandPeak      *float64
+	sdrDecode          *domain.SDRDecode
+
 	floating  *bool
 	number    int
 	workspace string
@@ -45,12 +55,13 @@ type ruleEffect struct {
 }
 
 func parseRules(rs []domain.WindowRule) ([]rule, error) {
+	rs = append(domain.DefaultWindowRules(), rs...)
 	out := make([]rule, 0, len(rs))
 	for _, r := range rs {
 		if r.AppID == nil {
 			return nil, fmt.Errorf("rule %s: no app-id", r.Name)
 		}
-		p := rule{appID: r.AppID, floating: r.Floating, monitor: r.Monitor}
+		p := rule{appID: r.AppID, floating: r.Floating, monitor: r.Monitor, sdrExpand: r.SDRExpand, sdrExpandIntensity: r.SDRExpandIntensity, sdrExpandPeak: r.SDRExpandPeak, sdrDecode: r.SDRDecode}
 		if r.Workspace != "" {
 			if n, err := strconv.Atoi(r.Workspace); err == nil {
 				if n < 1 {
@@ -97,6 +108,18 @@ func matchRules(rules []rule, appID string) (eff ruleEffect, ok bool) {
 // merge applies only fields set by r. Numbered and named workspaces are one
 // setting: choosing either replaces the other.
 func (eff *ruleEffect) merge(r rule) {
+	if r.sdrExpand != nil {
+		eff.sdrExpand = r.sdrExpand
+	}
+	if r.sdrExpandIntensity != nil {
+		eff.sdrExpandIntensity = r.sdrExpandIntensity
+	}
+	if r.sdrExpandPeak != nil {
+		eff.sdrExpandPeak = r.sdrExpandPeak
+	}
+	if r.sdrDecode != nil {
+		eff.sdrDecode = r.sdrDecode
+	}
 	if r.floating != nil {
 		eff.floating = r.floating
 	}

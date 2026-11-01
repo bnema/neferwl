@@ -146,7 +146,7 @@ func (m *hdrOutputMetadata) bytes() []byte {
 }
 
 // caps converts connector/EDID detection into pure capability facts without
-// changing the HDR signaling decision. Expansion config peaks are not wired yet.
+// changing the HDR signaling decision.
 func (c hdrCapability) caps(peakNits, sdrWhiteNits float64) domain.HDRCaps {
 	return domain.ResolveHDRCaps(domain.HDRCapsInput{
 		Capable: c.Capable, Reason: c.Reason,
@@ -158,7 +158,7 @@ func (c hdrCapability) caps(peakNits, sdrWhiteNits float64) domain.HDRCaps {
 // sendHDRCaps never stalls the output owner; a full channel drops the snapshot
 // until the next successful modeset, like sendFormats.
 func (o *Output) sendHDRCaps() {
-	event := domain.OutputHDRCaps{Output: o.conn.name, Caps: o.hdr.cap.caps(0, float64(o.hdr.settings.SDRBrightness)), Active: o.hdr.on && !o.off}
+	event := domain.OutputHDRCaps{Output: o.conn.name, Caps: o.hdr.cap.caps(o.hdr.settings.ExpansionPeakNits, float64(o.hdr.settings.SDRBrightness)), Active: o.hdr.on && !o.off}
 	select {
 	case o.HDRCaps <- event:
 	default:

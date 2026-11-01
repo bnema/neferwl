@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/drm"
@@ -23,7 +24,6 @@ import (
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 
@@ -352,7 +352,7 @@ func wantFromConfig(cfg domain.Config) drm.Want {
 		if nits == 0 {
 			nits = domain.DefaultSDRBrightness
 		}
-		want.HDR[o.Name] = drm.HDRSettings{Enabled: o.HDR, SDRBrightness: nits}
+		want.HDR[o.Name] = drm.HDRSettings{Enabled: o.HDR, SDRBrightness: nits, ExpansionPeakNits: o.SDRExpandPeak}
 		if o.Off {
 			want.Disabled[o.Name] = true
 			continue

@@ -31,6 +31,11 @@ func TestSendHDRCaps(t *testing.T) {
 	if got.Output != "DP-1" || !got.Active || got.Caps.PeakNits != 604 || got.Caps.Tier != domain.HDRFull || got.Caps.Headroom != 604.0/203 {
 		t.Fatalf("event: %+v", got)
 	}
+	o.hdr.settings.ExpansionPeakNits = 800
+	o.sendHDRCaps()
+	if got = <-events; got.Caps.PeakNits != 800 || got.Caps.PeakSource != domain.HDRPeakConfig {
+		t.Fatalf("configured peak: %+v", got)
+	}
 	o.off = true
 	o.sendHDRCaps()
 	if got = <-events; got.Active {

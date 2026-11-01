@@ -41,7 +41,12 @@ type OutputConfig struct {
 	Primary       bool
 	HDR           bool // opt-in to HDR10 on capable outputs
 	SDRBrightness int  // nits; default DefaultSDRBrightness
-	ScaleOnly     bool
+
+	SDRExpand          SDRExpandMode
+	SDRExpandIntensity float64 // default DefaultSDRExpandIntensity; explicit zero disables gain
+	SDRExpandPeak      float64 // nits; zero resolves from EDID
+	SDRDecode          SDRDecode
+	ScaleOnly          bool
 }
 
 // OutputAnchor places an output against another connected one, named by To.
@@ -293,6 +298,11 @@ type SlotConfig struct {
 // WindowRule places the windows whose app ID it matches when they first map.
 // Matching rules merge in config order, a later rule winning per field.
 type WindowRule struct {
+	SDRExpand          *SDRExpandRule
+	SDRExpandIntensity *float64
+	SDRExpandPeak      *float64
+	SDRDecode          *SDRDecode
+
 	Name string
 	// AppID matches the whole app ID (the config anchors it).
 	AppID *regexp.Regexp
@@ -379,6 +389,13 @@ func windowRuleEqual(a, b WindowRule) bool {
 	if !equalPointer(a.Floating, b.Floating) {
 		return false
 	}
+	if !equalPointer(a.SDRExpand, b.SDRExpand) || !equalPointer(a.SDRExpandIntensity, b.SDRExpandIntensity) || !equalPointer(a.SDRExpandPeak, b.SDRExpandPeak) || !equalPointer(a.SDRDecode, b.SDRDecode) {
+		return false
+	}
+	a.SDRExpand, b.SDRExpand = nil, nil
+	a.SDRExpandIntensity, b.SDRExpandIntensity = nil, nil
+	a.SDRExpandPeak, b.SDRExpandPeak = nil, nil
+	a.SDRDecode, b.SDRDecode = nil, nil
 	a.AppID, b.AppID = nil, nil
 	a.Floating, b.Floating = nil, nil
 	return a == b

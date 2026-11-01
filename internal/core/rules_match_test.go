@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -41,5 +42,33 @@ func TestMatchRules(t *testing.T) {
 	}
 	if got, ok := c.ruleFor(ports.WindowMapped{AppID: "game", Remap: true}); ok || got != (ruleEffect{}) {
 		t.Fatalf("remap reapplied rules: %+v, matched=%t", got, ok)
+	}
+}
+
+func TestExpansionRulesMergeAndDefaults(t *testing.T) {
+	off, on := domain.SDRExpandForceOff, domain.SDRExpandOn
+	intensity, zero, peak := 0.7, 0.0, 800.0
+	decode := domain.SDRDecodeSRGB
+	rules, err := parseRules([]domain.WindowRule{
+		{Name: "first", AppID: regexp.MustCompile(`^steam_app_\d+$`), SDRExpand: &on, SDRExpandIntensity: &intensity, SDRExpandPeak: &peak, SDRDecode: &decode},
+		{Name: "last", AppID: regexp.MustCompile(`^steam_app_\d+$`), SDRExpand: &off, SDRExpandIntensity: &zero},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eff, ok := matchRules(rules, "steam_app_123")
+	if !ok || *eff.sdrExpand != off || *eff.sdrExpandIntensity != 0 || *eff.sdrExpandPeak != peak || *eff.sdrDecode != decode {
+		t.Fatalf("effect %+v", eff)
+	}
+	defaults, err := parseRules(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eff, ok = matchRules(defaults, "steam_app_123")
+	if !ok || *eff.sdrExpand != domain.SDRExpandGame {
+		t.Fatal("Steam default missing")
+	}
+	if _, ok = matchRules(defaults, "steam_app_123_launcher"); ok {
+		t.Fatal("Steam pattern not anchored")
 	}
 }

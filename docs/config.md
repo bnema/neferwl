@@ -149,6 +149,10 @@ output.<name>.primary = off
 output.<name>.offset = 0
 output.<name>.hdr = off
 output.<name>.sdr-brightness = 203
+output.<name>.sdr-expand = auto
+output.<name>.sdr-expand-intensity = 0.5
+output.<name>.sdr-expand-peak = 0
+output.<name>.sdr-decode = gamma22
 ```
 
 Outputs are arranged automatically unless `.right-of`, `.left-of`, `.above` or `.below` is set. Per-output layouts inherit `layout.*`; named workspaces inherit their output's layout and size, use the focused output unless `.monitor` is set, and have no predefined columns. Media keys have no default bindings.
@@ -164,6 +168,11 @@ Rules place an app's windows when they first open.
 | `rule.<name>.workspace` | Workspace number or name |
 | `rule.<name>.monitor` | Output |
 | `rule.<name>.width` | Column width in [cells](#column-widths), 1 to 16 |
+| `rule.<name>.sdr-expand` | `game` (classify as game), `on` (force eligibility), or `off` |
+| `rule.<name>.sdr-expand-intensity` | Highlight intensity, 0 to 1 |
+| `rule.<name>.sdr-expand-peak` | Peak override in nits: 0 (automatic), or 200 to 10000 |
+| `rule.<name>.sdr-decode` | `gamma22` or `srgb`, for expanded SDR only |
+
 
 ```ini
 rule.games.app-id = steam_app_\d+
@@ -502,3 +511,18 @@ JSON records each target's source, kind, window, rectangle and score, plus stage
 Annotations use magenta for AT-SPI, cyan for OCR, green for detector, and
 grey crop outlines with thin popup outlines. The most recent 50 scan groups are
 kept. Dumps contain screen content in clear; delete sensitive captures after use.
+
+### SDR expansion settings
+
+Output `sdr-expand` accepts `off`, `auto` (default), or `always`. Intensity
+is 0–1 (default 0.5); zero preserves SDR. Peak is 0 for automatic resolution
+(config override, then EDID, then assumed 400 nits), or 200–10000 nits.
+Decode defaults to `gamma22`; `srgb` selects piecewise sRGB for expanded content.
+These settings are parsed and retained; expansion policy is not active yet.
+
+Rules merge per field in file order, last setting wins. A built-in rule for
+`steam_app_\d+` runs before user rules and sets `sdr-expand = game`: Steam
+X11 games are classified as games for auto mode, not forced past output gates.
+Other X11 games need an app-ID rule because X11 carries no Wayland game content
+type. `on` requests expansion eligibility; it does not bypass HDR/headroom gates.
+Placement fields still apply only at first map.

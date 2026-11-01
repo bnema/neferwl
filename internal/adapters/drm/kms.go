@@ -119,8 +119,9 @@ type Want struct {
 
 // HDRSettings is the requested HDR state and SDR reference white (nits).
 type HDRSettings struct {
-	Enabled       bool
-	SDRBrightness int
+	ExpansionPeakNits float64
+	Enabled           bool
+	SDRBrightness     int
 }
 
 // usable reports whether a connector should be driven.

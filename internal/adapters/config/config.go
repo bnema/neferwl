@@ -429,7 +429,7 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 					return &c.Outputs[i]
 				}
 				outputs[name] = len(c.Outputs)
-				c.Outputs = append(c.Outputs, domain.OutputConfig{Name: name, ScaleOnly: true, SDRBrightness: domain.DefaultSDRBrightness})
+				c.Outputs = append(c.Outputs, domain.OutputConfig{Name: name, ScaleOnly: true, SDRBrightness: domain.DefaultSDRBrightness, SDRExpandIntensity: domain.DefaultSDRExpandIntensity})
 				return &c.Outputs[len(c.Outputs)-1]
 			}
 			if base, ok := strings.CutSuffix(name, ".primary"); ok {
@@ -452,6 +452,34 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 				}
 				override()
 				entry().HDR = b
+				continue
+			}
+			handled := false
+			for _, field := range []string{"sdr-expand", "sdr-expand-intensity", "sdr-expand-peak", "sdr-decode"} {
+				if base, ok := strings.CutSuffix(name, "."+field); ok {
+					handled = true
+					var parsed domain.OutputConfig
+					if err := setOutputExpansion(&parsed, field, value); err != nil {
+						warn("%s: %v", key, err)
+						break
+					}
+					name = base
+					override()
+					e := entry()
+					switch field {
+					case "sdr-expand":
+						e.SDRExpand = parsed.SDRExpand
+					case "sdr-expand-intensity":
+						e.SDRExpandIntensity = parsed.SDRExpandIntensity
+					case "sdr-expand-peak":
+						e.SDRExpandPeak = parsed.SDRExpandPeak
+					case "sdr-decode":
+						e.SDRDecode = parsed.SDRDecode
+					}
+					break
+				}
+			}
+			if handled {
 				continue
 			}
 			if base, ok := strings.CutSuffix(name, ".sdr-brightness"); ok {
@@ -535,6 +563,7 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 			override()
 			e := entry()
 			o.Scale, o.Transform, o.Primary, o.HDR, o.SDRBrightness, o.Anchor = e.Scale, e.Transform, e.Primary, e.HDR, e.SDRBrightness, e.Anchor
+			o.SDRExpand, o.SDRExpandIntensity, o.SDRExpandPeak, o.SDRDecode = e.SDRExpand, e.SDRExpandIntensity, e.SDRExpandPeak, e.SDRDecode
 			*e = o
 			continue
 		}
@@ -1232,6 +1261,28 @@ var errUnknownRuleField = errors.New("unknown key (app-id, floating, workspace, 
 // setRule applies one rule.<name>.<field> key.
 func setRule(r *domain.WindowRule, field, v string) error {
 	switch field {
+	case "sdr-expand":
+		value, ok := domain.ParseSDRExpandRule(v)
+		if !ok {
+			return fmt.Errorf("must be game, on or off")
+		}
+		r.SDRExpand = &value
+	case "sdr-expand-intensity", "sdr-expand-peak":
+		value, err := expansionNumber(field, v)
+		if err != nil {
+			return err
+		}
+		if field == "sdr-expand-intensity" {
+			r.SDRExpandIntensity = &value
+		} else {
+			r.SDRExpandPeak = &value
+		}
+	case "sdr-decode":
+		value, ok := domain.ParseSDRDecode(v)
+		if !ok {
+			return fmt.Errorf("must be gamma22 or srgb")
+		}
+		r.SDRDecode = &value
 	case "app-id":
 		if v == "" {
 			return fmt.Errorf("needs a regular expression")
