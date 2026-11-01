@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 	"testing"
 
 	"bnema.dev/xturbo"
@@ -572,21 +573,33 @@ func TestNetWMStateClientMessageForwardsFullscreen(t *testing.T) {
 	const win = 0x500001
 	hs.classic(win)
 	s := hs.mapAndWait(win)
+	check := func(fullscreen bool) {
+		t.Helper()
+		// The peer must consume all property writes before inspecting its storage.
+		require.NoError(t, hs.x.conn.Sync(&hs.x.h))
+		st, ok := hs.p.prop(win, "_NET_WM_STATE")
+		require.True(t, ok)
+		if fullscreen {
+			require.Equal(t, le32(hs.p.atom("_NET_WM_STATE_FULLSCREEN")), st.data)
+		} else {
+			require.Empty(t, st.data)
+		}
+	}
+	check(false)
 	hs.h.EXPECT().Fullscreen(s, true).Once()
 	hs.p.clientMessage(win, hs.p.atom("_NET_WM_STATE"), 1, hs.p.atom("_NET_WM_STATE_FULLSCREEN"))
 	readUntil(t, hs.x, func() bool { return hs.x.tab.rec(s).fullscreen })
-	require.NoError(t, hs.x.conn.Sync(&hs.x.h))
-	st, ok := hs.p.prop(win, "_NET_WM_STATE")
-	require.True(t, ok)
-	require.Equal(t, le32(hs.p.atom("_NET_WM_STATE_FULLSCREEN")), st.data)
-	hs.h.EXPECT().Fullscreen(s, false).Once() // toggle
+	check(false) // request alone must not advertise fullscreen during grace
+	hs.x.Configure(s, ports.ConfigureWindow{Width: 640, Height: 360, Fullscreen: true})
+	hs.x.flush()
+	check(true) // core accepted the request
+	hs.h.EXPECT().Fullscreen(s, false).Once()
 	hs.p.clientMessage(win, hs.p.atom("_NET_WM_STATE"), 2, hs.p.atom("_NET_WM_STATE_FULLSCREEN"))
 	readUntil(t, hs.x, func() bool { return !hs.x.tab.rec(s).fullscreen })
-	// Local record changes do not imply that the peer consumed the writes.
-	require.NoError(t, hs.x.conn.Sync(&hs.x.h))
-	st, ok = hs.p.prop(win, "_NET_WM_STATE")
-	require.True(t, ok)
-	require.Empty(t, st.data)
+	check(true) // removal is also only a request until core configures
+	hs.x.Configure(s, ports.ConfigureWindow{Width: 640, Height: 360})
+	hs.x.flush()
+	check(false)
 }
 
 // Unmap, destroy, remap.
