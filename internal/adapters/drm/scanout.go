@@ -153,7 +153,7 @@ func scanoutCandidate(s domain.Scene, surfaces map[domain.WindowID]domain.Surfac
 	}
 	// Check the selected buffer (which may be the client subsurface), not
 	// just the window: HDR-described content does not use SDR expansion.
-	if full.SDRExpansion.Active() && isSDRColor(c.Color) {
+	if full.SDRExpansion.Active() && c.Color.PlainSDR() {
 		return c, "sdr_expansion"
 	}
 	switch {

@@ -109,12 +109,12 @@ func overlayCandidate(s domain.Scene, surfaces map[domain.WindowID]domain.Surfac
 		// window (a peeking stashed one) needs the veil drawn over it, a
 		// fading one its translucency; an overview preview is drawn smaller
 		// than its buffer.
-		if w.SDRExpansion.Active() && isSDRColor(c.Color) {
+		if w.SDRExpansion.Active() && c.Color.PlainSDR() {
 			// Keep expanded windows in composition, but still account for
 			// them occluding another candidate below.
 			expansion = true
 		}
-		if !(w.SDRExpansion.Active() && isSDRColor(c.Color)) && w.Radius == 0 && w.Dim <= 0 && w.Fade <= 0 && w.Zoom <= 0 && w.Preview <= 0 && c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) && (kept == nil || !kept(w.ID)) {
+		if !(w.SDRExpansion.Active() && c.Color.PlainSDR()) && w.Radius == 0 && w.Dim <= 0 && w.Fade <= 0 && w.Zoom <= 0 && w.Preview <= 0 && c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) && (kept == nil || !kept(w.ID)) {
 			if m, why := planeColor(c.Color, c.DMABuf.Format, c.Opaque, hdrOn, pipeline); why == "" {
 				pick, pickAt, mode = w, i, m
 				continue

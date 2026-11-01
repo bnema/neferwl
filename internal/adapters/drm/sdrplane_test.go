@@ -117,3 +117,23 @@ func TestSDRExpansionAllowsHDRScanout(t *testing.T) {
 		t.Fatalf("HDR overlay refused: %s", reason)
 	}
 }
+
+func TestSDRExpansionAllowsDescribedSRGBScanout(t *testing.T) {
+	t.Setenv("NEFERWL_DRM_SDR_PLANE", "1")
+	s, contents := fullscreenScene()
+	s.Windows[0].SDRExpansion = (domain.SDRExpansion{Intensity: .5, PeakNits: 604, SDRWhiteNits: 203}).Curve()
+	c := contents[s.Windows[0].ID]
+	c.Color = domain.SurfaceColor{TF: domain.ColorTFSRGB, Primaries: domain.ColorPrimariesSRGB}
+	contents[s.Windows[0].ID] = c
+	got, reason := scanoutCandidate(s, contents, 200, 100, nil)
+	if reason != "" {
+		t.Fatalf("described sRGB scanout refused: %s", reason)
+	}
+	pipe := &colorPipeline{}
+	if mode, reason := planeColor(got.Color, got.DMABuf.Format, got.Opaque, true, pipe); reason != "" || mode != colorSDRToPQ {
+		t.Fatalf("described sRGB plane: mode=%v reason=%q", mode, reason)
+	}
+	if _, _, _, reason := overlayCandidate(s, contents, true, pipe, nil); reason != "" {
+		t.Fatalf("described sRGB overlay refused: %s", reason)
+	}
+}
