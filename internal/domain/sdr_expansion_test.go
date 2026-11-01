@@ -139,3 +139,13 @@ func TestSDRExpansionCurveActive(t *testing.T) {
 		t.Fatal("expansion inactive")
 	}
 }
+
+func TestDecodeSDRNegativeUndershoot(t *testing.T) {
+	for _, d := range []SDRDecode{SDRDecodeGamma22, SDRDecodeSRGB} {
+		for _, v := range []float64{-1, -0.01, -0.000001} {
+			if got := DecodeSDR(v, d); got != 0 {
+				t.Errorf("DecodeSDR(%g, %s)=%g want zero", v, d, got)
+			}
+		}
+	}
+}

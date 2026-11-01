@@ -130,3 +130,9 @@ func (r *windowRegistry) acceptsInput(id WindowID, x, y float64) bool {
 	}
 	return false
 }
+
+func (r *windowRegistry) setColorDescription(id WindowID, plainSDR bool) {
+	if rec := r.records[id]; rec != nil && rec.client.ID != 0 {
+		rec.client.ColorDescription = !plainSDR
+	}
+}

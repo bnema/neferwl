@@ -10,6 +10,7 @@ type sdrExpansionInput struct {
 	Config                  domain.OutputConfig
 	Rule                    ruleEffect
 	Fullscreen, Game, Popup bool
+	ColorDescription        bool
 }
 
 // decideSDRExpansion is pure. Overrides never bypass output HDR capability;
@@ -18,6 +19,9 @@ func decideSDRExpansion(in sdrExpansionInput) (domain.SDRExpansionCurve, string)
 	off := domain.SDRExpansionCurve{}
 	if in.Popup {
 		return off, "popup"
+	}
+	if in.ColorDescription {
+		return off, "colour-managed surface"
 	}
 	if !in.Output.Active {
 		return off, "output not HDR"

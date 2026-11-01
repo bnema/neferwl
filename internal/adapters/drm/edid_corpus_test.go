@@ -1,8 +1,11 @@
 package drm
 
 import (
+	"bytes"
+	"encoding/binary"
 	"math"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
@@ -67,4 +70,49 @@ func capabilityEDID(hdr bool, eotf, peak byte) []byte {
 		block[127] = -sum
 	}
 	return d
+}
+
+// Scan every byte, not only base-block descriptor slots: extensions may also
+// contain serial descriptors. Metadata changes must preserve block checksums.
+func TestEDIDCorpusHasNoSerials(t *testing.T) {
+	files, err := filepath.Glob("testdata/edid/*.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no EDID fixtures")
+	}
+	for _, file := range files {
+		t.Run(filepath.Base(file), func(t *testing.T) {
+			data, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(data) < 128 || len(data)%128 != 0 {
+				t.Fatalf("invalid EDID length %d", len(data))
+			}
+			serial := binary.LittleEndian.Uint32(data[12:16])
+			if serial != 0 && serial != 0x01010101 {
+				t.Error("fixture contains a numeric serial")
+			}
+			for offset := 0; offset+18 <= len(data); offset++ {
+				if !bytes.Equal(data[offset:offset+5], []byte{0, 0, 0, 0xff, 0}) {
+					continue
+				}
+				text := bytes.Trim(data[offset+5:offset+18], " \n\r\x00")
+				if len(bytes.Trim(text, "0")) != 0 {
+					t.Errorf("fixture contains a non-generic serial descriptor at offset %d", offset)
+				}
+			}
+			for offset := 0; offset < len(data); offset += 128 {
+				var sum byte
+				for _, b := range data[offset : offset+128] {
+					sum += b
+				}
+				if sum != 0 {
+					t.Errorf("invalid checksum in block %d", offset/128)
+				}
+			}
+		})
+	}
 }

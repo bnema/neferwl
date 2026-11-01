@@ -79,7 +79,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		focused := p.Focused && i == c.focusScreen
 		sw := domain.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview, Fade: p.Fade}
 		rec := c.windows.lookup(p.ID)
-		sw.SDRExpansion, _ = decideSDRExpansion(sdrExpansionInput{Output: caps, Config: config, Rule: rec.expansionRule, Fullscreen: p.Fullscreen, Game: rec.client.ContentType == domain.ContentGame})
+		sw.SDRExpansion, _ = decideSDRExpansion(sdrExpansionInput{Output: caps, Config: config, Rule: rec.expansionRule, ColorDescription: rec.client.ColorDescription, Fullscreen: p.Fullscreen, Game: rec.client.ContentType == domain.ContentGame})
 		sw.Radius = windowRadius(p, sc.mon.Current().Gap(), c.cfg.Border.Radius)
 		if p.Zoom > 0 && (p.Zoom < 1 || p.Preview > 0) {
 			// A scale motion: the content follows the drawn size. A

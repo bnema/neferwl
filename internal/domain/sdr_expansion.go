@@ -120,8 +120,10 @@ func (c SDRExpansionCurve) ApplyRGB(r, g, b float64) (float64, float64, float64)
 }
 
 // DecodeSDR converts an encoded SDR component in [0, 1] to linear light.
+// Negative reconstruction undershoot is clamped to zero before either decode.
 // SDRDecodeGamma22 is a pure power; SDRDecodeSRGB uses the standard piecewise transfer function.
 func DecodeSDR(v float64, d SDRDecode) float64 {
+	v = math.Max(v, 0)
 	if d == SDRDecodeSRGB {
 		if v <= 0.04045 {
 			return v / 12.92

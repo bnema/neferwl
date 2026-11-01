@@ -20,6 +20,12 @@ func TestDecideSDRExpansion(t *testing.T) {
 		reason string
 	}{
 		{"LG", func(*sdrExpansionInput) {}, true, "eligible"},
+		{"colour managed", func(i *sdrExpansionInput) { i.ColorDescription = true }, false, "colour-managed surface"},
+		{"forced colour managed", func(i *sdrExpansionInput) {
+			i.ColorDescription = true
+			i.Config.SDRExpand = domain.SDRExpandAlways
+			i.Rule.sdrExpand = &on
+		}, false, "colour-managed surface"},
 		{"Gigabyte", func(i *sdrExpansionInput) { i.Output.Caps.PeakNits = 446 }, true, "eligible"},
 		{"assumed", func(i *sdrExpansionInput) { i.Output.Caps = domain.ResolveHDRCaps(domain.HDRCapsInput{Capable: true}) }, true, "eligible"},
 		{"inactive", func(i *sdrExpansionInput) { i.Output.Active = false }, false, "output not HDR"},

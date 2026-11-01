@@ -185,3 +185,55 @@ func TestYUVSourceCropEdges(t *testing.T) {
 		}
 	}
 }
+
+// Limited-range saturated red reconstructs slightly negative blue.
+// Expanded decode must clamp that undershoot rather than feed it to pow.
+func TestNV12SDRExpansionNegativeUndershoot(t *testing.T) {
+	for _, single := range []bool{false, true} {
+		name := "indexed"
+		if single {
+			name = "single"
+		}
+		t.Run(name, func(t *testing.T) {
+			r := hdrTestRendererVariant(t, single)
+			b := yuvTestBuffer(t, false, 63, 102, 240)
+			if !slices.Contains(r.DMABuf().Formats, domain.DMABufFormat{Format: b.Format}) {
+				t.Skip("linear NV12 not importable")
+			}
+			if _, err := r.importDMABuf(b); err != nil {
+				t.Fatal(err)
+			}
+			c := domain.SurfaceContent{ID: 1, Width: 64, Height: 16, Opaque: true, DMABuf: b, Color: domain.SurfaceColor{Coefficients: 2, Range: 2, Chroma: 1}}
+			scene := domain.Scene{Seq: 1, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
+			// Mirror the shader's BT.709 limited-range reconstruction exactly.
+			y, cb, cr := (63.0-16)/219, (102.0-128)/224, (240.0-128)/224
+			encoded := [3]float64{y + 2*(1-.2126)*cr, y - 2*.0722*(1-.0722)/(1-.2126-.0722)*cb - 2*.2126*(1-.2126)/(1-.2126-.0722)*cr, y + 2*(1-.0722)*cb}
+			if encoded[2] >= 0 {
+				t.Fatalf("fixture has no negative undershoot: %v", encoded)
+			}
+			for _, decode := range []domain.SDRDecode{domain.SDRDecodeGamma22, domain.SDRDecodeSRGB} {
+				curve := (domain.SDRExpansion{Intensity: .5, PeakNits: 604, SDRWhiteNits: 203, Decode: decode}).Curve()
+				scene.Seq++
+				scene.Windows[0].SDRExpansion = curve
+				if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: c}); err != nil {
+					t.Fatal(err)
+				}
+				a, g, blue := curve.ApplyRGB(domain.DecodeSDR(encoded[0], decode), domain.DecodeSDR(encoded[1], decode), domain.DecodeSDR(encoded[2], decode))
+				linear := [3]float64{a, g, blue}
+				matrix := [3][3]float64{{.627404, .329283, .043313}, {.069097, .919540, .011362}, {.016391, .088013, .895595}}
+				got := hdrTargetAt(t, r, 8, 8)
+				for ch := range got {
+					want := 0.0
+					for k := range linear {
+						want += matrix[ch][k] * linear[k]
+					}
+					actual := pqDecode(got[ch]) / 203
+					if math.IsNaN(actual) || math.IsInf(actual, 0) || math.Abs(actual-want) > .025 {
+						t.Errorf("%s channel %d readback %.6f mirror %.6f", decode, ch, actual, want)
+					}
+					t.Logf("%s BT2020 channel %d readback %.6f mirror %.6f", decode, ch, actual, want)
+				}
+			}
+		})
+	}
+}
