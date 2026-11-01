@@ -35,7 +35,8 @@ type Output struct {
 	// Frames, set before Run, tells core a flip of an animating scene
 	// completed (nil: nobody is told). Sends never block.
 	Frames           chan<- domain.OutputFrame
-	HDRCaps          chan<- domain.OutputHDRCaps
+	Events           chan<- ports.OutputEvent
+	eventContext     context.Context
 	securityState    domain.SecurityState
 	securityPrepared bool
 	securityInvalid  bool
@@ -1118,6 +1119,7 @@ func (o *Output) InactiveOnClose() bool { return o.inactiveOnClose }
 // Run renders scenes and commits them until ctx ends. active reports seat
 // enable/disable. What the output shows and read is pushed to reports.
 func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan bool, scenes <-chan domain.Scene, contents <-chan *domain.ContentBatch, returns ports.ContentReturn, cursor <-chan domain.CursorChange, reports ports.PresentationSink, captures <-chan domain.CaptureRequest, captured chan<- domain.CaptureDone) (runErr error) {
+	o.eventContext = ctx
 	defer func() {
 		p := recover()
 		if p != nil {

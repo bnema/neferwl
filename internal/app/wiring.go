@@ -48,8 +48,7 @@ type pipes struct {
 	// Outputs report to wayland through its presentation sink and, for each
 	// flip of an animating scene (Scene.Animating), tell core (frames) to
 	// move running slides.
-	frames  chan domain.OutputFrame
-	hdrCaps chan domain.OutputHDRCaps
+	frames chan domain.OutputFrame
 
 	// Hint mode: core asks the hints adapter for a scan and gets the result.
 	hintScans   chan domain.HintScanRequest
@@ -114,9 +113,8 @@ func newPipes(realSession, hint bool) *pipes {
 		configured:   make(chan domain.ConfigChanged, 8),
 		configErrors: make(chan error, 8),
 
-		frames:  make(chan domain.OutputFrame, 8),
-		hdrCaps: make(chan domain.OutputHDRCaps, 32),
-		binds:   make(chan domain.InputTrace, 32),
+		frames: make(chan domain.OutputFrame, 8),
+		binds:  make(chan domain.InputTrace, 32),
 
 		captures: make(chan domain.CaptureRequest, ports.MaxCaptureInflight),
 		captured: make(chan domain.CaptureDone, ports.MaxCaptureInflight),
@@ -167,7 +165,6 @@ func (p *pipes) core() core.Channels {
 		Scales:       p.scales,
 		Binds:        p.binds,
 		Frames:       p.frames,
-		HDRCaps:      p.hdrCaps,
 		HintScans:    p.hintScans,
 		Hints:        p.hintResults,
 	}
@@ -212,7 +209,6 @@ func (p *pipes) outputs(security ports.SessionSecurity, presented ports.Presenta
 		Presented:       presented,
 		Content:         content,
 		Frames:          p.frames,
-		HDRCaps:         p.hdrCaps,
 		Captures:        p.captures,
 		Captured:        p.capturedAll,
 		Formats:         p.outputFormats,

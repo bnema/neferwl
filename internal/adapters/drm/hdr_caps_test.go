@@ -1,8 +1,11 @@
 package drm
 
 import (
+	"context"
 	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 	"testing"
+	"testing/synctest"
 )
 
 func TestHDRCapabilityCaps(t *testing.T) {
@@ -20,36 +23,63 @@ func TestHDRCapabilityCaps(t *testing.T) {
 }
 
 func TestSendHDRCaps(t *testing.T) {
-	events := make(chan domain.OutputHDRCaps, 1)
-	o := &Output{HDRCaps: events}
+	events := make(chan ports.OutputEvent, 1)
+	o := &Output{Events: events}
 	o.conn.name = "DP-1"
 	o.hdr.cap = hdrCapability{Capable: true, HDRMetadata: HDRMetadata{MaxLuminance: 604}}
 	o.hdr.settings.SDRBrightness = 203
 	o.hdr.on = true
 	o.sendHDRCaps()
-	got := <-events
+	got := (<-events).(ports.OutputHDRCaps)
 	if got.Output != "DP-1" || !got.Active || got.Caps.PeakNits != 604 || got.Caps.Tier != domain.HDRFull || got.Caps.Headroom != 604.0/203 {
 		t.Fatalf("event: %+v", got)
 	}
 	o.hdr.settings.ExpansionPeakNits = 800
 	o.sendHDRCaps()
-	if got = <-events; got.Caps.PeakNits != 800 || got.Caps.PeakSource != domain.HDRPeakConfig {
+	if got = (<-events).(ports.OutputHDRCaps); got.Caps.PeakNits != 800 || got.Caps.PeakSource != domain.HDRPeakConfig {
 		t.Fatalf("configured peak: %+v", got)
 	}
 	o.off = true
 	o.sendHDRCaps()
-	if got = <-events; got.Active {
+	if got = (<-events).(ports.OutputHDRCaps); got.Active {
 		t.Fatal("inactive CRTC reports active HDR")
 	}
 	o.hdr.cap = hdrCapability{Reason: "edid: no PQ"}
 	o.hdr.on = false
 	o.sendHDRCaps()
-	if got = <-events; got.Active || got.Caps.Tier != domain.HDRUnavailable {
+	if got = (<-events).(ports.OutputHDRCaps); got.Active || got.Caps.Tier != domain.HDRUnavailable {
 		t.Fatalf("SDR: %+v", got)
 	}
-	// Full and absent channels must not block the output owner.
+	// A full stream is cancellation-aware, never silently dropped.
 	o.sendHDRCaps()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	o.eventContext = ctx
 	o.sendHDRCaps()
-	o.HDRCaps = nil
+	o.Events = nil
 	o.sendHDRCaps()
+}
+
+func TestHDRCapsBackpressurePreservesSnapshot(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		events := make(chan ports.OutputEvent, 1)
+		events <- ports.OutputAdded{}
+		o := &Output{Events: events, eventContext: context.Background()}
+		o.conn.name = "DP-1"
+		o.hdr.cap = hdrCapability{Capable: true, HDRMetadata: HDRMetadata{MaxLuminance: 604}}
+		done := make(chan struct{})
+		go func() { o.sendHDRCaps(); close(done) }()
+		synctest.Wait()
+		select {
+		case <-done:
+			t.Fatal("full lifecycle stream dropped snapshot")
+		default:
+		}
+		<-events
+		<-done
+		got := (<-events).(ports.OutputHDRCaps)
+		if got.Output != "DP-1" || got.Caps.PeakNits != 604 {
+			t.Fatalf("snapshot %+v", got)
+		}
+	})
 }

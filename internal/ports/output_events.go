@@ -15,6 +15,11 @@ type OutputAdded struct{ Info domain.OutputInfo }
 
 func (OutputAdded) outputEvent() {}
 
+// OutputHDRCaps carries confirmed HDR facts in output lifecycle order.
+type OutputHDRCaps struct{ domain.OutputHDRCaps }
+
+func (OutputHDRCaps) outputEvent() {}
+
 // PresentationSink receives output → wayland reports. Push never blocks;
 // it wakes the consumer. Owner goroutines of outputs call it. After Push the
 // report belongs to the sink: its maps are read-only snapshots, and Flip must

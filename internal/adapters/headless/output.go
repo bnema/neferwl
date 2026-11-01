@@ -54,7 +54,7 @@ type Options struct {
 	// Frames tells core a presented scene is animating: its next frame is
 	// due. Sends never block (nil: nobody is told).
 	Frames   chan<- domain.OutputFrame
-	HDRCaps  chan<- domain.OutputHDRCaps
+	Events   chan<- ports.OutputEvent
 	Captured chan<- domain.CaptureDone
 	// Clock paces the renderer trim (nil: system clock).
 	Clock ports.Clock
@@ -102,9 +102,12 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		event.Active = true
 	}
 	event.Caps = domain.ResolveHDRCaps(in)
-	select {
-	case opts.HDRCaps <- event:
-	default:
+	if opts.Events != nil {
+		select {
+		case opts.Events <- ports.OutputHDRCaps{OutputHDRCaps: event}:
+		case <-ctx.Done():
+			return nil
+		}
 	}
 	table := surfaces.New()
 	drawn := table.Map()

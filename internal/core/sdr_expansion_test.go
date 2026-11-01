@@ -72,7 +72,7 @@ func TestDecideSDRExpansion(t *testing.T) {
 
 func TestSDRExpansionSceneReevaluation(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		caps := make(chan domain.OutputHDRCaps)
+
 		client := make(chan ports.ClientEvent)
 		outputs := make(chan ports.OutputEvent)
 		reload := make(chan domain.ConfigChanged)
@@ -80,7 +80,7 @@ func TestSDRExpansionSceneReevaluation(t *testing.T) {
 		cfg := domain.Config{}
 		cfg.Layout.MaxColumns = 2
 		cfg.Keyboard.CmdKey = "super"
-		c, err := New(cfg, Channels{HDRCaps: caps, Client: client, Output: outputs, Config: reload, Scenes: scenes, Commands: make(chan ports.ClientCommand, 128)}, testOptions(t, Options{}))
+		c, err := New(cfg, Channels{Client: client, Output: outputs, Config: reload, Scenes: scenes, Commands: make(chan ports.ClientCommand, 128)}, testOptions(t, Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -119,13 +119,13 @@ func TestSDRExpansionSceneReevaluation(t *testing.T) {
 		client <- ports.WindowMapped{ID: 1, AppID: "game", Fullscreen: true, ContentType: domain.ContentGame}
 		check(false)
 		event := domain.OutputHDRCaps{Output: "A", Active: true, Caps: domain.ResolveHDRCaps(domain.HDRCapsInput{Capable: true, MaxLuminance: 604})}
-		caps <- event
+		outputs <- ports.OutputHDRCaps{OutputHDRCaps: event}
 		check(true)
 		event.Active = false
-		caps <- event
+		outputs <- ports.OutputHDRCaps{OutputHDRCaps: event}
 		check(false)
 		event.Active = true
-		caps <- event
+		outputs <- ports.OutputHDRCaps{OutputHDRCaps: event}
 		check(true)
 		client <- ports.WindowContentType{ID: 1, Type: domain.ContentNone}
 		check(false)

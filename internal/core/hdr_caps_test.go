@@ -2,21 +2,19 @@ package core
 
 import (
 	"context"
-	"testing"
-	"testing/synctest"
-
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
+	"testing"
+	"testing/synctest"
 )
 
-func TestOutputHDRCapsStoredAndRemoved(t *testing.T) {
+func TestOutputHDRCapsLifecycleOrder(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		events := make(chan domain.OutputHDRCaps)
-		outputs := make(chan ports.OutputEvent)
+		outputs := make(chan ports.OutputEvent, 16)
 		cfg := domain.Config{}
 		cfg.Layout.MaxColumns = 2
 		cfg.Keyboard.CmdKey = "super"
-		c, err := New(cfg, Channels{HDRCaps: events, Output: outputs, Scenes: make(chan []domain.Scene, 1), Commands: make(chan ports.ClientCommand, 64)}, testOptions(t, Options{}))
+		c, err := New(cfg, Channels{Output: outputs, Scenes: make(chan []domain.Scene, 1), Commands: make(chan ports.ClientCommand, 128)}, testOptions(t, Options{}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -29,37 +27,24 @@ func TestOutputHDRCapsStoredAndRemoved(t *testing.T) {
 				t.Error(err)
 			}
 		}()
+		old := domain.OutputHDRCaps{Output: "A", Active: true, Caps: domain.ResolveHDRCaps(domain.HDRCapsInput{Capable: true, MaxLuminance: 604})}
+		next := old
+		next.Caps = domain.ResolveHDRCaps(domain.HDRCapsInput{Capable: true, MaxLuminance: 446})
+		// Queue whole lifetimes without waiting between add/caps/remove/reconnect.
 		outputs <- ports.OutputAdded{Info: domain.OutputInfo{Name: "A", Width: 100, Height: 100}}
+		outputs <- ports.OutputHDRCaps{OutputHDRCaps: old}
+		outputs <- ports.OutputRemoved{Name: "A"}
+		outputs <- ports.OutputHDRCaps{OutputHDRCaps: old} // unknown output cannot resurrect
+		outputs <- ports.OutputAdded{Info: domain.OutputInfo{Name: "A", Width: 100, Height: 100}}
+		outputs <- ports.OutputHDRCaps{OutputHDRCaps: next}
 		synctest.Wait()
-		want := domain.OutputHDRCaps{Output: "A", Caps: domain.ResolveHDRCaps(domain.HDRCapsInput{Capable: true, MaxLuminance: 604}), Active: true}
-		events <- want
-		synctest.Wait()
-		if got, ok := c.outputHDRCaps("A"); !ok || got != want {
-			t.Fatalf("stored %v, %t", got, ok)
-		}
-		other := want
-		other.Output = "B"
-		other.Active = false
-		events <- other
-		synctest.Wait()
-		want.Active = false
-		events <- want
-		synctest.Wait()
-		if got, _ := c.outputHDRCaps("A"); got != want {
-			t.Fatal("update lost", got)
+		if got, ok := c.outputHDRCaps("A"); !ok || got != next {
+			t.Fatalf("new lifetime: %+v %t", got, ok)
 		}
 		outputs <- ports.OutputRemoved{Name: "A"}
 		synctest.Wait()
 		if _, ok := c.outputHDRCaps("A"); ok {
-			t.Fatal("removed output retained")
-		}
-		if got, ok := c.outputHDRCaps("B"); !ok || got != other {
-			t.Fatal("other output lost")
-		}
-		close(events)
-		synctest.Wait()
-		if c.ch.HDRCaps != nil {
-			t.Fatal("closed channel retained")
+			t.Fatal("removed caps retained")
 		}
 	})
 }

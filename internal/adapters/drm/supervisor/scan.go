@@ -63,7 +63,7 @@ func (run *outputsRun) scan() {
 			// Every physical lifetime gets the gate before any early exit:
 			// Close must not restore saved desktop, even on a name collision.
 			o.Security, o.Frames = run.ch.Security, run.ch.Frames
-			o.HDRCaps = run.ch.HDRCaps
+			o.Events = run.ch.Events
 			name := o.Info().Name
 			if other := run.cards[name]; other != nil && other != c {
 				// Core and clients know outputs by connector name.
@@ -98,8 +98,14 @@ func (run *outputsRun) scan() {
 			}
 			active := run.b.seat.Subscribe()
 			realtime := run.currentConfig.Performance.Realtime
+			announced := make(chan struct{})
 			started := run.set.Start(run.ctx, name, func(octx context.Context, feed routing.Feed) error {
 				defer run.b.seat.Unsubscribe(active)
+				select {
+				case <-announced:
+				case <-octx.Done():
+					return nil
+				}
 				o.Security, o.SecurityChanges, o.Instance, o.StartOff = run.ch.Security, feed.Security, feed.Instance, feed.StartOff
 				return safe("output "+name, func() error {
 					defer o.Close()
@@ -154,6 +160,7 @@ func (run *outputsRun) scan() {
 			}()
 			run.progress.Started(name, source)
 			run.send(ports.OutputAdded{Info: o.Info()})
+			close(announced)
 		}
 	}
 	run.publishInventory()

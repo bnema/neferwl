@@ -640,11 +640,11 @@ func TestHeadlessHDRFormatsConfirmed(t *testing.T) {
 				}
 				r.EXPECT().Close().Return().Once()
 				formats := make(chan domain.OutputFormats, 1)
-				caps := make(chan domain.OutputHDRCaps, 1)
+				caps := make(chan ports.OutputEvent, 1)
 				ctx, cancel := context.WithCancel(context.Background())
 				done := make(chan error, 1)
 				go func() {
-					done <- RunOutput(ctx, Options{Width: 2, Height: 2, HDR: true, Name: "HEADLESS-1", Formats: formats, HDRCaps: caps, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, nil)
+					done <- RunOutput(ctx, Options{Width: 2, Height: 2, HDR: true, Name: "HEADLESS-1", Formats: formats, Events: caps, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, nil)
 				}()
 				select {
 				case f := <-formats:
@@ -659,7 +659,8 @@ func TestHeadlessHDRFormatsConfirmed(t *testing.T) {
 				}
 				synctest.Wait()
 				select {
-				case event := <-caps:
+				case ev := <-caps:
+					event := ev.(ports.OutputHDRCaps)
 					if event.Output != "HEADLESS-1" || event.Active != success {
 						t.Fatalf("caps: %+v", event)
 					}

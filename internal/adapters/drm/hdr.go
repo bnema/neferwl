@@ -1,6 +1,8 @@
 package drm
 
 import (
+	"context"
+	"github.com/bnema/neferwl/internal/ports"
 	"math"
 	"unsafe"
 
@@ -155,12 +157,19 @@ func (c hdrCapability) caps(peakNits, sdrWhiteNits float64) domain.HDRCaps {
 	})
 }
 
-// sendHDRCaps never stalls the output owner; a full channel drops the snapshot
-// until the next successful modeset, like sendFormats.
+// sendHDRCaps shares the lossless lifecycle stream. Cancellation releases a
+// blocked owner before the supervisor emits removal and starts a replacement.
 func (o *Output) sendHDRCaps() {
+	if o.Events == nil {
+		return
+	}
 	event := domain.OutputHDRCaps{Output: o.conn.name, Caps: o.hdr.cap.caps(o.hdr.settings.ExpansionPeakNits, float64(o.hdr.settings.SDRBrightness)), Active: o.hdr.on && !o.off}
+	ctx := o.eventContext
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	select {
-	case o.HDRCaps <- event:
-	default:
+	case o.Events <- ports.OutputHDRCaps{OutputHDRCaps: event}:
+	case <-ctx.Done():
 	}
 }

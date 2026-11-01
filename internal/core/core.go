@@ -53,8 +53,6 @@ type Channels struct {
 	// animating scene (Scene.Animating): a running slide moves one step per
 	// report. Without them it moves on a timer.
 	Frames <-chan domain.OutputFrame
-	// HDRCaps carries per-output capability facts, independent of active mode.
-	HDRCaps <-chan domain.OutputHDRCaps
 	// HintScans, when set, receives the scan request of each hint action
 	// (capacity 1; core never waits: a full channel cancels the hint).
 	// Hints carries the results back. With HintScans nil the hint action
@@ -1175,19 +1173,6 @@ func (c *Core) Run(ctx context.Context) error {
 					return nil
 				}
 			}
-		case caps, ok := <-c.ch.HDRCaps:
-			if !ok {
-				c.ch.HDRCaps = nil
-				continue
-			}
-			if c.hdrCaps == nil {
-				c.hdrCaps = make(map[string]domain.OutputHDRCaps)
-			}
-			c.hdrCaps[caps.Output] = caps
-			if c.securityCheckpoint(ctx) != nil || c.publish(ctx) != nil {
-				return nil
-			}
-			continue
 		case f, ok := <-c.ch.Frames:
 			if c.securityCheckpoint(ctx) != nil {
 				return nil
@@ -1294,6 +1279,14 @@ func (c *Core) Run(ctx context.Context) error {
 				return nil
 			}
 			switch v := ev.(type) {
+			case ports.OutputHDRCaps:
+				if c.screenIndex(v.Output) < 0 {
+					continue
+				}
+				if c.hdrCaps == nil {
+					c.hdrCaps = make(map[string]domain.OutputHDRCaps)
+				}
+				c.hdrCaps[v.Output] = v.OutputHDRCaps
 			case ports.OutputAdded:
 				c.addScreen(v.Info)
 				if c.layerChanged {
