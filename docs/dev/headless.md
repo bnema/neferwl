@@ -197,3 +197,35 @@ env -u NEFERWL_STATE -u NEFERWL_SLOT PATH="$T/bin:$PATH" "$T/neferwl" --backend=
 ```
 
 The input script opens a large-font foot showing `https://example.com` and runs `hint`. Read the label from the screenshot, then append `type <label>` and a `sleep 2s` to `$T/input` and run again. `$T/opened` then holds exactly `https://example.com`. A `file:` target is clicked and leaves it empty. Launcher failures are in the log under `component=launcher`.
+
+## Primary output coordinates
+
+`output.<name>.primary = on` makes that output the origin for public
+`wl_output.geometry` and `xdg_output.logical_position`. All public output
+positions are translated by the same offset; without a configured primary,
+positions stay unchanged. Layout or primary changes resend existing bindings,
+with positions preceding their `done` event. Internal layout, pointer and window
+coordinates do not move.
+
+Other protocol coordinate spaces deliberately stay unchanged:
+
+- Xwayland's private xdg-output uses the xspace top-left origin, not the public
+  primary origin, so its root and RandR geometry stay compatible with X windows.
+  X11 primary selection is separate: honoring the configured primary for X11
+  clients would also require setting RandR's primary output; this translation
+  does not implement that.
+- wlr-output-management head positions remain absolute compositor coordinates:
+  clients must be able to round-trip a configuration without moving outputs.
+- Layer-shell configures carry output-local sizes, not global positions.
+- ext-workspace coordinates are workspace indices, not output positions.
+
+For a two-output check with a nonzero internal primary position, use
+`--size 640x360,640x360` and this throwaway config:
+
+```ini
+output.HEADLESS-2.primary = on
+output.HEADLESS-2.right-of = HEADLESS-1
+```
+
+On the isolated headless display, `wayland-info -i wl_output` should report
+HEADLESS-1 at (-640,0) and HEADLESS-2 at (0,0).

@@ -39,10 +39,12 @@ func (s *Server) setOutputHDR(f domain.OutputFormats) {
 
 // output is one advertised display and the resources clients bound to it.
 type output struct {
-	place      domain.OutputPlacement
-	global     *server.Global
-	resources  []*wayland.Output
-	xdgOutputs []*xdgoutput.ZxdgOutputV1
+	place domain.OutputPlacement
+	// Public protocol origin only; place remains in compositor layout space.
+	originX, originY int
+	global           *server.Global
+	resources        []*wayland.Output
+	xdgOutputs       []*xdgoutput.ZxdgOutputV1
 	// xdgOutputsX are the private xdg-outputs of the Xwayland client (X space).
 	xdgOutputsX []*xdgoutput.ZxdgOutputV1
 }
@@ -68,7 +70,7 @@ func (o *output) sendAll(r *wayland.Output) {
 	if refresh == 0 {
 		refresh = 60000
 	}
-	r.SendGeometry(int32(o.place.X), int32(o.place.Y), int32(i.PhysicalW), int32(i.PhysicalH), 0, make, model, int32(o.place.Transform))
+	r.SendGeometry(int32(o.place.X-o.originX), int32(o.place.Y-o.originY), int32(i.PhysicalW), int32(i.PhysicalH), 0, make, model, int32(o.place.Transform))
 	// The mode stays physical; the scale tells clients how to divide it.
 	r.SendMode(3, int32(i.Width), int32(i.Height), int32(refresh))
 	if r.Version() >= 2 {
@@ -84,7 +86,7 @@ func (o *output) sendAll(r *wayland.Output) {
 }
 
 func (o *output) sendXDG(x *xdgoutput.ZxdgOutputV1, withName bool) {
-	x.SendLogicalPosition(int32(o.place.X), int32(o.place.Y))
+	x.SendLogicalPosition(int32(o.place.X-o.originX), int32(o.place.Y-o.originY))
 	x.SendLogicalSize(int32(o.place.Width), int32(o.place.Height))
 	if withName && x.Version() >= 2 {
 		x.SendName(o.name())
@@ -161,7 +163,8 @@ func (s *Server) outputByName(name string) *output {
 
 // addOutput advertises a new wl_output global.
 func (s *Server) addOutput(p domain.OutputPlacement) {
-	o := &output{place: p}
+	ox, oy := s.publicOutputOrigin()
+	o := &output{place: p, originX: ox, originY: oy}
 	g, err := s.display.AddGlobal(wayland.OutputInterface, 4, func(c server.Client, v, id uint32) {
 		r, err := wayland.NewOutput(c, int32(v), id, outputHandler{})
 		if err != nil {
@@ -186,6 +189,17 @@ func (s *Server) addOutput(p domain.OutputPlacement) {
 	o.global = g
 	s.outputs = append(s.outputs, o)
 	s.log.Info().Str("output", p.Info.Name).Int("x", p.X).Int("y", p.Y).Int("w", p.Width).Int("h", p.Height).Float64("scale", p.Scale).Msg("output added")
+}
+
+// publicOutputOrigin translates client-visible coordinates without moving the
+// compositor layout. Core has already selected the configured primary output.
+func (s *Server) publicOutputOrigin() (int, int) {
+	for _, p := range s.outputPlaces {
+		if p.Primary {
+			return p.X, p.Y
+		}
+	}
+	return 0, 0
 }
 
 // setOutputs applies the global layout from core: new outputs are
@@ -267,13 +281,21 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 		// Buffer sizes follow the mode and the scale (region and workspace
 		// sources too): sessions send new constraints when theirs changed.
 		s.refreshSessions()
-		for _, r := range o.resources {
-			o.sendAll(r)
-		}
-		for _, x := range o.xdgOutputs {
-			o.sendXDG(x, false)
-			if x.Version() < 3 {
-				x.SendDone()
+	}
+	if changed {
+		ox, oy := s.publicOutputOrigin()
+		for _, o := range s.outputs {
+			o.originX, o.originY = ox, oy
+			// xdg-output v3 is committed by wl_output.done, so send its
+			// position before sendAll's done, including on origin-only changes.
+			for _, x := range o.xdgOutputs {
+				o.sendXDG(x, false)
+				if x.Version() < 3 {
+					x.SendDone()
+				}
+			}
+			for _, r := range o.resources {
+				o.sendAll(r)
 			}
 		}
 	}

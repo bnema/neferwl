@@ -86,7 +86,9 @@ func twoOutputs(ax int) ports.SetOutputs {
 // them on a layout change; every other client keeps the layout coordinates.
 func TestXwaylandPrivateXDGOutput(t *testing.T) {
 	r := newX11Rig(t)
-	applyOutputs(t, r.s, r.commands, twoOutputs(-1920))
+	initial := twoOutputs(-1920)
+	initial.Outputs[1].Primary = true
+	applyOutputs(t, r.s, r.commands, initial)
 	other := protocolClient(t, r.s, r.dir)
 	xo := xdgOutputsOf(t, r.xc)
 	oo := xdgOutputsOf(t, other)
