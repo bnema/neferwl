@@ -54,6 +54,7 @@ func parseEDID(d []byte) Monitor {
 		BlueX: xy(d[31], d[26]>>6), BlueY: xy(d[32], d[26]>>4&3),
 		WhiteX: xy(d[33], d[26]>>2&3), WhiteY: xy(d[34], d[26]&3),
 	}
+	// DisplayID luminance is not parsed; only CTA-861 HDR metadata is supported.
 	for i := 0; i < int(d[126]) && (i+2)*128 <= len(d); i++ {
 		m.HDR.parseCTA(d[(i+1)*128 : (i+2)*128])
 	}
