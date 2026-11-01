@@ -2,11 +2,11 @@ package drm
 
 import (
 	"context"
-	"github.com/bnema/neferwl/internal/ports"
 	"math"
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // HDMI static metadata type 1, embedded in struct hdr_output_metadata.
