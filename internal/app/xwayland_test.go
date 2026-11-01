@@ -516,6 +516,30 @@ func TestXwaylandFullscreen(t *testing.T) {
 	until(t, "gap back", func() bool { return greenShare(shot, corner) == 0 && fullOutput(shot) < 0.99 })
 }
 
+// TestXwaylandFullscreenStats watches an X11 game after leaving and re-entering
+// fullscreen, then closes the client after showing the stats overlay.
+func TestXwaylandFullscreenStats(t *testing.T) {
+	e := startXwayland(t)
+	p := startProbe(t, e.bin, e.display, "-fullscreen", "-fullscreen-delay", "1500ms", "-fullscreen-off", "1s")
+	until(t, "fullscreen", func() bool { return strings.Contains(p.out.String(), "fullscreen 640x360") })
+	until(t, "fullscreen off", func() bool { return strings.Contains(p.out.String(), "fullscreen off ") })
+	if _, err := io.WriteString(e.script, "key Super+Shift+f\n"); err != nil {
+		t.Fatal(err)
+	}
+	until(t, "fullscreen again", func() bool { return strings.Count(p.out.String(), "fullscreen 640x360") >= 2 })
+	// Holding cmd activates WatchStats for the focused X11 window. The OSD is
+	// excluded from screenshots; the subsequent close verifies the compositor
+	// and XWM survived the stats request.
+	if _, err := io.WriteString(e.script, "hold Super_L 1s\nkey Super+q\n"); err != nil {
+		t.Fatal(err)
+	}
+	until(t, "disconnected X11 client removed", func() bool { return len(readState(e.statePath).Windows) == 0 })
+	next := startProbe(t, e.bin, e.display, "-class", "AfterStats")
+	until(t, "XWM still manages new windows", func() bool {
+		return strings.Contains(next.out.String(), "mapped ") && len(readState(e.statePath).Windows) == 1
+	})
+}
+
 // TestXwaylandFullscreenOff: the client leaves fullscreen itself.
 func TestXwaylandFullscreenOff(t *testing.T) {
 	e := startXwayland(t)

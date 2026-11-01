@@ -2,9 +2,13 @@ package wayland
 
 import (
 	"testing"
+	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/domain"
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func statsRingOf(samples ...uint32) *frameRing {
@@ -123,6 +127,28 @@ func TestFrameRingSummaryAllocs(t *testing.T) {
 	r := statsRingOf(statsRepeat(12000, 3000)...)
 	var scratch [domain.StatsFrames]uint32
 	assert.Zero(t, testing.AllocsPerRun(100, func() { _ = r.summary(&scratch) }))
+}
+
+func TestWatchStatsX11BufferFacts(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		clock := portsmocks.NewMockClock(t)
+		timer := portsmocks.NewMockTimer(t)
+		clock.EXPECT().AfterFunc(ports.StatsInterval, mock.Anything).Return(timer).Once()
+		timer.EXPECT().Stop().Return(true).Once()
+		root := &surface{content: domain.SurfaceContent{Width: 5120, Height: 2160}, async: true}
+		s := &Server{clock: clock, windows: map[domain.WindowID]*window{
+			47: {id: 47, mapped: true, x11: &x11Window{surface: root}},
+		}}
+		s.watchStats(47)
+		assert.Equal(t, domain.WindowID(47), s.stats.watched)
+		assert.Equal(t, 5120, s.stats.facts.Width)
+		assert.Equal(t, 2160, s.stats.facts.Height)
+		assert.True(t, s.stats.facts.Tearing)
+		assert.Same(t, timer, s.stats.timer)
+		s.watchStats(0)
+		assert.Zero(t, s.stats.watched)
+		assert.Nil(t, s.stats.timer)
+	})
 }
 
 func TestWindowStatsScanoutReasons(t *testing.T) {

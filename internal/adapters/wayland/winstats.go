@@ -171,7 +171,7 @@ func (s *Server) watchStats(id domain.WindowID) {
 	gen := s.stats.gen + 1
 	s.stats = windowStats{watched: id, gen: gen}
 	if id != 0 {
-		root := w.xdg.surface
+		root := w.surf()
 		s.stats.bufferFacts(root.content, root.hold.acquire != nil, root.async)
 		s.armStats()
 	}
