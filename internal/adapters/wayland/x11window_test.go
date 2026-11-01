@@ -3,6 +3,7 @@ package wayland
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"github.com/bnema/neferwl/internal/domain"
 	"net"
 	"os"
@@ -376,6 +377,35 @@ func TestX11WindowPointerLock(t *testing.T) {
 	r.commands <- ports.FocusWindow{ID: m.ID}
 	if got := constrained(t, r.events); got.ID != m.ID || got.Mode != domain.ConstraintLock {
 		t.Fatalf("constrained %+v", got)
+	}
+}
+
+// A late wl_pointer bind inherits the entered X11 surface, just as it does
+// for an xdg window. Xwayland may bind additional pointer objects after focus.
+func TestX11WindowLatePointerBind(t *testing.T) {
+	r := newX11Rig(t)
+	r.x11Window(x11Win)
+	surf := r.pair(x11Win, x11Serial)
+	m := awaitEvent[ports.WindowMapped](t, r.events)
+	seat := bindProtocol(t, r.xc, "wl_seat")
+	first := &surfacePointer{events: make(chan string, 32)}
+	first.SetID(r.xc.AllocateID())
+	registerWireProxy(r.xc, first)
+	requestProtocol(t, r.xc, seat, wayland.SeatRequestGetPointer, first.ID())
+	if err := r.xc.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	r.commands <- ports.PointerFocus{ID: m.ID, X: 3, Y: 4}
+	want := fmt.Sprintf("enter %d 3.00 4.00", surf)
+	if entered := recvWire(t, r.xc, "first pointer enter", first.events); entered != want {
+		t.Fatalf("first pointer enter: %s", entered)
+	}
+	second := &surfacePointer{events: make(chan string, 32)}
+	second.SetID(r.xc.AllocateID())
+	registerWireProxy(r.xc, second)
+	requestProtocol(t, r.xc, seat, wayland.SeatRequestGetPointer, second.ID())
+	if late := recvWire(t, r.xc, "late pointer enter", second.events); late != want {
+		t.Fatalf("late pointer enter: %s", late)
 	}
 }
 

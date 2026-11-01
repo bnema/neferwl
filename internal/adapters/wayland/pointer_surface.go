@@ -124,7 +124,7 @@ func (s *Server) enteredPointerSurface() (*wayland.Surface, []*wayland.Pointer, 
 	x, y := s.seat.pointerX, s.seat.pointerY
 	var root *surface
 	if w := s.windows[s.seat.pointerFocus]; w != nil && w.mapped {
-		root = w.xdg.surface
+		root = w.surf()
 		x, y = w.surfacePoint(x, y)
 	} else if l := s.layers[s.seat.pointerFocus]; l != nil && l.mapped {
 		root = l.surface
