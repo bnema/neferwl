@@ -60,6 +60,8 @@ vec3 decodeSRGB(vec3 v) {
 // Mirror SDRExpansionCurve.Apply/ApplyRGB on straight (unpremultiplied)
 // linear RGB. main re-premultiplies afterwards, before opacity and coverage.
 vec3 expandSDR(vec3 v) {
+    // YUV reconstruction can undershoot zero. Clamp only expanded content.
+    v = max(v, vec3(0.0));
     vec3 rgb = d.expand.w == 1.0 ? decodeSRGB(v) : pow(v, vec3(2.2));
     float m = max(rgb.r, max(rgb.g, rgb.b));
     if (m <= 0.0) return rgb;
