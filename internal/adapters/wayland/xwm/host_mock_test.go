@@ -347,6 +347,52 @@ func (_c *mockhost_Fullscreen_Call) RunAndReturn(run func(slot Slot, on bool)) *
 	return _c
 }
 
+// Modal provides a mock function for the type mockhost
+func (_mock *mockhost) Modal(slot Slot, on bool) {
+	_mock.Called(slot, on)
+	return
+}
+
+// mockhost_Modal_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Modal'
+type mockhost_Modal_Call struct {
+	*mock.Call
+}
+
+// Modal is a helper method to define mock.On call
+//   - slot Slot
+//   - on bool
+func (_e *mockhost_Expecter) Modal(slot any, on any) *mockhost_Modal_Call {
+	return &mockhost_Modal_Call{Call: _e.mock.On("Modal", slot, on)}
+}
+
+func (_c *mockhost_Modal_Call) Run(run func(slot Slot, on bool)) *mockhost_Modal_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 Slot
+		if args[0] != nil {
+			arg0 = args[0].(Slot)
+		}
+		var arg1 bool
+		if args[1] != nil {
+			arg1 = args[1].(bool)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *mockhost_Modal_Call) Return() *mockhost_Modal_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *mockhost_Modal_Call) RunAndReturn(run func(slot Slot, on bool)) *mockhost_Modal_Call {
+	_c.Run(run)
+	return _c
+}
+
 // OverrideGone provides a mock function for the type mockhost
 func (_mock *mockhost) OverrideGone(slot Slot) {
 	_mock.Called(slot)

@@ -204,6 +204,23 @@ func TestX11WindowLifecycle(t *testing.T) {
 		t.Fatalf("title %q", title)
 	}
 
+	// Modal changes after map reach the existing core message.
+	for _, on := range []bool{true, false} {
+		action := uint32(0)
+		if on {
+			action = 1
+		}
+		p.clientMessage(win, "_NET_WM_STATE", action, p.atom("_NET_WM_STATE_MODAL"))
+		if ev := awaitEvent[ports.WindowModal](t, r.events); ev.ID != m.ID || ev.Modal != on {
+			t.Fatalf("modal %+v, want %t", ev, on)
+		}
+		onDisplay(t, r.s, func() {
+			if w := r.s.windows[m.ID]; w.modal != on || w.x11.info.Modal != on {
+				t.Errorf("modal state not updated")
+			}
+		})
+	}
+
 	// Fullscreen request from the client.
 	p.clientMessage(win, "_NET_WM_STATE", 1, p.atom("_NET_WM_STATE_FULLSCREEN"))
 	if f := awaitEvent[ports.WindowFullscreenRequest](t, r.events); f.ID != m.ID || !f.Fullscreen || f.External {
@@ -627,4 +644,3 @@ func TestX11WindowEntersOneOutput(t *testing.T) {
 		t.Fatalf("move to B: %d enters, %d leaves, want 1, 1", e, l)
 	}
 }
-

@@ -271,6 +271,13 @@ func (h hostImpl) Parent(slot xwm.Slot, parent xwm.Slot) {
 	}
 }
 
+func (h hostImpl) Modal(slot xwm.Slot, on bool) {
+	if w := h.window(slot); w != nil {
+		w.x11.info.Modal = on
+		w.setModal(on)
+	}
+}
+
 func (h hostImpl) Fullscreen(slot xwm.Slot, on bool) {
 	w := h.window(slot)
 	if w == nil {

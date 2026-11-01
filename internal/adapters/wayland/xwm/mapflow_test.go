@@ -814,3 +814,31 @@ func TestMapFlowWholeOutputRectSetsHint(t *testing.T) {
 	r.h, r.sized = 1024, false
 	require.False(t, hs.x.info(s).HasAt)
 }
+
+func TestNetWMStateModalAfterMap(t *testing.T) {
+	hs := newHarness(t, nil)
+	const win = 0x500001
+	hs.classic(win)
+	s := hs.mapAndWait(win)
+	modal := hs.p.atom("_NET_WM_STATE_MODAL")
+	for _, on := range []bool{true, false} {
+		hs.h.EXPECT().Modal(s, on).Once()
+		action := uint32(netStateRemove)
+		if on {
+			action = netStateAdd
+		}
+		hs.p.clientMessage(win, hs.p.atom("_NET_WM_STATE"), action, modal)
+		readUntil(t, hs.x, func() bool { return hs.x.tab.rec(s).modal == on })
+		require.NoError(t, hs.x.conn.Sync(&hs.x.h))
+		st, ok := hs.p.prop(win, "_NET_WM_STATE")
+		require.True(t, ok)
+		if on {
+			require.Equal(t, le32(modal), st.data)
+		} else {
+			require.Empty(t, st.data)
+		}
+		// Repeating the request must not notify the host again.
+		hs.p.clientMessage(win, hs.p.atom("_NET_WM_STATE"), action, modal)
+		require.NoError(t, hs.x.conn.Sync(&hs.x.h))
+	}
+}

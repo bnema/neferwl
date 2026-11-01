@@ -48,6 +48,8 @@ type host interface {
 	// Fullscreen forwards a fullscreen request (_NET_WM_STATE client message
 	// or initial state); the host emits WindowFullscreenRequest.
 	Fullscreen(slot Slot, on bool)
+	// Modal reports a changed modal state after Ready.
+	Modal(slot Slot, on bool)
 
 	// OverrideMapped reports an override-redirect window that is mapped,
 	// typed and paired with its wl_surface. Rect is in layout coordinates.

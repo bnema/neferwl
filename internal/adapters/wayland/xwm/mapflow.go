@@ -222,7 +222,17 @@ func (x *XWM) onNetWMState(e xproto.ClientMessageEvent) {
 		switch {
 		case a == 0:
 		case a == x.atoms[atomNetWMStateModal]:
-			rec.modal = apply(rec.modal)
+			on := apply(rec.modal)
+			if on == rec.modal {
+				continue
+			}
+			rec.modal = on
+			if rec.ready {
+				x.host.Modal(s, on)
+				rec = x.tab.rec(s)
+				x.writeState(rec)
+				x.wake()
+			}
 		case a == x.atoms[atomNetWMStateFullscreen]:
 			on := apply(rec.fullscreen)
 			if on == rec.fullscreen {
