@@ -505,6 +505,34 @@ func TestColorCommitTransitions(t *testing.T) {
 	if _, ok := again.req.value(tPrimary, pColorPipe); ok {
 		t.Fatal("Bypass written twice")
 	}
+
+	// Returning to the same fullscreen buffer after composed frames must
+	// restore every property, not just select the pipeline. Compare exact
+	// values with first entry, including bypasses, curves and blob IDs.
+	o.frame.endPending()
+	if ok, err := o.commitScanoutRect(80, c, pendingFrame{}, fullPlaneRect(200, 100), colorSDRToPQ); !ok || err != nil {
+		t.Fatalf("re-entry: ok=%v err=%v", ok, err)
+	}
+	reentry := last()
+	if reentry.flags&flipAsyncFlag != 0 {
+		t.Fatal("pipeline re-entry went async")
+	}
+	for i, obj := range first.req.objs {
+		if obj != tPrimary && obj < opBase {
+			continue
+		}
+		for _, p := range first.req.props[i] {
+			if obj == tPrimary && p.prop != pColorPipe {
+				continue
+			}
+			if v, ok := reentry.req.value(obj, p.prop); !ok || v != p.val {
+				t.Errorf("re-entry object %d property %d = %d %v, want %d", obj, p.prop, v, ok, p.val)
+			}
+		}
+	}
+	if !o.primary.colorKnown || o.primary.colorApplied != colorSDRToPQ || o.primary.colorFormat != fourccXRGB {
+		t.Fatalf("re-entry cache: known=%v applied=%v format=%d", o.primary.colorKnown, o.primary.colorApplied, o.primary.colorFormat)
+	}
 }
 
 // A plane that applies the pipeline never sees colorop properties in a
