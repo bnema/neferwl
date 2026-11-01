@@ -518,7 +518,12 @@ Output `sdr-expand` accepts `off`, `auto` (default), or `always`. Intensity
 is 0–1 (default 0.5); zero preserves SDR. Peak is 0 for automatic resolution
 (config override, then EDID, then assumed 400 nits), or 200–10000 nits.
 Decode defaults to `gamma22`; `srgb` selects piecewise sRGB for expanded content.
-These settings are parsed and retained; expansion policy is not active yet.
+`auto` expands fullscreen windows classified as games, and only plain-SDR
+surfaces on active HDR outputs with at least 1.5× headroom. `always` and rule
+`on` relax the fullscreen/game requirements, but still require an active,
+HDR-capable output with peak luminance above SDR reference white. Output `off`
+and rule `off` disable expansion. Color-described surfaces and popups are never
+expanded.
 
 Rules merge per field in file order, last setting wins. A built-in rule for
 `steam_app_\d+` runs before user rules and sets `sdr-expand = game`: Steam
