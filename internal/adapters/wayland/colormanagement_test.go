@@ -2,14 +2,17 @@ package wayland
 
 import (
 	"context"
+	"strings"
 	"testing"
 
-	"github.com/bnema/neferwl/internal/domain"
-
+	"bnema.dev/wlturbo"
+	"bnema.dev/zerowrap"
 	cm "github.com/bnema/go-wayland-bindings/server/colormanagement"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/adapters/logging"
-	"bnema.dev/wlturbo"
+	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 type colorEvent struct {
@@ -377,5 +380,176 @@ func TestColorProtocolErrors(t *testing.T) {
 			requestProtocol(t, c, creator, tc.op, args...)
 			expectProtocolError(t, c, creator, tc.code)
 		})
+	}
+}
+
+// Native clients may query before their first configure, then adapt on feedback.
+func TestColorFeedbackConfigureAndLogs(t *testing.T) {
+	var out lockedBuffer
+	log := zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &out}).WithField("component", "wayland")
+	s, _, _, _, dir := contentServerWith(t, Options{}, log)
+	c := protocolClient(t, s, dir)
+	manager := bindVersion(t, c, "wp_color_manager_v1", 2)
+	registerProtocol(t, c, manager)
+	comp := bindProtocol(t, c, "wl_compositor")
+	wm := bindProtocol(t, c, "xdg_wm_base")
+	wl := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, wl)
+	registerProtocol(t, c, wl)
+	feedback := c.AllocateID()
+	requestProtocol(t, c, manager, cm.WpColorManagerV1RequestGetSurfaceFeedback, feedback, wl)
+	changed := watchColor(c, feedback)
+	query := func() (*colorEvent, *colorEvent) {
+		t.Helper()
+		desc := c.AllocateID()
+		requestProtocol(t, c, feedback, cm.WpColorManagementSurfaceFeedbackV1RequestGetPreferred, desc)
+		ready := watchColor(c, desc)
+		info := c.AllocateID()
+		requestProtocol(t, c, desc, cm.WpImageDescriptionV1RequestGetInformation, info)
+		values := watchColor(c, info)
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+		return ready, values
+	}
+	_, before := query()
+	if before.values[2][0] != uint32(cm.WpColorManagerV1TransferFunctionSrgb) {
+		t.Fatalf("before map: %v", before.values)
+	}
+	query()
+	if n := strings.Count(out.String(), `"message":"preferred color description sent"`); n != 1 {
+		t.Fatalf("query logs=%d: %s", n, out.String())
+	}
+	xdg := c.AllocateID()
+	requestProtocol(t, c, wm, xdgshell.WmBaseRequestGetXdgSurface, xdg, wl)
+	registerProtocol(t, c, xdg)
+	top := c.AllocateID()
+	requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetToplevel, top)
+	registerProtocol(t, c, top)
+	requestProtocol(t, c, wl, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	var id domain.WindowID
+	s.display.Do(func() {
+		for r, surf := range s.surfaces {
+			if r.ID() == wl {
+				id = surf.toplevelWindow().id
+			}
+		}
+		layout := domain.Layout{s.outputs[0].place}
+		layout = append(layout, domain.OutputPlacement{Info: domain.OutputInfo{Name: "HDR", Width: 8, Height: 8}, Width: 8, Height: 8, Scale: 1})
+		s.setOutputs(ports.SetOutputs{Outputs: layout})
+		s.setOutputHDR(domain.OutputFormats{Output: "HDR", HDR: &domain.OutputHDR{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: .005}})
+	})
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	changed.events, changed.values = nil, nil
+	configure := func(output string) {
+		t.Helper()
+		s.display.Do(func() { s.apply(ports.ConfigureWindow{ID: id, Output: output, Width: 8, Height: 8, Visible: true}) })
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	configure("HDR")
+	if len(changed.events) != 1 {
+		t.Fatalf("first assignment feedback: %v id=%d logs=%s", changed.events, id, out.String())
+	}
+	ready, hdr := query()
+	if hdr.values[1][0] != bt2020 || hdr.values[2][0] != pq || hdr.values[5][1] <= hdr.values[3][2] {
+		t.Fatalf("HDR info: %v", hdr.values)
+	}
+	if ready.values[0][0] != changed.values[0][0] || ready.values[0][1] != changed.values[0][1] {
+		t.Fatalf("identity ready=%v changed=%v", ready.values, changed.values)
+	}
+	configure("HDR")
+	if len(changed.events) != 1 {
+		t.Fatalf("unchanged configure repeated feedback: %v", changed.events)
+	}
+	configure(testOutputs[0].Info.Name)
+	if len(changed.events) != 2 {
+		t.Fatalf("move feedback: %v", changed.events)
+	}
+	_, after := query()
+	if after.values[2][0] != uint32(cm.WpColorManagerV1TransferFunctionSrgb) {
+		t.Fatalf("after move: %v", after.values)
+	}
+	control := c.AllocateID()
+	requestProtocol(t, c, manager, cm.WpColorManagerV1RequestGetSurface, control, wl)
+	registerProtocol(t, c, control)
+	for range 3 {
+		requestProtocol(t, c, control, cm.WpColorManagementSurfaceV1RequestUnsetImageDescription)
+	}
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(out.String(), `"message":"surface color description unset"`); n != 1 {
+		t.Fatalf("unset logs=%d: %s", n, out.String())
+	}
+	for range 3 {
+		requestProtocol(t, c, control, cm.WpColorManagementSurfaceV1RequestSetImageDescription, ready.ID(), uint32(0))
+	}
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(out.String(), `"message":"surface color description set"`); n != 1 {
+		t.Fatalf("set logs=%d: %s", n, out.String())
+	}
+	t.Log(out.String())
+}
+
+func TestColorFeedbackBeforeOutputKnown(t *testing.T) {
+	s, c, _ := colorServer(t)
+	manager := bindVersion(t, c, "wp_color_manager_v1", 1)
+	registerProtocol(t, c, manager)
+	comp := bindProtocol(t, c, "wl_compositor")
+	wl := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, wl)
+	registerProtocol(t, c, wl)
+	feedback := c.AllocateID()
+	requestProtocol(t, c, manager, cm.WpColorManagerV1RequestGetSurfaceFeedback, feedback, wl)
+	changed := watchColor(c, feedback)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	s.display.Do(func() { s.setOutputs(ports.SetOutputs{}) })
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if len(changed.values) != 1 || changed.values[0][0] == 0 {
+		t.Fatalf("unknown output notification: %v", changed.values)
+	}
+	query := func() *colorEvent {
+		t.Helper()
+		id := c.AllocateID()
+		requestProtocol(t, c, feedback, cm.WpColorManagementSurfaceFeedbackV1RequestGetPreferred, id)
+		ready := watchColor(c, id)
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+		return ready
+	}
+	first, second := query(), query()
+	if first.values[0][0] != second.values[0][0] || first.values[0][0] != changed.values[0][0] {
+		t.Fatalf("unstable unknown-output identity: %v %v changed=%v", first.values, second.values, changed.values)
+	}
+	s.display.Do(func() {
+		s.setOutputs(ports.SetOutputs{Outputs: domain.Layout{{Info: domain.OutputInfo{Name: "HDR", Width: 8, Height: 8}, Width: 8, Height: 8, Scale: 1}}, Focused: "HDR"})
+		s.setOutputHDR(domain.OutputFormats{Output: "HDR", HDR: &domain.OutputHDR{MaxLuminance: 1000}})
+	})
+	ready := query()
+	if ready.values[0][0] != changed.values[len(changed.values)-1][0] {
+		t.Fatalf("first output identity: ready=%v changed=%v", ready.values, changed.values)
+	}
+	info := c.AllocateID()
+	requestProtocol(t, c, ready.ID(), cm.WpImageDescriptionV1RequestGetInformation, info)
+	hdr := watchColor(c, info)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if hdr.values[1][0] != bt2020 || hdr.values[2][0] != pq || hdr.values[5][1] <= hdr.values[3][2] {
+		t.Fatalf("focused HDR before map: %v", hdr.values)
 	}
 }

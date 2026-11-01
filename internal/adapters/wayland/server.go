@@ -849,9 +849,9 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		if surf := w.surf(); surf != nil && c.Output != "" {
 			surf.sendTreeScale()
 		}
-		if scanoutChanged {
-			s.notifyColorFeedback()
-		}
+		// Color preference follows core's configured output independently of
+		// scanout eligibility, including the first assignment.
+		s.notifyColorFeedback()
 	case ports.SetOutputs:
 		s.setOutputs(c)
 		off := map[string]bool{}

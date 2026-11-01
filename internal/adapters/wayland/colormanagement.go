@@ -3,9 +3,9 @@ package wayland
 import (
 	"math"
 
+	"bnema.dev/purego-libwayland/server"
 	cm "github.com/bnema/go-wayland-bindings/server/colormanagement"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
-	"bnema.dev/purego-libwayland/server"
 )
 
 // SurfaceColor is the committed color encoding of a client surface. Set is false
@@ -47,23 +47,33 @@ func (s *Server) outputColor(o *output) colorDescription {
 		}
 	}
 	// Identity changes only when the description changes, not on each query.
+	// The empty key is the no-output SDR fallback too: feedback events and
+	// get_preferred must agree even before an output exists.
+	name := ""
 	if o != nil {
-		if s.colorIdentity == nil {
-			s.colorIdentity = map[string]uint64{}
-		}
-		d.identity = s.colorIdentity[o.name()]
-		if d.identity == 0 {
-			d.identity = s.nextColorID()
-			s.colorIdentity[o.name()] = d.identity
-		}
+		name = o.name()
+	}
+	if s.colorIdentity == nil {
+		s.colorIdentity = map[string]uint64{}
+	}
+	d.identity = s.colorIdentity[name]
+	if d.identity == 0 {
+		d.identity = s.nextColorID()
+		s.colorIdentity[name] = d.identity
 	}
 	return d
 }
 func registerColorManagement(d *server.Display, s *Server) error {
+	bound := map[server.Client]bool{}
 	return cm.NewWpColorManagerV1Global(d, 3, func(c server.Client, v, id uint32) {
 		r, err := cm.NewWpColorManagerV1(c, int32(v), id, colorManager{s})
 		if err != nil {
 			return
+		}
+		if !bound[c] {
+			bound[c] = true
+			c.OnDestroy(func() { delete(bound, c) })
+			s.log.Info().Int("pid", c.PID()).Uint32("version", v).Msg("color manager bound")
 		}
 		r.SendSupportedIntent(uint32(cm.WpColorManagerV1RenderIntentPerceptual))
 		r.SendSupportedFeature(uint32(cm.WpColorManagerV1FeatureParametric))
@@ -129,6 +139,9 @@ func (m colorManager) GetSurfaceFeedback(r *cm.WpColorManagerV1, id uint32, wl *
 		return
 	}
 	h.res = res
+	if surf != nil {
+		m.s.log.Info().Uint64("surface", surf.identity).Uint64("id", uint64(surf.windowID())).Msg("surface color feedback created")
+	}
 	m.s.colorFeedbacks[h] = struct{}{}
 	res.OnDestroy = func() { delete(m.s.colorFeedbacks, h) }
 }
@@ -170,7 +183,11 @@ func (h *colorOutput) GetImageDescription(r *cm.WpColorManagementOutputV1, id ui
 	h.s.newColorDescription(r.Client(), r.Version(), id, h.s.outputColor(h.o), 0)
 }
 
-type colorSurface struct{ surf *surface }
+type colorSurface struct {
+	surf      *surface
+	logged    SurfaceColor
+	loggedSet bool
+}
 
 func (h *colorSurface) Destroy(*cm.WpColorManagementSurfaceV1) {
 	if h.surf != nil && !h.surf.destroyed {
@@ -196,6 +213,10 @@ func (h *colorSurface) SetImageDescription(r *cm.WpColorManagementSurfaceV1, des
 		return
 	}
 	h.surf.next.color = d.SurfaceColor
+	if h.loggedSet && h.logged == d.SurfaceColor {
+		return
+	}
+	h.logged, h.loggedSet = d.SurfaceColor, true
 	h.surf.server.log.Info().Uint64("surface", h.surf.identity).Uint64("id", uint64(h.surf.windowID())).Uint32("tf", d.TF).Uint32("primaries", d.Primaries).
 		Uint32("max_cll", d.MaxCLL).Uint32("max_fall", d.MaxFALL).Uint32("intent", intent).Msg("surface color description set")
 }
@@ -205,14 +226,21 @@ func (h *colorSurface) UnsetImageDescription(r *cm.WpColorManagementSurfaceV1) {
 		return
 	}
 	h.surf.next.color = SurfaceColor{}
+	if h.loggedSet && h.logged == (SurfaceColor{}) {
+		return
+	}
+	h.logged, h.loggedSet = SurfaceColor{}, true
 	h.surf.server.log.Info().Uint64("surface", h.surf.identity).Uint64("id", uint64(h.surf.windowID())).Msg("surface color description unset")
 }
 
 type colorFeedback struct {
-	s    *Server
-	surf *surface
-	res  *cm.WpColorManagementSurfaceFeedbackV1
-	last *output
+	s           *Server
+	surf        *surface
+	res         *cm.WpColorManagementSurfaceFeedbackV1
+	last        *output
+	answered    uint64
+	notified    uint64
+	initialized bool
 }
 
 func (*colorFeedback) Destroy(*cm.WpColorManagementSurfaceFeedbackV1) {}
@@ -221,7 +249,16 @@ func (h *colorFeedback) preferred(r *cm.WpColorManagementSurfaceFeedbackV1, id u
 		r.PostError(uint32(cm.WpColorManagementSurfaceFeedbackV1ErrorInert), "surface destroyed")
 		return
 	}
-	h.s.newColorDescription(r.Client(), r.Version(), id, h.s.outputColor(h.s.outputOfSurface(h.surf)), 0)
+	// Before core configures the window, outputOfSurface uses the focused
+	// output. Preference is advisory, not an output assignment; subsequent
+	// configures notify the client if the actual destination differs.
+	o := h.s.outputOfSurface(h.surf)
+	d := h.s.outputColor(o)
+	h.s.newColorDescription(r.Client(), r.Version(), id, d, 0)
+	if h.answered != d.identity {
+		h.answered = d.identity
+		h.s.log.Info().Uint64("surface", h.surf.identity).Uint64("id", uint64(h.surf.windowID())).Str("output", colorOutputName(o)).Uint32("tf", d.TF).Uint32("primaries", d.Primaries).Uint32("ref", d.white).Uint32("target_max", d.targetMax).Uint64("identity", d.identity).Msg("preferred color description sent")
+	}
 }
 func (h *colorFeedback) GetPreferred(r *cm.WpColorManagementSurfaceFeedbackV1, id uint32) {
 	h.preferred(r, id)
@@ -235,13 +272,23 @@ func (s *Server) notifyColorFeedback() {
 			continue
 		}
 		o := s.outputOfSurface(h.surf)
-		if o != h.last {
-			h.last = o
-			h.changed(s.outputColor(o).identity)
-		}
+		h.changed(s.outputColor(o).identity)
 	}
 }
+func colorOutputName(o *output) string {
+	if o == nil {
+		return "none"
+	}
+	return o.name()
+}
 func (h *colorFeedback) changed(id uint64) {
+	o := h.s.outputOfSurface(h.surf)
+	if h.initialized && h.last == o && h.notified == id {
+		return
+	}
+	h.initialized, h.notified = true, id
+	h.s.log.Info().Uint64("surface", h.surf.identity).Uint64("id", uint64(h.surf.windowID())).Str("old_output", colorOutputName(h.last)).Str("new_output", colorOutputName(o)).Uint64("identity", id).Msg("preferred color changed")
+	h.last = o
 	if h.res.Version() >= 2 {
 		h.res.SendPreferredChanged2(uint32(id>>32), uint32(id))
 	} else {
