@@ -77,26 +77,38 @@ func (c *Core) ruleFor(v ports.WindowMapped) (eff ruleEffect, ok bool) {
 	if v.Remap {
 		return eff, false
 	}
-	for i := range c.rules {
-		r := &c.rules[i]
-		if !r.appID.MatchString(v.AppID) {
+	return matchRules(c.rules, v.AppID)
+}
+
+// matchRules is independent of window lifecycle and placement. It merges every
+// app-ID match in config order; ok distinguishes no match from an empty effect.
+func matchRules(rules []rule, appID string) (eff ruleEffect, ok bool) {
+	for i := range rules {
+		r := &rules[i]
+		if !r.appID.MatchString(appID) {
 			continue
 		}
 		ok = true
-		if r.floating != nil {
-			eff.floating = r.floating
-		}
-		if r.number > 0 || r.workspace != "" {
-			eff.number, eff.workspace = r.number, r.workspace
-		}
-		if r.monitor != "" {
-			eff.monitor = r.monitor
-		}
-		if r.cells != 0 {
-			eff.cells = r.cells
-		}
+		eff.merge(*r)
 	}
 	return eff, ok
+}
+
+// merge applies only fields set by r. Numbered and named workspaces are one
+// setting: choosing either replaces the other.
+func (eff *ruleEffect) merge(r rule) {
+	if r.floating != nil {
+		eff.floating = r.floating
+	}
+	if r.number > 0 || r.workspace != "" {
+		eff.number, eff.workspace = r.number, r.workspace
+	}
+	if r.monitor != "" {
+		eff.monitor = r.monitor
+	}
+	if r.cells != 0 {
+		eff.cells = r.cells
+	}
 }
 
 // ruleTarget is the screen and workspace a rule sends a window to. A named
