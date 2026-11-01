@@ -20,6 +20,12 @@ const (
 	ColorTFSRGB           uint8 = 9 // wp_color_manager_v1 sRGB
 )
 
+// PlainSDR reports whether no transfer function or primaries are specified.
+// Only these legacy SDR surfaces are eligible for SDR highlight expansion.
+func (c SurfaceColor) PlainSDR() bool {
+	return c.TF == 0 && c.Primaries == 0
+}
+
 func (c SurfaceColor) IsPQ2020() bool {
 	return c.TF == ColorTFPQ && c.Primaries == ColorPrimariesBT2020
 }

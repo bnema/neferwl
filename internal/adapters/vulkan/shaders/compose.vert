@@ -7,6 +7,7 @@ struct Draw {
     vec4 map; // source texel = map.xy + fragment centre.x * map.zw
     vec4 mapy; // + fragment centre.y * mapy.xy; mapy.z and w are unused
     vec4 color; // solid premultiplied RGBA; content opacity in alpha
+    vec4 expand; // knee, top, quadratic coefficient, decode
     vec4 crop; // source crop bounds in buffer pixels
     uvec4 buf; // pixel-buffer first word, width, height; YUV metadata in w
     uvec4 misc; // mode, flags, target width, target height
@@ -19,6 +20,7 @@ layout(location = 0) out Parameters {
     flat vec4 map;
     flat vec4 mapy;
     flat vec4 color;
+    flat vec4 expand;
     flat vec4 crop;
     flat uvec4 buf;
     flat uvec4 misc;
@@ -37,6 +39,7 @@ void main() {
     parameters.map = d.map;
     parameters.mapy = d.mapy;
     parameters.color = d.color;
+    parameters.expand = d.expand;
     parameters.crop = d.crop;
     parameters.buf = d.buf;
     parameters.misc = d.misc;

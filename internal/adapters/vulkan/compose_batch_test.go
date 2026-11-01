@@ -13,7 +13,7 @@ import (
 )
 
 func TestInstanceDrawLayout(t *testing.T) {
-	if unsafe.Sizeof(drawParameters{}) != 112 || unsafe.Sizeof(instanceDraw{}) != 160 || unsafe.Offsetof(instanceDraw{}.resource) != 112 || unsafe.Offsetof(instanceDraw{}.round) != 128 || unsafe.Offsetof(instanceDraw{}.roundInner) != 144 {
+	if unsafe.Offsetof(drawParameters{}.expand) != 64 || unsafe.Sizeof(drawParameters{}) != 128 || unsafe.Sizeof(instanceDraw{}) != 176 || unsafe.Offsetof(instanceDraw{}.resource) != 128 || unsafe.Offsetof(instanceDraw{}.round) != 144 || unsafe.Offsetof(instanceDraw{}.roundInner) != 160 {
 		t.Fatal("draw layout differs from compose.vert std430 layout")
 	}
 }

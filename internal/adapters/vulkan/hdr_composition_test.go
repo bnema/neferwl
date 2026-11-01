@@ -11,9 +11,20 @@ import (
 )
 
 func hdrTestRenderer(t *testing.T) *Renderer {
+	return hdrTestRendererVariant(t, false)
+}
+
+func hdrTestRendererVariant(t *testing.T, single bool) *Renderer {
 	t.Helper()
 	r := newTestRenderer(t, 64, 16)
 	t.Cleanup(r.Close)
+	if single {
+		r.destroyComposer()
+		r.compose.resources, r.compose.indexing = 1, false
+		if err := r.createComposer(); err != nil {
+			t.Fatal(err)
+		}
+	}
 	r.SetHDR(203)
 	r.SetHDRReadback(true)
 	if r.gpu.physical == 0 {
@@ -300,4 +311,172 @@ func TestHDRSolidColorsMatchPartialRedraw(t *testing.T) {
 		t.Fatal("expected partial redraw")
 	}
 	check("partial")
+}
+
+// Read back PQ codes and decode to linear SDR-white units. The tolerance
+// includes fp16 composition and the exported target's 10-bit PQ quantization.
+func TestHDRSDRExpansion(t *testing.T) {
+	for _, single := range []bool{false, true} {
+		name := "indexed"
+		if single {
+			name = "single"
+		}
+		t.Run(name, func(t *testing.T) { testHDRSDRExpansion(t, single) })
+	}
+}
+
+func testHDRSDRExpansion(t *testing.T, single bool) {
+	r := hdrTestRendererVariant(t, single)
+	px := make([]byte, 64*16*4)
+	for i := 0; i < 64*16; i++ {
+		v := byte(i % 256)
+		copy(px[i*4:], []byte{v, v, v, 255})
+	}
+	c := shmContent(t, 64, 16, 256, px)
+	scene := domain.Scene{Seq: 1, Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: *c}
+	if err := render(r, scene, contents); err != nil {
+		t.Fatal(err)
+	}
+	baseline := pqTargetWords(t, r)
+	for _, curve := range []domain.SDRExpansionCurve{{}, (domain.SDRExpansion{PeakNits: 604, SDRWhiteNits: 203}).Curve()} {
+		scene.Seq++
+		scene.Windows[0].SDRExpansion = curve
+		if err := render(r, scene, contents); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(baseline, pqTargetWords(t, r)) {
+			t.Fatal("inactive curve changed output bits")
+		}
+	}
+	for _, decode := range []domain.SDRDecode{domain.SDRDecodeGamma22, domain.SDRDecodeSRGB} {
+		curve := (domain.SDRExpansion{Intensity: .5, PeakNits: 604, SDRWhiteNits: 203, Decode: decode}).Curve()
+		scene.Seq++
+		scene.Windows[0].SDRExpansion = curve
+		if err := render(r, scene, contents); err != nil {
+			t.Fatal(err)
+		}
+		words := pqTargetWords(t, r)
+		prev := 0.0
+		for i := 0; i < 256; i++ {
+			got := pqDecode(float64(words[i]>>20&1023)/1023) / 203
+			want := curve.Apply(domain.DecodeSDR(float64(i)/255, decode))
+			if math.Abs(got-want) > .025 {
+				t.Fatalf("%s level %d got %.6f mirror %.6f", decode, i, got, want)
+			}
+			if got < prev {
+				t.Fatalf("%s ramp decreased at %d: %.6f < %.6f", decode, i, got, prev)
+			}
+			prev = got
+			if i == 128 || i == 217 || i == 255 {
+				t.Logf("%s encoded %.6f: readback %.6f mirror %.6f", decode, float64(i)/255, got, want)
+			}
+		}
+	}
+	// Even an active curve must not expand a popup.
+	scene.Seq++
+	scene.Windows[0].Popup = true
+	if err := render(r, scene, contents); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(baseline, pqTargetWords(t, r)) {
+		t.Fatal("popup expanded")
+	}
+}
+
+func TestHDRSDRExpansionPremultipliedChild(t *testing.T) {
+	r := hdrTestRenderer(t)
+	// Straight RGB = (1, 0.5, 0.25), stored premultiplied at alpha 128/255.
+	px := make([]byte, 64*16*4)
+	for i := 0; i < 64*16; i++ {
+		copy(px[4*i:], []byte{32, 64, 128, 128})
+	}
+	child := shmContent(t, 64, 16, 256, px)
+	child.Surface, child.Version = 2, 1
+	curve := (domain.SDRExpansion{Intensity: .5, PeakNits: 604, SDRWhiteNits: 203, Decode: domain.SDRDecodeSRGB}).Curve()
+	scene := domain.Scene{Seq: 1, Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}, SDRExpansion: curve}}}
+	root := domain.SurfaceContent{ID: 1, Width: 64, Height: 16, LogicalW: 64, LogicalH: 16, Children: []domain.Subsurface{{SurfaceContent: *child}}}
+	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: root}); err != nil {
+		t.Fatal(err)
+	}
+	a, b, c := curve.ApplyRGB(1, domain.DecodeSDR(.5, curve.Decode), domain.DecodeSDR(.25, curve.Decode))
+	want := [3]float64{a * 128 / 255, b * 128 / 255, c * 128 / 255}
+	codes := hdrTargetAt(t, r, 32, 8)
+	// PQ target is BT.2020; invert its primary conversion after decoding.
+	v := [3]float64{}
+	for i := range v {
+		v[i] = pqDecode(codes[i]) / 203
+	}
+	got := [3]float64{1.660491*v[0] - .587641*v[1] - .072850*v[2], -.124550*v[0] + 1.132900*v[1] - .008349*v[2], -.018151*v[0] - .100579*v[1] + 1.118730*v[2]}
+	for i := range got {
+		if math.Abs(got[i]-want[i]) > .025 {
+			t.Fatalf("channel %d readback %.6f mirror %.6f", i, got[i], want[i])
+		}
+	}
+	t.Logf("premultiplied child readback %v mirror %v", got, want)
+}
+
+func TestSDRTargetIgnoresExpansion(t *testing.T) {
+	r := newTestRenderer(t, 64, 16)
+	defer r.Close()
+	c := solidContent(t, 64, 16, color.RGBA{240, 220, 200, 255})
+	scene := domain.Scene{Seq: 1, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: c}
+	if err := render(r, scene, contents); err != nil {
+		t.Fatal(err)
+	}
+	baseline := slices.Clone(readPixels(t, r).Pix)
+	scene.Seq++
+	scene.Windows[0].SDRExpansion = (domain.SDRExpansion{Intensity: .5, PeakNits: 604, SDRWhiteNits: 203}).Curve()
+	if err := render(r, scene, contents); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(baseline, readPixels(t, r).Pix) {
+		t.Fatal("SDR target changed")
+	}
+}
+
+func TestHDRExpansionLeavesPQUnchanged(t *testing.T) {
+	r := hdrTestRenderer(t)
+	scene, contents, _ := hdrPQScene(t, r)
+	if err := render(r, scene, contents); err != nil {
+		t.Fatal(err)
+	}
+	baseline := pqTargetWords(t, r)
+	scene.Seq++
+	scene.Windows[0].SDRExpansion = (domain.SDRExpansion{Intensity: .5, PeakNits: 604, SDRWhiteNits: 203}).Curve()
+	if err := render(r, scene, contents); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(baseline, pqTargetWords(t, r)) {
+		t.Fatal("PQ surface changed")
+	}
+}
+
+func TestExpansionParamsShaderLayout(t *testing.T) {
+	curve := (domain.SDRExpansion{Intensity: .5, PeakNits: 604, SDRWhiteNits: 203, Decode: domain.SDRDecodeSRGB}).Curve()
+	p := curve.Params()
+	if p != [4]float32{float32(curve.Knee), float32(curve.Top), float32(curve.Shape), 1} {
+		t.Fatalf("shader expects knee, top, shape, decode: %v", p)
+	}
+}
+
+func TestHDRExpansionLeavesDescribedSRGBUnchanged(t *testing.T) {
+	r := hdrTestRenderer(t)
+	c := solidContent(t, 64, 16, color.RGBA{255, 255, 255, 255})
+	c.Color = domain.SurfaceColor{TF: domain.ColorTFSRGB, Primaries: domain.ColorPrimariesSRGB}
+	scene := domain.Scene{Seq: 1, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: c}
+	if err := render(r, scene, contents); err != nil {
+		t.Fatal(err)
+	}
+	baseline := pqTargetWords(t, r)
+	scene.Seq++
+	scene.Windows[0].SDRExpansion = (domain.SDRExpansion{Intensity: .5, PeakNits: 604, SDRWhiteNits: 203}).Curve()
+	if err := render(r, scene, contents); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(baseline, pqTargetWords(t, r)) {
+		t.Fatal("described sRGB expanded")
+	}
 }

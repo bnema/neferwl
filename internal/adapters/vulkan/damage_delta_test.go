@@ -27,7 +27,7 @@ func TestSceneFieldCount(t *testing.T) {
 // sceneDelta compares windows by struct equality, so a new field is covered
 // as long as it only changes where or how that window draws (inside Rect).
 func TestSceneWindowFieldCount(t *testing.T) {
-	const fields = 15
+	const fields = 16
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(domain.SceneWindow{}))),
 		"SceneWindow fields changed: check sceneDelta (a field that draws outside Rect needs its own rule), then this count")
 }
@@ -461,4 +461,13 @@ func TestDamageSelectionOutlineDelta(t *testing.T) {
 		}
 		require.Equal(t, want, area)
 	}
+}
+
+func TestExpansionChangeDamagesWindow(t *testing.T) {
+	old := deltaScene(1, win(1, 10, 20, 100, 100))
+	cur := deltaScene(2, old.Windows[0])
+	cur.Windows[0].SDRExpansion = (domain.SDRExpansion{Intensity: 0.5, PeakNits: 604, SDRWhiteNits: 203}).Curve()
+	area, ok := sceneDelta(old, cur, func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }, 500000)
+	require.True(t, ok)
+	require.Equal(t, image.Rect(10, 20, 110, 120), area)
 }

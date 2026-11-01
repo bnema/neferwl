@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -23,6 +24,9 @@ import (
 
 	"github.com/bnema/neferwl/examples/testpattern/pattern"
 	"github.com/bnema/neferwl/internal/adapters/config"
+	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/adapters/vulkan"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 const (
@@ -369,5 +373,119 @@ func startPatternClient(t *testing.T, socket, mode string) *patternClient {
 		if !waitProcessOutputUntil(stderr, timeout) {
 			t.Fatalf("testpattern not ready: %s", strings.TrimSpace(log))
 		}
+	}
+}
+
+// TestColorCheckSDRExpansion exercises the real virtual-HDR render path with
+// a directly constructed scene: eligibility is core-owned on another branch.
+func TestColorCheckSDRExpansion(t *testing.T) {
+	inst, err := vulkan.NewInstance(logging.For(t.Context(), "render"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer inst.Close()
+	gpu, err := inst.Open(domain.GPUInfo{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gpu.Close()
+	renderer, err := gpu.NewRenderer(colorW, colorH, domain.RendererOptions{Virtual: true, Readback: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Close()
+	r := renderer.(*vulkan.Renderer)
+	r.SetHDR(pattern.ReferenceWhite)
+	bufs, err := r.ExportTargets(1, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		for _, b := range bufs {
+			for _, p := range b.Planes {
+				_ = p.File.Close()
+			}
+		}
+	}()
+	patches := []pattern.Patch{}
+	for i, rgb := range [][3]uint8{{64, 64, 64}, {128, 128, 128}, {192, 192, 192}, {217, 217, 217}, {255, 255, 255}, {255, 128, 64}} {
+		patches = append(patches, pattern.Patch{Rect: image.Rect(i*colorW/6, 0, (i+1)*colorW/6, colorH), SRGB: rgb})
+	}
+	pixels := make([]byte, colorW*colorH*4)
+	for _, p := range patches {
+		for y := p.Rect.Min.Y; y < p.Rect.Max.Y; y++ {
+			for x := p.Rect.Min.X; x < p.Rect.Max.X; x++ {
+				copy(pixels[(y*colorW+x)*4:], []byte{p.SRGB[2], p.SRGB[1], p.SRGB[0], 255})
+			}
+		}
+	}
+	f, err := os.CreateTemp(t.TempDir(), "game-shm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if _, err = f.Write(pixels); err != nil {
+		t.Fatal(err)
+	}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: {ID: 1, Seq: 1, Surface: 1, Version: 1, Width: colorW, Height: colorH, LogicalW: colorW, LogicalH: colorH, Opaque: true, SHM: &domain.SHMBuffer{Pool: 1, File: f, Stride: colorW * 4}}}
+	scene := domain.Scene{Seq: 1, OutputWidth: colorW, OutputHeight: colorH, Scale: 1, Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Fullscreen: true, Rect: domain.Rect{W: colorW, H: colorH}}}}
+	draw := func() *image.RGBA64 {
+		t.Helper()
+		r.UseTarget(0)
+		done, err := r.Render(scene, contents)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if done != nil {
+			_ = done.Close()
+		}
+		img := r.HDRPixels()
+		if img == nil {
+			t.Fatal("no virtual HDR readback")
+		}
+		return img
+	}
+	baseline := draw()
+	baselineBytes := slices.Clone(baseline.Pix)
+	curve := (domain.SDRExpansion{Intensity: .5, PeakNits: 604, SDRWhiteNits: 203, Decode: domain.SDRDecodeSRGB}).Curve()
+	scene.Seq++
+	scene.Windows[0].SDRExpansion = curve
+	expanded := draw()
+	decode := func(img image.Image, p image.Point) [3]float64 {
+		red, green, blue, _ := img.At(p.X, p.Y).RGBA()
+		v := [3]float64{pattern.PQDecode(float64(red)/65535) / 203, pattern.PQDecode(float64(green)/65535) / 203, pattern.PQDecode(float64(blue)/65535) / 203}
+		return [3]float64{1.660491*v[0] - .587641*v[1] - .072850*v[2], -.124550*v[0] + 1.132900*v[1] - .008349*v[2], -.018151*v[0] - .100579*v[1] + 1.118730*v[2]}
+	}
+	for i, p := range patches {
+		linear := [3]float64{}
+		for ch := range linear {
+			linear[ch] = domain.DecodeSDR(float64(p.SRGB[ch])/255, curve.Decode)
+		}
+		a, b, c := curve.ApplyRGB(linear[0], linear[1], linear[2])
+		want := [3]float64{a, b, c}
+		got := decode(expanded, p.Centre())
+		for ch := range got {
+			if math.Abs(got[ch]-want[ch]) > .025 {
+				t.Errorf("patch %d channel %d: got %.6f mirror %.6f", i, ch, got[ch], want[ch])
+			}
+		}
+		if i < 4 {
+			if expanded.RGBA64At(p.Centre().X, p.Centre().Y) != baseline.RGBA64At(p.Centre().X, p.Centre().Y) {
+				t.Errorf("below-knee patch %d changed", i)
+			}
+		}
+		if i == 5 {
+			for ch := 1; ch < 3; ch++ {
+				if math.Abs(got[ch]/got[0]-linear[ch]/linear[0]) > .01 {
+					t.Errorf("colour patch ratio %d changed", ch)
+				}
+			}
+		}
+		t.Logf("sRGB %v readback %.6f %.6f %.6f mirror %.6f %.6f %.6f", p.SRGB, got[0], got[1], got[2], want[0], want[1], want[2])
+	}
+	scene.Seq++
+	scene.Windows[0].SDRExpansion = domain.SDRExpansionCurve{}
+	if !slices.Equal(baselineBytes, draw().Pix) {
+		t.Fatal("unexpanded run differs from baseline")
 	}
 }
