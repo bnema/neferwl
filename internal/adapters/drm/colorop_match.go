@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"os"
 	"slices"
 	"strings"
 
@@ -300,6 +301,11 @@ func planeColor(c domain.SurfaceColor, format uint32, opaque, hdrOn bool, pipeli
 			return colorBypass, "hdr_format"
 		}
 		return colorBypass, ""
+	case os.Getenv("NEFERWL_DRM_SDR_PLANE") != "1":
+		// The SDR-to-PQ plane output is not verified on amdgpu: it can
+		// look oversaturated compared with composition. Keep it opt-in
+		// until that discrepancy is understood.
+		return colorBypass, "hdr_sdr_content"
 	case pipeline == nil || !opaque || !isSDRColor(c):
 		// The kernel applies the pipeline to premultiplied pixels: exact
 		// only without alpha.

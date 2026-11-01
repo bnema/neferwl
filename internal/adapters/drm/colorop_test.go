@@ -337,6 +337,7 @@ func TestLUT3DIdentityBytes(t *testing.T) {
 }
 
 func TestPlaneColor(t *testing.T) {
+	t.Setenv("NEFERWL_DRM_SDR_PLANE", "1")
 	pq := domain.SurfaceColor{TF: domain.ColorTFPQ, Primaries: domain.ColorPrimariesBT2020}
 	srgb := domain.SurfaceColor{TF: domain.ColorTFSRGB, Primaries: domain.ColorPrimariesSRGB}
 	ext := domain.SurfaceColor{TF: domain.ColorTFExtendedLinear, Primaries: domain.ColorPrimariesSRGB}
@@ -386,6 +387,7 @@ func TestPlaneColor(t *testing.T) {
 // amdgpu pipeline. rule, when set, is the driver model every commit meets.
 func colorOutput(t *testing.T, overlay bool, rule func(*atomicReq, uint32) error) (*Output, *mockkms, *[]commitRec) {
 	t.Helper()
+	t.Setenv("NEFERWL_DRM_SDR_PLANE", "1")
 	o, k, commits, _ := testOutputRules(t, rule)
 	props := maps0(planeProps)
 	props["zpos"] = pZpos
