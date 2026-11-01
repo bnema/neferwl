@@ -98,3 +98,22 @@ func TestSDRExpansionRefusesPlanes(t *testing.T) {
 		})
 	}
 }
+
+func TestSDRExpansionAllowsHDRScanout(t *testing.T) {
+	s, contents := fullscreenScene()
+	s.Windows[0].SDRExpansion = (domain.SDRExpansion{Intensity: .5, PeakNits: 604, SDRWhiteNits: 203}).Curve()
+	c := contents[s.Windows[0].ID]
+	c.Color = domain.SurfaceColor{TF: domain.ColorTFPQ, Primaries: domain.ColorPrimariesBT2020}
+	c.DMABuf.Format = fourccXR30
+	contents[s.Windows[0].ID] = c
+	got, reason := scanoutCandidate(s, contents, 200, 100, nil)
+	if reason != "" {
+		t.Fatalf("HDR scanout refused: %s", reason)
+	}
+	if _, reason := planeColor(got.Color, got.DMABuf.Format, got.Opaque, true, nil); reason != "" {
+		t.Fatalf("HDR plane refused: %s", reason)
+	}
+	if _, _, _, reason := overlayCandidate(s, contents, true, nil, nil); reason != "" {
+		t.Fatalf("HDR overlay refused: %s", reason)
+	}
+}

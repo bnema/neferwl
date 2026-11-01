@@ -460,3 +460,23 @@ func TestExpansionParamsShaderLayout(t *testing.T) {
 		t.Fatalf("shader expects knee, top, shape, decode: %v", p)
 	}
 }
+
+func TestHDRExpansionLeavesDescribedSRGBUnchanged(t *testing.T) {
+	r := hdrTestRenderer(t)
+	c := solidContent(t, 64, 16, color.RGBA{255, 255, 255, 255})
+	c.Color = domain.SurfaceColor{TF: domain.ColorTFSRGB, Primaries: domain.ColorPrimariesSRGB}
+	scene := domain.Scene{Seq: 1, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: c}
+	if err := render(r, scene, contents); err != nil {
+		t.Fatal(err)
+	}
+	baseline := pqTargetWords(t, r)
+	scene.Seq++
+	scene.Windows[0].SDRExpansion = (domain.SDRExpansion{Intensity: .5, PeakNits: 604, SDRWhiteNits: 203}).Curve()
+	if err := render(r, scene, contents); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(baseline, pqTargetWords(t, r)) {
+		t.Fatal("described sRGB expanded")
+	}
+}

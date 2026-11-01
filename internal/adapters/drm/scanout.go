@@ -121,11 +121,6 @@ func scanoutCandidate(s domain.Scene, surfaces map[domain.WindowID]domain.Surfac
 	if full == nil {
 		return domain.SurfaceContent{}, "no_fullscreen"
 	}
-	// Expansion is a compositor shader operation; no plane colour pipeline
-	// implements it, including the opt-in SDR-to-PQ pipeline.
-	if full.SDRExpansion.Active() {
-		return domain.SurfaceContent{}, "sdr_expansion"
-	}
 	if kept != nil && kept(full.ID) {
 		return domain.SurfaceContent{}, "leaving"
 	}
@@ -155,6 +150,11 @@ func scanoutCandidate(s domain.Scene, surfaces map[domain.WindowID]domain.Surfac
 		if c, reason = clientSubsurface(c); reason != "" {
 			return c, reason
 		}
+	}
+	// Check the selected buffer (which may be the client subsurface), not
+	// just the window: HDR-described content does not use SDR expansion.
+	if full.SDRExpansion.Active() && isSDRColor(c.Color) {
+		return c, "sdr_expansion"
 	}
 	switch {
 	case c.DMABuf == nil:

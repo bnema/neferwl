@@ -582,7 +582,7 @@ func (w *sceneWalk) surface(content *domain.SurfaceContent, x, y float64, clip i
 	n := len(w.draws)
 	w.content(dst, full, content, key, seq, root)
 	for i := n; i < len(w.draws); i++ {
-		if w.draws[i].pc.misc[0] != modeSolid {
+		if w.draws[i].pc.misc[0] != modeSolid && content.Color.TF == 0 && content.Color.Primaries == 0 {
 			w.draws[i].pc.expand = w.expand
 		}
 	}
