@@ -939,9 +939,7 @@ func (x *XWM) outPump(i int) {
 			x.outFinish(i)
 		case full: // does not fit one request: INCR
 			o.incr, o.notified = true, true
-			var v xproto.ChangeWindowAttributesValues
-			v.SetEventMask(xproto.EventMaskPropertyChange)
-			xproto.ChangeWindowAttributes(x.conn.Buf(), xproto.Window(o.requestor), &v)
+			x.updateEventMask(o.requestor)
 			xproto.ChangeProperty(x.conn.Buf(), xproto.PropModeReplace, xproto.Window(o.requestor), xproto.Atom(o.property),
 				xproto.Atom(x.atoms[atomIncr]), 32, 1, x.encode32([]uint32{0}))
 			x.notify(o.requestor, x.sel.st[o.kind].atom, o.target, o.property, o.time)
@@ -983,13 +981,6 @@ func (x *XWM) outSetProp(i, n int) {
 
 // outFinish ends a completed transfer.
 func (x *XWM) outFinish(i int) {
-	o := &x.sel.out[i]
-	if o.incr && !x.closed {
-		var v xproto.ChangeWindowAttributesValues
-		v.SetEventMask(0)
-		xproto.ChangeWindowAttributes(x.conn.Buf(), xproto.Window(o.requestor), &v)
-		x.wake()
-	}
 	x.outRelease(i)
 }
 
@@ -1006,6 +997,11 @@ func (x *XWM) outRelease(i int) {
 	o.fd, o.buf = -1, -1
 	o.gen++
 	o.state = outFree
+	if o.incr && !x.closed {
+		x.updateEventMask(o.requestor)
+		x.wake()
+	}
+	o.incr = false
 }
 
 // outAbort ends a transfer early: the requestor is refused (before its
@@ -1020,9 +1016,6 @@ func (x *XWM) outAbort(i int) {
 		case !o.notified:
 			x.notify(o.requestor, x.sel.st[o.kind].atom, o.target, 0, o.time)
 		case o.incr:
-			var v xproto.ChangeWindowAttributesValues
-			v.SetEventMask(0)
-			xproto.ChangeWindowAttributes(x.conn.Buf(), xproto.Window(o.requestor), &v)
 			xproto.DeleteProperty(x.conn.Buf(), xproto.Window(o.requestor), xproto.Atom(o.property))
 			x.wake()
 		}
@@ -1047,4 +1040,23 @@ func (x *XWM) onRequestorProperty(e xproto.PropertyNotifyEvent) bool {
 		x.outPump(i)
 	}
 	return hit
+}
+
+// updateEventMask merges the managed-window subscription with selection interest.
+// The bounded outgoing slots are the reference count: each live INCR targeting
+// xid owns one reference, so releasing one cannot unsubscribe another.
+func (x *XWM) updateEventMask(xid uint32) xturbo.Seq {
+	var mask xproto.EventMask
+	if s := x.tab.lookup(xid); s != 0 && x.tab.rec(s).kind == kindManaged {
+		mask = xproto.EventMaskPropertyChange | xproto.EventMaskFocusChange
+	}
+	for i := range x.sel.out {
+		o := &x.sel.out[i]
+		if o.state != outFree && o.incr && o.requestor == xid {
+			mask |= xproto.EventMaskPropertyChange
+		}
+	}
+	var v xproto.ChangeWindowAttributesValues
+	v.SetEventMask(mask)
+	return xproto.ChangeWindowAttributes(x.conn.Buf(), xproto.Window(xid), &v)
 }

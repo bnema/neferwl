@@ -3,6 +3,7 @@ package xwm
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"os"
 	"testing"
@@ -796,4 +797,47 @@ func TestSelectionOwnershipTimeFromLastEvent(t *testing.T) {
 	readUntil(t, x, func() bool { return x.lastTime == 4242 })
 	x.WaylandSelection(SelClipboard, []string{"text/plain"})
 	require.EqualValues(t, 4242, x.sel.st[SelClipboard].ownTime)
+}
+
+func TestSelectionRequestorEventMaskOwnership(t *testing.T) {
+	for _, managed := range []bool{false, true} {
+		for _, abort := range []bool{false, true} {
+			t.Run(fmt.Sprintf("managed=%t/abort=%t", managed, abort), func(t *testing.T) {
+				x, p := bootPeer(t, nil)
+				if managed {
+					require.NotZero(t, x.insert(reqWin))
+				}
+				for i := range 2 {
+					o := &x.sel.out[i]
+					o.state, o.requestor, o.incr, o.notified = outActive, reqWin, true, true
+					o.fd, o.buf = -1, -1
+				}
+				check := func(want uint32) {
+					before := len(p.requests())
+					x.updateEventMask(reqWin)
+					q, _ := pumpReq(t, x, p, before, func(q xpeerReq) bool {
+						return q.major == opChangeWindowAttributes && q.u32(4) == reqWin && q.u32(12) == want
+					})
+					require.Equal(t, want, q.u32(12))
+				}
+				base := uint32(0)
+				if managed {
+					base = uint32(xproto.EventMaskPropertyChange | xproto.EventMaskFocusChange)
+				}
+				check(base | uint32(xproto.EventMaskPropertyChange))
+				if abort {
+					x.outAbort(0)
+				} else {
+					x.outFinish(0)
+				}
+				check(base | uint32(xproto.EventMaskPropertyChange))
+				if abort {
+					x.outAbort(1)
+				} else {
+					x.outFinish(1)
+				}
+				check(base)
+			})
+		}
+	}
 }

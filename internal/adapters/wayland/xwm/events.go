@@ -224,9 +224,7 @@ func (x *XWM) onCreateNotify(ev *xturbo.Event) {
 func (x *XWM) adopt(s Slot) {
 	r := x.tab.rec(s)
 	r.id = x.host.Created(s, r.xid)
-	var v xproto.ChangeWindowAttributesValues
-	v.SetEventMask(xproto.EventMaskPropertyChange | xproto.EventMaskFocusChange)
-	x.expect(xproto.ChangeWindowAttributes(x.conn.Buf(), xproto.Window(r.xid), &v), kindAttr, x.tab.tag(s), 0)
+	x.expect(x.updateEventMask(r.xid), kindAttr, x.tab.tag(s), 0)
 	x.log.Debug().Uint32("xid", r.xid).Uint32("slot", uint32(s)).Msg("x11 window created")
 }
 
