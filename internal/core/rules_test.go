@@ -470,3 +470,18 @@ func TestRuleWidthWithFixedOverflow(t *testing.T) {
 
 	})
 }
+
+func TestInitialFullscreenKeepsRuleDestination(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := startMulti(t, func(c *domain.Config) {
+			declareDev(c)
+			c.Rules = []domain.WindowRule{winRule("dev", "game", func(r *domain.WindowRule) { r.Workspace = "dev"; r.Floating = ruleOn() })}
+		}, left)
+		r.client <- ports.WindowMapped{ID: 1, AppID: "game", Fullscreen: true}
+		st := r.stateWith(t, 1)
+		w := stWindow(st, 1)
+		if w.WorkspaceName != "dev" || !w.Fullscreen {
+			t.Fatalf("rule destination/fullscreen: %+v", w)
+		}
+	})
+}

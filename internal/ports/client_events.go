@@ -20,6 +20,8 @@ type WindowMapped struct {
 	ContentType domain.ContentType
 	// Xwayland is set when the client belongs to the X11 satellite session.
 	Xwayland bool
+	// Fullscreen is the last fullscreen state requested before the first map.
+	Fullscreen bool
 	// Floating windows are dialogs (a parent) or fixed-size windows such
 	// as splash screens: core shows them over the columns at their own
 	// size, Width×Height logical (0 when unknown).

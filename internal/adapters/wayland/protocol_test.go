@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/wlturbo"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
@@ -621,6 +621,12 @@ func surfaceMapper(t *testing.T, c *wlturbo.Display, events <-chan ports.ClientE
 // (damage_buffer needs 4).
 func surfaceMapperAt(t *testing.T, c *wlturbo.Display, events <-chan ports.ClientEvent, compositorVersion uint32) func() (ports.WindowMapped, uint32, uint32) {
 	t.Helper()
+	return surfaceMapperBeforeMap(t, c, events, compositorVersion, nil)
+}
+
+// surfaceMapperBeforeMap allows protocol requests before the initial commit.
+func surfaceMapperBeforeMap(t *testing.T, c *wlturbo.Display, events <-chan ports.ClientEvent, compositorVersion uint32, before func(uint32)) func() (ports.WindowMapped, uint32, uint32) {
+	t.Helper()
 	comp := bindVersion(t, c, "wl_compositor", compositorVersion)
 	wm := bindProtocol(t, c, "xdg_wm_base")
 	shm := bindProtocol(t, c, "wl_shm")
@@ -651,6 +657,9 @@ func surfaceMapperAt(t *testing.T, c *wlturbo.Display, events <-chan ports.Clien
 		registerWireProxy(c, xp)
 		registerProtocol(t, c, top)
 		requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetToplevel, top)
+		if before != nil {
+			before(top)
+		}
 		requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
 		if err := c.Roundtrip(); err != nil {
 			t.Fatal(err)

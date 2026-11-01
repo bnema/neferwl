@@ -124,3 +124,30 @@ func windowOf(t *testing.T, s domain.Scene, id domain.WindowID) domain.SceneWind
 	t.Fatalf("window %d not in %+v", id, s.Windows)
 	return domain.SceneWindow{}
 }
+
+func TestMapInitialFullscreen(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := startSwipe(t, nil)
+		r.mapWindow(t, 1)
+		r.client <- ports.WindowMapped{ID: 2, Fullscreen: true}
+		s := scene(t, r.scenes)
+		w := windowOf(t, s, 2)
+		if !w.Fullscreen || w.Hidden || w.Fade != 0 || w.Zoom != 0 || w.Rect.W != 800 {
+			t.Fatalf("initial fullscreen: %+v", w)
+		}
+		// Ending fullscreen is allowed immediately; re-entry after map is
+		// still subject to the unchanged grace.
+		r.client <- ports.WindowFullscreenRequest{ID: 2}
+		s = scene(t, r.scenes)
+		r.client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true}
+		synctest.Wait()
+		select {
+		case set := <-r.scenes:
+			s = set[0]
+		default:
+		}
+		if windowOf(t, s, 2).Fullscreen {
+			t.Fatal("post-map request bypassed grace")
+		}
+	})
+}

@@ -3,11 +3,11 @@ package wayland
 import (
 	"encoding/binary"
 
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/purego-libwayland/server"
 )
 
 func registerXDG(d *server.Display, s *Server) error {
@@ -135,6 +135,8 @@ type window struct {
 	xdg          *xdgSurface
 	appID, title string
 	mapped       bool
+	// initialFullscreen keeps the last request until the first map.
+	initialFullscreen bool
 	// gen counts the mappings: an unmap and a remap is a new toplevel to
 	// ext-foreign-toplevel-list (identifier) and to its capture sources.
 	gen uint32
@@ -263,7 +265,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 			}
 			pid := r.Client().PID()
 			x11 := x.server.x11Client != nil && x.server.x11Client.Owns(pid)
-			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Slot: slot, Sandbox: sandbox, ContentType: windowContentType(x.surface.contentKind), Xwayland: x11, PID: pid, Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Modal: w.modal, Remap: w.gen > 1})
+			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Slot: slot, Sandbox: sandbox, ContentType: windowContentType(x.surface.contentKind), Xwayland: x11, PID: pid, Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Modal: w.modal, Remap: w.gen > 1, Fullscreen: w.gen == 1 && w.initialFullscreen})
 			x.server.syncInhibitors()
 			x.server.toplevelChanged(w)
 			x.server.castInventoryChanged()
@@ -413,12 +415,16 @@ func (t top) SetFullscreen(*xdgshell.Toplevel, *wayland.Output) {
 	t.w.xdg.server.log.Info().Uint64("id", uint64(t.w.id)).Bool("on", true).Msg("client fullscreen request")
 	if t.w.mapped {
 		t.w.xdg.server.emit(ports.WindowFullscreenRequest{ID: t.w.id, Fullscreen: true})
+	} else if t.w.gen == 0 {
+		t.w.initialFullscreen = true
 	}
 }
 func (t top) UnsetFullscreen(*xdgshell.Toplevel) {
 	t.w.xdg.server.log.Info().Uint64("id", uint64(t.w.id)).Bool("on", false).Msg("client fullscreen request")
 	if t.w.mapped {
 		t.w.xdg.server.emit(ports.WindowFullscreenRequest{ID: t.w.id})
+	} else if t.w.gen == 0 {
+		t.w.initialFullscreen = false
 	}
 }
 func (top) SetMinimized(*xdgshell.Toplevel) {}

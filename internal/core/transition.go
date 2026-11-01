@@ -415,7 +415,7 @@ func (c *Core) mapWindow(v ports.WindowMapped) {
 	if s, _ := c.screenOf(v.ID); s != nil || !c.animOn() || c.security.Protected {
 		// Mapped before (a re-map keeps its place), animations off or a
 		// session lock: nothing to animate.
-		c.placement.place(c, v)
+		c.placeMapped(v)
 		return
 	}
 	shots := c.snapshot(now)
@@ -426,9 +426,21 @@ func (c *Core) mapWindow(v ports.WindowMapped) {
 			shots[i].ws = nil
 		}
 	}
-	c.placement.place(c, v)
+	c.placeMapped(v)
 	c.transition(shots, now)
 	c.appearMapped(v.ID, now)
+}
+
+// placeMapped applies rules before initial fullscreen, retaining their destination.
+func (c *Core) placeMapped(v ports.WindowMapped) {
+	c.placement.place(c, v)
+	if !v.Fullscreen || v.Remap || v.Parent != 0 {
+		return
+	}
+	if _, w := c.screenOf(v.ID); w != nil {
+		w.Activate(v.ID)
+		w.SetFullscreen(v.ID, true)
+	}
 }
 
 // appearMapped starts the entrance of a window that just mapped when it
