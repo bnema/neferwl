@@ -101,10 +101,15 @@ func Open(ctx context.Context, backend, level, debug string) (context.Context, f
 	// Close removes it while still empty. Created before pruneRuns so
 	// crash files rotate like logs.
 	crashPath := filepath.Join(dir, strings.TrimSuffix(name, ".log")+".crash")
+	// A run's crash file must include stacks even when the inherited
+	// GOTRACEBACK setting suppresses them. This covers worker goroutines too.
+	runtimedebug.SetTraceback("all")
+	var crashErr error
 	if crash, err := os.OpenFile(crashPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600); err == nil {
-		_ = runtimedebug.SetCrashOutput(crash, runtimedebug.CrashOptions{})
+		crashErr = runtimedebug.SetCrashOutput(crash, runtimedebug.CrashOptions{})
 		_ = crash.Close() // SetCrashOutput keeps its own duplicate
 	} else {
+		crashErr = err
 		crashPath = ""
 	}
 	pruneRuns(dir)
@@ -118,6 +123,10 @@ func Open(ctx context.Context, backend, level, debug string) (context.Context, f
 	ctx = context.WithValue(ctx, debugKey{}, debugSet(selected))
 	ctx = context.WithValue(ctx, levelKey{}, level)
 	ctx = context.WithValue(ctx, dirKey{}, dir)
+	if crashErr != nil {
+		log := For(ctx, "app")
+		log.Error().Err(crashErr).Msg("crash output unavailable; runtime reports remain on stderr")
+	}
 	return ctx, func(crashed bool) error {
 		if !crashed {
 			w.Clean()

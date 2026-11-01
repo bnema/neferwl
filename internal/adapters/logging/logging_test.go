@@ -6,11 +6,52 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"testing/synctest"
 	"time"
 )
+
+//testpolicy:realtime bounded wait for a real subprocess to write its runtime crash report
+func TestCrashOutputWorkerTraceback(t *testing.T) {
+	const childEnv = "NEFERWL_TEST_CRASH_WORKER"
+	if os.Getenv(childEnv) == "1" {
+		_, _, err := Open(context.Background(), "headless", "info", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		go func() { panic("logging worker crash regression") }()
+		select {} // keep the test's goroutine alive until the worker panics
+	}
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+	t.Setenv("GOTRACEBACK", "none")
+	t.Setenv(childEnv, "1")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCrashOutputWorkerTraceback$")
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatalf("crash subprocess timed out: %v\n%s", ctx.Err(), out)
+	}
+	if err == nil {
+		t.Fatalf("crash subprocess succeeded: %s", out)
+	}
+	paths, err := filepath.Glob(filepath.Join(state, "neferwl", "runs", "headless", "*.crash"))
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("crash files %v: %v; child output: %s", paths, err, out)
+	}
+	data, err := os.ReadFile(paths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"logging worker crash regression", "goroutine", "TestCrashOutputWorkerTraceback"} {
+		if !bytes.Contains(data, []byte(want)) {
+			t.Errorf("crash report missing %q:\n%s", want, data)
+		}
+	}
+}
 
 func TestParseDebug(t *testing.T) {
 	for _, tc := range []struct {
