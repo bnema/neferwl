@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/corewake"
@@ -19,7 +20,6 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 
@@ -456,7 +456,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			if opts.Presented != nil {
 				_, reads, _ := pipeline.CapHiddenSeen(seen)
 				if len(reads) > 0 {
-					reports.Push(domain.OutputPresented{Output: opts.Name, Seen: seen, ChildReads: reads})
+					reports.Push(ports.OutputPresented{Output: opts.Name, Seen: seen, ChildReads: reads})
 					reports.Flush(opts.Presented)
 				}
 			}
@@ -721,7 +721,7 @@ func (opts Options) report(q *presented.Queue, flip *domain.FlipInfo, seen map[d
 	if opts.Presented == nil {
 		return
 	}
-	q.Push(domain.OutputPresented{Output: opts.Name, Flip: flip, Seen: seen})
+	q.Push(ports.OutputPresented{Output: opts.Name, Flip: flip, Seen: seen})
 	q.Flush(opts.Presented)
 }
 

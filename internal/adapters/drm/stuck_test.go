@@ -38,7 +38,7 @@ type stuckRun struct {
 	scenes    chan domain.Scene
 	contents  *contentFeed
 	active    chan bool
-	presented chan domain.OutputPresented
+	presented chan ports.OutputPresented
 	flipped   chan flipEvent
 	done      <-chan error
 	snapshot  func() []commitRec

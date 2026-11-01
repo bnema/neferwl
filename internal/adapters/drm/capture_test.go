@@ -397,7 +397,7 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 			Capture:      &domain.SceneCapture{Workspace: 9},
 			CaptureScene: &domain.Scene{Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []domain.SceneWindow{{ID: 5, Rect: domain.Rect{W: 200, H: 100}}}}}
 
-		next := func(match func(domain.OutputPresented) bool) domain.OutputPresented {
+		next := func(match func(ports.OutputPresented) bool) ports.OutputPresented {
 			t.Helper()
 			timeout := time.After(2 * time.Second)
 			for {
@@ -411,7 +411,7 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 				}
 			}
 		}
-		held := next(func(r domain.OutputPresented) bool { return len(r.ChildReads) > 0 })
+		held := next(func(r ports.OutputPresented) bool { return len(r.ChildReads) > 0 })
 		require.Equal(t, map[domain.WindowID]uint64{5: 2}, held.ChildReads)
 		require.Equal(t, 3, count(), "display frame committed, never completes")
 
@@ -420,7 +420,7 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 		contents.send(domain.SurfaceContent{ID: 1, Seq: 9, Width: 1, Height: 1, SHM: &domain.SHMBuffer{}})
 		_, err = writeEnd.Write([]byte{1}) // the child's GPU work finished
 		require.NoError(t, err)
-		lifted := next(func(r domain.OutputPresented) bool { return len(r.ChildReads) == 0 })
+		lifted := next(func(r ports.OutputPresented) bool { return len(r.ChildReads) == 0 })
 		require.Empty(t, lifted.ChildReads)
 		require.NotContains(t, lifted.Seen, domain.WindowID(1), "display Seen does not advance while its commit is pending: only the child hold is lifted")
 		require.Nil(t, lifted.Flip)

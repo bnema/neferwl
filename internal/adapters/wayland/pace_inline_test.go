@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/purego-libwayland/server"
 	"golang.org/x/sys/unix"
 )
 
@@ -31,7 +31,7 @@ func paceFixture(t *testing.T) (*Server, *surface) {
 		fifoSurfaces: map[*surface]struct{}{},
 		lastFlip:     map[string]time.Time{},
 		flips:        map[string]domain.FlipInfo{},
-		reports:      map[string]domain.OutputPresented{},
+		reports:      map[string]ports.OutputPresented{},
 	}
 	s.paceSignalFn = s.paceSignalled
 	if err := s.openPaceTimer(); err != nil {

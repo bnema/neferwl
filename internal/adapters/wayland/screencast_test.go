@@ -228,7 +228,7 @@ func castFrame(id uint64, buf int, data []byte, w, hgt int) domain.CastCommand {
 
 func (h *castHarness) flip(output string) {
 	h.t.Helper()
-	h.s.Presentation().Push(domain.OutputPresented{Output: output, Flip: &domain.FlipInfo{When: 3 * time.Second, Seq: 1}})
+	h.s.Presentation().Push(ports.OutputPresented{Output: output, Flip: &domain.FlipInfo{When: 3 * time.Second, Seq: 1}})
 	h.sync()
 }
 
@@ -723,7 +723,7 @@ func TestCastFrameAllocations(t *testing.T) {
 	core := castClientEvent[ports.CaptureSessionOpen](h).ID
 	data := make([]byte, 64*32*4)
 	frame := castFrame(1, 0, data, 64, 32)
-	flip := domain.OutputPresented{Output: "HEADLESS-1", Flip: &domain.FlipInfo{When: time.Second, Seq: 1}}
+	flip := ports.OutputPresented{Output: "HEADLESS-1", Flip: &domain.FlipInfo{When: time.Second, Seq: 1}}
 	ran := make(chan struct{}, 1)
 	marker := func() { ran <- struct{}{} }
 	at := time.Unix(1, 2)

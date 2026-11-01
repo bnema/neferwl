@@ -65,10 +65,10 @@ func TestKeepHeld(t *testing.T) {
 	now := time.Unix(100, 0)
 	dma := heldBuffer{window: 1, id: 7, after: 5, at: now}
 	shm := heldBuffer{window: 1, after: 5, at: now}
-	out := func(shown, queued, seq uint64) domain.OutputPresented {
-		return domain.OutputPresented{Shown: shown, Queued: queued, Seen: map[domain.WindowID]uint64{1: seq}}
+	out := func(shown, queued, seq uint64) ports.OutputPresented {
+		return ports.OutputPresented{Shown: shown, Queued: queued, Seen: map[domain.WindowID]uint64{1: seq}}
 	}
-	type R = []domain.OutputPresented
+	type R = []ports.OutputPresented
 	for _, tc := range []struct {
 		name    string
 		h       heldBuffer
@@ -100,32 +100,32 @@ func TestKeepHeld(t *testing.T) {
 // The same predicate protects wl_buffer.release and explicit release points.
 func TestKeepHeldChildReadsBeyondTimeout(t *testing.T) {
 	now := time.Unix(100, 0)
-	report := domain.OutputPresented{
+	report := ports.OutputPresented{
 		Seen:       map[domain.WindowID]uint64{1: 20, 2: 20},
 		ChildReads: map[domain.WindowID]uint64{1: 5},
 	}
 	for _, id := range []uint64{0, 7} { // SHM / explicit points only, and dmabuf
 		h := heldBuffer{window: 1, id: id, after: 5, at: now}
-		if !keepHeld(h, []domain.OutputPresented{report}, now.Add(time.Second)) {
+		if !keepHeld(h, []ports.OutputPresented{report}, now.Add(time.Second)) {
 			t.Fatal("unfinished child read released after 100ms")
 		}
 		h.window = 2
-		if keepHeld(h, []domain.OutputPresented{report}, now.Add(time.Second)) {
+		if keepHeld(h, []ports.OutputPresented{report}, now.Add(time.Second)) {
 			t.Fatal("unrelated display window held by child")
 		}
 		h.window, h.after = 1, 4
-		if keepHeld(h, []domain.OutputPresented{report}, now.Add(time.Second)) {
+		if keepHeld(h, []ports.OutputPresented{report}, now.Add(time.Second)) {
 			t.Fatal("buffer older than child's content held")
 		}
 		h.after = 5
 		finished := report
 		finished.ChildReads = nil // render completed, or device closed
-		if keepHeld(h, []domain.OutputPresented{finished}, now.Add(time.Second)) {
+		if keepHeld(h, []ports.OutputPresented{finished}, now.Add(time.Second)) {
 			t.Fatal("finished child read still holds buffer")
 		}
 	}
 	allocs := testing.AllocsPerRun(100, func() {
-		keepHeld(heldBuffer{window: 1, after: 5, at: now}, []domain.OutputPresented{report}, now.Add(time.Second))
+		keepHeld(heldBuffer{window: 1, after: 5, at: now}, []ports.OutputPresented{report}, now.Add(time.Second))
 	})
 	if allocs != 0 {
 		t.Fatalf("child release guard: %.1f allocs, want 0", allocs)
@@ -160,13 +160,13 @@ func TestKeepHeldUntilChildFenceCompletes(t *testing.T) {
 	got, reads, pending := p.CapHiddenSeen(seen)
 	require.True(t, pending)
 	require.Equal(t, seen, got)
-	reports := []domain.OutputPresented{{Seen: got, ChildReads: reads}}
+	reports := []ports.OutputPresented{{Seen: got, ChildReads: reads}}
 	require.True(t, keepHeld(h, reports, now.Add(time.Second)), "unsignalled fence outlives 100ms timeout")
 	_, err = write.Write([]byte{1})
 	require.NoError(t, err)
 	got, reads, pending = p.CapHiddenSeen(seen)
 	require.False(t, pending)
-	reports[0] = domain.OutputPresented{Seen: got, ChildReads: reads}
+	reports[0] = ports.OutputPresented{Seen: got, ChildReads: reads}
 	require.False(t, keepHeld(h, reports, now.Add(time.Second)), "signalled fence lifts child hold")
 }
 
@@ -267,7 +267,7 @@ func TestHeldBufferRequeuedBeforeOutputAck(t *testing.T) {
 		if len(surf.queue) != 1 || surf.queue[0].buffer == nil || sameBuffer(surf.queue[0].buffer, surf.current) || len(s.held) == 0 {
 			t.Errorf("expected replaced buffer and queued reuse: queue=%d held=%d", len(surf.queue), len(s.held))
 		}
-		s.reports["HEADLESS-1"] = domain.OutputPresented{Output: "HEADLESS-1", Seen: map[domain.WindowID]uint64{w.ID: ^uint64(0)}}
+		s.reports["HEADLESS-1"] = ports.OutputPresented{Output: "HEADLESS-1", Seen: map[domain.WindowID]uint64{w.ID: ^uint64(0)}}
 		s.releaseHeld(time.Now(), nil)
 		if len(s.held) == 0 {
 			t.Error("released held buffer despite queued reuse")

@@ -2,6 +2,7 @@ package drm
 
 import (
 	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Reports to wayland: what the output shows and has read.
@@ -14,7 +15,7 @@ func (o *Output) report(flip *domain.FlipInfo, seen map[domain.WindowID]uint64) 
 	if o.capHidden != nil {
 		seen, reads, o.capped = o.capHidden(seen)
 	}
-	o.reports.Push(domain.OutputPresented{Output: o.conn.name, Flip: flip, Shown: o.shown, Queued: o.queued, Seen: seen, ChildReads: reads})
+	o.reports.Push(ports.OutputPresented{Output: o.conn.name, Flip: flip, Shown: o.shown, Queued: o.queued, Seen: seen, ChildReads: reads})
 }
 
 // shownBy returns an immutable snapshot of the content Seq of drawn windows

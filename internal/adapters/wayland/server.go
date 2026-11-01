@@ -213,11 +213,11 @@ type Server struct {
 	// frameFire is dueFrames' result slice, reused across ticks.
 	frameFire []string
 	// held buffers wait until no output reads them (release.go); reports
-	// are the outputs' latest domain.OutputPresented.
+	// are the outputs' latest ports.OutputPresented.
 	held []heldBuffer
 	// heldLive is releaseHeld's scratch (display goroutine only).
-	heldLive []domain.OutputPresented
-	reports  map[string]domain.OutputPresented
+	heldLive []ports.OutputPresented
+	reports  map[string]ports.OutputPresented
 	started  time.Time
 	// fifoSurfaces have a fifo barrier or queued commits (fifo.go);
 	// lastFlip is each output's latest page flip.
@@ -387,7 +387,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		display:            d,
 		awaiting:           map[string][]*wayland.Callback{},
 		frameDue:           map[string]time.Time{},
-		reports:            map[string]domain.OutputPresented{},
+		reports:            map[string]ports.OutputPresented{},
 		env:                linuxProcEnv{},
 		name:               name,
 		cleanup:            cleanup,

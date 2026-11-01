@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/wlturbo"
 	"github.com/bnema/go-wayland-bindings/server/presentationtime"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
@@ -170,7 +170,7 @@ func testPresentationFeedback(t *testing.T, version uint32, variable, async bool
 		}
 	}
 	flip := func(when time.Duration, seq uint64, shows uint64, zero domain.WindowID) {
-		presented.Push(domain.OutputPresented{Output: "HEADLESS-1", Flip: &domain.FlipInfo{When: when, Seq: seq, Refresh: refresh, VariableRate: variable, Async: async, ZeroCopy: zero, HardwareClock: true, Shows: map[domain.WindowID]uint64{w.ID: shows}}})
+		presented.Push(ports.OutputPresented{Output: "HEADLESS-1", Flip: &domain.FlipInfo{When: when, Seq: seq, Refresh: refresh, VariableRate: variable, Async: async, ZeroCopy: zero, HardwareClock: true, Shows: map[domain.WindowID]uint64{w.ID: shows}}})
 	}
 	// With no flip, hiding must discard a waiting feedback immediately.
 	hidden := feedback()
@@ -314,10 +314,10 @@ func TestNextRefreshFollowsFlips(t *testing.T) {
 // Software flips (headless) answer feedback without flags and do not pace
 // frame callbacks.
 func TestSoftwareFlipsDoNotPace(t *testing.T) {
-	if paces(domain.OutputPresented{Flip: &domain.FlipInfo{}}) {
+	if paces(ports.OutputPresented{Flip: &domain.FlipInfo{}}) {
 		t.Fatal("software flip paces callbacks")
 	}
-	if !paces(domain.OutputPresented{Flip: &domain.FlipInfo{HardwareClock: true}}) {
+	if !paces(ports.OutputPresented{Flip: &domain.FlipInfo{HardwareClock: true}}) {
 		t.Fatal("display flip does not pace")
 	}
 }

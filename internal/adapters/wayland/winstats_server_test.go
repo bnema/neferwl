@@ -138,7 +138,7 @@ func TestWatchStatsFlips(t *testing.T) {
 	w, _, _ := surfaceMapper(t, c, events)()
 	sink := s.Presentation()
 	push := func(seq uint64, when time.Duration) {
-		sink.Push(domain.OutputPresented{Output: "HEADLESS-1", Flip: &domain.FlipInfo{When: when, Shows: map[domain.WindowID]uint64{w.ID: seq}, ZeroCopy: w.ID, HardwareClock: true, VariableRate: true, OverlayReason: "occupied"}})
+		sink.Push(ports.OutputPresented{Output: "HEADLESS-1", Flip: &domain.FlipInfo{When: when, Shows: map[domain.WindowID]uint64{w.ID: seq}, ZeroCopy: w.ID, HardwareClock: true, VariableRate: true, OverlayReason: "occupied"}})
 		s.display.Do(func() {})
 	}
 	push(1, 0)

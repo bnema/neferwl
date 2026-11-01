@@ -2,7 +2,6 @@ package domain
 
 import (
 	"image"
-	"sync/atomic"
 	"time"
 )
 
@@ -60,55 +59,6 @@ type OutputApply struct {
 type OutputApplied struct {
 	ID  uint64
 	Err error
-}
-
-// OutputPresented carries output → wayland what an output shows and reads.
-// Flip is set when a page flip completed: frame callbacks of the surfaces
-// on it are due. Shown and Queued are the DMABuf IDs scanned out directly
-// (0: a composed image); Seen is the latest content Seq per window the
-// output finished reading (the GPU is done with it). A replaced client
-// buffer is released once every output that reports has seen a later
-// content of its window and neither shows nor queues it.
-type OutputPresented struct {
-	Output        string
-	Flip          *FlipInfo
-	Shown, Queued uint64
-	Seen          map[WindowID]uint64
-	// ChildReads is the oldest content Seq per window still read by a child
-	// renderer on a separate device. Unlike Seen, these holds never time out:
-	// they end only with a completed render or device shutdown.
-	ChildReads map[WindowID]uint64
-	// Snapshot owns Seen and ChildReads when non-nil. Consumers must release
-	// it exactly once after their final read; copies do not acquire ownership.
-	Snapshot *PresentationSnapshot
-}
-
-// PresentationSnapshot is a reference-counted, immutable pair of report maps.
-// Only the output owner writes maps, after receiving the last reference back.
-// Shows is deliberately not part of this lease: flips can retain it separately.
-type PresentationSnapshot struct {
-	Seen, ChildReads map[WindowID]uint64
-	refs             atomic.Int32
-	returned         chan<- *PresentationSnapshot
-}
-
-// Init starts an owner reference to a returned (or new) snapshot.
-func (s *PresentationSnapshot) Init(returned chan<- *PresentationSnapshot) {
-	s.returned = returned
-	s.refs.Store(1)
-}
-
-// Retain acquires a reference while the caller already owns one.
-func (s *PresentationSnapshot) Retain() { s.refs.Add(1) }
-
-// Release ends one reference. A full return queue drops the unused snapshot.
-func (s *PresentationSnapshot) Release() {
-	if s != nil && s.refs.Add(-1) == 0 {
-		select {
-		case s.returned <- s:
-		default:
-		}
-	}
 }
 
 // OutputFormats carries output → wayland the dmabuf formats an output can

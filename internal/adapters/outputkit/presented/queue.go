@@ -13,24 +13,24 @@ import (
 // Queue holds reports awaiting transport. Its owner alone calls its methods.
 // Maps remain immutable until all report consumers release their snapshots.
 type Queue struct {
-	unsent   []domain.OutputPresented
-	latest   *domain.PresentationSnapshot
-	returned chan *domain.PresentationSnapshot
+	unsent   []ports.OutputPresented
+	latest   *ports.PresentationSnapshot
+	returned chan *ports.PresentationSnapshot
 }
 
 // Push queues r. Its Seen and ChildReads may be the caller's scratch maps:
 // the queue keeps snapshots. A flip-less report replaces the newest queued
 // one when that one has no flip, or keeps its flip; every flip is queued.
-func (q *Queue) Push(r domain.OutputPresented) {
+func (q *Queue) Push(r ports.OutputPresented) {
 	if q.latest == nil || !maps.Equal(q.latest.Seen, r.Seen) || !maps.Equal(q.latest.ChildReads, r.ChildReads) {
 		if q.returned == nil {
-			q.returned = make(chan *domain.PresentationSnapshot, 128)
+			q.returned = make(chan *ports.PresentationSnapshot, 128)
 		}
-		var snapshot *domain.PresentationSnapshot
+		var snapshot *ports.PresentationSnapshot
 		select {
 		case snapshot = <-q.returned:
 		default:
-			snapshot = &domain.PresentationSnapshot{}
+			snapshot = &ports.PresentationSnapshot{}
 		}
 		snapshot.Init(q.returned)
 		snapshot.Seen = copyMap(snapshot.Seen, r.Seen)
@@ -90,7 +90,7 @@ func (q *Queue) Len() int { return len(q.unsent) }
 
 // Unsent returns the queued reports, oldest first. Callers must not modify
 // them.
-func (q *Queue) Unsent() []domain.OutputPresented { return q.unsent }
+func (q *Queue) Unsent() []ports.OutputPresented { return q.unsent }
 
 // Seen is the Seen snapshot of the last pushed report.
 func (q *Queue) Seen() map[domain.WindowID]uint64 {

@@ -18,8 +18,8 @@ import (
 
 func TestReleaseHeldAllocations(t *testing.T) {
 	out := &output{place: domain.OutputPlacement{Info: domain.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
-	s := &Server{outputs: []*output{out}, reports: map[string]domain.OutputPresented{}}
-	reports := []domain.OutputPresented{{Output: "DP-2", Seen: map[domain.WindowID]uint64{1: 1}}}
+	s := &Server{outputs: []*output{out}, reports: map[string]ports.OutputPresented{}}
+	reports := []ports.OutputPresented{{Output: "DP-2", Seen: map[domain.WindowID]uint64{1: 1}}}
 	now := time.Unix(100, 0)
 	s.releaseHeld(now, reports)
 	if allocs := testing.AllocsPerRun(100, func() { s.releaseHeld(now, reports) }); allocs != 0 {

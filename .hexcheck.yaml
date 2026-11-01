@@ -78,12 +78,6 @@ allow:
   - rule: suspicious-business-logic-in-adapter
     path: internal/adapters/wayland/server.go
     reason: Display command dispatch validates immutable security epochs before converting port messages to wire events.
-  - rule: suspicious-business-logic-in-adapter
-    path: internal/adapters/outputkit/presented/queue.go
-    reason: Reference counts and bounded snapshot returns manage transport memory ownership, not window policy.
-  - rule: suspicious-business-logic-in-adapter
-    path: internal/adapters/wayland/presented.go
-    reason: Ring eviction returns transport snapshot references; no window state or policy is changed.
 heuristics:
   # Domain value translation alone is medium confidence; require strong policy evidence.
   businessLogicMinConfidence: high

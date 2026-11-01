@@ -9,6 +9,7 @@ import (
 	"time"
 	"unsafe"
 
+	"bnema.dev/wlturbo"
 	"github.com/bnema/go-wayland-bindings/server/committiming"
 	"github.com/bnema/go-wayland-bindings/server/fifo"
 	"github.com/bnema/go-wayland-bindings/server/linuxdmabuf"
@@ -17,7 +18,6 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/wlturbo"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
@@ -303,7 +303,7 @@ func TestSyncobjAcquireAndRelease(t *testing.T) {
 		t.Fatal("acquire fence closed before release")
 	}
 	// The output read the second content: the first buffer is released.
-	h.presented.Push(domain.OutputPresented{Output: "HEADLESS-1", Seen: map[domain.WindowID]uint64{h.win: second.Seq}})
+	h.presented.Push(ports.OutputPresented{Output: "HEADLESS-1", Seen: map[domain.WindowID]uint64{h.win: second.Seq}})
 	select {
 	case <-h.signalReady:
 	case <-waylandDeadline(2 * time.Second):
