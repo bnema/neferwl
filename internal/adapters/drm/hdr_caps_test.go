@@ -18,3 +18,33 @@ func TestHDRCapabilityCaps(t *testing.T) {
 		t.Fatalf("unavailable: %+v", got)
 	}
 }
+
+func TestSendHDRCaps(t *testing.T) {
+	events := make(chan domain.OutputHDRCaps, 1)
+	o := &Output{HDRCaps: events}
+	o.conn.name = "DP-1"
+	o.hdr.cap = hdrCapability{Capable: true, HDRMetadata: HDRMetadata{MaxLuminance: 604}}
+	o.hdr.settings.SDRBrightness = 203
+	o.hdr.on = true
+	o.sendHDRCaps()
+	got := <-events
+	if got.Output != "DP-1" || !got.Active || got.Caps.PeakNits != 604 || got.Caps.Tier != domain.HDRFull || got.Caps.Headroom != 604.0/203 {
+		t.Fatalf("event: %+v", got)
+	}
+	o.off = true
+	o.sendHDRCaps()
+	if got = <-events; got.Active {
+		t.Fatal("inactive CRTC reports active HDR")
+	}
+	o.hdr.cap = hdrCapability{Reason: "edid: no PQ"}
+	o.hdr.on = false
+	o.sendHDRCaps()
+	if got = <-events; got.Active || got.Caps.Tier != domain.HDRUnavailable {
+		t.Fatalf("SDR: %+v", got)
+	}
+	// Full and absent channels must not block the output owner.
+	o.sendHDRCaps()
+	o.sendHDRCaps()
+	o.HDRCaps = nil
+	o.sendHDRCaps()
+}

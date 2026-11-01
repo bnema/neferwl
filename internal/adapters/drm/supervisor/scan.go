@@ -63,6 +63,7 @@ func (run *outputsRun) scan() {
 			// Every physical lifetime gets the gate before any early exit:
 			// Close must not restore saved desktop, even on a name collision.
 			o.Security, o.Frames = run.ch.Security, run.ch.Frames
+			o.HDRCaps = run.ch.HDRCaps
 			name := o.Info().Name
 			if other := run.cards[name]; other != nil && other != c {
 				// Core and clients know outputs by connector name.

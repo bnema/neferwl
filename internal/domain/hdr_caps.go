@@ -2,6 +2,13 @@ package domain
 
 import "math"
 
+// OutputHDRCaps reports output capability facts and confirmed HDR10 signaling.
+type OutputHDRCaps struct {
+	Output string
+	Caps   HDRCaps
+	Active bool
+}
+
 // HDRTier describes confidence in an output's HDR peak, not its active mode.
 type HDRTier uint8
 

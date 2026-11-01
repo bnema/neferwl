@@ -9,6 +9,7 @@ import (
 	"time"
 	"unsafe"
 
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/corewake"
@@ -16,7 +17,6 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/outputkit/surfaces"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 
@@ -35,6 +35,7 @@ type Output struct {
 	// Frames, set before Run, tells core a flip of an animating scene
 	// completed (nil: nobody is told). Sends never block.
 	Frames           chan<- domain.OutputFrame
+	HDRCaps          chan<- domain.OutputHDRCaps
 	securityState    domain.SecurityState
 	securityPrepared bool
 	securityInvalid  bool
@@ -499,6 +500,7 @@ func (o *Output) modesetImage(fb uint32, active bool) error {
 		o.testCursor()
 	}
 	o.sendFormats()
+	o.sendHDRCaps()
 	o.signalReady()
 	return nil
 }
@@ -534,6 +536,7 @@ func (o *Output) powerOff() error {
 	o.log.Info().Str("connector", o.conn.name).Msg("power off")
 	// An inactive output offers neither HDR nor direct scanout.
 	o.sendFormats()
+	o.sendHDRCaps()
 	return nil
 }
 

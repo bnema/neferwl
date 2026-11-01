@@ -53,6 +53,8 @@ type Channels struct {
 	// animating scene (Scene.Animating): a running slide moves one step per
 	// report. Without them it moves on a timer.
 	Frames <-chan domain.OutputFrame
+	// HDRCaps carries per-output capability facts, independent of active mode.
+	HDRCaps <-chan domain.OutputHDRCaps
 	// HintScans, when set, receives the scan request of each hint action
 	// (capacity 1; core never waits: a full channel cancels the hint).
 	// Hints carries the results back. With HintScans nil the hint action
@@ -88,7 +90,8 @@ type binding struct {
 	key  string
 }
 type Core struct {
-	osd osd
+	hdrCaps map[string]domain.OutputHDRCaps
+	osd     osd
 	// overviewReal is publish's scratch map of the real layouts under an open overview.
 	overviewReal map[WindowID]Placement
 	// realBuf backs the layout read through at once by publish (each
@@ -1169,6 +1172,16 @@ func (c *Core) Run(ctx context.Context) error {
 					return nil
 				}
 			}
+		case caps, ok := <-c.ch.HDRCaps:
+			if !ok {
+				c.ch.HDRCaps = nil
+				continue
+			}
+			if c.hdrCaps == nil {
+				c.hdrCaps = make(map[string]domain.OutputHDRCaps)
+			}
+			c.hdrCaps[caps.Output] = caps
+			continue
 		case f, ok := <-c.ch.Frames:
 			if c.securityCheckpoint(ctx) != nil {
 				return nil

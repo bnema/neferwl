@@ -22,6 +22,7 @@ type Channels struct {
 	CursorChanges   <-chan domain.CursorChange
 	Presented       ports.PresentationSink
 	Frames          chan<- domain.OutputFrame
+	HDRCaps         chan<- domain.OutputHDRCaps
 	Captures        <-chan domain.CaptureRequest
 	Captured        chan<- domain.CaptureDone
 	Formats         chan<- domain.OutputFormats

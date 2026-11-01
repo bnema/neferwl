@@ -7,13 +7,13 @@ import (
 	"os"
 	"path/filepath"
 
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/cursors"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/routing"
 	"github.com/bnema/neferwl/internal/adapters/xcursor"
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/zerowrap"
 )
 
 // BackendOptions are the settings of the virtual outputs.
@@ -50,7 +50,7 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 		}
 		cur := &Cursor{}
 		curs.Set(name, cur)
-		opts := Options{Cursor: cur, LoadCursor: xcursor.LoadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: o.HDR, RawHDR: o.Raw, Formats: ch.Formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.Presented, Frames: ch.Frames, Captured: ch.Captured}
+		opts := Options{Cursor: cur, LoadCursor: xcursor.LoadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: o.HDR, RawHDR: o.Raw, Formats: ch.Formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.Presented, Frames: ch.Frames, HDRCaps: ch.HDRCaps, Captured: ch.Captured}
 		started := set.Start(ctx, name, func(octx context.Context, feed routing.Feed) error {
 			opts.Security, opts.SecurityChanges, opts.Instance = ch.Security, feed.Security, feed.Instance
 			return RunOutput(octx, opts, feed.Scenes, feed.Contents, feed.Returns, feed.Cursor, feed.Captures)

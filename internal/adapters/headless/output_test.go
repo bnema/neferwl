@@ -22,9 +22,9 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
 
+	"bnema.dev/zerowrap"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/zerowrap"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -640,10 +640,11 @@ func TestHeadlessHDRFormatsConfirmed(t *testing.T) {
 				}
 				r.EXPECT().Close().Return().Once()
 				formats := make(chan domain.OutputFormats, 1)
+				caps := make(chan domain.OutputHDRCaps, 1)
 				ctx, cancel := context.WithCancel(context.Background())
 				done := make(chan error, 1)
 				go func() {
-					done <- RunOutput(ctx, Options{Width: 2, Height: 2, HDR: true, Name: "HEADLESS-1", Formats: formats, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, nil)
+					done <- RunOutput(ctx, Options{Width: 2, Height: 2, HDR: true, Name: "HEADLESS-1", Formats: formats, HDRCaps: caps, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, nil)
 				}()
 				select {
 				case f := <-formats:
@@ -655,6 +656,21 @@ func TestHeadlessHDRFormatsConfirmed(t *testing.T) {
 					}
 				case <-time.After(2 * time.Second):
 					t.Fatal("no format report")
+				}
+				synctest.Wait()
+				select {
+				case event := <-caps:
+					if event.Output != "HEADLESS-1" || event.Active != success {
+						t.Fatalf("caps: %+v", event)
+					}
+					if success && (event.Caps.PeakNits != 1000 || event.Caps.Tier != domain.HDRFull || event.Caps.Headroom != 1000.0/203) {
+						t.Fatalf("confirmed caps: %+v", event)
+					}
+					if !success && event.Caps.Tier != domain.HDRUnavailable {
+						t.Fatalf("fallback caps: %+v", event)
+					}
+				default:
+					t.Fatal("no capability report")
 				}
 				cancel()
 				if err := <-done; err != nil {

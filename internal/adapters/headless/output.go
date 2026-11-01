@@ -54,6 +54,7 @@ type Options struct {
 	// Frames tells core a presented scene is animating: its next frame is
 	// due. Sends never block (nil: nobody is told).
 	Frames   chan<- domain.OutputFrame
+	HDRCaps  chan<- domain.OutputHDRCaps
 	Captured chan<- domain.CaptureDone
 	// Clock paces the renderer trim (nil: system clock).
 	Clock ports.Clock
@@ -92,6 +93,18 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 				return nil
 			}
 		}
+	}
+	event := domain.OutputHDRCaps{Output: opts.Name}
+	in := domain.HDRCapsInput{Reason: "virtual HDR inactive", SDRWhiteNits: 203}
+	if confirmed != nil {
+		in.Capable = true
+		in.MaxLuminance, in.MaxFrameAverage, in.MinLuminance = confirmed.MaxLuminance, confirmed.MaxFrameAverage, confirmed.MinLuminance
+		event.Active = true
+	}
+	event.Caps = domain.ResolveHDRCaps(in)
+	select {
+	case opts.HDRCaps <- event:
+	default:
 	}
 	table := surfaces.New()
 	drawn := table.Map()

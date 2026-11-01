@@ -103,6 +103,7 @@ func (o *Output) disableProtected() error {
 	o.off, o.vrrGame, o.overlayOn = true, false, 0
 	o.setVRR(false)
 	o.sendFormats()
+	o.sendHDRCaps()
 	o.shown, o.queued = 0, 0
 	if o.cursor != nil {
 		o.cursor.applied = cursorState{}
