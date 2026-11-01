@@ -76,6 +76,10 @@ func (e SDRExpansion) Curve() SDRExpansionCurve {
 	}
 }
 
+// Active reports whether the curve changes any value: the zero curve (no
+// expansion) and intensity zero (Top 1) are both inactive.
+func (c SDRExpansionCurve) Active() bool { return c.Top > 1 }
+
 // Params returns the shader vec4: (knee, top, quadratic coefficient, decode).
 // Decode is 0 for gamma 2.2, 1 for piecewise sRGB.
 func (c SDRExpansionCurve) Params() [4]float32 {
