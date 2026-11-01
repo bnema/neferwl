@@ -606,10 +606,8 @@ func TestX11WindowEntersOneOutput(t *testing.T) {
 		{Info: domain.OutputInfo{Name: "A"}, X: 0, Y: 0, Width: 1920, Height: 1080, Scale: 1},
 		{Info: domain.OutputInfo{Name: "B"}, X: 1920, Y: 0, Width: 1920, Height: 1080, Scale: 1},
 	}, Focused: "A"}
-	r.state(func() {}) // the layout is applied
-	if err := r.xc.Roundtrip(); err != nil {
-		t.Fatal(err)
-	}
+	// SetOutputs is applied asynchronously: wait for both globals.
+	waitOutputs(t, r.xc, 2)
 	outputs := 0
 	for _, g := range r.xc.Registry().GetGlobals() {
 		if g.Interface != "wl_output" {
