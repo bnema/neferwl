@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"bnema.dev/wlturbo"
 	"bnema.dev/zerowrap"
@@ -551,5 +552,52 @@ func TestColorFeedbackBeforeOutputKnown(t *testing.T) {
 	}
 	if hdr.values[1][0] != bt2020 || hdr.values[2][0] != pq || hdr.values[5][1] <= hdr.values[3][2] {
 		t.Fatalf("focused HDR before map: %v", hdr.values)
+	}
+}
+
+func TestWindowColorDescriptionCommittedFact(t *testing.T) {
+	s, events, _, _, dir := contentServer(t)
+	c := protocolClient(t, s, dir)
+	w, wl, _ := surfaceMapper(t, c, events)()
+	var lastColor SurfaceColor
+	for _, color := range []SurfaceColor{{Set: true, TF: pq, Primaries: bt2020}, {Set: true, TF: pq, Primaries: bt2020}, {}} {
+		// Set pending protocol state on the owner goroutine; the actual client
+		// commit below must be what makes the fact visible.
+		if !s.display.Do(func() {
+			for res, surf := range s.surfaces {
+				if res.ID() == wl {
+					surf.next.color = color
+				}
+			}
+		}) {
+			t.Fatal("display stopped")
+		}
+		requestProtocol(t, c, wl, wayland.SurfaceRequestCommit)
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+		marker := ports.WindowAppID{ID: w.ID, AppID: "colour barrier"}
+		if !s.display.Do(func() { s.emit(marker) }) {
+			t.Fatal("display stopped")
+		}
+		var facts []ports.WindowColorDescription
+		for {
+			ev := waitEvent(t, events, 2*time.Second)
+			if ev == marker {
+				break
+			}
+			if fact, ok := ev.(ports.WindowColorDescription); ok {
+				facts = append(facts, fact)
+			}
+		}
+		wantPlain := color.TF == 0 && color.Primaries == 0
+		if color == lastColor {
+			if len(facts) != 0 {
+				t.Fatalf("unchanged description emitted %v", facts)
+			}
+		} else if len(facts) != 1 || facts[0] != (ports.WindowColorDescription{ID: w.ID, PlainSDR: wantPlain}) {
+			t.Fatalf("facts %v want PlainSDR=%t", facts, wantPlain)
+		}
+		lastColor = color
 	}
 }

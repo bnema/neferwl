@@ -75,7 +75,7 @@ func (c *Core) stateInto(st domain.State) domain.State {
 			for _, id := range c.scratch.ids {
 				rec := c.windows.lookup(id)
 				v := domain.WindowState{ID: id, AppID: rec.client.AppID, PID: rec.client.PID, Sandbox: rec.client.Sandbox, ContentType: contentTypeName(rec.client.ContentType), Xwayland: rec.client.Xwayland, Output: s.name(), Workspace: n, WorkspaceID: w.ID, WorkspaceName: w.Name, Visible: shown[id], IdleInhibit: rec.idleInhibit, ShortcutsInhibited: rec.inhibitShortcuts, Floating: w.IsFloat(id), Fullscreen: w.Fullscreen == id}
-				curve, reason := decideSDRExpansion(sdrExpansionInput{Output: caps, Config: config, Rule: rec.expansionRule, Fullscreen: v.Fullscreen && w == cur, Game: rec.client.ContentType == domain.ContentGame})
+				curve, reason := decideSDRExpansion(sdrExpansionInput{Output: caps, Config: config, Rule: rec.expansionRule, ColorDescription: rec.client.ColorDescription, Fullscreen: v.Fullscreen && w == cur, Game: rec.client.ContentType == domain.ContentGame})
 				v.SDRExpansion = domain.SDRExpansionState{Active: curve.Active(), Reason: reason}
 				if curve.Active() {
 					v.SDRExpansion.Top = curve.Top

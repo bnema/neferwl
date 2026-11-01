@@ -18,6 +18,8 @@ type WindowMapped struct {
 	Sandbox string
 	// ContentType is the root surface's committed content hint at map time.
 	ContentType domain.ContentType
+	// ColorDescription reports a committed root transfer function or primaries.
+	ColorDescription bool
 	// Xwayland is set when the client belongs to the X11 satellite session.
 	Xwayland bool
 	// Fullscreen is the last fullscreen state requested before the first map
@@ -189,3 +191,12 @@ type WindowResized struct {
 }
 
 func (WindowResized) clientEvent() {}
+
+// WindowColorDescription reports the root surface's committed colour fact.
+// Subsurface descriptions do not change the window's eligibility.
+type WindowColorDescription struct {
+	ID       domain.WindowID
+	PlainSDR bool
+}
+
+func (WindowColorDescription) clientEvent() {}

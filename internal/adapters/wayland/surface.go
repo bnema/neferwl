@@ -470,7 +470,13 @@ func (s *surface) applyCommit(u *update) {
 		s.root().treeDirty = true
 	}
 	s.async = u.async
+	oldPlain := s.outputColor().PlainSDR()
 	s.color = u.color
+	if plain := s.outputColor().PlainSDR(); plain != oldPlain {
+		if id := s.windowID(); s.root() == s && id != 0 {
+			s.server.emit(ports.WindowColorDescription{ID: id, PlainSDR: plain})
+		}
+	}
 	s.representation = u.representation
 	if s.lock != nil && s.commitSkipped {
 		// A discarded replacement cannot change retained lock geometry, even
