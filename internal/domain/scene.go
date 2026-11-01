@@ -261,6 +261,12 @@ type SceneWindow struct {
 	// OverLayers popups hang from a layer surface: drawn over the top and
 	// overlay layers. Window popups stay with the windows, under them.
 	OverLayers bool
+	// SDRExpansion, when Active, expands this window's plain-SDR
+	// surfaces (root and subsurfaces, never popups) into the HDR output's
+	// headroom with this curve. Core sets it only on HDR outputs; the
+	// renderer composes such windows, never scans them out. A value, not a
+	// pointer, so SameAs compares it; the zero value is no expansion.
+	SDRExpansion SDRExpansionCurve
 }
 
 // Tile reports whether w is a tile: laid out in the usable area and

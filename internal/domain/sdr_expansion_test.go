@@ -127,3 +127,15 @@ func TestSDRExpansionInvalidInputs(t *testing.T) {
 		t.Fatal("intensity not clamped")
 	}
 }
+
+func TestSDRExpansionCurveActive(t *testing.T) {
+	if (SDRExpansionCurve{}).Active() {
+		t.Fatal("zero curve active")
+	}
+	if (SDRExpansion{Intensity: 0, PeakNits: 604, SDRWhiteNits: 203}).Curve().Active() {
+		t.Fatal("intensity 0 active")
+	}
+	if !(SDRExpansion{Intensity: .5, PeakNits: 604, SDRWhiteNits: 203}).Curve().Active() {
+		t.Fatal("expansion inactive")
+	}
+}
