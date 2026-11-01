@@ -1,8 +1,10 @@
 package presented
 
 import (
+	"maps"
 	"reflect"
 	"testing"
+	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/domain"
 
@@ -39,7 +41,7 @@ func TestQueueSnapshotsCloneOnlyOnChange(t *testing.T) {
 	changed := q.Unsent()[0]
 	require.Equal(t, map[domain.WindowID]uint64{5: 3}, changed.ChildReads)
 	require.Equal(t, map[domain.WindowID]uint64{5: 2}, first.ChildReads, "sent snapshot stays immutable")
-	require.Equal(t, ptr(first.Seen), ptr(changed.Seen), "seen still unchanged")
+	require.Equal(t, first.Seen, changed.Seen, "seen still unchanged")
 }
 
 // Flip-less reports fold into the newest one and keep its flip; flips queue.
@@ -101,4 +103,94 @@ func TestQueueFlushPushesInOrderAndEmpties(t *testing.T) {
 	q.Push(domain.OutputPresented{Flip: &domain.FlipInfo{Seq: 3}})
 	q.Reset()
 	require.Zero(t, q.Len())
+}
+
+// Changed sequences exercise the live flip path, including consumer returns.
+func TestPresentationSnapshotAllocations(t *testing.T) {
+	var q Queue
+	seen := make(map[domain.WindowID]uint64, 200)
+	reads := make(map[domain.WindowID]uint64, 200)
+	for id := domain.WindowID(1); id <= 200; id++ {
+		seen[id] = 1
+		reads[id] = 1
+	}
+	var baseline domain.OutputPresented
+	before := testing.AllocsPerRun(1000, func() {
+		for id := range seen {
+			seen[id]++
+			reads[id]++
+		}
+		baseline.Seen, baseline.ChildReads = maps.Clone(seen), maps.Clone(reads)
+	})
+	require.Equal(t, seen, baseline.Seen)
+	t.Logf("previous clone path: %.1f allocs/push", before)
+	cycle := func() {
+		for id := range seen {
+			seen[id]++
+			reads[id]++
+		}
+		q.Push(domain.OutputPresented{Seen: seen, ChildReads: reads})
+		r := q.Unsent()[0]
+		r.Snapshot.Retain() // the consumer owns this reference after Reset
+		q.Reset()
+		r.Snapshot.Release()
+	}
+	for range 10 {
+		cycle()
+	}
+	allocs := testing.AllocsPerRun(1000, cycle)
+	t.Logf("changing Seen and ChildReads: %.1f allocs/push + release", allocs)
+	require.Zero(t, allocs)
+}
+
+func TestSentSnapshotSurvivesLaterPushes(t *testing.T) {
+	var q Queue
+	seen := map[domain.WindowID]uint64{1: 1}
+	reads := map[domain.WindowID]uint64{1: 2}
+	sink := portsmocks.NewMockPresentationSink(t)
+	var sent domain.OutputPresented
+	sink.EXPECT().Push(mock.Anything).RunAndReturn(func(r domain.OutputPresented) { sent = r }).Once()
+	q.Push(domain.OutputPresented{Seen: seen, ChildReads: reads})
+	q.Flush(sink)
+	for range 100 {
+		seen[1]++
+		reads[1]++
+		q.Push(domain.OutputPresented{Seen: seen, ChildReads: reads})
+		q.Reset()
+	}
+	require.Equal(t, uint64(1), sent.Seen[1])
+	require.Equal(t, uint64(2), sent.ChildReads[1])
+	sent.Snapshot.Release()
+}
+
+func TestSentSnapshotConcurrentReader(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var q Queue
+		seen := map[domain.WindowID]uint64{1: 1}
+		reads := map[domain.WindowID]uint64{1: 2}
+		sink := portsmocks.NewMockPresentationSink(t)
+		reports := make(chan domain.OutputPresented, 1)
+		sink.EXPECT().Push(mock.Anything).RunAndReturn(func(r domain.OutputPresented) { reports <- r }).Once()
+		q.Push(domain.OutputPresented{Seen: seen, ChildReads: reads})
+		q.Flush(sink)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			r := <-reports
+			defer r.Snapshot.Release()
+			for range 1000 {
+				if r.Seen[1] != 1 || r.ChildReads[1] != 2 {
+					t.Error("sent maps mutated")
+					return
+				}
+			}
+		}()
+		for range 1000 {
+			seen[1]++
+			reads[1]++
+			q.Push(domain.OutputPresented{Seen: seen, ChildReads: reads})
+			q.Reset()
+		}
+		<-done
+	})
 }

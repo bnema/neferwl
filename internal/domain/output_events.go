@@ -2,6 +2,7 @@ package domain
 
 import (
 	"image"
+	"sync/atomic"
 	"time"
 )
 
@@ -77,6 +78,37 @@ type OutputPresented struct {
 	// renderer on a separate device. Unlike Seen, these holds never time out:
 	// they end only with a completed render or device shutdown.
 	ChildReads map[WindowID]uint64
+	// Snapshot owns Seen and ChildReads when non-nil. Consumers must release
+	// it exactly once after their final read; copies do not acquire ownership.
+	Snapshot *PresentationSnapshot
+}
+
+// PresentationSnapshot is a reference-counted, immutable pair of report maps.
+// Only the output owner writes maps, after receiving the last reference back.
+// Shows is deliberately not part of this lease: flips can retain it separately.
+type PresentationSnapshot struct {
+	Seen, ChildReads map[WindowID]uint64
+	refs             atomic.Int32
+	returned         chan<- *PresentationSnapshot
+}
+
+// Init starts an owner reference to a returned (or new) snapshot.
+func (s *PresentationSnapshot) Init(returned chan<- *PresentationSnapshot) {
+	s.returned = returned
+	s.refs.Store(1)
+}
+
+// Retain acquires a reference while the caller already owns one.
+func (s *PresentationSnapshot) Retain() { s.refs.Add(1) }
+
+// Release ends one reference. A full return queue drops the unused snapshot.
+func (s *PresentationSnapshot) Release() {
+	if s != nil && s.refs.Add(-1) == 0 {
+		select {
+		case s.returned <- s:
+		default:
+		}
+	}
 }
 
 // OutputFormats carries output → wayland the dmabuf formats an output can

@@ -17,7 +17,8 @@ func (OutputAdded) outputEvent() {}
 // it wakes the consumer. Owner goroutines of outputs call it. After Push the
 // report belongs to the sink: its maps are read-only snapshots, and Flip must
 // be fresh for every push, since the sink may update Merged and replace Shows
-// when it merges flips.
+// when it merges flips. The sink must release a non-nil Snapshot exactly once
+// after its final read (including any retained latest-output report).
 type PresentationSink interface{ Push(domain.OutputPresented) }
 
 // OutputRemoved carries output → core an unplugged display.

@@ -89,11 +89,13 @@ func (s *Server) releaseBufferSync(surf *surface, sync syncHold) {
 // whether buffers are still held.
 func (s *Server) releaseHeld(now time.Time, reports []domain.OutputPresented) bool {
 	for _, r := range reports {
+		s.reports[r.Output].Snapshot.Release()
 		s.reports[r.Output] = r
 	}
 	live := s.heldLive[:0]
 	for name := range s.reports {
 		if s.outputByNameExact(name) == nil {
+			s.reports[name].Snapshot.Release()
 			delete(s.reports, name)
 		}
 	}

@@ -10,12 +10,13 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/fifo"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
 	"github.com/bnema/neferwl/internal/domain"
 
-	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 	"bnema.dev/wlturbo"
 	"bnema.dev/zerowrap"
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
 
@@ -343,19 +344,27 @@ func TestPresentationPushAllocations(t *testing.T) {
 		t.Skip("the race detector makes the purego wake callback allocate")
 	}
 	s, _, _, _, sink, _ := presentServer(t)
-	r := domain.OutputPresented{Output: "HEADLESS-1"}
+	seen := map[domain.WindowID]uint64{1: 1}
+	reads := map[domain.WindowID]uint64{1: 1}
+	var q presented.Queue
+	push := func() {
+		seen[1]++
+		reads[1]++
+		q.Push(domain.OutputPresented{Output: "HEADLESS-1", Seen: seen, ChildReads: reads})
+		q.Flush(sink)
+	}
 	// Posts run in order: once the marker ran, the drain before it did.
 	// The marker is bound once and the channel is reused, so waiting for it
 	// allocates nothing.
 	ran := make(chan struct{}, 1)
 	marker := func() { ran <- struct{}{} }
 	for range 4 {
-		sink.Push(r)
+		push()
 		s.display.Post(marker)
 		<-ran
 	}
 	allocs := testing.AllocsPerRun(200, func() {
-		sink.Push(r)
+		push()
 		s.display.Post(marker)
 		<-ran
 	})

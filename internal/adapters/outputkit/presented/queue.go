@@ -10,34 +10,41 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// Queue holds the reports an output has not pushed to wayland yet. The owner
-// goroutine flushes it every loop turn, so it holds the few reports of one
-// turn; the sink alone bounds what waits for the display loop (and merges
-// flips when that stalls). Its owner goroutine is the only user. The Seen and
-// ChildReads maps of a queued report are immutable snapshots: wayland may
-// still read an earlier report on another goroutine, so a snapshot is
-// replaced by a clone when its content changes and an unchanged report
-// allocates nothing.
+// Queue holds reports awaiting transport. Its owner alone calls its methods.
+// Maps remain immutable until all report consumers release their snapshots.
 type Queue struct {
-	unsent      []domain.OutputPresented
-	seen, reads map[domain.WindowID]uint64
+	unsent   []domain.OutputPresented
+	latest   *domain.PresentationSnapshot
+	returned chan *domain.PresentationSnapshot
 }
 
 // Push queues r. Its Seen and ChildReads may be the caller's scratch maps:
 // the queue keeps snapshots. A flip-less report replaces the newest queued
 // one when that one has no flip, or keeps its flip; every flip is queued.
 func (q *Queue) Push(r domain.OutputPresented) {
-	if !maps.Equal(q.seen, r.Seen) {
-		q.seen = maps.Clone(r.Seen)
+	if q.latest == nil || !maps.Equal(q.latest.Seen, r.Seen) || !maps.Equal(q.latest.ChildReads, r.ChildReads) {
+		if q.returned == nil {
+			q.returned = make(chan *domain.PresentationSnapshot, 128)
+		}
+		var snapshot *domain.PresentationSnapshot
+		select {
+		case snapshot = <-q.returned:
+		default:
+			snapshot = &domain.PresentationSnapshot{}
+		}
+		snapshot.Init(q.returned)
+		snapshot.Seen = copyMap(snapshot.Seen, r.Seen)
+		snapshot.ChildReads = copyMap(snapshot.ChildReads, r.ChildReads)
+		q.latest.Release()
+		q.latest = snapshot
 	}
-	if !maps.Equal(q.reads, r.ChildReads) {
-		q.reads = maps.Clone(r.ChildReads)
-	}
-	r.Seen, r.ChildReads = q.seen, q.reads
+	q.latest.Retain()
+	r.Seen, r.ChildReads, r.Snapshot = q.latest.Seen, q.latest.ChildReads, q.latest
 	if n := len(q.unsent); n > 0 && (r.Flip == nil || q.unsent[n-1].Flip == nil) {
 		if r.Flip == nil {
 			r.Flip = q.unsent[n-1].Flip
 		}
+		q.unsent[n-1].Snapshot.Release()
 		q.unsent[n-1] = r
 		return
 	}
@@ -74,7 +81,8 @@ func (q *Queue) Flush(sink ports.PresentationSink) {
 	for _, r := range q.unsent {
 		sink.Push(r)
 	}
-	q.Reset()
+	clear(q.unsent)
+	q.unsent = q.unsent[:0]
 }
 
 // Len is the number of queued reports.
@@ -85,11 +93,28 @@ func (q *Queue) Len() int { return len(q.unsent) }
 func (q *Queue) Unsent() []domain.OutputPresented { return q.unsent }
 
 // Seen is the Seen snapshot of the last pushed report.
-func (q *Queue) Seen() map[domain.WindowID]uint64 { return q.seen }
+func (q *Queue) Seen() map[domain.WindowID]uint64 {
+	if q.latest == nil {
+		return nil
+	}
+	return q.latest.Seen
+}
 
 // Reset drops queued reports, e.g. when a security epoch makes them stale.
-// Snapshots stay: they may be shared with reports already sent.
+// The owner retains the latest snapshot; sent reports retain their own reference.
 func (q *Queue) Reset() {
+	for _, r := range q.unsent {
+		r.Snapshot.Release()
+	}
 	clear(q.unsent)
 	q.unsent = q.unsent[:0]
+}
+
+func copyMap(dst, src map[domain.WindowID]uint64) map[domain.WindowID]uint64 {
+	if dst == nil && len(src) > 0 {
+		dst = make(map[domain.WindowID]uint64, len(src))
+	}
+	clear(dst)
+	maps.Copy(dst, src)
+	return dst
 }

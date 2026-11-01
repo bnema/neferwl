@@ -111,6 +111,7 @@ func (p *presentSink) makeRoomLocked(incoming *domain.OutputPresented) (merged b
 			presented.Merge(old, next.Flip)
 			merged = true
 		}
+		p.ring[i].Snapshot.Release()
 		p.ring = slices.Delete(p.ring, i, i+1)
 		return merged
 	}
