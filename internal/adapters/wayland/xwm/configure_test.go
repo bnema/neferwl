@@ -253,7 +253,10 @@ func TestConfigureStaleAndDuplicateDirtySlots(t *testing.T) {
 }
 
 func TestDirtyQueueNeverGrows(t *testing.T) {
-	x, p, h, _, _ := attached(t)
+	x, p, h, src, _ := attached(t)
+	// Hundreds of requests can fill the socket on a single-P runner; writable
+	// interest is normal transport backpressure, not part of the queue invariant.
+	src.EXPECT().SetWritable(mock.Anything).Return(nil).Maybe()
 	c0 := cap(x.dirty)
 	const base = 0x600000
 	for i := 0; i < 3*c0; i++ { // each round leaves a stale entry behind

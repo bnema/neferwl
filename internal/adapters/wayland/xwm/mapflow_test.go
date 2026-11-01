@@ -575,11 +575,16 @@ func TestNetWMStateClientMessageForwardsFullscreen(t *testing.T) {
 	hs.h.EXPECT().Fullscreen(s, true).Once()
 	hs.p.clientMessage(win, hs.p.atom("_NET_WM_STATE"), 1, hs.p.atom("_NET_WM_STATE_FULLSCREEN"))
 	readUntil(t, hs.x, func() bool { return hs.x.tab.rec(s).fullscreen })
+	require.NoError(t, hs.x.conn.Sync(&hs.x.h))
+	st, ok := hs.p.prop(win, "_NET_WM_STATE")
+	require.True(t, ok)
+	require.Equal(t, le32(hs.p.atom("_NET_WM_STATE_FULLSCREEN")), st.data)
 	hs.h.EXPECT().Fullscreen(s, false).Once() // toggle
 	hs.p.clientMessage(win, hs.p.atom("_NET_WM_STATE"), 2, hs.p.atom("_NET_WM_STATE_FULLSCREEN"))
 	readUntil(t, hs.x, func() bool { return !hs.x.tab.rec(s).fullscreen })
-	// Not written back by the message itself.
-	st, ok := hs.p.prop(win, "_NET_WM_STATE")
+	// Local record changes do not imply that the peer consumed the writes.
+	require.NoError(t, hs.x.conn.Sync(&hs.x.h))
+	st, ok = hs.p.prop(win, "_NET_WM_STATE")
 	require.True(t, ok)
 	require.Empty(t, st.data)
 }

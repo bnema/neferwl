@@ -195,8 +195,8 @@ func (x *XWM) onClientMessage(ev *xturbo.Event) {
 	}
 }
 
-// onNetWMState forwards fullscreen requests to the host and records them; the
-// property itself is written when core answers with a configure.
+// onNetWMState forwards state changes to the host and publishes them. A later
+// core configure reconciles fullscreen with the accepted compositor state.
 func (x *XWM) onNetWMState(e xproto.ClientMessageEvent) {
 	s := x.tab.lookup(uint32(e.Window()))
 	if s == 0 {
@@ -240,6 +240,15 @@ func (x *XWM) onNetWMState(e xproto.ClientMessageEvent) {
 			}
 			rec.fullscreen = on
 			if rec.ready {
+				// Publish before the host callback: a synchronous configure
+				// from the host may supersede the requested state.
+				if on {
+					rec.stateSent |= stateFullscreen
+				} else {
+					rec.stateSent &^= stateFullscreen
+				}
+				x.writeState(rec)
+				x.wake()
 				x.host.Fullscreen(s, on)
 				rec = x.tab.rec(s)
 			}
