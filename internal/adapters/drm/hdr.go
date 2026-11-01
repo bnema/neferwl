@@ -3,6 +3,8 @@ package drm
 import (
 	"math"
 	"unsafe"
+
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // HDMI static metadata type 1, embedded in struct hdr_output_metadata.
@@ -141,4 +143,14 @@ func (o *Output) hdrConnectorProps(req *atomicReq, enabled bool) {
 
 func (m *hdrOutputMetadata) bytes() []byte {
 	return unsafe.Slice((*byte)(unsafe.Pointer(m)), unsafe.Sizeof(*m))
+}
+
+// caps converts connector/EDID detection into pure capability facts without
+// changing the HDR signaling decision. Config expansion peaks arrive in phase 2.
+func (c hdrCapability) caps(peakNits, sdrWhiteNits float64) domain.HDRCaps {
+	return domain.ResolveHDRCaps(domain.HDRCapsInput{
+		Capable: c.Capable, Reason: c.Reason,
+		MaxLuminance: c.MaxLuminance, MaxFrameAverage: c.MaxFrameAverage,
+		MinLuminance: c.MinLuminance, ConfigPeakNits: peakNits, SDRWhiteNits: sdrWhiteNits,
+	})
 }
