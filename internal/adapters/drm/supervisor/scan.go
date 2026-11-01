@@ -101,14 +101,16 @@ func (run *outputsRun) scan() {
 			announced := make(chan struct{})
 			started := run.set.Start(run.ctx, name, func(octx context.Context, feed routing.Feed) error {
 				defer run.b.seat.Unsubscribe(active)
-				select {
-				case <-announced:
-				case <-octx.Done():
-					return nil
-				}
 				o.Security, o.SecurityChanges, o.Instance, o.StartOff = run.ch.Security, feed.Security, feed.Instance, feed.StartOff
 				return safe("output "+name, func() error {
 					defer o.Close()
+					// Setup already owns KMS resources before announcement. Even
+					// cancellation at this gate must close this exact lifetime.
+					select {
+					case <-announced:
+					case <-octx.Done():
+						return nil
+					}
 					run.b.addPreparer(o)
 					defer run.b.removePreparer(o) // before Close: it handles no request any more
 					// octx derives from the session: the probe ends with this
