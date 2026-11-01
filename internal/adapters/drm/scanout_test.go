@@ -446,3 +446,47 @@ func TestFrameDecisionOverlayFallback(t *testing.T) {
 		t.Fatalf("fallback decision: %+v", d)
 	}
 }
+
+func TestFrameDecisionExpansionAllocations(t *testing.T) {
+	o, _, _ := testOutput(t)
+	o.scanout = true
+	curve := (domain.SDRExpansion{Intensity: 0.5, PeakNits: 604, SDRWhiteNits: 203}).Curve()
+	s := domain.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []domain.SceneWindow{{ID: 1, Fullscreen: true, Rect: domain.Rect{W: 200, H: 100}}}}
+	surfaces := map[domain.WindowID]domain.SurfaceContent{1: {ID: 1, Width: 200, Height: 100, LogicalW: 200, LogicalH: 100, DMABuf: &domain.DMABuf{ID: 17, Format: fourccXRGB}}}
+	o.clientFBs[17] = &clientFB{fbID: 77}
+	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
+	for _, active := range []bool{false, true} {
+		if active {
+			s.Windows[0].SDRExpansion = curve
+		}
+		d := o.decideFrame(s, surfaces, false)
+		if active && (d.fb != 0 || o.reason != "sdr_expansion") {
+			t.Fatalf("decision %+v reason %q", d, o.reason)
+		}
+		n := testing.AllocsPerRun(100, func() { o.decideFrame(s, surfaces, false) })
+		t.Logf("expansion=%t decision: %.1f allocs/frame", active, n)
+		if n != 0 {
+			t.Fatalf("decision %.1f allocs", n)
+		}
+	}
+}
+
+func TestOverlayExpansionAllocations(t *testing.T) {
+	o, _, _ := overlayOutput(t)
+	o.overlay.formats = []domain.DMABufFormat{{Format: fourccXRGB}}
+	s, surfaces := overlayScene()
+	o.clientFBs[9] = &clientFB{fbID: 88}
+	curve := (domain.SDRExpansion{Intensity: 0.5, PeakNits: 604, SDRWhiteNits: 203}).Curve()
+	for i := range s.Windows {
+		s.Windows[i].SDRExpansion = curve
+	}
+	d := o.decideFrame(s, surfaces, false)
+	if d.overlay.fb != 0 || o.overlayReason != "sdr_expansion" {
+		t.Fatalf("overlay %+v reason %q", d.overlay, o.overlayReason)
+	}
+	n := testing.AllocsPerRun(100, func() { o.decideFrame(s, surfaces, false) })
+	t.Logf("expanded overlay rejection: %.1f allocs/frame", n)
+	if n != 0 {
+		t.Fatalf("overlay %.1f allocs", n)
+	}
+}

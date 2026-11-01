@@ -330,3 +330,60 @@ func TestSceneWalkUnchangedTiledSHM(t *testing.T) {
 		t.Fatalf("restacked tile has pixels %v, want second child's colour", got)
 	}
 }
+
+func TestRenderExpansionAllocations(t *testing.T) {
+	if raceEnabled {
+		t.Skip("purego allocation counts jitter under race")
+	}
+	r := hdrTestRenderer(t)
+	content := solidContent(t, 8, 8, color.RGBA{R: 255, A: 255})
+	content.ID, content.Surface, content.Seq, content.Version = 1, 1, 1, 1
+	contents := map[domain.WindowID]domain.SurfaceContent{1: content}
+	curve := (domain.SDRExpansion{Intensity: 0.5, PeakNits: 604, SDRWhiteNits: 203}).Curve()
+	var baseline float64
+	for _, active := range []bool{false, true} {
+		var scenes [4]domain.Scene
+		for i := range scenes {
+			scenes[i] = domain.Scene{Seq: uint64(100 + i), Scale: 1, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{X: i, W: 60, H: 16}}}}
+			if active {
+				scenes[i].Windows[0].SDRExpansion = curve
+			}
+		}
+		n := 0
+		step := func() {
+			n++
+			if err := render(r, scenes[n%4], contents); err != nil {
+				t.Fatal(err)
+			}
+		}
+		step()
+		allocs := testing.AllocsPerRun(20, step)
+		t.Logf("expansion=%t HDR render: %.1f allocs/frame", active, allocs)
+		if !active {
+			baseline = allocs
+		} else if allocs != baseline {
+			t.Fatalf("expansion changes render allocations: %.1f -> %.1f", baseline, allocs)
+		}
+		draws := func() {
+			n++
+			_ = r.draws(scenes[n%4], contents, r.frameDamage(r.last, scenes[n%4], image.Rect(0, 0, 64, 16)))
+		}
+		draws()
+		if active {
+			found := false
+			for _, d := range r.scratchDraws {
+				if d.pc.expand == curve.Params() {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatal("no expanded draw")
+			}
+		}
+		allocs = testing.AllocsPerRun(50, draws)
+		t.Logf("expansion=%t draws: %.1f allocs/frame", active, allocs)
+		if allocs != 0 {
+			t.Fatalf("draws %.1f allocs", allocs)
+		}
+	}
+}

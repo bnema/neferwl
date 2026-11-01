@@ -527,3 +527,49 @@ func BenchmarkPublishSubscribers(b *testing.B) {
 		<-c.ch.Scenes
 	}
 }
+
+// The scene ownership allocations must not grow when eligibility and curve
+// calculation run for a fullscreen game on an active HDR output.
+func TestPublishExpansionAllocations(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var baseline float64
+		for _, active := range []bool{false, true} {
+			c := publishRig(t, 1)
+			sc := c.screens[0]
+			c.hdrCaps = map[string]domain.OutputHDRCaps{sc.name(): {Output: sc.name(), Active: active, Caps: domain.ResolveHDRCaps(domain.HDRCapsInput{Capable: true, MaxLuminance: 604})}}
+			id := sc.mon.Current().Columns[0].Windows[0]
+			c.windows.mapped(ports.WindowMapped{ID: id, ContentType: domain.ContentGame}, time.Now())
+			sc.mon.Current().Fullscreen = id
+			ctx := context.Background()
+			step := func() {
+				if err := c.publish(ctx); err != nil {
+					t.Fatal(err)
+				}
+				ss := <-c.ch.Scenes
+				found := false
+				for _, w := range ss[0].Windows {
+					if w.ID == id {
+						found = true
+						if w.SDRExpansion.Active() != active {
+							t.Fatalf("active=%t curve=%+v", active, w.SDRExpansion)
+						}
+					}
+				}
+				if !found {
+					t.Fatal("game missing")
+				}
+			}
+			step()
+			n := testing.AllocsPerRun(50, step)
+			t.Logf("expansion=%t publish: %.1f allocs/frame", active, n)
+			if !active {
+				baseline = n
+			} else if n != baseline {
+				t.Fatalf("expansion changes publish allocations: %.1f -> %.1f", baseline, n)
+			}
+			if n > publishAllocBudget {
+				t.Fatalf("publish %.1f allocs, budget %d", n, publishAllocBudget)
+			}
+		}
+	})
+}
