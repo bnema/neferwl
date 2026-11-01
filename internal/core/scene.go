@@ -68,11 +68,18 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		// Only the focused output lights the focused window's lines.
 		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().Gap(), view, i == c.focusScreen)
 	}
+	caps, _ := c.outputHDRCaps(sc.name())
+	config, configured := c.outputConfig(sc.name())
+	if !configured {
+		config.SDRExpandIntensity = domain.DefaultSDRExpandIntensity
+	}
 	for k, p := range layout {
 		ps := settled[k]
 		// Only the focused output has an activated window.
 		focused := p.Focused && i == c.focusScreen
 		sw := domain.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview, Fade: p.Fade}
+		rec := c.windows.lookup(p.ID)
+		sw.SDRExpansion, _ = decideSDRExpansion(sdrExpansionInput{Output: caps, Config: config, Rule: rec.expansionRule, Fullscreen: p.Fullscreen, Game: rec.client.ContentType == domain.ContentGame})
 		sw.Radius = windowRadius(p, sc.mon.Current().Gap(), c.cfg.Border.Radius)
 		if p.Zoom > 0 && (p.Zoom < 1 || p.Preview > 0) {
 			// A scale motion: the content follows the drawn size. A

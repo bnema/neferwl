@@ -10,6 +10,7 @@ import (
 // windowRecord is what core knows about one client surface besides its
 // place in the layout. Fields fill in as wayland reports them, in any order.
 type windowRecord struct {
+	expansionRule ruleEffect
 	// client holds the app ID and PID of a mapped window, for State.
 	client   ports.WindowMapped
 	mappedAt time.Time

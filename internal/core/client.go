@@ -74,9 +74,9 @@ func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, 
 	case ports.WindowContentType:
 		c.windows.setContentType(v.ID, v.Type)
 		c.publishState()
-		return false, false
 	case ports.WindowAppID:
 		c.windows.setAppID(v.ID, v.AppID)
+		c.matchWindowExpansion(v.ID)
 	case ports.WindowParent:
 		if _, w := c.screenOf(v.ID); w != nil {
 			w.SetDialogParent(v.ID, v.Parent)

@@ -393,6 +393,9 @@ func (c *Core) apply(cfg domain.Config) error {
 	c.binds = binds
 	c.cmdMod = map[string]domain.Mods{"super": domain.ModSuper, "alt": domain.ModAlt, "ctrl": domain.ModCtrl}[cfg.Keyboard.CmdKey]
 	c.specs, c.rules = named, rules
+	for id := range c.windows.records {
+		c.matchWindowExpansion(id)
+	}
 	c.toSpawn = append(c.toSpawn, c.updateSlots(specs)...)
 	c.named()
 	for _, s := range c.screens {
@@ -1181,6 +1184,9 @@ func (c *Core) Run(ctx context.Context) error {
 				c.hdrCaps = make(map[string]domain.OutputHDRCaps)
 			}
 			c.hdrCaps[caps.Output] = caps
+			if c.securityCheckpoint(ctx) != nil || c.publish(ctx) != nil {
+				return nil
+			}
 			continue
 		case f, ok := <-c.ch.Frames:
 			if c.securityCheckpoint(ctx) != nil {
