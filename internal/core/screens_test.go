@@ -1008,6 +1008,12 @@ func TestStateSnapshot(t *testing.T) {
 			{ID: 2, Number: 1, Output: "DP-2", Visible: true, Overflow: "scroll", Columns: []domain.ColumnState{{Rect: domain.Rect{W: 400, H: 200}, Windows: []domain.TileState{{ID: 2, Rect: domain.Rect{W: 400, H: 200}}}}}},
 			{ID: 4, Number: 2, Output: "DP-2", Overflow: "scroll", Columns: []domain.ColumnState{}},
 		}
+		for i := range want.Outputs {
+			want.Outputs[i].HDR = domain.OutputHDRState{Tier: "unavailable", PeakSource: "default", SDRExpand: "auto"}
+		}
+		for i := range want.Windows {
+			want.Windows[i].SDRExpansion = domain.SDRExpansionState{Reason: "output not HDR"}
+		}
 		want.Window = &want.Windows[1]
 		if !reflect.DeepEqual(st, want) {
 			t.Fatalf("got  %+v\nwant %+v", st, want)

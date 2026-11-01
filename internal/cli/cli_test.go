@@ -70,7 +70,7 @@ func TestCommands(t *testing.T) {
 		{[]string{"version"}, 0, "1.2.3\n", ""},
 		{[]string{"validate-config", cfg}, 0, "ok: " + cfg + "\n", ""},
 		{[]string{"validate-config", badCfg}, 1, "", "line 1"},
-		{[]string{"state", "output-of", pid}, 0, `{"name":"DP-1","active":1,"count":1,"workspace":"","workspace_id":""}` + "\n", ""},
+		{[]string{"state", "output-of", pid}, 0, `{"hdr":{"tier":"","peak_nits":0,"peak_source":"","headroom":0,"active":false,"sdr_expand":"","expandable":false},"name":"DP-1","active":1,"count":1,"workspace":"","workspace_id":""}` + "\n", ""},
 		{[]string{"state"}, 0, `"output":"DP-1"`, ""},
 		{[]string{"--unknown"}, 2, "", "flag provided but not defined"},
 		{[]string{"--backend=invalid"}, 2, "", "invalid backend"},

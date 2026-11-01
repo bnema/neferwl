@@ -12,9 +12,9 @@ import (
 	"testing/synctest"
 	"time"
 
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
 	"github.com/bnema/neferwl/internal/domain"
-	"bnema.dev/zerowrap"
 )
 
 var sample = State{
@@ -249,4 +249,32 @@ func TestRunRateLimit(t *testing.T) {
 			t.Fatal("state file left behind", err)
 		}
 	})
+}
+
+func TestHDRExpansionJSON(t *testing.T) {
+	st := domain.State{Outputs: []domain.OutputState{{Name: "A", HDR: domain.OutputHDRState{Tier: "full", PeakNits: 604, PeakSource: "edid", Headroom: 604.0 / 203, Active: true, SDRExpand: "auto", Expandable: true}}}, Windows: []domain.WindowState{{ID: 1, SDRExpansion: domain.SDRExpansionState{Active: true, Reason: "eligible", Intensity: 0.5, Top: 1.9877, Decode: "gamma22"}}, {ID: 2, SDRExpansion: domain.SDRExpansionState{Reason: "not game"}}}}
+	data, err := json.Marshal(fromPorts(st, workspaceid.WithPrefix("test")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Outputs []struct {
+			HDR map[string]any `json:"hdr"`
+		}
+		Windows []struct {
+			Expansion map[string]any `json:"sdr_expansion"`
+		}
+	}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Outputs[0].HDR["peak_nits"] != float64(604) || got.Outputs[0].HDR["peak_source"] != "edid" || got.Outputs[0].HDR["sdr_expand"] != "auto" {
+		t.Fatal(string(data))
+	}
+	if got.Windows[0].Expansion["intensity"] != 0.5 || got.Windows[0].Expansion["decode"] != "gamma22" {
+		t.Fatal(string(data))
+	}
+	if len(got.Windows[1].Expansion) != 2 || got.Windows[1].Expansion["reason"] != "not game" {
+		t.Fatal(string(data))
+	}
 }

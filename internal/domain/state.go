@@ -40,6 +40,7 @@ type TileState struct {
 // OutputState is one output: its workspace on screen and how many numbered
 // workspaces it has. Active is 0 while a hidden (named) workspace is shown.
 type OutputState struct {
+	HDR       OutputHDRState
 	Name      string
 	Active    int
 	Count     int
@@ -50,10 +51,11 @@ type OutputState struct {
 
 // WindowState is one mapped window and where it is.
 type WindowState struct {
-	ID     WindowID
-	AppID  string
-	PID    int
-	Output string
+	SDRExpansion SDRExpansionState
+	ID           WindowID
+	AppID        string
+	PID          int
+	Output       string
 	// Workspace is the window's numbered workspace, 0 for a hidden one.
 	Workspace int
 	// WorkspaceID is the core ID of the window's workspace, numbered or not
@@ -91,4 +93,24 @@ type WindowState struct {
 	Column, Row int
 	// Hidden is set for a stashed window while its stash is hidden.
 	Hidden bool
+}
+
+// OutputHDRState is the diagnostic projection of output facts and policy.
+type OutputHDRState struct {
+	Tier       string  `json:"tier"`
+	PeakNits   float64 `json:"peak_nits"`
+	PeakSource string  `json:"peak_source"`
+	Headroom   float64 `json:"headroom"`
+	Active     bool    `json:"active"`
+	SDRExpand  string  `json:"sdr_expand"`
+	Expandable bool    `json:"expandable"`
+}
+
+// SDRExpansionState explains the current per-window decision. Active-only
+// fields remain zero when off; the statefile projection omits them then.
+type SDRExpansionState struct {
+	Active         bool
+	Reason         string
+	Intensity, Top float64
+	Decode         string
 }

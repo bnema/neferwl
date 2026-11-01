@@ -162,3 +162,15 @@ neferwl state | jq '[.windows[] | select(.hidden)] | length'   # windows in hidd
 neferwl state | jq '[.windows[] | select(.fullscreen)] | length'   # fullscreen windows
 neferwl state | jq '.workspaces[] | select(.visible) | .columns[] | .width'   # column widths on screen
 ```
+
+`neferwl state` includes an `hdr` block per output: `tier` (unavailable,
+assumed, full), `peak_nits`, `peak_source` (config, edid, default), `headroom`,
+`active` (confirmed HDR10 signaling), `sdr_expand` (off, auto, always), and
+`expandable` (capability headroom meets the automatic threshold, independent
+of active mode). Each window has `sdr_expansion.active` and `reason`; active
+expansion also includes `intensity`, `top` (SDR-white units), and `decode`.
+
+```sh
+neferwl state | jq '.outputs[] | {name, hdr}'
+neferwl state | jq '.windows[] | {app_id, sdr_expansion}'
+```

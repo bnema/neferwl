@@ -45,9 +45,15 @@ func (c *Core) stateInto(st domain.State) domain.State {
 		if s.name() == "" {
 			continue
 		}
+		caps, _ := c.outputHDRCaps(s.name())
+		config, configured := c.outputConfig(s.name())
+		if !configured {
+			config.SDRExpandIntensity = domain.DefaultSDRExpandIntensity
+		}
 		m := s.mon
 		cur := m.Current()
 		o := domain.OutputState{Name: s.name(), Count: numbered(m), Workspace: cur.Name, WorkspaceID: cur.ID}
+		o.HDR = domain.OutputHDRState{Tier: caps.Caps.Tier.String(), PeakNits: caps.Caps.PeakNits, PeakSource: caps.Caps.PeakSource.String(), Headroom: caps.Caps.Headroom, Active: caps.Active, SDRExpand: config.SDRExpand.String(), Expandable: caps.Caps.Expandable()}
 		if i := indexOf(m.Workspaces, cur); i >= 0 {
 			o.Active = i + 1
 		}
@@ -69,6 +75,13 @@ func (c *Core) stateInto(st domain.State) domain.State {
 			for _, id := range c.scratch.ids {
 				rec := c.windows.lookup(id)
 				v := domain.WindowState{ID: id, AppID: rec.client.AppID, PID: rec.client.PID, Sandbox: rec.client.Sandbox, ContentType: contentTypeName(rec.client.ContentType), Xwayland: rec.client.Xwayland, Output: s.name(), Workspace: n, WorkspaceID: w.ID, WorkspaceName: w.Name, Visible: shown[id], IdleInhibit: rec.idleInhibit, ShortcutsInhibited: rec.inhibitShortcuts, Floating: w.IsFloat(id), Fullscreen: w.Fullscreen == id}
+				curve, reason := decideSDRExpansion(sdrExpansionInput{Output: caps, Config: config, Rule: rec.expansionRule, Fullscreen: v.Fullscreen && w == cur, Game: rec.client.ContentType == domain.ContentGame})
+				v.SDRExpansion = domain.SDRExpansionState{Active: curve.Active(), Reason: reason}
+				if curve.Active() {
+					v.SDRExpansion.Top = curve.Top
+					v.SDRExpansion.Decode = curve.Decode.String()
+					v.SDRExpansion.Intensity = (curve.Top - 1) / (curve.MaxOut - 1)
+				}
 				if c.constrained.ID == id {
 					switch c.constrained.Mode {
 					case domain.ConstraintLock:

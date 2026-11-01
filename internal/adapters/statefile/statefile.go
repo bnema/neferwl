@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
 	"github.com/bnema/neferwl/internal/domain"
-	"bnema.dev/zerowrap"
 )
 
 // Env names the state file in the environment of processes neferwl starts.
@@ -80,20 +80,22 @@ type Tile struct {
 // sends as its id (package workspaceid): "name:<name>" for a configured
 // workspace, else "<launch prefix>-<core ID>".
 type Output struct {
-	Name        string `json:"name"`
-	Active      int    `json:"active"`
-	Count       int    `json:"count"`
-	Workspace   string `json:"workspace"`
-	WorkspaceID string `json:"workspace_id"`
+	HDR         domain.OutputHDRState `json:"hdr"`
+	Name        string                `json:"name"`
+	Active      int                   `json:"active"`
+	Count       int                   `json:"count"`
+	Workspace   string                `json:"workspace"`
+	WorkspaceID string                `json:"workspace_id"`
 }
 
 // Window is one mapped window.
 type Window struct {
-	ID        uint64 `json:"id"`
-	AppID     string `json:"app_id"`
-	PID       int    `json:"pid"`
-	Output    string `json:"output"`
-	Workspace int    `json:"workspace"`
+	SDRExpansion SDRExpansion `json:"sdr_expansion"`
+	ID           uint64       `json:"id"`
+	AppID        string       `json:"app_id"`
+	PID          int          `json:"pid"`
+	Output       string       `json:"output"`
+	Workspace    int          `json:"workspace"`
 	// WorkspaceID is the ID of the window's workspace, numbered or hidden
 	// (see Output.WorkspaceID).
 	WorkspaceID string `json:"workspace_id"`
@@ -132,7 +134,7 @@ type Window struct {
 func fromPorts(st domain.State, ids *workspaceid.IDs) State {
 	out := State{Output: st.Output, Outputs: make([]Output, 0, len(st.Outputs)), Windows: make([]Window, 0, len(st.Windows)), Workspaces: make([]Workspace, 0, len(st.Workspaces))}
 	for _, o := range st.Outputs {
-		out.Outputs = append(out.Outputs, Output{Name: o.Name, Active: o.Active, Count: o.Count, Workspace: o.Workspace, WorkspaceID: ids.ID(o.WorkspaceID, o.Workspace)})
+		out.Outputs = append(out.Outputs, Output{HDR: o.HDR, Name: o.Name, Active: o.Active, Count: o.Count, Workspace: o.Workspace, WorkspaceID: ids.ID(o.WorkspaceID, o.Workspace)})
 	}
 	for _, w := range st.Windows {
 		out.Windows = append(out.Windows, window(w, ids))
@@ -156,7 +158,7 @@ func fromPorts(st domain.State, ids *workspaceid.IDs) State {
 }
 
 func window(w domain.WindowState, ids *workspaceid.IDs) Window {
-	return Window{ID: uint64(w.ID), AppID: w.AppID, PID: w.PID, Sandbox: w.Sandbox, ContentType: w.ContentType, Xwayland: w.Xwayland, Output: w.Output, Workspace: w.Workspace, WorkspaceID: ids.ID(w.WorkspaceID, w.WorkspaceName), Visible: w.Visible, IdleInhibit: w.IdleInhibit, ShortcutsInhibited: w.ShortcutsInhibited, PointerConstraint: w.PointerConstraint, Floating: w.Floating, Fullscreen: w.Fullscreen, StashIndex: w.StashIndex, StashCount: w.StashCount, Column: w.Column, Row: w.Row, Hidden: w.Hidden}
+	return Window{SDRExpansion: expansion(w.SDRExpansion), ID: uint64(w.ID), AppID: w.AppID, PID: w.PID, Sandbox: w.Sandbox, ContentType: w.ContentType, Xwayland: w.Xwayland, Output: w.Output, Workspace: w.Workspace, WorkspaceID: ids.ID(w.WorkspaceID, w.WorkspaceName), Visible: w.Visible, IdleInhibit: w.IdleInhibit, ShortcutsInhibited: w.ShortcutsInhibited, PointerConstraint: w.PointerConstraint, Floating: w.Floating, Fullscreen: w.Fullscreen, StashIndex: w.StashIndex, StashCount: w.StashCount, Column: w.Column, Row: w.Row, Hidden: w.Hidden}
 }
 
 // writeInterval is the least time between two writes of the file.
@@ -320,4 +322,23 @@ func better(st State, a, b Window) bool {
 		return focused(a)
 	}
 	return a.Visible && !b.Visible
+}
+
+// SDRExpansion keeps active parameters absent when the decision is off.
+type SDRExpansion struct {
+	Active    bool     `json:"active"`
+	Reason    string   `json:"reason"`
+	Intensity *float64 `json:"intensity,omitempty"`
+	Top       *float64 `json:"top,omitempty"`
+	Decode    string   `json:"decode,omitempty"`
+}
+
+func expansion(s domain.SDRExpansionState) SDRExpansion {
+	out := SDRExpansion{Active: s.Active, Reason: s.Reason}
+	if s.Active {
+		out.Intensity = &s.Intensity
+		out.Top = &s.Top
+		out.Decode = s.Decode
+	}
+	return out
 }
