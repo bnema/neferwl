@@ -812,31 +812,40 @@ func TestSelectionRequestorEventMaskOwnership(t *testing.T) {
 					o.state, o.requestor, o.incr, o.notified = outActive, reqWin, true, true
 					o.fd, o.buf = -1, -1
 				}
-				check := func(want uint32) {
-					before := len(p.requests())
-					x.updateEventMask(reqWin)
-					q, _ := pumpReq(t, x, p, before, func(q xpeerReq) bool {
-						return q.major == opChangeWindowAttributes && q.u32(4) == reqWin && q.u32(12) == want
-					})
-					require.Equal(t, want, q.u32(12))
+				check := func(before int, want uint32) {
+					// Sync is a protocol barrier: inspect every write from the
+					// operation, not just the first matching final value.
+					require.NoError(t, x.conn.Sync(&x.h))
+					writes := 0
+					for _, q := range p.requests()[before:] {
+						if q.major == opChangeWindowAttributes && q.u32(4) == reqWin {
+							writes++
+							require.Equal(t, want, q.u32(12), "unexpected intermediate event mask")
+						}
+					}
+					require.NotZero(t, writes, "operation must update its own subscription")
 				}
 				base := uint32(0)
 				if managed {
 					base = uint32(xproto.EventMaskPropertyChange | xproto.EventMaskFocusChange)
 				}
-				check(base | uint32(xproto.EventMaskPropertyChange))
+				before := len(p.requests())
+				x.updateEventMask(reqWin) // establish the initial subscription once
+				check(before, base|uint32(xproto.EventMaskPropertyChange))
+				before = len(p.requests())
 				if abort {
 					x.outAbort(0)
 				} else {
 					x.outFinish(0)
 				}
-				check(base | uint32(xproto.EventMaskPropertyChange))
+				check(before, base|uint32(xproto.EventMaskPropertyChange))
+				before = len(p.requests())
 				if abort {
 					x.outAbort(1)
 				} else {
 					x.outFinish(1)
 				}
-				check(base)
+				check(before, base)
 			})
 		}
 	}
