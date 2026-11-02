@@ -375,8 +375,13 @@ func (x *XWM) attach(src fdSource, h host, post func(func())) {
 	}
 	for i := range x.tab.recs {
 		r := &x.tab.recs[i]
-		if r.kind == kindUnmanaged && r.mapped && !r.ready { // mapped before Attach
-			x.requestOverrideType(Slot(i + 1))
+		if r.kind == kindUnmanaged && r.mapped { // mapped before Attach
+			if !r.ready {
+				x.requestOverrideType(Slot(i + 1))
+			} else {
+				x.tryPair(Slot(i + 1))
+				x.overrideMapped(Slot(i+1), r)
+			}
 		}
 		if r.kind != kindManaged || r.id != 0 {
 			continue
@@ -388,6 +393,7 @@ func (x *XWM) attach(src fdSource, h host, post func(func())) {
 			x.beginMap(s)
 		}
 	}
+	x.replaySelectionOwners()
 	x.flush()
 }
 

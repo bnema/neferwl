@@ -215,6 +215,9 @@ func (x *XWM) onXFixesSelection(ev *xturbo.Event) {
 	x.clearProbe(st)
 	st.gen++
 	st.owner = owner
+	if x.host == nil {
+		return
+	}
 	if owner == 0 {
 		x.log.Debug().Int("kind", k).Msg("selection: no X owner")
 		x.host.SelectionOwned(k, nil)
@@ -1229,4 +1232,19 @@ func (x *XWM) updateEventMask(xid uint32) xturbo.Seq {
 	var v xproto.ChangeWindowAttributesValues
 	v.SetEventMask(mask)
 	return xproto.ChangeWindowAttributes(x.conn.Buf(), xproto.Window(xid), &v)
+}
+
+// replaySelectionOwners probes owners observed while no host was attached.
+func (x *XWM) replaySelectionOwners() {
+	for k := range x.sel.st {
+		st := &x.sel.st[k]
+		if st.owner == 0 {
+			continue
+		}
+		var ev xturbo.Event
+		ev.Kind = xfixes.KindSelectionNotify
+		binary.LittleEndian.PutUint32(ev.Raw[8:], st.owner)
+		binary.LittleEndian.PutUint32(ev.Raw[12:], st.atom)
+		x.onXFixesSelection(&ev)
+	}
 }

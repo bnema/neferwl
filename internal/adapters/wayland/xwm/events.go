@@ -83,6 +83,17 @@ func (x *XWM) onEvent(ev *xturbo.Event) {
 // withdrawn again, so Attach skips them; geometry requests are answered.
 func (x *XWM) onEventDetached(ev *xturbo.Event) {
 	switch ev.Kind {
+	case xfixes.KindSelectionNotify:
+		x.onXFixesSelection(ev)
+	case xproto.KindMapNotify:
+		if s := x.tab.lookup(uint32(xproto.MapNotifyOf(ev).Window())); s != 0 {
+			x.tab.rec(s).mapped = true
+		}
+	case xproto.KindClientMessage:
+		if uint32(xproto.ClientMessageOf(ev).Type()) == x.atoms[atomWLSurfaceSerial] {
+			x.onClientMessage(ev)
+		}
+
 	case xproto.KindMapRequest:
 		if s := x.tab.lookup(uint32(xproto.MapRequestOf(ev).Window())); s != 0 {
 			x.tab.rec(s).mapping = true

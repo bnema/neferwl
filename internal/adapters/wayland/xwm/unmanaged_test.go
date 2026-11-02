@@ -245,3 +245,24 @@ func TestDropWindowClearsQueuedOverride(t *testing.T) {
 	x.dropWindow(s)
 	require.False(t, r.ovQueued)
 }
+
+func TestOverrideMapAndSerialBeforeAttach(t *testing.T) {
+	x, p := bootPeer(t, nil)
+	const win = 0x500009
+	p.createNotify(win, true)
+	p.mapNotify(win)
+	p.clientMessage(win, p.atom("WL_SURFACE_SERIAL"), 9, 0)
+	readUntil(t, x, func() bool { s := x.tab.lookup(win); return s != 0 && x.tab.rec(s).serial == 9 })
+	s := x.tab.lookup(win)
+	require.True(t, x.tab.rec(s).mapped)
+	x.SetSerial(7, 9)
+	require.Zero(t, x.tab.rec(s).surface, "no pairing callback while detached")
+	h := newMockhost(t)
+	src := newMockfdSource(t)
+	src.EXPECT().Remove().Maybe()
+	post, _ := newPost()
+	h.EXPECT().OverrideMapped(s, uint32(win), uint64(7), 0, 0, 100, 50, false).Once()
+	x.attach(src, h, post)
+	readUntil(t, x, func() bool { return x.tab.rec(s).ovPaired })
+	require.True(t, x.tab.rec(s).ready)
+}

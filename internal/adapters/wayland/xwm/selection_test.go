@@ -1146,3 +1146,22 @@ func TestSelectionTextEncodingsINCR(t *testing.T) {
 		})
 	}
 }
+
+func TestSelectionOwnerBeforeAttach(t *testing.T) {
+	x, p := bootPeer(t, nil)
+	clip := p.atom("CLIPBOARD")
+	p.xfixesSelection(0x500010, clip)
+	readUntil(t, x, func() bool { return x.sel.st[SelClipboard].owner == 0x500010 })
+	require.Zero(t, x.sel.st[SelClipboard].probeWin, "do not start host work detached")
+	h := newMockhost(t)
+	src := newMockfdSource(t)
+	src.EXPECT().Remove().Maybe()
+	post, _ := newPost()
+	x.attach(src, h, post)
+	req, _ := pumpReq(t, x, p, 0, func(r xpeerReq) bool { return r.major == 24 && r.u32(8) == clip })
+	got := false
+	h.EXPECT().SelectionOwned(SelClipboard, []string{"text/plain;charset=utf-8", "UTF8_STRING", "TEXT"}).Run(func(int, []string) { got = true }).Once()
+	p.setProp(req.u32(4), req.u32(16), 4, 32, le32(p.atom("UTF8_STRING")))
+	p.selectionNotify(req.u32(4), clip, p.atom("TARGETS"), req.u32(16))
+	readUntil(t, x, func() bool { return got })
+}

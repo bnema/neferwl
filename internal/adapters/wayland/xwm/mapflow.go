@@ -303,7 +303,7 @@ func (x *XWM) onReparentNotify(ev *xturbo.Event) {
 // the surface but are never associated.
 func (x *XWM) tryPair(s Slot) {
 	rec := x.tab.rec(s)
-	if rec.serial == 0 || rec.surface != 0 {
+	if x.host == nil || rec.serial == 0 || rec.surface != 0 {
 		return
 	}
 	if rec.kind == kindManaged && !rec.ready {
