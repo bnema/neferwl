@@ -26,6 +26,7 @@ const (
 	kindSelOut
 	kindSelOwner
 	kindPictFormats
+	kindSelRetired
 )
 
 // onEvent dispatches an X event. Before Attach there is no host: only the
@@ -110,6 +111,9 @@ func (x *XWM) onReply(r *xturbo.Reply) {
 		return
 	case kindTree:
 		x.onTreeReply(r)
+		return
+	case kindSelRetired:
+		x.conn.FreeXID(r.Args[0])
 		return
 	case kindSelTargets:
 		x.onTargetsReply(r)

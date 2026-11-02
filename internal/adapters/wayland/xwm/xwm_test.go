@@ -387,7 +387,7 @@ func TestNoBlockingCallsOutsideBoot(t *testing.T) {
 		}
 		for _, call := range []string{".NewXID(", ".Sync(", ".InternAtoms("} {
 			for _, at := range allIndex(text, call) {
-				callbackXID := name == "selection.go" && call == ".NewXID(" && at > strings.Index(text, "func (x *XWM) onXFixesSelection(") && at < strings.Index(text, "func (x *XWM) clearProbe(")
+				callbackXID := name == "selection.go" && call == ".NewXID(" && at > strings.Index(text, "func (x *XWM) newSelectionRequestor(") && at < strings.Index(text, "func (x *XWM) finishSelectionRequestor(")
 				require.True(t, callbackXID || name == "xwm.go" && at > lo && at < hi, "%s: %s outside boot", name, call)
 			}
 		}

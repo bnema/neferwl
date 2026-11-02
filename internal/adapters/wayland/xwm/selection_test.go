@@ -920,3 +920,67 @@ func TestSelectionOwnerReplacementLateNotify(t *testing.T) {
 		})
 	}
 }
+
+func TestSelectionAnsweredProbeRecyclesRequestor(t *testing.T) {
+	x, p, h, _, _ := attached(t)
+	p.xfixesSelection(0x500010, p.atom("CLIPBOARD"))
+	req, _ := pumpReq(t, x, p, 0, func(r xpeerReq) bool { return r.major == 24 })
+	id := req.u32(4)
+	p.setProp(id, req.u32(16), 4, 32, le32(p.atom("UTF8_STRING")))
+	h.EXPECT().SelectionOwned(SelClipboard, []string{"text/plain;charset=utf-8", "UTF8_STRING", "TEXT"}).Once()
+	st := &x.sel.st[SelClipboard]
+	p.selectionNotify(id, st.atom, p.atom("TARGETS"), req.u32(16))
+	before := x.Stats().Events
+	readUntil(t, x, func() bool { return x.Stats().Events > before })
+	require.NoError(t, x.conn.Sync(&x.h))
+	require.Zero(t, x.sel.retiredN)
+	reused, err := x.newSelectionRequestor()
+	require.NoError(t, err)
+	require.Equal(t, id, reused)
+	x.abandonSelectionRequestor(reused)
+}
+
+func TestSelectionRequestorQuarantine(t *testing.T) {
+	x, p, _, _, _ := attached(t)
+	var ids [33]uint32
+	for i := range ids {
+		id, err := x.newSelectionRequestor()
+		require.NoError(t, err)
+		ids[i] = id
+		x.abandonSelectionRequestor(id)
+	}
+	require.Equal(t, 32, x.sel.retiredN)
+	require.EqualValues(t, 33, x.sel.quarantined)
+	require.Equal(t, ids[1:], x.sel.retired[:])
+	require.NoError(t, x.conn.Sync(&x.h))
+	destroyed := func(id uint32) bool {
+		for _, r := range p.requests() {
+			if r.major == 4 && r.u32(4) == id {
+				return true
+			}
+		}
+		return false
+	}
+	require.True(t, destroyed(ids[0]), "oldest evicted")
+	require.False(t, destroyed(ids[1]), "abandoned resource remains allocated")
+	next, err := x.newSelectionRequestor()
+	require.NoError(t, err)
+	require.NotContains(t, ids[1:], next, "unanswered IDs must not be locally recycled")
+	p.selectionNotify(ids[1], p.atom("CLIPBOARD"), p.atom("TARGETS"), 0)
+	before := x.Stats().Events
+	readUntil(t, x, func() bool { return x.Stats().Events > before })
+	require.NoError(t, x.conn.Sync(&x.h))
+	require.Equal(t, 31, x.sel.retiredN)
+	require.True(t, destroyed(ids[1]), "late answer releases quarantine")
+	reused, err := x.newSelectionRequestor()
+	require.NoError(t, err)
+	require.Equal(t, ids[1], reused)
+	x.abandonSelectionRequestor(next)
+	x.abandonSelectionRequestor(reused)
+	x.selClose()
+	require.Zero(t, x.sel.retiredN)
+	require.NoError(t, x.conn.Sync(&x.h))
+	for _, id := range ids {
+		require.True(t, destroyed(id))
+	}
+}

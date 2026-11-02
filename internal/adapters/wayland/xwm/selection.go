@@ -119,11 +119,14 @@ type selBridge struct {
 	out   [nXfer]xout
 	order uint64
 	// active is the transfer that owns the conversion property, -1 none.
-	active  int
-	timerOn bool
-	closing bool // selClose ran: no transfer may start
-	cancel  func()
-	tickFn  func()
+	active      int
+	timerOn     bool
+	retired     [32]uint32 // live abandoned requestors, oldest first
+	retiredN    int
+	quarantined uint64
+	closing     bool // selClose ran: no transfer may start
+	cancel      func()
+	tickFn      func()
 }
 
 func (x *XWM) initSelection() {
@@ -211,17 +214,13 @@ func (x *XWM) onXFixesSelection(ev *xturbo.Event) {
 		x.host.SelectionOwned(k, nil)
 		return
 	}
-	// This runs in a Dispatch callback: NewXID cannot block on refill here.
-	// The event loop prefetches IDs; exhaustion fails this probe closed.
-	requestor, err := x.conn.NewXID()
+	requestor, err := x.newSelectionRequestor()
 	if err != nil {
 		x.log.Warn().Err(err).Int("kind", k).Msg("selection: allocate TARGETS requestor")
 		x.host.SelectionOwned(k, nil)
 		return
 	}
 	st.probeWin = requestor
-	var wv xproto.CreateWindowValues
-	xproto.CreateWindow(x.conn.Buf(), 0, xproto.Window(requestor), xproto.Window(x.selWin), -1, -1, 1, 1, 0, xproto.WindowClassInputOnly, 0, &wv)
 	st.probe = st.gen
 	x.log.Debug().Int("kind", k).Uint32("owner", owner).Msg("selection: X owner")
 	xproto.ConvertSelection(x.conn.Buf(), xproto.Window(st.probeWin), xproto.Atom(st.atom),
@@ -229,20 +228,76 @@ func (x *XWM) onXFixesSelection(ev *xturbo.Event) {
 	x.wake()
 }
 
-// clearProbe retires the wire identity, including failed (property None) replies.
-// Windows, unlike interned atoms, do not accumulate server-global state.
-// Do not FreeXID here: immediate reuse would alias a late owner notification.
-func (x *XWM) clearProbe(st *selState) {
-	if st.probeWin != 0 {
-		xproto.DestroyWindow(x.conn.Buf(), xproto.Window(st.probeWin))
-		st.probeWin = 0
-		x.wake()
+// newSelectionRequestor allocates a wire identity shared by probe and data paths.
+// Called from Dispatch callbacks: NewXID cannot perform a blocking refill there.
+func (x *XWM) newSelectionRequestor() (uint32, error) {
+	id, err := x.conn.NewXID()
+	if err != nil {
+		return 0, err
 	}
+	var wv xproto.CreateWindowValues
+	wv.SetEventMask(xproto.EventMaskPropertyChange)
+	xproto.CreateWindow(x.conn.Buf(), 0, xproto.Window(id), xproto.Window(x.selWin), -1, -1, 1, 1, 0, xproto.WindowClassInputOnly, 0, &wv)
+	return id, nil
+}
+
+// finishSelectionRequestor destroys an answered requestor. The reply barrier
+// drains earlier events before the ID enters xturbo's local reuse list.
+func (x *XWM) finishSelectionRequestor(id uint32) {
+	if id == 0 {
+		return
+	}
+	xproto.DestroyWindow(x.conn.Buf(), xproto.Window(id))
+	seq := xproto.GetInputFocus(x.conn.Buf())
+	x.expect(seq, kindSelRetired, id, 0)
+	x.wake()
+}
+
+// abandonSelectionRequestor keeps the resource allocated so XC-MISC cannot
+// reissue its ID while the old owner may still write to it.
+func (x *XWM) abandonSelectionRequestor(id uint32) {
+	if id == 0 {
+		return
+	}
+	b := &x.sel
+	b.quarantined++
+	if b.retiredN == len(b.retired) {
+		xproto.DestroyWindow(x.conn.Buf(), xproto.Window(b.retired[0]))
+		copy(b.retired[:], b.retired[1:])
+		b.retiredN--
+		x.log.Debug().Uint64("quarantined", b.quarantined).Msg("selection: evict abandoned requestor")
+	}
+	b.retired[b.retiredN] = id
+	b.retiredN++
+	x.wake()
+}
+
+func (x *XWM) releaseAbandonedRequestor(id uint32) bool {
+	b := &x.sel
+	for i := 0; i < b.retiredN; i++ {
+		if b.retired[i] != id {
+			continue
+		}
+		copy(b.retired[i:], b.retired[i+1:b.retiredN])
+		b.retiredN--
+		b.retired[b.retiredN] = 0
+		x.finishSelectionRequestor(id)
+		return true
+	}
+	return false
+}
+
+func (x *XWM) clearProbe(st *selState) {
+	x.abandonSelectionRequestor(st.probeWin)
+	st.probeWin = 0
 }
 
 // onSelectionNotify: a ConvertSelection we issued was answered.
 func (x *XWM) onSelectionNotify(ev *xturbo.Event) {
 	e := xproto.SelectionNotifyOf(ev)
+	if x.releaseAbandonedRequestor(uint32(e.Requestor())) {
+		return
+	}
 	k := x.selKind(uint32(e.Selection()))
 	if k < 0 {
 		return
@@ -259,8 +314,8 @@ func (x *XWM) onSelectionNotify(ev *xturbo.Event) {
 			return
 		}
 		if e.Property() == 0 {
-			x.clearProbe(st)
-			x.wake()
+			x.finishSelectionRequestor(st.probeWin)
+			st.probeWin = 0
 			x.host.SelectionOwned(k, nil)
 			return
 		}
@@ -268,7 +323,8 @@ func (x *XWM) onSelectionNotify(ev *xturbo.Event) {
 			return
 		}
 		seq := xproto.GetProperty(x.conn.Buf(), true, xproto.Window(st.probeWin), xproto.Atom(x.atoms[atomNeferwlTargets]), 0, 0, 256)
-		x.clearProbe(st)
+		x.finishSelectionRequestor(st.probeWin)
+		st.probeWin = 0
 		x.expect(seq, kindSelTargets, uint32(k), x.sel.st[k].gen)
 		x.wake()
 		return
@@ -667,6 +723,12 @@ func (x *XWM) selClose() {
 	for k := range x.sel.st {
 		x.clearProbe(&x.sel.st[k])
 	}
+	for i := 0; i < x.sel.retiredN; i++ {
+		xproto.DestroyWindow(x.conn.Buf(), xproto.Window(x.sel.retired[i]))
+		x.sel.retired[i] = 0
+	}
+	x.sel.retiredN = 0
+	x.log.Debug().Uint64("quarantined", x.sel.quarantined).Msg("selection: requestors closed")
 	for i := range x.sel.out {
 		if x.sel.out[i].state != outFree {
 			x.outAbort(i)
