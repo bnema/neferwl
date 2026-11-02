@@ -668,7 +668,9 @@ func TestDestroyWhileMappingNeverReady(t *testing.T) {
 	readUntil(t, hs.x, func() bool { return hs.x.tab.lookup(win) == 0 })
 	replies := hs.x.Stats().Replies
 	hs.p.release() // replies for a window that is gone: xturbo retired their slots
-	readUntil(t, hs.x, func() bool { return hs.x.conn.Stats().DroppedReplies >= uint64(propCount) })
+	// Join every property reply and the final geometry reply before checking
+	// that none reached the XWM.
+	readUntil(t, hs.x, func() bool { return hs.x.conn.Stats().DroppedReplies >= uint64(propCount)+1 })
 	require.Equal(t, replies, hs.x.Stats().Replies, "none reaches the XWM")
 }
 
