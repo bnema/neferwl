@@ -105,7 +105,20 @@ func (x *XWM) onEventDetached(ev *xturbo.Event) {
 		if s := x.tab.lookup(uint32(xproto.UnmapNotifyOf(ev).Window())); s != 0 {
 			r := x.tab.rec(s)
 			r.mapped, r.mapping = false, false
+			if r.kind == kindUnmanaged {
+				x.overrideUnmapped(s, r) // no pairing/host callbacks before Attach
+			} else {
+				r.ready, r.pending, r.sized = false, 0, false
+				r.serial, r.surface = 0, 0
+				r.pend.dirty = false
+				r.gen++ // stale replies belong to the previous mapped life
+				if r.gen == 0 {
+					r.gen = 1
+				}
+			}
 		}
+	case xproto.KindConfigureNotify:
+		x.onConfigureNotify(ev)
 	case xproto.KindConfigureRequest:
 		x.onConfigureRequest(ev)
 	}
