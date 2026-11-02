@@ -173,3 +173,34 @@ func (o *Output) sendHDRCaps() {
 	case <-ctx.Done():
 	}
 }
+
+// updateExpansionPeak is called only by the card/supervisor owner. A busy or
+// closing output never blocks configuration; pending updates are latest-wins.
+func (o *Output) updateExpansionPeak(peak float64) {
+	if peak == o.requestedExpansionPeak {
+		return
+	}
+	o.requestedExpansionPeak = peak
+	select {
+	case o.expansionPeak <- peak:
+		return
+	default:
+	}
+	select {
+	case <-o.expansionPeak:
+	default:
+	}
+	select {
+	case o.expansionPeak <- peak:
+	default:
+	}
+}
+
+// applyExpansionPeak runs on the output owner, alongside lifecycle reporting.
+func (o *Output) applyExpansionPeak(peak float64) {
+	if peak == o.hdr.settings.ExpansionPeakNits {
+		return
+	}
+	o.hdr.settings.ExpansionPeakNits = peak
+	o.sendHDRCaps()
+}

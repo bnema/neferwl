@@ -135,6 +135,7 @@ func TestHDRSettingsRestartComparison(t *testing.T) {
 		restart  bool
 	}{
 		{HDRSettings{Enabled: true}, false},
+		{HDRSettings{Enabled: true, ExpansionPeakNits: 800}, false},
 		{HDRSettings{Enabled: true, SDRBrightness: 350}, true},
 		{HDRSettings{SDRBrightness: domain.DefaultSDRBrightness}, true},
 	} {

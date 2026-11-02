@@ -8,10 +8,10 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/fdwait"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 
@@ -177,6 +177,7 @@ func (c *Card) Scan() (added []*Output, removed, replaced []string, err error) {
 		mode := c.want.pickMode(conn)
 		if o := c.outputs[conn.name]; o != nil {
 			if !outputNeedsRestart(o, mode, c.want.HDR[conn.name]) {
+				o.updateExpansionPeak(c.want.HDR[conn.name].ExpansionPeakNits)
 				continue
 			}
 			replaced = append(replaced, conn.name)
@@ -359,7 +360,10 @@ func normalizedHDRSettings(settings HDRSettings) HDRSettings {
 // outputNeedsRestart applies the same replacement path to mode and HDR
 // configuration changes; Release drops the old output before reopening it.
 func outputNeedsRestart(o *Output, mode modeInfo, settings HDRSettings) bool {
-	return o.mode != mode || o.hdr.settings != normalizedHDRSettings(settings)
+	settings = normalizedHDRSettings(settings)
+	// ExpansionPeakNits affects composition and reported caps, not KMS state.
+	// Its live update is delivered to the owner instead of replacing the output.
+	return o.mode != mode || o.hdr.settings.Enabled != settings.Enabled || o.hdr.settings.SDRBrightness != settings.SDRBrightness
 }
 
 // Close releases the shared allocator after all outputs have closed.

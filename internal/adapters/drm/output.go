@@ -55,7 +55,11 @@ type Output struct {
 	saved   modeCrtc
 	monitor Monitor
 	hdr     hdrState
-	log     zerowrap.Logger
+	// expansionPeak is immutable after construction; the output owner receives.
+	expansionPeak chan float64
+	// requestedExpansionPeak belongs to the card/supervisor goroutine only.
+	requestedExpansionPeak float64
+	log                    zerowrap.Logger
 	// renderLog is the render-component logger (see Card.renderLog).
 	renderLog zerowrap.Logger
 	// clock paces the periodic stats and renderer trim (nil: system).
@@ -251,6 +255,8 @@ func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, er
 		return nil, err
 	}
 	o.hdr.settings = normalizedHDRSettings(card.want.HDR[c.name])
+	o.expansionPeak = make(chan float64, 1)
+	o.requestedExpansionPeak = o.hdr.settings.ExpansionPeakNits
 	o.hdr.cap = detectHDR(o.monitor, o.hdr.props)
 	o.readColor()
 	o.setupColor()
@@ -1430,6 +1436,8 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 		stuck := o.frame.wait(enabled)
 		stateDirty := false
 		select {
+		case peak := <-o.expansionPeak:
+			o.applyExpansionPeak(peak)
 		case _, ok := <-securityChanges:
 			if !ok {
 				securityChanges = nil
