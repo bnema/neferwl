@@ -109,8 +109,6 @@ func TestXSelectionReachesWaylandClients(t *testing.T) {
 }
 
 // A Wayland client's text selection is read for X through a pipe it fills.
-//
-//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
 func TestXSelectionReadFromWayland(t *testing.T) {
 	s, events, commands, dir := keyboardServer(t)
 	xm := newMockxwmSelection(t)
@@ -126,16 +124,11 @@ func TestXSelectionReadFromWayland(t *testing.T) {
 		t.Fatal("no read end")
 	}
 	defer unix.Close(fd)
-	deadline := time.After(2 * time.Second)
-	for len(src.sends) == 0 {
-		if err := a.c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case <-deadline:
-			t.Fatal("source never asked to send")
-		case <-time.After(5 * time.Millisecond):
-		}
+	if err := a.c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if len(src.sends) != 1 {
+		t.Fatalf("source send count after roundtrip: got %d, want 1", len(src.sends))
 	}
 	buf := make([]byte, 16)
 	n, err := unix.Read(fd, buf)
