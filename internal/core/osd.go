@@ -197,6 +197,27 @@ func (c *Core) osdPanel(v ports.WindowStats) {
 	b = strconv.AppendFloat(b, float64(v.Low1), 'f', 0, 32)
 	b = append(b, " / 0.1% low "...)
 	b = strconv.AppendFloat(b, float64(v.Low01), 'f', 0, 32)
+	curve, expansionReason, hdr := c.osdExpansion(v.Window)
+	b = append(b, " / "...)
+	if c.windows.lookup(v.Window).client.ColorDescription {
+		b = append(b, "colour-managed"...)
+	} else {
+		b = append(b, "SDR / SDR>HDR "...)
+		if curve.Active() {
+			b = append(b, "on (x"...)
+			b = strconv.AppendFloat(b, curve.Top, 'f', 2, 64)
+		} else {
+			b = append(b, "off ("...)
+			b = append(b, expansionReason...)
+		}
+		b = append(b, ')')
+	}
+	b = append(b, " / out "...)
+	if hdr {
+		b = append(b, "HDR10"...)
+	} else {
+		b = append(b, "SDR"...)
+	}
 	p.Lines[3] = string(b)
 	o.buf = b[:0]
 	o.panel = p

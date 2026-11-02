@@ -82,3 +82,28 @@ func (c *Core) matchWindowExpansion(id WindowID) {
 		rec.expansionRule, _ = matchRules(c.rules, rec.client.AppID)
 	}
 }
+
+// windowSDRExpansion shares the scene's eligibility inputs with diagnostics.
+func (c *Core) windowSDRExpansion(id WindowID, fullscreen bool, caps domain.OutputHDRCaps, config domain.OutputConfig) (domain.SDRExpansionCurve, string) {
+	rec := c.windows.lookup(id)
+	return decideSDRExpansion(sdrExpansionInput{Output: caps, Config: config, Rule: rec.expansionRule, ColorDescription: rec.client.ColorDescription, Fullscreen: fullscreen, Game: rec.client.ContentType == domain.ContentGame})
+}
+
+// osdExpansion reads the watched window's drawn placement, not keyboard focus.
+func (c *Core) osdExpansion(id WindowID) (domain.SDRExpansionCurve, string, bool) {
+	for _, sc := range c.screens {
+		for _, p := range sc.shown {
+			if p.ID != id {
+				continue
+			}
+			caps, _ := c.outputHDRCaps(sc.name())
+			config, configured := c.outputConfig(sc.name())
+			if !configured {
+				config.SDRExpandIntensity = domain.DefaultSDRExpandIntensity
+			}
+			curve, reason := c.windowSDRExpansion(id, p.Fullscreen, caps, config)
+			return curve, reason, caps.Active
+		}
+	}
+	return domain.SDRExpansionCurve{}, "output not HDR", false
+}

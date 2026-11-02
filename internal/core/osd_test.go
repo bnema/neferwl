@@ -169,3 +169,33 @@ func TestOSDCmdChangeResetsRecognition(t *testing.T) {
 		c.osdCancel()
 	})
 }
+
+func TestOSDWindowColour(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, _, _ := fadeCore(t)
+		caps := domain.OutputHDRCaps{Output: "A", Active: true, Caps: domain.ResolveHDRCaps(domain.HDRCapsInput{Capable: true, MaxLuminance: 604})}
+		c.hdrCaps = map[string]domain.OutputHDRCaps{"A": caps}
+		c.mapWindow(ports.WindowMapped{ID: 1, Fullscreen: true, ContentType: domain.ContentGame})
+		// A different focused window must not supply the watched window's colour.
+		c.mapWindow(ports.WindowMapped{ID: 2, ColorDescription: true})
+		c.screens[0].shown = []Placement{{ID: 1, Fullscreen: true}, {ID: 2}}
+		check := func(want string) {
+			t.Helper()
+			c.osdPanel(ports.WindowStats{Window: 1})
+			if got := c.osd.panel.Lines[3]; !strings.HasSuffix(got, want) {
+				t.Fatalf("line %q, want suffix %q", got, want)
+			}
+		}
+		check("SDR / SDR>HDR on (x1.99) / out HDR10")
+		c.windows.setColorDescription(1, false)
+		check("colour-managed / out HDR10")
+		c.windows.setColorDescription(1, true)
+		caps.Active = false
+		c.hdrCaps["A"] = caps
+		check("SDR / SDR>HDR off (output not HDR) / out SDR")
+		caps.Active = true
+		c.hdrCaps["A"] = caps
+		c.screens[0].shown[0].Fullscreen = false
+		check("SDR / SDR>HDR off (not fullscreen) / out HDR10")
+	})
+}
