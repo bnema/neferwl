@@ -161,7 +161,7 @@ func headlessSpawnClose(t *testing.T, animated bool) {
 				if len(s.Windows) == count {
 					if count == 1 && animated {
 						// The entrance runs first: wait for the settled scene.
-						if w := s.Windows[0]; w.Fade != 0 || w.Rect.W != 1920 {
+						if w := s.Windows[0]; s.Animating || w.Fade != 0 || w.Rect.W != 1920 {
 							continue
 						}
 					}
