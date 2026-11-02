@@ -573,10 +573,17 @@ func TestNetWMStateClientMessageForwardsFullscreen(t *testing.T) {
 	const win = 0x500001
 	hs.classic(win)
 	s := hs.mapAndWait(win)
+	// XWM state changes only queue property writes. Wait for the peer to
+	// receive each publication before inspecting its property storage.
+	next := 0
+	published := func() {
+		t.Helper()
+		_, next = pumpReq(t, hs.x, hs.p, next, func(q xpeerReq) bool {
+			return q.major == opChangeProperty && q.u32(4) == win && q.u32(8) == hs.p.atom("_NET_WM_STATE")
+		})
+	}
 	check := func(fullscreen bool) {
 		t.Helper()
-		// The peer must consume all property writes before inspecting its storage.
-		require.NoError(t, hs.x.conn.Sync(&hs.x.h))
 		st, ok := hs.p.prop(win, "_NET_WM_STATE")
 		require.True(t, ok)
 		if fullscreen {
@@ -585,20 +592,21 @@ func TestNetWMStateClientMessageForwardsFullscreen(t *testing.T) {
 			require.Empty(t, st.data)
 		}
 	}
+	published()
 	check(false)
 	hs.h.EXPECT().Fullscreen(s, true).Once()
 	hs.p.clientMessage(win, hs.p.atom("_NET_WM_STATE"), 1, hs.p.atom("_NET_WM_STATE_FULLSCREEN"))
 	readUntil(t, hs.x, func() bool { return hs.x.tab.rec(s).fullscreen })
 	check(false) // request alone must not advertise fullscreen before core accepts it
 	hs.x.Configure(s, ports.ConfigureWindow{Width: 640, Height: 360, Fullscreen: true})
-	hs.x.flush()
+	published()
 	check(true) // core accepted the request
 	hs.h.EXPECT().Fullscreen(s, false).Once()
 	hs.p.clientMessage(win, hs.p.atom("_NET_WM_STATE"), 2, hs.p.atom("_NET_WM_STATE_FULLSCREEN"))
 	readUntil(t, hs.x, func() bool { return !hs.x.tab.rec(s).fullscreen })
 	check(true) // removal is also only a request until core configures
 	hs.x.Configure(s, ports.ConfigureWindow{Width: 640, Height: 360})
-	hs.x.flush()
+	published()
 	check(false)
 }
 
