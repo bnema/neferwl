@@ -116,13 +116,10 @@ func TestHeadlessSpawnCloseAnimated(t *testing.T) { headlessSpawnClose(t, true) 
 
 //testpolicy:realtime real Wayland client process and headless renderer
 func headlessSpawnClose(t *testing.T, animated bool) {
-	if _, err := exec.LookPath("weston-simple-shm"); err != nil {
-		t.Skip("weston-simple-shm not installed")
-	}
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	cfg := config.Defaults()
-	cfg.Terminal.Command = []string{"weston-simple-shm"}
+	cfg.Terminal.Command = []string{os.Args[0], spawnClientArg}
 	cfg.Animations.On = animated
 	scenes := make(chan []domain.Scene, 4096)
 	ctx, cancel := context.WithCancel(context.Background())
