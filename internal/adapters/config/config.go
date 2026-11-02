@@ -172,7 +172,7 @@ func Defaults() domain.Config {
 	c.Hint.TextClick = domain.ModCtrl | domain.ModShift
 	c.Hint.Detector = defaultHintDetector
 	c.Hint.Model = defaultHintModel()
-	c.Xwayland = domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: "xwayland-satellite", XSettings: true}
+	c.Xwayland = domain.XwaylandConfig{Backend: domain.XwaylandBuiltin, Binary: "Xwayland", XSettings: true}
 	c.Background.Color = "#111111"
 	c.Floating.Dim = 0.3
 	c.Stash.Width = 80

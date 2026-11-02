@@ -12,7 +12,7 @@ license=('AGPL-3.0-only')
 depends=('glibc' 'libinput' 'libxkbcommon' 'seatd' 'systemd-libs' 'vulkan-icd-loader'
 	'vulkan-driver' 'wayland' 'dbus' 'libcap')
 makedepends=('go>=2:1.27' 'git')
-optdepends=('xwayland-satellite>=0.7: X11 apps'
+optdepends=('xorg-xwayland: X11 apps (built-in window manager)'
 	'foot: default terminal'
 	'fuzzel: launcher'
 	'xdg-desktop-portal-gtk: file pickers and settings for apps'

@@ -24,6 +24,10 @@ terminal.auto-open = first
 # startup = waybar; mako
 # startup = wl-paste --watch cliphist store
 
+# X11 support (restart required): builtin, satellite, off, or a satellite binary path.
+xwayland = builtin
+xwayland.xsettings = on
+
 background = #111111
 
 # Separator lines between tiled windows (tmux style), in logical pixels.

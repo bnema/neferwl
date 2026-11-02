@@ -381,7 +381,11 @@ func TestWorkspacePrevNextAction(t *testing.T) {
 }
 
 func TestXwayland(t *testing.T) {
-	if Defaults().Xwayland != (domain.XwaylandConfig{Backend: domain.XwaylandSatellite, Binary: "xwayland-satellite", XSettings: true}) {
+	c, warnings := parseString(t, "")
+	if c.Xwayland != Defaults().Xwayland || len(warnings) != 0 {
+		t.Fatal(c.Xwayland, warnings)
+	}
+	if Defaults().Xwayland != (domain.XwaylandConfig{Backend: domain.XwaylandBuiltin, Binary: "Xwayland", XSettings: true}) {
 		t.Fatal(Defaults().Xwayland)
 	}
 	for _, tt := range []struct {

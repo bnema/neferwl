@@ -52,13 +52,21 @@ Candidate popups are not drawn yet.
 
 ## X11 apps
 
-By default, X11 apps such as Steam run through [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite) 0.7+, found in `PATH`. NeferWL starts it when the first X11 app connects; do not start it yourself.
+By default, neferwl manages X11 apps such as Steam with its built-in window manager (`xwayland = builtin`). It starts `Xwayland` from `PATH` when the first X11 app connects; do not start it yourself.
+
+The optional `xwayland = satellite` backend uses [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite) 0.7+ instead; a custom binary path also selects satellite.
 
 ```text
 xwayland = off   # no X11 support
 ```
 
-With `xwayland = builtin` (experimental), neferwl starts `Xwayland` itself and manages X11 windows: they tile, take focus and close like Wayland windows. Menus, popups and tooltips of X11 apps are shown above their window and do not take the keyboard focus. X11 apps get the cursor theme (`XCURSOR_THEME`), cursor size (`XCURSOR_SIZE`) and DPI through XSETTINGS, always announced as scale 1 (96 dpi) because X11 apps see logical sizes and neferwl upscales their windows (`Gtk/CursorThemeName`, `Gtk/CursorThemeSize`, `Xft/DPI`, `Gdk/WindowScalingFactor`, `Gdk/UnscaledDPI`; `xwayland.xsettings = off` to disable), and the X background shows the themed arrow. The clipboard and the primary selection work between X11 and Wayland apps in both directions, for text; large copies are transferred in chunks (INCR). While the session is locked, no selection data crosses.
+With `xwayland = builtin`, neferwl starts `Xwayland` itself and manages X11 windows: they tile, take focus and close like Wayland windows.
+
+Menus, popups and tooltips of X11 apps are shown above their window and do not take the keyboard focus.
+
+X11 apps get the cursor theme (`XCURSOR_THEME`), cursor size (`XCURSOR_SIZE`) and DPI through XSETTINGS, always announced as scale 1 (96 dpi) because X11 apps see logical sizes and neferwl upscales their windows (`Gtk/CursorThemeName`, `Gtk/CursorThemeSize`, `Xft/DPI`, `Gdk/WindowScalingFactor`, `Gdk/UnscaledDPI`; `xwayland.xsettings = off` to disable), and the X background shows the themed arrow.
+
+The clipboard and the primary selection work between X11 and Wayland apps in both directions, for text; large copies are transferred in chunks (INCR). While the session is locked, no selection data crosses.
 
 Games with `builtin`:
 
@@ -151,7 +159,7 @@ Each window also carries metadata keys:
 - `pointer_constraint`: `locked`, `confined` or empty.
 - `sandbox`: the app ID the sandbox engine declared through `wp_security_context_v1`, else the engine name; empty when the window is not sandboxed. The sandbox declares it; NeferWL does not verify it.
 - `content_type`: `game`, `video`, `photo` or empty, from `wp_content_type_v1`.
-- `xwayland`: the window is an X11 window served through xwayland-satellite.
+- `xwayland`: the window is an X11 window on either backend.
 
 The `workspaces` list holds every workspace with its `visible` flag, its columns and the windows in them, each with `x`, `y`, `width` and `height` in logical pixels of its output. The file is written at most once per second.
 
