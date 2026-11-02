@@ -30,12 +30,13 @@ var (
 
 // selState is one selection.
 type selState struct {
-	atom    uint32
-	gen     uint32 // bumped on every ownership change; stales TARGETS probes
-	probe   uint32 // gen when the TARGETS ConvertSelection was issued
-	owner   uint32 // X owner window other than selWin, 0 none
-	ownTime uint32 // lastTime when selWin took ownership, answered for TIMESTAMP
-	ours    bool   // selWin owns the selection (Wayland -> X)
+	atom     uint32
+	gen      uint32 // bumped on every ownership change; stales TARGETS probes
+	probe    uint32 // gen when the TARGETS ConvertSelection was issued
+	probeWin uint32 // unique requestor for this ownership generation
+	owner    uint32 // X owner window other than selWin, 0 none
+	ownTime  uint32 // lastTime when selWin took ownership, answered for TIMESTAMP
+	ours     bool   // selWin owns the selection (Wayland -> X)
 	// wl is what the Wayland side offers while ours: raw text availability.
 	wlUTF8, wlPlain bool
 	wlMime          [len(textMimes)]string // offered text MIMEs, in textMimes order, "" absent
@@ -202,6 +203,7 @@ func (x *XWM) onXFixesSelection(ev *xturbo.Event) {
 	if owner == x.selWin { // our own SetSelectionOwner echoed back
 		return
 	}
+	x.clearProbe(st)
 	st.gen++
 	st.owner = owner
 	if owner == 0 {
@@ -209,37 +211,64 @@ func (x *XWM) onXFixesSelection(ev *xturbo.Event) {
 		x.host.SelectionOwned(k, nil)
 		return
 	}
+	// This runs in a Dispatch callback: NewXID cannot block on refill here.
+	// The event loop prefetches IDs; exhaustion fails this probe closed.
+	requestor, err := x.conn.NewXID()
+	if err != nil {
+		x.log.Warn().Err(err).Int("kind", k).Msg("selection: allocate TARGETS requestor")
+		x.host.SelectionOwned(k, nil)
+		return
+	}
+	st.probeWin = requestor
+	var wv xproto.CreateWindowValues
+	xproto.CreateWindow(x.conn.Buf(), 0, xproto.Window(requestor), xproto.Window(x.selWin), -1, -1, 1, 1, 0, xproto.WindowClassInputOnly, 0, &wv)
 	st.probe = st.gen
 	x.log.Debug().Int("kind", k).Uint32("owner", owner).Msg("selection: X owner")
-	xproto.ConvertSelection(x.conn.Buf(), xproto.Window(x.selWin), xproto.Atom(st.atom),
+	xproto.ConvertSelection(x.conn.Buf(), xproto.Window(st.probeWin), xproto.Atom(st.atom),
 		xproto.Atom(x.atoms[atomTargets]), xproto.Atom(x.atoms[atomNeferwlTargets]), 0)
 	x.wake()
+}
+
+// clearProbe retires the wire identity, including failed (property None) replies.
+// Windows, unlike interned atoms, do not accumulate server-global state.
+// Do not FreeXID here: immediate reuse would alias a late owner notification.
+func (x *XWM) clearProbe(st *selState) {
+	if st.probeWin != 0 {
+		xproto.DestroyWindow(x.conn.Buf(), xproto.Window(st.probeWin))
+		st.probeWin = 0
+		x.wake()
+	}
 }
 
 // onSelectionNotify: a ConvertSelection we issued was answered.
 func (x *XWM) onSelectionNotify(ev *xturbo.Event) {
 	e := xproto.SelectionNotifyOf(ev)
-	if uint32(e.Requestor()) != x.selWin {
-		return
-	}
 	k := x.selKind(uint32(e.Selection()))
 	if k < 0 {
 		return
 	}
 	if uint32(e.Target()) != x.atoms[atomTargets] {
-		x.onDataNotify(e)
+		if uint32(e.Requestor()) == x.selWin {
+			x.onDataNotify(e)
+		}
 		return
 	}
 	{
 		st := &x.sel.st[k]
-		if st.ours || st.owner == 0 || st.probe != st.gen { // stale probe
+		if st.probeWin == 0 || uint32(e.Requestor()) != st.probeWin || st.ours || st.owner == 0 || st.probe != st.gen { // stale probe
 			return
 		}
 		if e.Property() == 0 {
+			x.clearProbe(st)
+			x.wake()
 			x.host.SelectionOwned(k, nil)
 			return
 		}
-		seq := xproto.GetProperty(x.conn.Buf(), true, xproto.Window(x.selWin), xproto.Atom(x.atoms[atomNeferwlTargets]), 0, 0, 256)
+		if uint32(e.Property()) != x.atoms[atomNeferwlTargets] {
+			return
+		}
+		seq := xproto.GetProperty(x.conn.Buf(), true, xproto.Window(st.probeWin), xproto.Atom(x.atoms[atomNeferwlTargets]), 0, 0, 256)
+		x.clearProbe(st)
 		x.expect(seq, kindSelTargets, uint32(k), x.sel.st[k].gen)
 		x.wake()
 		return
@@ -635,6 +664,9 @@ func (x *XWM) selTick() {
 // selClose aborts every transfer.
 func (x *XWM) selClose() {
 	x.sel.closing = true
+	for k := range x.sel.st {
+		x.clearProbe(&x.sel.st[k])
+	}
 	for i := range x.sel.out {
 		if x.sel.out[i].state != outFree {
 			x.outAbort(i)
@@ -719,6 +751,7 @@ func (x *XWM) WaylandSelection(kind int, mimes []string) {
 		}
 		return
 	}
+	x.clearProbe(st)
 	st.ours = true
 	st.ownTime = x.lastTime
 	st.gen++

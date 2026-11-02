@@ -363,7 +363,8 @@ func TestFlushWithNothingQueuedSendsNothing(t *testing.T) {
 var bootOnlyFiles = map[string]bool{"selection_xsettings.go": true, "cursor.go": true}
 
 // The XWM never blocks after Boot: NewXID, Sync and InternAtoms are startup
-// only, so they may appear in production code only inside boot().
+// only, except NewXID in the selection event callback: xturbo forbids blocking
+// refill during Dispatch callbacks (and the loop prefetches IDs).
 func TestNoBlockingCallsOutsideBoot(t *testing.T) {
 	files, err := os.ReadDir(".")
 	require.NoError(t, err)
@@ -386,7 +387,8 @@ func TestNoBlockingCallsOutsideBoot(t *testing.T) {
 		}
 		for _, call := range []string{".NewXID(", ".Sync(", ".InternAtoms("} {
 			for _, at := range allIndex(text, call) {
-				require.True(t, name == "xwm.go" && at > lo && at < hi, "%s: %s outside boot", name, call)
+				callbackXID := name == "selection.go" && call == ".NewXID(" && at > strings.Index(text, "func (x *XWM) onXFixesSelection(") && at < strings.Index(text, "func (x *XWM) clearProbe(")
+				require.True(t, callbackXID || name == "xwm.go" && at > lo && at < hi, "%s: %s outside boot", name, call)
 			}
 		}
 	}

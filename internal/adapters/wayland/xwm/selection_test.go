@@ -88,24 +88,24 @@ func TestSelectionXOwnsAnnounces(t *testing.T) {
 	// Owner with text targets: TARGETS probe, then the intersection.
 	p.xfixesSelection(owner, clip)
 	req, n := pumpReq(t, x, p, 0, func(r xpeerReq) bool { return r.major == 24 }) // ConvertSelection
-	require.Equal(t, x.selWin, req.u32(4))
+	require.NotEqual(t, x.selWin, req.u32(4))
 	require.Equal(t, clip, req.u32(8))
 	require.Equal(t, tgt, req.u32(12))
 	prop := req.u32(16)
 	require.Equal(t, p.atom("_NEFERWL_TARGETS"), prop)
-	p.setProp(x.selWin, prop, 4, 32, le32(tgt, p.atom("UTF8_STRING"), p.atom("image/png"), p.atom("TEXT")))
+	p.setProp(req.u32(4), prop, 4, 32, le32(tgt, p.atom("UTF8_STRING"), p.atom("image/png"), p.atom("TEXT")))
 	got := make(chan []string, 8)
 	h.EXPECT().SelectionOwned(SelClipboard, []string{"text/plain;charset=utf-8", "UTF8_STRING", "TEXT"}).Run(func(int, []string) { got <- nil }).Once()
-	p.selectionNotify(x.selWin, clip, tgt, prop)
+	p.selectionNotify(req.u32(4), clip, tgt, prop)
 	readUntil(t, x, func() bool { return len(got) == 1 })
 	pumpReq(t, x, p, n, func(r xpeerReq) bool { return r.major == opGetProperty && r.u32(8) == prop })
 
 	// Only image/png: nothing offered.
 	p.xfixesSelection(owner, prim)
-	pumpReq(t, x, p, n, func(r xpeerReq) bool { return r.major == 24 && r.u32(8) == prim })
-	p.setProp(x.selWin, prop, 4, 32, le32(tgt, p.atom("image/png")))
+	req, _ = pumpReq(t, x, p, n, func(r xpeerReq) bool { return r.major == 24 && r.u32(8) == prim })
+	p.setProp(req.u32(4), prop, 4, 32, le32(tgt, p.atom("image/png")))
 	h.EXPECT().SelectionOwned(SelPrimary, []string(nil)).Run(func(int, []string) { got <- nil }).Once()
-	p.selectionNotify(x.selWin, prim, tgt, prop)
+	p.selectionNotify(req.u32(4), prim, tgt, prop)
 	readUntil(t, x, func() bool { return len(got) == 2 })
 
 	// Owner None.
@@ -144,10 +144,10 @@ func ownedRig(t *testing.T) *selRig {
 	got := 0
 	h.EXPECT().SelectionOwned(SelClipboard, mock.Anything).Run(func(int, []string) { got++ }).Once()
 	p.xfixesSelection(0x500010, r.clip)
-	_, n := pumpReq(t, x, p, 0, func(q xpeerReq) bool { return q.major == 24 })
+	req, n := pumpReq(t, x, p, 0, func(q xpeerReq) bool { return q.major == 24 })
 	tgt := p.atom("TARGETS")
-	p.setProp(x.selWin, p.atom("_NEFERWL_TARGETS"), 4, 32, le32(tgt, r.utf8))
-	p.selectionNotify(x.selWin, r.clip, tgt, p.atom("_NEFERWL_TARGETS"))
+	p.setProp(req.u32(4), p.atom("_NEFERWL_TARGETS"), 4, 32, le32(tgt, r.utf8))
+	p.selectionNotify(req.u32(4), r.clip, tgt, p.atom("_NEFERWL_TARGETS"))
 	readUntil(t, x, func() bool { return got == 1 })
 	r.skip = len(p.requests())
 	_ = n
@@ -688,8 +688,8 @@ func TestSelectionStaleTargetsAfterWaylandOwner(t *testing.T) {
 	req, _ := pumpReq(t, x, p, 0, func(r xpeerReq) bool { return r.major == 24 })
 	prop := req.u32(16)
 	x.WaylandSelection(SelClipboard, []string{"text/plain"})
-	p.setProp(x.selWin, prop, 4, 32, le32(tgt, p.atom("UTF8_STRING")))
-	p.selectionNotify(x.selWin, clip, tgt, prop) // the mock fails on SelectionOwned
+	p.setProp(req.u32(4), prop, 4, 32, le32(tgt, p.atom("UTF8_STRING")))
+	p.selectionNotify(req.u32(4), clip, tgt, prop) // the mock fails on SelectionOwned
 	ev := x.Stats().Events
 	readUntil(t, x, func() bool { return x.Stats().Events > ev })
 	x.flush()
@@ -867,6 +867,56 @@ func TestSelectionConnectionLossWithdrawsOwners(t *testing.T) {
 				x.Close()
 			}
 			x.Close() // idempotent
+		})
+	}
+}
+
+// Both owners may write TARGETS before either notify is dispatched.
+func TestSelectionOverlappingTargetsProbes(t *testing.T) {
+	x, p, h, _, _ := attached(t)
+	tgt, prop := p.atom("TARGETS"), p.atom("_NEFERWL_TARGETS")
+	clip, prim := p.atom("CLIPBOARD"), p.atom("PRIMARY")
+	p.xfixesSelection(0x500010, clip)
+	a, n := pumpReq(t, x, p, 0, func(r xpeerReq) bool { return r.major == 24 })
+	p.xfixesSelection(0x500011, prim)
+	b, _ := pumpReq(t, x, p, n, func(r xpeerReq) bool { return r.major == 24 })
+	require.NotEqual(t, a.u32(4), b.u32(4))
+	p.setProp(a.u32(4), prop, 4, 32, le32(p.atom("UTF8_STRING")))
+	p.setProp(b.u32(4), prop, 4, 32, le32(p.atom("image/png")))
+	got := 0
+	h.EXPECT().SelectionOwned(SelClipboard, []string{"text/plain;charset=utf-8", "UTF8_STRING", "TEXT"}).Run(func(int, []string) { got++ }).Once()
+	h.EXPECT().SelectionOwned(SelPrimary, []string(nil)).Run(func(int, []string) { got++ }).Once()
+	p.selectionNotify(b.u32(4), prim, tgt, prop)
+	p.selectionNotify(a.u32(4), clip, tgt, prop)
+	readUntil(t, x, func() bool { return got == 2 })
+}
+
+func TestSelectionOwnerReplacementLateNotify(t *testing.T) {
+	for _, refused := range []bool{false, true} {
+		t.Run(fmt.Sprint("refused=", refused), func(t *testing.T) {
+			x, p, h, _, _ := attached(t)
+			clip, tgt, prop := p.atom("CLIPBOARD"), p.atom("TARGETS"), p.atom("_NEFERWL_TARGETS")
+			p.xfixesSelection(0x500010, clip)
+			old, n := pumpReq(t, x, p, 0, func(r xpeerReq) bool { return r.major == 24 })
+			p.xfixesSelection(0x500011, clip)
+			current, _ := pumpReq(t, x, p, n, func(r xpeerReq) bool { return r.major == 24 })
+			require.NotEqual(t, old.u32(4), current.u32(4))
+			lateProp := prop
+			if refused {
+				lateProp = 0
+			}
+			before := x.Stats().Events
+			p.selectionNotify(old.u32(4), clip, tgt, lateProp)
+			readUntil(t, x, func() bool { return x.Stats().Events > before })
+			require.NoError(t, x.conn.Sync(&x.h))
+			require.Zero(t, getProps(p, 0, old.u32(4)))
+			require.Zero(t, getProps(p, 0, current.u32(4)))
+			got := false
+			h.EXPECT().SelectionOwned(SelClipboard, []string{"text/plain;charset=utf-8", "UTF8_STRING", "TEXT"}).Run(func(int, []string) { got = true }).Once()
+			p.setProp(current.u32(4), prop, 4, 32, le32(p.atom("UTF8_STRING")))
+			p.selectionNotify(current.u32(4), clip, tgt, prop)
+			readUntil(t, x, func() bool { return got })
+			require.Zero(t, x.sel.st[SelClipboard].probeWin)
 		})
 	}
 }
