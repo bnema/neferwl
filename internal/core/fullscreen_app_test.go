@@ -20,6 +20,12 @@ func TestFullscreenAppArrival(t *testing.T) {
 					same        bool
 				}{
 					{"pid", ports.WindowMapped{PID: 7, AppID: "launcher"}, ports.WindowMapped{PID: 7, AppID: "game"}, true},
+					{"satellite-different-apps", ports.WindowMapped{PID: 7, AppID: "game", Xwayland: true}, ports.WindowMapped{PID: 7, AppID: "other", Xwayland: true}, false},
+					{"satellite-same-app", ports.WindowMapped{PID: 7, AppID: "game", Xwayland: true}, ports.WindowMapped{PID: 7, AppID: "game", Xwayland: true}, true},
+					{"satellite-empty-app-id", ports.WindowMapped{PID: 7, Xwayland: true}, ports.WindowMapped{PID: 7, Xwayland: true}, false},
+					{"satellite-cover-native-arrival", ports.WindowMapped{PID: 7, Xwayland: true}, ports.WindowMapped{PID: 7}, false},
+					{"native-cover-satellite-arrival", ports.WindowMapped{PID: 7}, ports.WindowMapped{PID: 7, Xwayland: true}, false},
+					{"builtin-x11-pid", ports.WindowMapped{PID: 7, AppID: "launcher", Positioned: true}, ports.WindowMapped{PID: 7, AppID: "game", Positioned: true}, true},
 					{"app-id", ports.WindowMapped{PID: 7, AppID: "app"}, ports.WindowMapped{PID: 8, AppID: "app"}, true},
 					{"different", ports.WindowMapped{PID: 7, AppID: "launcher"}, ports.WindowMapped{PID: 8, AppID: "game"}, false},
 					{"empty", ports.WindowMapped{}, ports.WindowMapped{}, false},

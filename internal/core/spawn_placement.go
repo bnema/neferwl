@@ -162,7 +162,9 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 
 // sameApp is pure policy: absent identifiers never establish app identity.
 func sameApp(a, b ports.WindowMapped) bool {
-	return a.PID != 0 && a.PID == b.PID || a.AppID != "" && a.AppID == b.AppID
+	// Satellite X11 windows carry the bridge's PID, not the application's.
+	// Native Wayland and built-in X11 windows carry real application PIDs.
+	return !a.Xwayland && !b.Xwayland && a.PID != 0 && a.PID == b.PID || a.AppID != "" && a.AppID == b.AppID
 }
 
 // placeCoverApp handles ordinary same-app arrivals on the workspace in view.
