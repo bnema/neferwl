@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"time"
+	"unicode/utf8"
 
 	"bnema.dev/xturbo"
 	"bnema.dev/xturbo/xfixes"
@@ -780,6 +781,9 @@ type xout struct {
 	requestor uint32
 	property  uint32
 	target    uint32
+	encoding  uint32 // concrete property type, independent of requested target
+	decode    [4096 + utf8.UTFMax]byte
+	pending   int
 	time      uint32
 	fd        int
 	buf       int
@@ -909,7 +913,7 @@ func (x *XWM) onSelectionRequest(ev *xturbo.Event) {
 		return
 	}
 	// Choose the Wayland MIME: UTF-8 targets prefer the UTF-8 types; STRING
-	// prefers plain text and falls back to the UTF-8 bytes unchanged.
+	// prefers plain text; STRING output is transcoded from UTF-8 to Latin-1.
 	mime := ""
 	order := [...]int{0, 2, 4, 1, 3} // utf8 types, then plain
 	if target == x.atoms[atomString] {
@@ -957,6 +961,12 @@ func (x *XWM) onSelectionRequest(ev *xturbo.Event) {
 func (x *XWM) startOut(slot, k int, req, prop, target, time uint32, fd int) {
 	o := &x.sel.out[slot]
 	o.state, o.kind, o.requestor, o.property, o.target, o.time = outActive, k, req, prop, target, time
+	o.encoding = target
+	// ICCCM TEXT is polymorphic: use the concrete UTF8_STRING type, never TEXT.
+	if target == x.atoms[atomText] {
+		o.encoding = x.atoms[atomUTF8String]
+	}
+	o.pending = 0
 	o.fd, o.buf, o.n, o.eof, o.incr, o.credit, o.notified, o.idle, o.src = fd, x.sel.pool.get(), 0, false, false, false, false, 0, nil
 	x.selEnsureTimer()
 	x.outRead(slot) // data may already be waiting
@@ -1016,12 +1026,31 @@ func (x *XWM) outRead(i int) {
 	o := &x.sel.out[i]
 	buf := &x.sel.pool.bufs[o.buf]
 	for o.n < chunk && !o.eof {
-		n, err := unix.Read(o.fd, buf[o.n:])
+		if o.pending > 0 && utf8.FullRune(o.decode[:o.pending]) {
+			x.outLatin1(o, 0)
+			if o.n == chunk {
+				break
+			}
+		}
+		dst := buf[o.n:]
+		if o.encoding == x.atoms[atomString] {
+			dst = o.decode[o.pending : o.pending+min(4096, chunk-o.n)]
+		}
+		n, err := unix.Read(o.fd, dst)
 		switch {
 		case err == nil && n == 0:
 			o.eof = true
+			if o.pending != 0 {
+				buf[o.n] = '?'
+				o.n++
+				o.pending = 0
+			}
 		case err == nil:
-			o.n += n
+			if o.encoding == x.atoms[atomString] {
+				x.outLatin1(o, n)
+			} else {
+				o.n += n
+			}
 			o.idle = 0
 		case errors.Is(err, unix.EINTR):
 			continue
@@ -1034,6 +1063,27 @@ func (x *XWM) outRead(i int) {
 		}
 	}
 	x.outPump(i)
+}
+
+// outLatin1 converts UTF-8 incrementally into the existing pool buffer.
+// STRING is ISO-8859-1: unrepresentable runes and malformed input become '?'.
+func (x *XWM) outLatin1(o *xout, n int) {
+	v := o.decode[:o.pending+n]
+	o.pending = 0
+	for len(v) > 0 {
+		if o.n == chunk || !utf8.FullRune(v) {
+			o.pending = copy(o.decode[:], v)
+			break
+		}
+		r, size := utf8.DecodeRune(v)
+		b := byte('?')
+		if r <= 255 {
+			b = byte(r)
+		}
+		x.sel.pool.bufs[o.buf][o.n] = b
+		o.n++
+		v = v[size:]
+	}
 }
 
 // outPump sends what the state allows.
@@ -1082,7 +1132,7 @@ func (x *XWM) outPump(i int) {
 func (x *XWM) outSetProp(i, n int) {
 	o := &x.sel.out[i]
 	seq := xproto.ChangeProperty(x.conn.Buf(), xproto.PropModeReplace, xproto.Window(o.requestor), xproto.Atom(o.property),
-		xproto.Atom(o.target), 8, uint32(n), x.sel.pool.bufs[o.buf][:n])
+		xproto.Atom(o.encoding), 8, uint32(n), x.sel.pool.bufs[o.buf][:n])
 	if seq != 0 {
 		if err := x.conn.Expect(seq, kindSelOut, uint32(i), o.gen, 0, 0); err != nil {
 			x.stats.RingFull++

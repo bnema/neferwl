@@ -1029,3 +1029,110 @@ func TestSelectionRequestorQuarantine(t *testing.T) {
 		require.True(t, destroyed(id))
 	}
 }
+
+func TestSelectionTextEncodingsSmall(t *testing.T) {
+	for _, target := range []string{"STRING", "TEXT"} {
+		t.Run(target, func(t *testing.T) {
+			r := ownedByWayland(t, "text/plain;charset=utf-8")
+			w := r.serve(t, r.p.atom(target))
+			_, err := w.Write([]byte("café € 😀"))
+			require.NoError(t, err)
+			require.NoError(t, w.Close())
+			require.Equal(t, r.data, sentNotify(t, r))
+			v, ok := r.p.prop(reqWin, "_NEFERWL_DATA")
+			require.True(t, ok)
+			want, typ := []byte("café € 😀"), r.utf8
+			if target == "STRING" {
+				want, typ = []byte{'c', 'a', 'f', 0xe9, ' ', '?', ' ', '?'}, r.p.atom("STRING")
+			}
+			require.Equal(t, typ, v.typ)
+			require.Equal(t, want, v.data)
+		})
+	}
+}
+
+func TestSelectionTextEncodingsINCR(t *testing.T) {
+	for _, target := range []string{"STRING", "TEXT"} {
+		t.Run(target, func(t *testing.T) {
+			r := ownedByWayland(t, "text/plain;charset=utf-8")
+			src := newMockfdSource(t)
+			var onR func()
+			removes := 0
+			r.x.lp = newFDLoop(t, r, src, &onR, nil)
+			src.EXPECT().Remove().Run(func() { removes++ }).Return().Maybe()
+			const total = 1<<20 + 123
+			data := append(bytes.Repeat([]byte("a"), 4095), bytes.Repeat([]byte("é€😀"), total/9)...)
+			want, typ := data, r.utf8
+			if target == "STRING" {
+				want = append(bytes.Repeat([]byte("a"), 4095), bytes.Repeat([]byte{0xe9, '?', '?'}, total/9)...)
+				typ = r.p.atom("STRING")
+			}
+			w := r.serve(t, r.p.atom(target))
+			require.NoError(t, unix.SetNonblock(int(w.Fd()), false))
+			go func() { _, _ = w.Write(data); w.Close() }()
+
+			// The first fill is a whole chunk: INCR is announced.
+			var got []byte
+			for !r.x.sel.out[0].incr {
+				r.x.onReadable()
+				if onR != nil && r.x.sel.out[0].state == outActive {
+					onR()
+				}
+				if !r.x.sel.out[0].incr {
+					waitSocket(t, r.x.sel.out[0].fd, unix.POLLIN)
+				}
+			}
+			require.Equal(t, r.data, sentNotify(t, r))
+			v, _ := r.p.prop(reqWin, "_NEFERWL_DATA")
+			require.Equal(t, r.p.atom("INCR"), v.typ)
+			mask, _ := pumpReq(t, r.x, r.p, 0, func(q xpeerReq) bool {
+				return q.major == opChangeWindowAttributes && q.u32(4) == reqWin && q.u32(12) == uint32(xproto.EventMaskPropertyChange)
+			})
+			require.NotZero(t, mask.raw)
+
+			chunks := 0
+			for {
+				// The requestor deletes the property: the next chunk goes out.
+				r.p.propertyNotify(reqWin, r.data, true)
+				before := len(r.p.requests())
+				if onR != nil && r.x.sel.out[0].state != outFree && r.x.sel.out[0].n < chunk && !r.x.sel.out[0].eof {
+					waitSocket(t, r.x.sel.out[0].fd, unix.POLLIN)
+				}
+				var cp xpeerProp
+				readUntil(t, r.x, func() bool {
+					if onR != nil && r.x.sel.out[0].state != outFree && r.x.sel.out[0].n < chunk && !r.x.sel.out[0].eof {
+						onR()
+					}
+					r.x.flush()
+					for _, q := range r.p.requests()[before:] {
+						if q.major == opChangeProperty && q.u32(4) == reqWin {
+							return true
+						}
+					}
+					return false
+				})
+				cp, _ = r.p.prop(reqWin, "_NEFERWL_DATA")
+				chunks++
+				if len(cp.data) == 0 {
+					break
+				}
+				require.Equal(t, typ, cp.typ)
+				got = append(got, cp.data...)
+			}
+			require.True(t, bytes.Equal(want, got), "byte-exact: %d of %d", len(got), total)
+			require.Greater(t, chunks, 1)
+			readUntil(t, r.x, func() bool { return r.x.sel.out[0].state == outFree })
+			// The mask is removed at the end.
+			reqs := r.p.requests()
+			last := reqs[len(reqs)-1]
+			for i := len(reqs) - 1; i >= 0; i-- {
+				if reqs[i].major == opChangeWindowAttributes && reqs[i].u32(4) == reqWin {
+					last = reqs[i]
+					break
+				}
+			}
+			require.Zero(t, last.u32(12), "event mask dropped")
+			require.Equal(t, nXfer, r.x.sel.pool.n)
+		})
+	}
+}
