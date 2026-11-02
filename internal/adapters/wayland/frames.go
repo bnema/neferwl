@@ -165,12 +165,16 @@ func (s *Server) pacePass(flipped map[string]bool, reports []ports.OutputPresent
 		// Unanswered feedbacks time out: keep ticking.
 		wait, idle = min(wait, feedbackTimeout), false
 	}
-	for _, name := range due {
-		s.sendFrames(name, flipped[name])
-	}
+	// A client may redraw as soon as it receives its frame callback. Give
+	// back buffers this completion made safe first, so a two-buffer client
+	// does not see both buffers busy. releaseHeld still protects scanout,
+	// queued commits and unfinished child reads.
 	if s.releaseHeld(time.Now(), reports) && idle {
 		// Held buffers wait for a flip or heldTimeout.
 		wait, idle = heldTimeout, false
+	}
+	for _, name := range due {
+		s.sendFrames(name, flipped[name])
 	}
 	// Fifo barriers and queued commits wait for a refresh.
 	if fw, waiting := s.tickFifo(time.Now(), flipped); waiting {
