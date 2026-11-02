@@ -23,9 +23,10 @@ func monitorDirection(a Action) direction {
 	return 0
 }
 
-// applyAction runs a bind action. Focus past a content edge visits an occupied
-// workspace, then a neighbor screen, then a trailing empty workspace. Vertical
-// edges do this only with a vertical workspace axis; cascade stays within bands.
+// applyAction runs a bind action. Core owns focus-edge navigation: horizontal
+// edges prefer a neighbor screen, while vertical edges prefer an occupied
+// workspace. Both then try the other destination and a trailing empty workspace
+// on the layout's workspace axis. Cascade vertical edges stay within bands.
 // Other actions apply to the focused screen's monitor unless explicitly moving
 // between screens. Screen changes flash the focused window on the destination,
 // and so does a switch to another workspace of the same screen.
@@ -197,18 +198,14 @@ func (c *Core) dispatchAction(a Action) Effect {
 		}
 	case ActionFocusWindowUp, ActionFocusWindowDown:
 		m := c.cur().mon
-		// Cascade's up/down navigation stays within its bands. Let Monitor
-		// handle it unchanged; only vertical workspace axes cross screens.
-		if layout.WorkspaceStep(m.Current().Engine(), layout.Vertical, 1) != 0 {
-			dir, d := 1, dirDown
-			if a == ActionFocusWindowUp {
-				dir, d = -1, dirUp
-			}
-			if !m.Current().FocusWindow(dir) {
-				c.edgeFocus(layout.Vertical, dir, d)
-			}
-			return Effect{}
+		dir, d := 1, dirDown
+		if a == ActionFocusWindowUp {
+			dir, d = -1, dirUp
 		}
+		if !m.Current().FocusWindow(dir) {
+			c.edgeFocus(layout.Vertical, dir, d)
+		}
+		return Effect{}
 	case ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight:
 		dir, d := 1, dirRight
 		if a == ActionConsumeOrExpelLeft {
@@ -288,8 +285,8 @@ func (c *Core) dispatchAction(a Action) Effect {
 // trailing empty workspace. Vertical: an occupied workspace, else the
 // neighbor monitor, else the trailing empty workspace. Workspace steps only
 // happen on the layout's workspace axis. It reports whether focus moved.
-// Callers keep local content navigation and decide which layout axes may
-// cross monitors.
+// Callers keep local content navigation; edgeTarget owns screen eligibility
+// and keeps cascade vertical edges within their bands.
 func (c *Core) edgeFocus(axis layout.Axis, dir int, d direction) bool {
 	mark := c.markBind()
 	moved := c.edgeFocusMove(axis, dir, d)
@@ -303,8 +300,8 @@ func (c *Core) edgeFocusMove(axis layout.Axis, dir int, d direction) bool {
 	return c.edgeGo(c.edgeTarget(axis, dir, d), d)
 }
 
-// Apply runs a bind action on this monitor only. Vertical focus edges step
-// workspaces; Core dispatch adds neighboring-screen navigation for those edges.
+// Apply runs a bind action on this monitor only. Directional focus stays within
+// the current workspace; Core dispatch owns focus-edge workspace and screen hops.
 func (m *Monitor) Apply(a Action) Effect {
 	if e, ok := m.overviewAction(a); ok {
 		return e
@@ -332,19 +329,6 @@ func (m *Monitor) Apply(a Action) Effect {
 		return Effect{}
 	}
 	switch a {
-	case ActionFocusWindowUp, ActionFocusWindowDown:
-		// Past the column and any on-screen neighbor or demoted float,
-		// move to the next workspace if the layout's workspace axis is
-		// vertical. Cascade workspaces sit side by side: up/down stop at the
-		// first and last band.
-		dir := 1
-		if a == ActionFocusWindowUp {
-			dir = -1
-		}
-		if !m.Current().FocusWindow(dir) {
-			m.stepWorkspace(layout.Vertical, dir)
-		}
-		return Effect{}
 	case ActionToggleFullscreen:
 		m.ToggleFullscreen()
 		return Effect{}

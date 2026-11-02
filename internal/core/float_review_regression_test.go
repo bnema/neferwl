@@ -73,7 +73,9 @@ func TestSetNamedDemotedFloatKeepsColumnActions(t *testing.T) {
 func TestFloatOnlyWorkspaceDirectionalExit(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		for _, dir := range []int{-1, 1} {
-			m := monitor()
+			c := layoutCore(0, tile{"M", 0, 0, 100, 80})
+			m := c.cur().mon
+			m.SetMaxColumns(2)
 			m.AddWindow(1)
 			m.Focus(1)
 			m.AddFloating(2, 20, 20)
@@ -84,7 +86,7 @@ func TestFloatOnlyWorkspaceDirectionalExit(t *testing.T) {
 			if dir > 0 {
 				a = ActionFocusWindowDown
 			}
-			m.Apply(a)
+			c.applyAction(a)
 			if m.Active != 1+dir {
 				t.Fatalf("direction %d stayed on workspace %d", dir, m.Active)
 			}

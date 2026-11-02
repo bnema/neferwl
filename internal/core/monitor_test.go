@@ -159,20 +159,30 @@ func TestMonitorLayoutHidesOtherWorkspaces(t *testing.T) {
 	})
 }
 
+func TestCoreFocusWindowEdgeStepsWorkspace(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := layoutCore(0, tile{"M", 0, 0, 100, 80})
+		m := c.cur().mon
+		m.SetMaxColumns(2)
+		m.AddWindow(1)
+		m.AddWindow(2)
+		// Down past the only window of the column goes to the workspace below.
+		c.applyAction(ActionFocusWindowDown)
+		if m.Active != 1 {
+			t.Fatal(m.Active)
+		}
+		c.applyAction(ActionFocusWindowUp)
+		if m.Active != 0 {
+			t.Fatal(m.Active)
+		}
+	})
+}
+
 func TestMonitorActions(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		m := monitor()
 		m.AddWindow(1)
 		m.AddWindow(2)
-		// Down past the only window of the column goes to the workspace below.
-		m.Apply(ActionFocusWindowDown)
-		if m.Active != 1 {
-			t.Fatal(m.Active)
-		}
-		m.Apply(ActionFocusWindowUp)
-		if m.Active != 0 {
-			t.Fatal(m.Active)
-		}
 		// Up at the top workspace stays.
 		m.Apply(ActionFocusWorkspacePrev)
 		if m.Active != 0 {

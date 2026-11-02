@@ -206,19 +206,6 @@ func (m *Monitor) Focus(i int) {
 	m.normalize()
 }
 
-// stepWorkspace switches to the previous or next workspace (dir -1/1) when
-// axis is the current layout's workspace axis, and reports whether it did;
-// Focus clamps past the first or the trailing workspace. A hidden named
-// workspace is outside the numbered list: it never steps.
-func (m *Monitor) stepWorkspace(axis layout.Axis, dir int) bool {
-	step := layout.WorkspaceStep(m.Current().Engine(), axis, dir)
-	if m.shown != nil || step == 0 {
-		return false
-	}
-	m.Focus(m.Active + step)
-	return true
-}
-
 // occupiedStep is the numbered workspace dir (-1/1) away along axis when
 // it is the layout's workspace axis and that workspace is not the trailing
 // empty one, or -1.

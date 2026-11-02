@@ -138,11 +138,13 @@ func TestFocusWindowDemotedFloatAfterColumnAndScreenNeighbors(t *testing.T) {
 
 func TestFocusWindowWithoutDemotedFloatChangesWorkspace(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		m := monitor()
+		c := layoutCore(0, tile{"M", 0, 0, 100, 80})
+		m := c.cur().mon
+		m.SetMaxColumns(2)
 		m.AddWindow(1)
 		m.Focus(1)
 		m.AddWindow(2)
-		m.Apply(ActionFocusWindowUp)
+		c.applyAction(ActionFocusWindowUp)
 		if m.Active != 0 {
 			t.Fatalf("up on workspace %d", m.Active)
 		}
