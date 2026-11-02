@@ -15,8 +15,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// steppingClock returns a clock that moves a second forward on each Now:
-// a fullscreen request is never within fullscreenGrace of the mapping.
+// steppingClock returns a clock that moves a second forward on each Now.
 func steppingClock(t *testing.T) *portsmocks.MockClock {
 	t.Helper()
 	now := time.Unix(0, 0)

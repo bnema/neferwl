@@ -1010,66 +1010,6 @@ func TestDialogOverFullscreenHit(t *testing.T) {
 	})
 }
 
-// A window that asks for fullscreen as it maps (Wine at a remembered
-// monitor size) stays in its column: the windows it opens next are seen.
-// A later request is honoured.
-func TestFullscreenAtMapIgnored(t *testing.T) { both(t, fullscreenAtMapIgnored) }
-
-func fullscreenAtMapIgnored(t *testing.T, animated bool) {
-	cfg := scrollDefaults()
-	cfg.Layout.Overflow = "fixed"
-	client := make(chan ports.ClientEvent, 8)
-	output := make(chan ports.OutputEvent, 8)
-	commands := make(chan ports.ClientCommand, 64)
-	scenes := make(chan []domain.Scene, 1)
-	// Core reads the time on its goroutine: the clock is the test's.
-	ch := core.Channels{Client: client, Output: output, Commands: commands, Scenes: scenes}
-	opts := core.Options{}
-	l := newLanding(t, animated, &cfg, &ch, &opts, "OUT-1")
-	clk := l.clk
-	if clk == nil {
-		clk = newStepClock(t)
-		opts.Clock = clk.clock
-	}
-	c, err := core.New(cfg, ch, testOptions(t, opts))
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go c.Run(ctx)
-	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
-	scene(t, scenes)
-	client <- ports.WindowMapped{ID: 1}
-	scene(t, scenes)
-	client <- ports.WindowMapped{ID: 2}
-	scene(t, scenes)
-	client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true}
-	client <- ports.WindowMapped{ID: 3, Floating: true, Width: 20, Height: 10}
-	s := scene(t, scenes)
-	for !slices.ContainsFunc(s.Windows, func(w domain.SceneWindow) bool { return w.ID == 3 }) {
-		s = scene(t, scenes)
-	}
-	for _, w := range s.Windows {
-		if w.Fullscreen || w.Hidden {
-			t.Fatalf("startup fullscreen applied: %+v", s.Windows)
-		}
-	}
-	// With animations on this lands the maps' springs: the clock moves past
-	// the grace, as the next line does anyway.
-	l.one(s)
-	clk.advance(time.Second)
-	// Only the focused window may cover the screen (ADR 011).
-	client <- ports.WindowUnmapped{ID: 3}
-	scene(t, scenes)
-	client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true}
-	s = scene(t, scenes)
-	// Honoured, in place.
-	if !slices.ContainsFunc(s.Windows, func(w domain.SceneWindow) bool { return w.ID == 2 && w.Fullscreen && !w.Hidden }) {
-		t.Fatalf("later fullscreen ignored: %+v", s.Windows)
-	}
-}
-
 // Under fixed overflow, a window opening over a fullscreen game waits
 // hidden: the game keeps the screen and the keyboard. An activation (a
 // user action in the new client) leaves fullscreen and shows both tiles;
@@ -1315,7 +1255,7 @@ func TestWindowActivateShowsAndFocuses(t *testing.T) {
 // A window that maps with the fullscreen state (an X11 game with
 // _NET_WM_STATE_FULLSCREEN set before the map) covers its screen, focused,
 // in a tile of its own even when it was classified floating; a rule that
-// floats it does not change that. The grace still drops a later request.
+// floats it does not change that.
 func TestMappedFullscreenHonoured(t *testing.T) {
 	for _, tc := range []struct {
 		name string

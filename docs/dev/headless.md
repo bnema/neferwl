@@ -76,7 +76,7 @@ The test starts a headless NeferWL with a real `Xwayland` on the first free X di
 - an override-redirect menu is drawn magenta above the green toplevel at its X position, is not listed in the state, leaves focus on the toplevel and disappears from the screenshot once the probe unmaps it;
 - a menu is dismissed when its owner gets `FocusOut` because another X11 window took the focus;
 - a menu with an empty input shape is still drawn and still not a window;
-- a fullscreen request 1.5 s after the map fills the output (all green, no gap) and `Super+Shift+f` leaves it; the client can also leave it itself; a request at the map stays tiled (the 1 s grace);
+- a fullscreen request 1.5 s after the map fills the output (all green, no gap) and `Super+Shift+f` leaves it; the client can also leave it itself; a request at the map is also honoured immediately;
 - with the keyboard grab, `Super+q` does not close a fullscreen focused client and works again once it leaves fullscreen; on a windowed client it closes it;
 - on two outputs, a window created at the second output's origin opens on `HEADLESS-2` and fullscreens there;
 - clipboard: `wl-copy` text of 4 KiB and 1 MiB (INCR) is read by `x11probe -paste`, and an `x11probe -copy` of the same sizes is read byte-exact by `wl-paste`, for CLIPBOARD and PRIMARY; `wl-copy --clear` gives `paste none`;

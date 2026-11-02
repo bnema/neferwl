@@ -76,13 +76,6 @@ type Options struct {
 	HintDisabled func()
 }
 
-// fullscreenGrace is how long after mapping a window's fullscreen request
-// is ignored. Wine asks for fullscreen whenever a window has the monitor's
-// size, so a launcher that remembered a fullscreen size would open
-// fullscreen and hide the windows it opens next. The user can still
-// fullscreen it (bind or taskbar), and an app can ask again later.
-const fullscreenGrace = time.Second
-
 type binding struct {
 	mods domain.Mods
 	key  string

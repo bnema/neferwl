@@ -296,7 +296,7 @@ func TestLegacyFullscreenCascadeFloatBand(t *testing.T) {
 	for _, parent := range []WindowID{0, 1} {
 		t.Run(map[bool]string{true: "dialog", false: "parentless"}[parent != 0], func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				c, clock, _ := fadeCore(t)
+				c, _, _ := fadeCore(t)
 				sc := c.cur()
 				w := sc.mon.Current()
 				w.Overflow, w.MaxColumns = OverflowCascade, 3
@@ -308,7 +308,6 @@ func TestLegacyFullscreenCascadeFloatBand(t *testing.T) {
 					if !w.IsFloat(2) || w.Fullscreen != 0 {
 						t.Fatal("dialog was promoted or auto-fullscreened")
 					}
-					clock.now = clock.now.Add(fullscreenGrace)
 					c.clientEvent(context.Background(), ports.WindowFullscreenRequest{ID: 2, Fullscreen: true})
 					if w.Fullscreen != 2 || !w.IsFloat(2) {
 						t.Fatal("explicit fullscreen promoted a dialog")
@@ -331,16 +330,15 @@ func TestLegacyFullscreenCascadeFloatBand(t *testing.T) {
 	}
 }
 
-func TestCascadeClientFullscreenPromotesFloatAfterGrace(t *testing.T) {
+func TestCascadeClientFullscreenPromotesFloatAtMap(t *testing.T) {
 	for _, requests := range []int{1, 3} {
 		t.Run(map[int]string{1: "once", 3: "repeated"}[requests], func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				c, clock, _ := fadeCore(t)
+				c, _, _ := fadeCore(t)
 				w := c.cur().mon.Current()
 				w.Overflow, w.MaxColumns = OverflowCascade, 3
 				c.clientEvent(context.Background(), ports.WindowMapped{ID: 1})
 				c.clientEvent(context.Background(), ports.WindowMapped{ID: 2, Floating: true})
-				clock.now = clock.now.Add(fullscreenGrace)
 				for range requests {
 					c.clientEvent(context.Background(), ports.WindowFullscreenRequest{ID: 2, Fullscreen: true})
 				}

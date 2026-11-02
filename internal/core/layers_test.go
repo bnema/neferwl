@@ -12,14 +12,13 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// laterClock moves fullscreenGrace forward on each Now: fullscreen
-// requests are past the grace.
+// laterClock moves time forward by a second on each Now.
 func laterClock(t *testing.T) *portsmocks.MockClock {
 	t.Helper()
 	now := time.Unix(0, 0)
 	clock := portsmocks.NewMockClock(t)
 	clock.EXPECT().Now().RunAndReturn(func() time.Time {
-		now = now.Add(fullscreenGrace)
+		now = now.Add(time.Second)
 		return now
 	}).Maybe()
 	return clock

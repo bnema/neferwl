@@ -92,25 +92,19 @@ func TestMapFullscreenRequestDropsEntrance(t *testing.T) {
 	})
 }
 
-// A fullscreen request inside the grace after the map is ignored (Wine at a
-// remembered size): the entrance goes on.
-func TestMapFullscreenRequestWithinGraceKeepsEntrance(t *testing.T) {
+// A client fullscreen request at map is honoured and drops the entrance.
+func TestMapClientFullscreenRequestDropsEntrance(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startSwipe(t, nil)
 		s := r.multiRig.mapWindow(t, 1)[0]
 		if windowOf(t, s, 1).Fade != 1 {
-			t.Fatal("no entrance to keep")
+			t.Fatal("no entrance to drop")
 		}
 		r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
-		// The flip is a barrier: the request is handled, a leftover scene dropped.
-		set, ok := r.clk.flip(t, r.frames, r.scenes, 30*time.Millisecond, wide.Name)
-		if !ok {
-			t.Fatal("no frame: the entrance stopped")
+		s = scene(t, r.scenes)
+		if w := windowOf(t, s, 1); !w.Fullscreen || w.Fade != 0 || w.Zoom != 0 {
+			t.Fatalf("immediate client fullscreen: %+v", w)
 		}
-		if w := windowOf(t, set[0], 1); w.Fullscreen || !(w.Fade > 0 && w.Fade < 1) {
-			t.Fatalf("ignored fullscreen request changed the window: %+v", w)
-		}
-
 	})
 }
 
@@ -135,19 +129,16 @@ func TestMapInitialFullscreen(t *testing.T) {
 		if !w.Fullscreen || w.Hidden || w.Fade != 0 || w.Zoom != 0 || w.Rect.W != 800 {
 			t.Fatalf("initial fullscreen: %+v", w)
 		}
-		// Ending fullscreen is allowed immediately; re-entry after map is
-		// still subject to the unchanged grace.
+		// Both exit and re-entry are honoured immediately after map.
 		r.client <- ports.WindowFullscreenRequest{ID: 2}
 		s = scene(t, r.scenes)
-		r.client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true}
-		synctest.Wait()
-		select {
-		case set := <-r.scenes:
-			s = set[0]
-		default:
-		}
 		if windowOf(t, s, 2).Fullscreen {
-			t.Fatal("post-map request bypassed grace")
+			t.Fatal("fullscreen exit ignored")
+		}
+		r.client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true}
+		s = scene(t, r.scenes)
+		if !windowOf(t, s, 2).Fullscreen {
+			t.Fatal("post-map fullscreen re-entry ignored")
 		}
 	})
 }

@@ -187,9 +187,6 @@ func (c *Core) unmapClient(ctx context.Context, v ports.WindowUnmapped) error {
 // window itself or a taskbar (External).
 func (c *Core) fullscreenRequest(ctx context.Context, v ports.WindowFullscreenRequest) error {
 	c.configures.answer[v.ID] = true
-	if v.Fullscreen && !v.External && c.now().Sub(c.windows.lookup(v.ID).mappedAt) < fullscreenGrace {
-		return nil
-	}
 	// A taskbar request is a user action on that window, as an
 	// activation: it comes on screen with the focus, leaving
 	// another window's fullscreen.
@@ -201,10 +198,8 @@ func (c *Core) fullscreenRequest(ctx context.Context, v ports.WindowFullscreenRe
 	if s, _ := c.screenOf(v.ID); s != nil {
 		s.mon.SetFullscreen(v.ID, v.Fullscreen)
 		if w := s.mon.Current(); v.Fullscreen && w.Fullscreen == v.ID {
-			// A taskbar or late fullscreen request that took
-			// effect: the window does not fade in, it keeps the
-			// direct scanout path. One that was ignored (the
-			// grace after the map) leaves the entrance running.
+			// An honoured fullscreen request drops the entrance so
+			// the window keeps the direct scanout path.
 			delete(s.rects, v.ID)
 		}
 	}
