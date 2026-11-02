@@ -28,6 +28,15 @@ func (p *releaseOrderProxy) Dispatch(e *wlturbo.Event) {
 // inviting a two-buffer client to redraw. The current buffer stays owned by
 // the output; only the report proving newer content permits the old release.
 func TestFrameCompletionReleasesReplacedBufferBeforeCallback(t *testing.T) {
+	frameReleaseOrder(t, false)
+}
+
+func TestDueFrameDeliveredWhileReplacedBufferHeld(t *testing.T) {
+	frameReleaseOrder(t, true)
+}
+
+func frameReleaseOrder(t *testing.T, fallback bool) {
+	t.Helper()
 	s, events, commands, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
 	w, surf, xdg := surfaceMapper(t, c, events)()
@@ -64,22 +73,34 @@ func TestFrameCompletionReleasesReplacedBufferBeforeCallback(t *testing.T) {
 		t.Fatalf("event before completion: %s", event)
 	default:
 	}
-	// Force a refresh fallback without a completion report. Both buffers
-	// are still busy, so this must not invite the client to redraw.
-	s.display.Do(func() {
-		s.frameDue["HEADLESS-1"] = time.Time{}
-		s.paceTick(nil, nil)
-		if !s.paceArmed {
-			t.Error("deferred callback left fallback pacer disarmed")
+	if fallback {
+		s.display.Do(func() { s.frameDue["HEADLESS-1"] = time.Time{}; s.paceTick(nil, nil) })
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
 		}
-	})
-	if err := c.Roundtrip(); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case event := <-wire:
-		t.Fatalf("event while replaced buffer still held: %s", event)
-	default:
+		select {
+		case event := <-wire:
+			if event != "frame done" {
+				t.Fatalf("due event = %s", event)
+			}
+		default:
+			t.Fatal("due callback withheld by buffer hold")
+		}
+		s.display.Do(func() {
+			held := false
+			for _, h := range s.held {
+				held = held || h.res != nil && h.res.ID() == first
+			}
+			if !held {
+				t.Error("callback released unsafe buffer")
+			}
+		})
+		select {
+		case event := <-wire:
+			t.Fatalf("unexpected release: %s", event)
+		default:
+		}
+		return
 	}
 	s.display.Do(func() {
 		held := false

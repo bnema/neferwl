@@ -175,11 +175,6 @@ func (s *Server) pacePass(flipped map[string]bool, reports []ports.OutputPresent
 	}
 	for _, name := range due {
 		s.sendFrames(name, flipped[name])
-		if len(s.awaiting[name]) > 0 {
-			// A buffer hold deferred callbacks even though this refresh was
-			// due. Keep the fallback alive if no completion arrives.
-			wait, idle = min(wait, defaultFramePeriod), false
-		}
 	}
 	// Fifo barriers and queued commits wait for a refresh.
 	if fw, waiting := s.tickFifo(time.Now(), flipped); waiting {
@@ -369,16 +364,7 @@ func (s *Server) sendFrames(name string, flipped bool) {
 	if f, ok := s.flips[name]; ok && flipped && f.When > 0 {
 		ms = uint32(max(f.When-monotonic(s.started), 0).Milliseconds())
 	}
-	kept := callbacks[:0]
 	for _, cb := range callbacks {
-		// A refresh deadline is not proof that the output finished with
-		// the previous buffer. Do not invite a two-buffer client to draw
-		// while that buffer is still held. Completion reports (or the
-		// existing safe hold expiry) release it on a later pacing pass.
-		if owner := s.frameOwners[cb]; owner != nil && s.frameBufferHeld(owner) {
-			kept = append(kept, cb)
-			continue
-		}
 		delete(s.frameOwners, cb)
 		if !cb.Resource.Alive() {
 			continue
@@ -388,24 +374,8 @@ func (s *Server) sendFrames(name string, flipped bool) {
 	}
 	// The queue keeps its backing array for the next frame (an empty queue
 	// reads like an absent one). Nothing above queues a callback.
-	clear(callbacks[len(kept):])
-	s.awaiting[name] = kept
-}
-
-// frameBufferHeld reports whether an earlier buffer of this toplevel tree
-// still belongs to an output. It never releases buffers or weakens the
-// scanout, queued-commit or child-read ownership checks in releaseHeld.
-func (s *Server) frameBufferHeld(surf *surface) bool {
-	id := toplevelRoot(surf).windowID()
-	if id == 0 {
-		return false
-	}
-	for _, h := range s.held {
-		if h.window == id {
-			return true
-		}
-	}
-	return false
+	clear(callbacks)
+	s.awaiting[name] = callbacks[:0]
 }
 
 // framePeriod is one refresh at refreshMilli mHz, 60 Hz when unknown.
