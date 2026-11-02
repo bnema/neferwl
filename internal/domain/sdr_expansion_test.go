@@ -149,3 +149,34 @@ func TestDecodeSDRNegativeUndershoot(t *testing.T) {
 		}
 	}
 }
+
+func TestSDRExpansionLinearSolid(t *testing.T) {
+	for _, decode := range []SDRDecode{SDRDecodeGamma22, SDRDecodeSRGB} {
+		active := (SDRExpansion{Intensity: .5, PeakNits: 604, SDRWhiteNits: 203, Decode: decode}).Curve()
+		inactive := (SDRExpansion{PeakNits: 604, SDRWhiteNits: 203, Decode: decode}).Curve()
+		for _, curve := range []SDRExpansionCurve{{}, inactive, active} {
+			for _, plain := range []bool{false, true} {
+				for _, rgb := range [][3]float64{{0, 0, 0}, {.02, .04, .01}, {.5, .25, .125}, {1, .5, .25}, {1, 1, 1}} {
+					r, g, b := curve.LinearSolid(rgb[0], rgb[1], rgb[2], plain)
+					got := [3]float64{r, g, b}
+					want := [3]float64{}
+					d := SDRDecodeSRGB
+					gain := 1.0
+					if plain && curve.Active() {
+						d = decode
+						m := DecodeSDR(rgb[0], d) // fixtures have red as their maximum
+						if m > 0 {
+							gain = curve.Apply(m) / m
+						}
+					}
+					for ch := range want {
+						want[ch] = DecodeSDR(rgb[ch], d) * gain
+						if math.Abs(got[ch]-want[ch]) > 1e-12 {
+							t.Fatalf("decode=%s active=%t plain=%t RGB=%v: got %v want %v", decode, curve.Active(), plain, rgb, got, want)
+						}
+					}
+				}
+			}
+		}
+	}
+}

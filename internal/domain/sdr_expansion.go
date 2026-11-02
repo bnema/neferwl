@@ -132,3 +132,14 @@ func DecodeSDR(v float64, d SDRDecode) float64 {
 	}
 	return math.Pow(v, 2.2)
 }
+
+// LinearSolid decodes straight, encoded single-pixel RGB in [0, 1] to linear
+// light. Only plain SDR with an active curve uses the selected expansion
+// decode and highlight gain; other solids retain ordinary sRGB decoding.
+// Premultiplication belongs after this conversion.
+func (c SDRExpansionCurve) LinearSolid(r, g, b float64, plainSDR bool) (lr, lg, lb float64) {
+	if plainSDR && c.Active() {
+		return c.ApplyRGB(DecodeSDR(r, c.Decode), DecodeSDR(g, c.Decode), DecodeSDR(b, c.Decode))
+	}
+	return DecodeSDR(r, SDRDecodeSRGB), DecodeSDR(g, SDRDecodeSRGB), DecodeSDR(b, SDRDecodeSRGB)
+}
