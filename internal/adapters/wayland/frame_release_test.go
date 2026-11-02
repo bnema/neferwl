@@ -60,6 +60,16 @@ func frameReleaseOrder(t *testing.T, fallback bool) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
+	// A child read protects the replaced content even if the test is paused
+	// beyond heldTimeout. Only the controlled report below ends this read.
+	if !s.display.Do(func() {
+		s.reports["HEADLESS-1"] = ports.OutputPresented{
+			Output:     "HEADLESS-1",
+			ChildReads: map[domain.WindowID]uint64{w.ID: s.contentSeq[w.ID]},
+		}
+	}) {
+		t.Fatal("display stopped")
+	}
 	cb := c.AllocateID()
 	register(cb, "frame done")
 	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, current, int32(0), int32(0))
