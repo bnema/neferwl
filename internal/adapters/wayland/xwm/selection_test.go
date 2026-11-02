@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"bnema.dev/xturbo"
+	"bnema.dev/xturbo/xfixes"
 	"bnema.dev/xturbo/xproto"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -823,25 +824,34 @@ func TestSelectionCloseDoesNotStartQueued(t *testing.T) {
 
 func TestSelectionWaylandToXTimestamp(t *testing.T) {
 	r := ownedByWayland(t, "text/plain")
-	r.p.selectionRequest(r.x.selWin, reqWin, r.clip, r.p.atom("TIMESTAMP"), r.data)
-	require.Equal(t, r.data, sentNotify(t, r))
-	v, ok := r.p.prop(reqWin, "_NEFERWL_DATA")
-	require.True(t, ok)
-	require.EqualValues(t, 32, v.format)
-	require.EqualValues(t, 19, v.typ, "INTEGER")
-	require.Len(t, v.data, 4)
-}
-
-func TestSelectionOwnershipTimeFromLastEvent(t *testing.T) {
-	x, p, _, _, _ := attached(t)
-	p.event(28, func(b *[32]byte) { // PropertyNotify
-		binary.LittleEndian.PutUint32(b[4:], x.selWin)
-		binary.LittleEndian.PutUint32(b[8:], 1)
-		binary.LittleEndian.PutUint32(b[12:], 4242)
-	})
-	readUntil(t, x, func() bool { return x.lastTime == 4242 })
-	x.WaylandSelection(SelClipboard, []string{"text/plain"})
-	require.EqualValues(t, 4242, x.sel.st[SelClipboard].ownTime)
+	st := &r.x.sel.st[SelClipboard]
+	// No unrelated event has supplied lastTime; each copy must get its own
+	// server acquisition time rather than reuse a cached input timestamp.
+	for _, timestamp := range []uint32{4242, 5252} {
+		require.Zero(t, st.ownTime)
+		r.p.selectionRequest(r.x.selWin, reqWin, r.clip, r.p.atom("TIMESTAMP"), r.data)
+		require.Zero(t, sentNotify(t, r), "refuse until acquisition is known")
+		var ev xturbo.Event
+		ev.Kind = xfixes.KindSelectionNotify
+		ev.Seq = st.acquire - 1
+		binary.LittleEndian.PutUint32(ev.Raw[8:], r.x.selWin)
+		binary.LittleEndian.PutUint32(ev.Raw[12:], r.clip)
+		binary.LittleEndian.PutUint32(ev.Raw[20:], timestamp-1)
+		r.x.onXFixesSelection(&ev)
+		require.Zero(t, st.ownTime, "an earlier acquisition cannot confirm this copy")
+		ev.Seq = st.acquire
+		binary.LittleEndian.PutUint32(ev.Raw[20:], timestamp)
+		r.x.onXFixesSelection(&ev)
+		r.p.selectionRequest(r.x.selWin, reqWin, r.clip, r.p.atom("TIMESTAMP"), r.data)
+		require.Equal(t, r.data, sentNotify(t, r))
+		v, ok := r.p.prop(reqWin, "_NEFERWL_DATA")
+		require.True(t, ok)
+		require.EqualValues(t, 32, v.format)
+		require.EqualValues(t, 19, v.typ, "INTEGER")
+		require.Equal(t, le32(timestamp), v.data)
+		require.Zero(t, r.x.lastTime)
+		r.x.WaylandSelection(SelClipboard, []string{"text/plain"})
+	}
 }
 
 func TestSelectionRequestorEventMaskOwnership(t *testing.T) {

@@ -32,12 +32,13 @@ var (
 // selState is one selection.
 type selState struct {
 	atom     uint32
-	gen      uint32 // bumped on every ownership change; stales TARGETS probes
-	probe    uint32 // gen when the TARGETS ConvertSelection was issued
-	probeWin uint32 // unique requestor for this ownership generation
-	owner    uint32 // X owner window other than selWin, 0 none
-	ownTime  uint32 // lastTime when selWin took ownership, answered for TIMESTAMP
-	ours     bool   // selWin owns the selection (Wayland -> X)
+	gen      uint32     // bumped on every ownership change; stales TARGETS probes
+	probe    uint32     // gen when the TARGETS ConvertSelection was issued
+	probeWin uint32     // unique requestor for this ownership generation
+	owner    uint32     // X owner window other than selWin, 0 none
+	ownTime  uint32     // server acquisition time, 0 until confirmed by XFixes
+	acquire  xturbo.Seq // SetSelectionOwner sequence for the current acquisition
+	ours     bool       // selWin owns the selection (Wayland -> X)
 	// wl is what the Wayland side offers while ours: raw text availability.
 	wlUTF8, wlPlain bool
 	wlMime          [len(textMimes)]string // offered text MIMEs, in textMimes order, "" absent
@@ -205,7 +206,10 @@ func (x *XWM) onXFixesSelection(ev *xturbo.Event) {
 	}
 	st := &x.sel.st[k]
 	owner := uint32(e.Owner())
-	if owner == x.selWin { // our own SetSelectionOwner echoed back
+	if owner == x.selWin { // correlate the server's timestamp to this acquisition
+		if st.ours && st.acquire != 0 && ev.Seq >= st.acquire {
+			st.ownTime = uint32(e.SelectionTimestamp())
+		}
 		return
 	}
 	x.clearProbe(st)
@@ -836,10 +840,10 @@ func (x *XWM) WaylandSelection(kind int, mimes []string) {
 	}
 	x.clearProbe(st)
 	st.ours = true
-	st.ownTime = x.lastTime
+	st.ownTime = 0
 	st.gen++
 	st.owner = 0
-	xproto.SetSelectionOwner(b, xproto.Window(x.selWin), xproto.Atom(st.atom), 0)
+	st.acquire = xproto.SetSelectionOwner(b, xproto.Window(x.selWin), xproto.Atom(st.atom), 0)
 	x.log.Debug().Int("kind", kind).Msg("selection: Wayland owner")
 	x.wake()
 }
@@ -903,6 +907,10 @@ func (x *XWM) onSelectionRequest(ev *xturbo.Event) {
 		x.notify(req, sel, target, prop, time)
 		return
 	case x.atoms[atomTimestamp]:
+		if st.ownTime == 0 {
+			x.notify(req, sel, target, 0, time)
+			return
+		}
 		xproto.ChangeProperty(x.conn.Buf(), xproto.PropModeReplace, xproto.Window(req), xproto.Atom(prop),
 			xproto.AtomInteger, 32, 1, x.encode32([]uint32{st.ownTime}))
 		x.notify(req, sel, target, prop, time)
