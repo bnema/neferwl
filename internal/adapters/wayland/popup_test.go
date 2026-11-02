@@ -30,12 +30,24 @@ func TestPopupPointerSerial(t *testing.T) {
 				t.Fatal(err)
 			}
 			commands <- ports.PointerFocus{ID: top.ID}
-			dispatchUntil(t, c, func() bool { return len(pp.enters) > 0 })
-			<-pp.enters
+			flushCommands(t, s, commands)
+			roundtrip(t, c)
+			select {
+			case <-pp.enters:
+			default:
+				t.Fatal("missing pointer enter after focus barrier")
+			}
 			button := func(pressed bool, button uint32) uint32 {
 				commands <- ports.PointerButtonTo{ID: top.ID, Button: button, Pressed: pressed}
-				dispatchUntil(t, c, func() bool { return len(pp.buttons) > 0 })
-				return <-pp.buttons
+				flushCommands(t, s, commands)
+				roundtrip(t, c)
+				select {
+				case serial := <-pp.buttons:
+					return serial
+				default:
+					t.Fatal("missing pointer button after input barrier")
+					return 0
+				}
 			}
 			serial := button(true, 0x110)
 			if mode != "press" {
@@ -74,12 +86,19 @@ func TestPopupPointerSerial(t *testing.T) {
 				requestProtocol(t, c, popup, xdgshell.PopupRequestGrab, seat, serial)
 			})
 			if mode != "press" && mode != "release" {
-				dispatchUntil(t, c, func() bool { return len(done) > 0 })
+				// xdgWindow already roundtripped the rejected grab.
+				select {
+				case <-done:
+				default:
+					t.Fatal("missing popup dismissal after grab roundtrip")
+				}
 				if len(serials) != 0 {
 					t.Fatal("rejected popup configured")
 				}
 				return
 			}
+			// The commit was roundtripped, but core events use a separate
+			// forwarder: receive its event rather than dispatching more wire I/O.
 			req, ok := waitEvent(t, events, 2*time.Second).(ports.PopupRequest)
 			if !ok || !req.Grab || req.Parent != top.ID {
 				t.Fatalf("popup request: %+v", req)
