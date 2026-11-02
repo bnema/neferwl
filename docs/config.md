@@ -109,6 +109,8 @@ even when empty. Cascade workspaces use top-aligned band columns; scroll/fixed
 workspaces use one vertical workspace column. Large lists show at most 16 entries
 with the active entry kept visible; band rows are capped at 16.
 
+### Navigation edge policy
+
 Directional focus at a content edge uses `navigation.edge`. The default,
 `screen`, visits a neighbor screen or stays put. With `workspace`, horizontal
 edges prefer a neighbor screen, then an occupied workspace; vertical edges
@@ -321,8 +323,8 @@ bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
 | `cycle-column-width` | Grow the focused column by one [cell](#column-widths), then back to equal widths |
 | `set-column-width <+N\|-N>` | Widen or narrow the focused column by N cells |
 | `set-window-height <+N%\|-N%>` | Change the focused window's share of its column |
-| `focus-column-left/right` | Focus the neighbor column, then the neighbor monitor, else the neighbor workspace |
-| `focus-window-up/down` | Focus the neighbor window in the column, then the neighbor workspace (band in cascade) |
+| `focus-column-left/right` | Focus the neighbor column within the workspace (within the band in cascade), then follow the [navigation edge policy](#navigation-edge-policy): neighbor screen by default, workspace hops only with `navigation.edge = workspace`. |
+| `focus-window-up/down` | Focus the neighbor window in the column. Cascade continues to the band above/below and stops at its outer edge. Scroll/fixed follows the [navigation edge policy](#navigation-edge-policy), with a screen above/below as the default edge destination or fallback after an occupied workspace under `workspace`. |
 | `move-column-left/right` | Move the focused column, then to the neighbor monitor |
 | `move-window-up/down` | Move within the column; at its edge in scroll/fixed, send the window to the screen above/below if present, keeping fullscreen and following focus. It lands after the destination’s focused column. Cascade moves between bands. Independent of `navigation.edge`. |
 | `consume-or-expel-window-left/right` | Join the neighbor column, or leave the current one |

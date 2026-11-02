@@ -233,8 +233,9 @@ bind.ctrl+alt+backspace = quit
 bind.ctrl+cmd+space = spawn fuzzel
 
 # Workspaces stack vertically (side by side with cascade); numbers follow
-# their order. An empty one always waits after the last. cmd+up/down past the
-# column edge also switch workspace.
+# their order. An empty one always waits after the last. With
+# navigation.edge = workspace, cmd+up/down past the column edge can switch
+# workspaces in scroll/fixed (vertical workspace axis); cascade uses left/right.
 bind.cmd+pageup = focus-workspace-prev
 bind.cmd+pagedown = focus-workspace-next
 # move-column-to-workspace moves the whole column; move-window-to-workspace

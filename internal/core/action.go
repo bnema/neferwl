@@ -331,15 +331,11 @@ func (c *Core) dispatchAction(a Action) Effect {
 // and keeps cascade vertical edges within their bands.
 func (c *Core) edgeFocus(axis layout.Axis, dir int, d direction) bool {
 	mark := c.markBind()
-	moved := c.edgeFocusMove(axis, dir, d)
+	moved := c.edgeGo(c.edgeTarget(axis, dir, d), d)
 	if moved {
 		c.emitBind(mark, "", "edge-focus", domain.BindSourceEdge)
 	}
 	return moved
-}
-
-func (c *Core) edgeFocusMove(axis layout.Axis, dir int, d direction) bool {
-	return c.edgeGo(c.edgeTarget(axis, dir, d), d)
 }
 
 // Apply runs a bind action on this monitor only. Directional focus stays within

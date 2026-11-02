@@ -150,6 +150,7 @@ func TestScrollFixedWorkspaceAxisIsVertical(t *testing.T) {
 // AC5: a shown named workspace is outside the workspace list.
 func TestCascadeNamedWorkspaceDoesNotStep(t *testing.T) {
 	c, m := axisCore(t, false, OverflowCascade, 3)
+	c.cfg.Navigation.Edge = domain.NavEdgeWorkspace
 	m.SetNamed([]NamedWorkspace{{Name: "n"}})
 	m.ToggleNamed("n")
 	shown := m.shown
