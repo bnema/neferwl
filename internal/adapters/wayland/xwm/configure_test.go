@@ -476,8 +476,15 @@ func TestFocusInDenied(t *testing.T) {
 	settle(t, x, p)
 	require.Zero(t, focusCount(n))
 
-	x.feed(t, p, func() { focusIn(b, 0); focusIn(b, 0) })
-	readUntil(t, x, func() bool { return x.stats.Events >= 5 })
+	// Both events must be dispatched: the old absolute threshold of five
+	// also included the two creates and could pass after just one FocusIn.
+	before := x.stats.Events
+	focusIn(b, 0)
+	focusIn(b, 0)
+	readUntil(t, x, func() bool { return x.stats.Events == before+2 })
+	pumpReq(t, x, p, n, func(r xpeerReq) bool {
+		return r.major == opSetInputFocus && r.u32(4) == a
+	})
 	settle(t, x, p)
 	require.Equal(t, 1, focusCount(n), "denied once per iteration")
 	n = settle(t, x, p)
