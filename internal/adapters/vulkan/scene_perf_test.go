@@ -338,6 +338,10 @@ func TestRenderExpansionAllocations(t *testing.T) {
 	r := hdrTestRenderer(t)
 	content := solidContent(t, 8, 8, color.RGBA{R: 255, A: 255})
 	content.ID, content.Surface, content.Seq, content.Version = 1, 1, 1, 1
+	content.Children = []domain.Subsurface{{SurfaceContent: domain.SurfaceContent{
+		Surface: 2, Version: 1, Width: 1, Height: 1, LogicalW: 8, LogicalH: 8,
+		Solid: &domain.SolidColor{R: .5, G: .25, B: .125, A: .5},
+	}}}
 	contents := map[domain.WindowID]domain.SurfaceContent{1: content}
 	curve := (domain.SDRExpansion{Intensity: 0.5, PeakNits: 604, SDRWhiteNits: 203}).Curve()
 	var baseline float64

@@ -293,7 +293,7 @@ func (r *Renderer) fillDraw(rect image.Rectangle, c [3]uint8) draw {
 // scales the four premultiplied channels. The shader decodes the rgb of a
 // solid on HDR outputs, so there it is pre-encoded such that the decode
 // yields the linear premultiplied color.
-func (r *Renderer) solidDraw(rect image.Rectangle, content *domain.SurfaceContent) draw {
+func (r *Renderer) solidDraw(rect image.Rectangle, content *domain.SurfaceContent, curve domain.SDRExpansionCurve) draw {
 	c := *content.Solid
 	if content.Opaque {
 		c.A = 1
@@ -301,11 +301,20 @@ func (r *Renderer) solidDraw(rect image.Rectangle, content *domain.SurfaceConten
 	k := 1 - max(0, min(1, content.Fade))
 	c.R, c.G, c.B, c.A = c.R*k, c.G*k, c.B*k, c.A*k
 	if a := float64(c.A); r.hdrNits > 0 && a > 0 {
-		enc := func(ch float32) float32 {
+		decode := func(ch float32) float64 {
 			v := max(0, min(1, float64(ch)/a))
-			return float32(linearToSRGB(srgbToLinear(v) * a))
+			if content.Color.PlainSDR() && curve.Active() {
+				return domain.DecodeSDR(v, curve.Decode)
+			}
+			return srgbToLinear(v)
 		}
-		c.R, c.G, c.B = enc(c.R), enc(c.G), enc(c.B)
+		rr, gg, bb := decode(c.R), decode(c.G), decode(c.B)
+		// Only client plain-SDR solids participate; compositor fills never
+		// enter solidDraw. Expand straight RGB before linear premultiplication.
+		if content.Color.PlainSDR() && curve.Active() {
+			rr, gg, bb = curve.ApplyRGB(rr, gg, bb)
+		}
+		c.R, c.G, c.B = float32(linearToSRGB(rr*a)), float32(linearToSRGB(gg*a)), float32(linearToSRGB(bb*a))
 	}
 	dr := r.fillDraw(rect, [3]uint8{})
 	dr.pc.color = [4]float32{c.R, c.G, c.B, c.A}

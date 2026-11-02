@@ -1,6 +1,7 @@
 package vulkan
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"math"
@@ -478,5 +479,63 @@ func TestHDRExpansionLeavesDescribedSRGBUnchanged(t *testing.T) {
 	}
 	if !slices.Equal(baseline, pqTargetWords(t, r)) {
 		t.Fatal("described sRGB expanded")
+	}
+}
+
+// Client single-pixel buffers must match SHM, including expansion before
+// premultiplication for translucent subsurfaces.
+func TestHDRSDRExpansionClientSolid(t *testing.T) {
+	for _, decode := range []domain.SDRDecode{domain.SDRDecodeGamma22, domain.SDRDecodeSRGB} {
+		for _, child := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/child=%t", decode, child), func(t *testing.T) {
+				r := hdrTestRenderer(t)
+				alpha := byte(255)
+				if child {
+					alpha = 128
+				}
+				// White catches the highlight gain; colored highlights also
+				// exercise the decode choice and shared RGB gain.
+				for _, rgb := range [][3]byte{{alpha, alpha, alpha}, {alpha, alpha / 2, alpha / 4}} {
+					px := make([]byte, 64*16*4)
+					for i := range 64 * 16 {
+						copy(px[i*4:], []byte{rgb[2], rgb[1], rgb[0], alpha})
+					}
+					shm := shmContent(t, 64, 16, 256, px)
+					shm.Surface, shm.Version = 2, 1
+					solid := *shm
+					solid.SHM = nil
+					solid.Width, solid.Height = 1, 1
+					solid.LogicalW, solid.LogicalH = 64, 16
+					solid.Solid = &domain.SolidColor{R: float32(rgb[0]) / 255, G: float32(rgb[1]) / 255, B: float32(rgb[2]) / 255, A: float32(alpha) / 255}
+					curve := (domain.SDRExpansion{Intensity: .5, PeakNits: 604, SDRWhiteNits: 203, Decode: decode}).Curve()
+					for _, active := range []bool{false, true} {
+						scene := domain.Scene{Seq: r.frame + 1, Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
+						if active {
+							scene.Windows[0].SDRExpansion = curve
+						}
+						var reference [3]float64
+						for i, c := range []domain.SurfaceContent{*shm, solid} {
+							c.Seq, c.Version = r.frame+1, r.frame+1
+							if child {
+								c = domain.SurfaceContent{ID: 1, Seq: r.frame + 1, Width: 64, Height: 16, LogicalW: 64, LogicalH: 16, Children: []domain.Subsurface{{SurfaceContent: c}}}
+							}
+							scene.Seq++
+							if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: c}); err != nil {
+								t.Fatal(err)
+							}
+							codes := hdrTargetAt(t, r, 32, 8)
+							for ch := range codes {
+								got := pqDecode(codes[ch]) / 203
+								if i == 0 {
+									reference[ch] = got
+								} else if math.Abs(got-reference[ch]) > .025 {
+									t.Fatalf("active=%t RGB=%v channel %d: solid %.6f SHM %.6f", active, rgb, ch, got, reference[ch])
+								}
+							}
+						}
+					}
+				}
+			})
+		}
 	}
 }

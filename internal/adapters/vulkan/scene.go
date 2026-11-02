@@ -21,7 +21,8 @@ type sceneWalk struct {
 	// preview (domain.SceneWindow.Preview); 1 otherwise.
 	zoom float64
 	// expand applies only while placing an HDR window's surface tree.
-	expand [4]float32
+	expand      [4]float32
+	expandCurve domain.SDRExpansionCurve
 	// alpha is the opacity of the window being drawn, 1 - its Fade
 	// (domain.SceneWindow.Fade): its fills, lines and surfaces are scaled by
 	// it (premultiplied); 1 otherwise.
@@ -333,9 +334,11 @@ func (w *sceneWalk) windows() {
 			}
 			if w.r.hdrNits > 0 && win.SDRExpansion.Active() {
 				w.expand = win.SDRExpansion.Params()
+				w.expandCurve = win.SDRExpansion
 			}
 			w.place(win.ID, &content, c.X, c.Y, c.W, c.H)
 			w.expand = [4]float32{}
+			w.expandCurve = domain.SDRExpansionCurve{}
 			w.zoom = 1
 		}
 		if win.Radius > 0 {
@@ -663,7 +666,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *domain.SurfaceCo
 		return
 	}
 	if content.Solid != nil {
-		dr := r.solidDraw(rect, content)
+		dr := r.solidDraw(rect, content, w.expandCurve)
 		if w.alpha < 1 {
 			r.fadeSolid(&dr, w.alpha)
 		}
