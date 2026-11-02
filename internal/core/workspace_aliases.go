@@ -239,6 +239,11 @@ func MoveColumnTo(from, to *Workspace, at int) bool {
 	return workspacedomain.MoveColumnTo(from, to, at)
 }
 
+// MoveWindowTo calls workspace.MoveWindowTo.
+func MoveWindowTo(from, to *Workspace, at int) bool {
+	return workspacedomain.MoveWindowTo(from, to, at)
+}
+
 // MoveFocused calls workspace.MoveFocused.
 func MoveFocused(from, to *Workspace, column bool) bool {
 	return workspacedomain.MoveFocused(from, to, column)

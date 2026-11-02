@@ -324,7 +324,7 @@ bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
 | `focus-column-left/right` | Focus the neighbor column, then the neighbor monitor, else the neighbor workspace |
 | `focus-window-up/down` | Focus the neighbor window in the column, then the neighbor workspace (band in cascade) |
 | `move-column-left/right` | Move the focused column, then to the neighbor monitor |
-| `move-window-up/down` | Move the focused window in its column |
+| `move-window-up/down` | Move within the column; at its edge in scroll/fixed, send the window to the screen above/below if present, keeping fullscreen and following focus. It lands after the destination’s focused column. Cascade moves between bands. Independent of `navigation.edge`. |
 | `consume-or-expel-window-left/right` | Join the neighbor column, or leave the current one |
 | `focus-workspace <N>` / `-prev/-next` | Show a workspace |
 | `workspace <name>` | Show or hide a named workspace |

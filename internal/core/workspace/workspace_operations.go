@@ -80,6 +80,18 @@ func MoveColumnTo(from, to *Workspace, at int) bool {
 	return true
 }
 
+// MoveWindowTo transfers one focused tile into a new column at index at.
+// Like MoveColumnTo, it uses receive's insertion semantics even on a full fixed
+// workspace. If the focused window cannot be taken, neither workspace changes.
+func MoveWindowTo(from, to *Workspace, at int) bool {
+	id, ok := from.takeWindow()
+	if !ok {
+		return false
+	}
+	to.receive(layout.Column{Windows: []WindowID{id}}, at)
+	return true
+}
+
 // MoveFocused transfers the focused column or window to a workspace. A moved
 // column or window joins the destination at the layout's default position.
 func MoveFocused(from, to *Workspace, column bool) bool {

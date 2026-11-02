@@ -207,6 +207,46 @@ func (c *Core) dispatchAction(a Action) Effect {
 			c.edgeFocus(layout.Vertical, dir, d)
 		}
 		return Effect{}
+	case ActionMoveWindowUp, ActionMoveWindowDown:
+		from := c.cur()
+		w := from.mon.Current()
+		// Cascade keeps its existing band moves. Free floats were handled above;
+		// other floats and stash windows retain workspace-local behavior.
+		if layout.WorkspaceStep(w.Engine(), layout.Vertical, 1) == 0 {
+			break
+		}
+		dir, d := 1, dirDown
+		if a == ActionMoveWindowUp {
+			dir, d = -1, dirUp
+		}
+		fullscreen := w.MovableFullscreen()
+		if !fullscreen && (w.MoveWindow(dir) || w.OnFloat() || w.FullscreenHides()) {
+			return Effect{}
+		}
+		i := c.neighbor(d)
+		if i < 0 {
+			return Effect{}
+		}
+		to := c.screens[i].mon.Current()
+		// Vertical moves have no horizontal entry edge: land immediately after
+		// the destination's focused column (or at zero on an empty workspace).
+		at := 0
+		if len(to.Columns) > 0 {
+			at = to.Focus + 1
+		}
+		moved := false
+		if fullscreen {
+			moved = MoveFullscreen(w, to, at)
+		} else {
+			moved = MoveWindowTo(w, to, at)
+		}
+		if moved {
+			c.focusScreen = i
+			from.mon.normalize()
+			toScreen := c.cur()
+			toScreen.mon.normalize()
+		}
+		return Effect{}
 	case ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight:
 		dir, d := 1, dirRight
 		if a == ActionConsumeOrExpelLeft {

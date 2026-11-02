@@ -26,17 +26,19 @@ func (w *Workspace) MoveColumn(dir int) {
 // MoveWindow moves the focused tile up or down (dir -1/1) inside its
 // column; focus follows it. A slot window leaving row 0 releases the slot.
 // Past the column, a cascade column moves to the adjacent band.
-func (w *Workspace) MoveWindow(dir int) {
+// It reports whether a local move happened.
+func (w *Workspace) MoveWindow(dir int) bool {
 	if w.OnFloat() || len(w.Columns) == 0 || (dir != -1 && dir != 1) || w.FullscreenHides() {
-		return
+		return false
 	}
 	c := &w.Columns[w.Focus]
 	to := c.Focus + dir
 	if to < 0 || to >= len(c.Windows) {
 		if w.Engine().MoveLane(w.edit(), dir) {
 			w.scroll()
+			return true
 		}
-		return
+		return false
 	}
 	if c.Focus == 0 || to == 0 {
 		w.dropSlotOf(c.Windows[0])
@@ -47,6 +49,7 @@ func (w *Workspace) MoveWindow(dir int) {
 	}
 	c.Focus = to
 	w.scroll()
+	return true
 }
 
 // ResizeRow changes the focused window's height share by pct percent; the
