@@ -606,8 +606,10 @@ func TestX11WindowEntersOneOutput(t *testing.T) {
 		{Info: domain.OutputInfo{Name: "A"}, X: 0, Y: 0, Width: 1920, Height: 1080, Scale: 1},
 		{Info: domain.OutputInfo{Name: "B"}, X: 1920, Y: 0, Width: 1920, Height: 1080, Scale: 1},
 	}, Focused: "A"}
-	// SetOutputs is applied asynchronously: wait for both globals.
-	waitOutputs(t, r.xc, 2)
+	// Join the asynchronous command forwarder and display work before the
+	// client roundtrip collects the globals from this layout change.
+	flushCommands(t, r.s, r.commands)
+	roundtrip(t, r.xc)
 	outputs := 0
 	for _, g := range r.xc.Registry().GetGlobals() {
 		if g.Interface != "wl_output" {
