@@ -589,7 +589,7 @@ func TestNetWMStateClientMessageForwardsFullscreen(t *testing.T) {
 	hs.h.EXPECT().Fullscreen(s, true).Once()
 	hs.p.clientMessage(win, hs.p.atom("_NET_WM_STATE"), 1, hs.p.atom("_NET_WM_STATE_FULLSCREEN"))
 	readUntil(t, hs.x, func() bool { return hs.x.tab.rec(s).fullscreen })
-	check(false) // request alone must not advertise fullscreen during grace
+	check(false) // request alone must not advertise fullscreen before core accepts it
 	hs.x.Configure(s, ports.ConfigureWindow{Width: 640, Height: 360, Fullscreen: true})
 	hs.x.flush()
 	check(true) // core accepted the request

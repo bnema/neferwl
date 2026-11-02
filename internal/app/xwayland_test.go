@@ -491,9 +491,8 @@ func windowOf(st statefile.State, pid int) (statefile.Window, bool) {
 	return statefile.Window{}, false
 }
 
-// TestXwaylandFullscreen: a fullscreen request after the 1 s grace fills the
-// output, the toggle bind leaves it, and a request made right at the map is
-// ignored (the grace, current policy).
+// TestXwaylandFullscreen: a delayed fullscreen request fills the output,
+// and the toggle bind leaves it.
 func TestXwaylandFullscreen(t *testing.T) {
 	// Gaps make a tile visibly smaller than the output.
 	e := startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *domain.Config) { c.Layout.Gaps = 20 })
@@ -555,7 +554,7 @@ func TestXwaylandFullscreenOff(t *testing.T) {
 // TestXwaylandInitialFullscreen: a fixed-size window that maps with
 // _NET_WM_STATE_FULLSCREEN already set (a Proton game) opens fullscreen in a
 // column of its own, focused, beside the tiled window already open. This is
-// the state it maps with, not a request: the grace does not apply.
+// the state it maps with, rather than a later request.
 func TestXwaylandInitialFullscreen(t *testing.T) {
 	e := startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *domain.Config) { c.Layout.Gaps = 20 })
 	shot := filepath.Join(e.shots, "latest.png")
@@ -578,30 +577,17 @@ func TestXwaylandInitialFullscreen(t *testing.T) {
 	until(t, "game focused", func() bool { return strings.Contains(p.out.String(), "focus") })
 }
 
-// TestXwaylandFullscreenGrace: a request made at once after the map (not the
-// state it maps with) stays tiled (fullscreenGrace in core).
-func TestXwaylandFullscreenGrace(t *testing.T) {
-	e := startXwayland(t)
+// TestXwaylandImmediateFullscreen accepts a request immediately after mapping.
+// Gaps distinguish a tiled window from an output-filling fullscreen window.
+func TestXwaylandImmediateFullscreen(t *testing.T) {
+	e := startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *domain.Config) { c.Layout.Gaps = 20 })
 	p := startProbe(t, e.bin, e.display, "-fullscreen")
-	until(t, "mapped", func() bool { return strings.Contains(p.out.String(), "mapped ") })
-	until(t, "tiled window", func() bool {
+	until(t, "published fullscreen state", func() bool {
 		st := readState(e.statePath)
-		return len(st.Windows) == 1 && func() bool { _, ok := tileRect(st, st.Windows[0].ID); return ok }()
+		return len(st.Windows) == 1 && st.Windows[0].Fullscreen
 	})
-	// Stay inside the grace, then check it is still not fullscreen.
-	if _, err := e.script.Write([]byte("sleep 500ms\n")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.script.Write([]byte("sleep 0s\n")); err != nil {
-		t.Fatal(err)
-	}
-	st := readState(e.statePath)
-	if _, ok := tileRect(st, st.Windows[0].ID); !ok {
-		t.Error("window went fullscreen inside the grace")
-	}
-	if strings.Contains(p.out.String(), "fullscreen ") {
-		t.Errorf("probe saw a fullscreen resize inside the grace: %q", p.out.String())
-	}
+	until(t, "probe fullscreen at output size", func() bool { return strings.Contains(p.out.String(), "fullscreen 640x360") })
+	until(t, "output all green", func() bool { return fullOutput(filepath.Join(e.shots, "latest.png")) >= 0.99 })
 }
 
 // TestXwaylandKeyboardGrab: while a fullscreen, focused X11 client holds the

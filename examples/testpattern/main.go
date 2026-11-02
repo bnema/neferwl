@@ -17,10 +17,8 @@
 // the output does not report one).
 //
 // With -fullscreen the window asks for fullscreen and "ready" waits for the
-// compositor to grant it. NeferWL drops set_fullscreen sent before the
-// surface is mapped and ignores client fullscreen requests during the first
-// second after the map (core's fullscreenGrace), so the client maps first and
-// sends the request 1.2 s after its first buffer commit.
+// compositor to grant it. The client sends the request directly after its
+// first buffer commit.
 //
 // The client runs until the display closes, then exits 0.
 package main
@@ -34,21 +32,18 @@ import (
 	"net"
 	"os"
 	"syscall"
-	"time"
 
+	"bnema.dev/wlturbo"
 	"github.com/bnema/go-wayland-bindings/client/colormanagement"
 	"github.com/bnema/go-wayland-bindings/client/linuxdmabuf"
 	clientcore "github.com/bnema/go-wayland-bindings/client/wayland"
 	"github.com/bnema/go-wayland-bindings/client/xdgshell"
 	"github.com/bnema/neferwl/examples/testpattern/pattern"
-	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
 const (
 	defaultWidth, defaultHeight = 640, 360
-	// fullscreenDelay outlasts core's 1 s fullscreenGrace.
-	fullscreenDelay = 1200 * time.Millisecond
 
 	shmXRGB8888 = 1
 	fourccXR30  = 'X' | 'R'<<8 | '3'<<16 | '0'<<24
@@ -84,13 +79,13 @@ type client struct {
 	pendW, pendH int32
 	pendFull     bool
 
-	w, h     int
-	buffer   *clientcore.Buffer
-	ready    bool
-	closed   bool
-	err      error
-	xr30Lin  bool // XR30 with modifier 0 advertised
-	timerSet bool
+	w, h                int
+	buffer              *clientcore.Buffer
+	ready               bool
+	closed              bool
+	err                 error
+	xr30Lin             bool // XR30 with modifier 0 advertised
+	fullscreenRequested bool
 }
 
 func run(mode string, fullscreen bool) error {
@@ -323,14 +318,11 @@ func (c *client) configured() error {
 	if err := c.surface.Commit(); err != nil {
 		return err
 	}
-	if c.fullscreen && !c.timerSet {
-		c.timerSet = true
-		top := c.top
-		time.AfterFunc(fullscreenDelay, func() {
-			if err := top.SetFullscreen(nil); err != nil {
-				fmt.Fprintf(os.Stderr, "testpattern: set_fullscreen: %v\n", err)
-			}
-		})
+	if c.fullscreen && !c.fullscreenRequested {
+		c.fullscreenRequested = true
+		if err := c.top.SetFullscreen(nil); err != nil {
+			return err
+		}
 	}
 	if !c.ready && (!c.fullscreen || c.pendFull) {
 		c.ready = true

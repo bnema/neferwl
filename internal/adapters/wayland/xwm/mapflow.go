@@ -199,7 +199,7 @@ func (x *XWM) onClientMessage(ev *xturbo.Event) {
 }
 
 // onNetWMState applies modal changes and forwards fullscreen requests. Only a
-// core configure publishes fullscreen: a request may be refused (e.g. grace).
+// core configure publishes fullscreen: a request may be refused by the fullscreen focus rules.
 func (x *XWM) onNetWMState(e xproto.ClientMessageEvent) {
 	d := e.Data().Data32()
 	if d[1] == x.atoms[atomNetWMStateFullscreen] || d[2] == x.atoms[atomNetWMStateFullscreen] {
