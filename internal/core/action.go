@@ -300,20 +300,7 @@ func (c *Core) edgeFocus(axis layout.Axis, dir int, d direction) bool {
 }
 
 func (c *Core) edgeFocusMove(axis layout.Axis, dir int, d direction) bool {
-	m := c.cur().mon
-	i := c.neighbor(d)
-	if monitorFirst := axis == layout.Horizontal && i >= 0; !monitorFirst {
-		if to := m.occupiedStep(axis, dir); to >= 0 {
-			m.Focus(to)
-			return true
-		}
-	}
-	if i >= 0 {
-		c.focusScreen = i
-		c.cur().mon.focusEntry(d)
-		return true
-	}
-	return m.stepWorkspace(axis, dir)
+	return c.edgeGo(c.edgeTarget(axis, dir, d), d)
 }
 
 // Apply runs a bind action on this monitor only. Vertical focus edges step
