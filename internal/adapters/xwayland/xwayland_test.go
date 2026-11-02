@@ -474,16 +474,15 @@ func TestWaitReady(t *testing.T) {
 	})
 }
 
-// readyScript stands in for Xwayland: after a short delay it creates a marker
-// file and reports readiness on the -displayfd descriptor when ready is true,
-// then runs tail.
+// readyScript waits for Attach on the Wayland socket before reporting readiness,
+// then waits for AttachWM on the WM socket before running tail.
 func readyScript(t *testing.T, dir string, ready bool, tail string) (bin, marker string) {
 	t.Helper()
 	bin, marker = filepath.Join(dir, "xwayland"), filepath.Join(dir, "ready")
-	script := "#!/bin/sh\nwhile [ $# -gt 0 ]; do [ \"$1\" = -displayfd ] && fd=$2; shift; done\n" +
-		"sleep 0.3\n"
+	script := "#!/bin/sh\nwhile [ $# -gt 0 ]; do case \"$1\" in -displayfd) fd=$2;; -wm) wm=$2;; esac; shift; done\n" +
+		"eval \"read -r attached <&$WAYLAND_SOCKET\"\n"
 	if ready {
-		script += ": > " + marker + "\neval \"echo 1 >&$fd\"\n"
+		script += ": > " + marker + "\neval \"echo 1 >&$fd\"\neval \"read -r attached <&$wm\"\n"
 	}
 	script += tail + "\n"
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
@@ -504,6 +503,9 @@ func runBuiltin(t *testing.T, ctx context.Context, ready bool, tail string, atta
 			t.Error("Attach ran after readiness")
 		}
 		events = append(events, "attach")
+		if _, err := unix.Write(wlFD, []byte("attached\n")); err != nil {
+			t.Errorf("release Attach: %v", err)
+		}
 		unix.Close(wlFD)
 	}
 	opts.AttachWM = func(ctx context.Context, wmFD int) func() {
@@ -511,6 +513,9 @@ func runBuiltin(t *testing.T, ctx context.Context, ready bool, tail string, atta
 			t.Error("AttachWM ran before readiness")
 		}
 		events = append(events, "attachWM")
+		if _, err := unix.Write(wmFD, []byte("attached\n")); err != nil {
+			t.Errorf("release AttachWM: %v", err)
+		}
 		attachWM(ctx, wmFD)
 		return func() { events = append(events, "stop") }
 	}
@@ -529,7 +534,7 @@ func TestBuiltinAttachWMAfterReadiness(t *testing.T) {
 	for name, tc := range map[string]struct {
 		tail   string
 		cancel bool
-	}{"process exit": {tail: "exit 0"}, "context end": {tail: "exec sleep 30", cancel: true}} {
+	}{"process exit": {tail: "exit 0"}, "context end": {tail: "eval \"read -r stopped <&$wm\"", cancel: true}} {
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
@@ -564,7 +569,7 @@ func TestBuiltinNoAttachWMWithoutReadiness(t *testing.T) {
 func TestBuiltinAttachWMContextEndsWithProcess(t *testing.T) {
 	ended := make(chan error, 1)
 	start := time.Now()
-	events := runBuiltin(t, t.Context(), true, "sleep 0.3", func(ctx context.Context, wmFD int) {
+	events := runBuiltin(t, t.Context(), true, "exit 0", func(ctx context.Context, wmFD int) {
 		defer unix.Close(wmFD)
 		select {
 		case <-ctx.Done():
