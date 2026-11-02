@@ -58,6 +58,36 @@ func TestMapAnimates(t *testing.T) {
 	})
 }
 
+// Sparse flips must still land an entrance exactly, including when the first
+// flip arrives after every spring's end. Zoom zero means unscaled content.
+func TestMapEntranceSettlesWithSparseFrames(t *testing.T) {
+	for _, steps := range [][]time.Duration{
+		{5 * time.Second},
+		{30 * time.Millisecond, 137 * time.Millisecond, 5 * time.Second},
+		{250 * time.Millisecond, 5 * time.Second},
+	} {
+		t.Run(steps[0].String(), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				r := startSwipeOn(t, nil, domain.OutputInfo{Name: wide.Name, Width: 1920, Height: 1080})
+				first := r.multiRig.mapWindow(t, 1)[0]
+				if w := windowOf(t, first, 1); w.Fade != 1 || w.Rect.W != 1728 || !first.Animating {
+					t.Fatalf("initial entrance: %+v, animating=%v", w, first.Animating)
+				}
+				end := first
+				for _, d := range steps {
+					if set, ok := r.clk.flip(t, r.frames, r.scenes, d, wide.Name); ok {
+						end = set[0]
+					}
+				}
+				w := windowOf(t, end, 1)
+				if w.Rect != (domain.Rect{W: 1920, H: 1080}) || w.Fade != 0 || w.Zoom != 0 || end.Animating {
+					t.Fatalf("after sparse frames %v: %+v, animating=%v", steps, w, end.Animating)
+				}
+			})
+		})
+	}
+}
+
 // With animations off a map shows the final layout at once.
 func TestMapAnimationsOffIsInstant(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
