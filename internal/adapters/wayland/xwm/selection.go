@@ -204,11 +204,16 @@ func (x *XWM) onXFixesSelection(ev *xturbo.Event) {
 	if k < 0 {
 		return
 	}
+	x.ownerChanged(k, uint32(e.Owner()), ev.Seq, uint32(e.SelectionTimestamp()))
+}
+
+// ownerChanged records ownership and probes external owners once attached.
+// k must identify a known selection; seq and ts are zero for detached replay.
+func (x *XWM) ownerChanged(k int, owner uint32, seq xturbo.Seq, ts uint32) {
 	st := &x.sel.st[k]
-	owner := uint32(e.Owner())
 	if owner == x.selWin { // correlate the server's timestamp to this acquisition
-		if st.ours && st.acquire != 0 && ev.Seq >= st.acquire {
-			st.ownTime = uint32(e.SelectionTimestamp())
+		if st.ours && st.acquire != 0 && seq >= st.acquire {
+			st.ownTime = ts
 		}
 		return
 	}
@@ -1241,10 +1246,6 @@ func (x *XWM) replaySelectionOwners() {
 		if st.owner == 0 {
 			continue
 		}
-		var ev xturbo.Event
-		ev.Kind = xfixes.KindSelectionNotify
-		binary.LittleEndian.PutUint32(ev.Raw[8:], st.owner)
-		binary.LittleEndian.PutUint32(ev.Raw[12:], st.atom)
-		x.onXFixesSelection(&ev)
+		x.ownerChanged(k, st.owner, 0, 0)
 	}
 }
