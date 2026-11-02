@@ -1158,7 +1158,10 @@ func TestExternalFullscreenInOverview(t *testing.T) {
 // goes to the next workspace and fullscreen stays.
 func TestFocusWindowDownKeepsFullscreen(t *testing.T) {
 	both(t, func(t *testing.T, animated bool) {
-		r := startLanding(t, animated, func(c *domain.Config) { c.Layout.Overflow = "fixed" }, left)
+		r := startLanding(t, animated, func(c *domain.Config) {
+			c.Layout.Overflow = "fixed"
+			c.Navigation.Edge = domain.NavEdgeWorkspace
+		}, left)
 		r.mapLanded(t, 1)
 		r.mapLanded(t, 2)
 		r.keyLanded(t, "f", domain.ModAlt|domain.ModShift)

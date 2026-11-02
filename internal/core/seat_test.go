@@ -278,6 +278,7 @@ func TestCascadeRightmostOutputEdgeRightThenLeft(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startMulti(t, func(c *domain.Config) {
 			c.Layout.Overflow = "cascade"
+			c.Navigation.Edge = domain.NavEdgeWorkspace
 			c.Layout.MaxColumns = 2
 		}, left, right)
 		w := watchState(r)

@@ -81,6 +81,9 @@ func TestFlashWorkspaceSwitchByAction(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				c, clock := flashWorkspaces(t, tc.overflow)
+				if tc.action == ActionFocusWindowUp || tc.action == ActionFocusWindowDown || tc.action == ActionFocusColumnLeft || tc.action == ActionFocusColumnRight {
+					c.cfg.Navigation.Edge = domain.NavEdgeWorkspace
+				}
 				m := c.cur().mon
 				if tc.from != 1 {
 					m.Focus(tc.from)

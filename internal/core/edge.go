@@ -1,6 +1,9 @@
 package core
 
-import "github.com/bnema/neferwl/internal/core/layout"
+import (
+	"github.com/bnema/neferwl/internal/core/layout"
+	"github.com/bnema/neferwl/internal/domain"
+)
 
 type edgeKind uint8
 
@@ -32,20 +35,20 @@ func (c *Core) edgeTarget(axis layout.Axis, dir int, d direction) edgeHop {
 	if axis == layout.Horizontal && i >= 0 {
 		return edgeHop{kind: edgeScreen, index: i}
 	}
-	if to := m.occupiedStep(axis, dir); to >= 0 {
+	workspaceOK := c.cfg.Navigation.Edge == domain.NavEdgeWorkspace
+	if to := m.occupiedStep(axis, dir); workspaceOK && to >= 0 {
 		return edgeHop{kind: edgeWorkspace, index: to}
 	}
 	if i >= 0 {
 		return edgeHop{kind: edgeScreen, index: i}
 	}
-	if step != 0 {
+	if workspaceOK && step != 0 && m.Active+step >= 0 && m.Active+step < len(m.Workspaces) {
 		return edgeHop{kind: edgeWorkspace, index: m.Active + step}
 	}
 	return edgeHop{}
 }
 
-// edgeGo applies a decided hop. A clamped workspace hop still reports a move,
-// matching the existing edge-focus event and workspace-switch behavior.
+// edgeGo applies a decided hop.
 func (c *Core) edgeGo(h edgeHop, d direction) bool {
 	switch h.kind {
 	case edgeScreen:

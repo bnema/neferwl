@@ -24,7 +24,8 @@ func monitorDirection(a Action) direction {
 }
 
 // applyAction runs a bind action. Core owns focus-edge navigation: horizontal
-// edges prefer a neighbor screen, while vertical edges prefer an occupied
+// edges visit only a neighbor screen by default. With the workspace policy,
+// horizontal edges prefer a screen, while vertical edges prefer an occupied
 // workspace. Both then try the other destination and a trailing empty workspace
 // on the layout's workspace axis. Cascade vertical edges stay within bands.
 // Other actions apply to the focused screen's monitor unless explicitly moving
@@ -281,7 +282,8 @@ func (c *Core) dispatchAction(a Action) Effect {
 }
 
 // edgeFocus moves focus past a content edge along axis (dir -1/1, toward d).
-// Horizontal: the neighbor monitor, else an occupied workspace, else the
+// With the screen policy, only a neighbor monitor is considered. With workspace:
+// horizontal: the neighbor monitor, else an occupied workspace, else the
 // trailing empty workspace. Vertical: an occupied workspace, else the
 // neighbor monitor, else the trailing empty workspace. Workspace steps only
 // happen on the layout's workspace axis. It reports whether focus moved.

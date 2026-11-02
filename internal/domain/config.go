@@ -86,6 +86,16 @@ type OutputLayout struct {
 	LayoutRules
 }
 
+// NavEdge selects the destination of directional focus past a content edge.
+type NavEdge uint8
+
+const (
+	// NavEdgeScreen limits edge navigation to neighboring screens (the default).
+	NavEdgeScreen NavEdge = iota
+	// NavEdgeWorkspace also permits workspace hops on the layout's workspace axis.
+	NavEdgeWorkspace
+)
+
 // Config is the parsed compositor configuration (see the config adapter for keys).
 type Config struct {
 	Keyboard struct {
@@ -145,7 +155,9 @@ type Config struct {
 		On       bool
 		Slowdown float64
 	}
-	Focus struct {
+	// Navigation is global: edge decisions span workspaces and screens.
+	Navigation struct{ Edge NavEdge }
+	Focus      struct {
 		// FollowMove shows the target workspace after a column or window
 		// moves to it.
 		FollowMove bool
@@ -350,7 +362,7 @@ func (c Config) Equal(o Config) bool {
 		c.Xwayland == o.Xwayland && c.Background == o.Background && c.Floating == o.Floating &&
 		c.Stash == o.Stash && c.Border == o.Border && c.Layout.Gaps == o.Layout.Gaps &&
 		c.Layout.LayoutRules == o.Layout.LayoutRules && c.InputDevicesConfig == o.InputDevicesConfig &&
-		c.Cursor == o.Cursor && c.Animations == o.Animations && c.Focus == o.Focus && c.OSD == o.OSD &&
+		c.Cursor == o.Cursor && c.Animations == o.Animations && c.Navigation == o.Navigation && c.Focus == o.Focus && c.OSD == o.OSD &&
 		hintConfigScalars(c) == hintConfigScalars(o) && c.Render == o.Render &&
 		c.Performance == o.Performance && c.Log.Level == o.Log.Level
 }

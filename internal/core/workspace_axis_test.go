@@ -35,6 +35,7 @@ func wantActive(t *testing.T, m *Monitor, active int) {
 // AC1: past the band edge with no monitor, left/right step the workspace.
 func TestCascadeFocusColumnStepsWorkspaceAtBandEdge(t *testing.T) {
 	c, m := axisCore(t, false, OverflowCascade, 3)
+	c.cfg.Navigation.Edge = domain.NavEdgeWorkspace
 	m.Current().FocusID(23) // last column of band 1, not the last band
 	c.applyAction(ActionFocusColumnRight)
 	wantActive(t, m, 2)
@@ -78,6 +79,7 @@ func TestCascadeFocusColumnGoesToMonitorBeforeWorkspace(t *testing.T) {
 // stop, and left comes back from it.
 func TestCascadeFocusColumnReachesTrailingWorkspaceWithoutMonitor(t *testing.T) {
 	c, m := axisCore(t, false, OverflowCascade, 3)
+	c.cfg.Navigation.Edge = domain.NavEdgeWorkspace
 	m.Focus(2)
 	m.Current().FocusID(35)
 	c.applyAction(ActionFocusColumnRight)
@@ -93,6 +95,7 @@ func TestCascadeFocusColumnReachesTrailingWorkspaceWithoutMonitor(t *testing.T) 
 // from its empty band focuses that monitor without changing the workspace.
 func TestCascadeStepRightThenLeftFocusesMonitor(t *testing.T) {
 	c := layoutCore(1, tile{"L", 0, 0, 900, 600}, tile{"M", 900, 0, 900, 600})
+	c.cfg.Navigation.Edge = domain.NavEdgeWorkspace
 	m := c.cur().mon
 	m.SetOverflow(OverflowCascade)
 	m.SetMaxColumns(3)
@@ -123,6 +126,7 @@ func TestScrollFixedWorkspaceAxisIsVertical(t *testing.T) {
 	for _, overflow := range []Overflow{OverflowScroll, OverflowFixed} {
 		t.Run(string(overflow), func(t *testing.T) {
 			c, m := axisCore(t, false, overflow, 3)
+			c.cfg.Navigation.Edge = domain.NavEdgeWorkspace
 			m.Current().FocusID(25)
 			c.applyAction(ActionFocusColumnRight)
 			wantActive(t, m, 1)
@@ -175,6 +179,7 @@ func TestCascadeNamedWorkspaceDoesNotStep(t *testing.T) {
 // stays fullscreen.
 func TestCascadeFullscreenBandEdgeStepsWorkspace(t *testing.T) {
 	c, m := axisCore(t, false, OverflowCascade, 3)
+	c.cfg.Navigation.Edge = domain.NavEdgeWorkspace
 	w := m.Current()
 	w.FocusID(23)
 	w.ToggleFullscreen()
@@ -204,6 +209,7 @@ func TestCascadeFullscreenGoesToMonitorBeforeWorkspace(t *testing.T) {
 // side, it comes before the trailing empty one.
 func TestCascadeFloatOnlyWorkspaceIsOccupied(t *testing.T) {
 	c, m := axisCore(t, false, OverflowCascade, 3)
+	c.cfg.Navigation.Edge = domain.NavEdgeWorkspace
 	m.Focus(3)
 	m.AddFloating(9, 100, 100)
 	m.Focus(2)
@@ -219,6 +225,7 @@ func TestCascadeFloatOnlyWorkspaceIsOccupied(t *testing.T) {
 // both sides.
 func TestCascadeLoneFloatAndEmptyWorkspaceStepWorkspace(t *testing.T) {
 	c, m := axisCore(t, false, OverflowCascade, 3)
+	c.cfg.Navigation.Edge = domain.NavEdgeWorkspace
 	m.Focus(3) // the trailing empty workspace
 	if !m.Current().Empty() {
 		t.Fatal("workspace 4 not empty")
@@ -232,6 +239,7 @@ func TestCascadeLoneFloatAndEmptyWorkspaceStepWorkspace(t *testing.T) {
 		want int
 	}{{ActionFocusColumnLeft, 2}, {ActionFocusColumnRight, 4}} {
 		c, m = axisCore(t, false, OverflowCascade, 3)
+		c.cfg.Navigation.Edge = domain.NavEdgeWorkspace
 		m.Focus(3)
 		m.AddFloating(9, 100, 100)
 		if w := m.Current(); len(w.Columns) != 0 || !w.Inspect().FloatFocus {
@@ -246,6 +254,7 @@ func TestCascadeLoneFloatAndEmptyWorkspaceStepWorkspace(t *testing.T) {
 // then the trailing empty one; left goes to the monitor on that side.
 func TestCascadeRightmostMonitorStepsWorkspacesRight(t *testing.T) {
 	c := layoutCore(1, tile{"L", 0, 0, 900, 600}, tile{"R", 900, 0, 900, 600})
+	c.cfg.Navigation.Edge = domain.NavEdgeWorkspace
 	m := c.cur().mon
 	m.SetOverflow(OverflowCascade)
 	m.SetMaxColumns(3)
@@ -294,6 +303,7 @@ func TestVerticalEdgeFocusWorkspaceBeforeScreen(t *testing.T) {
 		} {
 			t.Run(string(overflow)+"/"+tc.name, func(t *testing.T) {
 				c := layoutCore(tc.screen, tile{"top", 0, 0, 900, 600}, tile{"bottom", 0, 600, 900, 600})
+				c.cfg.Navigation.Edge = domain.NavEdgeWorkspace
 				m := c.cur().mon
 				m.SetOverflow(overflow)
 				for ws := range 2 {

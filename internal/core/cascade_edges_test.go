@@ -1,6 +1,9 @@
 package core
 
-import "testing"
+import (
+	"github.com/bnema/neferwl/internal/domain"
+	"testing"
+)
 
 // With no monitor on that side, move-column-left/right at a cascade band
 // edge does nothing: the column never crosses into the adjacent band.
@@ -46,6 +49,7 @@ func TestCascadeMoveColumnInsideBandSwaps(t *testing.T) {
 // With no monitor on that side, the occupied neighbor workspace is next.
 func TestCascadeFocusColumnEdgeSwitchesToOccupiedWorkspace(t *testing.T) {
 	c := layoutCore(0, tile{"M", 0, 0, 900, 600})
+	c.cfg.Navigation.Edge = domain.NavEdgeWorkspace
 	m := c.cur().mon
 	m.SetOverflow(OverflowCascade)
 	m.SetMaxColumns(3)

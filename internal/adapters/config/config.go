@@ -920,6 +920,15 @@ func set(c *domain.Config, key, v string) error {
 			return err
 		}
 		c.OSD.Enable = b
+	case "navigation.edge":
+		switch v {
+		case "screen":
+			c.Navigation.Edge = domain.NavEdgeScreen
+		case "workspace":
+			c.Navigation.Edge = domain.NavEdgeWorkspace
+		default:
+			return fmt.Errorf("must be screen or workspace")
+		}
 	case "focus.flash":
 		b, err := onOff(v)
 		if err != nil {

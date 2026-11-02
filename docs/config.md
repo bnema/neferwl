@@ -53,6 +53,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `cursor.hide-after` | `5s` | Hide the cursor after this long without motion, or `off` |
 | `animations` | `off` | **Experimental.** Animate layout changes and make swipes follow the fingers |
 | `animations.speed` | `normal` | `slow`, `normal`, `fast`, or a factor from `0.1` to `10` |
+| `navigation.edge` | `screen` | Focus past a content edge: `screen` visits only a neighbor screen; `workspace` also visits workspaces on the layout's workspace axis |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
 | `focus.follow-mouse` | `off` | Focus the window the pointer moves into; a keyboard focus change holds until the pointer enters another window |
 | `focus.position-hint` | `on` | Show workspace/band dots near the output bottom for 600ms after a position change, then fade for 150ms (no fade with animations off); hidden in overview, fullscreen and session lock; never captured |
@@ -108,6 +109,13 @@ even when empty. Cascade workspaces use top-aligned band columns; scroll/fixed
 workspaces use one vertical workspace column. Large lists show at most 16 entries
 with the active entry kept visible; band rows are capped at 16.
 
+Directional focus at a content edge uses `navigation.edge`. The default,
+`screen`, visits a neighbor screen or stays put. With `workspace`, horizontal
+edges prefer a neighbor screen, then an occupied workspace; vertical edges
+prefer an occupied workspace, then a neighbor screen. Both finally try the
+trailing empty workspace on the layout's workspace axis. Cascade up/down never
+crosses screens. Workspace binds, the overview and workspace swipes are unchanged.
+
 The focus flash marks the window or column an action changes with a brief
 inner border. When a flash-triggering action crosses screens, it marks the focused window on the
 destination output; an empty destination does not flash. Directional monitor focus
@@ -116,7 +124,7 @@ and focus past a screen edge select the visible window nearest the entry edge
 and off-screen windows are ignored. If none are visible, the destination keeps
 its focus and does not flash. A switch to another workspace of the same screen
 flashes that workspace's focused window once, after the slide settles: the
-`focus-workspace`, prev/next and named `workspace` binds, a focus bind that
+`focus-workspace`, prev/next and named `workspace` binds, a focus bind with `navigation.edge = workspace` that
 crosses the workspace edge, a move bind with `focus.follow-move`, a committed
 three-finger swipe and an overview pick. A cancelled swipe and an empty
 workspace do not flash. A click or hover focus (`focus.follow-mouse`) flashes the window it focuses. A window flashes
@@ -370,7 +378,7 @@ With `keyboard.cmd = alt` or `ctrl`, the defaults that would combine `cmd` with 
 
 The default layout. Columns sit side by side in bands of up to `max-columns`, stacked one below the other. Each band fills the screen height and keeps its columns until you move them.
 
-- Left/right focus moves within a band, then to the neighbor monitor. With no monitor on that side, it goes to an occupied neighbor workspace, then to the trailing empty workspace; otherwise use `focus-workspace-prev/next`. From a fullscreen float it crosses that edge without revealing the tiles underneath; only up/down reaches another band.
+- Left/right focus moves within a band, then to the neighbor monitor, or stays put. With `navigation.edge = workspace` and no monitor on that side, it goes to an occupied neighbor workspace, then to the trailing empty workspace. Use workspace binds or swipes to change workspaces explicitly. From a fullscreen float it crosses that edge without revealing the tiles underneath; only up/down reaches another band.
 - `move-column-left/right` stays in the band; at its edge the column goes to the neighbor monitor, if any.
 - Up/down moves through the windows of a column, then to the band above or below.
 - `move-window-up/down` past the column's top or bottom sends the whole column to the band above or below. It joins that band when it has room, else it gets a new band between the two.

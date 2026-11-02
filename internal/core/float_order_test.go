@@ -3,6 +3,8 @@ package core
 import (
 	"testing"
 	"testing/synctest"
+
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestDemotedFloatFullscreenRoundTrip(t *testing.T) {
@@ -139,6 +141,7 @@ func TestFocusWindowDemotedFloatAfterColumnAndScreenNeighbors(t *testing.T) {
 func TestFocusWindowWithoutDemotedFloatChangesWorkspace(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c := layoutCore(0, tile{"M", 0, 0, 100, 80})
+		c.cfg.Navigation.Edge = domain.NavEdgeWorkspace
 		m := c.cur().mon
 		m.SetMaxColumns(2)
 		m.AddWindow(1)

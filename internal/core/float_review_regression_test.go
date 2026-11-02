@@ -3,6 +3,8 @@ package core
 import (
 	"testing"
 	"testing/synctest"
+
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestFullscreenFloatReturnPreservesDialogFocus(t *testing.T) {
@@ -74,6 +76,7 @@ func TestFloatOnlyWorkspaceDirectionalExit(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		for _, dir := range []int{-1, 1} {
 			c := layoutCore(0, tile{"M", 0, 0, 100, 80})
+			c.cfg.Navigation.Edge = domain.NavEdgeWorkspace
 			m := c.cur().mon
 			m.SetMaxColumns(2)
 			m.AddWindow(1)

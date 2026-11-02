@@ -23,6 +23,36 @@ func parseString(t *testing.T, s string) (domain.Config, []Warning) {
 	return c, w
 }
 
+func TestNavigationEdge(t *testing.T) {
+	if Defaults().Navigation.Edge != domain.NavEdgeScreen || (domain.Config{}).Navigation.Edge != domain.NavEdgeScreen {
+		t.Fatal("navigation.edge must default to screen")
+	}
+	for _, tc := range []struct {
+		value string
+		want  domain.NavEdge
+	}{
+		{"screen", domain.NavEdgeScreen},
+		{"workspace", domain.NavEdgeWorkspace},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			c, warnings := parseString(t, "navigation.edge = "+tc.value+"\n")
+			if len(warnings) != 0 || c.Navigation.Edge != tc.want {
+				t.Fatalf("edge %v, warnings %v", c.Navigation.Edge, warnings)
+			}
+		})
+	}
+	for _, value := range []string{"", "monitor", "on"} {
+		c, warnings := parseString(t, "navigation.edge = "+value+"\n")
+		if c.Navigation.Edge != domain.NavEdgeScreen || len(warnings) != 1 || warnings[0].Msg != "navigation.edge: must be screen or workspace" {
+			t.Fatalf("value %q: edge %v, warnings %v", value, c.Navigation.Edge, warnings)
+		}
+	}
+	c, warnings := parseString(t, "navigation.edge = workspace\nnavigation.edge = invalid\n")
+	if c.Navigation.Edge != domain.NavEdgeWorkspace || len(warnings) == 0 {
+		t.Fatalf("invalid value replaced previous policy: edge %v, warnings %v", c.Navigation.Edge, warnings)
+	}
+}
+
 func TestDefaultsAndLoad(t *testing.T) {
 	t.Setenv("TERMINAL", "")
 	d := Defaults()

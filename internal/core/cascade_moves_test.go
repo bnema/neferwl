@@ -4,6 +4,8 @@ import (
 	"slices"
 	"testing"
 	"testing/synctest"
+
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // cascadeMovesCore is a core whose focused screen holds a cascade of
@@ -99,6 +101,7 @@ func TestCascadeInsideBandStaysOnMonitor(t *testing.T) {
 func TestCascadeBandEdgeWithoutMonitorFocusStepsMoveStays(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, w := cascadeMovesCore(t, 5, 3, false)
+		c.cfg.Navigation.Edge = domain.NavEdgeWorkspace
 		m := c.cur().mon
 		w.FocusID(4)
 		c.applyAction(ActionFocusColumnLeft)

@@ -185,6 +185,11 @@ bind.cmd+up = focus-window-up
 bind.cmd+down = focus-window-down
 bind.cmd+shift+left = move-column-left
 bind.cmd+shift+right = move-column-right
+# Focus at a content edge visits a neighbor screen or stays put.
+# workspace also allows workspace hops on the layout's workspace axis.
+# Workspace binds and swipes work with either policy.
+navigation.edge = screen
+
 # Vim keys: every arrow bind also works with h j k l.
 bind.cmd+h = focus-column-left
 bind.cmd+l = focus-column-right
