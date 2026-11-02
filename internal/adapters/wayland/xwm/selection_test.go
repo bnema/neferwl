@@ -538,6 +538,7 @@ func TestSelectionWaylandToXINCR(t *testing.T) {
 	const total = 1<<20 + 123
 	data := pattern(total)
 	w := r.serve(t, r.utf8)
+	t.Cleanup(r.x.selClose) // close the reader before cleanup joins a blocked writer
 	require.NoError(t, unix.SetNonblock(int(w.Fd()), false))
 	go func() { _, _ = w.Write(data); w.Close() }()
 
@@ -570,7 +571,10 @@ func TestSelectionWaylandToXINCR(t *testing.T) {
 		}
 		var cp xpeerProp
 		readUntil(t, r.x, func() bool {
-			if onR != nil && r.x.sel.out[0].state != outFree && r.x.sel.out[0].n < chunk && !r.x.sel.out[0].eof {
+			for onR != nil && r.x.sel.out[0].state != outFree && r.x.sel.out[0].n < chunk && !r.x.sel.out[0].eof {
+				// Pipe progress does not signal p.changed. Join readability until
+				// a complete encoded chunk (or EOF) can produce an X request.
+				waitSocket(t, r.x.sel.out[0].fd, unix.POLLIN)
 				onR()
 			}
 			r.x.flush()
@@ -1074,6 +1078,7 @@ func TestSelectionTextEncodingsINCR(t *testing.T) {
 				typ = r.p.atom("STRING")
 			}
 			w := r.serve(t, r.p.atom(target))
+			t.Cleanup(r.x.selClose) // close the reader before cleanup joins a blocked writer
 			require.NoError(t, unix.SetNonblock(int(w.Fd()), false))
 			go func() { _, _ = w.Write(data); w.Close() }()
 
@@ -1106,7 +1111,10 @@ func TestSelectionTextEncodingsINCR(t *testing.T) {
 				}
 				var cp xpeerProp
 				readUntil(t, r.x, func() bool {
-					if onR != nil && r.x.sel.out[0].state != outFree && r.x.sel.out[0].n < chunk && !r.x.sel.out[0].eof {
+					for onR != nil && r.x.sel.out[0].state != outFree && r.x.sel.out[0].n < chunk && !r.x.sel.out[0].eof {
+						// Pipe progress does not signal p.changed. Join readability until
+						// a complete encoded chunk (or EOF) can produce an X request.
+						waitSocket(t, r.x.sel.out[0].fd, unix.POLLIN)
 						onR()
 					}
 					r.x.flush()
