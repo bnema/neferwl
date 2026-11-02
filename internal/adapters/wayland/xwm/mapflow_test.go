@@ -597,6 +597,7 @@ func TestNetWMStateClientMessageForwardsFullscreen(t *testing.T) {
 	hs.h.EXPECT().Fullscreen(s, true).Once()
 	hs.p.clientMessage(win, hs.p.atom("_NET_WM_STATE"), 1, hs.p.atom("_NET_WM_STATE_FULLSCREEN"))
 	readUntil(t, hs.x, func() bool { return hs.x.tab.rec(s).fullscreen })
+	settle(t, hs.x, hs.p)
 	check(false) // request alone must not advertise fullscreen before core accepts it
 	hs.x.Configure(s, ports.ConfigureWindow{Width: 640, Height: 360, Fullscreen: true})
 	published()
@@ -604,6 +605,7 @@ func TestNetWMStateClientMessageForwardsFullscreen(t *testing.T) {
 	hs.h.EXPECT().Fullscreen(s, false).Once()
 	hs.p.clientMessage(win, hs.p.atom("_NET_WM_STATE"), 2, hs.p.atom("_NET_WM_STATE_FULLSCREEN"))
 	readUntil(t, hs.x, func() bool { return !hs.x.tab.rec(s).fullscreen })
+	settle(t, hs.x, hs.p)
 	check(true) // removal is also only a request until core configures
 	hs.x.Configure(s, ports.ConfigureWindow{Width: 640, Height: 360})
 	published()
