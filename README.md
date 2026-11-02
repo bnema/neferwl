@@ -19,9 +19,11 @@ https://github.com/user-attachments/assets/1ff42ce5-47b3-4cf8-a3a7-5fc5abde4af1
 
 - **Performance:** allocation-free hot paths, no wasted CPU passes and no cgo; about 40–80 MB of RAM with two 4K monitors. On 4K HDR video, GC takes under 9% of a process using 13% of a core; see [Architecture](docs/dev/architecture.md#keeping-the-garbage-collector-out-of-the-way) and [Performance](docs/performance.md).
 - **Games:** direct scanout, VRR, tearing, explicit sync and [HDR](docs/config.md#hdr) give games the whole GPU instead of spending it on composition; see [Performance](docs/performance.md).
+- **SDR to HDR:** on an HDR screen, SDR games get brighter highlights instead of looking flat; see [SDR expansion](docs/config.md#sdr-expansion-settings).
+- **X11 apps:** Steam and other X11 apps behave like any other window, with no extra tool to install; see [X11 apps](docs/desktop.md#x11-apps).
 - **Overview:** `cmd+o` or a four-finger swipe up shows live workspace previews. Select a window with the keyboard, touchpad or mouse; see [Overview](docs/config.md#overview).
 - **Stash:** `cmd+s` toggles a floating strip of windows set aside for the current workspace; `cmd+shift+s` moves a window into or out of it. See [Stash](docs/config.md#stash).
-- **Hint mode:** click what is on screen by typing its label, without reaching for the mouse; targets come from an ordered chain of accessibility, OCR (URL-like text and underlined links only) and optional `nefer-hints` detection. Enable experimental `hint.enable` and add a bind; see [Hint mode](docs/config.md#hint-mode).
+- **Hint mode:** click what is on screen by typing its label. Works best in apps like Firefox; see [Hint mode](docs/config.md#hint-mode).
 - **Animations:** short, cheap and off by default. Opt in with experimental `animations = on`; see [Configuration](docs/config.md#keys).
 
 Written in Go, without cgo. Each piece of state has one owner goroutine, connected to the others by channels; hot paths reuse memory and client buffers stay off the Go heap. See [Architecture](docs/dev/architecture.md) for the concurrency model, the GC strategy and the reusable Go libraries.
@@ -58,7 +60,7 @@ sudo apt install ./neferwl_<version>_amd64.deb
 sudo apt install foot fuzzel xdg-desktop-portal-gtk xdg-desktop-portal-gnome
 ```
 
-X11 apps need [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite) 0.7 or later, which you may have to build. The package is tested on Ubuntu 24.04 and 26.04; Debian with the same library packages should work but is untested.
+X11 apps need the `Xwayland` binary (`sudo apt install xwayland`), not xwayland-satellite. The package is tested on Ubuntu 24.04 and 26.04; Debian with the same library packages should work but is untested.
 
 The packages provide:
 
@@ -117,7 +119,7 @@ bind.cmd+d = workspace dev
 | `output.<name>.hdr` | `off` | HDR on capable displays |
 | `touchpad.natural-scroll` | `off` | Content follows fingers |
 | `stash.width` | `80` | Selected stash window width, percent |
-| `hint.enable` | `off` | Experimental keyboard clicking; restart required |
+| `hint.enable` | `off` | Keyboard clicking; restart required |
 | `animations` | `off` | Experimental layout and swipe animations |
 
 ### Default key bindings
@@ -149,13 +151,22 @@ See [Configuration](docs/config.md) for all keys, actions, bindings and automati
 - Explicit sync carries client fences to the GPU and KMS, enabled by default with no flag. HDR10 on capable displays includes configurable SDR brightness.
 - Separate workspaces and fractional scale per output; workspaces move when a monitor is unplugged and return when it reconnects.
 - Hidden apps get frame callbacks once per second and the suspended state, whether on another workspace, in a hidden stash, off screen or under fullscreen. Captured windows keep their output's refresh rate.
-- Steam and other X11 clients run through xwayland-satellite, or through the default built-in window manager (`xwayland = builtin`; menus, popups and tooltips, fullscreen games with keyboard grab; text clipboard and primary selection in both directions, XSETTINGS and a themed root cursor). Wine can run natively on Wayland.
+- SDR expansion brightens SDR games on HDR screens, automatically for fullscreen games or per app with window rules. See [SDR expansion settings](docs/config.md#sdr-expansion-settings).
+
+### X11 apps
+
+NeferWL runs Xwayland itself and manages X11 windows directly, without a separate bridge such as xwayland-satellite.
+
+- Steam and its games tile, take focus and follow window rules like other apps.
+- Fullscreen games open on the right screen, with HDR.
+- Menus and popups appear in the right place, and copy-paste works both ways. See [X11 apps](docs/desktop.md#x11-apps).
 
 ### Windows and workspaces
 
 - [Cascade tiling](docs/config.md#cascade) is the default; horizontal scrolling (as in PaperWM and niri) and fixed spiral layouts are available per output or workspace.
 - Numbered workspaces appear as needed; named workspaces can start commands and place windows in predefined columns.
 - Overview and stash keep workspaces and set-aside windows close at hand, with keyboard, pointer and touchpad navigation.
+- Hint mode labels every clickable element in apps with accessibility support, such as Firefox. Elsewhere it reads links from the screen, with some false matches; see [Hint mode](docs/config.md#hint-mode).
 
 ### Desktop integration
 

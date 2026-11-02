@@ -63,7 +63,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `focus.flash-duration` | `200ms` | Fade duration, `50ms` to `1s`; not scaled by `animations.speed` |
 | `focus.flash-color` | `border.active` | Flash color `#rrggbb`; empty uses `border.active` |
 | `osd.enable` | `on` | Show the [window info overlay](#window-info-overlay): hold `cmd` to show it, double-tap `cmd` to keep it shown or hide it |
-| `hint.enable` | `off` | Turn on the experimental [hint mode](#hint-mode) (restart required) |
+| `hint.enable` | `off` | Turn on [hint mode](#hint-mode) (restart required) |
 | `hint.sources` | `atspi, ocr` | Ordered distinct sources: `atspi`, `ocr`, `detector` (restart required); empty resets the default |
 | `hint.targets` | `clickable` | `links` filters AT-SPI targets to links; reload applies to the next scan |
 | `hint.text-click` | `Ctrl+Shift` | Modifiers for clicks on OCR targets without an openable URL; `none` sends a plain click; reload applies at click time |
@@ -449,7 +449,9 @@ The overlay shows `scanout on` for zero-copy presentation, `scanout on (OSD hidd
 
 ## Hint mode
 
-Hint mode is experimental and off by default: set `hint.enable = on` and restart NeferWL.
+With AT-SPI compatible apps such as Firefox, hint mode covers every clickable element. OCR is a best-effort fallback that detects URL-like text and underlined links, and still produces false positives.
+
+Hint mode is off by default: set `hint.enable = on` and restart NeferWL.
 While it is off, nothing of hint mode runs or uses memory, and the `hint` bind
 logs a notice once and does nothing. A reload does not change it.
 

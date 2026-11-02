@@ -104,7 +104,7 @@ focus.flash-width = 2
 focus.flash-opacity = 0.6
 focus.flash-duration = 200ms
 focus.flash-color =
-# Hint mode is experimental and off: turn it on here (restart required).
+# Hint mode is off by default: turn it on here (restart required).
 # hint.enable = off
 # Ordered sources (restart required).
 # hint.sources = atspi, ocr

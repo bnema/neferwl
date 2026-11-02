@@ -184,7 +184,7 @@ type Config struct {
 	}
 	// Hint configures keyboard hint mode (action hint).
 	Hint struct {
-		// Enable turns the experimental hint mode on (hint.enable). It is
+		// Enable turns hint mode on (hint.enable). It is
 		// read at startup: a reload keeps the startup value.
 		Enable    bool
 		Sources   []HintSource // ordered startup-only chain

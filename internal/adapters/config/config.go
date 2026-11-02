@@ -166,7 +166,7 @@ func Defaults() domain.Config {
 		c.Terminal.Command = []string{"foot"}
 	}
 	c.Terminal.AutoOpen = "first"
-	// Hint mode is experimental: off unless the config turns it on.
+	// Hint mode is off unless the config turns it on.
 	c.Hint.Enable = false
 	c.Hint.Sources = []domain.HintSource{domain.HintSourceATSPI, domain.HintSourceOCR}
 	c.Hint.TextClick = domain.ModCtrl | domain.ModShift
