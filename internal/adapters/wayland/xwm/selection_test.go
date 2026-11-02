@@ -1095,7 +1095,7 @@ func TestSelectionTextEncodingsINCR(t *testing.T) {
 			require.Equal(t, r.data, sentNotify(t, r))
 			v, _ := r.p.prop(reqWin, "_NEFERWL_DATA")
 			require.Equal(t, r.p.atom("INCR"), v.typ)
-			mask, _ := pumpReq(t, r.x, r.p, 0, func(q xpeerReq) bool {
+			mask, afterMask := pumpReq(t, r.x, r.p, 0, func(q xpeerReq) bool {
 				return q.major == opChangeWindowAttributes && q.u32(4) == reqWin && q.u32(12) == uint32(xproto.EventMaskPropertyChange)
 			})
 			require.NotZero(t, mask.raw)
@@ -1132,15 +1132,12 @@ func TestSelectionTextEncodingsINCR(t *testing.T) {
 			require.True(t, bytes.Equal(want, got), "byte-exact: %d of %d", len(got), total)
 			require.Greater(t, chunks, 1)
 			readUntil(t, r.x, func() bool { return r.x.sel.out[0].state == outFree })
-			// The mask is removed at the end.
-			reqs := r.p.requests()
-			last := reqs[len(reqs)-1]
-			for i := len(reqs) - 1; i >= 0; i-- {
-				if reqs[i].major == opChangeWindowAttributes && reqs[i].u32(4) == reqWin {
-					last = reqs[i]
-					break
-				}
-			}
+			// outFree means the mask removal is queued, not that the peer has
+			// received it: the final empty property precedes it on the wire.
+			// Wait for the next mask request, then assert its value.
+			last, _ := pumpReq(t, r.x, r.p, afterMask, func(q xpeerReq) bool {
+				return q.major == opChangeWindowAttributes && q.u32(4) == reqWin
+			})
 			require.Zero(t, last.u32(12), "event mask dropped")
 			require.Equal(t, nXfer, r.x.sel.pool.n)
 		})
