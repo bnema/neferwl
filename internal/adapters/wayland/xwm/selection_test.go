@@ -125,14 +125,15 @@ func TestSelectionXOwnsAnnounces(t *testing.T) {
 // ---- X -> Wayland ----
 
 type selRig struct {
-	x     *XWM
-	p     *xpeer
-	h     *mockhost
-	clip  uint32
-	utf8  uint32
-	data  uint32
-	skip  int
-	timer func()
+	x         *XWM
+	p         *xpeer
+	h         *mockhost
+	clip      uint32
+	utf8      uint32
+	data      uint32
+	skip      int
+	timer     func()
+	requestor uint32
 }
 
 // ownedRig attaches an XWM whose CLIPBOARD is owned by an X client offering text.
@@ -164,6 +165,9 @@ func (r *selRig) receive(t *testing.T, size int) *os.File {
 		require.NoError(t, err)
 	}
 	r.x.SelectionReceive(SelClipboard, "text/plain;charset=utf-8", fds[1])
+	if i := r.x.sel.active; i >= 0 {
+		r.requestor = r.x.sel.in[i].requestor
+	}
 	r.x.flush()
 	f := os.NewFile(uintptr(fds[0]), "pipe-r")
 	t.Cleanup(func() { f.Close() })
@@ -188,13 +192,13 @@ func TestSelectionXToWaylandSmall(t *testing.T) {
 	r := ownedRig(t)
 	f := r.receive(t, 0)
 	req, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
-	require.Equal(t, r.x.selWin, req.u32(4))
+	require.Equal(t, r.requestor, req.u32(4))
 	require.Equal(t, r.clip, req.u32(8))
 	require.Equal(t, r.utf8, req.u32(12))
 	require.Equal(t, r.data, req.u32(16))
 	r.skip = n
-	r.p.setProp(r.x.selWin, r.data, r.utf8, 8, []byte("hello clipboard"))
-	r.p.selectionNotify(r.x.selWin, r.clip, r.utf8, r.data)
+	r.p.setProp(r.requestor, r.data, r.utf8, 8, []byte("hello clipboard"))
+	r.p.selectionNotify(r.requestor, r.clip, r.utf8, r.data)
 	r.waitGet(t)
 	buf := make([]byte, 64)
 	var got []byte
@@ -207,7 +211,7 @@ func TestSelectionXToWaylandSmall(t *testing.T) {
 	require.NoError(t, err)
 	got = buf[:m]
 	require.Equal(t, "hello clipboard", string(got))
-	_, ok := r.p.prop(r.x.selWin, "_NEFERWL_DATA")
+	_, ok := r.p.prop(r.requestor, "_NEFERWL_DATA")
 	require.False(t, ok, "property deleted by the read")
 	_, err = f.Read(buf)
 	require.ErrorIs(t, err, io.EOF, "write end closed")
@@ -218,7 +222,7 @@ func TestSelectionXToWaylandRefused(t *testing.T) {
 	f := r.receive(t, 0)
 	_, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
 	r.skip = n
-	r.p.selectionNotify(r.x.selWin, r.clip, r.utf8, 0)
+	r.p.selectionNotify(r.requestor, r.clip, r.utf8, 0)
 	readUntil(t, r.x, func() bool { return r.x.sel.in[0].state == inFree })
 	_, err := f.Read(make([]byte, 8))
 	require.ErrorIs(t, err, io.EOF)
@@ -231,14 +235,19 @@ func TestSelectionXToWaylandINCR(t *testing.T) {
 	f := r.receive(t, 1<<20)
 	_, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
 	r.skip = n
-	r.p.setProp(r.x.selWin, r.data, r.p.atom("INCR"), 32, le32(total))
-	r.p.selectionNotify(r.x.selWin, r.clip, r.utf8, r.data)
+	r.p.setProp(r.requestor, r.data, r.p.atom("INCR"), 32, le32(total))
+	r.p.selectionNotify(r.requestor, r.clip, r.utf8, r.data)
 	r.waitGet(t) // reads and deletes the INCR marker
 	gets := 1
 	for off := 0; off <= total; off += chunk {
+		readUntil(t, r.x, func() bool { return r.x.sel.in[0].state == inWaitIncr })
+		require.Equal(t, r.requestor, r.x.sel.in[0].requestor, "INCR identity retained until terminator")
+		for _, q := range r.p.requests()[n:] {
+			require.False(t, q.major == 4 && q.u32(4) == r.requestor, "not destroyed before final chunk")
+		}
 		end := min(off+chunk, total)
-		r.p.setProp(r.x.selWin, r.data, r.utf8, 8, want[off:end])
-		r.p.propertyNotify(r.x.selWin, r.data, false)
+		r.p.setProp(r.requestor, r.data, r.utf8, 8, want[off:end])
+		r.p.propertyNotify(r.requestor, r.data, false)
 		r.waitGet(t)
 		gets++
 	}
@@ -247,6 +256,11 @@ func TestSelectionXToWaylandINCR(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(want, got), "byte-exact, got %d", len(got))
 	require.Equal(t, 1+total/chunk+1, gets, "marker, 16 chunks, empty terminator")
+	require.NoError(t, r.x.conn.Sync(&r.x.h))
+	reused, err := r.x.newSelectionRequestor()
+	require.NoError(t, err)
+	require.Equal(t, r.requestor, reused, "recycled after final zero chunk and barrier")
+	r.x.abandonSelectionRequestor(reused)
 }
 
 // A reader that does not drain: no further GetProperty until the pipe has room.
@@ -261,13 +275,13 @@ func TestSelectionXToWaylandBackpressure(t *testing.T) {
 	f := r.receive(t, 0) // default 64 KiB pipe
 	_, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
 	r.skip = n
-	r.p.setProp(r.x.selWin, r.data, r.p.atom("INCR"), 32, le32(3*chunk))
-	r.p.selectionNotify(r.x.selWin, r.clip, r.utf8, r.data)
+	r.p.setProp(r.requestor, r.data, r.p.atom("INCR"), 32, le32(3*chunk))
+	r.p.selectionNotify(r.requestor, r.clip, r.utf8, r.data)
 	r.waitGet(t)
 	want := pattern(3 * chunk)
 	chunkN := func(k int) {
-		r.p.setProp(r.x.selWin, r.data, r.utf8, 8, want[k*chunk:(k+1)*chunk])
-		r.p.propertyNotify(r.x.selWin, r.data, false)
+		r.p.setProp(r.requestor, r.data, r.utf8, 8, want[k*chunk:(k+1)*chunk])
+		r.p.propertyNotify(r.requestor, r.data, false)
 	}
 	chunkN(0) // fills the pipe exactly
 	r.waitGet(t)
@@ -277,12 +291,12 @@ func TestSelectionXToWaylandBackpressure(t *testing.T) {
 	readUntil(t, r.x, func() bool { return r.x.sel.in[0].state == inWriting })
 	require.NotNil(t, onW)
 
-	gets := getProps(r.p, 0, r.x.selWin)
+	gets := getProps(r.p, 0, r.requestor)
 	chunkN(2) // announced while a buffer is pending
 	ev := r.x.Stats().Events
 	readUntil(t, r.x, func() bool { return r.x.Stats().Events > ev })
 	r.x.flush()
-	require.Equal(t, gets, getProps(r.p, 0, r.x.selWin), "no GetProperty while a buffer is pending")
+	require.Equal(t, gets, getProps(r.p, 0, r.requestor), "no GetProperty while a buffer is pending")
 
 	got := make([]byte, 0, 3*chunk)
 	buf := make([]byte, chunk)
@@ -363,7 +377,7 @@ func TestSelectionCopyAllocations(t *testing.T) {
 	rep := dataReply(r, r.utf8, payload)
 	var note xturbo.Event
 	note.Kind = xproto.KindSelectionNotify
-	binary.LittleEndian.PutUint32(note.Raw[8:], x.selWin)
+	binary.LittleEndian.PutUint32(note.Raw[8:], x.sel.in[0].requestor)
 	binary.LittleEndian.PutUint32(note.Raw[12:], r.clip)
 	binary.LittleEndian.PutUint32(note.Raw[16:], r.utf8)
 	binary.LittleEndian.PutUint32(note.Raw[20:], r.data)
@@ -375,6 +389,7 @@ func TestSelectionCopyAllocations(t *testing.T) {
 			t.Fatal("dup")
 		}
 		x.SelectionReceive(SelClipboard, mime, fd)
+		binary.LittleEndian.PutUint32(note.Raw[8:], x.sel.in[0].requestor)
 		x.onSelectionNotify(&note)
 		rep.Args = [4]uint32{0, x.sel.in[0].gen}
 		x.onSelDataReply(rep)
@@ -397,7 +412,7 @@ func TestSelectionINCRChunkAllocations(t *testing.T) {
 	x.SelectionReceive(SelClipboard, textMimes[0], fds[1])
 	var note xturbo.Event
 	note.Kind = xproto.KindSelectionNotify
-	binary.LittleEndian.PutUint32(note.Raw[8:], x.selWin)
+	binary.LittleEndian.PutUint32(note.Raw[8:], x.sel.in[0].requestor)
 	binary.LittleEndian.PutUint32(note.Raw[12:], r.clip)
 	binary.LittleEndian.PutUint32(note.Raw[16:], r.utf8)
 	binary.LittleEndian.PutUint32(note.Raw[20:], r.data)
@@ -407,7 +422,7 @@ func TestSelectionINCRChunkAllocations(t *testing.T) {
 	rep := dataReply(r, r.utf8, pattern(chunk))
 	var pn xturbo.Event
 	pn.Kind = xproto.KindPropertyNotify
-	binary.LittleEndian.PutUint32(pn.Raw[4:], x.selWin)
+	binary.LittleEndian.PutUint32(pn.Raw[4:], x.sel.in[0].requestor)
 	binary.LittleEndian.PutUint32(pn.Raw[8:], r.data)
 	sink := make([]byte, chunk)
 	step := func() {
@@ -727,25 +742,55 @@ func newTimerLoop(t *testing.T) *mockloop {
 	return l
 }
 
-// A late SelectionNotify of an aborted transfer (other selection or property)
-// is not taken by the next transfer.
+// Late writes and notifications retain the same selection, target and property,
+// but must not be consumed by the next conversion's distinct requestor.
 func TestSelectionLateReplyIgnored(t *testing.T) {
 	r := ownedRig(t)
 	_ = r.receive(t, 0)
-	_, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
+	old, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
 	r.skip = n
 	for i := 0; i < xIdleMax; i++ {
 		r.timer()
 	}
 	require.Equal(t, inFree, r.x.sel.in[0].state)
-	_ = r.receive(t, 0)
-	require.Equal(t, inConverting, r.x.sel.in[0].state)
-	prim := r.p.atom("PRIMARY")
-	r.p.selectionNotify(r.x.selWin, prim, r.utf8, r.data)
-	r.p.selectionNotify(r.x.selWin, r.clip, r.utf8, r.p.atom("_NEFERWL_TARGETS"))
+	require.Contains(t, r.x.sel.retired[:r.x.sel.retiredN], old.u32(4))
+	f := r.receive(t, 0)
+	current, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
+	r.skip = n
+	require.NotEqual(t, old.u32(4), current.u32(4))
+	require.Equal(t, old.u32(8), current.u32(8))
+	require.Equal(t, old.u32(12), current.u32(12))
+	require.Equal(t, old.u32(16), current.u32(16))
+	r.p.setProp(old.u32(4), r.data, r.utf8, 8, []byte("stale"))
 	ev := r.x.Stats().Events
+	r.p.propertyNotify(old.u32(4), r.data, false)
+	r.p.selectionNotify(old.u32(4), r.clip, r.utf8, r.data)
 	readUntil(t, r.x, func() bool { return r.x.Stats().Events >= ev+2 })
 	require.Equal(t, inConverting, r.x.sel.in[0].state)
+	require.NoError(t, r.x.conn.Sync(&r.x.h))
+	require.Zero(t, getProps(r.p, n, old.u32(4)))
+	require.Zero(t, getProps(r.p, n, current.u32(4)))
+	r.p.setProp(current.u32(4), r.data, r.p.atom("INCR"), 32, le32(5))
+	r.p.selectionNotify(current.u32(4), r.clip, r.utf8, r.data)
+	readUntil(t, r.x, func() bool { return r.x.sel.in[0].state == inWaitIncr })
+	// A stale PropertyNotify must not trigger a read on the active requestor.
+	r.skip = len(r.p.requests())
+	gets := getProps(r.p, n, current.u32(4))
+	ev = r.x.Stats().Events
+	r.p.propertyNotify(old.u32(4), r.data, false)
+	readUntil(t, r.x, func() bool { return r.x.Stats().Events > ev })
+	require.Equal(t, inWaitIncr, r.x.sel.in[0].state)
+	require.Equal(t, gets, getProps(r.p, n, current.u32(4)))
+	r.p.setProp(current.u32(4), r.data, r.utf8, 8, []byte("fresh"))
+	r.p.propertyNotify(current.u32(4), r.data, false)
+	r.waitGet(t)
+	readUntil(t, r.x, func() bool { return r.x.sel.in[0].state == inWaitIncr })
+	r.p.setProp(current.u32(4), r.data, r.utf8, 8, nil)
+	r.p.propertyNotify(current.u32(4), r.data, false)
+	readUntil(t, r.x, func() bool { return r.x.sel.in[0].state == inFree })
+	got, err := io.ReadAll(f)
+	require.NoError(t, err)
+	require.Equal(t, "fresh", string(got))
 }
 
 // CloseConn closes the fds of in-flight transfers.

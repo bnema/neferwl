@@ -90,24 +90,25 @@ const (
 
 // xin is one X -> Wayland transfer.
 type xin struct {
-	x      *XWM
-	idx    int
-	state  uint8
-	kind   int
-	fd     int
-	target uint32
-	order  uint64
-	gen    uint32 // stales replies of an aborted transfer
-	incr   bool
-	buf    int
-	off, n int
-	words  uint32 // long offset of the next piece of a long property
-	more   bool   // the last piece left bytes in the property
-	ready  bool   // the owner wrote the next INCR chunk while a buffer was pending
-	idle   int
-	src    fdSource
-	onR    func() // pipe hangup
-	onW    func() // pipe writable
+	x         *XWM
+	idx       int
+	state     uint8
+	kind      int
+	fd        int
+	target    uint32
+	requestor uint32
+	order     uint64
+	gen       uint32 // stales replies of an aborted transfer
+	incr      bool
+	buf       int
+	off, n    int
+	words     uint32 // long offset of the next piece of a long property
+	more      bool   // the last piece left bytes in the property
+	ready     bool   // the owner wrote the next INCR chunk while a buffer was pending
+	idle      int
+	src       fdSource
+	onR       func() // pipe hangup
+	onW       func() // pipe writable
 }
 
 // selBridge is the XWM's selection state.
@@ -303,9 +304,7 @@ func (x *XWM) onSelectionNotify(ev *xturbo.Event) {
 		return
 	}
 	if uint32(e.Target()) != x.atoms[atomTargets] {
-		if uint32(e.Requestor()) == x.selWin {
-			x.onDataNotify(e)
-		}
+		x.onDataNotify(e)
 		return
 	}
 	{
@@ -420,9 +419,16 @@ func (x *XWM) inStartNext() {
 		return
 	}
 	t := &b.in[best]
+	id, err := x.newSelectionRequestor()
+	if err != nil {
+		x.log.Warn().Err(err).Msg("selection: allocate data requestor")
+		x.inAbort(best, false)
+		return
+	}
+	t.requestor = id
 	t.state, t.idle = inConverting, 0
 	b.active = best
-	xproto.ConvertSelection(x.conn.Buf(), xproto.Window(x.selWin), xproto.Atom(b.st[t.kind].atom),
+	xproto.ConvertSelection(x.conn.Buf(), xproto.Window(t.requestor), xproto.Atom(b.st[t.kind].atom),
 		xproto.Atom(t.target), xproto.Atom(x.atoms[atomNeferwlData]), 0)
 	x.wake()
 }
@@ -442,6 +448,8 @@ func (x *XWM) inFinish(i int) {
 		b.pool.put(t.buf)
 		t.buf = -1
 	}
+	x.abandonSelectionRequestor(t.requestor)
+	t.requestor = 0
 	t.gen++
 	t.state, t.fd = inFree, -1
 	if b.active == i {
@@ -457,8 +465,8 @@ func (x *XWM) inAbort(i int, del bool) {
 	if t.state == inFree {
 		return
 	}
-	if del && x.sel.active == i && !x.closed {
-		xproto.DeleteProperty(x.conn.Buf(), xproto.Window(x.selWin), xproto.Atom(x.atoms[atomNeferwlData]))
+	if del && t.requestor != 0 && x.sel.active == i && !x.closed {
+		xproto.DeleteProperty(x.conn.Buf(), xproto.Window(t.requestor), xproto.Atom(x.atoms[atomNeferwlData]))
 		x.wake()
 	}
 	x.inFinish(i)
@@ -471,13 +479,15 @@ func (x *XWM) onDataNotify(e xproto.SelectionNotifyEvent) {
 		return
 	}
 	t := &x.sel.in[i]
-	if t.state != inConverting || uint32(e.Target()) != t.target || uint32(e.Selection()) != x.sel.st[t.kind].atom {
+	if t.requestor == 0 || uint32(e.Requestor()) != t.requestor || t.state != inConverting || uint32(e.Target()) != t.target || uint32(e.Selection()) != x.sel.st[t.kind].atom {
 		return
 	}
 	if p := uint32(e.Property()); p != 0 && p != x.atoms[atomNeferwlData] {
 		return
 	}
 	if e.Property() == 0 {
+		x.finishSelectionRequestor(t.requestor)
+		t.requestor = 0
 		x.inFinish(i)
 		return
 	}
@@ -490,7 +500,7 @@ func (x *XWM) onDataNotify(e xproto.SelectionNotifyEvent) {
 func (x *XWM) inRequest(i int) {
 	t := &x.sel.in[i]
 	t.state = inReading
-	seq := xproto.GetProperty(x.conn.Buf(), true, xproto.Window(x.selWin), xproto.Atom(x.atoms[atomNeferwlData]),
+	seq := xproto.GetProperty(x.conn.Buf(), true, xproto.Window(t.requestor), xproto.Atom(x.atoms[atomNeferwlData]),
 		0, t.words, chunk/4)
 	if seq != 0 {
 		if err := x.conn.Expect(seq, kindSelData, uint32(i), t.gen, 0, 0); err != nil {
@@ -526,6 +536,10 @@ func (x *XWM) onSelDataReply(r *xturbo.Reply) {
 		return
 	}
 	t.more = g.BytesAfter() > 0
+	if !t.more && (!t.incr || len(v) == 0) {
+		x.finishSelectionRequestor(t.requestor)
+		t.requestor = 0
+	}
 	if len(v) == 0 {
 		if t.more { // cannot happen: bytes remain only after a non-empty read
 			x.inAbort(i, true)
@@ -622,7 +636,7 @@ func (x *XWM) inNext(i int) {
 	}
 }
 
-// onSelProperty: PropertyNotify on the selection window.
+// onSelProperty: PropertyNotify on the active conversion requestor.
 func (x *XWM) onSelProperty(ev *xturbo.Event) {
 	e := xproto.PropertyNotifyOf(ev)
 	if e.State() != xproto.PropertyNewValue || uint32(e.Atom()) != x.atoms[atomNeferwlData] {
@@ -634,6 +648,9 @@ func (x *XWM) onSelProperty(ev *xturbo.Event) {
 		return
 	}
 	t := &x.sel.in[i]
+	if t.requestor == 0 || uint32(e.Window()) != t.requestor {
+		return
+	}
 	switch t.state {
 	case inWaitIncr:
 		t.idle = 0
@@ -723,12 +740,6 @@ func (x *XWM) selClose() {
 	for k := range x.sel.st {
 		x.clearProbe(&x.sel.st[k])
 	}
-	for i := 0; i < x.sel.retiredN; i++ {
-		xproto.DestroyWindow(x.conn.Buf(), xproto.Window(x.sel.retired[i]))
-		x.sel.retired[i] = 0
-	}
-	x.sel.retiredN = 0
-	x.log.Debug().Uint64("quarantined", x.sel.quarantined).Msg("selection: requestors closed")
 	for i := range x.sel.out {
 		if x.sel.out[i].state != outFree {
 			x.outAbort(i)
@@ -739,6 +750,12 @@ func (x *XWM) selClose() {
 			x.inAbort(i, false)
 		}
 	}
+	for i := 0; i < x.sel.retiredN; i++ {
+		xproto.DestroyWindow(x.conn.Buf(), xproto.Window(x.sel.retired[i]))
+		x.sel.retired[i] = 0
+	}
+	x.sel.retiredN = 0
+	x.log.Debug().Uint64("quarantined", x.sel.quarantined).Msg("selection: requestors closed")
 	if x.sel.cancel != nil {
 		x.sel.cancel()
 		x.sel.cancel = nil

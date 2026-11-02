@@ -111,7 +111,7 @@ func (x *XWM) requestProp(s Slot, idx int) {
 // being mapped or is mapped; unwatched atoms cost nothing.
 func (x *XWM) onPropertyNotify(ev *xturbo.Event) {
 	e := xproto.PropertyNotifyOf(ev)
-	if uint32(e.Window()) == x.selWin && x.selWin != 0 {
+	if i := x.sel.active; i >= 0 && x.sel.in[i].requestor != 0 && uint32(e.Window()) == x.sel.in[i].requestor {
 		x.onSelProperty(ev)
 		return
 	}
