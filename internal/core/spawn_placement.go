@@ -164,7 +164,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 func sameApp(a, b ports.WindowMapped) bool {
 	// Satellite X11 windows carry the bridge's PID, not the application's.
 	// Native Wayland and built-in X11 windows carry real application PIDs.
-	return !a.Xwayland && !b.Xwayland && a.PID != 0 && a.PID == b.PID || a.AppID != "" && a.AppID == b.AppID
+	return !a.PIDShared && !b.PIDShared && a.PID != 0 && a.PID == b.PID || a.AppID != "" && a.AppID == b.AppID
 }
 
 // placeCoverApp handles ordinary same-app arrivals on the workspace in view.

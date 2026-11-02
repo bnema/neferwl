@@ -22,8 +22,8 @@ func TestWindowXwayland(t *testing.T) {
 			s, events, _, _, dir := contentServerWith(t, opts, logging.For(context.Background(), "wayland"))
 			c := protocolClient(t, s, dir)
 			w := toplevelMapper(t, c, events)()
-			if w.PID != os.Getpid() || w.Xwayland != enabled {
-				t.Fatalf("mapped PID=%d Xwayland=%v, want PID=%d Xwayland=%v", w.PID, w.Xwayland, os.Getpid(), enabled)
+			if w.PID != os.Getpid() || w.Xwayland != enabled || w.PIDShared != enabled {
+				t.Fatalf("mapped PID=%d Xwayland=%v PIDShared=%v, want PID=%d Xwayland=PIDShared=%v", w.PID, w.Xwayland, w.PIDShared, os.Getpid(), enabled)
 			}
 		})
 	}

@@ -199,6 +199,9 @@ func TestXwaylandProbe(t *testing.T) {
 		st = readState(statePath)
 		return len(st.Windows) == 1 && st.Windows[0].AppID == "X11Probe" && st.Windows[0].Visible
 	})
+	if !st.Windows[0].Xwayland {
+		t.Errorf("built-in X11 window not marked Xwayland: %+v", st.Windows[0])
+	}
 	if w := st.Windows[0]; w.PID != first.cmd.Process.Pid {
 		t.Errorf("window pid %d, want %d", w.PID, first.cmd.Process.Pid)
 	}
@@ -568,7 +571,7 @@ func TestXwaylandInitialFullscreen(t *testing.T) {
 		st := readState(e.statePath)
 		for _, w := range st.Windows {
 			if w.AppID == "Game" {
-				return !w.Floating && w.Column == 2 && w.Row == 1
+				return w.Xwayland && !w.Floating && w.Column == 2 && w.Row == 1
 			}
 		}
 		return false
@@ -684,13 +687,13 @@ func TestXwaylandClassRule(t *testing.T) {
 		if len(st.Windows) == 1 {
 			t.Logf("rule state: %+v", st.Windows[0])
 		}
-		return len(st.Windows) == 1 && st.Windows[0].AppID == "steam_app_413150" && st.Windows[0].Floating
+		return len(st.Windows) == 1 && st.Windows[0].AppID == "steam_app_413150" && st.Windows[0].Xwayland && st.Windows[0].Floating
 	})
 	startProbe(t, e.bin, e.display, "-class", "Other")
 	until(t, "other class tiled", func() bool {
 		for _, w := range readState(e.statePath).Windows {
 			if w.AppID == "Other" {
-				return !w.Floating
+				return w.Xwayland && !w.Floating
 			}
 		}
 		return false

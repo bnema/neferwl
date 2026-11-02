@@ -183,7 +183,7 @@ func TestX11WindowLifecycle(t *testing.T) {
 	surf := r.pair(win, x11Serial)
 
 	m := awaitEvent[ports.WindowMapped](t, r.events)
-	if m.AppID != "Class" || m.PID != 4242 || !m.Positioned || m.Floating || m.Slot != "" {
+	if m.AppID != "Class" || m.PID != 4242 || !m.Positioned || !m.Xwayland || m.PIDShared || m.Floating || m.Slot != "" {
 		t.Fatalf("mapped %+v", m)
 	}
 

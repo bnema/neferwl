@@ -71,7 +71,7 @@ type WindowState struct {
 	Sandbox string `json:",omitempty"`
 	// ContentType is "photo", "video", "game", or "" without a hint.
 	ContentType string `json:",omitempty"`
-	// Xwayland is set for an X11 window served by the satellite session.
+	// Xwayland is set for an X11 window, with either backend.
 	Xwayland bool `json:",omitempty"`
 	// IdleInhibit is set while the window keeps the session from idling.
 	IdleInhibit bool `json:",omitempty"`

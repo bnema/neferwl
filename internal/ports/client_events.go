@@ -13,6 +13,8 @@ type WindowMapped struct {
 	Slot string
 	// PID is the client process, 0 when unknown.
 	PID int
+	// PIDShared means PID identifies a bridge process, not the application.
+	PIDShared bool
 	// Sandbox is the wp_security_context_v1 app id of the client, else
 	// its engine, "" when not sandboxed.
 	Sandbox string
@@ -20,7 +22,7 @@ type WindowMapped struct {
 	ContentType domain.ContentType
 	// ColorDescription reports a committed root transfer function or primaries.
 	ColorDescription bool
-	// Xwayland is set when the client belongs to the X11 satellite session.
+	// Xwayland is set for an X11 window, with either backend.
 	Xwayland bool
 	// Fullscreen is the last fullscreen state requested before the first map
 	// (xdg set_fullscreen, X11 _NET_WM_STATE_FULLSCREEN).
