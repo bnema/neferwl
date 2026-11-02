@@ -288,6 +288,8 @@ func (h hostImpl) Fullscreen(slot xwm.Slot, on bool) {
 	}
 	w.x11.info.Fullscreen = on
 	if w.mapped {
+		h.s.log.Info().Uint64("id", uint64(w.id)).Uint32("xid", w.x11.xid).
+			Bool("on", on).Msg("client fullscreen request")
 		h.s.emit(ports.WindowFullscreenRequest{ID: w.id, Fullscreen: on})
 	}
 }

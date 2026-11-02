@@ -111,6 +111,9 @@ func (x *XWM) checkReady(s Slot) {
 	x.classify(rec)
 	info := x.info(s)
 	xid := rec.xid
+	x.log.Info().Uint32("xid", xid).Bool("fullscreen", rec.fullscreen).
+		Int32("x", rec.x).Int32("y", rec.y).Uint32("w", rec.w).Uint32("h", rec.h).
+		Bool("modal", rec.modal).Msg("x11 window ready")
 
 	var state [2]uint32
 	n := 0
@@ -198,6 +201,20 @@ func (x *XWM) onClientMessage(ev *xturbo.Event) {
 // onNetWMState applies modal changes and forwards fullscreen requests. Only a
 // core configure publishes fullscreen: a request may be refused (e.g. grace).
 func (x *XWM) onNetWMState(e xproto.ClientMessageEvent) {
+	d := e.Data().Data32()
+	if d[1] == x.atoms[atomNetWMStateFullscreen] || d[2] == x.atoms[atomNetWMStateFullscreen] {
+		action := "unknown"
+		switch d[0] {
+		case netStateRemove:
+			action = "remove"
+		case netStateAdd:
+			action = "add"
+		case netStateToggle:
+			action = "toggle"
+		}
+		x.log.Info().Uint32("xid", uint32(e.Window())).Str("action", action).
+			Uint32("action_code", d[0]).Msg("x11 fullscreen request")
+	}
 	s := x.tab.lookup(uint32(e.Window()))
 	if s == 0 {
 		return
@@ -206,7 +223,6 @@ func (x *XWM) onNetWMState(e xproto.ClientMessageEvent) {
 	if rec.kind != kindManaged {
 		return
 	}
-	d := e.Data().Data32()
 	apply := func(cur bool) bool {
 		switch d[0] {
 		case netStateRemove:
