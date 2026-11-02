@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"image"
 
-	"github.com/bnema/neferwl/internal/domain"
 	"bnema.dev/zerowrap"
+	"github.com/bnema/neferwl/internal/domain"
 
 	_ "image/png"
 	"math"
@@ -23,7 +23,6 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sys/unix"
 )
 
 type harness struct {
@@ -225,74 +224,6 @@ func TestHintBadSize(t *testing.T) {
 	require.ErrorIs(t, res.Err, ErrBadRequest)
 }
 
-// waitFiles waits for the dump the worker writes after sending the result.
-func waitFiles(t *testing.T, dir string, n int) []os.DirEntry {
-	t.Helper()
-	// Watch before looking, so no write is missed. The worker creates dir
-	// itself, possibly after this call: watch the parent for its creation,
-	// then dir once it exists.
-	fd, err := unix.InotifyInit1(unix.IN_CLOEXEC | unix.IN_NONBLOCK)
-	require.NoError(t, err)
-	defer unix.Close(fd)
-	_, err = unix.InotifyAddWatch(fd, filepath.Dir(dir), unix.IN_CREATE|unix.IN_MOVED_TO)
-	require.NoError(t, err)
-	watching := false
-	watchDir := func() {
-		if watching {
-			return
-		}
-		_, err := unix.InotifyAddWatch(fd, dir, unix.IN_CLOSE_WRITE|unix.IN_MOVED_TO|unix.IN_CREATE)
-		if errors.Is(err, unix.ENOENT) {
-			return
-		}
-		require.NoError(t, err)
-		watching = true
-	}
-	watchDir()
-	var entries []os.DirEntry
-	dumped := func() bool {
-		watchDir()
-		all, _ := os.ReadDir(dir)
-		entries = nil
-		var raw, annotated, metadata bool
-		for _, e := range all {
-			if strings.HasPrefix(e.Name(), ".") {
-				continue
-			}
-			switch {
-			case strings.HasSuffix(e.Name(), ".annotated.png"):
-				annotated = true
-			case strings.HasSuffix(e.Name(), ".png"):
-				raw = true
-			case strings.HasSuffix(e.Name(), ".json"):
-				metadata = true
-			default:
-				continue
-			}
-			entries = append(entries, e)
-		}
-		return raw && annotated && metadata && len(entries) >= n
-	}
-	fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
-	var buf [4096]byte
-	for !dumped() {
-		// Each wake-up is a directory event; 5 s of silence is a failure.
-		n, err := unix.Poll(fds, 5000)
-		if err != nil && err != unix.EINTR {
-			t.Fatal(err)
-		}
-		if n == 0 && err == nil {
-			t.Fatal("timed out waiting for worker dump files")
-		}
-		for { // drain the events; the directory listing is the state
-			if _, err := unix.Read(fd, buf[:]); err != nil {
-				break
-			}
-		}
-	}
-	return entries
-}
-
 // scanOnce runs one scan on a 64x32 frame and waits for its result.
 func scanOnce(t *testing.T, h *harness, seq uint64) domain.HintScanResult {
 	t.Helper()
@@ -310,72 +241,78 @@ func scanOnce(t *testing.T, h *harness, seq uint64) domain.HintScanResult {
 }
 
 func TestHintDump(t *testing.T) {
-	det := newMockdetector(t)
-	det.EXPECT().Close().Return(nil).Once()
-	det.EXPECT().Detect(mock.Anything, mock.Anything).Return([]detection{{x1: 8, y1: 4, x2: 40, y2: 20, score: 0.75}}, nil).Once()
-	dir := filepath.Join(t.TempDir(), "hints")
-	h := startWith(t, 5*time.Second, Options{DumpDir: dir, detector: det})
-	res := scanOnce(t, h, 1)
-	require.Len(t, res.Targets, 1)
+	synctest.Test(t, func(t *testing.T) {
+		det := newMockdetector(t)
+		det.EXPECT().Close().Return(nil).Once()
+		det.EXPECT().Detect(mock.Anything, mock.Anything).Return([]detection{{x1: 8, y1: 4, x2: 40, y2: 20, score: 0.75}}, nil).Once()
+		dumped := make(chan error, 1)
+		dir := filepath.Join(t.TempDir(), "hints")
+		h := startWith(t, 5*time.Second, Options{DumpDir: dir, detector: det, dumpDone: dumped})
+		res := scanOnce(t, h, 1)
+		require.Len(t, res.Targets, 1)
 
-	entries := waitFiles(t, dir, 3)
-	var png, ann, js string
-	for _, e := range entries {
-		info, err := e.Info()
+		require.NoError(t, <-dumped)
+		entries, err := os.ReadDir(dir)
 		require.NoError(t, err)
-		require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
-		switch {
-		case strings.HasSuffix(e.Name(), ".annotated.png"):
-			ann = e.Name()
-		case strings.HasSuffix(e.Name(), ".png"):
-			png = e.Name()
-		case strings.HasSuffix(e.Name(), ".json"):
-			js = e.Name()
+		require.Len(t, entries, 3)
+		var png, ann, js string
+		for _, e := range entries {
+			info, err := e.Info()
+			require.NoError(t, err)
+			require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+			switch {
+			case strings.HasSuffix(e.Name(), ".annotated.png"):
+				ann = e.Name()
+			case strings.HasSuffix(e.Name(), ".png"):
+				png = e.Name()
+			case strings.HasSuffix(e.Name(), ".json"):
+				js = e.Name()
+			}
 		}
-	}
-	require.NotEmpty(t, png)
-	require.NotEmpty(t, ann)
-	require.Regexp(t, `^\d{8}-\d{6}\.\d{3}-HEADLESS-1\.json$`, js)
+		require.NotEmpty(t, png)
+		require.NotEmpty(t, ann)
+		require.Regexp(t, `^\d{8}-\d{6}\.\d{3}-HEADLESS-1\.json$`, js)
 
-	st, err := os.Stat(dir)
-	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o700), st.Mode().Perm())
+		st, err := os.Stat(dir)
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o700), st.Mode().Perm())
 
-	data, err := os.ReadFile(filepath.Join(dir, js))
-	require.NoError(t, err)
-	var meta struct {
-		Output  string  `json:"output"`
-		Width   int     `json:"width"`
-		Height  int     `json:"height"`
-		Stride  int     `json:"stride"`
-		Scale   float64 `json:"scale"`
-		TotalMS float64 `json:"total_ms"`
-		Targets []struct {
-			Rect  [4]int  `json:"rect"`
-			Score float32 `json:"score"`
-		} `json:"targets"`
-	}
-	require.NoError(t, json.Unmarshal(data, &meta))
-	require.Equal(t, "HEADLESS-1", meta.Output)
-	require.Equal(t, 64, meta.Width)
-	require.Equal(t, 32, meta.Height)
-	require.Equal(t, 64*4, meta.Stride)
-	require.Equal(t, 1.0, meta.Scale)
-	require.GreaterOrEqual(t, meta.TotalMS, 0.0)
-	require.Len(t, meta.Targets, 1)
-	require.Equal(t, [4]int{8, 4, 40, 20}, meta.Targets[0].Rect)
-	require.Equal(t, float32(0.75), meta.Targets[0].Score)
+		data, err := os.ReadFile(filepath.Join(dir, js))
+		require.NoError(t, err)
+		var meta struct {
+			Output  string  `json:"output"`
+			Width   int     `json:"width"`
+			Height  int     `json:"height"`
+			Stride  int     `json:"stride"`
+			Scale   float64 `json:"scale"`
+			TotalMS float64 `json:"total_ms"`
+			Targets []struct {
+				Rect  [4]int  `json:"rect"`
+				Score float32 `json:"score"`
+			} `json:"targets"`
+		}
+		require.NoError(t, json.Unmarshal(data, &meta))
+		require.Equal(t, "HEADLESS-1", meta.Output)
+		require.Equal(t, 64, meta.Width)
+		require.Equal(t, 32, meta.Height)
+		require.Equal(t, 64*4, meta.Stride)
+		require.Equal(t, 1.0, meta.Scale)
+		require.GreaterOrEqual(t, meta.TotalMS, 0.0)
+		require.Len(t, meta.Targets, 1)
+		require.Equal(t, [4]int{8, 4, 40, 20}, meta.Targets[0].Rect)
+		require.Equal(t, float32(0.75), meta.Targets[0].Score)
 
-	f, err := os.Open(filepath.Join(dir, png))
-	require.NoError(t, err)
-	defer f.Close()
-	img, _, err := image.Decode(f)
-	require.NoError(t, err)
-	require.Equal(t, image.Rect(0, 0, 64, 32), img.Bounds())
-	r, g, b, _ := img.At(0, 0).RGBA()
-	require.Equal(t, uint32(30)*0x101, r)
-	require.Equal(t, uint32(20)*0x101, g)
-	require.Equal(t, uint32(10)*0x101, b)
+		f, err := os.Open(filepath.Join(dir, png))
+		require.NoError(t, err)
+		defer f.Close()
+		img, _, err := image.Decode(f)
+		require.NoError(t, err)
+		require.Equal(t, image.Rect(0, 0, 64, 32), img.Bounds())
+		r, g, b, _ := img.At(0, 0).RGBA()
+		require.Equal(t, uint32(30)*0x101, r)
+		require.Equal(t, uint32(20)*0x101, g)
+		require.Equal(t, uint32(10)*0x101, b)
+	})
 }
 
 func TestHintDumpDisabled(t *testing.T) {

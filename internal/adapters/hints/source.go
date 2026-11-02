@@ -26,6 +26,9 @@ type Options struct {
 	// PNG and JSON). They contain the screen in clear.
 	DumpDir string
 
+	// dumpDone optionally reports completion of each dump, including failures.
+	dumpDone chan<- error
+
 	// detector replaces the subprocess in tests.
 	detector detector
 }

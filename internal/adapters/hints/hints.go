@@ -42,12 +42,13 @@ func Run(ctx context.Context, requests <-chan domain.HintScanRequest, captures c
 }
 
 type worker struct {
-	stages  []scanStage
-	sources []source
-	warned  map[domain.HintSource]bool
-	n       uint64
-	dumpDir string
-	pending *dumpJob
+	stages   []scanStage
+	sources  []source
+	warned   map[domain.HintSource]bool
+	n        uint64
+	dumpDir  string
+	dumpDone chan<- error
+	pending  *dumpJob
 	// orphans are capture buffers the output may still write: they are
 	// released when its CaptureDone finally arrives.
 	orphans map[uint64]*mapping
@@ -70,7 +71,7 @@ func (f *frame) String() string {
 }
 
 func run(ctx context.Context, requests <-chan domain.HintScanRequest, captures chan<- domain.CaptureRequest, captured <-chan domain.CaptureDone, results chan<- domain.HintScanResult, timeout time.Duration, opts Options) error {
-	w := &worker{dumpDir: opts.DumpDir, sources: makeSources(opts)}
+	w := &worker{dumpDir: opts.DumpDir, dumpDone: opts.dumpDone, sources: makeSources(opts)}
 	defer func() {
 		for i := len(w.sources) - 1; i >= 0; i-- {
 			_ = w.sources[i].Close()
@@ -107,9 +108,16 @@ func (w *worker) dump(ctx context.Context) {
 		return
 	}
 	defer j.m.unmap()
-	if err := writeDump(w.dumpDir, j); err != nil {
+	err := writeDump(w.dumpDir, j)
+	if err != nil {
 		log := logging.For(ctx, "hints")
 		log.Warn().Err(err).Str("dir", w.dumpDir).Msg("hint debug dump failed")
+	}
+	if w.dumpDone != nil {
+		select {
+		case w.dumpDone <- err:
+		case <-ctx.Done():
+		}
 	}
 }
 
