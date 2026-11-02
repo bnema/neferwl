@@ -23,7 +23,15 @@ func TestPopupPointerSerial(t *testing.T) {
 			pp.SetID(pointer)
 			registerWireProxy(c, pp)
 			requestProtocol(t, c, seat, wayland.SeatRequestGetPointer, pointer)
+			// Protocol requests and core commands arrive on independent queues.
+			// Finish creating the pointer before injecting input; otherwise the
+			// press can be processed before there is a pointer to receive it.
+			if err := c.Roundtrip(); err != nil {
+				t.Fatal(err)
+			}
 			commands <- ports.PointerFocus{ID: top.ID}
+			dispatchUntil(t, c, func() bool { return len(pp.enters) > 0 })
+			<-pp.enters
 			button := func(pressed bool, button uint32) uint32 {
 				commands <- ports.PointerButtonTo{ID: top.ID, Button: button, Pressed: pressed}
 				dispatchUntil(t, c, func() bool { return len(pp.buttons) > 0 })
