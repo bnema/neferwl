@@ -123,10 +123,14 @@ func TestFollowMouse(t *testing.T) {
 
 func TestAnimations(t *testing.T) {
 	d := Defaults().Animations
-	if d.On || d.Slowdown != normalSlowdown {
+	if !d.On || d.Slowdown != normalSlowdown {
 		t.Fatal("animations defaults", d)
 	}
-	c, w := parseString(t, "animations = on\nanimations.speed = 0.5\n")
+	c, w := parseString(t, "")
+	if c.Animations != d || len(w) != 0 {
+		t.Fatal("missing animations key", c.Animations, w)
+	}
+	c, w = parseString(t, "animations = on\nanimations.speed = 0.5\n")
 	if !c.Animations.On || c.Animations.Slowdown != 2*normalSlowdown || len(w) != 0 {
 		t.Fatal(c.Animations, w)
 	}

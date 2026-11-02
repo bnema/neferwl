@@ -24,7 +24,7 @@ https://github.com/user-attachments/assets/1ff42ce5-47b3-4cf8-a3a7-5fc5abde4af1
 - **Overview:** `cmd+o` or a four-finger swipe up shows live workspace previews. Select a window with the keyboard, touchpad or mouse; see [Overview](docs/config.md#overview).
 - **Stash:** `cmd+s` toggles a floating strip of windows set aside for the current workspace; `cmd+shift+s` moves a window into or out of it. See [Stash](docs/config.md#stash).
 - **Hint mode:** click what is on screen by typing its label. Works best in apps like Firefox; see [Hint mode](docs/config.md#hint-mode).
-- **Animations:** short, cheap and off by default. Opt in with experimental `animations = on`; see [Configuration](docs/config.md#keys).
+- **Animations:** short and cheap; turn them off with `animations = off`.
 
 Written in Go, without cgo. Each piece of state has one owner goroutine, connected to the others by channels; hot paths reuse memory and client buffers stay off the Go heap. See [Architecture](docs/dev/architecture.md) for the concurrency model, the GC strategy and the reusable Go libraries.
 
@@ -120,7 +120,7 @@ bind.cmd+d = workspace dev
 | `touchpad.natural-scroll` | `off` | Content follows fingers |
 | `stash.width` | `80` | Selected stash window width, percent |
 | `hint.enable` | `off` | Keyboard clicking; restart required |
-| `animations` | `off` | Experimental layout and swipe animations |
+| `animations` | `on` | Layout and swipe animations |
 
 ### Default key bindings
 

@@ -12,6 +12,7 @@ WAYLAND_DISPLAY=<name from the log> foot
   for testing `focus-monitor-left/right` and moving columns between outputs.
 - With several outputs, each writes to `<dir>/HEADLESS-<n>/`.
 - `--timeout 5s` stops NeferWL after 5 seconds.
+- Animations are on by default. For checks that need instant layout changes, set `animations = off` in the throwaway config; otherwise let transitions settle before checking final geometry.
 - `grim` and recorders work too; see [Screen capture](../capture.md).
 
 ## Recording a video

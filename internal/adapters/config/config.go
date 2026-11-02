@@ -190,8 +190,8 @@ func Defaults() domain.Config {
 	c.Touchpad.ScrollFactor = 1
 	c.Mouse.AccelProfile = domain.AccelAdaptive
 	c.Cursor.HideAfter = 5 * time.Second
-	// Animations are experimental: off unless the config turns them on.
-	c.Animations.On = false
+	// Animations are on unless the config turns them off.
+	c.Animations.On = true
 	c.Animations.Slowdown = normalSlowdown
 	c.Focus.PositionHint = true
 	c.OSD.Enable = true

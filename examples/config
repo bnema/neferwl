@@ -86,14 +86,14 @@ focus.follow-move = off
 # on: the window the pointer moves into gets focus; a keyboard focus change
 # holds until the pointer enters another window.
 focus.follow-mouse = off
-# Experimental, off by default.
+# Animations are on by default.
 # on: windows and the view move with springs, windows fade in and out as
 # they open, close or leave with the stash, the overview zooms its cards;
 # off: every change is instant and three-finger swipes act when the
 # fingers lift.
 # speed: slow, normal, fast, or a number from 0.1 (10x slower) to 10
 # (10x faster).
-animations = off
+animations = on
 animations.speed = normal
 # Focus flash: a brief inner border on the window, column or output an
 # action just changed. Width in logical pixels (1 to 8), starting opacity

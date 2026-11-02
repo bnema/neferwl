@@ -51,7 +51,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `touchpad.scroll-factor` | `1` | Scroll speed multiplier, up to `10` |
 | `mouse.natural-scroll`, `.accel-speed`, `.accel-profile`, `.left-handed` | as touchpad | Same, for mice, trackballs and trackpoints |
 | `cursor.hide-after` | `5s` | Hide the cursor after this long without motion, or `off` |
-| `animations` | `off` | **Experimental.** Animate layout changes and make swipes follow the fingers |
+| `animations` | `on` | Animate layout changes and make swipes follow the fingers |
 | `animations.speed` | `normal` | `slow`, `normal`, `fast`, or a factor from `0.1` to `10` |
 | `navigation.edge` | `screen` | Focus past a content edge: `screen` visits only a neighbor screen; `workspace` also visits workspaces on the layout's workspace axis |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |

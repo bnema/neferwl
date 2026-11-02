@@ -6,9 +6,11 @@ import (
 )
 
 // scrollDefaults is the default config with scroll overflow, the layout most
-// core tests were written against. Cascade has its own tests.
+// core tests were written against, with instant layout changes. Cascade and
+// animations have their own tests.
 func scrollDefaults() domain.Config {
 	cfg := config.Defaults()
 	cfg.Layout.Overflow = "scroll"
+	cfg.Animations.On = false
 	return cfg
 }
