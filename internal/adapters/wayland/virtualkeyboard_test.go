@@ -179,25 +179,26 @@ func TestVirtualKeyBeforeKeymap(t *testing.T) {
 func TestVirtualKeyboardSameKeymapNotResent(t *testing.T) {
 	s, events, commands, dir := keyboardServer(t)
 	target, proxy := focusedTarget(t, s, events, commands, dir)
-	for range 2 { // one typer per use, like a dictation app
+	for i := range 2 { // one typer per use, like a dictation app
 		typer, kb := virtualTyper(t, s, dir)
 		sendVirtualKeymap(t, typer, kb, keymapText(t))
 		requestProtocol(t, typer, kb, virtualkeyboard.ZwpVirtualKeyboardV1RequestKey, uint32(1), uint32(30), uint32(1))
 		requestProtocol(t, typer, kb, virtualkeyboard.ZwpVirtualKeyboardV1RequestKey, uint32(2), uint32(30), uint32(0))
 		roundtrip(t, typer, target)
 		_ = typer.Close()
-	}
-	// Join the release event from each typer before checking the complete
-	// stream; no keymap should be emitted for the unchanged seat keymap.
-	dispatchUntil(t, target, func() bool {
-		keys := 0
-		for _, op := range proxy.opcodes {
-			if op == uint16(wayland.KeyboardEventKey) {
-				keys++
+		// Each typer sends modifiers on switch-in and restores the seat's
+		// modifiers on disconnect. Keys are already delivered above, so only
+		// the second modifiers event proves this disconnect was processed.
+		dispatchUntil(t, target, func() bool {
+			modifiers := 0
+			for _, op := range proxy.opcodes {
+				if op == uint16(wayland.KeyboardEventModifiers) {
+					modifiers++
+				}
 			}
-		}
-		return keys == 4
-	})
+			return modifiers == 2*(i+1)
+		})
+	}
 	roundtrip(t, target)
 	if len(proxy.keymaps) != 0 {
 		t.Fatalf("%d keymaps sent for a virtual keyboard with the seat keymap", len(proxy.keymaps))
