@@ -64,6 +64,23 @@ func TestFrameCompletionReleasesReplacedBufferBeforeCallback(t *testing.T) {
 		t.Fatalf("event before completion: %s", event)
 	default:
 	}
+	// Force a refresh fallback without a completion report. Both buffers
+	// are still busy, so this must not invite the client to redraw.
+	s.display.Do(func() {
+		s.frameDue["HEADLESS-1"] = time.Time{}
+		s.paceTick(nil, nil)
+		if !s.paceArmed {
+			t.Error("deferred callback left fallback pacer disarmed")
+		}
+	})
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-wire:
+		t.Fatalf("event while replaced buffer still held: %s", event)
+	default:
+	}
 	s.display.Do(func() {
 		held := false
 		for _, h := range s.held {
