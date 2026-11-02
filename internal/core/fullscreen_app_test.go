@@ -75,3 +75,44 @@ func TestFullscreenAppArrival(t *testing.T) {
 		}
 	}
 }
+
+// The scene, not just workspace placements, must draw arrivals over covers
+// whose float eligibility deliberately prevents promotion.
+func TestFullscreenUnadoptableCoverScene(t *testing.T) {
+	for _, mode := range []Overflow{OverflowCascade, OverflowScroll} {
+		for _, stash := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stash=%v", mode, stash), func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					c, _, _ := fadeCore(t)
+					w := c.cur().mon.Current()
+					w.SetOverflow(mode)
+					c.clientEvent(context.Background(), ports.WindowMapped{ID: 9})
+					parent := WindowID(9)
+					if stash {
+						parent = 0
+					}
+					c.clientEvent(context.Background(), ports.WindowMapped{ID: 1, PID: 7, Floating: !stash, Parent: parent, Width: 400, Height: 300})
+					if stash {
+						w.FocusID(1)
+						w.ToggleWindowStash()
+						if !w.StashShown() {
+							w.ToggleStashVisible()
+						}
+					}
+					c.clientEvent(context.Background(), ports.WindowFullscreenRequest{ID: 1, Fullscreen: true})
+					c.clientEvent(context.Background(), ports.WindowMapped{ID: 2, PID: 7, Width: 200, Height: 100})
+					settleShown(t, c)
+					s := indicatorScene(t, c)
+					p := sceneWindow(t, s, 2)
+					if p.Hidden || !p.Focused || !p.Floating || !p.Rect.Overlaps(w.Output) {
+						t.Fatalf("arrival not drawn: %+v", p)
+					}
+					cover := sceneWindow(t, s, 1)
+					if !cover.Fullscreen || cover.Rect != w.Output {
+						t.Fatalf("cover: %+v", cover)
+					}
+				})
+			})
+		}
+	}
+}

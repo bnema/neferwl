@@ -41,6 +41,20 @@ func TestLayoutCoveredArrivalConformance(t *testing.T) {
 						}
 						found := false
 						for _, p := range w.Layout() {
+							if p.ID == 1 {
+								if !p.Fullscreen {
+									t.Fatal("original lost fullscreen placement")
+								}
+								if same && mode == OverflowCascade {
+									if p.Rect.Overlaps(w.Output) {
+										t.Fatalf("previous fullscreen bleeds into arrival viewport: %+v", p)
+									}
+								} else if !same || mode == OverflowFixed {
+									if p.Rect != w.Output {
+										t.Fatalf("cover rect %+v, want %+v", p.Rect, w.Output)
+									}
+								}
+							}
 							if p.ID != 2 {
 								continue
 							}
@@ -82,9 +96,52 @@ func TestLayoutCoveredArrivalConformance(t *testing.T) {
 						if w.Cover() != 1 {
 							t.Fatal("returning to fullscreen viewport lost cover")
 						}
+						for _, p := range w.Layout() {
+							if p.ID == 1 && p.Rect != w.Output {
+								t.Fatalf("returned cover %+v, want %+v", p.Rect, w.Output)
+							}
+						}
 					})
 				})
 			}
+		}
+	}
+}
+
+func TestLayoutUnadoptableCoverArrival(t *testing.T) {
+	for _, mode := range []Overflow{OverflowCascade, OverflowScroll} {
+		for _, stash := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stash=%v", mode, stash), func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					w := &Workspace{Lanes: layout.Lanes{Overflow: mode, MaxColumns: 3, Output: Rect{W: 1200, H: 900}, Usable: Rect{W: 1200, H: 840}}}
+					w.AddWindow(9)
+					if stash {
+						w.AddWindow(1)
+						w.ToggleWindowStash()
+					} else {
+						w.AddDialog(1, 9, 400, 300)
+					}
+					w.SetFullscreen(1, true)
+					if w.Cover() != 1 {
+						t.Fatal("fixture has no cover")
+					}
+					w.AddAppWindow(2, 0, 400, 300)
+					if !w.IsFloat(1) || !w.IsFloat(2) || w.Fullscreen != 1 {
+						t.Fatal("cover or overlay changed ownership")
+					}
+					if id, _ := w.Focused(); id != 2 {
+						t.Fatal("arrival not focused")
+					}
+					for _, p := range w.Layout() {
+						if p.ID == 1 && p.Rect != w.Output {
+							t.Fatalf("cover: %+v", p)
+						}
+						if p.ID == 2 && (p.Hidden || !p.Rect.Overlaps(w.Output)) {
+							t.Fatalf("arrival: %+v", p)
+						}
+					}
+				})
+			})
 		}
 	}
 }

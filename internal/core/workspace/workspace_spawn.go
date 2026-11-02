@@ -232,7 +232,7 @@ func (w *Workspace) AddAppWindow(id WindowID, cells, width, height int) {
 	}
 	w.adoptFloat(cover, true)
 	at, kind, overlay := w.Engine().AppSpawn(w.Snapshot())
-	if overlay {
+	if overlay || w.IsFloat(cover) {
 		w.AddDialog(id, cover, width, height)
 		return
 	}

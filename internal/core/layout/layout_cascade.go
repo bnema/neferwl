@@ -335,6 +335,11 @@ func (cascadeLayout) Covering(v View) bool {
 // FullscreenRect moves fullscreen with its band while keeping output size.
 func (cascadeLayout) FullscreenRect(v View, column Rect) Rect {
 	r := v.Output
-	r.Y += column.Y - v.Usable.Y - v.Gap
+	// Band offsets use usable height for tiles, but fullscreen fills Output.
+	// Scale whole-band offsets by output height so an off-current cover
+	// cannot bleed through a panel-sized strip into the selected band.
+	if v.Usable.H > 0 {
+		r.Y += (column.Y - v.Usable.Y - v.Gap) / v.Usable.H * v.Output.H
+	}
 	return r
 }
