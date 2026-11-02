@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/1ff42ce5-47b3-4cf8-a3a7-5fc5abde4af1
 
 ## Why NeferWL
 
-- **Performance:** allocation-free hot paths, no wasted CPU passes and no cgo; about 40–80 MB of RAM with two 4K monitors. On 4K HDR video, GC takes under 9% of a process using 13% of a core; see [Architecture](docs/dev/architecture.md#keeping-the-garbage-collector-out-of-the-way) and [Performance](docs/performance.md).
+- **Performance:** allocation-free hot paths, no wasted CPU passes and no cgo. About 56 MB of RAM on an empty desktop, more with wallpapers, bars and open windows; see [Memory](docs/performance.md#memory).
 - **Games:** direct scanout, VRR, tearing, explicit sync and [HDR](docs/config.md#hdr) give games the whole GPU instead of spending it on composition; see [Performance](docs/performance.md).
 - **SDR to HDR:** on an HDR screen, SDR games get brighter highlights instead of looking flat; see [SDR expansion](docs/config.md#sdr-expansion-settings).
 - **X11 apps:** Steam and other X11 apps behave like any other window, with no extra tool to install; see [X11 apps](docs/desktop.md#x11-apps).

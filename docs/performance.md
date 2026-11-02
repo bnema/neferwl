@@ -1,6 +1,6 @@
 # Performance
 
-NeferWL uses about 40–80 MB of RAM with two 4K monitors, and almost no CPU while the screen does not change.
+NeferWL keeps a Go heap of a few megabytes and uses almost no CPU while the screen does not change.
 
 - Only changed areas are redrawn. Windows nobody sees get one frame callback per second.
 - Windows are composed as instanced draws, so a frame makes a few Vulkan calls whatever the number of windows.
@@ -8,6 +8,37 @@ NeferWL uses about 40–80 MB of RAM with two 4K monitors, and almost no CPU whi
 - A full frame at 2560×1600 takes about 0.16 ms on an RX 9070 XT and 3 ms on a Radeon 680M. Measure yours with `go test ./internal/adapters/vulkan -bench ComposeFullTarget` (`NEFERWL_RENDER_DEVICE=/dev/dri/renderDN` picks the GPU).
 - An output on a non-render GPU costs nothing extra in direct mode and one GPU blit per frame in gpu-copy mode. See [GPUs](config.md#gpus).
 - NeferWL runs with `GOGC=100` and a 256 MiB soft memory limit. `GOGC` and `GOMEMLIMIT` from the environment override them.
+
+## Memory
+
+Measured on a headless NeferWL with an empty config: one 1920×1080 output, no client, no Xwayland, AMD GPU (RADV), one minute after start.
+
+| Part | Size | Source |
+|---|---|---|
+| Resident memory (RSS) | 56 MB | `VmRSS` |
+| Mapped files | 26 MB | `RssFile` |
+| ⤷ LLVM, loaded by the Mesa Vulkan driver | 15 MB | `smaps` |
+| ⤷ NeferWL binary | 14 MB | `smaps` |
+| ⤷ Vulkan driver (`libvulkan_radeon`) | 5 MB | `smaps` |
+| Shared memory: output images | 13 MB | `RssShmem` |
+| Private memory | 17 MB | `RssAnon` |
+| Go runtime, all of it | 18 MB | pprof `Sys` |
+| ⤷ Go heap in use | 3.5 MB | pprof `HeapInuse` |
+| ⤷ Live Go objects | 1.7 MB | pprof `HeapAlloc` |
+| ⤷ Goroutine stacks (42 goroutines) | 1.1 MB | pprof `Stack` |
+
+The driver libraries are shared with other Vulkan programs and their size depends on the GPU and driver.
+
+This is the cost of NeferWL alone. Memory grows with what runs on top of it: NeferWL maps the buffers of every client it shows, so a wallpaper (swaybg, awww and similar), a bar, a launcher or a large window each add their own pixels, and every extra output adds its own images. A desktop with two 4K screens, a wallpaper and a bar uses about 100 MB.
+
+To measure your own session, start NeferWL with `--pprof localhost:6060`, then:
+
+```sh
+curl -s 'localhost:6060/debug/pprof/heap?debug=1' | grep -E '^# (Sys|HeapAlloc|HeapInuse|HeapIdle|HeapReleased|Stack) '
+grep -E '^(VmRSS|RssAnon|RssFile|RssShmem)' /proc/$(pgrep -x neferwl)/status
+```
+
+The split by library needs root when NeferWL runs with extra capabilities (the packages set `CAP_SYS_NICE`): `sudo cat /proc/$(pgrep -x neferwl)/smaps`.
 
 ## VRR
 
