@@ -46,6 +46,11 @@ type seatState struct {
 	// pressClient: popup grabs must come from it.
 	press       uint32
 	pressClient server.Client
+	// A popup may answer the matching release of the latest pointer press.
+	// Tie it to press so a later key/button press invalidates it too.
+	pointerPress, pointerButton uint32
+	release, releasePress       uint32
+	releaseClient               server.Client
 	// grabSerial is the serial of the press that started the implicit
 	// grab (core marks it), grabButton its button: the only serial
 	// start_drag accepts (wlr_seat_validate_pointer_grab_serial). The
@@ -142,10 +147,17 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 				delete(s.seat.buttons, c.Button)
 			}
 			s.serial++
+			if !c.Pressed && s.seat.pointerPress == s.seat.press && s.seat.pointerButton == c.Button && s.seat.pressClient == client {
+				s.seat.release, s.seat.releasePress, s.seat.releaseClient = s.serial, s.seat.press, client
+				// Only the first matching release can authorize a grab.
+				s.seat.pointerPress = 0
+			}
 			state := uint32(0)
 			if c.Pressed {
 				state = 1
 				s.seat.press, s.seat.pressClient, s.seat.pressAt = s.serial, client, time.Now()
+				s.seat.pointerPress, s.seat.pointerButton = s.serial, c.Button
+				s.seat.release, s.seat.releasePress = 0, 0
 				if c.Grab {
 					s.seat.grabSerial, s.seat.grabButton = s.serial, c.Button
 				}
