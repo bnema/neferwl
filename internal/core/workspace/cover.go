@@ -95,14 +95,8 @@ func (w *Workspace) Cover() WindowID {
 	if w.Fullscreen == 0 {
 		return 0
 	}
-	if w.IsFloat(w.Fullscreen) || w.Engine().PinsFullscreen() {
+	if w.IsFloat(w.Fullscreen) || w.Engine().Covering(w.Snapshot()) {
 		return w.Fullscreen
-	}
-	// Scroll overflow: only while its column is aligned on the output.
-	for i, c := range w.Columns {
-		if slices.Contains(c.Windows, w.Fullscreen) && w.columnX(i)-w.View == 0 {
-			return w.Fullscreen
-		}
 	}
 	return 0
 }

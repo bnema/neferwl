@@ -32,6 +32,8 @@ func dispatchLayoutWith(t *testing.T, cols int, tr dispatchTraits) (*Workspace, 
 	l.EXPECT().Spiral().Return(tr.spiral).Maybe()
 	l.EXPECT().Bands().Return(false).Maybe()
 	l.EXPECT().PinsFullscreen().Return(false).Maybe()
+	l.EXPECT().Covering(mock.Anything).Return(true).Maybe()
+	l.EXPECT().FullscreenRect(mock.Anything, mock.Anything).RunAndReturn(layout.Base{}.FullscreenRect).Maybe()
 	l.EXPECT().Isolate(mock.Anything, mock.Anything).Return(false).Maybe()
 	l.EXPECT().LaneRow(mock.Anything).Return(tr.laneRow).Maybe()
 	w := &Workspace{Lanes: layout.Lanes{Override: l, MaxColumns: 3, Usable: Rect{W: 900, H: 600}, Output: Rect{W: 900, H: 600}}}

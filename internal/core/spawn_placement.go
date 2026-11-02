@@ -105,7 +105,9 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 			c.placeByRule(v, eff)
 			return
 		}
-		c.cur().mon.AddFloating(v.ID, v.Width, v.Height)
+		if !c.placeCoverApp(v, c.cur(), c.cur().mon.Current(), 0) {
+			c.cur().mon.AddFloating(v.ID, v.Width, v.Height)
+		}
 		return
 	}
 	if v.Slot != "" {
@@ -152,6 +154,24 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 			c.placeByRule(v, eff)
 			return
 		}
-		c.cur().mon.AddWindow(v.ID)
+		if !c.placeCoverApp(v, c.cur(), c.cur().mon.Current(), 0) {
+			c.cur().mon.AddWindow(v.ID)
+		}
 	}
+}
+
+// sameApp is pure policy: absent identifiers never establish app identity.
+func sameApp(a, b ports.WindowMapped) bool {
+	return a.PID != 0 && a.PID == b.PID || a.AppID != "" && a.AppID == b.AppID
+}
+
+// placeCoverApp handles ordinary same-app arrivals on the workspace in view.
+func (c *Core) placeCoverApp(v ports.WindowMapped, sc *screen, w *Workspace, cells int) bool {
+	cover := w.Cover()
+	if cover == 0 || !sameApp(v, c.windows.lookup(cover).client) {
+		return false
+	}
+	w.AddAppWindow(v.ID, cells, v.Width, v.Height)
+	sc.mon.normalize()
+	return true
 }

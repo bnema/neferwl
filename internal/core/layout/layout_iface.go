@@ -126,7 +126,15 @@ type Placer interface {
 	// SpawnAt returns the insertion position and lane relationship of a new column.
 	SpawnAt(v View) (at int, kind InsertKind) // after the focused column/lane
 	// CoveredSpawnAt returns the insertion position under a covering window.
-	CoveredSpawnAt(v View) int // under a covering window (ADR 011)
+	CoveredSpawnAt(v View) int // another app waits under the cover (ADR 011)
+	// AppSpawn returns same-app placement over a cover; float means an overlay.
+	AppSpawn(v View) (at int, kind InsertKind, float bool)
+	// AdoptCoverFloat promotes a covering float for a same-app arrival.
+	AdoptCoverFloat(w Edit, id WindowID) bool
+	// Covering reports whether tiled fullscreen covers the current view.
+	Covering(v View) bool
+	// FullscreenRect projects a fullscreen column into the current view.
+	FullscreenRect(v View, column Rect) Rect
 	// Full reports whether a new column must be expelled to a neighbor.
 	Full(v View) bool // no room: expel to neighbor (fixed)
 	// MoveAllowed reports whether columns may swap positions.

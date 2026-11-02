@@ -33,6 +33,9 @@ func extensionLayout(name Overflow, st layout.State) *layoutmocks.MockLayout {
 func extensionLayoutWith(name Overflow, newState func() layout.State) *layoutmocks.MockLayout {
 	l := &layoutmocks.MockLayout{}
 	base := layout.Base{}
+	l.EXPECT().Covering(mock.Anything).RunAndReturn(base.Covering)
+	l.EXPECT().FullscreenRect(mock.Anything, mock.Anything).RunAndReturn(base.FullscreenRect)
+	l.EXPECT().AppSpawn(mock.Anything).RunAndReturn(base.AppSpawn)
 	l.EXPECT().Name().Return(name)
 	l.EXPECT().NewState().RunAndReturn(newState)
 	l.EXPECT().PinsFullscreen().Return(name == overflowTrail)

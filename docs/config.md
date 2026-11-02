@@ -301,7 +301,7 @@ bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
 | `spawn-terminal` | Run `terminal` |
 | `stash <command>` | Run a program and open its window in the [stash](#stash) |
 | `close-window` | Close the focused window |
-| `toggle-fullscreen` | Fullscreen the focused window. Nothing shows above it except its own dialogs |
+| `toggle-fullscreen` | Fullscreen the focused window. Its dialogs and same-app arrivals in fixed layout can show above it |
 | `toggle-floating` | Make the focused window [float](#free-floating-windows), or put it back in its column |
 | `toggle-window-stash` | Move the focused window to the [stash](#stash), or back to its column |
 | `toggle-stash-visible` | Show or hide the stash |
@@ -379,6 +379,7 @@ The default layout. Columns sit side by side in bands of up to `max-columns`, st
 - `maximize-column` gives the column a band of its own: the columns on its left go to the band above, the ones on its right to the band below. Maximizing again forms the band back. A moved or new column joining its band clears maximization; a moved maximized column also unmaximizes when it joins another band.
 - A fullscreen window gets a band of its own right below the band it was in (expelled into its own column first when it shares one), so the other columns stay put and focus changes among them leave the fullscreen output alone. Leaving fullscreen keeps the column in that band. A parentless, non-stashed floating window becomes a tiled column in its own band below the selected column's band on fullscreen entry, including `toggle-fullscreen`; dialogs with a parent and stash entries stay floating.
 - A window requesting fullscreen before its first map opens fullscreen and focused, using the same band placement as `toggle-fullscreen`. The last pre-map set/unset request wins; child dialogs are excluded and window rules retain their workspace/output. Requests arriving after map are honoured immediately, subject to the usual fullscreen focus rules; `toggle-fullscreen` is unaffected.
+- A new window from another app never disturbs a covering fullscreen window; a window of the same app comes forward (equal non-zero PID or equal non-empty app ID). In cascade it opens focused in a new band; in scroll it opens focused to the right; in fixed it opens as a focused float above fullscreen. The original window keeps its fullscreen state. In scroll, a floating fullscreen cover is promoted to a tile when the same-app window arrives; ordinary fullscreen requests keep their existing floating semantics.
 - `move-column-left/right` on a fullscreen window (tiled or floating) sends it to the neighbor monitor, where it stays fullscreen and focused; with no neighbor monitor nothing moves.
 - A band left empty goes away. A smaller `max-columns` moves the extra columns of a band to a new band below it.
 

@@ -16,8 +16,8 @@ func (w *Workspace) addWindow(id WindowID, cells int) {
 		return
 	}
 	if w.Cover() != 0 {
-		// A new window never moves the view off a covering fullscreen
-		// window (ADR 011): it waits, hidden, after the focused column.
+		// A new window from another app never disturbs a covering fullscreen
+		// window (ADR 011); a same-app window comes forward via AddAppWindow.
 		at := w.Engine().CoveredSpawnAt(w.Snapshot())
 		w.Columns = slices.Insert(w.Columns, at, layout.Column{Windows: []WindowID{id}, Cells: cells})
 		w.ColumnInserted(at, layout.InsertDefault)
@@ -217,4 +217,27 @@ func (w *Workspace) insertAt(at int, col layout.Column) {
 	col.Span, col.SpanStamp = 0, 0
 	w.Columns = slices.Insert(w.Columns, at, col)
 	w.ColumnInserted(at, layout.InsertJoinDisplaced)
+}
+
+// AddAppWindow brings a window of the covering app forward, keeping fullscreen.
+// The layout owns whether it needs another viewport or an over-cover float.
+func (w *Workspace) AddAppWindow(id WindowID, cells, width, height int) {
+	if id == 0 || w.Has(id) {
+		return
+	}
+	cover := w.Cover()
+	if cover == 0 {
+		w.addWindow(id, cells)
+		return
+	}
+	w.adoptFloat(cover, true)
+	at, kind, overlay := w.Engine().AppSpawn(w.Snapshot())
+	if overlay {
+		w.AddDialog(id, cover, width, height)
+		return
+	}
+	w.Columns = slices.Insert(w.Columns, at, layout.Column{Windows: []WindowID{id}, Cells: cells})
+	w.ColumnInserted(at, kind)
+	w.Focus, w.floatFocus, w.stashFocus = at, false, false
+	w.scroll()
 }

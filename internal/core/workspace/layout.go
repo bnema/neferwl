@@ -519,7 +519,7 @@ func (w *Workspace) AppendLayout(dst []Placement) []Placement {
 	cover := w.Cover()
 	// Facts of the layout, asked once, not per window.
 	l := w.Engine()
-	pins, maxHides := l.PinsFullscreen(), l.MaximizeHides()
+	maxHides := l.MaximizeHides()
 	maxFocus := maxHides && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth
 	tiles := w.tileBuf[:0]
 	for i, c := range w.Columns {
@@ -539,14 +539,9 @@ func (w *Workspace) AppendLayout(dst []Placement) []Placement {
 			full := w.Fullscreen == id && id != 0
 			// Fixed overflow cannot scroll to other columns while one fills
 			// the view. Keep them in place, but out of the scene.
-			hidden := (cover != 0 && id != cover) || ((fullColumn || pins && w.Fullscreen != 0) && !full) || maxFocus && i != w.Focus
+			hidden := (cover != 0 && id != cover) || (fullColumn && !full) || maxFocus && i != w.Focus
 			if full {
-				// A layout that does not pin the cover aligns the view on the
-				// column; a pinned one fills the output at once.
-				r = w.Output
-				if !pins {
-					r.X = col.X
-				}
+				r = l.FullscreenRect(w.Snapshot(), col)
 			}
 			if hidden {
 				r = Rect{}

@@ -18,14 +18,7 @@ func (w *Workspace) edit() layout.Edit {
 }
 
 func (w *Workspace) isolate(id WindowID) bool {
-	if i := w.floatIndex(id); i >= 0 && w.Floats[i].over == 0 && w.StashIndex(id) < 0 {
-		if e := w.edit(); w.Engine().AdoptFloat(e, id) {
-			w.Floats = slices.Delete(w.Floats, i, i+1)
-			if e.Focused == id {
-				w.floatFocus, w.stashFocus = false, false
-			}
-		}
-	}
+	w.adoptFloat(id, false)
 	if w.IsFloat(id) || w.Fullscreen == id {
 		return false
 	}
@@ -88,4 +81,23 @@ func (w *Workspace) FocusLane(dir int) bool {
 	w.raiseColumns()
 	w.scroll()
 	return true
+}
+
+// adoptFloat shares eligibility and owner-state transfer for float promotions.
+func (w *Workspace) adoptFloat(id WindowID, cover bool) {
+	if i := w.floatIndex(id); i >= 0 && w.Floats[i].over == 0 && w.StashIndex(id) < 0 {
+		e := w.edit()
+		adopted := false
+		if cover {
+			adopted = w.Engine().AdoptCoverFloat(e, id)
+		} else {
+			adopted = w.Engine().AdoptFloat(e, id)
+		}
+		if adopted {
+			w.Floats = slices.Delete(w.Floats, i, i+1)
+			if e.Focused == id {
+				w.floatFocus, w.stashFocus = false, false
+			}
+		}
+	}
 }

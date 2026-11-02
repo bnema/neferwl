@@ -238,3 +238,34 @@ func (Base) PreviewLanes() bool { return false }
 
 // AdoptFloat isolates a formerly floating window in a tiled lane.
 func (Base) AdoptFloat(Edit, WindowID) bool { return false }
+
+// AppSpawn places a same-app tile to the right of the focused column.
+func (Base) AppSpawn(v View) (int, InsertKind, bool) {
+	return min(v.Focus+1, len(v.Columns)), InsertDefault, false
+}
+
+// Covering reports whether fullscreen is aligned on the view or pinned.
+func (Base) Covering(v View) bool {
+	if v.Layout.PinsFullscreen() {
+		return true
+	}
+	v = v.WithFacts()
+	for i, c := range v.Columns {
+		if fullscreenColumn(c, v.Fullscreen) {
+			return v.ColumnX(i)-v.View == 0
+		}
+	}
+	return false
+}
+
+// FullscreenRect keeps unpinned fullscreen aligned with its column.
+func (Base) FullscreenRect(v View, column Rect) Rect {
+	r := v.Output
+	if !v.Layout.PinsFullscreen() {
+		r.X = column.X
+	}
+	return r
+}
+
+// AdoptCoverFloat reuses the engine's ordinary float adoption policy.
+func (Base) AdoptCoverFloat(w Edit, id WindowID) bool { return w.Engine().AdoptFloat(w, id) }

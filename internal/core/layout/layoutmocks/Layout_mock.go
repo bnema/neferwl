@@ -45,6 +45,63 @@ func (_m *MockLayout) EXPECT() *MockLayout_Expecter {
 	return &MockLayout_Expecter{mock: &_m.Mock}
 }
 
+// AdoptCoverFloat provides a mock function for the type MockLayout
+func (_mock *MockLayout) AdoptCoverFloat(w layout.Edit, id layout.WindowID) bool {
+	ret := _mock.Called(w, id)
+
+	if len(ret) == 0 {
+		panic("no return value specified for AdoptCoverFloat")
+	}
+
+	var r0 bool
+	if returnFunc, ok := ret.Get(0).(func(layout.Edit, layout.WindowID) bool); ok {
+		r0 = returnFunc(w, id)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	return r0
+}
+
+// MockLayout_AdoptCoverFloat_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AdoptCoverFloat'
+type MockLayout_AdoptCoverFloat_Call struct {
+	*mock.Call
+}
+
+// AdoptCoverFloat is a helper method to define mock.On call
+//   - w layout.Edit
+//   - id layout.WindowID
+func (_e *MockLayout_Expecter) AdoptCoverFloat(w any, id any) *MockLayout_AdoptCoverFloat_Call {
+	return &MockLayout_AdoptCoverFloat_Call{Call: _e.mock.On("AdoptCoverFloat", w, id)}
+}
+
+func (_c *MockLayout_AdoptCoverFloat_Call) Run(run func(w layout.Edit, id layout.WindowID)) *MockLayout_AdoptCoverFloat_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 layout.Edit
+		if args[0] != nil {
+			arg0 = args[0].(layout.Edit)
+		}
+		var arg1 layout.WindowID
+		if args[1] != nil {
+			arg1 = args[1].(layout.WindowID)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockLayout_AdoptCoverFloat_Call) Return(b bool) *MockLayout_AdoptCoverFloat_Call {
+	_c.Call.Return(b)
+	return _c
+}
+
+func (_c *MockLayout_AdoptCoverFloat_Call) RunAndReturn(run func(w layout.Edit, id layout.WindowID) bool) *MockLayout_AdoptCoverFloat_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // AdoptFloat provides a mock function for the type MockLayout
 func (_mock *MockLayout) AdoptFloat(w layout.Edit, id layout.WindowID) bool {
 	ret := _mock.Called(w, id)
@@ -98,6 +155,72 @@ func (_c *MockLayout_AdoptFloat_Call) Return(b bool) *MockLayout_AdoptFloat_Call
 }
 
 func (_c *MockLayout_AdoptFloat_Call) RunAndReturn(run func(w layout.Edit, id layout.WindowID) bool) *MockLayout_AdoptFloat_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// AppSpawn provides a mock function for the type MockLayout
+func (_mock *MockLayout) AppSpawn(v layout.View) (int, layout.InsertKind, bool) {
+	ret := _mock.Called(v)
+
+	if len(ret) == 0 {
+		panic("no return value specified for AppSpawn")
+	}
+
+	var r0 int
+	var r1 layout.InsertKind
+	var r2 bool
+	if returnFunc, ok := ret.Get(0).(func(layout.View) (int, layout.InsertKind, bool)); ok {
+		return returnFunc(v)
+	}
+	if returnFunc, ok := ret.Get(0).(func(layout.View) int); ok {
+		r0 = returnFunc(v)
+	} else {
+		r0 = ret.Get(0).(int)
+	}
+	if returnFunc, ok := ret.Get(1).(func(layout.View) layout.InsertKind); ok {
+		r1 = returnFunc(v)
+	} else {
+		r1 = ret.Get(1).(layout.InsertKind)
+	}
+	if returnFunc, ok := ret.Get(2).(func(layout.View) bool); ok {
+		r2 = returnFunc(v)
+	} else {
+		r2 = ret.Get(2).(bool)
+	}
+	return r0, r1, r2
+}
+
+// MockLayout_AppSpawn_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AppSpawn'
+type MockLayout_AppSpawn_Call struct {
+	*mock.Call
+}
+
+// AppSpawn is a helper method to define mock.On call
+//   - v layout.View
+func (_e *MockLayout_Expecter) AppSpawn(v any) *MockLayout_AppSpawn_Call {
+	return &MockLayout_AppSpawn_Call{Call: _e.mock.On("AppSpawn", v)}
+}
+
+func (_c *MockLayout_AppSpawn_Call) Run(run func(v layout.View)) *MockLayout_AppSpawn_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 layout.View
+		if args[0] != nil {
+			arg0 = args[0].(layout.View)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockLayout_AppSpawn_Call) Return(at int, kind layout.InsertKind, float bool) *MockLayout_AppSpawn_Call {
+	_c.Call.Return(at, kind, float)
+	return _c
+}
+
+func (_c *MockLayout_AppSpawn_Call) RunAndReturn(run func(v layout.View) (int, layout.InsertKind, bool)) *MockLayout_AppSpawn_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -378,6 +501,57 @@ func (_c *MockLayout_CoveredSpawnAt_Call) RunAndReturn(run func(v layout.View) i
 	return _c
 }
 
+// Covering provides a mock function for the type MockLayout
+func (_mock *MockLayout) Covering(v layout.View) bool {
+	ret := _mock.Called(v)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Covering")
+	}
+
+	var r0 bool
+	if returnFunc, ok := ret.Get(0).(func(layout.View) bool); ok {
+		r0 = returnFunc(v)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	return r0
+}
+
+// MockLayout_Covering_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Covering'
+type MockLayout_Covering_Call struct {
+	*mock.Call
+}
+
+// Covering is a helper method to define mock.On call
+//   - v layout.View
+func (_e *MockLayout_Expecter) Covering(v any) *MockLayout_Covering_Call {
+	return &MockLayout_Covering_Call{Call: _e.mock.On("Covering", v)}
+}
+
+func (_c *MockLayout_Covering_Call) Run(run func(v layout.View)) *MockLayout_Covering_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 layout.View
+		if args[0] != nil {
+			arg0 = args[0].(layout.View)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockLayout_Covering_Call) Return(b bool) *MockLayout_Covering_Call {
+	_c.Call.Return(b)
+	return _c
+}
+
+func (_c *MockLayout_Covering_Call) RunAndReturn(run func(v layout.View) bool) *MockLayout_Covering_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // EqualCells provides a mock function for the type MockLayout
 func (_mock *MockLayout) EqualCells() bool {
 	ret := _mock.Called()
@@ -526,6 +700,63 @@ func (_c *MockLayout_Full_Call) Return(b bool) *MockLayout_Full_Call {
 }
 
 func (_c *MockLayout_Full_Call) RunAndReturn(run func(v layout.View) bool) *MockLayout_Full_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// FullscreenRect provides a mock function for the type MockLayout
+func (_mock *MockLayout) FullscreenRect(v layout.View, column layout.Rect) layout.Rect {
+	ret := _mock.Called(v, column)
+
+	if len(ret) == 0 {
+		panic("no return value specified for FullscreenRect")
+	}
+
+	var r0 layout.Rect
+	if returnFunc, ok := ret.Get(0).(func(layout.View, layout.Rect) layout.Rect); ok {
+		r0 = returnFunc(v, column)
+	} else {
+		r0 = ret.Get(0).(layout.Rect)
+	}
+	return r0
+}
+
+// MockLayout_FullscreenRect_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'FullscreenRect'
+type MockLayout_FullscreenRect_Call struct {
+	*mock.Call
+}
+
+// FullscreenRect is a helper method to define mock.On call
+//   - v layout.View
+//   - column layout.Rect
+func (_e *MockLayout_Expecter) FullscreenRect(v any, column any) *MockLayout_FullscreenRect_Call {
+	return &MockLayout_FullscreenRect_Call{Call: _e.mock.On("FullscreenRect", v, column)}
+}
+
+func (_c *MockLayout_FullscreenRect_Call) Run(run func(v layout.View, column layout.Rect)) *MockLayout_FullscreenRect_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 layout.View
+		if args[0] != nil {
+			arg0 = args[0].(layout.View)
+		}
+		var arg1 layout.Rect
+		if args[1] != nil {
+			arg1 = args[1].(layout.Rect)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockLayout_FullscreenRect_Call) Return(rect layout.Rect) *MockLayout_FullscreenRect_Call {
+	_c.Call.Return(rect)
+	return _c
+}
+
+func (_c *MockLayout_FullscreenRect_Call) RunAndReturn(run func(v layout.View, column layout.Rect) layout.Rect) *MockLayout_FullscreenRect_Call {
 	_c.Call.Return(run)
 	return _c
 }

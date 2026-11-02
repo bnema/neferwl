@@ -315,3 +315,26 @@ func (s *cascadeState) Removed(at int, col Column) any {
 
 // Settle refreshes layout state after column edits, before measuring.
 func (*cascadeState) Settle(w *Lanes) { w.markBands(); w.DropStaleSpans() }
+
+// AppSpawn gives a same-app window a new band after the cover's band.
+func (cascadeLayout) AppSpawn(v View) (int, InsertKind, bool) {
+	_, last := v.Layout.LaneBounds(v, v.Layout.LaneOf(v, v.Focus))
+	return last + 1, InsertNewLane, false
+}
+
+// Covering limits tiled fullscreen to its own band.
+func (cascadeLayout) Covering(v View) bool {
+	for i, c := range v.Columns {
+		if fullscreenColumn(c, v.Fullscreen) {
+			return v.Layout.LaneOf(v, i)*v.Usable.H == v.View
+		}
+	}
+	return false
+}
+
+// FullscreenRect moves fullscreen with its band while keeping output size.
+func (cascadeLayout) FullscreenRect(v View, column Rect) Rect {
+	r := v.Output
+	r.Y += column.Y - v.Usable.Y - v.Gap
+	return r
+}

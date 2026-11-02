@@ -4,7 +4,7 @@ import "slices"
 
 // FullscreenHides reports whether fullscreen hides the selected column.
 func (w *Lanes) FullscreenHides() bool {
-	return w.Fullscreen != 0 && (w.Engine().PinsFullscreen() || w.FullscreenColumn(w.Focus))
+	return w.Fullscreen != 0 && (w.Engine().Covering(w.Snapshot()) || w.FullscreenColumn(w.Focus))
 }
 
 // fullscreenColumn reports whether column i contains the fullscreen window.

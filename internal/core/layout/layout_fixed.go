@@ -111,3 +111,6 @@ func (fixedLayout) PreviewTiles(v View, dst []Placement, rowBuf []Rect) ([]Place
 	}
 	return dst, v.Usable.W, sel
 }
+
+// AppSpawn overlays a same-app window: fixed has no spare viewport.
+func (fixedLayout) AppSpawn(v View) (int, InsertKind, bool) { return 0, InsertDefault, true }
