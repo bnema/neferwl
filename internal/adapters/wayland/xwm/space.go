@@ -84,48 +84,6 @@ func (s *Space) Scale() float64 {
 // Size is the X screen size.
 func (s *Space) Size() (w, h int) { return s.w, s.h }
 
-// nearest returns the index of the region containing the layout point, or
-// the closest one by squared distance when it is in a hole. -1 when empty.
-func (s *Space) nearest(lx, ly int) int {
-	best, bestD := -1, 0
-	for i := 0; i < s.n; i++ {
-		r := s.regions[i].Layout
-		dx := axisGap(lx, r.X, r.X+r.W)
-		dy := axisGap(ly, r.Y, r.Y+r.H)
-		d := dx*dx + dy*dy
-		if best < 0 || d < bestD {
-			best, bestD = i, d
-		}
-	}
-	return best
-}
-
-// nearestX is nearest in X space.
-func (s *Space) nearestX(x, y int) int {
-	best, bestD := -1, 0
-	for i := 0; i < s.n; i++ {
-		r := s.regions[i].X
-		dx := axisGap(x, r.X, r.X+r.W)
-		dy := axisGap(y, r.Y, r.Y+r.H)
-		d := dx*dx + dy*dy
-		if best < 0 || d < bestD {
-			best, bestD = i, d
-		}
-	}
-	return best
-}
-
-// axisGap is the distance from v to [lo, hi): 0 inside.
-func axisGap(v, lo, hi int) int {
-	if v < lo {
-		return lo - v
-	}
-	if v >= hi {
-		return v - hi + 1
-	}
-	return 0
-}
-
 // WholeOutput reports whether the X rect is exactly one output's, and that
 // output's layout origin.
 func (s *Space) WholeOutput(x, y, w, h int) (lx, ly int, ok bool) {
@@ -137,22 +95,18 @@ func (s *Space) WholeOutput(x, y, w, h int) (lx, ly int, ok bool) {
 	return 0, 0, false
 }
 
-// ToX converts a layout point to X, through the nearest region.
+// ToX converts a layout point to X using the shared layout origin.
 func (s *Space) ToX(lx, ly int) (x, y int) {
-	i := s.nearest(lx, ly)
-	if i < 0 {
+	if s.n == 0 {
 		return lx, ly
 	}
-	r := &s.regions[i]
-	return r.X.X + lx - r.Layout.X, r.X.Y + ly - r.Layout.Y
+	return lx - s.ox, ly - s.oy
 }
 
 // ToLayout converts an X point to layout coordinates.
 func (s *Space) ToLayout(x, y int) (lx, ly int) {
-	i := s.nearestX(x, y)
-	if i < 0 {
+	if s.n == 0 {
 		return x, y
 	}
-	r := &s.regions[i]
-	return r.Layout.X + x - r.X.X, r.Layout.Y + y - r.X.Y
+	return x + s.ox, y + s.oy
 }

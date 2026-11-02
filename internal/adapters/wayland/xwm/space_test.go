@@ -21,7 +21,9 @@ func TestSpaceLayouts(t *testing.T) {
 		{"left-of negative origin", domain.Layout{out(-640, 0, 640, 480), out(0, 0, 1920, 1080)}, 2560, 1080, -630, 20, 10, 20},
 		{"above", domain.Layout{out(0, -500, 800, 500), out(0, 0, 800, 600)}, 800, 1100, 3, -400, 3, 100},
 		{"below", domain.Layout{out(0, 0, 800, 600), out(0, 600, 800, 400)}, 800, 1000, 3, 700, 3, 700},
-		{"hole nearest", domain.Layout{out(0, 0, 100, 100), out(300, 0, 100, 100)}, 400, 100, 120, 10, 120, 10},
+		{"negative-origin hole", domain.Layout{out(-200, -100, 100, 100), out(100, 100, 100, 100)}, 400, 300, 0, 0, 200, 100},
+		{"outside extents", domain.Layout{out(-200, -100, 100, 100)}, 100, 100, -400, 300, -200, 400},
+		{"hole", domain.Layout{out(0, 0, 100, 100), out(300, 0, 100, 100)}, 400, 100, 120, 10, 120, 10},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -51,9 +53,19 @@ func TestSpaceEmptyAndOrigin(t *testing.T) {
 	if x, y := s.ToX(5, 6); x != 5 || y != 6 {
 		t.Fatalf("empty ToX = %d,%d", x, y)
 	}
+	if x, y := s.ToLayout(5, 6); x != 5 || y != 6 {
+		t.Fatalf("empty ToLayout = %d,%d", x, y)
+	}
 	s.Set(domain.Layout{out(-640, -20, 640, 480), out(0, 0, 1920, 1080)})
 	if ox, oy := s.Origin(); ox != -640 || oy != -20 {
 		t.Fatalf("origin = %d,%d", ox, oy)
+	}
+	s.Set(nil)
+	if x, y := s.ToX(5, 6); x != 5 || y != 6 {
+		t.Fatalf("cleared ToX = %d,%d", x, y)
+	}
+	if x, y := s.ToLayout(5, 6); x != 5 || y != 6 {
+		t.Fatalf("cleared ToLayout = %d,%d", x, y)
 	}
 }
 
