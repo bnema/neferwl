@@ -144,3 +144,53 @@ func TestUnmanagedUnmapDuringGrabClearsPointer(t *testing.T) {
 		t.Fatal("pointer focus not reset")
 	}
 }
+
+func TestUnmanagedCrossOutputBoundary(t *testing.T) {
+	for _, vertical := range []bool{false, true} {
+		name := "horizontal"
+		if vertical {
+			name = "vertical"
+		}
+		t.Run(name, func(t *testing.T) {
+			c := publishRig(t, 2)
+			r := Rect{X: 280, Y: 20, W: 50, H: 40}
+			points := [2][2]float64{{290, 30}, {310, 30}}
+			if vertical {
+				c.screens[1].x, c.screens[1].y = 0, 200
+				r = Rect{X: 20, Y: 180, W: 50, H: 40}
+				points = [2][2]float64{{30, 190}, {30, 210}}
+			}
+			mapUnmanaged(t, c, 100, r.X, r.Y, r.W, r.H, false)
+			for i, sc := range c.screens {
+				want := r
+				want.X -= sc.x
+				want.Y -= sc.y
+				var found bool
+				for _, w := range unmanagedScene(t, c, i).Windows {
+					if w.ID == 100 {
+						found = true
+						if w.Rect != want || !w.Popup || !w.OverLayers {
+							t.Fatalf("screen %d window %+v, want rect %+v", i, w, want)
+						}
+					}
+				}
+				if !found {
+					t.Fatalf("screen %d missing crossing window", i)
+				}
+				p := points[i]
+				if id, x, y := c.hit(p[0], p[1]); id != 100 || x != p[0]-float64(r.X) || y != p[1]-float64(r.Y) {
+					t.Fatalf("screen %d hit %d at %v,%v", i, id, x, y)
+				}
+			}
+			// Both outputs reuse the caller's scene storage, even for a crossing window.
+			out := make([]domain.SceneWindow, 0, 1)
+			if n := testing.AllocsPerRun(100, func() {
+				for _, sc := range c.screens {
+					c.sceneUnmanaged(out[:0], sc)
+				}
+			}); n != 0 {
+				t.Fatalf("cross-output scene allocs = %v", n)
+			}
+		})
+	}
+}

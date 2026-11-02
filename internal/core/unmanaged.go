@@ -65,21 +65,6 @@ func (c *Core) unmanagedEvent(ctx context.Context, ev ports.ClientEvent) (change
 	return true, c.rehit(ctx)
 }
 
-// unmanagedScreen is the screen showing u: the one containing its origin, or
-// the one the pointer clamp would pick when the origin is in a hole.
-func (c *Core) unmanagedScreen(u *unmanagedState) *screen {
-	x, y := float64(u.rect.X), float64(u.rect.Y)
-	i := c.screenAt(x, y)
-	if i < 0 {
-		cx, cy := c.clampPointer(x, y, x, y)
-		i = c.screenAt(cx, cy)
-	}
-	if i < 0 {
-		return nil
-	}
-	return c.screens[i]
-}
-
 // sceneUnmanaged appends the unmanaged windows shown on sc, bottom to top,
 // drawn as popups over the layers. They are hidden while sc previews.
 func (c *Core) sceneUnmanaged(out []domain.SceneWindow, sc *screen) []domain.SceneWindow {
@@ -88,7 +73,7 @@ func (c *Core) sceneUnmanaged(out []domain.SceneWindow, sc *screen) []domain.Sce
 	}
 	for _, id := range c.unmanagedOrder {
 		u := c.unmanaged[id]
-		if u == nil || c.unmanagedScreen(u) != sc {
+		if u == nil || !u.rect.Overlaps(sc.rect()) {
 			continue
 		}
 		r := u.rect
@@ -106,7 +91,7 @@ func (c *Core) unmanagedAt(sc *screen, lx, ly float64) (WindowID, float64, float
 	}
 	for i := len(c.unmanagedOrder) - 1; i >= 0; i-- {
 		u := c.unmanaged[c.unmanagedOrder[i]]
-		if u == nil || u.noInput || c.unmanagedScreen(u) != sc {
+		if u == nil || u.noInput {
 			continue
 		}
 		x, y := lx-float64(u.rect.X-sc.x), ly-float64(u.rect.Y-sc.y)
