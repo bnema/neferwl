@@ -601,3 +601,49 @@ func TestWindowColorDescriptionCommittedFact(t *testing.T) {
 		lastColor = color
 	}
 }
+
+// A virtual output with confirmed HDR advertises the same PQ/BT.2020
+// description as a physical one.
+func TestColorVirtualOutputHDR(t *testing.T) {
+	s, c, _ := colorServer(t)
+	s.display.Do(func() {
+		layout := domain.Layout{s.outputs[0].place, {Info: domain.OutputInfo{Name: "tv", Virtual: true, Width: 8, Height: 8}, Width: 8, Height: 8, Scale: 1}}
+		s.setOutputs(ports.SetOutputs{Outputs: layout})
+		s.setOutputHDR(domain.OutputFormats{Output: "tv", HDR: &domain.OutputHDR{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: .005}})
+	})
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	manager := bindVersion(t, c, "wp_color_manager_v1", 2)
+	registerProtocol(t, c, manager)
+	var out uint32
+	for id, g := range c.Registry().GetGlobals() {
+		if g.Interface != "wl_output" {
+			continue
+		}
+		proxy, err := bindWireID(c, id, "wl_output", 4)
+		if err != nil {
+			t.Fatal(err)
+		}
+		registerProtocol(t, c, proxy)
+		obj := c.AllocateID()
+		requestProtocol(t, c, manager, cm.WpColorManagerV1RequestGetOutput, obj, proxy)
+		desc := c.AllocateID()
+		requestProtocol(t, c, obj, cm.WpColorManagementOutputV1RequestGetImageDescription, desc)
+		info := c.AllocateID()
+		requestProtocol(t, c, desc, cm.WpImageDescriptionV1RequestGetInformation, info)
+		ev := watchColor(c, info)
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+		if len(ev.values) >= 8 && ev.values[1][0] == bt2020 && ev.values[2][0] == pq {
+			if ev.values[6][0] != 1000 || ev.values[7][0] != 400 {
+				t.Fatalf("virtual HDR luminance %v", ev.values)
+			}
+			out++
+		}
+	}
+	if out != 1 {
+		t.Fatalf("PQ/BT.2020 outputs = %d, want only the virtual one", out)
+	}
+}
