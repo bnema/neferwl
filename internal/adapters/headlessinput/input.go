@@ -4,6 +4,7 @@ package headlessinput
 import (
 	"context"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -62,6 +63,7 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 	}
 	var layout domain.Layout
 	positions := map[string][2]float64{}
+	dirtyPositions := map[string]bool{}
 	pointerState := ""
 	pointerLayout := func() (string, domain.Layout) {
 		for _, o := range layout {
@@ -170,7 +172,18 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 			km.Close()
 			km = next
 			log.Info().Msg("keymap replaced")
-		case layout = <-layouts:
+		case next := <-layouts:
+			if !slices.EqualFunc(layout, next, domain.OutputPlacement.Equal) {
+				for key := range positions {
+					dirtyPositions[key] = true
+				}
+			}
+			// Snapshot binding slices: later producer mutations cannot hide a change.
+			layout = slices.Clone(next)
+			for i := range layout {
+				layout[i].Devices = slices.Clone(next[i].Devices)
+				layout[i].Inputs = slices.Clone(next[i].Inputs)
+			}
 		case line, ok := <-script:
 			if !ok {
 				return nil
@@ -190,7 +203,7 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 						motion.X, motion.Y = targets.Clamp(position[0], position[1], motion.X, motion.Y)
 						position = [2]float64{motion.X, motion.Y}
 						ev = motion
-					} else if pointerState != key && (pointerState != "" || key != "shared") {
+					} else if dirtyPositions[key] || pointerState != key && (pointerState != "" || key != "shared") {
 						sync := stamp(ports.PointerMotion{X: position[0], Y: position[1], Time: scriptedPointerTime(ev)}, snapshot())
 						select {
 						case input <- sync:
@@ -204,6 +217,7 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 							moveCursor(o.Info.Name, tx, ty)
 						}
 					}
+					delete(dirtyPositions, key)
 					positions[key] = position
 					pointerState = key
 				}

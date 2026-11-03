@@ -375,3 +375,57 @@ func TestFirstBoundClickSyncsTimeAndCursor(t *testing.T) {
 		t.Fatal(cursor)
 	}
 }
+
+func TestBoundLayoutChangeSyncsBeforeStationaryClick(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		km, err := xkb.New(xkb.RMLVO{Layout: "us"})
+		if err != nil {
+			t.Skip(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		script := make(chan string)
+		layouts := make(chan domain.Layout)
+		input := make(chan ports.InputEvent, 16)
+		done := make(chan error, 1)
+		go func() { done <- Run(ctx, km, nil, script, input, layouts, nil, logging.For(ctx, "input")) }()
+		assertScriptDevice(t, input)
+		layout := domain.Layout{{Info: domain.OutputInfo{Name: "tv", Width: 100, Height: 80}, X: 300, Width: 100, Height: 80, Isolated: true, Devices: []domain.InputDeviceID{2}}}
+		layouts <- layout
+		script <- "device 2"
+		script <- "click"
+		synctest.Wait()
+		<-input // device announcement
+		first := (<-input).(ports.PointerMotion)
+		if first.X != 350 {
+			t.Fatal(first)
+		}
+		<-input
+		<-input // first click press/release
+		layout[0].X = 600
+		layouts <- layout
+		script <- "click"
+		synctest.Wait()
+		sync := (<-input).(ports.PointerMotion)
+		button := (<-input).(ports.PointerButton)
+		if sync.Device != 2 || sync.X != 600 || sync.Y != 40 || sync.Time == 0 || sync.Time != button.Time || !button.Pressed {
+			t.Fatalf("sync=%+v button=%+v", sync, button)
+		}
+		<-input // release
+		// Identical snapshots and a steady-state click do not resync.
+		layouts <- layout
+		script <- "click"
+		synctest.Wait()
+		if len(input) != 2 {
+			t.Fatalf("repeated sync: %d events", len(input))
+		}
+		if _, ok := (<-input).(ports.PointerButton); !ok {
+			t.Fatal("unexpected sync")
+		}
+		<-input
+		close(script)
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
+}
