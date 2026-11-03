@@ -9,11 +9,13 @@ import (
 	"time"
 	"unicode"
 
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/zerowrap"
 )
+
+const scriptDeviceID domain.InputDeviceID = 1
 
 // Run owns the keymap and converts script lines into input events. A keymap
 // received on keymaps replaces the current one, which is closed. Scripted
@@ -34,6 +36,7 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 		return domain.SecurityState{}
 	}
 	stamp := func(ev ports.InputEvent, state domain.SecurityState) ports.InputEvent {
+		ev = withDevice(ev, scriptDeviceID)
 		if security == nil {
 			return ev
 		}

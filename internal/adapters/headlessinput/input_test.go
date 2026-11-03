@@ -53,6 +53,9 @@ func TestScript(t *testing.T) {
 			}
 			for i, name := range tt.names {
 				ev := (<-input).(ports.KeyEvent)
+				if ev.Device != scriptDeviceID {
+					t.Fatalf("device=%d", ev.Device)
+				}
 				if ev.Keysym != name {
 					t.Errorf("event %d: %s want %s", i, ev.Keysym, name)
 				}

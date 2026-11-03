@@ -14,6 +14,7 @@ type InputEvent interface{ inputEvent() }
 // after this transition; wayland forwards both to clients unchanged. Time is
 // the device timestamp (CLOCK_MONOTONIC), like SwipeBegin.Time.
 type KeyEvent struct {
+	Device domain.InputDeviceID
 	Keysym string
 	// Base is the key's unshifted keysym in the active layout, so Cmd+Shift+1
 	// still matches a cmd+shift+1 bind although it prints exclam.
@@ -32,6 +33,7 @@ func (KeyEvent) inputEvent() {}
 // raw device deltas; all four are 0 for absolute devices. Time is the device
 // timestamp (CLOCK_MONOTONIC).
 type PointerMotion struct {
+	Device               domain.InputDeviceID
 	X, Y                 float64
 	DX, DY               float64
 	UnaccelDX, UnaccelDY float64
@@ -43,6 +45,7 @@ func (PointerMotion) inputEvent() {}
 // PointerButton uses evdev button codes (BTN_LEFT is 0x110). Time is the
 // device timestamp (CLOCK_MONOTONIC).
 type PointerButton struct {
+	Device  domain.InputDeviceID
 	Button  uint32
 	Pressed bool
 	Time    time.Duration
@@ -53,6 +56,7 @@ func (PointerButton) inputEvent() {}
 // PointerAxis is one scroll frame: Vertical, then Horizontal. Time is the
 // device timestamp (CLOCK_MONOTONIC).
 type PointerAxis struct {
+	Device               domain.InputDeviceID
 	Source               domain.AxisSource
 	Vertical, Horizontal domain.ScrollAxis
 	Time                 time.Duration
@@ -65,6 +69,7 @@ func (PointerAxis) inputEvent() {}
 // pointer. Time is the device timestamp (CLOCK_MONOTONIC), shared by the
 // updates and the end.
 type SwipeBegin struct {
+	Device  domain.InputDeviceID
 	Fingers int
 	Time    time.Duration
 }
@@ -74,6 +79,7 @@ type SwipeBegin struct {
 // which the compositor's own swipes follow. AccelDX, AccelDY are the same
 // move with pointer acceleration, what a client gets.
 type SwipeUpdate struct {
+	Device           domain.InputDeviceID
 	DX, DY           float64
 	AccelDX, AccelDY float64
 	Time             time.Duration
@@ -82,6 +88,7 @@ type SwipeUpdate struct {
 // SwipeEnd lifts the fingers. Cancelled is set when libinput cancelled
 // the swipe (another finger landed).
 type SwipeEnd struct {
+	Device    domain.InputDeviceID
 	Cancelled bool
 	Time      time.Duration
 }
@@ -94,6 +101,7 @@ func (SwipeEnd) inputEvent()    {}
 // (CLOCK_MONOTONIC), shared by the updates and the end. A pinch always goes
 // to the window under the pointer.
 type PinchBegin struct {
+	Device  domain.InputDeviceID
 	Fingers int
 	Time    time.Duration
 }
@@ -103,6 +111,7 @@ type PinchBegin struct {
 // relative to the begin (1.0 there) and Rotation the angle turned since the
 // previous event, in degrees clockwise.
 type PinchUpdate struct {
+	Device   domain.InputDeviceID
 	DX, DY   float64
 	Scale    float64
 	Rotation float64
@@ -112,6 +121,7 @@ type PinchUpdate struct {
 // PinchEnd lifts the fingers. Cancelled is set when libinput cancelled the
 // pinch.
 type PinchEnd struct {
+	Device    domain.InputDeviceID
 	Cancelled bool
 	Time      time.Duration
 }
@@ -119,6 +129,7 @@ type PinchEnd struct {
 // HoldBegin starts a touchpad hold: fingers resting on the pad. Like a
 // pinch it goes to the window under the pointer.
 type HoldBegin struct {
+	Device  domain.InputDeviceID
 	Fingers int
 	Time    time.Duration
 }
@@ -126,6 +137,7 @@ type HoldBegin struct {
 // HoldEnd lifts the fingers. Cancelled is set when the fingers moved or
 // another finger landed, so the hold became something else.
 type HoldEnd struct {
+	Device    domain.InputDeviceID
 	Cancelled bool
 	Time      time.Duration
 }
@@ -147,3 +159,16 @@ type SeatChanged struct {
 }
 
 func (SeatChanged) inputEvent() {}
+
+// InputDeviceAdded announces a device before its input events. Name is the
+// human-readable device name (not necessarily unique).
+type InputDeviceAdded struct {
+	ID   domain.InputDeviceID
+	Name string
+}
+
+// InputDeviceRemoved follows any cancellation of the device's active gesture.
+type InputDeviceRemoved struct{ ID domain.InputDeviceID }
+
+func (InputDeviceAdded) inputEvent()   {}
+func (InputDeviceRemoved) inputEvent() {}

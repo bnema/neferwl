@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/zerowrap"
 )
 
 // forwarder decouples reading libinput from core. libinput keeps reading
@@ -46,7 +46,7 @@ func (f *forwarder) push(ev ports.InputEvent) {
 	if m, state, wrapped, ok := queuedMotion(ev); ok {
 		f.stats.Motions++
 		if n := len(f.queue); n > 0 {
-			if prev, prevState, prevWrapped, tail := queuedMotion(f.queue[n-1]); tail && wrapped == prevWrapped && state == prevState {
+			if prev, prevState, prevWrapped, tail := queuedMotion(f.queue[n-1]); tail && m.Device == prev.Device && wrapped == prevWrapped && state == prevState {
 				// Relative deltas add up: games read them, not the position.
 				m.DX += prev.DX
 				m.DY += prev.DY

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,9 +15,9 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/domain"
 
+	"bnema.dev/zerowrap"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/zerowrap"
 )
 
 func TestSecureScriptSnapshotsEveryInputKind(t *testing.T) {
@@ -42,6 +43,9 @@ func TestSecureScriptSnapshotsEveryInputKind(t *testing.T) {
 		ev, ok := raw.(ports.SecurityInput)
 		if !ok || ev.State != state {
 			t.Fatalf("unstamped event %T %+v", raw, raw)
+		}
+		if got := reflect.ValueOf(ev.Event).FieldByName("Device").Uint(); got != uint64(scriptDeviceID) {
+			t.Fatalf("device=%d", got)
 		}
 		switch ev.Event.(type) {
 		case ports.KeyEvent:

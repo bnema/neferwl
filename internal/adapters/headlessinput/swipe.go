@@ -18,13 +18,13 @@ const (
 // swipeEvents is a swipe of fingers fingers toward (dx, dy), a unit
 // direction, starting at the device time start.
 func swipeEvents(fingers int, dx, dy float64, start time.Duration) []ports.InputEvent {
-	evs := []ports.InputEvent{ports.SwipeBegin{Fingers: fingers, Time: start}}
+	evs := []ports.InputEvent{ports.SwipeBegin{Device: scriptDeviceID, Fingers: fingers, Time: start}}
 	at := start
 	for range swipeSteps {
 		at += swipeEvery
-		evs = append(evs, ports.SwipeUpdate{DX: dx * swipeStep, DY: dy * swipeStep, Time: at})
+		evs = append(evs, ports.SwipeUpdate{Device: scriptDeviceID, DX: dx * swipeStep, DY: dy * swipeStep, Time: at})
 	}
-	return append(evs, ports.SwipeEnd{Time: at})
+	return append(evs, ports.SwipeEnd{Device: scriptDeviceID, Time: at})
 }
 
 // monotonic is CLOCK_MONOTONIC, the clock of libinput's timestamps.

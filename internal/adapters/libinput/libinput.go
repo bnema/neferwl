@@ -11,12 +11,12 @@ import (
 	"time"
 	"unsafe"
 
+	"bnema.dev/purego"
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/fdwait"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/purego"
-	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 
@@ -285,8 +285,9 @@ func applySeat(on bool, sc seatControl, li uintptr, opts *Options, in *inputStat
 		opts.Log.Warn().Err(err).Msg("keymap reset failed")
 	}
 	if !on && in.gestures.owner != 0 {
+		id := in.identities[in.gestures.owner]
 		if end := in.gestures.abort(in.gestures.owner); end != nil {
-			fwd.push(secureInput(end, opts.Security, state))
+			fwd.push(secureInput(withDevice(end, id), opts.Security, state))
 		}
 	}
 	fwd.push(secureInput(ports.SeatChanged{Active: on, State: kept}, opts.Security, state))
@@ -439,8 +440,8 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 			if err != nil {
 				return err
 			}
-			if out != nil {
-				fwd.push(out)
+			for _, event := range out {
+				fwd.push(event)
 			}
 		}
 	}
@@ -452,10 +453,12 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 // the touchpads. dev applies the config to libinput; it is a zero-size
 // type, so storing it in the interface allocates nothing.
 type inputState struct {
-	cfg      domain.InputDevicesConfig
-	dev      deviceConfig
-	devices  map[uintptr]bool
-	gestures gestures
+	cfg        domain.InputDevicesConfig
+	dev        deviceConfig
+	devices    map[uintptr]bool
+	gestures   gestures
+	identities map[uintptr]domain.InputDeviceID
+	nextID     domain.InputDeviceID
 }
 
 // deviceConfig is libinput's device configuration side: what a device is
@@ -679,10 +682,67 @@ func usec(v uint64) time.Duration { return time.Duration(v) * time.Microsecond }
 // (CLOCK_MONOTONIC), so clients measure speeds (kinetic scrolling) on
 // when events happened, not when they were read.
 // It snapshots admission before translating and queueing any input kind.
-func translate(ev uintptr, opts Options, p *pointer, in *inputState) (ports.InputEvent, error) {
+func translate(ev uintptr, opts Options, p *pointer, in *inputState) ([]ports.InputEvent, error) {
 	state := securitySnapshot(opts.Security)
-	out, err := translateEvent(ev, opts, p, in, state)
-	return secureInput(out, opts.Security, state), err
+	dev := eventDevice(ev)
+	var events []ports.InputEvent
+	switch eventType(ev) {
+	case evDeviceAdded:
+		events = in.addDevice(dev, deviceName(dev))
+		opts.Log.Info().Str("device", deviceName(dev)).Msg("input device added")
+		if in.configurable(dev) && !in.devices[dev] {
+			in.devices[deviceRef(dev)] = true
+			in.configure(dev, opts.Log)
+		}
+	case evDeviceRemoved:
+		opts.Log.Info().Str("device", deviceName(dev)).Msg("input device removed")
+		events = in.removeDevice(dev)
+		if in.devices[dev] {
+			delete(in.devices, dev)
+			deviceUnref(dev)
+		}
+	default:
+		out, err := translateEvent(ev, opts, p, in, state)
+		if err != nil {
+			return nil, err
+		}
+		if out != nil {
+			events = append(events, withDevice(out, in.identities[dev]))
+		}
+	}
+	return secureBatch(events, opts.Security, state), nil
+}
+
+func secureBatch(events []ports.InputEvent, security ports.SessionSecurity, state domain.SecurityState) []ports.InputEvent {
+	for i, event := range events {
+		events[i] = secureInput(event, security, state)
+	}
+	return events
+}
+
+func (s *inputState) addDevice(dev uintptr, name string) []ports.InputEvent {
+	if s.identities == nil {
+		s.identities = make(map[uintptr]domain.InputDeviceID)
+	}
+	if _, exists := s.identities[dev]; exists {
+		return nil
+	}
+	s.nextID++
+	s.identities[dev] = s.nextID
+	return []ports.InputEvent{ports.InputDeviceAdded{ID: s.nextID, Name: name}}
+}
+
+func (s *inputState) removeDevice(dev uintptr) []ports.InputEvent {
+	id, exists := s.identities[dev]
+	if !exists {
+		return nil
+	}
+	var events []ports.InputEvent
+	if cancel := s.gestures.abort(dev); cancel != nil {
+		events = append(events, withDevice(cancel, id))
+	}
+	delete(s.identities, dev)
+	return append(events, ports.InputDeviceRemoved{ID: id})
 }
 
 func securitySnapshot(security ports.SessionSecurity) domain.SecurityState {
@@ -702,22 +762,6 @@ func secureInput(ev ports.InputEvent, security ports.SessionSecurity, state doma
 func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state domain.SecurityState) (ports.InputEvent, error) {
 	log := opts.Log
 	switch eventType(ev) {
-	case evDeviceAdded:
-		dev := eventDevice(ev)
-		log.Info().Str("device", deviceName(dev)).Msg("input device added")
-		if in.configurable(dev) && !in.devices[dev] {
-			in.devices[deviceRef(dev)] = true
-			in.configure(dev, log)
-		}
-	case evDeviceRemoved:
-		dev := eventDevice(ev)
-		log.Info().Str("device", deviceName(dev)).Msg("input device removed")
-		if in.devices[dev] {
-			delete(in.devices, dev)
-			deviceUnref(dev)
-		}
-		// Core waits for the end of a gesture the device began.
-		return in.gestures.abort(dev), nil
 	case evSwipeBegin, evPinchBegin, evHoldBegin:
 		ge := gestureEvent(ev)
 		kind := domain.GestureSwipe
