@@ -79,12 +79,12 @@ See [examples/config](../examples/config) for every key with its default.
 | `workspace.<name>.max-columns`, `.overflow` | output values | Per-workspace layout |
 | `workspace.<name>.column.<N>` | none | Column slot: `<cells>, <command>` |
 | `rule.<name>.*` | none | [Window rules](#window-rules) |
-| `output.<name>` | `preferred` | `WxH`, `WxH@Hz`, `preferred` or `off` |
+| `output.<name>` | `preferred` | `WxH`, `WxH@Hz`, `preferred`, `off`, or `virtual WxH[@Hz]` (60 Hz by default; dimensions 1–16384; name uses letters, digits, `.`, `_`, `-`) |
 | `output.<name>.scale` | `1` | 1 to 4, e.g. `1.5` or `4/3` |
 | `output.<name>.transform` | `normal` | `90`, `180`, `270`, `flipped`, `flipped-90`, … |
 | `output.<name>.primary` | `off` | Focused at startup |
 | `output.<name>.right-of`, `.left-of`, `.above`, `.below`, `.offset` | automatic | [Output placement](#output-placement) |
-| `output.<name>.hdr` | `off` | [HDR](#hdr) on capable displays |
+| `output.<name>.hdr` | `off` | [HDR](#hdr) on capable displays; ignored with a warning on virtual outputs, as are `.sdr-expand`, `.sdr-expand-intensity`, `.sdr-expand-peak` and `.sdr-decode` (always SDR) |
 | `output.<name>.sdr-brightness` | `203` | Brightness of SDR content in HDR, in nits (80–1000) |
 | `drm.devices` | empty (all GPUs) | Comma-separated [GPUs](#gpus) NeferWL uses (restart required) |
 | `drm.ignore` | empty | Comma-separated [GPUs](#gpus) NeferWL leaves alone (restart required) |

@@ -28,10 +28,12 @@ const DefaultSDRBrightness = 203
 // ScaleOnly marks an entry set only by output.<name> subkeys: it
 // does not select the connector.
 type OutputConfig struct {
-	Name  string
-	Mode  string
-	Off   bool
-	Scale float64
+	// Virtual declares an SDR virtual output; Mode is required, with 60 Hz when refresh is omitted.
+	Virtual bool
+	Name    string
+	Mode    string
+	Off     bool
+	Scale   float64
 	// Transform is output.<name>.transform; logical size swaps for 90/270.
 	Transform BufferTransform
 	// Pos is an explicit logical placement set at runtime; nil uses Anchor, else automatic layout.

@@ -552,7 +552,22 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 				continue
 			}
 			o := domain.OutputConfig{Name: name}
-			if value == "off" {
+			if fields := strings.Fields(value); len(fields) > 0 && fields[0] == "virtual" {
+				if name == "" || strings.Trim(name, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-") != "" {
+					warn("%s: virtual output name must be letters, digits, ., _ or -", key)
+					continue
+				}
+				if len(fields) != 2 {
+					warn("%s: expected virtual WxH[@Hz]", key)
+					continue
+				}
+				w, h, hz, err := ParseMode(fields[1])
+				if err != nil || w < 1 || h < 1 || w > 16384 || h > 16384 || math.IsNaN(hz) || math.IsInf(hz, 0) {
+					warn("%s: virtual mode must be WxH[@Hz], dimensions 1..16384 and a finite positive refresh", key)
+					continue
+				}
+				o.Virtual, o.Mode = true, fields[1]
+			} else if value == "off" {
 				o.Off = true
 			} else if _, _, _, err := ParseMode(value); err != nil {
 				warn("%s: %v", key, err)
@@ -624,6 +639,25 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 			continue
 		}
 		override()
+	}
+	// Subkeys may precede the declaration: enforce SDR only after all lines.
+	for i := range c.Outputs {
+		o := &c.Outputs[i]
+		if !o.Virtual {
+			continue
+		}
+		for _, field := range []string{"hdr", "sdr-expand", "sdr-expand-intensity", "sdr-expand-peak", "sdr-decode"} {
+			key := "output." + o.Name + "." + field
+			if line, ok := seen[key]; ok {
+				warnings = append(warnings, Warning{Line: line, Msg: key + ": ignored on virtual output (always SDR)"})
+				delete(raw, key)
+			}
+		}
+		o.HDR = false
+		o.SDRExpand = domain.SDRExpandAuto
+		o.SDRExpandIntensity = domain.DefaultSDRExpandIntensity
+		o.SDRExpandPeak = 0
+		o.SDRDecode = 0
 	}
 	warnings = append(warnings, checkOutputAnchors(c.Outputs, relKeys, offsetLines, seen)...)
 	warnings = append(warnings, checkWorkspaceBinds(c, seen)...)
