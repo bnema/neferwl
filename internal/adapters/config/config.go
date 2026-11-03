@@ -575,8 +575,12 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 					continue
 				}
 				w, h, hz, err := ParseMode(fields[1])
-				if err != nil || w < 1 || h < 1 || w > 16384 || h > 16384 || math.IsNaN(hz) || math.IsInf(hz, 0) {
-					warn("%s: virtual mode must be WxH[@Hz], dimensions 1..16384 and a finite positive refresh", key)
+				if hz == 0 {
+					hz = 60
+				}
+				_, representable := domain.RefreshMilli(hz)
+				if err != nil || w < 1 || h < 1 || w > 16384 || h > 16384 || !representable {
+					warn("%s: virtual mode must be WxH[@Hz], dimensions 1..16384 and rounded refresh 1..2147483647 mHz", key)
 					continue
 				}
 				o.Virtual, o.Mode = true, fields[1]

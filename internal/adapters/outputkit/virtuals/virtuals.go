@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"slices"
 
 	"bnema.dev/zerowrap"
@@ -170,15 +169,15 @@ func (h *Host) Heads() []domain.OutputHead {
 
 func parseMode(value string) (domain.OutputMode, error) {
 	w, h, hz, err := config.ParseMode(value)
-	if err != nil || w < 1 || h < 1 || w > 16384 || h > 16384 || math.IsNaN(hz) || math.IsInf(hz, 0) {
+	if err != nil || w < 1 || h < 1 || w > 16384 || h > 16384 {
 		return domain.OutputMode{}, fmt.Errorf("invalid mode %q", value)
 	}
 	if hz == 0 {
 		hz = 60
 	}
-	refresh := math.Round(hz * 1000)
-	if refresh < 1 || refresh >= float64(int(^uint(0)>>1)) {
+	refresh, ok := domain.RefreshMilli(hz)
+	if !ok {
 		return domain.OutputMode{}, fmt.Errorf("invalid refresh %q", value)
 	}
-	return domain.OutputMode{Width: w, Height: h, RefreshMilli: int(refresh)}, nil
+	return domain.OutputMode{Width: w, Height: h, RefreshMilli: refresh}, nil
 }
