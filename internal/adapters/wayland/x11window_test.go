@@ -539,9 +539,9 @@ func TestX11LockFollowsFocusAndRelativeMotion(t *testing.T) {
 	if got := constrained(t, r.events); got.ID != 0 {
 		t.Fatalf("constrained %+v after native focus", got)
 	}
-	if f, _ := r.peer.waitReq(skip, func(q x11Req) bool { return q.major == x11OpSetInputFocus }); f.u32(4) == win {
-		t.Fatalf("X focus still on %#x", win)
-	}
+	// The SetInputFocus for the earlier X11 focus may land after skip was
+	// taken, so wait for the request that moves the X focus away.
+	r.peer.waitReq(skip, func(q x11Req) bool { return q.major == x11OpSetInputFocus && q.u32(4) != win })
 
 	r.commands <- ports.FocusWindow{ID: m.ID}
 	if ev := next(t, r.xc, lockEvents); ev[0] != float64(pointerconstraints.ZwpLockedPointerV1EventLocked) {
