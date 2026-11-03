@@ -34,6 +34,10 @@ func TestVirtualReloadInventory(t *testing.T) {
 		if len(inventory.Heads) != 2 || inventory.Heads[1].Info.Name != "tv" || !inventory.Heads[1].Info.Virtual {
 			t.Fatal(inventory)
 		}
+		// Inventory is published before owners necessarily pass their announced
+		// gates. Let both create their renderers before testing removal, otherwise
+		// tv may correctly stop without ever owning a renderer to close.
+		synctest.Wait()
 		reload <- domain.ConfigChanged{Config: domain.Config{}}
 		inventory = <-heads
 		if len(inventory.Heads) != 1 {
