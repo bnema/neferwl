@@ -127,7 +127,7 @@ func scaleChanges(old, cur domain.Config) (map[string]float64, bool) {
 			c.Outputs[i].Scale = 0
 		}
 		c.Outputs = slices.DeleteFunc(c.Outputs, func(o domain.OutputConfig) bool {
-			return o == domain.OutputConfig{Name: o.Name, ScaleOnly: true, SDRBrightness: domain.DefaultSDRBrightness}
+			return sameVirtualEntry(o, domain.OutputConfig{Name: o.Name, ScaleOnly: true, SDRBrightness: domain.DefaultSDRBrightness})
 		})
 		return c
 	}

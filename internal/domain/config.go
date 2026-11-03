@@ -49,6 +49,8 @@ type OutputConfig struct {
 	SDRExpandPeak      float64 // nits; zero resolves from EDID
 	SDRDecode          SDRDecode
 	ScaleOnly          bool
+	// Inputs binds devices by name using path.Match globs, one per config line.
+	Inputs []string
 }
 
 // OutputAnchor places an output against another connected one, named by To.
@@ -418,11 +420,12 @@ func windowRuleEqual(a, b WindowRule) bool {
 }
 
 func outputConfigEqual(a, b OutputConfig) bool {
-	if !equalPointer(a.Pos, b.Pos) {
+	if !equalPointer(a.Pos, b.Pos) || !equalSlice(a.Inputs, b.Inputs) {
 		return false
 	}
 	a.Pos, b.Pos = nil, nil
-	return a == b
+	a.Inputs, b.Inputs = nil, nil
+	return reflect.DeepEqual(a, b)
 }
 
 func equalPointer[T comparable](a, b *T) bool {

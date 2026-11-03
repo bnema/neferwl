@@ -10,7 +10,7 @@ func TestDesiredVirtuals(t *testing.T) {
 	file := domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1"}, tv, {Name: "tablet", Virtual: true, Mode: "1x1"}}}
 	state := NewOutputOverrides(file, false)
 	got := state.Virtuals()
-	if len(got) != 2 || got[0] != tv || got[1].Name != "tablet" {
+	if len(got) != 2 || !sameVirtualEntry(got[0], tv) || got[1].Name != "tablet" {
 		t.Fatalf("virtuals=%+v", got)
 	}
 	got[0].Mode = "changed"

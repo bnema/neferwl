@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -432,6 +433,18 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 				c.Outputs = append(c.Outputs, domain.OutputConfig{Name: name, ScaleOnly: true, SDRBrightness: domain.DefaultSDRBrightness, SDRExpandIntensity: domain.DefaultSDRExpandIntensity})
 				return &c.Outputs[len(c.Outputs)-1]
 			}
+			if base, ok := strings.CutSuffix(name, ".input"); ok {
+				if _, err := path.Match(value, ""); err != nil || value == "" {
+					warn("%s: expected a non-empty device name glob (path.Match syntax)", key)
+					continue
+				}
+				name = base
+				// Unlike scalar keys, each valid input line adds one glob.
+				seen[key], raw[key] = n, value
+				e := entry()
+				e.Inputs = append(e.Inputs, value)
+				continue
+			}
 			if base, ok := strings.CutSuffix(name, ".primary"); ok {
 				name = base
 				b, err := onOff(value)
@@ -579,6 +592,7 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 			e := entry()
 			o.Scale, o.Transform, o.Primary, o.HDR, o.SDRBrightness, o.Anchor = e.Scale, e.Transform, e.Primary, e.HDR, e.SDRBrightness, e.Anchor
 			o.SDRExpand, o.SDRExpandIntensity, o.SDRExpandPeak, o.SDRDecode = e.SDRExpand, e.SDRExpandIntensity, e.SDRExpandPeak, e.SDRDecode
+			o.Inputs = e.Inputs
 			*e = o
 			continue
 		}
