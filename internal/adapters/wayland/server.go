@@ -181,6 +181,8 @@ type Server struct {
 	cleanup               func()
 	log                   zerowrap.Logger
 	creatingPrivateOutput bool
+	// Retired private globals remain bindable until libwayland destroys the display.
+	retiredPrivateOutputs map[*server.Global]struct{}
 	logDamage             bool
 	channels              Channels
 	xwayland              xwaylandClient
@@ -620,6 +622,9 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	s.castInventoryChanged()
 	err := s.display.Run(ctx)
+	// Run has destroyed the display and its withdrawn globals; no bind callback
+	// can consult the retired set after this point.
+	s.retiredPrivateOutputs = nil
 	s.syncWait.releasePending()
 	// The display is gone: only the X connection is left to close.
 	if s.xwm != nil {

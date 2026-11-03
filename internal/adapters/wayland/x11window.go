@@ -38,14 +38,12 @@ func xwaylandRestricted(iface string) bool {
 // are visible to, and bindable by, the Xwayland client alone.
 func (s *Server) globalVisible(c server.Client, g *server.Global) bool {
 	if g.Interface() == "wl_output" {
+		if _, retired := s.retiredPrivateOutputs[g]; retired {
+			return c == s.xwayland.client && c != (server.Client{})
+		}
 		for _, o := range s.outputs {
 			if g == o.global {
 				return c != s.xwayland.client
-			}
-			for _, retired := range o.xretired {
-				if g == retired {
-					return c == s.xwayland.client && c != (server.Client{})
-				}
 			}
 			if g == o.xglobal {
 				return c == s.xwayland.client && c != (server.Client{})

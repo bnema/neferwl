@@ -358,3 +358,48 @@ func TestPrivateOutputLateBindIsInert(t *testing.T) {
 		}
 	})
 }
+
+func TestRemovedPrivateOutputLateBindIsInert(t *testing.T) {
+	r := newX11Rig(t)
+	initial := twoOutputs(0)
+	initial.Outputs[1].X = 1920
+	applyOutputs(t, r.s, r.commands, initial)
+	roundtrip(t, r.xc)
+	var name uint32
+	for _, g := range r.xc.Registry().GetGlobals() {
+		if g.Interface == "wl_output" && g.Name > name {
+			name = g.Name
+		}
+	}
+	// Display.Do holds the owner so the bind is queued while the global is
+	// live, but cannot be dispatched until after withdrawal in this callback.
+	var id uint32
+	r.s.display.Do(func() {
+		var err error
+		id, err = bindWireID(r.xc, name, "wl_output", 1)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		excluded := twoOutputs(0)
+		excluded.Outputs = excluded.Outputs[:1]
+		r.s.setOutputs(excluded)
+	})
+	registerProtocol(t, r.xc, id)
+	roundtrip(t, r.xc)
+	r.s.display.Do(func() {
+		if o := r.s.outputByNameExact("B"); o != nil {
+			t.Error("removed output retained")
+		}
+		if len(r.s.retiredPrivateOutputs) != 1 {
+			t.Error("removed private global not retained")
+		}
+	})
+	applyOutputs(t, r.s, r.commands, initial)
+	roundtrip(t, r.xc)
+	r.s.display.Do(func() {
+		if o := r.s.outputByNameExact("B"); len(o.resources) != 0 {
+			t.Error("stale resource revived")
+		}
+	})
+}

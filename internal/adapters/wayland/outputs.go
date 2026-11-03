@@ -45,7 +45,6 @@ type output struct {
 	global           *server.Global
 	xglobal          *server.Global
 	xgeneration      *outputGeneration
-	xretired         []*server.Global
 	xresources       []*wayland.Output
 	resources        []*wayland.Output
 	xdgOutputs       []*xdgoutput.ZxdgOutputV1
@@ -233,7 +232,7 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 		o.global.Remove()
 		if o.xglobal != nil {
 			o.xgeneration.live = false
-			o.xretired = append(o.xretired, o.xglobal)
+			s.retirePrivateOutput(o.xglobal)
 			o.xglobal.Remove()
 			o.xglobal = nil
 		}
@@ -467,7 +466,7 @@ func (s *Server) syncXOutput(o *output) {
 	included := s.xspace.Includes(o.place)
 	if !included && o.xglobal != nil {
 		o.xgeneration.live = false
-		o.xretired = append(o.xretired, o.xglobal)
+		s.retirePrivateOutput(o.xglobal)
 		for _, surf := range s.surfaces {
 			if surf.on != o || surf.destroyed || !surf.wl.Resource.Alive() {
 				continue
@@ -490,4 +489,14 @@ func (s *Server) syncXOutput(o *output) {
 	if included && o.xglobal == nil {
 		o.xglobal = s.outputGlobal(o, true)
 	}
+}
+
+// retirePrivateOutput retains visibility classification independently of the
+// active output list. Global.Remove keeps the bind callback alive until display
+// destruction, when Server.Run clears this display-owned set.
+func (s *Server) retirePrivateOutput(g *server.Global) {
+	if s.retiredPrivateOutputs == nil {
+		s.retiredPrivateOutputs = make(map[*server.Global]struct{})
+	}
+	s.retiredPrivateOutputs[g] = struct{}{}
 }
