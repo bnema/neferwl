@@ -325,8 +325,8 @@ type WindowRule struct {
 	// Workspace is a 1-based number of a numbered workspace or the name of a
 	// declared one; empty leaves it.
 	Workspace string
-	// Monitor is a connector (DP-2) or a monitor key ("make model serial").
-	Monitor string
+	// Output is a connector (DP-2) or a monitor key ("make model serial").
+	Output string
 	// Cells is the width in cells of the new column of a tiled window
 	// (1 to 16; 0 leaves it automatic).
 	Cells int

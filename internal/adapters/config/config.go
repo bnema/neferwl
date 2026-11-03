@@ -612,6 +612,10 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 				warn("%s: rule name must be letters, digits, - or _", key)
 				continue
 			}
+			if field == "monitor" {
+				warn("%s: renamed to rule.%s.output", key, name)
+				continue
+			}
 			e := rules[name]
 			if e == nil {
 				e = &ruleEntry{rule: domain.WindowRule{Name: name}, line: n}
@@ -1299,7 +1303,7 @@ type ruleEntry struct {
 	dropped bool
 }
 
-var errUnknownRuleField = errors.New("unknown key (app-id, floating, workspace, monitor, width)")
+var errUnknownRuleField = errors.New("unknown key (app-id, floating, workspace, output, width)")
 
 // setRule applies one rule.<name>.<field> key.
 func setRule(r *domain.WindowRule, field, v string) error {
@@ -1357,11 +1361,11 @@ func setRule(r *domain.WindowRule, field, v string) error {
 			return fmt.Errorf("must be a workspace number or the name of a declared workspace")
 		}
 		r.Workspace = v
-	case "monitor":
+	case "output":
 		if v == "" {
 			return fmt.Errorf("needs a connector (DP-2) or a monitor key")
 		}
-		r.Monitor = v
+		r.Output = v
 	case "width":
 		n, ok := cells(v)
 		if !ok {

@@ -141,7 +141,7 @@ focus.flash-color =
 # monitor key, width = cells (1-16).
 # rule.games.app-id = steam_app_.*
 # rule.games.workspace = 3
-# rule.games.monitor = DP-2
+# rule.games.output = DP-2
 # rule.calc.app-id = org\.gnome\.Calculator
 # rule.calc.floating = on
 

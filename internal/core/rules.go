@@ -17,9 +17,9 @@ import (
 // fields are retained for eligibility policy and do not affect placement.
 //
 // A rule never moves the user (ADR 011): it does not take the focus and does
-// not change which workspace or monitor is shown or focused. A window sent to
+// not change which workspace or output is shown or focused. A window sent to
 // another workspace joins it quietly, like a slot window. The one exception
-// is the workspace on screen of the focused monitor, where the window
+// is the workspace on screen of the focused output, where the window
 // behaves like any new window.
 
 // rule is one parsed window rule.
@@ -35,7 +35,7 @@ type rule struct {
 	// named one. At most one is set.
 	number    int
 	workspace string
-	monitor   string
+	output    string
 	cells     int // zero: automatic
 }
 
@@ -50,7 +50,7 @@ type ruleEffect struct {
 	floating  *bool
 	number    int
 	workspace string
-	monitor   string
+	output    string
 	cells     int // zero: automatic
 }
 
@@ -61,7 +61,7 @@ func parseRules(rs []domain.WindowRule) ([]rule, error) {
 		if r.AppID == nil {
 			return nil, fmt.Errorf("rule %s: no app-id", r.Name)
 		}
-		p := rule{appID: r.AppID, floating: r.Floating, monitor: r.Monitor, sdrExpand: r.SDRExpand, sdrExpandIntensity: r.SDRExpandIntensity, sdrExpandPeak: r.SDRExpandPeak, sdrDecode: r.SDRDecode}
+		p := rule{appID: r.AppID, floating: r.Floating, output: r.Output, sdrExpand: r.SDRExpand, sdrExpandIntensity: r.SDRExpandIntensity, sdrExpandPeak: r.SDRExpandPeak, sdrDecode: r.SDRDecode}
 		if r.Workspace != "" {
 			if n, err := strconv.Atoi(r.Workspace); err == nil {
 				if n < 1 {
@@ -126,8 +126,8 @@ func (eff *ruleEffect) merge(r rule) {
 	if r.number > 0 || r.workspace != "" {
 		eff.number, eff.workspace = r.number, r.workspace
 	}
-	if r.monitor != "" {
-		eff.monitor = r.monitor
+	if r.output != "" {
+		eff.output = r.output
 	}
 	if r.cells != 0 {
 		eff.cells = r.cells
@@ -135,9 +135,9 @@ func (eff *ruleEffect) merge(r rule) {
 }
 
 // ruleTarget is the screen and workspace a rule sends a window to. A named
-// workspace lives where it lives, whatever the rule's monitor; an unknown one
-// is ignored. A monitor that is not connected is ignored too. Without a
-// workspace the monitor's workspace on screen is the target, and a number is
+// workspace lives where it lives, whatever the rule's output; an unknown one
+// is ignored. An output that is not connected is ignored too. Without a
+// workspace the output's workspace on screen is the target, and a number is
 // clamped to the workspaces that exist (the last one is the spare empty one),
 // so no empty workspace is created.
 func (c *Core) ruleTarget(eff ruleEffect) (*screen, *Workspace) {
@@ -147,8 +147,8 @@ func (c *Core) ruleTarget(eff ruleEffect) (*screen, *Workspace) {
 		}
 	}
 	sc := c.cur()
-	if eff.monitor != "" {
-		if i := slices.IndexFunc(c.screens, func(s *screen) bool { return s.mon.matches(eff.monitor) }); i >= 0 {
+	if eff.output != "" {
+		if i := slices.IndexFunc(c.screens, func(s *screen) bool { return s.mon.matches(eff.output) }); i >= 0 {
 			sc = c.screens[i]
 		}
 	}

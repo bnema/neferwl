@@ -182,12 +182,14 @@ Rules place an app's windows when they first open.
 | `rule.<name>.app-id` | Required. [Regular expression](https://pkg.go.dev/regexp/syntax) matching the whole app ID |
 | `rule.<name>.floating` | `on` to float, `off` to tile |
 | `rule.<name>.workspace` | Workspace number or name |
-| `rule.<name>.monitor` | Output |
+| `rule.<name>.output` | Output |
 | `rule.<name>.width` | Column width in [cells](#column-widths), 1 to 16 |
 | `rule.<name>.sdr-expand` | `game` (classify as game), `on` (force eligibility), or `off` |
 | `rule.<name>.sdr-expand-intensity` | Highlight intensity, 0 to 1 |
 | `rule.<name>.sdr-expand-peak` | Peak override in nits: 0 (automatic), or 200 to 10000 |
 | `rule.<name>.sdr-decode` | `gamma22` or `srgb`, for expanded SDR only |
+
+`rule.<name>.monitor` has been renamed to `rule.<name>.output`; the old key warns and is ignored. `workspace.<name>.monitor` is unchanged.
 
 
 ```ini
@@ -203,7 +205,7 @@ rule.calc.floating = on
 - Every matching rule applies, in file order; later rules win.
 - A rule never moves your focus or view.
 - Proton games (X11) use `steam_app_<id>` as app ID, taken from `WM_CLASS`.
-- An X11 window that opens exactly on one output's area opens on that output, unless a rule sets `monitor`.
+- An X11 window that opens exactly on one output's area opens on that output, unless a rule sets `output`.
 - A rule can float a Proton game: `rule.games.app-id = steam_app_\d+` with `rule.games.floating = on`. Without a rule, X11 games tile until they ask for fullscreen.
 - To find an app ID: `neferwl state | jq '.windows[].app_id'`.
 

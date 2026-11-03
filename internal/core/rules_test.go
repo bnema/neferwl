@@ -192,12 +192,12 @@ func TestRuleNumberOnCurrentWorkspaceActsAsNormalMap(t *testing.T) {
 	})
 }
 
-func TestRuleMonitor(t *testing.T) {
+func TestRuleOutput(t *testing.T) {
 	for _, mon := range []string{"DP-2", "Acme B 2"} {
 		t.Run(mon, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				r := startMulti(t, func(c *domain.Config) {
-					c.Rules = []domain.WindowRule{winRule("m", "chat", func(r *domain.WindowRule) { r.Monitor = mon })}
+					c.Rules = []domain.WindowRule{winRule("m", "chat", func(r *domain.WindowRule) { r.Output = mon })}
 				}, left, right)
 				r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
 				before := r.mapApp(t, 1, "term")
@@ -218,10 +218,10 @@ func TestRuleMonitor(t *testing.T) {
 	}
 }
 
-func TestRuleMonitorWithNumberedWorkspace(t *testing.T) {
+func TestRuleOutputWithNumberedWorkspace(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startMulti(t, func(c *domain.Config) {
-			c.Rules = []domain.WindowRule{winRule("m", "chat", func(r *domain.WindowRule) { r.Monitor = "DP-2"; r.Workspace = "2" })}
+			c.Rules = []domain.WindowRule{winRule("m", "chat", func(r *domain.WindowRule) { r.Output = "DP-2"; r.Workspace = "2" })}
 		}, left, right)
 		r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
 		r.mapApp(t, 3, "term") // DP-2 gets a window, so a second workspace
@@ -235,10 +235,10 @@ func TestRuleMonitorWithNumberedWorkspace(t *testing.T) {
 	})
 }
 
-func TestRuleDisconnectedMonitorFallsBack(t *testing.T) {
+func TestRuleDisconnectedOutputFallsBack(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startMulti(t, func(c *domain.Config) {
-			c.Rules = []domain.WindowRule{winRule("m", "chat", func(r *domain.WindowRule) { r.Monitor = "HDMI-9" })}
+			c.Rules = []domain.WindowRule{winRule("m", "chat", func(r *domain.WindowRule) { r.Output = "HDMI-9" })}
 		}, left, right)
 		r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
 		r.mapApp(t, 1, "term")
@@ -255,7 +255,7 @@ func TestRulesMerge(t *testing.T) {
 		r := startMulti(t, func(c *domain.Config) {
 			c.Layout.MaxColumns = 4
 			c.Rules = []domain.WindowRule{
-				winRule("all", ".*", func(r *domain.WindowRule) { r.Monitor = "DP-2"; r.Cells = 1 }),
+				winRule("all", ".*", func(r *domain.WindowRule) { r.Output = "DP-2"; r.Cells = 1 }),
 				winRule("chat", "chat", func(r *domain.WindowRule) { r.Cells = 2 }),
 			}
 		}, left, right)
@@ -267,7 +267,7 @@ func TestRulesMerge(t *testing.T) {
 		for _, w := range set.Windows {
 			got[w.ID] = w.Rect.W
 		}
-		// DP-2 is 400 wide: the later rule wins the width, the generic monitor still applies.
+		// DP-2 is 400 wide: the later rule wins the width, the generic output still applies.
 		if got[1] != 200 || got[2] != 100 {
 			t.Fatalf("widths %v", got)
 		}
@@ -475,7 +475,7 @@ func TestInitialFullscreenKeepsRuleDestination(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startMulti(t, func(c *domain.Config) {
 			declareDev(c)
-			c.Rules = []domain.WindowRule{winRule("dev", "game", func(r *domain.WindowRule) { r.Workspace = "dev"; r.Monitor = "DP-2"; r.Floating = ruleOn() })}
+			c.Rules = []domain.WindowRule{winRule("dev", "game", func(r *domain.WindowRule) { r.Workspace = "dev"; r.Output = "DP-2"; r.Floating = ruleOn() })}
 		}, left, right)
 		r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
 		r.client <- ports.WindowMapped{ID: 1, AppID: "game", Fullscreen: true}
@@ -500,14 +500,14 @@ func TestMapAtOutputPlacesOnThatOutput(t *testing.T) {
 	})
 }
 
-func TestMapAtOutputKeepsRuleMonitor(t *testing.T) {
+func TestMapAtOutputKeepsRuleOutput(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := startMulti(t, func(c *domain.Config) {
-			c.Rules = []domain.WindowRule{winRule("g", "game", func(r *domain.WindowRule) { r.Monitor = "DP-1" })}
+			c.Rules = []domain.WindowRule{winRule("g", "game", func(r *domain.WindowRule) { r.Output = "DP-1" })}
 		}, left, right)
 		r.client <- ports.WindowMapped{ID: 2, AppID: "game", HasAt: true, AtX: 200, AtY: 0}
 		if w := stWindow(r.stateWith(t, 2), 2); w.Output != "DP-1" {
-			t.Fatalf("rule monitor lost to the hint: %+v", w)
+			t.Fatalf("rule output lost to the hint: %+v", w)
 		}
 
 	})

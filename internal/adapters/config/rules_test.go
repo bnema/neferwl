@@ -17,7 +17,7 @@ rule.games.floating = on
 rule.games.workspace = 3
 rule.chat.app-id = org\.telegram\..*|discord
 rule.chat.workspace = chat
-rule.chat.monitor = DP-2
+rule.chat.output = DP-2
 rule.chat.width = 1
 rule.games.width = 4
 `)
@@ -28,10 +28,10 @@ rule.games.width = 4
 		t.Fatalf("%+v", c.Rules)
 	}
 	g, ch := c.Rules[0], c.Rules[1]
-	if g.Floating == nil || !*g.Floating || g.Workspace != "3" || g.Cells != 4 || g.Monitor != "" {
+	if g.Floating == nil || !*g.Floating || g.Workspace != "3" || g.Cells != 4 || g.Output != "" {
 		t.Fatalf("%+v", g)
 	}
-	if ch.Floating != nil || ch.Workspace != "chat" || ch.Monitor != "DP-2" || ch.Cells != 1 {
+	if ch.Floating != nil || ch.Workspace != "chat" || ch.Output != "DP-2" || ch.Cells != 1 {
 		t.Fatalf("%+v", ch)
 	}
 	if !g.AppID.MatchString("steam_app_1245620") || !ch.AppID.MatchString("discord") || !ch.AppID.MatchString("org.telegram.desktop") {
@@ -80,7 +80,7 @@ func TestRuleWarnings(t *testing.T) {
 		{"too wide", "rule.a.app-id = foo\nrule.a.width = 17\n", "rule.a.width: must be a cell count", 2, 0},
 		{"bad workspace number", "rule.a.app-id = foo\nrule.a.workspace = 0\n", "rule.a.workspace: workspace number", 2, 0},
 		{"bad workspace name", "rule.a.app-id = foo\nrule.a.workspace = a b\n", "rule.a.workspace: must be", 2, 0},
-		{"empty monitor", "rule.a.app-id = foo\nrule.a.monitor =\n", "rule.a.monitor: needs", 2, 0},
+		{"empty output", "rule.a.app-id = foo\nrule.a.output =\n", "rule.a.output: needs", 2, 0},
 		{"bad rule name", "rule.a b.app-id = foo\n", "rule name must be", 1, 0},
 		{"undeclared workspace", "rule.a.app-id = foo\nrule.a.workspace = web\n", "rule.a.workspace: no workspace.web.* declared", 2, 1},
 	} {
@@ -127,4 +127,29 @@ func parseRaw(t *testing.T, s string) (cfg any, raw map[string]string, w []Warni
 		t.Fatal(err)
 	}
 	return c, raw, w
+}
+
+func TestRuleMonitorRenamedWithoutAlias(t *testing.T) {
+	c, warnings := parseString(t, `
+workspace.chat.monitor = DP-2
+bind.cmd+c = workspace chat
+rule.a.app-id = foo
+rule.a.monitor = DP-1
+rule.b.monitor = DP-1
+rule.a.width = 2
+`)
+	if len(warnings) != 2 {
+		t.Fatal(warnings)
+	}
+	for i, name := range []string{"a", "b"} {
+		if !strings.Contains(warnings[i].Msg, "renamed to rule."+name+".output") {
+			t.Fatal(warnings)
+		}
+	}
+	if len(c.Rules) != 1 || c.Rules[0].Output != "" || c.Rules[0].Cells != 2 {
+		t.Fatal(c.Rules)
+	}
+	if len(c.Workspaces) != 1 || c.Workspaces[0].Monitor != "DP-2" {
+		t.Fatal(c.Workspaces)
+	}
 }
