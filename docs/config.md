@@ -227,8 +227,9 @@ Virtual outputs are SDR by default. `output.tv.hdr = on` makes one HDR
 (PQ/BT.2020, reported as a 1000-nit display) when the renderer supports it,
 else it falls back to SDR and logs why. `.sdr-brightness`, `.sdr-expand`,
 `.sdr-expand-intensity`, `.sdr-expand-peak` and `.sdr-decode` apply as on
-physical outputs. Changing `.hdr`, `.sdr-brightness` or `.sdr-expand-peak`
-and reloading recreates the virtual output.
+physical outputs. Reloading after a change to `.hdr` or `.sdr-brightness`
+restarts the output's rendering; its windows, workspaces and screen casts
+stay. `.sdr-expand-peak` applies at once.
 
 Without placement, `tv` is isolated: automatic layout, unbound pointers,
 directional focus and startup focus skip it. Isolated outputs share a column

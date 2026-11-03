@@ -24,8 +24,12 @@ import (
 )
 
 // ModeRequest is a live mode transaction. Result must be buffered by its sender.
+// A non-nil HDR replaces the output's HDR settings in place (same output,
+// same screen): an enable or SDR white change rebuilds the renderer, a peak
+// change only republishes the caps. Mode is then the current mode.
 type ModeRequest struct {
 	Mode   domain.OutputMode
+	HDR    *domain.OutputHDRSettings
 	Result chan<- error
 }
 
@@ -119,6 +123,59 @@ func enableHDR(r ports.Renderer, settings domain.OutputHDRSettings) error {
 	return nil
 }
 
+// setupHDR applies settings to a fresh renderer and returns the confirmed
+// HDR luminance, nil for SDR (also when HDR was asked but is unavailable).
+func setupHDR(r ports.Renderer, opts Options, settings domain.OutputHDRSettings) *domain.OutputHDR {
+	if !settings.Enabled {
+		return nil
+	}
+	if err := enableHDR(r, settings); err != nil {
+		opts.Log.Warn().Err(err).Str("output", opts.Name).Msg("virtual HDR unavailable; falling back to SDR")
+		r.SetHDR(0)
+		_, _ = r.ExportTargets(0, nil, false)
+		return nil
+	}
+	lum := opts.HDRLuminance
+	if lum == (domain.OutputHDR{}) {
+		lum = DefaultVirtualHDRLuminance
+	}
+	opts.Log.Info().Str("output", opts.Name).Msg("virtual HDR enabled")
+	return &lum
+}
+
+// reportFormats sends the confirmed color state; false when ctx ended.
+func reportFormats(ctx context.Context, opts Options, confirmed *domain.OutputHDR) bool {
+	if opts.Formats == nil {
+		return true
+	}
+	select {
+	case opts.Formats <- domain.OutputFormats{Output: opts.Name, HDR: confirmed}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// reportCaps sends the HDR caps of settings and the confirmed state; false
+// when ctx ended.
+func reportCaps(ctx context.Context, opts Options, settings domain.OutputHDRSettings, confirmed *domain.OutputHDR) bool {
+	if opts.Events == nil {
+		return true
+	}
+	facts := domain.HDRCapsInput{Reason: "virtual HDR inactive"}
+	if confirmed != nil {
+		facts.Capable = true
+		facts.MaxLuminance, facts.MaxFrameAverage, facts.MinLuminance = confirmed.MaxLuminance, confirmed.MaxFrameAverage, confirmed.MinLuminance
+	}
+	event := domain.NewOutputHDRCaps(opts.Name, settings, facts, confirmed != nil)
+	select {
+	case opts.Events <- ports.OutputHDRCaps{OutputHDRCaps: event}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
 func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, contents <-chan *domain.ContentBatch, returns ports.ContentReturn, cursor <-chan domain.CursorChange, incoming <-chan domain.CaptureRequest) error {
 	r, err := opts.NewRenderer(opts.Width, opts.Height)
 	if err != nil {
@@ -126,40 +183,18 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 	}
 	defer func() { r.Close() }()
 	hdrSettings := opts.HDR.Normalized()
-	var confirmed *domain.OutputHDR
+	confirmed := setupHDR(r, opts, hdrSettings)
+	// formats: whether the confirmed color state was reported (it is once
+	// HDR was requested, so a later SDR state is reported too).
+	formats := false
 	if hdrSettings.Enabled {
-		if err := enableHDR(r, hdrSettings); err != nil {
-			opts.Log.Warn().Err(err).Str("output", opts.Name).Msg("virtual HDR unavailable; falling back to SDR")
-			r.SetHDR(0)
-			_, _ = r.ExportTargets(0, nil, false)
-		} else {
-			lum := opts.HDRLuminance
-			if lum == (domain.OutputHDR{}) {
-				lum = DefaultVirtualHDRLuminance
-			}
-			confirmed = &lum
-			opts.Log.Info().Str("output", opts.Name).Msg("virtual HDR enabled")
-		}
-		if opts.Formats != nil {
-			select {
-			case opts.Formats <- domain.OutputFormats{Output: opts.Name, HDR: confirmed}:
-			case <-ctx.Done():
-				return nil
-			}
-		}
-	}
-	facts := domain.HDRCapsInput{Reason: "virtual HDR inactive"}
-	if confirmed != nil {
-		facts.Capable = true
-		facts.MaxLuminance, facts.MaxFrameAverage, facts.MinLuminance = confirmed.MaxLuminance, confirmed.MaxFrameAverage, confirmed.MinLuminance
-	}
-	event := domain.NewOutputHDRCaps(opts.Name, hdrSettings, facts, confirmed != nil)
-	if opts.Events != nil {
-		select {
-		case opts.Events <- ports.OutputHDRCaps{OutputHDRCaps: event}:
-		case <-ctx.Done():
+		if !reportFormats(ctx, opts, confirmed) {
 			return nil
 		}
+		formats = true
+	}
+	if !reportCaps(ctx, opts, hdrSettings, confirmed) {
+		return nil
 	}
 	table := surfaces.New()
 	drawn := table.Map()
@@ -330,6 +365,52 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		if holdDue == nil {
 			holdTimer.Stop()
 		}
+		// applyHDR replaces the HDR settings in place. Enable and SDR white
+		// rebuild the renderer (as DRM restarts its output) on the same
+		// output: no screen is removed. The peak only changes the caps.
+		applyHDR := func(want domain.OutputHDRSettings) error {
+			want = want.Normalized()
+			if want == hdrSettings {
+				return nil
+			}
+			if want.Enabled == hdrSettings.Enabled && want.SDRBrightness == hdrSettings.SDRBrightness {
+				hdrSettings = want
+				if !reportCaps(ctx, opts, hdrSettings, confirmed) {
+					return ctx.Err()
+				}
+				return nil
+			}
+			next, err := opts.NewRenderer(opts.Width, opts.Height)
+			if err != nil {
+				return fmt.Errorf("recreate renderer: %w", err)
+			}
+			nextConfirmed := setupHDR(next, opts, want)
+			pipeline.EndGate(capture.ErrFrameNotPresented)
+			pipeline.Close(r)
+			r.Close()
+			r = next
+			pipeline = capture.NewPipeline(ctx, opts.Captured)
+			pipeline.Security = opts.Security
+			if opts.NewCaptureRenderer != nil {
+				pipeline.EnableOffscreen(opts.NewCaptureRenderer)
+			}
+			requests.FailPending(capture.ErrFrameNotPresented)
+			hdrSettings, confirmed = want, nextConfirmed
+			if want.Enabled || formats {
+				if !reportFormats(ctx, opts, confirmed) {
+					return ctx.Err()
+				}
+				formats = true
+			}
+			if !reportCaps(ctx, opts, hdrSettings, confirmed) {
+				return ctx.Err()
+			}
+			// Redraw the current scene on the new renderer.
+			dirty, securityKnown = haveScene, false
+			cursorScale = -1
+			reports.Reset()
+			return nil
+		}
 		applyMode := func(mode domain.OutputMode) error {
 			if mode.Width <= 0 || mode.Height <= 0 || mode.RefreshMilli < 0 {
 				return fmt.Errorf("invalid output mode: %dx%d@%d", mode.Width, mode.Height, mode.RefreshMilli)
@@ -383,7 +464,12 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 				opts.ModeRequests = nil
 				continue
 			}
-			err := applyMode(req.Mode)
+			var err error
+			if req.HDR != nil {
+				err = applyHDR(*req.HDR)
+			} else {
+				err = applyMode(req.Mode)
+			}
 			req.Result <- err
 			if err != nil {
 				return err

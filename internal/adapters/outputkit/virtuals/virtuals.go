@@ -76,11 +76,13 @@ func (h *Host) Sync(ctx context.Context, want []domain.OutputConfig) error {
 			}
 		}
 		hdr := cfg.HDRSettings()
-		if current != nil && hdrNeedsRestart(current.hdr, hdr) {
-			if err := h.Remove(ctx, cfg.Name); err != nil {
-				return errors.Join(result, err)
+		if current != nil && current.hdr != hdr {
+			// Like a DRM restart, the screen stays: the owner rebuilds its
+			// renderer (enable, SDR white) or republishes caps (peak).
+			if err := h.request(ctx, cfg.Name, current, headless.ModeRequest{Mode: *current.head.Current, HDR: &hdr}); err != nil {
+				return errors.Join(result, err, h.Remove(ctx, cfg.Name))
 			}
-			current = nil
+			current.hdr = hdr
 		}
 		if current == nil {
 			if h.set.Outs[cfg.Name] != nil {
@@ -100,15 +102,7 @@ func (h *Host) Sync(ctx context.Context, want []domain.OutputConfig) error {
 			h.order = append(h.order, cfg.Name)
 		} else if current.head.Info.Width != info.Width || current.head.Info.Height != info.Height || current.head.Info.RefreshMilli != info.RefreshMilli {
 			// Inventory changes only after the owner has applied the mode.
-			ack := make(chan error, 1)
-			select {
-			case current.modes <- headless.ModeRequest{Mode: mode, Result: ack}:
-			case <-h.set.Outs[cfg.Name].Done:
-				return errors.Join(result, fmt.Errorf("virtual output %s stopped", cfg.Name))
-			case <-ctx.Done():
-				return errors.Join(result, ctx.Err())
-			}
-			if err := awaitMode(ctx, h.set.Outs[cfg.Name].Done, ack, cfg.Name); err != nil {
+			if err := h.request(ctx, cfg.Name, current, headless.ModeRequest{Mode: mode}); err != nil {
 				return errors.Join(result, err, h.Remove(ctx, cfg.Name))
 			}
 			select {
@@ -127,11 +121,19 @@ func (h *Host) Sync(ctx context.Context, want []domain.OutputConfig) error {
 	return result
 }
 
-// hdrNeedsRestart mirrors DRM's outputNeedsRestart for HDR enable and SDR
-// white. A headless owner reports its caps only at startup and has no live
-// peak channel, so an expansion peak change also replaces it.
-func hdrNeedsRestart(current, want domain.OutputHDRSettings) bool {
-	return current.Normalized() != want.Normalized()
+// request hands a mode or HDR change to the running owner and waits until
+// it applied it.
+func (h *Host) request(ctx context.Context, name string, o *output, req headless.ModeRequest) error {
+	ack := make(chan error, 1)
+	req.Result = ack
+	select {
+	case o.modes <- req:
+	case <-h.set.Outs[name].Done:
+		return fmt.Errorf("virtual output %s stopped", name)
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return awaitMode(ctx, h.set.Outs[name].Done, ack, name)
 }
 
 // Remove finishes one owned lifetime, including a spontaneously stopped owner.
