@@ -50,8 +50,10 @@ type HeadChange struct {
 	Name    string
 	Enabled bool
 	Mode    *OutputMode
-	Pos     *image.Point
-	Scale   float64
+	// Custom marks a client-supplied mode, permitted only on virtual heads.
+	Custom bool
+	Pos    *image.Point
+	Scale  float64
 	// Transform is nil to leave the transform unchanged.
 	Transform *BufferTransform
 }

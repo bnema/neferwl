@@ -6,8 +6,8 @@ import (
 
 	"github.com/bnema/neferwl/internal/domain"
 
-	wlr "github.com/bnema/go-wayland-bindings/server/wlroutputmanagement"
 	"bnema.dev/purego-libwayland/server"
+	wlr "github.com/bnema/go-wayland-bindings/server/wlroutputmanagement"
 )
 
 type outputConfiguration struct {
@@ -144,7 +144,7 @@ func (h *headConfiguration) SetCustomMode(r *wlr.ZwlrOutputConfigurationHeadV1, 
 		r.PostError(uint32(wlr.ZwlrOutputConfigurationHeadV1ErrorInvalidCustomMode), "invalid custom mode")
 		return
 	}
-	h.unsupported = true
+	h.change.Custom = true
 	h.change.Mode = &domain.OutputMode{Width: int(w), Height: int(height), RefreshMilli: int(refresh)}
 }
 func (h *headConfiguration) SetPosition(r *wlr.ZwlrOutputConfigurationHeadV1, x, y int32) {

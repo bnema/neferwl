@@ -6,6 +6,7 @@ import (
 	"maps"
 	"math"
 	"slices"
+	"strings"
 
 	"github.com/bnema/neferwl/internal/domain"
 )
@@ -163,10 +164,16 @@ func (o *OutputOverrides) validate(req domain.OutputApply) error {
 		if change.Transform != nil && *change.Transform > 7 {
 			return fmt.Errorf("invalid transform on %s", change.Name)
 		}
-		if o.headless && (change.Enabled != current.Enabled || change.Mode != nil && (current.Current == nil || change.Mode.Width != current.Current.Width || change.Mode.Height != current.Current.Height || change.Mode.RefreshMilli != current.Current.RefreshMilli)) {
+		if change.Custom {
+			m := change.Mode
+			if !current.Info.Virtual || m == nil || m.Width < 1 || m.Width > 16384 || m.Height < 1 || m.Height > 16384 || m.RefreshMilli < 0 {
+				return fmt.Errorf("invalid custom mode on %s (virtual heads only, dimensions 1..16384)", change.Name)
+			}
+		}
+		if o.headless && !current.Info.Virtual && strings.HasPrefix(change.Name, "HEADLESS-") && (change.Enabled != current.Enabled || change.Mode != nil && (current.Current == nil || change.Mode.Width != current.Current.Width || change.Mode.Height != current.Current.Height || change.Mode.RefreshMilli != current.Current.RefreshMilli)) {
 			return fmt.Errorf("headless mode and enabled state are fixed")
 		}
-		if change.Mode != nil && !slices.ContainsFunc(current.Modes, func(m domain.OutputMode) bool {
+		if change.Mode != nil && !change.Custom && !slices.ContainsFunc(current.Modes, func(m domain.OutputMode) bool {
 			return m.Width == change.Mode.Width && m.Height == change.Mode.Height && m.RefreshMilli == change.Mode.RefreshMilli
 		}) {
 			return fmt.Errorf("unknown mode on %s", change.Name)
@@ -206,7 +213,11 @@ func (o *OutputOverrides) Apply(req domain.OutputApply) (domain.Config, error) {
 			entry.Pos = &image.Point{X: h.Pos.X, Y: h.Pos.Y}
 		}
 		if h.Mode != nil {
-			entry.Mode = fmt.Sprintf("%dx%d@%.3f", h.Mode.Width, h.Mode.Height, float64(h.Mode.RefreshMilli)/1000)
+			refresh := h.Mode.RefreshMilli
+			if h.Custom && refresh == 0 {
+				refresh = 60000
+			}
+			entry.Mode = fmt.Sprintf("%dx%d@%.3f", h.Mode.Width, h.Mode.Height, float64(refresh)/1000)
 		}
 		o.overrides[h.Name] = entry
 	}

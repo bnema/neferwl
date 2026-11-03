@@ -7,10 +7,10 @@ import (
 
 	"github.com/bnema/neferwl/internal/domain"
 
+	"bnema.dev/wlturbo"
 	wlr "github.com/bnema/go-wayland-bindings/server/wlroutputmanagement"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/wlturbo"
 )
 
 type managementEvents struct {
@@ -246,9 +246,6 @@ func TestOutputManagementUnsupportedSettings(t *testing.T) {
 		name string
 		send func(*testing.T, *wlturbo.Display, uint32)
 	}{
-		{"custom mode", func(t *testing.T, c *wlturbo.Display, ch uint32) {
-			requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetCustomMode, int32(800), int32(600), int32(60000))
-		}},
 		{"adaptive sync off", func(t *testing.T, c *wlturbo.Display, ch uint32) {
 			requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetAdaptiveSync, uint32(0))
 		}},
@@ -729,5 +726,56 @@ func TestOutputManagementDestroyDropsPendingReply(t *testing.T) {
 		}
 	}) {
 		t.Fatal("display stopped")
+	}
+}
+
+//testpolicy:realtime real Wayland socket and display-loop request/reply channels
+func TestOutputManagementCustomMode(t *testing.T) {
+	for _, virtual := range []bool{false, true} {
+		t.Run(map[bool]string{false: "physical", true: "virtual"}[virtual], func(t *testing.T) {
+			s, _, applies, replies, dir := outputTestServer(t)
+			inventory := testHead()
+			inventory.Heads[0].Info.Virtual = virtual
+			if !s.display.Do(func() { s.setOutputHeads(inventory) }) {
+				t.Fatal("display stopped")
+			}
+			c := protocolClient(t, s, dir)
+			id := bindVersion(t, c, "zwlr_output_manager_v1", 4)
+			manager := &managementEvents{events: make(chan [2]uint32, 32), client: c}
+			manager.SetID(id)
+			registerWireProxy(c, manager)
+			if err := c.Roundtrip(); err != nil {
+				t.Fatal(err)
+			}
+			head := recvManagement(t, manager.events)
+			var serial [2]uint32
+			for serial[0] != wlr.ZwlrOutputManagerV1EventDone {
+				serial = recvManagement(t, manager.events)
+			}
+			cfg := c.AllocateID()
+			proxy := &managementEvents{events: make(chan [2]uint32, 8), client: c}
+			proxy.SetID(cfg)
+			registerWireProxy(c, proxy)
+			requestProtocol(t, c, id, wlr.ZwlrOutputManagerV1RequestCreateConfiguration, cfg, serial[1])
+			ch := c.AllocateID()
+			registerProtocol(t, c, ch)
+			requestProtocol(t, c, cfg, wlr.ZwlrOutputConfigurationV1RequestEnableHead, ch, head[1])
+			requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetCustomMode, int32(1280), int32(720), int32(0))
+			requestProtocol(t, c, cfg, wlr.ZwlrOutputConfigurationV1RequestApply)
+			if err := c.Roundtrip(); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case req := <-applies:
+				if len(req.Heads) != 1 || !req.Heads[0].Custom || req.Heads[0].Mode == nil || *req.Heads[0].Mode != (domain.OutputMode{Width: 1280, Height: 720}) {
+					t.Fatalf("request=%+v", req)
+				}
+				// The adapter transports both physical and virtual custom modes; core decides.
+				replies <- domain.OutputApplied{ID: req.ID}
+			case <-waylandDeadline(time.Second):
+				t.Fatal("custom mode not forwarded")
+			}
+			waitManagementEvent(t, c, proxy.events, uint32(wlr.ZwlrOutputConfigurationV1EventSucceeded))
+		})
 	}
 }
