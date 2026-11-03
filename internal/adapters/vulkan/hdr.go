@@ -153,6 +153,7 @@ func (r *Renderer) destroyHDR() {
 	if r.gpu == nil || r.gpu.dd == nil {
 		return
 	}
+	r.destroyCapturePQ()
 	d, h := r.gpu.dd, &r.hdr
 	if h.pool != 0 {
 		d.DestroyDescriptorPool(r.gpu.device, h.pool, nil)

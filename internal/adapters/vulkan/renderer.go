@@ -57,6 +57,8 @@ type Renderer struct {
 	captures    []*captureSlot
 	capturePass hdrPass
 	captureSDR  target
+	// capturePQ is the PQ readback pass of BeginCapturePQ (capture_pq.go).
+	capturePQ capturePQPass
 	sync        captureSync
 	pool        vk.CommandPool
 	// Frames in flight (frame.go): frame is the last frame recorded,

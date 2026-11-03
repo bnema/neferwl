@@ -238,6 +238,7 @@ type captureFrame struct {
 	pixels []byte // the slot's mapping, width*height*4
 	w, h   int
 	valid  bool // false after EndCapture
+	pq     bool // pixels are XBGR2101010 PQ words (capture_pq.go), copied as is
 }
 
 func (f *captureFrame) Done() *os.File { return f.done }
@@ -262,6 +263,9 @@ func (f *captureFrame) Read(region image.Rectangle, dst []byte, stride int) erro
 		start := ((region.Min.Y+y)*f.w + region.Min.X) * captureBytesPerPixel
 		row := dst[y*stride : y*stride+w*captureBytesPerPixel]
 		copy(row, src[start:start+w*captureBytesPerPixel])
+		if f.pq {
+			continue
+		}
 		// The output is opaque: x-format client buffers leave alpha undefined.
 		for x := 3; x < len(row); x += captureBytesPerPixel {
 			row[x] = 255
@@ -452,6 +456,12 @@ func (r *Renderer) BeginCapture() (ports.CaptureFrame, error) {
 // beginCapture is BeginCapture; debug (Pixels) skips the sync file, the
 // caller waits on the slot's fence instead.
 func (r *Renderer) beginCapture(debug bool) (*captureFrame, error) {
+	return r.beginCaptureAs(debug, false)
+}
+
+// beginCaptureAs is beginCapture; pq copies an HDR frame as PQ words
+// (recordCapturePQ) instead of converting it to sRGB8.
+func (r *Renderer) beginCaptureAs(debug, pq bool) (*captureFrame, error) {
 	if r.gpu.device == 0 || r.gpu.dd == nil {
 		return nil, errors.New("renderer closed")
 	}
@@ -468,7 +478,14 @@ func (r *Renderer) beginCapture(debug bool) (*captureFrame, error) {
 		return nil, err
 	}
 	hdr := r.last == &r.hdrOwn
-	if hdr {
+	if pq && !hdr {
+		return nil, errors.New("no HDR frame rendered")
+	}
+	if pq {
+		if err := r.createCapturePQ(); err != nil {
+			return nil, err
+		}
+	} else if hdr {
 		if err := r.createCapturePass(); err != nil {
 			return nil, err
 		}
@@ -490,7 +507,9 @@ func (r *Renderer) beginCapture(debug bool) (*captureFrame, error) {
 	if err := checked("vkBeginCommandBuffer(capture)", d.BeginCommandBuffer(cmd, &sc.begin)); err != nil {
 		return nil, err
 	}
-	if hdr {
+	if pq {
+		r.recordCapturePQ(cmd, s)
+	} else if hdr {
 		r.recordCaptureHDR(cmd, s)
 	} else {
 		r.recordCaptureCopy(cmd, r.last, r.last.layout, s)
@@ -531,7 +550,7 @@ func (r *Renderer) beginCapture(debug bool) (*captureFrame, error) {
 			f.done = s.file
 		}
 	}
-	s.leased, f.valid = true, true
+	s.leased, f.valid, f.pq = true, true, pq
 	return f, nil
 }
 
