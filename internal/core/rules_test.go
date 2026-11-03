@@ -584,3 +584,35 @@ func TestTitleRuleMovesOnceWithoutFocus(t *testing.T) {
 		}
 	})
 }
+
+func TestTitleRuleMoveKeepsFocusOfFocusedWindow(t *testing.T) {
+	tv := domain.OutputInfo{Name: "tv", Virtual: true, Width: 640, Height: 360}
+	for _, tc := range []struct {
+		name string
+		out  string
+		outs []domain.OutputInfo
+	}{{"placed", "DP-2", []domain.OutputInfo{left, right}}, {"isolated", "tv", []domain.OutputInfo{left, tv}}} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				r := startMulti(t, func(c *domain.Config) {
+					c.Outputs = []domain.OutputConfig{{Name: "DP-1"}, {Name: "DP-2"}, {Name: "tv", Virtual: true}}
+					c.Rules = []domain.WindowRule{winRule("title", "game", func(r *domain.WindowRule) {
+						r.Title = regexp.MustCompile("(?i)big picture")
+						r.Output = tc.out
+					})}
+				}, tc.outs...)
+				r.mapApp(t, 2, "term")
+				r.client <- ports.WindowMapped{ID: 1, AppID: "game", Title: "launcher", Xwayland: true}
+				st := stateAfter(t, r.state, func(st domain.State) bool { return stFocus(st) == 1 })
+				if st.Output != "DP-1" {
+					t.Fatal(st)
+				}
+				r.client <- ports.WindowTitle{ID: 1, Title: "Steam Big Picture Mode"}
+				st = stateAfter(t, r.state, func(st domain.State) bool { w := stWindow(st, 1); return w != nil && w.Output == tc.out })
+				if st.Output != tc.out || stFocus(st) != 1 {
+					t.Fatalf("focus %d on %s", stFocus(st), st.Output)
+				}
+			})
+		})
+	}
+}

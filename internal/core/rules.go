@@ -243,9 +243,20 @@ func (c *Core) windowTitle(v ports.WindowTitle) {
 	if from == to {
 		return
 	}
+	focused, _ := c.cur().mon.Focused()
+	held := focused == v.ID && fromScreen == c.cur()
 	workspacedomain.MoveByRule(from, to, v.ID)
 	fromScreen.mon.normalize()
 	toScreen.mon.normalize()
+	// A window that had the keyboard keeps it, on its new output, even an
+	// isolated one: the rule moved it, not the user's attention.
+	if held && to.Has(v.ID) {
+		if to != toScreen.mon.Current() {
+			toScreen.mon.show(to)
+		}
+		to.Activate(v.ID)
+		c.focusScreen = c.screenIndex(toScreen.name())
+	}
 }
 
 func (c *Core) titleHistory(id WindowID) *titleRuleHistory {
