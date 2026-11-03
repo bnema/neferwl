@@ -334,13 +334,25 @@ func (c *Core) addScreen(info domain.OutputInfo) {
 // removeScreen moves every workspace of an unplugged output to the focused
 // screen (another one if it was focused), numbered ones below its numbered
 // workspaces, hidden ones hidden. They remember their home and position and
-// return when it is plugged in again. The last output becomes the
+// return when it is plugged in again. Virtual outputs instead forget home
+// and position: recreating one never pulls adopted workspaces back. References
+// to a removed virtual home on other outputs are cleared too. The last output becomes the
 // placeholder again: it keeps its windows for the next output.
 func (c *Core) removeScreen(name string) {
 	delete(c.hdrCaps, name)
 	i := c.screenIndex(name)
 	if i < 0 {
 		return
+	}
+	gone := c.screens[i]
+	if gone.info.Virtual {
+		for _, s := range c.screens {
+			for w := range s.mon.all() {
+				if s == gone || gone.mon.matches(w.Home) {
+					w.Home, w.HomePos = "", 0
+				}
+			}
+		}
 	}
 	if c.switcher.sc == c.screens[i] {
 		c.cancelSwitcher()
@@ -364,7 +376,6 @@ func (c *Core) removeScreen(name string) {
 		c.screens[0].stopAnimations()
 		return
 	}
-	gone := c.screens[i]
 	if c.swipe != nil && c.swipe.screen == gone {
 		// Its slide would stay on the workspaces the host adopts.
 		c.dropSwipe()
@@ -384,7 +395,7 @@ func (c *Core) removeScreen(name string) {
 			w.Home = ""
 			host.mon.adopt(w, false, w.HomePos)
 			continue
-		case w.Home == "":
+		case w.Home == "" && !gone.info.Virtual:
 			w.Home, w.HomePos = gone.info.Key(), pos
 		}
 		host.mon.adopt(w, false, len(host.mon.Workspaces))
@@ -393,7 +404,7 @@ func (c *Core) removeScreen(name string) {
 		switch {
 		case host.mon.matches(w.Home):
 			w.Home = ""
-		case w.Home == "":
+		case w.Home == "" && !gone.info.Virtual:
 			w.Home = gone.info.Key()
 		}
 		host.mon.adopt(w, true, 0)
