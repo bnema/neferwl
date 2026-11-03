@@ -85,7 +85,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `output.<name>.transform` | `normal` | `90`, `180`, `270`, `flipped`, `flipped-90`, … |
 | `output.<name>.primary` | `off` | Focused at startup |
 | `output.<name>.right-of`, `.left-of`, `.above`, `.below`, `.offset` | automatic | [Output placement](#output-placement) |
-| `output.<name>.hdr` | `off` | [HDR](#hdr) on capable displays; ignored with a warning on virtual outputs, as are `.sdr-expand`, `.sdr-expand-intensity`, `.sdr-expand-peak` and `.sdr-decode` (always SDR) |
+| `output.<name>.hdr` | `off` | [HDR](#hdr) on capable displays and on virtual outputs |
 | `output.<name>.sdr-brightness` | `203` | Brightness of SDR content in HDR, in nits (80–1000) |
 | `drm.devices` | empty (all GPUs) | Comma-separated [GPUs](#gpus) NeferWL uses (restart required) |
 | `drm.ignore` | empty | Comma-separated [GPUs](#gpus) NeferWL leaves alone (restart required) |
@@ -213,7 +213,7 @@ rule.calc.floating = on
 
 ## Virtual outputs
 
-Declare an SDR output in the config; it exists while its entry remains:
+Declare a virtual output in the config; it exists while its entry remains:
 
 ```ini
 output.tv = virtual 1920x1080@60
@@ -221,8 +221,14 @@ output.tv = virtual 1920x1080@60
 
 Refresh defaults to 60 Hz. Dimensions must be 1–16384; names use ASCII
 letters, digits, `.`, `_` and `-`, and must not collide with a physical head.
-Invalid declarations warn and are ignored. HDR and SDR-expansion overrides
-warn and are ignored on virtual outputs.
+Invalid declarations warn and are ignored.
+
+Virtual outputs are SDR by default. `output.tv.hdr = on` makes one HDR
+(PQ/BT.2020, reported as a 1000-nit display) when the renderer supports it,
+else it falls back to SDR and logs why. `.sdr-brightness`, `.sdr-expand`,
+`.sdr-expand-intensity`, `.sdr-expand-peak` and `.sdr-decode` apply as on
+physical outputs. Changing `.hdr`, `.sdr-brightness` or `.sdr-expand-peak`
+and reloading recreates the virtual output.
 
 Without placement, `tv` is isolated: automatic layout, unbound pointers,
 directional focus and startup focus skip it. Isolated outputs share a column

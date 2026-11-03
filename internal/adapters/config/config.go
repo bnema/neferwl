@@ -662,25 +662,6 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 		}
 		override()
 	}
-	// Subkeys may precede the declaration: enforce SDR only after all lines.
-	for i := range c.Outputs {
-		o := &c.Outputs[i]
-		if !o.Virtual {
-			continue
-		}
-		for _, field := range []string{"hdr", "sdr-expand", "sdr-expand-intensity", "sdr-expand-peak", "sdr-decode"} {
-			key := "output." + o.Name + "." + field
-			if line, ok := seen[key]; ok {
-				warnings = append(warnings, Warning{Line: line, Msg: key + ": ignored on virtual output (always SDR)"})
-				delete(raw, key)
-			}
-		}
-		o.HDR = false
-		o.SDRExpand = domain.SDRExpandAuto
-		o.SDRExpandIntensity = domain.DefaultSDRExpandIntensity
-		o.SDRExpandPeak = 0
-		o.SDRDecode = 0
-	}
 	warnings = append(warnings, checkOutputAnchors(c.Outputs, relKeys, offsetLines, seen)...)
 	warnings = append(warnings, checkWorkspaceBinds(c, seen)...)
 	var ruleWarnings []Warning
