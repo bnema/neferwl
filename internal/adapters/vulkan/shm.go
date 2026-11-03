@@ -76,10 +76,16 @@ func readSHMRect(fd int, dst []byte, offset, stride, row int, rc image.Rectangle
 	return nil
 }
 
-// copySHMRect is only for GPU mappings which reject kernel writes. The
+// copySHMRects is only for GPU mappings which reject kernel writes. The
 // mapping never survives this copy; SIGBUS from concurrent truncation is guarded.
-func copySHMRect(fd int, dst []byte, offset, stride, row int, rc image.Rectangle) error {
-	end := offset + (rc.Max.Y-1)*stride + rc.Max.X*4
+func copySHMRects(fd int, dst []byte, offset, stride, row int, rects []image.Rectangle) error {
+	end := 0
+	for _, rc := range rects {
+		end = max(end, offset+(rc.Max.Y-1)*stride+rc.Max.X*4)
+	}
+	if len(rects) == 0 {
+		return nil
+	}
 	if err := shmSize(fd, end); err != nil {
 		return err
 	}
@@ -89,9 +95,11 @@ func copySHMRect(fd int, dst []byte, offset, stride, row int, rc image.Rectangle
 	}
 	defer unix.Munmap(data)
 	if !copyGuarded(func() {
-		for y := rc.Min.Y; y < rc.Max.Y; y++ {
-			d, src, n := y*row+rc.Min.X*4, offset+y*stride+rc.Min.X*4, rc.Dx()*4
-			copy(dst[d:d+n], data[src:src+n])
+		for _, rc := range rects {
+			for y := rc.Min.Y; y < rc.Max.Y; y++ {
+				d, src, n := y*row+rc.Min.X*4, offset+y*stride+rc.Min.X*4, rc.Dx()*4
+				copy(dst[d:d+n], data[src:src+n])
+			}
 		}
 	}) {
 		return io.ErrUnexpectedEOF
@@ -119,9 +127,32 @@ type gpuBuffer struct {
 	memory vk.DeviceMemory
 	mapped unsafe.Pointer
 	size   int
+	// preadRejected belongs to this allocation and resets when it is freed.
+	preadRejected bool
 	// last is the frame that last read it: it is written or freed only
 	// once that frame completed.
 	last uint64
+}
+
+// readSHM remembers kernel-copy rejection per allocation. Once rejected, all
+// damage in this and later copies uses one transient mapping per copy.
+func (b *gpuBuffer) readSHM(fd int, dst []byte, offset, stride, row int, rects []image.Rectangle) error {
+	if !b.preadRejected {
+		for _, rc := range rects {
+			err := readSHMRect(fd, dst, offset, stride, row, rc)
+			if errors.Is(err, unix.EFAULT) {
+				b.preadRejected = true
+				break
+			}
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if b.preadRejected {
+		return copySHMRects(fd, dst, offset, stride, row, rects)
+	}
+	return nil
 }
 
 func (r *Renderer) newGPUBuffer(b *gpuBuffer, size int) error {
@@ -282,34 +313,31 @@ func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, b *domain.
 		var err error
 		fd, err = shmFD(b, offset+(st.h-1)*stride+row)
 		if err != nil {
-			c.holds, c.gpu.last = st, r.frame
-			return c, nil
+			return nil, err
 		}
 		defer unix.Close(fd)
 	}
-	c.valid = true
-	for _, rc := range r.shmRects {
-		if b != nil {
-			err := readSHMRect(fd, dst, offset, stride, row, rc)
-			if errors.Is(err, unix.EFAULT) {
-				if !r.shmPreadFallback {
-					r.shmPreadFallback = true
-					r.log.Debug().Msg("pread into GPU memory rejected; using transient shm mappings")
-				}
-				err = copySHMRect(fd, dst, offset, stride, row, rc)
-			}
-			if err != nil {
-				c.valid = false
-				break
-			}
-		} else {
+	if b != nil {
+		err := c.gpu.readSHM(fd, dst, offset, stride, row, r.shmRects)
+		if c.gpu.preadRejected && !r.shmPreadFallback {
+			r.shmPreadFallback = true
+			r.log.Debug().Msg("pread into GPU memory rejected; using transient shm mappings")
+		}
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		for _, rc := range r.shmRects {
 			for y := rc.Min.Y; y < rc.Max.Y; y++ {
 				d, src, n := y*row+rc.Min.X*4, offset+y*stride+rc.Min.X*4, rc.Dx()*4
 				copy(dst[d:d+n], pixels[src:src+n])
 			}
 		}
+	}
+	for _, rc := range r.shmRects {
 		r.copied += rc.Dx() * rc.Dy() * 4
 	}
+	c.valid = true
 	c.holds, c.gpu.last = st, r.frame
 	return c, nil
 }
