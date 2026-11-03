@@ -250,6 +250,61 @@ func (_c *MockRenderer_BeginCapture_Call) RunAndReturn(run func() (ports.Capture
 	return _c
 }
 
+// BeginCapturePQ provides a mock function for the type MockRenderer
+func (_mock *MockRenderer) BeginCapturePQ() (ports.CaptureFrame, error) {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for BeginCapturePQ")
+	}
+
+	var r0 ports.CaptureFrame
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func() (ports.CaptureFrame, error)); ok {
+		return returnFunc()
+	}
+	if returnFunc, ok := ret.Get(0).(func() ports.CaptureFrame); ok {
+		r0 = returnFunc()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(ports.CaptureFrame)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func() error); ok {
+		r1 = returnFunc()
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockRenderer_BeginCapturePQ_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'BeginCapturePQ'
+type MockRenderer_BeginCapturePQ_Call struct {
+	*mock.Call
+}
+
+// BeginCapturePQ is a helper method to define mock.On call
+func (_e *MockRenderer_Expecter) BeginCapturePQ() *MockRenderer_BeginCapturePQ_Call {
+	return &MockRenderer_BeginCapturePQ_Call{Call: _e.mock.On("BeginCapturePQ")}
+}
+
+func (_c *MockRenderer_BeginCapturePQ_Call) Run(run func()) *MockRenderer_BeginCapturePQ_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockRenderer_BeginCapturePQ_Call) Return(captureFrame ports.CaptureFrame, err error) *MockRenderer_BeginCapturePQ_Call {
+	_c.Call.Return(captureFrame, err)
+	return _c
+}
+
+func (_c *MockRenderer_BeginCapturePQ_Call) RunAndReturn(run func() (ports.CaptureFrame, error)) *MockRenderer_BeginCapturePQ_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Close provides a mock function for the type MockRenderer
 func (_mock *MockRenderer) Close() {
 	_mock.Called()

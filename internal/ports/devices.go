@@ -94,6 +94,10 @@ type Renderer interface {
 	// slot is leased; another error when the copy cannot be tracked (no
 	// sync file): the caller fails the request.
 	BeginCapture() (CaptureFrame, error)
+	// BeginCapturePQ is BeginCapture for the last HDR frame as
+	// XBGR2101010 PQ words (BT.2020, no tone mapping; R in bits 0-9),
+	// copied as is by Read. It fails when the last frame was not HDR.
+	BeginCapturePQ() (CaptureFrame, error)
 	// EndCapture returns a lease. It never waits: a slot whose copy may
 	// still run is reused only once the renderer sees it finished.
 	EndCapture(CaptureFrame)
