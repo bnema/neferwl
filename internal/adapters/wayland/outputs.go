@@ -44,6 +44,8 @@ type output struct {
 	originX, originY int
 	global           *server.Global
 	xglobal          *server.Global
+	xgeneration      *outputGeneration
+	xretired         []*server.Global
 	xresources       []*wayland.Output
 	resources        []*wayland.Output
 	xdgOutputs       []*xdgoutput.ZxdgOutputV1
@@ -230,6 +232,8 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 		}
 		o.global.Remove()
 		if o.xglobal != nil {
+			o.xgeneration.live = false
+			o.xretired = append(o.xretired, o.xglobal)
 			o.xglobal.Remove()
 			o.xglobal = nil
 		}
@@ -409,16 +413,25 @@ type xdgOutput struct{}
 
 func (xdgOutput) Destroy(*xdgoutput.ZxdgOutputV1) {}
 
+type outputGeneration struct{ live bool }
+
 // outputGlobal separates native and Xwayland registry lifetimes. A withdrawn
 // X global leaves its already-bound resources inert until the client releases them.
 func (s *Server) outputGlobal(o *output, private bool) *server.Global {
 	// libwayland invokes the visibility filter synchronously while AddGlobal
 	// broadcasts, before the returned pointer can be assigned to the output.
+	generation := &outputGeneration{live: true}
+	if private {
+		o.xgeneration = generation
+	}
 	s.creatingPrivateOutput = private
 	defer func() { s.creatingPrivateOutput = false }()
 	g, err := s.display.AddGlobal(wayland.OutputInterface, 4, func(c server.Client, v, id uint32) {
 		r, err := wayland.NewOutput(c, int32(v), id, outputHandler{})
 		if err != nil {
+			return
+		}
+		if !generation.live {
 			return
 		}
 		o.resources = append(o.resources, r)
@@ -429,6 +442,13 @@ func (s *Server) outputGlobal(o *output, private bool) *server.Global {
 			r.OnDestroy = func() { o.resources = removeItem(o.resources, r) }
 		}
 		o.sendAll(r)
+		if private {
+			for _, surf := range s.surfaces {
+				if surf.on == o && !surf.destroyed && surf.wl.Resource.Alive() && surf.wl.Client() == c {
+					surf.wl.SendEnter(r)
+				}
+			}
+		}
 		for _, m := range s.workspaceManagers {
 			if m.outputBound(o.name()) {
 				m.res.SendDone()
@@ -446,6 +466,18 @@ func (s *Server) outputGlobal(o *output, private bool) *server.Global {
 func (s *Server) syncXOutput(o *output) {
 	included := s.xspace.Includes(o.place)
 	if !included && o.xglobal != nil {
+		o.xgeneration.live = false
+		o.xretired = append(o.xretired, o.xglobal)
+		for _, surf := range s.surfaces {
+			if surf.on != o || surf.destroyed || !surf.wl.Resource.Alive() {
+				continue
+			}
+			for _, r := range o.xresources {
+				if r.Resource.Alive() && r.Client() == surf.wl.Client() {
+					surf.wl.SendLeave(r)
+				}
+			}
+		}
 		o.xglobal.Remove()
 		o.xglobal = nil
 		// Resources from the withdrawn generation must never receive new geometry.

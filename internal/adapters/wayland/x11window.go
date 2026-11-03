@@ -42,6 +42,11 @@ func (s *Server) globalVisible(c server.Client, g *server.Global) bool {
 			if g == o.global {
 				return c != s.xwayland.client
 			}
+			for _, retired := range o.xretired {
+				if g == retired {
+					return c == s.xwayland.client && c != (server.Client{})
+				}
+			}
 			if g == o.xglobal {
 				return c == s.xwayland.client && c != (server.Client{})
 			}

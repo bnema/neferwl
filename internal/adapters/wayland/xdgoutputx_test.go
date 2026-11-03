@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
 	"slices"
 	"testing"
@@ -253,4 +254,107 @@ func TestPrivateXOutputInclusionLifecycle(t *testing.T) {
 	if unchanged != 1 {
 		t.Fatalf("withdrawn rectangle received updates: %d", unchanged)
 	}
+}
+
+func TestPrivateOutputSurfaceMembershipAcrossExclusion(t *testing.T) {
+	r := newX11Rig(t)
+	initial := twoOutputs(0)
+	initial.Outputs[1].X = 1920
+	applyOutputs(t, r.s, r.commands, initial)
+	xdgOutputsOf(t, r.xc)
+	oldNames := map[uint32]bool{}
+	for _, g := range r.xc.Registry().GetGlobals() {
+		oldNames[g.Name] = true
+	}
+	win := uint32(x11Win)
+	r.x11Window(win)
+	events := make(chan []float64, 64)
+	r.surfaceProxy = func(id uint32) wlturbo.Proxy { p := &eventLog{events: events}; p.SetID(id); return p }
+	r.pair(win, x11Serial)
+	m := awaitEvent[ports.WindowMapped](t, r.events)
+	r.commands <- ports.ConfigureWindow{ID: m.ID, Width: 200, Height: 100, Visible: true, Output: "B"}
+	r.waitOn(m.ID, "B")
+	roundtrip(t, r.xc)
+	count := func() (enter, leave int) {
+		for len(events) > 0 {
+			switch ev := <-events; ev[0] {
+			case float64(wayland.SurfaceEventEnter):
+				enter++
+			case float64(wayland.SurfaceEventLeave):
+				leave++
+			}
+		}
+		return
+	}
+	if e, l := count(); e-l != 1 {
+		t.Fatalf("initial membership %d %d", e, l)
+	}
+	excluded := twoOutputs(0)
+	excluded.Outputs[1].X = 40000
+	applyOutputs(t, r.s, r.commands, excluded)
+	roundtrip(t, r.xc)
+	if e, l := count(); e != 0 || l != 1 {
+		t.Fatalf("withdrawal membership %d %d", e, l)
+	}
+	applyOutputs(t, r.s, r.commands, initial)
+	roundtrip(t, r.xc)
+	// Bind only the newly advertised B, not A again.
+	for _, g := range r.xc.Registry().GetGlobals() {
+		if g.Interface == "wl_output" {
+			if !oldNames[g.Name] {
+				id, err := bindWireID(r.xc, g.Name, g.Interface, 1)
+				if err != nil {
+					t.Fatal(err)
+				}
+				registerProtocol(t, r.xc, id)
+			}
+		}
+	}
+	roundtrip(t, r.xc)
+	if e, l := count(); e != 1 || l != 0 {
+		t.Fatalf("rebind membership %d %d", e, l)
+	}
+}
+
+func TestPrivateOutputLateBindIsInert(t *testing.T) {
+	r := newX11Rig(t)
+	initial := twoOutputs(0)
+	initial.Outputs[1].X = 1920
+	applyOutputs(t, r.s, r.commands, initial)
+	roundtrip(t, r.xc)
+	var name uint32
+	for _, g := range r.xc.Registry().GetGlobals() {
+		if g.Interface == "wl_output" && g.Name > name {
+			name = g.Name
+		}
+	}
+	// Display.Do holds the owner so the bind is queued while the global is
+	// live, but cannot be dispatched until after withdrawal in this callback.
+	var id uint32
+	r.s.display.Do(func() {
+		var err error
+		id, err = bindWireID(r.xc, name, "wl_output", 1)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		excluded := twoOutputs(0)
+		excluded.Outputs[1].X = 40000
+		r.s.setOutputs(excluded)
+	})
+	registerProtocol(t, r.xc, id)
+	roundtrip(t, r.xc)
+	r.s.display.Do(func() {
+		o := r.s.outputByNameExact("B")
+		if len(o.xresources) != 0 || len(o.resources) != 0 {
+			t.Errorf("late bind joined active lists: %d %d", len(o.xresources), len(o.resources))
+		}
+	})
+	applyOutputs(t, r.s, r.commands, initial)
+	roundtrip(t, r.xc)
+	r.s.display.Do(func() {
+		if o := r.s.outputByNameExact("B"); len(o.resources) != 0 {
+			t.Error("stale resource revived")
+		}
+	})
 }
