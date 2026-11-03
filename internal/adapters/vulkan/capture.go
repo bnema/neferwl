@@ -204,6 +204,9 @@ type captureSlot struct {
 	// until the first export.
 	file   *os.File
 	syncFD int
+	// copies are the dmabuf copies of the slot's leases still tracked
+	// (capture_dmabuf.go); the slot is reused only once they finished.
+	copies []*dmaCopy
 }
 
 // adoptSync makes fd, a sync file the caller owns, the slot's. It always
@@ -308,7 +311,7 @@ func (r *Renderer) createCaptureSlots() (err error) {
 		}
 	}()
 	for _, s := range slots {
-		bi := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: size, Usage: vk.BufferUsageTransferDstBit, SharingMode: vk.SharingModeExclusive}
+		bi := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: size, Usage: vk.BufferUsageTransferDstBit | vk.BufferUsageTransferSrcBit, SharingMode: vk.SharingModeExclusive}
 		if err := checked("vkCreateBuffer(capture)", d.CreateBuffer(r.gpu.device, &bi, nil, &s.buffer)); err != nil {
 			return err
 		}
@@ -355,6 +358,9 @@ func (r *Renderer) captureSync() captureSync {
 
 // freeCaptureSlot destroys a slot; the device must be idle for it.
 func (r *Renderer) freeCaptureSlot(s *captureSlot) {
+	for _, c := range s.copies {
+		r.freeDMACopy(c)
+	}
 	s.frame.valid = false
 	s.frame.done = nil
 	if s.file != nil {
@@ -400,6 +406,14 @@ func (r *Renderer) freeCapture() (*captureSlot, error) {
 	for _, s := range r.captures {
 		if s.leased {
 			continue
+		}
+		if len(s.copies) > 0 {
+			if err := r.reapCopies(s); err != nil {
+				return nil, err
+			}
+			if len(s.copies) > 0 {
+				continue
+			}
 		}
 		if s.pending {
 			switch res := sync.fenceStatus(s.fence); res {
