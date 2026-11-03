@@ -11,6 +11,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/headless"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/cursors"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/routing"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/virtuals"
 	"github.com/bnema/neferwl/internal/adapters/xcursor"
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
@@ -27,7 +28,7 @@ type BackendOptions struct {
 
 // Run drives one virtual output per size, named HEADLESS-1, -2, ...
 // With several outputs, screenshots go to a subdirectory per output. Modes
-// are fixed, so apply answers every configuration without backend work.
+// of built-in heads are fixed; config-declared outputs reconcile through apply.
 //
 // newRenderer is configured for virtual outputs by the session.
 //
@@ -56,14 +57,31 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 			return set.Wait()
 		}
 	}
+	// Publish fixed heads first so core rejects virtual name collisions.
+	apply.Heads(inventory)
+	host := virtuals.New(set, ch, curs, newRenderer, log)
+	publish := func() {
+		heads := domain.OutputHeads{Heads: append([]domain.OutputHead(nil), inventory.Heads...)}
+		heads.Heads = append(heads.Heads, host.Heads()...)
+		apply.Heads(heads)
+	}
+	if err := host.Sync(ctx, apply.Virtuals()); err != nil {
+		return errors.Join(err, set.Wait())
+	}
+	publish()
 	// All virtual lifetimes have registered before this no-lease barrier.
 	if set.State.Protected {
 		set.SecurityEvent(ports.SecurityBackendBarrier{Generation: set.State.Generation})
 	}
-	apply.Heads(inventory)
 	// The pointer starts centred on the first output, like libinput's.
 	curs.Move("HEADLESS-1", float64(o.Sizes[0][0])/2, float64(o.Sizes[0][1])/2, false)
 	for {
+		if _, ok := apply.Next(); ok {
+			err := host.Sync(ctx, apply.Virtuals())
+			publish()
+			apply.Finished(err)
+			continue
+		}
 		for _, warning := range apply.TakeWarnings() {
 			log.Warn().Str("component", "output").Str("output", warning.Name).Msg(warning.Message)
 		}
@@ -96,6 +114,14 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 			apply.HeadsSent()
 		case stopped := <-set.Stopped:
 			if !set.StoppedCurrent(stopped) {
+				continue
+			}
+			if host.Owns(stopped.Name) {
+				err := host.Remove(ctx, stopped.Name)
+				publish()
+				if err != nil {
+					log.Error().Err(err).Str("output", stopped.Name).Msg("virtual output stopped")
+				}
 				continue
 			}
 			// An owner error is not protection or removal evidence.
