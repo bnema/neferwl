@@ -51,23 +51,7 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 		cur := &Cursor{}
 		curs.Set(name, cur)
 		opts := Options{Cursor: cur, LoadCursor: xcursor.LoadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: o.HDR, RawHDR: o.Raw, Formats: ch.Formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.Presented, Frames: ch.Frames, Events: ch.Events, Captured: ch.Captured}
-		announced := make(chan struct{})
-		started := set.Start(ctx, name, func(octx context.Context, feed routing.Feed) error {
-			select {
-			case <-announced:
-			case <-octx.Done():
-				return nil
-			}
-			opts.Security, opts.SecurityChanges, opts.Instance = ch.Security, feed.Security, feed.Instance
-			return RunOutput(octx, opts, feed.Scenes, feed.Contents, feed.Returns, feed.Cursor, feed.Captures)
-		}, &opts.SecurityEvents)
-		if !started {
-			return set.Wait()
-		}
-		select {
-		case ch.Events <- ports.OutputAdded{Info: domain.OutputInfo{Name: name, Width: size[0], Height: size[1]}}:
-			close(announced)
-		case <-ctx.Done():
+		if !StartOutput(ctx, set, ch, domain.OutputInfo{Name: name, Width: size[0], Height: size[1]}, opts) {
 			return set.Wait()
 		}
 	}
