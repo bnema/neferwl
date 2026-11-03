@@ -62,6 +62,32 @@ func (c *Core) activateInput(ctx context.Context, ev ports.InputEvent) error {
 	if !ok {
 		return nil
 	}
+	if _, key := ev.(ports.KeyEvent); !key {
+		if c.devicePointers == nil {
+			c.devicePointers = map[domain.InputDeviceID][2]float64{}
+		}
+		if motion, ok := ev.(ports.PointerMotion); ok {
+			c.devicePointers[id] = [2]float64{motion.X, motion.Y}
+		} else if c.activePointerDevice != id && c.grab == 0 && c.pgrab == nil && c.drag == nil && c.dataDrag == nil {
+			position, known := c.devicePointers[id]
+			if !known {
+				target := c.boundInput(id)
+				if target >= 0 {
+					r := c.screens[target].rect()
+					position = [2]float64{float64(r.X + r.W/2), float64(r.Y + r.H/2)}
+				} else {
+					position = [2]float64{c.cursorX, c.cursorY}
+				}
+			}
+			c.cursorX, c.cursorY = position[0], position[1]
+			pointer, x, y := c.hit(c.cursorX, c.cursorY)
+			c.pointer = pointer
+			if err := c.pointerFocus(ctx, ports.PointerFocus{ID: pointer, X: x, Y: y}); err != nil {
+				return err
+			}
+		}
+		c.activePointerDevice = id
+	}
 	target := c.boundInput(id)
 	if target < 0 {
 		if !c.cur().isolated && !c.lastInputBound {

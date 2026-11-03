@@ -705,7 +705,11 @@ func translate(ev uintptr, opts Options, p *pointer, in *inputState) ([]ports.In
 			deviceUnref(dev)
 		}
 	default:
-		out, err := translateEvent(ev, opts, p.forDevice(dev), in, state)
+		target := p
+		if eventType(ev) != evKeyboardKey {
+			target = p.forDevice(dev)
+		}
+		out, err := translateEvent(ev, opts, target, in, state)
 		if err != nil {
 			return nil, err
 		}
@@ -921,14 +925,15 @@ func hotkey(ke ports.KeyEvent, protected bool) (hotkeyAction, int) {
 // is divided by the scale of the output under the pointer, so it moves the
 // same number of physical pixels on every output.
 type pointer struct {
-	x, y       float64
-	layout     domain.Layout
-	touched    bool // false until the user moves it: it follows the primary output
-	constraint domain.PointerConstraint
-	all        domain.Layout
-	names      map[uintptr]domain.InputDeviceID
-	devices    map[uintptr]*pointer
-	active     *pointer
+	x, y              float64
+	layout            domain.Layout
+	touched           bool // false until the user moves it: it follows the primary output
+	constraint        domain.PointerConstraint
+	currentConstraint domain.PointerConstraint
+	all               domain.Layout
+	names             map[uintptr]domain.InputDeviceID
+	devices           map[uintptr]*pointer
+	active            *pointer
 }
 
 // newPointer starts at the centre of the primary output, else the first.
@@ -999,6 +1004,7 @@ func (p *pointer) set(x, y float64) (float64, float64) {
 // the pointer to core's cursor, which stood still meanwhile; a confined
 // pointer moves inside. A warp moves it to core's cursor.
 func (p *pointer) constrain(c domain.PointerConstraint) {
+	p.currentConstraint = c
 	if p.active != nil && p.active != p {
 		p.active.constrain(c)
 		return
@@ -1102,6 +1108,7 @@ func (p *pointer) forDevice(dev uintptr) *pointer {
 		}
 		p.constraint = domain.PointerConstraint{}
 		p.active = q
+		q.constrain(p.currentConstraint)
 	}
 	return q
 }

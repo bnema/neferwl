@@ -1,7 +1,9 @@
 package core
 
 import (
+	"context"
 	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 	"testing"
 )
 
@@ -47,5 +49,31 @@ func TestUnmatchedGlobsKeepBindingPathEnabled(t *testing.T) {
 	}
 	if c.boundInput(1) != -1 {
 		t.Fatal("unmatched device bound")
+	}
+}
+
+func TestStationaryDeviceSwitchRestoresPointerBeforeDispatch(t *testing.T) {
+	c := inputBenchCore(t)
+	c.inputBindings = true
+	c.inputNames = map[domain.InputDeviceID]string{1: "one", 2: "two"}
+	c.devicePointers = map[domain.InputDeviceID][2]float64{1: {10, 20}, 2: {50, 60}}
+	c.activePointerDevice = 1
+	c.cursorX, c.cursorY = 10, 20
+	for _, ev := range []ports.InputEvent{ports.PointerButton{Device: 2}, ports.PointerAxis{Device: 1}} {
+		if err := c.activateInput(context.Background(), ev); err != nil {
+			t.Fatal(err)
+		}
+		id, _ := inputDevice(ev)
+		want := c.devicePointers[id]
+		if c.cursorX != want[0] || c.cursorY != want[1] {
+			t.Fatalf("device %d pointer=%v,%v want %v", id, c.cursorX, c.cursorY, want)
+		}
+	}
+	c.grab = 1
+	if err := c.activateInput(context.Background(), ports.PointerAxis{Device: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if c.cursorX != 10 || c.cursorY != 20 {
+		t.Fatal("switch broke grab")
 	}
 }

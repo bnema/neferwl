@@ -109,3 +109,18 @@ func TestInterleavedDevicePositionsAndRebinding(t *testing.T) {
 		t.Fatal("new identity not bound")
 	}
 }
+
+func TestPointerSwitchReappliesCurrentConstraint(t *testing.T) {
+	p := newPointer(domain.Layout{{Width: 100, Height: 100, Devices: []domain.InputDeviceID{1, 2}}})
+	p.addDevice(1, 1)
+	p.addDevice(2, 2)
+	for _, mode := range []domain.ConstraintMode{domain.ConstraintLock, domain.ConstraintConfine} {
+		p.forDevice(1)
+		constraint := domain.PointerConstraint{Mode: mode, Rect: domain.Rect{W: 80, H: 80}, X: 20, Y: 20}
+		p.constrain(constraint)
+		q := p.forDevice(2)
+		if q.constraint.Mode != mode {
+			t.Fatalf("unchanged current constraint not applied: %+v", q.constraint)
+		}
+	}
+}
