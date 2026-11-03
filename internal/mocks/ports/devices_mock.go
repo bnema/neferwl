@@ -50,6 +50,74 @@ func (_m *MockCaptureFrame) EXPECT() *MockCaptureFrame_Expecter {
 	return &MockCaptureFrame_Expecter{mock: &_m.Mock}
 }
 
+// CopyTo provides a mock function for the type MockCaptureFrame
+func (_mock *MockCaptureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.File, error) {
+	ret := _mock.Called(region, dst)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CopyTo")
+	}
+
+	var r0 *os.File
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(image.Rectangle, domain.DMABuf) (*os.File, error)); ok {
+		return returnFunc(region, dst)
+	}
+	if returnFunc, ok := ret.Get(0).(func(image.Rectangle, domain.DMABuf) *os.File); ok {
+		r0 = returnFunc(region, dst)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*os.File)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(image.Rectangle, domain.DMABuf) error); ok {
+		r1 = returnFunc(region, dst)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockCaptureFrame_CopyTo_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CopyTo'
+type MockCaptureFrame_CopyTo_Call struct {
+	*mock.Call
+}
+
+// CopyTo is a helper method to define mock.On call
+//   - region image.Rectangle
+//   - dst domain.DMABuf
+func (_e *MockCaptureFrame_Expecter) CopyTo(region any, dst any) *MockCaptureFrame_CopyTo_Call {
+	return &MockCaptureFrame_CopyTo_Call{Call: _e.mock.On("CopyTo", region, dst)}
+}
+
+func (_c *MockCaptureFrame_CopyTo_Call) Run(run func(region image.Rectangle, dst domain.DMABuf)) *MockCaptureFrame_CopyTo_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 image.Rectangle
+		if args[0] != nil {
+			arg0 = args[0].(image.Rectangle)
+		}
+		var arg1 domain.DMABuf
+		if args[1] != nil {
+			arg1 = args[1].(domain.DMABuf)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockCaptureFrame_CopyTo_Call) Return(done *os.File, err error) *MockCaptureFrame_CopyTo_Call {
+	_c.Call.Return(done, err)
+	return _c
+}
+
+func (_c *MockCaptureFrame_CopyTo_Call) RunAndReturn(run func(region image.Rectangle, dst domain.DMABuf) (*os.File, error)) *MockCaptureFrame_CopyTo_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Done provides a mock function for the type MockCaptureFrame
 func (_mock *MockCaptureFrame) Done() *os.File {
 	ret := _mock.Called()
@@ -1238,6 +1306,52 @@ type MockRenderDevice_Expecter struct {
 
 func (_m *MockRenderDevice) EXPECT() *MockRenderDevice_Expecter {
 	return &MockRenderDevice_Expecter{mock: &_m.Mock}
+}
+
+// CaptureFormats provides a mock function for the type MockRenderDevice
+func (_mock *MockRenderDevice) CaptureFormats() []domain.DMABufFormat {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for CaptureFormats")
+	}
+
+	var r0 []domain.DMABufFormat
+	if returnFunc, ok := ret.Get(0).(func() []domain.DMABufFormat); ok {
+		r0 = returnFunc()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]domain.DMABufFormat)
+		}
+	}
+	return r0
+}
+
+// MockRenderDevice_CaptureFormats_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CaptureFormats'
+type MockRenderDevice_CaptureFormats_Call struct {
+	*mock.Call
+}
+
+// CaptureFormats is a helper method to define mock.On call
+func (_e *MockRenderDevice_Expecter) CaptureFormats() *MockRenderDevice_CaptureFormats_Call {
+	return &MockRenderDevice_CaptureFormats_Call{Call: _e.mock.On("CaptureFormats")}
+}
+
+func (_c *MockRenderDevice_CaptureFormats_Call) Run(run func()) *MockRenderDevice_CaptureFormats_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockRenderDevice_CaptureFormats_Call) Return(dMABufFormats []domain.DMABufFormat) *MockRenderDevice_CaptureFormats_Call {
+	_c.Call.Return(dMABufFormats)
+	return _c
+}
+
+func (_c *MockRenderDevice_CaptureFormats_Call) RunAndReturn(run func() []domain.DMABufFormat) *MockRenderDevice_CaptureFormats_Call {
+	_c.Call.Return(run)
+	return _c
 }
 
 // Close provides a mock function for the type MockRenderDevice

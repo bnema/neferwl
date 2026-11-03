@@ -5,7 +5,10 @@ import (
 	"time"
 )
 
-// CaptureRequest transfers ownership of Dst.File to the output goroutine.
+// CaptureRequest transfers ownership of Dst.File (or of the DMABuf plane
+// files) to the output goroutine. A request has exactly one destination:
+// Dst.File, Mapped or DMABuf (OneDestination); only an internal request the
+// output handed to its worker has none.
 type CaptureRequest struct {
 	ID                    uint64
 	Output                string
@@ -19,6 +22,11 @@ type CaptureRequest struct {
 	// keeps the mapping alive until CaptureDone; the output never maps,
 	// unmaps or closes it.
 	Mapped []byte
+	// DMABuf, when set, is the destination instead of Dst.File and Mapped
+	// (both nil then): a client linux-dmabuf buffer of Width×Height, in an
+	// XRGB8888 or ARGB8888 fourcc, the renderer writes on the GPU. Its
+	// plane files belong to the request and are closed with the reply.
+	DMABuf *DMABuf
 	// Session is the registered capture session (CaptureSessionOpen) the
 	// request belongs to, 0 for wlr-screencopy. It is informational, except
 	// with Exclude.
@@ -55,6 +63,22 @@ type CaptureRequest struct {
 	// Since is when the output owner took the request (monotonic), to bound
 	// that wait. Only the output owner sets it.
 	Since time.Time
+}
+
+// OneDestination reports whether exactly one of Dst.File, Mapped and DMABuf
+// is set.
+func (r CaptureRequest) OneDestination() bool {
+	n := 0
+	if r.Dst.File != nil {
+		n++
+	}
+	if r.Mapped != nil {
+		n++
+	}
+	if r.DMABuf != nil {
+		n++
+	}
+	return n == 1
 }
 
 // CaptureDone is attempted once after the output closes the destination.

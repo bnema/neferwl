@@ -198,9 +198,17 @@ func (r *Renderer) waitOwnIdle() error {
 		if s.pending {
 			fences = append(fences, s.fence)
 		}
+		for _, c := range s.copies {
+			fences = append(fences, c.fence)
+		}
 	}
 	if len(fences) > 0 {
 		if err := checked("vkWaitForFences(own idle)", r.gpu.dd.WaitForFences(r.gpu.device, uint32(len(fences)), &fences[0], 1, math.MaxUint64)); err != nil {
+			return err
+		}
+	}
+	for _, s := range r.captures {
+		if err := r.reapCopies(s); err != nil {
 			return err
 		}
 	}

@@ -35,6 +35,13 @@ type CaptureFrame interface {
 	// dst, stride bytes per row. Valid after Done signalled and before
 	// EndCapture.
 	Read(region image.Rectangle, dst []byte, stride int) error
+	// CopyTo submits a GPU copy of region (output pixels) into dst, a
+	// client dmabuf of the region's size in a format and modifier listed by
+	// RenderDevice.CaptureFormats, as opaque sRGB8. Unlike Done and Read it
+	// makes Vulkan calls: the renderer's owner calls it, after BeginCapture
+	// and before EndCapture. done is signalled when dst holds the image
+	// (nil: already); the caller closes it. dst's files stay the caller's.
+	CopyTo(region image.Rectangle, dst domain.DMABuf) (done *os.File, err error)
 }
 
 // Renderer draws scenes for an output. One goroutine owns it. Frames go
@@ -126,6 +133,11 @@ type RenderDevice interface {
 	NewRenderer(w, h int, o domain.RendererOptions) (Renderer, error)
 	NewCopier(w, h int) (Copier, error)
 	DMABuf() domain.DMABufSupport
+	// CaptureFormats lists the client dmabuf formats and modifiers its
+	// renderers' captures can write (CaptureFrame.CopyTo): XRGB8888 and
+	// ARGB8888 ones it imports, single-plane, that the device blits into.
+	// Empty when it cannot.
+	CaptureFormats() []domain.DMABufFormat
 	Node() (primary, render uint64)
 	Close()
 }

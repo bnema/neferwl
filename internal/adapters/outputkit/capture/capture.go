@@ -31,6 +31,13 @@ func replyAt(ctx context.Context, req domain.CaptureRequest, err error, at time.
 	if req.Dst.File != nil {
 		err = errors.Join(err, req.Dst.File.Close())
 	}
+	if req.DMABuf != nil {
+		for _, pl := range req.DMABuf.Planes {
+			if pl.File != nil {
+				err = errors.Join(err, pl.File.Close())
+			}
+		}
+	}
 	done := domain.CaptureDone{ID: req.ID, Output: req.Output, Err: err, Time: at}
 	// Prefer a ready reply even after output cancellation: Wayland needs the
 	// completion to release admission credit while the session is still alive.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -33,6 +34,40 @@ type batch struct {
 	// made once and lives as long as the batch.
 	gated   bool
 	release chan error
+	// copies are the GPU copies into the dmabuf destinations, by request
+	// index: the done sync file (nil: finished) or the error. The owner
+	// submits them (CopyTo) before handing the batch over, or for a gated
+	// batch before releasing it; the worker waits, closes and answers.
+	// Copies the worker never took are closed by Recycle.
+	copies [MaxRequests]dmaCopy
+}
+
+// dmaCopy is the outcome of one CaptureFrame.CopyTo.
+type dmaCopy struct {
+	done *os.File
+	err  error
+}
+
+// submitCopies starts the copy of each dmabuf request of b. Owner only.
+func (b *batch) submitCopies() {
+	if b.frame == nil {
+		return
+	}
+	for i := range b.count {
+		if q := b.requests[i]; q.DMABuf != nil {
+			b.copies[i].done, b.copies[i].err = b.frame.CopyTo(q.Region, *q.DMABuf)
+		}
+	}
+}
+
+// closeCopies closes the sync files of b's copies.
+func (b *batch) closeCopies() {
+	for i := range b.copies {
+		if f := b.copies[i].done; f != nil {
+			_ = f.Close()
+		}
+		b.copies[i] = dmaCopy{}
+	}
 }
 
 // Pipeline moves fence waiting and SHM copies off the renderer's owner.
@@ -73,6 +108,7 @@ func (p *Pipeline) Completed() <-chan *batch { return p.completed }
 
 // Recycle returns a completed GPU readback lease on the renderer's owner.
 func (p *Pipeline) Recycle(b *batch, r ports.Renderer) {
+	b.closeCopies()
 	r.EndCapture(b.frame)
 	rel := b.release
 	select { // a verdict nobody took (the worker was cancelled) must not leak to the next use
@@ -114,10 +150,15 @@ func (p *Pipeline) EndGate(err error) {
 	for i := range p.nheld {
 		b := p.held[i]
 		p.held[i] = nil
-		select {
-		case b.release <- err:
-		default: // the verdict is already there
+		if len(b.release) > 0 {
+			continue // the verdict is already there
 		}
+		if err == nil {
+			// Released: only now may pixels reach the client's buffers.
+			b.submitCopies()
+		}
+		// The worker only receives: the slot is free (owner only sends).
+		b.release <- err
 	}
 	p.nheld = 0
 	if p.off != nil && p.off.p != nil {
@@ -164,6 +205,8 @@ func (p *Pipeline) SubmitScoped(state domain.SecurityState, r ports.Renderer, re
 	if b.gated = p.gating; b.gated {
 		p.held[p.nheld] = b
 		p.nheld++
+	} else {
+		b.submitCopies()
 	}
 	// There are exactly two reusable batches and two queue slots, so this
 	// send cannot wait: no batch can be queued twice before recycling.
@@ -213,24 +256,48 @@ func (p *Pipeline) process(b *batch) {
 		// owner's verdict, when it gave one, says why the capture failed
 		// better than a cancelled context.
 		var v error
+		took := false
 		select {
 		case v = <-b.release:
+			took = true
 		case <-p.ctx.Done():
 			select {
 			case v = <-b.release:
+				took = true
 			default:
 			}
+		}
+		if !took {
+			// No verdict: the owner may still write the copies; it closes them.
+			err = cmp.Or(err, p.ctx.Err())
+			for i := range b.count {
+				Fail(p.ctx, b.requests[i], err, p.replies)
+			}
+			p.completed <- b
+			return
 		}
 		err = cmp.Or(v, err, p.ctx.Err())
 	}
 	for i := range b.count {
 		q := b.requests[i]
-		if err != nil {
+		c := b.copies[i]
+		b.copies[i] = dmaCopy{}
+		switch {
+		case err != nil:
 			Fail(p.ctx, q, err, p.replies)
-		} else if e := p.ctx.Err(); e != nil {
-			Fail(p.ctx, q, e, p.replies)
-		} else {
+		case p.ctx.Err() != nil:
+			Fail(p.ctx, q, p.ctx.Err(), p.replies)
+		case q.DMABuf != nil:
+			e := c.err
+			if e == nil && c.done != nil {
+				e = syncfile.Wait(p.ctx, c.done)
+			}
+			replyAt(p.ctx, q, e, b.at, p.replies)
+		default:
 			writeFrame(p.ctx, q, b.frame, b.at, p.replies)
+		}
+		if c.done != nil {
+			_ = c.done.Close()
 		}
 	}
 	p.completed <- b
