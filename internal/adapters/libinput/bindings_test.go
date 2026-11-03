@@ -67,3 +67,45 @@ func TestResolvedBindingIgnoresLayoutOrder(t *testing.T) {
 		t.Fatal("layout aliases caller")
 	}
 }
+
+func TestInterleavedDevicePositionsAndRebinding(t *testing.T) {
+	l := domain.Layout{{Info: domain.OutputInfo{Name: "desktop"}, Width: 100, Height: 100}, {Info: domain.OutputInfo{Name: "tv"}, X: 300, Width: 100, Height: 100, Isolated: true, Devices: []domain.InputDeviceID{1, 2, 3}}}
+	p := newPointer(l)
+	for dev := uintptr(1); dev <= 4; dev++ {
+		p.addDevice(dev, domain.InputDeviceID(dev))
+	}
+	for round := 0; round < 5; round++ {
+		for dev := uintptr(1); dev <= 4; dev++ {
+			p.forDevice(dev).move(float64(dev), 0)
+		}
+	}
+	for dev := uintptr(1); dev <= 3; dev++ {
+		if got, want := p.forDevice(dev).x, 350+float64(dev)*5; got != want {
+			t.Fatalf("device %d: %v want %v", dev, got, want)
+		}
+	}
+	if p.forDevice(4).x != 70 {
+		t.Fatal("shared pointer position lost")
+	}
+	p.forDevice(2)
+	p.setLayout(l[:1])
+	if p.active != nil || len(p.devices) != 0 || p.forDevice(2) != p {
+		t.Fatal("stale binding after active output removal")
+	}
+	// Core's next resolved snapshot rebinds one device, not the others.
+	l[0].Devices = []domain.InputDeviceID{2}
+	p.setLayout(l[:1])
+	if p.forDevice(2) == p || p.forDevice(1) != p {
+		t.Fatal("reload rebind not applied")
+	}
+	p.removeDevice(2)
+	p.addDevice(2, 5) // same native handle, new producer identity
+	if p.forDevice(2) != p {
+		t.Fatal("old identity binding resurrected")
+	}
+	l[0].Devices = []domain.InputDeviceID{5}
+	p.setLayout(l[:1])
+	if p.forDevice(2) == p {
+		t.Fatal("new identity not bound")
+	}
+}

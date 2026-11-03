@@ -89,3 +89,22 @@ func TestForwarderKeepsDevicesSeparate(t *testing.T) {
 		}
 	}
 }
+
+func TestFourDeviceMotionCoalescing(t *testing.T) {
+	f := newForwarder(zerowrap.Default())
+	for round := 0; round < 8; round++ {
+		for id := domain.InputDeviceID(1); id <= 4; id++ {
+			f.push(ports.PointerMotion{Device: id, DX: 1})
+			f.push(ports.PointerMotion{Device: id, DX: 2})
+		}
+	}
+	if len(f.queue) != 32 {
+		t.Fatalf("queue=%d", len(f.queue))
+	}
+	for i, event := range f.queue {
+		motion, _, _, ok := queuedMotion(event)
+		if !ok || motion.Device != domain.InputDeviceID(i%4+1) || motion.DX != 3 {
+			t.Fatalf("event %d: %+v", i, motion)
+		}
+	}
+}

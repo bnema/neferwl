@@ -20,6 +20,7 @@ func TestFocusFollowsInputDevice(t *testing.T) {
 				}, domain.OutputInfo{Name: "DP-1", Width: 800, Height: 600}, domain.OutputInfo{Name: "tv", Virtual: true, Width: 640, Height: 360})
 				r.in(ports.InputDeviceAdded{ID: 1, Name: "bound mouse"})
 				r.in(ports.InputDeviceAdded{ID: 2, Name: "desktop mouse"})
+				r.in(ports.InputDeviceAdded{ID: 3, Name: "bound tablet"})
 				r.client <- ports.WindowMapped{ID: 1}
 				r.settle(t)
 				r.in(ports.KeyEvent{Device: 1, Keysym: "a", Keycode: 30, Pressed: true})
@@ -30,7 +31,7 @@ func TestFocusFollowsInputDevice(t *testing.T) {
 				for _, step := range []struct {
 					device domain.InputDeviceID
 					focus  domain.WindowID
-				}{{2, 1}, {1, 2}, {1, 0}, {2, 1}, {2, 0}} {
+				}{{2, 1}, {1, 2}, {3, 0}, {2, 1}, {3, 2}, {1, 0}, {2, 1}, {2, 0}} {
 					r.in(ports.PointerAxis{Device: step.device})
 					r.settle(t)
 					got := focusChanges(r.drain())
