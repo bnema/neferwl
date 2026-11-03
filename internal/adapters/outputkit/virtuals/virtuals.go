@@ -1,4 +1,4 @@
-// Package virtuals hosts config-declared SDR outputs in a backend's existing set.
+// Package virtuals hosts config-declared (SDR or HDR) outputs in a backend's existing set.
 package virtuals
 
 import (
@@ -30,6 +30,7 @@ type Host struct {
 }
 type output struct {
 	head  domain.OutputHead
+	hdr   domain.OutputHDRSettings
 	modes chan headless.ModeRequest
 }
 
@@ -74,6 +75,13 @@ func (h *Host) Sync(ctx context.Context, want []domain.OutputConfig) error {
 			default:
 			}
 		}
+		hdr := cfg.HDRSettings()
+		if current != nil && hdrNeedsRestart(current.hdr, hdr) {
+			if err := h.Remove(ctx, cfg.Name); err != nil {
+				return errors.Join(result, err)
+			}
+			current = nil
+		}
 		if current == nil {
 			if h.set.Outs[cfg.Name] != nil {
 				return errors.Join(result, fmt.Errorf("output %s already running", cfg.Name))
@@ -81,13 +89,13 @@ func (h *Host) Sync(ctx context.Context, want []domain.OutputConfig) error {
 			modes := make(chan headless.ModeRequest)
 			cur := &headless.Cursor{}
 			h.curs.Set(cfg.Name, cur)
-			opts := headless.Options{Name: cfg.Name, Cursor: cur, LoadCursor: xcursor.LoadCursor, NewRenderer: h.renderer, NewCaptureRenderer: h.renderer, Log: h.log, Presented: h.ch.Presented, Frames: h.ch.Frames, Captured: h.ch.Captured, Formats: h.ch.Formats, Events: h.ch.Events, ModeRequests: modes}
+			opts := headless.Options{Name: cfg.Name, Cursor: cur, LoadCursor: xcursor.LoadCursor, NewRenderer: h.renderer, NewCaptureRenderer: h.renderer, Log: h.log, Presented: h.ch.Presented, Frames: h.ch.Frames, Captured: h.ch.Captured, Formats: h.ch.Formats, Events: h.ch.Events, ModeRequests: modes, HDR: hdr}
 			opts.SetMode(mode.Width, mode.Height, mode.RefreshMilli)
 			if !headless.StartOutput(ctx, h.set, h.ch, info, opts) {
 				h.curs.Set(cfg.Name, nil)
 				return errors.Join(result, fmt.Errorf("start virtual output %s failed", cfg.Name), h.set.StartErr, ctx.Err())
 			}
-			current = &output{modes: modes}
+			current = &output{modes: modes, hdr: hdr}
 			h.outputs[cfg.Name] = current
 			h.order = append(h.order, cfg.Name)
 		} else if current.head.Info.Width != info.Width || current.head.Info.Height != info.Height || current.head.Info.RefreshMilli != info.RefreshMilli {
@@ -117,6 +125,13 @@ func (h *Host) Sync(ctx context.Context, want []domain.OutputConfig) error {
 		h.order = append(h.order, cfg.Name)
 	}
 	return result
+}
+
+// hdrNeedsRestart mirrors DRM's outputNeedsRestart for HDR enable and SDR
+// white. A headless owner reports its caps only at startup and has no live
+// peak channel, so an expansion peak change also replaces it.
+func hdrNeedsRestart(current, want domain.OutputHDRSettings) bool {
+	return current.Normalized() != want.Normalized()
 }
 
 // Remove finishes one owned lifetime, including a spontaneously stopped owner.

@@ -13,6 +13,7 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestHostLifecycle(t *testing.T) {
@@ -311,4 +312,80 @@ func TestModeStoppedWithoutAcknowledgement(t *testing.T) {
 			t.Fatal("missing stopped error")
 		}
 	})
+}
+
+func TestHostHDRRestart(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		events := make(chan ports.OutputEvent, 16)
+		ch := routing.Channels{Events: events}
+		set := routing.NewSet(ctx, nil, ch.Routes())
+		defer func() {
+			if err := set.Wait(); err != nil {
+				t.Error(err)
+			}
+		}()
+		whites := make(chan float64, 4)
+		factory := func(int, int) (ports.Renderer, error) {
+			r := portsmocks.NewMockRenderer(t)
+			r.EXPECT().SetHDR(mock.Anything).Run(func(nits float64) { whites <- nits }).Return().Maybe()
+			r.EXPECT().ExportTargets(1, []uint64(nil), false).Return(nil, nil).Maybe()
+			r.EXPECT().Close().Return().Once()
+			return r, nil
+		}
+		host := New(set, ch, cursors.New(nil, 0), factory, logging.For(ctx, "virtuals"))
+		hdrCaps := func() ports.OutputHDRCaps {
+			t.Helper()
+			for {
+				if caps, ok := (<-events).(ports.OutputHDRCaps); ok {
+					return caps
+				}
+			}
+		}
+		want := []domain.OutputConfig{{Name: "tv", Virtual: true, Mode: "10x10"}}
+		if err := host.Sync(ctx, want); err != nil {
+			t.Fatal(err)
+		}
+		if caps := hdrCaps(); caps.Active {
+			t.Fatalf("SDR caps=%+v", caps)
+		}
+		want[0].HDR = true
+		if err := host.Sync(ctx, want); err != nil {
+			t.Fatal(err)
+		}
+		if caps := hdrCaps(); !caps.Active || !caps.Caps.Expandable() {
+			t.Fatalf("HDR caps=%+v", caps)
+		}
+		if nits := <-whites; nits != domain.DefaultSDRBrightness {
+			t.Fatal(nits)
+		}
+		synctest.Wait()
+		events, instance := drain(events), set.Outs["tv"].Instance
+		if err := host.Sync(ctx, want); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		if len(events) != 0 || set.Outs["tv"].Instance != instance {
+			t.Fatal("unchanged HDR settings restarted owner")
+		}
+		want[0].SDRBrightness = 300
+		if err := host.Sync(ctx, want); err != nil {
+			t.Fatal(err)
+		}
+		if caps := hdrCaps(); !caps.Active || caps.Caps.Headroom != 1000.0/300 {
+			t.Fatalf("white caps=%+v", caps)
+		}
+		if nits := <-whites; nits != 300 {
+			t.Fatal(nits)
+		}
+		cancel()
+	})
+}
+
+func drain(events chan ports.OutputEvent) chan ports.OutputEvent {
+	for len(events) > 0 {
+		<-events
+	}
+	return events
 }
