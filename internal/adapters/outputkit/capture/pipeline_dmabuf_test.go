@@ -109,3 +109,24 @@ func TestPipelineDMABufGated(t *testing.T) {
 		p.Close(r)
 	}
 }
+
+// A released gate on a cancelled pipeline starts no copy: the request
+// fails with the context and no pixel reaches the client buffer.
+func TestPipelineDMABufGateCancelledSkipsCopy(t *testing.T) {
+	r := portsmocks.NewMockRenderer(t)
+	frame := portsmocks.NewMockCaptureFrame(t) // no CopyTo expectation
+	frame.EXPECT().Done().Return(nil).Maybe()
+	r.EXPECT().BeginCapture().Return(frame, nil).Once()
+	r.EXPECT().EndCapture(frame).Return().Once()
+	replies := make(chan domain.CaptureDone, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	p := NewPipeline(ctx, replies)
+	p.BeginGate()
+	p.SubmitScoped(domain.SecurityState{}, r, []domain.CaptureRequest{dmabufRequest(t, 1)})
+	cancel()
+	p.EndGate(nil)
+	if done := awaitCapture(t, replies); !errors.Is(done.Err, context.Canceled) {
+		t.Fatalf("result %+v", done)
+	}
+	p.Close(r)
+}

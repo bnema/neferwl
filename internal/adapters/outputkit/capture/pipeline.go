@@ -155,8 +155,10 @@ func (p *Pipeline) EndGate(err error) {
 		if len(b.release) > 0 {
 			continue // the verdict is already there
 		}
-		if err == nil {
-			// Released: only now may pixels reach the client's buffers.
+		if err == nil && p.ctx.Err() == nil {
+			// Released: only now may pixels reach the client's buffers. A
+			// cancelled pipeline fails the batch instead (process sees the
+			// context), so no GPU copy is started for it.
 			b.submitCopies()
 		}
 		// The worker only receives: the slot is free (owner only sends).
