@@ -294,4 +294,6 @@ func (p *Pipeline) Split(s domain.Scene, reqs []domain.CaptureRequest) (normal, 
 
 // Handed reports a zeroed request: one Split failed, or one already given to
 // the worker. The owner never answers it again.
-func Handed(q domain.CaptureRequest) bool { return q.ID == 0 && q.Dst.File == nil && q.Mapped == nil }
+func Handed(q domain.CaptureRequest) bool {
+	return q.ID == 0 && q.Dst.File == nil && q.Mapped == nil && q.DMABuf == nil
+}
