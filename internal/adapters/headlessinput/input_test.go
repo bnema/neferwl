@@ -270,3 +270,39 @@ func assertScriptDevice(t *testing.T, input <-chan ports.InputEvent) {
 		t.Fatalf("announcement: %#v", ev)
 	}
 }
+
+func TestScriptDevices(t *testing.T) {
+	km, err := xkb.New(xkb.RMLVO{Layout: "us"})
+	if err != nil {
+		t.Skip(err)
+	}
+	script := make(chan string, 8)
+	for _, line := range []string{"device 2", "move 10 20", "device 1", "key a", "device 2", "click"} {
+		script <- line
+	}
+	close(script)
+	input := make(chan ports.InputEvent, 32)
+	if err := Run(context.Background(), km, nil, script, input, nil, nil, logging.For(context.Background(), "input")); err != nil {
+		t.Fatal(err)
+	}
+	assertScriptDevice(t, input)
+	if ev := <-input; ev != (ports.InputDeviceAdded{ID: 2, Name: "headless-script-2"}) {
+		t.Fatal(ev)
+	}
+	if ev := (<-input).(ports.PointerMotion); ev.Device != 2 {
+		t.Fatal(ev)
+	}
+	for range 2 {
+		if ev := (<-input).(ports.KeyEvent); ev.Device != 1 {
+			t.Fatal(ev)
+		}
+	}
+	for range 2 {
+		if ev := (<-input).(ports.PointerButton); ev.Device != 2 {
+			t.Fatal(ev)
+		}
+	}
+	if len(input) != 0 {
+		t.Fatal("duplicate announcement")
+	}
+}

@@ -234,3 +234,10 @@ HEADLESS-1 at (-640,0) and HEADLESS-2 at (0,0).
 Scripted input announces device ID `1` with the fixed name `headless-script`.
 Use `output.tv.input = headless-script` to test device-bound focus on a virtual
 output. The script's `move` coordinates remain global logical coordinates.
+
+`device <id>` selects the scripted device for subsequent keys, motions, buttons
+and gestures (positive integer; default `1`). A newly selected ID is announced
+once: ID `1` is `headless-script`, other IDs are `headless-script-<id>`.
+Devices share the scripted seat's keymap; release held keys before switching.
+For example, bind `headless-script-2` to `tv`, then interleave `device 2`,
+`key a`, `device 1`, `key a` to exercise bound/unbound focus switching.

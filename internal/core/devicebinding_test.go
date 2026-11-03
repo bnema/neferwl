@@ -33,3 +33,19 @@ func TestDeviceBindingPrecedenceAndReload(t *testing.T) {
 		t.Fatal("removed device remains bound")
 	}
 }
+
+func TestUnmatchedGlobsKeepBindingPathEnabled(t *testing.T) {
+	c := inputBenchCore(t)
+	cfg := c.cfg
+	cfg.Outputs = []domain.OutputConfig{{Name: "A", Inputs: []string{"missing*"}}}
+	if err := c.apply(cfg); err != nil {
+		t.Fatal(err)
+	}
+	c.inputNames = map[domain.InputDeviceID]string{1: "ordinary mouse"}
+	if !c.inputBindings {
+		t.Fatal("unmatched configured globs incorrectly enabled fast path")
+	}
+	if c.boundInput(1) != -1 {
+		t.Fatal("unmatched device bound")
+	}
+}

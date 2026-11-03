@@ -29,6 +29,8 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 // RunSecure snapshots the protection epoch before each event enters the input
 // queue. Scripts are a headless test transport, never an unlock authority.
 func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script <-chan string, input chan<- ports.InputEvent, layouts <-chan domain.Layout, moveCursor func(output string, x, y float64), log zerowrap.Logger, security ports.SessionSecurity) error {
+	activeDevice := scriptDeviceID
+	announcedDevices := map[domain.InputDeviceID]bool{scriptDeviceID: true}
 	snapshot := func() domain.SecurityState {
 		if security != nil {
 			return security.Snapshot()
@@ -36,7 +38,7 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 		return domain.SecurityState{}
 	}
 	stamp := func(ev ports.InputEvent, state domain.SecurityState) ports.InputEvent {
-		ev = withDevice(ev, scriptDeviceID)
+		ev = withDevice(ev, activeDevice)
 		if security == nil {
 			return ev
 		}
@@ -162,6 +164,26 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 				case input <- ev:
 					return nil
 				}
+			}
+			// Devices share the scripted seat/keymap, but retain distinct identities.
+			if len(fields) > 0 && fields[0] == "device" {
+				if len(fields) != 2 {
+					warnInput("line", line, "invalid device")
+					continue
+				}
+				id, err := strconv.ParseUint(fields[1], 10, 64)
+				if err != nil || id == 0 {
+					warnInput("line", line, "invalid device")
+					continue
+				}
+				activeDevice = domain.InputDeviceID(id)
+				if !announcedDevices[activeDevice] {
+					if err := sendPointer(ports.InputDeviceAdded{ID: activeDevice, Name: "headless-script-" + strconv.FormatUint(id, 10)}); err != nil {
+						return err
+					}
+					announcedDevices[activeDevice] = true
+				}
+				continue
 			}
 			buttonCode := func(name string) uint32 {
 				switch name {
