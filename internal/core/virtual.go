@@ -53,3 +53,12 @@ func (a *OutputApply) TakeWarnings() []domain.OutputWarning {
 func sameVirtualEntry(a, b domain.OutputConfig) bool {
 	return (domain.Config{Outputs: []domain.OutputConfig{a}}).Equal(domain.Config{Outputs: []domain.OutputConfig{b}})
 }
+
+func (a *OutputApply) hasVirtualHeads() bool {
+	for _, head := range a.state.Heads().Heads {
+		if head.Info.Virtual {
+			return true
+		}
+	}
+	return false
+}

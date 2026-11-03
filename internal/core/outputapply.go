@@ -48,6 +48,8 @@ func NewOutputApply(state *OutputOverrides) *OutputApply {
 // reload replaces the file configuration and supersedes the pending request.
 // Only the latest reload needs backend work.
 func (a *OutputApply) Reload(file domain.Config) {
+	// The old desired set matters when the last virtual declaration is removed.
+	virtualWork := len(a.state.Virtuals()) > 0 || a.hasVirtualHeads()
 	cfg := a.state.Reload(file)
 	a.checkVirtuals()
 	a.setConfig(cfg)
@@ -55,7 +57,7 @@ func (a *OutputApply) Reload(file domain.Config) {
 		a.reply(a.req.ID, ErrApplySuperseded)
 		a.req = nil
 	}
-	if !a.state.Headless() {
+	if !a.state.Headless() || virtualWork || len(a.state.Virtuals()) > 0 {
 		a.due(cfg)
 	}
 }
@@ -68,8 +70,8 @@ func (a *OutputApply) Heads(heads domain.OutputHeads) {
 	a.headsDue = true
 }
 
-// request validates a protocol request. Test, invalid and headless requests
-// are answered at once; others wait for the backend.
+// request validates a protocol request. Test, invalid and fixed-head-only
+// headless requests are answered at once; virtual changes wait for the backend.
 func (a *OutputApply) Request(req domain.OutputApply) {
 	if a.running || a.pending {
 		a.reply(req.ID, errors.New("output apply already pending"))
@@ -82,7 +84,7 @@ func (a *OutputApply) Request(req domain.OutputApply) {
 		return
 	}
 	a.setConfig(cfg)
-	if a.state.Headless() {
+	if a.state.Headless() && len(a.state.Virtuals()) == 0 && !a.hasVirtualHeads() {
 		a.reply(req.ID, nil)
 		return
 	}
