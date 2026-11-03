@@ -287,3 +287,28 @@ func TestModeWaitsForOwnerConsumption(t *testing.T) {
 		}
 	})
 }
+
+func TestModeResultRetainedAfterOwnerFinished(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		failure := errors.New("renderer allocation failed")
+		ack := make(chan error, 1)
+		done := make(chan struct{})
+		go func() { ack <- failure; close(done) }()
+		// Both signals are ready before the host resumes its wait. Either select
+		// branch must retain the same owner error, not replace it with "stopped".
+		synctest.Wait()
+		if err := awaitMode(context.Background(), done, ack, "tv"); !errors.Is(err, failure) {
+			t.Fatalf("lost owner failure: %v", err)
+		}
+	})
+}
+
+func TestModeStoppedWithoutAcknowledgement(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		done := make(chan struct{})
+		close(done)
+		if err := awaitMode(context.Background(), done, make(chan error, 1), "tv"); err == nil {
+			t.Fatal("missing stopped error")
+		}
+	})
+}

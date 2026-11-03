@@ -100,15 +100,8 @@ func (h *Host) Sync(ctx context.Context, want []domain.OutputConfig) error {
 			case <-ctx.Done():
 				return errors.Join(result, ctx.Err())
 			}
-			select {
-			case err := <-ack:
-				if err != nil {
-					return errors.Join(result, err, h.Remove(ctx, cfg.Name))
-				}
-			case <-h.set.Outs[cfg.Name].Done:
-				return errors.Join(result, fmt.Errorf("virtual output %s stopped applying mode", cfg.Name))
-			case <-ctx.Done():
-				return errors.Join(result, ctx.Err())
+			if err := awaitMode(ctx, h.set.Outs[cfg.Name].Done, ack, cfg.Name); err != nil {
+				return errors.Join(result, err, h.Remove(ctx, cfg.Name))
 			}
 			select {
 			case h.ch.Events <- ports.OutputAdded{Info: info}:
@@ -180,4 +173,22 @@ func parseMode(value string) (domain.OutputMode, error) {
 		return domain.OutputMode{}, fmt.Errorf("invalid refresh %q", value)
 	}
 	return domain.OutputMode{Width: w, Height: h, RefreshMilli: refresh}, nil
+}
+
+// awaitMode retains the owner's result when completion and acknowledgement are
+// both ready. The owner sends its buffered acknowledgement before closing Done.
+func awaitMode(ctx context.Context, done <-chan struct{}, ack <-chan error, name string) error {
+	select {
+	case err := <-ack:
+		return err
+	case <-done:
+		select {
+		case err := <-ack:
+			return err
+		default:
+			return fmt.Errorf("virtual output %s stopped applying mode", name)
+		}
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
