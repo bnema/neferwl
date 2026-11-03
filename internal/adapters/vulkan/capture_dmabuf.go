@@ -14,8 +14,9 @@ import (
 )
 
 // Captures into client dmabufs (CaptureFrame.CopyTo). The slot's readback
-// buffer already holds the frame as opaque sRGB8 BGRA (HDR frames went
-// through the capture pass), so a copy is that buffer's region uploaded
+// buffer already holds the frame as opaque sRGB8 BGRA, alpha 0xff (the
+// compose pipelines never write alpha over the clear's 1; the HDR capture
+// pass writes 1), so a copy is that buffer's region uploaded
 // into the imported client image, on the frame queue after the readback.
 // Each copy has its own command buffer, fence and exported semaphore; the
 // slot keeps it until its fence polls signalled, and is not reused before.

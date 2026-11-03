@@ -51,9 +51,15 @@ func udmabufMem(t *testing.T, size int) (buf *os.File, mem int) {
 // XRGB8888 dmabuf and returns its rows (w*4 bytes each).
 func copyToWait(t *testing.T, r *Renderer, region image.Rectangle) []byte {
 	t.Helper()
-	xr24 := domain.DMABufFormat{Format: fourcc('X', 'R', '2', '4')}
+	return copyToWaitFormat(t, r, region, fourcc('X', 'R', '2', '4'))
+}
+
+// copyToWaitFormat is copyToWait into a linear dmabuf of fourcc.
+func copyToWaitFormat(t *testing.T, r *Renderer, region image.Rectangle, fc uint32) []byte {
+	t.Helper()
+	xr24 := domain.DMABufFormat{Format: fc}
 	if !slices.Contains(r.gpu.CaptureFormats(), xr24) {
-		t.Skip("linear XRGB8888 capture destination unavailable")
+		t.Skipf("linear %#x capture destination unavailable", fc)
 	}
 	w, h := region.Dx(), region.Dy()
 	// Linear images want an aligned pitch: 256 bytes suits every driver.
@@ -98,9 +104,39 @@ func TestCaptureCopyToDMABuf(t *testing.T) {
 			t.Fatalf("pixel %d: %x", i/4, px[i:i+4])
 		}
 	}
+	// An ARGB8888 destination gets opaque pixels, as Read gives SHM.
+	px = copyToWaitFormat(t, r, image.Rect(4, 2, 12, 6), fourcc('A', 'R', '2', '4'))
+	for i := 0; i < len(px); i += 4 {
+		if px[i] != 0xff || px[i+1] != 0 || px[i+2] != 0 || px[i+3] != 0xff {
+			t.Fatalf("ARGB pixel %d: %x", i/4, px[i:i+4])
+		}
+	}
 	// The slot's copy is reaped once finished: the slots are reusable.
 	for range captureSlots + 1 {
 		_ = copyToWait(t, r, image.Rect(0, 0, 16, 8))
+	}
+}
+
+// A translucent client over the background still gives opaque pixels in
+// an ARGB8888 destination.
+func TestCaptureCopyToARGBOpaque(t *testing.T) {
+	r := newTestRenderer(t, 64, 16)
+	requireCaptureSync(t, r)
+	argb := domain.DMABufFormat{Format: fourcc('A', 'R', '2', '4')}
+	if !slices.Contains(r.DMABuf().Formats, argb) {
+		t.Skip("linear ARGB8888 not importable")
+	}
+	f := udmabuf(t, 64, 16, func(int, int) [4]byte { return [4]byte{0x40, 0x40, 0x40, 0x40} })
+	buf := &domain.DMABuf{ID: 7, Width: 64, Height: 16, Format: argb.Format, Planes: []domain.DMABufPlane{{File: f, Stride: 256}}}
+	scene := domain.Scene{Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
+	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: {ID: 1, Width: 64, Height: 16, DMABuf: buf}}); err != nil {
+		t.Fatal(err)
+	}
+	px := copyToWaitFormat(t, r, image.Rect(0, 0, 64, 16), argb.Format)
+	for i := 0; i < len(px); i += 4 {
+		if px[i+3] != 0xff || px[i] != 0x40 {
+			t.Fatalf("pixel %d: %x", i/4, px[i:i+4])
+		}
 	}
 }
 
