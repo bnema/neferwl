@@ -1,7 +1,9 @@
 package libinput
 
 import (
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 	"testing"
 )
 
@@ -122,5 +124,71 @@ func TestPointerSwitchReappliesCurrentConstraint(t *testing.T) {
 		if q.constraint.Mode != mode {
 			t.Fatalf("unchanged current constraint not applied: %+v", q.constraint)
 		}
+	}
+}
+
+func TestSwitchMotionUsesOwnerPosition(t *testing.T) {
+	l := domain.Layout{{Width: 100, Height: 100}, {X: 300, Width: 100, Height: 100, Isolated: true, Devices: []domain.InputDeviceID{1}}}
+	p := newPointer(l)
+	p.addDevice(1, 1)
+	p.addDevice(2, 2)
+	p.addDevice(3, 3)
+	shared := p.forDevice(2)
+	shared.move(10, 0)
+	previous := p.active
+	other := p.forDevice(3)
+	if other != shared {
+		t.Fatal("unbound mice do not share position")
+	}
+	if _, ok := p.switchMotion(previous, other, 3, ports.PointerButton{}); ok {
+		t.Fatal("shared switch emitted motion")
+	}
+	previous = p.active
+	bound := p.forDevice(1)
+	bound.set(390, 30)
+	l[1].X = 500
+	l[1].Width = 20
+	p.setLayout(l)
+	motion, ok := p.switchMotion(previous, bound, 1, ports.PointerButton{})
+	if !ok || motion.X != 500 || motion.Y != 30 || motion.DX != 0 || motion.Device != 1 {
+		t.Fatalf("rebound sync: %+v %v", motion, ok)
+	}
+	p.constrain(domain.PointerConstraint{Warp: true, X: 510, Y: 20})
+	bound.move(3, 0)
+	p.forDevice(2)
+	p.forDevice(1)
+	if bound.x != 513 || p.currentConstraint.Warp || bound.constraint.Warp {
+		t.Fatalf("warp replay: %v %+v", bound.x, bound.constraint)
+	}
+}
+
+func TestSwitchMotionOrderingAndLastBindingRemoval(t *testing.T) {
+	p := newPointer(domain.Layout{{Width: 100, Height: 100, Devices: []domain.InputDeviceID{1}}})
+	p.addDevice(1, 1)
+	p.addDevice(2, 2)
+	previous := p.forDevice(2)
+	target := p.forDevice(1)
+	event := ports.PointerButton{Device: 1, Pressed: true}
+	motion, ok := p.switchMotion(previous, target, 1, event)
+	if !ok {
+		t.Fatal("missing switch motion")
+	}
+	f := newForwarder(zerowrap.Default())
+	f.push(motion)
+	f.push(event)
+	if _, ok := f.queue[0].(ports.PointerMotion); !ok {
+		t.Fatal(f.queue)
+	}
+	if _, ok := f.queue[1].(ports.PointerButton); !ok {
+		t.Fatal(f.queue)
+	}
+	p.setLayout(domain.Layout{{Width: 100, Height: 100}})
+	previous = p.active
+	target = p.forDevice(1)
+	if target != p {
+		t.Fatal("last binding retained")
+	}
+	if _, ok := p.switchMotion(previous, target, 1, event); ok {
+		t.Fatal("no-bindings fast path emitted sync")
 	}
 }

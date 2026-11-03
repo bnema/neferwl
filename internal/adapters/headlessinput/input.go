@@ -61,6 +61,26 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 		return ctx.Err()
 	}
 	var layout domain.Layout
+	positions := map[string][2]float64{}
+	pointerState := ""
+	pointerLayout := func() (string, domain.Layout) {
+		for _, o := range layout {
+			for _, id := range o.Devices {
+				if id == activeDevice {
+					o.Isolated = false
+					return "device-" + strconv.FormatUint(uint64(activeDevice), 10), domain.Layout{o}
+				}
+			}
+		}
+		reachable := make(domain.Layout, 0, len(layout))
+		for _, o := range layout {
+			if !o.Isolated {
+				reachable = append(reachable, o)
+			}
+		}
+		return "shared", reachable
+	}
+
 	emit := func(code uint32, down bool) error {
 		state := snapshot()
 		var key ports.KeyEvent
@@ -157,6 +177,30 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 			}
 			fields := strings.Fields(line)
 			sendPointer := func(ev ports.InputEvent) error {
+				switch ev.(type) {
+				case ports.PointerMotion, ports.PointerButton, ports.PointerAxis, ports.SwipeBegin, ports.SwipeUpdate, ports.SwipeEnd, ports.PinchBegin, ports.PinchUpdate, ports.PinchEnd, ports.HoldBegin, ports.HoldEnd:
+					key, targets := pointerLayout()
+					position, known := positions[key]
+					if !known && len(targets) > 0 {
+						o := targets[0]
+						position = [2]float64{float64(o.X + o.Width/2), float64(o.Y + o.Height/2)}
+					}
+					position[0], position[1] = targets.Clamp(position[0], position[1], position[0], position[1])
+					if motion, ok := ev.(ports.PointerMotion); ok {
+						motion.X, motion.Y = targets.Clamp(position[0], position[1], motion.X, motion.Y)
+						position = [2]float64{motion.X, motion.Y}
+						ev = motion
+					} else if pointerState != key && pointerState != "" {
+						sync := stamp(ports.PointerMotion{X: position[0], Y: position[1], Time: monotonic()}, snapshot())
+						select {
+						case input <- sync:
+						case <-ctx.Done():
+							return ctx.Err()
+						}
+					}
+					positions[key] = position
+					pointerState = key
+				}
 				ev = stamp(ev, snapshot())
 				select {
 				case <-ctx.Done():
@@ -242,7 +286,7 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 					x, ex := strconv.ParseFloat(fields[1], 64)
 					y, ey := strconv.ParseFloat(fields[2], 64)
 					if ex == nil && ey == nil && !math.IsNaN(x) && !math.IsNaN(y) && !math.IsInf(x, 0) && !math.IsInf(y, 0) {
-						x, y = layout.Clamp(x, y, x, y)
+						// sendPointer applies the selected pointer state layout.
 						if o, ok := layout.At(x, y); ok && !o.Isolated && moveCursor != nil {
 							tx, ty := o.ToTarget(x, y)
 							moveCursor(o.Info.Name, tx, ty)

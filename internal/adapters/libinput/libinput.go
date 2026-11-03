@@ -708,10 +708,14 @@ func translate(ev uintptr, opts Options, p *pointer, in *inputState) (ports.Inpu
 			deviceUnref(dev)
 		}
 	default:
+		previous := p.active
 		target := p.forEvent(dev, eventType(ev))
 		out, err := translateEvent(ev, opts, target, in, state)
 		if err != nil {
 			return nil, nil, err
+		}
+		if motion, ok := p.switchMotion(previous, target, in.identities[dev], out); ok {
+			return secureInput(motion, opts.Security, state), []ports.InputEvent{secureInput(out, opts.Security, state)}, nil
 		}
 		return secureInput(out, opts.Security, state), nil, nil
 	}
@@ -1003,8 +1007,10 @@ func (p *pointer) set(x, y float64) (float64, float64) {
 // constrain applies a new constraint. Entering or leaving a lock resyncs
 // the pointer to core's cursor, which stood still meanwhile; a confined
 // pointer moves inside. A warp moves it to core's cursor.
+//hexcheck:ignore suspicious-business-logic-in-adapter applies core constraint and consumes one-shot warp in adapter-owned pointer storage
 func (p *pointer) constrain(c domain.PointerConstraint) {
 	p.currentConstraint = c
+	p.currentConstraint.Warp = false
 	if p.active != nil && p.active != p {
 		p.active.constrain(c)
 		return
@@ -1013,6 +1019,7 @@ func (p *pointer) constrain(c domain.PointerConstraint) {
 		p.x, p.y = p.layout.Clamp(c.X, c.Y, c.X, c.Y)
 	}
 	p.constraint = c
+	p.constraint.Warp = false
 	p.x, p.y = c.Clamp(p.x, p.y)
 }
 
@@ -1130,4 +1137,17 @@ func decodeMotion(p *pointer, id domain.InputDeviceID, dx, dy, rawDX, rawDY floa
 		p.set(p.x+dx, p.y+dy)
 	}
 	return ports.PointerMotion{Device: id, X: p.x, Y: p.y, DX: dx, DY: dy, UnaccelDX: rawDX, UnaccelDY: rawDY, Time: at}
+}
+
+// switchMotion reports an owner position only when a non-motion pointer event
+// changes pointer states. Unbound devices share p, so alternating them emits none.
+func (p *pointer) switchMotion(previous, target *pointer, id domain.InputDeviceID, event ports.InputEvent) (ports.PointerMotion, bool) {
+	if event == nil || previous == target || len(p.devices) == 0 {
+		return ports.PointerMotion{}, false
+	}
+	switch event.(type) {
+	case ports.KeyEvent, ports.PointerMotion:
+		return ports.PointerMotion{}, false
+	}
+	return ports.PointerMotion{Device: id, X: target.x, Y: target.y}, true
 }

@@ -47,3 +47,32 @@ func TestFocusFollowsInputDevice(t *testing.T) {
 		})
 	}
 }
+
+func TestSyncMotionPrecedesSameSurfaceClick(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := startDragRig(t, func(c *domain.Config) { c.Outputs = []domain.OutputConfig{{Name: "DP-1", Inputs: []string{"bound"}}} }, domain.OutputInfo{Name: "DP-1", Width: 800, Height: 600})
+		r.client <- ports.WindowMapped{ID: 1}
+		r.settle(t)
+		r.in(ports.InputDeviceAdded{ID: 1, Name: "bound"})
+		r.in(ports.InputDeviceAdded{ID: 2, Name: "other"})
+		r.in(ports.PointerMotion{Device: 1, X: 100, Y: 100})
+		r.settle(t)
+		r.drain()
+		r.in(ports.PointerMotion{Device: 2, X: 200, Y: 100})
+		r.in(ports.PointerButton{Device: 2, Button: 272, Pressed: true})
+		r.settle(t)
+		cmds := r.drain()
+		motion, button := -1, -1
+		for i, cmd := range cmds {
+			switch cmd.(type) {
+			case ports.PointerMotionTo:
+				motion = i
+			case ports.PointerButtonTo:
+				button = i
+			}
+		}
+		if motion < 0 || button <= motion {
+			t.Fatalf("motion must precede same-surface click: %#v", cmds)
+		}
+	})
+}

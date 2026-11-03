@@ -104,7 +104,6 @@ type Core struct {
 	activeInputOutput   string
 	lastInputBound      bool
 	inputBindings       bool
-	devicePointers      map[domain.InputDeviceID][2]float64
 	titleHistories      map[WindowID]*titleRuleHistory
 	activePointerDevice domain.InputDeviceID
 	lastUnboundOutput   string
