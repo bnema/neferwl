@@ -22,6 +22,8 @@ type OutputPlacement struct {
 	Transform BufferTransform
 	// Primary is output.<name>.primary: the pointer starts on it.
 	Primary bool
+	// Isolated outputs are not reachable by the unbound pointer.
+	Isolated bool
 }
 
 // Contains reports whether the logical point is on the output.
@@ -59,12 +61,28 @@ func (l Layout) Clamp(fromX, fromY, x, y float64) (float64, float64) {
 	if len(l) == 0 {
 		return x, y
 	}
-	if _, ok := l.At(x, y); ok {
+	pointerAt := func(x, y float64) (OutputPlacement, bool) {
+		for _, o := range l {
+			if !o.Isolated && o.Contains(x, y) {
+				return o, true
+			}
+		}
+		return OutputPlacement{}, false
+	}
+	if _, ok := pointerAt(x, y); ok {
 		return x, y
 	}
-	o, ok := l.At(fromX, fromY)
+	o, ok := pointerAt(fromX, fromY)
 	if !ok {
-		o = l[0]
+		for _, candidate := range l {
+			if !candidate.Isolated {
+				o, ok = candidate, true
+				break
+			}
+		}
+		if !ok {
+			return fromX, fromY
+		}
 	}
 	x = min(max(x, float64(o.X)), float64(o.X+o.Width)-1)
 	y = min(max(y, float64(o.Y)), float64(o.Y+o.Height)-1)

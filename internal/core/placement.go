@@ -11,10 +11,11 @@ import (
 // wlr-output-management, not a config key) and the output.<name> relation to
 // another output.
 type placeItem struct {
-	name   string
-	w, h   int
-	pos    *image.Point
-	anchor domain.OutputAnchor
+	isolated bool
+	name     string
+	w, h     int
+	pos      *image.Point
+	anchor   domain.OutputAnchor
 }
 
 // placeOutputs returns the logical origin of every item, in item order.
@@ -28,6 +29,11 @@ func placeOutputs(items []placeItem) []image.Point {
 	done := make([]bool, len(items))
 	left := len(items)
 	for i, it := range items {
+		if it.isolated {
+			done[i] = true
+			left--
+			continue
+		}
 		if it.pos != nil {
 			out[i], done[i] = *it.pos, true
 			left--
@@ -42,7 +48,7 @@ func placeOutputs(items []placeItem) []image.Point {
 					continue
 				}
 				for j, ref := range items {
-					if !done[j] || ref.name == "" || ref.name != it.anchor.To {
+					if ref.isolated || !done[j] || ref.name == "" || ref.name != it.anchor.To {
 						continue
 					}
 					out[i], done[i] = relativeTo(it, ref, out[j]), true
@@ -63,12 +69,27 @@ func placeOutputs(items []placeItem) []image.Point {
 		}
 		x := 0
 		for i, it := range items {
-			if done[i] {
+			if done[i] && !it.isolated {
 				x = max(x, out[i].X+it.w)
 			}
 		}
 		out[next], done[next] = image.Point{X: x}, true
 		left--
+	}
+
+	// Isolated outputs do not participate in automatic or anchored placement.
+	// Keep their origins distinct and leave a 2024px gap after each region.
+	right := 0
+	for i, it := range items {
+		if !it.isolated {
+			right = max(right, out[i].X+it.w)
+		}
+	}
+	for i, it := range items {
+		if it.isolated {
+			out[i] = image.Pt(right+2024, 0)
+			right = out[i].X + it.w
+		}
 	}
 	return out
 }

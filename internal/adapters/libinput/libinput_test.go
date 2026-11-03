@@ -10,9 +10,9 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/domain"
 
+	"bnema.dev/zerowrap"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/zerowrap"
 )
 
 func TestHotkey(t *testing.T) {
@@ -415,5 +415,22 @@ func TestPointerMovedTransform(t *testing.T) {
 	p.moved(func(o string, x, y float64, _ bool) { out, px, py = o, x, y }, true)
 	if out != "A" || px != 20 || py != 90 {
 		t.Fatal(out, px, py)
+	}
+}
+
+func TestPointerSkipsIsolatedOutputs(t *testing.T) {
+	l := domain.Layout{
+		{Info: domain.OutputInfo{Name: "tv"}, X: 2664, Width: 1280, Height: 720, Scale: 1, Primary: true, Isolated: true},
+		{Info: domain.OutputInfo{Name: "DP-1"}, Width: 640, Height: 360, Scale: 1},
+	}
+	p := newPointer(l)
+	if p.x != 320 || p.y != 180 {
+		t.Fatal(p)
+	}
+	if b := p.bounds(); b.W != 640 || b.H != 360 {
+		t.Fatal(b)
+	}
+	if m := p.move(3000, 0); m.X != 639 {
+		t.Fatal(m)
 	}
 }

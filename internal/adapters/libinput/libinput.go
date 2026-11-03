@@ -935,7 +935,14 @@ func newPointer(l domain.Layout) *pointer {
 // Until it is first moved it stays centred on the primary output, which
 // may be plugged in after the others.
 func (p *pointer) setLayout(l domain.Layout) {
-	p.layout = l
+	// Keep the full layout port unchanged; unbound devices use only reachable outputs.
+	p.layout = make(domain.Layout, 0, len(l))
+	for _, o := range l {
+		if !o.Isolated {
+			p.layout = append(p.layout, o)
+		}
+	}
+	l = p.layout
 	if !p.touched && len(l) > 0 {
 		o := l[0]
 		for _, v := range l {

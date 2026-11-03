@@ -144,3 +144,25 @@ func TestXSpaceFollowsLayoutWithoutXWM(t *testing.T) {
 		t.Fatalf("origin %d,%d, want -1920,0", ox, oy)
 	}
 }
+
+func TestIsolatedOutputXSpaceExtents(t *testing.T) {
+	r := newX11Rig(t)
+	outputs := ports.SetOutputs{Outputs: domain.Layout{
+		{Info: domain.OutputInfo{Name: "DP-1", Width: 5120, Height: 1440}, Width: 5120, Height: 1440, Scale: 1},
+		{Info: domain.OutputInfo{Name: "tv", Virtual: true, Width: 3840, Height: 2160}, X: 5120 + 2024, Width: 3840, Height: 2160, Scale: 1, Isolated: true},
+	}}
+	applyOutputs(t, r.s, r.commands, outputs)
+	positions := lastPositions(xdgOutputsOf(t, r.xc))
+	if !slices.Equal(positions, [][2]int32{{0, 0}, {7144, 0}}) {
+		t.Fatal(positions)
+	}
+	r.s.display.Do(func() {
+		w, h := r.s.xspace.Size()
+		if w != 10984 || h != 2160 || w > 32767 || h > 32767 {
+			t.Errorf("X extents %dx%d", w, h)
+		}
+		if x, y, ok := r.s.xspace.WholeOutput(7144, 0, 3840, 2160); !ok || x != 7144 || y != 0 {
+			t.Error("isolated X output unreachable")
+		}
+	})
+}

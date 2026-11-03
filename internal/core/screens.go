@@ -19,6 +19,7 @@ type screen struct {
 	// output (output.<name>.transform); 90/270 swap width and height.
 	transform domain.BufferTransform
 	primary   bool
+	isolated  bool
 	x, y      int  // logical origin in the global layout
 	off       bool // turned off by a client (output power management)
 	layers    []domain.LayerSurface
@@ -96,7 +97,7 @@ func (s *screen) rect() Rect {
 
 func (s *screen) placement() domain.OutputPlacement {
 	r := s.rect()
-	return domain.OutputPlacement{Info: s.info, X: r.X, Y: r.Y, Width: r.W, Height: r.H, Scale: s.scale, Transform: s.transform, Primary: s.primary}
+	return domain.OutputPlacement{Info: s.info, X: r.X, Y: r.Y, Width: r.W, Height: r.H, Scale: s.scale, Transform: s.transform, Primary: s.primary && !s.isolated, Isolated: s.isolated}
 }
 
 // setScale resizes the logical output; layer placement follows.
@@ -134,9 +135,16 @@ func (c *Core) order() {
 		if cfg, ok := c.outputConfig(s.name()); ok {
 			items[i].pos, items[i].anchor = cfg.Pos, cfg.Anchor
 		}
+		s.isolated = s.info.Virtual && items[i].pos == nil && items[i].anchor.Relation == domain.RelationNone
+		items[i].isolated = s.isolated
 	}
 	for i, p := range placeOutputs(items) {
 		c.screens[i].x, c.screens[i].y = p.X, p.Y
+	}
+	if c.cur().isolated {
+		if i := slices.IndexFunc(c.screens, func(s *screen) bool { return !s.isolated && s.name() != "" }); i >= 0 {
+			c.focusScreen = i
+		}
 	}
 }
 
@@ -180,7 +188,7 @@ func (c *Core) screenIndex(name string) int {
 // point, or -1. It does not allocate.
 func (c *Core) screenAt(x, y float64) int {
 	for i, s := range c.screens {
-		if s.name() == "" {
+		if s.name() == "" || s.isolated {
 			continue
 		}
 		r := s.rect()
@@ -200,7 +208,7 @@ func (c *Core) clampPointer(fromX, fromY, x, y float64) (float64, float64) {
 		return x, y
 	}
 	if i = c.screenAt(fromX, fromY); i < 0 {
-		i = slices.IndexFunc(c.screens, func(s *screen) bool { return s.name() != "" })
+		i = slices.IndexFunc(c.screens, func(s *screen) bool { return s.name() != "" && !s.isolated })
 		if i < 0 {
 			return x, y
 		}
@@ -317,7 +325,7 @@ func (c *Core) addScreen(info domain.OutputInfo) {
 	c.order()
 	// The primary output takes the focus while nothing is open yet
 	// (startup). Later, plugging it in never moves the user.
-	if s.primary && !c.anyWindow() {
+	if s.primary && !s.isolated && !c.anyWindow() {
 		c.focusScreen = slices.Index(c.screens, s)
 	}
 	c.named()
@@ -554,7 +562,7 @@ const (
 // reach. Screens with the same center on the axis are unreachable by direction
 // (the pointer still reaches them). There is no wrap.
 func (c *Core) neighbor(d direction) int {
-	if d < dirLeft || d > dirDown {
+	if c.cur().isolated || d < dirLeft || d > dirDown {
 		return -1
 	}
 	// span is the extent of s along the move (lo, hi) and across it.
@@ -569,7 +577,7 @@ func (c *Core) neighbor(d direction) int {
 	pick := func(fallback bool) int {
 		best, bestKey := -1, [4]int{}
 		for i, s := range c.screens {
-			if i == c.focusScreen || s.name() == "" {
+			if i == c.focusScreen || s.name() == "" || s.isolated {
 				continue
 			}
 			l, h, cl, ch := span(s)
@@ -628,3 +636,13 @@ func (c *Core) moveWorkspace(d direction) {
 
 // abs is the absolute value of n.
 func abs(n int) int { return max(n, -n) }
+
+// outputAt is geometric lookup for client placement, including isolated outputs.
+func (c *Core) outputAt(x, y float64) int {
+	for i, s := range c.screens {
+		if s.name() != "" && s.placement().Contains(x, y) {
+			return i
+		}
+	}
+	return -1
+}

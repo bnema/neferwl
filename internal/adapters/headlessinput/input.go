@@ -215,7 +215,8 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 					x, ex := strconv.ParseFloat(fields[1], 64)
 					y, ey := strconv.ParseFloat(fields[2], 64)
 					if ex == nil && ey == nil && !math.IsNaN(x) && !math.IsNaN(y) && !math.IsInf(x, 0) && !math.IsInf(y, 0) {
-						if o, ok := layout.At(x, y); ok && moveCursor != nil {
+						x, y = layout.Clamp(x, y, x, y)
+						if o, ok := layout.At(x, y); ok && !o.Isolated && moveCursor != nil {
 							tx, ty := o.ToTarget(x, y)
 							moveCursor(o.Info.Name, tx, ty)
 						}
