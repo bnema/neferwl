@@ -31,7 +31,7 @@ The driver libraries are shared with other Vulkan programs and their size depend
 
 On the GPU, the same setup uses about 36 MB of VRAM and 4 MB of GTT (system memory mapped for the GPU), read from the `drm-memory-vram` and `drm-memory-gtt` lines of `/proc/<pid>/fdinfo`. A DRM session adds scanout buffers for each output.
 
-This is the cost of NeferWL alone. Memory grows with what runs on top of it: NeferWL maps the buffers of every client it shows, so a wallpaper (swaybg, awww and similar), a bar, a launcher or a large window each add their own pixels, and every extra output adds its own images. A desktop with two 4K screens, a wallpaper and a bar uses about 100 MB.
+This is the cost of NeferWL alone. NeferWL reads wl_shm client pixels without mapping them, so shm clients do not add to its RSS; their copies live in GPU memory (fdinfo `drm-memory-vram`/`drm-memory-gtt`). Every extra output adds its own images. A desktop with two 4K screens, a wallpaper and a bar uses about 100 MB.
 
 To measure your own session, start NeferWL with `--pprof localhost:6060`, then:
 

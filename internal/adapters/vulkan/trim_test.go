@@ -31,7 +31,7 @@ func trimSettled(t *testing.T, r *Renderer, now time.Time) {
 	}
 }
 
-// An idle output frees the pool mapping and GPU copies of a window it no
+// An idle output frees the GPU copies of a window it no
 // longer draws once idleTTL passed, without rendering; the window drawn
 // by the last frame stays, and a window coming back is copied again.
 func TestTrimFreesUndrawnSHMWithoutRender(t *testing.T) {
@@ -56,13 +56,10 @@ func TestTrimFreesUndrawnSHMWithoutRender(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if len(r.pools) != 2 || len(r.shm) != 2 {
-		t.Fatalf("freed before idleTTL: pools %d, copies %d", len(r.pools), len(r.shm))
+	if len(r.shm) != 2 {
+		t.Fatalf("freed before idleTTL: copies %d", len(r.shm))
 	}
 	trimSettled(t, r, start.Add(idleTTL))
-	if _, ok := r.pools[a.SHM.Pool]; ok || len(r.pools) != 1 {
-		t.Fatalf("undrawn pool kept: %d pools", len(r.pools))
-	}
 	if _, ok := r.shm[shmKey{win: 1}]; ok || len(r.shm) != 1 {
 		t.Fatalf("undrawn copies kept: %d surfaces", len(r.shm))
 	}
@@ -70,8 +67,8 @@ func TestTrimFreesUndrawnSHMWithoutRender(t *testing.T) {
 	if err := r.Trim(start.Add(10 * idleTTL)); err != nil {
 		t.Fatal(err)
 	}
-	if len(r.pools) != 1 || len(r.shm) != 1 {
-		t.Fatalf("shown window freed: pools %d, copies %d", len(r.pools), len(r.shm))
+	if len(r.shm) != 1 {
+		t.Fatalf("shown window freed: copies %d", len(r.shm))
 	}
 	copied := r.copied
 	if err := render(r, both, contents); err != nil {
@@ -117,14 +114,14 @@ func TestTrimKeepsRecentlyDrawn(t *testing.T) {
 	if err := r.Trim(start.Add(idleTTL)); err != nil {
 		t.Fatal(err)
 	}
-	if len(r.pools) != 1 || len(r.shm) != 1 {
+	if len(r.shm) != 1 {
 		t.Fatalf("drawn %v ago but freed", time.Second)
 	}
 	if err := r.Trim(start.Add(2*idleTTL - time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	if len(r.pools) != 0 || len(r.shm) != 0 {
-		t.Fatalf("kept after idleTTL: pools %d, copies %d", len(r.pools), len(r.shm))
+	if len(r.shm) != 0 {
+		t.Fatalf("kept after idleTTL: copies %d", len(r.shm))
 	}
 }
 
@@ -200,8 +197,8 @@ func TestTrimPollsFinishedFrames(t *testing.T) {
 	}
 }
 
-// A window the last scene lists as Hidden (another workspace) loses its pool
-// mapping and GPU copy after hiddenTTL, while a window that merely left the
+// A window the last scene lists as Hidden (another workspace) loses its
+// GPU copy after hiddenTTL, while a window that merely left the
 // scene keeps them until idleTTL; the hidden window is copied again, with the
 // right pixels, once a scene draws it.
 func TestTrimFreesHiddenWindowsSooner(t *testing.T) {
@@ -229,15 +226,15 @@ func TestTrimFreesHiddenWindowsSooner(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if len(r.shm) != 3 || len(r.pools) != 3 {
-		t.Fatalf("freed before hiddenTTL: pools %d, copies %d", len(r.pools), len(r.shm))
+	if len(r.shm) != 3 {
+		t.Fatalf("freed before hiddenTTL: copies %d", len(r.shm))
 	}
 	trimSettled(t, r, start.Add(hiddenTTL))
 	if _, ok := r.shm[shmKey{win: 2}]; ok {
 		t.Fatal("hidden window's copy kept past hiddenTTL")
 	}
-	if len(r.shm) != 2 || len(r.pools) != 2 {
-		t.Fatalf("only the hidden window goes: pools %d, copies %d", len(r.pools), len(r.shm))
+	if len(r.shm) != 2 {
+		t.Fatalf("only the hidden window goes: copies %d", len(r.shm))
 	}
 	trimSettled(t, r, start.Add(idleTTL))
 	if _, ok := r.shm[shmKey{win: 1}]; ok || len(r.shm) != 1 {

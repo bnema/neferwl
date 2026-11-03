@@ -254,7 +254,6 @@ func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.Su
 	dmg := r.frameDamage(tg, s, image.Rect(0, 0, sw, sh))
 	ds := r.draws(s, contents, dmg)
 	dmg.finish()
-	r.dropPools()
 	partial := !dmg.all()
 	redrawn := sw * sh
 	if partial {

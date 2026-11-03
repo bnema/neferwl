@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/bnema/neferwl/internal/domain"
+	"golang.org/x/sys/unix"
 )
 
 // sceneWalk turns one scene into quads in paint order, copying new wl_shm
@@ -531,7 +532,10 @@ func (w *sceneWalk) drawable(c *domain.SurfaceContent) bool {
 	if b == nil {
 		return false
 	}
-	_, err := w.r.shmPixels(b, b.Offset+(c.Height-1)*b.Stride+c.Width*4)
+	fd, err := shmFD(b, b.Offset+(c.Height-1)*b.Stride+c.Width*4)
+	if err == nil {
+		unix.Close(fd)
+	}
 	return err == nil
 }
 
@@ -708,23 +712,14 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *domain.SurfaceCo
 	// The copy of this content, if any, needs no pool: a kept (closing)
 	// window whose pool file is closed still draws.
 	c := r.shmCached(key, st)
-	if c != nil {
-		// As a drawn pool, for Trim; nothing is mapped for it.
-		if m := r.pools[b.Pool]; m != nil {
-			m.last, m.win = r.frame, key.win
-		}
-	} else {
-		pixels, err := r.shmPixels(b, b.Offset+(content.Height-1)*b.Stride+content.Width*4)
-		if err != nil {
-			return
-		}
-		r.pools[b.Pool].win = key.win
+	if c == nil {
+		var err error
 		// Damage history is the root surface's: children copy in full.
 		var damage func(uint64) ([]domain.Rect, bool)
 		if root {
 			damage = content.DamageSince
 		}
-		if c, err = r.shmCopyFor(key, st, pixels, b.Offset, b.Stride, damage); err != nil {
+		if c, err = r.shmCopyFor(key, st, nil, b, b.Offset, b.Stride, damage); err != nil {
 			return
 		}
 	}

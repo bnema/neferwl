@@ -6,11 +6,11 @@ import (
 	"math"
 	"os"
 
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/hdrcursor"
 	"github.com/bnema/neferwl/internal/adapters/overlaydraw"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/zerowrap"
 
 	vk "bnema.dev/purego-vulkan/vulkan"
 )
@@ -65,11 +65,7 @@ type Renderer struct {
 	frame, submitted, completed uint64
 	deferred                    []deferredFree
 	imports                     map[uint64]*imported
-	// pools are client wl_shm pools mapped by pool ID.
-	pools map[uint64]*mapping
-	// retired are pool mappings replaced this frame, unmapped once the
-	// frame's copies are done.
-	retired [][]byte
+	shmPreadFallback            bool
 	// shm are the GPU copies of wl_shm surfaces (shm.go); copied counts
 	// the bytes copied into them, for tests.
 	shm    map[shmKey]*shmSurface
@@ -132,7 +128,7 @@ func (g *GPU) NewRenderer(width, height int, o domain.RendererOptions) (renderer
 	if width <= 0 || height <= 0 || width > math.MaxUint32 || height > math.MaxUint32 || uint64(width)*uint64(height) > uint64(math.MaxInt/4) {
 		return nil, fmt.Errorf("invalid renderer dimensions %d x %d", width, height)
 	}
-	r := &Renderer{gpu: g, q: g.acquireQueue(), width: width, height: height, lastHDRTarget: -1, imports: map[uint64]*imported{}, pools: map[uint64]*mapping{}, shm: map[shmKey]*shmSurface{}, hidden: map[domain.WindowID]struct{}{}, log: g.log}
+	r := &Renderer{gpu: g, q: g.acquireQueue(), width: width, height: height, lastHDRTarget: -1, imports: map[uint64]*imported{}, shm: map[shmKey]*shmSurface{}, hidden: map[domain.WindowID]struct{}{}, log: g.log}
 	if r.q == nil {
 		return nil, fmt.Errorf("vulkan: GPU closed")
 	}
@@ -295,7 +291,6 @@ func (r *Renderer) Close() {
 			delete(r.imports, id)
 		}
 		r.frame += importTTL + 1
-		r.dropPools()
 		r.dropShm()
 		r.destroySlots()
 		r.destroyCaptures()

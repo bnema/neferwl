@@ -366,7 +366,7 @@ func shmContent(t testing.TB, w, h, stride int, pixels []byte) *domain.SurfaceCo
 	return &domain.SurfaceContent{Width: w, Height: h, SHM: &domain.SHMBuffer{Pool: shmPools, File: f, Stride: stride}}
 }
 
-// shmPools numbers test pools: a renderer maps each pool ID once.
+// shmPools numbers test pools.
 var shmPools uint64
 
 // The window geometry lands on the window rect and the client shadow
@@ -504,7 +504,7 @@ func TestRendererAlphaBlend(t *testing.T) {
 
 // A window kept after its client closed (a closing window fading out) still
 // draws from the GPU copy of its content: the pool file is closed and its
-// mapping gone, and the copy is found without reading the pool.
+// the copy is found without reading the pool.
 func TestRendererSHMKeptWindowDrawsFromCopy(t *testing.T) {
 	r := newTestRenderer(t, 32, 32)
 	defer r.Close()
@@ -514,14 +514,9 @@ func TestRendererSHMKeptWindowDrawsFromCopy(t *testing.T) {
 	if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: c}); err != nil {
 		t.Fatal(err)
 	}
-	// Wayland closed the pool; the mapping was dropped meanwhile.
+	// Wayland closed the pool; no client mapping is retained.
 	if err := c.SHM.File.Close(); err != nil {
 		t.Fatal(err)
-	}
-	r.dropPools()
-	for pool, m := range r.pools {
-		_ = unix.Munmap(m.data)
-		delete(r.pools, pool)
 	}
 	// The window moves (a fade-out), so it draws again.
 	scene.Seq = 2

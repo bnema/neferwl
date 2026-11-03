@@ -6,15 +6,14 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	vk "bnema.dev/purego-vulkan/vulkan"
-	"golang.org/x/sys/unix"
 )
 
 // idleTTL is how long a client buffer cache survives undrawn in wall-clock
 // time. An idle output renders no frame, so importTTL alone never frees
-// the pools, GPU copies and imports of windows that left the screen.
+// the GPU copies and imports of windows that left the screen.
 const idleTTL = 20 * time.Second
 
-// hiddenTTL is idleTTL for the wl_shm copies and pool mappings of windows the
+// hiddenTTL is idleTTL for the wl_shm copies of windows the
 // last scene lists as Hidden (another workspace, a hidden stash): they are
 // suspended, so their content will not change before they are shown again,
 // and a window coming back is copied again in the frame that draws it. Trim
@@ -28,7 +27,7 @@ type trimMark struct {
 	at    time.Time
 }
 
-// Trim frees the pool mappings, GPU copies and dmabuf imports not drawn
+// Trim frees the GPU copies and dmabuf imports not drawn
 // for idleTTL, and the objects of frames the GPU finished, without a new
 // frame. What the last frame drew stays: it is on screen and a redraw
 // would copy it again. The output calls it periodically on its goroutine.
@@ -65,14 +64,6 @@ func (r *Renderer) Trim(now time.Time) error {
 				return last <= hiddenCutoff
 			}
 			return last <= cutoff
-		}
-		// The GPU reads the copies, never a mapping, and no frame is being
-		// recorded: unmapping now is safe.
-		for id, m := range r.pools {
-			if stale(m.last, m.win) {
-				_ = unix.Munmap(m.data)
-				delete(r.pools, id)
-			}
 		}
 		for key, s := range r.shm {
 			if stale(s.last, key.win) {

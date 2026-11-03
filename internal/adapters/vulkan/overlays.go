@@ -95,7 +95,7 @@ func (w *sceneWalk) overlay(o domain.Overlay, anchor, clip image.Rectangle, outp
 	c = r.shmCached(key, st)
 	if c == nil {
 		var err error
-		if c, err = r.shmCopyFor(key, st, pix, 0, lw*4, nil); err != nil {
+		if c, err = r.shmCopyFor(key, st, pix, nil, 0, lw*4, nil); err != nil {
 			return
 		}
 	}

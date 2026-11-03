@@ -1,8 +1,10 @@
 package vulkan
 
 import (
+	"errors"
 	"fmt"
 	"image"
+	"io"
 	"runtime/debug"
 	"unsafe"
 
@@ -13,72 +15,88 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// wl_shm buffers: each client pool is mapped once, read only. A surface's
-// pixels are copied once per new content into a persistently mapped,
-// host-visible GPU buffer (device-local when the GPU exposes it, ReBAR)
-// that the fragment shader reads directly: one memcpy per row, no staging
-// copy, no resample, no alpha fix-up on the CPU. Each surface has two GPU
-// buffers used in turn, so the CPU never writes one a frame in flight
-// reads. Mappings and buffers are dropped after importTTL frames unused,
-// or idleTTL of wall-clock time (Trim); hiddenTTL for a window the scene
-// lists as Hidden.
+// wl_shm pixels are read directly into persistently mapped GPU buffers.
+// Only drivers rejecting pread into GPU memory use a transient client mapping.
+// Each surface has two GPU buffers, so the CPU never writes one in flight.
 
-// mapping is a client pool mapped read-only.
-type mapping struct {
-	data []byte
-	last uint64
-	// win is the window that last drew from the pool (0: none known), for
-	// Trim's shorter TTL of hidden windows.
-	win domain.WindowID
-}
-
-// shmPixels returns the pool bytes of a buffer, mapping the pool once and
-// again when it grew past the mapping.
-func (r *Renderer) shmPixels(b *domain.SHMBuffer, end int) ([]byte, error) {
-	if m := r.pools[b.Pool]; m != nil {
-		if end <= len(m.data) {
-			m.last = r.frame
-			return m.data, nil
-		}
-		// Draws collected earlier this frame may still read the old
-		// mapping: it is unmapped once the frame is recorded.
-		r.retired = append(r.retired, m.data)
-		delete(r.pools, b.Pool)
-	}
+// shmFD holds the pool open across validation and copying, even if the client
+// concurrently closes its file.
+func shmFD(b *domain.SHMBuffer, end int) (int, error) {
 	fd, err := dupFile(b.File)
 	if err != nil {
-		return nil, err
+		return -1, err
 	}
-	defer unix.Close(fd)
-	var st unix.Stat_t
-	if err := unix.Fstat(fd, &st); err != nil {
-		return nil, err
+	if err := shmSize(fd, end); err != nil {
+		unix.Close(fd)
+		return -1, err
 	}
-	if int64(end) > st.Size {
-		return nil, fmt.Errorf("shm pool of %d bytes, buffer ends at %d", st.Size, end)
-	}
-	data, err := unix.Mmap(fd, 0, int(st.Size), unix.PROT_READ, unix.MAP_SHARED)
-	if err != nil {
-		return nil, err
-	}
-	r.pools[b.Pool] = &mapping{data: data, last: r.frame}
-	return data, nil
+	return fd, nil
 }
 
-// dropPools unmaps replaced mappings and pools not drawn for importTTL
-// frames. The GPU never reads a mapping: this runs once the CPU copies of
-// a frame are done.
-func (r *Renderer) dropPools() {
-	for _, data := range r.retired {
-		_ = unix.Munmap(data)
+func shmSize(fd, end int) error {
+	var st unix.Stat_t
+	if err := unix.Fstat(fd, &st); err != nil {
+		return err
 	}
-	r.retired = r.retired[:0]
-	for id, m := range r.pools {
-		if r.frame-m.last > importTTL {
-			_ = unix.Munmap(m.data)
-			delete(r.pools, id)
+	if end < 0 || int64(end) > st.Size {
+		return fmt.Errorf("shm pool of %d bytes, buffer ends at %d", st.Size, end)
+	}
+	return nil
+}
+
+// preadPixels reads exactly one contiguous region. A short read is invalid
+// content, not a reason to retry and combine different client publications.
+func preadPixels(fd int, dst []byte, offset int) error {
+	for {
+		n, err := unix.Pread(fd, dst, int64(offset))
+		if err == unix.EINTR && n == 0 {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if n != len(dst) {
+			return io.ErrUnexpectedEOF
+		}
+		return nil
+	}
+}
+
+// readSHMRect uses one syscall for full contiguous rows, otherwise one per row.
+func readSHMRect(fd int, dst []byte, offset, stride, row int, rc image.Rectangle) error {
+	if stride == row && rc.Min.X == 0 && rc.Dx()*4 == row {
+		return preadPixels(fd, dst[rc.Min.Y*row:rc.Max.Y*row], offset+rc.Min.Y*stride)
+	}
+	for y := rc.Min.Y; y < rc.Max.Y; y++ {
+		d, n := y*row+rc.Min.X*4, rc.Dx()*4
+		if err := preadPixels(fd, dst[d:d+n], offset+y*stride+rc.Min.X*4); err != nil {
+			return err
 		}
 	}
+	return nil
+}
+
+// copySHMRect is only for GPU mappings which reject kernel writes. The
+// mapping never survives this copy; SIGBUS from concurrent truncation is guarded.
+func copySHMRect(fd int, dst []byte, offset, stride, row int, rc image.Rectangle) error {
+	end := offset + (rc.Max.Y-1)*stride + rc.Max.X*4
+	if err := shmSize(fd, end); err != nil {
+		return err
+	}
+	data, err := unix.Mmap(fd, 0, end, unix.PROT_READ, unix.MAP_SHARED)
+	if err != nil {
+		return err
+	}
+	defer unix.Munmap(data)
+	if !copyGuarded(func() {
+		for y := rc.Min.Y; y < rc.Max.Y; y++ {
+			d, src, n := y*row+rc.Min.X*4, offset+y*stride+rc.Min.X*4, rc.Dx()*4
+			copy(dst[d:d+n], data[src:src+n])
+		}
+	}) {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
 }
 
 // copyGuarded runs copy with page faults turned into a recoverable panic:
@@ -211,12 +229,13 @@ func (r *Renderer) shmCached(key shmKey, st shmState) *shmCopy {
 	return nil
 }
 
-// shmCopyFor copies a surface's content st from the client pixels (stride
-// bytes per row from offset) into a GPU buffer; the caller found none
+// shmCopyFor copies a surface's content st from b, or CPU-owned pixels when
+// b is nil (compositor overlays), using stride
+// bytes per row from offset into a GPU buffer; the caller found none
 // holding it (shmCached). A buffer holding an older content of the same
 // size gets only what changed since (damage, in buffer pixels; false:
 // everything).
-func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, offset, stride int, damage func(since uint64) ([]domain.Rect, bool)) (*shmCopy, error) {
+func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, b *domain.SHMBuffer, offset, stride int, damage func(since uint64) ([]domain.Rect, bool)) (*shmCopy, error) {
 	s := r.shm[key]
 	if s == nil {
 		s = &shmSurface{}
@@ -255,22 +274,42 @@ func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, offset, st
 			rects = d
 		}
 	}
-	// The client may shrink its pool under the mapping: its window then
-	// shows garbage for this frame, never a crash, and is copied again.
-	// Damage of the frames since this buffer was written can overlap: each
-	// pixel is copied once.
+	// Damage can overlap: each pixel is copied once.
 	r.shmRects = disjointRects(r.shmRects[:0], rects, st.w, st.h)
-	c.valid = copyGuarded(func() {
-		for _, rc := range r.shmRects {
+	c.valid = false
+	fd := -1
+	if b != nil {
+		var err error
+		fd, err = shmFD(b, offset+(st.h-1)*stride+row)
+		if err != nil {
+			c.holds, c.gpu.last = st, r.frame
+			return c, nil
+		}
+		defer unix.Close(fd)
+	}
+	c.valid = true
+	for _, rc := range r.shmRects {
+		if b != nil {
+			err := readSHMRect(fd, dst, offset, stride, row, rc)
+			if errors.Is(err, unix.EFAULT) {
+				if !r.shmPreadFallback {
+					r.shmPreadFallback = true
+					r.log.Debug().Msg("pread into GPU memory rejected; using transient shm mappings")
+				}
+				err = copySHMRect(fd, dst, offset, stride, row, rc)
+			}
+			if err != nil {
+				c.valid = false
+				break
+			}
+		} else {
 			for y := rc.Min.Y; y < rc.Max.Y; y++ {
-				d := y*row + rc.Min.X*4
-				s := offset + y*stride + rc.Min.X*4
-				n := rc.Dx() * 4
-				copy(dst[d:d+n], pixels[s:s+n])
-				r.copied += n
+				d, src, n := y*row+rc.Min.X*4, offset+y*stride+rc.Min.X*4, rc.Dx()*4
+				copy(dst[d:d+n], pixels[src:src+n])
 			}
 		}
-	})
+		r.copied += rc.Dx() * rc.Dy() * 4
+	}
 	c.holds, c.gpu.last = st, r.frame
 	return c, nil
 }
