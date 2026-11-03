@@ -54,7 +54,18 @@ func TestIsolatedOutputPlacementAndPointer(t *testing.T) {
 
 func TestMultipleIsolatedOutputsDoNotOverlap(t *testing.T) {
 	positions := placeOutputs([]placeItem{{name: "tv", w: 1280, h: 720, isolated: true}, {name: "DP-1", w: 640, h: 360}, {name: "tablet", w: 800, h: 600, isolated: true}})
-	if positions[1].X != 0 || positions[0].X != 640+2024 || positions[2].X != positions[0].X+1280+2024 {
+	if positions[1].X != 0 || positions[0].X != 640+2024 || positions[2].X != positions[0].X || positions[2].Y != 720+2024 {
 		t.Fatal(positions)
+	}
+}
+
+func TestLargeIsolatedColumnWithNegativeOrigin(t *testing.T) {
+	items := []placeItem{{name: "DP-1", w: 5120, h: 1440, pos: &image.Point{X: -5120, Y: -100}}, {name: "a", w: 16384, h: 16384, isolated: true}, {name: "b", w: 16384, h: 16384, isolated: true}}
+	p := placeOutputs(items)
+	if p[1] != image.Pt(2024, -100) || p[2] != image.Pt(2024, 18308) {
+		t.Fatal(p)
+	}
+	if width := p[2].X + items[2].w - p[0].X; width != 23528 || width > 32767 {
+		t.Fatal(width)
 	}
 }

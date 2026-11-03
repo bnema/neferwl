@@ -119,3 +119,20 @@ func TestSpaceWholeOutputMatchesPlace(t *testing.T) {
 		t.Fatal("partial rect matched")
 	}
 }
+
+func TestSpaceExcludesOnlyOverflowingIsolatedOutput(t *testing.T) {
+	l := domain.Layout{out(-5120, -100, 5120, 1440), out(2024, -100, 16384, 16384), out(2024, 18308, 16384, 16384), out(-5120, 1400, 640, 480)}
+	var s Space
+	s.Set(l)
+	for i, o := range l {
+		if s.Includes(o) != (i != 2) {
+			t.Fatalf("output %d inclusion wrong", i)
+		}
+	}
+	if w, h := s.Size(); w != 23528 || h != 16384 {
+		t.Fatalf("size %dx%d", w, h)
+	}
+	if s.Dropped() != 1 {
+		t.Fatal(s.Dropped())
+	}
+}

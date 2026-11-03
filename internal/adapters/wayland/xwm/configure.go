@@ -122,7 +122,7 @@ func (x *XWM) LayoutChanged(changed bool) {
 	}
 	if n := x.space.Dropped(); n > 0 && !x.warnedSpace {
 		x.warnedSpace = true
-		x.log.Warn().Int("dropped", n).Int("max", maxRegions).Msg("more outputs than the X11 layout holds, extra outputs ignored")
+		x.log.Warn().Int("dropped", n).Int("max", maxRegions).Msg("outputs exceed X11 coordinate or output-count limits, extra outputs ignored")
 	}
 	if !changed {
 		return

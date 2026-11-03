@@ -166,3 +166,31 @@ func TestIsolatedOutputXSpaceExtents(t *testing.T) {
 		}
 	})
 }
+
+func TestPrivateXOutputOmitsOverflowingRectangle(t *testing.T) {
+	r := newX11Rig(t)
+	outputs := ports.SetOutputs{Outputs: domain.Layout{
+		{Info: domain.OutputInfo{Name: "DP-1", Width: 5120, Height: 1440}, X: -5120, Y: -100, Width: 5120, Height: 1440, Scale: 1},
+		{Info: domain.OutputInfo{Name: "a", Virtual: true, Width: 16384, Height: 16384}, X: 2024, Y: -100, Width: 16384, Height: 16384, Scale: 1, Isolated: true},
+		{Info: domain.OutputInfo{Name: "b", Virtual: true, Width: 16384, Height: 16384}, X: 2024, Y: 18308, Width: 16384, Height: 16384, Scale: 1, Isolated: true},
+	}}
+	applyOutputs(t, r.s, r.commands, outputs)
+	private := xdgOutputsOf(t, r.xc)
+	var positions [][2]int32
+	missing := 0
+	for _, p := range private {
+		if len(p.pos) == 0 {
+			missing++
+		} else {
+			positions = append(positions, p.pos[len(p.pos)-1])
+		}
+	}
+	slices.SortFunc(positions, func(a, b [2]int32) int { return int(a[0] - b[0]) })
+	if missing != 1 || !slices.Equal(positions, [][2]int32{{0, 0}, {7144, 0}}) {
+		t.Fatalf("missing=%d positions=%v", missing, positions)
+	}
+	other := protocolClient(t, r.s, r.dir)
+	if public := xdgOutputsOf(t, other); len(public) != 3 {
+		t.Fatal("native outputs changed")
+	}
+}

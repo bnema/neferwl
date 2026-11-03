@@ -79,16 +79,21 @@ func placeOutputs(items []placeItem) []image.Point {
 
 	// Isolated outputs do not participate in automatic or anchored placement.
 	// Keep their origins distinct and leave a 2024px gap after each region.
-	right := 0
+	right, top := 0, 0
+	haveLayout := false
 	for i, it := range items {
 		if !it.isolated {
 			right = max(right, out[i].X+it.w)
+			if !haveLayout || out[i].Y < top {
+				top = out[i].Y
+			}
+			haveLayout = true
 		}
 	}
 	for i, it := range items {
 		if it.isolated {
-			out[i] = image.Pt(right+2024, 0)
-			right = out[i].X + it.w
+			out[i] = image.Pt(right+2024, top)
+			top = out[i].Y + it.h + 2024
 		}
 	}
 	return out

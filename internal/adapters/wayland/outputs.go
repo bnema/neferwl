@@ -97,6 +97,9 @@ func (o *output) sendXDG(x *xdgoutput.ZxdgOutputV1, withName bool) {
 // sendXDGX sends the private xdg-output state: the layout position moved to
 // X space and the logical size.
 func (o *output) sendXDGX(s *Server, x *xdgoutput.ZxdgOutputV1, withName bool) {
+	if !s.xspace.Includes(o.place) {
+		return
+	}
 	ox, oy := s.xspace.Origin()
 	x.SendLogicalPosition(int32(o.place.X-ox), int32(o.place.Y-oy))
 	x.SendLogicalSize(int32(o.place.Width), int32(o.place.Height))
@@ -210,6 +213,13 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 	focusChanged := s.focusedOutput != c.Focused
 	s.outputPlaces = append(domain.Layout(nil), c.Outputs...)
 	xChanged := s.xspace.Set(s.outputPlaces)
+	if changed {
+		for _, p := range s.outputPlaces {
+			if !s.xspace.Includes(p) {
+				s.log.Warn().Str("output", p.Info.Name).Msg("output excluded from X11: rectangle exceeds X-space coordinate or output-count limit")
+			}
+		}
+	}
 	if s.xwm != nil {
 		s.xwm.LayoutChanged(xChanged)
 	}

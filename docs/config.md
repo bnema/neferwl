@@ -225,7 +225,14 @@ Invalid declarations warn and are ignored. HDR and SDR-expansion overrides
 warn and are ignored on virtual outputs.
 
 Without placement, `tv` is isolated: automatic layout, unbound pointers,
-directional focus and startup focus skip it. Add a relation to make it reachable:
+directional focus and startup focus skip it. Isolated outputs share a column
+2024 logical pixels beyond the layout's right edge; the first starts at the
+layout's top, and subsequent outputs are stacked below with a 2024-pixel gap.
+X11 only sees output rectangles whose extents relative to the X origin fit
+within 32767 on both axes. Outputs beyond this limit are omitted from private
+X-space output descriptions with a warning; native Wayland output behavior is
+unchanged. X11 apps cannot use an isolated output beyond that limit.
+Add a relation to make it reachable:
 
 ```ini
 output.tv.right-of = DP-1

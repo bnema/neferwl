@@ -36,8 +36,6 @@ func (s *Space) Set(l domain.Layout) bool {
 		next.dropped = n - maxRegions
 		n = maxRegions
 	}
-	next.n = n
-	var maxX, maxY int
 	for i := 0; i < n; i++ {
 		o := l[i]
 		if i == 0 || o.X < next.ox {
@@ -46,21 +44,18 @@ func (s *Space) Set(l domain.Layout) bool {
 		if i == 0 || o.Y < next.oy {
 			next.oy = o.Y
 		}
-		if i == 0 || o.X+o.Width > maxX {
-			maxX = o.X + o.Width
-		}
-		if i == 0 || o.Y+o.Height > maxY {
-			maxY = o.Y + o.Height
-		}
 	}
 	for i := 0; i < n; i++ {
 		o := l[i]
-		next.regions[i] = Region{
-			Layout: domain.Rect{X: o.X, Y: o.Y, W: o.Width, H: o.Height},
-			X:      domain.Rect{X: o.X - next.ox, Y: o.Y - next.oy, W: o.Width, H: o.Height},
+		x, y := o.X-next.ox, o.Y-next.oy
+		if x < 0 || y < 0 || o.Width <= 0 || o.Height <= 0 || x > 32767-o.Width || y > 32767-o.Height {
+			next.dropped++
+			continue
 		}
+		next.regions[next.n] = Region{Layout: domain.Rect{X: o.X, Y: o.Y, W: o.Width, H: o.Height}, X: domain.Rect{X: x, Y: y, W: o.Width, H: o.Height}}
+		next.n++
+		next.w, next.h = max(next.w, x+o.Width), max(next.h, y+o.Height)
 	}
-	next.w, next.h = maxX-next.ox, maxY-next.oy
 	if n > 0 {
 		next.scale = l[0].Scale
 	}
@@ -109,4 +104,14 @@ func (s *Space) ToLayout(x, y int) (lx, ly int) {
 		return x, y
 	}
 	return x + s.ox, y + s.oy
+}
+
+// Includes reports whether the output rectangle is representable and retained.
+func (s *Space) Includes(o domain.OutputPlacement) bool {
+	for i := 0; i < s.n; i++ {
+		if s.regions[i].Layout == (domain.Rect{X: o.X, Y: o.Y, W: o.Width, H: o.Height}) {
+			return true
+		}
+	}
+	return false
 }
