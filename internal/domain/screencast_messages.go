@@ -19,7 +19,9 @@ const (
 type CastEventKind uint8
 
 const (
-	// CastSize: the target is now Width x Height; the stream must renegotiate.
+	// CastSize: the target is now Width x Height, HDR when its output shows
+	// confirmed HDR; the stream must renegotiate. It is sent again when
+	// either changes.
 	CastSize CastEventKind = iota + 1
 	// CastDamage: the target changed and a frame may be requested. Time is
 	// the flip time.
@@ -55,6 +57,7 @@ type CastEvent struct {
 	Kind          CastEventKind
 	ID            uint64
 	Width, Height int
+	HDR           bool // CastSize
 	Buf           int
 	Err           error
 	Time          time.Time

@@ -53,6 +53,7 @@ type castSession struct {
 	// first: CaptureFrameTaken was sent, which turns the indicator on.
 	first bool
 	size  image.Point // the size the adapter was last told
+	hdr   bool        // the HDR state the adapter was last told
 	// dirty: the window committed since the last CastDamage (window casts).
 	dirty   bool
 	stopped bool
@@ -169,11 +170,11 @@ func (s *Server) openCast(cmd domain.CastCommand) {
 	s.nextSession++
 	c.id = s.nextSession
 	open.ID = c.id
-	c.size = image.Pt(rect.Dx(), rect.Dy())
+	c.size, c.hdr = image.Pt(rect.Dx(), rect.Dy()), c.targetHDR()
 	s.castSessions[cmd.ID], s.castByCore[c.id] = c, c
 	s.emit(open)
-	s.log.Info().Uint64("cast", cmd.ID).Uint64("session", c.id).Int("w", c.size.X).Int("h", c.size.Y).Msg("cast open")
-	c.push(domain.CastEvent{Kind: domain.CastSize, Width: c.size.X, Height: c.size.Y})
+	s.log.Info().Uint64("cast", cmd.ID).Uint64("session", c.id).Int("w", c.size.X).Int("h", c.size.Y).Bool("hdr", c.hdr).Msg("cast open")
+	c.push(domain.CastEvent{Kind: domain.CastSize, Width: c.size.X, Height: c.size.Y, HDR: c.hdr})
 }
 
 // state applies what core decided about the cast.
@@ -198,9 +199,29 @@ func (c *castSession) refresh() {
 	case fate == targetEmpty:
 		c.s.log.Info().Uint64("cast", c.cast).Msg("cast end: target empty")
 		c.end(domain.CaptureReasonOutputGone, nil, true, true)
-	case ok && image.Pt(rect.Dx(), rect.Dy()) != c.size:
-		c.size = image.Pt(rect.Dx(), rect.Dy())
-		c.push(domain.CastEvent{Kind: domain.CastSize, Width: c.size.X, Height: c.size.Y})
+	case ok && (image.Pt(rect.Dx(), rect.Dy()) != c.size || c.targetHDR() != c.hdr):
+		c.size, c.hdr = image.Pt(rect.Dx(), rect.Dy()), c.targetHDR()
+		c.push(domain.CastEvent{Kind: domain.CastSize, Width: c.size.X, Height: c.size.Y, HDR: c.hdr})
+	}
+}
+
+// targetHDR reports whether the cast shows confirmed HDR: an output cast
+// of an output with an HDR modeset. Window casts are drawn by the SDR
+// offscreen capture renderer.
+func (c *castSession) targetHDR() bool {
+	if c.src.kind != srcOutput || c.src.output == nil {
+		return false
+	}
+	_, ok := c.s.hdrOutputs[c.src.output.name()]
+	return ok
+}
+
+// castsHDRChanged follows an output's HDR toggle: its casts renegotiate.
+func (s *Server) castsHDRChanged(output string) {
+	for _, c := range s.castSessions {
+		if c.src.kind == srcOutput && c.src.output != nil && c.src.output.name() == output {
+			c.refresh()
+		}
 	}
 }
 

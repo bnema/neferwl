@@ -416,6 +416,36 @@ func TestCastSizeChange(t *testing.T) {
 	}
 }
 
+// An output cast reports its HDR state with its size and again when the
+// output's HDR toggles (not on metadata changes).
+func TestCastHDRToggle(t *testing.T) {
+	h := newCastHarness(t, true)
+	size, _ := h.open(1, "HEADLESS-1")
+	if size.HDR {
+		t.Fatalf("SDR output opened HDR: %+v", size)
+	}
+	hdr := &domain.OutputHDR{MaxLuminance: 1000}
+	h.s.display.Do(func() { h.s.setOutputHDR(domain.OutputFormats{Output: "HEADLESS-1", HDR: hdr}) })
+	if size = h.next(domain.CastSize); !size.HDR || size.Width != 64 || size.Height != 32 {
+		t.Fatalf("HDR on: %+v", size)
+	}
+	// Metadata changes do not renegotiate.
+	h.s.display.Do(func() {
+		h.s.setOutputHDR(domain.OutputFormats{Output: "HEADLESS-1", HDR: &domain.OutputHDR{MaxLuminance: 600}})
+	})
+	h.none()
+	size, _ = h.open(2, "HEADLESS-1")
+	if !size.HDR {
+		t.Fatalf("cast opened on an HDR output: %+v", size)
+	}
+	h.s.display.Do(func() { h.s.setOutputHDR(domain.OutputFormats{Output: "HEADLESS-1"}) })
+	for range 2 {
+		if size = h.next(domain.CastSize); size.HDR {
+			t.Fatalf("HDR off: %+v", size)
+		}
+	}
+}
+
 // A transient failure is retried on the cadence of an ext frame; past the
 // deadline the frame fails with the error.
 //
