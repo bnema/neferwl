@@ -200,17 +200,18 @@ func (r *Renderer) recordHDR(cmd vk.CommandBuffer, out *target) {
 	d.CmdPipelineBarrier(cmd, vk.PipelineStageFragmentShaderBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, in)
 }
 
-// dropHDROwn frees the HDR composition image with the capture pass that
-// samples it (its descriptor set refers to the view). Pending captures
+// dropHDROwn frees the HDR composition image with the capture passes that
+// sample it (their descriptor sets refer to the view). Pending captures
 // finish first: this runs on SetHDR failures, never per frame.
 func (r *Renderer) dropHDROwn() {
-	if r.capturePass.pipeline != 0 {
+	if r.capturePass.pipeline != 0 || r.capturePQ.pipeline != 0 {
 		for _, s := range r.captures {
 			if s.pending {
 				_ = r.waitOwnIdle()
 				break
 			}
 		}
+		r.destroyCapturePQ()
 		r.destroyCapturePass()
 	}
 	r.freeTarget(&r.hdrOwn)
