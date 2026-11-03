@@ -705,10 +705,7 @@ func translate(ev uintptr, opts Options, p *pointer, in *inputState) ([]ports.In
 			deviceUnref(dev)
 		}
 	default:
-		target := p
-		if eventType(ev) != evKeyboardKey {
-			target = p.forDevice(dev)
-		}
+		target := p.forEvent(dev, eventType(ev))
 		out, err := translateEvent(ev, opts, target, in, state)
 		if err != nil {
 			return nil, err
@@ -1111,4 +1108,12 @@ func (p *pointer) forDevice(dev uintptr) *pointer {
 		q.constrain(p.currentConstraint)
 	}
 	return q
+}
+
+// forEvent leaves pointer ownership unchanged while translating keyboard input.
+func (p *pointer) forEvent(dev uintptr, kind int32) *pointer {
+	if kind == evKeyboardKey {
+		return p
+	}
+	return p.forDevice(dev)
 }

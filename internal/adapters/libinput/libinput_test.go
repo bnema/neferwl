@@ -434,3 +434,30 @@ func TestPointerSkipsIsolatedOutputs(t *testing.T) {
 		t.Fatal(m)
 	}
 }
+
+func TestTypingTranslationPreservesActivePointerConstraint(t *testing.T) {
+	km, err := xkb.New(xkb.RMLVO{Layout: "us"})
+	if err != nil {
+		t.Skip(err)
+	}
+	defer km.Close()
+	for _, mode := range []domain.ConstraintMode{domain.ConstraintLock, domain.ConstraintConfine} {
+		p := newPointer(domain.Layout{{Width: 100, Height: 100, Devices: []domain.InputDeviceID{1}}})
+		p.addDevice(10, 1)
+		active := p.forDevice(10)
+		constraint := domain.PointerConstraint{Mode: mode, Rect: domain.Rect{W: 80, H: 80}, X: 20, Y: 20}
+		p.constrain(constraint)
+		for _, pressed := range []bool{true, false} {
+			// This is the production pointer selection and keyboard translation path;
+			// keyboard input must not select its own (unbound) pointer state.
+			target := p.forEvent(20, evKeyboardKey)
+			event, err := translateKeyboard(30, pressed, 0, Options{Keymap: km, Log: zerowrap.Default()}, domain.SecurityState{})
+			if err != nil || event == nil {
+				t.Fatalf("translation: %v %v", event, err)
+			}
+			if target != p || p.active != active || active.constraint.Mode != mode {
+				t.Fatalf("typing changed pointer ownership/constraint: %+v", active.constraint)
+			}
+		}
+	}
+}
