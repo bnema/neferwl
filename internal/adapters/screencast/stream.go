@@ -3,9 +3,9 @@ package screencast
 import (
 	"time"
 
-	"github.com/bnema/neferwl/internal/domain"
 	"bnema.dev/purego-pipewire/pipewire"
 	"bnema.dev/zerobus"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // stream is one cast of a session: a PipeWire node fed with frames that the
@@ -34,17 +34,22 @@ type stream struct {
 	stopped   bool // CastStopped came: the wayland side is done
 
 	// Negotiation.
-	w, h       int // size of the target, from CastSize
+	w, h       int  // size of the target, from CastSize
+	hdr        bool // the target shows HDR, from CastSize
 	haveSize   bool
 	needResize bool
-	src        videoSource
-	h2         streamHandler
-	pwState    int32 // last state of the PipeWire stream; -2 before the first
-	seenState  bool  // a state above UNCONNECTED was seen
-	nodeID     uint32
-	announced  bool // PipeWireStreamAdded was sent
-	format     pipewire.VideoFormat
-	fw, fh     int // size the format was negotiated at; 0 while renegotiating
+	// needFormats: the target's HDR state changed; the offer is replaced
+	// (SetFormats, same node) once no frame is in flight.
+	needFormats bool
+	offer       [3]pipewire.VideoFormat // scratch of formatsFor
+	src         videoSource
+	h2          streamHandler
+	pwState     int32 // last state of the PipeWire stream; -2 before the first
+	seenState   bool  // a state above UNCONNECTED was seen
+	nodeID      uint32
+	announced   bool // PipeWireStreamAdded was sent
+	format      pipewire.VideoFormat
+	fw, fh      int // size the format was negotiated at; 0 while renegotiating
 
 	// Frames.
 	dirty    bool

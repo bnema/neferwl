@@ -43,6 +43,7 @@ type videoSource interface {
 	Release(b *pipewire.VideoBuffer)
 	Trigger()
 	Resize(w, h int) error
+	SetFormats(formats []pipewire.VideoFormat, color pipewire.VideoColorimetry) error
 	Destroy()
 }
 

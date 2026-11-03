@@ -325,6 +325,63 @@ func (_c *mockvideoSource_Resize_Call) RunAndReturn(run func(w int, h int) error
 	return _c
 }
 
+// SetFormats provides a mock function for the type mockvideoSource
+func (_mock *mockvideoSource) SetFormats(formats []pipewire.VideoFormat, color pipewire.VideoColorimetry) error {
+	ret := _mock.Called(formats, color)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetFormats")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func([]pipewire.VideoFormat, pipewire.VideoColorimetry) error); ok {
+		r0 = returnFunc(formats, color)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// mockvideoSource_SetFormats_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetFormats'
+type mockvideoSource_SetFormats_Call struct {
+	*mock.Call
+}
+
+// SetFormats is a helper method to define mock.On call
+//   - formats []pipewire.VideoFormat
+//   - color pipewire.VideoColorimetry
+func (_e *mockvideoSource_Expecter) SetFormats(formats any, color any) *mockvideoSource_SetFormats_Call {
+	return &mockvideoSource_SetFormats_Call{Call: _e.mock.On("SetFormats", formats, color)}
+}
+
+func (_c *mockvideoSource_SetFormats_Call) Run(run func(formats []pipewire.VideoFormat, color pipewire.VideoColorimetry)) *mockvideoSource_SetFormats_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 []pipewire.VideoFormat
+		if args[0] != nil {
+			arg0 = args[0].([]pipewire.VideoFormat)
+		}
+		var arg1 pipewire.VideoColorimetry
+		if args[1] != nil {
+			arg1 = args[1].(pipewire.VideoColorimetry)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *mockvideoSource_SetFormats_Call) Return(err error) *mockvideoSource_SetFormats_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *mockvideoSource_SetFormats_Call) RunAndReturn(run func(formats []pipewire.VideoFormat, color pipewire.VideoColorimetry) error) *mockvideoSource_SetFormats_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // State provides a mock function for the type mockvideoSource
 func (_mock *mockvideoSource) State() int32 {
 	ret := _mock.Called()

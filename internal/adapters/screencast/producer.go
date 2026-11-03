@@ -3,8 +3,8 @@ package screencast
 import (
 	"time"
 
-	"github.com/bnema/neferwl/internal/domain"
 	"bnema.dev/purego-pipewire/pipewire"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // The producer turns wayland's damage into PipeWire frames, one stream at a
@@ -29,12 +29,6 @@ import (
 // released instead of queued), and the first frame after it is STREAMING
 // again is forced. The D-Bus session stays up for the next consumer.
 
-// wl_shm formats of the supported video formats.
-const (
-	shmARGB8888 = 0
-	shmXRGB8888 = 1
-)
-
 // maxFrameErrors is how many frames in a row may fail before the stream
 // stops.
 const maxFrameErrors = 3
@@ -42,11 +36,41 @@ const maxFrameErrors = 3
 // retryOpen is how long a command waits when the wayland channel is full.
 const retryOpen = 10 * time.Millisecond
 
+// shmFormat is the cast format of a negotiated video format.
 func shmFormat(f pipewire.VideoFormat) uint32 {
-	if f == pipewire.VideoFormatBGRA {
-		return shmARGB8888
+	switch f {
+	case pipewire.VideoFormatBGRA:
+		return domain.CastARGB8888
+	case pipewire.VideoFormatXBGR210LE:
+		return domain.CastXBGR2101010
 	}
-	return shmXRGB8888
+	return domain.CastXRGB8888
+}
+
+// videoFormat is the video format of a cast format.
+func videoFormat(f uint32) pipewire.VideoFormat {
+	switch f {
+	case domain.CastARGB8888:
+		return pipewire.VideoFormatBGRA
+	case domain.CastXBGR2101010:
+		return pipewire.VideoFormatXBGR210LE
+	}
+	return pipewire.VideoFormatBGRx
+}
+
+// formatsFor is the offer of st's target (domain.CastFormats), in st's
+// scratch array, and its colorimetry: HDR10 when the target shows HDR.
+func formatsFor(st *stream) ([]pipewire.VideoFormat, pipewire.VideoColorimetry) {
+	cast := domain.CastFormats(st.hdr)
+	n := 0
+	for _, f := range cast[:min(len(cast), len(st.offer))] {
+		st.offer[n] = videoFormat(f)
+		n++
+	}
+	if st.hdr {
+		return st.offer[:n], pipewire.HDR10Colorimetry
+	}
+	return st.offer[:n], pipewire.VideoColorimetry{}
 }
 
 // streamOfCast finds the stream of a cast ID.
@@ -78,13 +102,14 @@ func (s *Service) onCastEvent(ev *domain.CastEvent) {
 		if st.closing {
 			return
 		}
-		if st.haveSize && st.w == ev.Width && st.h == ev.Height {
+		if st.haveSize && st.w == ev.Width && st.h == ev.Height && st.hdr == ev.HDR {
 			return
 		}
-		st.w, st.h, st.haveSize = ev.Width, ev.Height, true
 		if st.src != nil {
-			st.needResize = true
+			st.needResize = st.needResize || st.w != ev.Width || st.h != ev.Height
+			st.needFormats = st.needFormats || st.hdr != ev.HDR
 		}
+		st.w, st.h, st.hdr, st.haveSize = ev.Width, ev.Height, ev.HDR, true
 	case domain.CastFrameDone:
 		s.frameDone(st, ev)
 	case domain.CastStopped:
@@ -226,6 +251,16 @@ func (s *Service) pump(st *stream, now time.Time) {
 		s.closeSession(st.sess, true)
 		return
 	}
+	if st.needFormats && !st.inflight {
+		st.needFormats = false
+		formats, color := formatsFor(st)
+		if err := st.src.SetFormats(formats, color); err != nil {
+			s.log.Warn().Err(err).Str("stream", st.path).Msg("PipeWire format change failed")
+			s.closeSession(st.sess, true)
+			return
+		}
+		s.log.Info().Str("stream", st.path).Bool("hdr", st.hdr).Msg("PipeWire formats renegotiated")
+	}
 	if st.needResize && !st.inflight {
 		st.needResize = false
 		st.fw, st.fh = 0, 0
@@ -249,7 +284,8 @@ func (s *Service) openSource(st *stream) {
 		s.closeSession(st.sess, true)
 		return
 	}
-	cfg := pipewire.VideoConfig{Name: "neferwl-screencast", Width: st.w, Height: st.h, MaxFPS: st.maxFPS, Formats: []pipewire.VideoFormat{pipewire.VideoFormatBGRx, pipewire.VideoFormatBGRA}}
+	formats, color := formatsFor(st)
+	cfg := pipewire.VideoConfig{Name: "neferwl-screencast", Width: st.w, Height: st.h, MaxFPS: st.maxFPS, Formats: formats, Color: color}
 	src, err := s.pwc.NewVideoSource(cfg, &st.h2)
 	if err != nil {
 		s.log.Warn().Err(err).Str("stream", st.path).Msg("PipeWire stream not created")

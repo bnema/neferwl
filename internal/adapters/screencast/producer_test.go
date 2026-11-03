@@ -128,7 +128,7 @@ func TestPacingForcesFirstFrameThenWaitsForDamage(t *testing.T) {
 	p.src.EXPECT().Dequeue().Return(p.buf).Once()
 	p.s.pump(p.st, p.now)
 	c := p.cmd()
-	if c.Kind != domain.CastFrame || c.Buf != 3 || c.Stride != 256 || c.Width != 64 || c.Height != 32 || c.Format != shmXRGB8888 || len(c.Data) != 64*32*4 || &c.Data[0] != &p.buf.Data[0] {
+	if c.Kind != domain.CastFrame || c.Buf != 3 || c.Stride != 256 || c.Width != 64 || c.Height != 32 || c.Format != domain.CastXRGB8888 || len(c.Data) != 64*32*4 || &c.Data[0] != &p.buf.Data[0] {
 		t.Fatalf("frame %+v", c)
 	}
 	// Done: queued, then triggered, in that order.
