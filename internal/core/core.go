@@ -105,6 +105,7 @@ type Core struct {
 	lastInputBound      bool
 	inputBindings       bool
 	devicePointers      map[domain.InputDeviceID][2]float64
+	titleHistories      map[WindowID]*titleRuleHistory
 	activePointerDevice domain.InputDeviceID
 	lastUnboundOutput   string
 	// offGone names outputs unplugged while turned off: a display that

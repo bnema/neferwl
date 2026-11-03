@@ -98,6 +98,8 @@ func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, 
 		if !changed {
 			return false, false
 		}
+	case ports.WindowDestroyed:
+		delete(c.titleHistories, v.ID)
 	case ports.WindowUnmapped:
 		if v.ID == c.osd.window {
 			c.osd.window = 0

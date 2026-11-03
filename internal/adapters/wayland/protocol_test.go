@@ -249,6 +249,7 @@ func TestRecreatedToplevelRequiresNewBuffer(t *testing.T) {
 	case <-waylandDeadline(2 * time.Second):
 		t.Fatal("unmap timeout")
 	}
+	clientEvent[ports.WindowDestroyed](t, events)
 	top = c.AllocateID()
 	registerProtocol(t, c, top)
 	requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetToplevel, top)

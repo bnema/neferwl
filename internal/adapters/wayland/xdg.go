@@ -283,6 +283,9 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 	}
 	t.OnDestroy = func() {
 		w.unmap()
+		if w.gen > 0 {
+			x.server.emit(ports.WindowDestroyed{ID: w.id})
+		}
 		x.server.foreignToplevelGone(w)
 		x.surface.dropQueue()
 		x.surface.current, x.surface.next.buffer = nil, nil

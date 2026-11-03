@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"regexp"
 	"testing"
 
@@ -107,5 +108,14 @@ func TestMapTimeTitleMatchIsRemembered(t *testing.T) {
 	c.windowTitle(ports.WindowTitle{ID: 1, Title: "ready"})
 	if !c.windows.lookup(1).appliedTitleRules.applied["title"] {
 		t.Fatal("map match not remembered")
+	}
+}
+
+func TestDestroyedClearsTitleHistory(t *testing.T) {
+	c := inputBenchCore(t)
+	c.titleHistory(7).applied["title"] = true
+	c.clientEvent(context.Background(), ports.WindowDestroyed{ID: 7})
+	if c.titleHistories[7] != nil {
+		t.Fatal("destroyed history retained")
 	}
 }

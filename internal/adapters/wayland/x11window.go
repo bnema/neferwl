@@ -234,6 +234,9 @@ func (h hostImpl) Dissociate(slot xwm.Slot, destroyed bool) {
 	w.x11.drop()
 	w.x11.ready = false
 	if destroyed {
+		if w.gen > 0 {
+			h.s.emit(ports.WindowDestroyed{ID: w.id})
+		}
 		for _, c := range h.s.windows {
 			if c.parent == w {
 				c.parent = nil

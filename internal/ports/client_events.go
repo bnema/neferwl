@@ -211,3 +211,8 @@ type WindowTitle struct {
 }
 
 func (WindowTitle) clientEvent() {}
+
+// WindowDestroyed ends the lifetime of a toplevel that mapped at least once.
+type WindowDestroyed struct{ ID domain.WindowID }
+
+func (WindowDestroyed) clientEvent() {}

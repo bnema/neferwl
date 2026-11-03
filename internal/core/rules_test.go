@@ -573,5 +573,14 @@ func TestTitleRuleMovesOnceWithoutFocus(t *testing.T) {
 		if stWindow(st, 1).Output != "DP-1" {
 			t.Fatal(st)
 		}
+		r.client <- ports.WindowUnmapped{ID: 1}
+		stateAfter(t, r.state, func(st domain.State) bool { return stWindow(st, 1) == nil })
+		r.client <- ports.WindowMapped{ID: 1, AppID: "game", Title: "launcher", Remap: true}
+		r.stateWith(t, 1)
+		r.client <- ports.WindowTitle{ID: 1, Title: "Big Picture"}
+		st = r.mapApp(t, 3, "term") // publish barrier even when once-only title is a no-op
+		if st := st; stWindow(st, 1).Output != "DP-1" {
+			t.Fatal("remap reapplied title rule", st)
+		}
 	})
 }

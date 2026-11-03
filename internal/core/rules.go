@@ -198,10 +198,11 @@ func (r rule) matches(appID, title string) bool {
 // rememberTitleRules counts map-time matches as already applied too.
 func (c *Core) rememberTitleRules(id WindowID) {
 	rec := c.windows.records[id]
+	rec.appliedTitleRules = c.titleHistories[id]
 	for _, r := range c.rules {
 		if r.title != nil && r.matches(rec.client.AppID, rec.client.Title) {
 			if rec.appliedTitleRules == nil {
-				rec.appliedTitleRules = &titleRuleHistory{applied: make(map[string]bool)}
+				rec.appliedTitleRules = c.titleHistory(id)
 			}
 			rec.appliedTitleRules.applied[r.key] = true
 		}
@@ -222,7 +223,7 @@ func (c *Core) windowTitle(v ports.WindowTitle) {
 			continue
 		}
 		if rec.appliedTitleRules == nil {
-			rec.appliedTitleRules = &titleRuleHistory{applied: make(map[string]bool)}
+			rec.appliedTitleRules = c.titleHistory(v.ID)
 		}
 		rec.appliedTitleRules.applied[r.key] = true
 		if r.output != "" || r.workspace != "" || r.number > 0 {
@@ -245,4 +246,14 @@ func (c *Core) windowTitle(v ports.WindowTitle) {
 	workspacedomain.MoveByRule(from, to, v.ID)
 	fromScreen.mon.normalize()
 	toScreen.mon.normalize()
+}
+
+func (c *Core) titleHistory(id WindowID) *titleRuleHistory {
+	if c.titleHistories == nil {
+		c.titleHistories = map[WindowID]*titleRuleHistory{}
+	}
+	if c.titleHistories[id] == nil {
+		c.titleHistories[id] = &titleRuleHistory{applied: map[string]bool{}}
+	}
+	return c.titleHistories[id]
 }
