@@ -83,12 +83,12 @@ func TestTitleMatchingAndExpansion(t *testing.T) {
 	if c.windows.lookup(1).expansionRule != (ruleEffect{}) {
 		t.Fatal("early title match")
 	}
-	c.windowTitle(ports.WindowTitle{ID: 1, Title: "BIG PICTURE mode"})
+	_ = c.windowTitle(t.Context(), ports.WindowTitle{ID: 1, Title: "BIG PICTURE mode"})
 	eff := c.windows.lookup(1).expansionRule
 	if eff.sdrExpand != &on || eff.sdrExpandIntensity != &intensity || eff.sdrExpandPeak != &peak || eff.sdrDecode != &decode {
 		t.Fatal(eff)
 	}
-	c.windowTitle(ports.WindowTitle{ID: 1, Title: "launcher"})
+	_ = c.windowTitle(t.Context(), ports.WindowTitle{ID: 1, Title: "launcher"})
 	if c.windows.lookup(1).expansionRule != (ruleEffect{}) {
 		t.Fatal("stale expansion match")
 	}
@@ -104,8 +104,8 @@ func TestMapTimeTitleMatchIsRemembered(t *testing.T) {
 		t.Fatal(eff)
 	}
 	c.rememberTitleRules(1)
-	c.windowTitle(ports.WindowTitle{ID: 1, Title: "loading"})
-	c.windowTitle(ports.WindowTitle{ID: 1, Title: "ready"})
+	_ = c.windowTitle(t.Context(), ports.WindowTitle{ID: 1, Title: "loading"})
+	_ = c.windowTitle(t.Context(), ports.WindowTitle{ID: 1, Title: "ready"})
 	if !c.windows.lookup(1).appliedTitleRules.applied["title"] {
 		t.Fatal("map match not remembered")
 	}

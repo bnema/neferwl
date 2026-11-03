@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"slices"
@@ -209,10 +210,10 @@ func (c *Core) rememberTitleRules(id WindowID) {
 	}
 }
 
-func (c *Core) windowTitle(v ports.WindowTitle) {
+func (c *Core) windowTitle(ctx context.Context, v ports.WindowTitle) error {
 	rec := c.windows.records[v.ID]
 	if rec == nil || rec.client.ID == 0 {
-		return
+		return nil
 	}
 	old := rec.client.Title
 	rec.client.Title = v.Title
@@ -233,30 +234,28 @@ func (c *Core) windowTitle(v ports.WindowTitle) {
 	}
 	c.matchWindowExpansion(v.ID)
 	if !apply {
-		return
+		return nil
 	}
 	fromScreen, from := c.screenOf(v.ID)
 	if from == nil {
-		return
+		return nil
 	}
 	toScreen, to := c.ruleTarget(eff)
 	if from == to {
-		return
+		return nil
 	}
 	focused, _ := c.cur().mon.Focused()
-	held := focused == v.ID && fromScreen == c.cur()
+	// An open overview owns the source output's selection; leave it alone.
+	held := focused == v.ID && fromScreen == c.cur() && !fromScreen.mon.ov.open
 	workspacedomain.MoveByRule(from, to, v.ID)
 	fromScreen.mon.normalize()
 	toScreen.mon.normalize()
-	// A window that had the keyboard keeps it, on its new output, even an
-	// isolated one: the rule moved it, not the user's attention.
+	// The focused window stays focused on its new output, even an isolated
+	// one: the rule moved it, not the user's attention.
 	if held && to.Has(v.ID) {
-		if to != toScreen.mon.Current() {
-			toScreen.mon.show(to)
-		}
-		to.Activate(v.ID)
-		c.focusScreen = c.screenIndex(toScreen.name())
+		return c.activate(ctx, v.ID)
 	}
+	return nil
 }
 
 func (c *Core) titleHistory(id WindowID) *titleRuleHistory {

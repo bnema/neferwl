@@ -176,7 +176,7 @@ Outputs are arranged automatically unless `.right-of`, `.left-of`, `.above` or `
 
 ## Window rules
 
-Rules place an app's windows when they first open. A rule matches its app ID and, when set, its title. A title rule's output/workspace placement also applies when a later title first matches, at most once per rule per window. This later move never changes floating state or column width. A window that has keyboard focus when it moves keeps it on the destination output, even an isolated one, and that output becomes focused; otherwise focus and view are unchanged. SDR expansion settings follow the current title match.
+Rules place an app's windows when they first open. A rule matches its app ID and, when set, its title. A title rule's output/workspace placement also applies when a later title first matches, at most once per rule per window. This later move never changes floating state or column width. When the focused window moves, it stays the focused window on the destination output, even an isolated one, and that output becomes focused (not while the source output's overview is open); otherwise focus and view are unchanged. With `output.<name>.input` bindings, input from an unbound device returns focus to the last unbound output. SDR expansion settings follow the current title match.
 
 | Key | Meaning |
 |---|---|
