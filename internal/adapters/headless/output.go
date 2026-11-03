@@ -58,6 +58,8 @@ type Options struct {
 	Captured chan<- domain.CaptureDone
 	// RefreshMilli limits presentation to this refresh in mHz; zero renders immediately.
 	RefreshMilli int
+	// Modes applies live modes on the owner goroutine; nil keeps the initial mode.
+	Modes <-chan domain.OutputMode
 	// Clock paces presentation and renderer trim (nil: system clock).
 	Clock ports.Clock
 }
@@ -66,12 +68,29 @@ type Options struct {
 // windows it no longer draws.
 const trimEvery = 10 * time.Second
 
+// SetMode sets the initial mode. Live updates are sent through Modes; RunOutput
+// applies them to its private Options copy on the renderer owner goroutine.
+func (opts *Options) SetMode(w, h, refresh int) {
+	opts.Width, opts.Height, opts.RefreshMilli = w, h, refresh
+}
+
+func refreshPeriod(refresh int) time.Duration {
+	if refresh <= 0 {
+		return 0
+	}
+	period := time.Second * 1000 / time.Duration(refresh)
+	if time.Second*1000%time.Duration(refresh) != 0 {
+		period++ // Round up so fractional nanoseconds cannot exceed the refresh.
+	}
+	return period
+}
+
 func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, contents <-chan *domain.ContentBatch, returns ports.ContentReturn, cursor <-chan domain.CursorChange, incoming <-chan domain.CaptureRequest) error {
 	r, err := opts.NewRenderer(opts.Width, opts.Height)
 	if err != nil {
 		return fmt.Errorf("create renderer: %w", err)
 	}
-	defer r.Close()
+	defer func() { r.Close() }()
 	var confirmed *domain.OutputHDR
 	if opts.HDR {
 		r.SetHDR(203)
@@ -238,13 +257,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 	clockStart := clk.Now()
 	var monoStart unix.Timespec
 	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &monoStart)
-	var period time.Duration
-	if opts.RefreshMilli > 0 {
-		period = time.Second * 1000 / time.Duration(opts.RefreshMilli)
-		if time.Second*1000%time.Duration(opts.RefreshMilli) != 0 {
-			period++ // Round up so fractional nanoseconds cannot exceed the refresh.
-		}
-	}
+	period := refreshPeriod(opts.RefreshMilli)
 	var pace ports.Timer
 	var paceDue <-chan time.Time
 	defer func() {
@@ -289,6 +302,60 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		ticked := false
 		var tickTime time.Time
 		select {
+		case mode, ok := <-opts.Modes:
+			if !ok {
+				opts.Modes = nil
+				continue
+			}
+			if mode.Width <= 0 || mode.Height <= 0 || mode.RefreshMilli < 0 {
+				return fmt.Errorf("invalid output mode: %dx%d@%d", mode.Width, mode.Height, mode.RefreshMilli)
+			}
+			if mode.Width == opts.Width && mode.Height == opts.Height && mode.RefreshMilli == opts.RefreshMilli {
+				continue
+			}
+			if mode.Width != opts.Width || mode.Height != opts.Height {
+				next, err := opts.NewRenderer(mode.Width, mode.Height)
+				if err != nil {
+					return fmt.Errorf("recreate renderer: %w", err)
+				}
+				if confirmed != nil {
+					next.SetHDR(203)
+					bufs, err := next.ExportTargets(1, nil, false)
+					if err != nil {
+						next.Close()
+						return fmt.Errorf("recreate HDR targets: %w", err)
+					}
+					for _, b := range bufs {
+						for _, p := range b.Planes {
+							_ = p.File.Close()
+						}
+					}
+				}
+				// Join workers and return every lease to its original renderer
+				// before releasing any of that renderer's storage.
+				pipeline.EndGate(capture.ErrFrameNotPresented)
+				pipeline.Close(r)
+				r.Close()
+				r = next
+				pipeline = capture.NewPipeline(ctx, opts.Captured)
+				pipeline.Security = opts.Security
+				if opts.NewCaptureRenderer != nil {
+					pipeline.EnableOffscreen(opts.NewCaptureRenderer)
+				}
+			}
+			requests.FailPending(capture.ErrFrameNotPresented)
+			opts.SetMode(mode.Width, mode.Height, mode.RefreshMilli)
+			period = refreshPeriod(opts.RefreshMilli)
+			if pace != nil {
+				pace.Stop()
+			}
+			paceDue = nil
+			// Wait for a scene laid out for the new mode, even if its Seq
+			// matches the old one. A protected output needs a new black proof.
+			haveScene, dirty, securityKnown = false, false, false
+			cursorScale = -1
+			reports.Reset()
+			continue
 		case <-paceDue:
 			paceDue = nil
 			ticked = true

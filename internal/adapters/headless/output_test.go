@@ -817,3 +817,193 @@ func TestRunOutputRefreshPacing(t *testing.T) {
 		}
 	})
 }
+
+func TestRunOutputLiveModes(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r1, f1 := recordingRenderer(t, nil)
+		r2, f2 := recordingRenderer(t, nil)
+		modes := make(chan domain.OutputMode)
+		scenes := make(chan domain.Scene)
+		calls := 0
+		opts := Options{Modes: modes, NewRenderer: func(w, h int) (ports.Renderer, error) {
+			calls++
+			switch calls {
+			case 1:
+				if w != 2 || h != 2 {
+					t.Errorf("initial size %dx%d", w, h)
+				}
+				return r1, nil
+			case 2:
+				if w != 4 || h != 3 {
+					t.Errorf("live size %dx%d", w, h)
+				}
+				return r2, nil
+			default:
+				t.Errorf("unexpected renderer recreation")
+				return nil, errors.New("unexpected recreation")
+			}
+		}}
+		opts.SetMode(2, 2, 50000)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() { done <- RunOutput(ctx, opts, scenes, nil, nil, nil, nil) }()
+		scenes <- domain.Scene{Seq: 1}
+		synctest.Wait()
+		// Replace the mode while its old frame timer is pending.
+		modes <- domain.OutputMode{Width: 4, Height: 3, RefreshMilli: 100000}
+		synctest.Wait()
+		time.Sleep(20 * time.Millisecond)
+		synctest.Wait()
+		if s, _ := f1.snapshot(); len(s) != 0 {
+			t.Fatal("old frame rendered")
+		}
+		if s, _ := f2.snapshot(); len(s) != 0 {
+			t.Fatal("stale scene rendered after resize")
+		}
+		scenes <- domain.Scene{Seq: 1, OutputWidth: 4, OutputHeight: 3}
+		synctest.Wait()
+		time.Sleep(10 * time.Millisecond)
+		waitFrames(t, f2, 1)
+		// Refresh-only updates keep the renderer and can restore immediate mode.
+		modes <- domain.OutputMode{Width: 4, Height: 3}
+		synctest.Wait()
+		scenes <- domain.Scene{Seq: 2, OutputWidth: 4, OutputHeight: 3}
+		waitFrames(t, f2, 2)
+		close(modes)
+		synctest.Wait()
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if calls != 2 {
+			t.Fatalf("renderer creations=%d", calls)
+		}
+	})
+}
+
+func TestRunOutputModeCreationFailure(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r, _ := recordingRenderer(t, nil)
+		want := errors.New("allocation failed")
+		modes := make(chan domain.OutputMode)
+		calls := 0
+		done := make(chan error, 1)
+		go func() {
+			done <- RunOutput(context.Background(), Options{Width: 2, Height: 2, Modes: modes,
+				NewRenderer: func(int, int) (ports.Renderer, error) {
+					calls++
+					if calls == 1 {
+						return r, nil
+					}
+					return nil, want
+				}}, nil, nil, nil, nil, nil)
+		}()
+		modes <- domain.OutputMode{Width: 4, Height: 4}
+		if err := <-done; !errors.Is(err, want) {
+			t.Fatalf("got %v, want allocation failure", err)
+		}
+	})
+}
+
+func TestRunOutputModeDrainsCaptureBeforeRendererClose(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r1 := portsmocks.NewMockRenderer(t)
+		r1.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
+		r2, f2 := recordingRenderer(t, nil)
+		frame := portsmocks.NewMockCaptureFrame(t)
+		frame.EXPECT().Done().Return(nil)
+		entered, release := make(chan struct{}), make(chan struct{})
+		frame.EXPECT().Read(mock.Anything, mock.Anything, 8).RunAndReturn(func(image.Rectangle, []byte, int) error {
+			close(entered)
+			<-release
+			return nil
+		}).Once()
+		r1.EXPECT().BeginCapture().Return(frame, nil).Once()
+		returned := false
+		r1.EXPECT().EndCapture(frame).Run(func(ports.CaptureFrame) { returned = true }).Once()
+		r1.EXPECT().Close().Run(func() {
+			if !returned {
+				t.Error("renderer closed before capture lease returned")
+			}
+		}).Once()
+		modes := make(chan domain.OutputMode)
+		scenes := make(chan domain.Scene)
+		incoming := make(chan domain.CaptureRequest)
+		replies := make(chan domain.CaptureDone, 2)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan error, 1)
+		calls := 0
+		go func() {
+			done <- RunOutput(ctx, Options{Width: 2, Height: 2, Modes: modes, Captured: replies,
+				NewRenderer: func(int, int) (ports.Renderer, error) {
+					calls++
+					if calls == 1 {
+						return r1, nil
+					}
+					return r2, nil
+				}}, scenes, nil, nil, nil, incoming)
+		}()
+		q := domain.CaptureRequest{ID: 1, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
+		incoming <- q
+		scenes <- domain.Scene{Seq: 1}
+		<-entered
+		modes <- domain.OutputMode{Width: 4, Height: 4}
+		synctest.Wait()
+		if returned {
+			t.Fatal("capture returned while worker still reading")
+		}
+		close(release)
+		synctest.Wait()
+		if !returned {
+			t.Fatal("capture lease not returned on resize")
+		}
+		scenes <- domain.Scene{Seq: 2, OutputWidth: 4, OutputHeight: 4}
+		waitFrames(t, f2, 1)
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		// Mockery retains the now-unmapped destination passed to Read.
+		frame.Calls = nil
+	})
+}
+
+func TestRunOutputModeFailsPendingCapture(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r1, _ := recordingRenderer(t, nil)
+		r2, _ := recordingRenderer(t, nil)
+		modes := make(chan domain.OutputMode)
+		incoming := make(chan domain.CaptureRequest)
+		replies := make(chan domain.CaptureDone, 1)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan error, 1)
+		calls := 0
+		go func() {
+			done <- RunOutput(ctx, Options{Width: 2, Height: 2, Modes: modes, Captured: replies,
+				NewRenderer: func(int, int) (ports.Renderer, error) {
+					calls++
+					if calls == 1 {
+						return r1, nil
+					}
+					return r2, nil
+				}}, nil, nil, nil, nil, incoming)
+		}()
+		q := domain.CaptureRequest{ID: 42, Dst: sessionCaptureFile(t)}
+		incoming <- q
+		modes <- domain.OutputMode{Width: 4, Height: 4}
+		got := <-replies
+		if got.ID != q.ID || got.Err == nil {
+			t.Fatalf("pending capture result: %+v", got)
+		}
+		if _, err := q.Dst.File.Stat(); err == nil {
+			t.Fatal("pending capture descriptor left open")
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
+}
