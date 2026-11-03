@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/wlturbo"
 	"github.com/bnema/go-wayland-bindings/server/inputmethod"
 	"github.com/bnema/go-wayland-bindings/server/textinput"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
@@ -370,6 +370,7 @@ func TestTextInputTeardown(t *testing.T) {
 	requestProtocol(t, app.c, app.surf, wayland.SurfaceRequestDestroy)
 	settle(t, app.c, ime.c)
 	unmapped(t, events, app.window)
+	clientEvent[ports.WindowDestroyed](t, events)
 	waitFocus(t, s, commands, 0)
 	settle(t, ime.c)
 	expectEvents(t, "ime", ime.log.take(), "deactivate", "done")
@@ -383,6 +384,7 @@ func TestTextInputTeardown(t *testing.T) {
 	roundtrip(t, ime.c)
 	expectEvents(t, "ime", ime.log.take(), "deactivate", "done")
 	unmapped(t, events, other.window)
+	clientEvent[ports.WindowDestroyed](t, events)
 
 	// With the grabbing input method gone, keys reach the client again.
 	last := newTextApp(t, s, events, commands, dir)
