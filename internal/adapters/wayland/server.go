@@ -34,6 +34,10 @@ type Options struct {
 	Outputs    domain.Layout
 	// DMABuf is what the renderer imports; empty disables linux-dmabuf.
 	DMABuf domain.DMABufSupport
+	// CaptureDMABuf are the dmabuf formats and modifiers captures can be
+	// written into (ports.RenderDevice.CaptureFormats); with linux-dmabuf,
+	// wlr-screencopy v3 offers them. Empty: SHM captures only.
+	CaptureDMABuf []domain.DMABufFormat
 	// SyncobjNode is the render node (/dev/dri/renderD*) timeline
 	// syncobjs are imported on; empty or without timeline support, no
 	// explicit sync is offered.
@@ -240,6 +244,7 @@ type Server struct {
 	surfaceByIdentity map[uint64]*surface
 	buffers           map[*server.Resource]clientBuffer
 	dmabuf            *dmabufGlobal
+	captureDMABuf     []domain.DMABufFormat
 	// hdrOutputs records confirmed DRM modesets; absent outputs are SDR.
 	hdrOutputs        map[string]domain.OutputHDR
 	colorID           uint64
@@ -396,6 +401,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		cleanup:            cleanup,
 		log:                log,
 		logDamage:          opts.LogDamage,
+		captureDMABuf:      opts.CaptureDMABuf,
 		xsettings:          opts.Xwayland,
 		channels:           ch,
 		surfaces:           make(map[*server.Resource]*surface),

@@ -5,6 +5,7 @@ import (
 	"image"
 	"math"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
@@ -89,6 +90,9 @@ func (m screencopyManager) create(r *wlr.ZwlrScreencopyManagerV1, id uint32, cur
 	}
 	f.SendBuffer(uint32(wayland.ShmFormatXrgb8888), uint32(rect.Dx()), uint32(rect.Dy()), uint32(rect.Dx()*4))
 	if f.Version() >= 3 {
+		if m.s.captureDMABufOffered(fourccXRGB) {
+			f.SendLinuxDmabuf(fourccXRGB, uint32(rect.Dx()), uint32(rect.Dy()))
+		}
 		f.SendBufferDone()
 	}
 }
@@ -117,11 +121,15 @@ func (f *screencopyFrame) copy(b *wayland.Buffer, damage bool) {
 		f.res.SendFailed()
 		return
 	}
-	if !f.s.validCaptureBuffer(b, f.region, uint32(wayland.ShmFormatXrgb8888)) {
-		f.res.PostError(uint32(wlr.ZwlrScreencopyFrameV1ErrorInvalidBuffer), "invalid shm buffer")
+	format := uint32(wayland.ShmFormatXrgb8888)
+	if f.res.Version() >= 3 && f.s.isDMABuf(b) {
+		format = fourccXRGB
+	}
+	if !f.s.validCaptureBuffer(b, f.region, format) {
+		f.res.PostError(uint32(wlr.ZwlrScreencopyFrameV1ErrorInvalidBuffer), "invalid buffer")
 		return
 	}
-	id, ok := f.s.requestCapture(f.o, f.region, f.cursor, b, uint32(wayland.ShmFormatXrgb8888), func(done domain.CaptureDone) {
+	id, ok := f.s.requestCapture(f.o, f.region, f.cursor, b, format, func(done domain.CaptureDone) {
 		if done.Err != nil {
 			f.res.SendFailed()
 			return
@@ -139,10 +147,44 @@ func (f *screencopyFrame) copy(b *wayland.Buffer, damage bool) {
 	}
 }
 
-// validCaptureBuffer checks the advertised shm constraints before any request is queued.
+// captureDMABufOffered reports whether captures can be written into
+// linux-dmabuf buffers of fourcc: the renderer copies into some of its
+// modifiers and clients can create such buffers.
+func (s *Server) captureDMABufOffered(fourcc uint32) bool {
+	if s.dmabuf == nil {
+		return false
+	}
+	for _, f := range s.captureDMABuf {
+		if f.Format == fourcc && slices.Contains(s.dmabuf.support.Formats, f) {
+			return true
+		}
+	}
+	return false
+}
+
+// isDMABuf reports whether b is a linux-dmabuf wl_buffer.
+func (s *Server) isDMABuf(b *wayland.Buffer) bool {
+	if b == nil {
+		return false
+	}
+	_, ok := s.buffers[b.Resource].(*dmabufBuffer)
+	return ok
+}
+
+// validCaptureBuffer checks the advertised constraints before any request
+// is queued: an shm buffer of format (wl_shm code), or, when format is the
+// XRGB8888 fourcc, a one-plane linux-dmabuf buffer of the region's size in
+// XRGB8888 or ARGB8888 with a modifier captures can write.
 func (s *Server) validCaptureBuffer(b *wayland.Buffer, rect image.Rectangle, format uint32) bool {
 	if b == nil {
 		return false
+	}
+	if format == fourccXRGB {
+		d, ok := s.buffers[b.Resource].(*dmabufBuffer)
+		if !ok || d.buf.Width != rect.Dx() || d.buf.Height != rect.Dy() || len(d.buf.Planes) != 1 || (d.buf.Format != fourccXRGB && d.buf.Format != fourccARGB) {
+			return false
+		}
+		return slices.Contains(s.captureDMABuf, domain.DMABufFormat{Format: d.buf.Format, Modifier: d.buf.Modifier})
 	}
 	buf, ok := s.buffers[b.Resource].(*buffer)
 	return ok && (format == uint32(wayland.ShmFormatArgb8888) || format == uint32(wayland.ShmFormatXrgb8888)) && buf.width == rect.Dx() && buf.height == rect.Dy() && buf.stride >= rect.Dx()*4 && buf.format == format && fileHolds(buf.pool.file, int64(buf.offset)+int64(buf.height-1)*int64(buf.stride)+int64(buf.width)*4)
@@ -198,11 +240,22 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 		s.log.Debug().Str("output", o.name()).Msg("capture refused: client may not capture")
 		return 0, false
 	}
-	buf := s.buffers[b.Resource].(*buffer)
-	fd, err := unix.Dup(int(buf.pool.file.Fd()))
-	if err != nil {
-		s.log.Warn().Err(err).Str("output", o.name()).Msg("capture: dup shm fd")
-		return 0, false
+	var req domain.CaptureRequest
+	if d, ok := s.buffers[b.Resource].(*dmabufBuffer); ok {
+		dst, err := dupDMABuf(d.buf)
+		if err != nil {
+			s.log.Warn().Err(err).Str("output", o.name()).Msg("capture: dup dmabuf fd")
+			return 0, false
+		}
+		req = domain.CaptureRequest{DMABuf: dst, Width: dst.Width, Height: dst.Height, Format: dst.Format}
+	} else {
+		buf := s.buffers[b.Resource].(*buffer)
+		fd, err := unix.Dup(int(buf.pool.file.Fd()))
+		if err != nil {
+			s.log.Warn().Err(err).Str("output", o.name()).Msg("capture: dup shm fd")
+			return 0, false
+		}
+		req = domain.CaptureRequest{Dst: domain.SHMBuffer{File: os.NewFile(uintptr(fd), "capture"), Offset: buf.offset}, Width: buf.width, Height: buf.height, Stride: buf.stride, Format: buf.format}
 	}
 	s.nextCapture++
 	id := s.nextCapture
@@ -226,7 +279,9 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 			reply(done)
 		}
 	}
-	req := domain.CaptureRequest{ID: id, Output: o.name(), Region: rect, Cursor: cursor, Dst: domain.SHMBuffer{File: os.NewFile(uintptr(fd), "capture"), Offset: buf.offset}, Width: buf.width, Height: buf.height, Stride: buf.stride, Format: buf.format, Session: tag.session, Exclude: tag.exclude, CaptureRevision: tag.revision, Workspace: tag.workspace, Window: tag.window, OffScreen: tag.offscreen, Indicate: true}
+	req.ID, req.Output, req.Region, req.Cursor = id, o.name(), rect, cursor
+	req.Session, req.Exclude, req.CaptureRevision = tag.session, tag.exclude, tag.revision
+	req.Workspace, req.Window, req.OffScreen, req.Indicate = tag.workspace, tag.window, tag.offscreen, true
 	select {
 	case s.channels.Captures <- req:
 		s.log.Debug().Uint64("id", id).Str("output", o.name()).Stringer("region", rect).Uint32("format", format).Bool("cursor", cursor).Msg("capture requested")
@@ -236,9 +291,39 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 	default:
 		delete(s.captureReplies, id)
 		delete(s.captureInflight, id)
-		req.Dst.File.Close()
+		closeCaptureDst(req)
 		s.log.Debug().Str("output", o.name()).Msg("capture refused: request queue full")
 		return 0, false
+	}
+}
+
+// dupDMABuf copies a client dmabuf with its own plane descriptors, so
+// destroying the wl_buffer cannot invalidate a capture in flight.
+func dupDMABuf(b *domain.DMABuf) (*domain.DMABuf, error) {
+	out := *b
+	out.Planes = make([]domain.DMABufPlane, len(b.Planes))
+	for i, p := range b.Planes {
+		fd, err := unix.FcntlInt(p.File.Fd(), unix.F_DUPFD_CLOEXEC, 0)
+		if err != nil {
+			for _, q := range out.Planes[:i] {
+				q.File.Close()
+			}
+			return nil, err
+		}
+		out.Planes[i] = domain.DMABufPlane{File: os.NewFile(uintptr(fd), "capture-dmabuf"), Offset: p.Offset, Stride: p.Stride}
+	}
+	return &out, nil
+}
+
+// closeCaptureDst closes the destination descriptors of a request never sent.
+func closeCaptureDst(req domain.CaptureRequest) {
+	if req.Dst.File != nil {
+		req.Dst.File.Close()
+	}
+	if req.DMABuf != nil {
+		for _, p := range req.DMABuf.Planes {
+			p.File.Close()
+		}
 	}
 }
 
