@@ -7,6 +7,8 @@ import (
 
 // OutputInfo describes a connected display. Sizes are physical pixels.
 type OutputInfo struct {
+	// Virtual distinguishes adapter-hosted outputs from physical connectors.
+	Virtual bool
 	// Name is the connector (e.g. DP-2), matched against output.<name>.* config.
 	Name string
 	// Make, Model and Serial come from EDID; empty when unknown.
@@ -36,6 +38,12 @@ type OutputHead struct {
 
 // OutputHeads is a complete backend inventory, delivered to Wayland after a scan.
 type OutputHeads struct{ Heads []OutputHead }
+
+// OutputWarning is a non-protocol diagnostic about desired output configuration.
+type OutputWarning struct {
+	Name    string
+	Message string
+}
 
 // HeadChange is the complete desired state of one head in a configuration.
 type HeadChange struct {

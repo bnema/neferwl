@@ -3,6 +3,9 @@ package supervisor
 //hexcheck:ignore suspicious-business-logic-in-adapter multiplexes backend I/O and forwards apply events to core without making apply decisions
 func (run *outputsRun) loop() error {
 	for {
+		for _, warning := range run.apply.TakeWarnings() {
+			run.appLog.Warn().Str("component", "output").Str("output", warning.Name).Msg(warning.Message)
+		}
 		if cfg, ok := run.apply.Next(); ok {
 			run.configure(cfg)
 			continue

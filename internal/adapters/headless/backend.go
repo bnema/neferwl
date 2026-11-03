@@ -79,6 +79,9 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 	// The pointer starts centred on the first output, like libinput's.
 	curs.Move("HEADLESS-1", float64(o.Sizes[0][0])/2, float64(o.Sizes[0][1])/2, false)
 	for {
+		for _, warning := range apply.TakeWarnings() {
+			log.Warn().Str("component", "output").Str("output", warning.Name).Msg(warning.Message)
+		}
 		configs, configNext := apply.ConfigOut(ch.Configured), apply.Config()
 		replies, replyNext := apply.ReplyOut(ch.Replies)
 		heads, headsNext := apply.HeadsOut(ch.Heads)

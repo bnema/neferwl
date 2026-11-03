@@ -53,6 +53,12 @@ func (o *OutputOverrides) Restore(previous map[string]domain.OutputConfig) domai
 func (o *OutputOverrides) Effective() domain.Config {
 	cfg := o.file
 	cfg.Outputs = slices.Clone(o.file.Outputs)
+	// Virtual overrides also apply before a head is announced or after it stops.
+	for i, entry := range cfg.Outputs {
+		if override, ok := o.overrides[entry.Name]; entry.Virtual && ok {
+			cfg.Outputs[i] = override
+		}
+	}
 	// Preserve file order and backend connection order; map iteration would
 	// make automatic placement change unpredictably.
 	for _, head := range o.heads.Heads {
@@ -71,13 +77,26 @@ func (o *OutputOverrides) Effective() domain.Config {
 }
 
 // Reload replaces the file configuration. Runtime overrides are dropped,
-// unless only output scales changed (a saved scale bind): then they stay and
-// take the new file scales.
+// except modes of unchanged virtual entries. If only output scales changed
+// (a saved scale bind), all overrides stay and take the new file scales.
 func (o *OutputOverrides) Reload(file domain.Config) domain.Config {
 	scales, onlyScales := scaleChanges(o.file, file)
+	old := o.file
 	o.file = file
 	if !onlyScales {
-		clear(o.overrides)
+		for name, entry := range o.overrides {
+			previous := slices.IndexFunc(old.Outputs, func(v domain.OutputConfig) bool { return v.Name == name && v.Virtual })
+			current := slices.IndexFunc(file.Outputs, func(v domain.OutputConfig) bool { return v.Name == name && v.Virtual })
+			if previous < 0 || current < 0 || !sameVirtualEntry(old.Outputs[previous], file.Outputs[current]) {
+				delete(o.overrides, name)
+				continue
+			}
+			// Only the mode survives an unrelated file edit; other runtime
+			// settings retain the existing full-reload reset behavior.
+			kept := file.Outputs[current]
+			kept.Mode = entry.Mode
+			o.overrides[name] = kept
+		}
 		return o.Effective()
 	}
 	for name, scale := range scales {

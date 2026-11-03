@@ -34,17 +34,22 @@ type OutputApply struct {
 	publish bool
 	replies []domain.OutputApplied
 	// headsDue is set while Wayland has not received the latest inventory.
-	headsDue bool
+	headsDue   bool
+	warnings   []domain.OutputWarning
+	collisions map[string]bool
 }
 
 func NewOutputApply(state *OutputOverrides) *OutputApply {
-	return &OutputApply{state: state}
+	a := &OutputApply{state: state}
+	a.checkVirtuals()
+	return a
 }
 
 // reload replaces the file configuration and supersedes the pending request.
 // Only the latest reload needs backend work.
 func (a *OutputApply) Reload(file domain.Config) {
 	cfg := a.state.Reload(file)
+	a.checkVirtuals()
 	a.setConfig(cfg)
 	if a.req != nil {
 		a.reply(a.req.ID, ErrApplySuperseded)
@@ -59,6 +64,7 @@ func (a *OutputApply) Reload(file domain.Config) {
 // Wayland in the outbox, latest only.
 func (a *OutputApply) Heads(heads domain.OutputHeads) {
 	a.state.SetHeads(heads)
+	a.checkVirtuals()
 	a.headsDue = true
 }
 
