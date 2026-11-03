@@ -80,7 +80,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `workspace.<name>.column.<N>` | none | Column slot: `<cells>, <command>` |
 | `rule.<name>.*` | none | [Window rules](#window-rules) |
 | `output.<name>` | `preferred` | `WxH`, `WxH@Hz`, `preferred`, `off`, or `virtual WxH[@Hz]` (60 Hz by default; dimensions 1–16384; name uses letters, digits, `.`, `_`, `-`) |
-| `output.<name>.input` | none | Device-name glob (`path.Match` syntax); one glob per line, repeat the key to append more. Invalid globs warn without dropping earlier entries. Parsed here; device routing is not yet wired. |
+| `output.<name>.input` | none | Device-name glob (`path.Match` syntax); one glob per line, repeat the key to append more. Invalid globs warn without dropping earlier entries. First matching connected output in config order wins; absent targets leave devices unbound. |
 | `output.<name>.scale` | `1` | 1 to 4, e.g. `1.5` or `4/3` |
 | `output.<name>.transform` | `normal` | `90`, `180`, `270`, `flipped`, `flipped-90`, … |
 | `output.<name>.primary` | `off` | Focused at startup |

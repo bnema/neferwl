@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -691,7 +690,7 @@ func translate(ev uintptr, opts Options, p *pointer, in *inputState) ([]ports.In
 	switch eventType(ev) {
 	case evDeviceAdded:
 		events = in.addDevice(dev, deviceName(dev))
-		p.addDevice(dev, deviceName(dev))
+		p.addDevice(dev, in.identities[dev])
 		opts.Log.Info().Str("device", deviceName(dev)).Msg("input device added")
 		if in.configurable(dev) && !in.devices[dev] {
 			in.devices[deviceRef(dev)] = true
@@ -927,7 +926,7 @@ type pointer struct {
 	touched    bool // false until the user moves it: it follows the primary output
 	constraint domain.PointerConstraint
 	all        domain.Layout
-	names      map[uintptr]string
+	names      map[uintptr]domain.InputDeviceID
 	devices    map[uintptr]*pointer
 	active     *pointer
 }
@@ -942,12 +941,14 @@ func newPointer(l domain.Layout) *pointer {
 // setLayout keeps the pointer where it is, or clamps it onto an output.
 // Until it is first moved it stays centred on the primary output, which
 // may be plugged in after the others.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter applies core layout and clamps device coordinates without deciding bindings
 func (p *pointer) setLayout(l domain.Layout) {
 	p.all = slices.Clone(l)
 	for i := range p.all {
 		p.all[i].Inputs = slices.Clone(l[i].Inputs)
+		p.all[i].Devices = slices.Clone(l[i].Devices)
 	}
-	slices.SortStableFunc(p.all, func(a, b domain.OutputPlacement) int { return a.InputOrder - b.InputOrder })
 	defer p.rebind()
 	// Keep the full layout port unchanged; unbound devices use only reachable outputs.
 	p.layout = make(domain.Layout, 0, len(l))
@@ -1038,11 +1039,11 @@ func (p *pointer) moved(move func(output string, x, y float64, motion bool), mot
 	}
 }
 
-func (p *pointer) addDevice(dev uintptr, name string) {
+func (p *pointer) addDevice(dev uintptr, id domain.InputDeviceID) {
 	if p.names == nil {
-		p.names = map[uintptr]string{}
+		p.names = map[uintptr]domain.InputDeviceID{}
 	}
-	p.names[dev] = name
+	p.names[dev] = id
 	p.rebind()
 }
 func (p *pointer) removeDevice(dev uintptr) {
@@ -1052,20 +1053,17 @@ func (p *pointer) removeDevice(dev uintptr) {
 	delete(p.names, dev)
 	delete(p.devices, dev)
 }
+
+//hexcheck:ignore suspicious-business-logic-in-adapter applies resolved device IDs from core and clamps private pointer storage
 func (p *pointer) rebind() {
 	if p.devices == nil {
 		p.devices = map[uintptr]*pointer{}
 	}
-	for dev, name := range p.names {
+	for dev, id := range p.names {
 		var bound *domain.OutputPlacement
 		for i := range p.all {
-			for _, glob := range p.all[i].Inputs {
-				if ok, _ := path.Match(glob, name); ok {
-					bound = &p.all[i]
-					break
-				}
-			}
-			if bound != nil {
+			if slices.Contains(p.all[i].Devices, id) {
+				bound = &p.all[i]
 				break
 			}
 		}

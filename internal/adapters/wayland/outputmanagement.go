@@ -115,6 +115,8 @@ func (m *outputManager) addHead(info domain.OutputHead) {
 	}
 	m.sendState(h, info)
 }
+
+//hexcheck:ignore suspicious-business-logic-in-adapter compares inventory values and sends protocol updates without deciding output policy
 func (m *outputManager) update() {
 	if m.stopped {
 		return

@@ -17,6 +17,7 @@ const (
 // physical = logical × Scale. Info.Width and Info.Height are the physical
 // mode, the untransformed target.
 type OutputPlacement struct {
+	Devices             []InputDeviceID // resolved by core; adapter applies these IDs only
 	Info                OutputInfo
 	X, Y, Width, Height int
 	Scale               float64
@@ -32,7 +33,7 @@ type OutputPlacement struct {
 
 // Equal compares placement values, including device globs.
 func (o OutputPlacement) Equal(other OutputPlacement) bool {
-	return o.Info == other.Info && o.X == other.X && o.Y == other.Y && o.Width == other.Width && o.Height == other.Height && o.Scale == other.Scale && o.Transform == other.Transform && o.Primary == other.Primary && o.Isolated == other.Isolated && o.InputOrder == other.InputOrder && slices.Equal(o.Inputs, other.Inputs)
+	return o.Info == other.Info && o.X == other.X && o.Y == other.Y && o.Width == other.Width && o.Height == other.Height && o.Scale == other.Scale && o.Transform == other.Transform && o.Primary == other.Primary && o.Isolated == other.Isolated && o.InputOrder == other.InputOrder && slices.Equal(o.Inputs, other.Inputs) && slices.Equal(o.Devices, other.Devices)
 }
 
 // Contains reports whether the logical point is on the output.

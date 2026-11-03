@@ -37,6 +37,10 @@ func TestSecureScriptSnapshotsEveryInputKind(t *testing.T) {
 	if err := RunSecure(context.Background(), km, nil, script, input, nil, nil, logging.For(context.Background(), "input"), security); err != nil {
 		t.Fatal(err)
 	}
+	announcement := (<-input).(ports.SecurityInput)
+	if announcement.Event != (ports.InputDeviceAdded{ID: 1, Name: "headless-script"}) {
+		t.Fatal(announcement)
+	}
 	kinds := map[string]bool{}
 	for len(input) > 0 {
 		raw := <-input
@@ -104,7 +108,7 @@ func TestSecureScriptDiagnosticsRedactProtectedPayloads(t *testing.T) {
 				t.Skip(err)
 			}
 			security := portsmocks.NewMockSessionSecurity(t)
-			security.EXPECT().Snapshot().Return(domain.SecurityState{Generation: 1, Protected: protected}).Times(len(lines))
+			security.EXPECT().Snapshot().Return(domain.SecurityState{Generation: 1, Protected: protected}).Times(len(lines) + 1)
 			var buf securityLogBuffer
 			log := zerowrap.Logger{Logger: zerowrap.New(zerowrap.Config{Level: "debug", Format: "json", Output: &buf}).With().Str("component", "input").Logger()}
 			script := make(chan string, len(lines))
@@ -166,14 +170,15 @@ func TestSecureScriptSnapshotsBeforeKeyTranslation(t *testing.T) {
 		}
 		return state
 	}).Once()
-	security.EXPECT().Snapshot().Return(state).Times(3)
+	security.EXPECT().Snapshot().Return(state).Times(4)
 	script := make(chan string, 1)
 	script <- "key Shift+A"
 	close(script)
-	input := make(chan ports.InputEvent, 4)
+	input := make(chan ports.InputEvent, 5)
 	if err := RunSecure(context.Background(), km, nil, script, input, nil, nil, logging.For(context.Background(), "input"), security); err != nil {
 		t.Fatal(err)
 	}
+	<-input // device announcement
 	if len(input) != 4 {
 		t.Fatalf("events=%d", len(input))
 	}
@@ -197,6 +202,7 @@ func TestSecureScriptBlockedSendPreservesProductionSnapshot(t *testing.T) {
 			var current atomic.Pointer[domain.SecurityState]
 			current.Store(&original)
 			produced := make(chan struct{})
+			security.EXPECT().Snapshot().Return(original).Once() // device announcement
 			security.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState {
 				state := *current.Load()
 				close(produced)
@@ -213,6 +219,7 @@ func TestSecureScriptBlockedSendPreservesProductionSnapshot(t *testing.T) {
 			defer cancel()
 			done := make(chan error, 1)
 			go func() { done <- RunSecure(ctx, km, nil, script, input, nil, nil, logging.For(ctx, "input"), security) }()
+			<-input // initial device announcement
 			select {
 			case <-produced:
 			case <-ctx.Done():
@@ -250,7 +257,7 @@ func TestSecureScriptQuarantinesModifierAcrossTransition(t *testing.T) {
 	initial := domain.SecurityState{}
 	locked := domain.SecurityState{Generation: 1, Protected: true}
 	security := portsmocks.NewMockSessionSecurity(t)
-	security.EXPECT().Snapshot().Return(initial).Once()  // Super down
+	security.EXPECT().Snapshot().Return(initial).Twice() // Super down
 	security.EXPECT().Snapshot().Return(locked).Times(5) // q down/up, held Super up, fresh q down/up
 	script := make(chan string, 2)
 	script <- "key Super+q"
@@ -260,6 +267,7 @@ func TestSecureScriptQuarantinesModifierAcrossTransition(t *testing.T) {
 	if err := RunSecure(context.Background(), km, nil, script, input, nil, nil, logging.For(context.Background(), "input"), security); err != nil {
 		t.Fatal(err)
 	}
+	<-input // device announcement
 	if len(input) != 5 {
 		t.Fatalf("quarantined release replayed: %d events", len(input))
 	}

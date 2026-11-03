@@ -52,6 +52,11 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 		}
 		entry.Str(field, value).Msg(message)
 	}
+	select {
+	case input <- stamp(ports.InputDeviceAdded{ID: scriptDeviceID, Name: "headless-script"}, snapshot()):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 	var layout domain.Layout
 	defer func() { km.Close() }()
 	emit := func(code uint32, down bool) error {

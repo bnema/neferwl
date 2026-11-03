@@ -176,6 +176,12 @@ func (c *Core) layoutInto(l domain.Layout) domain.Layout {
 				p.Inputs = slices.Clone(cfg.Inputs)
 				p.InputOrder = c.outputIndex(s.name())
 			}
+			for id := range c.inputNames {
+				if i := c.boundInput(id); i >= 0 && c.screens[i] == s {
+					p.Devices = append(p.Devices, id)
+				}
+			}
+			slices.Sort(p.Devices)
 			l = append(l, p)
 		}
 	}

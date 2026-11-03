@@ -87,19 +87,23 @@ type Core struct {
 	overviewReal map[WindowID]Placement
 	// realBuf backs the layout read through at once by publish (each
 	// workspace while overviewReal is filled) and by state(); never retained.
-	realBuf         []Placement
-	scratch         publishScratch
-	security        domain.SecurityState
-	lock            lockState
-	inputKeys       map[string]bool
-	inputActive     bool
-	startup         [][]string
-	nextWorkspaceID uint64
-	ch              Channels
-	opts            Options
-	cfg             domain.Config
-	screens         []*screen
-	focusScreen     int
+	realBuf           []Placement
+	scratch           publishScratch
+	security          domain.SecurityState
+	lock              lockState
+	inputKeys         map[string]bool
+	inputActive       bool
+	startup           [][]string
+	nextWorkspaceID   uint64
+	ch                Channels
+	opts              Options
+	cfg               domain.Config
+	screens           []*screen
+	focusScreen       int
+	inputNames        map[domain.InputDeviceID]string
+	activeInputOutput string
+	lastInputBound    bool
+	lastUnboundOutput string
 	// offGone names outputs unplugged while turned off: a display that
 	// reconnects from deep sleep comes back off, until the next input.
 	offGone        map[string]bool

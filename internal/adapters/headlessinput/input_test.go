@@ -48,6 +48,7 @@ func TestScript(t *testing.T) {
 			if err := Run(context.Background(), km, nil, script, input, nil, nil, logging.For(context.Background(), "input")); err != nil {
 				t.Fatal(err)
 			}
+			assertScriptDevice(t, input)
 			if len(input) != len(tt.names) {
 				t.Fatalf("events=%d want %d", len(input), len(tt.names))
 			}
@@ -87,6 +88,7 @@ func TestModifierAcrossMouseActions(t *testing.T) {
 	if err := Run(context.Background(), km, nil, script, input, nil, nil, logging.For(context.Background(), "input")); err != nil {
 		t.Fatal(err)
 	}
+	assertScriptDevice(t, input)
 	if len(input) != 6 {
 		t.Fatal(len(input))
 	}
@@ -132,6 +134,7 @@ func TestHoldKeepsKeyDown(t *testing.T) {
 		}()
 		time.Sleep(900 * time.Millisecond)
 		synctest.Wait()
+		assertScriptDevice(t, input)
 		if len(input) != 2 {
 			t.Fatalf("before the hold ends: %d events, want the 2 presses", len(input))
 		}
@@ -170,6 +173,7 @@ func TestPointerScript(t *testing.T) {
 	if err := Run(context.Background(), km, nil, script, input, nil, nil, logging.For(context.Background(), "input")); err != nil {
 		t.Fatal(err)
 	}
+	assertScriptDevice(t, input)
 	if len(input) != 5+2*(swipeSteps+2) {
 		t.Fatalf("events: %d", len(input))
 	}
@@ -253,7 +257,16 @@ func TestScriptVT(t *testing.T) {
 	if err := Run(context.Background(), km, nil, script, input, nil, nil, logging.For(context.Background(), "input")); err != nil {
 		t.Fatal(err)
 	}
+	assertScriptDevice(t, input)
 	if len(input) != 2 || <-input != (ports.SeatChanged{Active: false}) || <-input != (ports.SeatChanged{Active: true}) {
 		t.Fatal("want SeatChanged false, then true, and nothing for the invalid lines")
+	}
+}
+
+func assertScriptDevice(t *testing.T, input <-chan ports.InputEvent) {
+	t.Helper()
+	ev := <-input
+	if ev != (ports.InputDeviceAdded{ID: 1, Name: "headless-script"}) {
+		t.Fatalf("announcement: %#v", ev)
 	}
 }

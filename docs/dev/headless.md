@@ -230,3 +230,7 @@ output.HEADLESS-2.right-of = HEADLESS-1
 
 On the isolated headless display, `wayland-info -i wl_output` should report
 HEADLESS-1 at (-640,0) and HEADLESS-2 at (0,0).
+
+Scripted input announces device ID `1` with the fixed name `headless-script`.
+Use `output.tv.input = headless-script` to test device-bound focus on a virtual
+output. The script's `move` coordinates remain global logical coordinates.

@@ -6,10 +6,10 @@ import (
 )
 
 func TestBoundPointers(t *testing.T) {
-	l := domain.Layout{{Info: domain.OutputInfo{Name: "desktop"}, Width: 100, Height: 100, Scale: 1}, {Info: domain.OutputInfo{Name: "tv"}, X: 300, Width: 100, Height: 80, Scale: 2, Isolated: true, Inputs: []string{"Mouse*"}, InputOrder: 1}}
+	l := domain.Layout{{Info: domain.OutputInfo{Name: "desktop"}, Width: 100, Height: 100, Scale: 1}, {Info: domain.OutputInfo{Name: "tv"}, X: 300, Width: 100, Height: 80, Scale: 2, Isolated: true, Devices: []domain.InputDeviceID{1}, InputOrder: 1}}
 	p := newPointer(l)
-	p.addDevice(1, "Mouse passthrough")
-	p.addDevice(2, "other")
+	p.addDevice(1, 1)
+	p.addDevice(2, 2)
 	bound := p.forDevice(1)
 	m := bound.move(10000, 10000)
 	if m.X != 399 || m.Y != 79 {
@@ -55,15 +55,15 @@ func TestBoundPointers(t *testing.T) {
 	p.removeDevice(1)
 }
 
-func TestBindingConfigPrecedence(t *testing.T) {
-	l := domain.Layout{{Info: domain.OutputInfo{Name: "later"}, Width: 10, Height: 10, Inputs: []string{"*"}, InputOrder: 2}, {Info: domain.OutputInfo{Name: "first"}, X: 100, Width: 10, Height: 10, Inputs: []string{"*"}, InputOrder: 0}}
+func TestResolvedBindingIgnoresLayoutOrder(t *testing.T) {
+	l := domain.Layout{{Info: domain.OutputInfo{Name: "later"}, Width: 10, Height: 10, InputOrder: 2}, {Info: domain.OutputInfo{Name: "first"}, X: 100, Width: 10, Height: 10, Devices: []domain.InputDeviceID{1}, InputOrder: 0}}
 	p := newPointer(l)
-	p.addDevice(1, "mouse")
+	p.addDevice(1, 1)
 	if p.forDevice(1).layout[0].Info.Name != "first" {
-		t.Fatal("not config order")
+		t.Fatal("resolved binding ignored")
 	}
-	l[1].Inputs[0] = "different"
-	if p.all[0].Inputs[0] != "*" {
+	l[1].Devices[0] = 2
+	if p.all[1].Devices[0] != 1 {
 		t.Fatal("layout aliases caller")
 	}
 }
