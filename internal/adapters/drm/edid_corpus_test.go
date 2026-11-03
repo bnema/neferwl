@@ -41,7 +41,7 @@ func TestEDIDCorpus(t *testing.T) {
 			if tt.file != "" && math.Abs(m.HDR.MaxFrameAverage-tt.average) > 1 {
 				t.Fatalf("frame-average = %g, want %g", m.HDR.MaxFrameAverage, tt.average)
 			}
-			caps := detectHDR(m, props).caps(0, 203)
+			caps := domain.NewOutputHDRCaps("", domain.OutputHDRSettings{ExpansionPeakNits: 0, SDRBrightness: 203}, detectHDR(m, props).facts(), false).Caps
 			if caps.Tier != tt.tier || caps.PeakSource != tt.source || math.Abs(caps.PeakNits-tt.peak) > 1 || math.Abs(caps.Headroom-tt.peak/203) > 0.005 || caps.Expandable() != tt.expandable {
 				t.Fatalf("caps = %+v (expandable %t), want tier=%s source=%s peak=%g headroom=%g expandable=%t", caps, caps.Expandable(), tt.tier, tt.source, tt.peak, tt.peak/203, tt.expandable)
 			}

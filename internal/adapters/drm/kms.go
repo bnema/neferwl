@@ -97,7 +97,7 @@ type Want struct {
 	// Modes maps a connector to W, H and Hz (0: highest refresh at W x H).
 	Modes map[string][3]float64
 	// HDR settings are retained per connector; phase 1 never applies them to KMS.
-	HDR map[string]HDRSettings
+	HDR map[string]domain.OutputHDRSettings
 	// NoScanout disables direct scanout (render.direct-scanout = off).
 	NoScanout bool
 	// NoTearing ignores tearing requests (render.tearing = off).
@@ -115,13 +115,6 @@ type Want struct {
 	// VRRFlipGap delays a game frame after the previous flip under VRR
 	// (render.vrr-flip-gap, 0: off; see vrr_flip_gap.go).
 	VRRFlipGap time.Duration
-}
-
-// HDRSettings is the requested HDR state and SDR reference white (nits).
-type HDRSettings struct {
-	ExpansionPeakNits float64
-	Enabled           bool
-	SDRBrightness     int
 }
 
 // usable reports whether a connector should be driven.

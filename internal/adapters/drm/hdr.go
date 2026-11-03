@@ -52,7 +52,7 @@ func maxFrameAverage(h HDRMetadata) float64 {
 type hdrState struct {
 	cap      hdrCapability
 	props    connectorHDRProps
-	settings HDRSettings
+	settings domain.OutputHDRSettings
 	// failed disables retries until this Output is replaced; on is the
 	// currently selected signal encoding, including on VT resume.
 	on, failed bool
@@ -147,14 +147,13 @@ func (m *hdrOutputMetadata) bytes() []byte {
 	return unsafe.Slice((*byte)(unsafe.Pointer(m)), unsafe.Sizeof(*m))
 }
 
-// caps converts connector/EDID detection into pure capability facts without
+// facts converts connector/EDID detection into pure capability facts without
 // changing the HDR signaling decision.
-func (c hdrCapability) caps(peakNits, sdrWhiteNits float64) domain.HDRCaps {
-	return domain.ResolveHDRCaps(domain.HDRCapsInput{
+func (c hdrCapability) facts() domain.HDRCapsInput {
+	return domain.HDRCapsInput{
 		Capable: c.Capable, Reason: c.Reason,
-		MaxLuminance: c.MaxLuminance, MaxFrameAverage: c.MaxFrameAverage,
-		MinLuminance: c.MinLuminance, ConfigPeakNits: peakNits, SDRWhiteNits: sdrWhiteNits,
-	})
+		MaxLuminance: c.MaxLuminance, MaxFrameAverage: c.MaxFrameAverage, MinLuminance: c.MinLuminance,
+	}
 }
 
 // sendHDRCaps shares the lossless lifecycle stream. Cancellation releases a
@@ -163,7 +162,7 @@ func (o *Output) sendHDRCaps() {
 	if o.Events == nil {
 		return
 	}
-	event := domain.OutputHDRCaps{Output: o.conn.name, Caps: o.hdr.cap.caps(o.hdr.settings.ExpansionPeakNits, float64(o.hdr.settings.SDRBrightness)), Active: o.hdr.on && !o.off}
+	event := domain.NewOutputHDRCaps(o.conn.name, o.hdr.settings, o.hdr.cap.facts(), o.hdr.on && !o.off)
 	ctx := o.eventContext
 	if ctx == nil {
 		ctx = context.Background()
@@ -197,6 +196,8 @@ func (o *Output) updateExpansionPeak(peak float64) {
 }
 
 // applyExpansionPeak runs on the output owner, alongside lifecycle reporting.
+//
+//hexcheck:ignore suspicious-business-logic-in-adapter stores the owner-delivered peak and republishes caps; resolution policy is domain.NewOutputHDRCaps
 func (o *Output) applyExpansionPeak(peak float64) {
 	if peak == o.hdr.settings.ExpansionPeakNits {
 		return
