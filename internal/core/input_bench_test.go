@@ -6,9 +6,10 @@ import (
 	"testing"
 	"testing/synctest"
 
-	clock "github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/domain"
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
+	"time"
 )
 
 func inputBenchCore(t testing.TB) *Core {
@@ -16,7 +17,9 @@ func inputBenchCore(t testing.TB) *Core {
 	cfg := domain.Config{}
 	cfg.Layout.MaxColumns = 2
 	cfg.Keyboard.CmdKey = "super"
-	c, err := New(cfg, Channels{Commands: make(chan ports.ClientCommand, 64), Scenes: make(chan []domain.Scene, 1)}, testOptions(t, Options{Clock: clock.System{}}))
+	clock := portsmocks.NewMockClock(t)
+	clock.EXPECT().Now().Return(time.Unix(0, 0)).Maybe()
+	c, err := New(cfg, Channels{Commands: make(chan ports.ClientCommand, 64), Scenes: make(chan []domain.Scene, 1)}, testOptions(t, Options{Clock: clock}))
 	if err != nil {
 		t.Fatal(err)
 	}
