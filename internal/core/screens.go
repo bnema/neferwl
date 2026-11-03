@@ -141,11 +141,6 @@ func (c *Core) order() {
 	for i, p := range placeOutputs(items) {
 		c.screens[i].x, c.screens[i].y = p.X, p.Y
 	}
-	if c.cur().isolated {
-		if i := slices.IndexFunc(c.screens, func(s *screen) bool { return !s.isolated && s.name() != "" }); i >= 0 {
-			c.focusScreen = i
-		}
-	}
 }
 
 // outputIndex is the position of the output.<name> entry in the config, or
@@ -334,6 +329,14 @@ func (c *Core) addScreen(info domain.OutputInfo) {
 	s.setScale(s.cfgScale)
 	s.primary = c.isPrimary(info.Name)
 	c.order()
+	// Initial output discovery may have selected an isolated output before any
+	// reachable one arrived. Relayout itself must never undo explicit focus.
+	if c.cur().isolated && !c.anyWindow() {
+		if i := slices.IndexFunc(c.screens, func(s *screen) bool { return !s.isolated && s.name() != "" }); i >= 0 {
+			c.focusScreen = i
+		}
+	}
+
 	// The primary output takes the focus while nothing is open yet
 	// (startup). Later, plugging it in never moves the user.
 	if s.primary && !s.isolated && !c.anyWindow() {

@@ -9,7 +9,7 @@ import (
 )
 
 func TestIsolatedOutputPlacementAndPointer(t *testing.T) {
-	c := layoutCore(0, tile{"tv", 0, 0, 3840, 2160}, tile{"DP-1", 0, 0, 5120, 1440})
+	c := layoutCore(1, tile{"tv", 0, 0, 3840, 2160}, tile{"DP-1", 0, 0, 5120, 1440})
 	c.screens[0].info.Virtual = true
 	c.cfg.Outputs = []domain.OutputConfig{{Name: "tv", Virtual: true, Primary: true}}
 	c.order()
@@ -67,5 +67,33 @@ func TestLargeIsolatedColumnWithNegativeOrigin(t *testing.T) {
 	}
 	if width := p[2].X + items[2].w - p[0].X; width != 23528 || width > 32767 {
 		t.Fatal(width)
+	}
+}
+
+func TestIsolatedFocusSurvivesResizeAndReload(t *testing.T) {
+	c := layoutCore(0, tile{"DP-1", 0, 0, 640, 360}, tile{"tv", 2664, 0, 1280, 720})
+	c.screens[1].info.Virtual = true
+	c.screens[1].scale = 1
+	c.cfg.Outputs = []domain.OutputConfig{{Name: "tv", Virtual: true, Mode: "1280x720"}}
+	c.order()
+	c.focusScreen = c.screenIndex("tv") // An explicit window/output activation.
+	c.addScreen(domain.OutputInfo{Name: "tv", Virtual: true, Width: 1920, Height: 1080})
+	if c.cur().name() != "tv" {
+		t.Fatal("resize stole focus")
+	}
+	c.cfg.Outputs = []domain.OutputConfig{{Name: "DP-1"}, {Name: "tv", Virtual: true, Mode: "1920x1080", Scale: 1.5}}
+	c.applyOutputConfig()
+	if c.cur().name() != "tv" {
+		t.Fatal("reload stole focus")
+	}
+}
+
+func TestStartupIsolatedFocusFallsBackWhenReachableOutputArrives(t *testing.T) {
+	c := layoutCore(0, tile{"tv", 0, 0, 1280, 720})
+	c.screens[0].info.Virtual = true
+	c.order()
+	c.addScreen(domain.OutputInfo{Name: "DP-1", Width: 640, Height: 360})
+	if c.cur().name() != "DP-1" {
+		t.Fatal("startup chose isolated output")
 	}
 }
