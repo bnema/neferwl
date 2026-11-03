@@ -1030,6 +1030,9 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 		return c.lockHit(x, y)
 	}
 	i := c.screenAt(x, y)
+	if target := c.boundInput(c.activePointerDevice); target >= 0 && c.screens[target].placement().Contains(x, y) {
+		i = target
+	}
 	if i < 0 {
 		return 0, 0, 0
 	}

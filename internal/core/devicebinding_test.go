@@ -77,3 +77,24 @@ func TestStationaryDeviceSwitchRestoresPointerBeforeDispatch(t *testing.T) {
 		t.Fatal("switch broke grab")
 	}
 }
+
+func TestFirstUsePointerSwitchTargetsBoundOutput(t *testing.T) {
+	c := inputBenchCore(t)
+	c.addScreen(domain.OutputInfo{Name: "tv", Virtual: true, Width: 100, Height: 100})
+	c.cfg.Outputs = []domain.OutputConfig{{Name: "tv", Inputs: []string{"mouse"}}}
+	c.order()
+	c.inputNames = map[domain.InputDeviceID]string{2: "mouse"}
+	c.screens[c.screenIndex("tv")].mon.AddWindow(42)
+	c.screens[c.screenIndex("tv")].arrange()
+	c.refreshShown()
+	if err := c.activateInput(context.Background(), ports.PointerButton{Device: 2}); err != nil {
+		t.Fatal(err)
+	}
+	r := c.screens[c.screenIndex("tv")].rect()
+	if c.cursorX != float64(r.X+r.W/2) || c.cursorY != float64(r.Y+r.H/2) {
+		t.Fatal("first click did not target bound centre")
+	}
+	if c.pointer != 42 {
+		t.Fatalf("pointer focus=%d want 42", c.pointer)
+	}
+}

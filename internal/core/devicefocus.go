@@ -79,6 +79,7 @@ func (c *Core) activateInput(ctx context.Context, ev ports.InputEvent) error {
 					position = [2]float64{c.cursorX, c.cursorY}
 				}
 			}
+			c.activePointerDevice = id
 			c.cursorX, c.cursorY = position[0], position[1]
 			pointer, x, y := c.hit(c.cursorX, c.cursorY)
 			c.pointer = pointer
