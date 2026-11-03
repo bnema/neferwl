@@ -173,3 +173,21 @@ func TestFirstScaleOnlyEntryClearsOverrides(t *testing.T) {
 		t.Fatalf("reload retained overrides: %+v", cfg.Outputs)
 	}
 }
+
+func TestPhysicalCollisionOverrideUsesInventoryIdentity(t *testing.T) {
+	mode := domain.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
+	state := NewOutputOverrides(domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Virtual: true, Mode: "1280x720"}}}, false)
+	state.SetHeads(domain.OutputHeads{Heads: []domain.OutputHead{{Info: domain.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}})
+	for _, enabled := range []bool{true, false} {
+		cfg, err := state.Apply(domain.OutputApply{Heads: []domain.HeadChange{{Name: "DP-1", Enabled: enabled, Mode: &mode}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(cfg.Outputs) != 1 || cfg.Outputs[0].Virtual || cfg.Outputs[0].Off == enabled || cfg.Outputs[0].Mode != "1920x1080@60.000" {
+			t.Fatalf("%+v", cfg.Outputs)
+		}
+		if len(state.Virtuals()) != 0 {
+			t.Fatal("physical collision hosted as virtual")
+		}
+	}
+}

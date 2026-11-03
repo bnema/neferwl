@@ -202,6 +202,9 @@ func (o *OutputOverrides) Apply(req domain.OutputApply) (domain.Config, error) {
 				entry.Name = h.Name
 			}
 		}
+		// The connected inventory, not a colliding file declaration, owns identity.
+		index := slices.IndexFunc(o.heads.Heads, func(head domain.OutputHead) bool { return head.Info.Name == h.Name })
+		entry.Virtual = o.heads.Heads[index].Info.Virtual
 		entry.Off = !h.Enabled
 		if h.Scale > 0 {
 			entry.Scale = h.Scale
