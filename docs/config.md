@@ -175,11 +175,12 @@ Outputs are arranged automatically unless `.right-of`, `.left-of`, `.above` or `
 
 ## Window rules
 
-Rules place an app's windows when they first open.
+Rules place an app's windows when they first open. A rule matches its app ID and, when set, its title. A title rule's output/workspace placement also applies when a later title first matches, at most once per rule per window. This later move never changes focus or view, floating state, or column width. SDR expansion settings follow the current title match.
 
 | Key | Meaning |
 |---|---|
 | `rule.<name>.app-id` | Required. [Regular expression](https://pkg.go.dev/regexp/syntax) matching the whole app ID |
+| `rule.<name>.title` | Optional regular expression matching the title (substring match; use `^` and `$` for a whole-title match) |
 | `rule.<name>.floating` | `on` to float, `off` to tile |
 | `rule.<name>.workspace` | Workspace number or name |
 | `rule.<name>.output` | Output |

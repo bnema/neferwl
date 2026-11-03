@@ -100,7 +100,7 @@ func (c *Core) dataDragRoute(ctx context.Context, at time.Duration) error {
 func dataDragHitChanged(ev ports.ClientEvent) bool {
 	switch ev.(type) {
 	case ports.LayerChanged, ports.InputRegionChanged, ports.WindowMapped,
-		ports.WindowResized, ports.PopupRequest, ports.PopupMapped,
+		ports.WindowResized, ports.WindowTitle, ports.PopupRequest, ports.PopupMapped,
 		ports.OutputPower, ports.WindowParent, ports.WindowModal,
 		ports.WindowUnmapped, ports.UnmanagedMapped, ports.UnmanagedMoved, ports.UnmanagedUnmapped, ports.PointerWarp, ports.WindowMoveRequest,
 		ports.WindowFullscreenRequest, ports.WorkspaceActivate, ports.WindowActivate:

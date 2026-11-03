@@ -417,6 +417,7 @@ func (c *Core) mapWindow(v ports.WindowMapped) {
 		v.Floating, v.Width, v.Height = false, 0, 0
 	}
 	c.windows.mapped(v, now)
+	c.rememberTitleRules(v.ID)
 	c.matchWindowExpansion(v.ID)
 	if s, _ := c.screenOf(v.ID); s != nil || !c.animOn() || c.security.Protected {
 		// Mapped before (a re-map keeps its place), animations off or a

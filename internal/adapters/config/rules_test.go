@@ -67,7 +67,7 @@ func TestRuleWarnings(t *testing.T) {
 		// Quoting the anchoring group's ")" must warn, not panic.
 		{"quoted anchor", "rule.a.app-id = \\Qsteam\n", "rule.a.app-id: invalid regular expression", 1, 0},
 		{"missing app-id", "rule.a.floating = on\n", "rule.a: no app-id, rule ignored", 1, 0},
-		{"unknown field", "rule.a.app-id = foo\nrule.a.title = x\n", "rule.a.title: unknown key", 2, 1},
+		{"unknown field", "rule.a.app-id = foo\nrule.a.unknown = x\n", "rule.a.unknown: unknown key", 2, 1},
 		{"bad floating", "rule.a.app-id = foo\nrule.a.floating = maybe\n", "rule.a.floating: must be on or off", 2, 0},
 		// An invalid duplicate keeps the earlier value and the rule.
 		{"bad duplicate floating", "rule.a.app-id = foo\nrule.a.floating = on\nrule.a.floating = maybe\n", "rule.a.floating: must be on or off", 3, 1},
@@ -151,5 +151,18 @@ rule.a.width = 2
 	}
 	if len(c.Workspaces) != 1 || c.Workspaces[0].Monitor != "DP-2" {
 		t.Fatal(c.Workspaces)
+	}
+}
+
+func TestRuleTitle(t *testing.T) {
+	c, warnings := parseString(t, "rule.a.app-id = steam\nrule.a.title = (?i)big picture\nrule.a.output = DP-2\n")
+	if len(warnings) != 0 || len(c.Rules) != 1 || !c.Rules[0].Title.MatchString("Steam BIG PICTURE mode") {
+		t.Fatalf("%v %+v", warnings, c.Rules)
+	}
+	for _, value := range []string{"", "("} {
+		c, warnings = parseString(t, "rule.a.app-id = steam\nrule.a.title = "+value+"\n")
+		if len(warnings) != 1 || len(c.Rules) != 0 {
+			t.Fatalf("%v %+v", warnings, c.Rules)
+		}
 	}
 }

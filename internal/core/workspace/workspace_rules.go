@@ -40,3 +40,37 @@ func (w *Workspace) addFloat(f Float, quiet bool) {
 // addColumnQuiet adds a column where a new window goes, keeping the focus
 // where it is (ADR 011 golden rule).
 func (w *Workspace) addColumnQuiet(col layout.Column) { w.placeColumn(col, true) }
+
+// MoveByRule moves a single window without selecting it or changing either
+// workspace's view. Its existing floating class and tile width are retained.
+func MoveByRule(from, to *Workspace, id WindowID) {
+	if from == to || !from.Has(id) {
+		return
+	}
+	fromView, toView := from.View, to.View
+	fullscreen := from.Fullscreen == id
+	if i := from.floatIndex(id); i >= 0 {
+		f := from.Floats[i]
+		if f.free && f.back != nil {
+			f = f.rehome()
+		}
+		from.RemoveWindow(id)
+		to.addFloat(f, true)
+	} else if i := from.StashIndex(id); i >= 0 {
+		f := from.Stash[i].rehome()
+		from.RemoveWindow(id)
+		focused, hidden, at := to.stashFocus, to.stashHidden, to.stashAt
+		to.addStash(f)
+		to.stashFocus, to.stashHidden, to.stashAt = focused, hidden, at
+	} else if i := from.ColumnOf(id); i >= 0 {
+		cells := from.Columns[i].Cells
+		from.RemoveWindow(id)
+		to.AddTile(id, cells, true)
+	} else {
+		return
+	}
+	if fullscreen {
+		to.SetFullscreen(id, true)
+	}
+	from.View, to.View = fromView, toView
+}

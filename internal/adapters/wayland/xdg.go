@@ -272,7 +272,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 			}
 			pid := r.Client().PID()
 			x11 := x.server.x11Client != nil && x.server.x11Client.Owns(pid)
-			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Slot: slot, Sandbox: sandbox, ContentType: windowContentType(x.surface.contentKind), ColorDescription: !x.surface.outputColor().PlainSDR(), Xwayland: x11, PIDShared: x11, PID: pid, Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Modal: w.modal, Remap: w.gen > 1, Fullscreen: w.gen == 1 && w.initialFullscreen})
+			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Title: w.title, Slot: slot, Sandbox: sandbox, ContentType: windowContentType(x.surface.contentKind), ColorDescription: !x.surface.outputColor().PlainSDR(), Xwayland: x11, PIDShared: x11, PID: pid, Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Modal: w.modal, Remap: w.gen > 1, Fullscreen: w.gen == 1 && w.initialFullscreen})
 			x.server.syncInhibitors()
 			x.server.toplevelChanged(w)
 			x.server.castInventoryChanged()
@@ -367,6 +367,7 @@ func (t top) SetTitle(_ *xdgshell.Toplevel, title string) {
 	t.w.title = title
 	t.w.xdg.server.toplevelChanged(t.w)
 	if t.w.mapped {
+		t.w.xdg.server.emit(ports.WindowTitle{ID: t.w.id, Title: title})
 		t.w.xdg.server.castInventoryChanged()
 	}
 }

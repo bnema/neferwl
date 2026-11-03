@@ -320,6 +320,8 @@ type WindowRule struct {
 	Name string
 	// AppID matches the whole app ID (the config anchors it).
 	AppID *regexp.Regexp
+	// Title optionally matches the window title (unanchored).
+	Title *regexp.Regexp
 	// Floating forces a window to float (true) or to tile (false); nil leaves it.
 	Floating *bool
 	// Workspace is a 1-based number of a numbered workspace or the name of a

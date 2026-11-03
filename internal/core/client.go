@@ -77,6 +77,8 @@ func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, 
 	case ports.WindowContentType:
 		c.windows.setContentType(v.ID, v.Type)
 		c.publishState()
+	case ports.WindowTitle:
+		c.windowTitle(v)
 	case ports.WindowAppID:
 		c.windows.setAppID(v.ID, v.AppID)
 		c.matchWindowExpansion(v.ID)

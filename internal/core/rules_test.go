@@ -542,3 +542,36 @@ func TestRuleMatchesSteamAppClass(t *testing.T) {
 
 	})
 }
+
+func TestTitleRuleMovesOnceWithoutFocus(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := startMulti(t, func(c *domain.Config) {
+			c.Rules = []domain.WindowRule{winRule("title", "game", func(r *domain.WindowRule) {
+				r.Title = regexp.MustCompile("(?i)big picture")
+				r.Output = "DP-2"
+				r.Floating = ruleOn() // Title re-evaluation must not float the window.
+				r.Cells = 4
+			})}
+		}, left, right)
+		r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
+		r.client <- ports.WindowMapped{ID: 1, AppID: "game", Title: "launcher", Xwayland: true, HasAt: true, AtX: 0, AtY: 0}
+		r.stateWith(t, 1)
+		r.mapApp(t, 2, "term")
+		r.client <- ports.WindowTitle{ID: 1, Title: "Steam Big Picture Mode"}
+		st := stateAfter(t, r.state, func(st domain.State) bool { w := stWindow(st, 1); return w != nil && w.Output == "DP-2" })
+		if st.Output != "DP-1" || stFocus(st) != 2 || stWindow(st, 1).Floating {
+			t.Fatal(st)
+		}
+		// A second rule is not needed to test once-only behavior: move it back
+		// through an explicit user action, then cycle the title.
+		r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
+		r.key(t, "Left", domain.ModAlt|domain.ModCtrl|domain.ModShift)
+		r.client <- ports.WindowTitle{ID: 1, Title: "launcher"}
+		r.client <- ports.WindowTitle{ID: 1, Title: "Big Picture"}
+		synctest.Wait()
+		st = r.stateWith(t, 1)
+		if stWindow(st, 1).Output != "DP-1" {
+			t.Fatal(st)
+		}
+	})
+}

@@ -9,6 +9,7 @@ type ClientEvent interface{ clientEvent() }
 type WindowMapped struct {
 	ID    domain.WindowID
 	AppID string
+	Title string
 	// Slot is the SlotEnv value of the client process, empty if none.
 	Slot string
 	// PID is the client process, 0 when unknown.
@@ -202,3 +203,11 @@ type WindowColorDescription struct {
 }
 
 func (WindowColorDescription) clientEvent() {}
+
+// WindowTitle reports a title change on a mapped window.
+type WindowTitle struct {
+	ID    domain.WindowID
+	Title string
+}
+
+func (WindowTitle) clientEvent() {}

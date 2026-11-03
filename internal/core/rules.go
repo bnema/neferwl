@@ -7,13 +7,15 @@ import (
 	"strconv"
 
 	"github.com/bnema/neferwl/internal/core/layout"
+	workspacedomain "github.com/bnema/neferwl/internal/core/workspace"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Window rules (rule.<name>.* keys) merge placement and SDR expansion settings.
-// Placement applies once, at the first map, in spawnPlacement.place; a later
-// app ID change, a re-map or a config reload moves nothing. SDR expansion
+// Placement applies at the first map in spawnPlacement.place. Title rules may
+// also place a window once when a later title first matches; app ID changes
+// and config reloads alone move nothing. SDR expansion
 // fields are retained for eligibility policy and do not affect placement.
 //
 // A rule never moves the user (ADR 011): it does not take the focus and does
@@ -30,6 +32,8 @@ type rule struct {
 	sdrDecode          *domain.SDRDecode
 
 	appID    *regexp.Regexp
+	title    *regexp.Regexp
+	key      string
 	floating *bool
 	// number is the 1-based numbered workspace; workspace the name of a
 	// named one. At most one is set.
@@ -61,7 +65,7 @@ func parseRules(rs []domain.WindowRule) ([]rule, error) {
 		if r.AppID == nil {
 			return nil, fmt.Errorf("rule %s: no app-id", r.Name)
 		}
-		p := rule{appID: r.AppID, floating: r.Floating, output: r.Output, sdrExpand: r.SDRExpand, sdrExpandIntensity: r.SDRExpandIntensity, sdrExpandPeak: r.SDRExpandPeak, sdrDecode: r.SDRDecode}
+		p := rule{key: r.Name, title: r.Title, appID: r.AppID, floating: r.Floating, output: r.Output, sdrExpand: r.SDRExpand, sdrExpandIntensity: r.SDRExpandIntensity, sdrExpandPeak: r.SDRExpandPeak, sdrDecode: r.SDRDecode}
 		if r.Workspace != "" {
 			if n, err := strconv.Atoi(r.Workspace); err == nil {
 				if n < 1 {
@@ -88,15 +92,15 @@ func (c *Core) ruleFor(v ports.WindowMapped) (eff ruleEffect, ok bool) {
 	if v.Remap {
 		return eff, false
 	}
-	return matchRules(c.rules, v.AppID)
+	return matchRules(c.rules, v.AppID, v.Title)
 }
 
 // matchRules is independent of window lifecycle and placement. It merges every
 // app-ID match in config order; ok distinguishes no match from an empty effect.
-func matchRules(rules []rule, appID string) (eff ruleEffect, ok bool) {
+func matchRules(rules []rule, appID, title string) (eff ruleEffect, ok bool) {
 	for i := range rules {
 		r := &rules[i]
-		if !r.appID.MatchString(appID) {
+		if !r.matches(appID, title) {
 			continue
 		}
 		ok = true
@@ -185,4 +189,60 @@ func (c *Core) placeByRule(v ports.WindowMapped, eff ruleEffect) {
 		return
 	}
 	sc.mon.normalize()
+}
+
+func (r rule) matches(appID, title string) bool {
+	return r.appID.MatchString(appID) && (r.title == nil || r.title.MatchString(title))
+}
+
+// rememberTitleRules counts map-time matches as already applied too.
+func (c *Core) rememberTitleRules(id WindowID) {
+	rec := c.windows.records[id]
+	for _, r := range c.rules {
+		if r.title != nil && r.matches(rec.client.AppID, rec.client.Title) {
+			if rec.appliedTitleRules == nil {
+				rec.appliedTitleRules = &titleRuleHistory{applied: make(map[string]bool)}
+			}
+			rec.appliedTitleRules.applied[r.key] = true
+		}
+	}
+}
+
+func (c *Core) windowTitle(v ports.WindowTitle) {
+	rec := c.windows.records[v.ID]
+	if rec == nil || rec.client.ID == 0 {
+		return
+	}
+	old := rec.client.Title
+	rec.client.Title = v.Title
+	var eff ruleEffect
+	apply := false
+	for _, r := range c.rules {
+		if r.title == nil || rec.appliedTitleRules != nil && rec.appliedTitleRules.applied[r.key] || !r.matches(rec.client.AppID, v.Title) || r.matches(rec.client.AppID, old) {
+			continue
+		}
+		if rec.appliedTitleRules == nil {
+			rec.appliedTitleRules = &titleRuleHistory{applied: make(map[string]bool)}
+		}
+		rec.appliedTitleRules.applied[r.key] = true
+		if r.output != "" || r.workspace != "" || r.number > 0 {
+			eff.merge(r)
+			apply = true
+		}
+	}
+	c.matchWindowExpansion(v.ID)
+	if !apply {
+		return
+	}
+	fromScreen, from := c.screenOf(v.ID)
+	if from == nil {
+		return
+	}
+	toScreen, to := c.ruleTarget(eff)
+	if from == to {
+		return
+	}
+	workspacedomain.MoveByRule(from, to, v.ID)
+	fromScreen.mon.normalize()
+	toScreen.mon.normalize()
 }

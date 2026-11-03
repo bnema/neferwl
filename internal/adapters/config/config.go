@@ -1303,7 +1303,7 @@ type ruleEntry struct {
 	dropped bool
 }
 
-var errUnknownRuleField = errors.New("unknown key (app-id, floating, workspace, output, width)")
+var errUnknownRuleField = errors.New("unknown key (app-id, title, floating, workspace, output, width)")
 
 // setRule applies one rule.<name>.<field> key.
 func setRule(r *domain.WindowRule, field, v string) error {
@@ -1330,6 +1330,15 @@ func setRule(r *domain.WindowRule, field, v string) error {
 			return fmt.Errorf("must be gamma22 or srgb")
 		}
 		r.SDRDecode = &value
+	case "title":
+		if v == "" {
+			return fmt.Errorf("needs a regular expression")
+		}
+		re, err := regexp.Compile(v)
+		if err != nil {
+			return fmt.Errorf("invalid regular expression: %v", err)
+		}
+		r.Title = re
 	case "app-id":
 		if v == "" {
 			return fmt.Errorf("needs a regular expression")

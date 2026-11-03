@@ -10,7 +10,8 @@ import (
 // windowRecord is what core knows about one client surface besides its
 // place in the layout. Fields fill in as wayland reports them, in any order.
 type windowRecord struct {
-	expansionRule ruleEffect
+	expansionRule     ruleEffect
+	appliedTitleRules *titleRuleHistory
 	// client holds the app ID and PID of a mapped window, for State.
 	client   ports.WindowMapped
 	mappedAt time.Time
@@ -23,6 +24,8 @@ type windowRecord struct {
 	inhibitShortcuts bool
 	idleInhibit      bool
 }
+
+type titleRuleHistory struct{ applied map[string]bool }
 
 // windowRegistry owns the per-surface records. Dropping a surface removes
 // everything core keeps about it in one call.

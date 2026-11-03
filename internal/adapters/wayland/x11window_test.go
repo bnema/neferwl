@@ -191,6 +191,9 @@ func TestX11WindowLifecycle(t *testing.T) {
 	p := r.peer
 	p.setProp(win, p.atom("_NET_WM_NAME"), p.atom("UTF8_STRING"), 8, []byte("renamed"))
 	p.propertyNotify(win, p.atom("_NET_WM_NAME"))
+	if title := awaitEvent[ports.WindowTitle](t, r.events); title.ID != m.ID || title.Title != "renamed" {
+		t.Fatal(title)
+	}
 	p.setProp(win, 67, 31, 8, []byte("inst\x00Other\x00"))
 	p.propertyNotify(win, 67)
 	if a := awaitEvent[ports.WindowAppID](t, r.events); a.ID != m.ID || a.AppID != "Other" {

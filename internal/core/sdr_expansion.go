@@ -79,7 +79,7 @@ func decideSDRExpansion(in sdrExpansionInput) (domain.SDRExpansionCurve, string)
 
 func (c *Core) matchWindowExpansion(id WindowID) {
 	if rec := c.windows.records[id]; rec != nil && rec.client.ID != 0 {
-		rec.expansionRule, _ = matchRules(c.rules, rec.client.AppID)
+		rec.expansionRule, _ = matchRules(c.rules, rec.client.AppID, rec.client.Title)
 	}
 }
 

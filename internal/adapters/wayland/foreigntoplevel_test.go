@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/wlturbo"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	wlr "github.com/bnema/go-wayland-bindings/server/wlrforeigntoplevelmanagement"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/wlturbo"
 )
 
 // toplevelManagerEvents registers a handle proxy for each announced toplevel.
@@ -119,6 +119,12 @@ func TestForeignToplevel(t *testing.T) {
 		t.Fatalf("tiled = %q, want %q", got, want)
 	}
 	requestProtocol(t, c, top, xdgshell.ToplevelRequestSetTitle, "editor - file")
+	if title := clientEvent[ports.WindowTitle](t, events); title.ID != w.ID || title.Title != "editor" {
+		t.Fatal(title)
+	}
+	if title := clientEvent[ports.WindowTitle](t, events); title.ID != w.ID || title.Title != "editor - file" {
+		t.Fatal(title)
+	}
 	if got, want := takeEvents(t, c, p.events), []string{"title editor - file", "done"}; !slices.Equal(got, want) {
 		t.Fatalf("title = %q, want %q", got, want)
 	}
