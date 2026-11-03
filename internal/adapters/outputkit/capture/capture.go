@@ -115,7 +115,7 @@ func writeFrame(ctx context.Context, req domain.CaptureRequest, frame ports.Capt
 // destSize validates the destination of req, a file or a borrowed mapping, and
 // returns the bytes it must hold from offset 0 through the last pixel.
 func destSize(req domain.CaptureRequest) (int64, error) {
-	if (req.Dst.File == nil) == (req.Mapped == nil) || req.Width <= 0 || req.Width > maxMappedBytes/4 || req.Height <= 0 || req.Stride < req.Width*4 || req.Region.Dx() != req.Width || req.Region.Dy() != req.Height || req.Dst.Offset < 0 || (req.Format != shmARGB8888 && req.Format != shmXRGB8888) {
+	if (req.Dst.File == nil) == (req.Mapped == nil) || req.Width <= 0 || req.Width > maxMappedBytes/4 || req.Height <= 0 || req.Stride < req.Width*4 || req.Region.Dx() != req.Width || req.Region.Dy() != req.Height || req.Dst.Offset < 0 || (req.Format != shmARGB8888 && req.Format != shmXRGB8888 && req.Format != domain.CastXBGR2101010) {
 		return 0, errInvalidDest
 	}
 	rowBytes := int64(req.Width) * 4

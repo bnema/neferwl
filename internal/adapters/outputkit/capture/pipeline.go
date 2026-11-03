@@ -88,6 +88,8 @@ type Pipeline struct {
 	nheld         int
 	excl          excluder         // scratch of ExcludedScene, owner only
 	plainOverlays []domain.Overlay // scratch of SubmitPlain, owner only
+	// split holds SubmitScoped's requests by readback (SDR, PQ), owner only.
+	split [2][MaxRequests]domain.CaptureRequest
 	off           *offscreen
 	worker        sync.WaitGroup
 }
@@ -168,7 +170,45 @@ func (p *Pipeline) EndGate(err error) {
 
 // SubmitScoped consumes requests with explicit immutable scene admission. The
 // final gate read precedes BeginCapture, not the render that produced pixels.
+//
+// Requests for CastXBGR2101010 are read back as PQ words (BeginCapturePQ) in
+// a batch of their own; a frame that is not HDR fails them transiently.
 func (p *Pipeline) SubmitScoped(state domain.SecurityState, r ports.Renderer, requests []domain.CaptureRequest) {
+	npq := 0
+	for _, q := range requests {
+		if isPQ(q) {
+			npq++
+		}
+	}
+	if npq == 0 || len(requests) > MaxRequests {
+		p.submitBatch(state, r, requests, false)
+		return
+	}
+	if npq == len(requests) {
+		p.submitBatch(state, r, requests, true)
+		return
+	}
+	var n [2]int
+	for _, q := range requests {
+		k := 0
+		if isPQ(q) {
+			k = 1
+		}
+		p.split[k][n[k]] = q
+		n[k]++
+	}
+	p.submitBatch(state, r, p.split[0][:n[0]], false)
+	p.submitBatch(state, r, p.split[1][:n[1]], true)
+	p.split = [2][MaxRequests]domain.CaptureRequest{}
+}
+
+// isPQ reports whether q wants the HDR frame's PQ words.
+func isPQ(q domain.CaptureRequest) bool {
+	return q.DMABuf == nil && q.Format == domain.CastXBGR2101010
+}
+
+// submitBatch is SubmitScoped for requests of one readback.
+func (p *Pipeline) submitBatch(state domain.SecurityState, r ports.Renderer, requests []domain.CaptureRequest, pq bool) {
 	if len(requests) == 0 {
 		return
 	}
@@ -189,7 +229,15 @@ func (p *Pipeline) SubmitScoped(state domain.SecurityState, r ports.Renderer, re
 	} else if !p.captureAllowed(state) {
 		err = ErrSecurityState
 	} else {
-		b.frame, err = r.BeginCapture()
+		if pq {
+			if b.frame, err = r.BeginCapturePQ(); err != nil {
+				// No HDR frame (the output just turned SDR) or no PQ pass
+				// yet: the requester retries or renegotiates.
+				err = fmt.Errorf("%w: PQ capture: %w", ports.ErrCaptureTransient, err)
+			}
+		} else {
+			b.frame, err = r.BeginCapture()
+		}
 		if err == nil && b.frame == nil {
 			err = fmt.Errorf("renderer returned no capture frame")
 		}
