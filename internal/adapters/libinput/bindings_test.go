@@ -135,6 +135,7 @@ func TestSwitchMotionUsesOwnerPosition(t *testing.T) {
 	p.addDevice(3, 3)
 	shared := p.forDevice(2)
 	shared.move(10, 0)
+	p.switchMotion(shared, shared, 2, ports.PointerMotion{})
 	previous := p.active
 	other := p.forDevice(3)
 	if other != shared {
@@ -188,7 +189,46 @@ func TestSwitchMotionOrderingAndLastBindingRemoval(t *testing.T) {
 	if target != p {
 		t.Fatal("last binding retained")
 	}
-	if _, ok := p.switchMotion(previous, target, 1, event); ok {
-		t.Fatal("no-bindings fast path emitted sync")
+	if _, ok := p.switchMotion(previous, target, 1, event); !ok {
+		t.Fatal("last-binding removal requires one sync")
+	}
+	if _, ok := p.switchMotion(target, target, 1, event); ok {
+		t.Fatal("steady no-bindings emitted sync")
+	}
+}
+
+func TestLayoutSyncCoordinatesTimeAndCursor(t *testing.T) {
+	l := domain.Layout{{Info: domain.OutputInfo{Name: "tv"}, X: 100, Width: 100, Height: 100, Devices: []domain.InputDeviceID{1}}}
+	p := newPointer(l)
+	p.addDevice(1, 1)
+	q := p.forDevice(1)
+	p.switchMotion(nil, q, 1, ports.PointerMotion{})
+	l[0].X = 400
+	p.setLayout(l)
+	event := ports.PointerAxis{Device: 1, Time: 123}
+	m, ok := p.switchMotion(q, q, 1, event)
+	if !ok || m.X != 450 || m.Y != 50 || m.Time != 123 {
+		t.Fatalf("sync=%+v %v", m, ok)
+	}
+	var name string
+	var x, y float64
+	q.moved(func(n string, a, b float64, _ bool) { name, x, y = n, a, b }, true)
+	if name != "tv" || x != 50 || y != 50 {
+		t.Fatalf("cursor %s %v,%v", name, x, y)
+	}
+	if _, ok := p.switchMotion(q, q, 1, event); ok {
+		t.Fatal("sync not consumed")
+	}
+	f := newForwarder(zerowrap.Default())
+	f.push(ports.PointerMotion{Device: 1, Time: 100})
+	f.push(m)
+	got, _, _, _ := queuedMotion(f.queue[0])
+	if got.Time != 123 {
+		t.Fatal(got)
+	}
+	f.push(ports.PointerMotion{Device: 1, Time: 0})
+	got, _, _, _ = queuedMotion(f.queue[0])
+	if got.Time != 123 {
+		t.Fatal("valid timestamp lost")
 	}
 }

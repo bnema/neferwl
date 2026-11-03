@@ -715,6 +715,7 @@ func translate(ev uintptr, opts Options, p *pointer, in *inputState) (ports.Inpu
 			return nil, nil, err
 		}
 		if motion, ok := p.switchMotion(previous, target, in.identities[dev], out); ok {
+			target.moved(opts.MoveCursor, true)
 			return secureInput(motion, opts.Security, state), []ports.InputEvent{secureInput(out, opts.Security, state)}, nil
 		}
 		return secureInput(out, opts.Security, state), nil, nil
@@ -931,6 +932,7 @@ func hotkey(ke ports.KeyEvent, protected bool) (hotkeyAction, int) {
 type pointer struct {
 	x, y              float64
 	layout            domain.Layout
+	needsSync         bool
 	touched           bool // false until the user moves it: it follows the primary output
 	constraint        domain.PointerConstraint
 	currentConstraint domain.PointerConstraint
@@ -953,6 +955,7 @@ func newPointer(l domain.Layout) *pointer {
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter applies core layout and clamps device coordinates without deciding bindings
 func (p *pointer) setLayout(l domain.Layout) {
+	p.needsSync = true
 	p.all = slices.Clone(l)
 	for i := range p.all {
 		p.all[i].Inputs = slices.Clone(l[i].Inputs)
@@ -1007,6 +1010,7 @@ func (p *pointer) set(x, y float64) (float64, float64) {
 // constrain applies a new constraint. Entering or leaving a lock resyncs
 // the pointer to core's cursor, which stood still meanwhile; a confined
 // pointer moves inside. A warp moves it to core's cursor.
+//
 //hexcheck:ignore suspicious-business-logic-in-adapter applies core constraint and consumes one-shot warp in adapter-owned pointer storage
 func (p *pointer) constrain(c domain.PointerConstraint) {
 	p.currentConstraint = c
@@ -1095,6 +1099,9 @@ func (p *pointer) rebind() {
 		// This private layout explicitly admits its isolated target.
 		target := *bound
 		target.Isolated = false
+		if len(q.layout) == 0 || !q.layout[0].Equal(target) {
+			q.needsSync = true
+		}
 		q.layout = domain.Layout{target}
 		if !q.touched {
 			q.x = float64(target.X) + float64(target.Width)/2
@@ -1142,12 +1149,45 @@ func decodeMotion(p *pointer, id domain.InputDeviceID, dx, dy, rawDX, rawDY floa
 // switchMotion reports an owner position only when a non-motion pointer event
 // changes pointer states. Unbound devices share p, so alternating them emits none.
 func (p *pointer) switchMotion(previous, target *pointer, id domain.InputDeviceID, event ports.InputEvent) (ports.PointerMotion, bool) {
-	if event == nil || previous == target || len(p.devices) == 0 {
+	if event == nil {
 		return ports.PointerMotion{}, false
 	}
 	switch event.(type) {
-	case ports.KeyEvent, ports.PointerMotion:
+	case ports.KeyEvent:
+		return ports.PointerMotion{}, false
+	case ports.PointerMotion:
+		target.needsSync = false
 		return ports.PointerMotion{}, false
 	}
-	return ports.PointerMotion{Device: id, X: target.x, Y: target.y}, true
+	if !target.needsSync && (previous == target || len(p.devices) == 0) {
+		return ports.PointerMotion{}, false
+	}
+	target.needsSync = false
+	return ports.PointerMotion{Device: id, X: target.x, Y: target.y, Time: pointerEventTime(event)}, true
+}
+
+func pointerEventTime(event ports.InputEvent) time.Duration {
+	switch v := event.(type) {
+	case ports.PointerButton:
+		return v.Time
+	case ports.PointerAxis:
+		return v.Time
+	case ports.SwipeBegin:
+		return v.Time
+	case ports.SwipeUpdate:
+		return v.Time
+	case ports.SwipeEnd:
+		return v.Time
+	case ports.PinchBegin:
+		return v.Time
+	case ports.PinchUpdate:
+		return v.Time
+	case ports.PinchEnd:
+		return v.Time
+	case ports.HoldBegin:
+		return v.Time
+	case ports.HoldEnd:
+		return v.Time
+	}
+	return 0
 }

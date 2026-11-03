@@ -336,3 +336,42 @@ func TestCancelledAnnouncementClosesKeymap(t *testing.T) {
 		}
 	})
 }
+
+func TestFirstBoundClickSyncsTimeAndCursor(t *testing.T) {
+	km, err := xkb.New(xkb.RMLVO{Layout: "us"})
+	if err != nil {
+		t.Skip(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	script := make(chan string)
+	layouts := make(chan domain.Layout)
+	input := make(chan ports.InputEvent, 16)
+	type point struct {
+		name string
+		x, y float64
+	}
+	moved := make(chan point, 4)
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, km, nil, script, input, layouts, func(n string, x, y float64) { moved <- point{n, x, y} }, logging.For(ctx, "input"))
+	}()
+	assertScriptDevice(t, input)
+	layouts <- domain.Layout{{Info: domain.OutputInfo{Name: "tv", Width: 100, Height: 80}, X: 300, Width: 100, Height: 80, Isolated: true, Devices: []domain.InputDeviceID{2}}}
+	script <- "device 2"
+	script <- "click"
+	close(script)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	<-input // ID 2 announcement
+	motion := (<-input).(ports.PointerMotion)
+	button := (<-input).(ports.PointerButton)
+	if motion.X != 350 || motion.Y != 40 || motion.Device != 2 || motion.Time != button.Time || motion.Time == 0 {
+		t.Fatalf("motion=%+v button=%+v", motion, button)
+	}
+	cursor := <-moved
+	if cursor.name != "tv" || cursor.x != 50 || cursor.y != 40 {
+		t.Fatal(cursor)
+	}
+}

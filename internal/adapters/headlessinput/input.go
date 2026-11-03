@@ -190,12 +190,18 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 						motion.X, motion.Y = targets.Clamp(position[0], position[1], motion.X, motion.Y)
 						position = [2]float64{motion.X, motion.Y}
 						ev = motion
-					} else if pointerState != key && pointerState != "" {
-						sync := stamp(ports.PointerMotion{X: position[0], Y: position[1], Time: monotonic()}, snapshot())
+					} else if pointerState != key && (pointerState != "" || key != "shared") {
+						sync := stamp(ports.PointerMotion{X: position[0], Y: position[1], Time: scriptedPointerTime(ev)}, snapshot())
 						select {
 						case input <- sync:
 						case <-ctx.Done():
 							return ctx.Err()
+						}
+					}
+					if moveCursor != nil {
+						if o, ok := targets.At(position[0], position[1]); ok {
+							tx, ty := o.ToTarget(position[0], position[1])
+							moveCursor(o.Info.Name, tx, ty)
 						}
 					}
 					positions[key] = position
@@ -287,10 +293,7 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 					y, ey := strconv.ParseFloat(fields[2], 64)
 					if ex == nil && ey == nil && !math.IsNaN(x) && !math.IsNaN(y) && !math.IsInf(x, 0) && !math.IsInf(y, 0) {
 						// sendPointer applies the selected pointer state layout.
-						if o, ok := layout.At(x, y); ok && !o.Isolated && moveCursor != nil {
-							tx, ty := o.ToTarget(x, y)
-							moveCursor(o.Info.Name, tx, ty)
-						}
+
 						if err := sendPointer(ports.PointerMotion{X: x, Y: y, Time: now}); err != nil {
 							return err
 						}
@@ -414,4 +417,30 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 			}
 		}
 	}
+}
+
+func scriptedPointerTime(event ports.InputEvent) time.Duration {
+	switch v := event.(type) {
+	case ports.PointerButton:
+		return v.Time
+	case ports.PointerAxis:
+		return v.Time
+	case ports.SwipeBegin:
+		return v.Time
+	case ports.SwipeUpdate:
+		return v.Time
+	case ports.SwipeEnd:
+		return v.Time
+	case ports.HoldBegin:
+		return v.Time
+	case ports.HoldEnd:
+		return v.Time
+	case ports.PinchBegin:
+		return v.Time
+	case ports.PinchUpdate:
+		return v.Time
+	case ports.PinchEnd:
+		return v.Time
+	}
+	return 0
 }

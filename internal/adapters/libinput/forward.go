@@ -47,6 +47,9 @@ func (f *forwarder) push(ev ports.InputEvent) {
 		f.stats.Motions++
 		if n := len(f.queue); n > 0 {
 			if prev, prevState, prevWrapped, tail := queuedMotion(f.queue[n-1]); tail && m.Device == prev.Device && wrapped == prevWrapped && state == prevState {
+				if m.Time == 0 {
+					m.Time = prev.Time
+				}
 				// Relative deltas add up: games read them, not the position.
 				m.DX += prev.DX
 				m.DY += prev.DY
