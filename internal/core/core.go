@@ -103,6 +103,7 @@ type Core struct {
 	inputNames        map[domain.InputDeviceID]string
 	activeInputOutput string
 	lastInputBound    bool
+	inputBindings     bool
 	lastUnboundOutput string
 	// offGone names outputs unplugged while turned off: a display that
 	// reconnects from deep sleep comes back off, until the next input.
@@ -382,6 +383,13 @@ func (c *Core) apply(cfg domain.Config) error {
 		c.osdCancel()
 	}
 	c.cfg = cfg
+	c.inputBindings = false
+	for _, output := range cfg.Outputs {
+		if len(output.Inputs) > 0 {
+			c.inputBindings = true
+			break
+		}
+	}
 	if !cfg.Focus.FollowMouse {
 		c.hoverLocked, c.hoverLock = false, 0
 	}

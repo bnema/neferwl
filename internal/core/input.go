@@ -34,8 +34,10 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 		}
 		return nil
 	}
-	if err := c.activateInput(ctx, ev); err != nil {
-		return err
+	if c.inputBindings {
+		if err := c.activateInput(ctx, ev); err != nil {
+			return err
+		}
 	}
 	switch v := ev.(type) {
 	case ports.PointerMotion:
@@ -102,9 +104,11 @@ func (c *Core) pointerMotion(ctx context.Context, v ports.PointerMotion) error {
 	// A locked pointer stays still; relative motion still flows.
 	if c.constraint.Mode != domain.ConstraintLock {
 		x, y := c.clampPointer(c.cursorX, c.cursorY, v.X, v.Y)
-		if target := c.boundInput(v.Device); target >= 0 {
-			r := c.screens[target].rect()
-			x, y = min(max(v.X, float64(r.X)), float64(r.X+r.W)-1), min(max(v.Y, float64(r.Y)), float64(r.Y+r.H)-1)
+		if c.inputBindings {
+			if target := c.boundInput(v.Device); target >= 0 {
+				r := c.screens[target].rect()
+				x, y = min(max(v.X, float64(r.X)), float64(r.X+r.W)-1), min(max(v.Y, float64(r.Y)), float64(r.Y+r.H)-1)
+			}
 		}
 		c.cursorX, c.cursorY = c.constraint.Clamp(x, y)
 	}
