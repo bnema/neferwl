@@ -211,6 +211,60 @@ rule.calc.floating = on
 - A rule can float a Proton game: `rule.games.app-id = steam_app_\d+` with `rule.games.floating = on`. Without a rule, X11 games tile until they ask for fullscreen.
 - To find an app ID: `neferwl state | jq '.windows[].app_id'`.
 
+## Virtual outputs
+
+Declare an SDR output in the config; it exists while its entry remains:
+
+```ini
+output.tv = virtual 1920x1080@60
+```
+
+Refresh defaults to 60 Hz. Dimensions must be 1–16384; names use ASCII
+letters, digits, `.`, `_` and `-`, and must not collide with a physical head.
+Invalid declarations warn and are ignored. HDR and SDR-expansion overrides
+warn and are ignored on virtual outputs.
+
+Without placement, `tv` is isolated: automatic layout, unbound pointers,
+directional focus and startup focus skip it. Add a relation to make it reachable:
+
+```ini
+output.tv.right-of = DP-1
+```
+
+Edit the mode and reload, or use output management without recreating the output:
+
+```sh
+wlr-randr --output tv --custom-mode 1280x720@30
+```
+
+Removing the declaration and reloading removes the output. Its workspaces move
+to the focused output and do not move back when the virtual output returns.
+
+Bind input devices by name, one glob per line (Go `path.Match` syntax):
+
+```ini
+output.tv.input = Mouse passthrough*
+output.tv.input = Tablet*
+```
+
+The first matching connected output in config order wins. Bound pointers stay
+inside that output; absolute coordinates map to it. Using a bound device focuses
+its output; an unbound device restores the last unbound focus. This is one shared
+seat, not independent seats or separate keyboard modifier states.
+
+Title rules can send a streaming window there after its title changes:
+
+```ini
+rule.big.app-id = steam
+rule.big.title = (?i)big picture
+rule.big.output = tv
+```
+
+For Sunshine, a `global_prep_cmd` command can select the client's mode:
+`wlr-randr --output tv --custom-mode ${SUNSHINE_CLIENT_WIDTH}x${SUNSHINE_CLIENT_HEIGHT}@${SUNSHINE_CLIENT_FPS}`.
+Use `wayvnc -o tv` for remote access, or select `tv` in OBS's screen-capture
+source. Capture clients still need the normal [capture permissions](capture.md).
+
 ## Output placement
 
 By default, outputs sit left to right in config order. Place one against another, and use `offset` (logical pixels) to align the edges:

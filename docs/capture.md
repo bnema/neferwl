@@ -15,6 +15,18 @@ With ext-image-copy-capture, a client can capture an output, a window, a workspa
 - GPUs without Vulkan sync-file export (such as lavapipe) cannot capture.
 - `neferwl_capture_exclusion_manager_v1` lets a recorder keep its own HUD out of its frames.
 
+## Virtual outputs
+
+A [config-declared virtual output](config.md#virtual-outputs) is an ordinary capture
+source, even when isolated from the pointer layout. For example:
+
+```sh
+grim -o tv tv.png
+```
+
+Select `tv` in an OBS output-capture source or use `wayvnc -o tv`. The same
+allowlist, portal and lock-security restrictions apply; virtual outputs are SDR.
+
 ## The indicator
 
 A 2-pixel red border surrounds the captured output, region or workspace. A captured window adds a small red square in the top-right corner of its output. No client can turn it off, and it never appears in the captured image.
