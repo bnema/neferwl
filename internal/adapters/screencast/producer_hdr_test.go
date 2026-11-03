@@ -104,3 +104,49 @@ func TestShmFormatRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// A source that still holds a lent buffer refuses SetFormats and Resize
+// with ErrVideoBorrowed: the stream retries later instead of ending.
+func TestProducerRetriesBorrowedRenegotiation(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		ev   domain.CastEvent
+	}{
+		{"formats", domain.CastEvent{Kind: domain.CastSize, ID: 1, Width: 64, Height: 32, HDR: true}},
+		{"resize", domain.CastEvent{Kind: domain.CastSize, ID: 1, Width: 32, Height: 16}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newProducer(t)
+			p.open(false)
+			p.st.h2.StateChanged(pipewire.StreamStatePaused, 42, "")
+			p.st.h2.FormatChanged(pipewire.VideoFormatBGRx, 64, 32, 256)
+			p.st.h2.StateChanged(pipewire.StreamStateStreaming, 42, "")
+			p.s.onCastEvent(&tc.ev)
+			if tc.name == "formats" {
+				p.src.EXPECT().SetFormats(hdrOffer, pipewire.HDR10Colorimetry).Return(pipewire.ErrVideoBorrowed).Once()
+			} else {
+				p.src.EXPECT().Resize(32, 16).Return(pipewire.ErrVideoBorrowed).Once()
+			}
+			p.s.pump(p.st, p.now)
+			if p.st.closing || p.st.sess.dying {
+				t.Fatal("borrowed buffer ended the session")
+			}
+			if p.s.waitFor == 0 {
+				t.Fatal("no retry scheduled")
+			}
+			// No frame is requested while the change waits.
+			p.none()
+			if tc.name == "formats" {
+				p.src.EXPECT().SetFormats(hdrOffer, pipewire.HDR10Colorimetry).Return(nil).Once()
+			} else {
+				p.src.EXPECT().Resize(32, 16).Return(nil).Once()
+			}
+			p.now = p.now.Add(time.Second)
+			p.src.EXPECT().Dequeue().Return(nil).Maybe()
+			p.s.pump(p.st, p.now)
+			if p.st.needFormats || p.st.needResize {
+				t.Fatal("change not applied on retry")
+			}
+		})
+	}
+}

@@ -1,6 +1,7 @@
 package screencast
 
 import (
+	"errors"
 	"time"
 
 	"bnema.dev/purego-pipewire/pipewire"
@@ -252,22 +253,32 @@ func (s *Service) pump(st *stream, now time.Time) {
 		return
 	}
 	if st.needFormats && !st.inflight {
-		st.needFormats = false
 		formats, color := formatsFor(st)
-		if err := st.src.SetFormats(formats, color); err != nil {
+		switch err := st.src.SetFormats(formats, color); {
+		case errors.Is(err, pipewire.ErrVideoBorrowed):
+			// A buffer is still lent out: try again shortly.
+			s.wait(st.interval())
+		case err != nil:
 			s.log.Warn().Err(err).Str("stream", st.path).Msg("PipeWire format change failed")
 			s.closeSession(st.sess, true)
 			return
+		default:
+			st.needFormats = false
+			s.log.Info().Str("stream", st.path).Bool("hdr", st.hdr).Msg("PipeWire formats renegotiated")
 		}
-		s.log.Info().Str("stream", st.path).Bool("hdr", st.hdr).Msg("PipeWire formats renegotiated")
 	}
 	if st.needResize && !st.inflight {
-		st.needResize = false
-		st.fw, st.fh = 0, 0
-		if err := st.src.Resize(st.w, st.h); err != nil {
+		switch err := st.src.Resize(st.w, st.h); {
+		case errors.Is(err, pipewire.ErrVideoBorrowed):
+			// A buffer is still lent out: try again shortly.
+			s.wait(st.interval())
+		case err != nil:
 			s.log.Warn().Err(err).Str("stream", st.path).Msg("PipeWire resize failed")
 			s.closeSession(st.sess, true)
 			return
+		default:
+			st.needResize = false
+			st.fw, st.fh = 0, 0
 		}
 	}
 	if !st.announced && st.pwState >= pipewire.StreamStatePaused && st.nodeID != 0 {
@@ -321,7 +332,7 @@ func (st *stream) interval() time.Duration {
 // frame), none in flight and the interval has passed. When only the interval
 // is missing, it asks for a poll timeout.
 func (s *Service) frameDue(st *stream, now time.Time) bool {
-	if st.inflight || st.pwState != pipewire.StreamStateStreaming || st.needResize ||
+	if st.inflight || st.pwState != pipewire.StreamStateStreaming || st.needResize || st.needFormats ||
 		st.fw != st.w || st.fh != st.h || st.fw == 0 {
 		return false
 	}
