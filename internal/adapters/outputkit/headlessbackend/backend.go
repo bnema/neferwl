@@ -1,4 +1,4 @@
-package headless
+package headlessbackend
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"bnema.dev/zerowrap"
+	"github.com/bnema/neferwl/internal/adapters/headless"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/cursors"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/routing"
 	"github.com/bnema/neferwl/internal/adapters/xcursor"
@@ -48,10 +49,10 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 				return errors.Join(err, set.Wait())
 			}
 		}
-		cur := &Cursor{}
+		cur := &headless.Cursor{}
 		curs.Set(name, cur)
-		opts := Options{Cursor: cur, LoadCursor: xcursor.LoadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: o.HDR, RawHDR: o.Raw, Formats: ch.Formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.Presented, Frames: ch.Frames, Events: ch.Events, Captured: ch.Captured}
-		if !StartOutput(ctx, set, ch, domain.OutputInfo{Name: name, Width: size[0], Height: size[1]}, opts) {
+		opts := headless.Options{Cursor: cur, LoadCursor: xcursor.LoadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: o.HDR, RawHDR: o.Raw, Formats: ch.Formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.Presented, Frames: ch.Frames, Events: ch.Events, Captured: ch.Captured}
+		if !headless.StartOutput(ctx, set, ch, domain.OutputInfo{Name: name, Width: size[0], Height: size[1]}, opts) {
 			return set.Wait()
 		}
 	}

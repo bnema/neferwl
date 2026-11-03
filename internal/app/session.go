@@ -15,13 +15,13 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/drm"
 	"github.com/bnema/neferwl/internal/adapters/drm/supervisor"
-	"github.com/bnema/neferwl/internal/adapters/headless"
 	"github.com/bnema/neferwl/internal/adapters/headlessinput"
 	"github.com/bnema/neferwl/internal/adapters/hints"
 	"github.com/bnema/neferwl/internal/adapters/launcher"
 	"github.com/bnema/neferwl/internal/adapters/libinput"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/cursors"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/headlessbackend"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/routing"
 	"github.com/bnema/neferwl/internal/adapters/powerkey"
 	"github.com/bnema/neferwl/internal/adapters/sched"
@@ -412,7 +412,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 			})
 			return
 		}
-		done <- headless.Run(ctx, headless.BackendOptions{Sizes: sizes, Shots: opts.ScreenshotDir, HDR: opts.HeadlessHDR, Raw: opts.ScreenshotRaw}, apply, outputIO, curs, s.newRenderer, logging.For(ctx, "render"))
+		done <- headlessbackend.Run(ctx, headlessbackend.BackendOptions{Sizes: sizes, Shots: opts.ScreenshotDir, HDR: opts.HeadlessHDR, Raw: opts.ScreenshotRaw}, apply, outputIO, curs, s.newRenderer, logging.For(ctx, "render"))
 	}()
 
 	if hw != nil {

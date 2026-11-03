@@ -170,7 +170,7 @@ func TestAdapterImports(t *testing.T) {
 	const adapters = base + "internal/adapters/"
 	// Keep the shared-library allowlist here, not in the build-tag-sensitive
 	// go list output. All other cross-adapter dependencies must use ports.
-	libraries := strings.Fields("drm config sched seat watchdog fdwait busretry overlaydraw outputkit/routing outputkit/cursors outputkit/virtuals xcursor outputkit/capture outputkit/corewake outputkit/presented outputkit/surfaces captureallow clock hdrcursor logging peerexe sessionsecurity syncfile workspaceid xkb")
+	libraries := strings.Fields("drm config sched seat watchdog fdwait busretry overlaydraw outputkit/routing outputkit/cursors outputkit/virtuals outputkit/headlessbackend xcursor outputkit/capture outputkit/corewake outputkit/presented outputkit/surfaces captureallow clock hdrcursor logging peerexe sessionsecurity syncfile workspaceid xkb")
 	err := filepath.WalkDir("internal/adapters", func(dir string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -188,8 +188,8 @@ func TestAdapterImports(t *testing.T) {
 				if !strings.HasPrefix(name, adapters) || strings.HasPrefix(name, from+"/") {
 					continue
 				}
-				// Only the virtual host may reuse the headless owner implementation.
-				allowed := from == adapters+"outputkit/virtuals" && name == adapters+"headless"
+				// Only virtual hosting and headless orchestration reuse the headless owner.
+				allowed := (from == adapters+"outputkit/virtuals" || from == adapters+"outputkit/headlessbackend") && name == adapters+"headless"
 				for _, lib := range libraries {
 					allowed = allowed || name == adapters+lib
 				}
