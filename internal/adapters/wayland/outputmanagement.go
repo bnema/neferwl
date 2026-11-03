@@ -149,7 +149,7 @@ func (m *outputManager) update() {
 			continue // addHead has already sent the initial state.
 		}
 		changed := !reflect.DeepEqual(h.info, info)
-		placementChanged := m.places[info.Info.Name] != m.s.placementFor(info.Info.Name)
+		placementChanged := !m.places[info.Info.Name].Equal(m.s.placementFor(info.Info.Name))
 		if !changed && !placementChanged {
 			continue
 		}

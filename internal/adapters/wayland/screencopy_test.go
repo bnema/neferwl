@@ -17,10 +17,10 @@ import (
 	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 
+	"bnema.dev/wlturbo"
 	wlr "github.com/bnema/go-wayland-bindings/server/wlrscreencopy"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
@@ -382,7 +382,7 @@ func applyOutputs(t *testing.T, s *Server, commands chan<- ports.ClientCommand, 
 	flushCommands(t, s, commands)
 	applied := false
 	if !s.display.Do(func() {
-		applied = len(s.outputs) == len(c.Outputs) && slices.Equal(s.outputPlaces, c.Outputs)
+		applied = len(s.outputs) == len(c.Outputs) && slices.EqualFunc(s.outputPlaces, c.Outputs, domain.OutputPlacement.Equal)
 	}) {
 		t.Fatal("display stopped")
 	}

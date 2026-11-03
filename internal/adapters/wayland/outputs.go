@@ -206,7 +206,7 @@ func (s *Server) publicOutputOrigin() (int, int) {
 // advertised, gone ones withdrawn (their layer surfaces are closed), and
 // changed ones resent.
 func (s *Server) setOutputs(c ports.SetOutputs) {
-	changed := !slices.Equal(s.outputPlaces, c.Outputs)
+	changed := !slices.EqualFunc(s.outputPlaces, c.Outputs, domain.OutputPlacement.Equal)
 	focusChanged := s.focusedOutput != c.Focused
 	s.outputPlaces = append(domain.Layout(nil), c.Outputs...)
 	xChanged := s.xspace.Set(s.outputPlaces)
@@ -260,7 +260,7 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 			s.addOutput(p)
 			continue
 		}
-		if o.place == p {
+		if o.place.Equal(p) {
 			continue
 		}
 		// A 90° to 270° change keeps the logical size: lock surfaces are

@@ -171,7 +171,12 @@ func (c *Core) layoutInto(l domain.Layout) domain.Layout {
 	l = l[:0]
 	for _, s := range c.screens {
 		if s.name() != "" {
-			l = append(l, s.placement())
+			p := s.placement()
+			if cfg, ok := c.outputConfig(s.name()); ok {
+				p.Inputs = slices.Clone(cfg.Inputs)
+				p.InputOrder = c.outputIndex(s.name())
+			}
+			l = append(l, p)
 		}
 	}
 	return l

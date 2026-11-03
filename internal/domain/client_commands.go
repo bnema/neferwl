@@ -1,5 +1,7 @@
 package domain
 
+import "slices"
+
 // GestureKind is a touchpad gesture a client can receive
 // (zwp_pointer_gestures_v1).
 type GestureKind uint8
@@ -23,7 +25,14 @@ type OutputPlacement struct {
 	// Primary is output.<name>.primary: the pointer starts on it.
 	Primary bool
 	// Isolated outputs are not reachable by the unbound pointer.
-	Isolated bool
+	Isolated   bool
+	InputOrder int      // config order for binding precedence
+	Inputs     []string // device-name globs, in config precedence order
+}
+
+// Equal compares placement values, including device globs.
+func (o OutputPlacement) Equal(other OutputPlacement) bool {
+	return o.Info == other.Info && o.X == other.X && o.Y == other.Y && o.Width == other.Width && o.Height == other.Height && o.Scale == other.Scale && o.Transform == other.Transform && o.Primary == other.Primary && o.Isolated == other.Isolated && o.InputOrder == other.InputOrder && slices.Equal(o.Inputs, other.Inputs)
 }
 
 // Contains reports whether the logical point is on the output.

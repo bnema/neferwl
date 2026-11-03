@@ -951,7 +951,7 @@ func (c *Core) syncOutputs(ctx context.Context) error {
 		return err
 	}
 	c.sent.outputsSeq = seq
-	if c.ch.Layouts != nil && !slices.Equal(v.Outputs, c.sent.outputs.Outputs) {
+	if c.ch.Layouts != nil && !slices.EqualFunc(v.Outputs, c.sent.outputs.Outputs, domain.OutputPlacement.Equal) {
 		latest(c.ch.Layouts, v.Outputs)
 	}
 	c.sent.outputs = v
@@ -991,7 +991,7 @@ func latest[T any](ch chan T, v T) {
 }
 
 func sameOutputs(a, b ports.SetOutputs) bool {
-	return a.Focused == b.Focused && slices.Equal(a.Outputs, b.Outputs) && slices.Equal(a.Off, b.Off)
+	return a.Focused == b.Focused && slices.EqualFunc(a.Outputs, b.Outputs, domain.OutputPlacement.Equal) && slices.Equal(a.Off, b.Off)
 }
 
 // allLayers lists the layer surfaces of every output.

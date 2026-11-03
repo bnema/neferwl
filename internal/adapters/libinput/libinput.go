@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -689,6 +691,7 @@ func translate(ev uintptr, opts Options, p *pointer, in *inputState) ([]ports.In
 	switch eventType(ev) {
 	case evDeviceAdded:
 		events = in.addDevice(dev, deviceName(dev))
+		p.addDevice(dev, deviceName(dev))
 		opts.Log.Info().Str("device", deviceName(dev)).Msg("input device added")
 		if in.configurable(dev) && !in.devices[dev] {
 			in.devices[deviceRef(dev)] = true
@@ -697,12 +700,13 @@ func translate(ev uintptr, opts Options, p *pointer, in *inputState) ([]ports.In
 	case evDeviceRemoved:
 		opts.Log.Info().Str("device", deviceName(dev)).Msg("input device removed")
 		events = in.removeDevice(dev)
+		p.removeDevice(dev)
 		if in.devices[dev] {
 			delete(in.devices, dev)
 			deviceUnref(dev)
 		}
 	default:
-		out, err := translateEvent(ev, opts, p, in, state)
+		out, err := translateEvent(ev, opts, p.forDevice(dev), in, state)
 		if err != nil {
 			return nil, err
 		}
@@ -922,6 +926,10 @@ type pointer struct {
 	layout     domain.Layout
 	touched    bool // false until the user moves it: it follows the primary output
 	constraint domain.PointerConstraint
+	all        domain.Layout
+	names      map[uintptr]string
+	devices    map[uintptr]*pointer
+	active     *pointer
 }
 
 // newPointer starts at the centre of the primary output, else the first.
@@ -935,6 +943,12 @@ func newPointer(l domain.Layout) *pointer {
 // Until it is first moved it stays centred on the primary output, which
 // may be plugged in after the others.
 func (p *pointer) setLayout(l domain.Layout) {
+	p.all = slices.Clone(l)
+	for i := range p.all {
+		p.all[i].Inputs = slices.Clone(l[i].Inputs)
+	}
+	slices.SortStableFunc(p.all, func(a, b domain.OutputPlacement) int { return a.InputOrder - b.InputOrder })
+	defer p.rebind()
 	// Keep the full layout port unchanged; unbound devices use only reachable outputs.
 	p.layout = make(domain.Layout, 0, len(l))
 	for _, o := range l {
@@ -984,6 +998,10 @@ func (p *pointer) set(x, y float64) (float64, float64) {
 // the pointer to core's cursor, which stood still meanwhile; a confined
 // pointer moves inside. A warp moves it to core's cursor.
 func (p *pointer) constrain(c domain.PointerConstraint) {
+	if p.active != nil && p.active != p {
+		p.active.constrain(c)
+		return
+	}
 	if c.Warp || c.Mode == domain.ConstraintLock || p.constraint.Mode == domain.ConstraintLock {
 		p.x, p.y = p.layout.Clamp(c.X, c.Y, c.X, c.Y)
 	}
@@ -994,9 +1012,14 @@ func (p *pointer) constrain(c domain.PointerConstraint) {
 // bounds is the rectangle holding every output.
 func (p *pointer) bounds() domain.Rect {
 	var r domain.Rect
-	for _, o := range p.layout {
-		r.W = max(r.W, o.X+o.Width)
-		r.H = max(r.H, o.Y+o.Height)
+	for i, o := range p.layout {
+		if i == 0 {
+			r = domain.Rect{X: o.X, Y: o.Y, W: o.Width, H: o.Height}
+			continue
+		}
+		right, bottom := max(r.X+r.W, o.X+o.Width), max(r.Y+r.H, o.Y+o.Height)
+		r.X, r.Y = min(r.X, o.X), min(r.Y, o.Y)
+		r.W, r.H = right-r.X, bottom-r.Y
 	}
 	return r
 }
@@ -1005,8 +1028,82 @@ func (p *pointer) bounds() domain.Rect {
 // transform) on the output under the pointer;
 // motion tells the device moved it.
 func (p *pointer) moved(move func(output string, x, y float64, motion bool), motion bool) {
+	if p.active != nil && p.active != p {
+		p.active.moved(move, motion)
+		return
+	}
 	if o, ok := p.layout.At(p.x, p.y); ok && move != nil {
 		tx, ty := o.ToTarget(p.x, p.y)
 		move(o.Info.Name, tx, ty, motion)
 	}
+}
+
+func (p *pointer) addDevice(dev uintptr, name string) {
+	if p.names == nil {
+		p.names = map[uintptr]string{}
+	}
+	p.names[dev] = name
+	p.rebind()
+}
+func (p *pointer) removeDevice(dev uintptr) {
+	if p.active == p.devices[dev] {
+		p.active = nil
+	}
+	delete(p.names, dev)
+	delete(p.devices, dev)
+}
+func (p *pointer) rebind() {
+	if p.devices == nil {
+		p.devices = map[uintptr]*pointer{}
+	}
+	for dev, name := range p.names {
+		var bound *domain.OutputPlacement
+		for i := range p.all {
+			for _, glob := range p.all[i].Inputs {
+				if ok, _ := path.Match(glob, name); ok {
+					bound = &p.all[i]
+					break
+				}
+			}
+			if bound != nil {
+				break
+			}
+		}
+		if bound == nil {
+			if p.active == p.devices[dev] {
+				p.active = nil
+			}
+			delete(p.devices, dev)
+			continue
+		}
+		q := p.devices[dev]
+		if q == nil {
+			q = &pointer{}
+			p.devices[dev] = q
+		}
+		// This private layout explicitly admits its isolated target.
+		target := *bound
+		target.Isolated = false
+		q.layout = domain.Layout{target}
+		if !q.touched {
+			q.x = float64(target.X) + float64(target.Width)/2
+			q.y = float64(target.Y) + float64(target.Height)/2
+		} else {
+			q.x, q.y = q.layout.Clamp(q.x, q.y, q.x, q.y)
+		}
+	}
+}
+func (p *pointer) forDevice(dev uintptr) *pointer {
+	q := p.devices[dev]
+	if q == nil {
+		q = p
+	}
+	if p.active != q {
+		if p.active != nil {
+			p.active.constraint = domain.PointerConstraint{}
+		}
+		p.constraint = domain.PointerConstraint{}
+		p.active = q
+	}
+	return q
 }
