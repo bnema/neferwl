@@ -19,6 +19,7 @@ type managementEvents struct {
 	client     *wlturbo.Display
 	modes      chan uint32
 	headEvents chan [2]uint32
+	metadata   chan [2]string
 }
 
 func (p *managementEvents) Dispatch(e *wlturbo.Event) {
@@ -27,7 +28,7 @@ func (p *managementEvents) Dispatch(e *wlturbo.Event) {
 		msg[1] = e.Uint32()
 	}
 	if e.Opcode == uint16(wlr.ZwlrOutputManagerV1EventHead) {
-		h := &managementHeadEvents{client: p.client, modes: p.modes, events: p.headEvents}
+		h := &managementHeadEvents{client: p.client, modes: p.modes, events: p.headEvents, metadata: p.metadata}
 		h.SetID(msg[1])
 		registerWireProxy(p.client, h)
 	}
@@ -36,12 +37,26 @@ func (p *managementEvents) Dispatch(e *wlturbo.Event) {
 
 type managementHeadEvents struct {
 	wlturbo.BaseProxy
-	client *wlturbo.Display
-	modes  chan uint32
-	events chan [2]uint32
+	client   *wlturbo.Display
+	modes    chan uint32
+	events   chan [2]uint32
+	metadata chan [2]string
 }
 
 func (p *managementHeadEvents) Dispatch(e *wlturbo.Event) {
+	if p.metadata != nil {
+		switch uint32(e.Opcode) {
+		case wlr.ZwlrOutputHeadV1EventName:
+			p.metadata <- [2]string{"name", e.String()}
+		case wlr.ZwlrOutputHeadV1EventMake:
+			p.metadata <- [2]string{"make", e.String()}
+		case wlr.ZwlrOutputHeadV1EventModel:
+			p.metadata <- [2]string{"model", e.String()}
+		case wlr.ZwlrOutputHeadV1EventPhysicalSize:
+			p.metadata <- [2]string{"physical", "sent"}
+		}
+	}
+
 	if p.events != nil {
 		value := uint32(0)
 		switch uint32(e.Opcode) {
@@ -777,5 +792,74 @@ func TestOutputManagementCustomMode(t *testing.T) {
 			}
 			waitManagementEvent(t, c, proxy.events, uint32(wlr.ZwlrOutputConfigurationV1EventSucceeded))
 		})
+	}
+}
+
+//testpolicy:realtime real Wayland display goroutine and output-apply channel
+func TestVirtualOutputManagement(t *testing.T) {
+	s, _, apply, replies, dir := outputTestServer(t)
+	heads := testHead()
+	heads.Heads[0].Info.Name = "tv"
+	heads.Heads[0].Info.Virtual = true
+	// Virtual protocol identity must not leak physical metadata.
+	heads.Heads[0].Info.Make, heads.Heads[0].Info.Model = "physical", "panel"
+	heads.Heads[0].Info.PhysicalW, heads.Heads[0].Info.PhysicalH = 500, 300
+	s.display.Do(func() { s.setOutputHeads(heads) })
+	c := protocolClient(t, s, dir)
+	id := bindVersion(t, c, "zwlr_output_manager_v1", 4)
+	manager := &managementEvents{events: make(chan [2]uint32, 32), metadata: make(chan [2]string, 16), client: c}
+	manager.SetID(id)
+	registerWireProxy(c, manager)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	head := recvManagement(t, manager.events)
+	if head[0] != wlr.ZwlrOutputManagerV1EventHead {
+		t.Fatal(head)
+	}
+	var done [2]uint32
+	for done[0] != wlr.ZwlrOutputManagerV1EventDone {
+		done = recvManagement(t, manager.events)
+	}
+	metadata := map[string]string{}
+	for len(manager.metadata) > 0 {
+		pair := <-manager.metadata
+		metadata[pair[0]] = pair[1]
+	}
+	if metadata["name"] != "tv" || metadata["make"] != "NeferWL" || metadata["model"] != "Virtual" || metadata["physical"] != "" {
+		t.Fatal(metadata)
+	}
+	for _, enabled := range []bool{true, false, true} {
+		cfg := c.AllocateID()
+		proxy := &managementEvents{events: make(chan [2]uint32, 8), client: c}
+		proxy.SetID(cfg)
+		registerWireProxy(c, proxy)
+		requestProtocol(t, c, id, wlr.ZwlrOutputManagerV1RequestCreateConfiguration, cfg, done[1])
+		if enabled {
+			ch := c.AllocateID()
+			registerProtocol(t, c, ch)
+			requestProtocol(t, c, cfg, wlr.ZwlrOutputConfigurationV1RequestEnableHead, ch, head[1])
+			requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetCustomMode, int32(1280), int32(720), int32(30000))
+		} else {
+			requestProtocol(t, c, cfg, wlr.ZwlrOutputConfigurationV1RequestDisableHead, head[1])
+		}
+		requestProtocol(t, c, cfg, wlr.ZwlrOutputConfigurationV1RequestApply)
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+		var req domain.OutputApply
+		select {
+		case req = <-apply:
+		case <-waylandDeadline(time.Second):
+			t.Fatal("no virtual apply")
+		}
+		if len(req.Heads) != 1 || req.Heads[0].Name != "tv" || req.Heads[0].Enabled != enabled {
+			t.Fatal(req)
+		}
+		if enabled && (!req.Heads[0].Custom || req.Heads[0].Mode.Width != 1280 || req.Heads[0].Mode.Height != 720 || req.Heads[0].Mode.RefreshMilli != 30000) {
+			t.Fatal(req)
+		}
+		replies <- domain.OutputApplied{ID: req.ID}
+		waitManagementEvent(t, c, proxy.events, uint32(wlr.ZwlrOutputConfigurationV1EventSucceeded))
 	}
 }

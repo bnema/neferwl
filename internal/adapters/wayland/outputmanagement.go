@@ -6,8 +6,8 @@ import (
 
 	"github.com/bnema/neferwl/internal/domain"
 
-	wlr "github.com/bnema/go-wayland-bindings/server/wlroutputmanagement"
 	"bnema.dev/purego-libwayland/server"
+	wlr "github.com/bnema/go-wayland-bindings/server/wlroutputmanagement"
 )
 
 type managementHead struct {
@@ -81,15 +81,19 @@ func (m *outputManager) addHead(info domain.OutputHead) {
 	m.heads[info.Info.Name] = h
 	m.res.SendHead(res)
 	res.SendName(info.Info.Name)
-	desc := strings.Join(strings.Fields(info.Info.Make+" "+info.Info.Model+" "+info.Info.Serial+" ("+info.Info.Name+")"), " ")
+	make, model, serial := info.Info.Make, info.Info.Model, info.Info.Serial
+	if info.Info.Virtual {
+		make, model, serial = "NeferWL", "Virtual", ""
+	}
+	desc := strings.Join(strings.Fields(make+" "+model+" "+serial+" ("+info.Info.Name+")"), " ")
 	res.SendDescription(desc)
-	if info.Info.PhysicalW > 0 && info.Info.PhysicalH > 0 {
+	if !info.Info.Virtual && info.Info.PhysicalW > 0 && info.Info.PhysicalH > 0 {
 		res.SendPhysicalSize(int32(info.Info.PhysicalW), int32(info.Info.PhysicalH))
 	}
 	if res.Version() >= 2 {
-		res.SendMake(info.Info.Make)
-		res.SendModel(info.Info.Model)
-		res.SendSerialNumber(info.Info.Serial)
+		res.SendMake(make)
+		res.SendModel(model)
+		res.SendSerialNumber(serial)
 	}
 	for _, mode := range info.Modes {
 		mr, e := wlr.NewZwlrOutputModeV1(res.Client(), min(res.Version(), 3), 0, managementModeHandler{})
