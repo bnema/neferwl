@@ -1124,8 +1124,10 @@ func (p *pointer) forEvent(dev uintptr, kind int32) *pointer {
 // decodeMotion is the production boundary immediately after native field reads.
 // Stamp the concrete value before its only InputEvent boxing conversion.
 func decodeMotion(p *pointer, id domain.InputDeviceID, dx, dy, rawDX, rawDY float64, at time.Duration) ports.PointerMotion {
-	m := p.move(dx, dy)
-	m.Device = id
-	m.UnaccelDX, m.UnaccelDY, m.Time = rawDX, rawDY, at
-	return m
+	s := p.scale()
+	dx, dy = dx/s, dy/s
+	if p.constraint.Mode != domain.ConstraintLock {
+		p.set(p.x+dx, p.y+dy)
+	}
+	return ports.PointerMotion{Device: id, X: p.x, Y: p.y, DX: dx, DY: dy, UnaccelDX: rawDX, UnaccelDY: rawDY, Time: at}
 }
