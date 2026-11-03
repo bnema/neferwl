@@ -56,7 +56,9 @@ type Options struct {
 	Frames   chan<- domain.OutputFrame
 	Events   chan<- ports.OutputEvent
 	Captured chan<- domain.CaptureDone
-	// Clock paces the renderer trim (nil: system clock).
+	// RefreshMilli limits presentation to this refresh in mHz; zero renders immediately.
+	RefreshMilli int
+	// Clock paces presentation and renderer trim (nil: system clock).
 	Clock ports.Clock
 }
 
@@ -232,6 +234,24 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 	if clk == nil {
 		clk = clock.System{}
 	}
+	// Anchor the injected clock to the presentation protocol's monotonic epoch.
+	clockStart := clk.Now()
+	var monoStart unix.Timespec
+	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &monoStart)
+	var period time.Duration
+	if opts.RefreshMilli > 0 {
+		period = time.Second * 1000 / time.Duration(opts.RefreshMilli)
+		if time.Second*1000%time.Duration(opts.RefreshMilli) != 0 {
+			period++ // Round up so fractional nanoseconds cannot exceed the refresh.
+		}
+	}
+	var pace ports.Timer
+	var paceDue <-chan time.Time
+	defer func() {
+		if pace != nil {
+			pace.Stop()
+		}
+	}()
 	trim := clk.NewTicker(trimEvery)
 	defer trim.Stop()
 	// One timer for the wait of held requests, reset per pass (a time.After
@@ -266,7 +286,13 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		if holdDue == nil {
 			holdTimer.Stop()
 		}
+		ticked := false
+		var tickTime time.Time
 		select {
+		case <-paceDue:
+			paceDue = nil
+			ticked = true
+			tickTime = clk.Now()
 		case <-holdDue:
 			continue
 		case <-ctx.Done():
@@ -426,6 +452,17 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			opts.report(&reports, nil, seen)
 			continue
 		}
+		if period > 0 && !ticked {
+			if paceDue == nil {
+				if pace == nil {
+					pace = clk.NewTimer(period)
+				} else {
+					pace.Reset(period)
+				}
+				paceDue = pace.C()
+			}
+			continue
+		}
 		dirty = false
 		if !opts.protected() && opts.Cursor != nil && opts.LoadCursor != nil && (scene.Scale != cursorScale || scene.Transform != cursorTransform) {
 			cursorScale, cursorTransform = scene.Scale, scene.Transform
@@ -573,7 +610,12 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		pipeline.EndGate(nil)
 		requests.List = capture.Waiting(requests.List, scene)
 		frame++
-		opts.report(&reports, shows.flipInfo(scene, drawn, table.Kept), seen)
+		flip := shows.flipInfo(scene, drawn, table.Kept)
+		if period > 0 {
+			flip.When = time.Duration(monoStart.Nano()) + tickTime.Sub(clockStart)
+			flip.Refresh = period
+		}
+		opts.report(&reports, flip, seen)
 		if scene.Animating {
 			corewake.Send(opts.Frames, opts.Name)
 		}

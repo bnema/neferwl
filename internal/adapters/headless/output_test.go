@@ -756,3 +756,64 @@ func TestRunFinalizesLastFrameDuration(t *testing.T) {
 		}
 	})
 }
+
+func TestRunOutputRefreshPacing(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const period = 20 * time.Millisecond
+		scenes := make(chan domain.Scene, 8)
+		wakes := make(chan domain.OutputFrame, 8)
+		reports := make(chan ports.OutputPresented, 8)
+		sink := portsmocks.NewMockPresentationSink(t)
+		sink.EXPECT().Push(mock.Anything).Run(func(p ports.OutputPresented) { reports <- p })
+		r, f := recordingRenderer(t, nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() {
+			done <- RunOutput(ctx, Options{Width: 2, Height: 2, RefreshMilli: 50000, Presented: sink, Frames: wakes,
+				NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
+		}()
+		assertFrames := func(n int) {
+			t.Helper()
+			synctest.Wait()
+			if s, _ := f.snapshot(); len(s) != n {
+				t.Fatalf("got %d frames, want %d", len(s), n)
+			}
+			if len(reports) != n || len(wakes) != n {
+				t.Fatalf("reports=%d wakes=%d, want %d", len(reports), len(wakes), n)
+			}
+		}
+		scenes <- domain.Scene{Seq: 1, Animating: true}
+		assertFrames(0)
+		time.Sleep(period - time.Nanosecond)
+		assertFrames(0)
+		scenes <- domain.Scene{Seq: 2, Animating: true}
+		assertFrames(0)
+		time.Sleep(time.Nanosecond)
+		assertFrames(1)
+		if s, _ := f.snapshot(); s[0].Seq != 2 {
+			t.Fatalf("did not coalesce to latest scene: %+v", s)
+		}
+		scenes <- domain.Scene{Seq: 3, Animating: true}
+		assertFrames(1)
+		time.Sleep(period)
+		assertFrames(2)
+		first, second := <-reports, <-reports
+		if first.Flip.Refresh != period || second.Flip.When-first.Flip.When != period {
+			t.Fatalf("presentation timing: first=%+v second=%+v", first.Flip, second.Flip)
+		}
+		// Idle refreshes do not draw or wake core.
+		time.Sleep(3 * period)
+		synctest.Wait()
+		if s, _ := f.snapshot(); len(s) != 2 {
+			t.Fatalf("idle output rendered %d frames", len(s))
+		}
+		// Cancellation does not wait for a pending refresh.
+		scenes <- domain.Scene{Seq: 4, Animating: true}
+		synctest.Wait()
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
+}
