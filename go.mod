@@ -6,7 +6,7 @@ require (
 	bnema.dev/kvconf v0.2.0
 	bnema.dev/purego v0.13.0-bnema.3
 	bnema.dev/purego-libwayland v0.13.0
-	bnema.dev/purego-pipewire v0.4.1-0.20261103173652-9369b45ac0de
+	bnema.dev/purego-pipewire v0.4.1-0.20261103175857-56d00cf5a3ec
 	bnema.dev/purego-vulkan v0.7.0
 	bnema.dev/wlturbo v0.7.0
 	bnema.dev/xturbo v0.1.0
