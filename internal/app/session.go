@@ -196,10 +196,14 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	if s.path == "" {
 		s.path = config.DefaultPath()
 	}
-	if s.hw == nil {
+	{
 		traceDamage := logging.Enabled(ctx, "render-damage")
 		s.newRenderer = func(w, h int) (ports.Renderer, error) {
-			return s.gpu.NewRenderer(w, h, domain.RendererOptions{Virtual: true, Readback: opts.ScreenshotRaw, TraceDamage: traceDamage})
+			device := s.gpu
+			if s.hw != nil {
+				device = s.hw.RenderDevice()
+			}
+			return device.NewRenderer(w, h, domain.RendererOptions{Virtual: true, Readback: opts.ScreenshotRaw, TraceDamage: traceDamage})
 		}
 	}
 	return s, nil
@@ -408,7 +412,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 		apply := core.NewOutputApply(core.NewOutputOverrides(opts.Config, hw == nil))
 		if hw != nil {
 			done <- safe("output", func() error {
-				return hw.RunOutputs(ctx, opts.Config, apply, outputIO, curs, logging.For(ctx, "drm"))
+				return hw.RunOutputs(ctx, opts.Config, apply, outputIO, curs, s.newRenderer, logging.For(ctx, "drm"))
 			})
 			return
 		}

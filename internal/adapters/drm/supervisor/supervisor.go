@@ -348,6 +348,9 @@ func wantFromConfig(cfg domain.Config) drm.Want {
 	r := cfg.Render
 	want := drm.Want{Disabled: map[string]bool{}, Modes: map[string][3]float64{}, HDR: map[string]drm.HDRSettings{}, NoScanout: !r.DirectScanout, NoTearing: !r.Tearing, NoVRR: !r.VRR, VRRFlipGap: r.VRRFlipGap}
 	for _, o := range cfg.Outputs {
+		if o.Virtual {
+			continue
+		}
 		nits := o.SDRBrightness
 		if nits == 0 {
 			nits = domain.DefaultSDRBrightness

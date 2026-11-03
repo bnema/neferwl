@@ -18,6 +18,21 @@ func (run *outputsRun) onStopped(stopped routing.Stopped) (error, bool) {
 		return nil, false
 	}
 	name := stopped.Name
+	if run.virtuals != nil && run.virtuals.Owns(name) {
+		err := run.virtuals.Remove(run.ctx, name)
+		if run.ctx.Err() != nil {
+			return errors.Join(err, run.set.Wait()), true
+		}
+		run.beginRecovery(err)
+		if run.policy.Recovering {
+			return run.finishRecovery()
+		}
+		run.publishInventory()
+		if err != nil {
+			run.log.Error().Err(err).Str("output", name).Msg("virtual output stopped")
+		}
+		return nil, false
+	}
 	output := run.outputs[name]
 	err := run.set.Finish(name)
 	// finish observes done after the deferred Close. Only affirmative
@@ -43,14 +58,7 @@ func (run *outputsRun) onStopped(stopped routing.Stopped) (error, bool) {
 	if run.ctx.Err() != nil {
 		return errors.Join(err, run.set.Wait()), true
 	}
-	if run.policy.OnOutputFailure(err) {
-		// The backend currently owns one shared render device. Cancel every
-		// consumer first; normal stopped handling joins and retires each lifetime.
-		for n, r := range run.set.Outs {
-			run.stopping[n] = false
-			r.Stop()
-		}
-	}
+	run.beginRecovery(err)
 	restart := run.stopping[name]
 	delete(run.stopping, name)
 	run.curs.Set(name, nil)
@@ -84,25 +92,7 @@ func (run *outputsRun) onStopped(stopped routing.Stopped) (error, bool) {
 		if len(run.set.Outs) > 0 {
 			return nil, false
 		}
-		old := run.b.render
-		run.b.render = nil // failure cleanup must not close the lost device again.
-		run.log.Warn().Str("card", run.b.renderInfo.Path).Msg("render device lost, reopening")
-		next, reopenErr := reopenRender(run.b.opener, run.b.renderInfo, old, &run.policy.ReopenLimiter)
-		if reopenErr != nil {
-			return errors.Join(reopenErr, run.set.Wait()), true
-		}
-		run.b.render = next
-		if lost := core.LostFormats(run.b.advertised, next.DMABuf().Formats); lost > 0 {
-			run.log.Warn().Str("card", run.b.renderInfo.Path).Int("lost_formats", lost).Msg("render device lost advertised formats")
-		}
-		for _, c := range run.b.cards {
-			c.SetRender(next)
-		}
-		for _, name := range run.policy.OnReopened() {
-			run.addCard(name)
-		}
-		run.scan()
-		return nil, false
+		return run.finishRecovery()
 	}
 
 	if err != nil {
@@ -155,4 +145,39 @@ func (run *outputsRun) stopLocalDeviceUsers(card *drmCard, name string, err erro
 			run.set.Outs[n].Stop()
 		}
 	}
+}
+
+// beginRecovery cancels every consumer of the shared device, including virtuals.
+func (run *outputsRun) beginRecovery(err error) {
+	if run.policy.OnOutputFailure(err) {
+		for n, r := range run.set.Outs {
+			run.stopping[n] = false
+			r.Stop()
+		}
+	}
+}
+
+func (run *outputsRun) finishRecovery() (error, bool) {
+	if len(run.set.Outs) > 0 {
+		return nil, false
+	}
+	old := run.b.render
+	run.b.render = nil // failure cleanup must not close the lost device again.
+	run.log.Warn().Str("card", run.b.renderInfo.Path).Msg("render device lost, reopening")
+	next, reopenErr := reopenRender(run.b.opener, run.b.renderInfo, old, &run.policy.ReopenLimiter)
+	if reopenErr != nil {
+		return errors.Join(reopenErr, run.set.Wait()), true
+	}
+	run.b.render = next
+	if lost := core.LostFormats(run.b.advertised, next.DMABuf().Formats); lost > 0 {
+		run.log.Warn().Str("card", run.b.renderInfo.Path).Int("lost_formats", lost).Msg("render device lost advertised formats")
+	}
+	for _, c := range run.b.cards {
+		c.SetRender(next)
+	}
+	for _, name := range run.policy.OnReopened() {
+		run.addCard(name)
+	}
+	run.scan()
+	return nil, false
 }

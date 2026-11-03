@@ -6,14 +6,15 @@ import (
 	"sync"
 	"time"
 
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/drm"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/cursors"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/routing"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/virtuals"
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/zerowrap"
 )
 
 // RunOutputs drives every output of every card: one goroutine per output,
@@ -22,7 +23,7 @@ import (
 // output configuration: reloads and protocol requests go through apply, and
 // each configuration is finished when its outputs are ready, fail or time
 // out. It returns when ctx ends, after every output is closed.
-func (b *Backend) RunOutputs(ctx context.Context, initial domain.Config, apply *core.OutputApply, ch routing.Channels, curs *cursors.Router, log zerowrap.Logger) error {
+func (b *Backend) RunOutputs(ctx context.Context, initial domain.Config, apply *core.OutputApply, ch routing.Channels, curs *cursors.Router, newRenderer func(int, int) (ports.Renderer, error), log zerowrap.Logger) error {
 	run := outputsRun{b: b, ctx: ctx, apply: apply, ch: ch, curs: curs, log: log, appLog: logging.For(ctx, "app")}
 	run.ctx, run.cancel = context.WithCancel(run.ctx)
 	// A reader that fails sends at most once; cards come and go, so the
@@ -39,6 +40,7 @@ func (b *Backend) RunOutputs(ctx context.Context, initial domain.Config, apply *
 	run.set = routing.NewSet(run.ctx, run.ch.Captured, run.ch.Routes())
 	run.set.Attach = run.ch.Content
 	run.set.WireSecurity(run.ch)
+	run.virtuals = virtuals.New(run.set, run.ch, curs, newRenderer, log)
 	run.policy = core.OutputPolicy{RenderCard: run.b.renderInfo.Name, ReopenLimiter: core.ReopenLimiter{Clock: run.b.clock}}
 	protected := func() bool { return run.set.State.Protected || securitySnapshot(run.ch.Security).Protected }
 	run.leases = routing.NewLeasePublisher(run.ctx, run.ch.LeaseEvents, func() bool { return run.seatActive }, protected, run.log)
@@ -91,6 +93,7 @@ type outputsRun struct {
 	active             <-chan bool
 	seatActive         bool
 	set                *routing.Set
+	virtuals           *virtuals.Host
 	policy             core.OutputPolicy
 	leases             *routing.LeasePublisher
 	hotplug            chan domain.HotplugEvent

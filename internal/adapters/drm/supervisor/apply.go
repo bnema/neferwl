@@ -31,7 +31,7 @@ func (run *outputsRun) configure(cfg domain.Config) {
 		}
 	}
 	for name := range run.set.Outs {
-		if !w.Disabled[name] {
+		if !run.virtuals.Owns(name) && !w.Disabled[name] {
 			required[name] = true
 		}
 	}

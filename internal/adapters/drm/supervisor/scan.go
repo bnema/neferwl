@@ -65,6 +65,13 @@ func (run *outputsRun) scan() {
 			o.Security, o.Frames = run.ch.Security, run.ch.Frames
 			o.Events = run.ch.Events
 			name := o.Info().Name
+			// A newly connected physical head takes precedence over a virtual
+			// declaration. Join that owner before reusing the routing name.
+			if run.virtuals.Owns(name) {
+				if err := run.virtuals.Remove(run.ctx, name); err != nil {
+					scanErrors = append(scanErrors, err)
+				}
+			}
 			if other := run.cards[name]; other != nil && other != c {
 				// Core and clients know outputs by connector name.
 				run.log.Warn().Str("connector", name).Str("card", c.Path()).Msg("connector name already used by another card; ignored")
@@ -166,6 +173,10 @@ func (run *outputsRun) scan() {
 		}
 	}
 	run.publishInventory()
+	if err := run.virtuals.Sync(run.ctx, run.apply.Virtuals()); err != nil {
+		scanErrors = append(scanErrors, err)
+	}
+	run.publishInventory()
 	run.complete(run.progress.ScanError(errors.Join(scanErrors...)))
 	run.barrier()
 }
@@ -182,5 +193,6 @@ func (run *outputsRun) publishInventory() {
 		inventory.Heads = append(inventory.Heads, run.lastHeads[card]...)
 	}
 	run.currentHeads = inventory
+	inventory.Heads = append(inventory.Heads, run.virtuals.Heads()...)
 	run.apply.Heads(inventory)
 }
