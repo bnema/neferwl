@@ -2,6 +2,7 @@ package headlessinput
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -305,4 +306,33 @@ func TestScriptDevices(t *testing.T) {
 	if len(input) != 0 {
 		t.Fatal("duplicate announcement")
 	}
+}
+
+func TestCancelledAnnouncementClosesKeymap(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		km, err := xkb.New(xkb.RMLVO{Layout: "us"})
+		if err != nil {
+			t.Skip(err)
+		}
+		// Observe the real resource fields without replacing native callbacks or
+		// calling through unloaded native function pointers after Close.
+		resources := reflect.ValueOf(km).Elem()
+		if resources.FieldByName("state").Uint() == 0 {
+			t.Fatal("keymap did not acquire state")
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		input := make(chan ports.InputEvent)
+		done := make(chan error, 1)
+		go func() { done <- Run(ctx, km, nil, nil, input, nil, nil, logging.For(ctx, "input")) }()
+		synctest.Wait() // blocked announcing: no input receiver exists
+		cancel()
+		if err := <-done; err != context.Canceled {
+			t.Fatal(err)
+		}
+		for _, field := range []string{"state", "mapPtr", "ctx", "lib", "libc"} {
+			if resources.FieldByName(field).Uint() != 0 {
+				t.Fatalf("%s leaked on cancelled announcement", field)
+			}
+		}
+	})
 }

@@ -29,6 +29,7 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 // RunSecure snapshots the protection epoch before each event enters the input
 // queue. Scripts are a headless test transport, never an unlock authority.
 func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script <-chan string, input chan<- ports.InputEvent, layouts <-chan domain.Layout, moveCursor func(output string, x, y float64), log zerowrap.Logger, security ports.SessionSecurity) error {
+	defer func() { km.Close() }()
 	activeDevice := scriptDeviceID
 	announcedDevices := map[domain.InputDeviceID]bool{scriptDeviceID: true}
 	snapshot := func() domain.SecurityState {
@@ -60,7 +61,6 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 		return ctx.Err()
 	}
 	var layout domain.Layout
-	defer func() { km.Close() }()
 	emit := func(code uint32, down bool) error {
 		state := snapshot()
 		var key ports.KeyEvent
