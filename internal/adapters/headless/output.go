@@ -23,6 +23,12 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// ModeRequest is a live mode transaction. Result must be buffered by its sender.
+type ModeRequest struct {
+	Mode   domain.OutputMode
+	Result chan<- error
+}
+
 type Options struct {
 	// Security is the defensive gate. SecurityChanges wakes an idle owner;
 	// the snapshot, not the queued notification payload, is authoritative.
@@ -60,6 +66,8 @@ type Options struct {
 	RefreshMilli int
 	// Modes applies live modes on the owner goroutine; nil keeps the initial mode.
 	Modes <-chan domain.OutputMode
+	// ModeRequests acknowledges owner-side application before inventory publication.
+	ModeRequests <-chan ModeRequest
 	// Clock paces presentation and renderer trim (nil: system clock).
 	Clock ports.Clock
 }
@@ -299,19 +307,12 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		if holdDue == nil {
 			holdTimer.Stop()
 		}
-		ticked := false
-		var tickTime time.Time
-		select {
-		case mode, ok := <-opts.Modes:
-			if !ok {
-				opts.Modes = nil
-				continue
-			}
+		applyMode := func(mode domain.OutputMode) error {
 			if mode.Width <= 0 || mode.Height <= 0 || mode.RefreshMilli < 0 {
 				return fmt.Errorf("invalid output mode: %dx%d@%d", mode.Width, mode.Height, mode.RefreshMilli)
 			}
 			if mode.Width == opts.Width && mode.Height == opts.Height && mode.RefreshMilli == opts.RefreshMilli {
-				continue
+				return nil
 			}
 			if mode.Width != opts.Width || mode.Height != opts.Height {
 				next, err := opts.NewRenderer(mode.Width, mode.Height)
@@ -352,10 +353,33 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			paceDue = nil
 			// Wait for a scene laid out for the new mode, even if its Seq
 			// matches the old one. A protected output needs a new black proof.
-			haveScene, dirty, securityKnown = false, false, false
+			haveScene = haveScene && scene.OutputWidth == mode.Width && scene.OutputHeight == mode.Height
+			dirty, securityKnown = haveScene, false
 			cursorScale = -1
 			reports.Reset()
-			continue
+			return nil
+		}
+		ticked := false
+		var tickTime time.Time
+		select {
+		case req, ok := <-opts.ModeRequests:
+			if !ok {
+				opts.ModeRequests = nil
+				continue
+			}
+			err := applyMode(req.Mode)
+			req.Result <- err
+			if err != nil {
+				return err
+			}
+		case mode, ok := <-opts.Modes:
+			if !ok {
+				opts.Modes = nil
+				continue
+			}
+			if err := applyMode(mode); err != nil {
+				return err
+			}
 		case <-paceDue:
 			paceDue = nil
 			ticked = true

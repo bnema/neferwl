@@ -2,6 +2,8 @@ package virtuals
 
 import (
 	"context"
+	"errors"
+	"github.com/bnema/neferwl/internal/core"
 	"testing"
 	"testing/synctest"
 
@@ -164,4 +166,123 @@ func TestParseMode(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestModeAcknowledgementAndFailureRollback(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		events := make(chan ports.OutputEvent, 32)
+		ch := routing.Channels{Events: events}
+		set := routing.NewSet(ctx, nil, ch.Routes())
+		initial := portsmocks.NewMockRenderer(t)
+		initial.EXPECT().Close().Return().Once()
+		restored := portsmocks.NewMockRenderer(t)
+		restored.EXPECT().Close().Return().Once()
+		entered, release := make(chan struct{}), make(chan struct{})
+		failure := errors.New("renderer allocation failed")
+		creations := 0
+		host := New(set, ch, cursors.New(nil, 0), func(w, h int) (ports.Renderer, error) {
+			creations++
+			if w == 1280 {
+				close(entered)
+				<-release
+				return nil, failure
+			}
+			if creations == 1 {
+				return initial, nil
+			}
+			return restored, nil
+		}, logging.For(ctx, "virtuals"))
+		file := domain.Config{Outputs: []domain.OutputConfig{{Name: "tv", Virtual: true, Mode: "1920x1080"}}}
+		apply := core.NewOutputApply(core.NewOutputOverrides(file, true))
+		if err := host.Sync(ctx, apply.Virtuals()); err != nil {
+			t.Fatal(err)
+		}
+		<-events
+		<-events
+		apply.Heads(domain.OutputHeads{Heads: host.Heads()})
+		apply.Request(domain.OutputApply{ID: 7, Heads: []domain.HeadChange{{Name: "tv", Enabled: true, Custom: true, Mode: &domain.OutputMode{Width: 1280, Height: 720, RefreshMilli: 60000}}}})
+		if _, ok := apply.Next(); !ok {
+			t.Fatal("no apply")
+		}
+		done := make(chan error, 1)
+		go func() { done <- host.Sync(ctx, apply.Virtuals()) }()
+		<-entered
+		synctest.Wait()
+		if len(events) != 0 || host.Heads()[0].Info.Width != 1920 || len(done) != 0 {
+			t.Fatal("mode published before owner acknowledgement")
+		}
+		close(release)
+		err := <-done
+		if !errors.Is(err, failure) {
+			t.Fatal(err)
+		}
+		apply.Finished(err)
+		if _, ok := apply.Next(); !ok {
+			t.Fatal("rollback not scheduled")
+		}
+		if err := host.Sync(ctx, apply.Virtuals()); err != nil {
+			t.Fatal(err)
+		}
+		apply.Finished(nil)
+		synctest.Wait()
+		_, reply := apply.ReplyOut(make(chan domain.OutputApplied))
+		if reply.ID != 7 || reply.Err == nil {
+			t.Fatalf("reply %+v", reply)
+		}
+		if host.Heads()[0].Info.Width != 1920 {
+			t.Fatal(host.Heads())
+		}
+		cancel()
+		if err := set.Wait(); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestModeWaitsForOwnerConsumption(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		events := make(chan ports.OutputEvent, 16)
+		ch := routing.Channels{Events: events}
+		set := routing.NewSet(ctx, nil, ch.Routes())
+		first, second := portsmocks.NewMockRenderer(t), portsmocks.NewMockRenderer(t)
+		first.EXPECT().Close().Return().Once()
+		second.EXPECT().Close().Return().Once()
+		entered, release := make(chan struct{}), make(chan struct{})
+		host := New(set, ch, cursors.New(nil, 0), func(w, h int) (ports.Renderer, error) {
+			if w == 1920 {
+				close(entered)
+				<-release
+				return first, nil
+			}
+			return second, nil
+		}, logging.For(ctx, "virtuals"))
+		want := []domain.OutputConfig{{Name: "tv", Virtual: true, Mode: "1920x1080"}}
+		if err := host.Sync(ctx, want); err != nil {
+			t.Fatal(err)
+		}
+		<-events
+		<-entered
+		want[0].Mode = "1280x720"
+		done := make(chan error, 1)
+		go func() { done <- host.Sync(ctx, want) }()
+		synctest.Wait()
+		if len(done) != 0 || len(events) != 0 || host.Heads()[0].Info.Width != 1920 {
+			t.Fatal("unconsumed mode was published")
+		}
+		close(release)
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if host.Heads()[0].Info.Width != 1280 {
+			t.Fatal(host.Heads())
+		}
+		cancel()
+		if err := set.Wait(); err != nil {
+			t.Fatal(err)
+		}
+	})
 }

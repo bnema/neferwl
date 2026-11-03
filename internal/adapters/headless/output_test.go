@@ -1007,3 +1007,35 @@ func TestRunOutputModeFailsPendingCapture(t *testing.T) {
 		}
 	})
 }
+
+func TestAcknowledgedModePreservesEarlyScene(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		first, _ := recordingRenderer(t, nil)
+		second, frames := recordingRenderer(t, nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		modes := make(chan ModeRequest)
+		scenes := make(chan domain.Scene)
+		ack := make(chan error, 1)
+		done := make(chan error, 1)
+		go func() {
+			done <- RunOutput(ctx, Options{Width: 2, Height: 2, RefreshMilli: 1000, ModeRequests: modes, NewRenderer: func(w, h int) (ports.Renderer, error) {
+				if w == 2 {
+					return first, nil
+				}
+				return second, nil
+			}}, scenes, nil, nil, nil, nil)
+		}()
+		scenes <- domain.Scene{Seq: 1, OutputWidth: 4, OutputHeight: 3}
+		synctest.Wait()
+		modes <- ModeRequest{Mode: domain.OutputMode{Width: 4, Height: 3}, Result: ack}
+		if err := <-ack; err != nil {
+			t.Fatal(err)
+		}
+		waitFrames(t, frames, 1)
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
+}
