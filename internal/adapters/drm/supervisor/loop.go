@@ -4,7 +4,7 @@ package supervisor
 func (run *outputsRun) loop() error {
 	for {
 		for _, warning := range run.apply.TakeWarnings() {
-			run.appLog.Warn().Str("component", "output").Str("output", warning.Name).Msg(warning.Message)
+			run.appLog.Warn().Str("output", warning.Name).Msg(warning.Message)
 		}
 		if cfg, ok := run.apply.Next(); ok {
 			run.configure(cfg)

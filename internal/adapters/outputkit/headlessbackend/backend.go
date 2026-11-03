@@ -83,7 +83,7 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 			continue
 		}
 		for _, warning := range apply.TakeWarnings() {
-			log.Warn().Str("component", "output").Str("output", warning.Name).Msg(warning.Message)
+			log.Warn().Str("output", warning.Name).Msg(warning.Message)
 		}
 		configs, configNext := apply.ConfigOut(ch.Configured), apply.Config()
 		replies, replyNext := apply.ReplyOut(ch.Replies)
