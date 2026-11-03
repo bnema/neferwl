@@ -436,10 +436,13 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 			opts.Log.Warn().Msg("libinput_dispatch failed")
 		}
 		for ev := getEvent(li); ev != 0; ev = getEvent(li) {
-			out, err := translate(ev, opts, p, in)
+			single, out, err := translate(ev, opts, p, in)
 			eventDestroy(ev)
 			if err != nil {
 				return err
+			}
+			if single != nil {
+				fwd.push(single)
 			}
 			for _, event := range out {
 				fwd.push(event)
@@ -683,7 +686,7 @@ func usec(v uint64) time.Duration { return time.Duration(v) * time.Microsecond }
 // (CLOCK_MONOTONIC), so clients measure speeds (kinetic scrolling) on
 // when events happened, not when they were read.
 // It snapshots admission before translating and queueing any input kind.
-func translate(ev uintptr, opts Options, p *pointer, in *inputState) ([]ports.InputEvent, error) {
+func translate(ev uintptr, opts Options, p *pointer, in *inputState) (ports.InputEvent, []ports.InputEvent, error) {
 	state := securitySnapshot(opts.Security)
 	dev := eventDevice(ev)
 	var events []ports.InputEvent
@@ -708,13 +711,11 @@ func translate(ev uintptr, opts Options, p *pointer, in *inputState) ([]ports.In
 		target := p.forEvent(dev, eventType(ev))
 		out, err := translateEvent(ev, opts, target, in, state)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		if out != nil {
-			events = append(events, withDevice(out, in.identities[dev]))
-		}
+		return secureInput(out, opts.Security, state), nil, nil
 	}
-	return secureBatch(events, opts.Security, state), nil
+	return nil, secureBatch(events, opts.Security, state), nil
 }
 
 func secureBatch(events []ports.InputEvent, security ports.SessionSecurity, state domain.SecurityState) []ports.InputEvent {
@@ -765,6 +766,7 @@ func secureInput(ev ports.InputEvent, security ports.SessionSecurity, state doma
 
 func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state domain.SecurityState) (ports.InputEvent, error) {
 	log := opts.Log
+	id := in.identities[eventDevice(ev)]
 	switch eventType(ev) {
 	case evSwipeBegin, evPinchBegin, evHoldBegin:
 		ge := gestureEvent(ev)
@@ -774,31 +776,29 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 		} else if eventType(ev) == evHoldBegin {
 			kind = domain.GestureHold
 		}
-		return in.gestures.begin(eventDevice(ev), kind, int(gestureFingers(ge)), usec(gestureUsec(ge))), nil
+		return withDevice(in.gestures.begin(eventDevice(ev), kind, int(gestureFingers(ge)), usec(gestureUsec(ge))), id), nil
 	case evSwipeUpdate:
 		ge := gestureEvent(ev)
-		return in.gestures.swipeUpdate(eventDevice(ev), gestureDX(ge), gestureDY(ge), gestureAccelDX(ge), gestureAccelDY(ge), usec(gestureUsec(ge))), nil
+		return withDevice(in.gestures.swipeUpdate(eventDevice(ev), gestureDX(ge), gestureDY(ge), gestureAccelDX(ge), gestureAccelDY(ge), usec(gestureUsec(ge))), id), nil
 	case evPinchUpdate:
 		ge := gestureEvent(ev)
-		return in.gestures.pinchUpdate(eventDevice(ev), gestureAccelDX(ge), gestureAccelDY(ge), gestureScale(ge), gestureAngle(ge), usec(gestureUsec(ge))), nil
+		return withDevice(in.gestures.pinchUpdate(eventDevice(ev), gestureAccelDX(ge), gestureAccelDY(ge), gestureScale(ge), gestureAngle(ge), usec(gestureUsec(ge))), id), nil
 	case evSwipeEnd:
 		ge := gestureEvent(ev)
-		return in.gestures.end(eventDevice(ev), domain.GestureSwipe, gestureCanceled(ge) != 0, usec(gestureUsec(ge))), nil
+		return withDevice(in.gestures.end(eventDevice(ev), domain.GestureSwipe, gestureCanceled(ge) != 0, usec(gestureUsec(ge))), id), nil
 	case evPinchEnd:
 		ge := gestureEvent(ev)
-		return in.gestures.end(eventDevice(ev), domain.GesturePinch, gestureCanceled(ge) != 0, usec(gestureUsec(ge))), nil
+		return withDevice(in.gestures.end(eventDevice(ev), domain.GesturePinch, gestureCanceled(ge) != 0, usec(gestureUsec(ge))), id), nil
 	case evHoldEnd:
 		ge := gestureEvent(ev)
-		return in.gestures.end(eventDevice(ev), domain.GestureHold, gestureCanceled(ge) != 0, usec(gestureUsec(ge))), nil
+		return withDevice(in.gestures.end(eventDevice(ev), domain.GestureHold, gestureCanceled(ge) != 0, usec(gestureUsec(ge))), id), nil
 	case evKeyboardKey:
 		k := keyboardEvent(ev)
 		code, pressed := keyboardKey(k), keyboardState(k) == 1
-		return translateKeyboard(code, pressed, usec(keyboardUsec(k)), opts, state)
+		return translateKeyboard(code, pressed, usec(keyboardUsec(k)), opts, state, id)
 	case evPointerMotion:
 		pe := pointerEvent(ev)
-		m := p.move(pointerDX(pe), pointerDY(pe))
-		m.UnaccelDX, m.UnaccelDY = pointerRawDX(pe), pointerRawDY(pe)
-		m.Time = usec(pointerUsec(pe))
+		m := decodeMotion(p, id, pointerDX(pe), pointerDY(pe), pointerRawDX(pe), pointerRawDY(pe), usec(pointerUsec(pe)))
 		p.moved(opts.MoveCursor, true)
 		if opts.LogMotion {
 			log.Debug().Float64("x", m.X).Float64("y", m.Y).Msg("pointer")
@@ -810,21 +810,21 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 		now := usec(pointerUsec(pe))
 		b := p.bounds()
 		if p.constraint.Mode == domain.ConstraintLock {
-			return ports.PointerMotion{X: p.x, Y: p.y, Time: now}, nil
+			return ports.PointerMotion{Device: id, X: p.x, Y: p.y, Time: now}, nil
 		}
 		x, y := p.set(float64(b.X)+pointerAbsX(pe, uint32(b.W)), float64(b.Y)+pointerAbsY(pe, uint32(b.H)))
 		p.moved(opts.MoveCursor, true)
-		return ports.PointerMotion{X: x, Y: y, Time: now}, nil
+		return ports.PointerMotion{Device: id, X: x, Y: y, Time: now}, nil
 	case evPointerButton:
 		pe := pointerEvent(ev)
 		b, pressed := pointerButton(pe), pointerBtnState(pe) == 1
 		log.Debug().Uint32("button", b).Bool("pressed", pressed).Msg("button")
-		return ports.PointerButton{Button: b, Pressed: pressed, Time: usec(pointerUsec(pe))}, nil
+		return ports.PointerButton{Device: id, Button: b, Pressed: pressed, Time: usec(pointerUsec(pe))}, nil
 	case evScrollWheel, evScrollFinger, evScrollCont:
 		pe := pointerEvent(ev)
 		// The three scroll events follow each other as the sources do.
 		source := domain.AxisSource(eventType(ev) - evScrollWheel)
-		a := ports.PointerAxis{Source: source, Time: usec(pointerUsec(pe))}
+		a := ports.PointerAxis{Device: id, Source: source, Time: usec(pointerUsec(pe))}
 		// libinput axis 0 is vertical, 1 horizontal, as in wl_pointer.
 		for i, s := range []*domain.ScrollAxis{&a.Vertical, &a.Horizontal} {
 			if pointerHasAxis(pe, uint32(i)) == 0 {
@@ -849,7 +849,7 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 
 // translateKeyboard applies the production epoch before native translation.
 // Quarantined events never reach logging, reserved hotkeys or core.
-func translateKeyboard(code uint32, pressed bool, t time.Duration, opts Options, state domain.SecurityState) (ports.InputEvent, error) {
+func translateKeyboard(code uint32, pressed bool, t time.Duration, opts Options, state domain.SecurityState, device ...domain.InputDeviceID) (ports.InputEvent, error) {
 	var ke ports.KeyEvent
 	if opts.Security != nil {
 		var deliver bool
@@ -860,6 +860,9 @@ func translateKeyboard(code uint32, pressed bool, t time.Duration, opts Options,
 		}
 	} else {
 		ke = opts.Keymap.Key(code, pressed, t)
+	}
+	if len(device) > 0 {
+		ke.Device = device[0]
 	}
 	return translateKey(ke, opts, state)
 }
@@ -1116,4 +1119,13 @@ func (p *pointer) forEvent(dev uintptr, kind int32) *pointer {
 		return p
 	}
 	return p.forDevice(dev)
+}
+
+// decodeMotion is the production boundary immediately after native field reads.
+// Stamp the concrete value before its only InputEvent boxing conversion.
+func decodeMotion(p *pointer, id domain.InputDeviceID, dx, dy, rawDX, rawDY float64, at time.Duration) ports.PointerMotion {
+	m := p.move(dx, dy)
+	m.Device = id
+	m.UnaccelDX, m.UnaccelDY, m.Time = rawDX, rawDY, at
+	return m
 }

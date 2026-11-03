@@ -78,3 +78,23 @@ func TestSingleDevicePointerMotionAllocations(t *testing.T) {
 		}
 	})
 }
+
+func BenchmarkConfiguredBindingDispatch(b *testing.B) {
+	c := inputBenchCore(b)
+	cfg := c.cfg
+	cfg.Outputs = []domain.OutputConfig{{Name: "A", Inputs: []string{"benchmark"}}}
+	if err := c.apply(cfg); err != nil {
+		b.Fatal(err)
+	}
+	events := []ports.InputEvent{ports.PointerMotion{X: 10, Y: 10}}
+	configureBenchDevices(c, events)
+	ctx := context.Background()
+	c.handleInput(ctx, events[0])
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := c.handleInput(ctx, events[0]); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
