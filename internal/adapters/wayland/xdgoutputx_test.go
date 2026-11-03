@@ -186,11 +186,71 @@ func TestPrivateXOutputOmitsOverflowingRectangle(t *testing.T) {
 		}
 	}
 	slices.SortFunc(positions, func(a, b [2]int32) int { return int(a[0] - b[0]) })
-	if missing != 1 || !slices.Equal(positions, [][2]int32{{0, 0}, {7144, 0}}) {
+	if missing != 0 || !slices.Equal(positions, [][2]int32{{0, 0}, {7144, 0}}) {
 		t.Fatalf("missing=%d positions=%v", missing, positions)
 	}
 	other := protocolClient(t, r.s, r.dir)
 	if public := xdgOutputsOf(t, other); len(public) != 3 {
 		t.Fatal("native outputs changed")
+	}
+}
+
+func TestPrivateXOutputInclusionLifecycle(t *testing.T) {
+	r := newX11Rig(t)
+	initial := twoOutputs(0)
+	initial.Outputs[1].X = 1920
+	applyOutputs(t, r.s, r.commands, initial)
+	old := xdgOutputsOf(t, r.xc)
+	if len(old) != 2 {
+		t.Fatal(len(old))
+	}
+	public := protocolClient(t, r.s, r.dir)
+	outputIDs := func(c *wlturbo.Display) []uint32 {
+		var ids []uint32
+		for _, g := range c.Registry().GetGlobals() {
+			if g.Interface == "wl_output" {
+				ids = append(ids, g.Name)
+			}
+		}
+		slices.Sort(ids)
+		return ids
+	}
+	before := outputIDs(r.xc)
+	native := outputIDs(public)
+	excluded := twoOutputs(0)
+	excluded.Outputs[1].X = 40000
+	applyOutputs(t, r.s, r.commands, excluded)
+	if err := r.xc.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if err := public.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	during := outputIDs(r.xc)
+	if len(during) != 1 || !slices.Equal(native, outputIDs(public)) {
+		t.Fatalf("private=%v native changed", during)
+	}
+	counts := []int{len(old[0].pos), len(old[1].pos)}
+	applyOutputs(t, r.s, r.commands, initial)
+	if err := r.xc.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	after := outputIDs(r.xc)
+	if len(after) != 2 || slices.Equal(before, after) {
+		t.Fatalf("not re-advertised: %v -> %v", before, after)
+	}
+	fresh := xdgOutputsOf(t, r.xc)
+	if got := lastPositions(fresh); !slices.Equal(got, [][2]int32{{0, 0}, {1920, 0}}) {
+		t.Fatal(got)
+	}
+	// One old object belongs to the withdrawn generation and stays inert.
+	unchanged := 0
+	for i, p := range old {
+		if len(p.pos) == counts[i] {
+			unchanged++
+		}
+	}
+	if unchanged != 1 {
+		t.Fatalf("withdrawn rectangle received updates: %d", unchanged)
 	}
 }

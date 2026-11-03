@@ -43,6 +43,8 @@ type output struct {
 	// Public protocol origin only; place remains in compositor layout space.
 	originX, originY int
 	global           *server.Global
+	xglobal          *server.Global
+	xresources       []*wayland.Output
 	resources        []*wayland.Output
 	xdgOutputs       []*xdgoutput.ZxdgOutputV1
 	// xdgOutputsX are the private xdg-outputs of the Xwayland client (X space).
@@ -168,29 +170,13 @@ func (s *Server) outputByName(name string) *output {
 func (s *Server) addOutput(p domain.OutputPlacement) {
 	ox, oy := s.publicOutputOrigin()
 	o := &output{place: p, originX: ox, originY: oy}
-	g, err := s.display.AddGlobal(wayland.OutputInterface, 4, func(c server.Client, v, id uint32) {
-		r, err := wayland.NewOutput(c, int32(v), id, outputHandler{})
-		if err != nil {
-			return
-		}
-		// A client may bind a global just removed: it gets the last state
-		// and no updates.
-		o.resources = append(o.resources, r)
-		r.OnDestroy = func() { o.resources = removeItem(o.resources, r) }
-		o.sendAll(r)
-		for _, m := range s.workspaceManagers {
-			if m.outputBound(o.name()) {
-				m.res.SendDone()
-			}
-		}
-		s.refreshToplevels()
-	})
-	if err != nil {
-		s.log.Warn().Err(err).Str("output", p.Info.Name).Msg("add wl_output")
+	s.outputs = append(s.outputs, o)
+	o.global = s.outputGlobal(o, false)
+	if o.global == nil {
+		s.outputs = removeItem(s.outputs, o)
 		return
 	}
-	o.global = g
-	s.outputs = append(s.outputs, o)
+	s.syncXOutput(o)
 	s.log.Info().Str("output", p.Info.Name).Int("x", p.X).Int("y", p.Y).Int("w", p.Width).Int("h", p.Height).Float64("scale", p.Scale).Msg("output added")
 }
 
@@ -243,6 +229,10 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 			continue
 		}
 		o.global.Remove()
+		if o.xglobal != nil {
+			o.xglobal.Remove()
+			o.xglobal = nil
+		}
 		delete(s.hdrOutputs, o.name())
 		delete(s.colorIdentity, o.name())
 		s.outputGone(o)
@@ -293,6 +283,9 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 		s.refreshSessions()
 	}
 	if changed {
+		for _, o := range s.outputs {
+			s.syncXOutput(o)
+		}
 		ox, oy := s.publicOutputOrigin()
 		for _, o := range s.outputs {
 			o.originX, o.originY = ox, oy
@@ -415,3 +408,54 @@ func (m xdgOutputManager) GetXdgOutput(r *xdgoutput.ZxdgOutputManagerV1, id uint
 type xdgOutput struct{}
 
 func (xdgOutput) Destroy(*xdgoutput.ZxdgOutputV1) {}
+
+// outputGlobal separates native and Xwayland registry lifetimes. A withdrawn
+// X global leaves its already-bound resources inert until the client releases them.
+func (s *Server) outputGlobal(o *output, private bool) *server.Global {
+	// libwayland invokes the visibility filter synchronously while AddGlobal
+	// broadcasts, before the returned pointer can be assigned to the output.
+	s.creatingPrivateOutput = private
+	defer func() { s.creatingPrivateOutput = false }()
+	g, err := s.display.AddGlobal(wayland.OutputInterface, 4, func(c server.Client, v, id uint32) {
+		r, err := wayland.NewOutput(c, int32(v), id, outputHandler{})
+		if err != nil {
+			return
+		}
+		o.resources = append(o.resources, r)
+		if private {
+			o.xresources = append(o.xresources, r)
+			r.OnDestroy = func() { o.xresources = removeItem(o.xresources, r); o.resources = removeItem(o.resources, r) }
+		} else {
+			r.OnDestroy = func() { o.resources = removeItem(o.resources, r) }
+		}
+		o.sendAll(r)
+		for _, m := range s.workspaceManagers {
+			if m.outputBound(o.name()) {
+				m.res.SendDone()
+			}
+		}
+		s.refreshToplevels()
+	})
+	if err != nil {
+		s.log.Warn().Err(err).Str("output", o.name()).Msg("add wl_output")
+		return nil
+	}
+	return g
+}
+
+func (s *Server) syncXOutput(o *output) {
+	included := s.xspace.Includes(o.place)
+	if !included && o.xglobal != nil {
+		o.xglobal.Remove()
+		o.xglobal = nil
+		// Resources from the withdrawn generation must never receive new geometry.
+		for _, r := range o.xresources {
+			o.resources = removeItem(o.resources, r)
+		}
+		o.xresources = nil
+		o.xdgOutputsX = nil
+	}
+	if included && o.xglobal == nil {
+		o.xglobal = s.outputGlobal(o, true)
+	}
+}

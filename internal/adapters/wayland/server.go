@@ -180,6 +180,7 @@ type Server struct {
 	name                  string
 	cleanup               func()
 	log                   zerowrap.Logger
+	creatingPrivateOutput bool
 	logDamage             bool
 	channels              Channels
 	xwayland              xwaylandClient
