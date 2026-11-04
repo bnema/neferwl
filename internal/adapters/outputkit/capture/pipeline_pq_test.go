@@ -13,14 +13,16 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+// pqRequest is a screencast frame into a lent XB30 dmabuf.
 func pqRequest(t *testing.T, id uint64) domain.CaptureRequest {
-	q := pipelineRequest(t, id)
-	q.Format = domain.CastXBGR2101010
+	q := dmabufRequest(t, id)
+	q.DMABuf.Format, q.Format, q.DMABufBorrowed = domain.CastXBGR2101010, domain.CastXBGR2101010, true
 	return q
 }
 
-// PQ requests are read from a BeginCapturePQ frame, the others from a
-// BeginCapture frame: one frame per readback in a mixed batch.
+// PQ requests are copied from a BeginCapturePQ frame, the others read from
+// a BeginCapture frame: one frame per readback in a mixed batch. A lent
+// buffer's files stay open.
 func TestPipelineRoutesPQRequests(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
 	sdr, pq := portsmocks.NewMockCaptureFrame(t), portsmocks.NewMockCaptureFrame(t)
@@ -29,12 +31,13 @@ func TestPipelineRoutesPQRequests(t *testing.T) {
 		r.EXPECT().EndCapture(f).Return().Once()
 	}
 	sdr.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.Anything, 8).Return(nil).Once()
-	pq.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.Anything, 8).Return(nil).Twice()
+	pq.EXPECT().CopyTo(image.Rect(1, 1, 3, 3), mock.Anything).Return(nil, nil).Twice()
 	r.EXPECT().BeginCapture().Return(sdr, nil).Once()
 	r.EXPECT().BeginCapturePQ().Return(pq, nil).Once()
 	replies := make(chan domain.CaptureDone, 3)
 	p := NewPipeline(context.Background(), replies)
-	p.SubmitScoped(domain.SecurityState{}, r, []domain.CaptureRequest{pqRequest(t, 1), pipelineRequest(t, 2), pqRequest(t, 3)})
+	lent := pqRequest(t, 1)
+	p.SubmitScoped(domain.SecurityState{}, r, []domain.CaptureRequest{lent, pipelineRequest(t, 2), pqRequest(t, 3)})
 	seen := map[uint64]bool{}
 	for range 3 {
 		done := awaitCapture(t, replies)
@@ -45,6 +48,9 @@ func TestPipelineRoutesPQRequests(t *testing.T) {
 	}
 	if len(seen) != 3 {
 		t.Fatalf("answered %v", seen)
+	}
+	if _, err := lent.DMABuf.Planes[0].File.Stat(); err != nil {
+		t.Fatalf("lent plane closed: %v", err)
 	}
 	p.Close(r)
 	sdr.Calls, pq.Calls = nil, nil
@@ -80,10 +86,16 @@ func TestPipelinePQWithoutHDRFrameIsTransient(t *testing.T) {
 	sdr.Calls = nil
 }
 
-func TestDestSizeAcceptsXB30(t *testing.T) {
-	q := pqRequest(t, 1)
-	if _, err := destSize(q); err != nil {
-		t.Fatal(err)
+// No PQ words reach CPU memory: SHM destinations take wl_shm formats only,
+// and an XB30 SHM request is an ordinary (refused) SDR request.
+func TestDestSizeRefusesXB30(t *testing.T) {
+	q := pipelineRequest(t, 1)
+	q.Format = domain.CastXBGR2101010
+	if _, err := destSize(q); err == nil {
+		t.Fatal("XB30 SHM destination accepted")
+	}
+	if isPQ(q) {
+		t.Fatal("SHM request routed to the PQ readback")
 	}
 	q.Format = 0x34325258 // XR24 as a DRM code: not a wl_shm format here
 	if _, err := destSize(q); err == nil {

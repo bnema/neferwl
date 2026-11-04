@@ -14,6 +14,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/domain"
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"bnema.dev/zerobus"
 	"bnema.dev/zerowrap"
 	"github.com/stretchr/testify/mock"
@@ -172,6 +173,22 @@ func newSvcHarness(t *testing.T, o harnessOpts) *svcHarness {
 	}
 	h.svc = New(func() *captureallow.Policy { return allow }, h.cmds, testLog(h.log))
 	h.svc.address = h.addr
+	// A GPU exporting linear XR24 cast buffers, each a temporary file.
+	gpu := portsmocks.NewMockCastBufferAllocator(t)
+	gpu.EXPECT().CastFormats().Return([]domain.DMABufFormat{{Format: domain.CastXRGB8888}}).Maybe()
+	gpu.EXPECT().AllocCast(domain.CastXRGB8888, mock.Anything, mock.Anything, uint64(0)).RunAndReturn(
+		func(format uint32, w, hh int, _ uint64) (domain.DMABuf, error) {
+			f, err := os.CreateTemp(t.TempDir(), "cast")
+			if err != nil {
+				return domain.DMABuf{}, err
+			}
+			if err := f.Truncate(int64(w * hh * 4)); err != nil {
+				_ = f.Close()
+				return domain.DMABuf{}, err
+			}
+			return domain.DMABuf{Width: w, Height: hh, Format: format, Planes: []domain.DMABufPlane{{File: f, Stride: uint32(w * 4)}}}, nil
+		}).Maybe()
+	h.svc.SetCastBuffers(gpu)
 	h.applied = make(chan struct{}, 8)
 	h.reaped = make(chan struct{}, 8)
 	h.svc.inventoryApplied, h.svc.sessionsReaped = h.applied, h.reaped

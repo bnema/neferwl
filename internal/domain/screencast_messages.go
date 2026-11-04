@@ -26,7 +26,7 @@ const (
 	// CastDamage: the target changed and a frame may be requested. Time is
 	// the flip time.
 	CastDamage
-	// CastFrameDone: the frame into Buf finished. Err is nil when Data holds
+	// CastFrameDone: the frame into Buf finished. Err is nil when Buf holds
 	// a complete image; Time is the capture time.
 	CastFrameDone
 	// CastStopped: the cast ended (Reason, Err); no event follows.
@@ -42,14 +42,13 @@ type CastCommand struct {
 	Output string
 	Window WindowID
 	Cursor bool
-	// CastFrame: Buf is the buffer slot. Data is the buffer's mapping,
-	// borrowed until the CastFrameDone of Buf: the sender neither reuses nor
-	// unmaps it before then.
+	// CastFrame: Buf is the buffer slot. DMABuf is the PipeWire buffer, a
+	// GPU dmabuf of Width×Height in a cast format (CastFormats, also
+	// DMABuf.Format), borrowed until the CastFrameDone of Buf: the sender
+	// neither reuses, changes nor closes it before then.
 	Buf           int
-	Data          []byte
-	Stride        int
+	DMABuf        *DMABuf
 	Width, Height int
-	Format        uint32 // wl_shm format
 }
 
 // CastEvent carries wayland → screencast through CastSink.Push.

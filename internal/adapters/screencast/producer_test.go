@@ -3,6 +3,7 @@ package screencast
 import (
 	"context"
 	"errors"
+	"os"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/domain"
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"bnema.dev/purego-pipewire/pipewire"
 	"bnema.dev/zerobus"
@@ -28,7 +30,24 @@ type producer struct {
 	bus  *mockbus
 	now  time.Time
 	buf  *pipewire.VideoBuffer
+	gpu  *portsmocks.MockCastBufferAllocator
 	cmds chan domain.CastCommand
+}
+
+// testCastFormats is what the mocked GPU exports: linear, every format.
+var testCastFormats = []domain.DMABufFormat{{Format: domain.CastXBGR2101010}, {Format: domain.CastXRGB8888}, {Format: domain.CastARGB8888}}
+
+// lend gives the stream's allocator a dmabuf for buffer idx, as Alloc
+// would, backed by a temporary file the allocator closes.
+func (p *producer) lend(idx int, format uint32) {
+	p.t.Helper()
+	f, err := os.CreateTemp(p.t.TempDir(), "cast")
+	if err != nil {
+		p.t.Fatal(err)
+	}
+	p.t.Cleanup(func() { _ = f.Close() })
+	closePlanes(&p.st.alloc.bufs[idx])
+	p.st.alloc.bufs[idx] = domain.DMABuf{Width: 64, Height: 32, Format: format, Planes: []domain.DMABufPlane{{File: f, Stride: 256}}}
 }
 
 func newProducer(t *testing.T) *producer {
@@ -45,7 +64,10 @@ func newProducer(t *testing.T) *producer {
 	p.src = newMockvideoSource(t)
 	p.core = newMockvideoCore(t)
 	p.s.pwc = p.core
-	p.buf = &pipewire.VideoBuffer{Index: 3, Data: make([]byte, 64*32*4), Stride: 64 * 4, Width: 64, Height: 32, Format: pipewire.VideoFormatBGRx}
+	p.buf = &pipewire.VideoBuffer{Index: 3, Width: 64, Height: 32, Format: pipewire.VideoFormatBGRx, DMABuf: true}
+	p.gpu = portsmocks.NewMockCastBufferAllocator(t)
+	p.gpu.EXPECT().CastFormats().Return(testCastFormats).Maybe()
+	p.s.SetCastBuffers(p.gpu)
 
 	sess := &p.s.sessions[0]
 	*sess = session{used: true, id: 1, owner: ":1.7", path: prefixSession + "1", started: true}
@@ -53,6 +75,7 @@ func newProducer(t *testing.T) *producer {
 	*st = stream{used: true, sess: sess, id: 1, cast: 1, path: prefixStream + "1", output: "HEADLESS-1", maxFPS: 60, pwState: -2, needOpen: true}
 	st.h2 = streamHandler{st: st}
 	p.st = st
+	p.lend(3, domain.CastXRGB8888)
 	return p
 }
 
@@ -87,14 +110,14 @@ func (p *producer) streaming() {
 	p.s.onCastEvent(&domain.CastEvent{Kind: domain.CastSize, ID: 1, Width: 64, Height: 32})
 	p.core.EXPECT().NewVideoSource(mock.Anything, mock.Anything).RunAndReturn(
 		func(cfg pipewire.VideoConfig, h pipewire.VideoHandler) (videoSource, error) {
-			if cfg.Width != 64 || cfg.Height != 32 || cfg.MaxFPS != 60 {
+			if cfg.Width != 64 || cfg.Height != 32 || cfg.MaxFPS != 60 || cfg.DMABuf == nil || !cfg.DMABuf.Strict || cfg.DMABuf.Allocator == nil || cfg.DMABuf.OnError == nil {
 				p.t.Errorf("config %+v", cfg)
 			}
 			return p.src, nil
 		}).Once()
 	p.s.pump(p.st, p.now)
 	p.st.h2.StateChanged(pipewire.StreamStatePaused, 42, "")
-	p.st.h2.FormatChanged(pipewire.VideoFormatBGRx, 64, 32, 256)
+	p.st.h2.FormatChanged(pipewire.VideoFormatBGRx, 64, 32, 0)
 	p.st.h2.StateChanged(pipewire.StreamStateStreaming, 42, "")
 }
 
@@ -128,7 +151,7 @@ func TestPacingForcesFirstFrameThenWaitsForDamage(t *testing.T) {
 	p.src.EXPECT().Dequeue().Return(p.buf).Once()
 	p.s.pump(p.st, p.now)
 	c := p.cmd()
-	if c.Kind != domain.CastFrame || c.Buf != 3 || c.Stride != 256 || c.Width != 64 || c.Height != 32 || c.Format != domain.CastXRGB8888 || len(c.Data) != 64*32*4 || &c.Data[0] != &p.buf.Data[0] {
+	if c.Kind != domain.CastFrame || c.Buf != 3 || c.Width != 64 || c.Height != 32 || c.DMABuf != &p.st.alloc.bufs[3] || c.DMABuf.Format != domain.CastXRGB8888 {
 		t.Fatalf("frame %+v", c)
 	}
 	// Done: queued, then triggered, in that order.

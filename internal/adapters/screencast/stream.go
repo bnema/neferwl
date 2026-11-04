@@ -50,6 +50,11 @@ type stream struct {
 	announced   bool // PipeWireStreamAdded was sent
 	format      pipewire.VideoFormat
 	fw, fh      int // size the format was negotiated at; 0 while renegotiating
+	// alloc exports the stream's DMA-BUF buffers; PipeWire calls it inside
+	// Iterate. dmaErr is the DMA-BUF failure that ended the stream (the
+	// consumer took no DMA-BUF, or allocation failed): the pump ends the cast.
+	alloc  castAllocator
+	dmaErr error
 
 	// Frames.
 	dirty    bool
@@ -84,6 +89,15 @@ func (h *streamHandler) FormatChanged(f pipewire.VideoFormat, w, hh, _ int) {
 	h.st.format, h.st.fw, h.st.fh = f, w, hh
 	// A new format shows a new picture: the first frame is not paced by damage.
 	h.st.forced = true
+}
+
+// dmabufFailed is VideoDMABuf.OnError: the source disconnected because
+// DMA-BUF negotiation or allocation failed; the pump ends the cast.
+func (h *streamHandler) dmabufFailed(err error) {
+	if err == nil {
+		err = pipewire.ErrVideoDMABuf
+	}
+	h.st.dmaErr = err
 }
 
 // BuffersChanged: the next pump looks for a free buffer anyway.

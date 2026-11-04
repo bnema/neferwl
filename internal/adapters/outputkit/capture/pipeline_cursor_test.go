@@ -21,17 +21,18 @@ func TestPipelineCursorMixedRequests(t *testing.T) {
 			}
 			cursor := &domain.CaptureCursor{X: 4, Y: 5, Image: domain.CursorImage{W: 1, H: 1, Pixels: []byte{255, 255, 255, 255}}}
 			a, b := pipelineRequest(t, 1), pipelineRequest(t, 2)
-			b.Cursor = true
 			if pq {
-				a.Format = domain.CastXBGR2101010
-				b.Format = a.Format
+				a, b = pqRequest(t, 1), pqRequest(t, 2)
 				r.EXPECT().BeginCapturePQ().Return(plain, nil).Once()
+				plain.EXPECT().CopyTo(image.Rect(1, 1, 3, 3), mock.Anything).Return(nil, nil).Once()
+				with.EXPECT().CopyTo(image.Rect(1, 1, 3, 3), mock.Anything).Return(nil, nil).Once()
 			} else {
 				r.EXPECT().BeginCapture().Return(plain, nil).Once()
+				plain.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.Anything, 8).Return(nil).Once()
+				with.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.Anything, 8).Return(nil).Once()
 			}
+			b.Cursor = true
 			r.EXPECT().BeginCaptureCursor(cursor, pq).Return(with, nil).Once()
-			plain.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.Anything, 8).Return(nil).Once()
-			with.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.Anything, 8).Return(nil).Once()
 			replies := make(chan domain.CaptureDone, 2)
 			p := NewPipeline(context.Background(), replies)
 			p.Cursor = cursor

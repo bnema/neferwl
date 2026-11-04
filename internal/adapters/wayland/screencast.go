@@ -17,8 +17,9 @@ import (
 // and hears back through Options.Casts (ports.CastSink). A cast is a capture
 // target registered with core like an ext-image-copy-capture session
 // (ports.CaptureSessionOpen), so the capture indicator stays on while it
-// lives, but its frames are written straight into the PipeWire buffer the
-// adapter lends (domain.CaptureRequest.Mapped) and it has no wayland client:
+// lives, but its frames are copied on the GPU straight into the PipeWire
+// DMA-BUF the adapter lends (domain.CaptureRequest.DMABuf, borrowed) and it
+// has no wayland client:
 // the adapter checked its caller, so casts bypass mayCapture, not protected().
 //
 // Everything here runs on the display goroutine, which owns the casts. The
@@ -43,6 +44,7 @@ var (
 	errCastSize      = errors.New("cast: frame size differs from the target")
 	errCastBusy      = errors.New("cast: frame already in flight")
 	errCastUnknown   = errors.New("cast: unknown cast")
+	errCastBuffer    = errors.New("cast: frame without a dmabuf")
 )
 
 // castSession is one cast.
@@ -106,6 +108,8 @@ func (s *Server) applyCast(cmd domain.CastCommand) {
 			s.refuseCastFrame(cmd, errCastUnknown)
 		case c.waiting:
 			s.refuseCastFrame(cmd, errCastBusy)
+		case cmd.DMABuf == nil || len(cmd.DMABuf.Planes) == 0:
+			s.refuseCastFrame(cmd, errCastBuffer)
 		default:
 			c.frame, c.waiting = cmd, true
 			c.deadline = s.clock.Now().Add(captureRetryFor)
@@ -330,7 +334,7 @@ func (s *Server) requestCast(c *castSession, o *output, rect image.Rectangle, ta
 	id := s.nextCapture
 	s.captureInflight[id] = struct{}{}
 	s.captureReplies[id] = c.doneFn
-	req := domain.CaptureRequest{ID: id, Output: o.name(), Region: rect, Cursor: c.cursor, Mapped: f.Data, Width: f.Width, Height: f.Height, Stride: f.Stride, Format: f.Format, Session: tag.session, Workspace: tag.workspace, Window: tag.window, OffScreen: tag.offscreen, Indicate: true}
+	req := domain.CaptureRequest{ID: id, Output: o.name(), Region: rect, Cursor: c.cursor, DMABuf: f.DMABuf, DMABufBorrowed: true, Width: f.Width, Height: f.Height, Format: f.DMABuf.Format, Session: tag.session, Workspace: tag.workspace, Window: tag.window, OffScreen: tag.offscreen, Indicate: true}
 	select {
 	case s.channels.Captures <- req:
 	default:

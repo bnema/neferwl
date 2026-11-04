@@ -155,6 +155,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	var casts ports.CastSink
 	if s.hw != nil || opts.DBus {
 		s.cast = screencast.New(s.captureAllow.Policy, s.p.castCommands, logging.For(ctx, "screencast"))
+		s.cast.SetCastBuffers(s.gpu)
 		casts = s.cast
 		if opts.castInventoryApplied != nil {
 			s.cast.NotifyInventoryApplied(opts.castInventoryApplied)

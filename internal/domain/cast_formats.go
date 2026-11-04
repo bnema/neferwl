@@ -1,9 +1,9 @@
 package domain
 
-// Cast pixel formats, as wl_shm/DRM format codes.
+// Cast pixel formats, as DRM fourccs: screencast buffers are dmabufs.
 const (
-	CastARGB8888    uint32 = 0          // wl_shm ARGB8888
-	CastXRGB8888    uint32 = 1          // wl_shm XRGB8888
+	CastARGB8888    uint32 = 0x34325241 // DRM 'AR24': opaque sRGB8 BGRA
+	CastXRGB8888    uint32 = 0x34325258 // DRM 'XR24': sRGB8 BGRX
 	CastXBGR2101010 uint32 = 0x30334258 // DRM 'XB30': 10-bit PQ BT.2020, R in bits 0-9
 )
 

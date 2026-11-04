@@ -63,7 +63,7 @@ func TestProducerHDRToggleSetsFormats(t *testing.T) {
 	p.st.h2.StateChanged(pipewire.StreamStateStreaming, 42, "")
 	p.src.EXPECT().Dequeue().Return(p.buf).Once()
 	p.s.pump(p.st, p.now)
-	if c := p.cmd(); c.Kind != domain.CastFrame || c.Format != domain.CastXRGB8888 {
+	if c := p.cmd(); c.Kind != domain.CastFrame || c.DMABuf == nil || c.DMABuf.Format != domain.CastXRGB8888 {
 		t.Fatalf("frame %+v", c)
 	}
 	p.s.onCastEvent(&domain.CastEvent{Kind: domain.CastSize, ID: 1, Width: 64, Height: 32, HDR: true})
@@ -77,12 +77,13 @@ func TestProducerHDRToggleSetsFormats(t *testing.T) {
 		t.Fatal("toggle ended the session")
 	}
 	// The consumer picks the PQ format: frames ask for XB30.
-	p.st.h2.FormatChanged(pipewire.VideoFormatXBGR210LE, 64, 32, 256)
+	p.st.h2.FormatChanged(pipewire.VideoFormatXBGR210LE, 64, 32, 0)
 	p.buf.Format = pipewire.VideoFormatXBGR210LE
+	p.lend(3, domain.CastXBGR2101010)
 	p.src.EXPECT().Dequeue().Return(p.buf).Once()
 	p.now = p.now.Add(time.Second)
 	p.s.pump(p.st, p.now)
-	if c := p.cmd(); c.Kind != domain.CastFrame || c.Format != domain.CastXBGR2101010 {
+	if c := p.cmd(); c.Kind != domain.CastFrame || c.DMABuf == nil || c.DMABuf.Format != domain.CastXBGR2101010 {
 		t.Fatalf("PQ frame %+v", c)
 	}
 	// Back to SDR.
@@ -97,9 +98,9 @@ func TestProducerHDRToggleSetsFormats(t *testing.T) {
 	p.s.pump(p.st, p.now)
 }
 
-func TestShmFormatRoundTrip(t *testing.T) {
+func TestFourccRoundTrip(t *testing.T) {
 	for _, f := range []uint32{domain.CastXRGB8888, domain.CastARGB8888, domain.CastXBGR2101010} {
-		if got := shmFormat(videoFormat(f)); got != f {
+		if got, ok := fourccOf(videoFormat(f)); !ok || got != f {
 			t.Errorf("%#x -> %#x", f, got)
 		}
 	}

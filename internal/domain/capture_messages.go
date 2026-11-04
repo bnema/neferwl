@@ -25,8 +25,14 @@ type CaptureRequest struct {
 	// DMABuf, when set, is the destination instead of Dst.File and Mapped
 	// (both nil then): a client linux-dmabuf buffer of Width×Height, in an
 	// XRGB8888 or ARGB8888 fourcc, the renderer writes on the GPU. Its
-	// plane files belong to the request and are closed with the reply.
+	// plane files belong to the request and are closed with the reply,
+	// unless DMABufBorrowed.
 	DMABuf *DMABuf
+	// DMABufBorrowed: DMABuf is a screencast buffer lent by its owner,
+	// in a cast format (CastFormats; XBGR2101010 gets the PQ words of an HDR
+	// frame). Its files stay the owner's and are never closed by the output;
+	// the owner keeps them open until CaptureDone.
+	DMABufBorrowed bool
 	// Session is the registered capture session (CaptureSessionOpen) the
 	// request belongs to, 0 for wlr-screencopy. It is informational, except
 	// with Exclude.

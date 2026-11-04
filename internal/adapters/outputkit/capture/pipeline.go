@@ -177,7 +177,7 @@ func (p *Pipeline) EndGate(err error) {
 // SubmitScoped consumes requests with explicit immutable scene admission. The
 // final gate read precedes BeginCapture, not the render that produced pixels.
 //
-// Requests for CastXBGR2101010 are read back as PQ words (BeginCapturePQ) in
+// Screencast buffers in CastXBGR2101010 get the PQ words (BeginCapturePQ) in
 // a batch of their own; a frame that is not HDR fails them transiently.
 func (p *Pipeline) SubmitScoped(state domain.SecurityState, r ports.Renderer, requests []domain.CaptureRequest) {
 	if p.Cursor == nil || len(requests) > MaxRequests {
@@ -227,9 +227,10 @@ func (p *Pipeline) submitReadback(state domain.SecurityState, r ports.Renderer, 
 	p.split = [2][MaxRequests]domain.CaptureRequest{}
 }
 
-// isPQ reports whether q wants the HDR frame's PQ words.
+// isPQ reports whether q wants the HDR frame's PQ words: a screencast
+// buffer in XBGR2101010, copied on the GPU (client buffers are never PQ).
 func isPQ(q domain.CaptureRequest) bool {
-	return q.DMABuf == nil && q.Format == domain.CastXBGR2101010
+	return q.DMABuf != nil && q.DMABufBorrowed && q.DMABuf.Format == domain.CastXBGR2101010
 }
 
 // submitBatch is SubmitScoped for requests of one readback.

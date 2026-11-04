@@ -46,9 +46,11 @@ func startLiveCast(t *testing.T, withFrame bool, drain time.Duration) *liveCast 
 	h := l.h
 	c := h.client()
 	l.src = newMockvideoSource(t)
-	l.buf = &pipewire.VideoBuffer{Index: 2, Data: make([]byte, 64*32*4), Stride: 256, Width: 64, Height: 32, Format: pipewire.VideoFormatBGRx}
+	l.buf = &pipewire.VideoBuffer{Index: 2, Width: 64, Height: 32, Format: pipewire.VideoFormatBGRx, DMABuf: true}
+	var alloc pipewire.VideoAllocator
 	h.core.EXPECT().NewVideoSource(mock.Anything, mock.Anything).RunAndReturn(
-		func(_ pipewire.VideoConfig, hd pipewire.VideoHandler) (videoSource, error) {
+		func(cfg pipewire.VideoConfig, hd pipewire.VideoHandler) (videoSource, error) {
+			alloc = cfg.DMABuf.Allocator
 			l.hdl <- hd
 			return l.src, nil
 		}).Once()
@@ -76,8 +78,16 @@ func startLiveCast(t *testing.T, withFrame bool, drain time.Duration) *liveCast 
 		t.Fatal("no PipeWire source")
 	}
 	l.loop(func() {
+		// PipeWire negotiates the linear modifier and allocates buffer 2.
+		var planes pipewire.VideoPlanes
+		if m, n, err := alloc.Fixate(pipewire.VideoFormatBGRx, 64, 32, []uint64{0}); err != nil || m != 0 || n != 1 {
+			t.Errorf("fixate %#x %d %v", m, n, err)
+		}
+		if err := alloc.Alloc(2, pipewire.VideoFormatBGRx, 64, 32, 0, &planes); err != nil || planes.N != 1 || planes.P[0].Stride != 256 {
+			t.Errorf("alloc %+v %v", planes, err)
+		}
 		hd.StateChanged(pipewire.StreamStatePaused, 42, "")
-		hd.FormatChanged(pipewire.VideoFormatBGRx, 64, 32, 256)
+		hd.FormatChanged(pipewire.VideoFormatBGRx, 64, 32, 0)
 		hd.StateChanged(pipewire.StreamStateStreaming, 42, "")
 	})
 	if withFrame {
