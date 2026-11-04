@@ -117,3 +117,75 @@ func TestFullscreenGroupCleanup(t *testing.T) {
 		})
 	}
 }
+
+func placementOf(t *testing.T, ps []Placement, id WindowID) Placement {
+	t.Helper()
+	for _, p := range ps {
+		if p.ID == id {
+			return p
+		}
+	}
+	t.Fatalf("no placement for %d", id)
+	return Placement{}
+}
+
+// A held tile is laid out fullscreen at its own column or band: output
+// sized, off screen once the view settles on the cover, and it keeps that
+// rect while the cover hides it.
+func TestHeldTilePlacement(t *testing.T) {
+	for _, overflow := range []Overflow{OverflowScroll, OverflowCascade} {
+		t.Run(string(overflow), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				w := cols(overflow, 3, 0, []WindowID{1}, []WindowID{2}, []WindowID{3})
+				w.SetUsable(Rect{Y: 20, W: 300, H: 80})
+				w.Settle(false)
+				// P (2) went fullscreen, then G (1) took over as cover.
+				w.FocusID(2)
+				w.SetFullscreen(2, true)
+				w.Fullscreen = 0
+				w.hold(2)
+				w.FocusID(1)
+				w.SetFullscreen(1, true)
+				if w.Fullscreen != 1 || !slices.Equal(w.Held, []WindowID{2}) {
+					t.Fatalf("cover %d held %v", w.Fullscreen, w.Held)
+				}
+				w.Settle(false)
+				out := w.Output
+				for _, covered := range []bool{true, false} {
+					if !covered {
+						w.Fullscreen = 0 // held only: nothing covers
+					}
+					col := w.columnRectsInto(nil, false)[w.ColumnOf(2)]
+					want := out
+					if overflow == OverflowScroll {
+						want.X = col.X
+					} else {
+						want.Y += (col.Y - w.Usable.Y - w.Gap()) * out.H / w.Usable.H
+					}
+					p := placementOf(t, w.Layout(), 2)
+					if !p.Fullscreen || p.Rect != want {
+						t.Errorf("covered=%v: held %+v, want fullscreen at %+v", covered, p, want)
+					}
+					if covered && p.Rect.Overlaps(out) {
+						t.Errorf("held %+v on screen under the cover", p.Rect)
+					}
+					if p.Hidden != covered {
+						t.Errorf("covered=%v: hidden %v", covered, p.Hidden)
+					}
+				}
+			})
+		})
+	}
+}
+
+// A held float is never shown.
+func TestHeldFloatHidden(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := cols(OverflowScroll, 3, 0, []WindowID{1})
+		w.AddFloating(7, 100, 50)
+		w.hold(7)
+		if p := placementOf(t, w.Layout(), 7); !p.Hidden || p.Fullscreen {
+			t.Fatalf("held float %+v", p)
+		}
+	})
+}

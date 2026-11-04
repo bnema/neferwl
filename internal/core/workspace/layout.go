@@ -528,7 +528,8 @@ func (w *Workspace) AppendLayout(dst []Placement) []Placement {
 		if n == 0 {
 			continue
 		}
-		fullColumn := w.FullscreenColumn(i)
+		heldColumn := w.HeldColumn(i)
+		fullColumn := w.FullscreenColumn(i) || heldColumn
 		if fullColumn {
 			col.W = w.Output.W
 		}
@@ -536,14 +537,17 @@ func (w *Workspace) AppendLayout(dst []Placement) []Placement {
 		rows := w.rowBuf
 		for j, id := range c.Windows {
 			r := rows[j]
-			full := w.Fullscreen == id && id != 0
+			held := heldColumn && slices.Contains(w.Held, id)
+			full := id != 0 && (w.Fullscreen == id || held)
 			// Fixed overflow cannot scroll to other columns while one fills
 			// the view. Keep them in place, but out of the scene.
 			hidden := (cover != 0 && id != cover) || (fullColumn && !full) || maxFocus && i != w.Focus
 			if full {
 				r = l.FullscreenRect(w.Snapshot(), col)
 			}
-			if hidden {
+			// A hidden held window keeps its output-sized rect, so its
+			// configure stays fullscreen while the cover hides it.
+			if hidden && !held {
 				r = Rect{}
 			}
 			tiles = append(tiles, Placement{ID: id, Rect: r, Fullscreen: full, Focused: id == focusedID, Hidden: hidden})
@@ -582,7 +586,7 @@ func (w *Workspace) AppendLayout(dst []Placement) []Placement {
 			// A covering fullscreen window hides every float but the
 			// dialogs over it (overCover): the others show again when it
 			// leaves fullscreen.
-			p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Below: below, Focused: f.ID == focusedID, Inset: domain.SideAll, Hidden: cover != 0 && f.ID != cover && !dialog}
+			p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Below: below, Focused: f.ID == focusedID, Inset: domain.SideAll, Hidden: cover != 0 && f.ID != cover && !dialog || w.IsHeldFloat(f.ID)}
 			if p.Hidden {
 				p.Rect = Rect{}
 				result = append(result, p)
