@@ -456,6 +456,17 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 				entry().Primary = b
 				continue
 			}
+			if base, ok := strings.CutSuffix(name, ".keep-focus"); ok {
+				name = base
+				b, err := onOff(value)
+				if err != nil {
+					warn("%s: %v", key, err)
+					continue
+				}
+				override()
+				entry().KeepFocus = b
+				continue
+			}
 			if base, ok := strings.CutSuffix(name, ".hdr"); ok {
 				name = base
 				b, err := onOff(value)
