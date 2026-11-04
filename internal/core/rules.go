@@ -203,7 +203,7 @@ func (c *Core) placeOnWorkspace(v ports.WindowMapped, eff ruleEffect, sc *screen
 	case quiet:
 		w.AddTile(v.ID, eff.cells, true)
 	default:
-		if !c.placeCoverApp(v, sc, w, eff.cells) {
+		if !c.placeLaunched(v, sc, w, eff.cells) && !c.placeCoverApp(v, sc, w, eff.cells) {
 			sc.mon.addWindow(v.ID, eff.cells)
 		}
 		return follow

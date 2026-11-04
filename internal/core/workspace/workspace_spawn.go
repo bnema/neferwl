@@ -223,6 +223,42 @@ func (w *Workspace) insertAt(at int, col layout.Column) {
 	w.ColumnInserted(at, layout.InsertJoinDisplaced)
 }
 
+// AddLaunchedWindow places id, launched by fullscreen group member launcher
+// (another program), fullscreen in a column (scroll) or band (cascade) of its
+// own right after the launcher's, and reports whether it did. Launched by
+// the active cover, it becomes the cover with the focus and the launcher is
+// held: held before the focus moves, as scroll promotes a focused member.
+// Launched by a held member, it is held too and focus and cover stay. A
+// layout that does not scroll (fixed) has no group: false, as for a
+// launcher outside the group.
+func (w *Workspace) AddLaunchedWindow(id, launcher WindowID, cells int) bool {
+	li := w.ColumnOf(launcher)
+	if id == 0 || w.Has(id) || li < 0 || !w.IsFullscreenMember(launcher) || !w.Engine().Scrolls() {
+		return false
+	}
+	active := w.Fullscreen == launcher
+	at := li + 1
+	w.Columns = slices.Insert(w.Columns, at, layout.Column{Windows: []WindowID{id}, Cells: cells})
+	w.ColumnInserted(at, layout.InsertDefault)
+	if len(w.Columns) > 1 && at <= w.Focus {
+		w.Focus++
+	}
+	// Cascade: a band of its own right below the launcher's.
+	w.isolate(id)
+	w.DropStaleSpans()
+	if !active {
+		w.hold(id)
+		w.scroll()
+		return true
+	}
+	w.Fullscreen = 0
+	w.hold(launcher)
+	w.dropStashOver()
+	w.Fullscreen = id
+	w.FocusID(id)
+	return true
+}
+
 // AddAppWindow brings a window of the covering app forward, keeping fullscreen.
 // The layout owns whether it needs another viewport or an over-cover float.
 func (w *Workspace) AddAppWindow(id WindowID, cells, width, height int) {

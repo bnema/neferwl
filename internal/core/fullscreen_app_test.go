@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"testing"
 	"testing/synctest"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -184,6 +186,9 @@ func TestFullscreenAppRuleArrival(t *testing.T) {
 	}
 }
 
+// A tiled window launched by another program from a fullscreen launcher
+// inherits the fullscreen in its own column (scroll) or band (cascade): it is
+// the cover and the launcher is held. Fixed keeps the overlay.
 func TestFullscreenLauncherArrival(t *testing.T) {
 	for _, mode := range []Overflow{OverflowCascade, OverflowScroll, OverflowFixed} {
 		t.Run(string(mode), func(t *testing.T) {
@@ -201,21 +206,27 @@ func TestFullscreenLauncherArrival(t *testing.T) {
 				if id, _ := w.Focused(); id != 2 || c.keyboardFocus() != 2 {
 					t.Fatal("child did not take workspace and seat focus")
 				}
-				if w.Fullscreen != 1 {
-					t.Fatal("launcher fullscreen lost")
-				}
 				if mode == OverflowFixed {
-					if !w.IsFloat(2) || w.Cover() != 1 {
+					if w.Fullscreen != 1 || !w.IsFloat(2) || w.Cover() != 1 || len(w.Held) != 0 {
 						t.Fatal("fixed overlay changed")
 					}
-				} else {
-					if len(w.Columns) != 2 || len(w.Columns[0].Windows) != 1 || len(w.Columns[1].Windows) != 1 || w.ColumnOf(1) != 0 || w.ColumnOf(2) != 1 || w.IsFloat(2) || w.View == before {
-						t.Fatalf("child not in its own selected strip: %+v", w.Columns)
-					}
+					return
+				}
+				if w.Fullscreen != 2 || !slices.Equal(w.Held, []WindowID{1}) || w.Cover() != 2 || w.View == before {
+					t.Fatalf("cover %d held %v covering %d", w.Fullscreen, w.Held, w.Cover())
+				}
+				if mode == OverflowScroll && w.ColumnOf(2) != w.ColumnOf(1)+1 {
+					t.Fatalf("child not right of launcher: %+v", w.Columns)
+				}
+				if mode == OverflowCascade && w.Band(w.ColumnOf(2)) != w.Band(w.ColumnOf(1))+1 {
+					t.Fatalf("child not in the band below: %+v", w.Columns)
+				}
+				if len(w.Columns[w.ColumnOf(2)].Windows) != 1 || w.IsFloat(2) {
+					t.Fatalf("child not alone in its column: %+v", w.Columns)
 				}
 				s := indicatorScene(t, c)
 				child := sceneWindow(t, s, 2)
-				if child.Hidden || !child.Focused {
+				if child.Hidden || !child.Focused || !child.Fullscreen || child.Rect != w.Output {
 					t.Fatalf("child scene: %+v", child)
 				}
 				configs := configuresOf(cmds)[2]
@@ -223,10 +234,14 @@ func TestFullscreenLauncherArrival(t *testing.T) {
 					t.Fatal("child not configured")
 				}
 				cfg := configs[len(configs)-1]
-				if mode != OverflowFixed && (cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > w.Output.W || cfg.Height > w.Output.H || cfg.Fullscreen || cfg.Floating) {
-					t.Fatalf("child not output-fitting tile: %+v", cfg)
+				if !cfg.Fullscreen || cfg.Floating || cfg.Width != w.Output.W || cfg.Height != w.Output.H {
+					t.Fatalf("child not fullscreen at output size: %+v", cfg)
 				}
+				// Back to the launcher: it covers again, the child is held.
 				w.FocusID(1)
+				if w.Fullscreen != 1 || !slices.Equal(w.Held, []WindowID{2}) {
+					t.Fatalf("return: cover %d held %v", w.Fullscreen, w.Held)
+				}
 				cover := sceneWindow(t, indicatorScene(t, c), 1)
 				if !cover.Fullscreen || cover.Rect != w.Output {
 					t.Fatalf("return to launcher: %+v", cover)
@@ -234,4 +249,136 @@ func TestFullscreenLauncherArrival(t *testing.T) {
 			})
 		})
 	}
+}
+
+// Arrivals that do not inherit the launcher's fullscreen keep their path.
+func TestFullscreenLauncherArrivalExceptions(t *testing.T) {
+	for _, mode := range []Overflow{OverflowCascade, OverflowScroll} {
+		for _, tc := range []struct {
+			name  string
+			next  ports.WindowMapped
+			focus WindowID // workspace focus after the arrival
+		}{
+			// Same app (a chat or friends window): today's own column.
+			{"same-app", ports.WindowMapped{ID: 2, PID: 20, AppID: "launcher", Proc: lineageNodes(20, 10)}, 2},
+			// A floating child stays a float over the cover.
+			{"floating", ports.WindowMapped{ID: 2, PID: 20, AppID: "game", Proc: lineageNodes(20, 10), Floating: true, Width: 200, Height: 100}, 2},
+			// Unrelated: hidden under the cover (ADR 011).
+			{"unrelated", ports.WindowMapped{ID: 2, PID: 30, AppID: "other", Proc: lineageNodes(30)}, 1},
+		} {
+			t.Run(fmt.Sprintf("%s/%s", mode, tc.name), func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					c, _, cmds := fadeCore(t)
+					w := c.cur().mon.Current()
+					w.SetOverflow(mode)
+					c.clientEvent(context.Background(), ports.WindowMapped{ID: 1, PID: 10, AppID: "launcher", Proc: lineageNodes(10)})
+					c.clientEvent(context.Background(), ports.WindowFullscreenRequest{ID: 1, Fullscreen: true})
+					c.clientEvent(context.Background(), tc.next)
+					if w.Fullscreen != 1 || len(w.Held) != 0 {
+						t.Fatalf("cover %d held %v", w.Fullscreen, w.Held)
+					}
+					if id, _ := w.Focused(); id != tc.focus {
+						t.Fatalf("focus %d want %d", id, tc.focus)
+					}
+					p := sceneWindow(t, indicatorScene(t, c), 2)
+					if p.Fullscreen || p.Hidden != (tc.name == "unrelated") {
+						t.Fatalf("arrival scene: %+v", p)
+					}
+					if cfgs := configuresOf(cmds)[2]; len(cfgs) > 0 && cfgs[len(cfgs)-1].Fullscreen {
+						t.Fatalf("arrival configured fullscreen: %+v", cfgs[len(cfgs)-1])
+					}
+				})
+			})
+		}
+	}
+}
+
+// A launcher already held (its first child is the cover) holds its next
+// child too: the game keeps the cover and the focus.
+func TestFullscreenHeldLauncherArrival(t *testing.T) {
+	for _, mode := range []Overflow{OverflowCascade, OverflowScroll} {
+		t.Run(string(mode), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				c, _, cmds := fadeCore(t)
+				w := c.cur().mon.Current()
+				w.SetOverflow(mode)
+				c.clientEvent(context.Background(), ports.WindowMapped{ID: 1, PID: 10, AppID: "launcher", Proc: lineageNodes(10)})
+				c.clientEvent(context.Background(), ports.WindowFullscreenRequest{ID: 1, Fullscreen: true})
+				c.clientEvent(context.Background(), ports.WindowMapped{ID: 2, PID: 20, AppID: "game", Proc: lineageNodes(20, 10)})
+				c.clientEvent(context.Background(), ports.WindowMapped{ID: 3, PID: 30, AppID: "tool", Proc: lineageNodes(30, 10)})
+				// The game stays on screen: its column shifts, the view with it.
+				if w.Fullscreen != 2 || w.Cover() != 2 || !slices.Equal(w.Held, []WindowID{1, 3}) {
+					t.Fatalf("cover %d covering %d held %v", w.Fullscreen, w.Cover(), w.Held)
+				}
+				if g := sceneWindow(t, indicatorScene(t, c), 2); g.Hidden || g.Rect != w.Output {
+					t.Fatalf("game moved off screen: %+v", g)
+				}
+				if id, _ := w.Focused(); id != 2 || c.keyboardFocus() != 2 {
+					t.Fatalf("focus %d keyboard %d", id, c.keyboardFocus())
+				}
+				if mode == OverflowScroll && w.ColumnOf(3) != w.ColumnOf(1)+1 {
+					t.Fatalf("held child not next to launcher: %+v", w.Columns)
+				}
+				p := sceneWindow(t, indicatorScene(t, c), 3)
+				if !p.Fullscreen || p.Rect.W != w.Output.W || p.Rect.H != w.Output.H {
+					t.Fatalf("held child scene: %+v", p)
+				}
+				if cfgs := configuresOf(cmds)[3]; len(cfgs) == 0 || !cfgs[len(cfgs)-1].Fullscreen {
+					t.Fatalf("held child configures: %+v", cfgs)
+				}
+			})
+		})
+	}
+}
+
+// A child mapping fullscreen already set takes the cover; the launcher
+// survives held instead of being left (placeMapped's Activate).
+func TestFullscreenLauncherArrivalMappedFullscreen(t *testing.T) {
+	for _, mode := range []Overflow{OverflowCascade, OverflowScroll} {
+		t.Run(string(mode), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				c, _, _ := fadeCore(t)
+				w := c.cur().mon.Current()
+				w.SetOverflow(mode)
+				c.clientEvent(context.Background(), ports.WindowMapped{ID: 1, PID: 10, AppID: "launcher", Proc: lineageNodes(10)})
+				c.clientEvent(context.Background(), ports.WindowFullscreenRequest{ID: 1, Fullscreen: true})
+				c.clientEvent(context.Background(), ports.WindowMapped{ID: 2, PID: 20, AppID: "game", Proc: lineageNodes(20, 10), Fullscreen: true})
+				if w.Fullscreen != 2 || !slices.Equal(w.Held, []WindowID{1}) {
+					t.Fatalf("cover %d held %v", w.Fullscreen, w.Held)
+				}
+				if p := sceneWindow(t, indicatorScene(t, c), 1); !p.Fullscreen {
+					t.Fatalf("launcher lost fullscreen: %+v", p)
+				}
+			})
+		})
+	}
+}
+
+// On a remote keep-focus output the child advances there; the seat stays.
+func TestFullscreenLauncherArrivalRemote(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, _, _ := fadeCore(t)
+		c.clientEvent(context.Background(), ports.WindowMapped{ID: 9, AppID: "kitty"})
+		c.addScreen(domain.OutputInfo{Name: "tv", Virtual: true, Width: 640, Height: 360})
+		target := c.screens[c.screenIndex("tv")]
+		c.cfg.Outputs = []domain.OutputConfig{{Name: "tv", KeepFocus: true}}
+		c.rules = []rule{{appID: regexp.MustCompile("^picture$"), output: "tv"}}
+		c.clientEvent(context.Background(), ports.WindowMapped{ID: 1, AppID: "picture", Proc: lineageNodes(10), Xwayland: true, Fullscreen: true})
+		w := target.mon.Current()
+		w.SetOverflow(OverflowScroll)
+		if w.Fullscreen != 1 {
+			t.Fatalf("launcher not fullscreen on tv: %d", w.Fullscreen)
+		}
+		seat, keyboard, pointer := c.focusScreen, c.keyboardFocus(), c.pointer
+		c.clientEvent(context.Background(), ports.WindowMapped{ID: 2, AppID: "game", Proc: lineageNodes(20, 10), Xwayland: true})
+		if w.Fullscreen != 2 || !slices.Equal(w.Held, []WindowID{1}) {
+			t.Fatalf("tv cover %d held %v", w.Fullscreen, w.Held)
+		}
+		if id, _ := w.Focused(); id != 2 {
+			t.Fatalf("tv focus %d", id)
+		}
+		if c.focusScreen != seat || c.keyboardFocus() != keyboard || c.pointer != pointer {
+			t.Fatal("remote arrival changed seat")
+		}
+	})
 }

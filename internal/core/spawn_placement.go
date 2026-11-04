@@ -178,7 +178,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) (follow bool) {
 			}
 			return c.placeByRule(v, eff, byRule)
 		}
-		if !c.placeCoverApp(v, c.cur(), c.cur().mon.Current(), 0) {
+		if !c.placeLaunched(v, c.cur(), c.cur().mon.Current(), 0) && !c.placeCoverApp(v, c.cur(), c.cur().mon.Current(), 0) {
 			c.cur().mon.AddWindow(v.ID)
 		}
 	}
@@ -190,6 +190,25 @@ func sameApp(a, b ports.WindowMapped) bool {
 	// Satellite X11 windows carry the bridge's PID, not the application's.
 	// Native Wayland and built-in X11 windows carry real application PIDs.
 	return !a.PIDShared && !b.PIDShared && a.PID != 0 && a.PID == b.PID || a.AppID != "" && a.AppID == b.AppID
+}
+
+// placeLaunched gives a tiled window launched by another program that is a
+// fullscreen group member of w the launcher's fullscreen (AddLaunchedWindow).
+// Callers pass only visible, non-quiet, non-floating arrivals (a rule
+// floating it included); same-app windows keep their ordinary column.
+func (c *Core) placeLaunched(v ports.WindowMapped, sc *screen, w *Workspace, cells int) bool {
+	if v.Floating || v.Parent != 0 || v.Remap {
+		return false
+	}
+	l := c.launcherOf(v.ID)
+	if l == 0 || !w.IsFullscreenMember(l) || sameApp(v, c.windows.lookup(l).client) {
+		return false
+	}
+	if !w.AddLaunchedWindow(v.ID, l, cells) {
+		return false
+	}
+	sc.mon.normalize()
+	return true
 }
 
 // placeCoverApp handles ordinary same-app arrivals on the workspace in view.
