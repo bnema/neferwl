@@ -218,10 +218,13 @@ func TestKeepFocusStashedWindowNotHeld(t *testing.T) {
 		}
 		r.client <- ports.WindowActivate{ID: steamID}
 		r.settle(t)
+		if hidden := sceneHidden(r.last, "tv", steamID); hidden {
+			t.Fatal("activating the stashed window did not show it")
+		}
 		lastX11(r)
 		r.focusNative(t)
 		if hidden := sceneHidden(r.last, "tv", steamID); hidden {
-			t.Skip("activation did not show the stash")
+			t.Fatal("the tv window hid again when the native window took the keyboard")
 		}
 		if got := x11Seen[r]; got != steamID {
 			t.Fatalf("X11-active %d once shown again, want %d", got, steamID)
@@ -239,6 +242,13 @@ func TestKeepFocusFullscreenWindowHeld(t *testing.T) {
 		r.settle(t)
 		r.tap(t, "F3")
 		r.drain()
+		var full bool
+		for _, w := range dragScene(r.last, "tv").Windows {
+			full = full || w.ID == steamID && w.Fullscreen && !w.Hidden
+		}
+		if !full {
+			t.Fatal("tv window not fullscreen")
+		}
 		cmds := r.focusNative(t)
 		if got := x11Changes(cmds); len(got) != 0 {
 			t.Fatalf("X11Active %v: the fullscreen tv window must stay held", got)
@@ -283,8 +293,8 @@ func TestKeepFocusOverview(t *testing.T) {
 	})
 }
 
-// Removing tv moves its windows to DP-1, which keeps nothing: the X11
-// window is X11-active only if it has the keyboard.
+// Removing tv moves its windows to DP-1, which keeps nothing: the keyboard
+// stays on the native window and no X11 window is X11-active.
 func TestKeepFocusOutputRemoved(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := keepFocusRig(t, true)
@@ -292,20 +302,11 @@ func TestKeepFocusOutputRemoved(t *testing.T) {
 		r.output <- ports.OutputRemoved{Name: "tv"}
 		r.settle(t)
 		cmds := r.drain()
-		focus := nativeID
-		if f := focusChanges(cmds); len(f) > 0 {
-			focus = f[len(f)-1]
+		if got := focusChanges(cmds); len(got) != 0 {
+			t.Fatalf("keyboard focus moved to %v, want it kept on %d", got, nativeID)
 		}
-		want := domain.WindowID(0)
-		if focus == steamID {
-			want = steamID
-		}
-		got := x11Changes(cmds)
-		if want == steamID && len(got) == 0 {
-			return // steamID was already active
-		}
-		if len(got) != 1 || got[0] != want {
-			t.Fatalf("X11Active %v after tv was removed (keyboard %d), want [%d]", got, focus, want)
+		if got := x11Changes(cmds); len(got) != 1 || got[0] != 0 {
+			t.Fatalf("X11Active %v after tv was removed, want [0]", got)
 		}
 	})
 }
