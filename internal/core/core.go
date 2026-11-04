@@ -83,6 +83,7 @@ type binding struct {
 	key  string
 }
 type Core struct {
+	lineage       lineage
 	placementPath string
 	hdrCaps       map[string]domain.OutputHDRCaps
 	osd           osd
@@ -651,6 +652,7 @@ func (c *Core) publish(ctx context.Context) error { return c.publishFrame(ctx, n
 // moved the springs (nil: any, or none moved): only a flip's own screen gets
 // a fresh Seq for its animation, so another output keeps its Seq while it draws the same.
 func (c *Core) publishFrame(ctx context.Context, only *screen) error {
+	defer c.observeLineageFocus()
 	if c.inputEpochChanged() {
 		return errSecurityChanged
 	}

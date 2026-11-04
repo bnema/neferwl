@@ -98,3 +98,42 @@ func procNodes(pids ...int) []domain.ProcNode {
 	}
 	return nodes
 }
+
+func TestSteamLineageOutputRecency(t *testing.T) {
+	for _, want := range []string{"tv", "DP-2"} {
+		t.Run(want, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				tv := left
+				tv.Name = "tv"
+				r := startMulti(t, func(c *domain.Config) {
+					c.Rules = []domain.WindowRule{
+						winRule("desktop", "steam-desktop", func(r *domain.WindowRule) { r.Output = "DP-2" }),
+						winRule("picture", "steam-picture", func(r *domain.WindowRule) { r.Output = "tv" }),
+					}
+				}, tv, right)
+				steam := procNodes(70, 20, 10)
+				steam[0].SessionLeader, steam[2].SessionLeader = true, true
+				r.client <- ports.WindowMapped{ID: 1, AppID: "steam-desktop", Proc: steam}
+				r.stateWith(t, 1)
+				r.client <- ports.WindowMapped{ID: 2, AppID: "steam-picture", Proc: steam}
+				st := r.stateWith(t, 2)
+				if stWindow(st, 1).Output != "DP-2" || stWindow(st, 2).Output != "tv" {
+					t.Fatalf("setup: %+v", st)
+				}
+				// Both candidates remain focused on their respective workspaces. Only
+				// seat focus recency distinguishes them; exercise both directions.
+				r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
+				if want == "tv" {
+					r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
+				}
+				game := procNodes(60, 50, 40, 30, 20, 10)
+				game[5].SessionLeader = true
+				r.client <- ports.WindowMapped{ID: 3, AppID: "game", Proc: game}
+				got := stWindow(r.stateWith(t, 3), 3)
+				if got.Output != want {
+					t.Fatalf("game output %q want %q: %+v", got.Output, want, got)
+				}
+			})
+		})
+	}
+}

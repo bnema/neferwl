@@ -66,6 +66,7 @@ func publishRig(t testing.TB, screens int) *Core {
 			continue
 		}
 		for range 6 {
+			c.mapLineage(ports.WindowMapped{ID: next})
 			sc.mon.AddWindow(next)
 			next++
 		}

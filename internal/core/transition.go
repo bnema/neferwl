@@ -417,6 +417,7 @@ func (c *Core) mapWindow(v ports.WindowMapped) (follow bool) {
 		// client reported (a fixed-size game is not a float).
 		v.Floating, v.Width, v.Height = false, 0, 0
 	}
+	c.mapLineage(v)
 	c.windows.mapped(v, now)
 	c.rememberTitleRules(v.ID)
 	c.matchWindowExpansion(v.ID)

@@ -15,23 +15,8 @@ func (c *Core) tracePlacement(v ports.WindowMapped, before map[*screen]WindowID,
 	}
 	focus, _ := sc.mon.Focused()
 	t := domain.PlacementTrace{Window: v.ID, Path: c.placementPath, Output: sc.name(), Workspace: ws.ID, Cover: cover, WorkspaceFocusChanged: before[sc] != focus, SeatFocusChanged: seat != c.keyboardFocus()}
-	if t.Path == "dialog" {
-		t.Launcher = v.Parent
-	}
-	if t.Path == "lineage" {
-		for _, node := range v.Proc[min(1, len(v.Proc)):] {
-			for id, rec := range c.windows.records {
-				if id != v.ID && !rec.client.PIDShared && len(rec.client.Proc) != 0 && rec.client.Proc[0].Key == node.Key {
-					if _, w := c.screenOf(id); w != nil && (t.Launcher == 0 || id < t.Launcher) {
-						t.Launcher = id
-					}
-				}
-			}
-			if t.Launcher != 0 {
-				break
-			}
-		}
-	}
+	t.Launcher = c.launcherOf(v.ID)
+
 	select {
 	case c.ch.Placements <- t:
 	default:

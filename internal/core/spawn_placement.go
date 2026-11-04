@@ -203,30 +203,10 @@ func (c *Core) placeCoverApp(v ports.WindowMapped, sc *screen, w *Workspace, cel
 	return true
 }
 
-// ancestorWorkspace selects the nearest process ancestor with a placed window.
-// Multiple windows of one process use the lowest window ID for stable placement.
+// ancestorWorkspace uses the first-map launcher while preserving remap placement.
 func (c *Core) ancestorWorkspace(v ports.WindowMapped) (*screen, *Workspace) {
 	if v.Remap || v.PIDShared {
 		return nil, nil
 	}
-	for _, node := range v.Proc[min(1, len(v.Proc)):] {
-		if node.Key.PID <= 1 {
-			break
-		}
-		var chosen WindowID
-		var sc *screen
-		var ws *Workspace
-		for id, rec := range c.windows.records {
-			if id == v.ID || rec.client.PIDShared || len(rec.client.Proc) == 0 || rec.client.Proc[0].Key != node.Key {
-				continue
-			}
-			if s, w := c.screenOf(id); w != nil && (ws == nil || id < chosen) {
-				chosen, sc, ws = id, s, w
-			}
-		}
-		if ws != nil {
-			return sc, ws
-		}
-	}
-	return nil, nil
+	return c.screenOf(c.launcherOf(v.ID))
 }
