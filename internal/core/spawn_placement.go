@@ -91,12 +91,15 @@ func (p *spawnPlacement) expireWorkspaceClaims(now time.Time) {
 // follow reports a window a rule sent to another output that takes the focus
 // there (placeByRule).
 func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) (follow bool) {
+	path := "focused"
+	defer func() { c.placementPath = path }()
 	if v.Floating {
 		if s, _ := c.screenOf(v.ID); s != nil {
 			return false
 		}
 		// A dialog opens on its parent's workspace, over it, fullscreen too.
 		if ps, pw := c.screenOf(v.Parent); v.Parent != 0 && pw != nil {
+			path = "dialog"
 			pw.AddDialog(v.ID, v.Parent, v.Width, v.Height)
 			pw.SetModal(v.ID, v.Modal)
 			ps.mon.normalize()
@@ -106,10 +109,12 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) (follow bool) {
 		eff, ok := c.ruleFor(v)
 		if eff.output == "" && eff.workspace == "" && eff.number == 0 {
 			if sc, w := c.ancestorWorkspace(v); w != nil {
+				path = "lineage"
 				return c.placeOnWorkspace(v, eff, sc, w, true)
 			}
 		}
 		if ok {
+			path = "rule"
 			return c.placeByRule(v, eff, true)
 		}
 		if !c.placeCoverApp(v, c.cur(), c.cur().mon.Current(), 0) {
@@ -126,6 +131,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) (follow bool) {
 				delete(p.pending, v.Slot)
 				for _, s := range c.screens {
 					if s.mon.has(target.ws) {
+						path = "slot"
 						if target.kind == spawnStash {
 							target.ws.StashSpawned(v.ID)
 						} else {
@@ -138,6 +144,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) (follow bool) {
 			case spawnSlot:
 				if st := c.slots[target.slot]; st != nil && st.window == 0 {
 					if sc, w := c.byName(target.slot.workspace); w != nil {
+						path = "slot"
 						p.dropSlot(target.slot)
 						st.window = v.ID
 						w.AddSlotWindow(v.ID, target.slot.index, st.cells)
@@ -153,6 +160,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) (follow bool) {
 		byRule := ok
 		if eff.output == "" && eff.workspace == "" && eff.number == 0 {
 			if sc, w := c.ancestorWorkspace(v); w != nil {
+				path = "lineage"
 				return c.placeOnWorkspace(v, eff, sc, w, true)
 			}
 		}
@@ -164,6 +172,10 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) (follow bool) {
 			}
 		}
 		if ok {
+			path = "rule"
+			if !byRule {
+				path = "position"
+			}
 			return c.placeByRule(v, eff, byRule)
 		}
 		if !c.placeCoverApp(v, c.cur(), c.cur().mon.Current(), 0) {

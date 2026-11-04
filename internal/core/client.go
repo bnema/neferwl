@@ -42,8 +42,14 @@ func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, 
 	case ports.InputRegionChanged:
 		c.windows.setRegion(v)
 	case ports.WindowMapped:
+		before := c.windowFocus()
+		seat := c.keyboardFocus()
+		cover := c.cur().mon.Current().Cover()
 		if c.mapWindow(v) && c.activate(ctx, v.ID) != nil {
 			return false, true
+		}
+		if !v.Remap {
+			c.tracePlacement(v, before, seat, cover)
 		}
 	case ports.WindowResized:
 		c.resizeFloating(v)
