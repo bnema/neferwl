@@ -219,3 +219,30 @@ func TestLineageFocusWorkspaceChurn(t *testing.T) {
 		}
 	})
 }
+
+func TestShellMeetingExclusionLive(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := lineageCore(t)
+		candidate := lineageNodes(10, 5)
+		candidate[1].Comm = "bash"
+		c.mapWindow(ports.WindowMapped{ID: 1, Proc: candidate})
+		child := lineageNodes(20, 5)
+		child[1].Comm = "bash"
+		if got := c.resolveLauncher(ports.WindowMapped{ID: 2, Proc: child}); got != 0 {
+			t.Fatal("shell established common lineage")
+		}
+		c.lineage.records[1].proc[1].Comm = "custom-wrapper"
+		child[1].Comm = "custom-wrapper"
+		if got := c.resolveLauncher(ports.WindowMapped{ID: 2, Proc: child}); got != 1 {
+			t.Fatal("non-shell wrapper rejected before reload")
+		}
+		c.cfg.LineageShells = []string{"custom-wrapper"}
+		if got := c.resolveLauncher(ports.WindowMapped{ID: 2, Proc: child}); got != 0 {
+			t.Fatal("live shell extension ignored")
+		}
+		c.lineage.records[1].proc[0].Comm = "bash"
+		if got := c.resolveLauncher(ports.WindowMapped{ID: 2, Proc: lineageNodes(20, 10)}); got != 1 {
+			t.Fatal("direct ancestry changed")
+		}
+	})
+}

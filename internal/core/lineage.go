@@ -94,11 +94,11 @@ func (c *Core) resolveLauncher(v ports.WindowMapped) WindowID {
 			continue
 		}
 		for i := 1; i < len(v.Proc); i++ {
-			if v.Proc[i].SessionLeader {
+			if v.Proc[i].SessionLeader || c.lineageShell(v.Proc[i].Comm) {
 				continue
 			}
 			for j := 1; j < len(r.proc); j++ {
-				if !r.proc[j].SessionLeader && v.Proc[i].Key == r.proc[j].Key {
+				if !r.proc[j].SessionLeader && !c.lineageShell(r.proc[j].Comm) && v.Proc[i].Key == r.proc[j].Key {
 					consider(id, i, j)
 				}
 			}
@@ -190,4 +190,14 @@ func (c *Core) noteLineageFocus(id WindowID) {
 		c.lineage.focusOrder++
 		r.focused = c.lineage.focusOrder
 	}
+}
+
+// Generic launch wrappers cannot establish application identity. Configuration
+// extends the defaults live; direct process ancestry intentionally bypasses it.
+func (c *Core) lineageShell(name string) bool {
+	switch name {
+	case "sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh", "nu", "elvish", "xonsh", "env", "sudo", "doas", "setsid", "nohup", "timeout", "systemd-run", "flatpak-spawn":
+		return true
+	}
+	return slices.Contains(c.cfg.LineageShells, name)
 }

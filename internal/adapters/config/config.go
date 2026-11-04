@@ -775,6 +775,15 @@ func expandCmd(combo, cmd string) (string, error) {
 // set applies one scalar key. Unknown keys and invalid values are errors.
 func set(c *domain.Config, key, v string) error {
 	switch key {
+	case "lineage.shells":
+		c.LineageShells = nil
+		for _, name := range strings.Split(v, ",") {
+			name = strings.TrimSpace(name)
+			if name == "" || len(name) > 16 || strings.ContainsAny(name, "/\t\n") {
+				return fmt.Errorf("must be comma-separated process names of 1 to 16 bytes")
+			}
+			c.LineageShells = append(c.LineageShells, name)
+		}
 	case "keyboard.layout":
 		c.Keyboard.Layout = v
 	case "keyboard.variant":

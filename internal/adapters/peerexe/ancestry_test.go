@@ -31,6 +31,7 @@ func TestParseStat(t *testing.T) {
 
 func TestProcessChain(t *testing.T) {
 	root := fstest.MapFS{"100/stat": stat(100, 90, 90, 1), "90/stat": stat(90, 80, 90, 2), "80/stat": stat(80, 1, 80, 3), "200/stat": stat(200, 90, 200, 4), "300/stat": stat(300, 200, 300, 5)}
+	addComm(root)
 	p := NewProcesses(root, 100)
 	if got := p.Chain(300); len(got) != 2 || got[0].Key.PID != 300 || got[1].Key.PID != 200 {
 		t.Fatalf("cut: %+v", got)
@@ -58,11 +59,27 @@ func TestProcessDepth(t *testing.T) {
 	for pid := 2; pid < 100; pid++ {
 		root[fmt.Sprintf("%d/stat", pid)] = stat(pid, pid-1, pid, 1)
 	}
+	addComm(root)
 	p := NewProcesses(root, 0)
 	if got := p.Chain(99); len(got) != 32 {
 		t.Fatalf("depth: %d", len(got))
 	}
 	if got := p.Chain(3); len(got) != 2 {
 		t.Fatalf("init: %+v", got)
+	}
+}
+
+func addComm(root fstest.MapFS) {
+	for path := range root {
+		if strings.HasSuffix(path, "/stat") {
+			root[strings.TrimSuffix(path, "stat")+"comm"] = &fstest.MapFile{Data: []byte("steam\n")}
+		}
+	}
+}
+func TestProcessComm(t *testing.T) {
+	root := fstest.MapFS{"2/stat": stat(2, 1, 2, 1), "2/comm": {Data: []byte("bash\n")}}
+	got := NewProcesses(root, 0).Chain(2)
+	if len(got) != 1 || got[0].Comm != "bash" {
+		t.Fatalf("comm: %+v", got)
 	}
 }

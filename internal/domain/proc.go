@@ -9,6 +9,8 @@ type ProcKey struct {
 
 // ProcNode is a best-effort placement hint, never an authorization credential.
 type ProcNode struct {
+	// Comm is the bounded Linux process name, at most 16 bytes.
+	Comm          string
 	Key           ProcKey
 	SessionLeader bool
 }

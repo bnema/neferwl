@@ -51,7 +51,17 @@ func (p *Processes) read(pid int) (domain.ProcNode, int, bool) {
 	if err != nil {
 		return domain.ProcNode{}, 0, false
 	}
-	return parseStat(pid, string(b))
+	node, parent, ok := parseStat(pid, string(b))
+	if !ok {
+		return node, parent, false
+	}
+	comm, err := fs.ReadFile(p.fs, strconv.Itoa(pid)+"/comm")
+	if err != nil {
+		return domain.ProcNode{}, 0, false
+	}
+	node.Comm = string(comm[:min(16, len(comm))])
+	node.Comm = strings.TrimSuffix(node.Comm, "\n")
+	return node, parent, true
 }
 
 // comm may contain spaces and parentheses: fields begin after the LAST ')'.

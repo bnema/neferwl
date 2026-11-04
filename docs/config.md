@@ -634,3 +634,14 @@ X11 games are classified as games for auto mode, not forced past output gates.
 Other X11 games need an app-ID rule because X11 carries no Wayland game content
 type. `on` requests expansion eligibility; it does not bypass HDR/headroom gates.
 Placement fields still apply only at first map.
+
+### Process-lineage shell exclusions
+
+`lineage.shells = wrapper, custom-launcher` adds process **comm** names to the
+common-ancestor exclusion list. It reloads live and affects future first-map
+lineage decisions; existing launcher edges are retained. Names are limited to
+16 bytes. Defaults are `sh`, `bash`, `zsh`, `fish`, `dash`, `ksh`, `tcsh`, `csh`,
+`nu`, `elvish`, `xonsh`, `env`, `sudo`, `doas`, `setsid`, `nohup`, `timeout`,
+`systemd-run`, and `flatpak-spawn`. Generic launch wrappers (including
+`flatpak-spawn`) do not establish application identity. Direct ancestor matches
+are unaffected; common meeting points that are session leaders are excluded too.

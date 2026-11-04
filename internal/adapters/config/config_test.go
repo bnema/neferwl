@@ -1265,3 +1265,15 @@ func TestHintSources(t *testing.T) {
 		}
 	}
 }
+
+func TestLineageShells(t *testing.T) {
+	c, warnings, err := Parse(strings.NewReader("lineage.shells = wrapper, custom\n"))
+	if err != nil || len(warnings) != 0 || len(c.LineageShells) != 2 || c.LineageShells[0] != "wrapper" {
+		t.Fatalf("shells: %+v %v %v", c.LineageShells, warnings, err)
+	}
+	other := c
+	other.LineageShells = []string{"different"}
+	if c.Equal(other) {
+		t.Fatal("shell reload compares equal")
+	}
+}

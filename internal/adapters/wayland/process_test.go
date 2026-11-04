@@ -12,6 +12,7 @@ import (
 
 func TestWindowProcessChainAndRemap(t *testing.T) {
 	root := fstest.MapFS{
+		"20/comm": {Data: []byte("app\n")}, "10/comm": {Data: []byte("launcher\n")},
 		"20/stat": {Data: []byte("20 (app) S 10 0 20 " + strings.Repeat("0 ", 15) + "123")},
 		"10/stat": {Data: []byte("10 (launcher) S 1 0 10 " + strings.Repeat("0 ", 15) + "456")},
 	}
