@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"bnema.dev/wlturbo"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/wlrvirtualpointer"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
@@ -240,7 +241,7 @@ func TestVirtualPointerReleasesAllHeld(t *testing.T) {
 }
 
 // Repeated presses in one frame forward once; a frame over the limit is a
-// protocol error and forwards nothing.
+// wl_display implementation error (object 1, code 3) and forwards nothing.
 func TestVirtualPointerFrameLimit(t *testing.T) {
 	s, events, _, dir := keyboardServer(t)
 	c, p := virtualMover(t, s, dir, false)
@@ -255,7 +256,7 @@ func TestVirtualPointerFrameLimit(t *testing.T) {
 	for i := 0; i <= maxVirtualFrame; i++ {
 		requestProtocol(t, c2, p2, vpButton, uint32(i), btnLeftCode, uint32(i%2))
 	}
-	expectProtocolError(t, c2, p2, virtualFrameTooLarge)
+	expectProtocolError(t, c2, 1, uint32(wayland.DisplayErrorImplementation))
 	if !s.display.Do(func() {}) {
 		t.Fatal("display stopped")
 	}

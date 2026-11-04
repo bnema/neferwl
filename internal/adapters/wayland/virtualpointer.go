@@ -20,7 +20,7 @@ const virtualPointerInterface = "zwlr_virtual_pointer_manager_v1"
 
 // maxVirtualFrame bounds the requests one frame may hold: a client that
 // never sends frame cannot grow compositor memory. Exceeding it is a
-// protocol error and disconnects the client.
+// wl_display implementation error and disconnects the client.
 const maxVirtualFrame = 256
 
 // maxVirtualHeld bounds the buttons one virtual pointer holds at once.
@@ -137,16 +137,14 @@ func (p *virtualPointer) add(v ports.VirtualPointerInput) bool {
 		p.reset()
 		p.pending = nil
 		p.dead = true
-		// No error of the protocol fits; libwayland passes any code on.
-		p.res.PostError(virtualFrameTooLarge, "frame holds too many requests")
+		// The protocol has no error for it: a compositor limit is an
+		// implementation error on wl_display.
+		p.res.Client().PostImplementationError("zwlr_virtual_pointer_v1: frame holds more than 256 requests")
 		return false
 	}
 	p.pending = append(p.pending, v)
 	return true
 }
-
-// virtualFrameTooLarge is past the protocol's error enum.
-const virtualFrameTooLarge = 2
 
 // last is the newest pending request, or nil.
 func (p *virtualPointer) last() *ports.VirtualPointerInput {

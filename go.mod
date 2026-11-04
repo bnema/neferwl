@@ -5,7 +5,7 @@ go 1.27
 require (
 	bnema.dev/kvconf v0.2.0
 	bnema.dev/purego v0.13.0-bnema.3
-	bnema.dev/purego-libwayland v0.13.0
+	bnema.dev/purego-libwayland v0.13.1-0.20261104093118-71e77dc91c8f
 	bnema.dev/purego-pipewire v0.5.1-0.20261104054739-214239b692ee
 	bnema.dev/purego-vulkan v0.7.0
 	bnema.dev/wlturbo v0.7.0
