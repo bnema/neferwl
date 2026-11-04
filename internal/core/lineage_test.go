@@ -61,6 +61,7 @@ func TestLineageResolution(t *testing.T) {
 					tc.child[1].Key.Start++
 				}
 				c.mapWindow(ports.WindowMapped{ID: 1, Proc: tc.candidate, PIDShared: tc.candidateShared})
+				c.cur().lineageFocus = focusHistory{}
 				c.cur().lineageFocus.observe(time.Unix(999, 0), 1)
 				c.mapWindow(ports.WindowMapped{ID: 2, Proc: tc.child, PIDShared: tc.childShared})
 				if got := c.launcherOf(2); got != tc.want {
@@ -142,6 +143,7 @@ func TestLineageMeetingOrder(t *testing.T) {
 		} {
 			c := lineageCore(t)
 			c.mapWindow(ports.WindowMapped{ID: 1, Proc: tc.a})
+			c.cur().lineageFocus = focusHistory{}
 			c.cur().lineageFocus.observe(time.Unix(999, 0), 1)
 			first := c.cur().mon.Current()
 			c.mapWindow(ports.WindowMapped{ID: 2, Proc: tc.b})
@@ -163,6 +165,7 @@ func TestFirstExternalSiblingChain(t *testing.T) {
 		a := lineageNodes(70, 20, 10)
 		a[2].SessionLeader = true
 		c.mapWindow(ports.WindowMapped{ID: 1, Proc: a})
+		c.cur().lineageFocus = focusHistory{}
 		c.cur().lineageFocus.observe(time.Unix(999, 0), 1)
 		child := lineageNodes(80, 20, 10)
 		child[2].SessionLeader = true
@@ -204,6 +207,7 @@ func TestLineageFocusWorkspaceChurn(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c := lineageCore(t)
 		m := c.cur().mon
+		c.mapLineage(ports.WindowMapped{ID: 99, Proc: lineageNodes(99)})
 		for i := 0; i < 100; i++ {
 			w := m.Current()
 			w.AddWindow(1)
@@ -233,6 +237,7 @@ func TestShellMeetingExclusionLive(t *testing.T) {
 		candidate := lineageNodes(10, 5)
 		candidate[1].Comm = "bash"
 		c.mapWindow(ports.WindowMapped{ID: 1, Proc: candidate})
+		c.cur().lineageFocus = focusHistory{}
 		c.cur().lineageFocus.observe(time.Unix(999, 0), 1)
 		child := lineageNodes(20, 5)
 		child[1].Comm = "bash"

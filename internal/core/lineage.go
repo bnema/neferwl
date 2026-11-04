@@ -23,12 +23,19 @@ type lineageRecord struct {
 	focused, mappedOrder uint64
 }
 
+type workspaceFocusObservation struct {
+	id         WindowID
+	generation uint64
+}
+
 type lineage struct {
+	processRecords int
+	generation     uint64
 	records        map[WindowID]*lineageRecord
 	order          uint64
 	focusOrder     uint64
 	seat           WindowID
-	workspaceFocus map[*Workspace]WindowID
+	workspaceFocus map[*Workspace]workspaceFocusObservation
 }
 
 func (c *Core) launcherOf(id WindowID) WindowID {
@@ -58,6 +65,12 @@ func (c *Core) mapLineage(v ports.WindowMapped) {
 		}
 	}
 	l.records[v.ID] = r
+	if !r.shared && len(r.proc) > 0 {
+		l.processRecords++
+		if l.processRecords == 1 {
+			c.observeLineageFocus()
+		}
+	}
 }
 
 func (c *Core) resolveLauncher(v ports.WindowMapped) WindowID {
@@ -145,38 +158,47 @@ func (c *Core) removeLineage(id WindowID, destroyed bool) {
 	}
 	r.mapped = false
 	if destroyed {
+		if !r.shared && len(r.proc) > 0 {
+			c.lineage.processRecords--
+		}
 		delete(c.lineage.records, id)
+		if c.lineage.processRecords == 0 {
+			clear(c.lineage.workspaceFocus)
+			c.lineage.seat = 0
+			for _, sc := range c.screens {
+				sc.lineageFocus = focusHistory{}
+			}
+		}
 	}
 }
 
 // observeLineageFocus compares workspace-local state without allocating. Seat
 // changes also count when switching to an already-focused workspace window.
 func (c *Core) observeLineageFocus() {
+	if c.lineage.processRecords == 0 {
+		return
+	}
+	c.lineage.generation++
+	generation := c.lineage.generation
 	if c.lineage.workspaceFocus == nil {
-		c.lineage.workspaceFocus = make(map[*Workspace]WindowID)
+		c.lineage.workspaceFocus = make(map[*Workspace]workspaceFocusObservation)
 	}
 	for _, sc := range c.screens {
 		id, _ := sc.mon.Current().Focused()
 		c.observeDomainFocus(sc, id)
 		for _, w := range sc.mon.Workspaces {
 			id, _ := w.Focused()
-			if id != c.lineage.workspaceFocus[w] {
-				c.lineage.workspaceFocus[w] = id
+			observation := c.lineage.workspaceFocus[w]
+			if id != observation.id {
 				c.noteLineageFocus(id)
 			}
+			c.lineage.workspaceFocus[w] = workspaceFocusObservation{id: id, generation: generation}
 		}
 	}
-	// normalize and output removal can retire workspaces between observations.
-	// Prune against the same live set we observe, without allocating scratch.
-	for w := range c.lineage.workspaceFocus {
-		live := false
-		for _, sc := range c.screens {
-			if slices.Contains(sc.mon.Workspaces, w) {
-				live = true
-				break
-			}
-		}
-		if !live {
+	// Generation marking prunes retired workspaces in linear time, without
+	// repeated searches through the output workspace lists or scratch allocation.
+	for w, observation := range c.lineage.workspaceFocus {
+		if observation.generation != generation {
 			delete(c.lineage.workspaceFocus, w)
 		}
 	}

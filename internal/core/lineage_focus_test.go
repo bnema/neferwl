@@ -13,6 +13,7 @@ func TestBranchStartFocus(t *testing.T) {
 			c := lineageCore(t)
 			c.mapWindow(ports.WindowMapped{ID: 1, Proc: lineageNodes(70, 20, 10)})
 			c.mapWindow(ports.WindowMapped{ID: 2})
+			c.cur().lineageFocus = focusHistory{}
 			h := &c.cur().lineageFocus
 			at := time.Unix(1000, 0)
 			id := WindowID(2)
