@@ -38,13 +38,14 @@ func (c *Cursor) set(img domain.CursorImage) {
 
 // snapshot is called by the output owner; set replaces rather than mutates
 // image pixels, so the returned image stays immutable through the GPU upload.
-func (c *Cursor) snapshot() *domain.CaptureCursor {
+func (c *Cursor) snapshot(dst *domain.CaptureCursor) *domain.CaptureCursor {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.hidden || c.img.W == 0 || c.img.H == 0 {
 		return nil
 	}
-	return &domain.CaptureCursor{Image: c.img, X: int(c.x), Y: int(c.y)}
+	*dst = domain.CaptureCursor{Image: c.img, X: int(c.x), Y: int(c.y)}
+	return dst
 }
 
 // draw blends the premultiplied cursor over dst with its hotspot at (x, y).
@@ -80,4 +81,20 @@ func (c *Cursor) drawSecure(dst *image.RGBA, security ports.SessionSecurity) {
 			d[2] = byte(min(255, int(s[0])+int(d[2])*(255-a)/255))
 		}
 	}
+}
+
+// captureCursor samples only admitted displayed-frame requests. Hidden children
+// have no output cursor. dst belongs to the output owner, not to a frame lease.
+func (c *Cursor) captureCursor(dst *domain.CaptureCursor, normal, excluded []domain.CaptureRequest) *domain.CaptureCursor {
+	if c == nil {
+		return nil
+	}
+	for _, group := range [2][]domain.CaptureRequest{normal, excluded} {
+		for _, q := range group {
+			if q.Cursor {
+				return c.snapshot(dst)
+			}
+		}
+	}
+	return nil
 }

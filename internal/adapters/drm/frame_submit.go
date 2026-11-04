@@ -44,9 +44,6 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene domain
 	// (the caller keeps it, see capture.Waiting).
 	if pipeline != nil {
 		pipeline.Cursor = nil
-		if o.cursor != nil {
-			pipeline.Cursor = o.cursor.snapshot()
-		}
 	}
 	ready, _ := pipeline.Hold(scene, requests, time.Now())
 	if len(scene.CaptureIndicators) > 0 {
@@ -62,6 +59,9 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene domain
 		}()
 	}
 	normal, excluded, hidden := pipeline.Split(scene, ready)
+	if pipeline != nil {
+		pipeline.Cursor = o.cursor.captureCursor(&o.captureCursor, normal, excluded)
+	}
 	pipeline.Retire(scene)
 	if len(hidden) > 0 {
 		if !o.sceneCurrent(scene) || o.protected {
