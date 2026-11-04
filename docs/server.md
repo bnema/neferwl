@@ -93,6 +93,25 @@ Moonlight's keyboard, mouse and gamepads reach the host through Sunshine's virtu
 
 Steam's controller rules grant access through `uaccess`, which needs a logind seat. Server mode has none, so the `input` group is what gives Steam its gamepads.
 
+## Controlling a NeferWL session (agents)
+
+An agent or script on the host can watch the session and drive it with standard Wayland tools. Run them as the session user with the session's display:
+
+```sh
+export $(systemctl --user show-environment | grep -E '^(WAYLAND_DISPLAY|XDG_RUNTIME_DIR)=')
+grim -o tv /tmp/screen.png        # capture one output (see Screen capture)
+wlrctl pointer move 200 -50       # relative motion, in logical pixels
+wlrctl pointer click left         # click where the pointer is
+wtype 'hello'                     # type into the focused window
+neferwl state                     # windows, focus, outputs as JSON
+```
+
+- The pointer tools use `zwlr_virtual_pointer_v1`. NeferWL routes their events like a real mouse, so focus, hover and drags behave as they would for a person. Absolute motion maps into the whole layout, or into one output when the tool binds it (`create_virtual_pointer_with_output`).
+- `ydotool` writes to `/dev/uinput` through `ydotoold` and does not use this protocol; prefer `wlrctl`.
+- Nothing is injected while the session is locked. Buttons a tool still held when it disconnects are released.
+- Flatpak and other sandboxed clients (those on a `wp_security_context_v1` socket) do not see the virtual pointer global.
+- `grim` needs the capture allowlist to admit it; see [the allowlist](capture.md#the-allowlist).
+
 ## Hardening
 
 On a dedicated box, a local keyboard should not reboot or reach a console:

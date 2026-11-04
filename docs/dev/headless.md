@@ -64,6 +64,18 @@ WAYLAND_DISPLAY=<name> go run ./examples/testime -preedit nihon -commit 日本
 
 `-count <n>` exits after n commits; `-delay` sets the time between preedit and commit.
 
+## Testing the virtual pointer
+
+`examples/testpointer` is a small `zwlr_virtual_pointer_v1` client, for when `wlrctl` is not installed. Each argument is one frame:
+
+```sh
+WAYLAND_DISPLAY=<name> go run ./examples/testpointer abs 0.1 0.5 click   # fraction of the layout
+WAYLAND_DISPLAY=<name> go run ./examples/testpointer move 1500 0 click scroll 3
+WAYLAND_DISPLAY=<name> go run ./examples/testpointer -output abs 0.5 0.5  # first wl_output
+```
+
+Check the result with `neferwl state` (`.window.id` is the focused window). Headless screenshots do not show the cursor.
+
 ## X11 check
 
 `make e2e-xwayland` runs the end-to-end test of the built-in window manager (`xwayland = builtin`). It is behind the `xwayland` build tag, so `go test ./...` and `make check` only compile it (`go vet -tags xwayland`). It needs `Xwayland` on `PATH` and a GPU, and skips without Xwayland. The clipboard test also needs `wl-copy` and `wl-paste` (wl-clipboard) and skips without them; they run with the headless `WAYLAND_DISPLAY` and need no extra focus step, since the focused probe window is enough for `wl-copy --foreground` to set the selection.
