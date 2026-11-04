@@ -112,6 +112,14 @@ neferwl state                     # windows, focus, outputs as JSON
 - Flatpak and other sandboxed clients (those on a `wp_security_context_v1` socket) do not see the virtual pointer global.
 - `grim` needs the capture allowlist to admit it; see [the allowlist](capture.md#the-allowlist).
 
+[wayvnc](https://github.com/any1/wayvnc) works for remote viewing and control: it captures an output with wlr-screencopy and injects input through the virtual pointer and keyboard. Add its executable (`/usr/bin/wayvnc`) to `/etc/neferwl/capture-allow`, then run it in the session:
+
+```sh
+wayvnc -o tv 127.0.0.1 5900
+```
+
+Keep it on localhost and reach it through an SSH tunnel, or configure wayvnc's own authentication and TLS.
+
 ## Hardening
 
 On a dedicated box, a local keyboard should not reboot or reach a console:
