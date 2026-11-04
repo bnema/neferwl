@@ -63,10 +63,23 @@ func startCastApp(t *testing.T, allow string) *castApp {
 // startCastAppConfig runs the compositor with cfg and the capture allowlist
 // content. The PipeWire socket stays where it is: only the Wayland socket
 // and the state move to temporary directories.
-//
-//testpolicy:realtime real headless renderer and D-Bus service startup and teardown
 func startCastAppConfig(t *testing.T, allow string, cfg domain.Config) *castApp {
 	t.Helper()
+	return startCastAppBackend(t, allow, cfg, domain.BackendHeadless)
+}
+
+// startCastAppBackend is startCastAppConfig on backend. The server backend
+// has no fixed head (only cfg's virtual outputs), always serves the session
+// bus and never runs libinput here (noLibinput).
+//
+//testpolicy:realtime real headless renderer and D-Bus service startup and teardown
+func startCastAppBackend(t *testing.T, allow string, cfg domain.Config, backend domain.Backend) *castApp {
+	t.Helper()
+	server := backend == domain.BackendServer
+	sizes := [][2]int{{320, 240}}
+	if server {
+		sizes = nil
+	}
 	t.Setenv("PIPEWIRE_RUNTIME_DIR", os.Getenv("XDG_RUNTIME_DIR"))
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
@@ -80,7 +93,7 @@ func startCastAppConfig(t *testing.T, allow string, cfg domain.Config) *castApp 
 	inputReady := make(chan chan<- ports.InputEvent, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, Options{Backend: "headless", DBus: true, NoXwayland: true, NoTerminal: true, Config: cfg, Sizes: [][2]int{{320, 240}}, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid()), castInventoryApplied: inventory},
+		done <- run(ctx, Options{Backend: backend, DBus: !server, NoXwayland: true, NoTerminal: true, Config: cfg, Sizes: sizes, noLibinput: server, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid()), castInventoryApplied: inventory},
 			func(in chan<- ports.InputEvent) { inputReady <- in })
 	}()
 	a := &castApp{inventory: inventory}
@@ -496,5 +509,95 @@ func waitFrames(t *testing.T, frames *atomic.Int64, changed <-chan struct{}, exi
 		case <-timer.C:
 			t.Fatalf("consumer stalled at frame %d, want %d", frames.Load(), target)
 		}
+	}
+}
+
+// TestServerScreencastVirtualOutput: the server backend serves the cast
+// service without --dbus and streams its virtual output to a PipeWire
+// consumer.
+//
+//testpolicy:realtime real PipeWire/GStreamer frames and D-Bus lifecycle
+func TestServerScreencastVirtualOutput(t *testing.T) {
+	requireCastEnv(t)
+	cfg := config.Defaults()
+	cfg.Outputs = append(cfg.Outputs, domain.OutputConfig{Name: "tv", Virtual: true, Mode: "320x240"})
+	app := startCastAppBackend(t, "*\n", cfg, domain.BackendServer)
+	c := castClient(t)
+	waitOwner(t, c, scName)
+	var session, stream string
+	timeout := time.After(15 * time.Second)
+	for {
+		name, m := call(c, scPath, "org.gnome.Mutter.ScreenCast", "CreateSession", "a{sv}", emptyProps)
+		if name != "" {
+			t.Fatalf("CreateSession: %s", name)
+		}
+		session = strings.Clone(m.Body().ObjectPath())
+		var errName string
+		if errName, stream = recordMonitor(c, session, "tv"); errName == "" {
+			break
+		}
+		call(c, session, scSession, "Stop", "", nil)
+		select {
+		case <-timeout:
+			t.Fatalf("RecordMonitor tv: %s", errName)
+		case <-app.inventory:
+		}
+	}
+	if err := c.AddMatch("type='signal',interface='" + scStream + "'"); err != nil {
+		t.Fatal(err)
+	}
+	if name, _ := call(c, session, scSession, "Start", "", nil); name != "" {
+		t.Fatalf("Start: %s", name)
+	}
+	node := uint32(0)
+	for node == 0 {
+		m, err := c.ReadMessage()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m.Member == "PipeWireStreamAdded" && m.Path == stream && m.Destination == c.UniqueName() {
+			node = m.Body().Uint32()
+		}
+	}
+	// Pointer motion (an unbound device reaches the placed virtual output)
+	// damages the output while the consumer runs.
+	stop := make(chan struct{})
+	moved := make(chan struct{})
+	go func() {
+		defer close(moved)
+		tick := time.NewTicker(16 * time.Millisecond)
+		defer tick.Stop()
+		for i := 0; ; i++ {
+			ev := ports.InputEvent(ports.SecurityInput{Event: ports.PointerMotion{X: float64(40 + 120*(i%2)), Y: 40}})
+			select {
+			case app.input <- ev:
+			case <-stop:
+				return
+			}
+			select {
+			case <-tick.C:
+			case <-stop:
+				return
+			}
+		}
+	}()
+	defer func() { close(stop); <-moved }()
+	gst := exec.Command("gst-launch-1.0", "pipewiresrc", "path="+itoa(node), "stream-properties=props,media.type=Video", "num-buffers=30", "!", "fakesink")
+	exited := make(chan error, 1)
+	if err := gst.Start(); err != nil {
+		t.Fatal(err)
+	}
+	go func() { exited <- gst.Wait() }()
+	select {
+	case err := <-exited:
+		if err != nil {
+			t.Errorf("gst-launch-1.0: %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		_ = gst.Process.Kill()
+		t.Fatal("gst-launch-1.0 did not receive 30 buffers")
+	}
+	if name, _ := call(c, session, scSession, "Stop", "", nil); name != "" {
+		t.Fatalf("Stop: %s", name)
 	}
 }
