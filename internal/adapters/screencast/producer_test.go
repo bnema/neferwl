@@ -4,17 +4,18 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
 
+	"bnema.dev/purego-pipewire/pipewire"
+	"bnema.dev/zerobus"
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/domain"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/purego-pipewire/pipewire"
-	"bnema.dev/zerobus"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -112,6 +113,15 @@ func (p *producer) streaming() {
 		func(cfg pipewire.VideoConfig, h pipewire.VideoHandler) (videoSource, error) {
 			if cfg.Width != 64 || cfg.Height != 32 || cfg.MaxFPS != 60 || cfg.DMABuf == nil || !cfg.DMABuf.Strict || cfg.DMABuf.Allocator == nil || cfg.DMABuf.OnError == nil {
 				p.t.Errorf("config %+v", cfg)
+			}
+			wantProps := []pipewire.VideoProp{
+				{Key: "node.description", Value: "NeferWL screen cast (HEADLESS-1)"},
+				{Key: "media.role", Value: "Screen"},
+				{Key: "media.category", Value: "Capture"},
+				{Key: "application.name", Value: "NeferWL"},
+			}
+			if cfg.Name != "neferwl-screen-cast" || !slices.Equal(cfg.Props, wantProps) {
+				p.t.Errorf("node name %q props %+v", cfg.Name, cfg.Props)
 			}
 			return p.src, nil
 		}).Once()

@@ -281,6 +281,26 @@ func (s *Service) castFormats() []domain.DMABufFormat {
 	return s.gpu.CastFormats()
 }
 
+// castNodeName names the PipeWire node like other screen-cast producers
+// (xdpw-stream, xdph-streaming) so desktop tools tell it from a camera.
+const castNodeName = "neferwl-screen-cast"
+
+// castNodeProps identifies the node as a screen capture: media.role Screen
+// and media.category Capture are the PipeWire keys.h conventions for screen
+// capture streams.
+func castNodeProps(output string) []pipewire.VideoProp {
+	desc := "NeferWL screen cast"
+	if output != "" {
+		desc += " (" + output + ")"
+	}
+	return []pipewire.VideoProp{
+		{Key: "node.description", Value: desc},
+		{Key: "media.role", Value: "Screen"},
+		{Key: "media.category", Value: "Capture"},
+		{Key: "application.name", Value: "NeferWL"},
+	}
+}
+
 // openSource creates the PipeWire node once the target size is known.
 func (s *Service) openSource(st *stream) {
 	if s.pwc == nil {
@@ -295,7 +315,7 @@ func (s *Service) openSource(st *stream) {
 	}
 	formats, color := formatsFor(st)
 	st.alloc.dev = s.gpu
-	cfg := pipewire.VideoConfig{Name: "neferwl-screencast", Width: st.w, Height: st.h, MaxFPS: st.maxFPS, Formats: formats, Color: color,
+	cfg := pipewire.VideoConfig{Name: castNodeName, Props: castNodeProps(st.output), Width: st.w, Height: st.h, MaxFPS: st.maxFPS, Formats: formats, Color: color,
 		DMABuf: &pipewire.VideoDMABuf{Formats: dma, Allocator: &st.alloc, Strict: true, OnError: st.h2.dmabufFailed}}
 	src, err := s.pwc.NewVideoSource(cfg, &st.h2)
 	if err != nil {
