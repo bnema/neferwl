@@ -176,7 +176,7 @@ Outputs are arranged automatically unless `.right-of`, `.left-of`, `.above` or `
 
 ## Window rules
 
-Rules place an app's windows when they first open. A rule matches its app ID and, when set, its title. A title rule's output/workspace placement also applies when a later title first matches, at most once per rule per window. This later move never changes floating state or column width. When the focused window moves, it stays the focused window on the destination output, even an isolated one, and that output becomes focused (not while the source output's overview is open); otherwise focus and view are unchanged. With `output.<name>.input` bindings, input from an unbound device returns focus to the last unbound output. SDR expansion settings follow the current title match.
+Rules place an app's windows when they first open. A window a rule opens on another output, even an isolated one, takes the focus there and that output becomes focused, as it would have taken the focus on the focused output; a window that would open in the background (behind another app's fullscreen window, during overview or lock) stays unfocused. A rule matches its app ID and, when set, its title. A title rule's output/workspace placement also applies when a later title first matches, at most once per rule per window. This later move never changes floating state or column width. When the focused window moves, it stays the focused window on the destination output, even an isolated one, and that output becomes focused (not while the source output's overview is open); otherwise focus and view are unchanged. With `output.<name>.input` bindings, input from an unbound device returns focus to the last unbound output. SDR expansion settings follow the current title match.
 
 | Key | Meaning |
 |---|---|
@@ -205,7 +205,7 @@ rule.calc.floating = on
 ```
 
 - Every matching rule applies, in file order; later rules win.
-- A rule never moves your focus or view.
+- A rule never moves your focus or view, except a new window or a focused window it sends to another output (above).
 - Proton games (X11) use `steam_app_<id>` as app ID, taken from `WM_CLASS`.
 - An X11 window that opens exactly on one output's area opens on that output, unless a rule sets `output`.
 - A rule can float a Proton game: `rule.games.app-id = steam_app_\d+` with `rule.games.floating = on`. Without a rule, X11 games tile until they ask for fullscreen.

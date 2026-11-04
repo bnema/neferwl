@@ -206,7 +206,8 @@ func TestRuleOutput(t *testing.T) {
 				}
 				st := r.mapApp(t, 2, "chat")
 				w := stWindow(st, 2)
-				if w.Output != "DP-2" || st.Output != "DP-1" || stFocus(st) != 1 {
+				// A window a rule sends to another output takes the focus there.
+				if w.Output != "DP-2" || st.Output != "DP-2" || stFocus(st) != 2 {
 					t.Fatalf("%+v focused output %s window %d", w, st.Output, stFocus(st))
 				}
 				if !w.Visible {
@@ -228,7 +229,7 @@ func TestRuleOutputWithNumberedWorkspace(t *testing.T) {
 		r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
 		r.mapApp(t, 1, "term")
 		st := r.mapApp(t, 2, "chat")
-		if w := stWindow(st, 2); w.Output != "DP-2" || w.Workspace != 2 || st.Output != "DP-1" || stFocus(st) != 1 || stOutput(st, "DP-2").Active != 1 {
+		if w := stWindow(st, 2); w.Output != "DP-2" || w.Workspace != 2 || st.Output != "DP-2" || stFocus(st) != 2 || stOutput(st, "DP-2").Active != 2 {
 			t.Fatalf("%+v", w)
 		}
 
@@ -615,7 +616,8 @@ func TestTitleRuleMoveKeepsFocusOfFocusedWindow(t *testing.T) {
 		{name: "placed", out: "DP-2", outs: []domain.OutputInfo{left, right}, wantOut: "DP-2", wantFocus: 1, held: true},
 		{name: "isolated", out: "tv", outs: []domain.OutputInfo{left, tv}, wantOut: "tv", wantFocus: 1, held: true},
 		{name: "workspace not current", out: "DP-2", ws: "2", outs: []domain.OutputInfo{left, right}, setup: func(t *testing.T, r *multiRig) {
-			r.mapApp(t, 3, "side") // fills DP-2's current workspace; a spare follows
+			r.mapApp(t, 3, "side")                         // fills DP-2's current workspace; a spare follows
+			r.key(t, "Left", domain.ModAlt|domain.ModCtrl) // back from the focus it took
 		}, wantOut: "DP-2", wantFocus: 1, held: true},
 		{name: "focus on another output", out: "tv", outs: []domain.OutputInfo{left, right, tv}, setup: func(t *testing.T, r *multiRig) {
 			r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
@@ -658,6 +660,64 @@ func TestTitleRuleMoveKeepsFocusOfFocusedWindow(t *testing.T) {
 				for _, id := range focusChanges(drainCommands(r.commands)) {
 					if tc.held && id != 1 || !tc.held && id == 1 {
 						t.Fatalf("focus sent to %d", id)
+					}
+				}
+			})
+		})
+	}
+}
+
+func TestRuleOutputAtMapTakesFocus(t *testing.T) {
+	tv := domain.OutputInfo{Name: "tv", Virtual: true, Width: 640, Height: 360}
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, r *multiRig)
+		map_  ports.WindowMapped
+		want  bool
+	}{
+		{name: "fullscreen titled at map", map_: ports.WindowMapped{ID: 1, AppID: "game", Title: "Steam Big Picture Mode", Fullscreen: true, Xwayland: true}, want: true},
+		{name: "tile", map_: ports.WindowMapped{ID: 1, AppID: "game", Title: "Big Picture"}, want: true},
+		{name: "behind a covering fullscreen", setup: func(t *testing.T, r *multiRig) {
+			r.client <- ports.WindowMapped{ID: 3, AppID: "video", Fullscreen: true}
+			stateAfter(t, r.state, func(st domain.State) bool { return stFocus(st) == 3 })
+		}, map_: ports.WindowMapped{ID: 1, AppID: "game", Title: "Big Picture"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				r := startMulti(t, func(c *domain.Config) {
+					c.Outputs = []domain.OutputConfig{{Name: "DP-1"}, {Name: "tv", Virtual: true}}
+					c.Rules = []domain.WindowRule{winRule("bp", "game", func(r *domain.WindowRule) {
+						r.Title = regexp.MustCompile("(?i)big picture")
+						r.Output = "tv"
+					})}
+				}, left, tv)
+				r.mapApp(t, 2, "term")
+				before := domain.WindowID(2)
+				if tc.setup != nil {
+					tc.setup(t, r)
+					before = 3
+				}
+				synctest.Wait()
+				drainCommands(r.commands)
+				r.client <- tc.map_
+				st := r.stateWith(t, 1)
+				synctest.Wait()
+				focus := focusChanges(drainCommands(r.commands))
+				if tc.want {
+					if st.Output != "tv" || stFocus(st) != 1 || !stWindow(st, 1).Visible {
+						t.Fatalf("focus %d on %s: %+v", stFocus(st), st.Output, stWindow(st, 1))
+					}
+					if len(focus) == 0 || focus[len(focus)-1] != 1 {
+						t.Fatalf("keyboard focus sent to %v", focus)
+					}
+					return
+				}
+				if st.Output != "DP-1" || stFocus(st) != before {
+					t.Fatalf("background window took focus: %d on %s", stFocus(st), st.Output)
+				}
+				for _, id := range focus {
+					if id == 1 {
+						t.Fatal("focus sent to the background window")
 					}
 				}
 			})
