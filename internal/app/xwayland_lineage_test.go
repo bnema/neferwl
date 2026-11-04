@@ -16,13 +16,11 @@ import (
 	"testing"
 )
 
-//testpolicy:realtime real Wayland/X11 sockets, subprocess pipes and headless publications
 func TestXwaylandLineageCommonRemote(t *testing.T) { runXwaylandLineage(t, false, false) }
 
-//testpolicy:realtime real Wayland/X11 sockets, subprocess pipes and headless publications
 func runXwaylandLineage(t *testing.T, direct, seatTV bool) {
 	path := filepath.Join(t.TempDir(), "config")
-	text := strings.ReplaceAll(keepFocusConfig("on"), "X11Probe", "steam") + "layout.overflow = cascade\nanimations = off\n"
+	text := strings.ReplaceAll(keepFocusConfig("on"), "X11Probe", "steam") + "layout.overflow = cascade\nanimations = off\noutput.tv.right-of = HEADLESS-1\n"
 	if err := os.WriteFile(path, []byte(text), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +94,7 @@ func runXwaylandLineage(t *testing.T, direct, seatTV bool) {
 		return statefile.Window{}, false
 	}
 	var launcher, game statefile.Window
-	t.Cleanup(func(){t.Logf("probe: %s state: %+v",p.out.String(),readState(e.statePath))})
+	t.Cleanup(func() { t.Logf("probe: %s state: %+v", p.out.String(), readState(e.statePath)) })
 	until(t, "fullscreen launcher", func() bool {
 		var ok bool
 		launcher, ok = find("steam")
@@ -145,6 +143,12 @@ func runXwaylandLineage(t *testing.T, direct, seatTV bool) {
 	}
 	assertSeat()
 	typeNative()
+	if seatTV {
+		if _, err := io.WriteString(e.script, "key Super+Ctrl+Right\n"); err != nil {
+			t.Fatal(err)
+		}
+		until(t, "seat on tv", func() bool { return readState(e.statePath).Output == "tv" })
+	}
 	if _, err := io.WriteString(p.in, "spawn\n"); err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +168,16 @@ func runXwaylandLineage(t *testing.T, direct, seatTV bool) {
 	}
 	until(t, "game active", func() bool { return strings.Count(p.out.String(), "active self") >= 2 })
 	assertSeat()
-	typeNative()
+	if seatTV {
+		until(t, "game keyboard", func() bool { st := readState(e.statePath); return st.Window != nil && st.Window.ID == game.ID })
+		mark := strings.Count(p.out.String(), "key\n")
+		if _, err := io.WriteString(e.script, "key b\n"); err != nil {
+			t.Fatal(err)
+		}
+		until(t, "X11 game key", func() bool { return strings.Count(p.out.String(), "key\n") > mark })
+	} else {
+		typeNative()
+	}
 	if _, err := io.WriteString(p.in, "close\n"); err != nil {
 		t.Fatal(err)
 	}
@@ -179,5 +192,13 @@ func runXwaylandLineage(t *testing.T, direct, seatTV bool) {
 		t.Fatalf("launcher return: %+v %v", launcher, r)
 	}
 	assertSeat()
-	typeNative()
+	if seatTV {
+		until(t, "launcher keyboard", func() bool { st := readState(e.statePath); return st.Window != nil && st.Window.ID == launcher.ID })
+	} else {
+		typeNative()
+	}
 }
+
+func TestXwaylandLineageDirectRemote(t *testing.T) { runXwaylandLineage(t, true, false) }
+
+func TestXwaylandLineageTVSeat(t *testing.T) { runXwaylandLineage(t, false, true) }
