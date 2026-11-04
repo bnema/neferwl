@@ -164,6 +164,20 @@ func (c *Core) observeLineageFocus() {
 			}
 		}
 	}
+	// normalize and output removal can retire workspaces between observations.
+	// Prune against the same live set we observe, without allocating scratch.
+	for w := range c.lineage.workspaceFocus {
+		live := false
+		for _, sc := range c.screens {
+			if slices.Contains(sc.mon.Workspaces, w) {
+				live = true
+				break
+			}
+		}
+		if !live {
+			delete(c.lineage.workspaceFocus, w)
+		}
+	}
 	seat := c.keyboardFocus()
 	if seat != c.lineage.seat {
 		c.lineage.seat = seat

@@ -192,3 +192,30 @@ func TestRetainedChildReparentedOnLauncherRemoval(t *testing.T) {
 		}
 	}
 }
+
+func TestLineageFocusWorkspaceChurn(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := lineageCore(t)
+		m := c.cur().mon
+		for i := 0; i < 100; i++ {
+			w := m.Current()
+			w.AddWindow(1)
+			m.normalize()
+			c.observeLineageFocus()
+			next := m.Workspaces[len(m.Workspaces)-1]
+			m.show(next)
+			w.RemoveWindow(1)
+			m.normalize()
+			c.observeLineageFocus()
+			if _, retained := c.lineage.workspaceFocus[w]; retained {
+				t.Fatal("retired workspace retained")
+			}
+			if len(c.lineage.workspaceFocus) > len(m.Workspaces) {
+				t.Fatalf("observer grew: %d entries, %d live workspaces", len(c.lineage.workspaceFocus), len(m.Workspaces))
+			}
+		}
+		if n := testing.AllocsPerRun(100, func() { c.observeLineageFocus() }); n != 0 {
+			t.Fatalf("settled observer allocates: %g", n)
+		}
+	})
+}
