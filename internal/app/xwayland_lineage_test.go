@@ -162,8 +162,15 @@ func runXwaylandLineage(t *testing.T, direct, seatTV bool) {
 	if len(w.Columns[0].Windows) != 1 || len(w.Columns[1].Windows) != 1 || w.Columns[0].Windows[0].ID != launcher.ID || w.Columns[1].Windows[0].ID != game.ID {
 		t.Fatalf("not separate strips: %+v", w)
 	}
+	// The launched game inherits the launcher's fullscreen on tv: it
+	// covers there, the launcher held fullscreen above it.
+	until(t, "game fullscreen on tv", func() bool {
+		g, _ := find("lineage-game")
+		l, _ := find("steam")
+		return g.Fullscreen && l.Fullscreen && workspace().Cover == domain.WindowID(game.ID)
+	})
 	r, ok := tileRect(readState(e.statePath), game.ID)
-	if !ok || r.Dx() <= 0 || r.Dy() <= 0 || r.Dx() > 640 || r.Dy() > 360 {
+	if !ok || r.Min.Y != 0 || r.Dx() != 640 || r.Dy() != 360 {
 		t.Fatalf("game tile: %v", r)
 	}
 	until(t, "game active", func() bool { return strings.Count(p.out.String(), "active self") >= 2 })
