@@ -100,14 +100,16 @@ An agent or script on the host can watch the session and drive it with standard 
 ```sh
 export $(systemctl --user show-environment | grep -E '^(WAYLAND_DISPLAY|XDG_RUNTIME_DIR)=')
 grim -o tv /tmp/screen.png        # capture one output (see Screen capture)
-wlrctl pointer move 200 -50       # relative motion, in logical pixels
-wlrctl pointer click left         # click where the pointer is
+neferwl pointer abs 0.5 0.5 click # click the middle of the layout
+neferwl pointer move 200 -50 click right  # actions run in order
 wtype 'hello'                     # type into the focused window
 neferwl state                     # windows, focus, outputs as JSON
 ```
 
-- The pointer tools use `zwlr_virtual_pointer_v1`. NeferWL routes their events like a real mouse, so focus, hover and drags behave as they would for a person. Absolute motion maps into the whole layout, or into one output when the tool binds it (`create_virtual_pointer_with_output`).
-- `ydotool` writes to `/dev/uinput` through `ydotoold` and does not use this protocol; prefer `wlrctl`.
+- `neferwl pointer` actions: `abs X Y` (fractions 0..1 of the layout, or of one output with `--output <name>`), `move DX DY`, `press`/`release`/`click [BTN]`, `hold [BTN] [DURATION]`, `drag DX DY [BTN]` and `scroll up|down|left|right [N]`. BTN is `left` (default), `right`, `middle`, `side`, `extra`, `forward`, `back`, a `BTN_*` name or an evdev code. `--click-duration` (20ms), `--hold-duration` (500ms), `--drag-steps` (10) and `--drag-step-delay` (10ms) tune the timing. Buttons still pressed at exit are released. See `neferwl pointer --help`.
+- [wlrctl](https://git.sr.ht/~brocellous/wlrctl) (AUR: `wlrctl`) works too: `wlrctl pointer move 200 -50`, `wlrctl pointer click left`.
+- Both use `zwlr_virtual_pointer_v1`. NeferWL routes their events like a real mouse, so focus, hover and drags behave as they would for a person. Absolute motion maps into the whole layout, or into one output when the tool binds it (`create_virtual_pointer_with_output`).
+- `ydotool` writes to `/dev/uinput` through `ydotoold` and does not use this protocol; prefer `neferwl pointer`.
 - Nothing is injected while the session is locked. Buttons a tool still held when it disconnects are released.
 - Flatpak and other sandboxed clients (those on a `wp_security_context_v1` socket) do not see the virtual pointer global.
 - `grim` needs the capture allowlist to admit it; see [the allowlist](capture.md#the-allowlist).
