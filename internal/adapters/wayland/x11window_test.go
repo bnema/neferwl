@@ -244,9 +244,10 @@ func TestX11WindowLifecycle(t *testing.T) {
 		t.Fatalf("placed at %d,%d, want 10,20", x, y)
 	}
 
-	// Focus.
+	// Focus: X11 focus follows core's X11Active, not the keyboard.
 	skip = len(p.requests())
 	r.commands <- ports.FocusWindow{ID: m.ID}
+	r.commands <- ports.X11Active{ID: m.ID}
 	if f, _ := p.waitReq(skip, func(q x11Req) bool { return q.major == x11OpSetInputFocus }); f.u32(4) != win {
 		t.Fatalf("focus on %#x, want %#x", f.u32(4), win)
 	}
@@ -515,6 +516,7 @@ func TestX11LockFollowsFocusAndRelativeMotion(t *testing.T) {
 
 	r.commands <- ports.PointerFocus{ID: m.ID}
 	r.commands <- ports.FocusWindow{ID: m.ID}
+	r.commands <- ports.X11Active{ID: m.ID}
 	if ev := next(t, r.xc, lockEvents); ev[0] != float64(pointerconstraints.ZwpLockedPointerV1EventLocked) {
 		t.Fatalf("lock event %v", ev)
 	}
@@ -533,6 +535,7 @@ func TestX11LockFollowsFocusAndRelativeMotion(t *testing.T) {
 	nm, _, _ := surfaceMapper(t, nc, r.events)()
 	skip := len(r.peer.requests())
 	r.commands <- ports.FocusWindow{ID: nm.ID}
+	r.commands <- ports.X11Active{}
 	if ev := next(t, r.xc, lockEvents); ev[0] != float64(pointerconstraints.ZwpLockedPointerV1EventUnlocked) {
 		t.Fatalf("unlock event %v", ev)
 	}
