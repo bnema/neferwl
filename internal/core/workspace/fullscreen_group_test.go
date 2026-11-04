@@ -214,3 +214,77 @@ func TestFullscreenGroupFixed(t *testing.T) {
 		}
 	})
 }
+
+// Client requests against a group: P held, G the active cover.
+func TestFullscreenGroupRequests(t *testing.T) {
+	for _, overflow := range []Overflow{OverflowScroll, OverflowCascade} {
+		t.Run(string(overflow), func(t *testing.T) {
+			setup := func() *Workspace {
+				w := cols(overflow, 3, 0, []WindowID{1}, []WindowID{2}, []WindowID{3})
+				w.Settle(false)
+				// P (2) fullscreen, then held; G (1) becomes the cover.
+				w.FocusID(2)
+				w.SetFullscreen(2, true)
+				w.Fullscreen = 0
+				w.hold(2)
+				w.FocusID(1)
+				w.SetFullscreen(1, true)
+				if w.Fullscreen != 1 || !slices.Equal(w.Held, []WindowID{2}) {
+					t.Fatalf("setup: cover %d held %v", w.Fullscreen, w.Held)
+				}
+				return w
+			}
+			synctest.Test(t, func(t *testing.T) {
+				// P re-requests fullscreen, unfocused or focused.
+				w := setup()
+				w.SetFullscreen(2, true)
+				if w.Fullscreen != 1 || !slices.Equal(w.Held, []WindowID{2}) {
+					t.Fatalf("P re-request: cover %d held %v", w.Fullscreen, w.Held)
+				}
+				w.FocusID(2)
+				w.SetFullscreen(2, true)
+				if w.Fullscreen != 1 || !slices.Equal(w.Held, []WindowID{2}) {
+					t.Fatalf("focused P re-request: cover %d held %v", w.Fullscreen, w.Held)
+				}
+
+				// P unsets: it leaves the group, its column shrinks back.
+				w = setup()
+				w.SetFullscreen(2, false)
+				if w.Fullscreen != 1 || len(w.Held) != 0 {
+					t.Fatalf("P unset: cover %d held %v", w.Fullscreen, w.Held)
+				}
+				if w.HeldColumn(w.ColumnOf(2)) || w.FullscreenColumn(w.ColumnOf(2)) {
+					t.Fatal("P column still fullscreen-sized")
+				}
+				if overflow == OverflowScroll {
+					v := w.Snapshot()
+					if got := w.Engine().ColumnWidth(v, w.ColumnOf(2), false); got == w.Output.W {
+						t.Fatalf("P column still output wide: %d", got)
+					}
+				}
+
+				// G toggled off by the user, or unset by its client: only G ends.
+				for _, end := range []func(w *Workspace){
+					func(w *Workspace) { w.FocusID(1); w.ToggleFullscreen() },
+					func(w *Workspace) { w.SetFullscreen(1, false) },
+				} {
+					w = setup()
+					end(w)
+					if w.Fullscreen != 0 || !slices.Equal(w.Held, []WindowID{2}) {
+						t.Fatalf("G ended: cover %d held %v", w.Fullscreen, w.Held)
+					}
+					checkGroup(t, w, "G ended")
+				}
+
+				// A window outside the group still replaces the cover.
+				w = setup()
+				w.FocusID(3)
+				w.SetFullscreen(3, true)
+				if w.Fullscreen != 3 || !slices.Equal(w.Held, []WindowID{2}) {
+					t.Fatalf("outsider: cover %d held %v", w.Fullscreen, w.Held)
+				}
+				checkGroup(t, w, "outsider")
+			})
+		})
+	}
+}

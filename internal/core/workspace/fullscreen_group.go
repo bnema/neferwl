@@ -47,6 +47,9 @@ func (w *Workspace) dropHeld(id WindowID) {
 }
 
 // IsHeldFloat reports whether float id is held: held floats are not shown.
-func (w *Workspace) IsHeldFloat(id WindowID) bool {
-	return len(w.Held) > 0 && slices.Contains(w.Held, id)
+func (w *Workspace) IsHeldFloat(id WindowID) bool { return w.IsHeld(id) }
+
+// IsHeld reports whether id is a held fullscreen member (not the cover).
+func (w *Workspace) IsHeld(id WindowID) bool {
+	return id != 0 && len(w.Held) > 0 && slices.Contains(w.Held, id)
 }

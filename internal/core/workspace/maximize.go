@@ -112,6 +112,11 @@ func (w *Workspace) coverStays(id WindowID) bool {
 // SetFullscreen applies a client request. It never moves focus: client
 // requests are automatic events (ADR 011 golden rule).
 func (w *Workspace) SetFullscreen(id WindowID, on bool) {
+	if on && w.IsHeld(id) {
+		// A held member is fullscreen already: its request must not take
+		// the cover back. Checked before mayCover, which settles left.
+		return
+	}
 	if on && !w.mayCover(id) {
 		return
 	}
