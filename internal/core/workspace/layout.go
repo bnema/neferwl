@@ -307,10 +307,10 @@ func (w *Workspace) FocusModal(from WindowID) {
 		return
 	}
 	if c := w.Cover(); c != 0 && c != d {
-		if i := w.floatIndex(d); i >= 0 && !w.overCover(w.Floats[i]) && !w.groupLeaveTo(d) {
+		if i := w.floatIndex(d); i >= 0 && !w.overCover(w.Floats[i]) {
 			// Hidden under another window's fullscreen: leave it, as
 			// Activate does for a window not shown over the cover, so
-			// the dialog shows. A group's cover is demoted instead.
+			// the dialog shows.
 			w.leaveFullscreen()
 		}
 	}

@@ -712,9 +712,9 @@ func TestFullscreenGroupUnstashOverCover(t *testing.T) {
 	})
 }
 
-// A modal dialog of an unrelated window hidden under a cascade group's
-// cover, reached by any focus path, shows focused; the group survives
-// (held members, no latch).
+// Group membership is preserved across modal focus paths: a modal dialog
+// of an unrelated window, reached by any focus path over a cascade group,
+// shows focused while both members stay in the group, with no latch.
 func TestFullscreenGroupModalUnderCover(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -750,4 +750,45 @@ func TestFullscreenGroupModalUnderCover(t *testing.T) {
 			})
 		})
 	}
+}
+
+// groupLeaveTo leaves a hidden stash entry with its own pending fullscreen
+// to the existing replacement path: it becomes the cover, the old cover
+// leaves (latch set), the held member stays held.
+func TestFullscreenGroupLeaveToPendingStashFullscreen(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := groupPG(t, OverflowCascade)
+		w.FocusID(3)
+		w.ToggleWindowStash()
+		w.ToggleStashVisible()
+		w.FocusID(1)
+		w.SetFullscreen(3, true) // waits while the stash is hidden
+		if w.Fullscreen != 1 || w.Inspect().HiddenFullscreen != 3 || !w.Inspect().StashHidden {
+			t.Fatalf("setup: cover %d pending %d", w.Fullscreen, w.Inspect().HiddenFullscreen)
+		}
+		if w.groupLeaveTo(3) {
+			t.Fatal("groupLeaveTo took a pending stash fullscreen")
+		}
+		w.Activate(3)
+		if w.Fullscreen != 3 || w.left != 1 || !slices.Equal(w.Held, []WindowID{2}) {
+			t.Fatalf("cover %d left %d held %v", w.Fullscreen, w.left, w.Held)
+		}
+		checkGroup(t, w, "pending stash")
+	})
+}
+
+// groupLeaveTo does not demote when the focus cannot reach its target.
+func TestFullscreenGroupLeaveToUnfocusable(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := groupPG(t, OverflowCascade)
+		if !w.groupLeaveTo(99) {
+			t.Fatal("not handled")
+		}
+		if w.Fullscreen != 1 || w.Cover() != 1 || !slices.Equal(w.Held, []WindowID{2}) || w.left != 0 {
+			t.Fatalf("cover %d covering %d held %v left %d", w.Fullscreen, w.Cover(), w.Held, w.left)
+		}
+		if f, _ := w.Focused(); f != 1 {
+			t.Fatalf("focus %d", f)
+		}
+	})
 }
