@@ -17,9 +17,11 @@ import (
 // Screencast buffers (ports.CastBufferAllocator). The PipeWire producer
 // offers only DMA-BUF buffers, allocated here: one exported image per
 // buffer, of a modifier the device can export and copy captures into
-// (CaptureFrame.CopyTo, a transfer destination). The exported file keeps
-// the memory alive, so the image and memory objects are released at once:
-// a buffer is nothing but its plane files, closed by the caller.
+// (CaptureFrame.CopyTo, a transfer destination). The GPU keeps the
+// exporting image and memory, keyed by the buffer ID, so CopyTo writes
+// into them without importing the planes again. The caller calls
+// ReleaseCast before closing the plane files; outstanding copies defer the
+// destruction of the image and memory until their fences are reclaimed.
 
 // castFourccs are the cast formats, preferred first within an offer:
 // XBGR2101010 carries the PQ words of an HDR frame, the 8-bit formats the
