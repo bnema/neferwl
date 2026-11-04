@@ -72,11 +72,13 @@ func MoveFullscreen(from, to *Workspace, at int) bool {
 // It reports false, moving nothing, when the column cannot be taken, such as
 // while a floating or stash window has the focus.
 func MoveColumnTo(from, to *Workspace, at int) bool {
+	held := from.heldIn(from.focusedColumn())
 	col, ok := from.takeColumn()
 	if !ok {
 		return false
 	}
 	to.receive(col, at)
+	to.carryFullscreen(held)
 	return true
 }
 
@@ -84,11 +86,13 @@ func MoveColumnTo(from, to *Workspace, at int) bool {
 // Like MoveColumnTo, it uses receive's insertion semantics even on a full fixed
 // workspace. If the focused window cannot be taken, neither workspace changes.
 func MoveWindowTo(from, to *Workspace, at int) bool {
+	held := from.heldIn(from.focusedTile())
 	id, ok := from.takeWindow()
 	if !ok {
 		return false
 	}
 	to.receive(layout.Column{Windows: []WindowID{id}}, at)
+	to.carryFullscreen(held)
 	return true
 }
 
@@ -115,15 +119,19 @@ func MoveFocused(from, to *Workspace, column bool) bool {
 		to.Activate(id)
 	} else {
 		col := layout.Column{Windows: []WindowID{id}}
+		var held []WindowID
 		if column {
+			held = from.heldIn(from.focusedColumn())
 			col, ok = from.takeColumn()
 		} else {
+			held = from.heldIn(from.focusedTile())
 			_, ok = from.takeWindow()
 		}
 		if !ok {
 			return false
 		}
 		to.receive(col, -1)
+		to.carryFullscreen(held)
 	}
 	return true
 }
@@ -155,6 +163,14 @@ func Merge(dst, src *Workspace) {
 	dst.reconcileFloats()
 	for _, f := range src.Stash {
 		dst.Stash = append(dst.Stash, f.rehome())
+	}
+	// Held members stay held where the layout scrolls (hold refuses
+	// elsewhere): in a column or band of their own, off screen.
+	for _, id := range src.Held {
+		if dst.Engine().Scrolls() && dst.ColumnOf(id) >= 0 {
+			dst.isolate(id)
+			dst.hold(id)
+		}
 	}
 }
 

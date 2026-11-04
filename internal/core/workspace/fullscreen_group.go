@@ -83,6 +83,50 @@ func (w *Workspace) demotable() bool {
 	return full != 0 && len(w.Held) > 0 && !w.IsFloat(full) && w.Engine().PinsFullscreen()
 }
 
+// focusedColumn is the windows of the focused column, nil without one.
+func (w *Workspace) focusedColumn() []WindowID {
+	if w.OnFloat() || w.Focus < 0 || w.Focus >= len(w.Columns) {
+		return nil
+	}
+	return w.Columns[w.Focus].Windows
+}
+
+// focusedTile is the selected tile of the focused column, nil without one.
+func (w *Workspace) focusedTile() []WindowID {
+	c := w.focusedColumn()
+	if len(c) == 0 {
+		return nil
+	}
+	i := w.Columns[w.Focus].Focus
+	if i < 0 || i >= len(c) {
+		return nil
+	}
+	return c[i : i+1]
+}
+
+// heldIn returns the held members among ids, nil when there are none: a
+// move to another workspace takes them along fullscreen.
+func (w *Workspace) heldIn(ids []WindowID) []WindowID {
+	if len(w.Held) == 0 {
+		return nil
+	}
+	var out []WindowID
+	for _, id := range ids {
+		if w.IsHeld(id) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// carryFullscreen makes the held members a move brought fullscreen here,
+// as any fullscreen request (SetFullscreen): the destination's cover.
+func (w *Workspace) carryFullscreen(ids []WindowID) {
+	for _, id := range ids {
+		w.SetFullscreen(id, true)
+	}
+}
+
 // dropHeld removes id from the held windows, keeping the backing slice.
 func (w *Workspace) dropHeld(id WindowID) {
 	if len(w.Held) == 0 {

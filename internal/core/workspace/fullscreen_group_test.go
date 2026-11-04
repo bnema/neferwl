@@ -500,3 +500,136 @@ func TestFullscreenGroupCascadeActivateDemotes(t *testing.T) {
 		}
 	})
 }
+
+// A held member taken off by a rule arrives fullscreen; the source group
+// stays consistent.
+func TestFullscreenGroupMoveByRule(t *testing.T) {
+	for _, overflow := range []Overflow{OverflowScroll, OverflowCascade} {
+		t.Run(string(overflow), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				w := groupPG(t, overflow)
+				to := cols(overflow, 3, 0, []WindowID{9})
+				MoveByRule(w, to, 2)
+				// The destination's rules decide: cascade refuses an
+				// unfocused window's fullscreen (mayCover), as for a cover.
+				want := WindowID(2)
+				if overflow == OverflowCascade {
+					want = 0
+				}
+				if to.Fullscreen != want || w.Fullscreen != 1 || len(w.Held) != 0 {
+					t.Fatalf("dest cover %d, source cover %d held %v", to.Fullscreen, w.Fullscreen, w.Held)
+				}
+				checkGroup(t, w, "source")
+				checkGroup(t, to, "dest")
+			})
+		})
+	}
+}
+
+// Focused moves carry the held members of the moved column or tile. Focus
+// on a held member promotes it, so the state is set by hand: a held member
+// stacked under the moved selection.
+func TestFullscreenGroupMoveCarriesHeld(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		move func(from, to *Workspace) bool
+		want WindowID // dest cover
+	}{
+		{"column", func(f, t *Workspace) bool { return MoveColumnTo(f, t, 0) }, 2},
+		{"focused column", func(f, t *Workspace) bool { return MoveFocused(f, t, true) }, 2},
+		{"window", func(f, t *Workspace) bool { return MoveWindowTo(f, t, 0) }, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				w := cols(OverflowScroll, 3, 0, []WindowID{1}, []WindowID{2, 4}, []WindowID{3})
+				w.Settle(false)
+				w.Fullscreen, w.Held = 1, []WindowID{2}
+				w.Focus, w.Columns[1].Focus = 1, 1 // 4 selected, 2 stacked above
+				to := cols(OverflowScroll, 3, 0, []WindowID{9})
+				if !tc.move(w, to) {
+					t.Fatal("no move")
+				}
+				if to.Fullscreen != tc.want {
+					t.Fatalf("dest cover %d want %d", to.Fullscreen, tc.want)
+				}
+				if tc.want != 0 && w.IsHeld(2) {
+					t.Fatalf("source still holds 2: %v", w.Held)
+				}
+				checkGroup(t, w, "source")
+				checkGroup(t, to, "dest")
+			})
+		})
+	}
+}
+
+// Moving the active member leaves the source with no cover and its held
+// members held; the next focus on one of them promotes it.
+func TestFullscreenGroupMoveFullscreenKeepsHeld(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := cols(OverflowScroll, 3, 0, []WindowID{1}, []WindowID{3}, []WindowID{2})
+		w.Settle(false)
+		w.Fullscreen, w.Held = 1, []WindowID{2}
+		w.FocusID(1)
+		to := cols(OverflowScroll, 3, 0, []WindowID{9})
+		if !MoveFullscreen(w, to, 0) {
+			t.Fatal("no move")
+		}
+		if to.Fullscreen != 1 || w.Fullscreen != 0 || !slices.Equal(w.Held, []WindowID{2}) {
+			t.Fatalf("dest cover %d, source cover %d held %v", to.Fullscreen, w.Fullscreen, w.Held)
+		}
+		checkGroup(t, w, "source")
+		w.FocusID(2)
+		if w.Fullscreen != 2 || len(w.Held) != 0 {
+			t.Fatalf("focus held: cover %d held %v", w.Fullscreen, w.Held)
+		}
+	})
+}
+
+// Merged held members stay held where the destination scrolls.
+func TestFullscreenGroupMerge(t *testing.T) {
+	for _, tc := range []struct {
+		overflow Overflow
+		held     bool
+	}{{OverflowScroll, true}, {OverflowCascade, true}, {OverflowFixed, false}} {
+		t.Run(string(tc.overflow), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				src := cols(OverflowScroll, 3, 0, []WindowID{1}, []WindowID{2})
+				src.Fullscreen, src.Held = 1, []WindowID{2}
+				dst := cols(tc.overflow, 3, 0, []WindowID{9})
+				dst.SetOverflow(tc.overflow)
+				Merge(dst, src)
+				if dst.IsHeld(2) != tc.held {
+					t.Fatalf("held %v want %v", dst.Held, tc.held)
+				}
+				if tc.held && dst.HeldColumn(dst.ColumnOf(2)) && len(dst.Columns[dst.ColumnOf(2)].Windows) != 1 {
+					t.Fatalf("held 2 not alone: %v", dst.Columns)
+				}
+				checkGroup(t, dst, "merge")
+			})
+		})
+	}
+}
+
+// A held column, output-sized like the cover, has no resize borders.
+func TestHeldColumnNoBorders(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := spanWorkspace(OverflowScroll, 3)
+		rs := w.columnRects()
+		x, y := rs[0].X+rs[0].W+5, 100
+		if _, ok := w.BorderAt(x, y, 6); !ok {
+			t.Fatal("no border before hold")
+		}
+		w.Held = []WindowID{2}
+		rs = w.columnRects()
+		x = rs[0].X + rs[0].W + 5
+		if b, ok := w.BorderAt(x, y, 6); ok {
+			t.Fatalf("border %+v next to a held column", b)
+		}
+		if w.MoveBorder(Border{Kind: BorderColumn, Col: 0}, rs[0].X+rs[0].W-50) {
+			t.Fatal("moved a border into a held column")
+		}
+		if w.MoveBorder(Border{Kind: BorderColumn, Col: 1}, rs[1].X+rs[1].W-50) {
+			t.Fatal("moved a held column's border")
+		}
+	})
+}

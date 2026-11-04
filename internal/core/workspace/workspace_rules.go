@@ -48,7 +48,7 @@ func MoveByRule(from, to *Workspace, id WindowID) {
 		return
 	}
 	fromView, toView := from.View, to.View
-	fullscreen := from.Fullscreen == id
+	fullscreen := from.IsFullscreenMember(id)
 	if i := from.floatIndex(id); i >= 0 {
 		f := from.Floats[i]
 		if f.free && f.back != nil {
