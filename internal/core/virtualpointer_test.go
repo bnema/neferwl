@@ -81,6 +81,8 @@ func TestVirtualPointerRoutesAsInput(t *testing.T) {
 		if g := receive(t, constraints); g.X != 55 || g.Y != 30 {
 			t.Fatalf("cursor warp %+v", g)
 		}
+		// Codes outside the evdev button range never reach a client.
+		client <- ports.VirtualPointerInput{Event: ports.PointerButton{Device: dev, Button: 0xffffffff, Pressed: true}}
 		// An unpaired release goes nowhere; the click does.
 		client <- ports.VirtualPointerInput{Event: ports.PointerButton{Device: dev, Button: 0x111}}
 		client <- ports.VirtualPointerInput{Event: ports.PointerButton{Device: dev, Button: 0x110, Pressed: true}}

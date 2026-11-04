@@ -336,3 +336,30 @@ func TestVirtualPointerMixedMotionWaitsForFrame(t *testing.T) {
 		})
 	}
 }
+
+// Held buttons are bounded across valid frames: presses past the limit and
+// codes outside the evdev button range are dropped, the pointer stays usable.
+func TestVirtualPointerHeldLimit(t *testing.T) {
+	s, events, _, dir := keyboardServer(t)
+	c, p := virtualMover(t, s, dir, false)
+	for i := uint32(0); i < maxVirtualHeld+4; i++ {
+		requestProtocol(t, c, p, vpButton, i, 0x100+i, uint32(1))
+		requestProtocol(t, c, p, vpFrame)
+	}
+	if got := virtualEvents(t, c, events, maxVirtualHeld); len(got) != maxVirtualHeld {
+		t.Fatalf("forwarded %d presses", len(got))
+	}
+	for _, b := range []uint32{0, 0xff, 0x152, 0xffffffff} {
+		requestProtocol(t, c, p, vpButton, uint32(1), b, uint32(1))
+	}
+	requestProtocol(t, c, p, vpFrame)
+	virtualEvents(t, c, events, 0)
+	// A release frees a slot for a new press.
+	requestProtocol(t, c, p, vpButton, uint32(2), uint32(0x100), uint32(0))
+	requestProtocol(t, c, p, vpButton, uint32(2), uint32(0x151), uint32(1))
+	requestProtocol(t, c, p, vpFrame)
+	got := virtualEvents(t, c, events, 2)
+	if b := got[1].Event.(ports.PointerButton); b.Button != 0x151 || !b.Pressed {
+		t.Fatalf("press after release %+v", b)
+	}
+}

@@ -51,6 +51,11 @@ func (c *Core) virtualPointer(ctx context.Context, v ports.VirtualPointerInput) 
 			latest(c.ch.Constraints, g)
 		}
 	case ports.PointerButton:
+		// Only evdev button codes (BTN_MISC..BTN_GEAR_UP): c.buttons stays
+		// bounded whatever virtual pointers send.
+		if e.Button < 0x100 || e.Button > 0x151 {
+			return nil
+		}
 		if !e.Pressed && !c.buttons[e.Button] {
 			return nil
 		}

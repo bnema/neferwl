@@ -23,6 +23,13 @@ const virtualPointerInterface = "zwlr_virtual_pointer_manager_v1"
 // protocol error and disconnects the client.
 const maxVirtualFrame = 256
 
+// maxVirtualHeld bounds the buttons one virtual pointer holds at once.
+const maxVirtualHeld = 16
+
+// virtualButtonValid reports whether b is an evdev button code
+// (BTN_MISC 0x100 to BTN_GEAR_UP 0x151).
+func virtualButtonValid(b uint32) bool { return b >= 0x100 && b <= 0x151 }
+
 // virtualFrameKeep is the largest pending capacity kept across frames.
 const virtualFrameKeep = 32
 
@@ -45,6 +52,7 @@ type virtualPointer struct {
 	forwarded  map[uint32]bool
 	generation domain.LockGeneration
 	dead       bool // protocol error sent: requests are ignored
+	warned     bool // a dropped button was logged
 }
 
 // registerVirtualPointer exposes the global to unsandboxed clients
@@ -188,6 +196,10 @@ func (p *virtualPointer) Button(_ *wlrvirtualpointer.ZwlrVirtualPointerV1, t, bu
 		return
 	}
 	pressed := state == uint32(wayland.PointerButtonStatePressed)
+	if !virtualButtonValid(button) {
+		p.dropButton(button, "not an evdev button code")
+		return
+	}
 	p.add(ports.VirtualPointerInput{Event: ports.PointerButton{Device: p.device, Button: button, Pressed: pressed, Time: msec(t)}})
 }
 
@@ -272,6 +284,10 @@ func (p *virtualPointer) Frame(*wlrvirtualpointer.ZwlrVirtualPointerV1) {
 			if b.Pressed == p.forwarded[b.Button] {
 				continue
 			}
+			if b.Pressed && len(p.forwarded) >= maxVirtualHeld {
+				p.dropButton(b.Button, "too many held buttons")
+				continue
+			}
 			if b.Pressed {
 				p.forwarded[b.Button] = true
 			} else {
@@ -282,6 +298,16 @@ func (p *virtualPointer) Frame(*wlrvirtualpointer.ZwlrVirtualPointerV1) {
 		p.server.emit(v)
 	}
 	p.reset()
+}
+
+// dropButton ignores a press the pointer may not forward. The protocol has
+// no error for it, and dropping is harmless: nothing is held that would
+// need a release. Logged once per pointer.
+func (p *virtualPointer) dropButton(b uint32, why string) {
+	if !p.warned {
+		p.warned = true
+		p.server.log.Warn().Uint32("button", b).Str("reason", why).Msg("virtual pointer button dropped")
+	}
 }
 
 func (*virtualPointer) Destroy(*wlrvirtualpointer.ZwlrVirtualPointerV1) {}
