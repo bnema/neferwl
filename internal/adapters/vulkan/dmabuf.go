@@ -350,7 +350,14 @@ type dmaBufSync struct {
 
 // DMA_BUF_IOCTL_EXPORT_SYNC_FILE = _IOWR('b', 2, struct dma_buf_export_sync_file)
 const ioctlExportSyncFile = 0xc0086202
-const dmaBufSyncRead = 1
+// DMA_BUF_IOCTL_IMPORT_SYNC_FILE = _IOW('b', 3, struct dma_buf_import_sync_file)
+const ioctlImportSyncFile = 0x40086203
+
+// DMA_BUF_SYNC_READ, DMA_BUF_SYNC_WRITE.
+const (
+	dmaBufSyncRead  = 1
+	dmaBufSyncWrite = 2
+)
 
 // appendReadFences waits on every distinct backing object's pending writes.
 // Shared YUV planes have one implicit fence; disjoint planes have two.

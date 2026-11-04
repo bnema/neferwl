@@ -11,6 +11,7 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 
 	vk "bnema.dev/purego-vulkan/vulkan"
+	"golang.org/x/sys/unix"
 )
 
 // Captures into client dmabufs (CaptureFrame.CopyTo). The slot's readback
@@ -36,6 +37,7 @@ type dmaCopy struct {
 	cmd   vk.CommandBuffer
 	fence vk.Fence
 	done  vk.Semaphore
+	wait  vk.Semaphore // the destination's implicit fence, 0 when none
 	img   *target
 }
 
@@ -78,8 +80,10 @@ func (f *captureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.Fi
 	if region.Empty() || !region.In(image.Rect(0, 0, f.w, f.h)) || dst.Width != region.Dx() || dst.Height != region.Dy() {
 		return nil, errors.New("invalid capture region or destination")
 	}
-	if dst.Format != captureFourccs[0] && dst.Format != captureFourccs[1] {
-		return nil, fmt.Errorf("capture dmabuf format %#x unsupported", dst.Format)
+	// The slot holds opaque sRGB8 BGRA, or XBGR2101010 PQ words for a PQ
+	// capture: either is copied as is into a destination of that layout.
+	if f.pq && dst.Format != castFourccs[0] || !f.pq && dst.Format != captureFourccs[0] && dst.Format != captureFourccs[1] {
+		return nil, fmt.Errorf("capture dmabuf format %#x unsupported for this capture (pq %v)", dst.Format, f.pq)
 	}
 	if !r.syncFD || !r.gpu.dd.HasGetSemaphoreFdKHR() {
 		return nil, errors.New("capture needs sync file export")
@@ -95,6 +99,9 @@ func (f *captureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.Fi
 		return nil, err
 	}
 	c := &dmaCopy{img: img}
+	// Implicit sync with the buffer's other users: the copy waits for what
+	// they still do with it (a consumer reading the previous frame).
+	c.wait = r.dmabufBusy(dst.Planes[0].File)
 	submitted := false
 	defer func() {
 		if !submitted {
@@ -137,6 +144,10 @@ func (f *captureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.Fi
 		return nil, err
 	}
 	submit := vk.SubmitInfo{SType: vk.StructureTypeSubmitInfo, CommandBufferCount: 1, CommandBuffers: &c.cmd, SignalSemaphoreCount: 1, SignalSemaphores: &c.done}
+	waitStage := vk.PipelineStageFlags(vk.PipelineStageTransferBit)
+	if c.wait != 0 {
+		submit.WaitSemaphoreCount, submit.WaitSemaphores, submit.WaitDstStageMask = 1, &c.wait, &waitStage
+	}
 	if err := r.q.submit(1, &submit, c.fence); err != nil {
 		return nil, err
 	}
@@ -151,7 +162,54 @@ func (f *captureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.Fi
 	if fd < 0 {
 		return nil, nil
 	}
-	return os.NewFile(uintptr(fd), "capture-dmabuf-done"), nil
+	done := os.NewFile(uintptr(fd), "capture-dmabuf-done")
+	// Implicit sync the other way: users that do not wait on done (a
+	// PipeWire consumer) wait on the buffer's own fence.
+	attachWriteFence(dst.Planes[0].File, done)
+	return done, nil
+}
+
+// dmabufBusy makes a wait semaphore of every fence pending on the dmabuf
+// of f (DMA_BUF_IOCTL_EXPORT_SYNC_FILE for writing: readers and writers).
+// 0 when there is none to wait for or the kernel cannot export it.
+func (r *Renderer) dmabufBusy(f *os.File) vk.Semaphore {
+	arg := dmaBufSync{flags: dmaBufSyncWrite, fd: -1}
+	if dmabufIoctl(f, ioctlExportSyncFile, &arg) != nil || arg.fd < 0 {
+		return 0
+	}
+	return r.importSyncFD(int(arg.fd))
+}
+
+// attachWriteFence adds the sync file done to the dmabuf of f as a write
+// fence (DMA_BUF_IOCTL_IMPORT_SYNC_FILE): implicit-sync readers wait for it.
+// Best effort: an older kernel leaves the reader to explicit sync.
+func attachWriteFence(f, done *os.File) {
+	sc, err := done.SyscallConn()
+	if err != nil {
+		return
+	}
+	_ = sc.Control(func(fd uintptr) {
+		arg := dmaBufSync{flags: dmaBufSyncWrite, fd: int32(fd)}
+		_ = dmabufIoctl(f, ioctlImportSyncFile, &arg)
+	})
+}
+
+// dmabufIoctl runs a sync-file ioctl on the dmabuf of f.
+func dmabufIoctl(f *os.File, req uintptr, arg *dmaBufSync) error {
+	sc, err := f.SyscallConn()
+	if err != nil {
+		return err
+	}
+	var errno unix.Errno
+	if err := sc.Control(func(fd uintptr) {
+		_, _, errno = unix.Syscall(unix.SYS_IOCTL, fd, req, uintptr(unsafe.Pointer(arg)))
+	}); err != nil {
+		return err
+	}
+	if errno != 0 {
+		return errno
+	}
+	return nil
 }
 
 // reapCopies frees the slot's copies whose fence polls signalled.
@@ -179,6 +237,9 @@ func (r *Renderer) reapCopies(s *captureSlot) error {
 // freeDMACopy destroys a copy the device is done with (or never ran).
 func (r *Renderer) freeDMACopy(c *dmaCopy) {
 	d, dev := r.gpu.dd, r.gpu.device
+	if c.wait != 0 {
+		d.DestroySemaphore(dev, c.wait, nil)
+	}
 	if c.done != 0 {
 		d.DestroySemaphore(dev, c.done, nil)
 	}
