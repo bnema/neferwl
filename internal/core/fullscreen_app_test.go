@@ -183,3 +183,55 @@ func TestFullscreenAppRuleArrival(t *testing.T) {
 		}
 	}
 }
+
+func TestFullscreenLauncherArrival(t *testing.T) {
+	for _, mode := range []Overflow{OverflowCascade, OverflowScroll, OverflowFixed} {
+		t.Run(string(mode), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				c, _, cmds := fadeCore(t)
+				w := c.cur().mon.Current()
+				w.SetOverflow(mode)
+				c.clientEvent(context.Background(), ports.WindowMapped{ID: 1, PID: 10, AppID: "launcher", Proc: lineageNodes(10)})
+				c.clientEvent(context.Background(), ports.WindowFullscreenRequest{ID: 1, Fullscreen: true})
+				before := w.View
+				c.clientEvent(context.Background(), ports.WindowMapped{ID: 2, PID: 20, AppID: "game", Proc: lineageNodes(20, 10)})
+				if c.launcherOf(2) != 1 {
+					t.Fatal("missing launcher")
+				}
+				if id, _ := w.Focused(); id != 2 || c.keyboardFocus() != 2 {
+					t.Fatal("child did not take workspace and seat focus")
+				}
+				if w.Fullscreen != 1 {
+					t.Fatal("launcher fullscreen lost")
+				}
+				if mode == OverflowFixed {
+					if !w.IsFloat(2) || w.Cover() != 1 {
+						t.Fatal("fixed overlay changed")
+					}
+				} else {
+					if len(w.Columns) != 2 || len(w.Columns[0].Windows) != 1 || len(w.Columns[1].Windows) != 1 || w.ColumnOf(1) != 0 || w.ColumnOf(2) != 1 || w.IsFloat(2) || w.View == before {
+						t.Fatalf("child not in its own selected strip: %+v", w.Columns)
+					}
+				}
+				s := indicatorScene(t, c)
+				child := sceneWindow(t, s, 2)
+				if child.Hidden || !child.Focused {
+					t.Fatalf("child scene: %+v", child)
+				}
+				configs := configuresOf(cmds)[2]
+				if len(configs) == 0 {
+					t.Fatal("child not configured")
+				}
+				cfg := configs[len(configs)-1]
+				if mode != OverflowFixed && (cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > w.Output.W || cfg.Height > w.Output.H || cfg.Fullscreen || cfg.Floating) {
+					t.Fatalf("child not output-fitting tile: %+v", cfg)
+				}
+				w.FocusID(1)
+				cover := sceneWindow(t, indicatorScene(t, c), 1)
+				if !cover.Fullscreen || cover.Rect != w.Output {
+					t.Fatalf("return to launcher: %+v", cover)
+				}
+			})
+		})
+	}
+}

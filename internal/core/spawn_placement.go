@@ -195,7 +195,7 @@ func sameApp(a, b ports.WindowMapped) bool {
 // placeCoverApp handles ordinary same-app arrivals on the workspace in view.
 func (c *Core) placeCoverApp(v ports.WindowMapped, sc *screen, w *Workspace, cells int) bool {
 	cover := w.Cover()
-	if cover == 0 || !sameApp(v, c.windows.lookup(cover).client) {
+	if cover == 0 || !(sameApp(v, c.windows.lookup(cover).client) || c.launcherOf(v.ID) == cover) {
 		return false
 	}
 	w.AddAppWindow(v.ID, cells, v.Width, v.Height)

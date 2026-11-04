@@ -188,7 +188,7 @@ func (c *Core) placeOnWorkspace(v ports.WindowMapped, eff ruleEffect, sc *screen
 		// A new window takes the focus unless a fullscreen window of
 		// another app covers the workspace in view (ADR 011).
 		cover := c.cur().mon.Current().Cover()
-		follow = cover == 0 || sameApp(v, c.windows.lookup(cover).client)
+		follow = cover == 0 || sameApp(v, c.windows.lookup(cover).client) || c.launcherOf(v.ID) == cover
 	}
 	defer func() { follow = follow && w.Has(v.ID) }()
 	switch {
