@@ -43,6 +43,7 @@ func (c *Core) syncSecurity() bool {
 	c.lastBorderClick.ws = nil
 	c.pointerAt, c.motionTime = [2]float64{}, 0
 	c.keyboard = keyboard{}
+	c.x11.held = 0 // sent stays: the lock publish clears it
 	c.constrained, c.constraint = ports.PointerConstrained{}, domain.PointerConstraint{}
 	if c.ch.Constraints != nil {
 		latest(c.ch.Constraints, c.constraint)
@@ -218,6 +219,11 @@ func (c *Core) publishProtected(ctx context.Context) error {
 		scenes = append(scenes, scene)
 	}
 	if err := c.syncFocus(ctx, focus); err != nil {
+		return err
+	}
+	// No X11 window is active under the lock.
+	c.x11.held = 0
+	if err := c.syncX11Active(ctx, 0); err != nil {
 		return err
 	}
 	// Surface updates may invalidate the role under a stationary pointer.

@@ -28,4 +28,10 @@ func TestDiffConfigReload(t *testing.T) {
 	if len(same.RestartOnly) != 0 || same.HintRestartOnly || same.KeyboardLayoutChanged || same.RepeatChanged {
 		t.Fatalf("unchanged: %+v", same)
 	}
+	keep := cur
+	keep.Outputs = []domain.OutputConfig{{Name: "tv", Virtual: true, KeepFocus: true}}
+	live := DiffConfigReload(cur, keep)
+	if len(live.RestartOnly) != 0 || live.HintRestartOnly || !live.Sanitized.Outputs[0].KeepFocus {
+		t.Fatalf("keep-focus must apply live: %+v", live)
+	}
 }
