@@ -403,6 +403,10 @@ func (r *Renderer) destroyCaptures() {
 		r.freeCaptureSlot(s)
 	}
 	r.captures = nil
+	for _, c := range r.dmaIdle {
+		r.freeDMACopy(c)
+	}
+	r.dmaIdle = nil
 	r.destroyCapturePass()
 	r.freeTarget(&r.captureSDR)
 }

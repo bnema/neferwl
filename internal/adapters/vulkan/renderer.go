@@ -60,7 +60,9 @@ type Renderer struct {
 	// capturePQ is the PQ readback pass of BeginCapturePQ (capture_pq.go).
 	capturePQ capturePQPass
 	sync      captureSync
-	dmaFences dmabufFences // CopyTo's implicit sync (capture_dmabuf.go)
+	dmaImport vk.ImportSemaphoreFdInfoKHR // owner scratch for temporary wait payload
+	dmaIdle   []*dmaCopy                  // owner-only copies recycled after fence completion
+	dmaFences dmabufFences                // CopyTo's implicit sync (capture_dmabuf.go)
 	pool      vk.CommandPool
 	// Frames in flight (frame.go): frame is the last frame recorded,
 	// submitted the last submitted, completed the last known finished.

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestCaptureImportCopyCost(t *testing.T) {
+func TestCaptureDMABufCopyAllocations(t *testing.T) {
 	if raceEnabled {
 		t.Skip("allocation measurements require non-race runtime")
 	}
@@ -28,6 +28,11 @@ func TestCaptureImportCopyCost(t *testing.T) {
 		}
 	}
 	cycle()
+	// os.NewFile allocates its public wrapper and internal file (2 total).
+	// The caller owns Close; GPU completion cannot authorize wrapper reuse.
+	if allocs := testing.AllocsPerRun(100, cycle); allocs > 2 {
+		t.Fatalf("%.1f allocs/copy, budget 2 caller-owned file allocations", allocs)
+	}
 	before := openFDs(t)
 	result := testing.Benchmark(func(b *testing.B) {
 		for b.Loop() {
@@ -96,5 +101,41 @@ func TestCaptureRetainedCastImage(t *testing.T) {
 	r.Close()
 	if after := openFDs(t); after >= allocationFDs || after >= warmed {
 		t.Fatalf("fds allocated=%d warmed=%d released=%d", allocationFDs, warmed, after)
+	}
+}
+
+func TestCaptureDMACopyObjectReuse(t *testing.T) {
+	r := newTestRenderer(t, 16, 8)
+	defer r.Close()
+	requireCaptureSync(t, r)
+	buf := castLinear(t, r.gpu, domain.CastXRGB8888, 16, 8)
+	if err := render(r, domain.Scene{Background: "#3060c0"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	cf := captureWait(t, r)
+	defer r.EndCapture(cf)
+	slot := cf.(*captureFrame).slot
+	castSubmit(t, cf, image.Rect(0, 0, 16, 8), buf)
+	first := slot.copies[0]
+	cmd, fence, done, wait := first.cmd, first.fence, first.done, first.wait
+	if err := r.reapCopies(slot); err != nil {
+		t.Fatal(err)
+	}
+	for range 20 {
+		castSubmit(t, cf, image.Rect(0, 0, 16, 8), buf)
+		c := slot.copies[0]
+		if c != first || c.cmd != cmd || c.fence != fence || c.done != done || c.wait != wait {
+			t.Fatal("completed copy objects not reused")
+		}
+		if err := r.reapCopies(slot); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Export failure leaves a binary signal unconsumed: discard that object.
+	first.exported = false
+	r.dmaIdle = nil
+	r.recycleDMACopy(first)
+	if first.cmd != 0 || first.done != 0 || len(r.dmaIdle) != 0 {
+		t.Fatal("unconsumed signal recycled")
 	}
 }

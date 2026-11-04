@@ -19,8 +19,8 @@ import (
 // compose pipelines never write alpha over the clear's 1; the HDR capture
 // pass writes 1), so a copy is that buffer's region uploaded
 // into the imported client image, on the frame queue after the readback.
-// Each copy has its own command buffer, fence and exported semaphore; the
-// slot keeps it until its fence polls signalled, and is not reused before.
+// Each copy borrows command/sync objects from the renderer owner pool. The
+// slot keeps them until its fence polls signalled, then they can be reused.
 
 // VK_FORMAT_FEATURE_TRANSFER_DST_BIT (Vulkan 1.1), missing from the
 // generated bindings.
@@ -34,12 +34,22 @@ var captureFourccs = [...]uint32{fourcc('X', 'R', '2', '4'), fourcc('A', 'R', '2
 
 // dmaCopy is one submitted copy into a client dmabuf.
 type dmaCopy struct {
-	cmd    vk.CommandBuffer
-	fence  vk.Fence
-	done   vk.Semaphore
-	wait   vk.Semaphore // the destination's implicit fence, 0 when none
-	cached *castImage
-	img    *target
+	cmd       vk.CommandBuffer
+	fence     vk.Fence
+	done      vk.Semaphore
+	wait      vk.Semaphore // the destination's implicit fence, 0 when none
+	cached    *castImage
+	img       *target
+	exported  bool
+	waitUsed  bool
+	begin     vk.CommandBufferBeginInfo
+	hb        vk.BufferMemoryBarrier
+	ib        vk.ImageMemoryBarrier
+	region    vk.BufferImageCopy
+	submit    vk.SubmitInfo
+	waitStage vk.PipelineStageFlags
+	get       vk.SemaphoreGetFdInfoKHR
+	fd        int32
 }
 
 // CaptureFormats lists the single-plane XRGB8888/ARGB8888 modifiers a
@@ -99,7 +109,16 @@ func (f *captureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.Fi
 	if err != nil {
 		return nil, err
 	}
-	c := &dmaCopy{img: img, cached: cached}
+	var c *dmaCopy
+	if n := len(r.dmaIdle); n > 0 {
+		c = r.dmaIdle[n-1]
+		r.dmaIdle = r.dmaIdle[:n-1]
+	} else {
+		c = &dmaCopy{}
+	}
+	c.img, c.cached = img, cached
+	c.exported = false
+	c.waitUsed = false
 	submitted := false
 	defer func() {
 		if !submitted {
@@ -109,64 +128,74 @@ func (f *captureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.Fi
 	// Implicit sync with the buffer's other users: the copy waits for what
 	// they still do with it (a consumer reading the previous frame). When
 	// that cannot be established nothing is written (fail closed).
-	if c.wait, err = r.dmabufBusy(dst.Planes[0].File); err != nil {
+	if err = r.prepareDMAWait(c, dst.Planes[0].File); err != nil {
 		return nil, err
 	}
 	d, dev := r.gpu.dd, r.gpu.device
-	ai := vk.CommandBufferAllocateInfo{SType: vk.StructureTypeCommandBufferAllocateInfo, CommandPool: r.pool, Level: vk.CommandBufferLevelPrimary, CommandBufferCount: 1}
-	if err := checked("vkAllocateCommandBuffers(capture dmabuf)", d.AllocateCommandBuffers(dev, &ai, &c.cmd)); err != nil {
-		return nil, err
+	if c.cmd == 0 {
+		ai := vk.CommandBufferAllocateInfo{SType: vk.StructureTypeCommandBufferAllocateInfo, CommandPool: r.pool, Level: vk.CommandBufferLevelPrimary, CommandBufferCount: 1}
+		if err := checked("vkAllocateCommandBuffers(capture dmabuf)", d.AllocateCommandBuffers(dev, &ai, &c.cmd)); err != nil {
+			return nil, err
+		}
 	}
-	fi := vk.FenceCreateInfo{SType: vk.StructureTypeFenceCreateInfo}
-	if err := checked("vkCreateFence(capture dmabuf)", d.CreateFence(dev, &fi, nil, &c.fence)); err != nil {
-		return nil, err
+	if c.fence == 0 {
+		fi := vk.FenceCreateInfo{SType: vk.StructureTypeFenceCreateInfo}
+		if err := checked("vkCreateFence(capture dmabuf)", d.CreateFence(dev, &fi, nil, &c.fence)); err != nil {
+			return nil, err
+		}
 	}
-	if c.done, err = (deviceSync{r}).newSemaphore(); err != nil {
-		return nil, err
+	if c.done == 0 {
+		if c.done, err = (deviceSync{r}).newSemaphore(); err != nil {
+			return nil, err
+		}
 	}
-	begin := vk.CommandBufferBeginInfo{SType: vk.StructureTypeCommandBufferBeginInfo, Flags: vk.CommandBufferUsageOneTimeSubmitBit}
-	if err := checked("vkBeginCommandBuffer(capture dmabuf)", d.BeginCommandBuffer(c.cmd, &begin)); err != nil {
+	c.begin = vk.CommandBufferBeginInfo{SType: vk.StructureTypeCommandBufferBeginInfo, Flags: vk.CommandBufferUsageOneTimeSubmitBit}
+	if err := checked("vkBeginCommandBuffer(capture dmabuf)", d.BeginCommandBuffer(c.cmd, &c.begin)); err != nil {
 		return nil, err
 	}
 	// The readback, submitted earlier on this queue, wrote the buffer.
-	hb := vk.BufferMemoryBarrier{SType: vk.StructureTypeBufferMemoryBarrier, SrcAccessMask: vk.AccessTransferWriteBit, DstAccessMask: vk.AccessTransferReadBit, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Buffer: s.buffer, Size: wholeSize}
+	c.hb = vk.BufferMemoryBarrier{SType: vk.StructureTypeBufferMemoryBarrier, SrcAccessMask: vk.AccessTransferWriteBit, DstAccessMask: vk.AccessTransferReadBit, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Buffer: s.buffer, Size: wholeSize}
 	// Acquire the client image from the foreign family; its content is replaced.
-	ib := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, DstAccessMask: vk.AccessTransferWriteBit, OldLayout: vk.ImageLayoutUndefined, NewLayout: vk.ImageLayoutTransferDstOptimal, SrcQueueFamilyIndex: vk.QueueFamilyForeignEXT, DstQueueFamilyIndex: r.gpu.family, Image: img.image, SubresourceRange: colorRange}
-	d.CmdPipelineBarrier(c.cmd, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 1, &hb, 1, &ib)
-	region0 := vk.BufferImageCopy{
+	c.ib = vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, DstAccessMask: vk.AccessTransferWriteBit, OldLayout: vk.ImageLayoutUndefined, NewLayout: vk.ImageLayoutTransferDstOptimal, SrcQueueFamilyIndex: vk.QueueFamilyForeignEXT, DstQueueFamilyIndex: r.gpu.family, Image: img.image, SubresourceRange: colorRange}
+	d.CmdPipelineBarrier(c.cmd, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 1, &c.hb, 1, &c.ib)
+	c.region = vk.BufferImageCopy{
 		BufferOffset:     vk.DeviceSize((region.Min.Y*f.w + region.Min.X) * captureBytesPerPixel),
 		BufferRowLength:  uint32(f.w),
 		ImageSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1},
 		ImageExtent:      vk.Extent3D{Width: uint32(dst.Width), Height: uint32(dst.Height), Depth: 1},
 	}
-	d.CmdCopyBufferToImage(c.cmd, s.buffer, img.image, vk.ImageLayoutTransferDstOptimal, 1, &region0)
-	ib.SrcAccessMask, ib.DstAccessMask = vk.AccessTransferWriteBit, 0
-	ib.OldLayout, ib.NewLayout = vk.ImageLayoutTransferDstOptimal, vk.ImageLayoutGeneral
-	ib.SrcQueueFamilyIndex, ib.DstQueueFamilyIndex = r.gpu.family, vk.QueueFamilyForeignEXT
-	d.CmdPipelineBarrier(c.cmd, vk.PipelineStageTransferBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, &ib)
+	d.CmdCopyBufferToImage(c.cmd, s.buffer, img.image, vk.ImageLayoutTransferDstOptimal, 1, &c.region)
+	c.ib.SrcAccessMask, c.ib.DstAccessMask = vk.AccessTransferWriteBit, 0
+	c.ib.OldLayout, c.ib.NewLayout = vk.ImageLayoutTransferDstOptimal, vk.ImageLayoutGeneral
+	c.ib.SrcQueueFamilyIndex, c.ib.DstQueueFamilyIndex = r.gpu.family, vk.QueueFamilyForeignEXT
+	d.CmdPipelineBarrier(c.cmd, vk.PipelineStageTransferBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, &c.ib)
 	if err := checked("vkEndCommandBuffer(capture dmabuf)", d.EndCommandBuffer(c.cmd)); err != nil {
 		return nil, err
 	}
-	submit := vk.SubmitInfo{SType: vk.StructureTypeSubmitInfo, CommandBufferCount: 1, CommandBuffers: &c.cmd, SignalSemaphoreCount: 1, SignalSemaphores: &c.done}
-	waitStage := vk.PipelineStageFlags(vk.PipelineStageTransferBit)
-	if c.wait != 0 {
-		submit.WaitSemaphoreCount, submit.WaitSemaphores, submit.WaitDstStageMask = 1, &c.wait, &waitStage
+	c.submit = vk.SubmitInfo{SType: vk.StructureTypeSubmitInfo, CommandBufferCount: 1, CommandBuffers: &c.cmd, SignalSemaphoreCount: 1, SignalSemaphores: &c.done}
+	c.waitStage = vk.PipelineStageFlags(vk.PipelineStageTransferBit)
+	if c.waitUsed {
+		c.submit.WaitSemaphoreCount, c.submit.WaitSemaphores, c.submit.WaitDstStageMask = 1, &c.wait, &c.waitStage
 	}
-	if err := r.q.submit(1, &submit, c.fence); err != nil {
+	if err := r.q.submit(1, &c.submit, c.fence); err != nil {
 		return nil, err
 	}
 	// From here the copy is tracked by its fence, whatever happens.
 	submitted = true
 	s.copies = append(s.copies, c)
-	get := vk.SemaphoreGetFdInfoKHR{SType: vk.StructureTypeSemaphoreGetFDInfoKHR, Semaphore: c.done, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit}
-	fd := int32(-1)
-	if err := checked("vkGetSemaphoreFdKHR(capture dmabuf)", d.GetSemaphoreFdKHR(dev, &get, &fd)); err != nil {
+	c.get = vk.SemaphoreGetFdInfoKHR{SType: vk.StructureTypeSemaphoreGetFDInfoKHR, Semaphore: c.done, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit}
+	c.fd = -1
+	if err := checked("vkGetSemaphoreFdKHR(capture dmabuf)", d.GetSemaphoreFdKHR(dev, &c.get, &c.fd)); err != nil {
 		return nil, err
 	}
-	if fd < 0 {
+	c.exported = true
+	if c.fd < 0 {
 		return nil, nil
 	}
-	done := os.NewFile(uintptr(fd), "capture-dmabuf-done")
+	// CopyTo transfers this wrapper to its caller, which may still be using it
+	// after the GPU fence signals. No return notification exists in this API;
+	// recycling it here would race the pipeline worker's wait/Close.
+	done := os.NewFile(uintptr(c.fd), "capture-dmabuf-done")
 	// Implicit sync the other way: users that do not wait on done (a
 	// PipeWire consumer) wait on the buffer's own fence.
 	attachWriteFence(dst.Planes[0].File, done)
@@ -207,8 +236,8 @@ func (d deviceFences) createSemaphore() (vk.Semaphore, error) {
 }
 
 func (d deviceFences) importSyncFD(s vk.Semaphore, fd int32) vk.Result {
-	imp := vk.ImportSemaphoreFdInfoKHR{SType: vk.StructureTypeImportSemaphoreFDInfoKHR, Semaphore: s, Flags: vk.SemaphoreImportTemporaryBit, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit, Fd: fd}
-	return d.r.gpu.dd.ImportSemaphoreFdKHR(d.r.gpu.device, &imp)
+	d.r.dmaImport = vk.ImportSemaphoreFdInfoKHR{SType: vk.StructureTypeImportSemaphoreFDInfoKHR, Semaphore: s, Flags: vk.SemaphoreImportTemporaryBit, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit, Fd: fd}
+	return d.r.gpu.dd.ImportSemaphoreFdKHR(d.r.gpu.device, &d.r.dmaImport)
 }
 
 func (d deviceFences) destroySemaphore(s vk.Semaphore) {
@@ -221,33 +250,6 @@ func (r *Renderer) fences() dmabufFences {
 		r.dmaFences = deviceFences{r}
 	}
 	return r.dmaFences
-}
-
-// dmabufBusy makes a wait semaphore of every fence pending on the dmabuf
-// of f (DMA_BUF_IOCTL_EXPORT_SYNC_FILE for writing: readers and writers).
-// 0 with no error only when the kernel reports no fence; any failure to
-// export or import is an error, so the caller writes nothing. The exported
-// sync file is closed on every path but a successful import.
-func (r *Renderer) dmabufBusy(f *os.File) (vk.Semaphore, error) {
-	fs := r.fences()
-	fd, err := fs.exportSyncFile(f)
-	if err != nil {
-		return 0, err
-	}
-	if fd < 0 {
-		return 0, nil
-	}
-	sem, err := fs.createSemaphore()
-	if err != nil {
-		_ = unix.Close(int(fd))
-		return 0, err
-	}
-	if err := checked("vkImportSemaphoreFdKHR(dmabuf wait)", fs.importSyncFD(sem, fd)); err != nil {
-		_ = unix.Close(int(fd))
-		fs.destroySemaphore(sem)
-		return 0, err
-	}
-	return sem, nil
 }
 
 // attachWriteFence adds the sync file done to the dmabuf of f as a write
@@ -289,7 +291,7 @@ func (r *Renderer) reapCopies(s *captureSlot) error {
 	for _, c := range s.copies {
 		switch res := r.gpu.dd.WaitForFences(r.gpu.device, 1, &c.fence, 1, 0); res {
 		case vk.Success:
-			r.freeDMACopy(c)
+			r.recycleDMACopy(c)
 		case vk.Timeout, vk.NotReady:
 			kept = append(kept, c)
 		default:
@@ -325,4 +327,56 @@ func (r *Renderer) freeDMACopy(c *dmaCopy) {
 		r.gpu.freeImage(c.img)
 	}
 	*c = dmaCopy{}
+}
+
+// prepareDMAWait fails closed unless all implicit fences can be exported
+// and imported. It imports a fresh temporary payload each frame. A completed
+// queue wait consumed the previous payload before this object entered dmaIdle.
+func (r *Renderer) prepareDMAWait(c *dmaCopy, f *os.File) error {
+	fs := r.fences()
+	fd, err := fs.exportSyncFile(f)
+	if err != nil {
+		return err
+	}
+	if fd < 0 {
+		return nil
+	}
+	if c.wait == 0 {
+		c.wait, err = fs.createSemaphore()
+		if err != nil {
+			unix.Close(int(fd))
+			return err
+		}
+	}
+	if err = checked("vkImportSemaphoreFdKHR(dmabuf wait)", fs.importSyncFD(c.wait, fd)); err != nil {
+		unix.Close(int(fd))
+		return err
+	}
+	c.waitUsed = true
+	return nil
+}
+
+func (r *Renderer) recycleDMACopy(c *dmaCopy) {
+	// Failed sync-file export leaves a signalled binary semaphore payload;
+	// it must be destroyed, not signalled a second time.
+	if !c.exported {
+		r.freeDMACopy(c)
+		return
+	}
+	if c.cached != nil {
+		r.gpu.releaseCastImage(c.cached)
+	} else if c.img != nil {
+		r.gpu.freeImage(c.img)
+	}
+	c.cached, c.img = nil, nil
+	d := r.gpu.dd
+	if d.ResetFences(r.gpu.device, 1, &c.fence) != vk.Success || d.ResetCommandBuffer(c.cmd, 0) != vk.Success {
+		r.freeDMACopy(c)
+		return
+	}
+	if len(r.dmaIdle) >= captureSlots*maxSlotCopies {
+		r.freeDMACopy(c)
+		return
+	}
+	r.dmaIdle = append(r.dmaIdle, c)
 }
