@@ -57,12 +57,13 @@ type surface struct {
 	layer     *layerSurface
 	lock      *lockSurface
 	// bufferCommitted is permanent, including commits later discarded by FIFO.
-	bufferCommitted bool
-	server          *Server
-	current         *wayland.Buffer
-	lastW, lastH    int // last logged buffer size
-	role            func(bool)
-	destroyed       bool
+	bufferCommitted    bool
+	server             *Server
+	current            *wayland.Buffer
+	lastW, lastH       int // last logged buffer size
+	role               func(bool)
+	destroyed          bool
+	windowColorManaged bool // last emitted aggregate root/content colour fact
 	// hotX, hotY is the click point of a cursor surface (logical).
 	hotX, hotY int
 	// on is the output the surface entered; scale is the last scale sent.
@@ -317,6 +318,7 @@ func (s *surface) detach() {
 	// Parent updates cannot make a detached child's bound commits visible.
 	s.dropQueue()
 	s.flushDesync()
+	p.refreshWindowFacts(false)
 	p.redraw()
 	p.emitInput()
 	s.sendScale()
@@ -470,13 +472,7 @@ func (s *surface) applyCommit(u *update) {
 		s.root().treeDirty = true
 	}
 	s.async = u.async
-	oldPlain := s.outputColor().PlainSDR()
 	s.color = u.color
-	if plain := s.outputColor().PlainSDR(); plain != oldPlain {
-		if id := s.windowID(); s.root() == s && id != 0 {
-			s.server.emit(ports.WindowColorDescription{ID: id, PlainSDR: plain})
-		}
-	}
 	s.representation = u.representation
 	if s.lock != nil && s.commitSkipped {
 		// A discarded replacement cannot change retained lock geometry, even
@@ -521,9 +517,6 @@ func (s *surface) applyCommit(u *update) {
 			if c, ok := state.content(0); ok {
 				if !s.validateViewport(c.Width, c.Height) {
 					return
-				}
-				if s.sub.parent == nil && s.server.stats.watched != 0 && s.windowID() == s.server.stats.watched {
-					s.server.stats.commit(s.server.clock.Now(), c, s.hold.acquire != nil, s.async)
 				}
 				c.Transform = s.transform
 				c.Source, _ = s.source(c.Width, c.Height)
@@ -585,6 +578,7 @@ func (s *surface) applyCommit(u *update) {
 	if s.xdg != nil && s.xdg == u.xdg && u.geometry != s.xdg.geometry {
 		s.xdg.geometry, geometry = u.geometry, true
 	}
+	s.refreshWindowFacts(fresh)
 	s.commitConstraint(u.cons, u.region, geometry)
 	s.emitInput()
 	if s.kind == roleDragIcon {
