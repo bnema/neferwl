@@ -2,8 +2,8 @@ package wayland
 
 import "github.com/bnema/neferwl/internal/domain"
 
-// windowProc performs I/O only on first map. An own identity bootstraps the
-// mapped count; ancestor traversal is useful only with another known toplevel.
+// windowProc collects the bounded chain on first map so later sibling
+// arrivals can meet ancestors retained by the first external window.
 func (s *Server) windowProc(id domain.WindowID, pid int, remap bool) []domain.ProcNode {
 	if remap {
 		return s.knownProc[id]
@@ -11,5 +11,5 @@ func (s *Server) windowProc(id domain.WindowID, pid int, remap bool) []domain.Pr
 	if pid <= 1 {
 		return nil
 	}
-	return s.processes.Chain(pid, len(s.mappedProc) > 0)
+	return s.processes.Chain(pid)
 }

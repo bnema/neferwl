@@ -113,7 +113,6 @@ type Channels struct {
 
 type Server struct {
 	processes          *peerexe.Processes
-	mappedProc         map[domain.WindowID]bool
 	knownProc          map[domain.WindowID][]domain.ProcNode
 	x11Client          ports.X11Clients
 	security           ports.SessionSecurity
@@ -396,7 +395,6 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	s := &Server{
 		securityWake:       make(chan struct{}, 1),
 		processes:          peerexe.NewProcesses(os.DirFS("/proc"), os.Getpid()),
-		mappedProc:         make(map[domain.WindowID]bool),
 		knownProc:          make(map[domain.WindowID][]domain.ProcNode),
 		x11Client:          opts.X11Clients,
 		security:           opts.Security,
@@ -739,12 +737,8 @@ func (s *Server) emit(ev ports.ClientEvent) {
 	case ports.WindowMapped:
 		if len(v.Proc) != 0 {
 			s.knownProc[v.ID] = v.Proc
-			s.mappedProc[v.ID] = true
 		}
-	case ports.WindowUnmapped:
-		delete(s.mappedProc, v.ID)
 	case ports.WindowDestroyed:
-		delete(s.mappedProc, v.ID)
 		delete(s.knownProc, v.ID)
 	}
 

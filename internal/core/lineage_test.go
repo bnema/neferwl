@@ -147,3 +147,20 @@ func TestLineageMeetingOrder(t *testing.T) {
 		}
 	})
 }
+
+// The first external window must retain B even without an eligible peer:
+// [P] cannot meet sibling [G,B,A], whereas [P,B,A] meets non-leader B.
+func TestFirstExternalSiblingChain(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := lineageCore(t)
+		a := lineageNodes(70, 20, 10)
+		a[2].SessionLeader = true
+		c.mapWindow(ports.WindowMapped{ID: 1, Proc: a})
+		child := lineageNodes(80, 20, 10)
+		child[2].SessionLeader = true
+		c.mapWindow(ports.WindowMapped{ID: 2, Proc: child})
+		if c.launcherOf(2) != 1 {
+			t.Fatal("first external window lost common non-leader B")
+		}
+	})
+}

@@ -29,9 +29,9 @@ func NewProcesses(root fs.FS, compositor int) *Processes {
 }
 
 // Chain returns own process at element 0, then nearest-first ancestors.
-// Own identity costs one read even when ancestors is false. Chains exclude
+// Chains exclude
 // init and the compositor's ancestry, and contain at most 32 nodes.
-func (p *Processes) Chain(pid int, ancestors bool) []domain.ProcNode {
+func (p *Processes) Chain(pid int) []domain.ProcNode {
 	var chain []domain.ProcNode
 	seen := make(map[int]bool)
 	for len(chain) < 32 && pid > 1 && !p.cut[pid] && !seen[pid] {
@@ -41,9 +41,6 @@ func (p *Processes) Chain(pid int, ancestors bool) []domain.ProcNode {
 			break
 		}
 		chain = append(chain, node)
-		if !ancestors {
-			break
-		}
 		pid = parent
 	}
 	return chain
