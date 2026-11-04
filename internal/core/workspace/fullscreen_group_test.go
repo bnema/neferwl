@@ -169,8 +169,9 @@ func TestHeldTilePlacement(t *testing.T) {
 					if covered && p.Rect.Overlaps(out) {
 						t.Errorf("held %+v on screen under the cover", p.Rect)
 					}
-					if p.Hidden != covered {
-						t.Errorf("covered=%v: hidden %v", covered, p.Hidden)
+					// A tiled cover leaves the held tile shown, off screen.
+					if p.Hidden {
+						t.Errorf("covered=%v: held tile hidden", covered)
 					}
 				}
 			})

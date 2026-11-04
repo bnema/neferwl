@@ -521,6 +521,9 @@ func (w *Workspace) AppendLayout(dst []Placement) []Placement {
 	l := w.Engine()
 	maxHides := l.MaximizeHides()
 	maxFocus := maxHides && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth
+	// A tiled cover leaves held tiles shown: they slide with the view. A
+	// floating cover does not move the view, so they stay under it, hidden.
+	showHeld := cover != 0 && len(w.Held) > 0 && !w.IsFloat(cover)
 	tiles := w.tileBuf[:0]
 	for i, c := range w.Columns {
 		col := cols[i]
@@ -541,12 +544,16 @@ func (w *Workspace) AppendLayout(dst []Placement) []Placement {
 			full := id != 0 && (w.Fullscreen == id || held)
 			// Fixed overflow cannot scroll to other columns while one fills
 			// the view. Keep them in place, but out of the scene.
-			hidden := (cover != 0 && id != cover) || (fullColumn && !full) || maxFocus && i != w.Focus
+			// A tiled cover does not hide held tiles: output-sized at their
+			// own column or band, they are off screen once settled and slide
+			// in and out with the view when the cover changes (ADR 011 still
+			// hides every unrelated window).
+			hidden := (cover != 0 && id != cover && !(held && showHeld)) || (fullColumn && !full) || maxFocus && i != w.Focus
 			if full {
 				r = l.FullscreenRect(w.Snapshot(), col)
 			}
 			// A hidden held window keeps its output-sized rect, so its
-			// configure stays fullscreen while the cover hides it.
+			// configure stays fullscreen.
 			if hidden && !held {
 				r = Rect{}
 			}
