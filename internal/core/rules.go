@@ -171,11 +171,16 @@ func (c *Core) ruleTarget(eff ruleEffect) (*screen, *Workspace) {
 // sent to another output that would have taken the focus on the focused
 // output's workspace on screen; the caller activates it.
 func (c *Core) placeByRule(v ports.WindowMapped, eff ruleEffect, byRule bool) (follow bool) {
+	sc, w := c.ruleTarget(eff)
+	return c.placeOnWorkspace(v, eff, sc, w, byRule)
+}
+
+// placeOnWorkspace shares destination sizing and focus policy for rules and ancestry.
+func (c *Core) placeOnWorkspace(v ports.WindowMapped, eff ruleEffect, sc *screen, w *Workspace, byRule bool) (follow bool) {
 	float := v.Floating
 	if eff.floating != nil {
 		float = *eff.floating
 	}
-	sc, w := c.ruleTarget(eff)
 	// The workspace the user looks at takes a new window as usual; any
 	// other one gets it without a change of focus or view.
 	quiet := sc != c.cur() || w != sc.mon.Current()

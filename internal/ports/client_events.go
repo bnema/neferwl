@@ -14,6 +14,9 @@ type WindowMapped struct {
 	Slot string
 	// PID is the client process, 0 when unknown.
 	PID int
+	// AncestorPIDs lists process parents nearest first, excluding pid 1.
+	// This is a best-effort placement hint, not an authorization credential.
+	AncestorPIDs []int
 	// PIDShared means PID identifies a bridge process, not the application.
 	PIDShared bool
 	// Sandbox is the wp_security_context_v1 app id of the client, else

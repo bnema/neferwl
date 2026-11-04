@@ -103,7 +103,13 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) (follow bool) {
 			return false
 		}
 		// Rules come after the dialog: it stays over its parent.
-		if eff, ok := c.ruleFor(v); ok {
+		eff, ok := c.ruleFor(v)
+		if eff.output == "" && eff.workspace == "" && eff.number == 0 {
+			if sc, w := c.ancestorWorkspace(v); w != nil {
+				return c.placeOnWorkspace(v, eff, sc, w, true)
+			}
+		}
+		if ok {
 			return c.placeByRule(v, eff, true)
 		}
 		if !c.placeCoverApp(v, c.cur(), c.cur().mon.Current(), 0) {
@@ -145,6 +151,11 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) (follow bool) {
 	if s, _ := c.screenOf(v.ID); s == nil {
 		eff, ok := c.ruleFor(v)
 		byRule := ok
+		if eff.output == "" && eff.workspace == "" && eff.number == 0 {
+			if sc, w := c.ancestorWorkspace(v); w != nil {
+				return c.placeOnWorkspace(v, eff, sc, w, true)
+			}
+		}
 		// A window mapping at an output's rect goes to that output unless a
 		// rule names an output or workspace; it opens there quietly.
 		if v.HasAt && !v.Remap && eff.output == "" && eff.workspace == "" && eff.number == 0 {
@@ -178,4 +189,32 @@ func (c *Core) placeCoverApp(v ports.WindowMapped, sc *screen, w *Workspace, cel
 	w.AddAppWindow(v.ID, cells, v.Width, v.Height)
 	sc.mon.normalize()
 	return true
+}
+
+// ancestorWorkspace selects the nearest process ancestor with a placed window.
+// Multiple windows of one process use the lowest window ID for stable placement.
+func (c *Core) ancestorWorkspace(v ports.WindowMapped) (*screen, *Workspace) {
+	if v.Remap || v.PIDShared {
+		return nil, nil
+	}
+	for _, pid := range v.AncestorPIDs {
+		if pid <= 1 {
+			break
+		}
+		var chosen WindowID
+		var sc *screen
+		var ws *Workspace
+		for id, rec := range c.windows.records {
+			if id == v.ID || rec.client.PIDShared || rec.client.PID != pid {
+				continue
+			}
+			if s, w := c.screenOf(id); w != nil && (ws == nil || id < chosen) {
+				chosen, sc, ws = id, s, w
+			}
+		}
+		if ws != nil {
+			return sc, ws
+		}
+	}
+	return nil, nil
 }

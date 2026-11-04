@@ -7,6 +7,7 @@ import (
 	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xwaylandshell"
+	"github.com/bnema/neferwl/internal/adapters/peerexe"
 	"github.com/bnema/neferwl/internal/adapters/wayland/xwm"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -353,7 +354,11 @@ func (x *x11Window) tryMap() {
 	if w.parent != nil && w.parent.mapped {
 		parent = w.parent.id
 	}
-	s.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Title: w.title, ColorDescription: !surf.outputColor().PlainSDR(), PID: x.info.PID, Xwayland: true, Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Positioned: true, Modal: w.modal, Remap: w.gen > 1, HasAt: x.info.HasAt, AtX: x.info.AtX, AtY: x.info.AtY, Fullscreen: x.info.Fullscreen})
+	var ancestors []int
+	if w.gen == 1 {
+		ancestors = peerexe.AncestorPIDs(x.info.PID)
+	}
+	s.emit(ports.WindowMapped{AncestorPIDs: ancestors, ID: w.id, AppID: w.appID, Title: w.title, ColorDescription: !surf.outputColor().PlainSDR(), PID: x.info.PID, Xwayland: true, Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Positioned: true, Modal: w.modal, Remap: w.gen > 1, HasAt: x.info.HasAt, AtX: x.info.AtX, AtY: x.info.AtY, Fullscreen: x.info.Fullscreen})
 	s.syncInhibitors()
 	s.toplevelChanged(w)
 	s.castInventoryChanged()

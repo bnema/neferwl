@@ -114,7 +114,7 @@ func (r *windowRegistry) layerGone(id WindowID) {
 		return
 	}
 	rec.region = nil
-	if *rec == (windowRecord{}) {
+	if rec.client.ID == 0 && rec.expansionRule == (ruleEffect{}) && rec.appliedTitleRules == nil && rec.mappedAt.IsZero() && !rec.sized && !rec.inhibitShortcuts && !rec.idleInhibit {
 		delete(r.records, id)
 	}
 }
