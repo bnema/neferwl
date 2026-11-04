@@ -16,6 +16,8 @@ type State struct {
 // WorkspaceState is one workspace and its tiled columns, left to right in
 // layout order. Rects are logical pixels in the output's coordinates.
 type WorkspaceState struct {
+	// Focused is this workspace's focused window, 0 when empty.
+	Focused  WindowID
 	ID       uint64
 	Number   int    // numbered workspace, 0 for a hidden/named one
 	Name     string // configured name, "" if dynamic

@@ -148,7 +148,8 @@ func (c *Core) workspaceInto(ws []domain.WorkspaceState, i int, w *Workspace, ou
 	}
 	v := &ws[i]
 	cols := v.Columns[:0]
-	*v = domain.WorkspaceState{ID: w.ID, Number: number, Name: w.Name, Output: output, Visible: visible, Overflow: string(w.Overflow)}
+	focused, _ := w.Focused()
+	*v = domain.WorkspaceState{Focused: focused, ID: w.ID, Number: number, Name: w.Name, Output: output, Visible: visible, Overflow: string(w.Overflow)}
 	c.scratch.rects = w.Engine().ColumnRects(w.Snapshot(), c.scratch.rects, layout.RectOpts{})
 	for ci, col := range w.Columns {
 		if ci < cap(cols) {
@@ -176,7 +177,7 @@ func (c *Core) workspaceInto(ws []domain.WorkspaceState, i int, w *Workspace, ou
 func sameState(a, b domain.State) bool {
 	return a.Output == b.Output && slices.Equal(a.Outputs, b.Outputs) && slices.Equal(a.Windows, b.Windows) &&
 		slices.EqualFunc(a.Workspaces, b.Workspaces, func(x, y domain.WorkspaceState) bool {
-			return x.ID == y.ID && x.Number == y.Number && x.Name == y.Name && x.Output == y.Output && x.Visible == y.Visible && x.Overflow == y.Overflow &&
+			return x.Focused == y.Focused && x.ID == y.ID && x.Number == y.Number && x.Name == y.Name && x.Output == y.Output && x.Visible == y.Visible && x.Overflow == y.Overflow &&
 				slices.EqualFunc(x.Columns, y.Columns, func(p, q domain.ColumnState) bool {
 					return p.Rect == q.Rect && slices.Equal(p.Windows, q.Windows)
 				})
