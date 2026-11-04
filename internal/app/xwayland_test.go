@@ -64,10 +64,21 @@ func startXwayland(t *testing.T) *xwaylandEnv {
 
 // startXwaylandWith is startXwayland with the given headless outputs, left to
 // right, and an optional change to the default config.
-//
-//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
 func startXwaylandWith(t *testing.T, sizes [][2]int, mutate func(*domain.Config)) *xwaylandEnv {
 	t.Helper()
+	return startXwaylandConfig(t, sizes, mutate, "")
+}
+
+// startXwaylandConfig is startXwaylandWith watching the config file at path
+// for reloads; empty uses a path that does not exist.
+//
+//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
+func startXwaylandConfig(t *testing.T, sizes [][2]int, mutate func(*domain.Config), path string) *xwaylandEnv {
+	t.Helper()
+	if path == "" {
+		// Never the user's own config file.
+		path = filepath.Join(t.TempDir(), "absent", "config")
+	}
 	if _, err := exec.LookPath("Xwayland"); err != nil {
 		t.Skip("Xwayland not on PATH")
 	}
@@ -148,7 +159,7 @@ func startXwaylandWith(t *testing.T, sizes [][2]int, mutate func(*domain.Config)
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(ctx, Options{
-			Backend: "headless", NoTerminal: true, Config: cfg, Script: script,
+			Backend: "headless", NoTerminal: true, Config: cfg, ConfigPath: path, Script: script,
 			ScreenshotDir: shots, Sizes: sizes,
 		})
 	}()
