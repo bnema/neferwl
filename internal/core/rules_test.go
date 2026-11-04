@@ -584,3 +584,83 @@ func TestTitleRuleMovesOnceWithoutFocus(t *testing.T) {
 		}
 	})
 }
+
+func drainCommands(ch chan ports.ClientCommand) []ports.ClientCommand {
+	var out []ports.ClientCommand
+	for {
+		select {
+		case v := <-ch:
+			if s, ok := v.(ports.SecurityCommand); ok {
+				v = s.Command
+			}
+			out = append(out, v)
+		default:
+			return out
+		}
+	}
+}
+
+func TestTitleRuleMoveKeepsFocusOfFocusedWindow(t *testing.T) {
+	tv := domain.OutputInfo{Name: "tv", Virtual: true, Width: 640, Height: 360}
+	for _, tc := range []struct {
+		name      string
+		out       string
+		ws        string
+		outs      []domain.OutputInfo
+		setup     func(t *testing.T, r *multiRig)
+		wantOut   string
+		wantFocus domain.WindowID // 0: anything but the moved window
+		held      bool
+	}{
+		{name: "placed", out: "DP-2", outs: []domain.OutputInfo{left, right}, wantOut: "DP-2", wantFocus: 1, held: true},
+		{name: "isolated", out: "tv", outs: []domain.OutputInfo{left, tv}, wantOut: "tv", wantFocus: 1, held: true},
+		{name: "workspace not current", out: "DP-2", ws: "2", outs: []domain.OutputInfo{left, right}, setup: func(t *testing.T, r *multiRig) {
+			r.mapApp(t, 3, "side") // fills DP-2's current workspace; a spare follows
+		}, wantOut: "DP-2", wantFocus: 1, held: true},
+		{name: "focus on another output", out: "tv", outs: []domain.OutputInfo{left, right, tv}, setup: func(t *testing.T, r *multiRig) {
+			r.key(t, "Right", domain.ModAlt|domain.ModCtrl)
+		}, wantOut: "DP-2"},
+		{name: "overview open", out: "DP-2", outs: []domain.OutputInfo{left, right}, setup: func(t *testing.T, r *multiRig) {
+			r.key(t, "F12", domain.ModAlt)
+		}, wantOut: "DP-1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				r := startMulti(t, func(c *domain.Config) {
+					c.Binds["Alt+F12"] = "toggle-overview"
+					c.Outputs = []domain.OutputConfig{{Name: "DP-1"}, {Name: "DP-2"}, {Name: "tv", Virtual: true}}
+					c.Rules = []domain.WindowRule{
+						winRule("title", "game", func(r *domain.WindowRule) {
+							r.Title = regexp.MustCompile("(?i)big picture")
+							r.Output = tc.out
+							r.Workspace = tc.ws
+						}),
+						winRule("side", "side", func(r *domain.WindowRule) { r.Output = "DP-2" }),
+					}
+				}, tc.outs...)
+				r.mapApp(t, 2, "term")
+				r.client <- ports.WindowMapped{ID: 1, AppID: "game", Title: "launcher", Xwayland: true}
+				stateAfter(t, r.state, func(st domain.State) bool { return stFocus(st) == 1 && st.Output == "DP-1" })
+				if tc.setup != nil {
+					tc.setup(t, r)
+				}
+				synctest.Wait()
+				drainCommands(r.commands)
+				r.client <- ports.WindowTitle{ID: 1, Title: "Steam Big Picture Mode"}
+				st := stateAfter(t, r.state, func(st domain.State) bool { w := stWindow(st, 1); return w != nil && w.Output == tc.out })
+				if st.Output != tc.wantOut || (tc.wantFocus != 0 && stFocus(st) != tc.wantFocus) || (tc.wantFocus == 0 && stFocus(st) == 1) {
+					t.Fatalf("focus %d on %s", stFocus(st), st.Output)
+				}
+				if tc.held && stOutput(st, tc.out).Active != stWindow(st, 1).Workspace {
+					t.Fatalf("destination workspace not shown: %+v", stOutput(st, tc.out))
+				}
+				synctest.Wait()
+				for _, id := range focusChanges(drainCommands(r.commands)) {
+					if tc.held && id != 1 || !tc.held && id == 1 {
+						t.Fatalf("focus sent to %d", id)
+					}
+				}
+			})
+		})
+	}
+}
