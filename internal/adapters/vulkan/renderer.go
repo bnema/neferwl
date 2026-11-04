@@ -59,8 +59,9 @@ type Renderer struct {
 	captureSDR  target
 	// capturePQ is the PQ readback pass of BeginCapturePQ (capture_pq.go).
 	capturePQ capturePQPass
-	sync        captureSync
-	pool        vk.CommandPool
+	sync      captureSync
+	dmaFences dmabufFences // CopyTo's implicit sync (capture_dmabuf.go)
+	pool      vk.CommandPool
 	// Frames in flight (frame.go): frame is the last frame recorded,
 	// submitted the last submitted, completed the last known finished.
 	slots                       [frameSlots]frameSlot

@@ -99,15 +99,18 @@ func (f *captureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.Fi
 		return nil, err
 	}
 	c := &dmaCopy{img: img}
-	// Implicit sync with the buffer's other users: the copy waits for what
-	// they still do with it (a consumer reading the previous frame).
-	c.wait = r.dmabufBusy(dst.Planes[0].File)
 	submitted := false
 	defer func() {
 		if !submitted {
 			r.freeDMACopy(c)
 		}
 	}()
+	// Implicit sync with the buffer's other users: the copy waits for what
+	// they still do with it (a consumer reading the previous frame). When
+	// that cannot be established nothing is written (fail closed).
+	if c.wait, err = r.dmabufBusy(dst.Planes[0].File); err != nil {
+		return nil, err
+	}
 	d, dev := r.gpu.dd, r.gpu.device
 	ai := vk.CommandBufferAllocateInfo{SType: vk.StructureTypeCommandBufferAllocateInfo, CommandPool: r.pool, Level: vk.CommandBufferLevelPrimary, CommandBufferCount: 1}
 	if err := checked("vkAllocateCommandBuffers(capture dmabuf)", d.AllocateCommandBuffers(dev, &ai, &c.cmd)); err != nil {
@@ -169,15 +172,81 @@ func (f *captureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.Fi
 	return done, nil
 }
 
+// dmabufFences is the implicit-sync surface of CopyTo destinations: the
+// dmabuf fence export and the wait semaphore it is imported into (a seam for
+// tests; the device and the kernel implement it).
+type dmabufFences interface {
+	// exportSyncFile returns a sync file of every fence pending on the
+	// dmabuf of f, for a writer (readers and writers); -1 when the kernel
+	// reports none. The fd is the caller's.
+	exportSyncFile(f *os.File) (int32, error)
+	createSemaphore() (vk.Semaphore, error)
+	// importSyncFD makes fd the temporary payload of s; on success Vulkan
+	// owns fd, on failure it is still the caller's.
+	importSyncFD(s vk.Semaphore, fd int32) vk.Result
+	destroySemaphore(s vk.Semaphore)
+}
+
+// deviceFences is the dmabufFences of the renderer's device.
+type deviceFences struct{ r *Renderer }
+
+func (deviceFences) exportSyncFile(f *os.File) (int32, error) {
+	arg := dmaBufSync{flags: dmaBufSyncWrite, fd: -1}
+	if err := dmabufIoctl(f, ioctlExportSyncFile, &arg); err != nil {
+		return -1, fmt.Errorf("export cast buffer fences: %w", err)
+	}
+	return arg.fd, nil
+}
+
+func (d deviceFences) createSemaphore() (vk.Semaphore, error) {
+	var sem vk.Semaphore
+	si := vk.SemaphoreCreateInfo{SType: vk.StructureTypeSemaphoreCreateInfo}
+	err := checked("vkCreateSemaphore(dmabuf wait)", d.r.gpu.dd.CreateSemaphore(d.r.gpu.device, &si, nil, &sem))
+	return sem, err
+}
+
+func (d deviceFences) importSyncFD(s vk.Semaphore, fd int32) vk.Result {
+	imp := vk.ImportSemaphoreFdInfoKHR{SType: vk.StructureTypeImportSemaphoreFDInfoKHR, Semaphore: s, Flags: vk.SemaphoreImportTemporaryBit, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit, Fd: fd}
+	return d.r.gpu.dd.ImportSemaphoreFdKHR(d.r.gpu.device, &imp)
+}
+
+func (d deviceFences) destroySemaphore(s vk.Semaphore) {
+	d.r.gpu.dd.DestroySemaphore(d.r.gpu.device, s, nil)
+}
+
+// fences is the dmabuf fence seam: the device unless a test replaced it.
+func (r *Renderer) fences() dmabufFences {
+	if r.dmaFences == nil {
+		r.dmaFences = deviceFences{r}
+	}
+	return r.dmaFences
+}
+
 // dmabufBusy makes a wait semaphore of every fence pending on the dmabuf
 // of f (DMA_BUF_IOCTL_EXPORT_SYNC_FILE for writing: readers and writers).
-// 0 when there is none to wait for or the kernel cannot export it.
-func (r *Renderer) dmabufBusy(f *os.File) vk.Semaphore {
-	arg := dmaBufSync{flags: dmaBufSyncWrite, fd: -1}
-	if dmabufIoctl(f, ioctlExportSyncFile, &arg) != nil || arg.fd < 0 {
-		return 0
+// 0 with no error only when the kernel reports no fence; any failure to
+// export or import is an error, so the caller writes nothing. The exported
+// sync file is closed on every path but a successful import.
+func (r *Renderer) dmabufBusy(f *os.File) (vk.Semaphore, error) {
+	fs := r.fences()
+	fd, err := fs.exportSyncFile(f)
+	if err != nil {
+		return 0, err
 	}
-	return r.importSyncFD(int(arg.fd))
+	if fd < 0 {
+		return 0, nil
+	}
+	sem, err := fs.createSemaphore()
+	if err != nil {
+		_ = unix.Close(int(fd))
+		return 0, err
+	}
+	if err := checked("vkImportSemaphoreFdKHR(dmabuf wait)", fs.importSyncFD(sem, fd)); err != nil {
+		_ = unix.Close(int(fd))
+		fs.destroySemaphore(sem)
+		return 0, err
+	}
+	return sem, nil
 }
 
 // attachWriteFence adds the sync file done to the dmabuf of f as a write
@@ -238,7 +307,7 @@ func (r *Renderer) reapCopies(s *captureSlot) error {
 func (r *Renderer) freeDMACopy(c *dmaCopy) {
 	d, dev := r.gpu.dd, r.gpu.device
 	if c.wait != 0 {
-		d.DestroySemaphore(dev, c.wait, nil)
+		r.fences().destroySemaphore(c.wait)
 	}
 	if c.done != 0 {
 		d.DestroySemaphore(dev, c.done, nil)
