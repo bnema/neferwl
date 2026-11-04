@@ -364,7 +364,7 @@ func (r *Renderer) captureSync() captureSync {
 	return r.sync
 }
 
-// freeCaptureSlot destroys a slot; the device must be idle for it.
+// freeCaptureSlot destroys a slot; its capture and DMA-copy fences must be complete.
 func (r *Renderer) freeCaptureSlot(s *captureSlot) {
 	r.freeCaptureCursor(&s.cursor)
 	for _, c := range s.copies {
@@ -397,7 +397,7 @@ func (r *Renderer) freeCaptureSlot(s *captureSlot) {
 }
 
 // destroyCaptures frees the slots and the HDR conversion pass. Every
-// lease is invalid afterwards; the device is idle (Close).
+// lease is invalid afterwards; all capture and DMA-copy fences are complete.
 func (r *Renderer) destroyCaptures() {
 	for _, s := range r.captures {
 		r.freeCaptureSlot(s)
