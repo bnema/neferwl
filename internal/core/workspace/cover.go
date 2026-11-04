@@ -56,6 +56,16 @@ func (w *Workspace) leaveCover(move func()) bool {
 			w.hold(full)
 			return true
 		}
+		if len(w.Held) > 0 && !w.IsFloat(full) {
+			// Leaving a group for an unrelated window: the cover is
+			// demoted to held, not left, so focus on any member brings
+			// it back with no fullscreen key. A lone cover ends below.
+			w.hold(full)
+			w.stashOver = 0
+			w.reconcileFloats()
+			w.scroll()
+			return true
+		}
 		w.Fullscreen = full
 		w.leaveFullscreen()
 		return true

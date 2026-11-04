@@ -5,7 +5,11 @@ import "slices"
 // The fullscreen group: w.Fullscreen is the active cover, Lanes.Held the
 // other windows that stay fullscreen without covering. Invariants: the
 // active cover is never held, a window is held at most once, and every held
-// window is on the workspace.
+// window is on the workspace. Held may be non-empty with Fullscreen 0: in
+// a pinned layout (cascade), focus left the group for an unrelated window
+// and every member is held (leaveCover); the group comes back when focus
+// lands on a member (promoteFocused). In scroll the cover stays set while
+// scrolled off, so Cover() is 0 there with Fullscreen non-zero.
 
 // IsFullscreenMember reports whether id is the active cover or held.
 func (w *Workspace) IsFullscreenMember(id WindowID) bool {

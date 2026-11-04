@@ -392,7 +392,7 @@ func TestFullscreenGroupToggleAfterPromote(t *testing.T) {
 }
 
 // Focus on a window outside the group: scroll keeps the cover, scrolled
-// off; cascade leaves it as before. The held member stays held.
+// off; cascade demotes it to held (TestFullscreenGroupCascadeLeaveDemotes).
 func TestFullscreenGroupFocusOutsider(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		w := groupPG(t, OverflowScroll)
@@ -402,21 +402,73 @@ func TestFullscreenGroupFocusOutsider(t *testing.T) {
 			t.Fatalf("scroll: focus %d cover %d covering %d held %v", f, w.Fullscreen, w.Cover(), w.Held)
 		}
 	})
+}
+
+// Cascade: leaving a group for an unrelated band demotes the cover to held;
+// returning to a member promotes it without a toggle.
+func TestFullscreenGroupCascadeLeaveDemotes(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		w := groupPG(t, OverflowCascade)
+		w.FocusID(1)
 		d := 1
 		if w.Band(w.ColumnOf(3)) < w.Band(w.ColumnOf(1)) {
 			d = -1
 		}
-		// Step over P's band if it lies between G and the outsider.
+		// Stepping through P's band on the way promotes P; any member left
+		// for the outsider is demoted.
 		for f, _ := w.Focused(); f != 3; f, _ = w.Focused() {
 			if !w.FocusWindow(d) {
 				t.Fatal("no path to the outsider")
 			}
 		}
-		if w.Fullscreen != 0 || w.left == 0 || len(w.Held) != 1 {
-			t.Fatalf("cascade: cover %d left %d held %v", w.Fullscreen, w.left, w.Held)
+		held := slices.Clone(w.Held)
+		slices.Sort(held)
+		if w.Fullscreen != 0 || w.Cover() != 0 || w.left != 0 || !slices.Equal(held, []WindowID{1, 2}) {
+			t.Fatalf("left group: cover %d covering %d left %d held %v", w.Fullscreen, w.Cover(), w.left, w.Held)
 		}
-		checkGroup(t, w, "cascade outsider")
+		checkGroup(t, w, "left group")
+		ps := w.Layout()
+		if p := placementOf(t, ps, 3); p.Hidden || !p.Rect.Overlaps(w.Output) {
+			t.Fatalf("outsider not shown: %+v", p)
+		}
+		for _, id := range []WindowID{1, 2} {
+			if p := placementOf(t, ps, id); !p.Fullscreen || p.Rect.W != w.Output.W || p.Rect.H != w.Output.H {
+				t.Fatalf("held %d lost fullscreen: %+v", id, p)
+			}
+		}
+		// Back to G: it covers again, P stays held.
+		w.FocusID(1)
+		wantCover(t, w, 1, []WindowID{2}, "back to G")
+	})
+}
+
+// Scroll is unaffected: the cover stays set, scrolled off.
+func TestFullscreenGroupScrollLeaveKeepsCover(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := groupPG(t, OverflowScroll)
+		w.FocusID(3)
+		if w.Fullscreen != 1 || w.Cover() != 0 || !slices.Equal(w.Held, []WindowID{2}) || w.left != 0 {
+			t.Fatalf("scroll: cover %d covering %d held %v left %d", w.Fullscreen, w.Cover(), w.Held, w.left)
+		}
+	})
+}
+
+// A lone fullscreen window keeps the leave latch in cascade.
+func TestFullscreenLoneCascadeLeave(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := cols(OverflowCascade, 3, 0, []WindowID{1}, []WindowID{3})
+		w.Settle(false)
+		w.FocusID(1)
+		w.SetFullscreen(1, true)
+		d := 1
+		if w.Band(w.ColumnOf(3)) < w.Band(w.ColumnOf(1)) {
+			d = -1
+		}
+		if !w.FocusWindow(d) {
+			t.Fatal("no move")
+		}
+		if w.Fullscreen != 0 || w.left != 1 || len(w.Held) != 0 {
+			t.Fatalf("lone: cover %d left %d held %v", w.Fullscreen, w.left, w.Held)
+		}
 	})
 }
