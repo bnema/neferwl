@@ -5,6 +5,7 @@
 package directseat
 
 import (
+	"errors"
 	"fmt"
 
 	"bnema.dev/zerowrap"
@@ -56,15 +57,24 @@ func newSeat(log zerowrap.Logger, dev evdev) *Seat {
 	return &Seat{log: log, dev: dev, active: active}
 }
 
-// OpenDevice opens path read-write and grabs it exclusively. A failed grab
-// is logged and the fd kept: the device still works, only shared.
+// OpenDevice opens path read-write and grabs it exclusively. It fails
+// closed: a device it cannot grab is closed and refused, so its input never
+// reaches another client (a console or another session) as well.
 func (s *Seat) OpenDevice(path string) (int, error) {
 	fd, err := s.dev.open(path)
 	if err != nil {
 		return -1, fmt.Errorf("open input device %s: %w", path, err)
 	}
 	if err := s.dev.grab(fd); err != nil {
-		s.log.Warn().Err(err).Str("path", path).Msg("exclusive grab failed; device stays shared")
+		if cerr := s.dev.close(fd); cerr != nil {
+			s.log.Warn().Err(cerr).Int("fd", fd).Msg("close input device")
+		}
+		if errors.Is(err, unix.EBUSY) {
+			err = fmt.Errorf("another client holds an exclusive grab: %w", err)
+		}
+		err = fmt.Errorf("grab input device %s: %w", path, err)
+		s.log.Warn().Err(err).Str("path", path).Msg("input device skipped")
+		return -1, err
 	}
 	return fd, nil
 }

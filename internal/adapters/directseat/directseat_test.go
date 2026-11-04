@@ -46,14 +46,17 @@ func TestOpenDeviceGrabs(t *testing.T) {
 	assert.NotContains(t, out.String(), `"warn"`)
 }
 
-func TestOpenDeviceGrabFailureKeepsFD(t *testing.T) {
+func TestOpenDeviceGrabBusyRefused(t *testing.T) {
 	d := newMockevdev(t)
 	d.EXPECT().open("/dev/input/event3").Return(7, nil)
 	d.EXPECT().grab(7).Return(unix.EBUSY)
+	d.EXPECT().close(7).Return(nil).Once()
 	var out lockedBuffer
 	fd, err := newSeat(testLog(&out), d).OpenDevice("/dev/input/event3")
-	require.NoError(t, err)
-	assert.Equal(t, 7, fd)
+	require.ErrorIs(t, err, unix.EBUSY)
+	assert.Contains(t, err.Error(), "another client holds an exclusive grab")
+	assert.Contains(t, err.Error(), "/dev/input/event3")
+	assert.Equal(t, -1, fd)
 	assert.Contains(t, out.String(), `"level":"warn"`)
 	assert.Contains(t, out.String(), `"component":"seat"`)
 }
@@ -90,22 +93,48 @@ func TestSeatIdentityAndActive(t *testing.T) {
 	assert.Contains(t, out.String(), `"level":"debug"`)
 }
 
-// A regular file is not an evdev node: the grab fails with ENOTTY and the
-// fd must still be returned. Never opens a real /dev/input device.
-func TestRealFileGrabENOTTYTolerated(t *testing.T) {
+// A regular file is not an evdev node: the grab fails with ENOTTY, the
+// device is refused and the fd it opened is closed. Never opens a real
+// /dev/input device.
+func TestRealFileGrabENOTTYRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "event0")
 	require.NoError(t, os.WriteFile(path, nil, 0o600))
+	before := openFDs(t)
 	var out lockedBuffer
-	s := New(testLog(&out))
-	fd, err := s.OpenDevice(path)
-	require.NoError(t, err)
-	assert.GreaterOrEqual(t, fd, 0)
+	fd, err := New(testLog(&out)).OpenDevice(path)
+	require.ErrorIs(t, err, unix.ENOTTY)
+	assert.Equal(t, -1, fd)
 	assert.Contains(t, out.String(), "inappropriate ioctl")
+	assert.Equal(t, before, openFDs(t), "the refused device's fd leaked")
+}
+
+// openFDs lists the process's open descriptors that point at regular files
+// named event0 (the test's fake device).
+func openFDs(t *testing.T) []string {
+	t.Helper()
+	entries, err := os.ReadDir("/proc/self/fd")
+	require.NoError(t, err)
+	var fds []string
+	for _, e := range entries {
+		if target, err := os.Readlink(filepath.Join("/proc/self/fd", e.Name())); err == nil && filepath.Base(target) == "event0" {
+			fds = append(fds, e.Name())
+		}
+	}
+	return fds
+}
+
+// The kernel boundary opens devices read-write, non-blocking and close-on-exec.
+func TestUnixOpenFlags(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "event0")
+	require.NoError(t, os.WriteFile(path, nil, 0o600))
+	fd, err := unixEvdev{}.open(path)
+	require.NoError(t, err)
+	defer unix.Close(fd)
 	flags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFL, 0)
 	require.NoError(t, err)
 	assert.Equal(t, unix.O_RDWR, flags&unix.O_ACCMODE)
 	assert.NotZero(t, flags&unix.O_NONBLOCK)
-	s.CloseDevice(fd)
-	_, err = unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)
-	require.ErrorIs(t, err, unix.EBADF)
+	fdflags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)
+	require.NoError(t, err)
+	assert.NotZero(t, fdflags&unix.FD_CLOEXEC)
 }

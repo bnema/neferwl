@@ -32,7 +32,7 @@ sudo usermod -aG input,render $USER
 
 Log out and back in (or reboot) to apply.
 
-**Security.** Membership in `input` lets every program of that user read every keyboard of the machine: it is the same as a keylogger. NeferWL grabs each device exclusively (`EVIOCGRAB`), so a local keyboard types into the server session, not into a console or another session. Use a dedicated account, and never run server mode while a desktop NeferWL session is running on the same machine: `neferwl-server.service` conflicts with `neferwl.service` for that reason.
+**Security.** Membership in `input` lets every program of that user read every keyboard of the machine: it is the same as a keylogger. NeferWL grabs each device exclusively (`EVIOCGRAB`), so a local keyboard types into the server session, not into a console or another session. A device it cannot grab (another program already holds it) is skipped and logged as `input device skipped`. Use a dedicated account, and never run server mode while a desktop NeferWL session is running on the same machine: `neferwl-server.service` conflicts with `neferwl.service` for that reason.
 
 ## Configuration
 
