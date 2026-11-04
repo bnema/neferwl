@@ -13,6 +13,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/config"
+	"github.com/bnema/neferwl/internal/adapters/directseat"
 	"github.com/bnema/neferwl/internal/adapters/drm"
 	"github.com/bnema/neferwl/internal/adapters/drm/supervisor"
 	"github.com/bnema/neferwl/internal/adapters/headlessinput"
@@ -46,6 +47,7 @@ import (
 // until run ends; the keymap and the wayland server own themselves.
 type session struct {
 	opts Options
+	plan core.BackendPlan
 	log  zerowrap.Logger
 
 	clock    ports.Clock
@@ -93,7 +95,7 @@ const (
 // warning or nil instead of failing. A failure releases the DRM backend,
 // keymap and Vulkan resources (abort).
 func assembleSession(ctx context.Context, opts Options) (s *session, err error) {
-	s = &session{opts: opts, log: logging.For(ctx, "app"), clock: clock.System{}, security: &sessionsecurity.Gate{}}
+	s = &session{opts: opts, plan: core.PlanBackend(opts.Backend), log: logging.For(ctx, "app"), clock: clock.System{}, security: &sessionsecurity.Gate{}}
 	defer func() {
 		if err != nil {
 			s.abort()
@@ -102,7 +104,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	}()
 	log := s.log
 	s.sizes = opts.Sizes
-	if len(s.sizes) == 0 {
+	if len(s.sizes) == 0 && s.plan.FixedHeads == core.HeadsSized {
 		s.sizes = [][2]int{{1920, 1080}}
 	}
 	// Every output renders on the same GPU: its formats are the clients'.
@@ -110,24 +112,24 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	if err != nil {
 		return s, err
 	}
-	if opts.Backend == "drm" {
+	if s.plan.KMS {
 		if s.hw, err = supervisor.Open(ctx, opts.Config, s.inst); err != nil {
 			return s, err
 		}
 		s.gpu = s.hw.RenderDevice()
 	} else {
 		cands, listErr := drm.ListGPUs("/sys", "/dev")
-		s.gpu, err = openHeadlessRender(s.inst, cands, listErr, opts.Config, os.Getenv("NEFERWL_RENDER_DEVICE"), logging.For(ctx, "drm"))
+		s.gpu, err = openHeadlessRenderPolicy(s.inst, cands, listErr, opts.Config, os.Getenv("NEFERWL_RENDER_DEVICE"), s.plan.RequireRenderNode, logging.For(ctx, "drm"))
 		if err != nil {
 			return s, err
 		}
 	}
 	s.dmabuf = s.gpu.DMABuf()
 	log.Info().Int("formats", len(s.dmabuf.Formats)).Msg("dmabuf")
-	s.p = newPipes(s.hw != nil, opts.Config.Hint.Enable)
+	s.p = newPipes(s.plan.PersistScales, opts.Config.Hint.Enable)
 	// core() carries channels only; the gate, clock and terminal flag are
 	// explicit core.Options.
-	if s.core, err = core.New(opts.Config, s.p.core(), core.Options{Security: s.security, Clock: s.clock, Tokens: launcher.Tokens{}, Terminal: !opts.NoTerminal, HintDisabled: hintDisabledNote(ctx)}); err != nil {
+	if s.core, err = core.New(opts.Config, s.p.core(), core.Options{Security: s.security, Clock: s.clock, Tokens: launcher.Tokens{}, Terminal: !opts.NoTerminal && s.plan.AutoTerminal != core.AutoTerminalOff, HintDisabled: hintDisabledNote(ctx), PlaceVirtuals: !s.plan.IsolateVirtuals}); err != nil {
 		return s, err
 	}
 	if s.km, err = xkb.New(xkb.RMLVO{Layout: opts.Config.Keyboard.Layout, Variant: opts.Config.Keyboard.Variant, Options: opts.Config.Keyboard.Options}); err != nil {
@@ -153,7 +155,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	// Only a real session (or a test that asks) serves the session bus:
 	// headless runs would take the names from the desktop they run in.
 	var casts ports.CastSink
-	if s.hw != nil || opts.DBus {
+	if s.plan.SessionDBus == core.SessionDBusAlways || opts.DBus {
 		s.cast = screencast.New(s.captureAllow.Policy, s.p.castCommands, logging.For(ctx, "screencast"))
 		s.cast.SetCastBuffers(s.gpu)
 		casts = s.cast
@@ -251,7 +253,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	defer s.close()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	opts, log, p, hw, km, security := s.opts, s.log, s.p, s.hw, s.km, s.security
+	opts, plan, log, p, hw, km, security := s.opts, s.plan, s.log, s.p, s.hw, s.km, s.security
 	childEnv, curs, xdisplay, statePath := s.childEnv, s.curs, s.xdisplay, s.statePath
 	server, captureAllow, c, child, wsIDs, sizes, path := s.server, s.captureAllow, s.core, s.child, s.wsIDs, s.sizes, s.path
 	if opts.Session {
@@ -284,8 +286,20 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	script := make(chan string)
 	go func() {
 		defer workers.Done()
-		if hw != nil {
-			// Core sends the first layout once DRM reports the outputs.
+		var (
+			seat     ports.Seat
+			seatName string
+			active   <-chan bool
+		)
+		switch {
+		case plan.Input == core.InputLibinputLibseat:
+			seat, seatName, active = hw.Seat(), hw.Seat().Name(), hw.Seat().Subscribe()
+		case plan.Input == core.InputLibinputDirect && !opts.noLibinput:
+			direct := directseat.New(logging.For(ctx, "seat"))
+			seat, seatName, active = direct, direct.Name(), direct.Active()
+		}
+		if seat != nil {
+			// Core sends the first layout once the backend reports the outputs.
 			var layout domain.Layout
 			select {
 			case layout = <-p.layouts:
@@ -304,8 +318,8 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 				}
 				return libinput.Run(ctx, libinput.Options{
 					Security:      security,
-					Seat:          hw.Seat(),
-					SeatName:      hw.Seat().Name(),
+					Seat:          seat,
+					SeatName:      seatName,
 					Keymap:        km,
 					Keymaps:       p.keymaps,
 					Layout:        layout,
@@ -313,7 +327,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 					Constraints:   p.constraints,
 					DeviceConfig:  opts.Config.InputDevicesConfig,
 					DeviceConfigs: p.deviceConfigs,
-					Active:        hw.Seat().Subscribe(),
+					Active:        active,
 					MoveCursor:    curs.Move,
 					Log:           logging.For(ctx, "input"),
 					LogMotion:     logging.Enabled(ctx, "input-motion"),
@@ -427,7 +441,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	}
 	// Only a real session serves the session bus: headless runs would take
 	// the names from the desktop they run in, unless a test asks (DBus).
-	if hw != nil || opts.DBus {
+	if plan.SessionDBus == core.SessionDBusAlways || opts.DBus {
 		workers.Add(2)
 		go func() {
 			defer workers.Done()
@@ -441,7 +455,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 			s.cast.Run(ctx, busRetry)
 		}()
 	}
-	if hw != nil {
+	if plan.LogindPowerKeys {
 		// The same goes for the system bus: logind's locks keep the power
 		// keys from acting before a bind sees them.
 		workers.Add(1)

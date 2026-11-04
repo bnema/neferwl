@@ -21,7 +21,7 @@ import (
 )
 
 type Options struct {
-	Backend    string
+	Backend    domain.Backend
 	Config     domain.Config
 	ConfigPath string
 	Timeout    time.Duration
@@ -56,13 +56,17 @@ type Options struct {
 	// castInventoryApplied (tests) is signalled after each screencast
 	// inventory the D-Bus service applied.
 	castInventoryApplied chan<- struct{}
+	// noLibinput (tests) keeps a libinput backend from opening real devices:
+	// the inject channel drives input instead. A grab would steal the
+	// developer's keyboard.
+	noLibinput bool
 }
 
 func Run(ctx context.Context, opts Options) error { return run(ctx, opts, nil) }
 
 func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)) error {
 	log := logging.For(ctx, "app")
-	log.Info().Str("backend", opts.Backend).Msg("starting neferwl")
+	log.Info().Str("backend", string(opts.Backend)).Msg("starting neferwl")
 	var cancel context.CancelFunc
 	if opts.Timeout > 0 {
 		ctx, cancel = context.WithTimeoutCause(ctx, opts.Timeout, errTimeout)

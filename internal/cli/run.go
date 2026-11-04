@@ -19,6 +19,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/app"
+	"github.com/bnema/neferwl/internal/domain"
 	"golang.org/x/term"
 )
 
@@ -149,7 +150,7 @@ func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
 		configLog.Warn().Int("line", w.Line).Msg(w.Msg)
 	}
 	err = app.Run(ctx, app.Options{
-		Backend:       f.backend,
+		Backend:       domain.Backend(f.backend),
 		Config:        cfg,
 		ConfigPath:    path,
 		Timeout:       f.timeout,
