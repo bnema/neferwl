@@ -34,11 +34,12 @@ var captureFourccs = [...]uint32{fourcc('X', 'R', '2', '4'), fourcc('A', 'R', '2
 
 // dmaCopy is one submitted copy into a client dmabuf.
 type dmaCopy struct {
-	cmd   vk.CommandBuffer
-	fence vk.Fence
-	done  vk.Semaphore
-	wait  vk.Semaphore // the destination's implicit fence, 0 when none
-	img   *target
+	cmd    vk.CommandBuffer
+	fence  vk.Fence
+	done   vk.Semaphore
+	wait   vk.Semaphore // the destination's implicit fence, 0 when none
+	cached *castImage
+	img    *target
 }
 
 // CaptureFormats lists the single-plane XRGB8888/ARGB8888 modifiers a
@@ -94,11 +95,11 @@ func (f *captureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.Fi
 	if len(s.copies) >= maxSlotCopies {
 		return nil, ports.ErrCaptureBusy
 	}
-	img, err := r.gpu.importBlitImage(&dst, dst.Width, dst.Height, vk.ImageUsageTransferDstBit, formatFeatureTransferDst)
+	img, cached, err := r.gpu.acquireCastImage(&dst)
 	if err != nil {
 		return nil, err
 	}
-	c := &dmaCopy{img: img}
+	c := &dmaCopy{img: img, cached: cached}
 	submitted := false
 	defer func() {
 		if !submitted {
@@ -318,7 +319,9 @@ func (r *Renderer) freeDMACopy(c *dmaCopy) {
 	if c.cmd != 0 {
 		d.FreeCommandBuffers(dev, r.pool, 1, &c.cmd)
 	}
-	if c.img != nil {
+	if c.cached != nil {
+		r.gpu.releaseCastImage(c.cached)
+	} else if c.img != nil {
 		r.gpu.freeImage(c.img)
 	}
 	*c = dmaCopy{}

@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"slices"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/domain"
@@ -86,7 +87,8 @@ var errCastClosed = errors.New("vulkan: GPU closed")
 
 // AllocCast exports a w×h image of a cast format with modifier, one listed
 // by CastFormats, and returns it as a dmabuf whose plane files are the
-// caller's (every plane a file of the one memory object). It may run on
+// caller's (every plane a file of the one memory object). ReleaseCast must
+// precede closing them. It may run on
 // any goroutine.
 func (g *GPU) AllocCast(format uint32, w, h int, modifier uint64) (domain.DMABuf, error) {
 	if w <= 0 || h <= 0 || w > math.MaxUint16 || h > math.MaxUint16 {
@@ -108,11 +110,16 @@ func (g *GPU) AllocCast(format uint32, w, h int, modifier uint64) (domain.DMABuf
 	return g.exportCast(vf, format, w, h, modifier, planes)
 }
 
-// exportCast creates, exports and releases one cast image. g.poolMu is held.
+// exportCast creates and retains one cast image until ReleaseCast. g.poolMu is held.
 func (g *GPU) exportCast(vf vk.Format, format uint32, w, h int, modifier uint64, n uint32) (domain.DMABuf, error) {
 	d, dev := g.dd, g.device
 	t := &target{}
-	defer g.freeImage(t)
+	retained := false
+	defer func() {
+		if !retained {
+			g.freeImage(t)
+		}
+	}()
 	list := vk.ImageDrmFormatModifierListCreateInfoEXT{SType: vk.StructureTypeImageDRMFormatModifierListCreateInfoEXT, DrmFormatModifierCount: 1, DrmFormatModifiers: &modifier}
 	external := vk.ExternalMemoryImageCreateInfo{SType: vk.StructureTypeExternalMemoryImageCreateInfo, Next: unsafe.Pointer(&list), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: vf, Extent: vk.Extent3D{Width: uint32(w), Height: uint32(h), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: castUsage, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
@@ -167,5 +174,69 @@ func (g *GPU) exportCast(vf vk.Format, format uint32, w, h int, modifier uint64,
 		}
 		planes = append(planes, domain.DMABufPlane{File: os.NewFile(uintptr(dup), "neferwl-cast"), Offset: uint32(layouts[i].Offset), Stride: uint32(layouts[i].RowPitch)})
 	}
-	return domain.DMABuf{Width: w, Height: h, Format: format, Modifier: modifier, Planes: planes}, nil
+	buf := domain.DMABuf{ID: castBufferID.Add(1), Width: w, Height: h, Format: format, Modifier: modifier, Planes: planes}
+	if g.castImages == nil {
+		g.castImages = make(map[uint64]*castImage)
+	}
+	g.castImages[buf.ID] = &castImage{buffer: buf, img: t}
+	retained = true
+	return buf, nil
+}
+
+// castBufferID is process-wide, so cast identities cannot collide across GPUs.
+var castBufferID atomic.Uint64
+
+type castImage struct {
+	buffer   domain.DMABuf
+	img      *target
+	refs     int
+	released bool
+}
+
+// ReleaseCast is safe on the PipeWire owner while output owners finish copies.
+func (g *GPU) ReleaseCast(buf domain.DMABuf) {
+	g.poolMu.Lock()
+	defer g.poolMu.Unlock()
+	e := g.castImages[buf.ID]
+	if e == nil {
+		return
+	}
+	delete(g.castImages, buf.ID)
+	e.released = true
+	if e.refs == 0 && e.img != nil {
+		g.freeImage(e.img)
+		e.img = nil
+	}
+}
+
+func (g *GPU) acquireCastImage(buf *domain.DMABuf) (*target, *castImage, error) {
+	g.poolMu.Lock()
+	defer g.poolMu.Unlock()
+	e := g.castImages[buf.ID]
+	if e == nil {
+		img, err := g.importBlitImage(buf, buf.Width, buf.Height, vk.ImageUsageTransferDstBit, formatFeatureTransferDst)
+		return img, nil, err
+	}
+	// Registered IDs name an immutable allocation, not arbitrary request geometry.
+	if buf.Width != e.buffer.Width || buf.Height != e.buffer.Height || buf.Format != e.buffer.Format || buf.Modifier != e.buffer.Modifier || len(buf.Planes) != len(e.buffer.Planes) {
+		return nil, nil, errImageGeometry
+	}
+	for i, p := range buf.Planes {
+		if p != e.buffer.Planes[i] {
+			return nil, nil, errImagePlanes
+		}
+	}
+
+	e.refs++
+	return e.img, e, nil
+}
+
+func (g *GPU) releaseCastImage(e *castImage) {
+	g.poolMu.Lock()
+	defer g.poolMu.Unlock()
+	e.refs--
+	if e.released && e.refs == 0 && e.img != nil {
+		g.freeImage(e.img)
+		e.img = nil
+	}
 }
