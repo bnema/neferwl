@@ -112,6 +112,7 @@ func (w *Workspace) RemoveWindow(id WindowID) {
 	if w.Fullscreen == id {
 		w.Fullscreen = 0
 	}
+	w.dropHeld(id)
 	if w.stashOver == id {
 		w.stashOver = 0
 	}
@@ -179,6 +180,9 @@ func (w *Workspace) takeColumn() (layout.Column, bool) {
 	col.Slot = 0
 	if slices.Contains(col.Windows, w.Fullscreen) {
 		w.Fullscreen = 0
+	}
+	for _, id := range col.Windows {
+		w.dropHeld(id)
 	}
 	if slices.Contains(col.Windows, w.stashOver) {
 		w.stashOver = 0

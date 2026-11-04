@@ -28,6 +28,7 @@ func (w *Workspace) ToggleFullscreen() {
 		w.endFullscreen()
 		return
 	}
+	w.dropHeld(id)
 	w.isolate(id)
 	w.Fullscreen = id
 	w.scroll()
@@ -132,6 +133,7 @@ func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 		if w.left == id {
 			w.left = 0
 		}
+		w.dropHeld(id)
 		if w.Fullscreen == id {
 			w.endFullscreen()
 		}
@@ -141,6 +143,7 @@ func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 		// Another window covers: the override was for the old cover.
 		w.dropStashOver()
 	}
+	w.dropHeld(id)
 	w.isolate(id)
 	w.Fullscreen = id
 	if !w.IsFloat(id) {
