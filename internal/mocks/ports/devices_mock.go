@@ -1376,6 +1376,84 @@ func (_m *MockRenderDevice) EXPECT() *MockRenderDevice_Expecter {
 	return &MockRenderDevice_Expecter{mock: &_m.Mock}
 }
 
+// AllocCast provides a mock function for the type MockRenderDevice
+func (_mock *MockRenderDevice) AllocCast(format uint32, w int, h int, modifier uint64) (domain.DMABuf, error) {
+	ret := _mock.Called(format, w, h, modifier)
+
+	if len(ret) == 0 {
+		panic("no return value specified for AllocCast")
+	}
+
+	var r0 domain.DMABuf
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(uint32, int, int, uint64) (domain.DMABuf, error)); ok {
+		return returnFunc(format, w, h, modifier)
+	}
+	if returnFunc, ok := ret.Get(0).(func(uint32, int, int, uint64) domain.DMABuf); ok {
+		r0 = returnFunc(format, w, h, modifier)
+	} else {
+		r0 = ret.Get(0).(domain.DMABuf)
+	}
+	if returnFunc, ok := ret.Get(1).(func(uint32, int, int, uint64) error); ok {
+		r1 = returnFunc(format, w, h, modifier)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockRenderDevice_AllocCast_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AllocCast'
+type MockRenderDevice_AllocCast_Call struct {
+	*mock.Call
+}
+
+// AllocCast is a helper method to define mock.On call
+//   - format uint32
+//   - w int
+//   - h int
+//   - modifier uint64
+func (_e *MockRenderDevice_Expecter) AllocCast(format any, w any, h any, modifier any) *MockRenderDevice_AllocCast_Call {
+	return &MockRenderDevice_AllocCast_Call{Call: _e.mock.On("AllocCast", format, w, h, modifier)}
+}
+
+func (_c *MockRenderDevice_AllocCast_Call) Run(run func(format uint32, w int, h int, modifier uint64)) *MockRenderDevice_AllocCast_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 uint32
+		if args[0] != nil {
+			arg0 = args[0].(uint32)
+		}
+		var arg1 int
+		if args[1] != nil {
+			arg1 = args[1].(int)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		var arg3 uint64
+		if args[3] != nil {
+			arg3 = args[3].(uint64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRenderDevice_AllocCast_Call) Return(dMABuf domain.DMABuf, err error) *MockRenderDevice_AllocCast_Call {
+	_c.Call.Return(dMABuf, err)
+	return _c
+}
+
+func (_c *MockRenderDevice_AllocCast_Call) RunAndReturn(run func(format uint32, w int, h int, modifier uint64) (domain.DMABuf, error)) *MockRenderDevice_AllocCast_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // CaptureFormats provides a mock function for the type MockRenderDevice
 func (_mock *MockRenderDevice) CaptureFormats() []domain.DMABufFormat {
 	ret := _mock.Called()
@@ -1418,6 +1496,52 @@ func (_c *MockRenderDevice_CaptureFormats_Call) Return(dMABufFormats []domain.DM
 }
 
 func (_c *MockRenderDevice_CaptureFormats_Call) RunAndReturn(run func() []domain.DMABufFormat) *MockRenderDevice_CaptureFormats_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// CastFormats provides a mock function for the type MockRenderDevice
+func (_mock *MockRenderDevice) CastFormats() []domain.DMABufFormat {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for CastFormats")
+	}
+
+	var r0 []domain.DMABufFormat
+	if returnFunc, ok := ret.Get(0).(func() []domain.DMABufFormat); ok {
+		r0 = returnFunc()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]domain.DMABufFormat)
+		}
+	}
+	return r0
+}
+
+// MockRenderDevice_CastFormats_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CastFormats'
+type MockRenderDevice_CastFormats_Call struct {
+	*mock.Call
+}
+
+// CastFormats is a helper method to define mock.On call
+func (_e *MockRenderDevice_Expecter) CastFormats() *MockRenderDevice_CastFormats_Call {
+	return &MockRenderDevice_CastFormats_Call{Call: _e.mock.On("CastFormats")}
+}
+
+func (_c *MockRenderDevice_CastFormats_Call) Run(run func()) *MockRenderDevice_CastFormats_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockRenderDevice_CastFormats_Call) Return(dMABufFormats []domain.DMABufFormat) *MockRenderDevice_CastFormats_Call {
+	_c.Call.Return(dMABufFormats)
+	return _c
+}
+
+func (_c *MockRenderDevice_CastFormats_Call) RunAndReturn(run func() []domain.DMABufFormat) *MockRenderDevice_CastFormats_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1690,6 +1814,166 @@ func (_c *MockRenderDevice_Node_Call) Return(primary uint64, render uint64) *Moc
 }
 
 func (_c *MockRenderDevice_Node_Call) RunAndReturn(run func() (uint64, uint64)) *MockRenderDevice_Node_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// NewMockCastBufferAllocator creates a new instance of MockCastBufferAllocator. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
+// The first argument is typically a *testing.T value.
+func NewMockCastBufferAllocator(t interface {
+	mock.TestingT
+	Cleanup(func())
+}) *MockCastBufferAllocator {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
+	mock := &MockCastBufferAllocator{}
+	mock.Mock.Test(t)
+
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
+
+	return mock
+}
+
+// MockCastBufferAllocator is an autogenerated mock type for the CastBufferAllocator type
+type MockCastBufferAllocator struct {
+	mock.Mock
+}
+
+type MockCastBufferAllocator_Expecter struct {
+	mock *mock.Mock
+}
+
+func (_m *MockCastBufferAllocator) EXPECT() *MockCastBufferAllocator_Expecter {
+	return &MockCastBufferAllocator_Expecter{mock: &_m.Mock}
+}
+
+// AllocCast provides a mock function for the type MockCastBufferAllocator
+func (_mock *MockCastBufferAllocator) AllocCast(format uint32, w int, h int, modifier uint64) (domain.DMABuf, error) {
+	ret := _mock.Called(format, w, h, modifier)
+
+	if len(ret) == 0 {
+		panic("no return value specified for AllocCast")
+	}
+
+	var r0 domain.DMABuf
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(uint32, int, int, uint64) (domain.DMABuf, error)); ok {
+		return returnFunc(format, w, h, modifier)
+	}
+	if returnFunc, ok := ret.Get(0).(func(uint32, int, int, uint64) domain.DMABuf); ok {
+		r0 = returnFunc(format, w, h, modifier)
+	} else {
+		r0 = ret.Get(0).(domain.DMABuf)
+	}
+	if returnFunc, ok := ret.Get(1).(func(uint32, int, int, uint64) error); ok {
+		r1 = returnFunc(format, w, h, modifier)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockCastBufferAllocator_AllocCast_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AllocCast'
+type MockCastBufferAllocator_AllocCast_Call struct {
+	*mock.Call
+}
+
+// AllocCast is a helper method to define mock.On call
+//   - format uint32
+//   - w int
+//   - h int
+//   - modifier uint64
+func (_e *MockCastBufferAllocator_Expecter) AllocCast(format any, w any, h any, modifier any) *MockCastBufferAllocator_AllocCast_Call {
+	return &MockCastBufferAllocator_AllocCast_Call{Call: _e.mock.On("AllocCast", format, w, h, modifier)}
+}
+
+func (_c *MockCastBufferAllocator_AllocCast_Call) Run(run func(format uint32, w int, h int, modifier uint64)) *MockCastBufferAllocator_AllocCast_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 uint32
+		if args[0] != nil {
+			arg0 = args[0].(uint32)
+		}
+		var arg1 int
+		if args[1] != nil {
+			arg1 = args[1].(int)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		var arg3 uint64
+		if args[3] != nil {
+			arg3 = args[3].(uint64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MockCastBufferAllocator_AllocCast_Call) Return(dMABuf domain.DMABuf, err error) *MockCastBufferAllocator_AllocCast_Call {
+	_c.Call.Return(dMABuf, err)
+	return _c
+}
+
+func (_c *MockCastBufferAllocator_AllocCast_Call) RunAndReturn(run func(format uint32, w int, h int, modifier uint64) (domain.DMABuf, error)) *MockCastBufferAllocator_AllocCast_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// CastFormats provides a mock function for the type MockCastBufferAllocator
+func (_mock *MockCastBufferAllocator) CastFormats() []domain.DMABufFormat {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for CastFormats")
+	}
+
+	var r0 []domain.DMABufFormat
+	if returnFunc, ok := ret.Get(0).(func() []domain.DMABufFormat); ok {
+		r0 = returnFunc()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]domain.DMABufFormat)
+		}
+	}
+	return r0
+}
+
+// MockCastBufferAllocator_CastFormats_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CastFormats'
+type MockCastBufferAllocator_CastFormats_Call struct {
+	*mock.Call
+}
+
+// CastFormats is a helper method to define mock.On call
+func (_e *MockCastBufferAllocator_Expecter) CastFormats() *MockCastBufferAllocator_CastFormats_Call {
+	return &MockCastBufferAllocator_CastFormats_Call{Call: _e.mock.On("CastFormats")}
+}
+
+func (_c *MockCastBufferAllocator_CastFormats_Call) Run(run func()) *MockCastBufferAllocator_CastFormats_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockCastBufferAllocator_CastFormats_Call) Return(dMABufFormats []domain.DMABufFormat) *MockCastBufferAllocator_CastFormats_Call {
+	_c.Call.Return(dMABufFormats)
+	return _c
+}
+
+func (_c *MockCastBufferAllocator_CastFormats_Call) RunAndReturn(run func() []domain.DMABufFormat) *MockCastBufferAllocator_CastFormats_Call {
 	_c.Call.Return(run)
 	return _c
 }

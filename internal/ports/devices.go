@@ -36,8 +36,11 @@ type CaptureFrame interface {
 	// EndCapture.
 	Read(region image.Rectangle, dst []byte, stride int) error
 	// CopyTo submits a GPU copy of region (output pixels) into dst, a
-	// client dmabuf of the region's size in a format and modifier listed by
-	// RenderDevice.CaptureFormats, as opaque sRGB8. Unlike Done and Read it
+	// dmabuf of the region's size in a format and modifier listed by
+	// RenderDevice.CaptureFormats or CastFormats: as opaque sRGB8 into
+	// XRGB8888/ARGB8888, as PQ words into XBGR2101010 (a PQ capture only).
+	// The copy waits for the fences pending on dst and attaches its own as
+	// dst's write fence (implicit sync), when the kernel allows. Unlike Done and Read it
 	// makes Vulkan calls: the renderer's owner calls it, after BeginCapture
 	// and before EndCapture. done is signalled when dst holds the image
 	// (nil: already); the caller closes it. dst's files stay the caller's.
@@ -142,8 +145,23 @@ type RenderDevice interface {
 	// ARGB8888 ones it imports, single-plane, that the device blits into.
 	// Empty when it cannot.
 	CaptureFormats() []domain.DMABufFormat
+	CastBufferAllocator
 	Node() (primary, render uint64)
 	Close()
+}
+
+// CastBufferAllocator allocates the GPU buffers of screencast streams
+// (PipeWire DMA-BUF buffers): images captures are copied into with
+// CaptureFrame.CopyTo. Its methods may run on any goroutine.
+type CastBufferAllocator interface {
+	// CastFormats lists the cast formats (domain.CastFormats fourccs) and,
+	// for each, the modifiers AllocCast exports. Empty when the device
+	// cannot export dmabufs and sync files.
+	CastFormats() []domain.DMABufFormat
+	// AllocCast exports a w×h buffer of format with modifier, a pair listed
+	// by CastFormats. Its plane files are the caller's, who frees the
+	// buffer by closing them; nothing else holds the memory.
+	AllocCast(format uint32, w, h int, modifier uint64) (domain.DMABuf, error)
 }
 
 // RenderDeviceOpener opens a GPU; zero GPUInfo selects the first usable device.
