@@ -382,3 +382,84 @@ func TestFullscreenLauncherArrivalRemote(t *testing.T) {
 		}
 	})
 }
+
+// A launcher cover the layout cannot adopt (a dialog float or a stashed
+// window) stays a float, held and hidden, while the program it launched
+// covers from a column or band of its own. Returning to the launcher shows
+// it fullscreen again as a floating cover. Fixed keeps the overlay.
+func TestFullscreenUnadoptableLauncherArrival(t *testing.T) {
+	for _, mode := range []Overflow{OverflowCascade, OverflowScroll, OverflowFixed} {
+		for _, stash := range []bool{false, true} {
+			for _, back := range []string{"activate", "focus"} {
+				t.Run(fmt.Sprintf("%s/stash=%v/%s", mode, stash, back), func(t *testing.T) {
+					synctest.Test(t, func(t *testing.T) {
+						c, _, cmds := fadeCore(t)
+						w := c.cur().mon.Current()
+						w.SetOverflow(mode)
+						c.clientEvent(context.Background(), ports.WindowMapped{ID: 9})
+						parent := WindowID(9)
+						if stash {
+							parent = 0
+						}
+						c.clientEvent(context.Background(), ports.WindowMapped{ID: 1, PID: 10, AppID: "launcher", Proc: lineageNodes(10), Floating: !stash, Parent: parent, Width: 400, Height: 300})
+						if stash {
+							w.FocusID(1)
+							w.ToggleWindowStash()
+							if !w.StashShown() {
+								w.ToggleStashVisible()
+							}
+						}
+						c.clientEvent(context.Background(), ports.WindowFullscreenRequest{ID: 1, Fullscreen: true})
+						if w.Fullscreen != 1 {
+							t.Fatalf("launcher not fullscreen: %d", w.Fullscreen)
+						}
+						// A frame configures the launcher fullscreen first.
+						settleShown(t, c)
+						indicatorScene(t, c)
+						c.clientEvent(context.Background(), ports.WindowMapped{ID: 2, PID: 20, AppID: "game", Proc: lineageNodes(20, 10)})
+						if mode == OverflowFixed {
+							if w.Fullscreen != 1 || len(w.Held) != 0 || !w.IsFloat(2) {
+								t.Fatalf("fixed changed: cover %d held %v", w.Fullscreen, w.Held)
+							}
+							return
+						}
+						if w.Fullscreen != 2 || !slices.Equal(w.Held, []WindowID{1}) || !w.IsFloat(1) || w.ColumnOf(2) < 0 {
+							t.Fatalf("cover %d held %v float %v col %d", w.Fullscreen, w.Held, w.IsFloat(1), w.ColumnOf(2))
+						}
+						if id, _ := w.Focused(); id != 2 || c.keyboardFocus() != 2 {
+							t.Fatalf("focus %d", id)
+						}
+						settleShown(t, c)
+						s := indicatorScene(t, c)
+						if g := sceneWindow(t, s, 2); g.Hidden || !g.Fullscreen || g.Rect != w.Output {
+							t.Fatalf("game scene: %+v", g)
+						}
+						if l := sceneWindow(t, s, 1); !l.Hidden {
+							t.Fatalf("held launcher shown: %+v", l)
+						}
+						if cfgs := configuresOf(cmds)[1]; len(cfgs) == 0 || !cfgs[len(cfgs)-1].Fullscreen {
+							t.Fatalf("held launcher configures: %+v", cfgs)
+						}
+						// Back to the launcher: a floating cover again.
+						if back == "activate" {
+							w.Activate(1)
+						} else {
+							w.FocusID(1)
+						}
+						if w.Fullscreen != 1 || !slices.Equal(w.Held, []WindowID{2}) || !w.IsFloat(1) || w.Cover() != 1 {
+							t.Fatalf("return: cover %d held %v covering %d", w.Fullscreen, w.Held, w.Cover())
+						}
+						settleShown(t, c)
+						s = indicatorScene(t, c)
+						if l := sceneWindow(t, s, 1); l.Hidden || !l.Fullscreen || l.Rect != w.Output {
+							t.Fatalf("launcher scene: %+v", l)
+						}
+						if g := sceneWindow(t, s, 2); !g.Hidden {
+							t.Fatalf("held game shown: %+v", g)
+						}
+					})
+				})
+			}
+		}
+	}
+}

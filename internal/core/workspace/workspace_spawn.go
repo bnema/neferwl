@@ -231,15 +231,29 @@ func (w *Workspace) insertAt(at int, col layout.Column) {
 // Launched by a held member, it is held too and focus and cover stay. A
 // layout that does not scroll (fixed) has no group: false, as for a
 // launcher outside the group.
+//
+// A floating launcher cover is adopted as a tile when the layout allows; one
+// it refuses (a dialog float or a stashed cover) stays a float, held and so
+// hidden, and the window opens where the layout places a same-app window.
 func (w *Workspace) AddLaunchedWindow(id, launcher WindowID, cells int) bool {
-	li := w.ColumnOf(launcher)
-	if id == 0 || w.Has(id) || li < 0 || !w.IsFullscreenMember(launcher) || !w.Engine().Scrolls() {
+	if id == 0 || w.Has(id) || !w.IsFullscreenMember(launcher) || !w.Engine().Scrolls() {
 		return false
 	}
 	active := w.Fullscreen == launcher
-	at := li + 1
+	if active {
+		w.adoptFloat(launcher, true)
+	}
+	at, kind := 0, layout.InsertDefault
+	if li := w.ColumnOf(launcher); li >= 0 {
+		at = li + 1
+	} else if w.IsFloat(launcher) {
+		at, kind, _ = w.Engine().AppSpawn(w.Snapshot())
+		at = min(max(at, 0), len(w.Columns))
+	} else {
+		return false
+	}
 	w.Columns = slices.Insert(w.Columns, at, layout.Column{Windows: []WindowID{id}, Cells: cells})
-	w.ColumnInserted(at, layout.InsertDefault)
+	w.ColumnInserted(at, kind)
 	if len(w.Columns) > 1 && at <= w.Focus {
 		w.Focus++
 	}
