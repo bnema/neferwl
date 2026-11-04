@@ -297,37 +297,41 @@ func TestFullscreenLauncherArrivalExceptions(t *testing.T) {
 // child too: the game keeps the cover and the focus.
 func TestFullscreenHeldLauncherArrival(t *testing.T) {
 	for _, mode := range []Overflow{OverflowCascade, OverflowScroll} {
-		t.Run(string(mode), func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				c, _, cmds := fadeCore(t)
-				w := c.cur().mon.Current()
-				w.SetOverflow(mode)
-				c.clientEvent(context.Background(), ports.WindowMapped{ID: 1, PID: 10, AppID: "launcher", Proc: lineageNodes(10)})
-				c.clientEvent(context.Background(), ports.WindowFullscreenRequest{ID: 1, Fullscreen: true})
-				c.clientEvent(context.Background(), ports.WindowMapped{ID: 2, PID: 20, AppID: "game", Proc: lineageNodes(20, 10)})
-				c.clientEvent(context.Background(), ports.WindowMapped{ID: 3, PID: 30, AppID: "tool", Proc: lineageNodes(30, 10)})
-				// The game stays on screen: its column shifts, the view with it.
-				if w.Fullscreen != 2 || w.Cover() != 2 || !slices.Equal(w.Held, []WindowID{1, 3}) {
-					t.Fatalf("cover %d covering %d held %v", w.Fullscreen, w.Cover(), w.Held)
-				}
-				if g := sceneWindow(t, indicatorScene(t, c), 2); g.Hidden || g.Rect != w.Output {
-					t.Fatalf("game moved off screen: %+v", g)
-				}
-				if id, _ := w.Focused(); id != 2 || c.keyboardFocus() != 2 {
-					t.Fatalf("focus %d keyboard %d", id, c.keyboardFocus())
-				}
-				if mode == OverflowScroll && w.ColumnOf(3) != w.ColumnOf(1)+1 {
-					t.Fatalf("held child not next to launcher: %+v", w.Columns)
-				}
-				p := sceneWindow(t, indicatorScene(t, c), 3)
-				if !p.Fullscreen || p.Rect.W != w.Output.W || p.Rect.H != w.Output.H {
-					t.Fatalf("held child scene: %+v", p)
-				}
-				if cfgs := configuresOf(cmds)[3]; len(cfgs) == 0 || !cfgs[len(cfgs)-1].Fullscreen {
-					t.Fatalf("held child configures: %+v", cfgs)
-				}
+		for _, mapped := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/mapped-fullscreen=%v", mode, mapped), func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					c, _, cmds := fadeCore(t)
+					w := c.cur().mon.Current()
+					w.SetOverflow(mode)
+					c.clientEvent(context.Background(), ports.WindowMapped{ID: 1, PID: 10, AppID: "launcher", Proc: lineageNodes(10)})
+					c.clientEvent(context.Background(), ports.WindowFullscreenRequest{ID: 1, Fullscreen: true})
+					c.clientEvent(context.Background(), ports.WindowMapped{ID: 2, PID: 20, AppID: "game", Proc: lineageNodes(20, 10)})
+					// The child may map with fullscreen already set: held, it
+					// must not take the cover nor the keyboard (placeMapped).
+					c.clientEvent(context.Background(), ports.WindowMapped{ID: 3, PID: 30, AppID: "tool", Proc: lineageNodes(30, 10), Fullscreen: mapped})
+					// The game stays on screen: its column shifts, the view with it.
+					if w.Fullscreen != 2 || w.Cover() != 2 || !slices.Equal(w.Held, []WindowID{1, 3}) {
+						t.Fatalf("cover %d covering %d held %v", w.Fullscreen, w.Cover(), w.Held)
+					}
+					if g := sceneWindow(t, indicatorScene(t, c), 2); g.Hidden || g.Rect != w.Output {
+						t.Fatalf("game moved off screen: %+v", g)
+					}
+					if id, _ := w.Focused(); id != 2 || c.keyboardFocus() != 2 {
+						t.Fatalf("focus %d keyboard %d", id, c.keyboardFocus())
+					}
+					if mode == OverflowScroll && w.ColumnOf(3) != w.ColumnOf(1)+1 {
+						t.Fatalf("held child not next to launcher: %+v", w.Columns)
+					}
+					p := sceneWindow(t, indicatorScene(t, c), 3)
+					if !p.Fullscreen || p.Rect.W != w.Output.W || p.Rect.H != w.Output.H {
+						t.Fatalf("held child scene: %+v", p)
+					}
+					if cfgs := configuresOf(cmds)[3]; len(cfgs) == 0 || !cfgs[len(cfgs)-1].Fullscreen {
+						t.Fatalf("held child configures: %+v", cfgs)
+					}
+				})
 			})
-		})
+		}
 	}
 }
 

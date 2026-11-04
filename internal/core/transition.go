@@ -446,7 +446,10 @@ func (c *Core) placeMapped(v ports.WindowMapped) (follow bool) {
 	if !v.Fullscreen || v.Remap || v.Parent != 0 {
 		return follow
 	}
-	if _, w := c.screenOf(v.ID); w != nil {
+	// A window placement made a held fullscreen member (launched by a held
+	// launcher) is fullscreen already; activating it would take the cover
+	// and the keyboard from the member playing.
+	if _, w := c.screenOf(v.ID); w != nil && !w.IsHeld(v.ID) {
 		w.Activate(v.ID)
 		w.SetFullscreen(v.ID, true)
 	}
