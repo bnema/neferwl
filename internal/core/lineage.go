@@ -139,7 +139,7 @@ func (c *Core) removeLineage(id WindowID, destroyed bool) {
 		return
 	}
 	for child, cr := range c.lineage.records {
-		if child != id && cr.mapped && cr.launcher == id {
+		if child != id && cr.launcher == id {
 			cr.launcher = r.launcher
 		}
 	}

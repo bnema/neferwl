@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"testing"
 	"testing/synctest"
 
@@ -163,4 +164,31 @@ func TestFirstExternalSiblingChain(t *testing.T) {
 			t.Fatal("first external window lost common non-leader B")
 		}
 	})
+}
+
+func TestRetainedChildReparentedOnLauncherRemoval(t *testing.T) {
+	for _, destroyed := range []bool{false, true} {
+		for _, grandparent := range []bool{false, true} {
+			t.Run(fmt.Sprintf("destroyed=%v/grandparent=%v", destroyed, grandparent), func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					c := lineageCore(t)
+					var want WindowID
+					if grandparent {
+						c.mapWindow(ports.WindowMapped{ID: 1, Proc: lineageNodes(10)})
+						want = 1
+					}
+					c.mapWindow(ports.WindowMapped{ID: 2, Proc: lineageNodes(20, 10)})
+					c.mapWindow(ports.WindowMapped{ID: 3, Proc: lineageNodes(30, 20, 10)})
+					c.removeLineage(3, false)
+					c.cur().mon.RemoveWindow(3)
+					c.removeLineage(2, destroyed)
+					c.cur().mon.RemoveWindow(2)
+					c.mapWindow(ports.WindowMapped{ID: 3, Remap: true})
+					if got := c.launcherOf(3); got != want {
+						t.Fatalf("retained launcher %d want %d", got, want)
+					}
+				})
+			})
+		}
+	}
 }
