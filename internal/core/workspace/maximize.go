@@ -99,15 +99,8 @@ func (w *Workspace) Activate(id WindowID) {
 		w.stashAt = i
 		w.showStash()
 	}
-	if w.Fullscreen != 0 && w.Fullscreen != id {
-		if w.demotable() {
-			// Focus first: demoting scrolls, which would promote the
-			// member still selected.
-			w.FocusID(id)
-			w.demoteCover()
-		} else {
-			w.leaveFullscreen()
-		}
+	if w.Fullscreen != 0 && w.Fullscreen != id && !w.groupLeaveTo(id) {
+		w.leaveFullscreen()
 	}
 	w.FocusID(id)
 	w.FocusModal(0)

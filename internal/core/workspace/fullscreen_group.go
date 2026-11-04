@@ -77,6 +77,34 @@ func (w *Workspace) demoteCover() bool {
 	return true
 }
 
+// groupLeaveTo moves the focus off the cover to id inside a fullscreen
+// group and reports whether it handled the move; false leaves everything to
+// the caller's lone-cover path (leaveFullscreen). A held id takes the cover
+// over, the previous one held. An unrelated id gets the focus first, then
+// the cover is demoted: demoting scrolls, which would promote the member
+// still selected. A hidden stash entry, which FocusID refuses, is shown
+// selected instead, unless its own fullscreen waits there (the lone path
+// brings it back). If the focus cannot reach id, nothing is demoted.
+func (w *Workspace) groupLeaveTo(id WindowID) bool {
+	if w.IsHeld(id) {
+		w.promoteHeld(id)
+		return true
+	}
+	if id == w.Fullscreen || !w.demotable() {
+		return false
+	}
+	if i := w.StashIndex(id); i >= 0 && w.stashHidden {
+		if w.hiddenFullscreen == id {
+			return false
+		}
+		w.ShowStashAt(i)
+	} else if !w.FocusID(id) {
+		return true
+	}
+	w.demoteCover()
+	return true
+}
+
 // demotable reports whether demoteCover would hold the cover.
 func (w *Workspace) demotable() bool {
 	full := w.Fullscreen

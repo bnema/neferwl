@@ -108,3 +108,31 @@ func TestOverviewMoveInFullscreenGroup(t *testing.T) {
 		})
 	}
 }
+
+// Selecting a hidden stash entry in the overview over a cascade group
+// shows it focused; both members stay in the group, without a latch.
+func TestOverviewSelectHiddenStashInFullscreenGroup(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		_, m, w := groupOverview(t)
+		// Stash the unrelated window 3: hidden under the cover.
+		m.ToggleOverview()
+		w.Activate(3)
+		w.ToggleWindowStash()
+		w.ToggleStashVisible() // hidden: FocusID refuses its entries
+		w.FocusID(2)
+		if w.StashIndex(3) < 0 || w.Fullscreen != 2 || w.StashShown() || !w.Inspect().StashHidden {
+			t.Fatalf("setup: stash %d cover %d shown %v", w.StashIndex(3), w.Fullscreen, w.StashShown())
+		}
+		m.ToggleOverview()
+		m.selectCard(w, w.StashIndex(3))
+		m.ToggleOverview()
+		members := append([]WindowID{w.Fullscreen}, w.Held...)
+		slices.Sort(members)
+		if !slices.Equal(members, []WindowID{0, 1, 2}) || w.Inspect().Left != 0 {
+			t.Fatalf("cover %d held %v left %d", w.Fullscreen, w.Held, w.Inspect().Left)
+		}
+		if f, _ := w.Focused(); f != 3 || !w.StashShown() {
+			t.Fatalf("focus %d shown %v", f, w.StashShown())
+		}
+	})
+}
