@@ -711,3 +711,43 @@ func TestFullscreenGroupUnstashOverCover(t *testing.T) {
 		}
 	})
 }
+
+// A modal dialog of an unrelated window hidden under a cascade group's
+// cover, reached by any focus path, shows focused; the group survives
+// (held members, no latch).
+func TestFullscreenGroupModalUnderCover(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		focus func(w *Workspace)
+	}{
+		{"activate parent", func(w *Workspace) { w.Activate(3) }},
+		{"activate dialog", func(w *Workspace) { w.Activate(7) }},
+		{"click parent", func(w *Workspace) { w.Click(3) }},
+		{"focus parent", func(w *Workspace) { w.FocusID(3); w.FocusModal(0) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				w := groupPG(t, OverflowCascade)
+				w.AddDialog(7, 3, 100, 50)
+				w.SetModal(7, true)
+				w.FocusID(1)
+				if w.Cover() != 1 || !slices.Equal(w.Held, []WindowID{2}) {
+					t.Fatalf("setup: cover %d held %v", w.Cover(), w.Held)
+				}
+				tc.focus(w)
+				if f, _ := w.Focused(); f != 7 {
+					t.Fatalf("focus %d, want the dialog", f)
+				}
+				if p := placementOf(t, w.Layout(), 7); p.Hidden {
+					t.Fatalf("dialog hidden: %+v", p)
+				}
+				// Activate demotes the cover (groupLeaveTo); a plain focus
+				// move scrolls it off, still the group's active member.
+				if !w.IsFullscreenMember(1) || !w.IsFullscreenMember(2) || w.left != 0 || w.Cover() != 0 {
+					t.Fatalf("cover %d covering %d held %v left %d", w.Fullscreen, w.Cover(), w.Held, w.left)
+				}
+				checkGroup(t, w, tc.name)
+			})
+		})
+	}
+}
