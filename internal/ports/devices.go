@@ -105,6 +105,10 @@ type Renderer interface {
 	// XBGR2101010 PQ words (BT.2020, no tone mapping; R in bits 0-9),
 	// copied as is by Read. It fails when the last frame was not HDR.
 	BeginCapturePQ() (CaptureFrame, error)
+	// BeginCaptureCursor is a capture-only GPU composite of the last frame
+	// and cursor. pq selects the same readback as BeginCapturePQ. Nil cursor
+	// is equivalent to BeginCapture/BeginCapturePQ; display pixels are unchanged.
+	BeginCaptureCursor(cursor *domain.CaptureCursor, pq bool) (CaptureFrame, error)
 	// EndCapture returns a lease. It never waits: a slot whose copy may
 	// still run is reused only once the renderer sees it finished.
 	EndCapture(CaptureFrame)

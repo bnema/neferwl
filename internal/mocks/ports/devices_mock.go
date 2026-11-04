@@ -318,6 +318,74 @@ func (_c *MockRenderer_BeginCapture_Call) RunAndReturn(run func() (ports.Capture
 	return _c
 }
 
+// BeginCaptureCursor provides a mock function for the type MockRenderer
+func (_mock *MockRenderer) BeginCaptureCursor(cursor *domain.CaptureCursor, pq bool) (ports.CaptureFrame, error) {
+	ret := _mock.Called(cursor, pq)
+
+	if len(ret) == 0 {
+		panic("no return value specified for BeginCaptureCursor")
+	}
+
+	var r0 ports.CaptureFrame
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(*domain.CaptureCursor, bool) (ports.CaptureFrame, error)); ok {
+		return returnFunc(cursor, pq)
+	}
+	if returnFunc, ok := ret.Get(0).(func(*domain.CaptureCursor, bool) ports.CaptureFrame); ok {
+		r0 = returnFunc(cursor, pq)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(ports.CaptureFrame)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(*domain.CaptureCursor, bool) error); ok {
+		r1 = returnFunc(cursor, pq)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockRenderer_BeginCaptureCursor_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'BeginCaptureCursor'
+type MockRenderer_BeginCaptureCursor_Call struct {
+	*mock.Call
+}
+
+// BeginCaptureCursor is a helper method to define mock.On call
+//   - cursor *domain.CaptureCursor
+//   - pq bool
+func (_e *MockRenderer_Expecter) BeginCaptureCursor(cursor any, pq any) *MockRenderer_BeginCaptureCursor_Call {
+	return &MockRenderer_BeginCaptureCursor_Call{Call: _e.mock.On("BeginCaptureCursor", cursor, pq)}
+}
+
+func (_c *MockRenderer_BeginCaptureCursor_Call) Run(run func(cursor *domain.CaptureCursor, pq bool)) *MockRenderer_BeginCaptureCursor_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 *domain.CaptureCursor
+		if args[0] != nil {
+			arg0 = args[0].(*domain.CaptureCursor)
+		}
+		var arg1 bool
+		if args[1] != nil {
+			arg1 = args[1].(bool)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRenderer_BeginCaptureCursor_Call) Return(captureFrame ports.CaptureFrame, err error) *MockRenderer_BeginCaptureCursor_Call {
+	_c.Call.Return(captureFrame, err)
+	return _c
+}
+
+func (_c *MockRenderer_BeginCaptureCursor_Call) RunAndReturn(run func(cursor *domain.CaptureCursor, pq bool) (ports.CaptureFrame, error)) *MockRenderer_BeginCaptureCursor_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // BeginCapturePQ provides a mock function for the type MockRenderer
 func (_mock *MockRenderer) BeginCapturePQ() (ports.CaptureFrame, error) {
 	ret := _mock.Called()

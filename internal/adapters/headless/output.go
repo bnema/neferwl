@@ -40,8 +40,8 @@ type Options struct {
 	SecurityChanges <-chan domain.SecurityState
 	Instance        domain.OutputInstance
 	SecurityEvents  chan<- ports.SecurityBackendEvent
-	// Cursor, when set, is drawn into screenshots with the image from
-	// LoadCursor at the scene scale and transform. The cursor is drawn in
+	// Cursor, when set, supplies cursor-requesting captures and debug screenshots
+	// with the image from LoadCursor at the scene scale and transform. It is in
 	// target space: the image comes rotated and Move takes target pixels.
 	Cursor        *Cursor
 	LoadCursor    func(c domain.CursorChange, scale float64, t domain.BufferTransform, limit int) (domain.CursorImage, error)
@@ -592,7 +592,8 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 				}
 				return err
 			}
-			// The cursor is only drawn into screenshots: no new frame.
+			// Cursor images are sampled by captures and debug screenshots.
+			// Motion alone does not redraw the display.
 			want, cursorScale, cursorTransform = c, -1, 0
 		}
 		// Drain all queued updates before presenting one frame.
@@ -680,6 +681,10 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		// Requests the scene cannot serve (exclusion of another session, a
 		// workspace that moved) are failed here; see capture.Pipeline.Split.
 		// A request whose indicator the scene does not show yet stays held.
+		pipeline.Cursor = nil
+		if opts.Cursor != nil && !opts.protected() {
+			pipeline.Cursor = opts.Cursor.snapshot()
+		}
 		ready, _ := pipeline.Hold(scene, requests.List, time.Now())
 		if len(scene.CaptureIndicators) > 0 {
 			// The captures of this frame are delivered only once its frame,

@@ -9,8 +9,9 @@ import (
 	"os"
 	"unsafe"
 
-	"github.com/bnema/neferwl/internal/ports"
 	vk "bnema.dev/purego-vulkan/vulkan"
+	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
 
@@ -181,6 +182,7 @@ func (d deviceSync) destroySemaphore(s vk.Semaphore) {
 
 // captureSlot is one readback buffer with its copy command and sync.
 type captureSlot struct {
+	cursor captureCursorPass
 	buffer vk.Buffer
 	memory vk.DeviceMemory
 	mapped unsafe.Pointer
@@ -362,6 +364,7 @@ func (r *Renderer) captureSync() captureSync {
 
 // freeCaptureSlot destroys a slot; the device must be idle for it.
 func (r *Renderer) freeCaptureSlot(s *captureSlot) {
+	r.freeCaptureCursor(&s.cursor)
 	for _, c := range s.copies {
 		r.freeDMACopy(c)
 	}
@@ -476,6 +479,10 @@ func (r *Renderer) beginCapture(debug bool) (*captureFrame, error) {
 // beginCaptureAs is beginCapture; pq copies an HDR frame as PQ words
 // (recordCapturePQ) instead of converting it to sRGB8.
 func (r *Renderer) beginCaptureAs(debug, pq bool) (*captureFrame, error) {
+	return r.beginCaptureCursor(debug, pq, nil)
+}
+
+func (r *Renderer) beginCaptureCursor(debug, pq bool, cursor *domain.CaptureCursor) (*captureFrame, error) {
 	if r.gpu.device == 0 || r.gpu.dd == nil {
 		return nil, errors.New("renderer closed")
 	}
@@ -511,6 +518,11 @@ func (r *Renderer) beginCaptureAs(debug, pq bool) (*captureFrame, error) {
 	if s == nil {
 		return nil, ports.ErrCaptureBusy
 	}
+	if cursor != nil {
+		if err := r.prepareCaptureCursor(s, cursor, pq); err != nil {
+			return nil, err
+		}
+	}
 	d, sc := r.gpu.dd, &r.capCall
 	sc.cmd = s.cmd
 	cmd := sc.cmd
@@ -521,7 +533,9 @@ func (r *Renderer) beginCaptureAs(debug, pq bool) (*captureFrame, error) {
 	if err := checked("vkBeginCommandBuffer(capture)", d.BeginCommandBuffer(cmd, &sc.begin)); err != nil {
 		return nil, err
 	}
-	if pq {
+	if cursor != nil {
+		r.recordCaptureCursor(cmd, s, cursor, pq)
+	} else if pq {
 		r.recordCapturePQ(cmd, s)
 	} else if hdr {
 		r.recordCaptureHDR(cmd, s)

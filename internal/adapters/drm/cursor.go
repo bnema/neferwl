@@ -5,6 +5,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -46,9 +47,10 @@ type Cursor struct {
 	hotX, hotY int
 	// last is a copy of the loaded image, written again into new images
 	// when the allocator changes.
-	last    laterImage
-	applied cursorState // what the last commit put on the plane
-	commits int
+	captureImage domain.CursorImage // owner-only SDR image, independent of KMS allocation
+	last         laterImage
+	applied      cursorState // what the last commit put on the plane
+	commits      int
 	// screen is the image the plane scans out (0: none); flight is what
 	// the pending commit puts on it when flying. An image is written only
 	// when it is neither, so the plane never shows a half-written image.
@@ -90,6 +92,18 @@ func (c *Cursor) TakeStats() CursorStats {
 	c.moves, c.commits = 0, 0
 	c.mu.Unlock()
 	return s
+}
+
+// snapshot samples physical hotspot motion under its lock; the SDR image is
+// owned by this output goroutine, not by the input goroutine or KMS plane.
+func (c *Cursor) snapshot() *domain.CaptureCursor {
+	c.mu.Lock()
+	x, y, away := c.x, c.y, c.away
+	c.mu.Unlock()
+	if away || !c.image || c.captureImage.W == 0 || c.captureImage.H == 0 {
+		return nil
+	}
+	return &domain.CaptureCursor{Image: c.captureImage, X: x, Y: y}
 }
 
 // Limit is the largest image side the cursor plane accepts.
@@ -181,6 +195,10 @@ func (c *Cursor) useFallback(hdrNits float64) (bool, error) {
 // none).
 // hdrNits is the SDR white of an HDR output (0: SDR).
 func (c *Cursor) setImage(pixels []byte, w, h, hotX, hotY int, hdrNits float64) error {
+	c.captureImage = domain.CursorImage{}
+	if w > 0 && h > 0 && len(pixels) >= w*h*4 {
+		c.captureImage = domain.CursorImage{W: w, H: h, HotX: hotX, HotY: hotY, Pixels: slices.Clone(pixels[:w*h*4])}
+	}
 	c.later = nil
 	if w <= 0 || h <= 0 || len(pixels) < w*h*4 {
 		c.image = false
@@ -286,6 +304,7 @@ func (c *Cursor) free() {
 	}
 	c.fbs = [2]uint32{}
 	c.image, c.later = false, nil
+	c.captureImage = domain.CursorImage{}
 	c.last = laterImage{}
 	c.screen, c.flying = 0, false
 }

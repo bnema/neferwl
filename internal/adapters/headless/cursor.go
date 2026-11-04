@@ -36,6 +36,17 @@ func (c *Cursor) set(img domain.CursorImage) {
 	c.mu.Unlock()
 }
 
+// snapshot is called by the output owner; set replaces rather than mutates
+// image pixels, so the returned image stays immutable through the GPU upload.
+func (c *Cursor) snapshot() *domain.CaptureCursor {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.hidden || c.img.W == 0 || c.img.H == 0 {
+		return nil
+	}
+	return &domain.CaptureCursor{Image: c.img, X: int(c.x), Y: int(c.y)}
+}
+
 // draw blends the premultiplied cursor over dst with its hotspot at (x, y).
 func (c *Cursor) draw(dst *image.RGBA) {
 	c.drawSecure(dst, nil)

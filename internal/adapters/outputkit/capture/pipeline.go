@@ -74,6 +74,9 @@ func (b *batch) closeCopies() {
 // Submit, Recycle and Close belong to that owner; one worker handles all jobs.
 type Pipeline struct {
 	// Set before owner use; no mutation or worker access to this dependency.
+	// Cursor is the output owner's immutable snapshot for this frame. Hidden
+	// workspace/window child pipelines deliberately have no output cursor.
+	Cursor    *domain.CaptureCursor
 	Security  ports.SessionSecurity
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -89,9 +92,10 @@ type Pipeline struct {
 	excl          excluder         // scratch of ExcludedScene, owner only
 	plainOverlays []domain.Overlay // scratch of SubmitPlain, owner only
 	// split holds SubmitScoped's requests by readback (SDR, PQ), owner only.
-	split [2][MaxRequests]domain.CaptureRequest
-	off           *offscreen
-	worker        sync.WaitGroup
+	cursorSplit [2][MaxRequests]domain.CaptureRequest
+	split       [2][MaxRequests]domain.CaptureRequest
+	off         *offscreen
+	worker      sync.WaitGroup
 }
 
 func NewPipeline(ctx context.Context, replies chan<- domain.CaptureDone) *Pipeline {
@@ -176,6 +180,25 @@ func (p *Pipeline) EndGate(err error) {
 // Requests for CastXBGR2101010 are read back as PQ words (BeginCapturePQ) in
 // a batch of their own; a frame that is not HDR fails them transiently.
 func (p *Pipeline) SubmitScoped(state domain.SecurityState, r ports.Renderer, requests []domain.CaptureRequest) {
+	if p.Cursor == nil || len(requests) > MaxRequests {
+		p.submitReadback(state, r, requests, nil)
+		return
+	}
+	var n [2]int
+	for _, q := range requests {
+		k := 0
+		if q.Cursor {
+			k = 1
+		}
+		p.cursorSplit[k][n[k]] = q
+		n[k]++
+	}
+	p.submitReadback(state, r, p.cursorSplit[0][:n[0]], nil)
+	p.submitReadback(state, r, p.cursorSplit[1][:n[1]], p.Cursor)
+	p.cursorSplit = [2][MaxRequests]domain.CaptureRequest{}
+}
+
+func (p *Pipeline) submitReadback(state domain.SecurityState, r ports.Renderer, requests []domain.CaptureRequest, cursor *domain.CaptureCursor) {
 	npq := 0
 	for _, q := range requests {
 		if isPQ(q) {
@@ -183,11 +206,11 @@ func (p *Pipeline) SubmitScoped(state domain.SecurityState, r ports.Renderer, re
 		}
 	}
 	if npq == 0 || len(requests) > MaxRequests {
-		p.submitBatch(state, r, requests, false)
+		p.submitBatch(state, r, requests, false, cursor)
 		return
 	}
 	if npq == len(requests) {
-		p.submitBatch(state, r, requests, true)
+		p.submitBatch(state, r, requests, true, cursor)
 		return
 	}
 	var n [2]int
@@ -199,8 +222,8 @@ func (p *Pipeline) SubmitScoped(state domain.SecurityState, r ports.Renderer, re
 		p.split[k][n[k]] = q
 		n[k]++
 	}
-	p.submitBatch(state, r, p.split[0][:n[0]], false)
-	p.submitBatch(state, r, p.split[1][:n[1]], true)
+	p.submitBatch(state, r, p.split[0][:n[0]], false, cursor)
+	p.submitBatch(state, r, p.split[1][:n[1]], true, cursor)
 	p.split = [2][MaxRequests]domain.CaptureRequest{}
 }
 
@@ -210,7 +233,7 @@ func isPQ(q domain.CaptureRequest) bool {
 }
 
 // submitBatch is SubmitScoped for requests of one readback.
-func (p *Pipeline) submitBatch(state domain.SecurityState, r ports.Renderer, requests []domain.CaptureRequest, pq bool) {
+func (p *Pipeline) submitBatch(state domain.SecurityState, r ports.Renderer, requests []domain.CaptureRequest, pq bool, cursor *domain.CaptureCursor) {
 	if len(requests) == 0 {
 		return
 	}
@@ -231,7 +254,12 @@ func (p *Pipeline) submitBatch(state domain.SecurityState, r ports.Renderer, req
 	} else if !p.captureAllowed(state) {
 		err = ErrSecurityState
 	} else {
-		if pq {
+		if cursor != nil {
+			b.frame, err = r.BeginCaptureCursor(cursor, pq)
+			if err != nil {
+				err = fmt.Errorf("%w: cursor capture: %w", ports.ErrCaptureTransient, err)
+			}
+		} else if pq {
 			if b.frame, err = r.BeginCapturePQ(); err != nil {
 				// No HDR frame (the output just turned SDR) or no PQ pass
 				// yet: the requester retries or renegotiates.
