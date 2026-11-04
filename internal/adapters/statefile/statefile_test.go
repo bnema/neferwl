@@ -298,3 +298,29 @@ func TestWorkspaceFocusedJSON(t *testing.T) {
 		t.Fatalf("roundtrip: %+v", decoded.Workspaces)
 	}
 }
+
+func TestWorkspaceCoverJSON(t *testing.T) {
+	st := fromPorts(domain.State{
+		Workspaces: []domain.WorkspaceState{{ID: 1, Cover: 7}, {ID: 2}},
+		Windows:    []domain.WindowState{{ID: 7, Fullscreen: true}, {ID: 8, Fullscreen: true}},
+	}, workspaceid.WithPrefix("test"))
+	data, err := json.Marshal(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"cover":7`, `"cover":0`} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("missing %s: %s", want, data)
+		}
+	}
+	var decoded State
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Workspaces[0].Cover != 7 || decoded.Workspaces[1].Cover != 0 {
+		t.Fatalf("roundtrip: %+v", decoded.Workspaces)
+	}
+	if !decoded.Windows[0].Fullscreen || !decoded.Windows[1].Fullscreen {
+		t.Fatalf("held member not fullscreen: %+v", decoded.Windows)
+	}
+}

@@ -53,6 +53,7 @@ type Workspace struct {
 	Output   string          `json:"output"`
 	Visible  bool            `json:"visible"`
 	Overflow string          `json:"overflow"`
+	Cover    domain.WindowID `json:"cover"`
 	Columns  []Column        `json:"columns"`
 }
 
@@ -118,7 +119,8 @@ type Window struct {
 	PointerConstraint string `json:"pointer_constraint"`
 	// Floating is set for native floats (dialogs) and stashed windows.
 	Floating bool `json:"floating"`
-	// Fullscreen is set for the fullscreen window of its workspace.
+	// Fullscreen is set for the fullscreen windows of its workspace: the
+	// cover (Workspace.Cover) and held members.
 	Fullscreen bool `json:"fullscreen"`
 	// StashIndex is the 1-based place of a stashed window in its
 	// workspace's stash of StashCount windows; both are 0 outside it.
@@ -141,7 +143,7 @@ func fromPorts(st domain.State, ids *workspaceid.IDs) State {
 		out.Windows = append(out.Windows, window(w, ids))
 	}
 	for _, w := range st.Workspaces {
-		ws := Workspace{Focused: w.Focused, ID: ids.ID(w.ID, w.Name), Number: w.Number, Name: w.Name, Output: w.Output, Visible: w.Visible, Overflow: w.Overflow, Columns: make([]Column, 0, len(w.Columns))}
+		ws := Workspace{Focused: w.Focused, ID: ids.ID(w.ID, w.Name), Number: w.Number, Name: w.Name, Output: w.Output, Visible: w.Visible, Overflow: w.Overflow, Cover: w.Cover, Columns: make([]Column, 0, len(w.Columns))}
 		for _, c := range w.Columns {
 			col := Column{X: c.Rect.X, Y: c.Rect.Y, Width: c.Rect.W, Height: c.Rect.H, Windows: make([]Tile, 0, len(c.Windows))}
 			for _, t := range c.Windows {

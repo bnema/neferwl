@@ -14,9 +14,10 @@ func (w *Workspace) IsFullscreenMember(id WindowID) bool {
 
 // hold keeps id fullscreen in the group without making it the cover. It
 // ignores zero, the active cover, a window already held and one not on the
-// workspace.
+// workspace, and refuses under a layout that cannot scroll (fixed): with
+// nowhere off screen to sit, its cover overlays everything instead.
 func (w *Workspace) hold(id WindowID) {
-	if id == 0 || id == w.Fullscreen || slices.Contains(w.Held, id) || !w.Has(id) {
+	if id == 0 || !w.Engine().Scrolls() || id == w.Fullscreen || slices.Contains(w.Held, id) || !w.Has(id) {
 		return
 	}
 	w.Held = append(w.Held, id)

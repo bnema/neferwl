@@ -189,3 +189,28 @@ func TestHeldFloatHidden(t *testing.T) {
 		}
 	})
 }
+
+// Fixed overflow pins one cover over everything: it has no group.
+func TestFullscreenGroupFixed(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := cols(OverflowFixed, 3, 0, []WindowID{1}, []WindowID{2})
+		w.Fullscreen = 1
+		w.hold(2)
+		if len(w.Held) != 0 {
+			t.Fatalf("fixed held %v", w.Held)
+		}
+		w.SetOverflow(OverflowScroll)
+		w.hold(2)
+		if !slices.Equal(w.Held, []WindowID{2}) {
+			t.Fatalf("scroll held %v", w.Held)
+		}
+		w.SetOverflow(OverflowCascade)
+		if !slices.Equal(w.Held, []WindowID{2}) {
+			t.Fatalf("cascade dropped held %v", w.Held)
+		}
+		w.SetOverflow(OverflowFixed)
+		if len(w.Held) != 0 || w.Fullscreen != 1 {
+			t.Fatalf("switch to fixed: cover %d held %v", w.Fullscreen, w.Held)
+		}
+	})
+}
