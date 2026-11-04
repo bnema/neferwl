@@ -41,7 +41,7 @@ func TestXwaylandKeepFocus(t *testing.T) {
 		t.Fatalf("config: %v %v", err, warnings)
 	}
 	e := startXwaylandConfig(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *domain.Config) { *c = cfg }, path)
-	p := startProbe(t, e.bin, e.display, "-focus-log")
+	p := startProbe(t, e.bin, e.display, "-focus-log", "-stdin-sync")
 	until(t, "probe on tv", func() bool {
 		w, ok := windowOf(readState(e.statePath), p.cmd.Process.Pid)
 		return ok && w.Output == "tv"
@@ -111,8 +111,11 @@ func TestXwaylandKeepFocus(t *testing.T) {
 	if keys[0] != 30 {
 		t.Fatalf("native keys %v, want evdev a=30", keys)
 	}
+	// The native client has its key; an X round trip by the probe then
+	// flushes any X event (a key, a focus change) sent to it before.
+	p.sync(t)
 	after := p.out.String()[mark:]
-	if strings.Contains(after, "focus-out") || strings.Contains(after, "key") {
+	if strings.Contains(after, "focus-out") || strings.Contains(after, "key\n") {
 		t.Fatalf("probe lost focus or got a key under native focus: %q", after)
 	}
 	if got := lastLine(p.out.String(), "active "); got != "active self" {

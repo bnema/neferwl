@@ -19,6 +19,9 @@
 // "focus-in"/"focus-out" for the window's own focus changes (pointer details
 // skipped) and "active self|none|other" whenever the root's
 // _NET_ACTIVE_WINDOW changes, and "key" for each key press it receives.
+// -stdin-sync reads stdin lines: each "sync" makes a round trip to the X
+// server and prints "synced N" (N counts syncs) once the reply arrives,
+// after every event the server sent before it.
 //
 // Four more modes run without a window and exit when done.
 // -copy TEXT|@file owns -copy-sel (CLIPBOARD or PRIMARY) for
@@ -78,6 +81,7 @@ func run() error {
 	initialFullscreen := flag.Bool("initial-fullscreen", false, "set _NET_WM_STATE_FULLSCREEN and fixed-size WM_NORMAL_HINTS (min=max=size) before mapping")
 	keyboardGrab := flag.Bool("keyboard-grab", false, "XGrabKeyboard on the window once it is mapped")
 	focusLog := flag.Bool("focus-log", false, "print focus-in/focus-out and _NET_ACTIVE_WINDOW changes")
+	stdinSync := flag.Bool("stdin-sync", false, `answer each stdin line "sync" with "synced N" after an X round trip`)
 	at := flag.String("at", "0,0", "window position X,Y in root coordinates")
 	copyText := flag.String("copy", "", "own a selection with TEXT (or @file) and serve it, no window")
 	copySel := flag.String("copy-sel", "CLIPBOARD", "selection for -copy: CLIPBOARD or PRIMARY")
@@ -138,7 +142,35 @@ func run() error {
 	xproto.ChangeProperty(b, xproto.PropModeReplace, win, protocols, xproto.AtomAtom, 32, 1, del[:])
 
 	// Reply kinds: 16 is _NET_WM_STATE, 17 the root's _NET_ACTIVE_WINDOW.
-	const kindState, kindActive = 16, 17
+	const kindState, kindActive, kindSync = 16, 17, 18
+	syncs := 0
+	var stdinBuf []byte
+	// readStdin issues a round trip for each complete "sync" line.
+	readStdin := func() error {
+		var buf [256]byte
+		n, err := unix.Read(0, buf[:])
+		if n <= 0 {
+			if err == unix.EAGAIN || err == unix.EINTR {
+				return nil
+			}
+			*stdinSync = false // EOF: stop polling stdin
+			return nil
+		}
+		stdinBuf = append(stdinBuf, buf[:n]...)
+		for {
+			i := strings.IndexByte(string(stdinBuf), '\n')
+			if i < 0 {
+				return nil
+			}
+			line := strings.TrimSpace(string(stdinBuf[:i]))
+			stdinBuf = stdinBuf[i+1:]
+			if line == "sync" {
+				if err := c.Expect(xproto.GetInputFocus(b), kindSync, 0, 0, 0, 0); err != nil {
+					return err
+				}
+			}
+		}
+	}
 	root := xproto.Window(c.Root())
 	queryActive := func() {
 		seq := xproto.GetProperty(b, false, root, netActive, xproto.AtomWindow, 0, 1)
@@ -313,6 +345,11 @@ func run() error {
 			if !ok {
 				return
 			}
+			if r.Kind == kindSync {
+				syncs++
+				fmt.Printf("synced %d\n", syncs)
+				return
+			}
 			if r.Kind == kindActive {
 				var id uint32
 				if v := rep.Value(); len(v) >= 4 {
@@ -360,8 +397,16 @@ func run() error {
 			}
 		}
 		fds := []unix.PollFd{{Fd: int32(c.Fd()), Events: events}}
+		if *stdinSync {
+			fds = append(fds, unix.PollFd{Fd: 0, Events: unix.POLLIN})
+		}
 		if _, err := unix.Poll(fds, timeout); err != nil && err != unix.EINTR {
 			return err
+		}
+		if len(fds) > 1 && fds[1].Revents&(unix.POLLIN|unix.POLLHUP) != 0 {
+			if err := readStdin(); err != nil {
+				return err
+			}
 		}
 		if !ovDeadline.IsZero() && !time.Now().Before(ovDeadline) {
 			unmapOverride("override unmapped")
