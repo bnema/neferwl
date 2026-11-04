@@ -8,6 +8,8 @@ bnema.dev/purego-pipewire v0.4.1-0.20261103175857-56d00cf5a3ec h1:2PgZ9udUhwuNy2
 bnema.dev/purego-pipewire v0.4.1-0.20261103175857-56d00cf5a3ec/go.mod h1:1R+UJRJP5MG0HznFZ+9TjssGXip3Dqau2psuNEvMZvc=
 bnema.dev/purego-pipewire v0.5.0 h1:q5u923kgBoF8HvBhDMK4Y/89sNCUVz97YdaXF9b2fjE=
 bnema.dev/purego-pipewire v0.5.0/go.mod h1:1R+UJRJP5MG0HznFZ+9TjssGXip3Dqau2psuNEvMZvc=
+bnema.dev/purego-pipewire v0.5.1-0.20261104025523-b87b6e8f1bc0 h1:2IlD/0ulpjHtaL1moN2E4YXP8O+FNeERQvgba4Ku7Y4=
+bnema.dev/purego-pipewire v0.5.1-0.20261104025523-b87b6e8f1bc0/go.mod h1:1R+UJRJP5MG0HznFZ+9TjssGXip3Dqau2psuNEvMZvc=
 bnema.dev/purego-vulkan v0.7.0 h1:nXvLl2yLBi8u5FP5beAk7LyHDJiYgeEF9L63t+SasrU=
 bnema.dev/purego-vulkan v0.7.0/go.mod h1:HmXpjrc7g/lI4VhVTDGpIf6/C2J93b19tis5ZGn+yK8=
 bnema.dev/wlturbo v0.7.0 h1:UeUgL3KCQwemwwr+QbQ5OH3susvv7UfAK2/N4XKaRtc=
