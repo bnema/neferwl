@@ -586,7 +586,7 @@ func (w *Workspace) AppendLayout(dst []Placement) []Placement {
 			// A covering fullscreen window hides every float but the
 			// dialogs over it (overCover): the others show again when it
 			// leaves fullscreen.
-			p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Below: below, Focused: f.ID == focusedID, Inset: domain.SideAll, Hidden: cover != 0 && f.ID != cover && !dialog || w.IsHeldFloat(f.ID)}
+			p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Below: below, Focused: f.ID == focusedID, Inset: domain.SideAll, Hidden: cover != 0 && f.ID != cover && !dialog || w.IsHeld(f.ID)}
 			if p.Hidden {
 				p.Rect = Rect{}
 				result = append(result, p)

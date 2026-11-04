@@ -58,6 +58,31 @@ func (w *Workspace) promoteFocused() {
 	}
 }
 
+// demoteCover holds the cover of a pinned layout (cascade) whose group the
+// focus leaves for an unrelated window, and reports whether it did. Unlike
+// leaveFullscreen it sets no left, so focus on any member brings the group
+// back with no fullscreen key. A lone cover, a floating one (it cannot be
+// held: held floats are not shown) and a scrolling layout's are left alone.
+// The focus must already be off the group: scroll promotes a focused member.
+func (w *Workspace) demoteCover() bool {
+	if !w.demotable() {
+		return false
+	}
+	full := w.Fullscreen
+	w.Fullscreen = 0
+	w.hold(full)
+	w.stashOver = 0
+	w.reconcileFloats()
+	w.scroll()
+	return true
+}
+
+// demotable reports whether demoteCover would hold the cover.
+func (w *Workspace) demotable() bool {
+	full := w.Fullscreen
+	return full != 0 && len(w.Held) > 0 && !w.IsFloat(full) && w.Engine().PinsFullscreen()
+}
+
 // dropHeld removes id from the held windows, keeping the backing slice.
 func (w *Workspace) dropHeld(id WindowID) {
 	if len(w.Held) == 0 {
@@ -65,9 +90,6 @@ func (w *Workspace) dropHeld(id WindowID) {
 	}
 	w.Held = slices.DeleteFunc(w.Held, func(v WindowID) bool { return v == id })
 }
-
-// IsHeldFloat reports whether float id is held: held floats are not shown.
-func (w *Workspace) IsHeldFloat(id WindowID) bool { return w.IsHeld(id) }
 
 // IsHeld reports whether id is a held fullscreen member (not the cover).
 func (w *Workspace) IsHeld(id WindowID) bool {

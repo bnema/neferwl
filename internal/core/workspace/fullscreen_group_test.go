@@ -472,3 +472,31 @@ func TestFullscreenLoneCascadeLeave(t *testing.T) {
 		}
 	})
 }
+
+// Cascade taskbar activation of an unrelated window demotes the group's
+// cover like a focus move; a lone cover still ends with the latch.
+func TestFullscreenGroupCascadeActivateDemotes(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := groupPG(t, OverflowCascade)
+		w.Activate(3)
+		held := slices.Clone(w.Held)
+		slices.Sort(held)
+		if f, _ := w.Focused(); f != 3 || w.Fullscreen != 0 || w.Cover() != 0 || w.left != 0 || !slices.Equal(held, []WindowID{1, 2}) {
+			t.Fatalf("activate outsider: focus %d cover %d left %d held %v", f, w.Fullscreen, w.left, w.Held)
+		}
+		checkGroup(t, w, "activate outsider")
+		if p := placementOf(t, w.Layout(), 3); p.Hidden {
+			t.Fatalf("outsider hidden: %+v", p)
+		}
+	})
+	synctest.Test(t, func(t *testing.T) {
+		w := cols(OverflowCascade, 3, 0, []WindowID{1}, []WindowID{3})
+		w.Settle(false)
+		w.FocusID(1)
+		w.SetFullscreen(1, true)
+		w.Activate(3)
+		if w.Fullscreen != 0 || w.left != 1 || len(w.Held) != 0 {
+			t.Fatalf("lone: cover %d left %d held %v", w.Fullscreen, w.left, w.Held)
+		}
+	})
+}
