@@ -38,12 +38,16 @@ func main() {
 	}
 }
 
-func run(args []string, withOutput bool) error {
+func run(args []string, withOutput bool) (err error) {
 	c, err := wlturbo.Connect("")
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() {
+		if cerr := c.Close(); err == nil {
+			err = cerr
+		}
+	}()
 	if err := c.Roundtrip(); err != nil {
 		return err
 	}

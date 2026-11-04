@@ -127,6 +127,11 @@ func TestVirtualPointerWithOutput(t *testing.T) {
 		if g := receive(t, constraints); g.X != 200 || g.Y != 50 {
 			t.Fatalf("output warp %+v", g)
 		}
+		// x == extent lands on the last pixel of the bound output.
+		client <- ports.VirtualPointerInput{Absolute: true, FX: 1, FY: 1, Output: "B", Event: ports.PointerMotion{}}
+		if g := receive(t, constraints); g.X != 299 || g.Y != 99 {
+			t.Fatalf("edge warp %+v", g)
+		}
 		// The whole layout is 300x100.
 		client <- ports.VirtualPointerInput{Absolute: true, FX: 0.25, FY: 0.5, Event: ports.PointerMotion{}}
 		if g := receive(t, constraints); g.X != 75 || g.Y != 50 {

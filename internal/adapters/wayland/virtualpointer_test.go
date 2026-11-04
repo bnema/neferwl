@@ -178,3 +178,161 @@ func TestVirtualPointerHiddenFromSandbox(t *testing.T) {
 		t.Fatal("sandboxed client sees the virtual pointer global")
 	}
 }
+
+const (
+	vpMotion    = wlrvirtualpointer.ZwlrVirtualPointerV1RequestMotion
+	vpAbsolute  = wlrvirtualpointer.ZwlrVirtualPointerV1RequestMotionAbsolute
+	vpButton    = wlrvirtualpointer.ZwlrVirtualPointerV1RequestButton
+	vpFrame     = wlrvirtualpointer.ZwlrVirtualPointerV1RequestFrame
+	btnLeftCode = uint32(0x110)
+)
+
+// An unframed release is discarded on disconnect: the forwarded press is
+// still released exactly once.
+func TestVirtualPointerUnframedReleaseThenDisconnect(t *testing.T) {
+	s, events, _, dir := keyboardServer(t)
+	c, p := virtualMover(t, s, dir, false)
+	requestProtocol(t, c, p, vpButton, uint32(1), btnLeftCode, uint32(1))
+	requestProtocol(t, c, p, vpFrame)
+	virtualEvents(t, c, events, 1)
+	requestProtocol(t, c, p, vpButton, uint32(2), btnLeftCode, uint32(0))
+	virtualEvents(t, c, events, 0)
+	_ = c.Close()
+	b := nextEvent[ports.VirtualPointerInput](t, events).Event.(ports.PointerButton)
+	if b.Button != btnLeftCode || b.Pressed {
+		t.Fatalf("release %+v", b)
+	}
+	if !s.display.Do(func() {}) {
+		t.Fatal("display stopped")
+	}
+	select {
+	case ev := <-events:
+		if v, ok := ev.(ports.VirtualPointerInput); ok {
+			t.Fatalf("extra event %+v", v)
+		}
+	default:
+	}
+}
+
+// Every forwarded held button is released at destroy; a button pressed
+// only in an unframed request is not.
+func TestVirtualPointerReleasesAllHeld(t *testing.T) {
+	s, events, _, dir := keyboardServer(t)
+	c, p := virtualMover(t, s, dir, false)
+	for _, b := range []uint32{0x110, 0x111, 0x112} {
+		requestProtocol(t, c, p, vpButton, uint32(1), b, uint32(1))
+	}
+	requestProtocol(t, c, p, vpFrame)
+	virtualEvents(t, c, events, 3)
+	requestProtocol(t, c, p, vpButton, uint32(2), uint32(0x113), uint32(1))
+	requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestDestroy)
+	got := map[uint32]bool{}
+	for _, v := range virtualEvents(t, c, events, 3) {
+		b := v.Event.(ports.PointerButton)
+		if b.Pressed {
+			t.Fatalf("press on destroy %+v", b)
+		}
+		got[b.Button] = true
+	}
+	if !got[0x110] || !got[0x111] || !got[0x112] {
+		t.Fatalf("released %v", got)
+	}
+}
+
+// Repeated presses in one frame forward once; a frame over the limit is a
+// protocol error and forwards nothing.
+func TestVirtualPointerFrameLimit(t *testing.T) {
+	s, events, _, dir := keyboardServer(t)
+	c, p := virtualMover(t, s, dir, false)
+	for i := 0; i < 10; i++ {
+		requestProtocol(t, c, p, vpButton, uint32(i), btnLeftCode, uint32(1))
+	}
+	requestProtocol(t, c, p, vpFrame)
+	if got := virtualEvents(t, c, events, 1); len(got) != 1 {
+		t.Fatalf("repeated presses %v", got)
+	}
+	c2, p2 := virtualMover(t, s, dir, false)
+	for i := 0; i <= maxVirtualFrame; i++ {
+		requestProtocol(t, c2, p2, vpButton, uint32(i), btnLeftCode, uint32(i%2))
+	}
+	expectProtocolError(t, c2, p2, virtualFrameTooLarge)
+	if !s.display.Do(func() {}) {
+		t.Fatal("display stopped")
+	}
+	select {
+	case ev := <-events:
+		if v, ok := ev.(ports.VirtualPointerInput); ok {
+			t.Fatalf("oversized frame forwarded %+v", v)
+		}
+	default:
+	}
+}
+
+// An oversized frame buffer is not kept after the frame.
+func TestVirtualPointerResetDropsLargeBuffer(t *testing.T) {
+	p := &virtualPointer{pending: make([]ports.VirtualPointerInput, 100)}
+	p.reset()
+	if p.pending != nil {
+		t.Fatalf("kept cap %d", cap(p.pending))
+	}
+	p.pending = make([]ports.VirtualPointerInput, 3, virtualFrameKeep)
+	p.reset()
+	if len(p.pending) != 0 || cap(p.pending) != virtualFrameKeep {
+		t.Fatalf("small buffer len %d cap %d", len(p.pending), cap(p.pending))
+	}
+}
+
+// x == extent and an extent of 1 normalize into [0, 1].
+func TestVirtualPointerAbsoluteEdges(t *testing.T) {
+	s, events, _, dir := keyboardServer(t)
+	c, p := virtualMover(t, s, dir, false)
+	for _, tc := range []struct {
+		x, ext uint32
+		want   float64
+	}{{1, 1, 1}, {0, 1, 0}, {1920, 1920, 1}, {5000, 1920, 1}} {
+		requestProtocol(t, c, p, vpAbsolute, uint32(1), tc.x, tc.x, tc.ext, tc.ext)
+		requestProtocol(t, c, p, vpFrame)
+		if got := virtualEvents(t, c, events, 1)[0]; got.FX != tc.want || got.FY != tc.want {
+			t.Fatalf("x %d extent %d: %v,%v want %v", tc.x, tc.ext, got.FX, got.FY, tc.want)
+		}
+	}
+}
+
+// Mixed absolute and relative motion keeps its order and goes out only at
+// frame, in both directions.
+func TestVirtualPointerMixedMotionWaitsForFrame(t *testing.T) {
+	for _, absFirst := range []bool{true, false} {
+		t.Run(map[bool]string{true: "abs-rel", false: "rel-abs"}[absFirst], func(t *testing.T) {
+			s, events, _, dir := keyboardServer(t)
+			c, p := virtualMover(t, s, dir, false)
+			abs := func() { requestProtocol(t, c, p, vpAbsolute, uint32(1), uint32(1), uint32(1), uint32(4), uint32(4)) }
+			rel := func() { requestProtocol(t, c, p, vpMotion, uint32(1), fixed(3), fixed(4)) }
+			if absFirst {
+				abs()
+				rel()
+				rel()
+			} else {
+				rel()
+				abs()
+			}
+			virtualEvents(t, c, events, 0)
+			requestProtocol(t, c, p, vpFrame)
+			got := virtualEvents(t, c, events, 2)
+			if got[0].Absolute != absFirst || got[1].Absolute == absFirst {
+				t.Fatalf("order %+v", got)
+			}
+			rv := got[1]
+			if !absFirst {
+				rv = got[0]
+			}
+			m := rv.Event.(ports.PointerMotion)
+			want := 3.0
+			if absFirst {
+				want = 6
+			}
+			if m.DX != want {
+				t.Fatalf("relative %+v want dx %v", m, want)
+			}
+		})
+	}
+}

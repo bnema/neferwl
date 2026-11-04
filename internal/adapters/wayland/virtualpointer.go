@@ -18,26 +18,33 @@ const virtualPointerDevices domain.InputDeviceID = 1 << 62
 // virtualPointerInterface is the manager global, hidden from sandboxed clients.
 const virtualPointerInterface = "zwlr_virtual_pointer_manager_v1"
 
-// virtualPointer is a zwlr_virtual_pointer_v1 (wlrctl, ydotool, agents).
-// Requests accumulate until frame, then go to core as one batch of
-// ports.VirtualPointerInput: motion first, then buttons, then scroll. Core
-// places the pointer and routes the events as real input; the adapter
-// only translates. Held buttons are released when the resource dies.
+// maxVirtualFrame bounds the requests one frame may hold: a client that
+// never sends frame cannot grow compositor memory. Exceeding it is a
+// protocol error and disconnects the client.
+const maxVirtualFrame = 256
+
+// virtualFrameKeep is the largest pending capacity kept across frames.
+const virtualFrameKeep = 32
+
+// virtualPointer is a zwlr_virtual_pointer_v1 (wlrctl, agents).
+// Requests accumulate, in order, until frame; only then do they go to core
+// as ports.VirtualPointerInput. Consecutive motions of one kind merge, as do
+// consecutive axis requests. Core places the pointer and routes the events
+// as real input; the adapter only translates.
+//
+// forwarded are the buttons whose press reached core in this epoch: when
+// the resource dies they are released, and pending (unframed) requests are
+// discarded.
 type virtualPointer struct {
-	server *Server
-	device domain.InputDeviceID
-	output string // create_virtual_pointer_with_output, "" for the layout
-	// pending frame
-	moved      bool
-	absolute   bool
-	dx, dy     float64
-	fx, fy     float64
-	motionTime time.Duration
-	buttons    []ports.PointerButton
-	axis       ports.PointerAxis
-	scrolled   bool
-	pressed    map[uint32]bool
+	server     *Server
+	res        *wlrvirtualpointer.ZwlrVirtualPointerV1
+	device     domain.InputDeviceID
+	output     string // create_virtual_pointer_with_output, "" for the layout
+	pending    []ports.VirtualPointerInput
+	source     domain.AxisSource // axis_source of the frame, sticky
+	forwarded  map[uint32]bool
 	generation domain.LockGeneration
+	dead       bool // protocol error sent: requests are ignored
 }
 
 // registerVirtualPointer exposes the global to unsandboxed clients
@@ -58,7 +65,7 @@ func (m virtualPointerManager) CreateVirtualPointer(r *wlrvirtualpointer.ZwlrVir
 
 func (m virtualPointerManager) CreateVirtualPointerWithOutput(r *wlrvirtualpointer.ZwlrVirtualPointerManagerV1, _ *wayland.Seat, output *wayland.Output, id uint32) {
 	s := m.server
-	p := &virtualPointer{server: s, pressed: map[uint32]bool{}}
+	p := &virtualPointer{server: s, forwarded: map[uint32]bool{}}
 	if o := s.outputOf(output); o != nil {
 		p.output = o.name()
 	}
@@ -72,6 +79,7 @@ func (m virtualPointerManager) CreateVirtualPointerWithOutput(r *wlrvirtualpoint
 		s.log.Info().Int("pid", r.Client().PID()).Msg("virtual pointer refused: sandboxed client")
 		return
 	}
+	p.res = res
 	s.nextVirtualPointer++
 	p.device = virtualPointerDevices + s.nextVirtualPointer
 	p.generation = s.securityState().Generation
@@ -86,55 +94,93 @@ func (s *Server) securityState() domain.SecurityState {
 	return s.security.Snapshot()
 }
 
-// admitted drops the pending frame and held buttons when protection began
-// or passed since the last request: nothing from before a lock is replayed.
+// admitted drops the pending frame and forwarded buttons when protection
+// began or passed since the last request: nothing from before a lock is
+// replayed or released into it.
 func (p *virtualPointer) admitted() bool {
-	if p.server == nil {
+	if p.server == nil || p.dead {
 		return false
 	}
 	state := p.server.securityState()
 	if state.Protected || state.Generation != p.generation {
 		p.reset()
-		clear(p.pressed)
+		clear(p.forwarded)
 		p.generation = state.Generation
 	}
 	return !state.Protected
 }
 
+// reset drops the pending frame; an oversized buffer is not kept.
 func (p *virtualPointer) reset() {
-	p.moved, p.absolute, p.dx, p.dy, p.fx, p.fy = false, false, 0, 0, 0, 0
-	p.buttons = p.buttons[:0]
-	p.axis, p.scrolled = ports.PointerAxis{}, false
+	if cap(p.pending) > virtualFrameKeep {
+		p.pending = nil
+		return
+	}
+	clear(p.pending)
+	p.pending = p.pending[:0]
 }
 
 func msec(t uint32) time.Duration { return time.Duration(t) * time.Millisecond }
+
+// add appends one request to the frame, or reports false after a protocol
+// error for a frame over maxVirtualFrame.
+func (p *virtualPointer) add(v ports.VirtualPointerInput) bool {
+	if len(p.pending) >= maxVirtualFrame {
+		p.reset()
+		p.pending = nil
+		p.dead = true
+		// No error of the protocol fits; libwayland passes any code on.
+		p.res.PostError(virtualFrameTooLarge, "frame holds too many requests")
+		return false
+	}
+	p.pending = append(p.pending, v)
+	return true
+}
+
+// virtualFrameTooLarge is past the protocol's error enum.
+const virtualFrameTooLarge = 2
+
+// last is the newest pending request, or nil.
+func (p *virtualPointer) last() *ports.VirtualPointerInput {
+	if len(p.pending) == 0 {
+		return nil
+	}
+	return &p.pending[len(p.pending)-1]
+}
 
 func (p *virtualPointer) Motion(_ *wlrvirtualpointer.ZwlrVirtualPointerV1, t uint32, dx, dy server.Fixed) {
 	if !p.admitted() {
 		return
 	}
-	if p.absolute {
-		// Relative after absolute in one frame: the absolute point is
-		// flushed first so the delta applies from there.
-		p.flush()
+	if l := p.last(); l != nil {
+		if m, ok := l.Event.(ports.PointerMotion); ok && !l.Absolute {
+			m.DX += dx.Float()
+			m.DY += dy.Float()
+			m.UnaccelDX, m.UnaccelDY, m.Time = m.DX, m.DY, msec(t)
+			l.Event = m
+			return
+		}
 	}
-	p.moved = true
-	p.dx += dx.Float()
-	p.dy += dy.Float()
-	p.motionTime = msec(t)
+	p.add(ports.VirtualPointerInput{Event: ports.PointerMotion{Device: p.device, DX: dx.Float(), DY: dy.Float(), UnaccelDX: dx.Float(), UnaccelDY: dy.Float(), Time: msec(t)}})
 }
 
+// MotionAbsolute maps x/x_extent into [0, 1]; x may equal the extent.
+// Core clamps the point into the output or layout.
 func (p *virtualPointer) MotionAbsolute(_ *wlrvirtualpointer.ZwlrVirtualPointerV1, t, x, y, xExtent, yExtent uint32) {
 	if !p.admitted() || xExtent == 0 || yExtent == 0 {
 		return
 	}
-	if p.moved && !p.absolute {
-		p.flush()
+	v := ports.VirtualPointerInput{
+		Absolute: true, Output: p.output,
+		FX:    float64(min(x, xExtent)) / float64(xExtent),
+		FY:    float64(min(y, yExtent)) / float64(yExtent),
+		Event: ports.PointerMotion{Device: p.device, Time: msec(t)},
 	}
-	p.moved, p.absolute = true, true
-	p.fx = min(float64(x), float64(xExtent-1)) / float64(xExtent)
-	p.fy = min(float64(y), float64(yExtent-1)) / float64(yExtent)
-	p.motionTime = msec(t)
+	if l := p.last(); l != nil && l.Absolute {
+		*l = v
+		return
+	}
+	p.add(v)
 }
 
 func (p *virtualPointer) Button(_ *wlrvirtualpointer.ZwlrVirtualPointerV1, t, button, state uint32) {
@@ -142,125 +188,123 @@ func (p *virtualPointer) Button(_ *wlrvirtualpointer.ZwlrVirtualPointerV1, t, bu
 		return
 	}
 	pressed := state == uint32(wayland.PointerButtonStatePressed)
-	if !pressed && !p.pressed[button] {
-		return
-	}
-	if pressed {
-		p.pressed[button] = true
-	} else {
-		delete(p.pressed, button)
-	}
-	p.buttons = append(p.buttons, ports.PointerButton{Device: p.device, Button: button, Pressed: pressed, Time: msec(t)})
+	p.add(ports.VirtualPointerInput{Event: ports.PointerButton{Device: p.device, Button: button, Pressed: pressed, Time: msec(t)}})
 }
 
-// scrollAxis is the frame's axis, or nil after an invalid_axis error.
-func (p *virtualPointer) scrollAxis(r *wlrvirtualpointer.ZwlrVirtualPointerV1, axis uint32) *domain.ScrollAxis {
-	switch axis {
-	case uint32(wayland.PointerAxisVerticalScroll):
-		return &p.axis.Vertical
-	case uint32(wayland.PointerAxisHorizontalScroll):
-		return &p.axis.Horizontal
+// editAxis applies edit to the frame's axis request on axis, appending one
+// unless the newest request is already a scroll. Bad axes are an
+// invalid_axis error.
+func (p *virtualPointer) editAxis(r *wlrvirtualpointer.ZwlrVirtualPointerV1, axis, t uint32, edit func(*domain.ScrollAxis)) {
+	vertical := axis == uint32(wayland.PointerAxisVerticalScroll)
+	if !vertical && axis != uint32(wayland.PointerAxisHorizontalScroll) {
+		r.PostError(uint32(wlrvirtualpointer.ZwlrVirtualPointerV1ErrorInvalidAxis), "invalid axis")
+		return
 	}
-	r.PostError(uint32(wlrvirtualpointer.ZwlrVirtualPointerV1ErrorInvalidAxis), "invalid axis")
-	return nil
+	if !p.admitted() {
+		return
+	}
+	l := p.last()
+	if l == nil || !isAxis(l.Event) {
+		if !p.add(ports.VirtualPointerInput{Event: ports.PointerAxis{Device: p.device}}) {
+			return
+		}
+		l = p.last()
+	}
+	a := l.Event.(ports.PointerAxis)
+	a.Time, a.Source = msec(t), p.source
+	if vertical {
+		edit(&a.Vertical)
+	} else {
+		edit(&a.Horizontal)
+	}
+	l.Event = a
 }
+
+func isAxis(ev ports.InputEvent) bool { _, ok := ev.(ports.PointerAxis); return ok }
 
 func (p *virtualPointer) Axis(r *wlrvirtualpointer.ZwlrVirtualPointerV1, t, axis uint32, value server.Fixed) {
-	a := p.scrollAxis(r, axis)
-	if a == nil || !p.admitted() {
-		return
-	}
-	a.Set = true
-	a.Value += value.Float()
-	p.axis.Time, p.scrolled = msec(t), true
+	p.editAxis(r, axis, t, func(a *domain.ScrollAxis) {
+		a.Set = true
+		a.Value += value.Float()
+	})
 }
 
 func (p *virtualPointer) AxisDiscrete(r *wlrvirtualpointer.ZwlrVirtualPointerV1, t, axis uint32, value server.Fixed, discrete int32) {
-	a := p.scrollAxis(r, axis)
-	if a == nil || !p.admitted() {
-		return
-	}
-	a.Set = true
-	a.Value += value.Float()
-	a.V120 += discrete * 120
-	p.axis.Time, p.scrolled = msec(t), true
+	p.editAxis(r, axis, t, func(a *domain.ScrollAxis) {
+		a.Set = true
+		a.Value += value.Float()
+		a.V120 += discrete * 120
+	})
 }
 
 func (p *virtualPointer) AxisStop(r *wlrvirtualpointer.ZwlrVirtualPointerV1, t, axis uint32) {
-	a := p.scrollAxis(r, axis)
-	if a == nil || !p.admitted() {
-		return
-	}
-	a.Set, a.Stop = true, true
-	p.axis.Time, p.scrolled = msec(t), true
+	p.editAxis(r, axis, t, func(a *domain.ScrollAxis) { a.Set, a.Stop = true, true })
 }
 
 func (p *virtualPointer) AxisSource(r *wlrvirtualpointer.ZwlrVirtualPointerV1, source uint32) {
 	switch source {
 	case uint32(wayland.PointerAxisSourceWheel), uint32(wayland.PointerAxisSourceWheelTilt):
-		p.axis.Source = domain.AxisWheel
+		p.source = domain.AxisWheel
 	case uint32(wayland.PointerAxisSourceFinger):
-		p.axis.Source = domain.AxisFinger
+		p.source = domain.AxisFinger
 	case uint32(wayland.PointerAxisSourceContinuous):
-		p.axis.Source = domain.AxisContinuous
+		p.source = domain.AxisContinuous
 	default:
 		r.PostError(uint32(wlrvirtualpointer.ZwlrVirtualPointerV1ErrorInvalidAxisSource), "invalid axis source")
+		return
+	}
+	if l := p.last(); l != nil && isAxis(l.Event) {
+		a := l.Event.(ports.PointerAxis)
+		a.Source = p.source
+		l.Event = a
 	}
 }
 
+// Frame hands the pending requests to core, in order. A release whose press
+// was not forwarded in this epoch is dropped, as is a repeated press.
 func (p *virtualPointer) Frame(*wlrvirtualpointer.ZwlrVirtualPointerV1) {
-	if p.admitted() {
-		p.flush()
+	if !p.admitted() {
+		return
 	}
-}
-
-// flush hands the pending frame to core and clears it.
-func (p *virtualPointer) flush() {
-	s := p.server
-	state := s.securityState()
-	send := func(v ports.VirtualPointerInput) {
-		v.State = state
-		s.emit(v)
-	}
-	if p.moved {
-		m := ports.PointerMotion{Device: p.device, Time: p.motionTime}
-		v := ports.VirtualPointerInput{Absolute: p.absolute, Output: p.output}
-		if p.absolute {
-			v.FX, v.FY = p.fx, p.fy
-		} else {
-			m.DX, m.DY, m.UnaccelDX, m.UnaccelDY = p.dx, p.dy, p.dx, p.dy
+	state := p.server.securityState()
+	for _, v := range p.pending {
+		if b, ok := v.Event.(ports.PointerButton); ok {
+			if b.Pressed == p.forwarded[b.Button] {
+				continue
+			}
+			if b.Pressed {
+				p.forwarded[b.Button] = true
+			} else {
+				delete(p.forwarded, b.Button)
+			}
 		}
-		v.Event = m
-		send(v)
+		v.State = state
+		p.server.emit(v)
 	}
-	for _, b := range p.buttons {
-		send(ports.VirtualPointerInput{Event: b})
-	}
-	if p.scrolled {
-		a := p.axis
-		a.Device = p.device
-		send(ports.VirtualPointerInput{Event: a})
-	}
-	source := p.axis.Source
 	p.reset()
-	p.axis.Source = source
 }
 
 func (*virtualPointer) Destroy(*wlrvirtualpointer.ZwlrVirtualPointerV1) {}
 
-// release runs when the resource dies, by request or disconnect: buttons
-// still held in this epoch are released so no client keeps a stuck drag.
+// release runs when the resource dies, by request or disconnect: unframed
+// requests are discarded, and every button whose press was forwarded in
+// this epoch is released so no client keeps a stuck drag.
 func (p *virtualPointer) release() {
-	if !p.admitted() || len(p.pressed) == 0 {
+	p.dead = false // a protocol error still releases what was forwarded
+	if !p.admitted() {
 		return
 	}
 	p.reset()
+	if len(p.forwarded) == 0 {
+		return
+	}
 	var ts unix.Timespec
 	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
 	now := time.Duration(ts.Nano())
-	for b := range p.pressed {
-		p.buttons = append(p.buttons, ports.PointerButton{Device: p.device, Button: b, Time: now})
+	state := p.server.securityState()
+	for b := range p.forwarded {
+		p.server.emit(ports.VirtualPointerInput{State: state, Event: ports.PointerButton{Device: p.device, Button: b, Time: now}})
 	}
-	clear(p.pressed)
-	p.flush()
+	clear(p.forwarded)
+	p.dead = true
 }

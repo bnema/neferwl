@@ -29,7 +29,10 @@ func (c *Core) virtualPointer(ctx context.Context, v ports.VirtualPointerInput) 
 			if !ok {
 				return nil
 			}
-			e.X, e.Y = float64(r.X)+v.FX*float64(r.W), float64(r.Y)+v.FY*float64(r.H)
+			// FX, FY may reach 1 (x == extent): clamp onto the last pixel.
+			fx, fy := min(max(v.FX, 0), 1), min(max(v.FY, 0), 1)
+			e.X = min(float64(r.X)+fx*float64(r.W), float64(r.X+r.W)-1)
+			e.Y = min(float64(r.Y)+fy*float64(r.H), float64(r.Y+r.H)-1)
 			e.DX, e.DY, e.UnaccelDX, e.UnaccelDY = 0, 0, 0, 0
 		} else {
 			e.X, e.Y = c.cursorX+e.DX, c.cursorY+e.DY
