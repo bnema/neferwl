@@ -87,6 +87,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `output.<name>.right-of`, `.left-of`, `.above`, `.below`, `.offset` | automatic | [Output placement](#output-placement) |
 | `output.<name>.hdr` | `off` | [HDR](#hdr) on capable displays and on virtual outputs |
 | `output.<name>.sdr-brightness` | `203` | Brightness of SDR content in HDR, in nits (80–1000) |
+| `output.<name>.keep-focus` | `off` | Keeps an X11 window on this output X11-active while a native window has the keyboard; see [Virtual outputs](#virtual-outputs) |
 | `drm.devices` | empty (all GPUs) | Comma-separated [GPUs](#gpus) NeferWL uses (restart required) |
 | `drm.ignore` | empty | Comma-separated [GPUs](#gpus) NeferWL leaves alone (restart required) |
 | `render.device` | automatic | [GPU](#gpus) that renders; `NEFERWL_RENDER_DEVICE` overrides it (restart required) |
@@ -166,6 +167,7 @@ output.<name>.primary = off
 output.<name>.offset = 0
 output.<name>.hdr = off
 output.<name>.sdr-brightness = 203
+output.<name>.keep-focus = off
 output.<name>.sdr-expand = auto
 output.<name>.sdr-expand-intensity = 0.5
 output.<name>.sdr-expand-peak = 0
@@ -273,6 +275,16 @@ rule.big.app-id = steam
 rule.big.title = (?i)big picture
 rule.big.output = tv
 ```
+
+Steam Big Picture picks its controller layout from the X11 focus. With
+`output.tv.keep-focus = on`, an X11 (Xwayland) window on `tv` keeps the X11
+input focus and `_NET_ACTIVE_WINDOW` while a native window on another output
+has the keyboard: the window focused on `tv`, else the most recently mapped
+visible one. Wayland keyboard focus is unchanged, so typed keys go to the
+focused window only. It applies to X11 windows only; an X11 window with the
+keyboard elsewhere takes precedence, and a locked session clears it. With
+several such outputs, the first in config order wins. Sunshine's virtual
+keyboard and mouse still follow normal focus.
 
 For Sunshine, a `global_prep_cmd` command can select the client's mode:
 `wlr-randr --output tv --custom-mode ${SUNSHINE_CLIENT_WIDTH}x${SUNSHINE_CLIENT_HEIGHT}@${SUNSHINE_CLIENT_FPS}`.
