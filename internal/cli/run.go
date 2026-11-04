@@ -31,7 +31,7 @@ type runFlags struct {
 }
 
 func (f *runFlags) register(fs *flag.FlagSet) {
-	fs.StringVar(&f.backend, "backend", "drm", "drm or headless")
+	fs.StringVar(&f.backend, "backend", "drm", "drm, headless or server")
 	fs.StringVar(&f.screenshot, "screenshot", "", "write PNG frames to directory")
 	fs.StringVar(&f.size, "size", "1920x1080", "headless output sizes WxH, comma-separated for several outputs")
 	fs.StringVar(&f.input, "input", "", "headless input script path (- for stdin)")
@@ -47,9 +47,29 @@ func (f *runFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.pprof, "pprof", "", "serve Go runtime profiles (heap, CPU, trace) on this address, e.g. localhost:6060")
 }
 
-// validate checks the flag combinations and parses --size.
-func (f *runFlags) validate(args []string) ([][2]int, error) {
+// serverRejected are the test-only and headless flags --backend=server
+// refuses, in report order.
+var serverRejected = []string{"screenshot", "screenshot-raw", "input", "size", "timeout", "headless-hdr", "dbus"}
+
+// validate checks the flag combinations and parses --size. set holds the
+// flags given on the command line.
+func (f *runFlags) validate(args []string, set map[string]bool) ([][2]int, error) {
 	headless := f.backend == "headless"
+	if f.backend == string(domain.BackendServer) {
+		for _, name := range serverRejected {
+			if set[name] {
+				return nil, usagef("--%s is not allowed with --backend=server", name)
+			}
+		}
+		if len(args) != 0 {
+			return nil, usagef("unexpected arguments: %v", args)
+		}
+		if _, err := logging.ParseDebug(f.debug); err != nil {
+			return nil, usageError{fmt.Errorf("--debug: %w", err)}
+		}
+		// Server mode has no fixed heads: only config-declared virtual outputs.
+		return nil, nil
+	}
 	switch {
 	case f.backend != "drm" && !headless:
 		return nil, usagef("invalid backend %q", f.backend)
@@ -94,7 +114,9 @@ func setupRun(fs *flag.FlagSet) Runner {
 	var f runFlags
 	f.register(fs)
 	return func(ctx context.Context, _ Env, args []string) error {
-		sizes, err := f.validate(args)
+		set := map[string]bool{}
+		fs.Visit(func(fl *flag.Flag) { set[fl.Name] = true })
+		sizes, err := f.validate(args, set)
 		if err != nil {
 			return err
 		}

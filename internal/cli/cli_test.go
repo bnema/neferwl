@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"flag"
 	"io"
 	"os"
 	"strconv"
@@ -79,6 +80,15 @@ func TestCommands(t *testing.T) {
 		{[]string{"--backend=drm", "--input=-"}, 2, "", "--input requires"},
 		{[]string{"--backend=headless", "--screenshot=" + dir, "--screenshot-raw"}, 2, "", "--screenshot-raw requires"},
 		{[]string{"--backend=headless", "--headless-hdr", "--screenshot-raw"}, 2, "", "--screenshot-raw requires"},
+		{[]string{"--backend=server", "--screenshot=" + dir}, 2, "", "--screenshot is not allowed with --backend=server"},
+		{[]string{"--backend=server", "--screenshot-raw"}, 2, "", "--screenshot-raw is not allowed"},
+		{[]string{"--backend=server", "--input=-"}, 2, "", "--input is not allowed"},
+		{[]string{"--backend=server", "--size=1920x1080"}, 2, "", "--size is not allowed"},
+		{[]string{"--backend=server", "--timeout=1s"}, 2, "", "--timeout is not allowed"},
+		{[]string{"--backend=server", "--headless-hdr"}, 2, "", "--headless-hdr is not allowed"},
+		{[]string{"--backend=server", "--dbus"}, 2, "", "--dbus is not allowed"},
+		{[]string{"--backend=server", "extra"}, 2, "", "unexpected arguments"},
+		{[]string{"--backend=server", "--debug=nope"}, 2, "", "--debug"},
 		{[]string{"--size=1920"}, 2, "", "--size"},
 		{[]string{"--timeout=-1s"}, 2, "", "negative timeout"},
 		{[]string{"--debug=nope"}, 2, "", "--debug"},
@@ -178,5 +188,27 @@ func TestOpenScript(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestServerFlagsAllowed validates without running: a server run would grab
+// the machine's input devices.
+func TestServerFlagsAllowed(t *testing.T) {
+	for _, args := range [][]string{
+		{"--backend=server"},
+		{"--backend=server", "--config=/tmp/x", "--debug=all", "--pprof=localhost:0", "--session", "--no-xwayland", "--no-terminal"},
+	} {
+		fs := flag.NewFlagSet("neferwl", flag.ContinueOnError)
+		var f runFlags
+		f.register(fs)
+		if err := fs.Parse(args); err != nil {
+			t.Fatal(err)
+		}
+		set := map[string]bool{}
+		fs.Visit(func(fl *flag.Flag) { set[fl.Name] = true })
+		sizes, err := f.validate(fs.Args(), set)
+		if err != nil || sizes != nil {
+			t.Errorf("%v: sizes %v err %v", args, sizes, err)
+		}
 	}
 }
