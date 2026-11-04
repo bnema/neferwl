@@ -61,6 +61,11 @@ func (w *Workspace) leaveFullscreen() {
 // (coverStays); a dialog of a stashed window activates that window
 // first.
 func (w *Workspace) Activate(id WindowID) {
+	// A held member takes the cover over, keeping the old one held:
+	// never a leave, so neither ends.
+	if w.IsHeld(id) {
+		w.promoteHeld(id)
+	}
 	if c := w.Cover(); c != 0 && id != c {
 		owner := id
 		if f := w.floatIndex(id); f >= 0 {

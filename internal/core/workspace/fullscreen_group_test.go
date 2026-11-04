@@ -241,9 +241,10 @@ func TestFullscreenGroupRequests(t *testing.T) {
 				if w.Fullscreen != 1 || !slices.Equal(w.Held, []WindowID{2}) {
 					t.Fatalf("P re-request: cover %d held %v", w.Fullscreen, w.Held)
 				}
+				// Focus promotes P; its request then keeps it the cover.
 				w.FocusID(2)
 				w.SetFullscreen(2, true)
-				if w.Fullscreen != 1 || !slices.Equal(w.Held, []WindowID{2}) {
+				if w.Fullscreen != 2 || !slices.Equal(w.Held, []WindowID{1}) {
 					t.Fatalf("focused P re-request: cover %d held %v", w.Fullscreen, w.Held)
 				}
 
@@ -287,4 +288,135 @@ func TestFullscreenGroupRequests(t *testing.T) {
 			})
 		})
 	}
+}
+
+// groupPG lays out G (1), P (2) and an unrelated window (3), P held and G
+// the active cover, in their own columns (scroll) or bands (cascade).
+func groupPG(t *testing.T, overflow Overflow) *Workspace {
+	t.Helper()
+	w := cols(overflow, 3, 0, []WindowID{1}, []WindowID{2}, []WindowID{3})
+	w.Settle(false)
+	w.FocusID(2)
+	w.SetFullscreen(2, true)
+	w.Fullscreen = 0
+	w.hold(2)
+	w.FocusID(1)
+	w.SetFullscreen(1, true)
+	if w.Fullscreen != 1 || !slices.Equal(w.Held, []WindowID{2}) {
+		t.Fatalf("setup: cover %d held %v", w.Fullscreen, w.Held)
+	}
+	return w
+}
+
+// wantCover checks the cover, the held members, the focus and the view
+// settled on the cover.
+func wantCover(t *testing.T, w *Workspace, cover WindowID, held []WindowID, step string) {
+	t.Helper()
+	if w.Fullscreen != cover || !slices.Equal(w.Held, held) || w.left != 0 {
+		t.Fatalf("%s: cover %d held %v left %d", step, w.Fullscreen, w.Held, w.left)
+	}
+	if f, _ := w.Focused(); f != cover || w.Cover() != cover {
+		t.Fatalf("%s: focus %d covering %d", step, f, w.Cover())
+	}
+	if target := w.Engine().ScrollTarget(w.Snapshot()); w.View != target {
+		t.Fatalf("%s: view %d not on cover at %d", step, w.View, target)
+	}
+	checkGroup(t, w, step)
+}
+
+// Focus on a held member promotes it; moving back promotes the other.
+func TestFullscreenGroupFocusPromotes(t *testing.T) {
+	for _, overflow := range []Overflow{OverflowScroll, OverflowCascade} {
+		t.Run(string(overflow), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				w := groupPG(t, overflow)
+				toward := func(from, to WindowID) {
+					if overflow == OverflowScroll {
+						d := 1
+						if w.ColumnOf(to) < w.ColumnOf(from) {
+							d = -1
+						}
+						if !w.FocusColumn(d) {
+							t.Fatalf("focus column %d failed", d)
+						}
+						return
+					}
+					d := 1
+					if w.Band(w.ColumnOf(to)) < w.Band(w.ColumnOf(from)) {
+						d = -1
+					}
+					if !w.FocusWindow(d) {
+						t.Fatalf("focus window %d failed", d)
+					}
+				}
+				toward(1, 2)
+				wantCover(t, w, 2, []WindowID{1}, "to P")
+				toward(2, 1)
+				wantCover(t, w, 1, []WindowID{2}, "back to G")
+				toward(1, 2)
+				wantCover(t, w, 2, []WindowID{1}, "to P again")
+			})
+		})
+	}
+}
+
+// Taskbar activation of held P promotes it instead of ending G.
+func TestFullscreenGroupActivatePromotes(t *testing.T) {
+	for _, overflow := range []Overflow{OverflowScroll, OverflowCascade} {
+		t.Run(string(overflow), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				w := groupPG(t, overflow)
+				w.Activate(2)
+				wantCover(t, w, 2, []WindowID{1}, "activate P")
+			})
+		})
+	}
+}
+
+// Toggling a focused member ends only it: focus promoted it first.
+func TestFullscreenGroupToggleAfterPromote(t *testing.T) {
+	for _, overflow := range []Overflow{OverflowScroll, OverflowCascade} {
+		t.Run(string(overflow), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				w := groupPG(t, overflow)
+				w.FocusID(2)
+				wantCover(t, w, 2, []WindowID{1}, "focus P")
+				w.ToggleFullscreen()
+				if w.Fullscreen != 0 || !slices.Equal(w.Held, []WindowID{1}) {
+					t.Fatalf("toggle P: cover %d held %v", w.Fullscreen, w.Held)
+				}
+				checkGroup(t, w, "toggle P")
+			})
+		})
+	}
+}
+
+// Focus on a window outside the group: scroll keeps the cover, scrolled
+// off; cascade leaves it as before. The held member stays held.
+func TestFullscreenGroupFocusOutsider(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := groupPG(t, OverflowScroll)
+		w.FocusID(2) // P, so the unrelated column is the right neighbour
+		w.FocusColumn(1)
+		if f, _ := w.Focused(); f != 3 || w.Fullscreen != 2 || w.Cover() != 0 || !slices.Equal(w.Held, []WindowID{1}) {
+			t.Fatalf("scroll: focus %d cover %d covering %d held %v", f, w.Fullscreen, w.Cover(), w.Held)
+		}
+	})
+	synctest.Test(t, func(t *testing.T) {
+		w := groupPG(t, OverflowCascade)
+		d := 1
+		if w.Band(w.ColumnOf(3)) < w.Band(w.ColumnOf(1)) {
+			d = -1
+		}
+		// Step over P's band if it lies between G and the outsider.
+		for f, _ := w.Focused(); f != 3; f, _ = w.Focused() {
+			if !w.FocusWindow(d) {
+				t.Fatal("no path to the outsider")
+			}
+		}
+		if w.Fullscreen != 0 || w.left == 0 || len(w.Held) != 1 {
+			t.Fatalf("cascade: cover %d left %d held %v", w.Fullscreen, w.left, w.Held)
+		}
+		checkGroup(t, w, "cascade outsider")
+	})
 }

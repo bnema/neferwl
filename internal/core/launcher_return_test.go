@@ -15,7 +15,7 @@ import (
 func TestReturnToLauncher(t *testing.T) {
 	for _, animate := range []bool{false, true} {
 		for _, remote := range []bool{false, true} {
-			for _, scenario := range []string{"focused", "not focused", "launcher gone", "other workspace", "middle column"} {
+			for _, scenario := range []string{"focused", "not focused", "launcher gone", "other workspace", "middle column", "held"} {
 				t.Run(fmt.Sprintf("animations=%v/remote=%v/%s", animate, remote, scenario), func(t *testing.T) {
 					synctest.Test(t, func(t *testing.T) {
 						c, ic, _ := fadeCore(t)
@@ -51,6 +51,10 @@ func TestReturnToLauncher(t *testing.T) {
 							w.FocusID(3)
 						case "launcher gone":
 							c.clientEvent(context.Background(), ports.WindowUnmapped{ID: 1})
+						case "held":
+							// P held, G the active fullscreen cover.
+							w.Fullscreen, w.Held = 2, []WindowID{1}
+							w.FocusID(2)
 						case "other workspace":
 							w.RemoveWindow(1)
 							target.mon.Workspaces[1].AddWindow(1)
@@ -67,6 +71,9 @@ func TestReturnToLauncher(t *testing.T) {
 						}
 						if f, _ := w.Focused(); f != want {
 							t.Fatalf("focus %d want %d", f, want)
+						}
+						if scenario == "held" && (len(w.Held) != 0 || c.pointer != pointer || remote && c.focusScreen != seat) {
+							t.Fatalf("held return: held %v seat changed %v", w.Held, c.focusScreen != seat)
 						}
 						if remote && (c.focusScreen != seat || c.keyboardFocus() != keyboard || c.pointer != pointer) {
 							t.Fatal("remote close changed seat")

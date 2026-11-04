@@ -38,6 +38,22 @@ func (w *Workspace) promoteHeld(id WindowID) {
 	w.Fullscreen = id
 }
 
+// promoteFocused promotes the focused window when it is held: focus on a
+// held member makes it the cover. Workspace-local, it moves no seat focus.
+func (w *Workspace) promoteFocused() {
+	if len(w.Held) == 0 {
+		return
+	}
+	// The selected tile, not Focused: that reports the cover over it.
+	if w.floatFocus || w.stashFocused() || w.Focus < 0 || w.Focus >= len(w.Columns) {
+		return
+	}
+	c := w.Columns[w.Focus]
+	if c.Focus >= 0 && c.Focus < len(c.Windows) && w.IsHeld(c.Selected()) {
+		w.promoteHeld(c.Selected())
+	}
+}
+
 // dropHeld removes id from the held windows, keeping the backing slice.
 func (w *Workspace) dropHeld(id WindowID) {
 	if len(w.Held) == 0 {
