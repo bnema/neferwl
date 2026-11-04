@@ -3,11 +3,8 @@
 package app
 
 import (
-	"encoding/binary"
 	"encoding/json"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +17,8 @@ type pwVideoFormat struct {
 	Format           string `json:"format"`
 	TransferFunction string `json:"transferFunction"`
 	ColorPrimaries   string `json:"colorPrimaries"`
+	// Modifier is set only when DMA-BUF buffers were negotiated.
+	Modifier any `json:"modifier"`
 }
 
 // nodeFormat reads node's negotiated Format with pw-dump; ok is false while
@@ -52,8 +51,8 @@ func nodeFormat(t *testing.T, node uint32) (pwVideoFormat, bool) {
 	return pwVideoFormat{}, false
 }
 
-// A cast of a virtual HDR output negotiates 10-bit PQ BT.2020 with a
-// consumer that accepts it, and frames flow in that format.
+// A cast of a virtual HDR output negotiates 10-bit PQ BT.2020 DMA-BUF
+// buffers with a consumer that accepts it, and frames flow in that format.
 //
 //testpolicy:realtime real PipeWire/GStreamer negotiation and D-Bus lifecycle
 func TestScreencastHDRVirtualOutput(t *testing.T) {
@@ -102,8 +101,10 @@ func TestScreencastHDRVirtualOutput(t *testing.T) {
 	}
 	// The consumer accepts any raw format: it takes the producer's first.
 	gstLog := &strings.Builder{}
-	raw := filepath.Join(t.TempDir(), "frames.raw")
-	gst := exec.Command("gst-launch-1.0", "-v", "pipewiresrc", "path="+itoa(node), "stream-properties=props,media.type=Video", "num-buffers=30", "!", "filesink", "location="+raw)
+	// The buffers are device-local DMA-BUFs a CPU sink cannot map: fakesink
+	// takes them unmapped. Their PQ content is checked on the GPU
+	// (vulkan.TestCastCopyPQ).
+	gst := exec.Command("gst-launch-1.0", "-v", "pipewiresrc", "path="+itoa(node), "stream-properties=props,media.type=Video", "num-buffers=30", "!", "fakesink", "silent=false")
 	gst.Stdout, gst.Stderr = gstLog, gstLog
 	t.Cleanup(func() {
 		if t.Failed() {
@@ -130,8 +131,8 @@ func TestScreencastHDRVirtualOutput(t *testing.T) {
 		got, ok = nodeFormat(t, node)
 	}
 	t.Logf("node %d negotiated %+v", node, got)
-	if got.Format != "xBGR_210LE" || got.TransferFunction != "smpte2084" || got.ColorPrimaries != "bt2020" {
-		t.Errorf("negotiated %+v, want xBGR_210LE smpte2084 bt2020", got)
+	if got.Format != "xBGR_210LE" || got.TransferFunction != "smpte2084" || got.ColorPrimaries != "bt2020" || got.Modifier == nil {
+		t.Errorf("negotiated %+v, want DMA-BUF xBGR_210LE smpte2084 bt2020", got)
 	}
 	select {
 	case err := <-exited:
@@ -142,19 +143,8 @@ func TestScreencastHDRVirtualOutput(t *testing.T) {
 		_ = gst.Process.Kill()
 		t.Fatal("gst-launch-1.0 got no 30 buffers")
 	}
-	// The frames are PQ words, not 8-bit sRGB: the default grey background
-	// has equal 10-bit channels in bits 0-9, 10-19 and 20-29. The two x bits
-	// are padding (the GPU writes alpha there); consumers ignore them.
-	data, err := os.ReadFile(raw)
-	if err != nil || len(data) < 320*240*4 {
-		t.Fatalf("frames: %d bytes, %v", len(data), err)
-	}
-	last := data[len(data)-320*240*4:]
-	w := binary.LittleEndian.Uint32(last[(120*320+160)*4:])
-	r, g, b := w&0x3ff, w>>10&0x3ff, w>>20&0x3ff
-	t.Logf("centre pixel %#08x: R %d G %d B %d (10-bit PQ)", w, r, g, b)
-	if r == 0 || r != g || g != b {
-		t.Errorf("centre pixel %#08x is not the grey background in XB30", w)
+	if n := strings.Count(gstLog.String(), "chain "); n < 30 {
+		t.Errorf("consumer got %d buffers, want 30", n)
 	}
 	call(c, session, scSession, "Stop", "", nil)
 }
