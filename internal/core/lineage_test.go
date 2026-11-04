@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
@@ -12,7 +13,7 @@ import (
 func lineageNodes(pids ...int) []domain.ProcNode {
 	nodes := make([]domain.ProcNode, len(pids))
 	for i, pid := range pids {
-		nodes[i] = domain.ProcNode{Key: domain.ProcKey{PID: pid, Start: 100}}
+		nodes[i] = domain.ProcNode{Started: time.Unix(1000, 0), Key: domain.ProcKey{PID: pid, Start: 100}}
 	}
 	return nodes
 }
@@ -60,6 +61,7 @@ func TestLineageResolution(t *testing.T) {
 					tc.child[1].Key.Start++
 				}
 				c.mapWindow(ports.WindowMapped{ID: 1, Proc: tc.candidate, PIDShared: tc.candidateShared})
+				c.cur().lineageFocus.observe(time.Unix(999, 0), 1)
 				c.mapWindow(ports.WindowMapped{ID: 2, Proc: tc.child, PIDShared: tc.childShared})
 				if got := c.launcherOf(2); got != tc.want {
 					t.Fatalf("launcher %d want %d", got, tc.want)
@@ -115,6 +117,8 @@ func TestLineageRecencyAndFocusAllocations(t *testing.T) {
 		c.observeLineageFocus()
 		c.cur().mon.show(second)
 		c.observeLineageFocus()
+		c.cur().lineageFocus = focusHistory{}
+		c.cur().lineageFocus.observe(time.Unix(999, 0), 2)
 		if got := c.resolveLauncher(ports.WindowMapped{ID: 3, Proc: lineageNodes(60, 50, 40, 30, 20, 10)}); got != 2 {
 			t.Fatalf("recent Big Picture launcher: %d", got)
 		}
@@ -138,10 +142,12 @@ func TestLineageMeetingOrder(t *testing.T) {
 		} {
 			c := lineageCore(t)
 			c.mapWindow(ports.WindowMapped{ID: 1, Proc: tc.a})
+			c.cur().lineageFocus.observe(time.Unix(999, 0), 1)
 			first := c.cur().mon.Current()
 			c.mapWindow(ports.WindowMapped{ID: 2, Proc: tc.b})
 			first.RemoveWindow(2)
 			c.cur().mon.Workspaces[1].AddWindow(2)
+			c.cur().lineageFocus.observe(time.Unix(1000, 0), 2)
 			if got := c.resolveLauncher(ports.WindowMapped{ID: 3, Proc: tc.child}); got != tc.want {
 				t.Fatalf("%s: %d want %d", tc.name, got, tc.want)
 			}
@@ -157,6 +163,7 @@ func TestFirstExternalSiblingChain(t *testing.T) {
 		a := lineageNodes(70, 20, 10)
 		a[2].SessionLeader = true
 		c.mapWindow(ports.WindowMapped{ID: 1, Proc: a})
+		c.cur().lineageFocus.observe(time.Unix(999, 0), 1)
 		child := lineageNodes(80, 20, 10)
 		child[2].SessionLeader = true
 		c.mapWindow(ports.WindowMapped{ID: 2, Proc: child})
@@ -226,6 +233,7 @@ func TestShellMeetingExclusionLive(t *testing.T) {
 		candidate := lineageNodes(10, 5)
 		candidate[1].Comm = "bash"
 		c.mapWindow(ports.WindowMapped{ID: 1, Proc: candidate})
+		c.cur().lineageFocus.observe(time.Unix(999, 0), 1)
 		child := lineageNodes(20, 5)
 		child[1].Comm = "bash"
 		if got := c.resolveLauncher(ports.WindowMapped{ID: 2, Proc: child}); got != 0 {

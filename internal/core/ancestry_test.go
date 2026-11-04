@@ -3,6 +3,7 @@ package core_test
 import (
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
@@ -128,6 +129,9 @@ func TestSteamLineageOutputRecency(t *testing.T) {
 				}
 				game := procNodes(60, 50, 40, 30, 20, 10)
 				game[5].SessionLeader = true
+				for i := range game {
+					game[i].Started = time.Now()
+				}
 				r.client <- ports.WindowMapped{ID: 3, AppID: "game", Proc: game}
 				got := stWindow(r.stateWith(t, 3), 3)
 				if got.Output != want {

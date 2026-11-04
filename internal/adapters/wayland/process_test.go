@@ -1,9 +1,11 @@
 package wayland
 
 import (
+	"github.com/bnema/neferwl/internal/adapters/clock"
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/peerexe"
 	"github.com/bnema/neferwl/internal/domain"
@@ -16,7 +18,7 @@ func TestWindowProcessChainAndRemap(t *testing.T) {
 		"20/stat": {Data: []byte("20 (app) S 10 0 20 " + strings.Repeat("0 ", 15) + "123")},
 		"10/stat": {Data: []byte("10 (launcher) S 1 0 10 " + strings.Repeat("0 ", 15) + "456")},
 	}
-	s := &Server{processes: peerexe.NewProcesses(root, 0), knownProc: map[domain.WindowID][]domain.ProcNode{}}
+	s := &Server{clock: clock.System{}, processes: peerexe.NewProcesses(root, 0), knownProc: map[domain.WindowID][]domain.ProcNode{}}
 	own := s.windowProc(1, 20, false)
 	if len(own) != 2 {
 		t.Fatalf("first map must retain ancestor identities: %+v", own)
@@ -34,5 +36,13 @@ func TestWindowProcessChainAndRemap(t *testing.T) {
 	s.emit(ports.WindowDestroyed{ID: 1})
 	if len(s.knownProc) != 0 {
 		t.Fatal("destroyed process retained")
+	}
+}
+
+func TestProcessStartedProjection(t *testing.T) {
+	now := time.Unix(1000, 0)
+	got := processStarted(now, 20*time.Second, 1500)
+	if !got.Equal(now.Add(-5 * time.Second)) {
+		t.Fatal(got)
 	}
 }

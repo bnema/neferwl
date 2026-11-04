@@ -98,7 +98,7 @@ func (c *Core) resolveLauncher(v ports.WindowMapped) WindowID {
 				continue
 			}
 			for j := 1; j < len(r.proc); j++ {
-				if !r.proc[j].SessionLeader && !c.lineageShell(r.proc[j].Comm) && v.Proc[i].Key == r.proc[j].Key {
+				if !r.proc[j].SessionLeader && !c.lineageShell(r.proc[j].Comm) && v.Proc[i].Key == r.proc[j].Key && c.branchFocused(id, v.Proc[i-1].Started) {
 					consider(id, i, j)
 				}
 			}
@@ -156,6 +156,8 @@ func (c *Core) observeLineageFocus() {
 		c.lineage.workspaceFocus = make(map[*Workspace]WindowID)
 	}
 	for _, sc := range c.screens {
+		id, _ := sc.mon.Current().Focused()
+		c.observeDomainFocus(sc, id)
 		for _, w := range sc.mon.Workspaces {
 			id, _ := w.Focused()
 			if id != c.lineage.workspaceFocus[w] {
@@ -181,6 +183,7 @@ func (c *Core) observeLineageFocus() {
 	seat := c.keyboardFocus()
 	if seat != c.lineage.seat {
 		c.lineage.seat = seat
+		c.observeDomainFocus(c.cur(), seat)
 		c.noteLineageFocus(seat)
 	}
 }
