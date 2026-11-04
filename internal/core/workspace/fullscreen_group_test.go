@@ -634,3 +634,46 @@ func TestHeldColumnNoBorders(t *testing.T) {
 		}
 	})
 }
+
+// Overview selection (LeaveCoverFor) under a pinned group: a held member
+// is promoted, an unrelated window demotes the cover, a lone cover leaves.
+func TestFullscreenGroupLeaveCoverFor(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		target WindowID
+		cover  WindowID
+		held   []WindowID
+	}{
+		{"held member", 2, 2, []WindowID{1}},
+		{"unrelated", 3, 0, []WindowID{1, 2}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				w := groupPG(t, OverflowCascade)
+				w.LeaveCoverFor(tc.target)
+				w.FocusID(tc.target) // the overview then focuses it
+				held := slices.Clone(w.Held)
+				slices.Sort(held)
+				if w.Fullscreen != tc.cover || !slices.Equal(held, tc.held) || w.left != 0 {
+					t.Fatalf("cover %d held %v left %d", w.Fullscreen, w.Held, w.left)
+				}
+				if f, _ := w.Focused(); f != tc.target {
+					t.Fatalf("focus %d", f)
+				}
+				checkGroup(t, w, tc.name)
+			})
+		})
+	}
+	t.Run("lone", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			w := cols(OverflowCascade, 3, 0, []WindowID{1}, []WindowID{3})
+			w.Settle(false)
+			w.FocusID(1)
+			w.SetFullscreen(1, true)
+			w.LeaveCoverFor(3)
+			if w.Fullscreen != 0 || w.left != 1 || len(w.Held) != 0 {
+				t.Fatalf("lone: cover %d left %d held %v", w.Fullscreen, w.left, w.Held)
+			}
+		})
+	})
+}

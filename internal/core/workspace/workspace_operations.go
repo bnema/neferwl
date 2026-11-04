@@ -206,8 +206,22 @@ func (w *Workspace) LandSwipe(view int, forward bool) bool {
 }
 
 // LeaveCoverFor leaves a pinned cover when selecting a different window.
+// In a fullscreen group a held member takes the cover over, the previous
+// one held, and an unrelated window demotes the cover (demoteCover), with
+// no leave latch either way; a lone cover still leaves.
+//
+// The group cases read Fullscreen, not Cover: overview navigation already
+// scrolled the view to the selection, off the cover.
 func (w *Workspace) LeaveCoverFor(id WindowID) {
-	if w.Pinned() && id != w.Cover() {
+	switch {
+	case w.IsHeld(id):
+		w.promoteHeld(id)
+	case id != w.Fullscreen && w.demotable():
+		// Focus first: demoting scrolls, which would promote the member
+		// still selected (as in Activate).
+		w.FocusID(id)
+		w.demoteCover()
+	case w.Pinned() && id != w.Cover():
 		w.leaveFullscreen()
 	}
 }
