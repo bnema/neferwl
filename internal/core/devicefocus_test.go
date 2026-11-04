@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"testing"
@@ -73,6 +74,31 @@ func TestSyncMotionPrecedesSameSurfaceClick(t *testing.T) {
 		}
 		if motion < 0 || button <= motion {
 			t.Fatalf("motion must precede same-surface click: %#v", cmds)
+		}
+	})
+}
+
+func TestPlaceVirtualsSingleVirtualTakesFocus(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newDragRigWith(t, false, core.Options{PlaceVirtuals: true}, func(c *domain.Config) {
+			c.Outputs = []domain.OutputConfig{{Name: "tv", Virtual: true}}
+		}, domain.OutputInfo{Name: "tv", Virtual: true, Width: 640, Height: 360})
+		r.client <- ports.WindowMapped{ID: 1}
+		r.settle(t)
+		if got := focusChanges(r.drain()); len(got) == 0 || got[len(got)-1] != 1 {
+			t.Fatalf("startup focus %v", got)
+		}
+		r.in(ports.InputDeviceAdded{ID: 1, Name: "mouse"})
+		r.in(ports.PointerMotion{Device: 1, X: 100, Y: 100})
+		r.settle(t)
+		reached := false
+		for _, cmd := range r.drain() {
+			if m, ok := cmd.(ports.PointerMotionTo); ok {
+				reached = m.ID == 1
+			}
+		}
+		if !reached {
+			t.Fatal("unbound pointer did not reach the virtual output")
 		}
 	})
 }

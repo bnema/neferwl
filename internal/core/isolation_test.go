@@ -97,3 +97,20 @@ func TestStartupIsolatedFocusFallsBackWhenReachableOutputArrives(t *testing.T) {
 		t.Fatal("startup chose isolated output")
 	}
 }
+
+func TestPlaceVirtualsLaysOutUnplacedVirtuals(t *testing.T) {
+	c := layoutCore(0, tile{"tv", 0, 0, 1280, 720}, tile{"tablet", 0, 0, 800, 600})
+	c.opts.PlaceVirtuals = true
+	for _, s := range c.screens {
+		s.info.Virtual = true
+	}
+	c.cfg.Outputs = []domain.OutputConfig{{Name: "tv", Virtual: true}, {Name: "tablet", Virtual: true}}
+	c.order()
+	l := c.layout()
+	if l[0].Isolated || l[1].Isolated || c.screens[0].x != 0 || c.screens[0].y != 0 || c.screens[1].x != 1280 || c.screens[1].y != 0 {
+		t.Fatalf("layout %+v", l)
+	}
+	if c.neighbor(dirRight) != 1 {
+		t.Fatal("placed virtuals not neighbors")
+	}
+}

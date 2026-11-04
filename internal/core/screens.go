@@ -135,7 +135,7 @@ func (c *Core) order() {
 		if cfg, ok := c.outputConfig(s.name()); ok {
 			items[i].pos, items[i].anchor = cfg.Pos, cfg.Anchor
 		}
-		s.isolated = s.info.Virtual && items[i].pos == nil && items[i].anchor.Relation == domain.RelationNone
+		s.isolated = !c.opts.PlaceVirtuals && s.info.Virtual && items[i].pos == nil && items[i].anchor.Relation == domain.RelationNone
 		items[i].isolated = s.isolated
 	}
 	for i, p := range placeOutputs(items) {
