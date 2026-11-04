@@ -53,6 +53,7 @@ func TestPlanHeadlessRender(t *testing.T) {
 		listErr              error
 		cfg                  GPUSelectConfig
 		constrained, matched bool
+		require              bool
 		choice               HeadlessRenderChoice
 		wantErr              bool
 	}{
@@ -68,17 +69,21 @@ func TestPlanHeadlessRender(t *testing.T) {
 		{name: "strict selection", cands: []domain.GPUInfo{gpu}, cfg: GPUSelectConfig{Render: gpu.PCI}, constrained: true, choice: HeadlessUseSelection},
 		{name: "explicit without discovery", listErr: boom, cfg: GPUSelectConfig{Render: "/dev/dri/renderD128"}, constrained: true, choice: HeadlessUseExplicitRenderNode},
 		{name: "explicit matched", cands: []domain.GPUInfo{gpu}, cfg: GPUSelectConfig{Render: "/dev/dri/renderD128"}, constrained: true, matched: true, choice: HeadlessUseSelection},
+		{name: "require discovery", listErr: boom, require: true, choice: HeadlessFail, wantErr: true},
+		{name: "require empty", require: true, choice: HeadlessFail, wantErr: true},
+		{name: "require no renderer", cands: []domain.GPUInfo{{Path: "card0"}}, require: true, choice: HeadlessFail, wantErr: true},
+		{name: "require selection", cands: []domain.GPUInfo{gpu}, require: true, choice: HeadlessUseSelection},
 		{name: "explicit with ignore", cfg: GPUSelectConfig{Render: "/dev/dri/renderD128", Ignore: []string{"unknown"}}, constrained: true, choice: HeadlessFail, wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := PlanHeadlessRender(tc.cands, tc.listErr, tc.cfg, tc.constrained, tc.matched)
+			got := PlanHeadlessRender(tc.cands, tc.listErr, tc.cfg, tc.constrained, tc.matched, tc.require)
 			if got.Choice != tc.choice || (got.Err != nil) != tc.wantErr {
 				t.Fatalf("%+v", got)
 			}
 			if tc.listErr != nil && tc.choice != HeadlessUseExplicitRenderNode && !errors.Is(got.Err, tc.listErr) {
 				t.Fatal(got.Err)
 			}
-			if got.FallbackAfterFailure != (tc.choice == HeadlessUseSelection && !tc.constrained) {
+			if got.FallbackAfterFailure != (tc.choice == HeadlessUseSelection && !tc.constrained && !tc.require) {
 				t.Fatalf("fallback after failure: %+v", got)
 			}
 			if got.Choice == HeadlessUseSelection {
