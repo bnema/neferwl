@@ -121,9 +121,11 @@ type captureScratch struct {
 	begin  vk.CommandBufferBeginInfo
 	submit vk.SubmitInfo
 	// The copy (recordCaptureCopy).
-	region vk.BufferImageCopy
-	hb     vk.BufferMemoryBarrier
-	b      vk.ImageMemoryBarrier
+	region       vk.BufferImageCopy
+	blit         vk.ImageBlit
+	cursorParams captureCursorParams
+	hb           vk.BufferMemoryBarrier
+	b            vk.ImageMemoryBarrier
 	// The HDR conversion pass (recordCaptureHDR).
 	hdrIn, hdrB vk.ImageMemoryBarrier
 	attachment  vk.RenderingAttachmentInfo
