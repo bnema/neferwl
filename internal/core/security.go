@@ -43,7 +43,8 @@ func (c *Core) syncSecurity() bool {
 	c.lastBorderClick.ws = nil
 	c.pointerAt, c.motionTime = [2]float64{}, 0
 	c.keyboard = keyboard{}
-	c.x11.held = 0 // sent stays: the lock publish clears it
+	// The display resets X11 focus with any epoch change: send it again.
+	c.x11.held, c.x11.stale = 0, true
 	c.constrained, c.constraint = ports.PointerConstrained{}, domain.PointerConstraint{}
 	if c.ch.Constraints != nil {
 		latest(c.ch.Constraints, c.constraint)

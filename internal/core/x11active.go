@@ -14,6 +14,10 @@ type x11Active struct {
 	held WindowID
 	// sent is the last ports.X11Active sent; wayland starts with none.
 	sent WindowID
+	// stale forces the next send: a security epoch change may have
+	// cleared the display's X11 focus (even a lock and unlock core never
+	// saw protected), so sent no longer says what it holds.
+	stale bool
 }
 
 // isX11 reports whether id is a mapped X11 (Xwayland) window.
@@ -83,12 +87,12 @@ func (c *Core) keptX11(sc *screen, prev WindowID) WindowID {
 
 // syncX11Active tells wayland the X11-active window when it changed.
 func (c *Core) syncX11Active(ctx context.Context, id WindowID) error {
-	if id == c.x11.sent {
+	if id == c.x11.sent && !c.x11.stale {
 		return nil
 	}
 	if err := c.command(ctx, ports.X11Active{ID: id}); err != nil {
 		return err
 	}
-	c.x11.sent = id
+	c.x11.sent, c.x11.stale = id, false
 	return nil
 }
