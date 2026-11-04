@@ -7,6 +7,9 @@ Wants=graphical-session-pre.target
 After=graphical-session-pre.target
 Wants=xdg-desktop-autostart.target
 Before=xdg-desktop-autostart.target
+# Only one session at a time. neferwl-server.service orders the handover:
+# the outgoing one finishes stopping first, either way.
+Conflicts=neferwl-server.service
 
 [Service]
 Slice=session.slice
