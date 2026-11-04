@@ -49,6 +49,7 @@ import (
 	client_outputmanagement "github.com/bnema/go-wayland-bindings/client/wlroutputmanagement"
 	client_outputpower "github.com/bnema/go-wayland-bindings/client/wlroutputpowermanagement"
 	client_screencopy "github.com/bnema/go-wayland-bindings/client/wlrscreencopy"
+	client_wlrvirtualpointer "github.com/bnema/go-wayland-bindings/client/wlrvirtualpointer"
 	client_xdgactivation "github.com/bnema/go-wayland-bindings/client/xdgactivation"
 	client_xdgoutput "github.com/bnema/go-wayland-bindings/client/xdgoutput"
 	client_xdgshell "github.com/bnema/go-wayland-bindings/client/xdgshell"
@@ -93,6 +94,7 @@ import (
 	wire_wlroutputmanagement "github.com/bnema/go-wayland-bindings/server/wlroutputmanagement"
 	wire_wlroutputpower "github.com/bnema/go-wayland-bindings/server/wlroutputpowermanagement"
 	wire_wlrscreencopy "github.com/bnema/go-wayland-bindings/server/wlrscreencopy"
+	wire_wlrvirtualpointer "github.com/bnema/go-wayland-bindings/server/wlrvirtualpointer"
 	wire_xdgactivation "github.com/bnema/go-wayland-bindings/server/xdgactivation"
 	wire_xdgdialog "github.com/bnema/go-wayland-bindings/server/xdgdialog"
 	wire_xdgforeign "github.com/bnema/go-wayland-bindings/server/xdgforeign"
@@ -259,6 +261,8 @@ var wireSchemas = map[string]wireSchema{
 	"zwp_text_input_v3":                                    {wire_textinput.ZwpTextInputV3Interface, &client_textinput.TextInputV3{}, map[uint16]bool{0: true}, nil},
 	"zwp_virtual_keyboard_manager_v1":                      {wire_virtualkeyboard.ZwpVirtualKeyboardManagerV1Interface, &client_virtualkeyboard.VirtualKeyboardManager{}, nil, nil},
 	"zwp_virtual_keyboard_v1":                              {wire_virtualkeyboard.ZwpVirtualKeyboardV1Interface, &client_virtualkeyboard.VirtualKeyboard{}, map[uint16]bool{3: true}, nil},
+	"zwlr_virtual_pointer_manager_v1":                      {wire_wlrvirtualpointer.ZwlrVirtualPointerManagerV1Interface, &client_wlrvirtualpointer.VirtualPointerManager{}, map[uint16]bool{1: true}, nil},
+	"zwlr_virtual_pointer_v1":                              {wire_wlrvirtualpointer.ZwlrVirtualPointerV1Interface, &client_wlrvirtualpointer.VirtualPointer{}, map[uint16]bool{8: true}, nil},
 	"zwp_xwayland_keyboard_grab_manager_v1":                {wire_xwaylandkeyboardgrab.ZwpXwaylandKeyboardGrabManagerV1Interface, nil, map[uint16]bool{0: true}, nil},
 	"zwp_xwayland_keyboard_grab_v1":                        {wire_xwaylandkeyboardgrab.ZwpXwaylandKeyboardGrabV1Interface, nil, map[uint16]bool{0: true}, nil},
 	"xwayland_shell_v1":                                    {wire_xwaylandshell.XwaylandShellV1Interface, nil, map[uint16]bool{0: true}, nil},

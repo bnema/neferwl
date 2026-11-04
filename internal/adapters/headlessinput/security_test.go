@@ -34,7 +34,7 @@ func TestSecureScriptSnapshotsEveryInputKind(t *testing.T) {
 	security := portsmocks.NewMockSessionSecurity(t)
 	state := domain.SecurityState{Generation: 7, Protected: true}
 	security.EXPECT().Snapshot().Return(state)
-	if err := RunSecure(context.Background(), km, nil, script, input, nil, nil, logging.For(context.Background(), "input"), security); err != nil {
+	if err := RunSecure(context.Background(), km, nil, script, input, nil, nil, nil, logging.For(context.Background(), "input"), security); err != nil {
 		t.Fatal(err)
 	}
 	announcement := (<-input).(ports.SecurityInput)
@@ -116,7 +116,7 @@ func TestSecureScriptDiagnosticsRedactProtectedPayloads(t *testing.T) {
 				script <- line
 			}
 			close(script)
-			if err := RunSecure(context.Background(), km, nil, script, make(chan ports.InputEvent, 32), nil, nil, log, security); err != nil {
+			if err := RunSecure(context.Background(), km, nil, script, make(chan ports.InputEvent, 32), nil, nil, nil, log, security); err != nil {
 				t.Fatal(err)
 			}
 			output := buf.String()
@@ -175,7 +175,7 @@ func TestSecureScriptSnapshotsBeforeKeyTranslation(t *testing.T) {
 	script <- "key Shift+A"
 	close(script)
 	input := make(chan ports.InputEvent, 5)
-	if err := RunSecure(context.Background(), km, nil, script, input, nil, nil, logging.For(context.Background(), "input"), security); err != nil {
+	if err := RunSecure(context.Background(), km, nil, script, input, nil, nil, nil, logging.For(context.Background(), "input"), security); err != nil {
 		t.Fatal(err)
 	}
 	<-input // device announcement
@@ -218,7 +218,9 @@ func TestSecureScriptBlockedSendPreservesProductionSnapshot(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			done := make(chan error, 1)
-			go func() { done <- RunSecure(ctx, km, nil, script, input, nil, nil, logging.For(ctx, "input"), security) }()
+			go func() {
+				done <- RunSecure(ctx, km, nil, script, input, nil, nil, nil, logging.For(ctx, "input"), security)
+			}()
 			<-input // initial device announcement
 			select {
 			case <-produced:
@@ -264,7 +266,7 @@ func TestSecureScriptQuarantinesModifierAcrossTransition(t *testing.T) {
 	script <- "key q"
 	close(script)
 	input := make(chan ports.InputEvent, 8)
-	if err := RunSecure(context.Background(), km, nil, script, input, nil, nil, logging.For(context.Background(), "input"), security); err != nil {
+	if err := RunSecure(context.Background(), km, nil, script, input, nil, nil, nil, logging.For(context.Background(), "input"), security); err != nil {
 		t.Fatal(err)
 	}
 	<-input // device announcement

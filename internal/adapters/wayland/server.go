@@ -172,6 +172,9 @@ type Server struct {
 	securityStop int
 	securityWG   sync.WaitGroup
 	securityLive atomic.Int32
+
+	// nextVirtualPointer numbers virtual pointer devices (virtualpointer.go).
+	nextVirtualPointer domain.InputDeviceID
 	// Test seams, nil in production, set and read on the display goroutine:
 	// securityCreated receives the client whose security context was created;
 	// securityDone, captured by each listener at commit, is signalled when that

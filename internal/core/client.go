@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -120,6 +121,11 @@ func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, 
 		if c.warpPointer(ctx, v) != nil {
 			return false, true
 		}
+	case ports.VirtualPointerInput:
+		if err := c.virtualPointer(ctx, v); err != nil && !errors.Is(err, errSecurityChanged) {
+			return false, true
+		}
+		return false, false
 	case ports.WindowMoveRequest:
 		if c.clientDrag(ctx, v) != nil {
 			return false, true

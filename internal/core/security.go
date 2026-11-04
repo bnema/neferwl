@@ -107,7 +107,7 @@ func (c *Core) blockProtected(ev ports.ClientEvent) bool {
 
 func blockedProtectedEvent(ev ports.ClientEvent) bool {
 	switch ev.(type) {
-	case ports.WindowActivate, ports.WorkspaceActivate, ports.PointerWarp, ports.PointerConstrained,
+	case ports.WindowActivate, ports.WorkspaceActivate, ports.PointerWarp, ports.PointerConstrained, ports.VirtualPointerInput,
 		ports.PopupRequest, ports.ShortcutsInhibit, ports.WindowFullscreenRequest,
 		ports.CaptureSessionOpen, ports.CaptureFrameTaken, ports.CaptureExclusionBegin, ports.CaptureExclusionLayer,
 		ports.WindowMoveRequest:
