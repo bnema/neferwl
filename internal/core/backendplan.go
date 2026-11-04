@@ -64,7 +64,7 @@ func PlanBackend(b domain.Backend) BackendPlan {
 			SessionDBus: SessionDBusFlagOnly, AutoTerminal: AutoTerminalConfigOrFlag, AllowTestFlags: true}
 	case domain.BackendServer:
 		return BackendPlan{RequireRenderNode: true, FixedHeads: HeadsNone, Input: InputLibinputDirect,
-			SessionDBus: SessionDBusFlagOnly, PersistScales: true, AutoTerminal: AutoTerminalOff}
+			SessionDBus: SessionDBusAlways, PersistScales: true, AutoTerminal: AutoTerminalOff}
 	}
 	return BackendPlan{}
 }

@@ -16,7 +16,7 @@ func TestPlanBackend(t *testing.T) {
 			Input: InputScript, SessionDBus: SessionDBusFlagOnly, LogindPowerKeys: false, PersistScales: false,
 			AutoTerminal: AutoTerminalConfigOrFlag, AllowTestFlags: true},
 		domain.BackendServer: {KMS: false, RequireRenderNode: true, FixedHeads: HeadsNone, IsolateVirtuals: false,
-			Input: InputLibinputDirect, SessionDBus: SessionDBusFlagOnly, LogindPowerKeys: false, PersistScales: true,
+			Input: InputLibinputDirect, SessionDBus: SessionDBusAlways, LogindPowerKeys: false, PersistScales: true,
 			AutoTerminal: AutoTerminalOff, AllowTestFlags: false},
 	}
 	for b, want := range cases {
