@@ -872,3 +872,70 @@ func TestNetWMStateModalAfterMap(t *testing.T) {
 		require.NoError(t, hs.x.conn.Sync(&hs.x.h))
 	}
 }
+
+func TestPendingActiveAppliedWhenReady(t *testing.T) {
+	hs := newHarness(t, nil)
+	const win = 0x500001
+	hs.classic(win)
+	s := hs.create(win)
+	hs.x.Focus(s) // WM_HINTS has not been read: input is still false.
+	n := settle(t, hs.x, hs.p)
+	hs.expectReady(win)
+	hs.p.mapRequest(win)
+	readUntil(t, hs.x, func() bool { _, ok := hs.ready[win]; return ok })
+	settle(t, hs.x, hs.p)
+	reqs := since(hs.p, n, opSetInputFocus)
+	require.Len(t, reqs, 1)
+	require.Equal(t, uint32(win), reqs[0].u32(4))
+	require.Equal(t, s, hs.x.active)
+	require.NotEmpty(t, propsTo(hs.p, n, hs.x.root, "_NET_ACTIVE_WINDOW"))
+}
+
+func TestPendingActiveReappliedWhenMapped(t *testing.T) {
+	hs := newHarness(t, nil)
+	const win = 0x500001
+	hs.classic(win)
+	s := hs.mapAndWait(win)
+	hs.x.Focus(s)
+	n := settle(t, hs.x, hs.p)
+	hs.p.mapNotify(win)
+	readUntil(t, hs.x, func() bool { return hs.x.tab.rec(s).mapped })
+	settle(t, hs.x, hs.p)
+	reqs := since(hs.p, n, opSetInputFocus)
+	require.Len(t, reqs, 1)
+	require.Equal(t, uint32(win), reqs[0].u32(4))
+}
+
+func TestActiveFocusBadMatchRetriesOnce(t *testing.T) {
+	hs := newHarness(t, nil)
+	const win = 0x500001
+	hs.classic(win)
+	s := hs.mapAndWait(win)
+	n := settle(t, hs.x, hs.p)
+	hs.x.Focus(s)
+	hs.x.flush()
+	_, _ = hs.p.waitReq(n, func(r xpeerReq) bool { return r.major == opSetInputFocus })
+	reqs := since(hs.p, n, opSetInputFocus)
+	require.Len(t, reqs, 1)
+	fail := func(req xpeerReq) {
+		hs.p.mu.Lock()
+		e := make([]byte, 32)
+		e[1] = xproto.BadMatch
+		binary.LittleEndian.PutUint16(e[2:], req.seq)
+		binary.LittleEndian.PutUint32(e[4:], win)
+		e[10] = opSetInputFocus
+		hs.p.write(e)
+		hs.p.mu.Unlock()
+	}
+	fail(reqs[0])
+	readUntil(t, hs.x, func() bool { return hs.x.stats.Errors == 1 })
+	hs.x.flush()
+	_, _ = hs.p.waitReq(n+1, func(r xpeerReq) bool { return r.major == opSetInputFocus && r.seq != reqs[0].seq })
+	reqs = since(hs.p, n, opSetInputFocus)
+	require.Len(t, reqs, 2)
+	fail(reqs[1])
+	readUntil(t, hs.x, func() bool { return hs.x.stats.Errors == 2 })
+	settle(t, hs.x, hs.p)
+	require.Len(t, since(hs.p, n, opSetInputFocus), 2)
+	require.Zero(t, hs.x.stats.Unattributed)
+}

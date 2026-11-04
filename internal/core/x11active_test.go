@@ -348,3 +348,27 @@ func lastX11(r *dragRig) domain.WindowID {
 	}
 	return x11Seen[r]
 }
+
+// Mapping Steam must not depend on a subsequent pointer or keyboard event.
+func TestKeepFocusIdleFullscreenMap(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := startDragRig(t, func(c *domain.Config) {
+			c.Outputs = []domain.OutputConfig{{Name: "DP-1"}, {Name: "tv", Virtual: true, KeepFocus: true}}
+			c.Rules = []domain.WindowRule{winRule("steam", "steam", func(r *domain.WindowRule) { r.Output = "tv" })}
+		}, domain.OutputInfo{Name: "DP-1", Width: 800, Height: 600}, domain.OutputInfo{Name: "tv", Virtual: true, Width: 640, Height: 360})
+		r.client <- ports.WindowMapped{ID: nativeID, AppID: "foot"}
+		r.settle(t)
+		r.drain()
+		r.client <- ports.WindowMapped{ID: steamID, AppID: "steam", Xwayland: true, Fullscreen: true}
+		r.settle(t)
+		if got := x11Changes(r.drain()); len(got) != 1 || got[0] != steamID {
+			t.Fatalf("idle map: X11Active %v, want [%d]", got, steamID)
+		}
+		x11Seen[r] = steamID
+		r.client <- ports.WindowResized{ID: steamID, Width: 640, Height: 360}
+		r.settle(t)
+		if got := lastX11(r); got != steamID {
+			t.Fatalf("idle resize: X11Active %d, want %d", got, steamID)
+		}
+	})
+}
