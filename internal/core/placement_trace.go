@@ -19,9 +19,9 @@ func (c *Core) tracePlacement(v ports.WindowMapped, before map[*screen]WindowID,
 		t.Launcher = v.Parent
 	}
 	if t.Path == "lineage" {
-		for _, pid := range v.AncestorPIDs {
+		for _, node := range v.Proc[min(1, len(v.Proc)):] {
 			for id, rec := range c.windows.records {
-				if id != v.ID && !rec.client.PIDShared && rec.client.PID == pid {
+				if id != v.ID && !rec.client.PIDShared && len(rec.client.Proc) != 0 && rec.client.Proc[0].Key == node.Key {
 					if _, w := c.screenOf(id); w != nil && (t.Launcher == 0 || id < t.Launcher) {
 						t.Launcher = id
 					}

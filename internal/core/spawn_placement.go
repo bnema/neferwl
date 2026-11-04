@@ -209,15 +209,15 @@ func (c *Core) ancestorWorkspace(v ports.WindowMapped) (*screen, *Workspace) {
 	if v.Remap || v.PIDShared {
 		return nil, nil
 	}
-	for _, pid := range v.AncestorPIDs {
-		if pid <= 1 {
+	for _, node := range v.Proc[min(1, len(v.Proc)):] {
+		if node.Key.PID <= 1 {
 			break
 		}
 		var chosen WindowID
 		var sc *screen
 		var ws *Workspace
 		for id, rec := range c.windows.records {
-			if id == v.ID || rec.client.PIDShared || rec.client.PID != pid {
+			if id == v.ID || rec.client.PIDShared || len(rec.client.Proc) == 0 || rec.client.Proc[0].Key != node.Key {
 				continue
 			}
 			if s, w := c.screenOf(id); w != nil && (ws == nil || id < chosen) {
