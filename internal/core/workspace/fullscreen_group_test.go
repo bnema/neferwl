@@ -677,3 +677,37 @@ func TestFullscreenGroupLeaveCoverFor(t *testing.T) {
 		})
 	})
 }
+
+// Unstashing an unrelated entry shown over a cascade group's cover keeps
+// the group: both members held, no latch; focus on G promotes it.
+func TestFullscreenGroupUnstashOverCover(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := groupPG(t, OverflowCascade)
+		// Stash the unrelated window 3, then show the stash over G.
+		w.Fullscreen, w.Held = 0, []WindowID{1, 2}
+		w.FocusID(3)
+		w.ToggleWindowStash()
+		w.FocusID(1)
+		if w.Fullscreen != 1 || w.StashIndex(3) < 0 {
+			t.Fatalf("setup: cover %d stash %d", w.Fullscreen, w.StashIndex(3))
+		}
+		w.Activate(3)
+		if !w.stashOverCover() {
+			t.Fatal("setup: stash not over the cover")
+		}
+		w.ToggleWindowStash()
+		held := slices.Clone(w.Held)
+		slices.Sort(held)
+		if w.StashIndex(3) >= 0 || w.Fullscreen != 0 || !slices.Equal(held, []WindowID{1, 2}) || w.left != 0 {
+			t.Fatalf("unstash: stash %d cover %d held %v left %d", w.StashIndex(3), w.Fullscreen, w.Held, w.left)
+		}
+		if f, _ := w.Focused(); f != 3 {
+			t.Fatalf("focus %d", f)
+		}
+		checkGroup(t, w, "unstash")
+		w.FocusID(1)
+		if w.Fullscreen != 1 || w.left != 0 {
+			t.Fatalf("refocus: cover %d left %d", w.Fullscreen, w.left)
+		}
+	})
+}

@@ -708,8 +708,9 @@ func (w *Workspace) ToggleWindowStash() {
 		w.RemoveWindow(id)
 		w.restore(id, nil)
 	case w.StashIndex(id) >= 0:
-		if w.stashOverCover() {
-			// Its column would be hidden under the cover: leave it.
+		if w.stashOverCover() && !w.groupLeaveTo(id) {
+			// Its column would be hidden under the cover: leave it. A
+			// group's cover is demoted instead (groupLeaveTo).
 			w.leaveFullscreen()
 		}
 		w.unstash(w.StashIndex(id))
