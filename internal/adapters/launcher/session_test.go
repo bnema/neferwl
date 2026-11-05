@@ -17,7 +17,8 @@ import (
 func TestExportSession(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "calls")
-	script := "#!/bin/sh\necho \"${0##*/} $* $WAYLAND_DISPLAY\" >> " + out + "\n"
+	// show-environment reports this session's display: it is still ours.
+	script := "#!/bin/sh\nif [ \"$2\" = show-environment ]; then echo WAYLAND_DISPLAY=$WAYLAND_DISPLAY; exit 0; fi\necho \"${0##*/} $* $WAYLAND_DISPLAY\" >> " + out + "\n"
 	for _, name := range []string{"dbus-update-activation-environment", "systemctl"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755); err != nil {
 			t.Fatal(err)
@@ -42,6 +43,37 @@ func TestExportSession(t *testing.T) {
 	ExportSession(ctx, []string{"PATH=" + t.TempDir()}, logging.For(ctx, "launcher"))
 	if strings.Count(string(data), "\n") != 4 {
 		t.Fatal(string(data))
+	}
+}
+
+// handoverCalls runs UnexportSession for wayland-1 against a user manager
+// whose environment is shown, and returns the other systemctl calls.
+func handoverCalls(t *testing.T, shown string) string {
+	t.Helper()
+	dir := t.TempDir()
+	out := filepath.Join(dir, "calls")
+	script := "#!/bin/sh\nif [ \"$2\" = show-environment ]; then printf '" + shown + "'; exit 0; fi\necho \"$*\" >> " + out + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "systemctl"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	UnexportSession([]string{"PATH=" + dir, "WAYLAND_DISPLAY=wayland-1"}, logging.For(ctx, "launcher"))
+	data, _ := os.ReadFile(out)
+	return string(data)
+}
+
+// A session stopping after another exported its display leaves the other's
+// variables and portals alone; its own (or none left) are withdrawn.
+func TestUnexportSessionOnlyOurs(t *testing.T) {
+	if got := handoverCalls(t, `HOME=/h\nWAYLAND_DISPLAY=wayland-2\nDISPLAY=:1\n`); got != "" {
+		t.Errorf("another session's display: calls %q, want none", got)
+	}
+	want := "--user unset-environment WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE\n--user --no-block stop xdg-desktop-portal*.service\n"
+	if got := handoverCalls(t, `HOME=/h\nWAYLAND_DISPLAY=wayland-1\n`); got != want {
+		t.Errorf("our display: calls %q, want %q", got, want)
+	}
+	if got := handoverCalls(t, `HOME=/h\n`); got != want {
+		t.Errorf("no display exported: calls %q, want %q", got, want)
 	}
 }
 

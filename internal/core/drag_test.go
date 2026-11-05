@@ -57,6 +57,12 @@ func startAnimatedDragRig(t *testing.T, edit func(*domain.Config), outs ...domai
 
 func newDragRig(t *testing.T, animated bool, edit func(*domain.Config), outs ...domain.OutputInfo) *dragRig {
 	t.Helper()
+	return newDragRigWith(t, animated, core.Options{}, edit, outs...)
+}
+
+// newDragRigWith is newDragRig with base options (the gate is always set).
+func newDragRigWith(t *testing.T, animated bool, opts core.Options, edit func(*domain.Config), outs ...domain.OutputInfo) *dragRig {
+	t.Helper()
 	cfg := scrollDefaults()
 	cfg.Border.Width = 0
 	cfg.Layout.Gaps = 10
@@ -77,7 +83,7 @@ func newDragRig(t *testing.T, animated bool, edit func(*domain.Config), outs ...
 		reload: make(chan domain.ConfigChanged), cfg: cfg,
 	}
 	ch := core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes}
-	opts := core.Options{Security: gate}
+	opts.Security = gate
 	if animated {
 		r.frames, r.clock = make(chan domain.OutputFrame), newStepClock(t)
 		ch.Frames, opts.Clock = r.frames, r.clock.clock

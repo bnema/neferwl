@@ -72,11 +72,24 @@ func startXwaylandWith(t *testing.T, sizes [][2]int, mutate func(*domain.Config)
 	return startXwaylandConfig(t, sizes, mutate, "")
 }
 
+// startXwaylandBackend is startXwaylandWith on backend. The server backend
+// never runs libinput here (noLibinput): the script stays the input.
+func startXwaylandBackend(t *testing.T, backend domain.Backend, sizes [][2]int, mutate func(*domain.Config)) *xwaylandEnv {
+	t.Helper()
+	return startXwaylandBackendConfig(t, backend, sizes, mutate, "")
+}
+
 // startXwaylandConfig is startXwaylandWith watching the config file at path
 // for reloads; empty uses a path that does not exist.
+func startXwaylandConfig(t *testing.T, sizes [][2]int, mutate func(*domain.Config), path string) *xwaylandEnv {
+	t.Helper()
+	return startXwaylandBackendConfig(t, domain.BackendHeadless, sizes, mutate, path)
+}
+
+// startXwaylandBackendConfig combines backend selection and config reloads.
 //
 //testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
-func startXwaylandConfig(t *testing.T, sizes [][2]int, mutate func(*domain.Config), path string) *xwaylandEnv {
+func startXwaylandBackendConfig(t *testing.T, backend domain.Backend, sizes [][2]int, mutate func(*domain.Config), path string) *xwaylandEnv {
 	t.Helper()
 	if path == "" {
 		// Never the user's own config file.
@@ -162,8 +175,8 @@ func startXwaylandConfig(t *testing.T, sizes [][2]int, mutate func(*domain.Confi
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(ctx, Options{
-			Backend: "headless", NoTerminal: true, Config: cfg, ConfigPath: path, Script: script,
-			ScreenshotDir: shots, Sizes: sizes,
+			Backend: backend, NoTerminal: true, Config: cfg, ConfigPath: path, Script: script,
+			ScreenshotDir: shots, Sizes: sizes, noLibinput: backend == domain.BackendServer,
 		})
 	}()
 	t.Cleanup(func() {
@@ -986,4 +999,36 @@ func publicationChanges(t *testing.T) chan struct{} {
 		t.Fatal("missing publication observer")
 	}
 	return changes.(chan struct{})
+}
+
+// TestXwaylandServerProbe: on the server backend, with one virtual output
+// and no fixed head, an X11 client maps on the virtual output, takes the
+// focus and closes with the close-window bind.
+//
+//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
+func TestXwaylandServerProbe(t *testing.T) {
+	e := startXwaylandBackend(t, domain.BackendServer, nil, func(c *domain.Config) {
+		c.Outputs = append(c.Outputs, domain.OutputConfig{Name: "tv", Virtual: true, Mode: "640x360"})
+	})
+	p := startProbe(t, e.bin, e.display, "-title", "server")
+	var st statefile.State
+	until(t, "X11Probe visible on tv", func() bool {
+		st = readState(e.statePath)
+		return st.Output == "tv" && len(st.Windows) == 1 && st.Windows[0].AppID == "X11Probe" && st.Windows[0].Visible && st.Windows[0].Output == "tv"
+	})
+	if !st.Windows[0].Xwayland {
+		t.Errorf("X11 window not marked Xwayland: %+v", st.Windows[0])
+	}
+	until(t, "probe focus", func() bool { return strings.Contains(p.out.String(), "focus") })
+	if _, err := io.WriteString(e.script, "key Super+q\n"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-p.waited:
+		if err != nil {
+			t.Errorf("probe exited with %v, want 0", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("probe did not exit within 2s of Super+q")
+	}
 }

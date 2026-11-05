@@ -76,6 +76,9 @@ type Options struct {
 	// HintDisabled, when set, is called the first time the hint action runs
 	// without a scanner (hint mode off). It must not block.
 	HintDisabled func()
+	// PlaceVirtuals lays unplaced virtual outputs out like physical ones
+	// instead of isolating them (server mode). The zero value isolates.
+	PlaceVirtuals bool
 }
 
 type binding struct {

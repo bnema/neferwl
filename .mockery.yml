@@ -299,3 +299,11 @@ packages:
           dir: internal/adapters/wayland/xwm
           pkgname: xwm
           filename: loop_mock_test.go
+
+  github.com/bnema/neferwl/internal/adapters/directseat:
+    interfaces:
+      evdev:
+        config:
+          dir: internal/adapters/directseat
+          pkgname: directseat
+          filename: evdev_mock_test.go

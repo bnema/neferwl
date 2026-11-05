@@ -58,8 +58,15 @@ type HeadlessRenderDecision struct {
 	Err                  error
 }
 
+// ErrNoRenderNode reports a render device without a DRM render node, such
+// as a software rasterizer (lavapipe), when a hardware node is required.
+var ErrNoRenderNode = errors.New("render device has no DRM render node")
+
 // PlanHeadlessRender decides discovery policy without probing device nodes.
-func PlanHeadlessRender(cands []domain.GPUInfo, listErr error, cfg GPUSelectConfig, constrained, explicitRenderNodeMatched bool) HeadlessRenderDecision {
+// requireRenderNode disables the "first usable Vulkan device" fallback, which
+// may pick a software device without a render node.
+func PlanHeadlessRender(cands []domain.GPUInfo, listErr error, cfg GPUSelectConfig, constrained, explicitRenderNodeMatched, requireRenderNode bool) HeadlessRenderDecision {
+	constrained = constrained || requireRenderNode
 	if strings.HasPrefix(cfg.Render, "/dev/dri/renderD") && len(cfg.Devices) == 0 && len(cfg.Ignore) == 0 && !explicitRenderNodeMatched {
 		return HeadlessRenderDecision{Choice: HeadlessUseExplicitRenderNode}
 	}

@@ -1,0 +1,21 @@
+[Unit]
+Description=NeferWL game server (virtual outputs only)
+Documentation=https://github.com/bnema/neferwl/blob/main/docs/server.md
+BindsTo=graphical-session.target
+Before=graphical-session.target
+Wants=graphical-session-pre.target
+After=graphical-session-pre.target
+# The outgoing session finishes stopping (withdrawing its display and
+# portals) before the incoming one starts, in both directions: systemd orders
+# a stop before a start whatever the ordering's direction.
+Conflicts=neferwl.service
+After=neferwl.service
+
+[Service]
+Slice=session.slice
+Type=notify
+ExecStart=/usr/bin/neferwl --backend=server --session
+Restart=always
+
+[Install]
+WantedBy=default.target

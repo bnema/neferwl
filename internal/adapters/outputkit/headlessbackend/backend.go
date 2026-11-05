@@ -27,6 +27,7 @@ type BackendOptions struct {
 }
 
 // Run drives one virtual output per size, named HEADLESS-1, -2, ...
+// Sizes may be empty: then only config-declared virtual outputs exist.
 // With several outputs, screenshots go to a subdirectory per output. Modes
 // of built-in heads are fixed; config-declared outputs reconcile through apply.
 //
@@ -73,8 +74,11 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 	if set.State.Protected {
 		set.SecurityEvent(ports.SecurityBackendBarrier{Generation: set.State.Generation})
 	}
-	// The pointer starts centred on the first output, like libinput's.
-	curs.Move("HEADLESS-1", float64(o.Sizes[0][0])/2, float64(o.Sizes[0][1])/2, false)
+	// The pointer starts centred on the first output, like libinput's. With
+	// virtual outputs only, there is no fixed head to centre on.
+	if len(o.Sizes) > 0 {
+		curs.Move("HEADLESS-1", float64(o.Sizes[0][0])/2, float64(o.Sizes[0][1])/2, false)
+	}
 	for {
 		if _, ok := apply.Next(); ok {
 			err := host.Sync(ctx, apply.Virtuals())

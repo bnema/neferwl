@@ -59,3 +59,30 @@ func TestVirtualReloadInventory(t *testing.T) {
 		}
 	})
 }
+
+func TestVirtualOnlyNoFixedHeads(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		file := domain.Config{Outputs: []domain.OutputConfig{{Name: "tv", Virtual: true, Mode: "10x10"}}}
+		apply := core.NewOutputApply(core.NewOutputOverrides(file, true))
+		events := make(chan ports.OutputEvent, 16)
+		heads := make(chan domain.OutputHeads, 16)
+		ch := routing.Channels{Events: events, Heads: heads, Reloads: make(chan domain.ConfigChanged)}
+		r := portsmocks.NewMockRenderer(t)
+		r.EXPECT().Close().Return().Maybe()
+		done := make(chan error, 1)
+		go func() {
+			done <- Run(ctx, BackendOptions{}, apply, ch, cursors.New(nil, 0), func(int, int) (ports.Renderer, error) { return r, nil }, logging.For(ctx, "render"))
+		}()
+		inventory := <-heads
+		if len(inventory.Heads) != 1 || inventory.Heads[0].Info.Name != "tv" || !inventory.Heads[0].Info.Virtual {
+			t.Fatal(inventory)
+		}
+		synctest.Wait()
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
+}

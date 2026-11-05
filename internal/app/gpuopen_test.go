@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"bnema.dev/zerowrap"
@@ -57,4 +58,35 @@ func TestOpenHeadlessRenderDiscovery(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOpenHeadlessRenderRequireNode(t *testing.T) {
+	gpu := domain.GPUInfo{Path: "card0", Render: 1}
+	t.Run("no fallback", func(t *testing.T) {
+		opener := portsmocks.NewMockRenderDeviceOpener(t)
+		if _, err := openHeadlessRenderPolicy(opener, nil, nil, domain.Config{}, "", true, zerowrap.Logger{}); err == nil {
+			t.Fatal("fallback used")
+		}
+	})
+	t.Run("software device", func(t *testing.T) {
+		opener := portsmocks.NewMockRenderDeviceOpener(t)
+		dev := portsmocks.NewMockRenderDevice(t)
+		opener.EXPECT().Open(gpu).Return(dev, nil).Once()
+		dev.EXPECT().Node().Return(0, 0).Once()
+		dev.EXPECT().Close().Return().Once()
+		_, err := openHeadlessRenderPolicy(opener, []domain.GPUInfo{gpu}, nil, domain.Config{}, "", true, zerowrap.Logger{})
+		if !errors.Is(err, core.ErrNoRenderNode) || !strings.Contains(err.Error(), "render node") {
+			t.Fatal(err)
+		}
+	})
+	t.Run("hardware device", func(t *testing.T) {
+		opener := portsmocks.NewMockRenderDeviceOpener(t)
+		dev := portsmocks.NewMockRenderDevice(t)
+		opener.EXPECT().Open(gpu).Return(dev, nil).Once()
+		dev.EXPECT().Node().Return(0, 1).Once()
+		got, err := openHeadlessRenderPolicy(opener, []domain.GPUInfo{gpu}, nil, domain.Config{}, "", true, zerowrap.Logger{})
+		if err != nil || got != dev {
+			t.Fatal(got, err)
+		}
+	})
 }

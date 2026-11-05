@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"os/exec"
+	"strings"
 	"time"
 
 	"bnema.dev/zerowrap"
@@ -35,12 +36,50 @@ func ExportSession(ctx context.Context, env []string, log zerowrap.Logger) {
 
 // UnexportSession withdraws the displays from the systemd user manager on
 // exit, so services started after logout do not reach a dead display, and
-// stops the portals that still hold them.
+// stops the portals that still hold them. When another session has exported
+// its own display since (a desktop/server handover), the variables and the
+// portals are its own: they are left alone.
 func UnexportSession(env []string, log zerowrap.Logger) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	ours := envValue(env, "WAYLAND_DISPLAY")
+	if current, ok := managerEnv(ctx, env, "WAYLAND_DISPLAY"); ok && current != "" && current != ours {
+		log.Info().Str("ours", ours).Str("current", current).Msg("session unexport skipped: another session exported its display")
+		return
+	}
 	runSystemctl(ctx, env, log, append([]string{"unset-environment"}, sessionVars...), "session unexport failed")
 	runSystemctl(ctx, env, log, []string{"--no-block", "stop", portalUnits}, "portal stop failed")
+}
+
+// managerEnv reads key from the systemd user manager's environment ("" when
+// unset); ok is false when it cannot be read.
+func managerEnv(ctx context.Context, env []string, key string) (value string, ok bool) {
+	path, err := childLookPath("systemctl", env)
+	if err != nil {
+		return "", false
+	}
+	cmd := exec.CommandContext(ctx, path, "--user", "show-environment")
+	cmd.Env = env
+	out, err := cmd.Output()
+	if err != nil {
+		return "", false
+	}
+	for line := range strings.SplitSeq(string(out), "\n") {
+		if v, found := strings.CutPrefix(line, key+"="); found {
+			return v, true
+		}
+	}
+	return "", true
+}
+
+// envValue is key's value in env, "" when absent.
+func envValue(env []string, key string) string {
+	for i := len(env) - 1; i >= 0; i-- {
+		if v, found := strings.CutPrefix(env[i], key+"="); found {
+			return v
+		}
+	}
+	return ""
 }
 
 // runSystemctl runs systemctl --user with args; a missing systemctl is skipped.

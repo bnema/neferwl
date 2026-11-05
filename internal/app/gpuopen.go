@@ -32,6 +32,24 @@ func openPlannedRender(opener ports.RenderDeviceOpener, plans []core.CardPlan, s
 
 // openHeadlessRender executes core policy, keeping filesystem probes at the edge.
 func openHeadlessRender(opener ports.RenderDeviceOpener, cands []domain.GPUInfo, listErr error, cfg domain.Config, env string, log zerowrap.Logger) (ports.RenderDevice, error) {
+	return openHeadlessRenderPolicy(opener, cands, listErr, cfg, env, false, log)
+}
+
+// openHeadlessRenderPolicy is openHeadlessRender; requireRenderNode rejects
+// devices without a DRM render node (software rasterizers such as lavapipe).
+func openHeadlessRenderPolicy(opener ports.RenderDeviceOpener, cands []domain.GPUInfo, listErr error, cfg domain.Config, env string, requireRenderNode bool, log zerowrap.Logger) (ports.RenderDevice, error) {
+	dev, err := openHeadlessRenderDevice(opener, cands, listErr, cfg, env, requireRenderNode, log)
+	if err != nil || !requireRenderNode {
+		return dev, err
+	}
+	if _, render := dev.Node(); render == 0 {
+		dev.Close()
+		return nil, fmt.Errorf("headless render: a hardware render node is required: %w", core.ErrNoRenderNode)
+	}
+	return dev, nil
+}
+
+func openHeadlessRenderDevice(opener ports.RenderDeviceOpener, cands []domain.GPUInfo, listErr error, cfg domain.Config, env string, requireRenderNode bool, log zerowrap.Logger) (ports.RenderDevice, error) {
 	constrained := len(cfg.DRM.Devices) > 0 || len(cfg.DRM.Ignore) > 0 || cfg.Render.Device != "" || env != ""
 	fallback := func(reason error) (ports.RenderDevice, error) {
 		log.Info().Err(reason).Msg("render GPU: first usable Vulkan device (headless discovery fallback)")
@@ -50,7 +68,7 @@ func openHeadlessRender(opener ports.RenderDeviceOpener, cands []domain.GPUInfo,
 			}
 		}
 	}
-	decision := core.PlanHeadlessRender(cands, listErr, config, constrained, matched)
+	decision := core.PlanHeadlessRender(cands, listErr, config, constrained, matched, requireRenderNode)
 	switch decision.Choice {
 	case core.HeadlessUseExplicitRenderNode:
 		var st unix.Stat_t

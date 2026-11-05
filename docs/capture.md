@@ -101,3 +101,5 @@ capture = portal
 ```
 
 Pick the output in the portal dialog, for example a virtual `tv` with `output.tv.hdr = on`.
+
+To stream from a machine with no display, run NeferWL in server mode: see [Game server](server.md).
