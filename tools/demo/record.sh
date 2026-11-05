@@ -54,19 +54,15 @@ mkdir -p "$work/shots" "$work/state" docs/media
 docker build -t neferwl-demo -f tools/demo/Dockerfile tools/demo
 CGO_ENABLED=0 go build -o "$work/neferwl" ./cmd/neferwl
 log=$work/state/neferwl/runs/headless/latest.log
-mkfifo "$work/input"
-# Hold both ends open so the FIFO cannot block compositor startup or produce
-# premature EOF. No input is fed until the first app is ready.
-exec 3<>"$work/input"
 # The compositor is the container's main process, so the container ends with
 # it. Root in a rootless container is the host user: the bind-mounted work
-# directory (binary, FIFO, frames, log, hint dumps) stays owned by the host user.
+# directory (binary, frames, log, hint dumps) stays owned by the host user.
 # The GPU render node gives the compositor the sync files that hint scans need.
 docker run -d --name "$container" --hostname neferwl-demo --device /dev/dri \
     -e XDG_STATE_HOME=/work/state -e NEFERWL_HINT_DEBUG=1 \
     -v "$work:/work" -v "$work/neferwl:/usr/local/bin/neferwl:ro" neferwl-demo \
     --backend=headless --size 1920x1080 --config /home/demo/config --no-xwayland \
-    --screenshot /work/shots --input /work/input --timeout 75s >/dev/null
+    --screenshot /work/shots --timeout 75s >/dev/null
 display=''
 deadline=$((SECONDS + 30))
 while ((SECONDS < deadline)); do
@@ -81,6 +77,7 @@ done
 [[ -n $display ]] || { echo "Timed out after 30s waiting for the compositor to listen; see $log" >&2; exit 1; }
 # Mousepad runs as another user (see launch_apps) and needs the socket.
 docker exec "$container" chmod 666 "/run/wl/${display##*/}"
+control() { docker exec -e "WAYLAND_DISPLAY=${display##*/}" "$container" neferwl "$@"; }
 app() { docker exec -d -e "WAYLAND_DISPLAY=${display##*/}" "$container" "$@"; }
 at() { local delay=$(($1 - SECONDS)); if ((delay > 0)); then sleep "$delay"; fi; }
 launch_apps() {
@@ -129,21 +126,26 @@ feed() {
             label=$(docker exec "$container" demo-hint-label label "$mark" ${line#hint-click }) ||
                 { echo "No hint label for: ${line#hint-click }" >&2; docker kill "$container" >/dev/null; return 1; }
             echo "Hint label for ${line#hint-click }: $label" >&2
-            printf 'type %s\n' "$label" ;;
+            control type "$label" --wait committed ;;
         *)
             [[ $line == 'key Super+g' ]] && mark=$(date +%s.%N)
-            printf '%s\n' "$line" ;;
+            case $cmd in
+            type) control type "${line#type }" --wait committed ;;
+            swipe4) control swipe 4 "${line#swipe4 }" --wait committed ;;
+            swipe) control swipe 3 "${line#swipe }" --wait committed ;;
+            *) read -ra words <<<"$line"; control "${words[@]}" --wait committed ;;
+            esac ;;
         esac
     done <tools/demo/input.txt
-    printf 'key Ctrl+Alt+BackSpace\n'
+    control key Ctrl+Alt+BackSpace --wait committed || true
 }
 app foot --title 'System / NeferWL' bash -c \
     'fastfetch --logo small --structure OS:Kernel:WM:Terminal:Memory:Colors; eza -la --no-user --icons --color=always /etc | head -24; exec sleep infinity'
-# The first app is launched before t=0. FIFO input and shell launches now
+# The first app is launched before t=0. Control input and shell launches now
 # share this epoch, independent of compositor/image/container startup time.
 SECONDS=0
 set -m
-feed >&3 &
+feed &
 feeder=$!
 launch_apps &
 launcher=$!

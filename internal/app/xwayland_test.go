@@ -55,7 +55,7 @@ type probe struct {
 // xwaylandEnv is a running headless compositor with the built-in XWM.
 type xwaylandEnv struct {
 	bin, display, statePath, shots string
-	script                         *io.PipeWriter
+	script                         *controlTestClient
 }
 
 // startXwayland runs the compositor on one headless output and waits for its
@@ -112,7 +112,6 @@ func startXwaylandBackendConfig(t *testing.T, backend domain.Backend, sizes [][2
 	shots := t.TempDir()
 	bin := buildProbe(t)
 
-	script, scriptW := io.Pipe()
 	changes := make(chan struct{}, 1)
 	xwaylandPublications.Store(t, changes)
 	t.Cleanup(func() { xwaylandPublications.Delete(t) })
@@ -176,7 +175,7 @@ func startXwaylandBackendConfig(t *testing.T, backend domain.Backend, sizes [][2
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(ctx, Options{
-			Backend: backend, NoTerminal: true, Config: cfg, ConfigPath: path, Script: script,
+			Backend: backend, NoTerminal: true, Config: cfg, ConfigPath: path,
 			ScreenshotDir: shots, Sizes: sizes, noLibinput: backend == domain.BackendServer,
 		})
 	}()
@@ -185,7 +184,6 @@ func startXwaylandBackendConfig(t *testing.T, backend domain.Backend, sizes [][2
 			t.Logf("compositor log:\n%s", logs.String())
 		}
 		cancel()
-		_ = scriptW.Close()
 		select {
 		case err := <-done:
 			if err != nil {
@@ -208,7 +206,7 @@ func startXwaylandBackendConfig(t *testing.T, backend domain.Backend, sizes [][2
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &xwaylandEnv{bin: bin, display: display, statePath: statePath, shots: shots, script: scriptW}
+	return &xwaylandEnv{bin: bin, display: display, statePath: statePath, shots: shots, script: dialTestControl(t, runtime)}
 }
 
 // TestXwaylandProbe: an X11 client is managed by the built-in XWM. It shows
@@ -578,7 +576,7 @@ func TestXwaylandFullscreenStats(t *testing.T) {
 	// Holding cmd activates WatchStats for the focused X11 window. The OSD is
 	// excluded from screenshots; the subsequent close verifies the compositor
 	// and XWM survived the stats request.
-	if _, err := io.WriteString(e.script, "hold Super_L 1s\nkey Super+q\n"); err != nil {
+	if _, err := io.WriteString(e.script, "press Super\nrelease Super\nkey Super+q\n"); err != nil {
 		t.Fatal(err)
 	}
 	until(t, "disconnected X11 client removed", func() bool { return len(readState(e.statePath).Windows) == 0 })

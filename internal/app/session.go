@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"os"
@@ -18,7 +17,6 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/directseat"
 	"github.com/bnema/neferwl/internal/adapters/drm"
 	"github.com/bnema/neferwl/internal/adapters/drm/supervisor"
-	"github.com/bnema/neferwl/internal/adapters/headlessinput"
 	"github.com/bnema/neferwl/internal/adapters/hints"
 	"github.com/bnema/neferwl/internal/adapters/launcher"
 	"github.com/bnema/neferwl/internal/adapters/libinput"
@@ -190,7 +188,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	}
 	s.childEnv = launcher.ChildEnv(os.Environ(), s.server.SocketName(), runtimeDir, xcursor.CursorSize())
 	controlPath := ""
-	if opts.Backend == "headless" {
+	if opts.Backend != domain.BackendDRM {
 		path := filepath.Join(runtimeDir, "neferwl", s.server.SocketName()+".control.sock")
 		kb := opts.Config.Keyboard
 		controlMap, mapErr := xkb.New(xkb.RMLVO{Layout: kb.Layout, Variant: kb.Variant, Options: kb.Options})
@@ -317,7 +315,6 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 		defer workers.Done()
 		relayConfig(ctx, opts.Config, p.watched, p.filtered, p.keymaps, p.deviceConfigs, curs, p.commands, logging.For(ctx, "config"), p.controlKeymaps)
 	}()
-	script := make(chan string)
 	go func() {
 		defer workers.Done()
 		var (
@@ -370,32 +367,23 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 			})
 			return
 		}
-		if err := headlessinput.RunSecure(ctx, km, p.keymaps, script, p.input, p.layouts, p.constraints, func(o string, x, y float64) { curs.Move(o, x, y, true) }, logging.For(ctx, "input"), security); err != nil && !errors.Is(err, context.Canceled) {
+		// No physical input producer: control owns synthetic input. Continue
+		// consuming input-only state updates so the wiring cannot back up.
+		defer func() { km.Close() }()
+		for {
 			select {
-			case done <- err:
 			case <-ctx.Done():
+				return
+			case next := <-p.keymaps:
+				km.Close()
+				km = next
+			case <-p.layouts:
+			case <-p.constraints:
+			case <-p.deviceConfigs:
 			}
 		}
 	}()
-	if opts.Script != nil {
-		go func() { <-ctx.Done(); _ = opts.Script.Close() }()
-		go func() {
-			defer close(script)
-			scanner := bufio.NewScanner(opts.Script)
-			for scanner.Scan() {
-				select {
-				case <-ctx.Done():
-					return
-				case script <- scanner.Text():
-				}
-			}
-			if err := scanner.Err(); err != nil {
-				log.Warn().Err(err).Msg("reading input script")
-			}
-		}()
-	} else {
-		close(script)
-	}
+
 	go func() { defer workers.Done(); done <- server.Run(ctx) }()
 	if dir := logging.Dir(ctx); dir != "" {
 		workers.Add(1)

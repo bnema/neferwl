@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -25,7 +24,7 @@ import (
 
 // runFlags are the root command flags.
 type runFlags struct {
-	backend, screenshot, size, input, debug, config, pprof            string
+	backend, screenshot, size, debug, config, pprof                   string
 	noTerminal, noXwayland, headlessHDR, screenshotRaw, session, dbus bool
 	timeout                                                           time.Duration
 }
@@ -34,7 +33,6 @@ func (f *runFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.backend, "backend", "drm", "drm, headless or server")
 	fs.StringVar(&f.screenshot, "screenshot", "", "write PNG frames to directory")
 	fs.StringVar(&f.size, "size", "1920x1080", "headless output sizes WxH, comma-separated for several outputs")
-	fs.StringVar(&f.input, "input", "", "headless input script path (- for stdin)")
 	fs.BoolVar(&f.noTerminal, "no-terminal", false, "skip initial terminal")
 	fs.BoolVar(&f.noXwayland, "no-xwayland", false, "no X11 display for X11 apps")
 	fs.BoolVar(&f.headlessHDR, "headless-hdr", false, "test-only: report HDR on virtual outputs; fall back if Vulkan HDR unavailable")
@@ -49,7 +47,7 @@ func (f *runFlags) register(fs *flag.FlagSet) {
 
 // serverRejected are the test-only and headless flags --backend=server
 // refuses, in report order.
-var serverRejected = []string{"screenshot", "screenshot-raw", "input", "size", "timeout", "headless-hdr", "dbus"}
+var serverRejected = []string{"screenshot", "screenshot-raw", "size", "timeout", "headless-hdr", "dbus"}
 
 // validate checks the flag combinations and parses --size. set holds the
 // flags given on the command line.
@@ -81,8 +79,6 @@ func (f *runFlags) validate(args []string, set map[string]bool) ([][2]int, error
 		return nil, usagef("--screenshot requires --backend=headless")
 	case f.screenshotRaw && (f.screenshot == "" || !f.headlessHDR):
 		return nil, usagef("--screenshot-raw requires --screenshot and --headless-hdr")
-	case f.input != "" && !headless:
-		return nil, usagef("--input requires --backend=headless")
 	case f.timeout < 0:
 		return nil, usagef("negative timeout")
 	case len(args) != 0:
@@ -138,12 +134,6 @@ func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
 	if err != nil {
 		return err
 	}
-	script, closeScript, err := openScript(f.input)
-	if err != nil {
-		return err
-	}
-	// app.Run closes the script on shutdown; this covers the returns before it.
-	defer closeScript()
 	tuneGC()
 	ctx, closeLog, err := logging.Open(ctx, f.backend, cfg.Log.Level, mergeDebug(cfg.Log.Debug, f.debug))
 	if err != nil {
@@ -184,7 +174,6 @@ func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
 		ScreenshotDir: f.screenshot,
 		ScreenshotRaw: f.screenshotRaw,
 		Sizes:         sizes,
-		Script:        script,
 	})
 	// SIGINT and SIGTERM cancel the context and are clean exits.
 	if err != nil && ctx.Err() != nil && errors.Is(err, context.Canceled) {
@@ -239,24 +228,6 @@ func mergeDebug(configured []string, cli string) string {
 		b.WriteString(cli)
 	}
 	return b.String()
-}
-
-// openScript opens the --input script. It returns a nil interface, not a
-// typed-nil *os.File, when no script was requested: app.Run tests the
-// interface against nil to decide whether to read a script. closeScript
-// closes what openScript opened; it does nothing for stdin and for no script.
-func openScript(path string) (script io.ReadCloser, closeScript func(), err error) {
-	switch path {
-	case "":
-		return nil, func() {}, nil
-	case "-":
-		return os.Stdin, func() {}, nil
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, func() {}, err
-	}
-	return f, func() { _ = f.Close() }, nil
 }
 
 // tuneGC bounds the heap of a process that runs for days. The Go live heap

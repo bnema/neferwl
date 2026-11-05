@@ -31,28 +31,32 @@ It builds the Arch image (apps, tesseract, AT-SPI) and the compositor binary, th
 The compositor runs headless inside a disposable container, with the binary and a work directory bind-mounted and `/dev/dri` passed for the GPU.
 The image only carries Mesa's radeon Vulkan driver, and hint scans need the sync files that a hardware driver exports; the script stops early without an AMD render node.
 Firefox opens a live DuckDuckGo page, so the recording needs the network and its content varies.
-A FIFO feeds `input.txt` while the script launches the apps on the same clock.
+The recording script translates `input.txt` into control-socket commands while launching apps on the same clock.
 The hint step makes Firefox fullscreen and labels the page with `hint`; `hint-click <words>` then types the label of the link that shows those words, found from the scan's dump and an OCR read of the still page (`hint-read`).
 The recording only counts if the compositor stops on the quit key that ends `input.txt`; reaching its `--timeout` first fails the run as truncated.
 Temporary captures are removed by default; set `KEEP_CAPTURE=1` to keep successful runs.
 The recording and poster replace `docs/media/demo.mp4` and `docs/media/demo.png`.
 
-## Input scripts
+## Control input
 
-`--input <file>`, or `--input -` for stdin, plays one command per line:
+Scripted `--input` playback has been replaced by control-socket commands. Target
+an isolated session with `-s <id>` or `NEFERWL_CONTROL=<socket>`:
 
-| Command | Effect |
-|---|---|
-| `type <text>` | Type text |
-| `key Super+Return` | Press a key, with optional Shift, Ctrl, Alt or Super |
-| `hold Super+h 1s` | Press a key like `key`, hold it, then release it |
-| `press Super`, `release Super` | Hold or release a modifier across mouse actions (`Super`, `Shift`, `Ctrl`, `Alt`) |
-| `sleep 1s` | Wait |
-| `move <x> <y>` | Move the pointer, in output coordinates |
-| `click [left\|right\|middle]`, `down <button>`, `up <button>` | Mouse buttons |
-| `vt away`, `vt back` | Simulate a VT switch: the keys and modifiers held are forgotten and the seat goes inactive, then active again |
-| `swipe up\|down\|left\|right` | Three-finger flick |
-| `swipe4 up\|down` | Four-finger flick |
+```sh
+neferwl key Super+Return --until 'window-mapped app_id=foot'
+neferwl type 'echo hello'
+neferwl key Return
+neferwl move 600 300
+neferwl click left
+neferwl swipe 4 up
+neferwl press Super
+neferwl release Super
+```
+
+Commands accept `--wait committed|settled|presented`, `--until`, and `--timeout`.
+`move` uses global logical coordinates. Use shell orchestration for delays and
+holds; the translator never sleeps. Injection is rejected while the session is
+locked. The existing `pointer` virtual-pointer command remains available.
 
 ## Testing input methods
 

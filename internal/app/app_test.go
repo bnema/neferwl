@@ -4,7 +4,6 @@ import (
 	"context"
 	"image/color"
 	"image/png"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -190,7 +189,19 @@ func TestHeadlessTyping(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Terminal.Command = []string{"foot", "-c", "/dev/null", "sh"}
 	dir := t.TempDir()
-	err := Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: cfg, ScreenshotDir: dir, Script: io.NopCloser(strings.NewReader("sleep 1.5s\ntype echo neferwl-ok\nkey Return\nsleep 1s\n")), Timeout: 6 * time.Second})
+	scenes := make(chan []domain.Scene, 4096)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, ScreenshotDir: dir, Timeout: 6 * time.Second, testScenes: scenes})
+	}()
+	awaitControlScene(t, scenes, done, 1)
+	client := dialTestControl(t, os.Getenv("XDG_RUNTIME_DIR"))
+	if _, err := client.Write([]byte("type echo neferwl-ok\nkey Return")); err != nil {
+		t.Fatal(err)
+	}
+	err := <-done
 	if err != nil {
 		if strings.Contains(err.Error(), "Vulkan") || strings.Contains(err.Error(), "vulkan") {
 			t.Skipf("Vulkan unavailable: %v", err)
@@ -238,6 +249,7 @@ func TestHeadlessPointerClickFocus(t *testing.T) { headlessPointerClickFocus(t, 
 // click still lands on window 1 once the second column settled.
 func TestHeadlessPointerClickFocusAnimated(t *testing.T) { headlessPointerClickFocus(t, true) }
 
+//testpolicy:realtime real compositor pointer focus publication
 func headlessPointerClickFocus(t *testing.T, animated bool) {
 	if _, err := exec.LookPath("foot"); err != nil {
 		t.Skip("foot unavailable")
@@ -270,9 +282,46 @@ func headlessPointerClickFocus(t *testing.T, animated bool) {
 	var halt sync.Once
 	stopCollector := func() { halt.Do(func() { close(stop); <-collected }) }
 	t.Cleanup(stopCollector)
-	// The script ends with the default quit bind: the run stops when it
-	// is done, the timeout is only a backstop.
-	err := Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: cfg, Script: io.NopCloser(strings.NewReader("sleep 1s\nkey Super+Return\nsleep 1s\nmove 600 300\nclick\nsleep 500ms\nkey Ctrl+Alt+BackSpace\n")), Timeout: 5 * time.Second, testScenes: scenes})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	ready := make(chan []domain.Scene, 4096)
+	// Keep a dedicated readiness tap; the collector below still owns scenes.
+	go func() {
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, Timeout: 5 * time.Second, testScenes: ready})
+	}()
+	awaitControlScene(t, ready, done, 1)
+	client := dialTestControl(t, os.Getenv("XDG_RUNTIME_DIR"))
+	if err := client.call(map[string]any{"op": "inject", "kind": "key", "combo": "Super+Return", "until": "window-mapped app_id=foot", "wait": "settled"}); err != nil {
+		t.Fatal(err)
+	}
+	awaitControlScene(t, ready, done, 2)
+	// Preserve the two-column state for the existing scene assertions.
+	if err := client.call(map[string]any{"op": "inject", "kind": "pointer", "cmd": "move", "args": []string{"600", "300"}, "wait": "settled"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Write([]byte("move 600 300\nclick")); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(5 * time.Second)
+	found := false
+	for !found {
+		select {
+		case set := <-ready:
+			scenes <- set
+			for _, scene := range set {
+				for _, w := range scene.Windows {
+					if len(scene.Windows) == 2 && w.ID == 1 && w.Focused {
+						found = true
+					}
+				}
+			}
+		case <-deadline:
+			t.Fatal("click did not focus first window")
+		}
+	}
+	cancel()
+	err := <-done
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "vulkan") {
 			t.Skipf("Vulkan unavailable: %v", err)
@@ -300,19 +349,26 @@ func headlessPointerClickFocus(t *testing.T, animated bool) {
 	}
 }
 
-//testpolicy:realtime real headless session and child processes
-func TestBlockedScriptShutdown(t *testing.T) {
+//testpolicy:realtime real control client and headless session shutdown
+func TestOpenControlClientShutdown(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-	r, w := io.Pipe()
-	defer w.Close()
+	scenes := make(chan []domain.Scene, 128)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), NoTerminal: true, Script: r, Timeout: 300 * time.Millisecond})
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), NoTerminal: true, testScenes: scenes})
 	}()
+	awaitControlScene(t, scenes, done, 0)
+	_ = dialTestControl(t, os.Getenv("XDG_RUNTIME_DIR"))
+	cancel()
 	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("blocked script prevented shutdown")
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("open control client prevented shutdown")
 	}
 }
 

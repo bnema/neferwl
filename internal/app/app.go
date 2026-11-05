@@ -4,7 +4,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"io"
 	"os/exec"
 	"time"
 
@@ -44,9 +43,7 @@ type Options struct {
 	// Sizes are the headless outputs (width, height), left to right; empty
 	// means one 1920x1080 output. With several outputs, screenshots go to
 	// one subdirectory per output (HEADLESS-1, HEADLESS-2, ...).
-	Sizes [][2]int
-	// Run closes Script on shutdown; the reader goroutine exits after Close.
-	Script     io.ReadCloser
+	Sizes      [][2]int
 	testScenes chan<- []domain.Scene
 	// captureAllowPath replaces the fixed allowlist path (tests).
 	captureAllowPath string
