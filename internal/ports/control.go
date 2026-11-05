@@ -25,6 +25,7 @@ func (ControlDo) controlRequest() {}
 
 // ControlInject sends events through the core input path and observes completion.
 type ControlInject struct {
+	Shots   []domain.ShotRequest
 	Events  []InputEvent
 	Wait    domain.WaitLevel
 	Until   *domain.Until
@@ -45,6 +46,10 @@ type ControlQuery struct {
 func (ControlQuery) controlRequest() {}
 
 // ControlReply carries completion and partial results, including on timeout.
+// Shots contains output-specific presented scene sequences, not pixel data.
+// Core performs no capture I/O: the adapter issues CaptureRequests using each
+// returned MinSeq and reads their pixels. On timeout only presented outputs
+// have Shots.
 type ControlReply struct {
 	Err      string
 	Done     domain.WaitLevel

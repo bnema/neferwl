@@ -146,7 +146,7 @@ func TestControlWaitEarliestDeadlineAndReachedLevel(t *testing.T) {
 		predicate := &domain.Until{Kind: domain.UntilWindowMapped, AppID: "missing"}
 		// Queue in FIFO order with deadlines deliberately out of order.
 		for _, timeout := range []time.Duration{3 * time.Second, time.Second, time.Second} {
-			c.waitControl(c.state(), c.sceneSeqs(), domain.WaitSettled, predicate, timeout, replies)
+			c.waitControl(c.state(), c.sceneSeqs(), domain.WaitSettled, predicate, timeout, replies, nil)
 		}
 		c.evalWaits()
 		time.Sleep(time.Second)
@@ -172,8 +172,8 @@ func TestControlWaitEarliestDeadlineAndReachedLevel(t *testing.T) {
 		second := c.state()
 		first.Windows = []domain.WindowState{{ID: 11}}
 		second.Windows = []domain.WindowState{{ID: 22}}
-		c.waitControl(first, c.sceneSeqs(), domain.WaitSettled, nil, time.Second, replies)
-		c.waitControl(second, c.sceneSeqs(), domain.WaitSettled, nil, time.Second, replies)
+		c.waitControl(first, c.sceneSeqs(), domain.WaitSettled, nil, time.Second, replies, nil)
+		c.waitControl(second, c.sceneSeqs(), domain.WaitSettled, nil, time.Second, replies, nil)
 		c.evalWaits()
 		<-replies // previous timeout
 		if r := <-replies; len(r.Diff.Unmapped) != 1 || r.Diff.Unmapped[0] != 11 {

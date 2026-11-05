@@ -20,11 +20,16 @@ func (c *Core) control(ctx context.Context, r ports.ControlRequest) error {
 			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrUnknownCommand})
 			return nil
 		}
+		shots, code := c.controlShots(r.Shots, r.Caps)
+		if code != "" {
+			controlReply(r.Reply, ports.ControlReply{Err: code})
+			return nil
+		}
 		before := c.state()
 		baseline := c.sceneSeqs()
 		c.bindCombo, c.bindSource = "", domain.BindSourceControl
 		err := c.runBind(ctx, Action(r.Action))
-		c.waitControl(before, baseline, r.Wait, r.Until, r.Timeout, r.Reply)
+		c.waitControl(before, baseline, r.Wait, r.Until, r.Timeout, r.Reply, shots)
 		return err
 	case ports.ControlQuery:
 		if r.Caps&domain.CapRead == 0 {
@@ -44,6 +49,11 @@ func (c *Core) control(ctx context.Context, r ports.ControlRequest) error {
 			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrLocked})
 			return nil
 		}
+		shots, code := c.controlShots(r.Shots, r.Caps)
+		if code != "" {
+			controlReply(r.Reply, ports.ControlReply{Err: code})
+			return nil
+		}
 		before, baseline := c.state(), c.sceneSeqs()
 		for _, ev := range r.Events {
 			if err := c.inputEvent(ctx, ev); err != nil {
@@ -56,7 +66,7 @@ func (c *Core) control(ctx context.Context, r ports.ControlRequest) error {
 				return nil
 			}
 		}
-		c.waitControl(before, baseline, r.Wait, r.Until, r.Timeout, r.Reply)
+		c.waitControl(before, baseline, r.Wait, r.Until, r.Timeout, r.Reply, shots)
 	}
 	return nil
 }
@@ -66,4 +76,33 @@ func controlReply(ch chan<- ports.ControlReply, reply ports.ControlReply) {
 	case ch <- reply:
 	default:
 	}
+}
+
+// controlShots validates before execution and expands all-output selectors in
+// snapshot order. Caller-supplied sequence values are never trusted.
+func (c *Core) controlShots(requests []domain.ShotRequest, caps domain.Caps) ([]domain.ShotRequest, string) {
+	if len(requests) == 0 {
+		return nil, ""
+	}
+	if caps&domain.CapCapture == 0 {
+		return nil, ports.ControlErrForbidden
+	}
+	if c.security.Protected || c.protectionRequested() {
+		return nil, ports.ControlErrLocked
+	}
+	outputs := c.state().Outputs
+	var shots []domain.ShotRequest
+	for _, q := range requests {
+		found := false
+		for _, o := range outputs {
+			if q.Output == "" || q.Output == o.Name {
+				shots = append(shots, domain.ShotRequest{Output: o.Name, Raw: q.Raw})
+				found = true
+			}
+		}
+		if !found {
+			return nil, ports.ControlErrBadRequest
+		}
+	}
+	return shots, ""
 }
