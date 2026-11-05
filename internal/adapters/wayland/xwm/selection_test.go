@@ -250,7 +250,8 @@ func TestSelectionXToWaylandINCR(t *testing.T) {
 		data, err := io.ReadAll(f)
 		done <- result{data, err}
 	}()
-	t.Cleanup(func() { f.Close(); <-finished })
+	// Abort first: closing f does not interrupt a blocked read while the XWM holds the write end.
+	t.Cleanup(func() { r.x.selClose(); f.Close(); <-finished })
 	_, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
 	r.skip = n
 	r.p.setProp(r.requestor, r.data, r.p.atom("INCR"), 32, le32(total))
@@ -297,11 +298,13 @@ func TestSelectionXToWaylandBackpressure(t *testing.T) {
 	src.EXPECT().SetWritable(true).Return(nil).Once()
 	src.EXPECT().SetWritable(false).Return(nil).Once()
 	src.EXPECT().Remove().Return().Once()
-	const piece = 4096
-	f := r.receive(t, piece) // force backpressure independent of host pipe limits
+	f := r.receive(t, 4096) // force backpressure independent of host pipe limits
+	// The kernel rounds the request up to its page size: use the real capacity.
+	piece, err := unix.FcntlInt(f.Fd(), unix.F_GETPIPE_SZ, 0)
+	require.NoError(t, err)
 	_, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
 	r.skip = n
-	r.p.setProp(r.requestor, r.data, r.p.atom("INCR"), 32, le32(3*piece))
+	r.p.setProp(r.requestor, r.data, r.p.atom("INCR"), 32, le32(uint32(3*piece)))
 	r.p.selectionNotify(r.requestor, r.clip, r.utf8, r.data)
 	r.waitGet(t)
 	want := pattern(3 * piece)
