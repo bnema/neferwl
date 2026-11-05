@@ -186,6 +186,18 @@ Replace `test` with the id returned by `session new`. For continuous captures,
 use `neferwl shot --every-frame --dir <directory>` and stop with
 `neferwl shot --stop`; the directory contains PNG frames and `frames.ffconcat`.
 
+## Runtime outputs
+
+The `admin` capability adds and removes virtual outputs while the session runs.
+`neferwl output add WxH@Hz [--name NAME]` maps to `output-add`;
+`neferwl output rm NAME` maps to `output-rm`. The reply waits until core state
+lists or drops the output, with a 10s deadline.
+
+```json
+{"id":5,"op":"output-add","mode":"800x600@60","name":"extra"}
+{"id":6,"op":"output-rm","name":"extra"}
+```
+
 ## Sessions
 
 `neferwl session ls` lists live sessions in ID order, with profile, PID,
