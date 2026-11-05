@@ -264,3 +264,17 @@ func TestControlWaitCap(t *testing.T) {
 		}
 	})
 }
+
+// A removed output forgets its presented sequence.
+func TestRemovedScreenForgetsPresented(t *testing.T) {
+	var cfg domain.Config
+	cfg.Keyboard.CmdKey = "super"
+	cfg.Layout.MaxColumns = 2
+	c := newSizedCore(t, cfg)
+	c.addScreen(domain.OutputInfo{Name: "A", Width: 100, Height: 80})
+	c.presented = map[string]uint64{"A": 7}
+	c.removeScreen("A")
+	if _, ok := c.presented["A"]; ok {
+		t.Fatal("presented kept for a removed output")
+	}
+}

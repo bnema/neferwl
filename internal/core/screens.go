@@ -355,6 +355,7 @@ func (c *Core) addScreen(info domain.OutputInfo) {
 // placeholder again: it keeps its windows for the next output.
 func (c *Core) removeScreen(name string) {
 	delete(c.hdrCaps, name)
+	delete(c.presented, name)
 	i := c.screenIndex(name)
 	if i < 0 {
 		return
