@@ -25,10 +25,12 @@ type OutputApply struct {
 	pending bool
 	// req is the request behind the backend work; nil for a reload or after
 	// a reload superseded it.
-	req      *domain.OutputApply
-	previous map[string]domain.OutputConfig
-	rollback bool
-	failure  error
+	req             *domain.OutputApply
+	runtimePrevious []domain.OutputConfig
+	runtimeChange   bool
+	previous        map[string]domain.OutputConfig
+	rollback        bool
+	failure         error
 	// config is the latest effective configuration core has not received.
 	config  domain.ConfigChanged
 	publish bool
@@ -88,6 +90,7 @@ func (a *OutputApply) Request(req domain.OutputApply) {
 		a.reply(req.ID, nil)
 		return
 	}
+	a.runtimeChange = false
 	a.req, a.previous, a.rollback, a.failure = &req, previous, false, nil
 	a.due(cfg)
 }
@@ -129,6 +132,9 @@ func (a *OutputApply) Finished(err error) (decision OutputApplyDecision) {
 		return decision
 	}
 	if err != nil {
+		if a.runtimeChange {
+			a.state.runtime = a.runtimePrevious
+		}
 		cfg := a.state.Restore(a.previous)
 		a.setConfig(cfg)
 		a.rollback, a.failure = true, err
