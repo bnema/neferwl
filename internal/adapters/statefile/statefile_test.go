@@ -11,14 +11,15 @@ import (
 	"time"
 
 	"bnema.dev/zerowrap"
+	"github.com/bnema/neferwl/internal/adapters/statewire"
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
 	"github.com/bnema/neferwl/internal/domain"
 )
 
-var sample = State{
+var sample = statewire.State{
 	Output:  "DP-2",
-	Outputs: []Output{{Name: "HDMI-A-1", Active: 1, Count: 1, WorkspaceID: "p-1"}, {Name: "DP-2", Active: 2, Count: 3, Workspace: "web", WorkspaceID: "name:web"}},
-	Windows: []Window{{ID: 1, AppID: "foot", PID: 100, Output: "HDMI-A-1", Workspace: 1, WorkspaceID: "p-1", Visible: true}, {ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 2, WorkspaceID: "name:web", Visible: true}},
+	Outputs: []statewire.Output{{Name: "HDMI-A-1", Active: 1, Count: 1, WorkspaceID: "p-1"}, {Name: "DP-2", Active: 2, Count: 3, Workspace: "web", WorkspaceID: "name:web"}},
+	Windows: []statewire.Window{{ID: 1, AppID: "foot", PID: 100, Output: "HDMI-A-1", Workspace: 1, WorkspaceID: "p-1", Visible: true}, {ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 2, WorkspaceID: "name:web", Visible: true}},
 }
 
 // The file holds the latest state while the session runs; a stale file from
@@ -41,7 +42,7 @@ func TestRunWritesAndRemoves(t *testing.T) {
 		go func() { done <- Run(ctx, path, states, workspaceid.WithPrefix("0a1b2c3d"), zerowrap.Default()) }()
 		focused := domain.WindowState{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: 9, Visible: true}
 		states <- domain.State{Output: "DP-2", Outputs: []domain.OutputState{{Name: "DP-2", Active: 1, Count: 1, WorkspaceID: 9}}, Window: &focused, Windows: []domain.WindowState{focused}}
-		want := State{Output: "DP-2", Outputs: []Output{{Name: "DP-2", Active: 1, Count: 1, WorkspaceID: "0a1b2c3d-9"}}, Window: &Window{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true}, Windows: []Window{{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true}}, Workspaces: []Workspace{}}
+		want := statewire.State{Output: "DP-2", Outputs: []statewire.Output{{Name: "DP-2", Active: 1, Count: 1, WorkspaceID: "0a1b2c3d-9"}}, Window: &statewire.Window{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true}, Windows: []statewire.Window{{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true}}, Workspaces: []statewire.Workspace{}}
 		synctest.Wait()
 		got, err := Read(path)
 		if err != nil {
@@ -99,7 +100,7 @@ func TestOutputOfWalksParents(t *testing.T) {
 // window wins, else a visible one.
 func TestOutputOfPrefersFocusedWindow(t *testing.T) {
 	st := sample
-	st.Windows = []Window{
+	st.Windows = []statewire.Window{
 		{ID: 1, PID: 100, Output: "HDMI-A-1", Visible: true},
 		{ID: 2, PID: 100, Output: "DP-2", Visible: false},
 		{ID: 3, PID: 100, Output: "DP-2", Visible: true},

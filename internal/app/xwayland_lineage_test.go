@@ -7,7 +7,7 @@ import (
 	clientcore "github.com/bnema/go-wayland-bindings/client/wayland"
 	clientxdg "github.com/bnema/go-wayland-bindings/client/xdgshell"
 	"github.com/bnema/neferwl/internal/adapters/config"
-	"github.com/bnema/neferwl/internal/adapters/statefile"
+	"github.com/bnema/neferwl/internal/adapters/statewire"
 	"github.com/bnema/neferwl/internal/domain"
 	"io"
 	"os"
@@ -85,15 +85,15 @@ func runXwaylandLineage(t *testing.T, direct, seatTV bool) {
 		args = append(args, "-lineage-direct")
 	}
 	p := startProbe(t, e.bin, e.display, args...)
-	find := func(class string) (statefile.Window, bool) {
+	find := func(class string) (statewire.Window, bool) {
 		for _, w := range readState(e.statePath).Windows {
 			if w.AppID == class {
 				return w, true
 			}
 		}
-		return statefile.Window{}, false
+		return statewire.Window{}, false
 	}
-	var launcher, game statefile.Window
+	var launcher, game statewire.Window
 	t.Cleanup(func() { t.Logf("probe: %s state: %+v", p.out.String(), readState(e.statePath)) })
 	until(t, "fullscreen launcher", func() bool {
 		var ok bool
@@ -101,21 +101,21 @@ func runXwaylandLineage(t *testing.T, direct, seatTV bool) {
 		return ok && launcher.Output == "tv" && launcher.Fullscreen && strings.Contains(p.out.String(), "mapped 640x360")
 	})
 	until(t, "launcher active", func() bool { return lastLine(p.out.String(), "active ") == "active self" })
-	workspace := func() statefile.Workspace {
+	workspace := func() statewire.Workspace {
 		for _, w := range readState(e.statePath).Workspaces {
 			if w.Output == "tv" && w.Visible {
 				return w
 			}
 		}
-		return statefile.Workspace{}
+		return statewire.Workspace{}
 	}
-	desktop := func() statefile.Workspace {
+	desktop := func() statewire.Workspace {
 		for _, w := range readState(e.statePath).Workspaces {
 			if w.Output == "HEADLESS-1" && w.Visible {
 				return w
 			}
 		}
-		return statefile.Workspace{}
+		return statewire.Workspace{}
 	}
 	baseline := desktop()
 	assertSeat := func() {

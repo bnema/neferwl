@@ -33,27 +33,6 @@ func Path(runtimeDir, socket string) (string, error) {
 	return filepath.Join(runtimeDir, "neferwl", socket+".json"), nil
 }
 
-// State is the shared state JSON wire type.
-type State = statewire.State
-
-// Workspace is the shared state JSON wire type.
-type Workspace = statewire.Workspace
-
-// Column is the shared state JSON wire type.
-type Column = statewire.Column
-
-// Tile is the shared state JSON wire type.
-type Tile = statewire.Tile
-
-// Output is the shared state JSON wire type.
-type Output = statewire.Output
-
-// Window is the shared state JSON wire type.
-type Window = statewire.Window
-
-// SDRExpansion is the shared state JSON wire type.
-type SDRExpansion = statewire.SDRExpansion
-
 // writeInterval is the least time between two writes of the file.
 const writeInterval = time.Second
 
@@ -112,7 +91,7 @@ func Run(ctx context.Context, path string, states <-chan domain.State, ids *work
 }
 
 // write replaces the file atomically: readers never see half a state.
-func write(path string, st State) error {
+func write(path string, st statewire.State) error {
 	data, err := json.Marshal(st)
 	if err != nil {
 		return err
@@ -131,8 +110,8 @@ func write(path string, st State) error {
 }
 
 // Read loads the state file.
-func Read(path string) (State, error) {
-	var st State
+func Read(path string) (statewire.State, error) {
+	var st statewire.State
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return st, err
@@ -174,12 +153,12 @@ var ErrNoWindow = errors.New("no window for this process")
 // application windows count: bars (layer surfaces) have no single output.
 // A process with windows on several outputs resolves to its focused window,
 // else a visible one. PIDs are those of the compositor's PID namespace.
-func OutputOf(st State, pid int) (Output, error) {
+func OutputOf(st statewire.State, pid int) (statewire.Output, error) {
 	return outputOf(st, pid, linuxProcTree{})
 }
 
-func outputOf(st State, pid int, tree procTree) (Output, error) {
-	byPID := map[int]Window{}
+func outputOf(st statewire.State, pid int, tree procTree) (statewire.Output, error) {
+	byPID := map[int]statewire.Window{}
 	for _, w := range st.Windows {
 		if w.PID <= 0 {
 			continue
@@ -197,7 +176,7 @@ func outputOf(st State, pid int, tree procTree) (Output, error) {
 					return o, nil
 				}
 			}
-			return Output{}, fmt.Errorf("output %q not in state", w.Output)
+			return statewire.Output{}, fmt.Errorf("output %q not in state", w.Output)
 		}
 		parent, ok := tree.Parent(pid)
 		if !ok || parent == pid {
@@ -205,12 +184,12 @@ func outputOf(st State, pid int, tree procTree) (Output, error) {
 		}
 		pid = parent
 	}
-	return Output{}, ErrNoWindow
+	return statewire.Output{}, ErrNoWindow
 }
 
 // better prefers the focused window, then a visible one.
-func better(st State, a, b Window) bool {
-	focused := func(w Window) bool { return st.Window != nil && st.Window.ID == w.ID }
+func better(st statewire.State, a, b statewire.Window) bool {
+	focused := func(w statewire.Window) bool { return st.Window != nil && st.Window.ID == w.ID }
 	if focused(a) != focused(b) {
 		return focused(a)
 	}

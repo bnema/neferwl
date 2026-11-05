@@ -30,6 +30,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/statefile"
+	"github.com/bnema/neferwl/internal/adapters/statewire"
 )
 
 const (
@@ -221,7 +222,7 @@ func TestXwaylandProbe(t *testing.T) {
 	first := startProbe(t, bin, display, "-title", "one")
 	until(t, "probe one mapped", func() bool { return strings.Contains(first.out.String(), "mapped ") })
 
-	var st statefile.State
+	var st statewire.State
 	until(t, "one visible X11Probe window", func() bool {
 		st = readState(statePath)
 		return len(st.Windows) == 1 && st.Windows[0].AppID == "X11Probe" && st.Windows[0].Visible
@@ -377,16 +378,16 @@ func until(t *testing.T, what string, cond func() bool) {
 
 // readState returns the current state file, or an empty state while it does
 // not exist or is being replaced.
-func readState(path string) statefile.State {
+func readState(path string) statewire.State {
 	st, err := statefile.Read(path)
 	if err != nil {
-		return statefile.State{}
+		return statewire.State{}
 	}
 	return st
 }
 
 // tileRect finds the rectangle of window id in the tiled columns.
-func tileRect(st statefile.State, id uint64) (image.Rectangle, bool) {
+func tileRect(st statewire.State, id uint64) (image.Rectangle, bool) {
 	for _, ws := range st.Workspaces {
 		for _, c := range ws.Columns {
 			for _, w := range c.Windows {
@@ -469,7 +470,7 @@ func TestXwaylandOverride(t *testing.T) {
 	box := image.Rect(100, 50, 220, 130) // output-local: one output at the X origin
 	until(t, "magenta menu in latest.png", func() bool { return magentaShare(shot, box) >= 0.9 })
 
-	var st statefile.State
+	var st statewire.State
 	until(t, "focused X11Probe toplevel", func() bool {
 		st = readState(e.statePath)
 		return len(st.Windows) >= 1 && st.Window != nil
@@ -530,13 +531,13 @@ func fullOutput(path string) float64 {
 }
 
 // windowOf returns the state window with the given pid.
-func windowOf(st statefile.State, pid int) (statefile.Window, bool) {
+func windowOf(st statewire.State, pid int) (statewire.Window, bool) {
 	for _, w := range st.Windows {
 		if w.PID == pid {
 			return w, true
 		}
 	}
-	return statefile.Window{}, false
+	return statewire.Window{}, false
 }
 
 // TestXwaylandFullscreen: a delayed fullscreen request fills the output,
@@ -701,7 +702,7 @@ func TestXwaylandOutputHint(t *testing.T) {
 	sizes := [][2]int{{xwaylandW, xwaylandH}, {xwaylandW, xwaylandH}}
 	e := startXwaylandWith(t, sizes, nil)
 	p := startProbe(t, e.bin, e.display, "-size", "640x360", "-at", "640,0", "-fullscreen", "-fullscreen-delay", "1500ms")
-	var w statefile.Window
+	var w statewire.Window
 	until(t, "window on HEADLESS-2", func() bool {
 		var ok bool
 		w, ok = windowOf(readState(e.statePath), p.cmd.Process.Pid)
@@ -1011,7 +1012,7 @@ func TestXwaylandServerProbe(t *testing.T) {
 		c.Outputs = append(c.Outputs, domain.OutputConfig{Name: "tv", Virtual: true, Mode: "640x360"})
 	})
 	p := startProbe(t, e.bin, e.display, "-title", "server")
-	var st statefile.State
+	var st statewire.State
 	until(t, "X11Probe visible on tv", func() bool {
 		st = readState(e.statePath)
 		return st.Output == "tv" && len(st.Windows) == 1 && st.Windows[0].AppID == "X11Probe" && st.Windows[0].Visible && st.Windows[0].Output == "tv"

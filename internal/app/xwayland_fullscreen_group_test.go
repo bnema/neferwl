@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/adapters/config"
-	"github.com/bnema/neferwl/internal/adapters/statefile"
+	"github.com/bnema/neferwl/internal/adapters/statewire"
 	"github.com/bnema/neferwl/internal/domain"
 )
 
@@ -39,21 +39,21 @@ func runXwaylandFullscreenGroup(t *testing.T, mode string) {
 	e := startXwaylandConfig(t, [][2]int{{ow, oh}}, func(c *domain.Config) { *c = cfg }, path)
 	p := startProbe(t, e.bin, e.display, "-lineage-controller", "start", "-lineage-direct")
 	t.Cleanup(func() { t.Logf("probe: %s state: %+v", p.out.String(), readState(e.statePath)) })
-	find := func(class string) (statefile.Window, bool) {
+	find := func(class string) (statewire.Window, bool) {
 		for _, w := range readState(e.statePath).Windows {
 			if w.AppID == class {
 				return w, true
 			}
 		}
-		return statefile.Window{}, false
+		return statewire.Window{}, false
 	}
-	workspace := func() statefile.Workspace {
+	workspace := func() statewire.Workspace {
 		for _, w := range readState(e.statePath).Workspaces {
 			if w.Output == "HEADLESS-1" && w.Visible {
 				return w
 			}
 		}
-		return statefile.Workspace{}
+		return statewire.Workspace{}
 	}
 	send := func(w io.Writer, line string) {
 		t.Helper()
@@ -61,7 +61,7 @@ func runXwaylandFullscreenGroup(t *testing.T, mode string) {
 			t.Fatal(err)
 		}
 	}
-	var launcher, game statefile.Window
+	var launcher, game statewire.Window
 	until(t, "fullscreen launcher", func() bool {
 		var ok bool
 		launcher, ok = find("steam")
@@ -143,7 +143,7 @@ func runXwaylandFullscreenGroup(t *testing.T, mode string) {
 	// A second window of the launcher's own app opens in an ordinary
 	// column, focused, not fullscreen; the launcher keeps its fullscreen.
 	startProbe(t, e.bin, e.display, "-class", "steam", "-stdin-sync")
-	var chat statefile.Window
+	var chat statewire.Window
 	until(t, "same-app window", func() bool {
 		for _, w := range readState(e.statePath).Windows {
 			if w.AppID == "steam" && w.ID != launcher.ID {
