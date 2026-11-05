@@ -467,7 +467,9 @@ func (w *window) afterCommit() {
 			w.reportCommitted(x.ackedCore)
 		}
 	} else if w.x11 != nil && w.last.Serial > w.lastCommittedReported {
-		if width, height := w.size(); width == w.last.Width && height == w.last.Height {
+		// A zero dimension leaves the size to the client (an unsized
+		// float): any drawn size answers it.
+		if width, height := w.size(); x11SizeMatches(width, w.last.Width) && x11SizeMatches(height, w.last.Height) {
 			w.reportCommitted(w.last.Serial)
 		}
 	}
@@ -489,6 +491,15 @@ func (w *window) afterCommit() {
 		w.floatW, w.floatH = fw, fh
 		w.srv().emit(ports.WindowResized{ID: w.id, Width: fw, Height: fh})
 	}
+}
+
+// x11SizeMatches reports whether a committed dimension answers a requested
+// one; 0 requests nothing in particular, but the window must have drawn.
+func x11SizeMatches(got, want int) bool {
+	if want == 0 {
+		return got > 0
+	}
+	return got == want
 }
 
 // reportCommitted is deliberately cold: boxing the event only happens once

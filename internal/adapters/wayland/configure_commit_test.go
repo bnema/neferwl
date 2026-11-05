@@ -102,8 +102,12 @@ func TestX11ConfigureCommitted(t *testing.T) {
 	buffer := shmBufferSized(t, r.xc, 32, 24)
 	configure := func(serial uint64, width int) {
 		t.Helper()
+		height := 24
+		if width == 0 {
+			height = 0
+		}
 		if !r.s.display.Do(func() {
-			r.s.apply(ports.ConfigureWindow{ID: mapped.ID, Serial: serial, Width: width, Height: 24, Visible: true})
+			r.s.apply(ports.ConfigureWindow{ID: mapped.ID, Serial: serial, Width: width, Height: height, Visible: true, Floating: width == 0})
 		}) {
 			t.Fatal("server stopped")
 		}
@@ -138,5 +142,13 @@ func TestX11ConfigureCommitted(t *testing.T) {
 	got = committedThroughBarrier(t, r.s, r.events)
 	if len(got) != 1 || got[0].Serial != 22 {
 		t.Fatalf("same-size configure: %+v", got)
+	}
+	// A non-imposed float gets 0x0 and keeps the size it draws: its next
+	// commit answers the configure.
+	configure(23, 0)
+	commit(false)
+	got = committedThroughBarrier(t, r.s, r.events)
+	if len(got) != 1 || got[0] != (ports.WindowCommitted{ID: mapped.ID, Serial: 23, Width: 32, Height: 24}) {
+		t.Fatalf("unsized float configure: %+v", got)
 	}
 }
