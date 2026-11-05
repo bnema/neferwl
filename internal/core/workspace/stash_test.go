@@ -58,3 +58,68 @@ func TestActivateHiddenStashOverScrollFullscreen(t *testing.T) {
 
 	})
 }
+
+func TestFullscreenStashMemberReturns(t *testing.T) {
+	for _, kind := range []string{"captured", "former column", "free float"} {
+		t.Run(kind, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				w := workspace()
+				w.AddWindow(1)
+				w.ToggleWindowStash()
+				if kind == "captured" {
+					if !w.CaptureStash(2) {
+						t.Fatal("not captured")
+					}
+				} else {
+					w.AddWindow(2)
+					w.FocusID(2)
+					if kind == "free float" {
+						w.Apply(ActionToggleFloating)
+					}
+					w.ToggleWindowStash()
+				}
+				w.SetFullscreen(2, true)
+				if w.Cover() != 2 {
+					t.Fatal("setup has no cover")
+				}
+				w.ToggleWindowStash()
+				if w.StashIndex(2) >= 0 || w.Fullscreen != 2 || w.Cover() != 2 || w.stashFocus || w.hiddenFullscreen != 0 || w.stashOver != 0 {
+					t.Fatalf("bad restored state: %+v", w)
+				}
+				if id, _ := w.Focused(); id != 2 {
+					t.Fatalf("focused %d", id)
+				}
+				if kind == "free float" {
+					if i := w.floatIndex(2); i < 0 || !w.Floats[i].free {
+						t.Fatal("free float not restored")
+					}
+				} else if len(w.Columns) != 1 || w.Columns[0].Windows[0] != 2 {
+					t.Fatal(w.Columns)
+				}
+				for _, p := range w.Layout() {
+					if p.ID == 2 && (!p.Fullscreen || p.Hidden || p.Rect != w.Output) {
+						t.Fatalf("placement %+v", p)
+					}
+				}
+			})
+		})
+	}
+}
+
+func TestFullscreenOutsideStashKeepsPlace(t *testing.T) {
+	for _, floating := range []bool{false, true} {
+		synctest.Test(t, func(t *testing.T) {
+			w := workspace()
+			if floating {
+				w.AddFloating(1, 100, 80)
+			} else {
+				w.AddWindow(1)
+			}
+			w.SetFullscreen(1, true)
+			w.ToggleWindowStash()
+			if w.StashIndex(1) >= 0 || w.Fullscreen != 1 || w.Cover() != 1 {
+				t.Fatal("fullscreen window moved")
+			}
+		})
+	}
+}

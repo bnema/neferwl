@@ -233,3 +233,30 @@ func TestFourFingerSwipeEmptyStashDoesNotRefillSlots(t *testing.T) {
 
 	})
 }
+
+func TestCapturedMappedFullscreenCanUnstash(t *testing.T) {
+	for _, floating := range []bool{false, true} {
+		synctest.Test(t, func(t *testing.T) {
+			r := stashSpawnRig(t, func(c *domain.Config) { c.Stash.Capture = true })
+			r.mapWindow(t, 1)
+			r.key(t, "s", domain.ModAlt|domain.ModShift)
+			r.client <- ports.WindowMapped{ID: 2, Floating: floating, Fullscreen: true}
+			set := receive(t, r.scenes)
+			if w, ok := sceneWindow(set, 2); !ok || !w.Fullscreen || !w.Floating || w.Hidden {
+				t.Fatalf("captured: %+v", w)
+			}
+			for len(r.commands) > 0 {
+				<-r.commands
+			}
+			set = r.key(t, "s", domain.ModAlt|domain.ModShift)
+			if w, ok := sceneWindow(set, 2); !ok || !w.Fullscreen || w.Floating || w.Hidden || !w.Focused {
+				t.Fatalf("unstashed: %+v", w)
+			}
+			for len(r.commands) > 0 {
+				if cmd, ok := (<-r.commands).(ports.ConfigureWindow); ok && cmd.ID == 2 && !cmd.Fullscreen {
+					t.Fatalf("lost fullscreen configure: %+v", cmd)
+				}
+			}
+		})
+	}
+}
