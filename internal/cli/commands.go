@@ -54,14 +54,15 @@ func loadConfig(path string) (string, domain.Config, []config.Warning, error) {
 	return path, cfg, warnings, err
 }
 
-// stateCmd reads the file named by $NEFERWL_STATE, else the one of
-// $WAYLAND_DISPLAY.
+// stateCmd prefers control for plain state queries, falling back to the file
+// named by $NEFERWL_STATE, else the one of $WAYLAND_DISPLAY. output-of
+// retains its statefile contract.
 var stateCmd = Command{
 	Name:    "state",
 	Args:    "[output-of <pid>]",
 	Summary: "Print the session state, or the output showing a process's window, as JSON.",
 	Setup: func(*flag.FlagSet) Runner {
-		return func(_ context.Context, env Env, args []string) error {
+		return func(ctx context.Context, env Env, args []string) error {
 			pid := 0
 			switch {
 			case len(args) == 0:
@@ -73,6 +74,12 @@ var stateCmd = Command{
 				pid = n
 			default:
 				return usagef("unexpected arguments: %v", args)
+			}
+			if pid == 0 {
+				if c, err := dialControl(os.Getenv); err == nil {
+					defer c.conn.Close()
+					return printControl(ctx, env, c, map[string]any{"op": "query", "what": "state"})
+				}
 			}
 			path := os.Getenv(statefile.Env)
 			if path == "" {
