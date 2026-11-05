@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -34,6 +35,15 @@ var shotCmd = Command{
 			}
 			if *timeout <= 0 {
 				return usagef("timeout must be positive")
+			}
+			// The session resolves paths in its own working directory; send an
+			// absolute one.
+			if *dir != "" {
+				abs, err := filepath.Abs(*dir)
+				if err != nil {
+					return err
+				}
+				*dir = abs
 			}
 			c, err := dialControl(os.Getenv, *target)
 			if err != nil {

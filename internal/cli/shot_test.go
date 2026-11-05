@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"net"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -56,5 +57,49 @@ func TestShotUsage(t *testing.T) {
 		if code != 2 {
 			t.Fatalf("%v: %d", args, code)
 		}
+	}
+}
+
+// TestShotRelativeDir: a relative --dir is sent as an absolute path, resolved
+// in the CLI's working directory rather than the session's.
+func TestShotRelativeDir(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "control.sock")
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	t.Setenv("NEFERWL_CONTROL", path)
+	t.Chdir(t.TempDir())
+	requests := make(chan map[string]any, 1)
+	result := make(chan error, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			result <- err
+			return
+		}
+		defer conn.Close()
+		var req map[string]any
+		if err := json.NewDecoder(conn).Decode(&req); err != nil {
+			result <- err
+			return
+		}
+		requests <- req
+		result <- json.NewEncoder(conn).Encode(map[string]any{"id": req["id"], "ok": true})
+	}()
+	code, _, stderr := execute(t, "shot", "--every-frame", "--dir", "frames")
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+	if code != 0 {
+		t.Fatalf("%d %s", code, stderr)
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req := <-requests; req["dir"] != filepath.Join(wd, "frames") || req["every_frame"] != true {
+		t.Fatal(req)
 	}
 }
