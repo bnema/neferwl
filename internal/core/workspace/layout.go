@@ -693,9 +693,16 @@ func (w *Workspace) ImposedFloat(id WindowID) bool {
 // stashed window to its column. A native float becomes a new column.
 func (w *Workspace) ToggleWindowStash() {
 	id, ok := w.Focused()
-	// A fullscreen window (a Wine game in scanout) keeps its place: it
-	// leaves fullscreen first, then may float.
-	if !ok || id == w.Fullscreen {
+	if !ok {
+		return
+	}
+	if id == w.Fullscreen {
+		// Fullscreen tiles and native floats keep their place. A stash
+		// member may return to its column (or free float), still fullscreen.
+		if i := w.StashIndex(id); i >= 0 {
+			w.unstash(i) // RemoveWindow clears the old fullscreen state.
+			w.SetFullscreen(id, true)
+		}
 		return
 	}
 	switch {
