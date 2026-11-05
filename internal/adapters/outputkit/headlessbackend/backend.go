@@ -72,7 +72,7 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 		curs.Move("HEADLESS-1", float64(o.Sizes[0][0])/2, float64(o.Sizes[0][1])/2, false)
 	}
 	runtimeReplies := map[uint64]ports.OutputRuntimeRequest{}
-	var runtimeID uint64 = 1 << 63
+	runtimeID := ports.OutputApplyIDRuntime
 	for {
 		if _, ok := apply.Next(); ok {
 			err := host.Sync(ctx, apply.Virtuals())
@@ -87,12 +87,8 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 		replies, replyNext := apply.ReplyOut(ch.Replies)
 		heads, headsNext := apply.HeadsOut(ch.Heads)
 		if pending, ok := runtimeReplies[replyNext.ID]; ok {
-			code := ""
-			if replyNext.Err != nil {
-				code = ports.ControlErrBadRequest
-			}
 			select {
-			case pending.Reply <- ports.OutputRuntimeResult{Name: pending.Name, Err: code}:
+			case pending.Reply <- ports.OutputRuntimeResult{Name: pending.Name, Err: core.RuntimeOutputCode(replyNext.Err)}:
 			default:
 			}
 			select {
@@ -179,12 +175,8 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 				name, err = apply.RuntimeAdd(runtimeID, name, req.Mode)
 			}
 			if err != nil {
-				code := ports.ControlErrBadRequest
-				if errors.Is(err, core.ErrRuntimeOutputForbidden) {
-					code = ports.ControlErrForbidden
-				}
 				select {
-				case req.Reply <- ports.OutputRuntimeResult{Name: name, Err: code}:
+				case req.Reply <- ports.OutputRuntimeResult{Name: name, Err: core.RuntimeOutputCode(err)}:
 				default:
 				}
 				select {

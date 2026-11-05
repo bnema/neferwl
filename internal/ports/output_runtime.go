@@ -14,6 +14,10 @@ type OutputRuntimeRequest struct {
 
 func (OutputRuntimeRequest) outputRuntimeRequest() {}
 
+// OutputApplyIDRuntime marks the apply IDs the backend gives runtime output
+// requests, so they never collide with core's own apply IDs.
+const OutputApplyIDRuntime uint64 = 1 << 63
+
 // OutputRuntimeResult reports the selected name and a control error code.
 type OutputRuntimeResult struct{ Name, Err string }
 
