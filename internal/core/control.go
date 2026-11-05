@@ -7,8 +7,7 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// control runs on the owner, just like input. Completion currently means only
-// committed, irrespective of the requested wait level.
+// control runs on the owner, just like input.
 func (c *Core) control(ctx context.Context, r ports.ControlRequest) error {
 	switch r := r.(type) {
 	case ports.ControlDo:
@@ -22,10 +21,10 @@ func (c *Core) control(ctx context.Context, r ports.ControlRequest) error {
 			return nil
 		}
 		before := c.state()
+		baseline := c.sceneSeqs()
 		c.bindCombo, c.bindSource = "", domain.BindSourceControl
 		err := c.runBind(ctx, Action(r.Action))
-		after := c.state()
-		controlReply(r.Reply, ports.ControlReply{State: after, Diff: domain.DiffState(before, after), Done: domain.WaitCommitted})
+		c.waitControl(before, baseline, r.Wait, r.Until, r.Timeout, r.Reply)
 		return err
 	case ports.ControlQuery:
 		if r.Caps&domain.CapRead == 0 {

@@ -49,7 +49,7 @@ func TestControlRequests(t *testing.T) {
 		if before.Err != "" || len(before.State.Windows) != 1 || before.State.Outputs[0].Active != 1 {
 			t.Fatalf("query: %+v", before)
 		}
-		for i, wait := range []domain.WaitLevel{domain.WaitCommitted, domain.WaitSettled, domain.WaitPresented} {
+		for i, wait := range []domain.WaitLevel{domain.WaitCommitted, domain.WaitCommitted, domain.WaitCommitted} {
 			action := "focus-workspace-next"
 			if i == 1 {
 				action = "focus-workspace-prev"

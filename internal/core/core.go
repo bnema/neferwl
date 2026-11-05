@@ -88,11 +88,14 @@ type binding struct {
 	key  string
 }
 type Core struct {
-	presented     map[string]uint64 // highest presented scene sequence per output
-	lineage       lineage
-	placementPath string
-	hdrCaps       map[string]domain.OutputHDRCaps
-	osd           osd
+	controlWaits     []controlWait
+	controlWaitTimer ports.Timer
+	controlWaitC     <-chan time.Time
+	presented        map[string]uint64 // highest presented scene sequence per output
+	lineage          lineage
+	placementPath    string
+	hdrCaps          map[string]domain.OutputHDRCaps
+	osd              osd
 	// overviewReal is publish's scratch map of the real layouts under an open overview.
 	overviewReal map[WindowID]Placement
 	// realBuf backs the layout read through at once by publish (each
@@ -1148,6 +1151,7 @@ func (c *Core) Run(ctx context.Context) error {
 		<-senderDone
 	}()
 	c.syncSecurity()
+	defer c.stopControlWaitTimer()
 	defer c.stopFrame()
 	defer c.stopCaptureTimer()
 	defer c.stopFlashTimer()
@@ -1170,10 +1174,13 @@ func (c *Core) Run(ctx context.Context) error {
 		if c.securityCheckpoint(ctx) != nil {
 			return nil
 		}
+		c.evalWaits()
 		startupC, startupRequest := c.pendingStartup()
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-c.controlWaitC:
+			continue
 		case startupC <- startupRequest:
 			// Successful transfer consumes startup once. Only the receiver can
 			// decide execution admission; a later gate read cannot infer it.
