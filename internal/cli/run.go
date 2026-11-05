@@ -17,6 +17,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/adapters/sessiondir"
 	"github.com/bnema/neferwl/internal/app"
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
@@ -25,6 +26,8 @@ import (
 
 // runFlags are the root command flags.
 type runFlags struct {
+	sessionID                                                              string
+	readyFD                                                                int
 	overrides                                                              core.PlanOverrides
 	deprecatedServer                                                       bool
 	backend, profile, inputDevices, screenshot, size, debug, config, pprof string
@@ -34,6 +37,8 @@ type runFlags struct {
 
 func (f *runFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.backend, "backend", "drm", "drm or headless (server is deprecated)")
+	fs.StringVar(&f.sessionID, "session-id", "", "headless session ID")
+	fs.IntVar(&f.readyFD, "ready-fd", 0, "headless readiness file descriptor")
 	fs.StringVar(&f.profile, "profile", "ephemeral", "headless profile: ephemeral or persistent")
 	fs.StringVar(&f.inputDevices, "input-devices", "", "headless input devices: none or grab")
 	fs.StringVar(&f.screenshot, "screenshot", "", "write PNG frames to directory")
@@ -55,6 +60,15 @@ func (f *runFlags) register(fs *flag.FlagSet) {
 func (f *runFlags) validate(args []string, set map[string]bool) ([][2]int, error) {
 	f.normalizeBackendAlias()
 	headless := f.backend == "headless"
+	if (set["session-id"] || set["ready-fd"]) && !headless {
+		return nil, usagef("--session-id and --ready-fd require headless")
+	}
+	if f.sessionID != "" && !sessiondir.ValidID(f.sessionID) {
+		return nil, usagef("invalid session id")
+	}
+	if set["ready-fd"] && f.readyFD < 3 {
+		return nil, usagef("ready-fd must be at least 3")
+	}
 	if !headless && set["profile"] {
 		return nil, usagef("--profile requires --backend=headless")
 	}
@@ -137,7 +151,14 @@ func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
 		return err
 	}
 	tuneGC()
-	ctx, closeLog, err := logging.Open(ctx, f.backend, cfg.Log.Level, mergeDebug(cfg.Log.Debug, f.debug))
+	if f.backend == "headless" && f.sessionID == "" {
+		f.sessionID = sessiondir.NewID()
+	}
+	logTarget := f.backend
+	if f.sessionID != "" {
+		logTarget = "../sessions/" + f.sessionID
+	}
+	ctx, closeLog, err := logging.Open(ctx, logTarget, cfg.Log.Level, mergeDebug(cfg.Log.Debug, f.debug))
 	if err != nil {
 		return err
 	}
@@ -164,7 +185,8 @@ func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
 		configLog.Warn().Int("line", w.Line).Msg(w.Msg)
 	}
 	err = app.Run(ctx, app.Options{
-		Backend:       domain.Backend(f.backend),
+		Backend:   domain.Backend(f.backend),
+		SessionID: f.sessionID, ReadyFD: f.readyFD,
 		Profile:       mustProfile(f.profile),
 		PlanOverrides: f.overrides,
 		Config:        cfg,

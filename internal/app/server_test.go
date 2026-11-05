@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/config"
+	"github.com/bnema/neferwl/internal/adapters/sessiondir"
 	"github.com/bnema/neferwl/internal/adapters/statefile"
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
@@ -69,10 +70,11 @@ func TestServerVirtualOutput(t *testing.T) {
 			t.Error("Run did not stop")
 		}
 	}()
-	statePath, err := statefile.Path(runtimeDir, "wayland-1")
-	if err != nil {
-		t.Fatal(err)
+	metas, err := sessiondir.List(runtimeDir)
+	if err != nil || len(metas) != 1 {
+		t.Fatalf("sessions: %v %v", metas, err)
 	}
+	statePath := metas[0].State
 	input <- ports.SecurityInput{Event: ports.KeyEvent{Keysym: "Return", Mods: domain.ModSuper, Pressed: true}}
 	deadline := time.After(10 * time.Second)
 	// The state file is written by its own worker after the scene.

@@ -202,10 +202,11 @@ func startXwaylandBackendConfig(t *testing.T, backend domain.Backend, sizes [][2
 		}
 		return false
 	})
-	statePath, err := statefile.Path(runtime, "wayland-1")
-	if err != nil {
-		t.Fatal(err)
+	paths, err := filepath.Glob(filepath.Join(runtime, "neferwl", "sessions", "*", "state.json"))
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("state paths: %v %v", paths, err)
 	}
+	statePath := paths[0]
 	return &xwaylandEnv{bin: bin, display: display, statePath: statePath, shots: shots, script: dialTestControl(t, runtime)}
 }
 

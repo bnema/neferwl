@@ -65,12 +65,12 @@ func sessionRemove(ctx context.Context, env Env, args []string) error {
 	if err == nil {
 		reply, callErr := c.call(ctx, map[string]any{"op": "do", "action": "quit", "wait": "committed"})
 		c.conn.Close()
-		if callErr != nil {
+		if callErr != nil && !errors.Is(callErr, io.EOF) {
 			return callErr
 		}
 		var ok bool
 		_ = json.Unmarshal(reply["ok"], &ok)
-		if !ok {
+		if callErr == nil && !ok {
 			var code string
 			_ = json.Unmarshal(reply["error"], &code)
 			return fmt.Errorf("session quit: %s", code)

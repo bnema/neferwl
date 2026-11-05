@@ -261,3 +261,12 @@ once: ID `1` is `headless-script`, other IDs are `headless-script-<id>`.
 Devices share the scripted seat's keymap; release held keys before switching.
 For example, bind `headless-script-2` to `tv`, then interleave `device 2`,
 `key a`, `device 1`, `key a` to exercise bound/unbound focus switching.
+
+## Session paths
+
+Every headless run registers a session. Use `neferwl session ls` to find its ID.
+Runtime metadata, control.sock, state.json and shots/ live under
+`$XDG_RUNTIME_DIR/neferwl/sessions/<id>/`. CLI-started session logs live under
+`$XDG_STATE_HOME/neferwl/sessions/<id>/latest.log`, replacing the shared
+`runs/headless/latest.log` location. `neferwl -s <id> state` selects the session
+without unsetting the desktop environment.

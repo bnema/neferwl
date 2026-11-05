@@ -53,7 +53,7 @@ func TestHeadlessControlEndToEnd(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("initial scene missing")
 	}
-	paths, err := filepath.Glob(filepath.Join(runtime, "neferwl", "*.control.sock"))
+	paths, err := filepath.Glob(filepath.Join(runtime, "neferwl", "sessions", "*", "control.sock"))
 	if err != nil || len(paths) != 1 {
 		t.Fatalf("control paths: %v %v", paths, err)
 	}

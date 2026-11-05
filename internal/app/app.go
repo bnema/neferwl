@@ -20,6 +20,8 @@ import (
 )
 
 type Options struct {
+	SessionID     string
+	ReadyFD       int
 	Backend       domain.Backend
 	Profile       domain.Profile
 	PlanOverrides core.PlanOverrides

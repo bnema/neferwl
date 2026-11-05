@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -28,6 +29,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/sched"
 	"github.com/bnema/neferwl/internal/adapters/screencast"
 	"github.com/bnema/neferwl/internal/adapters/screensaver"
+	"github.com/bnema/neferwl/internal/adapters/sessiondir"
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
 	"github.com/bnema/neferwl/internal/adapters/statefile"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
@@ -46,9 +48,10 @@ import (
 // starts them. The session owns hw, curs and xdisplay (released by close)
 // until run ends; the keymap and the wayland server own themselves.
 type session struct {
-	opts Options
-	plan core.BackendPlan
-	log  zerowrap.Logger
+	registry *sessiondir.Dir
+	opts     Options
+	plan     core.BackendPlan
+	log      zerowrap.Logger
 
 	clock    ports.Clock
 	security *sessionsecurity.Gate
@@ -103,6 +106,19 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 			s = nil
 		}
 	}()
+	if opts.Backend != domain.BackendDRM {
+		id := opts.SessionID
+		if id == "" {
+			id = sessiondir.NewID()
+		}
+		s.registry, err = sessiondir.Create(os.Getenv("XDG_RUNTIME_DIR"), id)
+		if err != nil {
+			return s, err
+		}
+		if err = os.MkdirAll(filepath.Join(s.registry.Path(), "shots"), 0700); err != nil {
+			return s, err
+		}
+	}
 	log := s.log
 	s.sizes = opts.Sizes
 	if len(s.sizes) > 0 && !s.plan.KMS {
@@ -192,7 +208,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	s.childEnv = launcher.ChildEnv(os.Environ(), s.server.SocketName(), runtimeDir, xcursor.CursorSize())
 	controlPath := ""
 	if opts.Backend != domain.BackendDRM {
-		path := filepath.Join(runtimeDir, "neferwl", s.server.SocketName()+".control.sock")
+		path := filepath.Join(s.registry.Path(), "control.sock")
 		kb := opts.Config.Keyboard
 		controlMap, mapErr := xkb.New(xkb.RMLVO{Layout: kb.Layout, Variant: kb.Variant, Options: kb.Options})
 		if mapErr != nil {
@@ -207,9 +223,12 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 			s.childEnv = append(s.childEnv, "NEFERWL_CONTROL="+path)
 		}
 	}
-	log.Info().Str("WAYLAND_DISPLAY", s.server.SocketName()).Str("control", controlPath).Msg("listening")
 
 	statePath, serr := statefile.Path(runtimeDir, s.server.SocketName())
+	if s.registry != nil {
+		statePath = filepath.Join(s.registry.Path(), "state.json")
+		serr = nil
+	}
 	if serr != nil {
 		log.Warn().Err(serr).Msg("state file disabled")
 	} else {
@@ -219,6 +238,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	if s.xdisplay = openXwayland(ctx, opts, s.childEnv, logging.For(ctx, "xwayland"), s.server.AttachXwayland, s.server.AttachXWM); s.xdisplay != nil {
 		s.childEnv = append(s.childEnv, "DISPLAY="+s.xdisplay.Name())
 	}
+	s.announceReady(opts, controlPath)
 	s.child = launcher.New(s.childEnv, s.security, logging.For(ctx, "launcher"))
 	s.curs = cursors.New(s.clock, opts.Config.Cursor.HideAfter)
 	s.path = opts.ConfigPath
@@ -242,6 +262,9 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 // backend and the keymap. It runs only when assembly fails, before
 // anything else is owned.
 func (s *session) abort() {
+	if s.registry != nil {
+		defer s.registry.Close()
+	}
 	if s.control != nil {
 		_ = s.control.Close()
 	}
@@ -255,6 +278,9 @@ func (s *session) abort() {
 // keymap and the wayland server are not here: the input goroutine and
 // Server.Run own them.
 func (s *session) close() {
+	if s.registry != nil {
+		defer s.registry.Close()
+	}
 	s.curs.Stop()
 	if s.control != nil {
 		_ = s.control.Close()
@@ -525,4 +551,27 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 func renderNodeForDevice(dev ports.RenderDevice) string {
 	_, render := dev.Node()
 	return renderNode(render)
+}
+
+func (s *session) announceReady(opts Options, controlPath string) {
+	id := ""
+	display := ""
+	if s.xdisplay != nil {
+		display = s.xdisplay.Name()
+	}
+	if s.registry != nil {
+		id = s.registry.Meta().ID
+		s.childEnv = append(s.childEnv, "NEFERWL_SESSION="+id)
+		if err := s.registry.WriteMeta(sessiondir.Meta{ID: id, Wayland: s.server.SocketName(), Display: display, Control: controlPath, State: s.statePath, Profile: opts.Profile.String(), PID: os.Getpid(), Created: time.Now()}); err != nil {
+			s.log.Warn().Err(err).Msg("session metadata failed")
+		}
+	}
+	s.log.Info().Str("session", id).Str("WAYLAND_DISPLAY", s.server.SocketName()).Str("control", controlPath).Msg("listening")
+	if opts.ReadyFD >= 3 {
+		f := os.NewFile(uintptr(opts.ReadyFD), "session-ready")
+		if f != nil {
+			_ = json.NewEncoder(f).Encode(map[string]string{"id": id, "wayland": s.server.SocketName(), "control": controlPath, "display": display})
+			_ = f.Close()
+		}
+	}
 }

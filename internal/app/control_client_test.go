@@ -23,7 +23,7 @@ type controlTestClient struct {
 
 func dialTestControl(t *testing.T, runtime string) *controlTestClient {
 	t.Helper()
-	paths, err := filepath.Glob(filepath.Join(runtime, "neferwl", "*.control.sock"))
+	paths, err := filepath.Glob(filepath.Join(runtime, "neferwl", "sessions", "*", "control.sock"))
 	if err != nil || len(paths) != 1 {
 		t.Fatalf("control paths %v: %v", paths, err)
 	}
