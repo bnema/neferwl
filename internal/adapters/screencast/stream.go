@@ -3,9 +3,9 @@ package screencast
 import (
 	"time"
 
-	"github.com/bnema/neferwl/internal/domain"
 	"bnema.dev/purego-pipewire/pipewire"
 	"bnema.dev/zerobus"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // stream is one cast of a session: a PipeWire node fed with frames that the
@@ -34,17 +34,27 @@ type stream struct {
 	stopped   bool // CastStopped came: the wayland side is done
 
 	// Negotiation.
-	w, h       int // size of the target, from CastSize
+	w, h       int  // size of the target, from CastSize
+	hdr        bool // the target shows HDR, from CastSize
 	haveSize   bool
 	needResize bool
-	src        videoSource
-	h2         streamHandler
-	pwState    int32 // last state of the PipeWire stream; -2 before the first
-	seenState  bool  // a state above UNCONNECTED was seen
-	nodeID     uint32
-	announced  bool // PipeWireStreamAdded was sent
-	format     pipewire.VideoFormat
-	fw, fh     int // size the format was negotiated at; 0 while renegotiating
+	// needFormats: the target's HDR state changed; the offer is replaced
+	// (SetFormats, same node) once no frame is in flight.
+	needFormats bool
+	offer       [3]pipewire.VideoFormat // scratch of formatsFor
+	src         videoSource
+	h2          streamHandler
+	pwState     int32 // last state of the PipeWire stream; -2 before the first
+	seenState   bool  // a state above UNCONNECTED was seen
+	nodeID      uint32
+	announced   bool // PipeWireStreamAdded was sent
+	format      pipewire.VideoFormat
+	fw, fh      int // size the format was negotiated at; 0 while renegotiating
+	// alloc exports the stream's DMA-BUF buffers; PipeWire calls it inside
+	// Iterate. dmaErr is the DMA-BUF failure that ended the stream (the
+	// consumer took no DMA-BUF, or allocation failed): the pump ends the cast.
+	alloc  castAllocator
+	dmaErr error
 
 	// Frames.
 	dirty    bool
@@ -79,6 +89,15 @@ func (h *streamHandler) FormatChanged(f pipewire.VideoFormat, w, hh, _ int) {
 	h.st.format, h.st.fw, h.st.fh = f, w, hh
 	// A new format shows a new picture: the first frame is not paced by damage.
 	h.st.forced = true
+}
+
+// dmabufFailed is VideoDMABuf.OnError: the source disconnected because
+// DMA-BUF negotiation or allocation failed; the pump ends the cast.
+func (h *streamHandler) dmabufFailed(err error) {
+	if err == nil {
+		err = pipewire.ErrVideoDMABuf
+	}
+	h.st.dmaErr = err
 }
 
 // BuffersChanged: the next pump looks for a free buffer anyway.

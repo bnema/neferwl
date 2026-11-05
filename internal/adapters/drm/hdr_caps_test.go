@@ -10,14 +10,14 @@ import (
 
 func TestHDRCapabilityCaps(t *testing.T) {
 	c := hdrCapability{Capable: true, HDRMetadata: HDRMetadata{MaxLuminance: 604, MaxFrameAverage: 277}}
-	if got := c.caps(0, 203); got.Tier != domain.HDRFull || got.PeakNits != 604 {
+	if got := domain.NewOutputHDRCaps("", domain.OutputHDRSettings{ExpansionPeakNits: 0, SDRBrightness: 203}, c.facts(), false).Caps; got.Tier != domain.HDRFull || got.PeakNits != 604 {
 		t.Fatalf("caps: %+v", got)
 	}
-	if got := c.caps(800, 200); got.PeakSource != domain.HDRPeakConfig || got.Headroom != 4 {
+	if got := domain.NewOutputHDRCaps("", domain.OutputHDRSettings{ExpansionPeakNits: 800, SDRBrightness: 200}, c.facts(), false).Caps; got.PeakSource != domain.HDRPeakConfig || got.Headroom != 4 {
 		t.Fatalf("override: %+v", got)
 	}
 	c.Capable, c.Reason = false, "edid: no PQ"
-	if got := c.caps(800, 200); got.Tier != domain.HDRUnavailable || got.Reason != c.Reason {
+	if got := domain.NewOutputHDRCaps("", domain.OutputHDRSettings{ExpansionPeakNits: 800, SDRBrightness: 200}, c.facts(), false).Caps; got.Tier != domain.HDRUnavailable || got.Reason != c.Reason {
 		t.Fatalf("unavailable: %+v", got)
 	}
 }
@@ -93,13 +93,13 @@ func TestExpansionPeakLiveUpdate(t *testing.T) {
 		o.mode = modeInfo{VRefresh: 60}
 		o.hdr.cap = hdrCapability{Capable: true, HDRMetadata: HDRMetadata{MaxLuminance: 604}}
 		o.hdr.on = true
-		o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: 203}
+		o.hdr.settings = domain.OutputHDRSettings{Enabled: true, SDRBrightness: 203}
 		c := &Card{k: k, outputs: map[string]*Output{"DP-1": o}}
 		k.EXPECT().resources().Return([]uint32{30}, []uint32{40}, nil)
 		k.EXPECT().connector(uint32(40)).Return(connector{id: 40, name: "DP-1", connected: true, modes: []modeInfo{o.mode}}, nil)
 		scan := func(peak float64) {
 			t.Helper()
-			c.SetWant(Want{HDR: map[string]HDRSettings{"DP-1": {Enabled: true, SDRBrightness: 203, ExpansionPeakNits: peak}}})
+			c.SetWant(Want{HDR: map[string]domain.OutputHDRSettings{"DP-1": {Enabled: true, SDRBrightness: 203, ExpansionPeakNits: peak}}})
 			added, removed, replaced, err := c.Scan()
 			if err != nil || len(added)+len(removed)+len(replaced) != 0 {
 				t.Fatalf("peak-only scan: added=%v removed=%v replaced=%v err=%v", added, removed, replaced, err)

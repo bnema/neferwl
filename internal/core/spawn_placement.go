@@ -88,27 +88,28 @@ func (p *spawnPlacement) expireWorkspaceClaims(now time.Time) {
 // Without a slot, a window rule (rules.go) may choose its place; otherwise it
 // opens on the focused screen's workspace.
 // Untagged windows return before any map lookup or allocation.
-func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
+// follow reports a window a rule sent to another output that takes the focus
+// there (placeByRule).
+func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) (follow bool) {
 	if v.Floating {
 		if s, _ := c.screenOf(v.ID); s != nil {
-			return
+			return false
 		}
 		// A dialog opens on its parent's workspace, over it, fullscreen too.
 		if ps, pw := c.screenOf(v.Parent); v.Parent != 0 && pw != nil {
 			pw.AddDialog(v.ID, v.Parent, v.Width, v.Height)
 			pw.SetModal(v.ID, v.Modal)
 			ps.mon.normalize()
-			return
+			return false
 		}
 		// Rules come after the dialog: it stays over its parent.
 		if eff, ok := c.ruleFor(v); ok {
-			c.placeByRule(v, eff)
-			return
+			return c.placeByRule(v, eff, true)
 		}
 		if !c.placeCoverApp(v, c.cur(), c.cur().mon.Current(), 0) {
 			c.cur().mon.AddFloating(v.ID, v.Width, v.Height)
 		}
-		return
+		return false
 	}
 	if v.Slot != "" {
 		// A claim no window answered in time no longer places one.
@@ -125,7 +126,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 							target.ws.AddWindow(v.ID)
 						}
 						s.mon.normalize()
-						return
+						return false
 					}
 				}
 			case spawnSlot:
@@ -135,7 +136,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 						st.window = v.ID
 						w.AddSlotWindow(v.ID, target.slot.index, st.cells)
 						sc.mon.normalize()
-						return
+						return false
 					}
 				}
 			}
@@ -143,21 +144,22 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 	}
 	if s, _ := c.screenOf(v.ID); s == nil {
 		eff, ok := c.ruleFor(v)
+		byRule := ok
 		// A window mapping at an output's rect goes to that output unless a
-		// rule names an output or workspace.
+		// rule names an output or workspace; it opens there quietly.
 		if v.HasAt && !v.Remap && eff.output == "" && eff.workspace == "" && eff.number == 0 {
 			if i := c.outputAt(float64(v.AtX), float64(v.AtY)); i >= 0 && i != c.focusScreen {
-				eff.output, ok = c.screens[i].name(), true
+				eff.output, ok, byRule = c.screens[i].name(), true, false
 			}
 		}
 		if ok {
-			c.placeByRule(v, eff)
-			return
+			return c.placeByRule(v, eff, byRule)
 		}
 		if !c.placeCoverApp(v, c.cur(), c.cur().mon.Current(), 0) {
 			c.cur().mon.AddWindow(v.ID)
 		}
 	}
+	return false
 }
 
 // sameApp is pure policy: absent identifiers never establish app identity.

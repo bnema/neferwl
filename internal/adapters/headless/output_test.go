@@ -572,7 +572,7 @@ func TestHeadlessRawHDRScreenshot(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() {
-			done <- RunOutput(ctx, Options{Width: 2, Height: 2, HDR: true, RawHDR: true, ScreenshotDir: dir, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
+			done <- RunOutput(ctx, Options{Width: 2, Height: 2, HDR: domain.OutputHDRSettings{Enabled: true}, RawHDR: true, ScreenshotDir: dir, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
 		}()
 		select {
 		case <-rendered:
@@ -644,7 +644,7 @@ func TestHeadlessHDRFormatsConfirmed(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				done := make(chan error, 1)
 				go func() {
-					done <- RunOutput(ctx, Options{Width: 2, Height: 2, HDR: true, Name: "HEADLESS-1", Formats: formats, Events: caps, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, nil)
+					done <- RunOutput(ctx, Options{Width: 2, Height: 2, HDR: domain.OutputHDRSettings{Enabled: true}, Name: "HEADLESS-1", Formats: formats, Events: caps, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, nil)
 				}()
 				select {
 				case f := <-formats:

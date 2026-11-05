@@ -88,7 +88,7 @@ func (o *OutputOverrides) Reload(file domain.Config) domain.Config {
 		for name, entry := range o.overrides {
 			previous := slices.IndexFunc(old.Outputs, func(v domain.OutputConfig) bool { return v.Name == name && v.Virtual })
 			current := slices.IndexFunc(file.Outputs, func(v domain.OutputConfig) bool { return v.Name == name && v.Virtual })
-			if previous < 0 || current < 0 || !sameVirtualEntry(old.Outputs[previous], file.Outputs[current]) {
+			if previous < 0 || current < 0 || !sameVirtualEntry(withoutKeepFocus(old.Outputs[previous]), withoutKeepFocus(file.Outputs[current])) {
 				delete(o.overrides, name)
 				continue
 			}
@@ -107,6 +107,13 @@ func (o *OutputOverrides) Reload(file domain.Config) domain.Config {
 		}
 	}
 	return o.Effective()
+}
+
+// withoutKeepFocus drops keep-focus, a focus policy that leaves the
+// output itself (and its runtime mode) as it is.
+func withoutKeepFocus(o domain.OutputConfig) domain.OutputConfig {
+	o.KeepFocus = false
+	return o
 }
 
 // scaleChanges lists the output scales that differ from old to cur, and

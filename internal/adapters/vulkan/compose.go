@@ -177,6 +177,11 @@ func (r *Renderer) createGraphicsPipeline(vertex, fragment []byte, format vk.For
 	}
 	if !blend {
 		attachment.BlendEnable = 0
+	} else {
+		// Composed images are opaque: every pass clears alpha to 1 and no
+		// draw writes it, so readbacks (Read, CopyTo into ARGB8888 dmabufs)
+		// carry alpha 0xff. The blend factors use source alpha only.
+		attachment.ColorWriteMask = vk.ColorComponentRBit | vk.ColorComponentGBit | vk.ColorComponentBBit
 	}
 	blendState := vk.PipelineColorBlendStateCreateInfo{SType: vk.StructureTypePipelineColorBlendStateCreateInfo, AttachmentCount: 1, Attachments: &attachment}
 	rendering := vk.PipelineRenderingCreateInfo{SType: vk.StructureTypePipelineRenderingCreateInfo, ColorAttachmentCount: 1, ColorAttachmentFormats: &format}

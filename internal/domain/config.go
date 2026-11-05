@@ -51,6 +51,9 @@ type OutputConfig struct {
 	ScaleOnly          bool
 	// Inputs binds devices by name using path.Match globs, one per config line.
 	Inputs []string
+	// KeepFocus keeps an X11 window of this output X11-active (input focus,
+	// _NET_ACTIVE_WINDOW) while a native window holds the keyboard elsewhere.
+	KeepFocus bool
 }
 
 // OutputAnchor places an output against another connected one, named by To.

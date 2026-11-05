@@ -408,8 +408,9 @@ func (c *Core) appearFrom(rm *rectMotion, p Placement, old *rectMotion, now time
 // new one displaces re-flow with rect motions, and a window that comes on
 // screen appears (appearMapped). A map is the one client event that
 // animates; the settled layout is the same with animations off, so the
-// client is configured once, to its final size.
-func (c *Core) mapWindow(v ports.WindowMapped) {
+// client is configured once, to its final size. follow asks the caller to
+// activate the window (placeByRule).
+func (c *Core) mapWindow(v ports.WindowMapped) (follow bool) {
 	now := c.now()
 	if v.Fullscreen && v.Parent == 0 {
 		// Mapped fullscreen: a tile of its own, whatever size class the
@@ -422,8 +423,7 @@ func (c *Core) mapWindow(v ports.WindowMapped) {
 	if s, _ := c.screenOf(v.ID); s != nil || !c.animOn() || c.security.Protected {
 		// Mapped before (a re-map keeps its place), animations off or a
 		// session lock: nothing to animate.
-		c.placeMapped(v)
-		return
+		return c.placeMapped(v)
 	}
 	shots := c.snapshot(now)
 	for i := range shots {
@@ -433,21 +433,23 @@ func (c *Core) mapWindow(v ports.WindowMapped) {
 			shots[i].ws = nil
 		}
 	}
-	c.placeMapped(v)
+	follow = c.placeMapped(v)
 	c.transition(shots, now)
 	c.appearMapped(v.ID, now)
+	return follow
 }
 
 // placeMapped applies rules before initial fullscreen, retaining their destination.
-func (c *Core) placeMapped(v ports.WindowMapped) {
-	c.placement.place(c, v)
+func (c *Core) placeMapped(v ports.WindowMapped) (follow bool) {
+	follow = c.placement.place(c, v)
 	if !v.Fullscreen || v.Remap || v.Parent != 0 {
-		return
+		return follow
 	}
 	if _, w := c.screenOf(v.ID); w != nil {
 		w.Activate(v.ID)
 		w.SetFullscreen(v.ID, true)
 	}
+	return follow
 }
 
 // appearMapped starts the entrance of a window that just mapped when it

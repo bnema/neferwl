@@ -3,6 +3,7 @@ package wayland
 import (
 	"context"
 	"errors"
+	"os"
 	"slices"
 	"testing"
 	"time"
@@ -222,8 +223,13 @@ func (h *castHarness) state(core uint64, st ports.CaptureSessionState) {
 	}
 }
 
-func castFrame(id uint64, buf int, data []byte, w, hgt int) domain.CastCommand {
-	return domain.CastCommand{Kind: domain.CastFrame, ID: id, Buf: buf, Data: data, Stride: w * 4, Width: w, Height: hgt, Format: 1}
+// castBuf is a lent cast dmabuf of w×hgt; its plane file is the test's.
+func castBuf(w, hgt int) *domain.DMABuf {
+	return &domain.DMABuf{Width: w, Height: hgt, Format: domain.CastXRGB8888, Planes: []domain.DMABufPlane{{File: os.Stdin, Stride: uint32(w * 4)}}}
+}
+
+func castFrame(id uint64, buf int, dma *domain.DMABuf, w, hgt int) domain.CastCommand {
+	return domain.CastCommand{Kind: domain.CastFrame, ID: id, Buf: buf, DMABuf: dma, Width: w, Height: hgt}
 }
 
 func (h *castHarness) flip(output string) {
@@ -243,11 +249,11 @@ func TestCastOpenSizeFrameDone(t *testing.T) {
 	if core == 0 {
 		t.Fatal("cast not registered with core")
 	}
-	data := make([]byte, 64*32*4)
+	data := castBuf(64, 32)
 	h.casts <- castFrame(7, 3, data, 64, 32)
 	req := h.request()
 	if req.Output != "HEADLESS-1" || req.Session != core || !req.Indicate || !req.Cursor || req.Dst.File != nil ||
-		len(req.Mapped) != len(data) || &req.Mapped[0] != &data[0] || req.Stride != 256 || req.Format != 1 || req.Region.Dx() != 64 || req.Region.Dy() != 32 {
+		req.Mapped != nil || req.DMABuf != data || !req.DMABufBorrowed || req.Format != domain.CastXRGB8888 || req.Width != 64 || req.Height != 32 || req.Region.Dx() != 64 || req.Region.Dy() != 32 {
 		t.Fatalf("request %+v", req)
 	}
 	taken := castClientEvent[ports.CaptureFrameTaken](h)
@@ -340,7 +346,7 @@ func TestCastWindowCloseStops(t *testing.T) {
 func TestCastSessionLockStops(t *testing.T) {
 	h := newCastHarness(t, true)
 	h.open(1, "HEADLESS-1")
-	data := make([]byte, 64*32*4)
+	data := castBuf(64, 32)
 	h.casts <- castFrame(1, 0, data, 64, 32)
 	req := h.request()
 	c := protocolClient(t, h.s, h.dir)
@@ -368,7 +374,7 @@ func TestCastOutputUnplugStops(t *testing.T) {
 	h := newCastHarness(t, true)
 	h.open(1, "HEADLESS-1")
 	h.open(2, "HEADLESS-2")
-	data := make([]byte, 64*32*4)
+	data := castBuf(64, 32)
 	h.casts <- castFrame(1, 9, data, 64, 32)
 	req := h.request()
 	// Apply on the owner before completing the capture. Posting a barrier
@@ -387,7 +393,7 @@ func TestCastOutputUnplugStops(t *testing.T) {
 		t.Fatalf("stopped %+v", ev)
 	}
 	// The cast on the other output lives.
-	h.casts <- castFrame(2, 1, make([]byte, 32*32*4), 32, 32)
+	h.casts <- castFrame(2, 1, castBuf(32, 32), 32, 32)
 	h.complete(h.request(), nil)
 	if done := h.next(domain.CastFrameDone); done.ID != 2 || done.Err != nil {
 		t.Fatalf("done %+v", done)
@@ -404,15 +410,45 @@ func TestCastSizeChange(t *testing.T) {
 	if size := h.next(domain.CastSize); size.Width != 128 || size.Height != 64 {
 		t.Fatalf("size %+v", size)
 	}
-	h.casts <- castFrame(1, 2, make([]byte, 64*32*4), 64, 32)
+	h.casts <- castFrame(1, 2, castBuf(64, 32), 64, 32)
 	if done := h.next(domain.CastFrameDone); done.Buf != 2 || !errors.Is(done.Err, errCastSize) {
 		t.Fatalf("done %+v", done)
 	}
 	h.noRequest(20 * time.Millisecond)
-	h.casts <- castFrame(1, 2, make([]byte, 128*64*4), 128, 64)
+	h.casts <- castFrame(1, 2, castBuf(128, 64), 128, 64)
 	h.complete(h.request(), nil)
 	if done := h.next(domain.CastFrameDone); done.Err != nil {
 		t.Fatalf("done %+v", done)
+	}
+}
+
+// An output cast reports its HDR state with its size and again when the
+// output's HDR toggles (not on metadata changes).
+func TestCastHDRToggle(t *testing.T) {
+	h := newCastHarness(t, true)
+	size, _ := h.open(1, "HEADLESS-1")
+	if size.HDR {
+		t.Fatalf("SDR output opened HDR: %+v", size)
+	}
+	hdr := &domain.OutputHDR{MaxLuminance: 1000}
+	h.s.display.Do(func() { h.s.setOutputHDR(domain.OutputFormats{Output: "HEADLESS-1", HDR: hdr}) })
+	if size = h.next(domain.CastSize); !size.HDR || size.Width != 64 || size.Height != 32 {
+		t.Fatalf("HDR on: %+v", size)
+	}
+	// Metadata changes do not renegotiate.
+	h.s.display.Do(func() {
+		h.s.setOutputHDR(domain.OutputFormats{Output: "HEADLESS-1", HDR: &domain.OutputHDR{MaxLuminance: 600}})
+	})
+	h.none()
+	size, _ = h.open(2, "HEADLESS-1")
+	if !size.HDR {
+		t.Fatalf("cast opened on an HDR output: %+v", size)
+	}
+	h.s.display.Do(func() { h.s.setOutputHDR(domain.OutputFormats{Output: "HEADLESS-1"}) })
+	for range 2 {
+		if size = h.next(domain.CastSize); size.HDR {
+			t.Fatalf("HDR off: %+v", size)
+		}
 	}
 }
 
@@ -423,7 +459,7 @@ func TestCastSizeChange(t *testing.T) {
 func TestCastTransientRetry(t *testing.T) {
 	h := newCastHarness(t, true)
 	h.open(1, "HEADLESS-1")
-	data := make([]byte, 64*32*4)
+	data := castBuf(64, 32)
 	h.casts <- castFrame(1, 0, data, 64, 32)
 	first := h.request()
 	h.complete(first, ports.ErrCaptureBusy)
@@ -465,7 +501,7 @@ func TestCastWaitsForActiveState(t *testing.T) {
 	h := newCastHarness(t, true)
 	_, core := h.open(1, "HEADLESS-1")
 	h.state(core, ports.CaptureSessionState{ID: core, Output: "HEADLESS-1"})
-	h.casts <- castFrame(1, 0, make([]byte, 64*32*4), 64, 32)
+	h.casts <- castFrame(1, 0, castBuf(64, 32), 64, 32)
 	h.noRequest(60 * time.Millisecond)
 	h.commands <- ports.CaptureSessionState{ID: core, Output: "HEADLESS-1", Active: true}
 	h.complete(h.request(), nil)
@@ -660,7 +696,7 @@ func TestCastInventoryPublishedOncePerChange(t *testing.T) {
 
 	// Frames and flips do not publish.
 	h.open(1, "HEADLESS-1")
-	data := make([]byte, 64*32*4)
+	data := castBuf(64, 32)
 	for i := range 20 {
 		h.flip("HEADLESS-1")
 		h.casts <- castFrame(1, i%3, data, 64, 32)
@@ -721,7 +757,7 @@ func TestCastFrameAllocations(t *testing.T) {
 	s := h.s
 	s.castRing.Push(domain.CastCommand{Kind: domain.CastOpen, ID: 1, Output: "HEADLESS-1"})
 	core := castClientEvent[ports.CaptureSessionOpen](h).ID
-	data := make([]byte, 64*32*4)
+	data := castBuf(64, 32)
 	frame := castFrame(1, 0, data, 64, 32)
 	flip := ports.OutputPresented{Output: "HEADLESS-1", Flip: &domain.FlipInfo{When: time.Second, Seq: 1}}
 	ran := make(chan struct{}, 1)
@@ -748,5 +784,15 @@ func TestCastFrameAllocations(t *testing.T) {
 	}
 	if allocs := testing.AllocsPerRun(200, cycle); allocs != 0 {
 		t.Errorf("cast frame cycle: %.1f allocs, want 0", allocs)
+	}
+}
+
+// A frame without a dmabuf is refused at once: casts are DMA-BUF only.
+func TestCastFrameWithoutDMABufRefused(t *testing.T) {
+	h := newCastHarness(t, true)
+	h.open(7, "HEADLESS-1")
+	h.casts <- castFrame(7, 3, nil, 64, 32)
+	if done := h.next(domain.CastFrameDone); done.Buf != 3 || !errors.Is(done.Err, errCastBuffer) {
+		t.Fatalf("done %+v", done)
 	}
 }

@@ -9,8 +9,9 @@ import (
 	"os"
 	"unsafe"
 
-	"github.com/bnema/neferwl/internal/ports"
 	vk "bnema.dev/purego-vulkan/vulkan"
+	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
 
@@ -181,6 +182,7 @@ func (d deviceSync) destroySemaphore(s vk.Semaphore) {
 
 // captureSlot is one readback buffer with its copy command and sync.
 type captureSlot struct {
+	cursor captureCursorPass
 	buffer vk.Buffer
 	memory vk.DeviceMemory
 	mapped unsafe.Pointer
@@ -204,6 +206,9 @@ type captureSlot struct {
 	// until the first export.
 	file   *os.File
 	syncFD int
+	// copies are the dmabuf copies of the slot's leases still tracked
+	// (capture_dmabuf.go); the slot is reused only once they finished.
+	copies []*dmaCopy
 }
 
 // adoptSync makes fd, a sync file the caller owns, the slot's. It always
@@ -238,6 +243,7 @@ type captureFrame struct {
 	pixels []byte // the slot's mapping, width*height*4
 	w, h   int
 	valid  bool // false after EndCapture
+	pq     bool // pixels are XBGR2101010 PQ words (capture_pq.go), copied as is
 }
 
 func (f *captureFrame) Done() *os.File { return f.done }
@@ -262,6 +268,9 @@ func (f *captureFrame) Read(region image.Rectangle, dst []byte, stride int) erro
 		start := ((region.Min.Y+y)*f.w + region.Min.X) * captureBytesPerPixel
 		row := dst[y*stride : y*stride+w*captureBytesPerPixel]
 		copy(row, src[start:start+w*captureBytesPerPixel])
+		if f.pq {
+			continue
+		}
 		// The output is opaque: x-format client buffers leave alpha undefined.
 		for x := 3; x < len(row); x += captureBytesPerPixel {
 			row[x] = 255
@@ -308,7 +317,7 @@ func (r *Renderer) createCaptureSlots() (err error) {
 		}
 	}()
 	for _, s := range slots {
-		bi := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: size, Usage: vk.BufferUsageTransferDstBit, SharingMode: vk.SharingModeExclusive}
+		bi := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: size, Usage: vk.BufferUsageTransferDstBit | vk.BufferUsageTransferSrcBit, SharingMode: vk.SharingModeExclusive}
 		if err := checked("vkCreateBuffer(capture)", d.CreateBuffer(r.gpu.device, &bi, nil, &s.buffer)); err != nil {
 			return err
 		}
@@ -355,6 +364,10 @@ func (r *Renderer) captureSync() captureSync {
 
 // freeCaptureSlot destroys a slot; the device must be idle for it.
 func (r *Renderer) freeCaptureSlot(s *captureSlot) {
+	r.freeCaptureCursor(&s.cursor)
+	for _, c := range s.copies {
+		r.freeDMACopy(c)
+	}
 	s.frame.valid = false
 	s.frame.done = nil
 	if s.file != nil {
@@ -400,6 +413,14 @@ func (r *Renderer) freeCapture() (*captureSlot, error) {
 	for _, s := range r.captures {
 		if s.leased {
 			continue
+		}
+		if len(s.copies) > 0 {
+			if err := r.reapCopies(s); err != nil {
+				return nil, err
+			}
+			if len(s.copies) > 0 {
+				continue
+			}
 		}
 		if s.pending {
 			switch res := sync.fenceStatus(s.fence); res {
@@ -452,6 +473,16 @@ func (r *Renderer) BeginCapture() (ports.CaptureFrame, error) {
 // beginCapture is BeginCapture; debug (Pixels) skips the sync file, the
 // caller waits on the slot's fence instead.
 func (r *Renderer) beginCapture(debug bool) (*captureFrame, error) {
+	return r.beginCaptureAs(debug, false)
+}
+
+// beginCaptureAs is beginCapture; pq copies an HDR frame as PQ words
+// (recordCapturePQ) instead of converting it to sRGB8.
+func (r *Renderer) beginCaptureAs(debug, pq bool) (*captureFrame, error) {
+	return r.beginCaptureCursor(debug, pq, nil)
+}
+
+func (r *Renderer) beginCaptureCursor(debug, pq bool, cursor *domain.CaptureCursor) (*captureFrame, error) {
 	if r.gpu.device == 0 || r.gpu.dd == nil {
 		return nil, errors.New("renderer closed")
 	}
@@ -468,7 +499,14 @@ func (r *Renderer) beginCapture(debug bool) (*captureFrame, error) {
 		return nil, err
 	}
 	hdr := r.last == &r.hdrOwn
-	if hdr {
+	if pq && !hdr {
+		return nil, errors.New("no HDR frame rendered")
+	}
+	if pq {
+		if err := r.createCapturePQ(); err != nil {
+			return nil, err
+		}
+	} else if hdr {
 		if err := r.createCapturePass(); err != nil {
 			return nil, err
 		}
@@ -480,6 +518,11 @@ func (r *Renderer) beginCapture(debug bool) (*captureFrame, error) {
 	if s == nil {
 		return nil, ports.ErrCaptureBusy
 	}
+	if cursor != nil {
+		if err := r.prepareCaptureCursor(s, cursor, pq); err != nil {
+			return nil, err
+		}
+	}
 	d, sc := r.gpu.dd, &r.capCall
 	sc.cmd = s.cmd
 	cmd := sc.cmd
@@ -490,7 +533,11 @@ func (r *Renderer) beginCapture(debug bool) (*captureFrame, error) {
 	if err := checked("vkBeginCommandBuffer(capture)", d.BeginCommandBuffer(cmd, &sc.begin)); err != nil {
 		return nil, err
 	}
-	if hdr {
+	if cursor != nil {
+		r.recordCaptureCursor(cmd, s, cursor, pq)
+	} else if pq {
+		r.recordCapturePQ(cmd, s)
+	} else if hdr {
 		r.recordCaptureHDR(cmd, s)
 	} else {
 		r.recordCaptureCopy(cmd, r.last, r.last.layout, s)
@@ -531,7 +578,7 @@ func (r *Renderer) beginCapture(debug bool) (*captureFrame, error) {
 			f.done = s.file
 		}
 	}
-	s.leased, f.valid = true, true
+	s.leased, f.valid, f.pq = true, true, pq
 	return f, nil
 }
 

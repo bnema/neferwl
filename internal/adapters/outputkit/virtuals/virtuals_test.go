@@ -13,6 +13,7 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestHostLifecycle(t *testing.T) {
@@ -310,5 +311,128 @@ func TestModeStoppedWithoutAcknowledgement(t *testing.T) {
 		if err := awaitMode(context.Background(), done, make(chan error, 1), "tv"); err == nil {
 			t.Fatal("missing stopped error")
 		}
+	})
+}
+
+// HDR changes keep the screen, as a DRM restart does: the same owner
+// lifetime applies them, no OutputRemoved/OutputAdded or security removal
+// is emitted. Enable and SDR white rebuild the renderer; the peak only
+// republishes the caps.
+func TestHostHDRChangesKeepScreen(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		events := make(chan ports.OutputEvent, 16)
+		security := make(chan ports.SecurityBackendEvent, 16)
+		ch := routing.Channels{Events: events, SecurityEvents: security}
+		set := routing.NewSet(ctx, nil, ch.Routes())
+		set.WireSecurity(ch)
+		defer func() {
+			if err := set.Wait(); err != nil {
+				t.Error(err)
+			}
+		}()
+		whites := make(chan float64, 8)
+		renderers := 0
+		factory := func(int, int) (ports.Renderer, error) {
+			renderers++
+			r := portsmocks.NewMockRenderer(t)
+			r.EXPECT().SetHDR(mock.Anything).Run(func(nits float64) { whites <- nits }).Return().Maybe()
+			r.EXPECT().ExportTargets(1, []uint64(nil), false).Return(nil, nil).Maybe()
+			r.EXPECT().Close().Return().Once()
+			return r, nil
+		}
+		host := New(set, ch, cursors.New(nil, 0), factory, logging.For(ctx, "virtuals"))
+		// next returns the next caps; any other event fails the test.
+		next := func() ports.OutputHDRCaps {
+			t.Helper()
+			ev := <-events
+			caps, ok := ev.(ports.OutputHDRCaps)
+			if !ok {
+				t.Fatalf("event %T %+v, want only HDR caps", ev, ev)
+			}
+			return caps
+		}
+		want := []domain.OutputConfig{{Name: "tv", Virtual: true, Mode: "10x10"}}
+		if err := host.Sync(ctx, want); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := (<-events).(ports.OutputAdded); !ok {
+			t.Fatal("first event not OutputAdded")
+		}
+		if caps := next(); caps.Active {
+			t.Fatalf("SDR caps=%+v", caps)
+		}
+		synctest.Wait()
+		for len(security) > 0 {
+			<-security
+		}
+		instance := set.Outs["tv"].Instance
+		check := func(what string) {
+			t.Helper()
+			synctest.Wait()
+			if set.Outs["tv"] == nil || set.Outs["tv"].Instance != instance || len(security) != 0 || len(events) != 0 {
+				t.Fatalf("%s replaced the output (events %d, security %d)", what, len(events), len(security))
+			}
+		}
+
+		want[0].HDR = true
+		if err := host.Sync(ctx, want); err != nil {
+			t.Fatal(err)
+		}
+		if caps := next(); !caps.Active || !caps.Caps.Expandable() {
+			t.Fatalf("HDR caps=%+v", caps)
+		}
+		if nits := <-whites; nits != domain.DefaultSDRBrightness {
+			t.Fatal(nits)
+		}
+		check("HDR on")
+		if renderers != 2 {
+			t.Fatalf("renderers %d, want a rebuild", renderers)
+		}
+
+		// Unchanged: nothing at all.
+		if err := host.Sync(ctx, want); err != nil {
+			t.Fatal(err)
+		}
+		check("unchanged sync")
+
+		// The peak is live: caps only, no renderer rebuild.
+		want[0].SDRExpandPeak = 600
+		if err := host.Sync(ctx, want); err != nil {
+			t.Fatal(err)
+		}
+		if caps := next(); !caps.Active || caps.Caps.PeakNits != 600 || caps.Caps.PeakSource != domain.HDRPeakConfig {
+			t.Fatalf("peak caps=%+v", caps)
+		}
+		check("peak change")
+		if renderers != 2 || len(whites) != 0 {
+			t.Fatal("peak change rebuilt the renderer")
+		}
+
+		want[0].SDRBrightness = 300
+		if err := host.Sync(ctx, want); err != nil {
+			t.Fatal(err)
+		}
+		if caps := next(); !caps.Active || caps.Caps.Headroom != 600.0/300 {
+			t.Fatalf("white caps=%+v", caps)
+		}
+		if nits := <-whites; nits != 300 {
+			t.Fatal(nits)
+		}
+		check("SDR white change")
+
+		want[0].HDR = false
+		if err := host.Sync(ctx, want); err != nil {
+			t.Fatal(err)
+		}
+		if caps := next(); caps.Active {
+			t.Fatalf("HDR off caps=%+v", caps)
+		}
+		check("HDR off")
+		if renderers != 4 {
+			t.Fatalf("renderers %d", renderers)
+		}
+		cancel()
 	})
 }

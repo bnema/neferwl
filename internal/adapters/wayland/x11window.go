@@ -171,14 +171,16 @@ func (s *Server) x11Place(c ports.PlaceWindow) {
 	}
 }
 
-// x11Focus tells the XWM which X window holds the keyboard focus, none when a
-// native window does.
-func (s *Server) x11Focus() {
+// x11Focus gives the X11 input focus, _NET_ACTIVE_WINDOW and
+// _NET_WM_STATE_FOCUSED to the window core named X11-active (ports.X11Active),
+// none when it named none or a native window. Wayland keyboard focus is apart.
+func (s *Server) x11Focus(id domain.WindowID) {
+	s.x11Active = id
 	if s.xwm == nil {
 		return
 	}
 	var slot xwm.Slot
-	if w := s.windows[s.seat.focused]; w != nil && w.x11 != nil {
+	if w := s.windows[id]; w != nil && w.x11 != nil && !(s.security != nil && s.security.Snapshot().Protected) {
 		slot = w.x11.slot
 	}
 	s.xwm.Focus(slot)

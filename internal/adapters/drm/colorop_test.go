@@ -892,7 +892,7 @@ func TestSetupColor(t *testing.T) {
 	t.Run("HDR makes the matrix blob, the multiplier and the identity 3D LUT", func(t *testing.T) {
 		o, k, _ := colorOutput(t, false, nil)
 		o.ctmBlob, o.lut3dBlob, o.colorMult = 0, 0, 0
-		o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: 160}
+		o.hdr.settings = domain.OutputHDRSettings{Enabled: true, SDRBrightness: 160}
 		o.hdr.cap.Capable = true
 		k.EXPECT().createBlob(mock.MatchedBy(func(b []byte) bool { return slices.Equal(b, ctmBytes(bt709ToBT2020)) })).Return(uint32(61), nil).Once()
 		k.EXPECT().createBlob(mock.MatchedBy(func(b []byte) bool { return slices.Equal(b, lut3dIdentityBytes(17)) })).Return(uint32(62), nil).Once()
@@ -906,7 +906,7 @@ func TestSetupColor(t *testing.T) {
 		colorPlane(k, o.primary, pColorPipe, opBase, []opSpec{opSRGB, opMult, opCTM, opPQ})
 		o.hdr.on = true
 		o.readColor()
-		o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: 160}
+		o.hdr.settings = domain.OutputHDRSettings{Enabled: true, SDRBrightness: 160}
 		o.hdr.cap.Capable = true
 		k.EXPECT().createBlob(mock.Anything).Return(uint32(61), nil).Once()
 		o.setupColor()
@@ -943,7 +943,7 @@ func TestSetupColor(t *testing.T) {
 				if o.overlay == nil || o.overlay.pipeline == nil || o.primary.pipeline == nil {
 					t.Fatal("pipelines not matched")
 				}
-				o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: 203}
+				o.hdr.settings = domain.OutputHDRSettings{Enabled: true, SDRBrightness: 203}
 				o.hdr.cap.Capable = true
 				k.EXPECT().createBlob(mock.MatchedBy(func(b []byte) bool { return slices.Equal(b, ctmBytes(bt709ToBT2020)) })).Return(uint32(61), nil).Once()
 				k.EXPECT().createBlob(mock.MatchedBy(func(b []byte) bool { return slices.Equal(b, lut3dIdentityBytes(uint32(tc.lut))) })).Return(uint32(62), nil).Once()
@@ -957,7 +957,7 @@ func TestSetupColor(t *testing.T) {
 	t.Run("3D LUT blob failure turns the pipelines off", func(t *testing.T) {
 		o, k, _ := colorOutput(t, true, nil)
 		o.ctmBlob, o.lut3dBlob = 0, 0
-		o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: 203}
+		o.hdr.settings = domain.OutputHDRSettings{Enabled: true, SDRBrightness: 203}
 		o.hdr.cap.Capable = true
 		k.EXPECT().createBlob(mock.Anything).Return(uint32(61), nil).Once()
 		k.EXPECT().createBlob(mock.Anything).Return(uint32(0), unix.ENOMEM).Once()
@@ -969,7 +969,7 @@ func TestSetupColor(t *testing.T) {
 	t.Run("blob failure turns the pipelines off", func(t *testing.T) {
 		o, k, _ := colorOutput(t, true, nil)
 		o.ctmBlob = 0
-		o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: 203}
+		o.hdr.settings = domain.OutputHDRSettings{Enabled: true, SDRBrightness: 203}
 		o.hdr.cap.Capable = true
 		k.EXPECT().createBlob(mock.Anything).Return(uint32(0), unix.ENOMEM).Once()
 		o.setupColor()

@@ -83,6 +83,14 @@ type FocusWindow struct{ ID domain.WindowID }
 
 func (FocusWindow) clientCommand() {}
 
+// X11Active carries core → wayland the X11 window that holds X11 input
+// focus and _NET_ACTIVE_WINDOW (0: none). It is the keyboard focus when that
+// is an X11 window, else a window an output.<name>.keep-focus holds; Wayland
+// keyboard focus is FocusWindow's alone.
+type X11Active struct{ ID domain.WindowID }
+
+func (X11Active) clientCommand() {}
+
 // ConfigurePopup carries core → wayland a popup's place, relative to its
 // parent's window geometry. Reposition answers a reposition request.
 type ConfigurePopup struct {

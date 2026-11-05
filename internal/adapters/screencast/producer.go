@@ -1,10 +1,11 @@
 package screencast
 
 import (
+	"errors"
 	"time"
 
-	"github.com/bnema/neferwl/internal/domain"
 	"bnema.dev/purego-pipewire/pipewire"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // The producer turns wayland's damage into PipeWire frames, one stream at a
@@ -12,13 +13,14 @@ import (
 //
 //	CastDamage -> dirty
 //	pump:  STREAMING, dirty or first frame, no frame in flight, interval
-//	       elapsed, a buffer free  -> Dequeue, CastFrame{Data: buffer}
+//	       elapsed, a buffer free  -> Dequeue, CastFrame{DMABuf: buffer}
 //	CastFrameDone ok -> Queue, then Trigger (the order PipeWire needs)
 //	CastFrameDone with an error -> Release, retry paced
 //
-// The buffer's mapping is lent to the wayland server until the CastFrameDone
-// of that buffer, so the source is never resized or destroyed while a frame
-// is in flight.
+// Buffers are GPU dmabufs only (allocator.go): the wayland server copies
+// each frame into one on the GPU, never through CPU memory. The buffer is
+// lent to the wayland server until the CastFrameDone of that buffer, so the
+// source is never resized or destroyed while a frame is in flight.
 //
 // A cast ends (the session signals Closed) on Stop, when the owner leaves
 // the bus (NameOwnerChanged), when wayland stops the cast (output or window
@@ -29,12 +31,6 @@ import (
 // released instead of queued), and the first frame after it is STREAMING
 // again is forced. The D-Bus session stays up for the next consumer.
 
-// wl_shm formats of the supported video formats.
-const (
-	shmARGB8888 = 0
-	shmXRGB8888 = 1
-)
-
 // maxFrameErrors is how many frames in a row may fail before the stream
 // stops.
 const maxFrameErrors = 3
@@ -42,11 +38,19 @@ const maxFrameErrors = 3
 // retryOpen is how long a command waits when the wayland channel is full.
 const retryOpen = 10 * time.Millisecond
 
-func shmFormat(f pipewire.VideoFormat) uint32 {
-	if f == pipewire.VideoFormatBGRA {
-		return shmARGB8888
+// formatsFor is the offer of st's target (domain.CastFormats), in st's
+// scratch array, and its colorimetry: HDR10 when the target shows HDR.
+func formatsFor(st *stream) ([]pipewire.VideoFormat, pipewire.VideoColorimetry) {
+	cast := domain.CastFormats(st.hdr)
+	n := 0
+	for _, f := range cast[:min(len(cast), len(st.offer))] {
+		st.offer[n] = videoFormat(f)
+		n++
 	}
-	return shmXRGB8888
+	if st.hdr {
+		return st.offer[:n], pipewire.HDR10Colorimetry
+	}
+	return st.offer[:n], pipewire.VideoColorimetry{}
 }
 
 // streamOfCast finds the stream of a cast ID.
@@ -78,13 +82,14 @@ func (s *Service) onCastEvent(ev *domain.CastEvent) {
 		if st.closing {
 			return
 		}
-		if st.haveSize && st.w == ev.Width && st.h == ev.Height {
+		if st.haveSize && st.w == ev.Width && st.h == ev.Height && st.hdr == ev.HDR {
 			return
 		}
-		st.w, st.h, st.haveSize = ev.Width, ev.Height, true
 		if st.src != nil {
-			st.needResize = true
+			st.needResize = st.needResize || st.w != ev.Width || st.h != ev.Height
+			st.needFormats = st.needFormats || st.hdr != ev.HDR
 		}
+		st.w, st.h, st.hdr, st.haveSize = ev.Width, ev.Height, ev.HDR, true
 	case domain.CastFrameDone:
 		s.frameDone(st, ev)
 	case domain.CastStopped:
@@ -221,18 +226,43 @@ func (s *Service) pump(st *stream, now time.Time) {
 			return
 		}
 	}
+	if st.dmaErr != nil {
+		s.log.Warn().Err(st.dmaErr).Str("stream", st.path).Str("reason", "dmabuf").Msg("screencast ended: the consumer cannot take GPU DMA-BUF frames or their allocation failed")
+		s.closeSession(st.sess, true)
+		return
+	}
 	if st.pwState == pipewire.StreamStateError || st.pwState == pipewire.StreamStateUnconnected && st.seenState {
 		s.log.Info().Str("stream", st.path).Int32("state", st.pwState).Msg("PipeWire stream ended")
 		s.closeSession(st.sess, true)
 		return
 	}
+	if st.needFormats && !st.inflight {
+		formats, color := formatsFor(st)
+		switch err := st.src.SetFormats(formats, color); {
+		case errors.Is(err, pipewire.ErrVideoBorrowed):
+			// A buffer is still lent out: try again shortly.
+			s.wait(st.interval())
+		case err != nil:
+			s.log.Warn().Err(err).Str("stream", st.path).Msg("PipeWire format change failed")
+			s.closeSession(st.sess, true)
+			return
+		default:
+			st.needFormats = false
+			s.log.Info().Str("stream", st.path).Bool("hdr", st.hdr).Msg("PipeWire formats renegotiated")
+		}
+	}
 	if st.needResize && !st.inflight {
-		st.needResize = false
-		st.fw, st.fh = 0, 0
-		if err := st.src.Resize(st.w, st.h); err != nil {
+		switch err := st.src.Resize(st.w, st.h); {
+		case errors.Is(err, pipewire.ErrVideoBorrowed):
+			// A buffer is still lent out: try again shortly.
+			s.wait(st.interval())
+		case err != nil:
 			s.log.Warn().Err(err).Str("stream", st.path).Msg("PipeWire resize failed")
 			s.closeSession(st.sess, true)
 			return
+		default:
+			st.needResize = false
+			st.fw, st.fh = 0, 0
 		}
 	}
 	if !st.announced && st.pwState >= pipewire.StreamStatePaused && st.nodeID != 0 {
@@ -243,13 +273,50 @@ func (s *Service) pump(st *stream, now time.Time) {
 	s.pumpFrame(st, now)
 }
 
+// castFormats is what the GPU exports for casts; nothing without a GPU.
+func (s *Service) castFormats() []domain.DMABufFormat {
+	if s.gpu == nil {
+		return nil
+	}
+	return s.gpu.CastFormats()
+}
+
+// castNodeName names the PipeWire node like other screen-cast producers
+// (xdpw-stream, xdph-streaming) so desktop tools tell it from a camera.
+const castNodeName = "neferwl-screen-cast"
+
+// castNodeProps identifies the node as a screen capture: media.role Screen
+// and media.category Capture are the PipeWire keys.h conventions for screen
+// capture streams.
+func castNodeProps(output string) []pipewire.VideoProp {
+	desc := "NeferWL screen cast"
+	if output != "" {
+		desc += " (" + output + ")"
+	}
+	return []pipewire.VideoProp{
+		{Key: "node.description", Value: desc},
+		{Key: "media.role", Value: "Screen"},
+		{Key: "media.category", Value: "Capture"},
+		{Key: "application.name", Value: "NeferWL"},
+	}
+}
+
 // openSource creates the PipeWire node once the target size is known.
 func (s *Service) openSource(st *stream) {
 	if s.pwc == nil {
 		s.closeSession(st.sess, true)
 		return
 	}
-	cfg := pipewire.VideoConfig{Name: "neferwl-screencast", Width: st.w, Height: st.h, MaxFPS: st.maxFPS, Formats: []pipewire.VideoFormat{pipewire.VideoFormatBGRx, pipewire.VideoFormatBGRA}}
+	dma := dmabufFormats(s.castFormats())
+	if len(dma) == 0 {
+		s.log.Warn().Err(errNoCastFormats).Str("stream", st.path).Msg("PipeWire stream not created")
+		s.closeSession(st.sess, true)
+		return
+	}
+	formats, color := formatsFor(st)
+	st.alloc.dev = s.gpu
+	cfg := pipewire.VideoConfig{Name: castNodeName, Props: castNodeProps(st.output), Width: st.w, Height: st.h, MaxFPS: st.maxFPS, Formats: formats, Color: color,
+		DMABuf: &pipewire.VideoDMABuf{Formats: dma, Allocator: &st.alloc, Strict: true, OnError: st.h2.dmabufFailed}}
 	src, err := s.pwc.NewVideoSource(cfg, &st.h2)
 	if err != nil {
 		s.log.Warn().Err(err).Str("stream", st.path).Msg("PipeWire stream not created")
@@ -285,7 +352,7 @@ func (st *stream) interval() time.Duration {
 // frame), none in flight and the interval has passed. When only the interval
 // is missing, it asks for a poll timeout.
 func (s *Service) frameDue(st *stream, now time.Time) bool {
-	if st.inflight || st.pwState != pipewire.StreamStateStreaming || st.needResize ||
+	if st.inflight || st.pwState != pipewire.StreamStateStreaming || st.needResize || st.needFormats ||
 		st.fw != st.w || st.fh != st.h || st.fw == 0 {
 		return false
 	}
@@ -302,11 +369,12 @@ func (s *Service) frameDue(st *stream, now time.Time) bool {
 // issueFrame lends buffer b to the wayland server. False: the buffer is not
 // taken and stays the caller's.
 func (s *Service) issueFrame(st *stream, b *pipewire.VideoBuffer, now time.Time) bool {
-	if b.Width != st.w || b.Height != st.h || len(b.Data) < b.Stride*b.Height {
+	dma := st.alloc.buffer(b)
+	if b.Width != st.w || b.Height != st.h || dma == nil || dma.Width != b.Width || dma.Height != b.Height {
 		s.wait(st.interval())
 		return false
 	}
-	cmd := domain.CastCommand{Kind: domain.CastFrame, ID: st.cast, Buf: b.Index, Data: b.Data, Stride: b.Stride, Width: b.Width, Height: b.Height, Format: shmFormat(b.Format)}
+	cmd := domain.CastCommand{Kind: domain.CastFrame, ID: st.cast, Buf: b.Index, DMABuf: dma, Width: b.Width, Height: b.Height}
 	if !s.sendCmd(cmd) {
 		s.wait(st.interval())
 		return false
@@ -335,6 +403,8 @@ func (s *Service) pumpClosing(st *stream) {
 		s.giveBack(st)
 		st.src.Destroy()
 		st.src = nil
+		// Destroy gave every buffer back (Free); what is left is closed.
+		st.alloc.freeAll()
 	}
 	if !st.needClose {
 		*st = stream{}

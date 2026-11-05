@@ -1,4 +1,4 @@
-// Package virtuals hosts config-declared SDR outputs in a backend's existing set.
+// Package virtuals hosts config-declared (SDR or HDR) outputs in a backend's existing set.
 package virtuals
 
 import (
@@ -30,6 +30,7 @@ type Host struct {
 }
 type output struct {
 	head  domain.OutputHead
+	hdr   domain.OutputHDRSettings
 	modes chan headless.ModeRequest
 }
 
@@ -74,6 +75,15 @@ func (h *Host) Sync(ctx context.Context, want []domain.OutputConfig) error {
 			default:
 			}
 		}
+		hdr := cfg.HDRSettings()
+		if current != nil && current.hdr != hdr {
+			// Like a DRM restart, the screen stays: the owner rebuilds its
+			// renderer (enable, SDR white) or republishes caps (peak).
+			if err := h.request(ctx, cfg.Name, current, headless.ModeRequest{Mode: *current.head.Current, HDR: &hdr}); err != nil {
+				return errors.Join(result, err, h.Remove(ctx, cfg.Name))
+			}
+			current.hdr = hdr
+		}
 		if current == nil {
 			if h.set.Outs[cfg.Name] != nil {
 				return errors.Join(result, fmt.Errorf("output %s already running", cfg.Name))
@@ -81,26 +91,18 @@ func (h *Host) Sync(ctx context.Context, want []domain.OutputConfig) error {
 			modes := make(chan headless.ModeRequest)
 			cur := &headless.Cursor{}
 			h.curs.Set(cfg.Name, cur)
-			opts := headless.Options{Name: cfg.Name, Cursor: cur, LoadCursor: xcursor.LoadCursor, NewRenderer: h.renderer, NewCaptureRenderer: h.renderer, Log: h.log, Presented: h.ch.Presented, Frames: h.ch.Frames, Captured: h.ch.Captured, Formats: h.ch.Formats, Events: h.ch.Events, ModeRequests: modes}
+			opts := headless.Options{Name: cfg.Name, Cursor: cur, LoadCursor: xcursor.LoadCursor, NewRenderer: h.renderer, NewCaptureRenderer: h.renderer, Log: h.log, Presented: h.ch.Presented, Frames: h.ch.Frames, Captured: h.ch.Captured, Formats: h.ch.Formats, Events: h.ch.Events, ModeRequests: modes, HDR: hdr}
 			opts.SetMode(mode.Width, mode.Height, mode.RefreshMilli)
 			if !headless.StartOutput(ctx, h.set, h.ch, info, opts) {
 				h.curs.Set(cfg.Name, nil)
 				return errors.Join(result, fmt.Errorf("start virtual output %s failed", cfg.Name), h.set.StartErr, ctx.Err())
 			}
-			current = &output{modes: modes}
+			current = &output{modes: modes, hdr: hdr}
 			h.outputs[cfg.Name] = current
 			h.order = append(h.order, cfg.Name)
 		} else if current.head.Info.Width != info.Width || current.head.Info.Height != info.Height || current.head.Info.RefreshMilli != info.RefreshMilli {
 			// Inventory changes only after the owner has applied the mode.
-			ack := make(chan error, 1)
-			select {
-			case current.modes <- headless.ModeRequest{Mode: mode, Result: ack}:
-			case <-h.set.Outs[cfg.Name].Done:
-				return errors.Join(result, fmt.Errorf("virtual output %s stopped", cfg.Name))
-			case <-ctx.Done():
-				return errors.Join(result, ctx.Err())
-			}
-			if err := awaitMode(ctx, h.set.Outs[cfg.Name].Done, ack, cfg.Name); err != nil {
+			if err := h.request(ctx, cfg.Name, current, headless.ModeRequest{Mode: mode}); err != nil {
 				return errors.Join(result, err, h.Remove(ctx, cfg.Name))
 			}
 			select {
@@ -117,6 +119,21 @@ func (h *Host) Sync(ctx context.Context, want []domain.OutputConfig) error {
 		h.order = append(h.order, cfg.Name)
 	}
 	return result
+}
+
+// request hands a mode or HDR change to the running owner and waits until
+// it applied it.
+func (h *Host) request(ctx context.Context, name string, o *output, req headless.ModeRequest) error {
+	ack := make(chan error, 1)
+	req.Result = ack
+	select {
+	case o.modes <- req:
+	case <-h.set.Outs[name].Done:
+		return fmt.Errorf("virtual output %s stopped", name)
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return awaitMode(ctx, h.set.Outs[name].Done, ack, name)
 }
 
 // Remove finishes one owned lifetime, including a spontaneously stopped owner.

@@ -42,6 +42,12 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene domain
 	// displayed frame.
 	// A request whose capture indicator the scene does not show yet is held
 	// (the caller keeps it, see capture.Waiting).
+	if pipeline != nil {
+		pipeline.Cursor = nil
+		if o.cursor != nil {
+			pipeline.Cursor = o.cursor.snapshot()
+		}
+	}
 	ready, _ := pipeline.Hold(scene, requests, time.Now())
 	if len(scene.CaptureIndicators) > 0 {
 		// The captures of this frame are delivered only once the frame that

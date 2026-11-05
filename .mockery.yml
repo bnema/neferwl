@@ -14,6 +14,7 @@ packages:
       filename: '{{.InterfaceFile | base | trimSuffix ".go"}}_mock.go'
     interfaces:
       CaptureFrame:
+      CastBufferAllocator:
       CastSink:
       Clock:
       ContentReturn:
@@ -80,6 +81,11 @@ packages:
           dir: internal/adapters/vulkan
           pkgname: vulkan
           filename: capture_sync_mock_test.go
+      dmabufFences:
+        config:
+          dir: internal/adapters/vulkan
+          pkgname: vulkan
+          filename: dmabuf_fences_mock_test.go
   github.com/bnema/neferwl/internal/adapters/wayland:
     interfaces:
       procEnv:

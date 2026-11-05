@@ -155,6 +155,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	var casts ports.CastSink
 	if s.hw != nil || opts.DBus {
 		s.cast = screencast.New(s.captureAllow.Policy, s.p.castCommands, logging.For(ctx, "screencast"))
+		s.cast.SetCastBuffers(s.gpu)
 		casts = s.cast
 		if opts.castInventoryApplied != nil {
 			s.cast.NotifyInventoryApplied(opts.castInventoryApplied)
@@ -162,19 +163,20 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	}
 	if s.server, err = wayland.New(wayland.Options{
 		// Assembly opens the Display below, before any server/client runs.
-		X11Clients:   lateX11{&s.xdisplay},
-		CaptureAllow: s.captureAllow,
-		Casts:        casts,
-		WorkspaceIDs: s.wsIDs,
-		Security:     s.security,
-		RuntimeDir:   runtimeDir,
-		DMABuf:       s.dmabuf,
-		SyncobjNode:  renderNodeForDevice(s.gpu),
-		Keymap:       s.km.String(),
-		RepeatRate:   opts.Config.Keyboard.RepeatRate,
-		RepeatDelay:  opts.Config.Keyboard.RepeatDelay,
-		LogDamage:    logging.Enabled(ctx, "wayland-damage"),
-		Xwayland:     xwaylandSettings(opts.Config.Xwayland),
+		X11Clients:    lateX11{&s.xdisplay},
+		CaptureAllow:  s.captureAllow,
+		Casts:         casts,
+		WorkspaceIDs:  s.wsIDs,
+		Security:      s.security,
+		RuntimeDir:    runtimeDir,
+		DMABuf:        s.dmabuf,
+		CaptureDMABuf: s.gpu.CaptureFormats(),
+		SyncobjNode:   renderNodeForDevice(s.gpu),
+		Keymap:        s.km.String(),
+		RepeatRate:    opts.Config.Keyboard.RepeatRate,
+		RepeatDelay:   opts.Config.Keyboard.RepeatDelay,
+		LogDamage:     logging.Enabled(ctx, "wayland-damage"),
+		Xwayland:      xwaylandSettings(opts.Config.Xwayland),
 	}, s.p.wayland(), logging.For(ctx, "wayland")); err != nil {
 		return s, err
 	}

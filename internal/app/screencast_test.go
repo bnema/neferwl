@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/config"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"bnema.dev/zerobus"
 )
@@ -53,12 +54,18 @@ func requireCastEnv(t *testing.T) {
 	}
 }
 
-// startCastApp runs the compositor with the capture allowlist content. The
-// PipeWire socket stays where it is: only the Wayland socket and the state
-// move to temporary directories.
+// startCastApp runs the compositor with the default configuration.
+func startCastApp(t *testing.T, allow string) *castApp {
+	t.Helper()
+	return startCastAppConfig(t, allow, config.Defaults())
+}
+
+// startCastAppConfig runs the compositor with cfg and the capture allowlist
+// content. The PipeWire socket stays where it is: only the Wayland socket
+// and the state move to temporary directories.
 //
 //testpolicy:realtime real headless renderer and D-Bus service startup and teardown
-func startCastApp(t *testing.T, allow string) *castApp {
+func startCastAppConfig(t *testing.T, allow string, cfg domain.Config) *castApp {
 	t.Helper()
 	t.Setenv("PIPEWIRE_RUNTIME_DIR", os.Getenv("XDG_RUNTIME_DIR"))
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
@@ -73,7 +80,7 @@ func startCastApp(t *testing.T, allow string) *castApp {
 	inputReady := make(chan chan<- ports.InputEvent, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, Options{Backend: "headless", DBus: true, NoXwayland: true, NoTerminal: true, Config: config.Defaults(), Sizes: [][2]int{{320, 240}}, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid()), castInventoryApplied: inventory},
+		done <- run(ctx, Options{Backend: "headless", DBus: true, NoXwayland: true, NoTerminal: true, Config: cfg, Sizes: [][2]int{{320, 240}}, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid()), castInventoryApplied: inventory},
 			func(in chan<- ports.InputEvent) { inputReady <- in })
 	}()
 	a := &castApp{inventory: inventory}

@@ -346,16 +346,12 @@ func (b *Backend) openCard(ctx context.Context, info domain.GPUInfo, mode domain
 // wantFromConfig turns output.<name> and render.* entries into connector choices.
 func wantFromConfig(cfg domain.Config) drm.Want {
 	r := cfg.Render
-	want := drm.Want{Disabled: map[string]bool{}, Modes: map[string][3]float64{}, HDR: map[string]drm.HDRSettings{}, NoScanout: !r.DirectScanout, NoTearing: !r.Tearing, NoVRR: !r.VRR, VRRFlipGap: r.VRRFlipGap}
+	want := drm.Want{Disabled: map[string]bool{}, Modes: map[string][3]float64{}, HDR: map[string]domain.OutputHDRSettings{}, NoScanout: !r.DirectScanout, NoTearing: !r.Tearing, NoVRR: !r.VRR, VRRFlipGap: r.VRRFlipGap}
 	for _, o := range cfg.Outputs {
 		if o.Virtual {
 			continue
 		}
-		nits := o.SDRBrightness
-		if nits == 0 {
-			nits = domain.DefaultSDRBrightness
-		}
-		want.HDR[o.Name] = drm.HDRSettings{Enabled: o.HDR, SDRBrightness: nits, ExpansionPeakNits: o.SDRExpandPeak}
+		want.HDR[o.Name] = o.HDRSettings()
 		if o.Off {
 			want.Disabled[o.Name] = true
 			continue

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -33,12 +34,49 @@ type batch struct {
 	// made once and lives as long as the batch.
 	gated   bool
 	release chan error
+	// copies are the GPU copies into the dmabuf destinations, by request
+	// index: the done sync file (nil: finished) or the error. The owner
+	// submits them (CopyTo) before handing the batch over, or for a gated
+	// batch before releasing it; the worker waits, closes and answers.
+	// Copies the worker never took are closed by Recycle.
+	copies [MaxRequests]dmaCopy
+}
+
+// dmaCopy is the outcome of one CaptureFrame.CopyTo.
+type dmaCopy struct {
+	done *os.File
+	err  error
+}
+
+// submitCopies starts the copy of each dmabuf request of b. Owner only.
+func (b *batch) submitCopies() {
+	if b.frame == nil {
+		return
+	}
+	for i := range b.count {
+		if q := b.requests[i]; q.DMABuf != nil {
+			b.copies[i].done, b.copies[i].err = b.frame.CopyTo(q.Region, *q.DMABuf)
+		}
+	}
+}
+
+// closeCopies closes the sync files of b's copies.
+func (b *batch) closeCopies() {
+	for i := range b.copies {
+		if f := b.copies[i].done; f != nil {
+			_ = f.Close()
+		}
+		b.copies[i] = dmaCopy{}
+	}
 }
 
 // Pipeline moves fence waiting and SHM copies off the renderer's owner.
 // Submit, Recycle and Close belong to that owner; one worker handles all jobs.
 type Pipeline struct {
 	// Set before owner use; no mutation or worker access to this dependency.
+	// Cursor is the output owner's immutable snapshot for this frame. Hidden
+	// workspace/window child pipelines deliberately have no output cursor.
+	Cursor    *domain.CaptureCursor
 	Security  ports.SessionSecurity
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -53,8 +91,11 @@ type Pipeline struct {
 	nheld         int
 	excl          excluder         // scratch of ExcludedScene, owner only
 	plainOverlays []domain.Overlay // scratch of SubmitPlain, owner only
-	off           *offscreen
-	worker        sync.WaitGroup
+	// split holds SubmitScoped's requests by readback (SDR, PQ), owner only.
+	cursorSplit [2][MaxRequests]domain.CaptureRequest
+	split       [2][MaxRequests]domain.CaptureRequest
+	off         *offscreen
+	worker      sync.WaitGroup
 }
 
 func NewPipeline(ctx context.Context, replies chan<- domain.CaptureDone) *Pipeline {
@@ -73,6 +114,7 @@ func (p *Pipeline) Completed() <-chan *batch { return p.completed }
 
 // Recycle returns a completed GPU readback lease on the renderer's owner.
 func (p *Pipeline) Recycle(b *batch, r ports.Renderer) {
+	b.closeCopies()
 	r.EndCapture(b.frame)
 	rel := b.release
 	select { // a verdict nobody took (the worker was cancelled) must not leak to the next use
@@ -114,10 +156,17 @@ func (p *Pipeline) EndGate(err error) {
 	for i := range p.nheld {
 		b := p.held[i]
 		p.held[i] = nil
-		select {
-		case b.release <- err:
-		default: // the verdict is already there
+		if len(b.release) > 0 {
+			continue // the verdict is already there
 		}
+		if err == nil && p.ctx.Err() == nil {
+			// Released: only now may pixels reach the client's buffers. A
+			// cancelled pipeline fails the batch instead (process sees the
+			// context), so no GPU copy is started for it.
+			b.submitCopies()
+		}
+		// The worker only receives: the slot is free (owner only sends).
+		b.release <- err
 	}
 	p.nheld = 0
 	if p.off != nil && p.off.p != nil {
@@ -127,7 +176,65 @@ func (p *Pipeline) EndGate(err error) {
 
 // SubmitScoped consumes requests with explicit immutable scene admission. The
 // final gate read precedes BeginCapture, not the render that produced pixels.
+//
+// Screencast buffers in CastXBGR2101010 get the PQ words (BeginCapturePQ) in
+// a batch of their own; a frame that is not HDR fails them transiently.
 func (p *Pipeline) SubmitScoped(state domain.SecurityState, r ports.Renderer, requests []domain.CaptureRequest) {
+	if p.Cursor == nil || len(requests) > MaxRequests {
+		p.submitReadback(state, r, requests, nil)
+		return
+	}
+	var n [2]int
+	for _, q := range requests {
+		k := 0
+		if q.Cursor {
+			k = 1
+		}
+		p.cursorSplit[k][n[k]] = q
+		n[k]++
+	}
+	p.submitReadback(state, r, p.cursorSplit[0][:n[0]], nil)
+	p.submitReadback(state, r, p.cursorSplit[1][:n[1]], p.Cursor)
+	p.cursorSplit = [2][MaxRequests]domain.CaptureRequest{}
+}
+
+func (p *Pipeline) submitReadback(state domain.SecurityState, r ports.Renderer, requests []domain.CaptureRequest, cursor *domain.CaptureCursor) {
+	npq := 0
+	for _, q := range requests {
+		if isPQ(q) {
+			npq++
+		}
+	}
+	if npq == 0 || len(requests) > MaxRequests {
+		p.submitBatch(state, r, requests, false, cursor)
+		return
+	}
+	if npq == len(requests) {
+		p.submitBatch(state, r, requests, true, cursor)
+		return
+	}
+	var n [2]int
+	for _, q := range requests {
+		k := 0
+		if isPQ(q) {
+			k = 1
+		}
+		p.split[k][n[k]] = q
+		n[k]++
+	}
+	p.submitBatch(state, r, p.split[0][:n[0]], false, cursor)
+	p.submitBatch(state, r, p.split[1][:n[1]], true, cursor)
+	p.split = [2][MaxRequests]domain.CaptureRequest{}
+}
+
+// isPQ reports whether q wants the HDR frame's PQ words: a screencast
+// buffer in XBGR2101010, copied on the GPU (client buffers are never PQ).
+func isPQ(q domain.CaptureRequest) bool {
+	return q.DMABuf != nil && q.DMABufBorrowed && q.DMABuf.Format == domain.CastXBGR2101010
+}
+
+// submitBatch is SubmitScoped for requests of one readback.
+func (p *Pipeline) submitBatch(state domain.SecurityState, r ports.Renderer, requests []domain.CaptureRequest, pq bool, cursor *domain.CaptureCursor) {
 	if len(requests) == 0 {
 		return
 	}
@@ -148,7 +255,20 @@ func (p *Pipeline) SubmitScoped(state domain.SecurityState, r ports.Renderer, re
 	} else if !p.captureAllowed(state) {
 		err = ErrSecurityState
 	} else {
-		b.frame, err = r.BeginCapture()
+		if cursor != nil {
+			b.frame, err = r.BeginCaptureCursor(cursor, pq)
+			if err != nil {
+				err = fmt.Errorf("%w: cursor capture: %w", ports.ErrCaptureTransient, err)
+			}
+		} else if pq {
+			if b.frame, err = r.BeginCapturePQ(); err != nil {
+				// No HDR frame (the output just turned SDR) or no PQ pass
+				// yet: the requester retries or renegotiates.
+				err = fmt.Errorf("%w: PQ capture: %w", ports.ErrCaptureTransient, err)
+			}
+		} else {
+			b.frame, err = r.BeginCapture()
+		}
 		if err == nil && b.frame == nil {
 			err = fmt.Errorf("renderer returned no capture frame")
 		}
@@ -164,6 +284,8 @@ func (p *Pipeline) SubmitScoped(state domain.SecurityState, r ports.Renderer, re
 	if b.gated = p.gating; b.gated {
 		p.held[p.nheld] = b
 		p.nheld++
+	} else {
+		b.submitCopies()
 	}
 	// There are exactly two reusable batches and two queue slots, so this
 	// send cannot wait: no batch can be queued twice before recycling.
@@ -213,24 +335,48 @@ func (p *Pipeline) process(b *batch) {
 		// owner's verdict, when it gave one, says why the capture failed
 		// better than a cancelled context.
 		var v error
+		took := false
 		select {
 		case v = <-b.release:
+			took = true
 		case <-p.ctx.Done():
 			select {
 			case v = <-b.release:
+				took = true
 			default:
 			}
+		}
+		if !took {
+			// No verdict: the owner may still write the copies; it closes them.
+			err = cmp.Or(err, p.ctx.Err())
+			for i := range b.count {
+				Fail(p.ctx, b.requests[i], err, p.replies)
+			}
+			p.completed <- b
+			return
 		}
 		err = cmp.Or(v, err, p.ctx.Err())
 	}
 	for i := range b.count {
 		q := b.requests[i]
-		if err != nil {
+		c := b.copies[i]
+		b.copies[i] = dmaCopy{}
+		switch {
+		case err != nil:
 			Fail(p.ctx, q, err, p.replies)
-		} else if e := p.ctx.Err(); e != nil {
-			Fail(p.ctx, q, e, p.replies)
-		} else {
+		case p.ctx.Err() != nil:
+			Fail(p.ctx, q, p.ctx.Err(), p.replies)
+		case q.DMABuf != nil:
+			e := c.err
+			if e == nil && c.done != nil {
+				e = syncfile.Wait(p.ctx, c.done)
+			}
+			replyAt(p.ctx, q, e, b.at, p.replies)
+		default:
 			writeFrame(p.ctx, q, b.frame, b.at, p.replies)
+		}
+		if c.done != nil {
+			_ = c.done.Close()
 		}
 	}
 	p.completed <- b

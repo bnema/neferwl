@@ -266,7 +266,7 @@ func TestProtectedShowImagesHDRKeepsHDRForKMSErrors(t *testing.T) {
 			o.cursor = nil
 			o.protected = true
 			o.hdr.cap = hdrCapability{Capable: true}
-			o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: 203}
+			o.hdr.settings = domain.OutputHDRSettings{Enabled: true, SDRBrightness: 203}
 			o.hdr.props = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
 			o.primary.formats = []domain.DMABufFormat{{Format: fourccXR30, Modifier: 0}}
 			if errno == nil {

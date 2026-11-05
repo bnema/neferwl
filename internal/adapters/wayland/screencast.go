@@ -17,8 +17,9 @@ import (
 // and hears back through Options.Casts (ports.CastSink). A cast is a capture
 // target registered with core like an ext-image-copy-capture session
 // (ports.CaptureSessionOpen), so the capture indicator stays on while it
-// lives, but its frames are written straight into the PipeWire buffer the
-// adapter lends (domain.CaptureRequest.Mapped) and it has no wayland client:
+// lives, but its frames are copied on the GPU straight into the PipeWire
+// DMA-BUF the adapter lends (domain.CaptureRequest.DMABuf, borrowed) and it
+// has no wayland client:
 // the adapter checked its caller, so casts bypass mayCapture, not protected().
 //
 // Everything here runs on the display goroutine, which owns the casts. The
@@ -43,6 +44,7 @@ var (
 	errCastSize      = errors.New("cast: frame size differs from the target")
 	errCastBusy      = errors.New("cast: frame already in flight")
 	errCastUnknown   = errors.New("cast: unknown cast")
+	errCastBuffer    = errors.New("cast: frame without a dmabuf")
 )
 
 // castSession is one cast.
@@ -53,6 +55,7 @@ type castSession struct {
 	// first: CaptureFrameTaken was sent, which turns the indicator on.
 	first bool
 	size  image.Point // the size the adapter was last told
+	hdr   bool        // the HDR state the adapter was last told
 	// dirty: the window committed since the last CastDamage (window casts).
 	dirty   bool
 	stopped bool
@@ -105,6 +108,8 @@ func (s *Server) applyCast(cmd domain.CastCommand) {
 			s.refuseCastFrame(cmd, errCastUnknown)
 		case c.waiting:
 			s.refuseCastFrame(cmd, errCastBusy)
+		case cmd.DMABuf == nil || len(cmd.DMABuf.Planes) == 0:
+			s.refuseCastFrame(cmd, errCastBuffer)
 		default:
 			c.frame, c.waiting = cmd, true
 			c.deadline = s.clock.Now().Add(captureRetryFor)
@@ -169,11 +174,11 @@ func (s *Server) openCast(cmd domain.CastCommand) {
 	s.nextSession++
 	c.id = s.nextSession
 	open.ID = c.id
-	c.size = image.Pt(rect.Dx(), rect.Dy())
+	c.size, c.hdr = image.Pt(rect.Dx(), rect.Dy()), c.targetHDR()
 	s.castSessions[cmd.ID], s.castByCore[c.id] = c, c
 	s.emit(open)
-	s.log.Info().Uint64("cast", cmd.ID).Uint64("session", c.id).Int("w", c.size.X).Int("h", c.size.Y).Msg("cast open")
-	c.push(domain.CastEvent{Kind: domain.CastSize, Width: c.size.X, Height: c.size.Y})
+	s.log.Info().Uint64("cast", cmd.ID).Uint64("session", c.id).Int("w", c.size.X).Int("h", c.size.Y).Bool("hdr", c.hdr).Msg("cast open")
+	c.push(domain.CastEvent{Kind: domain.CastSize, Width: c.size.X, Height: c.size.Y, HDR: c.hdr})
 }
 
 // state applies what core decided about the cast.
@@ -198,9 +203,29 @@ func (c *castSession) refresh() {
 	case fate == targetEmpty:
 		c.s.log.Info().Uint64("cast", c.cast).Msg("cast end: target empty")
 		c.end(domain.CaptureReasonOutputGone, nil, true, true)
-	case ok && image.Pt(rect.Dx(), rect.Dy()) != c.size:
-		c.size = image.Pt(rect.Dx(), rect.Dy())
-		c.push(domain.CastEvent{Kind: domain.CastSize, Width: c.size.X, Height: c.size.Y})
+	case ok && (image.Pt(rect.Dx(), rect.Dy()) != c.size || c.targetHDR() != c.hdr):
+		c.size, c.hdr = image.Pt(rect.Dx(), rect.Dy()), c.targetHDR()
+		c.push(domain.CastEvent{Kind: domain.CastSize, Width: c.size.X, Height: c.size.Y, HDR: c.hdr})
+	}
+}
+
+// targetHDR reports whether the cast shows confirmed HDR: an output cast
+// of an output with an HDR modeset. Window casts are drawn by the SDR
+// offscreen capture renderer.
+func (c *castSession) targetHDR() bool {
+	if c.src.kind != srcOutput || c.src.output == nil {
+		return false
+	}
+	_, ok := c.s.hdrOutputs[c.src.output.name()]
+	return ok
+}
+
+// castsHDRChanged follows an output's HDR toggle: its casts renegotiate.
+func (s *Server) castsHDRChanged(output string) {
+	for _, c := range s.castSessions {
+		if c.src.kind == srcOutput && c.src.output != nil && c.src.output.name() == output {
+			c.refresh()
+		}
 	}
 }
 
@@ -309,7 +334,7 @@ func (s *Server) requestCast(c *castSession, o *output, rect image.Rectangle, ta
 	id := s.nextCapture
 	s.captureInflight[id] = struct{}{}
 	s.captureReplies[id] = c.doneFn
-	req := domain.CaptureRequest{ID: id, Output: o.name(), Region: rect, Cursor: c.cursor, Mapped: f.Data, Width: f.Width, Height: f.Height, Stride: f.Stride, Format: f.Format, Session: tag.session, Workspace: tag.workspace, Window: tag.window, OffScreen: tag.offscreen, Indicate: true}
+	req := domain.CaptureRequest{ID: id, Output: o.name(), Region: rect, Cursor: c.cursor, DMABuf: f.DMABuf, DMABufBorrowed: true, Width: f.Width, Height: f.Height, Format: f.DMABuf.Format, Session: tag.session, Workspace: tag.workspace, Window: tag.window, OffScreen: tag.offscreen, Indicate: true}
 	select {
 	case s.channels.Captures <- req:
 	default:

@@ -298,7 +298,7 @@ func TestSecurityRawHDRSuppressed(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				done := make(chan error, 1)
 				go func() {
-					done <- RunOutput(ctx, Options{Security: gate, Width: 2, Height: 2, HDR: true, RawHDR: true, ScreenshotDir: dir, Name: "H", Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
+					done <- RunOutput(ctx, Options{Security: gate, Width: 2, Height: 2, HDR: domain.OutputHDRSettings{Enabled: true}, RawHDR: true, ScreenshotDir: dir, Name: "H", Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
 				}()
 				// The black protection frame follows the frame under test (or is
 				// the only one): the raw block is over once it is rendered.

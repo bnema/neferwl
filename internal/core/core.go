@@ -167,6 +167,8 @@ type Core struct {
 	unmanaged      map[WindowID]*unmanagedState
 	unmanagedOrder []WindowID
 	keyboard       keyboard
+	// x11 is the X11-active window (x11active.go).
+	x11 x11Active
 	// activity is when core last told wayland about user input
 	// (ports.UserActivity), sent at most once per ActivityInterval.
 	activity time.Time
@@ -695,6 +697,8 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 		return err
 	}
 	focus := c.keyboardFocus()
+	// Before the scenes: the held window's configure is Activated.
+	x11 := c.decideX11Active(focus)
 	if err := c.osdWatch(ctx); err != nil {
 		return err
 	}
@@ -724,6 +728,9 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 		}
 	}
 	if err := c.syncFocus(ctx, focus); err != nil {
+		return err
+	}
+	if err := c.syncX11Active(ctx, x11); err != nil {
 		return err
 	}
 	if err := c.updateInhibit(ctx); err != nil {

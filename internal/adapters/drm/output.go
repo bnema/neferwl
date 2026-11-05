@@ -254,7 +254,7 @@ func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, er
 	if err := o.readProps(card.fd, pipe, card.taken, cursorSize(card.fd)); err != nil {
 		return nil, err
 	}
-	o.hdr.settings = normalizedHDRSettings(card.want.HDR[c.name])
+	o.hdr.settings = card.want.HDR[c.name].Normalized()
 	o.expansionPeak = make(chan float64, 1)
 	o.requestedExpansionPeak = o.hdr.settings.ExpansionPeakNits
 	o.hdr.cap = detectHDR(o.monitor, o.hdr.props)

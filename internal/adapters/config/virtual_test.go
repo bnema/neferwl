@@ -60,36 +60,32 @@ func TestVirtualOutputModes(t *testing.T) {
 	}
 }
 
-func TestVirtualOutputSDRWarnings(t *testing.T) {
-	for _, field := range []struct{ key, value string }{
-		{"hdr", "on"}, {"sdr-expand", "always"}, {"sdr-expand-intensity", "0.9"},
-		{"sdr-expand-peak", "800"}, {"sdr-decode", "srgb"},
-	} {
-		for _, before := range []bool{true, false} {
-			order := "after"
+func TestVirtualOutputHDRKeys(t *testing.T) {
+	for _, before := range []bool{true, false} {
+		t.Run(map[bool]string{true: "before", false: "after"}[before], func(t *testing.T) {
+			declaration := "output.tv = virtual 1920x1080\n"
+			subkeys := "output.tv.hdr = on\noutput.tv.sdr-brightness = 300\noutput.tv.sdr-expand = always\noutput.tv.sdr-expand-intensity = 0.9\noutput.tv.sdr-expand-peak = 800\noutput.tv.sdr-decode = srgb\n"
+			input := declaration + subkeys
 			if before {
-				order = "before"
+				input = subkeys + declaration
 			}
-			t.Run(field.key+"/"+order, func(t *testing.T) {
-				declaration := "output.tv = virtual 1920x1080\n"
-				subkey := "output.tv." + field.key + " = " + field.value + "\n"
-				input, line := declaration+subkey, 2
-				if before {
-					input, line = subkey+declaration, 1
+			c, raw, warnings, err := parseBytes([]byte(input))
+			if err != nil || len(warnings) != 0 {
+				t.Fatalf("err=%v warnings=%v", err, warnings)
+			}
+			o := c.Outputs[0]
+			if !o.Virtual || !o.HDR || o.SDRBrightness != 300 || o.SDRExpand != domain.SDRExpandAlways || o.SDRExpandIntensity != 0.9 || o.SDRExpandPeak != 800 || o.SDRDecode != domain.SDRDecodeSRGB {
+				t.Fatalf("output=%+v", o)
+			}
+			if got := o.HDRSettings(); got != (domain.OutputHDRSettings{Enabled: true, SDRBrightness: 300, ExpansionPeakNits: 800}) {
+				t.Fatalf("settings=%+v", got)
+			}
+			for _, key := range []string{"hdr", "sdr-brightness", "sdr-expand", "sdr-expand-intensity", "sdr-expand-peak", "sdr-decode"} {
+				if _, ok := raw["output.tv."+key]; !ok {
+					t.Fatalf("%s dropped from effective config", key)
 				}
-				c, raw, warnings, err := parseBytes([]byte(input))
-				if err != nil || len(warnings) != 1 || warnings[0].Line != line || !strings.Contains(warnings[0].Msg, "ignored on virtual output") {
-					t.Fatalf("err=%v warnings=%v", err, warnings)
-				}
-				o := c.Outputs[0]
-				if !o.Virtual || o.HDR || o.SDRExpand != domain.SDRExpandAuto || o.SDRExpandIntensity != domain.DefaultSDRExpandIntensity || o.SDRExpandPeak != 0 || o.SDRDecode != domain.SDRDecodeGamma22 {
-					t.Fatalf("output=%+v", o)
-				}
-				if _, ok := raw["output.tv."+field.key]; ok {
-					t.Fatal("ignored key retained in effective config")
-				}
-			})
-		}
+			}
+		})
 	}
 }
 

@@ -63,29 +63,36 @@ func findCopyMemory(g *GPU, bits uint32, props vk.MemoryPropertyFlags) (uint32, 
 }
 
 func (c *Copier) importImage(b *domain.DMABuf, usage vk.ImageUsageFlags) (*target, error) {
+	need := vk.FormatFeatureFlags(vk.FormatFeatureBlitSrcBit)
+	if usage == vk.ImageUsageTransferDstBit {
+		need = vk.FormatFeatureBlitDstBit
+	}
+	return c.gpu.importBlitImage(b, c.width, c.height, usage, need)
+}
+
+// importBlitImage imports a one-object RGB dmabuf of w×h for usage, its
+// modifier having the need tiling features. The image is foreign: each use
+// acquires it from and releases it to the foreign queue family.
+func (g *GPU) importBlitImage(b *domain.DMABuf, w, h int, usage vk.ImageUsageFlags, need vk.FormatFeatureFlags) (*target, error) {
 	format, _, known := vkFormat(b.Format)
 	n := len(b.Planes)
-	if !known || isYUVFormat(b.Format) || b.Width != c.width || b.Height != c.height {
+	if !known || isYUVFormat(b.Format) || b.Width != w || b.Height != h {
 		return nil, errImageGeometry
 	}
 	if n < 1 || n > maxModifierPlanes {
 		return nil, errImagePlanes
 	}
-	need := vk.FormatFeatureFlags(vk.FormatFeatureBlitSrcBit)
-	if usage == vk.ImageUsageTransferDstBit {
-		need = vk.FormatFeatureBlitDstBit
-	}
-	planes, supported := c.supportsBlit(format, b.Modifier, need)
+	planes, supported := g.supportsBlit(format, b.Modifier, need)
 	if !supported {
 		return nil, fmt.Errorf("copy format %#x modifier %#x lacks blit feature %#x", b.Format, b.Modifier, need)
 	}
 	if uint32(n) != planes {
 		return nil, errImagePlanes
 	}
-	if !c.gpu.copyImportable(format, b.Modifier, usage) {
+	if !g.copyImportable(format, b.Modifier, usage) {
 		return nil, errImageModifier
 	}
-	d := c.gpu.dd
+	d := g.dd
 	if err := sameDMABuf(b.Planes); err != nil {
 		return nil, err
 	}
@@ -104,7 +111,7 @@ func (c *Copier) importImage(b *domain.DMABuf, usage vk.ImageUsageFlags) (*targe
 	ok := false
 	defer func() {
 		if !ok {
-			c.freeImage(t)
+			g.freeImage(t)
 		}
 	}()
 	var layouts [maxModifierPlanes]vk.SubresourceLayout
@@ -113,31 +120,31 @@ func (c *Copier) importImage(b *domain.DMABuf, usage vk.ImageUsageFlags) (*targe
 	}
 	explicit := vk.ImageDrmFormatModifierExplicitCreateInfoEXT{SType: vk.StructureTypeImageDRMFormatModifierExplicitCreateInfoEXT, DrmFormatModifier: b.Modifier, DrmFormatModifierPlaneCount: uint32(n), PlaneLayouts: &layouts[0]}
 	external := vk.ExternalMemoryImageCreateInfo{SType: vk.StructureTypeExternalMemoryImageCreateInfo, Next: unsafe.Pointer(&explicit), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
-	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: format, Extent: vk.Extent3D{Width: uint32(c.width), Height: uint32(c.height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: usage, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
-	if err := checked("vkCreateImage(imported target)", d.CreateImage(c.gpu.device, &ii, nil, &t.image)); err != nil {
+	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: format, Extent: vk.Extent3D{Width: uint32(w), Height: uint32(h), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: usage, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
+	if err := checked("vkCreateImage(imported target)", d.CreateImage(g.device, &ii, nil, &t.image)); err != nil {
 		return nil, err
 	}
 	fdProps := vk.MemoryFdPropertiesKHR{SType: vk.StructureTypeMemoryFDPropertiesKHR}
-	if err := checked("vkGetMemoryFdPropertiesKHR", d.GetMemoryFdPropertiesKHR(c.gpu.device, vk.ExternalMemoryHandleTypeDMABUFBitEXT, int32(fd), &fdProps)); err != nil {
+	if err := checked("vkGetMemoryFdPropertiesKHR", d.GetMemoryFdPropertiesKHR(g.device, vk.ExternalMemoryHandleTypeDMABUFBitEXT, int32(fd), &fdProps)); err != nil {
 		return nil, err
 	}
 	var req vk.MemoryRequirements
-	d.GetImageMemoryRequirements(c.gpu.device, t.image, &req)
+	d.GetImageMemoryRequirements(g.device, t.image, &req)
 	bits := req.MemoryTypeBits & fdProps.MemoryTypeBits
-	kind, err := findCopyMemory(c.gpu, bits, vk.MemoryPropertyDeviceLocalBit)
+	kind, err := findCopyMemory(g, bits, vk.MemoryPropertyDeviceLocalBit)
 	if err != nil {
-		if kind, err = findCopyMemory(c.gpu, bits, 0); err != nil {
+		if kind, err = findCopyMemory(g, bits, 0); err != nil {
 			return nil, err
 		}
 	}
 	dedicated := vk.MemoryDedicatedAllocateInfo{SType: vk.StructureTypeMemoryDedicatedAllocateInfo, Image: t.image}
 	imp := vk.ImportMemoryFdInfoKHR{SType: vk.StructureTypeImportMemoryFDInfoKHR, Next: unsafe.Pointer(&dedicated), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT, Fd: int32(fd)}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&imp), AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err := checked("vkAllocateMemory(imported target)", d.AllocateMemory(c.gpu.device, &alloc, nil, &t.memory)); err != nil {
+	if err := checked("vkAllocateMemory(imported target)", d.AllocateMemory(g.device, &alloc, nil, &t.memory)); err != nil {
 		return nil, err
 	}
 	fd = -1 // Vulkan owns it now.
-	if err := checked("vkBindImageMemory(imported target)", d.BindImageMemory(c.gpu.device, t.image, t.memory, 0)); err != nil {
+	if err := checked("vkBindImageMemory(imported target)", d.BindImageMemory(g.device, t.image, t.memory, 0)); err != nil {
 		return nil, err
 	}
 	ok = true
@@ -377,15 +384,21 @@ func (g *GPU) importCopyFence(fd int) (vk.Semaphore, error) {
 }
 
 func (c *Copier) supportsBlit(format vk.Format, modifier uint64, need vk.FormatFeatureFlags) (uint32, bool) {
+	return c.gpu.supportsBlit(format, modifier, need)
+}
+
+// supportsBlit reports the plane count of modifier for format and whether
+// its tiling has the need features.
+func (g *GPU) supportsBlit(format vk.Format, modifier uint64, need vk.FormatFeatureFlags) (uint32, bool) {
 	list := vk.DrmFormatModifierPropertiesListEXT{SType: vk.StructureTypeDRMFormatModifierPropertiesListEXT}
 	props := vk.FormatProperties2{SType: vk.StructureTypeFormatProperties2, Next: unsafe.Pointer(&list)}
-	c.gpu.inst.id.GetPhysicalDeviceFormatProperties2(c.gpu.physical, format, &props)
+	g.inst.id.GetPhysicalDeviceFormatProperties2(g.physical, format, &props)
 	if list.DrmFormatModifierCount == 0 {
 		return 0, false
 	}
 	mods := make([]vk.DrmFormatModifierPropertiesEXT, list.DrmFormatModifierCount)
 	list.DrmFormatModifierProperties = &mods[0]
-	c.gpu.inst.id.GetPhysicalDeviceFormatProperties2(c.gpu.physical, format, &props)
+	g.inst.id.GetPhysicalDeviceFormatProperties2(g.physical, format, &props)
 	for _, m := range mods[:list.DrmFormatModifierCount] {
 		if m.DrmFormatModifier == modifier {
 			return m.DrmFormatModifierPlaneCount, m.DrmFormatModifierTilingFeatures&need == need
@@ -394,13 +407,16 @@ func (c *Copier) supportsBlit(format vk.Format, modifier uint64, need vk.FormatF
 	return 0, false
 }
 
-func (c *Copier) freeImage(t *target) {
+func (c *Copier) freeImage(t *target) { c.gpu.freeImage(t) }
+
+// freeImage frees an image of importBlitImage; the device must be done with it.
+func (g *GPU) freeImage(t *target) {
 	if t.image != 0 {
-		c.gpu.dd.DestroyImage(c.gpu.device, t.image, nil)
+		g.dd.DestroyImage(g.device, t.image, nil)
 		t.image = 0
 	}
 	if t.memory != 0 {
-		c.gpu.dd.FreeMemory(c.gpu.device, t.memory, nil)
+		g.dd.FreeMemory(g.device, t.memory, nil)
 		t.memory = 0
 	}
 }

@@ -103,7 +103,8 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 			continue
 		}
 		scene.Windows = append(scene.Windows, sw)
-		t := configureTarget{output: sc.name(), view: view, focused: focused, captured: capture != nil && capture.window == p.ID}
+		// A window a keep-focus output holds stays activated for its client.
+		t := configureTarget{output: sc.name(), view: view, focused: focused || p.ID == c.x11.held, captured: capture != nil && capture.window == p.ID}
 		if !p.Hidden && p.Preview == 0 {
 			// Only a sized configure needs the client size.
 			t.client, t.imposed = c.clientRect(ps), sc.mon.Current().ImposedFloat(p.ID)

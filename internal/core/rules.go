@@ -21,9 +21,12 @@ import (
 //
 // A rule never moves the user (ADR 011): it does not take the focus and does
 // not change which workspace or output is shown or focused. A window sent to
-// another workspace joins it quietly, like a slot window. The one exception
-// is the workspace on screen of the focused output, where the window
-// behaves like any new window.
+// another workspace joins it quietly, like a slot window. The exceptions:
+// the workspace on screen of the focused output, where the window behaves
+// like any new window, and a window a rule sends to another output (even an
+// isolated one) that would have taken the focus on the focused output: it
+// takes the focus there, as does a focused window a title rule moves. The
+// rule moved the window, not the user's attention.
 
 // rule is one parsed window rule.
 type rule struct {
@@ -164,7 +167,10 @@ func (c *Core) ruleTarget(eff ruleEffect) (*screen, *Workspace) {
 }
 
 // placeByRule puts a window that maps for the first time where eff says.
-func (c *Core) placeByRule(v ports.WindowMapped, eff ruleEffect) {
+// With byRule (a window rule, not a map position), follow reports a window
+// sent to another output that would have taken the focus on the focused
+// output's workspace on screen; the caller activates it.
+func (c *Core) placeByRule(v ports.WindowMapped, eff ruleEffect, byRule bool) (follow bool) {
 	float := v.Floating
 	if eff.floating != nil {
 		float = *eff.floating
@@ -173,10 +179,17 @@ func (c *Core) placeByRule(v ports.WindowMapped, eff ruleEffect) {
 	// The workspace the user looks at takes a new window as usual; any
 	// other one gets it without a change of focus or view.
 	quiet := sc != c.cur() || w != sc.mon.Current()
+	if byRule && sc != c.cur() && !c.cur().mon.ov.open && !c.security.Protected {
+		// A new window takes the focus unless a fullscreen window of
+		// another app covers the workspace in view (ADR 011).
+		cover := c.cur().mon.Current().Cover()
+		follow = cover == 0 || sameApp(v, c.windows.lookup(cover).client)
+	}
+	defer func() { follow = follow && w.Has(v.ID) }()
 	switch {
 	case float:
 		if !quiet && c.placeCoverApp(v, sc, w, eff.cells) {
-			return
+			return follow
 		}
 		// A window that already floats keeps the size it maps with; a tile
 		// floated by a rule becomes a free float, core sizing it.
@@ -187,9 +200,10 @@ func (c *Core) placeByRule(v ports.WindowMapped, eff ruleEffect) {
 		if !c.placeCoverApp(v, sc, w, eff.cells) {
 			sc.mon.addWindow(v.ID, eff.cells)
 		}
-		return
+		return follow
 	}
 	sc.mon.normalize()
+	return follow
 }
 
 func (r rule) matches(appID, title string) bool {

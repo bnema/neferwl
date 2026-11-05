@@ -29,3 +29,28 @@ func TestCursorDraw(t *testing.T) {
 	c.Move(100, -3)
 	c.draw(dst)
 }
+
+func TestCaptureCursorSnapshotVisibility(t *testing.T) {
+	c := &Cursor{}
+	if c.snapshot() != nil {
+		t.Fatal("empty cursor visible")
+	}
+	c.set(domain.CursorImage{W: 1, H: 1, HotX: 1, Pixels: []byte{0, 0, 255, 255}})
+	c.Move(12, 34)
+	got := c.snapshot()
+	if got == nil || got.X != 12 || got.Y != 34 || got.Image.HotX != 1 {
+		t.Fatalf("snapshot: %+v", got)
+	}
+	c.Hide()
+	if c.snapshot() != nil {
+		t.Fatal("hidden cursor visible")
+	}
+	c.Move(20, 30)
+	if c.snapshot() == nil {
+		t.Fatal("motion did not show cursor")
+	}
+	c.set(domain.CursorImage{})
+	if c.snapshot() != nil {
+		t.Fatal("client-hidden cursor visible")
+	}
+}

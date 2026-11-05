@@ -34,6 +34,10 @@ type Options struct {
 	Outputs    domain.Layout
 	// DMABuf is what the renderer imports; empty disables linux-dmabuf.
 	DMABuf domain.DMABufSupport
+	// CaptureDMABuf are the dmabuf formats and modifiers captures can be
+	// written into (ports.RenderDevice.CaptureFormats); with linux-dmabuf,
+	// wlr-screencopy v3 offers them. Empty: SHM captures only.
+	CaptureDMABuf []domain.DMABufFormat
 	// SyncobjNode is the render node (/dev/dri/renderD*) timeline
 	// syncobjs are imported on; empty or without timeline support, no
 	// explicit sync is offered.
@@ -240,6 +244,7 @@ type Server struct {
 	surfaceByIdentity map[uint64]*surface
 	buffers           map[*server.Resource]clientBuffer
 	dmabuf            *dmabufGlobal
+	captureDMABuf     []domain.DMABufFormat
 	// hdrOutputs records confirmed DRM modesets; absent outputs are SDR.
 	hdrOutputs        map[string]domain.OutputHDR
 	colorID           uint64
@@ -256,6 +261,8 @@ type Server struct {
 	nextSurface       uint64
 	// seat is the keyboard and pointer state (seat.go).
 	seat seatState
+	// x11Active is the window core last named X11-active (ports.X11Active).
+	x11Active domain.WindowID
 	// eventMu protects only the notification queue, not display-owned window state.
 	// The event queue is unbounded by design: it grows only if core stops draining
 	// Events, which happens only at shutdown (core owns the receiving end). A
@@ -396,6 +403,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		cleanup:            cleanup,
 		log:                log,
 		logDamage:          opts.LogDamage,
+		captureDMABuf:      opts.CaptureDMABuf,
 		xsettings:          opts.Xwayland,
 		channels:           ch,
 		surfaces:           make(map[*server.Resource]*surface),
@@ -805,7 +813,7 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		// Only input/focus commands require an owner envelope. Config relay
 		// also produces SetKeymap and other epoch-independent commands.
 		switch cmd.(type) {
-		case ports.PointerFocus, ports.PointerMotionTo, ports.PointerButtonTo, ports.PointerAxisTo, ports.GestureBeginTo, ports.GestureUpdateTo, ports.GestureEndTo, ports.FocusWindow, ports.ForwardKey, ports.SetModifiers, ports.KeyboardReset, ports.CursorOverride,
+		case ports.PointerFocus, ports.PointerMotionTo, ports.PointerButtonTo, ports.PointerAxisTo, ports.GestureBeginTo, ports.GestureUpdateTo, ports.GestureEndTo, ports.FocusWindow, ports.X11Active, ports.ForwardKey, ports.SetModifiers, ports.KeyboardReset, ports.CursorOverride,
 			ports.DataDragFocus, ports.DataDragMotion, ports.DataDragDrop, ports.DataDragCancel:
 			return
 		}
@@ -871,6 +879,8 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		s.userActivity()
 	case ports.ShortcutsInhibitState:
 		s.setShortcutsInhibit(c)
+	case ports.X11Active:
+		s.x11Focus(c.ID)
 	case ports.CloseWindow:
 		w := s.windows[c.ID]
 		if w == nil || !w.toplevelAlive() {

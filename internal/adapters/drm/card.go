@@ -350,17 +350,10 @@ func (c *Card) ReadEvents(ctx context.Context) error {
 	return nil
 }
 
-func normalizedHDRSettings(settings HDRSettings) HDRSettings {
-	if settings.SDRBrightness == 0 {
-		settings.SDRBrightness = domain.DefaultSDRBrightness
-	}
-	return settings
-}
-
 // outputNeedsRestart applies the same replacement path to mode and HDR
 // configuration changes; Release drops the old output before reopening it.
-func outputNeedsRestart(o *Output, mode modeInfo, settings HDRSettings) bool {
-	settings = normalizedHDRSettings(settings)
+func outputNeedsRestart(o *Output, mode modeInfo, settings domain.OutputHDRSettings) bool {
+	settings = settings.Normalized()
 	// ExpansionPeakNits affects composition and reported caps, not KMS state.
 	// Its live update is delivered to the owner instead of replacing the output.
 	return o.mode != mode || o.hdr.settings.Enabled != settings.Enabled || o.hdr.settings.SDRBrightness != settings.SDRBrightness

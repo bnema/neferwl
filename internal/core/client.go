@@ -42,7 +42,9 @@ func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, 
 	case ports.InputRegionChanged:
 		c.windows.setRegion(v)
 	case ports.WindowMapped:
-		c.mapWindow(v)
+		if c.mapWindow(v) && c.activate(ctx, v.ID) != nil {
+			return false, true
+		}
 	case ports.WindowResized:
 		c.resizeFloating(v)
 	case ports.PopupRequest:

@@ -24,8 +24,12 @@ import (
 )
 
 // ModeRequest is a live mode transaction. Result must be buffered by its sender.
+// A non-nil HDR replaces the output's HDR settings in place (same output,
+// same screen): an enable or SDR white change rebuilds the renderer, a peak
+// change only republishes the caps. Mode is then the current mode.
 type ModeRequest struct {
 	Mode   domain.OutputMode
+	HDR    *domain.OutputHDRSettings
 	Result chan<- error
 }
 
@@ -36,14 +40,19 @@ type Options struct {
 	SecurityChanges <-chan domain.SecurityState
 	Instance        domain.OutputInstance
 	SecurityEvents  chan<- ports.SecurityBackendEvent
-	// Cursor, when set, is drawn into screenshots with the image from
-	// LoadCursor at the scene scale and transform. The cursor is drawn in
+	// Cursor, when set, supplies cursor-requesting captures and debug screenshots
+	// with the image from LoadCursor at the scene scale and transform. It is in
 	// target space: the image comes rotated and Move takes target pixels.
 	Cursor        *Cursor
 	LoadCursor    func(c domain.CursorChange, scale float64, t domain.BufferTransform, limit int) (domain.CursorImage, error)
 	Width, Height int
 	ScreenshotDir string
-	HDR           bool // virtual HDR output for protocol testing only
+	// HDR is the virtual output's HDR request (protocol testing only);
+	// HDR.Enabled tries a PQ target and falls back to SDR when unavailable.
+	HDR domain.OutputHDRSettings
+	// HDRLuminance is the virtual display's luminance facts reported while
+	// HDR is confirmed; zero uses DefaultVirtualHDRLuminance.
+	HDRLuminance domain.OutputHDR
 	// RawHDR also writes latest-pq.png, the raw PQ codes of an HDR output
 	// (16-bit), next to the screenshots. Test-only; needs HDR and ScreenshotDir.
 	RawHDR      bool
@@ -93,50 +102,99 @@ func refreshPeriod(refresh int) time.Duration {
 	return period
 }
 
+// DefaultVirtualHDRLuminance is the luminance a virtual HDR output reports
+// when Options.HDRLuminance is unset.
+var DefaultVirtualHDRLuminance = domain.OutputHDR{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: .005}
+
+// enableHDR switches r to a PQ target at the settings' SDR white and probes
+// one exported target; the probe's files are closed. On error the caller
+// falls back or discards r.
+func enableHDR(r ports.Renderer, settings domain.OutputHDRSettings) error {
+	r.SetHDR(float64(settings.Normalized().SDRBrightness))
+	bufs, err := r.ExportTargets(1, nil, false)
+	if err != nil {
+		return err
+	}
+	for _, b := range bufs {
+		for _, p := range b.Planes {
+			_ = p.File.Close()
+		}
+	}
+	return nil
+}
+
+// setupHDR applies settings to a fresh renderer and returns the confirmed
+// HDR luminance, nil for SDR (also when HDR was asked but is unavailable).
+func setupHDR(r ports.Renderer, opts Options, settings domain.OutputHDRSettings) *domain.OutputHDR {
+	if !settings.Enabled {
+		return nil
+	}
+	if err := enableHDR(r, settings); err != nil {
+		opts.Log.Warn().Err(err).Str("output", opts.Name).Msg("virtual HDR unavailable; falling back to SDR")
+		r.SetHDR(0)
+		_, _ = r.ExportTargets(0, nil, false)
+		return nil
+	}
+	lum := opts.HDRLuminance
+	if lum == (domain.OutputHDR{}) {
+		lum = DefaultVirtualHDRLuminance
+	}
+	opts.Log.Info().Str("output", opts.Name).Msg("virtual HDR enabled")
+	return &lum
+}
+
+// reportFormats sends the confirmed color state; false when ctx ended.
+func reportFormats(ctx context.Context, opts Options, confirmed *domain.OutputHDR) bool {
+	if opts.Formats == nil {
+		return true
+	}
+	select {
+	case opts.Formats <- domain.OutputFormats{Output: opts.Name, HDR: confirmed}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// reportCaps sends the HDR caps of settings and the confirmed state; false
+// when ctx ended.
+func reportCaps(ctx context.Context, opts Options, settings domain.OutputHDRSettings, confirmed *domain.OutputHDR) bool {
+	if opts.Events == nil {
+		return true
+	}
+	facts := domain.HDRCapsInput{Reason: "virtual HDR inactive"}
+	if confirmed != nil {
+		facts.Capable = true
+		facts.MaxLuminance, facts.MaxFrameAverage, facts.MinLuminance = confirmed.MaxLuminance, confirmed.MaxFrameAverage, confirmed.MinLuminance
+	}
+	event := domain.NewOutputHDRCaps(opts.Name, settings, facts, confirmed != nil)
+	select {
+	case opts.Events <- ports.OutputHDRCaps{OutputHDRCaps: event}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
 func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, contents <-chan *domain.ContentBatch, returns ports.ContentReturn, cursor <-chan domain.CursorChange, incoming <-chan domain.CaptureRequest) error {
 	r, err := opts.NewRenderer(opts.Width, opts.Height)
 	if err != nil {
 		return fmt.Errorf("create renderer: %w", err)
 	}
 	defer func() { r.Close() }()
-	var confirmed *domain.OutputHDR
-	if opts.HDR {
-		r.SetHDR(203)
-		if bufs, err := r.ExportTargets(1, nil, false); err != nil {
-			opts.Log.Warn().Err(err).Str("output", opts.Name).Msg("virtual HDR unavailable; falling back to SDR")
-			r.SetHDR(0)
-			_, _ = r.ExportTargets(0, nil, false)
-		} else {
-			for _, b := range bufs {
-				for _, p := range b.Planes {
-					_ = p.File.Close()
-				}
-			}
-			confirmed = &domain.OutputHDR{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: .005}
-			opts.Log.Info().Str("output", opts.Name).Msg("virtual HDR enabled")
-		}
-		if opts.Formats != nil {
-			select {
-			case opts.Formats <- domain.OutputFormats{Output: opts.Name, HDR: confirmed}:
-			case <-ctx.Done():
-				return nil
-			}
-		}
-	}
-	event := domain.OutputHDRCaps{Output: opts.Name}
-	in := domain.HDRCapsInput{Reason: "virtual HDR inactive", SDRWhiteNits: 203}
-	if confirmed != nil {
-		in.Capable = true
-		in.MaxLuminance, in.MaxFrameAverage, in.MinLuminance = confirmed.MaxLuminance, confirmed.MaxFrameAverage, confirmed.MinLuminance
-		event.Active = true
-	}
-	event.Caps = domain.ResolveHDRCaps(in)
-	if opts.Events != nil {
-		select {
-		case opts.Events <- ports.OutputHDRCaps{OutputHDRCaps: event}:
-		case <-ctx.Done():
+	hdrSettings := opts.HDR.Normalized()
+	confirmed := setupHDR(r, opts, hdrSettings)
+	// formats: whether the confirmed color state was reported (it is once
+	// HDR was requested, so a later SDR state is reported too).
+	formats := false
+	if hdrSettings.Enabled {
+		if !reportFormats(ctx, opts, confirmed) {
 			return nil
 		}
+		formats = true
+	}
+	if !reportCaps(ctx, opts, hdrSettings, confirmed) {
+		return nil
 	}
 	table := surfaces.New()
 	drawn := table.Map()
@@ -307,6 +365,52 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		if holdDue == nil {
 			holdTimer.Stop()
 		}
+		// applyHDR replaces the HDR settings in place. Enable and SDR white
+		// rebuild the renderer (as DRM restarts its output) on the same
+		// output: no screen is removed. The peak only changes the caps.
+		applyHDR := func(want domain.OutputHDRSettings) error {
+			want = want.Normalized()
+			if want == hdrSettings {
+				return nil
+			}
+			if want.Enabled == hdrSettings.Enabled && want.SDRBrightness == hdrSettings.SDRBrightness {
+				hdrSettings = want
+				if !reportCaps(ctx, opts, hdrSettings, confirmed) {
+					return ctx.Err()
+				}
+				return nil
+			}
+			next, err := opts.NewRenderer(opts.Width, opts.Height)
+			if err != nil {
+				return fmt.Errorf("recreate renderer: %w", err)
+			}
+			nextConfirmed := setupHDR(next, opts, want)
+			pipeline.EndGate(capture.ErrFrameNotPresented)
+			pipeline.Close(r)
+			r.Close()
+			r = next
+			pipeline = capture.NewPipeline(ctx, opts.Captured)
+			pipeline.Security = opts.Security
+			if opts.NewCaptureRenderer != nil {
+				pipeline.EnableOffscreen(opts.NewCaptureRenderer)
+			}
+			requests.FailPending(capture.ErrFrameNotPresented)
+			hdrSettings, confirmed = want, nextConfirmed
+			if want.Enabled || formats {
+				if !reportFormats(ctx, opts, confirmed) {
+					return ctx.Err()
+				}
+				formats = true
+			}
+			if !reportCaps(ctx, opts, hdrSettings, confirmed) {
+				return ctx.Err()
+			}
+			// Redraw the current scene on the new renderer.
+			dirty, securityKnown = haveScene, false
+			cursorScale = -1
+			reports.Reset()
+			return nil
+		}
 		applyMode := func(mode domain.OutputMode) error {
 			if mode.Width <= 0 || mode.Height <= 0 || mode.RefreshMilli < 0 {
 				return fmt.Errorf("invalid output mode: %dx%d@%d", mode.Width, mode.Height, mode.RefreshMilli)
@@ -320,16 +424,9 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 					return fmt.Errorf("recreate renderer: %w", err)
 				}
 				if confirmed != nil {
-					next.SetHDR(203)
-					bufs, err := next.ExportTargets(1, nil, false)
-					if err != nil {
+					if err := enableHDR(next, hdrSettings); err != nil {
 						next.Close()
 						return fmt.Errorf("recreate HDR targets: %w", err)
-					}
-					for _, b := range bufs {
-						for _, p := range b.Planes {
-							_ = p.File.Close()
-						}
 					}
 				}
 				// Join workers and return every lease to its original renderer
@@ -367,7 +464,12 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 				opts.ModeRequests = nil
 				continue
 			}
-			err := applyMode(req.Mode)
+			var err error
+			if req.HDR != nil {
+				err = applyHDR(*req.HDR)
+			} else {
+				err = applyMode(req.Mode)
+			}
 			req.Result <- err
 			if err != nil {
 				return err
@@ -490,7 +592,8 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 				}
 				return err
 			}
-			// The cursor is only drawn into screenshots: no new frame.
+			// Cursor images are sampled by captures and debug screenshots.
+			// Motion alone does not redraw the display.
 			want, cursorScale, cursorTransform = c, -1, 0
 		}
 		// Drain all queued updates before presenting one frame.
@@ -578,6 +681,10 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		// Requests the scene cannot serve (exclusion of another session, a
 		// workspace that moved) are failed here; see capture.Pipeline.Split.
 		// A request whose indicator the scene does not show yet stays held.
+		pipeline.Cursor = nil
+		if opts.Cursor != nil && !opts.protected() {
+			pipeline.Cursor = opts.Cursor.snapshot()
+		}
 		ready, _ := pipeline.Hold(scene, requests.List, time.Now())
 		if len(scene.CaptureIndicators) > 0 {
 			// The captures of this frame are delivered only once its frame,
@@ -760,7 +867,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 				return fmt.Errorf("frame index: %w", err)
 			}
 			lastShot, lastShotName = now, name
-			if opts.RawHDR && opts.HDR {
+			if opts.RawHDR && opts.HDR.Enabled {
 				// No cursor on the raw image. Only a confirmed HDR output
 				// has a readable PQ target; else HDRPixels is nil.
 				if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {

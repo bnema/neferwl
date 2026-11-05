@@ -85,8 +85,9 @@ See [examples/config](../examples/config) for every key with its default.
 | `output.<name>.transform` | `normal` | `90`, `180`, `270`, `flipped`, `flipped-90`, … |
 | `output.<name>.primary` | `off` | Focused at startup |
 | `output.<name>.right-of`, `.left-of`, `.above`, `.below`, `.offset` | automatic | [Output placement](#output-placement) |
-| `output.<name>.hdr` | `off` | [HDR](#hdr) on capable displays; ignored with a warning on virtual outputs, as are `.sdr-expand`, `.sdr-expand-intensity`, `.sdr-expand-peak` and `.sdr-decode` (always SDR) |
+| `output.<name>.hdr` | `off` | [HDR](#hdr) on capable displays and on virtual outputs |
 | `output.<name>.sdr-brightness` | `203` | Brightness of SDR content in HDR, in nits (80–1000) |
+| `output.<name>.keep-focus` | `off` | Keeps an X11 window on this output X11-active while a native window has the keyboard; see [Virtual outputs](#virtual-outputs) |
 | `drm.devices` | empty (all GPUs) | Comma-separated [GPUs](#gpus) NeferWL uses (restart required) |
 | `drm.ignore` | empty | Comma-separated [GPUs](#gpus) NeferWL leaves alone (restart required) |
 | `render.device` | automatic | [GPU](#gpus) that renders; `NEFERWL_RENDER_DEVICE` overrides it (restart required) |
@@ -166,6 +167,7 @@ output.<name>.primary = off
 output.<name>.offset = 0
 output.<name>.hdr = off
 output.<name>.sdr-brightness = 203
+output.<name>.keep-focus = off
 output.<name>.sdr-expand = auto
 output.<name>.sdr-expand-intensity = 0.5
 output.<name>.sdr-expand-peak = 0
@@ -176,7 +178,7 @@ Outputs are arranged automatically unless `.right-of`, `.left-of`, `.above` or `
 
 ## Window rules
 
-Rules place an app's windows when they first open. A rule matches its app ID and, when set, its title. A title rule's output/workspace placement also applies when a later title first matches, at most once per rule per window. This later move never changes floating state or column width. When the focused window moves, it stays the focused window on the destination output, even an isolated one, and that output becomes focused (not while the source output's overview is open); otherwise focus and view are unchanged. With `output.<name>.input` bindings, input from an unbound device returns focus to the last unbound output. SDR expansion settings follow the current title match.
+Rules place an app's windows when they first open. A window a rule opens on another output, even an isolated one, takes the focus there and that output becomes focused, as it would have taken the focus on the focused output; a window that would open in the background (behind another app's fullscreen window, during overview or lock) stays unfocused. A rule matches its app ID and, when set, its title. A title rule's output/workspace placement also applies when a later title first matches, at most once per rule per window. This later move never changes floating state or column width. When the focused window moves, it stays the focused window on the destination output, even an isolated one, and that output becomes focused (not while the source output's overview is open); otherwise focus and view are unchanged. With `output.<name>.input` bindings, input from an unbound device returns focus to the last unbound output. SDR expansion settings follow the current title match.
 
 | Key | Meaning |
 |---|---|
@@ -205,7 +207,7 @@ rule.calc.floating = on
 ```
 
 - Every matching rule applies, in file order; later rules win.
-- A rule never moves your focus or view.
+- A rule never moves your focus or view, except a new window or a focused window it sends to another output (above).
 - Proton games (X11) use `steam_app_<id>` as app ID, taken from `WM_CLASS`.
 - An X11 window that opens exactly on one output's area opens on that output, unless a rule sets `output`.
 - A rule can float a Proton game: `rule.games.app-id = steam_app_\d+` with `rule.games.floating = on`. Without a rule, X11 games tile until they ask for fullscreen.
@@ -213,7 +215,7 @@ rule.calc.floating = on
 
 ## Virtual outputs
 
-Declare an SDR output in the config; it exists while its entry remains:
+Declare a virtual output in the config; it exists while its entry remains:
 
 ```ini
 output.tv = virtual 1920x1080@60
@@ -221,8 +223,15 @@ output.tv = virtual 1920x1080@60
 
 Refresh defaults to 60 Hz. Dimensions must be 1–16384; names use ASCII
 letters, digits, `.`, `_` and `-`, and must not collide with a physical head.
-Invalid declarations warn and are ignored. HDR and SDR-expansion overrides
-warn and are ignored on virtual outputs.
+Invalid declarations warn and are ignored.
+
+Virtual outputs are SDR by default. `output.tv.hdr = on` makes one HDR
+(PQ/BT.2020, reported as a 1000-nit display) when the renderer supports it,
+else it falls back to SDR and logs why. `.sdr-brightness`, `.sdr-expand`,
+`.sdr-expand-intensity`, `.sdr-expand-peak` and `.sdr-decode` apply as on
+physical outputs. Reloading after a change to `.hdr` or `.sdr-brightness`
+restarts the output's rendering; its windows, workspaces and screen casts
+stay. `.sdr-expand-peak` applies at once.
 
 Without placement, `tv` is isolated: automatic layout, unbound pointers,
 directional focus and startup focus skip it. Isolated outputs share a column
@@ -266,6 +275,16 @@ rule.big.app-id = steam
 rule.big.title = (?i)big picture
 rule.big.output = tv
 ```
+
+Steam Big Picture picks its controller layout from the X11 focus. With
+`output.tv.keep-focus = on`, an X11 (Xwayland) window on `tv` keeps the X11
+input focus and `_NET_ACTIVE_WINDOW` while a native window on another output
+has the keyboard: the window focused on `tv`, else the most recently mapped
+visible one. Wayland keyboard focus is unchanged, so typed keys go to the
+focused window only. It applies to X11 windows only; an X11 window with the
+keyboard elsewhere takes precedence, and a locked session clears it. With
+several such outputs, the first in config order wins. Sunshine's virtual
+keyboard and mouse still follow normal focus.
 
 For Sunshine, a `global_prep_cmd` command can select the client's mode:
 `wlr-randr --output tv --custom-mode ${SUNSHINE_CLIENT_WIDTH}x${SUNSHINE_CLIENT_HEIGHT}@${SUNSHINE_CLIENT_FPS}`.

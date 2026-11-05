@@ -497,6 +497,7 @@ func (b *dmabufBuffer) content(id domain.WindowID) (domain.SurfaceContent, bool)
 
 const (
 	fourccXRGB = 'X' | 'R'<<8 | '2'<<16 | '4'<<24
+	fourccARGB = 'A' | 'R'<<8 | '2'<<16 | '4'<<24
 	fourccXBGR = 'X' | 'B'<<8 | '2'<<16 | '4'<<24
 	fourccXR30 = 'X' | 'R'<<8 | '3'<<16 | '0'<<24
 	fourccXB30 = 'X' | 'B'<<8 | '3'<<16 | '0'<<24

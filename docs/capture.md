@@ -10,7 +10,8 @@ NeferWL supports `zwlr_screencopy_manager_v1` (used by `grim`) and `ext_image_co
 
 With ext-image-copy-capture, a client can capture an output, a window, a workspace (even off screen, without bars) or a region of an output. The workspace and region sources use the NeferWL protocol in `internal/adapters/wayland/imagecapture/`.
 
-- Captures are 8-bit sRGB. HDR content is tone-mapped.
+- Screenshots and recordings over these protocols are 8-bit sRGB. HDR content is tone-mapped. Screen sharing through the [portal](#portals) keeps HDR.
+- `zwlr_screencopy_manager_v1` offers shared-memory buffers and, when the GPU can write them, linux-dmabuf buffers (XRGB8888 or ARGB8888), so a recorder can keep frames on the GPU.
 - The cursor is never included.
 - GPUs without Vulkan sync-file export (such as lavapipe) cannot capture.
 - `neferwl_capture_exclusion_manager_v1` lets a recorder keep its own HUD out of its frames.
@@ -25,7 +26,8 @@ grim -o tv tv.png
 ```
 
 Select `tv` in an OBS output-capture source or use `wayvnc -o tv`. The same
-allowlist, portal and lock-security restrictions apply; virtual outputs are SDR.
+allowlist, portal and lock-security restrictions apply. A virtual output with
+`output.tv.hdr = on` is shared over the portal in HDR, like a physical one.
 
 ## The indicator
 
@@ -78,12 +80,24 @@ The allowlist stops unknown programs, not a program running as you that drives a
 NeferWL serves the GNOME ScreenCast, DisplayConfig, Introspect and Screenshot D-Bus interfaces, so `xdg-desktop-portal-gnome` provides screen sharing and screenshots.
 
 - **Screen sharing** in browsers and apps: install `xdg-desktop-portal-gnome` and run PipeWire. The portal dialog lists monitors and windows with their titles; the stream is a PipeWire video node. Without PipeWire, the ScreenCast interface is not offered.
+- **GPU buffers only**: the stream's buffers are DMA-BUFs the GPU allocates (DRM format modifiers), and every frame is copied into them on the GPU, synchronised through the buffers' implicit fences. No frame goes through CPU memory and no shared-memory (memfd) buffer is offered: a program that cannot take DMA-BUF frames (or a GPU that cannot export them) gets no stream, and the cast ends with a `dmabuf` reason in the log. OBS, browsers, Sunshine and GStreamer's `pipewiresrc` take DMA-BUF. `wlr-screencopy` clients such as grim still get shared-memory frames.
 - **Screenshots** through the portal, interactive or not: install [nefercap](https://github.com/bnema/nefercap), which writes the PNG.
 - A cast keeps the indicator on until it ends. It ends when the session locks, the output or window goes away, the client stops it or disconnects, or NeferWL loses the D-Bus connection. When the receiving program stops reading, the stream pauses (no frames are rendered) and the cast stays open for the next reader, as in GNOME.
-- Unsupported: area and virtual casts, and the "Select area" and "Window" choices of the screenshot dialog.
+- **HDR**: sharing an output that shows HDR offers 10-bit PQ first (`xBGR_210LE`, BT.2020 primaries, SMPTE 2084, full-range RGB), with no tone mapping, and 8-bit sRGB (`BGRx`, `BGRA`) as the fallback for programs that do not take it. When the output turns HDR on or off, the stream renegotiates on the same PipeWire node: the receiving program keeps its stream. Window casts are 8-bit sRGB.
+- Unsupported: area casts and casts of a monitor the cast itself creates (`RecordVirtual`; config-declared virtual outputs are shared like any output), and the "Select area" and "Window" choices of the screenshot dialog.
 
 The packaged `neferwl-portals.conf` routes `ScreenCast` and `Screenshot` to the gnome portal.
 
 The D-Bus interfaces are served on the session bus when NeferWL runs on a hardware session. With `--backend=headless`, pass `-dbus` to serve them. Names already owned (by a GNOME session) are skipped.
 
 Screenshots through the portal are taken without asking, for any program running as you whose executable is on the allowlist. The indicator still flashes.
+
+### Sunshine
+
+[Sunshine](https://github.com/LizardByte/Sunshine) streams an HDR output through the portal. Set its capture method in `sunshine.conf`:
+
+```ini
+capture = portal
+```
+
+Pick the output in the portal dialog, for example a virtual `tv` with `output.tv.hdr = on`.

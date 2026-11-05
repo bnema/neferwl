@@ -35,6 +35,16 @@ type CaptureFrame interface {
 	// dst, stride bytes per row. Valid after Done signalled and before
 	// EndCapture.
 	Read(region image.Rectangle, dst []byte, stride int) error
+	// CopyTo submits a GPU copy of region (output pixels) into dst, a
+	// dmabuf of the region's size in a format and modifier listed by
+	// RenderDevice.CaptureFormats or CastFormats: as opaque sRGB8 into
+	// XRGB8888/ARGB8888, as PQ words into XBGR2101010 (a PQ capture only).
+	// The copy waits for the fences pending on dst and attaches its own as
+	// dst's write fence (implicit sync), when the kernel allows. Unlike Done and Read it
+	// makes Vulkan calls: the renderer's owner calls it, after BeginCapture
+	// and before EndCapture. done is signalled when dst holds the image
+	// (nil: already); the caller closes it. dst's files stay the caller's.
+	CopyTo(region image.Rectangle, dst domain.DMABuf) (done *os.File, err error)
 }
 
 // Renderer draws scenes for an output. One goroutine owns it. Frames go
@@ -94,6 +104,14 @@ type Renderer interface {
 	// slot is leased; another error when the copy cannot be tracked (no
 	// sync file): the caller fails the request.
 	BeginCapture() (CaptureFrame, error)
+	// BeginCapturePQ is BeginCapture for the last HDR frame as
+	// XBGR2101010 PQ words (BT.2020, no tone mapping; R in bits 0-9),
+	// copied as is by Read. It fails when the last frame was not HDR.
+	BeginCapturePQ() (CaptureFrame, error)
+	// BeginCaptureCursor is a capture-only GPU composite of the last frame
+	// and cursor. pq selects the same readback as BeginCapturePQ. Nil cursor
+	// is equivalent to BeginCapture/BeginCapturePQ; display pixels are unchanged.
+	BeginCaptureCursor(cursor *domain.CaptureCursor, pq bool) (CaptureFrame, error)
 	// EndCapture returns a lease. It never waits: a slot whose copy may
 	// still run is reused only once the renderer sees it finished.
 	EndCapture(CaptureFrame)
@@ -122,8 +140,28 @@ type RenderDevice interface {
 	NewRenderer(w, h int, o domain.RendererOptions) (Renderer, error)
 	NewCopier(w, h int) (Copier, error)
 	DMABuf() domain.DMABufSupport
+	// CaptureFormats lists the client dmabuf formats and modifiers its
+	// renderers' captures can write (CaptureFrame.CopyTo): XRGB8888 and
+	// ARGB8888 ones it imports, single-plane, that the device blits into.
+	// Empty when it cannot.
+	CaptureFormats() []domain.DMABufFormat
+	CastBufferAllocator
 	Node() (primary, render uint64)
 	Close()
+}
+
+// CastBufferAllocator allocates the GPU buffers of screencast streams
+// (PipeWire DMA-BUF buffers): images captures are copied into with
+// CaptureFrame.CopyTo. Its methods may run on any goroutine.
+type CastBufferAllocator interface {
+	// CastFormats lists the cast formats (domain.CastFormats fourccs) and,
+	// for each, the modifiers AllocCast exports. Empty when the device
+	// cannot export dmabufs and sync files.
+	CastFormats() []domain.DMABufFormat
+	// AllocCast exports a w×h buffer of format with modifier, a pair listed
+	// by CastFormats. Its plane files are the caller's, who frees the
+	// buffer by closing them; nothing else holds the memory.
+	AllocCast(format uint32, w, h int, modifier uint64) (domain.DMABuf, error)
 }
 
 // RenderDeviceOpener opens a GPU; zero GPUInfo selects the first usable device.

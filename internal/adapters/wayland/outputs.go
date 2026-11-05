@@ -27,6 +27,9 @@ func (s *Server) setOutputHDR(f domain.OutputFormats) {
 	if (f.HDR == nil && had) || (f.HDR != nil && (!had || old != *f.HDR)) {
 		s.colorOutputChanged(f.Output)
 	}
+	if (f.HDR != nil) != had {
+		s.castsHDRChanged(f.Output)
+	}
 }
 
 // Outputs. Core sends the global layout (ports.SetOutputs); each output is

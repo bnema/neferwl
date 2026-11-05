@@ -100,6 +100,7 @@ type Service struct {
 	conn      bus
 	connClose sync.Once
 	pwc       videoCore
+	gpu       ports.CastBufferAllocator // exports the cast buffers; nil: no cast
 	owns      [4]bool // nameScreenCast, nameDisplayConfig, nameIntrospect, nameScreenshot
 	inv       domain.CastInventory
 	haveInv   bool
@@ -158,6 +159,10 @@ func New(policy func() *captureallow.Policy, cmds chan<- domain.CastCommand, log
 	s.poller, s.initErr = fdwait.New()
 	return s
 }
+
+// SetCastBuffers sets the GPU that exports the casts' DMA-BUF buffers.
+// Without one no cast starts. Call it before Run.
+func (s *Service) SetCastBuffers(gpu ports.CastBufferAllocator) { s.gpu = gpu }
 
 // SetEnv sets the environment nefercap runs in (WAYLAND_DISPLAY names this
 // compositor). Call it before Run.
