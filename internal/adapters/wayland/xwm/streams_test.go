@@ -64,7 +64,10 @@ func streamScenario(t *testing.T) *harness {
 	t.Helper()
 	hs := newHarness(t, nil)
 	hs.classic(streamWin)
-	hs.mapAndWait(streamWin)
+	s := hs.mapAndWait(streamWin)
+	// This fixture starts after the initial MapNotify: subsequent ones are
+	// steady-state duplicates, not the focus recovery transition.
+	hs.x.tab.rec(s).mapped = true
 	// The steady state is a focused window: a FocusIn on it is not denied,
 	// so no request depends on how events are batched into flushes. The
 	// poke makes sure the focus requests are out before the peer pauses.

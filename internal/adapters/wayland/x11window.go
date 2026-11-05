@@ -175,15 +175,23 @@ func (s *Server) x11Place(c ports.PlaceWindow) {
 // _NET_WM_STATE_FOCUSED to the window core named X11-active (ports.X11Active),
 // none when it named none or a native window. Wayland keyboard focus is apart.
 func (s *Server) x11Focus(id domain.WindowID) {
+	var xid uint32
+	if w := s.windows[id]; w != nil && w.x11 != nil {
+		xid = w.x11.xid
+	}
+	s.log.Info().Uint64("id", uint64(id)).Uint32("xid", xid).Msg("X11Active received")
 	s.x11Active = id
 	if s.xwm == nil {
 		return
 	}
 	var slot xwm.Slot
+	xid = 0
 	if w := s.windows[id]; w != nil && w.x11 != nil && !(s.security != nil && s.security.Snapshot().Protected) {
 		slot = w.x11.slot
+		xid = w.x11.xid
 	}
 	s.xwm.Focus(slot)
+	s.log.Info().Uint64("id", uint64(id)).Uint32("xid", xid).Msg("X11Active applied")
 }
 
 // hostImpl is the server as the XWM sees it.
@@ -353,7 +361,8 @@ func (x *x11Window) tryMap() {
 	if w.parent != nil && w.parent.mapped {
 		parent = w.parent.id
 	}
-	s.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Title: w.title, ColorDescription: surf.mappedColor(), PID: x.info.PID, Xwayland: true, Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Positioned: true, Modal: w.modal, Remap: w.gen > 1, HasAt: x.info.HasAt, AtX: x.info.AtX, AtY: x.info.AtY, Fullscreen: x.info.Fullscreen})
+	proc := s.windowProc(w.id, x.info.ClientPID, w.gen > 1)
+	s.emit(ports.WindowMapped{Proc: proc, ID: w.id, AppID: w.appID, Title: w.title, ColorDescription: surf.mappedColor(), PID: x.info.PID, Xwayland: true, Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Positioned: true, Modal: w.modal, Remap: w.gen > 1, HasAt: x.info.HasAt, AtX: x.info.AtX, AtY: x.info.AtY, Fullscreen: x.info.Fullscreen})
 	s.syncInhibitors()
 	s.toplevelChanged(w)
 	s.castInventoryChanged()

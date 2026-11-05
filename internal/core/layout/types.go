@@ -81,4 +81,7 @@ type Lanes struct {
 	MaxColumns int
 	// Fullscreen is the fullscreen window, or zero.
 	Fullscreen WindowID
+	// Held are fullscreen windows other than the active cover: they keep
+	// output size in their own column or band but never cover the output.
+	Held []WindowID
 }

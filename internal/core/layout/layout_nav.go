@@ -66,7 +66,7 @@ func GeometricNeighbor(rects []Rect, focus, dx, dy int) int {
 
 // Snapshot snapshots layout inputs without retaining the Workspace.
 func (w *Lanes) Snapshot() View {
-	return View{Columns: w.Columns, Focus: w.Focus, View: w.View, MaxColumns: w.MaxColumns, Usable: w.Usable, Output: w.Output, Gap: w.Gap(), Fullscreen: w.Fullscreen, State: w.state(), Layout: w.Engine()}
+	return View{Columns: w.Columns, Focus: w.Focus, View: w.View, MaxColumns: w.MaxColumns, Usable: w.Usable, Output: w.Output, Gap: w.Gap(), Fullscreen: w.Fullscreen, Held: w.Held, State: w.state(), Layout: w.Engine()}
 }
 
 // laneOf is the lane of column i in the overview: its band, or the only

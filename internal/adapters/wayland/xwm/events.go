@@ -188,7 +188,22 @@ func (x *XWM) onError(e *xturbo.XError) {
 		if e.Code == xproto.BadAccess {
 			x.bootErr = ErrWMExists
 		}
-	case kindProp, kindGeom, kindClientIds, kindConfigure, kindFocus, kindOverrideType:
+	case kindFocus:
+		s, rec := x.tab.live(e.Args[0])
+		xid := uint32(0)
+		if rec != nil {
+			xid = rec.xid
+		}
+		x.log.Warn().Uint32("xid", xid).
+			Uint8("code", e.Code).Uint8("major", e.Major).Uint16("minor", e.Minor).
+			Uint64("seq", uint64(e.Seq)).Msg("X11 focus request failed")
+		if rec == nil {
+			x.stats.Stale++
+		} else if s == x.active && e.Args[1] == 0 {
+			x.refocus = true
+			x.wake()
+		}
+	case kindProp, kindGeom, kindClientIds, kindConfigure, kindOverrideType:
 		// Usually BadWindow: the window died between request and reply and
 		// DestroyNotify follows. Whatever the code, the awaited reply will
 		// never come, so the map must not wait for it.

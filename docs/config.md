@@ -480,6 +480,7 @@ The default layout. Columns sit side by side in bands of up to `max-columns`, st
 - A fullscreen window gets a band of its own right below the band it was in (expelled into its own column first when it shares one), so the other columns stay put and focus changes among them leave the fullscreen output alone. Leaving fullscreen keeps the column in that band. A parentless, non-stashed floating window becomes a tiled column in its own band below the selected column's band on fullscreen entry, including `toggle-fullscreen`; dialogs with a parent and stash entries stay floating.
 - A window requesting fullscreen before its first map opens fullscreen and focused, using the same band placement as `toggle-fullscreen`. The last pre-map set/unset request wins; child dialogs are excluded and window rules retain their workspace/output. Requests arriving after map are honoured immediately, subject to the usual fullscreen focus rules; `toggle-fullscreen` is unaffected.
 - A new window from another app never disturbs a covering fullscreen window; a window of the same app comes forward (equal non-zero PID or equal non-empty app ID). In cascade it opens focused in a new band; in scroll it opens focused to the right; in fixed it opens as a focused float above fullscreen. The original window keeps its fullscreen state. In scroll, a floating fullscreen cover is promoted to a tile when the same-app window arrives; ordinary fullscreen requests keep their existing floating semantics.
+- A tiled window that a fullscreen window's program launches as a different program (a game started from Steam Big Picture, found by [process lineage](#process-lineage-shell-exclusions)) opens fullscreen too, in a column of its own to the right in scroll or a band of its own below in cascade, and fills the screen; the launcher stays fullscreen next to it. Moving the focus between them changes which one fills the screen, with no fullscreen toggle, and closing the program returns to the fullscreen launcher. Windows of the launcher's own app, floating and parented windows keep the behaviour above; fixed opens the program as a float above the launcher.
 - `move-column-left/right` on a fullscreen window (tiled or floating) sends it to the neighbor monitor, where it stays fullscreen and focused; with no neighbor monitor nothing moves.
 - A band left empty goes away. A smaller `max-columns` moves the extra columns of a band to a new band below it.
 
@@ -634,3 +635,14 @@ X11 games are classified as games for auto mode, not forced past output gates.
 Other X11 games need an app-ID rule because X11 carries no Wayland game content
 type. `on` requests expansion eligibility; it does not bypass HDR/headroom gates.
 Placement fields still apply only at first map.
+
+### Process-lineage shell exclusions
+
+`lineage.shells = wrapper, custom-launcher` adds process **comm** names to the
+common-ancestor exclusion list. It reloads live and affects future first-map
+lineage decisions; existing launcher edges are retained. Names are limited to
+16 bytes. Defaults are `sh`, `bash`, `zsh`, `fish`, `dash`, `ksh`, `tcsh`, `csh`,
+`nu`, `elvish`, `xonsh`, `env`, `sudo`, `doas`, `setsid`, `nohup`, `timeout`,
+`systemd-run`, and `flatpak-spawn`. Generic launch wrappers (including
+`flatpak-spawn`) do not establish application identity. Direct ancestor matches
+are unaffected; common meeting points that are session leaders are excluded too.

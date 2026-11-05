@@ -49,6 +49,8 @@ type Channels struct {
 	// each seat input reset, for the debug log. Core does not wait: a full
 	// channel drops the record.
 	Binds chan<- domain.InputTrace
+	// Placements carries best-effort first-map diagnostics; core never blocks.
+	Placements chan<- domain.PlacementTrace
 	// Frames, when set, carries the outputs' reports of each flip of an
 	// animating scene (Scene.Animating): a running slide moves one step per
 	// report. Without them it moves on a timer.
@@ -81,8 +83,10 @@ type binding struct {
 	key  string
 }
 type Core struct {
-	hdrCaps map[string]domain.OutputHDRCaps
-	osd     osd
+	lineage       lineage
+	placementPath string
+	hdrCaps       map[string]domain.OutputHDRCaps
+	osd           osd
 	// overviewReal is publish's scratch map of the real layouts under an open overview.
 	overviewReal map[WindowID]Placement
 	// realBuf backs the layout read through at once by publish (each
@@ -648,6 +652,7 @@ func (c *Core) publish(ctx context.Context) error { return c.publishFrame(ctx, n
 // moved the springs (nil: any, or none moved): only a flip's own screen gets
 // a fresh Seq for its animation, so another output keeps its Seq while it draws the same.
 func (c *Core) publishFrame(ctx context.Context, only *screen) error {
+	defer c.observeLineageFocus()
 	if c.inputEpochChanged() {
 		return errSecurityChanged
 	}

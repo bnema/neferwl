@@ -105,7 +105,9 @@ const (
 
 // Config is the parsed compositor configuration (see the config adapter for keys).
 type Config struct {
-	Keyboard struct {
+	// LineageShells extends generic shell/wrapper meeting-point exclusions.
+	LineageShells []string
+	Keyboard      struct {
 		Layout, Variant, Options string
 		RepeatRate               int
 		RepeatDelay              int
@@ -353,7 +355,7 @@ const (
 // Equal reports value equality. Nil and empty collections are distinct.
 // Pointer-valued configuration is compared by its value, not its address.
 func (c Config) Equal(o Config) bool {
-	if !equalSlice(c.Terminal.Command, o.Terminal.Command) ||
+	if !equalSlice(c.LineageShells, o.LineageShells) || !equalSlice(c.Terminal.Command, o.Terminal.Command) ||
 		!equalSliceFunc(c.Startup, o.Startup, equalSlice[[]string]) ||
 		!equalSlice(c.Layout.Outputs, o.Layout.Outputs) ||
 		!equalSlice(c.Hint.Sources, o.Hint.Sources) ||

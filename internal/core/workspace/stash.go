@@ -70,13 +70,19 @@ func (w *Workspace) addStash(f Float) {
 // float focused. Under a covering fullscreen window the stash is not on
 // screen: the window tiles as usual.
 func (w *Workspace) CaptureStash(id WindowID) bool {
-	if id == 0 || w.stashHidden || len(w.Stash) == 0 || w.Cover() != 0 {
+	if id == 0 || !w.StashCaptures() {
 		return false
 	}
 	// No former column: toggle-window-stash tiles it as a new column.
 	w.Stash = append(w.Stash, Float{ID: id})
 	w.stashAt, w.stashFocus = len(w.Stash)-1, true
 	return true
+}
+
+// StashCaptures reports whether a new window would be captured by the
+// stash (CaptureStash): it is shown and no fullscreen window covers it.
+func (w *Workspace) StashCaptures() bool {
+	return !w.stashHidden && len(w.Stash) > 0 && w.Cover() == 0
 }
 
 // StashSpawned puts a window opened by a stash spawn in the stash, selected

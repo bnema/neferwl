@@ -9,6 +9,7 @@ import (
 // clientEvent applies one client event. publish asks for a new scene;
 // stop ends Run (a command could not be delivered).
 func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, stop bool) {
+	defer c.observeLineageFocus()
 	switch v := ev.(type) {
 	case ports.WindowStats:
 		if !c.osd.shown || v.Window == 0 || v.Window != c.osd.window {
@@ -42,8 +43,14 @@ func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, 
 	case ports.InputRegionChanged:
 		c.windows.setRegion(v)
 	case ports.WindowMapped:
+		before := c.windowFocus()
+		seat := c.keyboardFocus()
+		cover := c.cur().mon.Current().Cover()
 		if c.mapWindow(v) && c.activate(ctx, v.ID) != nil {
 			return false, true
+		}
+		if !v.Remap {
+			c.tracePlacement(v, before, seat, cover)
 		}
 	case ports.WindowResized:
 		c.resizeFloating(v)
@@ -103,6 +110,7 @@ func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, 
 			return false, false
 		}
 	case ports.WindowDestroyed:
+		c.removeLineage(v.ID, true)
 		delete(c.titleHistories, v.ID)
 	case ports.WindowUnmapped:
 		if v.ID == c.osd.window {
@@ -168,6 +176,7 @@ func (c *Core) unmapClient(ctx context.Context, v ports.WindowUnmapped) error {
 	if err := c.closePopupsOf(ctx, v.ID); err != nil {
 		return err
 	}
+	c.removeLineage(v.ID, false)
 	c.windows.drop(v.ID)
 	if c.drag != nil && c.drag.id == v.ID {
 		c.abortDrag()

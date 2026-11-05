@@ -272,7 +272,11 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 			}
 			pid := r.Client().PID()
 			x11 := x.server.x11Client != nil && x.server.x11Client.Owns(pid)
-			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Title: w.title, Slot: slot, Sandbox: sandbox, ContentType: windowContentType(x.surface.contentKind), ColorDescription: x.surface.mappedColor(), Xwayland: x11, PIDShared: x11, PID: pid, Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Modal: w.modal, Remap: w.gen > 1, Fullscreen: w.gen == 1 && w.initialFullscreen})
+			var proc []domain.ProcNode
+			if !x11 {
+				proc = x.server.windowProc(w.id, pid, w.gen > 1)
+			}
+			x.server.emit(ports.WindowMapped{Proc: proc, ID: w.id, AppID: w.appID, Title: w.title, Slot: slot, Sandbox: sandbox, ContentType: windowContentType(x.surface.contentKind), ColorDescription: x.surface.mappedColor(), Xwayland: x11, PIDShared: x11, PID: pid, Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Modal: w.modal, Remap: w.gen > 1, Fullscreen: w.gen == 1 && w.initialFullscreen})
 			x.server.syncInhibitors()
 			x.server.toplevelChanged(w)
 			x.server.castInventoryChanged()

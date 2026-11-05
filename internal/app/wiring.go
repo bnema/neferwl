@@ -43,7 +43,8 @@ type pipes struct {
 	// config file.
 	scales chan domain.ScaleChanged
 	// binds carries bind dispatch records to the debug log.
-	binds chan domain.InputTrace
+	binds      chan domain.InputTrace
+	placements chan domain.PlacementTrace
 
 	// Outputs report to wayland through its presentation sink and, for each
 	// flip of an animating scene (Scene.Animating), tell core (frames) to
@@ -113,8 +114,9 @@ func newPipes(realSession, hint bool) *pipes {
 		configured:   make(chan domain.ConfigChanged, 8),
 		configErrors: make(chan error, 8),
 
-		frames: make(chan domain.OutputFrame, 8),
-		binds:  make(chan domain.InputTrace, 32),
+		frames:     make(chan domain.OutputFrame, 8),
+		binds:      make(chan domain.InputTrace, 32),
+		placements: make(chan domain.PlacementTrace, 32),
 
 		captures: make(chan domain.CaptureRequest, ports.MaxCaptureInflight),
 		captured: make(chan domain.CaptureDone, ports.MaxCaptureInflight),
@@ -164,6 +166,7 @@ func (p *pipes) core() core.Channels {
 		ConfigErrors: p.configErrors,
 		Scales:       p.scales,
 		Binds:        p.binds,
+		Placements:   p.placements,
 		Frames:       p.frames,
 		HintScans:    p.hintScans,
 		Hints:        p.hintResults,

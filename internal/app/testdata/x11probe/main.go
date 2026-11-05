@@ -39,6 +39,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -89,7 +90,26 @@ func run() error {
 	paste := flag.String("paste", "", "print the text of selection CLIPBOARD or PRIMARY, no window")
 	xsettings := flag.Bool("xsettings", false, "print the XSETTINGS values, no window")
 	rootCursor := flag.Bool("root-cursor", false, "print the size of the cursor shown over the root, no window")
+	controller := flag.String("lineage-controller", "", "test controller stage: start, session, branch")
+	direct := flag.Bool("lineage-direct", false, "spawn game from launcher rather than sibling controller")
+	spawn := flag.Bool("lineage-spawn", false, "handle spawn by starting a direct child probe")
 	flag.Parse()
+	if *controller == "start" {
+		return startLineageSession(*direct)
+	}
+	if *controller != "" {
+		return lineageController(*controller, *direct)
+	}
+	var child *exec.Cmd
+	var childIn *os.File
+	defer func() {
+		if child != nil {
+			childIn.Close()
+			child.Process.Kill()
+			child.Wait()
+		}
+	}()
+
 	if *copyText != "" || *paste != "" || *xsettings || *rootCursor {
 		return runTool(*copyText, *copySel, *copyFor, *paste, *xsettings, *rootCursor)
 	}
@@ -164,6 +184,38 @@ func run() error {
 			}
 			line := strings.TrimSpace(string(stdinBuf[:i]))
 			stdinBuf = stdinBuf[i+1:]
+			if line == "spawn" && *spawn && child == nil {
+				bin, err := os.Executable()
+				if err != nil {
+					return err
+				}
+				r, w, err := os.Pipe()
+				if err != nil {
+					return err
+				}
+				child = exec.Command(bin, "-class", "lineage-game", "-at", "9000,9000", "-focus-log", "-stdin-sync")
+				child.Stdin = r
+				child.Stdout = os.Stdout
+				child.Stderr = os.Stderr
+				if err := child.Start(); err != nil {
+					return err
+				}
+				r.Close()
+				childIn = w
+			}
+			if line == "close" {
+				if childIn != nil {
+					fmt.Fprintln(childIn, "close")
+				} else {
+					var ev [32]byte
+					ev[0] = 33
+					ev[1] = 32
+					binary.LittleEndian.PutUint32(ev[4:], uint32(win))
+					binary.LittleEndian.PutUint32(ev[8:], uint32(protocols))
+					binary.LittleEndian.PutUint32(ev[12:], uint32(deleteWin))
+					xproto.SendEvent(b, false, win, 0, &ev)
+				}
+			}
 			if line == "sync" {
 				if err := c.Expect(xproto.GetInputFocus(b), kindSync, 0, 0, 0, 0); err != nil {
 					return err
