@@ -15,10 +15,13 @@ import (
 
 var sessionCmd = Command{
 	Name:    "session",
-	Args:    "new|ls [flags]",
-	Summary: "Create or list compositor sessions.",
+	Args:    "new|ls|rm [flags]",
+	Summary: "Create, list or remove compositor sessions.",
 	Setup: func(*flag.FlagSet) Runner {
 		return func(ctx context.Context, env Env, args []string) error {
+			if len(args) > 0 && args[0] == "rm" {
+				return sessionRemove(ctx, env, args[1:])
+			}
 			if len(args) > 0 && args[0] == "new" {
 				return sessionNew(ctx, env, args[1:])
 			}

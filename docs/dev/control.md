@@ -188,3 +188,10 @@ prints the readiness JSON; `--env` (also `--export`) prints `NEFERWL_SESSION`
 and `WAYLAND_DISPLAY` assignments. Parent session targeting/display variables
 are removed from the child environment. The session bus address is removed
 unless `--dbus-session` is given. `session rm` is described below.
+
+`neferwl session rm <id>` asks the selected session to quit at the committed
+boundary, then waits for its lifetime lock to be released. `--timeout` before
+the ID bounds shutdown (default `30s`). If its control socket cannot be reached,
+the command sends SIGTERM only after verifying that the recorded PID runs the
+same executable. Stale cleanup is serialized by the registry, so a replacement
+live session with the same ID is not removed. No other process is killed.
