@@ -8,25 +8,19 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// maxControlWaits caps the pending control waits: a request that would wait
-// past it is refused before it runs.
+// maxControlWaits caps the pending control waits: a request that would add
+// a wait past it is refused with busy before it runs. Requests that add no
+// wait, and quit, always pass.
 const maxControlWaits = 64
+
+// waitsFull reports whether a request with this wait would exceed the cap.
+func (c *Core) waitsFull(level domain.WaitLevel, until *domain.Until, shots []domain.ShotRequest) bool {
+	adds := level > domain.WaitCommitted || until != nil || len(shots) > 0
+	return adds && len(c.controlWaits) >= maxControlWaits
+}
 
 // control runs on the owner, just like input.
 func (c *Core) control(ctx context.Context, r ports.ControlRequest) error {
-	if len(c.controlWaits) >= maxControlWaits {
-		switch r := r.(type) {
-		case ports.ControlOutput:
-			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBadRequest})
-			return nil
-		case ports.ControlDo:
-			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBadRequest})
-			return nil
-		case ports.ControlInject:
-			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBadRequest})
-			return nil
-		}
-	}
 	switch r := r.(type) {
 	case ports.ControlOutput:
 		return c.controlOutput(ctx, r)
@@ -49,6 +43,10 @@ func (c *Core) control(ctx context.Context, r ports.ControlRequest) error {
 		shots, code := c.controlShots(r.Shots, r.Caps)
 		if code != "" {
 			controlReply(r.Reply, ports.ControlReply{Err: code})
+			return nil
+		}
+		if Action(r.Action) != ActionQuit && c.waitsFull(r.Wait, r.Until, shots) {
+			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBusy})
 			return nil
 		}
 		before := c.state()
@@ -78,6 +76,10 @@ func (c *Core) control(ctx context.Context, r ports.ControlRequest) error {
 		shots, code := c.controlShots(r.Shots, r.Caps)
 		if code != "" {
 			controlReply(r.Reply, ports.ControlReply{Err: code})
+			return nil
+		}
+		if c.waitsFull(r.Wait, r.Until, shots) {
+			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBusy})
 			return nil
 		}
 		before, baseline := c.state(), c.sceneSeqs()

@@ -17,6 +17,10 @@ func (c *Core) controlOutput(ctx context.Context, r ports.ControlOutput) error {
 		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrForbidden})
 		return nil
 	}
+	if len(c.controlWaits) >= maxControlWaits {
+		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBusy})
+		return nil
+	}
 	if c.runtimeWake == nil {
 		c.runtimeWake = make(chan struct{}, 1)
 	}

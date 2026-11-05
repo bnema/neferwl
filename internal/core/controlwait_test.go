@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -259,11 +260,23 @@ func TestControlWaitCap(t *testing.T) {
 		for range maxControlWaits {
 			c.waitControl(c.state(), c.sceneSeqs(), domain.WaitCommitted, &domain.Until{Kind: domain.UntilWindowMapped, AppID: "missing"}, time.Minute, replies, nil)
 		}
-		if err := c.control(t.Context(), ports.ControlDo{Action: "none", Caps: domain.CapAct, Reply: replies}); err != nil {
+		// A settled wait would add a 65th: busy.
+		if err := c.control(t.Context(), ports.ControlDo{Action: "none", Wait: domain.WaitSettled, Caps: domain.CapAct, Reply: replies}); err != nil {
 			t.Fatal(err)
 		}
-		if r := <-replies; r.Err != ports.ControlErrBadRequest || len(c.controlWaits) != maxControlWaits {
+		if r := <-replies; r.Err != ports.ControlErrBusy || len(c.controlWaits) != maxControlWaits {
 			t.Fatalf("over cap: %+v", r)
+		}
+		// A committed action adds no wait and still runs.
+		if err := c.control(t.Context(), ports.ControlDo{Action: "none", Wait: domain.WaitCommitted, Caps: domain.CapAct, Reply: replies}); err != nil {
+			t.Fatal(err)
+		}
+		if r := <-replies; r.Err != "" || r.Done != domain.WaitCommitted {
+			t.Fatalf("committed at cap: %+v", r)
+		}
+		// Quit always passes, even asking for a wait.
+		if err := c.control(t.Context(), ports.ControlDo{Action: "quit", Wait: domain.WaitSettled, Caps: domain.CapAct, Reply: replies}); !errors.Is(err, ErrQuit) {
+			t.Fatalf("quit at cap: %v", err)
 		}
 	})
 }

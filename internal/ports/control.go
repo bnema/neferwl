@@ -70,8 +70,10 @@ const (
 	ControlErrUnknownCommand = "unknown-command"
 	ControlErrBadRequest     = "bad-request"
 	ControlErrLocked         = "locked"
-	ControlErrForbidden      = "forbidden"
-	ControlErrCaptureFailed  = "capture-failed"
+	// ControlErrBusy: too many control requests are already waiting.
+	ControlErrBusy          = "busy"
+	ControlErrForbidden     = "forbidden"
+	ControlErrCaptureFailed = "capture-failed"
 )
 
 // ControlOutput changes the runtime-only virtual output desired set.
