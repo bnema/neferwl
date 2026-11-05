@@ -126,3 +126,32 @@ func TestControlInjectInputPath(t *testing.T) {
 		done <- nil
 	})
 }
+
+// A batch ended by a non-security error (a bind running quit) still gets a
+// committed reply before core returns the error.
+func TestControlInjectQuitMidBatch(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var cfg domain.Config
+		cfg.Keyboard.CmdKey = "super"
+		cfg.Layout.MaxColumns = 2
+		cfg.Binds = map[string]string{"Super+q": "quit"}
+		c := newSizedCore(t, cfg)
+		c.addScreen(domain.OutputInfo{Name: "A", Width: 100, Height: 80})
+		reply := make(chan ports.ControlReply, 1)
+		key := func(pressed bool) ports.InputEvent {
+			return ports.KeyEvent{Keysym: "q", Mods: domain.ModSuper, Pressed: pressed}
+		}
+		err := c.control(context.Background(), ports.ControlInject{Caps: domain.CapInput, Wait: domain.WaitSettled, Events: []ports.InputEvent{key(true), key(false)}, Reply: reply})
+		if !errors.Is(err, ErrQuit) {
+			t.Fatalf("err %v", err)
+		}
+		select {
+		case r := <-reply:
+			if r.Err != "" || r.Done != domain.WaitCommitted {
+				t.Fatalf("reply %+v", r)
+			}
+		default:
+			t.Fatal("no reply")
+		}
+	})
+}
