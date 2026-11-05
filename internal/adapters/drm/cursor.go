@@ -96,14 +96,15 @@ func (c *Cursor) TakeStats() CursorStats {
 
 // snapshot samples physical hotspot motion under its lock; the SDR image is
 // owned by this output goroutine, not by the input goroutine or KMS plane.
-func (c *Cursor) snapshot() *domain.CaptureCursor {
+func (c *Cursor) snapshot(dst *domain.CaptureCursor) *domain.CaptureCursor {
 	c.mu.Lock()
 	x, y, away := c.x, c.y, c.away
 	c.mu.Unlock()
 	if away || !c.image || c.captureImage.W == 0 || c.captureImage.H == 0 {
 		return nil
 	}
-	return &domain.CaptureCursor{Image: c.captureImage, X: x, Y: y}
+	*dst = domain.CaptureCursor{Image: c.captureImage, X: x, Y: y}
+	return dst
 }
 
 // Limit is the largest image side the cursor plane accepts.
@@ -197,7 +198,10 @@ func (c *Cursor) useFallback(hdrNits float64) (bool, error) {
 func (c *Cursor) setImage(pixels []byte, w, h, hotX, hotY int, hdrNits float64) error {
 	c.captureImage = domain.CursorImage{}
 	if w > 0 && h > 0 && len(pixels) >= w*h*4 {
-		c.captureImage = domain.CursorImage{W: w, H: h, HotX: hotX, HotY: hotY, Pixels: slices.Clone(pixels[:w*h*4])}
+		// Loader images are immutable (also shared by the headless cursor).
+		// Prefer our replay/queued copy below when one is required for KMS.
+		// Snapshots are uploaded synchronously before the owner changes images.
+		c.captureImage = domain.CursorImage{W: w, H: h, HotX: hotX, HotY: hotY, Pixels: pixels[:w*h*4]}
 	}
 	c.later = nil
 	if w <= 0 || h <= 0 || len(pixels) < w*h*4 {
@@ -211,6 +215,7 @@ func (c *Cursor) setImage(pixels []byte, w, h, hotX, hotY int, hdrNits float64) 
 	next := c.freeSlot()
 	if next < 0 {
 		c.later = &laterImage{pixels: slices.Clone(pixels[:w*h*4]), w: w, h: h, hotX: hotX, hotY: hotY}
+		c.captureImage.Pixels = c.later.pixels
 		return nil
 	}
 	if err := c.imgs.write(next, pixels, w, h, hdrNits); err != nil {
@@ -219,6 +224,7 @@ func (c *Cursor) setImage(pixels []byte, w, h, hotX, hotY int, hdrNits float64) 
 	c.cur, c.image, c.hotX, c.hotY = next, true, hotX, hotY
 	if c.alloc == allocDumb && !c.off {
 		c.last = laterImage{pixels: append(c.last.pixels[:0], pixels[:w*h*4]...), w: w, h: h, hotX: hotX, hotY: hotY}
+		c.captureImage.Pixels = c.last.pixels
 	}
 	return nil
 }
@@ -307,4 +313,20 @@ func (c *Cursor) free() {
 	c.captureImage = domain.CursorImage{}
 	c.last = laterImage{}
 	c.screen, c.flying = 0, false
+}
+
+// captureCursor samples only admitted displayed-frame requests. Hidden children
+// have no output cursor. dst belongs to the output owner, not to a frame lease.
+func (c *Cursor) captureCursor(dst *domain.CaptureCursor, normal, excluded []domain.CaptureRequest) *domain.CaptureCursor {
+	if c == nil {
+		return nil
+	}
+	for _, group := range [2][]domain.CaptureRequest{normal, excluded} {
+		for _, q := range group {
+			if q.Cursor {
+				return c.snapshot(dst)
+			}
+		}
+	}
+	return nil
 }

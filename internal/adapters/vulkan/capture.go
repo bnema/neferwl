@@ -121,9 +121,11 @@ type captureScratch struct {
 	begin  vk.CommandBufferBeginInfo
 	submit vk.SubmitInfo
 	// The copy (recordCaptureCopy).
-	region vk.BufferImageCopy
-	hb     vk.BufferMemoryBarrier
-	b      vk.ImageMemoryBarrier
+	region       vk.BufferImageCopy
+	blit         vk.ImageBlit
+	cursorParams captureCursorParams
+	hb           vk.BufferMemoryBarrier
+	b            vk.ImageMemoryBarrier
 	// The HDR conversion pass (recordCaptureHDR).
 	hdrIn, hdrB vk.ImageMemoryBarrier
 	attachment  vk.RenderingAttachmentInfo
@@ -362,7 +364,7 @@ func (r *Renderer) captureSync() captureSync {
 	return r.sync
 }
 
-// freeCaptureSlot destroys a slot; the device must be idle for it.
+// freeCaptureSlot destroys a slot; its capture and DMA-copy fences must be complete.
 func (r *Renderer) freeCaptureSlot(s *captureSlot) {
 	r.freeCaptureCursor(&s.cursor)
 	for _, c := range s.copies {
@@ -395,12 +397,16 @@ func (r *Renderer) freeCaptureSlot(s *captureSlot) {
 }
 
 // destroyCaptures frees the slots and the HDR conversion pass. Every
-// lease is invalid afterwards; the device is idle (Close).
+// lease is invalid afterwards; all capture and DMA-copy fences are complete.
 func (r *Renderer) destroyCaptures() {
 	for _, s := range r.captures {
 		r.freeCaptureSlot(s)
 	}
 	r.captures = nil
+	for _, c := range r.dmaIdle {
+		r.freeDMACopy(c)
+	}
+	r.dmaIdle = nil
 	r.destroyCapturePass()
 	r.freeTarget(&r.captureSDR)
 }

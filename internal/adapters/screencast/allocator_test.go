@@ -60,6 +60,7 @@ func TestDMABufFormatsGroupsByCastFormat(t *testing.T) {
 // its plane count; nothing allocated for the trial is kept.
 func TestCastAllocatorFixate(t *testing.T) {
 	gpu := portsmocks.NewMockCastBufferAllocator(t)
+	gpu.EXPECT().ReleaseCast(mock.Anything).Maybe()
 	gpu.EXPECT().CastFormats().Return([]domain.DMABufFormat{{Format: domain.CastXRGB8888, Modifier: 7}, {Format: domain.CastXRGB8888, Modifier: 9}})
 	trial, f := tempCast(t, domain.CastXRGB8888, 64, 32, 2, 1<<16)
 	gpu.EXPECT().AllocCast(domain.CastXRGB8888, 64, 32, uint64(9)).Return(domain.DMABuf{}, errors.New("no memory")).Once()
@@ -97,6 +98,11 @@ func TestCastAllocatorAllocFree(t *testing.T) {
 	if a.buffer(&pipewire.VideoBuffer{Index: 4}) != nil {
 		t.Fatal("memfd buffer has a dmabuf")
 	}
+	gpu.EXPECT().ReleaseCast(buf).Run(func(b domain.DMABuf) {
+		if closed(b.Planes[0].File) {
+			t.Fatal("released after close")
+		}
+	}).Once()
 	a.Free(4)
 	if !closed(f) || a.buffer(&pipewire.VideoBuffer{Index: 4, DMABuf: true}) != nil {
 		t.Fatal("buffer not freed")
@@ -104,6 +110,7 @@ func TestCastAllocatorAllocFree(t *testing.T) {
 
 	// A plane past the object: the allocation is refused and closed.
 	bad, g := tempCast(t, domain.CastXRGB8888, 64, 32, 2, 512)
+	gpu.EXPECT().ReleaseCast(bad).Once()
 	gpu.EXPECT().AllocCast(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(bad, nil).Once()
 	if err := a.Alloc(5, pipewire.VideoFormatBGRx, 64, 32, 7, &out); err == nil {
 		t.Fatal("bad planes accepted")

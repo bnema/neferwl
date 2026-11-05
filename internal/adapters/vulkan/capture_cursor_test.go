@@ -164,3 +164,80 @@ func TestCaptureCursorCopyTo(t *testing.T) {
 		t.Fatalf("dmabuf pixels: %v", raw)
 	}
 }
+
+func TestCaptureCursorCycleAllocations(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation budgets are not stable under the race runtime")
+	}
+	for _, tc := range []struct {
+		name string
+		pq   bool
+		new  func(*testing.T) *Renderer
+	}{
+		{"sdr", false, func(t *testing.T) *Renderer {
+			r := newTestRenderer(t, 16, 8)
+			t.Cleanup(r.Close)
+			return r
+		}},
+		{"hdr", false, hdrTestRenderer},
+		{"pq", true, hdrTestRenderer},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := tc.new(t)
+			requireCaptureSync(t, r)
+			if err := render(r, domain.Scene{Seq: 1, Background: "#3060c0"}, nil); err != nil {
+				t.Fatal(err)
+			}
+			dst := make([]byte, 16*8*4)
+			fds := make([]unix.PollFd, 1)
+			region := image.Rect(0, 0, 16, 8)
+			cursor := &domain.CaptureCursor{X: 3, Y: 4, Image: domain.CursorImage{W: 1, H: 1, Pixels: []byte{0, 0, 255, 255}}}
+			var cycleErr error
+			cycle := func() {
+				cf, err := r.BeginCaptureCursor(cursor, tc.pq)
+				if err != nil {
+					cycleErr = err
+					return
+				}
+				if done := cf.Done(); done != nil {
+					if err := pollSyncFile(done, fds); err != nil {
+						cycleErr = err
+					}
+				}
+				if err := cf.Read(region, dst, 16*4); err != nil {
+					cycleErr = err
+				}
+				r.EndCapture(cf)
+			}
+			cycle() // creates the slots, the capture pass and the sync files
+			cycle()
+			if cycleErr != nil {
+				t.Fatal(cycleErr)
+			}
+			fdsBefore := openFDs(t)
+			// The cycle crosses into Vulkan through purego, whose argument pool
+			// drops items under the race detector; the zero count is only
+			// meaningful without it.
+			allocs := testing.AllocsPerRun(50, cycle)
+			t.Logf("%.1f allocs/cycle", allocs)
+			result := testing.Benchmark(func(b *testing.B) {
+				for b.Loop() {
+					cycle()
+				}
+			})
+			t.Logf("%s %s", result.String(), result.MemString())
+			if allocs != 0 && !raceEnabled {
+				t.Errorf("%.1f allocations per capture cycle, want 0", allocs)
+			}
+			if cycleErr != nil {
+				t.Fatal(cycleErr)
+			}
+			if after := openFDs(t); after != fdsBefore {
+				t.Errorf("%d descriptors open after the cycles, %d before: a sync file leaked", after, fdsBefore)
+			}
+			if dst[0] == 0 && dst[1] == 0 && dst[2] == 0 {
+				t.Error("capture read back black")
+			}
+		})
+	}
+}

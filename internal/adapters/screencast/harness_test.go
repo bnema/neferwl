@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/zerobus"
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/domain"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"bnema.dev/zerobus"
-	"bnema.dev/zerowrap"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
@@ -175,6 +175,7 @@ func newSvcHarness(t *testing.T, o harnessOpts) *svcHarness {
 	h.svc.address = h.addr
 	// A GPU exporting linear XR24 cast buffers, each a temporary file.
 	gpu := portsmocks.NewMockCastBufferAllocator(t)
+	gpu.EXPECT().ReleaseCast(mock.Anything).Maybe()
 	gpu.EXPECT().CastFormats().Return([]domain.DMABufFormat{{Format: domain.CastXRGB8888}}).Maybe()
 	gpu.EXPECT().AllocCast(domain.CastXRGB8888, mock.Anything, mock.Anything, uint64(0)).RunAndReturn(
 		func(format uint32, w, hh int, _ uint64) (domain.DMABuf, error) {
