@@ -56,7 +56,9 @@ func (f *runFlags) register(fs *flag.FlagSet) {
 // validate checks the flag combinations and parses --size. set holds the
 // flags given on the command line.
 func (f *runFlags) validate(args []string, set map[string]bool) ([][2]int, error) {
-	f.normalizeBackendAlias()
+	if err := f.normalizeBackendAlias(set); err != nil {
+		return nil, err
+	}
 	headless := f.backend == "headless"
 	if (set["session-id"] || set["ready-fd"]) && !headless {
 		return nil, usagef("--session-id and --ready-fd require headless")
@@ -119,12 +121,16 @@ func setupRun(fs *flag.FlagSet) Runner {
 	return func(ctx context.Context, env Env, args []string) error {
 		set := map[string]bool{}
 		fs.Visit(func(fl *flag.Flag) { set[fl.Name] = true })
+		if err := f.normalizeBackendAlias(set); err != nil {
+			return err
+		}
+		// Warn before validation, so a rejected alias run is warned too.
+		if f.deprecatedServer {
+			fmt.Fprintln(env.Stderr, "deprecated: use --backend=headless --profile=persistent")
+		}
 		sizes, err := f.validate(args, set)
 		if err != nil {
 			return err
-		}
-		if f.deprecatedServer {
-			fmt.Fprintln(env.Stderr, "deprecated: use --backend=headless --profile=persistent")
 		}
 		return f.run(ctx, sizes)
 	}
@@ -279,12 +285,19 @@ func servePprof(ctx context.Context, addr string) error {
 
 func mustProfile(s string) domain.Profile { p, _ := domain.ParseProfile(s); return p }
 
-func (f *runFlags) normalizeBackendAlias() {
+// normalizeBackendAlias maps the deprecated --backend=server to headless with
+// the persistent profile. An explicit --profile contradicts the alias.
+// Idempotent: validate calls it again.
+func (f *runFlags) normalizeBackendAlias(set map[string]bool) error {
 	if f.backend == "server" {
+		if set["profile"] {
+			return usagef("--backend=server implies --profile=persistent; use --backend=headless --profile=%s", f.profile)
+		}
 		f.backend = "headless"
 		f.profile = "persistent"
 		f.deprecatedServer = true
 	}
+	return nil
 }
 
 func (f *runFlags) parseOverrides(set map[string]bool, headless bool) error {

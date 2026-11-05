@@ -20,8 +20,8 @@ func sessionRemove(ctx context.Context, env Env, args []string) error {
 	fs := flag.NewFlagSet("session rm", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	timeout := fs.Duration("timeout", 30*time.Second, "Shutdown timeout.")
-	if err := fs.Parse(args); err != nil {
-		return usagef("%v", err)
+	if help, err := parseSubFlags(env, fs, "rm [flags] <id>", "Ask a live session to quit and wait for it to exit.", args); help || err != nil {
+		return err
 	}
 	if len(fs.Args()) != 1 || !sessiondir.ValidID(fs.Args()[0]) {
 		return usagef("expected a valid session ID")

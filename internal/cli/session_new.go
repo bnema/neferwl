@@ -66,9 +66,8 @@ func sessionNew(ctx context.Context, env Env, args []string) error {
 	startTimeout := fs.Duration("start-timeout", 30*time.Second, "Startup timeout.")
 	dbus := fs.Bool("dbus-session", false, "Keep the parent session bus.")
 	shellEnv := fs.Bool("env", false, "Print environment assignments instead of JSON.")
-	export := fs.Bool("export", false, "Alias for --env.")
-	if err := fs.Parse(args); err != nil {
-		return usagef("%v", err)
+	if help, err := parseSubFlags(env, fs, "new [flags] [-- compositor flags]", "Start a detached headless session and print its readiness.", args); help || err != nil {
+		return err
 	}
 	if *id == "" {
 		*id = sessiondir.NewID()
@@ -97,7 +96,7 @@ func sessionNew(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *shellEnv || *export {
+	if *shellEnv {
 		_, err = fmt.Fprintf(env.Stdout, "NEFERWL_SESSION=%s\nWAYLAND_DISPLAY=%s\n", ready.ID, ready.Wayland)
 		return err
 	}

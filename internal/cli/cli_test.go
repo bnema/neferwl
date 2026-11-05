@@ -82,6 +82,13 @@ func TestCommands(t *testing.T) {
 		{[]string{"--backend=server", "--screenshot-raw"}, 2, "", "flag provided but not defined"},
 		{[]string{"--backend=server", "--input=-"}, 2, "", "flag provided but not defined"},
 		{[]string{"--backend=server", "extra"}, 2, "", "unexpected arguments"},
+		// The deprecation goes to stderr, even when the run is rejected.
+		{[]string{"--backend=server", "--timeout=-1s"}, 2, "", "deprecated: use --backend=headless --profile=persistent\nnegative timeout"},
+		{[]string{"--backend=server", "--profile=ephemeral"}, 2, "", "--backend=server implies --profile=persistent"},
+		{[]string{"session", "new", "--export"}, 2, "", "flag provided but not defined: -export"},
+		{[]string{"session", "new", "--help"}, 0, "usage: neferwl session new", ""},
+		{[]string{"session", "ls", "-h"}, 0, "usage: neferwl session ls", ""},
+		{[]string{"session", "rm", "--help"}, 0, "-timeout duration", ""},
 		{[]string{"--backend=server", "--debug=nope"}, 2, "", "--debug"},
 		{[]string{"--size=1920"}, 2, "", "--size"},
 		{[]string{"--timeout=-1s"}, 2, "", "negative timeout"},

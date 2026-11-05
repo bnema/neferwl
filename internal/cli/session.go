@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -12,6 +13,22 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/sessiondir"
 )
+
+// parseSubFlags parses a session subverb's flags. -h/--help prints the
+// subverb usage and its flags to stdout and reports help=true.
+func parseSubFlags(env Env, fs *flag.FlagSet, args, summary string, argv []string) (help bool, err error) {
+	if err := fs.Parse(argv); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			// Not printUsage: it lists commands, which include sessionCmd.
+			fmt.Fprintf(env.Stdout, "usage: neferwl session %s\n\n%s\n\nFlags:\n", args, summary)
+			fs.SetOutput(env.Stdout)
+			fs.PrintDefaults()
+			return true, nil
+		}
+		return false, usagef("%v", err)
+	}
+	return false, nil
+}
 
 var sessionCmd = Command{
 	Name:    "session",
@@ -31,8 +48,8 @@ var sessionCmd = Command{
 			fs := flag.NewFlagSet("neferwl session ls", flag.ContinueOnError)
 			fs.SetOutput(io.Discard)
 			asJSON := fs.Bool("json", false, "Print session metadata as JSON.")
-			if err := fs.Parse(args[1:]); err != nil {
-				return usagef("%v", err)
+			if help, err := parseSubFlags(env, fs, "ls [flags]", "List live sessions.", args[1:]); help || err != nil {
+				return err
 			}
 			if len(fs.Args()) != 0 {
 				return usagef("unexpected arguments: %v", fs.Args())
