@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"bnema.dev/zerowrap"
@@ -21,15 +20,13 @@ import (
 // BackendOptions are the settings of the virtual outputs.
 type BackendOptions struct {
 	Sizes [][2]int
-	Shots string
 	HDR   bool
-	Raw   bool // also write latest-pq.png (Options.RawHDR)
 }
 
 // Run drives one virtual output per size, named HEADLESS-1, -2, ...
 // Sizes may be empty: then only config-declared virtual outputs exist.
-// With several outputs, screenshots go to a subdirectory per output. Modes
-// of built-in heads are fixed; config-declared outputs reconcile through apply.
+// Frame capture starts over control (Continuous). Modes of built-in heads are
+// fixed; config-declared outputs reconcile through apply.
 //
 // newRenderer is configured for virtual outputs by the session.
 //
@@ -44,19 +41,11 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 		name := fmt.Sprintf("HEADLESS-%d", i+1)
 		mode := domain.OutputMode{Width: size[0], Height: size[1], RefreshMilli: 60000, Preferred: true}
 		inventory.Heads = append(inventory.Heads, domain.OutputHead{Info: domain.OutputInfo{Name: name, Width: size[0], Height: size[1], RefreshMilli: 60000}, Modes: []domain.OutputMode{mode}, Current: &mode, Enabled: true})
-		dir := o.Shots
-		if dir != "" && len(o.Sizes) > 1 {
-			dir = filepath.Join(o.Shots, name)
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				// Outputs already started stop and release their captures.
-				return errors.Join(err, set.Wait())
-			}
-		}
 		writer := make(chan ports.ContinuousCaptureRequest)
 		writers[name] = writer
 		cur := &headless.Cursor{}
 		curs.Set(name, cur)
-		opts := headless.Options{Continuous: writer, Cursor: cur, LoadCursor: xcursor.LoadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: domain.OutputHDRSettings{Enabled: o.HDR}.Normalized(), RawHDR: o.Raw, Formats: ch.Formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.Presented, Frames: ch.Frames, Events: ch.Events, Captured: ch.Captured}
+		opts := headless.Options{Continuous: writer, Cursor: cur, LoadCursor: xcursor.LoadCursor, Width: size[0], Height: size[1], HDR: domain.OutputHDRSettings{Enabled: o.HDR}.Normalized(), Formats: ch.Formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.Presented, Frames: ch.Frames, Events: ch.Events, Captured: ch.Captured}
 		if !headless.StartOutput(ctx, set, ch, domain.OutputInfo{Name: name, Width: size[0], Height: size[1]}, opts) {
 			return set.Wait()
 		}
