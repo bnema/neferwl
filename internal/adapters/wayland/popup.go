@@ -155,7 +155,7 @@ func (p *popup) configure(c ports.ConfigurePopup) {
 	}
 	s.serial++
 	p.w.xdg.resource.SendConfigure(s.serial)
-	p.w.xdg.serials = append(p.w.xdg.serials, s.serial)
+	p.w.xdg.serials = append(p.w.xdg.serials, configureSerial{wire: s.serial})
 	p.w.xdg.configured = true
 	if surf := p.w.xdg.surface; surf != nil {
 		surf.sendTreeScale()

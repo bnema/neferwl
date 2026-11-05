@@ -107,6 +107,11 @@ func (s *Server) positionerOf(wm *xdgshell.WmBase, p *xdgshell.Positioner) (doma
 	return domain.Positioner{}, false
 }
 
+type configureSerial struct {
+	wire uint32
+	core uint64
+}
+
 type xdgSurface struct {
 	wm         *xdgshell.WmBase
 	resource   *xdgshell.Surface
@@ -115,7 +120,8 @@ type xdgSurface struct {
 	configured bool
 	acked      bool
 	window     *window
-	serials    []uint32
+	serials    []configureSerial
+	ackedCore  uint64
 	// geometry is the committed window geometry: the visible window inside
 	// client shadows. Empty means the whole surface.
 	geometry, pendingGeometry domain.Rect
@@ -153,8 +159,9 @@ type window struct {
 	floatW, floatH int  // size last sent to core
 	sized          bool // the first committed size after a map was sent
 	// last is the most recent core configure, resent when decoration mode changes.
-	last    ports.ConfigureWindow
-	hasLast bool
+	last                  ports.ConfigureWindow
+	hasLast               bool
+	lastCommittedReported uint64
 }
 
 // sendXDGConfigure sends w.last as xdg_toplevel + xdg_surface configure.
@@ -164,7 +171,7 @@ func (w *window) sendXDGConfigure() {
 	s := w.xdg.server
 	s.serial++
 	w.xdg.resource.SendConfigure(s.serial)
-	w.xdg.serials = append(w.xdg.serials, s.serial)
+	w.xdg.serials = append(w.xdg.serials, configureSerial{wire: s.serial, core: c.Serial})
 }
 
 // toplevelStates encodes the xdg_toplevel states of configure c.
@@ -216,6 +223,7 @@ func (w *window) unmap() {
 	if x := w.xdg; x != nil {
 		x.configured = false
 		x.acked = false
+		x.ackedCore = 0
 		x.serials = nil
 	}
 	s.emit(ports.WindowUnmapped{ID: w.id})
@@ -246,7 +254,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 			x.server.serial++
 			t.SendConfigure(0, 0, nil)
 			r.SendConfigure(x.server.serial)
-			x.serials = append(x.serials, x.server.serial)
+			x.serials = append(x.serials, configureSerial{wire: x.server.serial})
 		} else if buffer && !w.mapped && x.acked {
 			w.mapped = true
 			w.sized = false
@@ -299,6 +307,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 		x.surface.role = nil
 		x.configured = false
 		x.acked = false
+		x.ackedCore = 0
 		x.serials = nil
 		x.geometry, x.pendingGeometry = domain.Rect{}, domain.Rect{}
 	}
@@ -327,9 +336,10 @@ func (x *xdgSurface) SetWindowGeometry(r *xdgshell.Surface, gx, gy, gw, gh int32
 }
 func (x *xdgSurface) AckConfigure(r *xdgshell.Surface, serial uint32) {
 	for i, issued := range x.serials {
-		if issued == serial {
+		if issued.wire == serial {
 			x.serials = x.serials[i+1:]
 			x.acked = true
+			x.ackedCore = issued.core
 			return
 		}
 	}
@@ -450,6 +460,17 @@ func (w *window) afterCommit() {
 	if !w.mapped {
 		return
 	}
+	// Only the first applied commit for a new configure enters the reporting
+	// path. In particular, ordinary tile commits do not measure or allocate.
+	if x := w.xdg; x != nil {
+		if x.ackedCore > w.lastCommittedReported {
+			w.reportCommitted(x.ackedCore)
+		}
+	} else if w.x11 != nil && w.last.Serial > w.lastCommittedReported {
+		if width, height := w.size(); width == w.last.Width && height == w.last.Height {
+			w.reportCommitted(w.last.Serial)
+		}
+	}
 	if !w.floating {
 		// Core reads a tile's first size once, to spot a window that maps
 		// at its output's size without asking for fullscreen. This
@@ -468,6 +489,14 @@ func (w *window) afterCommit() {
 		w.floatW, w.floatH = fw, fh
 		w.srv().emit(ports.WindowResized{ID: w.id, Width: fw, Height: fh})
 	}
+}
+
+// reportCommitted is deliberately cold: boxing the event only happens once
+// per configure, never on the steady-state commit path.
+func (w *window) reportCommitted(serial uint64) {
+	width, height := w.size()
+	w.lastCommittedReported = serial
+	w.srv().emit(ports.WindowCommitted{ID: w.id, Serial: serial, Width: width, Height: height})
 }
 
 // floats reports whether the toplevel should float over the columns, as
