@@ -36,8 +36,27 @@ func (c *Core) control(ctx context.Context, r ports.ControlRequest) error {
 			controlReply(r.Reply, ports.ControlReply{State: c.state(), Done: domain.WaitCommitted})
 		}
 	case ports.ControlInject:
-		// Input injection is not implemented yet.
-		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBadRequest})
+		if r.Caps&domain.CapInput == 0 {
+			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrForbidden})
+			return nil
+		}
+		if c.security.Protected {
+			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrLocked})
+			return nil
+		}
+		before, baseline := c.state(), c.sceneSeqs()
+		for _, ev := range r.Events {
+			if err := c.inputEvent(ctx, ev); err != nil {
+				return err
+			}
+			// An epoch transition during a batch must not route later events
+			// to lock surfaces, even if their stamps match the new epoch.
+			if c.security.Protected || c.protectionRequested() {
+				controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrLocked})
+				return nil
+			}
+		}
+		c.waitControl(before, baseline, r.Wait, r.Until, r.Timeout, r.Reply)
 	}
 	return nil
 }

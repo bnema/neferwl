@@ -184,3 +184,10 @@ func TestControlWaitEarliestDeadlineAndReachedLevel(t *testing.T) {
 		}
 	})
 }
+
+func TestControlWaitIdleAllocations(t *testing.T) {
+	c := &Core{}
+	if n := testing.AllocsPerRun(100, c.evalWaits); n != 0 {
+		t.Fatalf("idle evalWaits: %v allocations", n)
+	}
+}

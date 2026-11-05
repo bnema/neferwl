@@ -1397,23 +1397,7 @@ func (c *Core) Run(ctx context.Context) error {
 				c.ch.Input = nil
 				continue
 			}
-			if c.securityCheckpoint(ctx) != nil {
-				return nil
-			}
-			// Even stale input is activity, but never becomes client input.
-			if err := c.userActivity(ctx); err != nil {
-				return nil
-			}
-			// Commands can backpressure; recheck after activity before admits/binds.
-			if c.securityCheckpoint(ctx) != nil {
-				return nil
-			}
-			var admitted bool
-			ev, admitted = c.admitInput(ev)
-			if !admitted {
-				continue
-			}
-			if err := c.handleInput(ctx, ev); err != nil {
+			if err := c.inputEvent(ctx, ev); err != nil {
 				if errors.Is(err, errSecurityChanged) {
 					continue
 				}

@@ -74,7 +74,7 @@ func TestControlRequests(t *testing.T) {
 			{ports.ControlDo{Action: "focus-workspace-next", Reply: reply}, ports.ControlErrForbidden},
 			{ports.ControlQuery{What: "state", Reply: reply}, ports.ControlErrForbidden},
 			{ports.ControlQuery{What: "missing", Caps: domain.CapRead, Reply: reply}, ports.ControlErrBadRequest},
-			{ports.ControlInject{Caps: domain.CapsAll, Reply: reply}, ports.ControlErrBadRequest},
+			{ports.ControlInject{Reply: reply}, ports.ControlErrForbidden},
 		}
 		for _, tt := range tests {
 			control <- tt.request
