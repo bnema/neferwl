@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	"bnema.dev/kvconf"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
 )
 
@@ -74,7 +75,6 @@ var defaultBinds = []struct{ combo, action string }{
 	{"cmd+ctrl+shift+down", "move-workspace-next"},
 	{"cmd+shift+space", "toggle-floating"},
 }
-var components = map[string]bool{"core": true, "wayland": true, "input": true, "drm": true, "seat": true, "render": true, "sync": true, "config": true, "app": true, "hints": true}
 var color = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 // columnStep is the +N or -N step of set-column-width, in cells, N from 1
@@ -1126,11 +1126,10 @@ func set(c *domain.Config, key, v string) error {
 		}
 		c.Log.Level = v
 	case "log.debug":
+		// The logger owns the component and category names.
 		list := splitList(v)
-		for _, s := range list {
-			if !components[s] && s != "all" {
-				return fmt.Errorf("unknown component %q", s)
-			}
+		if _, err := logging.ParseDebug(strings.Join(list, ",")); err != nil {
+			return err
 		}
 		c.Log.Debug = list
 	default:
