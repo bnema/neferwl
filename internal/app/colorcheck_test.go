@@ -64,7 +64,7 @@ const (
 // byte for byte (±1 per channel).
 func TestColorCheckSDR(t *testing.T) {
 	dir := t.TempDir()
-	socket := startColorCompositor(t, Options{})
+	socket := startColorCompositor(t, Options{}, dir, false)
 	client := startPatternClient(t, socket, "sdr")
 	patches := pattern.Patches("sdr", colorW, colorH)
 	assertNoCursorOverlap(t, patches)
@@ -96,7 +96,7 @@ func TestColorCheckSDR(t *testing.T) {
 // cursor and the capture indicator are not in the exported target.
 func TestColorCheckHDR(t *testing.T) {
 	dir := t.TempDir()
-	socket := startColorCompositor(t, Options{HeadlessHDR: true})
+	socket := startColorCompositor(t, Options{HeadlessHDR: true}, dir, true)
 	pq := filepath.Join(dir, "latest-pq.png")
 
 	t.Run("sdr-client", func(t *testing.T) {
@@ -256,7 +256,7 @@ func pollImage(t *testing.T, path string, notBefore time.Time, missing string, c
 // error, Vulkan included, fails the test: the target requires a GPU.
 //
 //testpolicy:realtime real headless renderer, Wayland sockets and screenshot files
-func startColorCompositor(t *testing.T, opts Options) string {
+func startColorCompositor(t *testing.T, opts Options, shots string, raw bool) string {
 	t.Helper()
 	runtime := t.TempDir()
 	t.Setenv("XDG_RUNTIME_DIR", runtime)
@@ -266,6 +266,8 @@ func startColorCompositor(t *testing.T, opts Options) string {
 	opts.NoTerminal = true
 	opts.Config = config.Defaults()
 	opts.Sizes = [][2]int{{colorW, colorH}}
+	scenes := make(chan []domain.Scene, 4096)
+	opts.testScenes = scenes
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -285,21 +287,33 @@ func startColorCompositor(t *testing.T, opts Options) string {
 			t.Error("Run did not stop")
 		}
 	})
+	awaitColorScene(t, scenes, done, &stopped)
+	// Frames are captured over control, as `shot --every-frame [--raw]`.
+	client := dialTestControl(t, runtime)
+	if err := client.call(map[string]any{"op": "shot", "every_frame": true, "dir": shots, "raw": raw}); err != nil {
+		t.Fatal(err)
+	}
 	socket := filepath.Join(runtime, "wayland-1")
-	waitFile := fileChangesWithin(t, runtime, colorTimeout)
-	for {
-		if _, err := os.Stat(socket); err == nil {
-			return socket
-		}
-		select {
-		case err := <-done:
-			stopped = true
-			t.Fatalf("neferwl exited: %v", err)
-		default:
-		}
-		if !waitFile() {
-			t.Fatal("no wayland socket")
-		}
+	if _, err := os.Stat(socket); err != nil {
+		t.Fatal(err)
+	}
+	return socket
+}
+
+// awaitColorScene waits for the first published scene set, which follows the
+// control socket and the Wayland socket. A Run error fails the test.
+//
+//testpolicy:realtime real headless renderer startup
+func awaitColorScene(t *testing.T, scenes <-chan []domain.Scene, done <-chan error, stopped *bool) {
+	t.Helper()
+	deadline := time.After(colorTimeout)
+	select {
+	case <-scenes:
+	case err := <-done:
+		*stopped = true
+		t.Fatalf("neferwl exited: %v", err)
+	case <-deadline:
+		t.Fatal("no scene published")
 	}
 }
 

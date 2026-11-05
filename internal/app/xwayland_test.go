@@ -202,12 +202,21 @@ func startXwaylandBackendConfig(t *testing.T, backend domain.Backend, sizes [][2
 		}
 		return false
 	})
-	paths, err := filepath.Glob(filepath.Join(runtime, "neferwl", "sessions", "*", "state.json"))
-	if err != nil || len(paths) != 1 {
-		t.Fatalf("state paths: %v %v", paths, err)
-	}
+	var paths []string
+	until(t, "session state publication", func() bool {
+		paths, _ = filepath.Glob(filepath.Join(runtime, "neferwl", "sessions", "*", "state.json"))
+		return len(paths) == 1
+	})
 	statePath := paths[0]
-	return &xwaylandEnv{bin: bin, display: display, statePath: statePath, shots: shots, script: dialTestControl(t, runtime)}
+	client := dialTestControl(t, runtime)
+	// Continuous capture is a headless-backend feature; the server backend
+	// rejects it and no server test reads screenshots.
+	if backend == domain.BackendHeadless {
+		if err := client.call(map[string]any{"op": "shot", "every_frame": true, "dir": shots}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return &xwaylandEnv{bin: bin, display: display, statePath: statePath, shots: shots, script: client}
 }
 
 // TestXwaylandProbe: an X11 client is managed by the built-in XWM. It shows

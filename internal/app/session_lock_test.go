@@ -92,6 +92,8 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 		}
 	}
 	waitScenes("initial outputs", func(set []domain.Scene) bool { return len(set) == 2 })
+	control := dialTestControl(t, runtime)
+	check(control.call(map[string]any{"op": "shot", "every_frame": true, "dir": shots}))
 	sockets, err := filepath.Glob(filepath.Join(runtime, "wayland-*[0-9]"))
 	check(err)
 	if len(sockets) != 1 {
