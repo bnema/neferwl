@@ -30,6 +30,7 @@ func (c *Core) syncSecurity() bool {
 		return false
 	}
 	c.security = state
+	clear(c.virtualButtons)
 	c.osd.shown, c.osd.pinned = false, false
 	c.osdReset()
 	c.lock = lockState{}

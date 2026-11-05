@@ -3,8 +3,15 @@ package core
 import (
 	"context"
 
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
+
+// virtualButton identifies a press admitted from one virtual device.
+type virtualButton struct {
+	device domain.InputDeviceID
+	button uint32
+}
 
 // virtualPointer routes one zwlr_virtual_pointer_v1 event as real pointer
 // input: core places the pointer (relative from its cursor, absolute in an
@@ -23,7 +30,7 @@ func (c *Core) virtualPointer(ctx context.Context, v ports.VirtualPointerInput) 
 	r, available := c.virtualArea(v.Output)
 	if v.Output != "" && !available {
 		e, release := v.Event.(ports.PointerButton)
-		if !release || e.Pressed || !c.buttons[e.Button] {
+		if !release || e.Pressed || !c.virtualButtons[virtualButton{e.Device, e.Button}] {
 			return nil
 		}
 	}
@@ -65,10 +72,24 @@ func (c *Core) virtualPointer(ctx context.Context, v ports.VirtualPointerInput) 
 		if e.Button < 0x100 || e.Button > 0x151 {
 			return nil
 		}
-		if !e.Pressed && !c.buttons[e.Button] {
-			return nil
+		key := virtualButton{e.Device, e.Button}
+		if !e.Pressed {
+			admitted := c.virtualButtons[key]
+			delete(c.virtualButtons, key)
+			if !admitted || !c.buttons[e.Button] {
+				return nil
+			}
 		}
-		return c.pointerButton(ctx, e)
+		if err := c.pointerButton(ctx, e); err != nil {
+			return err
+		}
+		if e.Pressed && c.buttons[e.Button] {
+			if c.virtualButtons == nil {
+				c.virtualButtons = make(map[virtualButton]bool)
+			}
+			c.virtualButtons[key] = true
+		}
+		return nil
 	case ports.PointerAxis:
 		return c.pointerAxis(ctx, e)
 	}

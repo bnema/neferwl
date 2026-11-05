@@ -122,6 +122,7 @@ type Core struct {
 	focusByPointer bool     // set while focusPointer publishes, so syncFocus does not arm the hold
 	grab           WindowID
 	buttons        map[uint32]bool
+	virtualButtons map[virtualButton]bool // admitted virtual presses, never global button ownership
 	placed         map[WindowID]Rect
 	// drag is the pointer drag in progress (drag.go); swallow holds the
 	// buttons whose release no client must see. mods are the modifiers

@@ -62,3 +62,48 @@ func TestVirtualPointerUnavailableOutput(t *testing.T) {
 		})
 	}
 }
+
+// Rejected virtual presses cannot release the same button held by the desktop,
+// even if their output returns or the adapter synthesizes a disconnect release.
+func TestVirtualPointerRejectedPressDoesNotReleaseDesktop(t *testing.T) {
+	for _, mode := range []string{"unavailable", "reappeared", "disconnect"} {
+		t.Run(mode, func(t *testing.T) {
+			c := layoutCore(0, tile{"desktop", 0, 0, 100, 80}, tile{"tv", 100, 0, 100, 80})
+			c.opts = testOptions(t, c.opts)
+			c.activity = c.now()
+			commands := make(chan ports.ClientCommand, 64)
+			c.ch.Commands = commands
+			c.buttons = make(map[uint32]bool)
+			c.swallow = make(map[uint32]bool)
+			c.pointer = 1
+			const button = uint32(0x110)
+			ctx := context.Background()
+			if err := c.pointerButton(ctx, ports.PointerButton{Device: 1, Button: button, Pressed: true}); err != nil {
+				t.Fatal(err)
+			}
+			<-commands
+			c.screens[1].isolated = true
+			send := func(pressed bool) {
+				t.Helper()
+				if err := c.virtualPointer(ctx, ports.VirtualPointerInput{Output: "tv", Event: ports.PointerButton{Device: 2, Button: button, Pressed: pressed}}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			send(true)
+			if mode == "reappeared" {
+				c.screens[1].isolated = false
+			}
+			// Disconnect uses exactly this release event, without a preceding frame.
+			send(false)
+			if !c.buttons[button] || c.grab != 1 || len(commands) != 0 || len(c.virtualButtons) != 0 {
+				t.Fatalf("virtual release changed desktop hold: buttons %v grab %v commands %d admission %v", c.buttons, c.grab, len(commands), c.virtualButtons)
+			}
+			if err := c.pointerButton(ctx, ports.PointerButton{Device: 1, Button: button}); err != nil {
+				t.Fatal(err)
+			}
+			if c.buttons[button] || c.grab != 0 {
+				t.Fatal("desktop release did not clear hold")
+			}
+		})
+	}
+}
