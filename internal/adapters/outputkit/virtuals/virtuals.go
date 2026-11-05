@@ -8,7 +8,6 @@ import (
 	"slices"
 
 	"bnema.dev/zerowrap"
-	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/headless"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/cursors"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/routing"
@@ -49,7 +48,7 @@ func (h *Host) Sync(ctx context.Context, want []domain.OutputConfig) error {
 		if cfg.Name == "" || desired[cfg.Name] {
 			return fmt.Errorf("empty or duplicate virtual output name %q", cfg.Name)
 		}
-		mode, err := parseMode(cfg.Mode)
+		mode, err := domain.ParseOutputMode(cfg.Mode)
 		if err != nil {
 			return fmt.Errorf("virtual %s: %w", cfg.Name, err)
 		}
@@ -177,21 +176,6 @@ func (h *Host) Heads() []domain.OutputHead {
 		heads = append(heads, head)
 	}
 	return heads
-}
-
-func parseMode(value string) (domain.OutputMode, error) {
-	w, h, hz, err := config.ParseMode(value)
-	if err != nil || w < 1 || h < 1 || w > 16384 || h > 16384 {
-		return domain.OutputMode{}, fmt.Errorf("invalid mode %q", value)
-	}
-	if hz == 0 {
-		hz = 60
-	}
-	refresh, ok := domain.RefreshMilli(hz)
-	if !ok {
-		return domain.OutputMode{}, fmt.Errorf("invalid refresh %q", value)
-	}
-	return domain.OutputMode{Width: w, Height: h, RefreshMilli: refresh}, nil
 }
 
 // awaitMode retains the owner's result when completion and acknowledgement are

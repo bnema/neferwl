@@ -22,7 +22,7 @@ func (a *OutputApply) RuntimeAdd(id uint64, name string, mode domain.OutputMode)
 	if !a.state.Headless() {
 		return "", ErrRuntimeOutputForbidden
 	}
-	if mode.Width < 1 || mode.Width > 16384 || mode.Height < 1 || mode.Height > 16384 || mode.RefreshMilli < 0 {
+	if mode.Width < 1 || mode.Width > domain.MaxOutputDim || mode.Height < 1 || mode.Height > domain.MaxOutputDim || mode.RefreshMilli < 0 {
 		return "", errors.New("invalid virtual output mode")
 	}
 	used := func(name string) bool {
@@ -51,10 +51,10 @@ func (a *OutputApply) RuntimeAdd(id uint64, name string, mode domain.OutputMode)
 		return "", errors.New("invalid or occupied output name")
 	}
 	if mode.RefreshMilli == 0 {
-		mode.RefreshMilli = 60000
+		mode.RefreshMilli = domain.DefaultRefreshMilli
 	}
 	a.beginRuntime(id)
-	a.state.runtime = append(a.state.runtime, domain.OutputConfig{Name: name, Virtual: true, Mode: fmt.Sprintf("%dx%d@%.3f", mode.Width, mode.Height, float64(mode.RefreshMilli)/1000)})
+	a.state.runtime = append(a.state.runtime, domain.OutputConfig{Name: name, Virtual: true, Mode: domain.FormatOutputMode(mode)})
 	a.setConfig(a.state.Effective())
 	a.due(a.state.Effective())
 	return name, nil
