@@ -31,6 +31,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/statefile"
 	"github.com/bnema/neferwl/internal/adapters/statewire"
+	"unsafe"
 )
 
 const (
@@ -121,12 +122,26 @@ func startXwaylandProfileConfig(t *testing.T, profile domain.Profile, sizes [][2
 	if err != nil {
 		t.Fatal(err)
 	}
-	stateDir := filepath.Join(runtime, "neferwl")
-	if err := os.MkdirAll(stateDir, 0700); err != nil {
+	// State lives in runtime/neferwl/sessions/<id>/ and multi-output frames
+	// in shots/<output>/: the watch follows every directory created under a
+	// watched one, so those rewrites wake until as well.
+	sessionsDir := filepath.Join(runtime, "neferwl", "sessions")
+	if err := os.MkdirAll(sessionsDir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	for _, dir := range []string{runtime, stateDir, shots} {
-		if _, err := unix.InotifyAddWatch(fd, dir, unix.IN_CREATE|unix.IN_CLOSE_WRITE|unix.IN_MOVED_TO); err != nil {
+	const mask = unix.IN_CREATE | unix.IN_CLOSE_WRITE | unix.IN_MOVED_TO
+	dirs := map[int32]string{}
+	// watch runs during setup, then only on the watcher goroutine, which
+	// alone reads dirs afterwards.
+	watch := func(dir string) error {
+		wd, err := unix.InotifyAddWatch(fd, dir, mask)
+		if err == nil {
+			dirs[int32(wd)] = dir
+		}
+		return err
+	}
+	for _, dir := range []string{runtime, filepath.Dir(sessionsDir), sessionsDir, shots} {
+		if err := watch(dir); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -154,11 +169,26 @@ func startXwaylandProfileConfig(t *testing.T, profile domain.Profile, sizes [][2
 			if n == 0 {
 				continue
 			}
-			if _, err := unix.Read(fd, b[:]); err != nil {
+			got, err := unix.Read(fd, b[:])
+			if err != nil {
 				if err == unix.EAGAIN || err == unix.EINTR {
 					continue
 				}
 				return
+			}
+			// A new subdirectory (the session dir, per-output shots) joins
+			// the watch, so the files written in it publish like the rest.
+			// A write racing the watch is caught by the next rewrite.
+			for off := 0; off+unix.SizeofInotifyEvent <= got; {
+				ev := (*unix.InotifyEvent)(unsafe.Pointer(&b[off]))
+				nameLen := int(ev.Len)
+				if ev.Mask&unix.IN_ISDIR != 0 && ev.Mask&unix.IN_CREATE != 0 && nameLen > 0 {
+					name := strings.TrimRight(string(b[off+unix.SizeofInotifyEvent:off+unix.SizeofInotifyEvent+nameLen]), "\x00")
+					if parent, ok := dirs[ev.Wd]; ok {
+						_ = watch(filepath.Join(parent, name))
+					}
+				}
+				off += unix.SizeofInotifyEvent + nameLen
 			}
 			select {
 			case changes <- struct{}{}:
