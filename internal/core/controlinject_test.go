@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -15,8 +16,18 @@ func TestControlInjectInputPath(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var epoch atomic.Value
 		epoch.Store(domain.SecurityState{})
+		// flip, when set, becomes the epoch after skip more snapshots: the
+		// security state changes in the middle of an injected event.
+		var flip atomic.Pointer[domain.SecurityState]
+		var skip atomic.Int32
 		gate := portsmocks.NewMockSessionSecurity(t)
-		gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return epoch.Load().(domain.SecurityState) })
+		gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState {
+			cur := epoch.Load().(domain.SecurityState)
+			if flip.Load() != nil && skip.Add(-1) < 0 {
+				epoch.Store(*flip.Swap(nil))
+			}
+			return cur
+		})
 		var cfg domain.Config
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
@@ -92,5 +103,26 @@ func TestControlInjectInputPath(t *testing.T) {
 		if r := read(); r.Err != "" || r.State.Outputs[0].Active != 1 {
 			t.Fatalf("stale epoch input admitted: %+v", r)
 		}
+		// The epoch changes mid-batch: the batch is answered, not dropped.
+		// Two snapshots in: after the first checkpoints, inside the bind.
+		skip.Store(2)
+		flip.Store(&domain.SecurityState{Generation: 3, Protected: true})
+		control <- ports.ControlInject{Caps: domain.CapInput, Events: []ports.InputEvent{key("s", true), key("s", false)}, Reply: reply}
+		if r := read(); r.Err != ports.ControlErrLocked {
+			t.Fatalf("interrupted batch: %+v", r)
+		}
+		// Locked: actions are refused, quit still runs.
+		control <- ports.ControlDo{Caps: domain.CapAct, Action: "focus-workspace-next", Reply: reply}
+		if r := read(); r.Err != ports.ControlErrLocked {
+			t.Fatalf("locked action: %+v", r)
+		}
+		control <- ports.ControlDo{Caps: domain.CapAct, Action: "quit", Reply: reply}
+		if r := read(); r.Err != "" {
+			t.Fatalf("locked quit: %+v", r)
+		}
+		if err := <-done; !errors.Is(err, ErrQuit) {
+			t.Fatalf("quit: %v", err)
+		}
+		done <- nil
 	})
 }

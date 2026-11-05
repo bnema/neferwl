@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
@@ -20,6 +21,12 @@ func (c *Core) control(ctx context.Context, r ports.ControlRequest) error {
 		spec, ok := domain.LookupCommand(r.Action)
 		if !ok || (spec.Kind != domain.CommandAction && spec.Kind != domain.CommandActionArg) {
 			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrUnknownCommand})
+			return nil
+		}
+		// Protected input runs no binds (protectedInput); control mirrors
+		// it, except quit, which session rm needs on a locked session.
+		if Action(r.Action) != ActionQuit && c.protectionRequested() {
+			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrLocked})
 			return nil
 		}
 		shots, code := c.controlShots(r.Shots, r.Caps)
@@ -59,6 +66,13 @@ func (c *Core) control(ctx context.Context, r ports.ControlRequest) error {
 		before, baseline := c.state(), c.sceneSeqs()
 		for _, ev := range r.Events {
 			if err := c.inputEvent(ctx, ev); err != nil {
+				// The batch stops here: answer it so the client does not hang.
+				if errors.Is(err, errSecurityChanged) || c.protectionRequested() {
+					controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrLocked})
+				} else {
+					now := c.state()
+					controlReply(r.Reply, ports.ControlReply{Done: domain.WaitCommitted, State: now, Diff: domain.DiffState(before, now)})
+				}
 				return err
 			}
 			// An epoch transition during a batch must not route later events
