@@ -65,7 +65,8 @@ type pipes struct {
 	// With hint mode on, the outputs reply on capturedAll and routeCaptured splits the replies by
 	// ports.CaptureIDInternal into captured (the wayland consumer) and
 	// hintCaptured (internal consumers). With hint mode off, capturedAll is
-	// captured itself and there is no routeCaptured.
+	// captured itself and there is no routeCaptured unless control captures
+	// need their own split (routeControlCaptures).
 	capturedAll chan domain.CaptureDone
 	captured    chan domain.CaptureDone
 	// hintCaptured carries internal capture replies to the hints adapter.
@@ -179,6 +180,18 @@ func (p *pipes) core() core.Channels {
 		Hints:          p.hintResults,
 	}
 }
+
+// routeControlCaptures gives the outputs their own reply channel so that
+// RouteCaptured can split control replies from the wayland ones.
+func (p *pipes) routeControlCaptures() {
+	if p.capturedAll == p.captured {
+		p.capturedAll = make(chan domain.CaptureDone, ports.MaxCaptureInflight)
+	}
+}
+
+// routesCaptured reports whether the outputs reply on a channel of their own,
+// which RouteCaptured must then forward to the wayland consumer.
+func (p *pipes) routesCaptured() bool { return p.capturedAll != p.captured }
 
 // internalCaptured is the channel internal capture replies are routed to: the
 // hints adapter reads it.

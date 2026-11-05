@@ -210,8 +210,6 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	}, s.p.wayland(), logging.For(ctx, "wayland")); err != nil {
 		return s, err
 	}
-	s.controlDone = make(chan domain.CaptureDone, ports.MaxCaptureInflight)
-	s.p.capturedAll = make(chan domain.CaptureDone, ports.MaxCaptureInflight)
 	s.childEnv = launcher.ChildEnv(os.Environ(), s.server.SocketName(), runtimeDir, xcursor.CursorSize())
 	controlPath := ""
 	if opts.Backend != domain.BackendDRM {
@@ -221,10 +219,13 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 		if mapErr != nil {
 			return s, mapErr
 		}
+		s.controlDone = make(chan domain.CaptureDone, ports.MaxCaptureInflight)
 		if listener, err := control.Listen(path, s.wsIDs, control.Options{Continuous: s.p.continuous, FramesDir: filepath.Join(s.registry.Path(), "shots", "frames"), Shooter: control.NewShooter(s.p.captures, s.controlDone, filepath.Join(s.registry.Path(), "shots"), s.shotSize), Keymap: controlMap, Keymaps: s.p.controlKeymaps, Security: s.security}); err != nil {
 			controlMap.Close()
+			s.controlDone = nil
 			log.Warn().Err(err).Msg("control socket disabled")
 		} else {
+			s.p.routeControlCaptures()
 			s.control = listener
 			controlPath = path
 			s.childEnv = append(s.childEnv, "NEFERWL_CONTROL="+path)
@@ -444,7 +445,9 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 			log.Warn().Err(err).Msg("capture allowlist not watched, restart to apply changes")
 		}
 	}()
-	if p.hintScans != nil || s.control != nil {
+	// Without hints or control the outputs reply on the wayland channel
+	// itself; any split needs the router or wayland replies are lost.
+	if p.routesCaptured() {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()

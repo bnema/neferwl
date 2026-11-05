@@ -136,3 +136,19 @@ func TestRelayConfigKeepsStartupHintDetector(t *testing.T) {
 	require.Equal(t, cur.Hint.Model, got.Model)
 	require.Equal(t, cur.Hint.Threshold, got.Threshold)
 }
+
+// Hints off and no control (the DRM default): outputs reply straight on the
+// wayland channel, so wayland captures are delivered without a router.
+// Control or hints split the replies, and the router must then run.
+func TestCaptureRepliesReachWaylandWithoutRouter(t *testing.T) {
+	off := newPipes(false, false)
+	require.False(t, off.routesCaptured())
+	done := domain.CaptureDone{ID: 7}
+	off.outputs(nil, nil, nil).Captured <- done
+	require.Equal(t, done, <-off.wayland().Captured)
+
+	ctl := newPipes(false, false)
+	ctl.routeControlCaptures()
+	require.True(t, ctl.routesCaptured())
+	require.True(t, newPipes(false, true).routesCaptured())
+}
