@@ -69,11 +69,6 @@ func startCastAppConfig(t *testing.T, allow string, cfg domain.Config) *castApp 
 	return startCastAppProfile(t, allow, cfg, domain.ProfileEphemeral)
 }
 
-// startCastAppProfile is startCastAppConfig on a headless profile. The
-// persistent profile (`server`) has no fixed head (only cfg's virtual outputs), always serves the session
-// bus and never runs libinput here (noLibinput).
-//
-//testpolicy:realtime real headless renderer and D-Bus service startup and teardown
 // castOverrides disables the startup terminal and, with dbus, serves the
 // session bus services (--dbus).
 func castOverrides(dbus bool) core.PlanOverrides {
@@ -84,6 +79,11 @@ func castOverrides(dbus bool) core.PlanOverrides {
 	return o
 }
 
+// startCastAppProfile is startCastAppConfig on a headless profile. The
+// persistent profile (`server`) has no fixed head (only cfg's virtual outputs), always serves the session
+// bus and never runs libinput here (noLibinput).
+//
+//testpolicy:realtime real headless renderer and D-Bus service startup and teardown
 func startCastAppProfile(t *testing.T, allow string, cfg domain.Config, profile domain.Profile) *castApp {
 	t.Helper()
 	server := profile == domain.ProfilePersistent
