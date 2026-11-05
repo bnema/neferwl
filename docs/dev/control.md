@@ -1,230 +1,187 @@
-# Control socket
+# Control protocol
 
-Agents and scripts use the control socket to drive headless sessions, run actions
-and observe their results without fixed sleeps. The CLI is a client of the same
-protocol.
+Wire reference for the headless control socket. For sessions, targeting and CLI
+usage, see [Scripting and agents](../control.md).
 
-## Connection and target
+## Connection
 
-Each session listens on a Unix socket at
-`$XDG_RUNTIME_DIR/neferwl/sessions/<id>/control.sock`. The session directory has
-mode `0700`; the socket has mode `0600`. Connections require the same uid as the
-owner, which grants all capabilities: `read`, `act`, `input`, `capture`, `admin`.
+Each session listens on `$XDG_RUNTIME_DIR/neferwl/sessions/<id>/control.sock`
+(directory `0700`, socket `0600`). The server reads the peer's credentials with
+`SO_PEERCRED` and closes connections from another uid. An accepted connection
+has every capability: `read`, `act`, `input`, `capture`, `admin`.
 
-CLI target resolution uses the first available target, in this order:
+Messages are JSON lines: one object per line, in both directions. A connection
+handles one request at a time: the next line is read after the previous reply
+is sent. Open several connections for concurrent requests.
 
-1. Explicit `-s <id>`.
-2. `NEFERWL_SESSION` (session id).
-3. `NEFERWL_CONTROL` (control socket path).
-4. The session that owns `WAYLAND_DISPLAY`, matched in the session registry.
+`id` is optional and may be any JSON value; the reply echoes it, or carries
+`null` when it is missing or the line is not valid JSON.
 
-If no target resolves, the CLI reports an error and lists sessions. Use an
-explicit target in automation to avoid controlling the desktop by accident.
-
-While the session is protected (locked), input injection, capture and actions
-are refused with `locked`, as native binds do not run on a locked session.
-`quit` is the only action still accepted, so `session rm` can stop a locked
-session. Window titles are masked. Same-uid access does not bypass this
-protection.
-
-## Messages
-
-Messages are JSON lines: one JSON object followed by a newline. A request may
-carry an `id`; the reply echoes it, or `null` when it is missing or the line is
-not valid JSON.
-The handshake advertises the protocol version, capabilities and command catalog:
+## Handshake
 
 ```json
 {"id":1,"op":"hello"}
-{"id":1,"ok":true,"v":1,"caps":["read","act","input","capture","admin"],"commands":[...]}
+{"id":1,"ok":true,"v":1,"caps":["read","act","input","capture","admin"],"commands":[{"name":"output-add","arg":"MODE","kind":"admin","caps":["admin"],"summary":"Add a runtime virtual output."},...]}
 ```
 
-Each command entry has `name`, `arg`, `kind`, `caps` and `summary`; the
-ellipsis stands for those entries.
+`commands` is the catalog: each entry has `name`, `arg`, `kind` (`action`,
+`action-arg`, `query`, `inject`, `shot`, `admin`), `caps` and `summary`. Action
+names are the bind actions; `do` has no automation-only names. Additive changes
+keep `v: 1`; clients ignore unknown fields.
 
-Additive changes keep `v: 1`. Clients tolerate additional fields and use the
-advertised capabilities and commands to discover supported operations.
+## Requests
 
-| Operation | Purpose |
-|---|---|
-| `hello` | Discover version, capabilities and commands. |
-| `do` | Run an action from the bind catalog, with the same name and arguments as a keybind action. |
-| `query` | Read `state`, including windows, focus and outputs. |
-| `inject` | Send keys, text, pointer or swipe input through the core input path; compositor keybinds work too. |
-| `shot` | Capture an output on demand; select the output by name. |
+| `op` | Fields | Capability |
+|---|---|---|
+| `do` | `action` (name and arguments, e.g. `"focus-workspace 2"`), wait fields | `act` |
+| `inject` | `kind` and its fields (below), wait fields | `input` |
+| `query` | `what`: `"state"` | `read` |
+| `shot` | `outputs`, `inline`, `raw`, `timeout` | `capture` |
+| `shot` (continuous) | `every_frame` or `stop`, `outputs`, `dir`, `raw` | `capture` |
+| `output-add` | `mode` (`WxH[@Hz]`), optional `name` | `admin` |
+| `output-rm` | `name` | `admin` |
 
-The command catalog is the single source of action names. `do` does not invent a
-separate set of automation-only names.
+Wait fields, on `do` and `inject`:
 
-## Input requests
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `wait` | `"committed"`, `"settled"`, `"presented"` | `"settled"` | Completion level |
+| `until` | string | none | State predicate |
+| `timeout` | Go duration string | `"10s"` | Bound on the wait, at most `5m` |
+| `shot` | `true`, `false` or a list of output names | none | Capture after the wait; implies `presented` |
 
-`inject` selects a translator with `kind`:
+### Inject kinds
 
 | `kind` | Fields | Meaning |
 |---|---|---|
-| `key` | `combo` | Press and release a key combination, such as `Super+Return`. |
-| `type` | `text` | Type text through the active keymap. |
-| `press`, `release` | `combo` | Press or release a combination. |
-| `pointer` | `cmd`, `args` | `move` takes absolute global logical `x`, `y` strings; `click`, `down`, `up` take a button name (`left`, `right`, `middle`). `click` defaults to left. |
-| `swipe` | `fingers`, `dir` | Swipe with a finger count and direction (`up`, `down`, `left`, `right`). |
-
-Input requests accept `wait`, `until` and `timeout` like actions:
+| `key` | `combo` | Press and release a combination such as `Super+Return` |
+| `type` | `text` | Type text through the session keymap |
+| `press`, `release` | `combo` | Press, or release in reverse order |
+| `pointer` | `cmd`, `args` | `move` with absolute global logical `x`, `y` strings; `click` (default `left`), `down`, `up` with `left`, `right` or `middle` |
+| `swipe` | `fingers` (3 or 4), `dir` | Touchpad swipe `up`, `down`, `left` or `right` |
 
 ```json
-{"id":1,"op":"inject","kind":"key","combo":"Super+Return","wait":"settled","timeout":"5s"}
+{"id":1,"op":"inject","kind":"key","combo":"Super+Return","until":"window-mapped app_id=foot"}
 {"id":2,"op":"inject","kind":"pointer","cmd":"move","args":["320","240"]}
-{"id":3,"op":"inject","kind":"swipe","fingers":4,"dir":"down"}
+{"id":3,"op":"inject","kind":"swipe","fingers":4,"dir":"down","wait":"presented"}
 ```
 
-## Act, wait, observe
+Injected input goes through the core input path, so compositor binds run as
+for a physical device. The first injection on a connection announces an input
+device with ID `1` named `control` (for `output.<name>.input = control`).
 
-Actions wait for their effects at one of three levels:
+## Wait semantics
 
-- `committed`: the action is applied.
-- `settled` (default): animations finish and windows commit at their configured
-  sizes.
-- `presented`: the resulting scene is presented on the output.
+- `committed`: the action or input batch has been applied to core state.
+- `settled`: animations are finished and every affected window has committed
+  its configured size.
+- `presented`: the resulting scene has been presented on its outputs.
 
-Use `--wait=committed|settled|presented` to select a level. `--shot` on `do`
-and the input verbs sets the wire field `shot` (`true` captures every output;
-the wire also accepts a list of output names). It implies `presented`, so the
-capture observes the resulting scene rather than an older frame, and the reply
-carries `shots` like a `shot` request.
+`until` is checked on top of the level; the reply comes when both hold.
 
-`--until` adds a typed state predicate:
-
-| Predicate | Condition |
+| Predicate | Holds when |
 |---|---|
-| `window-mapped app_id=…` | A matching application window is mapped. |
-| `focused app_id=…` | A matching window has focus. |
-| `unmapped id=…` | The identified window is unmapped. |
+| `window-mapped app_id=APP` | A window with that app ID mapped after the request |
+| `focused app_id=APP` | A window with that app ID has focus |
+| `unmapped id=N` | Window `N` is gone |
 
-The predicate is checked on top of the wait level, so the reply comes once
-both hold.
+`timeout` covers the wait and any capture together. A `timeout` above `5m` is
+`bad-request` with `detail: "timeout exceeds 5m"`. On timeout the reply has
+`error: "timeout"` and still carries `diff`, `state` and `late`: the action may
+have run.
 
-`--timeout` bounds the wait. A timeout returns `timeout` with the partial state
-diff and any late windows; it does not mean the action had no effect. Inspect
-that result before deciding whether to retry.
+At most 64 requests wait at once per session (any request with `wait` above
+`committed`, `until`, `shot`, `output-add` or `output-rm`). A further one gets
+`busy` before it runs. Committed-only requests and `quit` are never refused for
+this.
 
-The timeout defaults to `10s` and may not exceed `5m`: a longer one is a
-`bad-request` with detail `timeout exceeds 5m` (the CLI rejects it as a usage
-error). A `shot` reply's capture shares that deadline with the wait. At most 64
-requests wait at once (`--wait settled`/`presented`, `--until`, `--shot`,
-`output-add`/`output-rm`); another such request gets `busy`. Committed-only
-requests and `quit` are never refused for this.
-
-Replies use this envelope (field names shown, not a literal reply):
-
-```text
-{"id", "ok", "done", "diff", "state", "shots", "late", "error"}
-```
-
-`id` correlates the reply; `ok` reports success and `done` reports completion.
-`diff` describes observed state changes, `state` carries queried state, `shots`
-contains capture results, and `late` identifies windows still outstanding.
-`error` is omitted on success and describes a failure otherwise. Relevant results, including partial results on
-timeout, travel in the same reply.
-
-## Captures and errors
-
-A single-shot request selects output names; an empty `outputs` list selects
-all outputs. `timeout` bounds completion:
+## Replies
 
 ```json
-{"id":4,"op":"shot","outputs":["HEADLESS-1"],"inline":true,"raw":false,"timeout":"5s"}
+{"id":2,"ok":true,"done":"settled","diff":{"mapped":[2],"focus_from":1,"focus_to":2,"focus_changed":true},"state":{...},"late":null}
 ```
 
-Shots wait for presentation and write private PNG files. The reply’s `shots`
-array contains `{output, path, seq, png?}`: `seq` is the presented scene sequence,
-and `png` is base64 PNG data included only when `inline` is true. Inline data
-does not replace the file. For example:
+| Field | Meaning |
+|---|---|
+| `id` | Echo of the request `id` |
+| `ok` | `true` on success |
+| `done` | Level reached: `committed`, `settled`, `presented` |
+| `diff` | Changes since the request: `mapped`, `unmapped` (window IDs), `focus_from`, `focus_to`, `focus_changed`, `workspaces` (`"OUTPUT:WS"` for each output whose shown workspace changed). Unchanged parts are omitted. |
+| `state` | State after the request, in the state file's shape, without window titles |
+| `late` | Window IDs still not settled at timeout |
+| `shots` | Captures: `{output, path, seq, png?}` |
+| `dir` | Continuous capture directory |
+| `error` | Error code, omitted on success |
+| `detail` | Human-readable detail for some errors |
+
+## Captures
 
 ```json
-{"output":"HEADLESS-1","path":"/shots/7-HEADLESS-1.png","seq":7}
+{"id":4,"op":"shot","outputs":["HEADLESS-1"],"inline":true}
+{"id":4,"ok":true,"done":"presented","shots":[{"output":"HEADLESS-1","path":"/run/user/1000/neferwl/sessions/demo/shots/7-HEADLESS-1.png","seq":7,"png":"iVBOR..."}],...}
 ```
 
-Select outputs with repeated `--output <name>` flags. Single shots are 8-bit
-sRGB; `raw:true` is rejected for them with `raw shots need --every-frame`.
-Raw 16-bit PQ captures use the continuous `--every-frame` writer, not the
-single-shot CLI flag set.
+An empty or missing `outputs` selects every output; an unknown name is
+`bad-request`. Shots wait for presentation and write private 8-bit sRGB PNG
+files under the session's `shots/` directory. `seq` is the presented scene
+sequence. `png` (base64) is present only with `inline: true`; the file is
+written anyway. `raw: true` on a single shot is `bad-request` with
+`detail: "raw shots need --every-frame"`.
 
-| Error code | Meaning |
-|---|---|
-| `unknown-command` | The requested command is not in the catalog. |
-| `bad-request` | The message or its arguments are invalid. |
-| `locked` | Input, capture or an action other than `quit` is refused while the session is protected. |
-| `busy` | 64 control requests are already waiting; retry once one completes. |
-| `forbidden` | The connection lacks permission for the operation. |
-| `timeout` | The requested completion condition is not reached in time. |
-| `capture-failed` | The capture or the continuous frame writer could not be started or written. |
+Continuous capture:
 
-## CLI
-
-`neferwl do <action>` maps to `do`; `neferwl query state` maps to `query` and
-prints the whole reply. `neferwl state` sends the same query but prints only the
-`state` object, in the state file's shape; without a reachable control target
-it reads the state file. `neferwl key`, `type`, `press`,
-`release`, `click`, `move` and `swipe` map to `inject`; `neferwl shot` maps to
-`shot`. `click` and `move` use the pointer injection kind. `neferwl pointer`
-also supports the Wayland virtual-pointer workflow described in the
-[server guide](../server.md#controlling-a-neferwl-session-agents).
-`neferwl session new|ls|rm` creates, lists and removes managed sessions.
-
-`do` and the input verbs accept their flags (`-s`, `--wait`, `--until`,
-`--timeout`, `--shot`) before or after the arguments. `--` ends flag parsing,
-for arguments that start with a dash: `neferwl -s test move -- -640 0`,
-`neferwl -s test type -- -x`.
-
-```sh
-neferwl session new
-neferwl -s test query state
-neferwl -s test do focus-monitor-right --wait=settled
-neferwl -s test shot --output HEADLESS-1 --inline
+```json
+{"id":5,"op":"shot","every_frame":true,"dir":"/tmp/frames","outputs":["HEADLESS-1"],"raw":false}
+{"id":6,"op":"shot","stop":true}
 ```
 
-Replace `test` with the id returned by `session new`. For continuous captures,
-use `neferwl shot --every-frame --dir <directory>` and stop with
-`neferwl shot --stop`; the directory contains PNG frames and `frames.ffconcat`.
+`dir` must be absolute; it defaults to the session's `shots/frames`. With
+several outputs, each writes to `<dir>/<output>/`. Each directory gets
+`frame-NNNNNN.png`, `latest.png` (hard link to the newest frame) and
+`frames.ffconcat`; `raw: true` adds `latest-pq.png` on HDR outputs. Frames are
+skipped while the session is locked. `every_frame` with `stop`, or with
+`inline`, is `bad-request`.
 
 ## Runtime outputs
 
-The `admin` capability adds and removes virtual outputs while the session runs.
-`neferwl output add WxH@Hz [--name NAME]` maps to `output-add`;
-`neferwl output rm NAME` maps to `output-rm`. The reply waits until core state
-lists or drops the output, with a 10s deadline.
-
 ```json
-{"id":5,"op":"output-add","mode":"800x600@60","name":"extra"}
-{"id":6,"op":"output-rm","name":"extra"}
+{"id":7,"op":"output-add","mode":"800x600@60","name":"extra"}
+{"id":8,"op":"output-rm","name":"extra"}
 ```
 
-## Sessions
+The reply comes once core state lists or drops the output, within 10 seconds.
 
-`neferwl session ls` lists live sessions in ID order, with profile, PID,
-Wayland display and creation time. `--json` prints the registry metadata as a
-JSON array. Unlocked stale session directories are reclaimed while listing.
+## Errors
 
-`session new` accepts `--id`, `--profile` (default `ephemeral`), `--size`,
-`--config`, `--ttl`, and extra compositor flags after `--`. It starts a detached
-child with stdin/stdout/stderr on `/dev/null` using this startup contract:
+| Code | Meaning |
+|---|---|
+| `bad-request` | Invalid JSON, unknown `op`, or invalid fields |
+| `unknown-command` | `action` is not in the catalog |
+| `forbidden` | The connection lacks the capability |
+| `locked` | The session is locked: actions other than `quit`, input and captures are refused |
+| `busy` | 64 requests are already waiting, or the capture backend is busy; retry later |
+| `timeout` | The completion condition was not reached in time; partial results are included |
+| `capture-failed` | A capture or the frame writer failed; see `detail` |
+
+## Session startup
+
+`neferwl session new` starts a detached child with stdin, stdout and stderr on
+`/dev/null`:
 
 ```text
 <executable> --backend=headless --profile=P --session-id=ID --ready-fd=3
              [--size=WxH,...] [--config=PATH] [--timeout=TTL] [extra flags...]
 ```
 
-The child writes one JSON line containing `id`, `wayland`, `control` and
-`display` to fd 3 when ready, then closes it. EOF before that line means startup
-failed. The launcher waits at most `--start-timeout` (default `30s`). The child-side
-startup flags must be supported by the compositor. By default the launcher
-prints the readiness JSON; `--env` prints `NEFERWL_SESSION`
-and `WAYLAND_DISPLAY` assignments. Parent session targeting/display variables
-are removed from the child environment. The session bus address is removed
-unless `--dbus-session` is given. `session rm` is described below.
+The child writes one JSON line with `id`, `wayland`, `control` and `display`
+to fd 3 when ready, then closes it. EOF before that line means startup failed.
+The child environment drops `WAYLAND_DISPLAY`, `WAYLAND_SOCKET`, `DISPLAY`,
+`NEFERWL_SESSION`, `NEFERWL_CONTROL`, `NEFERWL_STATE` and `NEFERWL_SLOT`, and
+`DBUS_SESSION_BUS_ADDRESS` unless `--dbus-session` is given.
 
-`neferwl session rm <id>` asks the selected session to quit at the committed
-boundary, then waits for its lifetime lock to be released. `--timeout` before
-the ID bounds shutdown (default `30s`). If its control socket cannot be reached,
-the command sends SIGTERM only after verifying that the recorded PID runs the
-same executable. Stale cleanup is serialized by the registry, so a replacement
-live session with the same ID is not removed. No other process is killed.
+Session metadata lives in `$XDG_RUNTIME_DIR/neferwl/sessions/<id>/meta.json`
+beside `control.sock`, `state.json`, `shots/` and a lifetime `lock`.
+`session ls` reclaims unlocked stale directories. `session rm` sends
+`{"op":"do","action":"quit","wait":"committed"}` and waits for the lock to be
+released; if the socket is unreachable, it sends SIGTERM only after checking
+that the recorded PID runs the same executable.

@@ -1,52 +1,34 @@
-# Headless mode
+# Headless testing
 
-Run an isolated compositor without a screen for tests and quick checks:
+Test user-facing changes on an isolated headless session before merging. The
+session has its own Wayland display, control socket and logs, so the desktop
+stays untouched. [Scripting and agents](../control.md) documents every control
+command; this page covers testing NeferWL itself.
 
-```sh
-neferwl session new --id test --size 1920x1080 --config /tmp/test-config --ttl 60s -- --no-xwayland
-neferwl -s test key Super+Return --until 'window-mapped app_id=foot'
-neferwl -s test state
-neferwl -s test shot
-```
-
-`session new` prints readiness JSON with `id`, `wayland`, `control` and `display`.
-`--env` prints `NEFERWL_SESSION` and `WAYLAND_DISPLAY` assignments instead.
-Use `-s test` for every control command; it selects the test session independently
-of the desktop environment. Launch external clients with the `wayland` display
-from the readiness reply. `session new` removes inherited display and control
-targets from the compositor's environment.
-
-- `--size 640x360,640x360` creates two outputs arranged left to right.
-- `--ttl 60s` bounds the session lifetime; `neferwl session rm test` stops it early.
-- Animations are on by default. Set `animations = off` in the throwaway config
-  for immediate geometry changes, or wait for `--wait settled` (the default).
-- `shot` returns paths to presented sRGB PNG files. Repeat `--output NAME` to
-  select outputs; the default is all outputs. `--inline` also includes PNG data.
-- `grim` and recorders work too; see [Screen capture](../capture.md).
-
-## Recording a video
-
-Start capture before driving the session, then stop it before encoding:
+## End-to-end recipe
 
 ```sh
-neferwl -s test shot --every-frame
-neferwl -s test swipe 4 down --wait presented
-neferwl -s test shot --stop
-frames="$XDG_RUNTIME_DIR/neferwl/sessions/test/shots/frames"
-ffmpeg -f concat -safe 0 -i "$frames/frames.ffconcat" -vf "fps=60,format=yuv420p" -c:v libx264 -crf 18 demo.mp4
+T=$(mktemp -d)
+CGO_ENABLED=0 go build -o "$T/neferwl" ./cmd/neferwl
+printf 'animations = off\n' >"$T/config"
+"$T/neferwl" session new --id test --config "$T/config" --ttl 60s -- --no-xwayland
+"$T/neferwl" -s test key Super+Return --until 'window-mapped app_id=foot'
+"$T/neferwl" -s test state | jq '.windows[] | {id, app_id, column, row}'
+"$T/neferwl" -s test shot
+"$T/neferwl" session rm test
 ```
 
-`shot --every-frame --dir /tmp/test-frames` selects a different directory.
-Capture writes `frame-NNNNNN.png`, `latest.png` and `frames.ffconcat`; the
-index records frame timing. `latest.png` is a hard link to the newest frame,
-so replace it rather than editing it in place. The directory grows until
-`shot --stop`. With several outputs, files live in per-output subdirectories
-such as `HEADLESS-1/`; pass that output's `frames.ffconcat` to ffmpeg.
-`--output NAME` limits continuous capture to that output. Add `--raw` to
-`--every-frame` for raw PQ frames on an HDR test output; single shots are sRGB.
-For a GIF, use ffmpeg's `palettegen` and `paletteuse` filters on the video.
+- Use the branch binary for every command and `-s test` for every control
+  command.
+- `--size 640x360,640x360` creates two outputs, left to right.
+- With animations on, keep the default `--wait settled` before reading
+  geometry.
+- Launch external clients with the `wayland` display from the readiness JSON.
+- Logs: `$XDG_STATE_HOME/neferwl/sessions/test/latest.log`.
+- Record a sequence with `shot --every-frame` and `shot --stop`; see
+  [Every frame and video](../control.md#every-frame-and-video).
 
-### Demo recording
+## Demo recording
 Run `tools/demo/record.sh`. It requires Go 1.27, rootless Docker, ffmpeg, network access and an AMD GPU.
 It builds the Arch image (apps, tesseract, AT-SPI) and the compositor binary, then records the 1080p README demo.
 The compositor runs headless inside a disposable container, with the binary and a work directory bind-mounted and `/dev/dri` passed for the GPU.
@@ -57,29 +39,6 @@ The hint step makes Firefox fullscreen and labels the page with `hint`; `hint-cl
 The recording only counts if the compositor stops on the quit key that ends `input.txt`; reaching its lifetime limit first fails the run as truncated.
 Temporary captures are removed by default; set `KEEP_CAPTURE=1` to keep successful runs.
 The recording and poster replace `docs/media/demo.mp4` and `docs/media/demo.png`.
-
-## Control input
-
-Drive the named session through the control socket:
-
-```sh
-neferwl -s test key Super+Return --until 'window-mapped app_id=foot'
-neferwl -s test type 'echo hello'
-neferwl -s test key Return
-neferwl -s test move 600 300
-neferwl -s test click left
-neferwl -s test swipe 4 up
-neferwl -s test press Super
-neferwl -s test release Super
-```
-
-Input commands accept `--wait committed|settled|presented`, `--until`,
-`--timeout` and `--shot`, anywhere after the command. `move` uses global
-logical coordinates. Put `--` before arguments that start with a dash, such as
-negative coordinates or text: `move -- -640 0`, `type -- -x`. Use shell
-orchestration for delays and holds; the translator never sleeps. Injection is
-rejected while the session is locked. The `pointer` virtual-pointer command
-uses a Wayland display rather than a control target, as shown below.
 
 ## Testing input methods
 
@@ -93,7 +52,7 @@ WAYLAND_DISPLAY=<name> go run ./examples/testime -preedit nihon -commit 日本
 
 ## Testing the virtual pointer
 
-`neferwl pointer` drives the pointer of the headless session (same display resolution as `neferwl state`); run it with the headless `WAYLAND_DISPLAY`:
+`neferwl pointer` drives the pointer of the session whose `WAYLAND_DISPLAY` it runs with:
 
 ```sh
 WAYLAND_DISPLAY=<name> neferwl pointer abs 0.1 0.5 click
@@ -101,7 +60,7 @@ WAYLAND_DISPLAY=<name> neferwl pointer drag 100 0 scroll down 3
 WAYLAND_DISPLAY=<name> neferwl pointer --output HEADLESS-2 abs 0.5 0.5
 ```
 
-Check the result with `neferwl state` (`.window.id` is the focused window). Headless screenshots do not show the cursor. `TestPointerCLI` (`internal/app`, in `go test ./...`) runs the built binary against a headless NeferWL and checks a click, a drag, a scroll and the release at exit on a test client.
+Check the result with `neferwl -s <id> state` (`.window.id` is the focused window). Single shots do not show the cursor; `--every-frame` frames do. `TestPointerCLI` (`internal/app`, in `go test ./...`) runs the built binary against a headless NeferWL and checks a click, a drag, a scroll and the release at exit on a test client.
 
 ## wayvnc check
 
@@ -278,15 +237,15 @@ output.HEADLESS-2.right-of = HEADLESS-1
 On the isolated headless display, `wayland-info -i wl_output` should report
 HEADLESS-1 at (-640,0) and HEADLESS-2 at (0,0).
 
-Control input announces device ID `1` with the name `control`.
-Use `output.tv.input = control` to test device-bound focus on a virtual output.
-Control `move` coordinates remain global logical coordinates.
+## Control input device
+
+Control input announces device ID `1` named `control`. Use
+`output.tv.input = control` to test device-bound focus on a virtual output.
+Control `move` coordinates stay global logical coordinates.
 
 ## Session paths
 
-Every headless run registers a session. Use `neferwl session ls` to find its ID.
-Runtime metadata, control.sock, state.json and shots/ live under
-`$XDG_RUNTIME_DIR/neferwl/sessions/<id>/`. CLI-started session logs live under
-`$XDG_STATE_HOME/neferwl/sessions/<id>/latest.log`; the 20 most recent session
-log directories are kept. `neferwl -s <id> state` selects the session without
-changing the desktop environment.
+`$XDG_RUNTIME_DIR/neferwl/sessions/<id>/` holds `meta.json`, `control.sock`,
+`state.json` and `shots/`. Logs live in
+`$XDG_STATE_HOME/neferwl/sessions/<id>/`; the 20 most recent session log
+directories are kept.
