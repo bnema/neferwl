@@ -183,7 +183,7 @@ func (c *Core) placeOnWorkspace(v ports.WindowMapped, eff ruleEffect, sc *screen
 	}
 	// Keep-focus outputs advance their visible workspace independently of the
 	// seat. Hidden workspaces and ordinary remote outputs remain quiet.
-	kept := sc != c.cur() && c.keepsFocus(sc)
+	kept := c.keepsSeatFocus(sc)
 	quiet := w != sc.mon.Current() || sc != c.cur() && !kept
 	if byRule && sc != c.cur() && !kept && !c.cur().mon.ov.open && !c.security.Protected {
 		// A new window takes the focus unless a fullscreen window of
@@ -272,7 +272,7 @@ func (c *Core) windowTitle(ctx context.Context, v ports.WindowTitle) error {
 	toScreen.mon.normalize()
 	// Preserve the existing follow policy except for remote keep-focus
 	// outputs: a title change is not a user request to move the seat.
-	if held && to.Has(v.ID) && !(toScreen != c.cur() && c.keepsFocus(toScreen)) {
+	if held && to.Has(v.ID) && !c.keepsSeatFocus(toScreen) {
 		return c.activate(ctx, v.ID)
 	}
 	return nil
@@ -286,6 +286,14 @@ func (c *Core) titleHistory(id WindowID) *titleRuleHistory {
 		c.titleHistories[id] = &titleRuleHistory{applied: map[string]bool{}}
 	}
 	return c.titleHistories[id]
+}
+
+// keepsSeatFocus is the automatic-placement boundary: a remote keep-focus
+// output advances its own selection without moving the seat or desktop view.
+// Explicit activation does not use this policy. Keep startup arrivals quiet too;
+// the output's independent X11 selection does not require seat activation.
+func (c *Core) keepsSeatFocus(sc *screen) bool {
+	return sc != c.cur() && c.keepsFocus(sc)
 }
 
 // keepsFocus reports the output's independent workspace-focus policy.

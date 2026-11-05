@@ -386,6 +386,15 @@ func runLauncherArrivalRemote(t *testing.T, capture bool) {
 			}
 		}
 		stash := slices.Clone(dw.Stash)
+		seat, keyboard, pointer := c.focusScreen, c.keyboardFocus(), c.pointer
+		view, workspace := dw.View, desktop.mon.Current()
+		x, y := c.cursorX, c.cursorY
+		assertSeat := func() {
+			t.Helper()
+			if c.focusScreen != seat || c.keyboardFocus() != keyboard || c.pointer != pointer || c.cursorX != x || c.cursorY != y || desktop.mon.Current() != workspace || dw.View != view {
+				t.Fatal("remote activity changed seat or desktop view")
+			}
+		}
 		c.addScreen(domain.OutputInfo{Name: "tv", Virtual: true, Width: 640, Height: 360})
 		target := c.screens[c.screenIndex("tv")]
 		c.cfg.Outputs = []domain.OutputConfig{{Name: "tv", KeepFocus: true}}
@@ -396,7 +405,11 @@ func runLauncherArrivalRemote(t *testing.T, capture bool) {
 		if w.Fullscreen != 1 {
 			t.Fatalf("launcher not fullscreen on tv: %d", w.Fullscreen)
 		}
-		seat, keyboard, pointer := c.focusScreen, c.keyboardFocus(), c.pointer
+		indicatorScene(t, c)
+		assertSeat()
+		if c.x11.sent != 1 {
+			t.Fatalf("launcher X11 selection %d", c.x11.sent)
+		}
 		c.clientEvent(context.Background(), ports.WindowMapped{ID: 2, AppID: "game", Proc: lineageNodes(20, 10), Xwayland: true})
 		if w.Fullscreen != 2 || !slices.Equal(w.Held, []WindowID{1}) {
 			t.Fatalf("tv cover %d held %v", w.Fullscreen, w.Held)
@@ -404,8 +417,25 @@ func runLauncherArrivalRemote(t *testing.T, capture bool) {
 		if id, _ := w.Focused(); id != 2 {
 			t.Fatalf("tv focus %d", id)
 		}
-		if c.focusScreen != seat || c.keyboardFocus() != keyboard || c.pointer != pointer {
-			t.Fatal("remote arrival changed seat")
+		indicatorScene(t, c)
+		assertSeat()
+		if c.x11.sent != 2 {
+			t.Fatalf("child X11 selection %d", c.x11.sent)
+		}
+		// A second program from the now-held launcher joins held, even if
+		// it requests fullscreen. It must not promote itself or move the seat.
+		c.clientEvent(context.Background(), ports.WindowMapped{ID: 3, AppID: "other-game", Proc: lineageNodes(30, 10), Xwayland: true, Fullscreen: true})
+		indicatorScene(t, c)
+		assertSeat()
+		if !w.IsHeld(3) || w.Fullscreen != 2 || c.x11.sent != 2 {
+			t.Fatalf("held arrival: cover %d held %v X11 %d", w.Fullscreen, w.Held, c.x11.sent)
+		}
+		// Closing the active child promotes its launcher locally, not at the seat.
+		c.clientEvent(context.Background(), ports.WindowUnmapped{ID: 2})
+		indicatorScene(t, c)
+		assertSeat()
+		if w.Fullscreen != 1 || c.x11.sent != 1 {
+			t.Fatalf("launcher return: cover %d X11 %d", w.Fullscreen, c.x11.sent)
 		}
 		if dw.Has(2) || !slices.Equal(dw.Stash, stash) || dw.StashShown() != capture {
 			t.Fatalf("desktop stash changed: %+v (was %+v) shown %v", dw.Stash, stash, dw.StashShown())
