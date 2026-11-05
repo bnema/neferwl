@@ -189,7 +189,7 @@ func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.Config
 	}
 }
 
-func consumeScenes(ctx context.Context, scenes <-chan []domain.Scene, configErrors <-chan error, binds <-chan domain.InputTrace, placements <-chan domain.PlacementTrace, tap chan<- []domain.Scene, renderScenes chan []domain.Scene) {
+func consumeScenes(ctx context.Context, scenes <-chan []domain.Scene, configErrors <-chan error, binds <-chan domain.InputTrace, placements <-chan domain.PlacementTrace, tap chan<- []domain.Scene, renderScenes chan []domain.Scene, observers ...func([]domain.Scene)) {
 	log := logging.For(ctx, "core")
 	configLog := logging.For(ctx, "config")
 	for {
@@ -197,6 +197,9 @@ func consumeScenes(ctx context.Context, scenes <-chan []domain.Scene, configErro
 		case <-ctx.Done():
 			return
 		case set := <-scenes:
+			for _, observe := range observers {
+				observe(set)
+			}
 			if tap != nil {
 				select {
 				case tap <- set:

@@ -308,6 +308,9 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 		}
 	})
 	until(locker, "locker focus", func() bool { return configured && lockFocused })
+	if err := dialTestControl(t, runtime).call(map[string]any{"op": "shot", "outputs": []string{"HEADLESS-1"}}); err == nil || !strings.Contains(err.Error(), "locked") {
+		t.Fatalf("shot under lock: %v", err)
+	}
 	desktopCount := len(desktopKeys)
 	_, err = dialTestControl(t, runtime).Write([]byte("key b\n"))
 	if err == nil || !strings.Contains(err.Error(), "locked") {

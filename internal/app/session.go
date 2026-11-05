@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -48,10 +49,12 @@ import (
 // starts them. The session owns hw, curs and xdisplay (released by close)
 // until run ends; the keymap and the wayland server own themselves.
 type session struct {
-	registry *sessiondir.Dir
-	opts     Options
-	plan     core.BackendPlan
-	log      zerowrap.Logger
+	shotSizes   sync.Map
+	controlDone chan domain.CaptureDone
+	registry    *sessiondir.Dir
+	opts        Options
+	plan        core.BackendPlan
+	log         zerowrap.Logger
 
 	clock    ports.Clock
 	security *sessionsecurity.Gate
@@ -205,6 +208,8 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	}, s.p.wayland(), logging.For(ctx, "wayland")); err != nil {
 		return s, err
 	}
+	s.controlDone = make(chan domain.CaptureDone, ports.MaxCaptureInflight)
+	s.p.capturedAll = make(chan domain.CaptureDone, ports.MaxCaptureInflight)
 	s.childEnv = launcher.ChildEnv(os.Environ(), s.server.SocketName(), runtimeDir, xcursor.CursorSize())
 	controlPath := ""
 	if opts.Backend != domain.BackendDRM {
@@ -214,7 +219,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 		if mapErr != nil {
 			return s, mapErr
 		}
-		if listener, err := control.Listen(path, s.wsIDs, control.Options{Keymap: controlMap, Keymaps: s.p.controlKeymaps, Security: s.security}); err != nil {
+		if listener, err := control.Listen(path, s.wsIDs, control.Options{Shooter: control.NewShooter(s.p.captures, s.controlDone, filepath.Join(s.registry.Path(), "shots"), s.shotSize), Keymap: controlMap, Keymaps: s.p.controlKeymaps, Security: s.security}); err != nil {
 			controlMap.Close()
 			log.Warn().Err(err).Msg("control socket disabled")
 		} else {
@@ -437,12 +442,15 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 			log.Warn().Err(err).Msg("capture allowlist not watched, restart to apply changes")
 		}
 	}()
-	if p.hintScans != nil {
-		workers.Add(2)
+	if p.hintScans != nil || s.control != nil {
+		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			routing.RouteCaptured(ctx, p.capturedAll, p.captured, p.internalCaptured(), nil)
+			routing.RouteCaptured(ctx, p.capturedAll, p.captured, p.internalCaptured(), s.controlDone)
 		}()
+	}
+	if p.hintScans != nil {
+		workers.Add(1)
 		go func() {
 			defer workers.Done()
 			// Run only returns when ctx is done: nothing to report.
@@ -470,7 +478,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	}
 	go func() {
 		defer workers.Done()
-		consumeScenes(ctx, p.scenes, p.configErrors, p.binds, p.placements, opts.testScenes, p.renderScenes)
+		consumeScenes(ctx, p.scenes, p.configErrors, p.binds, p.placements, opts.testScenes, p.renderScenes, s.recordShotSizes)
 	}()
 
 	go func() {
@@ -574,4 +582,26 @@ func (s *session) announceReady(opts Options, controlPath string) {
 			_ = f.Close()
 		}
 	}
+}
+
+func (s *session) recordShotSizes(scenes []domain.Scene) {
+	for _, scene := range scenes {
+		scale := scene.Scale
+		if scale <= 0 {
+			scale = 1
+		}
+		w, h := int(math.Round(float64(scene.OutputWidth)*scale)), int(math.Round(float64(scene.OutputHeight)*scale))
+		if scene.Transform.Rotated() {
+			w, h = h, w
+		}
+		s.shotSizes.Store(scene.Output, [2]int{w, h})
+	}
+}
+func (s *session) shotSize(output string) (int, int, bool) {
+	value, ok := s.shotSizes.Load(output)
+	if !ok {
+		return 0, 0, false
+	}
+	size := value.([2]int)
+	return size[0], size[1], true
 }

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"image/png"
 	"net"
 	"os"
 	"path/filepath"
@@ -81,6 +82,25 @@ func TestHeadlessControlEndToEnd(t *testing.T) {
 			t.Fatalf("%s: %s", op, result)
 		}
 		return result
+	}
+	shot := call(99, "shot", map[string]any{"outputs": []string{"HEADLESS-1"}, "timeout": "5s"})
+	var shots []struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal(shot["shots"], &shots); err != nil || len(shots) != 1 {
+		t.Fatalf("shots: %s %v", shot, err)
+	}
+	f, err := os.Open(shots[0].Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	image, err := png.Decode(f)
+	f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if image.Bounds().Dx() != 640 || image.Bounds().Dy() != 480 {
+		t.Fatal(image.Bounds())
 	}
 	hello := call(1, "hello", map[string]any{})
 	if string(hello["v"]) != "1" {
