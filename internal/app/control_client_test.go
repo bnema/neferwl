@@ -13,8 +13,8 @@ import (
 )
 
 // controlTestClient is a real JSON-lines socket client shared by integration
-// tests. Write accepts the former key lines for compact multi-command fixtures;
-// all delivery is through the production control protocol, not an input port.
+// tests; input goes through the production control protocol, not an input
+// port.
 type controlTestClient struct {
 	conn net.Conn
 	enc  *json.Encoder
@@ -58,25 +58,34 @@ func (c *controlTestClient) call(fields map[string]any) error {
 	return nil
 }
 
-func (c *controlTestClient) Write(data []byte) (int, error) {
-	for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
-		kind, arg, _ := strings.Cut(line, " ")
-		req := map[string]any{"op": "inject", "kind": kind, "wait": "committed"}
-		switch kind {
-		case "key", "press", "release":
-			req["combo"] = arg
-		case "type":
-			req["text"] = arg
-		case "move", "click", "down", "up":
-			req["kind"], req["cmd"], req["args"] = "pointer", kind, strings.Fields(arg)
-		default:
-			return 0, fmt.Errorf("unsupported fixture command %q", kind)
-		}
-		if err := c.call(req); err != nil {
-			return 0, err
+// inject sends one input request and waits until it is committed. kind is
+// key, press or release (arg is the combo), type (arg is the text), or a
+// pointer command move, click, down or up (arg holds its space-separated
+// arguments).
+func (c *controlTestClient) inject(kind, arg string) error {
+	req := map[string]any{"op": "inject", "kind": kind, "wait": "committed"}
+	switch kind {
+	case "key", "press", "release":
+		req["combo"] = arg
+	case "type":
+		req["text"] = arg
+	case "move", "click", "down", "up":
+		req["kind"], req["cmd"], req["args"] = "pointer", kind, strings.Fields(arg)
+	default:
+		return fmt.Errorf("unsupported inject kind %q", kind)
+	}
+	return c.call(req)
+}
+
+// injectAll sends "kind arg" steps in order with inject.
+func injectAll(c *controlTestClient, steps ...string) error {
+	for _, step := range steps {
+		kind, arg, _ := strings.Cut(step, " ")
+		if err := c.inject(kind, arg); err != nil {
+			return err
 		}
 	}
-	return len(data), nil
+	return nil
 }
 
 // noTerminal is the --no-terminal override: no terminal at startup.

@@ -151,7 +151,7 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 	check(surface.Attach(buffer, 0, 0))
 	check(surface.Commit())
 	until(desktop, "desktop focus", func() bool { return focused == surface.ID() })
-	_, err = dialTestControl(t, runtime).Write([]byte("key a\n"))
+	err = dialTestControl(t, runtime).inject("key", "a")
 	check(err)
 	until(desktop, "initial desktop input", func() bool { return len(desktopKeys) != 0 })
 
@@ -314,7 +314,7 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 		t.Fatalf("shot under lock: %v", err)
 	}
 	desktopCount := len(desktopKeys)
-	_, err = dialTestControl(t, runtime).Write([]byte("key b\n"))
+	err = dialTestControl(t, runtime).inject("key", "b")
 	if err == nil || !strings.Contains(err.Error(), "locked") {
 		t.Fatalf("control injection under lock: %v", err)
 	}
@@ -346,7 +346,7 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 		return len(set) == 2 && !set[0].Security.Protected && !set[1].Security.Protected && set[0].Security.Generation > newer[0].Security.Generation
 	})
 	until(desktop, "restored desktop focus", func() bool { return focused == surface.ID() })
-	_, err = dialTestControl(t, runtime).Write([]byte("key c\n"))
+	err = dialTestControl(t, runtime).inject("key", "c")
 	check(err)
 	until(desktop, "restored desktop input", func() bool { return len(desktopKeys) > desktopCount })
 	if desktopKeys[len(desktopKeys)-1] != 46 {

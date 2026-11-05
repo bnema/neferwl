@@ -266,7 +266,7 @@ func TestXwaylandProbe(t *testing.T) {
 	until(t, "probe two focus", func() bool { return strings.Contains(second.out.String(), "focus") })
 
 	// The close-window bind asks the focused (second) probe to close.
-	if _, err := io.WriteString(scriptW, "key Super+q\n"); err != nil {
+	if err := scriptW.inject("key", "Super+q"); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -562,7 +562,7 @@ func TestXwaylandFullscreen(t *testing.T) {
 	until(t, "output all green", func() bool { return fullOutput(shot) >= 0.99 })
 
 	// The toggle bind (cmd+shift+f) leaves fullscreen.
-	if _, err := io.WriteString(e.script, "key Super+Shift+f\n"); err != nil {
+	if err := e.script.inject("key", "Super+Shift+f"); err != nil {
 		t.Fatal(err)
 	}
 	until(t, "probe left fullscreen", func() bool { return strings.Contains(p.out.String(), "fullscreen off ") })
@@ -576,14 +576,14 @@ func TestXwaylandFullscreenStats(t *testing.T) {
 	p := startProbe(t, e.bin, e.display, "-fullscreen", "-fullscreen-delay", "1500ms", "-fullscreen-off", "1s")
 	until(t, "fullscreen", func() bool { return strings.Contains(p.out.String(), "fullscreen 640x360") })
 	until(t, "fullscreen off", func() bool { return strings.Contains(p.out.String(), "fullscreen off ") })
-	if _, err := io.WriteString(e.script, "key Super+Shift+f\n"); err != nil {
+	if err := e.script.inject("key", "Super+Shift+f"); err != nil {
 		t.Fatal(err)
 	}
 	until(t, "fullscreen again", func() bool { return strings.Count(p.out.String(), "fullscreen 640x360") >= 2 })
 	// Holding cmd activates WatchStats for the focused X11 window. The OSD is
 	// excluded from screenshots; the subsequent close verifies the compositor
 	// and XWM survived the stats request.
-	if _, err := io.WriteString(e.script, "press Super\nrelease Super\nkey Super+q\n"); err != nil {
+	if err := injectAll(e.script, "press Super", "release Super", "key Super+q"); err != nil {
 		t.Fatal(err)
 	}
 	until(t, "disconnected X11 client removed", func() bool { return len(readState(e.statePath).Windows) == 0 })
@@ -655,7 +655,7 @@ func TestXwaylandKeyboardGrab(t *testing.T) {
 	until(t, "fullscreen", func() bool { return strings.Contains(p.out.String(), "fullscreen 640x360") })
 	until(t, "grab", func() bool { return strings.Contains(p.out.String(), "grab") })
 	until(t, "probe focus", func() bool { return strings.Contains(p.out.String(), "focus") })
-	if _, err := io.WriteString(e.script, "key Super+q\n"); err != nil {
+	if err := e.script.inject("key", "Super+q"); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -666,7 +666,7 @@ func TestXwaylandKeyboardGrab(t *testing.T) {
 
 	// The probe leaves fullscreen itself; its grab stays, but the binds work again.
 	until(t, "fullscreen off", func() bool { return strings.Contains(p.out.String(), "fullscreen off ") })
-	if _, err := io.WriteString(e.script, "key Super+q\n"); err != nil {
+	if err := e.script.inject("key", "Super+q"); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -688,7 +688,7 @@ func TestXwaylandKeyboardGrabWindowed(t *testing.T) {
 	p := startProbe(t, e.bin, e.display, "-keyboard-grab")
 	until(t, "grab", func() bool { return strings.Contains(p.out.String(), "grab") })
 	until(t, "probe focus", func() bool { return strings.Contains(p.out.String(), "focus") })
-	if _, err := io.WriteString(e.script, "key Super+q\n"); err != nil {
+	if err := e.script.inject("key", "Super+q"); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -1026,7 +1026,7 @@ func TestXwaylandServerProbe(t *testing.T) {
 		t.Errorf("X11 window not marked Xwayland: %+v", st.Windows[0])
 	}
 	until(t, "probe focus", func() bool { return strings.Contains(p.out.String(), "focus") })
-	if _, err := io.WriteString(e.script, "key Super+q\n"); err != nil {
+	if err := e.script.inject("key", "Super+q"); err != nil {
 		t.Fatal(err)
 	}
 	select {

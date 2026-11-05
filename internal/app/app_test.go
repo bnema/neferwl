@@ -207,7 +207,7 @@ func TestHeadlessTyping(t *testing.T) {
 	if err := client.call(map[string]any{"op": "shot", "every_frame": true, "dir": dir}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Write([]byte("type echo neferwl-ok\nkey Return")); err != nil {
+	if err := injectAll(client, "type echo neferwl-ok", "key Return"); err != nil {
 		t.Fatal(err)
 	}
 	err := <-done
@@ -309,7 +309,7 @@ func headlessPointerClickFocus(t *testing.T, animated bool) {
 	if err := client.call(map[string]any{"op": "inject", "kind": "pointer", "cmd": "move", "args": []string{"600", "300"}, "wait": "settled"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Write([]byte("move 600 300\nclick")); err != nil {
+	if err := injectAll(client, "move 600 300", "click"); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.After(5 * time.Second)

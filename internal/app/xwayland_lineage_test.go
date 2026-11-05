@@ -129,7 +129,7 @@ func runXwaylandLineage(t *testing.T, direct, seatTV bool) {
 	}
 	typeNative := func() {
 		before := len(keys)
-		if _, err := io.WriteString(e.script, "key a\n"); err != nil {
+		if err := e.script.inject("key", "a"); err != nil {
 			t.Fatal(err)
 		}
 		waitNative("native key", func() bool { return len(keys) > before })
@@ -144,7 +144,7 @@ func runXwaylandLineage(t *testing.T, direct, seatTV bool) {
 	assertSeat()
 	typeNative()
 	if seatTV {
-		if _, err := io.WriteString(e.script, "key Super+Ctrl+Right\n"); err != nil {
+		if err := e.script.inject("key", "Super+Ctrl+Right"); err != nil {
 			t.Fatal(err)
 		}
 		until(t, "seat on tv", func() bool { return readState(e.statePath).Output == "tv" })
@@ -178,7 +178,7 @@ func runXwaylandLineage(t *testing.T, direct, seatTV bool) {
 	if seatTV {
 		until(t, "game keyboard", func() bool { st := readState(e.statePath); return st.Window != nil && st.Window.ID == game.ID })
 		mark := strings.Count(p.out.String(), "key\n")
-		if _, err := io.WriteString(e.script, "key b\n"); err != nil {
+		if err := e.script.inject("key", "b"); err != nil {
 			t.Fatal(err)
 		}
 		until(t, "X11 game key", func() bool { return strings.Count(p.out.String(), "key\n") > mark })

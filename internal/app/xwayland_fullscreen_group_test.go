@@ -110,15 +110,17 @@ func runXwaylandFullscreenGroup(t *testing.T, mode string) {
 		t.Fatalf("unrelated window: %+v", o)
 	}
 	// Focus the launcher with the keyboard: it covers again.
-	back := "key Super+Left"
+	back := "Super+Left"
 	if mode == "cascade" {
-		back = "key Super+Up"
+		back = "Super+Up"
 	}
 	// The unrelated window waits hidden; the game keeps the cover.
 	if w := workspace(); w.Cover != domain.WindowID(game.ID) {
 		t.Fatalf("cover moved to %d", w.Cover)
 	}
-	send(e.script, back)
+	if err := e.script.inject("key", back); err != nil {
+		t.Fatal(err)
+	}
 	until(t, "launcher covers", func() bool {
 		w := workspace()
 		return w.Cover == domain.WindowID(launcher.ID) && w.Focused == domain.WindowID(launcher.ID)
@@ -128,7 +130,9 @@ func runXwaylandFullscreenGroup(t *testing.T, mode string) {
 	}
 	// Back to the game, then close it: the launcher covers and has the focus.
 	fwd := strings.Replace(strings.Replace(back, "Left", "Right", 1), "Up", "Down", 1)
-	send(e.script, fwd)
+	if err := e.script.inject("key", fwd); err != nil {
+		t.Fatal(err)
+	}
 	until(t, "game covers again", func() bool { return workspace().Cover == domain.WindowID(game.ID) })
 	send(p.in, "close")
 	until(t, "launcher restored", func() bool {
