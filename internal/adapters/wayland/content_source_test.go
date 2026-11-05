@@ -11,12 +11,12 @@ import (
 )
 
 func TestContentSubsurfaceWindowFacts(t *testing.T) {
-	for _, removal := range []string{"revert", "unmap", "destroy"} {
+	for _, removal := range []string{"revert", "unmap", "destroy", "remap"} {
 		t.Run(removal, func(t *testing.T) {
 			events := make(chan ports.ClientEvent, 32)
 			s, dir, _ := idleClockServerWith(t, Channels{Events: events})
 			c := protocolClient(t, s, dir)
-			w, root, _ := surfaceMapper(t, c, events)()
+			w, root, xdg := surfaceMapper(t, c, events)()
 			comp := bindProtocol(t, c, "wl_compositor")
 			subc := bindProtocol(t, c, "wl_subcompositor")
 			child, sub := c.AllocateID(), c.AllocateID()
@@ -25,6 +25,7 @@ func TestContentSubsurfaceWindowFacts(t *testing.T) {
 			requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, sub, child, root)
 			registerProtocol(t, c, sub)
 			requestProtocol(t, c, sub, wayland.SubsurfaceRequestSetDesync)
+			requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
 			require.NoError(t, c.Roundtrip())
 			var content *surface
 			s.display.Do(func() {
@@ -53,6 +54,23 @@ func TestContentSubsurfaceWindowFacts(t *testing.T) {
 				require.Equal(t, 1, s.stats.facts.Width)
 			})
 			switch removal {
+			case "remap":
+				s.display.Do(func() { s.watchStats(0) })
+				requestProtocol(t, c, root, wayland.SurfaceRequestAttach, uint32(0), int32(0), int32(0))
+				requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+				require.NoError(t, c.Roundtrip())
+				_ = clientEvent[ports.WindowUnmapped](t, events)
+				serials := make(chan uint32, 8)
+				xp := &configureProxy{serial: serials}
+				xp.SetID(xdg)
+				registerWireProxy(c, xp)
+				requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+				ackAndAttach(t, c, root, xdg, b, serials)
+				again := clientEvent[ports.WindowMapped](t, events)
+				require.True(t, again.Remap)
+				require.True(t, again.ColorDescription)
+				s.display.Do(func() { require.True(t, s.windows[w.ID].surf().windowColorManaged) })
+				return
 			case "revert":
 				s.display.Do(func() { content.next.color = SurfaceColor{} })
 				requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
@@ -67,4 +85,60 @@ func TestContentSubsurfaceWindowFacts(t *testing.T) {
 			s.display.Do(func() { s.watchStats(0) })
 		})
 	}
+}
+
+func TestContentSourceWaitsForCommittedLayout(t *testing.T) {
+	events := make(chan ports.ClientEvent, 32)
+	s, dir, _ := idleClockServerWith(t, Channels{Events: events})
+	c := protocolClient(t, s, dir)
+	w, root, _ := surfaceMapper(t, c, events)()
+	comp := bindProtocol(t, c, "wl_compositor")
+	subc := bindProtocol(t, c, "wl_subcompositor")
+	child, sub := c.AllocateID(), c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, child)
+	registerProtocol(t, c, child)
+	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, sub, child, root)
+	registerProtocol(t, c, sub)
+	requestProtocol(t, c, sub, wayland.SubsurfaceRequestSetDesync)
+	require.NoError(t, c.Roundtrip())
+	var r, ch *surface
+	s.display.Do(func() {
+		r = s.windows[w.ID].surf()
+		ch = r.sub.children[0]
+		ch.next.color = SurfaceColor{Set: true, TF: pq, Primaries: bt2020}
+	})
+	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, shmBufferSized(t, c, 64, 64), int32(0), int32(0))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	require.NoError(t, c.Roundtrip())
+	s.display.Do(func() {
+		require.True(t, ch.has)
+		require.Same(t, r, r.mainContent())
+		require.False(t, r.windowColorManaged)
+	})
+	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	require.NoError(t, c.Roundtrip())
+	require.Equal(t, ports.WindowColorDescription{ID: w.ID, PlainSDR: false}, clientEvent[ports.WindowColorDescription](t, events))
+	s.display.Do(func() { require.Same(t, ch, r.mainContent()) })
+}
+
+func BenchmarkContentSourceSteadyCommit(b *testing.B) {
+	r := &surface{has: true, server: &Server{}}
+	r.xdg = &xdgSurface{window: &window{id: 1, mapped: true}}
+	for range 100 {
+		ch := &surface{has: true, sub: subState{parent: r}}
+		r.sub.layout = append(r.sub.layout, childLayout{child: ch})
+	}
+	r.refreshWindowFacts(false)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		r.refreshWindowFacts(false)
+	}
+}
+
+func TestContentSourceSteadyCommitAllocations(t *testing.T) {
+	r := &surface{has: true, server: &Server{}}
+	r.xdg = &xdgSurface{window: &window{id: 1, mapped: true}}
+	r.refreshWindowFacts(false)
+	require.Zero(t, testing.AllocsPerRun(100, func() { r.refreshWindowFacts(false) }))
 }

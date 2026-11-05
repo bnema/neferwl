@@ -6,24 +6,51 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// mainContent selects one buffered source, independently of commit ordering.
-// Full-size subsurfaces win ties with the root (Wine keeps a static root).
-// Among children, structural order breaks ties. Smaller decorations never win.
+// mainContent caches the source on the root. Only committed render layouts
+// participate; pending structural children are not visible content yet.
 func (s *surface) mainContent() *surface {
-	best := s
-	area := func(s *surface) int64 {
-		if !s.has || s.destroyed {
-			return -1
-		}
-		return int64(s.content.LogicalW) * int64(s.content.LogicalH)
+	r := s.root()
+	if r.contentSource == nil {
+		r.contentSource = r.selectContent(r)
 	}
-	for _, child := range s.sub.children {
-		candidate := child.mainContent()
-		if area(candidate) > area(best) || best == s && area(candidate) == area(best) && area(candidate) >= 0 {
-			best = candidate
+	return r.contentSource
+}
+
+func contentArea(s *surface) int64 {
+	if !s.has || s.destroyed {
+		return -1
+	}
+	return int64(s.content.LogicalW) * int64(s.content.LogicalH)
+}
+
+// selectContent follows appendTree's paint order. First child wins equal-area
+// child ties; a full-size child wins a tie with the static root.
+func (s *surface) selectContent(best *surface) *surface {
+	for _, item := range s.sub.layout {
+		if item.below {
+			best = item.child.selectContent(best)
+		}
+	}
+	if contentArea(s) > contentArea(best) || best == s.root() && s != best && contentArea(s) == contentArea(best) && contentArea(s) >= 0 {
+		best = s
+	}
+	for _, item := range s.sub.layout {
+		if !item.below {
+			best = item.child.selectContent(best)
 		}
 	}
 	return best
+}
+
+func (s *surface) colorManaged() bool {
+	source := s.mainContent()
+	return !s.outputColor().PlainSDR() || source.has && !source.outputColor().PlainSDR()
+}
+
+// mappedColor synchronizes the delta cache with the initial/remap publication.
+func (s *surface) mappedColor() bool {
+	s.windowColorManaged = s.colorManaged()
+	return s.windowColorManaged
 }
 
 // refreshWindowFacts runs after committed content changes, including detaches.
@@ -36,7 +63,7 @@ func (s *surface) refreshWindowFacts(fresh bool) {
 		return
 	}
 	source := r.mainContent()
-	managed := !r.outputColor().PlainSDR() || source.has && !source.outputColor().PlainSDR()
+	managed := r.colorManaged()
 	if managed != r.windowColorManaged {
 		r.windowColorManaged = managed
 		s.server.emit(ports.WindowColorDescription{ID: id, PlainSDR: !managed})
