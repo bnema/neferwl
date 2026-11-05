@@ -157,7 +157,7 @@ type reply struct {
 	Diff  diff              `json:"diff"`
 	State statewire.State   `json:"state"`
 	Late  []domain.WindowID `json:"late"`
-	Error string            `json:"error"`
+	Error string            `json:"error,omitempty"`
 }
 
 type command struct {

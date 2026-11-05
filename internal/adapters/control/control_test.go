@@ -106,7 +106,8 @@ func TestProtocol(t *testing.T) {
 					} else if req.Wait != domain.DefaultWait || req.Timeout != 10*time.Second || req.Until != nil {
 						t.Errorf("defaults: %+v", req)
 					}
-					req.Reply <- ports.ControlReply{Done: req.Wait, TimedOut: i == 1, Diff: domain.StateDiff{FocusFrom: 1, FocusTo: 2, FocusChanged: true}, Late: []domain.WindowID{3}}
+					// Core may reach less than the requested level; preserve its report.
+					req.Reply <- ports.ControlReply{Done: domain.WaitCommitted, TimedOut: i == 1, Diff: domain.StateDiff{FocusFrom: 1, FocusTo: 2, FocusChanged: true}, Late: []domain.WindowID{3}}
 				case ports.ControlQuery:
 					if req.What != "state" || req.Caps != domain.CapsAll || cap(req.Reply) != 1 {
 						t.Errorf("query: %+v", req)
@@ -121,8 +122,11 @@ func TestProtocol(t *testing.T) {
 		}
 	}()
 	got := exchange(`{"id":6,"op":"do","action":"none","wait":"presented","until":"focused app_id=foot","timeout":"2s"}`)
-	if string(got["id"]) != "6" || string(got["done"]) != `"presented"` || string(got["ok"]) != "true" {
+	if string(got["id"]) != "6" || string(got["done"]) != `"committed"` || string(got["ok"]) != "true" {
 		t.Fatal(got)
+	}
+	if _, present := got["error"]; present {
+		t.Fatalf("successful reply includes error: %s", got["error"])
 	}
 	var d map[string]any
 	if err := json.Unmarshal(got["diff"], &d); err != nil {
