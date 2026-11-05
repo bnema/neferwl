@@ -15,6 +15,9 @@ type controlWait struct {
 	deadline   time.Time
 	baseline   map[string]uint64
 	targetSeqs map[string]uint64
+	runtime    <-chan ports.OutputRuntimeResult
+	remove     bool
+	output     string
 	reply      chan<- ports.ControlReply
 }
 
@@ -64,6 +67,35 @@ func (c *Core) evalWaits() {
 	kept := c.controlWaits[:0]
 	var earliest time.Time
 	for _, w := range c.controlWaits {
+		if w.runtime != nil {
+			select {
+			case result := <-w.runtime:
+				if result.Err != "" {
+					controlReply(w.reply, ports.ControlReply{Err: result.Err})
+					continue
+				}
+				w.output = result.Name
+				w.runtime = nil
+			default:
+				kept = append(kept, w)
+				continue
+			}
+		}
+		if w.output != "" {
+			exists := false
+			for _, o := range state.Outputs {
+				if o.Name == w.output {
+					exists = true
+				}
+			}
+			if exists == w.remove {
+				kept = append(kept, w)
+				continue
+			}
+			controlReply(w.reply, ports.ControlReply{Done: domain.WaitCommitted, State: state, Diff: domain.DiffState(w.before, state)})
+			continue
+		}
+
 		// Track final animation publications and scenes produced by later effects
 		// (for example a map satisfying Until), not only the first action frame.
 		for output, seq := range seqs {

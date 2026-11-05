@@ -79,6 +79,8 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 	if len(o.Sizes) > 0 {
 		curs.Move("HEADLESS-1", float64(o.Sizes[0][0])/2, float64(o.Sizes[0][1])/2, false)
 	}
+	runtimeReplies := map[uint64]ports.OutputRuntimeRequest{}
+	var runtimeID uint64 = 1 << 63
 	for {
 		if _, ok := apply.Next(); ok {
 			err := host.Sync(ctx, apply.Virtuals())
@@ -92,6 +94,23 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 		configs, configNext := apply.ConfigOut(ch.Configured), apply.Config()
 		replies, replyNext := apply.ReplyOut(ch.Replies)
 		heads, headsNext := apply.HeadsOut(ch.Heads)
+		if pending, ok := runtimeReplies[replyNext.ID]; ok {
+			code := ""
+			if replyNext.Err != nil {
+				code = ports.ControlErrBadRequest
+			}
+			select {
+			case pending.Reply <- ports.OutputRuntimeResult{Name: pending.Name, Err: code}:
+			default:
+			}
+			select {
+			case pending.Wake <- struct{}{}:
+			default:
+			}
+			delete(runtimeReplies, replyNext.ID)
+			apply.ReplySent()
+			continue
+		}
 		select {
 		case <-ctx.Done():
 			return set.Wait()
@@ -105,6 +124,32 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 			}
 		case ev := <-ch.Reloads:
 			apply.Reload(ev.Config)
+		case req := <-ch.RuntimeOutputs:
+			runtimeID++
+			name := req.Name
+			var err error
+			if req.Remove {
+				err = apply.RuntimeRemove(runtimeID, name)
+			} else {
+				name, err = apply.RuntimeAdd(runtimeID, name, req.Mode)
+			}
+			if err != nil {
+				code := ports.ControlErrBadRequest
+				if errors.Is(err, core.ErrRuntimeOutputForbidden) {
+					code = ports.ControlErrForbidden
+				}
+				select {
+				case req.Reply <- ports.OutputRuntimeResult{Name: name, Err: code}:
+				default:
+				}
+				select {
+				case req.Wake <- struct{}{}:
+				default:
+				}
+			} else {
+				req.Name = name
+				runtimeReplies[runtimeID] = req
+			}
 		case req := <-ch.Requests:
 			apply.Request(req)
 		case configs <- configNext:

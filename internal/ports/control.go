@@ -73,3 +73,14 @@ const (
 	ControlErrForbidden      = "forbidden"
 	ControlErrCaptureFailed  = "capture-failed"
 )
+
+// ControlOutput changes the runtime-only virtual output desired set.
+type ControlOutput struct {
+	Name   string
+	Mode   domain.OutputMode
+	Remove bool
+	Caps   domain.Caps
+	Reply  chan<- ControlReply
+}
+
+func (ControlOutput) controlRequest() {}

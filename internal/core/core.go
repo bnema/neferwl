@@ -24,14 +24,15 @@ var errSecurityChanged = errors.New("security epoch changed during input")
 // send holds one scene per output.
 type Channels struct {
 	// Control carries owner-serialized control requests; nil disables control.
-	Control  <-chan ports.ControlRequest
-	Client   <-chan ports.ClientEvent
-	Input    <-chan ports.InputEvent
-	Output   <-chan ports.OutputEvent
-	Config   <-chan domain.ConfigChanged
-	Commands chan<- ports.ClientCommand
-	Spawn    chan<- domain.SpawnRequest
-	Scenes   chan []domain.Scene
+	RuntimeOutputs chan<- ports.OutputRuntimeRequest
+	Control        <-chan ports.ControlRequest
+	Client         <-chan ports.ClientEvent
+	Input          <-chan ports.InputEvent
+	Output         <-chan ports.OutputEvent
+	Config         <-chan domain.ConfigChanged
+	Commands       chan<- ports.ClientCommand
+	Spawn          chan<- domain.SpawnRequest
+	Scenes         chan []domain.Scene
 	// Layouts, when set, receives the output layout whenever it changes,
 	// latest first (capacity 1, drained like Scenes). Input and cursors use it.
 	Layouts chan domain.Layout
@@ -88,6 +89,7 @@ type binding struct {
 	key  string
 }
 type Core struct {
+	runtimeWake      chan struct{}
 	controlWaits     []controlWait
 	controlWaitTimer ports.Timer
 	controlWaitC     <-chan time.Time
@@ -1179,6 +1181,8 @@ func (c *Core) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-c.runtimeWake:
+			continue
 		case <-c.controlWaitC:
 			continue
 		case startupC <- startupRequest:

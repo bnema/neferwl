@@ -10,6 +10,8 @@ import (
 // control runs on the owner, just like input.
 func (c *Core) control(ctx context.Context, r ports.ControlRequest) error {
 	switch r := r.(type) {
+	case ports.ControlOutput:
+		return c.controlOutput(ctx, r)
 	case ports.ControlDo:
 		if r.Caps&domain.CapAct == 0 {
 			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrForbidden})
