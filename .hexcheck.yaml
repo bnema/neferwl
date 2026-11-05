@@ -84,7 +84,7 @@ heuristics:
 ruleSettings:
   missing-generated-mock-for-port:
     # Sealed message unions are channel data, not ports; tested by sending messages (ADR 005).
-    excludePaths: [internal/ports/client_events.go, internal/ports/client_commands.go, internal/ports/input_events.go, internal/ports/output_events.go, internal/ports/lease.go, internal/ports/session_backend.go]
+    excludePaths: [internal/ports/control.go, internal/ports/client_events.go, internal/ports/client_commands.go, internal/ports/input_events.go, internal/ports/output_events.go, internal/ports/lease.go, internal/ports/session_backend.go]
   no-adapter-to-adapter-imports:
     # Composition root wires concrete adapters; Makefile ADAPTER_LIBS governs adapter sharing.
     excludePaths: [internal/app/**]
