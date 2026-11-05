@@ -134,7 +134,7 @@ func owner(t *testing.T, animated bool) {
 	if len(s.Windows) != 1 || s.Windows[0].Rect.W != 84 || s.Windows[0].Inset != domain.SideAll {
 		t.Fatal(s)
 	}
-	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 84, Height: 64, Activated: true, Output: "OUT-1", Visible: true}) {
+	if v := command(t, commands); v != (ports.ConfigureWindow{Serial: 1, ID: 1, Width: 84, Height: 64, Activated: true, Output: "OUT-1", Visible: true}) {
 		t.Fatal(v)
 	}
 	command(t, commands)
@@ -178,7 +178,7 @@ func owner(t *testing.T, animated bool) {
 	if s.Windows[0].Rect.W != 92 {
 		t.Fatal(s)
 	}
-	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 92, Height: 72, Activated: true, Output: "OUT-1", Visible: true}) {
+	if v := command(t, commands); v != (ports.ConfigureWindow{Serial: 5, ID: 1, Width: 92, Height: 72, Activated: true, Output: "OUT-1", Visible: true}) {
 		t.Fatal(v)
 	}
 	cfg.Layout.MaxColumns = 0
@@ -377,7 +377,7 @@ func borderInset(t *testing.T, animated bool) {
 	// Alone, the window is borderless and gets the full rect.
 	client <- ports.WindowMapped{ID: 1}
 	r := l.one(scene(t, scenes)).Windows[0].Rect
-	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: r.W, Height: r.H, Activated: true, Output: "OUT-1", Visible: true}) {
+	if v := command(t, commands); v != (ports.ConfigureWindow{Serial: 1, ID: 1, Width: r.W, Height: r.H, Activated: true, Output: "OUT-1", Visible: true}) {
 		t.Fatalf("%v for outer %v", v, r)
 	}
 	// With a second column, the left window owns the shared separator: its
@@ -391,8 +391,11 @@ func borderInset(t *testing.T, animated bool) {
 	want := ports.ConfigureWindow{ID: 1, Width: s.Windows[0].Rect.W - 2, Height: r.H, Activated: false, Output: "OUT-1", Visible: true}
 	found := false
 	for len(commands) > 0 {
-		if v := <-commands; v == want {
-			found = true
+		if v, ok := (<-commands).(ports.ConfigureWindow); ok {
+			v.Serial = 0 // This assertion checks geometry and state, not ordering.
+			if v == want {
+				found = true
+			}
 		}
 	}
 	if !found {
@@ -689,7 +692,7 @@ func outputScale(t *testing.T, animated bool) {
 	}
 	client <- ports.WindowMapped{ID: 1}
 	l.one(scene(t, scenes))
-	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 2560, Height: 1080, Activated: true, Output: "DP-2", Visible: true}) {
+	if v := command(t, commands); v != (ports.ConfigureWindow{Serial: 1, ID: 1, Width: 2560, Height: 1080, Activated: true, Output: "DP-2", Visible: true}) {
 		t.Fatal(v)
 	}
 	for len(commands) > 0 {

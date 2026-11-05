@@ -32,6 +32,8 @@ const ActivityInterval = 100 * time.Millisecond
 // ConfigureWindow carries core → wayland geometry and state. Output is the
 // connector showing the window, empty while it is hidden.
 type ConfigureWindow struct {
+	// Serial is the monotonically increasing configure identity assigned by core.
+	Serial                uint64
 	ID                    domain.WindowID
 	Width, Height         int
 	Fullscreen, Activated bool

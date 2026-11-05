@@ -1,6 +1,11 @@
 package core
 
-import "github.com/bnema/neferwl/internal/ports"
+import (
+	"slices"
+
+	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
+)
 
 // configureTarget is where a placement is shown, as the configure needs it.
 type configureTarget struct {
@@ -24,8 +29,10 @@ type configureTarget struct {
 // configures owns the last configure sent to each window and decides the
 // next one. Configures are sent only when they change.
 type configures struct {
-	sent map[WindowID]ports.ConfigureWindow
-	seen map[WindowID]bool
+	serial  uint64
+	pending map[domain.WindowID]uint64
+	sent    map[WindowID]ports.ConfigureWindow
+	seen    map[WindowID]bool
 	// answer holds windows whose state request awaits a configure, sent
 	// even unchanged: xdg-shell answers every request, a refused one too.
 	answer map[WindowID]bool
@@ -34,7 +41,7 @@ type configures struct {
 }
 
 func newConfigures() configures {
-	return configures{sent: map[WindowID]ports.ConfigureWindow{}, seen: map[WindowID]bool{}, answer: map[WindowID]bool{}}
+	return configures{pending: map[domain.WindowID]uint64{}, sent: map[WindowID]ports.ConfigureWindow{}, seen: map[WindowID]bool{}, answer: map[WindowID]bool{}}
 }
 
 // next returns the configure for p at t and whether it must be sent. The
@@ -49,6 +56,7 @@ func (s *configures) next(p Placement, t configureTarget) (ports.ConfigureWindow
 		// layout.
 		v.Width, v.Height = t.client.W, t.client.H
 	}
+	v.Serial, old.Serial = 0, 0
 	return v, !ok || v != old || s.answer[p.ID]
 }
 
@@ -78,6 +86,7 @@ func (s *configures) nextWithCapture(p Placement, t configureTarget, cp *Placeme
 		v = build(p, t, old, ok)
 	}
 	v.Captured = !v.Visible && (t.captured || !cp.Hidden && cp.Rect.Overlaps(t.captureArea))
+	v.Serial, old.Serial = 0, 0
 	return v, !ok || v != old || s.answer[p.ID]
 }
 
@@ -129,10 +138,18 @@ func build(p Placement, t configureTarget, old ports.ConfigureWindow, ok bool) p
 	return v
 }
 
-// mark records v as sent.
-func (s *configures) mark(v ports.ConfigureWindow) {
+// mark assigns a serial and records v for immediate delivery.
+func (s *configures) mark(v ports.ConfigureWindow) ports.ConfigureWindow {
+	s.serial++
+	v.Serial = s.serial
+	if v.Visible || v.Captured {
+		s.pending[v.ID] = v.Serial
+	} else {
+		delete(s.pending, v.ID)
+	}
 	s.sent[v.ID] = v
 	delete(s.answer, v.ID)
+	return v
 }
 
 // keep marks id as seen without a configure: a window drawn while it leaves
@@ -145,6 +162,7 @@ func (s *configures) keep(id WindowID) { s.seen[id] = true }
 // unchanged first configure would be withheld.
 func (s *configures) forget(id WindowID) {
 	delete(s.sent, id)
+	delete(s.pending, id)
 	delete(s.answer, id)
 	delete(s.seen, id)
 }
@@ -155,6 +173,7 @@ func (s *configures) prune() {
 	for id := range s.sent {
 		if !s.seen[id] {
 			delete(s.sent, id)
+			delete(s.pending, id)
 		}
 	}
 	for id := range s.answer {
@@ -163,4 +182,15 @@ func (s *configures) prune() {
 		}
 	}
 	clear(s.seen)
+}
+
+// pendingConfigures returns windows awaiting an applied configure commit.
+// Like the rest of core state, it is read by the owner goroutine only.
+func (c *Core) pendingConfigures() []domain.WindowID {
+	ids := make([]domain.WindowID, 0, len(c.configures.pending))
+	for id := range c.configures.pending {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
 }

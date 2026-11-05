@@ -53,6 +53,11 @@ func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, 
 		if !v.Remap {
 			c.tracePlacement(v, before, seat, cover)
 		}
+	case ports.WindowCommitted:
+		if serial, ok := c.configures.pending[v.ID]; ok && v.Serial >= serial {
+			delete(c.configures.pending, v.ID)
+		}
+		return false, false
 	case ports.WindowResized:
 		c.resizeFloating(v)
 	case ports.PopupRequest:
