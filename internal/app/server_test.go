@@ -18,7 +18,7 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// TestServerVirtualOutput: the server backend with one virtual output and no
+// TestServerVirtualOutput: the persistent headless profile with one virtual output and no
 // physical one focuses the virtual output at startup, and a client maps on
 // it. Real libinput never runs (noLibinput); the inject channel is the input.
 //
@@ -44,14 +44,14 @@ func TestServerVirtualOutput(t *testing.T) {
 	inputReady := make(chan chan<- ports.InputEvent, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, Options{Backend: domain.BackendServer, NoXwayland: true, Config: cfg, ConfigPath: path, testScenes: scenes, noLibinput: true},
+		done <- run(ctx, Options{Backend: domain.BackendHeadless, Profile: domain.ProfilePersistent, NoXwayland: true, Config: cfg, ConfigPath: path, testScenes: scenes, noLibinput: true},
 			func(input chan<- ports.InputEvent) { inputReady <- input })
 	}()
 	var input chan<- ports.InputEvent
 	select {
 	case input = <-inputReady:
 	case err := <-done:
-		// Containers without /sys/class/drm or a GPU cannot run the server backend.
+		// Containers without /sys/class/drm or a GPU cannot run the persistent headless profile.
 		if errors.Is(err, core.ErrNoRenderNode) || errors.Is(err, fs.ErrNotExist) || (err != nil && strings.Contains(strings.ToLower(err.Error()), "vulkan")) {
 			t.Skipf("no hardware render device: %v", err)
 		}

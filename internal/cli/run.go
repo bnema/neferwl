@@ -280,7 +280,7 @@ func servePprof(ctx context.Context, addr string) error {
 func mustProfile(s string) domain.Profile { p, _ := domain.ParseProfile(s); return p }
 
 func (f *runFlags) normalizeBackendAlias() {
-	if f.backend == string(domain.BackendServer) {
+	if f.backend == "server" {
 		f.backend = "headless"
 		f.profile = "persistent"
 		f.deprecatedServer = true

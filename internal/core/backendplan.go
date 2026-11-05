@@ -65,9 +65,6 @@ func PlanBackend(b domain.Backend, p domain.Profile, o PlanOverrides) BackendPla
 		return BackendPlan{KMS: true, RequireRenderNode: true, FixedHeads: HeadsConnectors, IsolateVirtuals: true,
 			Input: InputLibinputLibseat, SessionDBus: SessionDBusAlways, LogindPowerKeys: true, PersistScales: true, AutoTerminal: AutoTerminalConfig}
 	}
-	if b == domain.BackendServer {
-		b, p = domain.BackendHeadless, domain.ProfilePersistent
-	}
 	if b != domain.BackendHeadless {
 		return BackendPlan{}
 	}

@@ -73,24 +73,25 @@ func startXwaylandWith(t *testing.T, sizes [][2]int, mutate func(*domain.Config)
 	return startXwaylandConfig(t, sizes, mutate, "")
 }
 
-// startXwaylandBackend is startXwaylandWith on backend. The server backend
-// never runs libinput here (noLibinput): the script stays the input.
-func startXwaylandBackend(t *testing.T, backend domain.Backend, sizes [][2]int, mutate func(*domain.Config)) *xwaylandEnv {
+// startXwaylandProfile is startXwaylandWith on a headless profile. The
+// persistent profile never runs libinput here (noLibinput): the script stays
+// the input.
+func startXwaylandProfile(t *testing.T, profile domain.Profile, sizes [][2]int, mutate func(*domain.Config)) *xwaylandEnv {
 	t.Helper()
-	return startXwaylandBackendConfig(t, backend, sizes, mutate, "")
+	return startXwaylandProfileConfig(t, profile, sizes, mutate, "")
 }
 
 // startXwaylandConfig is startXwaylandWith watching the config file at path
 // for reloads; empty uses a path that does not exist.
 func startXwaylandConfig(t *testing.T, sizes [][2]int, mutate func(*domain.Config), path string) *xwaylandEnv {
 	t.Helper()
-	return startXwaylandBackendConfig(t, domain.BackendHeadless, sizes, mutate, path)
+	return startXwaylandProfileConfig(t, domain.ProfileEphemeral, sizes, mutate, path)
 }
 
-// startXwaylandBackendConfig combines backend selection and config reloads.
+// startXwaylandProfileConfig combines profile selection and config reloads.
 //
 //testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
-func startXwaylandBackendConfig(t *testing.T, backend domain.Backend, sizes [][2]int, mutate func(*domain.Config), path string) *xwaylandEnv {
+func startXwaylandProfileConfig(t *testing.T, profile domain.Profile, sizes [][2]int, mutate func(*domain.Config), path string) *xwaylandEnv {
 	t.Helper()
 	if path == "" {
 		// Never the user's own config file.
@@ -175,8 +176,8 @@ func startXwaylandBackendConfig(t *testing.T, backend domain.Backend, sizes [][2
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(ctx, Options{
-			Backend: backend, NoTerminal: true, Config: cfg, ConfigPath: path,
-			Sizes: sizes, noLibinput: backend == domain.BackendServer,
+			Backend: domain.BackendHeadless, Profile: profile, NoTerminal: true, Config: cfg, ConfigPath: path,
+			Sizes: sizes, noLibinput: profile == domain.ProfilePersistent,
 		})
 	}()
 	t.Cleanup(func() {
@@ -209,12 +210,8 @@ func startXwaylandBackendConfig(t *testing.T, backend domain.Backend, sizes [][2
 	})
 	statePath := paths[0]
 	client := dialTestControl(t, runtime)
-	// Continuous capture is a headless-backend feature; the server backend
-	// rejects it and no server test reads screenshots.
-	if backend == domain.BackendHeadless {
-		if err := client.call(map[string]any{"op": "shot", "every_frame": true, "dir": shots}); err != nil {
-			t.Fatal(err)
-		}
+	if err := client.call(map[string]any{"op": "shot", "every_frame": true, "dir": shots}); err != nil {
+		t.Fatal(err)
 	}
 	return &xwaylandEnv{bin: bin, display: display, statePath: statePath, shots: shots, script: client}
 }
@@ -1010,13 +1007,13 @@ func publicationChanges(t *testing.T) chan struct{} {
 	return changes.(chan struct{})
 }
 
-// TestXwaylandServerProbe: on the server backend, with one virtual output
+// TestXwaylandServerProbe: on the persistent headless profile (`server`), with one virtual output
 // and no fixed head, an X11 client maps on the virtual output, takes the
 // focus and closes with the close-window bind.
 //
 //testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
 func TestXwaylandServerProbe(t *testing.T) {
-	e := startXwaylandBackend(t, domain.BackendServer, nil, func(c *domain.Config) {
+	e := startXwaylandProfile(t, domain.ProfilePersistent, nil, func(c *domain.Config) {
 		c.Outputs = append(c.Outputs, domain.OutputConfig{Name: "tv", Virtual: true, Mode: "640x360"})
 	})
 	p := startProbe(t, e.bin, e.display, "-title", "server")

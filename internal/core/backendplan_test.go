@@ -10,7 +10,7 @@ func TestPlanBackend(t *testing.T) {
 	drm := BackendPlan{KMS: true, RequireRenderNode: true, FixedHeads: HeadsConnectors, IsolateVirtuals: true, Input: InputLibinputLibseat, SessionDBus: SessionDBusAlways, LogindPowerKeys: true, PersistScales: true, AutoTerminal: AutoTerminalConfig}
 	ephemeral := BackendPlan{FixedHeads: HeadsSized, IsolateVirtuals: true, SessionDBus: SessionDBusFlagOnly, AutoTerminal: AutoTerminalConfigOrFlag}
 	persistent := BackendPlan{RequireRenderNode: true, FixedHeads: HeadsNone, Input: InputLibinputDirect, SessionDBus: SessionDBusAlways, PersistScales: true, AutoTerminal: AutoTerminalOff}
-	for _, b := range []domain.Backend{domain.BackendDRM, domain.BackendHeadless, domain.BackendServer, "bogus"} {
+	for _, b := range []domain.Backend{domain.BackendDRM, domain.BackendHeadless, "server", "bogus"} {
 		for _, p := range []domain.Profile{domain.ProfileEphemeral, domain.ProfilePersistent} {
 			base := BackendPlan{}
 			switch b {
@@ -21,8 +21,6 @@ func TestPlanBackend(t *testing.T) {
 				if p == domain.ProfilePersistent {
 					base = persistent
 				}
-			case domain.BackendServer:
-				base = persistent
 			}
 			if got := PlanBackend(b, p, PlanOverrides{}); got != base {
 				t.Fatalf("%s/%s: %+v want %+v", b, p, got, base)
@@ -36,7 +34,7 @@ func TestPlanBackend(t *testing.T) {
 				}
 				overrides := PlanOverrides{SessionDBus: &dbus, AutoTerminal: &terminal, PersistScales: &persist, Input: &input}
 				want := base
-				if b == domain.BackendHeadless || b == domain.BackendServer {
+				if b == domain.BackendHeadless {
 					want.SessionDBus = SessionDBusFlagOnly
 					if dbus {
 						want.SessionDBus = SessionDBusAlways

@@ -66,17 +66,17 @@ func startCastApp(t *testing.T, allow string) *castApp {
 // and the state move to temporary directories.
 func startCastAppConfig(t *testing.T, allow string, cfg domain.Config) *castApp {
 	t.Helper()
-	return startCastAppBackend(t, allow, cfg, domain.BackendHeadless)
+	return startCastAppProfile(t, allow, cfg, domain.ProfileEphemeral)
 }
 
-// startCastAppBackend is startCastAppConfig on backend. The server backend
-// has no fixed head (only cfg's virtual outputs), always serves the session
+// startCastAppProfile is startCastAppConfig on a headless profile. The
+// persistent profile (`server`) has no fixed head (only cfg's virtual outputs), always serves the session
 // bus and never runs libinput here (noLibinput).
 //
 //testpolicy:realtime real headless renderer and D-Bus service startup and teardown
-func startCastAppBackend(t *testing.T, allow string, cfg domain.Config, backend domain.Backend) *castApp {
+func startCastAppProfile(t *testing.T, allow string, cfg domain.Config, profile domain.Profile) *castApp {
 	t.Helper()
-	server := backend == domain.BackendServer
+	server := profile == domain.ProfilePersistent
 	sizes := [][2]int{{320, 240}}
 	if server {
 		sizes = nil
@@ -94,7 +94,7 @@ func startCastAppBackend(t *testing.T, allow string, cfg domain.Config, backend 
 	inputReady := make(chan chan<- ports.InputEvent, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, Options{Backend: backend, DBus: !server, NoXwayland: true, NoTerminal: true, Config: cfg, Sizes: sizes, noLibinput: server, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid()), castInventoryApplied: inventory},
+		done <- run(ctx, Options{Backend: domain.BackendHeadless, Profile: profile, DBus: !server, NoXwayland: true, NoTerminal: true, Config: cfg, Sizes: sizes, noLibinput: server, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid()), castInventoryApplied: inventory},
 			func(in chan<- ports.InputEvent) { inputReady <- in })
 	}()
 	a := &castApp{inventory: inventory}
@@ -536,7 +536,7 @@ func waitFrames(t *testing.T, frames *atomic.Int64, changed <-chan struct{}, exi
 	}
 }
 
-// TestServerScreencastVirtualOutput: the server backend serves the cast
+// TestServerScreencastVirtualOutput: the persistent headless profile serves the cast
 // service without --dbus and streams its virtual output to a PipeWire
 // consumer.
 //
@@ -545,7 +545,7 @@ func TestServerScreencastVirtualOutput(t *testing.T) {
 	requireCastEnv(t)
 	cfg := config.Defaults()
 	cfg.Outputs = append(cfg.Outputs, domain.OutputConfig{Name: "tv", Virtual: true, Mode: "320x240"})
-	app := startCastAppBackend(t, "*\n", cfg, domain.BackendServer)
+	app := startCastAppProfile(t, "*\n", cfg, domain.ProfilePersistent)
 	c := castClient(t)
 	waitOwner(t, c, scName)
 	var session, stream string
