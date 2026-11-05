@@ -27,6 +27,7 @@ const (
 	CommandQuery
 	CommandInject
 	CommandShot
+	CommandAdmin
 )
 
 // String returns the protocol name of the command payload kind.
@@ -42,6 +43,8 @@ func (k CommandKind) String() string {
 		return "inject"
 	case CommandShot:
 		return "shot"
+	case CommandAdmin:
+		return "admin"
 	default:
 		return fmt.Sprintf("CommandKind(%d)", k)
 	}
@@ -55,6 +58,8 @@ type CommandSpec struct {
 }
 
 var commandCatalog = []CommandSpec{
+	{Name: "output-add", Arg: "MODE", Summary: "Add a runtime virtual output.", Kind: CommandAdmin, Caps: CapAdmin},
+	{Name: "output-rm", Arg: "NAME", Summary: "Remove a runtime virtual output.", Kind: CommandAdmin, Caps: CapAdmin},
 	{Name: "spawn-terminal", Summary: "Spawn terminal.", Kind: CommandAction, Caps: CapAct},
 	{Name: "focus-column-left", Summary: "Focus column left.", Kind: CommandAction, Caps: CapAct},
 	{Name: "focus-column-right", Summary: "Focus column right.", Kind: CommandAction, Caps: CapAct},

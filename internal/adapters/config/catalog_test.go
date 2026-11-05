@@ -40,7 +40,7 @@ func TestCatalogBindActions(t *testing.T) {
 			}
 		})
 	}
-	for _, text := range []string{"state extra", "key Super+x", "type hello", "pointer 1 2", "swipe down", "shot DP-1"} {
+	for _, text := range []string{"state extra", "key Super+x", "type hello", "pointer 1 2", "swipe down", "shot DP-1", "output-add 1920x1080@60", "output-rm HEADLESS-2"} {
 		if err := checkAction(text); err == nil {
 			t.Errorf("non-action %q accepted", text)
 		}
