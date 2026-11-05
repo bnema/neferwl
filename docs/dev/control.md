@@ -131,7 +131,9 @@ use `neferwl shot --every-frame --dir <directory>` and stop with
 Wayland display and creation time. `--json` prints the registry metadata as a
 JSON array. Unlocked stale session directories are reclaimed while listing.
 
-The planned `session new` launcher uses this child startup contract:
+`session new` accepts `--id`, `--profile` (default `ephemeral`), `--size`,
+`--config`, `--ttl`, and extra compositor flags after `--`. It starts a detached
+child with stdin/stdout/stderr on `/dev/null` using this startup contract:
 
 ```text
 <executable> --backend=headless --profile=P --session-id=ID --ready-fd=3
@@ -140,5 +142,9 @@ The planned `session new` launcher uses this child startup contract:
 
 The child writes one JSON line containing `id`, `wayland`, `control` and
 `display` to fd 3 when ready, then closes it. EOF before that line means startup
-failed. The launcher waits at most `--start-timeout` (default `30s`). These
-startup flags and the `new`/`rm` commands are pending implementation.
+failed. The launcher waits at most `--start-timeout` (default `30s`). The child-side
+startup flags must be supported by the compositor. By default the launcher
+prints the readiness JSON; `--env` (also `--export`) prints `NEFERWL_SESSION`
+and `WAYLAND_DISPLAY` assignments. Parent session targeting/display variables
+are removed from the child environment. The session bus address is removed
+unless `--dbus-session` is given. `session rm` is described below.

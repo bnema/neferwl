@@ -15,10 +15,13 @@ import (
 
 var sessionCmd = Command{
 	Name:    "session",
-	Args:    "ls [--json]",
-	Summary: "List live compositor sessions.",
+	Args:    "new|ls [flags]",
+	Summary: "Create or list compositor sessions.",
 	Setup: func(*flag.FlagSet) Runner {
-		return func(_ context.Context, env Env, args []string) error {
+		return func(ctx context.Context, env Env, args []string) error {
+			if len(args) > 0 && args[0] == "new" {
+				return sessionNew(ctx, env, args[1:])
+			}
 			if len(args) == 0 || args[0] != "ls" {
 				return usagef("expected session ls")
 			}
