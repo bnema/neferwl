@@ -17,6 +17,16 @@ func (c *Core) virtualPointer(ctx context.Context, v ports.VirtualPointerInput) 
 	if c.security.Protected || v.State.Protected || c.opts.Security != nil && v.State != c.security {
 		return nil
 	}
+	// Keep every event associated with its bound output, not just absolute
+	// motion. A paired release must still unwind held buttons and grabs if
+	// the output disappeared after the press.
+	r, available := c.virtualArea(v.Output)
+	if v.Output != "" && !available {
+		e, release := v.Event.(ports.PointerButton)
+		if !release || e.Pressed || !c.buttons[e.Button] {
+			return nil
+		}
+	}
 	if err := c.userActivity(ctx); err != nil {
 		return err
 	}
@@ -25,8 +35,7 @@ func (c *Core) virtualPointer(ctx context.Context, v ports.VirtualPointerInput) 
 	switch e := v.Event.(type) {
 	case ports.PointerMotion:
 		if v.Absolute {
-			r, ok := c.virtualArea(v.Output)
-			if !ok {
+			if !available {
 				return nil
 			}
 			// FX, FY may reach 1 (x == extent): clamp onto the last pixel.
@@ -67,10 +76,14 @@ func (c *Core) virtualPointer(ctx context.Context, v ports.VirtualPointerInput) 
 }
 
 // virtualArea is the rectangle absolute virtual motion maps into: the named
-// output, else the bounds of every reachable output.
+// output if reachable, or the bounds of every reachable output when unbound.
+// An unavailable named output must never fall back to the live desktop.
 func (c *Core) virtualArea(output string) (Rect, bool) {
-	if i := c.screenIndex(output); output != "" && i >= 0 && !c.screens[i].isolated {
-		return c.screens[i].rect(), true
+	if output != "" {
+		if i := c.screenIndex(output); i >= 0 && !c.screens[i].isolated {
+			return c.screens[i].rect(), true
+		}
+		return Rect{}, false
 	}
 	var r Rect
 	found := false

@@ -293,6 +293,7 @@ func (p *virtualPointer) Frame(*wlrvirtualpointer.ZwlrVirtualPointerV1) {
 			}
 		}
 		v.State = state
+		v.Output = p.output
 		p.server.emit(v)
 	}
 	p.reset()
@@ -327,7 +328,7 @@ func (p *virtualPointer) release() {
 	now := time.Duration(ts.Nano())
 	state := p.server.securityState()
 	for b := range p.forwarded {
-		p.server.emit(ports.VirtualPointerInput{State: state, Event: ports.PointerButton{Device: p.device, Button: b, Time: now}})
+		p.server.emit(ports.VirtualPointerInput{State: state, Output: p.output, Event: ports.PointerButton{Device: p.device, Button: b, Time: now}})
 	}
 	clear(p.forwarded)
 	p.dead = true

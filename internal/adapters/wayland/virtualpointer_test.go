@@ -106,6 +106,14 @@ func TestVirtualPointerAbsolute(t *testing.T) {
 			if !got.Absolute || got.FX != 0.25 || got.FY != 0.25 || got.Output != want {
 				t.Fatalf("absolute %+v", got)
 			}
+			requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestMotion, uint32(2), fixed(5), fixed(3))
+			requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestButton, uint32(2), uint32(0x110), uint32(1))
+			requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestFrame)
+			for _, event := range virtualEvents(t, c, events, 2) {
+				if event.Output != want {
+					t.Fatalf("lost output association: %+v", event)
+				}
+			}
 		})
 	}
 }
