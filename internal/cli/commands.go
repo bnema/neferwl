@@ -61,7 +61,8 @@ var stateCmd = Command{
 	Name:    "state",
 	Args:    "[output-of <pid>]",
 	Summary: "Print the session state, or the output showing a process's window, as JSON.",
-	Setup: func(*flag.FlagSet) Runner {
+	Setup: func(fs *flag.FlagSet) Runner {
+		target := addTargetFlag(fs)
 		return func(ctx context.Context, env Env, args []string) error {
 			pid := 0
 			switch {
@@ -76,9 +77,11 @@ var stateCmd = Command{
 				return usagef("unexpected arguments: %v", args)
 			}
 			if pid == 0 {
-				if c, err := dialControl(os.Getenv); err == nil {
+				if c, err := dialControl(os.Getenv, *target); err == nil {
 					defer c.conn.Close()
 					return printControl(ctx, env, c, map[string]any{"op": "query", "what": "state"})
+				} else if *target != "" || os.Getenv("NEFERWL_SESSION") != "" {
+					return err
 				}
 			}
 			path := os.Getenv(statefile.Env)

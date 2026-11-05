@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/sessiondir"
 	"github.com/bnema/neferwl/internal/domain"
 )
 
@@ -25,14 +25,19 @@ type controlClient struct {
 
 type controlResponse map[string]json.RawMessage
 
-func dialControl(env func(string) string) (*controlClient, error) {
-	path := env("NEFERWL_CONTROL")
-	if path == "" {
-		runtime, display := env("XDG_RUNTIME_DIR"), env("WAYLAND_DISPLAY")
-		if runtime == "" || display == "" {
-			return nil, errors.New("NEFERWL_CONTROL or XDG_RUNTIME_DIR and WAYLAND_DISPLAY must be set")
+func dialControl(env func(string) string, target ...string) (*controlClient, error) {
+	id := ""
+	if len(target) > 0 {
+		id = target[0]
+	}
+	path, err := resolveControl(id, env, func() ([]sessiondir.Meta, error) {
+		if env("XDG_RUNTIME_DIR") == "" {
+			return nil, nil
 		}
-		path = filepath.Join(runtime, "neferwl", display+".control.sock")
+		return sessiondir.List(env("XDG_RUNTIME_DIR"))
+	})
+	if err != nil {
+		return nil, err
 	}
 	conn, err := net.Dial("unix", path)
 	if err != nil {
@@ -104,6 +109,7 @@ func printControl(ctx context.Context, env Env, c *controlClient, req map[string
 var doCmd = Command{
 	Name: "do", Args: "<action> [arg...] [flags]", Summary: "Run a compositor action over the control socket.",
 	Setup: func(fs *flag.FlagSet) Runner {
+		target := addTargetFlag(fs)
 		wait := fs.String("wait", "settled", "Completion level: committed, settled or presented.")
 		until := fs.String("until", "", "State predicate to wait for.")
 		timeout := fs.Duration("timeout", 10*time.Second, "Maximum completion wait.")
@@ -150,7 +156,7 @@ var doCmd = Command{
 			if *timeout <= 0 {
 				return usagef("timeout must be positive")
 			}
-			c, err := dialControl(os.Getenv)
+			c, err := dialControl(os.Getenv, *target)
 			if err != nil {
 				return err
 			}
@@ -166,12 +172,13 @@ var doCmd = Command{
 
 var queryCmd = Command{
 	Name: "query", Args: "state", Summary: "Query the compositor over the control socket.",
-	Setup: func(*flag.FlagSet) Runner {
+	Setup: func(fs *flag.FlagSet) Runner {
+		target := addTargetFlag(fs)
 		return func(ctx context.Context, env Env, args []string) error {
 			if len(args) != 1 || args[0] != "state" {
 				return usagef("expected state")
 			}
-			c, err := dialControl(os.Getenv)
+			c, err := dialControl(os.Getenv, *target)
 			if err != nil {
 				return err
 			}
