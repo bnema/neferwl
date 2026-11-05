@@ -16,6 +16,7 @@ type pipes struct {
 	securityChanges chan domain.SecurityState
 	securityEvents  chan ports.SecurityBackendEvent
 
+	control  chan ports.ControlRequest
 	client   chan ports.ClientEvent
 	input    chan ports.InputEvent
 	output   chan ports.OutputEvent
@@ -152,6 +153,7 @@ func newPipes(realSession, hint bool) *pipes {
 // flag are not channels; assembleSession passes them as core.Options.
 func (p *pipes) core() core.Channels {
 	return core.Channels{
+		Control:      p.control,
 		Client:       p.client,
 		Input:        p.input,
 		Output:       p.output,

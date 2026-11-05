@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/config"
+	"github.com/bnema/neferwl/internal/adapters/control"
 	"github.com/bnema/neferwl/internal/adapters/directseat"
 	"github.com/bnema/neferwl/internal/adapters/drm"
 	"github.com/bnema/neferwl/internal/adapters/drm/supervisor"
@@ -66,6 +68,7 @@ type session struct {
 	wsIDs        *workspaceid.IDs
 	captureAllow *captureallow.Store
 	cast         *screencast.Service // nil without the D-Bus services
+	control      *control.Server
 	server       *wayland.Server
 	childEnv     []string
 	statePath    string
@@ -91,7 +94,7 @@ const (
 //
 // Invariant: wayland.New is the last fallible step. *wayland.Server has no
 // Close: its sockets are released only by Server.Run. Every later step
-// (statefile.Path, openXwayland, launcher.New, newCursors) degrades with a
+// (control.Listen, statefile.Path, openXwayland, launcher.New, newCursors) degrades with a
 // warning or nil instead of failing. A failure releases the DRM backend,
 // keymap and Vulkan resources (abort).
 func assembleSession(ctx context.Context, opts Options) (s *session, err error) {
@@ -127,6 +130,9 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	s.dmabuf = s.gpu.DMABuf()
 	log.Info().Int("formats", len(s.dmabuf.Formats)).Msg("dmabuf")
 	s.p = newPipes(s.plan.PersistScales, opts.Config.Hint.Enable)
+	if opts.Backend == "headless" {
+		s.p.control = make(chan ports.ControlRequest, 32)
+	}
 	// core() carries channels only; the gate, clock and terminal flag are
 	// explicit core.Options.
 	if s.core, err = core.New(opts.Config, s.p.core(), core.Options{Security: s.security, Clock: s.clock, Tokens: launcher.Tokens{}, Terminal: !opts.NoTerminal && s.plan.AutoTerminal != core.AutoTerminalOff, HintDisabled: hintDisabledNote(ctx), PlaceVirtuals: !s.plan.IsolateVirtuals}); err != nil {
@@ -182,8 +188,20 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	}, s.p.wayland(), logging.For(ctx, "wayland")); err != nil {
 		return s, err
 	}
-	log.Info().Str("WAYLAND_DISPLAY", s.server.SocketName()).Msg("listening")
 	s.childEnv = launcher.ChildEnv(os.Environ(), s.server.SocketName(), runtimeDir, xcursor.CursorSize())
+	controlPath := ""
+	if opts.Backend == "headless" {
+		path := filepath.Join(runtimeDir, "neferwl", s.server.SocketName()+".control.sock")
+		if listener, err := control.Listen(path, s.wsIDs); err != nil {
+			log.Warn().Err(err).Msg("control socket disabled")
+		} else {
+			s.control = listener
+			controlPath = path
+			s.childEnv = append(s.childEnv, "NEFERWL_CONTROL="+path)
+		}
+	}
+	log.Info().Str("WAYLAND_DISPLAY", s.server.SocketName()).Str("control", controlPath).Msg("listening")
+
 	statePath, serr := statefile.Path(runtimeDir, s.server.SocketName())
 	if serr != nil {
 		log.Warn().Err(serr).Msg("state file disabled")
@@ -228,6 +246,9 @@ func (s *session) abort() {
 // Server.Run own them.
 func (s *session) close() {
 	s.curs.Stop()
+	if s.control != nil {
+		_ = s.control.Close()
+	}
 	if s.xdisplay != nil {
 		s.xdisplay.Close()
 	}
@@ -266,7 +287,11 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	}
 	var workers sync.WaitGroup
 	workers.Add(8)
-	done := make(chan error, 8)
+	done := make(chan error, 9)
+	if s.control != nil {
+		workers.Add(1)
+		go func() { defer workers.Done(); done <- s.control.Run(ctx, p.control) }()
+	}
 	go func() {
 		defer workers.Done()
 		done <- config.Watch(ctx, path, p.watched, logging.For(ctx, "config"))
