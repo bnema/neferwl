@@ -138,10 +138,16 @@ func build(p Placement, t configureTarget, old ports.ConfigureWindow, ok bool) p
 	return v
 }
 
-// mark assigns a serial and records v for immediate delivery.
-func (s *configures) mark(v ports.ConfigureWindow) ports.ConfigureWindow {
+// stamp assigns v its serial; mark records it once it was sent. A failed
+// send records nothing, so the next publish sends the configure again.
+func (s *configures) stamp(v ports.ConfigureWindow) ports.ConfigureWindow {
 	s.serial++
 	v.Serial = s.serial
+	return v
+}
+
+// mark records a sent v and whether its commit is still awaited.
+func (s *configures) mark(v ports.ConfigureWindow) {
 	if v.Visible || v.Captured {
 		s.pending[v.ID] = v.Serial
 	} else {
@@ -149,7 +155,6 @@ func (s *configures) mark(v ports.ConfigureWindow) ports.ConfigureWindow {
 	}
 	s.sent[v.ID] = v
 	delete(s.answer, v.ID)
-	return v
 }
 
 // keep marks id as seen without a configure: a window drawn while it leaves
