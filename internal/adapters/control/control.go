@@ -7,12 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -300,7 +297,7 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 		mode := domain.OutputMode{}
 		if req.Op == "output-add" {
 			var err error
-			mode, err = parseOutputMode(req.Mode)
+			mode, err = domain.ParseOutputMode(req.Mode)
 			if err != nil {
 				return response
 			}
@@ -438,25 +435,6 @@ func requestShots(req request) ([]domain.ShotRequest, error) {
 		shots = append(shots, domain.ShotRequest{Output: output})
 	}
 	return shots, nil
-}
-
-func parseOutputMode(text string) (domain.OutputMode, error) {
-	size, refresh, has := strings.Cut(text, "@")
-	w, h, ok := strings.Cut(size, "x")
-	if !ok {
-		return domain.OutputMode{}, errors.New("invalid mode")
-	}
-	width, e1 := strconv.Atoi(w)
-	height, e2 := strconv.Atoi(h)
-	hz := 60.0
-	var err error
-	if has {
-		hz, err = strconv.ParseFloat(refresh, 64)
-	}
-	if e1 != nil || e2 != nil || err != nil || width < 1 || width > 16384 || height < 1 || height > 16384 || hz <= 0 || hz > 1000 || math.IsNaN(hz) {
-		return domain.OutputMode{}, errors.New("invalid mode")
-	}
-	return domain.OutputMode{Width: width, Height: height, RefreshMilli: int(math.Round(hz * 1000))}, nil
 }
 
 func (s *Server) continuousCapture(ctx context.Context, req request) reply {

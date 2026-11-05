@@ -30,7 +30,7 @@ func TestOutputDispatch(t *testing.T) {
 			}
 		}
 		for _, mode := range []string{"bad", "0x2", "2x3@NaN", "2x3@Inf"} {
-			if _, err := parseOutputMode(mode); err == nil {
+			if _, err := domain.ParseOutputMode(mode); err == nil {
 				t.Fatal(mode)
 			}
 		}
