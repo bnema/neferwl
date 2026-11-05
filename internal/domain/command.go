@@ -194,11 +194,11 @@ type Until struct {
 func ParseUntil(s string) (Until, error) {
 	fields := strings.Fields(s)
 	if len(fields) != 2 {
-		return Until{}, fmt.Errorf("invalid until predicate %q", s)
+		return Until{}, fmt.Errorf("invalid until predicate %q (%s)", s, untilSyntax)
 	}
 	key, value, ok := strings.Cut(fields[1], "=")
 	if !ok || value == "" {
-		return Until{}, fmt.Errorf("invalid until selector %q", fields[1])
+		return Until{}, fmt.Errorf("invalid until selector %q (%s)", fields[1], untilSyntax)
 	}
 	switch fields[0] {
 	case "window-mapped", "focused":
@@ -217,8 +217,10 @@ func ParseUntil(s string) (Until, error) {
 			}
 		}
 	}
-	return Until{}, fmt.Errorf("invalid until predicate %q", s)
+	return Until{}, fmt.Errorf("invalid until predicate %q (%s)", s, untilSyntax)
 }
+
+const untilSyntax = "want 'window-mapped app_id=<id>', 'focused app_id=<id>' or 'unmapped id=<n>'"
 
 // Holds evaluates transitions since before; focus is an absolute predicate.
 func (u Until) Holds(before, s State) bool {

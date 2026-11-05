@@ -2,6 +2,7 @@ package domain
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -102,9 +103,11 @@ func TestUntil(t *testing.T) {
 			}
 		})
 	}
-	for _, text := range []string{"", "idle", "focused", "focused id=12", "window-mapped app_id=", "unmapped app_id=x", "unmapped id=0", "unmapped id=-1", "unmapped id=18446744073709551616", "unmapped id=x", "focused app_id=x extra"} {
+	for _, text := range []string{"", "idle", "focused", "focused id=12", "window-mapped", "window-mapped app_id=", "unmapped", "unmapped app_id=x", "unmapped id=0", "unmapped id=-1", "unmapped id=18446744073709551616", "unmapped id=x", "focused app_id=x extra"} {
 		if _, err := ParseUntil(text); err == nil {
 			t.Errorf("accepted %q", text)
+		} else if !strings.Contains(err.Error(), "want 'window-mapped app_id=<id>'") {
+			t.Errorf("%q: error %v lacks the syntax", text, err)
 		}
 	}
 	for _, u := range []Until{{}, {Kind: UntilFocused}, {Kind: UntilUnmapped}, {Kind: UntilKind(99)}} {
