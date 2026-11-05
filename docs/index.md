@@ -6,6 +6,6 @@ NeferWL is a small Wayland compositor in Go. Start with Configuration to set up 
 - [Desktop integration](desktop.md): sessions, clipboard, input methods, X11 apps, session locking and scripting.
 - [Screen capture](capture.md): protocols, indicator, executable allowlist and portals.
 - [Performance](performance.md): resource use, VRR and real-time priority.
-- [Game server](server.md): `--backend=server` on a headless machine, streaming with Sunshine.
+- [Game server](server.md): the persistent headless profile on a machine without a screen, streaming with Sunshine and driven by agents.
 
 Developer documentation: [docs/dev](dev/index.md)
