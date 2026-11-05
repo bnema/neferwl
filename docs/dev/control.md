@@ -27,8 +27,9 @@ this protection.
 
 ## Messages
 
-Messages are JSON lines: one JSON object followed by a newline. Requests carry
-an `id`, echoed in the reply so clients can correlate requests and responses.
+Messages are JSON lines: one JSON object followed by a newline. A request may
+carry an `id`; the reply echoes it, or `null` when it is missing or the line is
+not valid JSON.
 The handshake advertises the protocol version, capabilities and command catalog:
 
 ```json
@@ -37,8 +38,7 @@ The handshake advertises the protocol version, capabilities and command catalog:
 ```
 
 Each command entry has `name`, `arg`, `kind`, `caps` and `summary`; the
-ellipsis stands for those entries. Every request needs an `id`: a request
-without one is answered with `bad-request` and `"id":null`.
+ellipsis stands for those entries.
 
 Additive changes keep `v: 1`. Clients tolerate additional fields and use the
 advertised capabilities and commands to discover supported operations.
