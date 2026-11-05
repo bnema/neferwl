@@ -116,3 +116,27 @@ func awaitControlScene(t *testing.T, scenes <-chan []domain.Scene, done <-chan e
 		}
 	}
 }
+
+// awaitSceneOutputs waits for a scene set covering n outputs: core then
+// knows all of them.
+//
+//testpolicy:realtime real compositor output readiness
+func awaitSceneOutputs(t *testing.T, scenes <-chan []domain.Scene, done <-chan error, n int) {
+	t.Helper()
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case set := <-scenes:
+			if len(set) >= n {
+				return
+			}
+		case err := <-done:
+			if err != nil && strings.Contains(strings.ToLower(err.Error()), "vulkan") {
+				t.Skip(err)
+			}
+			t.Fatalf("app exited: %v", err)
+		case <-deadline:
+			t.Fatalf("no scene set with %d outputs", n)
+		}
+	}
+}

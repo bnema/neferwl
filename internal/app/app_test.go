@@ -475,7 +475,9 @@ func TestHeadlessTwoOutputs(t *testing.T) {
 	go func() {
 		done <- Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), PlanOverrides: noTerminal(), Sizes: [][2]int{{640, 480}, {320, 240}}, Timeout: 2 * time.Second, testScenes: scenes})
 	}()
-	awaitControlScene(t, scenes, done, 0)
+	// Core must know both outputs before it plans the recording: with one,
+	// frames go to shots itself, not to a subdirectory per output.
+	awaitSceneOutputs(t, scenes, done, 2)
 	client := dialTestControl(t, os.Getenv("XDG_RUNTIME_DIR"))
 	if err := client.call(map[string]any{"op": "shot", "every_frame": true, "dir": shots}); err != nil {
 		t.Fatal(err)
