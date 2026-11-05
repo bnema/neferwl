@@ -12,11 +12,11 @@ import (
 
 func TestResolveControl(t *testing.T) {
 	runtime := t.TempDir()
+	// A <display>.control.sock beside the sessions is not a target.
 	if err := os.Mkdir(filepath.Join(runtime, "neferwl"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	derived := filepath.Join(runtime, "neferwl", "legacy.control.sock")
-	if err := os.WriteFile(derived, nil, 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(runtime, "neferwl", "legacy.control.sock"), nil, 0600); err != nil {
 		t.Fatal(err)
 	}
 	sessions := []sessiondir.Meta{{ID: "b", Wayland: "wayland-b", Control: "/b"}, {ID: "a", Wayland: "wayland-a", Control: "/a"}}
@@ -29,7 +29,7 @@ func TestResolveControl(t *testing.T) {
 		{"session", "", map[string]string{"NEFERWL_SESSION": "b", "NEFERWL_CONTROL": "/override"}, "/b", ""},
 		{"path", "", map[string]string{"NEFERWL_CONTROL": "/override", "WAYLAND_DISPLAY": "wayland-b"}, "/override", ""},
 		{"display", "", map[string]string{"WAYLAND_DISPLAY": "wayland-a"}, "/a", ""},
-		{"legacy", "", map[string]string{"XDG_RUNTIME_DIR": runtime, "WAYLAND_DISPLAY": "legacy"}, derived, ""},
+		{"legacy", "", map[string]string{"XDG_RUNTIME_DIR": runtime, "WAYLAND_DISPLAY": "legacy"}, "", "no control target"},
 		{"unknown", "missing", map[string]string{"NEFERWL_CONTROL": "/override"}, "", "live sessions: a, b"},
 		{"invalid", "../a", nil, "", "invalid session id"},
 		{"none", "", nil, "", "live sessions: a, b"},
@@ -71,7 +71,7 @@ func TestControlTargetFlag(t *testing.T) {
 	if err := d.WriteMeta(sessiondir.Meta{ID: "chosen", Control: filepath.Join(d.Path(), "selected.sock")}); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"-s", "chosen", "query", "state"}, {"query", "-s", "chosen", "state"}, {"do", "-s", "chosen", "none"}, {"state", "-s", "chosen"}} {
+	for _, args := range [][]string{{"-s", "chosen", "query", "state"}, {"query", "-s", "chosen", "state"}, {"do", "-s", "chosen", "none"}, {"do", "focus-workspace", "2", "-s", "chosen"}, {"do", "focus-workspace", "2", "-s=chosen"}, {"key", "Super+q", "-s", "chosen"}, {"state", "-s", "chosen"}} {
 		code, _, stderr := execute(t, args...)
 		if code != 1 || !strings.Contains(stderr, "selected.sock") {
 			t.Fatalf("%v: %d %s", args, code, stderr)

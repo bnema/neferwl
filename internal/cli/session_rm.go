@@ -56,12 +56,7 @@ func sessionRemove(ctx context.Context, env Env, args []string) error {
 		return err
 	}
 	defer lock.Close()
-	c, err := dialControl(func(k string) string {
-		if k == "NEFERWL_CONTROL" {
-			return meta.Control
-		}
-		return ""
-	})
+	c, err := dialPath(meta.Control)
 	if err == nil {
 		reply, callErr := c.call(ctx, map[string]any{"op": "do", "action": "quit", "wait": "committed"})
 		c.conn.Close()

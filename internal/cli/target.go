@@ -3,8 +3,6 @@ package cli
 import (
 	"flag"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -49,12 +47,6 @@ func resolveControl(flagS string, env func(string) string, list func() ([]sessio
 		for _, s := range sessions {
 			if s.Wayland == display && s.Control != "" {
 				return s.Control, nil
-			}
-		}
-		if runtime := env("XDG_RUNTIME_DIR"); runtime != "" {
-			path := filepath.Join(runtime, "neferwl", display+".control.sock")
-			if _, err := os.Stat(path); err == nil {
-				return path, nil
 			}
 		}
 	}
