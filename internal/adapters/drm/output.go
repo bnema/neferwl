@@ -1493,6 +1493,8 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 			if o.protected || !enabled || o.off || o.wantOff {
 				refuse = capture.ErrOutputOff
 			}
+			// MinSeq presentation fencing is headless-only for now.
+			q.MinSeq = 0
 			dirty = requests.Admit(q, refuse, scene, haveScene) || dirty
 		case ack := <-o.ping:
 			close(ack)

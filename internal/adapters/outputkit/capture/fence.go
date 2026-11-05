@@ -138,7 +138,7 @@ func (p *Pipeline) Hold(s domain.Scene, reqs []domain.CaptureRequest, now time.T
 	reqs, _ = p.Expire(s, reqs, now)
 	j := 0
 	for i := range reqs {
-		if IndicatorShown(s, reqs[i]) {
+		if s.Seq >= reqs[i].MinSeq && IndicatorShown(s, reqs[i]) {
 			reqs[i], reqs[j] = reqs[j], reqs[i]
 			j++
 		}
@@ -153,7 +153,7 @@ func (p *Pipeline) Hold(s domain.Scene, reqs []domain.CaptureRequest, now time.T
 func Waiting(reqs []domain.CaptureRequest, s domain.Scene) []domain.CaptureRequest {
 	n := 0
 	for _, q := range reqs {
-		if !Handed(q) && !IndicatorShown(s, q) {
+		if !Handed(q) && (s.Seq < q.MinSeq || !IndicatorShown(s, q)) {
 			reqs[n] = q
 			n++
 		}

@@ -10,6 +10,9 @@ import (
 // Dst.File, Mapped or DMABuf (OneDestination); only an internal request the
 // output handed to its worker has none.
 type CaptureRequest struct {
+	// MinSeq holds headless captures until this scene sequence is presented.
+	// Zero preserves ordinary capture behavior; DRM currently ignores it.
+	MinSeq                uint64
 	ID                    uint64
 	Output                string
 	Region                image.Rectangle // clipped output buffer coordinates
