@@ -29,14 +29,14 @@ func TestOutputCommands(t *testing.T) {
 				}
 				defer conn.Close()
 				var req map[string]any
-				err = json.NewDecoder(conn).Decode(&req)
+				if err := json.NewDecoder(conn).Decode(&req); err != nil {
+					done <- err
+					return
+				}
 				if req["op"] != tc.op || req["name"] != tc.name {
 					t.Error(req)
 				}
-				if err == nil {
-					err = json.NewEncoder(conn).Encode(map[string]any{"id": req["id"], "ok": true})
-				}
-				done <- err
+				done <- json.NewEncoder(conn).Encode(map[string]any{"id": req["id"], "ok": true})
 			}()
 			code, _, stderr := execute(t, tc.args...)
 			if code != 0 {
