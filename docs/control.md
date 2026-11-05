@@ -183,4 +183,6 @@ comes once the state lists or drops it.
 - Only headless sessions have a control socket. On a DRM desktop, use the
   [state file](desktop.md#state-for-scripts) and Wayland tools.
 - Single shots are 8-bit sRGB; raw PQ is only available with `--every-frame`.
+- On a device without sync-file export (software Vulkan such as lavapipe, in
+  CI or VMs), shots are read back on the CPU: slower, same pixels.
 - At most 64 requests wait at once per session; more get `busy`.

@@ -211,7 +211,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 	requests.Init(ctx, opts.Captured)
 	pipeline := capture.NewPipeline(ctx, opts.Captured)
 	var captureCursor domain.CaptureCursor
-	pipeline.Security = opts.Security
+	pipeline.Security, pipeline.CPUReadback = opts.Security, true
 	if opts.NewCaptureRenderer != nil {
 		pipeline.EnableOffscreen(opts.NewCaptureRenderer)
 	}
@@ -415,7 +415,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			r.Close()
 			r = next
 			pipeline = capture.NewPipeline(ctx, opts.Captured)
-			pipeline.Security = opts.Security
+			pipeline.Security, pipeline.CPUReadback = opts.Security, true
 			if opts.NewCaptureRenderer != nil {
 				pipeline.EnableOffscreen(opts.NewCaptureRenderer)
 			}
@@ -461,7 +461,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 				r.Close()
 				r = next
 				pipeline = capture.NewPipeline(ctx, opts.Captured)
-				pipeline.Security = opts.Security
+				pipeline.Security, pipeline.CPUReadback = opts.Security, true
 				if opts.NewCaptureRenderer != nil {
 					pipeline.EnableOffscreen(opts.NewCaptureRenderer)
 				}
