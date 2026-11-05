@@ -81,7 +81,7 @@ func (l *lockSurface) AckConfigure(r *extsessionlock.ExtSessionLockSurfaceV1, se
 	for i, c := range l.serials {
 		if c.serial == serial {
 			l.ack = c
-			l.serials = l.serials[i+1:]
+			l.serials = l.serials[:copy(l.serials, l.serials[i+1:])]
 			return
 		}
 	}

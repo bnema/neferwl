@@ -337,7 +337,7 @@ func (x *xdgSurface) SetWindowGeometry(r *xdgshell.Surface, gx, gy, gw, gh int32
 func (x *xdgSurface) AckConfigure(r *xdgshell.Surface, serial uint32) {
 	for i, issued := range x.serials {
 		if issued.wire == serial {
-			x.serials = x.serials[i+1:]
+			x.serials = x.serials[:copy(x.serials, x.serials[i+1:])]
 			x.acked = true
 			x.ackedCore = issued.core
 			return
