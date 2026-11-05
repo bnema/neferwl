@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,7 +50,8 @@ func TestServerVirtualOutput(t *testing.T) {
 	select {
 	case input = <-inputReady:
 	case err := <-done:
-		if errors.Is(err, core.ErrNoRenderNode) || (err != nil && strings.Contains(strings.ToLower(err.Error()), "vulkan")) {
+		// Containers without /sys/class/drm or a GPU cannot run the server backend.
+		if errors.Is(err, core.ErrNoRenderNode) || errors.Is(err, fs.ErrNotExist) || (err != nil && strings.Contains(strings.ToLower(err.Error()), "vulkan")) {
 			t.Skipf("no hardware render device: %v", err)
 		}
 		t.Fatalf("app exited: %v", err)
