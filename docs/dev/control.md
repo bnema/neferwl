@@ -47,11 +47,31 @@ advertised capabilities and commands to discover supported operations.
 | `hello` | Discover version, capabilities and commands. |
 | `do` | Run an action from the bind catalog, with the same name and arguments as a keybind action. |
 | `query` | Read `state`, including windows, focus and outputs. |
-| `inject` | Send `key`, `type`, `pointer` or `swipe` input through the core input path; compositor keybinds work too. |
+| `inject` | Send keys, text, pointer or swipe input through the core input path; compositor keybinds work too. |
 | `shot` | Capture an output on demand; select the output by name. |
 
 The command catalog is the single source of action names. `do` does not invent a
 separate set of automation-only names.
+
+## Input requests
+
+`inject` selects a translator with `kind`:
+
+| `kind` | Fields | Meaning |
+|---|---|---|
+| `key` | `combo` | Press and release a key combination, such as `Super+Return`. |
+| `type` | `text` | Type text through the active keymap. |
+| `press`, `release` | `combo` | Press or release a combination. |
+| `pointer` | `cmd`, `args` | `move` takes absolute global logical `x`, `y` strings; `click`, `down`, `up` take a button name (`left`, `right`, `middle`). `click` defaults to left. |
+| `swipe` | `fingers`, `dir` | Swipe with a finger count and direction (`up`, `down`, `left`, `right`). |
+
+Input requests accept `wait`, `until` and `timeout` like actions:
+
+```json
+{"id":1,"op":"inject","kind":"key","combo":"Super+Return","wait":"settled","timeout":"5s"}
+{"id":2,"op":"inject","kind":"pointer","cmd":"move","args":["320","240"]}
+{"id":3,"op":"inject","kind":"swipe","fingers":4,"dir":"down"}
+```
 
 ## Act, wait, observe
 
@@ -90,14 +110,31 @@ Replies use this envelope (field names shown, not a literal reply):
 `id` correlates the reply; `ok` reports success and `done` reports completion.
 `diff` describes observed state changes, `state` carries queried state, `shots`
 contains capture results, and `late` identifies windows still outstanding.
-`error` describes a failure. Relevant results, including partial results on
+`error` is omitted on success and describes a failure otherwise. Relevant results, including partial results on
 timeout, travel in the same reply.
 
 ## Captures and errors
 
-A shot always writes a file and returns its path. `--inline` also includes the
-PNG as base64; it does not replace the file. `--raw` requests raw PQ capture
-rather than the normal image. Select an output with `--output <name>`.
+A single-shot request selects output names; an empty `outputs` list selects
+all outputs. `timeout` bounds completion:
+
+```json
+{"id":4,"op":"shot","outputs":["HEADLESS-1"],"inline":true,"raw":false,"timeout":"5s"}
+```
+
+Shots wait for presentation and write private PNG files. The reply’s `shots`
+array contains `{output, path, seq, png?}`: `seq` is the presented scene sequence,
+and `png` is base64 PNG data included only when `inline` is true. Inline data
+does not replace the file. For example:
+
+```json
+{"output":"HEADLESS-1","path":"/shots/7-HEADLESS-1.png","seq":7}
+```
+
+Select outputs with repeated `--output <name>` flags. Single shots are 8-bit
+sRGB; `raw:true` is rejected for them with `raw shots need --every-frame`.
+Raw 16-bit PQ captures use the continuous `--every-frame` writer, not the
+single-shot CLI flag set.
 
 | Error code | Meaning |
 |---|---|
@@ -110,8 +147,11 @@ rather than the normal image. Select an output with `--output <name>`.
 ## CLI
 
 `neferwl do <action>` maps to `do`; `neferwl query state` maps to `query`.
-`neferwl state` is an alias for `query state`. `neferwl key`, `type`, `pointer`
-and `swipe` map to `inject`; `neferwl shot` maps to `shot`.
+`neferwl state` is an alias for `query state`. `neferwl key`, `type`, `press`,
+`release`, `click`, `move` and `swipe` map to `inject`; `neferwl shot` maps to
+`shot`. `click` and `move` use the pointer injection kind. `neferwl pointer`
+also supports the Wayland virtual-pointer workflow described in the
+[server guide](../server.md#controlling-a-neferwl-session-agents).
 `neferwl session new|ls|rm` creates, lists and removes managed sessions.
 
 ```sh
