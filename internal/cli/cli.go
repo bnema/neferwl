@@ -33,7 +33,7 @@ type Command struct {
 // root runs the compositor; commands are the subcommands.
 var (
 	root     = Command{Args: "[flags]", Summary: "Run the compositor.", Setup: setupRun}
-	commands = []Command{validateConfigCmd, stateCmd, doCmd, queryCmd, pointerCmd, versionCmd}
+	commands = []Command{validateConfigCmd, stateCmd, doCmd, queryCmd, keyCmd, typeCmd, pressCmd, releaseCmd, clickCmd, moveCmd, swipeCmd, pointerCmd, versionCmd}
 )
 
 // Main runs the command line args (without the program name) and returns

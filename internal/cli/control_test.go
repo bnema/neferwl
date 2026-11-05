@@ -18,6 +18,13 @@ func TestControlCommands(t *testing.T) {
 		reject bool
 	}{
 		{"do", []string{"do", "focus-workspace", "2", "--wait", "committed", "--until", "window-mapped app_id=foot", "--timeout", "3s"}, map[string]string{"op": "do", "action": "focus-workspace 2", "wait": "committed", "until": "window-mapped app_id=foot", "timeout": "3s"}, false},
+		{"key", []string{"key", "Super+Return", "--wait", "committed", "--until", "window-mapped app_id=foot", "--timeout", "3s"}, map[string]string{"op": "inject", "kind": "key", "combo": "Super+Return", "wait": "committed", "until": "window-mapped app_id=foot", "timeout": "3s"}, false},
+		{"type", []string{"type", "hello world"}, map[string]string{"op": "inject", "kind": "type", "text": "hello world"}, false},
+		{"press", []string{"press", "Super"}, map[string]string{"op": "inject", "kind": "press", "combo": "Super"}, false},
+		{"release", []string{"release", "Super"}, map[string]string{"op": "inject", "kind": "release", "combo": "Super"}, false},
+		{"click", []string{"click", "right"}, map[string]string{"op": "inject", "kind": "pointer", "cmd": "click"}, false},
+		{"move", []string{"move", "12.5", "-3"}, map[string]string{"op": "inject", "kind": "pointer", "cmd": "move"}, false},
+		{"swipe", []string{"swipe", "4", "up"}, map[string]string{"op": "inject", "kind": "swipe", "dir": "up"}, false},
 		{"query", []string{"query", "state"}, map[string]string{"op": "query", "what": "state"}, false},
 		{"state", []string{"state"}, map[string]string{"op": "query", "what": "state"}, false},
 		{"error", []string{"do", "missing"}, map[string]string{"op": "do", "action": "missing", "wait": "settled", "timeout": "10s"}, true},
