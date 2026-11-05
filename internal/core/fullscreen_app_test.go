@@ -359,10 +359,33 @@ func TestFullscreenLauncherArrivalMappedFullscreen(t *testing.T) {
 }
 
 // On a remote keep-focus output the child advances there; the seat stays.
+//
+// With stash.capture on and the desktop stash shown on the focused output,
+// the tv launch still goes to tv: the desktop stash is left as it was.
 func TestFullscreenLauncherArrivalRemote(t *testing.T) {
+	for _, capture := range []bool{false, true} {
+		t.Run(fmt.Sprintf("desktop-stash-capture=%v", capture), func(t *testing.T) {
+			runLauncherArrivalRemote(t, capture)
+		})
+	}
+}
+
+func runLauncherArrivalRemote(t *testing.T, capture bool) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _ := fadeCore(t)
 		c.clientEvent(context.Background(), ports.WindowMapped{ID: 9, AppID: "kitty"})
+		desktop := c.cur()
+		dw := desktop.mon.Current()
+		if capture {
+			desktop.mon.SetStashCapture(true)
+			c.clientEvent(context.Background(), ports.WindowMapped{ID: 8, AppID: "notes"})
+			dw.FocusID(8)
+			dw.ToggleWindowStash()
+			if !dw.StashShown() || dw.StashIndex(8) < 0 || !desktop.mon.captures(dw) {
+				t.Fatalf("setup: desktop stash %+v shown %v", dw.Stash, dw.StashShown())
+			}
+		}
+		stash := slices.Clone(dw.Stash)
 		c.addScreen(domain.OutputInfo{Name: "tv", Virtual: true, Width: 640, Height: 360})
 		target := c.screens[c.screenIndex("tv")]
 		c.cfg.Outputs = []domain.OutputConfig{{Name: "tv", KeepFocus: true}}
@@ -383,6 +406,9 @@ func TestFullscreenLauncherArrivalRemote(t *testing.T) {
 		}
 		if c.focusScreen != seat || c.keyboardFocus() != keyboard || c.pointer != pointer {
 			t.Fatal("remote arrival changed seat")
+		}
+		if dw.Has(2) || !slices.Equal(dw.Stash, stash) || dw.StashShown() != capture {
+			t.Fatalf("desktop stash changed: %+v (was %+v) shown %v", dw.Stash, stash, dw.StashShown())
 		}
 	})
 }
