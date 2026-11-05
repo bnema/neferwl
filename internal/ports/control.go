@@ -57,6 +57,9 @@ type ControlReply struct {
 
 func (ControlReply) controlReply() {}
 
+// ControlReply implements its seal so the method counts as used.
+var _ interface{ controlReply() } = ControlReply{}
+
 // Control error codes describe rejected requests.
 const (
 	ControlErrUnknownCommand = "unknown-command"
