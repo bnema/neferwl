@@ -7,9 +7,9 @@ import (
 )
 
 func TestPlanBackend(t *testing.T) {
-	drm := BackendPlan{KMS: true, RequireRenderNode: true, FixedHeads: HeadsConnectors, IsolateVirtuals: true, Input: InputLibinputLibseat, SessionDBus: SessionDBusAlways, LogindPowerKeys: true, PersistScales: true, AutoTerminal: AutoTerminalConfig}
-	ephemeral := BackendPlan{FixedHeads: HeadsSized, IsolateVirtuals: true, SessionDBus: SessionDBusFlagOnly, AutoTerminal: AutoTerminalConfigOrFlag}
-	persistent := BackendPlan{RequireRenderNode: true, FixedHeads: HeadsNone, Input: InputLibinputDirect, SessionDBus: SessionDBusAlways, PersistScales: true, AutoTerminal: AutoTerminalOff}
+	drm := BackendPlan{KMS: true, RequireRenderNode: true, FixedHeads: HeadsConnectors, IsolateVirtuals: true, Input: InputLibinputLibseat, SessionDBus: SessionDBusAlways, LogindPowerKeys: true, PersistScales: true, AutoTerminal: true}
+	ephemeral := BackendPlan{FixedHeads: HeadsSized, IsolateVirtuals: true, SessionDBus: SessionDBusFlagOnly, AutoTerminal: true, Control: true}
+	persistent := BackendPlan{RequireRenderNode: true, FixedHeads: HeadsNone, Input: InputLibinputDirect, SessionDBus: SessionDBusAlways, PersistScales: true, Control: true}
 	for _, b := range []domain.Backend{domain.BackendDRM, domain.BackendHeadless, "server", "bogus"} {
 		for _, p := range []domain.Profile{domain.ProfileEphemeral, domain.ProfilePersistent} {
 			base := BackendPlan{}
@@ -39,14 +39,11 @@ func TestPlanBackend(t *testing.T) {
 					if dbus {
 						want.SessionDBus = SessionDBusAlways
 					}
-					want.AutoTerminal = AutoTerminalOff
-					if terminal {
-						want.AutoTerminal = AutoTerminalConfigOrFlag
-					}
+					want.AutoTerminal = terminal
 					want.Input = input
 				}
 				if b == domain.BackendDRM && !terminal {
-					want.AutoTerminal = AutoTerminalOff
+					want.AutoTerminal = false
 				}
 				if got := PlanBackend(b, p, overrides); got != want {
 					t.Fatalf("%s/%s override %d: %+v want %+v", b, p, bits, got, want)

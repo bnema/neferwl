@@ -35,10 +35,6 @@ type Options struct {
 	// Session exports the displays to D-Bus and systemd user services
 	// before any client starts, and withdraws them on exit.
 	Session bool
-	// DBus serves the session D-Bus services (idle inhibition, screen
-	// casting and screenshots) of a headless run, which otherwise leaves the
-	// session bus alone. For tests under dbus-run-session.
-	DBus bool
 	// Sizes are headless outputs (width, height), left to right; empty
 	// means one 1920x1080 output.
 	Sizes      [][2]int

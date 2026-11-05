@@ -28,14 +28,6 @@ const (
 	SessionDBusAlways                          // always
 )
 
-// AutoTerminalMode tells when a terminal is spawned at startup.
-type AutoTerminalMode uint8
-
-const (
-	AutoTerminalOff          AutoTerminalMode = iota // never
-	AutoTerminalConfig                               // per config
-	AutoTerminalConfigOrFlag                         // per config, overridable by flag
-)
 
 // BackendPlan is the per-backend decision table consumed by wiring.
 type BackendPlan struct {
@@ -47,7 +39,11 @@ type BackendPlan struct {
 	SessionDBus       SessionDBusMode
 	LogindPowerKeys   bool
 	PersistScales     bool
-	AutoTerminal      AutoTerminalMode
+	// AutoTerminal spawns the configured terminal at startup.
+	AutoTerminal bool
+	// Control registers the run in the session registry and serves the
+	// control socket with its request, runtime output and capture channels.
+	Control bool
 }
 
 // PlanOverrides holds explicit CLI choices. Nil preserves profile defaults.
@@ -66,9 +62,9 @@ type PlanOverrides struct {
 func PlanBackend(b domain.Backend, p domain.Profile, o PlanOverrides) BackendPlan {
 	if b == domain.BackendDRM {
 		plan := BackendPlan{KMS: true, RequireRenderNode: true, FixedHeads: HeadsConnectors, IsolateVirtuals: true,
-			Input: InputLibinputLibseat, SessionDBus: SessionDBusAlways, LogindPowerKeys: true, PersistScales: true, AutoTerminal: AutoTerminalConfig}
+			Input: InputLibinputLibseat, SessionDBus: SessionDBusAlways, LogindPowerKeys: true, PersistScales: true, AutoTerminal: true}
 		if o.AutoTerminal != nil && !*o.AutoTerminal {
-			plan.AutoTerminal = AutoTerminalOff
+			plan.AutoTerminal = false
 		}
 		return plan
 	}
@@ -78,9 +74,9 @@ func PlanBackend(b domain.Backend, p domain.Profile, o PlanOverrides) BackendPla
 	var plan BackendPlan
 	switch p {
 	case domain.ProfileEphemeral:
-		plan = BackendPlan{FixedHeads: HeadsSized, IsolateVirtuals: true, Input: InputNone, SessionDBus: SessionDBusFlagOnly, AutoTerminal: AutoTerminalConfigOrFlag}
+		plan = BackendPlan{FixedHeads: HeadsSized, IsolateVirtuals: true, Input: InputNone, SessionDBus: SessionDBusFlagOnly, AutoTerminal: true, Control: true}
 	case domain.ProfilePersistent:
-		plan = BackendPlan{RequireRenderNode: true, FixedHeads: HeadsNone, Input: InputLibinputDirect, SessionDBus: SessionDBusAlways, PersistScales: true, AutoTerminal: AutoTerminalOff}
+		plan = BackendPlan{RequireRenderNode: true, FixedHeads: HeadsNone, Input: InputLibinputDirect, SessionDBus: SessionDBusAlways, PersistScales: true, Control: true}
 	default:
 		return BackendPlan{}
 	}
@@ -91,10 +87,7 @@ func PlanBackend(b domain.Backend, p domain.Profile, o PlanOverrides) BackendPla
 		}
 	}
 	if o.AutoTerminal != nil {
-		plan.AutoTerminal = AutoTerminalOff
-		if *o.AutoTerminal {
-			plan.AutoTerminal = AutoTerminalConfigOrFlag
-		}
+		plan.AutoTerminal = *o.AutoTerminal
 	}
 	if o.Input != nil {
 		plan.Input = *o.Input

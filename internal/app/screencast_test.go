@@ -74,6 +74,16 @@ func startCastAppConfig(t *testing.T, allow string, cfg domain.Config) *castApp 
 // bus and never runs libinput here (noLibinput).
 //
 //testpolicy:realtime real headless renderer and D-Bus service startup and teardown
+// castOverrides disables the startup terminal and, with dbus, serves the
+// session bus services (--dbus).
+func castOverrides(dbus bool) core.PlanOverrides {
+	o := noTerminal()
+	if dbus {
+		o.SessionDBus = &dbus
+	}
+	return o
+}
+
 func startCastAppProfile(t *testing.T, allow string, cfg domain.Config, profile domain.Profile) *castApp {
 	t.Helper()
 	server := profile == domain.ProfilePersistent
@@ -94,7 +104,7 @@ func startCastAppProfile(t *testing.T, allow string, cfg domain.Config, profile 
 	inputReady := make(chan chan<- ports.InputEvent, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, Options{Backend: domain.BackendHeadless, Profile: profile, DBus: !server, NoXwayland: true, PlanOverrides: noTerminal(), Config: cfg, Sizes: sizes, noLibinput: server, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid()), castInventoryApplied: inventory},
+		done <- run(ctx, Options{Backend: domain.BackendHeadless, Profile: profile, NoXwayland: true, PlanOverrides: castOverrides(!server), Config: cfg, Sizes: sizes, noLibinput: server, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid()), castInventoryApplied: inventory},
 			func(in chan<- ports.InputEvent) { inputReady <- in })
 	}()
 	a := &castApp{inventory: inventory}

@@ -113,7 +113,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 			s = nil
 		}
 	}()
-	if opts.Backend != domain.BackendDRM {
+	if s.plan.Control {
 		id := opts.SessionID
 		if id == "" {
 			id = sessiondir.NewID()
@@ -151,14 +151,14 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	s.dmabuf = s.gpu.DMABuf()
 	log.Info().Int("formats", len(s.dmabuf.Formats)).Msg("dmabuf")
 	s.p = newPipes(s.plan.PersistScales, opts.Config.Hint.Enable)
-	if opts.Backend == domain.BackendHeadless {
+	if s.plan.Control {
 		s.p.control = make(chan ports.ControlRequest, 32)
 		s.p.runtimeOutputs = make(chan ports.OutputRuntimeRequest, 32)
 		s.p.continuous = make(chan ports.ContinuousCaptureRequest, 8)
 	}
 	// core() carries channels only; the gate, clock and terminal flag are
 	// explicit core.Options.
-	if s.core, err = core.New(opts.Config, s.p.core(), core.Options{Security: s.security, Clock: s.clock, Tokens: launcher.Tokens{}, Terminal: s.plan.AutoTerminal != core.AutoTerminalOff, HintDisabled: hintDisabledNote(ctx), PlaceVirtuals: !s.plan.IsolateVirtuals}); err != nil {
+	if s.core, err = core.New(opts.Config, s.p.core(), core.Options{Security: s.security, Clock: s.clock, Tokens: launcher.Tokens{}, Terminal: s.plan.AutoTerminal, HintDisabled: hintDisabledNote(ctx), PlaceVirtuals: !s.plan.IsolateVirtuals}); err != nil {
 		return s, err
 	}
 	if s.km, err = xkb.New(xkb.RMLVO{Layout: opts.Config.Keyboard.Layout, Variant: opts.Config.Keyboard.Variant, Options: opts.Config.Keyboard.Options}); err != nil {
@@ -184,7 +184,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	// Only a real session (or a test that asks) serves the session bus:
 	// headless runs would take the names from the desktop they run in.
 	var casts ports.CastSink
-	if s.plan.SessionDBus == core.SessionDBusAlways || opts.DBus {
+	if s.plan.SessionDBus == core.SessionDBusAlways {
 		s.cast = screencast.New(s.captureAllow.Policy, s.p.castCommands, logging.For(ctx, "screencast"))
 		s.cast.SetCastBuffers(s.gpu)
 		casts = s.cast
@@ -213,7 +213,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	}
 	s.childEnv = launcher.ChildEnv(os.Environ(), s.server.SocketName(), runtimeDir, xcursor.CursorSize())
 	controlPath := ""
-	if opts.Backend != domain.BackendDRM {
+	if s.plan.Control {
 		path := filepath.Join(s.registry.Path(), "control.sock")
 		kb := opts.Config.Keyboard
 		controlMap, mapErr := xkb.New(xkb.RMLVO{Layout: kb.Layout, Variant: kb.Variant, Options: kb.Options})
@@ -515,8 +515,8 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 		go func() { defer workers.Done(); done <- safe("seat", func() error { return hw.Seat().Run(ctx) }) }()
 	}
 	// Only a real session serves the session bus: headless runs would take
-	// the names from the desktop they run in, unless a test asks (DBus).
-	if plan.SessionDBus == core.SessionDBusAlways || opts.DBus {
+	// the names from the desktop they run in, unless asked (--dbus).
+	if plan.SessionDBus == core.SessionDBusAlways {
 		workers.Add(2)
 		go func() {
 			defer workers.Done()

@@ -191,7 +191,6 @@ func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
 		NoXwayland:    f.noXwayland,
 		HeadlessHDR:   f.headlessHDR,
 		Session:       f.session,
-		DBus:          f.dbus,
 		Sizes:         sizes,
 	})
 	// SIGINT and SIGTERM cancel the context and are clean exits.
