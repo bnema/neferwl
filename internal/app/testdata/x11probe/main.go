@@ -15,7 +15,13 @@
 // prints "fullscreen WxH" when the window is resized; -fullscreen-off asks to
 // leave it that long after (prints "fullscreen off WxH"). -keyboard-grab
 // calls XGrabKeyboard on the window once it is mapped (prints "grab").
-// -at X,Y creates the window at that root position.
+// -at X,Y creates the window at that root position. -focus-log also prints
+// "focus-in"/"focus-out" for the window's own focus changes (pointer details
+// skipped) and "active self|none|other" whenever the root's
+// _NET_ACTIVE_WINDOW changes, and "key" for each key press it receives.
+// -stdin-sync reads stdin lines: each "sync" makes a round trip to the X
+// server and prints "synced N" (N counts syncs) once the reply arrives,
+// after every event the server sent before it.
 //
 // Four more modes run without a window and exit when done.
 // -copy TEXT|@file owns -copy-sel (CLIPBOARD or PRIMARY) for
@@ -33,6 +39,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -74,6 +81,8 @@ func run() error {
 	fullscreenOff := flag.Duration("fullscreen-off", 0, "leave fullscreen this long after the request (0: never)")
 	initialFullscreen := flag.Bool("initial-fullscreen", false, "set _NET_WM_STATE_FULLSCREEN and fixed-size WM_NORMAL_HINTS (min=max=size) before mapping")
 	keyboardGrab := flag.Bool("keyboard-grab", false, "XGrabKeyboard on the window once it is mapped")
+	focusLog := flag.Bool("focus-log", false, "print focus-in/focus-out and _NET_ACTIVE_WINDOW changes")
+	stdinSync := flag.Bool("stdin-sync", false, `answer each stdin line "sync" with "synced N" after an X round trip`)
 	at := flag.String("at", "0,0", "window position X,Y in root coordinates")
 	copyText := flag.String("copy", "", "own a selection with TEXT (or @file) and serve it, no window")
 	copySel := flag.String("copy-sel", "CLIPBOARD", "selection for -copy: CLIPBOARD or PRIMARY")
@@ -81,7 +90,26 @@ func run() error {
 	paste := flag.String("paste", "", "print the text of selection CLIPBOARD or PRIMARY, no window")
 	xsettings := flag.Bool("xsettings", false, "print the XSETTINGS values, no window")
 	rootCursor := flag.Bool("root-cursor", false, "print the size of the cursor shown over the root, no window")
+	controller := flag.String("lineage-controller", "", "test controller stage: start, session, branch")
+	direct := flag.Bool("lineage-direct", false, "spawn game from launcher rather than sibling controller")
+	spawn := flag.Bool("lineage-spawn", false, "handle spawn by starting a direct child probe")
 	flag.Parse()
+	if *controller == "start" {
+		return startLineageSession(*direct)
+	}
+	if *controller != "" {
+		return lineageController(*controller, *direct)
+	}
+	var child *exec.Cmd
+	var childIn *os.File
+	defer func() {
+		if child != nil {
+			childIn.Close()
+			child.Process.Kill()
+			child.Wait()
+		}
+	}()
+
 	if *copyText != "" || *paste != "" || *xsettings || *rootCursor {
 		return runTool(*copyText, *copySel, *copyFor, *paste, *xsettings, *rootCursor)
 	}
@@ -100,11 +128,12 @@ func run() error {
 	}
 	defer c.Close()
 
-	var atoms [9]uint32
+	var atoms [10]uint32
 	if err := c.InternAtoms([]string{"WM_PROTOCOLS", "WM_DELETE_WINDOW", "_NET_WM_NAME", "UTF8_STRING",
-		"_NET_WM_WINDOW_TYPE", "_NET_WM_WINDOW_TYPE_DROPDOWN_MENU", "_NET_WM_WINDOW_TYPE_TOOLTIP", "_NET_WM_STATE", "_NET_WM_STATE_FULLSCREEN"}, false, atoms[:]); err != nil {
+		"_NET_WM_WINDOW_TYPE", "_NET_WM_WINDOW_TYPE_DROPDOWN_MENU", "_NET_WM_WINDOW_TYPE_TOOLTIP", "_NET_WM_STATE", "_NET_WM_STATE_FULLSCREEN", "_NET_ACTIVE_WINDOW"}, false, atoms[:]); err != nil {
 		return err
 	}
+	netActive := xproto.Atom(atoms[9])
 	protocols, deleteWin, netWMName, utf8 := xproto.Atom(atoms[0]), xproto.Atom(atoms[1]), xproto.Atom(atoms[2]), xproto.Atom(atoms[3])
 	typeAtom, typeMenu, typeTooltip := xproto.Atom(atoms[4]), atoms[5], atoms[6]
 	netWMState, netWMFullscreen := atoms[7], atoms[8]
@@ -131,6 +160,84 @@ func run() error {
 	var del [4]byte
 	binary.LittleEndian.PutUint32(del[:], uint32(deleteWin))
 	xproto.ChangeProperty(b, xproto.PropModeReplace, win, protocols, xproto.AtomAtom, 32, 1, del[:])
+
+	// Reply kinds: 16 is _NET_WM_STATE, 17 the root's _NET_ACTIVE_WINDOW.
+	const kindState, kindActive, kindSync = 16, 17, 18
+	syncs := 0
+	var stdinBuf []byte
+	// readStdin issues a round trip for each complete "sync" line.
+	readStdin := func() error {
+		var buf [256]byte
+		n, err := unix.Read(0, buf[:])
+		if n <= 0 {
+			if err == unix.EAGAIN || err == unix.EINTR {
+				return nil
+			}
+			*stdinSync = false // EOF: stop polling stdin
+			return nil
+		}
+		stdinBuf = append(stdinBuf, buf[:n]...)
+		for {
+			i := strings.IndexByte(string(stdinBuf), '\n')
+			if i < 0 {
+				return nil
+			}
+			line := strings.TrimSpace(string(stdinBuf[:i]))
+			stdinBuf = stdinBuf[i+1:]
+			if line == "spawn" && *spawn && child == nil {
+				bin, err := os.Executable()
+				if err != nil {
+					return err
+				}
+				r, w, err := os.Pipe()
+				if err != nil {
+					return err
+				}
+				child = exec.Command(bin, "-class", "lineage-game", "-at", "9000,9000", "-focus-log", "-stdin-sync")
+				child.Stdin = r
+				child.Stdout = os.Stdout
+				child.Stderr = os.Stderr
+				if err := child.Start(); err != nil {
+					return err
+				}
+				r.Close()
+				childIn = w
+			}
+			if line == "close" {
+				if childIn != nil {
+					fmt.Fprintln(childIn, "close")
+				} else {
+					var ev [32]byte
+					ev[0] = 33
+					ev[1] = 32
+					binary.LittleEndian.PutUint32(ev[4:], uint32(win))
+					binary.LittleEndian.PutUint32(ev[8:], uint32(protocols))
+					binary.LittleEndian.PutUint32(ev[12:], uint32(deleteWin))
+					xproto.SendEvent(b, false, win, 0, &ev)
+				}
+			}
+			if line == "sync" {
+				if err := c.Expect(xproto.GetInputFocus(b), kindSync, 0, 0, 0, 0); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	root := xproto.Window(c.Root())
+	queryActive := func() {
+		seq := xproto.GetProperty(b, false, root, netActive, xproto.AtomWindow, 0, 1)
+		if err := c.Expect(seq, kindActive, 0, 0, 0, 0); err != nil {
+			fmt.Fprintln(os.Stderr, "x11probe:", err)
+		}
+	}
+	if *focusLog {
+		var rv xproto.ChangeWindowAttributesValues
+		rv.SetEventMask(xproto.EventMaskPropertyChange)
+		xproto.ChangeWindowAttributes(b, root, &rv)
+		var wv xproto.ChangeWindowAttributesValues
+		wv.SetEventMask(xproto.EventMaskExposure | xproto.EventMaskStructureNotify | xproto.EventMaskFocusChange | xproto.EventMaskPropertyChange | xproto.EventMaskKeyPress)
+		xproto.ChangeWindowAttributes(b, win, &wv)
+	}
 
 	var gv xproto.CreateGCValues
 	gv.SetForeground(green)
@@ -257,13 +364,24 @@ func run() error {
 			case xproto.KindPropertyNotify:
 				if e := xproto.PropertyNotifyOf(ev); e.Window() == win && xproto.Atom(e.Atom()) == xproto.Atom(netWMState) {
 					seq := xproto.GetProperty(b, false, win, xproto.Atom(netWMState), xproto.AtomAtom, 0, 64)
-					if err := c.Expect(seq, 16, 0, 0, 0, 0); err != nil {
+					if err := c.Expect(seq, kindState, 0, 0, 0, 0); err != nil {
 						ovErr = err
 					}
 				}
+				if e := xproto.PropertyNotifyOf(ev); *focusLog && e.Window() == root && xproto.Atom(e.Atom()) == netActive {
+					queryActive()
+				}
+			case xproto.KindKeyPress:
+				fmt.Println("key")
 			case xproto.KindFocusIn:
 				fmt.Println("focus")
+				if e := xproto.FocusInOf(ev); *focusLog && e.Event() == win && e.Detail() != xproto.NotifyDetailPointer {
+					fmt.Println("focus-in")
+				}
 			case xproto.KindFocusOut:
+				if e := xproto.FocusOutOf(ev); *focusLog && e.Event() == win && e.Detail() != xproto.NotifyDetailPointer {
+					fmt.Println("focus-out")
+				}
 				if *dismiss && xproto.FocusOutOf(ev).Event() == win {
 					unmapOverride("dismissed")
 				}
@@ -277,6 +395,26 @@ func run() error {
 		OnReply: func(r *xturbo.Reply) {
 			rep, ok := xproto.ParseGetPropertyReply(r.Raw)
 			if !ok {
+				return
+			}
+			if r.Kind == kindSync {
+				syncs++
+				fmt.Printf("synced %d\n", syncs)
+				return
+			}
+			if r.Kind == kindActive {
+				var id uint32
+				if v := rep.Value(); len(v) >= 4 {
+					id = binary.LittleEndian.Uint32(v)
+				}
+				switch id {
+				case uint32(win):
+					fmt.Println("active self")
+				case 0:
+					fmt.Println("active none")
+				default:
+					fmt.Println("active other")
+				}
 				return
 			}
 			on := false
@@ -311,8 +449,16 @@ func run() error {
 			}
 		}
 		fds := []unix.PollFd{{Fd: int32(c.Fd()), Events: events}}
+		if *stdinSync {
+			fds = append(fds, unix.PollFd{Fd: 0, Events: unix.POLLIN})
+		}
 		if _, err := unix.Poll(fds, timeout); err != nil && err != unix.EINTR {
 			return err
+		}
+		if len(fds) > 1 && fds[1].Revents&(unix.POLLIN|unix.POLLHUP) != 0 {
+			if err := readStdin(); err != nil {
+				return err
+			}
 		}
 		if !ovDeadline.IsZero() && !time.Now().Before(ovDeadline) {
 			unmapOverride("override unmapped")

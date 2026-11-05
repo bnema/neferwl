@@ -281,9 +281,9 @@ func (x *XWM) applyProp(s Slot, idx int, format uint8, val []byte) {
 	case propPID:
 		if len(val) >= 4 {
 			rec.pid = int32(word(val, 0))
-			return
+		} else {
+			rec.pid = 0
 		}
-		rec.pid = 0
 		if !rec.ready && rec.pending&propClientIDs == 0 && x.conn.Ext().Info(xturbo.ExtRes).Present {
 			x.queryClientIDs(s)
 		}
@@ -344,8 +344,8 @@ func (x *XWM) managedSlot(xid uint32) Slot {
 	return 0
 }
 
-// queryClientIDs asks XRes for the PID of the client owning s, which stands
-// in for a missing _NET_WM_PID: Ready waits for it (propClientIDs).
+// queryClientIDs asks XRes for the compositor-namespace PID of the client
+// owning s, independently of _NET_WM_PID. Ready waits for it (propClientIDs).
 func (x *XWM) queryClientIDs(s Slot) {
 	rec := x.tab.rec(s)
 	specs := [1]res.ClientIdSpec{{Client: rec.xid, Mask: res.ClientIdMaskLocalClientPID}}
@@ -364,7 +364,7 @@ func (x *XWM) onClientIdsReply(s Slot, rec *record, r *xturbo.Reply) {
 		for it.Next() {
 			v := it.Value()
 			if v.Spec().Mask == res.ClientIdMaskLocalClientPID && v.Value().Len() > 0 {
-				rec.pid = int32(v.Value().At(0))
+				rec.clientPID = int32(v.Value().At(0))
 				break
 			}
 		}

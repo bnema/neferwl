@@ -26,6 +26,7 @@ func castLinear(t *testing.T, g *GPU, fc uint32, w, h int) domain.DMABuf {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
+		g.ReleaseCast(buf)
 		for _, p := range buf.Planes {
 			_ = p.File.Close()
 		}

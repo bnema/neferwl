@@ -112,15 +112,17 @@ func (w *Workspace) BorderAt(x, y, pad int) (Border, bool) {
 		if r.X+r.W <= w.Usable.X || r.X >= w.Usable.X+w.Usable.W || r.Y+r.H <= w.Usable.Y || r.Y >= w.Usable.Y+w.Usable.H {
 			continue
 		}
+		// A held column is output-sized like the cover: no borders.
+		heldCol := w.HeldColumn(i)
 		rows := layout.RowRects(r, w.Columns[i], gap)
-		for j := 0; j+1 < len(rows); j++ {
+		for j := 0; !heldCol && j+1 < len(rows); j++ {
 			lo, size := geom.BorderZone(rows[j].Y+rows[j].H, rows[j+1].Y, pad)
 			b := Border{Kind: BorderRow, Col: i, Row: j, Rect: Rect{X: r.X, Y: lo, W: r.W, H: size}}
 			if contains(b.Rect, x, y) {
 				return b, true
 			}
 		}
-		if fixedFull || !borders || i+1 >= len(rs) || i+1 > laneLast || w.Columns[i].FullWidth || w.Columns[i+1].FullWidth {
+		if fixedFull || !borders || heldCol || i+1 >= len(rs) || i+1 > laneLast || w.Columns[i].FullWidth || w.Columns[i+1].FullWidth || w.HeldColumn(i+1) {
 			continue
 		}
 		next := rs[i+1]
@@ -148,7 +150,8 @@ func pixelShare(pixels, total int) int {
 // MoveBorder moves border b to pos and reports whether any span or share
 // changed (stamping a lane or a column's shares counts as a change).
 func (w *Workspace) MoveBorder(b Border, pos int) bool {
-	if b.Col < 0 || b.Col >= len(w.Columns) || w.Fullscreen != 0 {
+	if b.Col < 0 || b.Col >= len(w.Columns) || w.Fullscreen != 0 || w.HeldColumn(b.Col) ||
+		b.Kind == BorderColumn && b.Col+1 < len(w.Columns) && w.HeldColumn(b.Col+1) {
 		return false
 	}
 	rs := w.columnRects()

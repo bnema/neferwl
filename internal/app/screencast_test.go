@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,10 +17,10 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/zerobus"
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/zerobus"
 )
 
 // The screencast tests need a session bus of their own (run them under
@@ -313,7 +314,10 @@ func TestScreencastStreamsMonitor(t *testing.T) {
 	// Steady state: measure 150 frames after 60 warm-up frames. Every allocation is
 	// recorded (MemProfileRate 1) and attributed by its stack: the cast path
 	// (screencast, wayland casts, purego-pipewire, zerobus) must allocate
-	// less than once per frame, and so must the renderer capture path it
+	// less than once per frame, excluding a named allowance of two allocations
+	// for the caller-owned CopyTo sync-file wrapper (os.newFile). That wrapper
+	// cannot be recycled on GPU completion while the worker still owns it.
+	// The same budget covers the renderer capture path it
 	// shares with ext-image-copy-capture (BeginCapture, EndCapture and the
 	// pipeline worker). The headless output's own display frame (Render's
 	// sync file, the flip report, injected input) allocates whether or not
@@ -333,11 +337,16 @@ func TestScreencastStreamsMonitor(t *testing.T) {
 	if n < 60 {
 		t.Errorf("only %d frames in measurement interval", n)
 	} else {
-		cast, other := after.sub(before)
+		cast, other, wrappers := after.sub(before)
+		wrapperPer := float64(wrappers) / float64(n)
 		per := float64(cast) / float64(n)
 		t.Logf("%d frames: cast path %.3f mallocs per frame, whole process %.2f (renderer and runtime included; %d other profiled)",
 			n, per, float64(m1.Mallocs-m0.Mallocs)/float64(n), other)
-		if per >= 1 {
+		t.Logf("sync-file wrapper allowance: %.3f mallocs/frame (budget 2); total cast path %.3f", wrapperPer, per+wrapperPer)
+		if wrapperPer > 2 && !castRaceEnabled() {
+			t.Errorf("sync-file wrappers: %.3f mallocs/frame, budget 2", wrapperPer)
+		}
+		if per >= 1 && !castRaceEnabled() {
 			t.Errorf("cast path: %.2f mallocs per frame over %d frames, want < 1", per, n)
 		}
 	}
@@ -430,6 +439,8 @@ var castPath = []string{
 	// screencopy: lease, copy, read, return.
 	"vulkan.(*Renderer).BeginCapture",
 	"vulkan.(*Renderer).EndCapture",
+	"vulkan.(*captureFrame).CopyTo",
+	"outputkit/capture.(*batch).submitCopies",
 	"outputkit/capture.(*Pipeline).SubmitScoped",
 	"outputkit/capture.(*Pipeline).process",
 	"outputkit/capture.(*Pipeline).Recycle",
@@ -438,7 +449,8 @@ var castPath = []string{
 // allocs counts profiled allocation objects by stack, for the cast path and
 // for the rest.
 type allocs struct {
-	cast, other map[string]int64
+	cast, other      map[string]int64
+	syncFileWrappers map[string]int64
 }
 
 func allocSnapshot() allocs {
@@ -457,14 +469,21 @@ func allocSnapshot() allocs {
 			break
 		}
 	}
-	a := allocs{cast: map[string]int64{}, other: map[string]int64{}}
+	a := allocs{cast: map[string]int64{}, other: map[string]int64{}, syncFileWrappers: map[string]int64{}}
 	for i := range recs {
 		pcs := recs[i].Stack()
 		frames := runtime.CallersFrames(pcs)
 		var key strings.Builder
 		isCast := false
+		isCopy, isNewFile := false, false
 		for {
 			f, more := frames.Next()
+			if strings.Contains(f.Function, "vulkan.(*captureFrame).CopyTo") {
+				isCopy = true
+			}
+			if f.Function == "os.newFile" {
+				isNewFile = true
+			}
 			key.WriteString(f.Function)
 			key.WriteByte(';')
 			for _, p := range castPath {
@@ -476,7 +495,9 @@ func allocSnapshot() allocs {
 				break
 			}
 		}
-		if isCast {
+		if isCopy && isNewFile {
+			a.syncFileWrappers[key.String()] += recs[i].AllocObjects
+		} else if isCast {
 			a.cast[key.String()] += recs[i].AllocObjects
 		} else {
 			a.other[key.String()] += recs[i].AllocObjects
@@ -486,14 +507,17 @@ func allocSnapshot() allocs {
 }
 
 // sub returns the objects allocated between two snapshots.
-func (a allocs) sub(b allocs) (cast, other int64) {
+func (a allocs) sub(b allocs) (cast, other, syncFileWrappers int64) {
+	for k, v := range a.syncFileWrappers {
+		syncFileWrappers += v - b.syncFileWrappers[k]
+	}
 	for k, v := range a.cast {
 		cast += v - b.cast[k]
 	}
 	for k, v := range a.other {
 		other += v - b.other[k]
 	}
-	return cast, other
+	return cast, other, syncFileWrappers
 }
 
 //testpolicy:realtime observes frames from the real GStreamer/PipeWire consumer
@@ -600,4 +624,18 @@ func TestServerScreencastVirtualOutput(t *testing.T) {
 	if name, _ := call(c, session, scSession, "Stop", "", nil); name != "" {
 		t.Fatalf("Stop: %s", name)
 	}
+}
+
+// castRaceEnabled keeps the real-I/O lifecycle running with -race, but disables
+// allocation assertions: purego's sync.Pool drops argument storage under race.
+func castRaceEnabled() bool {
+	info, ok := debug.ReadBuildInfo()
+	if ok {
+		for _, setting := range info.Settings {
+			if setting.Key == "-race" {
+				return setting.Value == "true"
+			}
+		}
+	}
+	return false
 }

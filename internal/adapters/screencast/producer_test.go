@@ -67,6 +67,7 @@ func newProducer(t *testing.T) *producer {
 	p.s.pwc = p.core
 	p.buf = &pipewire.VideoBuffer{Index: 3, Width: 64, Height: 32, Format: pipewire.VideoFormatBGRx, DMABuf: true}
 	p.gpu = portsmocks.NewMockCastBufferAllocator(t)
+	p.gpu.EXPECT().ReleaseCast(mock.Anything).Maybe()
 	p.gpu.EXPECT().CastFormats().Return(testCastFormats).Maybe()
 	p.s.SetCastBuffers(p.gpu)
 

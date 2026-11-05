@@ -12,6 +12,7 @@ import (
 // handleInput dispatches one input event to its handler. A protected
 // session routes every event to protectedInput instead.
 func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
+	defer c.observeLineageFocus()
 	c.inputActive = true
 	defer func() { c.inputActive = false }()
 	if v, ok := ev.(ports.SeatChanged); ok {

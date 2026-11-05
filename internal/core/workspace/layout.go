@@ -521,6 +521,9 @@ func (w *Workspace) AppendLayout(dst []Placement) []Placement {
 	l := w.Engine()
 	maxHides := l.MaximizeHides()
 	maxFocus := maxHides && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth
+	// A tiled cover leaves held tiles shown: they slide with the view. A
+	// floating cover does not move the view, so they stay under it, hidden.
+	showHeld := cover != 0 && len(w.Held) > 0 && !w.IsFloat(cover)
 	tiles := w.tileBuf[:0]
 	for i, c := range w.Columns {
 		col := cols[i]
@@ -528,7 +531,8 @@ func (w *Workspace) AppendLayout(dst []Placement) []Placement {
 		if n == 0 {
 			continue
 		}
-		fullColumn := w.FullscreenColumn(i)
+		heldColumn := w.HeldColumn(i)
+		fullColumn := w.FullscreenColumn(i) || heldColumn
 		if fullColumn {
 			col.W = w.Output.W
 		}
@@ -536,14 +540,21 @@ func (w *Workspace) AppendLayout(dst []Placement) []Placement {
 		rows := w.rowBuf
 		for j, id := range c.Windows {
 			r := rows[j]
-			full := w.Fullscreen == id && id != 0
+			held := heldColumn && slices.Contains(w.Held, id)
+			full := id != 0 && (w.Fullscreen == id || held)
 			// Fixed overflow cannot scroll to other columns while one fills
 			// the view. Keep them in place, but out of the scene.
-			hidden := (cover != 0 && id != cover) || (fullColumn && !full) || maxFocus && i != w.Focus
+			// A tiled cover does not hide held tiles: output-sized at their
+			// own column or band, they are off screen once settled and slide
+			// in and out with the view when the cover changes (ADR 011 still
+			// hides every unrelated window).
+			hidden := (cover != 0 && id != cover && !(held && showHeld)) || (fullColumn && !full) || maxFocus && i != w.Focus
 			if full {
 				r = l.FullscreenRect(w.Snapshot(), col)
 			}
-			if hidden {
+			// A hidden held window keeps its output-sized rect, so its
+			// configure stays fullscreen.
+			if hidden && !held {
 				r = Rect{}
 			}
 			tiles = append(tiles, Placement{ID: id, Rect: r, Fullscreen: full, Focused: id == focusedID, Hidden: hidden})
@@ -582,7 +593,7 @@ func (w *Workspace) AppendLayout(dst []Placement) []Placement {
 			// A covering fullscreen window hides every float but the
 			// dialogs over it (overCover): the others show again when it
 			// leaves fullscreen.
-			p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Below: below, Focused: f.ID == focusedID, Inset: domain.SideAll, Hidden: cover != 0 && f.ID != cover && !dialog}
+			p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Below: below, Focused: f.ID == focusedID, Inset: domain.SideAll, Hidden: cover != 0 && f.ID != cover && !dialog || w.IsHeld(f.ID)}
 			if p.Hidden {
 				p.Rect = Rect{}
 				result = append(result, p)
@@ -697,8 +708,9 @@ func (w *Workspace) ToggleWindowStash() {
 		w.RemoveWindow(id)
 		w.restore(id, nil)
 	case w.StashIndex(id) >= 0:
-		if w.stashOverCover() {
-			// Its column would be hidden under the cover: leave it.
+		if w.stashOverCover() && !w.groupLeaveTo(id) {
+			// Its column would be hidden under the cover: leave it. A
+			// group's cover is demoted instead (groupLeaveTo).
 			w.leaveFullscreen()
 		}
 		w.unstash(w.StashIndex(id))

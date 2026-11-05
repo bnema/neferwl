@@ -87,6 +87,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `output.<name>.right-of`, `.left-of`, `.above`, `.below`, `.offset` | automatic | [Output placement](#output-placement) |
 | `output.<name>.hdr` | `off` | [HDR](#hdr) on capable displays and on virtual outputs |
 | `output.<name>.sdr-brightness` | `203` | Brightness of SDR content in HDR, in nits (80–1000) |
+| `output.<name>.keep-focus` | `off` | Keeps an X11 window on this output X11-active while a native window has the keyboard; see [Virtual outputs](#virtual-outputs) |
 | `drm.devices` | empty (all GPUs) | Comma-separated [GPUs](#gpus) NeferWL uses (restart required) |
 | `drm.ignore` | empty | Comma-separated [GPUs](#gpus) NeferWL leaves alone (restart required) |
 | `render.device` | automatic | [GPU](#gpus) that renders; `NEFERWL_RENDER_DEVICE` overrides it (restart required) |
@@ -166,6 +167,7 @@ output.<name>.primary = off
 output.<name>.offset = 0
 output.<name>.hdr = off
 output.<name>.sdr-brightness = 203
+output.<name>.keep-focus = off
 output.<name>.sdr-expand = auto
 output.<name>.sdr-expand-intensity = 0.5
 output.<name>.sdr-expand-peak = 0
@@ -273,6 +275,16 @@ rule.big.app-id = steam
 rule.big.title = (?i)big picture
 rule.big.output = tv
 ```
+
+Steam Big Picture picks its controller layout from the X11 focus. With
+`output.tv.keep-focus = on`, an X11 (Xwayland) window on `tv` keeps the X11
+input focus and `_NET_ACTIVE_WINDOW` while a native window on another output
+has the keyboard: the window focused on `tv`, else the most recently mapped
+visible one. Wayland keyboard focus is unchanged, so typed keys go to the
+focused window only. It applies to X11 windows only; an X11 window with the
+keyboard elsewhere takes precedence, and a locked session clears it. With
+several such outputs, the first in config order wins. Sunshine's virtual
+keyboard and mouse still follow normal focus.
 
 For Sunshine, a `global_prep_cmd` command can select the client's mode:
 `wlr-randr --output tv --custom-mode ${SUNSHINE_CLIENT_WIDTH}x${SUNSHINE_CLIENT_HEIGHT}@${SUNSHINE_CLIENT_FPS}`.
@@ -468,6 +480,7 @@ The default layout. Columns sit side by side in bands of up to `max-columns`, st
 - A fullscreen window gets a band of its own right below the band it was in (expelled into its own column first when it shares one), so the other columns stay put and focus changes among them leave the fullscreen output alone. Leaving fullscreen keeps the column in that band. A parentless, non-stashed floating window becomes a tiled column in its own band below the selected column's band on fullscreen entry, including `toggle-fullscreen`; dialogs with a parent and stash entries stay floating.
 - A window requesting fullscreen before its first map opens fullscreen and focused, using the same band placement as `toggle-fullscreen`. The last pre-map set/unset request wins; child dialogs are excluded and window rules retain their workspace/output. Requests arriving after map are honoured immediately, subject to the usual fullscreen focus rules; `toggle-fullscreen` is unaffected.
 - A new window from another app never disturbs a covering fullscreen window; a window of the same app comes forward (equal non-zero PID or equal non-empty app ID). In cascade it opens focused in a new band; in scroll it opens focused to the right; in fixed it opens as a focused float above fullscreen. The original window keeps its fullscreen state. In scroll, a floating fullscreen cover is promoted to a tile when the same-app window arrives; ordinary fullscreen requests keep their existing floating semantics.
+- A tiled window that a fullscreen window's program launches as a different program (a game started from Steam Big Picture, found by [process lineage](#process-lineage-shell-exclusions)) opens fullscreen too, in a column of its own to the right in scroll or a band of its own below in cascade, and fills the screen; the launcher stays fullscreen next to it. Moving the focus between them changes which one fills the screen, with no fullscreen toggle, and closing the program returns to the fullscreen launcher. Windows of the launcher's own app, floating and parented windows keep the behaviour above; fixed opens the program as a float above the launcher.
 - `move-column-left/right` on a fullscreen window (tiled or floating) sends it to the neighbor monitor, where it stays fullscreen and focused; with no neighbor monitor nothing moves.
 - A band left empty goes away. A smaller `max-columns` moves the extra columns of a band to a new band below it.
 
@@ -622,3 +635,14 @@ X11 games are classified as games for auto mode, not forced past output gates.
 Other X11 games need an app-ID rule because X11 carries no Wayland game content
 type. `on` requests expansion eligibility; it does not bypass HDR/headroom gates.
 Placement fields still apply only at first map.
+
+### Process-lineage shell exclusions
+
+`lineage.shells = wrapper, custom-launcher` adds process **comm** names to the
+common-ancestor exclusion list. It reloads live and affects future first-map
+lineage decisions; existing launcher edges are retained. Names are limited to
+16 bytes. Defaults are `sh`, `bash`, `zsh`, `fish`, `dash`, `ksh`, `tcsh`, `csh`,
+`nu`, `elvish`, `xonsh`, `env`, `sudo`, `doas`, `setsid`, `nohup`, `timeout`,
+`systemd-run`, and `flatpak-spawn`. Generic launch wrappers (including
+`flatpak-spawn`) do not establish application identity. Direct ancestor matches
+are unaffected; common meeting points that are session leaders are excluded too.

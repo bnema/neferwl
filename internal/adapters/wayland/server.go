@@ -16,6 +16,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/adapters/clock"
+	"github.com/bnema/neferwl/internal/adapters/peerexe"
 	"github.com/bnema/neferwl/internal/adapters/wayland/sessionlock"
 	"github.com/bnema/neferwl/internal/adapters/wayland/xwm"
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
@@ -111,6 +112,8 @@ type Channels struct {
 }
 
 type Server struct {
+	processes          *peerexe.Processes
+	knownProc          map[domain.WindowID][]domain.ProcNode
 	x11Client          ports.X11Clients
 	security           ports.SessionSecurity
 	securityController ports.SessionSecurityController
@@ -261,6 +264,8 @@ type Server struct {
 	nextSurface       uint64
 	// seat is the keyboard and pointer state (seat.go).
 	seat seatState
+	// x11Active is the window core last named X11-active (ports.X11Active).
+	x11Active domain.WindowID
 	// eventMu protects only the notification queue, not display-owned window state.
 	// The event queue is unbounded by design: it grows only if core stops draining
 	// Events, which happens only at shutdown (core owns the receiving end). A
@@ -389,6 +394,8 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	}
 	s := &Server{
 		securityWake:       make(chan struct{}, 1),
+		processes:          peerexe.NewProcesses(os.DirFS("/proc"), os.Getpid()),
+		knownProc:          make(map[domain.WindowID][]domain.ProcNode),
 		x11Client:          opts.X11Clients,
 		security:           opts.Security,
 		securityController: opts.Security,
@@ -726,6 +733,15 @@ func (s *Server) forwardOutputFormats(ctx context.Context) {
 }
 
 func (s *Server) emit(ev ports.ClientEvent) {
+	switch v := ev.(type) {
+	case ports.WindowMapped:
+		if len(v.Proc) != 0 {
+			s.knownProc[v.ID] = v.Proc
+		}
+	case ports.WindowDestroyed:
+		delete(s.knownProc, v.ID)
+	}
+
 	if unmapped, ok := ev.(ports.WindowUnmapped); ok && unmapped.ID == s.stats.watched {
 		s.watchStats(0)
 	}
@@ -811,7 +827,7 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		// Only input/focus commands require an owner envelope. Config relay
 		// also produces SetKeymap and other epoch-independent commands.
 		switch cmd.(type) {
-		case ports.PointerFocus, ports.PointerMotionTo, ports.PointerButtonTo, ports.PointerAxisTo, ports.GestureBeginTo, ports.GestureUpdateTo, ports.GestureEndTo, ports.FocusWindow, ports.ForwardKey, ports.SetModifiers, ports.KeyboardReset, ports.CursorOverride,
+		case ports.PointerFocus, ports.PointerMotionTo, ports.PointerButtonTo, ports.PointerAxisTo, ports.GestureBeginTo, ports.GestureUpdateTo, ports.GestureEndTo, ports.FocusWindow, ports.X11Active, ports.ForwardKey, ports.SetModifiers, ports.KeyboardReset, ports.CursorOverride,
 			ports.DataDragFocus, ports.DataDragMotion, ports.DataDragDrop, ports.DataDragCancel:
 			return
 		}
@@ -877,6 +893,8 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		s.userActivity()
 	case ports.ShortcutsInhibitState:
 		s.setShortcutsInhibit(c)
+	case ports.X11Active:
+		s.x11Focus(c.ID)
 	case ports.CloseWindow:
 		w := s.windows[c.ID]
 		if w == nil || !w.toplevelAlive() {

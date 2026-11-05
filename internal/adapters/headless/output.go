@@ -219,6 +219,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 	ctx, cancelCaptures := context.WithCancel(ctx)
 	requests.Init(ctx, opts.Captured)
 	pipeline := capture.NewPipeline(ctx, opts.Captured)
+	var captureCursor domain.CaptureCursor
 	pipeline.Security = opts.Security
 	if opts.NewCaptureRenderer != nil {
 		pipeline.EnableOffscreen(opts.NewCaptureRenderer)
@@ -682,9 +683,6 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		// workspace that moved) are failed here; see capture.Pipeline.Split.
 		// A request whose indicator the scene does not show yet stays held.
 		pipeline.Cursor = nil
-		if opts.Cursor != nil && !opts.protected() {
-			pipeline.Cursor = opts.Cursor.snapshot()
-		}
 		ready, _ := pipeline.Hold(scene, requests.List, time.Now())
 		if len(scene.CaptureIndicators) > 0 {
 			// The captures of this frame are delivered only once its frame,
@@ -692,6 +690,9 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			pipeline.BeginGate()
 		}
 		normal, excluded, hidden := pipeline.Split(scene, ready)
+		if !opts.protected() {
+			pipeline.Cursor = opts.Cursor.captureCursor(&captureCursor, normal, excluded)
+		}
 		pipeline.Retire(scene)
 		if len(hidden) > 0 {
 			// A hidden workspace: a child renderer draws it. The display's

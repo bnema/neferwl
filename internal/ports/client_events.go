@@ -14,6 +14,9 @@ type WindowMapped struct {
 	Slot string
 	// PID is the client process, 0 when unknown.
 	PID int
+	// Proc contains own process at element 0, then nearest-first ancestors.
+	// This is a best-effort placement hint, not an authorization credential.
+	Proc []domain.ProcNode
 	// PIDShared means PID identifies a bridge process, not the application.
 	PIDShared bool
 	// Sandbox is the wp_security_context_v1 app id of the client, else

@@ -12,7 +12,10 @@ type Slot uint32
 // WindowInfo is what the XWM learned about a managed window by the time it is
 // ready to be mapped. The host copies it.
 type WindowInfo struct {
-	PID           int
+	// PID prefers _NET_WM_PID for state and rules, with XRes as fallback.
+	PID int
+	// ClientPID is the XRes compositor-namespace PID, 0 when unavailable.
+	ClientPID     int
 	Floating      bool // dialog/utility/splash/fixed size
 	Width, Height int  // requested size, logical (scale 1)
 	Parent        Slot

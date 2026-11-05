@@ -142,6 +142,7 @@ func (s *Server) resetProtectionInput() {
 	s.cursorOverride = ""
 	s.dndCancelAll()
 	s.changeFocus(0)
+	s.x11Focus(0)
 	s.changePointerFocus(0, 0, 0)
 	s.deactivateText()
 	s.deactivateConstraint()

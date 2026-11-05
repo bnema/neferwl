@@ -73,13 +73,18 @@ func (x *XWM) Focus(s Slot) {
 // windows get SetInputFocus, Locally and Globally active ones WM_TAKE_FOCUS,
 // No-input windows nothing. A nil r clears the X focus.
 func (x *XWM) issueFocus(s Slot, r *record) {
+	x.issueFocusAttempt(s, r, 0)
+}
+
+// retry marks a recovery request: its error is logged but cannot re-arm itself.
+func (x *XWM) issueFocusAttempt(s Slot, r *record, retry uint32) {
 	b := x.conn.Buf()
 	if r == nil {
 		xproto.SetInputFocus(b, xproto.InputFocusNone, xproto.WindowNone, 0)
 		return
 	}
 	if r.input {
-		x.expect(xproto.SetInputFocus(b, xproto.InputFocusNone, xproto.Window(r.xid), 0), kindFocus, x.tab.tag(s), 0)
+		x.expect(xproto.SetInputFocus(b, xproto.InputFocusNone, xproto.Window(r.xid), 0), kindFocus, x.tab.tag(s), retry)
 	}
 	if r.takeFocus {
 		x.sendProtocol(r.xid, atomWMTakeFocus)
@@ -213,6 +218,6 @@ func (x *XWM) flushFocus() {
 	x.listsDirty = 0
 	if x.refocus {
 		x.refocus = false
-		x.issueFocus(x.active, x.managedRec(x.active))
+		x.issueFocusAttempt(x.active, x.managedRec(x.active), 1)
 	}
 }

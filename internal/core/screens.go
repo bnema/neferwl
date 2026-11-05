@@ -11,6 +11,7 @@ import (
 // place in the global layout (ADR 011). Outputs are ordered by config
 // (output.<name>.*), then by connection; order places them (placeOutputs).
 type screen struct {
+	lineageFocus    focusHistory
 	positionHint    positionHintState
 	info            domain.OutputInfo
 	mon             *Monitor

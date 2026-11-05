@@ -1818,6 +1818,46 @@ func (_c *MockRenderDevice_Node_Call) RunAndReturn(run func() (uint64, uint64)) 
 	return _c
 }
 
+// ReleaseCast provides a mock function for the type MockRenderDevice
+func (_mock *MockRenderDevice) ReleaseCast(buffer domain.DMABuf) {
+	_mock.Called(buffer)
+	return
+}
+
+// MockRenderDevice_ReleaseCast_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ReleaseCast'
+type MockRenderDevice_ReleaseCast_Call struct {
+	*mock.Call
+}
+
+// ReleaseCast is a helper method to define mock.On call
+//   - buffer domain.DMABuf
+func (_e *MockRenderDevice_Expecter) ReleaseCast(buffer any) *MockRenderDevice_ReleaseCast_Call {
+	return &MockRenderDevice_ReleaseCast_Call{Call: _e.mock.On("ReleaseCast", buffer)}
+}
+
+func (_c *MockRenderDevice_ReleaseCast_Call) Run(run func(buffer domain.DMABuf)) *MockRenderDevice_ReleaseCast_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 domain.DMABuf
+		if args[0] != nil {
+			arg0 = args[0].(domain.DMABuf)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRenderDevice_ReleaseCast_Call) Return() *MockRenderDevice_ReleaseCast_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockRenderDevice_ReleaseCast_Call) RunAndReturn(run func(buffer domain.DMABuf)) *MockRenderDevice_ReleaseCast_Call {
+	_c.Run(run)
+	return _c
+}
+
 // NewMockCastBufferAllocator creates a new instance of MockCastBufferAllocator. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
 // The first argument is typically a *testing.T value.
 func NewMockCastBufferAllocator(t interface {
@@ -1975,6 +2015,46 @@ func (_c *MockCastBufferAllocator_CastFormats_Call) Return(dMABufFormats []domai
 
 func (_c *MockCastBufferAllocator_CastFormats_Call) RunAndReturn(run func() []domain.DMABufFormat) *MockCastBufferAllocator_CastFormats_Call {
 	_c.Call.Return(run)
+	return _c
+}
+
+// ReleaseCast provides a mock function for the type MockCastBufferAllocator
+func (_mock *MockCastBufferAllocator) ReleaseCast(buffer domain.DMABuf) {
+	_mock.Called(buffer)
+	return
+}
+
+// MockCastBufferAllocator_ReleaseCast_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ReleaseCast'
+type MockCastBufferAllocator_ReleaseCast_Call struct {
+	*mock.Call
+}
+
+// ReleaseCast is a helper method to define mock.On call
+//   - buffer domain.DMABuf
+func (_e *MockCastBufferAllocator_Expecter) ReleaseCast(buffer any) *MockCastBufferAllocator_ReleaseCast_Call {
+	return &MockCastBufferAllocator_ReleaseCast_Call{Call: _e.mock.On("ReleaseCast", buffer)}
+}
+
+func (_c *MockCastBufferAllocator_ReleaseCast_Call) Run(run func(buffer domain.DMABuf)) *MockCastBufferAllocator_ReleaseCast_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 domain.DMABuf
+		if args[0] != nil {
+			arg0 = args[0].(domain.DMABuf)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockCastBufferAllocator_ReleaseCast_Call) Return() *MockCastBufferAllocator_ReleaseCast_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockCastBufferAllocator_ReleaseCast_Call) RunAndReturn(run func(buffer domain.DMABuf)) *MockCastBufferAllocator_ReleaseCast_Call {
+	_c.Run(run)
 	return _c
 }
 

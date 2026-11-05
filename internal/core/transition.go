@@ -417,6 +417,7 @@ func (c *Core) mapWindow(v ports.WindowMapped) (follow bool) {
 		// client reported (a fixed-size game is not a float).
 		v.Floating, v.Width, v.Height = false, 0, 0
 	}
+	c.mapLineage(v)
 	c.windows.mapped(v, now)
 	c.rememberTitleRules(v.ID)
 	c.matchWindowExpansion(v.ID)
@@ -445,7 +446,10 @@ func (c *Core) placeMapped(v ports.WindowMapped) (follow bool) {
 	if !v.Fullscreen || v.Remap || v.Parent != 0 {
 		return follow
 	}
-	if _, w := c.screenOf(v.ID); w != nil {
+	// A window placement made a held fullscreen member (launched by a held
+	// launcher) is fullscreen already; activating it would take the cover
+	// and the keyboard from the member playing.
+	if _, w := c.screenOf(v.ID); w != nil && !w.IsHeld(v.ID) {
 		w.Activate(v.ID)
 		w.SetFullscreen(v.ID, true)
 	}
@@ -490,8 +494,24 @@ func (c *Core) unmapWindow(v ports.WindowUnmapped) {
 	if sc == nil {
 		return
 	}
-	if !c.animOn() || c.security.Protected || sc.mon.previewing() {
+	focused, _ := w.Focused()
+	launcher := c.launcherOf(v.ID)
+	// Native float/dialog removal already owns its return selection. Only a
+	// tiled arrival falls through to launcher, then the normal neighbour.
+	returnLauncher := focused == v.ID && !w.IsFloat(v.ID) && w.StashIndex(v.ID) < 0
+	remove := func() {
 		sc.mon.RemoveWindow(v.ID)
+		if returnLauncher {
+			rec := c.lineage.records[launcher]
+			if rec != nil && rec.mapped {
+				if _, target := c.screenOf(launcher); target == w {
+					w.Activate(launcher)
+				}
+			}
+		}
+	}
+	if !c.animOn() || c.security.Protected || sc.mon.previewing() {
+		remove()
 		delete(sc.rects, v.ID)
 		return
 	}
@@ -519,7 +539,7 @@ func (c *Core) unmapWindow(v ports.WindowUnmapped) {
 			}
 		}
 	}
-	sc.mon.RemoveWindow(v.ID)
+	remove()
 	// A window already leaving (a stash hide still fading) keeps its
 	// motion: the fade goes on from where it is, drawn from the content
 	// the renderer kept. Any other motion goes with the window.

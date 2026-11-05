@@ -171,19 +171,25 @@ func (c *Core) ruleTarget(eff ruleEffect) (*screen, *Workspace) {
 // sent to another output that would have taken the focus on the focused
 // output's workspace on screen; the caller activates it.
 func (c *Core) placeByRule(v ports.WindowMapped, eff ruleEffect, byRule bool) (follow bool) {
+	sc, w := c.ruleTarget(eff)
+	return c.placeOnWorkspace(v, eff, sc, w, byRule)
+}
+
+// placeOnWorkspace shares destination sizing and focus policy for rules and ancestry.
+func (c *Core) placeOnWorkspace(v ports.WindowMapped, eff ruleEffect, sc *screen, w *Workspace, byRule bool) (follow bool) {
 	float := v.Floating
 	if eff.floating != nil {
 		float = *eff.floating
 	}
-	sc, w := c.ruleTarget(eff)
-	// The workspace the user looks at takes a new window as usual; any
-	// other one gets it without a change of focus or view.
-	quiet := sc != c.cur() || w != sc.mon.Current()
-	if byRule && sc != c.cur() && !c.cur().mon.ov.open && !c.security.Protected {
+	// Keep-focus outputs advance their visible workspace independently of the
+	// seat. Hidden workspaces and ordinary remote outputs remain quiet.
+	kept := c.keepsSeatFocus(sc)
+	quiet := w != sc.mon.Current() || sc != c.cur() && !kept
+	if byRule && sc != c.cur() && !kept && !c.cur().mon.ov.open && !c.security.Protected {
 		// A new window takes the focus unless a fullscreen window of
 		// another app covers the workspace in view (ADR 011).
 		cover := c.cur().mon.Current().Cover()
-		follow = cover == 0 || sameApp(v, c.windows.lookup(cover).client)
+		follow = cover == 0 || sameApp(v, c.windows.lookup(cover).client) || c.launcherOf(v.ID) == cover
 	}
 	defer func() { follow = follow && w.Has(v.ID) }()
 	switch {
@@ -197,7 +203,7 @@ func (c *Core) placeByRule(v ports.WindowMapped, eff ruleEffect, byRule bool) (f
 	case quiet:
 		w.AddTile(v.ID, eff.cells, true)
 	default:
-		if !c.placeCoverApp(v, sc, w, eff.cells) {
+		if !c.placeLaunched(v, sc, w, eff.cells) && !c.placeCoverApp(v, sc, w, eff.cells) {
 			sc.mon.addWindow(v.ID, eff.cells)
 		}
 		return follow
@@ -264,9 +270,9 @@ func (c *Core) windowTitle(ctx context.Context, v ports.WindowTitle) error {
 	workspacedomain.MoveByRule(from, to, v.ID)
 	fromScreen.mon.normalize()
 	toScreen.mon.normalize()
-	// The focused window stays focused on its new output, even an isolated
-	// one: the rule moved it, not the user's attention.
-	if held && to.Has(v.ID) {
+	// Preserve the existing follow policy except for remote keep-focus
+	// outputs: a title change is not a user request to move the seat.
+	if held && to.Has(v.ID) && !c.keepsSeatFocus(toScreen) {
 		return c.activate(ctx, v.ID)
 	}
 	return nil
@@ -280,4 +286,22 @@ func (c *Core) titleHistory(id WindowID) *titleRuleHistory {
 		c.titleHistories[id] = &titleRuleHistory{applied: map[string]bool{}}
 	}
 	return c.titleHistories[id]
+}
+
+// keepsSeatFocus is the automatic-placement boundary: a remote keep-focus
+// output advances its own selection without moving the seat or desktop view.
+// Explicit activation does not use this policy. Keep startup arrivals quiet too;
+// the output's independent X11 selection does not require seat activation.
+func (c *Core) keepsSeatFocus(sc *screen) bool {
+	return sc != c.cur() && c.keepsFocus(sc)
+}
+
+// keepsFocus reports the output's independent workspace-focus policy.
+func (c *Core) keepsFocus(sc *screen) bool {
+	for _, o := range c.cfg.Outputs {
+		if o.KeepFocus && sc.mon.matches(o.Name) {
+			return true
+		}
+	}
+	return false
 }

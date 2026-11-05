@@ -36,6 +36,7 @@ func (w *Workspace) columnX(i int) int {
 }
 
 func (w *Workspace) scroll() {
+	w.promoteFocused()
 	w.SettleLayout()
 	before := w.View
 	w.View = w.Engine().ScrollTarget(w.Snapshot())

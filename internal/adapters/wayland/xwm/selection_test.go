@@ -233,7 +233,25 @@ func TestSelectionXToWaylandINCR(t *testing.T) {
 	r := ownedRig(t)
 	const total = 1 << 20
 	want := pattern(total)
-	f := r.receive(t, 1<<20)
+	src := newMockfdSource(t)
+	var onW func()
+	r.x.lp = newFDLoop(t, r, src, nil, &onW)
+	src.EXPECT().SetWritable(mock.Anything).Return(nil).Maybe()
+	src.EXPECT().Remove().Return().Maybe()
+	f := r.receive(t, 4096)
+	type result struct {
+		data []byte
+		err  error
+	}
+	done := make(chan result, 1)
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		data, err := io.ReadAll(f)
+		done <- result{data, err}
+	}()
+	// Abort first: closing f does not interrupt a blocked read while the XWM holds the write end.
+	t.Cleanup(func() { r.x.selClose(); f.Close(); <-finished })
 	_, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
 	r.skip = n
 	r.p.setProp(r.requestor, r.data, r.p.atom("INCR"), 32, le32(total))
@@ -251,11 +269,18 @@ func TestSelectionXToWaylandINCR(t *testing.T) {
 		r.p.propertyNotify(r.requestor, r.data, false)
 		r.waitGet(t)
 		gets++
+		readUntil(t, r.x, func() bool {
+			for r.x.sel.in[0].state == inWriting {
+				waitSocket(t, r.x.sel.in[0].fd, unix.POLLOUT)
+				onW()
+			}
+			return r.x.sel.in[0].state == inWaitIncr || r.x.sel.in[0].state == inFree
+		})
 	}
 	readUntil(t, r.x, func() bool { return r.x.sel.in[0].state == inFree })
-	got, err := io.ReadAll(f)
-	require.NoError(t, err)
-	require.True(t, bytes.Equal(want, got), "byte-exact, got %d", len(got))
+	got := <-done
+	require.NoError(t, got.err)
+	require.True(t, bytes.Equal(want, got.data), "byte-exact, got %d", len(got.data))
 	require.Equal(t, 1+total/chunk+1, gets, "marker, 16 chunks, empty terminator")
 	require.NoError(t, r.x.conn.Sync(&r.x.h))
 	reused, err := r.x.newSelectionRequestor()
@@ -273,15 +298,18 @@ func TestSelectionXToWaylandBackpressure(t *testing.T) {
 	src.EXPECT().SetWritable(true).Return(nil).Once()
 	src.EXPECT().SetWritable(false).Return(nil).Once()
 	src.EXPECT().Remove().Return().Once()
-	f := r.receive(t, 0) // default 64 KiB pipe
+	f := r.receive(t, 4096) // force backpressure independent of host pipe limits
+	// The kernel rounds the request up to its page size: use the real capacity.
+	piece, err := unix.FcntlInt(f.Fd(), unix.F_GETPIPE_SZ, 0)
+	require.NoError(t, err)
 	_, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
 	r.skip = n
-	r.p.setProp(r.requestor, r.data, r.p.atom("INCR"), 32, le32(3*chunk))
+	r.p.setProp(r.requestor, r.data, r.p.atom("INCR"), 32, le32(uint32(3*piece)))
 	r.p.selectionNotify(r.requestor, r.clip, r.utf8, r.data)
 	r.waitGet(t)
-	want := pattern(3 * chunk)
+	want := pattern(3 * piece)
 	chunkN := func(k int) {
-		r.p.setProp(r.requestor, r.data, r.utf8, 8, want[k*chunk:(k+1)*chunk])
+		r.p.setProp(r.requestor, r.data, r.utf8, 8, want[k*piece:(k+1)*piece])
 		r.p.propertyNotify(r.requestor, r.data, false)
 	}
 	chunkN(0) // fills the pipe exactly
@@ -299,8 +327,8 @@ func TestSelectionXToWaylandBackpressure(t *testing.T) {
 	r.x.flush()
 	require.Equal(t, gets, getProps(r.p, 0, r.requestor), "no GetProperty while a buffer is pending")
 
-	got := make([]byte, 0, 3*chunk)
-	buf := make([]byte, chunk)
+	got := make([]byte, 0, 3*piece)
+	buf := make([]byte, piece)
 	m, err := f.Read(buf) // the reader wakes: room again
 	require.NoError(t, err)
 	got = append(got, buf[:m]...)
@@ -420,17 +448,20 @@ func TestSelectionINCRChunkAllocations(t *testing.T) {
 	x.onSelectionNotify(&note)
 	x.onSelDataReply(dataReply(r, r.p.atom("INCR"), le32(1<<20)))
 	require.Equal(t, inWaitIncr, x.sel.in[0].state)
-	rep := dataReply(r, r.utf8, pattern(chunk))
+	// INCR chunks need not fill the protocol buffer. Keep this hot-path
+	// allocation measurement within one pipe page; full-size chunks and
+	// writable callbacks are exercised by TestSelectionXToWaylandINCR.
+	rep := dataReply(r, r.utf8, pattern(4096))
 	var pn xturbo.Event
 	pn.Kind = xproto.KindPropertyNotify
 	binary.LittleEndian.PutUint32(pn.Raw[4:], x.sel.in[0].requestor)
 	binary.LittleEndian.PutUint32(pn.Raw[8:], r.data)
-	sink := make([]byte, chunk)
+	sink := make([]byte, 4096)
 	step := func() {
 		x.onSelProperty(&pn)
 		rep.Args = [4]uint32{0, x.sel.in[0].gen}
 		x.onSelDataReply(rep)
-		if m, err := unix.Read(fds[0], sink); err != nil || m != chunk {
+		if m, err := unix.Read(fds[0], sink); err != nil || m != 4096 {
 			t.Fatal("read")
 		}
 		x.posted = false
@@ -605,14 +636,30 @@ func TestSelectionWaylandToXINCR(t *testing.T) {
 	require.Equal(t, nXfer, r.x.sel.pool.n)
 }
 
+// fillOutChunk drives the mock fd loop between pipe-sized writes. A write of
+// chunk bytes before dispatch would deadlock on hosts with smaller pipes.
+func fillOutChunk(t *testing.T, r *selRig, w *os.File, onR *func()) {
+	t.Helper()
+	readUntil(t, r.x, func() bool { return r.x.sel.out[0].state == outActive })
+	data := pattern(chunk)
+	for off := 0; off < len(data); off += 4096 {
+		n, err := unix.Write(int(w.Fd()), data[off:off+4096])
+		require.NoError(t, err)
+		require.Equal(t, 4096, n)
+		require.NotNil(t, *onR)
+		(*onR)()
+	}
+	require.True(t, r.x.sel.out[0].incr)
+}
+
 func TestSelectionWaylandToXTimeoutAndClear(t *testing.T) {
 	r := ownedByWayland(t, "text/plain;charset=utf-8")
 	src := newMockfdSource(t)
 	src.EXPECT().Remove().Return().Maybe()
-	r.x.lp = newFDLoop(t, r, src, nil, nil)
+	var onR func()
+	r.x.lp = newFDLoop(t, r, src, &onR, nil)
 	w := r.serve(t, r.utf8)
-	_, err := w.Write(pattern(chunk)) // a full chunk: INCR
-	require.NoError(t, err)
+	fillOutChunk(t, r, w, &onR)
 	readUntil(t, r.x, func() bool { return r.x.sel.out[0].incr })
 	require.Equal(t, r.data, sentNotify(t, r))
 	require.NotNil(t, r.timer)
@@ -621,15 +668,18 @@ func TestSelectionWaylandToXTimeoutAndClear(t *testing.T) {
 		r.timer()
 	}
 	require.Equal(t, outFree, r.x.sel.out[0].state, "no Deleted for 10 s aborts")
+	_, err := unix.Write(int(w.Fd()), []byte("late"))
+	require.ErrorIs(t, err, unix.EPIPE, "timeout closes the transfer reader")
 	pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == opDeleteProperty && q.u32(4) == reqWin })
 
 	// SelectionClear aborts a running transfer and refuses further requests.
 	w2 := r.serve(t, r.utf8)
-	_, err = w2.Write(pattern(chunk))
-	require.NoError(t, err)
+	fillOutChunk(t, r, w2, &onR)
 	readUntil(t, r.x, func() bool { return r.x.sel.out[0].state == outActive })
 	r.p.selectionClear(r.x.selWin, r.clip)
 	readUntil(t, r.x, func() bool { return r.x.sel.out[0].state == outFree })
+	_, err = unix.Write(int(w2.Fd()), []byte("late"))
+	require.ErrorIs(t, err, unix.EPIPE, "clear closes the transfer reader")
 	r.p.selectionRequest(r.x.selWin, reqWin, r.clip, r.utf8, r.data)
 	require.Equal(t, r.data, sentNotify(t, r), "INCR announcement of the aborted transfer")
 	require.Zero(t, sentNotify(t, r), "request after the clear is refused")
@@ -640,10 +690,10 @@ func TestSelectionClearAndRace(t *testing.T) {
 	r := ownedByWayland(t, "text/plain;charset=utf-8")
 	src := newMockfdSource(t)
 	src.EXPECT().Remove().Return().Maybe()
-	r.x.lp = newFDLoop(t, r, src, nil, nil)
+	var onR func()
+	r.x.lp = newFDLoop(t, r, src, &onR, nil)
 	w := r.serve(t, r.utf8)
-	_, err := w.Write(pattern(chunk))
-	require.NoError(t, err)
+	fillOutChunk(t, r, w, &onR)
 	readUntil(t, r.x, func() bool { return r.x.sel.out[0].incr })
 	r.x.WaylandSelection(SelClipboard, []string{"text/plain"})
 	require.Equal(t, outFree, r.x.sel.out[0].state)

@@ -91,7 +91,7 @@ func (a *castAllocator) Fixate(f pipewire.VideoFormat, w, h int, candidates []ui
 			continue
 		}
 		n := len(buf.Planes)
-		closePlanes(&buf)
+		a.release(&buf)
 		return m, n, nil
 	}
 	if last == nil {
@@ -109,25 +109,25 @@ func (a *castAllocator) Alloc(idx int, f pipewire.VideoFormat, w, h int, modifie
 	if !ok {
 		return fmt.Errorf("screencast: video format %d is not a cast format", f)
 	}
-	closePlanes(&a.bufs[idx])
+	a.release(&a.bufs[idx])
 	buf, err := a.dev.AllocCast(fc, w, h, modifier)
 	if err != nil {
 		return err
 	}
 	if len(buf.Planes) < 1 || len(buf.Planes) > len(out.P) {
-		closePlanes(&buf)
+		a.release(&buf)
 		return fmt.Errorf("screencast: cast buffer with %d planes", len(buf.Planes))
 	}
 	// The planes share one object: its size bounds every plane.
 	size, err := unix.Seek(int(buf.Planes[0].File.Fd()), 0, unix.SEEK_END)
 	if err != nil || size <= 0 || size > 1<<32-1 {
-		closePlanes(&buf)
+		a.release(&buf)
 		return fmt.Errorf("screencast: cast buffer size %d: %v", size, err)
 	}
 	*out = pipewire.VideoPlanes{N: len(buf.Planes), Size: uint32(size)}
 	for i, p := range buf.Planes {
 		if int64(p.Offset) >= size {
-			closePlanes(&buf)
+			a.release(&buf)
 			*out = pipewire.VideoPlanes{}
 			return fmt.Errorf("screencast: plane %d offset %d past the buffer", i, p.Offset)
 		}
@@ -137,10 +137,10 @@ func (a *castAllocator) Alloc(idx int, f pipewire.VideoFormat, w, h int, modifie
 	return nil
 }
 
-// Free closes buffer idx's files: nothing else holds its memory.
+// Free releases buffer idx's retained allocation before closing its files.
 func (a *castAllocator) Free(idx int) {
 	if idx >= 0 && idx < len(a.bufs) {
-		closePlanes(&a.bufs[idx])
+		a.release(&a.bufs[idx])
 	}
 }
 
@@ -155,7 +155,7 @@ func (a *castAllocator) buffer(b *pipewire.VideoBuffer) *domain.DMABuf {
 // freeAll closes every buffer still held: the source is gone.
 func (a *castAllocator) freeAll() {
 	for i := range a.bufs {
-		closePlanes(&a.bufs[i])
+		a.release(&a.bufs[i])
 	}
 }
 
@@ -167,4 +167,12 @@ func closePlanes(b *domain.DMABuf) {
 		}
 	}
 	*b = domain.DMABuf{}
+}
+
+// release runs for remove-buffer, replacement, failed allocation and shutdown.
+func (a *castAllocator) release(b *domain.DMABuf) {
+	if len(b.Planes) > 0 {
+		a.dev.ReleaseCast(*b)
+	}
+	closePlanes(b)
 }
