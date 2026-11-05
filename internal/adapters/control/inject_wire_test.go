@@ -6,6 +6,7 @@ import (
 	"net"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
@@ -140,4 +141,29 @@ func TestInjectProtocol(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("open-client shutdown hung")
 	}
+}
+
+// The device announcement repeats until core accepts a batch: a refused
+// (locked) batch never reached the input path.
+func TestInjectAnnouncesUntilAccepted(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := &Server{ids: workspaceid.WithPrefix("inject"), done: make(chan struct{}), injector: newInjector(injectKeymap(t), nil)}
+		out := make(chan ports.ControlRequest)
+		announced := false
+		for _, refuse := range []string{ports.ControlErrLocked, "", ""} {
+			go func() {
+				r := (<-out).(ports.ControlInject)
+				_, first := r.Events[0].(ports.InputDeviceAdded)
+				if first == announced {
+					t.Errorf("announcement sent=%v after announced=%v", first, announced)
+				}
+				r.Reply <- ports.ControlReply{Err: refuse}
+			}()
+			s.dispatch(context.Background(), request{Op: "inject", Kind: "key", Combo: "a"}, out, &announced)
+			synctest.Wait()
+			if announced != (refuse == "") {
+				t.Fatalf("announced=%v after %q", announced, refuse)
+			}
+		}
+	})
 }

@@ -63,6 +63,10 @@ func TestProtocol(t *testing.T) {
 	if string(hello["id"]) != `"hello"` || string(hello["ok"]) != "true" || string(hello["v"]) != "1" {
 		t.Fatal(hello)
 	}
+	// The id is optional and echoed as null.
+	if anon := exchange(`{"op":"hello"}`); string(anon["id"]) != "null" || string(anon["ok"]) != "true" {
+		t.Fatal(anon)
+	}
 	var commands []command
 	if err := json.Unmarshal(hello["commands"], &commands); err != nil {
 		t.Fatal(err)
@@ -82,7 +86,7 @@ func TestProtocol(t *testing.T) {
 	if !reflect.DeepEqual(caps, []string{"read", "act", "input", "capture", "admin"}) {
 		t.Fatal(caps)
 	}
-	for _, line := range []string{`{broken`, `{"id":2,"op":"unknown"}`, `{"id":3,"op":"do","action":"none","wait":"bad"}`, `{"id":4,"op":"do","action":"none","until":"bad"}`, `{"id":5,"op":"do","action":"none","timeout":"bad"}`} {
+	for _, line := range []string{`{broken`, `{"id":2,"op":"unknown"}`, `{"id":3,"op":"do","action":"none","wait":"bad"}`, `{"id":4,"op":"do","action":"none","until":"bad"}`, `{"id":5,"op":"do","action":"none","timeout":"bad"}`, `{"id":5,"op":"do","action":"none","timeout":"6m"}`, `{"op":"do"}`} {
 		got := exchange(line)
 		if string(got["error"]) != `"bad-request"` || string(got["ok"]) != "false" {
 			t.Fatal(got)

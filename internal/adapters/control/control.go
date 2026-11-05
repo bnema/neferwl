@@ -245,6 +245,12 @@ func capNames(c domain.Caps) []string {
 	return names
 }
 
+var nullID = json.RawMessage("null")
+
+// maxRequestTimeout caps the client-supplied timeout: core and the shooter
+// hold a request at most this long.
+const maxRequestTimeout = 5 * time.Minute
+
 func (s *Server) serve(ctx context.Context, conn *net.UnixConn, out chan<- ports.ControlRequest) {
 	scanner := bufio.NewScanner(conn)
 	scanner.Buffer(make([]byte, 4096), 1024*1024)
@@ -252,11 +258,15 @@ func (s *Server) serve(ctx context.Context, conn *net.UnixConn, out chan<- ports
 	announced := false
 	for scanner.Scan() {
 		var req request
-		if err := json.Unmarshal(scanner.Bytes(), &req); err != nil || len(req.ID) == 0 || string(req.ID) == "null" {
-			if encoder.Encode(reply{Error: ports.ControlErrBadRequest}) != nil {
+		if err := json.Unmarshal(scanner.Bytes(), &req); err != nil {
+			if encoder.Encode(reply{ID: nullID, Error: ports.ControlErrBadRequest}) != nil {
 				return
 			}
 			continue
+		}
+		// The id is optional: a request without one gets "id": null back.
+		if len(req.ID) == 0 {
+			req.ID = nullID
 		}
 		if req.Op == "hello" {
 			commands := []command{}
@@ -291,6 +301,7 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 	}
 	ch := make(chan ports.ControlReply, 1)
 	var message ports.ControlRequest
+	timeout := 10 * time.Second
 	switch req.Op {
 	case "output-add", "output-rm":
 		mode := domain.OutputMode{}
@@ -331,11 +342,10 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 			}
 			until = &parsed
 		}
-		timeout := 10 * time.Second
 		if req.Timeout != nil {
 			var err error
 			timeout, err = time.ParseDuration(*req.Timeout)
-			if err != nil || timeout <= 0 {
+			if err != nil || timeout <= 0 || timeout > maxRequestTimeout {
 				return response
 			}
 		}
@@ -347,7 +357,6 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 			if err != nil {
 				return response
 			}
-			*announced = true
 			message = ports.ControlInject{Shots: shots, Events: events, Wait: wait, Until: until, Timeout: timeout, Caps: domain.CapsAll, Reply: ch}
 		} else {
 			if req.Op == "shot" {
@@ -377,6 +386,10 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 	case <-ctx.Done():
 		return response
 	}
+	// The device announcement went through only if core ran the batch.
+	if _, inject := message.(ports.ControlInject); inject && (result.Err == "" || result.TimedOut) {
+		*announced = true
+	}
 	code := result.Err
 	if result.TimedOut {
 		code = "timeout"
@@ -390,7 +403,10 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 			response.Detail = "capture unavailable"
 			return response
 		}
-		shots, err := s.shooter.Shoot(ctx, result.Shots, req.Inline)
+		// The capture is part of the request: bound it by the request timeout.
+		shotCtx, cancel := context.WithTimeout(ctx, timeout)
+		shots, err := s.shooter.Shoot(shotCtx, result.Shots, req.Inline)
+		cancel()
 		response.Shots = shots
 		if err != nil {
 			response.OK = false
