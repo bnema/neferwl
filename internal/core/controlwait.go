@@ -218,7 +218,7 @@ func earlier(min, t time.Time) time.Time {
 }
 
 func (c *Core) stopControlWaitTimer() {
-	if c.controlWaitTimer == nil {
+	if c.controlWaitC == nil {
 		return
 	}
 	c.controlWaitTimer.Stop()
