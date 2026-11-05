@@ -362,7 +362,7 @@ func (x *x11Window) tryMap() {
 		parent = w.parent.id
 	}
 	proc := s.windowProc(w.id, x.info.ClientPID, w.gen > 1)
-	s.emit(ports.WindowMapped{Proc: proc, ID: w.id, AppID: w.appID, Title: w.title, ColorDescription: !surf.outputColor().PlainSDR(), PID: x.info.PID, Xwayland: true, Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Positioned: true, Modal: w.modal, Remap: w.gen > 1, HasAt: x.info.HasAt, AtX: x.info.AtX, AtY: x.info.AtY, Fullscreen: x.info.Fullscreen})
+	s.emit(ports.WindowMapped{Proc: proc, ID: w.id, AppID: w.appID, Title: w.title, ColorDescription: surf.mappedColor(), PID: x.info.PID, Xwayland: true, Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Positioned: true, Modal: w.modal, Remap: w.gen > 1, HasAt: x.info.HasAt, AtX: x.info.AtX, AtY: x.info.AtY, Fullscreen: x.info.Fullscreen})
 	s.syncInhibitors()
 	s.toplevelChanged(w)
 	s.castInventoryChanged()
