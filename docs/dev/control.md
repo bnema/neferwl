@@ -16,7 +16,7 @@ CLI target resolution uses the first available target, in this order:
 1. Explicit `-s <id>`.
 2. `NEFERWL_SESSION` (session id).
 3. `NEFERWL_CONTROL` (control socket path).
-4. The session that owns `WAYLAND_DISPLAY`.
+4. The session that owns `WAYLAND_DISPLAY`, matched in the session registry.
 
 If no target resolves, the CLI reports an error and lists sessions. Use an
 explicit target in automation to avoid controlling the desktop by accident.
@@ -32,12 +32,13 @@ an `id`, echoed in the reply so clients can correlate requests and responses.
 The handshake advertises the protocol version, capabilities and command catalog:
 
 ```json
-{"op":"hello"}
-{"v":1,"caps":[...],"commands":[...]}
+{"id":1,"op":"hello"}
+{"id":1,"ok":true,"v":1,"caps":["read","act","input","capture","admin"],"commands":[...]}
 ```
 
-The ellipses above stand for advertised entries, not literal JSON. Include an
-`id` on requests that need correlation.
+Each command entry has `name`, `arg`, `kind`, `caps` and `summary`; the
+ellipsis stands for those entries. Every request needs an `id`: a request
+without one is answered with `bad-request` and `"id":null`.
 
 Additive changes keep `v: 1`. Clients tolerate additional fields and use the
 advertised capabilities and commands to discover supported operations.
@@ -82,9 +83,11 @@ Actions wait for their effects at one of three levels:
   sizes.
 - `presented`: the resulting scene is presented on the output.
 
-Use `--wait=committed|settled|presented` to select a level. Attaching `--shot`
-implies `presented`, so a capture observes the resulting scene rather than an
-older frame.
+Use `--wait=committed|settled|presented` to select a level. `--shot` on `do`
+and the input verbs sets the wire field `shot` (`true` captures every output;
+the wire also accepts a list of output names). It implies `presented`, so the
+capture observes the resulting scene rather than an older frame, and the reply
+carries `shots` like a `shot` request.
 
 `--until` adds a typed state predicate:
 
@@ -143,16 +146,24 @@ single-shot CLI flag set.
 | `locked` | Input or capture is refused while the session is protected. |
 | `forbidden` | The connection lacks permission for the operation. |
 | `timeout` | The requested completion condition is not reached in time. |
+| `capture-failed` | The capture or the continuous frame writer could not be started or written. |
 
 ## CLI
 
-`neferwl do <action>` maps to `do`; `neferwl query state` maps to `query`.
-`neferwl state` is an alias for `query state`. `neferwl key`, `type`, `press`,
+`neferwl do <action>` maps to `do`; `neferwl query state` maps to `query` and
+prints the whole reply. `neferwl state` sends the same query but prints only the
+`state` object, in the state file's shape; without a reachable control target
+it reads the state file. `neferwl key`, `type`, `press`,
 `release`, `click`, `move` and `swipe` map to `inject`; `neferwl shot` maps to
 `shot`. `click` and `move` use the pointer injection kind. `neferwl pointer`
 also supports the Wayland virtual-pointer workflow described in the
 [server guide](../server.md#controlling-a-neferwl-session-agents).
 `neferwl session new|ls|rm` creates, lists and removes managed sessions.
+
+`do` and the input verbs accept their flags (`-s`, `--wait`, `--until`,
+`--timeout`, `--shot`) before or after the arguments. `--` ends flag parsing,
+for arguments that start with a dash: `neferwl -s test move -- -640 0`,
+`neferwl -s test type -- -x`.
 
 ```sh
 neferwl session new
@@ -184,7 +195,7 @@ The child writes one JSON line containing `id`, `wayland`, `control` and
 `display` to fd 3 when ready, then closes it. EOF before that line means startup
 failed. The launcher waits at most `--start-timeout` (default `30s`). The child-side
 startup flags must be supported by the compositor. By default the launcher
-prints the readiness JSON; `--env` (also `--export`) prints `NEFERWL_SESSION`
+prints the readiness JSON; `--env` prints `NEFERWL_SESSION`
 and `WAYLAND_DISPLAY` assignments. Parent session targeting/display variables
 are removed from the child environment. The session bus address is removed
 unless `--dbus-session` is given. `session rm` is described below.

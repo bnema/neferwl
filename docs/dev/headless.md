@@ -73,11 +73,13 @@ neferwl -s test press Super
 neferwl -s test release Super
 ```
 
-Input commands accept `--wait committed|settled|presented`, `--until`, and
-`--timeout`. `move` uses global logical coordinates. Use shell orchestration
-for delays and holds; the translator never sleeps. Injection is rejected while
-the session is locked. The existing `pointer` virtual-pointer command uses a
-Wayland display rather than a control target, as shown below.
+Input commands accept `--wait committed|settled|presented`, `--until`,
+`--timeout` and `--shot`, anywhere after the command. `move` uses global
+logical coordinates. Put `--` before arguments that start with a dash, such as
+negative coordinates or text: `move -- -640 0`, `type -- -x`. Use shell
+orchestration for delays and holds; the translator never sleeps. Injection is
+rejected while the session is locked. The `pointer` virtual-pointer command
+uses a Wayland display rather than a control target, as shown below.
 
 ## Testing input methods
 
@@ -285,6 +287,6 @@ Control `move` coordinates remain global logical coordinates.
 Every headless run registers a session. Use `neferwl session ls` to find its ID.
 Runtime metadata, control.sock, state.json and shots/ live under
 `$XDG_RUNTIME_DIR/neferwl/sessions/<id>/`. CLI-started session logs live under
-`$XDG_STATE_HOME/neferwl/sessions/<id>/latest.log`, replacing the shared
-`runs/headless/latest.log` location. `neferwl -s <id> state` selects the session
-without changing the desktop environment.
+`$XDG_STATE_HOME/neferwl/sessions/<id>/latest.log`; the 20 most recent session
+log directories are kept. `neferwl -s <id> state` selects the session without
+changing the desktop environment.
