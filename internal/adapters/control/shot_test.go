@@ -23,7 +23,7 @@ func TestShotPNG(t *testing.T) {
 				requests := make(chan domain.CaptureRequest)
 				done := make(chan domain.CaptureDone)
 				dir := t.TempDir()
-				s := NewShooter(requests, done, dir, func(string) (int, int, bool) { return 1, 1, true })
+				s := NewShooter(requests, done, dir)
 				go func() {
 					q := <-requests
 					if q.ID&ports.CaptureIDControl == 0 || q.MinSeq != 7 || q.Output != "A" || q.Stride != 4 || q.Format != 1 {
@@ -32,7 +32,7 @@ func TestShotPNG(t *testing.T) {
 					copy(q.Mapped, []byte{3, 2, 1, 0})
 					done <- domain.CaptureDone{ID: q.ID}
 				}()
-				got, err := s.Shoot(context.Background(), []domain.ShotRequest{{Output: "A", MinSeq: 7}}, inline)
+				got, err := s.Shoot(context.Background(), []domain.ShotRequest{{Output: "A", MinSeq: 7, Width: 1, Height: 1}}, inline)
 				if err != nil || len(got) != 1 {
 					t.Fatalf("%+v %v", got, err)
 				}
@@ -75,7 +75,7 @@ func TestShotFailureAndCancel(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		requests := make(chan domain.CaptureRequest)
 		done := make(chan domain.CaptureDone, 2)
-		s := NewShooter(requests, done, t.TempDir(), func(name string) (int, int, bool) { return 1, 1, name == "A" })
+		s := NewShooter(requests, done, t.TempDir())
 		if _, err := s.Shoot(context.Background(), []domain.ShotRequest{{Raw: true}}, false); err == nil || err.Error() != "raw shots need --every-frame" {
 			t.Fatal(err)
 		}
@@ -84,17 +84,17 @@ func TestShotFailureAndCancel(t *testing.T) {
 		}
 		failure := errors.New("output failed")
 		go func() { q := <-requests; done <- domain.CaptureDone{ID: q.ID, Err: failure} }()
-		if _, err := s.Shoot(context.Background(), []domain.ShotRequest{{Output: "A"}}, false); !errors.Is(err, failure) {
+		if _, err := s.Shoot(context.Background(), []domain.ShotRequest{{Output: "A", Width: 1, Height: 1}}, false); !errors.Is(err, failure) {
 			t.Fatal(err)
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		go func() { q := <-requests; cancel(); done <- domain.CaptureDone{ID: q.ID} }()
-		if _, err := s.Shoot(ctx, []domain.ShotRequest{{Output: "A"}}, false); !errors.Is(err, context.Canceled) {
+		if _, err := s.Shoot(ctx, []domain.ShotRequest{{Output: "A", Width: 1, Height: 1}}, false); !errors.Is(err, context.Canceled) {
 			t.Fatal(err)
 		}
 		// A subsequent shot reaps any cancelled destination before its own reply.
 		go func() { q := <-requests; copy(q.Mapped, []byte{0, 0, 0, 255}); done <- domain.CaptureDone{ID: q.ID} }()
-		if _, err := s.Shoot(context.Background(), []domain.ShotRequest{{Output: "A"}}, false); err != nil {
+		if _, err := s.Shoot(context.Background(), []domain.ShotRequest{{Output: "A", Width: 1, Height: 1}}, false); err != nil {
 			t.Fatal(err)
 		}
 		if len(s.orphans) != 0 {

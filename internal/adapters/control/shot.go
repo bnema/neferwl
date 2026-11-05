@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
@@ -31,15 +32,14 @@ type Shooter struct {
 	requests chan<- domain.CaptureRequest
 	done     <-chan domain.CaptureDone
 	dir      string
-	size     func(string) (int, int, bool)
 	token    chan struct{}
 	next     uint64
 	orphans  map[uint64][]byte
 }
 
-// NewShooter uses size to resolve physical output pixel dimensions.
-func NewShooter(requests chan<- domain.CaptureRequest, done <-chan domain.CaptureDone, dir string, size func(output string) (w, h int, ok bool)) *Shooter {
-	return &Shooter{requests: requests, done: done, dir: dir, size: size, token: make(chan struct{}, 1), orphans: make(map[uint64][]byte)}
+// NewShooter writes into dir; each shot's pixel size comes from core.
+func NewShooter(requests chan<- domain.CaptureRequest, done <-chan domain.CaptureDone, dir string) *Shooter {
+	return &Shooter{requests: requests, done: done, dir: dir, token: make(chan struct{}, 1), orphans: make(map[uint64][]byte)}
 }
 
 // Shoot captures presented scenes to private PNG files. Raw single shots are
@@ -64,12 +64,9 @@ func (s *Shooter) Shoot(ctx context.Context, shots []domain.ShotRequest, inline 
 		if err := ctx.Err(); err != nil {
 			return results, err
 		}
-		if s.size == nil {
-			return results, errors.New("shot output size resolver is required")
-		}
-		w, h, ok := s.size(q.Output)
+		w, h := q.Width, q.Height
 		const maxBytes = 512 * 1024 * 1024
-		if !ok || w <= 0 || h <= 0 || w > maxBytes/4 || h > maxBytes/(w*4) {
+		if w <= 0 || h <= 0 || w > maxBytes/4 || h > maxBytes/(w*4) {
 			return results, fmt.Errorf("invalid or unknown shot output %q", q.Output)
 		}
 		if q.Output == "" || strings.ContainsAny(q.Output, "/\\") || q.Output == "." || q.Output == ".." {
@@ -117,14 +114,16 @@ func (s *Shooter) Shoot(ctx context.Context, shots []domain.ShotRequest, inline 
 			unix.Munmap(pixels)
 			return results, err
 		}
-		// CaptureFrame.Read writes opaque little-endian XRGB (BGRA bytes).
-		img := image.NewNRGBA(image.Rect(0, 0, w, h))
+		// CaptureFrame.Read writes opaque little-endian XRGB (BGRA bytes):
+		// swap to RGBA in the private mapping and encode it in place.
 		for i := 0; i < len(pixels); i += 4 {
-			img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = pixels[i+2], pixels[i+1], pixels[i], 255
+			pixels[i], pixels[i+2], pixels[i+3] = pixels[i+2], pixels[i], 255
 		}
-		unix.Munmap(pixels)
+		img := &image.NRGBA{Pix: pixels, Stride: w * 4, Rect: image.Rect(0, 0, w, h)}
 		var encoded bytes.Buffer
-		if err := png.Encode(&encoded, img); err != nil {
+		err = shotPNG.Encode(&encoded, img)
+		unix.Munmap(pixels)
+		if err != nil {
 			return results, err
 		}
 		path := filepath.Join(s.dir, fmt.Sprintf("%d-%s.png", q.MinSeq, q.Output))
@@ -150,3 +149,17 @@ func (s *Shooter) Shoot(ctx context.Context, shots []domain.ShotRequest, inline 
 	}
 	return results, nil
 }
+
+// shotPNG matches the headless frame writer: fast compression, pooled
+// encoder buffers.
+var shotPNG = png.Encoder{CompressionLevel: png.BestSpeed, BufferPool: new(pngBuffers)}
+
+// pngBuffers is a png.EncoderBufferPool.
+type pngBuffers struct{ pool sync.Pool }
+
+func (p *pngBuffers) Get() *png.EncoderBuffer {
+	b, _ := p.pool.Get().(*png.EncoderBuffer)
+	return b
+}
+
+func (p *pngBuffers) Put(b *png.EncoderBuffer) { p.pool.Put(b) }

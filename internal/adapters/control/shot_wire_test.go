@@ -16,7 +16,7 @@ func TestShotDispatch(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		captures := make(chan domain.CaptureRequest)
 		captured := make(chan domain.CaptureDone)
-		shooter := NewShooter(captures, captured, t.TempDir(), func(string) (int, int, bool) { return 1, 1, true })
+		shooter := NewShooter(captures, captured, t.TempDir())
 		s := &Server{ids: workspaceid.WithPrefix("test"), shooter: shooter, injector: newInjector(injectKeymap(t), nil), done: make(chan struct{})}
 		defer s.injector.km.Close()
 		out := make(chan ports.ControlRequest)
@@ -64,7 +64,7 @@ func TestShotDispatch(t *testing.T) {
 				if tc.timeout {
 					timedOut = ports.ControlErrTimeout
 				}
-				response <- ports.ControlReply{Done: domain.WaitPresented, Shots: []domain.ShotRequest{{Output: "A", MinSeq: 9}}, Err: timedOut}
+				response <- ports.ControlReply{Done: domain.WaitPresented, Shots: []domain.ShotRequest{{Output: "A", MinSeq: 9, Width: 1, Height: 1}}, Err: timedOut}
 				q := <-captures
 				if q.MinSeq != 9 || q.Output != "A" {
 					t.Errorf("capture: %+v", q)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -49,9 +48,6 @@ import (
 // starts them. The session owns hw, curs and xdisplay (released by close)
 // until run ends; the keymap and the wayland server own themselves.
 type session struct {
-	// shotSizes is written by the scene consumer and read by control shots.
-	shotMu      sync.Mutex
-	shotSizes   map[string][2]int
 	controlDone chan domain.CaptureDone
 	registry    *sessiondir.Dir
 	opts        Options
@@ -221,7 +217,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 			return s, mapErr
 		}
 		s.controlDone = make(chan domain.CaptureDone, ports.MaxCaptureInflight)
-		if listener, err := control.Listen(path, s.wsIDs, control.Options{Continuous: s.p.continuous, FramesDir: filepath.Join(s.registry.Path(), "shots", "frames"), Shooter: control.NewShooter(s.p.captures, s.controlDone, filepath.Join(s.registry.Path(), "shots"), s.shotSize), Keymap: controlMap, Keymaps: s.p.controlKeymaps, Security: s.security}); err != nil {
+		if listener, err := control.Listen(path, s.wsIDs, control.Options{Continuous: s.p.continuous, FramesDir: filepath.Join(s.registry.Path(), "shots", "frames"), Shooter: control.NewShooter(s.p.captures, s.controlDone, filepath.Join(s.registry.Path(), "shots")), Keymap: controlMap, Keymaps: s.p.controlKeymaps, Security: s.security}); err != nil {
 			controlMap.Close()
 			s.controlDone = nil
 			log.Warn().Err(err).Msg("control socket disabled")
@@ -489,12 +485,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	}
 	go func() {
 		defer workers.Done()
-		// Shot sizes serve control captures only: no per-frame work without.
-		var observers []func([]domain.Scene)
-		if s.control != nil {
-			observers = append(observers, s.recordShotSizes)
-		}
-		consumeScenes(ctx, p.scenes, p.configErrors, p.binds, p.placements, opts.testScenes, p.renderScenes, observers...)
+		consumeScenes(ctx, p.scenes, p.configErrors, p.binds, p.placements, opts.testScenes, p.renderScenes)
 	}()
 
 	go func() {
@@ -598,32 +589,4 @@ func (s *session) announceReady(opts Options, controlPath string) {
 			_ = f.Close()
 		}
 	}
-}
-
-func (s *session) recordShotSizes(scenes []domain.Scene) {
-	s.shotMu.Lock()
-	defer s.shotMu.Unlock()
-	for _, scene := range scenes {
-		scale := scene.Scale
-		if scale <= 0 {
-			scale = 1
-		}
-		w, h := int(math.Round(float64(scene.OutputWidth)*scale)), int(math.Round(float64(scene.OutputHeight)*scale))
-		if scene.Transform.Rotated() {
-			w, h = h, w
-		}
-		if size := [2]int{w, h}; s.shotSizes[scene.Output] != size {
-			if s.shotSizes == nil {
-				s.shotSizes = make(map[string][2]int)
-			}
-			s.shotSizes[scene.Output] = size
-		}
-	}
-}
-
-func (s *session) shotSize(output string) (int, int, bool) {
-	s.shotMu.Lock()
-	defer s.shotMu.Unlock()
-	size, ok := s.shotSizes[output]
-	return size[0], size[1], ok
 }
