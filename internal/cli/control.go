@@ -24,6 +24,20 @@ type controlClient struct {
 
 type controlResponse map[string]json.RawMessage
 
+// err returns the reply's error code, or nil when ok is true.
+func (r controlResponse) err() error {
+	var ok bool
+	_ = json.Unmarshal(r["ok"], &ok)
+	if ok {
+		return nil
+	}
+	var code string
+	if err := json.Unmarshal(r["error"], &code); err != nil || code == "" {
+		return errors.New("control request failed")
+	}
+	return errors.New(code)
+}
+
 // dialControl resolves the control target (-s value, then environment) and
 // connects to it.
 func dialControl(env func(string) string, target string) (*controlClient, error) {
@@ -96,16 +110,25 @@ func printControl(ctx context.Context, env Env, c *controlClient, req map[string
 	if err := enc.Encode(reply); err != nil {
 		return err
 	}
-	var ok bool
-	_ = json.Unmarshal(reply["ok"], &ok)
-	if !ok {
-		var code string
-		if err := json.Unmarshal(reply["error"], &code); err != nil || code == "" {
-			return errors.New("control request failed")
-		}
-		return errors.New(code)
+	return reply.err()
+}
+
+// printControlState queries state and prints it bare, in the state file's
+// shape; query state keeps the reply envelope.
+func printControlState(ctx context.Context, env Env, c *controlClient) error {
+	reply, err := c.call(ctx, map[string]any{"op": "query", "what": "state"})
+	if err != nil {
+		return err
 	}
-	return nil
+	if err := reply.err(); err != nil {
+		return err
+	}
+	state := reply["state"]
+	if len(state) == 0 {
+		return errors.New("control reply has no state")
+	}
+	_, err = env.Stdout.Write(append(append([]byte{}, state...), '\n'))
+	return err
 }
 
 var doCmd = Command{

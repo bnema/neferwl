@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -90,6 +91,44 @@ func TestControlCommands(t *testing.T) {
 				t.Fatal(stderr)
 			}
 		})
+	}
+}
+
+// TestControlStateBare: neferwl state prints the state object alone, like
+// the state file; query state keeps the envelope.
+func TestControlStateBare(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "control.sock")
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	t.Setenv("NEFERWL_CONTROL", path)
+	result := make(chan error, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			result <- err
+			return
+		}
+		defer conn.Close()
+		var req map[string]any
+		if err := json.NewDecoder(conn).Decode(&req); err != nil {
+			result <- err
+			return
+		}
+		if req["op"] != "query" || req["what"] != "state" {
+			result <- fmt.Errorf("request %v", req)
+			return
+		}
+		result <- json.NewEncoder(conn).Encode(map[string]any{"id": req["id"], "ok": true, "done": "committed", "state": map[string]any{"output": "A"}})
+	}()
+	code, stdout, stderr := execute(t, "state")
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+	if code != 0 || stdout != `{"output":"A"}`+"\n" || stderr != "" {
+		t.Fatalf("exit %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
 }
 

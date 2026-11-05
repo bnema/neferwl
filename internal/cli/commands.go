@@ -54,7 +54,8 @@ func loadConfig(path string) (string, domain.Config, []config.Warning, error) {
 	return path, cfg, warnings, err
 }
 
-// stateCmd prefers control for plain state queries, falling back to the file
+// stateCmd prefers control for plain state queries (printed bare, in the state
+// file shape), falling back to the file
 // named by $NEFERWL_STATE, else the one of $WAYLAND_DISPLAY. output-of
 // retains its statefile contract.
 var stateCmd = Command{
@@ -79,7 +80,7 @@ var stateCmd = Command{
 			if pid == 0 {
 				if c, err := dialControl(os.Getenv, *target); err == nil {
 					defer c.conn.Close()
-					return printControl(ctx, env, c, map[string]any{"op": "query", "what": "state"})
+					return printControlState(ctx, env, c)
 				} else if *target != "" || os.Getenv("NEFERWL_SESSION") != "" {
 					return err
 				}
