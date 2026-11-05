@@ -15,9 +15,7 @@ import (
 func injectCommand(name, args, summary string) Command {
 	return Command{Name: name, Args: args + " [flags]", Summary: summary, Setup: func(fs *flag.FlagSet) Runner {
 		target := addTargetFlag(fs)
-		wait := fs.String("wait", "settled", "Completion level: committed, settled or presented.")
-		until := fs.String("until", "", "State predicate to wait for.")
-		timeout := fs.Duration("timeout", 10*time.Second, "Maximum completion wait.")
+		wf := addWaitFlags(fs)
 		return func(ctx context.Context, env Env, args []string) error {
 			positional, err := injectArguments(fs, args)
 			if err != nil {
@@ -27,19 +25,9 @@ func injectCommand(name, args, summary string) Command {
 			if err != nil {
 				return err
 			}
-			if _, err := domain.ParseWaitLevel(*wait); err != nil {
-				return usagef("%v", err)
+			if err := wf.apply(req); err != nil {
+				return err
 			}
-			if *until != "" {
-				if _, err := domain.ParseUntil(*until); err != nil {
-					return usagef("%v", err)
-				}
-				req["until"] = *until
-			}
-			if *timeout <= 0 {
-				return usagef("timeout must be positive")
-			}
-			req["wait"], req["timeout"] = *wait, timeout.String()
 			c, err := dialControl(os.Getenv, *target)
 			if err != nil {
 				return err
@@ -50,8 +38,45 @@ func injectCommand(name, args, summary string) Command {
 	}}
 }
 
-// injectArguments accepts flags after positional input, like do. -- protects
-// text that starts with a double dash from option parsing.
+// waitFlags are the completion flags shared by do and the input verbs.
+type waitFlags struct {
+	wait, until *string
+	timeout     *time.Duration
+	shot        *bool
+}
+
+func addWaitFlags(fs *flag.FlagSet) waitFlags {
+	return waitFlags{
+		wait:    fs.String("wait", "settled", "Completion level: committed, settled or presented."),
+		until:   fs.String("until", "", "State predicate to wait for, e.g. 'window-mapped app_id=foot'."),
+		timeout: fs.Duration("timeout", 10*time.Second, "Maximum completion wait."),
+		shot:    fs.Bool("shot", false, "Capture all outputs once the result is presented (implies --wait=presented)."),
+	}
+}
+
+// apply validates the flags and adds them to a do or inject request.
+func (w waitFlags) apply(req map[string]any) error {
+	if _, err := domain.ParseWaitLevel(*w.wait); err != nil {
+		return usagef("%v", err)
+	}
+	if *w.until != "" {
+		if _, err := domain.ParseUntil(*w.until); err != nil {
+			return usagef("%v", err)
+		}
+		req["until"] = *w.until
+	}
+	if *w.timeout <= 0 {
+		return usagef("timeout must be positive")
+	}
+	req["wait"], req["timeout"] = *w.wait, w.timeout.String()
+	if *w.shot {
+		req["shot"] = true
+	}
+	return nil
+}
+
+// injectArguments accepts flags after positional arguments. -- ends option
+// parsing, for text or coordinates that start with a dash.
 func injectArguments(fs *flag.FlagSet, args []string) ([]string, error) {
 	var positional []string
 	for n := 0; n < len(args); n++ {
@@ -66,6 +91,9 @@ func injectArguments(fs *flag.FlagSet, args []string) ([]string, error) {
 		name, value, hasValue := strings.Cut(strings.TrimLeft(arg, "-"), "=")
 		if fs.Lookup(name) == nil {
 			return nil, usagef("unknown flag --%s", name)
+		}
+		if b, ok := fs.Lookup(name).Value.(interface{ IsBoolFlag() bool }); ok && b.IsBoolFlag() && !hasValue {
+			value, hasValue = "true", true
 		}
 		if !hasValue {
 			n++

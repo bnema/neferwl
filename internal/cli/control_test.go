@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -14,20 +15,23 @@ func TestControlCommands(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		args   []string
-		want   map[string]string
+		want   map[string]any
 		reject bool
 	}{
-		{"do", []string{"do", "focus-workspace", "2", "--wait", "committed", "--until", "window-mapped app_id=foot", "--timeout", "3s"}, map[string]string{"op": "do", "action": "focus-workspace 2", "wait": "committed", "until": "window-mapped app_id=foot", "timeout": "3s"}, false},
-		{"key", []string{"key", "Super+Return", "--wait", "committed", "--until", "window-mapped app_id=foot", "--timeout", "3s"}, map[string]string{"op": "inject", "kind": "key", "combo": "Super+Return", "wait": "committed", "until": "window-mapped app_id=foot", "timeout": "3s"}, false},
-		{"type", []string{"type", "hello world"}, map[string]string{"op": "inject", "kind": "type", "text": "hello world"}, false},
-		{"press", []string{"press", "Super"}, map[string]string{"op": "inject", "kind": "press", "combo": "Super"}, false},
-		{"release", []string{"release", "Super"}, map[string]string{"op": "inject", "kind": "release", "combo": "Super"}, false},
-		{"click", []string{"click", "right"}, map[string]string{"op": "inject", "kind": "pointer", "cmd": "click"}, false},
-		{"move", []string{"move", "12.5", "-3"}, map[string]string{"op": "inject", "kind": "pointer", "cmd": "move"}, false},
-		{"swipe", []string{"swipe", "4", "up"}, map[string]string{"op": "inject", "kind": "swipe", "dir": "up"}, false},
-		{"query", []string{"query", "state"}, map[string]string{"op": "query", "what": "state"}, false},
-		{"state", []string{"state"}, map[string]string{"op": "query", "what": "state"}, false},
-		{"error", []string{"do", "missing"}, map[string]string{"op": "do", "action": "missing", "wait": "settled", "timeout": "10s"}, true},
+		{"do", []string{"do", "focus-workspace", "2", "--wait", "committed", "--until", "window-mapped app_id=foot", "--timeout", "3s"}, map[string]any{"op": "do", "action": "focus-workspace 2", "wait": "committed", "until": "window-mapped app_id=foot", "timeout": "3s", "shot": nil}, false},
+		{"do-shot", []string{"do", "focus-workspace", "2", "--shot"}, map[string]any{"op": "do", "action": "focus-workspace 2", "shot": true}, false},
+		{"key", []string{"key", "Super+Return", "--wait", "committed", "--until", "window-mapped app_id=foot", "--timeout", "3s"}, map[string]any{"op": "inject", "kind": "key", "combo": "Super+Return", "wait": "committed", "until": "window-mapped app_id=foot", "timeout": "3s"}, false},
+		{"key-shot", []string{"key", "Super+Return", "--shot=true"}, map[string]any{"op": "inject", "kind": "key", "shot": true}, false},
+		{"type", []string{"type", "hello world"}, map[string]any{"op": "inject", "kind": "type", "text": "hello world"}, false},
+		{"type-dash", []string{"type", "--", "-x"}, map[string]any{"op": "inject", "kind": "type", "text": "-x"}, false},
+		{"press", []string{"press", "Super"}, map[string]any{"op": "inject", "kind": "press", "combo": "Super"}, false},
+		{"release", []string{"release", "Super"}, map[string]any{"op": "inject", "kind": "release", "combo": "Super"}, false},
+		{"click", []string{"click", "right"}, map[string]any{"op": "inject", "kind": "pointer", "cmd": "click", "args": []any{"right"}}, false},
+		{"move", []string{"move", "12.5", "-3"}, map[string]any{"op": "inject", "kind": "pointer", "cmd": "move", "args": []any{"12.5", "-3"}}, false},
+		{"move-negative", []string{"move", "--", "-640", "0"}, map[string]any{"op": "inject", "kind": "pointer", "cmd": "move", "args": []any{"-640", "0"}}, false},
+		{"swipe", []string{"swipe", "4", "up"}, map[string]any{"op": "inject", "kind": "swipe", "fingers": float64(4), "dir": "up"}, false},
+		{"query", []string{"query", "state"}, map[string]any{"op": "query", "what": "state"}, false},
+		{"error", []string{"do", "missing"}, map[string]any{"op": "do", "action": "missing", "wait": "settled", "timeout": "10s"}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "control.sock")
@@ -67,8 +71,8 @@ func TestControlCommands(t *testing.T) {
 				t.Fatalf("id: %v", req)
 			}
 			for key, want := range tc.want {
-				if req[key] != want {
-					t.Errorf("%s = %v, want %s", key, req[key], want)
+				if !reflect.DeepEqual(req[key], want) {
+					t.Errorf("%s = %#v, want %#v", key, req[key], want)
 				}
 			}
 			wantCode := 0
@@ -103,12 +107,9 @@ func TestControlStateFallback(t *testing.T) {
 	}
 }
 
-func TestControlClientIDsAndDerivedPath(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, "neferwl"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	listener, err := net.Listen("unix", filepath.Join(dir, "neferwl", "wayland-test.control.sock"))
+func TestControlClientIDs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "control.sock")
+	listener, err := net.Listen("unix", path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,8 +136,8 @@ func TestControlClientIDsAndDerivedPath(t *testing.T) {
 		}
 		result <- nil
 	}()
-	env := map[string]string{"XDG_RUNTIME_DIR": dir, "WAYLAND_DISPLAY": "wayland-test"}
-	c, err := dialControl(func(k string) string { return env[k] })
+	env := map[string]string{"NEFERWL_CONTROL": path}
+	c, err := dialControl(func(k string) string { return env[k] }, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +164,7 @@ func TestControlUsage(t *testing.T) {
 			t.Fatalf("%v: %d %s", args, code, stderr)
 		}
 	}
-	_, err := dialControl(func(string) string { return "" })
+	_, err := dialControl(func(string) string { return "" }, "")
 	if err == nil || !strings.Contains(err.Error(), "NEFERWL_CONTROL") {
 		t.Fatal(err)
 	}

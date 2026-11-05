@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/sessiondir"
-	"github.com/bnema/neferwl/internal/domain"
 )
 
 // controlClient is a sequential JSON-lines client, owned by its caller.
@@ -25,12 +24,10 @@ type controlClient struct {
 
 type controlResponse map[string]json.RawMessage
 
-func dialControl(env func(string) string, target ...string) (*controlClient, error) {
-	id := ""
-	if len(target) > 0 {
-		id = target[0]
-	}
-	path, err := resolveControl(id, env, func() ([]sessiondir.Meta, error) {
+// dialControl resolves the control target (-s value, then environment) and
+// connects to it.
+func dialControl(env func(string) string, target string) (*controlClient, error) {
+	path, err := resolveControl(target, env, func() ([]sessiondir.Meta, error) {
 		if env("XDG_RUNTIME_DIR") == "" {
 			return nil, nil
 		}
@@ -39,6 +36,11 @@ func dialControl(env func(string) string, target ...string) (*controlClient, err
 	if err != nil {
 		return nil, err
 	}
+	return dialPath(path)
+}
+
+// dialPath connects to the control socket at path.
+func dialPath(path string) (*controlClient, error) {
 	conn, err := net.Dial("unix", path)
 	if err != nil {
 		return nil, fmt.Errorf("control socket %s: %w", path, err)
@@ -110,61 +112,26 @@ var doCmd = Command{
 	Name: "do", Args: "<action> [arg...] [flags]", Summary: "Run a compositor action over the control socket.",
 	Setup: func(fs *flag.FlagSet) Runner {
 		target := addTargetFlag(fs)
-		wait := fs.String("wait", "settled", "Completion level: committed, settled or presented.")
-		until := fs.String("until", "", "State predicate to wait for.")
-		timeout := fs.Duration("timeout", 10*time.Second, "Maximum completion wait.")
+		wf := addWaitFlags(fs)
 		return func(ctx context.Context, env Env, args []string) error {
-			// flag stops at the first positional argument; accept options after action
-			// arguments too, without changing parsing for existing commands.
-			var action []string
-			for i := 0; i < len(args); i++ {
-				arg := args[i]
-				if arg == "--" {
-					action = append(action, args[i+1:]...)
-					break
-				}
-				if !strings.HasPrefix(arg, "--") {
-					action = append(action, arg)
-					continue
-				}
-				name, value, hasValue := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
-				if fs.Lookup(name) == nil {
-					return usagef("unknown flag --%s", name)
-				}
-				if !hasValue {
-					i++
-					if i == len(args) {
-						return usagef("--%s needs a value", name)
-					}
-					value = args[i]
-				}
-				if err := fs.Set(name, value); err != nil {
-					return usagef("%v", err)
-				}
+			// flag stops at the first positional argument; accept options after
+			// action arguments too.
+			action, err := injectArguments(fs, args)
+			if err != nil {
+				return err
 			}
 			if len(action) == 0 {
 				return usagef("expected an action")
 			}
-			if _, err := domain.ParseWaitLevel(*wait); err != nil {
-				return usagef("%v", err)
-			}
-			if *until != "" {
-				if _, err := domain.ParseUntil(*until); err != nil {
-					return usagef("%v", err)
-				}
-			}
-			if *timeout <= 0 {
-				return usagef("timeout must be positive")
+			req := map[string]any{"op": "do", "action": strings.Join(action, " ")}
+			if err := wf.apply(req); err != nil {
+				return err
 			}
 			c, err := dialControl(os.Getenv, *target)
 			if err != nil {
 				return err
 			}
 			defer c.conn.Close()
-			req := map[string]any{"op": "do", "action": strings.Join(action, " "), "wait": *wait, "timeout": timeout.String()}
-			if *until != "" {
-				req["until"] = *until
-			}
 			return printControl(ctx, env, c, req)
 		}
 	},
