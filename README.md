@@ -25,6 +25,8 @@ https://github.com/user-attachments/assets/1ff42ce5-47b3-4cf8-a3a7-5fc5abde4af1
 - **Stash:** `cmd+s` toggles a floating strip of windows set aside for the current workspace; `cmd+shift+s` moves a window into or out of it. See [Stash](docs/config.md#stash).
 - **Hint mode:** click what is on screen by typing its label. Works best in apps like Firefox; see [Hint mode](docs/config.md#hint-mode).
 - **Animations:** short and cheap; turn them off with `animations = off`.
+- **Headless server:** run without a screen on virtual outputs, then stream with Sunshine, watch over VNC or record; see [Headless and server mode](docs/server.md).
+- **Agents and scripts:** throwaway sessions that a script or AI agent drives with actions, input, state and screenshots, each command waiting for its result; see [Scripting and agents](docs/control.md).
 
 Written in Go, without cgo. Each piece of state has one owner goroutine, connected to the others by channels; hot paths reuse memory and client buffers stay off the Go heap. See [Architecture](docs/dev/architecture.md) for the concurrency model, the GC strategy and the reusable Go libraries.
 
@@ -174,9 +176,46 @@ Bring your own layer-shell UI, such as Noctalia or Waybar. For capture and idle 
 
 Configuration is a flat `key = value` file that reloads on save. A JSON state file exposes outputs, workspaces and windows to scripts; see [Desktop integration](docs/desktop.md).
 
-For a streaming host, run the [server](docs/server.md) as
-`neferwl --backend=headless --profile=persistent`. Agents use the
-[control socket](docs/dev/control.md) with `neferwl -s server do|key|shot|query …`.
+### Headless server
+
+`neferwl --backend=headless --profile=persistent` runs NeferWL on a machine without a screen, on the virtual outputs declared in the config. `neferwl-server.service` runs it as a systemd user service. Apps connect to its Wayland display as usual; Sunshine, OBS and other PipeWire clients stream its outputs through the portal. See [Headless and server mode](docs/server.md) for the setup and a game streaming host with Sunshine.
+
+### Agents and automation
+
+Each headless session has a control socket for scripts and AI agents. Every command waits for its effect and replies with what changed, so no sleeps are needed. A session looks like this:
+
+1. Start a throwaway session; it prints its Wayland display and control socket:
+
+   ```sh
+   neferwl session new --id demo --ttl 10m -- --no-terminal
+   ```
+
+2. Launch an app and wait for its window:
+
+   ```sh
+   neferwl -s demo do spawn foot --until 'window-mapped app_id=foot'
+   ```
+
+3. Act, then wait until the result is on screen and capture it:
+
+   ```sh
+   neferwl -s demo type 'echo hello'
+   neferwl -s demo key Return --shot       # prints the PNG path
+   ```
+
+4. Read the state:
+
+   ```sh
+   neferwl -s demo state | jq '.windows[] | {id, app_id, visible}'
+   ```
+
+5. Stop the session:
+
+   ```sh
+   neferwl session rm demo
+   ```
+
+Give an agent the [`skills/neferwl`](skills/neferwl/SKILL.md) skill so it knows the commands. [Scripting and agents](docs/control.md) covers waits, captures, video and security; the wire protocol is in [docs/dev/control.md](docs/dev/control.md).
 
 ## Hardware support
 
@@ -196,7 +235,9 @@ Reports from NVIDIA and Intel users are welcome.
 - [Desktop integration](docs/desktop.md): sessions, clipboard, input methods, X11 apps, session locking and scripting.
 - [Screen capture](docs/capture.md): protocols, indicator, executable allowlist and portals.
 - [Performance](docs/performance.md): VRR and real-time priority.
-- [Developer documentation](docs/dev/index.md): architecture, headless testing, profiling and frame stats.
+- [Headless and server mode](docs/server.md): profiles, the server service, streaming with Sunshine and remote viewing.
+- [Scripting and agents](docs/control.md): sessions, targeting, waits, state, captures and runtime outputs.
+- [Developer documentation](docs/dev/index.md): architecture, headless testing, control protocol, profiling and frame stats.
 
 ## Contributing
 
