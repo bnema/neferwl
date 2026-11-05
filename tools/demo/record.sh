@@ -129,12 +129,8 @@ feed() {
             control type "$label" --wait committed ;;
         *)
             [[ $line == 'key Super+g' ]] && mark=$(date +%s.%N)
-            case $cmd in
-            type) control type "${line#type }" --wait committed ;;
-            swipe4) control swipe 4 "${line#swipe4 }" --wait committed ;;
-            swipe) control swipe 3 "${line#swipe }" --wait committed ;;
-            *) read -ra words <<<"$line"; control "${words[@]}" --wait committed ;;
-            esac ;;
+            read -ra words <<<"$line"
+            control "${words[@]}" --wait committed ;;
         esac
     done <tools/demo/input.txt
     control shot --stop >/dev/null
@@ -159,7 +155,7 @@ if grep -q '"reason":"timeout"' "$log"; then
     exit 1
 fi
 [[ $status == 0 ]] || { echo "Compositor failed (exit $status); see $log" >&2; docker logs "$container" >&2 || true; exit 1; }
-wait "$feeder" || { echo 'Scripted input failed.' >&2; exit 1; }
+wait "$feeder" || { echo 'Control input failed.' >&2; exit 1; }
 feeder=
 wait "$launcher"
 launcher=
