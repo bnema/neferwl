@@ -19,7 +19,7 @@ import (
 //testpolicy:realtime Unix socket exchanges and server shutdown need bounded waits outside synctest.
 func TestProtocol(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "session", "control.sock")
-	s, err := Listen(path, workspaceid.WithPrefix("test"))
+	s, err := Listen(path, workspaceid.WithPrefix("test"), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,12 +190,12 @@ func TestProtocol(t *testing.T) {
 func TestListenPreservesLiveSocketAndFiles(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "control.sock")
 	ids := workspaceid.WithPrefix("test")
-	s, err := Listen(path, ids)
+	s, err := Listen(path, ids, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if other, err := Listen(path, ids); err == nil {
+	if other, err := Listen(path, ids, Options{}); err == nil {
 		other.Close()
 		t.Fatal("replaced live listener")
 	}
@@ -205,7 +205,7 @@ func TestListenPreservesLiveSocketAndFiles(t *testing.T) {
 	if err := os.WriteFile(path, []byte("keep"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if other, err := Listen(path, ids); err == nil {
+	if other, err := Listen(path, ids, Options{}); err == nil {
 		other.Close()
 		t.Fatal("replaced regular file")
 	}
@@ -225,7 +225,7 @@ func TestListenRemovesStaleSocket(t *testing.T) {
 	if err := listener.Close(); err != nil {
 		t.Fatal(err)
 	}
-	s, err := Listen(path, workspaceid.WithPrefix("test"))
+	s, err := Listen(path, workspaceid.WithPrefix("test"), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +236,7 @@ func TestListenRemovesStaleSocket(t *testing.T) {
 
 //testpolicy:realtime Socket reads and cancellation completion are bounded real I/O waits.
 func TestConnectionOrderingAndClose(t *testing.T) {
-	s, err := Listen(filepath.Join(t.TempDir(), "control.sock"), workspaceid.WithPrefix("test"))
+	s, err := Listen(filepath.Join(t.TempDir(), "control.sock"), workspaceid.WithPrefix("test"), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

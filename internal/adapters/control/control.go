@@ -55,10 +55,7 @@ type Server struct {
 
 // Listen creates a private socket using the same workspace IDs as statefile.
 // An existing socket is removed only when connecting proves it has no listener.
-func Listen(path string, ids *workspaceid.IDs, options ...Options) (*Server, error) {
-	if len(options) > 1 {
-		return nil, errors.New("at most one control options value is accepted")
-	}
+func Listen(path string, ids *workspaceid.IDs, opts Options) (*Server, error) {
 	if ids == nil {
 		return nil, errors.New("workspace IDs are required")
 	}
@@ -92,14 +89,11 @@ func Listen(path string, ids *workspaceid.IDs, options ...Options) (*Server, err
 		return nil, err
 	}
 	s := &Server{listener: listener, ids: ids, done: make(chan struct{})}
-	if len(options) == 1 {
-		opts := options[0]
-		s.continuous, s.framesDir, s.security = opts.Continuous, opts.FramesDir, opts.Security
-		s.shooter = opts.Shooter
-		s.keymaps = opts.Keymaps
-		if opts.Keymap != nil {
-			s.injector = newInjector(opts.Keymap, opts.Security)
-		}
+	s.continuous, s.framesDir, s.security = opts.Continuous, opts.FramesDir, opts.Security
+	s.shooter = opts.Shooter
+	s.keymaps = opts.Keymaps
+	if opts.Keymap != nil {
+		s.injector = newInjector(opts.Keymap, opts.Security)
 	}
 	return s, nil
 }
