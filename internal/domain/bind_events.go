@@ -4,6 +4,7 @@ package domain
 type BindSource string
 
 const (
+	BindSourceControl BindSource = "control"
 	BindSourceKey     BindSource = "key"
 	BindSourceRepeat  BindSource = "repeat"
 	BindSourceGesture BindSource = "gesture"

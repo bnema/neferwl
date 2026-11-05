@@ -23,6 +23,8 @@ var errSecurityChanged = errors.New("security epoch changed during input")
 // its only sender and may drain a stale set; consumers only receive. Each
 // send holds one scene per output.
 type Channels struct {
+	// Control carries owner-serialized control requests; nil disables control.
+	Control  <-chan ports.ControlRequest
 	Client   <-chan ports.ClientEvent
 	Input    <-chan ports.InputEvent
 	Output   <-chan ports.OutputEvent
@@ -1176,6 +1178,20 @@ func (c *Core) Run(ctx context.Context) error {
 			// decide execution admission; a later gate read cannot infer it.
 			c.startup = c.startup[1:]
 			continue
+		case r, ok := <-c.ch.Control:
+			if !ok {
+				c.ch.Control = nil
+				continue
+			}
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
+			}
+			if err := c.control(ctx, r); err != nil {
+				if errors.Is(err, errSecurityChanged) {
+					continue
+				}
+				return err
+			}
 		case ev, ok := <-c.ch.Client:
 			if !ok {
 				c.ch.Client = nil
