@@ -70,6 +70,11 @@ func TestProtocol(t *testing.T) {
 	if len(commands) != len(domain.Commands()) || commands[0].Name != domain.Commands()[0].Name || len(commands[0].Caps) == 0 {
 		t.Fatal(commands)
 	}
+	for i, spec := range domain.Commands() {
+		if commands[i].Kind != spec.Kind.String() {
+			t.Errorf("command %q kind = %q, want %q", spec.Name, commands[i].Kind, spec.Kind.String())
+		}
+	}
 	var caps []string
 	if err := json.Unmarshal(hello["caps"], &caps); err != nil {
 		t.Fatal(err)

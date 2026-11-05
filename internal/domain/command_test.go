@@ -138,3 +138,18 @@ func TestDiffState(t *testing.T) {
 		})
 	}
 }
+
+func TestCommandKindString(t *testing.T) {
+	for _, tc := range []struct {
+		kind CommandKind
+		want string
+	}{
+		{CommandAction, "action"}, {CommandActionArg, "action-arg"},
+		{CommandQuery, "query"}, {CommandInject, "inject"}, {CommandShot, "shot"},
+		{CommandKind(255), "CommandKind(255)"},
+	} {
+		if got := tc.kind.String(); got != tc.want {
+			t.Errorf("kind %d = %q, want %q", tc.kind, got, tc.want)
+		}
+	}
+}

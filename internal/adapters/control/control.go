@@ -161,11 +161,11 @@ type reply struct {
 }
 
 type command struct {
-	Name    string             `json:"name"`
-	Arg     string             `json:"arg"`
-	Kind    domain.CommandKind `json:"kind"`
-	Caps    []string           `json:"caps"`
-	Summary string             `json:"summary"`
+	Name    string   `json:"name"`
+	Arg     string   `json:"arg"`
+	Kind    string   `json:"kind"`
+	Caps    []string `json:"caps"`
+	Summary string   `json:"summary"`
 }
 
 func capNames(c domain.Caps) []string {
@@ -196,7 +196,7 @@ func (s *Server) serve(ctx context.Context, conn *net.UnixConn, out chan<- ports
 		if req.Op == "hello" {
 			commands := []command{}
 			for _, spec := range domain.Commands() {
-				commands = append(commands, command{spec.Name, spec.Arg, spec.Kind, capNames(spec.Caps), spec.Summary})
+				commands = append(commands, command{spec.Name, spec.Arg, spec.Kind.String(), capNames(spec.Caps), spec.Summary})
 			}
 			if encoder.Encode(struct {
 				ID       json.RawMessage `json:"id"`

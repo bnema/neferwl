@@ -29,6 +29,24 @@ const (
 	CommandShot
 )
 
+// String returns the protocol name of the command payload kind.
+func (k CommandKind) String() string {
+	switch k {
+	case CommandAction:
+		return "action"
+	case CommandActionArg:
+		return "action-arg"
+	case CommandQuery:
+		return "query"
+	case CommandInject:
+		return "inject"
+	case CommandShot:
+		return "shot"
+	default:
+		return fmt.Sprintf("CommandKind(%d)", k)
+	}
+}
+
 // CommandSpec describes a command; Arg documents its payload, not its value.
 type CommandSpec struct {
 	Name, Arg, Summary string
