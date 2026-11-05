@@ -49,6 +49,8 @@ type Channels struct {
 	// each seat input reset, for the debug log. Core does not wait: a full
 	// channel drops the record.
 	Binds chan<- domain.InputTrace
+	// Placements carries best-effort first-map diagnostics; core never blocks.
+	Placements chan<- domain.PlacementTrace
 	// Frames, when set, carries the outputs' reports of each flip of an
 	// animating scene (Scene.Animating): a running slide moves one step per
 	// report. Without them it moves on a timer.
@@ -84,8 +86,10 @@ type binding struct {
 	key  string
 }
 type Core struct {
-	hdrCaps map[string]domain.OutputHDRCaps
-	osd     osd
+	lineage       lineage
+	placementPath string
+	hdrCaps       map[string]domain.OutputHDRCaps
+	osd           osd
 	// overviewReal is publish's scratch map of the real layouts under an open overview.
 	overviewReal map[WindowID]Placement
 	// realBuf backs the layout read through at once by publish (each
@@ -171,6 +175,8 @@ type Core struct {
 	unmanaged      map[WindowID]*unmanagedState
 	unmanagedOrder []WindowID
 	keyboard       keyboard
+	// x11 is the X11-active window (x11active.go).
+	x11 x11Active
 	// activity is when core last told wayland about user input
 	// (ports.UserActivity), sent at most once per ActivityInterval.
 	activity time.Time
@@ -650,6 +656,7 @@ func (c *Core) publish(ctx context.Context) error { return c.publishFrame(ctx, n
 // moved the springs (nil: any, or none moved): only a flip's own screen gets
 // a fresh Seq for its animation, so another output keeps its Seq while it draws the same.
 func (c *Core) publishFrame(ctx context.Context, only *screen) error {
+	defer c.observeLineageFocus()
 	if c.inputEpochChanged() {
 		return errSecurityChanged
 	}
@@ -699,6 +706,8 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 		return err
 	}
 	focus := c.keyboardFocus()
+	// Before the scenes: the held window's configure is Activated.
+	x11 := c.decideX11Active(focus)
 	if err := c.osdWatch(ctx); err != nil {
 		return err
 	}
@@ -728,6 +737,9 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 		}
 	}
 	if err := c.syncFocus(ctx, focus); err != nil {
+		return err
+	}
+	if err := c.syncX11Active(ctx, x11); err != nil {
 		return err
 	}
 	if err := c.updateInhibit(ctx); err != nil {

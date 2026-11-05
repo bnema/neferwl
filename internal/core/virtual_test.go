@@ -41,6 +41,7 @@ func TestVirtualModeReload(t *testing.T) {
 		{"unchanged", func(*domain.Config) {}, "1280x720@60.000"},
 		{"unrelated", func(c *domain.Config) { c.Layout.Gaps = 4 }, "1280x720@60.000"},
 		{"mode", func(c *domain.Config) { c.Outputs[0].Mode = "2560x1440@120" }, "2560x1440@120"},
+		{"keep-focus", func(c *domain.Config) { c.Outputs[0].KeepFocus = true }, "1280x720@60.000"},
 		{"other entry field", func(c *domain.Config) { c.Outputs[0].Primary = true }, "1920x1080"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

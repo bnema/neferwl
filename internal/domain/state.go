@@ -16,13 +16,18 @@ type State struct {
 // WorkspaceState is one workspace and its tiled columns, left to right in
 // layout order. Rects are logical pixels in the output's coordinates.
 type WorkspaceState struct {
+	// Focused is this workspace's focused window, 0 when empty.
+	Focused  WindowID
 	ID       uint64
 	Number   int    // numbered workspace, 0 for a hidden/named one
 	Name     string // configured name, "" if dynamic
 	Output   string
 	Visible  bool   // on screen on its output
 	Overflow string // "fixed", "scroll", "cascade"
-	Columns  []ColumnState
+	// Cover is the active fullscreen window, 0 if none. Other fullscreen
+	// members (held) are reported only by WindowState.Fullscreen.
+	Cover   WindowID
+	Columns []ColumnState
 }
 
 // ColumnState is one column and its tiled windows.
@@ -81,8 +86,9 @@ type WindowState struct {
 	PointerConstraint string `json:",omitempty"`
 	// Floating is set for native floats and stashed windows.
 	Floating bool
-	// Fullscreen is set for its workspace's fullscreen window, also while a
-	// stashed window shows over it or its workspace is not shown.
+	// Fullscreen is set for its workspace's fullscreen windows, the active
+	// cover and held members, also while a stashed window shows over them or
+	// their workspace is not shown.
 	Fullscreen bool
 	// StashIndex is the 1-based place of a stashed window in its stash of
 	// StashCount windows; both are 0 outside the stash.

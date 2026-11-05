@@ -28,7 +28,7 @@ var workspaceFields = map[string]bool{ // true: setting
 var lanesFields = map[string]string{
 	"Override": "setting", "Overflow": "setting", "Gaps": "setting", "MaxColumns": "setting",
 	"Output": "derived", "Usable": "derived",
-	"Focus": "state", "View": "state", "Fullscreen": "state", "Columns": "state", "Maximized": "state",
+	"Focus": "state", "View": "state", "Fullscreen": "state", "Held": "state", "Columns": "state", "Maximized": "state",
 	"lcache": "derived", "lcacheFor": "derived", "colSeq": "state", "spanSeq": "state",
 	"lstate": "state", "lstateReady": "state",
 }

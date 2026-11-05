@@ -160,8 +160,11 @@ type CastBufferAllocator interface {
 	CastFormats() []domain.DMABufFormat
 	// AllocCast exports a w×h buffer of format with modifier, a pair listed
 	// by CastFormats. Its plane files are the caller's, who frees the
-	// buffer by closing them; nothing else holds the memory.
+	// buffer with ReleaseCast before closing them.
 	AllocCast(format uint32, w, h int, modifier uint64) (domain.DMABuf, error)
+	// ReleaseCast releases the retained allocation and invalidates its imports. Outstanding
+	// GPU copies retain memory until completion; plane files remain the caller's.
+	ReleaseCast(buffer domain.DMABuf)
 }
 
 // RenderDeviceOpener opens a GPU; zero GPUInfo selects the first usable device.

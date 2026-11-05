@@ -50,7 +50,16 @@ func (w *Workspace) leaveCover(move func()) bool {
 	w.Fullscreen = 0
 	move()
 	if id, ok := w.Focused(); ok && id != full {
+		if w.Fullscreen == id {
+			// The move landed on a held member, which scroll promoted
+			// while no cover was set: the old cover is held, not left.
+			w.hold(full)
+			return true
+		}
 		w.Fullscreen = full
+		if w.demoteCover() {
+			return true
+		}
 		w.leaveFullscreen()
 		return true
 	}

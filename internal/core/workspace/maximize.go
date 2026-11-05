@@ -28,6 +28,7 @@ func (w *Workspace) ToggleFullscreen() {
 		w.endFullscreen()
 		return
 	}
+	w.dropHeld(id)
 	w.isolate(id)
 	w.Fullscreen = id
 	w.scroll()
@@ -60,6 +61,11 @@ func (w *Workspace) leaveFullscreen() {
 // (coverStays); a dialog of a stashed window activates that window
 // first.
 func (w *Workspace) Activate(id WindowID) {
+	// A held member takes the cover over, keeping the old one held:
+	// never a leave, so neither ends.
+	if w.IsHeld(id) {
+		w.promoteHeld(id)
+	}
 	if c := w.Cover(); c != 0 && id != c {
 		owner := id
 		if f := w.floatIndex(id); f >= 0 {
@@ -93,7 +99,7 @@ func (w *Workspace) Activate(id WindowID) {
 		w.stashAt = i
 		w.showStash()
 	}
-	if w.Fullscreen != 0 && w.Fullscreen != id {
+	if w.Fullscreen != 0 && w.Fullscreen != id && !w.groupLeaveTo(id) {
 		w.leaveFullscreen()
 	}
 	w.FocusID(id)
@@ -111,6 +117,11 @@ func (w *Workspace) coverStays(id WindowID) bool {
 // SetFullscreen applies a client request. It never moves focus: client
 // requests are automatic events (ADR 011 golden rule).
 func (w *Workspace) SetFullscreen(id WindowID, on bool) {
+	if on && w.IsHeld(id) {
+		// A held member is fullscreen already: its request must not take
+		// the cover back. Checked before mayCover, which settles left.
+		return
+	}
 	if on && !w.mayCover(id) {
 		return
 	}
@@ -132,6 +143,7 @@ func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 		if w.left == id {
 			w.left = 0
 		}
+		w.dropHeld(id)
 		if w.Fullscreen == id {
 			w.endFullscreen()
 		}
@@ -141,6 +153,7 @@ func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 		// Another window covers: the override was for the old cover.
 		w.dropStashOver()
 	}
+	w.dropHeld(id)
 	w.isolate(id)
 	w.Fullscreen = id
 	if !w.IsFloat(id) {

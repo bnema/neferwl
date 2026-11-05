@@ -21,6 +21,8 @@ type dragRig struct {
 	output   chan ports.OutputEvent
 	commands chan ports.ClientCommand
 	scenes   chan []domain.Scene
+	reload   chan domain.ConfigChanged
+	cfg      domain.Config
 	last     []domain.Scene
 	epoch    *atomic.Value
 	// With a clock the test moves (animated rigs), frames carries the page
@@ -78,8 +80,9 @@ func newDragRigWith(t *testing.T, animated bool, opts core.Options, edit func(*d
 		client: make(chan ports.ClientEvent), input: make(chan ports.InputEvent),
 		output: make(chan ports.OutputEvent), commands: make(chan ports.ClientCommand, 4096),
 		scenes: make(chan []domain.Scene, 1), epoch: epoch,
+		reload: make(chan domain.ConfigChanged), cfg: cfg,
 	}
-	ch := core.Channels{Client: r.client, Input: r.input, Output: r.output, Commands: r.commands, Scenes: r.scenes}
+	ch := core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes}
 	opts.Security = gate
 	if animated {
 		r.frames, r.clock = make(chan domain.OutputFrame), newStepClock(t)

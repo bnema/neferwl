@@ -46,6 +46,9 @@ type probe struct {
 	cmd    *exec.Cmd
 	out    *lockedBuffer
 	waited chan error
+	// in is the probe's stdin (-stdin-sync commands); syncs counts them.
+	in    io.WriteCloser
+	syncs int
 }
 
 // xwaylandEnv is a running headless compositor with the built-in XWM.
@@ -66,15 +69,32 @@ func startXwayland(t *testing.T) *xwaylandEnv {
 // right, and an optional change to the default config.
 func startXwaylandWith(t *testing.T, sizes [][2]int, mutate func(*domain.Config)) *xwaylandEnv {
 	t.Helper()
-	return startXwaylandBackend(t, domain.BackendHeadless, sizes, mutate)
+	return startXwaylandConfig(t, sizes, mutate, "")
 }
 
 // startXwaylandBackend is startXwaylandWith on backend. The server backend
 // never runs libinput here (noLibinput): the script stays the input.
-//
-//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
 func startXwaylandBackend(t *testing.T, backend domain.Backend, sizes [][2]int, mutate func(*domain.Config)) *xwaylandEnv {
 	t.Helper()
+	return startXwaylandBackendConfig(t, backend, sizes, mutate, "")
+}
+
+// startXwaylandConfig is startXwaylandWith watching the config file at path
+// for reloads; empty uses a path that does not exist.
+func startXwaylandConfig(t *testing.T, sizes [][2]int, mutate func(*domain.Config), path string) *xwaylandEnv {
+	t.Helper()
+	return startXwaylandBackendConfig(t, domain.BackendHeadless, sizes, mutate, path)
+}
+
+// startXwaylandBackendConfig combines backend selection and config reloads.
+//
+//testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
+func startXwaylandBackendConfig(t *testing.T, backend domain.Backend, sizes [][2]int, mutate func(*domain.Config), path string) *xwaylandEnv {
+	t.Helper()
+	if path == "" {
+		// Never the user's own config file.
+		path = filepath.Join(t.TempDir(), "absent", "config")
+	}
 	if _, err := exec.LookPath("Xwayland"); err != nil {
 		t.Skip("Xwayland not on PATH")
 	}
@@ -155,7 +175,7 @@ func startXwaylandBackend(t *testing.T, backend domain.Backend, sizes [][2]int, 
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(ctx, Options{
-			Backend: backend, NoTerminal: true, Config: cfg, Script: script,
+			Backend: backend, NoTerminal: true, Config: cfg, ConfigPath: path, Script: script,
 			ScreenshotDir: shots, Sizes: sizes, noLibinput: backend == domain.BackendServer,
 		})
 	}()
@@ -287,6 +307,12 @@ func startProbe(t *testing.T, bin, display string, args ...string) *probe {
 	p.cmd.Stdout = p.out
 	stderr := &lockedBuffer{}
 	p.cmd.Stderr = stderr
+	in, err := p.cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.in = in
+	t.Cleanup(func() { _ = in.Close() })
 	if err := p.cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -305,6 +331,18 @@ func startProbe(t *testing.T, bin, display string, args ...string) *probe {
 		}
 	})
 	return p
+}
+
+// sync makes p round-trip to the X server (-stdin-sync) and waits for its
+// ack: every X event sent to p before the round trip is in p.out.
+func (p *probe) sync(t *testing.T) {
+	t.Helper()
+	p.syncs++
+	if _, err := io.WriteString(p.in, "sync\n"); err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("synced %d\n", p.syncs)
+	until(t, "probe X11 round trip", func() bool { return strings.Contains(p.out.String(), want) })
 }
 
 func envWithout(keys ...string) []string {

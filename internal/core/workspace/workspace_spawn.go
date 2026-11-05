@@ -112,6 +112,7 @@ func (w *Workspace) RemoveWindow(id WindowID) {
 	if w.Fullscreen == id {
 		w.Fullscreen = 0
 	}
+	w.dropHeld(id)
 	if w.stashOver == id {
 		w.stashOver = 0
 	}
@@ -180,6 +181,9 @@ func (w *Workspace) takeColumn() (layout.Column, bool) {
 	if slices.Contains(col.Windows, w.Fullscreen) {
 		w.Fullscreen = 0
 	}
+	for _, id := range col.Windows {
+		w.dropHeld(id)
+	}
 	if slices.Contains(col.Windows, w.stashOver) {
 		w.stashOver = 0
 	}
@@ -217,6 +221,56 @@ func (w *Workspace) insertAt(at int, col layout.Column) {
 	col.Span, col.SpanStamp = 0, 0
 	w.Columns = slices.Insert(w.Columns, at, col)
 	w.ColumnInserted(at, layout.InsertJoinDisplaced)
+}
+
+// AddLaunchedWindow places id, launched by fullscreen group member launcher
+// (another program), fullscreen in a column (scroll) or band (cascade) of its
+// own right after the launcher's, and reports whether it did. Launched by
+// the active cover, it becomes the cover with the focus and the launcher is
+// held: held before the focus moves, as scroll promotes a focused member.
+// Launched by a held member, it is held too and focus and cover stay. A
+// layout that does not scroll (fixed) has no group: false, as for a
+// launcher outside the group.
+//
+// A floating launcher cover is adopted as a tile when the layout allows; one
+// it refuses (a dialog float or a stashed cover) stays a float, held and so
+// hidden, and the window opens where the layout places a same-app window.
+func (w *Workspace) AddLaunchedWindow(id, launcher WindowID, cells int) bool {
+	if id == 0 || w.Has(id) || !w.IsFullscreenMember(launcher) || !w.Engine().Scrolls() {
+		return false
+	}
+	active := w.Fullscreen == launcher
+	if active {
+		w.adoptFloat(launcher, true)
+	}
+	at, kind := 0, layout.InsertDefault
+	if li := w.ColumnOf(launcher); li >= 0 {
+		at = li + 1
+	} else if w.IsFloat(launcher) {
+		at, kind, _ = w.Engine().AppSpawn(w.Snapshot())
+		at = min(max(at, 0), len(w.Columns))
+	} else {
+		return false
+	}
+	w.Columns = slices.Insert(w.Columns, at, layout.Column{Windows: []WindowID{id}, Cells: cells})
+	w.ColumnInserted(at, kind)
+	if len(w.Columns) > 1 && at <= w.Focus {
+		w.Focus++
+	}
+	// Cascade: a band of its own right below the launcher's.
+	w.isolate(id)
+	w.DropStaleSpans()
+	if !active {
+		w.hold(id)
+		w.scroll()
+		return true
+	}
+	w.Fullscreen = 0
+	w.hold(launcher)
+	w.dropStashOver()
+	w.Fullscreen = id
+	w.FocusID(id)
+	return true
 }
 
 // AddAppWindow brings a window of the covering app forward, keeping fullscreen.

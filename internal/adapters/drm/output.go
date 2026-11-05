@@ -71,9 +71,10 @@ type Output struct {
 	// primary shows frames; cursor is the cursor plane (nil: none);
 	// stray are other planes that can show on this CRTC, turned off at
 	// every modeset when a previous master left them on it.
-	primary *plane
-	cursor  *Cursor
-	stray   []*plane
+	primary       *plane
+	cursor        *Cursor
+	captureCursor domain.CaptureCursor
+	stray         []*plane
 	// overlay shows one window's buffer above the composed frame
 	// (overlay.go); overlayOn is the buffer on it in the pending or last
 	// frame (0: off), overlayReason why it is off.

@@ -28,6 +28,7 @@ func (x *XWM) beginMap(s Slot) {
 	}
 	rec.mapping, rec.ready = true, false
 	rec.hasNetName = false
+	rec.clientPID = 0
 	rec.pending = propGeom
 	xid := rec.xid
 	for idx := 0; idx < propCount; idx++ {
@@ -52,6 +53,12 @@ func (x *XWM) onMapNotify(ev *xturbo.Event) {
 	rec := x.tab.rec(s)
 	again := rec.mapped
 	rec.mapped = true
+	// Focus may have been requested before the X window became viewable.
+	// SetInputFocus on an unviewable window fails with BadMatch.
+	if rec.kind == kindManaged && s == x.active && rec.ready && !again {
+		x.refocus = true
+		x.wake()
+	}
 	if rec.kind == kindUnmanaged && !again {
 		x.requestOverrideType(s)
 	}
@@ -130,6 +137,15 @@ func (x *XWM) checkReady(s Slot) {
 	x.addClient(xid)
 
 	x.host.Ready(s, info)
+	// Properties (notably the ICCCM input model) were unknown when an
+	// early Focus arrived. Re-apply it now, even if the slot is unchanged.
+	if s == x.active {
+		x.refocus = true
+		x.setActive(rec.xid)
+		rec.pend.activated = true
+		x.markDirty(s, rec)
+		x.wake()
+	}
 	x.tryPair(s)
 }
 
@@ -137,8 +153,13 @@ func (x *XWM) checkReady(s Slot) {
 func (x *XWM) info(s Slot) WindowInfo {
 	rec := x.tab.rec(s)
 	parent := x.managedSlot(rec.transient)
+	pid := rec.pid
+	if pid == 0 {
+		pid = rec.clientPID
+	}
 	info := WindowInfo{
-		PID:        int(rec.pid),
+		PID:        int(pid),
+		ClientPID:  int(rec.clientPID),
 		Floating:   rec.floating,
 		Parent:     parent,
 		Modal:      rec.modal,

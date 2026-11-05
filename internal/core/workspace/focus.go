@@ -9,6 +9,10 @@ import (
 // FocusID selects a window and scrolls its column into view; a native
 // float is raised, a stashed window is selected.
 func (w *Workspace) FocusID(id WindowID) bool {
+	if w.IsHeld(id) && w.IsFloat(id) {
+		// A held float takes the cover back; tiles promote in scroll.
+		w.promoteHeld(id)
+	}
 	if i := w.floatIndex(id); i >= 0 {
 		f := w.Floats[i]
 		f.below = false

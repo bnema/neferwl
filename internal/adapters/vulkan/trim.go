@@ -78,6 +78,9 @@ func (r *Renderer) Trim(now time.Time) error {
 			}
 		}
 	}
+	if err := r.trimCaptures(); err != nil {
+		return err
+	}
 	if err := r.poll(); err != nil {
 		return err
 	}
@@ -131,4 +134,41 @@ func (r *Renderer) noteHidden(s domain.Scene) {
 			r.hidden[w.ID] = struct{}{}
 		}
 	}
+}
+
+// trimCaptures reclaims capture-only storage without waiting on the device.
+// Output owners call Trim periodically; there is no per-capture timer. A live
+// lease (including one held by the pipeline worker) pins the entire capture
+// pass. Returned leases can still have GPU copies running, so poll all fences
+// before destroying shared SDR/PQ passes and slot-owned cursor resources.
+func (r *Renderer) trimCaptures() error {
+	for _, s := range r.captures {
+		if s.leased {
+			return nil
+		}
+	}
+	pending := false
+	for _, s := range r.captures {
+		if err := r.reapCopies(s); err != nil {
+			return err
+		}
+		if len(s.copies) > 0 {
+			pending = true
+		}
+		if s.pending {
+			switch res := r.captureSync().fenceStatus(s.fence); res {
+			case vk.Success:
+			case vk.Timeout, vk.NotReady:
+				pending = true
+			default:
+				return checked("vkWaitForFences(capture trim)", res)
+			}
+		}
+	}
+	if pending {
+		return nil
+	}
+	r.destroyCaptures()
+	r.destroyCapturePQ()
+	return nil
 }

@@ -3,9 +3,9 @@ package vulkan
 import (
 	"fmt"
 
+	"bnema.dev/purego"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/purego"
 
 	"runtime"
 	"sync"
@@ -34,6 +34,7 @@ type GPU struct {
 	hdrReadbackMods     []uint64 // Immutable transfer-source export list, computed at open.
 	modPlanes           map[uint64]uint32
 	importMods          map[importKey][]uint64
+	castImages          map[uint64]*castImage // retained exports, protected by poolMu
 	poolMu              sync.Mutex
 	syncFD              bool
 	resources           uint32
@@ -228,6 +229,12 @@ func (g *GPU) Close() {
 	}()
 	if err := checked("vkDeviceWaitIdle", g.dd.DeviceWaitIdle(g.device)); err != nil {
 		g.log.Error().Err(err).Msg("wait for GPU idle")
+	}
+	for id, entry := range g.castImages {
+		if entry.img != nil {
+			g.freeImage(entry.img)
+		}
+		delete(g.castImages, id)
 	}
 	g.dd.DestroyDevice(g.device, nil)
 	g.device = 0

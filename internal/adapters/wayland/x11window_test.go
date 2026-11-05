@@ -244,9 +244,10 @@ func TestX11WindowLifecycle(t *testing.T) {
 		t.Fatalf("placed at %d,%d, want 10,20", x, y)
 	}
 
-	// Focus.
+	// Focus: X11 focus follows core's X11Active, not the keyboard.
 	skip = len(p.requests())
 	r.commands <- ports.FocusWindow{ID: m.ID}
+	r.commands <- ports.X11Active{ID: m.ID}
 	if f, _ := p.waitReq(skip, func(q x11Req) bool { return q.major == x11OpSetInputFocus }); f.u32(4) != win {
 		t.Fatalf("focus on %#x, want %#x", f.u32(4), win)
 	}
@@ -515,6 +516,7 @@ func TestX11LockFollowsFocusAndRelativeMotion(t *testing.T) {
 
 	r.commands <- ports.PointerFocus{ID: m.ID}
 	r.commands <- ports.FocusWindow{ID: m.ID}
+	r.commands <- ports.X11Active{ID: m.ID}
 	if ev := next(t, r.xc, lockEvents); ev[0] != float64(pointerconstraints.ZwpLockedPointerV1EventLocked) {
 		t.Fatalf("lock event %v", ev)
 	}
@@ -533,6 +535,7 @@ func TestX11LockFollowsFocusAndRelativeMotion(t *testing.T) {
 	nm, _, _ := surfaceMapper(t, nc, r.events)()
 	skip := len(r.peer.requests())
 	r.commands <- ports.FocusWindow{ID: nm.ID}
+	r.commands <- ports.X11Active{}
 	if ev := next(t, r.xc, lockEvents); ev[0] != float64(pointerconstraints.ZwpLockedPointerV1EventUnlocked) {
 		t.Fatalf("unlock event %v", ev)
 	}
@@ -676,4 +679,42 @@ func TestX11WindowEntersOneOutput(t *testing.T) {
 	if e, l := count(); e != 1 || l != 1 {
 		t.Fatalf("move to B: %d enters, %d leaves, want 1, 1", e, l)
 	}
+}
+
+// X11 focus follows X11Active alone: a keymap replacement or keyboard reset,
+// which takes the Wayland keyboard focus away and back, leaves it on the
+// window core named, never clearing it to None.
+func TestX11ActiveSurvivesKeyboardRefocus(t *testing.T) {
+	r := newX11Rig(t)
+	win := uint32(x11Win)
+	r.x11Window(win)
+	r.pair(win, x11Serial)
+	m := awaitEvent[ports.WindowMapped](t, r.events)
+	p := r.peer
+	skip := len(p.requests())
+	r.commands <- ports.FocusWindow{ID: m.ID}
+	r.commands <- ports.X11Active{ID: m.ID}
+	if f, _ := p.waitReq(skip, func(q x11Req) bool { return q.major == x11OpSetInputFocus }); f.u32(4) != win {
+		t.Fatalf("focus on %#x, want %#x", f.u32(4), win)
+	}
+	keymap := keymapText(t)
+	skip = len(p.requests())
+	onDisplay(t, r.s, func() {
+		r.s.setKeymap(ports.SetKeymap{Keymap: keymap})
+		r.s.resetKeyboard(domain.ModState{})
+	})
+	// Barrier: the XWM sends requests in order, so the Place shows up
+	// after any focus change the refocus caused.
+	r.commands <- ports.PlaceWindow{ID: m.ID, X: 3, Y: 4}
+	_, end := p.waitReq(skip, func(q x11Req) bool { return q.major == x11OpConfigureWindow && q.u32(4) == win })
+	for _, q := range p.requests()[skip:end] {
+		if q.major == x11OpSetInputFocus {
+			t.Fatalf("keyboard refocus changed the X11 focus to %#x", q.u32(4))
+		}
+	}
+	onDisplay(t, r.s, func() {
+		if r.s.x11Active != m.ID {
+			t.Errorf("x11Active %d, want %d", r.s.x11Active, m.ID)
+		}
+	})
 }

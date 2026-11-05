@@ -163,7 +163,7 @@ func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.Config
 	}
 }
 
-func consumeScenes(ctx context.Context, scenes <-chan []domain.Scene, configErrors <-chan error, binds <-chan domain.InputTrace, tap chan<- []domain.Scene, renderScenes chan []domain.Scene) {
+func consumeScenes(ctx context.Context, scenes <-chan []domain.Scene, configErrors <-chan error, binds <-chan domain.InputTrace, placements <-chan domain.PlacementTrace, tap chan<- []domain.Scene, renderScenes chan []domain.Scene) {
 	log := logging.For(ctx, "core")
 	configLog := logging.For(ctx, "config")
 	for {
@@ -179,6 +179,8 @@ func consumeScenes(ctx context.Context, scenes <-chan []domain.Scene, configErro
 			}
 			routing.Latest(renderScenes, set) // this goroutine is the only sender
 			logScenes(log, set)
+		case t := <-placements:
+			logPlacementTrace(log, t)
 		case t := <-binds:
 			logInputTrace(log, t)
 		case err := <-configErrors:
@@ -252,4 +254,8 @@ func renderNode(dev uint64) string {
 		return ""
 	}
 	return fmt.Sprintf("/dev/dri/renderD%d", unix.Minor(dev))
+}
+
+func logPlacementTrace(log zerowrap.Logger, t domain.PlacementTrace) {
+	log.Info().Uint64("window", uint64(t.Window)).Str("path", t.Path).Str("output", t.Output).Uint64("workspace", t.Workspace).Uint64("launcher", uint64(t.Launcher)).Uint64("cover", uint64(t.Cover)).Bool("workspace_focus_changed", t.WorkspaceFocusChanged).Bool("seat_focus_changed", t.SeatFocusChanged).Msg("window placed")
 }

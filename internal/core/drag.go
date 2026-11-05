@@ -63,10 +63,10 @@ type dragState struct {
 
 // draggable returns the screen and workspace of a window a drag may
 // take: a tile or a native or free float of the workspace on screen,
-// not fullscreen, outside the overview.
+// not fullscreen (the cover or a held member), outside the overview.
 func (c *Core) draggable(id WindowID) (*screen, *Workspace, bool) {
 	s, w := c.screenOf(id)
-	if s == nil || w != s.mon.Current() || s.mon.previewing() || id == w.Fullscreen || w.Cover() != 0 {
+	if s == nil || w != s.mon.Current() || s.mon.previewing() || w.IsFullscreenMember(id) || w.Cover() != 0 {
 		return nil, nil, false
 	}
 	if _, _, floating := w.FloatAt(id); !floating && w.ColumnOf(id) < 0 {
