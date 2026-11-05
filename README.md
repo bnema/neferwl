@@ -174,6 +174,10 @@ Bring your own layer-shell UI, such as Noctalia or Waybar. For capture and idle 
 
 Configuration is a flat `key = value` file that reloads on save. A JSON state file exposes outputs, workspaces and windows to scripts; see [Desktop integration](docs/desktop.md).
 
+For a streaming host, run the [server](docs/server.md) as
+`neferwl --backend=headless --profile=persistent`. Agents use the
+[control socket](docs/dev/control.md) with `neferwl -s server do|key|shot|query …`.
+
 ## Hardware support
 
 NeferWL requires Linux, atomic KMS and a Vulkan 1.3 device that can export images as dmabufs. It reports an error at startup if these requirements are not met.

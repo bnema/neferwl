@@ -1,14 +1,15 @@
 # Game server
 
-`neferwl --backend=server` runs NeferWL without a display: it drives only the virtual outputs declared in the config, reads input devices directly and serves screen casting on the session bus. With [Sunshine](https://github.com/LizardByte/Sunshine), it turns a headless machine into a game streaming host.
+The server is the headless backend’s persistent profile.
+`neferwl --backend=headless --profile=persistent` runs without a display: it drives only the virtual outputs declared in the config, reads input devices directly and serves screen casting on the session bus. With [Sunshine](https://github.com/LizardByte/Sunshine), it turns a headless machine into a game streaming host.
 
-Server mode differs from a desktop session:
+The persistent profile differs from a desktop session:
 
 - No DRM/KMS and no logind session: no physical output lights up, and no VT is taken.
 - Virtual outputs are laid out left to right in config order, starting at 0,0. They take the startup focus and every pointer reaches them, so they are not isolated as on a desktop.
 - The screen-casting and screensaver D-Bus services always run. The logind power-key lock does not.
 - No terminal opens at startup. Scale changes are saved to the config, as on a desktop.
-- The test flags (`--screenshot`, `--screenshot-raw`, `--input`, `--size`, `--timeout`, `--headless-hdr`, `--dbus`) are rejected.
+- The control socket accepts actions, input and captures from the session user.
 
 ## Requirements
 
@@ -55,7 +56,7 @@ systemctl --user enable --now neferwl-server.service
 systemctl --user enable --now sunshine.service
 ```
 
-`neferwl-server.service` starts `neferwl --backend=server --session`, notifies systemd when ready, exports `WAYLAND_DISPLAY` and `DISPLAY` to the user manager and restarts on failure. It binds `graphical-session.target`, so Sunshine and the portals start in the right environment.
+`neferwl-server.service` starts `neferwl --backend=headless --profile=persistent --session --session-id=server`, notifies systemd when ready, exports `WAYLAND_DISPLAY` and `DISPLAY` to the user manager and restarts on failure. It binds `graphical-session.target`, so Sunshine and the portals start in the right environment.
 
 ## Sunshine
 
@@ -95,15 +96,27 @@ Steam's controller rules grant access through `uaccess`, which needs a logind se
 
 ## Controlling a NeferWL session (agents)
 
-An agent or script on the host can watch the session and drive it with standard Wayland tools. Run them as the session user with the session's display:
+Agents and scripts use the control socket as the session user. Target the
+persistent session explicitly:
+
+```sh
+neferwl -s server query state
+neferwl -s server do focus-workspace-next
+neferwl -s server key Super+Return
+neferwl -s server type 'hello'
+neferwl -s server shot --output tv --inline
+```
+
+Actions wait for completion instead of requiring fixed sleeps. `input` injection
+and `capture` are refused while the session is locked. See the
+[control protocol](dev/control.md) for waits, predicates and reply fields.
+
+Standard Wayland tools also work with the session’s display:
 
 ```sh
 export $(systemctl --user show-environment | grep -E '^(WAYLAND_DISPLAY|XDG_RUNTIME_DIR)=')
-grim -o tv /tmp/screen.png        # capture one output (see Screen capture)
-neferwl pointer abs 0.5 0.5 click # click the middle of the layout
-neferwl pointer move 200 -50 click right  # actions run in order
-wtype 'hello'                     # type into the focused window
-neferwl state                     # windows, focus, outputs as JSON
+neferwl pointer abs 0.5 0.5 click
+neferwl pointer move 200 -50 click right
 ```
 
 - `neferwl pointer` actions: `abs X Y` (fractions 0..1 of the layout, or of one output with `--output <name>`), `move DX DY`, `press`/`release`/`click [BTN]`, `hold [BTN] [DURATION]`, `drag DX DY [BTN]` and `scroll up|down|left|right [N]`. BTN is `left` (default), `right`, `middle`, `side`, `extra`, `forward`, `back`, a `BTN_*` name or an evdev code. `--click-duration` (20ms), `--hold-duration` (500ms), `--drag-steps` (10) and `--drag-step-delay` (10ms) tune the timing. Buttons still pressed at exit are released. See `neferwl pointer --help`.
