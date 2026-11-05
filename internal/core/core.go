@@ -91,6 +91,7 @@ type binding struct {
 type Core struct {
 	runtimeWake      chan struct{}
 	controlWaits     []controlWait
+	waitSeqs         map[string]uint64 // evalWaits scratch
 	controlWaitTimer ports.Timer
 	controlWaitC     <-chan time.Time
 	presented        map[string]uint64 // highest presented scene sequence per output

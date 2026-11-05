@@ -8,8 +8,25 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
+// maxControlWaits caps the pending control waits: a request that would wait
+// past it is refused before it runs.
+const maxControlWaits = 64
+
 // control runs on the owner, just like input.
 func (c *Core) control(ctx context.Context, r ports.ControlRequest) error {
+	if len(c.controlWaits) >= maxControlWaits {
+		switch r := r.(type) {
+		case ports.ControlOutput:
+			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBadRequest})
+			return nil
+		case ports.ControlDo:
+			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBadRequest})
+			return nil
+		case ports.ControlInject:
+			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBadRequest})
+			return nil
+		}
+	}
 	switch r := r.(type) {
 	case ports.ControlOutput:
 		return c.controlOutput(ctx, r)
@@ -106,13 +123,13 @@ func (c *Core) controlShots(requests []domain.ShotRequest, caps domain.Caps) ([]
 	if c.security.Protected || c.protectionRequested() {
 		return nil, ports.ControlErrLocked
 	}
-	outputs := c.state().Outputs
 	var shots []domain.ShotRequest
 	for _, q := range requests {
 		found := false
-		for _, o := range outputs {
-			if q.Output == "" || q.Output == o.Name {
-				shots = append(shots, domain.ShotRequest{Output: o.Name, Raw: q.Raw})
+		// The screens in state order, without building the state.
+		for _, sc := range c.screens {
+			if name := sc.name(); name != "" && (q.Output == "" || q.Output == name) {
+				shots = append(shots, domain.ShotRequest{Output: name, Raw: q.Raw})
 				found = true
 			}
 		}

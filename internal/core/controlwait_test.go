@@ -191,3 +191,76 @@ func TestControlWaitIdleAllocations(t *testing.T) {
 		t.Fatalf("idle evalWaits: %v allocations", n)
 	}
 }
+
+// A pending committed wait (an Until not yet true) neither builds the
+// pending list nor reallocates scene sequences on every pass.
+func TestControlWaitPendingAllocations(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var cfg domain.Config
+		cfg.Keyboard.CmdKey = "super"
+		cfg.Layout.MaxColumns = 2
+		c := newSizedCore(t, cfg)
+		replies := make(chan ports.ControlReply, 1)
+		c.waitControl(c.state(), c.sceneSeqs(), domain.WaitCommitted, &domain.Until{Kind: domain.UntilWindowMapped, AppID: "missing"}, time.Minute, replies, nil)
+		c.evalWaits()
+		// The generated clock and timer mocks allocate per call: that is the
+		// baseline, the wait itself must add nothing.
+		base := testing.AllocsPerRun(20, func() {
+			_ = c.now()
+			c.controlWaitTimer.Reset(time.Minute)
+			_ = c.controlWaitTimer.C()
+		})
+		if n := testing.AllocsPerRun(20, c.evalWaits); n > base {
+			t.Fatalf("pending evalWaits: %v allocations, clock and timer alone %v", n, base)
+		}
+		if len(replies) != 0 || len(c.controlWaits) != 1 {
+			t.Fatal("wait resolved")
+		}
+	})
+}
+
+// Runtime output waits time out instead of waiting forever.
+func TestControlOutputWaitDeadline(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var cfg domain.Config
+		cfg.Keyboard.CmdKey = "super"
+		cfg.Layout.MaxColumns = 2
+		c := newSizedCore(t, cfg)
+		runtime := make(chan ports.OutputRuntimeRequest, 1)
+		c.ch.RuntimeOutputs = runtime
+		reply := make(chan ports.ControlReply, 1)
+		if err := c.control(t.Context(), ports.ControlOutput{Name: "X", Caps: domain.CapAdmin, Reply: reply}); err != nil {
+			t.Fatal(err)
+		}
+		c.evalWaits()
+		if c.controlWaitC == nil {
+			t.Fatal("output wait has no deadline")
+		}
+		time.Sleep(runtimeOutputTimeout)
+		<-c.controlWaitC
+		c.evalWaits()
+		if r := <-reply; !r.TimedOut || len(c.controlWaits) != 0 {
+			t.Fatalf("output wait: %+v", r)
+		}
+	})
+}
+
+// The pending wait list is capped.
+func TestControlWaitCap(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var cfg domain.Config
+		cfg.Keyboard.CmdKey = "super"
+		cfg.Layout.MaxColumns = 2
+		c := newSizedCore(t, cfg)
+		replies := make(chan ports.ControlReply, maxControlWaits+1)
+		for range maxControlWaits {
+			c.waitControl(c.state(), c.sceneSeqs(), domain.WaitCommitted, &domain.Until{Kind: domain.UntilWindowMapped, AppID: "missing"}, time.Minute, replies, nil)
+		}
+		if err := c.control(t.Context(), ports.ControlDo{Action: "none", Caps: domain.CapAct, Reply: replies}); err != nil {
+			t.Fatal(err)
+		}
+		if r := <-replies; r.Err != ports.ControlErrBadRequest || len(c.controlWaits) != maxControlWaits {
+			t.Fatalf("over cap: %+v", r)
+		}
+	})
+}

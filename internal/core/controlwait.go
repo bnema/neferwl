@@ -53,6 +53,55 @@ func (c *Core) waitControl(before domain.State, baseline map[string]uint64, leve
 	c.controlWaits = append(c.controlWaits, controlWait{shots: shots, before: before, baseline: baseline, targetSeqs: make(map[string]uint64), level: level, until: predicate, deadline: c.now().Add(timeout), reply: reply})
 }
 
+// waitPass caches what evalWaits derives from owner state: each value is
+// computed on first use in a pass, so a wait that needs none of them costs
+// nothing beyond the scratch scene sequences.
+type waitPass struct {
+	c          *Core
+	state      domain.State
+	hasState   bool
+	pending    []domain.WindowID
+	hasPending bool
+}
+
+func (p *waitPass) State() domain.State {
+	if !p.hasState {
+		p.state, p.hasState = p.c.state(), true
+	}
+	return p.state
+}
+
+func (p *waitPass) Pending() []domain.WindowID {
+	if !p.hasPending {
+		p.pending, p.hasPending = p.c.pendingConfigures(), true
+	}
+	return p.pending
+}
+
+func (p *waitPass) settled() bool {
+	return !p.c.animating() && len(p.c.configures.pending) == 0
+}
+
+func (p *waitPass) reply(w controlWait, r ports.ControlReply) {
+	r.State = p.State()
+	r.Diff = domain.DiffState(w.before, r.State)
+	controlReply(w.reply, r)
+}
+
+// scratchSeqs fills the reused scene sequence map for this pass.
+func (c *Core) scratchSeqs() map[string]uint64 {
+	if c.waitSeqs == nil {
+		c.waitSeqs = make(map[string]uint64, len(c.screens))
+	}
+	clear(c.waitSeqs)
+	for _, sc := range c.screens {
+		if sc.name() != "" {
+			c.waitSeqs[sc.name()] = sc.last.Seq
+		}
+	}
+	return c.waitSeqs
+}
+
 // evalWaits runs at the top of every owner-loop pass, including passes reached
 // via continue, after the preceding event and its publications have completed.
 func (c *Core) evalWaits() {
@@ -60,39 +109,39 @@ func (c *Core) evalWaits() {
 		c.stopControlWaitTimer()
 		return
 	}
-	now, state := c.now(), c.state()
-	pending := c.pendingConfigures()
-	settled := !c.animating() && len(pending) == 0
-	seqs := c.sceneSeqs()
+	now := c.now()
+	pass := waitPass{c: c}
+	seqs := c.scratchSeqs()
 	kept := c.controlWaits[:0]
 	var earliest time.Time
 	for _, w := range c.controlWaits {
-		if w.runtime != nil {
-			select {
-			case result := <-w.runtime:
-				if result.Err != "" {
-					controlReply(w.reply, ports.ControlReply{Err: result.Err})
-					continue
-				}
-				w.output = result.Name
-				w.runtime = nil
-			default:
-				kept = append(kept, w)
+		if w.runtime != nil || w.output != "" {
+			if !now.Before(w.deadline) {
+				pass.reply(w, ports.ControlReply{Err: "timeout", TimedOut: true, Done: domain.WaitCommitted})
 				continue
 			}
-		}
-		if w.output != "" {
-			exists := false
-			for _, o := range state.Outputs {
-				if o.Name == w.output {
-					exists = true
+			if w.runtime != nil {
+				select {
+				case result := <-w.runtime:
+					if result.Err != "" {
+						controlReply(w.reply, ports.ControlReply{Err: result.Err})
+						continue
+					}
+					w.output = result.Name
+					w.runtime = nil
+				default:
 				}
 			}
+			if w.runtime != nil {
+				kept, earliest = append(kept, w), earlier(earliest, w.deadline)
+				continue
+			}
+			_, exists := seqs[w.output]
 			if exists == w.remove {
-				kept = append(kept, w)
+				kept, earliest = append(kept, w), earlier(earliest, w.deadline)
 				continue
 			}
-			controlReply(w.reply, ports.ControlReply{Done: domain.WaitCommitted, State: state, Diff: domain.DiffState(w.before, state)})
+			pass.reply(w, ports.ControlReply{Done: domain.WaitCommitted})
 			continue
 		}
 
@@ -109,8 +158,10 @@ func (c *Core) evalWaits() {
 				w.targetSeqs[shot.Output] = seq
 			}
 		}
+		timedOut := !now.Before(w.deadline)
 		reached := domain.WaitCommitted
-		if settled {
+		// The reached level matters only to a higher wait or to a timeout reply.
+		if (w.level > domain.WaitCommitted || timedOut) && pass.settled() {
 			reached = domain.WaitSettled
 			presented := true
 			for output, seq := range w.targetSeqs {
@@ -123,17 +174,14 @@ func (c *Core) evalWaits() {
 				reached = domain.WaitPresented
 			}
 		}
-		satisfied := reached >= w.level && (w.until == nil || w.until.Holds(w.before, state))
-		timedOut := !now.Before(w.deadline)
+		satisfied := reached >= w.level && (w.until == nil || w.until.Holds(w.before, pass.State()))
 		if satisfied || timedOut {
 			done := w.level
+			response := ports.ControlReply{Done: done, TimedOut: !satisfied}
 			if !satisfied {
-				done = reached
-			}
-			response := ports.ControlReply{Done: done, State: state, Diff: domain.DiffState(w.before, state), TimedOut: !satisfied}
-			if !satisfied {
+				response.Done = reached
 				response.Err = "timeout"
-				response.Late = pending
+				response.Late = pass.Pending()
 			}
 			for _, shot := range w.shots {
 				seq, exists := seqs[shot.Output]
@@ -142,13 +190,10 @@ func (c *Core) evalWaits() {
 					response.Shots = append(response.Shots, shot)
 				}
 			}
-			controlReply(w.reply, response)
+			pass.reply(w, response)
 			continue
 		}
-		kept = append(kept, w)
-		if earliest.IsZero() || w.deadline.Before(earliest) {
-			earliest = w.deadline
-		}
+		kept, earliest = append(kept, w), earlier(earliest, w.deadline)
 	}
 	clear(c.controlWaits[len(kept):])
 	c.controlWaits = kept
@@ -164,9 +209,18 @@ func (c *Core) evalWaits() {
 	c.controlWaitC = c.controlWaitTimer.C()
 }
 
-func (c *Core) stopControlWaitTimer() {
-	if c.controlWaitTimer != nil {
-		c.controlWaitTimer.Stop()
+// earlier returns the earlier of a running minimum (zero: none) and t.
+func earlier(min, t time.Time) time.Time {
+	if min.IsZero() || t.Before(min) {
+		return t
 	}
+	return min
+}
+
+func (c *Core) stopControlWaitTimer() {
+	if c.controlWaitTimer == nil {
+		return
+	}
+	c.controlWaitTimer.Stop()
 	c.controlWaitC = nil
 }
