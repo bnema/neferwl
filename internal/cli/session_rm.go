@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -63,12 +62,10 @@ func sessionRemove(ctx context.Context, env Env, args []string) error {
 		if callErr != nil && !errors.Is(callErr, io.EOF) {
 			return callErr
 		}
-		var ok bool
-		_ = json.Unmarshal(reply["ok"], &ok)
-		if callErr == nil && !ok {
-			var code string
-			_ = json.Unmarshal(reply["error"], &code)
-			return fmt.Errorf("session quit: %s", code)
+		if callErr == nil {
+			if err := reply.err(); err != nil {
+				return fmt.Errorf("session quit: %w", err)
+			}
 		}
 	} else {
 		if err := terminateSession(*meta); err != nil {
