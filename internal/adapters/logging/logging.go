@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"bnema.dev/zerowrap"
@@ -69,19 +70,69 @@ const keepRuns = 20
 // The caller must invoke close after all logging is complete; crashed
 // keeps the crash file for a panic about to be re-raised.
 func Open(ctx context.Context, backend, level, debug string) (context.Context, func(crashed bool) error, error) {
+	state, err := stateDir()
+	if err != nil {
+		return nil, nil, err
+	}
+	return openDir(ctx, filepath.Join(state, "neferwl", "runs", backend), level, debug, nil)
+}
+
+// OpenSession is Open for a headless session: its runs go to
+// sessions/<id>/ under the state directory. The session directory is
+// locked while the log is open, and session directories beyond the newest
+// keepRuns (by modification time) are removed unless their lock is held.
+func OpenSession(ctx context.Context, id, level, debug string) (context.Context, func(crashed bool) error, error) {
+	if _, err := ParseDebug(debug); err != nil {
+		return nil, nil, err
+	}
+	if id == "" || id != filepath.Base(id) || id == "." || id == ".." {
+		return nil, nil, fmt.Errorf("invalid session id %q", id)
+	}
+	state, err := stateDir()
+	if err != nil {
+		return nil, nil, err
+	}
+	root := filepath.Join(state, "neferwl", "sessions")
+	dir := filepath.Join(root, id)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, nil, err
+	}
+	lock, err := os.OpenFile(filepath.Join(dir, "lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = lock.Close()
+		return nil, nil, fmt.Errorf("session log %s is in use: %w", dir, err)
+	}
+	pruneSessions(root, id)
+	return openDir(ctx, dir, level, debug, lock)
+}
+
+func stateDir() (string, error) {
+	if state := os.Getenv("XDG_STATE_HOME"); state != "" {
+		return state, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".local", "state"), nil
+}
+
+// openDir starts a run in dir. lock, if any, is closed with the log.
+func openDir(ctx context.Context, dir, level, debug string, lock *os.File) (_ context.Context, _ func(crashed bool) error, err error) {
+	if lock != nil {
+		defer func() {
+			if err != nil {
+				_ = lock.Close()
+			}
+		}()
+	}
 	selected, err := ParseDebug(debug)
 	if err != nil {
 		return nil, nil, err
 	}
-	state := os.Getenv("XDG_STATE_HOME")
-	if state == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, nil, err
-		}
-		state = filepath.Join(home, ".local", "state")
-	}
-	dir := filepath.Join(state, "neferwl", "runs", backend)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, nil, err
 	}
@@ -131,8 +182,62 @@ func Open(ctx context.Context, backend, level, debug string) (context.Context, f
 		if !crashed {
 			w.Clean()
 		}
-		return w.Close()
+		err := w.Close()
+		if lock != nil {
+			_ = lock.Close()
+		}
+		return err
 	}, nil
+}
+
+// pruneSessions keeps the newest keepRuns session log directories of root
+// by modification time; current and directories whose lock is held by a
+// live session are kept.
+func pruneSessions(root, current string) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	type session struct {
+		path string
+		mod  time.Time
+	}
+	var old []session
+	for _, e := range entries {
+		if !e.IsDir() || e.Name() == current {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		old = append(old, session{filepath.Join(root, e.Name()), info.ModTime()})
+	}
+	// The current session counts toward keepRuns.
+	if len(old) < keepRuns {
+		return
+	}
+	sort.Slice(old, func(i, j int) bool { return old[i].mod.After(old[j].mod) })
+	for _, s := range old[keepRuns-1:] {
+		if sessionLive(s.path) {
+			continue
+		}
+		_ = os.RemoveAll(s.path)
+	}
+}
+
+// sessionLive reports whether another process holds the directory's lock.
+func sessionLive(dir string) bool {
+	f, err := os.OpenFile(filepath.Join(dir, "lock"), os.O_RDWR, 0)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		return true
+	}
+	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	return false
 }
 
 // logQueue is how many entries may wait for the disk. Past it, entries are

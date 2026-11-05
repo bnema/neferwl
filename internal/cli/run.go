@@ -149,11 +149,12 @@ func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
 	if f.backend == "headless" && f.sessionID == "" {
 		f.sessionID = sessiondir.NewID()
 	}
-	logTarget := f.backend
+	var closeLog func(bool) error
 	if f.sessionID != "" {
-		logTarget = "../sessions/" + f.sessionID
+		ctx, closeLog, err = logging.OpenSession(ctx, f.sessionID, cfg.Log.Level, mergeDebug(cfg.Log.Debug, f.debug))
+	} else {
+		ctx, closeLog, err = logging.Open(ctx, f.backend, cfg.Log.Level, mergeDebug(cfg.Log.Debug, f.debug))
 	}
-	ctx, closeLog, err := logging.Open(ctx, logTarget, cfg.Log.Level, mergeDebug(cfg.Log.Debug, f.debug))
 	if err != nil {
 		return err
 	}

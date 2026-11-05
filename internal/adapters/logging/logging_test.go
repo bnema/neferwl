@@ -4,10 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"sort"
+	"syscall"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -235,6 +239,76 @@ func TestEnabledCategories(t *testing.T) {
 			if got := Enabled(ctx, category); got != tc.want {
 				t.Errorf("%s with %q: %v", category, tc.debug, got)
 			}
+		}
+	}
+}
+
+// TestOpenSessionPrunesOldSessions: a session's runs go to sessions/<id>/;
+// the newest keepRuns session directories are kept by modification time,
+// and an old one whose lock is held by a live session survives.
+func TestOpenSessionPrunesOldSessions(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+	root := filepath.Join(state, "neferwl", "sessions")
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := range keepRuns + 5 {
+		dir := filepath.Join(root, fmt.Sprintf("s-%02d", i))
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		mod := base.Add(time.Duration(i) * time.Minute)
+		if err := os.Chtimes(dir, mod, mod); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// s-00 is the oldest but live: another holder has its lock.
+	live, err := os.OpenFile(filepath.Join(root, "s-00", "lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer live.Close()
+	if err := syscall.Flock(int(live.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	mod := base
+	if err := os.Chtimes(filepath.Join(root, "s-00"), mod, mod); err != nil {
+		t.Fatal(err)
+	}
+
+	_, closeLog, err := OpenSession(context.Background(), "current", "info", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "current", "latest.log")); err != nil {
+		t.Fatal(err)
+	}
+	// A second open of the same live session is refused.
+	if _, _, err := OpenSession(context.Background(), "current", "info", ""); err == nil {
+		t.Fatal("opened a session log twice")
+	}
+	if err := closeLog(false); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	// current + the newest keepRuns-1 others + live s-00.
+	want := []string{"current", "s-00"}
+	for i := 6; i < keepRuns+5; i++ {
+		want = append(want, fmt.Sprintf("s-%02d", i))
+	}
+	sort.Strings(want)
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("kept %v, want %v", names, want)
+	}
+	for _, bad := range []string{"", "..", "a/b"} {
+		if _, _, err := OpenSession(context.Background(), bad, "info", ""); err == nil {
+			t.Errorf("accepted session id %q", bad)
 		}
 	}
 }
