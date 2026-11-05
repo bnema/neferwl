@@ -195,6 +195,9 @@ func TestControlWaitIdleAllocations(t *testing.T) {
 // A pending committed wait (an Until not yet true) neither builds the
 // pending list nor reallocates scene sequences on every pass.
 func TestControlWaitPendingAllocations(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation counts differ under -race")
+	}
 	synctest.Test(t, func(t *testing.T) {
 		var cfg domain.Config
 		cfg.Keyboard.CmdKey = "super"
