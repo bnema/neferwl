@@ -192,7 +192,13 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	controlPath := ""
 	if opts.Backend == "headless" {
 		path := filepath.Join(runtimeDir, "neferwl", s.server.SocketName()+".control.sock")
-		if listener, err := control.Listen(path, s.wsIDs); err != nil {
+		kb := opts.Config.Keyboard
+		controlMap, mapErr := xkb.New(xkb.RMLVO{Layout: kb.Layout, Variant: kb.Variant, Options: kb.Options})
+		if mapErr != nil {
+			return s, mapErr
+		}
+		if listener, err := control.Listen(path, s.wsIDs, control.Options{Keymap: controlMap, Keymaps: s.p.controlKeymaps, Security: s.security}); err != nil {
+			controlMap.Close()
 			log.Warn().Err(err).Msg("control socket disabled")
 		} else {
 			s.control = listener
@@ -235,6 +241,9 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 // backend and the keymap. It runs only when assembly fails, before
 // anything else is owned.
 func (s *session) abort() {
+	if s.control != nil {
+		_ = s.control.Close()
+	}
 	s.releaseRender()
 	if s.km != nil {
 		s.km.Close()
@@ -306,7 +315,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
-		relayConfig(ctx, opts.Config, p.watched, p.filtered, p.keymaps, p.deviceConfigs, curs, p.commands, logging.For(ctx, "config"))
+		relayConfig(ctx, opts.Config, p.watched, p.filtered, p.keymaps, p.deviceConfigs, curs, p.commands, logging.For(ctx, "config"), p.controlKeymaps)
 	}()
 	script := make(chan string)
 	go func() {
@@ -503,10 +512,12 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	// The wayland server has stopped: no request can be queued any more.
 	routing.DrainCaptures(ctx, p.captures, nil)
 	// A keymap the input goroutine never took is still ours to free.
-	select {
-	case km := <-p.keymaps:
-		km.Close()
-	default:
+	for _, maps := range []chan *xkb.Keymap{p.keymaps, p.controlKeymaps} {
+		select {
+		case km := <-maps:
+			km.Close()
+		default:
+		}
 	}
 	for len(done) > 0 {
 		err := <-done

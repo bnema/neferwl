@@ -24,15 +24,16 @@ type pipes struct {
 	spawn    chan domain.SpawnRequest
 
 	// Capacity 1: each holds the latest value its sender published.
-	scenes        chan []domain.Scene
-	renderScenes  chan []domain.Scene
-	layouts       chan domain.Layout
-	constraints   chan domain.PointerConstraint
-	states        chan domain.State
-	workspaces    chan domain.Workspaces
-	cursorChanges chan domain.CursorChange
-	keymaps       chan *xkb.Keymap
-	deviceConfigs chan domain.InputDevicesConfig
+	scenes         chan []domain.Scene
+	renderScenes   chan []domain.Scene
+	layouts        chan domain.Layout
+	constraints    chan domain.PointerConstraint
+	states         chan domain.State
+	workspaces     chan domain.Workspaces
+	cursorChanges  chan domain.CursorChange
+	keymaps        chan *xkb.Keymap
+	controlKeymaps chan *xkb.Keymap
+	deviceConfigs  chan domain.InputDevicesConfig
 
 	// Configuration: watched from the file, filtered by relayConfig, then
 	// configured (overrides included) by outputs for core.
@@ -100,15 +101,16 @@ func newPipes(realSession, hint bool) *pipes {
 		commands: make(chan ports.ClientCommand, 32),
 		spawn:    make(chan domain.SpawnRequest, 32),
 
-		scenes:        make(chan []domain.Scene, 1),
-		renderScenes:  make(chan []domain.Scene, 1),
-		layouts:       make(chan domain.Layout, 1),
-		constraints:   make(chan domain.PointerConstraint, 1),
-		states:        make(chan domain.State, 1),
-		workspaces:    make(chan domain.Workspaces, 1),
-		cursorChanges: make(chan domain.CursorChange, 1),
-		keymaps:       make(chan *xkb.Keymap, 1),
-		deviceConfigs: make(chan domain.InputDevicesConfig, 1),
+		scenes:         make(chan []domain.Scene, 1),
+		renderScenes:   make(chan []domain.Scene, 1),
+		layouts:        make(chan domain.Layout, 1),
+		constraints:    make(chan domain.PointerConstraint, 1),
+		states:         make(chan domain.State, 1),
+		workspaces:     make(chan domain.Workspaces, 1),
+		cursorChanges:  make(chan domain.CursorChange, 1),
+		keymaps:        make(chan *xkb.Keymap, 1),
+		controlKeymaps: make(chan *xkb.Keymap, 1),
+		deviceConfigs:  make(chan domain.InputDevicesConfig, 1),
 
 		watched:      make(chan domain.ConfigChanged, 8),
 		filtered:     make(chan domain.ConfigChanged, 8),
