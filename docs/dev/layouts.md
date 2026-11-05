@@ -134,5 +134,4 @@ Required: `CGO_ENABLED=0 go build ./...`, `make check`, `make race`,
 
 For end-to-end testing follow [headless.md](headless.md): a throwaway config per
 layout, several windows, focus/move on both axes, grow/shrink, maximize,
-overview and swipe, with `WAYLAND_DISPLAY` isolated and `NEFERWL_STATE` and
-`NEFERWL_SLOT` unset.
+overview and swipe, on an isolated session driven with `-s`.

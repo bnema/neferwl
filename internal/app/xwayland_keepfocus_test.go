@@ -3,7 +3,6 @@
 package app
 
 import (
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,7 +103,7 @@ func TestXwaylandKeepFocus(t *testing.T) {
 		t.Fatalf("probe left tv: %+v", w)
 	}
 
-	if _, err := io.WriteString(e.script, "key a\n"); err != nil {
+	if err := e.script.inject("key", "a"); err != nil {
 		t.Fatal(err)
 	}
 	waitNative("native key", func() bool { return len(keys) != 0 })

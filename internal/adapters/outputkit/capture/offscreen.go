@@ -394,7 +394,7 @@ func (p *Pipeline) SubmitHidden(s domain.Scene, surfaces map[domain.WindowID]dom
 			return
 		}
 		o.r, o.p, o.w, o.h, o.target = r, NewPipeline(p.ctx, p.replies), w, h, target
-		o.p.Security = p.Security
+		o.p.Security, o.p.CPUReadback = p.Security, p.CPUReadback
 	}
 	// Request regions are physical pixels of the output, and the scene does
 	// not carry the workspace viewport's origin in output coordinates, so they

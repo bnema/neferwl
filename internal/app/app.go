@@ -4,7 +4,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"io"
 	"os/exec"
 	"time"
 
@@ -21,11 +20,14 @@ import (
 )
 
 type Options struct {
-	Backend    domain.Backend
-	Config     domain.Config
-	ConfigPath string
-	Timeout    time.Duration
-	NoTerminal bool
+	SessionID     string
+	ReadyFD       int
+	Backend       domain.Backend
+	Profile       domain.Profile
+	PlanOverrides core.PlanOverrides
+	Config        domain.Config
+	ConfigPath    string
+	Timeout       time.Duration
 	// NoXwayland skips the X11 display even when the config enables it.
 	NoXwayland bool
 	// HeadlessHDR enables a virtual HDR output for protocol testing only.
@@ -33,20 +35,9 @@ type Options struct {
 	// Session exports the displays to D-Bus and systemd user services
 	// before any client starts, and withdraws them on exit.
 	Session bool
-	// DBus serves the session D-Bus services (idle inhibition, screen
-	// casting and screenshots) of a headless run, which otherwise leaves the
-	// session bus alone. For tests under dbus-run-session.
-	DBus          bool
-	ScreenshotDir string
-	// ScreenshotRaw also writes latest-pq.png, the raw PQ codes of a
-	// virtual HDR output (test-only; needs ScreenshotDir and HeadlessHDR).
-	ScreenshotRaw bool
-	// Sizes are the headless outputs (width, height), left to right; empty
-	// means one 1920x1080 output. With several outputs, screenshots go to
-	// one subdirectory per output (HEADLESS-1, HEADLESS-2, ...).
-	Sizes [][2]int
-	// Run closes Script on shutdown; the reader goroutine exits after Close.
-	Script     io.ReadCloser
+	// Sizes are headless outputs (width, height), left to right; empty
+	// means one 1920x1080 output.
+	Sizes      [][2]int
 	testScenes chan<- []domain.Scene
 	// captureAllowPath replaces the fixed allowlist path (tests).
 	captureAllowPath string
@@ -87,13 +78,14 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 // either way.
 const busRetry = 2 * time.Second
 
-// relayConfig forwards reloads to core. A layout change builds a new keymap, hands it
+// relayConfig forwards reloads to core. controlKeymaps, when not nil, receives a
+// separate keymap for the control socket. A layout change builds a new keymap, hands it
 // to the input goroutine and sends it to clients; a repeat-only change just updates
 // clients. A keymap that fails to build keeps the previous layout. A touchpad
 // or mouse change goes to the input goroutine as one InputDevicesConfig; only
 // the newest one waits there. The cursor idle delay goes straight to the
 // cursor router.
-func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.ConfigChanged, out chan<- domain.ConfigChanged, keymaps chan *xkb.Keymap, deviceConfigs chan domain.InputDevicesConfig, curs *cursors.Router, commands chan<- ports.ClientCommand, log zerowrap.Logger) {
+func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.ConfigChanged, out chan<- domain.ConfigChanged, keymaps chan *xkb.Keymap, deviceConfigs chan domain.InputDevicesConfig, curs *cursors.Router, commands chan<- ports.ClientCommand, log zerowrap.Logger, controlKeymaps chan *xkb.Keymap) {
 	kb := cur.Keyboard
 	devCfg := cur.InputDevicesConfig
 	for {
@@ -124,6 +116,28 @@ func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.Config
 				layoutChanged = false
 			} else {
 				cmd.Keymap = km.String()
+				// Every producer needs its own mutable XKB state. Build the
+				// control map separately: sharing km races physical input and
+				// would merge modifiers across the two synthetic/real seats.
+				if controlKeymaps != nil {
+					nextMap, err := xkb.New(xkb.RMLVO{Layout: next.Layout, Variant: next.Variant, Options: next.Options})
+					if err != nil {
+						log.Warn().Err(err).Msg("control keymap reload rejected")
+					} else {
+						select {
+						case old := <-controlKeymaps:
+							old.Close()
+						default:
+						}
+						select {
+						case controlKeymaps <- nextMap:
+						case <-ctx.Done():
+							nextMap.Close()
+							km.Close()
+							return
+						}
+					}
+				}
 				// Drop a keymap the input goroutine has not taken yet; the newest wins.
 				select {
 				case old := <-keymaps:

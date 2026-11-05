@@ -196,7 +196,7 @@ func TestInputRegionResentAfterRemap(t *testing.T) {
 	if !s.display.Do(func() {
 		for _, v := range s.surfaces {
 			if v.xdg != nil && v.xdg.window != nil && v.xdg.window.id == w.ID && len(v.xdg.serials) > 0 {
-				serial = v.xdg.serials[len(v.xdg.serials)-1]
+				serial = v.xdg.serials[len(v.xdg.serials)-1].wire
 			}
 		}
 	}) {

@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/headless"
@@ -21,39 +19,32 @@ import (
 // BackendOptions are the settings of the virtual outputs.
 type BackendOptions struct {
 	Sizes [][2]int
-	Shots string
 	HDR   bool
-	Raw   bool // also write latest-pq.png (Options.RawHDR)
 }
 
 // Run drives one virtual output per size, named HEADLESS-1, -2, ...
 // Sizes may be empty: then only config-declared virtual outputs exist.
-// With several outputs, screenshots go to a subdirectory per output. Modes
-// of built-in heads are fixed; config-declared outputs reconcile through apply.
+// Frame capture starts over control (Continuous). Modes of built-in heads are
+// fixed; config-declared outputs reconcile through apply.
 //
 // newRenderer is configured for virtual outputs by the session.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter wires virtual output owners and forwards apply messages to core; preserves registration before the no-lease security barrier
+//hexcheck:ignore suspicious-business-logic-in-adapter wires virtual output owners, forwards apply messages to core and fans out core's capture plans; preserves registration before the no-lease security barrier
 func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch routing.Channels, curs *cursors.Router, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
 	set := routing.NewSet(ctx, ch.Captured, ch.Routes())
 	set.Attach = ch.Content
 	set.WireSecurity(ch)
+	writers := map[string]chan ports.OutputContinuous{}
 	inventory := domain.OutputHeads{}
 	for i, size := range o.Sizes {
 		name := fmt.Sprintf("HEADLESS-%d", i+1)
 		mode := domain.OutputMode{Width: size[0], Height: size[1], RefreshMilli: 60000, Preferred: true}
 		inventory.Heads = append(inventory.Heads, domain.OutputHead{Info: domain.OutputInfo{Name: name, Width: size[0], Height: size[1], RefreshMilli: 60000}, Modes: []domain.OutputMode{mode}, Current: &mode, Enabled: true})
-		dir := o.Shots
-		if dir != "" && len(o.Sizes) > 1 {
-			dir = filepath.Join(o.Shots, name)
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				// Outputs already started stop and release their captures.
-				return errors.Join(err, set.Wait())
-			}
-		}
+		writer := make(chan ports.OutputContinuous)
+		writers[name] = writer
 		cur := &headless.Cursor{}
 		curs.Set(name, cur)
-		opts := headless.Options{Cursor: cur, LoadCursor: xcursor.LoadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: domain.OutputHDRSettings{Enabled: o.HDR}.Normalized(), RawHDR: o.Raw, Formats: ch.Formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.Presented, Frames: ch.Frames, Events: ch.Events, Captured: ch.Captured}
+		opts := headless.Options{Continuous: writer, Cursor: cur, LoadCursor: xcursor.LoadCursor, Width: size[0], Height: size[1], HDR: domain.OutputHDRSettings{Enabled: o.HDR}.Normalized(), Formats: ch.Formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.Presented, Frames: ch.Frames, Events: ch.Events, Captured: ch.Captured}
 		if !headless.StartOutput(ctx, set, ch, domain.OutputInfo{Name: name, Width: size[0], Height: size[1]}, opts) {
 			return set.Wait()
 		}
@@ -79,6 +70,8 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 	if len(o.Sizes) > 0 {
 		curs.Move("HEADLESS-1", float64(o.Sizes[0][0])/2, float64(o.Sizes[0][1])/2, false)
 	}
+	runtimeReplies := map[uint64]ports.OutputRuntimeRequest{}
+	runtimeID := ports.OutputApplyIDRuntime
 	for {
 		if _, ok := apply.Next(); ok {
 			err := host.Sync(ctx, apply.Virtuals())
@@ -92,6 +85,19 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 		configs, configNext := apply.ConfigOut(ch.Configured), apply.Config()
 		replies, replyNext := apply.ReplyOut(ch.Replies)
 		heads, headsNext := apply.HeadsOut(ch.Heads)
+		if pending, ok := runtimeReplies[replyNext.ID]; ok {
+			select {
+			case pending.Reply <- ports.OutputRuntimeResult{Name: pending.Name, Err: core.RuntimeOutputCode(replyNext.Err)}:
+			default:
+			}
+			select {
+			case pending.Wake <- struct{}{}:
+			default:
+			}
+			delete(runtimeReplies, replyNext.ID)
+			apply.ReplySent()
+			continue
+		}
 		select {
 		case <-ctx.Done():
 			return set.Wait()
@@ -105,6 +111,32 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 			}
 		case ev := <-ch.Reloads:
 			apply.Reload(ev.Config)
+		case req := <-ch.Continuous:
+			if !handleContinuous(ctx, writers, host, set, req) {
+				return set.Wait()
+			}
+		case req := <-ch.RuntimeOutputs:
+			runtimeID++
+			name := req.Name
+			var err error
+			if req.Remove {
+				err = apply.RuntimeRemove(runtimeID, name)
+			} else {
+				name, err = apply.RuntimeAdd(runtimeID, name, req.Mode)
+			}
+			if err != nil {
+				select {
+				case req.Reply <- ports.OutputRuntimeResult{Name: name, Err: core.RuntimeOutputCode(err)}:
+				default:
+				}
+				select {
+				case req.Wake <- struct{}{}:
+				default:
+				}
+			} else {
+				req.Name = name
+				runtimeReplies[runtimeID] = req
+			}
 		case req := <-ch.Requests:
 			apply.Request(req)
 		case configs <- configNext:
@@ -132,5 +164,70 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 			err := set.Finish(stopped.Name)
 			return errors.Join(err, set.Wait())
 		}
+	}
+}
+
+// handleContinuous carries out core's resolved plan: every target's writer
+// changes, or none. A start that fails partway stops the outputs already
+// started before replying. It reports false when ctx ended.
+func handleContinuous(ctx context.Context, writers map[string]chan ports.OutputContinuous, host *virtuals.Host, set *routing.Set, req ports.ContinuousCaptureRequest) bool {
+	code := ""
+	for _, t := range req.Targets {
+		if writers[t.Output] == nil && host.Continuous(t.Output) == nil {
+			// Gone since core planned: nothing has started yet.
+			code = ports.ControlErrBadRequest
+			break
+		}
+	}
+	if code == "" {
+		var started []string
+		for _, t := range req.Targets {
+			var stopped bool
+			if code, stopped = sendContinuous(ctx, writers, host, set, t.Output, ports.OutputContinuous{Dir: t.Dir, Raw: req.Raw, Stop: req.Stop}); stopped {
+				return false
+			}
+			if code != "" {
+				break
+			}
+			started = append(started, t.Output)
+		}
+		if code != "" && !req.Stop {
+			for _, name := range started {
+				if _, stopped := sendContinuous(ctx, writers, host, set, name, ports.OutputContinuous{Stop: true}); stopped {
+					return false
+				}
+			}
+		}
+	}
+	select {
+	case req.Reply <- ports.ContinuousCaptureResult{Dir: req.Dir, Err: code}:
+	default:
+	}
+	return true
+}
+
+// sendContinuous hands req to the frame writer of name and waits for its
+// acknowledgement. stopped reports that ctx ended.
+func sendContinuous(ctx context.Context, writers map[string]chan ports.OutputContinuous, host *virtuals.Host, set *routing.Set, name string, req ports.OutputContinuous) (code string, stopped bool) {
+	writer := chan<- ports.OutputContinuous(writers[name])
+	if writer == nil {
+		writer = host.Continuous(name)
+	}
+	ack := make(chan ports.ContinuousCaptureResult, 1)
+	req.Reply = ack
+	select {
+	case writer <- req:
+	case <-set.Outs[name].Done:
+		return ports.ControlErrCaptureFailed, false
+	case <-ctx.Done():
+		return "", true
+	}
+	select {
+	case result := <-ack:
+		return result.Err, false
+	case <-set.Outs[name].Done:
+		return ports.ControlErrCaptureFailed, false
+	case <-ctx.Done():
+		return "", true
 	}
 }

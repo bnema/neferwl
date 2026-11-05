@@ -219,3 +219,14 @@ func (WindowTitle) clientEvent() {}
 type WindowDestroyed struct{ ID domain.WindowID }
 
 func (WindowDestroyed) clientEvent() {}
+
+// WindowCommitted reports the first applied commit after the client acked the
+// newest configure, once per acked configure. X11 has no ack: it reports the
+// first commit whose size matches the last configure instead.
+type WindowCommitted struct {
+	ID            domain.WindowID
+	Serial        uint64
+	Width, Height int
+}
+
+func (WindowCommitted) clientEvent() {}

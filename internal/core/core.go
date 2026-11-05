@@ -23,13 +23,19 @@ var errSecurityChanged = errors.New("security epoch changed during input")
 // its only sender and may drain a stale set; consumers only receive. Each
 // send holds one scene per output.
 type Channels struct {
-	Client   <-chan ports.ClientEvent
-	Input    <-chan ports.InputEvent
-	Output   <-chan ports.OutputEvent
-	Config   <-chan domain.ConfigChanged
-	Commands chan<- ports.ClientCommand
-	Spawn    chan<- domain.SpawnRequest
-	Scenes   chan []domain.Scene
+	// Control carries owner-serialized control requests; nil disables control.
+	RuntimeOutputs chan<- ports.OutputRuntimeRequest
+	// Continuous carries resolved continuous capture plans to the backend;
+	// nil refuses ControlCapture.
+	Continuous chan<- ports.ContinuousCaptureRequest
+	Control    <-chan ports.ControlRequest
+	Client         <-chan ports.ClientEvent
+	Input          <-chan ports.InputEvent
+	Output         <-chan ports.OutputEvent
+	Config         <-chan domain.ConfigChanged
+	Commands       chan<- ports.ClientCommand
+	Spawn          chan<- domain.SpawnRequest
+	Scenes         chan []domain.Scene
 	// Layouts, when set, receives the output layout whenever it changes,
 	// latest first (capacity 1, drained like Scenes). Input and cursors use it.
 	Layouts chan domain.Layout
@@ -51,9 +57,9 @@ type Channels struct {
 	Binds chan<- domain.InputTrace
 	// Placements carries best-effort first-map diagnostics; core never blocks.
 	Placements chan<- domain.PlacementTrace
-	// Frames, when set, carries the outputs' reports of each flip of an
-	// animating scene (Scene.Animating): a running slide moves one step per
-	// report. Without them it moves on a timer.
+	// Frames, when set, carries presented scene sequences. For a running
+	// slide, each report advances it one step; idle reports only record the
+	// sequence. Without frame reports slides move on a timer.
 	Frames <-chan domain.OutputFrame
 	// HintScans, when set, receives the scan request of each hint action
 	// (capacity 1; core never waits: a full channel cancels the hint).
@@ -86,10 +92,18 @@ type binding struct {
 	key  string
 }
 type Core struct {
-	lineage       lineage
-	placementPath string
-	hdrCaps       map[string]domain.OutputHDRCaps
-	osd           osd
+	runtimeWake      chan struct{}
+	controlWaits     []controlWait
+	outputWaits      []outputWait
+	waitState        domain.State // evalWaits scratch for Until predicates
+	waitSeqs         map[string]uint64 // evalWaits scratch
+	controlWaitTimer ports.Timer
+	controlWaitC     <-chan time.Time
+	presented        map[string]uint64 // highest presented scene sequence per output
+	lineage          lineage
+	placementPath    string
+	hdrCaps          map[string]domain.OutputHDRCaps
+	osd              osd
 	// overviewReal is publish's scratch map of the real layouts under an open overview.
 	overviewReal map[WindowID]Placement
 	// realBuf backs the layout read through at once by publish (each
@@ -1145,6 +1159,7 @@ func (c *Core) Run(ctx context.Context) error {
 		<-senderDone
 	}()
 	c.syncSecurity()
+	defer c.stopControlWaitTimer()
 	defer c.stopFrame()
 	defer c.stopCaptureTimer()
 	defer c.stopFlashTimer()
@@ -1167,15 +1182,34 @@ func (c *Core) Run(ctx context.Context) error {
 		if c.securityCheckpoint(ctx) != nil {
 			return nil
 		}
+		c.evalWaits()
 		startupC, startupRequest := c.pendingStartup()
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-c.runtimeWake:
+			continue
+		case <-c.controlWaitC:
+			continue
 		case startupC <- startupRequest:
 			// Successful transfer consumes startup once. Only the receiver can
 			// decide execution admission; a later gate read cannot infer it.
 			c.startup = c.startup[1:]
 			continue
+		case r, ok := <-c.ch.Control:
+			if !ok {
+				c.ch.Control = nil
+				continue
+			}
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
+			}
+			if err := c.control(ctx, r); err != nil {
+				if errors.Is(err, errSecurityChanged) {
+					continue
+				}
+				return err
+			}
 		case ev, ok := <-c.ch.Client:
 			if !ok {
 				c.ch.Client = nil
@@ -1207,6 +1241,10 @@ func (c *Core) Run(ctx context.Context) error {
 				c.ch.Frames = nil
 				continue
 			}
+			if c.presented == nil {
+				c.presented = make(map[string]uint64)
+			}
+			c.presented[f.Output] = max(c.presented[f.Output], f.SceneSeq)
 			if i := c.screenIndex(f.Output); i >= 0 && c.sliding(f.Output) && c.step(ctx, c.screens[i]) != nil {
 				return nil
 			}
@@ -1369,23 +1407,7 @@ func (c *Core) Run(ctx context.Context) error {
 				c.ch.Input = nil
 				continue
 			}
-			if c.securityCheckpoint(ctx) != nil {
-				return nil
-			}
-			// Even stale input is activity, but never becomes client input.
-			if err := c.userActivity(ctx); err != nil {
-				return nil
-			}
-			// Commands can backpressure; recheck after activity before admits/binds.
-			if c.securityCheckpoint(ctx) != nil {
-				return nil
-			}
-			var admitted bool
-			ev, admitted = c.admitInput(ev)
-			if !admitted {
-				continue
-			}
-			if err := c.handleInput(ctx, ev); err != nil {
+			if err := c.inputEvent(ctx, ev); err != nil {
 				if errors.Is(err, errSecurityChanged) {
 					continue
 				}

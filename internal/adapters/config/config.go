@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	"bnema.dev/kvconf"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
 )
 
@@ -74,52 +75,6 @@ var defaultBinds = []struct{ combo, action string }{
 	{"cmd+ctrl+shift+down", "move-workspace-next"},
 	{"cmd+shift+space", "toggle-floating"},
 }
-var actions = map[string]bool{
-	"focus-monitor-left":              true,
-	"focus-monitor-right":             true,
-	"move-workspace-to-monitor-left":  true,
-	"move-workspace-to-monitor-right": true,
-	"focus-monitor-up":                true,
-	"focus-monitor-down":              true,
-	"move-workspace-to-monitor-up":    true,
-	"move-workspace-to-monitor-down":  true,
-	"scale-up":                        true,
-	"scale-down":                      true,
-	"focus-workspace-prev":            true,
-	"focus-workspace-next":            true,
-	"move-column-to-workspace-prev":   true,
-	"move-column-to-workspace-next":   true,
-	"move-window-to-workspace-prev":   true,
-	"move-window-to-workspace-next":   true,
-	"none":                            true,
-	"consume-or-expel-window-left":    true,
-	"consume-or-expel-window-right":   true,
-	"spawn-terminal":                  true,
-	"focus-column-left":               true,
-	"focus-column-right":              true,
-	"focus-window-up":                 true,
-	"focus-window-down":               true,
-	"move-column-left":                true,
-	"move-column-right":               true,
-	"cycle-column-width":              true,
-	"maximize-column":                 true,
-	"toggle-fullscreen":               true,
-	"toggle-window-stash":             true,
-	"toggle-stash-visible":            true,
-	"toggle-overview":                 true,
-	"switch-column-next":              true,
-	"switch-column-prev":              true,
-	"close-window":                    true,
-	"quit":                            true,
-	"move-window-up":                  true,
-	"move-window-down":                true,
-	"move-workspace-prev":             true,
-	"move-workspace-next":             true,
-	"toggle-floating":                 true,
-	"hint":                            true,
-	"osd-pin":                         true,
-}
-var components = map[string]bool{"core": true, "wayland": true, "input": true, "drm": true, "seat": true, "render": true, "sync": true, "config": true, "app": true, "hints": true}
 var color = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 // columnStep is the +N or -N step of set-column-width, in cells, N from 1
@@ -585,13 +540,8 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 					warn("%s: expected virtual WxH[@Hz]", key)
 					continue
 				}
-				w, h, hz, err := ParseMode(fields[1])
-				if hz == 0 {
-					hz = 60
-				}
-				_, representable := domain.RefreshMilli(hz)
-				if err != nil || w < 1 || h < 1 || w > 16384 || h > 16384 || !representable {
-					warn("%s: virtual mode must be WxH[@Hz], dimensions 1..16384 and rounded refresh 1..2147483647 mHz", key)
+				if _, err := domain.ParseOutputMode(fields[1]); err != nil {
+					warn("%s: virtual %v", key, err)
 					continue
 				}
 				o.Virtual, o.Mode = true, fields[1]
@@ -1176,11 +1126,10 @@ func set(c *domain.Config, key, v string) error {
 		}
 		c.Log.Level = v
 	case "log.debug":
+		// The logger owns the component and category names.
 		list := splitList(v)
-		for _, s := range list {
-			if !components[s] && s != "all" {
-				return fmt.Errorf("unknown component %q", s)
-			}
+		if _, err := logging.ParseDebug(strings.Join(list, ",")); err != nil {
+			return err
 		}
 		c.Log.Debug = list
 	default:
@@ -1558,11 +1507,14 @@ func checkAction(v string) error {
 		return nil
 	}
 	for old, repl := range map[string]string{"-workspace-up": "-workspace-prev", "-workspace-down": "-workspace-next"} {
-		if base, ok := strings.CutSuffix(v, old); ok && actions[base+repl] {
+		if base, ok := strings.CutSuffix(v, old); ok {
+			if spec, found := domain.LookupCommand(base + repl); !found || spec.Kind != domain.CommandAction {
+				continue
+			}
 			return fmt.Errorf("action %q was renamed to %q", v, base+repl)
 		}
 	}
-	if !actions[v] {
+	if spec, ok := domain.LookupCommand(v); !ok || spec.Kind != domain.CommandAction {
 		return fmt.Errorf(`unknown action %q (or "spawn <command>", "stash <command>", "workspace <name>")`, v)
 	}
 	return nil

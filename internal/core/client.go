@@ -10,6 +10,14 @@ import (
 // clientEvent applies one client event. publish asks for a new scene;
 // stop ends Run (a command could not be delivered).
 func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, stop bool) {
+	// A commit report changes no focus: skip the lineage observer, it is
+	// on the per-configure path.
+	if v, ok := ev.(ports.WindowCommitted); ok {
+		if serial, ok := c.configures.pending[v.ID]; ok && v.Serial >= serial {
+			delete(c.configures.pending, v.ID)
+		}
+		return false, false
+	}
 	defer c.observeLineageFocus()
 	switch v := ev.(type) {
 	case ports.WindowStats:

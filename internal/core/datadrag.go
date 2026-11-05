@@ -99,6 +99,8 @@ func (c *Core) dataDragRoute(ctx context.Context, at time.Duration) error {
 // capture state or the drag icon. The type switch allocates nothing.
 func dataDragHitChanged(ev ports.ClientEvent) bool {
 	switch ev.(type) {
+	case ports.WindowCommitted:
+		return false
 	case ports.LayerChanged, ports.InputRegionChanged, ports.WindowMapped,
 		ports.WindowResized, ports.WindowTitle, ports.PopupRequest, ports.PopupMapped,
 		ports.OutputPower, ports.WindowParent, ports.WindowModal,

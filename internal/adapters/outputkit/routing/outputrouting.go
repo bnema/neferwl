@@ -11,6 +11,8 @@ import (
 // attached to wayland's content feed (ContentAttacher).
 // heads, configured and replies are fed from the outputApply outbox.
 type Channels struct {
+	Continuous      <-chan ports.ContinuousCaptureRequest
+	RuntimeOutputs  <-chan ports.OutputRuntimeRequest
 	Security        ports.SessionSecurity
 	SecurityChanges <-chan domain.SecurityState
 	SecurityEvents  chan<- ports.SecurityBackendEvent

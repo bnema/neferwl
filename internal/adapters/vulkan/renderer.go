@@ -40,7 +40,7 @@ type Renderer struct {
 	// traceDamage logs every frame's redrawn area (--debug=render-damage).
 	traceDamage bool
 	// hdrReadback makes exported HDR targets transfer sources, for GPU tests
-	// and headless --screenshot-raw (SetHDRReadback); never DRM.
+	// and headless `shot --every-frame --raw` (SetHDRReadback); never DRM.
 	hdrReadback bool
 	// virtual: the output has no display (headless), so ExportTargets
 	// accepts an empty modifier list for HDR (SetVirtualOutput).

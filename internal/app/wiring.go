@@ -13,9 +13,12 @@ import (
 // them all, with their buffer sizes; core, wayland and outputs hand each
 // side the ends it uses.
 type pipes struct {
+	continuous      chan ports.ContinuousCaptureRequest
+	runtimeOutputs  chan ports.OutputRuntimeRequest
 	securityChanges chan domain.SecurityState
 	securityEvents  chan ports.SecurityBackendEvent
 
+	control  chan ports.ControlRequest
 	client   chan ports.ClientEvent
 	input    chan ports.InputEvent
 	output   chan ports.OutputEvent
@@ -23,15 +26,16 @@ type pipes struct {
 	spawn    chan domain.SpawnRequest
 
 	// Capacity 1: each holds the latest value its sender published.
-	scenes        chan []domain.Scene
-	renderScenes  chan []domain.Scene
-	layouts       chan domain.Layout
-	constraints   chan domain.PointerConstraint
-	states        chan domain.State
-	workspaces    chan domain.Workspaces
-	cursorChanges chan domain.CursorChange
-	keymaps       chan *xkb.Keymap
-	deviceConfigs chan domain.InputDevicesConfig
+	scenes         chan []domain.Scene
+	renderScenes   chan []domain.Scene
+	layouts        chan domain.Layout
+	constraints    chan domain.PointerConstraint
+	states         chan domain.State
+	workspaces     chan domain.Workspaces
+	cursorChanges  chan domain.CursorChange
+	keymaps        chan *xkb.Keymap
+	controlKeymaps chan *xkb.Keymap
+	deviceConfigs  chan domain.InputDevicesConfig
 
 	// Configuration: watched from the file, filtered by relayConfig, then
 	// configured (overrides included) by outputs for core.
@@ -61,7 +65,8 @@ type pipes struct {
 	// With hint mode on, the outputs reply on capturedAll and routeCaptured splits the replies by
 	// ports.CaptureIDInternal into captured (the wayland consumer) and
 	// hintCaptured (internal consumers). With hint mode off, capturedAll is
-	// captured itself and there is no routeCaptured.
+	// captured itself and there is no routeCaptured unless control captures
+	// need their own split (routeControlCaptures).
 	capturedAll chan domain.CaptureDone
 	captured    chan domain.CaptureDone
 	// hintCaptured carries internal capture replies to the hints adapter.
@@ -99,15 +104,16 @@ func newPipes(realSession, hint bool) *pipes {
 		commands: make(chan ports.ClientCommand, 32),
 		spawn:    make(chan domain.SpawnRequest, 32),
 
-		scenes:        make(chan []domain.Scene, 1),
-		renderScenes:  make(chan []domain.Scene, 1),
-		layouts:       make(chan domain.Layout, 1),
-		constraints:   make(chan domain.PointerConstraint, 1),
-		states:        make(chan domain.State, 1),
-		workspaces:    make(chan domain.Workspaces, 1),
-		cursorChanges: make(chan domain.CursorChange, 1),
-		keymaps:       make(chan *xkb.Keymap, 1),
-		deviceConfigs: make(chan domain.InputDevicesConfig, 1),
+		scenes:         make(chan []domain.Scene, 1),
+		renderScenes:   make(chan []domain.Scene, 1),
+		layouts:        make(chan domain.Layout, 1),
+		constraints:    make(chan domain.PointerConstraint, 1),
+		states:         make(chan domain.State, 1),
+		workspaces:     make(chan domain.Workspaces, 1),
+		cursorChanges:  make(chan domain.CursorChange, 1),
+		keymaps:        make(chan *xkb.Keymap, 1),
+		controlKeymaps: make(chan *xkb.Keymap, 1),
+		deviceConfigs:  make(chan domain.InputDevicesConfig, 1),
 
 		watched:      make(chan domain.ConfigChanged, 8),
 		filtered:     make(chan domain.ConfigChanged, 8),
@@ -152,26 +158,41 @@ func newPipes(realSession, hint bool) *pipes {
 // flag are not channels; assembleSession passes them as core.Options.
 func (p *pipes) core() core.Channels {
 	return core.Channels{
-		Client:       p.client,
-		Input:        p.input,
-		Output:       p.output,
-		Config:       p.configured,
-		Commands:     p.commands,
-		Spawn:        p.spawn,
-		Scenes:       p.scenes,
-		Layouts:      p.layouts,
-		Constraints:  p.constraints,
-		State:        p.states,
-		Workspaces:   p.workspaces,
-		ConfigErrors: p.configErrors,
-		Scales:       p.scales,
-		Binds:        p.binds,
-		Placements:   p.placements,
-		Frames:       p.frames,
-		HintScans:    p.hintScans,
-		Hints:        p.hintResults,
+		Control:        p.control,
+		RuntimeOutputs: p.runtimeOutputs,
+		Continuous:     p.continuous,
+		Client:         p.client,
+		Input:          p.input,
+		Output:         p.output,
+		Config:         p.configured,
+		Commands:       p.commands,
+		Spawn:          p.spawn,
+		Scenes:         p.scenes,
+		Layouts:        p.layouts,
+		Constraints:    p.constraints,
+		State:          p.states,
+		Workspaces:     p.workspaces,
+		ConfigErrors:   p.configErrors,
+		Scales:         p.scales,
+		Binds:          p.binds,
+		Placements:     p.placements,
+		Frames:         p.frames,
+		HintScans:      p.hintScans,
+		Hints:          p.hintResults,
 	}
 }
+
+// routeControlCaptures gives the outputs their own reply channel so that
+// RouteCaptured can split control replies from the wayland ones.
+func (p *pipes) routeControlCaptures() {
+	if p.capturedAll == p.captured {
+		p.capturedAll = make(chan domain.CaptureDone, ports.MaxCaptureInflight)
+	}
+}
+
+// routesCaptured reports whether the outputs reply on a channel of their own,
+// which RouteCaptured must then forward to the wayland consumer.
+func (p *pipes) routesCaptured() bool { return p.capturedAll != p.captured }
 
 // internalCaptured is the channel internal capture replies are routed to: the
 // hints adapter reads it.
@@ -203,6 +224,8 @@ func (p *pipes) wayland() wayland.Channels {
 // outputs is the outputs' side (DRM or headless).
 func (p *pipes) outputs(security ports.SessionSecurity, presented ports.PresentationSink, content routing.ContentAttacher) routing.Channels {
 	return routing.Channels{
+		Continuous:      p.continuous,
+		RuntimeOutputs:  p.runtimeOutputs,
 		Security:        security,
 		SecurityChanges: p.securityChanges,
 		SecurityEvents:  p.securityEvents,

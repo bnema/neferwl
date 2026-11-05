@@ -76,14 +76,19 @@ type Pipeline struct {
 	// Set before owner use; no mutation or worker access to this dependency.
 	// Cursor is the output owner's immutable snapshot for this frame. Hidden
 	// workspace/window child pipelines deliberately have no output cursor.
-	Cursor    *domain.CaptureCursor
-	Security  ports.SessionSecurity
-	ctx       context.Context
-	cancel    context.CancelFunc
-	replies   chan<- domain.CaptureDone
-	jobs      chan *batch
-	completed chan *batch
-	batches   [pipelineSlots]batch
+	Cursor   *domain.CaptureCursor
+	Security ports.SessionSecurity
+	// CPUReadback lets a plain sRGB capture that BeginCapture refuses (a
+	// device without sync-file export) be read back with Renderer.Pixels,
+	// which waits for the GPU on the owner. Headless only: it has no display
+	// to pace, and already waits for its frames on the CPU.
+	CPUReadback bool
+	ctx         context.Context
+	cancel      context.CancelFunc
+	replies     chan<- domain.CaptureDone
+	jobs        chan *batch
+	completed   chan *batch
+	batches     [pipelineSlots]batch
 	// gating is set between BeginGate and EndGate; held are the batches
 	// submitted meanwhile, waiting for their verdict. Owner only.
 	gating        bool
@@ -115,7 +120,9 @@ func (p *Pipeline) Completed() <-chan *batch { return p.completed }
 // Recycle returns a completed GPU readback lease on the renderer's owner.
 func (p *Pipeline) Recycle(b *batch, r ports.Renderer) {
 	b.closeCopies()
-	r.EndCapture(b.frame)
+	if _, cpu := b.frame.(*pixelsFrame); !cpu {
+		r.EndCapture(b.frame)
+	}
 	rel := b.release
 	select { // a verdict nobody took (the worker was cancelled) must not leak to the next use
 	case <-rel:
@@ -268,6 +275,13 @@ func (p *Pipeline) submitBatch(state domain.SecurityState, r ports.Renderer, req
 			}
 		} else {
 			b.frame, err = r.BeginCapture()
+			if err != nil && p.CPUReadback {
+				// Pixels fails where BeginCapture failed for any other
+				// reason (busy slots, no frame): the original error stands.
+				if img := r.Pixels(); img != nil {
+					b.frame, err = &pixelsFrame{img: img}, nil
+				}
+			}
 		}
 		if err == nil && b.frame == nil {
 			err = fmt.Errorf("renderer returned no capture frame")

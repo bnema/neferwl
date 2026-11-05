@@ -148,7 +148,7 @@ func (l *layerSurface) surfaceResource() *wayland.Surface {
 func (l *layerSurface) AckConfigure(r *wlrlayershell.ZwlrLayerSurfaceV1, serial uint32) {
 	for i, v := range l.serials {
 		if v == serial {
-			l.serials = l.serials[i+1:]
+			l.serials = l.serials[:copy(l.serials, l.serials[i+1:])]
 			l.acked = true
 			return
 		}

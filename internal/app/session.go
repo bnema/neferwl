@@ -1,10 +1,11 @@
 package app
 
 import (
-	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
@@ -13,10 +14,10 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/config"
+	"github.com/bnema/neferwl/internal/adapters/control"
 	"github.com/bnema/neferwl/internal/adapters/directseat"
 	"github.com/bnema/neferwl/internal/adapters/drm"
 	"github.com/bnema/neferwl/internal/adapters/drm/supervisor"
-	"github.com/bnema/neferwl/internal/adapters/headlessinput"
 	"github.com/bnema/neferwl/internal/adapters/hints"
 	"github.com/bnema/neferwl/internal/adapters/launcher"
 	"github.com/bnema/neferwl/internal/adapters/libinput"
@@ -28,6 +29,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/sched"
 	"github.com/bnema/neferwl/internal/adapters/screencast"
 	"github.com/bnema/neferwl/internal/adapters/screensaver"
+	"github.com/bnema/neferwl/internal/adapters/sessiondir"
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
 	"github.com/bnema/neferwl/internal/adapters/statefile"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
@@ -46,9 +48,11 @@ import (
 // starts them. The session owns hw, curs and xdisplay (released by close)
 // until run ends; the keymap and the wayland server own themselves.
 type session struct {
-	opts Options
-	plan core.BackendPlan
-	log  zerowrap.Logger
+	controlDone chan domain.CaptureDone
+	registry    *sessiondir.Dir
+	opts        Options
+	plan        core.BackendPlan
+	log         zerowrap.Logger
 
 	clock    ports.Clock
 	security *sessionsecurity.Gate
@@ -66,6 +70,7 @@ type session struct {
 	wsIDs        *workspaceid.IDs
 	captureAllow *captureallow.Store
 	cast         *screencast.Service // nil without the D-Bus services
+	control      *control.Server
 	server       *wayland.Server
 	childEnv     []string
 	statePath    string
@@ -91,17 +96,32 @@ const (
 //
 // Invariant: wayland.New is the last fallible step. *wayland.Server has no
 // Close: its sockets are released only by Server.Run. Every later step
-// (statefile.Path, openXwayland, launcher.New, newCursors) degrades with a
+// (control.Listen, statefile.Path, openXwayland, launcher.New, newCursors) degrades with a
 // warning or nil instead of failing. A failure releases the DRM backend,
 // keymap and Vulkan resources (abort).
 func assembleSession(ctx context.Context, opts Options) (s *session, err error) {
-	s = &session{opts: opts, plan: core.PlanBackend(opts.Backend), log: logging.For(ctx, "app"), clock: clock.System{}, security: &sessionsecurity.Gate{}}
+	overrides := opts.PlanOverrides
+	overrides.SizedHeads = len(opts.Sizes) > 0
+	s = &session{opts: opts, plan: core.PlanBackend(opts.Backend, opts.Profile, overrides), log: logging.For(ctx, "app"), clock: clock.System{}, security: &sessionsecurity.Gate{}}
 	defer func() {
 		if err != nil {
 			s.abort()
 			s = nil
 		}
 	}()
+	if s.plan.Control {
+		id := opts.SessionID
+		if id == "" {
+			id = sessiondir.NewID()
+		}
+		s.registry, err = sessiondir.Create(os.Getenv("XDG_RUNTIME_DIR"), id)
+		if err != nil {
+			return s, err
+		}
+		if err = os.MkdirAll(filepath.Join(s.registry.Path(), "shots"), 0700); err != nil {
+			return s, err
+		}
+	}
 	log := s.log
 	s.sizes = opts.Sizes
 	if len(s.sizes) == 0 && s.plan.FixedHeads == core.HeadsSized {
@@ -127,9 +147,14 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	s.dmabuf = s.gpu.DMABuf()
 	log.Info().Int("formats", len(s.dmabuf.Formats)).Msg("dmabuf")
 	s.p = newPipes(s.plan.PersistScales, opts.Config.Hint.Enable)
+	if s.plan.Control {
+		s.p.control = make(chan ports.ControlRequest, 32)
+		s.p.runtimeOutputs = make(chan ports.OutputRuntimeRequest, 32)
+		s.p.continuous = make(chan ports.ContinuousCaptureRequest, 8)
+	}
 	// core() carries channels only; the gate, clock and terminal flag are
 	// explicit core.Options.
-	if s.core, err = core.New(opts.Config, s.p.core(), core.Options{Security: s.security, Clock: s.clock, Tokens: launcher.Tokens{}, Terminal: !opts.NoTerminal && s.plan.AutoTerminal != core.AutoTerminalOff, HintDisabled: hintDisabledNote(ctx), PlaceVirtuals: !s.plan.IsolateVirtuals}); err != nil {
+	if s.core, err = core.New(opts.Config, s.p.core(), core.Options{Security: s.security, Clock: s.clock, Tokens: launcher.Tokens{}, Terminal: s.plan.AutoTerminal, HintDisabled: hintDisabledNote(ctx), PlaceVirtuals: !s.plan.IsolateVirtuals}); err != nil {
 		return s, err
 	}
 	if s.km, err = xkb.New(xkb.RMLVO{Layout: opts.Config.Keyboard.Layout, Variant: opts.Config.Keyboard.Variant, Options: opts.Config.Keyboard.Options}); err != nil {
@@ -155,7 +180,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	// Only a real session (or a test that asks) serves the session bus:
 	// headless runs would take the names from the desktop they run in.
 	var casts ports.CastSink
-	if s.plan.SessionDBus == core.SessionDBusAlways || opts.DBus {
+	if s.plan.SessionDBus == core.SessionDBusAlways {
 		s.cast = screencast.New(s.captureAllow.Policy, s.p.castCommands, logging.For(ctx, "screencast"))
 		s.cast.SetCastBuffers(s.gpu)
 		casts = s.cast
@@ -182,9 +207,17 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	}, s.p.wayland(), logging.For(ctx, "wayland")); err != nil {
 		return s, err
 	}
-	log.Info().Str("WAYLAND_DISPLAY", s.server.SocketName()).Msg("listening")
 	s.childEnv = launcher.ChildEnv(os.Environ(), s.server.SocketName(), runtimeDir, xcursor.CursorSize())
+	controlPath, err := s.openControl()
+	if err != nil {
+		return s, err
+	}
+
 	statePath, serr := statefile.Path(runtimeDir, s.server.SocketName())
+	if s.registry != nil {
+		statePath = filepath.Join(s.registry.Path(), "state.json")
+		serr = nil
+	}
 	if serr != nil {
 		log.Warn().Err(serr).Msg("state file disabled")
 	} else {
@@ -194,6 +227,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	if s.xdisplay = openXwayland(ctx, opts, s.childEnv, logging.For(ctx, "xwayland"), s.server.AttachXwayland, s.server.AttachXWM); s.xdisplay != nil {
 		s.childEnv = append(s.childEnv, "DISPLAY="+s.xdisplay.Name())
 	}
+	s.announceReady(opts, controlPath)
 	s.child = launcher.New(s.childEnv, s.security, logging.For(ctx, "launcher"))
 	s.curs = cursors.New(s.clock, opts.Config.Cursor.HideAfter)
 	s.path = opts.ConfigPath
@@ -207,7 +241,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 			if s.hw != nil {
 				device = s.hw.RenderDevice()
 			}
-			return device.NewRenderer(w, h, domain.RendererOptions{Virtual: true, Readback: opts.ScreenshotRaw, TraceDamage: traceDamage})
+			return device.NewRenderer(w, h, domain.RendererOptions{Virtual: true, Readback: opts.HeadlessHDR, TraceDamage: traceDamage})
 		}
 	}
 	return s, nil
@@ -217,6 +251,12 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 // backend and the keymap. It runs only when assembly fails, before
 // anything else is owned.
 func (s *session) abort() {
+	if s.registry != nil {
+		defer s.registry.Close()
+	}
+	if s.control != nil {
+		_ = s.control.Close()
+	}
 	s.releaseRender()
 	if s.km != nil {
 		s.km.Close()
@@ -227,7 +267,13 @@ func (s *session) abort() {
 // keymap and the wayland server are not here: the input goroutine and
 // Server.Run own them.
 func (s *session) close() {
+	if s.registry != nil {
+		defer s.registry.Close()
+	}
 	s.curs.Stop()
+	if s.control != nil {
+		_ = s.control.Close()
+	}
 	if s.xdisplay != nil {
 		s.xdisplay.Close()
 	}
@@ -266,7 +312,11 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	}
 	var workers sync.WaitGroup
 	workers.Add(8)
-	done := make(chan error, 8)
+	done := make(chan error, 9)
+	if s.control != nil {
+		workers.Add(1)
+		go func() { defer workers.Done(); done <- s.control.Run(ctx, p.control) }()
+	}
 	go func() {
 		defer workers.Done()
 		done <- config.Watch(ctx, path, p.watched, logging.For(ctx, "config"))
@@ -281,9 +331,13 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
-		relayConfig(ctx, opts.Config, p.watched, p.filtered, p.keymaps, p.deviceConfigs, curs, p.commands, logging.For(ctx, "config"))
+		// Only a live control socket needs its own keymap on reload.
+		var controlKeymaps chan *xkb.Keymap
+		if s.control != nil {
+			controlKeymaps = p.controlKeymaps
+		}
+		relayConfig(ctx, opts.Config, p.watched, p.filtered, p.keymaps, p.deviceConfigs, curs, p.commands, logging.For(ctx, "config"), controlKeymaps)
 	}()
-	script := make(chan string)
 	go func() {
 		defer workers.Done()
 		var (
@@ -336,32 +390,23 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 			})
 			return
 		}
-		if err := headlessinput.RunSecure(ctx, km, p.keymaps, script, p.input, p.layouts, p.constraints, func(o string, x, y float64) { curs.Move(o, x, y, true) }, logging.For(ctx, "input"), security); err != nil && !errors.Is(err, context.Canceled) {
+		// No physical input producer: control owns synthetic input. Continue
+		// consuming input-only state updates so the wiring cannot back up.
+		defer func() { km.Close() }()
+		for {
 			select {
-			case done <- err:
 			case <-ctx.Done():
+				return
+			case next := <-p.keymaps:
+				km.Close()
+				km = next
+			case <-p.layouts:
+			case <-p.constraints:
+			case <-p.deviceConfigs:
 			}
 		}
 	}()
-	if opts.Script != nil {
-		go func() { <-ctx.Done(); _ = opts.Script.Close() }()
-		go func() {
-			defer close(script)
-			scanner := bufio.NewScanner(opts.Script)
-			for scanner.Scan() {
-				select {
-				case <-ctx.Done():
-					return
-				case script <- scanner.Text():
-				}
-			}
-			if err := scanner.Err(); err != nil {
-				log.Warn().Err(err).Msg("reading input script")
-			}
-		}()
-	} else {
-		close(script)
-	}
+
 	go func() { defer workers.Done(); done <- server.Run(ctx) }()
 	if dir := logging.Dir(ctx); dir != "" {
 		workers.Add(1)
@@ -386,12 +431,17 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 			log.Warn().Err(err).Msg("capture allowlist not watched, restart to apply changes")
 		}
 	}()
-	if p.hintScans != nil {
-		workers.Add(2)
+	// Without hints or control the outputs reply on the wayland channel
+	// itself; any split needs the router or wayland replies are lost.
+	if p.routesCaptured() {
+		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			routing.RouteCaptured(ctx, p.capturedAll, p.captured, p.internalCaptured())
+			routing.RouteCaptured(ctx, p.capturedAll, p.captured, p.internalCaptured(), s.controlDone)
 		}()
+	}
+	if p.hintScans != nil {
+		workers.Add(1)
 		go func() {
 			defer workers.Done()
 			// Run only returns when ctx is done: nothing to report.
@@ -432,7 +482,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 			})
 			return
 		}
-		done <- headlessbackend.Run(ctx, headlessbackend.BackendOptions{Sizes: sizes, Shots: opts.ScreenshotDir, HDR: opts.HeadlessHDR, Raw: opts.ScreenshotRaw}, apply, outputIO, curs, s.newRenderer, logging.For(ctx, "render"))
+		done <- headlessbackend.Run(ctx, headlessbackend.BackendOptions{Sizes: sizes, HDR: opts.HeadlessHDR}, apply, outputIO, curs, s.newRenderer, logging.For(ctx, "render"))
 	}()
 
 	if hw != nil {
@@ -440,8 +490,8 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 		go func() { defer workers.Done(); done <- safe("seat", func() error { return hw.Seat().Run(ctx) }) }()
 	}
 	// Only a real session serves the session bus: headless runs would take
-	// the names from the desktop they run in, unless a test asks (DBus).
-	if plan.SessionDBus == core.SessionDBusAlways || opts.DBus {
+	// the names from the desktop they run in, unless asked (--dbus).
+	if plan.SessionDBus == core.SessionDBusAlways {
 		workers.Add(2)
 		go func() {
 			defer workers.Done()
@@ -478,10 +528,12 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	// The wayland server has stopped: no request can be queued any more.
 	routing.DrainCaptures(ctx, p.captures, nil)
 	// A keymap the input goroutine never took is still ours to free.
-	select {
-	case km := <-p.keymaps:
-		km.Close()
-	default:
+	for _, maps := range []chan *xkb.Keymap{p.keymaps, p.controlKeymaps} {
+		select {
+		case km := <-maps:
+			km.Close()
+		default:
+		}
 	}
 	for len(done) > 0 {
 		err := <-done
@@ -495,7 +547,58 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	return result
 }
 
+// openControl opens the session's control socket when the plan serves one.
+// A socket that cannot listen only disables control; the path is empty then.
+func (s *session) openControl() (string, error) {
+	if !s.plan.Control {
+		return "", nil
+	}
+	path := filepath.Join(s.registry.Path(), "control.sock")
+	kb := s.opts.Config.Keyboard
+	controlMap, mapErr := xkb.New(xkb.RMLVO{Layout: kb.Layout, Variant: kb.Variant, Options: kb.Options})
+	if mapErr != nil {
+		return "", mapErr
+	}
+	s.controlDone = make(chan domain.CaptureDone, ports.MaxCaptureInflight)
+	if listener, err := control.Listen(path, s.wsIDs, control.Options{FramesDir: filepath.Join(s.registry.Path(), "shots", "frames"), Shooter: control.NewShooter(s.p.captures, s.controlDone, filepath.Join(s.registry.Path(), "shots")), Keymap: controlMap, Keymaps: s.p.controlKeymaps, Security: s.security}); err != nil {
+		controlMap.Close()
+		s.controlDone = nil
+		s.log.Warn().Err(err).Msg("control socket disabled")
+	} else {
+		s.p.routeControlCaptures()
+		s.control = listener
+		s.childEnv = append(s.childEnv, "NEFERWL_CONTROL="+path)
+	}
+	if s.control == nil {
+		return "", nil
+	}
+	return path, nil
+}
+
 func renderNodeForDevice(dev ports.RenderDevice) string {
 	_, render := dev.Node()
 	return renderNode(render)
+}
+
+func (s *session) announceReady(opts Options, controlPath string) {
+	id := ""
+	display := ""
+	if s.xdisplay != nil {
+		display = s.xdisplay.Name()
+	}
+	if s.registry != nil {
+		id = s.registry.Meta().ID
+		s.childEnv = append(s.childEnv, "NEFERWL_SESSION="+id)
+		if err := s.registry.WriteMeta(sessiondir.Meta{ID: id, Wayland: s.server.SocketName(), Display: display, Control: controlPath, State: s.statePath, Profile: opts.Profile.String(), PID: os.Getpid(), Created: time.Now()}); err != nil {
+			s.log.Warn().Err(err).Msg("session metadata failed")
+		}
+	}
+	s.log.Info().Str("session", id).Str("WAYLAND_DISPLAY", s.server.SocketName()).Str("control", controlPath).Msg("listening")
+	if opts.ReadyFD >= 3 {
+		f := os.NewFile(uintptr(opts.ReadyFD), "session-ready")
+		if f != nil {
+			_ = json.NewEncoder(f).Encode(map[string]string{"id": id, "wayland": s.server.SocketName(), "control": controlPath, "display": display})
+			_ = f.Close()
+		}
+	}
 }

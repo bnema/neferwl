@@ -42,8 +42,10 @@ func TestPipelineCursorMixedRequests(t *testing.T) {
 					t.Fatal(done.Err)
 				}
 			}
-			p.Close(r)
+			// Read/CopyTo arguments point into unmapped destinations: clear
+			// them before Close, whose EndCapture matching compares frames.
 			plain.Calls, with.Calls = nil, nil
+			p.Close(r)
 		})
 	}
 }

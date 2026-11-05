@@ -88,7 +88,7 @@ NeferWL serves the GNOME ScreenCast, DisplayConfig, Introspect and Screenshot D-
 
 The packaged `neferwl-portals.conf` routes `ScreenCast` and `Screenshot` to the gnome portal.
 
-The D-Bus interfaces are served on the session bus when NeferWL runs on a hardware session. With `--backend=headless`, pass `-dbus` to serve them. Names already owned (by a GNOME session) are skipped.
+The D-Bus interfaces are served on the session bus when NeferWL runs on a hardware session. The persistent [headless profile](server.md#profiles) serves them too; the ephemeral profile only with `--dbus`. Names already owned (by a GNOME session) are skipped.
 
 Screenshots through the portal are taken without asking, for any program running as you whose executable is on the allowlist. The indicator still flashes.
 
@@ -102,4 +102,4 @@ capture = portal
 
 Pick the output in the portal dialog, for example a virtual `tv` with `output.tv.hdr = on`.
 
-To stream from a machine with no display, run NeferWL in server mode: see [Game server](server.md).
+To stream from a machine with no display, see [Game streaming with Sunshine](server.md#game-streaming-with-sunshine).

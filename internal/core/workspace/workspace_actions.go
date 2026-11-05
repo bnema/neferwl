@@ -304,3 +304,36 @@ func (w *Workspace) Apply(a Action) Effect {
 	}
 	return Effect{}
 }
+
+// Actions returns every argument-free workspace action.
+func Actions() []Action {
+	return []Action{
+		ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp,
+		ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth,
+		ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowStash, ActionToggleStashVisible,
+		ActionToggleOverview, ActionCloseWindow, ActionQuit, ActionFocusWorkspacePrev,
+		ActionFocusWorkspaceNext, ActionMoveColumnToWorkspacePrev, ActionMoveColumnToWorkspaceNext, ActionMoveWindowToWorkspacePrev,
+		ActionMoveWindowToWorkspaceNext, ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionFocusMonitorUp,
+		ActionFocusMonitorDown, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionMoveWorkspaceToMonitorUp,
+		ActionMoveWorkspaceToMonitorDown, ActionScaleUp, ActionScaleDown, ActionConsumeOrExpelLeft,
+		ActionConsumeOrExpelRight, ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspacePrev,
+		ActionMoveWorkspaceNext, ActionToggleFloating, ActionSwitchColumnNext, ActionSwitchColumnPrev,
+		ActionHint, ActionOSDPin,
+	}
+}
+
+// ArgPrefixes returns the names of the actions that take an argument, such as
+// "focus-workspace" for "focus-workspace 2".
+func ArgPrefixes() []string {
+	var names []string
+	for _, prefix := range resizePrefixes {
+		names = append(names, strings.TrimSpace(prefix))
+	}
+	for _, prefix := range workspacePrefixes {
+		names = append(names, strings.TrimSpace(prefix))
+	}
+	for _, prefix := range []string{namedPrefix, spawnPrefix, stashPrefix} {
+		names = append(names, strings.TrimSpace(prefix))
+	}
+	return names
+}

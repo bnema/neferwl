@@ -14,7 +14,7 @@ After=neferwl.service
 [Service]
 Slice=session.slice
 Type=notify
-ExecStart=/usr/bin/neferwl --backend=server --session
+ExecStart=/usr/bin/neferwl --backend=headless --profile=persistent --session --session-id=server
 Restart=always
 
 [Install]

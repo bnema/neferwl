@@ -19,8 +19,8 @@ func TestCompletedFrames(t *testing.T) {
 		want      []domain.OutputFrame
 	}{
 		{name: "a settled scene wakes nobody", buffer: 2, animating: []bool{false}},
-		{name: "an animating scene wakes core once", buffer: 2, animating: []bool{false, true}, want: []domain.OutputFrame{{Output: "DP-1"}}},
-		{name: "a full channel never blocks", buffer: 1, animating: []bool{true, true, true}, want: []domain.OutputFrame{{Output: "DP-1"}}},
+		{name: "an animating scene wakes core once", buffer: 2, animating: []bool{false, true}, want: []domain.OutputFrame{{Output: "DP-1", SceneSeq: 11}}},
+		{name: "a full channel never blocks", buffer: 1, animating: []bool{true, true, true}, want: []domain.OutputFrame{{Output: "DP-1", SceneSeq: 11}}},
 		{name: "no frames channel", animating: []bool{true}},
 	}
 	for _, tt := range tests {
@@ -34,7 +34,7 @@ func TestCompletedFrames(t *testing.T) {
 			}
 			seen := map[domain.WindowID]uint64{}
 			for i, animating := range tt.animating {
-				require.NoError(t, o.commitFrame(70, nil, false, false, pendingFrame{animating: animating}))
+				require.NoError(t, o.commitFrame(70, nil, false, false, pendingFrame{animating: animating, sceneSeq: 11}))
 				require.True(t, o.completed(eventOf((*commits)[i]), seen))
 			}
 			if frames != nil {
@@ -58,12 +58,12 @@ func TestAnimatingFrameSendAllocations(t *testing.T) {
 	frames := make(chan domain.OutputFrame, 1)
 	o.Frames = frames
 	if n := testing.AllocsPerRun(100, func() {
-		o.wakeCore() // fills the channel, or finds it full
+		o.wakeCore(9) // fills the channel, or finds it full
 		select {
 		case <-frames:
 		default:
 		}
-		o.wakeCore()
+		o.wakeCore(9)
 	}); n != 0 {
 		t.Fatalf("wakeCore: %v allocations", n)
 	}

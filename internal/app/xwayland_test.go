@@ -30,6 +30,8 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/statefile"
+	"github.com/bnema/neferwl/internal/adapters/statewire"
+	"unsafe"
 )
 
 const (
@@ -54,7 +56,7 @@ type probe struct {
 // xwaylandEnv is a running headless compositor with the built-in XWM.
 type xwaylandEnv struct {
 	bin, display, statePath, shots string
-	script                         *io.PipeWriter
+	script                         *controlTestClient
 }
 
 // startXwayland runs the compositor on one headless output and waits for its
@@ -72,24 +74,25 @@ func startXwaylandWith(t *testing.T, sizes [][2]int, mutate func(*domain.Config)
 	return startXwaylandConfig(t, sizes, mutate, "")
 }
 
-// startXwaylandBackend is startXwaylandWith on backend. The server backend
-// never runs libinput here (noLibinput): the script stays the input.
-func startXwaylandBackend(t *testing.T, backend domain.Backend, sizes [][2]int, mutate func(*domain.Config)) *xwaylandEnv {
+// startXwaylandProfile is startXwaylandWith on a headless profile. The
+// persistent profile never runs libinput here (noLibinput): the script stays
+// the input.
+func startXwaylandProfile(t *testing.T, profile domain.Profile, sizes [][2]int, mutate func(*domain.Config)) *xwaylandEnv {
 	t.Helper()
-	return startXwaylandBackendConfig(t, backend, sizes, mutate, "")
+	return startXwaylandProfileConfig(t, profile, sizes, mutate, "")
 }
 
 // startXwaylandConfig is startXwaylandWith watching the config file at path
 // for reloads; empty uses a path that does not exist.
 func startXwaylandConfig(t *testing.T, sizes [][2]int, mutate func(*domain.Config), path string) *xwaylandEnv {
 	t.Helper()
-	return startXwaylandBackendConfig(t, domain.BackendHeadless, sizes, mutate, path)
+	return startXwaylandProfileConfig(t, domain.ProfileEphemeral, sizes, mutate, path)
 }
 
-// startXwaylandBackendConfig combines backend selection and config reloads.
+// startXwaylandProfileConfig combines profile selection and config reloads.
 //
 //testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
-func startXwaylandBackendConfig(t *testing.T, backend domain.Backend, sizes [][2]int, mutate func(*domain.Config), path string) *xwaylandEnv {
+func startXwaylandProfileConfig(t *testing.T, profile domain.Profile, sizes [][2]int, mutate func(*domain.Config), path string) *xwaylandEnv {
 	t.Helper()
 	if path == "" {
 		// Never the user's own config file.
@@ -111,7 +114,6 @@ func startXwaylandBackendConfig(t *testing.T, backend domain.Backend, sizes [][2
 	shots := t.TempDir()
 	bin := buildProbe(t)
 
-	script, scriptW := io.Pipe()
 	changes := make(chan struct{}, 1)
 	xwaylandPublications.Store(t, changes)
 	t.Cleanup(func() { xwaylandPublications.Delete(t) })
@@ -120,12 +122,26 @@ func startXwaylandBackendConfig(t *testing.T, backend domain.Backend, sizes [][2
 	if err != nil {
 		t.Fatal(err)
 	}
-	stateDir := filepath.Join(runtime, "neferwl")
-	if err := os.MkdirAll(stateDir, 0700); err != nil {
+	// State lives in runtime/neferwl/sessions/<id>/ and multi-output frames
+	// in shots/<output>/: the watch follows every directory created under a
+	// watched one, so those rewrites wake until as well.
+	sessionsDir := filepath.Join(runtime, "neferwl", "sessions")
+	if err := os.MkdirAll(sessionsDir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	for _, dir := range []string{runtime, stateDir, shots} {
-		if _, err := unix.InotifyAddWatch(fd, dir, unix.IN_CREATE|unix.IN_CLOSE_WRITE|unix.IN_MOVED_TO); err != nil {
+	const mask = unix.IN_CREATE | unix.IN_CLOSE_WRITE | unix.IN_MOVED_TO
+	dirs := map[int32]string{}
+	// watch runs during setup, then only on the watcher goroutine, which
+	// alone reads dirs afterwards.
+	watch := func(dir string) error {
+		wd, err := unix.InotifyAddWatch(fd, dir, mask)
+		if err == nil {
+			dirs[int32(wd)] = dir
+		}
+		return err
+	}
+	for _, dir := range []string{runtime, filepath.Dir(sessionsDir), sessionsDir, shots} {
+		if err := watch(dir); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -153,11 +169,26 @@ func startXwaylandBackendConfig(t *testing.T, backend domain.Backend, sizes [][2
 			if n == 0 {
 				continue
 			}
-			if _, err := unix.Read(fd, b[:]); err != nil {
+			got, err := unix.Read(fd, b[:])
+			if err != nil {
 				if err == unix.EAGAIN || err == unix.EINTR {
 					continue
 				}
 				return
+			}
+			// A new subdirectory (the session dir, per-output shots) joins
+			// the watch, so the files written in it publish like the rest.
+			// A write racing the watch is caught by the next rewrite.
+			for off := 0; off+unix.SizeofInotifyEvent <= got; {
+				ev := (*unix.InotifyEvent)(unsafe.Pointer(&b[off]))
+				nameLen := int(ev.Len)
+				if ev.Mask&unix.IN_ISDIR != 0 && ev.Mask&unix.IN_CREATE != 0 && nameLen > 0 {
+					name := strings.TrimRight(string(b[off+unix.SizeofInotifyEvent:off+unix.SizeofInotifyEvent+nameLen]), "\x00")
+					if parent, ok := dirs[ev.Wd]; ok {
+						_ = watch(filepath.Join(parent, name))
+					}
+				}
+				off += unix.SizeofInotifyEvent + nameLen
 			}
 			select {
 			case changes <- struct{}{}:
@@ -175,8 +206,8 @@ func startXwaylandBackendConfig(t *testing.T, backend domain.Backend, sizes [][2
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(ctx, Options{
-			Backend: backend, NoTerminal: true, Config: cfg, ConfigPath: path, Script: script,
-			ScreenshotDir: shots, Sizes: sizes, noLibinput: backend == domain.BackendServer,
+			Backend: domain.BackendHeadless, Profile: profile, PlanOverrides: noTerminal(), Config: cfg, ConfigPath: path,
+			Sizes: sizes, noLibinput: profile == domain.ProfilePersistent,
 		})
 	}()
 	t.Cleanup(func() {
@@ -184,7 +215,6 @@ func startXwaylandBackendConfig(t *testing.T, backend domain.Backend, sizes [][2
 			t.Logf("compositor log:\n%s", logs.String())
 		}
 		cancel()
-		_ = scriptW.Close()
 		select {
 		case err := <-done:
 			if err != nil {
@@ -203,11 +233,17 @@ func startXwaylandBackendConfig(t *testing.T, backend domain.Backend, sizes [][2
 		}
 		return false
 	})
-	statePath, err := statefile.Path(runtime, "wayland-1")
-	if err != nil {
+	var paths []string
+	until(t, "session state publication", func() bool {
+		paths, _ = filepath.Glob(filepath.Join(runtime, "neferwl", "sessions", "*", "state.json"))
+		return len(paths) == 1
+	})
+	statePath := paths[0]
+	client := dialTestControl(t, runtime)
+	if err := client.call(map[string]any{"op": "shot", "every_frame": true, "dir": shots}); err != nil {
 		t.Fatal(err)
 	}
-	return &xwaylandEnv{bin: bin, display: display, statePath: statePath, shots: shots, script: scriptW}
+	return &xwaylandEnv{bin: bin, display: display, statePath: statePath, shots: shots, script: client}
 }
 
 // TestXwaylandProbe: an X11 client is managed by the built-in XWM. It shows
@@ -221,7 +257,7 @@ func TestXwaylandProbe(t *testing.T) {
 	first := startProbe(t, bin, display, "-title", "one")
 	until(t, "probe one mapped", func() bool { return strings.Contains(first.out.String(), "mapped ") })
 
-	var st statefile.State
+	var st statewire.State
 	until(t, "one visible X11Probe window", func() bool {
 		st = readState(statePath)
 		return len(st.Windows) == 1 && st.Windows[0].AppID == "X11Probe" && st.Windows[0].Visible
@@ -260,7 +296,7 @@ func TestXwaylandProbe(t *testing.T) {
 	until(t, "probe two focus", func() bool { return strings.Contains(second.out.String(), "focus") })
 
 	// The close-window bind asks the focused (second) probe to close.
-	if _, err := io.WriteString(scriptW, "key Super+q\n"); err != nil {
+	if err := scriptW.inject("key", "Super+q"); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -377,16 +413,16 @@ func until(t *testing.T, what string, cond func() bool) {
 
 // readState returns the current state file, or an empty state while it does
 // not exist or is being replaced.
-func readState(path string) statefile.State {
+func readState(path string) statewire.State {
 	st, err := statefile.Read(path)
 	if err != nil {
-		return statefile.State{}
+		return statewire.State{}
 	}
 	return st
 }
 
 // tileRect finds the rectangle of window id in the tiled columns.
-func tileRect(st statefile.State, id uint64) (image.Rectangle, bool) {
+func tileRect(st statewire.State, id uint64) (image.Rectangle, bool) {
 	for _, ws := range st.Workspaces {
 		for _, c := range ws.Columns {
 			for _, w := range c.Windows {
@@ -469,7 +505,7 @@ func TestXwaylandOverride(t *testing.T) {
 	box := image.Rect(100, 50, 220, 130) // output-local: one output at the X origin
 	until(t, "magenta menu in latest.png", func() bool { return magentaShare(shot, box) >= 0.9 })
 
-	var st statefile.State
+	var st statewire.State
 	until(t, "focused X11Probe toplevel", func() bool {
 		st = readState(e.statePath)
 		return len(st.Windows) >= 1 && st.Window != nil
@@ -530,13 +566,13 @@ func fullOutput(path string) float64 {
 }
 
 // windowOf returns the state window with the given pid.
-func windowOf(st statefile.State, pid int) (statefile.Window, bool) {
+func windowOf(st statewire.State, pid int) (statewire.Window, bool) {
 	for _, w := range st.Windows {
 		if w.PID == pid {
 			return w, true
 		}
 	}
-	return statefile.Window{}, false
+	return statewire.Window{}, false
 }
 
 // TestXwaylandFullscreen: a delayed fullscreen request fills the output,
@@ -556,7 +592,7 @@ func TestXwaylandFullscreen(t *testing.T) {
 	until(t, "output all green", func() bool { return fullOutput(shot) >= 0.99 })
 
 	// The toggle bind (cmd+shift+f) leaves fullscreen.
-	if _, err := io.WriteString(e.script, "key Super+Shift+f\n"); err != nil {
+	if err := e.script.inject("key", "Super+Shift+f"); err != nil {
 		t.Fatal(err)
 	}
 	until(t, "probe left fullscreen", func() bool { return strings.Contains(p.out.String(), "fullscreen off ") })
@@ -570,14 +606,14 @@ func TestXwaylandFullscreenStats(t *testing.T) {
 	p := startProbe(t, e.bin, e.display, "-fullscreen", "-fullscreen-delay", "1500ms", "-fullscreen-off", "1s")
 	until(t, "fullscreen", func() bool { return strings.Contains(p.out.String(), "fullscreen 640x360") })
 	until(t, "fullscreen off", func() bool { return strings.Contains(p.out.String(), "fullscreen off ") })
-	if _, err := io.WriteString(e.script, "key Super+Shift+f\n"); err != nil {
+	if err := e.script.inject("key", "Super+Shift+f"); err != nil {
 		t.Fatal(err)
 	}
 	until(t, "fullscreen again", func() bool { return strings.Count(p.out.String(), "fullscreen 640x360") >= 2 })
 	// Holding cmd activates WatchStats for the focused X11 window. The OSD is
 	// excluded from screenshots; the subsequent close verifies the compositor
 	// and XWM survived the stats request.
-	if _, err := io.WriteString(e.script, "hold Super_L 1s\nkey Super+q\n"); err != nil {
+	if err := injectAll(e.script, "press Super", "release Super", "key Super+q"); err != nil {
 		t.Fatal(err)
 	}
 	until(t, "disconnected X11 client removed", func() bool { return len(readState(e.statePath).Windows) == 0 })
@@ -649,7 +685,7 @@ func TestXwaylandKeyboardGrab(t *testing.T) {
 	until(t, "fullscreen", func() bool { return strings.Contains(p.out.String(), "fullscreen 640x360") })
 	until(t, "grab", func() bool { return strings.Contains(p.out.String(), "grab") })
 	until(t, "probe focus", func() bool { return strings.Contains(p.out.String(), "focus") })
-	if _, err := io.WriteString(e.script, "key Super+q\n"); err != nil {
+	if err := e.script.inject("key", "Super+q"); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -660,7 +696,7 @@ func TestXwaylandKeyboardGrab(t *testing.T) {
 
 	// The probe leaves fullscreen itself; its grab stays, but the binds work again.
 	until(t, "fullscreen off", func() bool { return strings.Contains(p.out.String(), "fullscreen off ") })
-	if _, err := io.WriteString(e.script, "key Super+q\n"); err != nil {
+	if err := e.script.inject("key", "Super+q"); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -682,7 +718,7 @@ func TestXwaylandKeyboardGrabWindowed(t *testing.T) {
 	p := startProbe(t, e.bin, e.display, "-keyboard-grab")
 	until(t, "grab", func() bool { return strings.Contains(p.out.String(), "grab") })
 	until(t, "probe focus", func() bool { return strings.Contains(p.out.String(), "focus") })
-	if _, err := io.WriteString(e.script, "key Super+q\n"); err != nil {
+	if err := e.script.inject("key", "Super+q"); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -701,7 +737,7 @@ func TestXwaylandOutputHint(t *testing.T) {
 	sizes := [][2]int{{xwaylandW, xwaylandH}, {xwaylandW, xwaylandH}}
 	e := startXwaylandWith(t, sizes, nil)
 	p := startProbe(t, e.bin, e.display, "-size", "640x360", "-at", "640,0", "-fullscreen", "-fullscreen-delay", "1500ms")
-	var w statefile.Window
+	var w statewire.Window
 	until(t, "window on HEADLESS-2", func() bool {
 		var ok bool
 		w, ok = windowOf(readState(e.statePath), p.cmd.Process.Pid)
@@ -1001,17 +1037,17 @@ func publicationChanges(t *testing.T) chan struct{} {
 	return changes.(chan struct{})
 }
 
-// TestXwaylandServerProbe: on the server backend, with one virtual output
+// TestXwaylandServerProbe: on the persistent headless profile (`server`), with one virtual output
 // and no fixed head, an X11 client maps on the virtual output, takes the
 // focus and closes with the close-window bind.
 //
 //testpolicy:realtime bounded wait on real X11/Wayland sockets or child process I/O
 func TestXwaylandServerProbe(t *testing.T) {
-	e := startXwaylandBackend(t, domain.BackendServer, nil, func(c *domain.Config) {
+	e := startXwaylandProfile(t, domain.ProfilePersistent, nil, func(c *domain.Config) {
 		c.Outputs = append(c.Outputs, domain.OutputConfig{Name: "tv", Virtual: true, Mode: "640x360"})
 	})
 	p := startProbe(t, e.bin, e.display, "-title", "server")
-	var st statefile.State
+	var st statewire.State
 	until(t, "X11Probe visible on tv", func() bool {
 		st = readState(e.statePath)
 		return st.Output == "tv" && len(st.Windows) == 1 && st.Windows[0].AppID == "X11Probe" && st.Windows[0].Visible && st.Windows[0].Output == "tv"
@@ -1020,7 +1056,7 @@ func TestXwaylandServerProbe(t *testing.T) {
 		t.Errorf("X11 window not marked Xwayland: %+v", st.Windows[0])
 	}
 	until(t, "probe focus", func() bool { return strings.Contains(p.out.String(), "focus") })
-	if _, err := io.WriteString(e.script, "key Super+q\n"); err != nil {
+	if err := e.script.inject("key", "Super+q"); err != nil {
 		t.Fatal(err)
 	}
 	select {

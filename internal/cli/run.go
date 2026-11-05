@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -18,27 +17,34 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/adapters/sessiondir"
 	"github.com/bnema/neferwl/internal/app"
+	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
 	"golang.org/x/term"
 )
 
 // runFlags are the root command flags.
 type runFlags struct {
-	backend, screenshot, size, input, debug, config, pprof            string
-	noTerminal, noXwayland, headlessHDR, screenshotRaw, session, dbus bool
-	timeout                                                           time.Duration
+	sessionID                                                  string
+	readyFD                                                    int
+	overrides                                                  core.PlanOverrides
+	deprecatedServer                                           bool
+	backend, profile, inputDevices, size, debug, config, pprof string
+	noTerminal, noXwayland, headlessHDR, session, dbus         bool
+	timeout                                                    time.Duration
 }
 
 func (f *runFlags) register(fs *flag.FlagSet) {
-	fs.StringVar(&f.backend, "backend", "drm", "drm, headless or server")
-	fs.StringVar(&f.screenshot, "screenshot", "", "write PNG frames to directory")
+	fs.StringVar(&f.backend, "backend", "drm", "drm or headless (server is deprecated)")
+	fs.StringVar(&f.sessionID, "session-id", "", "headless session ID")
+	fs.IntVar(&f.readyFD, "ready-fd", 0, "headless readiness file descriptor")
+	fs.StringVar(&f.profile, "profile", "ephemeral", "headless profile: ephemeral or persistent")
+	fs.StringVar(&f.inputDevices, "input-devices", "", "headless input devices: none or grab")
 	fs.StringVar(&f.size, "size", "1920x1080", "headless output sizes WxH, comma-separated for several outputs")
-	fs.StringVar(&f.input, "input", "", "headless input script path (- for stdin)")
 	fs.BoolVar(&f.noTerminal, "no-terminal", false, "skip initial terminal")
 	fs.BoolVar(&f.noXwayland, "no-xwayland", false, "no X11 display for X11 apps")
 	fs.BoolVar(&f.headlessHDR, "headless-hdr", false, "test-only: report HDR on virtual outputs; fall back if Vulkan HDR unavailable")
-	fs.BoolVar(&f.screenshotRaw, "screenshot-raw", false, "test-only: also write latest-pq.png, the raw PQ codes of an HDR output")
 	fs.DurationVar(&f.timeout, "timeout", 0, "duration before exit (0 disables timeout)")
 	fs.StringVar(&f.debug, "debug", "", "debug components (comma-separated or all; all leaves out drm-flip, input-motion, input-keys, wayland-damage and render-damage, which log every flip, pointer motion, key, client commit or frame)")
 	fs.StringVar(&f.config, "config", "", "config path (empty uses XDG default)")
@@ -47,28 +53,30 @@ func (f *runFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.pprof, "pprof", "", "serve Go runtime profiles (heap, CPU, trace) on this address, e.g. localhost:6060")
 }
 
-// serverRejected are the test-only and headless flags --backend=server
-// refuses, in report order.
-var serverRejected = []string{"screenshot", "screenshot-raw", "input", "size", "timeout", "headless-hdr", "dbus"}
-
 // validate checks the flag combinations and parses --size. set holds the
 // flags given on the command line.
 func (f *runFlags) validate(args []string, set map[string]bool) ([][2]int, error) {
+	if err := f.normalizeBackendAlias(set); err != nil {
+		return nil, err
+	}
 	headless := f.backend == "headless"
-	if f.backend == string(domain.BackendServer) {
-		for _, name := range serverRejected {
-			if set[name] {
-				return nil, usagef("--%s is not allowed with --backend=server", name)
-			}
-		}
-		if len(args) != 0 {
-			return nil, usagef("unexpected arguments: %v", args)
-		}
-		if _, err := logging.ParseDebug(f.debug); err != nil {
-			return nil, usageError{fmt.Errorf("--debug: %w", err)}
-		}
-		// Server mode has no fixed heads: only config-declared virtual outputs.
-		return nil, nil
+	if (set["session-id"] || set["ready-fd"]) && !headless {
+		return nil, usagef("--session-id and --ready-fd require headless")
+	}
+	if f.sessionID != "" && !sessiondir.ValidID(f.sessionID) {
+		return nil, usagef("invalid session id")
+	}
+	if set["ready-fd"] && f.readyFD < 3 {
+		return nil, usagef("ready-fd must be at least 3")
+	}
+	if !headless && set["profile"] {
+		return nil, usagef("--profile requires --backend=headless")
+	}
+	if _, err := domain.ParseProfile(f.profile); err != nil {
+		return nil, usagef("%v", err)
+	}
+	if err := f.parseOverrides(set, headless); err != nil {
+		return nil, err
 	}
 	switch {
 	case f.backend != "drm" && !headless:
@@ -77,12 +85,6 @@ func (f *runFlags) validate(args []string, set map[string]bool) ([][2]int, error
 		return nil, usagef("--dbus requires --backend=headless")
 	case f.headlessHDR && !headless:
 		return nil, usagef("--headless-hdr requires --backend=headless")
-	case f.screenshot != "" && !headless:
-		return nil, usagef("--screenshot requires --backend=headless")
-	case f.screenshotRaw && (f.screenshot == "" || !f.headlessHDR):
-		return nil, usagef("--screenshot-raw requires --screenshot and --headless-hdr")
-	case f.input != "" && !headless:
-		return nil, usagef("--input requires --backend=headless")
 	case f.timeout < 0:
 		return nil, usagef("negative timeout")
 	case len(args) != 0:
@@ -91,6 +93,9 @@ func (f *runFlags) validate(args []string, set map[string]bool) ([][2]int, error
 	// The config file checks its own log.debug names.
 	if _, err := logging.ParseDebug(f.debug); err != nil {
 		return nil, usageError{fmt.Errorf("--debug: %w", err)}
+	}
+	if headless && f.profile == "persistent" && !set["size"] {
+		return nil, nil
 	}
 	return parseSizes(f.size)
 }
@@ -113,9 +118,16 @@ func parseSizes(value string) ([][2]int, error) {
 func setupRun(fs *flag.FlagSet) Runner {
 	var f runFlags
 	f.register(fs)
-	return func(ctx context.Context, _ Env, args []string) error {
+	return func(ctx context.Context, env Env, args []string) error {
 		set := map[string]bool{}
 		fs.Visit(func(fl *flag.Flag) { set[fl.Name] = true })
+		if err := f.normalizeBackendAlias(set); err != nil {
+			return err
+		}
+		// Warn before validation, so a rejected alias run is warned too.
+		if f.deprecatedServer {
+			fmt.Fprintln(env.Stderr, "deprecated: use --backend=headless --profile=persistent")
+		}
 		sizes, err := f.validate(args, set)
 		if err != nil {
 			return err
@@ -129,23 +141,20 @@ func setupRun(fs *flag.FlagSet) Runner {
 func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if f.screenshot != "" {
-		if err := os.MkdirAll(f.screenshot, 0o755); err != nil {
-			return err
-		}
-	}
 	path, cfg, warnings, err := loadConfig(f.config)
 	if err != nil {
 		return err
 	}
-	script, closeScript, err := openScript(f.input)
-	if err != nil {
-		return err
-	}
-	// app.Run closes the script on shutdown; this covers the returns before it.
-	defer closeScript()
 	tuneGC()
-	ctx, closeLog, err := logging.Open(ctx, f.backend, cfg.Log.Level, mergeDebug(cfg.Log.Debug, f.debug))
+	if f.backend == "headless" && f.sessionID == "" {
+		f.sessionID = sessiondir.NewID()
+	}
+	var closeLog func(bool) error
+	if f.sessionID != "" {
+		ctx, closeLog, err = logging.OpenSession(ctx, f.sessionID, cfg.Log.Level, mergeDebug(cfg.Log.Debug, f.debug))
+	} else {
+		ctx, closeLog, err = logging.Open(ctx, f.backend, cfg.Log.Level, mergeDebug(cfg.Log.Debug, f.debug))
+	}
 	if err != nil {
 		return err
 	}
@@ -172,19 +181,17 @@ func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
 		configLog.Warn().Int("line", w.Line).Msg(w.Msg)
 	}
 	err = app.Run(ctx, app.Options{
-		Backend:       domain.Backend(f.backend),
+		Backend:   domain.Backend(f.backend),
+		SessionID: f.sessionID, ReadyFD: f.readyFD,
+		Profile:       mustProfile(f.profile),
+		PlanOverrides: f.overrides,
 		Config:        cfg,
 		ConfigPath:    path,
 		Timeout:       f.timeout,
-		NoTerminal:    f.noTerminal,
 		NoXwayland:    f.noXwayland,
 		HeadlessHDR:   f.headlessHDR,
 		Session:       f.session,
-		DBus:          f.dbus,
-		ScreenshotDir: f.screenshot,
-		ScreenshotRaw: f.screenshotRaw,
 		Sizes:         sizes,
-		Script:        script,
 	})
 	// SIGINT and SIGTERM cancel the context and are clean exits.
 	if err != nil && ctx.Err() != nil && errors.Is(err, context.Canceled) {
@@ -241,24 +248,6 @@ func mergeDebug(configured []string, cli string) string {
 	return b.String()
 }
 
-// openScript opens the --input script. It returns a nil interface, not a
-// typed-nil *os.File, when no script was requested: app.Run tests the
-// interface against nil to decide whether to read a script. closeScript
-// closes what openScript opened; it does nothing for stdin and for no script.
-func openScript(path string) (script io.ReadCloser, closeScript func(), err error) {
-	switch path {
-	case "":
-		return nil, func() {}, nil
-	case "-":
-		return os.Stdin, func() {}, nil
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, func() {}, err
-	}
-	return f, func() { _ = f.Close() }, nil
-}
-
 // tuneGC bounds the heap of a process that runs for days. The Go live heap
 // is small (tens of MB; buffers live in GPU and shared memory), so the
 // default GOGC=100 is kept: on the tiled playback test, GOGC=50 ran 13
@@ -290,5 +279,48 @@ func servePprof(ctx context.Context, addr string) error {
 		<-ctx.Done()
 		_ = srv.Close()
 	}()
+	return nil
+}
+
+func mustProfile(s string) domain.Profile { p, _ := domain.ParseProfile(s); return p }
+
+// normalizeBackendAlias maps the deprecated --backend=server to headless with
+// the persistent profile. An explicit --profile contradicts the alias.
+// Idempotent: validate calls it again.
+func (f *runFlags) normalizeBackendAlias(set map[string]bool) error {
+	if f.backend == "server" {
+		if set["profile"] {
+			return usagef("--backend=server implies --profile=persistent; use --backend=headless --profile=%s", f.profile)
+		}
+		f.backend = "headless"
+		f.profile = "persistent"
+		f.deprecatedServer = true
+	}
+	return nil
+}
+
+func (f *runFlags) parseOverrides(set map[string]bool, headless bool) error {
+	if set["input-devices"] {
+		if !headless {
+			return usagef("--input-devices requires --backend=headless")
+		}
+		input := core.InputNone
+		switch f.inputDevices {
+		case "none":
+		case "grab":
+			input = core.InputLibinputDirect
+		default:
+			return usagef("--input-devices must be none or grab")
+		}
+		f.overrides.Input = &input
+	}
+	if set["dbus"] {
+		value := f.dbus
+		f.overrides.SessionDBus = &value
+	}
+	if set["no-terminal"] {
+		value := !f.noTerminal
+		f.overrides.AutoTerminal = &value
+	}
 	return nil
 }

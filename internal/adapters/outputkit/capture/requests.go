@@ -52,7 +52,7 @@ func (r *Requests) Admit(q domain.CaptureRequest, refuse error, scene domain.Sce
 	r.List = append(r.List, q)
 	// Its indicator may already be on screen; else it waits for the scene
 	// that shows it.
-	return haveScene && IndicatorShown(scene, q)
+	return haveScene && scene.Seq >= q.MinSeq && IndicatorShown(scene, q)
 }
 
 // FailPending fails every request not yet handed to the capture worker and

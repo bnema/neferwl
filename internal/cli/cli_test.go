@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -75,19 +74,21 @@ func TestCommands(t *testing.T) {
 		{[]string{"state"}, 0, `"output":"DP-1"`, ""},
 		{[]string{"--unknown"}, 2, "", "flag provided but not defined"},
 		{[]string{"--backend=invalid"}, 2, "", "invalid backend"},
-		{[]string{"--backend=drm", "--screenshot=" + dir}, 2, "", "--screenshot requires"},
+		{[]string{"--backend=drm", "--screenshot=" + dir}, 2, "", "flag provided but not defined"},
 		{[]string{"--backend=drm", "--headless-hdr"}, 2, "", "--headless-hdr requires"},
-		{[]string{"--backend=drm", "--input=-"}, 2, "", "--input requires"},
-		{[]string{"--backend=headless", "--screenshot=" + dir, "--screenshot-raw"}, 2, "", "--screenshot-raw requires"},
-		{[]string{"--backend=headless", "--headless-hdr", "--screenshot-raw"}, 2, "", "--screenshot-raw requires"},
-		{[]string{"--backend=server", "--screenshot=" + dir}, 2, "", "--screenshot is not allowed with --backend=server"},
-		{[]string{"--backend=server", "--screenshot-raw"}, 2, "", "--screenshot-raw is not allowed"},
-		{[]string{"--backend=server", "--input=-"}, 2, "", "--input is not allowed"},
-		{[]string{"--backend=server", "--size=1920x1080"}, 2, "", "--size is not allowed"},
-		{[]string{"--backend=server", "--timeout=1s"}, 2, "", "--timeout is not allowed"},
-		{[]string{"--backend=server", "--headless-hdr"}, 2, "", "--headless-hdr is not allowed"},
-		{[]string{"--backend=server", "--dbus"}, 2, "", "--dbus is not allowed"},
+		{[]string{"--backend=drm", "--input=-"}, 2, "", "flag provided but not defined"},
+		{[]string{"--backend=headless", "--screenshot=" + dir, "--screenshot-raw"}, 2, "", "flag provided but not defined"},
+		{[]string{"--backend=headless", "--headless-hdr", "--screenshot-raw"}, 2, "", "flag provided but not defined"},
+		{[]string{"--backend=server", "--screenshot-raw"}, 2, "", "flag provided but not defined"},
+		{[]string{"--backend=server", "--input=-"}, 2, "", "flag provided but not defined"},
 		{[]string{"--backend=server", "extra"}, 2, "", "unexpected arguments"},
+		// The deprecation goes to stderr, even when the run is rejected.
+		{[]string{"--backend=server", "--timeout=-1s"}, 2, "", "deprecated: use --backend=headless --profile=persistent\nnegative timeout"},
+		{[]string{"--backend=server", "--profile=ephemeral"}, 2, "", "--backend=server implies --profile=persistent"},
+		{[]string{"session", "new", "--export"}, 2, "", "flag provided but not defined: -export"},
+		{[]string{"session", "new", "--help"}, 0, "usage: neferwl session new", ""},
+		{[]string{"session", "ls", "-h"}, 0, "usage: neferwl session ls", ""},
+		{[]string{"session", "rm", "--help"}, 0, "-timeout duration", ""},
 		{[]string{"--backend=server", "--debug=nope"}, 2, "", "--debug"},
 		{[]string{"--size=1920"}, 2, "", "--size"},
 		{[]string{"--timeout=-1s"}, 2, "", "negative timeout"},
@@ -134,60 +135,6 @@ func TestExitCode(t *testing.T) {
 		if code := exitCode(&b, tc.err); code != tc.code || (b.Len() > 0) != tc.print {
 			t.Errorf("%s: exit %d printed %q", tc.name, code, b.String())
 		}
-	}
-}
-
-func TestOpenScript(t *testing.T) {
-	file := t.TempDir() + "/script"
-	if err := os.WriteFile(file, []byte("quit\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range []struct {
-		name, path string
-		check      func(t *testing.T, script io.ReadCloser, err error)
-	}{
-		{"none", "", func(t *testing.T, script io.ReadCloser, err error) {
-			if err != nil || script != nil {
-				t.Fatalf("got %#v, %v; want a nil interface", script, err)
-			}
-		}},
-		{"stdin", "-", func(t *testing.T, script io.ReadCloser, err error) {
-			if err != nil || script != io.ReadCloser(os.Stdin) {
-				t.Fatalf("got %#v, %v; want os.Stdin", script, err)
-			}
-		}},
-		{"missing", "/nonexistent/script", func(t *testing.T, script io.ReadCloser, err error) {
-			if err == nil || script != nil {
-				t.Fatalf("got %#v, %v; want a nil interface and an error", script, err)
-			}
-		}},
-		{"file", file, func(t *testing.T, script io.ReadCloser, err error) {
-			if err != nil || script == nil {
-				t.Fatalf("got %#v, %v", script, err)
-			}
-			if got, err := io.ReadAll(script); err != nil || string(got) != "quit\n" {
-				t.Fatalf("read %q, %v", got, err)
-			}
-		}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			script, closeScript, err := openScript(tc.path)
-			if closeScript == nil {
-				t.Fatal("nil close func")
-			}
-			tc.check(t, script, err)
-			closeScript()
-			if tc.path == "-" {
-				if _, err := os.Stdin.Stat(); err != nil {
-					t.Fatalf("stdin closed: %v", err)
-				}
-			}
-			if tc.name == "file" {
-				if _, err := script.Read(make([]byte, 1)); err == nil || err == io.EOF {
-					t.Fatalf("file left open: %v", err)
-				}
-			}
-		})
 	}
 }
 

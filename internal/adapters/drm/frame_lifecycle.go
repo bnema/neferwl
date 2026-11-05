@@ -40,6 +40,7 @@ const (
 
 // pendingFrame is what the pending frame commit shows.
 type pendingFrame struct {
+	sceneSeq     uint64
 	security     domain.SecurityState // admission epoch checked again at KMS boundary
 	frame        bool
 	queued       uint64

@@ -4,14 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/bnema/neferwl/internal/domain"
 	"bnema.dev/zerowrap"
+	"github.com/bnema/neferwl/internal/domain"
 
 	lockclient "github.com/bnema/go-wayland-bindings/client/extsessionlock"
 
@@ -19,10 +19,10 @@ import (
 
 	captureclient "github.com/bnema/go-wayland-bindings/client/wlrscreencopy"
 
+	"bnema.dev/wlturbo"
 	clientxdg "github.com/bnema/go-wayland-bindings/client/xdgshell"
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
-	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
@@ -42,12 +42,10 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	scenes := make(chan []domain.Scene, 128)
-	script, writer := io.Pipe()
-	defer writer.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, NoTerminal: true, Config: config.Defaults(), Sizes: [][2]int{{160, 120}, {128, 96}}, ScreenshotDir: shots, Script: script, testScenes: scenes, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid())})
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, PlanOverrides: noTerminal(), Config: config.Defaults(), Sizes: [][2]int{{160, 120}, {128, 96}}, testScenes: scenes, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid())})
 	}()
 	// Cancellation closes clients' sockets too, bounding blocked Roundtrip.
 	watchdog := time.AfterFunc(20*time.Second, cancel)
@@ -94,6 +92,8 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 		}
 	}
 	waitScenes("initial outputs", func(set []domain.Scene) bool { return len(set) == 2 })
+	control := dialTestControl(t, runtime)
+	check(control.call(map[string]any{"op": "shot", "every_frame": true, "dir": shots}))
 	sockets, err := filepath.Glob(filepath.Join(runtime, "wayland-*[0-9]"))
 	check(err)
 	if len(sockets) != 1 {
@@ -151,7 +151,7 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 	check(surface.Attach(buffer, 0, 0))
 	check(surface.Commit())
 	until(desktop, "desktop focus", func() bool { return focused == surface.ID() })
-	_, err = io.WriteString(writer, "key a\n")
+	err = dialTestControl(t, runtime).inject("key", "a")
 	check(err)
 	until(desktop, "initial desktop input", func() bool { return len(desktopKeys) != 0 })
 
@@ -271,7 +271,7 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 	}
 
 	// A configured real locker surface supplies an input completion witness:
-	// receipt by the locker proves scripted key processing without timing sleeps.
+	// control injection must be rejected rather than granting unlock authority.
 	lockComp := clientcore.NewCompositor(locker.Context())
 	lockShm := clientcore.NewShm(locker.Context())
 	lockSeat := clientcore.NewSeat(locker.Context())
@@ -310,10 +310,18 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 		}
 	})
 	until(locker, "locker focus", func() bool { return configured && lockFocused })
+	if err := dialTestControl(t, runtime).call(map[string]any{"op": "shot", "outputs": []string{"HEADLESS-1"}}); err == nil || !strings.Contains(err.Error(), "locked") {
+		t.Fatalf("shot under lock: %v", err)
+	}
 	desktopCount := len(desktopKeys)
-	_, err = io.WriteString(writer, "key b\n")
-	check(err)
-	until(locker, "locker input and release", func() bool { return lockKey && lockReleased })
+	err = dialTestControl(t, runtime).inject("key", "b")
+	if err == nil || !strings.Contains(err.Error(), "locked") {
+		t.Fatalf("control injection under lock: %v", err)
+	}
+	check(locker.Roundtrip())
+	if lockKey || lockReleased {
+		t.Fatal("control input reached locker")
+	}
 	check(desktop.Roundtrip())
 	if len(desktopKeys) != desktopCount {
 		t.Fatal("locker input leaked to desktop")
@@ -338,7 +346,7 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 		return len(set) == 2 && !set[0].Security.Protected && !set[1].Security.Protected && set[0].Security.Generation > newer[0].Security.Generation
 	})
 	until(desktop, "restored desktop focus", func() bool { return focused == surface.ID() })
-	_, err = io.WriteString(writer, "key c\n")
+	err = dialTestControl(t, runtime).inject("key", "c")
 	check(err)
 	until(desktop, "restored desktop input", func() bool { return len(desktopKeys) > desktopCount })
 	if desktopKeys[len(desktopKeys)-1] != 46 {

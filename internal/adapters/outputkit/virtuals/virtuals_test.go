@@ -152,24 +152,6 @@ func TestHostAnnouncedBeforeOwner(t *testing.T) {
 	})
 }
 
-func TestParseMode(t *testing.T) {
-	for _, tc := range []struct {
-		value   string
-		valid   bool
-		refresh int
-	}{
-		{"10x10@0.0001", false, 0}, {"10x10@2147483.648", false, 0}, {"10x10@2147483.647", true, 2147483647}, {"10x10@0.0005", true, 1},
-		{"10x10", true, 60000}, {"10x10@59.94", true, 59940}, {"preferred", false, 0}, {"0x10", false, 0}, {"16385x10", false, 0}, {"10x10@NaN", false, 0}, {"10x10@1e100", false, 0},
-	} {
-		t.Run(tc.value, func(t *testing.T) {
-			mode, err := parseMode(tc.value)
-			if (err == nil) != tc.valid || tc.valid && mode.RefreshMilli != tc.refresh {
-				t.Fatalf("mode=%+v err=%v", mode, err)
-			}
-		})
-	}
-}
-
 func TestModeAcknowledgementAndFailureRollback(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())

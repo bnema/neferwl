@@ -15,6 +15,7 @@ import (
 // management on top of the file configuration, which is never mutated. Its
 // owner is the backend loop; it is not safe for concurrent use.
 type OutputOverrides struct {
+	runtime   []domain.OutputConfig
 	file      domain.Config
 	overrides map[string]domain.OutputConfig
 	heads     domain.OutputHeads
@@ -53,7 +54,7 @@ func (o *OutputOverrides) Restore(previous map[string]domain.OutputConfig) domai
 // Effective is the file configuration with the overrides applied.
 func (o *OutputOverrides) Effective() domain.Config {
 	cfg := o.file
-	cfg.Outputs = slices.Clone(o.file.Outputs)
+	cfg.Outputs = append(slices.Clone(o.file.Outputs), o.runtime...)
 	// Virtual overrides also apply before a head is announced or after it stops.
 	for i, entry := range cfg.Outputs {
 		if override, ok := o.overrides[entry.Name]; entry.Virtual && ok {

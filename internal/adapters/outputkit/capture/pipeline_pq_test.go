@@ -52,8 +52,10 @@ func TestPipelineRoutesPQRequests(t *testing.T) {
 	if _, err := lent.DMABuf.Planes[0].File.Stat(); err != nil {
 		t.Fatalf("lent plane closed: %v", err)
 	}
-	p.Close(r)
+	// Read arguments point into unmapped destinations: clear them before
+	// Close, whose EndCapture matching compares the two frames.
 	sdr.Calls, pq.Calls = nil, nil
+	p.Close(r)
 }
 
 // Without an HDR frame a PQ request fails transiently: the cast retries

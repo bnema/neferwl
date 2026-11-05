@@ -2,6 +2,8 @@ package headlessbackend
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"testing/synctest"
 
@@ -80,6 +82,61 @@ func TestVirtualOnlyNoFixedHeads(t *testing.T) {
 			t.Fatal(inventory)
 		}
 		synctest.Wait()
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+// The backend fans core's plan out to the output owners. A start that fails
+// on one output stops those already started and reports the failure; a
+// target gone since core planned is refused before anything starts.
+func TestContinuousCapturePlan(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		apply := core.NewOutputApply(core.NewOutputOverrides(domain.Config{}, true))
+		continuous := make(chan ports.ContinuousCaptureRequest)
+		heads := make(chan domain.OutputHeads, 16)
+		ch := routing.Channels{Events: make(chan ports.OutputEvent, 16), Heads: heads, Reloads: make(chan domain.ConfigChanged), Continuous: continuous}
+		r := portsmocks.NewMockRenderer(t)
+		r.EXPECT().Close().Return().Maybe()
+		done := make(chan error, 1)
+		go func() {
+			done <- Run(ctx, BackendOptions{Sizes: [][2]int{{20, 20}, {20, 20}}}, apply, ch, cursors.New(nil, 0), func(int, int) (ports.Renderer, error) { return r, nil }, logging.For(ctx, "render"))
+		}()
+		inventory := <-heads
+		synctest.Wait()
+		first, second := inventory.Heads[0].Info.Name, inventory.Heads[1].Info.Name
+		ask := func(plan ports.ContinuousCaptureRequest) ports.ContinuousCaptureResult {
+			reply := make(chan ports.ContinuousCaptureResult, 1)
+			plan.Reply = reply
+			continuous <- plan
+			return <-reply
+		}
+		dir := t.TempDir()
+		if res := ask(ports.ContinuousCaptureRequest{Dir: dir, Targets: []ports.ContinuousTarget{{Output: "missing", Dir: dir}}}); res.Err != ports.ControlErrBadRequest {
+			t.Fatalf("gone output: %+v", res)
+		}
+		// The second output's directory is a file: its start fails, and the
+		// first, already started, is stopped again.
+		if err := os.WriteFile(filepath.Join(dir, second), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		plan := ports.ContinuousCaptureRequest{Dir: dir, Targets: []ports.ContinuousTarget{{Output: first, Dir: filepath.Join(dir, first)}, {Output: second, Dir: filepath.Join(dir, second)}}}
+		if res := ask(plan); res.Err != ports.ControlErrCaptureFailed || res.Dir != dir {
+			t.Fatalf("partial start: %+v", res)
+		}
+		if err := os.Remove(filepath.Join(dir, second)); err != nil {
+			t.Fatal(err)
+		}
+		if res := ask(plan); res.Err != "" || res.Dir != dir {
+			t.Fatalf("start: %+v", res)
+		}
+		if res := ask(ports.ContinuousCaptureRequest{Stop: true, Targets: []ports.ContinuousTarget{{Output: first}, {Output: second}}}); res.Err != "" {
+			t.Fatalf("stop: %+v", res)
+		}
 		cancel()
 		if err := <-done; err != nil {
 			t.Fatal(err)

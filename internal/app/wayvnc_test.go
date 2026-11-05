@@ -208,7 +208,7 @@ func TestWayVNC(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, NoTerminal: true, Config: cfg, Sizes: [][2]int{{vncW, vncH}}, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid())})
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, PlanOverrides: noTerminal(), Config: cfg, Sizes: [][2]int{{vncW, vncH}}, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid())})
 	}()
 	stopped := false
 	defer func() {

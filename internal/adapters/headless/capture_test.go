@@ -454,3 +454,40 @@ func TestCaptureDeliveredOnlyWhenTheIndicatedFramePresents(t *testing.T) {
 		})
 	}
 }
+
+func TestCaptureWaitsForMinSeq(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := portsmocks.NewMockRenderer(t)
+		r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
+		r.EXPECT().Close().Return().Once()
+		frame := portsmocks.NewMockCaptureFrame(t)
+		frame.EXPECT().Done().Return(nil)
+		frame.EXPECT().Read(mock.Anything, mock.Anything, 8).Return(nil).Maybe()
+		r.EXPECT().BeginCapture().Return(frame, nil).Once()
+		r.EXPECT().EndCapture(frame).Return().Once()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		scenes := make(chan domain.Scene, 1)
+		incoming := make(chan domain.CaptureRequest)
+		replies := make(chan domain.CaptureDone, 1)
+		done := make(chan error, 1)
+		go func() {
+			done <- RunOutput(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }, Captured: replies}, scenes, nil, nil, nil, incoming)
+		}()
+		incoming <- domain.CaptureRequest{ID: 1, MinSeq: 3, Mapped: make([]byte, 16), Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1}
+		scenes <- domain.Scene{Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2}
+		synctest.Wait()
+		require.Empty(t, replies)
+		scenes <- domain.Scene{Seq: 3, Scale: 1, OutputWidth: 2, OutputHeight: 2}
+		synctest.Wait()
+		select {
+		case got := <-replies:
+			require.Equal(t, uint64(1), got.ID)
+			require.NoError(t, got.Err)
+		default:
+			t.Fatal("target scene did not release capture")
+		}
+		cancel()
+		require.NoError(t, <-done)
+	})
+}

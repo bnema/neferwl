@@ -57,7 +57,7 @@ func TestHintOffStartsNoHintGoroutine(t *testing.T) {
 			done := make(chan error, 1)
 			scenes := make(chan []domain.Scene, 4096)
 			go func() {
-				done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, NoTerminal: true, testScenes: scenes, Timeout: 800 * time.Millisecond})
+				done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, PlanOverrides: noTerminal(), testScenes: scenes, Timeout: 800 * time.Millisecond})
 			}()
 			select {
 			case <-scenes:
@@ -107,7 +107,7 @@ func TestRelayConfigKeepsStartupHintEnable(t *testing.T) {
 	cur := config.Defaults()
 	in := make(chan domain.ConfigChanged, 1)
 	out := make(chan domain.ConfigChanged, 1)
-	go relayConfig(ctx, cur, in, out, make(chan *xkb.Keymap, 1), make(chan domain.InputDevicesConfig, 1), cursors.New(clock.System{}, 0), make(chan ports.ClientCommand, 1), logging.For(ctx, "config"))
+	go relayConfig(ctx, cur, in, out, make(chan *xkb.Keymap, 1), make(chan domain.InputDevicesConfig, 1), cursors.New(clock.System{}, 0), make(chan ports.ClientCommand, 1), logging.For(ctx, "config"), nil)
 	next := config.Defaults()
 	next.Hint.Enable = true
 	next.Hint.Sources = []domain.HintSource{domain.HintSourceDetector}
@@ -127,7 +127,7 @@ func TestRelayConfigKeepsStartupHintDetector(t *testing.T) {
 	cur := config.Defaults()
 	in := make(chan domain.ConfigChanged, 1)
 	out := make(chan domain.ConfigChanged, 1)
-	go relayConfig(ctx, cur, in, out, make(chan *xkb.Keymap, 1), make(chan domain.InputDevicesConfig, 1), cursors.New(clock.System{}, 0), make(chan ports.ClientCommand, 1), logging.For(ctx, "config"))
+	go relayConfig(ctx, cur, in, out, make(chan *xkb.Keymap, 1), make(chan domain.InputDevicesConfig, 1), cursors.New(clock.System{}, 0), make(chan ports.ClientCommand, 1), logging.For(ctx, "config"), nil)
 	next := config.Defaults()
 	next.Hint.Detector, next.Hint.Model, next.Hint.Threshold = "/other/nh", "/other/models", 0.5
 	in <- domain.ConfigChanged{Config: next}
@@ -135,4 +135,20 @@ func TestRelayConfigKeepsStartupHintDetector(t *testing.T) {
 	require.Equal(t, cur.Hint.Detector, got.Detector)
 	require.Equal(t, cur.Hint.Model, got.Model)
 	require.Equal(t, cur.Hint.Threshold, got.Threshold)
+}
+
+// Hints off and no control (the DRM default): outputs reply straight on the
+// wayland channel, so wayland captures are delivered without a router.
+// Control or hints split the replies, and the router must then run.
+func TestCaptureRepliesReachWaylandWithoutRouter(t *testing.T) {
+	off := newPipes(false, false)
+	require.False(t, off.routesCaptured())
+	done := domain.CaptureDone{ID: 7}
+	off.outputs(nil, nil, nil).Captured <- done
+	require.Equal(t, done, <-off.wayland().Captured)
+
+	ctl := newPipes(false, false)
+	ctl.routeControlCaptures()
+	require.True(t, ctl.routesCaptured())
+	require.True(t, newPipes(false, true).routesCaptured())
 }

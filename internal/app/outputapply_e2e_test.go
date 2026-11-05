@@ -11,9 +11,9 @@ import (
 
 	client "github.com/bnema/go-wayland-bindings/client/wlroutputmanagement"
 
+	"bnema.dev/wlturbo"
 	wlr "github.com/bnema/go-wayland-bindings/server/wlroutputmanagement"
 	"github.com/bnema/neferwl/internal/adapters/config"
-	"bnema.dev/wlturbo"
 )
 
 // A wlr-output-management client goes through Wayland, the headless owner
@@ -27,7 +27,7 @@ func TestHeadlessOutputManagementEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), NoTerminal: true, Sizes: [][2]int{{640, 480}}, testScenes: scenes})
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), PlanOverrides: noTerminal(), Sizes: [][2]int{{640, 480}}, testScenes: scenes})
 	}()
 	// A stuck loop never answers the client: the watchdog stops the app,
 	// which closes the socket, so a blocked Roundtrip fails instead of hanging.

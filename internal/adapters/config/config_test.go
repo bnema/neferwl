@@ -1277,3 +1277,13 @@ func TestLineageShells(t *testing.T) {
 		t.Fatal("shell reload compares equal")
 	}
 }
+
+// TestLogDebugNames: log.debug accepts every logger component and category.
+func TestLogDebugNames(t *testing.T) {
+	for _, v := range []string{"control", "screensaver, powerkey", "sched,screencast", "input-motion", "all"} {
+		c, w := parseString(t, "log.debug = "+v)
+		if len(w) != 0 || len(c.Log.Debug) == 0 {
+			t.Errorf("%q: debug %v warnings %v", v, c.Log.Debug, w)
+		}
+	}
+}

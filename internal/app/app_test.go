@@ -4,7 +4,6 @@ import (
 	"context"
 	"image/color"
 	"image/png"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,10 +34,11 @@ func TestHeadlessConfigReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	shots := t.TempDir()
+	scenes := make(chan []domain.Scene, 4096)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, ConfigPath: path, NoTerminal: true, ScreenshotDir: shots})
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, ConfigPath: path, PlanOverrides: noTerminal(), testScenes: scenes})
 	}()
 	defer func() {
 		cancel()
@@ -51,6 +51,11 @@ func TestHeadlessConfigReload(t *testing.T) {
 			t.Error("Run did not stop")
 		}
 	}()
+	awaitControlScene(t, scenes, done, 0)
+	client := dialTestControl(t, os.Getenv("XDG_RUNTIME_DIR"))
+	if err := client.call(map[string]any{"op": "shot", "every_frame": true, "dir": shots}); err != nil {
+		t.Fatal(err)
+	}
 	latest := filepath.Join(shots, "latest.png")
 	waitColor := func(want color.RGBA, budget time.Duration) bool {
 		waitFile := fileChangesWithin(t, shots, budget)
@@ -94,7 +99,7 @@ func TestHeadlessConfigReload(t *testing.T) {
 func TestQuitJoinsWorkers(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
-		done <- run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), NoTerminal: true}, func(input chan<- ports.InputEvent) {
+		done <- run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), PlanOverrides: noTerminal()}, func(input chan<- ports.InputEvent) {
 			input <- ports.SecurityInput{State: domain.SecurityState{}, Event: ports.KeyEvent{Keysym: "BackSpace", Mods: domain.ModCtrl | domain.ModAlt, Pressed: true}}
 		})
 	}()
@@ -127,7 +132,7 @@ func headlessSpawnClose(t *testing.T, animated bool) {
 	inputReady := make(chan chan<- ports.InputEvent, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, Options{Backend: "headless", NoXwayland: true, NoTerminal: true, Config: cfg, testScenes: scenes}, func(input chan<- ports.InputEvent) { inputReady <- input })
+		done <- run(ctx, Options{Backend: "headless", NoXwayland: true, PlanOverrides: noTerminal(), Config: cfg, testScenes: scenes}, func(input chan<- ports.InputEvent) { inputReady <- input })
 	}()
 	var input chan<- ports.InputEvent
 	select {
@@ -190,7 +195,22 @@ func TestHeadlessTyping(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Terminal.Command = []string{"foot", "-c", "/dev/null", "sh"}
 	dir := t.TempDir()
-	err := Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: cfg, ScreenshotDir: dir, Script: io.NopCloser(strings.NewReader("sleep 1.5s\ntype echo neferwl-ok\nkey Return\nsleep 1s\n")), Timeout: 6 * time.Second})
+	scenes := make(chan []domain.Scene, 4096)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, Timeout: 6 * time.Second, testScenes: scenes})
+	}()
+	awaitControlScene(t, scenes, done, 1)
+	client := dialTestControl(t, os.Getenv("XDG_RUNTIME_DIR"))
+	if err := client.call(map[string]any{"op": "shot", "every_frame": true, "dir": dir}); err != nil {
+		t.Fatal(err)
+	}
+	if err := injectAll(client, "type echo neferwl-ok", "key Return"); err != nil {
+		t.Fatal(err)
+	}
+	err := <-done
 	if err != nil {
 		if strings.Contains(err.Error(), "Vulkan") || strings.Contains(err.Error(), "vulkan") {
 			t.Skipf("Vulkan unavailable: %v", err)
@@ -238,6 +258,7 @@ func TestHeadlessPointerClickFocus(t *testing.T) { headlessPointerClickFocus(t, 
 // click still lands on window 1 once the second column settled.
 func TestHeadlessPointerClickFocusAnimated(t *testing.T) { headlessPointerClickFocus(t, true) }
 
+//testpolicy:realtime real compositor pointer focus publication
 func headlessPointerClickFocus(t *testing.T, animated bool) {
 	if _, err := exec.LookPath("foot"); err != nil {
 		t.Skip("foot unavailable")
@@ -270,9 +291,46 @@ func headlessPointerClickFocus(t *testing.T, animated bool) {
 	var halt sync.Once
 	stopCollector := func() { halt.Do(func() { close(stop); <-collected }) }
 	t.Cleanup(stopCollector)
-	// The script ends with the default quit bind: the run stops when it
-	// is done, the timeout is only a backstop.
-	err := Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: cfg, Script: io.NopCloser(strings.NewReader("sleep 1s\nkey Super+Return\nsleep 1s\nmove 600 300\nclick\nsleep 500ms\nkey Ctrl+Alt+BackSpace\n")), Timeout: 5 * time.Second, testScenes: scenes})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	ready := make(chan []domain.Scene, 4096)
+	// Keep a dedicated readiness tap; the collector below still owns scenes.
+	go func() {
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, Timeout: 5 * time.Second, testScenes: ready})
+	}()
+	awaitControlScene(t, ready, done, 1)
+	client := dialTestControl(t, os.Getenv("XDG_RUNTIME_DIR"))
+	if err := client.call(map[string]any{"op": "inject", "kind": "key", "combo": "Super+Return", "until": "window-mapped app_id=foot", "wait": "settled"}); err != nil {
+		t.Fatal(err)
+	}
+	awaitControlScene(t, ready, done, 2)
+	// Preserve the two-column state for the existing scene assertions.
+	if err := client.call(map[string]any{"op": "inject", "kind": "pointer", "cmd": "move", "args": []string{"600", "300"}, "wait": "settled"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := injectAll(client, "move 600 300", "click"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(5 * time.Second)
+	found := false
+	for !found {
+		select {
+		case set := <-ready:
+			scenes <- set
+			for _, scene := range set {
+				for _, w := range scene.Windows {
+					if len(scene.Windows) == 2 && w.ID == 1 && w.Focused {
+						found = true
+					}
+				}
+			}
+		case <-deadline:
+			t.Fatal("click did not focus first window")
+		}
+	}
+	cancel()
+	err := <-done
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "vulkan") {
 			t.Skipf("Vulkan unavailable: %v", err)
@@ -300,19 +358,26 @@ func headlessPointerClickFocus(t *testing.T, animated bool) {
 	}
 }
 
-//testpolicy:realtime real headless session and child processes
-func TestBlockedScriptShutdown(t *testing.T) {
+//testpolicy:realtime real control client and headless session shutdown
+func TestOpenControlClientShutdown(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-	r, w := io.Pipe()
-	defer w.Close()
+	scenes := make(chan []domain.Scene, 128)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), NoTerminal: true, Script: r, Timeout: 300 * time.Millisecond})
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), PlanOverrides: noTerminal(), testScenes: scenes})
 	}()
+	awaitControlScene(t, scenes, done, 0)
+	_ = dialTestControl(t, os.Getenv("XDG_RUNTIME_DIR"))
+	cancel()
 	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("blocked script prevented shutdown")
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("open control client prevented shutdown")
 	}
 }
 
@@ -325,7 +390,7 @@ func TestRelayConfigKeyboard(t *testing.T) {
 	keymaps := make(chan *xkb.Keymap, 1)
 	commands := make(chan ports.ClientCommand, 1)
 	devices := make(chan domain.InputDevicesConfig, 1)
-	go relayConfig(ctx, cur, in, out, keymaps, devices, cursors.New(clock.System{}, 0), commands, logging.For(ctx, "config"))
+	go relayConfig(ctx, cur, in, out, keymaps, devices, cursors.New(clock.System{}, 0), commands, logging.For(ctx, "config"), nil)
 
 	next := config.Defaults()
 	next.Background.Color = "#000000"
@@ -406,7 +471,18 @@ func TestHeadlessTwoOutputs(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	scenes := make(chan []domain.Scene, 64)
 	shots := t.TempDir()
-	err := Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), NoTerminal: true, ScreenshotDir: shots, Sizes: [][2]int{{640, 480}, {320, 240}}, Timeout: 2 * time.Second, testScenes: scenes})
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), PlanOverrides: noTerminal(), Sizes: [][2]int{{640, 480}, {320, 240}}, Timeout: 2 * time.Second, testScenes: scenes})
+	}()
+	// Core must know both outputs before it plans the recording: with one,
+	// frames go to shots itself, not to a subdirectory per output.
+	awaitSceneOutputs(t, scenes, done, 2)
+	client := dialTestControl(t, os.Getenv("XDG_RUNTIME_DIR"))
+	if err := client.call(map[string]any{"op": "shot", "every_frame": true, "dir": shots}); err != nil {
+		t.Fatal(err)
+	}
+	err := <-done
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "vulkan") {
 			t.Skipf("Vulkan unavailable: %v", err)

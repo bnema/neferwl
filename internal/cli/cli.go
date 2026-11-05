@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 // Env holds what a command uses besides its arguments.
@@ -32,7 +33,7 @@ type Command struct {
 // root runs the compositor; commands are the subcommands.
 var (
 	root     = Command{Args: "[flags]", Summary: "Run the compositor.", Setup: setupRun}
-	commands = []Command{validateConfigCmd, stateCmd, pointerCmd, versionCmd}
+	commands = []Command{sessionCmd, validateConfigCmd, stateCmd, doCmd, queryCmd, shotCmd, outputCmd, keyCmd, typeCmd, pressCmd, releaseCmd, clickCmd, moveCmd, swipeCmd, pointerCmd, versionCmd}
 )
 
 // Main runs the command line args (without the program name) and returns
@@ -45,6 +46,17 @@ func Main(args []string, version string) int {
 // Execute selects the command named by args[0], or the root command, parses
 // its flags and runs it. -h and --help print the command usage to Stdout.
 func Execute(ctx context.Context, env Env, args []string) error {
+	// Accept the global target before the verb as well as command-local -s.
+	var target string
+	if len(args) > 0 && (args[0] == "-s" || args[0] == "--s") {
+		if len(args) < 3 {
+			return usagef("-s requires a session ID and command")
+		}
+		target, args = args[1], args[2:]
+	} else if len(args) > 0 && (strings.HasPrefix(args[0], "-s=") || strings.HasPrefix(args[0], "--s=")) {
+		_, target, _ = strings.Cut(args[0], "=")
+		args = args[1:]
+	}
 	cmd := lookup(args)
 	if cmd.Name != "" {
 		args = args[1:]
@@ -52,6 +64,14 @@ func Execute(ctx context.Context, env Env, args []string) error {
 	fs := flag.NewFlagSet(cmd.path(), flag.ContinueOnError)
 	fs.SetOutput(io.Discard) // errors and usage are printed once, here and in exitCode
 	run := cmd.Setup(fs)
+	if target != "" {
+		if fs.Lookup("s") == nil {
+			return cmd.usageError(fmt.Errorf("-s is not supported for this command"))
+		}
+		if err := fs.Set("s", target); err != nil {
+			return err
+		}
+	}
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			printUsage(env.Stdout, cmd, fs)

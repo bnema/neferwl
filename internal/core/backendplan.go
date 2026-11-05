@@ -17,7 +17,6 @@ type InputSource uint8
 const (
 	InputNone            InputSource = iota
 	InputLibinputLibseat             // libinput with devices opened through libseat
-	InputScript                      // scripted input (headless)
 	InputLibinputDirect              // libinput opening devices directly
 )
 
@@ -29,14 +28,6 @@ const (
 	SessionDBusAlways                          // always
 )
 
-// AutoTerminalMode tells when a terminal is spawned at startup.
-type AutoTerminalMode uint8
-
-const (
-	AutoTerminalOff          AutoTerminalMode = iota // never
-	AutoTerminalConfig                               // per config
-	AutoTerminalConfigOrFlag                         // per config, overridable by flag
-)
 
 // BackendPlan is the per-backend decision table consumed by wiring.
 type BackendPlan struct {
@@ -48,23 +39,61 @@ type BackendPlan struct {
 	SessionDBus       SessionDBusMode
 	LogindPowerKeys   bool
 	PersistScales     bool
-	AutoTerminal      AutoTerminalMode
-	AllowTestFlags    bool
+	// AutoTerminal spawns the configured terminal at startup.
+	AutoTerminal bool
+	// Control registers the run in the session registry and serves the
+	// control socket with its request, runtime output and capture channels.
+	Control bool
 }
 
-// PlanBackend returns the plan for b; an unknown backend yields the zero plan.
-func PlanBackend(b domain.Backend) BackendPlan {
-	switch b {
-	case domain.BackendDRM:
-		return BackendPlan{KMS: true, RequireRenderNode: true, FixedHeads: HeadsConnectors, IsolateVirtuals: true,
-			Input: InputLibinputLibseat, SessionDBus: SessionDBusAlways, LogindPowerKeys: true, PersistScales: true,
-			AutoTerminal: AutoTerminalConfig}
-	case domain.BackendHeadless:
-		return BackendPlan{FixedHeads: HeadsSized, IsolateVirtuals: true, Input: InputScript,
-			SessionDBus: SessionDBusFlagOnly, AutoTerminal: AutoTerminalConfigOrFlag, AllowTestFlags: true}
-	case domain.BackendServer:
-		return BackendPlan{RequireRenderNode: true, FixedHeads: HeadsNone, Input: InputLibinputDirect,
-			SessionDBus: SessionDBusAlways, PersistScales: true, AutoTerminal: AutoTerminalOff}
+// PlanOverrides holds explicit CLI choices. Nil preserves profile defaults.
+type PlanOverrides struct {
+	SessionDBus  *bool
+	AutoTerminal *bool
+	Input        *InputSource
+	// SizedHeads: explicit output sizes were given (--size). Headless then
+	// runs sized heads whatever the profile; DRM uses its connectors.
+	SizedHeads bool
+}
+
+// PlanBackend returns the backend/profile policy consumed by wiring. DRM
+// ignores profiles and overrides, except an explicit AutoTerminal=false
+// (--no-terminal); its session/device ownership is fixed.
+func PlanBackend(b domain.Backend, p domain.Profile, o PlanOverrides) BackendPlan {
+	if b == domain.BackendDRM {
+		plan := BackendPlan{KMS: true, RequireRenderNode: true, FixedHeads: HeadsConnectors, IsolateVirtuals: true,
+			Input: InputLibinputLibseat, SessionDBus: SessionDBusAlways, LogindPowerKeys: true, PersistScales: true, AutoTerminal: true}
+		if o.AutoTerminal != nil && !*o.AutoTerminal {
+			plan.AutoTerminal = false
+		}
+		return plan
 	}
-	return BackendPlan{}
+	if b != domain.BackendHeadless {
+		return BackendPlan{}
+	}
+	var plan BackendPlan
+	switch p {
+	case domain.ProfileEphemeral:
+		plan = BackendPlan{FixedHeads: HeadsSized, IsolateVirtuals: true, Input: InputNone, SessionDBus: SessionDBusFlagOnly, AutoTerminal: true, Control: true}
+	case domain.ProfilePersistent:
+		plan = BackendPlan{RequireRenderNode: true, FixedHeads: HeadsNone, Input: InputLibinputDirect, SessionDBus: SessionDBusAlways, PersistScales: true, Control: true}
+	default:
+		return BackendPlan{}
+	}
+	if o.SessionDBus != nil {
+		plan.SessionDBus = SessionDBusFlagOnly
+		if *o.SessionDBus {
+			plan.SessionDBus = SessionDBusAlways
+		}
+	}
+	if o.AutoTerminal != nil {
+		plan.AutoTerminal = *o.AutoTerminal
+	}
+	if o.Input != nil {
+		plan.Input = *o.Input
+	}
+	if o.SizedHeads {
+		plan.FixedHeads = HeadsSized
+	}
+	return plan
 }

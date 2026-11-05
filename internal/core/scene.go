@@ -119,6 +119,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		}
 		cp, t := c.captureConfigure(sc, ps, t)
 		if v, send := c.configures.nextWithCapture(ps, t, cp); send {
+			v = c.configures.stamp(v)
 			if err := c.command(ctx, v); err != nil {
 				return domain.Scene{}, err
 			}

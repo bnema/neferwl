@@ -1,58 +1,44 @@
-# Headless mode
+# Headless testing
 
-Runs NeferWL without a screen, for tests and quick checks:
+Test user-facing changes on an isolated headless session before merging. The
+session has its own Wayland display, control socket and logs, so the desktop
+stays untouched. [Scripting and agents](../control.md) documents every control
+command; this page covers testing NeferWL itself.
 
-```sh
-neferwl --backend=headless --screenshot /tmp/neferwl-shots
-WAYLAND_DISPLAY=<name from the log> foot
-```
-
-- `latest.png` shows the current frame; `frames.ffconcat` records frame timing. Every frame is also saved as `frame-NNNNNN.png`, so the directory grows. `latest.png` is a hard link to the newest frame, so replace it rather than editing it in place.
-- `--size 640x360,640x360` creates two outputs, arranged left to right,
-  for testing `focus-monitor-left/right` and moving columns between outputs.
-- With several outputs, each writes to `<dir>/HEADLESS-<n>/`.
-- `--timeout 5s` stops NeferWL after 5 seconds.
-- Animations are on by default. For checks that need instant layout changes, set `animations = off` in the throwaway config; otherwise let transitions settle before checking final geometry.
-- `grim` and recorders work too; see [Screen capture](../capture.md).
-
-## Recording a video
-
-Convert the screenshots and their real-time timing index into a video:
+## End-to-end recipe
 
 ```sh
-ffmpeg -f concat -safe 0 -i /tmp/shots/frames.ffconcat -vf "fps=60,format=yuv420p" -c:v libx264 -crf 18 demo.mp4
+T=$(mktemp -d)
+CGO_ENABLED=0 go build -o "$T/neferwl" ./cmd/neferwl
+printf 'animations = off\n' >"$T/config"
+"$T/neferwl" session new --id test --config "$T/config" --ttl 60s -- --no-xwayland
+"$T/neferwl" -s test key Super+Return --until 'window-mapped app_id=foot'
+"$T/neferwl" -s test state | jq '.windows[] | {id, app_id, column, row}'
+"$T/neferwl" -s test shot
+"$T/neferwl" session rm test
 ```
 
-For a GIF, convert `demo.mp4` with ffmpeg's `palettegen` and `paletteuse` filters.
+- Use the branch binary for every command and `-s test` for every control
+  command.
+- `--size 640x360,640x360` creates two outputs, left to right.
+- With animations on, keep the default `--wait settled` before reading
+  geometry.
+- Launch external clients with the `wayland` display from the readiness JSON.
+- Logs: `$XDG_STATE_HOME/neferwl/sessions/test/latest.log`.
+- Record a sequence with `shot --every-frame` and `shot --stop`; see
+  [Every frame and video](../control.md#every-frame-and-video).
 
-### Demo recording
+## Demo recording
 Run `tools/demo/record.sh`. It requires Go 1.27, rootless Docker, ffmpeg, network access and an AMD GPU.
 It builds the Arch image (apps, tesseract, AT-SPI) and the compositor binary, then records the 1080p README demo.
 The compositor runs headless inside a disposable container, with the binary and a work directory bind-mounted and `/dev/dri` passed for the GPU.
 The image only carries Mesa's radeon Vulkan driver, and hint scans need the sync files that a hardware driver exports; the script stops early without an AMD render node.
 Firefox opens a live DuckDuckGo page, so the recording needs the network and its content varies.
-A FIFO feeds `input.txt` while the script launches the apps on the same clock.
+The recording script translates `input.txt` into control-socket commands while launching apps on the same clock.
 The hint step makes Firefox fullscreen and labels the page with `hint`; `hint-click <words>` then types the label of the link that shows those words, found from the scan's dump and an OCR read of the still page (`hint-read`).
-The recording only counts if the compositor stops on the quit key that ends `input.txt`; reaching its `--timeout` first fails the run as truncated.
+The recording only counts if the compositor stops on the quit key that ends `input.txt`; reaching its lifetime limit first fails the run as truncated.
 Temporary captures are removed by default; set `KEEP_CAPTURE=1` to keep successful runs.
 The recording and poster replace `docs/media/demo.mp4` and `docs/media/demo.png`.
-
-## Input scripts
-
-`--input <file>`, or `--input -` for stdin, plays one command per line:
-
-| Command | Effect |
-|---|---|
-| `type <text>` | Type text |
-| `key Super+Return` | Press a key, with optional Shift, Ctrl, Alt or Super |
-| `hold Super+h 1s` | Press a key like `key`, hold it, then release it |
-| `press Super`, `release Super` | Hold or release a modifier across mouse actions (`Super`, `Shift`, `Ctrl`, `Alt`) |
-| `sleep 1s` | Wait |
-| `move <x> <y>` | Move the pointer, in output coordinates |
-| `click [left\|right\|middle]`, `down <button>`, `up <button>` | Mouse buttons |
-| `vt away`, `vt back` | Simulate a VT switch: the keys and modifiers held are forgotten and the seat goes inactive, then active again |
-| `swipe up\|down\|left\|right` | Three-finger flick |
-| `swipe4 up\|down` | Four-finger flick |
 
 ## Testing input methods
 
@@ -66,7 +52,7 @@ WAYLAND_DISPLAY=<name> go run ./examples/testime -preedit nihon -commit 日本
 
 ## Testing the virtual pointer
 
-`neferwl pointer` drives the pointer of the headless session (same display resolution as `neferwl state`); run it with the headless `WAYLAND_DISPLAY`:
+`neferwl pointer` drives the pointer of the session whose `WAYLAND_DISPLAY` it runs with:
 
 ```sh
 WAYLAND_DISPLAY=<name> neferwl pointer abs 0.1 0.5 click
@@ -74,7 +60,7 @@ WAYLAND_DISPLAY=<name> neferwl pointer drag 100 0 scroll down 3
 WAYLAND_DISPLAY=<name> neferwl pointer --output HEADLESS-2 abs 0.5 0.5
 ```
 
-Check the result with `neferwl state` (`.window.id` is the focused window). Headless screenshots do not show the cursor. `TestPointerCLI` (`internal/app`, in `go test ./...`) runs the built binary against a headless NeferWL and checks a click, a drag, a scroll and the release at exit on a test client.
+Check the result with `neferwl -s <id> state` (`.window.id` is the focused window). Single shots do not show the cursor; `--every-frame` frames do. `TestPointerCLI` (`internal/app`, in `go test ./...`) runs the built binary against a headless NeferWL and checks a click, a drag, a scroll and the release at exit on a test client.
 
 ## wayvnc check
 
@@ -138,41 +124,36 @@ For the test installation these are
 `~/.local/share/nefer-hints-test/models`.
 
 ```sh
-env -u NEFERWL_STATE -u NEFERWL_SLOT XDG_STATE_HOME="$T/state" \
-  NEFERWL_HINT_DEBUG=1 dbus-run-session -- bash -c '
+XDG_STATE_HOME="$T/state" NEFERWL_HINT_DEBUG=1 dbus-run-session -- bash -c '
   T=$1
-  # Enable accessibility before either the compositor or its clients starts.
   gdbus call --session --dest org.a11y.Bus --object-path /org/a11y/bus \
     --method org.freedesktop.DBus.Properties.Set org.a11y.Status IsEnabled "<true>"
-  # On hosts whose registry service activation is unavailable (adjust path).
   /usr/lib/at-spi2-registryd >"$T/registry.log" 2>&1 &
-  WAYLAND_DISPLAY=wp4-headless "$T/neferwl" --backend=headless \
-    --config "$T/config" --no-xwayland --screenshot "$T/shots" \
-    --input "$T/input" --timeout 20s & compositor=$!
-  # Bounded wait for the actual display, not an inherited live-session display.
-  for i in {1..50}; do
-    display=$(jq -r "select(.message == \"listening\") | .WAYLAND_DISPLAY" \
-      "$T/state/neferwl/runs/headless/latest.log" 2>/dev/null | head -1)
-    [ -n "$display" ] && break
-    sleep .1
-  done
-  [ -n "$display" ] || exit 1
-  export WAYLAND_DISPLAY="$display"
+  ready=$("$T/neferwl" session new --id hints --dbus-session --config "$T/config" \
+    --ttl 60s -- --no-xwayland)
+  export WAYLAND_DISPLAY=$(printf "%s" "$ready" | jq -r .wayland)
+  "$T/neferwl" -s hints shot --every-frame --dir "$T/shots"
   foot sh -c "printf https://example.org/a; exec sleep 60" &
   chromium --ozone-platform=wayland --force-renderer-accessibility \
     --user-data-dir="$T/chrome" "file://$T/page.html" >"$T/chromium.log" 2>&1 &
-  wait "$compositor"
+  "$T/neferwl" -s hints key Super+g --until "window-mapped app_id=chromium"
+  read -r -p "Visible hint label: " label
+  "$T/neferwl" -s hints type "$label"
+  "$T/neferwl" -s hints shot
+  "$T/neferwl" -s hints shot --stop
+  "$T/neferwl" session rm hints
 ' bash "$T"
 ```
 
 All clients and state queries must run inside that wrapper shell so they share
 its session bus as well as its Wayland display. Logs are in
-`$T/state/neferwl/runs/headless/latest.log`.
-Prepare `$T/page.html` with underlined local links before running. OCR detects
+`$T/state/neferwl/sessions/hints/latest.log`.
+Prepare `$T/page.html` with underlined local links before running (the shell example also needs `jq`). OCR detects
 URL-like text without an underline and underlined link text; ordinary menu
 labels, buttons, separators and box borders do not produce OCR targets. Arrange both windows
 visibly; open a menu if possible.
-Script `sleep 8s`, `key Super+g`, `sleep 4s`, then `type <visible label>`.
+Wait for the clients to map, run `neferwl -s hints key Super+g`, then use
+`neferwl -s hints type <visible-label>` while the session is running.
 Check screenshots before and after the click; a local link changing the page
 background is a convenient observable result.
 
@@ -193,7 +174,7 @@ sources (startup rejects `hint.sources = ocr, ocr`).
 
 ## OCR URL opening
 
-OCR targets with an http, https or mailto URL run `xdg-open` instead of a click. The recipe builds the binary, writes a minimal config and input script, and puts a fake `xdg-open` first in `PATH`. It needs the hint prerequisites listed above.
+OCR targets with an http, https or mailto URL run `xdg-open` instead of a click. The recipe builds the binary, writes a minimal config, and puts a fake `xdg-open` first in `PATH`. It needs the hint prerequisites listed above.
 
 ```sh
 T=$(mktemp -d); mkdir "$T/bin"
@@ -208,12 +189,21 @@ hint.sources = atspi, ocr
 bind.cmd+g = hint
 bind.cmd+u = spawn foot -o main.font=monospace:size=28 $T/show.sh
 EOF
-printf 'sleep 1s\nkey Super+u\nsleep 4s\nkey Super+g\nsleep 4s\n' >"$T/input"
-env -u NEFERWL_STATE -u NEFERWL_SLOT PATH="$T/bin:$PATH" "$T/neferwl" --backend=headless \
-  --config "$T/config" --no-xwayland --screenshot "$T/shots" --input "$T/input" --timeout 20s
+PATH="$T/bin:$PATH" "$T/neferwl" session new --id ocr --config "$T/config" --ttl 60s -- --no-xwayland
+"$T/neferwl" -s ocr shot --every-frame --dir "$T/shots"
+"$T/neferwl" -s ocr key Super+u --until 'window-mapped app_id=foot'
+"$T/neferwl" -s ocr key Super+g
+"$T/neferwl" -s ocr shot
+# Read the visible hint label, then:
+"$T/neferwl" -s ocr type '<label>'
+"$T/neferwl" -s ocr shot --stop
+"$T/neferwl" session rm ocr
 ```
 
-The input script opens a large-font foot showing `https://example.com` and runs `hint`. Read the label from the screenshot, then append `type <label>` and a `sleep 2s` to `$T/input` and run again. `$T/opened` then holds exactly `https://example.com`. A `file:` target is clicked and leaves it empty. Launcher failures are in the log under `component=launcher`.
+The foot window shows `https://example.com`. Typing its hint label opens that
+URL; `$T/opened` holds exactly `https://example.com`. A `file:` target is clicked
+and leaves it empty. Launcher failures are in the session log under
+`component=launcher`.
 
 ## Primary output coordinates
 
@@ -247,13 +237,15 @@ output.HEADLESS-2.right-of = HEADLESS-1
 On the isolated headless display, `wayland-info -i wl_output` should report
 HEADLESS-1 at (-640,0) and HEADLESS-2 at (0,0).
 
-Scripted input announces device ID `1` with the fixed name `headless-script`.
-Use `output.tv.input = headless-script` to test device-bound focus on a virtual
-output. The script's `move` coordinates remain global logical coordinates.
+## Control input device
 
-`device <id>` selects the scripted device for subsequent keys, motions, buttons
-and gestures (positive integer; default `1`). A newly selected ID is announced
-once: ID `1` is `headless-script`, other IDs are `headless-script-<id>`.
-Devices share the scripted seat's keymap; release held keys before switching.
-For example, bind `headless-script-2` to `tv`, then interleave `device 2`,
-`key a`, `device 1`, `key a` to exercise bound/unbound focus switching.
+Control input announces device ID `1` named `control`. Use
+`output.tv.input = control` to test device-bound focus on a virtual output.
+Control `move` coordinates stay global logical coordinates.
+
+## Session paths
+
+`$XDG_RUNTIME_DIR/neferwl/sessions/<id>/` holds `meta.json`, `control.sock`,
+`state.json` and `shots/`. Logs live in
+`$XDG_STATE_HOME/neferwl/sessions/<id>/`; the 20 most recent session log
+directories are kept.

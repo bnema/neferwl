@@ -7,7 +7,7 @@ import (
 	clientcore "github.com/bnema/go-wayland-bindings/client/wayland"
 	clientxdg "github.com/bnema/go-wayland-bindings/client/xdgshell"
 	"github.com/bnema/neferwl/internal/adapters/config"
-	"github.com/bnema/neferwl/internal/adapters/statefile"
+	"github.com/bnema/neferwl/internal/adapters/statewire"
 	"github.com/bnema/neferwl/internal/domain"
 	"io"
 	"os"
@@ -85,15 +85,15 @@ func runXwaylandLineage(t *testing.T, direct, seatTV bool) {
 		args = append(args, "-lineage-direct")
 	}
 	p := startProbe(t, e.bin, e.display, args...)
-	find := func(class string) (statefile.Window, bool) {
+	find := func(class string) (statewire.Window, bool) {
 		for _, w := range readState(e.statePath).Windows {
 			if w.AppID == class {
 				return w, true
 			}
 		}
-		return statefile.Window{}, false
+		return statewire.Window{}, false
 	}
-	var launcher, game statefile.Window
+	var launcher, game statewire.Window
 	t.Cleanup(func() { t.Logf("probe: %s state: %+v", p.out.String(), readState(e.statePath)) })
 	until(t, "fullscreen launcher", func() bool {
 		var ok bool
@@ -101,21 +101,21 @@ func runXwaylandLineage(t *testing.T, direct, seatTV bool) {
 		return ok && launcher.Output == "tv" && launcher.Fullscreen && strings.Contains(p.out.String(), "mapped 640x360")
 	})
 	until(t, "launcher active", func() bool { return lastLine(p.out.String(), "active ") == "active self" })
-	workspace := func() statefile.Workspace {
+	workspace := func() statewire.Workspace {
 		for _, w := range readState(e.statePath).Workspaces {
 			if w.Output == "tv" && w.Visible {
 				return w
 			}
 		}
-		return statefile.Workspace{}
+		return statewire.Workspace{}
 	}
-	desktop := func() statefile.Workspace {
+	desktop := func() statewire.Workspace {
 		for _, w := range readState(e.statePath).Workspaces {
 			if w.Output == "HEADLESS-1" && w.Visible {
 				return w
 			}
 		}
-		return statefile.Workspace{}
+		return statewire.Workspace{}
 	}
 	baseline := desktop()
 	assertSeat := func() {
@@ -129,7 +129,7 @@ func runXwaylandLineage(t *testing.T, direct, seatTV bool) {
 	}
 	typeNative := func() {
 		before := len(keys)
-		if _, err := io.WriteString(e.script, "key a\n"); err != nil {
+		if err := e.script.inject("key", "a"); err != nil {
 			t.Fatal(err)
 		}
 		waitNative("native key", func() bool { return len(keys) > before })
@@ -144,7 +144,7 @@ func runXwaylandLineage(t *testing.T, direct, seatTV bool) {
 	assertSeat()
 	typeNative()
 	if seatTV {
-		if _, err := io.WriteString(e.script, "key Super+Ctrl+Right\n"); err != nil {
+		if err := e.script.inject("key", "Super+Ctrl+Right"); err != nil {
 			t.Fatal(err)
 		}
 		until(t, "seat on tv", func() bool { return readState(e.statePath).Output == "tv" })
@@ -178,7 +178,7 @@ func runXwaylandLineage(t *testing.T, direct, seatTV bool) {
 	if seatTV {
 		until(t, "game keyboard", func() bool { st := readState(e.statePath); return st.Window != nil && st.Window.ID == game.ID })
 		mark := strings.Count(p.out.String(), "key\n")
-		if _, err := io.WriteString(e.script, "key b\n"); err != nil {
+		if err := e.script.inject("key", "b"); err != nil {
 			t.Fatal(err)
 		}
 		until(t, "X11 game key", func() bool { return strings.Count(p.out.String(), "key\n") > mark })
