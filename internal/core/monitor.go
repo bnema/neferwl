@@ -504,6 +504,15 @@ func (m *Monitor) SetStash(width, gap int) {
 	m.each(func(w *Workspace) { w.SetStash(width, gap) })
 }
 
+// captures reports whether a new tiled window placed on w goes to its
+// stash (stash.capture, addWindow): w is the workspace on screen and its
+// stash captures. Placement paths that would otherwise bypass addWindow
+// (lineage, fullscreen inheritance) yield to it: an open stash is the
+// user's explicit choice.
+func (m *Monitor) captures(w *Workspace) bool {
+	return m.stashCapture && w == m.Current() && w.StashCaptures()
+}
+
 // SetStashCapture makes new windows join the shown stash (stash.capture).
 func (m *Monitor) SetStashCapture(on bool) { m.stashCapture = on }
 

@@ -159,7 +159,9 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) (follow bool) {
 		eff, ok := c.ruleFor(v)
 		byRule := ok
 		if eff.output == "" && eff.workspace == "" && eff.number == 0 {
-			if sc, w := c.ancestorWorkspace(v); w != nil {
+			// The shown stash of the focused screen captures a new tile
+			// before lineage moves it to its launcher's workspace there.
+			if sc, w := c.ancestorWorkspace(v); w != nil && !(sc == c.cur() && sc.mon.captures(sc.mon.Current())) {
 				path = "lineage"
 				return c.placeOnWorkspace(v, eff, sc, w, true)
 			}
@@ -197,7 +199,8 @@ func sameApp(a, b ports.WindowMapped) bool {
 // Callers pass only visible, non-quiet, non-floating arrivals (a rule
 // floating it included); same-app windows keep their ordinary column.
 func (c *Core) placeLaunched(v ports.WindowMapped, sc *screen, w *Workspace, cells int) bool {
-	if v.Floating || v.Parent != 0 || v.Remap {
+	// A shown capturing stash takes the window instead (addWindow).
+	if v.Floating || v.Parent != 0 || v.Remap || sc.mon.captures(w) {
 		return false
 	}
 	l := c.launcherOf(v.ID)
