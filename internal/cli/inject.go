@@ -55,6 +55,19 @@ func addWaitFlags(fs *flag.FlagSet) waitFlags {
 }
 
 // apply validates the flags and adds them to a do or inject request.
+// maxControlTimeout mirrors the control server's cap on request timeouts.
+const maxControlTimeout = 5 * time.Minute
+
+func checkControlTimeout(d time.Duration) error {
+	if d <= 0 {
+		return usagef("timeout must be positive")
+	}
+	if d > maxControlTimeout {
+		return usagef("timeout must not exceed 5m")
+	}
+	return nil
+}
+
 func (w waitFlags) apply(req map[string]any) error {
 	if _, err := domain.ParseWaitLevel(*w.wait); err != nil {
 		return usagef("%v", err)
@@ -65,8 +78,8 @@ func (w waitFlags) apply(req map[string]any) error {
 		}
 		req["until"] = *w.until
 	}
-	if *w.timeout <= 0 {
-		return usagef("timeout must be positive")
+	if err := checkControlTimeout(*w.timeout); err != nil {
+		return err
 	}
 	req["wait"], req["timeout"] = *w.wait, w.timeout.String()
 	if *w.shot {

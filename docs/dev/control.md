@@ -106,6 +106,13 @@ both hold.
 diff and any late windows; it does not mean the action had no effect. Inspect
 that result before deciding whether to retry.
 
+The timeout defaults to `10s` and may not exceed `5m`: a longer one is a
+`bad-request` with detail `timeout exceeds 5m` (the CLI rejects it as a usage
+error). A `shot` reply's capture shares that deadline with the wait. At most 64
+requests wait at once (`--wait settled`/`presented`, `--until`, `--shot`,
+`output-add`/`output-rm`); another such request gets `busy`. Committed-only
+requests and `quit` are never refused for this.
+
 Replies use this envelope (field names shown, not a literal reply):
 
 ```text
@@ -146,6 +153,7 @@ single-shot CLI flag set.
 | `unknown-command` | The requested command is not in the catalog. |
 | `bad-request` | The message or its arguments are invalid. |
 | `locked` | Input, capture or an action other than `quit` is refused while the session is protected. |
+| `busy` | 64 control requests are already waiting; retry once one completes. |
 | `forbidden` | The connection lacks permission for the operation. |
 | `timeout` | The requested completion condition is not reached in time. |
 | `capture-failed` | The capture or the continuous frame writer could not be started or written. |

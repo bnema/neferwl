@@ -33,8 +33,8 @@ var shotCmd = Command{
 			if (*raw && !*every) || (*every && *stop) || (*inline && (*every || *stop)) || (*dir != "" && !*every) {
 				return usagef("invalid continuous capture flags")
 			}
-			if *timeout <= 0 {
-				return usagef("timeout must be positive")
+			if err := checkControlTimeout(*timeout); err != nil {
+				return err
 			}
 			// The session resolves paths in its own working directory; send an
 			// absolute one.

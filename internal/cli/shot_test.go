@@ -52,7 +52,7 @@ func TestShotCommand(t *testing.T) {
 }
 
 func TestShotUsage(t *testing.T) {
-	for _, args := range [][]string{{"shot", "--raw"}, {"shot", "--timeout", "0s"}, {"shot", "unexpected"}, {"shot", "--output", ""}} {
+	for _, args := range [][]string{{"shot", "--raw"}, {"shot", "--timeout", "0s"}, {"shot", "--timeout", "6m"}, {"do", "--timeout", "6m", "none"}, {"key", "--timeout", "6m", "a"}, {"shot", "unexpected"}, {"shot", "--output", ""}} {
 		code, _, _ := execute(t, args...)
 		if code != 2 {
 			t.Fatalf("%v: %d", args, code)
