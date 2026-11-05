@@ -157,7 +157,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	}
 	// core() carries channels only; the gate, clock and terminal flag are
 	// explicit core.Options.
-	if s.core, err = core.New(opts.Config, s.p.core(), core.Options{Security: s.security, Clock: s.clock, Tokens: launcher.Tokens{}, Terminal: !opts.NoTerminal && s.plan.AutoTerminal != core.AutoTerminalOff, HintDisabled: hintDisabledNote(ctx), PlaceVirtuals: !s.plan.IsolateVirtuals}); err != nil {
+	if s.core, err = core.New(opts.Config, s.p.core(), core.Options{Security: s.security, Clock: s.clock, Tokens: launcher.Tokens{}, Terminal: s.plan.AutoTerminal != core.AutoTerminalOff, HintDisabled: hintDisabledNote(ctx), PlaceVirtuals: !s.plan.IsolateVirtuals}); err != nil {
 		return s, err
 	}
 	if s.km, err = xkb.New(xkb.RMLVO{Layout: opts.Config.Keyboard.Layout, Variant: opts.Config.Keyboard.Variant, Options: opts.Config.Keyboard.Options}); err != nil {

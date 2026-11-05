@@ -38,7 +38,7 @@ func TestHeadlessConfigReload(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, ConfigPath: path, NoTerminal: true, testScenes: scenes})
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, ConfigPath: path, PlanOverrides: noTerminal(), testScenes: scenes})
 	}()
 	defer func() {
 		cancel()
@@ -99,7 +99,7 @@ func TestHeadlessConfigReload(t *testing.T) {
 func TestQuitJoinsWorkers(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
-		done <- run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), NoTerminal: true}, func(input chan<- ports.InputEvent) {
+		done <- run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), PlanOverrides: noTerminal()}, func(input chan<- ports.InputEvent) {
 			input <- ports.SecurityInput{State: domain.SecurityState{}, Event: ports.KeyEvent{Keysym: "BackSpace", Mods: domain.ModCtrl | domain.ModAlt, Pressed: true}}
 		})
 	}()
@@ -132,7 +132,7 @@ func headlessSpawnClose(t *testing.T, animated bool) {
 	inputReady := make(chan chan<- ports.InputEvent, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, Options{Backend: "headless", NoXwayland: true, NoTerminal: true, Config: cfg, testScenes: scenes}, func(input chan<- ports.InputEvent) { inputReady <- input })
+		done <- run(ctx, Options{Backend: "headless", NoXwayland: true, PlanOverrides: noTerminal(), Config: cfg, testScenes: scenes}, func(input chan<- ports.InputEvent) { inputReady <- input })
 	}()
 	var input chan<- ports.InputEvent
 	select {
@@ -366,7 +366,7 @@ func TestOpenControlClientShutdown(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), NoTerminal: true, testScenes: scenes})
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), PlanOverrides: noTerminal(), testScenes: scenes})
 	}()
 	awaitControlScene(t, scenes, done, 0)
 	_ = dialTestControl(t, os.Getenv("XDG_RUNTIME_DIR"))
@@ -473,7 +473,7 @@ func TestHeadlessTwoOutputs(t *testing.T) {
 	shots := t.TempDir()
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), NoTerminal: true, Sizes: [][2]int{{640, 480}, {320, 240}}, Timeout: 2 * time.Second, testScenes: scenes})
+		done <- Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), PlanOverrides: noTerminal(), Sizes: [][2]int{{640, 480}, {320, 240}}, Timeout: 2 * time.Second, testScenes: scenes})
 	}()
 	awaitControlScene(t, scenes, done, 0)
 	client := dialTestControl(t, os.Getenv("XDG_RUNTIME_DIR"))

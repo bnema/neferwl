@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
 	"net"
 	"path/filepath"
@@ -76,6 +77,12 @@ func (c *controlTestClient) Write(data []byte) (int, error) {
 		}
 	}
 	return len(data), nil
+}
+
+// noTerminal is the --no-terminal override: no terminal at startup.
+func noTerminal() core.PlanOverrides {
+	off := false
+	return core.PlanOverrides{AutoTerminal: &off}
 }
 
 //testpolicy:realtime real compositor and client mapping readiness

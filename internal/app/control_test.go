@@ -27,7 +27,7 @@ func TestHeadlessControlEndToEnd(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, NoTerminal: true, Config: cfg, Sizes: [][2]int{{640, 480}}, testScenes: scenes})
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, PlanOverrides: noTerminal(), Config: cfg, Sizes: [][2]int{{640, 480}}, testScenes: scenes})
 	}()
 	exited := false
 	t.Cleanup(func() {

@@ -34,7 +34,7 @@ func startPointerHeadless(t *testing.T, w, h int) string {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, NoTerminal: true, Config: cfg, Sizes: [][2]int{{w, h}}})
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, PlanOverrides: noTerminal(), Config: cfg, Sizes: [][2]int{{w, h}}})
 	}()
 	stopped := false
 	t.Cleanup(func() {

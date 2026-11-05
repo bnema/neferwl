@@ -176,7 +176,7 @@ func startXwaylandProfileConfig(t *testing.T, profile domain.Profile, sizes [][2
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(ctx, Options{
-			Backend: domain.BackendHeadless, Profile: profile, NoTerminal: true, Config: cfg, ConfigPath: path,
+			Backend: domain.BackendHeadless, Profile: profile, PlanOverrides: noTerminal(), Config: cfg, ConfigPath: path,
 			Sizes: sizes, noLibinput: profile == domain.ProfilePersistent,
 		})
 	}()

@@ -52,18 +52,22 @@ type BackendPlan struct {
 
 // PlanOverrides holds explicit CLI choices. Nil preserves profile defaults.
 type PlanOverrides struct {
-	SessionDBus   *bool
-	AutoTerminal  *bool
-	Input         *InputSource
-	PersistScales *bool
+	SessionDBus  *bool
+	AutoTerminal *bool
+	Input        *InputSource
 }
 
 // PlanBackend returns the backend/profile policy consumed by wiring. DRM
-// ignores profiles and overrides; its session/device ownership is fixed.
+// ignores profiles and overrides, except an explicit AutoTerminal=false
+// (--no-terminal); its session/device ownership is fixed.
 func PlanBackend(b domain.Backend, p domain.Profile, o PlanOverrides) BackendPlan {
 	if b == domain.BackendDRM {
-		return BackendPlan{KMS: true, RequireRenderNode: true, FixedHeads: HeadsConnectors, IsolateVirtuals: true,
+		plan := BackendPlan{KMS: true, RequireRenderNode: true, FixedHeads: HeadsConnectors, IsolateVirtuals: true,
 			Input: InputLibinputLibseat, SessionDBus: SessionDBusAlways, LogindPowerKeys: true, PersistScales: true, AutoTerminal: AutoTerminalConfig}
+		if o.AutoTerminal != nil && !*o.AutoTerminal {
+			plan.AutoTerminal = AutoTerminalOff
+		}
+		return plan
 	}
 	if b != domain.BackendHeadless {
 		return BackendPlan{}
@@ -91,9 +95,6 @@ func PlanBackend(b domain.Backend, p domain.Profile, o PlanOverrides) BackendPla
 	}
 	if o.Input != nil {
 		plan.Input = *o.Input
-	}
-	if o.PersistScales != nil {
-		plan.PersistScales = *o.PersistScales
 	}
 	return plan
 }

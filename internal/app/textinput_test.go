@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/wlturbo"
 	clienttext "github.com/bnema/go-wayland-bindings/client/textinput"
 	clientcore "github.com/bnema/go-wayland-bindings/client/wayland"
 	clientxdg "github.com/bnema/go-wayland-bindings/client/xdgshell"
 	"github.com/bnema/neferwl/internal/adapters/config"
-	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
@@ -72,7 +72,7 @@ func TestHeadlessTextInputIME(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, NoTerminal: true, Config: config.Defaults()})
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, PlanOverrides: noTerminal(), Config: config.Defaults()})
 	}()
 	stopped := false // Run's result was already received
 	defer func() {

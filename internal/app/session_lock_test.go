@@ -45,7 +45,7 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, NoTerminal: true, Config: config.Defaults(), Sizes: [][2]int{{160, 120}, {128, 96}}, testScenes: scenes, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid())})
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, PlanOverrides: noTerminal(), Config: config.Defaults(), Sizes: [][2]int{{160, 120}, {128, 96}}, testScenes: scenes, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid())})
 	}()
 	// Cancellation closes clients' sockets too, bounding blocked Roundtrip.
 	watchdog := time.AfterFunc(20*time.Second, cancel)

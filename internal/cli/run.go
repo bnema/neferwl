@@ -187,7 +187,6 @@ func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
 		Config:        cfg,
 		ConfigPath:    path,
 		Timeout:       f.timeout,
-		NoTerminal:    f.noTerminal,
 		NoXwayland:    f.noXwayland,
 		HeadlessHDR:   f.headlessHDR,
 		Session:       f.session,

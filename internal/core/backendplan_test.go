@@ -26,13 +26,13 @@ func TestPlanBackend(t *testing.T) {
 				t.Fatalf("%s/%s: %+v want %+v", b, p, got, base)
 			}
 			// Exercise every combination of explicit true/false overrides and inputs.
-			for bits := 0; bits < 16; bits++ {
-				dbus, terminal, persist := bits&1 != 0, bits&2 != 0, bits&4 != 0
+			for bits := 0; bits < 8; bits++ {
+				dbus, terminal := bits&1 != 0, bits&2 != 0
 				input := InputNone
-				if bits&8 != 0 {
+				if bits&4 != 0 {
 					input = InputLibinputDirect
 				}
-				overrides := PlanOverrides{SessionDBus: &dbus, AutoTerminal: &terminal, PersistScales: &persist, Input: &input}
+				overrides := PlanOverrides{SessionDBus: &dbus, AutoTerminal: &terminal, Input: &input}
 				want := base
 				if b == domain.BackendHeadless {
 					want.SessionDBus = SessionDBusFlagOnly
@@ -43,8 +43,10 @@ func TestPlanBackend(t *testing.T) {
 					if terminal {
 						want.AutoTerminal = AutoTerminalConfigOrFlag
 					}
-					want.PersistScales = persist
 					want.Input = input
+				}
+				if b == domain.BackendDRM && !terminal {
+					want.AutoTerminal = AutoTerminalOff
 				}
 				if got := PlanBackend(b, p, overrides); got != want {
 					t.Fatalf("%s/%s override %d: %+v want %+v", b, p, bits, got, want)

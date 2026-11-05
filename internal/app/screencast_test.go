@@ -94,7 +94,7 @@ func startCastAppProfile(t *testing.T, allow string, cfg domain.Config, profile 
 	inputReady := make(chan chan<- ports.InputEvent, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, Options{Backend: domain.BackendHeadless, Profile: profile, DBus: !server, NoXwayland: true, NoTerminal: true, Config: cfg, Sizes: sizes, noLibinput: server, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid()), castInventoryApplied: inventory},
+		done <- run(ctx, Options{Backend: domain.BackendHeadless, Profile: profile, DBus: !server, NoXwayland: true, PlanOverrides: noTerminal(), Config: cfg, Sizes: sizes, noLibinput: server, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid()), castInventoryApplied: inventory},
 			func(in chan<- ports.InputEvent) { inputReady <- in })
 	}()
 	a := &castApp{inventory: inventory}

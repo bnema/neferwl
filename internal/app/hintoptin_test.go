@@ -57,7 +57,7 @@ func TestHintOffStartsNoHintGoroutine(t *testing.T) {
 			done := make(chan error, 1)
 			scenes := make(chan []domain.Scene, 4096)
 			go func() {
-				done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, NoTerminal: true, testScenes: scenes, Timeout: 800 * time.Millisecond})
+				done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, PlanOverrides: noTerminal(), testScenes: scenes, Timeout: 800 * time.Millisecond})
 			}()
 			select {
 			case <-scenes:

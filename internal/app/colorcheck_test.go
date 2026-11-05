@@ -263,7 +263,7 @@ func startColorCompositor(t *testing.T, opts Options, shots string, raw bool) st
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	opts.Backend = "headless"
 	opts.NoXwayland = true
-	opts.NoTerminal = true
+	opts.PlanOverrides = noTerminal()
 	opts.Config = config.Defaults()
 	opts.Sizes = [][2]int{{colorW, colorH}}
 	scenes := make(chan []domain.Scene, 4096)
