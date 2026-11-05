@@ -71,4 +71,5 @@ const (
 	ControlErrBadRequest     = "bad-request"
 	ControlErrLocked         = "locked"
 	ControlErrForbidden      = "forbidden"
+	ControlErrCaptureFailed  = "capture-failed"
 )

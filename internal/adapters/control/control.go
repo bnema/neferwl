@@ -30,12 +30,14 @@ import (
 // each map it receives from Keymaps; producers own any maps left in the channel
 // after shutdown. Security is sampled before every translated event.
 type Options struct {
+	Shooter  *Shooter
 	Keymap   *xkb.Keymap
 	Keymaps  <-chan *xkb.Keymap
 	Security ports.SessionSecurity
 }
 
 type Server struct {
+	shooter  *Shooter
 	injectMu sync.Mutex
 	injector *injector
 	keymaps  <-chan *xkb.Keymap
@@ -87,6 +89,7 @@ func Listen(path string, ids *workspaceid.IDs, options ...Options) (*Server, err
 	s := &Server{listener: listener, ids: ids, done: make(chan struct{})}
 	if len(options) == 1 {
 		opts := options[0]
+		s.shooter = opts.Shooter
 		s.keymaps = opts.Keymaps
 		if opts.Keymap != nil {
 			s.injector = newInjector(opts.Keymap, opts.Security)
@@ -166,6 +169,10 @@ func sameUID(conn *net.UnixConn) bool {
 }
 
 type request struct {
+	Outputs []string        `json:"outputs"`
+	Inline  bool            `json:"inline"`
+	Raw     bool            `json:"raw"`
+	Shot    json.RawMessage `json:"shot"`
 	ID      json.RawMessage `json:"id"`
 	Op      string          `json:"op"`
 	Action  string          `json:"action"`
@@ -192,13 +199,15 @@ type diff struct {
 }
 
 type reply struct {
-	ID    json.RawMessage   `json:"id"`
-	OK    bool              `json:"ok"`
-	Done  string            `json:"done"`
-	Diff  diff              `json:"diff"`
-	State statewire.State   `json:"state"`
-	Late  []domain.WindowID `json:"late"`
-	Error string            `json:"error,omitempty"`
+	Shots  []Shot            `json:"shots,omitempty"`
+	Detail string            `json:"detail,omitempty"`
+	ID     json.RawMessage   `json:"id"`
+	OK     bool              `json:"ok"`
+	Done   string            `json:"done"`
+	Diff   diff              `json:"diff"`
+	State  statewire.State   `json:"state"`
+	Late   []domain.WindowID `json:"late"`
+	Error  string            `json:"error,omitempty"`
 }
 
 type command struct {
@@ -266,7 +275,16 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 	ch := make(chan ports.ControlReply, 1)
 	var message ports.ControlRequest
 	switch req.Op {
-	case "do", "inject":
+	case "do", "inject", "shot":
+		shots, err := requestShots(req)
+		if err != nil {
+			response.Detail = err.Error()
+			return response
+		}
+		if len(shots) > 0 && s.shooter == nil {
+			response.Detail = "capture unavailable"
+			return response
+		}
 		wait := domain.DefaultWait
 		if req.Wait != nil {
 			var err error
@@ -291,18 +309,24 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 				return response
 			}
 		}
+		if len(shots) > 0 {
+			wait = domain.WaitPresented
+		}
 		if req.Op == "inject" {
 			events, err := s.translate(req, !*announced)
 			if err != nil {
 				return response
 			}
 			*announced = true
-			message = ports.ControlInject{Events: events, Wait: wait, Until: until, Timeout: timeout, Caps: domain.CapsAll, Reply: ch}
+			message = ports.ControlInject{Shots: shots, Events: events, Wait: wait, Until: until, Timeout: timeout, Caps: domain.CapsAll, Reply: ch}
 		} else {
+			if req.Op == "shot" {
+				req.Action = "none"
+			}
 			if req.Action == "" {
 				return response
 			}
-			message = ports.ControlDo{Action: req.Action, Wait: wait, Until: until, Timeout: timeout, Caps: domain.CapsAll, Reply: ch}
+			message = ports.ControlDo{Shots: shots, Action: req.Action, Wait: wait, Until: until, Timeout: timeout, Caps: domain.CapsAll, Reply: ch}
 		}
 	case "query":
 		if req.What == "" {
@@ -328,5 +352,51 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 		code = "timeout"
 	}
 	d := result.Diff
-	return reply{ID: req.ID, OK: code == "", Done: result.Done.String(), Diff: diff{d.Mapped, d.Unmapped, d.FocusFrom, d.FocusTo, d.FocusChanged, d.Workspaces}, State: statewire.FromDomain(result.State, s.ids), Late: result.Late, Error: code}
+	response = reply{ID: req.ID, OK: code == "", Done: result.Done.String(), Diff: diff{d.Mapped, d.Unmapped, d.FocusFrom, d.FocusTo, d.FocusChanged, d.Workspaces}, State: statewire.FromDomain(result.State, s.ids), Late: result.Late, Error: code}
+	if len(result.Shots) > 0 {
+		if s.shooter == nil {
+			response.OK = false
+			response.Error = ports.ControlErrBadRequest
+			response.Detail = "capture unavailable"
+			return response
+		}
+		shots, err := s.shooter.Shoot(ctx, result.Shots, req.Inline)
+		response.Shots = shots
+		if err != nil {
+			response.OK = false
+			response.Error = ports.ControlErrCaptureFailed
+			response.Detail = err.Error()
+		}
+	}
+	return response
+}
+
+func requestShots(req request) ([]domain.ShotRequest, error) {
+	var outputs []string
+	if req.Op == "shot" {
+		if req.Raw {
+			return nil, errors.New("raw shots need --every-frame")
+		}
+		outputs = req.Outputs
+		if len(outputs) == 0 {
+			outputs = []string{""}
+		}
+	} else if len(req.Shot) > 0 {
+		var enabled bool
+		if err := json.Unmarshal(req.Shot, &enabled); err == nil {
+			if !enabled {
+				return nil, nil
+			}
+			outputs = []string{""}
+		} else {
+			if err := json.Unmarshal(req.Shot, &outputs); err != nil || outputs == nil {
+				return nil, errors.New("shot must be true, false or an output list")
+			}
+		}
+	}
+	shots := make([]domain.ShotRequest, 0, len(outputs))
+	for _, output := range outputs {
+		shots = append(shots, domain.ShotRequest{Output: output})
+	}
+	return shots, nil
 }
