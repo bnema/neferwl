@@ -29,9 +29,10 @@ type Host struct {
 	order    []string
 }
 type output struct {
-	head  domain.OutputHead
-	hdr   domain.OutputHDRSettings
-	modes chan headless.ModeRequest
+	head       domain.OutputHead
+	hdr        domain.OutputHDRSettings
+	continuous chan ports.ContinuousCaptureRequest
+	modes      chan headless.ModeRequest
 }
 
 func New(set *routing.Set, ch routing.Channels, curs *cursors.Router, renderer func(int, int) (ports.Renderer, error), log zerowrap.Logger) *Host {
@@ -88,16 +89,17 @@ func (h *Host) Sync(ctx context.Context, want []domain.OutputConfig) error {
 			if h.set.Outs[cfg.Name] != nil {
 				return errors.Join(result, fmt.Errorf("output %s already running", cfg.Name))
 			}
+			continuous := make(chan ports.ContinuousCaptureRequest)
 			modes := make(chan headless.ModeRequest)
 			cur := &headless.Cursor{}
 			h.curs.Set(cfg.Name, cur)
-			opts := headless.Options{Name: cfg.Name, Cursor: cur, LoadCursor: xcursor.LoadCursor, NewRenderer: h.renderer, NewCaptureRenderer: h.renderer, Log: h.log, Presented: h.ch.Presented, Frames: h.ch.Frames, Captured: h.ch.Captured, Formats: h.ch.Formats, Events: h.ch.Events, ModeRequests: modes, HDR: hdr}
+			opts := headless.Options{Continuous: continuous, Name: cfg.Name, Cursor: cur, LoadCursor: xcursor.LoadCursor, NewRenderer: h.renderer, NewCaptureRenderer: h.renderer, Log: h.log, Presented: h.ch.Presented, Frames: h.ch.Frames, Captured: h.ch.Captured, Formats: h.ch.Formats, Events: h.ch.Events, ModeRequests: modes, HDR: hdr}
 			opts.SetMode(mode.Width, mode.Height, mode.RefreshMilli)
 			if !headless.StartOutput(ctx, h.set, h.ch, info, opts) {
 				h.curs.Set(cfg.Name, nil)
 				return errors.Join(result, fmt.Errorf("start virtual output %s failed", cfg.Name), h.set.StartErr, ctx.Err())
 			}
-			current = &output{modes: modes, hdr: hdr}
+			current = &output{continuous: continuous, modes: modes, hdr: hdr}
 			h.outputs[cfg.Name] = current
 			h.order = append(h.order, cfg.Name)
 		} else if current.head.Info.Width != info.Width || current.head.Info.Height != info.Height || current.head.Info.RefreshMilli != info.RefreshMilli {
@@ -208,4 +210,12 @@ func awaitMode(ctx context.Context, done <-chan struct{}, ack <-chan error, name
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// Continuous returns the writer channel of a live virtual output.
+func (h *Host) Continuous(name string) chan<- ports.ContinuousCaptureRequest {
+	if o := h.outputs[name]; o != nil {
+		return o.continuous
+	}
+	return nil
 }

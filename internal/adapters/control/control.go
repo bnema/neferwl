@@ -33,22 +33,27 @@ import (
 // each map it receives from Keymaps; producers own any maps left in the channel
 // after shutdown. Security is sampled before every translated event.
 type Options struct {
-	Shooter  *Shooter
-	Keymap   *xkb.Keymap
-	Keymaps  <-chan *xkb.Keymap
-	Security ports.SessionSecurity
+	Continuous chan<- ports.ContinuousCaptureRequest
+	FramesDir  string
+	Shooter    *Shooter
+	Keymap     *xkb.Keymap
+	Keymaps    <-chan *xkb.Keymap
+	Security   ports.SessionSecurity
 }
 
 type Server struct {
-	shooter  *Shooter
-	injectMu sync.Mutex
-	injector *injector
-	keymaps  <-chan *xkb.Keymap
-	listener *net.UnixListener
-	ids      *workspaceid.IDs
-	done     chan struct{}
-	once     sync.Once
-	err      error
+	continuous chan<- ports.ContinuousCaptureRequest
+	framesDir  string
+	security   ports.SessionSecurity
+	shooter    *Shooter
+	injectMu   sync.Mutex
+	injector   *injector
+	keymaps    <-chan *xkb.Keymap
+	listener   *net.UnixListener
+	ids        *workspaceid.IDs
+	done       chan struct{}
+	once       sync.Once
+	err        error
 }
 
 // Listen creates a private socket using the same workspace IDs as statefile.
@@ -92,6 +97,7 @@ func Listen(path string, ids *workspaceid.IDs, options ...Options) (*Server, err
 	s := &Server{listener: listener, ids: ids, done: make(chan struct{})}
 	if len(options) == 1 {
 		opts := options[0]
+		s.continuous, s.framesDir, s.security = opts.Continuous, opts.FramesDir, opts.Security
 		s.shooter = opts.Shooter
 		s.keymaps = opts.Keymaps
 		if opts.Keymap != nil {
@@ -172,26 +178,28 @@ func sameUID(conn *net.UnixConn) bool {
 }
 
 type request struct {
-	Name    string          `json:"name"`
-	Mode    string          `json:"mode"`
-	Outputs []string        `json:"outputs"`
-	Inline  bool            `json:"inline"`
-	Raw     bool            `json:"raw"`
-	Shot    json.RawMessage `json:"shot"`
-	ID      json.RawMessage `json:"id"`
-	Op      string          `json:"op"`
-	Action  string          `json:"action"`
-	What    string          `json:"what"`
-	Wait    *string         `json:"wait"`
-	Until   *string         `json:"until"`
-	Timeout *string         `json:"timeout"`
-	Kind    string          `json:"kind"`
-	Combo   string          `json:"combo"`
-	Text    string          `json:"text"`
-	Cmd     string          `json:"cmd"`
-	Args    []string        `json:"args"`
-	Fingers int             `json:"fingers"`
-	Dir     string          `json:"dir"`
+	EveryFrame bool            `json:"every_frame"`
+	Stop       bool            `json:"stop"`
+	Name       string          `json:"name"`
+	Mode       string          `json:"mode"`
+	Outputs    []string        `json:"outputs"`
+	Inline     bool            `json:"inline"`
+	Raw        bool            `json:"raw"`
+	Shot       json.RawMessage `json:"shot"`
+	ID         json.RawMessage `json:"id"`
+	Op         string          `json:"op"`
+	Action     string          `json:"action"`
+	What       string          `json:"what"`
+	Wait       *string         `json:"wait"`
+	Until      *string         `json:"until"`
+	Timeout    *string         `json:"timeout"`
+	Kind       string          `json:"kind"`
+	Combo      string          `json:"combo"`
+	Text       string          `json:"text"`
+	Cmd        string          `json:"cmd"`
+	Args       []string        `json:"args"`
+	Fingers    int             `json:"fingers"`
+	Dir        string          `json:"dir"`
 }
 
 type diff struct {
@@ -204,6 +212,7 @@ type diff struct {
 }
 
 type reply struct {
+	Dir    string            `json:"dir,omitempty"`
 	Shots  []Shot            `json:"shots,omitempty"`
 	Detail string            `json:"detail,omitempty"`
 	ID     json.RawMessage   `json:"id"`
@@ -277,6 +286,9 @@ func (s *Server) serve(ctx context.Context, conn *net.UnixConn, out chan<- ports
 
 func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.ControlRequest, announced *bool) reply {
 	response := reply{ID: req.ID, Error: ports.ControlErrBadRequest}
+	if req.Op == "shot" && (req.EveryFrame || req.Stop) {
+		return s.continuousCapture(ctx, req)
+	}
 	ch := make(chan ports.ControlReply, 1)
 	var message ports.ControlRequest
 	switch req.Op {
@@ -436,4 +448,36 @@ func parseOutputMode(text string) (domain.OutputMode, error) {
 		return domain.OutputMode{}, errors.New("invalid mode")
 	}
 	return domain.OutputMode{Width: width, Height: height, RefreshMilli: int(math.Round(hz * 1000))}, nil
+}
+
+func (s *Server) continuousCapture(ctx context.Context, req request) reply {
+	response := reply{ID: req.ID, Error: ports.ControlErrBadRequest}
+	if s.continuous == nil || (req.EveryFrame && req.Stop) || req.Inline {
+		return response
+	}
+	if s.security != nil && s.security.Snapshot().Protected {
+		response.Error = ports.ControlErrLocked
+		return response
+	}
+	dir := req.Dir
+	if dir == "" {
+		dir = s.framesDir
+	}
+	if dir == "" && !req.Stop {
+		return response
+	}
+	ack := make(chan ports.ContinuousCaptureResult, 1)
+	select {
+	case s.continuous <- ports.ContinuousCaptureRequest{Outputs: req.Outputs, Dir: dir, Raw: req.Raw, Stop: req.Stop, Reply: ack}:
+	case <-ctx.Done():
+		return response
+	}
+	select {
+	case result := <-ack:
+		response.OK = result.Err == ""
+		response.Error = result.Err
+		response.Dir = result.Dir
+	case <-ctx.Done():
+	}
+	return response
 }

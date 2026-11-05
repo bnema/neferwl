@@ -38,6 +38,7 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 	set := routing.NewSet(ctx, ch.Captured, ch.Routes())
 	set.Attach = ch.Content
 	set.WireSecurity(ch)
+	writers := map[string]chan ports.ContinuousCaptureRequest{}
 	inventory := domain.OutputHeads{}
 	for i, size := range o.Sizes {
 		name := fmt.Sprintf("HEADLESS-%d", i+1)
@@ -51,9 +52,11 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 				return errors.Join(err, set.Wait())
 			}
 		}
+		writer := make(chan ports.ContinuousCaptureRequest)
+		writers[name] = writer
 		cur := &headless.Cursor{}
 		curs.Set(name, cur)
-		opts := headless.Options{Cursor: cur, LoadCursor: xcursor.LoadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: domain.OutputHDRSettings{Enabled: o.HDR}.Normalized(), RawHDR: o.Raw, Formats: ch.Formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.Presented, Frames: ch.Frames, Events: ch.Events, Captured: ch.Captured}
+		opts := headless.Options{Continuous: writer, Cursor: cur, LoadCursor: xcursor.LoadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: domain.OutputHDRSettings{Enabled: o.HDR}.Normalized(), RawHDR: o.Raw, Formats: ch.Formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.Presented, Frames: ch.Frames, Events: ch.Events, Captured: ch.Captured}
 		if !headless.StartOutput(ctx, set, ch, domain.OutputInfo{Name: name, Width: size[0], Height: size[1]}, opts) {
 			return set.Wait()
 		}
@@ -124,6 +127,64 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 			}
 		case ev := <-ch.Reloads:
 			apply.Reload(ev.Config)
+		case req := <-ch.Continuous:
+			code := ""
+			if ch.Security != nil && ch.Security.Snapshot().Protected {
+				code = ports.ControlErrLocked
+			}
+			names := req.Outputs
+			if len(names) == 0 {
+				for _, head := range inventory.Heads {
+					names = append(names, head.Info.Name)
+				}
+				for _, head := range host.Heads() {
+					names = append(names, head.Info.Name)
+				}
+			}
+			for _, name := range names {
+				if writers[name] == nil && host.Continuous(name) == nil {
+					code = ports.ControlErrBadRequest
+				}
+			}
+			if code == "" {
+				for _, name := range names {
+					writer := chan<- ports.ContinuousCaptureRequest(writers[name])
+					if writer == nil {
+						writer = host.Continuous(name)
+					}
+					local := req
+					ack := make(chan ports.ContinuousCaptureResult, 1)
+					local.Reply = ack
+					if len(names) > 1 && !req.Stop {
+						local.Dir = filepath.Join(req.Dir, name)
+					}
+					select {
+					case writer <- local:
+					case <-set.Outs[name].Done:
+						code = ports.ControlErrCaptureFailed
+					case <-ctx.Done():
+						return set.Wait()
+					}
+					if code != "" {
+						break
+					}
+					select {
+					case result := <-ack:
+						code = result.Err
+					case <-set.Outs[name].Done:
+						code = ports.ControlErrCaptureFailed
+					case <-ctx.Done():
+						return set.Wait()
+					}
+					if code != "" {
+						break
+					}
+				}
+			}
+			select {
+			case req.Reply <- ports.ContinuousCaptureResult{Dir: req.Dir, Err: code}:
+			default:
+			}
 		case req := <-ch.RuntimeOutputs:
 			runtimeID++
 			name := req.Name

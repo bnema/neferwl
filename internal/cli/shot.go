@@ -19,11 +19,18 @@ var shotCmd = Command{
 			outputs = append(outputs, value)
 			return nil
 		})
+		every := fs.Bool("every-frame", false, "Write each presented frame until stopped.")
+		stop := fs.Bool("stop", false, "Stop continuous capture.")
+		dir := fs.String("dir", "", "Continuous capture directory.")
+		raw := fs.Bool("raw", false, "Also write raw PQ frames (requires --every-frame).")
 		inline := fs.Bool("inline", false, "Include PNG bytes as base64 in the reply.")
 		timeout := fs.Duration("timeout", 5*time.Second, "Maximum completion wait.")
 		return func(ctx context.Context, env Env, args []string) error {
 			if len(args) != 0 {
 				return usagef("shot takes no positional arguments")
+			}
+			if (*raw && !*every) || (*every && *stop) || (*inline && (*every || *stop)) || (*dir != "" && !*every) {
+				return usagef("invalid continuous capture flags")
 			}
 			if *timeout <= 0 {
 				return usagef("timeout must be positive")
@@ -33,6 +40,9 @@ var shotCmd = Command{
 				return err
 			}
 			defer c.conn.Close()
+			if *every || *stop {
+				return printControl(ctx, env, c, map[string]any{"op": "shot", "outputs": outputs, "every_frame": *every, "stop": *stop, "dir": *dir, "raw": *raw, "timeout": timeout.String()})
+			}
 			return printControl(ctx, env, c, map[string]any{"op": "shot", "outputs": outputs, "inline": *inline, "raw": false, "timeout": timeout.String()})
 		}
 	},

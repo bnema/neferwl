@@ -34,6 +34,7 @@ type ModeRequest struct {
 }
 
 type Options struct {
+	Continuous <-chan ports.ContinuousCaptureRequest
 	// Security is the defensive gate. SecurityChanges wakes an idle owner;
 	// the snapshot, not the queued notification payload, is authoritative.
 	Security        ports.SessionSecurity
@@ -205,7 +206,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 	var indexWriter *bufio.Writer
 	var lastShot time.Time
 	var lastShotName string
-	defer func() {
+	closeWriter := func() {
 		if index != nil {
 			// A following file makes concat honor the final held interval.
 			if !lastShot.IsZero() {
@@ -214,7 +215,12 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			}
 			_ = index.Close()
 		}
-	}()
+		index = nil
+		indexWriter = nil
+		lastShot = time.Time{}
+		lastShotName = ""
+	}
+	defer closeWriter()
 	var requests capture.Requests
 	ctx, cancelCaptures := context.WithCancel(ctx)
 	requests.Init(ctx, opts.Captured)
@@ -559,6 +565,31 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			}
 			pipeline.Retire(scene)
 			continue
+		case req := <-opts.Continuous:
+			code := ""
+			if opts.protected() {
+				code = ports.ControlErrLocked
+			} else if !req.Stop {
+				if req.Dir == "" {
+					code = ports.ControlErrBadRequest
+				} else if err := os.MkdirAll(req.Dir, 0o700); err != nil {
+					code = ports.ControlErrCaptureFailed
+				}
+			}
+			if code == "" {
+				closeWriter()
+				opts.ScreenshotDir = ""
+				opts.RawHDR = false
+				if !req.Stop {
+					opts.ScreenshotDir = req.Dir
+					opts.RawHDR = req.Raw
+					dirty = haveScene
+				}
+			}
+			select {
+			case req.Reply <- ports.ContinuousCaptureResult{Dir: req.Dir, Err: code}:
+			default:
+			}
 		case q, ok := <-incoming:
 			if !ok {
 				incoming = nil
