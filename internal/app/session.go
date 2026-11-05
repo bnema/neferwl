@@ -217,7 +217,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 			return s, mapErr
 		}
 		s.controlDone = make(chan domain.CaptureDone, ports.MaxCaptureInflight)
-		if listener, err := control.Listen(path, s.wsIDs, control.Options{Continuous: s.p.continuous, FramesDir: filepath.Join(s.registry.Path(), "shots", "frames"), Shooter: control.NewShooter(s.p.captures, s.controlDone, filepath.Join(s.registry.Path(), "shots")), Keymap: controlMap, Keymaps: s.p.controlKeymaps, Security: s.security}); err != nil {
+		if listener, err := control.Listen(path, s.wsIDs, control.Options{FramesDir: filepath.Join(s.registry.Path(), "shots", "frames"), Shooter: control.NewShooter(s.p.captures, s.controlDone, filepath.Join(s.registry.Path(), "shots")), Keymap: controlMap, Keymaps: s.p.controlKeymaps, Security: s.security}); err != nil {
 			controlMap.Close()
 			s.controlDone = nil
 			log.Warn().Err(err).Msg("control socket disabled")

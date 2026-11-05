@@ -25,7 +25,10 @@ var errSecurityChanged = errors.New("security epoch changed during input")
 type Channels struct {
 	// Control carries owner-serialized control requests; nil disables control.
 	RuntimeOutputs chan<- ports.OutputRuntimeRequest
-	Control        <-chan ports.ControlRequest
+	// Continuous carries resolved continuous capture plans to the backend;
+	// nil refuses ControlCapture.
+	Continuous chan<- ports.ContinuousCaptureRequest
+	Control    <-chan ports.ControlRequest
 	Client         <-chan ports.ClientEvent
 	Input          <-chan ports.InputEvent
 	Output         <-chan ports.OutputEvent

@@ -30,7 +30,6 @@ import (
 // each map it receives from Keymaps; producers own any maps left in the channel
 // after shutdown. Security is sampled before every translated event.
 type Options struct {
-	Continuous chan<- ports.ContinuousCaptureRequest
 	FramesDir  string
 	Shooter    *Shooter
 	Keymap     *xkb.Keymap
@@ -39,9 +38,7 @@ type Options struct {
 }
 
 type Server struct {
-	continuous chan<- ports.ContinuousCaptureRequest
 	framesDir  string
-	security   ports.SessionSecurity
 	shooter    *Shooter
 	injectMu   sync.Mutex
 	injector   *injector
@@ -89,7 +86,7 @@ func Listen(path string, ids *workspaceid.IDs, opts Options) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{listener: listener, ids: ids, done: make(chan struct{})}
-	s.continuous, s.framesDir, s.security = opts.Continuous, opts.FramesDir, opts.Security
+	s.framesDir = opts.FramesDir
 	s.shooter = opts.Shooter
 	s.keymaps = opts.Keymaps
 	if opts.Keymap != nil {
@@ -281,7 +278,7 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 	start := time.Now()
 	response := reply{ID: req.ID, Error: ports.ControlErrBadRequest}
 	if req.Op == "shot" && (req.EveryFrame || req.Stop) {
-		return s.continuousCapture(ctx, req)
+		return s.continuousCapture(ctx, req, out)
 	}
 	ch := make(chan ports.ControlReply, 1)
 	var message ports.ControlRequest
@@ -431,25 +428,20 @@ func requestShots(req request) ([]domain.ShotRequest, error) {
 	return shots, nil
 }
 
-func (s *Server) continuousCapture(ctx context.Context, req request) reply {
+// continuousCapture forwards an every-frame start or stop to core, which
+// decides it; the default directory is the session's frames directory.
+func (s *Server) continuousCapture(ctx context.Context, req request, out chan<- ports.ControlRequest) reply {
 	response := reply{ID: req.ID, Error: ports.ControlErrBadRequest}
-	if s.continuous == nil || (req.EveryFrame && req.Stop) || req.Inline {
-		return response
-	}
-	if s.security != nil && s.security.Snapshot().Protected {
-		response.Error = ports.ControlErrLocked
+	if (req.EveryFrame && req.Stop) || req.Inline {
 		return response
 	}
 	dir := req.Dir
 	if dir == "" {
 		dir = s.framesDir
 	}
-	if dir == "" && !req.Stop {
-		return response
-	}
 	ack := make(chan ports.ContinuousCaptureResult, 1)
 	select {
-	case s.continuous <- ports.ContinuousCaptureRequest{Outputs: req.Outputs, Dir: dir, Raw: req.Raw, Stop: req.Stop, Reply: ack}:
+	case out <- ports.ControlCapture{Outputs: req.Outputs, Dir: dir, Raw: req.Raw, Stop: req.Stop, Caps: domain.CapsAll, Reply: ack}:
 	case <-ctx.Done():
 		return response
 	}

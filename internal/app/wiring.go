@@ -160,6 +160,7 @@ func (p *pipes) core() core.Channels {
 	return core.Channels{
 		Control:        p.control,
 		RuntimeOutputs: p.runtimeOutputs,
+		Continuous:     p.continuous,
 		Client:         p.client,
 		Input:          p.input,
 		Output:         p.output,

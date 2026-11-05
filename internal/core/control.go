@@ -33,6 +33,8 @@ func (c *Core) control(ctx context.Context, r ports.ControlRequest) error {
 		c.controlQuery(r)
 	case ports.ControlInject:
 		return c.controlInject(ctx, r)
+	case ports.ControlCapture:
+		return c.controlCapture(ctx, r)
 	}
 	return nil
 }

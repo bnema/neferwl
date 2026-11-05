@@ -30,7 +30,7 @@ type Host struct {
 type output struct {
 	head       domain.OutputHead
 	hdr        domain.OutputHDRSettings
-	continuous chan ports.ContinuousCaptureRequest
+	continuous chan ports.OutputContinuous
 	modes      chan headless.ModeRequest
 }
 
@@ -88,7 +88,7 @@ func (h *Host) Sync(ctx context.Context, want []domain.OutputConfig) error {
 			if h.set.Outs[cfg.Name] != nil {
 				return errors.Join(result, fmt.Errorf("output %s already running", cfg.Name))
 			}
-			continuous := make(chan ports.ContinuousCaptureRequest)
+			continuous := make(chan ports.OutputContinuous)
 			modes := make(chan headless.ModeRequest)
 			cur := &headless.Cursor{}
 			h.curs.Set(cfg.Name, cur)
@@ -197,7 +197,7 @@ func awaitMode(ctx context.Context, done <-chan struct{}, ack <-chan error, name
 }
 
 // Continuous returns the writer channel of a live virtual output.
-func (h *Host) Continuous(name string) chan<- ports.ContinuousCaptureRequest {
+func (h *Host) Continuous(name string) chan<- ports.OutputContinuous {
 	if o := h.outputs[name]; o != nil {
 		return o.continuous
 	}

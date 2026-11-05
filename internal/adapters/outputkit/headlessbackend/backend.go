@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 
 	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/headless"
@@ -30,18 +29,18 @@ type BackendOptions struct {
 //
 // newRenderer is configured for virtual outputs by the session.
 //
-//hexcheck:ignore suspicious-business-logic-in-adapter wires virtual output owners and forwards apply messages to core; preserves registration before the no-lease security barrier
+//hexcheck:ignore suspicious-business-logic-in-adapter wires virtual output owners, forwards apply messages to core and fans out core's capture plans; preserves registration before the no-lease security barrier
 func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch routing.Channels, curs *cursors.Router, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
 	set := routing.NewSet(ctx, ch.Captured, ch.Routes())
 	set.Attach = ch.Content
 	set.WireSecurity(ch)
-	writers := map[string]chan ports.ContinuousCaptureRequest{}
+	writers := map[string]chan ports.OutputContinuous{}
 	inventory := domain.OutputHeads{}
 	for i, size := range o.Sizes {
 		name := fmt.Sprintf("HEADLESS-%d", i+1)
 		mode := domain.OutputMode{Width: size[0], Height: size[1], RefreshMilli: 60000, Preferred: true}
 		inventory.Heads = append(inventory.Heads, domain.OutputHead{Info: domain.OutputInfo{Name: name, Width: size[0], Height: size[1], RefreshMilli: 60000}, Modes: []domain.OutputMode{mode}, Current: &mode, Enabled: true})
-		writer := make(chan ports.ContinuousCaptureRequest)
+		writer := make(chan ports.OutputContinuous)
 		writers[name] = writer
 		cur := &headless.Cursor{}
 		curs.Set(name, cur)
@@ -113,57 +112,8 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 		case ev := <-ch.Reloads:
 			apply.Reload(ev.Config)
 		case req := <-ch.Continuous:
-			code := ""
-			if ch.Security != nil && ch.Security.Snapshot().Protected {
-				code = ports.ControlErrLocked
-			}
-			names := req.Outputs
-			if len(names) == 0 {
-				for _, head := range inventory.Heads {
-					names = append(names, head.Info.Name)
-				}
-				for _, head := range host.Heads() {
-					names = append(names, head.Info.Name)
-				}
-			}
-			for _, name := range names {
-				if code == "" && writers[name] == nil && host.Continuous(name) == nil {
-					code = ports.ControlErrBadRequest
-				}
-			}
-			// Frames go to a directory the session chose, never relative to
-			// the compositor's working directory.
-			if code == "" && !req.Stop && !filepath.IsAbs(req.Dir) {
-				code = ports.ControlErrBadRequest
-			}
-			if code == "" {
-				var started []string
-				for _, name := range names {
-					local := req
-					if len(names) > 1 && !req.Stop {
-						local.Dir = filepath.Join(req.Dir, name)
-					}
-					var stopped bool
-					if code, stopped = sendContinuous(ctx, writers, host, set, name, local); stopped {
-						return set.Wait()
-					}
-					if code != "" {
-						break
-					}
-					started = append(started, name)
-				}
-				// A partial start stops the outputs already writing frames.
-				if code != "" && !req.Stop {
-					for _, name := range started {
-						if _, stopped := sendContinuous(ctx, writers, host, set, name, ports.ContinuousCaptureRequest{Stop: true}); stopped {
-							return set.Wait()
-						}
-					}
-				}
-			}
-			select {
-			case req.Reply <- ports.ContinuousCaptureResult{Dir: req.Dir, Err: code}:
-			default:
+			if !handleContinuous(ctx, writers, host, set, req) {
+				return set.Wait()
 			}
 		case req := <-ch.RuntimeOutputs:
 			runtimeID++
@@ -217,10 +167,49 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 	}
 }
 
+// handleContinuous carries out core's resolved plan: every target's writer
+// changes, or none. A start that fails partway stops the outputs already
+// started before replying. It reports false when ctx ended.
+func handleContinuous(ctx context.Context, writers map[string]chan ports.OutputContinuous, host *virtuals.Host, set *routing.Set, req ports.ContinuousCaptureRequest) bool {
+	code := ""
+	for _, t := range req.Targets {
+		if writers[t.Output] == nil && host.Continuous(t.Output) == nil {
+			// Gone since core planned: nothing has started yet.
+			code = ports.ControlErrBadRequest
+			break
+		}
+	}
+	if code == "" {
+		var started []string
+		for _, t := range req.Targets {
+			var stopped bool
+			if code, stopped = sendContinuous(ctx, writers, host, set, t.Output, ports.OutputContinuous{Dir: t.Dir, Raw: req.Raw, Stop: req.Stop}); stopped {
+				return false
+			}
+			if code != "" {
+				break
+			}
+			started = append(started, t.Output)
+		}
+		if code != "" && !req.Stop {
+			for _, name := range started {
+				if _, stopped := sendContinuous(ctx, writers, host, set, name, ports.OutputContinuous{Stop: true}); stopped {
+					return false
+				}
+			}
+		}
+	}
+	select {
+	case req.Reply <- ports.ContinuousCaptureResult{Dir: req.Dir, Err: code}:
+	default:
+	}
+	return true
+}
+
 // sendContinuous hands req to the frame writer of name and waits for its
 // acknowledgement. stopped reports that ctx ended.
-func sendContinuous(ctx context.Context, writers map[string]chan ports.ContinuousCaptureRequest, host *virtuals.Host, set *routing.Set, name string, req ports.ContinuousCaptureRequest) (code string, stopped bool) {
-	writer := chan<- ports.ContinuousCaptureRequest(writers[name])
+func sendContinuous(ctx context.Context, writers map[string]chan ports.OutputContinuous, host *virtuals.Host, set *routing.Set, name string, req ports.OutputContinuous) (code string, stopped bool) {
+	writer := chan<- ports.OutputContinuous(writers[name])
 	if writer == nil {
 		writer = host.Continuous(name)
 	}

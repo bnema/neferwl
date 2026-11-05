@@ -34,7 +34,7 @@ type ModeRequest struct {
 }
 
 type Options struct {
-	Continuous <-chan ports.ContinuousCaptureRequest
+	Continuous <-chan ports.OutputContinuous
 	// Security is the defensive gate. SecurityChanges wakes an idle owner;
 	// the snapshot, not the queued notification payload, is authoritative.
 	Security        ports.SessionSecurity
@@ -202,25 +202,10 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 	var scene domain.Scene
 	haveScene, dirty := false, false
 	frame := 0
-	var index *os.File
-	var indexWriter *bufio.Writer
-	var lastShot time.Time
-	var lastShotName string
-	closeWriter := func() {
-		if index != nil {
-			// A following file makes concat honor the final held interval.
-			if !lastShot.IsZero() {
-				_, _ = fmt.Fprintf(indexWriter, "duration %.6f\nfile '%s'\n", time.Since(lastShot).Seconds(), lastShotName)
-				_ = indexWriter.Flush()
-			}
-			_ = index.Close()
-		}
-		index = nil
-		indexWriter = nil
-		lastShot = time.Time{}
-		lastShotName = ""
-	}
-	defer closeWriter()
+	// Frame writing starts from the options and then follows Continuous;
+	// opts itself is never changed.
+	writer := frameWriter{dir: opts.ScreenshotDir, raw: opts.RawHDR}
+	defer writer.close()
 	var requests capture.Requests
 	ctx, cancelCaptures := context.WithCancel(ctx)
 	requests.Init(ctx, opts.Captured)
@@ -577,12 +562,10 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 				}
 			}
 			if code == "" {
-				closeWriter()
-				opts.ScreenshotDir = ""
-				opts.RawHDR = false
+				writer.close()
+				writer = frameWriter{}
 				if !req.Stop {
-					opts.ScreenshotDir = req.Dir
-					opts.RawHDR = req.Raw
+					writer = frameWriter{dir: req.Dir, raw: req.Raw}
 					dirty = haveScene
 				}
 			}
@@ -884,76 +867,113 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		opts.report(&reports, flip, seen)
 		presentedSeq = max(presentedSeq, scene.Seq)
 		reportFrame(scene.Animating)
-		if opts.ScreenshotDir != "" && !opts.protected() {
-			shot := r.Pixels()
-			if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {
-				continue
-			}
-			if shot == nil {
-				opts.Log.Debug().Str("output", opts.Name).Int("frame", frame).Msg("screenshot readback unavailable; frame skipped")
-				continue
-			}
-			if opts.Cursor != nil {
-				opts.Cursor.drawSecure(shot, opts.Security)
-			}
-			if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {
-				continue
-			}
-			name := fmt.Sprintf("frame-%06d.png", frame)
-			written, err := writePNGSecureResult(filepath.Join(opts.ScreenshotDir, name), shot, opts.Security, scene.Security)
+		if writer.dir != "" && !opts.protected() {
+			skipped, err := writer.write(opts, r, scene, frame)
 			if err != nil {
-				return fmt.Errorf("screenshot: %w", err)
+				return err
 			}
-			if !written {
+			if skipped {
 				continue
-			}
-			// latest.png is the frame just written, linked rather than encoded again.
-			written, err = linkPNGSecure(filepath.Join(opts.ScreenshotDir, name), filepath.Join(opts.ScreenshotDir, "latest.png"), shot, opts.Security, scene.Security)
-			if err != nil {
-				return fmt.Errorf("latest screenshot: %w", err)
-			}
-			if !written {
-				continue
-			}
-			now := time.Now()
-			if index == nil {
-				index, err = os.OpenFile(filepath.Join(opts.ScreenshotDir, "frames.ffconcat"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY|os.O_APPEND, 0o600)
-				if err != nil {
-					return fmt.Errorf("frame index: %w", err)
-				}
-				indexWriter = bufio.NewWriter(index)
-				_, _ = fmt.Fprintln(indexWriter, "ffconcat version 1.0")
-			}
-			// Complete the previous frame's duration before starting this one.
-			// An idle scene leaves that frame displayed and adds no entries.
-			if !lastShot.IsZero() {
-				_, _ = fmt.Fprintf(indexWriter, "duration %.6f\n", now.Sub(lastShot).Seconds())
-			}
-			_, _ = fmt.Fprintf(indexWriter, "file '%s'\n", name)
-			if err := indexWriter.Flush(); err != nil {
-				return fmt.Errorf("frame index: %w", err)
-			}
-			lastShot, lastShotName = now, name
-			if opts.RawHDR && opts.HDR.Enabled {
-				// No cursor on the raw image. Only a confirmed HDR output
-				// has a readable PQ target; else HDRPixels is nil.
-				if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {
-					continue
-				}
-				raw := r.HDRPixels()
-				if raw == nil {
-					opts.Log.Debug().Str("output", opts.Name).Int("frame", frame).Msg("raw HDR readback unavailable; frame skipped")
-					continue
-				}
-				if err := writePNGSecure(filepath.Join(opts.ScreenshotDir, "latest-pq.png"), raw, opts.Security, scene.Security); err != nil {
-					return fmt.Errorf("raw HDR screenshot: %w", err)
-				}
 			}
 		}
 		if ev := opts.Log.Debug(); ev.Enabled() {
 			ev.Int("frame", frame).Uint64("seq", scene.Seq).Int("windows", len(scene.Windows)).Dur("ms", time.Since(start)).Int("redrawn", r.TakeRedrawn()).Msg("frame")
 		}
 	}
+}
+
+// frameWriter is the continuous capture state of one output: where frames go
+// and the ffconcat index being written.
+type frameWriter struct {
+	dir          string
+	raw          bool
+	index        *os.File
+	indexWriter  *bufio.Writer
+	lastShot     time.Time
+	lastShotName string
+}
+
+// close finishes the index; a following file makes concat honor the final
+// held interval.
+func (w *frameWriter) close() {
+	if w.index != nil {
+		if !w.lastShot.IsZero() {
+			_, _ = fmt.Fprintf(w.indexWriter, "duration %.6f\nfile '%s'\n", time.Since(w.lastShot).Seconds(), w.lastShotName)
+			_ = w.indexWriter.Flush()
+		}
+		_ = w.index.Close()
+	}
+	w.index, w.indexWriter, w.lastShot, w.lastShotName = nil, nil, time.Time{}, ""
+}
+
+// write saves the presented frame. skipped reports a frame not written (the
+// security epoch moved, or no readback); the caller then skips its frame log.
+func (w *frameWriter) write(opts Options, r ports.Renderer, scene domain.Scene, frame int) (skipped bool, err error) {
+	shot := r.Pixels()
+	if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {
+		return true, nil
+	}
+	if shot == nil {
+		opts.Log.Debug().Str("output", opts.Name).Int("frame", frame).Msg("screenshot readback unavailable; frame skipped")
+		return true, nil
+	}
+	if opts.Cursor != nil {
+		opts.Cursor.drawSecure(shot, opts.Security)
+	}
+	if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {
+		return true, nil
+	}
+	name := fmt.Sprintf("frame-%06d.png", frame)
+	written, err := writePNGSecureResult(filepath.Join(w.dir, name), shot, opts.Security, scene.Security)
+	if err != nil {
+		return false, fmt.Errorf("screenshot: %w", err)
+	}
+	if !written {
+		return true, nil
+	}
+	// latest.png is the frame just written, linked rather than encoded again.
+	written, err = linkPNGSecure(filepath.Join(w.dir, name), filepath.Join(w.dir, "latest.png"), shot, opts.Security, scene.Security)
+	if err != nil {
+		return false, fmt.Errorf("latest screenshot: %w", err)
+	}
+	if !written {
+		return true, nil
+	}
+	now := time.Now()
+	if w.index == nil {
+		w.index, err = os.OpenFile(filepath.Join(w.dir, "frames.ffconcat"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY|os.O_APPEND, 0o600)
+		if err != nil {
+			return false, fmt.Errorf("frame index: %w", err)
+		}
+		w.indexWriter = bufio.NewWriter(w.index)
+		_, _ = fmt.Fprintln(w.indexWriter, "ffconcat version 1.0")
+	}
+	// Complete the previous frame's duration before starting this one.
+	// An idle scene leaves that frame displayed and adds no entries.
+	if !w.lastShot.IsZero() {
+		_, _ = fmt.Fprintf(w.indexWriter, "duration %.6f\n", now.Sub(w.lastShot).Seconds())
+	}
+	_, _ = fmt.Fprintf(w.indexWriter, "file '%s'\n", name)
+	if err := w.indexWriter.Flush(); err != nil {
+		return false, fmt.Errorf("frame index: %w", err)
+	}
+	w.lastShot, w.lastShotName = now, name
+	if w.raw && opts.HDR.Enabled {
+		// No cursor on the raw image. Only a confirmed HDR output
+		// has a readable PQ target; else HDRPixels is nil.
+		if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {
+			return true, nil
+		}
+		raw := r.HDRPixels()
+		if raw == nil {
+			opts.Log.Debug().Str("output", opts.Name).Int("frame", frame).Msg("raw HDR readback unavailable; frame skipped")
+			return true, nil
+		}
+		if err := writePNGSecure(filepath.Join(w.dir, "latest-pq.png"), raw, opts.Security, scene.Security); err != nil {
+			return false, fmt.Errorf("raw HDR screenshot: %w", err)
+		}
+	}
+	return false, nil
 }
 
 func (opts Options) protected() bool {

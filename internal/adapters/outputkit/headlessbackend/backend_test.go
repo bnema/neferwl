@@ -89,9 +89,10 @@ func TestVirtualOnlyNoFixedHeads(t *testing.T) {
 	})
 }
 
-// Continuous capture needs an absolute directory, and a start that fails on
-// one output reports the failure.
-func TestContinuousCaptureRequests(t *testing.T) {
+// The backend fans core's plan out to the output owners. A start that fails
+// on one output stops those already started and reports the failure; a
+// target gone since core planned is refused before anything starts.
+func TestContinuousCapturePlan(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -107,54 +108,38 @@ func TestContinuousCaptureRequests(t *testing.T) {
 		}()
 		inventory := <-heads
 		synctest.Wait()
-		ask := func(dir string) string {
+		first, second := inventory.Heads[0].Info.Name, inventory.Heads[1].Info.Name
+		ask := func(plan ports.ContinuousCaptureRequest) ports.ContinuousCaptureResult {
 			reply := make(chan ports.ContinuousCaptureResult, 1)
-			continuous <- ports.ContinuousCaptureRequest{Dir: dir, Reply: reply}
-			return (<-reply).Err
+			plan.Reply = reply
+			continuous <- plan
+			return <-reply
 		}
-		if code := ask("frames"); code != ports.ControlErrBadRequest {
-			t.Fatalf("relative dir: %q", code)
-		}
-		// The second output's directory is a file: its start fails.
 		dir := t.TempDir()
-		second := inventory.Heads[1].Info.Name
+		if res := ask(ports.ContinuousCaptureRequest{Dir: dir, Targets: []ports.ContinuousTarget{{Output: "missing", Dir: dir}}}); res.Err != ports.ControlErrBadRequest {
+			t.Fatalf("gone output: %+v", res)
+		}
+		// The second output's directory is a file: its start fails, and the
+		// first, already started, is stopped again.
 		if err := os.WriteFile(filepath.Join(dir, second), nil, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if code := ask(dir); code != ports.ControlErrCaptureFailed {
-			t.Fatalf("partial start: %q", code)
+		plan := ports.ContinuousCaptureRequest{Dir: dir, Targets: []ports.ContinuousTarget{{Output: first, Dir: filepath.Join(dir, first)}, {Output: second, Dir: filepath.Join(dir, second)}}}
+		if res := ask(plan); res.Err != ports.ControlErrCaptureFailed || res.Dir != dir {
+			t.Fatalf("partial start: %+v", res)
+		}
+		if err := os.Remove(filepath.Join(dir, second)); err != nil {
+			t.Fatal(err)
+		}
+		if res := ask(plan); res.Err != "" || res.Dir != dir {
+			t.Fatalf("start: %+v", res)
+		}
+		if res := ask(ports.ContinuousCaptureRequest{Stop: true, Targets: []ports.ContinuousTarget{{Output: first}, {Output: second}}}); res.Err != "" {
+			t.Fatalf("stop: %+v", res)
 		}
 		cancel()
 		if err := <-done; err != nil {
 			t.Fatal(err)
 		}
-	})
-}
-
-// A protected session answers locked, even for a request that is also
-// malformed (relative dir, unknown output). No outputs: nothing renders.
-func TestContinuousCaptureLockedFirst(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		gate := portsmocks.NewMockSessionSecurity(t)
-		gate.EXPECT().Snapshot().Return(domain.SecurityState{Generation: 1, Protected: true}).Maybe()
-		apply := core.NewOutputApply(core.NewOutputOverrides(domain.Config{}, true))
-		continuous := make(chan ports.ContinuousCaptureRequest)
-		heads := make(chan domain.OutputHeads, 16)
-		ch := routing.Channels{Events: make(chan ports.OutputEvent, 16), Heads: heads, Reloads: make(chan domain.ConfigChanged), Continuous: continuous, Security: gate}
-		done := make(chan error, 1)
-		go func() {
-			done <- Run(ctx, BackendOptions{}, apply, ch, cursors.New(nil, 0), func(int, int) (ports.Renderer, error) { return portsmocks.NewMockRenderer(t), nil }, logging.For(ctx, "render"))
-		}()
-		<-heads
-		synctest.Wait()
-		reply := make(chan ports.ContinuousCaptureResult, 1)
-		continuous <- ports.ContinuousCaptureRequest{Outputs: []string{"missing"}, Dir: "frames", Reply: reply}
-		if got := (<-reply).Err; got != ports.ControlErrLocked {
-			t.Fatalf("got %q", got)
-		}
-		cancel()
-		<-done
 	})
 }

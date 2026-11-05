@@ -80,6 +80,20 @@ const (
 	ControlErrTimeout = "timeout"
 )
 
+// ControlCapture starts or stops continuous frame capture. Empty Outputs
+// selects every current output; Dir must be absolute to start. Core answers
+// a refusal on Reply itself, else hands the resolved plan to the backend,
+// which answers on Reply. Reply must have capacity one.
+type ControlCapture struct {
+	Outputs   []string
+	Dir       string
+	Raw, Stop bool
+	Caps      domain.Caps
+	Reply     chan<- ContinuousCaptureResult
+}
+
+func (ControlCapture) controlRequest() {}
+
 // ControlOutput changes the runtime-only virtual output desired set.
 type ControlOutput struct {
 	Name   string

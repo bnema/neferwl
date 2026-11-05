@@ -16,14 +16,14 @@ func TestContinuousCaptureStartStop(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		scenes := make(chan domain.Scene, 1)
-		changes := make(chan ports.ContinuousCaptureRequest)
+		changes := make(chan ports.OutputContinuous)
 		done := make(chan error, 1)
 		go func() {
 			done <- RunOutput(ctx, Options{Width: 2, Height: 2, Continuous: changes, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
 		}()
 		dir := t.TempDir()
 		ack := make(chan ports.ContinuousCaptureResult, 1)
-		changes <- ports.ContinuousCaptureRequest{Dir: dir, Reply: ack}
+		changes <- ports.OutputContinuous{Dir: dir, Reply: ack}
 		if result := <-ack; result.Err != "" {
 			t.Fatal(result)
 		}
@@ -34,7 +34,7 @@ func TestContinuousCaptureStartStop(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		changes <- ports.ContinuousCaptureRequest{Stop: true, Reply: ack}
+		changes <- ports.OutputContinuous{Stop: true, Reply: ack}
 		<-ack
 		scenes <- domain.Scene{Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2}
 		synctest.Wait()
