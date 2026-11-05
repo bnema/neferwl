@@ -390,7 +390,7 @@ func TestRelayConfigKeyboard(t *testing.T) {
 	keymaps := make(chan *xkb.Keymap, 1)
 	commands := make(chan ports.ClientCommand, 1)
 	devices := make(chan domain.InputDevicesConfig, 1)
-	go relayConfig(ctx, cur, in, out, keymaps, devices, cursors.New(clock.System{}, 0), commands, logging.For(ctx, "config"))
+	go relayConfig(ctx, cur, in, out, keymaps, devices, cursors.New(clock.System{}, 0), commands, logging.For(ctx, "config"), nil)
 
 	next := config.Defaults()
 	next.Background.Color = "#000000"

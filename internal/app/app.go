@@ -78,13 +78,14 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 // either way.
 const busRetry = 2 * time.Second
 
-// relayConfig forwards reloads to core. A layout change builds a new keymap, hands it
+// relayConfig forwards reloads to core. controlKeymaps, when not nil, receives a
+// separate keymap for the control socket. A layout change builds a new keymap, hands it
 // to the input goroutine and sends it to clients; a repeat-only change just updates
 // clients. A keymap that fails to build keeps the previous layout. A touchpad
 // or mouse change goes to the input goroutine as one InputDevicesConfig; only
 // the newest one waits there. The cursor idle delay goes straight to the
 // cursor router.
-func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.ConfigChanged, out chan<- domain.ConfigChanged, keymaps chan *xkb.Keymap, deviceConfigs chan domain.InputDevicesConfig, curs *cursors.Router, commands chan<- ports.ClientCommand, log zerowrap.Logger, controlKeymaps ...chan *xkb.Keymap) {
+func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.ConfigChanged, out chan<- domain.ConfigChanged, keymaps chan *xkb.Keymap, deviceConfigs chan domain.InputDevicesConfig, curs *cursors.Router, commands chan<- ports.ClientCommand, log zerowrap.Logger, controlKeymaps chan *xkb.Keymap) {
 	kb := cur.Keyboard
 	devCfg := cur.InputDevicesConfig
 	for {
@@ -118,26 +119,23 @@ func relayConfig(ctx context.Context, cur domain.Config, in <-chan domain.Config
 				// Every producer needs its own mutable XKB state. Build the
 				// control map separately: sharing km races physical input and
 				// would merge modifiers across the two synthetic/real seats.
-				for _, target := range controlKeymaps {
-					if target == nil {
-						continue
-					}
+				if controlKeymaps != nil {
 					nextMap, err := xkb.New(xkb.RMLVO{Layout: next.Layout, Variant: next.Variant, Options: next.Options})
 					if err != nil {
 						log.Warn().Err(err).Msg("control keymap reload rejected")
-						continue
-					}
-					select {
-					case old := <-target:
-						old.Close()
-					default:
-					}
-					select {
-					case target <- nextMap:
-					case <-ctx.Done():
-						nextMap.Close()
-						km.Close()
-						return
+					} else {
+						select {
+						case old := <-controlKeymaps:
+							old.Close()
+						default:
+						}
+						select {
+						case controlKeymaps <- nextMap:
+						case <-ctx.Done():
+							nextMap.Close()
+							km.Close()
+							return
+						}
 					}
 				}
 				// Drop a keymap the input goroutine has not taken yet; the newest wins.
