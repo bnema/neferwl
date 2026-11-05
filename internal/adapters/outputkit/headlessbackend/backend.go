@@ -146,38 +146,33 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 					code = ports.ControlErrBadRequest
 				}
 			}
+			// Frames go to a directory the session chose, never relative to
+			// the compositor's working directory.
+			if !req.Stop && (req.Dir == "" || !filepath.IsAbs(filepath.Clean(req.Dir))) {
+				code = ports.ControlErrBadRequest
+			}
 			if code == "" {
+				var started []string
 				for _, name := range names {
-					writer := chan<- ports.ContinuousCaptureRequest(writers[name])
-					if writer == nil {
-						writer = host.Continuous(name)
-					}
 					local := req
-					ack := make(chan ports.ContinuousCaptureResult, 1)
-					local.Reply = ack
 					if len(names) > 1 && !req.Stop {
 						local.Dir = filepath.Join(req.Dir, name)
 					}
-					select {
-					case writer <- local:
-					case <-set.Outs[name].Done:
-						code = ports.ControlErrCaptureFailed
-					case <-ctx.Done():
+					var stopped bool
+					if code, stopped = sendContinuous(ctx, writers, host, set, name, local); stopped {
 						return set.Wait()
 					}
 					if code != "" {
 						break
 					}
-					select {
-					case result := <-ack:
-						code = result.Err
-					case <-set.Outs[name].Done:
-						code = ports.ControlErrCaptureFailed
-					case <-ctx.Done():
-						return set.Wait()
-					}
-					if code != "" {
-						break
+					started = append(started, name)
+				}
+				// A partial start stops the outputs already writing frames.
+				if code != "" && !req.Stop {
+					for _, name := range started {
+						if _, stopped := sendContinuous(ctx, writers, host, set, name, ports.ContinuousCaptureRequest{Stop: true}); stopped {
+							return set.Wait()
+						}
 					}
 				}
 			}
@@ -238,5 +233,31 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 			err := set.Finish(stopped.Name)
 			return errors.Join(err, set.Wait())
 		}
+	}
+}
+
+// sendContinuous hands req to the frame writer of name and waits for its
+// acknowledgement. stopped reports that ctx ended.
+func sendContinuous(ctx context.Context, writers map[string]chan ports.ContinuousCaptureRequest, host *virtuals.Host, set *routing.Set, name string, req ports.ContinuousCaptureRequest) (code string, stopped bool) {
+	writer := chan<- ports.ContinuousCaptureRequest(writers[name])
+	if writer == nil {
+		writer = host.Continuous(name)
+	}
+	ack := make(chan ports.ContinuousCaptureResult, 1)
+	req.Reply = ack
+	select {
+	case writer <- req:
+	case <-set.Outs[name].Done:
+		return ports.ControlErrCaptureFailed, false
+	case <-ctx.Done():
+		return "", true
+	}
+	select {
+	case result := <-ack:
+		return result.Err, false
+	case <-set.Outs[name].Done:
+		return ports.ControlErrCaptureFailed, false
+	case <-ctx.Done():
+		return "", true
 	}
 }

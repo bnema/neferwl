@@ -2,6 +2,8 @@ package headlessbackend
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"testing/synctest"
 
@@ -80,6 +82,48 @@ func TestVirtualOnlyNoFixedHeads(t *testing.T) {
 			t.Fatal(inventory)
 		}
 		synctest.Wait()
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+// Continuous capture needs an absolute directory, and a start that fails on
+// one output reports the failure.
+func TestContinuousCaptureRequests(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		apply := core.NewOutputApply(core.NewOutputOverrides(domain.Config{}, true))
+		continuous := make(chan ports.ContinuousCaptureRequest)
+		heads := make(chan domain.OutputHeads, 16)
+		ch := routing.Channels{Events: make(chan ports.OutputEvent, 16), Heads: heads, Reloads: make(chan domain.ConfigChanged), Continuous: continuous}
+		r := portsmocks.NewMockRenderer(t)
+		r.EXPECT().Close().Return().Maybe()
+		done := make(chan error, 1)
+		go func() {
+			done <- Run(ctx, BackendOptions{Sizes: [][2]int{{20, 20}, {20, 20}}}, apply, ch, cursors.New(nil, 0), func(int, int) (ports.Renderer, error) { return r, nil }, logging.For(ctx, "render"))
+		}()
+		inventory := <-heads
+		synctest.Wait()
+		ask := func(dir string) string {
+			reply := make(chan ports.ContinuousCaptureResult, 1)
+			continuous <- ports.ContinuousCaptureRequest{Dir: dir, Reply: reply}
+			return (<-reply).Err
+		}
+		if code := ask("frames"); code != ports.ControlErrBadRequest {
+			t.Fatalf("relative dir: %q", code)
+		}
+		// The second output's directory is a file: its start fails.
+		dir := t.TempDir()
+		second := inventory.Heads[1].Info.Name
+		if err := os.WriteFile(filepath.Join(dir, second), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if code := ask(dir); code != ports.ControlErrCaptureFailed {
+			t.Fatalf("partial start: %q", code)
+		}
 		cancel()
 		if err := <-done; err != nil {
 			t.Fatal(err)
