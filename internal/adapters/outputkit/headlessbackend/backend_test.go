@@ -130,3 +130,31 @@ func TestContinuousCaptureRequests(t *testing.T) {
 		}
 	})
 }
+
+// A protected session answers locked, even for a request that is also
+// malformed (relative dir, unknown output). No outputs: nothing renders.
+func TestContinuousCaptureLockedFirst(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		gate := portsmocks.NewMockSessionSecurity(t)
+		gate.EXPECT().Snapshot().Return(domain.SecurityState{Generation: 1, Protected: true}).Maybe()
+		apply := core.NewOutputApply(core.NewOutputOverrides(domain.Config{}, true))
+		continuous := make(chan ports.ContinuousCaptureRequest)
+		heads := make(chan domain.OutputHeads, 16)
+		ch := routing.Channels{Events: make(chan ports.OutputEvent, 16), Heads: heads, Reloads: make(chan domain.ConfigChanged), Continuous: continuous, Security: gate}
+		done := make(chan error, 1)
+		go func() {
+			done <- Run(ctx, BackendOptions{}, apply, ch, cursors.New(nil, 0), func(int, int) (ports.Renderer, error) { return portsmocks.NewMockRenderer(t), nil }, logging.For(ctx, "render"))
+		}()
+		<-heads
+		synctest.Wait()
+		reply := make(chan ports.ContinuousCaptureResult, 1)
+		continuous <- ports.ContinuousCaptureRequest{Outputs: []string{"missing"}, Dir: "frames", Reply: reply}
+		if got := (<-reply).Err; got != ports.ControlErrLocked {
+			t.Fatalf("got %q", got)
+		}
+		cancel()
+		<-done
+	})
+}

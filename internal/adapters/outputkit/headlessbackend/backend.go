@@ -142,13 +142,13 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 				}
 			}
 			for _, name := range names {
-				if writers[name] == nil && host.Continuous(name) == nil {
+				if code == "" && writers[name] == nil && host.Continuous(name) == nil {
 					code = ports.ControlErrBadRequest
 				}
 			}
 			// Frames go to a directory the session chose, never relative to
 			// the compositor's working directory.
-			if !req.Stop && (req.Dir == "" || !filepath.IsAbs(filepath.Clean(req.Dir))) {
+			if code == "" && !req.Stop && !filepath.IsAbs(req.Dir) {
 				code = ports.ControlErrBadRequest
 			}
 			if code == "" {
