@@ -91,3 +91,28 @@ func TestIDs(t *testing.T) {
 		t.Fatal("empty runtime accepted")
 	}
 }
+
+// Close removes the directory under the registry lock; the id is then free
+// for a new Create, and the registry lock was released.
+func TestCloseThenRecreate(t *testing.T) {
+	runtime := t.TempDir()
+	for range 2 {
+		d, err := Create(runtime, "again")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := d.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(d.Path()); !os.IsNotExist(err) {
+			t.Fatalf("directory kept: %v", err)
+		}
+	}
+	registry, err := registryLock(runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := unlock(registry); err != nil {
+		t.Fatal(err)
+	}
+}

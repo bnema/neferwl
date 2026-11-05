@@ -64,7 +64,12 @@ func registryLock(runtimeDir string) (*os.File, error) {
 	if err := os.MkdirAll(Root(runtimeDir), 0700); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(filepath.Join(Root(runtimeDir), ".lock"), os.O_CREATE|os.O_RDWR, 0600)
+	return lockRegistryFile(Root(runtimeDir))
+}
+
+// lockRegistryFile takes the registry lock of an existing sessions root.
+func lockRegistryFile(root string) (*os.File, error) {
+	f, err := os.OpenFile(filepath.Join(root, ".lock"), os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return nil, err
 	}
@@ -159,9 +164,14 @@ func (d *Dir) Close() error {
 	if d.lock == nil {
 		return nil
 	}
-	// Retain the lifetime lock until the directory is gone.
+	// Retain the lifetime lock until the directory is gone, and hold the
+	// registry lock so a same-id Create cannot lock the inode being removed.
+	registry, regErr := lockRegistryFile(filepath.Dir(d.path))
 	err := os.RemoveAll(d.path)
-	err = errors.Join(err, unlock(d.lock))
+	err = errors.Join(regErr, err, unlock(d.lock))
+	if registry != nil {
+		err = errors.Join(err, unlock(registry))
+	}
 	d.lock = nil
 	return err
 }
