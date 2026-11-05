@@ -21,9 +21,11 @@ CLI target resolution uses the first available target, in this order:
 If no target resolves, the CLI reports an error and lists sessions. Use an
 explicit target in automation to avoid controlling the desktop by accident.
 
-While the session is protected (locked), input injection and capture are refused
-with `locked`, and window titles are masked. Same-uid access does not bypass
-this protection.
+While the session is protected (locked), input injection, capture and actions
+are refused with `locked`, as native binds do not run on a locked session.
+`quit` is the only action still accepted, so `session rm` can stop a locked
+session. Window titles are masked. Same-uid access does not bypass this
+protection.
 
 ## Messages
 
@@ -143,7 +145,7 @@ single-shot CLI flag set.
 |---|---|
 | `unknown-command` | The requested command is not in the catalog. |
 | `bad-request` | The message or its arguments are invalid. |
-| `locked` | Input or capture is refused while the session is protected. |
+| `locked` | Input, capture or an action other than `quit` is refused while the session is protected. |
 | `forbidden` | The connection lacks permission for the operation. |
 | `timeout` | The requested completion condition is not reached in time. |
 | `capture-failed` | The capture or the continuous frame writer could not be started or written. |
