@@ -17,6 +17,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/statewire"
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
+	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
@@ -24,7 +25,20 @@ import (
 
 // Server owns a control listener. Requests on each connection are processed in
 // order: the next line is read only after the preceding core reply is sent.
+// Options supplies a dedicated control keymap, never the physical input map.
+// Listen takes ownership of Keymap on success. The server takes ownership of
+// each map it receives from Keymaps; producers own any maps left in the channel
+// after shutdown. Security is sampled before every translated event.
+type Options struct {
+	Keymap   *xkb.Keymap
+	Keymaps  <-chan *xkb.Keymap
+	Security ports.SessionSecurity
+}
+
 type Server struct {
+	injectMu sync.Mutex
+	injector *injector
+	keymaps  <-chan *xkb.Keymap
 	listener *net.UnixListener
 	ids      *workspaceid.IDs
 	done     chan struct{}
@@ -34,7 +48,10 @@ type Server struct {
 
 // Listen creates a private socket using the same workspace IDs as statefile.
 // An existing socket is removed only when connecting proves it has no listener.
-func Listen(path string, ids *workspaceid.IDs) (*Server, error) {
+func Listen(path string, ids *workspaceid.IDs, options ...Options) (*Server, error) {
+	if len(options) > 1 {
+		return nil, errors.New("at most one control options value is accepted")
+	}
 	if ids == nil {
 		return nil, errors.New("workspace IDs are required")
 	}
@@ -67,12 +84,29 @@ func Listen(path string, ids *workspaceid.IDs) (*Server, error) {
 		listener.Close()
 		return nil, err
 	}
-	return &Server{listener: listener, ids: ids, done: make(chan struct{})}, nil
+	s := &Server{listener: listener, ids: ids, done: make(chan struct{})}
+	if len(options) == 1 {
+		opts := options[0]
+		s.keymaps = opts.Keymaps
+		if opts.Keymap != nil {
+			s.injector = newInjector(opts.Keymap, opts.Security)
+		}
+	}
+	return s, nil
 }
 
 // Close stops acceptance and all active connections. It is safe to call twice.
 func (s *Server) Close() error {
-	s.once.Do(func() { close(s.done); s.err = s.listener.Close() })
+	s.once.Do(func() {
+		close(s.done)
+		s.err = s.listener.Close()
+		s.injectMu.Lock()
+		defer s.injectMu.Unlock()
+		if s.injector != nil {
+			s.injector.km.Close()
+			s.injector = nil
+		}
+	})
 	return s.err
 }
 
@@ -139,6 +173,13 @@ type request struct {
 	Wait    *string         `json:"wait"`
 	Until   *string         `json:"until"`
 	Timeout *string         `json:"timeout"`
+	Kind    string          `json:"kind"`
+	Combo   string          `json:"combo"`
+	Text    string          `json:"text"`
+	Cmd     string          `json:"cmd"`
+	Args    []string        `json:"args"`
+	Fingers int             `json:"fingers"`
+	Dir     string          `json:"dir"`
 }
 
 type diff struct {
@@ -185,6 +226,7 @@ func (s *Server) serve(ctx context.Context, conn *net.UnixConn, out chan<- ports
 	scanner := bufio.NewScanner(conn)
 	scanner.Buffer(make([]byte, 4096), 1024*1024)
 	encoder := json.NewEncoder(conn)
+	announced := false
 	for scanner.Scan() {
 		var req request
 		if err := json.Unmarshal(scanner.Bytes(), &req); err != nil || len(req.ID) == 0 || string(req.ID) == "null" {
@@ -209,7 +251,7 @@ func (s *Server) serve(ctx context.Context, conn *net.UnixConn, out chan<- ports
 			}
 			continue
 		}
-		response := s.dispatch(ctx, req, out)
+		response := s.dispatch(ctx, req, out, &announced)
 		if ctx.Err() != nil {
 			return
 		}
@@ -219,12 +261,12 @@ func (s *Server) serve(ctx context.Context, conn *net.UnixConn, out chan<- ports
 	}
 }
 
-func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.ControlRequest) reply {
+func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.ControlRequest, announced *bool) reply {
 	response := reply{ID: req.ID, Error: ports.ControlErrBadRequest}
 	ch := make(chan ports.ControlReply, 1)
 	var message ports.ControlRequest
 	switch req.Op {
-	case "do":
+	case "do", "inject":
 		wait := domain.DefaultWait
 		if req.Wait != nil {
 			var err error
@@ -249,10 +291,19 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 				return response
 			}
 		}
-		if req.Action == "" {
-			return response
+		if req.Op == "inject" {
+			events, err := s.translate(req, !*announced)
+			if err != nil {
+				return response
+			}
+			*announced = true
+			message = ports.ControlInject{Events: events, Wait: wait, Until: until, Timeout: timeout, Caps: domain.CapsAll, Reply: ch}
+		} else {
+			if req.Action == "" {
+				return response
+			}
+			message = ports.ControlDo{Action: req.Action, Wait: wait, Until: until, Timeout: timeout, Caps: domain.CapsAll, Reply: ch}
 		}
-		message = ports.ControlDo{Action: req.Action, Wait: wait, Until: until, Timeout: timeout, Caps: domain.CapsAll, Reply: ch}
 	case "query":
 		if req.What == "" {
 			return response
