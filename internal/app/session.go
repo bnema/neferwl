@@ -208,25 +208,9 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 		return s, err
 	}
 	s.childEnv = launcher.ChildEnv(os.Environ(), s.server.SocketName(), runtimeDir, xcursor.CursorSize())
-	controlPath := ""
-	if s.plan.Control {
-		path := filepath.Join(s.registry.Path(), "control.sock")
-		kb := opts.Config.Keyboard
-		controlMap, mapErr := xkb.New(xkb.RMLVO{Layout: kb.Layout, Variant: kb.Variant, Options: kb.Options})
-		if mapErr != nil {
-			return s, mapErr
-		}
-		s.controlDone = make(chan domain.CaptureDone, ports.MaxCaptureInflight)
-		if listener, err := control.Listen(path, s.wsIDs, control.Options{FramesDir: filepath.Join(s.registry.Path(), "shots", "frames"), Shooter: control.NewShooter(s.p.captures, s.controlDone, filepath.Join(s.registry.Path(), "shots")), Keymap: controlMap, Keymaps: s.p.controlKeymaps, Security: s.security}); err != nil {
-			controlMap.Close()
-			s.controlDone = nil
-			log.Warn().Err(err).Msg("control socket disabled")
-		} else {
-			s.p.routeControlCaptures()
-			s.control = listener
-			controlPath = path
-			s.childEnv = append(s.childEnv, "NEFERWL_CONTROL="+path)
-		}
+	controlPath, err := s.openControl()
+	if err != nil {
+		return s, err
 	}
 
 	statePath, serr := statefile.Path(runtimeDir, s.server.SocketName())
@@ -561,6 +545,34 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 		return nil
 	}
 	return result
+}
+
+// openControl opens the session's control socket when the plan serves one.
+// A socket that cannot listen only disables control; the path is empty then.
+func (s *session) openControl() (string, error) {
+	if !s.plan.Control {
+		return "", nil
+	}
+	path := filepath.Join(s.registry.Path(), "control.sock")
+	kb := s.opts.Config.Keyboard
+	controlMap, mapErr := xkb.New(xkb.RMLVO{Layout: kb.Layout, Variant: kb.Variant, Options: kb.Options})
+	if mapErr != nil {
+		return "", mapErr
+	}
+	s.controlDone = make(chan domain.CaptureDone, ports.MaxCaptureInflight)
+	if listener, err := control.Listen(path, s.wsIDs, control.Options{FramesDir: filepath.Join(s.registry.Path(), "shots", "frames"), Shooter: control.NewShooter(s.p.captures, s.controlDone, filepath.Join(s.registry.Path(), "shots")), Keymap: controlMap, Keymaps: s.p.controlKeymaps, Security: s.security}); err != nil {
+		controlMap.Close()
+		s.controlDone = nil
+		s.log.Warn().Err(err).Msg("control socket disabled")
+	} else {
+		s.p.routeControlCaptures()
+		s.control = listener
+		s.childEnv = append(s.childEnv, "NEFERWL_CONTROL="+path)
+	}
+	if s.control == nil {
+		return "", nil
+	}
+	return path, nil
 }
 
 func renderNodeForDevice(dev ports.RenderDevice) string {
