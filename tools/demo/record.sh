@@ -40,7 +40,6 @@ cleanup() {
     for pid in "$launcher" "$feeder"; do
         if [[ -n $pid ]]; then wait "$pid" 2>/dev/null || true; fi
     done
-    exec 3>&-
     if [[ $success != yes || ${KEEP_CAPTURE:-0} != 1 ]]; then
         rm -rf -- "$work"
     fi
@@ -53,7 +52,7 @@ printf 'Capture directory: %s\n' "$work"
 mkdir -p "$work/shots" "$work/state" docs/media
 docker build -t neferwl-demo -f tools/demo/Dockerfile tools/demo
 CGO_ENABLED=0 go build -o "$work/neferwl" ./cmd/neferwl
-log=$work/state/neferwl/runs/headless/latest.log
+log=$work/state/neferwl/sessions/demo/latest.log
 # The compositor is the container's main process, so the container ends with
 # it. Root in a rootless container is the host user: the bind-mounted work
 # directory (binary, frames, log, hint dumps) stays owned by the host user.
@@ -61,8 +60,8 @@ log=$work/state/neferwl/runs/headless/latest.log
 docker run -d --name "$container" --hostname neferwl-demo --device /dev/dri \
     -e XDG_STATE_HOME=/work/state -e NEFERWL_HINT_DEBUG=1 \
     -v "$work:/work" -v "$work/neferwl:/usr/local/bin/neferwl:ro" neferwl-demo \
-    --backend=headless --size 1920x1080 --config /home/demo/config --no-xwayland \
-    --screenshot /work/shots --timeout 75s >/dev/null
+    --backend=headless --session-id demo --size 1920x1080 --config /home/demo/config --no-xwayland \
+    --timeout 75s >/dev/null
 display=''
 deadline=$((SECONDS + 30))
 while ((SECONDS < deadline)); do
@@ -77,12 +76,13 @@ done
 [[ -n $display ]] || { echo "Timed out after 30s waiting for the compositor to listen; see $log" >&2; exit 1; }
 # Mousepad runs as another user (see launch_apps) and needs the socket.
 docker exec "$container" chmod 666 "/run/wl/${display##*/}"
-control() { docker exec -e "WAYLAND_DISPLAY=${display##*/}" "$container" neferwl "$@"; }
+control() { docker exec "$container" neferwl -s demo "$@"; }
+control shot --every-frame --dir /work/shots >/dev/null
 app() { docker exec -d -e "WAYLAND_DISPLAY=${display##*/}" "$container" "$@"; }
 at() { local delay=$(($1 - SECONDS)); if ((delay > 0)); then sleep "$delay"; fi; }
 launch_apps() {
     # This shell timeline shares t=0 with input.txt. Only keys live in input.txt;
-    # app launches cannot be invoked by compositor input scripts.
+    # app launches and control commands share the same clock.
     at 3
     app firefox --no-remote --profile /root/firefox 'https://duckduckgo.com/?q=wayland+compositor'
     # btop's first per-core sample is bogus in this container. Let it collect
@@ -137,6 +137,7 @@ feed() {
             esac ;;
         esac
     done <tools/demo/input.txt
+    control shot --stop >/dev/null
     control key Ctrl+Alt+BackSpace --wait committed || true
 }
 app foot --title 'System / NeferWL' bash -c \
