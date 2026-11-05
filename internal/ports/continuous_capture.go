@@ -4,6 +4,8 @@ package ports
 // frames go (unused when stopping).
 type ContinuousTarget struct{ Output, Dir string }
 
+func (ContinuousTarget) continuousTarget() {}
+
 // ContinuousCaptureRequest is core's resolved plan for owner-local frame
 // writers: every target is a live output and every Dir is absolute. Reply
 // must have capacity one; the backend acknowledges the whole plan once.
@@ -35,3 +37,4 @@ func (OutputContinuous) outputContinuous() {}
 var _ interface{ continuousCaptureRequest() } = ContinuousCaptureRequest{}
 var _ interface{ continuousCaptureResult() } = ContinuousCaptureResult{}
 var _ interface{ outputContinuous() } = OutputContinuous{}
+var _ interface{ continuousTarget() } = ContinuousTarget{}
