@@ -295,6 +295,8 @@ func (s *Server) serve(ctx context.Context, conn *net.UnixConn, out chan<- ports
 }
 
 func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.ControlRequest, announced *bool) reply {
+	// The request deadline covers the core wait and the capture together.
+	start := time.Now()
 	response := reply{ID: req.ID, Error: ports.ControlErrBadRequest}
 	if req.Op == "shot" && (req.EveryFrame || req.Stop) {
 		return s.continuousCapture(ctx, req)
@@ -345,7 +347,11 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 		if req.Timeout != nil {
 			var err error
 			timeout, err = time.ParseDuration(*req.Timeout)
-			if err != nil || timeout <= 0 || timeout > maxRequestTimeout {
+			if err != nil || timeout <= 0 {
+				return response
+			}
+			if timeout > maxRequestTimeout {
+				response.Detail = "timeout exceeds 5m"
 				return response
 			}
 		}
@@ -403,8 +409,8 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 			response.Detail = "capture unavailable"
 			return response
 		}
-		// The capture is part of the request: bound it by the request timeout.
-		shotCtx, cancel := context.WithTimeout(ctx, timeout)
+		// The capture gets what the core wait left of the request deadline.
+		shotCtx, cancel := context.WithDeadline(ctx, start.Add(timeout))
 		shots, err := s.shooter.Shoot(shotCtx, result.Shots, req.Inline)
 		cancel()
 		response.Shots = shots

@@ -63,6 +63,13 @@ func TestProtocol(t *testing.T) {
 	if string(hello["id"]) != `"hello"` || string(hello["ok"]) != "true" || string(hello["v"]) != "1" {
 		t.Fatal(hello)
 	}
+	// A line that is not JSON has no id to echo: null.
+	if bad := exchange(`{broken`); string(bad["id"]) != "null" || string(bad["error"]) != `"bad-request"` {
+		t.Fatal(bad)
+	}
+	if long := exchange(`{"id":9,"op":"do","action":"none","timeout":"6m"}`); string(long["detail"]) != `"timeout exceeds 5m"` {
+		t.Fatal(long)
+	}
 	// The id is optional and echoed as null.
 	if anon := exchange(`{"op":"hello"}`); string(anon["id"]) != "null" || string(anon["ok"]) != "true" {
 		t.Fatal(anon)
