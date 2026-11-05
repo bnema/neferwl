@@ -102,6 +102,27 @@ func TestHeadlessControlEndToEnd(t *testing.T) {
 	if image.Bounds().Dx() != 640 || image.Bounds().Dy() != 480 {
 		t.Fatal(image.Bounds())
 	}
+	added := call(100, "output-add", map[string]any{"mode": "800x600@60"})
+	checkOutput := func(reply map[string]json.RawMessage, want bool) {
+		t.Helper()
+		var state statewire.State
+		if err := json.Unmarshal(reply["state"], &state); err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, output := range state.Outputs {
+			if output.Name == "HEADLESS-2" {
+				found = true
+			}
+		}
+		if found != want {
+			t.Fatalf("HEADLESS-2 present=%v want %v: %s", found, want, reply["state"])
+		}
+	}
+	checkOutput(added, true)
+	checkOutput(call(101, "query", map[string]any{"what": "state"}), true)
+	checkOutput(call(102, "output-rm", map[string]any{"name": "HEADLESS-2"}), false)
+	checkOutput(call(103, "query", map[string]any{"what": "state"}), false)
 	hello := call(1, "hello", map[string]any{})
 	if string(hello["v"]) != "1" {
 		t.Fatal(hello)

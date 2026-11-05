@@ -152,6 +152,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	s.p = newPipes(s.plan.PersistScales, opts.Config.Hint.Enable)
 	if opts.Backend == "headless" {
 		s.p.control = make(chan ports.ControlRequest, 32)
+		s.p.runtimeOutputs = make(chan ports.OutputRuntimeRequest, 32)
 	}
 	// core() carries channels only; the gate, clock and terminal flag are
 	// explicit core.Options.

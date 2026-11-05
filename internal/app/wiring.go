@@ -13,6 +13,7 @@ import (
 // them all, with their buffer sizes; core, wayland and outputs hand each
 // side the ends it uses.
 type pipes struct {
+	runtimeOutputs  chan ports.OutputRuntimeRequest
 	securityChanges chan domain.SecurityState
 	securityEvents  chan ports.SecurityBackendEvent
 
@@ -155,25 +156,26 @@ func newPipes(realSession, hint bool) *pipes {
 // flag are not channels; assembleSession passes them as core.Options.
 func (p *pipes) core() core.Channels {
 	return core.Channels{
-		Control:      p.control,
-		Client:       p.client,
-		Input:        p.input,
-		Output:       p.output,
-		Config:       p.configured,
-		Commands:     p.commands,
-		Spawn:        p.spawn,
-		Scenes:       p.scenes,
-		Layouts:      p.layouts,
-		Constraints:  p.constraints,
-		State:        p.states,
-		Workspaces:   p.workspaces,
-		ConfigErrors: p.configErrors,
-		Scales:       p.scales,
-		Binds:        p.binds,
-		Placements:   p.placements,
-		Frames:       p.frames,
-		HintScans:    p.hintScans,
-		Hints:        p.hintResults,
+		Control:        p.control,
+		RuntimeOutputs: p.runtimeOutputs,
+		Client:         p.client,
+		Input:          p.input,
+		Output:         p.output,
+		Config:         p.configured,
+		Commands:       p.commands,
+		Spawn:          p.spawn,
+		Scenes:         p.scenes,
+		Layouts:        p.layouts,
+		Constraints:    p.constraints,
+		State:          p.states,
+		Workspaces:     p.workspaces,
+		ConfigErrors:   p.configErrors,
+		Scales:         p.scales,
+		Binds:          p.binds,
+		Placements:     p.placements,
+		Frames:         p.frames,
+		HintScans:      p.hintScans,
+		Hints:          p.hintResults,
 	}
 }
 
@@ -207,6 +209,7 @@ func (p *pipes) wayland() wayland.Channels {
 // outputs is the outputs' side (DRM or headless).
 func (p *pipes) outputs(security ports.SessionSecurity, presented ports.PresentationSink, content routing.ContentAttacher) routing.Channels {
 	return routing.Channels{
+		RuntimeOutputs:  p.runtimeOutputs,
 		Security:        security,
 		SecurityChanges: p.securityChanges,
 		SecurityEvents:  p.securityEvents,
