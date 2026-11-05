@@ -176,7 +176,7 @@ func startXwaylandBackendConfig(t *testing.T, backend domain.Backend, sizes [][2
 	go func() {
 		done <- Run(ctx, Options{
 			Backend: backend, NoTerminal: true, Config: cfg, ConfigPath: path,
-			ScreenshotDir: shots, Sizes: sizes, noLibinput: backend == domain.BackendServer,
+			Sizes: sizes, noLibinput: backend == domain.BackendServer,
 		})
 	}()
 	t.Cleanup(func() {

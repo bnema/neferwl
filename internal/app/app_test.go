@@ -34,10 +34,11 @@ func TestHeadlessConfigReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	shots := t.TempDir()
+	scenes := make(chan []domain.Scene, 4096)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, ConfigPath: path, NoTerminal: true, ScreenshotDir: shots})
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, ConfigPath: path, NoTerminal: true, testScenes: scenes})
 	}()
 	defer func() {
 		cancel()
@@ -50,6 +51,11 @@ func TestHeadlessConfigReload(t *testing.T) {
 			t.Error("Run did not stop")
 		}
 	}()
+	awaitControlScene(t, scenes, done, 0)
+	client := dialTestControl(t, os.Getenv("XDG_RUNTIME_DIR"))
+	if err := client.call(map[string]any{"op": "shot", "every_frame": true, "dir": shots}); err != nil {
+		t.Fatal(err)
+	}
 	latest := filepath.Join(shots, "latest.png")
 	waitColor := func(want color.RGBA, budget time.Duration) bool {
 		waitFile := fileChangesWithin(t, shots, budget)
@@ -194,10 +200,13 @@ func TestHeadlessTyping(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, ScreenshotDir: dir, Timeout: 6 * time.Second, testScenes: scenes})
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, Timeout: 6 * time.Second, testScenes: scenes})
 	}()
 	awaitControlScene(t, scenes, done, 1)
 	client := dialTestControl(t, os.Getenv("XDG_RUNTIME_DIR"))
+	if err := client.call(map[string]any{"op": "shot", "every_frame": true, "dir": dir}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := client.Write([]byte("type echo neferwl-ok\nkey Return")); err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +471,16 @@ func TestHeadlessTwoOutputs(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	scenes := make(chan []domain.Scene, 64)
 	shots := t.TempDir()
-	err := Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), NoTerminal: true, ScreenshotDir: shots, Sizes: [][2]int{{640, 480}, {320, 240}}, Timeout: 2 * time.Second, testScenes: scenes})
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), NoTerminal: true, Sizes: [][2]int{{640, 480}, {320, 240}}, Timeout: 2 * time.Second, testScenes: scenes})
+	}()
+	awaitControlScene(t, scenes, done, 0)
+	client := dialTestControl(t, os.Getenv("XDG_RUNTIME_DIR"))
+	if err := client.call(map[string]any{"op": "shot", "every_frame": true, "dir": shots}); err != nil {
+		t.Fatal(err)
+	}
+	err := <-done
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "vulkan") {
 			t.Skipf("Vulkan unavailable: %v", err)

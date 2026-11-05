@@ -26,13 +26,13 @@ import (
 
 // runFlags are the root command flags.
 type runFlags struct {
-	sessionID                                                              string
-	readyFD                                                                int
-	overrides                                                              core.PlanOverrides
-	deprecatedServer                                                       bool
-	backend, profile, inputDevices, screenshot, size, debug, config, pprof string
-	noTerminal, noXwayland, headlessHDR, screenshotRaw, session, dbus      bool
-	timeout                                                                time.Duration
+	sessionID                                                  string
+	readyFD                                                    int
+	overrides                                                  core.PlanOverrides
+	deprecatedServer                                           bool
+	backend, profile, inputDevices, size, debug, config, pprof string
+	noTerminal, noXwayland, headlessHDR, session, dbus         bool
+	timeout                                                    time.Duration
 }
 
 func (f *runFlags) register(fs *flag.FlagSet) {
@@ -41,12 +41,10 @@ func (f *runFlags) register(fs *flag.FlagSet) {
 	fs.IntVar(&f.readyFD, "ready-fd", 0, "headless readiness file descriptor")
 	fs.StringVar(&f.profile, "profile", "ephemeral", "headless profile: ephemeral or persistent")
 	fs.StringVar(&f.inputDevices, "input-devices", "", "headless input devices: none or grab")
-	fs.StringVar(&f.screenshot, "screenshot", "", "write PNG frames to directory")
 	fs.StringVar(&f.size, "size", "1920x1080", "headless output sizes WxH, comma-separated for several outputs")
 	fs.BoolVar(&f.noTerminal, "no-terminal", false, "skip initial terminal")
 	fs.BoolVar(&f.noXwayland, "no-xwayland", false, "no X11 display for X11 apps")
 	fs.BoolVar(&f.headlessHDR, "headless-hdr", false, "test-only: report HDR on virtual outputs; fall back if Vulkan HDR unavailable")
-	fs.BoolVar(&f.screenshotRaw, "screenshot-raw", false, "test-only: also write latest-pq.png, the raw PQ codes of an HDR output")
 	fs.DurationVar(&f.timeout, "timeout", 0, "duration before exit (0 disables timeout)")
 	fs.StringVar(&f.debug, "debug", "", "debug components (comma-separated or all; all leaves out drm-flip, input-motion, input-keys, wayland-damage and render-damage, which log every flip, pointer motion, key, client commit or frame)")
 	fs.StringVar(&f.config, "config", "", "config path (empty uses XDG default)")
@@ -85,10 +83,6 @@ func (f *runFlags) validate(args []string, set map[string]bool) ([][2]int, error
 		return nil, usagef("--dbus requires --backend=headless")
 	case f.headlessHDR && !headless:
 		return nil, usagef("--headless-hdr requires --backend=headless")
-	case f.screenshot != "" && !headless:
-		return nil, usagef("--screenshot requires --backend=headless")
-	case f.screenshotRaw && (f.screenshot == "" || !f.headlessHDR):
-		return nil, usagef("--screenshot-raw requires --screenshot and --headless-hdr")
 	case f.timeout < 0:
 		return nil, usagef("negative timeout")
 	case len(args) != 0:
@@ -141,11 +135,6 @@ func setupRun(fs *flag.FlagSet) Runner {
 func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if f.screenshot != "" {
-		if err := os.MkdirAll(f.screenshot, 0o755); err != nil {
-			return err
-		}
-	}
 	path, cfg, warnings, err := loadConfig(f.config)
 	if err != nil {
 		return err
@@ -197,8 +186,6 @@ func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
 		HeadlessHDR:   f.headlessHDR,
 		Session:       f.session,
 		DBus:          f.dbus,
-		ScreenshotDir: f.screenshot,
-		ScreenshotRaw: f.screenshotRaw,
 		Sizes:         sizes,
 	})
 	// SIGINT and SIGTERM cancel the context and are clean exits.

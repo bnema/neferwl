@@ -64,7 +64,7 @@ const (
 // byte for byte (±1 per channel).
 func TestColorCheckSDR(t *testing.T) {
 	dir := t.TempDir()
-	socket := startColorCompositor(t, Options{ScreenshotDir: dir})
+	socket := startColorCompositor(t, Options{})
 	client := startPatternClient(t, socket, "sdr")
 	patches := pattern.Patches("sdr", colorW, colorH)
 	assertNoCursorOverlap(t, patches)
@@ -96,7 +96,7 @@ func TestColorCheckSDR(t *testing.T) {
 // cursor and the capture indicator are not in the exported target.
 func TestColorCheckHDR(t *testing.T) {
 	dir := t.TempDir()
-	socket := startColorCompositor(t, Options{ScreenshotDir: dir, HeadlessHDR: true, ScreenshotRaw: true})
+	socket := startColorCompositor(t, Options{HeadlessHDR: true})
 	pq := filepath.Join(dir, "latest-pq.png")
 
 	t.Run("sdr-client", func(t *testing.T) {

@@ -153,6 +153,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	if opts.Backend == "headless" {
 		s.p.control = make(chan ports.ControlRequest, 32)
 		s.p.runtimeOutputs = make(chan ports.OutputRuntimeRequest, 32)
+		s.p.continuous = make(chan ports.ContinuousCaptureRequest, 8)
 	}
 	// core() carries channels only; the gate, clock and terminal flag are
 	// explicit core.Options.
@@ -220,7 +221,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 		if mapErr != nil {
 			return s, mapErr
 		}
-		if listener, err := control.Listen(path, s.wsIDs, control.Options{Shooter: control.NewShooter(s.p.captures, s.controlDone, filepath.Join(s.registry.Path(), "shots"), s.shotSize), Keymap: controlMap, Keymaps: s.p.controlKeymaps, Security: s.security}); err != nil {
+		if listener, err := control.Listen(path, s.wsIDs, control.Options{Continuous: s.p.continuous, FramesDir: filepath.Join(s.registry.Path(), "shots", "frames"), Shooter: control.NewShooter(s.p.captures, s.controlDone, filepath.Join(s.registry.Path(), "shots"), s.shotSize), Keymap: controlMap, Keymaps: s.p.controlKeymaps, Security: s.security}); err != nil {
 			controlMap.Close()
 			log.Warn().Err(err).Msg("control socket disabled")
 		} else {
@@ -258,7 +259,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 			if s.hw != nil {
 				device = s.hw.RenderDevice()
 			}
-			return device.NewRenderer(w, h, domain.RendererOptions{Virtual: true, Readback: opts.ScreenshotRaw, TraceDamage: traceDamage})
+			return device.NewRenderer(w, h, domain.RendererOptions{Virtual: true, Readback: opts.HeadlessHDR, TraceDamage: traceDamage})
 		}
 	}
 	return s, nil
@@ -492,7 +493,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 			})
 			return
 		}
-		done <- headlessbackend.Run(ctx, headlessbackend.BackendOptions{Sizes: sizes, Shots: opts.ScreenshotDir, HDR: opts.HeadlessHDR, Raw: opts.ScreenshotRaw}, apply, outputIO, curs, s.newRenderer, logging.For(ctx, "render"))
+		done <- headlessbackend.Run(ctx, headlessbackend.BackendOptions{Sizes: sizes, HDR: opts.HeadlessHDR}, apply, outputIO, curs, s.newRenderer, logging.For(ctx, "render"))
 	}()
 
 	if hw != nil {

@@ -13,6 +13,7 @@ import (
 // them all, with their buffer sizes; core, wayland and outputs hand each
 // side the ends it uses.
 type pipes struct {
+	continuous      chan ports.ContinuousCaptureRequest
 	runtimeOutputs  chan ports.OutputRuntimeRequest
 	securityChanges chan domain.SecurityState
 	securityEvents  chan ports.SecurityBackendEvent
@@ -209,6 +210,7 @@ func (p *pipes) wayland() wayland.Channels {
 // outputs is the outputs' side (DRM or headless).
 func (p *pipes) outputs(security ports.SessionSecurity, presented ports.PresentationSink, content routing.ContentAttacher) routing.Channels {
 	return routing.Channels{
+		Continuous:      p.continuous,
 		RuntimeOutputs:  p.runtimeOutputs,
 		Security:        security,
 		SecurityChanges: p.securityChanges,

@@ -18,7 +18,7 @@ func TestProfileFlags(t *testing.T) {
 	}{
 		{[]string{"--backend=headless"}, false, "ephemeral", 1, core.InputNone},
 		{[]string{"--backend=headless", "--profile=persistent"}, false, "persistent", 0, core.InputLibinputDirect},
-		{[]string{"--backend=server", "--size=100x80", "--timeout=1s", "--screenshot=/tmp/shots"}, false, "persistent", 1, core.InputLibinputDirect},
+		{[]string{"--backend=server", "--size=100x80", "--timeout=1s"}, false, "persistent", 1, core.InputLibinputDirect},
 		{[]string{"--backend=headless", "--profile=persistent", "--input-devices=none"}, false, "persistent", 0, core.InputNone},
 		{[]string{"--backend=headless", "--input-devices=grab"}, false, "ephemeral", 1, core.InputLibinputDirect},
 		{[]string{"--profile=ephemeral"}, true, "", 0, 0},

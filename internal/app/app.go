@@ -39,14 +39,9 @@ type Options struct {
 	// DBus serves the session D-Bus services (idle inhibition, screen
 	// casting and screenshots) of a headless run, which otherwise leaves the
 	// session bus alone. For tests under dbus-run-session.
-	DBus          bool
-	ScreenshotDir string
-	// ScreenshotRaw also writes latest-pq.png, the raw PQ codes of a
-	// virtual HDR output (test-only; needs ScreenshotDir and HeadlessHDR).
-	ScreenshotRaw bool
-	// Sizes are the headless outputs (width, height), left to right; empty
-	// means one 1920x1080 output. With several outputs, screenshots go to
-	// one subdirectory per output (HEADLESS-1, HEADLESS-2, ...).
+	DBus bool
+	// Sizes are headless outputs (width, height), left to right; empty
+	// means one 1920x1080 output.
 	Sizes      [][2]int
 	testScenes chan<- []domain.Scene
 	// captureAllowPath replaces the fixed allowlist path (tests).
