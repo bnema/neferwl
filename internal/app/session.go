@@ -104,7 +104,9 @@ const (
 // warning or nil instead of failing. A failure releases the DRM backend,
 // keymap and Vulkan resources (abort).
 func assembleSession(ctx context.Context, opts Options) (s *session, err error) {
-	s = &session{opts: opts, plan: core.PlanBackend(opts.Backend, opts.Profile, opts.PlanOverrides), log: logging.For(ctx, "app"), clock: clock.System{}, security: &sessionsecurity.Gate{}}
+	overrides := opts.PlanOverrides
+	overrides.SizedHeads = len(opts.Sizes) > 0
+	s = &session{opts: opts, plan: core.PlanBackend(opts.Backend, opts.Profile, overrides), log: logging.For(ctx, "app"), clock: clock.System{}, security: &sessionsecurity.Gate{}}
 	defer func() {
 		if err != nil {
 			s.abort()
@@ -126,9 +128,6 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	}
 	log := s.log
 	s.sizes = opts.Sizes
-	if len(s.sizes) > 0 && !s.plan.KMS {
-		s.plan.FixedHeads = core.HeadsSized
-	}
 	if len(s.sizes) == 0 && s.plan.FixedHeads == core.HeadsSized {
 		s.sizes = [][2]int{{1920, 1080}}
 	}

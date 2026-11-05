@@ -54,6 +54,18 @@ func TestPlanBackend(t *testing.T) {
 			}
 		}
 	}
+	// Explicit sizes give headless sized heads in every profile; DRM keeps
+	// its connectors.
+	for _, p := range []domain.Profile{domain.ProfileEphemeral, domain.ProfilePersistent} {
+		want := PlanBackend(domain.BackendHeadless, p, PlanOverrides{})
+		want.FixedHeads = HeadsSized
+		if got := PlanBackend(domain.BackendHeadless, p, PlanOverrides{SizedHeads: true}); got != want {
+			t.Fatalf("sized %s: %+v want %+v", p, got, want)
+		}
+	}
+	if got := PlanBackend(domain.BackendDRM, domain.ProfileEphemeral, PlanOverrides{SizedHeads: true}); got != drm {
+		t.Fatalf("sized drm: %+v", got)
+	}
 	if got := PlanBackend(domain.BackendHeadless, domain.Profile(99), PlanOverrides{}); got != (BackendPlan{}) {
 		t.Fatal(got)
 	}

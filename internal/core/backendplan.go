@@ -55,6 +55,9 @@ type PlanOverrides struct {
 	SessionDBus  *bool
 	AutoTerminal *bool
 	Input        *InputSource
+	// SizedHeads: explicit output sizes were given (--size). Headless then
+	// runs sized heads whatever the profile; DRM uses its connectors.
+	SizedHeads bool
 }
 
 // PlanBackend returns the backend/profile policy consumed by wiring. DRM
@@ -95,6 +98,9 @@ func PlanBackend(b domain.Backend, p domain.Profile, o PlanOverrides) BackendPla
 	}
 	if o.Input != nil {
 		plan.Input = *o.Input
+	}
+	if o.SizedHeads {
+		plan.FixedHeads = HeadsSized
 	}
 	return plan
 }
