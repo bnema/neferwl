@@ -18,19 +18,24 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/app"
+	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
 	"golang.org/x/term"
 )
 
 // runFlags are the root command flags.
 type runFlags struct {
-	backend, screenshot, size, debug, config, pprof                   string
-	noTerminal, noXwayland, headlessHDR, screenshotRaw, session, dbus bool
-	timeout                                                           time.Duration
+	overrides                                                              core.PlanOverrides
+	deprecatedServer                                                       bool
+	backend, profile, inputDevices, screenshot, size, debug, config, pprof string
+	noTerminal, noXwayland, headlessHDR, screenshotRaw, session, dbus      bool
+	timeout                                                                time.Duration
 }
 
 func (f *runFlags) register(fs *flag.FlagSet) {
-	fs.StringVar(&f.backend, "backend", "drm", "drm, headless or server")
+	fs.StringVar(&f.backend, "backend", "drm", "drm or headless (server is deprecated)")
+	fs.StringVar(&f.profile, "profile", "ephemeral", "headless profile: ephemeral or persistent")
+	fs.StringVar(&f.inputDevices, "input-devices", "", "headless input devices: none or grab")
 	fs.StringVar(&f.screenshot, "screenshot", "", "write PNG frames to directory")
 	fs.StringVar(&f.size, "size", "1920x1080", "headless output sizes WxH, comma-separated for several outputs")
 	fs.BoolVar(&f.noTerminal, "no-terminal", false, "skip initial terminal")
@@ -45,28 +50,19 @@ func (f *runFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.pprof, "pprof", "", "serve Go runtime profiles (heap, CPU, trace) on this address, e.g. localhost:6060")
 }
 
-// serverRejected are the test-only and headless flags --backend=server
-// refuses, in report order.
-var serverRejected = []string{"screenshot", "screenshot-raw", "size", "timeout", "headless-hdr", "dbus"}
-
 // validate checks the flag combinations and parses --size. set holds the
 // flags given on the command line.
 func (f *runFlags) validate(args []string, set map[string]bool) ([][2]int, error) {
+	f.normalizeBackendAlias()
 	headless := f.backend == "headless"
-	if f.backend == string(domain.BackendServer) {
-		for _, name := range serverRejected {
-			if set[name] {
-				return nil, usagef("--%s is not allowed with --backend=server", name)
-			}
-		}
-		if len(args) != 0 {
-			return nil, usagef("unexpected arguments: %v", args)
-		}
-		if _, err := logging.ParseDebug(f.debug); err != nil {
-			return nil, usageError{fmt.Errorf("--debug: %w", err)}
-		}
-		// Server mode has no fixed heads: only config-declared virtual outputs.
-		return nil, nil
+	if !headless && set["profile"] {
+		return nil, usagef("--profile requires --backend=headless")
+	}
+	if _, err := domain.ParseProfile(f.profile); err != nil {
+		return nil, usagef("%v", err)
+	}
+	if err := f.parseOverrides(set, headless); err != nil {
+		return nil, err
 	}
 	switch {
 	case f.backend != "drm" && !headless:
@@ -87,6 +83,9 @@ func (f *runFlags) validate(args []string, set map[string]bool) ([][2]int, error
 	// The config file checks its own log.debug names.
 	if _, err := logging.ParseDebug(f.debug); err != nil {
 		return nil, usageError{fmt.Errorf("--debug: %w", err)}
+	}
+	if headless && f.profile == "persistent" && !set["size"] {
+		return nil, nil
 	}
 	return parseSizes(f.size)
 }
@@ -109,12 +108,15 @@ func parseSizes(value string) ([][2]int, error) {
 func setupRun(fs *flag.FlagSet) Runner {
 	var f runFlags
 	f.register(fs)
-	return func(ctx context.Context, _ Env, args []string) error {
+	return func(ctx context.Context, env Env, args []string) error {
 		set := map[string]bool{}
 		fs.Visit(func(fl *flag.Flag) { set[fl.Name] = true })
 		sizes, err := f.validate(args, set)
 		if err != nil {
 			return err
+		}
+		if f.deprecatedServer {
+			fmt.Fprintln(env.Stderr, "deprecated: use --backend=headless --profile=persistent")
 		}
 		return f.run(ctx, sizes)
 	}
@@ -163,6 +165,8 @@ func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
 	}
 	err = app.Run(ctx, app.Options{
 		Backend:       domain.Backend(f.backend),
+		Profile:       mustProfile(f.profile),
+		PlanOverrides: f.overrides,
 		Config:        cfg,
 		ConfigPath:    path,
 		Timeout:       f.timeout,
@@ -261,5 +265,41 @@ func servePprof(ctx context.Context, addr string) error {
 		<-ctx.Done()
 		_ = srv.Close()
 	}()
+	return nil
+}
+
+func mustProfile(s string) domain.Profile { p, _ := domain.ParseProfile(s); return p }
+
+func (f *runFlags) normalizeBackendAlias() {
+	if f.backend == string(domain.BackendServer) {
+		f.backend = "headless"
+		f.profile = "persistent"
+		f.deprecatedServer = true
+	}
+}
+
+func (f *runFlags) parseOverrides(set map[string]bool, headless bool) error {
+	if set["input-devices"] {
+		if !headless {
+			return usagef("--input-devices requires --backend=headless")
+		}
+		input := core.InputNone
+		switch f.inputDevices {
+		case "none":
+		case "grab":
+			input = core.InputLibinputDirect
+		default:
+			return usagef("--input-devices must be none or grab")
+		}
+		f.overrides.Input = &input
+	}
+	if set["dbus"] {
+		value := f.dbus
+		f.overrides.SessionDBus = &value
+	}
+	if set["no-terminal"] {
+		value := !f.noTerminal
+		f.overrides.AutoTerminal = &value
+	}
 	return nil
 }

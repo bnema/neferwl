@@ -20,11 +20,13 @@ import (
 )
 
 type Options struct {
-	Backend    domain.Backend
-	Config     domain.Config
-	ConfigPath string
-	Timeout    time.Duration
-	NoTerminal bool
+	Backend       domain.Backend
+	Profile       domain.Profile
+	PlanOverrides core.PlanOverrides
+	Config        domain.Config
+	ConfigPath    string
+	Timeout       time.Duration
+	NoTerminal    bool
 	// NoXwayland skips the X11 display even when the config enables it.
 	NoXwayland bool
 	// HeadlessHDR enables a virtual HDR output for protocol testing only.
