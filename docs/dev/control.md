@@ -124,3 +124,21 @@ neferwl -s test shot --output HEADLESS-1 --inline
 Replace `test` with the id returned by `session new`. For continuous captures,
 use `neferwl shot --every-frame --dir <directory>` and stop with
 `neferwl shot --stop`; the directory contains PNG frames and `frames.ffconcat`.
+
+## Sessions
+
+`neferwl session ls` lists live sessions in ID order, with profile, PID,
+Wayland display and creation time. `--json` prints the registry metadata as a
+JSON array. Unlocked stale session directories are reclaimed while listing.
+
+The planned `session new` launcher uses this child startup contract:
+
+```text
+<executable> --backend=headless --profile=P --session-id=ID --ready-fd=3
+             [--size=WxH,...] [--config=PATH] [--timeout=TTL] [extra flags...]
+```
+
+The child writes one JSON line containing `id`, `wayland`, `control` and
+`display` to fd 3 when ready, then closes it. EOF before that line means startup
+failed. The launcher waits at most `--start-timeout` (default `30s`). These
+startup flags and the `new`/`rm` commands are pending implementation.
