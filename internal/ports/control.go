@@ -51,13 +51,14 @@ func (ControlQuery) controlRequest() {}
 // returned MinSeq and reads their pixels. On timeout only presented outputs
 // have Shots.
 type ControlReply struct {
-	Err      string
-	Done     domain.WaitLevel
-	TimedOut bool
-	State    domain.State
-	Diff     domain.StateDiff
-	Late     []domain.WindowID
-	Shots    []domain.ShotRequest
+	// Err is empty on success; ControlErrTimeout reports a wait that ended
+	// before its condition, with the partial results below.
+	Err   string
+	Done  domain.WaitLevel
+	State domain.State
+	Diff  domain.StateDiff
+	Late  []domain.WindowID
+	Shots []domain.ShotRequest
 }
 
 func (ControlReply) controlReply() {}
@@ -74,6 +75,9 @@ const (
 	ControlErrBusy          = "busy"
 	ControlErrForbidden     = "forbidden"
 	ControlErrCaptureFailed = "capture-failed"
+	// ControlErrTimeout: the completion condition was not reached in time;
+	// the reply still carries the partial results.
+	ControlErrTimeout = "timeout"
 )
 
 // ControlOutput changes the runtime-only virtual output desired set.

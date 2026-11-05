@@ -49,20 +49,17 @@ func addWaitFlags(fs *flag.FlagSet) waitFlags {
 	return waitFlags{
 		wait:    fs.String("wait", "settled", "Completion level: committed, settled or presented."),
 		until:   fs.String("until", "", "State predicate to wait for, e.g. 'window-mapped app_id=foot'."),
-		timeout: fs.Duration("timeout", 10*time.Second, "Maximum completion wait."),
+		timeout: fs.Duration("timeout", domain.DefaultControlTimeout, "Maximum completion wait."),
 		shot:    fs.Bool("shot", false, "Capture all outputs once the result is presented (implies --wait=presented)."),
 	}
 }
 
 // apply validates the flags and adds them to a do or inject request.
-// maxControlTimeout mirrors the control server's cap on request timeouts.
-const maxControlTimeout = 5 * time.Minute
-
 func checkControlTimeout(d time.Duration) error {
 	if d <= 0 {
 		return usagef("timeout must be positive")
 	}
-	if d > maxControlTimeout {
+	if d > domain.MaxControlTimeout {
 		return usagef("timeout must not exceed 5m")
 	}
 	return nil

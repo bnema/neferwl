@@ -5,7 +5,8 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
-	"time"
+
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 var shotCmd = Command{
@@ -25,7 +26,7 @@ var shotCmd = Command{
 		dir := fs.String("dir", "", "Continuous capture directory.")
 		raw := fs.Bool("raw", false, "Also write raw PQ frames (requires --every-frame).")
 		inline := fs.Bool("inline", false, "Include PNG bytes as base64 in the reply.")
-		timeout := fs.Duration("timeout", 5*time.Second, "Maximum completion wait.")
+		timeout := fs.Duration("timeout", domain.DefaultControlTimeout, "Maximum completion wait.")
 		return func(ctx context.Context, env Env, args []string) error {
 			if len(args) != 0 {
 				return usagef("shot takes no positional arguments")

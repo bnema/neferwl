@@ -77,7 +77,7 @@ func TestControlWaits(t *testing.T) {
 		action("none", domain.WaitSettled, nil, time.Second)
 		noReply()
 		client <- ports.WindowCommitted{ID: 1, Serial: configured.Serial}
-		if r := receive(); r.Done != domain.WaitSettled || r.TimedOut {
+		if r := receive(); r.Done != domain.WaitSettled || r.Err == ports.ControlErrTimeout {
 			t.Fatalf("settled: %+v", r)
 		}
 
@@ -109,7 +109,7 @@ func TestControlWaits(t *testing.T) {
 		noReply()
 		time.Sleep(time.Second)
 		r := receive()
-		if !r.TimedOut || r.Err != "timeout" || r.Done != domain.WaitCommitted || len(r.Diff.Mapped) != 1 || r.Diff.Mapped[0] != 3 || len(r.Late) != 2 {
+		if r.Err != ports.ControlErrTimeout || r.Done != domain.WaitCommitted || len(r.Diff.Mapped) != 1 || r.Diff.Mapped[0] != 3 || len(r.Late) != 2 {
 			t.Fatalf("timeout: %+v", r)
 		}
 		client <- ports.WindowCommitted{ID: 2, Serial: configured.Serial}
@@ -131,7 +131,7 @@ func TestControlWaits(t *testing.T) {
 		action("focus-workspace-next", domain.WaitPresented, nil, time.Second)
 		noReply()
 		output <- ports.OutputRemoved{Name: "A"}
-		if r := receive(); r.Done != domain.WaitPresented || r.TimedOut {
+		if r := receive(); r.Done != domain.WaitPresented || r.Err == ports.ControlErrTimeout {
 			t.Fatalf("removed: %+v", r)
 		}
 	})
@@ -158,7 +158,7 @@ func TestControlWaitEarliestDeadlineAndReachedLevel(t *testing.T) {
 		}
 		for range 2 {
 			r := <-replies
-			if !r.TimedOut || r.Done != domain.WaitPresented {
+			if r.Err != ports.ControlErrTimeout || r.Done != domain.WaitPresented {
 				t.Fatalf("highest reached: %+v", r)
 			}
 		}
@@ -204,8 +204,15 @@ func TestControlWaitPendingAllocations(t *testing.T) {
 		cfg.Keyboard.CmdKey = "super"
 		cfg.Layout.MaxColumns = 2
 		c := newSizedCore(t, cfg)
+		// A populated desktop: the predicate reads a scratch snapshot, it
+		// must not clone it every pass.
+		c.addScreen(domain.OutputInfo{Name: "A", Width: 200, Height: 100})
+		for id := range WindowID(4) {
+			c.clientEvent(context.Background(), ports.WindowMapped{ID: id + 1, AppID: "app"})
+		}
 		replies := make(chan ports.ControlReply, 1)
 		c.waitControl(c.state(), c.sceneSeqs(), domain.WaitCommitted, &domain.Until{Kind: domain.UntilWindowMapped, AppID: "missing"}, time.Minute, replies, nil)
+		c.evalWaits()
 		c.evalWaits()
 		// The generated clock and timer mocks allocate per call: that is the
 		// baseline, the wait itself must add nothing.
@@ -243,7 +250,7 @@ func TestControlOutputWaitDeadline(t *testing.T) {
 		time.Sleep(runtimeOutputTimeout)
 		<-c.controlWaitC
 		c.evalWaits()
-		if r := <-reply; !r.TimedOut || len(c.controlWaits) != 0 {
+		if r := <-reply; r.Err != ports.ControlErrTimeout || len(c.outputWaits) != 0 {
 			t.Fatalf("output wait: %+v", r)
 		}
 	})
@@ -292,5 +299,26 @@ func TestRemovedScreenForgetsPresented(t *testing.T) {
 	c.removeScreen("A")
 	if _, ok := c.presented["A"]; ok {
 		t.Fatal("presented kept for a removed output")
+	}
+}
+
+// Shots carry the physical size of their output's presented scene.
+func TestShotSizePhysical(t *testing.T) {
+	var cfg domain.Config
+	cfg.Keyboard.CmdKey = "super"
+	cfg.Layout.MaxColumns = 2
+	c := newSizedCore(t, cfg)
+	c.addScreen(domain.OutputInfo{Name: "A", Width: 200, Height: 100})
+	sc := c.screens[c.screenIndex("A")]
+	sc.last = domain.Scene{Output: "A", OutputWidth: 640, OutputHeight: 480, Scale: 1.5}
+	if w, h := c.shotSize("A"); w != 960 || h != 720 {
+		t.Fatalf("scaled %dx%d", w, h)
+	}
+	sc.last.Transform = 1 // 90°
+	if w, h := c.shotSize("A"); w != 720 || h != 960 {
+		t.Fatalf("rotated %dx%d", w, h)
+	}
+	if w, h := c.shotSize("missing"); w != 0 || h != 0 {
+		t.Fatal("unknown output has a size")
 	}
 }

@@ -92,7 +92,7 @@ func TestControlShots(t *testing.T) {
 		noReply()
 		time.Sleep(time.Second)
 		r = receive()
-		if !r.TimedOut || len(r.Shots) != 1 || r.Shots[0].Output != "A" || r.Shots[0].MinSeq != seqs["A"] {
+		if r.Err != ports.ControlErrTimeout || len(r.Shots) != 1 || r.Shots[0].Output != "A" || r.Shots[0].MinSeq != seqs["A"] {
 			t.Fatalf("partial: %+v", r)
 		}
 		// Reject the whole action up front; quit must never execute.

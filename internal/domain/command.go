@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Caps is a set of control permissions.
@@ -138,6 +139,12 @@ func LookupCommand(text string) (CommandSpec, bool) {
 	return CommandSpec{}, false
 }
 
+// Control request timeouts: the default and the most a client may ask for.
+const (
+	DefaultControlTimeout = 10 * time.Second
+	MaxControlTimeout     = 5 * time.Minute
+)
+
 // WaitLevel identifies the completion boundary required by a caller.
 type WaitLevel uint8
 
@@ -263,11 +270,13 @@ func (u Until) Holds(before, s State) bool {
 	return false
 }
 
-// ShotRequest describes an output capture at or after MinSeq.
+// ShotRequest describes an output capture at or after MinSeq. Core fills
+// Width and Height, the physical size of the presented scene, in its reply.
 type ShotRequest struct {
-	Output string
-	MinSeq uint64
-	Raw    bool
+	Output        string
+	MinSeq        uint64
+	Width, Height int
+	Raw           bool
 }
 
 // StateDiff describes mapped-window, focus and active-workspace changes.

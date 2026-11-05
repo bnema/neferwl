@@ -118,7 +118,11 @@ func TestProtocol(t *testing.T) {
 						t.Errorf("defaults: %+v", req)
 					}
 					// Core may reach less than the requested level; preserve its report.
-					req.Reply <- ports.ControlReply{Done: domain.WaitCommitted, TimedOut: i == 1, Diff: domain.StateDiff{FocusFrom: 1, FocusTo: 2, FocusChanged: true}, Late: []domain.WindowID{3}}
+					timedOut := ""
+					if i == 1 {
+						timedOut = ports.ControlErrTimeout
+					}
+					req.Reply <- ports.ControlReply{Done: domain.WaitCommitted, Err: timedOut, Diff: domain.StateDiff{FocusFrom: 1, FocusTo: 2, FocusChanged: true}, Late: []domain.WindowID{3}}
 				case ports.ControlQuery:
 					if req.What != "state" || req.Caps != domain.CapsAll || cap(req.Reply) != 1 {
 						t.Errorf("query: %+v", req)

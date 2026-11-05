@@ -202,15 +202,6 @@ type request struct {
 	Dir        string          `json:"dir"`
 }
 
-type diff struct {
-	Mapped       []domain.WindowID `json:"mapped"`
-	Unmapped     []domain.WindowID `json:"unmapped"`
-	FocusFrom    domain.WindowID   `json:"focus_from"`
-	FocusTo      domain.WindowID   `json:"focus_to"`
-	FocusChanged bool              `json:"focus_changed"`
-	Workspaces   []string          `json:"workspaces"`
-}
-
 type reply struct {
 	Dir    string            `json:"dir,omitempty"`
 	Shots  []Shot            `json:"shots,omitempty"`
@@ -249,7 +240,7 @@ var nullID = json.RawMessage("null")
 
 // maxRequestTimeout caps the client-supplied timeout: core and the shooter
 // hold a request at most this long.
-const maxRequestTimeout = 5 * time.Minute
+const maxRequestTimeout = domain.MaxControlTimeout
 
 func (s *Server) serve(ctx context.Context, conn *net.UnixConn, out chan<- ports.ControlRequest) {
 	scanner := bufio.NewScanner(conn)
@@ -303,7 +294,7 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 	}
 	ch := make(chan ports.ControlReply, 1)
 	var message ports.ControlRequest
-	timeout := 10 * time.Second
+	timeout := domain.DefaultControlTimeout
 	switch req.Op {
 	case "output-add", "output-rm":
 		mode := domain.OutputMode{}
@@ -393,15 +384,11 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 		return response
 	}
 	// The device announcement went through only if core ran the batch.
-	if _, inject := message.(ports.ControlInject); inject && (result.Err == "" || result.TimedOut) {
+	code := result.Err
+	if _, inject := message.(ports.ControlInject); inject && (code == "" || code == ports.ControlErrTimeout) {
 		*announced = true
 	}
-	code := result.Err
-	if result.TimedOut {
-		code = "timeout"
-	}
-	d := result.Diff
-	response = reply{ID: req.ID, OK: code == "", Done: result.Done.String(), Diff: diff{d.Mapped, d.Unmapped, d.FocusFrom, d.FocusTo, d.FocusChanged, d.Workspaces}, State: statewire.FromDomain(result.State, s.ids), Late: result.Late, Error: code}
+	response = reply{ID: req.ID, OK: code == "", Done: result.Done.String(), Diff: wireDiff(result.Diff), State: statewire.FromDomain(result.State, s.ids), Late: result.Late, Error: code}
 	if len(result.Shots) > 0 {
 		if s.shooter == nil {
 			response.OK = false

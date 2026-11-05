@@ -60,7 +60,11 @@ func TestShotDispatch(t *testing.T) {
 				if len(shots) != 1 || shots[0].Output != tc.output || wait != domain.WaitPresented || caps != domain.CapsAll {
 					t.Errorf("forwarded %+v %v %v", shots, wait, caps)
 				}
-				response <- ports.ControlReply{Done: domain.WaitPresented, Shots: []domain.ShotRequest{{Output: "A", MinSeq: 9}}, TimedOut: tc.timeout}
+				timedOut := ""
+				if tc.timeout {
+					timedOut = ports.ControlErrTimeout
+				}
+				response <- ports.ControlReply{Done: domain.WaitPresented, Shots: []domain.ShotRequest{{Output: "A", MinSeq: 9}}, Err: timedOut}
 				q := <-captures
 				if q.MinSeq != 9 || q.Output != "A" {
 					t.Errorf("capture: %+v", q)

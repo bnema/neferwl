@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
@@ -10,14 +9,14 @@ import (
 
 // runtimeOutputTimeout bounds how long an output add or removal waits for the
 // backend and then for the output to (dis)appear.
-const runtimeOutputTimeout = 10 * time.Second
+const runtimeOutputTimeout = domain.DefaultControlTimeout
 
 func (c *Core) controlOutput(ctx context.Context, r ports.ControlOutput) error {
 	if r.Caps&domain.CapAdmin == 0 {
 		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrForbidden})
 		return nil
 	}
-	if len(c.controlWaits) >= maxControlWaits {
+	if c.waitsFull() {
 		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBusy})
 		return nil
 	}
@@ -28,7 +27,7 @@ func (c *Core) controlOutput(ctx context.Context, r ports.ControlOutput) error {
 	request := ports.OutputRuntimeRequest{Name: r.Name, Mode: r.Mode, Remove: r.Remove, Reply: result, Wake: c.runtimeWake}
 	select {
 	case c.ch.RuntimeOutputs <- request:
-		c.controlWaits = append(c.controlWaits, controlWait{before: c.state(), runtime: result, remove: r.Remove, reply: r.Reply, deadline: c.now().Add(runtimeOutputTimeout)})
+		c.outputWaits = append(c.outputWaits, outputWait{before: c.state(), runtime: result, remove: r.Remove, reply: r.Reply, deadline: c.now().Add(runtimeOutputTimeout)})
 	case <-ctx.Done():
 		return ctx.Err()
 	default:

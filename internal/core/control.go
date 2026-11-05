@@ -13,10 +13,13 @@ import (
 // wait, and quit, always pass.
 const maxControlWaits = 64
 
-// waitsFull reports whether a request with this wait would exceed the cap.
-func (c *Core) waitsFull(level domain.WaitLevel, until *domain.Until, shots []domain.ShotRequest) bool {
-	adds := level > domain.WaitCommitted || until != nil || len(shots) > 0
-	return adds && len(c.controlWaits) >= maxControlWaits
+// waitsFull reports whether one more pending wait would exceed the cap.
+func (c *Core) waitsFull() bool { return len(c.controlWaits)+len(c.outputWaits) >= maxControlWaits }
+
+// addsWait reports whether a request with this completion waits past its
+// own pass (waitControl queues it).
+func addsWait(level domain.WaitLevel, until *domain.Until, shots []domain.ShotRequest) bool {
+	return level > domain.WaitCommitted || until != nil || len(shots) > 0
 }
 
 // control runs on the owner, just like input.
@@ -25,84 +28,99 @@ func (c *Core) control(ctx context.Context, r ports.ControlRequest) error {
 	case ports.ControlOutput:
 		return c.controlOutput(ctx, r)
 	case ports.ControlDo:
-		if r.Caps&domain.CapAct == 0 {
-			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrForbidden})
-			return nil
-		}
-		spec, ok := domain.LookupCommand(r.Action)
-		if !ok || (spec.Kind != domain.CommandAction && spec.Kind != domain.CommandActionArg) {
-			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrUnknownCommand})
-			return nil
-		}
-		// Protected input runs no binds (protectedInput); control mirrors
-		// it, except quit, which session rm needs on a locked session.
-		if Action(r.Action) != ActionQuit && c.protectionRequested() {
-			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrLocked})
-			return nil
-		}
-		shots, code := c.controlShots(r.Shots, r.Caps)
-		if code != "" {
-			controlReply(r.Reply, ports.ControlReply{Err: code})
-			return nil
-		}
-		if Action(r.Action) != ActionQuit && c.waitsFull(r.Wait, r.Until, shots) {
-			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBusy})
-			return nil
-		}
-		before := c.state()
-		baseline := c.sceneSeqs()
-		c.bindCombo, c.bindSource = "", domain.BindSourceControl
-		err := c.runBind(ctx, Action(r.Action))
-		c.waitControl(before, baseline, r.Wait, r.Until, r.Timeout, r.Reply, shots)
-		return err
+		return c.controlDo(ctx, r)
 	case ports.ControlQuery:
-		if r.Caps&domain.CapRead == 0 {
-			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrForbidden})
-		} else if r.What != "state" {
-			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBadRequest})
-		} else {
-			// State contains no window titles, including while protected.
-			controlReply(r.Reply, ports.ControlReply{State: c.state(), Done: domain.WaitCommitted})
-		}
+		c.controlQuery(r)
 	case ports.ControlInject:
-		if r.Caps&domain.CapInput == 0 {
-			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrForbidden})
-			return nil
+		return c.controlInject(ctx, r)
+	}
+	return nil
+}
+
+func (c *Core) controlDo(ctx context.Context, r ports.ControlDo) error {
+	if r.Caps&domain.CapAct == 0 {
+		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrForbidden})
+		return nil
+	}
+	spec, ok := domain.LookupCommand(r.Action)
+	if !ok || (spec.Kind != domain.CommandAction && spec.Kind != domain.CommandActionArg) {
+		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrUnknownCommand})
+		return nil
+	}
+	quit := Action(r.Action) == ActionQuit
+	// Protected input runs no binds (protectedInput); control mirrors
+	// it, except quit, which session rm needs on a locked session.
+	if !quit && c.protectionRequested() {
+		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrLocked})
+		return nil
+	}
+	shots, code := c.controlShots(r.Shots, r.Caps)
+	if code != "" {
+		controlReply(r.Reply, ports.ControlReply{Err: code})
+		return nil
+	}
+	if !quit && addsWait(r.Wait, r.Until, shots) && c.waitsFull() {
+		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBusy})
+		return nil
+	}
+	before := c.state()
+	baseline := c.sceneSeqs()
+	c.bindCombo, c.bindSource = "", domain.BindSourceControl
+	err := c.runBind(ctx, Action(r.Action))
+	c.waitControl(before, baseline, r.Wait, r.Until, r.Timeout, r.Reply, shots)
+	return err
+}
+
+func (c *Core) controlQuery(r ports.ControlQuery) {
+	switch {
+	case r.Caps&domain.CapRead == 0:
+		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrForbidden})
+	case r.What != "state":
+		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBadRequest})
+	default:
+		// State contains no window titles, including while protected.
+		controlReply(r.Reply, ports.ControlReply{State: c.state(), Done: domain.WaitCommitted})
+	}
+}
+
+func (c *Core) controlInject(ctx context.Context, r ports.ControlInject) error {
+	if r.Caps&domain.CapInput == 0 {
+		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrForbidden})
+		return nil
+	}
+	if c.protectionRequested() {
+		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrLocked})
+		return nil
+	}
+	shots, code := c.controlShots(r.Shots, r.Caps)
+	if code != "" {
+		controlReply(r.Reply, ports.ControlReply{Err: code})
+		return nil
+	}
+	if addsWait(r.Wait, r.Until, shots) && c.waitsFull() {
+		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBusy})
+		return nil
+	}
+	before, baseline := c.state(), c.sceneSeqs()
+	for _, ev := range r.Events {
+		if err := c.inputEvent(ctx, ev); err != nil {
+			// The batch stops here: answer it so the client does not hang.
+			if errors.Is(err, errSecurityChanged) || c.protectionRequested() {
+				controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrLocked})
+			} else {
+				now := c.state()
+				controlReply(r.Reply, ports.ControlReply{Done: domain.WaitCommitted, State: now, Diff: domain.DiffState(before, now)})
+			}
+			return err
 		}
-		if c.security.Protected {
+		// An epoch transition during a batch must not route later events
+		// to lock surfaces, even if their stamps match the new epoch.
+		if c.protectionRequested() {
 			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrLocked})
 			return nil
 		}
-		shots, code := c.controlShots(r.Shots, r.Caps)
-		if code != "" {
-			controlReply(r.Reply, ports.ControlReply{Err: code})
-			return nil
-		}
-		if c.waitsFull(r.Wait, r.Until, shots) {
-			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBusy})
-			return nil
-		}
-		before, baseline := c.state(), c.sceneSeqs()
-		for _, ev := range r.Events {
-			if err := c.inputEvent(ctx, ev); err != nil {
-				// The batch stops here: answer it so the client does not hang.
-				if errors.Is(err, errSecurityChanged) || c.protectionRequested() {
-					controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrLocked})
-				} else {
-					now := c.state()
-					controlReply(r.Reply, ports.ControlReply{Done: domain.WaitCommitted, State: now, Diff: domain.DiffState(before, now)})
-				}
-				return err
-			}
-			// An epoch transition during a batch must not route later events
-			// to lock surfaces, even if their stamps match the new epoch.
-			if c.security.Protected || c.protectionRequested() {
-				controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrLocked})
-				return nil
-			}
-		}
-		c.waitControl(before, baseline, r.Wait, r.Until, r.Timeout, r.Reply, shots)
 	}
+	c.waitControl(before, baseline, r.Wait, r.Until, r.Timeout, r.Reply, shots)
 	return nil
 }
 
@@ -122,7 +140,7 @@ func (c *Core) controlShots(requests []domain.ShotRequest, caps domain.Caps) ([]
 	if caps&domain.CapCapture == 0 {
 		return nil, ports.ControlErrForbidden
 	}
-	if c.security.Protected || c.protectionRequested() {
+	if c.protectionRequested() {
 		return nil, ports.ControlErrLocked
 	}
 	var shots []domain.ShotRequest

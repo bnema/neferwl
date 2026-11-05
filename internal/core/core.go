@@ -91,6 +91,8 @@ type binding struct {
 type Core struct {
 	runtimeWake      chan struct{}
 	controlWaits     []controlWait
+	outputWaits      []outputWait
+	waitState        domain.State // evalWaits scratch for Until predicates
 	waitSeqs         map[string]uint64 // evalWaits scratch
 	controlWaitTimer ports.Timer
 	controlWaitC     <-chan time.Time
