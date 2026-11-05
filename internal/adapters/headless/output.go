@@ -66,8 +66,8 @@ type Options struct {
 	// frame, so wayland can release client buffers (nil: no reports).
 	Name      string
 	Presented ports.PresentationSink
-	// Frames tells core a presented scene is animating: its next frame is
-	// due. Sends never block (nil: nobody is told).
+	// Frames reports new presented sequences and wakes core for animations.
+	// Sends never block; new sequences are retried (nil: nobody is told).
 	Frames   chan<- domain.OutputFrame
 	Events   chan<- ports.OutputEvent
 	Captured chan<- domain.CaptureDone
@@ -325,6 +325,39 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 	var monoStart unix.Timespec
 	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &monoStart)
 	period := refreshPeriod(opts.RefreshMilli)
+	var presentedSeq, reportedSeq uint64
+	var retry ports.Timer
+	var retryDue <-chan time.Time
+	defer func() {
+		if retry != nil {
+			retry.Stop()
+		}
+	}()
+	reportFrame := func(animating bool) {
+		if opts.Frames == nil {
+			return
+		}
+		if (animating || presentedSeq > reportedSeq) && corewake.Send(opts.Frames, opts.Name, presentedSeq) {
+			reportedSeq = presentedSeq
+		}
+		if presentedSeq > reportedSeq {
+			delay := period
+			if delay <= 0 {
+				delay = time.Second / 60
+			}
+			if retry == nil {
+				retry = clk.NewTimer(delay)
+			} else {
+				retry.Reset(delay)
+			}
+			retryDue = retry.C()
+		} else {
+			if retry != nil {
+				retry.Stop()
+			}
+			retryDue = nil
+		}
+	}
 	var pace ports.Timer
 	var paceDue <-chan time.Time
 	defer func() {
@@ -483,6 +516,9 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			if err := applyMode(mode); err != nil {
 				return err
 			}
+		case <-retryDue:
+			reportFrame(false)
+			continue
 		case <-paceDue:
 			paceDue = nil
 			ticked = true
@@ -815,9 +851,8 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			flip.Refresh = period
 		}
 		opts.report(&reports, flip, seen)
-		if scene.Animating {
-			corewake.Send(opts.Frames, opts.Name)
-		}
+		presentedSeq = max(presentedSeq, scene.Seq)
+		reportFrame(scene.Animating)
 		if opts.ScreenshotDir != "" && !opts.protected() {
 			shot := r.Pixels()
 			if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {

@@ -1822,14 +1822,14 @@ func (o *Output) completed(ev flipEvent, seen map[domain.WindowID]uint64) bool {
 	}
 	o.report(&domain.FlipInfo{When: ev.when, Seq: uint64(ev.seq), Refresh: f.refresh, VariableRate: f.variableRate, ZeroCopy: f.zeroCopy, Async: f.async, ScanoutReason: f.scanoutReason, OverlayReason: f.overlayReason, HardwareClock: true, Shows: f.shows}, seen)
 	if f.animating {
-		o.wakeCore()
+		o.wakeCore(f.sceneSeq)
 	}
 	return true
 }
 
 // wakeCore tells core the next frame of a running animation is due. A frame
 // core has not read yet is enough, so the owner never waits.
-func (o *Output) wakeCore() { corewake.Send(o.Frames, o.conn.name) }
+func (o *Output) wakeCore(seq uint64) { corewake.Send(o.Frames, o.conn.name, seq) }
 
 // setCursor loads a cursor for scale and output transform t into the cursor
 // images.

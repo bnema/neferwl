@@ -53,9 +53,9 @@ type Channels struct {
 	Binds chan<- domain.InputTrace
 	// Placements carries best-effort first-map diagnostics; core never blocks.
 	Placements chan<- domain.PlacementTrace
-	// Frames, when set, carries the outputs' reports of each flip of an
-	// animating scene (Scene.Animating): a running slide moves one step per
-	// report. Without them it moves on a timer.
+	// Frames, when set, carries presented scene sequences. For a running
+	// slide, each report advances it one step; idle reports only record the
+	// sequence. Without frame reports slides move on a timer.
 	Frames <-chan domain.OutputFrame
 	// HintScans, when set, receives the scan request of each hint action
 	// (capacity 1; core never waits: a full channel cancels the hint).
@@ -88,6 +88,7 @@ type binding struct {
 	key  string
 }
 type Core struct {
+	presented     map[string]uint64 // highest presented scene sequence per output
 	lineage       lineage
 	placementPath string
 	hdrCaps       map[string]domain.OutputHDRCaps
@@ -1223,6 +1224,10 @@ func (c *Core) Run(ctx context.Context) error {
 				c.ch.Frames = nil
 				continue
 			}
+			if c.presented == nil {
+				c.presented = make(map[string]uint64)
+			}
+			c.presented[f.Output] = max(c.presented[f.Output], f.SceneSeq)
 			if i := c.screenIndex(f.Output); i >= 0 && c.sliding(f.Output) && c.step(ctx, c.screens[i]) != nil {
 				return nil
 			}

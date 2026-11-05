@@ -121,10 +121,12 @@ type FlipInfo struct {
 	Shows                        map[WindowID]uint64
 }
 
-// OutputFrame carries output → core a completed flip of an animating scene
-// (Scene.Animating): the next frame is due. Sends never block; a full
-// channel drops it.
-type OutputFrame struct{ Output string }
+// OutputFrame reports a presented scene sequence. Animating presentations also
+// tell core the next animation frame is due. Sends never block.
+type OutputFrame struct {
+	Output   string
+	SceneSeq uint64
+}
 
 // ConfigChanged carries config → core reloads.
 type ConfigChanged struct{ Config Config }

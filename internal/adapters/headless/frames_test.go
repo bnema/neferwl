@@ -31,8 +31,7 @@ func runWithFrames(t *testing.T, size int) (scenes chan domain.Scene, frames cha
 	}
 }
 
-// The presentation of an animating scene tells core the next frame is due;
-// the one of a settled scene does not.
+// Animating and settled scenes both report the sequence presented.
 func TestAnimatingSceneSendsFrame(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		scenes, frames, rec, stop := runWithFrames(t, 4)
@@ -41,20 +40,19 @@ func TestAnimatingSceneSendsFrame(t *testing.T) {
 		scenes <- domain.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Animating: true}
 		select {
 		case got := <-frames:
-			require.Equal(t, domain.OutputFrame{Output: "HEADLESS-1"}, got)
+			require.Equal(t, domain.OutputFrame{Output: "HEADLESS-1", SceneSeq: 1}, got)
 		case <-time.After(3 * time.Second):
 			t.Fatal("no frame for an animating scene")
 		}
 
-		// The scene an animation settles on: drawn, nobody woken.
+		// The scene an animation settles on is reported too.
 		scenes <- domain.Scene{Seq: 2, OutputWidth: 2, OutputHeight: 2}
 		waitFrames(t, rec, 2)
-		// A third scene is drawn after the settled one (the owner handles scenes
-		// in order): had the settled frame woken core, its frame precedes the
-		// third's in the channel.
+		// Reports retain presentation order across settled scenes.
 		scenes <- domain.Scene{Seq: 3, OutputWidth: 2, OutputHeight: 2}
 		waitFrames(t, rec, 3)
-		require.Empty(t, frames)
+		require.Equal(t, domain.OutputFrame{Output: "HEADLESS-1", SceneSeq: 2}, <-frames)
+		require.Equal(t, domain.OutputFrame{Output: "HEADLESS-1", SceneSeq: 3}, <-frames)
 	})
 }
 
@@ -68,5 +66,71 @@ func TestAnimatingFramesNeverBlock(t *testing.T) {
 			waitFrames(t, rec, int(seq))
 		}
 		require.Len(t, frames, 1)
+	})
+}
+
+func TestPresentedSceneFrames(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		scenes := make(chan domain.Scene)
+		frames := make(chan domain.OutputFrame, 1)
+		contents := newContentFeed(t, 8)
+		r, rendered := recordingRenderer(t, nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- RunOutput(ctx, Options{Name: "A", Width: 2, Height: 2, Frames: frames, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
+		}()
+		defer func() {
+			cancel()
+			if err := <-done; err != nil {
+				t.Error(err)
+			}
+		}()
+		scenes <- domain.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2}
+		waitFrames(t, rendered, 1)
+		if got := <-frames; got != (domain.OutputFrame{Output: "A", SceneSeq: 1}) {
+			t.Fatal(got)
+		}
+		scenes <- domain.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2}
+		synctest.Wait()
+		select {
+		case got := <-frames:
+			t.Fatalf("duplicate: %+v", got)
+		default:
+		}
+		frames <- domain.OutputFrame{Output: "busy"}
+		scenes <- domain.Scene{Seq: 2, OutputWidth: 2, OutputHeight: 2}
+		waitFrames(t, rendered, 2)
+		// A newer presentation supersedes the pending sequence while still full.
+		scenes <- domain.Scene{Seq: 3, OutputWidth: 2, OutputHeight: 2}
+		waitFrames(t, rendered, 3)
+		if got := <-frames; got.Output != "busy" {
+			t.Fatal(got)
+		}
+		time.Sleep(time.Second / 60)
+		synctest.Wait()
+		select {
+		case got := <-frames:
+			if got.SceneSeq != 3 || got.Output != "A" {
+				t.Fatal(got)
+			}
+		default:
+			t.Fatal("no retry of latest presented sequence")
+		}
+		time.Sleep(time.Second / 60)
+		synctest.Wait()
+		select {
+		case got := <-frames:
+			t.Fatalf("duplicate retry: %+v", got)
+		default:
+		}
+		// Animation still wakes core for every presentation, even at seq zero.
+		scenes <- domain.Scene{Animating: true, OutputWidth: 2, OutputHeight: 2}
+		waitFrames(t, rendered, 4)
+		select {
+		case <-frames:
+		default:
+			t.Fatal("animation did not wake core")
+		}
 	})
 }
