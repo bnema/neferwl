@@ -4,5 +4,6 @@ These guides cover NeferWL's internals and tools for development, testing and pe
 
 - [Architecture](architecture.md): owner goroutines, GC strategy and reusable purego libraries.
 - [Headless mode](headless.md): screenshots, scripted input and testing without a screen.
+- [Control socket](control.md): protocol, session targeting and CLI automation for agents and scripts.
 - [Profiling](profiling.md): CPU and allocation profiling, logging and frame statistics.
 - [Repository rules](../../AGENTS.md): architecture constraints, test requirements and checks before merge.
