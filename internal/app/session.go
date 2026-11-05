@@ -415,7 +415,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 		workers.Add(2)
 		go func() {
 			defer workers.Done()
-			routing.RouteCaptured(ctx, p.capturedAll, p.captured, p.internalCaptured())
+			routing.RouteCaptured(ctx, p.capturedAll, p.captured, p.internalCaptured(), nil)
 		}()
 		go func() {
 			defer workers.Done()
