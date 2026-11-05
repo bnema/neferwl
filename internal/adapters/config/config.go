@@ -74,51 +74,6 @@ var defaultBinds = []struct{ combo, action string }{
 	{"cmd+ctrl+shift+down", "move-workspace-next"},
 	{"cmd+shift+space", "toggle-floating"},
 }
-var actions = map[string]bool{
-	"focus-monitor-left":              true,
-	"focus-monitor-right":             true,
-	"move-workspace-to-monitor-left":  true,
-	"move-workspace-to-monitor-right": true,
-	"focus-monitor-up":                true,
-	"focus-monitor-down":              true,
-	"move-workspace-to-monitor-up":    true,
-	"move-workspace-to-monitor-down":  true,
-	"scale-up":                        true,
-	"scale-down":                      true,
-	"focus-workspace-prev":            true,
-	"focus-workspace-next":            true,
-	"move-column-to-workspace-prev":   true,
-	"move-column-to-workspace-next":   true,
-	"move-window-to-workspace-prev":   true,
-	"move-window-to-workspace-next":   true,
-	"none":                            true,
-	"consume-or-expel-window-left":    true,
-	"consume-or-expel-window-right":   true,
-	"spawn-terminal":                  true,
-	"focus-column-left":               true,
-	"focus-column-right":              true,
-	"focus-window-up":                 true,
-	"focus-window-down":               true,
-	"move-column-left":                true,
-	"move-column-right":               true,
-	"cycle-column-width":              true,
-	"maximize-column":                 true,
-	"toggle-fullscreen":               true,
-	"toggle-window-stash":             true,
-	"toggle-stash-visible":            true,
-	"toggle-overview":                 true,
-	"switch-column-next":              true,
-	"switch-column-prev":              true,
-	"close-window":                    true,
-	"quit":                            true,
-	"move-window-up":                  true,
-	"move-window-down":                true,
-	"move-workspace-prev":             true,
-	"move-workspace-next":             true,
-	"toggle-floating":                 true,
-	"hint":                            true,
-	"osd-pin":                         true,
-}
 var components = map[string]bool{"core": true, "wayland": true, "input": true, "drm": true, "seat": true, "render": true, "sync": true, "config": true, "app": true, "hints": true}
 var color = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
@@ -1558,11 +1513,14 @@ func checkAction(v string) error {
 		return nil
 	}
 	for old, repl := range map[string]string{"-workspace-up": "-workspace-prev", "-workspace-down": "-workspace-next"} {
-		if base, ok := strings.CutSuffix(v, old); ok && actions[base+repl] {
+		if base, ok := strings.CutSuffix(v, old); ok {
+			if spec, found := domain.LookupCommand(base + repl); !found || spec.Kind != domain.CommandAction {
+				continue
+			}
 			return fmt.Errorf("action %q was renamed to %q", v, base+repl)
 		}
 	}
-	if !actions[v] {
+	if spec, ok := domain.LookupCommand(v); !ok || spec.Kind != domain.CommandAction {
 		return fmt.Errorf(`unknown action %q (or "spawn <command>", "stash <command>", "workspace <name>")`, v)
 	}
 	return nil

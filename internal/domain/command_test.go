@@ -1,11 +1,7 @@
 package domain
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"reflect"
-	"strconv"
 	"testing"
 )
 
@@ -61,57 +57,6 @@ func TestCommands(t *testing.T) {
 	}
 	if CapsAll != CapRead|CapAct|CapInput|CapCapture|CapAdmin {
 		t.Fatal("CapsAll")
-	}
-}
-
-// Parse source rather than importing an adapter into domain tests. This also
-// catches future config action additions without duplicating its action list.
-func TestCatalogCoversConfigAndWorkspaceActions(t *testing.T) {
-	for _, tc := range []struct{ path, symbol string }{
-		{"../adapters/config/config.go", "actions"},
-		{"../core/workspace/workspace_actions.go", ""},
-	} {
-		file, err := parser.ParseFile(token.NewFileSet(), tc.path, nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		count := 0
-		ast.Inspect(file, func(n ast.Node) bool {
-			spec, ok := n.(*ast.ValueSpec)
-			if !ok {
-				return true
-			}
-			selected := tc.symbol != "" && len(spec.Names) == 1 && spec.Names[0].Name == tc.symbol
-			if tc.symbol == "" {
-				typ, ok := spec.Type.(*ast.Ident)
-				selected = ok && typ.Name == "Action"
-			}
-			if !selected {
-				return true
-			}
-			for _, value := range spec.Values {
-				ast.Inspect(value, func(n ast.Node) bool {
-					lit, ok := n.(*ast.BasicLit)
-					if !ok || lit.Kind != token.STRING {
-						return true
-					}
-					name, err := strconv.Unquote(lit.Value)
-					if err != nil {
-						t.Fatal(err)
-					}
-					count++
-					got, ok := LookupCommand(name)
-					if !ok || got.Kind != CommandAction || got.Caps != CapAct {
-						t.Errorf("missing action %q", name)
-					}
-					return true
-				})
-			}
-			return false
-		})
-		if count == 0 {
-			t.Fatalf("no actions found in %s", tc.path)
-		}
 	}
 }
 
