@@ -66,6 +66,7 @@ func publishRig(t testing.TB, screens int) *Core {
 			continue
 		}
 		for range 6 {
+			c.mapLineage(ports.WindowMapped{ID: next})
 			sc.mon.AddWindow(next)
 			next++
 		}
@@ -438,6 +439,20 @@ func TestPublishSubscribersAllocations(t *testing.T) {
 			t.Fatal("setup: no snapshot sent")
 		}
 		st := <-c.ch.State
+		for _, workspace := range st.Workspaces {
+			for _, sc := range c.screens {
+				if sc.name() == workspace.Output {
+					for _, w := range sc.mon.Workspaces {
+						if w.ID == workspace.ID {
+							focused, _ := w.Focused()
+							if workspace.Focused != focused {
+								t.Fatalf("workspace focus %d want %d", workspace.Focused, focused)
+							}
+						}
+					}
+				}
+			}
+		}
 		ws := <-c.ch.Workspaces
 		n := testing.AllocsPerRun(50, step)
 		t.Logf("subscribers allocs per step = %v", n)

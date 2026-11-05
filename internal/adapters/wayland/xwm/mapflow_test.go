@@ -259,6 +259,18 @@ func TestMapFlowPIDFromXRes(t *testing.T) {
 	hs.p.mapRequest(win)
 	readUntil(t, hs.x, func() bool { _, ok := hs.ready[win]; return ok })
 	require.Equal(t, 777, hs.ready[win].PID, "Ready waited for the QueryClientIds reply")
+	require.Equal(t, 777, hs.ready[win].ClientPID)
+	require.Equal(t, 1, hs.count(func(r xpeerReq) bool { return r.major == 144 && r.minor == 4 }))
+	require.Zero(t, hs.x.tab.rec(hs.x.tab.lookup(win)).pending)
+}
+
+func TestMapFlowClientPIDIndependentOfNetWMPID(t *testing.T) {
+	hs := newHarness(t, func(p *xpeer) { p.pids = map[uint32]uint32{0x500001: 777} })
+	const win = 0x500001
+	hs.classic(win) // _NET_WM_PID is namespace-local (4242).
+	hs.mapAndWait(win)
+	require.Equal(t, 4242, hs.ready[win].PID)
+	require.Equal(t, 777, hs.ready[win].ClientPID)
 	require.Equal(t, 1, hs.count(func(r xpeerReq) bool { return r.major == 144 && r.minor == 4 }))
 	require.Zero(t, hs.x.tab.rec(hs.x.tab.lookup(win)).pending)
 }
@@ -291,6 +303,7 @@ func TestMapFlowNoXResAsksNothing(t *testing.T) {
 	p.set(func(p *xpeer) { delete(p.props[win], p.atoms["_NET_WM_PID"]) })
 	hs.mapAndWait(win)
 	require.Zero(t, hs.count(func(r xpeerReq) bool { return r.major == 144 }))
+	require.Zero(t, hs.ready[win].ClientPID)
 }
 
 func TestMapFlowBadWindowOnPropertiesNeverReady(t *testing.T) {
@@ -822,7 +835,9 @@ func TestMapFlowReadyFiresOnLastReplyInAnyOrder(t *testing.T) {
 		x.tab.rec(s).pending &^= 1 << bit
 		x.checkReady(s)
 	}
-	require.True(t, hs.x.tab.rec(s).ready)
+	require.False(t, hs.x.tab.rec(s).ready, "Ready still waits for XRes after all property replies")
+	require.Equal(t, uint16(propClientIDs), hs.x.tab.rec(s).pending)
+	readUntil(t, hs.x, func() bool { return hs.x.tab.rec(s).ready })
 	require.Equal(t, "B", hs.ready[win].AppID)
 	require.Equal(t, "t", hs.ready[win].Title)
 	require.Equal(t, 5, hs.ready[win].PID)

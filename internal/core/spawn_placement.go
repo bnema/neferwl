@@ -91,12 +91,15 @@ func (p *spawnPlacement) expireWorkspaceClaims(now time.Time) {
 // follow reports a window a rule sent to another output that takes the focus
 // there (placeByRule).
 func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) (follow bool) {
+	path := "focused"
+	defer func() { c.placementPath = path }()
 	if v.Floating {
 		if s, _ := c.screenOf(v.ID); s != nil {
 			return false
 		}
 		// A dialog opens on its parent's workspace, over it, fullscreen too.
 		if ps, pw := c.screenOf(v.Parent); v.Parent != 0 && pw != nil {
+			path = "dialog"
 			pw.AddDialog(v.ID, v.Parent, v.Width, v.Height)
 			pw.SetModal(v.ID, v.Modal)
 			ps.mon.normalize()
@@ -106,10 +109,12 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) (follow bool) {
 		eff, ok := c.ruleFor(v)
 		if eff.output == "" && eff.workspace == "" && eff.number == 0 {
 			if sc, w := c.ancestorWorkspace(v); w != nil {
+				path = "lineage"
 				return c.placeOnWorkspace(v, eff, sc, w, true)
 			}
 		}
 		if ok {
+			path = "rule"
 			return c.placeByRule(v, eff, true)
 		}
 		if !c.placeCoverApp(v, c.cur(), c.cur().mon.Current(), 0) {
@@ -126,6 +131,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) (follow bool) {
 				delete(p.pending, v.Slot)
 				for _, s := range c.screens {
 					if s.mon.has(target.ws) {
+						path = "slot"
 						if target.kind == spawnStash {
 							target.ws.StashSpawned(v.ID)
 						} else {
@@ -138,6 +144,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) (follow bool) {
 			case spawnSlot:
 				if st := c.slots[target.slot]; st != nil && st.window == 0 {
 					if sc, w := c.byName(target.slot.workspace); w != nil {
+						path = "slot"
 						p.dropSlot(target.slot)
 						st.window = v.ID
 						w.AddSlotWindow(v.ID, target.slot.index, st.cells)
@@ -152,7 +159,10 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) (follow bool) {
 		eff, ok := c.ruleFor(v)
 		byRule := ok
 		if eff.output == "" && eff.workspace == "" && eff.number == 0 {
-			if sc, w := c.ancestorWorkspace(v); w != nil {
+			// The shown stash of the focused screen captures a new tile
+			// before lineage moves it to its launcher's workspace there.
+			if sc, w := c.ancestorWorkspace(v); w != nil && !(sc == c.cur() && sc.mon.captures(sc.mon.Current())) {
+				path = "lineage"
 				return c.placeOnWorkspace(v, eff, sc, w, true)
 			}
 		}
@@ -164,9 +174,13 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) (follow bool) {
 			}
 		}
 		if ok {
+			path = "rule"
+			if !byRule {
+				path = "position"
+			}
 			return c.placeByRule(v, eff, byRule)
 		}
-		if !c.placeCoverApp(v, c.cur(), c.cur().mon.Current(), 0) {
+		if !c.placeLaunched(v, c.cur(), c.cur().mon.Current(), 0) && !c.placeCoverApp(v, c.cur(), c.cur().mon.Current(), 0) {
 			c.cur().mon.AddWindow(v.ID)
 		}
 	}
@@ -180,10 +194,30 @@ func sameApp(a, b ports.WindowMapped) bool {
 	return !a.PIDShared && !b.PIDShared && a.PID != 0 && a.PID == b.PID || a.AppID != "" && a.AppID == b.AppID
 }
 
+// placeLaunched gives a tiled window launched by another program that is a
+// fullscreen group member of w the launcher's fullscreen (AddLaunchedWindow).
+// Callers pass only visible, non-quiet, non-floating arrivals (a rule
+// floating it included); same-app windows keep their ordinary column.
+func (c *Core) placeLaunched(v ports.WindowMapped, sc *screen, w *Workspace, cells int) bool {
+	// A shown capturing stash takes the window instead (addWindow).
+	if v.Floating || v.Parent != 0 || v.Remap || sc.mon.captures(w) {
+		return false
+	}
+	l := c.launcherOf(v.ID)
+	if l == 0 || !w.IsFullscreenMember(l) || sameApp(v, c.windows.lookup(l).client) {
+		return false
+	}
+	if !w.AddLaunchedWindow(v.ID, l, cells) {
+		return false
+	}
+	sc.mon.normalize()
+	return true
+}
+
 // placeCoverApp handles ordinary same-app arrivals on the workspace in view.
 func (c *Core) placeCoverApp(v ports.WindowMapped, sc *screen, w *Workspace, cells int) bool {
 	cover := w.Cover()
-	if cover == 0 || !sameApp(v, c.windows.lookup(cover).client) {
+	if cover == 0 || !(sameApp(v, c.windows.lookup(cover).client) || c.launcherOf(v.ID) == cover) {
 		return false
 	}
 	w.AddAppWindow(v.ID, cells, v.Width, v.Height)
@@ -191,30 +225,10 @@ func (c *Core) placeCoverApp(v ports.WindowMapped, sc *screen, w *Workspace, cel
 	return true
 }
 
-// ancestorWorkspace selects the nearest process ancestor with a placed window.
-// Multiple windows of one process use the lowest window ID for stable placement.
+// ancestorWorkspace uses the first-map launcher while preserving remap placement.
 func (c *Core) ancestorWorkspace(v ports.WindowMapped) (*screen, *Workspace) {
 	if v.Remap || v.PIDShared {
 		return nil, nil
 	}
-	for _, pid := range v.AncestorPIDs {
-		if pid <= 1 {
-			break
-		}
-		var chosen WindowID
-		var sc *screen
-		var ws *Workspace
-		for id, rec := range c.windows.records {
-			if id == v.ID || rec.client.PIDShared || rec.client.PID != pid {
-				continue
-			}
-			if s, w := c.screenOf(id); w != nil && (ws == nil || id < chosen) {
-				chosen, sc, ws = id, s, w
-			}
-		}
-		if ws != nil {
-			return sc, ws
-		}
-	}
-	return nil, nil
+	return c.screenOf(c.launcherOf(v.ID))
 }

@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"fmt"
 	"regexp"
 	"testing"
 	"testing/synctest"
@@ -193,29 +194,35 @@ func TestRuleNumberOnCurrentWorkspaceActsAsNormalMap(t *testing.T) {
 }
 
 func TestRuleOutput(t *testing.T) {
-	for _, mon := range []string{"DP-2", "Acme B 2"} {
-		t.Run(mon, func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				r := startMulti(t, func(c *domain.Config) {
-					c.Rules = []domain.WindowRule{winRule("m", "chat", func(r *domain.WindowRule) { r.Output = mon })}
-				}, left, right)
-				r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
-				before := r.mapApp(t, 1, "term")
-				if before.Output != "DP-1" {
-					t.Fatalf("focused %s", before.Output)
-				}
-				st := r.mapApp(t, 2, "chat")
-				w := stWindow(st, 2)
-				// A window a rule sends to another output takes the focus there.
-				if w.Output != "DP-2" || st.Output != "DP-2" || stFocus(st) != 2 {
-					t.Fatalf("%+v focused output %s window %d", w, st.Output, stFocus(st))
-				}
-				if !w.Visible {
-					t.Fatal("the window is not shown on the current workspace of DP-2")
-				}
+	for _, keep := range []bool{false, true} {
+		for _, mon := range []string{"DP-2", "Acme B 2"} {
+			t.Run(fmt.Sprintf("%s/keep=%v", mon, keep), func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					r := startMulti(t, func(c *domain.Config) {
+						c.Outputs = []domain.OutputConfig{{Name: "DP-1"}, {Name: "DP-2", KeepFocus: keep}}
+						c.Rules = []domain.WindowRule{winRule("m", "chat", func(r *domain.WindowRule) { r.Output = mon })}
+					}, left, right)
+					r.key(t, "Left", domain.ModAlt|domain.ModCtrl)
+					before := r.mapApp(t, 1, "term")
+					if before.Output != "DP-1" {
+						t.Fatalf("focused %s", before.Output)
+					}
+					st := r.mapApp(t, 2, "chat")
+					w := stWindow(st, 2)
+					wantOut, wantFocus := "DP-2", domain.WindowID(2)
+					if keep {
+						wantOut, wantFocus = "DP-1", 1
+					}
+					if w.Output != "DP-2" || st.Output != wantOut || stFocus(st) != wantFocus {
+						t.Fatalf("%+v focused output %s window %d", w, st.Output, stFocus(st))
+					}
+					if !w.Visible {
+						t.Fatal("the window is not shown on the current workspace of DP-2")
+					}
 
+				})
 			})
-		})
+		}
 	}
 }
 

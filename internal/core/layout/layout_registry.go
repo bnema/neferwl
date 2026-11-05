@@ -45,6 +45,11 @@ func (w *Lanes) SetOverflow(o Overflow) {
 	w.Overflow = o
 	w.lstateReady = false
 	w.lcache, w.lcacheFor = resolveLayout(o), o
+	if len(w.Held) > 0 && !w.Engine().Scrolls() {
+		// A layout that cannot scroll (fixed) has nowhere off screen for a
+		// held window: its one cover overlays everything, no group.
+		w.Held = w.Held[:0]
+	}
 }
 
 // Engine resolves Overflow lazily and caches the result until Overflow changes.

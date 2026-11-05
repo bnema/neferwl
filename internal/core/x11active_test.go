@@ -66,6 +66,10 @@ func keepFocusStart(t *testing.T, keep bool) *dragRig {
 	if got := x11Changes(r.drain()); len(got) != 1 || got[0] != steamID {
 		t.Fatalf("X11 window focused on tv: X11Active %v, want [%d]", got, steamID)
 	}
+	// This fixture promises tv owns the seat; placement no longer implies it.
+	r.client <- ports.WindowActivate{ID: steamID}
+	r.settle(t)
+	r.drain()
 	return r
 }
 

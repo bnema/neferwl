@@ -47,7 +47,7 @@ func (w *View) specialWidth(i int, ignoreFullWidth bool) (int, bool) {
 	if w.Columns[i].FullWidth && !ignoreFullWidth {
 		return max(w.Usable.W-2*w.gap(), 0), true
 	}
-	if w.fullscreenColumn(i) {
+	if w.fullscreenSized(i) {
 		return w.Output.W, true
 	}
 	return 0, false

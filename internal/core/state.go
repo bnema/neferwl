@@ -74,8 +74,8 @@ func (c *Core) stateInto(st domain.State) domain.State {
 			c.scratch.ids = w.AppendWindows(c.scratch.ids[:0])
 			for _, id := range c.scratch.ids {
 				rec := c.windows.lookup(id)
-				v := domain.WindowState{ID: id, AppID: rec.client.AppID, PID: rec.client.PID, Sandbox: rec.client.Sandbox, ContentType: contentTypeName(rec.client.ContentType), Xwayland: rec.client.Xwayland, Output: s.name(), Workspace: n, WorkspaceID: w.ID, WorkspaceName: w.Name, Visible: shown[id], IdleInhibit: rec.idleInhibit, ShortcutsInhibited: rec.inhibitShortcuts, Floating: w.IsFloat(id), Fullscreen: w.Fullscreen == id}
-				curve, reason := decideSDRExpansion(sdrExpansionInput{Output: caps, Config: config, Rule: rec.expansionRule, ColorDescription: rec.client.ColorDescription, Fullscreen: v.Fullscreen && w == cur, Game: rec.client.ContentType == domain.ContentGame})
+				v := domain.WindowState{ID: id, AppID: rec.client.AppID, PID: rec.client.PID, Sandbox: rec.client.Sandbox, ContentType: contentTypeName(rec.client.ContentType), Xwayland: rec.client.Xwayland, Output: s.name(), Workspace: n, WorkspaceID: w.ID, WorkspaceName: w.Name, Visible: shown[id], IdleInhibit: rec.idleInhibit, ShortcutsInhibited: rec.inhibitShortcuts, Floating: w.IsFloat(id), Fullscreen: w.IsFullscreenMember(id)}
+				curve, reason := decideSDRExpansion(sdrExpansionInput{Output: caps, Config: config, Rule: rec.expansionRule, ColorDescription: rec.client.ColorDescription, Fullscreen: w.Fullscreen == id && w == cur, Game: rec.client.ContentType == domain.ContentGame})
 				v.SDRExpansion = domain.SDRExpansionState{Active: curve.Active(), Reason: reason}
 				if curve.Active() {
 					v.SDRExpansion.Top = curve.Top
@@ -148,7 +148,8 @@ func (c *Core) workspaceInto(ws []domain.WorkspaceState, i int, w *Workspace, ou
 	}
 	v := &ws[i]
 	cols := v.Columns[:0]
-	*v = domain.WorkspaceState{ID: w.ID, Number: number, Name: w.Name, Output: output, Visible: visible, Overflow: string(w.Overflow)}
+	focused, _ := w.Focused()
+	*v = domain.WorkspaceState{Focused: focused, ID: w.ID, Number: number, Name: w.Name, Output: output, Visible: visible, Overflow: string(w.Overflow), Cover: w.Fullscreen}
 	c.scratch.rects = w.Engine().ColumnRects(w.Snapshot(), c.scratch.rects, layout.RectOpts{})
 	for ci, col := range w.Columns {
 		if ci < cap(cols) {
@@ -160,10 +161,14 @@ func (c *Core) workspaceInto(ws []domain.WorkspaceState, i int, w *Workspace, ou
 		tiles := cv.Windows[:0]
 		r := c.scratch.rects[ci]
 		c.scratch.rows = layout.RowRectsInto(c.scratch.rows[:0], r, col, w.Gap())
+		held := w.HeldColumn(ci)
 		for ri, id := range col.Windows {
 			tr := c.scratch.rows[ri]
 			if w.Fullscreen == id {
 				tr = w.Output
+			} else if held && w.IsFullscreenMember(id) {
+				// Output-sized at its own column, as placed.
+				tr = w.Engine().FullscreenRect(w.Snapshot(), r)
 			}
 			tiles = append(tiles, domain.TileState{ID: id, Rect: tr})
 		}
@@ -176,7 +181,7 @@ func (c *Core) workspaceInto(ws []domain.WorkspaceState, i int, w *Workspace, ou
 func sameState(a, b domain.State) bool {
 	return a.Output == b.Output && slices.Equal(a.Outputs, b.Outputs) && slices.Equal(a.Windows, b.Windows) &&
 		slices.EqualFunc(a.Workspaces, b.Workspaces, func(x, y domain.WorkspaceState) bool {
-			return x.ID == y.ID && x.Number == y.Number && x.Name == y.Name && x.Output == y.Output && x.Visible == y.Visible && x.Overflow == y.Overflow &&
+			return x.Focused == y.Focused && x.ID == y.ID && x.Number == y.Number && x.Name == y.Name && x.Output == y.Output && x.Visible == y.Visible && x.Overflow == y.Overflow && x.Cover == y.Cover &&
 				slices.EqualFunc(x.Columns, y.Columns, func(p, q domain.ColumnState) bool {
 					return p.Rect == q.Rect && slices.Equal(p.Windows, q.Windows)
 				})

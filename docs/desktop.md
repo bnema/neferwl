@@ -161,13 +161,14 @@ Each window also carries metadata keys:
 - `content_type`: `game`, `video`, `photo` or empty, from `wp_content_type_v1`.
 - `xwayland`: the window is an X11 window on either backend.
 
-The `workspaces` list holds every workspace with its `visible` flag, its columns and the windows in them, each with `x`, `y`, `width` and `height` in logical pixels of its output. The file is written at most once per second.
+The `workspaces` list holds every workspace with its `visible` flag, its columns and the windows in them, each with `x`, `y`, `width` and `height` in logical pixels of its output. A workspace's `cover` is its active fullscreen window, 0 if none; a window's `fullscreen` is also set for the other fullscreen windows it holds, which sit output-sized in their own column or band. The file is written at most once per second.
 
 ```sh
 neferwl state                        # the whole state
 neferwl state output-of "$PID"       # the output showing that process's window
 neferwl state | jq '[.windows[] | select(.hidden)] | length'   # windows in hidden stashes
 neferwl state | jq '[.windows[] | select(.fullscreen)] | length'   # fullscreen windows
+neferwl state | jq '.workspaces[] | select(.visible) | .cover'   # the window covering the screen
 neferwl state | jq '.workspaces[] | select(.visible) | .columns[] | .width'   # column widths on screen
 ```
 

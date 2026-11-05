@@ -35,7 +35,7 @@ func TestStateWorkspaceGeometry(t *testing.T) {
 			t.Fatalf("%d workspaces: %+v", len(got), got)
 		}
 		ws := got[0]
-		if ws.ID != shown.ID || ws.Number != 1 || ws.Output != "OUT-1" || !ws.Visible || ws.Overflow != "fixed" {
+		if ws.Focused != 1 || ws.ID != shown.ID || ws.Number != 1 || ws.Output != "OUT-1" || !ws.Visible || ws.Overflow != "fixed" {
 			t.Fatalf("%+v", ws)
 		}
 		want := []domain.ColumnState{
@@ -59,7 +59,7 @@ func TestStateWorkspaceGeometry(t *testing.T) {
 		for _, w := range got[1:] {
 			if w.ID == other.ID {
 				found = true
-				if w.Visible || w.Number != 0 || len(w.Columns) != 1 || w.Columns[0].Windows[0].ID != 4 {
+				if w.Focused != 4 || w.Visible || w.Number != 0 || len(w.Columns) != 1 || w.Columns[0].Windows[0].ID != 4 {
 					t.Errorf("hidden workspace: %+v", w)
 				}
 			} else if w.Visible {
@@ -95,5 +95,33 @@ func TestStateWorkspaceChange(t *testing.T) {
 			t.Fatal("new column not seen")
 		}
 
+	})
+}
+
+func TestStateWorkspaceFocusChange(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := lineageCore(t)
+		c.addScreen(domain.OutputInfo{Name: "OUT-1", Width: 300, Height: 200})
+		w := c.cur().mon.Current()
+		w.AddWindow(1)
+		w.AddWindow(2)
+		a := cloneState(c.state())
+		w.FocusID(1)
+		b := c.state()
+		if sameState(a, b) {
+			t.Fatal("workspace focus change not seen")
+		}
+		var found bool
+		for _, ws := range b.Workspaces {
+			if ws.ID == w.ID {
+				found = true
+				if ws.Focused != 1 {
+					t.Fatalf("focus: %+v", ws)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("workspace missing")
+		}
 	})
 }

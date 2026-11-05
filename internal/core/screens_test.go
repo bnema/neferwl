@@ -1003,9 +1003,9 @@ func TestStateSnapshot(t *testing.T) {
 			},
 		}
 		want.Workspaces = []domain.WorkspaceState{
-			{ID: 1, Number: 1, Output: "DP-1", Visible: true, Overflow: "scroll", Columns: []domain.ColumnState{{Rect: domain.Rect{W: 200, H: 100}, Windows: []domain.TileState{{ID: 1, Rect: domain.Rect{W: 200, H: 100}}}}}},
+			{Focused: 1, ID: 1, Number: 1, Output: "DP-1", Visible: true, Overflow: "scroll", Columns: []domain.ColumnState{{Rect: domain.Rect{W: 200, H: 100}, Windows: []domain.TileState{{ID: 1, Rect: domain.Rect{W: 200, H: 100}}}}}},
 			{ID: 3, Number: 2, Output: "DP-1", Overflow: "scroll", Columns: []domain.ColumnState{}},
-			{ID: 2, Number: 1, Output: "DP-2", Visible: true, Overflow: "scroll", Columns: []domain.ColumnState{{Rect: domain.Rect{W: 400, H: 200}, Windows: []domain.TileState{{ID: 2, Rect: domain.Rect{W: 400, H: 200}}}}}},
+			{Focused: 2, ID: 2, Number: 1, Output: "DP-2", Visible: true, Overflow: "scroll", Columns: []domain.ColumnState{{Rect: domain.Rect{W: 400, H: 200}, Windows: []domain.TileState{{ID: 2, Rect: domain.Rect{W: 400, H: 200}}}}}},
 			{ID: 4, Number: 2, Output: "DP-2", Overflow: "scroll", Columns: []domain.ColumnState{}},
 		}
 		for i := range want.Outputs {

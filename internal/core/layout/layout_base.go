@@ -97,7 +97,7 @@ func nativeColumnWidth(v *View, row *nativeWidths, i int, ignore bool) int {
 	if c.FullWidth && !ignore {
 		return max(v.Usable.W-2*v.Gap, 0)
 	}
-	if fullscreenColumn(*c, v.Fullscreen) {
+	if fullscreenSizedColumn(*c, v.Fullscreen, v.Held) {
 		return v.Output.W
 	}
 	if f.spiral {
@@ -122,7 +122,7 @@ func (Base) ScrollTarget(v View) int {
 	vf := v.WithFacts()
 	left := vf.ColumnX(w.Focus) - w.View
 	width := vf.Layout.ColumnWidth(vf, w.Focus, false)
-	if w.fullscreenColumn(w.Focus) {
+	if w.fullscreenSized(w.Focus) {
 		w.View += left - w.Output.X
 		return w.View
 	}
@@ -221,7 +221,7 @@ func (Base) PreviewTiles(v View, dst []Placement, rowBuf []Rect) ([]Placement, i
 	for i, c := range v.Columns {
 		r := rects[i]
 		r.X, r.Y = r.X-v.Usable.X, v.Gap
-		if fullscreenColumn(c, v.Fullscreen) {
+		if fullscreenSizedColumn(c, v.Fullscreen, v.Held) {
 			r.W = max(v.Usable.W-2*v.Gap, 0)
 		}
 		dst = appendPreviewColumn(dst, rowBuf, r, c, v.Gap, i == v.Focus)

@@ -94,6 +94,11 @@ func build(p Placement, t configureTarget, old ports.ConfigureWindow, ok bool) p
 		v = old
 		if !ok {
 			v = ports.ConfigureWindow{ID: p.ID, Floating: p.Floating}
+			if p.Fullscreen {
+				// A held fullscreen member mapped hidden is fullscreen from
+				// its first configure, sized by its output-sized placement.
+				v.Width, v.Height, v.Fullscreen, v.Floating = p.Rect.W, p.Rect.H, true, false
+			}
 		}
 		v.Activated, v.Visible, v.Output, v.Captured = false, false, t.output, false
 	case p.Preview > 0:

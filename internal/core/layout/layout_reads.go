@@ -38,6 +38,11 @@ func (w *Lanes) ValidSpans(first, last int) bool {
 // frame, and a Snapshot per call would copy the whole View.
 func (w *Lanes) FullscreenColumn(i int) bool { return fullscreenColumn(w.Columns[i], w.Fullscreen) }
 
+// HeldColumn reports whether column i holds a held fullscreen window.
+func (w *Lanes) HeldColumn(i int) bool {
+	return len(w.Held) > 0 && fullscreenSizedColumn(w.Columns[i], 0, w.Held)
+}
+
 // ColumnEdges returns unscrolled positions and widths in one pass.
 func (w *Lanes) ColumnEdges() ([]int, []int) { v := w.Snapshot(); return v.columnEdges() }
 

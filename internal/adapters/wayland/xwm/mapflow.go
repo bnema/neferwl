@@ -28,6 +28,7 @@ func (x *XWM) beginMap(s Slot) {
 	}
 	rec.mapping, rec.ready = true, false
 	rec.hasNetName = false
+	rec.clientPID = 0
 	rec.pending = propGeom
 	xid := rec.xid
 	for idx := 0; idx < propCount; idx++ {
@@ -152,8 +153,13 @@ func (x *XWM) checkReady(s Slot) {
 func (x *XWM) info(s Slot) WindowInfo {
 	rec := x.tab.rec(s)
 	parent := x.managedSlot(rec.transient)
+	pid := rec.pid
+	if pid == 0 {
+		pid = rec.clientPID
+	}
 	info := WindowInfo{
-		PID:        int(rec.pid),
+		PID:        int(pid),
+		ClientPID:  int(rec.clientPID),
 		Floating:   rec.floating,
 		Parent:     parent,
 		Modal:      rec.modal,

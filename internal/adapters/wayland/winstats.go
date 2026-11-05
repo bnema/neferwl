@@ -105,6 +105,7 @@ type windowStats struct {
 	gen           uint64
 	timer         ports.Timer
 	client, shown frameRing
+	source        *surface
 	lastCommit    time.Time
 	lastShown     time.Duration
 	lastShownSeq  uint64
@@ -112,7 +113,7 @@ type windowStats struct {
 	scratch       [domain.StatsFrames]uint32
 }
 
-// commit records a fresh root buffer and its presentation hints.
+// commit records a fresh main-content buffer and its presentation hints.
 func (w *windowStats) commit(now time.Time, c domain.SurfaceContent, explicitSync, tearing bool) {
 	if w.watched == 0 {
 		return
@@ -171,8 +172,9 @@ func (s *Server) watchStats(id domain.WindowID) {
 	gen := s.stats.gen + 1
 	s.stats = windowStats{watched: id, gen: gen}
 	if id != 0 {
-		root := w.surf()
-		s.stats.bufferFacts(root.content, root.hold.acquire != nil, root.async)
+		source := w.surf().mainContent()
+		s.stats.source = source
+		s.stats.bufferFacts(source.content, source.hold.acquire != nil, source.async)
 		s.armStats()
 	}
 }

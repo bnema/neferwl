@@ -19,6 +19,8 @@ type View struct {
 	Gap int
 	// Fullscreen is the fullscreen window, or zero.
 	Fullscreen WindowID
+	// Held are the held fullscreen windows; they never cover the output.
+	Held []WindowID
 	// State is per-layout data, nil for stateless layouts.
 	State State // per-layout state, nil for stateless layouts
 	// Layout is the resolved engine used by shared geometry helpers.

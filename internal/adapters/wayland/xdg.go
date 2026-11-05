@@ -6,7 +6,6 @@ import (
 	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
-	"github.com/bnema/neferwl/internal/adapters/peerexe"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -273,11 +272,11 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 			}
 			pid := r.Client().PID()
 			x11 := x.server.x11Client != nil && x.server.x11Client.Owns(pid)
-			var ancestors []int
-			if w.gen == 1 && !x11 {
-				ancestors = peerexe.AncestorPIDs(pid)
+			var proc []domain.ProcNode
+			if !x11 {
+				proc = x.server.windowProc(w.id, pid, w.gen > 1)
 			}
-			x.server.emit(ports.WindowMapped{AncestorPIDs: ancestors, ID: w.id, AppID: w.appID, Title: w.title, Slot: slot, Sandbox: sandbox, ContentType: windowContentType(x.surface.contentKind), ColorDescription: !x.surface.outputColor().PlainSDR(), Xwayland: x11, PIDShared: x11, PID: pid, Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Modal: w.modal, Remap: w.gen > 1, Fullscreen: w.gen == 1 && w.initialFullscreen})
+			x.server.emit(ports.WindowMapped{Proc: proc, ID: w.id, AppID: w.appID, Title: w.title, Slot: slot, Sandbox: sandbox, ContentType: windowContentType(x.surface.contentKind), ColorDescription: x.surface.mappedColor(), Xwayland: x11, PIDShared: x11, PID: pid, Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Modal: w.modal, Remap: w.gen > 1, Fullscreen: w.gen == 1 && w.initialFullscreen})
 			x.server.syncInhibitors()
 			x.server.toplevelChanged(w)
 			x.server.castInventoryChanged()

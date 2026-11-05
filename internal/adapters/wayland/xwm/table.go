@@ -49,7 +49,7 @@ type record struct {
 	wtype                          uint8
 	modal, fullscreen              bool
 	transient                      uint32 // xid
-	pid                            int32
+	pid, clientPID                 int32
 	minW, minH, maxW, maxH         int32
 	title, class                   string // owned, replaced only on change
 	hasNetName                     bool
