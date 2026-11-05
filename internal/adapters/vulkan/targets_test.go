@@ -73,7 +73,7 @@ func TestHDRExportTarget(t *testing.T) {
 	r := newTestRenderer(t, 32, 16)
 	defer r.Close()
 	r.SetHDR(203)
-	// GPU tests and headless --screenshot-raw (SetHDRReadback); never DRM.
+	// GPU tests and headless `shot --every-frame --raw` (SetHDRReadback); never DRM.
 	r.SetHDRReadback(true)
 	if r.gpu.physical == 0 {
 		t.Skip("no exportable GPU")
