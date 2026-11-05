@@ -17,7 +17,6 @@ type InputSource uint8
 const (
 	InputNone            InputSource = iota
 	InputLibinputLibseat             // libinput with devices opened through libseat
-	InputScript                      // scripted input (headless)
 	InputLibinputDirect              // libinput opening devices directly
 )
 
@@ -49,22 +48,55 @@ type BackendPlan struct {
 	LogindPowerKeys   bool
 	PersistScales     bool
 	AutoTerminal      AutoTerminalMode
-	AllowTestFlags    bool
 }
 
-// PlanBackend returns the plan for b; an unknown backend yields the zero plan.
-func PlanBackend(b domain.Backend) BackendPlan {
-	switch b {
-	case domain.BackendDRM:
+// PlanOverrides holds explicit CLI choices. Nil preserves profile defaults.
+type PlanOverrides struct {
+	SessionDBus   *bool
+	AutoTerminal  *bool
+	Input         *InputSource
+	PersistScales *bool
+}
+
+// PlanBackend returns the backend/profile policy consumed by wiring. DRM
+// ignores profiles and overrides; its session/device ownership is fixed.
+func PlanBackend(b domain.Backend, p domain.Profile, o PlanOverrides) BackendPlan {
+	if b == domain.BackendDRM {
 		return BackendPlan{KMS: true, RequireRenderNode: true, FixedHeads: HeadsConnectors, IsolateVirtuals: true,
-			Input: InputLibinputLibseat, SessionDBus: SessionDBusAlways, LogindPowerKeys: true, PersistScales: true,
-			AutoTerminal: AutoTerminalConfig}
-	case domain.BackendHeadless:
-		return BackendPlan{FixedHeads: HeadsSized, IsolateVirtuals: true, Input: InputScript,
-			SessionDBus: SessionDBusFlagOnly, AutoTerminal: AutoTerminalConfigOrFlag, AllowTestFlags: true}
-	case domain.BackendServer:
-		return BackendPlan{RequireRenderNode: true, FixedHeads: HeadsNone, Input: InputLibinputDirect,
-			SessionDBus: SessionDBusAlways, PersistScales: true, AutoTerminal: AutoTerminalOff}
+			Input: InputLibinputLibseat, SessionDBus: SessionDBusAlways, LogindPowerKeys: true, PersistScales: true, AutoTerminal: AutoTerminalConfig}
 	}
-	return BackendPlan{}
+	if b == domain.BackendServer {
+		b, p = domain.BackendHeadless, domain.ProfilePersistent
+	}
+	if b != domain.BackendHeadless {
+		return BackendPlan{}
+	}
+	var plan BackendPlan
+	switch p {
+	case domain.ProfileEphemeral:
+		plan = BackendPlan{FixedHeads: HeadsSized, IsolateVirtuals: true, Input: InputNone, SessionDBus: SessionDBusFlagOnly, AutoTerminal: AutoTerminalConfigOrFlag}
+	case domain.ProfilePersistent:
+		plan = BackendPlan{RequireRenderNode: true, FixedHeads: HeadsNone, Input: InputLibinputDirect, SessionDBus: SessionDBusAlways, PersistScales: true, AutoTerminal: AutoTerminalOff}
+	default:
+		return BackendPlan{}
+	}
+	if o.SessionDBus != nil {
+		plan.SessionDBus = SessionDBusFlagOnly
+		if *o.SessionDBus {
+			plan.SessionDBus = SessionDBusAlways
+		}
+	}
+	if o.AutoTerminal != nil {
+		plan.AutoTerminal = AutoTerminalOff
+		if *o.AutoTerminal {
+			plan.AutoTerminal = AutoTerminalConfigOrFlag
+		}
+	}
+	if o.Input != nil {
+		plan.Input = *o.Input
+	}
+	if o.PersistScales != nil {
+		plan.PersistScales = *o.PersistScales
+	}
+	return plan
 }

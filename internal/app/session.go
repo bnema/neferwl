@@ -98,7 +98,7 @@ const (
 // warning or nil instead of failing. A failure releases the DRM backend,
 // keymap and Vulkan resources (abort).
 func assembleSession(ctx context.Context, opts Options) (s *session, err error) {
-	s = &session{opts: opts, plan: core.PlanBackend(opts.Backend), log: logging.For(ctx, "app"), clock: clock.System{}, security: &sessionsecurity.Gate{}}
+	s = &session{opts: opts, plan: core.PlanBackend(opts.Backend, domain.ProfileEphemeral, core.PlanOverrides{}), log: logging.For(ctx, "app"), clock: clock.System{}, security: &sessionsecurity.Gate{}}
 	defer func() {
 		if err != nil {
 			s.abort()
