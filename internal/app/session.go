@@ -49,7 +49,9 @@ import (
 // starts them. The session owns hw, curs and xdisplay (released by close)
 // until run ends; the keymap and the wayland server own themselves.
 type session struct {
-	shotSizes   sync.Map
+	// shotSizes is written by the scene consumer and read by control shots.
+	shotMu      sync.Mutex
+	shotSizes   map[string][2]int
 	controlDone chan domain.CaptureDone
 	registry    *sessiondir.Dir
 	opts        Options
@@ -150,7 +152,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	s.dmabuf = s.gpu.DMABuf()
 	log.Info().Int("formats", len(s.dmabuf.Formats)).Msg("dmabuf")
 	s.p = newPipes(s.plan.PersistScales, opts.Config.Hint.Enable)
-	if opts.Backend == "headless" {
+	if opts.Backend == domain.BackendHeadless {
 		s.p.control = make(chan ports.ControlRequest, 32)
 		s.p.runtimeOutputs = make(chan ports.OutputRuntimeRequest, 32)
 		s.p.continuous = make(chan ports.ContinuousCaptureRequest, 8)
@@ -350,7 +352,12 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
-		relayConfig(ctx, opts.Config, p.watched, p.filtered, p.keymaps, p.deviceConfigs, curs, p.commands, logging.For(ctx, "config"), p.controlKeymaps)
+		// Only a live control socket needs its own keymap on reload.
+		var controlKeymaps chan *xkb.Keymap
+		if s.control != nil {
+			controlKeymaps = p.controlKeymaps
+		}
+		relayConfig(ctx, opts.Config, p.watched, p.filtered, p.keymaps, p.deviceConfigs, curs, p.commands, logging.For(ctx, "config"), controlKeymaps)
 	}()
 	go func() {
 		defer workers.Done()
@@ -483,7 +490,12 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	}
 	go func() {
 		defer workers.Done()
-		consumeScenes(ctx, p.scenes, p.configErrors, p.binds, p.placements, opts.testScenes, p.renderScenes, s.recordShotSizes)
+		// Shot sizes serve control captures only: no per-frame work without.
+		var observers []func([]domain.Scene)
+		if s.control != nil {
+			observers = append(observers, s.recordShotSizes)
+		}
+		consumeScenes(ctx, p.scenes, p.configErrors, p.binds, p.placements, opts.testScenes, p.renderScenes, observers...)
 	}()
 
 	go func() {
@@ -590,6 +602,8 @@ func (s *session) announceReady(opts Options, controlPath string) {
 }
 
 func (s *session) recordShotSizes(scenes []domain.Scene) {
+	s.shotMu.Lock()
+	defer s.shotMu.Unlock()
 	for _, scene := range scenes {
 		scale := scene.Scale
 		if scale <= 0 {
@@ -599,14 +613,18 @@ func (s *session) recordShotSizes(scenes []domain.Scene) {
 		if scene.Transform.Rotated() {
 			w, h = h, w
 		}
-		s.shotSizes.Store(scene.Output, [2]int{w, h})
+		if size := [2]int{w, h}; s.shotSizes[scene.Output] != size {
+			if s.shotSizes == nil {
+				s.shotSizes = make(map[string][2]int)
+			}
+			s.shotSizes[scene.Output] = size
+		}
 	}
 }
+
 func (s *session) shotSize(output string) (int, int, bool) {
-	value, ok := s.shotSizes.Load(output)
-	if !ok {
-		return 0, 0, false
-	}
-	size := value.([2]int)
-	return size[0], size[1], true
+	s.shotMu.Lock()
+	defer s.shotMu.Unlock()
+	size, ok := s.shotSizes[output]
+	return size[0], size[1], ok
 }
