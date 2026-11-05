@@ -123,7 +123,7 @@ func (c *Core) evalWaits() {
 				reached = domain.WaitPresented
 			}
 		}
-		satisfied := reached >= w.level && (w.until == nil || w.until.Holds(state))
+		satisfied := reached >= w.level && (w.until == nil || w.until.Holds(w.before, state))
 		timedOut := !now.Before(w.deadline)
 		if satisfied || timedOut {
 			done := w.level

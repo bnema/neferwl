@@ -90,14 +90,14 @@ func TestUntil(t *testing.T) {
 		{"focused app_id=foot", Until{Kind: UntilFocused, AppID: "foot"}, true, false},
 		{"focused app_id=x", Until{Kind: UntilFocused, AppID: "x"}, false, false},
 		{"unmapped id=12", Until{Kind: UntilUnmapped, Window: 12}, false, true},
-		{"unmapped id=13", Until{Kind: UntilUnmapped, Window: 13}, true, true},
+		{"unmapped id=13", Until{Kind: UntilUnmapped, Window: 13}, false, false},
 	} {
 		t.Run(tc.text, func(t *testing.T) {
 			got, err := ParseUntil(tc.text)
 			if err != nil || got != tc.want {
 				t.Fatalf("parse = %+v, %v", got, err)
 			}
-			if got.Holds(state) != tc.holds || got.Holds(State{}) != tc.empty {
+			if got.Holds(State{}, state) != tc.holds || got.Holds(state, State{}) != tc.empty {
 				t.Fatal("predicate result")
 			}
 		})
@@ -108,7 +108,7 @@ func TestUntil(t *testing.T) {
 		}
 	}
 	for _, u := range []Until{{}, {Kind: UntilFocused}, {Kind: UntilUnmapped}, {Kind: UntilKind(99)}} {
-		if u.Holds(State{}) {
+		if u.Holds(State{}, State{}) {
 			t.Errorf("invalid predicate holds: %+v", u)
 		}
 	}
@@ -151,5 +151,25 @@ func TestCommandKindString(t *testing.T) {
 		if got := tc.kind.String(); got != tc.want {
 			t.Errorf("kind %d = %q, want %q", tc.kind, got, tc.want)
 		}
+	}
+}
+
+func TestUntilRelativeToBefore(t *testing.T) {
+	old := WindowState{ID: 1, AppID: "foot"}
+	before := State{Windows: []WindowState{old}, Window: &old}
+	mapped := Until{Kind: UntilWindowMapped, AppID: "foot"}
+	if mapped.Holds(before, before) {
+		t.Fatal("existing match satisfied mapped")
+	}
+	now := State{Windows: []WindowState{old, {ID: 2, AppID: "foot"}}}
+	if !mapped.Holds(before, now) {
+		t.Fatal("new match did not satisfy mapped")
+	}
+	removed := Until{Kind: UntilUnmapped, Window: 1}
+	if removed.Holds(State{}, State{}) || removed.Holds(before, before) || !removed.Holds(before, State{}) {
+		t.Fatal("unmapped must transition from present to absent")
+	}
+	if !(Until{Kind: UntilFocused, AppID: "foot"}).Holds(before, before) {
+		t.Fatal("focus must remain absolute")
 	}
 }

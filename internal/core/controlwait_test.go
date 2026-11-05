@@ -71,7 +71,7 @@ func TestControlWaits(t *testing.T) {
 			}
 			return last
 		}
-		client <- ports.WindowMapped{ID: 1, AppID: "one"}
+		client <- ports.WindowMapped{ID: 1, AppID: "foot"}
 		configured := latestConfigure(1)
 		action("none", domain.WaitSettled, nil, time.Second)
 		noReply()

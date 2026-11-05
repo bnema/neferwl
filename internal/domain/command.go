@@ -220,7 +220,8 @@ func ParseUntil(s string) (Until, error) {
 	return Until{}, fmt.Errorf("invalid until predicate %q", s)
 }
 
-func (u Until) Holds(s State) bool {
+// Holds evaluates transitions since before; focus is an absolute predicate.
+func (u Until) Holds(before, s State) bool {
 	switch u.Kind {
 	case UntilWindowMapped:
 		if u.AppID == "" {
@@ -228,7 +229,16 @@ func (u Until) Holds(s State) bool {
 		}
 		for _, w := range s.Windows {
 			if w.AppID == u.AppID {
-				return true
+				existed := false
+				for _, old := range before.Windows {
+					if old.ID == w.ID {
+						existed = true
+						break
+					}
+				}
+				if !existed {
+					return true
+				}
 			}
 		}
 	case UntilFocused:
@@ -242,7 +252,11 @@ func (u Until) Holds(s State) bool {
 				return false
 			}
 		}
-		return true
+		for _, old := range before.Windows {
+			if old.ID == u.Window {
+				return true
+			}
+		}
 	}
 	return false
 }
