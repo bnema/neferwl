@@ -24,12 +24,12 @@ const scriptDeviceID domain.InputDeviceID = 1
 // software cursor of the output under them (physical position on it), using
 // the latest layout from layouts.
 func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script <-chan string, input chan<- ports.InputEvent, layouts <-chan domain.Layout, moveCursor func(output string, x, y float64), log zerowrap.Logger) error {
-	return RunSecure(ctx, km, keymaps, script, input, layouts, moveCursor, log, nil)
+	return RunSecure(ctx, km, keymaps, script, input, layouts, nil, moveCursor, log, nil)
 }
 
 // RunSecure snapshots the protection epoch before each event enters the input
 // queue. Scripts are a headless test transport, never an unlock authority.
-func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script <-chan string, input chan<- ports.InputEvent, layouts <-chan domain.Layout, moveCursor func(output string, x, y float64), log zerowrap.Logger, security ports.SessionSecurity) error {
+func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script <-chan string, input chan<- ports.InputEvent, layouts <-chan domain.Layout, constraints <-chan domain.PointerConstraint, moveCursor func(output string, x, y float64), log zerowrap.Logger, security ports.SessionSecurity) error {
 	defer func() { km.Close() }()
 	activeDevice := scriptDeviceID
 	announcedDevices := map[domain.InputDeviceID]bool{scriptDeviceID: true}
@@ -172,6 +172,22 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 			km.Close()
 			km = next
 			log.Info().Msg("keymap replaced")
+		case g := <-constraints:
+			// Core moved the pointer (a warp or a virtual pointer): the
+			// script continues from there and the cursor follows.
+			if !g.Warp {
+				continue
+			}
+			key, targets := pointerLayout()
+			x, y := targets.Clamp(g.X, g.Y, g.X, g.Y)
+			positions[key] = [2]float64{x, y}
+			delete(dirtyPositions, key)
+			if moveCursor != nil {
+				if o, ok := targets.At(x, y); ok {
+					tx, ty := o.ToTarget(x, y)
+					moveCursor(o.Info.Name, tx, ty)
+				}
+			}
 		case next := <-layouts:
 			if !slices.EqualFunc(layout, next, domain.OutputPlacement.Equal) {
 				for key := range positions {

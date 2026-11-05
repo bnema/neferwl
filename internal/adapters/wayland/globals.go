@@ -52,6 +52,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 		func() error { return registerActivation(d, s) },
 		func() error { return registerForeign(d, s) },
 		func() error { return registerVirtualKeyboard(d, s) },
+		func() error { return registerVirtualPointer(d, s) },
 		func() error { return registerTextInput(d, s) },
 		func() error { return registerInputMethod(d, s) },
 		func() error {

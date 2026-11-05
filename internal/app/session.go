@@ -336,7 +336,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 			})
 			return
 		}
-		if err := headlessinput.RunSecure(ctx, km, p.keymaps, script, p.input, p.layouts, func(o string, x, y float64) { curs.Move(o, x, y, true) }, logging.For(ctx, "input"), security); err != nil && !errors.Is(err, context.Canceled) {
+		if err := headlessinput.RunSecure(ctx, km, p.keymaps, script, p.input, p.layouts, p.constraints, func(o string, x, y float64) { curs.Move(o, x, y, true) }, logging.For(ctx, "input"), security); err != nil && !errors.Is(err, context.Canceled) {
 			select {
 			case done <- err:
 			case <-ctx.Done():

@@ -64,6 +64,22 @@ WAYLAND_DISPLAY=<name> go run ./examples/testime -preedit nihon -commit 日本
 
 `-count <n>` exits after n commits; `-delay` sets the time between preedit and commit.
 
+## Testing the virtual pointer
+
+`neferwl pointer` drives the pointer of the headless session (same display resolution as `neferwl state`); run it with the headless `WAYLAND_DISPLAY`:
+
+```sh
+WAYLAND_DISPLAY=<name> neferwl pointer abs 0.1 0.5 click
+WAYLAND_DISPLAY=<name> neferwl pointer drag 100 0 scroll down 3
+WAYLAND_DISPLAY=<name> neferwl pointer --output HEADLESS-2 abs 0.5 0.5
+```
+
+Check the result with `neferwl state` (`.window.id` is the focused window). Headless screenshots do not show the cursor. `TestPointerCLI` (`internal/app`, in `go test ./...`) runs the built binary against a headless NeferWL and checks a click, a drag, a scroll and the release at exit on a test client.
+
+## wayvnc check
+
+`make e2e-wayvnc` runs `TestWayVNC` (build tag `wayvnc`; skips without `wayvnc` on `PATH`). A headless NeferWL with a 320x240 output allowlists wayvnc in a throwaway capture-allow file and maps a client that shows a red square; then `wayvnc -o HEADLESS-1` runs on a free localhost port. A minimal RFB client in the test checks that the framebuffer has the output's size and shows the square, that a pointer event over the square enters the client and a click reaches it, and that a key event types `a` (KEY_A) into the focused client.
+
 ## X11 check
 
 `make e2e-xwayland` runs the end-to-end test of the built-in window manager (`xwayland = builtin`). It is behind the `xwayland` build tag, so `go test ./...` and `make check` only compile it (`go vet -tags xwayland`). It needs `Xwayland` on `PATH` and a GPU, and skips without Xwayland. The clipboard test also needs `wl-copy` and `wl-paste` (wl-clipboard) and skips without them; they run with the headless `WAYLAND_DISPLAY` and need no extra focus step, since the focused probe window is enough for `wl-copy --foreground` to set the selection.

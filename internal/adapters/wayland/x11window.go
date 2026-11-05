@@ -60,6 +60,10 @@ func (s *Server) globalVisible(c server.Client, g *server.Global) bool {
 	if g == s.xdgPublic {
 		return c != s.xwayland.client
 	}
+	if g.Interface() == virtualPointerInterface {
+		// Sandboxed clients never drive the seat pointer.
+		return s.sandboxed[c] == nil
+	}
 	if xwaylandRestricted(g.Interface()) {
 		return s.xwayland.client != (server.Client{}) && c == s.xwayland.client
 	}
