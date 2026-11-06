@@ -239,8 +239,8 @@ HEADLESS-1 at (-640,0) and HEADLESS-2 at (0,0).
 
 ## Control input device
 
-Control input announces the domain-reserved synthetic device ID `9223372036854775808`
-named `control`, disjoint from physical and virtual-pointer devices. Use
+Control input announces a device named `control` with ID
+`9223372036854775808`, which no real device uses. Use
 `output.tv.input = control` to test device-bound focus on a virtual output.
 Control `move` coordinates stay global logical coordinates.
 
