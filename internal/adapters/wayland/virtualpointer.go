@@ -12,8 +12,8 @@ import (
 )
 
 // virtualPointerDevices is the first device identity of virtual pointers;
-// real producers count up from 1 and never reach it.
-const virtualPointerDevices domain.InputDeviceID = 1 << 62
+// physical and control producers use other domain-reserved namespaces.
+const virtualPointerDevices = domain.VirtualPointerDeviceBase
 
 // virtualPointerInterface is the manager global, hidden from sandboxed clients.
 const virtualPointerInterface = "zwlr_virtual_pointer_manager_v1"

@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const controlDeviceID domain.InputDeviceID = 1
+const controlDeviceID = domain.ControlDeviceID
 
 // injector translates commands on its owner's goroutine. It borrows km; the
 // caller owns its lifetime and announces Device once before delivering input.

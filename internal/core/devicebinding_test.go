@@ -1,7 +1,9 @@
 package core
 
 import (
+	"context"
 	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 	"testing"
 )
 
@@ -47,5 +49,38 @@ func TestUnmatchedGlobsKeepBindingPathEnabled(t *testing.T) {
 	}
 	if c.boundInput(1) != -1 {
 		t.Fatal("unmatched device bound")
+	}
+}
+
+func TestControlAndPhysicalDeviceBindings(t *testing.T) {
+	var cfg domain.Config
+	cfg.Layout.MaxColumns = 2
+	cfg.Keyboard.CmdKey = "super"
+	c := newSizedCore(t, cfg)
+	c.addScreen(domain.OutputInfo{Name: "desktop", Width: 100, Height: 100})
+	c.addScreen(domain.OutputInfo{Name: "tv", Width: 100, Height: 100})
+	c.cfg.Outputs = []domain.OutputConfig{{Name: "tv", Inputs: []string{"control"}}, {Name: "desktop", Inputs: []string{"mouse"}}}
+	reply := make(chan ports.ControlReply, 1)
+	if err := c.controlInject(context.Background(), ports.ControlInject{Caps: domain.CapInput, Events: []ports.InputEvent{ports.InputDeviceAdded{ID: domain.ControlDeviceID, Name: "control"}}, Reply: reply}); err != nil {
+		t.Fatal(err)
+	}
+	if r := <-reply; r.Err != "" {
+		t.Fatal(r)
+	}
+	if err := c.handleInput(context.Background(), ports.InputDeviceAdded{ID: 1, Name: "mouse"}); err != nil {
+		t.Fatal(err)
+	}
+	if c.boundInput(domain.ControlDeviceID) != 1 || c.boundInput(1) != 0 {
+		t.Fatalf("bindings after physical add: %v", c.inputNames)
+	}
+	layout := c.layout()
+	if len(layout[1].Devices) != 1 || layout[1].Devices[0] != domain.ControlDeviceID || len(layout[0].Devices) != 1 || layout[0].Devices[0] != 1 {
+		t.Fatalf("layout bindings: %+v", layout)
+	}
+	if err := c.handleInput(context.Background(), ports.InputDeviceRemoved{ID: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if c.inputNames[domain.ControlDeviceID] != "control" || c.boundInput(domain.ControlDeviceID) != 1 || c.boundInput(1) != -1 {
+		t.Fatalf("bindings after physical removal: %v", c.inputNames)
 	}
 }
