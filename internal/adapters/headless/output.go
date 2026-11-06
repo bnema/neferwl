@@ -871,7 +871,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		presentedSeq = max(presentedSeq, scene.Seq)
 		reportFrame(scene.Animating)
 		if writer.dir != "" && !opts.protected() {
-			skipped, err := writer.write(opts, r, scene, frame)
+			skipped, err := writer.write(opts, r, scene, frame, confirmed != nil)
 			if err != nil {
 				writer.close()
 				writer = frameWriter{}
@@ -931,7 +931,7 @@ func (w *frameWriter) close() {
 
 // write saves the presented frame. skipped reports a frame not written (the
 // security epoch moved, or no readback); the caller then skips its frame log.
-func (w *frameWriter) write(opts Options, r ports.Renderer, scene domain.Scene, frame int) (skipped bool, err error) {
+func (w *frameWriter) write(opts Options, r ports.Renderer, scene domain.Scene, frame int, hdrConfirmed bool) (skipped bool, err error) {
 	shot := r.Pixels()
 	if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {
 		return true, nil
@@ -981,7 +981,7 @@ func (w *frameWriter) write(opts Options, r ports.Renderer, scene domain.Scene, 
 		return false, fmt.Errorf("frame index: %w", err)
 	}
 	w.lastShot, w.lastShotName = now, name
-	if w.raw && opts.HDR.Enabled {
+	if w.raw && hdrConfirmed {
 		// No cursor on the raw image. Only a confirmed HDR output
 		// has a readable PQ target; else HDRPixels is nil.
 		if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {
