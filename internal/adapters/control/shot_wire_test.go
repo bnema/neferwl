@@ -52,6 +52,7 @@ func TestShotDispatch(t *testing.T) {
 						t.Errorf("action %q", r.Action)
 					}
 				case ports.ControlInject:
+					r.Admission <- ports.ControlAdmission{}
 					shots, wait, caps, response = r.Shots, r.Wait, r.Caps, r.Reply
 				default:
 					t.Errorf("message %T", message)

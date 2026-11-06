@@ -325,6 +325,24 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 	}
 	ch := make(chan ports.ControlReply, 1)
 	var message ports.ControlRequest
+	var admission chan ports.ControlAdmission
+	var transaction *xkb.Transaction
+	locked := false
+	finishTranslation := func(commit bool) {
+		if !locked {
+			return
+		}
+		if transaction != nil {
+			if commit {
+				transaction.Commit()
+			} else {
+				transaction.Rollback()
+			}
+		}
+		locked = false
+		s.injectMu.Unlock()
+	}
+	defer func() { finishTranslation(false) }()
 	timeout := domain.DefaultControlTimeout
 	switch req.Op {
 	case "output-add", "output-rm":
@@ -381,11 +399,15 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 			wait = domain.WaitPresented
 		}
 		if req.Op == "inject" {
-			events, err := s.translate(req, !*announced)
+			s.injectMu.Lock()
+			locked = true
+			events, tx, err := s.translate(req, !*announced)
+			transaction = tx
 			if err != nil {
 				return response
 			}
-			message = ports.ControlInject{Shots: shots, Events: events, Wait: wait, Until: until, Timeout: timeout, Caps: domain.CapsAll, Reply: ch}
+			admission = make(chan ports.ControlAdmission, 1)
+			message = ports.ControlInject{Admission: admission, Shots: shots, Events: events, Wait: wait, Until: until, Timeout: timeout, Caps: domain.CapsAll, Reply: ch}
 		} else {
 			if req.Op == "shot" {
 				req.Action = "none"
@@ -408,17 +430,24 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 	case <-ctx.Done():
 		return response
 	}
+	if admission != nil {
+		select {
+		case admitted := <-admission:
+			finishTranslation(admitted.Err == "")
+			if admitted.Err == "" {
+				*announced = true
+			}
+		case <-ctx.Done():
+			return response
+		}
+	}
 	var result ports.ControlReply
 	select {
 	case result = <-ch:
 	case <-ctx.Done():
 		return response
 	}
-	// The device announcement went through only if core ran the batch.
 	code := result.Err
-	if _, inject := message.(ports.ControlInject); inject && (code == "" || code == ports.ControlErrTimeout) {
-		*announced = true
-	}
 	response = reply{ID: req.ID, OK: code == "", Done: result.Done.String(), Diff: wireDiff(result.Diff), State: statewire.FromDomain(result.State, s.ids), Late: result.Late, Error: code}
 	if len(result.Shots) > 0 {
 		if s.shooter == nil {
