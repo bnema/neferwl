@@ -45,7 +45,8 @@ func Run(ctx context.Context, o BackendOptions, apply *core.OutputApply, ch rout
 		cur := &headless.Cursor{}
 		curs.Set(name, cur)
 		opts := headless.Options{Continuous: writer, Cursor: cur, LoadCursor: xcursor.LoadCursor, Width: size[0], Height: size[1], HDR: domain.OutputHDRSettings{Enabled: o.HDR}.Normalized(), Formats: ch.Formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.Presented, Frames: ch.Frames, Events: ch.Events, Captured: ch.Captured}
-		if !headless.StartOutput(ctx, set, ch, domain.OutputInfo{Name: name, Width: size[0], Height: size[1]}, opts) {
+		opts.SetMode(size[0], size[1], 60000)
+		if !headless.StartOutput(ctx, set, ch, domain.OutputInfo{Name: name, Width: size[0], Height: size[1], RefreshMilli: 60000}, opts) {
 			return set.Wait()
 		}
 	}

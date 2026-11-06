@@ -246,7 +246,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 			if s.hw != nil {
 				device = s.hw.RenderDevice()
 			}
-			return device.NewRenderer(w, h, domain.RendererOptions{Virtual: true, Readback: opts.HeadlessHDR, TraceDamage: traceDamage})
+			return device.NewRenderer(w, h, domain.RendererOptions{Virtual: true, Readback: true, TraceDamage: traceDamage})
 		}
 	}
 	return s, nil

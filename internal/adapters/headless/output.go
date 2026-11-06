@@ -13,6 +13,7 @@ import (
 
 	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/clock"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/corewake"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
@@ -555,9 +556,11 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			if opts.protected() {
 				code = ports.ControlErrLocked
 			} else if !req.Stop {
-				if req.Dir == "" {
+				if writer.dir != "" {
 					code = ports.ControlErrBadRequest
-				} else if err := os.MkdirAll(req.Dir, 0o700); err != nil {
+				} else if req.Dir == "" {
+					code = ports.ControlErrBadRequest
+				} else if err := prepareRecordingDir(req.Dir); err != nil {
 					code = ports.ControlErrCaptureFailed
 				}
 			}
@@ -868,9 +871,12 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		presentedSeq = max(presentedSeq, scene.Seq)
 		reportFrame(scene.Animating)
 		if writer.dir != "" && !opts.protected() {
-			skipped, err := writer.write(opts, r, scene, frame)
+			skipped, err := writer.write(opts, r, scene, frame, confirmed != nil)
 			if err != nil {
-				return err
+				writer.close()
+				writer = frameWriter{}
+				log := logging.For(ctx, "headless")
+				log.Warn().Str("output", opts.Name).Err(err).Msg("continuous capture stopped")
 			}
 			if skipped {
 				continue
@@ -880,6 +886,23 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			ev.Int("frame", frame).Uint64("seq", scene.Seq).Int("windows", len(scene.Windows)).Dur("ms", time.Since(start)).Int("redrawn", r.TakeRedrawn()).Msg("frame")
 		}
 	}
+}
+
+// prepareRecordingDir checks write access before acknowledging a recording.
+func prepareRecordingDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(dir, ".capture-*")
+	if err != nil {
+		return err
+	}
+	closeErr := f.Close()
+	removeErr := os.Remove(f.Name())
+	if closeErr != nil {
+		return closeErr
+	}
+	return removeErr
 }
 
 // frameWriter is the continuous capture state of one output: where frames go
@@ -908,7 +931,7 @@ func (w *frameWriter) close() {
 
 // write saves the presented frame. skipped reports a frame not written (the
 // security epoch moved, or no readback); the caller then skips its frame log.
-func (w *frameWriter) write(opts Options, r ports.Renderer, scene domain.Scene, frame int) (skipped bool, err error) {
+func (w *frameWriter) write(opts Options, r ports.Renderer, scene domain.Scene, frame int, hdrConfirmed bool) (skipped bool, err error) {
 	shot := r.Pixels()
 	if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {
 		return true, nil
@@ -958,7 +981,7 @@ func (w *frameWriter) write(opts Options, r ports.Renderer, scene domain.Scene, 
 		return false, fmt.Errorf("frame index: %w", err)
 	}
 	w.lastShot, w.lastShotName = now, name
-	if w.raw && opts.HDR.Enabled {
+	if w.raw && hdrConfirmed {
 		// No cursor on the raw image. Only a confirmed HDR output
 		// has a readable PQ target; else HDRPixels is nil.
 		if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {
