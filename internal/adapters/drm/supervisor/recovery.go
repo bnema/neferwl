@@ -162,13 +162,13 @@ func (run *outputsRun) finishRecovery() (error, bool) {
 		return nil, false
 	}
 	old := run.b.render
-	run.b.render = nil // failure cleanup must not close the lost device again.
+	run.b.setRender(nil) // failure cleanup must not close the lost device again.
 	run.log.Warn().Str("card", run.b.renderInfo.Path).Msg("render device lost, reopening")
 	next, reopenErr := reopenRender(run.b.opener, run.b.renderInfo, old, &run.policy.ReopenLimiter)
 	if reopenErr != nil {
 		return errors.Join(reopenErr, run.set.Wait()), true
 	}
-	run.b.render = next
+	run.b.setRender(next)
 	if lost := core.LostFormats(run.b.advertised, next.DMABuf().Formats); lost > 0 {
 		run.log.Warn().Str("card", run.b.renderInfo.Path).Int("lost_formats", lost).Msg("render device lost advertised formats")
 	}
