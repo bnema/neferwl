@@ -58,6 +58,13 @@ The service runs `neferwl --backend=headless --profile=persistent --session --se
 It notifies systemd when ready, exports `WAYLAND_DISPLAY` and `DISPLAY` to the
 user manager, binds `graphical-session.target` and restarts on failure. It
 conflicts with `neferwl.service`, so it never runs beside a desktop session.
+Starting it from a desktop session hands over to the server: the desktop login
+wrapper leaves the graphical session, exported environment and portals alone
+while the server has a pending job or is active or activating. On a normal desktop exit or crash,
+the wrapper shuts down the graphical session and clears its environment and
+portals. On a clean server exit, the compositor withdraws its display variables
+and stops its portals; the server service has no wrapper or `ExecStopPost` crash
+cleanup.
 
 Programs started by the compositor (`startup`, binds, `do spawn`) already have
 the right environment. To start a client yourself, take the display from the
