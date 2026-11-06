@@ -91,11 +91,7 @@ func sessionNew(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	signalCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	readyCtx, cancel := context.WithTimeout(signalCtx, *startTimeout)
-	defer cancel()
-	ready, err := startSession(readyCtx, exe, sessionArgs(*id, *profile, *size, *config, *ttl, fs.Args()), sessionEnvironment(os.Environ(), *dbus))
+	ready, err := startSessionInterruptible(ctx, *startTimeout, exe, sessionArgs(*id, *profile, *size, *config, *ttl, fs.Args()), sessionEnvironment(os.Environ(), *dbus))
 	if err != nil {
 		return err
 	}
@@ -104,6 +100,16 @@ func sessionNew(ctx context.Context, env Env, args []string) error {
 		return err
 	}
 	return json.NewEncoder(env.Stdout).Encode(ready)
+}
+
+// startSessionInterruptible bounds startup by timeout and lets SIGINT or
+// SIGTERM cancel it, so an interrupted CLI kills and reaps the detached child.
+func startSessionInterruptible(ctx context.Context, timeout time.Duration, exe string, args, environ []string) (sessionReady, error) {
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return startSession(ctx, exe, args, environ)
 }
 
 // startSession detaches the child but owns it until readiness or failure.

@@ -80,18 +80,17 @@ func TestStartSessionReady(t *testing.T) {
 	}
 }
 
-//testpolicy:realtime A detached helper sends SIGINT during startup; process exit and reaping use real OS I/O.
+// TestStartSessionSignalCancellation: a detached helper sends SIGINT during
+// startup; process exit and reaping use real OS I/O.
 func TestStartSessionSignalCancellation(t *testing.T) {
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	pidPath := filepath.Join(t.TempDir(), "child.pid")
-	_, err = startSession(ctx, exe, []string{"-test.run=^TestSessionHelperProcess$"}, append(sessionEnvironment(os.Environ(), false), "NEFERWL_TEST_SESSION_CHILD=cancel", "NEFERWL_TEST_CHILD_PID="+pidPath))
+	// Without the production signal handling, the helper's SIGINT kills this
+	// test binary instead of cancelling startup.
+	_, err = startSessionInterruptible(t.Context(), 10*time.Second, exe, []string{"-test.run=^TestSessionHelperProcess$"}, append(sessionEnvironment(os.Environ(), false), "NEFERWL_TEST_SESSION_CHILD=cancel", "NEFERWL_TEST_CHILD_PID="+pidPath))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("startup: %v", err)
 	}
