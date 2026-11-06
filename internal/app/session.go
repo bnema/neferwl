@@ -182,7 +182,12 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	var casts ports.CastSink
 	if s.plan.SessionDBus == core.SessionDBusAlways {
 		s.cast = screencast.New(s.captureAllow.Policy, s.p.castCommands, logging.For(ctx, "screencast"))
-		s.cast.SetCastBuffers(s.gpu)
+		s.cast.SetCastBuffers(screencast.CurrentBuffers(func() ports.CastBufferAllocator {
+			if s.hw != nil {
+				return s.hw.RenderDevice()
+			}
+			return s.gpu
+		}))
 		casts = s.cast
 		if opts.castInventoryApplied != nil {
 			s.cast.NotifyInventoryApplied(opts.castInventoryApplied)

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"math"
 	"os"
 	"unsafe"
 
@@ -186,6 +187,15 @@ func (f *captureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.Fi
 	c.get = vk.SemaphoreGetFdInfoKHR{SType: vk.StructureTypeSemaphoreGetFDInfoKHR, Semaphore: c.done, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit}
 	c.fd = -1
 	if err := checked("vkGetSemaphoreFdKHR(capture dmabuf)", d.GetSemaphoreFdKHR(dev, &c.get, &c.fd)); err != nil {
+		// No write fence can be handed to the client. Returning the error
+		// returns ownership of dst, so first finish every GPU write to it.
+		// Device loss also ends those writes. An unexpected wait failure
+		// makes this capture unusable: report device loss to recovery rather
+		// than retrying on the owner goroutine and potentially spinning.
+		res := d.WaitForFences(dev, 1, &c.fence, 1, math.MaxUint64)
+		if res != vk.Success && res != vk.ErrorDeviceLost {
+			return nil, errors.Join(err, checked("vkWaitForFences(capture export failure)", res), ports.ErrDeviceLost)
+		}
 		return nil, err
 	}
 	c.exported = true
