@@ -282,8 +282,11 @@ func TestControlWaitCap(t *testing.T) {
 			t.Fatalf("committed at cap: %+v", r)
 		}
 		// Quit always passes, even asking for a wait.
-		if err := c.control(t.Context(), ports.ControlDo{Action: "quit", Wait: domain.WaitSettled, Caps: domain.CapAct, Reply: replies}); !errors.Is(err, ErrQuit) {
+		if err := c.control(t.Context(), ports.ControlDo{Action: "quit", Wait: domain.DefaultWait, Caps: domain.CapAct, Reply: replies}); !errors.Is(err, ErrQuit) {
 			t.Fatalf("quit at cap: %v", err)
+		}
+		if r := <-replies; r.Err != "" || r.Done != domain.WaitCommitted || len(c.controlWaits) != maxControlWaits {
+			t.Fatalf("default quit must reply without queuing a wait: %+v", r)
 		}
 	})
 }

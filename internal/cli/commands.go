@@ -81,7 +81,7 @@ var stateCmd = Command{
 				if c, err := dialControl(os.Getenv, *target); err == nil {
 					defer c.conn.Close()
 					return printControlState(ctx, env, c)
-				} else if *target != "" || os.Getenv("NEFERWL_SESSION") != "" {
+				} else if *target != "" || os.Getenv("NEFERWL_SESSION") != "" || os.Getenv("NEFERWL_CONTROL") != "" {
 					return err
 				}
 			}

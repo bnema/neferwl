@@ -30,24 +30,26 @@ import (
 // each map it receives from Keymaps; producers own any maps left in the channel
 // after shutdown. Security is sampled before every translated event.
 type Options struct {
-	FramesDir  string
-	Shooter    *Shooter
-	Keymap     *xkb.Keymap
-	Keymaps    <-chan *xkb.Keymap
-	Security   ports.SessionSecurity
+	FramesDir string
+	Shooter   *Shooter
+	Keymap    *xkb.Keymap
+	Keymaps   <-chan *xkb.Keymap
+	Security  ports.SessionSecurity
 }
 
 type Server struct {
-	framesDir  string
-	shooter    *Shooter
-	injectMu   sync.Mutex
-	injector   *injector
-	keymaps    <-chan *xkb.Keymap
-	listener   *net.UnixListener
-	ids        *workspaceid.IDs
-	done       chan struct{}
-	once       sync.Once
-	err        error
+	framesDir   string
+	shooter     *Shooter
+	quitMu      sync.Mutex
+	quitReplies map[chan struct{}]struct{}
+	injectMu    sync.Mutex
+	injector    *injector
+	keymaps     <-chan *xkb.Keymap
+	listener    *net.UnixListener
+	ids         *workspaceid.IDs
+	done        chan struct{}
+	once        sync.Once
+	err         error
 }
 
 // Listen creates a private socket using the same workspace IDs as statefile.
@@ -108,6 +110,40 @@ func (s *Server) Close() error {
 		}
 	})
 	return s.err
+}
+
+// WaitQuitReplies lets shutdown flush outstanding quit replies before cancelling
+// control connections. The caller bounds the wait in case a peer stops reading.
+func (s *Server) WaitQuitReplies(ctx context.Context) {
+	s.quitMu.Lock()
+	pending := make([]chan struct{}, 0, len(s.quitReplies))
+	for done := range s.quitReplies {
+		pending = append(pending, done)
+	}
+	s.quitMu.Unlock()
+	for _, done := range pending {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (s *Server) trackQuit() func() {
+	done := make(chan struct{})
+	s.quitMu.Lock()
+	if s.quitReplies == nil {
+		s.quitReplies = make(map[chan struct{}]struct{})
+	}
+	s.quitReplies[done] = struct{}{}
+	s.quitMu.Unlock()
+	return func() {
+		s.quitMu.Lock()
+		delete(s.quitReplies, done)
+		close(done)
+		s.quitMu.Unlock()
+	}
 }
 
 // Run accepts connections until cancellation or Close, waiting for handlers to exit.
@@ -263,11 +299,18 @@ func (s *Server) serve(ctx context.Context, conn *net.UnixConn, out chan<- ports
 			}
 			continue
 		}
+		finish := func() {}
+		if req.Op == "do" || req.Op == "inject" {
+			finish = s.trackQuit()
+		}
 		response := s.dispatch(ctx, req, out, &announced)
 		if ctx.Err() != nil {
+			finish()
 			return
 		}
-		if encoder.Encode(response) != nil {
+		err := encoder.Encode(response)
+		finish()
+		if err != nil {
 			return
 		}
 	}
@@ -282,6 +325,24 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 	}
 	ch := make(chan ports.ControlReply, 1)
 	var message ports.ControlRequest
+	var admission chan ports.ControlAdmission
+	var transaction *xkb.Transaction
+	locked := false
+	finishTranslation := func(commit bool) {
+		if !locked {
+			return
+		}
+		if transaction != nil {
+			if commit {
+				transaction.Commit()
+			} else {
+				transaction.Rollback()
+			}
+		}
+		locked = false
+		s.injectMu.Unlock()
+	}
+	defer func() { finishTranslation(false) }()
 	timeout := domain.DefaultControlTimeout
 	switch req.Op {
 	case "output-add", "output-rm":
@@ -338,11 +399,15 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 			wait = domain.WaitPresented
 		}
 		if req.Op == "inject" {
-			events, err := s.translate(req, !*announced)
+			s.injectMu.Lock()
+			locked = true
+			events, tx, err := s.translate(req, !*announced)
+			transaction = tx
 			if err != nil {
 				return response
 			}
-			message = ports.ControlInject{Shots: shots, Events: events, Wait: wait, Until: until, Timeout: timeout, Caps: domain.CapsAll, Reply: ch}
+			admission = make(chan ports.ControlAdmission, 1)
+			message = ports.ControlInject{Admission: admission, Shots: shots, Events: events, Wait: wait, Until: until, Timeout: timeout, Caps: domain.CapsAll, Reply: ch}
 		} else {
 			if req.Op == "shot" {
 				req.Action = "none"
@@ -365,17 +430,24 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 	case <-ctx.Done():
 		return response
 	}
+	if admission != nil {
+		select {
+		case admitted := <-admission:
+			finishTranslation(admitted.Err == "")
+			if admitted.Err == "" {
+				*announced = true
+			}
+		case <-ctx.Done():
+			return response
+		}
+	}
 	var result ports.ControlReply
 	select {
 	case result = <-ch:
 	case <-ctx.Done():
 		return response
 	}
-	// The device announcement went through only if core ran the batch.
 	code := result.Err
-	if _, inject := message.(ports.ControlInject); inject && (code == "" || code == ports.ControlErrTimeout) {
-		*announced = true
-	}
 	response = reply{ID: req.ID, OK: code == "", Done: result.Done.String(), Diff: wireDiff(result.Diff), State: statewire.FromDomain(result.State, s.ids), Late: result.Late, Error: code}
 	if len(result.Shots) > 0 {
 		if s.shooter == nil {

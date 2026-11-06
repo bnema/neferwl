@@ -85,8 +85,7 @@ Only outputs added this way can be removed; removing a `--size` output returns `
 ## Launch apps into the session
 
 ```sh
-WAYLAND_DISPLAY=wayland-2 foot --app-id probe -e sleep 60 &   # "wayland" from session new
-neferwl -s test do none --until 'window-mapped app_id=probe'
+neferwl -s test do spawn --until 'window-mapped app_id=probe' -- foot --app-id probe -e sleep 60
 ```
 
 `eval "$(neferwl session new --env)"` sets both variables, but only in a subshell or script: it replaces the caller's `WAYLAND_DISPLAY`. Or let the compositor spawn the app: `neferwl -s test do spawn -- foot --app-id probe`. `spawn` splits on spaces and `;`, without a shell. For X11 apps, set `DISPLAY` to the `display` field of the readiness JSON (empty with `--no-xwayland`). App IDs must match exactly; read them from `state` (weston-terminal is `org.freedesktop.weston.wayland-terminal`).
@@ -106,8 +105,8 @@ Verify a keybind with a throwaway config:
 
 ```sh
 printf 'bind.cmd+p = toggle-floating\n' > /tmp/nwl.conf
-neferwl session new --id kb --config /tmp/nwl.conf --ttl 2m -- --no-xwayland
-neferwl -s kb do none --until 'focused app_id=foot'
+neferwl session new --id kb --config /tmp/nwl.conf --ttl 2m -- --no-xwayland --no-terminal
+neferwl -s kb do spawn --until 'window-mapped app_id=foot' -- foot --app-id foot -e sleep 60
 neferwl -s kb key Super+p | jq -e '.ok and .state.window.floating'
 neferwl session rm kb
 ```

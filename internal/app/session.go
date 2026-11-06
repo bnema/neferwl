@@ -528,6 +528,11 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	case result = <-done:
 		log.Info().AnErr("cause", result).Msg("stopping")
 	}
+	if errors.Is(result, core.ErrQuit) && s.control != nil {
+		flushCtx, flushCancel := context.WithTimeout(ctx, time.Second)
+		s.control.WaitQuitReplies(flushCtx)
+		flushCancel()
+	}
 	cancel()
 	workers.Wait()
 	// The wayland server has stopped: no request can be queued any more.

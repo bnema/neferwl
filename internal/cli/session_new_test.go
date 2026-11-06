@@ -3,9 +3,14 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
+	"os/signal"
+	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -28,6 +33,18 @@ func TestSessionHelperProcess(t *testing.T) {
 	mode := os.Getenv("NEFERWL_TEST_SESSION_CHILD")
 	if mode == "" {
 		return
+	}
+	if mode == "cancel" {
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM)
+		defer stop()
+		if err := os.WriteFile(os.Getenv("NEFERWL_TEST_CHILD_PID"), []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
+			os.Exit(8)
+		}
+		if err := syscall.Kill(os.Getppid(), syscall.SIGINT); err != nil {
+			os.Exit(9)
+		}
+		<-ctx.Done()
+		os.Exit(10)
 	}
 	if mode == "fail" {
 		os.Exit(7)
@@ -60,5 +77,33 @@ func TestStartSessionReady(t *testing.T) {
 		} else if err == nil || !strings.Contains(err.Error(), "exit status") {
 			t.Fatal(err)
 		}
+	}
+}
+
+//testpolicy:realtime A detached helper sends SIGINT during startup; process exit and reaping use real OS I/O.
+func TestStartSessionSignalCancellation(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	pidPath := filepath.Join(t.TempDir(), "child.pid")
+	_, err = startSession(ctx, exe, []string{"-test.run=^TestSessionHelperProcess$"}, append(sessionEnvironment(os.Environ(), false), "NEFERWL_TEST_SESSION_CHILD=cancel", "NEFERWL_TEST_CHILD_PID="+pidPath))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("startup: %v", err)
+	}
+	data, err := os.ReadFile(pidPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(string(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("child %d still exists after cancellation: %v", pid, err)
 	}
 }

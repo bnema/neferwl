@@ -3,21 +3,20 @@ package control
 import (
 	"errors"
 
+	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// translate serializes XKB access across connections and keymap reloads. The
-// output batch is immutable; core receives it through the normal control port.
-func (s *Server) translate(req request, announce bool) ([]ports.InputEvent, error) {
-	s.injectMu.Lock()
-	defer s.injectMu.Unlock()
+// translate requires injectMu through admission. Reloads happen before Begin,
+// never while the tentative translation is awaiting core admission.
+func (s *Server) translate(req request, announce bool) ([]ports.InputEvent, *xkb.Transaction, error) {
 	select {
 	case <-s.done:
-		return nil, errors.New("control closed")
+		return nil, nil, errors.New("control closed")
 	default:
 	}
 	if s.injector == nil {
-		return nil, errors.New("input unavailable")
+		return nil, nil, errors.New("input unavailable")
 	}
 	for s.keymaps != nil {
 		select {
@@ -41,8 +40,17 @@ func (s *Server) translate(req request, announce bool) ([]ports.InputEvent, erro
 	}
 ready:
 	i := s.injector
+	tx, err := i.km.Begin()
+	if err != nil {
+		return nil, nil, err
+	}
+	success := false
+	defer func() {
+		if !success {
+			tx.Rollback()
+		}
+	}()
 	var events []ports.InputEvent
-	var err error
 	// Snapshot an announcement before translating the first event, but don't
 	// deliver it or consume the connection's announcement on validation failure.
 	var device ports.InputEvent
@@ -63,13 +71,14 @@ ready:
 	case "swipe":
 		events, err = i.Swipe(req.Fingers, req.Dir)
 	default:
-		return nil, errors.New("unknown injection kind")
+		return nil, nil, errors.New("unknown injection kind")
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if announce {
 		events = append([]ports.InputEvent{device}, events...)
 	}
-	return events, nil
+	success = true
+	return events, tx, nil
 }
