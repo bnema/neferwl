@@ -295,7 +295,9 @@ func TestOpenSessionPrunesOldSessions(t *testing.T) {
 	}
 	var names []string
 	for _, e := range entries {
-		names = append(names, e.Name())
+		if e.IsDir() {
+			names = append(names, e.Name())
+		}
 	}
 	// current + the newest keepRuns-1 others + live s-00.
 	want := []string{"current", "s-00"}
@@ -310,5 +312,34 @@ func TestOpenSessionPrunesOldSessions(t *testing.T) {
 		if _, _, err := OpenSession(context.Background(), bad, "info", ""); err == nil {
 			t.Errorf("accepted session id %q", bad)
 		}
+	}
+}
+
+// Root lifecycle ownership excludes other openers and pruners on the same
+// inode, including after release and reacquisition. No scheduling or waits
+// are needed to probe real flock exclusion.
+func TestSessionLifecycleLock(t *testing.T) {
+	root := t.TempDir()
+	for range 2 {
+		owner, err := lockSessionRoot(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		probe, err := os.OpenFile(filepath.Join(root, ".lock"), os.O_RDWR, 0)
+		if err != nil {
+			_ = owner.Close()
+			t.Fatal(err)
+		}
+		err = syscall.Flock(int(probe.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err != syscall.EWOULDBLOCK {
+			t.Errorf("lifecycle lock not exclusive: %v", err)
+		}
+		if err := owner.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := syscall.Flock(int(probe.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+			t.Errorf("lifecycle lock not released: %v", err)
+		}
+		_ = probe.Close()
 	}
 }
