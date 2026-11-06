@@ -113,14 +113,15 @@ const applyTimeout = 5 * time.Second
 
 // Backend is the seat and the cards with at least one usable output.
 type Backend struct {
-	startupConfig domain.Config
-	selectConfig  core.GPUSelectConfig
-	render        ports.RenderDevice
-	opener        ports.RenderDeviceOpener
-	renderInfo    domain.GPUInfo
-	advertised    []domain.DMABufFormat
-	seat          *seat.Seat
-	cards         []*drmCard
+	startupConfig   domain.Config
+	selectConfig    core.GPUSelectConfig
+	render          ports.RenderDevice // supervisor-owned; cross-goroutine readers use publishedRender
+	publishedRender atomic.Pointer[renderDeviceSnapshot]
+	opener          ports.RenderDeviceOpener
+	renderInfo      domain.GPUInfo
+	advertised      []domain.DMABufFormat
+	seat            *seat.Seat
+	cards           []*drmCard
 	// dying holds unplugged cards until their outputs are stopped. Only the
 	// runOutputs goroutine touches it; close reads it after that returns.
 	dying map[*drmCard]*core.CardTeardown
@@ -281,7 +282,8 @@ func Open(ctx context.Context, cfg domain.Config, opener ports.RenderDeviceOpene
 		s.Close()
 		return nil, err
 	}
-	b.render, b.renderInfo = render, info
+	b.setRender(render)
+	b.renderInfo = info
 	b.advertised = append([]domain.DMABufFormat(nil), render.DMABuf().Formats...)
 	want.Sampled = render.DMABuf().Formats
 	var errs []error
@@ -506,8 +508,25 @@ func safe(name string, fn func() error) (err error) {
 	return fn()
 }
 
-func (b *Backend) RenderDevice() ports.RenderDevice { return b.render }
-func (b *Backend) Seat() *seat.Seat                 { return b.seat }
+// renderDeviceSnapshot wraps the interface so nil and different concrete device
+// types can be published atomically without atomic.Value's type restrictions.
+type renderDeviceSnapshot struct{ device ports.RenderDevice }
+
+// setRender is called only by the supervisor, preserving recovery ordering.
+func (b *Backend) setRender(device ports.RenderDevice) {
+	b.render = device
+	b.publishedRender.Store(&renderDeviceSnapshot{device: device})
+}
+
+// RenderDevice returns the published device, or nil while recovery reopens it.
+// Publication protects the interface, not the lifetime of the returned device.
+func (b *Backend) RenderDevice() ports.RenderDevice {
+	if snapshot := b.publishedRender.Load(); snapshot != nil {
+		return snapshot.device
+	}
+	return nil
+}
+func (b *Backend) Seat() *seat.Seat { return b.seat }
 
 func logOutputApplied(heads []domain.HeadChange, log zerowrap.Logger) {
 	for _, h := range heads {
