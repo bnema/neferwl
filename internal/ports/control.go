@@ -25,16 +25,27 @@ func (ControlDo) controlRequest() {}
 
 // ControlInject sends events through the core input path and observes completion.
 type ControlInject struct {
-	Shots   []domain.ShotRequest
-	Events  []InputEvent
-	Wait    domain.WaitLevel
-	Until   *domain.Until
-	Timeout time.Duration
-	Caps    domain.Caps
-	Reply   chan<- ControlReply
+	// Admission, when nonnil, must have capacity >=1. Core answers exactly once
+	// after upfront validation, before executing events; completion remains on Reply.
+	Admission chan<- ControlAdmission
+	Shots     []domain.ShotRequest
+	Events    []InputEvent
+	Wait      domain.WaitLevel
+	Until     *domain.Until
+	Timeout   time.Duration
+	Caps      domain.Caps
+	Reply     chan<- ControlReply
 }
 
 func (ControlInject) controlRequest() {}
+
+// ControlAdmission separates upfront refusal from later execution/completion.
+// Empty Err means admitted, even if execution is later interrupted by security.
+type ControlAdmission struct{ Err string }
+
+func (ControlAdmission) controlAdmission() {}
+
+var _ interface{ controlAdmission() } = ControlAdmission{}
 
 // ControlQuery reads the requested state.
 type ControlQuery struct {

@@ -92,23 +92,28 @@ func (c *Core) controlQuery(r ports.ControlQuery) {
 }
 
 func (c *Core) controlInject(ctx context.Context, r ports.ControlInject) error {
+	refuse := func(code string) {
+		controlAdmission(r.Admission, code)
+		controlReply(r.Reply, ports.ControlReply{Err: code})
+	}
 	if r.Caps&domain.CapInput == 0 {
-		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrForbidden})
+		refuse(ports.ControlErrForbidden)
 		return nil
 	}
 	if c.protectionRequested() {
-		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrLocked})
+		refuse(ports.ControlErrLocked)
 		return nil
 	}
 	shots, code := c.controlShots(r.Shots, r.Caps)
 	if code != "" {
-		controlReply(r.Reply, ports.ControlReply{Err: code})
+		refuse(code)
 		return nil
 	}
 	if addsWait(r.Wait, r.Until, shots) && c.waitsFull() {
-		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBusy})
+		refuse(ports.ControlErrBusy)
 		return nil
 	}
+	controlAdmission(r.Admission, "")
 	before, baseline := c.state(), c.sceneSeqs()
 	for _, ev := range r.Events {
 		if err := c.inputEvent(ctx, ev); err != nil {
@@ -166,4 +171,11 @@ func (c *Core) controlShots(requests []domain.ShotRequest, caps domain.Caps) ([]
 		}
 	}
 	return shots, ""
+}
+
+func controlAdmission(ch chan<- ports.ControlAdmission, code string) {
+	select {
+	case ch <- ports.ControlAdmission{Err: code}:
+	default:
+	}
 }
