@@ -15,6 +15,15 @@ if command -v dbus-update-activation-environment >/dev/null 2>&1; then
     dbus-update-activation-environment --all
 fi
 systemctl --user --wait start neferwl.service
+# A conflicting server start may still be queued behind the desktop stop.
+# Check its job first, then its state in case the job completed meanwhile.
+# Its graphical session, environment and portals must survive the handover.
+if [ -n "$(systemctl --user show -p Job --value neferwl-server.service)" ]; then
+    exit 0
+fi
+case "$(systemctl --user is-active neferwl-server.service)" in
+    active|activating) exit 0 ;;
+esac
 systemctl --user start --job-mode=replace-irreversibly neferwl-shutdown.target
 systemctl --user unset-environment WAYLAND_DISPLAY DISPLAY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP NEFERWL_STATE
 # Portals keep the session variables they started with: stop them, even after a crash.

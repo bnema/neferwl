@@ -93,6 +93,11 @@ func OpenSession(ctx context.Context, id, level, debug string) (context.Context,
 		return nil, nil, err
 	}
 	root := filepath.Join(state, "neferwl", "sessions")
+	lifecycle, err := lockSessionRoot(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer lifecycle.Close()
 	dir := filepath.Join(root, id)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, nil, err
@@ -192,7 +197,7 @@ func openDir(ctx context.Context, dir, level, debug string, lock *os.File) (_ co
 
 // pruneSessions keeps the newest keepRuns session log directories of root
 // by modification time; current and directories whose lock is held by a
-// live session are kept.
+// live session are kept. The caller must hold the root lifecycle lock.
 func pruneSessions(root, current string) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -219,25 +224,40 @@ func pruneSessions(root, current string) {
 	}
 	sort.Slice(old, func(i, j int) bool { return old[i].mod.After(old[j].mod) })
 	for _, s := range old[keepRuns-1:] {
-		if sessionLive(s.path) {
-			continue
-		}
-		_ = os.RemoveAll(s.path)
+		removeSession(s.path)
 	}
 }
 
-// sessionLive reports whether another process holds the directory's lock.
-func sessionLive(dir string) bool {
-	f, err := os.OpenFile(filepath.Join(dir, "lock"), os.O_RDWR, 0)
+// lockSessionRoot serializes directory creation and pruning. The root lock file
+// is never removed: every opener must lock the same inode before touching a
+// session directory, then acquire its session lock before releasing this lock.
+func lockSessionRoot(root string) (*os.File, error) {
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(filepath.Join(root, ".lock"), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return false
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
+// removeSession holds the session lock through removal. On any lock error,
+// conservatively keep the directory. The caller must hold the root lock.
+func removeSession(dir string) {
+	f, err := os.OpenFile(filepath.Join(dir, "lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return
 	}
 	defer f.Close()
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return true
+		return
 	}
-	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-	return false
+	_ = os.RemoveAll(dir)
 }
 
 // logQueue is how many entries may wait for the disk. Past it, entries are
