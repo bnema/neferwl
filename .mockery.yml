@@ -76,6 +76,11 @@ packages:
           filename: seat_control_mock_test.go
   github.com/bnema/neferwl/internal/adapters/vulkan:
     interfaces:
+      copyCompletion:
+        config:
+          dir: internal/adapters/vulkan
+          pkgname: vulkan
+          filename: copy_completion_mock_test.go
       captureSync:
         config:
           dir: internal/adapters/vulkan

@@ -187,16 +187,7 @@ func (f *captureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.Fi
 	c.get = vk.SemaphoreGetFdInfoKHR{SType: vk.StructureTypeSemaphoreGetFDInfoKHR, Semaphore: c.done, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit}
 	c.fd = -1
 	if err := checked("vkGetSemaphoreFdKHR(capture dmabuf)", d.GetSemaphoreFdKHR(dev, &c.get, &c.fd)); err != nil {
-		// No write fence can be handed to the client. Returning the error
-		// returns ownership of dst, so first finish every GPU write to it.
-		// Device loss also ends those writes. An unexpected wait failure
-		// makes this capture unusable: report device loss to recovery rather
-		// than retrying on the owner goroutine and potentially spinning.
-		res := d.WaitForFences(dev, 1, &c.fence, 1, math.MaxUint64)
-		if res != vk.Success && res != vk.ErrorDeviceLost {
-			return nil, errors.Join(err, checked("vkWaitForFences(capture export failure)", res), ports.ErrDeviceLost)
-		}
-		return nil, err
+		return nil, errors.Join(err, finishFailedExport(deviceCopyCompletion{r}, c.fence))
 	}
 	c.exported = true
 	if c.fd < 0 {
@@ -389,4 +380,68 @@ func (r *Renderer) recycleDMACopy(c *dmaCopy) {
 		return
 	}
 	r.dmaIdle = append(r.dmaIdle, c)
+}
+
+// copyCompletion is the bounded synchronization fallback after sync-file export
+// fails. The copy remains in the slot until its fence signals or device teardown.
+type copyCompletion interface {
+	waitCopy(vk.Fence) vk.Result
+	queueIdle() vk.Result
+	deviceIdle() vk.Result
+}
+
+type deviceCopyCompletion struct{ r *Renderer }
+
+func (d deviceCopyCompletion) waitCopy(fence vk.Fence) vk.Result {
+	return d.r.gpu.dd.WaitForFences(d.r.gpu.device, 1, &fence, 1, math.MaxUint64)
+}
+
+func (d deviceCopyCompletion) queueIdle() vk.Result {
+	q := d.r.q
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.dd.QueueWaitIdle(q.q)
+}
+
+func (d deviceCopyCompletion) deviceIdle() vk.Result {
+	g := d.r.gpu
+	// Match Close's lock order: pool first, then every submission lock in order.
+	g.poolMu.Lock()
+	defer g.poolMu.Unlock()
+	for _, q := range g.queues {
+		q.mu.Lock()
+	}
+	defer func() {
+		for i := len(g.queues) - 1; i >= 0; i-- {
+			g.queues[i].mu.Unlock()
+		}
+	}()
+	return g.dd.DeviceWaitIdle(g.device)
+}
+
+func finishFailedExport(sync copyCompletion, fence vk.Fence) error {
+	res := sync.waitCopy(fence)
+	if res == vk.Success {
+		return nil
+	}
+	err := checked("vkWaitForFences(capture export failure)", res)
+	if res == vk.ErrorDeviceLost {
+		return err
+	}
+	// A wait allocation failure does not stop writes. Try broader synchronization
+	// once each instead of retrying (and potentially spinning) on the owner.
+	res = sync.queueIdle()
+	err = errors.Join(err, checked("vkQueueWaitIdle(capture export failure)", res))
+	if res == vk.Success || res == vk.ErrorDeviceLost {
+		return err
+	}
+	res = sync.deviceIdle()
+	err = errors.Join(err, checked("vkDeviceWaitIdle(capture export failure)", res))
+	if res == vk.Success || res == vk.ErrorDeviceLost {
+		return err
+	}
+	// Completion is still unproven. Keep the submitted copy in s.copies; do not
+	// recycle its resources. Mark the device unusable: device teardown, not these
+	// failed waits, is what must end the outstanding writes.
+	return errors.Join(err, ports.ErrDeviceLost)
 }
