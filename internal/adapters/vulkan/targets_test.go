@@ -1,6 +1,7 @@
 package vulkan
 
 import (
+	"bnema.dev/zerowrap"
 	"errors"
 	"image/color"
 	"math"
@@ -28,7 +29,7 @@ func TestExportTargets(t *testing.T) {
 	defer func() {
 		for _, b := range bufs {
 			for _, p := range b.Planes {
-				p.File.Close()
+				_ = p.File.Close()
 			}
 		}
 	}()
@@ -86,7 +87,7 @@ func TestHDRExportTarget(t *testing.T) {
 	if err != nil {
 		t.Skipf("no HDR-exportable target: %v", err)
 	}
-	defer bufs[0].Planes[0].File.Close()
+	defer func() { _ = bufs[0].Planes[0].File.Close() }()
 	if bufs[0].Format != fourccXR30 {
 		t.Fatalf("format: %#x", bufs[0].Format)
 	}
@@ -137,7 +138,7 @@ func TestVirtualHDRExportsWithoutDisplayList(t *testing.T) {
 	}
 	r.SetHDR(203)
 	if bufs, err := r.ExportTargets(1, nil, false); err == nil {
-		bufs[0].Planes[0].File.Close()
+		_ = bufs[0].Planes[0].File.Close()
 		t.Fatal("HDR export without a display list succeeded on a non-virtual output")
 	}
 	r.SetVirtualOutput(true)
@@ -145,7 +146,7 @@ func TestVirtualHDRExportsWithoutDisplayList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("virtual HDR export: %v", err)
 	}
-	defer bufs[0].Planes[0].File.Close()
+	defer func() { _ = bufs[0].Planes[0].File.Close() }()
 	if bufs[0].Format != fourccXR30 {
 		t.Fatalf("format: %#x", bufs[0].Format)
 	}
@@ -210,7 +211,7 @@ func TestExportTargetsPlanes(t *testing.T) {
 	closeAll := func(bufs []domain.DMABuf) {
 		for _, b := range bufs {
 			for _, p := range b.Planes {
-				p.File.Close()
+				_ = p.File.Close()
 			}
 		}
 	}
@@ -287,7 +288,7 @@ func TestExportTargetsStayInTheDisplayList(t *testing.T) {
 		}
 		got := bufs[0].Modifier
 		for _, p := range bufs[0].Planes {
-			p.File.Close()
+			_ = p.File.Close()
 		}
 		if got != m {
 			t.Fatalf("display lists only %#x, target has modifier %#x", m, got)
@@ -296,7 +297,7 @@ func TestExportTargetsStayInTheDisplayList(t *testing.T) {
 	// A list with no exportable modifier is an error, not a guess.
 	if bufs, err := r.ExportTargets(1, []uint64{0x1234567}, false); err == nil {
 		for _, p := range bufs[0].Planes {
-			p.File.Close()
+			_ = p.File.Close()
 		}
 		t.Fatalf("export with an unexportable display list gave modifier %#x", bufs[0].Modifier)
 	}
@@ -357,8 +358,8 @@ func pipeFile(t *testing.T) *os.File {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.Close()
-	t.Cleanup(func() { f.Close() })
+	_ = w.Close()
+	t.Cleanup(func() { _ = f.Close() })
 	return f
 }
 
@@ -377,7 +378,7 @@ func TestSameDMABuf(t *testing.T) {
 		{"third plane elsewhere", []domain.DMABufPlane{{File: one}, {File: one}, {File: other}}, false},
 		{"no file", []domain.DMABufPlane{{File: one}, {}}, false},
 	} {
-		err := sameDMABuf(tc.planes)
+		err := sameDMABuf(zerowrap.Logger{}, tc.planes)
 		if (err == nil) != tc.ok {
 			t.Errorf("%s: %v", tc.name, err)
 		}
@@ -509,7 +510,7 @@ func TestImportTargetsRefusesMismatchedImages(t *testing.T) {
 func closeBufs(bufs []domain.DMABuf) {
 	for _, b := range bufs {
 		for _, p := range b.Planes {
-			p.File.Close()
+			_ = p.File.Close()
 		}
 	}
 }

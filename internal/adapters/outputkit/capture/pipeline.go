@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"bnema.dev/zerowrap"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
@@ -61,10 +63,10 @@ func (b *batch) submitCopies() {
 }
 
 // closeCopies closes the sync files of b's copies.
-func (b *batch) closeCopies() {
+func (b *batch) closeCopies(log zerowrap.Logger) {
 	for i := range b.copies {
 		if f := b.copies[i].done; f != nil {
-			_ = f.Close()
+			logging.CloseFile(log, f, "capture copy fence")
 		}
 		b.copies[i] = dmaCopy{}
 	}
@@ -78,6 +80,9 @@ type Pipeline struct {
 	// workspace/window child pipelines deliberately have no output cursor.
 	Cursor   *domain.CaptureCursor
 	Security ports.SessionSecurity
+	// Log receives release failures of fences; set it before EnableOffscreen.
+	// The zero Logger discards them.
+	Log zerowrap.Logger
 	// CPUReadback lets a plain sRGB capture that BeginCapture refuses (a
 	// device without sync-file export) be read back with Renderer.Pixels,
 	// which waits for the GPU on the owner. Headless only: it has no display
@@ -119,13 +124,14 @@ func (p *Pipeline) Completed() <-chan *batch { return p.completed }
 
 // Recycle returns a completed GPU readback lease on the renderer's owner.
 func (p *Pipeline) Recycle(b *batch, r ports.Renderer) {
-	b.closeCopies()
+	b.closeCopies(p.Log)
 	if _, cpu := b.frame.(*pixelsFrame); !cpu {
 		r.EndCapture(b.frame)
 	}
 	rel := b.release
 	select { // a verdict nobody took (the worker was cancelled) must not leak to the next use
-	case <-rel:
+	case verdict := <-rel:
+		_ = verdict // the gate verdict is obsolete: the worker was cancelled, nothing failed
 	default:
 	}
 	*b = batch{release: rel}
@@ -390,7 +396,7 @@ func (p *Pipeline) process(b *batch) {
 			writeFrame(p.ctx, q, b.frame, b.at, p.replies)
 		}
 		if c.done != nil {
-			_ = c.done.Close()
+			logging.CloseFile(p.Log, c.done, "capture copy fence")
 		}
 	}
 	p.completed <- b

@@ -11,9 +11,11 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
 
-	wlr "github.com/bnema/go-wayland-bindings/server/wlrscreencopy"
-	"github.com/bnema/neferwl/internal/ports"
 	"bnema.dev/purego-libwayland/server"
+	"bnema.dev/zerowrap"
+	wlr "github.com/bnema/go-wayland-bindings/server/wlrscreencopy"
+	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
 
@@ -242,7 +244,7 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 	}
 	var req domain.CaptureRequest
 	if d, ok := s.buffers[b.Resource].(*dmabufBuffer); ok {
-		dst, err := dupDMABuf(d.buf)
+		dst, err := dupDMABuf(s.log, d.buf)
 		if err != nil {
 			s.log.Warn().Err(err).Str("output", o.name()).Msg("capture: dup dmabuf fd")
 			return 0, false
@@ -291,7 +293,7 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 	default:
 		delete(s.captureReplies, id)
 		delete(s.captureInflight, id)
-		closeCaptureDst(req)
+		closeCaptureDst(s.log, req)
 		s.log.Debug().Str("output", o.name()).Msg("capture refused: request queue full")
 		return 0, false
 	}
@@ -299,14 +301,14 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 
 // dupDMABuf copies a client dmabuf with its own plane descriptors, so
 // destroying the wl_buffer cannot invalidate a capture in flight.
-func dupDMABuf(b *domain.DMABuf) (*domain.DMABuf, error) {
+func dupDMABuf(log zerowrap.Logger, b *domain.DMABuf) (*domain.DMABuf, error) {
 	out := *b
 	out.Planes = make([]domain.DMABufPlane, len(b.Planes))
 	for i, p := range b.Planes {
 		fd, err := unix.FcntlInt(p.File.Fd(), unix.F_DUPFD_CLOEXEC, 0)
 		if err != nil {
 			for _, q := range out.Planes[:i] {
-				q.File.Close()
+				logging.CloseFile(log, q.File, "capture dmabuf plane")
 			}
 			return nil, err
 		}
@@ -316,13 +318,13 @@ func dupDMABuf(b *domain.DMABuf) (*domain.DMABuf, error) {
 }
 
 // closeCaptureDst closes the destination descriptors of a request never sent.
-func closeCaptureDst(req domain.CaptureRequest) {
+func closeCaptureDst(log zerowrap.Logger, req domain.CaptureRequest) {
 	if req.Dst.File != nil {
-		req.Dst.File.Close()
+		logging.CloseFile(log, req.Dst.File, "capture destination")
 	}
 	if req.DMABuf != nil {
 		for _, p := range req.DMABuf.Planes {
-			p.File.Close()
+			logging.CloseFile(log, p.File, "capture dmabuf plane")
 		}
 	}
 }

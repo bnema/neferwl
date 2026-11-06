@@ -20,13 +20,13 @@ func udmabuf(t testing.TB, w, h int, fill func(x, y int) [4]byte) *os.File {
 	if err != nil {
 		t.Skipf("udmabuf unavailable: %v", err)
 	}
-	defer dev.Close()
+	defer func() { _ = dev.Close() }()
 	size := (w*h*4 + os.Getpagesize() - 1) / os.Getpagesize() * os.Getpagesize()
 	mem, err := unix.MemfdCreate("dmabuf-test", unix.MFD_ALLOW_SEALING)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(mem)
+	defer func() { _ = unix.Close(mem) }()
 	if err := unix.Ftruncate(mem, int64(size)); err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func udmabuf(t testing.TB, w, h int, fill func(x, y int) [4]byte) *os.File {
 		t.Skipf("udmabuf create: %v", errno)
 	}
 	f := os.NewFile(fd, "dmabuf")
-	t.Cleanup(func() { f.Close() })
+	t.Cleanup(func() { _ = f.Close() })
 	return f
 }
 
@@ -134,8 +134,8 @@ func TestRendererSubsurfaceAcquire(t *testing.T) {
 	}
 	f := udmabuf(t, 64, 16, func(int, int) [4]byte { return [4]byte{0, 0, 255, 255} })
 	fence, w, _ := os.Pipe()
-	defer fence.Close()
-	defer w.Close()
+	defer func() { _ = fence.Close() }()
+	defer func() { _ = w.Close() }()
 	child := domain.SurfaceContent{ID: 1, Width: 64, Height: 16, Acquire: fence,
 		DMABuf: &domain.DMABuf{ID: 8, Width: 64, Height: 16, Format: linear.Format, Planes: []domain.DMABufPlane{{File: f, Stride: 256}}}}
 	scene := domain.Scene{Background: "#000000", Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}

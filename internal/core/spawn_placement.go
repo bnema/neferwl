@@ -161,7 +161,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) (follow bool) {
 		if eff.output == "" && eff.workspace == "" && eff.number == 0 {
 			// The shown stash of the focused screen captures a new tile
 			// before lineage moves it to its launcher's workspace there.
-			if sc, w := c.ancestorWorkspace(v); w != nil && !(sc == c.cur() && sc.mon.captures(sc.mon.Current())) {
+			if sc, w := c.ancestorWorkspace(v); w != nil && (sc != c.cur() || !sc.mon.captures(sc.mon.Current())) {
 				path = "lineage"
 				return c.placeOnWorkspace(v, eff, sc, w, true)
 			}
@@ -217,7 +217,7 @@ func (c *Core) placeLaunched(v ports.WindowMapped, sc *screen, w *Workspace, cel
 // placeCoverApp handles ordinary same-app arrivals on the workspace in view.
 func (c *Core) placeCoverApp(v ports.WindowMapped, sc *screen, w *Workspace, cells int) bool {
 	cover := w.Cover()
-	if cover == 0 || !(sameApp(v, c.windows.lookup(cover).client) || c.launcherOf(v.ID) == cover) {
+	if cover == 0 || (!sameApp(v, c.windows.lookup(cover).client) && c.launcherOf(v.ID) != cover) {
 		return false
 	}
 	w.AddAppWindow(v.ID, cells, v.Width, v.Height)

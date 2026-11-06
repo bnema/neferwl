@@ -89,7 +89,7 @@ func BenchmarkConfiguredBindingDispatch(b *testing.B) {
 	events := []ports.InputEvent{ports.PointerMotion{X: 10, Y: 10}}
 	configureBenchDevices(c, events)
 	ctx := context.Background()
-	c.handleInput(ctx, events[0])
+	_ = c.handleInput(ctx, events[0])
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

@@ -59,7 +59,7 @@ func TestMapTiledAppearsAndReflows(t *testing.T) {
 		if !(w2.Fade > 0 && w2.Fade < 1) || !(w2.Zoom > appearScale && w2.Zoom < 1) || !(w2.Rect.W > scaledRect(settled2.Rect, appearScale).W && w2.Rect.W < settled2.Rect.W) {
 			t.Fatalf("first frame of the new window: %+v", w2)
 		}
-		if r := sceneWindow(t, s, 1).Rect; !(r.W < old1.W && r.W > settled1.Rect.W) {
+		if r := sceneWindow(t, s, 1).Rect; r.W >= old1.W || r.W <= settled1.Rect.W {
 			t.Fatalf("neighbour on the first frame %+v, want between %+v and %+v", r, old1, settled1.Rect)
 		}
 		if ids := drainConfigures(cmds); len(ids) != 0 {
@@ -251,7 +251,7 @@ func TestMapFloatEntranceFollowsItsFirstCommit(t *testing.T) {
 		c.animate(ic.now, nil)
 		w = sceneWindow(t, indicatorScene(t, c), 2)
 		ratio, wantRatio := float64(w.Rect.W)/float64(w.Rect.H), float64(real.W)/float64(real.H)
-		if math.Abs(ratio-wantRatio)/wantRatio > 0.06 || !(w.Rect.W > want.W && w.Rect.W < real.W) || math.Abs(w.Zoom-float64(w.Rect.W)/float64(real.W)) > 0.01 {
+		if math.Abs(ratio-wantRatio)/wantRatio > 0.06 || (w.Rect.W <= want.W || w.Rect.W >= real.W) || math.Abs(w.Zoom-float64(w.Rect.W)/float64(real.W)) > 0.01 {
 			t.Fatalf("mid-way %+v: aspect %.3f want %.3f", w, ratio, wantRatio)
 		}
 

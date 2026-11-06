@@ -9,11 +9,11 @@ import (
 
 	"github.com/bnema/neferwl/internal/domain"
 
+	"bnema.dev/purego-libwayland/server"
 	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/purego-libwayland/server"
 )
 
 // Capture exclusion (neferwl_capture_exclusion_manager_v1). A recorder asks
@@ -154,7 +154,7 @@ func (ex *exclusion) Destroy(*imagecapture.NeferwlCaptureExclusionV1) {
 
 func (m *exclusionManager) AttachSurface(r *imagecapture.NeferwlCaptureExclusionManagerV1, id uint32, token string, surface *wayland.Surface) {
 	s := m.s
-	if surface == nil || s.surfaces[surface.Resource] == nil || surface.Resource.Client() != r.Client() {
+	if surface == nil || s.surfaces[surface.Resource] == nil || surface.Client() != r.Client() {
 		r.PostError(uint32(imagecapture.NeferwlCaptureExclusionManagerV1ErrorInvalidSurface), "surface is not yours")
 		return
 	}

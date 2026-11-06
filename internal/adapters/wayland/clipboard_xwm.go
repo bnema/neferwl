@@ -3,6 +3,7 @@ package wayland
 import (
 	"slices"
 
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"golang.org/x/sys/unix"
 )
 
@@ -83,11 +84,11 @@ func (s *Server) xSelectionRead(kind int, mime string) int {
 		return -1
 	}
 	if unix.SetNonblock(p[0], true) != nil {
-		unix.Close(p[0])
-		unix.Close(p[1])
+		logging.CloseFD(s.log, p[0], "clipboard pipe read end")
+		logging.CloseFD(s.log, p[1], "clipboard pipe write end")
 		return -1
 	}
 	src.send(mime, p[1])
-	unix.Close(p[1])
+	logging.CloseFD(s.log, p[1], "clipboard pipe write end")
 	return p[0]
 }

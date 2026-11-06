@@ -52,11 +52,11 @@ func TestSessionHelperProcess(t *testing.T) {
 	f := os.NewFile(3, "ready")
 	if mode == "bad" {
 		_, _ = f.WriteString("not json\n")
-		f.Close()
+		_ = f.Close()
 		os.Exit(0)
 	}
 	_ = json.NewEncoder(f).Encode(sessionReady{ID: "test", Wayland: "wayland-test", Control: "/tmp/test.sock"})
-	f.Close()
+	_ = f.Close()
 	os.Exit(0)
 }
 

@@ -67,8 +67,7 @@ func Listen(path string, ids *workspaceid.IDs, opts Options) (*Server, error) {
 		}
 		conn, err := net.DialTimeout("unix", path, time.Second)
 		if err == nil {
-			conn.Close()
-			return nil, fmt.Errorf("control socket already listening: %s", path)
+			return nil, errors.Join(fmt.Errorf("control socket already listening: %s", path), conn.Close())
 		}
 		if !errors.Is(err, syscall.ECONNREFUSED) {
 			return nil, err
@@ -84,8 +83,7 @@ func Listen(path string, ids *workspaceid.IDs, opts Options) (*Server, error) {
 		return nil, err
 	}
 	if err := os.Chmod(path, 0o600); err != nil {
-		listener.Close()
-		return nil, err
+		return nil, errors.Join(err, listener.Close())
 	}
 	s := &Server{listener: listener, ids: ids, done: make(chan struct{})}
 	s.framesDir = opts.FramesDir
@@ -167,7 +165,12 @@ func (s *Server) Run(ctx context.Context, out chan<- ports.ControlRequest) error
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			defer conn.Close()
+			defer func() {
+				// The context hook below may have closed it already.
+				if err := conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+					log.Warn().Err(err).Msg("close control connection")
+				}
+			}()
 			connCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
 			go func() {

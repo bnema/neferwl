@@ -257,7 +257,11 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 // anything else is owned.
 func (s *session) abort() {
 	if s.registry != nil {
-		defer s.registry.Close()
+		defer func() {
+			if err := s.registry.Close(); err != nil {
+				s.log.Warn().Err(err).Msg("close session registry")
+			}
+		}()
 	}
 	if s.control != nil {
 		_ = s.control.Close()
@@ -273,7 +277,11 @@ func (s *session) abort() {
 // Server.Run own them.
 func (s *session) close() {
 	if s.registry != nil {
-		defer s.registry.Close()
+		defer func() {
+			if err := s.registry.Close(); err != nil {
+				s.log.Warn().Err(err).Msg("close session registry")
+			}
+		}()
 	}
 	s.curs.Stop()
 	if s.control != nil {

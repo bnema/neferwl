@@ -23,14 +23,14 @@ import (
 	"sync"
 	"time"
 
+	"bnema.dev/zerobus"
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/busretry"
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/fdwait"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/zerobus"
-	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 
@@ -101,7 +101,7 @@ type Service struct {
 	connClose sync.Once
 	pwc       videoCore
 	gpu       ports.CastBufferAllocator // exports the cast buffers; nil: no cast
-	owns      [4]bool // nameScreenCast, nameDisplayConfig, nameIntrospect, nameScreenshot
+	owns      [4]bool                   // nameScreenCast, nameDisplayConfig, nameIntrospect, nameScreenshot
 	inv       domain.CastInventory
 	haveInv   bool
 	callers   [maxCallers]caller
@@ -226,7 +226,11 @@ func (s *Service) Run(ctx context.Context, retry time.Duration) {
 		s.log.Warn().Err(s.initErr).Msg("screencast disabled")
 		return
 	}
-	defer s.poller.Close()
+	defer func() {
+		if err := s.poller.Close(); err != nil {
+			s.log.Warn().Err(err).Msg("close screencast poller")
+		}
+	}()
 	s.poller.StopOn(ctx)
 	if s.runner == nil {
 		s.runner = execRunner{env: s.env}
@@ -275,7 +279,11 @@ func (s *Service) reset(ctx context.Context, conn bus) {
 
 // closeBus shares cancellation and owner cleanup without closing twice.
 func (s *Service) closeBus() {
-	s.connClose.Do(func() { _ = s.conn.Close() })
+	s.connClose.Do(func() {
+		if err := s.conn.Close(); err != nil {
+			s.log.Warn().Err(err).Msg("close session bus")
+		}
+	})
 }
 
 // acquire watches departures and takes the names.

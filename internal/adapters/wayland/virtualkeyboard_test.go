@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/wlturbo"
 	"github.com/bnema/go-wayland-bindings/server/virtualkeyboard"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
@@ -34,7 +34,7 @@ func sendVirtualKeymap(t *testing.T, c *wlturbo.Display, kb uint32, keymap strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := wireRequest(c, kb, uint16(virtualkeyboard.ZwpVirtualKeyboardV1RequestKeymap), []int{fd}, uint32(wayland.KeyboardKeymapFormatXkbV1), size); err != nil {
 		t.Fatal(err)
 	}

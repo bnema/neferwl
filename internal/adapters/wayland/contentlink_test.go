@@ -22,7 +22,7 @@ func linkServer(t *testing.T) *Server {
 	done := make(chan error, 1)
 	run := guardedServerRun(t, s, ctx)
 	go func() { done <- run() }()
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() { cancel(); discardedErr := <-done; _ = discardedErr })
 	return s
 }
 

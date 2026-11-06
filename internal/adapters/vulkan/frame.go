@@ -1,6 +1,7 @@
 package vulkan
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"math"
@@ -489,11 +490,13 @@ func (r *Renderer) oneShot(record func(vk.CommandBuffer)) error {
 // Clear draws a background-only frame and waits for it.
 func (r *Renderer) Clear(rgb [3]uint8) error {
 	done, err := r.Render(domain.Scene{Background: fmt.Sprintf("#%02x%02x%02x", rgb[0], rgb[1], rgb[2])}, nil)
+	var closeErr error
 	if done != nil {
-		done.Close()
+		closeErr = done.Close()
 	}
 	if err != nil {
-		return err
+		return errors.Join(err, closeErr)
 	}
-	return r.waitFrame(r.frame)
+	// A fence close failure does not mean the GPU finished: always wait.
+	return errors.Join(r.waitFrame(r.frame), closeErr)
 }

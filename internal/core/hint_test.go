@@ -68,7 +68,7 @@ func newHintConfig(t *testing.T, opts core.Options, edit func(*domain.Config)) *
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
-	t.Cleanup(func() { cancel(); receive(t, done) })
+	t.Cleanup(func() { cancel(); _ = receive(t, done) })
 	h.output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 1000, Height: 800}}
 	scene(t, h.scenes)
 	h.client <- ports.WindowMapped{ID: 1, AppID: "org.test.app", PID: 4242}
@@ -179,7 +179,7 @@ func TestHintRequestNilScansIsNoop(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() { done <- c.Run(ctx) }()
-		defer func() { cancel(); receive(t, done) }()
+		defer func() { cancel(); _ = receive(t, done) }()
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 1000, Height: 800}}
 		scene(t, scenes)
 		input <- ports.KeyEvent{Keysym: "g", Base: "g", Mods: domain.ModSuper, Pressed: true}
@@ -845,7 +845,7 @@ func TestHintDisabledNotesOnce(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() { done <- c.Run(ctx) }()
-		t.Cleanup(func() { cancel(); receive(t, done) })
+		t.Cleanup(func() { cancel(); _ = receive(t, done) })
 		h.output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 1000, Height: 800}}
 		scene(t, h.scenes)
 		for range 3 {

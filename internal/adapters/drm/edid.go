@@ -2,6 +2,9 @@ package drm
 
 import (
 	"bufio"
+	"bytes"
+	"errors"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -115,14 +118,24 @@ func (h *HDRMetadata) parseCTA(b []byte) {
 	}
 }
 
+// readBounded reads at most 1 MiB of path. A failed close fails the read, so
+// the caller falls back to its default.
+func readBounded(path string) (data []byte, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, f.Close()) }()
+	return io.ReadAll(io.LimitReader(f, 1<<20))
+}
+
 // pnpName maps a PNP id to a vendor name via hwdata, falling back to the id.
 func pnpName(id string) string {
-	f, err := os.Open("/usr/share/hwdata/pnp.ids")
+	data, err := readBounded("/usr/share/hwdata/pnp.ids")
 	if err != nil {
 		return id
 	}
-	defer f.Close()
-	s := bufio.NewScanner(f)
+	s := bufio.NewScanner(bytes.NewReader(data))
 	for s.Scan() {
 		if name, ok := strings.CutPrefix(s.Text(), id+"\t"); ok {
 			return name

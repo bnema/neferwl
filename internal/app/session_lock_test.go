@@ -363,12 +363,12 @@ func sessionLockBuffer(t *testing.T, shm *clientcore.Shm, width, height int32, f
 		t.Fatal(err)
 	}
 	if err := unix.Ftruncate(fd, int64(size)); err != nil {
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		t.Fatal(err)
 	}
 	pool, err := shm.CreatePool(fd, size) // generated request consumes fd on success
 	if err != nil {
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		t.Fatal(err)
 	}
 	buffer, err := pool.CreateBuffer(0, width, height, width*4, format)

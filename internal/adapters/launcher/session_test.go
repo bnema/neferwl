@@ -106,7 +106,7 @@ func TestNotifyReady(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	NotifyReady(path, log)
 	if err := listener.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
 		t.Fatal(err)

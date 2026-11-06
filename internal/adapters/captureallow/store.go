@@ -13,8 +13,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/bnema/neferwl/internal/adapters/fdwait"
 	"bnema.dev/zerowrap"
+	"github.com/bnema/neferwl/internal/adapters/fdwait"
 	"golang.org/x/sys/unix"
 )
 
@@ -32,7 +32,7 @@ import (
 // owner, and not group- or other-writable unless sticky. Anything else fails
 // closed. Only a missing file, or a missing directory that holds the file
 // (/etc/neferwl) under checked ancestors, gives the built-in list.
-func load(path string, owner uint32) (*Policy, error) {
+func load(path string, owner uint32) (p *Policy, err error) {
 	path = filepath.Clean(path)
 	if !filepath.IsAbs(path) {
 		return Closed(), fmt.Errorf("%s: path is not absolute", path)
@@ -61,7 +61,12 @@ func load(path string, owner uint32) (*Policy, error) {
 		return Closed(), &fs.PathError{Op: "open", Path: path, Err: err}
 	}
 	f := os.NewFile(uintptr(fd), path)
-	defer f.Close()
+	defer func() {
+		// A failed close of the policy file fails closed.
+		if cerr := f.Close(); cerr != nil {
+			p, err = Closed(), errors.Join(err, &fs.PathError{Op: "close", Path: path, Err: cerr})
+		}
+	}()
 	var st unix.Stat_t
 	if err := unix.Fstat(fd, &st); err != nil {
 		return Closed(), &fs.PathError{Op: "stat", Path: path, Err: err}
@@ -77,7 +82,7 @@ func load(path string, owner uint32) (*Policy, error) {
 	// Reads of a regular file do not block; leave non-blocking mode off so the
 	// os.File does not go through the poller.
 	_ = unix.SetNonblock(fd, false)
-	p, err := Parse(f)
+	p, err = Parse(f)
 	if err != nil {
 		return Closed(), err
 	}
@@ -207,17 +212,17 @@ func (inotifyWatchInstaller) AddWatch(fd int, path string, mask uint32) (int, er
 	return unix.InotifyAddWatch(fd, path, mask)
 }
 
-func (s *Store) run(ctx context.Context, watches watchInstaller) error {
+func (s *Store) run(ctx context.Context, watches watchInstaller) (err error) {
 	fd, err := unix.InotifyInit1(unix.IN_CLOEXEC | unix.IN_NONBLOCK)
 	if err != nil {
 		return err
 	}
-	defer unix.Close(fd)
+	defer func() { err = errors.Join(err, unix.Close(fd)) }()
 	waiter, err := fdwait.New()
 	if err != nil {
 		return err
 	}
-	defer waiter.Close()
+	defer func() { err = errors.Join(err, waiter.Close()) }()
 	waiter.StopOn(ctx)
 	if err := waiter.Pin(int32(fd)); err != nil {
 		return err

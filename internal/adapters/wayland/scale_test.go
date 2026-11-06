@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/wlturbo"
+	"bnema.dev/zerowrap"
 	"github.com/bnema/go-wayland-bindings/server/fractionalscale"
 	"github.com/bnema/go-wayland-bindings/server/viewporter"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
@@ -13,8 +15,6 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/wlturbo"
-	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 
@@ -77,7 +77,7 @@ func contentServerWith(t *testing.T, opts Options, log zerowrap.Logger) (*Server
 	done := make(chan error, 1)
 	run := guardedServerRun(t, s, ctx)
 	go func() { done <- run() }()
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() { cancel(); discardedErr := <-done; _ = discardedErr })
 	return s, events, commands, contents, dir
 }
 
@@ -232,7 +232,7 @@ func TestFractionalScaleAndViewport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	size := int32(30 * 15 * 4)
 	if err := unix.Ftruncate(fd, int64(size)); err != nil {
 		t.Fatal(err)
@@ -361,7 +361,7 @@ func TestViewportApplyErrors(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer unix.Close(fd)
+			defer func() { _ = unix.Close(fd) }()
 			if err := unix.Ftruncate(fd, 4); err != nil {
 				t.Fatal(err)
 			}
@@ -414,7 +414,7 @@ func TestViewportSourceEdgeRounding(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer unix.Close(fd)
+			defer func() { _ = unix.Close(fd) }()
 			if err := unix.Ftruncate(fd, w*h*4); err != nil {
 				t.Fatal(err)
 			}

@@ -246,7 +246,7 @@ type CursorLoader func(c domain.CursorChange, scale float64, t domain.BufferTran
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
 	log := card.log
 	pipe := slices.Index(card.crtcs, crtc)
-	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, renderLog: card.renderLog, monitor: readMonitor(card.info.Path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, cpuFences: card.cpuFences, card: card, reason: "start", ready: make(chan error, 1), seatDisable: make(chan chan struct{}), ping: make(chan chan struct{}), traceFlips: card.want.TraceFlips, vrrFlipGap: card.want.VRRFlipGap}
+	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials, log: log}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, renderLog: card.renderLog, monitor: readMonitor(card.info.Path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, cpuFences: card.cpuFences, card: card, reason: "start", ready: make(chan error, 1), seatDisable: make(chan chan struct{}), ping: make(chan chan struct{}), traceFlips: card.want.TraceFlips, vrrFlipGap: card.want.VRRFlipGap}
 	o.NewCaptureRenderer = func(w, h int) (ports.Renderer, error) { return card.dev.Render.NewRenderer(w, h, card.rendererOptions) }
 	var err error
 	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
@@ -982,7 +982,7 @@ func (o *Output) commitScanoutRect(fb uint32, c domain.SurfaceContent, f pending
 	// held open (the kernel keeps its own reference).
 	fence := dupFence(c.Acquire)
 	if fence != nil {
-		defer fence.Close()
+		defer o.closeFence(fence)
 	}
 	pc := colorUse{mode: mode, format: c.DMABuf.Format}
 	err := o.commitWithRect(fb, fence, async, vrr, f, overlayWin{}, rect, pc)
@@ -1196,7 +1196,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 	ctx, cancelCaptures := context.WithCancel(ctx)
 	requests.Init(ctx, captured)
 	pipeline := capture.NewPipeline(ctx, captured)
-	pipeline.Security = o.Security
+	pipeline.Security, pipeline.Log = o.Security, o.log
 	if o.NewCaptureRenderer != nil {
 		pipeline.EnableOffscreen(o.NewCaptureRenderer)
 		o.capHidden = pipeline.CapHiddenSeen

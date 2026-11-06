@@ -366,7 +366,7 @@ func (s *Server) sendFrames(name string, flipped bool) {
 	}
 	for _, cb := range callbacks {
 		delete(s.frameOwners, cb)
-		if !cb.Resource.Alive() {
+		if !cb.Alive() {
 			continue
 		}
 		cb.SendDone(ms)

@@ -57,7 +57,7 @@ func startSwipeOn(t *testing.T, edit func(*domain.Config), outs ...domain.Output
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() { cancel(); discardedErr := <-done; _ = discardedErr })
 	for _, o := range outs {
 		r.plug(t, o)
 		r.outs = append(r.outs, o.Name)

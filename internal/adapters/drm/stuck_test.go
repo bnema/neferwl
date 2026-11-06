@@ -60,7 +60,7 @@ func startStuck(t *testing.T, render func() *os.File, errs ...error) *stuckRun {
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
-		w.Close()
+		_ = w.Close()
 		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
@@ -169,7 +169,7 @@ func fencePipe(t *testing.T) (fence, signal *os.File) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { r.Close(); w.Close() })
+	t.Cleanup(func() { _ = r.Close(); _ = w.Close() })
 	return r, w
 }
 

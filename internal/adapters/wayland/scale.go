@@ -52,7 +52,7 @@ func (surf *surface) sendTreeScale() {
 // buffer scale (wl_surface v6+) and the fractional scale.
 func (surf *surface) sendScale() {
 	s := surf.server
-	if surf.destroyed || surf.wl == nil || !surf.wl.Resource.Alive() {
+	if surf.destroyed || surf.wl == nil || !surf.wl.Alive() {
 		return
 	}
 	o := s.outputOfSurface(surf)
@@ -107,11 +107,11 @@ func (surf *surface) leave(o *output) {
 		return
 	}
 	surf.on = nil
-	if surf.destroyed || !surf.wl.Resource.Alive() {
+	if surf.destroyed || !surf.wl.Alive() {
 		return
 	}
 	for _, r := range o.resources {
-		if r.Client() == surf.wl.Client() && r.Resource.Alive() {
+		if r.Client() == surf.wl.Client() && r.Alive() {
 			surf.wl.SendLeave(r)
 		}
 	}

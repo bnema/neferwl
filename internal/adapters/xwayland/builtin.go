@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"golang.org/x/sys/unix"
 )
 
@@ -22,8 +23,11 @@ func (builtinStarter) start(ctx context.Context, d *Display, stderr *logWriter) 
 	var files []*os.File
 	defer func() {
 		for _, f := range files {
+			// Files already closed on the success path report os.ErrClosed.
 			if f != nil {
-				f.Close()
+				if err := f.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
+					d.opts.Log.Warn().Err(err).Str("name", f.Name()).Msg("close xwayland setup fd")
+				}
 			}
 		}
 	}()
@@ -71,9 +75,9 @@ func (builtinStarter) start(ctx context.Context, d *Display, stderr *logWriter) 
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	files[wl+1].Close()
-	files[wm+1].Close()
-	wr.Close()
+	logging.CloseFile(d.opts.Log, files[wl+1], "xwayland child socket")
+	logging.CloseFile(d.opts.Log, files[wm+1], "xwayland child wm socket")
+	logging.CloseFile(d.opts.Log, wr, "xwayland displayfd write end")
 	d.opts.Log.Info().Str("display", d.Name()).Int("pid", cmd.Process.Pid).Msg("Xwayland started")
 	// Detach the Wayland descriptor from os.File ownership before handing it
 	// to the display (including its finalizers).
@@ -86,7 +90,7 @@ func (builtinStarter) start(ctx context.Context, d *Display, stderr *logWriter) 
 			d.opts.Attach(wlFD)
 		}
 	}
-	files[wl].Close()
+	logging.CloseFile(d.opts.Log, files[wl], "xwayland wayland socket")
 	done := make(chan error, 1)
 	procGone := make(chan struct{})
 	go func() { done <- cmd.Wait(); close(procGone) }()
@@ -106,7 +110,7 @@ func (builtinStarter) start(ctx context.Context, d *Display, stderr *logWriter) 
 		}
 		return err
 	}
-	rd.Close()
+	logging.CloseFile(d.opts.Log, rd, "xwayland displayfd read end")
 	d.opts.Log.Info().Str("display", d.Name()).Msg("Xwayland ready")
 	if d.opts.AttachWM != nil {
 		// The WM socket is bootstrapped only now: Xwayland serves it after its
@@ -208,9 +212,11 @@ func waitReady(ctx context.Context, fd int, done <-chan error) (bool, error) {
 func stopGroup(cmd *exec.Cmd, done <-chan error) {
 	_ = unix.Kill(-cmd.Process.Pid, unix.SIGTERM)
 	select {
-	case <-done:
+	case exitErr := <-done:
+		_ = exitErr // exit status after our SIGTERM/SIGKILL is expected, not a failure
 	case <-time.After(2 * time.Second):
 		_ = unix.Kill(-cmd.Process.Pid, unix.SIGKILL)
-		<-done
+		exitErr := <-done
+		_ = exitErr // exit status after our SIGTERM/SIGKILL is expected, not a failure
 	}
 }

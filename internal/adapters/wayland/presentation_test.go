@@ -67,7 +67,7 @@ func presentServerOn(t *testing.T, layout domain.Layout) (*Server, chan ports.Cl
 	done := make(chan error, 1)
 	run := guardedServerRun(t, s, ctx)
 	go func() { done <- run() }()
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() { cancel(); discardedErr := <-done; _ = discardedErr })
 	return s, events, commands, contents, s.Presentation(), dir
 }
 
@@ -150,7 +150,7 @@ func testPresentationFeedback(t *testing.T, version uint32, variable, async bool
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := unix.Ftruncate(fd, 4); err != nil {
 		t.Fatal(err)
 	}

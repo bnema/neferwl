@@ -65,11 +65,11 @@ func TestProtectedClipboardPreexistingOffer(t *testing.T) {
 	if err := unix.Pipe2(fds[:], unix.O_CLOEXEC|unix.O_NONBLOCK); err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fds[0])
+	defer func() { _ = unix.Close(fds[0]) }()
 	if err := wireRequest(a.c, offer, uint16(wayland.DataOfferRequestReceive), []int{fds[1]}, "text/plain"); err != nil {
 		t.Fatal(err)
 	}
-	unix.Close(fds[1])
+	_ = unix.Close(fds[1])
 	roundtrip(t, a.c)
 	select {
 	case <-src.sends:

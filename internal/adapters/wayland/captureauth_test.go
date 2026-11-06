@@ -14,11 +14,11 @@ import (
 
 	source "github.com/bnema/go-wayland-bindings/server/extimagecapturesource"
 
+	"bnema.dev/zerowrap"
 	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/adapters/peerexe"
 	"github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
-	"bnema.dev/zerowrap"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
@@ -373,8 +373,8 @@ func TestLinuxPeerExeSelf(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fds[0])
-	defer unix.Close(fds[1])
+	defer func() { _ = unix.Close(fds[0]) }()
+	defer func() { _ = unix.Close(fds[1]) }()
 	var l linuxPeerExe
 	pidfd, err := l.Pidfd(fds[0])
 	if errors.Is(err, peerexe.ErrNoPidfd) {
@@ -383,7 +383,7 @@ func TestLinuxPeerExeSelf(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pidfd.Close()
+	defer func() { _ = pidfd.Close() }()
 	exe, pid, err := l.Exe(pidfd)
 	if err != nil {
 		t.Fatal(err)

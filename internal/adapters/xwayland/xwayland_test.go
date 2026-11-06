@@ -112,7 +112,7 @@ func TestRunDropsClientsOfFailedSatellite(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- d.Run(ctx) }()
 	fd := dial(t, d.socket)
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	// The dropped connection reads EOF.
 	if err := unix.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &unix.Timeval{Sec: 3}); err != nil {
 		t.Fatal(err)
@@ -221,7 +221,7 @@ func TestRunStartsSatelliteOnConnect(t *testing.T) {
 	if got := runs.settled(); len(got) != 0 {
 		t.Fatalf("started without a client: %v", got)
 	}
-	unix.Close(dial(t, d.socket))
+	_ = unix.Close(dial(t, d.socket))
 	want := d.Name() + "_-listenfd_3_-listenfd_4"
 	if got := runs.wait(1); len(got) != 1 || got[0] != want {
 		t.Fatalf("runs %v, want [%s]", got, want)
@@ -231,7 +231,7 @@ func TestRunStartsSatelliteOnConnect(t *testing.T) {
 	if got := runs.settled(); len(got) != 1 {
 		t.Fatalf("respawned without a client: %v", got)
 	}
-	unix.Close(dial(t, "\x00"+d.socket))
+	_ = unix.Close(dial(t, "\x00"+d.socket))
 	if got := runs.wait(2); len(got) != 2 {
 		t.Fatalf("runs %v after the second client", got)
 	}
@@ -320,7 +320,7 @@ func TestRunKillsSatelliteGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pidfifo.Close()
+	defer func() { _ = pidfifo.Close() }()
 	opts.Binary = filepath.Join(opts.TmpDir, "satellite")
 	script := "#!/bin/sh\ntrap '' TERM\nsleep 30 &\necho $! > " + pidfile + "\nwait\n"
 	if err := os.WriteFile(opts.Binary, []byte(script), 0o755); err != nil {
@@ -334,7 +334,7 @@ func TestRunKillsSatelliteGroup(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- d.Run(ctx) }()
-	unix.Close(dial(t, d.socket))
+	_ = unix.Close(dial(t, d.socket))
 	// The script writes the child's pid to the FIFO the test holds
 	// read-write; the read deadline bounds the wait.
 	if err := pidfifo.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
@@ -353,10 +353,11 @@ func TestRunKillsSatelliteGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(pidfd)
+	defer func() { _ = unix.Close(pidfd) }()
 	cancel()
 	select {
-	case <-done:
+	case discardedErr := <-done:
+		_ = discardedErr
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not stop")
 	}
@@ -420,7 +421,7 @@ func TestRunCallsStarter(t *testing.T) {
 	}).Once()
 	done := make(chan error, 1)
 	go func() { done <- d.Run(ctx) }()
-	unix.Close(dial(t, d.socket))
+	_ = unix.Close(dial(t, d.socket))
 	select {
 	case err := <-done:
 		if err != nil {
@@ -443,13 +444,13 @@ func TestWaitReady(t *testing.T) {
 			if err := unix.Pipe2(p[:], unix.O_CLOEXEC); err != nil {
 				t.Fatal(err)
 			}
-			defer unix.Close(p[0])
+			defer func() { _ = unix.Close(p[0]) }()
 			if tt.data != "" {
 				if _, err := unix.Write(p[1], []byte(tt.data)); err != nil {
 					t.Fatal(err)
 				}
 			}
-			unix.Close(p[1])
+			_ = unix.Close(p[1])
 			joined, err := waitReady(t.Context(), p[0], make(chan error))
 			if joined || (err != nil) != tt.wantErr {
 				t.Fatalf("joined=%v err=%v", joined, err)
@@ -506,7 +507,7 @@ func runBuiltin(t *testing.T, ctx context.Context, ready bool, tail string, atta
 		if _, err := unix.Write(wlFD, []byte("attached\n")); err != nil {
 			t.Errorf("release Attach: %v", err)
 		}
-		unix.Close(wlFD)
+		_ = unix.Close(wlFD)
 	}
 	opts.AttachWM = func(ctx context.Context, wmFD int) func() {
 		if !exists() {
@@ -542,7 +543,7 @@ func TestBuiltinAttachWMAfterReadiness(t *testing.T) {
 				if _, err := unix.FcntlInt(uintptr(wmFD), unix.F_GETFD, 0); err != nil {
 					t.Errorf("wmFD not open: %v", err)
 				}
-				unix.Close(wmFD)
+				_ = unix.Close(wmFD)
 				if tc.cancel {
 					go cancel()
 				}
@@ -570,7 +571,7 @@ func TestBuiltinAttachWMContextEndsWithProcess(t *testing.T) {
 	ended := make(chan error, 1)
 	start := time.Now()
 	events := runBuiltin(t, t.Context(), true, "exit 0", func(ctx context.Context, wmFD int) {
-		defer unix.Close(wmFD)
+		defer func() { _ = unix.Close(wmFD) }()
 		select {
 		case <-ctx.Done():
 			ended <- ctx.Err()

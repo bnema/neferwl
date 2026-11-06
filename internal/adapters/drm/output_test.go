@@ -17,9 +17,9 @@ import (
 
 	"github.com/bnema/neferwl/internal/domain"
 
+	"bnema.dev/zerowrap"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/zerowrap"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
@@ -104,8 +104,8 @@ func TestFrameCommitCarriesPrimaryFenceCursorAndVRR(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fence.Close()
-	defer w.Close()
+	defer func() { _ = fence.Close() }()
+	defer func() { _ = w.Close() }()
 	if err := o.commitFrame(70, fence, false, true, pendingFrame{}); err != nil {
 		t.Fatal(err)
 	}
@@ -133,8 +133,8 @@ func TestFrameCommitCarriesPrimaryFenceCursorAndVRR(t *testing.T) {
 func TestAsyncCommitHasOnlyPrimaryFBAndFence(t *testing.T) {
 	o, _, commits := testOutput(t)
 	fence, w, _ := os.Pipe()
-	defer fence.Close()
-	defer w.Close()
+	defer func() { _ = fence.Close() }()
+	defer func() { _ = w.Close() }()
 	if err := o.commitFrame(70, fence, true, false, pendingFrame{}); err != nil {
 		t.Fatal(err)
 	}
@@ -163,8 +163,8 @@ func TestAsyncWithoutFenceSupportStaysSync(t *testing.T) {
 	o, _, commits := testOutput(t)
 	o.asyncFence = false
 	fence, w, _ := os.Pipe()
-	defer fence.Close()
-	defer w.Close()
+	defer func() { _ = fence.Close() }()
+	defer func() { _ = w.Close() }()
 	if err := o.commitFrame(70, fence, true, false, pendingFrame{}); err != nil {
 		t.Fatal(err)
 	}
@@ -451,7 +451,7 @@ func TestAsyncProbeAfterModeset(t *testing.T) {
 	o.asyncFence = true
 	r := portsmocks.NewMockRenderer(t)
 	fence, w, _ := os.Pipe()
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 	r.EXPECT().UseTarget(mock.Anything).Return().Once()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(fence, nil).Once()
 	o.probeAsync(r)
@@ -610,7 +610,7 @@ func TestRunReportsSeenAfterFlip(t *testing.T) {
 		var fences []*os.File
 		pipeBuf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
-			w.Close()
+			_ = w.Close()
 			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
@@ -619,7 +619,7 @@ func TestRunReportsSeenAfterFlip(t *testing.T) {
 		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			f, w, _ := os.Pipe()
 			_, _ = w.Write([]byte{1}) // readable: signalled
-			w.Close()
+			_ = w.Close()
 			mu.Lock()
 			fences = append(fences, f)
 			mu.Unlock()
@@ -707,7 +707,7 @@ func TestRunComposedFullscreenKeepsVRR(t *testing.T) {
 		r := portsmocks.NewMockRenderer(t)
 		pipeBuf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
-			w.Close()
+			_ = w.Close()
 			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
@@ -916,7 +916,7 @@ func TestCaptureForcesDRMComposition(t *testing.T) {
 		r := &portsmocks.MockRenderer{}
 		makeBuf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
-			w.Close()
+			_ = w.Close()
 			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe() // SDR output
@@ -1008,7 +1008,7 @@ func TestRunPanicReportsReadinessError(t *testing.T) {
 	dev := portsmocks.NewMockRenderDevice(t)
 	dev.EXPECT().NewRenderer(o.Width(), o.Height(), domain.RendererOptions{}).RunAndReturn(func(int, int, domain.RendererOptions) (ports.Renderer, error) { panic("renderer panic") }).Once()
 	o.card = &Card{dev: CardDevices{Render: dev}}
-	o.Run(context.Background(), nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	_ = o.Run(context.Background(), nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 // stampRun starts Run on an output with unbuffered scene and content
@@ -1037,7 +1037,7 @@ func startStampRun(t *testing.T) *stampRun {
 	r := portsmocks.NewMockRenderer(t)
 	pipeBuf := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
-		w.Close()
+		_ = w.Close()
 		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
@@ -1173,7 +1173,7 @@ func TestRunKeepsLastContentOfLeavingWindow(t *testing.T) {
 		r := portsmocks.NewMockRenderer(t)
 		pipeBuf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
-			w.Close()
+			_ = w.Close()
 			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		var mu sync.Mutex
@@ -1188,7 +1188,7 @@ func TestRunKeepsLastContentOfLeavingWindow(t *testing.T) {
 			mu.Unlock()
 			f, w, _ := os.Pipe()
 			_, _ = w.Write([]byte{1})
-			w.Close()
+			_ = w.Close()
 			return f, nil
 		})
 		r.EXPECT().Close().Return().Once()
@@ -1219,8 +1219,8 @@ func TestRunKeepsLastContentOfLeavingWindow(t *testing.T) {
 			done <- o.Run(ctx, nil, make(chan bool), scenes, contents.in(), contents.ret, nil, discardSink(t), nil, nil)
 		}()
 		acq, acqW, _ := os.Pipe()
-		defer acq.Close()
-		defer acqW.Close()
+		defer func() { _ = acq.Close() }()
+		defer func() { _ = acqW.Close() }()
 		win := domain.SceneWindow{ID: 1, Rect: domain.Rect{W: 10, H: 10}}
 		full := domain.SurfaceContent{ID: 1, Seq: 1, Width: 10, Height: 10, DMABuf: &domain.DMABuf{ID: 5, Planes: []domain.DMABufPlane{{}}}, Acquire: acq}
 		contents.send(full)

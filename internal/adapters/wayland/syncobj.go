@@ -7,12 +7,13 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"bnema.dev/purego-libwayland/server"
+	"bnema.dev/zerowrap"
 	"github.com/bnema/go-wayland-bindings/server/linuxdrmsyncobj"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/fdwait"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
-	"bnema.dev/purego-libwayland/server"
-	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 
@@ -88,7 +89,7 @@ func (m syncManager) GetSurface(r *linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1, i
 }
 
 func (m syncManager) ImportTimeline(r *linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1, id uint32, fd int) {
-	defer unix.Close(fd)
+	defer logging.CloseFD(m.server.log, fd, "timeline fd")
 	h, err := m.server.syncDev.fdToHandle(fd)
 	if err != nil {
 		r.PostError(uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1ErrorInvalidTimeline), "invalid timeline fd")
@@ -97,7 +98,9 @@ func (m syncManager) ImportTimeline(r *linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV
 	tl := &timeline{dev: m.server.syncDev, handle: h, alive: true}
 	res, err := linuxdrmsyncobj.NewWpLinuxDrmSyncobjTimelineV1(r.Client(), r.Version(), id, timelineHandler{})
 	if err != nil {
-		_ = tl.dev.destroy(h)
+		if derr := tl.dev.destroy(h); derr != nil {
+			m.server.log.Warn().Err(derr).Uint32("handle", h).Msg("destroy syncobj")
+		}
 		return
 	}
 	m.server.timelines[res.Resource] = tl
@@ -266,9 +269,7 @@ func newSyncWaiter(wake func()) (*syncWaiter, error) {
 	}
 	p, err := fdwait.New()
 	if err != nil {
-		r.Close()
-		w.Close()
-		return nil, err
+		return nil, errors.Join(err, r.Close(), w.Close())
 	}
 	return &syncWaiter{poller: unixAcquirePoller{p}, waiter: p, ready: map[*syncWait]bool{}, wake: wake, pipeR: r, pipeW: w, log: zerowrap.Default()}, nil
 }
@@ -285,14 +286,12 @@ func (sw *syncWaiter) watch(p syncPoint) (*syncWait, error) {
 		return &syncWait{efd: -1, explicit: true, done: true, failed: true}, err
 	}
 	if err := p.tl.dev.eventfd(p.tl.handle, p.point, efd); err != nil {
-		unix.Close(efd)
-		return &syncWait{efd: -1, explicit: true, done: true, failed: true}, err
+		return &syncWait{efd: -1, explicit: true, done: true, failed: true}, errors.Join(err, unix.Close(efd))
 	}
 	w := &syncWait{efd: efd, explicit: true}
 	src, err := sw.src.add(efd, func() { sw.onAcquire(w) })
 	if err != nil {
-		unix.Close(efd)
-		return &syncWait{efd: -1, explicit: true, done: true, failed: true}, err
+		return &syncWait{efd: -1, explicit: true, done: true, failed: true}, errors.Join(err, unix.Close(efd))
 	}
 	w.src = src
 	if sw.pending == nil {
@@ -326,7 +325,7 @@ func (sw *syncWaiter) finish(w *syncWait) {
 		w.src = nil
 	}
 	if w.efd >= 0 {
-		unix.Close(w.efd)
+		logging.CloseFD(sw.log, w.efd, "acquire eventfd")
 		w.efd = -1
 	}
 	w.done = true
@@ -393,7 +392,7 @@ func (sw *syncWaiter) add(fd int) *syncWait {
 	sw.mu.Lock()
 	if sw.terminal {
 		sw.mu.Unlock()
-		unix.Close(fd)
+		logging.CloseFD(sw.log, fd, "acquire fence")
 		return &syncWait{efd: -1, done: true, failed: true}
 	}
 	sw.added = append(sw.added, w)
@@ -460,8 +459,12 @@ func (sw *syncWaiter) fail(waits []*syncWait) {
 
 // run polls the implicit dma-buf fence descriptors; it owns and closes them.
 func (sw *syncWaiter) run(ctx context.Context) {
-	defer sw.pipeR.Close()
-	defer sw.waiter.Close()
+	defer logging.CloseFile(sw.log, sw.pipeR, "sync waiter pipe")
+	defer func() {
+		if err := sw.waiter.Close(); err != nil {
+			sw.log.Warn().Err(err).Msg("close sync waiter poller")
+		}
+	}()
 	pipeFD := int(sw.pipeR.Fd())
 	// The pipe lives as long as the poller; the fence fds come and go. The
 	// poll sleeps until a fence, a new or cancelled wait (the pipe), or the
@@ -473,7 +476,7 @@ func (sw *syncWaiter) run(ctx context.Context) {
 		sw.added = nil
 		sw.mu.Unlock()
 		for _, w := range waits {
-			unix.Close(w.efd)
+			logging.CloseFD(sw.log, w.efd, "acquire fence")
 		}
 	}()
 	sw.waiter.StopOn(ctx)
@@ -486,7 +489,7 @@ func (sw *syncWaiter) run(ctx context.Context) {
 		live := waits[:0]
 		for _, w := range waits {
 			if w.cancelled.Load() {
-				unix.Close(w.efd)
+				logging.CloseFD(sw.log, w.efd, "acquire fence")
 				continue
 			}
 			live = append(live, w)
@@ -508,7 +511,7 @@ func (sw *syncWaiter) run(ctx context.Context) {
 		kept := waits[:0]
 		for i, w := range waits {
 			if w.cancelled.Load() {
-				unix.Close(w.efd)
+				logging.CloseFD(sw.log, w.efd, "acquire fence")
 				continue
 			}
 			revents := fds[i+1].Revents
@@ -519,7 +522,7 @@ func (sw *syncWaiter) run(ctx context.Context) {
 			if revents&unix.POLLIN == 0 {
 				sw.warnPollError()
 			}
-			unix.Close(w.efd)
+			logging.CloseFD(sw.log, w.efd, "acquire fence")
 			sw.mu.Lock()
 			if !w.cancelled.Load() {
 				sw.ready[w] = revents&unix.POLLIN != 0
@@ -544,13 +547,15 @@ func (sw *syncWaiter) run(ctx context.Context) {
 }
 
 // close stops the waiter's input side.
-func (sw *syncWaiter) close() { sw.pipeW.Close() }
+func (sw *syncWaiter) close() { logging.CloseFile(sw.log, sw.pipeW, "sync waiter pipe") }
 
 // discard releases what run would have closed, for a waiter whose run
 // never starts.
 func (sw *syncWaiter) discard() {
-	sw.pipeR.Close()
-	sw.waiter.Close()
+	logging.CloseFile(sw.log, sw.pipeR, "sync waiter pipe")
+	if err := sw.waiter.Close(); err != nil {
+		sw.log.Warn().Err(err).Msg("close sync waiter poller")
+	}
 }
 
 // syncHold is a buffer's explicit-sync state while it is on screen: the
@@ -564,7 +569,7 @@ type syncHold struct {
 // and closes the acquire fence.
 func (s *Server) releaseSync(h syncHold) {
 	if h.acquire != nil {
-		h.acquire.Close()
+		logging.CloseFile(s.log, h.acquire, "acquire fence")
 	}
 	if h.release.set() {
 		if err := h.release.tl.dev.signal(h.release.tl.handle, h.release.point); err != nil {
@@ -579,7 +584,9 @@ func (s *Server) releaseSync(h syncHold) {
 // buffer still needs to signal it.
 func (s *Server) dropTimeline(tl *timeline) {
 	if !tl.alive && tl.uses <= 0 && tl.handle != 0 {
-		_ = tl.dev.destroy(tl.handle)
+		if err := tl.dev.destroy(tl.handle); err != nil {
+			s.log.Warn().Err(err).Uint32("handle", tl.handle).Msg("destroy syncobj")
+		}
 		tl.handle = 0
 	}
 }
@@ -621,7 +628,7 @@ func (s *surface) dropSync(cs *commitSync) {
 		return
 	}
 	if cs.fence != nil {
-		cs.fence.Close()
+		logging.CloseFile(s.server.log, cs.fence, "acquire fence")
 		cs.fence = nil
 	}
 	ready := cs.wait != nil && s.server.syncWait.fired(cs.wait) && !cs.wait.failed
@@ -647,7 +654,7 @@ func (s *surface) prepareSync(cs *commitSync) bool {
 	f, err := cs.acquire.tl.dev.exportSyncFile(cs.acquire.tl.handle, cs.acquire.point)
 	if err != nil || f == nil {
 		if f != nil {
-			f.Close()
+			logging.CloseFile(s.server.log, f, "acquire fence")
 		}
 		s.server.log.Warn().Err(err).Msg("acquire fence export rejected")
 		return false

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/fifo"
 	"github.com/bnema/go-wayland-bindings/server/presentationtime"
 	"github.com/bnema/go-wayland-bindings/server/viewporter"
@@ -12,7 +13,6 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wlrlayershell"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/domain"
-	"bnema.dev/purego-libwayland/server"
 )
 
 // Applying an older captured commit must never transiently own newer requests.
@@ -228,18 +228,19 @@ func TestQueuedDestructionDropsUpdates(t *testing.T) {
 				surfID = c.AllocateID()
 				requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surfID)
 				registerProtocol(t, c, surfID)
-				if kind == "viewport" {
+				switch kind {
+				case "viewport":
 					vpm := bindProtocol(t, c, "wp_viewporter")
 					objectID = c.AllocateID()
 					requestProtocol(t, c, vpm, viewporter.WpViewporterRequestGetViewport, objectID, surfID)
 					registerProtocol(t, c, objectID)
-				} else if kind == "layer" {
+				case "layer":
 					shell := bindProtocol(t, c, "zwlr_layer_shell_v1")
 					objectID = c.AllocateID()
 					requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, objectID, surfID, uint32(0), uint32(domain.LayerTop), "drop")
 					registerProtocol(t, c, objectID)
 					requestProtocol(t, c, objectID, wlrlayershell.ZwlrLayerSurfaceV1RequestSetSize, uint32(1), uint32(1))
-				} else if kind == "buffer" {
+				case "buffer":
 					bufferID = shmBuffer(t, c)
 				}
 			}
@@ -286,7 +287,7 @@ func TestQueuedDestructionDropsUpdates(t *testing.T) {
 				for _, surf := range s.surfaces {
 					if surf.wl != nil && surf.wl.ID() == surfID {
 						if kind == "viewport" || kind == "buffer" {
-							if kind == "buffer" && (len(surf.queue) != 1 || surf.queue[0].buffer == nil || surf.queue[0].buffer.Resource.Alive()) {
+							if kind == "buffer" && (len(surf.queue) != 1 || surf.queue[0].buffer == nil || surf.queue[0].buffer.Alive()) {
 								t.Error("expected destroyed buffer in queued update")
 							}
 							if len(surf.queue) != 1 {

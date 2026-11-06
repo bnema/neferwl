@@ -2,13 +2,16 @@ package wayland
 
 import (
 	"encoding/binary"
+	"errors"
 	"io"
 	"os"
 	"slices"
 
 	"bnema.dev/purego-libwayland/server"
+	"bnema.dev/zerowrap"
 	"github.com/bnema/go-wayland-bindings/server/linuxdmabuf"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
 	"golang.org/x/sys/unix"
 )
@@ -92,13 +95,11 @@ func formatTable(formats []domain.DMABufFormat) (*os.File, error) {
 	}
 	f := os.NewFile(uintptr(fd), "dmabuf-formats")
 	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return nil, err
+		return nil, errors.Join(err, f.Close())
 	}
 	// Clients map it: it must never shrink or change.
 	if _, err := unix.FcntlInt(uintptr(fd), unix.F_ADD_SEALS, unix.F_SEAL_SHRINK|unix.F_SEAL_GROW|unix.F_SEAL_WRITE|unix.F_SEAL_SEAL); err != nil {
-		f.Close()
-		return nil, err
+		return nil, errors.Join(err, f.Close())
 	}
 	return f, nil
 }
@@ -148,7 +149,7 @@ func (g *dmabufGlobal) offer(f domain.OutputFormats) scanoutOffer {
 
 func (g *dmabufGlobal) close() {
 	if g != nil && g.table != nil {
-		g.table.Close()
+		logging.CloseFile(g.server.log, g.table, "dmabuf format table")
 	}
 }
 
@@ -303,7 +304,7 @@ type plane struct {
 func (p *params) closeFiles() {
 	for i, pl := range p.planes {
 		if pl != nil {
-			pl.file.Close()
+			logging.CloseFile(p.global.server.log, pl.file, "dmabuf plane")
 			p.planes[i] = nil
 		}
 	}
@@ -315,18 +316,18 @@ func (p *params) Add(r *linuxdmabuf.ZwpLinuxBufferParamsV1, fd int, idx, offset,
 	f := os.NewFile(uintptr(fd), "dmabuf")
 	switch {
 	case p.used:
-		f.Close()
+		logging.CloseFile(p.global.server.log, f, "dmabuf plane")
 		r.PostError(uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorAlreadyUsed), "params already used")
 	case idx >= maxPlanes:
-		f.Close()
+		logging.CloseFile(p.global.server.log, f, "dmabuf plane")
 		r.PostError(uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorPlaneIdx), "plane index out of bounds")
 	case p.planes[idx] != nil:
-		f.Close()
+		logging.CloseFile(p.global.server.log, f, "dmabuf plane")
 		r.PostError(uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorPlaneSet), "plane already set")
 	default:
 		mod := uint64(modHi)<<32 | uint64(modLo)
 		if p.anyPlane() && mod != p.modifier {
-			f.Close()
+			logging.CloseFile(p.global.server.log, f, "dmabuf plane")
 			r.PostError(uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorInvalidFormat), "planes with different modifiers")
 			return
 		}
@@ -438,7 +439,7 @@ func (p *params) Create(r *linuxdmabuf.ZwpLinuxBufferParamsV1, width, height int
 	// A server-side wl_buffer: id 0 asks libwayland to allocate one.
 	res, err := wayland.NewBuffer(r.Client(), 1, 0, b)
 	if err != nil {
-		b.close()
+		b.close(p.global.server.log)
 		r.SendFailed()
 		return
 	}
@@ -459,7 +460,7 @@ func (p *params) CreateImmed(r *linuxdmabuf.ZwpLinuxBufferParamsV1, id uint32, w
 	}
 	res, err := wayland.NewBuffer(r.Client(), 1, id, b)
 	if err != nil {
-		b.close()
+		b.close(p.global.server.log)
 		return
 	}
 	p.global.server.addBuffer(res, b)
@@ -481,9 +482,9 @@ type dmabufBuffer struct{ buf *domain.DMABuf }
 
 func (*dmabufBuffer) Destroy(*wayland.Buffer) {}
 
-func (b *dmabufBuffer) close() {
+func (b *dmabufBuffer) close(log zerowrap.Logger) {
 	for _, pl := range b.buf.Planes {
-		pl.File.Close()
+		logging.CloseFile(log, pl.File, "dmabuf plane")
 	}
 }
 

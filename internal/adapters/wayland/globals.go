@@ -5,7 +5,9 @@ import (
 	"slices"
 
 	"bnema.dev/purego-libwayland/server"
+	"bnema.dev/zerowrap"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
 	"golang.org/x/sys/unix"
 )
@@ -56,11 +58,17 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 		func() error { return registerTextInput(d, s) },
 		func() error { return registerInputMethod(d, s) },
 		func() error {
-			return wayland.NewCompositorGlobal(d, 6, func(c server.Client, v, id uint32) { wayland.NewCompositor(c, int32(v), id, compositor{s}) })
+			return wayland.NewCompositorGlobal(d, 6, func(c server.Client, v, id uint32) {
+				if _, err := wayland.NewCompositor(c, int32(v), id, compositor{s}); err != nil {
+					s.log.Warn().Err(err).Msg("create wl_compositor")
+				}
+			})
 		},
 		func() error {
 			return wayland.NewSubcompositorGlobal(d, 1, func(c server.Client, v, id uint32) {
-				wayland.NewSubcompositor(c, int32(v), id, subcompositor{s})
+				if _, err := wayland.NewSubcompositor(c, int32(v), id, subcompositor{s}); err != nil {
+					s.log.Warn().Err(err).Msg("create wl_subcompositor")
+				}
 			})
 		},
 		func() error {
@@ -322,7 +330,7 @@ type shm struct{ server *Server }
 func (h shm) CreatePool(r *wayland.Shm, id uint32, fd int, size int32) {
 	file := os.NewFile(uintptr(fd), "wl_shm_pool")
 	if size <= 0 || !fileHolds(file, int64(size)) {
-		file.Close()
+		logging.CloseFile(h.server.log, file, "shm pool")
 		r.PostError(uint32(wayland.ShmErrorInvalidFd), "invalid pool size")
 		return
 	}
@@ -330,13 +338,13 @@ func (h shm) CreatePool(r *wayland.Shm, id uint32, fd int, size int32) {
 	state := &pool{id: h.server.nextPool, file: file, size: size, shm: r, server: h.server}
 	p, err := wayland.NewShmPool(r.Client(), 1, id, state)
 	if err != nil {
-		file.Close()
+		logging.CloseFile(h.server.log, file, "shm pool")
 		return
 	}
 	p.OnDestroy = func() {
 		state.destroyed = true
 		if state.refs == 0 {
-			state.file.Close()
+			logging.CloseFile(h.server.log, state.file, "shm pool")
 		}
 	}
 }
@@ -380,7 +388,7 @@ func (p *pool) CreateBuffer(r *wayland.ShmPool, id uint32, offset, width, height
 		delete(p.server.buffers, b.Resource)
 		p.refs--
 		if p.destroyed && p.refs == 0 {
-			p.file.Close()
+			logging.CloseFile(p.server.log, p.file, "shm pool")
 		}
 	}
 }
@@ -428,8 +436,8 @@ func (s *Server) addBuffer(r *wayland.Buffer, b clientBuffer) {
 	s.buffers[r.Resource] = b
 	r.OnDestroy = func() {
 		delete(s.buffers, r.Resource)
-		if c, ok := b.(interface{ close() }); ok {
-			c.close()
+		if c, ok := b.(interface{ close(zerowrap.Logger) }); ok {
+			c.close(s.log)
 		}
 	}
 }
@@ -512,8 +520,10 @@ func (h seat) GetKeyboard(r *wayland.Seat, id uint32) {
 		s.sendModifiers(k)
 	}
 }
-func (seat) GetTouch(r *wayland.Seat, id uint32) {
-	wayland.NewTouch(r.Client(), r.Version(), id, touch{})
+func (h seat) GetTouch(r *wayland.Seat, id uint32) {
+	if _, err := wayland.NewTouch(r.Client(), r.Version(), id, touch{}); err != nil {
+		h.server.log.Warn().Err(err).Msg("create wl_touch")
+	}
 }
 func (seat) Release(*wayland.Seat) {}
 

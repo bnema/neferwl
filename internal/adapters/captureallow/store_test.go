@@ -179,7 +179,7 @@ func TestStoreWaitsForMissingDirectory(t *testing.T) {
 	}).Once()
 	watches.EXPECT().AddWatch(mock.Anything, filepath.Dir(path), uint32(watchMask)).RunAndReturn(unix.InotifyAddWatch)
 	go func() { done <- s.run(ctx, watches) }()
-	defer func() { cancel(); <-done }()
+	defer func() { cancel(); discardedErr := <-done; _ = discardedErr }()
 	select {
 	case err := <-attempted:
 		if !errors.Is(err, unix.ENOENT) {

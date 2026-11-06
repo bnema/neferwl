@@ -1,6 +1,7 @@
 package vulkan
 
 import (
+	"errors"
 	"fmt"
 	"unsafe"
 
@@ -126,8 +127,7 @@ func (r *Renderer) importYUV(b *domain.DMABuf, format vk.Format) (*imported, err
 			imp := vk.ImportMemoryFdInfoKHR{SType: vk.StructureTypeImportMemoryFDInfoKHR, Next: unsafe.Pointer(&dedicated), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT, Fd: int32(memFD)}
 			alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&imp), AllocationSize: req.MemoryRequirements.Size, MemoryTypeIndex: kind}
 			if err := checked("vkAllocateMemory(YUV plane)", d.AllocateMemory(r.gpu.device, &alloc, nil, &im.memories[i])); err != nil {
-				unix.Close(memFD)
-				return nil, err
+				return nil, errors.Join(err, unix.Close(memFD))
 			}
 			planeBind := &bindImagePlane{sType: structureBindImagePlane, planeAspect: aspects[i]}
 			bindings[i] = vk.BindImageMemoryInfo{SType: vk.StructureTypeBindImageMemoryInfo, Next: unsafe.Pointer(planeBind), Image: im.image, Memory: im.memories[i]}
@@ -204,8 +204,7 @@ func (r *Renderer) bindSharedYUV(im *imported) error {
 	imp := vk.ImportMemoryFdInfoKHR{SType: vk.StructureTypeImportMemoryFDInfoKHR, Next: unsafe.Pointer(&dedicated), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT, Fd: int32(memFD)}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&imp), AllocationSize: req.Size, MemoryTypeIndex: kind}
 	if err := checked("vkAllocateMemory(YUV shared)", d.AllocateMemory(r.gpu.device, &alloc, nil, &im.memory)); err != nil {
-		unix.Close(memFD)
-		return err
+		return errors.Join(err, unix.Close(memFD))
 	}
 	return checked("vkBindImageMemory(YUV shared)", d.BindImageMemory(r.gpu.device, im.image, im.memory, 0))
 }

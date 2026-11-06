@@ -5,6 +5,7 @@ import (
 	"os"
 	"slices"
 
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/domain"
 	"golang.org/x/sys/unix"
 )
@@ -114,7 +115,7 @@ func overlayCandidate(s domain.Scene, surfaces map[domain.WindowID]domain.Surfac
 			// them occluding another candidate below.
 			expansion = true
 		}
-		if !(w.SDRExpansion.Active() && c.Color.PlainSDR()) && w.Radius == 0 && w.Dim <= 0 && w.Fade <= 0 && w.Zoom <= 0 && w.Preview <= 0 && c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) && (kept == nil || !kept(w.ID)) {
+		if (!w.SDRExpansion.Active() || !c.Color.PlainSDR()) && w.Radius == 0 && w.Dim <= 0 && w.Fade <= 0 && w.Zoom <= 0 && w.Preview <= 0 && c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) && (kept == nil || !kept(w.ID)) {
 			if m, why := planeColor(c.Color, c.DMABuf.Format, c.Opaque, hdrOn, pipeline); why == "" {
 				pick, pickAt, mode = w, i, m
 				continue
@@ -241,9 +242,11 @@ func (o *Output) overlayProps(req *atomicReq, ov overlayWin) {
 }
 
 // close releases the frame's duplicate of the acquire fence.
-func (ov overlayWin) close() {
+func (ov overlayWin) close(log zerowrap.Logger) {
 	if ov.acquire != nil {
-		ov.acquire.Close()
+		if err := ov.acquire.Close(); err != nil {
+			log.Warn().Err(err).Uint64("window", uint64(ov.id)).Msg("close overlay acquire fence")
+		}
 	}
 }
 

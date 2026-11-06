@@ -241,7 +241,7 @@ func newSvcHarness(t *testing.T, o harnessOpts) *svcHarness {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { r.Close(); w.Close() })
+		t.Cleanup(func() { _ = r.Close(); _ = w.Close() })
 		h.core = newMockvideoCore(t)
 		h.core.EXPECT().Fd().Return(int(r.Fd()))
 		h.core.EXPECT().Iterate().Run(func() {

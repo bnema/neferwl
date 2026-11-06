@@ -41,7 +41,7 @@ func captureCore(t *testing.T) *captureRig {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go c.Run(ctx)
+	go func() { _ = c.Run(ctx) }()
 	r.output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 	scene(t, r.scenes)
 	return r
@@ -578,7 +578,7 @@ func TestCaptureFrameFlashRunsOnTheCoreClock(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
-		go c.Run(ctx)
+		go func() { _ = c.Run(ctx) }()
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
 		// A wlr-screencopy frame: no session.

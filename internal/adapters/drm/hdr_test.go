@@ -83,7 +83,7 @@ func TestHDRTestCommitFallbackReexportsSDR(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
-		w.Close()
+		_ = w.Close()
 		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	var calls []string
@@ -159,7 +159,7 @@ func TestHDRSuccessfulModeset(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
-		w.Close()
+		_ = w.Close()
 		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(domain.DefaultSDRBrightness)).Return().Once()
@@ -200,7 +200,7 @@ func TestHDRBlobReusedAcrossImageSetup(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
-		w.Close()
+		_ = w.Close()
 		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(domain.DefaultSDRBrightness)).Return().Twice()
@@ -250,7 +250,7 @@ func TestHDRBlobReplacementWaitsForCommit(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
-		w.Close()
+		_ = w.Close()
 		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(domain.DefaultSDRBrightness)).Return().Twice()

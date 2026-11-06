@@ -131,7 +131,7 @@ func TestSceneZoomedFloatOpensFloats(t *testing.T) {
 		t.Fatalf("tile line = %+v, want it painted before the float", zoomed[1].pc.rect)
 	}
 	pr, zr := plain[4].pc.rect, zoomed[4].pc.rect
-	if !(zr[2]-zr[0] < pr[2]-pr[0]) || zr[0] != pr[0] || zr[1] != pr[1] {
+	if (zr[2]-zr[0] >= pr[2]-pr[0]) || zr[0] != pr[0] || zr[1] != pr[1] {
 		t.Fatalf("zoomed content %v, want smaller than %v from the same origin", zr, pr)
 	}
 	// A card (Preview) keeps not opening the floats: no tile lines, no veil.

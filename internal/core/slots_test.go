@@ -81,7 +81,7 @@ func startSlotsMode(t *testing.T, animated *bool, numbered ...bool) *slotRig {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() { cancel(); discardedErr := <-done; _ = discardedErr })
 	go func() { // commands are not under test
 		for {
 			select {
@@ -463,7 +463,7 @@ func TestStartupCommands(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() { done <- c.Run(ctx) }()
-		defer func() { cancel(); <-done }()
+		defer func() { cancel(); discardedErr := <-done; _ = discardedErr }()
 		for _, want := range cfg.Startup {
 			if got := receive(t, spawn); !slices.Equal(got.Argv, want) {
 				t.Fatalf("spawned %q, want %q", got.Argv, want)
@@ -490,7 +490,7 @@ func TestSpawnBindSeveralCommands(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() { done <- c.Run(ctx) }()
-		defer func() { cancel(); <-done }()
+		defer func() { cancel(); discardedErr := <-done; _ = discardedErr }()
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
 		input <- ports.KeyEvent{Keysym: "p", Mods: domain.ModAlt, Pressed: true}

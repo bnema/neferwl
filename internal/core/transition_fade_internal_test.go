@@ -79,7 +79,7 @@ func TestAppearDerivesFadeAndZoom(t *testing.T) {
 		if !(w.Fade > 0 && w.Fade < 1) || !(w.Zoom > 0.9 && w.Zoom < 1) {
 			t.Fatalf("mid-way fade %v zoom %v, want strictly between", w.Fade, w.Zoom)
 		}
-		if !(w.Rect.W > want.W && w.Rect.W < settled.Rect.W) {
+		if w.Rect.W <= want.W || w.Rect.W >= settled.Rect.W {
 			t.Fatalf("mid-way width %d, want between %d and %d", w.Rect.W, want.W, settled.Rect.W)
 		}
 
@@ -171,7 +171,7 @@ func TestLeavingEntryLifecycle(t *testing.T) {
 		c.animate(ic.now, nil)
 		s = indicatorScene(t, c)
 		w = sceneWindow(t, s, 2)
-		if !(w.Fade > 0 && w.Fade < 1) || !(w.Rect.W < left.Rect.W) || !(w.Zoom > 0.9 && w.Zoom < 1) {
+		if !(w.Fade > 0 && w.Fade < 1) || (w.Rect.W >= left.Rect.W) || !(w.Zoom > 0.9 && w.Zoom < 1) {
 			t.Fatalf("mid-way %+v", w)
 		}
 

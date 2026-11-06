@@ -65,7 +65,7 @@ func startRigWith(t *testing.T, opts core.Options, edit func(*domain.Config), ou
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() { cancel(); discardedErr := <-done; _ = discardedErr })
 	for _, o := range outs {
 		r.plug(t, o)
 	}
@@ -691,7 +691,7 @@ func TestFirstTerminalFollowsSetOutputs(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() { done <- c.Run(ctx) }()
-		t.Cleanup(func() { cancel(); receive(t, done) })
+		t.Cleanup(func() { cancel(); _ = receive(t, done) })
 		receive(t, state) // startup finished; next command belongs to the output event
 		output <- ports.OutputAdded{Info: left}
 		synctest.Wait()

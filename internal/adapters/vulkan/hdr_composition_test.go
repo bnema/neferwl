@@ -39,7 +39,7 @@ func hdrTestRendererVariant(t *testing.T, single bool) *Renderer {
 	if err != nil {
 		t.Skipf("no HDR target: %v", err)
 	}
-	t.Cleanup(func() { bufs[0].Planes[0].File.Close() })
+	t.Cleanup(func() { _ = bufs[0].Planes[0].File.Close() })
 	return r
 }
 
@@ -125,7 +125,7 @@ func TestHDRPixels(t *testing.T) {
 	if err != nil {
 		t.Skipf("no HDR target: %v", err)
 	}
-	defer bufs[0].Planes[0].File.Close()
+	defer func() { _ = bufs[0].Planes[0].File.Close() }()
 	if err := render(plain, domain.Scene{Background: "#ffffff"}, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestHDRPixelsReadsRenderedTarget(t *testing.T) {
 		t.Skipf("no two HDR targets: %v", err)
 	}
 	for _, b := range bufs {
-		defer b.Planes[0].File.Close()
+		defer func() { _ = b.Planes[0].File.Close() }()
 	}
 	if r.HDRPixels() != nil {
 		t.Fatal("HDRPixels from targets no frame drew into")

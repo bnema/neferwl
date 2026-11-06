@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/go-wayland-bindings/server/securitycontext"
-	"github.com/bnema/neferwl/internal/adapters/logging"
 	"bnema.dev/purego-libwayland/server"
 	"bnema.dev/wlturbo"
+	"github.com/bnema/go-wayland-bindings/server/securitycontext"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"golang.org/x/sys/unix"
 )
 
@@ -94,7 +94,7 @@ func (l *sandboxListener) refused() bool {
 	if err != nil {
 		return false
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	return errors.Is(unix.Connect(fd, &unix.SockaddrUnix{Name: l.path}), unix.ECONNREFUSED)
 }
 
@@ -412,22 +412,22 @@ func TestSecurityContextInvalidListenFD(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(pair[1])
+	defer func() { _ = unix.Close(pair[1]) }()
 	dgram, err := unix.Socket(unix.AF_UNIX, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(dgram)
+	defer func() { _ = unix.Close(dgram) }()
 	pipe := make([]int, 2)
 	if err := unix.Pipe2(pipe, unix.O_CLOEXEC); err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(pipe[1])
+	defer func() { _ = unix.Close(pipe[1]) }()
 	for name, fd := range map[string]int{"connected": pair[0], "datagram": dgram, "pipe": pipe[0]} {
 		t.Run(name, func(t *testing.T) {
 			cc := newContextClient(t, h)
 			r, w := mustPipe(t)
-			defer unix.Close(w)
+			defer func() { _ = unix.Close(w) }()
 			cc.create(t, fd, r)
 			expectProtocolError(t, cc.c, cc.manager, uint32(securitycontext.WpSecurityContextManagerV1ErrorInvalidListenFd))
 			_ = unix.Close(r)

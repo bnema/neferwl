@@ -11,7 +11,11 @@ import (
 )
 
 func registerXDG(d *server.Display, s *Server) error {
-	return xdgshell.NewWmBaseGlobal(d, 6, func(c server.Client, v, id uint32) { xdgshell.NewWmBase(c, int32(v), id, wm{s}) })
+	return xdgshell.NewWmBaseGlobal(d, 6, func(c server.Client, v, id uint32) {
+		if _, err := xdgshell.NewWmBase(c, int32(v), id, wm{s}); err != nil {
+			s.log.Warn().Err(err).Msg("create xdg_wm_base")
+		}
+	})
 }
 
 type wm struct{ server *Server }

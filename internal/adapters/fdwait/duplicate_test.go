@@ -15,17 +15,17 @@ func TestRemovedDuplicatedDescriptorDoesNotKeepPollReadable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 	old, err := unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC)
 	if err != nil {
 		t.Fatal(err)
 	}
 	dup, err := unix.Dup(old)
 	if err != nil {
-		unix.Close(old)
+		_ = unix.Close(old)
 		t.Fatal(err)
 	}
-	defer unix.Close(dup)
+	defer func() { _ = unix.Close(dup) }()
 	if _, err := p.Poll([]unix.PollFd{{Fd: int32(old), Events: unix.POLLIN}}, 1); err != nil {
 		t.Fatal(err)
 	}
@@ -35,8 +35,8 @@ func TestRemovedDuplicatedDescriptorDoesNotKeepPollReadable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fresh)
-	unix.Close(old)
+	defer func() { _ = unix.Close(fresh) }()
+	_ = unix.Close(old)
 	if _, err := unix.Write(dup, []byte{1, 0, 0, 0, 0, 0, 0, 0}); err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestRemovedDuplicatedDescriptorDoesNotKeepPollReadable(t *testing.T) {
 			t.Fatal(err)
 		}
 	case <-time.After(time.Second):
-		p.Close()
+		_ = p.Close()
 		t.Fatal("stale epoll readiness prevents timeout")
 	}
 }

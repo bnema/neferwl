@@ -1,6 +1,7 @@
 package vulkan
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -9,6 +10,7 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	vk "bnema.dev/purego-vulkan/vulkan"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"golang.org/x/sys/unix"
 )
 
@@ -268,8 +270,7 @@ func (r *Renderer) importDMABuf(b *domain.DMABuf) (*imported, error) {
 	imp := vk.ImportMemoryFdInfoKHR{SType: vk.StructureTypeImportMemoryFDInfoKHR, Next: unsafe.Pointer(&dedicated), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT, Fd: int32(memFD)}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&imp), AllocationSize: req.Size, MemoryTypeIndex: kind}
 	if err := checked("vkAllocateMemory(dmabuf)", d.AllocateMemory(r.gpu.device, &alloc, nil, &im.memory)); err != nil {
-		unix.Close(memFD)
-		return nil, err
+		return nil, errors.Join(err, unix.Close(memFD))
 	}
 	if err := checked("vkBindImageMemory(dmabuf)", d.BindImageMemory(r.gpu.device, im.image, im.memory, 0)); err != nil {
 		return nil, err
@@ -319,12 +320,12 @@ func (r *Renderer) release(im *imported) {
 		}
 	}
 	if im.fd >= 0 {
-		unix.Close(im.fd)
+		logging.CloseFD(r.log, im.fd, "imported dmabuf fd")
 	}
 	if im.yuv {
 		for _, fd := range im.fds {
 			if fd >= 0 {
-				unix.Close(fd)
+				logging.CloseFD(r.log, fd, "imported dmabuf plane fd")
 			}
 		}
 	}
@@ -350,6 +351,7 @@ type dmaBufSync struct {
 
 // DMA_BUF_IOCTL_EXPORT_SYNC_FILE = _IOWR('b', 2, struct dma_buf_export_sync_file)
 const ioctlExportSyncFile = 0xc0086202
+
 // DMA_BUF_IOCTL_IMPORT_SYNC_FILE = _IOW('b', 3, struct dma_buf_import_sync_file)
 const ioctlImportSyncFile = 0x40086203
 
@@ -398,12 +400,12 @@ func (r *Renderer) importSyncFD(fd int) vk.Semaphore {
 	var sem vk.Semaphore
 	si := vk.SemaphoreCreateInfo{SType: vk.StructureTypeSemaphoreCreateInfo}
 	if r.gpu.dd.CreateSemaphore(r.gpu.device, &si, nil, &sem) != vk.Success {
-		unix.Close(fd)
+		logging.CloseFD(r.gpu.log, fd, "sync file fd")
 		return 0
 	}
 	imp := vk.ImportSemaphoreFdInfoKHR{SType: vk.StructureTypeImportSemaphoreFDInfoKHR, Semaphore: sem, Flags: vk.SemaphoreImportTemporaryBit, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit, Fd: int32(fd)}
 	if r.gpu.dd.ImportSemaphoreFdKHR(r.gpu.device, &imp) != vk.Success {
-		unix.Close(fd)
+		logging.CloseFD(r.gpu.log, fd, "sync file fd")
 		r.gpu.dd.DestroySemaphore(r.gpu.device, sem, nil)
 		return 0
 	}

@@ -34,6 +34,12 @@ jobs:
       - run: |
           go install github.com/bnema/hexcheck/cmd/hexcheck@v0.3.1
           cd tools && GOBIN=$HOME/go/bin go install tool
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        env:
+          CGO_ENABLED: "0"
+        with:
+          version: v2.15.0
       - run: make check
       - run: make race
       - run: make mocks-check

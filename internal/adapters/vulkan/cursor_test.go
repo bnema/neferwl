@@ -18,7 +18,7 @@ func TestCursorBuffersWriteCursor(t *testing.T) {
 		if p := b.Planes[0]; p.Stride != 64*4 || p.Offset != 0 || b.Format != fourccARGB {
 			t.Fatalf("layout %+v format %#x", p, b.Format)
 		}
-		b.Planes[0].File.Close()
+		_ = b.Planes[0].File.Close()
 	}
 	mem := func() []byte { c := r.cursors[1]; return unsafe.Slice((*byte)(c.mapped), c.pitch*c.size) }
 	// A first image fills the corner; a second, smaller one must clear it.
@@ -52,7 +52,7 @@ func TestHDRCursorWritesBothImagesAndInvalidates(t *testing.T) {
 		t.Skipf("no cursor images: %v", err)
 	}
 	for _, b := range bufs {
-		b.Planes[0].File.Close()
+		_ = b.Planes[0].File.Close()
 	}
 	r.SetHDR(203)
 	px := []byte{255, 255, 255, 255}

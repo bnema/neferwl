@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/domain"
 )
 
@@ -26,6 +27,7 @@ type frameLifecycle struct {
 	nomemBackoff              time.Duration
 	nomemAttempts             int
 	stuckTimer                *time.Timer
+	log                       zerowrap.Logger // zero value logs nothing
 }
 
 // frameWaitKind is the current wait, independent of refusal-run summaries.
@@ -71,9 +73,11 @@ type pendingFrame struct {
 // deliberate VRR flip gap (0: unknown).
 func (f *pendingFrame) dueAt() time.Duration { return max(f.wantedAt, f.gapEnd) }
 
-func (f *pendingFrame) closeFences() {
+func (f *pendingFrame) closeFences(log zerowrap.Logger) {
 	for _, fd := range f.fences {
-		fd.Close()
+		if err := fd.Close(); err != nil {
+			log.Warn().Err(err).Str("fence", fd.Name()).Msg("close frame fence")
+		}
 	}
 	f.fences = nil
 }
@@ -109,7 +113,7 @@ func (l *frameLifecycle) userData(kind uint64) uint64 {
 
 // endPending releases the in-flight commit and its duplicated fences.
 func (l *frameLifecycle) endPending() {
-	l.pendingFrame.closeFences()
+	l.pendingFrame.closeFences(l.log)
 	l.pending, l.pendingFrame = false, pendingFrame{}
 	l.waitKind = waitNone
 }
@@ -117,7 +121,7 @@ func (l *frameLifecycle) endPending() {
 // begin records a successful nonblocking commit awaiting its event.
 func (l *frameLifecycle) begin(f pendingFrame, now time.Time) {
 	l.pendingSerial = l.nextSerial
-	l.pendingFrame.closeFences()
+	l.pendingFrame.closeFences(l.log)
 	l.pending, l.pendingFrame, l.flipStart = true, f, now
 	l.waitKind = waitFlip
 	l.stuckAt, l.fenceWarned = now.Add(l.stuckLimit()), false

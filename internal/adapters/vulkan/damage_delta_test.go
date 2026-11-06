@@ -328,7 +328,7 @@ func sceneDeltaMatchesFullRedraw(t *testing.T, tc deltaCase, reuse bool) {
 	}
 	for _, b := range bufs {
 		for _, p := range b.Planes {
-			p.File.Close()
+			_ = p.File.Close()
 		}
 	}
 	red := solidContent(t, 8, 8, color.RGBA{R: 255, A: 255})

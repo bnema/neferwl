@@ -3,6 +3,7 @@ package logging
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -81,7 +82,7 @@ func Open(ctx context.Context, backend, level, debug string) (context.Context, f
 // sessions/<id>/ under the state directory. The session directory is
 // locked while the log is open, and session directories beyond the newest
 // keepRuns (by modification time) are removed unless their lock is held.
-func OpenSession(ctx context.Context, id, level, debug string) (context.Context, func(crashed bool) error, error) {
+func OpenSession(ctx context.Context, id, level, debug string) (_ context.Context, _ func(crashed bool) error, err error) {
 	if _, err := ParseDebug(debug); err != nil {
 		return nil, nil, err
 	}
@@ -97,7 +98,11 @@ func OpenSession(ctx context.Context, id, level, debug string) (context.Context,
 	if err != nil {
 		return nil, nil, err
 	}
-	defer lifecycle.Close()
+	defer func() {
+		if lifecycle != nil {
+			err = errors.Join(err, lifecycle.Close())
+		}
+	}()
 	dir := filepath.Join(root, id)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, nil, err
@@ -107,10 +112,18 @@ func OpenSession(ctx context.Context, id, level, debug string) (context.Context,
 		return nil, nil, err
 	}
 	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		_ = lock.Close()
+		err = errors.Join(err, lock.Close())
 		return nil, nil, fmt.Errorf("session log %s is in use: %w", dir, err)
 	}
-	pruneSessions(root, id)
+	if err := pruneSessions(root, id); err != nil {
+		return nil, nil, errors.Join(err, lock.Close())
+	}
+	// Release the lifecycle lock before starting the asynchronous log writer.
+	closeErr := lifecycle.Close()
+	lifecycle = nil // Close must not be retried, even on failure.
+	if closeErr != nil {
+		return nil, nil, errors.Join(closeErr, lock.Close())
+	}
 	return openDir(ctx, dir, level, debug, lock)
 }
 
@@ -130,7 +143,7 @@ func openDir(ctx context.Context, dir, level, debug string, lock *os.File) (_ co
 	if lock != nil {
 		defer func() {
 			if err != nil {
-				_ = lock.Close()
+				err = errors.Join(err, lock.Close())
 			}
 		}()
 	}
@@ -189,7 +202,7 @@ func openDir(ctx context.Context, dir, level, debug string, lock *os.File) (_ co
 		}
 		err := w.Close()
 		if lock != nil {
-			_ = lock.Close()
+			err = errors.Join(err, lock.Close())
 		}
 		return err
 	}, nil
@@ -198,10 +211,10 @@ func openDir(ctx context.Context, dir, level, debug string, lock *os.File) (_ co
 // pruneSessions keeps the newest keepRuns session log directories of root
 // by modification time; current and directories whose lock is held by a
 // live session are kept. The caller must hold the root lifecycle lock.
-func pruneSessions(root, current string) {
+func pruneSessions(root, current string) error {
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		return
+		return nil
 	}
 	type session struct {
 		path string
@@ -220,12 +233,14 @@ func pruneSessions(root, current string) {
 	}
 	// The current session counts toward keepRuns.
 	if len(old) < keepRuns {
-		return
+		return nil
 	}
 	sort.Slice(old, func(i, j int) bool { return old[i].mod.After(old[j].mod) })
+	var closeErr error
 	for _, s := range old[keepRuns-1:] {
-		removeSession(s.path)
+		closeErr = errors.Join(closeErr, removeSession(s.path))
 	}
+	return closeErr
 }
 
 // lockSessionRoot serializes directory creation and pruning. The root lock file
@@ -240,24 +255,24 @@ func lockSessionRoot(root string) (*os.File, error) {
 		return nil, err
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		_ = f.Close()
-		return nil, err
+		return nil, errors.Join(err, f.Close())
 	}
 	return f, nil
 }
 
 // removeSession holds the session lock through removal. On any lock error,
 // conservatively keep the directory. The caller must hold the root lock.
-func removeSession(dir string) {
+func removeSession(dir string) (err error) {
 	f, err := os.OpenFile(filepath.Join(dir, "lock"), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return
+		return nil
 	}
-	defer f.Close()
+	defer func() { err = errors.Join(err, f.Close()) }()
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return
+		return nil
 	}
 	_ = os.RemoveAll(dir)
+	return nil
 }
 
 // logQueue is how many entries may wait for the disk. Past it, entries are

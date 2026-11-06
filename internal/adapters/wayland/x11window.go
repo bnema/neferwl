@@ -190,7 +190,7 @@ func (s *Server) x11Focus(id domain.WindowID) {
 	}
 	var slot xwm.Slot
 	xid = 0
-	if w := s.windows[id]; w != nil && w.x11 != nil && !(s.security != nil && s.security.Snapshot().Protected) {
+	if w := s.windows[id]; w != nil && w.x11 != nil && (s.security == nil || !s.security.Snapshot().Protected) {
 		slot = w.x11.slot
 		xid = w.x11.xid
 	}

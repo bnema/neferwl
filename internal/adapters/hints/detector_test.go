@@ -202,7 +202,7 @@ func TestDetectorChild(t *testing.T) {
 	if err != nil {
 		os.Exit(2)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if mode == "descendant" {
 		child := exec.Command("sleep", "60")
 		if err := child.Start(); err != nil {
@@ -295,7 +295,7 @@ func TestDetectorCanceledBufferedResponse(t *testing.T) {
 			require.NoError(t, d.start(context.Background()))
 			conn, err := l.Accept()
 			require.NoError(t, err)
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 			p := d.proc
 			response := cat([]byte("NHRS"), u32(1), u64(1), u32(status))
 			if status == 0 {
@@ -320,10 +320,10 @@ func TestInterruptDeadlineBoundary(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				inR, inW, err := os.Pipe()
 				require.NoError(t, err)
-				defer inR.Close()
+				defer func() { _ = inR.Close() }()
 				outR, outW, err := os.Pipe()
 				require.NoError(t, err)
-				defer outW.Close()
+				defer func() { _ = outW.Close() }()
 				// Already reaped: only the real pipe endpoints remain to interrupt.
 				p := &process{in: inW, out: outR, reaped: true}
 				ctx, cancel := context.WithCancel(context.Background())
@@ -367,7 +367,7 @@ func TestDetectorCloseKillsDescendant(t *testing.T) {
 	require.NoError(t, l.(*net.UnixListener).SetDeadline(time.Now().Add(5*time.Second)))
 	conn, err := l.Accept()
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
 	var pid int
 	_, err = fmt.Fscanln(conn, &pid)

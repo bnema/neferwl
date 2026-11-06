@@ -112,20 +112,32 @@ func startSessionInterruptible(ctx context.Context, timeout time.Duration, exe s
 	return startSession(ctx, exe, args, environ)
 }
 
+// closeStartFile closes one of startSession's files. After a successful start
+// a close failure must not turn the ready session into an error and orphan the
+// detached child, so it is only printed to stderr; on failure it is joined.
+func closeStartFile(f *os.File, what string, err *error) {
+	cerr := f.Close()
+	switch {
+	case cerr == nil:
+	case *err == nil:
+		fmt.Fprintf(os.Stderr, "neferwl: warning: close %s: %v\n", what, cerr)
+	default:
+		*err = errors.Join(*err, cerr)
+	}
+}
+
 // startSession detaches the child but owns it until readiness or failure.
-func startSession(ctx context.Context, exe string, args, environ []string) (sessionReady, error) {
-	var ready sessionReady
+func startSession(ctx context.Context, exe string, args, environ []string) (ready sessionReady, err error) {
 	reader, writer, err := os.Pipe()
 	if err != nil {
 		return ready, err
 	}
-	defer reader.Close()
+	defer closeStartFile(reader, "readiness pipe", &err)
 	null, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	if err != nil {
-		writer.Close()
-		return ready, err
+		return ready, errors.Join(err, writer.Close())
 	}
-	defer null.Close()
+	defer closeStartFile(null, os.DevNull, &err)
 	cmd := exec.Command(exe, args...)
 	cmd.Env = environ
 	cmd.Stdin = null
@@ -134,12 +146,16 @@ func startSession(ctx context.Context, exe string, args, environ []string) (sess
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.ExtraFiles = []*os.File{writer}
 	if err := cmd.Start(); err != nil {
-		writer.Close()
-		return ready, err
+		return ready, errors.Join(err, writer.Close())
 	}
-	writer.Close()
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
+	if err := writer.Close(); err != nil {
+		_ = cmd.Process.Kill() // best effort: the close error is what we report
+		exitErr := <-exited
+		_ = exitErr // exit status is expected after the kill
+		return ready, err
+	}
 	type result struct {
 		ready sessionReady
 		err   error
@@ -161,12 +177,13 @@ func startSession(ctx context.Context, exe string, args, environ []string) (sess
 		if r.err == nil {
 			return r.ready, nil
 		}
-		_ = cmd.Process.Kill()
+		_ = cmd.Process.Kill() // the child may have exited already; its status is reported below
 		status := <-exited
 		return ready, fmt.Errorf("session startup failed: %w (exit status: %v)", r.err, status)
 	case <-ctx.Done():
-		_ = cmd.Process.Kill()
-		<-exited
+		_ = cmd.Process.Kill() // the child may have exited already
+		exitErr := <-exited
+		_ = exitErr // expected after killing the child
 		return ready, fmt.Errorf("session startup: %w", ctx.Err())
 	}
 }

@@ -33,7 +33,7 @@ func TestCopierImportsLinear(t *testing.T) {
 	defer func() {
 		for _, b := range bufs {
 			for _, p := range b.Planes {
-				p.File.Close()
+				_ = p.File.Close()
 			}
 		}
 	}()
@@ -95,7 +95,7 @@ func TestCopierRoundTrip(t *testing.T) {
 		defer func() {
 			for _, b := range bufs {
 				for _, p := range b.Planes {
-					p.File.Close()
+					_ = p.File.Close()
 				}
 			}
 		}()
@@ -119,7 +119,7 @@ func TestCopierRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if acquire != nil {
-		defer acquire.Close()
+		defer func() { _ = acquire.Close() }()
 	}
 	// Initialize B's target/readback bookkeeping without using it after copy.
 	rs[1].UseTarget(0)
@@ -142,7 +142,7 @@ func TestCopierRoundTrip(t *testing.T) {
 		}
 		if done != nil {
 			err = syncfile.Wait(ctx, done)
-			done.Close()
+			_ = done.Close()
 			if err != nil {
 				t.Fatal(err)
 			}

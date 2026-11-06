@@ -15,7 +15,7 @@ func TestDeviceInventorySurvivesSecurityEpochChange(t *testing.T) {
 		ports.InputDeviceRemoved{ID: 7},
 	} {
 		for _, wrapped := range []bool{false, true} {
-			var queued ports.InputEvent = event
+			var queued = event
 			if wrapped {
 				queued = ports.SecurityInput{State: old, Event: event}
 			}

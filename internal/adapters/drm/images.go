@@ -303,7 +303,7 @@ func (o *Output) clearImages(r ports.Renderer) error {
 				waitCtx = context.Background()
 			}
 			err = errors.Join(err, syncfile.Wait(waitCtx, done))
-			done.Close()
+			err = errors.Join(err, done.Close())
 		}
 		if err != nil {
 			return err

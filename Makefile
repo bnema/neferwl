@@ -1,4 +1,4 @@
-.PHONY: build test vet race e2e-xwayland e2e-wayvnc mocks mocks-check spv-check fakes-check log-check arch adapter-imports check perf-check color-check bin tty logs pkg install
+.PHONY: build test vet lint race e2e-xwayland e2e-wayvnc mocks mocks-check spv-check fakes-check log-check arch adapter-imports check perf-check color-check bin tty logs pkg install
 
 # 0 runs until quit; set e.g. TTY_TIMEOUT=60s for a safety net.
 TTY_TIMEOUT ?= 0
@@ -24,6 +24,15 @@ build:
 	CGO_ENABLED=0 go build ./...
 test:
 	CGO_ENABLED=0 go test ./...
+GOLANGCI_LINT_VERSION := v2.15.0
+GOLANGCI_LINT ?= golangci-lint
+lint:
+	@command -v "$(GOLANGCI_LINT)" >/dev/null 2>&1 || { echo 'error: golangci-lint is required; install $(GOLANGCI_LINT_VERSION) from https://golangci-lint.run/docs/welcome/install/' >&2; exit 1; }
+	@version="$$("$(GOLANGCI_LINT)" version)"; case "$$version" in \
+		*"version $(patsubst v%,%,$(GOLANGCI_LINT_VERSION)) "*) ;; \
+		*) echo "warning: expected golangci-lint $(GOLANGCI_LINT_VERSION); got $$version" >&2 ;; \
+	esac
+	CGO_ENABLED=0 $(GOLANGCI_LINT) run ./...
 vet:
 	CGO_ENABLED=0 go vet ./...
 	CGO_ENABLED=0 go vet -tags xwayland ./internal/app
@@ -70,7 +79,7 @@ adapter-imports:
 perf-check:
 	CGO_ENABLED=0 go test ./internal/adapters/outputkit/presented ./internal/core ./internal/app ./internal/adapters/drm ./internal/adapters/headless ./internal/adapters/vulkan ./internal/adapters/wayland ./internal/adapters/outputkit/capture ./internal/adapters/outputkit/routing ./internal/adapters/screencast ./internal/adapters/wayland/xwm -run '^(TestLineageObserverDormantAndAllocations|TestWaitNilFencesAllocations|TestAnimateAllocations|TestPublishAllocations|TestPublishExpansionAllocations|TestPublishSubscribersAllocations|TestPublishStashSlideAllocations|TestPublishOverviewAllocations|TestPublishLeavingAllocations|TestOutputRoutingAllocations|TestReportSeenAllocations|TestFrameLifecycleTransitionsAllocations|TestFullscreenShownAllocations|TestFrameDecisionAllocations|TestFrameDecisionExpansionAllocations|TestOverlayExpansionAllocations|TestCommitFrameAllocations|TestColorPipelineAllocations|TestShownBySnapshotAllocations|TestFlipShowsAllocations|TestMRUNoteFocusDoesNotAllocateWhenSettled|TestDueFramesAllocations|TestRenderSteadyStateAllocations|TestRenderExpansionAllocations|TestRenderSteadyStateDMABufAllocations|TestSceneOpaqueRegionAllocations|TestSceneDeltaAllocations|TestAccountFlipAllocations|TestFlipDoneAllocations|TestSceneWalkUnchangedTiledSHM|TestTiledCommitPublishAllocations|TestCapturedCommitApplyAllocations|TestCapturedViewportApplyAllocations|TestEffectiveInputEmptyTreeAllocations|TestHeadlessTiledSHMCallbackAndCopyBudget|TestReleaseHeldAllocations|TestCommitDamageAllocations|TestEmitContentAllocations|TestPresentationPushAllocations|TestPresentationSnapshotAllocations|TestAnimatingFrameSendAllocations|TestContentBatchCycleAllocations|TestWriteMappedAllocations|TestCapturedForwardAllocations|TestCommandForwardAllocations|TestOutboxQueuedDeliveryAllocations|TestCastFrameAllocations|TestCastProducerAllocations|TestCaptureCycleAllocations|TestCaptureCursorCycleAllocations|TestCaptureCursorIdleAllocations|TestCaptureDMABufCopyAllocations|TestLogScenesAllocations|TestOverviewNamedRowsAllocations|TestOverviewWorkspaceSwitchAllocations|TestBufferContentAllocations|TestDueFramesFireScratch|TestRetireSemaphoreAllocatesNothing|TestTableLookupAllocations|TestTableInsertRemoveAllocations|TestPropertyUnchangedAllocations|TestDispatchAllocations|TestConfigureFlushAllocations|TestFocusAllocations|TestSpaceAllocations|TestUnmanagedGeometryAllocations|TestFocusInUnmanagedAllocations|TestUnmanagedPublishAllocations|TestUnmanagedHitAllocations|TestOverrideMovedUnchangedAllocations|TestFullscreenConfigureAllocations|TestKeyboardGrabSyncAllocations|TestSelectionCopyAllocations|TestSelectionINCRChunkAllocations|TestSelectionCopyAllocationsWaylandToX|TestXSettingsNoChangeAllocations|TestSettleLeftAllocs)$$' -count=1
 	CGO_ENABLED=0 go test -tags xturbo_poison ./internal/adapters/wayland/xwm -count=1
-check: vet test arch fakes-check log-check perf-check
+check: lint vet test arch fakes-check log-check perf-check
 
 # On-demand SDR/HDR colour check with examples/testpattern on a headless
 # NeferWL. Needs a GPU and /dev/udmabuf; not part of check.

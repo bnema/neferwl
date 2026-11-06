@@ -446,7 +446,7 @@ func (s *Server) outputGlobal(o *output, private bool) *server.Global {
 		o.sendAll(r)
 		if private {
 			for _, surf := range s.surfaces {
-				if surf.on == o && !surf.destroyed && surf.wl.Resource.Alive() && surf.wl.Client() == c {
+				if surf.on == o && !surf.destroyed && surf.wl.Alive() && surf.wl.Client() == c {
 					surf.wl.SendEnter(r)
 				}
 			}
@@ -471,11 +471,11 @@ func (s *Server) syncXOutput(o *output) {
 		o.xgeneration.live = false
 		s.retirePrivateOutput(o.xglobal)
 		for _, surf := range s.surfaces {
-			if surf.on != o || surf.destroyed || !surf.wl.Resource.Alive() {
+			if surf.on != o || surf.destroyed || !surf.wl.Alive() {
 				continue
 			}
 			for _, r := range o.xresources {
-				if r.Resource.Alive() && r.Client() == surf.wl.Client() {
+				if r.Alive() && r.Client() == surf.wl.Client() {
 					surf.wl.SendLeave(r)
 				}
 			}

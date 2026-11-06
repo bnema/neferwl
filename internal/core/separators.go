@@ -58,7 +58,7 @@ func separators(ps []Placement, width, gap int, v viewport, lit bool) []domain.S
 		p := &ps[i]
 		// A leaving float keeps its own lines while it fades; a leaving
 		// tile's were shared with its neighbours, which re-flowed.
-		if p.Fullscreen || !(v.shows(*p) || p.Leaving && p.Floating && p.Rect.Overlaps(o)) {
+		if p.Fullscreen || (!v.shows(*p) && (!p.Leaving || !p.Floating || !p.Rect.Overlaps(o))) {
 			continue
 		}
 		if gap > 0 {

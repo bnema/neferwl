@@ -22,8 +22,8 @@ func startPointerHeadless(t *testing.T, w, h int) string {
 	t.Helper()
 	for _, k := range []string{"NEFERWL_STATE", "NEFERWL_SLOT", "WAYLAND_DISPLAY"} {
 		if v, ok := os.LookupEnv(k); ok {
-			os.Unsetenv(k)
-			t.Cleanup(func() { os.Setenv(k, v) })
+			_ = os.Unsetenv(k)
+			t.Cleanup(func() { _ = os.Setenv(k, v) })
 		}
 	}
 	runtime := t.TempDir()
@@ -106,7 +106,7 @@ func TestPointerCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	target := mapPointerTarget(t, c)
 	dispatchUntil(t, c, 5*time.Second, func() string { return "no keyboard focus" }, func() bool { return target.focused })
 	wait := func(what string, ok func() bool) {

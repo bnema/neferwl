@@ -87,7 +87,7 @@ func (s *Server) relativeMotion(w *window, c ports.PointerMotionTo) bool {
 	sent := false
 	usec := uint64(c.Time / time.Microsecond)
 	for _, rel := range s.relatives[w.client()] {
-		if rel.Resource.Alive() {
+		if rel.Alive() {
 			rel.SendRelativeMotion(uint32(usec>>32), uint32(usec), server.FixedFromFloat(c.DX), server.FixedFromFloat(c.DY), server.FixedFromFloat(c.UnaccelDX), server.FixedFromFloat(c.UnaccelDY))
 			sent = true
 		}
@@ -233,10 +233,10 @@ func (s *Server) dropConstraint(c *constraint) {
 	if s.constraint == c {
 		c.active = false
 		s.constraint = nil
-		if c.lock != nil && c.lock.Resource.Alive() {
+		if c.lock != nil && c.lock.Alive() {
 			c.lock.SendUnlocked()
 		}
-		if c.confine != nil && c.confine.Resource.Alive() {
+		if c.confine != nil && c.confine.Alive() {
 			c.confine.SendUnconfined()
 		}
 		s.emit(ports.PointerConstrained{})
@@ -254,10 +254,10 @@ func (s *Server) deactivateConstraint() {
 	if !old.persistent {
 		old.defunct = true
 	}
-	if old.lock != nil && old.lock.Resource.Alive() {
+	if old.lock != nil && old.lock.Alive() {
 		old.lock.SendUnlocked()
 	}
-	if old.confine != nil && old.confine.Resource.Alive() {
+	if old.confine != nil && old.confine.Alive() {
 		old.confine.SendUnconfined()
 	}
 	s.constraint = nil

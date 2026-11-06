@@ -35,7 +35,7 @@ func BenchmarkComposeFullTarget(b *testing.B) {
 			defer func() {
 				for _, buf := range bufs {
 					for _, p := range buf.Planes {
-						p.File.Close()
+						_ = p.File.Close()
 					}
 				}
 			}()

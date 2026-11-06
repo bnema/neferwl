@@ -5,8 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bnema/go-wayland-bindings/server/securitycontext"
 	"bnema.dev/purego-libwayland/server"
+	"github.com/bnema/go-wayland-bindings/server/securitycontext"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"golang.org/x/sys/unix"
 )
 
@@ -74,8 +75,8 @@ func (m *securityManager) CreateListener(r *securitycontext.WpSecurityContextMan
 			return
 		}
 	}
-	_ = unix.Close(listenFD)
-	_ = unix.Close(closeFD)
+	logging.CloseFD(s.log, listenFD, "security listen fd")
+	logging.CloseFD(s.log, closeFD, "security close fd")
 }
 
 // listeningUnixSocket reports whether fd is a unix stream socket that listens.
@@ -109,8 +110,8 @@ func (c *securityContext) release() {
 		return
 	}
 	c.committed = true
-	_ = unix.Close(c.listenFD)
-	_ = unix.Close(c.closeFD)
+	logging.CloseFD(c.s.log, c.listenFD, "security listen fd")
+	logging.CloseFD(c.s.log, c.closeFD, "security close fd")
 }
 
 func (c *securityContext) Destroy(*securitycontext.WpSecurityContextV1) {}
@@ -192,8 +193,8 @@ func (l *securityListener) run() {
 	}
 	defer s.securityWG.Done()
 	defer s.securityLive.Add(-1)
-	defer unix.Close(l.closeFD)
-	defer unix.Close(l.listenFD)
+	defer logging.CloseFD(s.log, l.closeFD, "security close fd")
+	defer logging.CloseFD(s.log, l.listenFD, "security listen fd")
 	// Only this listener accepts on the socket: a blocked accept must not
 	// outlast a stop request.
 	if err := unix.SetNonblock(l.listenFD, true); err != nil {
@@ -258,7 +259,7 @@ func (l *securityListener) adopt(fd int) {
 		c, err := s.display.CreateClient(fd)
 		if err != nil {
 			s.log.Warn().Err(err).Msg("security context: connection not adopted")
-			_ = unix.Close(fd)
+			logging.CloseFD(s.log, fd, "sandboxed client fd")
 			return
 		}
 		info := l.info
@@ -267,7 +268,7 @@ func (l *securityListener) adopt(fd int) {
 		s.log.Debug().Str("engine", info.engine).Str("app_id", info.appID).Msg("sandboxed client connected")
 	})
 	if !ran {
-		_ = unix.Close(fd) // the display stopped first
+		logging.CloseFD(s.log, fd, "sandboxed client fd") // the display stopped first
 	}
 }
 

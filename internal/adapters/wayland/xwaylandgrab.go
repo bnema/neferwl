@@ -51,8 +51,8 @@ func (m xwaylandGrabManager) GrabKeyboard(r *xwaylandkeyboardgrab.ZwpXwaylandKey
 			m.s.syncKeyboardGrab()
 		}
 	}
-	if old != nil && old.res != nil && old.res.Resource.Alive() {
-		old.res.Resource.Destroy()
+	if old != nil && old.res != nil && old.res.Alive() {
+		old.res.Destroy()
 	}
 	m.s.syncKeyboardGrab()
 }
@@ -64,7 +64,7 @@ func (xwaylandGrabHandler) Destroy(*xwaylandkeyboardgrab.ZwpXwaylandKeyboardGrab
 // xgrabWindow is the window whose grab is in effect (0: none).
 func (s *Server) xgrabWindow() domain.WindowID {
 	g := s.xgrab
-	if g == nil || g.surf == nil || g.surf.destroyed || !g.res.Resource.Alive() {
+	if g == nil || g.surf == nil || g.surf.destroyed || !g.res.Alive() {
 		return 0
 	}
 	if s.security != nil && s.security.Snapshot().Protected {

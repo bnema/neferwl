@@ -3,11 +3,11 @@ package wayland
 import (
 	"slices"
 
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/purego-libwayland/server"
-	"golang.org/x/sys/unix"
 )
 
 // Drag and drop (wl_data_device.start_drag). A client starts a drag with the
@@ -277,7 +277,7 @@ func (s *Server) applyDrag(cmd ports.ClientCommand) {
 				return
 			}
 			for _, dev := range t.devices {
-				if dev.Resource.Alive() {
+				if dev.Alive() {
 					dev.SendMotion(wireMsec(c.Time), server.FixedFromFloat(x), server.FixedFromFloat(y))
 				}
 			}
@@ -308,7 +308,7 @@ func (s *Server) dndFocus(d *dndState, c ports.DataDragFocus) {
 	t := &dndTarget{d: d, surface: surf, devices: devices, legacy: true}
 	d.target = t
 	for _, dev := range devices {
-		if !dev.Resource.Alive() {
+		if !dev.Alive() {
 			continue
 		}
 		if dev.Version() >= 3 {
@@ -353,7 +353,7 @@ func (s *Server) dndLeave(d *dndState) {
 
 func (s *Server) dndSendLeave(t *dndTarget) {
 	for _, dev := range t.devices {
-		if dev.Resource.Alive() {
+		if dev.Alive() {
 			dev.SendLeave()
 		}
 	}
@@ -421,7 +421,7 @@ func (s *Server) dndDrop(d *dndState) {
 
 func (s *Server) dndSendDrop(t *dndTarget) {
 	for _, dev := range t.devices {
-		if dev.Resource.Alive() {
+		if dev.Alive() {
 			dev.SendDrop()
 		}
 	}
@@ -555,7 +555,7 @@ func (o *dndOffer) update() {
 
 func (o *dndOffer) Accept(_ *wayland.DataOffer, _ uint32, mime string) {
 	t := o.t
-	if t.state != targetActive && !(t.state == targetDropped && t.ask) || !t.d.src.alive() {
+	if t.state != targetActive && (t.state != targetDropped || !t.ask) || !t.d.src.alive() {
 		return
 	}
 	t.accepted = mime
@@ -564,7 +564,7 @@ func (o *dndOffer) Accept(_ *wayland.DataOffer, _ uint32, mime string) {
 }
 
 func (o *dndOffer) Receive(_ *wayland.DataOffer, mime string, fd int) {
-	defer unix.Close(fd)
+	defer logging.CloseFD(o.server.log, fd, "dnd pipe")
 	src := o.t.d.src
 	if o.server.protected() || o.t.state == targetDone || !src.alive() {
 		return

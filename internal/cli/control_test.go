@@ -40,7 +40,7 @@ func TestControlCommands(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer listener.Close()
+			defer func() { _ = listener.Close() }()
 			t.Setenv("NEFERWL_CONTROL", path)
 			result := make(chan error, 1)
 			requests := make(chan map[string]any, 1)
@@ -50,7 +50,7 @@ func TestControlCommands(t *testing.T) {
 					result <- err
 					return
 				}
-				defer conn.Close()
+				defer func() { _ = conn.Close() }()
 				var req map[string]any
 				if err := json.NewDecoder(conn).Decode(&req); err != nil {
 					result <- err
@@ -102,7 +102,7 @@ func TestControlStateBare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	t.Setenv("NEFERWL_CONTROL", path)
 	result := make(chan error, 1)
 	go func() {
@@ -111,7 +111,7 @@ func TestControlStateBare(t *testing.T) {
 			result <- err
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		var req map[string]any
 		if err := json.NewDecoder(conn).Decode(&req); err != nil {
 			result <- err
@@ -158,7 +158,7 @@ func TestControlClientIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	result := make(chan error, 1)
 	go func() {
 		conn, err := listener.Accept()
@@ -166,7 +166,7 @@ func TestControlClientIDs(t *testing.T) {
 			result <- err
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		dec, enc := json.NewDecoder(conn), json.NewEncoder(conn)
 		for range 2 {
 			var req map[string]any
@@ -186,7 +186,7 @@ func TestControlClientIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.conn.Close()
+	defer func() { _ = c.conn.Close() }()
 	for i := uint64(1); i <= 2; i++ {
 		reply, err := c.call(context.Background(), map[string]any{"op": "hello"})
 		if err != nil {

@@ -147,7 +147,7 @@ func TestStandardCaptureDuringSessionUsesOneComposition(t *testing.T) {
 func TestHiddenWorkspaceCaptureUsesChildRenderer(t *testing.T) {
 	read, write, err := os.Pipe()
 	require.NoError(t, err)
-	defer write.Close()
+	defer func() { _ = write.Close() }()
 	display := portsmocks.NewMockRenderer(t)
 	display.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
 	display.EXPECT().Close().Return().Once()

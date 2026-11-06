@@ -91,7 +91,7 @@ func TestRunWaitsVRRFlipGap(t *testing.T) {
 		r := portsmocks.NewMockRenderer(t)
 		pipeBuf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
-			w.Close()
+			_ = w.Close()
 			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()

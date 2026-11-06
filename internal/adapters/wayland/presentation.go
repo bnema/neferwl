@@ -3,10 +3,10 @@ package wayland
 import (
 	"time"
 
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/presentationtime"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
-	"bnema.dev/purego-libwayland/server"
 	"golang.org/x/sys/unix"
 )
 
@@ -108,7 +108,7 @@ func (s *surface) commitFeedback(pending []*presentationtime.WpPresentationFeedb
 }
 
 func discard(fb *presentationtime.WpPresentationFeedback) {
-	if fb.Resource.Alive() {
+	if fb.Alive() {
 		fb.SendDiscarded()
 		fb.Destroy()
 	}
@@ -126,7 +126,7 @@ func (s *Server) presentFlip(output string, f *domain.FlipInfo) {
 	for _, w := range s.feedbacks {
 		shown, ok := f.Shows[w.win]
 		switch {
-		case !w.fb.Resource.Alive():
+		case !w.fb.Alive():
 		case w.surf.destroyed:
 			discard(w.fb)
 		case s.invisible(w.surf):
@@ -155,7 +155,7 @@ func (s *Server) sendPresented(w feedbackWait, o *output, f *domain.FlipInfo, ex
 	}
 	if o != nil {
 		for _, r := range o.resources {
-			if r.Resource.Alive() && r.Client() == w.fb.Client() {
+			if r.Alive() && r.Client() == w.fb.Client() {
 				w.fb.SendSyncOutput(r)
 			}
 		}
@@ -197,7 +197,7 @@ const feedbackTimeout = time.Second
 func (s *Server) dropFeedbacks(now time.Time) {
 	kept := s.feedbacks[:0]
 	for _, w := range s.feedbacks {
-		if !w.fb.Resource.Alive() {
+		if !w.fb.Alive() {
 			continue
 		}
 		if w.surf.destroyed || s.invisible(w.surf) || s.frameOutput(w.surf) == "" || now.Sub(w.at) > feedbackTimeout {

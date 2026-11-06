@@ -492,7 +492,7 @@ func TestSubsurfaceContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := unix.Ftruncate(fd, 4*4*4); err != nil {
 		t.Fatal(err)
 	}

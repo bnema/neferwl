@@ -125,17 +125,17 @@ func (c Command) usageError(err error) error {
 }
 
 func printUsage(w io.Writer, cmd Command, fs *flag.FlagSet) {
-	fmt.Fprintf(w, "usage: %s\n\n%s\n", cmd.synopsis(), cmd.Summary)
+	_, _ = fmt.Fprintf(w, "usage: %s\n\n%s\n", cmd.synopsis(), cmd.Summary)
 	if cmd.Name == "" {
-		fmt.Fprintln(w, "\nCommands:")
+		_, _ = fmt.Fprintln(w, "\nCommands:")
 		for _, c := range commands {
-			fmt.Fprintf(w, "  %-34s %s\n", c.synopsis(), c.Summary)
+			_, _ = fmt.Fprintf(w, "  %-34s %s\n", c.synopsis(), c.Summary)
 		}
 	}
 	hasFlags := false
 	fs.VisitAll(func(*flag.Flag) { hasFlags = true })
 	if hasFlags {
-		fmt.Fprintln(w, "\nFlags:")
+		_, _ = fmt.Fprintln(w, "\nFlags:")
 		fs.SetOutput(w)
 		fs.PrintDefaults()
 	}
@@ -149,7 +149,7 @@ func exitCode(w io.Writer, err error) int {
 		return 0
 	}
 	if !errors.As(err, new(loggedError)) {
-		fmt.Fprintln(w, err)
+		_, _ = fmt.Fprintln(w, err)
 	}
 	var usage usageError
 	if errors.As(err, &usage) {

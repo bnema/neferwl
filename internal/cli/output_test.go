@@ -18,7 +18,7 @@ func TestOutputCommands(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer listener.Close()
+			defer func() { _ = listener.Close() }()
 			t.Setenv("NEFERWL_CONTROL", path)
 			done := make(chan error, 1)
 			go func() {
@@ -27,7 +27,7 @@ func TestOutputCommands(t *testing.T) {
 					done <- err
 					return
 				}
-				defer conn.Close()
+				defer func() { _ = conn.Close() }()
 				var req map[string]any
 				if err := json.NewDecoder(conn).Decode(&req); err != nil {
 					done <- err

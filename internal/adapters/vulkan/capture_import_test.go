@@ -86,7 +86,7 @@ func TestCaptureRetainedCastImage(t *testing.T) {
 		if err := syncfile.Wait(context.Background(), done); err != nil {
 			t.Fatal(err)
 		}
-		done.Close()
+		_ = done.Close()
 	}
 	if err := r.reapCopies(slot); err != nil {
 		t.Fatal(err)
@@ -95,7 +95,7 @@ func TestCaptureRetainedCastImage(t *testing.T) {
 		t.Fatal("completed removal retained resources")
 	}
 	for _, p := range buf.Planes {
-		p.File.Close()
+		_ = p.File.Close()
 	}
 	r.EndCapture(cf)
 	r.Close()

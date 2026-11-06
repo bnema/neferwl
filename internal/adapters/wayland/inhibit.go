@@ -158,7 +158,7 @@ func diffSets(old, cur map[domain.WindowID]bool) map[domain.WindowID]bool {
 // inhibitor.
 func (s *Server) setShortcutsInhibit(c ports.ShortcutsInhibitState) {
 	for _, in := range s.inhibitors {
-		if in.shortcut == nil || in.window != c.Window || in.active == c.Active || !in.shortcut.Resource.Alive() {
+		if in.shortcut == nil || in.window != c.Window || in.active == c.Active || !in.shortcut.Alive() {
 			continue
 		}
 		in.active = c.Active

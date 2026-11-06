@@ -145,7 +145,8 @@ func TestPostRingPushStopsWithDisplay(t *testing.T) {
 	run := guardedServerRun(t, s, ctx)
 	go func() { done <- run() }()
 	cancel()
-	<-done
+	discardedErr := <-done
+	_ = discardedErr
 	r := newPostRing(s.display, 1, func(int) {})
 	if !r.Push(1) { // room: queued, its drain is dropped by the stopped display
 		t.Fatal("first push refused")

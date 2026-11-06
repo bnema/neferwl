@@ -42,7 +42,7 @@ func TestSecurityInitialBlackFenceBeforeLockerAndNoReadback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer signal.Close()
+	defer func() { _ = signal.Close() }()
 	rendered := make(chan domain.Scene, 4)
 	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s domain.Scene, c map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		if s.Seq == 0 {
@@ -67,8 +67,8 @@ func TestSecurityInitialBlackFenceBeforeLockerAndNoReadback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer acquire.Close()
-	defer acquireSignal.Close()
+	defer func() { _ = acquire.Close() }()
+	defer func() { _ = acquireSignal.Close() }()
 	contents.send(domain.SurfaceContent{ID: 10, SHM: &domain.SHMBuffer{Pool: 10}, Acquire: acquire})
 	proof := make(chan ports.SecurityBackendEvent, 4)
 	replies := make(chan domain.CaptureDone, 4)

@@ -234,14 +234,14 @@ func TestMultiGPUCopyFrameFence(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			w.Close()
-			defer renderFence.Close()
+			_ = w.Close()
+			defer func() { _ = renderFence.Close() }()
 			copyFence, w, err := os.Pipe()
 			if err != nil {
 				t.Fatal(err)
 			}
-			w.Close()
-			defer copyFence.Close()
+			_ = w.Close()
+			defer func() { _ = copyFence.Close() }()
 			r.EXPECT().UseTarget(0).Return().Once()
 			r.EXPECT().Render(mock.Anything, mock.Anything).Return(renderFence, nil).Once()
 			copyFD := uint64(copyFence.Fd())
@@ -288,7 +288,7 @@ func TestMultiGPUCopyCommitFailureWaitsForCopy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer copyFence.Close()
+	defer func() { _ = copyFence.Close() }()
 	committed := make(chan struct{}, 1)
 	o, _, _, _ := testOutputRules(t, func(*atomicReq, uint32) error {
 		committed <- struct{}{}
@@ -312,11 +312,12 @@ func TestMultiGPUCopyCommitFailureWaitsForCopy(t *testing.T) {
 	<-committed
 	// The copy fence is unsignalled: the failure path must still be waiting.
 	select {
-	case <-result:
+	case discardedErr := <-result:
+		_ = discardedErr
 		t.Fatal("commit failure returned before the copy finished")
 	case <-time.After(100 * time.Millisecond):
 	}
-	w.Close()
+	_ = w.Close()
 	select {
 	case err := <-result:
 		if err == nil {
@@ -348,14 +349,14 @@ func TestMultiGPUCopyCPUFence(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer w.Close()
-		defer renderFence.Close()
+		defer func() { _ = w.Close() }()
+		defer func() { _ = renderFence.Close() }()
 		copied, cw, err := os.Pipe()
 		if err != nil {
 			t.Fatal(err)
 		}
-		cw.Close()
-		defer copied.Close()
+		_ = cw.Close()
+		defer func() { _ = copied.Close() }()
 		r.EXPECT().UseTarget(0).Return().Once()
 		r.EXPECT().Render(mock.Anything, mock.Anything).Return(renderFence, nil).Once()
 		copier.EXPECT().Copy(0, 0, renderFence).Return(copied, nil).Once()

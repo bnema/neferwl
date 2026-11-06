@@ -12,7 +12,7 @@ func TestStatelessLayoutBuildsStateOnce(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		w, l := dispatchLayout(t, 3)
 		// dispatchLayout allows NewState at will; this test counts it.
-		l.Mock.ExpectedCalls = slices.DeleteFunc(l.Mock.ExpectedCalls, func(c *mock.Call) bool { return c.Method == "NewState" })
+		l.ExpectedCalls = slices.DeleteFunc(l.ExpectedCalls, func(c *mock.Call) bool { return c.Method == "NewState" })
 		l.EXPECT().NewState().Return(nil).Once()
 		for range 3 {
 			w.Snapshot()

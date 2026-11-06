@@ -306,12 +306,12 @@ func (c *Card) open(conn connector, mode modeInfo) (*Output, error) {
 // ReadEvents reads commit events until ctx ends and routes them to the
 // output of their CRTC. Run it once per card. An event is never dropped:
 // the output owes it a pending commit.
-func (c *Card) ReadEvents(ctx context.Context) error {
+func (c *Card) ReadEvents(ctx context.Context) (err error) {
 	waiter, err := fdwait.New()
 	if err != nil {
 		return fmt.Errorf("drm event waiter: %w", err)
 	}
-	defer waiter.Close()
+	defer func() { err = errors.Join(err, waiter.Close()) }()
 	waiter.StopOn(ctx)
 	if err := waiter.Pin(int32(c.fd)); err != nil {
 		return fmt.Errorf("drm event waiter: %w", err)

@@ -33,7 +33,7 @@ func runProtectedStartup(t *testing.T, o *Output, k *mockkms, renders func() (*o
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() domain.DMABuf {
 		f, w := protectionFence(t, false)
-		w.Close()
+		_ = w.Close()
 		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
@@ -179,7 +179,7 @@ func TestProtectedStartupRecoverableFailuresRetry(t *testing.T) {
 					}
 					failures.Add(1)
 					f, w := protectionFence(t, false)
-					w.Close() // HUP without POLLIN is an error, not completion
+					_ = w.Close() // HUP without POLLIN is an error, not completion
 					return f, nil
 				})
 				defer cancel()
@@ -220,7 +220,7 @@ func TestProtectedPreparationFailuresRetryableRenderFatal(t *testing.T) {
 					r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
 				case "fence":
 					f, w := protectionFence(t, false)
-					w.Close()
+					_ = w.Close()
 					r.EXPECT().UseTarget(0).Return().Once()
 					r.EXPECT().Render(mock.Anything, mock.Anything).Return(f, nil).Once()
 				case "render":
@@ -275,7 +275,7 @@ func TestProtectedShowImagesHDRKeepsHDRForKMSErrors(t *testing.T) {
 			r := portsmocks.NewMockRenderer(t)
 			buf := func() domain.DMABuf {
 				f, w := protectionFence(t, false)
-				w.Close()
+				_ = w.Close()
 				return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 			}
 			r.EXPECT().SetHDR(float64(203)).Return().Once()

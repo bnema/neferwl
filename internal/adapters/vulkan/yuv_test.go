@@ -24,7 +24,7 @@ func yuvTestBuffer(t *testing.T, p010 bool, y, u, v int, rows ...[3]int) *domain
 	if err != nil {
 		t.Skipf("udmabuf unavailable: %v", err)
 	}
-	defer dev.Close()
+	defer func() { _ = dev.Close() }()
 	// Use a stride supported by the modifier on the device; the test
 	// populates the exact client-provided row pitch.
 	stride := uint32(256)
@@ -36,7 +36,7 @@ func yuvTestBuffer(t *testing.T, p010 bool, y, u, v int, rows ...[3]int) *domain
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(mem)
+	defer func() { _ = unix.Close(mem) }()
 	if err := unix.Ftruncate(mem, int64(pages)); err != nil {
 		t.Fatal(err)
 	}
@@ -81,13 +81,13 @@ func yuvTestBuffer(t *testing.T, p010 bool, y, u, v int, rows ...[3]int) *domain
 		t.Skipf("udmabuf create: %v", errno)
 	}
 	f := os.NewFile(fd, "yuv-shared")
-	t.Cleanup(func() { f.Close() })
+	t.Cleanup(func() { _ = f.Close() })
 	dup, err := unix.Dup(int(f.Fd()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	f2 := os.NewFile(uintptr(dup), "yuv-shared-dup")
-	t.Cleanup(func() { f2.Close() })
+	t.Cleanup(func() { _ = f2.Close() })
 	planes[0] = domain.DMABufPlane{File: f, Stride: stride}
 	planes[1] = domain.DMABufPlane{File: f2, Offset: uint32(ySize), Stride: stride}
 	return &domain.DMABuf{ID: uint64(format) + uint64(y), Width: 64, Height: 16, Format: format, Planes: planes}

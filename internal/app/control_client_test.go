@@ -32,7 +32,7 @@ func dialTestControl(t *testing.T, runtime string) *controlTestClient {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { conn.Close() })
+	t.Cleanup(func() { _ = conn.Close() })
 	return &controlTestClient{conn: conn, enc: json.NewEncoder(conn), dec: json.NewDecoder(conn)}
 }
 

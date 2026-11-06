@@ -11,6 +11,7 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 
 	vk "bnema.dev/purego-vulkan/vulkan"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"golang.org/x/sys/unix"
 )
 
@@ -93,7 +94,7 @@ func (g *GPU) importBlitImage(b *domain.DMABuf, w, h int, usage vk.ImageUsageFla
 		return nil, errImageModifier
 	}
 	d := g.dd
-	if err := sameDMABuf(b.Planes); err != nil {
+	if err := sameDMABuf(g.log, b.Planes); err != nil {
 		return nil, err
 	}
 	fd, err := dupFile(b.Planes[0].File)
@@ -104,7 +105,7 @@ func (g *GPU) importBlitImage(b *domain.DMABuf, w, h int, usage vk.ImageUsageFla
 	// Closed here on every path but the successful import.
 	defer func() {
 		if fd >= 0 {
-			_ = unix.Close(fd)
+			logging.CloseFD(g.log, fd, "dmabuf blit import fd")
 		}
 	}()
 	t := &target{exported: true, layout: vk.ImageLayoutUndefined}
@@ -371,14 +372,13 @@ func (g *GPU) importCopyFence(fd int) (vk.Semaphore, error) {
 	var sem vk.Semaphore
 	si := vk.SemaphoreCreateInfo{SType: vk.StructureTypeSemaphoreCreateInfo}
 	if err := checked("vkCreateSemaphore(copy acquire)", g.dd.CreateSemaphore(g.device, &si, nil, &sem)); err != nil {
-		unix.Close(fd)
-		return 0, err
+		return 0, errors.Join(err, unix.Close(fd))
 	}
 	imp := vk.ImportSemaphoreFdInfoKHR{SType: vk.StructureTypeImportSemaphoreFDInfoKHR, Semaphore: sem, Flags: vk.SemaphoreImportTemporaryBit, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit, Fd: int32(fd)}
 	if err := checked("vkImportSemaphoreFdKHR(copy)", g.dd.ImportSemaphoreFdKHR(g.device, &imp)); err != nil {
-		unix.Close(fd)
+		cerr := unix.Close(fd)
 		g.dd.DestroySemaphore(g.device, sem, nil)
-		return 0, err
+		return 0, errors.Join(err, cerr)
 	}
 	return sem, nil
 }

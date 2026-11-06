@@ -2,12 +2,14 @@ package wayland
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"time"
 
 	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/inputtimestamps"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
@@ -200,7 +202,7 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 	case ports.SetModifiers:
 		s.setModifiers(c)
 	case ports.ForwardKey:
-		if !(s.security != nil && s.security.Snapshot().Protected) && s.grabKey(c) {
+		if (s.security == nil || !s.security.Snapshot().Protected) && s.grabKey(c) {
 			return
 		}
 		_, keyboards := s.focusTarget(c.ID)
@@ -323,7 +325,7 @@ func (s *Server) focusTarget(id domain.WindowID) (*wayland.Surface, []*wayland.K
 			return surf, s.windowKeyboards(w)
 		}
 	}
-	if l := s.layers[id]; l != nil && l.mapped && l.resource.Resource.Alive() {
+	if l := s.layers[id]; l != nil && l.mapped && l.resource.Alive() {
 		if surf := l.surfaceResource(); surf != nil {
 			return surf, s.clientKeyboards(l.resource.Client())
 		}
@@ -340,7 +342,7 @@ func (s *Server) pointerTarget(id domain.WindowID) (server.Client, []*wayland.Po
 	if w := s.windows[id]; w != nil && w.mapped && w.alive() {
 		return w.client(), s.windowPointers(w), true
 	}
-	if l := s.layers[id]; l != nil && l.mapped && l.resource.Resource.Alive() {
+	if l := s.layers[id]; l != nil && l.mapped && l.resource.Alive() {
 		return l.resource.Client(), s.layerPointers(l), true
 	}
 	return server.Client{}, nil, false
@@ -353,7 +355,7 @@ func (s *Server) pointerSurface(id domain.WindowID, x, y float64) (*wayland.Surf
 		return l.surface.wl, s.clientPointers(l.surface.wl.Client()), x, y
 	}
 	if w := s.windows[id]; w != nil && w.mapped {
-		if surf := w.surfaceResource(); surf != nil && surf.Resource.Alive() {
+		if surf := w.surfaceResource(); surf != nil && surf.Alive() {
 			x, y := w.surfacePoint(x, y)
 			return s.resolvePointerSurface(surf, s.windowPointers(w), x, y)
 		}
@@ -383,8 +385,7 @@ func keymapFile(keymap string) (int, uint32, error) {
 		_, err = unix.FcntlInt(uintptr(fd), unix.F_ADD_SEALS, unix.F_SEAL_SHRINK|unix.F_SEAL_GROW|unix.F_SEAL_WRITE|unix.F_SEAL_SEAL)
 	}
 	if err != nil {
-		unix.Close(fd)
-		return -1, 0, err
+		return -1, 0, errors.Join(err, unix.Close(fd))
 	}
 	return fd, uint32(n), nil
 }
@@ -412,7 +413,7 @@ func (s *Server) setKeymap(c ports.SetKeymap) {
 		return
 	}
 	if s.seat.keymapFD >= 0 {
-		unix.Close(s.seat.keymapFD)
+		logging.CloseFD(s.log, s.seat.keymapFD, "previous keymap")
 	}
 	s.seat.keymapFD, s.seat.keymapSize, s.seat.keymapText = fd, size, c.Keymap
 	s.seat.keymapOwner = nil
@@ -590,7 +591,7 @@ func (s *Server) windowPointers(w *window) []*wayland.Pointer {
 }
 
 func (s *Server) layerPointers(l *layerSurface) []*wayland.Pointer {
-	if l == nil || !l.mapped || !l.resource.Resource.Alive() {
+	if l == nil || !l.mapped || !l.resource.Alive() {
 		return nil
 	}
 	return s.clientPointers(l.resource.Client())

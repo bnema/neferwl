@@ -50,7 +50,7 @@ func newX11Rig(t *testing.T) *x11Rig {
 	f := os.NewFile(uintptr(wl[1]), "xwayland client")
 	wl[1] = -1
 	conn, err := net.FileConn(f)
-	f.Close()
+	_ = f.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,7 +336,7 @@ func TestAttachXWMBootAbortsWithContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fds[1]) // the silent server end
+	defer func() { _ = unix.Close(fds[1]) }() // the silent server end
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan func(), 1)
 	go func() { done <- s.AttachXWM(ctx, fds[0]) }()

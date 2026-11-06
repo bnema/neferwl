@@ -199,7 +199,7 @@ func TestLogWriteNeverBlocksOnSlowDisk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	w := newAsyncWriter(struct{ io.Writer }{pw}, pw, "")
 	line := bytes.Repeat([]byte{'x'}, 1024)
 	done := make(chan struct{})
@@ -214,7 +214,7 @@ func TestLogWriteNeverBlocksOnSlowDisk(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("log write blocked on a stuck disk")
 	}
-	r.Close() // unblock the writer so Close can drain and return
+	_ = r.Close() // unblock the writer so Close can drain and return
 	_ = w.Close()
 }
 
@@ -266,7 +266,7 @@ func TestOpenSessionPrunesOldSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer live.Close()
+	defer func() { _ = live.Close() }()
 	if err := syscall.Flock(int(live.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		t.Fatal(err)
 	}

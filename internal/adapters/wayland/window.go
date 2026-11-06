@@ -36,9 +36,9 @@ func (w *window) surf() *surface {
 func (w *window) alive() bool {
 	switch {
 	case w.xdg != nil:
-		return w.xdg.resource.Resource.Alive()
+		return w.xdg.resource.Alive()
 	case w.x11 != nil:
-		return w.x11.surface != nil && w.x11.surface.wl.Resource.Alive()
+		return w.x11.surface != nil && w.x11.surface.wl.Alive()
 	}
 	return false
 }
@@ -88,14 +88,14 @@ func (w *window) toplevelAlive() bool {
 	if w.x11 != nil {
 		return w.alive()
 	}
-	return w.toplevel != nil && w.toplevel.Resource.Alive()
+	return w.toplevel != nil && w.toplevel.Alive()
 }
 
 // surfaceResource is the window's wl_surface, nil when it has none or it died.
 func (w *window) surfaceResource() *wayland.Surface {
 	switch {
 	case w.xdg != nil:
-		if surf := w.xdg.surface; surf != nil && surf.wl != nil && surf.wl.Resource.Alive() {
+		if surf := w.xdg.surface; surf != nil && surf.wl != nil && surf.wl.Alive() {
 			return surf.wl
 		}
 		return nil

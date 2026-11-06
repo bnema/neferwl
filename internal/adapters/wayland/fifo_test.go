@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/wlturbo"
 	"github.com/bnema/go-wayland-bindings/server/committiming"
 	"github.com/bnema/go-wayland-bindings/server/contenttype"
 	"github.com/bnema/go-wayland-bindings/server/fifo"
@@ -11,7 +12,6 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
@@ -47,7 +47,7 @@ func shmBufferSized(t *testing.T, c *wlturbo.Display, w, h int32) uint32 {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	size := w * h * 4
 	if err := unix.Ftruncate(fd, int64(size)); err != nil {
 		t.Fatal(err)

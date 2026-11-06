@@ -43,7 +43,7 @@ func (run *outputsRun) addCard(name domain.CardName) bool {
 func (run *outputsRun) finishCard(c *drmCard) {
 	c.stopReader()
 	<-c.readerDone
-	c.Card.Close()
+	c.Close()
 	if c.local != nil {
 		c.local.close()
 	}

@@ -3,6 +3,7 @@ package headless
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/png"
@@ -111,7 +112,7 @@ var DefaultVirtualHDRLuminance = domain.OutputHDR{MaxLuminance: 1000, MaxFrameAv
 // enableHDR switches r to a PQ target at the settings' SDR white and probes
 // one exported target; the probe's files are closed. On error the caller
 // falls back or discards r.
-func enableHDR(r ports.Renderer, settings domain.OutputHDRSettings) error {
+func enableHDR(r ports.Renderer, settings domain.OutputHDRSettings, log zerowrap.Logger) error {
 	r.SetHDR(float64(settings.Normalized().SDRBrightness))
 	bufs, err := r.ExportTargets(1, nil, false)
 	if err != nil {
@@ -119,7 +120,7 @@ func enableHDR(r ports.Renderer, settings domain.OutputHDRSettings) error {
 	}
 	for _, b := range bufs {
 		for _, p := range b.Planes {
-			_ = p.File.Close()
+			logging.CloseFile(log, p.File, "HDR probe plane")
 		}
 	}
 	return nil
@@ -131,7 +132,7 @@ func setupHDR(r ports.Renderer, opts Options, settings domain.OutputHDRSettings)
 	if !settings.Enabled {
 		return nil
 	}
-	if err := enableHDR(r, settings); err != nil {
+	if err := enableHDR(r, settings, opts.Log); err != nil {
 		opts.Log.Warn().Err(err).Str("output", opts.Name).Msg("virtual HDR unavailable; falling back to SDR")
 		r.SetHDR(0)
 		_, _ = r.ExportTargets(0, nil, false)
@@ -206,13 +207,13 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 	// Frame writing starts from the options and then follows Continuous;
 	// opts itself is never changed.
 	writer := frameWriter{dir: opts.ScreenshotDir, raw: opts.RawHDR}
-	defer writer.close()
+	defer func() { writer.close(opts.Log) }()
 	var requests capture.Requests
 	ctx, cancelCaptures := context.WithCancel(ctx)
 	requests.Init(ctx, opts.Captured)
 	pipeline := capture.NewPipeline(ctx, opts.Captured)
 	var captureCursor domain.CaptureCursor
-	pipeline.Security, pipeline.CPUReadback = opts.Security, true
+	pipeline.Security, pipeline.CPUReadback, pipeline.Log = opts.Security, true, opts.Log
 	if opts.NewCaptureRenderer != nil {
 		pipeline.EnableOffscreen(opts.NewCaptureRenderer)
 	}
@@ -270,7 +271,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 				}
 				if done != nil {
 					err = syncfile.Wait(ctx, done)
-					_ = done.Close()
+					logging.CloseFile(opts.Log, done, "protection fence")
 					if err != nil {
 						return fmt.Errorf("protection fence: %w", err)
 					}
@@ -416,7 +417,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			r.Close()
 			r = next
 			pipeline = capture.NewPipeline(ctx, opts.Captured)
-			pipeline.Security, pipeline.CPUReadback = opts.Security, true
+			pipeline.Security, pipeline.CPUReadback, pipeline.Log = opts.Security, true, opts.Log
 			if opts.NewCaptureRenderer != nil {
 				pipeline.EnableOffscreen(opts.NewCaptureRenderer)
 			}
@@ -450,7 +451,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 					return fmt.Errorf("recreate renderer: %w", err)
 				}
 				if confirmed != nil {
-					if err := enableHDR(next, hdrSettings); err != nil {
+					if err := enableHDR(next, hdrSettings, opts.Log); err != nil {
 						next.Close()
 						return fmt.Errorf("recreate HDR targets: %w", err)
 					}
@@ -462,7 +463,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 				r.Close()
 				r = next
 				pipeline = capture.NewPipeline(ctx, opts.Captured)
-				pipeline.Security, pipeline.CPUReadback = opts.Security, true
+				pipeline.Security, pipeline.CPUReadback, pipeline.Log = opts.Security, true, opts.Log
 				if opts.NewCaptureRenderer != nil {
 					pipeline.EnableOffscreen(opts.NewCaptureRenderer)
 				}
@@ -565,7 +566,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 				}
 			}
 			if code == "" {
-				writer.close()
+				writer.close(opts.Log)
 				writer = frameWriter{}
 				if !req.Stop {
 					writer = frameWriter{dir: req.Dir, raw: req.Raw}
@@ -781,7 +782,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			// are rejected by a gate transition: own and wait its fence
 			// before any Seen report or protection check can proceed.
 			waitErr := syncfile.Wait(ctx, pdone)
-			_ = pdone.Close()
+			logging.CloseFile(opts.Log, pdone, "plain render fence")
 			if waitErr != nil {
 				if ctx.Err() != nil {
 					return nil
@@ -810,7 +811,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 				// frame is skipped by a gate/off transition. Own and wait its
 				// fence before any Seen report or protection check can proceed.
 				waitErr := syncfile.Wait(ctx, xdone)
-				_ = xdone.Close()
+				logging.CloseFile(opts.Log, xdone, "excluded render fence")
 				if waitErr != nil {
 					if ctx.Err() != nil {
 						return nil
@@ -840,7 +841,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			// No screen paces headless frames: wait for the GPU before
 			// reporting that its buffers were read.
 			err = syncfile.Wait(ctx, done)
-			done.Close()
+			err = errors.Join(err, done.Close())
 			if err != nil {
 				if ctx.Err() != nil {
 					return nil
@@ -873,7 +874,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		if writer.dir != "" && !opts.protected() {
 			skipped, err := writer.write(opts, r, scene, frame, confirmed != nil)
 			if err != nil {
-				writer.close()
+				writer.close(opts.Log)
 				writer = frameWriter{}
 				log := logging.For(ctx, "headless")
 				log.Warn().Str("output", opts.Name).Err(err).Msg("continuous capture stopped")
@@ -918,13 +919,15 @@ type frameWriter struct {
 
 // close finishes the index; a following file makes concat honor the final
 // held interval.
-func (w *frameWriter) close() {
+func (w *frameWriter) close(log zerowrap.Logger) {
 	if w.index != nil {
 		if !w.lastShot.IsZero() {
 			_, _ = fmt.Fprintf(w.indexWriter, "duration %.6f\nfile '%s'\n", time.Since(w.lastShot).Seconds(), w.lastShotName)
-			_ = w.indexWriter.Flush()
+			if err := w.indexWriter.Flush(); err != nil {
+				log.Warn().Err(err).Str("dir", w.dir).Msg("flush frame index")
+			}
 		}
-		_ = w.index.Close()
+		logging.CloseFile(log, w.index, "frame index")
 	}
 	w.index, w.indexWriter, w.lastShot, w.lastShotName = nil, nil, time.Time{}, ""
 }
@@ -1031,7 +1034,7 @@ func gated(security ports.SessionSecurity, state domain.SecurityState) bool {
 }
 
 // writePNGSecureResult distinguishes a security skip from a published PNG.
-func writePNGSecureResult(path string, img image.Image, security ports.SessionSecurity, state domain.SecurityState) (bool, error) {
+func writePNGSecureResult(path string, img image.Image, security ports.SessionSecurity, state domain.SecurityState) (written bool, err error) {
 	if gated(security, state) {
 		return false, nil
 	}
@@ -1039,10 +1042,9 @@ func writePNGSecureResult(path string, img image.Image, security ports.SessionSe
 	if err != nil {
 		return false, err
 	}
-	defer os.Remove(f.Name())
+	defer func() { err = errors.Join(err, removeTemp(f.Name())) }()
 	if err := screenshotPNG.Encode(f, img); err != nil {
-		_ = f.Close()
-		return false, err
+		return false, errors.Join(err, f.Close())
 	}
 	if err := f.Close(); err != nil {
 		return false, err
@@ -1056,22 +1058,32 @@ func writePNGSecureResult(path string, img image.Image, security ports.SessionSe
 	return true, nil
 }
 
+// removeTemp removes a temporary file; one already renamed away is not an error.
+func removeTemp(name string) error {
+	if err := os.Remove(name); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
 // linkPNGSecure publishes the PNG already written at src as dst without
 // encoding it again: a hard link under a temporary name, renamed over dst, so
 // readers see the old or the new frame, never a partial one. Frame files are
 // never modified after they are published, which makes the shared file safe.
 // It gates on security like writePNGSecureResult, and falls back to encoding
 // img where the file system cannot link.
-func linkPNGSecure(src, dst string, img image.Image, security ports.SessionSecurity, state domain.SecurityState) (bool, error) {
+func linkPNGSecure(src, dst string, img image.Image, security ports.SessionSecurity, state domain.SecurityState) (written bool, err error) {
 	if gated(security, state) {
 		return false, nil
 	}
 	tmp := dst + ".tmp"
-	_ = os.Remove(tmp)
+	if err := os.Remove(tmp); err != nil && !errors.Is(err, os.ErrNotExist) { // a stale tmp left by a crash
+		return false, err
+	}
 	if err := os.Link(src, tmp); err != nil {
 		return writePNGSecureResult(dst, img, security, state)
 	}
-	defer os.Remove(tmp)
+	defer func() { err = errors.Join(err, removeTemp(tmp)) }()
 	if gated(security, state) {
 		return false, nil
 	}

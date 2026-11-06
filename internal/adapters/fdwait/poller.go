@@ -61,18 +61,15 @@ func New() (*Poller, error) {
 		return nil, fmt.Errorf("fdwait epoll create: %w", err)
 	}
 	if err = unix.SetNonblock(fd, true); err != nil {
-		unix.Close(fd)
-		return nil, fmt.Errorf("fdwait epoll nonblock: %w", err)
+		return nil, fmt.Errorf("fdwait epoll nonblock: %w", errors.Join(err, unix.Close(fd)))
 	}
 	p := &Poller{file: os.NewFile(uintptr(fd), "fdwait")}
 	if p.raw, err = p.file.SyscallConn(); err != nil {
-		p.file.Close()
-		return nil, fmt.Errorf("fdwait epoll conn: %w", err)
+		return nil, fmt.Errorf("fdwait epoll conn: %w", errors.Join(err, p.file.Close()))
 	}
 	efd, err := unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK)
 	if err != nil {
-		p.file.Close()
-		return nil, fmt.Errorf("fdwait wake eventfd: %w", err)
+		return nil, fmt.Errorf("fdwait wake eventfd: %w", errors.Join(err, p.file.Close()))
 	}
 	p.wake, p.wakeFD = os.NewFile(uintptr(efd), "fdwait-wake"), int32(efd)
 	p.addFn, p.delFn, p.readFn, p.checkFn = p.watch, p.unwatchAll, p.ready, p.pollNow
@@ -81,8 +78,7 @@ func New() (*Poller, error) {
 		err = p.control(unix.EPOLL_CTL_ADD, p.wakeFD)
 	}
 	if err != nil {
-		p.Close()
-		return nil, fmt.Errorf("fdwait wake: %w", err)
+		return nil, fmt.Errorf("fdwait wake: %w", errors.Join(err, p.Close()))
 	}
 	return p, nil
 }
@@ -93,8 +89,7 @@ func (p *Poller) Close() error {
 		p.stop()
 	}
 	err := p.file.Close()
-	p.wake.Close()
-	return err
+	return errors.Join(err, p.wake.Close())
 }
 
 func (p *Poller) control(op int, fd int32) error {

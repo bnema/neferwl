@@ -38,7 +38,7 @@ func repeatRig(t *testing.T) rig {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() { cancel(); discardedErr := <-done; _ = discardedErr })
 	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 500, Height: 100}}
 	for id := domain.WindowID(1); id <= 5; id++ {
 		client <- ports.WindowMapped{ID: id}

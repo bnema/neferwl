@@ -17,7 +17,7 @@ func xwaylandPair(t *testing.T) *[2]int {
 	}
 	t.Cleanup(func() {
 		if p[1] >= 0 {
-			unix.Close(p[1])
+			_ = unix.Close(p[1])
 		}
 	})
 	return &p
@@ -43,7 +43,7 @@ func TestAttachXwaylandLifecycle(t *testing.T) {
 	}
 	wl2 := xwaylandPair(t)
 	h.s.AttachXwayland(wl2[0])
-	unix.Close(wl[1])
+	_ = unix.Close(wl[1])
 	wl[1] = -1 // Old client's destroy must not clear the new record.
 	select {
 	case <-firstGone:
@@ -58,7 +58,7 @@ func TestAttachXwaylandLifecycle(t *testing.T) {
 	})
 	secondGone := make(chan struct{})
 	h.s.display.Do(func() { h.s.xwayland.client.OnDestroy(func() { close(secondGone) }) })
-	unix.Close(wl2[1])
+	_ = unix.Close(wl2[1])
 	wl2[1] = -1
 	select {
 	case <-secondGone:
@@ -79,7 +79,7 @@ func TestAttachXwaylandFailureClosesFDs(t *testing.T) {
 	if err := unix.Pipe2(p[:], unix.O_CLOEXEC); err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(p[1])
+	defer func() { _ = unix.Close(p[1]) }()
 	h.s.AttachXwayland(p[0])
 	assertFDClosed(t, p[0])
 }

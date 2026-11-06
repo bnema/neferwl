@@ -16,8 +16,8 @@ func TestWaitReturnsWhenReadable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
-	defer w.Close()
+	defer func() { _ = r.Close() }()
+	defer func() { _ = w.Close() }()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	done := make(chan error, 1)
@@ -36,8 +36,8 @@ func TestWaitStopsOnCancel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
-	defer w.Close()
+	defer func() { _ = r.Close() }()
+	defer func() { _ = w.Close() }()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := Wait(ctx, r); !errors.Is(err, context.Canceled) {
@@ -51,8 +51,8 @@ func TestWaitReportsErrorEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer w.Close()
-	r.Close()
+	defer func() { _ = w.Close() }()
+	_ = r.Close()
 	if err := Wait(context.Background(), w); err == nil {
 		t.Fatal("POLLERR taken as signalled")
 	}

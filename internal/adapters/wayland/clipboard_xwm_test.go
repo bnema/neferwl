@@ -24,7 +24,7 @@ func receiveVia(t *testing.T, cc *clipClient, offer uint32, mime string) int {
 	if err := unix.Pipe2(fds[:], unix.O_CLOEXEC); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { unix.Close(fds[0]) })
+	t.Cleanup(func() { _ = unix.Close(fds[0]) })
 	if err := wireRequest(cc.c, offer, uint16(wayland.DataOfferRequestReceive), []int{fds[1]}, mime); err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestXSelectionReachesWaylandClients(t *testing.T) {
 	var fd int
 	onDisplay(t, s, func() { fd = s.xSelectionRead(selClipboard, "text/plain") })
 	if fd >= 0 {
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		t.Fatal("protected selection readable by X")
 	}
 	protect(t, s, state, 2, false)
@@ -123,7 +123,7 @@ func TestXSelectionReadFromWayland(t *testing.T) {
 	if fd < 0 {
 		t.Fatal("no read end")
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := a.c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestXSelectionReadFromWayland(t *testing.T) {
 	onDisplay(t, s, func() {
 		fd2 := s.xSelectionRead(selClipboard, "image/png")
 		if fd2 >= 0 {
-			unix.Close(fd2)
+			_ = unix.Close(fd2)
 			t.Error("unoffered mime readable")
 		}
 	})

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/neferwl/internal/domain"
 	"bnema.dev/zerowrap"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 func TestSyncWaitAlreadySignalled(t *testing.T) {
@@ -78,13 +78,13 @@ func TestImplicitPollHangupWakes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	b := &domain.DMABuf{Planes: []domain.DMABufPlane{{File: r}}}
 	var waits [4]*syncWait
 	if err := sw.watchImplicit(b, &waits); err != nil || waits[0] == nil {
 		t.Fatalf("watch: %v", err)
 	}
-	wr.Close()
+	_ = wr.Close()
 	waitSyncWake(t, wake)
 	if !sw.fired(waits[0]) || !waits[0].failed {
 		t.Fatal("hangup must wake waiter as failed, not ready to publish")
@@ -105,8 +105,8 @@ func TestImplicitWaitAndDrop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
-	defer wr.Close()
+	defer func() { _ = r.Close() }()
+	defer func() { _ = wr.Close() }()
 	b := &domain.DMABuf{Planes: []domain.DMABufPlane{{File: r}}}
 	var waits [4]*syncWait
 	err = sw.watchImplicit(b, &waits)

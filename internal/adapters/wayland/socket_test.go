@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"bnema.dev/zerowrap"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,17 +13,17 @@ import (
 
 func TestListen(t *testing.T) {
 	dir := t.TempDir()
-	n1, fd1, close1, err := listen(dir)
+	n1, fd1, close1, err := listen(dir, zerowrap.Logger{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer close1()
-	defer unix.Close(fd1)
-	n2, fd2, close2, err := listen(dir)
+	defer func() { _ = unix.Close(fd1) }()
+	n2, fd2, close2, err := listen(dir, zerowrap.Logger{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd2)
+	defer func() { _ = unix.Close(fd2) }()
 	if n1 != "wayland-1" || n2 != "wayland-2" {
 		t.Fatalf("names: %s, %s", n1, n2)
 	}
@@ -52,11 +53,11 @@ func TestListenPublishedSocket(t *testing.T) {
 			if err := os.WriteFile(tmp, []byte("stale"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			name, fd, cleanup, err := listen(dir)
+			name, fd, cleanup, err := listen(dir, zerowrap.Logger{})
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer unix.Close(fd)
+			defer func() { _ = unix.Close(fd) }()
 			defer cleanup()
 			entries, err := os.ReadDir(dir)
 			if err != nil {
@@ -77,7 +78,7 @@ func TestListenPublishedSocket(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer unix.Close(client)
+			defer func() { _ = unix.Close(client) }()
 			if err := unix.Connect(client, &unix.SockaddrUnix{Name: path}); err != nil {
 				t.Fatal(err)
 			}
@@ -92,7 +93,7 @@ func socketPathDir(t *testing.T, pathLen int) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.RemoveAll(root) })
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
 	padding := pathLen - len(root) - len("//wayland-1")
 	if padding < 1 {
 		t.Skip("temporary root too long for socket boundary fixture")
@@ -109,7 +110,7 @@ func socketPathDir(t *testing.T, pathLen int) string {
 
 func TestListenRejectsUnreachablePath(t *testing.T) {
 	dir := socketPathDir(t, 108)
-	_, fd, cleanup, err := listen(dir)
+	_, fd, cleanup, err := listen(dir, zerowrap.Logger{})
 	if err == nil || fd != -1 || cleanup != nil {
 		t.Fatalf("unexpected result: fd=%d err=%v", fd, err)
 	}
@@ -136,7 +137,7 @@ func TestListenErrorCleansStaging(t *testing.T) {
 	if err := os.WriteFile(tmp, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	_, fd, cleanup, err := listen(dir)
+	_, fd, cleanup, err := listen(dir, zerowrap.Logger{})
 	if err == nil || fd != -1 || cleanup != nil {
 		t.Fatalf("unexpected result: fd=%d err=%v", fd, err)
 	}

@@ -176,7 +176,7 @@ func ocrTestdata(t *testing.T, name string) (*image.Gray, []OCRWord) {
 	}
 	f, err := os.Open("testdata/" + name)
 	require.NoError(t, err)
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	img, _, err := image.Decode(f)
 	require.NoError(t, err)
 	g := image.NewGray(img.Bounds())

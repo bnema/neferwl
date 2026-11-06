@@ -15,7 +15,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/sessiondir"
 )
 
-func sessionRemove(ctx context.Context, env Env, args []string) error {
+func sessionRemove(ctx context.Context, env Env, args []string) (err error) {
 	fs := flag.NewFlagSet("session rm", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	timeout := fs.Duration("timeout", 30*time.Second, "Shutdown timeout.")
@@ -54,13 +54,14 @@ func sessionRemove(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
+	defer func() { err = errors.Join(err, lock.Close()) }()
+	var connCloseErr error // reported after the wait and cleanup, never early
 	c, err := dialPath(meta.Control)
 	if err == nil {
 		reply, callErr := c.call(ctx, map[string]any{"op": "do", "action": "quit", "wait": "committed"})
-		c.conn.Close()
+		connCloseErr = c.conn.Close()
 		if callErr != nil && !errors.Is(callErr, io.EOF) {
-			return callErr
+			return errors.Join(callErr, connCloseErr)
 		}
 		if callErr == nil {
 			if err := reply.err(); err != nil {
@@ -73,12 +74,12 @@ func sessionRemove(ctx context.Context, env Env, args []string) error {
 		}
 	}
 	if err := waitSessionLock(ctx, lock); err != nil {
-		return err
+		return errors.Join(err, connCloseErr)
 	}
 	// List performs stale cleanup under the registry lock, without removing a
 	// new live session that may have reused the same ID during shutdown.
 	_, err = sessiondir.List(runtime)
-	return err
+	return errors.Join(err, connCloseErr)
 }
 
 func terminateSession(meta sessiondir.Meta) error {
@@ -116,12 +117,11 @@ func waitSessionLock(ctx context.Context, lock *os.File) error {
 	}
 	done := make(chan error, 1)
 	go func() {
-		defer syscall.Close(fd)
 		err := syscall.Flock(fd, syscall.LOCK_EX)
 		if err == nil {
 			err = syscall.Flock(fd, syscall.LOCK_UN)
 		}
-		done <- err
+		done <- errors.Join(err, syscall.Close(fd))
 	}()
 	select {
 	case err := <-done:

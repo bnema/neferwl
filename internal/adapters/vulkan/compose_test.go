@@ -106,7 +106,7 @@ func TestRendererReturnsDoneFence(t *testing.T) {
 	if done == nil {
 		t.Fatal("no done fence")
 	}
-	defer done.Close()
+	defer func() { _ = done.Close() }()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := syncfile.Wait(ctx, done); err != nil {
@@ -126,7 +126,7 @@ func TestRendererSHMCopiedOncePerContent(t *testing.T) {
 		t.Helper()
 		done, err := r.Render(scene, contents)
 		if done != nil {
-			done.Close()
+			_ = done.Close()
 		}
 		if err != nil {
 			t.Fatal(err)
@@ -213,7 +213,7 @@ func TestRendererKeepsSurfaceBelowFailedCover(t *testing.T) {
 func render(r *Renderer, s domain.Scene, contents map[domain.WindowID]domain.SurfaceContent) error {
 	done, err := r.Render(s, contents)
 	if done != nil {
-		done.Close()
+		_ = done.Close()
 	}
 	return err
 }
@@ -262,7 +262,7 @@ func TestRendererImportsAcquireFence(t *testing.T) {
 	if err != nil || done == nil {
 		t.Skipf("no sync file: %v", err)
 	}
-	defer done.Close()
+	defer func() { _ = done.Close() }()
 	sem := r.importFence(done)
 	if sem == 0 {
 		t.Fatal("sync file not imported")
@@ -272,8 +272,8 @@ func TestRendererImportsAcquireFence(t *testing.T) {
 		t.Fatal("caller's fence closed")
 	}
 	f, w, _ := os.Pipe()
-	defer f.Close()
-	defer w.Close()
+	defer func() { _ = f.Close() }()
+	defer func() { _ = w.Close() }()
 	if sem := r.importFence(f); sem != 0 {
 		t.Fatal("pipe imported as a fence")
 	}

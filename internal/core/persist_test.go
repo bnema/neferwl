@@ -110,7 +110,7 @@ func TestScaleBindReportsScale(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		go c.Run(ctx)
+		go func() { _ = c.Run(ctx) }()
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "DP-2", Width: 5120, Height: 2160}}
 		scene(t, scenes)
 		press := func(sym string, code uint32) {

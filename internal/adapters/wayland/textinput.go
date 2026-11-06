@@ -1,12 +1,12 @@
 package wayland
 
 import (
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/inputmethod"
 	"github.com/bnema/go-wayland-bindings/server/textinput"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/purego-libwayland/server"
 )
 
 // Text input (zwp_text_input_v3) lets clients take IME text; one input
@@ -150,7 +150,7 @@ func (t *textInput) leave() {
 	if s.activeText == t {
 		s.deactivateText()
 	}
-	if t.focus.Resource.Alive() {
+	if t.focus.Alive() {
 		t.res.SendLeave(t.focus)
 	}
 	t.focus = nil

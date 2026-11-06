@@ -12,10 +12,10 @@ import (
 	"os"
 	"time"
 
+	"bnema.dev/wlturbo"
 	clientime "github.com/bnema/go-wayland-bindings/client/inputmethod"
 	clientcore "github.com/bnema/go-wayland-bindings/client/wayland"
 	"github.com/bnema/go-wayland-bindings/server/inputmethod"
-	"bnema.dev/wlturbo"
 )
 
 func main() {
@@ -86,7 +86,7 @@ func run(preedit, commit string, delay time.Duration, count int) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	if err := c.Roundtrip(); err != nil {
 		return err
 	}

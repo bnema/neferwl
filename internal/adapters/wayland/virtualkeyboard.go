@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"time"
 
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/virtualkeyboard"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
-	"bnema.dev/purego-libwayland/server"
 	"golang.org/x/sys/unix"
 )
 
@@ -55,10 +56,10 @@ func (m virtualKeyboardManager) CreateVirtualKeyboard(r *virtualkeyboard.ZwpVirt
 // see the client's fd. An unreadable or malformed keymap is ignored.
 func (k *virtualKeyboard) Keymap(_ *virtualkeyboard.ZwpVirtualKeyboardV1, format uint32, fd int, size uint32) {
 	if k.server.protected() {
-		unix.Close(fd)
+		logging.CloseFD(k.server.log, fd, "client keymap")
 		k.admitted() // discard held state and ownership without delivery
 		if k.fd >= 0 {
-			unix.Close(k.fd)
+			logging.CloseFD(k.server.log, k.fd, "virtual keymap")
 		}
 		k.fd, k.size, k.text = -1, 0, ""
 		// A rejected replacement must not leave an old layout usable after
@@ -66,7 +67,7 @@ func (k *virtualKeyboard) Keymap(_ *virtualkeyboard.ZwpVirtualKeyboardV1, format
 		return
 	}
 	text, ok := readKeymap(fd, size)
-	unix.Close(fd)
+	logging.CloseFD(k.server.log, fd, "client keymap")
 	if format != uint32(wayland.KeyboardKeymapFormatXkbV1) || !ok {
 		k.server.log.Debug().Msg("virtual keymap rejected")
 		return
@@ -81,7 +82,7 @@ func (k *virtualKeyboard) Keymap(_ *virtualkeyboard.ZwpVirtualKeyboardV1, format
 		return
 	}
 	if k.fd >= 0 {
-		unix.Close(k.fd)
+		logging.CloseFD(k.server.log, k.fd, "virtual keymap")
 	}
 	k.fd, k.size = copyFD, copySize
 	old := k.server.activeKeymapText()
@@ -200,7 +201,7 @@ func (k *virtualKeyboard) release() {
 	if admitted && len(k.pressed) > 0 && k.focus == s.seat.focused {
 		_, keyboards := s.focusTarget(s.seat.focused)
 		var ts unix.Timespec
-		_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
+		_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts) // CLOCK_MONOTONIC cannot fail; a zero stamp is harmless
 		// Input events carry CLOCK_MONOTONIC (libinput's clock).
 		now := time.Duration(ts.Nano())
 		for key := range k.pressed {
@@ -220,7 +221,7 @@ func (k *virtualKeyboard) release() {
 		}
 	}
 	if k.fd >= 0 {
-		unix.Close(k.fd)
+		logging.CloseFD(s.log, k.fd, "virtual keymap")
 		k.fd = -1
 	}
 }
@@ -257,7 +258,7 @@ func (s *Server) useKeymap(k *virtualKeyboard) {
 func (s *Server) sendKeymapAll(fd int, size uint32) {
 	for _, list := range s.seat.keyboards {
 		for _, kb := range list {
-			if kb.Resource.Alive() {
+			if kb.Alive() {
 				kb.SendKeymap(uint32(wayland.KeyboardKeymapFormatXkbV1), fd, size)
 			}
 		}

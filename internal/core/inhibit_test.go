@@ -49,7 +49,7 @@ func shortcutsInhibit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
-	defer func() { cancel(); receive(t, done) }()
+	defer func() { cancel(); _ = receive(t, done) }()
 	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 	scene(t, scenes)
 	client <- ports.WindowMapped{ID: 1}
@@ -124,7 +124,7 @@ func TestShortcutsInhibitDropsBoundRelease(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() { done <- c.Run(ctx) }()
-		defer func() { cancel(); receive(t, done) }()
+		defer func() { cancel(); _ = receive(t, done) }()
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}

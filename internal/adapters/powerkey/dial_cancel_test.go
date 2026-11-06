@@ -20,7 +20,7 @@ func TestDialCancellationDuringAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -46,7 +46,7 @@ func TestDialCancellationDuringAuth(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("dial did not connect")
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	// Wait for auth bytes, so cancellation exercises the handshake, not just connect.
 	if err := conn.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
 		t.Fatal(err)

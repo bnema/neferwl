@@ -163,10 +163,10 @@ func TestConcurrentRendererTargets(t *testing.T) {
 				return
 			}
 			defer func() {
-				r.ExportTargets(0, nil, false)
+				_, _ = r.ExportTargets(0, nil, false)
 				for _, b := range bufs {
 					for _, p := range b.Planes {
-						p.File.Close()
+						_ = p.File.Close()
 					}
 				}
 			}()

@@ -10,8 +10,8 @@ func TestCascadeOverflowInherited(t *testing.T) {
 	if len(w) != 0 {
 		t.Fatalf("warnings=%v", w)
 	}
-	out := c.Layout.Outputs[0].LayoutRules.Over(c.Layout.LayoutRules)
-	ws := c.Workspaces[0].LayoutRules.Over(out)
+	out := c.Layout.Outputs[0].Over(c.Layout.LayoutRules)
+	ws := c.Workspaces[0].Over(out)
 	if out.Overflow != "cascade" || ws.Overflow != "cascade" {
 		t.Fatalf("output=%q workspace=%q, want cascade", out.Overflow, ws.Overflow)
 	}

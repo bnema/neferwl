@@ -40,7 +40,7 @@ func (s *Server) releaseBuffer(surf *surface, b *wayland.Buffer, sync syncHold) 
 	// An invisible window is held like a shown one: a scanout plane may
 	// still read its buffer until the flip that hides it.
 	window, name := surf.root().windowID(), s.frameOutput(surf)
-	if !b.Resource.Alive() || window == 0 || name == "" {
+	if !b.Alive() || window == 0 || name == "" {
 		// Not drawn (unmapped, a cursor): nothing reads it.
 		s.release(b, sync)
 		return
@@ -62,7 +62,7 @@ func (s *Server) release(b *wayland.Buffer, sync syncHold) {
 		s.releaseSync(sync)
 		return
 	}
-	if b != nil && b.Resource.Alive() {
+	if b != nil && b.Alive() {
 		b.SendRelease()
 	}
 }

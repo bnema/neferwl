@@ -90,7 +90,7 @@ func TestWaitHiddenClosesEveryFenceOnCancel(t *testing.T) {
 func TestTerminalChildFenceClosesPipelineBeforeClearingHolds(t *testing.T) {
 	read, failed, err := os.Pipe()
 	require.NoError(t, err)
-	defer failed.Close()
+	defer func() { _ = failed.Close() }()
 	pending, _ := fencePipe(t)
 	p := NewPipeline(context.Background(), make(chan domain.CaptureDone, 2))
 	defer p.Close(nil)

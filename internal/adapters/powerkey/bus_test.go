@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/bnema/neferwl/internal/adapters/logging"
 	"bnema.dev/zerobus"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -43,7 +43,7 @@ func TestHoldBusFailuresPreserveLock(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer old.Close()
+			defer func() { _ = old.Close() }()
 			lock := old
 			if err := holdBus(context.Background(), b, logging.For(context.Background(), "powerkey"), &lock); err == nil {
 				t.Fatal("expected error")

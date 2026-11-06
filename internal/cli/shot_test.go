@@ -16,7 +16,7 @@ func TestShotCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	t.Setenv("NEFERWL_CONTROL", path)
 	requests := make(chan map[string]any, 1)
 	result := make(chan error, 1)
@@ -26,7 +26,7 @@ func TestShotCommand(t *testing.T) {
 			result <- err
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		var req map[string]any
 		if err := json.NewDecoder(conn).Decode(&req); err != nil {
 			result <- err
@@ -68,7 +68,7 @@ func TestShotRelativeDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	t.Setenv("NEFERWL_CONTROL", path)
 	t.Chdir(t.TempDir())
 	requests := make(chan map[string]any, 1)
@@ -79,7 +79,7 @@ func TestShotRelativeDir(t *testing.T) {
 			result <- err
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		var req map[string]any
 		if err := json.NewDecoder(conn).Decode(&req); err != nil {
 			result <- err

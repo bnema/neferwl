@@ -54,7 +54,7 @@ func TestSubmitHiddenEngageDuringRenderRejectsCopyRetainsReads(t *testing.T) {
 	child := portsmocks.NewMockRenderer(t)
 	f, w, err := os.Pipe()
 	require.NoError(t, err)
-	t.Cleanup(func() { f.Close(); w.Close() })
+	t.Cleanup(func() { _ = f.Close(); _ = w.Close() })
 	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 		engaged.Store(true)
 		return f, nil

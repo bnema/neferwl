@@ -63,7 +63,7 @@ func TestHeadlessConfigReload(t *testing.T) {
 			f, err := os.Open(latest)
 			if err == nil {
 				img, decodeErr := png.Decode(f)
-				f.Close()
+				_ = f.Close()
 				if decodeErr == nil {
 					r, g, b, _ := img.At(1900, 10).RGBA()
 					if uint8(r>>8) == want.R && uint8(g>>8) == want.G && uint8(b>>8) == want.B {
@@ -222,7 +222,7 @@ func TestHeadlessTyping(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	img, err := png.Decode(f)
 	if err != nil {
 		t.Fatal(err)

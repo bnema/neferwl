@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/drm/gbm"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
 	"github.com/bnema/neferwl/internal/domain"
-	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 
@@ -66,7 +66,7 @@ func TestGBMImagesAreRenderTargets(t *testing.T) {
 	}
 	t.Logf("renderer target modifiers: %#x", mods)
 	node := renderNodeFor(t, sup.Device)
-	defer node.Close()
+	defer func() { _ = node.Close() }()
 	dev, err := gbm.Open(int(node.Fd()))
 	if err != nil {
 		t.Skipf("GBM unavailable: %v", err)
@@ -109,7 +109,7 @@ func TestGBMImagesAreRenderTargets(t *testing.T) {
 	defer func() {
 		for _, d := range dmas {
 			for _, p := range d.Planes {
-				p.File.Close()
+				_ = p.File.Close()
 			}
 		}
 	}()
@@ -144,7 +144,7 @@ func TestGBMImagesAreRenderTargets(t *testing.T) {
 				t.Fatalf("render %d: %v", i, err)
 			}
 			if done != nil {
-				done.Close()
+				_ = done.Close()
 			}
 			img := r.Pixels()
 			if img == nil {

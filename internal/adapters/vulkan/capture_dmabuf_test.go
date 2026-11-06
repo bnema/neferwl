@@ -22,7 +22,7 @@ func udmabufMem(t *testing.T, size int) (buf *os.File, mem int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { unix.Close(mem) })
+	t.Cleanup(func() { _ = unix.Close(mem) })
 	if err := unix.Ftruncate(mem, int64(size)); err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func udmabufMem(t *testing.T, size int) (buf *os.File, mem int) {
 	if err != nil {
 		t.Skipf("udmabuf unavailable: %v", err)
 	}
-	defer dev.Close()
+	defer func() { _ = dev.Close() }()
 	arg := struct {
 		memfd, flags uint32
 		offset, size uint64
@@ -43,7 +43,7 @@ func udmabufMem(t *testing.T, size int) (buf *os.File, mem int) {
 		t.Skipf("udmabuf create: %v", errno)
 	}
 	f := os.NewFile(fd, "capture-dst")
-	t.Cleanup(func() { f.Close() })
+	t.Cleanup(func() { _ = f.Close() })
 	return f, mem
 }
 
@@ -74,7 +74,7 @@ func copyToWaitFormat(t *testing.T, r *Renderer, region image.Rectangle, fc uint
 		t.Fatal(err)
 	}
 	if done != nil {
-		defer done.Close()
+		defer func() { _ = done.Close() }()
 		if err := syncfile.Wait(context.Background(), done); err != nil {
 			t.Fatal(err)
 		}

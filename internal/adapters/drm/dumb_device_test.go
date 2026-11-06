@@ -24,7 +24,7 @@ func TestDumbBuffersOnRealDevice(t *testing.T) {
 			continue
 		}
 		done := func() bool {
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 			return dumbDeviceRoundTrip(t, path, kmsDevice{fd: int(f.Fd())})
 		}()
 		if done {

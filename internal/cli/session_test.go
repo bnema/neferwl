@@ -21,7 +21,7 @@ func TestSessionList(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer d.Close()
+		defer func() { _ = d.Close() }()
 		if err := d.WriteMeta(sessiondir.Meta{ID: id, Profile: "persistent", PID: 123, Wayland: "wayland-" + id, Created: time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC)}); err != nil {
 			t.Fatal(err)
 		}

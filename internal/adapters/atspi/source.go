@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"bnema.dev/zerobus"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
-	"bnema.dev/zerobus"
 )
 
 const (
@@ -392,7 +392,7 @@ func (s *Source) Targets(ctx context.Context, windows []domain.HintWindow, links
 			for i, r := range replies {
 				var be *busError
 				// Collection may be absent; elements falls back to walking the frame.
-				if r.err != nil && !(calls[i].op == opMatches && errors.As(r.err, &be)) {
+				if r.err != nil && (calls[i].op != opMatches || !errors.As(r.err, &be)) {
 					windowErr = errors.Join(windowErr, r.err)
 				}
 			}

@@ -358,7 +358,7 @@ func shmContent(t testing.TB, w, h, stride int, pixels []byte) *domain.SurfaceCo
 		t.Fatal(err)
 	}
 	f := os.NewFile(uintptr(fd), "shm-test")
-	t.Cleanup(func() { f.Close() })
+	t.Cleanup(func() { _ = f.Close() })
 	if _, err := f.Write(pixels); err != nil {
 		t.Fatal(err)
 	}

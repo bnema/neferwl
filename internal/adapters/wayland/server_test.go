@@ -104,7 +104,8 @@ func TestWestonFrames(t *testing.T) {
 	t.Cleanup(func() {
 		stop()
 		select {
-		case <-exited:
+		case discardedErr := <-exited:
+			_ = discardedErr
 		case <-waylandDeadline(2 * time.Second):
 			t.Error("client did not exit")
 		}

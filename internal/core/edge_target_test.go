@@ -40,12 +40,13 @@ func TestEdgeTarget(t *testing.T) {
 									// empty neighbor, to exercise both signs independently.
 									m.Workspaces = []*Workspace{m.newWorkspace(), m.newWorkspace(), m.newWorkspace()}
 									m.Active = 1
-									if next == "out of range" {
+									switch next {
+									case "out of range":
 										m.Active = 0
 										if dir > 0 {
 											m.Active = 2
 										}
-									} else if next == "occupied" {
+									case "occupied":
 										m.Workspaces[m.Active+dir].AddWindow(1)
 									}
 									if shown {

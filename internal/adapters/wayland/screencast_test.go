@@ -85,7 +85,8 @@ func newCastHarness(t *testing.T, withSink bool) *castHarness {
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case discardedErr := <-done:
+			_ = discardedErr
 		case <-waylandDeadline(3 * time.Second):
 			t.Fatal("server did not stop")
 		}

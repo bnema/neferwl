@@ -14,12 +14,12 @@ import (
 	core "github.com/bnema/go-wayland-bindings/client/wayland"
 	"github.com/bnema/go-wayland-bindings/server/drmlease"
 
+	"bnema.dev/wlturbo"
 	serverlock "github.com/bnema/go-wayland-bindings/server/extsessionlock"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
@@ -374,7 +374,7 @@ func TestSessionLockLifecycleLatePrelockLeaseRevokedAfterUnlock(t *testing.T) {
 	registerWireProxy(c, device)
 	roundtrip(t, c)
 	for _, fd := range device.fds {
-		defer unix.Close(fd)
+		defer func() { _ = unix.Close(fd) }()
 	}
 	if len(device.connectors) != 1 {
 		t.Fatal("lease connector missing")
@@ -436,7 +436,7 @@ func TestSessionLockLifecycleLatePrelockLeaseRevokedAfterUnlock(t *testing.T) {
 	})
 	if len(result.fds) != 0 {
 		for _, fd := range result.fds {
-			unix.Close(fd)
+			_ = unix.Close(fd)
 		}
 		t.Fatal("late lease FD delivered after unlock")
 	}

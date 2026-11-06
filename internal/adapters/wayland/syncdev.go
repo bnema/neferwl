@@ -1,11 +1,14 @@
 package wayland
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
 	"unsafe"
 
+	"bnema.dev/zerowrap"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"golang.org/x/sys/unix"
 )
 
@@ -80,14 +83,13 @@ func openSyncobj(path string) (*renderNode, error) {
 		return nil, err
 	}
 	c := drmCap{capability: capSyncobjTimeline}
-	if ioctl(fd, ioctlGetCap, unsafe.Pointer(&c)) != nil || c.value == 0 {
-		unix.Close(fd)
-		return nil, fmt.Errorf("%s: no timeline syncobjs", path)
+	if err := ioctl(fd, ioctlGetCap, unsafe.Pointer(&c)); err != nil || c.value == 0 {
+		return nil, errors.Join(fmt.Errorf("%s: no timeline syncobjs", path), unix.Close(fd))
 	}
 	return &renderNode{fd: fd}, nil
 }
 
-func (n *renderNode) close() { unix.Close(n.fd) }
+func (n *renderNode) close(log zerowrap.Logger) { logging.CloseFD(log, n.fd, "render node") }
 
 func ioctl(fd int, req uintptr, arg unsafe.Pointer) error {
 	for {

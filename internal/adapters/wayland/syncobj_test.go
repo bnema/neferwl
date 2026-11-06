@@ -88,7 +88,7 @@ func newSyncHarness(t *testing.T) *syncHarness {
 		if err != nil {
 			return nil, err
 		}
-		w.Close()
+		_ = w.Close()
 		h.mu.Lock()
 		h.fences = append(h.fences, r)
 		h.mu.Unlock()
@@ -116,10 +116,11 @@ func newSyncHarness(t *testing.T) *syncHarness {
 	go func() { done <- run() }()
 	t.Cleanup(func() {
 		cancel()
-		<-done
+		discardedErr := <-done
+		_ = discardedErr
 		h.mu.Lock()
 		for _, fd := range h.efds {
-			unix.Close(fd)
+			_ = unix.Close(fd)
 		}
 		h.mu.Unlock()
 	})
@@ -137,7 +138,7 @@ func newSyncHarness(t *testing.T) *syncHarness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	h.timeline = h.c.AllocateID()
 	registerProtocol(t, h.c, h.timeline)
 	if err := wireRequest(h.c, mgr, uint16(linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1RequestImportTimeline), []int{fd}, h.timeline); err != nil {
@@ -160,7 +161,7 @@ func (h *syncHarness) dmabuf() uint32 {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := unix.Ftruncate(fd, 256*16); err != nil {
 		t.Fatal(err)
 	}
@@ -503,11 +504,11 @@ func TestSyncobjInvalidTimeline(t *testing.T) {
 	done := make(chan error, 1)
 	run := guardedServerRun(t, s, ctx)
 	go func() { done <- run() }()
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() { cancel(); discardedErr := <-done; _ = discardedErr })
 	c := protocolClient(t, s, dir)
 	mgr := bindProtocol(t, c, "wp_linux_drm_syncobj_manager_v1")
 	fd, _ := unix.MemfdCreate("bad", 0)
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := wireRequest(c, mgr, uint16(linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1RequestImportTimeline), []int{fd}, c.AllocateID()); err != nil {
 		t.Fatal(err)
 	}

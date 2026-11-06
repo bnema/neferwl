@@ -129,7 +129,7 @@ func TestXDGProtocolErrors(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				defer unix.Close(fd)
+				defer func() { _ = unix.Close(fd) }()
 				if err := unix.Ftruncate(fd, 4); err != nil {
 					t.Fatal(err)
 				}
@@ -206,7 +206,7 @@ func TestRecreatedToplevelRequiresNewBuffer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := unix.Ftruncate(fd, 4); err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +288,7 @@ func TestSHMInvalidStride(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := unix.Ftruncate(fd, 16); err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +316,7 @@ func TestSHMUnpaddedLastRow(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer unix.Close(fd)
+			defer func() { _ = unix.Close(fd) }()
 			if err := unix.Ftruncate(fd, int64(tc.size)); err != nil {
 				t.Fatal(err)
 			}
@@ -347,7 +347,7 @@ func TestBufferContentTruncatedPool(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := os.NewFile(uintptr(fd), "truncated-pool")
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if err := f.Truncate(28); err != nil {
 		t.Fatal(err)
 	}
@@ -386,7 +386,7 @@ func TestSHMBufferReleasedOnReplaceAndDestroy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := unix.Ftruncate(fd, 64); err != nil {
 		t.Fatal(err)
 	}
@@ -495,7 +495,7 @@ func TestPointerProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := unix.Ftruncate(fd, 4); err != nil {
 		t.Fatal(err)
 	}
@@ -636,7 +636,7 @@ func surfaceMapperBeforeMap(t *testing.T, c *wlturbo.Display, events <-chan port
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := unix.Ftruncate(fd, 4); err != nil {
 		t.Fatal(err)
 	}
@@ -737,7 +737,7 @@ func TestPopupAndFloatingLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := unix.Ftruncate(fd, 4); err != nil {
 		t.Fatal(err)
 	}

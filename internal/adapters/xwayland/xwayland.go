@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"bnema.dev/zerowrap"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
 	"golang.org/x/sys/unix"
 )
@@ -94,7 +95,7 @@ func Open(opts Options) (*Display, error) {
 		if errors.Is(err, unix.EEXIST) && staleLock(lock) {
 			// A crashed session left it: take the display over.
 			opts.Log.Info().Str("lock", lock).Msg("removing stale X11 lock")
-			_ = os.Remove(lock)
+			logging.RemoveFile(opts.Log, lock, "stale X11 lock")
 			fd, err = unix.Open(lock, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_CLOEXEC, 0o444)
 		}
 		if err != nil {
@@ -104,9 +105,9 @@ func Open(opts Options) (*Display, error) {
 			continue
 		}
 		_, err = unix.Write(fd, fmt.Appendf(nil, "%10d\n", os.Getpid()))
-		unix.Close(fd)
+		err = errors.Join(err, unix.Close(fd))
 		if err != nil {
-			_ = os.Remove(lock)
+			logging.RemoveFile(opts.Log, lock, "X11 lock")
 			return nil, fmt.Errorf("write X11 lock: %w", err)
 		}
 		d := &Display{starter: satelliteStarter{}, opts: opts, n: n, lock: lock, socket: filepath.Join(opts.Dir, fmt.Sprintf("X%d", n))}
@@ -176,7 +177,7 @@ func (d *Display) listen() error {
 	}
 	for _, name := range names {
 		if name == d.socket {
-			_ = os.Remove(name) // a stale socket without a lock
+			logging.RemoveFile(d.opts.Log, name, "stale X11 socket") // a stale socket without a lock
 		}
 		fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
 		if err != nil {
@@ -188,8 +189,7 @@ func (d *Display) listen() error {
 			addr = "\x00" + addr[1:]
 		}
 		if err := unix.Bind(fd, &unix.SockaddrUnix{Name: addr}); err != nil {
-			f.Close()
-			return fmt.Errorf("bind %s: %w", name, err)
+			return fmt.Errorf("bind %s: %w", name, errors.Join(err, f.Close()))
 		}
 		d.sockets = append(d.sockets, f)
 		if err := unix.Listen(fd, 128); err != nil {
@@ -205,13 +205,13 @@ func (d *Display) Name() string { return ":" + strconv.Itoa(d.n) }
 // Close stops listening and removes the socket and lock files.
 func (d *Display) Close() {
 	for _, f := range d.sockets {
-		f.Close()
+		logging.CloseFile(d.opts.Log, f, "x11 listen socket")
 	}
 	if len(d.sockets) > 0 {
-		_ = os.Remove(d.socket)
+		logging.RemoveFile(d.opts.Log, d.socket, "X11 socket")
 	}
 	d.sockets = nil
-	_ = os.Remove(d.lock)
+	logging.RemoveFile(d.opts.Log, d.lock, "X11 lock")
 }
 
 // Run starts the satellite whenever an X11 client connects while it is not
@@ -233,7 +233,7 @@ func (d *Display) Run(ctx context.Context) error {
 		case <-stopWaker:
 		}
 	})
-	defer func() { close(stopWaker); waker.Wait(); unix.Close(wake) }()
+	defer func() { close(stopWaker); waker.Wait(); logging.CloseFD(d.opts.Log, wake, "xwayland wake eventfd") }()
 	for {
 		if err := d.waitClient(ctx, wake); err != nil {
 			if ctx.Err() != nil {
@@ -327,10 +327,12 @@ func (satelliteStarter) start(ctx context.Context, d *Display, stderr *logWriter
 		pgid := -cmd.Process.Pid
 		_ = unix.Kill(pgid, unix.SIGTERM)
 		select {
-		case <-done:
+		case exitErr := <-done:
+			_ = exitErr // exit status after our SIGTERM/SIGKILL is expected, not a failure
 		case <-time.After(2 * time.Second):
 			_ = unix.Kill(pgid, unix.SIGKILL)
-			<-done
+			exitErr := <-done
+			_ = exitErr // exit status after our SIGTERM/SIGKILL is expected, not a failure
 		}
 		return ctx.Err()
 	}
@@ -348,7 +350,7 @@ func (d *Display) dropPending() {
 			if err != nil {
 				break
 			}
-			unix.Close(nfd)
+			logging.CloseFD(d.opts.Log, nfd, "dropped x11 connection")
 		}
 		_ = unix.SetNonblock(fd, false)
 	}

@@ -32,13 +32,15 @@ var validateConfigCmd = Command{
 				return err
 			}
 			for _, w := range warnings {
-				fmt.Fprintf(env.Stderr, "%s:%s\n", path, w)
+				if _, err := fmt.Fprintf(env.Stderr, "%s:%s\n", path, w); err != nil {
+					return err
+				}
 			}
 			if len(warnings) > 0 {
 				return fmt.Errorf("%d warning(s)", len(warnings))
 			}
-			fmt.Fprintf(env.Stdout, "ok: %s\n", path)
-			return nil
+			_, err = fmt.Fprintf(env.Stdout, "ok: %s\n", path)
+			return err
 		}
 	},
 }
@@ -64,7 +66,7 @@ var stateCmd = Command{
 	Summary: "Print the session state, or the output showing a process's window, as JSON.",
 	Setup: func(fs *flag.FlagSet) Runner {
 		target := addTargetFlag(fs)
-		return func(ctx context.Context, env Env, args []string) error {
+		return func(ctx context.Context, env Env, args []string) (runErr error) {
 			pid := 0
 			switch {
 			case len(args) == 0:
@@ -79,7 +81,7 @@ var stateCmd = Command{
 			}
 			if pid == 0 {
 				if c, err := dialControl(os.Getenv, *target); err == nil {
-					defer c.conn.Close()
+					defer c.closeInto(&runErr)
 					return printControlState(ctx, env, c)
 				} else if *target != "" || os.Getenv("NEFERWL_SESSION") != "" || os.Getenv("NEFERWL_CONTROL") != "" {
 					return err
@@ -120,8 +122,8 @@ var versionCmd = Command{
 			if len(args) != 0 {
 				return usagef("unexpected arguments: %v", args)
 			}
-			fmt.Fprintln(env.Stdout, buildVersion(env.Version))
-			return nil
+			_, err := fmt.Fprintln(env.Stdout, buildVersion(env.Version))
+			return err
 		}
 	},
 }

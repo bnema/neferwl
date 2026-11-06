@@ -304,7 +304,7 @@ func TestHintDump(t *testing.T) {
 
 		f, err := os.Open(filepath.Join(dir, png))
 		require.NoError(t, err)
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		img, _, err := image.Decode(f)
 		require.NoError(t, err)
 		require.Equal(t, image.Rect(0, 0, 64, 32), img.Bounds())

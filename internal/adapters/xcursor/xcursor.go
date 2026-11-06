@@ -6,9 +6,11 @@ package xcursor
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -164,15 +166,25 @@ func Load(dirs []string, theme string, names []string, size int) (Image, error) 
 	return Image{}, fmt.Errorf("cursor %v not found in theme %q", names, theme)
 }
 
+// readBounded reads at most 1 MiB of path. A failed close fails the read, so
+// the theme is skipped like an unreadable one.
+func readBounded(path string) (data []byte, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, f.Close()) }()
+	return io.ReadAll(io.LimitReader(f, 1<<20))
+}
+
 // inherits reads Inherits= from the first index.theme of the theme.
 func inherits(dirs []string, theme string) []string {
 	for _, dir := range dirs {
-		f, err := os.Open(filepath.Join(dir, theme, "index.theme"))
+		data, err := readBounded(filepath.Join(dir, theme, "index.theme"))
 		if err != nil {
 			continue
 		}
-		defer f.Close()
-		s := bufio.NewScanner(f)
+		s := bufio.NewScanner(bytes.NewReader(data))
 		for s.Scan() {
 			if k, v, ok := strings.Cut(s.Text(), "="); ok && strings.TrimSpace(k) == "Inherits" {
 				return strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ';' || r == ' ' })

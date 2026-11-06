@@ -74,7 +74,7 @@ func TestTrimCaptureDMACopies(t *testing.T) {
 	castSubmit(t, f, image.Rect(0, 0, 16, 8), buf)
 	r.gpu.ReleaseCast(buf)
 	for _, p := range buf.Planes {
-		p.File.Close()
+		_ = p.File.Close()
 	}
 	r.EndCapture(f)
 	if err := r.Trim(time.Time{}); err != nil {

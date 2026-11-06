@@ -27,7 +27,7 @@ var shotCmd = Command{
 		raw := fs.Bool("raw", false, "Also write raw PQ frames (requires --every-frame).")
 		inline := fs.Bool("inline", false, "Include PNG bytes as base64 in the reply.")
 		timeout := fs.Duration("timeout", domain.DefaultControlTimeout, "Maximum completion wait.")
-		return func(ctx context.Context, env Env, args []string) error {
+		return func(ctx context.Context, env Env, args []string) (runErr error) {
 			if len(args) != 0 {
 				return usagef("shot takes no positional arguments")
 			}
@@ -50,7 +50,7 @@ var shotCmd = Command{
 			if err != nil {
 				return err
 			}
-			defer c.conn.Close()
+			defer c.closeInto(&runErr)
 			if *every || *stop {
 				return printControl(ctx, env, c, map[string]any{"op": "shot", "outputs": outputs, "every_frame": *every, "stop": *stop, "dir": *dir, "raw": *raw, "timeout": timeout.String()})
 			}

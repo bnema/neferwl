@@ -100,8 +100,8 @@ func TestSubmitFrameOverlayOnlyWaitsForHeldReads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fence.Close()
-	defer w.Close()
+	defer func() { _ = fence.Close() }()
+	defer func() { _ = w.Close() }()
 	o.holdRead(fence)
 	defer o.dropRead()
 	overlayFrames(t, o, r, s, c, 1)
@@ -131,7 +131,7 @@ func TestRunVideoOnOverlayDoesNotRender(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			w.Close()
+			_ = w.Close()
 			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()

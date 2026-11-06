@@ -233,7 +233,7 @@ func (c *Cursor) setImage(pixels []byte, w, h, hotX, hotY int, hdrNits float64) 
 // when both are busy.
 func (c *Cursor) freeSlot() int {
 	for i, fb := range c.fbs {
-		if fb != c.screen && !(c.flying && c.flight.on && c.flight.fb == fb) {
+		if fb != c.screen && (!c.flying || !c.flight.on || c.flight.fb != fb) {
 			return i
 		}
 	}

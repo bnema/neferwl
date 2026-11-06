@@ -27,7 +27,7 @@ func TestReadSHMRect(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 			const offset = 7
 			src := make([]byte, offset+tc.stride*3)
 			for i := range src {
@@ -40,7 +40,7 @@ func TestReadSHMRect(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer unix.Close(fd)
+			defer func() { _ = unix.Close(fd) }()
 			dst, want := make([]byte, 36), make([]byte, 36)
 			for y := tc.rect.Min.Y; y < tc.rect.Max.Y; y++ {
 				for x := tc.rect.Min.X * 4; x < tc.rect.Max.X*4; x++ {
@@ -87,7 +87,7 @@ func TestSHMCopyShrunkPoolInvalid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if err := f.Truncate(16); err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestSHMFallbackCopiesAllDamage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	src := make([]byte, 48)
 	for i := range src {
 		src[i] = byte(i + 1)
@@ -117,7 +117,7 @@ func TestSHMFallbackCopiesAllDamage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	rects := []image.Rectangle{image.Rect(0, 0, 1, 1), image.Rect(2, 2, 3, 3)}
 	dst, want := make([]byte, 36), make([]byte, 36)
 	copy(want[:4], src[:4])
@@ -150,7 +150,7 @@ func TestSceneSkipsInvalidSHM(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 			if err := f.Truncate(16); err != nil {
 				t.Fatal(err)
 			}

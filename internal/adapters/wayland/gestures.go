@@ -3,11 +3,11 @@ package wayland
 import (
 	"time"
 
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/pointergestures"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/purego-libwayland/server"
 )
 
 // zwp_pointer_gestures_v1: touchpad swipes (other than the compositor's own
@@ -26,11 +26,11 @@ type gestureObject struct {
 func (g *gestureObject) alive() bool {
 	switch {
 	case g.swipe != nil:
-		return g.swipe.Resource.Alive()
+		return g.swipe.Alive()
 	case g.pinch != nil:
-		return g.pinch.Resource.Alive()
+		return g.pinch.Alive()
 	case g.hold != nil:
-		return g.hold.Resource.Alive()
+		return g.hold.Alive()
 	}
 	return false
 }

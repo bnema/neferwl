@@ -42,7 +42,7 @@ func (l *imeLog) Dispatch(e *wlturbo.Event) {
 			parts = append(parts, fmt.Sprintf("%q", e.String()))
 		case 'h':
 			if fd := int(e.Fd()); fd > 0 {
-				unix.Close(fd)
+				_ = unix.Close(fd)
 			}
 			parts = append(parts, "fd")
 		}

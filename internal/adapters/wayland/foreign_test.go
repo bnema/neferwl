@@ -4,11 +4,11 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/wlturbo"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgforeign"
 	xdgshell "github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
@@ -76,7 +76,7 @@ func childToplevel(t *testing.T, c *wlturbo.Display, parent func(surf uint32)) u
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := unix.Ftruncate(fd, 4); err != nil {
 		t.Fatal(err)
 	}

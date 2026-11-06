@@ -21,8 +21,8 @@ func TestPidfdSelf(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fds[0])
-	defer unix.Close(fds[1])
+	defer func() { _ = unix.Close(fds[0]) }()
+	defer func() { _ = unix.Close(fds[1]) }()
 	pidfd, err := Pidfd(fds[0])
 	if errors.Is(err, ErrNoPidfd) {
 		t.Skip("kernel without SO_PEERPIDFD")
@@ -30,7 +30,7 @@ func TestPidfdSelf(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pidfd.Close()
+	defer func() { _ = pidfd.Close() }()
 	exe, pid, err := ExeOfPidfd(int(pidfd.Fd()))
 	runtime.KeepAlive(pidfd)
 	if err != nil {
@@ -51,7 +51,7 @@ func TestOpenSelf(t *testing.T) {
 	if err != nil {
 		t.Skip("pidfd_open: ", err)
 	}
-	defer pidfd.Close()
+	defer func() { _ = pidfd.Close() }()
 	exe, pid, err := ExeOfPidfd(int(pidfd.Fd()))
 	runtime.KeepAlive(pidfd)
 	if err != nil {
@@ -65,7 +65,7 @@ func TestOpenSelf(t *testing.T) {
 func TestOpenMissingProcess(t *testing.T) {
 	// Pids above the kernel's pid_max do not exist.
 	if f, err := Open(1 << 30); err == nil {
-		f.Close()
+		_ = f.Close()
 		t.Fatal("Open of a missing pid succeeded")
 	}
 }
@@ -86,16 +86,16 @@ func TestExeOfPidfdDeletedAndExited(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer stdinW.Close()
+	defer func() { _ = stdinW.Close() }()
 	stdoutR, stdoutW, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer stdoutR.Close()
+	defer func() { _ = stdoutR.Close() }()
 	// The copied shell prints once it runs, then blocks reading stdin.
 	proc, err := os.StartProcess(path, []string{path, "-c", "echo ready; read _"}, &os.ProcAttr{Files: []*os.File{stdinR, stdoutW, nil}})
-	stdinR.Close()
-	stdoutW.Close()
+	_ = stdinR.Close()
+	_ = stdoutW.Close()
 	if err != nil {
 		t.Skip("cannot run a copy of sh: ", err)
 	}
@@ -105,7 +105,7 @@ func TestExeOfPidfdDeletedAndExited(t *testing.T) {
 	if err != nil {
 		t.Skip("pidfd_open: ", err)
 	}
-	defer unix.Close(pidfd)
+	defer func() { _ = unix.Close(pidfd) }()
 	// StartProcess may return before /proc/<pid>/exe names the copy; the
 	// line is written by the copied shell itself, so exec has completed.
 	line := make([]byte, len("ready\n"))

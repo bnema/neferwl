@@ -192,8 +192,7 @@ func (c *Card) ClientFD() (*os.File, error) {
 		return nil, err
 	}
 	if err = ioctl(fd, ioctlDropMaster, nil); err != nil && !errors.Is(err, unix.EINVAL) && !errors.Is(err, unix.EACCES) {
-		unix.Close(fd)
-		return nil, err
+		return nil, errors.Join(err, unix.Close(fd))
 	}
 	return os.NewFile(uintptr(fd), c.info.Path), nil
 }

@@ -37,7 +37,7 @@ func paceFixture(t *testing.T) (*Server, *surface) {
 	if err := s.openPaceTimer(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { unix.Close(s.paceFD) })
+	t.Cleanup(func() { _ = unix.Close(s.paceFD) })
 	w := &window{hasLast: true, last: ports.ConfigureWindow{Output: "DP-2", Visible: true}}
 	surf := &surface{server: s, xdg: &xdgSurface{window: w}}
 	surf.next.callbacks = []*wayland.Callback{new(wayland.Callback)}

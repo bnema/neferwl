@@ -123,7 +123,8 @@ func TestHeadlessTextInputIME(t *testing.T) {
 	defer func() {
 		if !imeExited {
 			_ = cmd.Process.Kill()
-			<-imeDone
+			discardedErr := <-imeDone
+			_ = discardedErr
 		}
 	}()
 	imeTimeout := time.After(5 * time.Second)
@@ -137,7 +138,7 @@ func TestHeadlessTextInputIME(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	text := mapTextClient(t, c)
 	poll := func(what string, ok func() bool) {
 		t.Helper()

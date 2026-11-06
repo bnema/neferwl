@@ -111,7 +111,7 @@ func (w *Workspace) Activate(id WindowID) {
 // and no pending fullscreen of id's own that would replace it.
 func (w *Workspace) coverStays(id WindowID) bool {
 	c := w.Cover()
-	return c != 0 && w.StashIndex(c) < 0 && !(w.stashHidden && w.hiddenFullscreen == id)
+	return c != 0 && w.StashIndex(c) < 0 && (!w.stashHidden || w.hiddenFullscreen != id)
 }
 
 // SetFullscreen applies a client request. It never moves focus: client

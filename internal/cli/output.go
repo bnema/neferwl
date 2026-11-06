@@ -9,7 +9,7 @@ import (
 var outputCmd = Command{Name: "output", Args: "add MODE [--name NAME] | rm NAME", Summary: "Manage runtime virtual outputs.", Setup: func(fs *flag.FlagSet) Runner {
 	target := addTargetFlag(fs)
 	name := fs.String("name", "", "Name for a new output.")
-	return func(ctx context.Context, env Env, args []string) error {
+	return func(ctx context.Context, env Env, args []string) (runErr error) {
 		positional, err := injectArguments(fs, args)
 		if err != nil {
 			return err
@@ -27,7 +27,7 @@ var outputCmd = Command{Name: "output", Args: "add MODE [--name NAME] | rm NAME"
 		if err != nil {
 			return err
 		}
-		defer c.conn.Close()
+		defer c.closeInto(&runErr)
 		return printControl(ctx, env, c, req)
 	}
 }}

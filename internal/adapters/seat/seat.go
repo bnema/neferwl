@@ -10,9 +10,10 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/bnema/neferwl/internal/adapters/fdwait"
 	"bnema.dev/purego"
 	"bnema.dev/zerowrap"
+	"github.com/bnema/neferwl/internal/adapters/fdwait"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"golang.org/x/sys/unix"
 )
 
@@ -194,12 +195,12 @@ func (s *Seat) dispatchLocked(ctx context.Context, timeoutMs int) error {
 // Run dispatches seat events until ctx ends. The owner calls Close afterwards,
 // once outputs have restored their CRTC state.
 // It sleeps until the seat fd is readable or a seat call wakes it.
-func (s *Seat) Run(ctx context.Context) error {
+func (s *Seat) Run(ctx context.Context) (err error) {
 	waiter, err := fdwait.New()
 	if err != nil {
 		return fmt.Errorf("seat waiter: %w", err)
 	}
-	defer waiter.Close()
+	defer func() { err = errors.Join(err, waiter.Close()) }()
 	waiter.StopOn(ctx)
 	s.mu.Lock()
 	fd := getFD(s.handle)
@@ -265,7 +266,7 @@ func (s *Seat) CloseDevice(fd int) {
 	delete(s.devices, int32(fd))
 	closeDevice(s.handle, id)
 	s.wakeLocked()
-	_ = unix.Close(fd)
+	logging.CloseFD(s.log, fd, "seat device")
 	s.log.Info().Int("fd", fd).Msg("device closed")
 }
 
@@ -293,7 +294,7 @@ func (s *Seat) closeLocked() {
 	}
 	for fd, id := range s.devices {
 		closeDevice(s.handle, id)
-		_ = unix.Close(int(fd))
+		logging.CloseFD(s.log, int(fd), "seat device")
 	}
 	s.devices = map[int32]int32{}
 	closeSeat(s.handle)

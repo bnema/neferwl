@@ -3,12 +3,12 @@ package wayland
 import (
 	"sort"
 
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/wlrlayershell"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/purego-libwayland/server"
 )
 
 type layerShell struct{ server *Server }
@@ -194,7 +194,7 @@ func (l *layerSurface) close() {
 	l.unmap()
 	l.output = nil
 	l.closed = true
-	if l.resource.Resource.Alive() {
+	if l.resource.Alive() {
 		l.resource.SendClosed()
 	}
 }

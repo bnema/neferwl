@@ -106,7 +106,7 @@ func TestRealOCR(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 			src, err := png.Decode(f)
 			if err != nil {
 				t.Fatal(err)
@@ -151,7 +151,7 @@ func TestSmallGlyphOCR(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	src, err := png.Decode(f)
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +236,7 @@ func TestPGMMatchesPNG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	src, err := png.Decode(f)
 	if err != nil {
 		t.Fatal(err)

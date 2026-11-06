@@ -25,7 +25,7 @@ func TestLayoutGeometryConformance(t *testing.T) {
 				// A spiral past its row subdivides a rect without changing columnWidth;
 				// bands keep their own geometry under a fullscreen column.
 				inSpiral := l.Spiral() && !l.LaneRow(v)
-				if width := l.ColumnWidth(v, i, ignore); !inSpiral && !(l.Bands() && mode == "fullscreen") && width != r.W {
+				if width := l.ColumnWidth(v, i, ignore); !inSpiral && (!l.Bands() || mode != "fullscreen") && width != r.W {
 					t.Fatalf("column %d width %d != rect %d", i, width, r.W)
 				}
 				if mode == "normal" || ignore {

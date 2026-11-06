@@ -141,7 +141,7 @@ func (p *popup) Reposition(r *xdgshell.Popup, pos *xdgshell.Positioner, token ui
 // configure sends core's placement: xdg_popup.configure then
 // xdg_surface.configure.
 func (p *popup) configure(c ports.ConfigurePopup) {
-	if p.done || !p.resource.Resource.Alive() || !p.w.xdg.resource.Resource.Alive() {
+	if p.done || !p.resource.Alive() || !p.w.xdg.resource.Alive() {
 		return
 	}
 	if c.Reposition && p.resource.Version() >= 3 {
@@ -184,7 +184,7 @@ func (p *popup) dismiss() {
 		return
 	}
 	p.done = true
-	if p.resource.Resource.Alive() {
+	if p.resource.Alive() {
 		p.resource.SendPopupDone()
 	}
 	p.w.unmap()

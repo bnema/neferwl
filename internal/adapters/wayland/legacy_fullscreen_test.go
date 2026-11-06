@@ -26,7 +26,8 @@ func outputSizedServer(t *testing.T, w, h int) (*Server, chan ports.ClientEvent,
 	go func() { done <- run() }()
 	t.Cleanup(func() {
 		cancel()
-		<-done
+		discardedErr := <-done
+		_ = discardedErr
 	})
 	return s, events, dir
 }

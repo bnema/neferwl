@@ -69,10 +69,10 @@ func (c *Core) keptX11(sc *screen, prev WindowID) WindowID {
 		if !eligible(p) {
 			continue
 		}
-		switch {
-		case p.ID == focused:
+		switch p.ID {
+		case focused:
 			return p.ID
-		case p.ID == prev:
+		case prev:
 			kept = p.ID
 		}
 		if best == 0 || c.windows.records[p.ID].mappedAt.After(c.windows.records[best].mappedAt) {

@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/wlturbo"
 	"github.com/bnema/go-wayland-bindings/server/extdatacontrol"
 	"github.com/bnema/go-wayland-bindings/server/primaryselection"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
@@ -156,7 +156,7 @@ func TestClipboardFollowsFocus(t *testing.T) {
 	if err := unix.Pipe2(fds[:], unix.O_CLOEXEC); err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fds[0])
+	defer func() { _ = unix.Close(fds[0]) }()
 	if err := wireRequest(b.c, offer, uint16(wayland.DataOfferRequestReceive), []int{fds[1]}, "text/plain"); err != nil {
 		t.Fatal(err)
 	}

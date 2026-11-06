@@ -78,7 +78,7 @@ func TestImplicitAcquireWatchFailureDiscardsCommit(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				defer plane.Close()
+				defer func() { _ = plane.Close() }()
 			}
 			// Real pollable descriptors exercise observation errors without replacing
 			// watch/poll functions or constructing a handwritten device double.
@@ -106,7 +106,7 @@ func TestImplicitAcquireWatchFailureDiscardsCommit(t *testing.T) {
 				surf.Commit(surf.wl)
 			})
 			if writer != nil {
-				writer.Close()
+				_ = writer.Close()
 			}
 			if got, ok := h.content(100 * time.Millisecond); ok {
 				t.Fatalf("failed implicit acquire published %+v", got)
@@ -223,7 +223,7 @@ func TestSyncWaiterPinFailureClosesWaits(t *testing.T) {
 	if err := unix.Pipe2(p[:], unix.O_CLOEXEC|unix.O_NONBLOCK); err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(p[1])
+	defer func() { _ = unix.Close(p[1]) }()
 	w := sw.add(p[0])
 	sw.run(context.Background())
 	if !sw.fired(w) || !w.failed {

@@ -101,7 +101,7 @@ func newDragRigWith(t *testing.T, animated bool, opts core.Options, edit func(*d
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() { cancel(); discardedErr := <-done; _ = discardedErr })
 	for _, o := range outs {
 		r.output <- ports.OutputAdded{Info: o}
 		r.outputs = append(r.outputs, o.Name)

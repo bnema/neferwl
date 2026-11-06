@@ -4,11 +4,11 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/wlturbo"
+	"bnema.dev/zerowrap"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
 	"github.com/bnema/neferwl/internal/domain"
-	"bnema.dev/wlturbo"
-	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 
@@ -40,7 +40,7 @@ func TestHeadlessTiledSHMCallbackAndCopyBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	const tiles = 64
 	const edge = 8
 	const stride = edge * 4

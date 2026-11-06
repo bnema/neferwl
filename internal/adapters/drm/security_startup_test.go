@@ -28,7 +28,7 @@ func TestSecurityProtectedStartupBlackProofAndCaptureRejection(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() domain.DMABuf {
 		f, w := protectionFence(t, false)
-		w.Close()
+		_ = w.Close()
 		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
@@ -70,7 +70,7 @@ func TestSecurityProtectedStartupBlackProofAndCaptureRejection(t *testing.T) {
 	}
 	mu.Unlock()
 	f, w := protectionFence(t, false)
-	w.Close()
+	_ = w.Close()
 	captures <- domain.CaptureRequest{ID: 9, Dst: domain.SHMBuffer{File: f}}
 	select {
 	case reply := <-captured:
@@ -95,7 +95,7 @@ func TestSecurityStartupClearWaitUsesRunContext(t *testing.T) {
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() domain.DMABuf {
 		f, w := protectionFence(t, false)
-		w.Close()
+		_ = w.Close()
 		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()

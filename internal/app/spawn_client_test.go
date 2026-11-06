@@ -37,7 +37,7 @@ func runSpawnClient() error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	if err := c.Roundtrip(); err != nil {
 		return err
 	}
@@ -59,12 +59,12 @@ func runSpawnClient() error {
 		return err
 	}
 	if err := unix.Ftruncate(fd, 12); err != nil {
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		return err
 	}
 	pool, err := shm.CreatePool(fd, 12)
 	if err != nil {
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		return err
 	}
 	var buffers [3]*clientcore.Buffer

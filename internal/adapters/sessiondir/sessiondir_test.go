@@ -14,7 +14,7 @@ func TestRegistry(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer d.Close()
+		defer func() { _ = d.Close() }()
 		meta := Meta{ID: id, Control: d.Path() + "/control.sock", PID: os.Getpid(), Created: time.Now()}
 		if err := d.WriteMeta(meta); err != nil {
 			t.Fatal(err)

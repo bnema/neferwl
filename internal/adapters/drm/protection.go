@@ -179,7 +179,7 @@ func (o *Output) protectedModeset(ctx context.Context, r ports.Renderer) error {
 	fence, err := r.Render(domain.Scene{Seq: 0, Background: "#000000"}, nil)
 	if err != nil {
 		if fence != nil {
-			fence.Close()
+			o.closeFence(fence)
 		}
 		return fmt.Errorf("clear protected output: %w", err)
 	}
@@ -189,7 +189,7 @@ func (o *Output) protectedModeset(ctx context.Context, r ports.Renderer) error {
 	}
 	if fence != nil {
 		err := syncfile.Wait(ctx, fence)
-		fence.Close()
+		o.closeFence(fence)
 		if err != nil {
 			err = fmt.Errorf("wait protected clear: %w", err)
 			if ctx.Err() != nil {

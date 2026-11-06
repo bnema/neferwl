@@ -28,8 +28,8 @@ func TestLeaseResourceOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
-	defer w.Close()
+	defer func() { _ = r.Close() }()
+	defer func() { _ = w.Close() }()
 	k.EXPECT().createLease(mock.Anything).RunAndReturn(func(ids []uint32) (*os.File, uint32, error) {
 		if !slices.Equal(ids, []uint32{40, 30, 50}) {
 			t.Errorf("objects %v", ids)

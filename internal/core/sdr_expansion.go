@@ -59,7 +59,7 @@ func decideSDRExpansion(in sdrExpansionInput) (domain.SDRExpansionCurve, string)
 		if !in.Fullscreen {
 			return off, "not fullscreen"
 		}
-		if !in.Game && !(r.sdrExpand != nil && *r.sdrExpand == domain.SDRExpandGame) {
+		if !in.Game && (r.sdrExpand == nil || *r.sdrExpand != domain.SDRExpandGame) {
 			return off, "not game"
 		}
 	}

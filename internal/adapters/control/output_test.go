@@ -16,7 +16,9 @@ func TestOutputDispatch(t *testing.T) {
 		out := make(chan ports.ControlRequest)
 		for _, wire := range []string{`{"op":"output-add","mode":"1920x1080@60","name":"X"}`, `{"op":"output-rm","name":"X"}`} {
 			var req request
-			json.Unmarshal([]byte(wire), &req)
+			if err := json.Unmarshal([]byte(wire), &req); err != nil {
+				t.Fatal(err)
+			}
 			go func() {
 				r := (<-out).(ports.ControlOutput)
 				if r.Name != "X" || r.Caps != domain.CapsAll || r.Remove != (req.Op == "output-rm") {

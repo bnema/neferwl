@@ -84,7 +84,7 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene domain
 	// hidden-workspace child does not.
 	decision := o.decideFrame(scene, surfaces, len(normal) > 0 || len(excluded) > 0 || len(scene.CaptureIndicators) > 0)
 	if !o.sceneCurrent(scene) || o.protected {
-		decision.overlay.close()
+		decision.overlay.close(o.log)
 		return false, errSecurityScene
 	}
 	if decision.fb != 0 {
@@ -108,7 +108,7 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene domain
 				return false, err
 			}
 			// Refused: compose the window too (cached per buffer).
-			ov.close()
+			ov.close(o.log)
 			ov, composed = overlayWin{}, scene
 		}
 	}
@@ -119,9 +119,9 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene domain
 	if perr != nil {
 		o.holdRead(pdone)
 		if pdone != nil {
-			pdone.Close()
+			o.closeFence(pdone)
 		}
-		ov.close()
+		ov.close(o.log)
 		return false, renderError{perr}
 	}
 	// Not capture admission: an engage during the render retains its client
@@ -129,13 +129,13 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene domain
 	if !o.sceneCurrent(scene) || o.protected {
 		o.holdRead(pdone)
 		if pdone != nil {
-			pdone.Close()
+			o.closeFence(pdone)
 		}
-		ov.close()
+		ov.close(o.log)
 		return false, errSecurityScene
 	}
 	if pdone != nil {
-		pdone.Close()
+		o.closeFence(pdone)
 	}
 	if took {
 		normal = nil // answered from the frame without the indicator
@@ -150,9 +150,9 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene domain
 		if xerr != nil {
 			o.holdRead(xdone)
 			if xdone != nil {
-				xdone.Close()
+				o.closeFence(xdone)
 			}
-			ov.close()
+			ov.close(o.log)
 			return false, renderError{xerr}
 		}
 		// An excluded composition is not capture admission. Engage may have
@@ -161,13 +161,13 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene domain
 		if !o.sceneCurrent(scene) || o.protected {
 			o.holdRead(xdone)
 			if xdone != nil {
-				xdone.Close()
+				o.closeFence(xdone)
 			}
-			ov.close()
+			ov.close(o.log)
 			return false, errSecurityScene
 		}
 		if xdone != nil {
-			xdone.Close()
+			o.closeFence(xdone)
 		}
 		pipeline.SubmitScoped(scene.Security, r, excluded)
 		// Ownership moved to the worker (or an immediate failure reply).
@@ -175,15 +175,15 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene domain
 	}
 	done, rerr := r.Render(composed, surfaces)
 	if rerr != nil {
-		ov.close()
+		ov.close(o.log)
 		return false, renderError{rerr}
 	}
 	if ov.fb != 0 && !o.testOverlay(o.fbs[o.back], ov) {
 		// Refused: compose the window too (cached per buffer).
 		if done != nil {
-			done.Close()
+			o.closeFence(done)
 		}
-		ov.close()
+		ov.close(o.log)
 		ov = overlayWin{}
 		if done, rerr = r.Render(scene, surfaces); rerr != nil {
 			return false, renderError{rerr}
@@ -192,9 +192,9 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene domain
 	if !o.sceneCurrent(scene) || o.protected {
 		o.holdRead(done)
 		if done != nil {
-			done.Close()
+			o.closeFence(done)
 		}
-		ov.close()
+		ov.close(o.log)
 		return false, errSecurityScene
 	}
 	if len(normal) > 0 {
@@ -208,14 +208,14 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene domain
 	if !o.sceneCurrent(scene) || o.protected {
 		o.holdRead(done)
 		if done != nil {
-			done.Close()
+			o.closeFence(done)
 		}
-		ov.close()
+		ov.close(o.log)
 		return false, errSecurityScene
 	}
 	done, rerr = o.copyFence(o.back, done)
 	if rerr != nil {
-		ov.close()
+		ov.close(o.log)
 		return false, renderError{rerr}
 	}
 	// The overlay buffer is on screen like a scanned-out one: it is
@@ -232,9 +232,9 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene domain
 		o.holdRead(done)
 	}
 	if done != nil {
-		done.Close()
+		o.closeFence(done)
 	}
-	ov.close()
+	ov.close(o.log)
 	if err = o.finishOverlayCommit(err, ov.buf); err == nil {
 		// The image now holds what was drawn last: composed, or the whole
 		// scene after an overlay refusal.
@@ -251,7 +251,7 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene domain
 // commitOverlayOnly commits front, the image on screen, again with ov on
 // the overlay plane: no render, no GPU fence. It closes ov's fence.
 func (o *Output) commitOverlayOnly(front uint32, scene domain.Scene, f pendingFrame, ov overlayWin) error {
-	defer ov.close()
+	defer ov.close(o.log)
 	if !o.sceneCurrent(scene) || o.protected {
 		return errSecurityScene
 	}

@@ -52,7 +52,7 @@ func damageMatchesFullRedraw(t *testing.T, tr, out domain.BufferTransform) {
 		t.Skipf("no exportable targets: %v", err)
 	}
 	for _, b := range bufsD {
-		b.Planes[0].File.Close()
+		_ = b.Planes[0].File.Close()
 	}
 	px := func(c color.RGBA, x0, y0, x1, y1 int, into []byte) []byte {
 		for y := y0; y < y1; y++ {

@@ -62,6 +62,11 @@ func dialPath(path string) (*controlClient, error) {
 	return &controlClient{conn: conn, enc: json.NewEncoder(conn), dec: json.NewDecoder(conn)}, nil
 }
 
+// closeInto closes the connection, joining a close failure into *err.
+func (c *controlClient) closeInto(err *error) {
+	*err = errors.Join(*err, c.conn.Close())
+}
+
 func (c *controlClient) call(ctx context.Context, req map[string]any) (controlResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -136,7 +141,7 @@ var doCmd = Command{
 	Setup: func(fs *flag.FlagSet) Runner {
 		target := addTargetFlag(fs)
 		wf := addWaitFlags(fs)
-		return func(ctx context.Context, env Env, args []string) error {
+		return func(ctx context.Context, env Env, args []string) (runErr error) {
 			// flag stops at the first positional argument; accept options after
 			// action arguments too.
 			action, err := injectArguments(fs, args)
@@ -154,7 +159,7 @@ var doCmd = Command{
 			if err != nil {
 				return err
 			}
-			defer c.conn.Close()
+			defer c.closeInto(&runErr)
 			return printControl(ctx, env, c, req)
 		}
 	},
@@ -164,7 +169,7 @@ var queryCmd = Command{
 	Name: "query", Args: "state", Summary: "Query the compositor over the control socket.",
 	Setup: func(fs *flag.FlagSet) Runner {
 		target := addTargetFlag(fs)
-		return func(ctx context.Context, env Env, args []string) error {
+		return func(ctx context.Context, env Env, args []string) (runErr error) {
 			if len(args) != 1 || args[0] != "state" {
 				return usagef("expected state")
 			}
@@ -172,7 +177,7 @@ var queryCmd = Command{
 			if err != nil {
 				return err
 			}
-			defer c.conn.Close()
+			defer c.closeInto(&runErr)
 			return printControl(ctx, env, c, map[string]any{"op": "query", "what": "state"})
 		}
 	},

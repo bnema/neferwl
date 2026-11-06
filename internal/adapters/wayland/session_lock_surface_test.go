@@ -4,13 +4,13 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/wlturbo"
 	"github.com/bnema/go-wayland-bindings/server/extsessionlock"
 	"github.com/bnema/go-wayland-bindings/server/linuxdrmsyncobj"
 	"github.com/bnema/go-wayland-bindings/server/viewporter"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/wlrlayershell"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
-	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
@@ -254,7 +254,7 @@ func lockSizedBuffer(t *testing.T, c *wlturbo.Display, w, h int) uint32 {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	size := int32(w * h * 4)
 	if err := unix.Ftruncate(fd, int64(size)); err != nil {
 		t.Fatal(err)

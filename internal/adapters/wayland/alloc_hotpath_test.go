@@ -187,7 +187,7 @@ func TestBufferContentAllocations(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := os.NewFile(uintptr(fd), "content-allocs")
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if err := f.Truncate(28); err != nil {
 		t.Fatal(err)
 	}

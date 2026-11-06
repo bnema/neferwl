@@ -29,7 +29,7 @@ func (o *Output) probeAsync(r ports.Renderer) {
 	req := &atomicReq{}
 	req.set(o.primary.id, o.primary.prop("FB_ID"), uint64(o.fbs[o.back]))
 	if done != nil {
-		defer done.Close()
+		defer o.closeFence(done)
 		o.fenceProp(req, o.primary, done)
 	}
 	err = o.k.commit(req, atomicTestOnly|flipAsyncFlag, 0)

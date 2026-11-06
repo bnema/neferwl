@@ -67,7 +67,7 @@ func TestControlTargetFlag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	if err := d.WriteMeta(sessiondir.Meta{ID: "chosen", Control: filepath.Join(d.Path(), "selected.sock")}); err != nil {
 		t.Fatal(err)
 	}

@@ -10,11 +10,11 @@ import (
 
 	"github.com/bnema/neferwl/internal/domain"
 
+	"bnema.dev/purego-libwayland/server"
+	"bnema.dev/wlturbo"
 	dl "github.com/bnema/go-wayland-bindings/server/drmlease"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/purego-libwayland/server"
-	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
@@ -123,7 +123,7 @@ func TestDRMLeaseFlow(t *testing.T) {
 	if len(p.fds) != 1 || len(p.connectors) != 1 {
 		t.Fatalf("device: fds=%v connectors=%v", p.fds, p.connectors)
 	}
-	defer unix.Close(p.fds[0])
+	defer func() { _ = unix.Close(p.fds[0]) }()
 	conn := p.connectors[0]
 	req := c.AllocateID()
 	registerProtocol(t, c, req)
@@ -155,7 +155,7 @@ func TestDRMLeaseFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	events <- ports.LeaseReply{ID: got.ID, FD: w, LeaseID: 7}
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -164,7 +164,7 @@ func TestDRMLeaseFlow(t *testing.T) {
 	if len(l.fds) != 1 {
 		t.Fatalf("lease fd count %d", len(l.fds))
 	}
-	defer unix.Close(l.fds[0])
+	defer func() { _ = unix.Close(l.fds[0]) }()
 	requestProtocol(t, c, lease, dl.WpDrmLeaseV1RequestDestroy)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -194,7 +194,7 @@ func TestDRMLeaseErrors(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, fd := range p.fds {
-				defer unix.Close(fd)
+				defer func() { _ = unix.Close(fd) }()
 			}
 			req := c.AllocateID()
 			registerProtocol(t, c, req)
@@ -221,7 +221,7 @@ func TestDRMLeaseFinished(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(p.fds[0])
+	defer func() { _ = unix.Close(p.fds[0]) }()
 	req := c.AllocateID()
 	registerProtocol(t, c, req)
 	requestProtocol(t, c, dev, dl.WpDrmLeaseDeviceV1RequestCreateLeaseRequest, req)
@@ -239,7 +239,7 @@ func TestDRMLeaseFinished(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	events <- ports.LeaseReply{ID: got.ID, FD: w, LeaseID: 8}
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -248,7 +248,7 @@ func TestDRMLeaseFinished(t *testing.T) {
 	if len(l.fds) != 1 {
 		t.Fatal("missing lease fd")
 	}
-	defer unix.Close(l.fds[0])
+	defer func() { _ = unix.Close(l.fds[0]) }()
 	events <- ports.LeaseFinished{Card: got.Card, LeaseID: 8}
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -357,7 +357,7 @@ func TestLeaseIDsAreScopedToCard(t *testing.T) {
 		if len(p.connectors) != 1 || len(p.fds) != 1 {
 			t.Fatalf("device %d: %+v", dev, p)
 		}
-		defer unix.Close(p.fds[0])
+		defer func() { _ = unix.Close(p.fds[0]) }()
 		req := c.AllocateID()
 		registerProtocol(t, c, req)
 		requestProtocol(t, c, dev, dl.WpDrmLeaseDeviceV1RequestCreateLeaseRequest, req)
@@ -381,7 +381,7 @@ func TestLeaseIDsAreScopedToCard(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer r.Close()
+		defer func() { _ = r.Close() }()
 		events <- ports.LeaseReply{ID: req.ID, FD: w, LeaseID: 7}
 	}
 	if err := c.Roundtrip(); err != nil {
@@ -427,7 +427,7 @@ func TestLeaseDestroyPendingRevokesLateReply(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(p.fds[0])
+	defer func() { _ = unix.Close(p.fds[0]) }()
 	req := c.AllocateID()
 	registerProtocol(t, c, req)
 	requestProtocol(t, c, dev, dl.WpDrmLeaseDeviceV1RequestCreateLeaseRequest, req)
@@ -477,7 +477,7 @@ func safelyLeaseMaps(t *testing.T, c *wlturbo.Display, events chan ports.LeaseMe
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	events <- ports.LeaseReply{ID: sent.ID, FD: w, LeaseID: 51}
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)

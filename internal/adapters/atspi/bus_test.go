@@ -1,10 +1,10 @@
 package atspi
 
 import (
+	"bnema.dev/zerowrap"
 	"bufio"
 	"bytes"
 	"context"
-	"bnema.dev/zerowrap"
 	"os"
 	"os/exec"
 	"strings"
@@ -238,13 +238,14 @@ func TestConnectCancelledWhileEnabling(t *testing.T) {
 			if m.Type != zerobus.TypeMethodCall {
 				continue
 			}
-			if m.Member == "GetAddress" {
+			switch m.Member {
+			case "GetAddress":
 				app.NewReply(m, "s").Str(address)
 				if _, err := app.Send(); err != nil {
 					peerDone <- err
 					return
 				}
-			} else if m.Member == "Set" {
+			case "Set":
 				cancel()
 				peerDone <- nil
 				return

@@ -435,7 +435,7 @@ func (h *colorParams) Create(r *cm.WpImageDescriptionCreatorParamsV1, id uint32)
 	// cross-product can be rendered. Reject unsupported combinations as an
 	// image-description failure, not a protocol error.
 	validSDR := h.d.Primaries == srgb && (h.d.TF == extLinear || h.d.TF == uint32(cm.WpColorManagerV1TransferFunctionSrgb))
-	if !validSDR && !(h.d.Primaries == bt2020 && h.d.TF == pq) {
+	if !validSDR && (h.d.Primaries != bt2020 || h.d.TF != pq) {
 		h.s.createColorDescription(r.Client(), r.Version(), id, h.d, uint32(cm.WpImageDescriptionV1CauseUnsupported), false)
 		return
 	}
@@ -459,12 +459,13 @@ func (h *colorParams) SetTfNamed(r *cm.WpImageDescriptionCreatorParamsV1, tf uin
 	h.tfSet = true
 	h.d.TF = tf
 	h.d.Set = true
-	if tf == pq {
+	switch tf {
+	case pq:
 		h.d.min, h.d.max, h.d.white = 50, 10000, 203
-	} else if tf == extLinear {
+	case extLinear:
 		// Protocol defaults: sRGB primary volume, 80 cd/m² reference white.
 		h.d.min, h.d.max, h.d.white = 2000, 80, 80
-	} else {
+	default:
 		h.d.min, h.d.max, h.d.white = 100, 100, 100
 	}
 	h.d.targetMin, h.d.targetMax = h.d.min, h.d.max

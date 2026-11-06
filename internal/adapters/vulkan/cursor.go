@@ -9,6 +9,7 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	vk "bnema.dev/purego-vulkan/vulkan"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 )
 
 // Cursor images for the display's cursor plane: two linear B8G8R8A8
@@ -38,7 +39,7 @@ func (r *Renderer) CursorBuffers(size int) ([2]domain.DMABuf, error) {
 		if err != nil {
 			r.dropCursors()
 			for _, b := range out[:i] {
-				b.Planes[0].File.Close()
+				logging.CloseFile(r.log, b.Planes[0].File, "cursor image")
 			}
 			return [2]domain.DMABuf{}, err
 		}

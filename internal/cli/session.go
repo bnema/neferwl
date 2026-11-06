@@ -20,7 +20,9 @@ func parseSubFlags(env Env, fs *flag.FlagSet, args, summary string, argv []strin
 	if err := fs.Parse(argv); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			// Not printUsage: it lists commands, which include sessionCmd.
-			fmt.Fprintf(env.Stdout, "usage: neferwl session %s\n\n%s\n\nFlags:\n", args, summary)
+			if _, err := fmt.Fprintf(env.Stdout, "usage: neferwl session %s\n\n%s\n\nFlags:\n", args, summary); err != nil {
+				return true, err
+			}
 			fs.SetOutput(env.Stdout)
 			fs.PrintDefaults()
 			return true, nil

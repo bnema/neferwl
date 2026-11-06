@@ -45,17 +45,17 @@ func TestCheckOneObject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	g, err := os.CreateTemp(t.TempDir(), "b")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer g.Close()
+	defer func() { _ = g.Close() }()
 	dup, err := unix.FcntlInt(f.Fd(), unix.F_DUPFD_CLOEXEC, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(dup)
+	defer func() { _ = unix.Close(dup) }()
 	fd := int(f.Fd())
 	if err := checkOneObject([]int{fd}); err != nil {
 		t.Errorf("one plane: %v", err)
@@ -93,12 +93,12 @@ func TestReopenDeviceIndependentDescription(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	fd, err := reopenDevice(int(f.Fd()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	var a, b unix.Stat_t
 	if err := unix.Fstat(int(f.Fd()), &a); err != nil {
 		t.Fatal(err)
@@ -126,7 +126,7 @@ func TestReopenDevicePrefersRenderNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer primary.Close()
+	defer func() { _ = primary.Close() }()
 	sysChar, devDRI := t.TempDir(), t.TempDir()
 	// A regular file has rdev 0:0; discovery still exercises the real fstat.
 	drmDir := filepath.Join(sysChar, "0:0", "device", "drm")
@@ -138,12 +138,12 @@ func TestReopenDevicePrefersRenderNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer render.Close()
+	defer func() { _ = render.Close() }()
 	fd, err := reopenDeviceAt(int(primary.Fd()), sysChar, devDRI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	var want, got unix.Stat_t
 	if err := unix.Fstat(int(render.Fd()), &want); err != nil {
 		t.Fatal(err)
@@ -168,7 +168,7 @@ func TestReopenDevicePrefersRenderNode(t *testing.T) {
 		t.Fatal(err)
 	}
 	if fd, err := reopenDeviceAt(int(primary.Fd()), sysChar, devDRI); err == nil {
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		t.Fatal("fell back to primary despite a present render node")
 	}
 }

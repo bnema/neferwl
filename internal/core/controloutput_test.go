@@ -21,7 +21,7 @@ func TestControlOutputCompletion(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() { done <- c.Run(ctx) }()
-		defer func() { cancel(); <-done }()
+		defer func() { cancel(); discardedErr := <-done; _ = discardedErr }()
 		reply := make(chan ports.ControlReply, 1)
 		control <- ports.ControlOutput{Caps: domain.CapRead, Reply: reply}
 		synctest.Wait()

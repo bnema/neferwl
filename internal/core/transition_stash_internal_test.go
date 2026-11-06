@@ -140,7 +140,7 @@ func TestStashHideLeaves(t *testing.T) {
 
 		s = frame(t, c, ic, 40*time.Millisecond)
 		for _, id := range []WindowID{2, 3} {
-			if w := sceneWindow(t, s, id); !(w.Fade > 0 && w.Fade < 1) || !(w.Rect.W < left[id].Rect.W) {
+			if w := sceneWindow(t, s, id); !(w.Fade > 0 && w.Fade < 1) || (w.Rect.W >= left[id].Rect.W) {
 				t.Fatalf("window %d mid-way %+v", id, w)
 			}
 		}
@@ -270,7 +270,7 @@ func TestOverviewPileScalesFromStash(t *testing.T) {
 		for _, id := range []WindowID{2, 3} {
 			w := sceneWindow(t, s, id)
 			p := settledOf(t, sc, id)
-			if !(w.Rect.W < from[id].W && w.Rect.W > p.Rect.W) || !(w.Zoom > overviewCardZoom && w.Zoom < 1) {
+			if (w.Rect.W >= from[id].W || w.Rect.W <= p.Rect.W) || !(w.Zoom > overviewCardZoom && w.Zoom < 1) {
 				t.Fatalf("window %d mid-way %+v, want between %+v and %+v", id, w, from[id], p.Rect)
 			}
 			checkContent(t, w, from[id], "mid-way")
@@ -493,7 +493,7 @@ func TestWithLeavingOrderIsDeterministic(t *testing.T) {
 				i4, i5 := slices.Index(ids, 4), slices.Index(ids, 5)
 				// Absent tiles by ID, then the leaving stash float (in its
 				// slot), the absent float last.
-				if !(i2 >= 0 && i2 < i3 && i3 < i4 && i4 < i5 && i5 == len(ids)-1) {
+				if i2 < 0 || i2 >= i3 || i3 >= i4 || i4 >= i5 || i5 != len(ids)-1 {
 					t.Fatalf("order %v: want tiles 2, 3, then the stash float 4, then 5", ids)
 				}
 				if k := slices.Index(ids, 4); !sc.settledLayout[k].Leaving {

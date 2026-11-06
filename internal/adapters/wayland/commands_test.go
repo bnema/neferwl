@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/zerowrap"
 )
 
 // Adjacent motions for one window fold into the last queued command, summing
@@ -126,7 +126,7 @@ func TestForwarderDrainsWhileDisplayBusy(t *testing.T) {
 	done := make(chan error, 1)
 	run := guardedServerRun(t, s, ctx)
 	go func() { done <- run() }()
-	defer func() { cancel(); <-done }()
+	defer func() { cancel(); discardedErr := <-done; _ = discardedErr }()
 
 	// Deferred after the shutdown above, so it runs first: a failing
 	// assertion never leaves the display stalled while Run is joined.
@@ -205,7 +205,7 @@ func TestCommandThroughput(t *testing.T) {
 	done := make(chan error, 1)
 	run := guardedServerRun(t, s, ctx)
 	go func() { done <- run() }()
-	defer func() { cancel(); <-done }()
+	defer func() { cancel(); discardedErr := <-done; _ = discardedErr }()
 	release := releaseOnce(t)
 	defer release.do()
 	stalled := make(chan struct{})

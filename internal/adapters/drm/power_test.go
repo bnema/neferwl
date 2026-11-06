@@ -23,7 +23,7 @@ func TestRunOutputPower(t *testing.T) {
 		r := portsmocks.NewMockRenderer(t)
 		buf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
-			w.Close()
+			_ = w.Close()
 			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
@@ -134,7 +134,7 @@ func TestRunOutputStartOff(t *testing.T) {
 		r := portsmocks.NewMockRenderer(t)
 		buf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
-			w.Close()
+			_ = w.Close()
 			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()

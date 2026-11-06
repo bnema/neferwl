@@ -1,6 +1,7 @@
 package drm
 
 import (
+	"bnema.dev/zerowrap"
 	"os"
 	"testing"
 	"time"
@@ -439,7 +440,7 @@ func TestFrameDecisionOverlayFallback(t *testing.T) {
 	if d.fb != 0 || d.overlay.fb != 88 || o.reason != "other_windows" || len(d.composed.Windows) != 1 {
 		t.Fatalf("overlay decision: %+v", d)
 	}
-	d.overlay.close()
+	d.overlay.close(zerowrap.Logger{})
 	o.clientFBs[9].overlayFailed = "overlay_refused"
 	d = o.decideFrame(s, surfaces, false)
 	if d.overlay.fb != 0 || o.overlayReason != "overlay_refused" || len(d.composed.Windows) != 2 {

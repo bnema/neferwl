@@ -23,7 +23,7 @@ func TestProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	for path, want := range map[string]os.FileMode{filepath.Dir(path): 0o700, path: 0o600} {
 		info, err := os.Stat(path)
 		if err != nil || info.Mode().Perm() != want {
@@ -39,7 +39,7 @@ func TestProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
@@ -194,9 +194,9 @@ func TestListenPreservesLiveSocketAndFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	if other, err := Listen(path, ids, Options{}); err == nil {
-		other.Close()
+		_ = other.Close()
 		t.Fatal("replaced live listener")
 	}
 	if err := s.Close(); err != nil {
@@ -206,7 +206,7 @@ func TestListenPreservesLiveSocketAndFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if other, err := Listen(path, ids, Options{}); err == nil {
-		other.Close()
+		_ = other.Close()
 		t.Fatal("replaced regular file")
 	}
 	data, err := os.ReadFile(path)
@@ -240,7 +240,7 @@ func TestConnectionOrderingAndClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	out := make(chan ports.ControlRequest, 2)
@@ -250,7 +250,7 @@ func TestConnectionOrderingAndClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +269,7 @@ func TestConnectionOrderingAndClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer barrier.Close()
+	defer func() { _ = barrier.Close() }()
 	if err := barrier.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +318,7 @@ func TestQuitReplyBeforeShutdown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	out := make(chan ports.ControlRequest)
@@ -328,7 +328,7 @@ func TestQuitReplyBeforeShutdown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
 		t.Fatal(err)
 	}

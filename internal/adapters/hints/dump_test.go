@@ -66,7 +66,7 @@ func TestDumpSourcesAndCrops(t *testing.T) {
 	require.Equal(t, []string{"ocr"}, meta.Sources)
 	f, err := os.Open(files[0][:len(files[0])-5] + ".annotated.png")
 	require.NoError(t, err)
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	img, err := png.Decode(f)
 	require.NoError(t, err)
 	for i, target := range j.targets {

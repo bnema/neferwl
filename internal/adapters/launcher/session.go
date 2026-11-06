@@ -123,7 +123,11 @@ func NotifyReady(socket string, log zerowrap.Logger) {
 		log.Warn().Err(err).Msg("session readiness notification failed")
 		return
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			log.Warn().Err(err).Msg("close session readiness socket")
+		}
+	}()
 	if _, err := conn.Write([]byte("READY=1")); err != nil {
 		log.Warn().Err(err).Msg("session readiness notification failed")
 		return

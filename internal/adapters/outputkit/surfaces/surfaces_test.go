@@ -26,8 +26,8 @@ func TestEmptyContentKeptWhileShown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
-	defer w.Close()
+	defer func() { _ = r.Close() }()
+	defer func() { _ = w.Close() }()
 	full := domain.SurfaceContent{ID: 1, Seq: 4, Width: 10, Height: 10, DMABuf: &domain.DMABuf{ID: 7}, Acquire: r}
 	tb.Update(full, shows(1))
 	tb.Update(domain.SurfaceContent{ID: 1, Seq: 5}, shows(1))
@@ -110,8 +110,8 @@ func TestKeptChildrenFencesDroppedOnACopy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
-	defer w.Close()
+	defer func() { _ = r.Close() }()
+	defer func() { _ = w.Close() }()
 	children := []domain.Subsurface{{SurfaceContent: domain.SurfaceContent{DMABuf: &domain.DMABuf{ID: 2}, Acquire: r}}}
 	full := domain.SurfaceContent{ID: 1, Seq: 1, SHM: &domain.SHMBuffer{Pool: 1}, Children: children}
 	tb.Update(full, shows(1))

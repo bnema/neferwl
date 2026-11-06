@@ -12,6 +12,7 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	vk "bnema.dev/purego-vulkan/vulkan"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"golang.org/x/sys/unix"
 )
 
@@ -27,8 +28,7 @@ func shmFD(b *domain.SHMBuffer, end int) (int, error) {
 		return -1, err
 	}
 	if err := shmSize(fd, end); err != nil {
-		unix.Close(fd)
-		return -1, err
+		return -1, errors.Join(err, unix.Close(fd))
 	}
 	return fd, nil
 }
@@ -78,7 +78,7 @@ func readSHMRect(fd int, dst []byte, offset, stride, row int, rc image.Rectangle
 
 // copySHMRects is only for GPU mappings which reject kernel writes. The
 // mapping never survives this copy; SIGBUS from concurrent truncation is guarded.
-func copySHMRects(fd int, dst []byte, offset, stride, row int, rects []image.Rectangle) error {
+func copySHMRects(fd int, dst []byte, offset, stride, row int, rects []image.Rectangle) (err error) {
 	end := 0
 	for _, rc := range rects {
 		end = max(end, offset+(rc.Max.Y-1)*stride+rc.Max.X*4)
@@ -93,7 +93,7 @@ func copySHMRects(fd int, dst []byte, offset, stride, row int, rects []image.Rec
 	if err != nil {
 		return err
 	}
-	defer unix.Munmap(data)
+	defer func() { err = errors.Join(err, unix.Munmap(data)) }()
 	if !copyGuarded(func() {
 		for _, rc := range rects {
 			for y := rc.Min.Y; y < rc.Max.Y; y++ {
@@ -315,7 +315,7 @@ func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, b *domain.
 		if err != nil {
 			return nil, err
 		}
-		defer unix.Close(fd)
+		defer logging.CloseFD(r.log, fd, "shm copy fd")
 	}
 	if b != nil {
 		err := c.gpu.readSHM(fd, dst, offset, stride, row, r.shmRects)

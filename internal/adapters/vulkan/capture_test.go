@@ -256,7 +256,7 @@ func TestCaptureCurve(t *testing.T) {
 	if white[0] < 240 || white[0] != white[1] || white[1] != white[2] {
 		t.Fatalf("diffuse white %v", white)
 	}
-	if !(white[0] < twice[0] && twice[0] < peak[0] && peak[0] < 255) {
+	if white[0] >= twice[0] || twice[0] >= peak[0] || peak[0] == 255 {
 		t.Fatalf("shoulder white %v 2x %v 5x %v", white, twice, peak)
 	}
 	// Bright red keeps its hue: green and blue stay zero.
@@ -667,7 +667,7 @@ func udmabuf16(t *testing.T, w, h int, v func(x int) uint16) *os.File {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(mem)
+	defer func() { _ = unix.Close(mem) }()
 	if err := unix.Ftruncate(mem, int64(len(pixels))); err != nil {
 		t.Fatal(err)
 	}
@@ -681,7 +681,7 @@ func udmabuf16(t *testing.T, w, h int, v func(x int) uint16) *os.File {
 	if err != nil {
 		t.Skipf("udmabuf unavailable: %v", err)
 	}
-	defer dev.Close()
+	defer func() { _ = dev.Close() }()
 	arg := struct {
 		memfd, flags uint32
 		offset, size uint64
@@ -691,7 +691,7 @@ func udmabuf16(t *testing.T, w, h int, v func(x int) uint16) *os.File {
 		t.Skipf("udmabuf create: %v", errno)
 	}
 	f := os.NewFile(fd, "fp16-client")
-	t.Cleanup(func() { f.Close() })
+	t.Cleanup(func() { _ = f.Close() })
 	return f
 }
 

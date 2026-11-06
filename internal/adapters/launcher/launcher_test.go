@@ -98,7 +98,8 @@ func TestChildPath(t *testing.T) {
 	}
 	cancel()
 	select {
-	case <-done:
+	case discardedErr := <-done:
+		_ = discardedErr
 	case <-time.After(time.Second):
 		t.Fatal("launcher hung")
 	}

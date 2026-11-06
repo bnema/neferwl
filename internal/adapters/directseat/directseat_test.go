@@ -129,7 +129,7 @@ func TestUnixOpenFlags(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, nil, 0o600))
 	fd, err := unixEvdev{}.open(path)
 	require.NoError(t, err)
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	flags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFL, 0)
 	require.NoError(t, err)
 	assert.Equal(t, unix.O_RDWR, flags&unix.O_ACCMODE)

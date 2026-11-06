@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/wlturbo"
 	"github.com/bnema/go-wayland-bindings/server/extidlenotify"
 	"github.com/bnema/go-wayland-bindings/server/idleinhibit"
 	"github.com/bnema/go-wayland-bindings/server/wlroutputpowermanagement"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/wlturbo"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -277,7 +277,7 @@ func idleClockServerWith(t *testing.T, ch Channels) (*Server, string, chan armed
 	done := make(chan error, 1)
 	run := guardedServerRun(t, s, ctx)
 	go func() { done <- run() }()
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() { cancel(); discardedErr := <-done; _ = discardedErr })
 	return s, dir, timers
 }
 

@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/extidlenotify"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/wlroutputpowermanagement"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/purego-libwayland/server"
 )
 
 // Idle and output power. ext_idle_notifier_v1: each notification has its
@@ -138,7 +138,7 @@ func (s *Server) armIdle(n *idleNotification) {
 	n.timer = s.clock.AfterFunc(max(n.timeout, ports.ActivityInterval), func() {
 		s.display.Do(func() {
 			// A timer stopped or replaced while it waited for Do is stale.
-			if n.gen != gen || !n.res.Resource.Alive() || n.idle || s.idleHeld(n) {
+			if n.gen != gen || !n.res.Alive() || n.idle || s.idleHeld(n) {
 				return
 			}
 			n.idle = true

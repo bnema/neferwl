@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/wlturbo"
 	"github.com/bnema/go-wayland-bindings/server/linuxdmabuf"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
@@ -77,7 +77,7 @@ func TestDMABufParams(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := unix.Ftruncate(fd, 256*16); err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func createNV12(t *testing.T, version uint32, immed bool, flags uint32) (*wlturb
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { unix.Close(fd) })
+	t.Cleanup(func() { _ = unix.Close(fd) })
 	if err := unix.Ftruncate(fd, 256*16); err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestDMABufSamplingDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := unix.Ftruncate(fd, 256*16); err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +253,7 @@ func TestDMABufParamsReuse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := unix.Ftruncate(fd, 256*16); err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +327,7 @@ func (p *feedbackProxy) Dispatch(e *wlturbo.Event) {
 	case linuxdmabuf.ZwpLinuxDmabufFeedbackV1EventFormatTable:
 		p.cur.tables++
 		if fd := e.Fd(); fd != 0 {
-			unix.Close(int(fd))
+			_ = unix.Close(int(fd))
 		}
 	case linuxdmabuf.ZwpLinuxDmabufFeedbackV1EventMainDevice:
 		p.cur.mainDevices++
@@ -373,7 +373,7 @@ func newScanoutHarness(t *testing.T, sup domain.DMABufSupport, version uint32) *
 	done := make(chan error, 1)
 	run := guardedServerRun(t, s, ctx)
 	go func() { done <- run() }()
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() { cancel(); discardedErr := <-done; _ = discardedErr })
 	h.c = protocolClient(t, s, dir)
 	w, surf, xdg := surfaceMapper(t, h.c, events)()
 	h.w = w

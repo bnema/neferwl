@@ -61,7 +61,7 @@ func (o *Output) readDone() bool {
 	kept := o.readFences[:0]
 	for _, f := range o.readFences {
 		if signalled([]*os.File{f}) {
-			f.Close()
+			o.closeFence(f)
 			continue
 		}
 		kept = append(kept, f)
@@ -74,7 +74,7 @@ func (o *Output) readDone() bool {
 // dropRead closes the fences of uncommitted frames.
 func (o *Output) dropRead() {
 	for _, f := range o.readFences {
-		f.Close()
+		o.closeFence(f)
 	}
 	o.readFences = nil
 }
@@ -101,4 +101,12 @@ func (o *Output) expire() bool {
 		return true
 	}
 	return false
+}
+
+// closeFence reports descriptor release failures without changing a frame's
+// commit verdict. Never retry Close: the descriptor number may already be reused.
+func (o *Output) closeFence(f *os.File) {
+	if err := f.Close(); err != nil {
+		o.log.Warn().Err(err).Msg("close GPU fence")
+	}
 }

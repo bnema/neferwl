@@ -28,7 +28,7 @@ func virtualCore(t *testing.T) (chan ports.ClientEvent, chan ports.ClientCommand
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go c.Run(ctx)
+	go func() { _ = c.Run(ctx) }()
 	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "A", Width: 100, Height: 80}}
 	scene(t, scenes)
 	client <- ports.WindowMapped{ID: 1}
@@ -120,7 +120,7 @@ func TestVirtualPointerWithOutput(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		go c.Run(ctx)
+		go func() { _ = c.Run(ctx) }()
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "A", Width: 100, Height: 80}}
 		scene(t, scenes)
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "B", Width: 200, Height: 100}}

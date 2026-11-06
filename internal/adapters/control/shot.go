@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
@@ -82,8 +83,7 @@ func (s *Shooter) Shoot(ctx context.Context, shots []domain.ShotRequest, inline 
 		select {
 		case s.requests <- request:
 		case <-ctx.Done():
-			unix.Munmap(pixels)
-			return results, ctx.Err()
+			return results, errors.Join(ctx.Err(), unix.Munmap(pixels))
 		}
 		completed := false
 		for !completed {
@@ -94,7 +94,10 @@ func (s *Shooter) Shoot(ctx context.Context, shots []domain.ShotRequest, inline 
 					return results, errors.New("control capture sink closed before completion")
 				}
 				if old, ok := s.orphans[done.ID]; ok {
-					unix.Munmap(old)
+					if err := unix.Munmap(old); err != nil {
+						log := logging.For(ctx, "control")
+						log.Warn().Err(err).Uint64("capture", done.ID).Msg("unmap orphaned capture")
+					}
 					delete(s.orphans, done.ID)
 				}
 				if done.ID != id {
@@ -102,8 +105,7 @@ func (s *Shooter) Shoot(ctx context.Context, shots []domain.ShotRequest, inline 
 				}
 				completed = true
 				if done.Err != nil {
-					unix.Munmap(pixels)
-					return results, fmt.Errorf("capture %s: %w", q.Output, done.Err)
+					return results, fmt.Errorf("capture %s: %w", q.Output, errors.Join(done.Err, unix.Munmap(pixels)))
 				}
 			case <-ctx.Done():
 				s.orphans[id] = pixels
@@ -111,8 +113,7 @@ func (s *Shooter) Shoot(ctx context.Context, shots []domain.ShotRequest, inline 
 			}
 		}
 		if err := ctx.Err(); err != nil {
-			unix.Munmap(pixels)
-			return results, err
+			return results, errors.Join(err, unix.Munmap(pixels))
 		}
 		// CaptureFrame.Read writes opaque little-endian XRGB (BGRA bytes):
 		// swap to RGBA in the private mapping and encode it in place.
@@ -121,8 +122,7 @@ func (s *Shooter) Shoot(ctx context.Context, shots []domain.ShotRequest, inline 
 		}
 		img := &image.NRGBA{Pix: pixels, Stride: w * 4, Rect: image.Rect(0, 0, w, h)}
 		var encoded bytes.Buffer
-		err = shotPNG.Encode(&encoded, img)
-		unix.Munmap(pixels)
+		err = errors.Join(shotPNG.Encode(&encoded, img), unix.Munmap(pixels))
 		if err != nil {
 			return results, err
 		}
@@ -134,12 +134,10 @@ func (s *Shooter) Shoot(ctx context.Context, shots []domain.ShotRequest, inline 
 		_, writeErr := f.Write(encoded.Bytes())
 		closeErr := f.Close()
 		if err := errors.Join(writeErr, closeErr); err != nil {
-			os.Remove(f.Name())
-			return results, err
+			return results, errors.Join(err, os.Remove(f.Name()))
 		}
 		if err := os.Rename(f.Name(), path); err != nil {
-			os.Remove(f.Name())
-			return results, err
+			return results, errors.Join(err, os.Remove(f.Name()))
 		}
 		shot := Shot{Output: q.Output, Path: path, Seq: q.MinSeq}
 		if inline {

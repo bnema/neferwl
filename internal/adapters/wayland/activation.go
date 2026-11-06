@@ -119,7 +119,7 @@ func (s *Server) focusClient() server.Client {
 	if w := s.windows[s.seat.focused]; w != nil && w.alive() {
 		return w.client()
 	}
-	if l := s.layers[s.seat.focused]; l != nil && l.resource.Resource.Alive() {
+	if l := s.layers[s.seat.focused]; l != nil && l.resource.Alive() {
 		return l.resource.Client()
 	}
 	return server.Client{}

@@ -1,6 +1,7 @@
 package drm
 
 import (
+	"bnema.dev/zerowrap"
 	"os"
 	"testing"
 	"time"
@@ -385,8 +386,8 @@ func TestOverlayCarriesAcquireFence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
-	defer w.Close()
+	defer func() { _ = r.Close() }()
+	defer func() { _ = w.Close() }()
 	win := c[2]
 	win.Acquire = r
 	c[2] = win
@@ -398,7 +399,7 @@ func TestOverlayCarriesAcquireFence(t *testing.T) {
 	if err := o.commitWith(70, nil, false, false, pendingFrame{queued: ov.buf}, ov); err != nil {
 		t.Fatal(err)
 	}
-	ov.close()
+	ov.close(zerowrap.Logger{})
 	last := (*commits)[len(*commits)-1]
 	if v, ok := last.req.value(tOverlay, pFence); !ok || v != uint64(fd) {
 		t.Fatalf("overlay IN_FENCE_FD %d %v, want %d", v, ok, fd)

@@ -102,7 +102,7 @@ func TestScreencopyDMABuf(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := unix.Ftruncate(fd, 4096); err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestScreencopyDMABuf(t *testing.T) {
 		t.Fatalf("plane is not the client's buffer: %v", err)
 	}
 	for _, pl := range req.DMABuf.Planes {
-		pl.File.Close()
+		_ = pl.File.Close()
 	}
 	deliverCapture(t, s, replies, domain.CaptureDone{ID: req.ID, Output: req.Output, Time: time.Now()})
 	if err := c.Roundtrip(); err != nil {
@@ -181,7 +181,7 @@ func TestScreencopyNoDMABufOffer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := unix.Ftruncate(fd, 4096); err != nil {
 		t.Fatal(err)
 	}

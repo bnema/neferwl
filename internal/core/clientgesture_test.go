@@ -257,7 +257,7 @@ func TestGesturesRefusedWhileLocked(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() { done <- c.Run(ctx) }()
-		t.Cleanup(func() { cancel(); <-done })
+		t.Cleanup(func() { cancel(); discardedErr := <-done; _ = discardedErr })
 		r.output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "A", Width: 300, Height: 200}}
 		scene(t, r.scenes)
 		r.client <- ports.WindowMapped{ID: 1}

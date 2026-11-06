@@ -17,7 +17,7 @@ func gbmBuf(planes int) domain.DMABuf {
 	b := domain.DMABuf{Modifier: tiledMod}
 	for range planes {
 		f, w, _ := os.Pipe()
-		w.Close()
+		_ = w.Close()
 		b.Planes = append(b.Planes, domain.DMABufPlane{File: f})
 	}
 	return b

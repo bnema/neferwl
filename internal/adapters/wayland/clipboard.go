@@ -5,7 +5,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/extdatacontrol"
 	"github.com/bnema/go-wayland-bindings/server/primaryselection"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
-	"golang.org/x/sys/unix"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 )
 
 // The clipboard (wl_data_device) and the primary selection
@@ -227,7 +227,7 @@ func (s *Server) setFocused(c server.Client, kind int, src *clipSource) {
 // rejects even previously announced offers. Transfers accepted before protection
 // are client-to-client: their already handed-off pipes cannot be revoked here.
 func (s *Server) receive(kind int, src *clipSource, mime string, fd int) {
-	defer unix.Close(fd)
+	defer logging.CloseFD(s.log, fd, "clipboard pipe")
 	if s.protected() || s.selections[kind] != src || !src.alive() {
 		return
 	}
@@ -252,7 +252,7 @@ func (m dataManager) CreateDataSource(r *wayland.DataDeviceManager, id uint32) {
 	src.res = res
 	src.send = func(mime string, fd int) { res.SendSend(mime, fd) }
 	src.cancel = res.SendCancelled
-	src.alive = res.Resource.Alive
+	src.alive = res.Alive
 	m.server.dataSources[res.Resource] = src
 	res.OnDestroy = func() {
 		delete(m.server.dataSources, res.Resource)
@@ -266,7 +266,7 @@ func (m dataManager) GetDataDevice(r *wayland.DataDeviceManager, id uint32, _ *w
 		return
 	}
 	s.addDataDevice(r.Client(), res)
-	s.addClipDevice(&clipDevice{client: r.Client(), kinds: [2]bool{selClipboard: true}, alive: res.Resource.Alive, offer: func(kind int, src *clipSource) {
+	s.addClipDevice(&clipDevice{client: r.Client(), kinds: [2]bool{selClipboard: true}, alive: res.Alive, offer: func(kind int, src *clipSource) {
 		if src == nil {
 			res.SendSelection(nil)
 			return
@@ -352,7 +352,7 @@ func (m primaryManager) CreateSource(r *primaryselection.ZwpPrimarySelectionDevi
 	}
 	src.send = func(mime string, fd int) { res.SendSend(mime, fd) }
 	src.cancel = res.SendCancelled
-	src.alive = res.Resource.Alive
+	src.alive = res.Alive
 	m.server.primarySources[res.Resource] = src
 	res.OnDestroy = func() {
 		delete(m.server.primarySources, res.Resource)
@@ -365,7 +365,7 @@ func (m primaryManager) GetDevice(r *primaryselection.ZwpPrimarySelectionDeviceM
 	if err != nil {
 		return
 	}
-	s.addClipDevice(&clipDevice{client: r.Client(), kinds: [2]bool{selPrimary: true}, alive: res.Resource.Alive, offer: func(kind int, src *clipSource) {
+	s.addClipDevice(&clipDevice{client: r.Client(), kinds: [2]bool{selPrimary: true}, alive: res.Alive, offer: func(kind int, src *clipSource) {
 		if src == nil {
 			res.SendSelection(nil)
 			return
@@ -427,7 +427,7 @@ func (m controlManager) CreateDataSource(r *extdatacontrol.ExtDataControlManager
 	}
 	src.send = func(mime string, fd int) { res.SendSend(mime, fd) }
 	src.cancel = res.SendCancelled
-	src.alive = res.Resource.Alive
+	src.alive = res.Alive
 	m.server.controlSources[res.Resource] = src
 	res.OnDestroy = func() {
 		delete(m.server.controlSources, res.Resource)
@@ -440,7 +440,7 @@ func (m controlManager) GetDataDevice(r *extdatacontrol.ExtDataControlManagerV1,
 	if err != nil {
 		return
 	}
-	s.addClipDevice(&clipDevice{client: r.Client(), control: true, kinds: [2]bool{true, true}, alive: res.Resource.Alive, offer: func(kind int, src *clipSource) {
+	s.addClipDevice(&clipDevice{client: r.Client(), control: true, kinds: [2]bool{true, true}, alive: res.Alive, offer: func(kind int, src *clipSource) {
 		send := res.SendSelection
 		if kind == selPrimary {
 			send = res.SendPrimarySelection

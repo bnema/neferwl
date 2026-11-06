@@ -138,7 +138,7 @@ func TestKeepHeldChildReadsBeyondTimeout(t *testing.T) {
 func TestKeepHeldUntilChildFenceCompletes(t *testing.T) {
 	read, write, err := os.Pipe()
 	require.NoError(t, err)
-	defer write.Close()
+	defer func() { _ = write.Close() }()
 	child := portsmocks.NewMockRenderer(t)
 	child.EXPECT().Render(mock.Anything, mock.Anything).Return(read, nil).Once()
 	// A failed readback does not finish the render's client-buffer reads.

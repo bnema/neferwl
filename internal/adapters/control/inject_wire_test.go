@@ -28,7 +28,7 @@ func TestInjectProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	out := make(chan ports.ControlRequest, 1)
@@ -40,7 +40,7 @@ func TestInjectProtocol(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { c.Close() })
+		t.Cleanup(func() { _ = c.Close() })
 		if err := c.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
 			t.Fatal(err)
 		}
@@ -283,7 +283,7 @@ func TestTwoConnectionsShareAdmittedModifiers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	out := make(chan ports.ControlRequest)
@@ -295,7 +295,7 @@ func TestTwoConnectionsShareAdmittedModifiers(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { conn.Close() })
+		t.Cleanup(func() { _ = conn.Close() })
 		if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
 			t.Fatal(err)
 		}

@@ -341,7 +341,7 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 		display := portsmocks.NewMockRenderer(t)
 		buf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
-			w.Close()
+			_ = w.Close()
 			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		display.EXPECT().SetHDR(float64(0)).Return().Maybe()
@@ -443,7 +443,7 @@ func TestRunCaptureWaitsForItsIndicatorScene(t *testing.T) {
 		o.flipped = flips
 		buf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
-			w.Close()
+			_ = w.Close()
 			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		// Only what the renderer draws for scenes after the modeset's black frame.
@@ -551,7 +551,7 @@ func TestRunCaptureWithoutIndicatorFailsAfterTheBoundedWait(t *testing.T) {
 		o.flipped = flips
 		buf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
-			w.Close()
+			_ = w.Close()
 			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r := portsmocks.NewMockRenderer(t)

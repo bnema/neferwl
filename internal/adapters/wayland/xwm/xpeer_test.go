@@ -134,7 +134,7 @@ func startXPeer(t *testing.T, exts map[string]xpeerExt) (int, *xpeer) {
 	p.gate.Store(&open)
 	t.Cleanup(func() {
 		p.resume() // a paused peer would never see the close
-		p.f.Close()
+		_ = p.f.Close()
 		<-p.done
 	})
 	go p.serve()

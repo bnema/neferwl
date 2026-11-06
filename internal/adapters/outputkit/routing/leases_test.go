@@ -48,7 +48,7 @@ func TestLeasePublisherSendsChangesOnly(t *testing.T) {
 	if !ok || inv.Device == nil || len(inv.Connectors) != 1 {
 		t.Fatalf("inventory: %+v", inv)
 	}
-	defer inv.Device.Close()
+	defer func() { _ = inv.Device.Close() }()
 	if inv.Device.Fd() == p.clientFDs[card].Fd() {
 		t.Fatal("message shares the publisher's fd")
 	}
@@ -74,7 +74,7 @@ func TestLeasePublisherProtectedWithdraws(t *testing.T) {
 	card.EXPECT().ClientFD().Return(clientFile(t), nil).Once()
 	p.Publish(card)
 	inv := (<-events).(ports.LeaseConnectors)
-	inv.Device.Close()
+	_ = inv.Device.Close()
 	held := p.clientFDs[card]
 
 	active = false // an inactive seat withdraws what was offered
@@ -99,7 +99,7 @@ func TestLeasePublisherForgetWithdrawsCard(t *testing.T) {
 	card.EXPECT().Leasable().Return([]domain.LeaseConnector{{Name: "DP-2"}}).Once()
 	card.EXPECT().ClientFD().Return(clientFile(t), nil).Once()
 	p.Publish(card)
-	(<-events).(ports.LeaseConnectors).Device.Close()
+	_ = (<-events).(ports.LeaseConnectors).Device.Close()
 	held := p.clientFDs[card]
 
 	card.EXPECT().FinishedLeases().Return([]uint32{3}).Once()

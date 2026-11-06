@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/wlturbo"
 	"github.com/bnema/go-wayland-bindings/server/fifo"
 	"github.com/bnema/go-wayland-bindings/server/viewporter"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/logging"
-	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
@@ -27,7 +27,7 @@ func BenchmarkProtocolQueuedCommit(b *testing.B) {
 	done := make(chan error, 1)
 	run := guardedServerRun(b, s, ctx)
 	go func() { done <- run() }()
-	defer func() { cancel(); <-done }()
+	defer func() { cancel(); discardedErr := <-done; _ = discardedErr }()
 	c, err := wlturbo.Connect(filepath.Join(dir, s.SocketName()))
 	if err != nil {
 		b.Fatal(err)
@@ -77,7 +77,7 @@ func BenchmarkProtocolQueuedCommit(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := unix.Ftruncate(fd, 4); err != nil {
 		b.Fatal(err)
 	}

@@ -5,6 +5,7 @@ package watchdog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -100,18 +101,13 @@ func dump(dir, name string, now time.Time) (string, error) {
 	if err != nil {
 		return path, err
 	}
-	fmt.Fprintf(f, "loop %q stopped answering at %s\n\n", name, now.Format(time.RFC3339Nano))
+	_, herr := fmt.Fprintf(f, "loop %q stopped answering at %s\n\n", name, now.Format(time.RFC3339Nano))
 	werr := pprof.Lookup("goroutine").WriteTo(f, 2)
 	serr := f.Sync()
 	cerr := f.Close()
-	if d, err := os.Open(dir); err == nil {
-		_ = d.Sync()
-		_ = d.Close()
+	d, derr := os.Open(dir)
+	if derr == nil {
+		derr = errors.Join(d.Sync(), d.Close())
 	}
-	for _, err := range []error{werr, serr, cerr} {
-		if err != nil {
-			return path, err
-		}
-	}
-	return path, nil
+	return path, errors.Join(herr, werr, serr, cerr, derr)
 }

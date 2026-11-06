@@ -354,7 +354,7 @@ func relayControls(ctx context.Context, opts *Options, p *pointer, in *inputStat
 const statsEvery = 10 * time.Second
 
 // Run owns libinput and the keymap, converting device events into input events.
-func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error {
+func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) (err error) {
 	defer func() { opts.Keymap.Close() }()
 	if err := load(); err != nil {
 		return err
@@ -385,7 +385,7 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 	if err != nil {
 		return fmt.Errorf("libinput waiter: %w", err)
 	}
-	defer waiter.Close()
+	defer func() { err = errors.Join(err, waiter.Close()) }()
 	waiter.StopOn(ctx)
 	fd := getFD(li)
 	if err := waiter.Pin(fd); err != nil {

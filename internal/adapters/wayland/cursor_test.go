@@ -27,7 +27,7 @@ func cursorServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.Cli
 	done := make(chan error, 1)
 	run := guardedServerRun(t, s, ctx)
 	go func() { done <- run() }()
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() { cancel(); discardedErr := <-done; _ = discardedErr })
 	return s, events, commands, cursors, dir
 }
 
@@ -161,7 +161,7 @@ func TestSetCursorSurface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	// 2x1 ARGB: opaque blue, then transparent; stride padded to 12.
 	if _, err := unix.Pwrite(fd, []byte{255, 0, 0, 255, 0, 0, 0, 0, 9, 9, 9, 9}, 0); err != nil {
 		t.Fatal(err)

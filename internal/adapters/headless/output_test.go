@@ -421,7 +421,7 @@ func TestLinkPNGSecureSkipsAndFallsBack(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		if _, err := png.Decode(f); err != nil {
 			t.Fatal(err)
 		}
@@ -593,7 +593,7 @@ func TestHeadlessRawHDRScreenshot(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 		got, err := png.Decode(file)
 		if err != nil {
 			t.Fatal(err)

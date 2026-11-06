@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bnema/neferwl/internal/adapters/fdwait"
 	"bnema.dev/purego"
+	"github.com/bnema/neferwl/internal/adapters/fdwait"
 	"golang.org/x/sys/unix"
 )
 
@@ -134,7 +134,7 @@ func DeliverHotplug(ctx context.Context, changed chan<- domain.HotplugEvent, ev 
 
 // WatchHotplug sends every DRM card add or remove and every connector change
 // on changed until ctx ends (see DeliverHotplug for the send policy).
-func WatchHotplug(ctx context.Context, changed chan<- domain.HotplugEvent) error {
+func WatchHotplug(ctx context.Context, changed chan<- domain.HotplugEvent) (err error) {
 	if err := loadUdev(); err != nil {
 		return err
 	}
@@ -156,7 +156,7 @@ func WatchHotplug(ctx context.Context, changed chan<- domain.HotplugEvent) error
 	if err != nil {
 		return fmt.Errorf("udev waiter: %w", err)
 	}
-	defer waiter.Close()
+	defer func() { err = errors.Join(err, waiter.Close()) }()
 	waiter.StopOn(ctx)
 	if err := waiter.Pin(fd); err != nil {
 		return fmt.Errorf("udev waiter: %w", err)

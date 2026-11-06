@@ -2,6 +2,7 @@ package wayland
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/adapters/clock"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/peerexe"
 	"github.com/bnema/neferwl/internal/adapters/wayland/sessionlock"
 	"github.com/bnema/neferwl/internal/adapters/wayland/xwm"
@@ -384,13 +386,13 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	name, fd, cleanup, err := listen(opts.RuntimeDir)
+	name, fd, cleanup, err := listen(opts.RuntimeDir, log)
 	if err != nil {
 		d.Close()
 		return nil, err
 	}
 	if err = d.AddSocketFD(fd); err != nil {
-		unix.Close(fd)
+		err = errors.Join(err, unix.Close(fd))
 		cleanup()
 		d.Close()
 		return nil, err
@@ -489,7 +491,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 			log.Info().Err(err).Msg("explicit sync off")
 			node = nil
 		} else if s.syncWait, err = newSyncWaiter(s.signalPacer); err != nil {
-			node.close()
+			node.close(log)
 			node = nil
 		} else {
 			s.syncDev = node
@@ -513,20 +515,20 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	s.syncWait.src, s.syncWait.pace = displayAcquireSource{d}, s.acquireSignalled
 	s.cleanup = func() {
 		if s.paceReady {
-			unix.Close(s.paceFD)
+			logging.CloseFD(log, s.paceFD, "pace timer")
 		}
 		if s.securityStop >= 0 {
-			unix.Close(s.securityStop)
+			logging.CloseFD(log, s.securityStop, "security stop eventfd")
 		}
 		if s.seat.keymapFD >= 0 {
-			unix.Close(s.seat.keymapFD)
+			logging.CloseFD(log, s.seat.keymapFD, "keymap")
 		}
 		s.dmabuf.close()
 		if s.syncWait != nil {
 			s.syncWait.close()
 		}
 		if node != nil {
-			node.close()
+			node.close(log)
 		}
 		cleanup()
 	}
@@ -570,8 +572,7 @@ func (s *Server) openPaceTimer() error {
 	// libwayland duplicates fd: ours stays open for TimerfdSettime and is
 	// closed by cleanup; the source goes with the display.
 	if _, err = s.display.AddFD(fd, s.onPaceTimer); err != nil {
-		unix.Close(fd)
-		return err
+		return errors.Join(err, unix.Close(fd))
 	}
 	s.paceFD, s.paceReady = fd, true
 	return nil
@@ -583,7 +584,7 @@ func (s *Server) Run(ctx context.Context) error {
 	defer func() {
 		for _, device := range s.leaseDevices {
 			if device.fd != nil {
-				device.fd.Close()
+				s.closeLeaseFD(device.fd)
 			}
 		}
 	}()

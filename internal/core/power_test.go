@@ -31,7 +31,7 @@ func powerCoreWith(t *testing.T, opts core.Options) (chan ports.InputEvent, chan
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
-	t.Cleanup(func() { cancel(); receive(t, done) })
+	t.Cleanup(func() { cancel(); _ = receive(t, done) })
 	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
 	return input, client, output, commands, scenes

@@ -70,7 +70,7 @@ func TestSessionLockBarrierWaitsForAdmittedCopyAfterFrameDeath(t *testing.T) {
 	output := bindVersion(t, client, "wl_output", 4)
 	registerProtocol(t, client, output)
 	_, buffer, fd := captureSmallBuffer(t, client)
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	a := &admissionClient{c: client, wlr: bindVersion(t, client, "zwlr_screencopy_manager_v1", 3), output: output, buf: buffer}
 	frame := a.captureWlr(t)
 	var request domain.CaptureRequest

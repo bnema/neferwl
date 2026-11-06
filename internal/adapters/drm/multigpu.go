@@ -105,11 +105,11 @@ func (o *Output) copyFence(index int, fence *os.File) (*os.File, error) {
 		if err != nil {
 			o.holdRead(fence)
 		}
-		fence.Close()
+		o.closeFence(fence)
 	}
 	if err != nil {
 		if done != nil {
-			done.Close()
+			o.closeFence(done)
 		}
 		return nil, localDeviceError{err}
 	}

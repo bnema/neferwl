@@ -231,7 +231,7 @@ func (s *Service) properties(req *request, sess *session, st *stream) {
 	case objScreenshot:
 		iface = ifaceScreenshot
 	}
-	if req.text != iface && !(req.method == mGetAll && req.text == "") {
+	if req.text != iface && (req.method != mGetAll || req.text != "") {
 		s.replyErr(req, errUnknownInterface, "no such interface")
 		return
 	}

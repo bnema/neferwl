@@ -49,7 +49,7 @@ func TestConstraintRegionUsesFullClientOrigin(t *testing.T) {
 			t.Fatalf("region %+v want %+v", c.constraint.Rect, want)
 		}
 		// A region straddling the viewport edge is cut to it: local 10..40 is 1085..1115.
-		c.constrained.PointerConstraint.Rect = Rect{X: 10, Y: 0, W: 30, H: 100}
+		c.constrained.Rect = Rect{X: 10, Y: 0, W: 30, H: 100}
 		c.resolveConstraint()
 		if want := (Rect{X: 1100, Y: 50, W: 15, H: 100}); c.constraint.Rect != want {
 			t.Fatalf("straddling region %+v want %+v", c.constraint.Rect, want)

@@ -58,7 +58,7 @@ func guardedLease(c securityLeaseCard, gate ports.SessionSecurity, connectors []
 	after := securitySnapshot(gate)
 	if err := core.LeaseGuard(before, after); err != nil {
 		if fd != nil {
-			fd.Close()
+			err = errors.Join(err, fd.Close())
 		}
 		return nil, 0, errors.Join(err, c.Revoke(id))
 	}
@@ -375,7 +375,7 @@ func (b *Backend) Close() {
 		cards = append(cards, c)
 	}
 	for _, c := range cards {
-		c.Card.Close()
+		c.Close()
 	}
 	for _, c := range cards {
 		if c.local != nil {

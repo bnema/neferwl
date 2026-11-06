@@ -2,12 +2,13 @@ package routing
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"slices"
 
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/zerowrap"
 	"golang.org/x/sys/unix"
 )
 
@@ -43,7 +44,9 @@ func (p *LeasePublisher) Send(msg ports.LeaseMessage) {
 	select {
 	case p.events <- msg:
 	case <-p.ctx.Done():
-		ports.CloseLeaseFiles(msg)
+		if err := ports.CloseLeaseFiles(msg); err != nil {
+			p.log.Warn().Err(err).Str("message", fmt.Sprintf("%T", msg)).Msg("close dropped lease fd")
+		}
 	}
 }
 
@@ -63,7 +66,7 @@ func (p *LeasePublisher) Publish(c leaseInventoryCard) {
 			p.Send(ports.LeaseConnectors{Card: c.Path()})
 		}
 		if p.clientFDs[c] != nil {
-			p.clientFDs[c].Close()
+			p.closeClientFD(p.clientFDs[c])
 			delete(p.clientFDs, c)
 		}
 		delete(p.last, c)
@@ -100,7 +103,7 @@ func (p *LeasePublisher) Forget(c leaseInventoryCard) {
 		p.Send(ports.LeaseConnectors{Card: c.Path()})
 	}
 	if p.clientFDs[c] != nil {
-		p.clientFDs[c].Close()
+		p.closeClientFD(p.clientFDs[c])
 	}
 	delete(p.clientFDs, c)
 	delete(p.last, c)
@@ -109,7 +112,14 @@ func (p *LeasePublisher) Forget(c leaseInventoryCard) {
 // Close releases the client fds.
 func (p *LeasePublisher) Close() {
 	for _, f := range p.clientFDs {
-		f.Close()
+		p.closeClientFD(f)
 	}
 	clear(p.clientFDs)
+}
+
+// closeClientFD releases ownership once; a failed Close must never be retried.
+func (p *LeasePublisher) closeClientFD(f *os.File) {
+	if err := f.Close(); err != nil {
+		p.log.Warn().Err(err).Str("card", f.Name()).Msg("close lease client fd")
+	}
 }

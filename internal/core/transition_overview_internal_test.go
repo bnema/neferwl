@@ -114,7 +114,7 @@ func TestOverviewOpenCloseAnimatesCards(t *testing.T) {
 				checkContent(t, w, full[id], "opening")
 				if i == 1 {
 					p := sc.mon.Layout()[slices.IndexFunc(sc.mon.Layout(), func(p Placement) bool { return p.ID == id })]
-					if !(w.Rect.W < full[id].W && w.Rect.W > p.Rect.W) || !(w.Zoom > p.Preview && w.Zoom < 1) {
+					if (w.Rect.W >= full[id].W || w.Rect.W <= p.Rect.W) || !(w.Zoom > p.Preview && w.Zoom < 1) {
 						t.Fatalf("window %d mid-way %+v, want a frame between %+v and %+v and a zoom between %v and 1", id, w, full[id], p.Rect, p.Preview)
 					}
 				}

@@ -15,13 +15,13 @@ func udmabuf(size int, fill func(data []byte)) (*os.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("udmabuf unavailable: %w", err)
 	}
-	defer dev.Close()
+	defer func() { _ = dev.Close() }()
 	size = (size + os.Getpagesize() - 1) / os.Getpagesize() * os.Getpagesize()
 	mem, err := unix.MemfdCreate("testpattern-dmabuf", unix.MFD_ALLOW_SEALING|unix.MFD_CLOEXEC)
 	if err != nil {
 		return nil, err
 	}
-	defer unix.Close(mem)
+	defer func() { _ = unix.Close(mem) }()
 	if err := unix.Ftruncate(mem, int64(size)); err != nil {
 		return nil, err
 	}

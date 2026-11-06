@@ -345,13 +345,11 @@ func (r *Renderer) prepareDMAWait(c *dmaCopy, f *os.File) error {
 	if c.wait == 0 {
 		c.wait, err = fs.createSemaphore()
 		if err != nil {
-			unix.Close(int(fd))
-			return err
+			return errors.Join(err, unix.Close(int(fd)))
 		}
 	}
 	if err = checked("vkImportSemaphoreFdKHR(dmabuf wait)", fs.importSyncFD(c.wait, fd)); err != nil {
-		unix.Close(int(fd))
-		return err
+		return errors.Join(err, unix.Close(int(fd)))
 	}
 	c.waitUsed = true
 	return nil

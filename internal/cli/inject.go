@@ -16,7 +16,7 @@ func injectCommand(name, args, summary string) Command {
 	return Command{Name: name, Args: args + " [flags]", Summary: summary, Setup: func(fs *flag.FlagSet) Runner {
 		target := addTargetFlag(fs)
 		wf := addWaitFlags(fs)
-		return func(ctx context.Context, env Env, args []string) error {
+		return func(ctx context.Context, env Env, args []string) (runErr error) {
 			positional, err := injectArguments(fs, args)
 			if err != nil {
 				return err
@@ -32,7 +32,7 @@ func injectCommand(name, args, summary string) Command {
 			if err != nil {
 				return err
 			}
-			defer c.conn.Close()
+			defer c.closeInto(&runErr)
 			return printControl(ctx, env, c, req)
 		}
 	}}

@@ -151,7 +151,7 @@ func TestCaptureCursorCopyTo(t *testing.T) {
 		t.Fatal(err)
 	}
 	if done != nil {
-		defer done.Close()
+		defer func() { _ = done.Close() }()
 		if err = syncfile.Wait(context.Background(), done); err != nil {
 			t.Fatal(err)
 		}

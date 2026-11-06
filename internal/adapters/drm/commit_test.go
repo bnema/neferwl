@@ -129,7 +129,7 @@ func TestShowImagesTestsBeforeModeset(t *testing.T) {
 		var b domain.DMABuf
 		for range 2 {
 			f, w, _ := os.Pipe()
-			w.Close()
+			_ = w.Close()
 			b.Planes = append(b.Planes, domain.DMABufPlane{File: f})
 		}
 		b.Modifier = tiledMod
@@ -137,7 +137,7 @@ func TestShowImagesTestsBeforeModeset(t *testing.T) {
 	}
 	linear := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
-		w.Close()
+		_ = w.Close()
 		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	tiled1 := func() domain.DMABuf {
@@ -183,7 +183,7 @@ func TestShowImagesRetriesSinglePlaneBeforeLinear(t *testing.T) {
 		b := domain.DMABuf{Modifier: tiledMod}
 		for range planes {
 			f, w, _ := os.Pipe()
-			w.Close()
+			_ = w.Close()
 			files = append(files, f)
 			b.Planes = append(b.Planes, domain.DMABufPlane{File: f})
 		}
@@ -230,7 +230,7 @@ func TestShowImagesOffersThePrimaryPlanesXRGBModifiers(t *testing.T) {
 	}
 	buf := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
-		w.Close()
+		_ = w.Close()
 		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r := portsmocks.NewMockRenderer(t)
@@ -259,7 +259,7 @@ func TestShowImagesNoCommonModifierFallsBackWithThePlanesList(t *testing.T) {
 	o.primary.formats = []domain.DMABufFormat{{Format: fourccXRGB, Modifier: listed}, {Format: fourccXRGB, Modifier: 0}}
 	buf := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
-		w.Close()
+		_ = w.Close()
 		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r := portsmocks.NewMockRenderer(t)
@@ -337,7 +337,7 @@ func TestShowImagesRefusedLinearImagesAreNotExportedAgain(t *testing.T) {
 // linearBuf is a one-plane linear dmabuf over a closed pipe.
 func linearBuf() domain.DMABuf {
 	f, w, _ := os.Pipe()
-	w.Close()
+	_ = w.Close()
 	return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 }
 
@@ -348,12 +348,12 @@ func TestShowImagesSkipsSinglePlaneWhenDriverImagesHadOnePlane(t *testing.T) {
 	o.cursor = nil
 	buf := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
-		w.Close()
+		_ = w.Close()
 		return domain.DMABuf{Modifier: tiledMod, Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	linear := func() domain.DMABuf {
 		f, w, _ := os.Pipe()
-		w.Close()
+		_ = w.Close()
 		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r := portsmocks.NewMockRenderer(t)
@@ -383,7 +383,7 @@ func TestEnableAfterStartAwayModesetsOnce(t *testing.T) {
 		r := portsmocks.NewMockRenderer(t)
 		buf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
-			w.Close()
+			_ = w.Close()
 			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
@@ -485,7 +485,7 @@ func TestRunReportsSeenAfterCursorCommit(t *testing.T) {
 		r := portsmocks.NewMockRenderer(t)
 		buf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
-			w.Close()
+			_ = w.Close()
 			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r.EXPECT().CursorBuffers(64).Return([2]domain.DMABuf{buf(), buf()}, nil).Once()
@@ -584,7 +584,7 @@ func TestRunClosesFrameFences(t *testing.T) {
 		r := portsmocks.NewMockRenderer(t)
 		buf := func() domain.DMABuf {
 			f, w, _ := os.Pipe()
-			w.Close()
+			_ = w.Close()
 			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
@@ -593,7 +593,7 @@ func TestRunClosesFrameFences(t *testing.T) {
 		r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) (*os.File, error) {
 			f, w, _ := os.Pipe()
 			_, _ = w.Write([]byte{1})
-			w.Close()
+			_ = w.Close()
 			return f, nil
 		})
 		r.EXPECT().Close().Return().Once()

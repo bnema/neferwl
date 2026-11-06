@@ -2,13 +2,14 @@ package wayland
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"slices"
 
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/drmlease"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/purego-libwayland/server"
 	"golang.org/x/sys/unix"
 )
 
@@ -50,6 +51,13 @@ type leaseConnectorHandler struct{}
 
 func (leaseConnectorHandler) Destroy(*drmlease.WpDrmLeaseConnectorV1) {}
 
+// closeLeaseFiles closes the fds of a dropped lease message and logs a failure.
+func (s *Server) closeLeaseFiles(event ports.LeaseMessage) {
+	if err := ports.CloseLeaseFiles(event); err != nil {
+		s.log.Warn().Err(err).Str("message", fmt.Sprintf("%T", event)).Msg("close dropped lease fd")
+	}
+}
+
 func (s *Server) forwardLeases(ctx context.Context) {
 	// Messages own their fds: close those still queued when the display stops.
 	defer func() {
@@ -59,7 +67,7 @@ func (s *Server) forwardLeases(ctx context.Context) {
 				if !ok {
 					return
 				}
-				ports.CloseLeaseFiles(event)
+				s.closeLeaseFiles(event)
 			default:
 				return
 			}
@@ -76,7 +84,7 @@ func (s *Server) forwardLeases(ctx context.Context) {
 				return
 			}
 			if !s.display.Do(func() { s.applyLeaseEvent(event) }) {
-				ports.CloseLeaseFiles(event)
+				s.closeLeaseFiles(event)
 				return
 			}
 		}
@@ -93,7 +101,7 @@ func (s *Server) applyLeaseEvent(event ports.LeaseMessage) {
 		delete(s.pendingLeaseCards, v.ID)
 		if obj == nil || !obj.res.Alive() || s.security != nil && s.security.Snapshot().Protected {
 			if v.FD != nil {
-				v.FD.Close()
+				s.closeLeaseFD(v.FD)
 			}
 			if v.LeaseID != 0 && card != "" {
 				s.sendLeaseRequest(ports.LeaseRevoke{Card: card, LeaseID: v.LeaseID})
@@ -105,7 +113,7 @@ func (s *Server) applyLeaseEvent(event ports.LeaseMessage) {
 		}
 		if v.Err != nil || v.FD == nil {
 			if v.FD != nil {
-				v.FD.Close()
+				s.closeLeaseFD(v.FD)
 			}
 			obj.finish()
 			return
@@ -113,7 +121,7 @@ func (s *Server) applyLeaseEvent(event ports.LeaseMessage) {
 		obj.id = v.LeaseID
 		s.activeLeases[leaseKey{obj.card, v.LeaseID}] = obj
 		obj.res.SendLeaseFd(int(v.FD.Fd()))
-		v.FD.Close()
+		s.closeLeaseFD(v.FD)
 	case ports.LeaseFinished:
 		if obj := s.activeLeases[leaseKey{v.Card, v.LeaseID}]; obj != nil {
 			obj.finish()
@@ -171,14 +179,14 @@ func (s *Server) updateLeaseConnectors(msg ports.LeaseConnectors) {
 	if d == nil {
 		if copyFD == nil || len(msg.Connectors) == 0 {
 			if copyFD != nil {
-				copyFD.Close()
+				s.closeLeaseFD(copyFD)
 			}
 			return
 		}
 		d = &leaseDevice{server: s, card: msg.Card, fd: copyFD, connectors: map[string]domain.LeaseConnector{}, binds: map[*drmlease.WpDrmLeaseDeviceV1]*leaseBind{}}
 		g, err := s.display.AddGlobal(drmlease.WpDrmLeaseDeviceV1Interface, 1, func(c server.Client, v, id uint32) { d.bind(c, v, id) })
 		if err != nil {
-			copyFD.Close()
+			s.closeLeaseFD(copyFD)
 			s.log.Warn().Err(err).Str("card", msg.Card).Msg("drm lease global")
 			return
 		}
@@ -187,11 +195,11 @@ func (s *Server) updateLeaseConnectors(msg ports.LeaseConnectors) {
 	}
 	if copyFD == nil || len(msg.Connectors) == 0 {
 		if copyFD != nil {
-			copyFD.Close()
+			s.closeLeaseFD(copyFD)
 		}
 		d.global.Remove()
 		if d.fd != nil {
-			d.fd.Close()
+			s.closeLeaseFD(d.fd)
 			d.fd = nil
 		}
 		// Bound devices stay until the client sends release, as the
@@ -208,7 +216,7 @@ func (s *Server) updateLeaseConnectors(msg ports.LeaseConnectors) {
 	}
 	if d.fd != copyFD {
 		if d.fd != nil {
-			d.fd.Close()
+			s.closeLeaseFD(d.fd)
 		}
 		d.fd = copyFD
 	}
@@ -257,7 +265,11 @@ func (d *leaseDevice) bind(c server.Client, v, id uint32) {
 		fd, err := unix.FcntlInt(d.fd.Fd(), unix.F_DUPFD_CLOEXEC, 0)
 		if err == nil {
 			r.SendDrmFd(fd)
-			unix.Close(fd)
+			func() {
+				if err := unix.Close(fd); err != nil {
+					d.server.log.Warn().Err(err).Str("card", d.card).Msg("close lease drm fd")
+				}
+			}()
 		} else {
 			d.server.log.Warn().Err(err).Str("card", d.card).Msg("lease drm fd")
 			r.SendReleased()
@@ -363,5 +375,11 @@ func (o *leaseObject) finish() {
 	}
 	if o.res.Alive() {
 		o.res.SendFinished()
+	}
+}
+
+func (s *Server) closeLeaseFD(f *os.File) {
+	if err := f.Close(); err != nil {
+		s.log.Warn().Err(err).Str("file", f.Name()).Msg("close lease fd")
 	}
 }

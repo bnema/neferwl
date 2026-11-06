@@ -62,7 +62,7 @@ func TestHeadlessControlEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if err := conn.SetDeadline(time.Now().Add(15 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestHeadlessControlEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	image, err := png.Decode(f)
-	f.Close()
+	_ = f.Close()
 	if err != nil {
 		t.Fatal(err)
 	}

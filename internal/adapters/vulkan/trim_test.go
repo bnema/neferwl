@@ -167,7 +167,7 @@ func TestTrimPollsFinishedFrames(t *testing.T) {
 	if done == nil {
 		t.Skip("frame finished on return")
 	}
-	defer done.Close()
+	defer func() { _ = done.Close() }()
 	freed := false
 	r.retire(r.frame, func() { freed = true })
 	// The frame's sync file becomes readable when the GPU finished it: wait

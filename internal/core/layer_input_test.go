@@ -38,7 +38,7 @@ func TestLayerPointerPopupAndFocus(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		go c.Run(ctx)
+		go func() { _ = c.Run(ctx) }()
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}
@@ -160,7 +160,7 @@ func TestWindowPopupUnderOverlay(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		go c.Run(ctx)
+		go func() { _ = c.Run(ctx) }()
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}
@@ -200,7 +200,7 @@ func TestLayerHitOrder(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		go c.Run(ctx)
+		go func() { _ = c.Run(ctx) }()
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
 		wallpaper := domain.LayerSurface{ID: 5, Layer: domain.LayerBackground, Anchor: 15}
@@ -249,7 +249,7 @@ func TestLayerFocusAcrossOutputs(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		go c.Run(ctx)
+		go func() { _ = c.Run(ctx) }()
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
@@ -300,7 +300,7 @@ func TestLayerInputRegionPassThrough(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		go c.Run(ctx)
+		go func() { _ = c.Run(ctx) }()
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}
@@ -348,7 +348,7 @@ func TestRemovedLayerInputRegionCleared(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		go c.Run(ctx)
+		go func() { _ = c.Run(ctx) }()
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}
@@ -393,7 +393,7 @@ func TestPopupInputRegionPassesThroughToWindow(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		go c.Run(ctx)
+		go func() { _ = c.Run(ctx) }()
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}
@@ -433,7 +433,7 @@ func TestHiddenGrabPopupLosesKeyboard(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		go c.Run(ctx)
+		go func() { _ = c.Run(ctx) }()
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 		<-scenes
 		client <- ports.WindowMapped{ID: 1}

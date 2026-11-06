@@ -171,7 +171,7 @@ func (r *selRig) receive(t *testing.T, size int) *os.File {
 	}
 	r.x.flush()
 	f := os.NewFile(uintptr(fds[0]), "pipe-r")
-	t.Cleanup(func() { f.Close() })
+	t.Cleanup(func() { _ = f.Close() })
 	return f
 }
 
@@ -251,7 +251,7 @@ func TestSelectionXToWaylandINCR(t *testing.T) {
 		done <- result{data, err}
 	}()
 	// Abort first: closing f does not interrupt a blocked read while the XWM holds the write end.
-	t.Cleanup(func() { r.x.selClose(); f.Close(); <-finished })
+	t.Cleanup(func() { r.x.selClose(); _ = f.Close(); <-finished })
 	_, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
 	r.skip = n
 	r.p.setProp(r.requestor, r.data, r.p.atom("INCR"), 32, le32(total))
@@ -401,7 +401,7 @@ func TestSelectionCopyAllocations(t *testing.T) {
 	x := r.x
 	fds := make([]int, 2)
 	require.NoError(t, unix.Pipe2(fds, unix.O_CLOEXEC))
-	t.Cleanup(func() { unix.Close(fds[0]); unix.Close(fds[1]) })
+	t.Cleanup(func() { _ = unix.Close(fds[0]); _ = unix.Close(fds[1]) })
 	payload := pattern(4096)
 	rep := dataReply(r, r.utf8, payload)
 	var note xturbo.Event
@@ -437,7 +437,7 @@ func TestSelectionINCRChunkAllocations(t *testing.T) {
 	x := r.x
 	fds := make([]int, 2)
 	require.NoError(t, unix.Pipe2(fds, unix.O_CLOEXEC))
-	t.Cleanup(func() { unix.Close(fds[0]); unix.Close(fds[1]) })
+	t.Cleanup(func() { _ = unix.Close(fds[0]); _ = unix.Close(fds[1]) })
 	x.SelectionReceive(SelClipboard, textMimes[0], fds[1])
 	var note xturbo.Event
 	note.Kind = xproto.KindSelectionNotify
@@ -526,7 +526,7 @@ func (r *selRig) serve(t *testing.T, target uint32) (w *os.File) {
 	r.h.EXPECT().SelectionRead(SelClipboard, mock.Anything).Return(fds[0]).Once()
 	r.p.selectionRequest(r.x.selWin, reqWin, r.clip, target, r.data)
 	w = os.NewFile(uintptr(fds[1]), "pipe-w")
-	t.Cleanup(func() { w.Close() })
+	t.Cleanup(func() { _ = w.Close() })
 	return w
 }
 
@@ -571,7 +571,7 @@ func TestSelectionWaylandToXINCR(t *testing.T) {
 	w := r.serve(t, r.utf8)
 	t.Cleanup(r.x.selClose) // close the reader before cleanup joins a blocked writer
 	require.NoError(t, unix.SetNonblock(int(w.Fd()), false))
-	go func() { _, _ = w.Write(data); w.Close() }()
+	go func() { _, _ = w.Write(data); _ = w.Close() }()
 
 	// The first fill is a whole chunk: INCR is announced.
 	var got []byte
@@ -732,7 +732,7 @@ func TestSelectionCopyAllocationsWaylandToX(t *testing.T) {
 		if _, err := unix.Write(fds[1], data); err != nil {
 			t.Fatal("write")
 		}
-		unix.Close(fds[1])
+		_ = unix.Close(fds[1])
 		r.h.Calls = r.h.Calls[:0] // the mock's call log would grow
 		x.onSelectionRequest(&ev)
 		x.posted = false
@@ -1130,7 +1130,7 @@ func TestSelectionTextEncodingsINCR(t *testing.T) {
 			w := r.serve(t, r.p.atom(target))
 			t.Cleanup(r.x.selClose) // close the reader before cleanup joins a blocked writer
 			require.NoError(t, unix.SetNonblock(int(w.Fd()), false))
-			go func() { _, _ = w.Write(data); w.Close() }()
+			go func() { _, _ = w.Write(data); _ = w.Close() }()
 
 			// The first fill is a whole chunk: INCR is announced.
 			var got []byte

@@ -45,7 +45,7 @@ func castSubmit(t *testing.T, cf ports.CaptureFrame, region image.Rectangle, buf
 		t.Fatal(err)
 	}
 	if done != nil {
-		defer done.Close()
+		defer func() { _ = done.Close() }()
 		if err := syncfile.Wait(context.Background(), done); err != nil {
 			t.Fatal(err)
 		}

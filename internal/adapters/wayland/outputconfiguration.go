@@ -26,7 +26,7 @@ type headConfiguration struct {
 }
 
 func (c *outputConfiguration) head(r *wlr.ZwlrOutputHeadV1) (string, bool) {
-	if r == nil || !r.Resource.Alive() || r.Client() != c.res.Client() {
+	if r == nil || !r.Alive() || r.Client() != c.res.Client() {
 		return "", false
 	}
 	for name, h := range c.manager.heads {
@@ -125,7 +125,7 @@ func (h *headConfiguration) SetMode(r *wlr.ZwlrOutputConfigurationHeadV1, mode *
 		return
 	}
 	head := h.parent.manager.heads[h.change.Name]
-	if head == nil || mode == nil || !mode.Resource.Alive() {
+	if head == nil || mode == nil || !mode.Alive() {
 		r.PostError(uint32(wlr.ZwlrOutputConfigurationHeadV1ErrorInvalidMode), "invalid mode")
 		return
 	}

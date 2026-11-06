@@ -114,7 +114,7 @@ func TestScreencopyProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	if err := unix.Ftruncate(fd, 16); err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +242,7 @@ func TestCaptureProtocolErrors(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				defer unix.Close(fd)
+				defer func() { _ = unix.Close(fd) }()
 				if err := unix.Ftruncate(fd, int64(testOutputs[0].Info.Width*testOutputs[0].Info.Height*4)); err != nil {
 					t.Fatal(err)
 				}
@@ -316,7 +316,7 @@ func TestCaptureProtocolErrors(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				defer unix.Close(fd)
+				defer func() { _ = unix.Close(fd) }()
 				if err := unix.Ftruncate(fd, 4); err != nil {
 					t.Fatal(err)
 				}
@@ -476,7 +476,7 @@ func TestExtCaptureLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	// Room for the 4x4 and the resized 5x4 buffers.
 	if err := unix.Ftruncate(fd, 80); err != nil {
 		t.Fatal(err)
@@ -684,7 +684,7 @@ func TestWlrOutputGoneAndDestroyedBeforeReply(t *testing.T) {
 			if !destroy {
 				applyOutputs(t, s, commands, ports.SetOutputs{})
 				shm, buf, fd := captureSmallBuffer(t, c)
-				defer unix.Close(fd)
+				defer func() { _ = unix.Close(fd) }()
 				_ = shm
 				requestProtocol(t, c, frame, wlr.ZwlrScreencopyFrameV1RequestCopy, buf)
 				if err := c.Roundtrip(); err != nil {
@@ -696,7 +696,7 @@ func TestWlrOutputGoneAndDestroyedBeforeReply(t *testing.T) {
 				return
 			}
 			_, buf, fd := captureSmallBuffer(t, c)
-			defer unix.Close(fd)
+			defer func() { _ = unix.Close(fd) }()
 			requestProtocol(t, c, frame, wlr.ZwlrScreencopyFrameV1RequestCopy, buf)
 			if err := c.Roundtrip(); err != nil {
 				t.Fatal(err)

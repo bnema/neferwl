@@ -26,7 +26,7 @@ func TestOverviewLauncherKeepsKeys(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		go c.Run(ctx)
+		go func() { _ = c.Run(ctx) }()
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 300, Height: 200}}
 		scene(t, scenes)
 		client <- ports.WindowMapped{ID: 1}
@@ -82,7 +82,7 @@ func TestOverviewFocusBindsNavigate(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		go c.Run(ctx)
+		go func() { _ = c.Run(ctx) }()
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 300, Height: 200}}
 		scene(t, scenes)
 		for id := domain.WindowID(1); id <= 2; id++ {
@@ -136,7 +136,7 @@ func TestOverviewCloseBindTargetsPreview(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		go c.Run(ctx)
+		go func() { _ = c.Run(ctx) }()
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 300, Height: 200}}
 		scene(t, scenes)
 		for _, id := range []domain.WindowID{1, 2} {
@@ -214,7 +214,7 @@ func TestOverviewThreeFingerNavigation(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		go c.Run(ctx)
+		go func() { _ = c.Run(ctx) }()
 		output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 300, Height: 200}}
 		scene(t, scenes)
 		for id := domain.WindowID(1); id <= 3; id++ {

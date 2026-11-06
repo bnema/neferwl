@@ -22,18 +22,20 @@ type LeaseConnectors struct {
 func (LeaseConnectors) leaseMessage() {}
 
 // CloseLeaseFiles closes the fd a lease message owns, for a message that is
-// dropped instead of delivered.
-func CloseLeaseFiles(msg LeaseMessage) {
+// dropped instead of delivered. It returns the close error for the caller to
+// log; it never retries.
+func CloseLeaseFiles(msg LeaseMessage) error {
 	switch m := msg.(type) {
 	case LeaseConnectors:
 		if m.Device != nil {
-			m.Device.Close()
+			return m.Device.Close()
 		}
 	case LeaseReply:
 		if m.FD != nil {
-			m.FD.Close()
+			return m.FD.Close()
 		}
 	}
+	return nil
 }
 
 type LeaseRequest struct {

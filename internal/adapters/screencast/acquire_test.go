@@ -39,7 +39,8 @@ func TestAcquireCancelledPendingReply(t *testing.T) {
 			// Unblock the mutant too, so a missing cancellation hook fails without
 			// leaving a blocked goroutine in the bubble.
 			s.closeBus()
-			<-done
+			discardedErr := <-done
+			_ = discardedErr
 			t.Fatal("acquire outlived cancellation with a reply pending")
 		}
 		s.closeBus() // Owner cleanup must not close the connection again.
@@ -52,7 +53,7 @@ func TestAcquireSuccessStopsCancellationHook(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	defer boundIO(t, "name reply", func() { _ = conn.Close() })()
 	e, serial := conn.NewMethodCall(busDaemon, busDaemonPath, busDaemon, "RequestName", "su")
 	e.Str(nameDisplayConfig)

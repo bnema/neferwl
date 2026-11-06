@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/wlturbo"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
@@ -98,7 +98,7 @@ func (p *keymapProxy) Dispatch(e *wlturbo.Event) {
 		p.result <- os.ErrInvalid
 		return
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	data := make([]byte, size)
 	_, err := unix.Pread(fd, data, 0)
 	if err == nil && !strings.HasPrefix(string(data), "xkb_keymap") {
@@ -164,7 +164,7 @@ func (p *eventsProxy) Dispatch(e *wlturbo.Event) {
 	e.Uint32()
 	fd := int(e.Fd())
 	size := e.Uint32()
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	data := make([]byte, size)
 	if _, err := unix.Pread(fd, data, 0); err == nil {
 		p.keymaps = append(p.keymaps, strings.TrimRight(string(data), "\x00"))

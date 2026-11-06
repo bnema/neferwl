@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/zerobus"
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/domain"
-	"bnema.dev/zerobus"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -773,18 +773,18 @@ func TestCallDuringNameAcquisition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	server, err := zerobus.Dial(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer server.Close()
+	defer func() { _ = server.Close() }()
 	defer boundIO(t, "name acquisition", func() { _ = server.Close(); _ = client.Close() })()
 	if err := client.AddMatch("type='signal',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0='" + nameIntrospect + "'"); err != nil {
 		t.Fatal(err)
 	}
 	s := New(captureallow.Builtin, nil, testLog(&logBuf{}))
-	defer s.poller.Close()
+	defer func() { _ = s.poller.Close() }()
 	// Authentication is orthogonal; this peer has already been checked.
 	s.callers[0] = caller{state: callerKnown, name: client.UniqueName(), exe: "/usr/bin/grim"}
 	b := newMockbus(t)
@@ -864,7 +864,7 @@ func TestRequestNameErrorMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer server.Close()
+	defer func() { _ = server.Close() }()
 	defer boundIO(t, "invalid name reply", func() { _ = server.Close() })()
 	// Compare the same daemon error with zerobus's synchronous decoder.
 	_, wantErr := server.RequestName("invalid", zerobus.NameFlagDoNotQueue)

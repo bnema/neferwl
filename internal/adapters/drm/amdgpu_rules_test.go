@@ -135,7 +135,7 @@ func amdgpuRuleWith(t *testing.T, live func(uint32) bool) func(*atomicReq, uint3
 			for i, obj := range req.objs {
 				for _, p := range req.props[i] {
 					isPlane := obj == tPrimary || obj == tCursor || obj == tOverlay || obj == 53
-					if p.val != state[[2]uint32{obj, p.prop}] && !(isPlane && (p.prop == pFB || p.prop == pFence)) {
+					if p.val != state[[2]uint32{obj, p.prop}] && (!isPlane || p.prop != pFB && p.prop != pFence) {
 						t.Logf("amdgpu: async commit changes object %d property %d", obj, p.prop)
 						return unix.EINVAL
 					}
@@ -421,7 +421,7 @@ func TestRunProtectedActivationRetriesWithoutStoppingOrEarlyProof(t *testing.T) 
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() domain.DMABuf {
 		f, w := protectionFence(t, false)
-		w.Close()
+		_ = w.Close()
 		return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()

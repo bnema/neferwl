@@ -86,7 +86,8 @@ func TestInitialFullscreenConfigure(t *testing.T) {
 	}
 	// Dispatch may consume just one event; closing the client also releases it.
 	_ = c.Close()
-	<-done
+	discardedErr := <-done
+	_ = discardedErr
 }
 
 func TestInitialFullscreenNotReplayedOnRemap(t *testing.T) {

@@ -45,8 +45,14 @@ func Run(ctx context.Context, path string, states <-chan domain.State, ids *work
 		return err
 	}
 	// A file left by a crashed session on this socket is not ours.
-	_ = os.Remove(path)
-	defer os.Remove(path)
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Warn().Err(err).Str("path", path).Msg("remove stale state")
+	}
+	defer func() {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Warn().Err(err).Str("path", path).Msg("remove state")
+		}
+	}()
 	flush := func(st domain.State) {
 		if err := write(path, statewire.FromDomain(st, ids)); err != nil {
 			// Scripts lose their state; the session goes on.
@@ -103,8 +109,7 @@ func write(path string, st statewire.State) error {
 	_, werr := f.Write(append(data, '\n'))
 	cerr := f.Close()
 	if err := errors.Join(werr, cerr); err != nil {
-		os.Remove(f.Name())
-		return err
+		return errors.Join(err, os.Remove(f.Name()))
 	}
 	return os.Rename(f.Name(), path)
 }

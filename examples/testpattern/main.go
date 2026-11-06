@@ -93,7 +93,7 @@ func run(mode string, fullscreen bool) error {
 	if err != nil {
 		return err
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	if err := d.Roundtrip(); err != nil {
 		return err
 	}
@@ -389,7 +389,7 @@ func (c *client) dmabufBuffer(w, h int, patches []pattern.Patch) (*clientcore.Bu
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	params, err := c.dmabuf.CreateParams()
 	if err != nil {
 		return nil, err

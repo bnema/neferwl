@@ -1,6 +1,7 @@
 package drm
 
 import (
+	"bnema.dev/zerowrap"
 	"context"
 	"errors"
 	"os"
@@ -22,7 +23,7 @@ func pipeFence(t *testing.T) (fence, signal *os.File) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { r.Close(); w.Close() })
+	t.Cleanup(func() { _ = r.Close(); _ = w.Close() })
 	return r, w
 }
 
@@ -93,7 +94,7 @@ func TestDriverName(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		name, err := driverName(int(f.Fd()))
 		if err != nil || name == "" {
 			t.Fatalf("driverName(%s) = %q, %v", n, name, err)
@@ -199,8 +200,8 @@ func TestClientFenceReady(t *testing.T) {
 		t.Fatal("signalled client fence not ready")
 	}
 	closed, cw := pipeFence(t)
-	closed.Close()
-	cw.Close()
+	_ = closed.Close()
+	_ = cw.Close()
 	if o.clientFenceReady(closed) {
 		t.Fatal("closed fence ready")
 	}
@@ -241,7 +242,7 @@ func TestPendingClientFenceComposes(t *testing.T) {
 			content := c[2]
 			content.Acquire = fence
 			ov, _ := o.overlayFrame(s, map[domain.WindowID]domain.SurfaceContent{2: content})
-			ov.close()
+			ov.close(zerowrap.Logger{})
 			return ov.fb != 0
 		}},
 	} {

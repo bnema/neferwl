@@ -11,12 +11,12 @@ func TestPollReadinessTimeoutAndReplacement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 	fd, err := unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
 	if n, err := p.Poll(fds, 5); n != 0 || err != nil {
 		t.Fatalf("timeout: %d %v", n, err)
@@ -44,7 +44,7 @@ func TestPollReadinessTimeoutAndReplacement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(other)
+	defer func() { _ = unix.Close(other) }()
 	fds[0].Fd = int32(other)
 	if _, err := unix.Write(other, b[:]); err != nil {
 		t.Fatal(err)
@@ -68,12 +68,12 @@ func TestCloseUnblocksPoll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 	fd, err := unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	done := make(chan error, 1)
 	go func() { _, e := p.Poll([]unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}, -1); done <- e }()
 	// Close is safe both before and during the netpoll wait.

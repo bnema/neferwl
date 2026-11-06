@@ -22,7 +22,7 @@ func TestSupervisorVirtualInventoryAndSeat(t *testing.T) {
 		events := make(chan ports.OutputEvent, 16)
 		ch := routing.Channels{Events: events}
 		set := routing.NewSet(ctx, nil, ch.Routes())
-		defer set.Wait()
+		defer func() { _ = set.Wait() }()
 		r := portsmocks.NewMockRenderer(t)
 		r.EXPECT().Close().Return().Once()
 		log := logging.For(ctx, "drm")
@@ -39,7 +39,9 @@ func TestSupervisorVirtualInventoryAndSeat(t *testing.T) {
 			t.Fatal(inventory)
 		}
 		instance := set.Outs["tv"].Instance
-		run.onSeat(false)
+		if err, _ := run.onSeat(false); err != nil {
+			t.Fatal(err)
+		}
 		synctest.Wait()
 		if set.Outs["tv"].Instance != instance || set.Outs["tv"].Ctx.Err() != nil {
 			t.Fatal("seat inactive stopped virtual")
@@ -61,7 +63,7 @@ func TestRecoveryJoinsVirtualConsumers(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		set := routing.NewSet(ctx, nil, routing.Routes{})
-		defer set.Wait()
+		defer func() { _ = set.Wait() }()
 		if !set.Start(ctx, "tv", func(ctx context.Context, _ routing.Feed) error { <-ctx.Done(); return nil }) {
 			t.Fatal("start")
 		}

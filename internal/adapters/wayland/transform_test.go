@@ -4,11 +4,11 @@ import (
 	"testing"
 	"time"
 
+	"bnema.dev/wlturbo"
 	"github.com/bnema/go-wayland-bindings/server/viewporter"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/domain"
-	"bnema.dev/wlturbo"
 	"golang.org/x/sys/unix"
 )
 
@@ -58,7 +58,7 @@ func newTransformClient(t *testing.T) transformClient {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { unix.Close(fd) })
+	t.Cleanup(func() { _ = unix.Close(fd) })
 	size := int32(30 * 20 * 4)
 	if err := unix.Ftruncate(fd, int64(size)); err != nil {
 		t.Fatal(err)

@@ -20,7 +20,7 @@ func protectionFence(t *testing.T, signalled bool) (*os.File, *os.File) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { f.Close(); w.Close() })
+	t.Cleanup(func() { _ = f.Close(); _ = w.Close() })
 	if signalled {
 		if _, err := w.Write([]byte{1}); err != nil {
 			t.Fatal(err)
@@ -125,7 +125,7 @@ func TestProtectedModesetFailureNeverActivates(t *testing.T) {
 				f, w := protectionFence(t, stage != "fence")
 				fence = f
 				if stage == "fence" {
-					w.Close() // HUP without POLLIN is not fence completion.
+					_ = w.Close() // HUP without POLLIN is not fence completion.
 				}
 				var renderErr error
 				if stage == "render" {

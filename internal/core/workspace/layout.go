@@ -548,7 +548,7 @@ func (w *Workspace) AppendLayout(dst []Placement) []Placement {
 			// own column or band, they are off screen once settled and slide
 			// in and out with the view when the cover changes (ADR 011 still
 			// hides every unrelated window).
-			hidden := (cover != 0 && id != cover && !(held && showHeld)) || (fullColumn && !full) || maxFocus && i != w.Focus
+			hidden := (cover != 0 && id != cover && (!held || !showHeld)) || (fullColumn && !full) || maxFocus && i != w.Focus
 			if full {
 				r = l.FullscreenRect(w.Snapshot(), col)
 			}

@@ -30,7 +30,7 @@ func TestExcludeFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer signal.Close()
+			defer func() { _ = signal.Close() }()
 			r := portsmocks.NewMockRenderer(t)
 			r.EXPECT().Close().Return().Once()
 			rendered := make(chan struct{}, 1)

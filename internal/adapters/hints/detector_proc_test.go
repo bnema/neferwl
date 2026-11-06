@@ -132,7 +132,7 @@ func waitGone(t *testing.T, pid int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(fd)
+	defer func() { _ = unix.Close(fd) }()
 	fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
 	for {
 		n, err := unix.Poll(fds, 5000)

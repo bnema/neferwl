@@ -126,7 +126,9 @@ func setupRun(fs *flag.FlagSet) Runner {
 		}
 		// Warn before validation, so a rejected alias run is warned too.
 		if f.deprecatedServer {
-			fmt.Fprintln(env.Stderr, "deprecated: use --backend=headless --profile=persistent")
+			if _, err := fmt.Fprintln(env.Stderr, "deprecated: use --backend=headless --profile=persistent"); err != nil {
+				return err
+			}
 		}
 		sizes, err := f.validate(args, set)
 		if err != nil {
@@ -138,7 +140,7 @@ func setupRun(fs *flag.FlagSet) Runner {
 
 // run starts the compositor once the flags are valid. SIGINT and SIGTERM
 // stop it; other commands keep the default signal behaviour.
-func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
+func (f *runFlags) run(ctx context.Context, sizes [][2]int) (err error) {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	path, cfg, warnings, err := loadConfig(f.config)
@@ -158,7 +160,17 @@ func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
 	if err != nil {
 		return err
 	}
-	defer closeLog(false) // no-op after the panic path closed it
+	defer func() { // no-op after the panic path closed it
+		closeErr := closeLog(false)
+		if closeErr == nil {
+			return
+		}
+		// The log did not print closeErr: unwrap so exitCode prints both.
+		if logged, ok := err.(loggedError); ok {
+			err = logged.error
+		}
+		err = errors.Join(err, closeErr)
+	}()
 	log := logging.For(ctx, "app")
 	defer func() {
 		if p := recover(); p != nil {

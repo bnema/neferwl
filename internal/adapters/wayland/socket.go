@@ -1,14 +1,18 @@
 package wayland
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"bnema.dev/zerowrap"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"golang.org/x/sys/unix"
 )
 
-func listen(runtimeDir string) (name string, fd int, cleanup func(), err error) {
+// listen reports cleanup failures to log (the zero Logger discards them).
+func listen(runtimeDir string, log zerowrap.Logger) (name string, fd int, cleanup func(), err error) {
 	for n := 1; n <= 32; n++ {
 		name = fmt.Sprintf("wayland-%d", n)
 		path := filepath.Join(runtimeDir, name)
@@ -26,13 +30,23 @@ func listen(runtimeDir string) (name string, fd int, cleanup func(), err error) 
 			return "", -1, nil, e
 		}
 		if e = unix.Flock(l, unix.LOCK_EX|unix.LOCK_NB); e != nil {
-			unix.Close(l)
+			cerr := unix.Close(l)
 			if e == unix.EWOULDBLOCK {
+				if cerr != nil {
+					log.Warn().Err(cerr).Str("lock", lock).Msg("close socket lock")
+				}
 				continue
 			}
-			return "", -1, nil, e
+			return "", -1, nil, errors.Join(e, cerr)
 		}
-		cleanup = func() { os.Remove(tmp); os.Remove(path); os.Remove(lock); unix.Close(l) }
+		cleanup = func() {
+			for _, p := range []string{tmp, path, lock} {
+				if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+					log.Warn().Err(err).Str("path", p).Msg("remove wayland socket file")
+				}
+			}
+			logging.CloseFD(log, l, "socket lock")
+		}
 		if e = os.Remove(tmp); e != nil && !os.IsNotExist(e) {
 			cleanup()
 			return "", -1, nil, e
@@ -54,7 +68,7 @@ func listen(runtimeDir string) (name string, fd int, cleanup func(), err error) 
 		}
 		if e != nil {
 			if fd >= 0 {
-				unix.Close(fd)
+				e = errors.Join(e, unix.Close(fd))
 			}
 			cleanup()
 			return "", -1, nil, e

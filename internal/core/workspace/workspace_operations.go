@@ -474,11 +474,12 @@ func (w *Workspace) AppendOverviewRow(dst []Placement, r OverviewRow) ([]Placeme
 		slot := r.Slot
 		slot.H -= w.pileBand(r.Axis)
 		var tiles []Placement
-		if r.Items == 0 {
+		switch r.Items {
+		case 0:
 			tiles = w.previewRow(r.Axis, slot, !r.Current, r.Card < 0)
-		} else if r.Items == 1 {
+		case 1:
 			tiles = w.previewItem(r.Head, r.HiddenColumn, r.Axis, slot, !r.Current, r.Card < 0)
-		} else {
+		default:
 			tiles = w.stackRow(r.Front, r.Current, r.HiddenColumn, r.Axis, slot, !r.Current, r.Card < 0)
 		}
 		dst = append(dst, tiles...)

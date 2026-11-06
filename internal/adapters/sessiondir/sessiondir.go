@@ -74,8 +74,7 @@ func lockRegistryFile(root string) (*os.File, error) {
 		return nil, err
 	}
 	if err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		f.Close()
-		return nil, err
+		return nil, errors.Join(err, f.Close())
 	}
 	return f, nil
 }
@@ -90,16 +89,14 @@ func openLock(path string) (*os.File, bool, error) {
 	}
 	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 	if errors.Is(err, syscall.EWOULDBLOCK) {
-		f.Close()
-		return nil, true, nil
+		return nil, true, f.Close()
 	}
 	if err != nil {
-		f.Close()
-		return nil, false, err
+		return nil, false, errors.Join(err, f.Close())
 	}
 	return f, false, nil
 }
-func Create(runtimeDir, id string) (*Dir, error) {
+func Create(runtimeDir, id string) (dir *Dir, err error) {
 	if !ValidID(id) {
 		return nil, fmt.Errorf("invalid session id %q", id)
 	}
@@ -107,7 +104,15 @@ func Create(runtimeDir, id string) (*Dir, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer unlock(registry)
+	defer func() {
+		if unlockErr := unlock(registry); unlockErr != nil {
+			err = errors.Join(err, unlockErr)
+			if dir != nil {
+				err = errors.Join(err, unlock(dir.lock))
+				dir = nil
+			}
+		}
+	}()
 	path := filepath.Join(Root(runtimeDir), id)
 	if err := os.MkdirAll(path, 0700); err != nil {
 		return nil, err
@@ -122,22 +127,20 @@ func Create(runtimeDir, id string) (*Dir, error) {
 	// Keep the locked inode in place while clearing stale contents.
 	entries, err := os.ReadDir(path)
 	if err != nil {
-		unlock(lock)
-		return nil, err
+		return nil, errors.Join(err, unlock(lock))
 	}
 	for _, entry := range entries {
 		if entry.Name() != "lock" {
 			if err := os.RemoveAll(filepath.Join(path, entry.Name())); err != nil {
-				unlock(lock)
-				return nil, err
+				return nil, errors.Join(err, unlock(lock))
 			}
 		}
 	}
 	if err := os.Chmod(path, 0700); err != nil {
-		unlock(lock)
-		return nil, err
+		return nil, errors.Join(err, unlock(lock))
 	}
-	return &Dir{path: path, lock: lock, meta: Meta{ID: id}}, nil
+	dir = &Dir{path: path, lock: lock, meta: Meta{ID: id}}
+	return dir, nil
 }
 func (d *Dir) WriteMeta(meta Meta) error {
 	if d.lock == nil {
@@ -175,12 +178,12 @@ func (d *Dir) Close() error {
 	d.lock = nil
 	return err
 }
-func List(runtimeDir string) ([]Meta, error) {
+func List(runtimeDir string) (_ []Meta, err error) {
 	registry, err := registryLock(runtimeDir)
 	if err != nil {
 		return nil, err
 	}
-	defer unlock(registry)
+	defer func() { err = errors.Join(err, unlock(registry)) }()
 	entries, err := os.ReadDir(Root(runtimeDir))
 	if err != nil {
 		return nil, err

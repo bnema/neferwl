@@ -32,7 +32,7 @@ func TestSecurityStuckRecoveryInvalidatesBeforeFreshProof(t *testing.T) {
 		r := portsmocks.NewMockRenderer(t)
 		buf := func() domain.DMABuf {
 			f, w := protectionFence(t, false)
-			w.Close()
+			_ = w.Close()
 			return domain.DMABuf{Planes: []domain.DMABufPlane{{File: f}}}
 		}
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()

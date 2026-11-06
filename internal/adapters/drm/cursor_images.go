@@ -137,7 +137,7 @@ func newRendererCursor(k kms, r ports.Renderer, size int) (*rendererCursor, erro
 			c.fbs[i], err = k.addFB(&bufs[i], fourccARGB)
 		}
 		for _, p := range bufs[i].Planes {
-			p.File.Close()
+			err = errors.Join(err, p.File.Close())
 		}
 	}
 	if err != nil {

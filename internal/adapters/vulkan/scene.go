@@ -5,8 +5,8 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
-	"golang.org/x/sys/unix"
 )
 
 // sceneWalk turns one scene into quads in paint order, copying new wl_shm
@@ -534,7 +534,7 @@ func (w *sceneWalk) drawable(c *domain.SurfaceContent) bool {
 	}
 	fd, err := shmFD(b, b.Offset+(c.Height-1)*b.Stride+c.Width*4)
 	if err == nil {
-		unix.Close(fd)
+		logging.CloseFD(w.r.log, fd, "shm probe fd")
 	}
 	return err == nil
 }

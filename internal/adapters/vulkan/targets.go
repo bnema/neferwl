@@ -11,6 +11,8 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 
 	vk "bnema.dev/purego-vulkan/vulkan"
+	"bnema.dev/zerowrap"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"golang.org/x/sys/unix"
 )
 
@@ -84,7 +86,7 @@ func (r *Renderer) ExportTargets(n int, modifiers []uint64, singlePlane bool) ([
 			r.dropTargets()
 			for _, b := range out {
 				for _, p := range b.Planes {
-					p.File.Close()
+					logging.CloseFile(r.log, p.File, "exported target plane")
 				}
 			}
 			return nil, err
@@ -372,7 +374,7 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, domain.DMABuf, error) {
 	planes := make([]domain.DMABufPlane, 0, n)
 	closePlanes := func() {
 		for _, p := range planes {
-			_ = p.File.Close()
+			logging.CloseFile(r.log, p.File, "exported target plane")
 		}
 	}
 	first := os.NewFile(uintptr(fd), "neferwl-target")
@@ -411,7 +413,9 @@ func (r *Renderer) freeTarget(t *target) {
 
 func (r *Renderer) dropTargets() {
 	if len(r.targets) > 0 && r.gpu.device != 0 {
-		_ = r.waitOwnIdle()
+		if err := r.waitOwnIdle(); err != nil {
+			r.log.Warn().Err(err).Msg("wait for GPU idle before dropping targets")
+		}
 	}
 	for _, t := range r.targets {
 		if r.last == t {
@@ -449,7 +453,7 @@ func (r *Renderer) importTarget(b *domain.DMABuf) (*target, error) {
 	case !r.gpu.externalTarget(format, b.Modifier, vk.ExternalMemoryFeatureImportableBit, r.hdrReadback):
 		return nil, fmt.Errorf("%w: %#x cannot be imported as a target", errImageModifier, b.Modifier)
 	}
-	if err := sameDMABuf(b.Planes); err != nil {
+	if err := sameDMABuf(r.log, b.Planes); err != nil {
 		return nil, err
 	}
 	fd, err := dupFile(b.Planes[0].File)
@@ -460,7 +464,7 @@ func (r *Renderer) importTarget(b *domain.DMABuf) (*target, error) {
 	// Closed here on every path but the successful import.
 	defer func() {
 		if fd >= 0 {
-			_ = unix.Close(fd)
+			logging.CloseFD(r.log, fd, "target import fd")
 		}
 	}()
 	t := &target{exported: true, layout: vk.ImageLayoutUndefined}
@@ -514,7 +518,7 @@ func (r *Renderer) importTarget(b *domain.DMABuf) (*target, error) {
 // sameDMABuf fails unless every plane file is the same dmabuf (same device
 // and inode): the target is imported from the first plane's memory only, so
 // planes in other buffers would read the wrong memory.
-func sameDMABuf(planes []domain.DMABufPlane) error {
+func sameDMABuf(log zerowrap.Logger, planes []domain.DMABufPlane) error {
 	var first unix.Stat_t
 	for i, p := range planes {
 		fd, err := dupFile(p.File)
@@ -523,7 +527,7 @@ func sameDMABuf(planes []domain.DMABufPlane) error {
 		}
 		var st unix.Stat_t
 		err = unix.Fstat(fd, &st)
-		_ = unix.Close(fd)
+		logging.CloseFD(log, fd, "dmabuf plane duplicate") // a close failure must not fail the import
 		if err != nil {
 			return fmt.Errorf("stat plane %d: %w", i, err)
 		}

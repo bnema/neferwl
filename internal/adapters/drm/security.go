@@ -125,7 +125,7 @@ func (o *Output) submitProtectedFrame(ctx context.Context, r ports.Renderer, sce
 	done, err := r.Render(scene, surfaces)
 	if err != nil {
 		if done != nil {
-			done.Close()
+			o.closeFence(done)
 		}
 		return renderError{err}
 	}
@@ -133,7 +133,7 @@ func (o *Output) submitProtectedFrame(ctx context.Context, r ports.Renderer, sce
 	if !o.sceneCurrent(scene) || !o.protected || !o.securityPrepared {
 		o.holdRead(done)
 		if done != nil {
-			done.Close()
+			o.closeFence(done)
 		}
 		return errSecurityScene
 	}
@@ -148,7 +148,7 @@ func (o *Output) submitProtectedFrame(ctx context.Context, r ports.Renderer, sce
 		o.holdRead(done)
 	}
 	if done != nil {
-		done.Close()
+		o.closeFence(done)
 	}
 	if err == nil {
 		o.front.forget()

@@ -74,7 +74,7 @@ func TestUnmapTiledLeavesAndReflows(t *testing.T) {
 		if !(w2.Fade > 0 && w2.Fade < 1) || w2.Rect.W >= left.Rect.W || !(w2.Zoom > appearScale && w2.Zoom < 1) {
 			t.Fatalf("first frame of the leaving window: %+v", w2)
 		}
-		if r := sceneWindow(t, s, 1).Rect; !(r.W > old1.W && r.W < settled1.Rect.W) {
+		if r := sceneWindow(t, s, 1).Rect; r.W <= old1.W || r.W >= settled1.Rect.W {
 			t.Fatalf("neighbour on the first frame %+v, want between %+v and %+v", r, old1, settled1.Rect)
 		}
 		if ids := drainConfigures(cmds); len(ids) != 0 {

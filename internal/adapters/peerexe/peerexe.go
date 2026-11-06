@@ -78,12 +78,12 @@ func ExeOfPidfd(pidfd int) (string, int, error) {
 
 // pidOfPidfd reads the Pid: line of /proc/self/fdinfo/<pidfd>: -1 once the
 // process has exited, 0 when it is outside this pid namespace.
-func pidOfPidfd(pidfd int) (int, error) {
+func pidOfPidfd(pidfd int) (pid int, err error) {
 	f, err := os.Open("/proc/self/fdinfo/" + strconv.Itoa(pidfd))
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
+	defer func() { err = errors.Join(err, f.Close()) }()
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		if v, ok := strings.CutPrefix(sc.Text(), "Pid:"); ok {

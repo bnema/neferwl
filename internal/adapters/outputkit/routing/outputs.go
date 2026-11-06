@@ -257,7 +257,7 @@ func (s *Set) Detach(r *RunningOutput) {
 
 // Wait stops every output and returns the first error.
 func (s *Set) Wait() error {
-	var first error = s.StartErr
+	var first = s.StartErr
 	// Cancel producers before closing the forwarding quit path. Owners may
 	// be backpressured on a full FIFO, and need their context to exit.
 	for _, r := range s.Outs {

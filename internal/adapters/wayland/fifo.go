@@ -415,7 +415,7 @@ func (s *surface) applyUpdate(u *update) {
 	if u.buffer != nil {
 		s.queuedBuffer = u.buffer.ID()
 	}
-	if u.buffer != nil && !u.buffer.Resource.Alive() {
+	if u.buffer != nil && !u.buffer.Alive() {
 		s.commitSkipped = true
 		// No reader takes this buffer. A release point is safe to signal
 		// only if the acquire has already signalled; dropSync owns that rule.
@@ -469,7 +469,7 @@ func (s *surface) dropQueuePrefix(n int) {
 		if u.sync != nil {
 			continue // explicit sync: the release point replaced release
 		}
-		if u.buffer != nil && !sameBuffer(u.buffer, s.current) && !released[u.buffer.Resource] && u.buffer.Resource.Alive() && !s.bufferQueuedElsewhere(u.buffer) {
+		if u.buffer != nil && !sameBuffer(u.buffer, s.current) && !released[u.buffer.Resource] && u.buffer.Alive() && !s.bufferQueuedElsewhere(u.buffer) {
 			released[u.buffer.Resource] = true
 			u.buffer.SendRelease()
 		}
@@ -648,7 +648,7 @@ func (u *update) graphReady(now time.Time) bool {
 	}
 	// A dead attachment is skipped by applyUpdate; waiting for its fence
 	// would leave this update and every later one stuck behind it.
-	if u.buffer != nil && !u.buffer.Resource.Alive() {
+	if u.buffer != nil && !u.buffer.Alive() {
 		for i, w := range u.implicit {
 			if w != nil {
 				s.server.syncWait.cancel(w)

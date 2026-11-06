@@ -55,7 +55,7 @@ func startX11Peer(t *testing.T) (int, *x11Peer) {
 		t: t, f: os.NewFile(uintptr(fds[1]), "x11peer"), atoms: map[string]uint32{}, nextAtom: 1000,
 		props: map[uint32]map[uint32][]byte{}, propMeta: map[uint32]map[uint32][2]uint32{}, changed: make(chan struct{}, 1), done: make(chan struct{}),
 	}
-	t.Cleanup(func() { p.f.Close(); <-p.done })
+	t.Cleanup(func() { _ = p.f.Close(); <-p.done })
 	go p.serve()
 	return fds[0], p
 }

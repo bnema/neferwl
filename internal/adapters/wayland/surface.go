@@ -480,7 +480,7 @@ func (s *surface) applyCommit(u *update) {
 	if s.lock != nil && s.commitSkipped {
 		// A discarded replacement cannot change retained lock geometry, even
 		// if its viewport was destroyed before capture or before application.
-	} else if u.vp != nil && (s.lock != nil || u.vp.resource != nil && u.vp.resource.Resource.Alive()) {
+	} else if u.vp != nil && (s.lock != nil || u.vp.resource != nil && u.vp.resource.Alive()) {
 		s.committedViewport.destW, s.committedViewport.destH, s.committedViewport.dest = u.vpW, u.vpH, u.vpSet
 		s.committedViewport.src, s.committedViewport.crop = u.vpSrc, u.vpCrop
 	} else {

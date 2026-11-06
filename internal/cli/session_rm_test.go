@@ -19,7 +19,7 @@ func TestSessionRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	path := filepath.Join(d.Path(), "control.sock")
 	if err := d.WriteMeta(sessiondir.Meta{ID: "remove", Control: path}); err != nil {
 		t.Fatal(err)
@@ -28,7 +28,7 @@ func TestSessionRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	result := make(chan error, 1)
 	go func() {
 		conn, err := listener.Accept()
@@ -36,7 +36,7 @@ func TestSessionRemove(t *testing.T) {
 			result <- err
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		var req map[string]any
 		if err := json.NewDecoder(conn).Decode(&req); err != nil {
 			result <- err
@@ -75,7 +75,7 @@ func TestSessionLockTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lock.Close()
+	defer func() { _ = lock.Close() }()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
 	defer cancel()
 	if err := waitSessionLock(ctx, lock); err != context.DeadlineExceeded {

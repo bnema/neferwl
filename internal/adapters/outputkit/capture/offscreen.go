@@ -9,6 +9,8 @@ import (
 	"math"
 	"os"
 
+	"bnema.dev/zerowrap"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
@@ -56,9 +58,11 @@ type fenceSlot struct {
 }
 
 // release closes the fence and forgets the ceiling, keeping the map.
-func (s *fenceSlot) release() {
+func (s *fenceSlot) release(log zerowrap.Logger) {
 	if s.fd != nil {
-		s.fd.Close()
+		// Release only; completion was polled/waited or the device joined, so a
+		// close failure is logged and never changes a verdict.
+		logging.CloseFile(log, s.fd, "capture fence")
 		s.fd = nil
 	}
 	clear(s.ceil)
@@ -72,6 +76,7 @@ type offTarget struct {
 
 // offscreen is owned by the goroutine of its Pipeline.
 type offscreen struct {
+	log     zerowrap.Logger
 	factory func(w, h int) (ports.Renderer, error)
 	r       ports.Renderer
 	p       *Pipeline // leases of r
@@ -90,7 +95,7 @@ type offscreen struct {
 // workspace with renderers made by factory. Without it they fail closed
 // with ErrOffscreenUnavailable.
 func (p *Pipeline) EnableOffscreen(factory func(w, h int) (ports.Renderer, error)) {
-	p.off = &offscreen{factory: factory}
+	p.off = &offscreen{factory: factory, log: p.Log}
 }
 
 // HiddenCompleted wakes the owner when a child capture finished; nil (blocks
@@ -186,7 +191,7 @@ func (p *Pipeline) WaitHidden(ctx context.Context) error {
 		if first == nil {
 			first = syncfile.Wait(ctx, o.slots[i].fd)
 		}
-		o.slots[i].release()
+		o.slots[i].release(o.log)
 	}
 	o.nf = 0
 	return first
@@ -221,7 +226,7 @@ func (o *offscreen) reap() {
 	for i := range o.nf {
 		switch pollFence(o.slots[i].fd) {
 		case fenceDone:
-			o.slots[i].release()
+			o.slots[i].release(o.log)
 			continue
 		case fenceFailed:
 			failed = true
@@ -297,7 +302,7 @@ func (o *offscreen) close() {
 		o.r = nil
 	}
 	for i := range o.slots {
-		o.slots[i].release()
+		o.slots[i].release(o.log)
 	}
 	o.nf, o.w, o.h, o.target = 0, 0, 0, offTarget{}
 }
@@ -393,7 +398,9 @@ func (p *Pipeline) SubmitHidden(s domain.Scene, surfaces map[domain.WindowID]dom
 			fail(fmt.Errorf("%w: %v", ErrOffscreenUnavailable, err), reqs)
 			return
 		}
-		o.r, o.p, o.w, o.h, o.target = r, NewPipeline(p.ctx, p.replies), w, h, target
+		child := NewPipeline(p.ctx, p.replies)
+		child.Log = p.Log
+		o.r, o.p, o.w, o.h, o.target = r, child, w, h, target
 		o.p.Security, o.p.CPUReadback = p.Security, p.CPUReadback
 	}
 	// Request regions are physical pixels of the output, and the scene does

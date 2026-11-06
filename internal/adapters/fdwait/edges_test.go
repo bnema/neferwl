@@ -17,7 +17,7 @@ func TestPollPinned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 	pinned, other := eventfd(t), eventfd(t)
 	if err := p.Pin(int32(pinned)); err != nil {
 		t.Fatal(err)
@@ -26,7 +26,11 @@ func TestPollPinned(t *testing.T) {
 	if n, err := p.Poll(fds, 1); n != 0 || err != nil {
 		t.Fatalf("idle: %d %v", n, err)
 	}
-	go unix.Write(pinned, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+	go func() {
+		if _, err := unix.Write(pinned, []byte{1, 0, 0, 0, 0, 0, 0, 0}); err != nil {
+			t.Error(err)
+		}
+	}()
 	if n, err := p.Poll(fds, 1000); n != 1 || err != nil || fds[0].Revents&unix.POLLIN == 0 {
 		t.Fatalf("pinned ready: %d %v %+v", n, err, fds)
 	}
@@ -50,15 +54,21 @@ func TestPollPinnedAllocations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 	fd := eventfd(t)
 	if err := p.Pin(int32(fd)); err != nil {
 		t.Fatal(err)
 	}
 	fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
 	signal(t, fd)
-	p.Poll(fds, -1)
-	if allocs := testing.AllocsPerRun(100, func() { p.Poll(fds, -1) }); allocs != 0 {
+	if _, err := p.Poll(fds, -1); err != nil {
+		t.Fatal(err)
+	}
+	if allocs := testing.AllocsPerRun(100, func() {
+		if _, err := p.Poll(fds, -1); err != nil {
+			t.Fatal(err)
+		}
+	}); allocs != 0 {
 		t.Errorf("pinned ready Poll: %.1f allocs, want 0", allocs)
 	}
 }
@@ -72,7 +82,7 @@ func TestPollWake(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 	fds := []unix.PollFd{{Fd: int32(eventfd(t)), Events: unix.POLLIN}}
 	done := make(chan error, 1)
 	go func() {
@@ -110,7 +120,7 @@ func TestPollStopOn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 	ctx, cancel := context.WithCancel(context.Background())
 	p.StopOn(ctx)
 	fds := []unix.PollFd{{Fd: int32(eventfd(t)), Events: unix.POLLIN}}
@@ -138,7 +148,7 @@ func eventfd(t *testing.T) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { unix.Close(fd) })
+	t.Cleanup(func() { _ = unix.Close(fd) })
 	return fd
 }
 
@@ -173,7 +183,7 @@ func TestPollZeroTimeoutReportsReady(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 	fd := eventfd(t)
 	fds := []unix.PollFd{{Fd: -1}, {Fd: int32(fd), Events: unix.POLLIN}}
 	if n, err := p.Poll(fds, 0); n != 0 || err != nil {
@@ -191,7 +201,7 @@ func TestPollDuplicateDescriptor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 	fd := eventfd(t)
 	fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}, {Fd: int32(fd), Events: unix.POLLIN}}
 	if n, err := p.Poll(fds, 1); n != 0 || err != nil {
@@ -206,7 +216,7 @@ func TestPollFailedWatchRemovesAdded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 	fd := eventfd(t)
 	var self int32
 	if err := p.raw.Control(func(ep uintptr) { self = int32(ep) }); err != nil {
@@ -227,17 +237,17 @@ func TestPollFailsAfterLostRegistration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 	fd, err := unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC)
 	if err != nil {
 		t.Fatal(err)
 	}
 	dup, err := unix.Dup(fd)
 	if err != nil {
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		t.Fatal(err)
 	}
-	defer unix.Close(dup)
+	defer func() { _ = unix.Close(dup) }()
 	if err := p.raw.Control(func(ep uintptr) {
 		ev := unix.EpollEvent{Events: unix.EPOLLIN, Fd: int32(fd)}
 		if err := unix.EpollCtl(int(ep), unix.EPOLL_CTL_ADD, fd, &ev); err != nil {
@@ -246,7 +256,7 @@ func TestPollFailsAfterLostRegistration(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	unix.Close(fd) // what a caller closing fd during a wait does
+	_ = unix.Close(fd) // what a caller closing fd during a wait does
 	p.fds, p.added = []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}, 1
 	p.unwatch()
 	p.fds = nil

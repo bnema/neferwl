@@ -49,7 +49,7 @@ func TestExtendedLinearClient(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer unix.Close(mem)
+			defer func() { _ = unix.Close(mem) }()
 			if err := unix.Ftruncate(mem, int64(len(pixels))); err != nil {
 				t.Fatal(err)
 			}
@@ -63,7 +63,7 @@ func TestExtendedLinearClient(t *testing.T) {
 			if err != nil {
 				t.Skipf("udmabuf unavailable: %v", err)
 			}
-			defer dev.Close()
+			defer func() { _ = dev.Close() }()
 			arg := struct {
 				memfd, flags uint32
 				offset, size uint64
@@ -73,7 +73,7 @@ func TestExtendedLinearClient(t *testing.T) {
 				t.Skipf("udmabuf create: %v", errno)
 			}
 			f := os.NewFile(fd, "fp16-client")
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 			buf := &domain.DMABuf{ID: 164, Width: 64, Height: 16, Format: format.Format, Planes: []domain.DMABufPlane{{File: f, Stride: 512}}}
 			c := domain.SurfaceContent{ID: 1, Width: 64, Height: 16, Opaque: true, DMABuf: buf, Color: domain.SurfaceColor{TF: domain.ColorTFExtendedLinear, Primaries: domain.ColorPrimariesSRGB}}
 			scene := domain.Scene{Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
