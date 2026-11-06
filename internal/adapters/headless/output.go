@@ -556,7 +556,9 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			if opts.protected() {
 				code = ports.ControlErrLocked
 			} else if !req.Stop {
-				if req.Dir == "" {
+				if writer.dir != "" {
+					code = ports.ControlErrBadRequest
+				} else if req.Dir == "" {
 					code = ports.ControlErrBadRequest
 				} else if err := prepareRecordingDir(req.Dir); err != nil {
 					code = ports.ControlErrCaptureFailed

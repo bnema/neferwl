@@ -152,7 +152,12 @@ Continuous capture writes `frame-NNNNNN.png` per presented frame, `latest.png`
 (a hard link to the newest frame) and `frames.ffconcat` with the frame timing.
 `--dir DIR` selects another directory and `--output NAME` limits capture to
 that output. With several outputs, each gets a subdirectory named after it.
-The directory grows until `shot --stop`.
+The directory grows until `shot --stop`. Starting on an output that is already
+recording is refused with `bad-request`; stop it before starting another
+recording. A multi-output start that fails preserves existing recordings and
+rolls back recordings newly started by that request. Unwritable directories
+are refused with `capture-failed`. A later write failure stops that output's
+recording and logs a warning, without stopping the compositor.
 
 On an HDR output, `--every-frame --raw` also writes `latest-pq.png`, the newest
 frame in raw PQ.

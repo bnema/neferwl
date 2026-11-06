@@ -134,6 +134,26 @@ func TestContinuousCapturePlan(t *testing.T) {
 		if res := ask(plan); res.Err != "" || res.Dir != dir {
 			t.Fatalf("start: %+v", res)
 		}
+		// Both outputs are recording. A failed replacement must preserve them.
+		if res := ask(plan); res.Err != ports.ControlErrBadRequest {
+			t.Fatalf("active recording replacement: %+v", res)
+		}
+		// Stop only the second: starting it first in a new plan must roll it
+		// back when the already-active first target refuses, not stop first.
+		if res := ask(ports.ContinuousCaptureRequest{Stop: true, Targets: []ports.ContinuousTarget{{Output: second}}}); res.Err != "" {
+			t.Fatal(res)
+		}
+		reversed := plan
+		reversed.Targets = []ports.ContinuousTarget{plan.Targets[1], plan.Targets[0]}
+		if res := ask(reversed); res.Err != ports.ControlErrBadRequest {
+			t.Fatalf("partial start with active recording: %+v", res)
+		}
+		if res := ask(ports.ContinuousCaptureRequest{Targets: []ports.ContinuousTarget{plan.Targets[0]}}); res.Err != ports.ControlErrBadRequest {
+			t.Fatalf("active recording lost: %+v", res)
+		}
+		if res := ask(ports.ContinuousCaptureRequest{Targets: []ports.ContinuousTarget{plan.Targets[1]}}); res.Err != "" {
+			t.Fatalf("new recording not rolled back: %+v", res)
+		}
 		if res := ask(ports.ContinuousCaptureRequest{Stop: true, Targets: []ports.ContinuousTarget{{Output: first}, {Output: second}}}); res.Err != "" {
 			t.Fatalf("stop: %+v", res)
 		}
