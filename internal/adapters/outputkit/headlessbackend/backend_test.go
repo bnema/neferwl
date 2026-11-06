@@ -2,10 +2,12 @@ package headlessbackend
 
 import (
 	"context"
+	"github.com/stretchr/testify/mock"
 	"os"
 	"path/filepath"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/cursors"
@@ -156,6 +158,45 @@ func TestContinuousCapturePlan(t *testing.T) {
 		}
 		if res := ask(ports.ContinuousCaptureRequest{Stop: true, Targets: []ports.ContinuousTarget{{Output: first}, {Output: second}}}); res.Err != "" {
 			t.Fatalf("stop: %+v", res)
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestBuiltinOutputRefresh(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		scenes := make(chan []domain.Scene)
+		events := make(chan ports.OutputEvent, 16)
+		reports := make(chan ports.OutputPresented, 8)
+		sink := portsmocks.NewMockPresentationSink(t)
+		sink.EXPECT().Push(mock.Anything).Run(func(p ports.OutputPresented) { reports <- p })
+		r := portsmocks.NewMockRenderer(t)
+		r.EXPECT().Close().Return()
+		rendered := make(chan struct{}, 1)
+		r.EXPECT().Render(mock.Anything, mock.Anything).Run(func(domain.Scene, map[domain.WindowID]domain.SurfaceContent) { rendered <- struct{}{} }).Return(nil, nil)
+		r.EXPECT().TakeRedrawn().Return(0).Maybe()
+		ch := routing.Channels{Events: events, Heads: make(chan domain.OutputHeads, 16), Scenes: scenes, Presented: sink}
+		apply := core.NewOutputApply(core.NewOutputOverrides(domain.Config{}, true))
+		done := make(chan error, 1)
+		go func() {
+			done <- Run(ctx, BackendOptions{Sizes: [][2]int{{20, 20}}}, apply, ch, cursors.New(nil, 0), func(int, int) (ports.Renderer, error) { return r, nil }, logging.For(ctx, "render"))
+		}()
+		added := (<-events).(ports.OutputAdded)
+		if added.Info.RefreshMilli != 60000 {
+			t.Fatal(added.Info)
+		}
+		synctest.Wait()
+		start := time.Now()
+		scenes <- []domain.Scene{{Output: "HEADLESS-1", Seq: 1}}
+		<-rendered
+		period := time.Duration(16666667)
+		if time.Since(start) != period {
+			t.Fatalf("unpaced output: elapsed=%v, want %v", time.Since(start), period)
 		}
 		cancel()
 		if err := <-done; err != nil {
