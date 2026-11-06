@@ -109,3 +109,27 @@ func TestVirtualOutputOverrides(t *testing.T) {
 		}
 	}
 }
+
+func TestVirtualOutputKeepFocusKey(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		input string
+	}{
+		{"before", "output.tv.keep-focus = on\noutput.tv = virtual 1920x1080\n"},
+		{"after", "output.tv = virtual 1920x1080\noutput.tv.keep-focus = on\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, raw, warnings, err := parseBytes([]byte(tc.input))
+			if err != nil || len(warnings) != 0 || len(c.Outputs) != 1 {
+				t.Fatalf("outputs=%+v err=%v warnings=%v", c.Outputs, err, warnings)
+			}
+			o := c.Outputs[0]
+			if !o.Virtual || o.Mode != "1920x1080" || !o.KeepFocus || o.ScaleOnly {
+				t.Fatalf("output=%+v", o)
+			}
+			if raw["output.tv.keep-focus"] != "on" {
+				t.Fatal("keep-focus dropped from effective config")
+			}
+		})
+	}
+}
