@@ -590,11 +590,11 @@ func (s *surface) applyCommit(u *update) {
 	if s.kind == roleDragIcon {
 		s.server.dndIconCommit(s, u.dx, u.dy)
 	}
-	if s.xdg != nil && s.xdg.window != nil {
-		s.xdg.window.afterCommit()
+	if s.xdg != nil && s.xdg == u.xdg && s.xdg.window != nil {
+		s.xdg.window.afterCommit(u.ackedCore)
 	}
 	if s.x11win != nil {
-		s.x11win.afterCommit()
+		s.x11win.afterCommit(0)
 	}
 	if s.lock != nil {
 		// Role callbacks precede content construction; publish lock placement

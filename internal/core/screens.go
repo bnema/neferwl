@@ -399,7 +399,12 @@ func (c *Core) removeScreen(name string) {
 	}
 	focused := c.cur()
 	c.screens = slices.Delete(c.screens, i, i+1)
-	c.focusScreen = max(slices.Index(c.screens, focused), 0)
+	c.focusScreen = slices.Index(c.screens, focused)
+	if c.focusScreen < 0 {
+		// A removed focus needs a reachable adoption host when one remains.
+		// A surviving explicit focus, including an isolated output, stays put.
+		c.focusScreen = max(slices.IndexFunc(c.screens, func(s *screen) bool { return !s.isolated }), 0)
+	}
 	host := c.cur()
 	for pos, w := range gone.mon.Workspaces {
 		if w.Empty() && w.Name == "" {

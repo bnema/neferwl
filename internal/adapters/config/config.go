@@ -557,7 +557,7 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 			e := entry()
 			o.Scale, o.Transform, o.Primary, o.HDR, o.SDRBrightness, o.Anchor = e.Scale, e.Transform, e.Primary, e.HDR, e.SDRBrightness, e.Anchor
 			o.SDRExpand, o.SDRExpandIntensity, o.SDRExpandPeak, o.SDRDecode = e.SDRExpand, e.SDRExpandIntensity, e.SDRExpandPeak, e.SDRDecode
-			o.Inputs = e.Inputs
+			o.Inputs, o.KeepFocus = e.Inputs, e.KeepFocus
 			*e = o
 			continue
 		}

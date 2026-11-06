@@ -4,12 +4,12 @@ import (
 	"sync"
 	"time"
 
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/go-wayland-bindings/server/committiming"
 	"github.com/bnema/go-wayland-bindings/server/contenttype"
 	"github.com/bnema/go-wayland-bindings/server/fifo"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
-	"bnema.dev/purego-libwayland/server"
 	"golang.org/x/sys/unix"
 )
 
@@ -227,6 +227,7 @@ type update struct {
 	prev            *update
 	synced, bound   bool
 	xdg             *xdgSurface
+	ackedCore       uint64 // configure acknowledged when this commit was submitted
 	geometry        domain.Rect
 	cons            *constraint
 	region          *domain.Rect
@@ -317,7 +318,7 @@ func (s *surface) takePending() update {
 	}
 	u.layout = s.sub.pendingLayout
 	if s.xdg != nil {
-		u.xdg, u.geometry = s.xdg, s.xdg.pendingGeometry
+		u.xdg, u.geometry, u.ackedCore = s.xdg, s.xdg.pendingGeometry, s.xdg.ackedCore
 	}
 	if c := s.server.constraints[s]; c != nil && c.pending != nil {
 		u.cons, u.region, c.pending = c, c.pending, nil
