@@ -30,24 +30,26 @@ import (
 // each map it receives from Keymaps; producers own any maps left in the channel
 // after shutdown. Security is sampled before every translated event.
 type Options struct {
-	FramesDir  string
-	Shooter    *Shooter
-	Keymap     *xkb.Keymap
-	Keymaps    <-chan *xkb.Keymap
-	Security   ports.SessionSecurity
+	FramesDir string
+	Shooter   *Shooter
+	Keymap    *xkb.Keymap
+	Keymaps   <-chan *xkb.Keymap
+	Security  ports.SessionSecurity
 }
 
 type Server struct {
-	framesDir  string
-	shooter    *Shooter
-	injectMu   sync.Mutex
-	injector   *injector
-	keymaps    <-chan *xkb.Keymap
-	listener   *net.UnixListener
-	ids        *workspaceid.IDs
-	done       chan struct{}
-	once       sync.Once
-	err        error
+	framesDir   string
+	shooter     *Shooter
+	quitMu      sync.Mutex
+	quitReplies map[chan struct{}]struct{}
+	injectMu    sync.Mutex
+	injector    *injector
+	keymaps     <-chan *xkb.Keymap
+	listener    *net.UnixListener
+	ids         *workspaceid.IDs
+	done        chan struct{}
+	once        sync.Once
+	err         error
 }
 
 // Listen creates a private socket using the same workspace IDs as statefile.
@@ -108,6 +110,40 @@ func (s *Server) Close() error {
 		}
 	})
 	return s.err
+}
+
+// WaitQuitReplies lets shutdown flush outstanding quit replies before cancelling
+// control connections. The caller bounds the wait in case a peer stops reading.
+func (s *Server) WaitQuitReplies(ctx context.Context) {
+	s.quitMu.Lock()
+	pending := make([]chan struct{}, 0, len(s.quitReplies))
+	for done := range s.quitReplies {
+		pending = append(pending, done)
+	}
+	s.quitMu.Unlock()
+	for _, done := range pending {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (s *Server) trackQuit() func() {
+	done := make(chan struct{})
+	s.quitMu.Lock()
+	if s.quitReplies == nil {
+		s.quitReplies = make(map[chan struct{}]struct{})
+	}
+	s.quitReplies[done] = struct{}{}
+	s.quitMu.Unlock()
+	return func() {
+		s.quitMu.Lock()
+		delete(s.quitReplies, done)
+		close(done)
+		s.quitMu.Unlock()
+	}
 }
 
 // Run accepts connections until cancellation or Close, waiting for handlers to exit.
@@ -263,11 +299,18 @@ func (s *Server) serve(ctx context.Context, conn *net.UnixConn, out chan<- ports
 			}
 			continue
 		}
+		finish := func() {}
+		if req.Op == "do" || req.Op == "inject" {
+			finish = s.trackQuit()
+		}
 		response := s.dispatch(ctx, req, out, &announced)
 		if ctx.Err() != nil {
+			finish()
 			return
 		}
-		if encoder.Encode(response) != nil {
+		err := encoder.Encode(response)
+		finish()
+		if err != nil {
 			return
 		}
 	}

@@ -69,6 +69,12 @@ func (c *Core) controlDo(ctx context.Context, r ports.ControlDo) error {
 	baseline := c.sceneSeqs()
 	c.bindCombo, c.bindSource = "", domain.BindSourceControl
 	err := c.runBind(ctx, Action(r.Action))
+	if quit {
+		// There is no subsequent settle/present pass after ErrQuit.
+		now := c.state()
+		controlReply(r.Reply, ports.ControlReply{Done: domain.WaitCommitted, State: now, Diff: domain.DiffState(before, now)})
+		return err
+	}
 	c.waitControl(before, baseline, r.Wait, r.Until, r.Timeout, r.Reply, shots)
 	return err
 }

@@ -311,3 +311,51 @@ func TestConnectionOrderingAndClose(t *testing.T) {
 		t.Fatal("Close did not stop Run")
 	}
 }
+
+//testpolicy:realtime A real Unix socket verifies the reply is written before shutdown cancellation.
+func TestQuitReplyBeforeShutdown(t *testing.T) {
+	s, err := Listen(filepath.Join(t.TempDir(), "control.sock"), workspaceid.WithPrefix("quit"), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	out := make(chan ports.ControlRequest)
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx, out) }()
+	conn, err := net.Dial("unix", s.listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Write([]byte("{\"op\":\"do\",\"action\":\"quit\"}\n")); err != nil {
+		t.Fatal(err)
+	}
+	var req ports.ControlDo
+	select {
+	case message := <-out:
+		req = message.(ports.ControlDo)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if req.Wait != domain.DefaultWait {
+		t.Fatalf("wait: %v", req.Wait)
+	}
+	req.Reply <- ports.ControlReply{Done: domain.WaitCommitted}
+	s.WaitQuitReplies(ctx)
+	cancel()
+	var response reply
+	if err := json.NewDecoder(conn).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.OK || response.Done != "committed" {
+		t.Fatalf("reply: %+v", response)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
