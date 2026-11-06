@@ -114,3 +114,42 @@ func TestPlaceVirtualsLaysOutUnplacedVirtuals(t *testing.T) {
 		t.Fatal("placed virtuals not neighbors")
 	}
 }
+
+func TestOutputRemovalAdoptionAvoidsIsolatedFallback(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		focus        int
+		remove       string
+		isolatedLast bool
+		want         string
+	}{
+		{name: "focused output removed", focus: 1, remove: "DP-1", want: "DP-2"},
+		{name: "explicit isolated focus survives", focus: 0, remove: "DP-1", want: "tv"},
+		{name: "only isolated outputs remain", focus: 1, remove: "DP-1", isolatedLast: true, want: "tv"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := layoutCore(1, tile{"tv", 0, 0, 1280, 720}, tile{"DP-1", 0, 0, 640, 360}, tile{"DP-2", 640, 0, 640, 360})
+			c.screens[0].info.Virtual = true
+			c.screens[2].info.Virtual = tt.isolatedLast
+			c.order()
+			c.focusScreen = tt.focus
+			gone := c.screens[c.screenIndex(tt.remove)].mon
+			numbered := gone.Current()
+			numbered.AddWindow(1)
+			hidden := workspace()
+			hidden.AddWindow(2)
+			gone.adopt(hidden, true, 0)
+			c.removeScreen(tt.remove)
+			if c.cur().name() != tt.want {
+				t.Fatalf("focus = %q, want %q", c.cur().name(), tt.want)
+			}
+			host := c.cur().mon
+			if w, _ := host.find(1); w != numbered {
+				t.Fatal("numbered workspace not adopted by focused host")
+			}
+			if w, _ := host.find(2); w != hidden || !host.isHidden(w) {
+				t.Fatal("hidden workspace not adopted hidden by focused host")
+			}
+		})
+	}
+}
