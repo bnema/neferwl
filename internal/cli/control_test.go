@@ -134,15 +134,21 @@ func TestControlStateBare(t *testing.T) {
 
 func TestControlStateFallback(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("NEFERWL_CONTROL", filepath.Join(dir, "absent.sock"))
 	path := filepath.Join(dir, "state.json")
 	if err := os.WriteFile(path, []byte(`{"output":"fallback"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("NEFERWL_STATE", path)
+	t.Setenv("NEFERWL_SESSION", "")
+	t.Setenv("NEFERWL_CONTROL", "")
 	code, out, errOut := execute(t, "state")
 	if code != 0 || !strings.Contains(out, `"output":"fallback"`) || errOut != "" {
 		t.Fatalf("%d %s %s", code, out, errOut)
+	}
+	t.Setenv("NEFERWL_CONTROL", filepath.Join(dir, "absent.sock"))
+	code, out, errOut = execute(t, "state")
+	if code != 1 || out != "" || !strings.Contains(errOut, "absent.sock") {
+		t.Fatalf("explicit control must not fall back: %d %s %s", code, out, errOut)
 	}
 }
 
