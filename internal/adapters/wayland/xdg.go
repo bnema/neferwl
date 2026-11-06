@@ -456,15 +456,15 @@ func (top) SetMinimized(*xdgshell.Toplevel) {}
 
 // afterCommit runs once the commit applied content and geometry: a
 // floating window keeps the size it draws.
-func (w *window) afterCommit() {
+func (w *window) afterCommit(ackedCore uint64) {
 	if !w.mapped {
 		return
 	}
 	// Only the first applied commit for a new configure enters the reporting
 	// path. In particular, ordinary tile commits do not measure or allocate.
-	if x := w.xdg; x != nil {
-		if x.ackedCore > w.lastCommittedReported {
-			w.reportCommitted(x.ackedCore)
+	if w.xdg != nil {
+		if ackedCore > w.lastCommittedReported {
+			w.reportCommitted(ackedCore)
 		}
 	} else if w.x11 != nil && w.last.Serial > w.lastCommittedReported {
 		// A zero dimension leaves the size to the client (an unsized
