@@ -13,6 +13,7 @@ import (
 
 	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/clock"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/corewake"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
@@ -557,7 +558,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			} else if !req.Stop {
 				if req.Dir == "" {
 					code = ports.ControlErrBadRequest
-				} else if err := os.MkdirAll(req.Dir, 0o700); err != nil {
+				} else if err := prepareRecordingDir(req.Dir); err != nil {
 					code = ports.ControlErrCaptureFailed
 				}
 			}
@@ -870,7 +871,10 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		if writer.dir != "" && !opts.protected() {
 			skipped, err := writer.write(opts, r, scene, frame)
 			if err != nil {
-				return err
+				writer.close()
+				writer = frameWriter{}
+				log := logging.For(ctx, "headless")
+				log.Warn().Str("output", opts.Name).Err(err).Msg("continuous capture stopped")
 			}
 			if skipped {
 				continue
@@ -880,6 +884,23 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			ev.Int("frame", frame).Uint64("seq", scene.Seq).Int("windows", len(scene.Windows)).Dur("ms", time.Since(start)).Int("redrawn", r.TakeRedrawn()).Msg("frame")
 		}
 	}
+}
+
+// prepareRecordingDir checks write access before acknowledging a recording.
+func prepareRecordingDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(dir, ".capture-*")
+	if err != nil {
+		return err
+	}
+	closeErr := f.Close()
+	removeErr := os.Remove(f.Name())
+	if closeErr != nil {
+		return closeErr
+	}
+	return removeErr
 }
 
 // frameWriter is the continuous capture state of one output: where frames go
