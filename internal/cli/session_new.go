@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
 	"syscall"
 	"time"
@@ -90,7 +91,9 @@ func sessionNew(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	readyCtx, cancel := context.WithTimeout(ctx, *startTimeout)
+	signalCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	readyCtx, cancel := context.WithTimeout(signalCtx, *startTimeout)
 	defer cancel()
 	ready, err := startSession(readyCtx, exe, sessionArgs(*id, *profile, *size, *config, *ttl, fs.Args()), sessionEnvironment(os.Environ(), *dbus))
 	if err != nil {
