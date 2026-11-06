@@ -9,9 +9,9 @@ import (
 	"time"
 	"unsafe"
 
+	"bnema.dev/purego"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/purego"
 )
 
 const (
@@ -19,6 +19,8 @@ const (
 	modsLatched
 	modsLocked
 	modsEffective
+	layoutDepressed = 1 << 4
+	layoutLatched   = 1 << 5
 	layoutLocked    = 1 << 6
 	layoutEffective = 1 << 7
 )
@@ -37,6 +39,8 @@ type Keymap struct {
 	epoch             domain.SecurityState
 	epochSet          bool
 	held, quarantined map[uint32]bool
+	down              map[uint32]bool
+	transaction       bool
 	keymapString      func(uintptr, uint32) unsafe.Pointer
 	free              func(uintptr)
 	getSym            func(uintptr, uint32) uint32
@@ -151,6 +155,14 @@ func (k *Keymap) Key(evdevCode uint32, pressed bool, t time.Duration) ports.KeyE
 		direction = 1
 	}
 	k.updateKey(k.state, code, direction)
+	if k.down == nil {
+		k.down = make(map[uint32]bool)
+	}
+	if pressed {
+		k.down[evdevCode] = true
+	} else {
+		delete(k.down, evdevCode)
+	}
 	event := ports.KeyEvent{Keysym: name, Pressed: pressed, Time: t, Keycode: evdevCode}
 	if pressed {
 		layout := k.serializeLayout(k.state, layoutEffective)
@@ -221,6 +233,7 @@ func (k *Keymap) reset(keepLocks bool) error {
 	}
 	old := k.state
 	k.state = next
+	k.down = nil
 	k.stateUnref(old)
 	if k.held == nil {
 		k.held = make(map[uint32]bool)
