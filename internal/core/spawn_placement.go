@@ -199,8 +199,10 @@ func sameApp(a, b ports.WindowMapped) bool {
 // Callers pass only visible, non-quiet, non-floating arrivals (a rule
 // floating it included); same-app windows keep their ordinary column.
 func (c *Core) placeLaunched(v ports.WindowMapped, sc *screen, w *Workspace, cells int) bool {
-	// A shown capturing stash takes the window instead (addWindow).
-	if v.Floating || v.Parent != 0 || v.Remap || sc.mon.captures(w) {
+	// A shown capturing stash takes the window instead (addWindow), unless
+	// a fullscreen window covers the output: a window launched by its group
+	// stays with it, under the stash shown over it.
+	if v.Floating || v.Parent != 0 || v.Remap || sc.mon.captures(w) && w.Cover() == 0 {
 		return false
 	}
 	l := c.launcherOf(v.ID)

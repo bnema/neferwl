@@ -97,9 +97,9 @@ func TestStashShowsOverCover(t *testing.T) {
 	}
 }
 
-// Only the user shows the stash over the cover: a window mapping
-// meanwhile is not captured, a dialog of the cover shows above the
-// stash, and the override ends with its cover.
+// A window mapping while the stash shows over the cover is captured,
+// shown above the cover; a dialog of the cover shows above the stash, and
+// the override ends with its cover.
 func TestStashOverCoverEdges(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, w, cover := stashCoverCore(t, OverflowFixed, false)
@@ -107,8 +107,8 @@ func TestStashOverCoverEdges(t *testing.T) {
 		m.SetStashCapture(true)
 		c.applyAction(ActionToggleStashVisible)
 		m.AddWindow(5)
-		if w.StashIndex(5) >= 0 || !previewOf(t, w.Layout(), 5).Hidden {
-			t.Fatalf("new window shown: %+v", w.Layout())
+		if id, _ := w.Focused(); w.StashIndex(5) < 0 || id != 5 || previewOf(t, w.Layout(), 5).Hidden || !modelStashOverCover(w) {
+			t.Fatalf("new window not captured over the cover: %+v", w.Layout())
 		}
 		w.AddDialog(6, cover, 20, 20)
 		if ps := w.Layout(); ps[len(ps)-1].ID != 6 {
@@ -118,7 +118,7 @@ func TestStashOverCoverEdges(t *testing.T) {
 			t.Fatalf("dialog focus %d", id)
 		}
 		c.applyAction(ActionFocusColumnLeft) // back to the stash
-		if id, _ := w.Focused(); id != 3 || !modelStashOverCover(w) {
+		if id, _ := w.Focused(); id != 5 || !modelStashOverCover(w) {
 			t.Fatalf("from dialog: focused %d", id)
 		}
 		w.RemoveWindow(6)
@@ -445,4 +445,62 @@ func TestCoreActivateStashKeepsGameConfigure(t *testing.T) {
 
 func isID(id WindowID) func(Placement) bool {
 	return func(p Placement) bool { return p.ID == id }
+}
+
+// With stash.capture, a window mapping while the stash shows over a
+// fullscreen cover joins the stash, focused above the cover; a window of
+// the cover's app stays with the cover instead.
+func TestStashOverCoverMapCapture(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		next     ports.WindowMapped
+		captured bool
+	}{
+		{"unrelated", ports.WindowMapped{ID: 4, PID: 9, AppID: "other"}, true},
+		{"cover app", ports.WindowMapped{ID: 4, PID: 7, AppID: "game"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				c, _, _ := fadeCore(t)
+				ctx := context.Background()
+				m := c.cur().mon
+				m.SetStashCapture(true)
+				w := m.Current()
+				c.clientEvent(ctx, ports.WindowMapped{ID: 2, PID: 8, AppID: "stashed"})
+				w.ToggleWindowStash()
+				w.ToggleStashVisible()
+				c.clientEvent(ctx, ports.WindowMapped{ID: 1, PID: 7, AppID: "game"})
+				c.clientEvent(ctx, ports.WindowFullscreenRequest{ID: 1, Fullscreen: true})
+				c.applyAction(ActionToggleStashVisible)
+				if !modelStashOverCover(w) {
+					t.Fatal("stash not shown over the cover")
+				}
+				c.clientEvent(ctx, tc.next)
+				if w.Fullscreen != 1 {
+					t.Fatalf("fullscreen lost: %d", w.Fullscreen)
+				}
+				if id, _ := w.Focused(); id != 4 {
+					t.Fatalf("arrival not focused: %d", id)
+				}
+				if tc.captured && w.Cover() != 1 {
+					t.Fatalf("cover lost: fullscreen %d cover %d", w.Fullscreen, w.Cover())
+				}
+				if got := w.StashIndex(4) >= 0; got != tc.captured {
+					t.Fatalf("captured %v, stash %+v path %s", got, w.Stash, c.placementPath)
+				}
+				if !tc.captured {
+					return
+				}
+				if w.StashAt() != w.StashIndex(4) || !modelStashOverCover(w) {
+					t.Fatalf("stashAt %d", w.StashAt())
+				}
+				if p := previewOf(t, w.Layout(), 4); p.Hidden {
+					t.Fatalf("captured window hidden: %+v", p)
+				}
+				if p := previewOf(t, w.Layout(), 1); p.Hidden || !p.Fullscreen {
+					t.Fatalf("cover %+v", p)
+				}
+			})
+		})
+	}
 }

@@ -196,6 +196,12 @@ func TestStashCapture(t *testing.T) {
 		{"dialog keeps focus", OverflowScroll, func(m *Monitor) { m.AddFloating(9, 10, 10) }, true, 9},
 		{"hidden", OverflowScroll, func(m *Monitor) { m.Current().ToggleStashVisible() }, false, 4},
 		{"under fullscreen", OverflowScroll, func(m *Monitor) { m.Current().SetFullscreen(3, true) }, false, 3},
+		{"shown over fullscreen", OverflowScroll, func(m *Monitor) {
+			w := m.Current()
+			w.FocusID(1)
+			w.SetFullscreen(1, true)
+			w.ToggleStashVisible()
+		}, true, 4},
 		{"off", OverflowScroll, func(m *Monitor) { m.SetStashCapture(false) }, false, 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -210,6 +216,17 @@ func TestStashCapture(t *testing.T) {
 				}
 				if id, _ := w.Focused(); id != tc.focused {
 					t.Fatalf("focused %d", id)
+				}
+				if tc.name == "shown over fullscreen" {
+					if w.Cover() != 1 || !w.StashShown() {
+						t.Fatalf("cover %d shown %v", w.Cover(), w.StashShown())
+					}
+					if p := placement(w, 4); p.Hidden {
+						t.Fatalf("captured hidden %+v", p)
+					}
+					if p := placement(w, 1); p.Hidden || !p.Fullscreen {
+						t.Fatalf("cover hidden %+v", p)
+					}
 				}
 
 			})
