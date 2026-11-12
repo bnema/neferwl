@@ -54,39 +54,21 @@ var (
 	assignSeat          func(li uintptr, seat string) int32
 	unref               func(li uintptr) uintptr
 	getFD               func(li uintptr) int32
-	dispatch            func(li uintptr) int32
-	getEvent            func(li uintptr) uintptr
-	eventType           func(ev uintptr) int32
-	eventDestroy        func(ev uintptr)
-	eventDevice         func(ev uintptr) uintptr
 	deviceName          func(dev uintptr) string
 	suspend             func(li uintptr)
 	resume              func(li uintptr) int32
-	keyboardEvent       func(ev uintptr) uintptr
-	keyboardKey         func(kev uintptr) uint32
-	keyboardState       func(kev uintptr) int32
-	keyboardUsec        func(kev uintptr) uint64
-	pointerEvent        func(ev uintptr) uintptr
 	pointerDX           func(pev uintptr) float64
 	pointerDY           func(pev uintptr) float64
 	pointerRawDX        func(pev uintptr) float64
 	pointerRawDY        func(pev uintptr) float64
-	pointerUsec         func(pev uintptr) uint64
 	pointerAbsX         func(pev uintptr, width uint32) float64
 	pointerAbsY         func(pev uintptr, height uint32) float64
-	pointerButton       func(pev uintptr) uint32
-	pointerBtnState     func(pev uintptr) int32
-	pointerHasAxis      func(pev uintptr, axis uint32) int32
 	scrollValue         func(pev uintptr, axis uint32) float64
 	scrollV120          func(pev uintptr, axis uint32) float64
-	gestureEvent        func(ev uintptr) uintptr
-	gestureFingers      func(gev uintptr) int32
-	gestureCanceled     func(gev uintptr) int32
 	gestureDX           func(gev uintptr) float64
 	gestureDY           func(gev uintptr) float64
 	gestureAccelDX      func(gev uintptr) float64
 	gestureAccelDY      func(gev uintptr) float64
-	gestureUsec         func(gev uintptr) uint64
 	gestureScale        func(gev uintptr) float64
 	gestureAngle        func(gev uintptr) float64
 	deviceRef           func(dev uintptr) uintptr
@@ -107,6 +89,117 @@ var (
 	active              ports.Seat
 )
 
+// sym holds the integer-returning event-path entry points resolved once by load.
+var sym struct {
+	dispatch        uintptr
+	getEvent        uintptr
+	eventType       uintptr
+	eventDestroy    uintptr
+	eventDevice     uintptr
+	keyboardEvent   uintptr
+	keyboardKey     uintptr
+	keyboardState   uintptr
+	keyboardUsec    uintptr
+	pointerEvent    uintptr
+	pointerUsec     uintptr
+	pointerButton   uintptr
+	pointerBtnState uintptr
+	pointerHasAxis  uintptr
+	gestureEvent    uintptr
+	gestureFingers  uintptr
+	gestureCanceled uintptr
+	gestureUsec     uintptr
+}
+
+func dispatch(li uintptr) int32 {
+	r1, _, _ := purego.Syscall6(sym.dispatch, li, 0, 0, 0, 0, 0)
+	return int32(r1)
+}
+
+func getEvent(li uintptr) uintptr {
+	r1, _, _ := purego.Syscall6(sym.getEvent, li, 0, 0, 0, 0, 0)
+	return r1
+}
+
+func eventType(ev uintptr) int32 {
+	r1, _, _ := purego.Syscall6(sym.eventType, ev, 0, 0, 0, 0, 0)
+	return int32(r1)
+}
+
+func eventDestroy(ev uintptr) {
+	purego.Syscall6(sym.eventDestroy, ev, 0, 0, 0, 0, 0)
+}
+
+func eventDevice(ev uintptr) uintptr {
+	r1, _, _ := purego.Syscall6(sym.eventDevice, ev, 0, 0, 0, 0, 0)
+	return r1
+}
+
+func keyboardEvent(ev uintptr) uintptr {
+	r1, _, _ := purego.Syscall6(sym.keyboardEvent, ev, 0, 0, 0, 0, 0)
+	return r1
+}
+
+func keyboardKey(kev uintptr) uint32 {
+	r1, _, _ := purego.Syscall6(sym.keyboardKey, kev, 0, 0, 0, 0, 0)
+	return uint32(r1)
+}
+
+func keyboardState(kev uintptr) int32 {
+	r1, _, _ := purego.Syscall6(sym.keyboardState, kev, 0, 0, 0, 0, 0)
+	return int32(r1)
+}
+
+func keyboardUsec(kev uintptr) uint64 {
+	r1, _, _ := purego.Syscall6(sym.keyboardUsec, kev, 0, 0, 0, 0, 0)
+	return uint64(r1)
+}
+
+func pointerEvent(ev uintptr) uintptr {
+	r1, _, _ := purego.Syscall6(sym.pointerEvent, ev, 0, 0, 0, 0, 0)
+	return r1
+}
+
+func pointerUsec(pev uintptr) uint64 {
+	r1, _, _ := purego.Syscall6(sym.pointerUsec, pev, 0, 0, 0, 0, 0)
+	return uint64(r1)
+}
+
+func pointerButton(pev uintptr) uint32 {
+	r1, _, _ := purego.Syscall6(sym.pointerButton, pev, 0, 0, 0, 0, 0)
+	return uint32(r1)
+}
+
+func pointerBtnState(pev uintptr) int32 {
+	r1, _, _ := purego.Syscall6(sym.pointerBtnState, pev, 0, 0, 0, 0, 0)
+	return int32(r1)
+}
+
+func pointerHasAxis(pev uintptr, axis uint32) int32 {
+	r1, _, _ := purego.Syscall6(sym.pointerHasAxis, pev, uintptr(axis), 0, 0, 0, 0)
+	return int32(r1)
+}
+
+func gestureEvent(ev uintptr) uintptr {
+	r1, _, _ := purego.Syscall6(sym.gestureEvent, ev, 0, 0, 0, 0, 0)
+	return r1
+}
+
+func gestureFingers(gev uintptr) int32 {
+	r1, _, _ := purego.Syscall6(sym.gestureFingers, gev, 0, 0, 0, 0, 0)
+	return int32(r1)
+}
+
+func gestureCanceled(gev uintptr) int32 {
+	r1, _, _ := purego.Syscall6(sym.gestureCanceled, gev, 0, 0, 0, 0, 0)
+	return int32(r1)
+}
+
+func gestureUsec(gev uintptr) uint64 {
+	r1, _, _ := purego.Syscall6(sym.gestureUsec, gev, 0, 0, 0, 0, 0)
+	return uint64(r1)
+}
+
 func load() error {
 	loadOnce.Do(func() {
 		udev, err := purego.Dlopen("libudev.so.1", purego.RTLD_NOW|purego.RTLD_LOCAL)
@@ -124,6 +217,78 @@ func load() error {
 				loadErr = fmt.Errorf("libinput: %v", r)
 			}
 		}()
+		if sym.dispatch, err = purego.Dlsym(lib, "libinput_dispatch"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_dispatch: %w", err)
+			return
+		}
+		if sym.getEvent, err = purego.Dlsym(lib, "libinput_get_event"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_get_event: %w", err)
+			return
+		}
+		if sym.eventType, err = purego.Dlsym(lib, "libinput_event_get_type"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_get_type: %w", err)
+			return
+		}
+		if sym.eventDestroy, err = purego.Dlsym(lib, "libinput_event_destroy"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_destroy: %w", err)
+			return
+		}
+		if sym.eventDevice, err = purego.Dlsym(lib, "libinput_event_get_device"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_get_device: %w", err)
+			return
+		}
+		if sym.keyboardEvent, err = purego.Dlsym(lib, "libinput_event_get_keyboard_event"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_get_keyboard_event: %w", err)
+			return
+		}
+		if sym.keyboardKey, err = purego.Dlsym(lib, "libinput_event_keyboard_get_key"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_keyboard_get_key: %w", err)
+			return
+		}
+		if sym.keyboardState, err = purego.Dlsym(lib, "libinput_event_keyboard_get_key_state"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_keyboard_get_key_state: %w", err)
+			return
+		}
+		if sym.keyboardUsec, err = purego.Dlsym(lib, "libinput_event_keyboard_get_time_usec"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_keyboard_get_time_usec: %w", err)
+			return
+		}
+		if sym.pointerEvent, err = purego.Dlsym(lib, "libinput_event_get_pointer_event"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_get_pointer_event: %w", err)
+			return
+		}
+		if sym.pointerUsec, err = purego.Dlsym(lib, "libinput_event_pointer_get_time_usec"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_pointer_get_time_usec: %w", err)
+			return
+		}
+		if sym.pointerButton, err = purego.Dlsym(lib, "libinput_event_pointer_get_button"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_pointer_get_button: %w", err)
+			return
+		}
+		if sym.pointerBtnState, err = purego.Dlsym(lib, "libinput_event_pointer_get_button_state"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_pointer_get_button_state: %w", err)
+			return
+		}
+		if sym.pointerHasAxis, err = purego.Dlsym(lib, "libinput_event_pointer_has_axis"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_pointer_has_axis: %w", err)
+			return
+		}
+		if sym.gestureEvent, err = purego.Dlsym(lib, "libinput_event_get_gesture_event"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_get_gesture_event: %w", err)
+			return
+		}
+		if sym.gestureFingers, err = purego.Dlsym(lib, "libinput_event_gesture_get_finger_count"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_gesture_get_finger_count: %w", err)
+			return
+		}
+		if sym.gestureCanceled, err = purego.Dlsym(lib, "libinput_event_gesture_get_cancelled"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_gesture_get_cancelled: %w", err)
+			return
+		}
+		if sym.gestureUsec, err = purego.Dlsym(lib, "libinput_event_gesture_get_time_usec"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_gesture_get_time_usec: %w", err)
+			return
+		}
 		purego.RegisterLibFunc(&udevNew, udev, "udev_new")
 		purego.RegisterLibFunc(&udevUnref, udev, "udev_unref")
 		reg := func(fn any, name string) { purego.RegisterLibFunc(fn, lib, "libinput_"+name) }
@@ -131,39 +296,21 @@ func load() error {
 		reg(&assignSeat, "udev_assign_seat")
 		reg(&unref, "unref")
 		reg(&getFD, "get_fd")
-		reg(&dispatch, "dispatch")
-		reg(&getEvent, "get_event")
-		reg(&eventType, "event_get_type")
-		reg(&eventDestroy, "event_destroy")
-		reg(&eventDevice, "event_get_device")
 		reg(&deviceName, "device_get_name")
 		reg(&suspend, "suspend")
 		reg(&resume, "resume")
-		reg(&keyboardEvent, "event_get_keyboard_event")
-		reg(&keyboardKey, "event_keyboard_get_key")
-		reg(&keyboardState, "event_keyboard_get_key_state")
-		reg(&keyboardUsec, "event_keyboard_get_time_usec")
-		reg(&pointerEvent, "event_get_pointer_event")
 		reg(&pointerDX, "event_pointer_get_dx")
 		reg(&pointerDY, "event_pointer_get_dy")
 		reg(&pointerRawDX, "event_pointer_get_dx_unaccelerated")
 		reg(&pointerRawDY, "event_pointer_get_dy_unaccelerated")
-		reg(&pointerUsec, "event_pointer_get_time_usec")
 		reg(&pointerAbsX, "event_pointer_get_absolute_x_transformed")
 		reg(&pointerAbsY, "event_pointer_get_absolute_y_transformed")
-		reg(&pointerButton, "event_pointer_get_button")
-		reg(&pointerBtnState, "event_pointer_get_button_state")
-		reg(&pointerHasAxis, "event_pointer_has_axis")
 		reg(&scrollValue, "event_pointer_get_scroll_value")
 		reg(&scrollV120, "event_pointer_get_scroll_value_v120")
-		reg(&gestureEvent, "event_get_gesture_event")
-		reg(&gestureFingers, "event_gesture_get_finger_count")
-		reg(&gestureCanceled, "event_gesture_get_cancelled")
 		reg(&gestureDX, "event_gesture_get_dx_unaccelerated")
 		reg(&gestureDY, "event_gesture_get_dy_unaccelerated")
 		reg(&gestureAccelDX, "event_gesture_get_dx")
 		reg(&gestureAccelDY, "event_gesture_get_dy")
-		reg(&gestureUsec, "event_gesture_get_time_usec")
 		reg(&gestureScale, "event_gesture_get_scale")
 		reg(&gestureAngle, "event_gesture_get_angle_delta")
 		reg(&deviceRef, "device_ref")
