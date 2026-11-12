@@ -3,8 +3,6 @@ package wayland
 import (
 	"context"
 	"fmt"
-	"github.com/bnema/neferwl/internal/ports"
-	"github.com/stretchr/testify/require"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -12,6 +10,8 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
+	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/require"
 )
 
 // linkServer is a running server with no client, to publish contents on its

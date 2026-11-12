@@ -2,11 +2,11 @@ package wayland
 
 import (
 	"slices"
+	"time"
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"time"
 )
 
 type linkMask uint64

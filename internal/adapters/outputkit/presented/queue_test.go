@@ -2,18 +2,16 @@ package presented
 
 import (
 	"fmt"
-	"github.com/bnema/neferwl/internal/adapters/outputkit/surfaces"
 	"maps"
 	"reflect"
 	"testing"
 	"testing/synctest"
 	"time"
 
-	"github.com/bnema/neferwl/internal/ports"
-
+	"github.com/bnema/neferwl/internal/adapters/outputkit/surfaces"
 	"github.com/bnema/neferwl/internal/domain"
-
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
