@@ -122,12 +122,19 @@ func (p *presentSink) makeRoomLocked(incoming *ports.OutputPresented) (merged bo
 // carryFlip makes old the flip of next, which has none. old lives in the
 // lease of its own report, which the caller releases next: unless next shares
 // that lease, the flip is copied into next's own lease, as presented.Queue.Push
-// does, so the output owner cannot recycle it while next is pending. A next
-// without a lease keeps the pointer (nothing leased to recycle).
+// does, so the output owner cannot recycle it while next is pending. When
+// next shares that lease, or old is not leased, the pointer stays valid; a
+// next without a lease gets its own copy (rare path, allocates).
 func carryFlip(old *domain.FlipInfo, oldLease *ports.PresentationSnapshot, next *ports.OutputPresented) {
 	lease := next.Snapshot
-	if lease == nil || lease == oldLease {
+	if oldLease == nil || lease == oldLease {
 		next.Flip = old
+		return
+	}
+	if lease == nil {
+		flip := *old
+		flip.Shows = maps.Clone(old.Shows)
+		next.Flip = &flip
 		return
 	}
 	lease.Flip = *old
