@@ -373,17 +373,22 @@ func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.Su
 	// Wait for the client's GPU writes to each buffer: its explicit
 	// acquire fence, else the buffer's implicit fences.
 	waits := r.frameWaits[:0]
+	fenced := r.frameFenced[:0]
 	for _, im := range dmas {
 		if f := acquires[im]; f != nil {
 			if sem := r.importFence(f); sem != 0 {
 				waits = append(waits, sem)
 			}
 		} else if !im.fenceWaited || im.fenceWin != im.drawWin || im.fenceSeq != im.drawSeq {
+			n := len(waits)
 			waits = r.appendReadFences(waits, im)
-			im.fenceWin, im.fenceSeq, im.fenceWaited = im.drawWin, im.drawSeq, true
+			if len(waits)-n == im.fenceCount() {
+				fenced = append(fenced, im)
+			}
 		}
 	}
 	r.frameWaits = waits
+	r.frameFenced = fenced
 	frame := r.frame
 	for _, sem := range waits {
 		r.retireSemaphore(frame, sem)
@@ -408,6 +413,12 @@ func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.Su
 	}
 	runtime.KeepAlive(stages)
 	runtime.KeepAlive(waits)
+	// Only a submitted frame has waited on the implicit fences.
+	for _, im := range fenced {
+		im.fenceWin, im.fenceSeq, im.fenceWaited = im.drawWin, im.drawSeq, true
+	}
+	clear(fenced)
+	r.frameFenced = fenced[:0]
 	slot.frame, slot.busy, r.submitted = frame, true, frame
 	if hdr {
 		// recordHDR left the composed linear image in TRANSFER_SRC for capture.

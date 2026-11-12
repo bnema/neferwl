@@ -366,6 +366,14 @@ const (
 	dmaBufSyncWrite = 2
 )
 
+// fenceCount is the number of implicit fences appendReadFences exports.
+func (im *imported) fenceCount() int {
+	if im.yuv && im.disjoint {
+		return 2
+	}
+	return 1
+}
+
 // appendReadFences waits on every distinct backing object's pending writes.
 // Shared YUV planes have one implicit fence; disjoint planes have two.
 func (r *Renderer) appendReadFences(waits []vk.Semaphore, im *imported) []vk.Semaphore {
