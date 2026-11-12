@@ -20,6 +20,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// idleLinger covers Vulkan idleTTL (20s) plus a trim period, and scanoutIdleTTL (5s).
+const idleLinger = 30 * time.Second
+
 // Output is one KMS connector on a CRTC, driven by atomic commits (ADR
 // 015). One goroutine runs it (Run) and closes it. Every commit that
 // changes the screen asks for an event and leaves the output pending until
@@ -1211,8 +1214,16 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 	if clk == nil {
 		clk = clock.System{}
 	}
-	stats := clk.NewTicker(10 * time.Second)
+	stats := clk.NewTimer(10 * time.Second)
 	defer stats.Stop()
+	lastActivity, statsArmed := clk.Now(), true
+	activity := func() {
+		lastActivity = clk.Now()
+		if !statsArmed {
+			stats.Reset(10 * time.Second)
+			statsArmed = true
+		}
+	}
 	// Timer channels are enabled only when their condition holds. Go 1.27
 	// guarantees a stopped/reset timer cannot deliver its old value.
 	retryTimer := time.NewTimer(time.Hour)
@@ -1439,6 +1450,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 		stateDirty := false
 		select {
 		case peak := <-o.expansionPeak:
+			activity()
 			o.applyExpansionPeak(peak)
 		case _, ok := <-securityChanges:
 			if !ok {
@@ -1446,10 +1458,13 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 			}
 			continue // gate is authoritative, not the queued wake payload
 		case <-retry:
+			activity()
 			continue
 		case <-protectDue:
+			activity()
 			continue
 		case <-stuck:
+			activity()
 			o.observeSecurity()
 			if !o.frame.deadlineReached(time.Now()) {
 				continue // waits for a fence
@@ -1469,26 +1484,35 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 			dirty = haveScene
 			stateDirty = true
 		case <-vrrOff:
+			activity()
 			stateDirty = true
 		case <-cursorDue:
+			activity()
 			stateDirty = true
 		case <-stateDue:
+			activity()
 			stateDirty = true
 		case <-cursorWake:
+			activity()
 			stateDirty = true
 		case <-gapDue:
+			activity()
 		case <-holdDue:
+			activity()
 			continue
 		case <-ctx.Done():
 			return nil
 		case b := <-pipeline.Completed():
+			activity()
 			pipeline.Recycle(b, r)
 			continue
 		case b := <-pipeline.HiddenCompleted():
+			activity()
 			pipeline.RecycleHidden(b)
 			pipeline.Retire(scene)
 			continue
 		case q := <-captures:
+			activity()
 			o.observeSecurity()
 			var refuse error
 			if o.protected || !enabled || o.off || o.wantOff {
@@ -1501,6 +1525,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 			close(ack)
 			continue
 		case ack := <-o.seatDisable:
+			activity()
 			o.bypassForSeatDisable()
 			// The seat is about to be disabled: no frame may select the
 			// pipeline again before the next enable (a modeset), not even a
@@ -1510,6 +1535,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 			ack <- struct{}{}
 			continue
 		case on := <-active:
+			activity()
 			reacquire.done()
 			skip, err := setActive(on)
 			if err != nil {
@@ -1520,6 +1546,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 			}
 			stateDirty = on
 		case <-reacquireDue:
+			activity()
 			// The seat reported active before the kernel gave DRM master
 			// back: the enable modeset was refused. Try it again.
 			reacquire.fire()
@@ -1532,6 +1559,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 			}
 			stateDirty = true
 		case ev := <-o.flipped:
+			activity()
 			o.observeSecurity()
 			if !o.completed(ev, seen) {
 				continue // stale event from before a modeset
@@ -1544,6 +1572,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 				}
 			}
 		case s := <-scenes:
+			activity()
 			o.observeSecurity()
 			if !o.sceneCurrent(s) {
 				continue
@@ -1568,6 +1597,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 			// A closed window's last content goes once no scene draws it.
 			table.Prune(scene)
 		case c := <-cursor:
+			activity()
 			o.observeSecurity()
 			if o.protected {
 				continue
@@ -1579,12 +1609,17 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 				stateDirty = true
 			}
 		case b := <-contents:
+			activity()
 			// Windows on other outputs or workspaces do not need a frame.
 			batchDirty, batchSeen := table.Apply(b, scene, seen, returns)
 			dirty = dirty || batchDirty
 			reportDirty = reportDirty || batchSeen
 		case <-stats.C():
 			now := clk.Now()
+			statsArmed = now.Sub(lastActivity) < idleLinger
+			if statsArmed {
+				stats.Reset(10 * time.Second)
+			}
 			pipeline.Retire(scene) // an idle child of an ended session goes
 			o.dropClientFBs(now, false)
 			// An idle output renders nothing: free what windows that left

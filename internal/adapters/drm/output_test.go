@@ -786,10 +786,11 @@ func TestRunTrimsRendererOnStatsTick(t *testing.T) {
 		o.cursor, o.tearing, o.fbs = nil, false, [2]uint32{}
 		ticks := make(chan time.Time)
 		clk := portsmocks.NewMockClock(t)
-		tk := portsmocks.NewMockTicker(t)
-		clk.EXPECT().NewTicker(10 * time.Second).Return(tk).Once()
+		tk := portsmocks.NewMockTimer(t)
+		clk.EXPECT().NewTimer(10 * time.Second).Return(tk).Once()
 		tk.EXPECT().C().Return(ticks)
-		tk.EXPECT().Stop().Return().Once()
+		tk.EXPECT().Stop().Return(true).Once()
+		tk.EXPECT().Reset(10 * time.Second).Return(true)
 		now := time.Unix(1000, 0)
 		clk.EXPECT().Now().Return(now)
 		o.clock = clk
@@ -1290,4 +1291,59 @@ func TestAllPlaneFormats(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
+}
+
+// Idle cleanup runs through the linger boundary, then content re-arms it.
+func TestRunStatsTimerIdleAndRearm(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		o, k, _ := testOutput(t)
+		o.cursor, o.tearing, o.fbs = nil, false, [2]uint32{}
+		r := portsmocks.NewMockRenderer(t)
+		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+		r.EXPECT().Close().Return().Once()
+		r.EXPECT().TakeRedrawn().Return(0)
+		trimmed := make(chan time.Time, 4)
+		r.EXPECT().Trim(mock.Anything).RunAndReturn(func(at time.Time) error {
+			trimmed <- at
+			return nil
+		})
+		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+		k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+		setOutputRenderer(t, o, r)
+		active := make(chan bool, 1)
+		active <- false
+		contents := newContentFeed(t, 0)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan error, 1)
+		start := time.Now()
+		go func() {
+			done <- o.Run(ctx, nil, active, nil, contents.in(), contents.ret, nil, discardSink(t), nil, nil)
+		}()
+		synctest.Wait()
+		for range 3 {
+			time.Sleep(10 * time.Second)
+			synctest.Wait()
+		}
+		first, second, third := <-trimmed, <-trimmed, <-trimmed
+		if first.Sub(start) != 10*time.Second || second.Sub(start) != 20*time.Second || third.Sub(start) != 30*time.Second {
+			t.Fatalf("trim times: %v, %v, %v", first, second, third)
+		}
+		time.Sleep(time.Minute)
+		synctest.Wait()
+		if len(trimmed) != 0 {
+			t.Fatalf("extra idle trims: %d, want 0", len(trimmed))
+		}
+		contents.send(domain.SurfaceContent{ID: 1, Seq: 1})
+		synctest.Wait()
+		time.Sleep(10 * time.Second)
+		synctest.Wait()
+		if at := <-trimmed; !at.Equal(start.Add(100 * time.Second)) {
+			t.Fatalf("rearmed trim at %v", at)
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
 }
