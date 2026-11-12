@@ -492,6 +492,8 @@ type Options struct {
 type control struct {
 	apply  func()
 	keymap *xkb.Keymap
+	// pushesInput marks seat controls, which enqueue events when applied.
+	pushesInput bool
 }
 
 func (c control) discard() {
@@ -553,6 +555,7 @@ func relayControls(ctx context.Context, opts *Options, p *pointer, in *inputStat
 		case <-ctx.Done():
 			return
 		case on := <-opts.Active:
+			c.pushesInput = true
 			f = func() { applySeat(on, libinputSeat{}, li, opts, in, fwd) }
 		case km := <-opts.Keymaps:
 			c.keymap = km
@@ -598,6 +601,15 @@ func relayControls(ctx context.Context, opts *Options, p *pointer, in *inputStat
 
 // statsEvery is how often Run logs input throughput.
 const statsEvery = 10 * time.Second
+
+// pollTimeout leaves a quiet input loop asleep until input or a control wakes
+// it. Pending stats retain the existing millisecond deadline rounding.
+func pollTimeout(now, nextStats time.Time, pending bool) int {
+	if !pending {
+		return -1
+	}
+	return max(0, int(nextStats.Sub(now).Milliseconds())+1)
+}
 
 // Run owns libinput and the keymap, converting device events into input events.
 func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) (err error) {
@@ -655,8 +667,10 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) (err 
 	}()
 	fds := []unix.PollFd{{Fd: fd, Events: unix.POLLIN}}
 	nextStats := time.Now().Add(statsEvery)
+	statsPending := false
 	for ctx.Err() == nil {
-		if !time.Now().Before(nextStats) {
+		if statsPending && !time.Now().Before(nextStats) {
+			statsPending = false
 			nextStats = time.Now().Add(statsEvery)
 			if s := fwd.take(); s.Motions > 0 || s.Sent > 0 {
 				opts.Log.Info().Int("motions", s.Motions).Int("coalesced", s.Coalesced).Int("sent", s.Sent).Dur("max_block_ms", s.MaxBlock).Msg("input stats")
@@ -667,11 +681,12 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) (err 
 			select {
 			case c := <-controls:
 				c.apply()
+				statsPending = statsPending || c.pushesInput
 			default:
 				break apply
 			}
 		}
-		n, err := waiter.Poll(fds, max(0, int(time.Until(nextStats).Milliseconds())+1))
+		n, err := waiter.Poll(fds, pollTimeout(time.Now(), nextStats, statsPending))
 		if err != nil && !errors.Is(err, unix.EINTR) {
 			return fmt.Errorf("libinput poll: %w", err)
 		}
@@ -689,9 +704,11 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) (err 
 			}
 			if single != nil {
 				fwd.push(single)
+				statsPending = true
 			}
 			for _, event := range out {
 				fwd.push(event)
+				statsPending = true
 			}
 		}
 	}

@@ -461,3 +461,29 @@ func TestTypingTranslationPreservesActivePointerConstraint(t *testing.T) {
 		}
 	}
 }
+
+func TestPollTimeout(t *testing.T) {
+	now := time.Unix(1000, 0)
+	for _, tc := range []struct {
+		name    string
+		until   time.Duration
+		pending bool
+		want    int
+	}{
+		{"quiet before deadline", statsEvery, false, -1},
+		{"quiet at deadline", 0, false, -1},
+		{"quiet past deadline", -time.Hour, false, -1},
+		{"pending full interval", statsEvery, true, 10001},
+		{"pending rounds up", 1500 * time.Microsecond, true, 2},
+		{"pending sub millisecond", time.Microsecond, true, 1},
+		{"pending at deadline", 0, true, 1},
+		{"pending just overdue", -time.Microsecond, true, 1},
+		{"pending overdue", -time.Second, true, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := pollTimeout(now, now.Add(tc.until), tc.pending); got != tc.want {
+				t.Fatalf("pollTimeout = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
