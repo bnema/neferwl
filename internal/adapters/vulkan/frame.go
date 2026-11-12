@@ -246,6 +246,11 @@ func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.Su
 			return nil, err
 		}
 	}
+	if len(r.targets) == 0 && r.hdrNits <= 0 {
+		if err := r.ensureOwn(); err != nil {
+			return nil, err
+		}
+	}
 	tg := r.target()
 	hdr := r.hdrNits > 0 && len(r.targets) > 0
 	if r.hdrNits > 0 && !hdr {

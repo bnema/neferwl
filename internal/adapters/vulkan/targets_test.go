@@ -514,3 +514,47 @@ func closeBufs(bufs []domain.DMABuf) {
 		}
 	}
 }
+
+// Display targets do not need the internal SDR image. Dropping them switches
+// back to an internal image on the first render, not during configuration.
+func TestOwnAllocatedOnFirstInternalRender(t *testing.T) {
+	r := newTestRenderer(t, 64, 32)
+	if r.own.image != 0 {
+		t.Fatal("internal target allocated at construction")
+	}
+	bufs, err := r.ExportTargets(2, nil, false)
+	if err != nil {
+		t.Skipf("no exportable targets: %v", err)
+	}
+	t.Cleanup(func() {
+		for _, b := range bufs {
+			for _, p := range b.Planes {
+				_ = p.File.Close()
+			}
+		}
+	})
+	for i := range 3 {
+		r.UseTarget(i % 2)
+		if err := render(r, domain.Scene{Seq: uint64(i + 1), Background: "#ff0000"}, nil); err != nil {
+			t.Fatal(err)
+		}
+		if r.own.image != 0 {
+			t.Fatal("internal target allocated with exported targets")
+		}
+	}
+	if _, err := r.ExportTargets(0, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if r.own.image != 0 {
+		t.Fatal("dropping targets allocated internal image")
+	}
+	if err := render(r, domain.Scene{Background: "#0000ff"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if r.own.image == 0 {
+		t.Fatal("internal render has no image")
+	}
+	if got := readPixels(t, r).At(3, 3); got != (color.RGBA{0, 0, 255, 255}) {
+		t.Fatalf("internal readback %v", got)
+	}
+}

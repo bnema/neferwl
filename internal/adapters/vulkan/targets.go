@@ -139,6 +139,37 @@ func (r *Renderer) UseTarget(i int) {
 	}
 }
 
+// ensureOwn allocates the internal SDR target only when no display target is used.
+func (r *Renderer) ensureOwn() (err error) {
+	if r.own.image != 0 {
+		return nil
+	}
+	defer func() {
+		if err != nil {
+			r.freeTarget(&r.own)
+		}
+	}()
+	extent := vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}
+	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: extent, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingOptimal, Usage: targetUsage | vk.ImageUsageSampledBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
+	if err := checked("vkCreateImage", r.gpu.dd.CreateImage(r.gpu.device, &ii, nil, &r.own.image)); err != nil {
+		return err
+	}
+	var req vk.MemoryRequirements
+	r.gpu.dd.GetImageMemoryRequirements(r.gpu.device, r.own.image, &req)
+	kind, err := r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyDeviceLocalBit)
+	if err != nil {
+		return err
+	}
+	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
+	if err := checked("vkAllocateMemory(image)", r.gpu.dd.AllocateMemory(r.gpu.device, &alloc, nil, &r.own.memory)); err != nil {
+		return err
+	}
+	if err := checked("vkBindImageMemory", r.gpu.dd.BindImageMemory(r.gpu.device, r.own.image, r.own.memory, 0)); err != nil {
+		return err
+	}
+	return r.createView(&r.own)
+}
+
 // target is the image the next frame draws into.
 func (r *Renderer) target() *target {
 	if len(r.targets) > 0 {

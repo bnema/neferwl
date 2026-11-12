@@ -149,33 +149,11 @@ func (g *GPU) NewRenderer(width, height int, o domain.RendererOptions) (renderer
 			renderer = nil
 		}
 	}()
-	extent := vk.Extent3D{Width: uint32(width), Height: uint32(height), Depth: 1}
-	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: extent, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingOptimal, Usage: targetUsage | vk.ImageUsageSampledBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
-	if err = checked("vkCreateImage", r.gpu.dd.CreateImage(r.gpu.device, &ii, nil, &r.own.image)); err != nil {
-		return
-	}
-	var req vk.MemoryRequirements
-	r.gpu.dd.GetImageMemoryRequirements(r.gpu.device, r.own.image, &req)
-	var kind uint32
-	kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyDeviceLocalBit)
-	if err != nil {
-		return
-	}
-	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err = checked("vkAllocateMemory(image)", r.gpu.dd.AllocateMemory(r.gpu.device, &alloc, nil, &r.own.memory)); err != nil {
-		return
-	}
-	if err = checked("vkBindImageMemory", r.gpu.dd.BindImageMemory(r.gpu.device, r.own.image, r.own.memory, 0)); err != nil {
-		return
-	}
 	pi := vk.CommandPoolCreateInfo{SType: vk.StructureTypeCommandPoolCreateInfo, Flags: vk.CommandPoolCreateResetCommandBufferBit, QueueFamilyIndex: g.family}
 	if err = checked("vkCreateCommandPool", r.gpu.dd.CreateCommandPool(r.gpu.device, &pi, nil, &r.pool)); err != nil {
 		return
 	}
 	if err = r.createSlots(); err != nil {
-		return
-	}
-	if err = r.createView(&r.own); err != nil {
 		return
 	}
 	if err = r.createComposer(); err != nil {
