@@ -325,6 +325,7 @@ func (w *sceneWalk) windows() {
 		start := len(w.draws)
 		// Until its first buffer, a window shows the background: no flash.
 		w.fill(body, parseColor(w.s.Background))
+		filled := len(w.draws) > start
 		if !content.Empty() {
 			// An animating frame zooms its content (Zoom); a card draws
 			// at its Preview.
@@ -338,6 +339,20 @@ func (w *sceneWalk) windows() {
 				w.expandCurve = win.SDRExpansion
 			}
 			w.place(win.ID, &content, c.X, c.Y, c.W, c.H)
+			if win.Radius == 0 && w.alpha == 1 && filled {
+				fill := w.draws[start].pc.rect
+				for _, dr := range w.draws[start+1:] {
+					r := dr.pc.rect
+					if dr.pc.misc[0] != modeSolid && dr.pc.misc[1]&flagOpaque != 0 && dr.pc.color[3] == 1 &&
+						r[0] <= fill[0] && r[1] <= fill[1] && r[2] >= fill[2] && r[3] >= fill[3] {
+						// Only an emitted covering draw can hide the body:
+						// failed imports must leave its background visible.
+						copy(w.draws[start:], w.draws[start+1:])
+						w.draws = w.draws[:len(w.draws)-1]
+						break
+					}
+				}
+			}
 			w.expand = [4]float32{}
 			w.expandCurve = domain.SDRExpansionCurve{}
 			w.zoom = 1
