@@ -238,6 +238,8 @@ func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.Su
 	// A frame that fails before its submit keeps its number: objects it
 	// touched are freed once a later frame completes (never early).
 	r.frame++
+	r.inRender = true
+	defer func() { r.inRender = false }()
 	slot := &r.slots[r.frame%frameSlots]
 	// The slot's previous frame must be done before its command buffer
 	// is recorded again.

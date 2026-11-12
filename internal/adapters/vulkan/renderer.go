@@ -68,6 +68,7 @@ type Renderer struct {
 	// submitted the last submitted, completed the last known finished.
 	slots                       [frameSlots]frameSlot
 	frame, submitted, completed uint64
+	inRender                    bool // current frame may still be recording, not completed
 	deferred                    []deferredFree
 	imports                     map[uint64]*imported
 	shmPreadFallback            bool

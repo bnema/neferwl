@@ -118,6 +118,11 @@ func (r *Renderer) poll() error {
 		// Nothing runs: frames recorded but never submitted have no GPU
 		// work either (like idle).
 		r.completed = r.frame
+		if r.inRender {
+			// The current walk can already reference resources, but its
+			// commands have not been submitted yet.
+			r.completed = r.frame - 1
+		}
 	} else {
 		r.completed = max(r.completed, pending-1)
 	}
