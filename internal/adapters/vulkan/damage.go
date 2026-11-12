@@ -20,13 +20,16 @@ import (
 // what the target will hold after it: the windows drawn, their content
 // Seq and rect.
 type damageRegion struct {
-	held  *target // nil: redraw everything
-	area  image.Rectangle
-	seen  map[domain.WindowID]bool
-	bound image.Rectangle
-	drawn map[domain.WindowID]heldWindow
-	// rects is scratch for a content's damage rects (reused across frames).
-	rects []domain.Rect
+	held      *target // nil: redraw everything
+	area      image.Rectangle
+	rects     []image.Rectangle
+	clipped   []draw
+	collapsed bool
+	seen      map[domain.WindowID]bool
+	bound     image.Rectangle
+	drawn     map[domain.WindowID]heldWindow
+	// contentRects is scratch for a content's damage rects (reused across frames).
+	contentRects []domain.Rect
 	// why counts the reasons of full redraws (the renderer's; nil: none).
 	why *fullRedraws
 }
@@ -66,7 +69,8 @@ func (d *damageRegion) hold(tg *target, s domain.Scene) {
 	// The limit only bounds the CPU cost of clipping every quad.
 	limit := d.bound.Dx() * d.bound.Dy() * 9 / 10
 	if area, ok := sceneDelta(tg.scene, s, phys, limit); ok {
-		d.held, d.area = tg, area
+		d.held = tg
+		d.add(area)
 	} else {
 		d.why.count(fullScene)
 	}
@@ -83,7 +87,7 @@ func (r *Renderer) frameDamage(tg *target, s domain.Scene, bounds image.Rectangl
 		r.damageDrawn = make(map[domain.WindowID]heldWindow)
 	}
 	clear(r.damageDrawn)
-	r.damage = damageRegion{seen: r.damageSeen, drawn: r.damageDrawn, bound: bounds, rects: r.damage.rects[:0], why: &r.fullRedraws}
+	r.damage = damageRegion{seen: r.damageSeen, drawn: r.damageDrawn, bound: bounds, rects: r.damage.rects[:0], contentRects: r.damage.contentRects[:0], clipped: r.damage.clipped[:0], why: &r.fullRedraws}
 	r.damage.hold(tg, s)
 	return &r.damage
 }
@@ -93,8 +97,58 @@ func (d *damageRegion) all() bool { return d.held == nil }
 
 func (d *damageRegion) add(r image.Rectangle) {
 	if d.held != nil {
-		d.area = d.area.Union(r.Intersect(d.bound))
+		r = r.Intersect(d.bound)
+		if r.Empty() {
+			return
+		}
+		d.area = d.area.Union(r)
+		if !d.collapsed {
+			d.rects = appendDisjoint(d.rects, r)
+		}
+		if d.collapsed || len(d.rects) > maxDamageRects {
+			d.rects = append(d.rects[:0], d.area)
+			d.collapsed = true
+		}
 	}
+}
+
+const maxDamageRects = 8
+
+// appendDisjoint cuts a new rectangle against the existing disjoint set.
+func appendDisjoint(dst []image.Rectangle, r image.Rectangle) []image.Rectangle {
+	pending := len(dst)
+	dst = append(dst, r)
+	for i := pending; i < len(dst); i++ {
+		if dst[i].Empty() {
+			dst[i] = dst[len(dst)-1]
+			dst = dst[:len(dst)-1]
+			i--
+			continue
+		}
+		for _, old := range dst[:pending] {
+			in := dst[i].Intersect(old)
+			if in.Empty() {
+				continue
+			}
+			r := dst[i]
+			dst[i] = image.Rect(r.Min.X, r.Min.Y, r.Max.X, in.Min.Y)
+			dst = append(dst,
+				image.Rect(r.Min.X, in.Max.Y, r.Max.X, r.Max.Y),
+				image.Rect(r.Min.X, in.Min.Y, in.Min.X, in.Max.Y),
+				image.Rect(in.Max.X, in.Min.Y, r.Max.X, in.Max.Y))
+			i--
+			break
+		}
+	}
+	return dst
+}
+
+func (d *damageRegion) pixels() int {
+	n := 0
+	for _, r := range d.rects {
+		n += r.Dx() * r.Dy()
+	}
+	return n
 }
 
 // window records a window drawn in rect (physical): if its content changed
@@ -122,7 +176,7 @@ func (d *damageRegion) window(id domain.WindowID, c domain.SurfaceContent, rect 
 		d.why.count(fullChildren)
 	default:
 		var known bool
-		d.rects, known = c.AppendDamageSince(d.rects[:0], held)
+		d.contentRects, known = c.AppendDamageSince(d.contentRects[:0], held)
 		if known {
 			return // mapped by content, called next
 		}
@@ -173,11 +227,11 @@ func (d *damageRegion) content(id domain.WindowID, c *domain.SurfaceContent, ful
 		return
 	}
 	var known bool
-	d.rects, known = c.AppendDamageSince(d.rects[:0], held)
+	d.contentRects, known = c.AppendDamageSince(d.contentRects[:0], held)
 	if !known || c.Width <= 0 || c.Height <= 0 {
 		return
 	}
-	rects := d.rects
+	rects := d.contentRects
 	if c.Transform != 0 {
 		d.add(dst)
 		return
@@ -216,15 +270,19 @@ func (d *damageRegion) clip(ds []draw) []draw {
 	if d.held == nil {
 		return ds
 	}
-	out := ds[:0]
+	out := d.clipped[:0]
 	for _, dr := range ds {
-		r := image.Rect(int(dr.pc.rect[0]), int(dr.pc.rect[1]), int(dr.pc.rect[2]), int(dr.pc.rect[3])).Intersect(d.area)
-		if r.Empty() {
-			continue
+		for _, area := range d.rects {
+			r := image.Rect(int(dr.pc.rect[0]), int(dr.pc.rect[1]), int(dr.pc.rect[2]), int(dr.pc.rect[3])).Intersect(area)
+			if r.Empty() {
+				continue
+			}
+			clipped := dr
+			clipped.pc.rect = [4]int32{int32(r.Min.X), int32(r.Min.Y), int32(r.Max.X), int32(r.Max.Y)}
+			out = append(out, clipped)
 		}
-		dr.pc.rect = [4]int32{int32(r.Min.X), int32(r.Min.Y), int32(r.Max.X), int32(r.Max.Y)}
-		out = append(out, dr)
 	}
+	d.clipped = out
 	return out
 }
 

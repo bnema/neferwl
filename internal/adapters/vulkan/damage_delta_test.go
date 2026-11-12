@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image"
 	"image/color"
+	"math/rand/v2"
 	"reflect"
 	"slices"
 	"testing"
@@ -470,4 +471,137 @@ func TestExpansionChangeDamagesWindow(t *testing.T) {
 	area, ok := sceneDelta(old, cur, func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }, 500000)
 	require.True(t, ok)
 	require.Equal(t, image.Rect(10, 20, 110, 120), area)
+}
+
+func TestDamageRectSet(t *testing.T) {
+	d := &damageRegion{held: &target{}, bound: image.Rect(0, 0, 100, 100)}
+	d.add(image.Rect(0, 0, 10, 10))
+	d.add(image.Rect(90, 90, 100, 100))
+	require.Equal(t, 200, d.pixels())
+	require.Len(t, d.rects, 2)
+	for i := range 7 {
+		d.add(image.Rect(20+i*3, 20, 21+i*3, 21))
+	}
+	require.Equal(t, []image.Rectangle{d.bound}, d.rects)
+	require.Equal(t, 10000, d.pixels())
+	// Once collapsed, subsequent damage extends the same bounding box.
+	d.add(image.Rect(50, 50, 51, 51))
+	require.Len(t, d.rects, 1)
+}
+
+func TestDamageRectSetDisjointProperty(t *testing.T) {
+	rng := rand.New(rand.NewPCG(12, 1))
+	for range 200 {
+		d := &damageRegion{held: &target{}, bound: image.Rect(0, 0, 32, 32)}
+		var covered [32][32]bool
+		for range 30 {
+			r := image.Rect(rng.IntN(40)-4, rng.IntN(40)-4, rng.IntN(40)-4, rng.IntN(40)-4)
+			d.add(r)
+			for y := range 32 {
+				for x := range 32 {
+					covered[y][x] = covered[y][x] || image.Pt(x, y).In(r)
+				}
+			}
+			require.LessOrEqual(t, len(d.rects), maxDamageRects)
+			for i, a := range d.rects {
+				require.False(t, a.Empty())
+				require.True(t, a.In(d.bound))
+				for _, b := range d.rects[:i] {
+					require.True(t, a.Intersect(b).Empty(), "overlap: %v %v", a, b)
+				}
+			}
+			for y := range 32 {
+				for x := range 32 {
+					if !covered[y][x] {
+						continue
+					}
+					found := false
+					for _, a := range d.rects {
+						found = found || image.Pt(x, y).In(a)
+					}
+					require.True(t, found, "lost damaged pixel %d,%d", x, y)
+				}
+			}
+		}
+	}
+}
+
+func TestAppendDisjointExactCoverage(t *testing.T) {
+	rng := rand.New(rand.NewPCG(12, 2))
+	for range 100 {
+		var rects []image.Rectangle
+		var covered [16][16]bool
+		for range 12 {
+			r := image.Rect(rng.IntN(16), rng.IntN(16), rng.IntN(16), rng.IntN(16))
+			rects = appendDisjoint(rects, r)
+			for y := range 16 {
+				for x := range 16 {
+					covered[y][x] = covered[y][x] || image.Pt(x, y).In(r)
+					count := 0
+					for _, a := range rects {
+						if image.Pt(x, y).In(a) {
+							count++
+						}
+					}
+					want := 0
+					if covered[y][x] {
+						want = 1
+					}
+					require.Equal(t, want, count)
+				}
+			}
+		}
+	}
+}
+
+func TestDamageClipPreservesPaintOrder(t *testing.T) {
+	d := &damageRegion{held: &target{}, bound: image.Rect(0, 0, 100, 100)}
+	d.add(image.Rect(0, 0, 10, 10))
+	d.add(image.Rect(90, 90, 100, 100))
+	ds := []draw{{pc: drawParameters{rect: [4]int32{0, 0, 100, 100}}}, {pc: drawParameters{rect: [4]int32{0, 0, 100, 100}}}}
+	ds[0].pc.color = [4]float32{1, 0, 0, 0.5}
+	ds[1].pc.color = [4]float32{0, 1, 0, 0.5}
+	out := d.clip(ds)
+	require.Len(t, out, 4)
+	for i, dr := range out {
+		require.Equal(t, ds[i/2].pc.color, dr.pc.color)
+	}
+}
+
+func TestDisjointWindowDamageMatchesFullRedraw(t *testing.T) {
+	r, full := newTestRenderer(t, 128, 128), newTestRenderer(t, 128, 128)
+	scene := domain.Scene{Seq: 1, OutputWidth: 128, OutputHeight: 128, Scale: 1, Background: "#1a2030", Windows: []domain.SceneWindow{
+		{ID: 1, Rect: domain.Rect{X: 2, Y: 2, W: 10, H: 10}},
+		{ID: 2, Rect: domain.Rect{X: 116, Y: 116, W: 10, H: 10}},
+	}}
+	contents := map[domain.WindowID]domain.SurfaceContent{}
+	for _, id := range []domain.WindowID{1, 2} {
+		c := solidContent(t, 10, 10, color.RGBA{R: 40, G: 20, B: 10, A: 128})
+		c.ID, c.Seq, c.Surface, c.Version = id, 1, uint64(id), 1
+		c.Opaque = false
+		contents[id] = c
+	}
+	require.NoError(t, render(r, scene, contents))
+	r.TakeRedrawn()
+	for id, c := range contents {
+		px := make([]byte, 10*10*4)
+		for i := 0; i < len(px); i += 4 {
+			copy(px[i:], []byte{20, 40, 80, 128})
+		}
+		c = damagedContent(t, c.SHM.File, c, 2, px, []domain.SeqDamage{{Seq: 1, Full: true}, {Seq: 2, Rects: []domain.Rect{{W: 10, H: 10}}}})
+		c.Version = 2
+		contents[id] = c
+	}
+	require.NoError(t, render(r, scene, contents))
+	require.Equal(t, 200, r.TakeRedrawn(), "two corner windows must not redraw the gap")
+	scene.Seq = 2
+	require.NoError(t, render(full, scene, contents))
+	a, b := readPixels(t, full), readPixels(t, r)
+	for y := range 128 {
+		for x := range 128 {
+			if a.At(x, y) != b.At(x, y) {
+				t.Fatalf("pixel %d,%d full=%v partial=%v", x, y, a.At(x, y), b.At(x, y))
+			}
+		}
+	}
 }

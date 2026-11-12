@@ -273,15 +273,19 @@ func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.Su
 	partial := !dmg.all()
 	redrawn := sw * sh
 	if partial {
-		redrawn = dmg.area.Dx() * dmg.area.Dy()
-		// The pass keeps the image: repaint the background under the
-		// region, then everything clipped to it.
-		// Keep the background first without allocating a second draw slice.
-		ds = append(ds, draw{})
-		copy(ds[1:], ds[:len(ds)-1])
-		ds[0] = r.fillDraw(dmg.area, parseColor(s.Background))
+		redrawn = dmg.pixels()
+		// Clip into separate scratch: one draw may expand into several copies.
+		original := ds
 		ds = dmg.clip(ds)
-		r.scratchDraws = ds
+		n := len(dmg.rects)
+		ds = append(ds, make([]draw, n)...)
+		copy(ds[n:], ds[:len(ds)-n])
+		bg := parseColor(s.Background)
+		for i, rect := range dmg.rects {
+			ds[i] = r.fillDraw(rect, bg)
+		}
+		dmg.clipped = ds
+		r.scratchDraws = original[:0]
 	}
 	r.redrawn += redrawn
 	if r.traceDamage {
