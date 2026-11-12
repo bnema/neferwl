@@ -524,7 +524,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			return nil
 		}
 		// A frame held for a route change's contents renders at the deadline.
-		if d, wait := gate.Wait(clk.Now()); wait && dirty && haveScene {
+		if d, wait := gate.Wait(clk.Now()); wait && dirty && haveScene && !scene.Security.Protected && !opts.protected() {
 			if routeTimer == nil {
 				routeTimer = clk.NewTimer(d)
 			} else {
@@ -780,9 +780,12 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		}
 		now := clk.Now()
 		_, gated := gate.Wait(now)
+		// A protected (lock) scene never waits for routed contents: it
+		// draws no client window.
+		gated = gated && !scene.Security.Protected && !opts.protected()
 		if !gated && dirty && haveScene && gate.Late(now) && now.Sub(lastRouteWarn) >= 10*time.Second {
 			lastRouteWarn = now
-			opts.Log.Warn().Str("output", opts.Name).Msg("route wait expired: rendering without the routed contents")
+			opts.Log.Warn().Str("output", opts.Name).Uint64("need", scene.Routes).Dur("waited", gate.Waited(now)).Msg("route wait expired: rendering without the routed contents")
 		}
 		if !haveScene || !dirty || scene.Off || gated {
 			// Contents not drawn are still read: report them. An output

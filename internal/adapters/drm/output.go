@@ -1461,7 +1461,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 		}
 		// A frame held for a route change's contents renders at the deadline.
 		var routeDue <-chan time.Time
-		if d, wait := gate.Wait(time.Now()); wait && dirty && haveScene {
+		if d, wait := gate.Wait(time.Now()); wait && dirty && haveScene && !o.protected && !scene.Security.Protected {
 			routeTimer.Reset(d)
 			routeDue = routeTimer.C
 		} else {
@@ -1749,9 +1749,12 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 		// (at most routeWait); state commits are not gated.
 		now := time.Now()
 		_, gated := gate.Wait(now)
+		// A protected (lock) scene never waits for routed contents: it
+		// draws no client window.
+		gated = gated && !o.protected && !scene.Security.Protected
 		if !gated && dirty && haveScene && gate.Late(now) && now.Sub(lastRouteWarn) >= 10*time.Second {
 			lastRouteWarn = now
-			o.log.Warn().Str("connector", o.conn.name).Msg("route wait expired: rendering without the routed contents")
+			o.log.Warn().Str("connector", o.conn.name).Uint64("need", scene.Routes).Dur("waited", gate.Waited(now)).Msg("route wait expired: rendering without the routed contents")
 		}
 		if !dirty || !haveScene || gated {
 			if stateDirty && !o.protected {

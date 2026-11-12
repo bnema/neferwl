@@ -44,3 +44,8 @@ func (g *RouteGate) Late(now time.Time) bool {
 	g.warned = g.need
 	return true
 }
+
+// Waited is how long the scene has waited for its generation, as of now.
+func (g *RouteGate) Waited(now time.Time) time.Duration {
+	return max(now.Sub(g.deadline.Add(-routeWait)), 0)
+}

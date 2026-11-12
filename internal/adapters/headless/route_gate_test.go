@@ -80,3 +80,35 @@ func TestRunGatesFrameOnRouteGeneration(t *testing.T) {
 		}
 	})
 }
+
+// A protected (lock) scene draws no client window: it never waits for routed
+// contents.
+func TestRunDoesNotGateProtectedSceneOnRouteGeneration(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		clk := portsmocks.NewMockClock(t)
+		clk.EXPECT().Now().RunAndReturn(time.Now)
+		idle := func() *portsmocks.MockTimer {
+			tk := portsmocks.NewMockTimer(t)
+			tk.EXPECT().C().Return(make(chan time.Time)).Maybe()
+			tk.EXPECT().Stop().Return(true).Maybe()
+			tk.EXPECT().Reset(mock.Anything).Return(true).Maybe()
+			return tk
+		}
+		clk.EXPECT().NewTimer(trimEvery).Return(idle()).Once()
+		clk.EXPECT().NewTimer(time.Hour).Return(idle()).Once()
+		r, f := recordingRenderer(t, nil)
+		scenes := make(chan domain.Scene)
+		contents := newContentFeed(t, 4)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- RunOutput(ctx, Options{Width: 2, Height: 2, Clock: clk, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
+		}()
+		scenes <- domain.Scene{Seq: 1, Routes: 2, Security: domain.SecurityState{Generation: 1, Protected: true}, OutputWidth: 2, OutputHeight: 2}
+		waitFrames(t, f, 1)
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
+}

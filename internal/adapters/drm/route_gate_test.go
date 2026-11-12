@@ -132,3 +132,23 @@ func TestRunCursorCommitsWhileRouteGated(t *testing.T) {
 		}
 	})
 }
+
+// A protected (lock) scene draws no client window: it never waits for routed
+// contents.
+func TestRunDoesNotGateProtectedSceneOnRouteGeneration(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		sr := startStampRun(t)
+		sr.state.Store(3) // generation 1, protected
+		sr.wake <- domain.SecurityState{Generation: 1, Protected: true}
+		synctest.Wait()
+		sr.flips <- flipEvent{crtc: tCrtc, user: sr.lastCommit().user, when: time.Second, seq: 1}
+		synctest.Wait()
+		frames := sr.frameCommit()
+		sr.scenes <- domain.Scene{Seq: 1, Routes: 2, Security: domain.SecurityState{Generation: 1, Protected: true}, OutputWidth: 200, OutputHeight: 100}
+		synctest.Wait()
+		if n := sr.frameCommit(); n != frames+1 {
+			t.Fatalf("%d frames, want %d: a protected scene must not wait for routed contents", n, frames+1)
+		}
+		sr.stop()
+	})
+}
