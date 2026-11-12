@@ -737,9 +737,6 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 		scenes = append(scenes, scene)
 	}
 	c.configures.prune()
-	for i, sc := range c.screens {
-		sc.last = scenes[i]
-	}
 	// A workspace switch can hide the window under the pointer; it must not get
 	// clicks. The next motion re-runs hit-testing.
 	if c.pointer != 0 && !c.visible(c.pointer) {
@@ -765,6 +762,12 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 	}
 	if c.syncSecurity() {
 		return c.publishFrame(ctx, only)
+	}
+	if err := c.syncRoutes(ctx, scenes); err != nil {
+		return err
+	}
+	for i, sc := range c.screens {
+		sc.last = scenes[i]
 	}
 	latest(c.ch.Scenes, scenes)
 	c.publishState()

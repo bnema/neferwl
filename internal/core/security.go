@@ -235,6 +235,9 @@ func (c *Core) publishProtected(ctx context.Context) error {
 	if err := c.pointerFocus(ctx, ports.PointerFocus{ID: c.pointer, X: c.pointerAt[0], Y: c.pointerAt[1]}); err != nil {
 		return err
 	}
+	if err := c.syncRoutes(ctx, scenes); err != nil {
+		return err
+	}
 	latest(c.ch.Scenes, scenes)
 	c.publishState()
 	c.publishWorkspaces()

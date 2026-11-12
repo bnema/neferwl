@@ -11,11 +11,13 @@ import (
 // place in the global layout (ADR 011). Outputs are ordered by config
 // (output.<name>.*), then by connection; order places them (placeOutputs).
 type screen struct {
-	lineageFocus    focusHistory
-	positionHint    positionHintState
-	info            domain.OutputInfo
-	mon             *Monitor
-	scale, cfgScale float64
+	routeBuf, routes []WindowID
+	routeGen         uint64
+	lineageFocus     focusHistory
+	positionHint     positionHintState
+	info             domain.OutputInfo
+	mon              *Monitor
+	scale, cfgScale  float64
 	// transform is how the physical target holds the screen's logical
 	// output (output.<name>.transform); 90/270 swap width and height.
 	transform domain.BufferTransform
