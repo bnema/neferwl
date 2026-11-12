@@ -128,7 +128,7 @@ func TestPresentationPushCoalescesWhileDisplayBusy(t *testing.T) {
 	var reported bool
 	s.display.Do(func() {
 		seq = s.flips["HEADLESS-1"].Seq
-		_, reported = s.reports["HEADLESS-1"]
+		_, reported = s.router.reports["HEADLESS-1"]
 	})
 	if !reported || seq != flips {
 		t.Fatalf("last flip %d, reported %v: every flip must still be answered in order", seq, reported)

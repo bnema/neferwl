@@ -63,7 +63,7 @@ func frameReleaseOrder(t *testing.T, fallback bool) {
 	// A child read protects the replaced content even if the test is paused
 	// beyond heldTimeout. Only the controlled report below ends this read.
 	if !s.display.Do(func() {
-		s.reports["HEADLESS-1"] = ports.OutputPresented{
+		s.router.reports["HEADLESS-1"] = ports.OutputPresented{
 			Output:     "HEADLESS-1",
 			ChildReads: map[domain.WindowID]uint64{w.ID: s.router.contentSeq[w.ID]},
 		}
@@ -98,7 +98,7 @@ func frameReleaseOrder(t *testing.T, fallback bool) {
 		}
 		s.display.Do(func() {
 			held := false
-			for _, h := range s.held {
+			for _, h := range s.router.held {
 				held = held || h.res != nil && h.res.ID() == first
 			}
 			if !held {
@@ -114,7 +114,7 @@ func frameReleaseOrder(t *testing.T, fallback bool) {
 	}
 	s.display.Do(func() {
 		held := false
-		for _, h := range s.held {
+		for _, h := range s.router.held {
 			if h.res != nil && h.res.ID() == first {
 				held = true
 			}

@@ -31,8 +31,9 @@ func paceFixture(t *testing.T) (*Server, *surface) {
 		fifoSurfaces: map[*surface]struct{}{},
 		lastFlip:     map[string]time.Time{},
 		flips:        map[string]domain.FlipInfo{},
-		reports:      map[string]ports.OutputPresented{},
+		router:       contentRouter{reports: map[string]ports.OutputPresented{}},
 	}
+	s.router = newContentRouter(s, s.release, s.bufferReferenced, func(name string) bool { return s.outputByNameExact(name) != nil })
 	s.paceSignalFn = s.paceSignalled
 	if err := s.openPaceTimer(); err != nil {
 		t.Fatal(err)

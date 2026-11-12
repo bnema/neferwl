@@ -18,11 +18,12 @@ import (
 
 func TestReleaseHeldAllocations(t *testing.T) {
 	out := &output{place: domain.OutputPlacement{Info: domain.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
-	s := &Server{outputs: []*output{out}, reports: map[string]ports.OutputPresented{}}
+	s := &Server{outputs: []*output{out}, router: contentRouter{reports: map[string]ports.OutputPresented{}}}
+	s.router = newContentRouter(s, s.release, s.bufferReferenced, func(name string) bool { return s.outputByNameExact(name) != nil })
 	reports := []ports.OutputPresented{{Output: "DP-2", Seen: map[domain.WindowID]uint64{1: 1}}}
 	now := time.Unix(100, 0)
-	s.releaseHeld(now, reports)
-	if allocs := testing.AllocsPerRun(100, func() { s.releaseHeld(now, reports) }); allocs != 0 {
+	s.router.settle(now, reports)
+	if allocs := testing.AllocsPerRun(100, func() { s.router.settle(now, reports) }); allocs != 0 {
 		t.Errorf("releaseHeld: %.1f allocs, want 0", allocs)
 	}
 }
@@ -97,7 +98,7 @@ func TestCommitSyncStorageIsPerUpdate(t *testing.T) {
 
 func TestEmitContentAllocations(t *testing.T) {
 	s := &Server{
-		router: newContentRouter(nil),
+		router: newContentRouter(nil, nil, nil, nil),
 	}
 	c := domain.SurfaceContent{ID: 1, Solid: &domain.SolidColor{}}
 	var held []domain.SurfaceContent // readers retaining published histories

@@ -171,7 +171,8 @@ func TestRelocateCallbacksClearsFilteredTail(t *testing.T) {
 }
 
 func TestPacePassKeepsOnlyFlipTiming(t *testing.T) {
-	s := &Server{reports: map[string]ports.OutputPresented{}, flips: map[string]domain.FlipInfo{}, frameDue: map[string]time.Time{}, awaiting: map[string][]*wayland.Callback{}}
+	s := &Server{router: contentRouter{reports: map[string]ports.OutputPresented{}}, flips: map[string]domain.FlipInfo{}, frameDue: map[string]time.Time{}, awaiting: map[string][]*wayland.Callback{}}
+	s.router = newContentRouter(s, s.release, s.bufferReferenced, func(name string) bool { return s.outputByNameExact(name) != nil })
 	f := domain.FlipInfo{When: time.Second, Refresh: time.Second / 60, VariableRate: true, Shows: map[domain.WindowID]uint64{1: 7}}
 	s.pacePass(nil, []ports.OutputPresented{{Output: "test", Flip: &f}})
 	got := s.flips["test"]

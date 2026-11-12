@@ -212,15 +212,15 @@ func TestInvisibleWindowBufferHeldUntilReport(t *testing.T) {
 	}
 	s.display.Do(func() {
 		held := false
-		for _, h := range s.held {
+		for _, h := range s.router.held {
 			held = held || h.res != nil && h.res.ID() == b
 		}
 		if !held {
-			t.Errorf("replaced buffer of an invisible window released at once: held=%d", len(s.held))
+			t.Errorf("replaced buffer of an invisible window released at once: held=%d", len(s.router.held))
 		}
 		// Without a report showing it, the hold still ends.
-		s.releaseHeld(time.Now().Add(heldTimeout), nil)
-		for _, h := range s.held {
+		s.router.settle(time.Now().Add(heldTimeout), nil)
+		for _, h := range s.router.held {
 			if h.res != nil && h.res.ID() == b {
 				t.Error("held buffer of an invisible window never released")
 			}
@@ -266,18 +266,18 @@ func TestHeldBufferRequeuedBeforeOutputAck(t *testing.T) {
 	}
 	s.display.Do(func() {
 		surf := s.windows[w.ID].xdg.surface
-		if len(surf.queue) != 1 || surf.queue[0].buffer == nil || sameBuffer(surf.queue[0].buffer, surf.current) || len(s.held) == 0 {
-			t.Errorf("expected replaced buffer and queued reuse: queue=%d held=%d", len(surf.queue), len(s.held))
+		if len(surf.queue) != 1 || surf.queue[0].buffer == nil || sameBuffer(surf.queue[0].buffer, surf.current) || len(s.router.held) == 0 {
+			t.Errorf("expected replaced buffer and queued reuse: queue=%d held=%d", len(surf.queue), len(s.router.held))
 		}
-		s.reports["HEADLESS-1"] = ports.OutputPresented{Output: "HEADLESS-1", Seen: map[domain.WindowID]uint64{w.ID: ^uint64(0)}}
-		s.releaseHeld(time.Now(), nil)
-		if len(s.held) == 0 {
+		s.router.reports["HEADLESS-1"] = ports.OutputPresented{Output: "HEADLESS-1", Seen: map[domain.WindowID]uint64{w.ID: ^uint64(0)}}
+		s.router.settle(time.Now(), nil)
+		if len(s.router.held) == 0 {
 			t.Error("released held buffer despite queued reuse")
 		}
 		surf.barrier = false
 		s.tickFifo(time.Now(), nil)
-		s.releaseHeld(time.Now().Add(heldTimeout), nil)
-		if len(s.held) != 0 {
+		s.router.settle(time.Now().Add(heldTimeout), nil)
+		if len(s.router.held) != 0 {
 			t.Error("held buffer not released after queued reuse applied")
 		}
 	})

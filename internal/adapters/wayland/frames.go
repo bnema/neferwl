@@ -169,9 +169,9 @@ func (s *Server) pacePass(flipped map[string]bool, reports []ports.OutputPresent
 	}
 	// A client may redraw as soon as it receives its frame callback. Give
 	// back buffers this completion made safe first, so a two-buffer client
-	// does not see both buffers busy. releaseHeld still protects scanout,
+	// does not see both buffers busy. router.settle still protects scanout,
 	// queued commits and unfinished child reads.
-	if s.releaseHeld(time.Now(), reports) && idle {
+	if s.router.settle(time.Now(), reports) && idle {
 		// Held buffers wait for a flip or heldTimeout.
 		wait, idle = heldTimeout, false
 	}

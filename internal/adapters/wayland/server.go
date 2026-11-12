@@ -227,13 +227,7 @@ type Server struct {
 	framePeriods map[string]time.Duration
 	// frameFire is dueFrames' result slice, reused across ticks.
 	frameFire []string
-	// held buffers wait until no output reads them (release.go); reports
-	// are the outputs' latest ports.OutputPresented.
-	held []heldBuffer
-	// heldLive is releaseHeld's scratch (display goroutine only).
-	heldLive []ports.OutputPresented
-	reports  map[string]ports.OutputPresented
-	started  time.Time
+	started   time.Time
 	// fifoSurfaces have a fifo barrier or queued commits (fifo.go);
 	// lastFlip is each output's latest page flip.
 	fifoSurfaces        map[*surface]struct{}
@@ -402,7 +396,6 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		display:            d,
 		awaiting:           map[string][]*wayland.Callback{},
 		frameDue:           map[string]time.Time{},
-		reports:            map[string]ports.OutputPresented{},
 		env:                linuxProcEnv{},
 		name:               name,
 		cleanup:            cleanup,
@@ -433,7 +426,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	// Bound once, before anything can post them (the sync waiter calls
 	// signalPacer from its own goroutine as soon as it exists).
 	s.paceSignalFn = s.paceSignalled
-	s.router = newContentRouter(s)
+	s.router = newContentRouter(s, s.release, s.bufferReferenced, func(name string) bool { return s.outputByNameExact(name) != nil })
 	s.flushLinksFn = s.flushLinks
 	s.sink = newPresentSink(s)
 	s.capturedRing = newPostRing(d, capturedRingSize, s.applyCaptured)

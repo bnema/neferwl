@@ -31,17 +31,18 @@ func TestLatestOutputReplacementAndRemovalReleaseSnapshots(t *testing.T) {
 	first.Init(returned)
 	next.Init(returned)
 	out := &output{place: domain.OutputPlacement{Info: domain.OutputInfo{Name: "DP-2"}}}
-	s := &Server{outputs: []*output{out}, reports: make(map[string]ports.OutputPresented)}
+	s := &Server{outputs: []*output{out}, router: contentRouter{reports: map[string]ports.OutputPresented{}}}
+	s.router = newContentRouter(s, s.release, s.bufferReferenced, func(name string) bool { return s.outputByNameExact(name) != nil })
 	now := time.Unix(100, 0)
-	s.releaseHeld(now, []ports.OutputPresented{{Output: "DP-2", Snapshot: first}})
+	s.router.settle(now, []ports.OutputPresented{{Output: "DP-2", Snapshot: first}})
 	require.Empty(t, returned, "latest report remains retained")
-	s.releaseHeld(now, []ports.OutputPresented{{Output: "DP-2", Snapshot: next}})
+	s.router.settle(now, []ports.OutputPresented{{Output: "DP-2", Snapshot: next}})
 	require.Len(t, returned, 1)
 	require.Same(t, first, <-returned)
-	require.Same(t, next, s.reports["DP-2"].Snapshot)
+	require.Same(t, next, s.router.reports["DP-2"].Snapshot)
 	s.outputs = nil
-	s.releaseHeld(now, nil)
+	s.router.settle(now, nil)
 	require.Len(t, returned, 1)
 	require.Same(t, next, <-returned)
-	require.Empty(t, s.reports)
+	require.Empty(t, s.router.reports)
 }

@@ -212,7 +212,7 @@ func TestDetachOldHandleKeepsReplacedLink(t *testing.T) {
 // keeps up.
 func TestContentBatchCycleAllocations(t *testing.T) {
 	s := &Server{
-		router: newContentRouter(nil),
+		router: newContentRouter(nil, nil, nil, nil),
 	}
 	in, ret := s.attachOutput("A")
 	c := solid(1)

@@ -50,7 +50,7 @@ func (s *Server) releaseBuffer(surf *surface, b *wayland.Buffer, sync syncHold) 
 		h.id = d.buf.ID
 	}
 	h.after = s.router.seq(window)
-	s.held = append(s.held, h)
+	s.router.hold(h)
 	// Wake the pacer: it releases the buffer on the next output report.
 	s.wakePacer()
 }
@@ -79,45 +79,8 @@ func (s *Server) releaseBufferSync(surf *surface, sync syncHold) {
 		return
 	}
 	after := s.router.seq(window)
-	s.held = append(s.held, heldBuffer{sync: sync, window: window, after: after, at: time.Now()})
+	s.router.hold(heldBuffer{sync: sync, window: window, after: after, at: time.Now()})
 	s.wakePacer()
-}
-
-// releaseHeld records the output reports and releases the buffers no
-// output reads. Every output reads every window's content, so a buffer
-// waits until no live output shows or queues it and all of them have seen
-// a later content of its window (or heldTimeout passed, without child reads).
-// It reports
-// whether buffers are still held.
-func (s *Server) releaseHeld(now time.Time, reports []ports.OutputPresented) bool {
-	for _, r := range reports {
-		s.reports[r.Output].Snapshot.Release()
-		s.reports[r.Output] = r
-	}
-	live := s.heldLive[:0]
-	for name := range s.reports {
-		if s.outputByNameExact(name) == nil {
-			s.reports[name].Snapshot.Release()
-			delete(s.reports, name)
-		}
-	}
-	for _, r := range s.reports {
-		live = append(live, r)
-	}
-	// keepHeld only reads live: the scratch holds nothing across calls.
-	s.heldLive = live
-	kept := s.held[:0]
-	for _, h := range s.held {
-		if s.bufferReferenced(h.res) || keepHeld(h, live, now) {
-			kept = append(kept, h)
-			continue
-		}
-		s.release(h.res, h.sync)
-	}
-	clear(s.held[len(kept):])
-	s.held = kept
-	clear(live) // the reports carry maps: do not retain them
-	return len(s.held) > 0
 }
 
 // bufferReferenced checks queued, cached and pending commits on the owner

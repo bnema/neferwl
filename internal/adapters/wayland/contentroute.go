@@ -1,9 +1,20 @@
 package wayland
 
-import "github.com/bnema/neferwl/internal/domain"
+import (
+	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
+	"time"
+)
 
 // contentRouter owns content delivery state on the display goroutine.
 type contentRouter struct {
+	held       []heldBuffer
+	heldLive   []ports.OutputPresented
+	reports    map[string]ports.OutputPresented
+	release    func(*wayland.Buffer, syncHold)
+	referenced func(*wayland.Buffer) bool
+	live       func(string) bool
 	server     *Server // Return posts back to the display through this server.
 	links      []*contentLink
 	latest     map[domain.WindowID]domain.SurfaceContent
@@ -11,8 +22,8 @@ type contentRouter struct {
 	damage     map[domain.WindowID][]domain.SeqDamage
 }
 
-func newContentRouter(s *Server) contentRouter {
-	return contentRouter{server: s, latest: make(map[domain.WindowID]domain.SurfaceContent), contentSeq: make(map[domain.WindowID]uint64), damage: make(map[domain.WindowID][]domain.SeqDamage)}
+func newContentRouter(s *Server, release func(*wayland.Buffer, syncHold), referenced func(*wayland.Buffer) bool, live func(string) bool) contentRouter {
+	return contentRouter{server: s, release: release, referenced: referenced, live: live, reports: make(map[string]ports.OutputPresented), latest: make(map[domain.WindowID]domain.SurfaceContent), contentSeq: make(map[domain.WindowID]uint64), damage: make(map[domain.WindowID][]domain.SeqDamage)}
 }
 
 func (r *contentRouter) seq(id domain.WindowID) uint64 { return r.contentSeq[id] }
@@ -51,4 +62,43 @@ func (r *contentRouter) publish(c domain.SurfaceContent, d damage) domain.Surfac
 		r.flushLink(l)
 	}
 	return c
+}
+
+func (r *contentRouter) hold(h heldBuffer) { r.held = append(r.held, h) }
+
+// settle records the output reports and releases the buffers no
+// output reads. Every output reads every window's content, so a buffer
+// waits until no live output shows or queues it and all of them have seen
+// a later content of its window (or heldTimeout passed, without child reads).
+// It reports
+// whether buffers are still held.
+func (r *contentRouter) settle(now time.Time, reports []ports.OutputPresented) bool {
+	for _, report := range reports {
+		r.reports[report.Output].Snapshot.Release()
+		r.reports[report.Output] = report
+	}
+	live := r.heldLive[:0]
+	for name := range r.reports {
+		if !r.live(name) {
+			r.reports[name].Snapshot.Release()
+			delete(r.reports, name)
+		}
+	}
+	for _, r := range r.reports {
+		live = append(live, r)
+	}
+	// keepHeld only reads live: the scratch holds nothing across calls.
+	r.heldLive = live
+	kept := r.held[:0]
+	for _, h := range r.held {
+		if r.referenced(h.res) || keepHeld(h, live, now) {
+			kept = append(kept, h)
+			continue
+		}
+		r.release(h.res, h.sync)
+	}
+	clear(r.held[len(kept):])
+	r.held = kept
+	clear(live) // the reports carry maps: do not retain them
+	return len(r.held) > 0
 }
