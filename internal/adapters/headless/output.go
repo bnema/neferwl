@@ -302,6 +302,16 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		clk = clock.System{}
 	}
 	reportDirty := false
+	// gate holds a frame back until the contents of a route change arrived.
+	var gate surfaces.RouteGate
+	var lastRouteWarn time.Time
+	var routeTimer ports.Timer
+	var routeDue <-chan time.Time
+	defer func() {
+		if routeTimer != nil {
+			routeTimer.Stop()
+		}
+	}()
 	acceptScene := func(s domain.Scene) {
 		if opts.Security != nil && (s.Security != security || s.Security != opts.Security.Snapshot()) {
 			return
@@ -311,11 +321,13 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			return
 		}
 		scene, haveScene, dirty = s, true, true
+		gate.Scene(s.Routes, clk.Now())
 		// A closed window's last content goes once no scene draws it.
 		table.Prune(scene, clk.Now())
 	}
 	update := func(b *domain.ContentBatch) {
-		batchDirty, seenChanged, _ := table.Apply(b, scene, seen, returns, clk.Now())
+		batchDirty, seenChanged, routes := table.Apply(b, scene, seen, returns, clk.Now())
+		gate.Batch(routes)
 		dirty = dirty || batchDirty
 		reportDirty = reportDirty || seenChanged
 	}
@@ -511,9 +523,25 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			reports.Reset()
 			return nil
 		}
+		// A frame held for a route change's contents renders at the deadline.
+		if d, wait := gate.Wait(clk.Now()); wait && dirty && haveScene {
+			if routeTimer == nil {
+				routeTimer = clk.NewTimer(d)
+			} else {
+				routeTimer.Reset(d)
+			}
+			routeDue = routeTimer.C()
+		} else {
+			if routeTimer != nil {
+				routeTimer.Stop()
+			}
+			routeDue = nil
+		}
 		ticked := false
 		var tickTime time.Time
 		select {
+		case <-routeDue:
+			activity()
 		case req, ok := <-opts.ModeRequests:
 			activity()
 			if !ok {
@@ -750,7 +778,13 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		if scene.Off && requests.Len() > 0 {
 			requests.FailPending(capture.ErrOutputOff)
 		}
-		if !haveScene || !dirty || scene.Off {
+		now := clk.Now()
+		_, gated := gate.Wait(now)
+		if !gated && dirty && haveScene && gate.Late(now) && now.Sub(lastRouteWarn) >= 10*time.Second {
+			lastRouteWarn = now
+			opts.Log.Warn().Str("output", opts.Name).Msg("route wait expired: rendering without the routed contents")
+		}
+		if !haveScene || !dirty || scene.Off || gated {
 			// Contents not drawn are still read: report them. An output
 			// turned off draws nothing.
 			if reportDirty {
