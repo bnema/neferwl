@@ -221,6 +221,7 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene domain
 	// The overlay buffer is on screen like a scanned-out one: it is
 	// reported shown, so it is not released under the plane.
 	f.queued, f.zeroCopy, f.composed = ov.buf, ov.id, true
+	f.takesFence = true
 	// A covering fullscreen window keeps VRR while composed (overlay
 	// layer, subsurfaces, size mismatch).
 	game := o.vrrProp != 0 && fullscreenShown(&scene)
@@ -231,7 +232,7 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene domain
 		o.settleCopy(done)
 		o.holdRead(done)
 	}
-	if done != nil {
+	if err != nil && done != nil {
 		o.closeFence(done)
 	}
 	ov.close(o.log)

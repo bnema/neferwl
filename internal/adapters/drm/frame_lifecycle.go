@@ -58,8 +58,9 @@ type pendingFrame struct {
 	shows     map[domain.WindowID]uint64
 	// fences are duplicates of the fences the commit waits on, owned until
 	// the commit ends. composed is set when the frame was rendered.
-	fences   []*os.File
-	composed bool
+	takesFence bool // composed render fence transfers only on successful commit
+	fences     []*os.File
+	composed   bool
 	// fenceReady: every fence had signalled at commit (flip tracing only).
 	fenceReady bool
 	// wantedAt is when the frame was first wanted (CLOCK_MONOTONIC, 0:

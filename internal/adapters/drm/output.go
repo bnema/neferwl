@@ -820,7 +820,16 @@ func (o *Output) commitRect(fb uint32, fence *os.File, async bool, vrr bool, f p
 	f.scanoutReason, f.overlayReason = o.reason, o.overlayReason
 	f.wantedAt, o.wantedAt = o.wantedAt, 0
 	f.gapEnd, o.flipGapAt = o.flipGapAt, 0
-	f.fences = dupFences(fence, ov.acquire)
+	if f.takesFence {
+		if fence != nil {
+			f.fences = append(f.fences, fence)
+		}
+		if acquired := dupFence(ov.acquire); acquired != nil {
+			f.fences = append(f.fences, acquired)
+		}
+	} else {
+		f.fences = dupFences(fence, ov.acquire)
+	}
 	if o.traceFlips {
 		f.fenceReady = signalled(f.fences)
 	}
@@ -1151,6 +1160,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 		return fmt.Errorf("create renderer: %w", err)
 	}
 	defer r.Close()
+	defer func() { o.frame.pendingFrame.closeFences(o.log) }() // Also release transferred fences on shutdown.
 	defer o.closeCopier()
 	if o.cursor != nil {
 		dumbErr, err := o.cursor.setup(o.k, r)

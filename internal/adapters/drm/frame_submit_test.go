@@ -126,3 +126,91 @@ func fullscreenScene() (domain.Scene, map[domain.WindowID]domain.SurfaceContent)
 		1: {ID: 1, Width: 200, Height: 100, LogicalW: 200, LogicalH: 100, Opaque: true, DMABuf: &domain.DMABuf{ID: 9, Width: 200, Height: 100, Format: fourccXRGB}},
 	}
 }
+
+func TestSubmitFrameTransfersRenderFence(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(map[bool]string{false: "success", true: "failure"}[fail], func(t *testing.T) {
+			var errs []error
+			if fail {
+				errs = []error{unix.EIO}
+			}
+			o, _, _ := testOutput(t, errs...)
+			o.cursor, o.vrrProp = nil, 0
+			fence, writer, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = writer.Close() }()
+			r := portsmocks.NewMockRenderer(t)
+			r.EXPECT().UseTarget(0).Return().Once()
+			r.EXPECT().Render(mock.Anything, mock.Anything).Return(fence, nil).Once()
+			_, err = o.submitFrame(context.Background(), r, domain.Scene{Seq: 1}, nil, map[domain.WindowID]uint64{}, nil, nil)
+			if fail {
+				if err == nil {
+					t.Fatal("commit succeeded")
+				}
+				if len(o.readFences) != 1 || o.readFences[0] == fence {
+					t.Fatal("failed render lacks independent read hold")
+				}
+				if _, err := o.readFences[0].Stat(); err != nil {
+					t.Fatal(err)
+				}
+				o.dropRead()
+			} else {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(o.frame.pendingFrame.fences) != 1 || o.frame.pendingFrame.fences[0] != fence {
+					t.Fatal("render fence not transferred")
+				}
+				if _, err := fence.Stat(); err != nil {
+					t.Fatal("closed before flip", err)
+				}
+				o.frame.flip(o.frame.pendingSerial<<userKindBits | userFrame)
+			}
+			if err := fence.Close(); !errors.Is(err, os.ErrClosed) {
+				t.Fatalf("fence not already closed: %v", err)
+			}
+		})
+	}
+}
+
+func TestRenderFenceTransferRetries(t *testing.T) {
+	for _, cursor := range []bool{false, true} {
+		t.Run(map[bool]string{false: "vrr", true: "cursor"}[cursor], func(t *testing.T) {
+			errs := []error{unix.EINVAL}
+			if cursor {
+				errs = append(errs, unix.EINVAL)
+			}
+			o, _, commits := testOutput(t, errs...)
+			if cursor {
+				o.cursor.image = true
+				o.cursor.Move(12, 34)
+				o.vrrProp = 0
+			} else {
+				o.cursor = nil
+			}
+			fence, w, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = w.Close() }()
+			if err := o.commitWith(70, fence, false, !cursor, pendingFrame{takesFence: true}, overlayWin{}); err != nil {
+				t.Fatal(err)
+			}
+			if len(*commits) < 2 {
+				t.Fatal("no retry")
+			}
+			if _, err := fence.Stat(); err != nil {
+				t.Fatal("closed during retry", err)
+			}
+			if o.frame.pendingFrame.fences[0] != fence {
+				t.Fatal("fence duplicated")
+			}
+			o.frame.flip(o.frame.pendingSerial<<userKindBits | userFrame)
+			if err := fence.Close(); !errors.Is(err, os.ErrClosed) {
+				t.Fatalf("fence not closed at flip: %v", err)
+			}
+		})
+	}
+}
