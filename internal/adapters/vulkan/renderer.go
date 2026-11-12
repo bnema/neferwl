@@ -80,7 +80,7 @@ type Renderer struct {
 	// the bytes copied into them, for tests.
 	shm          map[shmKey]*shmSurface
 	copied       int
-	fenceExports uint64 // implicit sync export ioctl attempts
+	fenceExports uint64 // test counter: implicit sync export ioctl attempts
 	// overlayRaster rasterizes label overlays (overlays.go); the zero value works.
 	overlayRaster overlaydraw.Raster
 	// panels owns one reusable panel raster per overlay ID, retired with SHM.
