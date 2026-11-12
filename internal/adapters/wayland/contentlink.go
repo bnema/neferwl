@@ -79,7 +79,7 @@ func (l *contentLink) try() bool {
 
 // flushLink sends l's batch when the output can take it; otherwise l keeps
 // filling it and asks Return for a wake.
-func (s *Server) flushLink(l *contentLink) {
+func (r *contentRouter) flushLink(l *contentLink) {
 	if len(l.cur.Items) == 0 {
 		l.pending.Store(false)
 		return
@@ -96,11 +96,11 @@ func (s *Server) flushLink(l *contentLink) {
 
 // flushLinks retries every link that waits for a free batch. Display
 // goroutine; posted by Return.
-func (s *Server) flushLinks() {
-	s.flushPosted.Store(false)
-	for _, l := range s.links {
+func (r *contentRouter) flushPending() {
+	r.server.flushPosted.Store(false)
+	for _, l := range r.links {
 		if l.pending.Load() {
-			s.flushLink(l)
+			r.flushLink(l)
 		}
 	}
 }
@@ -111,15 +111,15 @@ func (s *Server) flushLinks() {
 // first batch holds the latest content of every live window,
 // so the output starts with all of them drawn. Display goroutine, or before
 // Run.
-func (s *Server) attachOutput(name string) (<-chan *domain.ContentBatch, ports.ContentReturn) {
-	for i, old := range s.links {
+func (r *contentRouter) attach(name string) (<-chan *domain.ContentBatch, ports.ContentReturn) {
+	for i, old := range r.links {
 		if old.name == name {
-			s.links = slices.Delete(s.links, i, i+1)
+			r.links = slices.Delete(r.links, i, i+1)
 			break
 		}
 	}
 	l := &contentLink{
-		s:    s,
+		s:    r.server,
 		name: name,
 		in:   make(chan *domain.ContentBatch, 1),
 		free: make(chan *domain.ContentBatch, batchesPerLink),
@@ -127,12 +127,12 @@ func (s *Server) attachOutput(name string) (<-chan *domain.ContentBatch, ports.C
 	for range batchesPerLink - 1 {
 		l.free <- &domain.ContentBatch{Items: make([]domain.SurfaceContent, 0, batchItems)}
 	}
-	l.cur = &domain.ContentBatch{Items: make([]domain.SurfaceContent, 0, max(batchItems, len(s.latest)))}
-	for _, c := range s.latest {
+	l.cur = &domain.ContentBatch{Items: make([]domain.SurfaceContent, 0, max(batchItems, len(r.latest)))}
+	for _, c := range r.latest {
 		l.add(c)
 	}
-	s.links = append(s.links, l)
-	s.flushLink(l)
+	r.links = append(r.links, l)
+	r.flushLink(l)
 	return l.in, l
 }
 
@@ -140,15 +140,21 @@ func (s *Server) attachOutput(name string) (<-chan *domain.ContentBatch, ports.C
 // A handle whose link was replaced by a later attach of its name, or that is
 // not a link, detaches nothing: a newer link is never removed. Display
 // goroutine, or before Run. The output may still Return its last batch.
-func (s *Server) detachOutput(ret ports.ContentReturn) {
+func (r *contentRouter) detach(ret ports.ContentReturn) {
 	l, ok := ret.(*contentLink)
 	if !ok {
 		return
 	}
-	if i := slices.Index(s.links, l); i >= 0 {
-		s.links = slices.Delete(s.links, i, i+1)
+	if i := slices.Index(r.links, l); i >= 0 {
+		r.links = slices.Delete(r.links, i, i+1)
 	}
 }
+
+func (s *Server) flushLinks() { s.router.flushPending() }
+func (s *Server) attachOutput(name string) (<-chan *domain.ContentBatch, ports.ContentReturn) {
+	return s.router.attach(name)
+}
+func (s *Server) detachOutput(ret ports.ContentReturn) { s.router.detach(ret) }
 
 // AttachOutput starts feeding the output called name with the contents of
 // the windows, as batches on the returned channel, starting with the current

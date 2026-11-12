@@ -279,13 +279,8 @@ type Server struct {
 	eventMu    sync.Mutex
 	events     []ports.ClientEvent
 	eventReady chan struct{}
-	// contentSeq counts each window's contents and damage is its recent
-	// damage; latest is its current content. All three belong to the display
-	// goroutine, as do the outputs' content links (contentlink.go).
-	contentSeq map[domain.WindowID]uint64
-	damage     map[domain.WindowID][]domain.SeqDamage
-	latest     map[domain.WindowID]domain.SurfaceContent
-	links      []*contentLink
+	// router owns content delivery on the display goroutine.
+	router contentRouter
 	// flushPosted: a flushLinks is posted and has not started (Return).
 	flushPosted  atomic.Bool
 	flushLinksFn func()
@@ -424,9 +419,6 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		x11Slots:           make(map[xwm.Slot]*window),
 		nextWindow:         1,
 		eventReady:         make(chan struct{}, 1),
-		contentSeq:         make(map[domain.WindowID]uint64),
-		damage:             map[domain.WindowID][]domain.SeqDamage{},
-		latest:             make(map[domain.WindowID]domain.SurfaceContent),
 		cursorReady:        make(chan struct{}, 1),
 		dataSources:        map[*server.Resource]*clipSource{},
 		primarySources:     map[*server.Resource]*clipSource{},
@@ -441,6 +433,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	// Bound once, before anything can post them (the sync waiter calls
 	// signalPacer from its own goroutine as soon as it exists).
 	s.paceSignalFn = s.paceSignalled
+	s.router = newContentRouter(s)
 	s.flushLinksFn = s.flushLinks
 	s.sink = newPresentSink(s)
 	s.capturedRing = newPostRing(d, capturedRingSize, s.applyCaptured)
@@ -789,35 +782,7 @@ func (s *Server) forward(ctx context.Context) {
 // becomes the window's latest content and joins the batch of every attached
 // output (contentlink.go).
 func (s *Server) emitContent(c domain.SurfaceContent, d damage) {
-	s.contentSeq[c.ID]++
-	c.Seq = s.contentSeq[c.ID]
-	// Published histories are immutable: an output may hold one for as long
-	// as it likes. The history grows inside one backing array, appended past
-	// the end of every published slice (never over an element a reader can
-	// see), and moves to a fresh array only when that one is full. Readers
-	// get a capacity-clipped slice, so they cannot append into the spare.
-	old := s.damage[c.ID]
-	if len(old) >= damageHistory {
-		old = old[len(old)-damageHistory+1:]
-	}
-	if len(old) == cap(old) {
-		grown := make([]domain.SeqDamage, len(old), damageHistoryCap)
-		copy(grown, old)
-		old = grown
-	}
-	h := append(old, domain.SeqDamage{Seq: c.Seq, Full: d.full, Rects: d.rects})
-	c.DamageHistory = h[:len(h):len(h)]
-	if c.Empty() {
-		delete(s.damage, c.ID)
-		delete(s.latest, c.ID)
-	} else {
-		s.damage[c.ID] = h
-		s.latest[c.ID] = c
-	}
-	for _, l := range s.links {
-		l.add(c)
-		s.flushLink(l)
-	}
+	c = s.router.publish(c, d)
 	s.castCommitted(c.ID)
 }
 

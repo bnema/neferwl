@@ -49,7 +49,7 @@ func (s *Server) releaseBuffer(surf *surface, b *wayland.Buffer, sync syncHold) 
 	if d, ok := s.buffers[b.Resource].(*dmabufBuffer); ok {
 		h.id = d.buf.ID
 	}
-	h.after = s.contentSeq[window]
+	h.after = s.router.seq(window)
 	s.held = append(s.held, h)
 	// Wake the pacer: it releases the buffer on the next output report.
 	s.wakePacer()
@@ -78,7 +78,7 @@ func (s *Server) releaseBufferSync(surf *surface, sync syncHold) {
 		s.releaseSync(sync)
 		return
 	}
-	after := s.contentSeq[window]
+	after := s.router.seq(window)
 	s.held = append(s.held, heldBuffer{sync: sync, window: window, after: after, at: time.Now()})
 	s.wakePacer()
 }

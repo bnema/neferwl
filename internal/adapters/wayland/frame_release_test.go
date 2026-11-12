@@ -65,7 +65,7 @@ func frameReleaseOrder(t *testing.T, fallback bool) {
 	if !s.display.Do(func() {
 		s.reports["HEADLESS-1"] = ports.OutputPresented{
 			Output:     "HEADLESS-1",
-			ChildReads: map[domain.WindowID]uint64{w.ID: s.contentSeq[w.ID]},
+			ChildReads: map[domain.WindowID]uint64{w.ID: s.router.contentSeq[w.ID]},
 		}
 	}) {
 		t.Fatal("display stopped")
@@ -124,7 +124,7 @@ func frameReleaseOrder(t *testing.T, fallback bool) {
 		}
 		// No scanout or child read remains: the output has completed reading
 		// the current content, strictly newer than the replaced buffer's hold.
-		seq := s.contentSeq[w.ID]
+		seq := s.router.contentSeq[w.ID]
 		report := ports.OutputPresented{Output: "HEADLESS-1", Seen: map[domain.WindowID]uint64{w.ID: seq}}
 		s.paceTick(map[string]bool{"HEADLESS-1": true}, []ports.OutputPresented{report})
 	})

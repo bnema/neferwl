@@ -758,7 +758,7 @@ func TestDataDragOfferDestroyedBeforeFinish(t *testing.T) {
 func iconContent(t *testing.T, s *Server, id domain.WindowID) bool {
 	t.Helper()
 	var ok bool
-	if !s.display.Do(func() { _, ok = s.latest[id] }) {
+	if !s.display.Do(func() { _, ok = s.router.latest[id] }) {
 		t.Fatal("display stopped")
 	}
 	return ok

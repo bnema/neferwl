@@ -118,7 +118,7 @@ func TestContentBatchAttachSeedsLiveWindows(t *testing.T) {
 		t.Fatalf("seed batch %+v", b.Items)
 	}
 	// An attach with nothing to show sends nothing.
-	s.display.Do(func() { clear(s.latest) })
+	s.display.Do(func() { clear(s.router.latest) })
 	in2, _ := s.AttachOutput("B")
 	noBatch(t, s, in2)
 }
@@ -138,7 +138,7 @@ func TestContentBatchDeliversEmpty(t *testing.T) {
 		t.Fatalf("empty not delivered: %+v", b.Items)
 	}
 	var left int
-	s.display.Do(func() { left = len(s.latest) })
+	s.display.Do(func() { left = len(s.router.latest) })
 	if left != 0 {
 		t.Fatalf("latest keeps %d emptied windows", left)
 	}
@@ -182,7 +182,7 @@ func TestContentBatchDetach(t *testing.T) {
 		t.Fatalf("re-attached batch %+v", got.Items)
 	}
 	var links int
-	s.display.Do(func() { links = len(s.links) })
+	s.display.Do(func() { links = len(s.router.links) })
 	if links != 2 {
 		t.Fatalf("%d links, want 2", links)
 	}
@@ -197,7 +197,7 @@ func TestDetachOldHandleKeepsReplacedLink(t *testing.T) {
 	in, _ := s.AttachOutput("A")
 	s.DetachOutput(oldRet)
 	var links int
-	s.display.Do(func() { links = len(s.links) })
+	s.display.Do(func() { links = len(s.router.links) })
 	if links != 1 {
 		t.Fatalf("%d links, want the new one only", links)
 	}
@@ -212,9 +212,7 @@ func TestDetachOldHandleKeepsReplacedLink(t *testing.T) {
 // keeps up.
 func TestContentBatchCycleAllocations(t *testing.T) {
 	s := &Server{
-		contentSeq: map[domain.WindowID]uint64{},
-		damage:     map[domain.WindowID][]domain.SeqDamage{},
-		latest:     map[domain.WindowID]domain.SurfaceContent{},
+		router: newContentRouter(nil),
 	}
 	in, ret := s.attachOutput("A")
 	c := solid(1)
@@ -333,7 +331,7 @@ func TestContentBatchHandshakeNeverStrandsContent(t *testing.T) {
 	var want [windows + 1]uint64
 	s.display.Do(func() {
 		for id := 1; id <= windows; id++ {
-			want[id] = s.contentSeq[domain.WindowID(id)]
+			want[id] = s.router.contentSeq[domain.WindowID(id)]
 		}
 	})
 	deadline := waylandDeadline(5 * time.Second)
