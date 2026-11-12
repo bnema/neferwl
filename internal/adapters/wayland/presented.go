@@ -1,11 +1,13 @@
 package wayland
 
 import (
+	"maps"
 	"slices"
 	"sync"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
+	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -105,7 +107,7 @@ func (p *presentSink) makeRoomLocked(incoming *ports.OutputPresented) (merged bo
 		switch old := p.ring[i].Flip; {
 		case old == nil:
 		case next.Flip == nil:
-			next.Flip = old
+			carryFlip(old, p.ring[i].Snapshot, next)
 		default:
 			presented.Merge(old, next.Flip)
 			merged = true
@@ -115,6 +117,27 @@ func (p *presentSink) makeRoomLocked(incoming *ports.OutputPresented) (merged bo
 		return merged
 	}
 	return false
+}
+
+// carryFlip makes old the flip of next, which has none. old lives in the
+// lease of its own report, which the caller releases next: unless next shares
+// that lease, the flip is copied into next's own lease, as presented.Queue.Push
+// does, so the output owner cannot recycle it while next is pending. A next
+// without a lease keeps the pointer (nothing leased to recycle).
+func carryFlip(old *domain.FlipInfo, oldLease *ports.PresentationSnapshot, next *ports.OutputPresented) {
+	lease := next.Snapshot
+	if lease == nil || lease == oldLease {
+		next.Flip = old
+		return
+	}
+	lease.Flip = *old
+	if lease.Shows == nil && len(old.Shows) > 0 {
+		lease.Shows = make(map[domain.WindowID]uint64, len(old.Shows))
+	}
+	clear(lease.Shows)
+	maps.Copy(lease.Shows, old.Shows)
+	lease.Flip.Shows = lease.Shows
+	next.Flip = &lease.Flip
 }
 
 // successorLocked returns the next report of ring[i]'s output: a later ring

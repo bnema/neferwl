@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
@@ -45,4 +46,27 @@ func TestLatestOutputReplacementAndRemovalReleaseSnapshots(t *testing.T) {
 	require.Len(t, returned, 1)
 	require.Same(t, next, <-returned)
 	require.Empty(t, s.router.reports)
+}
+
+// A flip carried over an evicted report must live in the successor's own
+// lease: the evicted lease goes back to the output owner, which recycles it.
+func TestPresentationRingOverflowCarriesFlipIntoOwnLease(t *testing.T) {
+	p := ringOf()
+	flip := &domain.FlipInfo{Seq: 7, Shows: map[domain.WindowID]uint64{3: 7}}
+	// Two separate queues keep two distinct leases for the same output.
+	var q1, q2 presented.Queue
+	q1.Push(ports.OutputPresented{Output: "A", Flip: flip, Seen: map[domain.WindowID]uint64{1: 1}})
+	q2.Push(ports.OutputPresented{Output: "A", Seen: map[domain.WindowID]uint64{1: 2}})
+	old, next := q1.Unsent()[0], q2.Unsent()[0]
+	require.NotSame(t, old.Snapshot, next.Snapshot)
+	p.ring = append(p.ring, old)
+	p.fill()
+	require.False(t, p.makeRoomLocked(&next))
+	// The old lease is back with its owner and gets recycled (overwritten).
+	old.Snapshot.Flip = domain.FlipInfo{Seq: 99}
+	clear(old.Snapshot.Shows)
+	require.NotNil(t, next.Flip)
+	require.Same(t, &next.Snapshot.Flip, next.Flip)
+	require.EqualValues(t, 7, next.Flip.Seq)
+	require.Equal(t, map[domain.WindowID]uint64{3: 7}, next.Flip.Shows)
 }
