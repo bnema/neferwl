@@ -22,7 +22,9 @@ type Queue struct {
 // the queue keeps snapshots. A flip-less report replaces the newest queued
 // one when that one has no flip, or keeps its flip; every flip is queued.
 func (q *Queue) Push(r ports.OutputPresented) {
-	if q.latest == nil || !maps.Equal(q.latest.Seen, r.Seen) || !maps.Equal(q.latest.ChildReads, r.ChildReads) {
+	source := r.Flip
+	r.Flip = nil
+	if source != nil || q.latest == nil || !maps.Equal(q.latest.Seen, r.Seen) || !maps.Equal(q.latest.ChildReads, r.ChildReads) {
 		if q.returned == nil {
 			q.returned = make(chan *ports.PresentationSnapshot, 128)
 		}
@@ -35,6 +37,12 @@ func (q *Queue) Push(r ports.OutputPresented) {
 		snapshot.Init(q.returned)
 		snapshot.Seen = copyMap(snapshot.Seen, r.Seen)
 		snapshot.ChildReads = copyMap(snapshot.ChildReads, r.ChildReads)
+		if source != nil {
+			snapshot.Flip = *source
+			snapshot.Shows = copyMap(snapshot.Shows, source.Shows)
+			snapshot.Flip.Shows = snapshot.Shows
+			r.Flip = &snapshot.Flip
+		}
 		q.latest.Release()
 		q.latest = snapshot
 	}
@@ -42,7 +50,16 @@ func (q *Queue) Push(r ports.OutputPresented) {
 	r.Seen, r.ChildReads, r.Snapshot = q.latest.Seen, q.latest.ChildReads, q.latest
 	if n := len(q.unsent); n > 0 && (r.Flip == nil || q.unsent[n-1].Flip == nil) {
 		if r.Flip == nil {
-			r.Flip = q.unsent[n-1].Flip
+			// Preserve the older flip in the new lease before releasing it.
+			old := q.unsent[n-1].Flip
+			if old != nil && q.unsent[n-1].Snapshot != r.Snapshot {
+				r.Snapshot.Flip = *old
+				r.Snapshot.Shows = copyMap(r.Snapshot.Shows, old.Shows)
+				r.Snapshot.Flip.Shows = r.Snapshot.Shows
+				r.Flip = &r.Snapshot.Flip
+			} else {
+				r.Flip = old
+			}
 		}
 		q.unsent[n-1].Snapshot.Release()
 		q.unsent[n-1] = r

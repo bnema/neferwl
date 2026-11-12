@@ -154,18 +154,14 @@ func (t *Table) Apply(b *domain.ContentBatch, scene domain.Scene, seen map[domai
 	return dirty, seenChanged
 }
 
-// ShowsSnapshot builds the Shows of successive flips. Its owner goroutine is
-// the only user. A flip's Shows map is an immutable snapshot: wayland may
-// still read the one of an earlier flip on another goroutine, so the scratch
-// map is never sent and a snapshot is replaced by a clone only when it
-// changed. The zero value is ready; an unchanged result allocates nothing.
+// ShowsSnapshot builds owner-only scratch Shows maps. Queue.Push copies them
+// into a leased snapshot before transport. The zero value is ready.
 type ShowsSnapshot struct {
-	scratch, snapshot map[domain.WindowID]uint64
+	scratch map[domain.WindowID]uint64
 }
 
 // FromSeen returns the windows of seen that scene showed to their client
-// (Shown), at their seen Seq. The result is shared with earlier flips of the
-// same content: never modify it.
+// (Shown), at their seen Seq. The result is scratch, valid until the next call.
 func (s *ShowsSnapshot) FromSeen(scene domain.Scene, seen map[domain.WindowID]uint64, kept func(domain.WindowID) bool) map[domain.WindowID]uint64 {
 	s.begin()
 	for id, seq := range seen {
@@ -177,8 +173,7 @@ func (s *ShowsSnapshot) FromSeen(scene domain.Scene, seen map[domain.WindowID]ui
 }
 
 // FromContents returns the windows of contents that scene showed to their
-// client (Shown), at their content Seq. The result is shared with earlier
-// flips of the same content: never modify it.
+// client (Shown), at their content Seq. The result is scratch, valid until the next call.
 func (s *ShowsSnapshot) FromContents(scene domain.Scene, contents map[domain.WindowID]domain.SurfaceContent, kept func(domain.WindowID) bool) map[domain.WindowID]uint64 {
 	s.begin()
 	for id, c := range contents {
@@ -197,10 +192,7 @@ func (s *ShowsSnapshot) begin() {
 }
 
 func (s *ShowsSnapshot) settle() map[domain.WindowID]uint64 {
-	if s.snapshot == nil || !maps.Equal(s.snapshot, s.scratch) {
-		s.snapshot = maps.Clone(s.scratch)
-	}
-	return s.snapshot
+	return s.scratch
 }
 
 // Retiring reports whether any withdrawn window still awaits retirement.

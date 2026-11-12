@@ -18,7 +18,7 @@ func (o *Output) report(flip *domain.FlipInfo, seen map[domain.WindowID]uint64) 
 	o.reports.Push(ports.OutputPresented{Output: o.conn.name, Flip: flip, Shown: o.shown, Queued: o.queued, Seen: seen, ChildReads: reads})
 }
 
-// shownBy returns an immutable snapshot of the content Seq of drawn windows
+// shownBy returns owner-only scratch of the content Seq of drawn windows
 // (see surfaces.ShowsSnapshot). A closed window drawn from its kept content is
 // not shown to its client: the empty content has no frame to present.
 func (o *Output) shownBy(s domain.Scene, seen map[domain.WindowID]uint64) map[domain.WindowID]uint64 {
@@ -26,8 +26,10 @@ func (o *Output) shownBy(s domain.Scene, seen map[domain.WindowID]uint64) map[do
 }
 
 func (o *Output) directShownBy(id domain.WindowID, seq uint64) map[domain.WindowID]uint64 {
-	if len(o.directShowsSnapshot) != 1 || o.directShowsSnapshot[id] != seq {
-		o.directShowsSnapshot = map[domain.WindowID]uint64{id: seq}
+	if o.directShowsSnapshot == nil {
+		o.directShowsSnapshot = make(map[domain.WindowID]uint64, 1)
 	}
+	clear(o.directShowsSnapshot)
+	o.directShowsSnapshot[id] = seq
 	return o.directShowsSnapshot
 }

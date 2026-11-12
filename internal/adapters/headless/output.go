@@ -926,7 +926,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			flip.When = time.Duration(monoStart.Nano()) + tickTime.Sub(clockStart)
 			flip.Refresh = period
 		}
-		opts.report(&reports, flip, seen)
+		opts.report(&reports, &flip, seen)
 		presentedSeq = max(presentedSeq, scene.Seq)
 		reportFrame(scene.Animating)
 		if writer.dir != "" && !opts.protected() {
@@ -1162,8 +1162,7 @@ func (opts Options) report(q *presented.Queue, flip *domain.FlipInfo, seen map[d
 }
 
 // flipShows builds the Shows of successive flips. Its owner goroutine is the
-// only user. The Shows snapshot is shared with earlier flips of the same
-// content (see surfaces.ShowsSnapshot): never modify it.
+// only user. Queue.Push copies its scratch Shows into a leased snapshot.
 type flipShows struct {
 	snapshot surfaces.ShowsSnapshot
 }
@@ -1177,10 +1176,9 @@ func (f *flipShows) of(scene domain.Scene, contents map[domain.WindowID]domain.S
 
 // flipInfo describes a drawn frame as a flip at the current CLOCK_MONOTONIC
 // time (software clock, refresh unknown), so presentation feedback and
-// frame callbacks follow headless frames. The FlipInfo itself is new per
-// flip (the sink counts merges on it); only its Shows is shared.
-func (f *flipShows) flipInfo(scene domain.Scene, contents map[domain.WindowID]domain.SurfaceContent, kept func(domain.WindowID) bool) *domain.FlipInfo {
+// frame callbacks follow headless frames. Queue.Push copies the value and Shows.
+func (f *flipShows) flipInfo(scene domain.Scene, contents map[domain.WindowID]domain.SurfaceContent, kept func(domain.WindowID) bool) domain.FlipInfo {
 	var ts unix.Timespec
 	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
-	return &domain.FlipInfo{When: time.Duration(ts.Nano()), Shows: f.of(scene, contents, kept)}
+	return domain.FlipInfo{When: time.Duration(ts.Nano()), Shows: f.of(scene, contents, kept)}
 }

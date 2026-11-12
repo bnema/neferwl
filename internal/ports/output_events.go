@@ -50,16 +50,17 @@ type OutputPresented struct {
 	// renderer on a separate device. Unlike Seen, these holds never time out:
 	// they end only with a completed render or device shutdown.
 	ChildReads map[domain.WindowID]uint64
-	// Snapshot owns Seen and ChildReads when non-nil. Consumers must release
+	// Snapshot owns Flip, Shows, Seen and ChildReads when non-nil. Consumers must release
 	// it exactly once after their final read; copies do not acquire ownership.
 	Snapshot *PresentationSnapshot
 }
 
-// PresentationSnapshot is a reference-counted, immutable pair of report maps.
-// Only the output owner writes maps, after receiving the last reference back.
-// Shows is deliberately not part of this lease: flips can retain it separately.
+// PresentationSnapshot leases report maps and flip storage across goroutines.
+// Only the output owner writes them after receiving the last reference back.
 type PresentationSnapshot struct {
 	Seen, ChildReads map[domain.WindowID]uint64
+	Flip             domain.FlipInfo
+	Shows            map[domain.WindowID]uint64
 	refs             atomic.Int32
 	returned         chan<- *PresentationSnapshot
 }

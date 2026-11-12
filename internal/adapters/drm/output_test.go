@@ -372,7 +372,9 @@ func TestShownBySnapshotAllocations(t *testing.T) {
 	o := &Output{}
 	s := domain.Scene{OutputWidth: 10, OutputHeight: 10, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 10, H: 10}}}}
 	seen := map[domain.WindowID]uint64{1: 1, 2: 2}
-	previous := o.shownBy(s, seen)
+	o.reports.Push(ports.OutputPresented{Flip: &domain.FlipInfo{Shows: o.shownBy(s, seen)}})
+	previous := o.reports.Unsent()[0].Flip.Shows
+	defer o.reports.Reset()
 	if allocs := testing.AllocsPerRun(100, func() { o.shownBy(s, seen) }); allocs != 0 {
 		t.Errorf("unchanged shows: %.1f allocs, want 0", allocs)
 	}
@@ -381,7 +383,8 @@ func TestShownBySnapshotAllocations(t *testing.T) {
 	if previous[1] != 1 || current[1] != 3 {
 		t.Fatalf("snapshot mutated: old %v new %v", previous, current)
 	}
-	direct := o.directShownBy(1, 3)
+	o.reports.Push(ports.OutputPresented{Flip: &domain.FlipInfo{Shows: o.directShownBy(1, 3)}})
+	direct := o.reports.Unsent()[1].Flip.Shows
 	if allocs := testing.AllocsPerRun(100, func() { o.directShownBy(1, 3) }); allocs != 0 {
 		t.Errorf("unchanged direct shows: %.1f allocs, want 0", allocs)
 	}

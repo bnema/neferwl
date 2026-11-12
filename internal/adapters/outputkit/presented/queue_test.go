@@ -164,12 +164,13 @@ func TestPresentationSnapshotAllocations(t *testing.T) {
 	})
 	require.Equal(t, seen, baseline.Seen)
 	t.Logf("previous clone path: %.1f allocs/push", before)
+	flip := domain.FlipInfo{Shows: seen}
 	cycle := func() {
 		for id := range seen {
 			seen[id]++
 			reads[id]++
 		}
-		q.Push(ports.OutputPresented{Seen: seen, ChildReads: reads})
+		q.Push(ports.OutputPresented{Seen: seen, ChildReads: reads, Flip: &flip})
 		r := q.Unsent()[0]
 		r.Snapshot.Retain() // the consumer owns this reference after Reset
 		q.Reset()
@@ -190,14 +191,15 @@ func TestSentSnapshotSurvivesLaterPushes(t *testing.T) {
 	sink := portsmocks.NewMockPresentationSink(t)
 	var sent ports.OutputPresented
 	sink.EXPECT().Push(mock.Anything).RunAndReturn(func(r ports.OutputPresented) { sent = r }).Once()
-	q.Push(ports.OutputPresented{Seen: seen, ChildReads: reads})
+	q.Push(ports.OutputPresented{Seen: seen, ChildReads: reads, Flip: &domain.FlipInfo{Shows: seen}})
 	q.Flush(sink)
 	for range 100 {
 		seen[1]++
 		reads[1]++
-		q.Push(ports.OutputPresented{Seen: seen, ChildReads: reads})
+		q.Push(ports.OutputPresented{Seen: seen, ChildReads: reads, Flip: &domain.FlipInfo{Shows: seen}})
 		q.Reset()
 	}
+	require.Equal(t, uint64(1), sent.Flip.Shows[1])
 	require.Equal(t, uint64(1), sent.Seen[1])
 	require.Equal(t, uint64(2), sent.ChildReads[1])
 	sent.Snapshot.Release()
@@ -211,7 +213,7 @@ func TestSentSnapshotConcurrentReader(t *testing.T) {
 		sink := portsmocks.NewMockPresentationSink(t)
 		reports := make(chan ports.OutputPresented, 1)
 		sink.EXPECT().Push(mock.Anything).RunAndReturn(func(r ports.OutputPresented) { reports <- r }).Once()
-		q.Push(ports.OutputPresented{Seen: seen, ChildReads: reads})
+		q.Push(ports.OutputPresented{Seen: seen, ChildReads: reads, Flip: &domain.FlipInfo{Shows: seen}})
 		q.Flush(sink)
 		done := make(chan struct{})
 		go func() {
@@ -219,7 +221,7 @@ func TestSentSnapshotConcurrentReader(t *testing.T) {
 			r := <-reports
 			defer r.Snapshot.Release()
 			for range 1000 {
-				if r.Seen[1] != 1 || r.ChildReads[1] != 2 {
+				if r.Flip.Shows[1] != 1 || r.Seen[1] != 1 || r.ChildReads[1] != 2 {
 					t.Error("sent maps mutated")
 					return
 				}
@@ -228,7 +230,7 @@ func TestSentSnapshotConcurrentReader(t *testing.T) {
 		for range 1000 {
 			seen[1]++
 			reads[1]++
-			q.Push(ports.OutputPresented{Seen: seen, ChildReads: reads})
+			q.Push(ports.OutputPresented{Seen: seen, ChildReads: reads, Flip: &domain.FlipInfo{Shows: seen}})
 			q.Reset()
 		}
 		<-done
@@ -240,17 +242,17 @@ func TestSnapshotReturnedByConsumerIsReusedNext(t *testing.T) {
 		var q Queue
 		seen := map[domain.WindowID]uint64{1: 1}
 		reads := map[domain.WindowID]uint64{1: 10}
-		q.Push(ports.OutputPresented{Seen: seen, ChildReads: reads})
+		q.Push(ports.OutputPresented{Seen: seen, ChildReads: reads, Flip: &domain.FlipInfo{Shows: seen}})
 		first := q.Unsent()[0]
 		first.Snapshot.Retain()
 		q.Reset()
 		seen[1], reads[1] = 2, 20
-		q.Push(ports.OutputPresented{Seen: seen, ChildReads: reads})
+		q.Push(ports.OutputPresented{Seen: seen, ChildReads: reads, Flip: &domain.FlipInfo{Shows: seen}})
 		q.Reset() // only first remains with a consumer; latest has the owner ref
 		go first.Snapshot.Release()
 		synctest.Wait()
 		seen[1], reads[1] = 3, 30
-		q.Push(ports.OutputPresented{Seen: seen, ChildReads: reads})
+		q.Push(ports.OutputPresented{Seen: seen, ChildReads: reads, Flip: &domain.FlipInfo{Shows: seen}})
 		next := q.Unsent()[0]
 		require.Same(t, first.Snapshot, next.Snapshot)
 		require.Equal(t, map[domain.WindowID]uint64{1: 3}, next.Seen)

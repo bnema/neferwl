@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
 	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 )
@@ -185,7 +187,10 @@ func TestShowsSnapshotImmutable(t *testing.T) {
 	var snap ShowsSnapshot
 	scene := shows(1)
 	seen := map[domain.WindowID]uint64{1: 1, 2: 2}
-	first := snap.FromSeen(scene, seen, nil)
+	var q presented.Queue
+	q.Push(ports.OutputPresented{Flip: &domain.FlipInfo{Shows: snap.FromSeen(scene, seen, nil)}})
+	first := q.Unsent()[0].Flip.Shows
+	defer q.Reset()
 	if allocs := testing.AllocsPerRun(100, func() { snap.FromSeen(scene, seen, nil) }); allocs != 0 {
 		t.Errorf("unchanged shows: %.1f allocs, want 0", allocs)
 	}
