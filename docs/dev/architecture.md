@@ -35,6 +35,15 @@ About 35 channels connect them, all created in one place, so the full data flow 
 - **Work only when something changes.** Damage tracking redraws only what changed, surfaces hidden behind opaque ones are skipped, and an idle output does nothing.
 - **Tuned on real hardware.** Under VRR, cursor moves ride on the game's next frame instead of forcing their own refresh, and game frames keep a short gap after each flip so the panel does not fall back to its slowest rate.
 
+### Content routing
+
+An output receives the contents of exactly the windows its scene lists, hidden workspaces included, so an idle output does no work for another output's clients.
+
+- **Core decides.** Each publish computes, per output, the sorted IDs of its scene (windows, layers, capture scene) and sends `ports.SetContentRoutes` only for the outputs whose set changed. Each route carries a generation that grows only when the set gains an ID, and every scene carries the generation it needs (`Scene.Routes`).
+- **Wayland delivers.** The content router keeps, per window, which outputs are routed and which hold a content. A window that joins an output gets its latest content at once. One that leaves is withdrawn lazily: the output hears about it with the window's next commit (an empty content with the same Seq), so a workspace switch or an animation changes nothing.
+- **Outputs gate.** A batch carries the newest generation applied. An output holds a scene that needs a newer generation until that batch arrived, for at most 100 ms, so a window that moved is never drawn without its pixels. State commits (cursor, VRR) are not held.
+- **Release.** A replaced buffer is held until each output that received it saw a later content of its window (see `internal/adapters/wayland/release.go`).
+
 ### Output images
 
 A DRM output flips between two images the renderer draws into, with no CPU copy.

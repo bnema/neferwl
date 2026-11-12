@@ -11,14 +11,18 @@ import (
 
 // Buffer release. Outputs read client buffers in place: the renderer
 // samples them when it draws, and an output scanning out a client buffer
-// (ADR 006) shows it until the next flip. A replaced wl_buffer therefore
-// goes back to the client (release) only when the output showing its
-// window reports (ports.OutputPresented) that it has a later content of
-// that window and neither shows nor queues the buffer. Outputs keep only
-// the latest content of a window, so they never draw an older buffer
-// again. heldTimeout guards against an output that stopped reporting
-// (switched away, stalled): a buffer it does not scan out or read on a
-// separate child device is released then.
+// (ADR 006) shows it until the next flip. An output only receives the
+// contents of the windows its scene lists (contentroute.go), so a replaced
+// wl_buffer goes back to the client (release) only when every output that
+// received it (its targets: the window's delivered mask when the buffer was
+// replaced, pending leavers included) has reported (ports.OutputPresented)
+// a later content of that window, and no output that reports shows or queues
+// it. Every target is guaranteed such a content: the replacing one, or the
+// withdraw that carries its Seq. Outputs keep only the latest content of a
+// window, so they never draw an older buffer again. heldTimeout guards
+// against a target that stopped reporting (switched away, stalled): a buffer
+// it does not scan out or read on a separate child device is released then.
+// A buffer with no target is released at once.
 
 // heldTimeout releases held buffers of an output that stopped reporting.
 const heldTimeout = 100 * time.Millisecond

@@ -38,9 +38,11 @@ func (OutputRemoved) outputEvent() {}
 // on it are due. Shown and Queued are the DMABuf IDs scanned out directly
 // (0: a composed image); Seen is the latest content Seq per window the
 // output finished reading (the GPU is done with it); entries of unmapped
-// windows disappear after a delay. A replaced client
-// buffer is released once every output that reports has seen a later
-// content of its window and neither shows nor queues it.
+// windows disappear after a delay. An output only receives the contents of
+// the windows its scene lists (ports.SetContentRoutes). A replaced client
+// buffer is released once every output that received the buffer (its targets)
+// has seen a later content of its window, and no output that reports shows
+// or queues it.
 type OutputPresented struct {
 	Output        string
 	Flip          *domain.FlipInfo

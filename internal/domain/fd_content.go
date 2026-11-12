@@ -69,7 +69,9 @@ type SurfaceContent struct {
 }
 
 // ContentBatch is the window contents wayland hands to one output: at most
-// one per window, the latest published. A content superseded before the
+// one per window, the latest published, and only of the windows the output's
+// scene lists (core's routes, ContentRoute). A window that stops being listed
+// gets one withdraw (an empty content) at its next commit. A content superseded before the
 // output took the batch is overwritten in place; contents carry the window's
 // Seq, so the release accounting needs only the newest one.
 //

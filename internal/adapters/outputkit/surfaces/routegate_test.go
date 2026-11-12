@@ -46,3 +46,20 @@ func TestRouteGate(t *testing.T) {
 	_, wait = g.Wait(t0)
 	require.False(t, wait)
 }
+
+func TestRouteGateAllocations(t *testing.T) {
+	var g RouteGate
+	now := time.Unix(100, 0)
+	gen := uint64(0)
+	cycle := func() {
+		gen++
+		g.Scene(gen, now)
+		g.Wait(now)
+		g.Batch(gen)
+		g.Wait(now)
+		g.Late(now)
+	}
+	if allocs := testing.AllocsPerRun(100, cycle); allocs != 0 {
+		t.Errorf("route gate cycle: %.1f allocs, want 0", allocs)
+	}
+}

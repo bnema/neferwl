@@ -648,3 +648,41 @@ func TestContentLeaverQueuedHoldsPastTimeout(t *testing.T) {
 	require.True(t, g.r.settle(now.Add(time.Hour), queued), "a queued buffer holds with no timeout")
 	require.False(t, g.r.settle(now.Add(time.Hour), []ports.OutputPresented{{Output: "A", Seen: map[domain.WindowID]uint64{1: 2}}}))
 }
+
+// Routing a content, a join and a generation allocate nothing once the
+// batches and maps have their capacity: the route lists are reused by value.
+func TestContentRoutedPublishAllocations(t *testing.T) {
+	if raceEnabled {
+		t.Skip("the race detector allocates in the background")
+	}
+	g := newRouterRig(t)
+	g.attach("A")
+	g.attach("B")
+	toA := []domain.ContentRoute{{Output: "A", Gen: 1, Windows: []domain.WindowID{1, 2}}}
+	toB := []domain.ContentRoute{{Output: "B", Gen: 1, Windows: []domain.WindowID{1, 2}}}
+	g.r.setRoutes(toA)
+	g.r.setRoutes(toB)
+	drain := func() {
+		for _, name := range []string{"A", "B"} {
+			select {
+			case b := <-g.in[name]:
+				b.Reset()
+				g.ret[name].Return(b)
+			default:
+			}
+		}
+	}
+	c1, c2 := solid(1), solid(2)
+	cycle := func() {
+		g.r.publish(c1, damage{full: true})
+		drain()
+		g.r.publish(c2, damage{full: true})
+		drain()
+	}
+	for range 3 * damageHistoryCap {
+		cycle()
+	}
+	if allocs := testing.AllocsPerRun(200, cycle); allocs != 0 {
+		t.Errorf("routed publish cycle: %.2f allocs, want 0", allocs)
+	}
+}
