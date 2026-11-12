@@ -121,3 +121,26 @@ func TestProtectedPublishRoutesLockSurface(t *testing.T) {
 		require.Equal(t, uint64(1), scenes[0].Routes)
 	})
 }
+
+func TestRoutesSentAgainForOutputAdoptingPlaceholder(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := publishRig(t, 1)
+		commands := make(chan ports.ClientCommand, 128)
+		c.ch.Commands = commands
+		require.NoError(t, c.publish(context.Background()))
+		first := routeCommands(c, commands)
+		require.Len(t, first, 1)
+		require.Equal(t, "A", first[0].Output)
+		<-c.ch.Scenes
+
+		c.removeScreen("A")
+		c.addScreen(domain.OutputInfo{Name: "B", Width: 300, Height: 200})
+		require.NoError(t, c.publish(context.Background()))
+		second := routeCommands(c, commands)
+		require.Len(t, second, 1)
+		require.Equal(t, "B", second[0].Output)
+		require.Equal(t, first[0].Windows, second[0].Windows)
+		require.Greater(t, second[0].Gen, first[0].Gen)
+		require.Equal(t, second[0].Gen, (<-c.ch.Scenes)[0].Routes)
+	})
+}

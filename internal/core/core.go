@@ -92,6 +92,8 @@ type binding struct {
 	key  string
 }
 type Core struct {
+	// routeHigh is the highest route generation issued to any screen.
+	routeHigh        uint64
 	runtimeWake      chan struct{}
 	controlWaits     []controlWait
 	outputWaits      []outputWait

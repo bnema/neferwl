@@ -13,6 +13,7 @@ import (
 type screen struct {
 	routeBuf, routes []WindowID
 	routeGen         uint64
+	routeSent        bool // a route was sent: Scene.Routes carries routeGen
 	lineageFocus     focusHistory
 	positionHint     positionHintState
 	info             domain.OutputInfo
@@ -321,6 +322,7 @@ func (c *Core) addScreen(info domain.OutputInfo) {
 		s.info = info
 	} else {
 		s = &screen{info: info, mon: newMonitorWithIDs(info.Name, info.Key(), &c.nextWorkspaceID)}
+		c.resetRoutes(s)
 		c.screens = append(c.screens, s)
 	}
 	s.off = c.offGone[info.Name]
@@ -388,6 +390,8 @@ func (c *Core) removeScreen(name string) {
 	if len(c.screens) == 1 {
 		c.screens[0].info = domain.OutputInfo{}
 		c.screens[0].layers = nil
+		// The next output is a new one for wayland: it needs its routes sent.
+		c.resetRoutes(c.screens[0])
 		// Nothing draws the placeholder: its springs would only wake the
 		// fallback timer, and start from the old output's geometry if an
 		// output came back.
