@@ -33,6 +33,9 @@ func sameSceneBase() Scene {
 
 func TestSceneSameAs(t *testing.T) {
 	base := sameSceneBase()
+	routesOnly := sameSceneBase()
+	routesOnly.Routes = 42
+	assert.True(t, base.SameAs(routesOnly), "Routes alone must not matter")
 
 	same := sameSceneBase()
 	same.Seq = 99
@@ -102,9 +105,9 @@ func TestSceneSameAs(t *testing.T) {
 // TestSceneSameAsCoversEveryField fails when Scene gains or loses a field:
 // update Scene.SameAs, then this count.
 func TestSceneSameAsCoversEveryField(t *testing.T) {
-	// 27 with Animating, which SameAs intentionally does not compare: it
+	// 28 with Routes and Animating, which SameAs intentionally does not compare: it
 	// only schedules the next frame, it draws nothing.
-	const fields = 27
+	const fields = 28
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(Scene{}))),
 		"Scene fields changed: update Scene.SameAs (and TestSceneSameAs), then this count")
 }

@@ -246,3 +246,9 @@ func (WatchStats) clientCommand() {}
 
 // StatsInterval is how often wayland reports the watched window's stats.
 const StatsInterval = 500 * time.Millisecond
+
+// SetContentRoutes carries core output membership decisions to wayland.
+// Like SetOutputs, it is epoch-independent inventory, not an input grant.
+type SetContentRoutes struct{ Routes []domain.ContentRoute }
+
+func (SetContentRoutes) clientCommand() {}

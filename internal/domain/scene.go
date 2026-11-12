@@ -101,10 +101,14 @@ type Scene struct {
 	// of it wakes nobody. It describes scheduling, not drawing: SameAs and
 	// the renderer ignore it.
 	Animating bool
+	// Routes is the content-route generation this output must receive before
+	// rendering the scene, except after the bounded output route wait.
+	Routes uint64
 }
 
 // SameAs reports whether o draws exactly what s draws: every field other
-// than Seq and Animating (scheduling only, not drawn) is equal. A scene
+// than Seq, Animating and Routes (scheduling only, not drawn) is equal.
+// A route gain also changes Windows, Layers or CaptureScene. A scene
 // carrying a CaptureScene is never the same (conservative: the capture image
 // is not compared). Add every new Scene field here;
 // TestSceneSameAsCoversEveryField fails until the field count is updated.
@@ -274,4 +278,12 @@ type SceneWindow struct {
 // and popups are placed against the whole viewport.
 func (w SceneWindow) Tile() bool {
 	return !w.Floating && !w.Fullscreen && !w.Popup && w.Preview == 0
+}
+
+// ContentRoute lists the window contents needed by one output. Gen advances
+// only when Windows gains an ID. Windows is sorted, unique and immutable.
+type ContentRoute struct {
+	Output  string
+	Gen     uint64
+	Windows []WindowID
 }

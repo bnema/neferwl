@@ -842,6 +842,8 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		// Color preference follows core's configured output independently of
 		// scanout eligibility, including the first assignment.
 		s.notifyColorFeedback()
+	case ports.SetContentRoutes:
+	// Applied by the router once output generation gates are wired.
 	case ports.SetOutputs:
 		s.setOutputs(c)
 		off := map[string]bool{}

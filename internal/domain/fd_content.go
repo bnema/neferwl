@@ -79,11 +79,14 @@ type SurfaceContent struct {
 // allocate its elements again after every clear.
 type ContentBatch struct {
 	Items []SurfaceContent
+	// Routes is the newest route generation applied before this batch was sent.
+	Routes uint64
 }
 
 // Reset empties the batch, dropping its references to buffers, and keeps its
 // capacity for reuse.
 func (b *ContentBatch) Reset() {
+	b.Routes = 0
 	clear(b.Items)
 	b.Items = b.Items[:0]
 }
