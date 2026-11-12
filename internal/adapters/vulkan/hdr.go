@@ -3,6 +3,7 @@ package vulkan
 import (
 	_ "embed"
 	"fmt"
+	"image"
 	"unsafe"
 
 	vk "bnema.dev/purego-vulkan/vulkan"
@@ -28,6 +29,9 @@ type hdrPass struct {
 // remains owner-goroutine confined; all GPU objects are reused each frame.
 func (r *Renderer) SetHDR(nits float64) {
 	if nits != r.hdrNits {
+		for _, t := range r.targets {
+			t.pqValid = false
+		}
 		r.cursorCache.Reset()
 		if r.hdrNits > 0 && nits > 0 {
 			r.hdrOwn.valid = false
@@ -126,7 +130,7 @@ func (r *Renderer) createHDR() error {
 	if err := checked("vkCreateDescriptorSetLayout(HDR)", d.CreateDescriptorSetLayout(r.gpu.device, &sli, nil, &h.setLayout)); err != nil {
 		return err
 	}
-	push := vk.PushConstantRange{StageFlags: vk.ShaderStageFragmentBit, Size: 4}
+	push := vk.PushConstantRange{StageFlags: vk.ShaderStageVertexBit | vk.ShaderStageFragmentBit, Size: 32}
 	pli := vk.PipelineLayoutCreateInfo{SType: vk.StructureTypePipelineLayoutCreateInfo, SetLayoutCount: 1, SetLayouts: &h.setLayout, PushConstantRangeCount: 1, PushConstantRanges: &push}
 	if err := checked("vkCreatePipelineLayout(HDR)", d.CreatePipelineLayout(r.gpu.device, &pli, nil, &h.layout)); err != nil {
 		return err
@@ -177,23 +181,33 @@ func (r *Renderer) destroyHDR() {
 	*h = hdrPass{}
 }
 
-// recordHDR converts the fully composed linear HDR image in the same command buffer.
-func (r *Renderer) recordHDR(cmd vk.CommandBuffer, out *target) {
+// recordHDR converts the target-stale region of the linear HDR image.
+func (r *Renderer) recordHDR(cmd vk.CommandBuffer, out *target, rect image.Rectangle) {
 	d, h := r.gpu.dd, &r.hdr
 	in, b := &r.call.hdrIn, &r.call.hdrOut
 	attachment, info := &r.call.attach, &r.call.render
 	*in = vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, SrcAccessMask: vk.AccessColorAttachmentWriteBit, DstAccessMask: vk.AccessShaderReadBit, OldLayout: vk.ImageLayoutColorAttachmentOptimal, NewLayout: vk.ImageLayoutShaderReadOnlyOptimal, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Image: r.hdrOwn.image, SubresourceRange: colorRange}
 	d.CmdPipelineBarrier(cmd, vk.PipelineStageColorAttachmentOutputBit, vk.PipelineStageFragmentShaderBit, 0, 0, nil, 0, nil, 1, in)
 	*b = vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, DstAccessMask: vk.AccessColorAttachmentWriteBit, OldLayout: vk.ImageLayoutUndefined, NewLayout: vk.ImageLayoutColorAttachmentOptimal, SrcQueueFamilyIndex: vk.QueueFamilyForeignEXT, DstQueueFamilyIndex: r.gpu.family, Image: out.image, SubresourceRange: colorRange}
+	partial := out.pqValid && rect != image.Rect(0, 0, r.width, r.height)
+	if partial {
+		b.OldLayout = out.layout
+		b.DstAccessMask |= vk.AccessColorAttachmentReadBit
+	}
 	d.CmdPipelineBarrier(cmd, vk.PipelineStageTopOfPipeBit, vk.PipelineStageColorAttachmentOutputBit, 0, 0, nil, 0, nil, 1, b)
 	*attachment = vk.RenderingAttachmentInfo{SType: vk.StructureTypeRenderingAttachmentInfo, ImageView: out.view, ImageLayout: vk.ImageLayoutColorAttachmentOptimal, LoadOp: vk.AttachmentLoadOpDontCare, StoreOp: vk.AttachmentStoreOpStore}
+	if partial {
+		attachment.LoadOp = vk.AttachmentLoadOpLoad
+	}
 	*info = vk.RenderingInfo{SType: vk.StructureTypeRenderingInfo, RenderArea: vk.Rect2D{Extent: vk.Extent2D{Width: uint32(r.width), Height: uint32(r.height)}}, LayerCount: 1, ColorAttachmentCount: 1, ColorAttachments: attachment}
 	d.CmdBeginRendering(cmd, info)
 	d.CmdBindPipeline(cmd, vk.PipelineBindPointGraphics, h.pipeline)
 	d.CmdBindDescriptorSets(cmd, vk.PipelineBindPointGraphics, h.layout, 0, 1, &h.set, 0, nil)
-	r.call.hdrNits = float32(r.hdrNits)
-	d.CmdPushConstants(cmd, h.layout, vk.ShaderStageFragmentBit, 0, 4, unsafe.Pointer(&r.call.hdrNits))
-	d.CmdDraw(cmd, 3, 1, 0, 0)
+	r.call.hdrPush = [8]float32{float32(rect.Min.X), float32(rect.Min.Y), float32(rect.Max.X), float32(rect.Max.Y), float32(r.hdrNits), 0, float32(r.width), float32(r.height)}
+	d.CmdPushConstants(cmd, h.layout, vk.ShaderStageVertexBit|vk.ShaderStageFragmentBit, 0, 32, unsafe.Pointer(&r.call.hdrPush))
+	if !rect.Empty() {
+		d.CmdDraw(cmd, 6, 1, 0, 0)
+	}
 	d.CmdEndRendering(cmd)
 	b.SrcAccessMask, b.DstAccessMask = vk.AccessColorAttachmentWriteBit, 0
 	b.OldLayout, b.NewLayout = vk.ImageLayoutColorAttachmentOptimal, vk.ImageLayoutGeneral

@@ -15,7 +15,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+//go:generate glslc -O --target-env=vulkan1.3 shaders/capture.vert -o shaders/capture.vert.spv
 //go:generate glslc -O --target-env=vulkan1.3 shaders/capture_sdr.frag -o shaders/capture_sdr.frag.spv
+
+//go:embed shaders/capture.vert.spv
+var captureVert []byte
 
 //go:embed shaders/capture_sdr.frag.spv
 var captureFrag []byte
@@ -780,7 +784,7 @@ func (r *Renderer) createCapturePass() (err error) {
 	write := vk.WriteDescriptorSet{SType: vk.StructureTypeWriteDescriptorSet, DstSet: p.set, DstBinding: 0, DescriptorCount: 1, DescriptorType: vk.DescriptorTypeCombinedImageSampler, ImageInfo: &img}
 	d.UpdateDescriptorSets(r.gpu.device, 1, &write, 0, nil)
 	// The pipeline is last: it marks the pass complete.
-	return r.createGraphicsPipeline(hdrVert, captureFrag, vk.FormatB8g8r8a8Unorm, p.layout, false, nil, &p.pipeline)
+	return r.createGraphicsPipeline(captureVert, captureFrag, vk.FormatB8g8r8a8Unorm, p.layout, false, nil, &p.pipeline)
 }
 
 // destroyCapturePass frees the conversion pipeline (device idle).

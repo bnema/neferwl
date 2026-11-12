@@ -53,7 +53,7 @@ type callScratch struct {
 	fd      int32
 	hdrIn   vk.ImageMemoryBarrier // recordHDR
 	hdrOut  vk.ImageMemoryBarrier
-	hdrNits float32
+	hdrPush [8]float32 // rect, nits, padding, size (GLSL vec2 aligned to byte 24)
 }
 
 // deferredFree runs once frame completed. The hot path, a wait semaphore
@@ -336,7 +336,16 @@ func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.Su
 	r.recordDraws(cmd, tg.view, parseColor(s.Background), batches, partial)
 	r.ownership(cmd, dmas, false)
 	if hdr {
-		r.recordHDR(cmd, r.targets[r.current])
+		whole := image.Rect(0, 0, r.width, r.height)
+		area := whole
+		if partial && s.Transform == 0 {
+			area = dmg.area
+		}
+		for _, t := range r.targets {
+			t.pqStale = t.pqStale.Union(area)
+		}
+		out := r.targets[r.current]
+		r.recordHDR(cmd, out, nextPQRect(out, whole))
 	}
 	if !hdr {
 		b.SrcAccessMask, b.OldLayout = vk.AccessColorAttachmentWriteBit, vk.ImageLayoutColorAttachmentOptimal
@@ -395,7 +404,9 @@ func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.Su
 	if hdr {
 		// recordHDR left the composed linear image in TRANSFER_SRC for capture.
 		tg.layout = vk.ImageLayoutTransferSrcOptimal
-		r.targets[r.current].layout = vk.ImageLayoutGeneral
+		out := r.targets[r.current]
+		out.layout = vk.ImageLayoutGeneral
+		out.pqValid, out.pqStale = true, image.Rectangle{}
 	} else {
 		tg.layout = b.NewLayout
 	}

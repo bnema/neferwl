@@ -122,9 +122,9 @@ func (r *Renderer) recordCapturePQ(cmd vk.CommandBuffer, s *captureSlot) {
 	d.CmdBindPipeline(cmd, vk.PipelineBindPointGraphics, r.capturePQ.pipeline)
 	d.CmdBindDescriptorSets(cmd, vk.PipelineBindPointGraphics, h.layout, 0, 1, &h.set, 0, nil)
 	// Push constants are copied at record time; the frame's field is free.
-	r.call.hdrNits = float32(r.hdrNits)
-	d.CmdPushConstants(cmd, h.layout, vk.ShaderStageFragmentBit, 0, 4, unsafe.Pointer(&r.call.hdrNits))
-	d.CmdDraw(cmd, 3, 1, 0, 0)
+	r.call.hdrPush = [8]float32{0, 0, float32(r.width), float32(r.height), float32(r.hdrNits), 0, float32(r.width), float32(r.height)}
+	d.CmdPushConstants(cmd, h.layout, vk.ShaderStageVertexBit|vk.ShaderStageFragmentBit, 0, 32, unsafe.Pointer(&r.call.hdrPush))
+	d.CmdDraw(cmd, 6, 1, 0, 0)
 	d.CmdEndRendering(cmd)
 	in.SrcAccessMask, in.DstAccessMask = vk.AccessShaderReadBit, vk.AccessTransferReadBit
 	in.OldLayout, in.NewLayout = vk.ImageLayoutShaderReadOnlyOptimal, vk.ImageLayoutTransferSrcOptimal

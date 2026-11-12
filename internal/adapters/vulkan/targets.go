@@ -3,6 +3,7 @@ package vulkan
 import (
 	"errors"
 	"fmt"
+	"image"
 	"maps"
 	"os"
 	"slices"
@@ -27,10 +28,13 @@ import (
 
 // target is an image frames are drawn into.
 type target struct {
-	image  vk.Image
-	memory vk.DeviceMemory
-	layout vk.ImageLayout
-	view   vk.ImageView // color attachment for blended draws
+	// PQ conversion tracks damage since this exported target was last converted.
+	pqValid bool
+	pqStale image.Rectangle
+	image   vk.Image
+	memory  vk.DeviceMemory
+	layout  vk.ImageLayout
+	view    vk.ImageView // color attachment for blended draws
 	// exported images are shared with the display: ownership goes to the
 	// foreign queue family after each frame, and KMS reads them.
 	exported bool
@@ -137,6 +141,14 @@ func (r *Renderer) UseTarget(i int) {
 	if i >= 0 && i < len(r.targets) {
 		r.current = i
 	}
+}
+
+// nextPQRect returns the stale region, or the whole image for a new target.
+func nextPQRect(t *target, whole image.Rectangle) image.Rectangle {
+	if !t.pqValid {
+		return whole
+	}
+	return t.pqStale.Intersect(whole)
 }
 
 // ensureOwn allocates the internal SDR target only when no display target is used.

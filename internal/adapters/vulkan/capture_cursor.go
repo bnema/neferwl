@@ -141,7 +141,7 @@ func (r *Renderer) prepareCaptureCursor(s *captureSlot, c *domain.CaptureCursor,
 		buf := vk.DescriptorBufferInfo{Buffer: p.upload.buffer, Range: vk.DeviceSize(p.upload.size)}
 		writes := []vk.WriteDescriptorSet{{SType: vk.StructureTypeWriteDescriptorSet, DstSet: h.set, DstBinding: 0, DescriptorCount: 1, DescriptorType: vk.DescriptorTypeCombinedImageSampler, ImageInfo: &img}, {SType: vk.StructureTypeWriteDescriptorSet, DstSet: h.set, DstBinding: 1, DescriptorCount: 1, DescriptorType: vk.DescriptorTypeStorageBuffer, BufferInfo: &buf}}
 		d.UpdateDescriptorSets(r.gpu.device, 2, &writes[0], 0, nil)
-		if err = r.createGraphicsPipeline(hdrVert, captureCursorFrag, outFormat, h.layout, false, nil, &h.pipeline); err != nil {
+		if err = r.createGraphicsPipeline(captureVert, captureCursorFrag, outFormat, h.layout, false, nil, &h.pipeline); err != nil {
 			return err
 		}
 	}

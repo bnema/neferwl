@@ -1,5 +1,9 @@
 #version 450
+layout(push_constant) uniform PC { vec4 rect; float nits; vec2 size; } pc;
 void main() {
-    const vec2 corners[3] = vec2[](vec2(-1, -1), vec2(3, -1), vec2(-1, 3));
-    gl_Position = vec4(corners[gl_VertexIndex], 0, 1);
+    const vec2 corners[6] = vec2[](
+        vec2(0, 0), vec2(1, 0), vec2(0, 1),
+        vec2(0, 1), vec2(1, 0), vec2(1, 1));
+    vec2 pixel = mix(pc.rect.xy, pc.rect.zw, corners[gl_VertexIndex]);
+    gl_Position = vec4(pixel / pc.size * 2.0 - 1.0, 0, 1);
 }
