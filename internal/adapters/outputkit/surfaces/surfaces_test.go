@@ -216,7 +216,7 @@ func TestApply(t *testing.T) {
 			t.Errorf("batch returned before its reset: %d items", len(got.Items))
 		}
 	}).Once()
-	dirty, changed := tb.Apply(b, shows(2), seen, ret, time.Time{})
+	dirty, changed, _ := tb.Apply(b, shows(2), seen, ret, time.Time{})
 	if !dirty || !changed {
 		t.Fatalf("dirty %v changed %v, want both", dirty, changed)
 	}
@@ -230,7 +230,7 @@ func TestApply(t *testing.T) {
 	// A window no scene draws and no newer Seq: nothing to do.
 	b = &domain.ContentBatch{Items: []domain.SurfaceContent{{ID: 1, Seq: 5, SHM: &domain.SHMBuffer{Pool: 1}}}}
 	ret.EXPECT().Return(b).Once()
-	dirty, changed = tb.Apply(b, shows(2), seen, ret, time.Time{})
+	dirty, changed, _ = tb.Apply(b, shows(2), seen, ret, time.Time{})
 	if dirty || changed {
 		t.Fatalf("dirty %v changed %v, want neither", dirty, changed)
 	}

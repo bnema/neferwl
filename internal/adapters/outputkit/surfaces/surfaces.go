@@ -128,10 +128,11 @@ func Shown(scene domain.Scene, id domain.WindowID, kept func(domain.WindowID) bo
 //
 // dirty reports a content of a window scene draws (windows on other outputs
 // or workspaces need no frame). seenChanged reports a window whose seen Seq
-// moved forward: a new report is due.
+// moved forward: a new report is due. routes is the batch's Routes, read
+// before Reset, for the output's RouteGate.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter Consumes and returns transport batches on the output owner goroutine.
-func (t *Table) Apply(b *domain.ContentBatch, scene domain.Scene, seen map[domain.WindowID]uint64, ret ports.ContentReturn, now time.Time) (dirty, seenChanged bool) {
+func (t *Table) Apply(b *domain.ContentBatch, scene domain.Scene, seen map[domain.WindowID]uint64, ret ports.ContentReturn, now time.Time) (dirty, seenChanged bool, routes uint64) {
 	for i := range b.Items {
 		c := b.Items[i]
 		t.Update(c, scene)
@@ -147,11 +148,12 @@ func (t *Table) Apply(b *domain.ContentBatch, scene domain.Scene, seen map[domai
 		dirty = dirty || capture.Shows(scene, c.ID)
 	}
 	t.seenHighWater = max(t.seenHighWater, len(seen))
+	routes = b.Routes
 	b.Reset()
 	if ret != nil {
 		ret.Return(b)
 	}
-	return dirty, seenChanged
+	return dirty, seenChanged, routes
 }
 
 // ShowsSnapshot builds owner-only scratch Shows maps. Queue.Push copies them

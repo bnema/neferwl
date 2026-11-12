@@ -315,7 +315,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		table.Prune(scene, clk.Now())
 	}
 	update := func(b *domain.ContentBatch) {
-		batchDirty, seenChanged := table.Apply(b, scene, seen, returns, clk.Now())
+		batchDirty, seenChanged, _ := table.Apply(b, scene, seen, returns, clk.Now())
 		dirty = dirty || batchDirty
 		reportDirty = reportDirty || seenChanged
 	}

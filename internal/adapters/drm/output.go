@@ -1201,6 +1201,9 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 	o.kept = table.Kept
 	var scene domain.Scene
 	haveScene, dirty := false, false
+	// gate holds a frame back until the contents of a route change arrived.
+	var gate surfaces.RouteGate
+	var lastRouteWarn time.Time
 	var want domain.CursorChange
 	cursorScale := -1.0 // not loaded yet
 	var cursorTransform domain.BufferTransform
@@ -1252,6 +1255,9 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 	holdTimer := time.NewTimer(time.Hour)
 	holdTimer.Stop()
 	defer holdTimer.Stop()
+	routeTimer := time.NewTimer(time.Hour)
+	routeTimer.Stop()
+	defer routeTimer.Stop()
 	// Retirement uses the surfaces seenRetire grace period (one second).
 	retireTimer := time.NewTimer(time.Hour)
 	retireTimer.Stop()
@@ -1453,6 +1459,14 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 		if holdDue == nil {
 			holdTimer.Stop()
 		}
+		// A frame held for a route change's contents renders at the deadline.
+		var routeDue <-chan time.Time
+		if d, wait := gate.Wait(time.Now()); wait && dirty && haveScene {
+			routeTimer.Reset(d)
+			routeDue = routeTimer.C
+		} else {
+			routeTimer.Stop()
+		}
 		// A refused protected commit is retried after a bounded backoff.
 		var protectDue <-chan time.Time
 		if o.protected && enabled && !o.securityPrepared && o.protectBackoffActive() {
@@ -1531,6 +1545,8 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 		case <-holdDue:
 			activity()
 			continue
+		case <-routeDue:
+			activity()
 		case <-ctx.Done():
 			return nil
 		case b := <-pipeline.Completed():
@@ -1624,6 +1640,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 				stateDirty = true
 			}
 			scene, haveScene, dirty = s, true, true
+			gate.Scene(s.Routes, time.Now())
 			o.wantOff = s.Off
 			// A closed window's last content goes once no scene draws it.
 			table.Prune(scene, time.Now())
@@ -1642,7 +1659,8 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 		case b := <-contents:
 			activity()
 			// Windows on other outputs or workspaces do not need a frame.
-			batchDirty, batchSeen := table.Apply(b, scene, seen, returns, time.Now())
+			batchDirty, batchSeen, batchRoutes := table.Apply(b, scene, seen, returns, time.Now())
+			gate.Batch(batchRoutes)
 			dirty = dirty || batchDirty
 			reportDirty = reportDirty || batchSeen
 		case <-stats.C():
@@ -1727,7 +1745,15 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 		if o.off {
 			continue
 		}
-		if !dirty || !haveScene {
+		// A scene that needs a route generation's contents waits for them
+		// (at most routeWait); state commits are not gated.
+		now := time.Now()
+		_, gated := gate.Wait(now)
+		if !gated && dirty && haveScene && gate.Late(now) && now.Sub(lastRouteWarn) >= 10*time.Second {
+			lastRouteWarn = now
+			o.log.Warn().Str("connector", o.conn.name).Msg("route wait expired: rendering without the routed contents")
+		}
+		if !dirty || !haveScene || gated {
 			if stateDirty && !o.protected {
 				err := o.commitState(o.stateVRR())
 				if errors.Is(err, errSecurityScene) {
