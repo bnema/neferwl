@@ -2,6 +2,9 @@ package wayland
 
 import (
 	"context"
+	"fmt"
+	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/require"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -364,4 +367,36 @@ func (s *Server) publishRound(windows int) {
 			s.emitContent(solid(domain.WindowID(id)), damage{full: true})
 		}
 	})
+}
+
+func TestContentRouterSlotLimitAndReuse(t *testing.T) {
+	s := &Server{}
+	s.router = newContentRouter(s, s.release, s.bufferReferenced, func(string) bool { return true })
+	r := &s.router
+	var handles []ports.ContentReturn
+	for i := range 64 {
+		in, ret := r.attach(fmt.Sprintf("output-%d", i))
+		require.NotNil(t, in)
+		require.NotNil(t, ret)
+		require.Equal(t, uint(i), ret.(*contentLink).slot)
+		handles = append(handles, ret)
+	}
+	in, ret := r.attach("overflow")
+	require.Nil(t, in)
+	require.Nil(t, ret)
+	r.publish(solid(1), damage{})
+	require.Equal(t, ^linkMask(0), r.delivered[1])
+	now := time.Unix(100, 0)
+	r.hold(heldBuffer{window: 1, at: now})
+	// Isolate a hold targeting the old slot; every other recipient has advanced.
+	r.held[0].targets = linkMask(1) << 17
+	r.detach(handles[17])
+	require.Zero(t, r.delivered[1]&(linkMask(1)<<17))
+	require.Zero(t, r.held[0].targets)
+	_, replacement := r.attach("replacement")
+	require.Equal(t, uint(17), replacement.(*contentLink).slot)
+	require.Zero(t, r.held[0].targets, "replay cannot retroactively target a held buffer")
+	require.False(t, r.settle(now, nil), "old target cannot survive slot reuse")
+	r.detach(handles[17])
+	require.Len(t, r.links, 64, "stale handle must not detach replacement")
 }

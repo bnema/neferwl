@@ -24,7 +24,8 @@ import (
 const heldTimeout = 100 * time.Millisecond
 
 type heldBuffer struct {
-	res *wayland.Buffer
+	res     *wayland.Buffer
+	targets linkMask
 	// sync is the buffer's explicit-sync state: its release point is
 	// signalled instead of wl_buffer.release.
 	sync   syncHold
@@ -107,21 +108,21 @@ func (s *Server) bufferReferenced(b *wayland.Buffer) bool {
 // one has not got a later content of its window yet and heldTimeout has
 // not passed. Child reads are exempt from the timeout until the render
 // finishes or its device shuts down.
-func keepHeld(h heldBuffer, reports []ports.OutputPresented, now time.Time) bool {
-	seen := true
-	for _, r := range reports {
+func keepHeld(h heldBuffer, reports []ports.OutputPresented, slots []linkMask, now time.Time) bool {
+	waiting := h.targets
+	for i, r := range reports {
 		if h.id != 0 && (r.Shown == h.id || r.Queued == h.id) {
 			return true
+		}
+		if h.targets&slots[i] == 0 {
+			continue
 		}
 		if seq, ok := r.ChildReads[h.window]; ok && seq <= h.after {
 			return true
 		}
-		if r.Seen[h.window] <= h.after {
-			seen = false
+		if r.Seen[h.window] > h.after {
+			waiting &^= slots[i]
 		}
 	}
-	if len(reports) == 0 {
-		seen = false
-	}
-	return !seen && now.Sub(h.at) < heldTimeout
+	return waiting != 0 && now.Sub(h.at) < heldTimeout
 }

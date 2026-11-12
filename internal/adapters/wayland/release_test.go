@@ -63,8 +63,8 @@ func TestCachedSubsurfaceBufferReleaseOnRoleDestroy(t *testing.T) {
 
 func TestKeepHeld(t *testing.T) {
 	now := time.Unix(100, 0)
-	dma := heldBuffer{window: 1, id: 7, after: 5, at: now}
-	shm := heldBuffer{window: 1, after: 5, at: now}
+	dma := heldBuffer{targets: 1, window: 1, id: 7, after: 5, at: now}
+	shm := heldBuffer{targets: 1, window: 1, after: 5, at: now}
 	out := func(shown, queued, seq uint64) ports.OutputPresented {
 		return ports.OutputPresented{Shown: shown, Queued: queued, Seen: map[domain.WindowID]uint64{1: seq}}
 	}
@@ -92,7 +92,12 @@ func TestKeepHeld(t *testing.T) {
 		{"other output lags", dma, R{out(0, 0, 6), out(0, 0, 5)}, 0, true},
 		{"all outputs moved on", dma, R{out(0, 0, 6), out(0, 0, 6)}, 0, false},
 	} {
-		if got := keepHeld(tc.h, tc.reports, now.Add(tc.after)); got != tc.want {
+		slots := make([]linkMask, len(tc.reports))
+		for i := range slots {
+			slots[i] = linkMask(1) << i
+			tc.h.targets |= slots[i]
+		}
+		if got := keepHeld(tc.h, tc.reports, slots, now.Add(tc.after)); got != tc.want {
 			t.Errorf("%s: %v", tc.name, got)
 		}
 	}
@@ -107,27 +112,27 @@ func TestKeepHeldChildReadsBeyondTimeout(t *testing.T) {
 		ChildReads: map[domain.WindowID]uint64{1: 5},
 	}
 	for _, id := range []uint64{0, 7} { // SHM / explicit points only, and dmabuf
-		h := heldBuffer{window: 1, id: id, after: 5, at: now}
-		if !keepHeld(h, []ports.OutputPresented{report}, now.Add(time.Second)) {
+		h := heldBuffer{targets: 1, window: 1, id: id, after: 5, at: now}
+		if !keepHeld(h, []ports.OutputPresented{report}, []linkMask{1}, now.Add(time.Second)) {
 			t.Fatal("unfinished child read released after 100ms")
 		}
 		h.window = 2
-		if keepHeld(h, []ports.OutputPresented{report}, now.Add(time.Second)) {
+		if keepHeld(h, []ports.OutputPresented{report}, []linkMask{1}, now.Add(time.Second)) {
 			t.Fatal("unrelated display window held by child")
 		}
 		h.window, h.after = 1, 4
-		if keepHeld(h, []ports.OutputPresented{report}, now.Add(time.Second)) {
+		if keepHeld(h, []ports.OutputPresented{report}, []linkMask{1}, now.Add(time.Second)) {
 			t.Fatal("buffer older than child's content held")
 		}
 		h.after = 5
 		finished := report
 		finished.ChildReads = nil // render completed, or device closed
-		if keepHeld(h, []ports.OutputPresented{finished}, now.Add(time.Second)) {
+		if keepHeld(h, []ports.OutputPresented{finished}, []linkMask{1}, now.Add(time.Second)) {
 			t.Fatal("finished child read still holds buffer")
 		}
 	}
 	allocs := testing.AllocsPerRun(100, func() {
-		keepHeld(heldBuffer{window: 1, after: 5, at: now}, []ports.OutputPresented{report}, now.Add(time.Second))
+		keepHeld(heldBuffer{targets: 1, window: 1, after: 5, at: now}, []ports.OutputPresented{report}, []linkMask{1}, now.Add(time.Second))
 	})
 	if allocs != 0 {
 		t.Fatalf("child release guard: %.1f allocs, want 0", allocs)
@@ -157,19 +162,19 @@ func TestKeepHeldUntilChildFenceCompletes(t *testing.T) {
 		ID: 1, Workspace: 9, OffScreen: true, Region: image.Rect(0, 0, 2, 2),
 	}})
 	now := time.Unix(100, 0)
-	h := heldBuffer{window: 1, after: 5, at: now}
+	h := heldBuffer{targets: 1, window: 1, after: 5, at: now}
 	seen := map[domain.WindowID]uint64{1: 5}
 	got, reads, pending := p.CapHiddenSeen(seen)
 	require.True(t, pending)
 	require.Equal(t, seen, got)
 	reports := []ports.OutputPresented{{Seen: got, ChildReads: reads}}
-	require.True(t, keepHeld(h, reports, now.Add(time.Second)), "unsignalled fence outlives 100ms timeout")
+	require.True(t, keepHeld(h, reports, []linkMask{1}, now.Add(time.Second)), "unsignalled fence outlives 100ms timeout")
 	_, err = write.Write([]byte{1})
 	require.NoError(t, err)
 	got, reads, pending = p.CapHiddenSeen(seen)
 	require.False(t, pending)
 	reports[0] = ports.OutputPresented{Seen: got, ChildReads: reads}
-	require.False(t, keepHeld(h, reports, now.Add(time.Second)), "signalled fence lifts child hold")
+	require.False(t, keepHeld(h, reports, []linkMask{1}, now.Add(time.Second)), "signalled fence lifts child hold")
 }
 
 // A buffer replaced just after its window becomes invisible is still held:
@@ -286,4 +291,47 @@ func TestHeldBufferRequeuedBeforeOutputAck(t *testing.T) {
 		t.Fatal("queued buffer released after output ack")
 	case <-waylandDeadline(40 * time.Millisecond):
 	}
+}
+
+func TestKeepHeldTargets(t *testing.T) {
+	now := time.Unix(100, 0)
+	h := heldBuffer{targets: 1, window: 1, id: 7, after: 5, at: now}
+	for _, tc := range []struct {
+		name    string
+		targets linkMask
+		reports []ports.OutputPresented
+		slots   []linkMask
+		age     time.Duration
+		want    bool
+	}{
+		{name: "empty targets release immediately", reports: nil},
+		{name: "missing target report", targets: 1, want: true},
+		{name: "missing target times out", targets: 1, age: heldTimeout},
+		{name: "unrelated report cannot acknowledge", targets: 1, reports: []ports.OutputPresented{{Seen: map[domain.WindowID]uint64{1: 6}}}, slots: []linkMask{2}, want: true},
+		{name: "non-target queued still holds", reports: []ports.OutputPresented{{Queued: 7}}, slots: []linkMask{2}, age: time.Second, want: true},
+		{name: "target child read outlives timeout", targets: 1, reports: []ports.OutputPresented{{Seen: map[domain.WindowID]uint64{1: 6}, ChildReads: map[domain.WindowID]uint64{1: 5}}}, slots: []linkMask{1}, age: time.Second, want: true},
+		{name: "non-target child read does not hold", targets: 1, reports: []ports.OutputPresented{{ChildReads: map[domain.WindowID]uint64{1: 5}}}, slots: []linkMask{2}, age: time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h.targets = tc.targets
+			require.Equal(t, tc.want, keepHeld(h, tc.reports, tc.slots, now.Add(tc.age)))
+		})
+	}
+}
+
+func TestContentRouterLateAttachDoesNotDelayRelease(t *testing.T) {
+	s := &Server{}
+	s.router = newContentRouter(s, s.release, s.bufferReferenced, func(string) bool { return true })
+	r := &s.router
+	_, a := r.attach("A")
+	r.publish(solid(1), damage{full: true})
+	now := time.Unix(100, 0)
+	r.hold(heldBuffer{window: 1, after: r.seq(1), at: now})
+	r.publish(solid(1), damage{full: true})
+	_, b := r.attach("B")
+	require.NotEqual(t, a.(*contentLink).slot, b.(*contentLink).slot)
+	require.Equal(t, linkMask(1), r.held[0].targets)
+	require.False(t, r.settle(now, []ports.OutputPresented{{Output: "A", Seen: map[domain.WindowID]uint64{1: r.seq(1)}}}), "late output without a report must not delay release")
+	r.publish(domain.SurfaceContent{ID: 1}, damage{})
+	require.NotContains(t, r.delivered, domain.WindowID(1), "empty content clears delivered entry")
 }

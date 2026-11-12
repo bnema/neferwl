@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"math/bits"
 	"slices"
 	"sync/atomic"
 
@@ -27,6 +28,7 @@ const batchItems = 8
 type contentLink struct {
 	s    *Server
 	name string
+	slot uint
 	in   chan *domain.ContentBatch
 	free chan *domain.ContentBatch
 	cur  *domain.ContentBatch
@@ -112,13 +114,22 @@ func (r *contentRouter) flushPending() {
 // so the output starts with all of them drawn. Display goroutine, or before
 // Run.
 func (r *contentRouter) attach(name string) (<-chan *domain.ContentBatch, ports.ContentReturn) {
-	for i, old := range r.links {
+	for _, old := range r.links {
 		if old.name == name {
-			r.links = slices.Delete(r.links, i, i+1)
+			r.detach(old)
 			break
 		}
 	}
-	l := &contentLink{
+	var used linkMask
+	for _, l := range r.links {
+		used |= linkMask(1) << l.slot
+	}
+	if used == ^linkMask(0) {
+		r.server.log.Error().Str("output", name).Msg("too many content outputs (maximum 64)")
+		return nil, nil
+	}
+	slot := uint(bits.TrailingZeros64(uint64(^used)))
+	l := &contentLink{slot: slot,
 		s:    r.server,
 		name: name,
 		in:   make(chan *domain.ContentBatch, 1),
@@ -129,6 +140,7 @@ func (r *contentRouter) attach(name string) (<-chan *domain.ContentBatch, ports.
 	}
 	l.cur = &domain.ContentBatch{Items: make([]domain.SurfaceContent, 0, max(batchItems, len(r.latest)))}
 	for _, c := range r.latest {
+		r.delivered[c.ID] |= linkMask(1) << slot
 		l.add(c)
 	}
 	r.links = append(r.links, l)
@@ -147,6 +159,15 @@ func (r *contentRouter) detach(ret ports.ContentReturn) {
 	}
 	if i := slices.Index(r.links, l); i >= 0 {
 		r.links = slices.Delete(r.links, i, i+1)
+		bit := linkMask(1) << l.slot
+		for id, mask := range r.delivered {
+			r.delivered[id] = mask &^ bit
+		}
+		for i := range r.held {
+			r.held[i].targets &^= bit
+		}
+		r.reports[l.name].Snapshot.Release()
+		delete(r.reports, l.name)
 	}
 }
 

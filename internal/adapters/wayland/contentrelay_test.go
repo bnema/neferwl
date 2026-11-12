@@ -12,7 +12,7 @@ import (
 // Return. The server must not be running yet.
 func relayContents(t *testing.T, s *Server) <-chan domain.SurfaceContent {
 	t.Helper()
-	in, ret := s.attachOutput("TEST-1")
+	in, ret := s.attachOutput("HEADLESS-1")
 	out := make(chan domain.SurfaceContent, 64)
 	stop := make(chan struct{})
 	flush := make(chan chan struct{})

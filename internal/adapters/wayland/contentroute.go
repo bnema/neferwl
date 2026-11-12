@@ -7,23 +7,27 @@ import (
 	"time"
 )
 
+type linkMask uint64
+
 // contentRouter owns content delivery state on the display goroutine.
 type contentRouter struct {
-	held       []heldBuffer
-	heldLive   []ports.OutputPresented
-	reports    map[string]ports.OutputPresented
-	release    func(*wayland.Buffer, syncHold)
-	referenced func(*wayland.Buffer) bool
-	live       func(string) bool
-	server     *Server // Return posts back to the display through this server.
-	links      []*contentLink
-	latest     map[domain.WindowID]domain.SurfaceContent
-	contentSeq map[domain.WindowID]uint64
-	damage     map[domain.WindowID][]domain.SeqDamage
+	held        []heldBuffer
+	heldLive    []ports.OutputPresented
+	reportSlots []linkMask
+	delivered   map[domain.WindowID]linkMask
+	reports     map[string]ports.OutputPresented
+	release     func(*wayland.Buffer, syncHold)
+	referenced  func(*wayland.Buffer) bool
+	live        func(string) bool
+	server      *Server // Return posts back to the display through this server.
+	links       []*contentLink
+	latest      map[domain.WindowID]domain.SurfaceContent
+	contentSeq  map[domain.WindowID]uint64
+	damage      map[domain.WindowID][]domain.SeqDamage
 }
 
 func newContentRouter(s *Server, release func(*wayland.Buffer, syncHold), referenced func(*wayland.Buffer) bool, live func(string) bool) contentRouter {
-	return contentRouter{server: s, release: release, referenced: referenced, live: live, reports: make(map[string]ports.OutputPresented), latest: make(map[domain.WindowID]domain.SurfaceContent), contentSeq: make(map[domain.WindowID]uint64), damage: make(map[domain.WindowID][]domain.SeqDamage)}
+	return contentRouter{delivered: make(map[domain.WindowID]linkMask), server: s, release: release, referenced: referenced, live: live, reports: make(map[string]ports.OutputPresented), latest: make(map[domain.WindowID]domain.SurfaceContent), contentSeq: make(map[domain.WindowID]uint64), damage: make(map[domain.WindowID][]domain.SeqDamage)}
 }
 
 func (r *contentRouter) seq(id domain.WindowID) uint64 { return r.contentSeq[id] }
@@ -59,12 +63,21 @@ func (r *contentRouter) publish(c domain.SurfaceContent, d damage) domain.Surfac
 	}
 	for _, l := range r.links {
 		l.add(c)
+		if !c.Empty() {
+			r.delivered[c.ID] |= linkMask(1) << l.slot
+		}
 		r.flushLink(l)
+	}
+	if c.Empty() {
+		delete(r.delivered, c.ID)
 	}
 	return c
 }
 
-func (r *contentRouter) hold(h heldBuffer) { r.held = append(r.held, h) }
+func (r *contentRouter) hold(h heldBuffer) {
+	h.targets = r.delivered[h.window]
+	r.held = append(r.held, h)
+}
 
 // settle records the output reports and releases the buffers no
 // output reads. Every output reads every window's content, so a buffer
@@ -84,14 +97,24 @@ func (r *contentRouter) settle(now time.Time, reports []ports.OutputPresented) b
 			delete(r.reports, name)
 		}
 	}
-	for _, r := range r.reports {
-		live = append(live, r)
+	slots := r.reportSlots[:0]
+	for _, report := range r.reports {
+		live = append(live, report)
+		var slot linkMask
+		for _, l := range r.links {
+			if l.name == report.Output {
+				slot = linkMask(1) << l.slot
+				break
+			}
+		}
+		slots = append(slots, slot)
 	}
+	r.reportSlots = slots
 	// keepHeld only reads live: the scratch holds nothing across calls.
 	r.heldLive = live
 	kept := r.held[:0]
 	for _, h := range r.held {
-		if r.referenced(h.res) || keepHeld(h, live, now) {
+		if r.referenced(h.res) || keepHeld(h, live, slots, now) {
 			kept = append(kept, h)
 			continue
 		}
