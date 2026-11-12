@@ -241,6 +241,9 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 		}
 		delete(s.hdrOutputs, o.name())
 		delete(s.colorIdentity, o.name())
+		// Gone for good: a later output of this name starts without a route.
+		// (A same-name replace by attach keeps it.)
+		delete(s.router.routes, o.name())
 		s.outputGone(o)
 		s.log.Info().Str("output", o.name()).Msg("output removed")
 		for _, l := range s.layers {

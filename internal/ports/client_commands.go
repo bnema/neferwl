@@ -248,7 +248,9 @@ func (WatchStats) clientCommand() {}
 const StatsInterval = 500 * time.Millisecond
 
 // SetContentRoutes carries core output membership decisions to wayland.
-// Like SetOutputs, it is epoch-independent inventory, not an input grant.
+// It is epoch-independent inventory, not an input grant: core never resends
+// it, so wayland applies it even inside a SecurityCommand envelope whose
+// epoch is stale.
 type SetContentRoutes struct{ Routes []domain.ContentRoute }
 
 func (SetContentRoutes) clientCommand() {}

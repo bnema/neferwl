@@ -11,6 +11,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 )
 
 // linkServer is a running server with no client, to publish contents on its
@@ -685,4 +686,34 @@ func TestContentRoutedPublishAllocations(t *testing.T) {
 	if allocs := testing.AllocsPerRun(200, cycle); allocs != 0 {
 		t.Errorf("routed publish cycle: %.2f allocs, want 0", allocs)
 	}
+}
+
+func TestContentRouteForgottenWithRemovedOutputAcceptsNewGeneration(t *testing.T) {
+	g := newRouterRig(t)
+	g.attach("A")
+	g.route("A", 9, 1)
+	g.take("A")
+	g.r.publish(solid(1), damage{full: true})
+	g.take("A")
+	g.r.detach(g.ret["A"])
+	delete(g.r.routes, "A") // what setOutputs does when the output is removed
+	g.attach("A")
+	require.Nil(t, g.take("A"), "no stale route applied")
+	g.route("A", 2, 1)
+	b := g.take("A")
+	require.NotNil(t, b)
+	require.Equal(t, uint64(2), b.Routes)
+	require.Equal(t, map[domain.WindowID]uint64{1: 1}, itemSeqs(b))
+}
+
+func TestApplyContentRoutesInStaleEnvelope(t *testing.T) {
+	s := &Server{}
+	s.router = newContentRouter(s, s.release, s.bufferReferenced, func(string) bool { return true })
+	security := portsmocks.NewMockSessionSecurity(t)
+	security.EXPECT().Snapshot().Return(domain.SecurityState{Generation: 8}).Maybe()
+	s.security = security
+	_, _ = s.router.attach("A")
+	s.apply(ports.SecurityCommand{State: domain.SecurityState{Generation: 7}, Command: ports.SetContentRoutes{Routes: []domain.ContentRoute{{Output: "A", Gen: 3, Windows: []domain.WindowID{1}}}}})
+	require.Equal(t, uint64(3), s.router.routes["A"].Gen)
+	require.Equal(t, uint64(3), s.router.links[0].gen)
 }

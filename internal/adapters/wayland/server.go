@@ -781,6 +781,11 @@ func (s *Server) emitContent(c domain.SurfaceContent, d damage) {
 
 func (s *Server) apply(cmd ports.ClientCommand) {
 	if envelope, ok := cmd.(ports.SecurityCommand); ok {
+		if routes, ok := envelope.Command.(ports.SetContentRoutes); ok {
+			// Core sends routes once: a stale owner epoch must not drop them.
+			s.router.setRoutes(routes.Routes)
+			return
+		}
 		if s.security == nil || envelope.State != s.security.Snapshot() {
 			return
 		}
