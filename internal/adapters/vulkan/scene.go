@@ -12,10 +12,11 @@ import (
 // sceneWalk turns one scene into quads in paint order, copying new wl_shm
 // content into GPU buffers on the way. It lives for one frame.
 type sceneWalk struct {
-	r        *Renderer
-	s        domain.Scene
-	contents map[domain.WindowID]domain.SurfaceContent
-	dmg      *damageRegion
+	r                    *Renderer
+	s                    domain.Scene
+	contents             map[domain.WindowID]domain.SurfaceContent
+	dmg                  *damageRegion
+	bg, active, inactive [3]uint8
 	// scale maps the scene's logical pixels to scene-physical ones.
 	scale float64
 	// zoom shrinks the surfaces of the window being placed: an overview
@@ -46,6 +47,7 @@ func (r *Renderer) draws(s domain.Scene, contents map[domain.WindowID]domain.Sur
 	// a rotated output); orient maps the draws to the target afterwards.
 	sw, sh := r.sceneSize(s.Transform)
 	w := &sceneWalk{r: r, s: s, contents: contents, dmg: dmg, scale: s.Scale, zoom: 1, alpha: 1, bounds: image.Rect(0, 0, sw, sh), draws: r.scratchDraws[:0]}
+	w.bg, w.active, w.inactive = parseColor(s.Background), parseColor(s.Border.Active), parseColor(s.Border.Inactive)
 	r.scratchCovers = r.scratchCovers[:0]
 	if w.scale <= 0 {
 		w.scale = 1
@@ -150,7 +152,7 @@ func (w *sceneWalk) dropHints() {
 	if len(w.s.DropHints) == 0 {
 		return
 	}
-	col := parseColor(w.s.Border.Active)
+	col := w.active
 	for _, r := range w.s.DropHints {
 		if r.W > 0 && r.H > 0 {
 			w.fill(w.physRect(r.X, r.Y, r.W, r.H), col)
@@ -324,7 +326,7 @@ func (w *sceneWalk) windows() {
 		}
 		start := len(w.draws)
 		// Until its first buffer, a window shows the background: no flash.
-		w.fill(body, parseColor(w.s.Background))
+		w.fill(body, w.bg)
 		filled := len(w.draws) > start
 		if !content.Empty() {
 			// An animating frame zooms its content (Zoom); a card draws
@@ -405,7 +407,7 @@ func (w *sceneWalk) tileSeparators() {
 	w.bounds = w.tileBounds
 	w.separators(0)
 	if o := w.s.Outline; o != nil {
-		w.roundedInnerBorder(o.Rect, o.Width, o.Radius, parseColor(w.s.Border.Active))
+		w.roundedInnerBorder(o.Rect, o.Width, o.Radius, w.active)
 	}
 	w.bounds = b
 }
@@ -433,12 +435,12 @@ func (w *sceneWalk) separators(id domain.WindowID) {
 		if sep.Window != id {
 			continue
 		}
-		col := w.s.Border.Inactive
+		col, color := w.s.Border.Inactive, w.inactive
 		if sep.Active {
-			col = w.s.Border.Active
+			col, color = w.s.Border.Active, w.active
 		}
 		if col != "" {
-			w.fill(w.physRect(sep.Rect.X, sep.Rect.Y, sep.Rect.W, sep.Rect.H), parseColor(col))
+			w.fill(w.physRect(sep.Rect.X, sep.Rect.Y, sep.Rect.W, sep.Rect.H), color)
 		}
 	}
 }
