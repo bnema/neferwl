@@ -12,6 +12,13 @@ import (
 // Return. The server must not be running yet.
 func relayContents(t *testing.T, s *Server) <-chan domain.SurfaceContent {
 	t.Helper()
+	// Fixture wiring: the output lists the window IDs the tests create (core
+	// decides this in production), with generation 0 so no gate batch is sent.
+	ids := make([]domain.WindowID, 512)
+	for i := range ids {
+		ids[i] = domain.WindowID(i + 1)
+	}
+	s.router.setRoutes([]domain.ContentRoute{{Output: "HEADLESS-1", Windows: ids}})
 	in, ret := s.attachOutput("HEADLESS-1")
 	out := make(chan domain.SurfaceContent, 64)
 	stop := make(chan struct{})

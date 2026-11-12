@@ -32,6 +32,10 @@ type contentLink struct {
 	in   chan *domain.ContentBatch
 	free chan *domain.ContentBatch
 	cur  *domain.ContentBatch
+	// gen is the newest route generation core sent for the output; genSent
+	// the one the last batch carried. A newer gen sends a batch even with no
+	// item: the output holds its scenes of that generation for it.
+	gen, genSent uint64
 	// pending: cur holds contents that could not be sent yet (the channel is
 	// full, or every batch is out). Return only wakes the display when it is
 	// set, so a steady stream of frames costs the display no extra wake.
@@ -71,6 +75,7 @@ func (l *contentLink) try() bool {
 	}
 	select {
 	case next := <-l.free:
+		l.cur.Routes, l.genSent = l.gen, l.gen
 		l.in <- l.cur // empty, and only this goroutine sends
 		l.cur = next
 		return true
@@ -82,7 +87,7 @@ func (l *contentLink) try() bool {
 // flushLink sends l's batch when the output can take it; otherwise l keeps
 // filling it and asks Return for a wake.
 func (r *contentRouter) flushLink(l *contentLink) {
-	if len(l.cur.Items) == 0 {
+	if len(l.cur.Items) == 0 && l.gen <= l.genSent {
 		l.pending.Store(false)
 		return
 	}
@@ -110,8 +115,8 @@ func (r *contentRouter) flushPending() {
 // attachOutput starts feeding the output called name; a link of the same name
 // is replaced (dropped from the feed: its handle then detaches nothing). The
 // returned ContentReturn is the link, and the handle for detachOutput. The
-// first batch holds the latest content of every live window,
-// so the output starts with all of them drawn. Display goroutine, or before
+// first batch holds the latest content of every live window the output's
+// route lists (none before core sent one). Display goroutine, or before
 // Run.
 func (r *contentRouter) attach(name string) (<-chan *domain.ContentBatch, ports.ContentReturn) {
 	for _, old := range r.links {
@@ -139,11 +144,12 @@ func (r *contentRouter) attach(name string) (<-chan *domain.ContentBatch, ports.
 		l.free <- &domain.ContentBatch{Items: make([]domain.SurfaceContent, 0, batchItems)}
 	}
 	l.cur = &domain.ContentBatch{Items: make([]domain.SurfaceContent, 0, max(batchItems, len(r.latest)))}
-	for _, c := range r.latest {
-		r.delivered[c.ID] |= linkMask(1) << slot
-		l.add(c)
-	}
 	r.links = append(r.links, l)
+	// An output with no route yet gets nothing; the first route delivers.
+	if rt, ok := r.routes[name]; ok {
+		r.applyRoute(l, nil, rt.Windows)
+		l.gen = rt.Gen
+	}
 	r.flushLink(l)
 	return l.in, l
 }
@@ -161,7 +167,18 @@ func (r *contentRouter) detach(ret ports.ContentReturn) {
 		r.links = slices.Delete(r.links, i, i+1)
 		bit := linkMask(1) << l.slot
 		for id, mask := range r.delivered {
-			r.delivered[id] = mask &^ bit
+			if mask &^= bit; mask == 0 {
+				delete(r.delivered, id)
+			} else {
+				r.delivered[id] = mask
+			}
+		}
+		for id, mask := range r.routed {
+			if mask &^= bit; mask == 0 {
+				delete(r.routed, id)
+			} else {
+				r.routed[id] = mask
+			}
 		}
 		for i := range r.held {
 			r.held[i].targets &^= bit

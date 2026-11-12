@@ -29,6 +29,15 @@ func linkServer(t *testing.T) *Server {
 	return s
 }
 
+// route is fixture wiring: core's decision that the output called name lists
+// ids (generation 0: no gate batch). Before the attach it is stored for it.
+func (s *Server) route(t *testing.T, name string, ids ...domain.WindowID) {
+	t.Helper()
+	if !s.display.Do(func() { s.router.setRoutes([]domain.ContentRoute{{Output: name, Windows: ids}}) }) {
+		t.Fatal("display stopped")
+	}
+}
+
 func solid(id domain.WindowID) domain.SurfaceContent {
 	return domain.SurfaceContent{ID: id, Solid: &domain.SolidColor{}}
 }
@@ -76,6 +85,7 @@ func noBatch(t *testing.T, s *Server, in <-chan *domain.ContentBatch) {
 // FIFO; the release accounting needs only the newest Seq.)
 func TestContentBatchKeepsLatestPerWindow(t *testing.T) {
 	s := linkServer(t)
+	s.route(t, "A", 1, 2)
 	in, ret := s.AttachOutput("A")
 	s.publish(t, solid(1))                     // sent at once
 	s.publish(t, solid(1), solid(2), solid(1)) // wait for the output
@@ -111,6 +121,7 @@ func TestContentBatchKeepsLatestPerWindow(t *testing.T) {
 func TestContentBatchAttachSeedsLiveWindows(t *testing.T) {
 	s := linkServer(t)
 	s.publish(t, solid(1), solid(2), solid(3), domain.SurfaceContent{ID: 2}, solid(1))
+	s.route(t, "A", 1, 2, 3)
 	in, _ := s.AttachOutput("A")
 	b := nextBatch(t, in)
 	got := map[domain.WindowID]uint64{}
@@ -130,6 +141,7 @@ func TestContentBatchAttachSeedsLiveWindows(t *testing.T) {
 // buffers) and removes the window from what a later output starts with.
 func TestContentBatchDeliversEmpty(t *testing.T) {
 	s := linkServer(t)
+	s.route(t, "A", 1)
 	in, ret := s.AttachOutput("A")
 	s.publish(t, solid(1))
 	b := nextBatch(t, in)
@@ -163,6 +175,8 @@ func TestContentBatchDeliversEmpty(t *testing.T) {
 // only, and its output may still Return what it holds.
 func TestContentBatchDetach(t *testing.T) {
 	s := linkServer(t)
+	s.route(t, "A", 1)
+	s.route(t, "B", 1)
 	inA, retA := s.AttachOutput("A")
 	inB, _ := s.AttachOutput("B")
 	s.publish(t, solid(1))
@@ -196,6 +210,7 @@ func TestContentBatchDetach(t *testing.T) {
 // handle leaves the new one fed.
 func TestDetachOldHandleKeepsReplacedLink(t *testing.T) {
 	s := linkServer(t)
+	s.route(t, "A", 1)
 	_, oldRet := s.AttachOutput("A")
 	in, _ := s.AttachOutput("A")
 	s.DetachOutput(oldRet)
@@ -217,6 +232,7 @@ func TestContentBatchCycleAllocations(t *testing.T) {
 	s := &Server{
 		router: newContentRouter(nil, nil, nil, nil),
 	}
+	s.router.setRoutes([]domain.ContentRoute{{Output: "A", Windows: []domain.WindowID{1, 2}}})
 	in, ret := s.attachOutput("A")
 	c := solid(1)
 	other := solid(2)
@@ -255,6 +271,11 @@ func TestContentBatchAttachReplaysLargeSet(t *testing.T) {
 		all = append(all, solid(domain.WindowID(id)))
 	}
 	s.publish(t, all...)
+	listed := make([]domain.WindowID, windows)
+	for i := range listed {
+		listed[i] = domain.WindowID(i + 1)
+	}
+	s.route(t, "A", listed...)
 	attached := make(chan (<-chan *domain.ContentBatch), 1)
 	go func() { in, _ := s.AttachOutput("A"); attached <- in }()
 	var in <-chan *domain.ContentBatch
@@ -282,6 +303,7 @@ func TestContentBatchAttachReplaysLargeSet(t *testing.T) {
 //testpolicy:realtime channel fed by the real display goroutine (Server.Run on libwayland epoll)
 func TestContentBatchHandshakeNeverStrandsContent(t *testing.T) {
 	s := linkServer(t)
+	s.route(t, "A", 1, 2, 3, 4)
 	in, ret := s.AttachOutput("A")
 	const windows, rounds = 4, 3000
 	progress := make(chan struct{}, 1)
@@ -384,6 +406,11 @@ func TestContentRouterSlotLimitAndReuse(t *testing.T) {
 	in, ret := r.attach("overflow")
 	require.Nil(t, in)
 	require.Nil(t, ret)
+	routes := make([]domain.ContentRoute, 0, 64)
+	for i := range 64 {
+		routes = append(routes, domain.ContentRoute{Output: fmt.Sprintf("output-%d", i), Windows: []domain.WindowID{1}})
+	}
+	r.setRoutes(routes)
 	r.publish(solid(1), damage{})
 	require.Equal(t, ^linkMask(0), r.delivered[1])
 	now := time.Unix(100, 0)
@@ -399,4 +426,225 @@ func TestContentRouterSlotLimitAndReuse(t *testing.T) {
 	require.False(t, r.settle(now, nil), "old target cannot survive slot reuse")
 	r.detach(handles[17])
 	require.Len(t, r.links, 64, "stale handle must not detach replacement")
+}
+
+// routerRig is a content router with no display: batches are taken inline,
+// like an output that keeps up.
+type routerRig struct {
+	t   *testing.T
+	r   *contentRouter
+	in  map[string]<-chan *domain.ContentBatch
+	ret map[string]ports.ContentReturn
+}
+
+func newRouterRig(t *testing.T) *routerRig {
+	t.Helper()
+	s := &Server{}
+	s.router = newContentRouter(s, s.release, s.bufferReferenced, func(string) bool { return true })
+	return &routerRig{t: t, r: &s.router, in: map[string]<-chan *domain.ContentBatch{}, ret: map[string]ports.ContentReturn{}}
+}
+
+func (g *routerRig) attach(name string) {
+	g.t.Helper()
+	in, ret := g.r.attach(name)
+	require.NotNil(g.t, in)
+	g.in[name], g.ret[name] = in, ret
+}
+
+func (g *routerRig) route(name string, gen uint64, ids ...domain.WindowID) {
+	g.r.setRoutes([]domain.ContentRoute{{Output: name, Gen: gen, Windows: ids}})
+}
+
+// take returns what the output has been sent (nil: no batch), after giving
+// the batch back.
+func (g *routerRig) take(name string) *domain.ContentBatch {
+	g.t.Helper()
+	select {
+	case b := <-g.in[name]:
+		got := &domain.ContentBatch{Items: append([]domain.SurfaceContent(nil), b.Items...), Routes: b.Routes}
+		b.Reset()
+		g.ret[name].Return(b)
+		return got
+	default:
+		return nil
+	}
+}
+
+func itemSeqs(b *domain.ContentBatch) map[domain.WindowID]uint64 {
+	got := map[domain.WindowID]uint64{}
+	if b == nil {
+		return got
+	}
+	for _, c := range b.Items {
+		got[c.ID] = c.Seq
+	}
+	return got
+}
+
+func TestContentRoutedOnlyToListingLinks(t *testing.T) {
+	g := newRouterRig(t)
+	g.attach("A")
+	g.attach("B")
+	g.route("A", 1, 1)
+	g.route("B", 1, 2)
+	g.take("A")
+	g.take("B") // generation batches
+	g.r.publish(solid(1), damage{full: true})
+	g.r.publish(solid(2), damage{full: true})
+	require.Equal(t, map[domain.WindowID]uint64{1: 1}, itemSeqs(g.take("A")))
+	require.Equal(t, map[domain.WindowID]uint64{2: 1}, itemSeqs(g.take("B")))
+}
+
+func TestContentAttachBeforeAnyRouteDeliversNothing(t *testing.T) {
+	g := newRouterRig(t)
+	g.r.publish(solid(1), damage{full: true})
+	g.attach("A")
+	require.Nil(t, g.take("A"))
+	g.r.publish(solid(1), damage{full: true})
+	require.Nil(t, g.take("A"), "still no route")
+	g.route("A", 1, 1)
+	b := g.take("A")
+	require.Equal(t, map[domain.WindowID]uint64{1: 2}, itemSeqs(b))
+	require.Equal(t, uint64(1), b.Routes)
+}
+
+func TestContentJoinResendsLatestWithGeneration(t *testing.T) {
+	g := newRouterRig(t)
+	g.attach("A")
+	g.attach("B")
+	g.route("A", 1, 1)
+	g.take("A")
+	g.r.publish(solid(1), damage{full: true})
+	g.take("A")
+	require.Nil(t, g.take("B"))
+	g.route("B", 1, 1)
+	b := g.take("B")
+	require.Equal(t, map[domain.WindowID]uint64{1: 1}, itemSeqs(b))
+	require.Equal(t, uint64(1), b.Routes)
+	require.Equal(t, linkMask(3), g.r.delivered[1])
+}
+
+func TestContentGenerationWithoutJoinYieldsEmptyBatch(t *testing.T) {
+	g := newRouterRig(t)
+	g.attach("A")
+	g.route("A", 3, 7) // window 7 has no content yet
+	b := g.take("A")
+	require.NotNil(t, b)
+	require.Empty(t, b.Items)
+	require.Equal(t, uint64(3), b.Routes)
+	g.route("A", 3, 7, 8) // same generation: nothing new to say
+	require.Nil(t, g.take("A"))
+	g.route("A", 4, 7, 8, 9)
+	b = g.take("A")
+	require.NotNil(t, b)
+	require.Equal(t, uint64(4), b.Routes)
+}
+
+func TestContentLazyLeaveWithdrawsAtNextContent(t *testing.T) {
+	g := newRouterRig(t)
+	g.attach("A")
+	g.attach("B")
+	g.route("A", 1, 1)
+	g.take("A")
+	g.r.publish(solid(1), damage{full: true})
+	g.take("A")
+	g.route("B", 1, 1) // window 1 moves to B ...
+	g.take("B")
+	g.route("A", 1) // ... and leaves A: nothing is sent at once
+	require.Nil(t, g.take("A"))
+	require.Equal(t, linkMask(3), g.r.delivered[1])
+	c := solid(1)
+	c.Seq = 0
+	g.r.publish(c, damage{full: true})
+	a, b := g.take("A"), g.take("B")
+	require.Len(t, a.Items, 1)
+	require.True(t, a.Items[0].Empty(), "the leaver gets a withdraw")
+	require.Equal(t, uint64(2), a.Items[0].Seq, "with the Seq of the real content")
+	require.Len(t, b.Items, 1)
+	require.False(t, b.Items[0].Empty())
+	require.Equal(t, uint64(2), b.Items[0].Seq)
+	require.Equal(t, linkMask(2), g.r.delivered[1])
+	g.r.publish(solid(1), damage{full: true})
+	require.Nil(t, g.take("A"), "a link that left and withdrew hears nothing more")
+}
+
+func TestContentRejoinBeforeNextCommitSendsNoItem(t *testing.T) {
+	g := newRouterRig(t)
+	g.attach("A")
+	g.route("A", 1, 1)
+	g.take("A")
+	g.r.publish(solid(1), damage{full: true})
+	g.take("A")
+	g.route("A", 1)
+	g.route("A", 2, 1)
+	b := g.take("A")
+	require.NotNil(t, b, "the generation still goes")
+	require.Empty(t, b.Items)
+	require.Equal(t, uint64(2), b.Routes)
+}
+
+func TestContentUnmapReachesPendingLeaver(t *testing.T) {
+	g := newRouterRig(t)
+	g.attach("A")
+	g.attach("B")
+	g.route("A", 1, 1)
+	g.route("B", 1, 1)
+	g.take("A")
+	g.take("B")
+	g.r.publish(solid(1), damage{full: true})
+	g.take("A")
+	g.take("B")
+	g.route("A", 1) // pending leaver
+	g.take("A")
+	g.r.publish(domain.SurfaceContent{ID: 1}, damage{full: true})
+	for _, name := range []string{"A", "B"} {
+		b := g.take(name)
+		require.Len(t, b.Items, 1, name)
+		require.True(t, b.Items[0].Empty(), name)
+		require.Equal(t, uint64(2), b.Items[0].Seq, name)
+	}
+	require.NotContains(t, g.r.delivered, domain.WindowID(1))
+}
+
+// A buffer replaced while a leave is pending is released only after the
+// leaver saw the withdraw, or after heldTimeout.
+func TestContentBufferReplacedDuringPendingLeave(t *testing.T) {
+	g := newRouterRig(t)
+	g.attach("A")
+	g.attach("B")
+	g.route("A", 1, 1)
+	g.route("B", 1, 1)
+	g.r.publish(solid(1), damage{full: true})
+	g.route("A", 2) // A leaves lazily
+	now := time.Unix(100, 0)
+	// The buffer is replaced: targets are read before the replacing content.
+	g.r.hold(heldBuffer{window: 1, after: g.r.seq(1), at: now})
+	require.Equal(t, linkMask(3), g.r.held[0].targets, "includes the pending leaver")
+	g.r.publish(solid(1), damage{full: true}) // Seq 2: real content on B, withdraw on A
+	seen := func(seq uint64) []ports.OutputPresented {
+		m := map[domain.WindowID]uint64{1: seq}
+		return []ports.OutputPresented{{Output: "A", Seen: m}, {Output: "B", Seen: m}}
+	}
+	require.True(t, g.r.settle(now, seen(1)), "neither saw a later content")
+	onlyB := []ports.OutputPresented{{Output: "A", Seen: map[domain.WindowID]uint64{1: 1}}, {Output: "B", Seen: map[domain.WindowID]uint64{1: 2}}}
+	require.True(t, g.r.settle(now, onlyB), "the leaver has not seen the withdraw")
+	require.False(t, g.r.settle(now, seen(2)), "both saw a later content")
+
+	g.r.hold(heldBuffer{window: 1, after: g.r.seq(1), at: now})
+	require.True(t, g.r.settle(now.Add(heldTimeout-time.Millisecond), onlyB))
+	require.False(t, g.r.settle(now.Add(heldTimeout), onlyB), "heldTimeout releases")
+}
+
+func TestContentLeaverQueuedHoldsPastTimeout(t *testing.T) {
+	g := newRouterRig(t)
+	g.attach("A")
+	g.route("A", 1, 1)
+	g.r.publish(solid(1), damage{full: true})
+	g.route("A", 2)
+	now := time.Unix(100, 0)
+	g.r.hold(heldBuffer{window: 1, id: 9, after: g.r.seq(1), at: now})
+	g.r.publish(solid(1), damage{full: true})
+	queued := []ports.OutputPresented{{Output: "A", Queued: 9, Seen: map[domain.WindowID]uint64{1: 2}}}
+	require.True(t, g.r.settle(now.Add(time.Hour), queued), "a queued buffer holds with no timeout")
+	require.False(t, g.r.settle(now.Add(time.Hour), []ports.OutputPresented{{Output: "A", Seen: map[domain.WindowID]uint64{1: 2}}}))
 }

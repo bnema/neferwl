@@ -843,7 +843,7 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		// scanout eligibility, including the first assignment.
 		s.notifyColorFeedback()
 	case ports.SetContentRoutes:
-	// Applied by the router once output generation gates are wired.
+		s.router.setRoutes(c.Routes)
 	case ports.SetOutputs:
 		s.setOutputs(c)
 		off := map[string]bool{}

@@ -323,6 +323,8 @@ func TestContentRouterLateAttachDoesNotDelayRelease(t *testing.T) {
 	s := &Server{}
 	s.router = newContentRouter(s, s.release, s.bufferReferenced, func(string) bool { return true })
 	r := &s.router
+	// Fixture wiring: core lists window 1 on output A.
+	r.setRoutes([]domain.ContentRoute{{Output: "A", Windows: []domain.WindowID{1}}})
 	_, a := r.attach("A")
 	r.publish(solid(1), damage{full: true})
 	now := time.Unix(100, 0)

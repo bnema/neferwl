@@ -1,6 +1,8 @@
 package wayland
 
 import (
+	"slices"
+
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
@@ -15,6 +17,11 @@ type contentRouter struct {
 	heldLive    []ports.OutputPresented
 	reportSlots []linkMask
 	delivered   map[domain.WindowID]linkMask
+	// routed holds, per window, the links whose output lists it (core's
+	// decision, ports.SetContentRoutes); routes the latest route of every
+	// output name, also of outputs not attached yet.
+	routed map[domain.WindowID]linkMask
+	routes map[string]domain.ContentRoute
 	reports     map[string]ports.OutputPresented
 	release     func(*wayland.Buffer, syncHold)
 	referenced  func(*wayland.Buffer) bool
@@ -27,12 +34,14 @@ type contentRouter struct {
 }
 
 func newContentRouter(s *Server, release func(*wayland.Buffer, syncHold), referenced func(*wayland.Buffer) bool, live func(string) bool) contentRouter {
-	return contentRouter{delivered: make(map[domain.WindowID]linkMask), server: s, release: release, referenced: referenced, live: live, reports: make(map[string]ports.OutputPresented), latest: make(map[domain.WindowID]domain.SurfaceContent), contentSeq: make(map[domain.WindowID]uint64), damage: make(map[domain.WindowID][]domain.SeqDamage)}
+	return contentRouter{delivered: make(map[domain.WindowID]linkMask), routed: make(map[domain.WindowID]linkMask), routes: make(map[string]domain.ContentRoute), server: s, release: release, referenced: referenced, live: live, reports: make(map[string]ports.OutputPresented), latest: make(map[domain.WindowID]domain.SurfaceContent), contentSeq: make(map[domain.WindowID]uint64), damage: make(map[domain.WindowID][]domain.SeqDamage)}
 }
 
 func (r *contentRouter) seq(id domain.WindowID) uint64 { return r.contentSeq[id] }
 
-// publish stamps immutable damage history and feeds every attached link.
+// publish stamps immutable damage history and feeds the links that list the
+// window (D15.5): routed links, and links that still hold an earlier content
+// (delivered) but no longer list it, which get a withdraw.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter Moves adapter-owned content delivery bookkeeping on the display owner goroutine; no policy decision.
 func (r *contentRouter) publish(c domain.SurfaceContent, d damage) domain.SurfaceContent {
@@ -61,17 +70,86 @@ func (r *contentRouter) publish(c domain.SurfaceContent, d damage) domain.Surfac
 		r.damage[c.ID] = h
 		r.latest[c.ID] = c
 	}
+	routed, delivered := r.routed[c.ID], r.delivered[c.ID]
 	for _, l := range r.links {
-		l.add(c)
-		if !c.Empty() {
-			r.delivered[c.ID] |= linkMask(1) << l.slot
+		bit := linkMask(1) << l.slot
+		switch {
+		case routed&bit != 0 || (delivered&bit != 0 && c.Empty()):
+			l.add(c)
+			if c.Empty() {
+				delivered &^= bit
+			} else {
+				delivered |= bit
+			}
+		case delivered&bit != 0:
+			// Lazy leave: the output drops (or keeps, while its scene still
+			// draws it) the content, and its seen entry retires.
+			l.add(domain.SurfaceContent{ID: c.ID, Seq: c.Seq})
+			delivered &^= bit
+		default:
+			continue
 		}
 		r.flushLink(l)
 	}
-	if c.Empty() {
+	if delivered == 0 {
 		delete(r.delivered, c.ID)
+	} else {
+		r.delivered[c.ID] = delivered
 	}
 	return c
+}
+
+// setRoutes applies core's routes: it stores each, and for an attached
+// output recomputes its routed bits, sends the latest content of every
+// window it joins (D15.6) and the new generation, even with no item.
+func (r *contentRouter) setRoutes(routes []domain.ContentRoute) {
+	for _, rt := range routes {
+		old := r.routes[rt.Output]
+		r.routes[rt.Output] = rt
+		l := r.linkNamed(rt.Output)
+		if l == nil {
+			continue
+		}
+		r.applyRoute(l, old.Windows, rt.Windows)
+		l.gen = max(l.gen, rt.Gen)
+		r.flushLink(l)
+	}
+}
+
+func (r *contentRouter) linkNamed(name string) *contentLink {
+	for _, l := range r.links {
+		if l.name == name {
+			return l
+		}
+	}
+	return nil
+}
+
+// applyRoute moves l's routed bit from the windows of old to those of
+// want (both sorted), and delivers the latest content of each joined window
+// the link does not hold.
+func (r *contentRouter) applyRoute(l *contentLink, old, want []domain.WindowID) {
+	bit := linkMask(1) << l.slot
+	for _, id := range old {
+		if _, ok := slices.BinarySearch(want, id); ok {
+			continue
+		}
+		if m := r.routed[id] &^ bit; m == 0 {
+			delete(r.routed, id)
+		} else {
+			r.routed[id] = m
+		}
+	}
+	for _, id := range want {
+		r.routed[id] |= bit
+		if r.delivered[id]&bit != 0 {
+			continue // still holds it: a re-join before the next commit sends nothing
+		}
+		if c, ok := r.latest[id]; ok {
+			l.add(c)
+			r.delivered[id] |= bit
+		}
+	}
 }
 
 func (r *contentRouter) hold(h heldBuffer) {
