@@ -20,17 +20,17 @@ type contentRouter struct {
 	// routed holds, per window, the links whose output lists it (core's
 	// decision, ports.SetContentRoutes); routes the latest route of every
 	// output name, also of outputs not attached yet.
-	routed map[domain.WindowID]linkMask
-	routes map[string]domain.ContentRoute
-	reports     map[string]ports.OutputPresented
-	release     func(*wayland.Buffer, syncHold)
-	referenced  func(*wayland.Buffer) bool
-	live        func(string) bool
-	server      *Server // Return posts back to the display through this server.
-	links       []*contentLink
-	latest      map[domain.WindowID]domain.SurfaceContent
-	contentSeq  map[domain.WindowID]uint64
-	damage      map[domain.WindowID][]domain.SeqDamage
+	routed     map[domain.WindowID]linkMask
+	routes     map[string]domain.ContentRoute
+	reports    map[string]ports.OutputPresented
+	release    func(*wayland.Buffer, syncHold)
+	referenced func(*wayland.Buffer) bool
+	live       func(string) bool
+	server     *Server // Return posts back to the display through this server.
+	links      []*contentLink
+	latest     map[domain.WindowID]domain.SurfaceContent
+	contentSeq map[domain.WindowID]uint64
+	damage     map[domain.WindowID][]domain.SeqDamage
 }
 
 func newContentRouter(s *Server, release func(*wayland.Buffer, syncHold), referenced func(*wayland.Buffer) bool, live func(string) bool) contentRouter {
@@ -70,7 +70,8 @@ func (r *contentRouter) publish(c domain.SurfaceContent, d damage) domain.Surfac
 		r.damage[c.ID] = h
 		r.latest[c.ID] = c
 	}
-	routed, delivered := r.routed[c.ID], r.delivered[c.ID]
+	routed, before := r.routed[c.ID], r.delivered[c.ID]
+	delivered := before
 	for _, l := range r.links {
 		bit := linkMask(1) << l.slot
 		switch {
@@ -91,10 +92,12 @@ func (r *contentRouter) publish(c domain.SurfaceContent, d damage) domain.Surfac
 		}
 		r.flushLink(l)
 	}
-	if delivered == 0 {
-		delete(r.delivered, c.ID)
-	} else {
-		r.delivered[c.ID] = delivered
+	if delivered != before {
+		if delivered == 0 {
+			delete(r.delivered, c.ID)
+		} else {
+			r.delivered[c.ID] = delivered
+		}
 	}
 	return c
 }
