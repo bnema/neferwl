@@ -57,20 +57,6 @@ var (
 	deviceName          func(dev uintptr) string
 	suspend             func(li uintptr)
 	resume              func(li uintptr) int32
-	pointerDX           func(pev uintptr) float64
-	pointerDY           func(pev uintptr) float64
-	pointerRawDX        func(pev uintptr) float64
-	pointerRawDY        func(pev uintptr) float64
-	pointerAbsX         func(pev uintptr, width uint32) float64
-	pointerAbsY         func(pev uintptr, height uint32) float64
-	scrollValue         func(pev uintptr, axis uint32) float64
-	scrollV120          func(pev uintptr, axis uint32) float64
-	gestureDX           func(gev uintptr) float64
-	gestureDY           func(gev uintptr) float64
-	gestureAccelDX      func(gev uintptr) float64
-	gestureAccelDY      func(gev uintptr) float64
-	gestureScale        func(gev uintptr) float64
-	gestureAngle        func(gev uintptr) float64
 	deviceRef           func(dev uintptr) uintptr
 	deviceUnref         func(dev uintptr) uintptr
 	hasNatural          func(dev uintptr) int32
@@ -89,8 +75,23 @@ var (
 	active              ports.Seat
 )
 
-// sym holds the integer-returning event-path entry points resolved once by load.
+// sym holds the event-path entry points resolved once by load.
 var sym struct {
+	pointerDX      uintptr
+	pointerDY      uintptr
+	pointerRawDX   uintptr
+	pointerRawDY   uintptr
+	pointerAbsX    uintptr
+	pointerAbsY    uintptr
+	scrollValue    uintptr
+	scrollV120     uintptr
+	gestureDX      uintptr
+	gestureDY      uintptr
+	gestureAccelDX uintptr
+	gestureAccelDY uintptr
+	gestureScale   uintptr
+	gestureAngle   uintptr
+
 	dispatch        uintptr
 	getEvent        uintptr
 	eventType       uintptr
@@ -200,6 +201,62 @@ func gestureUsec(gev uintptr) uint64 {
 	return uint64(r1)
 }
 
+func pointerDX(pev uintptr) float64 {
+	return purego.SyscallF6(sym.pointerDX, pev, 0, 0, 0, 0, 0)
+}
+
+func pointerDY(pev uintptr) float64 {
+	return purego.SyscallF6(sym.pointerDY, pev, 0, 0, 0, 0, 0)
+}
+
+func pointerRawDX(pev uintptr) float64 {
+	return purego.SyscallF6(sym.pointerRawDX, pev, 0, 0, 0, 0, 0)
+}
+
+func pointerRawDY(pev uintptr) float64 {
+	return purego.SyscallF6(sym.pointerRawDY, pev, 0, 0, 0, 0, 0)
+}
+
+func pointerAbsX(pev uintptr, width uint32) float64 {
+	return purego.SyscallF6(sym.pointerAbsX, pev, uintptr(width), 0, 0, 0, 0)
+}
+
+func pointerAbsY(pev uintptr, height uint32) float64 {
+	return purego.SyscallF6(sym.pointerAbsY, pev, uintptr(height), 0, 0, 0, 0)
+}
+
+func scrollValue(pev uintptr, axis uint32) float64 {
+	return purego.SyscallF6(sym.scrollValue, pev, uintptr(axis), 0, 0, 0, 0)
+}
+
+func scrollV120(pev uintptr, axis uint32) float64 {
+	return purego.SyscallF6(sym.scrollV120, pev, uintptr(axis), 0, 0, 0, 0)
+}
+
+func gestureDX(gev uintptr) float64 {
+	return purego.SyscallF6(sym.gestureDX, gev, 0, 0, 0, 0, 0)
+}
+
+func gestureDY(gev uintptr) float64 {
+	return purego.SyscallF6(sym.gestureDY, gev, 0, 0, 0, 0, 0)
+}
+
+func gestureAccelDX(gev uintptr) float64 {
+	return purego.SyscallF6(sym.gestureAccelDX, gev, 0, 0, 0, 0, 0)
+}
+
+func gestureAccelDY(gev uintptr) float64 {
+	return purego.SyscallF6(sym.gestureAccelDY, gev, 0, 0, 0, 0, 0)
+}
+
+func gestureScale(gev uintptr) float64 {
+	return purego.SyscallF6(sym.gestureScale, gev, 0, 0, 0, 0, 0)
+}
+
+func gestureAngle(gev uintptr) float64 {
+	return purego.SyscallF6(sym.gestureAngle, gev, 0, 0, 0, 0, 0)
+}
+
 func load() error {
 	loadOnce.Do(func() {
 		udev, err := purego.Dlopen("libudev.so.1", purego.RTLD_NOW|purego.RTLD_LOCAL)
@@ -289,6 +346,62 @@ func load() error {
 			loadErr = fmt.Errorf("resolve libinput_event_gesture_get_time_usec: %w", err)
 			return
 		}
+		if sym.pointerDX, err = purego.Dlsym(lib, "libinput_event_pointer_get_dx"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_pointer_get_dx: %w", err)
+			return
+		}
+		if sym.pointerDY, err = purego.Dlsym(lib, "libinput_event_pointer_get_dy"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_pointer_get_dy: %w", err)
+			return
+		}
+		if sym.pointerRawDX, err = purego.Dlsym(lib, "libinput_event_pointer_get_dx_unaccelerated"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_pointer_get_dx_unaccelerated: %w", err)
+			return
+		}
+		if sym.pointerRawDY, err = purego.Dlsym(lib, "libinput_event_pointer_get_dy_unaccelerated"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_pointer_get_dy_unaccelerated: %w", err)
+			return
+		}
+		if sym.pointerAbsX, err = purego.Dlsym(lib, "libinput_event_pointer_get_absolute_x_transformed"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_pointer_get_absolute_x_transformed: %w", err)
+			return
+		}
+		if sym.pointerAbsY, err = purego.Dlsym(lib, "libinput_event_pointer_get_absolute_y_transformed"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_pointer_get_absolute_y_transformed: %w", err)
+			return
+		}
+		if sym.scrollValue, err = purego.Dlsym(lib, "libinput_event_pointer_get_scroll_value"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_pointer_get_scroll_value: %w", err)
+			return
+		}
+		if sym.scrollV120, err = purego.Dlsym(lib, "libinput_event_pointer_get_scroll_value_v120"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_pointer_get_scroll_value_v120: %w", err)
+			return
+		}
+		if sym.gestureDX, err = purego.Dlsym(lib, "libinput_event_gesture_get_dx_unaccelerated"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_gesture_get_dx_unaccelerated: %w", err)
+			return
+		}
+		if sym.gestureDY, err = purego.Dlsym(lib, "libinput_event_gesture_get_dy_unaccelerated"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_gesture_get_dy_unaccelerated: %w", err)
+			return
+		}
+		if sym.gestureAccelDX, err = purego.Dlsym(lib, "libinput_event_gesture_get_dx"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_gesture_get_dx: %w", err)
+			return
+		}
+		if sym.gestureAccelDY, err = purego.Dlsym(lib, "libinput_event_gesture_get_dy"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_gesture_get_dy: %w", err)
+			return
+		}
+		if sym.gestureScale, err = purego.Dlsym(lib, "libinput_event_gesture_get_scale"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_gesture_get_scale: %w", err)
+			return
+		}
+		if sym.gestureAngle, err = purego.Dlsym(lib, "libinput_event_gesture_get_angle_delta"); err != nil {
+			loadErr = fmt.Errorf("resolve libinput_event_gesture_get_angle_delta: %w", err)
+			return
+		}
 		purego.RegisterLibFunc(&udevNew, udev, "udev_new")
 		purego.RegisterLibFunc(&udevUnref, udev, "udev_unref")
 		reg := func(fn any, name string) { purego.RegisterLibFunc(fn, lib, "libinput_"+name) }
@@ -299,20 +412,6 @@ func load() error {
 		reg(&deviceName, "device_get_name")
 		reg(&suspend, "suspend")
 		reg(&resume, "resume")
-		reg(&pointerDX, "event_pointer_get_dx")
-		reg(&pointerDY, "event_pointer_get_dy")
-		reg(&pointerRawDX, "event_pointer_get_dx_unaccelerated")
-		reg(&pointerRawDY, "event_pointer_get_dy_unaccelerated")
-		reg(&pointerAbsX, "event_pointer_get_absolute_x_transformed")
-		reg(&pointerAbsY, "event_pointer_get_absolute_y_transformed")
-		reg(&scrollValue, "event_pointer_get_scroll_value")
-		reg(&scrollV120, "event_pointer_get_scroll_value_v120")
-		reg(&gestureDX, "event_gesture_get_dx_unaccelerated")
-		reg(&gestureDY, "event_gesture_get_dy_unaccelerated")
-		reg(&gestureAccelDX, "event_gesture_get_dx")
-		reg(&gestureAccelDY, "event_gesture_get_dy")
-		reg(&gestureScale, "event_gesture_get_scale")
-		reg(&gestureAngle, "event_gesture_get_angle_delta")
 		reg(&deviceRef, "device_ref")
 		reg(&deviceUnref, "device_unref")
 		reg(&hasNatural, "device_config_scroll_has_natural_scroll")

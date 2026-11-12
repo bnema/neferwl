@@ -1,7 +1,7 @@
 bnema.dev/kvconf v0.2.0 h1:EtDq3aq3fmb89bZYf64kr4dM/gzHzB851diFzhR3Am0=
 bnema.dev/kvconf v0.2.0/go.mod h1:t0zTTL01/CDF++mlS1IErZhy0OF3+HwhGvJvspoiNHY=
-bnema.dev/purego v0.13.0-bnema.3 h1:15iXEOkg0WrpUKoLnoD/94qX4gPc+F4T6hTbpUWg81s=
-bnema.dev/purego v0.13.0-bnema.3/go.mod h1:isZX4JISlvO21uwYXw3coKTo8RhwMpLpdro6jLIp++s=
+bnema.dev/purego v0.13.0-bnema.4 h1:ZWmKISmlcJfN2xpYHbPBqCfesNNtRctIBCT6SfWQtkk=
+bnema.dev/purego v0.13.0-bnema.4/go.mod h1:isZX4JISlvO21uwYXw3coKTo8RhwMpLpdro6jLIp++s=
 bnema.dev/purego-libwayland v0.14.0 h1:VJiYrF7tsruQt8b/KQdfFQ0MBjn4YmILf5IaZWUtzwM=
 bnema.dev/purego-libwayland v0.14.0/go.mod h1:ffooPnsy1V3pdw01Gu4kh31q5F0fcIiNKD8EefYilWo=
 bnema.dev/purego-pipewire v0.6.0 h1:fzbC7XOkVJ4qLSTrRxwwNoWVMbj6KfegJk/K6f22WFw=
