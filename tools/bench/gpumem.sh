@@ -13,6 +13,9 @@ for path in files:
         fields = dict(line.split(':', 1) for line in path.read_text().splitlines() if ':' in line)
     except FileNotFoundError:
         continue  # fd closed during sampling
+    def kib(key, fields=fields):
+        parts = fields.get(key, '').split()
+        return int(parts[0]) if parts else 0
     client = fields.get('drm-client-id')
     if client is None:
         continue
@@ -20,8 +23,10 @@ for path in files:
     if key in seen:
         continue
     seen.add(key)
-    vram += int(fields.get('drm-memory-vram', '0').split()[0])
-    gtt += int(fields.get('drm-memory-gtt', '0').split()[0])
-    engine += sum(int(v.split()[0]) for k, v in fields.items() if k.startswith('drm-engine-'))
+    vram += kib('drm-memory-vram')
+    gtt += kib('drm-memory-gtt')
+    for k, v in fields.items():
+        if k.startswith('drm-engine-') and not k.startswith('drm-engine-capacity-') and v.split():
+            engine += int(v.split()[0])
 print(f'vram_kib={vram} gtt_kib={gtt} engine_ns={engine}')
 PY
