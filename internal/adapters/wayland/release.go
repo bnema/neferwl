@@ -118,11 +118,17 @@ func keepHeld(h heldBuffer, reports []ports.OutputPresented, slots []linkMask, n
 		if h.id != 0 && (r.Shown == h.id || r.Queued == h.id) {
 			return true
 		}
-		if h.targets&slots[i] == 0 {
+		// A report from an output with no link (slot 0) cannot be told apart
+		// from a target: its child reads keep the buffer. A linked output
+		// outside targets is ignored entirely.
+		if h.targets&slots[i] == 0 && slots[i] != 0 {
 			continue
 		}
 		if seq, ok := r.ChildReads[h.window]; ok && seq <= h.after {
 			return true
+		}
+		if slots[i] == 0 {
+			continue
 		}
 		if r.Seen[h.window] > h.after {
 			waiting &^= slots[i]

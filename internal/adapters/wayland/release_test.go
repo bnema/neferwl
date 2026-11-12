@@ -310,6 +310,8 @@ func TestKeepHeldTargets(t *testing.T) {
 		{name: "unrelated report cannot acknowledge", targets: 1, reports: []ports.OutputPresented{{Seen: map[domain.WindowID]uint64{1: 6}}}, slots: []linkMask{2}, want: true},
 		{name: "non-target queued still holds", reports: []ports.OutputPresented{{Queued: 7}}, slots: []linkMask{2}, age: time.Second, want: true},
 		{name: "target child read outlives timeout", targets: 1, reports: []ports.OutputPresented{{Seen: map[domain.WindowID]uint64{1: 6}, ChildReads: map[domain.WindowID]uint64{1: 5}}}, slots: []linkMask{1}, age: time.Second, want: true},
+		{name: "unlinked output child read holds", targets: 1, reports: []ports.OutputPresented{{ChildReads: map[domain.WindowID]uint64{1: 5}}}, slots: []linkMask{0}, age: time.Second, want: true},
+		{name: "unlinked output without child read does not hold", targets: 1, reports: []ports.OutputPresented{{Seen: map[domain.WindowID]uint64{1: 6}}}, slots: []linkMask{0}, age: time.Second},
 		{name: "non-target child read does not hold", targets: 1, reports: []ports.OutputPresented{{ChildReads: map[domain.WindowID]uint64{1: 5}}}, slots: []linkMask{2}, age: time.Second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
