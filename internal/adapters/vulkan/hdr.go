@@ -46,6 +46,10 @@ func (r *Renderer) SetHDR(nits float64) {
 	}
 	r.hdrNits = nits
 	if nits <= 0 {
+		if r.hdrOwn.image != 0 {
+			r.destroyHDR()
+			r.dropHDROwn()
+		}
 		r.cursorCache.Reset()
 		r.hdrError = nil
 		return
@@ -80,7 +84,7 @@ func (r *Renderer) SetHDR(nits float64) {
 }
 
 // createHDROwn allocates the fp16 linear-light composition image once per
-// renderer; toggling HDR reuses it after the previous frames complete.
+// renderer while HDR is enabled; SetHDR frees it when switching to SDR.
 func (r *Renderer) createHDROwn() error {
 	// An HDR compositor needs an fp16 blendable color attachment that can
 	// also be sampled by the PQ pass and copied only for capture.
@@ -202,7 +206,7 @@ func (r *Renderer) recordHDR(cmd vk.CommandBuffer, out *target) {
 
 // dropHDROwn frees the HDR composition image with the capture passes that
 // sample it (their descriptor sets refer to the view). Pending captures
-// finish first: this runs on SetHDR failures, never per frame.
+// finish first: this runs on SetHDR failures and on switching to SDR, never per frame.
 func (r *Renderer) dropHDROwn() {
 	if r.capturePass.pipeline != 0 || r.capturePQ.pipeline != 0 {
 		for _, s := range r.captures {

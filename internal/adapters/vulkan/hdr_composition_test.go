@@ -539,3 +539,63 @@ func TestHDRSDRExpansionClientSolid(t *testing.T) {
 		}
 	}
 }
+
+func TestHDRSDRHDRRecreatesComposition(t *testing.T) {
+	r := hdrTestRenderer(t)
+	scene := domain.Scene{Seq: 1, Background: "#ff0000"}
+	if err := render(r, scene, nil); err != nil {
+		t.Fatal(err)
+	}
+	before := r.HDRPixels()
+	if before == nil {
+		t.Fatal("no initial HDR pixels")
+	}
+	wantCapture := readPixels(t, r).At(3, 3)
+	// Exercise capture descriptors that reference the image being destroyed.
+	cf := captureWait(t, r)
+	r.EndCapture(cf)
+	pipeline := r.compose.hdrPipeline
+	r.SetHDR(0)
+	if r.hdrOwn.image != 0 || r.hdrOwn.memory != 0 || r.hdrOwn.view != 0 || r.hdr.pipeline != 0 {
+		t.Fatal("SDR retained HDR image or PQ pass")
+	}
+	if r.compose.hdrPipeline != pipeline {
+		t.Fatal("SDR discarded reusable HDR composition pipeline")
+	}
+	if _, err := r.ExportTargets(0, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := render(r, scene, nil); err != nil {
+		t.Fatal(err)
+	}
+	if r.HDRPixels() != nil {
+		t.Fatal("SDR returned HDR pixels")
+	}
+	if got := readPixels(t, r).At(3, 3); got != (color.RGBA{255, 0, 0, 255}) {
+		t.Fatalf("SDR capture %v", got)
+	}
+	r.SetHDR(203)
+	bufs, err := r.ExportTargets(1, r.gpu.hdrReadbackMods, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		for _, b := range bufs {
+			for _, p := range b.Planes {
+				_ = p.File.Close()
+			}
+		}
+	})
+	if err := render(r, scene, nil); err != nil {
+		t.Fatal(err)
+	}
+	after := r.HDRPixels()
+	if after == nil || !slices.Equal(before.Pix, after.Pix) {
+		t.Fatal("HDR pixels changed after HDR/SDR/HDR toggle")
+	}
+	cf = captureWait(t, r)
+	defer r.EndCapture(cf)
+	if got := readPixels(t, r).At(3, 3); got != wantCapture {
+		t.Fatalf("recreated HDR capture %v", got)
+	}
+}
