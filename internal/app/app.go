@@ -47,6 +47,9 @@ type Options struct {
 	// castInventoryApplied (tests) is signalled after each screencast
 	// inventory the D-Bus service applied.
 	castInventoryApplied chan<- struct{}
+	// presentedTap (tests) wraps the sink the outputs report to: it sees every
+	// report and hands it on to the real sink.
+	presentedTap func(ports.PresentationSink) ports.PresentationSink
 	// noLibinput (tests) keeps a libinput backend from opening real devices:
 	// the inject channel drives input instead. A grab would steal the
 	// developer's keyboard.

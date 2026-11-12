@@ -487,7 +487,11 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 
 	go func() {
 		defer workers.Done()
-		outputIO := p.outputs(security, server.Presentation(), server)
+		presented := server.Presentation()
+		if opts.presentedTap != nil {
+			presented = opts.presentedTap(presented)
+		}
+		outputIO := p.outputs(security, presented, server)
 		apply := core.NewOutputApply(core.NewOutputOverrides(opts.Config, hw == nil))
 		if hw != nil {
 			done <- safe("output", func() error {
