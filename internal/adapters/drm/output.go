@@ -1192,6 +1192,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 	cursorScale := -1.0 // not loaded yet
 	var cursorTransform domain.BufferTransform
 	frame := 0
+	lastStatsFrame, lastStatsFlips := -1, -1
 	var requests capture.Requests
 	ctx, cancelCaptures := context.WithCancel(ctx)
 	requests.Init(ctx, captured)
@@ -1591,19 +1592,27 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 			if err := r.Trim(now); err != nil {
 				return fmt.Errorf("trim renderer: %w", err)
 			}
-			ev := o.log.Info().Str("connector", o.conn.name).Int("frames", frame).Int("flips", o.flips).Bool("pending", o.frame.pendingCommit())
+			var cs CursorStats
 			if o.cursor != nil {
-				cs := o.cursor.TakeStats()
-				ev = ev.Int("cursor_moves", cs.Moves).Int("cursor_commits", cs.Commits)
+				cs = o.cursor.TakeStats()
 			}
 			fs := o.takeFlipStats()
+			redrawn := r.TakeRedrawn()
+			if frame == lastStatsFrame && o.flips == lastStatsFlips && cs == (CursorStats{}) && fs == (flipStats{}) && redrawn == 0 {
+				break
+			}
+			lastStatsFrame, lastStatsFlips = frame, o.flips
+			ev := o.log.Info().Str("connector", o.conn.name).Int("frames", frame).Int("flips", o.flips).Bool("pending", o.frame.pendingCommit())
+			if o.cursor != nil {
+				ev = ev.Int("cursor_moves", cs.Moves).Int("cursor_commits", cs.Commits)
+			}
 			ev = ev.Int("missed_vblanks", fs.missedVblanks).Float64("max_flip_interval_ms", ms(fs.maxInterval))
 			ev = ev.Float64("max_commit_delay_ms", ms(fs.maxCommitDelay)).Float64("max_flip_to_read_ms", ms(fs.maxFlipToRead))
 			ev = ev.Int("state_commits", fs.stateCommits).Int("state_carried", fs.stateCarried)
 			if fs.fenceTimeouts > 0 {
 				ev = ev.Int("fence_timeouts", fs.fenceTimeouts)
 			}
-			ev = ev.Int("redrawn_pixels", r.TakeRedrawn())
+			ev = ev.Int("redrawn_pixels", redrawn)
 			if o.traceFlips {
 				ev = ev.Int("late_fences", fs.lateFences)
 			}

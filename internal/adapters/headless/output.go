@@ -204,6 +204,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 	var scene domain.Scene
 	haveScene, dirty := false, false
 	frame := 0
+	lastStatsFrame := -1
 	// Frame writing starts from the options and then follows Continuous;
 	// opts itself is never changed.
 	writer := frameWriter{dir: opts.ScreenshotDir, raw: opts.RawHDR}
@@ -610,7 +611,10 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			if err := r.Trim(clk.Now()); err != nil {
 				return fmt.Errorf("trim renderer: %w", err)
 			}
-			opts.Log.Info().Str("output", opts.Name).Int("frames", frame).Msg("stats")
+			if frame != lastStatsFrame {
+				opts.Log.Info().Str("output", opts.Name).Int("frames", frame).Msg("stats")
+				lastStatsFrame = frame
+			}
 			continue
 		case s, ok := <-scenes:
 			if !ok {

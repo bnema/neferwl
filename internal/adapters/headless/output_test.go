@@ -235,38 +235,45 @@ func TestRunTrimsRendererOnTick(t *testing.T) {
 		now := time.Unix(1000, 0)
 		clk.EXPECT().Now().Return(now)
 		r, f := recordingRenderer(t, nil)
-		trimmed := make(chan time.Time, 2)
+		trimmed := make(chan time.Time, 4)
 		failure := errors.New("trim failed")
 		calls := 0 // Run's goroutine only
 		r.EXPECT().Trim(now).RunAndReturn(func(at time.Time) error {
 			trimmed <- at
-			if calls++; calls == 2 {
+			if calls++; calls == 4 {
 				return failure
 			}
 			return nil
-		}).Twice()
+		}).Times(4)
 		done := make(chan error, 1)
+		scenes := make(chan domain.Scene)
 		var statsLog bytes.Buffer // written by Run's goroutine, read after it ends
 		log := zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &statsLog})
 		go func() {
-			done <- RunOutput(context.Background(), Options{Width: 2, Height: 2, Clock: clk, Log: log, Name: "HEADLESS-1", NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, nil)
+			done <- RunOutput(context.Background(), Options{Width: 2, Height: 2, Clock: clk, Log: log, Name: "HEADLESS-1", NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
 		}()
 		ticks <- now
 		if got := <-trimmed; !got.Equal(now) {
 			t.Fatalf("trimmed at %v", got)
 		}
 		ticks <- now
+		<-trimmed
+		scenes <- domain.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2}
+		waitFrames(t, f, 1)
+		ticks <- now
+		<-trimmed
+		ticks <- now
 		if err := <-done; !errors.Is(err, failure) {
 			t.Fatalf("run: %v", err)
 		}
-		if s, _ := f.snapshot(); len(s) != 0 {
-			t.Fatalf("%d frames for a trim", len(s))
+		if s, _ := f.snapshot(); len(s) != 1 {
+			t.Fatalf("%d frames, want only the scene frame", len(s))
 		}
-		// A trim tick that succeeded logs the periodic stats once.
-		if got := strings.Count(statsLog.String(), `"message":"stats"`); got != 1 {
+		// Quiet ticks are suppressed; a new frame logs again.
+		if got := strings.Count(statsLog.String(), `"message":"stats"`); got != 2 {
 			t.Fatalf("%d stats entries: %s", got, statsLog.String())
 		}
-		for _, want := range []string{`"output":"HEADLESS-1"`, `"frames":0`} {
+		for _, want := range []string{`"output":"HEADLESS-1"`, `"frames":0`, `"frames":1`} {
 			if !strings.Contains(statsLog.String(), want) {
 				t.Fatalf("stats entry lacks %s: %s", want, statsLog.String())
 			}

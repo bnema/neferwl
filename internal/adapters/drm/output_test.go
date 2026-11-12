@@ -797,19 +797,23 @@ func TestRunTrimsRendererOnStatsTick(t *testing.T) {
 		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 		r.EXPECT().Close().Return().Once()
 		r.EXPECT().TakeRedrawn().Return(1234).Once()
+		r.EXPECT().TakeRedrawn().Return(0).Twice()
 		var statsLog bytes.Buffer // written by Run's goroutine, read after it ends
 		o.log = zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &statsLog})
 		o.flipStats = flipStats{missedVblanks: 3, maxInterval: 50 * time.Millisecond, maxFlipToRead: 25 * time.Millisecond, lateFences: 2}
-		trimmed := make(chan struct{}, 2)
+		trimmed := make(chan struct{}, 4)
 		failure := os.ErrInvalid
 		calls := 0 // Run's goroutine only
 		r.EXPECT().Trim(now).RunAndReturn(func(time.Time) error {
 			trimmed <- struct{}{}
-			if calls++; calls == 2 {
+			if calls++; calls == 3 {
+				o.flips++ // owner-goroutine activity between stats ticks
+			}
+			if calls == 4 {
 				return failure
 			}
 			return nil
-		}).Twice()
+		}).Times(4)
 		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
 		k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
 		// Switched away from the start: no target, no frame.
@@ -823,10 +827,18 @@ func TestRunTrimsRendererOnStatsTick(t *testing.T) {
 		ticks <- now
 		<-trimmed
 		ticks <- now
+		<-trimmed
+		ticks <- now
+		<-trimmed
+		ticks <- now
 		if err := <-done; !errors.Is(err, failure) {
 			t.Fatalf("run: %v", err)
 		}
-		// Reported once, then reset. late_fences needs flip tracing.
+		if got := strings.Count(statsLog.String(), `"message":"stats"`); got != 2 {
+			t.Fatalf("%d stats entries: %s", got, statsLog.String())
+		}
+		// Quiet ticks are suppressed; flips log again. Counters reset.
+		// late_fences needs flip tracing.
 		for _, want := range []string{`"message":"stats"`, `"missed_vblanks":3`, `"max_flip_interval_ms":50`, `"max_flip_to_read_ms":25`, `"redrawn_pixels":1234`} {
 			if !strings.Contains(statsLog.String(), want) {
 				t.Fatalf("stats entry lacks %s: %s", want, statsLog.String())
