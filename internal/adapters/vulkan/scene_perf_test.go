@@ -159,10 +159,10 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 
 // A steady frame that draws a client dmabuf also records the ownership
 // barriers (acquire and release) of its image, which allocate nothing. The
-// frame still allocates in the driver bindings (importing the client's read
-// fence; the semaphore retire is typed and costs no closure, locked by
-// TestRetireSemaphoreAllocatesNothing). Those counts depend on purego and the
-// driver, so they are logged only; our draw building must allocate nothing.
+// frame still allocates when exporting the client's read fence. Semaphore
+// import uses renderer-owned scratch, and semaphore retirement is typed and
+// costs no closure (TestRetireSemaphoreAllocatesNothing). The syncFD path is
+// bounded at two allocations per frame; draw building must allocate nothing.
 // Skipped without a GPU or /dev/udmabuf.
 func TestRenderSteadyStateDMABufAllocations(t *testing.T) {
 	r := newTestRenderer(t, 80, 32)
@@ -199,7 +199,11 @@ func TestRenderSteadyStateDMABufAllocations(t *testing.T) {
 		}
 	}
 	moved()
-	t.Logf("dmabuf Render: %.1f allocs/frame (syncFD path: %v)", testing.AllocsPerRun(20, moved), r.syncFD)
+	allocs := testing.AllocsPerRun(20, moved)
+	t.Logf("dmabuf Render: %.1f allocs/frame (syncFD path: %v)", allocs, r.syncFD)
+	if r.syncFD && allocs != 2 && !raceEnabled { // purego allocation counts jitter under -race
+		t.Errorf("dmabuf Render: %.1f allocs/frame, want 2", allocs)
+	}
 	bounds := image.Rect(0, 0, r.width, r.height)
 	drawsOnly := func() {
 		n++
