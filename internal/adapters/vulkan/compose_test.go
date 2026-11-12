@@ -219,9 +219,8 @@ func render(r *Renderer, s domain.Scene, contents map[domain.WindowID]domain.Sur
 }
 
 // A wl_shm window's GPU buffer is rewritten only after every frame that
-// read it completed: contents 1, 2, 3 back to back alternate two buffers,
-// and the third copy waits for the frame that drew the first (the slot
-// ring and shmCopyFor's waitFrame both guarantee it).
+// read it completed. Back-to-back commits may discover completion by polling;
+// otherwise the two-buffer path waits for the previous reader.
 func TestRendererSHMDoubleBufferWaitsForReaders(t *testing.T) {
 	r := newTestRenderer(t, 32, 32)
 	defer r.Close()
@@ -233,14 +232,21 @@ func TestRendererSHMDoubleBufferWaitsForReaders(t *testing.T) {
 	for seq := uint64(1); seq <= 3; seq++ {
 		c := solidContent(t, 16, 16, color.RGBA{uint8(seq * 60), 0, 0, 255})
 		c.ID, c.Seq, c.Version = 1, seq, seq
-		if seq == 3 {
-			// The buffer about to be reused was last read by frame 1.
-			if r.completed >= readers[0] {
-				t.Fatalf("frame %d already known done before the reuse", readers[0])
+		previous := map[*shmCopy]uint64{}
+		for _, s := range r.shm {
+			for _, copy := range s.bufs {
+				if copy != nil {
+					previous[copy] = copy.gpu.last
+				}
 			}
 		}
 		if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{1: c}); err != nil {
 			t.Fatal(err)
+		}
+		for copy, last := range previous {
+			if copy.gpu.last == r.frame && last > r.completed {
+				t.Fatalf("buffer rewritten before reader %d completed (%d)", last, r.completed)
+			}
 		}
 		readers = append(readers, r.frame)
 		if seq == 3 && r.completed < readers[0] {

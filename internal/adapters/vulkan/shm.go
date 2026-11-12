@@ -18,7 +18,7 @@ import (
 
 // wl_shm pixels are read directly into persistently mapped GPU buffers.
 // Only drivers rejecting pread into GPU memory use a transient client mapping.
-// Each surface has two GPU buffers, so the CPU never writes one in flight.
+// Surfaces reuse a completed GPU buffer, or alternate two while in flight.
 
 // shmFD holds the pool open across validation and copying, even if the client
 // concurrently closes its file.
@@ -282,6 +282,24 @@ func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, b *domain.
 	if size > r.gpu.maxRange {
 		return nil, fmt.Errorf("shm buffer of %d bytes past the storage buffer range", size)
 	}
+	if s.bufs[0] != nil && s.bufs[0].gpu.size == size && r.polledFrame != r.frame {
+		if err := r.poll(); err != nil {
+			return nil, err
+		}
+		r.polledFrame = r.frame
+	}
+	// Prefer the newest completed copy: its own publication determines damage.
+	chosen := -1
+	for j, candidate := range s.bufs {
+		if candidate != nil && candidate.gpu.size == size && candidate.gpu.last <= r.completed {
+			if chosen < 0 || candidate.holds.windowSeq > s.bufs[chosen].holds.windowSeq {
+				chosen = j
+			}
+		}
+	}
+	if chosen >= 0 {
+		i = chosen
+	}
 	c := s.bufs[i]
 	if c != nil && c.gpu.size != size {
 		r.retire(c.gpu.last, func() { r.freeShmCopy(c) })
@@ -300,7 +318,7 @@ func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, b *domain.
 	dst := unsafe.Slice((*byte)(c.gpu.mapped), size)
 	row := st.w * 4
 	rects := []domain.Rect{{W: st.w, H: st.h}}
-	if c.valid && c.holds.w == st.w && c.holds.h == st.h && damage != nil {
+	if c.valid && c.holds.w == st.w && c.holds.h == st.h && c.holds.windowSeq < st.windowSeq && damage != nil {
 		if d, ok := damage(c.holds.windowSeq); ok {
 			rects = d
 		}
@@ -353,6 +371,17 @@ func (r *Renderer) dropShm() {
 		if r.frame-s.last > importTTL {
 			r.retireShm(s)
 			r.removeShm(key)
+			continue
+		}
+		for i, c := range s.bufs {
+			if c != nil && r.frame-c.gpu.last > importTTL {
+				r.retire(c.gpu.last, func() { r.freeShmCopy(c) })
+				s.bufs[i] = nil
+			}
+		}
+		// Keep the surviving copy first so the next update polls it.
+		if s.bufs[0] == nil {
+			s.bufs[0], s.bufs[1] = s.bufs[1], nil
 		}
 	}
 }
