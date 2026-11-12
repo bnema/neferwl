@@ -611,6 +611,32 @@ func pollTimeout(now, nextStats time.Time, pending bool) int {
 	return max(0, int(nextStats.Sub(now).Milliseconds())+1)
 }
 
+// statsClock tracks when the next input stats line is due. The deadline only
+// matters while stats are pending, so it restarts when they become pending:
+// after a quiet period the first line covers a full interval, not a fragment.
+type statsClock struct {
+	next    time.Time
+	pending bool
+}
+
+// mark records input at now.
+func (c *statsClock) mark(now time.Time) {
+	if !c.pending {
+		c.pending = true
+		c.next = now.Add(statsEvery)
+	}
+}
+
+// due reports whether the pending stats are due at now, and if so re-arms.
+func (c *statsClock) due(now time.Time) bool {
+	if !c.pending || now.Before(c.next) {
+		return false
+	}
+	c.pending = false
+	c.next = now.Add(statsEvery)
+	return true
+}
+
 // Run owns libinput and the keymap, converting device events into input events.
 func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) (err error) {
 	defer func() { opts.Keymap.Close() }()
@@ -666,12 +692,9 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) (err 
 		}
 	}()
 	fds := []unix.PollFd{{Fd: fd, Events: unix.POLLIN}}
-	nextStats := time.Now().Add(statsEvery)
-	statsPending := false
+	var stats statsClock
 	for ctx.Err() == nil {
-		if statsPending && !time.Now().Before(nextStats) {
-			statsPending = false
-			nextStats = time.Now().Add(statsEvery)
+		if stats.due(time.Now()) {
 			if s := fwd.take(); s.Motions > 0 || s.Sent > 0 {
 				opts.Log.Info().Int("motions", s.Motions).Int("coalesced", s.Coalesced).Int("sent", s.Sent).Dur("max_block_ms", s.MaxBlock).Msg("input stats")
 			}
@@ -681,12 +704,14 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) (err 
 			select {
 			case c := <-controls:
 				c.apply()
-				statsPending = statsPending || c.pushesInput
+				if c.pushesInput {
+					stats.mark(time.Now())
+				}
 			default:
 				break apply
 			}
 		}
-		n, err := waiter.Poll(fds, pollTimeout(time.Now(), nextStats, statsPending))
+		n, err := waiter.Poll(fds, pollTimeout(time.Now(), stats.next, stats.pending))
 		if err != nil && !errors.Is(err, unix.EINTR) {
 			return fmt.Errorf("libinput poll: %w", err)
 		}
@@ -704,11 +729,11 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) (err 
 			}
 			if single != nil {
 				fwd.push(single)
-				statsPending = true
+				stats.mark(time.Now())
 			}
 			for _, event := range out {
 				fwd.push(event)
-				statsPending = true
+				stats.mark(time.Now())
 			}
 		}
 	}

@@ -13,6 +13,7 @@ import (
 	"bnema.dev/zerowrap"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/require"
 )
 
 func TestHotkey(t *testing.T) {
@@ -486,4 +487,19 @@ func TestPollTimeout(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestStatsClockRestartsWhenInputResumesAfterIdle(t *testing.T) {
+	var c statsClock
+	t0 := time.Unix(1000, 0)
+	require.False(t, c.due(t0.Add(time.Hour)), "quiet loop has nothing due")
+	// Input after a long idle period starts a full interval.
+	resume := t0.Add(time.Hour)
+	c.mark(resume)
+	require.False(t, c.due(resume.Add(statsEvery-time.Millisecond)))
+	require.Equal(t, statsEvery.Milliseconds()+1, int64(pollTimeout(resume, c.next, c.pending)))
+	// More input does not push the deadline back.
+	c.mark(resume.Add(statsEvery / 2))
+	require.True(t, c.due(resume.Add(statsEvery)))
+	require.False(t, c.pending)
 }
