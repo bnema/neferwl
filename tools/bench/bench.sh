@@ -9,6 +9,7 @@
 #        BENCH_PPROF=addr pprof listen address (default localhost:6061)
 #        BENCH_ROOT=dir   build neferwl from another worktree (A/B runs)
 #        BENCH_IDLE=1     static page: no frames expected, per-second numbers only
+#        BENCH_SIZE=spec  output sizes (default 5120x2160; comma-separated)
 set -euo pipefail
 
 page=${1:?usage: bench.sh <page.html> <seconds>}
@@ -35,7 +36,7 @@ debug=render${BENCH_DEBUG:+,$BENCH_DEBUG}
 xflag=--no-xwayland
 [ -n "${BENCH_X11:-}" ] && xflag=
 env XDG_RUNTIME_DIR="$tmp/rt" XDG_CONFIG_HOME="$tmp/cfg" XDG_STATE_HOME="$tmp/state" WAYLAND_DISPLAY= \
-	setsid "$tmp/nwl" --backend=headless --size=5120x2160 --no-terminal $xflag \
+	setsid "$tmp/nwl" --backend=headless --size="${BENCH_SIZE:-5120x2160}" --no-terminal $xflag \
 	--debug="$debug" --pprof="${BENCH_PPROF:-localhost:6061}" >"$tmp/nwl.out" 2>&1 </dev/null &
 nwl=$!
 pids+=("$nwl")
