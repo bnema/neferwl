@@ -119,11 +119,14 @@ func BenchmarkComposeHDRPartial(b *testing.B) {
 	for i := range 8 {
 		frame(i)
 	}
+	gpuStart := gpuEngineTime(b)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := range b.N {
 		frame(i + 8)
 	}
+	b.StopTimer()
+	b.ReportMetric(float64(gpuEngineTime(b)-gpuStart)/float64(b.N), "gpu-ns/op")
 }
 
 // BenchmarkComposeOpaqueTiles forces full redraws of four opaque covering tiles.
