@@ -152,7 +152,9 @@ func (s *Server) pacePass(flipped map[string]bool, reports []ports.OutputPresent
 	// are never merged here.
 	for _, p := range reports {
 		if p.Flip != nil {
-			s.flips[p.Output] = *p.Flip
+			timing := *p.Flip
+			timing.Shows = nil // The report lease, not the timing cache, owns Shows.
+			s.flips[p.Output] = timing
 			s.presentFlip(p.Output, p.Flip)
 			s.castFlip(p.Output, p.Flip)
 			s.stats.flip(p.Flip)

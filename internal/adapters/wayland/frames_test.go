@@ -169,3 +169,19 @@ func TestRelocateCallbacksClearsFilteredTail(t *testing.T) {
 		t.Error("the filtered tail still pins the moved callback")
 	}
 }
+
+func TestPacePassKeepsOnlyFlipTiming(t *testing.T) {
+	s := &Server{reports: map[string]ports.OutputPresented{}, flips: map[string]domain.FlipInfo{}, frameDue: map[string]time.Time{}, awaiting: map[string][]*wayland.Callback{}}
+	f := domain.FlipInfo{When: time.Second, Refresh: time.Second / 60, VariableRate: true, Shows: map[domain.WindowID]uint64{1: 7}}
+	s.pacePass(nil, []ports.OutputPresented{{Output: "test", Flip: &f}})
+	got := s.flips["test"]
+	if got.Shows != nil {
+		t.Fatal("timing cache retained leased Shows")
+	}
+	if got.When != f.When || got.Refresh != f.Refresh || got.VariableRate != f.VariableRate {
+		t.Fatal("flip timing changed")
+	}
+	if f.Shows[1] != 7 {
+		t.Fatal("report Shows changed")
+	}
+}
