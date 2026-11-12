@@ -34,3 +34,12 @@ Every 10 s, each output logs a `stats` entry:
 If outputs report flips faster than the display loop reads them, wayland merges them and logs a warning with `merged` at most every 10 s.
 
 Missed vblanks with `late_fences` mean the GPU was late. Without `late_fences` but with a large `max_commit_delay_ms`, the CPU was late.
+
+## Tracking
+
+Use `tools/bench/idle-budget.sh 60` (V12) for the no-client idle budget,
+`tools/bench/bench.sh spin60.html 15` and `gif.html 15` (V15) for frame cost,
+and `tools/bench/gpumem.sh <pid>` for GPU memory/engine accounting on a private,
+non-setcap dev compositor. Run V12 and V15 before merging a perf-sensitive change.
+Record repeated-run medians, revision, and concurrent host/GPU load in the
+performance audit's `perf-log.md`; do not profile or restart the live session.

@@ -47,6 +47,10 @@ if [ ! -S "$tmp/rt/wayland-1" ]; then
 	exit 1
 fi
 
+# Headless runs use a generated session ID on current builds.
+log=$(find "$tmp/state/neferwl" -name latest.log -print -quit)
+[ -n "$log" ] && [ -r "$log" ] || { echo 'no private compositor log' >&2; exit 1; }
+
 if [ -n "${BENCH_X11:-}" ]; then
 	disp=
 	for _ in $(seq 50); do
