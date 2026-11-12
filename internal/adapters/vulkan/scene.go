@@ -42,7 +42,7 @@ type sceneWalk struct {
 
 // draws walks the scene into quads in paint order.
 func (r *Renderer) draws(s domain.Scene, contents map[domain.WindowID]domain.SurfaceContent, dmg *damageRegion) []draw {
-	clear(r.scratchDraws) // release references from longer earlier scenes
+	clear(r.scratchDraws[:cap(r.scratchDraws)]) // release references beyond len, left by partial frames or longer scenes
 	// The walk stays in scene-physical space (the target's size, swapped for
 	// a rotated output); orient maps the draws to the target afterwards.
 	sw, sh := r.sceneSize(s.Transform)

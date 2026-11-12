@@ -397,3 +397,33 @@ func TestRenderExpansionAllocations(t *testing.T) {
 		}
 	}
 }
+
+// TestDrawsReleaseStaleScratch checks that a scene shorter than an earlier
+// one (with the scratch truncated, as after a partial frame) leaves no draw
+// beyond its length, so no released buffer stays reachable.
+func TestDrawsReleaseStaleScratch(t *testing.T) {
+	r := newTestRenderer(t, 32, 32)
+	defer r.Close()
+	contents := map[domain.WindowID]domain.SurfaceContent{}
+	long := domain.Scene{Seq: 1, Scale: 1}
+	for id := domain.WindowID(1); id <= 3; id++ {
+		c := solidContent(t, 8, 8, color.RGBA{R: 255, A: 255})
+		c.ID, c.Surface, c.Seq, c.Version = id, uint64(id), 1, 1
+		contents[id] = c
+		long.Windows = append(long.Windows, domain.SceneWindow{ID: id, Rect: domain.Rect{X: int(id), W: 8, H: 8}})
+	}
+	bounds := image.Rect(0, 0, r.width, r.height)
+	ds := r.draws(long, contents, r.frameDamage(&target{}, long, bounds))
+	if len(ds) < 3 {
+		t.Fatalf("long scene drew %d quads", len(ds))
+	}
+	r.scratchDraws = ds[:0] // as left by a partial frame
+	short := domain.Scene{Seq: 2, Scale: 1, Windows: long.Windows[:1]}
+	ds = r.draws(short, contents, r.frameDamage(&target{}, short, bounds))
+	full := ds[:cap(ds)]
+	for i := len(ds); i < len(full); i++ {
+		if full[i] != (draw{}) {
+			t.Fatalf("scratch draw %d beyond len %d not released", i, len(ds))
+		}
+	}
+}

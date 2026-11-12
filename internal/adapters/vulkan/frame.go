@@ -285,7 +285,7 @@ func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.Su
 			ds[i] = r.fillDraw(rect, bg)
 		}
 		dmg.clipped = ds
-		r.scratchDraws = original[:0]
+		r.scratchDraws = original
 	}
 	r.redrawn += redrawn
 	if r.traceDamage {

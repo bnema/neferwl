@@ -87,6 +87,7 @@ func (r *Renderer) frameDamage(tg *target, s domain.Scene, bounds image.Rectangl
 		r.damageDrawn = make(map[domain.WindowID]heldWindow)
 	}
 	clear(r.damageDrawn)
+	clear(r.damage.clipped[:cap(r.damage.clipped)]) // release stale draw references
 	r.damage = damageRegion{seen: r.damageSeen, drawn: r.damageDrawn, bound: bounds, rects: r.damage.rects[:0], contentRects: r.damage.contentRects[:0], clipped: r.damage.clipped[:0], why: &r.fullRedraws}
 	r.damage.hold(tg, s)
 	return &r.damage
