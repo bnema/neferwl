@@ -6,11 +6,15 @@ package surfaces
 
 import (
 	"maps"
+	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 )
+
+// seenRetire is ten times wayland.heldTimeout: I2 keeps release timing safe.
+const seenRetire = time.Second
 
 // Table is what an output passes to Renderer.Render: the latest content per
 // window. Its owner goroutine is the only user.
@@ -39,15 +43,18 @@ import (
 // Every Acquire fence of the kept content (root and children) is dropped:
 // the frame that first drew it waited on them, and wayland closes them
 // when the buffers are released.
+
 type Table struct {
-	m map[domain.WindowID]domain.SurfaceContent
+	retiring      map[domain.WindowID]time.Time
+	seenHighWater int
+	m             map[domain.WindowID]domain.SurfaceContent
 	// kept are the windows drawn from a content their client withdrew.
 	kept map[domain.WindowID]struct{}
 }
 
 // New returns an empty table.
 func New() *Table {
-	return &Table{m: make(map[domain.WindowID]domain.SurfaceContent), kept: make(map[domain.WindowID]struct{})}
+	return &Table{retiring: make(map[domain.WindowID]time.Time), m: make(map[domain.WindowID]domain.SurfaceContent), kept: make(map[domain.WindowID]struct{})}
 }
 
 // Map is the contents the renderer draws from. It is the table's own map:
@@ -88,11 +95,12 @@ func (t *Table) Update(c domain.SurfaceContent, scene domain.Scene) {
 
 // Prune drops the kept contents of windows scene no longer draws. Outputs
 // call it with every scene they accept.
-func (t *Table) Prune(scene domain.Scene) {
+func (t *Table) Prune(scene domain.Scene, now time.Time) {
 	for id := range t.kept {
 		if !capture.Shows(scene, id) {
 			delete(t.m, id)
 			delete(t.kept, id)
+			t.retiring[id] = now
 		}
 	}
 }
@@ -116,25 +124,33 @@ func Shown(scene domain.Scene, id domain.WindowID, kept func(domain.WindowID) bo
 // when it receives a batch: Update per item against scene, seen advanced to
 // the highest Seq per window, then the batch reset and handed back through
 // ret. Reset-then-return is the ownership rule of domain.ContentBatch; b is
-// not the caller's after Apply.
+// not the caller's after Apply. A nil ret consumes without returning the batch.
 //
 // dirty reports a content of a window scene draws (windows on other outputs
 // or workspaces need no frame). seenChanged reports a window whose seen Seq
 // moved forward: a new report is due.
 //
 //hexcheck:ignore suspicious-business-logic-in-adapter Consumes and returns transport batches on the output owner goroutine.
-func (t *Table) Apply(b *domain.ContentBatch, scene domain.Scene, seen map[domain.WindowID]uint64, ret ports.ContentReturn) (dirty, seenChanged bool) {
+func (t *Table) Apply(b *domain.ContentBatch, scene domain.Scene, seen map[domain.WindowID]uint64, ret ports.ContentReturn, now time.Time) (dirty, seenChanged bool) {
 	for i := range b.Items {
 		c := b.Items[i]
 		t.Update(c, scene)
+		if !c.Empty() {
+			delete(t.retiring, c.ID)
+		} else if !t.Kept(c.ID) {
+			t.retiring[c.ID] = now
+		}
 		if c.Seq > seen[c.ID] {
 			seen[c.ID] = c.Seq
 			seenChanged = true
 		}
 		dirty = dirty || capture.Shows(scene, c.ID)
 	}
+	t.seenHighWater = max(t.seenHighWater, len(seen))
 	b.Reset()
-	ret.Return(b)
+	if ret != nil {
+		ret.Return(b)
+	}
 	return dirty, seenChanged
 }
 
@@ -185,4 +201,31 @@ func (s *ShowsSnapshot) settle() map[domain.WindowID]uint64 {
 		s.snapshot = maps.Clone(s.scratch)
 	}
 	return s.snapshot
+}
+
+// Retiring reports whether any withdrawn window still awaits retirement.
+func (t *Table) Retiring() bool { return len(t.retiring) != 0 }
+
+// Retire removes withdrawn, unkept windows only after the release grace period.
+// The owner must replace seen with the returned map: a sufficiently shrunken
+// map is rebuilt so iteration cost does not depend on historical windows.
+func (t *Table) Retire(seen map[domain.WindowID]uint64, now time.Time) (map[domain.WindowID]uint64, bool) {
+	changed := false
+	t.seenHighWater = max(t.seenHighWater, len(seen))
+	for id, at := range t.retiring {
+		if now.Sub(at) >= seenRetire {
+			if _, ok := seen[id]; ok {
+				delete(seen, id)
+				changed = true
+			}
+			delete(t.retiring, id)
+		}
+	}
+	if changed && t.seenHighWater >= 64 && len(seen) <= t.seenHighWater/2 {
+		compact := make(map[domain.WindowID]uint64, len(seen))
+		maps.Copy(compact, seen)
+		seen = compact
+		t.seenHighWater = len(seen)
+	}
+	return seen, changed
 }

@@ -37,7 +37,8 @@ func (OutputRemoved) outputEvent() {}
 // Flip is set when a page flip completed: frame callbacks of the surfaces
 // on it are due. Shown and Queued are the DMABuf IDs scanned out directly
 // (0: a composed image); Seen is the latest content Seq per window the
-// output finished reading (the GPU is done with it). A replaced client
+// output finished reading (the GPU is done with it); entries of unmapped
+// windows disappear after a delay. A replaced client
 // buffer is released once every output that reports has seen a later
 // content of its window and neither shows nor queues it.
 type OutputPresented struct {

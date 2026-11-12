@@ -2,10 +2,12 @@ package presented
 
 import (
 	"fmt"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/surfaces"
 	"maps"
 	"reflect"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
 
@@ -24,6 +26,18 @@ func BenchmarkQueuePushDeadWindows(b *testing.B) {
 			seen := make(map[domain.WindowID]uint64, 10+dead)
 			for id := domain.WindowID(1); id <= domain.WindowID(10+dead); id++ {
 				seen[id] = 1
+			}
+
+			tb := surfaces.New()
+			ret := portsmocks.NewMockContentReturn(b)
+			ret.EXPECT().Return(mock.Anything).Return().Maybe()
+			now := time.Unix(100, 0)
+			for id := domain.WindowID(11); id <= domain.WindowID(10+dead); id++ {
+				tb.Apply(&domain.ContentBatch{Items: []domain.SurfaceContent{{ID: id, Seq: 2}}}, domain.Scene{}, seen, ret, now)
+			}
+			seen, _ = tb.Retire(seen, now.Add(time.Second))
+			if len(seen) != 10 {
+				b.Fatalf("post-retirement seen=%d, want 10", len(seen))
 			}
 			var q Queue
 			sink := portsmocks.NewMockPresentationSink(b)

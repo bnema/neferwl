@@ -391,7 +391,7 @@ func TestSecurityOffOutputProofDoesNotRender(t *testing.T) {
 		r.EXPECT().Close().Return().Once()
 		scenes := make(chan domain.Scene, 1)
 		scenes <- domain.Scene{Off: true}
-		sink, presented := presentedSink(t, 1)
+		sink, _ := presentedSink(t, 1)
 		changes := make(chan domain.SecurityState, 1)
 		proofs := make(chan ports.SecurityBackendEvent, 1)
 		ctx, cancel := context.WithCancel(context.Background())
@@ -399,7 +399,7 @@ func TestSecurityOffOutputProofDoesNotRender(t *testing.T) {
 		go func() {
 			done <- RunOutput(ctx, Options{Security: gate, SecurityChanges: changes, SecurityEvents: proofs, Instance: 12, Presented: sink, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
 		}()
-		securityReceive(t, presented) // Off has actually been applied by the owner.
+		synctest.Wait() // The owner applied Off; idle scenes no longer emit read reports.
 		locked := domain.SecurityState{Generation: 4, Protected: true}
 		state.Store(locked)
 		changes <- locked

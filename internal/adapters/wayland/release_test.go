@@ -76,6 +76,8 @@ func TestKeepHeld(t *testing.T) {
 		after   time.Duration
 		want    bool
 	}{
+		{"retired entry young", dma, R{{}}, heldTimeout - time.Nanosecond, true},
+		{"retired entry old", dma, R{{}}, heldTimeout, false},
 		{"no report yet", dma, nil, 0, true},
 		{"no report times out", dma, nil, heldTimeout, false},
 		{"output has only this content", dma, R{out(0, 0, 5)}, 0, true},

@@ -1347,3 +1347,53 @@ func TestRunStatsTimerIdleAndRearm(t *testing.T) {
 		}
 	})
 }
+
+func TestRunRetiresSeen(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		o, k, _ := testOutput(t)
+		o.cursor, o.tearing, o.fbs = nil, false, [2]uint32{}
+		r := portsmocks.NewMockRenderer(t)
+		r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+		r.EXPECT().Close().Return().Once()
+		k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+		k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+		setOutputRenderer(t, o, r)
+		active := make(chan bool, 1)
+		active <- false
+		ret := portsmocks.NewMockContentReturn(t)
+		ret.EXPECT().Return(mock.Anything).Return()
+		contents := make(chan *domain.ContentBatch)
+		sink := portsmocks.NewMockPresentationSink(t)
+		got := make(chan map[domain.WindowID]uint64, 4)
+		sink.EXPECT().Push(mock.Anything).RunAndReturn(func(p ports.OutputPresented) { got <- maps.Clone(p.Seen); p.Snapshot.Release() })
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() { done <- o.Run(ctx, nil, active, nil, contents, ret, nil, sink, nil, nil) }()
+		synctest.Wait()
+		contents <- &domain.ContentBatch{Items: []domain.SurfaceContent{{ID: 1, Seq: 1}}}
+		synctest.Wait()
+		if len(got) != 1 || (<-got)[1] != 1 {
+			t.Fatal("missing initial report")
+		}
+		time.Sleep(999 * time.Millisecond)
+		synctest.Wait()
+		if len(got) != 0 {
+			t.Fatal("early retirement")
+		}
+		time.Sleep(time.Millisecond)
+		synctest.Wait()
+		if len(got) != 1 || len(<-got) != 0 {
+			t.Fatal("missing retirement report")
+		}
+		time.Sleep(time.Second)
+		synctest.Wait()
+		if len(got) != 0 {
+			t.Fatal("extra idle report")
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
+}

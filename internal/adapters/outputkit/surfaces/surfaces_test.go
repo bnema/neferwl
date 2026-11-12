@@ -2,8 +2,10 @@ package surfaces
 
 import (
 	"fmt"
+	"github.com/stretchr/testify/mock"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
 
@@ -16,6 +18,18 @@ func BenchmarkShowsFromSeenDeadWindows(b *testing.B) {
 			seen := make(map[domain.WindowID]uint64, 10+dead)
 			for id := domain.WindowID(1); id <= domain.WindowID(10+dead); id++ {
 				seen[id] = 1
+			}
+
+			tb := New()
+			ret := portsmocks.NewMockContentReturn(b)
+			ret.EXPECT().Return(mock.Anything).Return().Maybe()
+			now := time.Unix(100, 0)
+			for id := domain.WindowID(11); id <= domain.WindowID(10+dead); id++ {
+				tb.Apply(&domain.ContentBatch{Items: []domain.SurfaceContent{{ID: id, Seq: 2}}}, domain.Scene{}, seen, ret, now)
+			}
+			seen, _ = tb.Retire(seen, now.Add(time.Second))
+			if len(seen) != 10 {
+				b.Fatalf("post-retirement seen=%d, want 10", len(seen))
 			}
 			scene := shows(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
 			var snap ShowsSnapshot
@@ -62,11 +76,11 @@ func TestEmptyContentKeptWhileShown(t *testing.T) {
 		t.Fatal("Kept false for a content drawn after its empty one")
 	}
 	// A scene still listing it keeps it; one without it drops it.
-	tb.Prune(shows(1, 2))
+	tb.Prune(shows(1, 2), time.Time{})
 	if _, ok := tb.Map()[1]; !ok {
 		t.Fatal("dropped while still listed")
 	}
-	tb.Prune(shows(2))
+	tb.Prune(shows(2), time.Time{})
 	if _, ok := tb.Map()[1]; ok || tb.Kept(1) {
 		t.Fatal("not dropped once unlisted")
 	}
@@ -116,7 +130,7 @@ func TestUpdateAllocations(t *testing.T) {
 	if n := testing.AllocsPerRun(100, func() {
 		c.Seq++
 		tb.Update(c, s)
-		tb.Prune(s)
+		tb.Prune(s, time.Time{})
 	}); n != 0 {
 		t.Fatalf("%v allocations per update", n)
 	}
@@ -197,7 +211,7 @@ func TestApply(t *testing.T) {
 			t.Errorf("batch returned before its reset: %d items", len(got.Items))
 		}
 	}).Once()
-	dirty, changed := tb.Apply(b, shows(2), seen, ret)
+	dirty, changed := tb.Apply(b, shows(2), seen, ret, time.Time{})
 	if !dirty || !changed {
 		t.Fatalf("dirty %v changed %v, want both", dirty, changed)
 	}
@@ -211,8 +225,113 @@ func TestApply(t *testing.T) {
 	// A window no scene draws and no newer Seq: nothing to do.
 	b = &domain.ContentBatch{Items: []domain.SurfaceContent{{ID: 1, Seq: 5, SHM: &domain.SHMBuffer{Pool: 1}}}}
 	ret.EXPECT().Return(b).Once()
-	dirty, changed = tb.Apply(b, shows(2), seen, ret)
+	dirty, changed = tb.Apply(b, shows(2), seen, ret, time.Time{})
 	if dirty || changed {
 		t.Fatalf("dirty %v changed %v, want neither", dirty, changed)
+	}
+}
+
+func TestSeenRetirement(t *testing.T) {
+	now := time.Unix(100, 0)
+	for _, kept := range []bool{false, true} {
+		t.Run(fmt.Sprintf("kept=%v", kept), func(t *testing.T) {
+			tb := New()
+			seen := map[domain.WindowID]uint64{}
+			ret := portsmocks.NewMockContentReturn(t)
+			ret.EXPECT().Return(mock.Anything).Return().Maybe()
+			scene := shows()
+			if kept {
+				scene = shows(1)
+			}
+			retire := func(at time.Time) bool { var changed bool; seen, changed = tb.Retire(seen, at); return changed }
+			apply := func(c domain.SurfaceContent, at time.Time) {
+				tb.Apply(&domain.ContentBatch{Items: []domain.SurfaceContent{c}}, scene, seen, ret, at)
+			}
+			apply(domain.SurfaceContent{ID: 1, Seq: 1, SHM: &domain.SHMBuffer{Pool: 1}}, now)
+			apply(domain.SurfaceContent{ID: 1, Seq: 2}, now)
+			if kept {
+				if tb.Retiring() || retire(now.Add(2*time.Second)) {
+					t.Fatal("kept content retired")
+				}
+				tb.Prune(shows(), now)
+			}
+			if !tb.Retiring() || retire(now.Add(999*time.Millisecond)) || seen[1] != 2 {
+				t.Fatal("retired too early")
+			}
+			if !retire(now.Add(time.Second)) || len(seen) != 0 || tb.Retiring() {
+				t.Fatal("not retired")
+			}
+			apply(domain.SurfaceContent{ID: 1, Seq: 3}, now)
+			apply(domain.SurfaceContent{ID: 1, Seq: 4, SHM: &domain.SHMBuffer{Pool: 1}}, now.Add(time.Millisecond))
+			if retire(now.Add(2*time.Second)) || seen[1] != 4 || tb.Retiring() {
+				t.Fatal("remap retired")
+			}
+		})
+	}
+}
+
+func TestSeenBoundedAfterUnmapCycles(t *testing.T) {
+	tb := New()
+	seen := map[domain.WindowID]uint64{1: 1}
+	ret := portsmocks.NewMockContentReturn(t)
+	ret.EXPECT().Return(mock.Anything).Return().Maybe()
+	now := time.Unix(100, 0)
+	for i := 2; i < 1002; i++ {
+		id := domain.WindowID(i)
+		tb.Apply(&domain.ContentBatch{Items: []domain.SurfaceContent{{ID: id, Seq: 1, SHM: &domain.SHMBuffer{Pool: 1}}, {ID: id, Seq: 2}}}, shows(1), seen, ret, now)
+		now = now.Add(time.Second)
+		seen, _ = tb.Retire(seen, now)
+		if len(seen) != 1 {
+			t.Fatalf("cycle %d seen=%d", i, len(seen))
+		}
+	}
+}
+
+func TestApplyRetireAllocations(t *testing.T) {
+	tb := New()
+	seen := map[domain.WindowID]uint64{}
+	now := time.Unix(100, 0)
+	b := &domain.ContentBatch{Items: make([]domain.SurfaceContent, 1)}
+	full := domain.SurfaceContent{ID: 1, Seq: 1, SHM: &domain.SHMBuffer{Pool: 1}}
+	cycle := func() {
+		b.Items = b.Items[:1]
+		b.Items[0] = full
+		tb.Apply(b, shows(), seen, nil, now)
+		seen, _ = tb.Retire(seen, now.Add(time.Second))
+	}
+	// Warm through a compaction before measuring the live steady state.
+	for id := domain.WindowID(2); id <= 100; id++ {
+		seen[id] = 1
+		tb.retiring[id] = now
+	}
+	seen, _ = tb.Retire(seen, now.Add(time.Second))
+	cycle()
+	if n := testing.AllocsPerRun(100, cycle); n != 0 {
+		t.Fatalf("Apply+Retire allocations=%v", n)
+	}
+}
+
+func TestRetireCompactsOwnerMap(t *testing.T) {
+	tb := New()
+	seen := make(map[domain.WindowID]uint64, 1000)
+	now := time.Unix(100, 0)
+	for id := domain.WindowID(1); id <= 1000; id++ {
+		seen[id] = 1
+		if id > 10 {
+			tb.retiring[id] = now
+		}
+	}
+	old := seen
+	var changed bool
+	seen, changed = tb.Retire(seen, now.Add(time.Second))
+	if !changed || len(seen) != 10 {
+		t.Fatalf("changed=%v len=%d", changed, len(seen))
+	}
+	seen[1] = 2
+	if old[1] != 1 {
+		t.Fatal("owner map was not compacted into independent storage")
+	}
+	if tb.seenHighWater != 10 {
+		t.Fatalf("high water=%d", tb.seenHighWater)
 	}
 }

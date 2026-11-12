@@ -1242,6 +1242,11 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 	holdTimer := time.NewTimer(time.Hour)
 	holdTimer.Stop()
 	defer holdTimer.Stop()
+	// Retirement uses the surfaces seenRetire grace period (one second).
+	retireTimer := time.NewTimer(time.Hour)
+	retireTimer.Stop()
+	defer retireTimer.Stop()
+	var retireDue <-chan time.Time
 	retryTimer.Stop()
 	vrrTimer.Stop()
 	cursorTimer.Stop()
@@ -1417,6 +1422,15 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 		} else {
 			gapTimer.Stop()
 		}
+		if table.Retiring() {
+			if retireDue == nil {
+				retireTimer.Reset(time.Second)
+				retireDue = retireTimer.C
+			}
+		} else {
+			retireTimer.Stop()
+			retireDue = nil
+		}
 		var holdDue <-chan time.Time
 		if requests.Len() > 0 {
 			var wait time.Duration
@@ -1497,6 +1511,13 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 			stateDirty = true
 		case <-gapDue:
 			activity()
+		case <-retireDue:
+			retireDue = nil
+			var retired bool
+			seen, retired = table.Retire(seen, time.Now())
+			if retired {
+				reportDirty = true
+			}
 		case <-holdDue:
 			activity()
 			continue
@@ -1595,7 +1616,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 			scene, haveScene, dirty = s, true, true
 			o.wantOff = s.Off
 			// A closed window's last content goes once no scene draws it.
-			table.Prune(scene)
+			table.Prune(scene, time.Now())
 		case c := <-cursor:
 			activity()
 			o.observeSecurity()
@@ -1611,7 +1632,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 		case b := <-contents:
 			activity()
 			// Windows on other outputs or workspaces do not need a frame.
-			batchDirty, batchSeen := table.Apply(b, scene, seen, returns)
+			batchDirty, batchSeen := table.Apply(b, scene, seen, returns, time.Now())
 			dirty = dirty || batchDirty
 			reportDirty = reportDirty || batchSeen
 		case <-stats.C():

@@ -230,6 +230,9 @@ func TestRunTrimsRendererOnTick(t *testing.T) {
 		clk := portsmocks.NewMockClock(t)
 		tk := portsmocks.NewMockTimer(t)
 		clk.EXPECT().NewTimer(trimEvery).Return(tk).Once()
+		retirement := portsmocks.NewMockTimer(t)
+		clk.EXPECT().NewTimer(time.Hour).Return(retirement).Once()
+		retirement.EXPECT().Stop().Return(true)
 		tk.EXPECT().C().Return(ticks)
 		tk.EXPECT().Stop().Return(true).Once()
 		tk.EXPECT().Reset(trimEvery).Return(true)
@@ -1085,6 +1088,62 @@ func TestRunTrimTimerIdleAndRearm(t *testing.T) {
 		synctest.Wait()
 		if at := <-trimmed; at.Sub(start) != 100*time.Second {
 			t.Fatalf("rearmed trim at %v", at)
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestUndrawnContentReportsAndRetires(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r, f := recordingRenderer(t, nil)
+		ret := portsmocks.NewMockContentReturn(t)
+		ret.EXPECT().Return(mock.Anything).Return()
+		contents := make(chan *domain.ContentBatch)
+		sink := portsmocks.NewMockPresentationSink(t)
+		got := make(chan map[domain.WindowID]uint64, 128)
+		sink.EXPECT().Push(mock.Anything).RunAndReturn(func(p ports.OutputPresented) { got <- maps.Clone(p.Seen); p.Snapshot.Release() })
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() {
+			done <- RunOutput(ctx, Options{Width: 2, Height: 2, Presented: sink, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, contents, ret, nil, nil)
+		}()
+		for i := 1; i <= 100; i++ {
+			contents <- &domain.ContentBatch{Items: []domain.SurfaceContent{{ID: 1, Seq: uint64(i), SHM: &domain.SHMBuffer{Pool: 1}}}}
+			synctest.Wait()
+			if len(got) != 1 || (<-got)[1] != uint64(i) {
+				t.Fatalf("missing seq %d report", i)
+			}
+		}
+		for range 100 {
+			contents <- &domain.ContentBatch{Items: []domain.SurfaceContent{{ID: 1, Seq: 100, SHM: &domain.SHMBuffer{Pool: 1}}}}
+			synctest.Wait()
+		}
+		if len(got) != 0 {
+			t.Fatalf("unchanged seq reports=%d", len(got))
+		}
+		if scenes, _ := f.snapshot(); len(scenes) != 0 {
+			t.Fatal("undrawn content rendered")
+		}
+		contents <- &domain.ContentBatch{Items: []domain.SurfaceContent{{ID: 1, Seq: 101}}}
+		synctest.Wait()
+		time.Sleep(999 * time.Millisecond)
+		synctest.Wait()
+		if len(got) != 1 || (<-got)[1] != 101 {
+			t.Fatal("early retirement")
+		}
+		time.Sleep(time.Millisecond)
+		synctest.Wait()
+		if len(got) != 1 || len(<-got) != 0 {
+			t.Fatal("missing retirement report")
+		}
+		time.Sleep(time.Second)
+		synctest.Wait()
+		if len(got) != 0 {
+			t.Fatal("extra idle report")
 		}
 		cancel()
 		if err := <-done; err != nil {

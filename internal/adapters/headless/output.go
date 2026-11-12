@@ -297,6 +297,11 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			failRequests(capture.ErrSessionProtected)
 		}
 	}
+	clk := opts.Clock
+	if clk == nil {
+		clk = clock.System{}
+	}
+	reportDirty := false
 	acceptScene := func(s domain.Scene) {
 		if opts.Security != nil && (s.Security != security || s.Security != opts.Security.Snapshot()) {
 			return
@@ -307,15 +312,12 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		}
 		scene, haveScene, dirty = s, true, true
 		// A closed window's last content goes once no scene draws it.
-		table.Prune(scene)
+		table.Prune(scene, clk.Now())
 	}
 	update := func(b *domain.ContentBatch) {
-		batchDirty, _ := table.Apply(b, scene, seen, returns)
+		batchDirty, seenChanged := table.Apply(b, scene, seen, returns, clk.Now())
 		dirty = dirty || batchDirty
-	}
-	clk := opts.Clock
-	if clk == nil {
-		clk = clock.System{}
+		reportDirty = reportDirty || seenChanged
 	}
 	// Anchor the injected clock to the presentation protocol's monotonic epoch.
 	clockStart := clk.Now()
@@ -377,6 +379,11 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 	holdTimer := time.NewTimer(time.Hour)
 	holdTimer.Stop()
 	defer holdTimer.Stop()
+	// Retirement uses the surfaces seenRetire grace period (one second).
+	retireTimer := clk.NewTimer(time.Hour)
+	retireTimer.Stop()
+	defer retireTimer.Stop()
+	var retireDue <-chan time.Time
 	for {
 		// A frame that left its gate open (any path out but its present) fails
 		// what it held: nothing is delivered for a frame that did not present.
@@ -392,6 +399,15 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		}
 		// Requests wait for a scene that shows their indicator, at most
 		// capture.HoldFor (see capture.Hold).
+		if table.Retiring() {
+			if retireDue == nil {
+				retireTimer.Reset(time.Second)
+				retireDue = retireTimer.C()
+			}
+		} else {
+			retireTimer.Stop()
+			retireDue = nil
+		}
 		var holdDue <-chan time.Time
 		if requests.Len() > 0 {
 			var wait time.Duration
@@ -532,6 +548,13 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			paceDue = nil
 			ticked = true
 			tickTime = clk.Now()
+		case <-retireDue:
+			retireDue = nil
+			var retired bool
+			seen, retired = table.Retire(seen, clk.Now())
+			if retired {
+				reportDirty = true
+			}
 		case <-holdDue:
 			activity()
 			continue
@@ -730,7 +753,10 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		if !haveScene || !dirty || scene.Off {
 			// Contents not drawn are still read: report them. An output
 			// turned off draws nothing.
-			opts.report(&reports, nil, seen)
+			if reportDirty {
+				opts.report(&reports, nil, seen)
+				reportDirty = false
+			}
 			continue
 		}
 		if period > 0 && !ticked {
