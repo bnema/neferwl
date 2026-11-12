@@ -332,6 +332,7 @@ func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.Su
 		if dr.im != nil && !slices.Contains(dmas, dr.im) {
 			dmas = append(dmas, dr.im)
 			dr.im.last = r.frame
+			dr.im.drawWin, dr.im.drawSeq = dr.win, dr.seq
 		}
 		if dr.acquire != nil {
 			acquires[dr.im] = dr.acquire
@@ -377,8 +378,9 @@ func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.Su
 			if sem := r.importFence(f); sem != 0 {
 				waits = append(waits, sem)
 			}
-		} else {
+		} else if !im.fenceWaited || im.fenceWin != im.drawWin || im.fenceSeq != im.drawSeq {
 			waits = r.appendReadFences(waits, im)
+			im.fenceWin, im.fenceSeq, im.fenceWaited = im.drawWin, im.drawSeq, true
 		}
 	}
 	r.frameWaits = waits

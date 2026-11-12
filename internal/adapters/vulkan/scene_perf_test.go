@@ -201,6 +201,8 @@ func TestRenderSteadyStateDMABufAllocations(t *testing.T) {
 	moved()
 	allocs := testing.AllocsPerRun(20, moved)
 	t.Logf("dmabuf Render: %.1f allocs/frame (syncFD path: %v)", allocs, r.syncFD)
+	// P14 skips repeated implicit exports; P2.2 already reduced this path
+	// to 2 allocations/frame, so the measured budget remains unchanged.
 	if r.syncFD && allocs != 2 && !raceEnabled { // purego allocation counts jitter under -race
 		t.Errorf("dmabuf Render: %.1f allocs/frame, want 2", allocs)
 	}

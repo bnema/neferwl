@@ -470,14 +470,14 @@ func (w *sceneWalk) place(id domain.WindowID, content *domain.SurfaceContent, x,
 	for i := range content.Children {
 		if ch := &content.Children[i]; ch.Below {
 			cx, cy := at(ch)
-			w.surface(&ch.SurfaceContent, cx, cy, clip, shmKey{win: id, surface: ch.Surface}, ch.Version, covers, false)
+			w.surface(&ch.SurfaceContent, cx, cy, clip, shmKey{win: id, surface: ch.Surface}, ch.Version, content.Seq, covers, false)
 		}
 	}
-	w.surface(content, ox, oy, clip, shmKey{win: id, surface: content.Surface}, content.Version, covers, true)
+	w.surface(content, ox, oy, clip, shmKey{win: id, surface: content.Surface}, content.Version, content.Seq, covers, true)
 	for i := range content.Children {
 		if ch := &content.Children[i]; !ch.Below {
 			cx, cy := at(ch)
-			w.surface(&ch.SurfaceContent, cx, cy, clip, shmKey{win: id, surface: ch.Surface}, ch.Version, nil, false)
+			w.surface(&ch.SurfaceContent, cx, cy, clip, shmKey{win: id, surface: ch.Surface}, ch.Version, content.Seq, nil, false)
 		}
 	}
 }
@@ -590,7 +590,7 @@ func (w *sceneWalk) surfaceRects(content *domain.SurfaceContent, x, y float64, c
 // clipped to clip (logical), unless an opaque surface above it (covers,
 // physical) hides all of it: its buffer is then neither copied nor drawn.
 // A cover over only part of it clips the draw to the rest.
-func (w *sceneWalk) surface(content *domain.SurfaceContent, x, y float64, clip image.Rectangle, key shmKey, seq uint64, covers []image.Rectangle, root bool) {
+func (w *sceneWalk) surface(content *domain.SurfaceContent, x, y float64, clip image.Rectangle, key shmKey, seq, windowSeq uint64, covers []image.Rectangle, root bool) {
 	full, dst, ok := w.surfaceRects(content, x, y, clip)
 	if !ok {
 		return
@@ -604,7 +604,7 @@ func (w *sceneWalk) surface(content *domain.SurfaceContent, x, y float64, clip i
 		w.dmg.content(key.win, content, full, dst)
 	}
 	n := len(w.draws)
-	w.content(dst, full, content, key, seq, root)
+	w.content(dst, full, content, key, seq, windowSeq, root)
 	for i := n; i < len(w.draws); i++ {
 		if w.draws[i].pc.misc[0] != modeSolid && content.Color.PlainSDR() {
 			w.draws[i].pc.expand = w.expand
@@ -680,7 +680,7 @@ func (w *sceneWalk) quad(d draw, rect image.Rectangle) {
 
 // content draws the part of a buffer mapped onto full (physical pixels)
 // that dst shows. key names the surface, seq its content.
-func (w *sceneWalk) content(dst, full image.Rectangle, content *domain.SurfaceContent, key shmKey, seq uint64, root bool) {
+func (w *sceneWalk) content(dst, full image.Rectangle, content *domain.SurfaceContent, key shmKey, seq, windowSeq uint64, root bool) {
 	r := w.r
 	rect := dst
 	if rect.Empty() {
@@ -720,6 +720,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *domain.SurfaceCo
 			dr.pc.buf[3] = uint32(coeff) | uint32(ran)<<8 | uint32(content.Color.Chroma)<<16
 		}
 		dr.im = im
+		dr.win, dr.seq = key.win, windowSeq
 		dr.acquire = content.Acquire
 		w.draws = append(w.draws, dr)
 		return

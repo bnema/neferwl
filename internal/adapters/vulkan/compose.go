@@ -72,6 +72,8 @@ type drawParameters struct {
 
 // draw is one quad of a frame.
 type draw struct {
+	win               domain.WindowID
+	seq               uint64
 	round, roundInner [4]float32
 	radii             [2]uint32
 	pc                drawParameters

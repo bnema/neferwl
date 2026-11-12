@@ -148,3 +148,51 @@ func TestRendererSubsurfaceAcquire(t *testing.T) {
 	}
 	t.Fatal("subsurface draw has no acquire fence")
 }
+
+func TestImplicitFenceOncePerWindowContent(t *testing.T) {
+	for _, child := range []bool{false, true} {
+		name := "root"
+		if child {
+			name = "child"
+		}
+		t.Run(name, func(t *testing.T) {
+			r := newTestRenderer(t, 80, 32)
+			linear := domain.DMABufFormat{Format: fourcc('A', 'R', '2', '4'), Modifier: 0}
+			if !slices.Contains(r.DMABuf().Formats, linear) {
+				t.Skip("linear ARGB8888 not importable")
+			}
+			f := udmabuf(t, 64, 16, func(int, int) [4]byte { return [4]byte{0, 0, 255, 255} })
+			buf := &domain.DMABuf{ID: 7, Width: 64, Height: 16, Format: linear.Format, Planes: []domain.DMABufPlane{{File: f, Stride: 256}}}
+			leaf := domain.SurfaceContent{ID: 1, Surface: 2, Seq: 99, Version: 1, Width: 64, Height: 16, DMABuf: buf}
+			root := leaf
+			root.Seq = 0 // the first zero publication must not match uninitialized state
+			if child {
+				root = domain.SurfaceContent{ID: 1, Surface: 1, Children: []domain.Subsurface{{SurfaceContent: leaf}}}
+			}
+			scene := domain.Scene{Scale: 1, Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 64, H: 16}}}}
+			draw := func(want uint64) {
+				t.Helper()
+				scene.Seq++
+				if err := render(r, scene, map[domain.WindowID]domain.SurfaceContent{root.ID: root}); err != nil {
+					t.Fatal(err)
+				}
+				if r.fenceExports != want {
+					t.Fatalf("exports=%d want=%d", r.fenceExports, want)
+				}
+				if got := readPixels(t, r).RGBAAt(4, 4); got != (color.RGBA{R: 255, A: 255}) {
+					t.Fatalf("pixels=%v", got)
+				}
+			}
+			for range 5 {
+				draw(1)
+			}
+			root.Seq++
+			draw(2)
+			draw(2)
+			root.ID = 2
+			scene.Windows[0].ID = 2
+			draw(3)
+			t.Logf("five repeats=1 export; new root Seq=2; new window=3 (child=%v)", child)
+		})
+	}
+}

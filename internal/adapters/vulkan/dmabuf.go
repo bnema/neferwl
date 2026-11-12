@@ -191,13 +191,18 @@ func (r *Renderer) DMABuf() domain.DMABufSupport { return r.gpu.dmabuf }
 
 // imported is a client dmabuf bound to a VkImage and its sampled views.
 type imported struct {
-	image      vk.Image
-	memory     vk.DeviceMemory
-	view       vk.ImageView
-	chromaView vk.ImageView
-	memories   [2]vk.DeviceMemory
-	fds        [2]int
-	yuv        bool
+	fenceWin    domain.WindowID
+	fenceSeq    uint64
+	fenceWaited bool            // zero is also a valid first publication
+	drawWin     domain.WindowID // first draw of the current frame
+	drawSeq     uint64
+	image       vk.Image
+	memory      vk.DeviceMemory
+	view        vk.ImageView
+	chromaView  vk.ImageView
+	memories    [2]vk.DeviceMemory
+	fds         [2]int
+	yuv         bool
 	// disjoint is available for this format/modifier; required only when
 	// the two planes refer to different underlying DMA-BUF objects.
 	disjoint bool
@@ -373,6 +378,7 @@ func (r *Renderer) appendReadFences(waits []vk.Semaphore, im *imported) []vk.Sem
 		}
 	}
 	for _, fd := range fds[:count] {
+		r.fenceExports++
 		arg := dmaBufSync{flags: dmaBufSyncRead, fd: -1}
 		if _, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), ioctlExportSyncFile, uintptr(unsafe.Pointer(&arg))); errno != 0 || arg.fd < 0 {
 			continue // Older kernels cannot export implicit fences.

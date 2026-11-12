@@ -166,7 +166,7 @@ func TestSceneSkipsInvalidSHM(t *testing.T) {
 			content := &domain.SurfaceContent{Width: 2, Height: 2, SHM: &domain.SHMBuffer{File: f, Stride: 8}}
 			walk := sceneWalk{r: r, alpha: 1}
 			rect := image.Rect(0, 0, 2, 2)
-			walk.content(rect, rect, content, key, 1, false)
+			walk.content(rect, rect, content, key, 1, content.Seq, false)
 			if len(walk.draws) != 0 {
 				t.Fatalf("submitted %d draws for failed SHM", len(walk.draws))
 			}
