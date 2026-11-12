@@ -35,11 +35,12 @@ If outputs report flips faster than the display loop reads them, wayland merges 
 
 Missed vblanks with `late_fences` mean the GPU was late. Without `late_fences` but with a large `max_commit_delay_ms`, the CPU was late.
 
-## Tracking
+## Benchmark scripts
 
-Use `tools/bench/idle-budget.sh 60` (V12) for the no-client idle budget,
-`tools/bench/bench.sh spin60.html 15` and `gif.html 15` (V15) for frame cost,
-and `tools/bench/gpumem.sh <pid>` for GPU memory/engine accounting on a private,
-non-setcap dev compositor. Run V12 and V15 before merging a perf-sensitive change.
-Record repeated-run medians, revision, and concurrent host/GPU load in the
-performance audit's `perf-log.md`; do not profile or restart the live session.
+All scripts run a private, non-setcap compositor; never profile or restart the live session.
+
+- `tools/bench/idle-budget.sh <seconds>` starts a headless compositor with no client, waits 70 s for stats and trim warmup, then reports frames, voluntary context switches/s, CPU % and `stats` lines over the window. It exits non-zero if any frame was rendered while idle.
+- `tools/bench/bench.sh <page> <seconds>` measures frame cost with a client page such as `spin60.html` or `gif.html`. `BENCH_KEEP=1` keeps the run directory and processes for inspection.
+- `tools/bench/gpumem.sh <pid>` prints VRAM, GTT and engine-time accounting from the process's DRM fdinfo, counting each DRM client once even when several fds refer to it.
+
+Compare repeated-run medians, and note the revision and any concurrent host or GPU load, before and after a perf-sensitive change.

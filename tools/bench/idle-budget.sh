@@ -18,12 +18,12 @@ chmod 700 "$tmp/rt"
 env XDG_RUNTIME_DIR="$tmp/rt" XDG_CONFIG_HOME="$tmp/cfg" XDG_STATE_HOME="$tmp/state" XDG_CACHE_HOME="$tmp/cache" XDG_DATA_HOME="$tmp/data" WAYLAND_DISPLAY= \
  "$tmp/nwl" --backend=headless --size=1920x1080 --no-terminal --no-xwayland --debug=render >"$tmp/out" 2>&1 </dev/null &
 pid=$!
-log=$tmp/state/neferwl/runs/headless/latest.log
 for _ in $(seq 50); do [ -S "$tmp/rt/wayland-1" ] && break; sleep 0.1; done
 [ -S "$tmp/rt/wayland-1" ] || { cat "$tmp/out" >&2; exit 1; }
 log=$(find "$tmp/state/neferwl" -name latest.log -print -quit)
 [ -n "$log" ] && [ -r "$log" ] || { echo 'no private compositor log' >&2; exit 1; }
 sleep 70
+kill -0 "$pid" || { echo 'compositor exited' >&2; exit 1; }
 cs() { cat /proc/"$pid"/task/*/status | awk '/^voluntary_ctxt_switches:/{v+=$2} END{printf "%.0f\n",v}'; }
 cpu() { cat /proc/"$pid"/task/*/schedstat | awk '{v+=$1} END{printf "%.0f\n",v}'; }
 count() { grep -c "\"message\":\"$1\"" "$log" || true; }
