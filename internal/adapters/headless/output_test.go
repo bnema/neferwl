@@ -228,10 +228,11 @@ func TestRunTrimsRendererOnTick(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ticks := make(chan time.Time)
 		clk := portsmocks.NewMockClock(t)
-		tk := portsmocks.NewMockTicker(t)
-		clk.EXPECT().NewTicker(trimEvery).Return(tk).Once()
+		tk := portsmocks.NewMockTimer(t)
+		clk.EXPECT().NewTimer(trimEvery).Return(tk).Once()
 		tk.EXPECT().C().Return(ticks)
-		tk.EXPECT().Stop().Return().Once()
+		tk.EXPECT().Stop().Return(true).Once()
+		tk.EXPECT().Reset(trimEvery).Return(true)
 		now := time.Unix(1000, 0)
 		clk.EXPECT().Now().Return(now)
 		r, f := recordingRenderer(t, nil)
@@ -1040,6 +1041,51 @@ func TestAcknowledgedModePreservesEarlyScene(t *testing.T) {
 			t.Fatal(err)
 		}
 		waitFrames(t, frames, 1)
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+// Cleanup reaches the linger boundary, then new content restarts it.
+func TestRunTrimTimerIdleAndRearm(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r, _ := recordingRenderer(t, nil)
+		trimmed := make(chan time.Time, 4)
+		r.EXPECT().Trim(mock.Anything).RunAndReturn(func(at time.Time) error {
+			trimmed <- at
+			return nil
+		})
+		contents := newContentFeed(t, 0)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan error, 1)
+		start := time.Now()
+		go func() {
+			done <- RunOutput(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, contents.in(), contents.ret, nil, nil)
+		}()
+		synctest.Wait()
+		for range 3 {
+			time.Sleep(10 * time.Second)
+			synctest.Wait()
+		}
+		first, second, third := <-trimmed, <-trimmed, <-trimmed
+		if first.Sub(start) != 10*time.Second || second.Sub(start) != 20*time.Second || third.Sub(start) != 30*time.Second {
+			t.Fatalf("trim times: %v, %v, %v", first, second, third)
+		}
+		time.Sleep(time.Minute)
+		synctest.Wait()
+		if len(trimmed) != 0 {
+			t.Fatalf("extra idle trims: %d", len(trimmed))
+		}
+		contents.send(domain.SurfaceContent{ID: 1, Seq: 1})
+		synctest.Wait()
+		time.Sleep(10 * time.Second)
+		synctest.Wait()
+		if at := <-trimmed; at.Sub(start) != 100*time.Second {
+			t.Fatalf("rearmed trim at %v", at)
+		}
 		cancel()
 		if err := <-done; err != nil {
 			t.Fatal(err)

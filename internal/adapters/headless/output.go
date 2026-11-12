@@ -88,6 +88,9 @@ type Options struct {
 // windows it no longer draws.
 const trimEvery = 10 * time.Second
 
+// idleLinger covers Vulkan idleTTL (20s) plus one cleanup period.
+const idleLinger = 30 * time.Second
+
 // SetMode sets the initial mode. Live updates are sent through Modes; RunOutput
 // applies them to its private Options copy on the renderer owner goroutine.
 func (opts *Options) SetMode(w, h, refresh int) {
@@ -359,8 +362,16 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			pace.Stop()
 		}
 	}()
-	trim := clk.NewTicker(trimEvery)
+	trim := clk.NewTimer(trimEvery)
 	defer trim.Stop()
+	lastActivity, trimArmed := clk.Now(), true
+	activity := func() {
+		lastActivity = clk.Now()
+		if !trimArmed {
+			trim.Reset(trimEvery)
+			trimArmed = true
+		}
+	}
 	// One timer for the wait of held requests, reset per pass (a time.After
 	// per loop pass would leave a timer behind each).
 	holdTimer := time.NewTimer(time.Hour)
@@ -488,6 +499,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 		var tickTime time.Time
 		select {
 		case req, ok := <-opts.ModeRequests:
+			activity()
 			if !ok {
 				opts.ModeRequests = nil
 				continue
@@ -503,6 +515,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 				return err
 			}
 		case mode, ok := <-opts.Modes:
+			activity()
 			if !ok {
 				opts.Modes = nil
 				continue
@@ -511,13 +524,16 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 				return err
 			}
 		case <-retryDue:
+			activity()
 			reportFrame(false)
 			continue
 		case <-paceDue:
+			activity()
 			paceDue = nil
 			ticked = true
 			tickTime = clk.Now()
 		case <-holdDue:
+			activity()
 			continue
 		case <-ctx.Done():
 			return nil
@@ -533,6 +549,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			}
 			continue
 		case b := <-pipeline.Completed():
+			activity()
 			// The completed token has left the pipeline's queue. Return its
 			// lease before any transition path can error or block.
 			pipeline.Recycle(b, r)
@@ -544,6 +561,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			}
 			continue
 		case b := <-pipeline.HiddenCompleted():
+			activity()
 			pipeline.RecycleHidden(b)
 			if err := checkSecurity(); err != nil {
 				if ctx.Err() != nil {
@@ -554,6 +572,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			pipeline.Retire(scene)
 			continue
 		case req := <-opts.Continuous:
+			activity()
 			code := ""
 			if opts.protected() {
 				code = ports.ControlErrLocked
@@ -579,6 +598,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			default:
 			}
 		case q, ok := <-incoming:
+			activity()
 			if !ok {
 				incoming = nil
 				continue
@@ -599,6 +619,11 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			}
 			dirty = requests.Admit(q, refuse, scene, haveScene) || dirty
 		case <-trim.C():
+			now := clk.Now()
+			trimArmed = now.Sub(lastActivity) < idleLinger
+			if trimArmed {
+				trim.Reset(trimEvery)
+			}
 			if err := checkSecurity(); err != nil {
 				if ctx.Err() != nil {
 					return nil
@@ -608,7 +633,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			// An idle output renders nothing: free what windows that left
 			// it held, and the child of an ended session.
 			pipeline.Retire(scene)
-			if err := r.Trim(clk.Now()); err != nil {
+			if err := r.Trim(now); err != nil {
 				return fmt.Errorf("trim renderer: %w", err)
 			}
 			if frame != lastStatsFrame {
@@ -617,6 +642,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			}
 			continue
 		case s, ok := <-scenes:
+			activity()
 			if !ok {
 				scenes = nil
 				continue
@@ -629,6 +655,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			}
 			acceptScene(s)
 		case b, ok := <-contents:
+			activity()
 			if !ok {
 				contents = nil
 				continue
@@ -641,6 +668,7 @@ func RunOutput(ctx context.Context, opts Options, scenes <-chan domain.Scene, co
 			}
 			update(b)
 		case c, ok := <-cursor:
+			activity()
 			if !ok {
 				cursor = nil
 				continue
