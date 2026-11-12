@@ -10,8 +10,8 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/bnema/neferwl/internal/domain"
 	"bnema.dev/zerowrap"
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 // statsRegistered returns a router with output A registered and its initial
@@ -153,3 +153,49 @@ func (b *lockedBuffer) Write(p []byte) (int, error) {
 	return b.buf.Write(p)
 }
 func (b *lockedBuffer) String() string { b.mu.Lock(); defer b.mu.Unlock(); return b.buf.String() }
+
+// Reporting follows the first counter change, not a periodic idle deadline.
+func TestRouterStatsTimerArmedOnActivity(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var out lockedBuffer
+		log := zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &out})
+		ctx, cancel := context.WithCancel(zerowrap.WithCtx(context.Background(), log))
+		defer cancel()
+		in := newRouteInputs()
+		r, m := statsRegistered(ctx, in.routes())
+		go r.Run(ctx)
+		synctest.Wait()
+		time.Sleep(25 * time.Second)
+		synctest.Wait()
+		if out.String() != "" {
+			t.Fatal("idle router logged")
+		}
+		in.scenes <- []domain.Scene{{Output: "A", Seq: 1}}
+		<-m.Scenes
+		synctest.Wait()
+		time.Sleep(9 * time.Second)
+		synctest.Wait()
+		if out.String() != "" {
+			t.Fatal("reported before activity deadline")
+		}
+		time.Sleep(time.Second)
+		synctest.Wait()
+		if n := strings.Count(out.String(), "routing stats"); n != 1 {
+			t.Fatalf("scene reports: %d", n)
+		}
+		time.Sleep(time.Minute)
+		synctest.Wait()
+		if n := strings.Count(out.String(), "routing stats"); n != 1 {
+			t.Fatalf("extra idle reports: %d", n)
+		}
+		r.NoteEventSend(time.Millisecond)
+		synctest.Wait()
+		time.Sleep(routerStatsEvery)
+		synctest.Wait()
+		if n := strings.Count(out.String(), "routing stats"); n != 2 {
+			t.Fatalf("backend counter reports: %d", n)
+		}
+		cancel()
+		<-r.done
+	})
+}

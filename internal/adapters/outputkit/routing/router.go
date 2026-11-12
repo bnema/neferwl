@@ -6,10 +6,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
 	"github.com/bnema/neferwl/internal/domain"
-	"bnema.dev/zerowrap"
 )
 
 // Router feeds the running outputs their scenes, cursor and capture
@@ -43,6 +43,7 @@ type Router struct {
 	// OutputEvent to core since the last report. The backend loop writes it,
 	// so it is atomic.
 	eventWait atomic.Int64
+	statsWake chan struct{} // coalesced backend counter transition
 }
 
 // routerStatsEvery is the period of the "routing stats" log entry.
@@ -90,20 +91,28 @@ type routerOp struct {
 }
 
 func NewRouter(ctx context.Context, captured chan<- domain.CaptureDone, in Routes) *Router {
-	return &Router{outs: map[string]*Mailbox{}, off: map[string]bool{}, captured: captured, ctx: ctx, in: in, ops: make(chan routerOp), done: make(chan struct{}), log: logging.For(ctx, "router")}
+	return &Router{outs: map[string]*Mailbox{}, off: map[string]bool{}, captured: captured, ctx: ctx, in: in, ops: make(chan routerOp), done: make(chan struct{}), statsWake: make(chan struct{}, 1), log: logging.For(ctx, "router")}
 }
 
 // Run routes until ctx ends.
 func (r *Router) Run(ctx context.Context) {
 	defer close(r.done)
-	report := time.NewTicker(routerStatsEvery)
+	report := time.NewTimer(routerStatsEvery)
+	report.Stop()
 	defer report.Stop()
+	var reportDue <-chan time.Time
 	for {
+		if reportDue == nil && (r.stats != (routerStats{}) || r.eventWait.Load() != 0) {
+			report.Reset(routerStatsEvery)
+			reportDue = report.C
+		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-report.C:
+		case <-reportDue:
 			r.Report()
+			reportDue = nil
+		case <-r.statsWake:
 		case op := <-r.ops:
 			r.Apply(op)
 		case set := <-r.in.Scenes:
@@ -139,7 +148,16 @@ func (r *Router) NoteEventSend(d time.Duration) {
 	n := int64(d)
 	for {
 		cur := r.eventWait.Load()
-		if n <= cur || r.eventWait.CompareAndSwap(cur, n) {
+		if n <= cur {
+			return
+		}
+		if r.eventWait.CompareAndSwap(cur, n) {
+			if cur == 0 {
+				select {
+				case r.statsWake <- struct{}{}:
+				default:
+				}
+			}
 			return
 		}
 	}
