@@ -185,7 +185,17 @@ type subState struct {
 	parent                *surface
 	children              []*surface // structural children
 	pendingLayout, layout []childLayout
+	pendingOwned          bool // pendingLayout is private until captured by an update
 	synced                bool // explicit synchronization mode
+}
+
+// ownPendingLayout makes pending layout edits private to this commit cycle.
+// Updates and the applied layout may still reference the previous slice.
+func (p *surface) ownPendingLayout() {
+	if !p.sub.pendingOwned {
+		p.sub.pendingLayout = append([]childLayout(nil), p.sub.pendingLayout...)
+		p.sub.pendingOwned = true
+	}
 }
 
 // root is the top of the surface's subsurface tree.
@@ -309,12 +319,13 @@ func (s *surface) detach() {
 			break
 		}
 	}
+	p.ownPendingLayout()
 	p.sub.pendingLayout = removeLayout(p.sub.pendingLayout, s)
-	p.sub.layout = removeLayout(p.sub.layout, s)
+	p.sub.layout = removeLayout(append([]childLayout(nil), p.sub.layout...), s)
 	p.root().treeDirty = true
 	p.root().contentSource = nil
 	for _, u := range p.queue {
-		u.layout = removeLayout(u.layout, s)
+		u.layout = removeLayout(append([]childLayout(nil), u.layout...), s)
 	}
 	s.sub.parent = nil
 	// Parent updates cannot make a detached child's bound commits visible.
@@ -350,6 +361,7 @@ func (s *surface) Destroy(*wayland.Surface) {
 	}
 	s.sub.children = nil
 	s.sub.layout, s.sub.pendingLayout = nil, nil
+	s.sub.pendingOwned = false
 	for _, cb := range s.next.callbacks {
 		cb.Destroy()
 	}

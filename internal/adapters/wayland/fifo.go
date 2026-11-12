@@ -284,11 +284,13 @@ type childLayout struct {
 	below bool
 }
 
+// removeLayout edits caller-owned storage; shared layouts must be cloned first.
 func removeLayout(layout []childLayout, child *surface) []childLayout {
-	layout = append([]childLayout(nil), layout...)
 	for i := 0; i < len(layout); i++ {
 		if layout[i].child == child {
-			layout = append(layout[:i:i], layout[i+1:]...)
+			copy(layout[i:], layout[i+1:])
+			layout[len(layout)-1] = childLayout{}
+			layout = layout[:len(layout)-1]
 			i--
 		}
 	}
@@ -317,6 +319,7 @@ func (s *surface) takePending() update {
 		u.vp, u.vpW, u.vpH, u.vpSet, u.vpSrc, u.vpCrop = v, v.pendingW, v.pendingH, v.pendingSet, v.pendingSrc, v.pendingCrop
 	}
 	u.layout = s.sub.pendingLayout
+	s.sub.pendingOwned = false
 	if s.xdg != nil {
 		u.xdg, u.geometry, u.ackedCore = s.xdg, s.xdg.pendingGeometry, s.xdg.ackedCore
 	}

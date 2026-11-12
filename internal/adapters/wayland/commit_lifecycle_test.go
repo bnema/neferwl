@@ -415,3 +415,46 @@ func TestTakePendingKeepsStickyState(t *testing.T) {
 		t.Fatalf("left pending = %+v, want %+v", surf.next, want)
 	}
 }
+
+// A queued parent's layout is immutable even while later requests accumulate.
+func TestPendingLayoutPreservesQueuedCommit(t *testing.T) {
+	srv := &Server{fifoSurfaces: map[*surface]struct{}{}, surfaces: map[*server.Resource]*surface{}}
+	parent := &surface{server: srv}
+	child := &surface{server: srv, sub: subState{parent: parent}}
+	parent.sub.pendingLayout = []childLayout{{child: child, x: 1, y: 2}}
+	parent.queueUpdate()
+	defer parent.dropQueue()
+	captured := parent.queue[0]
+	resource := &server.Resource{}
+	srv.surfaces[resource] = parent
+	sub := subsurface{child}
+	sub.SetPosition(nil, 3, 4)
+	sub.SetPosition(nil, 5, 6)
+	sub.PlaceAbove(nil, &wayland.Surface{Resource: resource})
+	if want := (childLayout{child: child, x: 1, y: 2}); len(captured.layout) != 1 || captured.layout[0] != want {
+		t.Fatalf("queued layout mutated: %+v", captured.layout)
+	}
+	if want := (childLayout{child: child, x: 5, y: 6}); len(parent.sub.pendingLayout) != 1 || parent.sub.pendingLayout[0] != want {
+		t.Fatalf("pending layout: %+v", parent.sub.pendingLayout)
+	}
+}
+
+// Ten position requests between parent commits need only one layout clone.
+func TestPendingLayoutPositionAllocations(t *testing.T) {
+	parent := &surface{server: &Server{}}
+	child := &surface{sub: subState{parent: parent}}
+	parent.sub.pendingLayout = []childLayout{{child: child}}
+	sub := subsurface{child}
+	cycle := func() {
+		_ = parent.takePending()
+		for i := range 10 {
+			sub.SetPosition(nil, int32(i), int32(i))
+		}
+		_ = parent.takePending()
+	}
+	allocs := testing.AllocsPerRun(100, cycle)
+	t.Logf("10 SetPosition requests per commit cycle: %.1f allocations", allocs)
+	if allocs != 1 {
+		t.Errorf("got %.1f allocations, want 1", allocs)
+	}
+}

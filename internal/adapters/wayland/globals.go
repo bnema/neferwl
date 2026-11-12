@@ -193,7 +193,8 @@ func (c subcompositor) GetSubsurface(r *wayland.Subcompositor, id uint32, w, par
 	state.role = func(bool) {}
 	state.sub = subState{role: sub, parent: up, children: state.sub.children, layout: state.sub.layout, pendingLayout: state.sub.pendingLayout, synced: true}
 	up.sub.children = append(up.sub.children, state)
-	up.sub.pendingLayout = append(append([]childLayout(nil), up.sub.pendingLayout...), childLayout{child: state})
+	up.ownPendingLayout()
+	up.sub.pendingLayout = append(up.sub.pendingLayout, childLayout{child: state})
 	// The child follows its root window's output and scale.
 	state.sendScale()
 	up.emitInput()
@@ -217,7 +218,7 @@ func (s subsurface) SetPosition(_ *wayland.Subsurface, x, y int32) {
 	if p == nil {
 		return
 	}
-	p.sub.pendingLayout = append([]childLayout(nil), p.sub.pendingLayout...)
+	p.ownPendingLayout()
 	for i := range p.sub.pendingLayout {
 		item := &p.sub.pendingLayout[i]
 		if item.child == s.surface {
@@ -253,7 +254,8 @@ func (s subsurface) restack(r *wayland.Subsurface, sibling *wayland.Surface, abo
 		r.PostError(uint32(wayland.SubsurfaceErrorBadSurface), "not a sibling or the parent")
 		return
 	}
-	list := append([]childLayout(nil), p.sub.pendingLayout...)
+	p.ownPendingLayout()
+	list := p.sub.pendingLayout
 	var item childLayout
 	for _, entry := range list {
 		if entry.child == me {
