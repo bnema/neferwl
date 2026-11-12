@@ -25,7 +25,9 @@ func newExplicitWaiter(t *testing.T, addErr error) *explicitWaiter {
 	e := &explicitWaiter{src: newMockacquireSource(t), rm: newMockacquireRemover(t)}
 	dev := newMocksyncobjDevice(t)
 	dev.EXPECT().signalled(uint32(7), uint64(4)).Return(false, nil).Once()
-	dev.EXPECT().eventfd(uint32(7), uint64(4), mock.Anything).Return(nil).Once()
+	if addErr == nil {
+		dev.EXPECT().eventfd(uint32(7), uint64(4), mock.Anything).Return(nil).Once()
+	}
 	e.point = syncPoint{tl: &timeline{dev: dev, handle: 7}, point: 4}
 	sw, err := newSyncWaiter(func() { t.Error("explicit wait posted a tick") })
 	if err != nil {
@@ -49,7 +51,7 @@ func fdClosed(fd int) bool {
 	return err == unix.EBADF
 }
 
-// A fired eventfd removes the source, closes the fd and wakes the pacer
+// A fired eventfd retains the source and drained fd and wakes the pacer
 // inline, never through a posted tick.
 func TestExplicitWaitFiresOnDisplayLoop(t *testing.T) {
 	e := newExplicitWaiter(t, nil)
@@ -64,10 +66,14 @@ func TestExplicitWaitFiresOnDisplayLoop(t *testing.T) {
 	}
 	fd := e.fd
 	e.fire()
-	if !e.sw.fired(w) || w.failed || e.paced != 1 || !fdClosed(fd) {
+	if !e.sw.fired(w) || w.failed || e.paced != 1 || fdClosed(fd) {
 		t.Fatalf("fired=%v failed=%v paced=%d closed=%v", e.sw.fired(w), w.failed, e.paced, fdClosed(fd))
 	}
 	e.sw.cancel(w) // applySync cancels after the fire: nothing more to release
+	e.sw.releasePending()
+	if !fdClosed(fd) {
+		t.Fatal("pooled fd leaked at shutdown")
+	}
 }
 
 // Cancelling before the fire removes the source, then closes the fd.
@@ -158,4 +164,112 @@ func TestSyncobjCommitAppliedByAcquireCallback(t *testing.T) {
 	if !ok || got.Acquire == nil {
 		t.Fatalf("content %+v", got)
 	}
+}
+
+// The kernel retains the old eventfd object even if its numeric fd is reused.
+func TestExplicitWaitLateCancelledWrite(t *testing.T) {
+	e := newExplicitWaiter(t, nil)
+	w, err := e.sw.watch(e.point)
+	if err != nil {
+		t.Fatal(err)
+	}
+	late, err := unix.Dup(e.fd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = unix.Close(late) }()
+	e.rm.EXPECT().Remove().Once()
+	e.sw.cancel(w)
+	if !fdClosed(e.fd) {
+		t.Fatal("cancelled fd open")
+	}
+	next, err := unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = unix.Close(next) }()
+	one := [8]byte{1}
+	if _, err := unix.Write(late, one[:]); err != nil {
+		t.Fatal(err)
+	}
+	e.fire() // even a stale callback must be harmless
+	var b [8]byte
+	if _, err := unix.Read(next, b[:]); err != unix.EAGAIN {
+		t.Fatalf("late notification reached new fd: %v", err)
+	}
+	if e.paced != 0 {
+		t.Fatal("cancelled callback paced")
+	}
+}
+
+func TestExplicitSyncWatchPool(t *testing.T) {
+	e := newExplicitWaiter(t, nil)
+	dev := e.point.tl.dev.(*mocksyncobjDevice)
+	dev.EXPECT().signalled(uint32(7), uint64(4)).Return(false, nil).Times(99)
+	dev.EXPECT().eventfd(uint32(7), uint64(4), mock.Anything).Return(nil).Times(99)
+	e.rm.EXPECT().Remove().Once()
+	var first *acquireSlot
+	for range 100 {
+		w, err := e.sw.watch(e.point)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if first == nil {
+			first = w.slot
+		} else if first != w.slot {
+			t.Fatal("slot not reused")
+		}
+		one := [8]byte{1}
+		if _, err := unix.Write(w.efd, one[:]); err != nil {
+			t.Fatal(err)
+		}
+		e.fire()
+		e.sw.cancel(w)
+	}
+	if e.paced != 100 || len(e.sw.slots) != 1 {
+		t.Fatal("pool cycle failed")
+	}
+	e.sw.releasePending()
+}
+
+// Subtract the identical generated mock calls: testify bookkeeping is not
+// production acquire-path allocation. The sole remaining allocation is w.
+func TestExplicitSyncWatchAllocations(t *testing.T) {
+	if raceEnabled {
+		// AllocsPerRun counts every goroutine, and the race runtime
+		// allocates on its own now and then. perf-check runs it without.
+		t.Skip("the race detector allocates in the background")
+	}
+	e := newExplicitWaiter(t, nil)
+	dev := e.point.tl.dev.(*mocksyncobjDevice)
+	dev.EXPECT().signalled(uint32(7), uint64(4)).Return(false, nil)
+	dev.EXPECT().eventfd(uint32(7), uint64(4), mock.Anything).Return(nil)
+	e.rm.EXPECT().Remove().Once()
+	cycle := func() {
+		w, err := e.sw.watch(e.point)
+		if err != nil {
+			t.Fatal(err)
+		}
+		one := [8]byte{1}
+		if _, err := unix.Write(w.efd, one[:]); err != nil {
+			t.Fatal(err)
+		}
+		e.fire()
+	}
+	cycle()
+	baseline := testing.AllocsPerRun(100, func() {
+		explicitWatchMockCalls(dev, e.fd)
+	})
+	total := testing.AllocsPerRun(100, cycle)
+	t.Logf("total=%.0f mock=%.0f acquire=%.0f allocs/cycle", total, baseline, total-baseline)
+	if total-baseline > 1 {
+		t.Fatalf("acquire allocations %.0f > 1", total-baseline)
+	}
+	e.sw.releasePending()
+}
+
+//go:noinline
+func explicitWatchMockCalls(dev syncobjDevice, fd int) {
+	_, _ = dev.signalled(7, 4)
+	_ = dev.eventfd(7, 4, fd)
 }

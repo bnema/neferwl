@@ -236,6 +236,7 @@ type syncWaiter struct {
 	// src registers the eventfd there, pace applies what the fired wait
 	// unblocked (display goroutine only).
 	src       acquireSource
+	slots     []*acquireSlot // fired and drained explicit waits; display goroutine only
 	pace      func()
 	pending   map[*syncWait]struct{} // explicit waits still registered (display goroutine, then Run's exit)
 	poller    acquirePoller
@@ -251,11 +252,19 @@ type syncWaiter struct {
 	pollError sync.Once
 }
 
+// acquireSlot retains a display registration only after its eventfd fired and
+// was drained. Cancelled kernel notifications must never target a reused slot.
+type acquireSlot struct {
+	efd int
+	src acquireRemover
+	w   *syncWait
+}
+
 // syncWait is one acquire point a queued commit waits for. An explicit wait
 // lives on the display loop only; an implicit one is polled by run.
 type syncWait struct {
 	efd       int
-	src       acquireRemover // explicit: the display-loop registration, nil once removed
+	slot      *acquireSlot // explicit: registration retained until recycled or destroyed
 	explicit  bool
 	done      bool        // the eventfd fired or the wait was cancelled (display goroutine)
 	failed    bool        // observation failed; done must not authorize publication
@@ -281,19 +290,36 @@ func (sw *syncWaiter) watch(p syncPoint) (*syncWait, error) {
 	if err != nil || ready {
 		return &syncWait{efd: -1, explicit: true, done: true, failed: err != nil}, err
 	}
-	efd, err := unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK)
-	if err != nil {
-		return &syncWait{efd: -1, explicit: true, done: true, failed: true}, err
+	w := &syncWait{efd: -1, explicit: true}
+	var slot *acquireSlot
+	if n := len(sw.slots); n > 0 {
+		slot = sw.slots[n-1]
+		sw.slots[n-1] = nil
+		sw.slots = sw.slots[:n-1]
+	} else {
+		efd, err := unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK)
+		if err != nil {
+			w.done, w.failed = true, true
+			return w, err
+		}
+		slot = &acquireSlot{efd: efd}
+		src, err := sw.src.add(efd, func() {
+			if slot.w != nil {
+				sw.onAcquire(slot.w)
+			}
+		})
+		if err != nil {
+			w.done, w.failed = true, true
+			return w, errors.Join(err, unix.Close(efd))
+		}
+		slot.src = src
 	}
-	if err := p.tl.dev.eventfd(p.tl.handle, p.point, efd); err != nil {
-		return &syncWait{efd: -1, explicit: true, done: true, failed: true}, errors.Join(err, unix.Close(efd))
+	slot.w, w.slot, w.efd = w, slot, slot.efd
+	if err := p.tl.dev.eventfd(p.tl.handle, p.point, w.efd); err != nil {
+		w.failed = true
+		sw.finish(w)
+		return w, err
 	}
-	w := &syncWait{efd: efd, explicit: true}
-	src, err := sw.src.add(efd, func() { sw.onAcquire(w) })
-	if err != nil {
-		return &syncWait{efd: -1, explicit: true, done: true, failed: true}, errors.Join(err, unix.Close(efd))
-	}
-	w.src = src
 	if sw.pending == nil {
 		sw.pending = map[*syncWait]struct{}{}
 	}
@@ -312,23 +338,44 @@ func (sw *syncWaiter) onAcquire(w *syncWait) {
 			return // not signalled yet: keep waiting
 		}
 		w.failed = true
+		sw.finish(w)
+		sw.pace()
+		return
 	}
-	sw.finish(w)
+	sw.recycle(w)
 	sw.pace()
 }
 
-// finish unregisters then closes an explicit wait's eventfd and marks it done.
+// destroySlot unregisters before closing; an outstanding kernel write may still
+// reference this eventfd, so cancellation must never recycle it.
+func (sw *syncWaiter) destroySlot(slot *acquireSlot) {
+	slot.w = nil
+	slot.src.Remove()
+	logging.CloseFD(sw.log, slot.efd, "acquire eventfd")
+}
+
+// recycle retains only eventfds whose notification was successfully drained.
+func (sw *syncWaiter) recycle(w *syncWait) {
+	delete(sw.pending, w)
+	slot := w.slot
+	slot.w = nil
+	if len(sw.slots) < 8 {
+		sw.slots = append(sw.slots, slot)
+	} else {
+		sw.destroySlot(slot)
+	}
+	w.slot, w.efd, w.done = nil, -1, true
+}
+
+// finish destroys an explicit wait's slot and marks it done. It is also safe
+// after recycling: dropping an applied commit must not destroy a reused slot.
 func (sw *syncWaiter) finish(w *syncWait) {
 	delete(sw.pending, w)
-	if w.src != nil {
-		w.src.Remove()
-		w.src = nil
+	if w.slot != nil {
+		sw.destroySlot(w.slot)
+		w.slot = nil
 	}
-	if w.efd >= 0 {
-		logging.CloseFD(sw.log, w.efd, "acquire eventfd")
-		w.efd = -1
-	}
-	w.done = true
+	w.efd, w.done = -1, true
 }
 
 // watchImplicit waits for a dma-buf's exclusive fences without blocking dispatch.
@@ -697,4 +744,8 @@ func (sw *syncWaiter) releasePending() {
 	for w := range sw.pending {
 		sw.finish(w)
 	}
+	for _, slot := range sw.slots {
+		sw.destroySlot(slot)
+	}
+	sw.slots = nil
 }
