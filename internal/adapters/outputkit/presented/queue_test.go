@@ -1,6 +1,7 @@
 package presented
 
 import (
+	"fmt"
 	"maps"
 	"reflect"
 	"testing"
@@ -16,6 +17,29 @@ import (
 )
 
 func ptr(m map[domain.WindowID]uint64) uintptr { return reflect.ValueOf(m).Pointer() }
+
+func BenchmarkQueuePushDeadWindows(b *testing.B) {
+	for _, dead := range []int{0, 1000} {
+		b.Run(fmt.Sprintf("dead=%d", dead), func(b *testing.B) {
+			seen := make(map[domain.WindowID]uint64, 10+dead)
+			for id := domain.WindowID(1); id <= domain.WindowID(10+dead); id++ {
+				seen[id] = 1
+			}
+			var q Queue
+			sink := portsmocks.NewMockPresentationSink(b)
+			sink.EXPECT().Push(mock.Anything).RunAndReturn(func(r ports.OutputPresented) {
+				r.Snapshot.Release()
+			})
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				seen[domain.WindowID(i%10+1)]++
+				q.Push(ports.OutputPresented{Seen: seen})
+				q.Flush(sink)
+			}
+		})
+	}
+}
 
 // An unchanged publication reuses its immutable snapshots; a change clones,
 // and earlier reports keep their maps.

@@ -1,6 +1,7 @@
 package surfaces
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
@@ -8,6 +9,25 @@ import (
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 )
+
+func BenchmarkShowsFromSeenDeadWindows(b *testing.B) {
+	for _, dead := range []int{0, 1000} {
+		b.Run(fmt.Sprintf("dead=%d", dead), func(b *testing.B) {
+			seen := make(map[domain.WindowID]uint64, 10+dead)
+			for id := domain.WindowID(1); id <= domain.WindowID(10+dead); id++ {
+				seen[id] = 1
+			}
+			scene := shows(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+			var snap ShowsSnapshot
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				seen[domain.WindowID(i%10+1)]++
+				snap.FromSeen(scene, seen, nil)
+			}
+		})
+	}
+}
 
 func shows(ids ...domain.WindowID) domain.Scene {
 	s := domain.Scene{OutputWidth: 100, OutputHeight: 100}

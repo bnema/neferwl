@@ -628,3 +628,31 @@ func openFDs(t *testing.T) int {
 	}
 	return n
 }
+
+// BenchmarkExplicitSyncWatch includes generated mock dispatch overhead.
+func BenchmarkExplicitSyncWatch(b *testing.B) {
+	dev := newMocksyncobjDevice(b)
+	src, rm := newMockacquireSource(b), newMockacquireRemover(b)
+	dev.EXPECT().signalled(uint32(7), uint64(4)).Return(false, nil)
+	dev.EXPECT().eventfd(uint32(7), uint64(4), mock.Anything).Return(nil)
+	src.EXPECT().add(mock.Anything, mock.Anything).Return(rm, nil)
+	rm.EXPECT().Remove().Return()
+	sw := &syncWaiter{src: src, pace: func() {}, log: logging.For(context.Background(), "wayland")}
+	point := syncPoint{tl: &timeline{dev: dev, handle: 7}, point: 4}
+	one := [8]byte{1}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		w, err := sw.watch(point)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if _, err := unix.Write(w.efd, one[:]); err != nil {
+			b.Fatal(err)
+		}
+		sw.onAcquire(w)
+	}
+	b.StopTimer()
+	// Pooled eventfds are unregistered and closed at shutdown.
+	sw.releasePending()
+}
