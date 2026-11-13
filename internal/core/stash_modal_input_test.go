@@ -270,3 +270,55 @@ func TestStashBindRehitsStationaryPointer(t *testing.T) {
 		})
 	}
 }
+
+func TestStashShownDuringTileGrabRehitsOnRelease(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, _, sc, cmds := stashRig(t, false)
+		if err := c.runBind(t.Context(), ActionToggleStashVisible); err != nil {
+			t.Fatal(err)
+		}
+		r := c.clientRect(settledOf(t, sc, 1))
+		if err := c.pointerMotion(t.Context(), ports.PointerMotion{X: float64(r.X + r.W/2), Y: float64(r.Y + 1)}); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.pointerButton(t.Context(), ports.PointerButton{Button: btnLeft, Pressed: true}); err != nil {
+			t.Fatal(err)
+		}
+		if c.grab != 1 {
+			t.Fatalf("grab %d, want tile 1", c.grab)
+		}
+		drainConfigures(cmds)
+		if err := c.runBind(t.Context(), ActionToggleStashVisible); err != nil {
+			t.Fatal(err)
+		}
+		if c.pointer != 1 || c.grab != 1 {
+			t.Fatal("bind revoked active tile grab")
+		}
+		for len(cmds) > 0 {
+			if v, ok := (<-cmds).(ports.PointerFocus); ok {
+				t.Fatalf("premature pointer focus %+v", v)
+			}
+		}
+		if err := c.pointerButton(t.Context(), ports.PointerButton{Button: btnLeft}); err != nil {
+			t.Fatal(err)
+		}
+		released, left := false, false
+		for len(cmds) > 0 {
+			switch v := (<-cmds).(type) {
+			case ports.PointerButtonTo:
+				if v.ID != 1 || v.Pressed || released {
+					t.Fatalf("unexpected release %+v", v)
+				}
+				released = true
+			case ports.PointerFocus:
+				if !released || v.ID != 0 {
+					t.Fatalf("focus %+v before release or not a leave", v)
+				}
+				left = true
+			}
+		}
+		if !released || !left || c.pointer != 0 || c.grab != 0 || c.held() != 0 {
+			t.Fatalf("release=%v leave=%v pointer=%d grab=%d held=%d", released, left, c.pointer, c.grab, c.held())
+		}
+	})
+}

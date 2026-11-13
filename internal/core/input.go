@@ -316,6 +316,11 @@ func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {
 	}
 	if c.held() == 0 {
 		c.grab = 0
+		// Showing the stash during a client grab defers its pointer
+		// leave until the owner has received the final release.
+		if c.pointerInputBlocked() {
+			return c.rehit(ctx)
+		}
 	}
 	return nil
 }
