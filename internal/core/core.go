@@ -774,6 +774,19 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 	latest(c.ch.Scenes, scenes)
 	c.publishState()
 	c.publishWorkspaces()
+	stashChanged := false
+	for _, sc := range c.screens {
+		shown := sc.mon.Current().StashShown()
+		stashChanged = stashChanged || shown != sc.publishedStashShown
+		sc.publishedStashShown = shown
+	}
+	if stashChanged {
+		// Stash modality changes immediately, even under a stationary
+		// cursor. rehit preserves active grabs and drags.
+		if err := c.rehit(ctx); err != nil {
+			return err
+		}
+	}
 	c.armCaptureTimer()
 	// A running slide moves on the next flip, or on the fallback timer.
 	if c.animating() {
@@ -1115,7 +1128,7 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 			if p.Peek {
 				lx, ly = min(max(lx, float64(r.X)), float64(r.X+r.W-1)), min(max(ly, float64(r.Y)), float64(r.Y+r.H-1))
 			}
-			if c.dataDrag == nil && c.grab == 0 && c.held() == 0 && sc.mon.Current().InputBlocked(p.ID) {
+			if c.dataDrag == nil && p.ID != c.grab && sc.mon.Current().InputBlocked(p.ID) {
 				// A blocked tile still occludes bottom/background layers:
 				// clicking it dismisses the stash, never clicks through it.
 				id, blocked = 0, true

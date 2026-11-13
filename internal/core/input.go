@@ -142,7 +142,8 @@ func (c *Core) pointerMotion(ctx context.Context, v ports.PointerMotion) error {
 	}
 	id, x, y := c.hit(c.cursorX, c.cursorY)
 	entered := false
-	// Layout changes are intentionally re-hit-tested only on motion.
+	// Most layout changes re-hit-test only on motion; stash visibility
+	// changes also re-hit after publishing to update pointer modality.
 	if id != c.pointer {
 		entered = c.hoverEntry(id, px, py)
 		c.pointer = id
@@ -252,7 +253,7 @@ func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {
 			}
 		}
 	}
-	if c.pointerInputBlocked() {
+	if c.grab == 0 && c.pointerInputBlocked() {
 		return nil
 	}
 	if started, err := c.startPointerGrab(ctx, v); err != nil || started {
@@ -332,10 +333,10 @@ func (c *Core) focusEmptyOutput(ctx context.Context) error {
 	return c.publish(ctx)
 }
 
-// pointerInputBlocked also covers a stale pointer focus after a keybind
-// shows the stash. Layout changes otherwise re-hit-test only on motion.
+// pointerInputBlocked guards pointer events while a grab defers rehit.
+// Only the tile owning the grab remains interactive behind the stash.
 func (c *Core) pointerInputBlocked() bool {
-	if c.grab != 0 || c.held() != 0 || c.dataDrag != nil || c.pointerBusy() {
+	if c.pointer == c.grab || c.dataDrag != nil || c.pointerBusy() {
 		return false
 	}
 	s, w := c.screenOf(c.pointer)

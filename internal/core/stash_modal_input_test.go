@@ -63,6 +63,9 @@ func TestStashBlocksTilePointerInput(t *testing.T) {
 				if w.StashShown() {
 					t.Fatal("click did not hide stash")
 				}
+				if c.pointer != 1 {
+					t.Fatalf("dismissal did not re-hit tile: pointer %d", c.pointer)
+				}
 				if w.Focus != 0 || w.Columns[0].Focus != 0 {
 					t.Fatal("click changed column selection")
 				}
@@ -138,6 +141,130 @@ func TestStashInteractiveWindows(t *testing.T) {
 				}
 				if n != 2 {
 					t.Fatalf("got %d buttons for %d", n, target)
+				}
+			})
+		})
+	}
+}
+
+func TestStashGrabDoesNotUnblockTiles(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, _, sc, cmds := stashRig(t, false)
+		r := c.clientRect(settledOf(t, sc, 2))
+		if err := c.pointerMotion(t.Context(), ports.PointerMotion{X: float64(r.X + r.W/2), Y: float64(r.Y + r.H/2)}); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.pointerButton(t.Context(), ports.PointerButton{Button: btnLeft, Pressed: true}); err != nil {
+			t.Fatal(err)
+		}
+		if c.grab != 2 {
+			t.Fatalf("grab %d, want stash window 2", c.grab)
+		}
+		drainConfigures(cmds)
+		r = c.clientRect(settledOf(t, sc, 1))
+		if err := c.pointerMotion(t.Context(), ports.PointerMotion{X: float64(r.X + r.W/2), Y: float64(r.Y + 1)}); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.pointerAxis(t.Context(), ports.PointerAxis{Vertical: domain.ScrollAxis{Set: true, Value: 10}}); err != nil {
+			t.Fatal(err)
+		}
+		// Also guard a stale target while another window owns the grab.
+		c.pointer = 1
+		if err := c.pointerAxis(t.Context(), ports.PointerAxis{Vertical: domain.ScrollAxis{Set: true, Value: 10}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.pointerButton(t.Context(), ports.PointerButton{Button: btnLeft}); err != nil {
+			t.Fatal(err)
+		}
+		released := false
+		for len(cmds) > 0 {
+			switch v := (<-cmds).(type) {
+			case ports.PointerFocus:
+				if v.ID == 1 {
+					t.Fatal("tile entered during stash grab")
+				}
+			case ports.PointerMotionTo:
+				if v.ID == 1 {
+					t.Fatal("tile received motion during stash grab")
+				}
+			case ports.PointerAxisTo:
+				if v.ID == 1 {
+					t.Fatal("tile received axis during stash grab")
+				}
+			case ports.PointerButtonTo:
+				if v.ID != 2 || v.Pressed {
+					t.Fatalf("unexpected button %+v", v)
+				}
+				released = true
+			}
+		}
+		if !released {
+			t.Fatal("stash grab did not receive release")
+		}
+	})
+}
+
+func TestStashBindRehitsStationaryPointer(t *testing.T) {
+	for _, center := range []bool{false, true} {
+		name := "exposed-tile"
+		if center {
+			name = "under-stash"
+		}
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				c, _, sc, cmds := stashRig(t, false)
+				if err := c.runBind(t.Context(), ActionToggleStashVisible); err != nil {
+					t.Fatal(err)
+				}
+				r := c.clientRect(settledOf(t, sc, 1))
+				x, y := float64(r.X+r.W/2), float64(r.Y+1)
+				if center {
+					y = float64(r.Y + r.H/2)
+				}
+				if err := c.pointerMotion(t.Context(), ports.PointerMotion{X: x, Y: y}); err != nil {
+					t.Fatal(err)
+				}
+				if c.pointer != 1 {
+					t.Fatalf("setup pointer %d", c.pointer)
+				}
+				drainConfigures(cmds)
+				if err := c.runBind(t.Context(), ActionToggleStashVisible); err != nil {
+					t.Fatal(err)
+				}
+				want := WindowID(0)
+				if center {
+					want = 2
+				}
+				entered := false
+				for len(cmds) > 0 {
+					if v, ok := (<-cmds).(ports.PointerFocus); ok {
+						if v.ID != want {
+							t.Fatalf("focus %+v want %d", v, want)
+						}
+						entered = true
+					}
+				}
+				if !entered || c.pointer != want {
+					t.Fatalf("stationary pointer not retargeted: %d", c.pointer)
+				}
+				if center {
+					for _, pressed := range []bool{true, false} {
+						if err := c.pointerButton(t.Context(), ports.PointerButton{Button: btnLeft, Pressed: pressed}); err != nil {
+							t.Fatal(err)
+						}
+					}
+					n := 0
+					for len(cmds) > 0 {
+						if v, ok := (<-cmds).(ports.PointerButtonTo); ok {
+							if v.ID != 2 {
+								t.Fatalf("first click targeted %d", v.ID)
+							}
+							n++
+						}
+					}
+					if n != 2 {
+						t.Fatalf("first click delivered %d buttons", n)
+					}
 				}
 			})
 		})

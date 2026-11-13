@@ -1485,6 +1485,12 @@ func TestStashThinPeekClick(t *testing.T) {
 		r.key(t, "s", domain.ModAlt)
 		r.key(t, "Left", domain.ModAlt)
 		r.key(t, "s", domain.ModAlt|domain.ModShift) // stash 2 1, 2 peeks 2px from the left
+		synctest.Wait()
+		// Visibility changes now re-hit the stationary cursor too. Discard
+		// those earlier focus changes before checking this motion.
+		for len(r.commands) > 0 {
+			<-r.commands
+		}
 		r.input <- ports.PointerMotion{X: 1, Y: 50}
 		for {
 			if v, ok := (<-r.commands).(ports.PointerFocus); ok {

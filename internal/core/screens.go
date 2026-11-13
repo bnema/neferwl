@@ -38,6 +38,9 @@ type screen struct {
 	// last is the scene published for this screen: an identical next one
 	// keeps its Seq (Scene.SameAs). Zero after a protected publish.
 	last domain.Scene
+	// publishedStashShown tracks modality changes independently of pointer
+	// motion, so a visibility publish can revoke stale client pointer focus.
+	publishedStashShown bool
 	// settledLayout is the monitor's layout as of the last publish: what
 	// configures are sized from. shown is the same with the rect motions applied: what is
 	// drawn and hit-tested. They are the same slice while no rect motion
