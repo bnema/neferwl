@@ -76,6 +76,11 @@ func (c *Core) hoverTick(ctx context.Context) error {
 	if c.pointer != id || !c.hoverEligible(id) || c.hoverLocked {
 		return nil
 	}
+	// Surface input regions and overlays can change without re-hitting the
+	// cached pointer target. Dwell only counts while the target still wins.
+	if hit, _, _ := c.hit(c.cursorX, c.cursorY); hit != id {
+		return nil
+	}
 	return c.applyHover(ctx, id)
 }
 

@@ -411,6 +411,9 @@ func (c *Core) apply(cfg domain.Config) error {
 	if c.cfg.Keyboard.CmdKey != cfg.Keyboard.CmdKey {
 		c.osdCancel()
 	}
+	if c.cfg.Focus.FollowMouse != cfg.Focus.FollowMouse || c.cfg.Focus.FollowMouseDelay != cfg.Focus.FollowMouseDelay {
+		c.cancelHover()
+	}
 	c.cfg = cfg
 	c.inputBindings = false
 	for _, output := range cfg.Outputs {
