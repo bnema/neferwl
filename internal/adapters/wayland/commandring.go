@@ -5,9 +5,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"bnema.dev/purego-libwayland/server"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
-	"bnema.dev/purego-libwayland/server"
 )
 
 // commandRingSize bounds the client commands waiting for the display
@@ -127,6 +127,9 @@ func (s *Server) logCommandStats(ctx context.Context) {
 			return
 		case <-t.C:
 			s.reportCommandStats()
+			if !s.display.Do(func() { s.reportSurfaceStats(time.Now()) }) {
+				return
+			}
 		}
 	}
 }

@@ -44,7 +44,9 @@ type surface struct {
 	syncScratch commitSync
 	// releasePointsDropped is display-goroutine-owned diagnostic accounting.
 	// A dropped point was not signalled because its acquire was not ready.
-	releasePointsDropped uint64
+	releasePointsDropped                                      uint64
+	commitsReceived, commitsApplied, releasePointsSignalled   uint64
+	statsReceived, statsApplied, statsSignalled, statsDropped uint64
 	// bufferScale, transform and opaque are committed state. formatOpaque is
 	// the current buffer's own opacity (x formats).
 	bufferScale  int
@@ -402,6 +404,7 @@ func (s *surface) Frame(r *wayland.Surface, id uint32) {
 	}
 }
 func (s *surface) Commit(*wayland.Surface) {
+	s.commitsReceived++
 	if s.next.attached && s.next.buffer != nil {
 		s.bufferCommitted = true
 	}
@@ -431,8 +434,9 @@ func (s *surface) Commit(*wayland.Surface) {
 func (s *surface) queueAndTick() {
 	srv := s.server
 	srv.paceDepth++
-	s.queueUpdate()
-	srv.tickFifo(time.Now(), nil)
+	now := time.Now()
+	s.queueUpdateAt(now)
+	srv.tickFifo(now, nil)
 	if n := len(s.queue); n > 0 && !s.queue[n-1].synced {
 		// The commit waits for a barrier, a fence or a refresh: the pacer
 		// must time it. A commit applied at once needs no tick of its own;

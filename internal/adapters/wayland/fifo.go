@@ -212,6 +212,9 @@ func (s *Server) surfaceOf(w *wayland.Surface) *surface {
 
 // update owns a captured commit until it applies or is discarded.
 type update struct {
+	enqueued time.Time
+	blocked  headBlock
+	stalled  bool
 	// pendingCommit is the wl_surface state captured by the commit.
 	pendingCommit
 	vp              *viewport
@@ -361,6 +364,10 @@ func (s *Server) nextRefresh(name string, now time.Time) time.Time {
 
 // queueUpdate queues the pending commit until it can apply.
 func (s *surface) queueUpdate() {
+	s.queueUpdateAt(time.Now())
+}
+
+func (s *surface) queueUpdateAt(now time.Time) {
 	u, _ := updatePool.Get().(*update)
 	if u == nil {
 		u = new(update)
@@ -379,6 +386,7 @@ func (s *surface) queueUpdate() {
 		u.sync = &u.syncStore
 	}
 	u.owner, u.synced = s, s.effectivelySynced()
+	u.enqueued = now
 	if s.server.syncWait != nil && u.attached && u.buffer != nil && u.sync == nil {
 		if b, ok := s.server.buffers[u.buffer.Resource].(*dmabufBuffer); ok {
 			err := s.server.syncWait.watchImplicit(b.buf, &u.implicit)
@@ -410,6 +418,7 @@ func (s *surface) queueUpdate() {
 
 // applyUpdate applies only the captured commit; later requests remain pending.
 func (s *surface) applyUpdate(u *update) {
+	s.commitsApplied++
 	// A buffer destroyed while queued (a swapchain resize) is skipped: the
 	// surface keeps its content, and is not unmapped behind the client.
 	s.commitSkipped = false
@@ -563,6 +572,7 @@ func (s *Server) tickFifo(now time.Time, flipped map[string]bool) (time.Duration
 		for len(surf.queue) > 0 && !surf.destroyed {
 			u := surf.queue[0]
 			if u.synced || !u.graphReady(now) {
+				surf.reportStall(now)
 				break
 			}
 			s.applyingGraph = true
@@ -643,10 +653,17 @@ func (u *update) graphReady(now time.Time) bool {
 	if gen != 0 {
 		u.readyGeneration, u.readyResult = gen, false
 	}
+	u.blocked = blockNone
 	if u.prev != nil && !u.prev.graphReady(now) {
+		u.blocked = blockPrev
 		return false
 	}
-	if u.wait && s.barrier || s.tooEarly(u.at, now) {
+	if u.wait && s.barrier {
+		u.blocked = blockBarrier
+		return false
+	}
+	if s.tooEarly(u.at, now) {
+		u.blocked = blockTimestamp
 		return false
 	}
 	// A dead attachment is skipped by applyUpdate; waiting for its fence
@@ -660,6 +677,7 @@ func (u *update) graphReady(now time.Time) bool {
 		}
 	} else if !u.failed {
 		if !s.syncReady(u.sync) {
+			u.blocked = blockAcquire
 			return false
 		}
 		if u.sync != nil && u.sync.wait != nil && u.sync.wait.failed {
@@ -677,6 +695,7 @@ func (u *update) graphReady(now time.Time) bool {
 			}
 		}
 		if waiting && !u.failed {
+			u.blocked = blockImplicit
 			return false
 		}
 	}
@@ -686,6 +705,7 @@ func (u *update) graphReady(now time.Time) bool {
 	}
 	for _, dep := range u.deps {
 		if !dep.owner.destroyed && !dep.graphReady(now) {
+			u.blocked = blockDeps
 			return false
 		}
 	}

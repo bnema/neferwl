@@ -608,6 +608,7 @@ func (sw *syncWaiter) discard() {
 // syncHold is a buffer's explicit-sync state while it is on screen: the
 // acquire fence handed to readers and the release point to signal.
 type syncHold struct {
+	owner   *surface
 	acquire *os.File
 	release syncPoint
 }
@@ -621,6 +622,8 @@ func (s *Server) releaseSync(h syncHold) {
 	if h.release.set() {
 		if err := h.release.tl.dev.signal(h.release.tl.handle, h.release.point); err != nil {
 			s.log.Warn().Err(err).Msg("release point")
+		} else if h.owner != nil {
+			h.owner.releasePointsSignalled++
 		}
 		h.release.tl.uses--
 		s.dropTimeline(h.release.tl)
@@ -686,7 +689,7 @@ func (s *surface) dropSync(cs *commitSync) {
 	cs.acquire.tl.uses--
 	s.server.dropTimeline(cs.acquire.tl)
 	if ready {
-		s.server.releaseSync(syncHold{release: cs.release})
+		s.server.releaseSync(syncHold{owner: s, release: cs.release})
 		return
 	}
 	s.releasePointsDropped++
@@ -733,7 +736,7 @@ func (s *surface) applySync(cs *commitSync) {
 	cs.fence = nil
 	cs.acquire.tl.uses--
 	s.server.dropTimeline(cs.acquire.tl)
-	s.hold = syncHold{acquire: f, release: cs.release}
+	s.hold = syncHold{owner: s, acquire: f, release: cs.release}
 }
 
 // acquireSignalled applies what a fired acquire point unblocked: like a

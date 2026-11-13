@@ -1,0 +1,110 @@
+package wayland
+
+import (
+	"bytes"
+	"encoding/json"
+	"testing"
+	"testing/synctest"
+	"time"
+
+	"bnema.dev/purego-libwayland/server"
+	"bnema.dev/zerowrap"
+)
+
+func TestSurfaceAcquireStallAndStats(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var out bytes.Buffer
+		srv := &Server{log: zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &out}).WithField("component", "wayland"), syncWait: &syncWaiter{}, fifoSurfaces: map[*surface]struct{}{}, lastFlip: map[string]time.Time{}}
+		surf := &surface{server: srv, x11win: &window{id: 42, mapped: true}, commitsReceived: 2, commitsApplied: 1, releasePointsSignalled: 3, releasePointsDropped: 4}
+		srv.surfaces = map[*server.Resource]*surface{nil: surf}
+		u := &update{owner: surf, enqueued: time.Now(), pendingCommit: pendingCommit{sync: &commitSync{wait: &syncWait{explicit: true}, acquire: syncPoint{tl: &timeline{handle: 7}, point: 11}}}}
+		surf.queue = []*update{u}
+		srv.fifoSurfaces[surf] = struct{}{}
+		srv.tickFifo(time.Now(), nil)
+		if u.blocked != blockAcquire {
+			t.Fatalf("block = %v", u.blocked)
+		}
+		time.Sleep(501 * time.Millisecond)
+		synctest.Wait()
+		srv.tickFifo(time.Now(), nil)
+		srv.tickFifo(time.Now(), nil)
+		if n := bytes.Count(out.Bytes(), []byte("surface commit stalled")); n != 1 {
+			t.Fatalf("warnings=%d: %s", n, out.String())
+		}
+		time.Sleep(10*time.Second - 501*time.Millisecond)
+		synctest.Wait()
+		srv.reportSurfaceStats(time.Now())
+		dec := json.NewDecoder(&out)
+		var warning, stats map[string]any
+		if err := dec.Decode(&warning); err != nil {
+			t.Fatal(err)
+		}
+		if err := dec.Decode(&stats); err != nil {
+			t.Fatal(err)
+		}
+		for k, want := range map[string]any{"message": "surface stats", "component": "wayland", "window": float64(42), "head_block": "acquire", "head_age_ms": float64(10000), "queue_len": float64(1), "commits_received": float64(2), "commits_applied": float64(1), "release_points_signalled": float64(3), "release_points_dropped": float64(4)} {
+			if stats[k] != want {
+				t.Errorf("%s=%v, want %v", k, stats[k], want)
+			}
+		}
+		if warning["acquire_point"] != float64(11) || warning["acquire_timeline"] != float64(7) {
+			t.Fatalf("warning: %v", warning)
+		}
+		srv.reportSurfaceStats(time.Now())
+		var next map[string]any
+		if err := json.NewDecoder(&out).Decode(&next); err != nil {
+			t.Fatal(err)
+		}
+		if next["commits_received"] != float64(0) || next["release_points_dropped"] != float64(0) {
+			t.Fatalf("not interval counts: %v", next)
+		}
+		surf.queue = nil
+		out.Reset()
+		srv.reportSurfaceStats(time.Now())
+		if out.Len() != 0 {
+			t.Fatalf("idle surface logged: %s", out.String())
+		}
+		// A new head re-arms independently of the previous head's warning.
+		v := *u
+		v.stalled = false
+		surf.queue = []*update{&v}
+		surf.reportStall(time.Now())
+		if n := bytes.Count(out.Bytes(), []byte("surface commit stalled")); n != 1 {
+			t.Fatalf("new head did not rearm: %s", out.String())
+		}
+	})
+}
+
+func TestSurfaceBarrierWaitDoesNotWarn(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var out bytes.Buffer
+		srv := &Server{log: zerowrap.New(zerowrap.Config{Output: &out}).WithField("component", "wayland")}
+		surf := &surface{server: srv, x11win: &window{id: 42, mapped: true}, barrier: true}
+		u := &update{owner: surf, enqueued: time.Now(), pendingCommit: pendingCommit{wait: true}}
+		surf.queue = []*update{u}
+		if u.graphReady(time.Now()) || u.blocked != blockBarrier {
+			t.Fatal("expected barrier wait")
+		}
+		time.Sleep(20 * time.Millisecond)
+		synctest.Wait()
+		surf.reportStall(time.Now())
+		// Even an intentionally suspended FIFO barrier is not a stall warning.
+		time.Sleep(time.Second)
+		synctest.Wait()
+		surf.reportStall(time.Now())
+		if out.Len() != 0 {
+			t.Fatalf("barrier warned: %s", out.String())
+		}
+	})
+}
+
+func TestSurfaceReleaseSignalCount(t *testing.T) {
+	dev := newMocksyncobjDevice(t)
+	dev.EXPECT().signal(uint32(7), uint64(11)).Return(nil).Once()
+	srv := &Server{}
+	surf := &surface{server: srv}
+	srv.releaseSync(syncHold{owner: surf, release: syncPoint{tl: &timeline{dev: dev, handle: 7, alive: true, uses: 1}, point: 11}})
+	if surf.releasePointsSignalled != 1 {
+		t.Fatal("successful signal not counted")
+	}
+}
