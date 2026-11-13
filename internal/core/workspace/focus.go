@@ -66,8 +66,7 @@ func (w *Workspace) HoverFocusable(id WindowID) bool {
 	if w.ColumnOf(id) < 0 {
 		return false
 	}
-	// Click hides a shown stash; FocusID drops one shown over the cover.
-	if w.StashShown() {
+	if w.InputBlocked(id) {
 		return false
 	}
 	for i := range w.Floats {

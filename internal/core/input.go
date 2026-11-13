@@ -235,6 +235,26 @@ func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {
 			return err
 		}
 	}
+	if v.Pressed && c.grab == 0 && c.held() == 0 {
+		if i := c.screenAt(c.cursorX, c.cursorY); i >= 0 {
+			sc := c.screens[i]
+			w := sc.mon.Current()
+			if !sc.mon.previewing() && w.StashShown() {
+				id, _, _ := c.hit(c.cursorX, c.cursorY)
+				if id == 0 {
+					c.buttons[v.Button], c.swallow[v.Button] = true, true
+					now := c.now()
+					before := c.snapshot(now)
+					w.ToggleStashVisible()
+					c.transition(before, now)
+					return c.publish(ctx)
+				}
+			}
+		}
+	}
+	if c.pointerInputBlocked() {
+		return nil
+	}
 	if started, err := c.startPointerGrab(ctx, v); err != nil || started {
 		return err
 	}
@@ -312,6 +332,16 @@ func (c *Core) focusEmptyOutput(ctx context.Context) error {
 	return c.publish(ctx)
 }
 
+// pointerInputBlocked also covers a stale pointer focus after a keybind
+// shows the stash. Layout changes otherwise re-hit-test only on motion.
+func (c *Core) pointerInputBlocked() bool {
+	if c.grab != 0 || c.held() != 0 || c.dataDrag != nil || c.pointerBusy() {
+		return false
+	}
+	s, w := c.screenOf(c.pointer)
+	return s != nil && !s.mon.previewing() && w.InputBlocked(c.pointer)
+}
+
 func (c *Core) pointerAxis(ctx context.Context, v ports.PointerAxis) error {
 	c.scrollStop(v)
 	// Only wheel/continuous scrolling navigates the overview.
@@ -334,7 +364,7 @@ func (c *Core) pointerAxis(ctx context.Context, v ports.PointerAxis) error {
 	}
 	// Scroll goes to the window under the pointer, which has the
 	// pointer focus even mid-drag. None during a window drag.
-	if c.pointer != 0 && !c.pointerBusy() && c.dataDrag == nil {
+	if c.pointer != 0 && !c.pointerBusy() && c.dataDrag == nil && !c.pointerInputBlocked() {
 		if err := c.command(ctx, ports.PointerAxisTo{ID: c.pointer, Axis: v}); err != nil {
 			return err
 		}

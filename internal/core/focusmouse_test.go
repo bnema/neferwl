@@ -453,7 +453,7 @@ func TestHoverShownStash(t *testing.T) {
 		if !w.StashShown() {
 			t.Fatal("setup: stash hidden")
 		}
-		// Find exposed tile and peek pixels through the real hit tester: the
+		// Find exposed stash and peek pixels through the real hit tester: the
 		// selected stash window overlaps their layout rectangles.
 		point := func(id WindowID) (float64, float64) {
 			t.Helper()
@@ -470,8 +470,12 @@ func TestHoverShownStash(t *testing.T) {
 		x, y := point(2)
 		hoverMove(t, c, x, y)
 		drainHoverFocus(cmds)
-		x, y = point(1)
+		r := c.clientRect(settledOf(t, c.cur(), 1))
+		x, y = float64(r.X+r.W/2), float64(r.Y+1)
 		hoverMove(t, c, x, y)
+		if c.pointer != 0 {
+			t.Fatalf("tile behind stash received pointer: %d", c.pointer)
+		}
 		hoverWantFocus(t, c, 2)
 		if !w.StashShown() {
 			t.Fatal("tile hover hid stash")

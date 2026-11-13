@@ -29,13 +29,13 @@ type Channels struct {
 	// nil refuses ControlCapture.
 	Continuous chan<- ports.ContinuousCaptureRequest
 	Control    <-chan ports.ControlRequest
-	Client         <-chan ports.ClientEvent
-	Input          <-chan ports.InputEvent
-	Output         <-chan ports.OutputEvent
-	Config         <-chan domain.ConfigChanged
-	Commands       chan<- ports.ClientCommand
-	Spawn          chan<- domain.SpawnRequest
-	Scenes         chan []domain.Scene
+	Client     <-chan ports.ClientEvent
+	Input      <-chan ports.InputEvent
+	Output     <-chan ports.OutputEvent
+	Config     <-chan domain.ConfigChanged
+	Commands   chan<- ports.ClientCommand
+	Spawn      chan<- domain.SpawnRequest
+	Scenes     chan []domain.Scene
 	// Layouts, when set, receives the output layout whenever it changes,
 	// latest first (capacity 1, drained like Scenes). Input and cursors use it.
 	Layouts chan domain.Layout
@@ -97,7 +97,7 @@ type Core struct {
 	runtimeWake      chan struct{}
 	controlWaits     []controlWait
 	outputWaits      []outputWait
-	waitState        domain.State // evalWaits scratch for Until predicates
+	waitState        domain.State      // evalWaits scratch for Until predicates
 	waitSeqs         map[string]uint64 // evalWaits scratch
 	controlWaitTimer ports.Timer
 	controlWaitC     <-chan time.Time
@@ -1099,6 +1099,7 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	}
 	var id WindowID
 	var sx, sy float64
+	blocked := false
 	view := sc.mon.viewport()
 	for _, p := range sc.shownLayout() {
 		r := c.clientRect(p)
@@ -1114,13 +1115,20 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 			if p.Peek {
 				lx, ly = min(max(lx, float64(r.X)), float64(r.X+r.W-1)), min(max(ly, float64(r.Y)), float64(r.Y+r.H-1))
 			}
-			if c.acceptsInput(p.ID, lx-float64(r.X), ly-float64(r.Y)) {
+			if c.dataDrag == nil && c.grab == 0 && c.held() == 0 && sc.mon.Current().InputBlocked(p.ID) {
+				// A blocked tile still occludes bottom/background layers:
+				// clicking it dismisses the stash, never clicks through it.
+				id, blocked = 0, true
+			} else if c.acceptsInput(p.ID, lx-float64(r.X), ly-float64(r.Y)) {
 				// Layout is bottom to top, including fullscreen and floats.
 				id, sx, sy = p.ID, lx-float64(r.X), ly-float64(r.Y)
 			}
 		}
 	}
 	if id == 0 {
+		if blocked {
+			return 0, 0, 0
+		}
 		return c.layerAt(sc, lx, ly, false)
 	}
 	return id, sx, sy

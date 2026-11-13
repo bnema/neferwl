@@ -231,12 +231,15 @@ func (w *Workspace) dropStashOver() {
 	w.stashOver = 0
 }
 
-// Click focuses the clicked window. A click on a tile behind the shown
-// stash hides the stash, as a click outside a menu closes it.
+// InputBlocked reports whether id is a column window behind the shown
+// stash, including a covering fullscreen tile. Floats and stash members
+// remain interactive.
+func (w *Workspace) InputBlocked(id WindowID) bool {
+	return w.StashShown() && w.ColumnOf(id) >= 0
+}
+
+// Click focuses an interactive window. Blocked tiles never reach Click.
 func (w *Workspace) Click(id WindowID) {
-	if !w.stashHidden && len(w.Stash) > 0 && !w.IsFloat(id) && w.Cover() == 0 {
-		w.stashHidden = true
-	}
 	w.FocusID(id)
 	w.FocusModal(0)
 }
