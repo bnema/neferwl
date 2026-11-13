@@ -137,6 +137,7 @@ type Core struct {
 	pressed        map[string]bool
 	configures     configures
 	pointer        WindowID
+	hover          pendingHover
 	hoverLocked    bool     // a non-pointer focus change holds hover focus
 	hoverLock      WindowID // hover target the hold ignores: the window under the cursor, retargeted when layout changes what lies there
 	focusByPointer bool     // set while focusPointer publishes, so syncFocus does not arm the hold
@@ -851,6 +852,7 @@ func (c *Core) rehit(ctx context.Context) error {
 	}
 	id, x, y := c.hit(c.cursorX, c.cursorY)
 	if id != c.pointer {
+		c.cancelHover()
 		if c.hoverLocked {
 			c.hoverLock = id
 		}
@@ -1026,6 +1028,7 @@ func (c *Core) syncFocus(ctx context.Context, focus WindowID) error {
 		return nil
 	}
 	if !c.focusByPointer {
+		c.cancelHover()
 		c.hoverLocked, c.hoverLock = true, c.pointer
 	}
 	if err := c.command(ctx, ports.FocusWindow{ID: focus}); err != nil {
@@ -1190,6 +1193,7 @@ func (c *Core) Run(ctx context.Context) error {
 	defer c.stopCaptureTimer()
 	defer c.stopFlashTimer()
 	defer c.stopPositionHintTimer()
+	defer c.cancelHover()
 	defer c.cancelSwitcher()
 	defer c.stopRepeat()
 	// Startup commands run once per session. Full launcher queues retain a
@@ -1284,6 +1288,11 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			c.frameC = nil
 			if c.step(ctx, nil) != nil {
+				return nil
+			}
+			continue
+		case <-c.hover.timerC:
+			if c.securityCheckpoint(ctx) != nil || c.hoverTick(ctx) != nil {
 				return nil
 			}
 			continue

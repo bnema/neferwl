@@ -55,6 +55,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `animations.speed` | `normal` | `slow`, `normal`, `fast`, or a factor from `0.1` to `10` |
 | `navigation.edge` | `screen` | Focus past a content edge: `screen` visits only a neighbor screen; `workspace` also visits workspaces on the layout's workspace axis |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
+| `focus.follow-mouse-delay` | `150ms` | Dwell before hover focus; non-negative duration, `0` for immediate focus |
 | `focus.follow-mouse` | `off` | Focus the window the pointer moves into; a keyboard focus change holds until the pointer enters another window |
 | `focus.position-hint` | `on` | Show workspace/band dots near the output bottom for 600ms after a position change, then fade for 150ms (no fade with animations off); hidden in overview, fullscreen and session lock; never captured |
 | `focus.flash` | `on` | Briefly draw an inner border, inside the window border, on the window or column an action changed |

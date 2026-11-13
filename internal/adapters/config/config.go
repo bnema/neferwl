@@ -149,6 +149,7 @@ func Defaults() domain.Config {
 	// Animations are on unless the config turns them off.
 	c.Animations.On = true
 	c.Animations.Slowdown = normalSlowdown
+	c.Focus.FollowMouseDelay = 150 * time.Millisecond
 	c.Focus.PositionHint = true
 	c.OSD.Enable = true
 	c.Focus.Flash = true
@@ -915,6 +916,12 @@ func set(c *domain.Config, key, v string) error {
 			return err
 		}
 		c.Focus.FollowMouse = b
+	case "focus.follow-mouse-delay":
+		d, err := time.ParseDuration(v)
+		if err != nil || d < 0 {
+			return fmt.Errorf("must be a non-negative duration, e.g. 150ms (0 for immediate)")
+		}
+		c.Focus.FollowMouseDelay = d
 	case "focus.position-hint":
 		b, err := onOff(v)
 		if err != nil {

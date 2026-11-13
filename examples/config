@@ -86,6 +86,7 @@ focus.follow-move = off
 # on: the window the pointer moves into gets focus; a keyboard focus change
 # holds until the pointer enters another window.
 focus.follow-mouse = off
+focus.follow-mouse-delay = 150ms
 # Animations are on by default.
 # on: windows and the view move with springs, windows fade in and out as
 # they open, close or leave with the stash, the overview zooms its cards;

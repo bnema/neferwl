@@ -428,6 +428,7 @@ func TestFlashHoverFocus(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _ := flashCore(t)
 		c.cfg.Focus.FollowMouse = true
+		c.cfg.Focus.FollowMouseDelay = 0
 		ctx := context.Background()
 		indicatorScene(t, c)
 		focused, _ := c.cur().mon.Focused()
