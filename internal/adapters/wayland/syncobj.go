@@ -678,6 +678,7 @@ func (s *surface) dropSync(cs *commitSync) {
 		logging.CloseFile(s.server.log, cs.fence, "acquire fence")
 		cs.fence = nil
 	}
+	acquireHandle := cs.acquire.tl.handle
 	ready := cs.wait != nil && s.server.syncWait.fired(cs.wait) && !cs.wait.failed
 	if cs.wait != nil {
 		s.server.syncWait.cancel(cs.wait)
@@ -688,6 +689,15 @@ func (s *surface) dropSync(cs *commitSync) {
 		s.server.releaseSync(syncHold{release: cs.release})
 		return
 	}
+	s.releasePointsDropped++
+	s.server.log.Warn().
+		Uint64("window", uint64(s.root().windowID())).
+		Uint64("release_point", cs.release.point).
+		Uint32("release_timeline", cs.release.tl.handle).
+		Uint64("acquire_point", cs.acquire.point).
+		Uint32("acquire_timeline", acquireHandle).
+		Uint64("release_points_dropped", s.releasePointsDropped).
+		Msg("surface release point dropped without signal")
 	cs.release.tl.uses--
 	s.server.dropTimeline(cs.release.tl)
 }
