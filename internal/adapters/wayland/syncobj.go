@@ -109,6 +109,7 @@ func (m syncManager) ImportTimeline(r *linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV
 		// Points already committed keep the syncobj: destroyed once no
 		// held buffer or waiting commit uses it (timeline.drop).
 		tl.alive = false
+		m.server.drainDeferredReleases(false)
 		m.server.dropTimeline(tl)
 	}
 }
@@ -670,9 +671,16 @@ func (s *surface) syncReady(cs *commitSync) bool {
 	return cs == nil || cs.wait == nil || s.server.syncWait.fired(cs.wait)
 }
 
-// dropSync forgets a commit that will never apply. Its release point is
-// signalled only once the acquire point has a fence: signalling earlier
-// could move a shared timeline past a point the client has not submitted.
+// deferredRelease owns points and a wait independently of the retired update.
+// Only the display goroutine creates and drains these records.
+type deferredRelease struct {
+	owner *surface
+	sync  commitSync
+}
+
+// dropSync retires an unused attachment. An unready acquire must retain its
+// release point until the acquire has a fence; advancing a shared timeline
+// sooner could pass work the client has not submitted yet.
 func (s *surface) dropSync(cs *commitSync) {
 	if cs == nil {
 		return
@@ -681,8 +689,23 @@ func (s *surface) dropSync(cs *commitSync) {
 		logging.CloseFile(s.server.log, cs.fence, "acquire fence")
 		cs.fence = nil
 	}
+	if cs.wait != nil && cs.acquire.tl.alive && cs.release.tl.alive &&
+		!s.server.syncWait.fired(cs.wait) && !cs.wait.failed {
+		s.server.deferredReleases = append(s.server.deferredReleases, deferredRelease{owner: s, sync: *cs})
+		s.server.log.Debug().Uint64("window", uint64(s.root().windowID())).
+			Uint64("release_point", cs.release.point).Uint32("release_timeline", cs.release.tl.handle).
+			Msg("surface release point deferred")
+		return
+	}
+	s.finishDroppedSync(cs, false)
+}
+
+// finishDroppedSync consumes both references exactly once. Abandoning a dead
+// protocol timeline never signals it, even though its retained handle is valid.
+func (s *surface) finishDroppedSync(cs *commitSync, abandon bool) {
 	acquireHandle := cs.acquire.tl.handle
-	ready := cs.wait != nil && s.server.syncWait.fired(cs.wait) && !cs.wait.failed
+	ready := !abandon && cs.acquire.tl.alive && cs.release.tl.alive &&
+		cs.wait != nil && s.server.syncWait.fired(cs.wait) && !cs.wait.failed
 	if cs.wait != nil {
 		s.server.syncWait.cancel(cs.wait)
 	}
@@ -703,6 +726,23 @@ func (s *surface) dropSync(cs *commitSync) {
 		Msg("surface release point dropped without signal")
 	cs.release.tl.uses--
 	s.server.dropTimeline(cs.release.tl)
+}
+
+// drainDeferredReleases runs on acquire notification and timeline destruction.
+// Shutdown abandons remaining waits before the waiter's registrations close.
+func (s *Server) drainDeferredReleases(shutdown bool) {
+	kept := s.deferredReleases[:0]
+	for _, d := range s.deferredReleases {
+		cs := &d.sync
+		dead := shutdown || !cs.acquire.tl.alive || !cs.release.tl.alive
+		if dead || cs.wait.failed || s.syncWait.fired(cs.wait) {
+			d.owner.finishDroppedSync(cs, dead)
+		} else {
+			kept = append(kept, d)
+		}
+	}
+	clear(s.deferredReleases[len(kept):])
+	s.deferredReleases = kept
 }
 
 // prepareSync exports only after observed readiness, before any current state
@@ -742,6 +782,7 @@ func (s *surface) applySync(cs *commitSync) {
 // acquireSignalled applies what a fired acquire point unblocked: like a
 // commit, it ticks inline instead of posting a tick to the display loop.
 func (s *Server) acquireSignalled() {
+	s.drainDeferredReleases(false)
 	s.paceDepth++
 	s.wakePacer()
 	s.paceDepth--

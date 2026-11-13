@@ -271,16 +271,22 @@ func TestFailedRootRetiresEveryChildPredecessorGraph(t *testing.T) {
 		child.queueUpdate()
 		later := child.queue[2]
 		u.applyGraph()
-		if len(child.queue) != 1 || child.queue[0] != later || len(a.queue) != 0 || len(b.queue) != 0 || tl.uses != 0 {
+		if len(child.queue) != 1 || child.queue[0] != later || len(a.queue) != 0 || len(b.queue) != 0 || tl.uses != 4 || len(h.s.deferredReleases) != 2 {
 			t.Errorf("retirement stranded prefix graphs: uses=%d child=%d a=%d b=%d", tl.uses, len(child.queue), len(a.queue), len(b.queue))
 		}
 		for i, g := range graphs {
-			if !g.retired || g.refs != 1 || !waits[i].cancelled.Load() {
+			if !g.retired || g.refs != 1 || waits[i].cancelled.Load() {
 				t.Error("grandchild not safely retired")
 			}
 			g.releaseRef()
 		}
 		child.dropQueue()
+		// Retired graphs no longer own points; shutdown abandons the two
+		// deferred releases and cancels their waits without signalling.
+		h.s.drainDeferredReleases(true)
+		if tl.uses != 0 {
+			t.Errorf("deferred references leaked: %d", tl.uses)
+		}
 	})
 	if len(h.signalled()) != 0 {
 		t.Fatal("release signalled before acquire")

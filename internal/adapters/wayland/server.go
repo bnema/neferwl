@@ -282,9 +282,10 @@ type Server struct {
 	feedbacks []feedbackWait
 	// Explicit sync (syncobj.go): the render node, imported timelines by
 	// resource, and the acquire point waiter.
-	syncDev   syncobjDevice
-	timelines map[*server.Resource]*timeline
-	syncWait  *syncWaiter
+	syncDev          syncobjDevice
+	timelines        map[*server.Resource]*timeline
+	syncWait         *syncWaiter
+	deferredReleases []deferredRelease
 	// flips is each output's latest flip (display goroutine).
 	flips map[string]domain.FlipInfo
 	// inhibitors are the live inhibitor objects (inhibit.go);
@@ -628,6 +629,7 @@ func (s *Server) Run(ctx context.Context) error {
 	// Run has destroyed the display and its withdrawn globals; no bind callback
 	// can consult the retired set after this point.
 	s.retiredPrivateOutputs = nil
+	s.drainDeferredReleases(true)
 	s.syncWait.releasePending()
 	// The display is gone: only the X connection is left to close.
 	if s.xwm != nil {

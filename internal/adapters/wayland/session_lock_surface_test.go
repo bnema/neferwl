@@ -466,6 +466,12 @@ func TestLockSurfaceDestroyRetiresFencedChildDependencies(t *testing.T) {
 				if destroy == "surface" {
 					remaining, refs = 0, 1 // parent destruction detaches the child
 				}
+				if destroy != "role ready" {
+					if len(s.deferredReleases) != 1 || tl.uses != 2 || wait.done {
+						t.Error("unready release was not deferred")
+					}
+					s.drainDeferredReleases(true)
+				}
 				if len(root.queue) != 0 || len(child.queue) != remaining || !dep.retired || !parent.retired || dep.refs != refs || parent.refs != 1 || !wait.done || wait.efd >= 0 || tl.uses != 0 {
 					t.Errorf("dependency teardown: child=%d dep refs=%d parent refs=%d uses=%d done=%v", len(child.queue), dep.refs, parent.refs, tl.uses, wait.done)
 				}

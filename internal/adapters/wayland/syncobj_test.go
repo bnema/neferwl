@@ -516,7 +516,9 @@ func TestSyncobjInvalidTimeline(t *testing.T) {
 }
 
 // A synchronized subsurface dropped before its acquire is ready must
-// retire its release point without sending wl_buffer.release.
+// defer its release point without sending wl_buffer.release.
+//
+//testpolicy:realtime real display eventfd callback signals the deferred release
 func TestSyncobjDroppedSubsurfaceCommit(t *testing.T) {
 	h := newSyncHarness(t)
 	h.releases = map[uint32]*syncReleaseProxy{}
@@ -542,12 +544,20 @@ func TestSyncobjDroppedSubsurfaceCommit(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	h.fire(21) // dropping before acquire means the later signal must not release
+	if got := h.signalled(); len(got) != 0 {
+		t.Fatalf("release before acquire: %v", got)
+	}
+	h.fire(21)
+	select {
+	case <-h.signalReady:
+	case <-waylandDeadline(2 * time.Second):
+		t.Fatal("deferred release not signalled")
+	}
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	if got := h.signalled(); len(got) != 0 {
-		t.Fatalf("premature release point: %v", got)
+	if got := h.signalled(); len(got) != 1 || got[0] != 22 {
+		t.Fatalf("deferred release point: %v", got)
 	}
 	select {
 	case <-h.releases[b].released:
@@ -558,7 +568,7 @@ func TestSyncobjDroppedSubsurfaceCommit(t *testing.T) {
 
 // A commit dropped before its acquire point has a fence signals nothing
 // (the client has not submitted that point) and sends no wl_buffer.release;
-// the waiter closes its eventfd and no acquire file is left open.
+// destroying the timeline then cancels the deferred wait without leaking an fd.
 func TestSyncobjDroppedCommit(t *testing.T) {
 	h := newSyncHarness(t)
 	h.releases = map[uint32]*syncReleaseProxy{}
@@ -569,8 +579,9 @@ func TestSyncobjDroppedCommit(t *testing.T) {
 	if err := h.c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	// Explicit acquire registrations are removed synchronously by destruction;
-	// the roundtrip above joins that display-owner work.
+	// Surface destruction retains the deferred wait. Timeline destruction
+	// abandons it synchronously, including the eventfd registration.
+	requestProtocol(t, h.c, h.timeline, linuxdrmsyncobj.WpLinuxDrmSyncobjTimelineV1RequestDestroy)
 	if err := h.c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
