@@ -646,8 +646,3 @@ lineage decisions; existing launcher edges are retained. Names are limited to
 `systemd-run`, and `flatpak-spawn`. Generic launch wrappers (including
 `flatpak-spawn`) do not establish application identity. Direct ancestor matches
 are unaffected; common meeting points that are session leaders are excluded too.
-
-Layer-shell OVERLAY surfaces (lockers, capture selectors and OSDs) remain visible
-and interactive above fullscreen windows. TOP surfaces such as bars and
-notifications are hidden during fullscreen, except those taking exclusive
-keyboard focus or excluded from capture. Visible overlays prevent direct scanout.
