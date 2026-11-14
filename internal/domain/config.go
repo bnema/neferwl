@@ -409,6 +409,12 @@ func windowRuleEqual(a, b WindowRule) bool {
 	if a.AppID != nil && !reflect.DeepEqual(a.AppID, b.AppID) {
 		return false
 	}
+	if (a.Title == nil) != (b.Title == nil) {
+		return false
+	}
+	if a.Title != nil && !reflect.DeepEqual(a.Title, b.Title) {
+		return false
+	}
 	if !equalPointer(a.Floating, b.Floating) {
 		return false
 	}
@@ -420,6 +426,7 @@ func windowRuleEqual(a, b WindowRule) bool {
 	a.SDRExpandPeak, b.SDRExpandPeak = nil, nil
 	a.SDRDecode, b.SDRDecode = nil, nil
 	a.AppID, b.AppID = nil, nil
+	a.Title, b.Title = nil, nil
 	a.Floating, b.Floating = nil, nil
 	return a == b
 }

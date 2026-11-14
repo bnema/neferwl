@@ -2,6 +2,7 @@ package core
 
 import (
 	"image"
+	"regexp"
 	"testing"
 	"testing/synctest"
 
@@ -30,13 +31,14 @@ func TestOutputSettingsDisableAndHeadlessMode(t *testing.T) {
 func TestReloadScaleOnlyKeepsOverrides(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		mode := domain.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
-		file := domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 2}}}
+		file := domain.Config{Outputs: []domain.OutputConfig{{Name: "DP-1", Scale: 2}}, Rules: []domain.WindowRule{{Title: regexp.MustCompile("^title$")}}}
 		state := NewOutputOverrides(file, false)
 		state.heads = domain.OutputHeads{Heads: []domain.OutputHead{{Info: domain.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}, {Info: domain.OutputInfo{Name: "DP-2"}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}}
 		if _, err := state.Apply(domain.OutputApply{Heads: []domain.HeadChange{{Name: "DP-1", Enabled: true, Pos: &image.Point{X: 100}}, {Name: "DP-2", Enabled: true}}}); err != nil {
 			t.Fatal(err)
 		}
 		scaled := file
+		scaled.Rules = []domain.WindowRule{{Title: regexp.MustCompile("^title$")}}
 		scaled.Outputs = []domain.OutputConfig{{Name: "DP-1", Scale: 1.5}, {Name: "DP-2", Scale: 1.25, ScaleOnly: true, SDRBrightness: domain.DefaultSDRBrightness}}
 		cfg := state.Reload(scaled)
 		if len(cfg.Outputs) != 2 || cfg.Outputs[0].Pos == nil || cfg.Outputs[0].Scale != 1.5 || cfg.Outputs[1].Scale != 1.25 {
