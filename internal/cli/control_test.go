@@ -10,6 +10,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/bnema/neferwl/internal/adapters/sessiondir"
 )
 
 func TestControlCommands(t *testing.T) {
@@ -25,6 +27,13 @@ func TestControlCommands(t *testing.T) {
 		{"key-shot", []string{"key", "Super+Return", "--shot=true"}, map[string]any{"op": "inject", "kind": "key", "shot": true}, false},
 		{"type", []string{"type", "hello world"}, map[string]any{"op": "inject", "kind": "type", "text": "hello world"}, false},
 		{"type-dash", []string{"type", "--", "-x"}, map[string]any{"op": "inject", "kind": "type", "text": "-x"}, false},
+		{"type-literal", []string{"type", "--", "--literal"}, map[string]any{"text": "--literal"}, false},
+		{"type-session-literal", []string{"type", "--", "-s"}, map[string]any{"text": "-s"}, false},
+		{"type-global-target-literal", []string{"-s", "test", "type", "--", "--x"}, map[string]any{"text": "--x"}, false},
+		{"type-local-target", []string{"type", "-s", "test", "hello"}, map[string]any{"text": "hello"}, false},
+		{"type-global-target", []string{"-s", "test", "type", "hello"}, map[string]any{"text": "hello"}, false},
+		{"type-interspersed-target", []string{"type", "hello", "-s", "test"}, map[string]any{"text": "hello"}, false},
+		{"type-target-terminator", []string{"type", "-s", "test", "--", "--literal"}, map[string]any{"text": "--literal"}, false},
 		{"press", []string{"press", "Super"}, map[string]any{"op": "inject", "kind": "press", "combo": "Super"}, false},
 		{"release", []string{"release", "Super"}, map[string]any{"op": "inject", "kind": "release", "combo": "Super"}, false},
 		{"click", []string{"click", "right"}, map[string]any{"op": "inject", "kind": "pointer", "cmd": "click", "args": []any{"right"}}, false},
@@ -42,6 +51,16 @@ func TestControlCommands(t *testing.T) {
 			}
 			defer func() { _ = listener.Close() }()
 			t.Setenv("NEFERWL_CONTROL", path)
+			runtime := t.TempDir()
+			t.Setenv("XDG_RUNTIME_DIR", runtime)
+			d, err := sessiondir.Create(runtime, "test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = d.Close() }()
+			if err := d.WriteMeta(sessiondir.Meta{ID: "test", Control: path}); err != nil {
+				t.Fatal(err)
+			}
 			result := make(chan error, 1)
 			requests := make(chan map[string]any, 1)
 			go func() {
