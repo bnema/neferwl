@@ -1258,7 +1258,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 	routeTimer := time.NewTimer(time.Hour)
 	routeTimer.Stop()
 	defer routeTimer.Stop()
-	// Retirement uses the surfaces seenRetire grace period (one second).
+	// Retirement uses the surfaces.SeenRetire grace period (one second).
 	retireTimer := time.NewTimer(time.Hour)
 	retireTimer.Stop()
 	defer retireTimer.Stop()
@@ -1440,7 +1440,7 @@ func (o *Output) Run(ctx context.Context, loadCursor CursorLoader, active <-chan
 		}
 		if table.Retiring() {
 			if retireDue == nil {
-				retireTimer.Reset(time.Second)
+				retireTimer.Reset(surfaces.SeenRetire)
 				retireDue = retireTimer.C
 			}
 		} else {

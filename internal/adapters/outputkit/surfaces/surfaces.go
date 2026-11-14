@@ -13,8 +13,8 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// seenRetire is ten times wayland.heldTimeout: I2 keeps release timing safe.
-const seenRetire = time.Second
+// SeenRetire is ten times wayland.heldTimeout: I2 keeps release timing safe.
+const SeenRetire = time.Second
 
 // Table is what an output passes to Renderer.Render: the latest content per
 // window. Its owner goroutine is the only user.
@@ -207,7 +207,7 @@ func (t *Table) Retire(seen map[domain.WindowID]uint64, now time.Time) (map[doma
 	changed := false
 	t.seenHighWater = max(t.seenHighWater, len(seen))
 	for id, at := range t.retiring {
-		if now.Sub(at) >= seenRetire {
+		if now.Sub(at) >= SeenRetire {
 			if _, ok := seen[id]; ok {
 				delete(seen, id)
 				changed = true

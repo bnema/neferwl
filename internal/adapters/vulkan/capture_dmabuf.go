@@ -224,7 +224,7 @@ type deviceFences struct{ r *Renderer }
 func (deviceFences) exportSyncFile(f *os.File) (int32, error) {
 	arg := dmaBufSync{flags: dmaBufSyncWrite, fd: -1}
 	if err := dmabufIoctl(f, ioctlExportSyncFile, &arg); err != nil {
-		return -1, fmt.Errorf("export cast buffer fences: %w", err)
+		return -1, fmt.Errorf("export buffer fences: %w", err)
 	}
 	return arg.fd, nil
 }
