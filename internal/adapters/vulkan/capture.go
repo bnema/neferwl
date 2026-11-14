@@ -126,7 +126,7 @@ type captureScratch struct {
 	submit vk.SubmitInfo
 	// The copy (recordCaptureCopy).
 	region       vk.BufferImageCopy
-	blit         vk.ImageBlit
+	imageCopy    vk.ImageCopy
 	cursorParams captureCursorParams
 	hb           vk.BufferMemoryBarrier
 	b            vk.ImageMemoryBarrier
