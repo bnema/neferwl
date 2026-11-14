@@ -193,3 +193,17 @@ func TestShotLastCancellationReaped(t *testing.T) {
 		}
 	})
 }
+
+func TestListenFailureStopsShooter(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := NewShooter(make(chan domain.CaptureRequest), make(chan domain.CaptureDone), t.TempDir())
+		if _, err := Listen(filepath.Join(t.TempDir(), "control.sock"), nil, Options{Shooter: s}); err == nil {
+			t.Fatal("Listen without workspace IDs succeeded")
+		}
+		select {
+		case <-s.stopped:
+		default:
+			t.Fatal("completion owner still running after Listen failed")
+		}
+	})
+}

@@ -54,7 +54,19 @@ type Server struct {
 
 // Listen creates a private socket using the same workspace IDs as statefile.
 // An existing socket is removed only when connecting proves it has no listener.
-func Listen(path string, ids *workspaceid.IDs, opts Options) (*Server, error) {
+// Listen owns opts.Shooter: it is stopped when Listen fails, else by Close.
+func Listen(path string, ids *workspaceid.IDs, opts Options) (s *Server, err error) {
+	if opts.Shooter != nil {
+		defer func() {
+			if err != nil {
+				opts.Shooter.close()
+			}
+		}()
+	}
+	return listen(path, ids, opts)
+}
+
+func listen(path string, ids *workspaceid.IDs, opts Options) (*Server, error) {
 	if ids == nil {
 		return nil, errors.New("workspace IDs are required")
 	}
