@@ -72,7 +72,7 @@ export $(systemctl --user show-environment | grep -E '^(WAYLAND_DISPLAY|DISPLAY|
 firefox &
 ```
 
-Logs are in `$XDG_STATE_HOME/neferwl/sessions/<id>/latest.log` with `--session-id`, else in `$XDG_STATE_HOME/neferwl/runs/headless/latest.log`.
+Logs are in `$XDG_STATE_HOME/neferwl/sessions/<id>/latest.log`. A session ID is generated if none is supplied; find it in the readiness JSON or `neferwl session ls`.
 
 ## Watch and control it
 
