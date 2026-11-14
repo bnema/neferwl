@@ -3,8 +3,10 @@ package capture
 import (
 	"context"
 	"errors"
+	"fmt"
 	"image"
 	"testing"
+	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/domain"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
@@ -92,6 +94,84 @@ func TestPipelineCursorErrorClassification(t *testing.T) {
 				t.Fatalf("transient=%v want %v: %v", got, want, done.Err)
 			}
 			p.Close(r)
+		})
+	}
+}
+
+func TestPipelineClassFairness(t *testing.T) {
+	for _, count := range []int{3, 4} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				r := portsmocks.NewMockRenderer(t)
+				cursor := &domain.CaptureCursor{Image: domain.CursorImage{W: 1, H: 1}}
+				frames := make([]*portsmocks.MockCaptureFrame, count)
+				requests := make([]domain.CaptureRequest, count)
+				for k := range count {
+					f := portsmocks.NewMockCaptureFrame(t)
+					frames[k] = f
+					f.EXPECT().Done().Return(nil)
+					r.EXPECT().EndCapture(f).Return()
+					if k%2 == 0 {
+						requests[k] = pipelineRequest(t, uint64(k+1))
+						f.EXPECT().Read(mock.Anything, mock.Anything, mock.Anything).Return(nil)
+					} else {
+						requests[k] = pqRequest(t, uint64(k+1))
+						f.EXPECT().CopyTo(mock.Anything, mock.Anything).Return(nil, nil)
+					}
+					requests[k].Cursor = k >= 2
+					if k >= 2 {
+						r.EXPECT().BeginCaptureCursor(cursor, k%2 != 0).Return(f, nil)
+					} else if k == 1 {
+						r.EXPECT().BeginCapturePQ().Return(f, nil)
+					} else {
+						r.EXPECT().BeginCapture().Return(f, nil)
+					}
+				}
+				replies := make(chan domain.CaptureDone, MaxRequests)
+				p := NewPipeline(context.Background(), replies)
+				p.Cursor = cursor
+				seen := make(map[uint64]bool)
+				for range 4 {
+					for k := range count {
+						if k%2 == 0 {
+							requests[k] = pipelineRequest(t, uint64(k+1))
+						} else {
+							requests[k] = pqRequest(t, uint64(k+1))
+						}
+						requests[k].Cursor = k >= 2
+					}
+					// Hold both admitted batches until all classes have attempted admission,
+					// so worker scheduling cannot mask saturation and the old starvation.
+					p.BeginGate()
+					p.SubmitScoped(domain.SecurityState{}, r, requests)
+					p.EndGate(nil)
+					synctest.Wait()
+					for _, f := range frames {
+						f.Calls = nil
+					}
+					for range count {
+						select {
+						case done := <-replies:
+							if done.Err == nil {
+								seen[done.ID] = true
+							} else if !errors.Is(done.Err, ports.ErrCaptureTransient) {
+								t.Fatal(done.Err)
+							}
+						default:
+							t.Fatal("missing class reply")
+						}
+					}
+					p.reclaim(r)
+				}
+				if len(seen) != count {
+					t.Fatalf("served classes within four frames: %v; want %d", seen, count)
+				}
+				// Generated mocks retain Read/CopyTo arguments into unmapped destinations.
+				for _, f := range frames {
+					f.Calls = nil
+				}
+				p.Close(r)
+			})
 		})
 	}
 }
