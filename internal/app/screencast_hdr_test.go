@@ -115,14 +115,28 @@ func TestScreencastHDRVirtualOutput(t *testing.T) {
 	if err := gst.Start(); err != nil {
 		t.Fatal(err)
 	}
-	exited := make(chan error, 1)
-	go func() { exited <- gst.Wait() }()
+	// Closing done keeps completion observable by both the normal path and
+	// cleanup. Wait also joins os/exec's output copier before logs are read.
+	done := make(chan struct{})
+	var exitErr error
+	go func() {
+		exitErr = gst.Wait()
+		close(done)
+	}()
+	t.Cleanup(func() {
+		select {
+		case <-done:
+		default:
+			_ = gst.Process.Kill()
+			<-done
+		}
+	})
 	var got pwVideoFormat
 	deadline := time.After(15 * time.Second)
 	for ok := false; !ok; {
 		select {
-		case err := <-exited:
-			t.Fatalf("consumer exited before negotiation: %v", err)
+		case <-done:
+			t.Fatalf("consumer exited before negotiation: %v", exitErr)
 		case <-deadline:
 			_ = gst.Process.Kill()
 			t.Fatal("no negotiated format")
@@ -135,9 +149,9 @@ func TestScreencastHDRVirtualOutput(t *testing.T) {
 		t.Errorf("negotiated %+v, want DMA-BUF xBGR_210LE smpte2084 bt2020", got)
 	}
 	select {
-	case err := <-exited:
-		if err != nil {
-			t.Errorf("gst-launch-1.0 (30 PQ buffers): %v", err)
+	case <-done:
+		if exitErr != nil {
+			t.Errorf("gst-launch-1.0 (30 PQ buffers): %v", exitErr)
 		}
 	case <-time.After(30 * time.Second):
 		_ = gst.Process.Kill()
