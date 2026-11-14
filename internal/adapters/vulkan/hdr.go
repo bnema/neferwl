@@ -28,6 +28,9 @@ type hdrPass struct {
 // SetHDR prepares the output transform before ExportTargets. The renderer
 // remains owner-goroutine confined; all GPU objects are reused each frame.
 func (r *Renderer) SetHDR(nits float64) {
+	if r.lost {
+		return
+	}
 	if nits != r.hdrNits {
 		for _, t := range r.targets {
 			t.pqValid = false
@@ -37,7 +40,9 @@ func (r *Renderer) SetHDR(nits float64) {
 			r.hdrOwn.valid = false
 		}
 		if (nits > 0) != (r.hdrNits > 0) && r.gpu.device != 0 {
-			_ = r.waitOwnIdle()
+			if r.waitOwnIdle() != nil {
+				return
+			}
 			r.hdrOwn.valid = false
 			r.own.valid = false
 			for _, t := range r.targets {
@@ -158,6 +163,9 @@ func (r *Renderer) createHDR() error {
 }
 
 func (r *Renderer) destroyHDR() {
+	if r.lost {
+		return
+	}
 	if r.gpu == nil || r.gpu.dd == nil {
 		return
 	}
@@ -222,10 +230,15 @@ func (r *Renderer) recordHDR(cmd vk.CommandBuffer, out *target, rect image.Recta
 // sample it (their descriptor sets refer to the view). Pending captures
 // finish first: this runs on SetHDR failures and on switching to SDR, never per frame.
 func (r *Renderer) dropHDROwn() {
+	if r.lost {
+		return
+	}
 	if r.capturePass.pipeline != 0 || r.capturePQ.pipeline != 0 {
 		for _, s := range r.captures {
 			if s.pending {
-				_ = r.waitOwnIdle()
+				if r.waitOwnIdle() != nil {
+					return
+				}
 				break
 			}
 		}

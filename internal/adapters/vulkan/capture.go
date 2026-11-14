@@ -493,6 +493,9 @@ func (r *Renderer) beginCaptureAs(debug, pq bool) (*captureFrame, error) {
 }
 
 func (r *Renderer) beginCaptureCursor(debug, pq bool, cursor *domain.CaptureCursor) (*captureFrame, error) {
+	if r.lost {
+		return nil, ports.ErrDeviceLost
+	}
 	if r.gpu.device == 0 || r.gpu.dd == nil {
 		return nil, errors.New("renderer closed")
 	}
@@ -611,7 +614,7 @@ func (r *Renderer) debugCapture() (*captureFrame, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := checked("vkWaitForFences(capture)", r.gpu.dd.WaitForFences(r.gpu.device, 1, &f.slot.fence, 1, math.MaxUint64)); err != nil {
+	if err := r.fenceWaitErr("vkWaitForFences(capture)", r.gpu.dd.WaitForFences(r.gpu.device, 1, &f.slot.fence, 1, uint64(fenceWaitTimeout))); err != nil {
 		r.EndCapture(f)
 		return nil, err
 	}
@@ -625,6 +628,9 @@ func (r *Renderer) debugCapture() (*captureFrame, error) {
 // copy fails. read gets the words in the slot's mapped memory, valid only
 // during the call: copy what must outlive it.
 func (r *Renderer) readHDRTarget(read func(words []uint32)) error {
+	if r.lost {
+		return ports.ErrDeviceLost
+	}
 	switch {
 	case r.gpu.device == 0 || r.gpu.dd == nil:
 		return errors.New("renderer closed")

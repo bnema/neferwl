@@ -23,6 +23,7 @@ type DeviceInfo struct {
 
 // Renderer is owned by one goroutine; its methods must not be called concurrently.
 type Renderer struct {
+	lost          bool // Owner-goroutine owned; GPU resources must survive loss.
 	width, height int
 	gpu           *GPU
 	q             *queue
@@ -268,11 +269,14 @@ func (r *Renderer) Close() {
 	if r == nil || r.q == nil {
 		return
 	}
-	if r.gpu.dd != nil {
+	if r.gpu.dd != nil && r.gpu.device != 0 && !r.lost {
+		_ = r.waitOwnIdle()
+	}
+	if r.lost {
+		r.log.Warn().Str("component", "vulkan").Msg("leaking lost renderer GPU resources")
+	}
+	if r.gpu.dd != nil && !r.lost {
 		d := r.gpu.dd
-		if r.gpu.device != 0 {
-			_ = r.waitOwnIdle()
-		}
 		r.dropTargets()
 		r.destroyHDR()
 		r.dropCursors()

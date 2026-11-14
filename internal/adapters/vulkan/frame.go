@@ -4,13 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	"math"
 	"os"
 	"runtime"
 	"slices"
+	"time"
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 
 	vk "bnema.dev/purego-vulkan/vulkan"
 )
@@ -136,6 +137,9 @@ func (r *Renderer) destroySlots() {
 // frames known done return at once. Every slot holding a frame up to n
 // is waited and reset, so its fence is unsignalled before reuse.
 func (r *Renderer) waitFrame(n uint64) error {
+	if r.lost {
+		return ports.ErrDeviceLost
+	}
 	n = min(n, r.submitted)
 	if n <= r.completed {
 		return nil
@@ -145,7 +149,7 @@ func (r *Renderer) waitFrame(n uint64) error {
 		if !s.busy || s.frame > n {
 			continue
 		}
-		if err := checked("vkWaitForFences", r.gpu.dd.WaitForFences(r.gpu.device, 1, &s.fence, 1, math.MaxUint64)); err != nil {
+		if err := r.fenceWaitErr("vkWaitForFences", r.gpu.dd.WaitForFences(r.gpu.device, 1, &s.fence, 1, uint64(fenceWaitTimeout))); err != nil {
 			return err
 		}
 		if err := checked("vkResetFences", r.gpu.dd.ResetFences(r.gpu.device, 1, &s.fence)); err != nil {
@@ -186,8 +190,30 @@ func (r *Renderer) runDeferred() {
 	})
 }
 
+const fenceWaitTimeout = 2 * time.Second
+
+var errFenceTimeout = errors.New("Vulkan fence wait timed out")
+
+func fenceWaitErr(name string, res vk.Result) error {
+	if res == vk.Timeout {
+		return fmt.Errorf("%s: %w", name, errors.Join(errFenceTimeout, ports.ErrDeviceLost))
+	}
+	return checked(name, res)
+}
+
+func (r *Renderer) fenceWaitErr(name string, res vk.Result) error {
+	err := fenceWaitErr(name, res)
+	if errors.Is(err, ports.ErrDeviceLost) {
+		r.lost = true
+	}
+	return err
+}
+
 // waitOwnIdle waits only for work successfully submitted by this renderer.
 func (r *Renderer) waitOwnIdle() error {
+	if r.lost {
+		return ports.ErrDeviceLost
+	}
 	fences := make([]vk.Fence, 0, len(r.slots)+len(r.captures))
 	for i := range r.slots {
 		s := &r.slots[i]
@@ -204,7 +230,7 @@ func (r *Renderer) waitOwnIdle() error {
 		}
 	}
 	if len(fences) > 0 {
-		if err := checked("vkWaitForFences(own idle)", r.gpu.dd.WaitForFences(r.gpu.device, uint32(len(fences)), &fences[0], 1, math.MaxUint64)); err != nil {
+		if err := r.fenceWaitErr("vkWaitForFences(own idle)", r.gpu.dd.WaitForFences(r.gpu.device, uint32(len(fences)), &fences[0], 1, uint64(fenceWaitTimeout))); err != nil {
 			return err
 		}
 	}
@@ -235,6 +261,9 @@ func (r *Renderer) idle() {
 // the GPU finished it; nil when the device cannot export a sync file,
 // then the frame is finished on return.
 func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.SurfaceContent) (done *os.File, err error) {
+	if r.lost {
+		return nil, ports.ErrDeviceLost
+	}
 	// A frame that fails before its submit keeps its number: objects it
 	// touched are freed once a later frame completes (never early).
 	r.frame++
@@ -494,19 +523,30 @@ func (r *Renderer) ownership(cmd vk.CommandBuffer, dmas []*imported, acquire boo
 // oneShot records and runs commands outside the frame ring and waits for
 // them (setup and screenshots only, never per frame).
 func (r *Renderer) oneShot(record func(vk.CommandBuffer)) error {
+	if r.lost {
+		return ports.ErrDeviceLost
+	}
 	d := r.gpu.dd
 	var cmd vk.CommandBuffer
 	ai := vk.CommandBufferAllocateInfo{SType: vk.StructureTypeCommandBufferAllocateInfo, CommandPool: r.pool, Level: vk.CommandBufferLevelPrimary, CommandBufferCount: 1}
 	if err := checked("vkAllocateCommandBuffers", d.AllocateCommandBuffers(r.gpu.device, &ai, &cmd)); err != nil {
 		return err
 	}
-	defer d.FreeCommandBuffers(r.gpu.device, r.pool, 1, &cmd)
+	defer func() {
+		if !r.lost {
+			d.FreeCommandBuffers(r.gpu.device, r.pool, 1, &cmd)
+		}
+	}()
 	var fence vk.Fence
 	fi := vk.FenceCreateInfo{SType: vk.StructureTypeFenceCreateInfo}
 	if err := checked("vkCreateFence", d.CreateFence(r.gpu.device, &fi, nil, &fence)); err != nil {
 		return err
 	}
-	defer d.DestroyFence(r.gpu.device, fence, nil)
+	defer func() {
+		if !r.lost {
+			d.DestroyFence(r.gpu.device, fence, nil)
+		}
+	}()
 	begin := vk.CommandBufferBeginInfo{SType: vk.StructureTypeCommandBufferBeginInfo, Flags: vk.CommandBufferUsageOneTimeSubmitBit}
 	if err := checked("vkBeginCommandBuffer", d.BeginCommandBuffer(cmd, &begin)); err != nil {
 		return err
@@ -519,7 +559,7 @@ func (r *Renderer) oneShot(record func(vk.CommandBuffer)) error {
 	if err := r.q.submit(1, &submit, fence); err != nil {
 		return err
 	}
-	return checked("vkWaitForFences", d.WaitForFences(r.gpu.device, 1, &fence, 1, math.MaxUint64))
+	return r.fenceWaitErr("vkWaitForFences", d.WaitForFences(r.gpu.device, 1, &fence, 1, uint64(fenceWaitTimeout)))
 }
 
 // Clear draws a background-only frame and waits for it.
