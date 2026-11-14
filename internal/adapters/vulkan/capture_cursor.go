@@ -82,7 +82,7 @@ func (r *Renderer) captureCursorTarget(t *target, format vk.Format, usage vk.Ima
 
 func (r *Renderer) prepareCaptureCursor(s *captureSlot, c *domain.CaptureCursor, pq bool) (err error) {
 	im := c.Image
-	if im.W <= 0 || im.H <= 0 || im.W > 256 || im.H > 256 || len(im.Pixels) < im.W*im.H*4 {
+	if im.W <= 0 || im.H <= 0 || im.W > domain.MaxCursorSize || im.H > domain.MaxCursorSize || len(im.Pixels) < im.W*im.H*4 {
 		return errors.New("invalid capture cursor image")
 	}
 	p := &s.cursor
@@ -110,7 +110,7 @@ func (r *Renderer) prepareCaptureCursor(s *captureSlot, c *domain.CaptureCursor,
 		if err = r.captureCursorTarget(&p.out, outFormat, targetUsage); err != nil {
 			return err
 		}
-		if err = r.newGPUBuffer(&p.upload, 256*256*4); err != nil {
+		if err = r.newGPUBuffer(&p.upload, domain.MaxCursorSize*domain.MaxCursorSize*4); err != nil {
 			return err
 		}
 		d, h := r.gpu.dd, &p.pass
@@ -167,9 +167,10 @@ func (r *Renderer) recordCaptureCursor(cmd vk.CommandBuffer, s *captureSlot, c *
 		d.CmdPipelineBarrier(cmd, vk.PipelineStageAllCommandsBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &sc.b)
 	}
 	barrier(p.source.image, vk.ImageLayoutUndefined, vk.ImageLayoutTransferDstOptimal, 0, vk.AccessTransferWriteBit, vk.PipelineStageTopOfPipeBit, vk.PipelineStageTransferBit)
-	offsets := [2]vk.Offset3D{{}, {X: int32(r.width), Y: int32(r.height), Z: 1}}
-	sc.blit = vk.ImageBlit{SrcSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, DstSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, SrcOffsets: offsets, DstOffsets: offsets}
-	d.CmdBlitImage(cmd, t.image, t.layout, p.source.image, vk.ImageLayoutTransferDstOptimal, 1, &sc.blit, vk.FilterNearest)
+	// Identical formats and extents need only transfer support, not BLIT_SRC
+	// on the display target's modifier.
+	sc.imageCopy = vk.ImageCopy{SrcSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, DstSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, Extent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}}
+	d.CmdCopyImage(cmd, t.image, t.layout, p.source.image, vk.ImageLayoutTransferDstOptimal, 1, &sc.imageCopy)
 	if t.exported {
 		sc.b = vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, SrcAccessMask: vk.AccessTransferReadBit, OldLayout: t.layout, NewLayout: t.layout, SrcQueueFamilyIndex: r.gpu.family, DstQueueFamilyIndex: vk.QueueFamilyForeignEXT, Image: t.image, SubresourceRange: colorRange}
 		d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, &sc.b)

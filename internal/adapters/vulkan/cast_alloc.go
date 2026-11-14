@@ -184,7 +184,7 @@ func (g *GPU) exportCast(vf vk.Format, format uint32, w, h int, modifier uint64,
 		}
 		planes = append(planes, domain.DMABufPlane{File: os.NewFile(uintptr(dup), "neferwl-cast"), Offset: uint32(layouts[i].Offset), Stride: uint32(layouts[i].RowPitch)})
 	}
-	buf := domain.DMABuf{ID: castBufferID.Add(1), Width: w, Height: h, Format: format, Modifier: modifier, Planes: planes}
+	buf := domain.DMABuf{ID: nextCastBufferID(), Width: w, Height: h, Format: format, Modifier: modifier, Planes: planes}
 	if g.castImages == nil {
 		g.castImages = make(map[uint64]*castImage)
 	}
@@ -195,6 +195,10 @@ func (g *GPU) exportCast(vf vk.Format, format uint32, w, h int, modifier uint64,
 
 // castBufferID is process-wide, so cast identities cannot collide across GPUs.
 var castBufferID atomic.Uint64
+
+func nextCastBufferID() uint64 {
+	return domain.DMABufIDCast | castBufferID.Add(1)
+}
 
 type castImage struct {
 	buffer   domain.DMABuf

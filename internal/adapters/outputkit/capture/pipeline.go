@@ -101,11 +101,12 @@ type Pipeline struct {
 	nheld         int
 	excl          excluder         // scratch of ExcludedScene, owner only
 	plainOverlays []domain.Overlay // scratch of SubmitPlain, owner only
-	// split holds SubmitScoped's requests by readback (SDR, PQ), owner only.
-	cursorSplit [2][MaxRequests]domain.CaptureRequest
-	split       [2][MaxRequests]domain.CaptureRequest
-	off         *offscreen
-	worker      sync.WaitGroup
+	// classes holds requests by cursor × PQ. Rotate priority without adding
+	// GPU readback slots (each slot can hold a full output-sized image).
+	classes   [4][MaxRequests]domain.CaptureRequest
+	nextClass int
+	off       *offscreen
+	worker    sync.WaitGroup
 }
 
 func NewPipeline(ctx context.Context, replies chan<- domain.CaptureDone) *Pipeline {
@@ -193,51 +194,34 @@ func (p *Pipeline) EndGate(err error) {
 // Screencast buffers in CastXBGR2101010 get the PQ words (BeginCapturePQ) in
 // a batch of their own; a frame that is not HDR fails them transiently.
 func (p *Pipeline) SubmitScoped(state domain.SecurityState, r ports.Renderer, requests []domain.CaptureRequest) {
-	if p.Cursor == nil || len(requests) > MaxRequests {
-		p.submitReadback(state, r, requests, nil)
+	if len(requests) > MaxRequests {
+		p.submitBatch(state, r, requests, false, nil)
 		return
 	}
-	var n [2]int
-	for _, q := range requests {
-		k := 0
-		if q.Cursor {
-			k = 1
-		}
-		p.cursorSplit[k][n[k]] = q
-		n[k]++
-	}
-	p.submitReadback(state, r, p.cursorSplit[0][:n[0]], nil)
-	p.submitReadback(state, r, p.cursorSplit[1][:n[1]], p.Cursor)
-	p.cursorSplit = [2][MaxRequests]domain.CaptureRequest{}
-}
-
-func (p *Pipeline) submitReadback(state domain.SecurityState, r ports.Renderer, requests []domain.CaptureRequest, cursor *domain.CaptureCursor) {
-	npq := 0
-	for _, q := range requests {
-		if isPQ(q) {
-			npq++
-		}
-	}
-	if npq == 0 || len(requests) > MaxRequests {
-		p.submitBatch(state, r, requests, false, cursor)
-		return
-	}
-	if npq == len(requests) {
-		p.submitBatch(state, r, requests, true, cursor)
-		return
-	}
-	var n [2]int
+	var n [4]int
 	for _, q := range requests {
 		k := 0
 		if isPQ(q) {
 			k = 1
 		}
-		p.split[k][n[k]] = q
+		if p.Cursor != nil && q.Cursor {
+			k += 2
+		}
+		p.classes[k][n[k]] = q
 		n[k]++
 	}
-	p.submitBatch(state, r, p.split[0][:n[0]], false, cursor)
-	p.submitBatch(state, r, p.split[1][:n[1]], true, cursor)
-	p.split = [2][MaxRequests]domain.CaptureRequest{}
+	// Every class leads once within four submissions, even when only one
+	// slot is available. Full batches still fail transiently for retry.
+	for offset := range len(n) {
+		k := (p.nextClass + offset) % len(n)
+		var cursor *domain.CaptureCursor
+		if k >= 2 {
+			cursor = p.Cursor
+		}
+		p.submitBatch(state, r, p.classes[k][:n[k]], k%2 != 0, cursor)
+	}
+	p.nextClass = (p.nextClass + 1) % len(n)
+	p.classes = [4][MaxRequests]domain.CaptureRequest{}
 }
 
 // isPQ reports whether q wants the HDR frame's PQ words: a screencast
@@ -271,7 +255,9 @@ func (p *Pipeline) submitBatch(state domain.SecurityState, r ports.Renderer, req
 		if cursor != nil {
 			b.frame, err = r.BeginCaptureCursor(cursor, pq)
 			if err != nil {
-				err = fmt.Errorf("%w: cursor capture: %w", ports.ErrCaptureTransient, err)
+				// Preserve the renderer's classification (e.g. ErrCaptureBusy).
+				// Invalid cursor images cannot recover by retrying this request.
+				err = fmt.Errorf("cursor capture: %w", err)
 			}
 		} else if pq {
 			if b.frame, err = r.BeginCapturePQ(); err != nil {

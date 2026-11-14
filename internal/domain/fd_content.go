@@ -158,11 +158,15 @@ type SHMBuffer struct {
 	Offset, Stride int
 }
 
+// DMABufIDCast marks compositor-allocated screencast buffers. Client buffer
+// IDs use the low-bit namespace; cast allocators OR this bit with their counter.
+const DMABufIDCast uint64 = 1 << 63
+
 // DMABuf is a client GPU buffer (linux-dmabuf). Its files stay open while
 // the client's buffer exists; a renderer that keeps it must duplicate the
 // descriptors under File.SyscallConn so a concurrent close cannot hand it a
 // reused one. ID is unique per buffer for the whole session: renderers key
-// their imports on it.
+// their imports on it. Bit 63 is reserved for cast buffers (DMABufIDCast).
 type DMABuf struct {
 	ID            uint64
 	Width, Height int

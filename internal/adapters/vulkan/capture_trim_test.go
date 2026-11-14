@@ -29,13 +29,17 @@ func TestTrimCaptureResources(t *testing.T) {
 			if mode == "cursor" || mode == "pq-cursor" {
 				cursor = &domain.CaptureCursor{X: 3, Y: 4, Image: domain.CursorImage{W: 1, H: 1, Pixels: []byte{0, 0, 255, 255}}}
 			}
-			for range 2 { // A capture immediately after trim recreates everything lazily.
+			for cycle := range 2 { // A capture immediately after trim recreates everything lazily.
+				start := time.Time{}.Add(time.Duration(cycle) * 3 * idleTTL)
 				f, err := r.beginCaptureCursor(false, pq, cursor)
 				if err != nil {
 					t.Fatal(err)
 				}
 				waitCaptureSlot(t, r, f)
-				if err := r.Trim(time.Time{}); err != nil {
+				if err := r.Trim(start); err != nil {
+					t.Fatal(err)
+				}
+				if err := r.Trim(start.Add(idleTTL)); err != nil {
 					t.Fatal(err)
 				}
 				if len(r.captures) == 0 {
@@ -46,7 +50,17 @@ func TestTrimCaptureResources(t *testing.T) {
 					t.Fatal(err)
 				}
 				r.EndCapture(f)
-				if err := r.Trim(time.Time{}); err != nil {
+				start = start.Add(idleTTL)
+				if err := r.Trim(start); err != nil {
+					t.Fatal(err)
+				}
+				if err := r.Trim(start.Add(idleTTL - time.Second)); err != nil {
+					t.Fatal(err)
+				}
+				if len(r.captures) == 0 {
+					t.Fatal("trim destroyed a recently used capture")
+				}
+				if err := r.Trim(start.Add(idleTTL)); err != nil {
 					t.Fatal(err)
 				}
 				if len(r.captures) != 0 || len(r.dmaIdle) != 0 || r.capturePass.pipeline != 0 || r.captureSDR.image != 0 || r.capturePQ.pipeline != 0 || r.capturePQ.out.image != 0 {
@@ -80,6 +94,9 @@ func TestTrimCaptureDMACopies(t *testing.T) {
 	if err := r.Trim(time.Time{}); err != nil {
 		t.Fatal(err)
 	}
+	if err := r.Trim(time.Time{}.Add(idleTTL)); err != nil {
+		t.Fatal(err)
+	}
 	if len(r.captures) != 0 || len(r.dmaIdle) != 0 || retained.img != nil || retained.refs != 0 {
 		t.Fatal("trim retained released cast or copy resources")
 	}
@@ -99,18 +116,21 @@ func TestTrimCapturePendingFence(t *testing.T) {
 	}
 	waitCaptureSlot(t, r, f)
 	r.EndCapture(f)
+	if err := r.Trim(time.Time{}); err != nil {
+		t.Fatal(err)
+	}
 	saved := r.sync
 	m := newMockcaptureSync(t)
 	m.EXPECT().fenceStatus(f.slot.fence).Return(vk.Timeout).Once()
 	r.sync = m
-	if err := r.Trim(time.Time{}); err != nil {
+	if err := r.Trim(time.Time{}.Add(idleTTL)); err != nil {
 		t.Fatal(err)
 	}
 	if len(r.captures) == 0 {
 		t.Fatal("trim destroyed pending capture")
 	}
 	r.sync = saved
-	if err := r.Trim(time.Time{}); err != nil {
+	if err := r.Trim(time.Time{}.Add(idleTTL)); err != nil {
 		t.Fatal(err)
 	}
 	if len(r.captures) != 0 {

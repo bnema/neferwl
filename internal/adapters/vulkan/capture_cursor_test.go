@@ -241,3 +241,28 @@ func TestCaptureCursorCycleAllocations(t *testing.T) {
 		})
 	}
 }
+
+func TestCaptureCursorFullSize(t *testing.T) {
+	r := newTestRenderer(t, 4, 4)
+	if err := render(r, domain.Scene{Background: "#000000"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	const size = domain.MaxCursorSize
+	pixels := make([]byte, size*size*4)
+	// Place the last cursor pixel on the output to exercise the entire upload.
+	copy(pixels[len(pixels)-4:], []byte{0, 255, 0, 255})
+	cursor := &domain.CaptureCursor{Image: domain.CursorImage{W: size, H: size, HotX: size - 1, HotY: size - 1, Pixels: pixels}}
+	f, err := r.beginCaptureCursor(true, false, cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.EndCapture(f)
+	waitCaptureSlot(t, r, f)
+	dst := make([]byte, 4)
+	if err := f.Read(image.Rect(0, 0, 1, 1), dst, 4); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(dst, []byte{0, 255, 0, 255}) {
+		t.Fatalf("full-size cursor pixel: %v", dst)
+	}
+}

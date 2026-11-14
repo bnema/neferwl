@@ -5,6 +5,7 @@ import (
 	"image"
 	"math"
 	"os"
+	"time"
 
 	"bnema.dev/zerowrap"
 	"github.com/bnema/neferwl/internal/adapters/hdrcursor"
@@ -55,9 +56,12 @@ type Renderer struct {
 	last *target
 	// captures are the readback slots (capture.go), allocated on the
 	// first capture; capturePass converts HDR frames into captureSDR.
-	captures    []*captureSlot
-	capturePass hdrPass
-	captureSDR  target
+	// Trim dates capture activity at its next call, like the frame caches.
+	captureUsed      bool
+	captureIdleSince time.Time
+	captures         []*captureSlot
+	capturePass      hdrPass
+	captureSDR       target
 	// capturePQ is the PQ readback pass of BeginCapturePQ (capture_pq.go).
 	capturePQ  capturePQPass
 	sync       captureSync

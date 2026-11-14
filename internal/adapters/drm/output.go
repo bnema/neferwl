@@ -350,7 +350,7 @@ func cursorSize(fd int) int {
 	size := 0
 	for _, c := range []uint64{capCursorW, capCursorH} {
 		v := getCap{capability: c}
-		if ioctl(fd, ioctlGetCap, unsafe.Pointer(&v)) == nil && v.value >= 16 && v.value <= 512 {
+		if ioctl(fd, ioctlGetCap, unsafe.Pointer(&v)) == nil && v.value >= 16 && v.value <= domain.MaxCursorSize {
 			if size == 0 || int(v.value) < size {
 				size = int(v.value)
 			}
