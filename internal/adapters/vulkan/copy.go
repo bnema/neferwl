@@ -240,6 +240,7 @@ func (c *Copier) waitSlot(s *copySlot) error {
 		if err := fenceWaitErr("vkWaitForFences(copy)", c.gpu.dd.WaitForFences(c.gpu.device, 1, &s.fence, 1, uint64(fenceWaitTimeout))); err != nil {
 			if errors.Is(err, ports.ErrDeviceLost) {
 				c.lost = true
+				c.gpu.markLost()
 			}
 			return err
 		}

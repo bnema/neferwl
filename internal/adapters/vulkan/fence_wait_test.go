@@ -30,3 +30,14 @@ func TestFenceWaitErr(t *testing.T) {
 		})
 	}
 }
+
+// A lost device must not call into its dispatch, even on repeated Close.
+func TestLostGPUCloseSkipsDispatch(t *testing.T) {
+	g := &GPU{device: vk.Device(1), dd: &vk.DeviceDispatch{}}
+	g.markLost()
+	g.Close()
+	g.Close()
+	if g.device != vk.Device(1) || !g.lostCloseLogged {
+		t.Fatal("lost device was not retained or warning was not recorded")
+	}
+}

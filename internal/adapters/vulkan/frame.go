@@ -192,7 +192,7 @@ func (r *Renderer) runDeferred() {
 
 const fenceWaitTimeout = 2 * time.Second
 
-var errFenceTimeout = errors.New("Vulkan fence wait timed out")
+var errFenceTimeout = errors.New("vulkan fence wait timed out")
 
 func fenceWaitErr(name string, res vk.Result) error {
 	if res == vk.Timeout {
@@ -205,6 +205,7 @@ func (r *Renderer) fenceWaitErr(name string, res vk.Result) error {
 	err := fenceWaitErr(name, res)
 	if errors.Is(err, ports.ErrDeviceLost) {
 		r.lost = true
+		r.gpu.markLost()
 	}
 	return err
 }
