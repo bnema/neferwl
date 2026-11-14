@@ -298,19 +298,23 @@ func (r *Renderer) reapCopies(s *captureSlot) error {
 	}
 	kept := s.copies[:0]
 	var err error
-	for _, c := range s.copies {
-		switch res := r.gpu.dd.WaitForFences(r.gpu.device, 1, &c.fence, 1, 0); res {
+	for i, c := range s.copies {
+		switch res := r.captureSync().fenceStatus(c.fence); res {
 		case vk.Success:
 			r.recycleDMACopy(c)
 		case vk.Timeout, vk.NotReady:
 			kept = append(kept, c)
 		default:
 			kept = append(kept, c)
+			next := r.noteLoss(checked("vkWaitForFences(capture dmabuf poll)", res))
+			if r.lost {
+				kept = append(kept, s.copies[i+1:]...)
+				clear(s.copies[len(kept):])
+				s.copies = kept
+				return errors.Join(err, next)
+			}
 			if err == nil {
-				err = r.noteLoss(checked("vkWaitForFences(capture dmabuf poll)", res))
-				if r.lost {
-					return err
-				}
+				err = next
 			}
 		}
 	}

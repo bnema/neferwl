@@ -389,6 +389,9 @@ func (r *Renderer) appendReadFences(waits []vk.Semaphore, im *imported) []vk.Sem
 		}
 	}
 	for _, fd := range fds[:count] {
+		if r.lost {
+			return waits
+		}
 		r.fenceExports++
 		arg := dmaBufSync{flags: dmaBufSyncRead, fd: -1}
 		if _, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), ioctlExportSyncFile, uintptr(unsafe.Pointer(&arg))); errno != 0 || arg.fd < 0 {
@@ -414,21 +417,22 @@ func (r *Renderer) importFence(f *os.File) vk.Semaphore {
 // importSyncFD imports a sync file fd as a temporary semaphore payload;
 // the fd is Vulkan's on success and closed on failure.
 func (r *Renderer) importSyncFD(fd int) vk.Semaphore {
-	r.syncSem = 0
-	r.syncCreate = vk.SemaphoreCreateInfo{SType: vk.StructureTypeSemaphoreCreateInfo}
-	if res := r.gpu.dd.CreateSemaphore(r.gpu.device, &r.syncCreate, nil, &r.syncSem); res != vk.Success {
-		_ = r.noteLoss(checked("vkCreateSemaphore(sync file)", res))
+	if r.lost {
 		logging.CloseFD(r.gpu.log, fd, "sync file fd")
 		return 0
 	}
-	r.syncImport = vk.ImportSemaphoreFdInfoKHR{SType: vk.StructureTypeImportSemaphoreFDInfoKHR, Semaphore: r.syncSem, Flags: vk.SemaphoreImportTemporaryBit, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit, Fd: int32(fd)}
-	if res := r.gpu.dd.ImportSemaphoreFdKHR(r.gpu.device, &r.syncImport); res != vk.Success {
-		_ = r.noteLoss(checked("vkImportSemaphoreFdKHR(sync file)", res))
+	sem, err := r.fences().createSemaphore()
+	if err != nil {
+		_ = r.noteLoss(err)
+		logging.CloseFD(r.gpu.log, fd, "sync file fd")
+		return 0
+	}
+	if err := r.noteLoss(checked("vkImportSemaphoreFdKHR(sync file)", r.fences().importSyncFD(sem, int32(fd)))); err != nil {
 		logging.CloseFD(r.gpu.log, fd, "sync file fd")
 		if !r.lost {
-			r.gpu.dd.DestroySemaphore(r.gpu.device, r.syncSem, nil)
+			r.fences().destroySemaphore(sem)
 		}
 		return 0
 	}
-	return r.syncSem
+	return sem
 }

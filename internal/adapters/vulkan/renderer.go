@@ -63,15 +63,12 @@ type Renderer struct {
 	capturePass      hdrPass
 	captureSDR       target
 	// capturePQ is the PQ readback pass of BeginCapturePQ (capture_pq.go).
-	capturePQ  capturePQPass
-	sync       captureSync
-	syncSem    vk.Semaphore // owner scratch for sync file imports
-	syncCreate vk.SemaphoreCreateInfo
-	syncImport vk.ImportSemaphoreFdInfoKHR
-	dmaImport  vk.ImportSemaphoreFdInfoKHR // owner scratch for temporary wait payload
-	dmaIdle    []*dmaCopy                  // owner-only copies recycled after fence completion
-	dmaFences  dmabufFences                // CopyTo's implicit sync (capture_dmabuf.go)
-	pool       vk.CommandPool
+	capturePQ capturePQPass
+	sync      captureSync
+	dmaImport vk.ImportSemaphoreFdInfoKHR // owner scratch for temporary wait payload
+	dmaIdle   []*dmaCopy                  // owner-only copies recycled after fence completion
+	dmaFences dmabufFences                // CopyTo's implicit sync (capture_dmabuf.go)
+	pool      vk.CommandPool
 	// Frames in flight (frame.go): frame is the last frame recorded,
 	// submitted the last submitted, completed the last known finished.
 	slots                       [frameSlots]frameSlot
@@ -162,7 +159,7 @@ func (g *GPU) NewRenderer(width, height int, o domain.RendererOptions) (renderer
 		}
 	}()
 	pi := vk.CommandPoolCreateInfo{SType: vk.StructureTypeCommandPoolCreateInfo, Flags: vk.CommandPoolCreateResetCommandBufferBit, QueueFamilyIndex: g.family}
-	if err = checked("vkCreateCommandPool", r.gpu.dd.CreateCommandPool(r.gpu.device, &pi, nil, &r.pool)); err != nil {
+	if err = r.noteLoss(checked("vkCreateCommandPool", r.gpu.dd.CreateCommandPool(r.gpu.device, &pi, nil, &r.pool))); err != nil {
 		return
 	}
 	if err = r.createSlots(); err != nil {

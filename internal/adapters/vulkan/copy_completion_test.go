@@ -3,6 +3,7 @@ package vulkan
 import (
 	"errors"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -117,4 +118,44 @@ func TestOwnerNoteLoss(t *testing.T) {
 			require.Equal(t, tc.lost, c.gpu.lost)
 		})
 	}
+}
+
+func TestReapCopiesRecordsLaterLoss(t *testing.T) {
+	sync := newMockcaptureSync(t)
+	sync.EXPECT().fenceStatus(vk.Fence(1)).Return(vk.ErrorOutOfDeviceMemory).Once()
+	sync.EXPECT().fenceStatus(vk.Fence(2)).Return(vk.ErrorDeviceLost).Once()
+	r := &Renderer{gpu: &GPU{}, sync: sync}
+	slot := &captureSlot{copies: []*dmaCopy{{fence: 1}, {fence: 2}, {fence: 3}}}
+	err := r.reapCopies(slot)
+	require.ErrorIs(t, err, ports.ErrDeviceLost)
+	require.Contains(t, err.Error(), "vkWaitForFences")
+	require.True(t, r.lost)
+	require.True(t, r.gpu.lost)
+	require.Len(t, slot.copies, 3)
+}
+
+func TestRenderStopsOnSyncImportLoss(t *testing.T) {
+	r := newTestRenderer(t, 8, 8)
+	defer r.Close()
+	// Use the renderer's real image as a cached sampled client image; no
+	// external dmabuf allocator or sync-file support is needed for this path.
+	require.NoError(t, r.ensureOwn())
+	r.imports[42] = &imported{image: r.own.image, view: r.own.view}
+	acquire, err := os.CreateTemp(t.TempDir(), "acquire")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, acquire.Close()) }()
+	fs := newMockdmabufFences(t)
+	fs.EXPECT().createSemaphore().Return(vk.Semaphore(123), nil).Once()
+	fs.EXPECT().importSyncFD(vk.Semaphore(123), mock.Anything).Return(vk.ErrorDeviceLost).Once()
+	r.dmaFences = fs
+	scene := domain.Scene{Windows: []domain.SceneWindow{{ID: 1, Rect: domain.Rect{W: 8, H: 8}}}}
+	contents := map[domain.WindowID]domain.SurfaceContent{1: {ID: 1, Width: 8, Height: 8, DMABuf: &domain.DMABuf{ID: 42}, Acquire: acquire}}
+	submitted := r.submitted
+	done, err := r.Render(scene, contents)
+	require.ErrorIs(t, err, ports.ErrDeviceLost)
+	require.Nil(t, done)
+	require.True(t, r.lost)
+	require.True(t, r.gpu.lost)
+	require.Equal(t, submitted, r.submitted)
+	require.False(t, r.slots[r.frame%frameSlots].busy)
 }
