@@ -6,7 +6,8 @@ import (
 	"bnema.dev/purego"
 )
 
-func TestFixedArityCalls(t *testing.T) {
+// TestFixedAritySymbolsResolve is a loader smoke test; it does not call native wrappers.
+func TestFixedAritySymbolsResolve(t *testing.T) {
 	lib, err := purego.Dlopen("libinput.so.10", purego.RTLD_NOW|purego.RTLD_LOCAL)
 	if err != nil {
 		t.Skipf("libinput.so.10 unavailable: %v", err)

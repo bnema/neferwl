@@ -81,12 +81,7 @@ func TestCaptureCursorIdleAllocations(t *testing.T) {
 			if allocs != 0 || storage.X != -123 {
 				t.Fatalf("allocs=%v storage=%+v", allocs, storage)
 			}
-			result := testing.Benchmark(func(b *testing.B) {
-				for b.Loop() {
-					cycle()
-				}
-			})
-			t.Logf("%s %s", result.String(), result.MemString())
+
 		})
 	}
 	for _, excluded := range []bool{false, true} {
@@ -100,5 +95,28 @@ func TestCaptureCursorIdleAllocations(t *testing.T) {
 		if got := c.captureCursor(&storage, normal, scoped); got != &storage || got.Image.W != 1 {
 			t.Fatalf("owner snapshot: %+v", got)
 		}
+	}
+}
+
+func BenchmarkCaptureCursor(b *testing.B) {
+	c := &Cursor{}
+	c.set(domain.CursorImage{W: 1, H: 1, Pixels: []byte{0, 0, 255, 255}})
+	noCursor := []domain.CaptureRequest{{Cursor: false}}
+	for _, tc := range []struct {
+		name             string
+		normal, excluded []domain.CaptureRequest
+	}{
+		{name: "idle"},
+		{name: "cursor-free", normal: noCursor, excluded: noCursor},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			var storage domain.CaptureCursor
+			b.ReportAllocs()
+			for b.Loop() {
+				if got := c.captureCursor(&storage, tc.normal, tc.excluded); got != nil {
+					b.Fatal("unexpected cursor")
+				}
+			}
+		})
 	}
 }
