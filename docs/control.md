@@ -189,3 +189,5 @@ comes once the state lists or drops it.
 - On a device without sync-file export (software Vulkan such as lavapipe, in
   CI or VMs), shots are read back on the CPU: slower, same pixels.
 - At most 64 requests wait at once per session; more get `busy`.
+
+Injection requests accept at most 4096 text runes, 256 combo bytes, and 8192 translated input events (excluding the device announcement); larger requests return `bad-request`.

@@ -410,6 +410,7 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 			events, tx, err := s.translate(req, !*announced)
 			transaction = tx
 			if err != nil {
+				response.Detail = err.Error()
 				return response
 			}
 			admission = make(chan ports.ControlAdmission, 1)
