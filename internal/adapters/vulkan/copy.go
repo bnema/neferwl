@@ -17,6 +17,7 @@ import (
 
 // Copier owns transfer imports and commands on one GPU; one goroutine uses it.
 type Copier struct {
+	lost             bool // Owner-goroutine owned.
 	gpu              *GPU
 	q                *queue
 	width, height    int
@@ -232,8 +233,15 @@ type copySlot struct {
 }
 
 func (c *Copier) waitSlot(s *copySlot) error {
+	if c.lost {
+		return ports.ErrDeviceLost
+	}
 	if s.busy {
-		if err := checked("vkWaitForFences(copy)", c.gpu.dd.WaitForFences(c.gpu.device, 1, &s.fence, 1, math.MaxUint64)); err != nil {
+		if err := fenceWaitErr("vkWaitForFences(copy)", c.gpu.dd.WaitForFences(c.gpu.device, 1, &s.fence, 1, uint64(fenceWaitTimeout))); err != nil {
+			if errors.Is(err, ports.ErrDeviceLost) {
+				c.lost = true
+				c.gpu.markLost()
+			}
 			return err
 		}
 		if err := checked("vkResetFences(copy)", c.gpu.dd.ResetFences(c.gpu.device, 1, &s.fence)); err != nil {
@@ -424,6 +432,13 @@ func (g *GPU) freeImage(t *target) {
 // Close releases all imports, commands and the acquired queue. It is idempotent.
 func (c *Copier) Close() {
 	if c == nil || c.q == nil {
+		return
+	}
+	_ = c.waitAll()
+	if c.lost {
+		c.gpu.log.Warn().Msg("leaking lost copier GPU resources")
+		c.gpu.releaseQueue(c.q)
+		c.q = nil
 		return
 	}
 	for i := range c.slots {

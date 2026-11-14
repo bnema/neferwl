@@ -370,6 +370,9 @@ func (r *Renderer) captureSync() captureSync {
 
 // freeCaptureSlot destroys a slot; its capture and DMA-copy fences must be complete.
 func (r *Renderer) freeCaptureSlot(s *captureSlot) {
+	if r.lost {
+		return
+	}
 	r.freeCaptureCursor(&s.cursor)
 	for _, c := range s.copies {
 		r.freeDMACopy(c)
@@ -403,6 +406,9 @@ func (r *Renderer) freeCaptureSlot(s *captureSlot) {
 // destroyCaptures frees the slots and the HDR conversion pass. Every
 // lease is invalid afterwards; all capture and DMA-copy fences are complete.
 func (r *Renderer) destroyCaptures() {
+	if r.lost {
+		return
+	}
 	for _, s := range r.captures {
 		r.freeCaptureSlot(s)
 	}
@@ -419,6 +425,9 @@ func (r *Renderer) destroyCaptures() {
 // fence signalled (polled, never waited). Nil when none is free; an
 // error when the device fails to report or reset a fence.
 func (r *Renderer) freeCapture() (*captureSlot, error) {
+	if r.lost {
+		return nil, ports.ErrDeviceLost
+	}
 	sync := r.captureSync()
 	for _, s := range r.captures {
 		if s.leased {
@@ -493,6 +502,9 @@ func (r *Renderer) beginCaptureAs(debug, pq bool) (*captureFrame, error) {
 }
 
 func (r *Renderer) beginCaptureCursor(debug, pq bool, cursor *domain.CaptureCursor) (*captureFrame, error) {
+	if r.lost {
+		return nil, ports.ErrDeviceLost
+	}
 	if r.gpu.device == 0 || r.gpu.dd == nil {
 		return nil, errors.New("renderer closed")
 	}
@@ -595,6 +607,9 @@ func (r *Renderer) beginCaptureCursor(debug, pq bool, cursor *domain.CaptureCurs
 // EndCapture returns a lease. The slot's copy may still run: it stays
 // pending until a later BeginCapture polls its fence.
 func (r *Renderer) EndCapture(cf ports.CaptureFrame) {
+	if r.lost {
+		return
+	}
 	f, ok := cf.(*captureFrame)
 	if !ok || f == nil || f.r != r || !f.valid {
 		return
@@ -611,7 +626,7 @@ func (r *Renderer) debugCapture() (*captureFrame, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := checked("vkWaitForFences(capture)", r.gpu.dd.WaitForFences(r.gpu.device, 1, &f.slot.fence, 1, math.MaxUint64)); err != nil {
+	if err := r.fenceWaitErr("vkWaitForFences(capture)", r.gpu.dd.WaitForFences(r.gpu.device, 1, &f.slot.fence, 1, uint64(fenceWaitTimeout))); err != nil {
 		r.EndCapture(f)
 		return nil, err
 	}
@@ -625,6 +640,9 @@ func (r *Renderer) debugCapture() (*captureFrame, error) {
 // copy fails. read gets the words in the slot's mapped memory, valid only
 // during the call: copy what must outlive it.
 func (r *Renderer) readHDRTarget(read func(words []uint32)) error {
+	if r.lost {
+		return ports.ErrDeviceLost
+	}
 	switch {
 	case r.gpu.device == 0 || r.gpu.dd == nil:
 		return errors.New("renderer closed")

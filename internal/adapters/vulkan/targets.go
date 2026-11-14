@@ -460,6 +460,10 @@ func (r *Renderer) dropTargets() {
 			r.log.Warn().Err(err).Msg("wait for GPU idle before dropping targets")
 		}
 	}
+	if r.lost {
+		r.targets, r.last, r.current, r.lastHDRTarget = nil, nil, 0, -1
+		return
+	}
 	for _, t := range r.targets {
 		if r.last == t {
 			r.last = nil

@@ -36,6 +36,8 @@ type GPU struct {
 	importMods          map[importKey][]uint64
 	castImages          map[uint64]*castImage // retained exports, protected by poolMu
 	poolMu              sync.Mutex
+	lost                bool // Protected by poolMu.
+	lostCloseLogged     bool // Protected by poolMu.
 	syncFD              bool
 	captureSyncExport   bool // Immutable kernel DMA-BUF sync-file export capability.
 	resources           uint32
@@ -206,6 +208,13 @@ func (g *GPU) Node() (primary, render uint64) {
 	return
 }
 
+// markLost prevents teardown of a device that may still have pending work.
+func (g *GPU) markLost() {
+	g.poolMu.Lock()
+	defer g.poolMu.Unlock()
+	g.lost = true
+}
+
 // Close requires all users to have released their queues first.
 func (g *GPU) Close() {
 	if g == nil || g.dd == nil || g.device == 0 {
@@ -213,6 +222,13 @@ func (g *GPU) Close() {
 	}
 	g.poolMu.Lock()
 	defer g.poolMu.Unlock()
+	if g.lost {
+		if !g.lostCloseLogged {
+			g.log.Warn().Msg("leaking lost Vulkan device with potentially pending work")
+			g.lostCloseLogged = true
+		}
+		return
+	}
 	for _, q := range g.queues {
 		if q.users != 0 {
 			g.log.Error().Int("users", q.users).Msg("closing GPU with active renderers")
