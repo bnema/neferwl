@@ -25,6 +25,7 @@ func TestHoverAllocations(t *testing.T) {
 		}
 		off := testing.AllocsPerRun(100, motion)
 		c.cfg.Focus.FollowMouse = true
+		c.cfg.Focus.FollowMouseDelay = 0
 		on := testing.AllocsPerRun(100, motion)
 		t.Logf("in-window motion: off=%g on=%g", off, on)
 		if on != off {
