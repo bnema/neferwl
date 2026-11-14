@@ -42,6 +42,7 @@ type surface struct {
 	// syncScratch holds next.sync between takeSyncPoints and queueUpdate,
 	// which moves it into the update.
 	syncScratch commitSync
+	syncClient  *deferredClient
 	// releasePointsDropped is display-goroutine-owned diagnostic accounting.
 	// A dropped point was not signalled because its acquire was not ready.
 	releasePointsDropped                                      uint64

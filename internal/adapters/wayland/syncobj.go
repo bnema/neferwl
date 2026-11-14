@@ -79,6 +79,7 @@ func (m syncManager) GetSurface(r *linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1, i
 	}
 	st.resource = res
 	state.sync = st
+	state.syncClient = m.server.deferredClientFor(r.Client())
 	m.server.log.Debug().Uint32("surface", state.wl.ID()).
 		Uint64("window", uint64(state.root().windowID())).Msg("explicit sync surface created")
 	res.OnDestroy = func() {
@@ -109,7 +110,6 @@ func (m syncManager) ImportTimeline(r *linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV
 		// Points already committed keep the syncobj: destroyed once no
 		// held buffer or waiting commit uses it (timeline.drop).
 		tl.alive = false
-		m.server.drainDeferredReleases(false)
 		m.server.dropTimeline(tl)
 	}
 }
@@ -673,9 +673,49 @@ func (s *surface) syncReady(cs *commitSync) bool {
 
 // deferredRelease owns points and a wait independently of the retired update.
 // Only the display goroutine creates and drains these records.
+const maxDeferredReleasesPerClient = 64
+
+type deferredClient struct {
+	client server.Client
+	count  int
+	gone   bool
+}
+
+func (s *Server) deferredClientFor(c server.Client) *deferredClient {
+	if s.deferredClients == nil {
+		s.deferredClients = make(map[server.Client]*deferredClient)
+	}
+	if state := s.deferredClients[c]; state != nil {
+		return state
+	}
+	state := &deferredClient{client: c}
+	s.deferredClients[c] = state
+	c.OnDestroy(func() {
+		state.gone = true
+		s.abandonDeferredClient(state)
+		delete(s.deferredClients, c)
+	})
+	return state
+}
+
+func (s *Server) abandonDeferredClient(client *deferredClient) {
+	kept := s.deferredReleases[:0]
+	for _, d := range s.deferredReleases {
+		if d.client == client {
+			d.owner.finishDroppedSync(&d.sync, false)
+			client.count--
+		} else {
+			kept = append(kept, d)
+		}
+	}
+	clear(s.deferredReleases[len(kept):])
+	s.deferredReleases = kept
+}
+
 type deferredRelease struct {
-	owner *surface
-	sync  commitSync
+	client *deferredClient
+	owner  *surface
+	sync   commitSync
 }
 
 // dropSync retires an unused attachment. An unready acquire must retain its
@@ -689,9 +729,24 @@ func (s *surface) dropSync(cs *commitSync) {
 		logging.CloseFile(s.server.log, cs.fence, "acquire fence")
 		cs.fence = nil
 	}
-	if cs.wait != nil && cs.acquire.tl.alive && cs.release.tl.alive &&
+	if s.syncClient == nil {
+		c := server.Client{}
+		if s.wl != nil {
+			c = s.wl.Client()
+		}
+		s.syncClient = s.server.deferredClientFor(c)
+	}
+	if cs.wait != nil && !s.syncClient.gone &&
 		!s.server.syncWait.fired(cs.wait) && !cs.wait.failed {
-		s.server.deferredReleases = append(s.server.deferredReleases, deferredRelease{owner: s, sync: *cs})
+		if s.syncClient.count >= maxDeferredReleasesPerClient {
+			s.syncClient.client.PostImplementationError("too many deferred explicit-sync releases")
+			s.syncClient.gone = true
+			s.server.abandonDeferredClient(s.syncClient)
+			s.finishDroppedSync(cs, false)
+			return
+		}
+		s.syncClient.count++
+		s.server.deferredReleases = append(s.server.deferredReleases, deferredRelease{client: s.syncClient, owner: s, sync: *cs})
 		s.releasePointsDeferred++
 		s.server.log.Debug().Uint64("window", uint64(s.root().windowID())).
 			Bool("sub", s.sub.parent != nil).
@@ -709,15 +764,15 @@ func (s *surface) finishDroppedSync(cs *commitSync, shutdown bool) {
 	switch {
 	case shutdown:
 		reason = "shutdown"
-	case !cs.acquire.tl.alive || !cs.release.tl.alive:
-		reason = "timeline_dead"
+	case s.syncClient != nil && s.syncClient.gone:
+		reason = "client_gone"
 	case cs.wait == nil:
 		reason = "no_wait"
 	case cs.wait.failed:
 		reason = "wait_failed"
 	}
 	acquireHandle := cs.acquire.tl.handle
-	ready := !shutdown && cs.acquire.tl.alive && cs.release.tl.alive &&
+	ready := !shutdown && (s.syncClient == nil || !s.syncClient.gone) &&
 		cs.wait != nil && s.server.syncWait.fired(cs.wait) && !cs.wait.failed
 	if cs.wait != nil {
 		s.server.syncWait.cancel(cs.wait)
@@ -749,9 +804,10 @@ func (s *Server) drainDeferredReleases(shutdown bool) {
 	kept := s.deferredReleases[:0]
 	for _, d := range s.deferredReleases {
 		cs := &d.sync
-		dead := shutdown || !cs.acquire.tl.alive || !cs.release.tl.alive
+		dead := shutdown || d.client.gone
 		if dead || cs.wait.failed || s.syncWait.fired(cs.wait) {
 			d.owner.finishDroppedSync(cs, shutdown)
+			d.client.count--
 		} else {
 			kept = append(kept, d)
 		}

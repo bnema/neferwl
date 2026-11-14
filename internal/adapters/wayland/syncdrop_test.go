@@ -3,13 +3,16 @@ package wayland
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"bnema.dev/zerowrap"
 )
 
 func TestDropSyncDeferredLifecycle(t *testing.T) {
-	for _, outcome := range []string{"ready", "failed", "acquire_destroyed", "release_destroyed", "shutdown", "already_ready"} {
+	for _, outcome := range []string{"ready", "failed", "acquire_destroyed", "release_destroyed", "shutdown", "client_gone", "already_ready", "already_ready_destroyed"} {
 		t.Run(outcome, func(t *testing.T) {
 			var out bytes.Buffer
 			dev := newMocksyncobjDevice(t)
@@ -18,14 +21,20 @@ func TestDropSyncDeferredLifecycle(t *testing.T) {
 			surf.sub.parent = &surface{server: srv, x11win: &window{id: 42, mapped: true}}
 			acquire := &timeline{dev: dev, handle: 7, alive: true, uses: 1}
 			release := &timeline{dev: dev, handle: 8, alive: true, uses: 1}
-			w := &syncWait{explicit: true, efd: -1, done: outcome == "already_ready"}
+			w := &syncWait{explicit: true, efd: -1, done: (outcome == "already_ready" || outcome == "already_ready_destroyed")}
 			cs := commitSync{acquire: syncPoint{tl: acquire, point: 11}, release: syncPoint{tl: release, point: 12}, wait: w}
-			signals := outcome == "ready" || outcome == "already_ready"
+			signals := outcome == "ready" || outcome == "acquire_destroyed" || outcome == "release_destroyed" || outcome == "already_ready" || outcome == "already_ready_destroyed"
 			if signals {
 				dev.EXPECT().signal(uint32(8), uint64(12)).Return(nil).Once()
 			}
+			if outcome == "already_ready_destroyed" {
+				acquire.alive = false
+				release.alive = false
+				dev.EXPECT().destroy(uint32(7)).Return(nil).Once()
+				dev.EXPECT().destroy(uint32(8)).Return(nil).Once()
+			}
 			surf.dropSync(&cs)
-			if outcome != "already_ready" {
+			if outcome != "already_ready" && outcome != "already_ready_destroyed" {
 				if surf.releasePointsDeferred != 1 {
 					t.Fatal("deferred counter not incremented")
 				}
@@ -50,12 +59,21 @@ func TestDropSyncDeferredLifecycle(t *testing.T) {
 					w.done = true
 				case "failed":
 					w.done, w.failed = true, true
+				case "client_gone":
+					surf.syncClient.gone = true
 				case "acquire_destroyed":
 					acquire.alive = false
 					dev.EXPECT().destroy(uint32(7)).Return(nil).Once()
 				case "release_destroyed":
 					release.alive = false
 					dev.EXPECT().destroy(uint32(8)).Return(nil).Once()
+				}
+				if outcome == "acquire_destroyed" || outcome == "release_destroyed" {
+					srv.drainDeferredReleases(false)
+					if len(srv.deferredReleases) != 1 {
+						t.Fatal("protocol timeline destruction cancelled committed point")
+					}
+					w.done = true
 				}
 				srv.drainDeferredReleases(outcome == "shutdown")
 			}
@@ -79,7 +97,7 @@ func TestDropSyncDeferredLifecycle(t *testing.T) {
 				}
 			}
 			if !signals {
-				want := "timeline_dead"
+				want := "client_gone"
 				if outcome == "failed" {
 					want = "wait_failed"
 				}
@@ -98,7 +116,7 @@ func TestDropSyncDeferredLifecycle(t *testing.T) {
 					t.Fatalf("abandon diagnostic: %v", warning)
 				}
 			}
-			if outcome == "already_ready" && surf.releasePointsDeferred != 0 {
+			if (outcome == "already_ready" || outcome == "already_ready_destroyed") && surf.releasePointsDeferred != 0 {
 				t.Fatal("ready release counted as deferred")
 			}
 			// Destroy remaining live timelines after the references have retired.
@@ -135,5 +153,61 @@ func TestDropSyncMissingWaitWarns(t *testing.T) {
 	}
 	if tl.uses != 0 || surf.releasePointsDropped != 1 || !bytes.Contains(out.Bytes(), []byte("surface release point dropped without signal")) {
 		t.Fatal("missing wait must be abandoned and warned")
+	}
+}
+
+//testpolicy:realtime client disconnect is delivered by the real Wayland display loop
+func TestDeferredReleaseClientTeardownAndBudget(t *testing.T) {
+	for _, budget := range []bool{false, true} {
+		t.Run(fmt.Sprint(budget), func(t *testing.T) {
+			h := newSyncHarness(t)
+			var out lockedBuffer
+			var client *deferredClient
+			gone := make(chan struct{})
+			h.s.display.Do(func() {
+				h.s.log = zerowrap.New(zerowrap.Config{Format: "json", Output: &out}).WithField("component", "wayland")
+				var surf *surface
+				for _, s := range h.s.surfaces {
+					if s.wl.ID() == h.surf {
+						surf = s
+					}
+				}
+				client = surf.syncClient
+				client.client.OnDestroy(func() { close(gone) })
+				n := 1
+				if budget {
+					n = maxDeferredReleasesPerClient + 1
+				}
+				tl := &timeline{dev: h.dev, handle: 7, alive: true, uses: 2 * n}
+				for range n {
+					surf.dropSync(&commitSync{acquire: syncPoint{tl: tl, point: 11}, release: syncPoint{tl: tl, point: 12}, wait: &syncWait{explicit: true, efd: -1}})
+				}
+				if budget && (client.count != 0 || tl.uses != 0 || len(h.s.deferredReleases) != 0) {
+					t.Error("budget cleanup leaked")
+				}
+			})
+			if budget {
+				if err := h.c.Roundtrip(); err == nil {
+					t.Fatal("budget did not post a protocol error")
+				}
+			}
+			_ = h.c.Close()
+			select {
+			case <-gone:
+			case <-waylandDeadline(2 * time.Second):
+				t.Fatal("client teardown not observed")
+			}
+			h.s.display.Do(func() {
+				if client.count != 0 || len(h.s.deferredReleases) != 0 {
+					t.Error("client releases leaked")
+				}
+				if _, ok := h.s.deferredClients[client.client]; ok {
+					t.Error("client state retained")
+				}
+			})
+			if !strings.Contains(out.String(), `"reason":"client_gone"`) {
+				t.Fatalf("missing client_gone: %s", out.String())
+			}
+		})
 	}
 }

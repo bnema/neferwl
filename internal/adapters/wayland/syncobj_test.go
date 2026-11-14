@@ -568,7 +568,8 @@ func TestSyncobjDroppedSubsurfaceCommit(t *testing.T) {
 
 // A commit dropped before its acquire point has a fence signals nothing
 // (the client has not submitted that point) and sends no wl_buffer.release;
-// destroying the timeline then cancels the deferred wait without leaking an fd.
+// protocol timeline destruction retains it until the acquire arrives.
+//
 func TestSyncobjDroppedCommit(t *testing.T) {
 	h := newSyncHarness(t)
 	h.releases = map[uint32]*syncReleaseProxy{}
@@ -579,8 +580,7 @@ func TestSyncobjDroppedCommit(t *testing.T) {
 	if err := h.c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	// Surface destruction retains the deferred wait. Timeline destruction
-	// abandons it synchronously, including the eventfd registration.
+	// Timeline object destruction must not unset committed points.
 	requestProtocol(t, h.c, h.timeline, linuxdrmsyncobj.WpLinuxDrmSyncobjTimelineV1RequestDestroy)
 	if err := h.c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -593,8 +593,18 @@ func TestSyncobjDroppedCommit(t *testing.T) {
 		t.Fatal("wl_buffer.release sent under explicit sync")
 	default:
 	}
-	// The harness keeps its own duplicate of the eventfd.
-	if after := openFDs(t); after > before+1 {
+	h.fire(1)
+	h.s.display.Do(func() {
+		if len(h.s.deferredReleases) > 0 {
+			h.s.syncWait.onAcquire(h.s.deferredReleases[0].sync.wait)
+		}
+	})
+	if got := h.signalled(); len(got) != 1 || got[0] != 2 {
+		t.Fatalf("retained release: %v", got)
+	}
+	// The harness keeps its own duplicate of the eventfd, and the waiter caches
+	// its drained registration for reuse.
+	if after := openFDs(t); after > before+3 {
 		t.Fatalf("eventfds and sync files %d -> %d", before, after)
 	}
 }

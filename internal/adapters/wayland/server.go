@@ -286,6 +286,7 @@ type Server struct {
 	timelines        map[*server.Resource]*timeline
 	syncWait         *syncWaiter
 	deferredReleases []deferredRelease
+	deferredClients  map[server.Client]*deferredClient
 	// flips is each output's latest flip (display goroutine).
 	flips map[string]domain.FlipInfo
 	// inhibitors are the live inhibitor objects (inhibit.go);
