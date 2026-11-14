@@ -117,3 +117,59 @@ func TestShotDispatchValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestShotDispatchCaptureErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		coreErr       string
+		captureErr    error
+		cancelRequest bool
+		want          string
+	}{
+		{name: "deadline waiting for shooter", want: ports.ControlErrTimeout},
+		{name: "core timeout and deadline", coreErr: ports.ControlErrTimeout, want: ports.ControlErrTimeout},
+		{name: "capture failure", captureErr: errors.New("capture refused"), want: ports.ControlErrCaptureFailed},
+		{name: "core timeout and capture failure", coreErr: ports.ControlErrTimeout, captureErr: errors.New("capture refused"), want: ports.ControlErrTimeout},
+		{name: "request canceled", cancelRequest: true, want: ports.ControlErrTimeout},
+		{name: "unrelated capture cancellation", captureErr: context.Canceled, want: ports.ControlErrCaptureFailed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				captures := make(chan domain.CaptureRequest)
+				captured := make(chan domain.CaptureDone)
+				s := &Server{ids: workspaceid.WithPrefix("test"), shooter: NewShooter(captures, captured, t.TempDir())}
+				out := make(chan ports.ControlRequest)
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				go func() {
+					r := (<-out).(ports.ControlDo)
+					r.Reply <- ports.ControlReply{Done: domain.WaitPresented, Err: tc.coreErr, Shots: []domain.ShotRequest{
+						{Output: "A", MinSeq: 9, Width: 1, Height: 1},
+						{Output: "B", MinSeq: 10, Width: 1, Height: 1},
+					}}
+					q := <-captures
+					captured <- domain.CaptureDone{ID: q.ID}
+					if tc.captureErr != nil {
+						q = <-captures
+						captured <- domain.CaptureDone{ID: q.ID, Err: tc.captureErr}
+					}
+				}()
+				if tc.cancelRequest {
+					go func() {
+						synctest.Wait()
+						cancel()
+					}()
+				}
+				timeout := "1s"
+				announced := false
+				got := s.dispatch(ctx, request{Op: "shot", Timeout: &timeout, Inline: true}, out, &announced)
+				if got.OK || got.Error != tc.want || got.Detail == "" {
+					t.Fatalf("reply: %+v, want error %q", got, tc.want)
+				}
+				if len(got.Shots) != 1 || got.Shots[0].Output != "A" || got.Shots[0].Seq != 9 || len(got.Shots[0].PNG) == 0 {
+					t.Fatalf("partial shots lost: %+v", got.Shots)
+				}
+			})
+		})
+	}
+}

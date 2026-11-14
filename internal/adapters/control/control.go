@@ -466,7 +466,12 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 		response.Shots = shots
 		if err != nil {
 			response.OK = false
-			response.Error = ports.ControlErrCaptureFailed
+			if code == ports.ControlErrTimeout || errors.Is(err, context.DeadlineExceeded) ||
+				(errors.Is(err, context.Canceled) && ctx.Err() != nil) {
+				response.Error = ports.ControlErrTimeout
+			} else {
+				response.Error = ports.ControlErrCaptureFailed
+			}
 			response.Detail = err.Error()
 		}
 	}
