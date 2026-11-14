@@ -416,14 +416,18 @@ func (r *Renderer) importFence(f *os.File) vk.Semaphore {
 func (r *Renderer) importSyncFD(fd int) vk.Semaphore {
 	r.syncSem = 0
 	r.syncCreate = vk.SemaphoreCreateInfo{SType: vk.StructureTypeSemaphoreCreateInfo}
-	if r.gpu.dd.CreateSemaphore(r.gpu.device, &r.syncCreate, nil, &r.syncSem) != vk.Success {
+	if res := r.gpu.dd.CreateSemaphore(r.gpu.device, &r.syncCreate, nil, &r.syncSem); res != vk.Success {
+		_ = r.noteLoss(checked("vkCreateSemaphore(sync file)", res))
 		logging.CloseFD(r.gpu.log, fd, "sync file fd")
 		return 0
 	}
 	r.syncImport = vk.ImportSemaphoreFdInfoKHR{SType: vk.StructureTypeImportSemaphoreFDInfoKHR, Semaphore: r.syncSem, Flags: vk.SemaphoreImportTemporaryBit, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit, Fd: int32(fd)}
-	if r.gpu.dd.ImportSemaphoreFdKHR(r.gpu.device, &r.syncImport) != vk.Success {
+	if res := r.gpu.dd.ImportSemaphoreFdKHR(r.gpu.device, &r.syncImport); res != vk.Success {
+		_ = r.noteLoss(checked("vkImportSemaphoreFdKHR(sync file)", res))
 		logging.CloseFD(r.gpu.log, fd, "sync file fd")
-		r.gpu.dd.DestroySemaphore(r.gpu.device, r.syncSem, nil)
+		if !r.lost {
+			r.gpu.dd.DestroySemaphore(r.gpu.device, r.syncSem, nil)
+		}
 		return 0
 	}
 	return r.syncSem
