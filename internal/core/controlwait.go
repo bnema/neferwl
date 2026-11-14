@@ -237,7 +237,13 @@ func (c *Core) evalSceneWait(pass *waitPass, w *controlWait) bool {
 	}
 	for _, shot := range w.shots {
 		seq, exists := seqs[shot.Output]
-		if exists && c.presented[shot.Output] >= seq {
+		if !exists {
+			// Removal satisfies an ordinary presentation boundary, but a
+			// requested screenshot still requires its output to exist.
+			response.Err = ports.ControlErrBadRequest
+			continue
+		}
+		if c.presented[shot.Output] >= seq {
 			shot.MinSeq = seq
 			shot.Width, shot.Height = c.shotSize(shot.Output)
 			response.Shots = append(response.Shots, shot)

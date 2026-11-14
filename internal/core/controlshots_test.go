@@ -103,3 +103,63 @@ func TestControlShots(t *testing.T) {
 		}
 	})
 }
+
+func TestControlShotsOutputRemoved(t *testing.T) {
+	for _, multiple := range []bool{false, true} {
+		t.Run(map[bool]string{false: "single", true: "partial"}[multiple], func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var cfg domain.Config
+				cfg.Keyboard.CmdKey = "super"
+				cfg.Layout.MaxColumns = 2
+				c := newSizedCore(t, cfg)
+				control := make(chan ports.ControlRequest)
+				output := make(chan ports.OutputEvent)
+				frames := make(chan domain.OutputFrame)
+				c.ch.Control, c.ch.Output, c.ch.Frames = control, output, frames
+				ctx, cancel := context.WithCancel(context.Background())
+				done := make(chan error, 1)
+				go func() { done <- c.Run(ctx) }()
+				defer func() {
+					cancel()
+					if err := <-done; err != nil {
+						t.Error(err)
+					}
+				}()
+				output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "A", Width: 100, Height: 80}}
+				shots := []domain.ShotRequest{{Output: "A"}}
+				if multiple {
+					output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "B", Width: 100, Height: 80}}
+					shots = append(shots, domain.ShotRequest{Output: "B"})
+				}
+				synctest.Wait()
+				reply := make(chan ports.ControlReply, 1)
+				control <- ports.ControlDo{Action: "none", Shots: shots, Caps: domain.CapAct | domain.CapCapture, Reply: reply}
+				synctest.Wait()
+				if len(reply) != 0 {
+					t.Fatal("reply before presentation")
+				}
+				output <- ports.OutputRemoved{Name: "A"}
+				synctest.Wait()
+				if multiple {
+					frames <- domain.OutputFrame{Output: "B", SceneSeq: c.sceneSeqs()["B"]}
+					synctest.Wait()
+				}
+				select {
+				case r := <-reply:
+					want := 0
+					if multiple {
+						want = 1
+					}
+					if r.Err != ports.ControlErrBadRequest || len(r.Shots) != want {
+						t.Fatalf("removed shot: %+v", r)
+					}
+					if multiple && (r.Shots[0].Output != "B" || r.Shots[0].MinSeq != c.sceneSeqs()["B"]) {
+						t.Fatalf("remaining shot: %+v", r.Shots)
+					}
+				default:
+					t.Fatal("missing reply")
+				}
+			})
+		})
+	}
+}
