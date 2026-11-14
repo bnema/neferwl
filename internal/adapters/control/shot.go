@@ -9,7 +9,6 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
@@ -70,7 +69,7 @@ func (s *Shooter) Shoot(ctx context.Context, shots []domain.ShotRequest, inline 
 		if w <= 0 || h <= 0 || w > maxBytes/4 || h > maxBytes/(w*4) {
 			return results, fmt.Errorf("invalid or unknown shot output %q", q.Output)
 		}
-		if q.Output == "" || strings.ContainsAny(q.Output, "/\\") || q.Output == "." || q.Output == ".." {
+		if !domain.ValidOutputName(q.Output) {
 			return results, fmt.Errorf("invalid shot output name %q", q.Output)
 		}
 		pixels, err := unix.Mmap(-1, 0, w*h*4, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_PRIVATE|unix.MAP_ANON)
