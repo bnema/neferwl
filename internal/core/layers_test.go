@@ -176,9 +176,8 @@ func TestOverviewOverFullscreenShowsLayers(t *testing.T) {
 	})
 }
 
-// A fullscreen window is exclusive: the scene carries only the background
-// and a layer taking the keyboard exclusively (a locker), so the output
-// can scan the window out.
+// Fullscreen keeps overlays visible regardless of keyboard interactivity,
+// while hiding top bars unless they take the keyboard exclusively.
 func TestFullscreenSceneLayers(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		client := make(chan ports.ClientEvent)
@@ -226,19 +225,20 @@ func TestFullscreenSceneLayers(t *testing.T) {
 			{ID: 5, Layer: domain.LayerBackground, Anchor: 15},
 			{ID: 6, Layer: domain.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 10},
 			{ID: 7, Layer: domain.LayerOverlay, Width: 20, Height: 10},
+			{ID: 9, Layer: domain.LayerOverlay, Width: 20, Height: 10, Keyboard: 2},
 		}
 		client <- ports.LayerChanged{Layers: all}
-		if got := layers(recv()); len(got) != 3 {
+		if got := layers(recv()); len(got) != 4 {
 			t.Fatalf("layers %v", got)
 		}
 		client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
-		if got := layers(recv()); len(got) != 1 || got[0] != 5 {
-			t.Fatalf("fullscreen layers %v, want the background", got)
+		if got := layers(recv()); len(got) != 3 || got[0] != 5 || got[1] != 7 || got[2] != 9 {
+			t.Fatalf("fullscreen layers %v, want background and overlays", got)
 		}
-		locker := domain.LayerSurface{ID: 8, Layer: domain.LayerOverlay, Anchor: 15, Keyboard: 1}
+		locker := domain.LayerSurface{ID: 8, Layer: domain.LayerTop, Anchor: 15, Keyboard: 1}
 		client <- ports.LayerChanged{Layers: append(all, locker)}
-		if got := layers(recv()); len(got) != 2 || got[1] != 8 {
-			t.Fatalf("fullscreen layers %v, want the background and the locker", got)
+		if got := layers(recv()); len(got) != 4 || got[1] != 8 || got[2] != 7 || got[3] != 9 {
+			t.Fatalf("fullscreen layers %v, want background, exclusive top and overlays", got)
 		}
 		cancel()
 		<-done

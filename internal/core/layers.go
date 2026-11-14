@@ -94,13 +94,12 @@ func hasFullscreen(sc *screen) bool {
 	return !sc.mon.previewing() && sc.mon.Current().Cover() != 0
 }
 
-// shown reports whether a layer surface is drawn. A fullscreen window is
-// exclusive: it hides every layer above the background (bars,
-// notifications), so the output can scan it out. A surface taking the
-// keyboard exclusively (a locker, a launcher) still shows: it has the
-// keyboard and must be seen.
+// shown reports whether a layer surface is drawn. Overlay surfaces (lockers,
+// capture selectors, OSDs) are drawn over fullscreen. Top bars and notifications
+// are hidden so the output can scan out, unless they take the keyboard
+// exclusively or are capture exclusions that must remain visible.
 func shown(sc *screen, l domain.SceneLayer) bool {
-	return l.Layer == domain.LayerBackground || !hasFullscreen(sc) || sc.exclusiveKeyboard(l.ID) || sc.capture[l.ID]
+	return l.Layer == domain.LayerBackground || l.Layer == domain.LayerOverlay || !hasFullscreen(sc) || sc.exclusiveKeyboard(l.ID) || sc.capture[l.ID]
 }
 
 // exclusiveKeyboard reports whether layer surface id takes the keyboard
