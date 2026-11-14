@@ -23,6 +23,9 @@ func (w *sceneWalk) overlays() {
 // without changing the raster dimensions or cache key.
 func (w *sceneWalk) overlay(o domain.Overlay, anchor, clip image.Rectangle, outputWidth int) {
 	r := w.r
+	if r.lost {
+		return
+	}
 	switch o.Kind {
 	case domain.OverlayLabel:
 	case domain.OverlayPanel:
@@ -96,6 +99,7 @@ func (w *sceneWalk) overlay(o domain.Overlay, anchor, clip image.Rectangle, outp
 	if c == nil {
 		var err error
 		if c, err = r.shmCopyFor(key, st, pix, nil, 0, lw*4, nil); err != nil {
+			_ = r.noteLoss(err)
 			return
 		}
 	}

@@ -3,6 +3,7 @@ package vulkan
 import (
 	"errors"
 	"fmt"
+	"image"
 	"os"
 	"testing"
 	"time"
@@ -98,6 +99,16 @@ func TestLostTargetAndTrimEntries(t *testing.T) {
 	require.Len(t, r.deferred, 1)
 	require.Empty(t, r.marks)
 }
+
+func TestLostSceneWalkSkipsOverlayUpload(t *testing.T) {
+	// A nil GPU makes any overlay upload panic: the walk must stop first.
+	r := &Renderer{lost: true}
+	w := &sceneWalk{r: r, scale: 1, alpha: 1, bounds: image.Rect(0, 0, 64, 64)}
+	w.overlay(domain.Overlay{ID: 1, Kind: domain.OverlayLabel, Text: "x"}, w.bounds, w.bounds, 64)
+	require.Empty(t, w.draws)
+	require.Empty(t, r.shm)
+}
+
 func TestOwnerNoteLoss(t *testing.T) {
 	for _, tc := range []struct {
 		name string
