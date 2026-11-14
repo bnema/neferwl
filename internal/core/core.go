@@ -1074,13 +1074,14 @@ func (c *Core) acceptsInput(id WindowID, x, y float64) bool {
 // windows (last visible placement is topmost), then bottom and
 // background layers.
 func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
+	return c.hitForDevice(x, y, c.activePointerDevice)
+}
+
+func (c *Core) hitForDevice(x, y float64, device domain.InputDeviceID) (WindowID, float64, float64) {
 	if c.security.Protected {
 		return c.lockHit(x, y)
 	}
-	i := c.screenAt(x, y)
-	if target := c.boundInput(c.activePointerDevice); target >= 0 && c.screens[target].placement().Contains(x, y) {
-		i = target
-	}
+	i := c.pointerScreenAt(x, y, device)
 	if i < 0 {
 		return 0, 0, 0
 	}

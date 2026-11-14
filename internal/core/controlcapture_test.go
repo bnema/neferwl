@@ -70,6 +70,15 @@ func TestControlCapturePlan(t *testing.T) {
 		if plan, _ := ask(ports.ControlCapture{Stop: true, Caps: domain.CapCapture}); !plan.Stop || len(plan.Targets) != 2 || plan.Targets[0].Dir != "" {
 			t.Fatalf("stop: %+v", plan)
 		}
+		// Even a connected dot-name output cannot escape the capture directory.
+		c.addScreen(domain.OutputInfo{Name: "..", Width: 100, Height: 80})
+		if _, code := ask(ports.ControlCapture{Outputs: []string{"A", ".."}, Dir: dir, Caps: domain.CapCapture}); code != ports.ControlErrBadRequest {
+			t.Fatalf("dot output: %q", code)
+		}
+		if len(plans) != 0 {
+			t.Fatal("invalid capture plan reached backend")
+		}
+		c.removeScreen("..")
 		// A busy backend refuses rather than stalling the owner.
 		plans <- ports.ContinuousCaptureRequest{}
 		if _, code := func() (ports.ContinuousCaptureRequest, string) {

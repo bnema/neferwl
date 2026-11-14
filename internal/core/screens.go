@@ -212,6 +212,14 @@ func (c *Core) screenAt(x, y float64) int {
 	return -1
 }
 
+// pointerScreenAt includes an isolated output when the device is bound to it.
+func (c *Core) pointerScreenAt(x, y float64, device domain.InputDeviceID) int {
+	if target := c.boundInput(device); target >= 0 && c.screens[target].placement().Contains(x, y) {
+		return target
+	}
+	return c.screenAt(x, y)
+}
+
 // clampPointer keeps the pointer on a screen: a point outside every screen
 // stays on the screen under (fromX, fromY), or the first one, clamped to its
 // edges.

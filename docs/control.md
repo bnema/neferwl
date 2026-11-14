@@ -136,7 +136,9 @@ A shot waits for the next presented frame and writes one 8-bit sRGB PNG per
 output under `$XDG_RUNTIME_DIR/neferwl/sessions/<id>/shots/`. The reply lists
 `{output, path, seq}` for each, where `seq` is the presented scene. `--shot` on
 an action captures its result in the same round trip. Single shots do not show
-the cursor.
+the cursor. If a requested output disappears while waiting, the reply reports
+`bad-request` and still includes shots for surviving outputs whose scenes have
+presented. Presentation waits without shots still succeed when an output is removed.
 
 ### Every frame and video
 

@@ -532,8 +532,8 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 			}
 			o := domain.OutputConfig{Name: name}
 			if fields := strings.Fields(value); len(fields) > 0 && fields[0] == "virtual" {
-				if name == "" || strings.Trim(name, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-") != "" {
-					warn("%s: virtual output name must be letters, digits, ., _ or -", key)
+				if !domain.ValidOutputName(name) {
+					warn("%s: virtual output name must be letters, digits, ., _ or - and not . or ..", key)
 					continue
 				}
 				if len(fields) != 2 {

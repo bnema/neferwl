@@ -117,3 +117,24 @@ func TestConfigEqualNilAndEmptyNestedCollections(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigEqualRuleTitles(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		a, b *regexp.Regexp
+		want bool
+	}{
+		{"identical", regexp.MustCompile("^title$"), regexp.MustCompile("^title$"), true},
+		{"different", regexp.MustCompile("^title$"), regexp.MustCompile("^other$"), false},
+		{"both nil", nil, nil, true},
+		{"one nil", regexp.MustCompile("^title$"), nil, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			a := Config{Rules: []WindowRule{{Title: tt.a}}}
+			b := Config{Rules: []WindowRule{{Title: tt.b}}}
+			if a.Equal(b) != tt.want || b.Equal(a) != tt.want {
+				t.Fatalf("title equality: want %v in both directions", tt.want)
+			}
+		})
+	}
+}

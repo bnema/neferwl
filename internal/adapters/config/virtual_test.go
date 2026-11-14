@@ -38,6 +38,8 @@ func TestVirtualOutputModes(t *testing.T) {
 		{"tv", "10x10@", false},
 		{"tv", "10x10 extra", false},
 		{"bad/name", "10x10", false},
+		{".", "10x10", false},
+		{"..", "10x10", false},
 		{"écran", "10x10", false},
 		{"", "10x10", false},
 	} {

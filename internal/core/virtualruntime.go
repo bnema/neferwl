@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/bnema/neferwl/internal/domain"
 )
@@ -47,7 +46,7 @@ func (a *OutputApply) RuntimeAdd(id uint64, name string, mode domain.OutputMode)
 			}
 		}
 	}
-	if strings.ContainsAny(name, "/\\\x00 \t\n") || name == "." || name == ".." || used(name) {
+	if !domain.ValidOutputName(name) || used(name) {
 		return "", errors.New("invalid or occupied output name")
 	}
 	if mode.RefreshMilli == 0 {

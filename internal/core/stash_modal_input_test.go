@@ -322,3 +322,37 @@ func TestStashShownDuringTileGrabRehitsOnRelease(t *testing.T) {
 		}
 	})
 }
+
+func TestStashIsolatedBoundPointerDismissal(t *testing.T) {
+	for _, window := range []bool{false, true} {
+		t.Run(map[bool]string{false: "blocked-area", true: "window"}[window], func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				c, _, sc, _ := stashRig(t, false)
+				sc.isolated = true
+				c.inputBindings = true
+				c.cfg.Outputs = []domain.OutputConfig{{Name: sc.name(), Inputs: []string{"bound"}}}
+				c.inputNames = map[domain.InputDeviceID]string{1: "bound", 2: "other"}
+				target := WindowID(1)
+				if window {
+					target = 2
+				}
+				r := c.clientRect(settledOf(t, sc, target))
+				x, y := float64(r.X+r.W/2), float64(r.Y+1)
+				if window {
+					y = float64(r.Y + r.H/2)
+				}
+				if err := c.handleInput(t.Context(), ports.PointerMotion{Device: 1, X: x, Y: y}); err != nil {
+					t.Fatal(err)
+				}
+				// The button's identity must win over the last motion device.
+				c.activePointerDevice = 2
+				if err := c.handleInput(t.Context(), ports.PointerButton{Device: 1, Button: btnLeft, Pressed: true}); err != nil {
+					t.Fatal(err)
+				}
+				if got := sc.mon.Current().StashShown(); got != window {
+					t.Fatalf("stash shown = %v, want %v", got, window)
+				}
+			})
+		})
+	}
+}

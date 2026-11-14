@@ -43,7 +43,7 @@ func (c *Core) controlCapture(ctx context.Context, r ports.ControlCapture) error
 	}
 	plan := ports.ContinuousCaptureRequest{Dir: r.Dir, Raw: r.Raw, Stop: r.Stop, Reply: r.Reply, Targets: make([]ports.ContinuousTarget, 0, len(names))}
 	for _, name := range names {
-		if c.screenIndex(name) < 0 {
+		if !domain.ValidOutputName(name) || c.screenIndex(name) < 0 {
 			return refuse(ports.ControlErrBadRequest)
 		}
 		target := ports.ContinuousTarget{Output: name}

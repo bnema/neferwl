@@ -131,7 +131,7 @@ func TestControlWaits(t *testing.T) {
 		action("focus-workspace-next", domain.WaitPresented, nil, time.Second)
 		noReply()
 		output <- ports.OutputRemoved{Name: "A"}
-		if r := receive(); r.Done != domain.WaitPresented || r.Err == ports.ControlErrTimeout {
+		if r := receive(); r.Done != domain.WaitPresented || r.Err != "" {
 			t.Fatalf("removed: %+v", r)
 		}
 	})

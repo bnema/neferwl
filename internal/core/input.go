@@ -237,11 +237,11 @@ func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {
 		}
 	}
 	if v.Pressed && c.grab == 0 && c.held() == 0 {
-		if i := c.screenAt(c.cursorX, c.cursorY); i >= 0 {
+		if i := c.pointerScreenAt(c.cursorX, c.cursorY, v.Device); i >= 0 {
 			sc := c.screens[i]
 			w := sc.mon.Current()
 			if !sc.mon.previewing() && w.StashShown() {
-				id, _, _ := c.hit(c.cursorX, c.cursorY)
+				id, _, _ := c.hitForDevice(c.cursorX, c.cursorY, v.Device)
 				if id == 0 {
 					c.buttons[v.Button], c.swallow[v.Button] = true, true
 					now := c.now()
