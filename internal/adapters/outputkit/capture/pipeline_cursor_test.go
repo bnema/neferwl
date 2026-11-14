@@ -2,11 +2,13 @@ package capture
 
 import (
 	"context"
+	"errors"
 	"image"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/domain"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -68,4 +70,28 @@ func TestPipelineCursorDMABuf(t *testing.T) {
 		t.Fatal(done.Err)
 	}
 	p.Close(r)
+}
+
+func TestPipelineCursorErrorClassification(t *testing.T) {
+	for _, cause := range []error{errors.New("invalid capture cursor image"), ports.ErrCaptureBusy} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			r := portsmocks.NewMockRenderer(t)
+			cursor := &domain.CaptureCursor{Image: domain.CursorImage{W: 1, H: 1}}
+			q := pipelineRequest(t, 1)
+			q.Cursor = true
+			r.EXPECT().BeginCaptureCursor(cursor, false).Return(nil, cause).Once()
+			replies := make(chan domain.CaptureDone, 1)
+			p := NewPipeline(context.Background(), replies)
+			p.Cursor = cursor
+			p.SubmitScoped(domain.SecurityState{}, r, []domain.CaptureRequest{q})
+			done := awaitCapture(t, replies)
+			if !errors.Is(done.Err, cause) {
+				t.Fatalf("lost original error: %v", done.Err)
+			}
+			if got, want := errors.Is(done.Err, ports.ErrCaptureTransient), errors.Is(cause, ports.ErrCaptureTransient); got != want {
+				t.Fatalf("transient=%v want %v: %v", got, want, done.Err)
+			}
+			p.Close(r)
+		})
+	}
 }

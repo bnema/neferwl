@@ -82,7 +82,7 @@ func (r *Renderer) captureCursorTarget(t *target, format vk.Format, usage vk.Ima
 
 func (r *Renderer) prepareCaptureCursor(s *captureSlot, c *domain.CaptureCursor, pq bool) (err error) {
 	im := c.Image
-	if im.W <= 0 || im.H <= 0 || im.W > 256 || im.H > 256 || len(im.Pixels) < im.W*im.H*4 {
+	if im.W <= 0 || im.H <= 0 || im.W > domain.MaxCursorSize || im.H > domain.MaxCursorSize || len(im.Pixels) < im.W*im.H*4 {
 		return errors.New("invalid capture cursor image")
 	}
 	p := &s.cursor
@@ -110,7 +110,7 @@ func (r *Renderer) prepareCaptureCursor(s *captureSlot, c *domain.CaptureCursor,
 		if err = r.captureCursorTarget(&p.out, outFormat, targetUsage); err != nil {
 			return err
 		}
-		if err = r.newGPUBuffer(&p.upload, 256*256*4); err != nil {
+		if err = r.newGPUBuffer(&p.upload, domain.MaxCursorSize*domain.MaxCursorSize*4); err != nil {
 			return err
 		}
 		d, h := r.gpu.dd, &p.pass

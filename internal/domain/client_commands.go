@@ -99,6 +99,10 @@ func (l Layout) Clamp(fromX, fromY, x, y float64) (float64, float64) {
 	return x, y
 }
 
+// MaxCursorSize is the largest supported cursor side in physical pixels,
+// shared by hardware cursor allocation and capture composition.
+const MaxCursorSize = 512
+
 // CursorImage is a cursor frame in premultiplied B8G8R8A8, W*4 bytes per
 // row; (HotX, HotY) is the click point. Sizes are physical pixels.
 type CursorImage struct {

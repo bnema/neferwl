@@ -271,7 +271,9 @@ func (p *Pipeline) submitBatch(state domain.SecurityState, r ports.Renderer, req
 		if cursor != nil {
 			b.frame, err = r.BeginCaptureCursor(cursor, pq)
 			if err != nil {
-				err = fmt.Errorf("%w: cursor capture: %w", ports.ErrCaptureTransient, err)
+				// Preserve the renderer's classification (e.g. ErrCaptureBusy).
+				// Invalid cursor images cannot recover by retrying this request.
+				err = fmt.Errorf("cursor capture: %w", err)
 			}
 		} else if pq {
 			if b.frame, err = r.BeginCapturePQ(); err != nil {
