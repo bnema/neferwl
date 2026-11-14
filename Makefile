@@ -37,6 +37,8 @@ vet:
 	CGO_ENABLED=0 go vet ./...
 	CGO_ENABLED=0 go vet -tags xwayland ./internal/app
 	CGO_ENABLED=0 go vet -tags wayvnc ./internal/app
+	CGO_ENABLED=0 go vet -tags screencast ./internal/app
+	CGO_ENABLED=0 go vet -tags colorcheck ./internal/app
 race:
 	# cgo is enabled only for the race test binary.
 	CGO_ENABLED=1 go test -race ./...
