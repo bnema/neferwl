@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"testing/synctest"
 
@@ -223,11 +224,11 @@ func TestLayerHitOrder(t *testing.T) {
 		hit(50, 40, 1)
 		hit(50, 5, 6)
 		hit(50, 75, 7)
-		// A fullscreen window is exclusive: bars and notifications are hidden.
+		// Fullscreen hides TOP bars, but overlays still receive input.
 		client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
 		scene(t, scenes)
 		hit(50, 5, 1)
-		hit(50, 75, 1)
+		hit(50, 75, 7)
 
 	})
 }
@@ -454,4 +455,32 @@ func TestHiddenGrabPopupLosesKeyboard(t *testing.T) {
 		}
 
 	})
+}
+
+// Overlays without exclusive keyboard focus still receive pointer input over fullscreen.
+func TestOverlayPointerOverFullscreen(t *testing.T) {
+	for _, keyboard := range []uint32{0, 2} {
+		t.Run(fmt.Sprint(keyboard), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				r := startMulti(t, nil, left)
+				r.mapWindow(t, 1)
+				r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
+				scene(t, r.scenes)
+				r.client <- ports.LayerChanged{Layers: []domain.LayerSurface{{ID: 6, Layer: domain.LayerOverlay, Anchor: 15, Keyboard: keyboard}}}
+				scene(t, r.scenes)
+				synctest.Wait()
+				for len(r.commands) > 0 {
+					<-r.commands
+				}
+				r.input <- ports.PointerMotion{X: 50, Y: 40}
+				if v := next(t, r.commands, anyOf[ports.PointerFocus]); v.ID != 6 {
+					t.Fatalf("pointer focus %+v, want overlay", v)
+				}
+				r.input <- ports.PointerButton{Button: 0x110, Pressed: true}
+				if v := next(t, r.commands, anyOf[ports.PointerButtonTo]); v.ID != 6 {
+					t.Fatalf("button target %+v, want overlay", v)
+				}
+			})
+		})
+	}
 }

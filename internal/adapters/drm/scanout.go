@@ -138,7 +138,7 @@ func scanoutCandidate(s domain.Scene, surfaces map[domain.WindowID]domain.Surfac
 		return domain.SurfaceContent{}, "window_fade"
 	}
 	// Core leaves the layers a fullscreen window hides out of the scene:
-	// one above the windows here is drawn.
+	// overlays remain visible over fullscreen and prevent direct scanout.
 	for _, l := range s.Layers {
 		if l.Layer >= domain.LayerTop && l.Rect.W > 0 && l.Rect.H > 0 {
 			return domain.SurfaceContent{}, "overlay_surface"

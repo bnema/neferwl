@@ -221,7 +221,7 @@ func TestCaptureSessionsAreIndependent(t *testing.T) {
 }
 
 // An exclusion needs a live session; attached layers stay over a fullscreen
-// window, are excluded with their popups, and other layers keep hiding.
+// window, are excluded with their popups, and other TOP layers keep hiding.
 func TestCaptureExclusionLayersOverFullscreen(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := captureCore(t)
@@ -229,7 +229,7 @@ func TestCaptureExclusionLayersOverFullscreen(t *testing.T) {
 		scene(t, r.scenes)
 		r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
 		scene(t, r.scenes)
-		r.client <- ports.LayerChanged{Layers: []domain.LayerSurface{r.layer(10, domain.LayerOverlay, 0), r.layer(11, domain.LayerTop, 0)}}
+		r.client <- ports.LayerChanged{Layers: []domain.LayerSurface{r.layer(10, domain.LayerTop, 0), r.layer(11, domain.LayerTop, 0)}}
 		if s := scene(t, r.scenes); len(s.Layers) != 0 {
 			t.Fatalf("fullscreen should hide layers: %+v", s.Layers)
 		}
@@ -315,7 +315,7 @@ func TestCaptureExclusionEndKeepsListedLayersExcluded(t *testing.T) {
 		scene(t, r.scenes)
 		r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
 		scene(t, r.scenes)
-		r.client <- ports.LayerChanged{Layers: []domain.LayerSurface{r.layer(10, domain.LayerOverlay, 0)}}
+		r.client <- ports.LayerChanged{Layers: []domain.LayerSurface{r.layer(10, domain.LayerTop, 0)}}
 		scene(t, r.scenes)
 		r.client <- ports.CaptureSessionOpen{ID: 1, Output: "OUT-1"}
 		r.client <- ports.CaptureExclusionBegin{Session: 1}
