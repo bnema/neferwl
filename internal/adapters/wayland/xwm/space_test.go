@@ -136,3 +136,42 @@ func TestSpaceExcludesOnlyOverflowingIsolatedOutput(t *testing.T) {
 		t.Fatal(s.Dropped())
 	}
 }
+
+func TestSpaceIncludesRetainedIdentities(t *testing.T) {
+	l := make(domain.Layout, 17)
+	for i := range l {
+		l[i] = out(0, 0, 100, 100)
+		l[i].Info.Name = string(rune('A' + i))
+		l[i].Isolated = true
+	}
+	var s Space
+	if !s.Set(l) {
+		t.Fatal("first Set not changed")
+	}
+	if s.Dropped() != 1 {
+		t.Fatalf("dropped = %d, want 1", s.Dropped())
+	}
+	for i, o := range l {
+		if got := s.Includes(o); got != (i < 16) {
+			t.Errorf("Includes(%q) = %v, want %v", o.Info.Name, got, i < 16)
+		}
+	}
+	if s.Set(l) {
+		t.Fatal("identical Set reported changed")
+	}
+
+	// Replacing an identity must refresh retention without changing geometry.
+	old := l[0]
+	l[0].Info.Name = "replacement"
+	if s.Set(l) {
+		t.Fatal("identity-only Set reported geometry changed")
+	}
+	if s.Includes(old) || !s.Includes(l[0]) {
+		t.Fatal("identity-only Set did not refresh retained output")
+	}
+	moved := l[0]
+	moved.X++
+	if s.Includes(moved) {
+		t.Fatal("matching identity with a different rectangle included")
+	}
+}

@@ -35,25 +35,15 @@ func virtualMover(t *testing.T, s *Server, dir string, withOutput bool) (*wlturb
 
 func fixed(v float64) wlturbo.Fixed { return wlturbo.Fixed(int32(v * 256)) }
 
-// virtualEvents waits for n VirtualPointerInput events after a roundtrip
-// and fails on any further one already forwarded.
-func virtualEvents(t *testing.T, c *wlturbo.Display, events chan ports.ClientEvent, n int) []ports.VirtualPointerInput {
+// virtualEvents checks the exact count after joining event forwarding.
+func virtualEvents(t *testing.T, s *Server, c *wlturbo.Display, events chan ports.ClientEvent, n int) []ports.VirtualPointerInput {
 	t.Helper()
 	roundtrip(t, c)
-	var out []ports.VirtualPointerInput
-	for len(out) < n {
-		out = append(out, nextEvent[ports.VirtualPointerInput](t, events))
+	out := eventsThroughBarrier[ports.VirtualPointerInput](t, s, events)
+	if len(out) != n {
+		t.Fatalf("virtual events = %+v (count %d), want %d", out, len(out), n)
 	}
-	for {
-		select {
-		case ev := <-events:
-			if v, ok := ev.(ports.VirtualPointerInput); ok {
-				t.Fatalf("unexpected virtual event %+v", v)
-			}
-		default:
-			return out
-		}
-	}
+	return out
 }
 
 // Requests are held until frame and reach core in one batch: motion, then
@@ -66,16 +56,9 @@ func TestVirtualPointerFrameBatch(t *testing.T) {
 	requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestButton, uint32(7), uint32(0x110), uint32(1))
 	requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestAxisSource, uint32(0))
 	requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestAxisDiscrete, uint32(8), uint32(0), fixed(15), int32(1))
-	roundtrip(t, c)
-	select {
-	case ev := <-events:
-		if _, ok := ev.(ports.VirtualPointerInput); ok {
-			t.Fatal("virtual event before frame")
-		}
-	default:
-	}
+	virtualEvents(t, s, c, events, 0)
 	requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestFrame)
-	got := virtualEvents(t, c, events, 3)
+	got := virtualEvents(t, s, c, events, 3)
 	m, ok := got[0].Event.(ports.PointerMotion)
 	if !ok || got[0].Absolute || m.DX != 12.5 || m.DY != -3 || m.Device < virtualPointerDevices {
 		t.Fatalf("motion %+v", got[0])
@@ -98,7 +81,7 @@ func TestVirtualPointerAbsolute(t *testing.T) {
 			c, p := virtualMover(t, s, dir, withOutput)
 			requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestMotionAbsolute, uint32(1), uint32(480), uint32(270), uint32(1920), uint32(1080))
 			requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestFrame)
-			got := virtualEvents(t, c, events, 1)[0]
+			got := virtualEvents(t, s, c, events, 1)[0]
 			want := ""
 			if withOutput {
 				want = "HEADLESS-1"
@@ -109,7 +92,7 @@ func TestVirtualPointerAbsolute(t *testing.T) {
 			requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestMotion, uint32(2), fixed(5), fixed(3))
 			requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestButton, uint32(2), uint32(0x110), uint32(1))
 			requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestFrame)
-			for _, event := range virtualEvents(t, c, events, 2) {
+			for _, event := range virtualEvents(t, s, c, events, 2) {
 				if event.Output != want {
 					t.Fatalf("lost output association: %+v", event)
 				}
@@ -126,7 +109,7 @@ func TestVirtualPointerDisconnectReleases(t *testing.T) {
 	requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestButton, uint32(1), uint32(0x111), uint32(0))
 	requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestButton, uint32(1), uint32(0x110), uint32(1))
 	requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestFrame)
-	if b := virtualEvents(t, c, events, 1)[0].Event.(ports.PointerButton); b.Button != 0x110 || !b.Pressed {
+	if b := virtualEvents(t, s, c, events, 1)[0].Event.(ports.PointerButton); b.Button != 0x110 || !b.Pressed {
 		t.Fatalf("press %+v", b)
 	}
 	_ = c.Close()
@@ -152,22 +135,22 @@ func TestProtectedVirtualPointer(t *testing.T) {
 	c, p := virtualMover(t, s, dir, false)
 	requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestButton, uint32(1), uint32(0x110), uint32(1))
 	requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestFrame)
-	virtualEvents(t, c, events, 1)
+	virtualEvents(t, s, c, events, 1)
 	requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestMotion, uint32(2), fixed(5), fixed(5))
 	roundtrip(t, c)
 	protect(t, s, state, 1, true)
 	requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestMotion, uint32(3), fixed(5), fixed(5))
 	requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestButton, uint32(3), uint32(0x110), uint32(0))
 	requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestFrame)
-	virtualEvents(t, c, events, 0)
+	virtualEvents(t, s, c, events, 0)
 	protect(t, s, state, 2, false)
 	// The old press died with the epoch: its release is not paired.
 	requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestButton, uint32(4), uint32(0x110), uint32(0))
 	requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestFrame)
-	virtualEvents(t, c, events, 0)
+	virtualEvents(t, s, c, events, 0)
 	requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestMotion, uint32(5), fixed(1), fixed(0))
 	requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestFrame)
-	if got := virtualEvents(t, c, events, 1)[0]; got.State.Generation != 2 || got.State.Protected {
+	if got := virtualEvents(t, s, c, events, 1)[0]; got.State.Generation != 2 || got.State.Protected {
 		t.Fatalf("post-unlock state %+v", got.State)
 	}
 }
@@ -203,23 +186,16 @@ func TestVirtualPointerUnframedReleaseThenDisconnect(t *testing.T) {
 	c, p := virtualMover(t, s, dir, false)
 	requestProtocol(t, c, p, vpButton, uint32(1), btnLeftCode, uint32(1))
 	requestProtocol(t, c, p, vpFrame)
-	virtualEvents(t, c, events, 1)
+	virtualEvents(t, s, c, events, 1)
 	requestProtocol(t, c, p, vpButton, uint32(2), btnLeftCode, uint32(0))
-	virtualEvents(t, c, events, 0)
+	virtualEvents(t, s, c, events, 0)
 	_ = c.Close()
 	b := nextEvent[ports.VirtualPointerInput](t, events).Event.(ports.PointerButton)
 	if b.Button != btnLeftCode || b.Pressed {
 		t.Fatalf("release %+v", b)
 	}
-	if !s.display.Do(func() {}) {
-		t.Fatal("display stopped")
-	}
-	select {
-	case ev := <-events:
-		if v, ok := ev.(ports.VirtualPointerInput); ok {
-			t.Fatalf("extra event %+v", v)
-		}
-	default:
+	if got := eventsThroughBarrier[ports.VirtualPointerInput](t, s, events); len(got) != 0 {
+		t.Fatalf("extra events %+v", got)
 	}
 }
 
@@ -232,11 +208,11 @@ func TestVirtualPointerReleasesAllHeld(t *testing.T) {
 		requestProtocol(t, c, p, vpButton, uint32(1), b, uint32(1))
 	}
 	requestProtocol(t, c, p, vpFrame)
-	virtualEvents(t, c, events, 3)
+	virtualEvents(t, s, c, events, 3)
 	requestProtocol(t, c, p, vpButton, uint32(2), uint32(0x113), uint32(1))
 	requestProtocol(t, c, p, wlrvirtualpointer.ZwlrVirtualPointerV1RequestDestroy)
 	got := map[uint32]bool{}
-	for _, v := range virtualEvents(t, c, events, 3) {
+	for _, v := range virtualEvents(t, s, c, events, 3) {
 		b := v.Event.(ports.PointerButton)
 		if b.Pressed {
 			t.Fatalf("press on destroy %+v", b)
@@ -257,7 +233,7 @@ func TestVirtualPointerFrameLimit(t *testing.T) {
 		requestProtocol(t, c, p, vpButton, uint32(i), btnLeftCode, uint32(1))
 	}
 	requestProtocol(t, c, p, vpFrame)
-	if got := virtualEvents(t, c, events, 1); len(got) != 1 {
+	if got := virtualEvents(t, s, c, events, 1); len(got) != 1 {
 		t.Fatalf("repeated presses %v", got)
 	}
 	c2, p2 := virtualMover(t, s, dir, false)
@@ -265,15 +241,8 @@ func TestVirtualPointerFrameLimit(t *testing.T) {
 		requestProtocol(t, c2, p2, vpButton, uint32(i), btnLeftCode, uint32(i%2))
 	}
 	expectProtocolError(t, c2, 1, uint32(wayland.DisplayErrorImplementation))
-	if !s.display.Do(func() {}) {
-		t.Fatal("display stopped")
-	}
-	select {
-	case ev := <-events:
-		if v, ok := ev.(ports.VirtualPointerInput); ok {
-			t.Fatalf("oversized frame forwarded %+v", v)
-		}
-	default:
+	if got := eventsThroughBarrier[ports.VirtualPointerInput](t, s, events); len(got) != 0 {
+		t.Fatalf("oversized frame forwarded %+v", got)
 	}
 }
 
@@ -301,7 +270,7 @@ func TestVirtualPointerAbsoluteEdges(t *testing.T) {
 	}{{1, 1, 1}, {0, 1, 0}, {1920, 1920, 1}, {5000, 1920, 1}} {
 		requestProtocol(t, c, p, vpAbsolute, uint32(1), tc.x, tc.x, tc.ext, tc.ext)
 		requestProtocol(t, c, p, vpFrame)
-		if got := virtualEvents(t, c, events, 1)[0]; got.FX != tc.want || got.FY != tc.want {
+		if got := virtualEvents(t, s, c, events, 1)[0]; got.FX != tc.want || got.FY != tc.want {
 			t.Fatalf("x %d extent %d: %v,%v want %v", tc.x, tc.ext, got.FX, got.FY, tc.want)
 		}
 	}
@@ -324,9 +293,9 @@ func TestVirtualPointerMixedMotionWaitsForFrame(t *testing.T) {
 				rel()
 				abs()
 			}
-			virtualEvents(t, c, events, 0)
+			virtualEvents(t, s, c, events, 0)
 			requestProtocol(t, c, p, vpFrame)
-			got := virtualEvents(t, c, events, 2)
+			got := virtualEvents(t, s, c, events, 2)
 			if got[0].Absolute != absFirst || got[1].Absolute == absFirst {
 				t.Fatalf("order %+v", got)
 			}
@@ -355,19 +324,19 @@ func TestVirtualPointerHeldLimit(t *testing.T) {
 		requestProtocol(t, c, p, vpButton, i, 0x100+i, uint32(1))
 		requestProtocol(t, c, p, vpFrame)
 	}
-	if got := virtualEvents(t, c, events, maxVirtualHeld); len(got) != maxVirtualHeld {
+	if got := virtualEvents(t, s, c, events, maxVirtualHeld); len(got) != maxVirtualHeld {
 		t.Fatalf("forwarded %d presses", len(got))
 	}
 	for _, b := range []uint32{0, 0xff, 0x152, 0xffffffff} {
 		requestProtocol(t, c, p, vpButton, uint32(1), b, uint32(1))
 	}
 	requestProtocol(t, c, p, vpFrame)
-	virtualEvents(t, c, events, 0)
+	virtualEvents(t, s, c, events, 0)
 	// A release frees a slot for a new press.
 	requestProtocol(t, c, p, vpButton, uint32(2), uint32(0x100), uint32(0))
 	requestProtocol(t, c, p, vpButton, uint32(2), uint32(0x151), uint32(1))
 	requestProtocol(t, c, p, vpFrame)
-	got := virtualEvents(t, c, events, 2)
+	got := virtualEvents(t, s, c, events, 2)
 	if b := got[1].Event.(ports.PointerButton); b.Button != 0x151 || !b.Pressed {
 		t.Fatalf("press after release %+v", b)
 	}

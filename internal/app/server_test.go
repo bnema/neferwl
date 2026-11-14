@@ -75,21 +75,12 @@ func TestServerVirtualOutput(t *testing.T) {
 		t.Fatalf("sessions: %v %v", metas, err)
 	}
 	statePath := metas[0].State
+	waitStateChange := fileChangesWithin(t, filepath.Dir(statePath), 10*time.Second)
 	input <- ports.SecurityInput{Event: ports.KeyEvent{Keysym: "Return", Mods: domain.ModSuper, Pressed: true}}
 	deadline := time.After(10 * time.Second)
-	// The state file is written by its own worker after the scene.
-	tick := time.NewTicker(20 * time.Millisecond)
-	defer tick.Stop()
 	mapped := false
-	for {
-		if mapped {
-			st, err := statefile.Read(statePath)
-			if err == nil && st.Output == "tv" && len(st.Windows) == 1 && st.Windows[0].Output == "tv" {
-				return
-			}
-		}
+	for !mapped {
 		select {
-		case <-tick.C:
 		case set := <-scenes:
 			if len(set) == 1 && set[0].Output == "" {
 				continue // before the first output
@@ -102,6 +93,17 @@ func TestServerVirtualOutput(t *testing.T) {
 			t.Fatalf("app exited early: %v", err)
 		case <-deadline:
 			st, err := statefile.Read(statePath)
+			t.Fatalf("no window mapped on a focused tv: %+v %v", st, err)
+		}
+	}
+	// The state worker publishes independently of scene delivery. The watch
+	// was installed before spawning the client so no replacement is missed.
+	for {
+		st, err := statefile.Read(statePath)
+		if err == nil && st.Output == "tv" && len(st.Windows) == 1 && st.Windows[0].Output == "tv" {
+			return
+		}
+		if !waitStateChange() {
 			t.Fatalf("no window mapped on a focused tv: %+v %v", st, err)
 		}
 	}

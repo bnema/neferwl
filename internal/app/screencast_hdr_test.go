@@ -100,7 +100,7 @@ func TestScreencastHDRVirtualOutput(t *testing.T) {
 		}
 	}
 	// The consumer accepts any raw format: it takes the producer's first.
-	gstLog := &strings.Builder{}
+	gstLog := &lockedBuffer{changed: make(chan struct{}, 1)}
 	// The buffers are device-local DMA-BUFs a CPU sink cannot map: fakesink
 	// takes them unmapped. Their PQ content is checked on the GPU
 	// (vulkan.TestCastCopyPQ).
@@ -115,29 +115,48 @@ func TestScreencastHDRVirtualOutput(t *testing.T) {
 	if err := gst.Start(); err != nil {
 		t.Fatal(err)
 	}
-	exited := make(chan error, 1)
-	go func() { exited <- gst.Wait() }()
-	var got pwVideoFormat
-	deadline := time.After(15 * time.Second)
-	for ok := false; !ok; {
+	// Closing done keeps completion observable by both the normal path and
+	// cleanup. Wait also joins os/exec's output copier before logs are read.
+	done := make(chan struct{})
+	var exitErr error
+	go func() {
+		exitErr = gst.Wait()
+		close(done)
+	}()
+	t.Cleanup(func() {
 		select {
-		case err := <-exited:
-			t.Fatalf("consumer exited before negotiation: %v", err)
-		case <-deadline:
+		case <-done:
+		default:
 			_ = gst.Process.Kill()
-			t.Fatal("no negotiated format")
-		case <-time.After(50 * time.Millisecond):
+			<-done
 		}
-		got, ok = nodeFormat(t, node)
+	})
+	deadline := time.After(15 * time.Second)
+	// -v prints negotiated caps before buffers flow. Output notifications
+	// join the real negotiation instead of repeatedly invoking pw-dump.
+	for !strings.Contains(gstLog.String(), "video/x-raw") {
+		select {
+		case <-done:
+			if !strings.Contains(gstLog.String(), "video/x-raw") {
+				t.Fatalf("consumer exited before negotiation: %v", exitErr)
+			}
+		case <-deadline:
+			t.Fatal("no negotiated caps from GStreamer")
+		case <-gstLog.changed:
+		}
+	}
+	got, ok := nodeFormat(t, node)
+	if !ok {
+		t.Fatal("no negotiated PipeWire format after GStreamer caps")
 	}
 	t.Logf("node %d negotiated %+v", node, got)
 	if got.Format != "xBGR_210LE" || got.TransferFunction != "smpte2084" || got.ColorPrimaries != "bt2020" || got.Modifier == nil {
 		t.Errorf("negotiated %+v, want DMA-BUF xBGR_210LE smpte2084 bt2020", got)
 	}
 	select {
-	case err := <-exited:
-		if err != nil {
-			t.Errorf("gst-launch-1.0 (30 PQ buffers): %v", err)
+	case <-done:
+		if exitErr != nil {
+			t.Errorf("gst-launch-1.0 (30 PQ buffers): %v", exitErr)
 		}
 	case <-time.After(30 * time.Second):
 		_ = gst.Process.Kill()

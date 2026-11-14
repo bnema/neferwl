@@ -14,6 +14,7 @@ type Region struct {
 // (non-negative: the layout top-left is X (0,0)). Fixed storage, no allocs.
 type Space struct {
 	regions [maxRegions]Region
+	names   [maxRegions]string // retained output identities; not part of the change test
 	n       int
 	dropped int     // outputs beyond maxRegions in the last Set
 	ox, oy  int     // layout point that is X (0,0)
@@ -53,6 +54,7 @@ func (s *Space) Set(l domain.Layout) bool {
 			continue
 		}
 		next.regions[next.n] = Region{Layout: domain.Rect{X: o.X, Y: o.Y, W: o.Width, H: o.Height}, X: domain.Rect{X: x, Y: y, W: o.Width, H: o.Height}}
+		next.names[next.n] = o.Info.Name
 		next.n++
 		next.w, next.h = max(next.w, x+o.Width), max(next.h, y+o.Height)
 	}
@@ -61,6 +63,7 @@ func (s *Space) Set(l domain.Layout) bool {
 	}
 	if next.regions == s.regions && next.n == s.n && next.ox == s.ox && next.oy == s.oy &&
 		next.w == s.w && next.h == s.h {
+		s.names = next.names
 		s.dropped, s.scale = next.dropped, next.scale
 		return false
 	}
@@ -106,10 +109,10 @@ func (s *Space) ToLayout(x, y int) (lx, ly int) {
 	return x + s.ox, y + s.oy
 }
 
-// Includes reports whether the output rectangle is representable and retained.
+// Includes reports whether the output identity and rectangle are retained.
 func (s *Space) Includes(o domain.OutputPlacement) bool {
 	for i := 0; i < s.n; i++ {
-		if s.regions[i].Layout == (domain.Rect{X: o.X, Y: o.Y, W: o.Width, H: o.Height}) {
+		if s.names[i] == o.Info.Name && s.regions[i].Layout == (domain.Rect{X: o.X, Y: o.Y, W: o.Width, H: o.Height}) {
 			return true
 		}
 	}
