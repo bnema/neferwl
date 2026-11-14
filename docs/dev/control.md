@@ -68,7 +68,7 @@ Wait fields, on `do` and `inject`:
 
 Injected input goes through the core input path, so compositor binds run as
 for a physical device. The first injection on a connection announces an input
-device with ID `1` named `control` (for `output.<name>.input = control`).
+device named `control` (for `output.<name>.input = control`).
 
 ## Wait semantics
 

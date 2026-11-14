@@ -726,14 +726,15 @@ func expandCmd(combo, cmd string) (string, error) {
 func set(c *domain.Config, key, v string) error {
 	switch key {
 	case "lineage.shells":
-		c.LineageShells = nil
+		var shells []string
 		for _, name := range strings.Split(v, ",") {
 			name = strings.TrimSpace(name)
 			if name == "" || len(name) > 16 || strings.ContainsAny(name, "/\t\n") {
 				return fmt.Errorf("must be comma-separated process names of 1 to 16 bytes")
 			}
-			c.LineageShells = append(c.LineageShells, name)
+			shells = append(shells, name)
 		}
+		c.LineageShells = shells
 	case "keyboard.layout":
 		c.Keyboard.Layout = v
 	case "keyboard.variant":

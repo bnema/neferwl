@@ -13,15 +13,11 @@ import (
 )
 
 func injectCommand(name, args, summary string) Command {
-	return Command{Name: name, Args: args + " [flags]", Summary: summary, Setup: func(fs *flag.FlagSet) Runner {
+	return Command{Name: name, interspersed: true, Args: args + " [flags]", Summary: summary, Setup: func(fs *flag.FlagSet) Runner {
 		target := addTargetFlag(fs)
 		wf := addWaitFlags(fs)
 		return func(ctx context.Context, env Env, args []string) (runErr error) {
-			positional, err := injectArguments(fs, args)
-			if err != nil {
-				return err
-			}
-			req, err := injectRequest(name, positional)
+			req, err := injectRequest(name, args)
 			if err != nil {
 				return err
 			}
@@ -93,6 +89,9 @@ func injectArguments(fs *flag.FlagSet, args []string) ([]string, error) {
 		arg := args[n]
 		if arg == "--" {
 			return append(positional, args[n+1:]...), nil
+		}
+		if arg == "-h" || arg == "--help" {
+			return nil, flag.ErrHelp
 		}
 		if !strings.HasPrefix(arg, "--") && arg != "-s" && !strings.HasPrefix(arg, "-s=") {
 			positional = append(positional, arg)

@@ -1287,3 +1287,17 @@ func TestLogDebugNames(t *testing.T) {
 		}
 	}
 }
+
+func TestLineageShellsInvalidKeepsPrevious(t *testing.T) {
+	for _, value := range []string{"/invalid", "custom,", "custom,,other"} {
+		t.Run(value, func(t *testing.T) {
+			for _, prefix := range []string{"", "lineage.shells = wrapper\n"} {
+				previous, _ := parseString(t, prefix)
+				c, warnings := parseString(t, prefix+"lineage.shells = "+value+"\n")
+				if len(warnings) != 1 || !reflect.DeepEqual(c.LineageShells, previous.LineageShells) {
+					t.Fatalf("prefix %q: shells %v, want %v; warnings %v", prefix, c.LineageShells, previous.LineageShells, warnings)
+				}
+			}
+		})
+	}
+}

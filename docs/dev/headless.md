@@ -134,9 +134,10 @@ XDG_STATE_HOME="$T/state" NEFERWL_HINT_DEBUG=1 dbus-run-session -- bash -c '
   export WAYLAND_DISPLAY=$(printf "%s" "$ready" | jq -r .wayland)
   "$T/neferwl" -s hints shot --every-frame --dir "$T/shots"
   foot sh -c "printf https://example.org/a; exec sleep 60" &
-  chromium --ozone-platform=wayland --force-renderer-accessibility \
-    --user-data-dir="$T/chrome" "file://$T/page.html" >"$T/chromium.log" 2>&1 &
-  "$T/neferwl" -s hints key Super+g --until "window-mapped app_id=chromium"
+  "$T/neferwl" -s hints do spawn \
+    "chromium --ozone-platform=wayland --force-renderer-accessibility --user-data-dir=\"$T/chrome\" \"file://$T/page.html\"" \
+    --until "window-mapped app_id=chromium"
+  "$T/neferwl" -s hints key Super+g
   read -r -p "Visible hint label: " label
   "$T/neferwl" -s hints type "$label"
   "$T/neferwl" -s hints shot

@@ -12,8 +12,8 @@ With ext-image-copy-capture, a client can capture an output, a window, a workspa
 
 - Screenshots and recordings over these protocols are 8-bit sRGB. HDR content is tone-mapped. Screen sharing through the [portal](#portals) keeps HDR.
 - `zwlr_screencopy_manager_v1` offers shared-memory buffers and, when the GPU can write them, linux-dmabuf buffers (XRGB8888 or ARGB8888), so a recorder can keep frames on the GPU.
-- The cursor is never included.
-- GPUs without Vulkan sync-file export (such as lavapipe) cannot capture.
+- Screencopy includes the cursor when the client requests it (opt-in).
+- Without Vulkan sync-file export (such as on lavapipe), DMA-BUF capture and screencast are unavailable; headless capture uses CPU readback.
 - `neferwl_capture_exclusion_manager_v1` lets a recorder keep its own HUD out of its frames.
 
 ## Virtual outputs

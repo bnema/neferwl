@@ -24,10 +24,11 @@ type Runner func(ctx context.Context, env Env, args []string) error
 // Command is one neferwl command. Setup registers the command's flags on fs
 // and returns its Runner, which reads the parsed flag values.
 type Command struct {
-	Name    string // empty for the root command
-	Args    string // positional arguments synopsis, e.g. "[path]"
-	Summary string
-	Setup   func(fs *flag.FlagSet) Runner
+	Name         string // empty for the root command
+	interspersed bool   // parse flags among positional arguments once
+	Args         string // positional arguments synopsis, e.g. "[path]"
+	Summary      string
+	Setup        func(fs *flag.FlagSet) Runner
 }
 
 // root runs the compositor; commands are the subcommands.
@@ -72,14 +73,22 @@ func Execute(ctx context.Context, env Env, args []string) error {
 			return err
 		}
 	}
-	if err := fs.Parse(args); err != nil {
+	var positional []string
+	var err error
+	if cmd.interspersed {
+		positional, err = injectArguments(fs, args)
+	} else {
+		err = fs.Parse(args)
+		positional = fs.Args()
+	}
+	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			printUsage(env.Stdout, cmd, fs)
 			return nil
 		}
 		return cmd.usageError(err)
 	}
-	err := run(ctx, env, fs.Args())
+	err = run(ctx, env, positional)
 	var usage usageError
 	if errors.As(err, &usage) {
 		return cmd.usageError(usage.error)
