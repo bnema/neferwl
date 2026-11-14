@@ -257,15 +257,23 @@ func (r *Renderer) waitOwnIdle() error {
 		}
 	}
 	r.idle()
+	if r.lost {
+		return ports.ErrDeviceLost
+	}
 	return nil
 }
 
 // idle records that this renderer finished every submitted frame.
 func (r *Renderer) idle() {
+	if r.lost {
+		return
+	}
 	for i := range r.slots {
 		s := &r.slots[i]
 		if s.busy {
-			_ = r.gpu.dd.ResetFences(r.gpu.device, 1, &s.fence)
+			if err := r.noteLoss(checked("vkResetFences(own idle)", r.gpu.dd.ResetFences(r.gpu.device, 1, &s.fence))); err != nil && r.lost {
+				return
+			}
 			s.busy = false
 		}
 	}
@@ -315,6 +323,9 @@ func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.Su
 	r.noteHidden(s)
 	dmg := r.frameDamage(tg, s, image.Rect(0, 0, sw, sh))
 	ds := r.draws(s, contents, dmg)
+	if r.lost {
+		return nil, ports.ErrDeviceLost
+	}
 	dmg.finish()
 	partial := !dmg.all()
 	redrawn := sw * sh
@@ -432,6 +443,9 @@ func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.Su
 				fenced = append(fenced, im)
 			}
 		}
+		if r.lost {
+			return nil, ports.ErrDeviceLost
+		}
 	}
 	r.frameWaits = waits
 	r.frameFenced = fenced
@@ -489,7 +503,10 @@ func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.Su
 	}
 	sc.fd = 0
 	sc.getFD = vk.SemaphoreGetFdInfoKHR{SType: vk.StructureTypeSemaphoreGetFDInfoKHR, Semaphore: slot.done, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit}
-	if d.GetSemaphoreFdKHR(r.gpu.device, &sc.getFD, &sc.fd) != vk.Success {
+	if res := d.GetSemaphoreFdKHR(r.gpu.device, &sc.getFD, &sc.fd); res != vk.Success {
+		if err := r.noteLoss(checked("vkGetSemaphoreFdKHR(frame)", res)); r.lost {
+			return nil, err
+		}
 		// The frame is drawn: finish it on the CPU. The semaphore stays
 		// signalled: replace it, so the slot's next submit signals a
 		// fresh one.

@@ -172,8 +172,10 @@ func (r *Renderer) createComposeSet(b *composeBatch) error {
 	}
 	alloc := vk.DescriptorSetAllocateInfo{SType: vk.StructureTypeDescriptorSetAllocateInfo, DescriptorPool: b.pool, DescriptorSetCount: 1, SetLayouts: &r.compose.setLayout}
 	if err := r.noteLoss(checked("vkAllocateDescriptorSets(compose)", r.gpu.dd.AllocateDescriptorSets(r.gpu.device, &alloc, &b.set))); err != nil {
-		r.gpu.dd.DestroyDescriptorPool(r.gpu.device, b.pool, nil)
-		b.pool = 0
+		if !r.lost {
+			r.gpu.dd.DestroyDescriptorPool(r.gpu.device, b.pool, nil)
+			b.pool = 0
+		}
 		return err
 	}
 	return nil

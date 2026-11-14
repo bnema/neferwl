@@ -43,12 +43,12 @@ func (g *GPU) NewCopier(w, h int) (ports.Copier, error) {
 		return nil, errors.New("vulkan: GPU closed")
 	}
 	info := vk.CommandPoolCreateInfo{SType: vk.StructureTypeCommandPoolCreateInfo, Flags: vk.CommandPoolCreateResetCommandBufferBit, QueueFamilyIndex: g.family}
-	if err := checked("vkCreateCommandPool(copy)", g.dd.CreateCommandPool(g.device, &info, nil, &c.pool)); err != nil {
+	if err := c.noteLoss(checked("vkCreateCommandPool(copy)", g.dd.CreateCommandPool(g.device, &info, nil, &c.pool))); err != nil {
 		c.Close()
 		return nil, err
 	}
 	ai := vk.CommandBufferAllocateInfo{SType: vk.StructureTypeCommandBufferAllocateInfo, CommandPool: c.pool, Level: vk.CommandBufferLevelPrimary, CommandBufferCount: uint32(len(c.cmds))}
-	if err := checked("vkAllocateCommandBuffers(copy)", g.dd.AllocateCommandBuffers(g.device, &ai, &c.cmds[0])); err != nil {
+	if err := c.noteLoss(checked("vkAllocateCommandBuffers(copy)", g.dd.AllocateCommandBuffers(g.device, &ai, &c.cmds[0]))); err != nil {
 		c.Close()
 		return nil, err
 	}

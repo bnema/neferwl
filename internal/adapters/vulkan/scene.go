@@ -538,11 +538,15 @@ func opaqueCover(c *domain.SurfaceContent, full, dst image.Rectangle) image.Rect
 // drawable reports whether the child's buffer will draw. GPU buffer
 // imports are cached, so pre-importing here costs nothing.
 func (w *sceneWalk) drawable(c *domain.SurfaceContent) bool {
+	if w.r.lost {
+		return false
+	}
 	if c.Solid != nil {
 		return true
 	}
 	if c.DMABuf != nil {
 		_, err := w.r.importDMABuf(c.DMABuf)
+		_ = w.r.noteLoss(err)
 		return err == nil
 	}
 	b := c.SHM
@@ -682,6 +686,9 @@ func (w *sceneWalk) quad(d draw, rect image.Rectangle) {
 // that dst shows. key names the surface, seq its content.
 func (w *sceneWalk) content(dst, full image.Rectangle, content *domain.SurfaceContent, key shmKey, seq, windowSeq uint64, root bool) {
 	r := w.r
+	if r.lost {
+		return
+	}
 	rect := dst
 	if rect.Empty() {
 		return
@@ -699,6 +706,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *domain.SurfaceCo
 	if content.DMABuf != nil {
 		im, err := r.importDMABuf(content.DMABuf)
 		if err != nil {
+			_ = r.noteLoss(err)
 			// The window shows its background until a buffer imports.
 			return
 		}
@@ -738,6 +746,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *domain.SurfaceCo
 			damage = content.DamageSince
 		}
 		if c, err = r.shmCopyFor(key, st, nil, b, b.Offset, b.Stride, damage); err != nil {
+			_ = r.noteLoss(err)
 			return
 		}
 	}
