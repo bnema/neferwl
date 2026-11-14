@@ -28,19 +28,97 @@ type Shot struct {
 
 // Shooter serializes captures and owns their destinations until CaptureDone.
 // Its done channel must be dedicated to control captures. Cancellation retains
-// an admitted mapping until a later Shoot reaps its matching completion.
+// an admitted mapping until the completion owner reaps its matching completion.
 type Shooter struct {
-	requests chan<- domain.CaptureRequest
-	done     <-chan domain.CaptureDone
-	dir      string
-	token    chan struct{}
-	next     uint64
-	orphans  map[uint64][]byte
+	requests  chan<- domain.CaptureRequest
+	done      <-chan domain.CaptureDone
+	dir       string
+	token     chan struct{}
+	next      uint64
+	orphans   map[uint64][]byte
+	updates   chan shotUpdate
+	stop      chan struct{}
+	stopped   chan struct{}
+	closeOnce sync.Once
 }
 
 // NewShooter writes into dir; each shot's pixel size comes from core.
+// The control server owns its completion goroutine and stops it on Close.
 func NewShooter(requests chan<- domain.CaptureRequest, done <-chan domain.CaptureDone, dir string) *Shooter {
-	return &Shooter{requests: requests, done: done, dir: dir, token: make(chan struct{}, 1), orphans: make(map[uint64][]byte)}
+	s := &Shooter{requests: requests, done: done, dir: dir, token: make(chan struct{}, 1), orphans: make(map[uint64][]byte), updates: make(chan shotUpdate), stop: make(chan struct{}), stopped: make(chan struct{})}
+	go s.reap()
+	return s
+}
+
+type shotUpdate struct {
+	id      uint64
+	pixels  []byte
+	reply   chan domain.CaptureDone
+	abandon bool
+}
+
+// close stops completion ownership. Still-inflight mappings remain mapped;
+// the kernel releases them when the session process exits.
+func (s *Shooter) close() {
+	s.closeOnce.Do(func() { close(s.stop) })
+	<-s.stopped
+}
+
+func (s *Shooter) update(u shotUpdate) {
+	select {
+	case s.updates <- u:
+	case <-s.stopped:
+	}
+}
+
+func (s *Shooter) reap() {
+	defer close(s.stopped)
+	pending := make(map[uint64]shotUpdate)
+	completed := make(map[uint64]bool)
+	unmap := func(id uint64, pixels []byte) {
+		if err := unix.Munmap(pixels); err != nil {
+			log := logging.For(context.Background(), "control")
+			log.Warn().Err(err).Uint64("capture", id).Msg("unmap orphaned capture")
+		}
+		delete(s.orphans, id)
+	}
+	for {
+		select {
+		case <-s.stop:
+			return
+		case u := <-s.updates:
+			if u.reply != nil {
+				pending[u.id] = u
+			} else if u.abandon {
+				q := pending[u.id]
+				if completed[u.id] {
+					unmap(u.id, q.pixels)
+					delete(pending, u.id)
+					delete(completed, u.id)
+				} else {
+					s.orphans[u.id] = q.pixels
+				}
+			} else {
+				delete(pending, u.id)
+				delete(completed, u.id)
+			}
+		case d, open := <-s.done:
+			if !open {
+				return
+			}
+			q, ok := pending[d.ID]
+			if !ok || completed[d.ID] {
+				continue
+			}
+			if pixels, abandoned := s.orphans[d.ID]; abandoned {
+				unmap(d.ID, pixels)
+				delete(pending, d.ID)
+			} else {
+				completed[d.ID] = true
+				q.reply <- d
+			}
+		}
+	}
 }
 
 // Shoot captures presented scenes to private PNG files. Raw single shots are
@@ -51,6 +129,8 @@ func (s *Shooter) Shoot(ctx context.Context, shots []domain.ShotRequest, inline 
 		defer func() { <-s.token }()
 	case <-ctx.Done():
 		return nil, ctx.Err()
+	case <-s.stopped:
+		return nil, errors.New("control capture completion owner stopped")
 	}
 	for _, q := range shots {
 		if q.Raw {
@@ -79,36 +159,30 @@ func (s *Shooter) Shoot(ctx context.Context, shots []domain.ShotRequest, inline 
 		}
 		s.next++
 		id := ports.CaptureIDControl | s.next
+		completion := make(chan domain.CaptureDone, 1)
+		s.update(shotUpdate{id: id, pixels: pixels, reply: completion})
 		request := domain.CaptureRequest{ID: id, Output: q.Output, MinSeq: q.MinSeq, Region: image.Rect(0, 0, w, h), Mapped: pixels, Width: w, Height: h, Stride: w * 4, Format: 1}
 		select {
 		case s.requests <- request:
+		case <-s.stopped:
+			return results, errors.Join(errors.New("control capture completion owner stopped"), unix.Munmap(pixels))
 		case <-ctx.Done():
+			s.update(shotUpdate{id: id})
 			return results, errors.Join(ctx.Err(), unix.Munmap(pixels))
 		}
 		completed := false
 		for !completed {
 			select {
-			case done, open := <-s.done:
-				if !open {
-					s.orphans[id] = pixels
-					return results, errors.New("control capture sink closed before completion")
-				}
-				if old, ok := s.orphans[done.ID]; ok {
-					if err := unix.Munmap(old); err != nil {
-						log := logging.For(ctx, "control")
-						log.Warn().Err(err).Uint64("capture", done.ID).Msg("unmap orphaned capture")
-					}
-					delete(s.orphans, done.ID)
-				}
-				if done.ID != id {
-					continue
-				}
+			case done := <-completion:
+				s.update(shotUpdate{id: id})
 				completed = true
 				if done.Err != nil {
 					return results, fmt.Errorf("capture %s: %w", q.Output, errors.Join(done.Err, unix.Munmap(pixels)))
 				}
+			case <-s.stopped:
+				return results, errors.New("control capture completion owner stopped")
 			case <-ctx.Done():
-				s.orphans[id] = pixels
+				s.update(shotUpdate{id: id, abandon: true})
 				return results, ctx.Err()
 			}
 		}

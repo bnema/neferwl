@@ -99,6 +99,9 @@ func Listen(path string, ids *workspaceid.IDs, opts Options) (*Server, error) {
 func (s *Server) Close() error {
 	s.once.Do(func() {
 		close(s.done)
+		if s.shooter != nil {
+			s.shooter.close()
+		}
 		s.err = s.listener.Close()
 		s.injectMu.Lock()
 		defer s.injectMu.Unlock()

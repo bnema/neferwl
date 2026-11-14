@@ -17,6 +17,7 @@ func TestShotDispatch(t *testing.T) {
 		captures := make(chan domain.CaptureRequest)
 		captured := make(chan domain.CaptureDone)
 		shooter := NewShooter(captures, captured, t.TempDir())
+		defer shooter.close()
 		s := &Server{ids: workspaceid.WithPrefix("test"), shooter: shooter, injector: newInjector(injectKeymap(t), nil), done: make(chan struct{})}
 		defer s.injector.km.Close()
 		out := make(chan ports.ControlRequest)
@@ -138,6 +139,7 @@ func TestShotDispatchCaptureErrors(t *testing.T) {
 				captures := make(chan domain.CaptureRequest)
 				captured := make(chan domain.CaptureDone)
 				s := &Server{ids: workspaceid.WithPrefix("test"), shooter: NewShooter(captures, captured, t.TempDir())}
+				defer s.shooter.close()
 				out := make(chan ports.ControlRequest)
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()

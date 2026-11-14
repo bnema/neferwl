@@ -24,6 +24,7 @@ func TestShotPNG(t *testing.T) {
 				done := make(chan domain.CaptureDone)
 				dir := t.TempDir()
 				s := NewShooter(requests, done, dir)
+				defer s.close()
 				go func() {
 					q := <-requests
 					if q.ID&ports.CaptureIDControl == 0 || q.MinSeq != 7 || q.Output != "A" || q.Stride != 4 || q.Format != 1 {
@@ -76,6 +77,7 @@ func TestShotFailureAndCancel(t *testing.T) {
 		requests := make(chan domain.CaptureRequest)
 		done := make(chan domain.CaptureDone, 2)
 		s := NewShooter(requests, done, t.TempDir())
+		defer s.close()
 		if _, err := s.Shoot(context.Background(), []domain.ShotRequest{{Raw: true}}, false); err == nil || err.Error() != "raw shots need --every-frame" {
 			t.Fatal(err)
 		}
@@ -92,11 +94,7 @@ func TestShotFailureAndCancel(t *testing.T) {
 		if _, err := s.Shoot(ctx, []domain.ShotRequest{{Output: "A", Width: 1, Height: 1}}, false); !errors.Is(err, context.Canceled) {
 			t.Fatal(err)
 		}
-		// A subsequent shot reaps any cancelled destination before its own reply.
-		go func() { q := <-requests; copy(q.Mapped, []byte{0, 0, 0, 255}); done <- domain.CaptureDone{ID: q.ID} }()
-		if _, err := s.Shoot(context.Background(), []domain.ShotRequest{{Output: "A", Width: 1, Height: 1}}, false); err != nil {
-			t.Fatal(err)
-		}
+		synctest.Wait()
 		if len(s.orphans) != 0 {
 			t.Fatal("abandoned mapping not reaped")
 		}
@@ -109,6 +107,7 @@ func TestShotCancellationBeforePublication(t *testing.T) {
 		done := make(chan domain.CaptureDone, 1)
 		dir := t.TempDir()
 		s := NewShooter(requests, done, dir)
+		defer s.close()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go func() {
@@ -134,13 +133,7 @@ func TestShotCancellationBeforePublication(t *testing.T) {
 		if len(s.token) != 0 {
 			t.Fatal("shooter token not released")
 		}
-		// Reap a completion that cancellation may have left pending, using
-		// the existing ownership path without publishing another shot.
-		go func() {
-			q := <-requests
-			done <- domain.CaptureDone{ID: q.ID, Err: errors.New("reap only")}
-		}()
-		_, _ = s.Shoot(context.Background(), []domain.ShotRequest{{Output: "C", Width: 1, Height: 1}}, false)
+		synctest.Wait()
 		if len(s.orphans) != 0 {
 			t.Fatal("cancelled mapping not reaped")
 		}
@@ -162,4 +155,41 @@ func TestShotContextWriterCancellation(t *testing.T) {
 	if buffer.String() != "PNG" {
 		t.Fatalf("write after cancellation: %q", buffer.String())
 	}
+}
+
+func TestShotLastCancellationReaped(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		requests := make(chan domain.CaptureRequest)
+		done := make(chan domain.CaptureDone)
+		s := NewShooter(requests, done, t.TempDir())
+		defer s.close()
+		ctx, cancel := context.WithCancel(context.Background())
+		result := make(chan error, 1)
+		go func() {
+			_, err := s.Shoot(ctx, []domain.ShotRequest{{Output: "A", Width: 1, Height: 1}}, false)
+			result <- err
+		}()
+		q := <-requests
+		cancel()
+		if err := <-result; !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		if len(s.orphans) != 1 {
+			t.Fatal("mapping released before completion")
+		}
+		// The backend can still write after the client has cancelled.
+		copy(q.Mapped, []byte{1, 2, 3, 4})
+		done <- domain.CaptureDone{ID: q.ID}
+		synctest.Wait()
+		if len(s.orphans) != 0 {
+			t.Fatal("last mapping not reaped")
+		}
+		s.close()
+		select {
+		case <-s.stopped:
+		default:
+			t.Fatal("completion owner not stopped")
+		}
+	})
 }
