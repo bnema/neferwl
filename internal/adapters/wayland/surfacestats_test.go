@@ -17,7 +17,7 @@ func TestSurfaceAcquireStallAndStats(t *testing.T) {
 		srv := &Server{log: zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &out}).WithField("component", "wayland"), syncWait: &syncWaiter{}, fifoSurfaces: map[*surface]struct{}{}, lastFlip: map[string]time.Time{}}
 		surf := &surface{server: srv, x11win: &window{id: 42, mapped: true}, commitsReceived: 2, commitsApplied: 1, releasePointsSignalled: 3, releasePointsDropped: 4, releasePointsDeferred: 5}
 		srv.surfaces = map[*server.Resource]*surface{nil: surf}
-		u := &update{owner: surf, enqueued: time.Now(), pendingCommit: pendingCommit{sync: &commitSync{wait: &syncWait{explicit: true}, acquire: syncPoint{tl: &timeline{handle: 7}, point: 11}}}}
+		u := &update{owner: surf, enqueued: time.Now(), pendingCommit: pendingCommit{sync: &commitSync{wait: &syncWait{explicit: true}, acquire: syncPoint{tl: &timeline{handle: 7, alive: true, uses: 1}, point: 11}}}}
 		surf.queue = []*update{u}
 		srv.fifoSurfaces[surf] = struct{}{}
 		srv.tickFifo(time.Now(), nil)
@@ -42,7 +42,7 @@ func TestSurfaceAcquireStallAndStats(t *testing.T) {
 		if err := dec.Decode(&stats); err != nil {
 			t.Fatal(err)
 		}
-		for k, want := range map[string]any{"message": "surface stats", "component": "wayland", "window": float64(42), "head_block": "acquire", "head_age_ms": float64(10000), "queue_len": float64(1), "commits_received": float64(2), "commits_applied": float64(1), "release_points_signalled": float64(3), "release_points_dropped": float64(4), "release_points_deferred": float64(5), "sub": false} {
+		for k, want := range map[string]any{"message": "surface stats", "component": "wayland", "window": float64(42), "head_block": "acquire", "head_age_ms": float64(10000), "queue_len": float64(1), "commits_received": float64(2), "commits_applied": float64(1), "release_points_signalled": float64(3), "release_points_dropped": float64(4), "release_points_deferred": float64(5), "sub": false, "surface": float64(0)} {
 			if stats[k] != want {
 				t.Errorf("%s=%v, want %v", k, stats[k], want)
 			}
@@ -58,19 +58,36 @@ func TestSurfaceAcquireStallAndStats(t *testing.T) {
 		if next["commits_received"] != float64(0) || next["release_points_dropped"] != float64(0) || next["release_points_deferred"] != float64(0) {
 			t.Fatalf("not interval counts: %v", next)
 		}
-		surf.queue = nil
+		// Retire the warned head through the production queue teardown, then
+		// capture a new commit. Pool reuse is deliberately not assumed.
+		u.sync.release = syncPoint{tl: &timeline{alive: true, uses: 1}, point: 13}
+		surf.dropQueue()
+		surf.queueUpdateAt(time.Now())
+		fresh := surf.queue[0]
+		fresh.sync = &commitSync{release: syncPoint{tl: &timeline{alive: true, uses: 1}, point: 14}, wait: &syncWait{explicit: true}, acquire: syncPoint{tl: &timeline{handle: 7, alive: true, uses: 1}, point: 12}}
+		if !fresh.enqueued.Equal(time.Now()) {
+			t.Fatal("new head age not reset")
+		}
+		out.Reset()
+		srv.tickFifo(time.Now(), nil)
+		time.Sleep(501 * time.Millisecond)
+		synctest.Wait()
+		srv.tickFifo(time.Now(), nil)
+		srv.tickFifo(time.Now(), nil)
+		var rearmed map[string]any
+		if err := json.Unmarshal(out.Bytes(), &rearmed); err != nil {
+			t.Fatal(err)
+		}
+		if rearmed["message"] != "surface commit stalled" || rearmed["head_age_ms"] != float64(501) {
+			t.Fatalf("fresh head warning: %v", rearmed)
+		}
+		surf.dropQueue()
+		srv.drainDeferredReleases(true)
+		srv.reportSurfaceStats(time.Now()) // consume release/drop activity
 		out.Reset()
 		srv.reportSurfaceStats(time.Now())
 		if out.Len() != 0 {
 			t.Fatalf("idle surface logged: %s", out.String())
-		}
-		// A new head re-arms independently of the previous head's warning.
-		v := *u
-		v.stalled = false
-		surf.queue = []*update{&v}
-		surf.reportStall(time.Now())
-		if n := bytes.Count(out.Bytes(), []byte("surface commit stalled")); n != 1 {
-			t.Fatalf("new head did not rearm: %s", out.String())
 		}
 	})
 }

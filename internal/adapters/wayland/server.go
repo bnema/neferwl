@@ -153,15 +153,16 @@ type Server struct {
 	castByCore   map[uint64]*castSession
 	castRing     *postRing[domain.CastCommand]
 	// commands carries core's client commands to the display goroutine.
-	commands      *postRing[queuedCommand]
-	commandStats  commandStats
-	castInvFn     func()
-	castInvPosted bool
-	castInvSent   bool
-	castInvLast   domain.CastInventory
-	nextSession   uint64
-	excl          *exclusion
-	ownUID        uint32
+	commands            *postRing[queuedCommand]
+	commandStats        commandStats
+	surfaceStatsPending atomic.Bool
+	castInvFn           func()
+	castInvPosted       bool
+	castInvSent         bool
+	castInvLast         domain.CastInventory
+	nextSession         uint64
+	excl                *exclusion
+	ownUID              uint32
 	// captureAllow, peer and peers decide mayCapture (captureauth.go):
 	// peers keeps each client's pidfd until it is destroyed.
 	captureAllow *captureallow.Store

@@ -351,3 +351,45 @@ func TestReportCommandStatsDuringStall(t *testing.T) {
 		}
 	}
 }
+
+//testpolicy:realtime display.Do joins the real display goroutine after a deliberately blocked callback
+func TestSurfaceStatsPostCoalescesWithoutBlockingCommands(t *testing.T) {
+	var out lockedBuffer
+	h := newAdmissionHarnessWith(t, 1, Options{}, zerowrap.New(zerowrap.Config{Format: "json", Output: &out}).WithField("component", "wayland"))
+	s := h.s
+	entered, resume := make(chan struct{}), make(chan struct{})
+	s.display.Post(func() { close(entered); <-resume })
+	select {
+	case <-entered:
+	case <-waylandDeadline(time.Second):
+		t.Fatal("display did not enter callback")
+	}
+	defer func() {
+		select {
+		case <-resume:
+		default:
+			close(resume)
+		}
+	}()
+	for range 3 {
+		s.postSurfaceStats()
+		s.commandStats.observe(time.Time{}, time.Time{})
+		s.reportCommandStats()
+	}
+	if !s.surfaceStatsPending.Load() {
+		t.Fatal("surface report was not pending")
+	}
+	if n := strings.Count(out.String(), "command stats"); n != 3 {
+		t.Fatalf("command stats blocked: %d", n)
+	}
+	close(resume)
+	s.display.Do(func() {})
+	if s.surfaceStatsPending.Load() {
+		t.Fatal("pending guard not cleared")
+	}
+	s.postSurfaceStats()
+	s.display.Do(func() {})
+	if s.surfaceStatsPending.Load() {
+		t.Fatal("next interval failed to rearm")
+	}
+}

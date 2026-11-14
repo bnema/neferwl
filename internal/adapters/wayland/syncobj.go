@@ -671,8 +671,7 @@ func (s *surface) syncReady(cs *commitSync) bool {
 	return cs == nil || cs.wait == nil || s.server.syncWait.fired(cs.wait)
 }
 
-// deferredRelease owns points and a wait independently of the retired update.
-// Only the display goroutine creates and drains these records.
+// Bound retained waits for each client without advancing unsubmitted work.
 const maxDeferredReleasesPerClient = 64
 
 type deferredClient struct {
@@ -712,6 +711,8 @@ func (s *Server) abandonDeferredClient(client *deferredClient) {
 	s.deferredReleases = kept
 }
 
+// deferredRelease owns points and a wait independently of the retired update.
+// Only the display goroutine creates and drains these records.
 type deferredRelease struct {
 	client *deferredClient
 	owner  *surface
@@ -750,6 +751,7 @@ func (s *surface) dropSync(cs *commitSync) {
 		s.releasePointsDeferred++
 		s.server.log.Debug().Uint64("window", uint64(s.root().windowID())).
 			Bool("sub", s.sub.parent != nil).
+			Uint32("surface", s.surfaceID()).
 			Uint64("release_point", cs.release.point).Uint32("release_timeline", cs.release.tl.handle).
 			Msg("surface release point deferred")
 		return
@@ -757,8 +759,8 @@ func (s *surface) dropSync(cs *commitSync) {
 	s.finishDroppedSync(cs, false)
 }
 
-// finishDroppedSync consumes both references exactly once. Abandoning a dead
-// protocol timeline never signals it, even though its retained handle is valid.
+// finishDroppedSync consumes both references exactly once. Protocol object
+// destruction does not unset committed points or invalidate retained handles.
 func (s *surface) finishDroppedSync(cs *commitSync, shutdown bool) {
 	reason := ""
 	switch {
@@ -787,6 +789,7 @@ func (s *surface) finishDroppedSync(cs *commitSync, shutdown bool) {
 	s.server.log.Warn().
 		Uint64("window", uint64(s.root().windowID())).
 		Bool("sub", s.sub.parent != nil).
+		Uint32("surface", s.surfaceID()).
 		Str("reason", reason).
 		Uint64("release_point", cs.release.point).
 		Uint32("release_timeline", cs.release.tl.handle).
@@ -798,7 +801,7 @@ func (s *surface) finishDroppedSync(cs *commitSync, shutdown bool) {
 	s.server.dropTimeline(cs.release.tl)
 }
 
-// drainDeferredReleases runs on acquire notification and timeline destruction.
+// drainDeferredReleases runs on acquire notification.
 // Shutdown abandons remaining waits before the waiter's registrations close.
 func (s *Server) drainDeferredReleases(shutdown bool) {
 	kept := s.deferredReleases[:0]

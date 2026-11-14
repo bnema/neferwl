@@ -64,6 +64,7 @@ func (s *surface) logSurfaceState(now time.Time, stalled bool) {
 	e := s.server.log.WithLevel(level)
 	e = e.Uint64("window", uint64(s.root().windowID())).
 		Bool("sub", s.sub.parent != nil).
+		Uint32("surface", s.surfaceID()).
 		Uint64("commits_received", s.commitsReceived-s.statsReceived).
 		Uint64("commits_applied", s.commitsApplied-s.statsApplied).
 		Int("queue_len", len(s.queue)).
@@ -114,4 +115,12 @@ func (s *Server) reportSurfaceStats(now time.Time) {
 		surf.statsReceived, surf.statsApplied = surf.commitsReceived, surf.commitsApplied
 		surf.statsSignalled, surf.statsDropped = surf.releasePointsSignalled, surf.releasePointsDropped
 	}
+}
+
+// surfaceID also supports diagnostic-only surfaces without a protocol resource.
+func (s *surface) surfaceID() uint32 {
+	if s.wl == nil {
+		return 0
+	}
+	return s.wl.ID()
 }

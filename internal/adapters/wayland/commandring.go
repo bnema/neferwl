@@ -127,9 +127,7 @@ func (s *Server) logCommandStats(ctx context.Context) {
 			return
 		case <-t.C:
 			s.reportCommandStats()
-			if !s.display.Do(func() { s.reportSurfaceStats(time.Now()) }) {
-				return
-			}
+			s.postSurfaceStats()
 		}
 	}
 }
@@ -157,4 +155,15 @@ func (s *Server) applyQueued(q queuedCommand) {
 	}
 	s.commandStats.observe(q.at, time.Now())
 	s.apply(q.command())
+}
+
+// postSurfaceStats never waits for the display: command reporting must remain
+// live during a display stall. At most one surface report can be outstanding.
+func (s *Server) postSurfaceStats() {
+	if s.surfaceStatsPending.CompareAndSwap(false, true) {
+		s.display.Post(func() {
+			defer s.surfaceStatsPending.Store(false)
+			s.reportSurfaceStats(time.Now())
+		})
+	}
 }
