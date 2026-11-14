@@ -165,3 +165,29 @@ func TestCastCopyPQ(t *testing.T) {
 		t.Error("PQ capture copied into XR24")
 	}
 }
+
+func TestCastBufferIDDoesNotResolveClientBuffer(t *testing.T) {
+	buf := domain.DMABuf{ID: nextCastBufferID(), Width: 16, Height: 8, Format: fourcc('X', 'R', '2', '4')}
+	if buf.ID&domain.DMABufIDCast == 0 {
+		t.Fatal("cast buffer ID lacks its namespace bit")
+	}
+	entry := &castImage{buffer: buf, img: &target{}}
+	g := &GPU{castImages: map[uint64]*castImage{buf.ID: entry}}
+
+	client := buf
+	client.ID &^= domain.DMABufIDCast
+	if client.ID == 0 {
+		t.Fatal("expected a nonzero client-namespace ID")
+	}
+	// No planes: the independent import path rejects this before any GPU I/O.
+	// A colliding cache lookup would instead return entry's image successfully.
+	img, cached, err := g.acquireCastImage(&client)
+	if err != errImagePlanes || img != nil || cached != nil || entry.refs != 0 {
+		t.Fatalf("client resolved to cast image: img=%p cached=%p err=%v refs=%d", img, cached, err, entry.refs)
+	}
+	img, cached, err = g.acquireCastImage(&buf)
+	if err != nil || img != entry.img || cached != entry || entry.refs != 1 {
+		t.Fatalf("cast ID did not resolve: img=%p cached=%p err=%v refs=%d", img, cached, err, entry.refs)
+	}
+	g.releaseCastImage(cached)
+}
