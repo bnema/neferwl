@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -76,5 +77,42 @@ func TestControlTargetFlag(t *testing.T) {
 		if code != 1 || !strings.Contains(stderr, "selected.sock") {
 			t.Fatalf("%v: %d %s", args, code, stderr)
 		}
+	}
+}
+
+func TestStateOutputOfTarget(t *testing.T) {
+	runtime := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", runtime)
+	t.Setenv("WAYLAND_DISPLAY", "live")
+	d, err := sessiondir.Create(runtime, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = d.Close() }()
+	targetPath := filepath.Join(d.Path(), "state.json")
+	livePath := filepath.Join(runtime, "neferwl", "live.json")
+	for path, output := range map[string]string{targetPath: "TARGET", livePath: "LIVE"} {
+		data := `{"outputs":[{"name":"` + output + `"}],"windows":[{"id":1,"pid":` + strconv.Itoa(os.Getpid()) + `,"output":"` + output + `"}]}`
+		if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := d.WriteMeta(sessiondir.Meta{ID: "test", State: targetPath}); err != nil {
+		t.Fatal(err)
+	}
+	for _, override := range []string{"", livePath} {
+		t.Run("override="+override, func(t *testing.T) {
+			t.Setenv("NEFERWL_STATE", override)
+			for _, args := range [][]string{{"-s", "test", "state", "output-of", strconv.Itoa(os.Getpid())}, {"state", "-s", "test", "output-of", strconv.Itoa(os.Getpid())}} {
+				code, out, stderr := execute(t, args...)
+				if code != 0 || stderr != "" || !strings.Contains(out, `"name":"TARGET"`) || strings.Contains(out, "LIVE") {
+					t.Fatalf("%v: %d %s %s", args, code, out, stderr)
+				}
+			}
+		})
+	}
+	code, _, stderr := execute(t, "-s", "missing", "state", "output-of", strconv.Itoa(os.Getpid()))
+	if code != 1 || !strings.Contains(stderr, "has no state file") {
+		t.Fatalf("%d %s", code, stderr)
 	}
 }

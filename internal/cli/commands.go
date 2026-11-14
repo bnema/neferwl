@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"github.com/bnema/neferwl/internal/adapters/config"
+	"github.com/bnema/neferwl/internal/adapters/sessiondir"
 	"github.com/bnema/neferwl/internal/adapters/statefile"
 	"github.com/bnema/neferwl/internal/domain"
 )
@@ -88,6 +89,25 @@ var stateCmd = Command{
 				}
 			}
 			path := os.Getenv(statefile.Env)
+			if pid != 0 && *target != "" {
+				if !sessiondir.ValidID(*target) {
+					return fmt.Errorf("invalid session id %q", *target)
+				}
+				sessions, err := sessiondir.List(os.Getenv("XDG_RUNTIME_DIR"))
+				if err != nil {
+					return err
+				}
+				path = ""
+				for _, session := range sessions {
+					if session.ID == *target {
+						path = session.State
+						break
+					}
+				}
+				if path == "" {
+					return fmt.Errorf("session %q has no state file", *target)
+				}
+			}
 			if path == "" {
 				var err error
 				if path, err = statefile.Path(os.Getenv("XDG_RUNTIME_DIR"), os.Getenv("WAYLAND_DISPLAY")); err != nil {
