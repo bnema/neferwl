@@ -6,8 +6,8 @@ bnema.dev/purego-libwayland v0.14.0 h1:VJiYrF7tsruQt8b/KQdfFQ0MBjn4YmILf5IaZWUtz
 bnema.dev/purego-libwayland v0.14.0/go.mod h1:ffooPnsy1V3pdw01Gu4kh31q5F0fcIiNKD8EefYilWo=
 bnema.dev/purego-pipewire v0.6.0 h1:fzbC7XOkVJ4qLSTrRxwwNoWVMbj6KfegJk/K6f22WFw=
 bnema.dev/purego-pipewire v0.6.0/go.mod h1:1R+UJRJP5MG0HznFZ+9TjssGXip3Dqau2psuNEvMZvc=
-bnema.dev/purego-vulkan v0.7.0 h1:nXvLl2yLBi8u5FP5beAk7LyHDJiYgeEF9L63t+SasrU=
-bnema.dev/purego-vulkan v0.7.0/go.mod h1:HmXpjrc7g/lI4VhVTDGpIf6/C2J93b19tis5ZGn+yK8=
+bnema.dev/purego-vulkan v0.8.0 h1:74ItsDUI/clwRSAawz7YfG6NmzN9t0mUYfPUxrSSNKo=
+bnema.dev/purego-vulkan v0.8.0/go.mod h1:HmXpjrc7g/lI4VhVTDGpIf6/C2J93b19tis5ZGn+yK8=
 bnema.dev/wlturbo v0.7.0 h1:UeUgL3KCQwemwwr+QbQ5OH3susvv7UfAK2/N4XKaRtc=
 bnema.dev/wlturbo v0.7.0/go.mod h1:u6jdtuOVOsMWO51WDOFKq0xz4jIq6yPVHV2fayGgP1k=
 bnema.dev/xturbo v0.1.0 h1:UkdSoJLRvJeGTiT+KmgDBIuKQ85i+TcC/PYSeK05Trg=

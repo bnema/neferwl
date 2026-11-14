@@ -7,7 +7,7 @@ require (
 	bnema.dev/purego v0.13.0-bnema.4
 	bnema.dev/purego-libwayland v0.14.0
 	bnema.dev/purego-pipewire v0.6.0
-	bnema.dev/purego-vulkan v0.7.0
+	bnema.dev/purego-vulkan v0.8.0
 	bnema.dev/wlturbo v0.7.0
 	bnema.dev/xturbo v0.1.0
 	bnema.dev/zerobus v0.6.0
