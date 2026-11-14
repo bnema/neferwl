@@ -689,21 +689,31 @@ func TestContentRoutedPublishAllocations(t *testing.T) {
 }
 
 func TestContentRouteForgottenWithRemovedOutputAcceptsNewGeneration(t *testing.T) {
-	g := newRouterRig(t)
-	g.attach("A")
-	g.route("A", 9, 1)
-	g.take("A")
-	g.r.publish(solid(1), damage{full: true})
-	g.take("A")
-	g.r.detach(g.ret["A"])
-	delete(g.r.routes, "A") // what setOutputs does when the output is removed
-	g.attach("A")
-	require.Nil(t, g.take("A"), "no stale route applied")
-	g.route("A", 2, 1)
-	b := g.take("A")
-	require.NotNil(t, b)
-	require.Equal(t, uint64(2), b.Routes)
-	require.Equal(t, map[domain.WindowID]uint64{1: 1}, itemSeqs(b))
+	s := linkServer(t)
+	require.True(t, s.display.Do(func() {
+		g := &routerRig{t: t, r: &s.router, in: map[string]<-chan *domain.ContentBatch{}, ret: map[string]ports.ContentReturn{}}
+		name := testOutputs[0].Info.Name
+		g.attach(name)
+		g.route(name, 9, 1)
+		g.take(name)
+		g.r.publish(solid(1), damage{full: true})
+		g.take(name)
+
+		s.setOutputs(ports.SetOutputs{})
+		if _, ok := s.router.routes[name]; ok {
+			t.Error("removed output's route was not forgotten")
+			return
+		}
+		g.r.detach(g.ret[name])
+		s.setOutputs(ports.SetOutputs{Outputs: testOutputs})
+		g.attach(name)
+		require.Nil(t, g.take(name), "no stale route applied")
+		g.route(name, 2, 1)
+		b := g.take(name)
+		require.NotNil(t, b)
+		require.Equal(t, uint64(2), b.Routes)
+		require.Equal(t, map[domain.WindowID]uint64{1: 1}, itemSeqs(b))
+	}))
 }
 
 func TestApplyContentRoutesInStaleEnvelope(t *testing.T) {
