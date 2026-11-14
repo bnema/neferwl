@@ -68,6 +68,9 @@ type deferredFree struct {
 
 // free frees what f holds.
 func (r *Renderer) free(f deferredFree) {
+	if r.lost {
+		return
+	}
 	if f.free != nil {
 		f.free()
 		return
@@ -79,14 +82,14 @@ func (r *Renderer) createSlots() error {
 	d := r.gpu.dd
 	cmds := make([]vk.CommandBuffer, frameSlots)
 	ai := vk.CommandBufferAllocateInfo{SType: vk.StructureTypeCommandBufferAllocateInfo, CommandPool: r.pool, Level: vk.CommandBufferLevelPrimary, CommandBufferCount: frameSlots}
-	if err := checked("vkAllocateCommandBuffers", d.AllocateCommandBuffers(r.gpu.device, &ai, &cmds[0])); err != nil {
+	if err := r.noteLoss(checked("vkAllocateCommandBuffers", d.AllocateCommandBuffers(r.gpu.device, &ai, &cmds[0]))); err != nil {
 		return err
 	}
 	for i := range r.slots {
 		s := &r.slots[i]
 		s.cmd = cmds[i]
 		fi := vk.FenceCreateInfo{SType: vk.StructureTypeFenceCreateInfo}
-		if err := checked("vkCreateFence", d.CreateFence(r.gpu.device, &fi, nil, &s.fence)); err != nil {
+		if err := r.noteLoss(checked("vkCreateFence", d.CreateFence(r.gpu.device, &fi, nil, &s.fence))); err != nil {
 			return err
 		}
 		if err := r.newDone(s); err != nil {
@@ -111,10 +114,13 @@ func (r *Renderer) newDone(s *frameSlot) error {
 		r.syncFD = false
 		si.Next = nil
 	}
-	return checked("vkCreateSemaphore", d.CreateSemaphore(r.gpu.device, &si, nil, &s.done))
+	return r.noteLoss(checked("vkCreateSemaphore", d.CreateSemaphore(r.gpu.device, &si, nil, &s.done)))
 }
 
 func (r *Renderer) destroySlots() {
+	if r.lost {
+		return
+	}
 	for i := range r.slots {
 		s := &r.slots[i]
 		for j := range s.batches {
@@ -152,7 +158,7 @@ func (r *Renderer) waitFrame(n uint64) error {
 		if err := r.fenceWaitErr("vkWaitForFences", r.gpu.dd.WaitForFences(r.gpu.device, 1, &s.fence, 1, uint64(fenceWaitTimeout))); err != nil {
 			return err
 		}
-		if err := checked("vkResetFences", r.gpu.dd.ResetFences(r.gpu.device, 1, &s.fence)); err != nil {
+		if err := r.noteLoss(checked("vkResetFences", r.gpu.dd.ResetFences(r.gpu.device, 1, &s.fence))); err != nil {
 			return err
 		}
 		s.busy = false
@@ -173,6 +179,9 @@ func (r *Renderer) retire(frame uint64, free func()) {
 
 // retireSemaphore destroys sem once the frame that last used it completed.
 func (r *Renderer) retireSemaphore(frame uint64, sem vk.Semaphore) {
+	if r.lost {
+		return
+	}
 	if frame <= r.completed {
 		r.gpu.dd.DestroySemaphore(r.gpu.device, sem, nil)
 		return
@@ -181,6 +190,9 @@ func (r *Renderer) retireSemaphore(frame uint64, sem vk.Semaphore) {
 }
 
 func (r *Renderer) runDeferred() {
+	if r.lost {
+		return
+	}
 	r.deferred = slices.DeleteFunc(r.deferred, func(f deferredFree) bool {
 		if f.frame <= r.completed {
 			r.free(f)
@@ -202,7 +214,11 @@ func fenceWaitErr(name string, res vk.Result) error {
 }
 
 func (r *Renderer) fenceWaitErr(name string, res vk.Result) error {
-	err := fenceWaitErr(name, res)
+	return r.noteLoss(fenceWaitErr(name, res))
+}
+
+// noteLoss records device loss before any caller cleanup can run.
+func (r *Renderer) noteLoss(err error) error {
 	if errors.Is(err, ports.ErrDeviceLost) {
 		r.lost = true
 		r.gpu.markLost()
@@ -330,11 +346,11 @@ func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.Su
 	sc := &r.call
 	cmd := slot.cmd
 	sc.cmd = cmd
-	if err := checked("vkResetCommandBuffer", d.ResetCommandBuffer(cmd, 0)); err != nil {
+	if err := r.noteLoss(checked("vkResetCommandBuffer", d.ResetCommandBuffer(cmd, 0))); err != nil {
 		return nil, err
 	}
 	sc.begin = vk.CommandBufferBeginInfo{SType: vk.StructureTypeCommandBufferBeginInfo, Flags: vk.CommandBufferUsageOneTimeSubmitBit}
-	if err := checked("vkBeginCommandBuffer", d.BeginCommandBuffer(cmd, &sc.begin)); err != nil {
+	if err := r.noteLoss(checked("vkBeginCommandBuffer", d.BeginCommandBuffer(cmd, &sc.begin))); err != nil {
 		return nil, err
 	}
 	// A full redraw clears the target: its old contents never matter
@@ -397,7 +413,7 @@ func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.Su
 			d.CmdPipelineBarrier(cmd, vk.PipelineStageColorAttachmentOutputBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, b)
 		}
 	}
-	if err := checked("vkEndCommandBuffer", d.EndCommandBuffer(cmd)); err != nil {
+	if err := r.noteLoss(checked("vkEndCommandBuffer", d.EndCommandBuffer(cmd))); err != nil {
 		return nil, err
 	}
 	// Wait for the client's GPU writes to each buffer: its explicit
@@ -438,7 +454,7 @@ func (r *Renderer) Render(s domain.Scene, contents map[domain.WindowID]domain.Su
 	if r.syncFD {
 		submit.SignalSemaphoreCount, submit.SignalSemaphores = 1, &slot.done
 	}
-	if err := r.q.submit(1, submit, slot.fence); err != nil {
+	if err := r.noteLoss(r.q.submit(1, submit, slot.fence)); err != nil {
 		return nil, err
 	}
 	runtime.KeepAlive(stages)
@@ -530,7 +546,7 @@ func (r *Renderer) oneShot(record func(vk.CommandBuffer)) error {
 	d := r.gpu.dd
 	var cmd vk.CommandBuffer
 	ai := vk.CommandBufferAllocateInfo{SType: vk.StructureTypeCommandBufferAllocateInfo, CommandPool: r.pool, Level: vk.CommandBufferLevelPrimary, CommandBufferCount: 1}
-	if err := checked("vkAllocateCommandBuffers", d.AllocateCommandBuffers(r.gpu.device, &ai, &cmd)); err != nil {
+	if err := r.noteLoss(checked("vkAllocateCommandBuffers", d.AllocateCommandBuffers(r.gpu.device, &ai, &cmd))); err != nil {
 		return err
 	}
 	defer func() {
@@ -540,7 +556,7 @@ func (r *Renderer) oneShot(record func(vk.CommandBuffer)) error {
 	}()
 	var fence vk.Fence
 	fi := vk.FenceCreateInfo{SType: vk.StructureTypeFenceCreateInfo}
-	if err := checked("vkCreateFence", d.CreateFence(r.gpu.device, &fi, nil, &fence)); err != nil {
+	if err := r.noteLoss(checked("vkCreateFence", d.CreateFence(r.gpu.device, &fi, nil, &fence))); err != nil {
 		return err
 	}
 	defer func() {
@@ -549,15 +565,15 @@ func (r *Renderer) oneShot(record func(vk.CommandBuffer)) error {
 		}
 	}()
 	begin := vk.CommandBufferBeginInfo{SType: vk.StructureTypeCommandBufferBeginInfo, Flags: vk.CommandBufferUsageOneTimeSubmitBit}
-	if err := checked("vkBeginCommandBuffer", d.BeginCommandBuffer(cmd, &begin)); err != nil {
+	if err := r.noteLoss(checked("vkBeginCommandBuffer", d.BeginCommandBuffer(cmd, &begin))); err != nil {
 		return err
 	}
 	record(cmd)
-	if err := checked("vkEndCommandBuffer", d.EndCommandBuffer(cmd)); err != nil {
+	if err := r.noteLoss(checked("vkEndCommandBuffer", d.EndCommandBuffer(cmd))); err != nil {
 		return err
 	}
 	submit := vk.SubmitInfo{SType: vk.StructureTypeSubmitInfo, CommandBufferCount: 1, CommandBuffers: &cmd}
-	if err := r.q.submit(1, &submit, fence); err != nil {
+	if err := r.noteLoss(r.q.submit(1, &submit, fence)); err != nil {
 		return err
 	}
 	return r.fenceWaitErr("vkWaitForFences", d.WaitForFences(r.gpu.device, 1, &fence, 1, uint64(fenceWaitTimeout)))

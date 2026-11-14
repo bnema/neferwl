@@ -2,7 +2,9 @@ package vulkan
 
 import (
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	vk "bnema.dev/purego-vulkan/vulkan"
 	"github.com/bnema/neferwl/internal/domain"
@@ -81,4 +83,38 @@ func TestLostDropTargetsSkipsFree(t *testing.T) {
 	require.Nil(t, r.last)
 	require.Zero(t, r.current)
 	require.Equal(t, vk.Image(1), tg.image)
+}
+
+func TestLostTargetAndTrimEntries(t *testing.T) {
+	r := &Renderer{lost: true, targets: []*target{{image: 1}}, deferred: []deferredFree{{frame: 0, sem: 1}}}
+	_, err := r.ExportTargets(1, nil, false)
+	require.ErrorIs(t, err, ports.ErrDeviceLost)
+	require.ErrorIs(t, r.ImportTargets(nil), ports.ErrDeviceLost)
+	require.ErrorIs(t, r.Trim(time.Time{}), ports.ErrDeviceLost)
+	require.ErrorIs(t, r.poll(), ports.ErrDeviceLost)
+	r.runDeferred()
+	require.Len(t, r.targets, 1)
+	require.Len(t, r.deferred, 1)
+	require.Empty(t, r.marks)
+}
+func TestOwnerNoteLoss(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		lost bool
+	}{
+		{"nil", nil, false}, {"other", errors.New("other"), false},
+		{"lost", ports.ErrDeviceLost, true}, {"wrapped", fmt.Errorf("wrapped: %w", ports.ErrDeviceLost), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &Renderer{gpu: &GPU{}}
+			require.Equal(t, tc.err, r.noteLoss(tc.err))
+			require.Equal(t, tc.lost, r.lost)
+			require.Equal(t, tc.lost, r.gpu.lost)
+			c := &Copier{gpu: &GPU{}}
+			require.Equal(t, tc.err, c.noteLoss(tc.err))
+			require.Equal(t, tc.lost, c.lost)
+			require.Equal(t, tc.lost, c.gpu.lost)
+		})
+	}
 }

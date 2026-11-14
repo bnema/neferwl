@@ -164,7 +164,7 @@ func (r *Renderer) newGPUBuffer(b *gpuBuffer, size int) error {
 		}
 	}()
 	info := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: vk.DeviceSize(size), Usage: vk.BufferUsageStorageBufferBit, SharingMode: vk.SharingModeExclusive}
-	if err := checked("vkCreateBuffer(shm)", d.CreateBuffer(r.gpu.device, &info, nil, &b.buffer)); err != nil {
+	if err := r.noteLoss(checked("vkCreateBuffer(shm)", d.CreateBuffer(r.gpu.device, &info, nil, &b.buffer))); err != nil {
 		return err
 	}
 	var req vk.MemoryRequirements
@@ -178,13 +178,13 @@ func (r *Renderer) newGPUBuffer(b *gpuBuffer, size int) error {
 		return err
 	}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err := checked("vkAllocateMemory(shm)", d.AllocateMemory(r.gpu.device, &alloc, nil, &b.memory)); err != nil {
+	if err := r.noteLoss(checked("vkAllocateMemory(shm)", d.AllocateMemory(r.gpu.device, &alloc, nil, &b.memory))); err != nil {
 		return err
 	}
-	if err := checked("vkBindBufferMemory(shm)", d.BindBufferMemory(r.gpu.device, b.buffer, b.memory, 0)); err != nil {
+	if err := r.noteLoss(checked("vkBindBufferMemory(shm)", d.BindBufferMemory(r.gpu.device, b.buffer, b.memory, 0))); err != nil {
 		return err
 	}
-	if err := checked("vkMapMemory(shm)", d.MapMemory(r.gpu.device, b.memory, 0, vk.DeviceSize(size), 0, &b.mapped)); err != nil {
+	if err := r.noteLoss(checked("vkMapMemory(shm)", d.MapMemory(r.gpu.device, b.memory, 0, vk.DeviceSize(size), 0, &b.mapped))); err != nil {
 		return err
 	}
 	b.size, ok = size, true
@@ -192,6 +192,9 @@ func (r *Renderer) newGPUBuffer(b *gpuBuffer, size int) error {
 }
 
 func (r *Renderer) freeGPUBuffer(b *gpuBuffer) {
+	if r.lost {
+		return
+	}
 	if b.mapped == nil && b.buffer == 0 && b.memory == 0 {
 		*b = gpuBuffer{}
 		return
@@ -361,6 +364,9 @@ func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, b *domain.
 }
 
 func (r *Renderer) freeShmCopy(c *shmCopy) {
+	if r.lost {
+		return
+	}
 	r.invalidateCompose(resourceKey{shm: c})
 	r.freeGPUBuffer(&c.gpu)
 }

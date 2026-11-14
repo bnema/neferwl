@@ -178,7 +178,7 @@ func (d deviceSync) newSemaphore() (vk.Semaphore, error) {
 	export := vk.ExportSemaphoreCreateInfo{SType: vk.StructureTypeExportSemaphoreCreateInfo, HandleTypes: vk.ExternalSemaphoreHandleTypeSyncFDBit}
 	si := vk.SemaphoreCreateInfo{SType: vk.StructureTypeSemaphoreCreateInfo, Next: unsafe.Pointer(&export)}
 	var s vk.Semaphore
-	err := checked("vkCreateSemaphore(capture)", d.r.gpu.dd.CreateSemaphore(d.r.gpu.device, &si, nil, &s))
+	err := d.r.noteLoss(checked("vkCreateSemaphore(capture)", d.r.gpu.dd.CreateSemaphore(d.r.gpu.device, &si, nil, &s)))
 	return s, err
 }
 
@@ -306,7 +306,7 @@ func (r *Renderer) createCaptureSlots() (err error) {
 	d := r.gpu.dd
 	cmds := make([]vk.CommandBuffer, captureSlots)
 	ai := vk.CommandBufferAllocateInfo{SType: vk.StructureTypeCommandBufferAllocateInfo, CommandPool: r.pool, Level: vk.CommandBufferLevelPrimary, CommandBufferCount: captureSlots}
-	if err := checked("vkAllocateCommandBuffers(capture)", d.AllocateCommandBuffers(r.gpu.device, &ai, &cmds[0])); err != nil {
+	if err := r.noteLoss(checked("vkAllocateCommandBuffers(capture)", d.AllocateCommandBuffers(r.gpu.device, &ai, &cmds[0]))); err != nil {
 		return err
 	}
 	// Every command buffer belongs to a slot before anything can fail,
@@ -324,7 +324,7 @@ func (r *Renderer) createCaptureSlots() (err error) {
 	}()
 	for _, s := range slots {
 		bi := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: size, Usage: vk.BufferUsageTransferDstBit | vk.BufferUsageTransferSrcBit, SharingMode: vk.SharingModeExclusive}
-		if err := checked("vkCreateBuffer(capture)", d.CreateBuffer(r.gpu.device, &bi, nil, &s.buffer)); err != nil {
+		if err := r.noteLoss(checked("vkCreateBuffer(capture)", d.CreateBuffer(r.gpu.device, &bi, nil, &s.buffer))); err != nil {
 			return err
 		}
 		var req vk.MemoryRequirements
@@ -338,17 +338,17 @@ func (r *Renderer) createCaptureSlots() (err error) {
 			return err
 		}
 		alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
-		if err := checked("vkAllocateMemory(capture)", d.AllocateMemory(r.gpu.device, &alloc, nil, &s.memory)); err != nil {
+		if err := r.noteLoss(checked("vkAllocateMemory(capture)", d.AllocateMemory(r.gpu.device, &alloc, nil, &s.memory))); err != nil {
 			return err
 		}
-		if err := checked("vkBindBufferMemory(capture)", d.BindBufferMemory(r.gpu.device, s.buffer, s.memory, 0)); err != nil {
+		if err := r.noteLoss(checked("vkBindBufferMemory(capture)", d.BindBufferMemory(r.gpu.device, s.buffer, s.memory, 0))); err != nil {
 			return err
 		}
-		if err := checked("vkMapMemory(capture)", d.MapMemory(r.gpu.device, s.memory, 0, size, 0, &s.mapped)); err != nil {
+		if err := r.noteLoss(checked("vkMapMemory(capture)", d.MapMemory(r.gpu.device, s.memory, 0, size, 0, &s.mapped))); err != nil {
 			return err
 		}
 		fi := vk.FenceCreateInfo{SType: vk.StructureTypeFenceCreateInfo}
-		if err := checked("vkCreateFence(capture)", d.CreateFence(r.gpu.device, &fi, nil, &s.fence)); err != nil {
+		if err := r.noteLoss(checked("vkCreateFence(capture)", d.CreateFence(r.gpu.device, &fi, nil, &s.fence))); err != nil {
 			return err
 		}
 		if s.done, err = r.captureSync().newSemaphore(); err != nil {
@@ -447,9 +447,9 @@ func (r *Renderer) freeCapture() (*captureSlot, error) {
 			case vk.Timeout, vk.NotReady:
 				continue
 			default:
-				return nil, checked("vkWaitForFences(capture poll)", res)
+				return nil, r.noteLoss(checked("vkWaitForFences(capture poll)", res))
 			}
-			if err := checked("vkResetFences(capture)", sync.resetFence(s.fence)); err != nil {
+			if err := r.noteLoss(checked("vkResetFences(capture)", sync.resetFence(s.fence))); err != nil {
 				return nil, err
 			}
 			s.pending = false
@@ -548,11 +548,11 @@ func (r *Renderer) beginCaptureCursor(debug, pq bool, cursor *domain.CaptureCurs
 	d, sc := r.gpu.dd, &r.capCall
 	sc.cmd = s.cmd
 	cmd := sc.cmd
-	if err := checked("vkResetCommandBuffer(capture)", d.ResetCommandBuffer(cmd, 0)); err != nil {
+	if err := r.noteLoss(checked("vkResetCommandBuffer(capture)", d.ResetCommandBuffer(cmd, 0))); err != nil {
 		return nil, err
 	}
 	sc.begin = vk.CommandBufferBeginInfo{SType: vk.StructureTypeCommandBufferBeginInfo, Flags: vk.CommandBufferUsageOneTimeSubmitBit}
-	if err := checked("vkBeginCommandBuffer(capture)", d.BeginCommandBuffer(cmd, &sc.begin)); err != nil {
+	if err := r.noteLoss(checked("vkBeginCommandBuffer(capture)", d.BeginCommandBuffer(cmd, &sc.begin))); err != nil {
 		return nil, err
 	}
 	if cursor != nil {
@@ -564,7 +564,7 @@ func (r *Renderer) beginCaptureCursor(debug, pq bool, cursor *domain.CaptureCurs
 	} else {
 		r.recordCaptureCopy(cmd, r.last, r.last.layout, s)
 	}
-	if err := checked("vkEndCommandBuffer(capture)", d.EndCommandBuffer(cmd)); err != nil {
+	if err := r.noteLoss(checked("vkEndCommandBuffer(capture)", d.EndCommandBuffer(cmd))); err != nil {
 		return nil, err
 	}
 	// After the frame on the same queue: the copy reads what it drew, and
@@ -577,7 +577,7 @@ func (r *Renderer) beginCaptureCursor(debug, pq bool, cursor *domain.CaptureCurs
 		// binary semaphore is signalled once, then waited or exported).
 		sc.submit.SignalSemaphoreCount, sc.submit.SignalSemaphores = 1, &s.done
 	}
-	if err := r.q.submit(1, &sc.submit, s.fence); err != nil {
+	if err := r.noteLoss(r.q.submit(1, &sc.submit, s.fence)); err != nil {
 		return nil, err
 	}
 	s.pending = true
@@ -590,7 +590,7 @@ func (r *Renderer) beginCaptureCursor(debug, pq bool, cursor *domain.CaptureCurs
 			// pending until its fence polls signalled, and only then is
 			// the semaphore (still to be signalled) replaced.
 			s.replaceDone = true
-			return nil, checked("vkGetSemaphoreFdKHR(capture)", res)
+			return nil, r.noteLoss(checked("vkGetSemaphoreFdKHR(capture)", res))
 		}
 		if fd >= 0 {
 			// -1: already signalled at export, nothing to wait for.
@@ -758,7 +758,7 @@ func (r *Renderer) createCapturePass() (err error) {
 	d, p, t := r.gpu.dd, &r.capturePass, &r.captureSDR
 	if t.image == 0 {
 		ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingOptimal, Usage: targetUsage, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
-		if err := checked("vkCreateImage(capture)", d.CreateImage(r.gpu.device, &ii, nil, &t.image)); err != nil {
+		if err := r.noteLoss(checked("vkCreateImage(capture)", d.CreateImage(r.gpu.device, &ii, nil, &t.image))); err != nil {
 			return err
 		}
 		var req vk.MemoryRequirements
@@ -768,10 +768,10 @@ func (r *Renderer) createCapturePass() (err error) {
 			return err
 		}
 		alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
-		if err := checked("vkAllocateMemory(capture)", d.AllocateMemory(r.gpu.device, &alloc, nil, &t.memory)); err != nil {
+		if err := r.noteLoss(checked("vkAllocateMemory(capture)", d.AllocateMemory(r.gpu.device, &alloc, nil, &t.memory))); err != nil {
 			return err
 		}
-		if err := checked("vkBindImageMemory(capture)", d.BindImageMemory(r.gpu.device, t.image, t.memory, 0)); err != nil {
+		if err := r.noteLoss(checked("vkBindImageMemory(capture)", d.BindImageMemory(r.gpu.device, t.image, t.memory, 0))); err != nil {
 			return err
 		}
 		if err := r.createView(t); err != nil {
@@ -780,24 +780,24 @@ func (r *Renderer) createCapturePass() (err error) {
 	}
 	binding := vk.DescriptorSetLayoutBinding{Binding: 0, DescriptorType: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: 1, StageFlags: vk.ShaderStageFragmentBit}
 	sli := vk.DescriptorSetLayoutCreateInfo{SType: vk.StructureTypeDescriptorSetLayoutCreateInfo, BindingCount: 1, Bindings: &binding}
-	if err := checked("vkCreateDescriptorSetLayout(capture)", d.CreateDescriptorSetLayout(r.gpu.device, &sli, nil, &p.setLayout)); err != nil {
+	if err := r.noteLoss(checked("vkCreateDescriptorSetLayout(capture)", d.CreateDescriptorSetLayout(r.gpu.device, &sli, nil, &p.setLayout))); err != nil {
 		return err
 	}
 	pli := vk.PipelineLayoutCreateInfo{SType: vk.StructureTypePipelineLayoutCreateInfo, SetLayoutCount: 1, SetLayouts: &p.setLayout}
-	if err := checked("vkCreatePipelineLayout(capture)", d.CreatePipelineLayout(r.gpu.device, &pli, nil, &p.layout)); err != nil {
+	if err := r.noteLoss(checked("vkCreatePipelineLayout(capture)", d.CreatePipelineLayout(r.gpu.device, &pli, nil, &p.layout))); err != nil {
 		return err
 	}
 	si := vk.SamplerCreateInfo{SType: vk.StructureTypeSamplerCreateInfo, MagFilter: vk.FilterNearest, MinFilter: vk.FilterNearest, AddressModeU: vk.SamplerAddressModeClampToEdge, AddressModeV: vk.SamplerAddressModeClampToEdge, AddressModeW: vk.SamplerAddressModeClampToEdge}
-	if err := checked("vkCreateSampler(capture)", d.CreateSampler(r.gpu.device, &si, nil, &p.sampler)); err != nil {
+	if err := r.noteLoss(checked("vkCreateSampler(capture)", d.CreateSampler(r.gpu.device, &si, nil, &p.sampler))); err != nil {
 		return err
 	}
 	size := vk.DescriptorPoolSize{Type: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: 1}
 	dpi := vk.DescriptorPoolCreateInfo{SType: vk.StructureTypeDescriptorPoolCreateInfo, MaxSets: 1, PoolSizeCount: 1, PoolSizes: &size}
-	if err := checked("vkCreateDescriptorPool(capture)", d.CreateDescriptorPool(r.gpu.device, &dpi, nil, &p.pool)); err != nil {
+	if err := r.noteLoss(checked("vkCreateDescriptorPool(capture)", d.CreateDescriptorPool(r.gpu.device, &dpi, nil, &p.pool))); err != nil {
 		return err
 	}
 	dai := vk.DescriptorSetAllocateInfo{SType: vk.StructureTypeDescriptorSetAllocateInfo, DescriptorPool: p.pool, DescriptorSetCount: 1, SetLayouts: &p.setLayout}
-	if err := checked("vkAllocateDescriptorSets(capture)", d.AllocateDescriptorSets(r.gpu.device, &dai, &p.set)); err != nil {
+	if err := r.noteLoss(checked("vkAllocateDescriptorSets(capture)", d.AllocateDescriptorSets(r.gpu.device, &dai, &p.set))); err != nil {
 		return err
 	}
 	img := vk.DescriptorImageInfo{Sampler: p.sampler, ImageView: r.hdrOwn.view, ImageLayout: vk.ImageLayoutShaderReadOnlyOptimal}
@@ -809,6 +809,9 @@ func (r *Renderer) createCapturePass() (err error) {
 
 // destroyCapturePass frees the conversion pipeline (device idle).
 func (r *Renderer) destroyCapturePass() {
+	if r.lost {
+		return
+	}
 	if r.gpu.dd == nil {
 		return
 	}

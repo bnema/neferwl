@@ -35,6 +35,9 @@ func (r *Renderer) BeginCaptureCursor(c *domain.CaptureCursor, pq bool) (ports.C
 }
 
 func (r *Renderer) freeCaptureCursor(p *captureCursorPass) {
+	if r.lost {
+		return
+	}
 	d := r.gpu.dd
 	if p.pass.pipeline != 0 {
 		d.DestroyPipeline(r.gpu.device, p.pass.pipeline, nil)
@@ -60,7 +63,7 @@ func (r *Renderer) freeCaptureCursor(p *captureCursorPass) {
 func (r *Renderer) captureCursorTarget(t *target, format vk.Format, usage vk.ImageUsageFlags) error {
 	d := r.gpu.dd
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, ImageType: vk.ImageType2d, Format: format, Extent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingOptimal, Usage: usage, SharingMode: vk.SharingModeExclusive}
-	if err := checked("vkCreateImage(capture cursor)", d.CreateImage(r.gpu.device, &ii, nil, &t.image)); err != nil {
+	if err := r.noteLoss(checked("vkCreateImage(capture cursor)", d.CreateImage(r.gpu.device, &ii, nil, &t.image))); err != nil {
 		return err
 	}
 	var req vk.MemoryRequirements
@@ -70,10 +73,10 @@ func (r *Renderer) captureCursorTarget(t *target, format vk.Format, usage vk.Ima
 		return err
 	}
 	ai := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err = checked("vkAllocateMemory(capture cursor)", d.AllocateMemory(r.gpu.device, &ai, nil, &t.memory)); err != nil {
+	if err = r.noteLoss(checked("vkAllocateMemory(capture cursor)", d.AllocateMemory(r.gpu.device, &ai, nil, &t.memory))); err != nil {
 		return err
 	}
-	if err = checked("vkBindImageMemory(capture cursor)", d.BindImageMemory(r.gpu.device, t.image, t.memory, 0)); err != nil {
+	if err = r.noteLoss(checked("vkBindImageMemory(capture cursor)", d.BindImageMemory(r.gpu.device, t.image, t.memory, 0))); err != nil {
 		return err
 	}
 	t.view, err = r.imageView(t.image, format)
@@ -116,25 +119,25 @@ func (r *Renderer) prepareCaptureCursor(s *captureSlot, c *domain.CaptureCursor,
 		d, h := r.gpu.dd, &p.pass
 		bindings := []vk.DescriptorSetLayoutBinding{{Binding: 0, DescriptorType: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: 1, StageFlags: vk.ShaderStageFragmentBit}, {Binding: 1, DescriptorType: vk.DescriptorTypeStorageBuffer, DescriptorCount: 1, StageFlags: vk.ShaderStageFragmentBit}}
 		sli := vk.DescriptorSetLayoutCreateInfo{SType: vk.StructureTypeDescriptorSetLayoutCreateInfo, BindingCount: 2, Bindings: &bindings[0]}
-		if err = checked("vkCreateDescriptorSetLayout(capture cursor)", d.CreateDescriptorSetLayout(r.gpu.device, &sli, nil, &h.setLayout)); err != nil {
+		if err = r.noteLoss(checked("vkCreateDescriptorSetLayout(capture cursor)", d.CreateDescriptorSetLayout(r.gpu.device, &sli, nil, &h.setLayout))); err != nil {
 			return err
 		}
 		push := vk.PushConstantRange{StageFlags: vk.ShaderStageFragmentBit, Size: 24}
 		pli := vk.PipelineLayoutCreateInfo{SType: vk.StructureTypePipelineLayoutCreateInfo, SetLayoutCount: 1, SetLayouts: &h.setLayout, PushConstantRangeCount: 1, PushConstantRanges: &push}
-		if err = checked("vkCreatePipelineLayout(capture cursor)", d.CreatePipelineLayout(r.gpu.device, &pli, nil, &h.layout)); err != nil {
+		if err = r.noteLoss(checked("vkCreatePipelineLayout(capture cursor)", d.CreatePipelineLayout(r.gpu.device, &pli, nil, &h.layout))); err != nil {
 			return err
 		}
 		si := vk.SamplerCreateInfo{SType: vk.StructureTypeSamplerCreateInfo, MagFilter: vk.FilterNearest, MinFilter: vk.FilterNearest, AddressModeU: vk.SamplerAddressModeClampToEdge, AddressModeV: vk.SamplerAddressModeClampToEdge, AddressModeW: vk.SamplerAddressModeClampToEdge}
-		if err = checked("vkCreateSampler(capture cursor)", d.CreateSampler(r.gpu.device, &si, nil, &h.sampler)); err != nil {
+		if err = r.noteLoss(checked("vkCreateSampler(capture cursor)", d.CreateSampler(r.gpu.device, &si, nil, &h.sampler))); err != nil {
 			return err
 		}
 		sizes := []vk.DescriptorPoolSize{{Type: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: 1}, {Type: vk.DescriptorTypeStorageBuffer, DescriptorCount: 1}}
 		dpi := vk.DescriptorPoolCreateInfo{SType: vk.StructureTypeDescriptorPoolCreateInfo, MaxSets: 1, PoolSizeCount: 2, PoolSizes: &sizes[0]}
-		if err = checked("vkCreateDescriptorPool(capture cursor)", d.CreateDescriptorPool(r.gpu.device, &dpi, nil, &h.pool)); err != nil {
+		if err = r.noteLoss(checked("vkCreateDescriptorPool(capture cursor)", d.CreateDescriptorPool(r.gpu.device, &dpi, nil, &h.pool))); err != nil {
 			return err
 		}
 		dai := vk.DescriptorSetAllocateInfo{SType: vk.StructureTypeDescriptorSetAllocateInfo, DescriptorPool: h.pool, DescriptorSetCount: 1, SetLayouts: &h.setLayout}
-		if err = checked("vkAllocateDescriptorSets(capture cursor)", d.AllocateDescriptorSets(r.gpu.device, &dai, &h.set)); err != nil {
+		if err = r.noteLoss(checked("vkAllocateDescriptorSets(capture cursor)", d.AllocateDescriptorSets(r.gpu.device, &dai, &h.set))); err != nil {
 			return err
 		}
 		img := vk.DescriptorImageInfo{Sampler: h.sampler, ImageView: p.source.view, ImageLayout: vk.ImageLayoutShaderReadOnlyOptimal}

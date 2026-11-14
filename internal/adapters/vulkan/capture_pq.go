@@ -69,7 +69,7 @@ func (r *Renderer) createCapturePQ() (err error) {
 	}
 	d, t := r.gpu.dd, &p.out
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, ImageType: vk.ImageType2d, Format: formatXB30, Extent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingOptimal, Usage: targetUsage, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
-	if err := checked("vkCreateImage(PQ capture)", d.CreateImage(r.gpu.device, &ii, nil, &t.image)); err != nil {
+	if err := r.noteLoss(checked("vkCreateImage(PQ capture)", d.CreateImage(r.gpu.device, &ii, nil, &t.image))); err != nil {
 		return err
 	}
 	var req vk.MemoryRequirements
@@ -79,10 +79,10 @@ func (r *Renderer) createCapturePQ() (err error) {
 		return err
 	}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err := checked("vkAllocateMemory(PQ capture)", d.AllocateMemory(r.gpu.device, &alloc, nil, &t.memory)); err != nil {
+	if err := r.noteLoss(checked("vkAllocateMemory(PQ capture)", d.AllocateMemory(r.gpu.device, &alloc, nil, &t.memory))); err != nil {
 		return err
 	}
-	if err := checked("vkBindImageMemory(PQ capture)", d.BindImageMemory(r.gpu.device, t.image, t.memory, 0)); err != nil {
+	if err := r.noteLoss(checked("vkBindImageMemory(PQ capture)", d.BindImageMemory(r.gpu.device, t.image, t.memory, 0))); err != nil {
 		return err
 	}
 	if t.view, err = r.imageView(t.image, formatXB30); err != nil {
@@ -95,6 +95,9 @@ func (r *Renderer) createCapturePQ() (err error) {
 // destroyCapturePQ frees the pass (device idle). It runs before the display
 // PQ pass whose layout it borrows is destroyed.
 func (r *Renderer) destroyCapturePQ() {
+	if r.lost {
+		return
+	}
 	if r.gpu == nil || r.gpu.dd == nil {
 		return
 	}
