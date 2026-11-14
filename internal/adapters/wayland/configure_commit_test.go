@@ -10,26 +10,29 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// committedThroughBarrier drains the event stream through an owner-loop marker.
+func committedThroughBarrier(t *testing.T, s *Server, events chan ports.ClientEvent) []ports.WindowCommitted {
+	t.Helper()
+	return eventsThroughBarrier[ports.WindowCommitted](t, s, events)
+}
+
+// eventsThroughBarrier drains the event stream through an owner-loop marker.
 //
 //testpolicy:realtime event forwarding from the real Wayland display owner
-func committedThroughBarrier(t *testing.T, s *Server, events chan ports.ClientEvent) []ports.WindowCommitted {
+func eventsThroughBarrier[T ports.ClientEvent](t *testing.T, s *Server, events chan ports.ClientEvent) []T {
 	t.Helper()
 	if !s.display.Do(func() { s.emit(ports.WindowTitle{Title: "commit-barrier"}) }) {
 		t.Fatal("server stopped")
 	}
-	var got []ports.WindowCommitted
+	var got []T
 	deadline := waylandDeadline(2 * time.Second)
 	for {
 		select {
 		case ev := <-events:
-			switch v := ev.(type) {
-			case ports.WindowCommitted:
+			if v, ok := ev.(ports.WindowTitle); ok && v.Title == "commit-barrier" {
+				return got
+			}
+			if v, ok := ev.(T); ok {
 				got = append(got, v)
-			case ports.WindowTitle:
-				if v.Title == "commit-barrier" {
-					return got
-				}
 			}
 		case <-deadline:
 			t.Fatal("event barrier timeout")
