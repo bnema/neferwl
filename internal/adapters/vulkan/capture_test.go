@@ -588,7 +588,7 @@ func TestCapturePollErrorPropagates(t *testing.T) {
 	r.EndCapture(a)
 	m := newMockcaptureSync(t)
 	r.sync = m
-	m.EXPECT().fenceStatus(mock.Anything).Return(vk.ErrorDeviceLost).Once()
+	m.EXPECT().fenceStatus(mock.Anything).Return(vk.ErrorOutOfDeviceMemory).Once()
 	if _, err := r.BeginCapture(); err == nil || errors.Is(err, ports.ErrCaptureBusy) {
 		t.Fatalf("poll error: %v", err)
 	}

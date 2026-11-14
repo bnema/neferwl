@@ -63,7 +63,7 @@ func (r *Renderer) cursorImage(size int) (*cursorImage, domain.DMABuf, error) {
 	list := vk.ImageDrmFormatModifierListCreateInfoEXT{SType: vk.StructureTypeImageDRMFormatModifierListCreateInfoEXT, DrmFormatModifierCount: 1, DrmFormatModifiers: &linear}
 	external := vk.ExternalMemoryImageCreateInfo{SType: vk.StructureTypeExternalMemoryImageCreateInfo, Next: unsafe.Pointer(&list), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: vk.Extent3D{Width: uint32(size), Height: uint32(size), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: vk.ImageUsageTransferSrcBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
-	if err := checked("vkCreateImage(cursor)", d.CreateImage(r.gpu.device, &ii, nil, &c.image)); err != nil {
+	if err := r.noteLoss(checked("vkCreateImage(cursor)", d.CreateImage(r.gpu.device, &ii, nil, &c.image))); err != nil {
 		return nil, domain.DMABuf{}, err
 	}
 	var req vk.MemoryRequirements
@@ -75,10 +75,10 @@ func (r *Renderer) cursorImage(size int) (*cursorImage, domain.DMABuf, error) {
 	dedicated := vk.MemoryDedicatedAllocateInfo{SType: vk.StructureTypeMemoryDedicatedAllocateInfo, Image: c.image}
 	export := vk.ExportMemoryAllocateInfo{SType: vk.StructureTypeExportMemoryAllocateInfo, Next: unsafe.Pointer(&dedicated), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&export), AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err := checked("vkAllocateMemory(cursor)", d.AllocateMemory(r.gpu.device, &alloc, nil, &c.memory)); err != nil {
+	if err := r.noteLoss(checked("vkAllocateMemory(cursor)", d.AllocateMemory(r.gpu.device, &alloc, nil, &c.memory))); err != nil {
 		return nil, domain.DMABuf{}, err
 	}
-	if err := checked("vkBindImageMemory(cursor)", d.BindImageMemory(r.gpu.device, c.image, c.memory, 0)); err != nil {
+	if err := r.noteLoss(checked("vkBindImageMemory(cursor)", d.BindImageMemory(r.gpu.device, c.image, c.memory, 0))); err != nil {
 		return nil, domain.DMABuf{}, err
 	}
 	var layout vk.SubresourceLayout
@@ -89,14 +89,14 @@ func (r *Renderer) cursorImage(size int) (*cursorImage, domain.DMABuf, error) {
 	if c.pitch != size*4 || layout.Offset != 0 {
 		return nil, domain.DMABuf{}, fmt.Errorf("cursor image layout pitch %d offset %d, want pitch %d offset 0", c.pitch, layout.Offset, size*4)
 	}
-	if err := checked("vkMapMemory(cursor)", d.MapMemory(r.gpu.device, c.memory, 0, vk.DeviceSize(req.Size), 0, &c.mapped)); err != nil {
+	if err := r.noteLoss(checked("vkMapMemory(cursor)", d.MapMemory(r.gpu.device, c.memory, 0, vk.DeviceSize(req.Size), 0, &c.mapped))); err != nil {
 		return nil, domain.DMABuf{}, err
 	}
 	c.mapped = unsafe.Add(c.mapped, layout.Offset)
 	clear(unsafe.Slice((*byte)(c.mapped), c.pitch*size))
 	var fd int32
 	get := vk.MemoryGetFdInfoKHR{SType: vk.StructureTypeMemoryGetFDInfoKHR, Memory: c.memory, HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
-	if err := checked("vkGetMemoryFdKHR(cursor)", d.GetMemoryFdKHR(r.gpu.device, &get, &fd)); err != nil {
+	if err := r.noteLoss(checked("vkGetMemoryFdKHR(cursor)", d.GetMemoryFdKHR(r.gpu.device, &get, &fd))); err != nil {
 		return nil, domain.DMABuf{}, err
 	}
 	f := os.NewFile(uintptr(fd), "neferwl-cursor")
@@ -132,6 +132,9 @@ func (r *Renderer) WriteCursor(i int, pixels []byte, w, h int) error {
 }
 
 func (r *Renderer) freeCursor(c *cursorImage) {
+	if r.lost {
+		return
+	}
 	if c.mapped != nil {
 		r.gpu.dd.UnmapMemory(r.gpu.device, c.memory)
 		c.mapped = nil

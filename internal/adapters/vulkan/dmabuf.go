@@ -253,11 +253,11 @@ func (r *Renderer) importDMABuf(b *domain.DMABuf) (*imported, error) {
 	explicit := vk.ImageDrmFormatModifierExplicitCreateInfoEXT{SType: vk.StructureTypeImageDRMFormatModifierExplicitCreateInfoEXT, DrmFormatModifier: b.Modifier, DrmFormatModifierPlaneCount: 1, PlaneLayouts: &layout}
 	external := vk.ExternalMemoryImageCreateInfo{SType: vk.StructureTypeExternalMemoryImageCreateInfo, Next: unsafe.Pointer(&explicit), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: format, Extent: vk.Extent3D{Width: uint32(b.Width), Height: uint32(b.Height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: vk.ImageUsageSampledBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
-	if err := checked("vkCreateImage(dmabuf)", d.CreateImage(r.gpu.device, &ii, nil, &im.image)); err != nil {
+	if err := r.noteLoss(checked("vkCreateImage(dmabuf)", d.CreateImage(r.gpu.device, &ii, nil, &im.image))); err != nil {
 		return nil, err
 	}
 	fdProps := vk.MemoryFdPropertiesKHR{SType: vk.StructureTypeMemoryFDPropertiesKHR}
-	if err := checked("vkGetMemoryFdPropertiesKHR", d.GetMemoryFdPropertiesKHR(r.gpu.device, vk.ExternalMemoryHandleTypeDMABUFBitEXT, int32(fd), &fdProps)); err != nil {
+	if err := r.noteLoss(checked("vkGetMemoryFdPropertiesKHR", d.GetMemoryFdPropertiesKHR(r.gpu.device, vk.ExternalMemoryHandleTypeDMABUFBitEXT, int32(fd), &fdProps))); err != nil {
 		return nil, err
 	}
 	var req vk.MemoryRequirements
@@ -274,10 +274,10 @@ func (r *Renderer) importDMABuf(b *domain.DMABuf) (*imported, error) {
 	dedicated := vk.MemoryDedicatedAllocateInfo{SType: vk.StructureTypeMemoryDedicatedAllocateInfo, Image: im.image}
 	imp := vk.ImportMemoryFdInfoKHR{SType: vk.StructureTypeImportMemoryFDInfoKHR, Next: unsafe.Pointer(&dedicated), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT, Fd: int32(memFD)}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&imp), AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err := checked("vkAllocateMemory(dmabuf)", d.AllocateMemory(r.gpu.device, &alloc, nil, &im.memory)); err != nil {
+	if err := r.noteLoss(checked("vkAllocateMemory(dmabuf)", d.AllocateMemory(r.gpu.device, &alloc, nil, &im.memory))); err != nil {
 		return nil, errors.Join(err, unix.Close(memFD))
 	}
-	if err := checked("vkBindImageMemory(dmabuf)", d.BindImageMemory(r.gpu.device, im.image, im.memory, 0)); err != nil {
+	if err := r.noteLoss(checked("vkBindImageMemory(dmabuf)", d.BindImageMemory(r.gpu.device, im.image, im.memory, 0))); err != nil {
 		return nil, err
 	}
 	if im.view, err = r.imageView(im.image, format); err != nil {
@@ -306,6 +306,9 @@ func dupFile(f *os.File) (int, error) {
 }
 
 func (r *Renderer) release(im *imported) {
+	if r.lost {
+		return
+	}
 	r.invalidateCompose(resourceKey{im: im})
 	if im.view != 0 {
 		r.gpu.dd.DestroyImageView(r.gpu.device, im.view, nil)

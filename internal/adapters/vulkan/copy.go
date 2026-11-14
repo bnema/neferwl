@@ -69,13 +69,14 @@ func (c *Copier) importImage(b *domain.DMABuf, usage vk.ImageUsageFlags) (*targe
 	if usage == vk.ImageUsageTransferDstBit {
 		need = vk.FormatFeatureBlitDstBit
 	}
-	return c.gpu.importBlitImage(b, c.width, c.height, usage, need)
+	im, err := c.gpu.importBlitImage(b, c.width, c.height, usage, need)
+	return im, c.noteLoss(err)
 }
 
 // importBlitImage imports a one-object RGB dmabuf of w×h for usage, its
 // modifier having the need tiling features. The image is foreign: each use
 // acquires it from and releases it to the foreign queue family.
-func (g *GPU) importBlitImage(b *domain.DMABuf, w, h int, usage vk.ImageUsageFlags, need vk.FormatFeatureFlags) (*target, error) {
+func (g *GPU) importBlitImage(b *domain.DMABuf, w, h int, usage vk.ImageUsageFlags, need vk.FormatFeatureFlags) (_ *target, err error) {
 	format, _, known := vkFormat(b.Format)
 	n := len(b.Planes)
 	if !known || isYUVFormat(b.Format) || b.Width != w || b.Height != h {
@@ -112,7 +113,7 @@ func (g *GPU) importBlitImage(b *domain.DMABuf, w, h int, usage vk.ImageUsageFla
 	t := &target{exported: true, layout: vk.ImageLayoutUndefined}
 	ok := false
 	defer func() {
-		if !ok {
+		if !ok && !errors.Is(err, ports.ErrDeviceLost) {
 			g.freeImage(t)
 		}
 	}()
@@ -190,6 +191,9 @@ func (c *Copier) SourceModifiers(formats []domain.DMABufFormat) []domain.DMABufF
 }
 
 func (c *Copier) importImages(bufs []domain.DMABuf, usage vk.ImageUsageFlags, dst *[]*target) error {
+	if c.lost {
+		return ports.ErrDeviceLost
+	}
 	if c.q == nil {
 		return errors.New("copier closed")
 	}
@@ -237,14 +241,10 @@ func (c *Copier) waitSlot(s *copySlot) error {
 		return ports.ErrDeviceLost
 	}
 	if s.busy {
-		if err := fenceWaitErr("vkWaitForFences(copy)", c.gpu.dd.WaitForFences(c.gpu.device, 1, &s.fence, 1, uint64(fenceWaitTimeout))); err != nil {
-			if errors.Is(err, ports.ErrDeviceLost) {
-				c.lost = true
-				c.gpu.markLost()
-			}
+		if err := c.noteLoss(fenceWaitErr("vkWaitForFences(copy)", c.gpu.dd.WaitForFences(c.gpu.device, 1, &s.fence, 1, uint64(fenceWaitTimeout)))); err != nil {
 			return err
 		}
-		if err := checked("vkResetFences(copy)", c.gpu.dd.ResetFences(c.gpu.device, 1, &s.fence)); err != nil {
+		if err := c.noteLoss(checked("vkResetFences(copy)", c.gpu.dd.ResetFences(c.gpu.device, 1, &s.fence))); err != nil {
 			return err
 		}
 		s.busy = false
@@ -283,6 +283,9 @@ func (c *Copier) waitAll() error {
 
 // Copy submits a 1:1 nearest blit. The acquire file remains caller-owned.
 func (c *Copier) Copy(src, dst int, acquire *os.File) (*os.File, error) {
+	if c.lost {
+		return nil, ports.ErrDeviceLost
+	}
 	if c.q == nil {
 		return nil, errors.New("copier closed")
 	}
@@ -297,7 +300,7 @@ func (c *Copier) Copy(src, dst int, acquire *os.File) (*os.File, error) {
 	d, dev := c.gpu.dd, c.gpu.device
 	if s.fence == 0 {
 		fi := vk.FenceCreateInfo{SType: vk.StructureTypeFenceCreateInfo}
-		if err := checked("vkCreateFence(copy)", d.CreateFence(dev, &fi, nil, &s.fence)); err != nil {
+		if err := c.noteLoss(checked("vkCreateFence(copy)", d.CreateFence(dev, &fi, nil, &s.fence))); err != nil {
 			return nil, err
 		}
 	}
@@ -305,7 +308,7 @@ func (c *Copier) Copy(src, dst int, acquire *os.File) (*os.File, error) {
 		// Exporting a sync_fd resets the semaphore to unsignalled: reused.
 		export := vk.ExportSemaphoreCreateInfo{SType: vk.StructureTypeExportSemaphoreCreateInfo, HandleTypes: vk.ExternalSemaphoreHandleTypeSyncFDBit}
 		si := vk.SemaphoreCreateInfo{SType: vk.StructureTypeSemaphoreCreateInfo, Next: unsafe.Pointer(&export)}
-		if err := checked("vkCreateSemaphore(copy)", d.CreateSemaphore(dev, &si, nil, &s.done)); err != nil {
+		if err := c.noteLoss(checked("vkCreateSemaphore(copy)", d.CreateSemaphore(dev, &si, nil, &s.done))); err != nil {
 			return nil, err
 		}
 	}
@@ -316,14 +319,14 @@ func (c *Copier) Copy(src, dst int, acquire *os.File) (*os.File, error) {
 		}
 		s.wait, err = c.gpu.importCopyFence(fd)
 		if err != nil {
-			return nil, err
+			return nil, c.noteLoss(err)
 		}
 	}
-	if err := checked("vkResetCommandBuffer(copy)", d.ResetCommandBuffer(cmd, 0)); err != nil {
+	if err := c.noteLoss(checked("vkResetCommandBuffer(copy)", d.ResetCommandBuffer(cmd, 0))); err != nil {
 		return nil, err
 	}
 	begin := vk.CommandBufferBeginInfo{SType: vk.StructureTypeCommandBufferBeginInfo}
-	if err := checked("vkBeginCommandBuffer(copy)", d.BeginCommandBuffer(cmd, &begin)); err != nil {
+	if err := c.noteLoss(checked("vkBeginCommandBuffer(copy)", d.BeginCommandBuffer(cmd, &begin))); err != nil {
 		return nil, err
 	}
 	source, target := c.sources[src], c.targets[dst]
@@ -349,7 +352,7 @@ func (c *Copier) Copy(src, dst int, acquire *os.File) (*os.File, error) {
 		b.DstQueueFamilyIndex = vk.QueueFamilyForeignEXT
 	}
 	d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 2, &barriers[0])
-	if err := checked("vkEndCommandBuffer(copy)", d.EndCommandBuffer(cmd)); err != nil {
+	if err := c.noteLoss(checked("vkEndCommandBuffer(copy)", d.EndCommandBuffer(cmd))); err != nil {
 		return nil, err
 	}
 	submit := vk.SubmitInfo{SType: vk.StructureTypeSubmitInfo, CommandBufferCount: 1, CommandBuffers: &cmd, SignalSemaphoreCount: 1, SignalSemaphores: &s.done}
@@ -359,14 +362,14 @@ func (c *Copier) Copy(src, dst int, acquire *os.File) (*os.File, error) {
 		submit.WaitSemaphores = &s.wait
 		submit.WaitDstStageMask = &stage
 	}
-	if err := c.q.submit(1, &submit, s.fence); err != nil {
+	if err := c.noteLoss(c.q.submit(1, &submit, s.fence)); err != nil {
 		return nil, err
 	}
 	s.busy = true
 	c.next = (c.next + 1) % len(c.cmds)
 	get := vk.SemaphoreGetFdInfoKHR{SType: vk.StructureTypeSemaphoreGetFDInfoKHR, Semaphore: s.done, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit}
 	fd := int32(-1)
-	if err := checked("vkGetSemaphoreFdKHR(copy)", d.GetSemaphoreFdKHR(dev, &get, &fd)); err != nil {
+	if err := c.noteLoss(checked("vkGetSemaphoreFdKHR(copy)", d.GetSemaphoreFdKHR(dev, &get, &fd))); err != nil {
 		s.stale = true // signalled, never exported
 		return nil, err
 	}
@@ -385,7 +388,9 @@ func (g *GPU) importCopyFence(fd int) (vk.Semaphore, error) {
 	imp := vk.ImportSemaphoreFdInfoKHR{SType: vk.StructureTypeImportSemaphoreFDInfoKHR, Semaphore: sem, Flags: vk.SemaphoreImportTemporaryBit, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit, Fd: int32(fd)}
 	if err := checked("vkImportSemaphoreFdKHR(copy)", g.dd.ImportSemaphoreFdKHR(g.device, &imp)); err != nil {
 		cerr := unix.Close(fd)
-		g.dd.DestroySemaphore(g.device, sem, nil)
+		if !errors.Is(err, ports.ErrDeviceLost) {
+			g.dd.DestroySemaphore(g.device, sem, nil)
+		}
 		return 0, errors.Join(err, cerr)
 	}
 	return sem, nil
@@ -415,7 +420,11 @@ func (g *GPU) supportsBlit(format vk.Format, modifier uint64, need vk.FormatFeat
 	return 0, false
 }
 
-func (c *Copier) freeImage(t *target) { c.gpu.freeImage(t) }
+func (c *Copier) freeImage(t *target) {
+	if !c.lost {
+		c.gpu.freeImage(t)
+	}
+}
 
 // freeImage frees an image of importBlitImage; the device must be done with it.
 func (g *GPU) freeImage(t *target) {
@@ -466,4 +475,13 @@ func (c *Copier) Close() {
 	}
 	c.gpu.releaseQueue(c.q)
 	c.q = nil
+}
+
+// noteLoss records device loss on the copier owner.
+func (c *Copier) noteLoss(err error) error {
+	if errors.Is(err, ports.ErrDeviceLost) {
+		c.lost = true
+		c.gpu.markLost()
+	}
+	return err
 }

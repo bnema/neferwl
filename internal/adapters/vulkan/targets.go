@@ -10,6 +10,7 @@ import (
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 
 	vk "bnema.dev/purego-vulkan/vulkan"
 	"bnema.dev/zerowrap"
@@ -66,7 +67,13 @@ const fourccXR30 = 'X' | 'R'<<8 | '3'<<16 | '0'<<24
 // singlePlane keeps only one-plane modifiers (no DCC metadata planes), for
 // displays that refuse the multi-plane framebuffers of the others.
 func (r *Renderer) ExportTargets(n int, modifiers []uint64, singlePlane bool) ([]domain.DMABuf, error) {
+	if r.lost {
+		return nil, ports.ErrDeviceLost
+	}
 	r.dropTargets()
+	if r.lost {
+		return nil, ports.ErrDeviceLost
+	}
 	if n > 0 && r.hdrNits > 0 && r.hdr.pipeline == 0 {
 		return nil, fmt.Errorf("HDR transform unavailable: %w", r.hdrError)
 	}
@@ -109,7 +116,13 @@ func (r *Renderer) ExportTargets(n int, modifiers []uint64, singlePlane bool) ([
 // target format and a modifier from TargetModifiers. A refusal (the driver
 // rejecting the explicit layout) returns an error and leaves no targets.
 func (r *Renderer) ImportTargets(bufs []domain.DMABuf) error {
+	if r.lost {
+		return ports.ErrDeviceLost
+	}
 	r.dropTargets()
+	if r.lost {
+		return ports.ErrDeviceLost
+	}
 	if len(bufs) == 0 {
 		return nil
 	}
@@ -163,7 +176,7 @@ func (r *Renderer) ensureOwn() (err error) {
 	}()
 	extent := vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: extent, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingOptimal, Usage: targetUsage | vk.ImageUsageSampledBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
-	if err := checked("vkCreateImage", r.gpu.dd.CreateImage(r.gpu.device, &ii, nil, &r.own.image)); err != nil {
+	if err := r.noteLoss(checked("vkCreateImage", r.gpu.dd.CreateImage(r.gpu.device, &ii, nil, &r.own.image))); err != nil {
 		return err
 	}
 	var req vk.MemoryRequirements
@@ -173,10 +186,10 @@ func (r *Renderer) ensureOwn() (err error) {
 		return err
 	}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err := checked("vkAllocateMemory(image)", r.gpu.dd.AllocateMemory(r.gpu.device, &alloc, nil, &r.own.memory)); err != nil {
+	if err := r.noteLoss(checked("vkAllocateMemory(image)", r.gpu.dd.AllocateMemory(r.gpu.device, &alloc, nil, &r.own.memory))); err != nil {
 		return err
 	}
-	if err := checked("vkBindImageMemory", r.gpu.dd.BindImageMemory(r.gpu.device, r.own.image, r.own.memory, 0)); err != nil {
+	if err := r.noteLoss(checked("vkBindImageMemory", r.gpu.dd.BindImageMemory(r.gpu.device, r.own.image, r.own.memory, 0))); err != nil {
 		return err
 	}
 	return r.createView(&r.own)
@@ -374,7 +387,7 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, domain.DMABuf, error) {
 	list := vk.ImageDrmFormatModifierListCreateInfoEXT{SType: vk.StructureTypeImageDRMFormatModifierListCreateInfoEXT, DrmFormatModifierCount: uint32(len(mods)), DrmFormatModifiers: &mods[0]}
 	external := vk.ExternalMemoryImageCreateInfo{SType: vk.StructureTypeExternalMemoryImageCreateInfo, Next: unsafe.Pointer(&list), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: format, Extent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: exportUsage(format, r.hdrReadback), SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
-	if err := checked("vkCreateImage(target)", d.CreateImage(r.gpu.device, &ii, nil, &t.image)); err != nil {
+	if err := r.noteLoss(checked("vkCreateImage(target)", d.CreateImage(r.gpu.device, &ii, nil, &t.image))); err != nil {
 		return nil, domain.DMABuf{}, err
 	}
 	var req vk.MemoryRequirements
@@ -386,14 +399,14 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, domain.DMABuf, error) {
 	dedicated := vk.MemoryDedicatedAllocateInfo{SType: vk.StructureTypeMemoryDedicatedAllocateInfo, Image: t.image}
 	export := vk.ExportMemoryAllocateInfo{SType: vk.StructureTypeExportMemoryAllocateInfo, Next: unsafe.Pointer(&dedicated), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&export), AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err := checked("vkAllocateMemory(target)", d.AllocateMemory(r.gpu.device, &alloc, nil, &t.memory)); err != nil {
+	if err := r.noteLoss(checked("vkAllocateMemory(target)", d.AllocateMemory(r.gpu.device, &alloc, nil, &t.memory))); err != nil {
 		return nil, domain.DMABuf{}, err
 	}
-	if err := checked("vkBindImageMemory(target)", d.BindImageMemory(r.gpu.device, t.image, t.memory, 0)); err != nil {
+	if err := r.noteLoss(checked("vkBindImageMemory(target)", d.BindImageMemory(r.gpu.device, t.image, t.memory, 0))); err != nil {
 		return nil, domain.DMABuf{}, err
 	}
 	props := vk.ImageDrmFormatModifierPropertiesEXT{SType: vk.StructureTypeImageDRMFormatModifierPropertiesEXT}
-	if err := checked("vkGetImageDrmFormatModifierPropertiesEXT", d.GetImageDrmFormatModifierPropertiesEXT(r.gpu.device, t.image, &props)); err != nil {
+	if err := r.noteLoss(checked("vkGetImageDrmFormatModifierPropertiesEXT", d.GetImageDrmFormatModifierPropertiesEXT(r.gpu.device, t.image, &props))); err != nil {
 		return nil, domain.DMABuf{}, err
 	}
 	planeCount, _ := r.gpu.modifierPlanes(props.DrmFormatModifier)
@@ -409,7 +422,7 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, domain.DMABuf, error) {
 	}
 	var fd int32
 	get := vk.MemoryGetFdInfoKHR{SType: vk.StructureTypeMemoryGetFDInfoKHR, Memory: t.memory, HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
-	if err := checked("vkGetMemoryFdKHR", d.GetMemoryFdKHR(r.gpu.device, &get, &fd)); err != nil {
+	if err := r.noteLoss(checked("vkGetMemoryFdKHR", d.GetMemoryFdKHR(r.gpu.device, &get, &fd))); err != nil {
 		return nil, domain.DMABuf{}, err
 	}
 	// Every plane owns its file: the planes share the one memory object,
@@ -440,6 +453,9 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, domain.DMABuf, error) {
 }
 
 func (r *Renderer) freeTarget(t *target) {
+	if r.lost {
+		return
+	}
 	if t.view != 0 {
 		r.gpu.dd.DestroyImageView(r.gpu.device, t.view, nil)
 		t.view = 0
@@ -528,11 +544,11 @@ func (r *Renderer) importTarget(b *domain.DMABuf) (*target, error) {
 	explicit := vk.ImageDrmFormatModifierExplicitCreateInfoEXT{SType: vk.StructureTypeImageDRMFormatModifierExplicitCreateInfoEXT, DrmFormatModifier: b.Modifier, DrmFormatModifierPlaneCount: uint32(n), PlaneLayouts: &layouts[0]}
 	external := vk.ExternalMemoryImageCreateInfo{SType: vk.StructureTypeExternalMemoryImageCreateInfo, Next: unsafe.Pointer(&explicit), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: format, Extent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: exportUsage(format, r.hdrReadback), SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
-	if err := checked("vkCreateImage(imported target)", d.CreateImage(r.gpu.device, &ii, nil, &t.image)); err != nil {
+	if err := r.noteLoss(checked("vkCreateImage(imported target)", d.CreateImage(r.gpu.device, &ii, nil, &t.image))); err != nil {
 		return nil, err
 	}
 	fdProps := vk.MemoryFdPropertiesKHR{SType: vk.StructureTypeMemoryFDPropertiesKHR}
-	if err := checked("vkGetMemoryFdPropertiesKHR", d.GetMemoryFdPropertiesKHR(r.gpu.device, vk.ExternalMemoryHandleTypeDMABUFBitEXT, int32(fd), &fdProps)); err != nil {
+	if err := r.noteLoss(checked("vkGetMemoryFdPropertiesKHR", d.GetMemoryFdPropertiesKHR(r.gpu.device, vk.ExternalMemoryHandleTypeDMABUFBitEXT, int32(fd), &fdProps))); err != nil {
 		return nil, err
 	}
 	var req vk.MemoryRequirements
@@ -547,11 +563,11 @@ func (r *Renderer) importTarget(b *domain.DMABuf) (*target, error) {
 	dedicated := vk.MemoryDedicatedAllocateInfo{SType: vk.StructureTypeMemoryDedicatedAllocateInfo, Image: t.image}
 	imp := vk.ImportMemoryFdInfoKHR{SType: vk.StructureTypeImportMemoryFDInfoKHR, Next: unsafe.Pointer(&dedicated), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT, Fd: int32(fd)}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&imp), AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err := checked("vkAllocateMemory(imported target)", d.AllocateMemory(r.gpu.device, &alloc, nil, &t.memory)); err != nil {
+	if err := r.noteLoss(checked("vkAllocateMemory(imported target)", d.AllocateMemory(r.gpu.device, &alloc, nil, &t.memory))); err != nil {
 		return nil, err
 	}
 	fd = -1 // Vulkan owns it now.
-	if err := checked("vkBindImageMemory(imported target)", d.BindImageMemory(r.gpu.device, t.image, t.memory, 0)); err != nil {
+	if err := r.noteLoss(checked("vkBindImageMemory(imported target)", d.BindImageMemory(r.gpu.device, t.image, t.memory, 0))); err != nil {
 		return nil, err
 	}
 	if t.view, err = r.imageView(t.image, format); err != nil {

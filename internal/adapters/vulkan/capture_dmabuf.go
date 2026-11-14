@@ -111,7 +111,7 @@ func (f *captureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.Fi
 	}
 	img, cached, err := r.gpu.acquireCastImage(&dst)
 	if err != nil {
-		return nil, err
+		return nil, r.noteLoss(err)
 	}
 	var c *dmaCopy
 	if n := len(r.dmaIdle); n > 0 {
@@ -138,13 +138,13 @@ func (f *captureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.Fi
 	d, dev := r.gpu.dd, r.gpu.device
 	if c.cmd == 0 {
 		ai := vk.CommandBufferAllocateInfo{SType: vk.StructureTypeCommandBufferAllocateInfo, CommandPool: r.pool, Level: vk.CommandBufferLevelPrimary, CommandBufferCount: 1}
-		if err := checked("vkAllocateCommandBuffers(capture dmabuf)", d.AllocateCommandBuffers(dev, &ai, &c.cmd)); err != nil {
+		if err := f.r.noteLoss(checked("vkAllocateCommandBuffers(capture dmabuf)", d.AllocateCommandBuffers(dev, &ai, &c.cmd))); err != nil {
 			return nil, err
 		}
 	}
 	if c.fence == 0 {
 		fi := vk.FenceCreateInfo{SType: vk.StructureTypeFenceCreateInfo}
-		if err := checked("vkCreateFence(capture dmabuf)", d.CreateFence(dev, &fi, nil, &c.fence)); err != nil {
+		if err := f.r.noteLoss(checked("vkCreateFence(capture dmabuf)", d.CreateFence(dev, &fi, nil, &c.fence))); err != nil {
 			return nil, err
 		}
 	}
@@ -154,7 +154,7 @@ func (f *captureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.Fi
 		}
 	}
 	c.begin = vk.CommandBufferBeginInfo{SType: vk.StructureTypeCommandBufferBeginInfo, Flags: vk.CommandBufferUsageOneTimeSubmitBit}
-	if err := checked("vkBeginCommandBuffer(capture dmabuf)", d.BeginCommandBuffer(c.cmd, &c.begin)); err != nil {
+	if err := f.r.noteLoss(checked("vkBeginCommandBuffer(capture dmabuf)", d.BeginCommandBuffer(c.cmd, &c.begin))); err != nil {
 		return nil, err
 	}
 	// The readback, submitted earlier on this queue, wrote the buffer.
@@ -173,7 +173,7 @@ func (f *captureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.Fi
 	c.ib.OldLayout, c.ib.NewLayout = vk.ImageLayoutTransferDstOptimal, vk.ImageLayoutGeneral
 	c.ib.SrcQueueFamilyIndex, c.ib.DstQueueFamilyIndex = r.gpu.family, vk.QueueFamilyForeignEXT
 	d.CmdPipelineBarrier(c.cmd, vk.PipelineStageTransferBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, &c.ib)
-	if err := checked("vkEndCommandBuffer(capture dmabuf)", d.EndCommandBuffer(c.cmd)); err != nil {
+	if err := f.r.noteLoss(checked("vkEndCommandBuffer(capture dmabuf)", d.EndCommandBuffer(c.cmd))); err != nil {
 		return nil, err
 	}
 	c.submit = vk.SubmitInfo{SType: vk.StructureTypeSubmitInfo, CommandBufferCount: 1, CommandBuffers: &c.cmd, SignalSemaphoreCount: 1, SignalSemaphores: &c.done}
@@ -181,7 +181,7 @@ func (f *captureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.Fi
 	if c.waitUsed {
 		c.submit.WaitSemaphoreCount, c.submit.WaitSemaphores, c.submit.WaitDstStageMask = 1, &c.wait, &c.waitStage
 	}
-	if err := r.q.submit(1, &c.submit, c.fence); err != nil {
+	if err := f.r.noteLoss(r.q.submit(1, &c.submit, c.fence)); err != nil {
 		return nil, err
 	}
 	// From here the copy is tracked by its fence, whatever happens.
@@ -189,7 +189,10 @@ func (f *captureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.Fi
 	s.copies = append(s.copies, c)
 	c.get = vk.SemaphoreGetFdInfoKHR{SType: vk.StructureTypeSemaphoreGetFDInfoKHR, Semaphore: c.done, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit}
 	c.fd = -1
-	if err := checked("vkGetSemaphoreFdKHR(capture dmabuf)", d.GetSemaphoreFdKHR(dev, &c.get, &c.fd)); err != nil {
+	if err := f.r.noteLoss(checked("vkGetSemaphoreFdKHR(capture dmabuf)", d.GetSemaphoreFdKHR(dev, &c.get, &c.fd))); err != nil {
+		if r.lost {
+			return nil, err
+		}
 		return nil, errors.Join(err, r.finishFailedExport(deviceCopyCompletion{r}, c.fence))
 	}
 	c.exported = true
@@ -235,7 +238,7 @@ func (deviceFences) exportSyncFile(f *os.File) (int32, error) {
 func (d deviceFences) createSemaphore() (vk.Semaphore, error) {
 	var sem vk.Semaphore
 	si := vk.SemaphoreCreateInfo{SType: vk.StructureTypeSemaphoreCreateInfo}
-	err := checked("vkCreateSemaphore(dmabuf wait)", d.r.gpu.dd.CreateSemaphore(d.r.gpu.device, &si, nil, &sem))
+	err := d.r.noteLoss(checked("vkCreateSemaphore(dmabuf wait)", d.r.gpu.dd.CreateSemaphore(d.r.gpu.device, &si, nil, &sem)))
 	return sem, err
 }
 
@@ -304,7 +307,10 @@ func (r *Renderer) reapCopies(s *captureSlot) error {
 		default:
 			kept = append(kept, c)
 			if err == nil {
-				err = checked("vkWaitForFences(capture dmabuf poll)", res)
+				err = r.noteLoss(checked("vkWaitForFences(capture dmabuf poll)", res))
+				if r.lost {
+					return err
+				}
 			}
 		}
 	}
@@ -357,7 +363,7 @@ func (r *Renderer) prepareDMAWait(c *dmaCopy, f *os.File) error {
 			return errors.Join(err, unix.Close(int(fd)))
 		}
 	}
-	if err = checked("vkImportSemaphoreFdKHR(dmabuf wait)", fs.importSyncFD(c.wait, fd)); err != nil {
+	if err = r.noteLoss(checked("vkImportSemaphoreFdKHR(dmabuf wait)", fs.importSyncFD(c.wait, fd))); err != nil {
 		return errors.Join(err, unix.Close(int(fd)))
 	}
 	c.waitUsed = true
@@ -431,12 +437,7 @@ func (d deviceCopyCompletion) deviceIdle() vk.Result {
 
 // finishFailedExport records sticky loss before the caller returns to its owner.
 func (r *Renderer) finishFailedExport(sync copyCompletion, fence vk.Fence) error {
-	err := finishFailedExport(sync, fence)
-	if errors.Is(err, ports.ErrDeviceLost) {
-		r.lost = true
-		r.gpu.markLost()
-	}
-	return err
+	return r.noteLoss(finishFailedExport(sync, fence))
 }
 
 func finishFailedExport(sync copyCompletion, fence vk.Fence) error {

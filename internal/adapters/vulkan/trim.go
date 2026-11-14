@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 
 	vk "bnema.dev/purego-vulkan/vulkan"
 )
@@ -32,6 +33,9 @@ type trimMark struct {
 // frame. What the last frame drew stays: it is on screen and a redraw
 // would copy it again. The output calls it periodically on its goroutine.
 func (r *Renderer) Trim(now time.Time) error {
+	if r.lost {
+		return ports.ErrDeviceLost
+	}
 	// An idle output keeps its oldest mark: the frame is the same.
 	if n := len(r.marks); n == 0 || r.marks[n-1].frame != r.frame {
 		r.marks = append(r.marks, trimMark{frame: r.frame, at: now})
@@ -93,6 +97,9 @@ func (r *Renderer) Trim(now time.Time) error {
 // poll records the frames the GPU finished, without waiting, and frees
 // what they held.
 func (r *Renderer) poll() error {
+	if r.lost {
+		return ports.ErrDeviceLost
+	}
 	var pending uint64 // oldest frame still running, 0: none
 	for i := range r.slots {
 		s := &r.slots[i]
@@ -100,16 +107,16 @@ func (r *Renderer) poll() error {
 			continue
 		}
 		res := r.gpu.dd.WaitForFences(r.gpu.device, 1, &s.fence, 1, 0)
-		if res == vk.Timeout {
+		if res == vk.Timeout || res == vk.NotReady {
 			if pending == 0 || s.frame < pending {
 				pending = s.frame
 			}
 			continue
 		}
-		if err := checked("vkWaitForFences", res); err != nil {
+		if err := r.noteLoss(checked("vkWaitForFences", res)); err != nil {
 			return err
 		}
-		if err := checked("vkResetFences", r.gpu.dd.ResetFences(r.gpu.device, 1, &s.fence)); err != nil {
+		if err := r.noteLoss(checked("vkResetFences", r.gpu.dd.ResetFences(r.gpu.device, 1, &s.fence))); err != nil {
 			return err
 		}
 		s.busy = false
@@ -176,7 +183,7 @@ func (r *Renderer) trimCaptures(now time.Time) error {
 			case vk.Timeout, vk.NotReady:
 				pending = true
 			default:
-				return checked("vkWaitForFences(capture trim)", res)
+				return r.noteLoss(checked("vkWaitForFences(capture trim)", res))
 			}
 		}
 	}

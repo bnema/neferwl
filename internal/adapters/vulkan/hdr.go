@@ -108,7 +108,7 @@ func (r *Renderer) createHDROwn() error {
 	}
 	d, t := r.gpu.dd, &r.hdrOwn
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, ImageType: vk.ImageType2d, Format: vk.FormatR16g16b16a16Sfloat, Extent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingOptimal, Usage: targetUsage | vk.ImageUsageSampledBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
-	if err := checked("vkCreateImage(HDR composition)", d.CreateImage(r.gpu.device, &ii, nil, &t.image)); err != nil {
+	if err := r.noteLoss(checked("vkCreateImage(HDR composition)", d.CreateImage(r.gpu.device, &ii, nil, &t.image))); err != nil {
 		return err
 	}
 	var req vk.MemoryRequirements
@@ -118,10 +118,10 @@ func (r *Renderer) createHDROwn() error {
 		return err
 	}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err := checked("vkAllocateMemory(HDR composition)", d.AllocateMemory(r.gpu.device, &alloc, nil, &t.memory)); err != nil {
+	if err := r.noteLoss(checked("vkAllocateMemory(HDR composition)", d.AllocateMemory(r.gpu.device, &alloc, nil, &t.memory))); err != nil {
 		return err
 	}
-	if err := checked("vkBindImageMemory(HDR composition)", d.BindImageMemory(r.gpu.device, t.image, t.memory, 0)); err != nil {
+	if err := r.noteLoss(checked("vkBindImageMemory(HDR composition)", d.BindImageMemory(r.gpu.device, t.image, t.memory, 0))); err != nil {
 		return err
 	}
 	t.view, err = r.imageView(t.image, vk.FormatR16g16b16a16Sfloat)
@@ -132,28 +132,28 @@ func (r *Renderer) createHDR() error {
 	d, h := r.gpu.dd, &r.hdr
 	binding := vk.DescriptorSetLayoutBinding{Binding: 0, DescriptorType: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: 1, StageFlags: vk.ShaderStageFragmentBit}
 	sli := vk.DescriptorSetLayoutCreateInfo{SType: vk.StructureTypeDescriptorSetLayoutCreateInfo, BindingCount: 1, Bindings: &binding}
-	if err := checked("vkCreateDescriptorSetLayout(HDR)", d.CreateDescriptorSetLayout(r.gpu.device, &sli, nil, &h.setLayout)); err != nil {
+	if err := r.noteLoss(checked("vkCreateDescriptorSetLayout(HDR)", d.CreateDescriptorSetLayout(r.gpu.device, &sli, nil, &h.setLayout))); err != nil {
 		return err
 	}
 	push := vk.PushConstantRange{StageFlags: vk.ShaderStageVertexBit | vk.ShaderStageFragmentBit, Size: 32}
 	pli := vk.PipelineLayoutCreateInfo{SType: vk.StructureTypePipelineLayoutCreateInfo, SetLayoutCount: 1, SetLayouts: &h.setLayout, PushConstantRangeCount: 1, PushConstantRanges: &push}
-	if err := checked("vkCreatePipelineLayout(HDR)", d.CreatePipelineLayout(r.gpu.device, &pli, nil, &h.layout)); err != nil {
+	if err := r.noteLoss(checked("vkCreatePipelineLayout(HDR)", d.CreatePipelineLayout(r.gpu.device, &pli, nil, &h.layout))); err != nil {
 		return err
 	}
 	if err := r.createGraphicsPipeline(hdrVert, hdrFrag, vk.FormatA2r10g10b10UnormPack32, h.layout, false, nil, &h.pipeline); err != nil {
 		return err
 	}
 	si := vk.SamplerCreateInfo{SType: vk.StructureTypeSamplerCreateInfo, MagFilter: vk.FilterNearest, MinFilter: vk.FilterNearest, AddressModeU: vk.SamplerAddressModeClampToEdge, AddressModeV: vk.SamplerAddressModeClampToEdge, AddressModeW: vk.SamplerAddressModeClampToEdge}
-	if err := checked("vkCreateSampler(HDR)", d.CreateSampler(r.gpu.device, &si, nil, &h.sampler)); err != nil {
+	if err := r.noteLoss(checked("vkCreateSampler(HDR)", d.CreateSampler(r.gpu.device, &si, nil, &h.sampler))); err != nil {
 		return err
 	}
 	size := vk.DescriptorPoolSize{Type: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: 1}
 	dpi := vk.DescriptorPoolCreateInfo{SType: vk.StructureTypeDescriptorPoolCreateInfo, MaxSets: 1, PoolSizeCount: 1, PoolSizes: &size}
-	if err := checked("vkCreateDescriptorPool(HDR)", d.CreateDescriptorPool(r.gpu.device, &dpi, nil, &h.pool)); err != nil {
+	if err := r.noteLoss(checked("vkCreateDescriptorPool(HDR)", d.CreateDescriptorPool(r.gpu.device, &dpi, nil, &h.pool))); err != nil {
 		return err
 	}
 	dai := vk.DescriptorSetAllocateInfo{SType: vk.StructureTypeDescriptorSetAllocateInfo, DescriptorPool: h.pool, DescriptorSetCount: 1, SetLayouts: &h.setLayout}
-	if err := checked("vkAllocateDescriptorSets(HDR)", d.AllocateDescriptorSets(r.gpu.device, &dai, &h.set)); err != nil {
+	if err := r.noteLoss(checked("vkAllocateDescriptorSets(HDR)", d.AllocateDescriptorSets(r.gpu.device, &dai, &h.set))); err != nil {
 		return err
 	}
 	img := vk.DescriptorImageInfo{Sampler: h.sampler, ImageView: r.hdrOwn.view, ImageLayout: vk.ImageLayoutShaderReadOnlyOptimal}

@@ -167,11 +167,11 @@ func (r *Renderer) createComposeSet(b *composeBatch) error {
 		{Type: vk.DescriptorTypeStorageBuffer, DescriptorCount: n + 1},
 	}
 	info := vk.DescriptorPoolCreateInfo{SType: vk.StructureTypeDescriptorPoolCreateInfo, MaxSets: 1, PoolSizeCount: uint32(len(sizes)), PoolSizes: &sizes[0]}
-	if err := checked("vkCreateDescriptorPool(compose)", r.gpu.dd.CreateDescriptorPool(r.gpu.device, &info, nil, &b.pool)); err != nil {
+	if err := r.noteLoss(checked("vkCreateDescriptorPool(compose)", r.gpu.dd.CreateDescriptorPool(r.gpu.device, &info, nil, &b.pool))); err != nil {
 		return err
 	}
 	alloc := vk.DescriptorSetAllocateInfo{SType: vk.StructureTypeDescriptorSetAllocateInfo, DescriptorPool: b.pool, DescriptorSetCount: 1, SetLayouts: &r.compose.setLayout}
-	if err := checked("vkAllocateDescriptorSets(compose)", r.gpu.dd.AllocateDescriptorSets(r.gpu.device, &alloc, &b.set)); err != nil {
+	if err := r.noteLoss(checked("vkAllocateDescriptorSets(compose)", r.gpu.dd.AllocateDescriptorSets(r.gpu.device, &alloc, &b.set))); err != nil {
 		r.gpu.dd.DestroyDescriptorPool(r.gpu.device, b.pool, nil)
 		b.pool = 0
 		return err
@@ -217,6 +217,9 @@ func (r *Renderer) trimCompose(cutoff uint64) {
 }
 
 func (r *Renderer) freeComposeBatch(b *composeBatch) {
+	if r.lost {
+		return
+	}
 	if b.pool != 0 {
 		r.gpu.dd.DestroyDescriptorPool(r.gpu.device, b.pool, nil)
 	}
