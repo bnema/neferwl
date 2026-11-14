@@ -145,6 +145,7 @@ func (c *Core) pointerMotion(ctx context.Context, v ports.PointerMotion) error {
 	// Most layout changes re-hit-test only on motion; stash visibility
 	// changes also re-hit after publishing to update pointer modality.
 	if id != c.pointer {
+		c.cancelHover()
 		entered = c.hoverEntry(id, px, py)
 		c.pointer = id
 		if err := c.pointerFocus(ctx, ports.PointerFocus{ID: id, X: x, Y: y}); err != nil {
@@ -158,13 +159,7 @@ func (c *Core) pointerMotion(ctx context.Context, v ports.PointerMotion) error {
 		}
 	}
 	if entered {
-		sent := c.keyboard.sent
-		if err := c.focusPointer(ctx, id, true); err != nil {
-			return err
-		}
-		if c.keyboard.sent != sent {
-			return c.rehit(ctx)
-		}
+		return c.startHover(ctx, id)
 	}
 	return nil
 }
@@ -199,6 +194,9 @@ func (c *Core) focusClick(s *screen, w *Workspace, id WindowID, flash bool) {
 }
 
 func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {
+	if v.Pressed {
+		c.cancelHover()
+	}
 	// Buttons a drag took stay in c.buttons until released, so the
 	// security gate admits their release; no client sees it.
 	if !v.Pressed && c.swallow[v.Button] {

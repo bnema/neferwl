@@ -1301,3 +1301,30 @@ func TestLineageShellsInvalidKeepsPrevious(t *testing.T) {
 		})
 	}
 }
+
+func TestFollowMouseDelay(t *testing.T) {
+	for _, tt := range []struct {
+		value    string
+		want     time.Duration
+		warnings int
+	}{
+		{"", 150 * time.Millisecond, 0},
+		{"0", 0, 0},
+		{"250ms", 250 * time.Millisecond, 0},
+		{"1s", time.Second, 0},
+		{"-1ms", 150 * time.Millisecond, 1},
+		{"150", 150 * time.Millisecond, 1},
+		{"invalid", 150 * time.Millisecond, 1},
+	} {
+		t.Run(tt.value, func(t *testing.T) {
+			text := ""
+			if tt.value != "" {
+				text = "focus.follow-mouse-delay = " + tt.value + "\n"
+			}
+			c, warnings := parseString(t, text)
+			if c.Focus.FollowMouseDelay != tt.want || len(warnings) != tt.warnings {
+				t.Fatalf("delay %s warnings %v", c.Focus.FollowMouseDelay, warnings)
+			}
+		})
+	}
+}

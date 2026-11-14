@@ -47,6 +47,7 @@ func TestHoverFocusMotion(t *testing.T) {
 				}
 				c.cfg.Animations.On = false
 				c.cfg.Focus.FollowMouse = on
+				c.cfg.Focus.FollowMouseDelay = 0
 				indicatorScene(t, c)
 				x, y := hoverPoint(t, c, 3)
 				if err := c.pointerMotion(context.Background(), ports.PointerMotion{X: x, Y: y}); err != nil {
@@ -94,6 +95,7 @@ func TestHoverEntryGuardsAndHold(t *testing.T) {
 		c, _ := flashCore(t)
 		c.cfg.Animations.On = false
 		c.cfg.Focus.FollowMouse = true
+		c.cfg.Focus.FollowMouseDelay = 0
 		indicatorScene(t, c)
 		x, y := hoverPoint(t, c, 3)
 		for _, guard := range []string{"button", "grab", "synthetic", "overview"} {
@@ -148,6 +150,7 @@ func TestHoverKeyboardHoldMotion(t *testing.T) {
 		}
 		c.cfg.Animations.On = false
 		c.cfg.Focus.FollowMouse = true
+		c.cfg.Focus.FollowMouseDelay = 0
 		indicatorScene(t, c)
 		x, y := hoverPoint(t, c, 3)
 		ctx := context.Background()
@@ -182,6 +185,7 @@ func TestHoverOtherOutput(t *testing.T) {
 		c, clock := flashCore(t)
 		c.cfg.Animations.On = false
 		c.cfg.Focus.FollowMouse = true
+		c.cfg.Focus.FollowMouseDelay = 0
 		c.addScreen(domain.OutputInfo{Name: "B", Width: 300, Height: 200})
 		b := c.screens[1]
 		c.windows.mapped(ports.WindowMapped{ID: 4}, clock.now)
@@ -219,6 +223,7 @@ func hoverEventCore(t *testing.T, n int) (*Core, *indicatorClock, chan ports.Cli
 	cmds := make(chan ports.ClientCommand, 256)
 	c, clock := indicatorCoreWith(t, cmds)
 	c.cfg.Focus.FollowMouse = true
+	c.cfg.Focus.FollowMouseDelay = 0
 	c.cfg.Layout.Overflow = "scroll"
 	c.settings(c.cur().mon)
 	for id := WindowID(1); id <= WindowID(n); id++ {
@@ -448,6 +453,7 @@ func TestHoverShownStash(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, _, _, cmds := stashRig(t, false)
 		c.cfg.Focus.FollowMouse = true
+		c.cfg.Focus.FollowMouseDelay = 0
 		indicatorScene(t, c)
 		w := c.cur().mon.Current()
 		if !w.StashShown() {
@@ -491,4 +497,227 @@ func TestHoverShownStash(t *testing.T) {
 			t.Fatalf("peek focus commands %v", ids)
 		}
 	})
+}
+
+func TestHoverDwell(t *testing.T) {
+	for _, mode := range []string{"dwell", "pass through", "button", "keyboard", "overview", "disabled"} {
+		t.Run(mode, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				c, _, cmds := hoverEventCore(t, 3)
+				x, y := hoverPoint(t, c, 3)
+				hoverMove(t, c, x, y)
+				drainHoverFocus(cmds)
+				c.opts.Clock = testClock(t)
+				c.cfg.Focus.FollowMouseDelay = 150 * time.Millisecond
+				x, y = hoverPoint(t, c, 2)
+				hoverMove(t, c, x, y)
+				if c.hover.target != 2 {
+					t.Fatal("hover not armed")
+				}
+				time.Sleep(149 * time.Millisecond)
+				select {
+				case <-c.hover.timerC:
+					t.Fatal("early timer")
+				default:
+				}
+				hoverWantFocus(t, c, 3)
+				hoverNoFocusCommand(t, cmds)
+				switch mode {
+				case "pass through":
+					x, y = hoverPoint(t, c, 3)
+					hoverMove(t, c, x, y)
+					time.Sleep(time.Millisecond)
+					select {
+					case <-c.hover.timerC:
+						t.Fatal("new target inherited old deadline")
+					default:
+					}
+					hoverNoFocusCommand(t, cmds)
+					time.Sleep(149 * time.Millisecond)
+				case "button":
+					if err := c.pointerButton(context.Background(), ports.PointerButton{Button: btnLeft, Pressed: true}); err != nil {
+						t.Fatal(err)
+					}
+					if c.hover.timerC != nil {
+						t.Fatal("button did not cancel")
+					}
+					drainHoverFocus(cmds) // Click itself may focus; the hover must not do so later.
+					time.Sleep(time.Millisecond)
+					hoverNoFocusCommand(t, cmds)
+					return
+				case "keyboard":
+					if err := c.syncFocus(context.Background(), 1); err != nil {
+						t.Fatal(err)
+					}
+					if c.hover.timerC != nil {
+						t.Fatal("keyboard did not cancel")
+					}
+					return
+				case "overview":
+					hoverBind(t, c, ActionToggleOverview)
+					time.Sleep(time.Millisecond)
+				case "disabled":
+					c.cfg.Focus.FollowMouse = false
+					time.Sleep(time.Millisecond)
+				default:
+					time.Sleep(time.Millisecond)
+				}
+				<-c.hover.timerC
+				if err := c.hoverTick(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				want := WindowID(2)
+				if mode == "pass through" {
+					want = 3
+				}
+				if mode == "overview" || mode == "disabled" {
+					hoverNoFocusCommand(t, cmds)
+					return
+				}
+				hoverWantFocus(t, c, want)
+				ids := drainHoverFocus(cmds)
+				if mode == "pass through" && len(ids) == 0 {
+					return // Returning to the focused window sends no redundant focus.
+				}
+				if len(ids) != 1 || ids[0] != want {
+					t.Fatalf("focus commands %v want %d", ids, want)
+				}
+			})
+		})
+	}
+}
+
+func TestHoverStashBriefDwell(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, _, _, cmds := stashRig(t, false)
+		c.cfg.Focus.FollowMouse = true
+		c.cfg.Focus.FollowMouseDelay = 150 * time.Millisecond
+		c.opts.Clock = testClock(t)
+		indicatorScene(t, c)
+		point := func(id WindowID) (float64, float64) {
+			for y := 5; y < 200; y += 5 {
+				for x := 5; x < 300; x += 5 {
+					if hit, _, _ := c.hit(float64(x), float64(y)); hit == id {
+						return float64(x), float64(y)
+					}
+				}
+			}
+			t.Fatalf("no exposed pixels for %d", id)
+			return 0, 0
+		}
+		x, y := point(2)
+		hoverMove(t, c, x, y)
+		drainHoverFocus(cmds)
+		x, y = point(3)
+		hoverMove(t, c, x, y)
+		if c.hover.target != 3 {
+			t.Fatal("neighbour hover not armed")
+		}
+		time.Sleep(50 * time.Millisecond)
+		hoverWantFocus(t, c, 2)
+		hoverNoFocusCommand(t, cmds)
+		x, y = point(2)
+		hoverMove(t, c, x, y)
+		time.Sleep(150 * time.Millisecond)
+		if c.hover.timerC != nil {
+			<-c.hover.timerC
+			if err := c.hoverTick(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		hoverWantFocus(t, c, 2)
+		hoverNoFocusCommand(t, cmds)
+		if !c.cur().mon.Current().StashShown() {
+			t.Fatal("hover hid stash")
+		}
+	})
+}
+
+func TestHoverDwellInputRegionChanged(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, _, cmds := hoverEventCore(t, 3)
+		x, y := hoverPoint(t, c, 3)
+		hoverMove(t, c, x, y)
+		drainHoverFocus(cmds)
+		c.opts.Clock = testClock(t)
+		c.cfg.Focus.FollowMouseDelay = 150 * time.Millisecond
+		x, y = hoverPoint(t, c, 2)
+		hoverMove(t, c, x, y)
+		if c.hover.target != 2 {
+			t.Fatal("hover not armed")
+		}
+		c.clientEvent(context.Background(), ports.InputRegionChanged{ID: 2})
+		if c.pointer != 2 {
+			t.Fatal("test requires stale cached pointer")
+		}
+		if hit, _, _ := c.hit(c.cursorX, c.cursorY); hit == 2 {
+			t.Fatal("input region still hits target")
+		}
+		time.Sleep(150 * time.Millisecond)
+		<-c.hover.timerC
+		if err := c.hoverTick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		hoverWantFocus(t, c, 3)
+		hoverNoFocusCommand(t, cmds)
+	})
+}
+
+func TestHoverDwellConfigReload(t *testing.T) {
+	for _, mode := range []string{"delay", "disable-enable", "unchanged", "invalid"} {
+		t.Run(mode, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				c, _, cmds := hoverEventCore(t, 3)
+				x, y := hoverPoint(t, c, 3)
+				hoverMove(t, c, x, y)
+				drainHoverFocus(cmds)
+				c.opts.Clock = testClock(t)
+				c.cfg.Focus.FollowMouseDelay = 150 * time.Millisecond
+				x, y = hoverPoint(t, c, 2)
+				hoverMove(t, c, x, y)
+				if c.hover.target != 2 {
+					t.Fatal("hover not armed")
+				}
+				time.Sleep(50 * time.Millisecond)
+				cfg := c.cfg
+				switch mode {
+				case "delay":
+					cfg.Focus.FollowMouseDelay = 300 * time.Millisecond
+				case "disable-enable":
+					cfg.Focus.FollowMouse = false
+				case "invalid":
+					cfg.Focus.FollowMouseDelay = 300 * time.Millisecond
+					cfg.Layout.MaxColumns = 0
+				}
+				err := c.apply(cfg)
+				if mode == "invalid" {
+					if err == nil {
+						t.Fatal("invalid reload succeeded")
+					}
+				} else if err != nil {
+					t.Fatal(err)
+				}
+				if mode == "disable-enable" {
+					cfg.Focus.FollowMouse = true
+					if err := c.apply(cfg); err != nil {
+						t.Fatal(err)
+					}
+				}
+				time.Sleep(100 * time.Millisecond)
+				if mode == "delay" || mode == "disable-enable" {
+					if c.hover.timerC != nil || c.hover.target != 0 {
+						t.Fatal("reload retained pending hover")
+					}
+					hoverWantFocus(t, c, 3)
+					hoverNoFocusCommand(t, cmds)
+					return
+				}
+				<-c.hover.timerC
+				if err := c.hoverTick(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				hoverWantFocus(t, c, 2)
+			})
+		})
+	}
 }
