@@ -1,10 +1,12 @@
 package drm
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
 	"github.com/bnema/neferwl/internal/adapters/hdrcursor"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -137,7 +139,7 @@ func newRendererCursor(k kms, r ports.Renderer, size int) (*rendererCursor, erro
 			c.fbs[i], err = k.addFB(&bufs[i], fourccARGB)
 		}
 		for _, p := range bufs[i].Planes {
-			err = errors.Join(err, p.File.Close())
+			logging.CloseFile(logging.For(context.Background(), "drm"), p.File, "cursor image")
 		}
 	}
 	if err != nil {
