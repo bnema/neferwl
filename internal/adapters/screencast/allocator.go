@@ -1,11 +1,13 @@
 package screencast
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
 
 	"bnema.dev/purego-pipewire/pipewire"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
@@ -122,7 +124,10 @@ func (a *castAllocator) Alloc(idx int, f pipewire.VideoFormat, w, h int, modifie
 	size, err := unix.Seek(int(buf.Planes[0].File.Fd()), 0, unix.SEEK_END)
 	if err != nil || size <= 0 || size > 1<<32-1 {
 		a.release(&buf)
-		return fmt.Errorf("screencast: cast buffer size %d: %v", size, err)
+		if err != nil {
+			return fmt.Errorf("screencast: cast buffer size %d: %w", size, err)
+		}
+		return fmt.Errorf("screencast: cast buffer size %d", size)
 	}
 	*out = pipewire.VideoPlanes{N: len(buf.Planes), Size: uint32(size)}
 	for i, p := range buf.Planes {
@@ -163,7 +168,7 @@ func (a *castAllocator) freeAll() {
 func closePlanes(b *domain.DMABuf) {
 	for _, p := range b.Planes {
 		if p.File != nil {
-			_ = p.File.Close()
+			logging.CloseFile(logging.For(context.Background(), "screencast"), p.File, "cast buffer plane")
 		}
 	}
 	*b = domain.DMABuf{}

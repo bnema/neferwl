@@ -496,3 +496,29 @@ func TestCursorFallbackFailureGoesOff(t *testing.T) {
 		})
 	}
 }
+
+// Descriptor release errors do not invalidate successfully imported framebuffers.
+func TestRendererCursorCloseFailureDoesNotFailSetup(t *testing.T) {
+	k, r := newMockkms(t), portsmocks.NewMockRenderer(t)
+	bufs := rendererBufs(t)
+	for _, buf := range bufs {
+		for _, p := range buf.Planes {
+			if err := p.File.Close(); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	r.EXPECT().CursorBuffers(tSide).Return(bufs, nil).Once()
+	k.EXPECT().addFB(mock.Anything, uint32(fourccARGB)).Return(80, nil).Once()
+	k.EXPECT().addFB(mock.Anything, uint32(fourccARGB)).Return(81, nil).Once()
+	c, err := newRendererCursor(k, r, tSide)
+	if err != nil {
+		t.Fatalf("close failure changed setup verdict: %v", err)
+	}
+	if c.fbs != [2]uint32{80, 81} {
+		t.Fatalf("framebuffers: %v", c.fbs)
+	}
+	k.EXPECT().rmFB(uint32(80)).Return(nil).Once()
+	k.EXPECT().rmFB(uint32(81)).Return(nil).Once()
+	c.close()
+}

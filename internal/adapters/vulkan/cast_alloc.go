@@ -39,6 +39,14 @@ const castUsage = vk.ImageUsageTransferDstBit
 // DCC retile). A format without one is left out; nothing when the device
 // cannot export dmabufs or sync files.
 func (g *GPU) CastFormats() []domain.DMABufFormat {
+	if !g.captureSyncExport {
+		return nil
+	}
+	return g.castFormats()
+}
+
+// castFormats is also used before the kernel sync-file capability is known.
+func (g *GPU) castFormats() []domain.DMABufFormat {
 	if g.dd == nil || !g.syncFD || !g.dd.HasGetMemoryFdKHR() || !g.dd.HasGetImageDrmFormatModifierPropertiesEXT() {
 		return nil
 	}

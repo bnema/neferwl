@@ -2,6 +2,7 @@ package screencast
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/bnema/neferwl/internal/domain"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/stretchr/testify/mock"
+	"golang.org/x/sys/unix"
 )
 
 // tempCast is a cast buffer of n planes in one temporary file of size bytes.
@@ -173,4 +175,32 @@ func TestMemfdBufferNotLent(t *testing.T) {
 	p.src.EXPECT().Release(p.buf).Return().Once()
 	p.s.pump(p.st, p.now)
 	p.none()
+}
+
+func TestCastAllocatorInvalidSizeErrors(t *testing.T) {
+	for _, seekFails := range []bool{false, true} {
+		t.Run(fmt.Sprint("seekFails=", seekFails), func(t *testing.T) {
+			gpu := portsmocks.NewMockCastBufferAllocator(t)
+			buf, f := tempCast(t, domain.CastXRGB8888, 64, 32, 1, 0)
+			if seekFails {
+				if err := f.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			gpu.EXPECT().AllocCast(domain.CastXRGB8888, 64, 32, uint64(7)).Return(buf, nil).Once()
+			gpu.EXPECT().ReleaseCast(buf).Once()
+			a := &castAllocator{dev: gpu}
+			var out pipewire.VideoPlanes
+			err := a.Alloc(0, pipewire.VideoFormatBGRx, 64, 32, 7, &out)
+			if err == nil || strings.Contains(err.Error(), "<nil>") {
+				t.Fatalf("size error: %v", err)
+			}
+			if seekFails && !errors.Is(err, unix.EBADF) {
+				t.Fatalf("seek error not wrapped: %v", err)
+			}
+			if !closed(f) {
+				t.Fatal("invalid allocation retained")
+			}
+		})
+	}
 }

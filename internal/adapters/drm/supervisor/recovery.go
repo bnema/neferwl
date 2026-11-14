@@ -20,6 +20,8 @@ func (run *outputsRun) onStopped(stopped routing.Stopped) (error, bool) {
 	name := stopped.Name
 	if run.virtuals != nil && run.virtuals.Owns(name) {
 		err := run.virtuals.Remove(run.ctx, name)
+		// Remove joined this lifetime; later applies must not wait for it.
+		delete(run.stopping, name)
 		if run.ctx.Err() != nil {
 			return errors.Join(err, run.set.Wait()), true
 		}

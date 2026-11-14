@@ -49,7 +49,7 @@ func shmSize(fd, end int) error {
 func preadPixels(fd int, dst []byte, offset int) error {
 	for {
 		n, err := unix.Pread(fd, dst, int64(offset))
-		if err == unix.EINTR && n == 0 {
+		if err == unix.EINTR {
 			continue
 		}
 		if err != nil {
