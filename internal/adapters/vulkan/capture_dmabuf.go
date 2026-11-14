@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	"math"
 	"os"
 	"unsafe"
 
@@ -85,6 +84,9 @@ func (g *GPU) CaptureFormats() []domain.DMABufFormat {
 func (f *captureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.File, error) {
 	if !f.valid {
 		return nil, errors.New("capture frame ended")
+	}
+	if f.r.lost {
+		return nil, ports.ErrDeviceLost
 	}
 	r, s := f.r, f.slot
 	if r.gpu.device == 0 || r.gpu.dd == nil {
@@ -188,7 +190,7 @@ func (f *captureFrame) CopyTo(region image.Rectangle, dst domain.DMABuf) (*os.Fi
 	c.get = vk.SemaphoreGetFdInfoKHR{SType: vk.StructureTypeSemaphoreGetFDInfoKHR, Semaphore: c.done, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit}
 	c.fd = -1
 	if err := checked("vkGetSemaphoreFdKHR(capture dmabuf)", d.GetSemaphoreFdKHR(dev, &c.get, &c.fd)); err != nil {
-		return nil, errors.Join(err, finishFailedExport(deviceCopyCompletion{r}, c.fence))
+		return nil, errors.Join(err, r.finishFailedExport(deviceCopyCompletion{r}, c.fence))
 	}
 	c.exported = true
 	if c.fd < 0 {
@@ -288,6 +290,9 @@ func dmabufIoctl(f *os.File, req uintptr, arg *dmaBufSync) error {
 
 // reapCopies frees the slot's copies whose fence polls signalled.
 func (r *Renderer) reapCopies(s *captureSlot) error {
+	if r.lost {
+		return ports.ErrDeviceLost
+	}
 	kept := s.copies[:0]
 	var err error
 	for _, c := range s.copies {
@@ -310,6 +315,9 @@ func (r *Renderer) reapCopies(s *captureSlot) error {
 
 // freeDMACopy destroys a copy the device is done with (or never ran).
 func (r *Renderer) freeDMACopy(c *dmaCopy) {
+	if r.lost {
+		return
+	}
 	d, dev := r.gpu.dd, r.gpu.device
 	if c.wait != 0 {
 		r.fences().destroySemaphore(c.wait)
@@ -357,6 +365,9 @@ func (r *Renderer) prepareDMAWait(c *dmaCopy, f *os.File) error {
 }
 
 func (r *Renderer) recycleDMACopy(c *dmaCopy) {
+	if r.lost {
+		return
+	}
 	// Failed sync-file export leaves a signalled binary semaphore payload;
 	// it must be destroyed, not signalled a second time.
 	if !c.exported {
@@ -392,7 +403,7 @@ type copyCompletion interface {
 type deviceCopyCompletion struct{ r *Renderer }
 
 func (d deviceCopyCompletion) waitCopy(fence vk.Fence) vk.Result {
-	return d.r.gpu.dd.WaitForFences(d.r.gpu.device, 1, &fence, 1, math.MaxUint64)
+	return d.r.gpu.dd.WaitForFences(d.r.gpu.device, 1, &fence, 1, uint64(fenceWaitTimeout))
 }
 
 func (d deviceCopyCompletion) queueIdle() vk.Result {
@@ -418,13 +429,23 @@ func (d deviceCopyCompletion) deviceIdle() vk.Result {
 	return g.dd.DeviceWaitIdle(g.device)
 }
 
+// finishFailedExport records sticky loss before the caller returns to its owner.
+func (r *Renderer) finishFailedExport(sync copyCompletion, fence vk.Fence) error {
+	err := finishFailedExport(sync, fence)
+	if errors.Is(err, ports.ErrDeviceLost) {
+		r.lost = true
+		r.gpu.markLost()
+	}
+	return err
+}
+
 func finishFailedExport(sync copyCompletion, fence vk.Fence) error {
 	res := sync.waitCopy(fence)
 	if res == vk.Success {
 		return nil
 	}
-	err := checked("vkWaitForFences(capture export failure)", res)
-	if res == vk.ErrorDeviceLost {
+	err := fenceWaitErr("vkWaitForFences(capture export failure)", res)
+	if res == vk.Timeout || res == vk.ErrorDeviceLost {
 		return err
 	}
 	// A wait allocation failure does not stop writes. Try broader synchronization

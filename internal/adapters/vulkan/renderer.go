@@ -273,7 +273,7 @@ func (r *Renderer) Close() {
 		_ = r.waitOwnIdle()
 	}
 	if r.lost {
-		r.log.Warn().Str("component", "vulkan").Msg("leaking lost renderer GPU resources")
+		r.log.Warn().Msg("leaking lost renderer GPU resources")
 	}
 	if r.gpu.dd != nil && !r.lost {
 		d := r.gpu.dd

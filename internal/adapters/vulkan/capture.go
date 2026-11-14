@@ -370,6 +370,9 @@ func (r *Renderer) captureSync() captureSync {
 
 // freeCaptureSlot destroys a slot; its capture and DMA-copy fences must be complete.
 func (r *Renderer) freeCaptureSlot(s *captureSlot) {
+	if r.lost {
+		return
+	}
 	r.freeCaptureCursor(&s.cursor)
 	for _, c := range s.copies {
 		r.freeDMACopy(c)
@@ -403,6 +406,9 @@ func (r *Renderer) freeCaptureSlot(s *captureSlot) {
 // destroyCaptures frees the slots and the HDR conversion pass. Every
 // lease is invalid afterwards; all capture and DMA-copy fences are complete.
 func (r *Renderer) destroyCaptures() {
+	if r.lost {
+		return
+	}
 	for _, s := range r.captures {
 		r.freeCaptureSlot(s)
 	}
@@ -419,6 +425,9 @@ func (r *Renderer) destroyCaptures() {
 // fence signalled (polled, never waited). Nil when none is free; an
 // error when the device fails to report or reset a fence.
 func (r *Renderer) freeCapture() (*captureSlot, error) {
+	if r.lost {
+		return nil, ports.ErrDeviceLost
+	}
 	sync := r.captureSync()
 	for _, s := range r.captures {
 		if s.leased {
@@ -598,6 +607,9 @@ func (r *Renderer) beginCaptureCursor(debug, pq bool, cursor *domain.CaptureCurs
 // EndCapture returns a lease. The slot's copy may still run: it stays
 // pending until a later BeginCapture polls its fence.
 func (r *Renderer) EndCapture(cf ports.CaptureFrame) {
+	if r.lost {
+		return
+	}
 	f, ok := cf.(*captureFrame)
 	if !ok || f == nil || f.r != r || !f.valid {
 		return

@@ -224,7 +224,7 @@ func (g *GPU) Close() {
 	defer g.poolMu.Unlock()
 	if g.lost {
 		if !g.lostCloseLogged {
-			g.log.Warn().Str("component", "vulkan").Msg("leaking lost Vulkan device with potentially pending work")
+			g.log.Warn().Msg("leaking lost Vulkan device with potentially pending work")
 			g.lostCloseLogged = true
 		}
 		return

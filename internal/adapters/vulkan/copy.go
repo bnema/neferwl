@@ -436,7 +436,7 @@ func (c *Copier) Close() {
 	}
 	_ = c.waitAll()
 	if c.lost {
-		c.gpu.log.Warn().Str("component", "vulkan").Msg("leaking lost copier GPU resources")
+		c.gpu.log.Warn().Msg("leaking lost copier GPU resources")
 		c.gpu.releaseQueue(c.q)
 		c.q = nil
 		return
