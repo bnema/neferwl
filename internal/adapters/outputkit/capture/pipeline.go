@@ -130,7 +130,8 @@ func (p *Pipeline) Recycle(b *batch, r ports.Renderer) {
 	}
 	rel := b.release
 	select { // a verdict nobody took (the worker was cancelled) must not leak to the next use
-	case <-rel: // the gate verdict is obsolete: the worker was cancelled, nothing failed
+	case err := <-rel:
+		_ = err // the gate verdict is obsolete: the worker was cancelled, nothing failed
 	default:
 	}
 	*b = batch{release: rel}

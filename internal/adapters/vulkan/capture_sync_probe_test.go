@@ -43,7 +43,7 @@ func TestCaptureSyncExportProbeClosesFence(t *testing.T) {
 	if err := unix.Pipe2(p[:], unix.O_CLOEXEC); err != nil {
 		t.Fatal(err)
 	}
-	defer unix.Close(p[1])
+	defer func() { _ = unix.Close(p[1]) }()
 	fs := newMockdmabufFences(t)
 	var buffer *os.File
 	fs.EXPECT().exportSyncFile(buffer).Return(int32(p[0]), nil).Once()
