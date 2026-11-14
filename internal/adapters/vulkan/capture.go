@@ -588,6 +588,7 @@ func (r *Renderer) beginCaptureCursor(debug, pq bool, cursor *domain.CaptureCurs
 			f.done = s.file
 		}
 	}
+	r.captureUsed = true
 	s.leased, f.valid, f.pq = true, true, pq
 	return f, nil
 }
@@ -599,6 +600,7 @@ func (r *Renderer) EndCapture(cf ports.CaptureFrame) {
 	if !ok || f == nil || f.r != r || !f.valid {
 		return
 	}
+	r.captureUsed = true
 	f.valid = false
 	f.done = nil // the slot keeps the descriptor for its next lease
 	f.slot.leased = false

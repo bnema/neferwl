@@ -78,7 +78,7 @@ func (r *Renderer) Trim(now time.Time) error {
 			}
 		}
 	}
-	if err := r.trimCaptures(); err != nil {
+	if err := r.trimCaptures(now); err != nil {
 		return err
 	}
 	if err := r.poll(); err != nil {
@@ -146,7 +146,17 @@ func (r *Renderer) noteHidden(s domain.Scene) {
 // lease (including one held by the pipeline worker) pins the entire capture
 // pass. Returned leases can still have GPU copies running, so poll all fences
 // before destroying shared SDR/PQ passes and slot-owned cursor resources.
-func (r *Renderer) trimCaptures() error {
+func (r *Renderer) trimCaptures(now time.Time) error {
+	// Activity between ticks is dated conservatively at this tick, just as
+	// frame cache use is dated by Trim's marks. Returning a lease also counts
+	// as use, so a long-lived lease gets a full idle period after its return.
+	if r.captureUsed {
+		r.captureIdleSince = now
+		r.captureUsed = false
+	}
+	if now.Sub(r.captureIdleSince) < idleTTL {
+		return nil
+	}
 	for _, s := range r.captures {
 		if s.leased {
 			return nil
