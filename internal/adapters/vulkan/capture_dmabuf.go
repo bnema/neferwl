@@ -8,6 +8,7 @@ import (
 	"os"
 	"unsafe"
 
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
 
@@ -56,7 +57,7 @@ type dmaCopy struct {
 // CaptureFormats lists the single-plane XRGB8888/ARGB8888 modifiers a
 // capture can be copied into: transfer destinations the device imports.
 func (g *GPU) CaptureFormats() []domain.DMABufFormat {
-	if g.dd == nil || !g.syncFD {
+	if g.dd == nil || !g.syncFD || !g.captureSyncExport {
 		return nil
 	}
 	var out []domain.DMABufFormat
@@ -442,4 +443,33 @@ func finishFailedExport(sync copyCompletion, fence vk.Fence) error {
 	// recycle its resources. Mark the device unusable: device teardown, not these
 	// failed waits, is what must end the outstanding writes.
 	return errors.Join(err, ports.ErrDeviceLost)
+}
+
+// probeCaptureSyncExport runs once before GPU publication. Probe a real exported
+// DMA-BUF: an unrelated descriptor cannot distinguish unsupported ioctls from
+// descriptors which are not DMA-BUFs. Failure leaves only CPU capture available.
+func (g *GPU) probeCaptureSyncExport() {
+	for _, format := range g.castFormats() {
+		buf, err := g.AllocCast(format.Format, 8, 8, format.Modifier)
+		if err != nil {
+			continue
+		}
+		g.checkCaptureSyncExport(deviceFences{}, buf.Planes[0].File)
+		g.ReleaseCast(buf)
+		for _, p := range buf.Planes {
+			logging.CloseFile(g.log, p.File, "capture sync probe buffer")
+		}
+		return
+	}
+}
+
+func (g *GPU) checkCaptureSyncExport(fs dmabufFences, buffer *os.File) {
+	fd, err := fs.exportSyncFile(buffer)
+	g.captureSyncExport = err == nil
+	if err != nil {
+		g.log.Debug().Err(err).Msg("DMA-BUF capture sync-file export unavailable")
+	}
+	if fd >= 0 {
+		logging.CloseFD(g.log, int(fd), "capture sync probe fence")
+	}
 }

@@ -37,6 +37,7 @@ type GPU struct {
 	castImages          map[uint64]*castImage // retained exports, protected by poolMu
 	poolMu              sync.Mutex
 	syncFD              bool
+	captureSyncExport   bool // Immutable kernel DMA-BUF sync-file export capability.
 	resources           uint32
 	indexing            bool
 	queues              []*queue
@@ -182,6 +183,7 @@ func (g *GPU) initDevice(physical vk.PhysicalDevice, family, n uint32, start tim
 		g.dd.GetDeviceQueue(g.device, family, uint32(i), &q.q)
 		g.queues[i] = q
 	}
+	g.probeCaptureSyncExport()
 	g.deviceInfo.CreateMS = time.Since(start).Milliseconds()
 	g.log.Info().Str("queue_priority", g.queuePriority).Str("vk_device", g.deviceInfo.Name).Str("primary", g.deviceInfo.Primary).Str("render", g.deviceInfo.Render).Int64("create_ms", g.deviceInfo.CreateMS).Msg("vulkan queue")
 	return
