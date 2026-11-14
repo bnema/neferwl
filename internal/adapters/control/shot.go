@@ -121,8 +121,11 @@ func (s *Shooter) Shoot(ctx context.Context, shots []domain.ShotRequest, inline 
 			pixels[i], pixels[i+2], pixels[i+3] = pixels[i+2], pixels[i], 255
 		}
 		img := &image.NRGBA{Pix: pixels, Stride: w * 4, Rect: image.Rect(0, 0, w, h)}
+		if err := ctx.Err(); err != nil {
+			return results, errors.Join(err, unix.Munmap(pixels))
+		}
 		var encoded bytes.Buffer
-		err = errors.Join(shotPNG.Encode(&encoded, img), unix.Munmap(pixels))
+		err = errors.Join(shotPNG.Encode(shotContextWriter{ctx: ctx, buffer: &encoded}, img), unix.Munmap(pixels))
 		if err != nil {
 			return results, err
 		}
@@ -136,6 +139,9 @@ func (s *Shooter) Shoot(ctx context.Context, shots []domain.ShotRequest, inline 
 		if err := errors.Join(writeErr, closeErr); err != nil {
 			return results, errors.Join(err, os.Remove(f.Name()))
 		}
+		if err := ctx.Err(); err != nil {
+			return results, errors.Join(err, os.Remove(f.Name()))
+		}
 		if err := os.Rename(f.Name(), path); err != nil {
 			return results, errors.Join(err, os.Remove(f.Name()))
 		}
@@ -146,6 +152,20 @@ func (s *Shooter) Shoot(ctx context.Context, shots []domain.ShotRequest, inline 
 		results = append(results, shot)
 	}
 	return results, nil
+}
+
+// shotContextWriter stops PNG encoding at the next write after cancellation.
+// It keeps the encoded bytes in the caller's buffer without another copy.
+type shotContextWriter struct {
+	ctx    context.Context
+	buffer *bytes.Buffer
+}
+
+func (w shotContextWriter) Write(p []byte) (int, error) {
+	if err := w.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return w.buffer.Write(p)
 }
 
 // shotPNG matches the headless frame writer: fast compression, pooled

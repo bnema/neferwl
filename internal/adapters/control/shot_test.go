@@ -102,3 +102,64 @@ func TestShotFailureAndCancel(t *testing.T) {
 		}
 	})
 }
+
+func TestShotCancellationBeforePublication(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		requests := make(chan domain.CaptureRequest)
+		done := make(chan domain.CaptureDone, 1)
+		dir := t.TempDir()
+		s := NewShooter(requests, done, dir)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go func() {
+			q := <-requests
+			done <- domain.CaptureDone{ID: q.ID}
+			q = <-requests
+			// Readback is complete, but publication must not proceed.
+			copy(q.Mapped, []byte{3, 2, 1, 0})
+			cancel()
+			done <- domain.CaptureDone{ID: q.ID}
+		}()
+		got, err := s.Shoot(ctx, []domain.ShotRequest{
+			{Output: "A", MinSeq: 1, Width: 1, Height: 1},
+			{Output: "B", MinSeq: 2, Width: 1, Height: 1},
+		}, true)
+		if !errors.Is(err, context.Canceled) || len(got) != 1 || got[0].Output != "A" || len(got[0].PNG) == 0 {
+			t.Fatalf("shots: %+v, error: %v", got, err)
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) != 1 || entries[0].Name() != "1-A.png" {
+			t.Fatalf("unexpected published or temporary files: %v, %v", entries, err)
+		}
+		if len(s.token) != 0 {
+			t.Fatal("shooter token not released")
+		}
+		// Reap a completion that cancellation may have left pending, using
+		// the existing ownership path without publishing another shot.
+		go func() {
+			q := <-requests
+			done <- domain.CaptureDone{ID: q.ID, Err: errors.New("reap only")}
+		}()
+		_, _ = s.Shoot(context.Background(), []domain.ShotRequest{{Output: "C", Width: 1, Height: 1}}, false)
+		if len(s.orphans) != 0 {
+			t.Fatal("cancelled mapping not reaped")
+		}
+	})
+}
+
+func TestShotContextWriterCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var buffer bytes.Buffer
+	writer := shotContextWriter{ctx: ctx, buffer: &buffer}
+	if n, err := writer.Write([]byte("PNG")); n != 3 || err != nil {
+		t.Fatalf("write: %d, %v", n, err)
+	}
+	cancel()
+	if n, err := writer.Write([]byte("more")); n != 0 || !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled write: %d, %v", n, err)
+	}
+	if buffer.String() != "PNG" {
+		t.Fatalf("write after cancellation: %q", buffer.String())
+	}
+}
