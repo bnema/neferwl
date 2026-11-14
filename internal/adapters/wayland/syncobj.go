@@ -692,7 +692,9 @@ func (s *surface) dropSync(cs *commitSync) {
 	if cs.wait != nil && cs.acquire.tl.alive && cs.release.tl.alive &&
 		!s.server.syncWait.fired(cs.wait) && !cs.wait.failed {
 		s.server.deferredReleases = append(s.server.deferredReleases, deferredRelease{owner: s, sync: *cs})
+		s.releasePointsDeferred++
 		s.server.log.Debug().Uint64("window", uint64(s.root().windowID())).
+			Bool("sub", s.sub.parent != nil).
 			Uint64("release_point", cs.release.point).Uint32("release_timeline", cs.release.tl.handle).
 			Msg("surface release point deferred")
 		return
@@ -702,9 +704,20 @@ func (s *surface) dropSync(cs *commitSync) {
 
 // finishDroppedSync consumes both references exactly once. Abandoning a dead
 // protocol timeline never signals it, even though its retained handle is valid.
-func (s *surface) finishDroppedSync(cs *commitSync, abandon bool) {
+func (s *surface) finishDroppedSync(cs *commitSync, shutdown bool) {
+	reason := ""
+	switch {
+	case shutdown:
+		reason = "shutdown"
+	case !cs.acquire.tl.alive || !cs.release.tl.alive:
+		reason = "timeline_dead"
+	case cs.wait == nil:
+		reason = "no_wait"
+	case cs.wait.failed:
+		reason = "wait_failed"
+	}
 	acquireHandle := cs.acquire.tl.handle
-	ready := !abandon && cs.acquire.tl.alive && cs.release.tl.alive &&
+	ready := !shutdown && cs.acquire.tl.alive && cs.release.tl.alive &&
 		cs.wait != nil && s.server.syncWait.fired(cs.wait) && !cs.wait.failed
 	if cs.wait != nil {
 		s.server.syncWait.cancel(cs.wait)
@@ -718,6 +731,8 @@ func (s *surface) finishDroppedSync(cs *commitSync, abandon bool) {
 	s.releasePointsDropped++
 	s.server.log.Warn().
 		Uint64("window", uint64(s.root().windowID())).
+		Bool("sub", s.sub.parent != nil).
+		Str("reason", reason).
 		Uint64("release_point", cs.release.point).
 		Uint32("release_timeline", cs.release.tl.handle).
 		Uint64("acquire_point", cs.acquire.point).
@@ -736,7 +751,7 @@ func (s *Server) drainDeferredReleases(shutdown bool) {
 		cs := &d.sync
 		dead := shutdown || !cs.acquire.tl.alive || !cs.release.tl.alive
 		if dead || cs.wait.failed || s.syncWait.fired(cs.wait) {
-			d.owner.finishDroppedSync(cs, dead)
+			d.owner.finishDroppedSync(cs, shutdown)
 		} else {
 			kept = append(kept, d)
 		}

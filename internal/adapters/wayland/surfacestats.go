@@ -62,14 +62,16 @@ func (s *surface) logSurfaceState(now time.Time, stalled bool) {
 		level = zerolog.WarnLevel
 	}
 	e := s.server.log.WithLevel(level)
-	e = e.Uint64("window", uint64(s.windowID())).
+	e = e.Uint64("window", uint64(s.root().windowID())).
+		Bool("sub", s.sub.parent != nil).
 		Uint64("commits_received", s.commitsReceived-s.statsReceived).
 		Uint64("commits_applied", s.commitsApplied-s.statsApplied).
 		Int("queue_len", len(s.queue)).
 		Int64("head_age_ms", age.Milliseconds()).
 		Str("head_block", block.String()).
 		Uint64("release_points_signalled", s.releasePointsSignalled-s.statsSignalled).
-		Uint64("release_points_dropped", s.releasePointsDropped-s.statsDropped)
+		Uint64("release_points_dropped", s.releasePointsDropped-s.statsDropped).
+		Uint64("release_points_deferred", s.releasePointsDeferred-s.statsDeferred)
 	if stalled {
 		if block == blockAcquire {
 			cs := s.queue[0].sync
@@ -84,7 +86,7 @@ func (s *surface) logSurfaceState(now time.Time, stalled bool) {
 }
 
 func (s *surface) reportStall(now time.Time) {
-	if s.windowID() == 0 || len(s.queue) == 0 {
+	if s.root().windowID() == 0 || len(s.queue) == 0 {
 		return
 	}
 	u := s.queue[0]
@@ -102,10 +104,13 @@ func (s *surface) reportStall(now time.Time) {
 // It does not evaluate readiness (which can cancel waits), apply, or wake work.
 func (s *Server) reportSurfaceStats(now time.Time) {
 	for _, surf := range s.surfaces {
-		if surf.windowID() != 0 && (surf.commitsReceived != surf.statsReceived || len(surf.queue) != 0) {
+		if surf.root().windowID() != 0 && (surf.commitsReceived != surf.statsReceived || surf.commitsApplied != surf.statsApplied ||
+			surf.releasePointsSignalled != surf.statsSignalled || surf.releasePointsDropped != surf.statsDropped ||
+			surf.releasePointsDeferred != surf.statsDeferred || len(surf.queue) != 0) {
 			surf.reportStall(now)
 			surf.logSurfaceState(now, false)
 		}
+		surf.statsDeferred = surf.releasePointsDeferred
 		surf.statsReceived, surf.statsApplied = surf.commitsReceived, surf.commitsApplied
 		surf.statsSignalled, surf.statsDropped = surf.releasePointsSignalled, surf.releasePointsDropped
 	}

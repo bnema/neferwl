@@ -45,6 +45,7 @@ type surface struct {
 	// releasePointsDropped is display-goroutine-owned diagnostic accounting.
 	// A dropped point was not signalled because its acquire was not ready.
 	releasePointsDropped                                      uint64
+	releasePointsDeferred, statsDeferred                      uint64
 	commitsReceived, commitsApplied, releasePointsSignalled   uint64
 	statsReceived, statsApplied, statsSignalled, statsDropped uint64
 	// bufferScale, transform and opaque are committed state. formatOpaque is

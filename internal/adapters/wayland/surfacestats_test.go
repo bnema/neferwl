@@ -15,7 +15,7 @@ func TestSurfaceAcquireStallAndStats(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var out bytes.Buffer
 		srv := &Server{log: zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &out}).WithField("component", "wayland"), syncWait: &syncWaiter{}, fifoSurfaces: map[*surface]struct{}{}, lastFlip: map[string]time.Time{}}
-		surf := &surface{server: srv, x11win: &window{id: 42, mapped: true}, commitsReceived: 2, commitsApplied: 1, releasePointsSignalled: 3, releasePointsDropped: 4}
+		surf := &surface{server: srv, x11win: &window{id: 42, mapped: true}, commitsReceived: 2, commitsApplied: 1, releasePointsSignalled: 3, releasePointsDropped: 4, releasePointsDeferred: 5}
 		srv.surfaces = map[*server.Resource]*surface{nil: surf}
 		u := &update{owner: surf, enqueued: time.Now(), pendingCommit: pendingCommit{sync: &commitSync{wait: &syncWait{explicit: true}, acquire: syncPoint{tl: &timeline{handle: 7}, point: 11}}}}
 		surf.queue = []*update{u}
@@ -42,12 +42,12 @@ func TestSurfaceAcquireStallAndStats(t *testing.T) {
 		if err := dec.Decode(&stats); err != nil {
 			t.Fatal(err)
 		}
-		for k, want := range map[string]any{"message": "surface stats", "component": "wayland", "window": float64(42), "head_block": "acquire", "head_age_ms": float64(10000), "queue_len": float64(1), "commits_received": float64(2), "commits_applied": float64(1), "release_points_signalled": float64(3), "release_points_dropped": float64(4)} {
+		for k, want := range map[string]any{"message": "surface stats", "component": "wayland", "window": float64(42), "head_block": "acquire", "head_age_ms": float64(10000), "queue_len": float64(1), "commits_received": float64(2), "commits_applied": float64(1), "release_points_signalled": float64(3), "release_points_dropped": float64(4), "release_points_deferred": float64(5), "sub": false} {
 			if stats[k] != want {
 				t.Errorf("%s=%v, want %v", k, stats[k], want)
 			}
 		}
-		if warning["acquire_point"] != float64(11) || warning["acquire_timeline"] != float64(7) {
+		if warning["acquire_point"] != float64(11) || warning["acquire_timeline"] != float64(7) || warning["release_points_deferred"] != float64(5) || warning["sub"] != false {
 			t.Fatalf("warning: %v", warning)
 		}
 		srv.reportSurfaceStats(time.Now())
@@ -55,7 +55,7 @@ func TestSurfaceAcquireStallAndStats(t *testing.T) {
 		if err := json.NewDecoder(&out).Decode(&next); err != nil {
 			t.Fatal(err)
 		}
-		if next["commits_received"] != float64(0) || next["release_points_dropped"] != float64(0) {
+		if next["commits_received"] != float64(0) || next["release_points_dropped"] != float64(0) || next["release_points_deferred"] != float64(0) {
 			t.Fatalf("not interval counts: %v", next)
 		}
 		surf.queue = nil
@@ -107,4 +107,40 @@ func TestSurfaceReleaseSignalCount(t *testing.T) {
 	if surf.releasePointsSignalled != 1 {
 		t.Fatal("successful signal not counted")
 	}
+}
+
+func TestSubsurfaceStatsAndStallAttribution(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var out bytes.Buffer
+		srv := &Server{log: zerowrap.New(zerowrap.Config{Format: "json", Output: &out}).WithField("component", "wayland")}
+		root := &surface{server: srv, x11win: &window{id: 42, mapped: true}}
+		child := &surface{server: srv, commitsReceived: 1, releasePointsDeferred: 2}
+		child.sub.parent = root
+		child.queue = []*update{{enqueued: time.Now(), blocked: blockAcquire}}
+		srv.surfaces = map[*server.Resource]*surface{nil: child}
+		time.Sleep(time.Second)
+		synctest.Wait()
+		srv.reportSurfaceStats(time.Now())
+		dec := json.NewDecoder(&out)
+		for _, message := range []string{"surface commit stalled", "surface stats"} {
+			var event map[string]any
+			if err := dec.Decode(&event); err != nil {
+				t.Fatal(err)
+			}
+			if event["message"] != message || event["window"] != float64(42) || event["sub"] != true || event["release_points_deferred"] != float64(2) {
+				t.Fatalf("attribution: %v", event)
+			}
+		}
+		child.queue = nil
+		out.Reset()
+		child.releasePointsDeferred++
+		srv.reportSurfaceStats(time.Now())
+		var event map[string]any
+		if err := json.Unmarshal(out.Bytes(), &event); err != nil {
+			t.Fatal(err)
+		}
+		if event["release_points_deferred"] != float64(1) {
+			t.Fatalf("deferred-only interval: %v", event)
+		}
+	})
 }

@@ -2,6 +2,7 @@ package wayland
 
 import (
 	"bytes"
+	"encoding/json"
 	"testing"
 
 	"bnema.dev/zerowrap"
@@ -14,6 +15,7 @@ func TestDropSyncDeferredLifecycle(t *testing.T) {
 			dev := newMocksyncobjDevice(t)
 			srv := &Server{syncWait: &syncWaiter{}, log: zerowrap.New(zerowrap.Config{Level: "debug", Format: "json", Output: &out}).WithField("component", "wayland")}
 			surf := &surface{server: srv}
+			surf.sub.parent = &surface{server: srv, x11win: &window{id: 42, mapped: true}}
 			acquire := &timeline{dev: dev, handle: 7, alive: true, uses: 1}
 			release := &timeline{dev: dev, handle: 8, alive: true, uses: 1}
 			w := &syncWait{explicit: true, efd: -1, done: outcome == "already_ready"}
@@ -24,6 +26,16 @@ func TestDropSyncDeferredLifecycle(t *testing.T) {
 			}
 			surf.dropSync(&cs)
 			if outcome != "already_ready" {
+				if surf.releasePointsDeferred != 1 {
+					t.Fatal("deferred counter not incremented")
+				}
+				var event map[string]any
+				if err := json.NewDecoder(bytes.NewReader(out.Bytes())).Decode(&event); err != nil {
+					t.Fatal(err)
+				}
+				if event["level"] != "debug" || event["window"] != float64(42) || event["sub"] != true {
+					t.Fatalf("deferred attribution: %v", event)
+				}
 				if len(srv.deferredReleases) != 1 || w.done || acquire.uses != 1 || release.uses != 1 || surf.releasePointsDropped != 0 {
 					t.Fatalf("ownership not retained: deferred=%d done=%v uses=%d/%d dropped=%d", len(srv.deferredReleases), w.done, acquire.uses, release.uses, surf.releasePointsDropped)
 				}
@@ -66,6 +78,29 @@ func TestDropSyncDeferredLifecycle(t *testing.T) {
 					t.Fatalf("warnings=%d: %s", n, out.String())
 				}
 			}
+			if !signals {
+				want := "timeline_dead"
+				if outcome == "failed" {
+					want = "wait_failed"
+				}
+				if outcome == "shutdown" {
+					want = "shutdown"
+				}
+				dec := json.NewDecoder(bytes.NewReader(out.Bytes()))
+				var deferred, warning map[string]any
+				if err := dec.Decode(&deferred); err != nil {
+					t.Fatal(err)
+				}
+				if err := dec.Decode(&warning); err != nil {
+					t.Fatal(err)
+				}
+				if warning["reason"] != want || warning["window"] != float64(42) || warning["sub"] != true {
+					t.Fatalf("abandon diagnostic: %v", warning)
+				}
+			}
+			if outcome == "already_ready" && surf.releasePointsDeferred != 0 {
+				t.Fatal("ready release counted as deferred")
+			}
 			// Destroy remaining live timelines after the references have retired.
 			if acquire.alive {
 				dev.EXPECT().destroy(uint32(7)).Return(nil).Once()
@@ -86,11 +121,18 @@ func TestDropSyncDeferredLifecycle(t *testing.T) {
 
 func TestDropSyncMissingWaitWarns(t *testing.T) {
 	var out bytes.Buffer
-	srv := &Server{log: zerowrap.New(zerowrap.Config{Output: &out}).WithField("component", "wayland")}
+	srv := &Server{log: zerowrap.New(zerowrap.Config{Format: "json", Output: &out}).WithField("component", "wayland")}
 	surf := &surface{server: srv}
 	tl := &timeline{alive: true, uses: 2}
 	surf.dropSync(&commitSync{acquire: syncPoint{tl: tl, point: 11}, release: syncPoint{tl: tl, point: 12}})
 	surf.dropSync(nil)
+	var event map[string]any
+	if err := json.Unmarshal(out.Bytes(), &event); err != nil {
+		t.Fatal(err)
+	}
+	if event["reason"] != "no_wait" || event["sub"] != false {
+		t.Fatalf("missing wait diagnostic: %v", event)
+	}
 	if tl.uses != 0 || surf.releasePointsDropped != 1 || !bytes.Contains(out.Bytes(), []byte("surface release point dropped without signal")) {
 		t.Fatal("missing wait must be abandoned and warned")
 	}
