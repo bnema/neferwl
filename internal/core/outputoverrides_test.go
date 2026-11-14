@@ -193,3 +193,45 @@ func TestPhysicalCollisionOverrideUsesInventoryIdentity(t *testing.T) {
 		}
 	}
 }
+
+func TestRuntimeAddedOutputOverridesKeepMode(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		change domain.HeadChange
+	}{
+		{"disable", domain.HeadChange{Enabled: false}},
+		{"scale and position", domain.HeadChange{Enabled: true, Scale: 1.5, Pos: &image.Point{X: 100, Y: 200}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			state := NewOutputOverrides(domain.Config{}, true)
+			a := NewOutputApply(state)
+			mode := domain.OutputMode{Width: 1280, Height: 720, RefreshMilli: 60000}
+			name, err := a.RuntimeAdd(1, "", mode)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := a.Next(); !ok {
+				t.Fatal("no runtime addition to apply")
+			}
+			a.Finished(nil)
+			a.ReplySent()
+			state.SetHeads(domain.OutputHeads{Heads: []domain.OutputHead{{Info: domain.OutputInfo{Name: name, Virtual: true}, Enabled: true, Current: &mode, Modes: []domain.OutputMode{mode}}}})
+			change := tt.change
+			change.Name = name
+			cfg, err := state.Apply(domain.OutputApply{Heads: []domain.HeadChange{change}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(cfg.Outputs) != 1 {
+				t.Fatalf("outputs: %+v", cfg.Outputs)
+			}
+			got := cfg.Outputs[0]
+			if got.Name != name || !got.Virtual || got.Mode != domain.FormatOutputMode(mode) || got.Off != !change.Enabled || got.Scale != change.Scale {
+				t.Fatalf("runtime override: %+v", got)
+			}
+			if change.Pos != nil && (got.Pos == nil || *got.Pos != *change.Pos) {
+				t.Fatalf("position: %v, want %v", got.Pos, change.Pos)
+			}
+		})
+	}
+}

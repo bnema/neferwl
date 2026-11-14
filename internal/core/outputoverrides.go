@@ -206,6 +206,8 @@ func (o *OutputOverrides) Apply(req domain.OutputApply) (domain.Config, error) {
 			index := slices.IndexFunc(o.file.Outputs, func(v domain.OutputConfig) bool { return v.Name == h.Name })
 			if index >= 0 {
 				entry = o.file.Outputs[index]
+			} else if index := slices.IndexFunc(o.runtime, func(v domain.OutputConfig) bool { return v.Name == h.Name }); index >= 0 {
+				entry = o.runtime[index]
 			} else {
 				entry.Name = h.Name
 			}
