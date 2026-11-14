@@ -99,6 +99,9 @@ func Listen(path string, ids *workspaceid.IDs, opts Options) (*Server, error) {
 func (s *Server) Close() error {
 	s.once.Do(func() {
 		close(s.done)
+		if s.shooter != nil {
+			s.shooter.close()
+		}
 		s.err = s.listener.Close()
 		s.injectMu.Lock()
 		defer s.injectMu.Unlock()
@@ -407,6 +410,7 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 			events, tx, err := s.translate(req, !*announced)
 			transaction = tx
 			if err != nil {
+				response.Detail = err.Error()
 				return response
 			}
 			admission = make(chan ports.ControlAdmission, 1)
@@ -466,7 +470,12 @@ func (s *Server) dispatch(ctx context.Context, req request, out chan<- ports.Con
 		response.Shots = shots
 		if err != nil {
 			response.OK = false
-			response.Error = ports.ControlErrCaptureFailed
+			if code == ports.ControlErrTimeout || errors.Is(err, context.DeadlineExceeded) ||
+				(errors.Is(err, context.Canceled) && ctx.Err() != nil) {
+				response.Error = ports.ControlErrTimeout
+			} else {
+				response.Error = ports.ControlErrCaptureFailed
+			}
 			response.Detail = err.Error()
 		}
 	}

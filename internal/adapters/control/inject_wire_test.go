@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -349,5 +350,55 @@ func TestTwoConnectionsShareAdmittedModifiers(t *testing.T) {
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestInjectionLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name, kind, text, combo string
+		reject                  bool
+	}{
+		{name: "text below", kind: "type", text: strings.Repeat("a", maxInjectTextRunes-1)},
+		{name: "text at", kind: "type", text: strings.Repeat("a", maxInjectTextRunes)},
+		{name: "text over", kind: "type", text: strings.Repeat("a", maxInjectTextRunes+1), reject: true},
+		{name: "events below", kind: "type", text: strings.Repeat("A", maxInjectEvents/4-1)},
+		{name: "events over", kind: "type", text: strings.Repeat("A", maxInjectEvents/4+1), reject: true},
+		{name: "key below", kind: "key", combo: strings.Repeat("Shift+", 42) + "a"},
+		{name: "key over", kind: "key", combo: strings.Repeat("Shift+", 43) + "a", reject: true},
+		{name: "press below", kind: "press", combo: strings.Repeat("Shift+", 42) + "a"},
+		{name: "press over", kind: "press", combo: strings.Repeat("Shift+", 43) + "a", reject: true},
+		{name: "release below", kind: "release", combo: strings.Repeat("Shift+", 42) + "a"},
+		{name: "release over", kind: "release", combo: strings.Repeat("Shift+", 43) + "a", reject: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				s := &Server{ids: workspaceid.WithPrefix("limits"), done: make(chan struct{}), injector: newInjector(injectKeymap(t), nil)}
+				req := request{Op: "inject", Kind: tc.kind, Text: tc.text, Combo: tc.combo}
+				announced := false
+				out := make(chan ports.ControlRequest)
+				if !tc.reject {
+					go func() {
+						r := (<-out).(ports.ControlInject)
+						if len(r.Events) > maxInjectEvents+1 {
+							t.Error("event bound exceeded")
+						}
+						r.Admission <- ports.ControlAdmission{}
+						r.Reply <- ports.ControlReply{}
+					}()
+				}
+				got := s.dispatch(t.Context(), req, out, &announced)
+				if tc.reject {
+					if got.OK || got.Error != ports.ControlErrBadRequest || got.Detail == "" || announced {
+						t.Fatalf("rejection: %+v, announced %v", got, announced)
+					}
+					ev := s.injector.km.Key(16, true, 0)
+					if ev.Mods != 0 {
+						t.Fatalf("rejection changed modifiers: %+v", ev)
+					}
+				} else if !got.OK || !announced {
+					t.Fatalf("acceptance: %+v, announced %v", got, announced)
+				}
+			})
+		})
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/domain"
@@ -16,6 +17,26 @@ import (
 )
 
 const controlDeviceID = domain.ControlDeviceID
+
+const (
+	maxInjectTextRunes  = 4096
+	maxInjectComboBytes = 256
+	maxInjectEvents     = 8192
+)
+
+func validateInjectionSize(req request) error {
+	switch req.Kind {
+	case "type":
+		if utf8.RuneCountInString(req.Text) > maxInjectTextRunes {
+			return errors.New("type text exceeds 4096 runes")
+		}
+	case "key", "press", "release":
+		if len(req.Combo) > maxInjectComboBytes {
+			return errors.New("key combo exceeds 256 bytes")
+		}
+	}
+	return nil
+}
 
 // injector translates commands on its owner's goroutine. It borrows km; the
 // caller owns its lifetime and announces Device once before delivering input.
@@ -55,6 +76,9 @@ func (i *injector) Device() ports.InputEvent {
 }
 
 func (i *injector) keyEdge(events []ports.InputEvent, code uint32, down bool) ([]ports.InputEvent, error) {
+	if len(events) >= maxInjectEvents {
+		return nil, errors.New("injection exceeds 8192 translated events")
+	}
 	state := i.snapshot() // Must precede KeySecure's epoch-aware translation.
 	var key ports.KeyEvent
 	if i.security != nil {
@@ -90,6 +114,9 @@ func injectModifier(name string) uint32 {
 
 // combo resolves all keys before any keymap state is changed.
 func (i *injector) combo(combo string) ([]uint32, error) {
+	if len(combo) > maxInjectComboBytes {
+		return nil, errors.New("key combo exceeds 256 bytes")
+	}
 	parts := strings.Split(combo, "+")
 	var codes []uint32
 	for _, name := range parts[:len(parts)-1] {
@@ -160,7 +187,11 @@ func (i *injector) Release(combo string) ([]ports.InputEvent, error) {
 var injectPunctuation = map[rune]string{' ': "space", '\n': "Return", '.': "period", ',': "comma", '-': "minus", '_': "underscore", '/': "slash", ':': "colon", ';': "semicolon", '!': "exclam", '?': "question", '\'': "apostrophe", '"': "quotedbl", '(': "parenleft", ')': "parenright", '=': "equal", '+': "plus", '\\': "backslash", '@': "at", '#': "numbersign", '$': "dollar", '%': "percent", '&': "ampersand", '*': "asterisk", '[': "bracketleft", ']': "bracketright", '{': "braceleft", '}': "braceright", '<': "less", '>': "greater", '|': "bar", '`': "grave", '~': "asciitilde", '^': "asciicircum"}
 
 func (i *injector) Type(text string) ([]ports.InputEvent, error) {
+	if utf8.RuneCountInString(text) > maxInjectTextRunes {
+		return nil, errors.New("type text exceeds 4096 runes")
+	}
 	var strokes [][]uint32
+	eventCount := 0
 	for _, r := range text {
 		name := injectPunctuation[r]
 		if name == "" && (unicode.IsLetter(r) || unicode.IsDigit(r)) {
@@ -172,6 +203,10 @@ func (i *injector) Type(text string) ([]ports.InputEvent, error) {
 		codes, err := i.combo(name)
 		if err != nil {
 			return nil, err
+		}
+		eventCount += 2 * len(codes)
+		if eventCount > maxInjectEvents {
+			return nil, errors.New("injection exceeds 8192 translated events")
 		}
 		strokes = append(strokes, codes)
 	}

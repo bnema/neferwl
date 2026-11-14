@@ -166,3 +166,5 @@ The `hello` catalog also lists the non-action commands: `state` (query), `key`, 
 | `$XDG_STATE_HOME/neferwl/sessions/<id>/latest.log` | session log (JSON lines), `~/.local/state` when unset |
 
 The runtime directory is removed when the session exits; the log directory stays.
+
+Injection requests accept at most 4096 text runes, 256 combo bytes, and 8192 translated input events (excluding the device announcement); larger requests return `bad-request`.

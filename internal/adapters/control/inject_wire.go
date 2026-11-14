@@ -18,6 +18,9 @@ func (s *Server) translate(req request, announce bool) ([]ports.InputEvent, *xkb
 	if s.injector == nil {
 		return nil, nil, errors.New("input unavailable")
 	}
+	if err := validateInjectionSize(req); err != nil {
+		return nil, nil, err
+	}
 	for s.keymaps != nil {
 		select {
 		case next, ok := <-s.keymaps:
@@ -75,6 +78,9 @@ ready:
 	}
 	if err != nil {
 		return nil, nil, err
+	}
+	if len(events) > maxInjectEvents {
+		return nil, nil, errors.New("injection exceeds 8192 translated events")
 	}
 	if announce {
 		events = append([]ports.InputEvent{device}, events...)
