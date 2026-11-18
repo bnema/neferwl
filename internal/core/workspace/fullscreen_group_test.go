@@ -513,6 +513,58 @@ func TestFullscreenLoneCascadeHeldEdges(t *testing.T) {
 	})
 }
 
+// A window made fullscreen while another is lone-held joins it in a group:
+// activating the held one swaps the cover, and leaving for an unrelated
+// window holds both.
+func TestFullscreenLoneCascadeHeldJoinsGroup(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := cols(OverflowCascade, 3, 0, []WindowID{1}, []WindowID{2}, []WindowID{3})
+		w.Settle(false)
+		w.FocusID(1)
+		w.SetFullscreen(1, true)
+		w.LeaveCoverFor(2)
+		w.FocusID(2)
+		w.ToggleFullscreen()
+		if w.Fullscreen != 2 || !slices.Equal(w.Held, []WindowID{1}) {
+			t.Fatalf("join: cover %d held %v", w.Fullscreen, w.Held)
+		}
+		w.Activate(1)
+		if f, _ := w.Focused(); f != 1 || w.Fullscreen != 1 || !slices.Equal(w.Held, []WindowID{2}) {
+			t.Fatalf("swap: focus %d cover %d held %v", f, w.Fullscreen, w.Held)
+		}
+		w.LeaveCoverFor(3)
+		w.FocusID(3)
+		held := slices.Clone(w.Held)
+		slices.Sort(held)
+		if f, _ := w.Focused(); f != 3 || w.Fullscreen != 0 || w.left != 0 || !slices.Equal(held, []WindowID{1, 2}) {
+			t.Fatalf("leave: focus %d cover %d left %d held %v", f, w.Fullscreen, w.left, w.Held)
+		}
+		checkGroup(t, w, "lone join")
+	})
+}
+
+// A program launched by a lone-held window opens held too: fullscreen, off
+// screen, and the focus stays on the other band.
+func TestFullscreenLoneCascadeHeldLaunches(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := cols(OverflowCascade, 3, 0, []WindowID{1}, []WindowID{3})
+		w.Settle(false)
+		w.FocusID(1)
+		w.SetFullscreen(1, true)
+		w.LeaveCoverFor(3)
+		w.FocusID(3)
+		if !w.AddLaunchedWindow(9, 1, 0) {
+			t.Fatal("launch refused")
+		}
+		held := slices.Clone(w.Held)
+		slices.Sort(held)
+		if f, _ := w.Focused(); f != 3 || w.Fullscreen != 0 || !slices.Equal(held, []WindowID{1, 9}) {
+			t.Fatalf("launch: focus %d cover %d held %v", f, w.Fullscreen, w.Held)
+		}
+		checkGroup(t, w, "lone launch")
+	})
+}
+
 // Cascade taskbar activation of an unrelated window demotes the group's
 // cover like a focus move; a lone cover is held the same way.
 func TestFullscreenGroupCascadeActivateDemotes(t *testing.T) {
