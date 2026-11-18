@@ -208,7 +208,8 @@ func (w *Workspace) LandSwipe(view int, forward bool) bool {
 // LeaveCoverFor leaves a pinned cover when selecting a different window.
 // In a fullscreen group a held member takes the cover over, the previous
 // one held, and an unrelated window demotes the cover (demoteCover), with
-// no leave latch either way; a lone cover still leaves.
+// no leave latch either way. In cascade a lone tiled cover is held the same
+// way; a floating cover, or one in fixed overflow, still leaves.
 //
 // The group cases read Fullscreen, not Cover: overview navigation already
 // scrolled the view to the selection, off the cover.

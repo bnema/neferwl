@@ -41,9 +41,10 @@ func (w *Workspace) Pinned() bool {
 }
 
 // leaveCover runs a focus move from the covering fullscreen window as if it
-// were not fullscreen. When the move reaches another window, fullscreen
-// ends and that window shows, focused; otherwise (an edge) nothing changes
-// and the caller goes on to the next workspace or monitor.
+// were not fullscreen. When the move reaches another window, that window
+// shows, focused, and the cover is held (cascade, see demoteCover) or its
+// fullscreen ends; otherwise (an edge) nothing changes and the caller goes
+// on to the next workspace or monitor.
 func (w *Workspace) leaveCover(move func()) bool {
 	w.FocusCover()
 	full := w.Fullscreen

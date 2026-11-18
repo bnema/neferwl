@@ -140,7 +140,8 @@ func (w *Workspace) onScreenFocus() bool {
 // FocusWindow moves focus inside the column, then to a fixed-overflow column
 // above or below on screen. Up at the top raises the topmost demoted covering
 // float; false means no window is available in that direction. From a
-// covering fullscreen window it leaves fullscreen for that window.
+// covering fullscreen window it moves to that window, holding the cover in
+// cascade and leaving its fullscreen otherwise.
 func (w *Workspace) FocusWindow(dir int) bool {
 	from, _ := w.Focused()
 	defer w.FocusModal(from)

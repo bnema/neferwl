@@ -320,10 +320,24 @@ func TestCascadeFullscreenUpReachesPreviousBand(t *testing.T) {
 	c, w := cascadeMovesCore(t, 2, 3, false)
 	w.ToggleFullscreen()
 	c.applyAction(ActionFocusWindowUp)
-	if w.Fullscreen != 0 {
-		t.Fatalf("fullscreen %d", w.Fullscreen)
-	}
 	wantFocus(t, c, "M", 1)
+	// The window stays fullscreen in its band, off screen: a game is not
+	// resized into a tile when the focus leaves its band.
+	if w.Fullscreen != 0 || !w.IsHeld(2) || !w.IsFullscreenMember(2) {
+		t.Fatalf("fullscreen %d held %v", w.Fullscreen, w.Held)
+	}
+	// A client that asks for fullscreen again while held does not take the
+	// focus back from the other band.
+	c.cur().mon.SetFullscreen(2, true)
+	wantFocus(t, c, "M", 1)
+	if w.Cover() != 0 || !w.IsFullscreenMember(2) {
+		t.Fatalf("re-request: cover %d held %v", w.Cover(), w.Held)
+	}
+	c.applyAction(ActionFocusWindowDown)
+	wantFocus(t, c, "M", 2)
+	if w.Fullscreen != 2 || len(w.Held) != 0 {
+		t.Fatalf("back: fullscreen %d held %v", w.Fullscreen, w.Held)
+	}
 }
 
 func TestCascadeFullscreenFloatEdgePrefersMonitor(t *testing.T) {

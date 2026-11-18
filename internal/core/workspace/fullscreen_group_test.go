@@ -454,7 +454,9 @@ func TestFullscreenGroupScrollLeaveKeepsCover(t *testing.T) {
 	})
 }
 
-// A lone fullscreen window keeps the leave latch in cascade.
+// A lone fullscreen window left for another band in cascade is held, not
+// left: it keeps its fullscreen size off screen (a game is never resized),
+// and focus back on it makes it the cover again.
 func TestFullscreenLoneCascadeLeave(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		w := cols(OverflowCascade, 3, 0, []WindowID{1}, []WindowID{3})
@@ -468,14 +470,21 @@ func TestFullscreenLoneCascadeLeave(t *testing.T) {
 		if !w.FocusWindow(d) {
 			t.Fatal("no move")
 		}
-		if w.Fullscreen != 0 || w.left != 1 || len(w.Held) != 0 {
-			t.Fatalf("lone: cover %d left %d held %v", w.Fullscreen, w.left, w.Held)
+		if f, _ := w.Focused(); f != 3 || w.Fullscreen != 0 || w.left != 0 || !slices.Equal(w.Held, []WindowID{1}) {
+			t.Fatalf("lone: focus %d cover %d left %d held %v", f, w.Fullscreen, w.left, w.Held)
+		}
+		checkGroup(t, w, "lone leave")
+		if !w.FocusWindow(-d) {
+			t.Fatal("no move back")
+		}
+		if f, _ := w.Focused(); f != 1 || w.Fullscreen != 1 || len(w.Held) != 0 {
+			t.Fatalf("back: focus %d cover %d held %v", f, w.Fullscreen, w.Held)
 		}
 	})
 }
 
 // Cascade taskbar activation of an unrelated window demotes the group's
-// cover like a focus move; a lone cover still ends with the latch.
+// cover like a focus move; a lone cover is held the same way.
 func TestFullscreenGroupCascadeActivateDemotes(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		w := groupPG(t, OverflowCascade)
@@ -496,7 +505,7 @@ func TestFullscreenGroupCascadeActivateDemotes(t *testing.T) {
 		w.FocusID(1)
 		w.SetFullscreen(1, true)
 		w.Activate(3)
-		if w.Fullscreen != 0 || w.left != 1 || len(w.Held) != 0 {
+		if w.Fullscreen != 0 || w.left != 0 || !slices.Equal(w.Held, []WindowID{1}) {
 			t.Fatalf("lone: cover %d left %d held %v", w.Fullscreen, w.left, w.Held)
 		}
 	})
@@ -671,7 +680,7 @@ func TestFullscreenGroupLeaveCoverFor(t *testing.T) {
 			w.FocusID(1)
 			w.SetFullscreen(1, true)
 			w.LeaveCoverFor(3)
-			if w.Fullscreen != 0 || w.left != 1 || len(w.Held) != 0 {
+			if w.Fullscreen != 0 || w.left != 0 || !slices.Equal(w.Held, []WindowID{1}) {
 				t.Fatalf("lone: cover %d left %d held %v", w.Fullscreen, w.left, w.Held)
 			}
 		})

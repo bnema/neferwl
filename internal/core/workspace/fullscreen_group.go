@@ -61,8 +61,10 @@ func (w *Workspace) promoteFocused() {
 // demoteCover holds the cover of a pinned layout (cascade) whose group the
 // focus leaves for an unrelated window, and reports whether it did. Unlike
 // leaveFullscreen it sets no left, so focus on any member brings the group
-// back with no fullscreen key. A lone cover, a floating one (it cannot be
-// held: held floats are not shown) and a scrolling layout's are left alone.
+// back with no fullscreen key. A lone cover is held too: a game keeps its
+// fullscreen size off screen instead of being resized into a tile. A
+// floating cover (held floats are not shown) and a scrolling layout's are
+// left alone.
 // The focus must already be off the group: scroll promotes a focused member.
 func (w *Workspace) demoteCover() bool {
 	if !w.demotable() {
@@ -108,7 +110,7 @@ func (w *Workspace) groupLeaveTo(id WindowID) bool {
 // demotable reports whether demoteCover would hold the cover.
 func (w *Workspace) demotable() bool {
 	full := w.Fullscreen
-	return full != 0 && len(w.Held) > 0 && !w.IsFloat(full) && w.Engine().PinsFullscreen()
+	return full != 0 && !w.IsFloat(full) && w.Engine().PinsFullscreen() && w.Engine().Scrolls()
 }
 
 // focusedColumn is the windows of the focused column, nil without one.
