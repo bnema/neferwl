@@ -483,6 +483,36 @@ func TestFullscreenLoneCascadeLeave(t *testing.T) {
 	})
 }
 
+// A client leaving fullscreen while lone-held drops out of the group and
+// ends as a plain tile; a floating cascade cover still leaves with the
+// latch (held floats are not shown).
+func TestFullscreenLoneCascadeHeldEdges(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := cols(OverflowCascade, 3, 0, []WindowID{1}, []WindowID{3})
+		w.Settle(false)
+		w.FocusID(1)
+		w.SetFullscreen(1, true)
+		w.LeaveCoverFor(3)
+		w.SetFullscreen(1, false)
+		if w.Fullscreen != 0 || len(w.Held) != 0 || w.IsFullscreenMember(1) {
+			t.Fatalf("unset: cover %d held %v", w.Fullscreen, w.Held)
+		}
+	})
+	synctest.Test(t, func(t *testing.T) {
+		w := cols(OverflowCascade, 3, 0, []WindowID{1}, []WindowID{3})
+		w.Settle(false)
+		w.AddDialog(9, 1, 100, 50)
+		w.SetFullscreen(9, true)
+		if w.Fullscreen != 9 || !w.IsFloat(9) {
+			t.Fatalf("setup: cover %d float %v", w.Fullscreen, w.IsFloat(9))
+		}
+		w.LeaveCoverFor(3)
+		if w.Fullscreen != 0 || len(w.Held) != 0 || w.left != 9 {
+			t.Fatalf("float: cover %d held %v left %d", w.Fullscreen, w.Held, w.left)
+		}
+	})
+}
+
 // Cascade taskbar activation of an unrelated window demotes the group's
 // cover like a focus move; a lone cover is held the same way.
 func TestFullscreenGroupCascadeActivateDemotes(t *testing.T) {

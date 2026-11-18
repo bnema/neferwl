@@ -6,10 +6,11 @@ import "slices"
 // other windows that stay fullscreen without covering. Invariants: the
 // active cover is never held, a window is held at most once, and every held
 // window is on the workspace. Held may be non-empty with Fullscreen 0: in
-// a pinned layout (cascade), focus left the group for an unrelated window
-// and every member is held (leaveCover); the group comes back when focus
-// lands on a member (promoteFocused). In scroll the cover stays set while
-// scrolled off, so Cover() is 0 there with Fullscreen non-zero.
+// a pinned layout (cascade), focus left the group, or a lone cover, for an
+// unrelated window and every member is held (leaveCover); the group comes
+// back when focus lands on a member (promoteFocused). In scroll the cover
+// stays set while scrolled off, so Cover() is 0 there with Fullscreen
+// non-zero.
 
 // IsFullscreenMember reports whether id is the active cover or held.
 func (w *Workspace) IsFullscreenMember(id WindowID) bool {
@@ -63,8 +64,9 @@ func (w *Workspace) promoteFocused() {
 // leaveFullscreen it sets no left, so focus on any member brings the group
 // back with no fullscreen key. A lone cover is held too: a game keeps its
 // fullscreen size off screen instead of being resized into a tile. A
-// floating cover (held floats are not shown) and a scrolling layout's are
-// left alone.
+// floating cover (held floats are not shown), one in fixed overflow (hold
+// refuses it: nothing sits off screen there) and scroll overflow's are left
+// alone.
 // The focus must already be off the group: scroll promotes a focused member.
 func (w *Workspace) demoteCover() bool {
 	if !w.demotable() {
@@ -80,13 +82,15 @@ func (w *Workspace) demoteCover() bool {
 }
 
 // groupLeaveTo moves the focus off the cover to id inside a fullscreen
-// group and reports whether it handled the move; false leaves everything to
-// the caller's lone-cover path (leaveFullscreen). A held id takes the cover
-// over, the previous one held. An unrelated id gets the focus first, then
-// the cover is demoted: demoting scrolls, which would promote the member
-// still selected. A hidden stash entry, which FocusID refuses, is shown
-// selected instead, unless its own fullscreen waits there (the lone path
-// brings it back). If the focus cannot reach id, nothing is demoted.
+// group or from a lone cascade cover, and reports whether it handled the
+// move; false leaves the cover to the caller (leaveFullscreen): a floating
+// cover, or one in a layout that does not hold (fixed, scroll). A held id
+// takes the cover over, the previous one held. An unrelated id gets the
+// focus first, then the cover is demoted: demoting scrolls, which would
+// promote the member still selected. A hidden stash entry, which FocusID
+// refuses, is shown selected instead, unless its own fullscreen waits there
+// (the lone path brings it back). If the focus cannot reach id, nothing is
+// demoted.
 func (w *Workspace) groupLeaveTo(id WindowID) bool {
 	if w.IsHeld(id) {
 		w.promoteHeld(id)
