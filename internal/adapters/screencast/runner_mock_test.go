@@ -76,14 +76,14 @@ func (_e *mockrunner_Expecter) Run(ctx any, args any) *mockrunner_Run_Call {
 }
 
 func (_c *mockrunner_Run_Call) Run(run func(ctx context.Context, args []string)) *mockrunner_Run_Call {
-	_c.Call.Run(func(args mock.Arguments) {
+	_c.Call.Run(func(args1 mock.Arguments) {
 		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
+		if args1[0] != nil {
+			arg0 = args1[0].(context.Context)
 		}
 		var arg1 []string
-		if args[1] != nil {
-			arg1 = args[1].([]string)
+		if args1[1] != nil {
+			arg1 = args1[1].([]string)
 		}
 		run(
 			arg0,
