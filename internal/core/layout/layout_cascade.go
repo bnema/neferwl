@@ -183,12 +183,12 @@ func (cascadeLayout) MoveAllowed(v View, from, to int) bool {
 }
 
 // MoveLane sends the focused column to the band dir away, focus following.
+// A column joining a band lands at its right end.
 func (cascadeLayout) MoveLane(w Edit, dir int) bool {
 	if len(w.Columns) == 0 {
 		return false
 	}
-	first, _ := w.bandBounds(w.Band(w.Focus))
-	return w.shiftBand(w.Focus, w.Focus, dir, w.Focus-first)
+	return w.shiftBand(w.Focus, w.Focus, dir, max(w.MaxColumns, 1))
 }
 
 // Isolate gives a window about to go fullscreen a band of its own: a

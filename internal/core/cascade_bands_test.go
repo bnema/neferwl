@@ -56,10 +56,10 @@ func TestCascadeCycleRestoreSkipsMovedColumn(t *testing.T) {
 		w.FocusID(2)
 		w.Apply(ActionCycleColumnWidth) // {1 2} {3}
 		w.FocusID(3)
-		c.applyAction(ActionMoveWindowUp) // {3 1 2}: 3 is back by hand.
+		c.applyAction(ActionMoveWindowUp) // {1 2 3}: 3 is back by hand.
 		w.FocusID(2)
 		w.Apply(ActionCycleColumnWidth)
-		wantBands(t, w, []WindowID{3, 1, 2})
+		wantBands(t, w, []WindowID{1, 2, 3})
 		if got := cellsOf(w); !slices.Equal(got, []int{0, 0, 0}) {
 			t.Fatalf("cells %v, want equal", got)
 		}
@@ -107,12 +107,12 @@ func TestCascadeMaximizeLeftJoinsBandAbove(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, w := cascadeMovesCore(t, 5, 3, false) // {1 2 3} {4 5}
 		w.FocusID(2)
-		c.applyAction(ActionMoveWindowDown) // {1 3} {4 2 5}
-		w.FocusID(2)
+		c.applyAction(ActionMoveWindowDown) // {1 3} {4 5 2}
+		w.FocusID(5)
 		w.ToggleFullWidth()
-		wantBands(t, w, []WindowID{1, 3, 4}, []WindowID{2}, []WindowID{5})
+		wantBands(t, w, []WindowID{1, 3, 4}, []WindowID{5}, []WindowID{2})
 		w.ToggleFullWidth()
-		wantBands(t, w, []WindowID{1, 3}, []WindowID{4, 2, 5})
+		wantBands(t, w, []WindowID{1, 3}, []WindowID{4, 5, 2})
 
 	})
 }

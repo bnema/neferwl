@@ -474,7 +474,7 @@ The default layout. Columns sit side by side in bands of up to `max-columns`, st
 - Left/right focus moves within a band, then to the neighbor monitor, or stays put. With `navigation.edge = workspace` and no monitor on that side, it goes to an occupied neighbor workspace, then to the trailing empty workspace. Use workspace binds or swipes to change workspaces explicitly. From a fullscreen float it crosses that edge without revealing the tiles underneath; only up/down reaches another band.
 - `move-column-left/right` stays in the band; at its edge the column goes to the neighbor monitor, if any.
 - Up/down moves through the windows of a column, then to the band above or below.
-- `move-window-up/down` past the column's top or bottom sends the whole column to the band above or below. It joins that band when it has room, else it gets a new band between the two.
+- `move-window-up/down` past the column's top or bottom sends the whole column to the band above or below. It joins that band at its right end when it has room, else it gets a new band between the two.
 - A new window joins the focused band when it has room, else it gets a new band right below.
 - `cycle-column-width` in a full band makes room: the rightmost column goes to the band below (from the last column, the leftmost goes to the band above). The end of the cycle brings it back.
 - `maximize-column` gives the column a band of its own: the columns on its left go to the band above, the ones on its right to the band below. Maximizing again forms the band back. A moved or new column joining its band clears maximization; a moved maximized column also unmaximizes when it joins another band.

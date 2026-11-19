@@ -154,19 +154,33 @@ func TestFixedMoveColumnKeepsLinearEdge(t *testing.T) {
 }
 
 // At the top or bottom of its column, move-window-up/down sends a cascade
-// column to the adjacent band: it joins it when it has room, at its offset
-// in the band, else it makes a new band between the two.
+// column to the adjacent band: it joins it at its right end when it has
+// room, else it makes a new band between the two.
 func TestCascadeMoveWindowCrossesBands(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, w := cascadeMovesCore(t, 5, 3, false) // {1 2 3} {4 5}
 		w.FocusID(2)
 		c.applyAction(ActionMoveWindowDown)
-		wantBands(t, w, []WindowID{1, 3}, []WindowID{4, 2, 5})
+		wantBands(t, w, []WindowID{1, 3}, []WindowID{4, 5, 2})
 		wantFocus(t, c, "M", 2)
 		c.applyAction(ActionMoveWindowUp)
-		wantBands(t, w, []WindowID{1, 2, 3}, []WindowID{4, 5})
+		wantBands(t, w, []WindowID{1, 3, 2}, []WindowID{4, 5})
 		wantFocus(t, c, "M", 2)
 
+	})
+}
+
+// A column alone in its band, moved up into a band with room, lands at
+// its right end.
+func TestCascadeMoveWindowLoneColumnJoinsRight(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, w := cascadeMovesCore(t, 3, 2, false) // {1 2} {3}
+		w.RemoveWindow(2)
+		wantBands(t, w, []WindowID{1}, []WindowID{3})
+		w.FocusID(3)
+		c.applyAction(ActionMoveWindowUp)
+		wantBands(t, w, []WindowID{1, 3})
+		wantFocus(t, c, "M", 3)
 	})
 }
 
@@ -213,8 +227,8 @@ func TestCascadeMoveWindowDropsEmptyBand(t *testing.T) {
 		c.applyAction(ActionMoveWindowDown)
 		wantBands(t, w, []WindowID{1, 3}, []WindowID{4, 2})
 		w.FocusID(4)
-		c.applyAction(ActionMoveWindowUp) // At its offset in the band: first.
-		wantBands(t, w, []WindowID{4, 1, 3}, []WindowID{2})
+		c.applyAction(ActionMoveWindowUp) // At the band's right end.
+		wantBands(t, w, []WindowID{1, 3, 4}, []WindowID{2})
 
 	})
 }
@@ -229,11 +243,11 @@ func TestCascadeMoveWindowAndMaximizedBand(t *testing.T) {
 		want       [][]WindowID
 	}{
 		// After maximizing 2: {1} {2*} {3 4}.
-		{"maximized down", 4, 2, 2, ActionMoveWindowDown, [][]WindowID{{1}, {2, 3, 4}}},
-		{"maximized up", 4, 2, 2, ActionMoveWindowUp, [][]WindowID{{2, 1}, {3, 4}}},
+		{"maximized down", 4, 2, 2, ActionMoveWindowDown, [][]WindowID{{1}, {3, 4, 2}}},
+		{"maximized up", 4, 2, 2, ActionMoveWindowUp, [][]WindowID{{1, 2}, {3, 4}}},
 		// After maximizing 4: {1 2 3} {4*} {5}.
 		{"into maximized below", 5, 4, 3, ActionMoveWindowDown, [][]WindowID{{1, 2}, {4, 3}, {5}}},
-		{"into maximized above", 5, 4, 5, ActionMoveWindowUp, [][]WindowID{{1, 2, 3}, {5, 4}}},
+		{"into maximized above", 5, 4, 5, ActionMoveWindowUp, [][]WindowID{{1, 2, 3}, {4, 5}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
