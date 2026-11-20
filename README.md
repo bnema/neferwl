@@ -19,14 +19,15 @@ https://github.com/user-attachments/assets/1ff42ce5-47b3-4cf8-a3a7-5fc5abde4af1
 
 - **Performance:** allocation-free hot paths, no wasted CPU passes and no cgo. About 56 MB of RAM and 36 MB of VRAM on an empty desktop, more with wallpapers, bars and open windows; see [Memory](docs/performance.md#memory).
 - **Games:** direct scanout, VRR, tearing, explicit sync and [HDR](docs/config.md#hdr) give games the whole GPU instead of spending it on composition; see [Performance](docs/performance.md).
+- **A screen without a screen:** one config line gives the GPU a permanent virtual display, with or without a monitor plugged in. Boot a box straight into Steam Big Picture and stream it to your TV with Sunshine and Moonlight, in HDR, or add a TV screen next to your monitors so someone plays while you keep working; see [Couch gaming](#headless-server-and-couch-gaming).
+- **Built for scripts and AI agents:** start a throwaway headless session in one command, then drive it with actions, input and screenshots. Every command waits for its result, so no sleeps; see [Agents and automation](#agents-and-automation).
+- **Private captures:** only allowed programs can capture the screen, and a red indicator that no app can hide shows while they do. Record a single window or a whole workspace, even one that is off screen; see [Screen capture](#screen-capture).
 - **SDR to HDR:** on an HDR screen, SDR games get brighter highlights instead of looking flat; see [SDR expansion](docs/config.md#sdr-expansion-settings).
 - **X11 apps:** Steam and other X11 apps behave like any other window, with no extra tool to install; see [X11 apps](docs/desktop.md#x11-apps).
 - **Overview:** `cmd+o` or a four-finger swipe up shows live workspace previews. Select a window with the keyboard, touchpad or mouse; see [Overview](docs/config.md#overview).
 - **Stash:** `cmd+s` toggles a floating strip of windows set aside for the current workspace; `cmd+shift+s` moves a window into or out of it. See [Stash](docs/config.md#stash).
 - **Hint mode:** click what is on screen by typing its label. Works best in apps like Firefox; see [Hint mode](docs/config.md#hint-mode).
 - **Animations:** short and cheap; turn them off with `animations = off`.
-- **Headless server:** run without a screen on virtual outputs, then stream with Sunshine, watch over VNC or record; see [Headless and server mode](docs/server.md).
-- **Agents and scripts:** throwaway sessions that a script or AI agent drives with actions, input, state and screenshots, each command waiting for its result; see [Scripting and agents](docs/control.md).
 
 Written in Go, without cgo. Each piece of state has one owner goroutine, connected to the others by channels; hot paths reuse memory and client buffers stay off the Go heap. See [Architecture](docs/dev/architecture.md) for the concurrency model, the GC strategy and the reusable Go libraries.
 
@@ -176,9 +177,35 @@ Bring your own layer-shell UI, such as Noctalia or Waybar. For capture and idle 
 
 Configuration is a flat `key = value` file that reloads on save. A JSON state file exposes outputs, workspaces and windows to scripts; see [Desktop integration](docs/desktop.md).
 
-### Headless server
+Session locking with swaylock or hyprlock fails safe: if the locker crashes, the session stays locked and black until a new locker takes over. See [Session locking](docs/desktop.md#session-locking).
 
-`neferwl --backend=headless --profile=persistent` runs NeferWL on a machine without a screen, on the virtual outputs declared in the config. `neferwl-server.service` runs it as a systemd user service. Apps connect to its Wayland display as usual; Sunshine, OBS and other PipeWire clients stream its outputs through the portal. See [Headless and server mode](docs/server.md) for the setup and a game streaming host with Sunshine.
+### Screen capture
+
+- Only executables in an allowlist can capture; `grim`, nefercap and the screen-sharing portal work out of the box.
+- A red indicator shows on screen during every capture. No app can turn it off, and it never appears in the image.
+- Capture an output, a region, a window or a whole workspace, even one that is off screen, without bars.
+- Recorders can keep their own HUD out of the frames, and portal screen sharing keeps HDR.
+
+See [Screen capture](docs/capture.md).
+
+### Headless server and couch gaming
+
+NeferWL runs without any monitor on virtual outputs that the GPU renders like real screens. Turn a spare PC into a game console for the TV:
+
+```ini
+# ~/.config/neferwl/config
+output.tv = virtual 3840x2160@60
+output.tv.hdr = on
+startup = steam -gamepadui
+```
+
+```sh
+systemctl --user enable --now neferwl-server.service sunshine.service
+```
+
+The box boots into Steam Big Picture on a 4K HDR virtual screen; Moonlight on the TV connects to it, and the screen can follow the client's resolution and refresh rate. The same setup serves a remote desktop over VNC or recordings with OBS. See [Headless and server mode](docs/server.md) for the one-time account and portal setup.
+
+On a desktop, a virtual output also sits next to your monitors: a window rule sends Big Picture to `tv`, and `output.tv.keep-focus = on` keeps its controller focus while you work on another screen. Someone plays on the TV, you keep your desktop. See [Virtual outputs](docs/config.md#virtual-outputs).
 
 ### Agents and automation
 
