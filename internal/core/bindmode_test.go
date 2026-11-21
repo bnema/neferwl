@@ -1,119 +1,19 @@
 package core_test
 
 import (
-	"context"
-	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/domain"
-	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// modeRig is a running Core with five windows in a row, the last focused,
-// cmd+x bound to a chain, cmd+h to focus-column-left and a resize mode.
-type modeRig struct {
-	cfg      domain.Config
-	input    chan ports.InputEvent
-	commands chan ports.ClientCommand
-	state    chan domain.State
-	reload   chan domain.ConfigChanged
-	client   chan ports.ClientEvent
-	control  chan ports.ControlRequest
-	epoch    *atomic.Value
-	done     chan error
-}
-
-func runModeRig(t *testing.T, chain string) modeRig {
-	t.Helper()
-	var epoch atomic.Value
-	epoch.Store(domain.SecurityState{})
-	gate := portsmocks.NewMockSessionSecurity(t)
-	gate.EXPECT().Snapshot().RunAndReturn(func() domain.SecurityState { return epoch.Load().(domain.SecurityState) }).Maybe()
-	r := modeRig{
-		input:    make(chan ports.InputEvent, 4),
-		commands: make(chan ports.ClientCommand, 256),
-		state:    make(chan domain.State, 1),
-		reload:   make(chan domain.ConfigChanged, 1),
-		control:  make(chan ports.ControlRequest, 1),
-		epoch:    &epoch,
-	}
-	client := make(chan ports.ClientEvent, 8)
-	r.client = client
-	output := make(chan ports.OutputEvent, 1)
-	cfg := scrollDefaults()
-	cfg.Layout.MaxColumns = 5
-	cfg.Binds["Cmd+x"] = chain
-	cfg.Binds["Cmd+h"] = "focus-column-left"
-	cfg.Binds["Cmd+e"] = "mode esc"
-	cfg.Modes = map[string]map[string]string{
-		"resize": {"h": "set-column-width +1", "q": "mode default"}, // columns are one cell: -1 is a no-op
-		"esc":    {"Escape": "focus-column-left"},
-	}
-	r.cfg = cfg
-	c, err := core.New(cfg, core.Channels{Input: r.input, Client: client, Output: output, Control: r.control, Config: r.reload, ConfigErrors: make(chan error, 1), Commands: r.commands, Scenes: make(chan []domain.Scene, 1), State: r.state}, testOptions(t, core.Options{Security: gate}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	r.done = make(chan error, 1)
-	go func() { r.done <- c.Run(ctx) }()
-	t.Cleanup(func() { cancel(); synctest.Wait() })
-	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 500, Height: 100}}
-	for id := domain.WindowID(1); id <= 5; id++ {
-		client <- ports.WindowMapped{ID: id}
-	}
-	synctest.Wait()
-	for len(r.commands) > 0 {
-		<-r.commands
-	}
-	for len(r.state) > 0 {
-		<-r.state
-	}
-	return r
-}
-
-// stamp marks ev with the rig's current security epoch.
-func (r modeRig) stamp(ev ports.InputEvent) ports.InputEvent {
-	return ports.SecurityInput{State: r.epoch.Load().(domain.SecurityState), Event: ev}
-}
-
-// focused returns the windows focused since the last call, in order,
-// unwrapping security envelopes.
-func (r modeRig) focused() []domain.WindowID {
-	var ids []domain.WindowID
-	for len(r.commands) > 0 {
-		cmd := <-r.commands
-		if s, ok := cmd.(ports.SecurityCommand); ok {
-			cmd = s.Command
-		}
-		if f, ok := cmd.(ports.FocusWindow); ok {
-			ids = append(ids, f.ID)
-		}
-	}
-	return ids
-}
-
-// mode returns the mode of the snapshot published since the last call.
-func (r modeRig) mode(t *testing.T) string {
-	t.Helper()
-	synctest.Wait()
-	select {
-	case st := <-r.state:
-		return st.Mode
-	default:
-		t.Fatal("no state published")
-		return ""
-	}
-}
-
 func TestBindModeSetsMode(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize")
-		r.input <- r.stamp(cmdX)
+		r := runChainRig(t, "mode resize")
+		r.send(cmdX)
 		if got := r.mode(t); got != "resize" {
 			t.Fatalf("mode %q, want resize", got)
 		}
@@ -122,8 +22,8 @@ func TestBindModeSetsMode(t *testing.T) {
 
 func TestBindChainEndsInMode(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "focus-column-left; mode resize")
-		r.input <- r.stamp(cmdX)
+		r := runChainRig(t, "focus-column-left; mode resize")
+		r.send(cmdX)
 		if got := r.mode(t); got != "resize" {
 			t.Fatalf("mode %q, want resize", got)
 		}
@@ -135,8 +35,8 @@ func TestBindChainEndsInMode(t *testing.T) {
 
 func TestBindModeResetOnReload(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize")
-		r.input <- r.stamp(cmdX)
+		r := runChainRig(t, "mode resize")
+		r.send(cmdX)
 		if got := r.mode(t); got != "resize" {
 			t.Fatalf("mode %q, want resize", got)
 		}
@@ -152,13 +52,13 @@ func TestBindModeResetOnReload(t *testing.T) {
 
 func TestBindModeResetOnSecurityEpoch(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize")
-		r.input <- r.stamp(cmdX)
+		r := runChainRig(t, "mode resize")
+		r.send(cmdX)
 		if got := r.mode(t); got != "resize" {
 			t.Fatalf("mode %q, want resize", got)
 		}
 		r.epoch.Store(domain.SecurityState{Generation: 1})
-		r.input <- r.stamp(ports.KeyEvent{Keysym: "x", Keycode: 53, Mods: domain.ModSuper})
+		r.send(ports.KeyEvent{Keysym: "x", Keycode: 53, Mods: domain.ModSuper})
 		if got := r.mode(t); got != "" {
 			t.Fatalf("mode after epoch change %q, want default", got)
 		}
@@ -167,8 +67,8 @@ func TestBindModeResetOnSecurityEpoch(t *testing.T) {
 
 func TestBindModeStopsRepeat(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize")
-		r.input <- r.stamp(ports.KeyEvent{Keysym: "h", Keycode: 43, Mods: domain.ModSuper, Pressed: true})
+		r := runChainRig(t, "mode resize")
+		r.send(ports.KeyEvent{Keysym: "h", Keycode: 43, Mods: domain.ModSuper, Pressed: true})
 		synctest.Wait()
 		if got := r.focused(); len(got) != 1 {
 			t.Fatalf("press: focus %v, want one change", got)
@@ -187,65 +87,12 @@ func TestBindModeStopsRepeat(t *testing.T) {
 	})
 }
 
-// key is an unmodified key event.
-func key(sym string, code uint32, pressed bool) ports.KeyEvent {
-	return ports.KeyEvent{Keysym: sym, Base: sym, Keycode: code, Pressed: pressed}
-}
-
-// enter switches the rig into its resize mode with cmd+x.
-func (r modeRig) enter(t *testing.T) {
-	t.Helper()
-	r.input <- r.stamp(cmdX)
-	r.input <- r.stamp(ports.KeyEvent{Keysym: "x", Keycode: 53, Mods: domain.ModSuper})
-	if got := r.mode(t); got != "resize" {
-		t.Fatalf("mode %q, want resize", got)
-	}
-	drained(r.commands)
-}
-
-func drained(ch chan ports.ClientCommand) {
-	for len(ch) > 0 {
-		<-ch
-	}
-}
-
-// forwarded returns the keys forwarded since the last call.
-func (r modeRig) forwarded() []ports.KeyEvent {
-	var keys []ports.KeyEvent
-	for len(r.commands) > 0 {
-		cmd := <-r.commands
-		if s, ok := cmd.(ports.SecurityCommand); ok {
-			cmd = s.Command
-		}
-		if f, ok := cmd.(ports.ForwardKey); ok {
-			keys = append(keys, f.Key)
-		}
-	}
-	return keys
-}
-
-// widths returns the column widths of the published snapshot, if any.
-func (r modeRig) widths(t *testing.T) []int {
-	t.Helper()
-	synctest.Wait()
-	select {
-	case st := <-r.state:
-		var w []int
-		for _, col := range st.Workspaces[0].Columns {
-			w = append(w, col.Rect.W)
-		}
-		return w
-	default:
-		return nil
-	}
-}
-
 func TestModeRunsItsBinds(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize")
+		r := runChainRig(t, "mode resize")
 		r.enter(t)
-		r.input <- r.stamp(key("h", 43, true))
-		r.input <- r.stamp(key("h", 43, false))
+		r.send(key("h", 43, true))
+		r.send(key("h", 43, false))
 		w := r.widths(t)
 		if len(w) != 5 || w[4] <= w[0] {
 			t.Fatalf("widths %v, want the focused column wider", w)
@@ -258,14 +105,14 @@ func TestModeRunsItsBinds(t *testing.T) {
 
 func TestModeSwallowsUnboundKeys(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize")
+		r := runChainRig(t, "mode resize")
 		r.enter(t)
 		for _, sym := range []struct {
 			name string
 			code uint32
 		}{{"x", 53}, {"Shift_L", 50}} {
-			r.input <- r.stamp(key(sym.name, sym.code, true))
-			r.input <- r.stamp(key(sym.name, sym.code, false))
+			r.send(key(sym.name, sym.code, true))
+			r.send(key(sym.name, sym.code, false))
 		}
 		synctest.Wait()
 		if got := r.forwarded(); len(got) != 0 {
@@ -275,21 +122,11 @@ func TestModeSwallowsUnboundKeys(t *testing.T) {
 	})
 }
 
-func (r modeRig) noState(t *testing.T) {
-	t.Helper()
-	synctest.Wait()
-	select {
-	case st := <-r.state:
-		t.Fatalf("state published: mode %q", st.Mode)
-	default:
-	}
-}
-
 func TestModeIgnoresDefaultBinds(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize")
+		r := runChainRig(t, "mode resize")
 		r.enter(t)
-		r.input <- r.stamp(ports.KeyEvent{Keysym: "h", Keycode: 43, Mods: domain.ModSuper, Pressed: true})
+		r.send(ports.KeyEvent{Keysym: "h", Keycode: 43, Mods: domain.ModSuper, Pressed: true})
 		synctest.Wait()
 		if got := r.focused(); len(got) != 0 {
 			t.Fatalf("default bind ran: focus %v", got)
@@ -300,14 +137,14 @@ func TestModeIgnoresDefaultBinds(t *testing.T) {
 
 func TestModeForwardsReleaseOfEarlierPress(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize")
-		r.input <- r.stamp(key("a", 38, true))
+		r := runChainRig(t, "mode resize")
+		r.send(key("a", 38, true))
 		synctest.Wait()
 		if got := r.forwarded(); len(got) != 1 {
 			t.Fatalf("press forwarded %v", got)
 		}
 		r.enter(t)
-		r.input <- r.stamp(key("a", 38, false))
+		r.send(key("a", 38, false))
 		synctest.Wait()
 		if got := r.forwarded(); len(got) != 1 || got[0].Pressed || got[0].Keysym != "a" {
 			t.Fatalf("release forwarded %v", got)
@@ -317,13 +154,13 @@ func TestModeForwardsReleaseOfEarlierPress(t *testing.T) {
 
 func TestModeEscapeReturnsToDefault(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize")
+		r := runChainRig(t, "mode resize")
 		r.enter(t)
-		r.input <- r.stamp(key("Escape", 9, true))
+		r.send(key("Escape", 9, true))
 		if got := r.mode(t); got != "" {
 			t.Fatalf("mode %q, want default", got)
 		}
-		r.input <- r.stamp(key("Escape", 9, false))
+		r.send(key("Escape", 9, false))
 		synctest.Wait()
 		if got := r.forwarded(); len(got) != 0 {
 			t.Fatalf("forwarded %v", got)
@@ -333,13 +170,13 @@ func TestModeEscapeReturnsToDefault(t *testing.T) {
 
 func TestModeBoundEscapeStays(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize")
-		r.input <- r.stamp(ports.KeyEvent{Keysym: "e", Keycode: 26, Mods: domain.ModSuper, Pressed: true})
-		r.input <- r.stamp(ports.KeyEvent{Keysym: "e", Keycode: 26, Mods: domain.ModSuper})
+		r := runChainRig(t, "mode resize")
+		r.send(ports.KeyEvent{Keysym: "e", Keycode: 26, Mods: domain.ModSuper, Pressed: true})
+		r.send(ports.KeyEvent{Keysym: "e", Keycode: 26, Mods: domain.ModSuper})
 		if got := r.mode(t); got != "esc" {
 			t.Fatalf("mode %q, want esc", got)
 		}
-		r.input <- r.stamp(key("Escape", 9, true))
+		r.send(key("Escape", 9, true))
 		synctest.Wait()
 		if got := r.focused(); len(got) != 1 || got[0] != 4 {
 			t.Fatalf("focus %v, want [4]", got)
@@ -352,15 +189,12 @@ func TestModeBoundEscapeStays(t *testing.T) {
 
 func TestModeInhibitorTakesKeys(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize")
+		r := runChainRig(t, "mode resize")
 		r.enter(t)
 		r.client <- ports.ShortcutsInhibit{Window: 5, Active: true}
 		synctest.Wait()
-		drained(r.commands)
-		for len(r.state) > 0 {
-			<-r.state
-		}
-		r.input <- r.stamp(key("h", 43, true))
+		r.drain()
+		r.send(key("h", 43, true))
 		synctest.Wait()
 		if got := r.forwarded(); len(got) != 1 || got[0].Keysym != "h" {
 			t.Fatalf("forwarded %v, want h", got)
@@ -393,64 +227,27 @@ func TestModeHintKeepsPriority(t *testing.T) {
 
 func TestControlDoMode(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize")
-		// The rig never commits configures, so a settled wait would not end.
-		do := func(action string) ports.ControlReply {
-			t.Helper()
-			reply := make(chan ports.ControlReply, 1)
-			r.control <- ports.ControlDo{Caps: domain.CapAct, Wait: domain.WaitCommitted, Action: action, Reply: reply}
-			synctest.Wait()
-			select {
-			case rep := <-reply:
-				return rep
-			default:
-				t.Fatalf("do %q: no reply", action)
-				return ports.ControlReply{}
-			}
-		}
-		if rep := do("mode ghost"); rep.Err != ports.ControlErrBadRequest {
+		r := runChainRig(t, "mode resize")
+		// The rig never commits configures: do waits for committed only.
+		if rep := r.do(t, "mode ghost"); rep.Err != ports.ControlErrBadRequest {
 			t.Fatalf("do mode ghost: %+v", rep.Err)
 		}
-		if rep := do("focus-column-left; mode ghost"); rep.Err != ports.ControlErrBadRequest {
+		if rep := r.do(t, "focus-column-left; mode ghost"); rep.Err != ports.ControlErrBadRequest {
 			t.Fatalf("chain with ghost: %+v", rep.Err)
 		}
 		if got := r.focused(); len(got) != 0 {
 			t.Fatalf("rejected chain ran: focus %v", got)
 		}
 		r.noState(t)
-		if rep := do("mode resize"); rep.Err != "" || rep.Done != domain.WaitCommitted || rep.State.Mode != "resize" {
+		if rep := r.do(t, "mode resize"); rep.Err != "" || rep.Done != domain.WaitCommitted || rep.State.Mode != "resize" {
 			t.Fatalf("do mode resize: err %q done %q mode %q", rep.Err, rep.Done, rep.State.Mode)
 		}
 	})
 }
 
-// do runs a control action and returns its reply.
-func (r modeRig) do(t *testing.T, action string) ports.ControlReply {
-	t.Helper()
-	reply := make(chan ports.ControlReply, 1)
-	r.control <- ports.ControlDo{Caps: domain.CapAct, Wait: domain.WaitCommitted, Action: action, Reply: reply}
-	synctest.Wait()
-	select {
-	case rep := <-reply:
-		return rep
-	default:
-		t.Fatalf("do %q: no reply", action)
-		return ports.ControlReply{}
-	}
-}
-
-// current is the live state, read over control.
-func (r modeRig) current(t *testing.T) domain.State {
-	t.Helper()
-	reply := make(chan ports.ControlReply, 1)
-	r.control <- ports.ControlQuery{Caps: domain.CapRead, What: "state", Reply: reply}
-	synctest.Wait()
-	return (<-reply).State
-}
-
 func TestControlLockedChainWithQuit(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize")
+		r := runChainRig(t, "mode resize")
 		r.epoch.Store(domain.SecurityState{Generation: 1, Protected: true})
 		if rep := r.do(t, "focus-column-left; quit"); rep.Err != ports.ControlErrLocked {
 			t.Fatalf("locked chain: %+v", rep.Err)
@@ -469,7 +266,7 @@ func TestControlLockedChainWithQuit(t *testing.T) {
 
 func TestControlRejectsInvalidChains(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize")
+		r := runChainRig(t, "mode resize")
 		for _, action := range []string{"none; focus-column-left", "switch-column-next; focus-column-left", "mode a b", "focus-column-left; mode a b"} {
 			if rep := r.do(t, action); rep.Err != ports.ControlErrBadRequest {
 				t.Fatalf("%q: %q, want bad-request", action, rep.Err)
@@ -502,8 +299,8 @@ func TestApplyRejectsInvalidChains(t *testing.T) {
 
 func TestBindChainStartsWithMode(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize; focus-column-left")
-		r.input <- r.stamp(cmdX)
+		r := runChainRig(t, "mode resize; focus-column-left")
+		r.send(cmdX)
 		if got := r.mode(t); got != "resize" {
 			t.Fatalf("mode %q, want resize", got)
 		}
@@ -515,13 +312,13 @@ func TestBindChainStartsWithMode(t *testing.T) {
 
 func TestModeDefaultAction(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize")
+		r := runChainRig(t, "mode resize")
 		r.enter(t)
-		r.input <- r.stamp(key("q", 24, true))
+		r.send(key("q", 24, true))
 		if got := r.mode(t); got != "" {
 			t.Fatalf("bind mode default: %q", got)
 		}
-		r.input <- r.stamp(key("q", 24, false))
+		r.send(key("q", 24, false))
 		if rep := r.do(t, "mode resize"); rep.State.Mode != "resize" {
 			t.Fatalf("do mode resize: %q", rep.State.Mode)
 		}
@@ -533,9 +330,9 @@ func TestModeDefaultAction(t *testing.T) {
 
 func TestModeShiftEscapeLeaves(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize")
+		r := runChainRig(t, "mode resize")
 		r.enter(t)
-		r.input <- r.stamp(ports.KeyEvent{Keysym: "Escape", Keycode: 9, Mods: domain.ModShift, Pressed: true})
+		r.send(ports.KeyEvent{Keysym: "Escape", Keycode: 9, Mods: domain.ModShift, Pressed: true})
 		if got := r.mode(t); got != "" {
 			t.Fatalf("mode %q, want default", got)
 		}
@@ -544,9 +341,9 @@ func TestModeShiftEscapeLeaves(t *testing.T) {
 
 func TestModeBindRepeats(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize")
+		r := runChainRig(t, "mode resize")
 		r.enter(t)
-		r.input <- r.stamp(key("h", 43, true))
+		r.send(key("h", 43, true))
 		pressed := r.widths(t)
 		time.Sleep(time.Second)
 		held := r.widths(t)
@@ -558,14 +355,14 @@ func TestModeBindRepeats(t *testing.T) {
 
 func TestModeOverviewTakesItsKeys(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize")
+		r := runChainRig(t, "mode resize")
 		r.enter(t)
 		if rep := r.do(t, "toggle-overview"); rep.Err != "" {
 			t.Fatalf("overview: %q", rep.Err)
 		}
 		// Escape closes the overview; the mode stays.
-		r.input <- r.stamp(key("Escape", 9, true))
-		r.input <- r.stamp(key("Escape", 9, false))
+		r.send(key("Escape", 9, true))
+		r.send(key("Escape", 9, false))
 		synctest.Wait()
 		if got := r.current(t).Mode; got != "resize" {
 			t.Fatalf("mode %q, want resize", got)
@@ -575,7 +372,7 @@ func TestModeOverviewTakesItsKeys(t *testing.T) {
 
 func TestReloadKeepsDeclaredMode(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := runModeRig(t, "mode resize")
+		r := runChainRig(t, "mode resize")
 		r.enter(t)
 		r.reload <- domain.ConfigChanged{Config: r.cfg}
 		synctest.Wait()
