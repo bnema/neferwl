@@ -368,7 +368,7 @@ func TestWarningsKeepDefaults(t *testing.T) {
 		{"bind.cmd+x = quit; none", "action 2: none cannot be chained"},
 		{"bind.cmd+x = switch-column-next; quit", "action 1: switch-column-next must be the last action"},
 		{"bind.cmd+x = switch-column-prev; switch-column-next", "action 1: switch-column-prev must be the last action"},
-		{"bind.cmd+x = stash a; b", `unknown action "b": start each program with its own spawn ("spawn b")`},
+		{"bind.cmd+x = stash a; b", `unknown action "b": start each program with its own stash ("stash b")`},
 		{"startup = ;", "must not be empty"},
 	}
 	for _, tc := range cases {

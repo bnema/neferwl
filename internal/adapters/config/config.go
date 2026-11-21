@@ -1643,7 +1643,8 @@ func checkAction(v string) (string, error) {
 		}
 		if i > 0 && (strings.HasPrefix(parts[i-1], "spawn ") || strings.HasPrefix(parts[i-1], "stash ")) {
 			if spec, ok := domain.LookupCommand(p); !ok || (spec.Kind != domain.CommandAction && spec.Kind != domain.CommandActionArg) {
-				err = fmt.Errorf("unknown action %q: start each program with its own spawn (\"spawn %s\")", p, p)
+				verb, _, _ := strings.Cut(parts[i-1], " ")
+				err = fmt.Errorf("unknown action %q: start each program with its own %s (\"%s %s\")", p, verb, verb, p)
 			}
 		}
 		if len(parts) > 1 {
