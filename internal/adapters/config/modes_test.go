@@ -111,3 +111,55 @@ func TestModeBindInRaw(t *testing.T) {
 		t.Fatalf("raw %q vs %q", a[key], b[key])
 	}
 }
+
+func TestModeEqualGuard(t *testing.T) {
+	c, w := parseString(t, resizeMode+"mode.resize.bind.cmd+ = = set-column-width +1\n")
+	if !hasWarning(w, 5, "write cmd+equal instead of cmd+=") || len(c.Modes["resize"]) != 3 {
+		t.Fatalf("modes %v, warnings %v", c.Modes, w)
+	}
+}
+
+func TestModeUndeclaredDroppedFromRaw(t *testing.T) {
+	_, raw, _, err := parseBytes([]byte("bind.cmd+shift+r = mode ghost\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := raw["bind.Cmd+Shift+r"]; ok {
+		t.Fatalf("raw kept the dropped bind: %v", raw)
+	}
+}
+
+func TestModeAllBindsDropped(t *testing.T) {
+	c, w := parseString(t, "bind.cmd+shift+r = mode resize\nmode.resize.bind.x = none\n")
+	if !hasWarning(w, 2, "mode.resize: no binds left") || c.Modes != nil {
+		t.Fatalf("modes %v, warnings %v", c.Modes, w)
+	}
+	if !hasWarning(w, 1, "bind.Cmd+Shift+r: no mode.resize.* declared") {
+		t.Fatalf("enter bind not dropped: %v", w)
+	}
+}
+
+func TestModeEnterLostToCollision(t *testing.T) {
+	c, w := parseString(t, "bind.cmd+shift+r = mode resize\nbind.super+shift+r = quit\nmode.resize.bind.h = set-column-width -1\n")
+	if !hasWarning(w, 1, "bind.Cmd+Shift+r: overridden by bind.Shift+Super+r") {
+		t.Fatalf("no collision warning: %v", w)
+	}
+	if !hasWarning(w, 3, "mode.resize: no bind enters it") {
+		t.Fatalf("warnings: %v", w)
+	}
+	if _, ok := c.Modes["resize"]; !ok {
+		t.Fatalf("mode dropped: %v", c.Modes)
+	}
+}
+
+func TestBindWarningsSortedByLine(t *testing.T) {
+	_, w := parseString(t, "keyboard.cmd = ctrl\nbind.ctrl+x = quit\nbind.cmd+x = close-window\nbind.cmd+shift+r = mode ghost\nbind.bogus+x = quit\n")
+	if len(w) != 3 {
+		t.Fatalf("warnings: %v", w)
+	}
+	for i := 1; i < len(w); i++ {
+		if w[i-1].Line > w[i].Line {
+			t.Fatalf("unsorted: %v", w)
+		}
+	}
+}

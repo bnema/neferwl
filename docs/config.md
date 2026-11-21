@@ -384,7 +384,7 @@ A swipe moves one step at most. Other gestures (pinch, hold, two-finger scroll) 
 - Other keys use their xkb name (`wev` shows it).
 - `none` removes a default bind.
 - `spawn <command>` runs one program without a shell. See [Running commands](desktop.md#running-commands).
-- `;` chains actions, run in order: `bind.cmd+x = focus-column-left; focus-column-left`. Each program needs its own `spawn` action: `bind.cmd+r = mode resize; spawn notify-send resize`. A chain does not repeat when held.
+- `;` chains actions, run in order: `bind.cmd+x = focus-column-left; focus-column-left`. Each program needs its own `spawn` action: `bind.cmd+shift+r = mode resize; spawn notify-send resize`. A chain does not repeat when held. `none` cannot be chained, and `switch-column-next`/`-prev` must be the last action of a chain.
 - Holding a move bind repeats it: focus, move, resize and workspace steps, first after 250 ms, then 8 times a second. Toggles, spawns and closes run once. The overview's arrows and `h/j/k/l` repeat the same way.
 
 ```ini
@@ -472,7 +472,7 @@ With `keyboard.cmd = alt` or `ctrl`, the defaults that would combine `cmd` with 
 A mode is a named set of binds that replaces the normal ones while it is active. Declare it with `mode.<name>.bind.<keys> = <action>` and enter it with the `mode <name>` action:
 
 ```ini
-bind.cmd+r = mode resize
+bind.cmd+shift+r = mode resize
 mode.resize.bind.h = set-column-width -1
 mode.resize.bind.l = set-column-width +1
 mode.resize.bind.k = set-window-height -10%
@@ -489,7 +489,7 @@ mode.resize.bind.return = mode default
 Show the mode with a notification, and in waybar with a `custom` module (the state file is written at most once per second, so it can lag by up to a second):
 
 ```ini
-bind.cmd+r = mode resize; spawn notify-send resize
+bind.cmd+shift+r = mode resize; spawn notify-send resize
 ```
 
 ```json

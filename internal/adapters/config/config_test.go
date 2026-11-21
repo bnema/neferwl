@@ -364,6 +364,11 @@ func TestWarningsKeepDefaults(t *testing.T) {
 		{"bind.cmd+x = spawn ; ;", "spawn needs a command"},
 		{"bind.cmd+x = stash ", "stash needs a command"},
 		{"bind.cmd+x = stash ; ;", "stash needs a command"},
+		{"bind.cmd+x = none; quit", "action 1: none cannot be chained"},
+		{"bind.cmd+x = quit; none", "action 2: none cannot be chained"},
+		{"bind.cmd+x = switch-column-next; quit", "action 1: switch-column-next must be the last action"},
+		{"bind.cmd+x = switch-column-prev; switch-column-next", "action 1: switch-column-prev must be the last action"},
+		{"bind.cmd+x = stash a; b", `unknown action "b": start each program with its own spawn ("spawn b")`},
 		{"startup = ;", "must not be empty"},
 	}
 	for _, tc := range cases {
@@ -498,7 +503,7 @@ func TestBindResolvedCollision(t *testing.T) {
 	if _, ok := c.Binds["Cmd+Ctrl+y"]; ok {
 		t.Fatal(c.Binds)
 	}
-	if len(w) != 2 || w[0].Line != 4 || w[1].Line != 2 || !strings.Contains(w[1].Msg, "overridden by bind.Cmd+x") {
+	if len(w) != 2 || w[0].Line != 2 || w[1].Line != 4 || !strings.Contains(w[0].Msg, "overridden by bind.Cmd+x") {
 		t.Fatal(w)
 	}
 	// A user bind replaces a default with the same resolved keys, without a warning.

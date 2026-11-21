@@ -352,28 +352,34 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 		warn := func(format string, a ...any) {
 			warnings = append(warnings, Warning{Line: n, Msg: fmt.Sprintf(format, a...)})
 		}
-		if combo, ok := strings.CutPrefix(key, "bind."); ok {
+		// bindEntry checks a bind line and records it under prefix+canon.
+		bindEntry := func(prefix, combo string) (canon, action string, ok bool) {
 			if strings.HasSuffix(combo, "+") && strings.HasPrefix(value, "=") {
 				warn("%s: write %sequal instead of %s=", key, combo, combo)
-				continue
+				return "", "", false
 			}
 			canon, err := parseCombo(combo)
 			if err != nil {
 				warn("%s: %v", key, err)
-				continue
+				return "", "", false
 			}
-			value, err = checkAction(value)
+			action, err = checkAction(value)
 			if err != nil {
 				warn("%s: %v", key, err)
-				continue
+				return "", "", false
 			}
-			key = "bind." + canon
-			if prev, dup := seen[key]; dup {
-				warn("%s: overrides line %d", key, prev)
+			k := prefix + canon
+			if prev, dup := seen[k]; dup {
+				warn("%s: overrides line %d", k, prev)
 			}
-			seen[key] = n
-			raw[key] = value
-			c.Binds[canon] = value
+			seen[k] = n
+			raw[k] = action
+			return canon, action, true
+		}
+		if combo, ok := strings.CutPrefix(key, "bind."); ok {
+			if canon, action, ok := bindEntry("bind.", combo); ok {
+				c.Binds[canon] = action
+			}
 			continue
 		}
 		if rest, ok := strings.CutPrefix(key, "mode."); ok {
@@ -389,29 +395,17 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 				warn("%s: mode name must be letters, digits, - or _", key)
 				continue
 			}
-			canon, err := parseCombo(combo)
-			if err != nil {
-				warn("%s: %v", key, err)
+			canon, action, ok := bindEntry("mode."+name+".bind.", combo)
+			if !ok {
 				continue
 			}
-			value, err = checkAction(value)
-			if err != nil {
-				warn("%s: %v", key, err)
-				continue
-			}
-			key = "mode." + name + ".bind." + canon
-			if prev, dup := seen[key]; dup {
-				warn("%s: overrides line %d", key, prev)
-			}
-			seen[key] = n
-			raw[key] = value
 			if c.Modes == nil {
 				c.Modes = map[string]map[string]string{}
 			}
 			if c.Modes[name] == nil {
 				c.Modes[name] = map[string]string{}
 			}
-			c.Modes[name][canon] = value
+			c.Modes[name][canon] = action
 			continue
 		}
 		override := func() {
@@ -666,8 +660,6 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 		override()
 	}
 	warnings = append(warnings, checkOutputAnchors(c.Outputs, relKeys, offsetLines, seen)...)
-	warnings = append(warnings, checkModeBinds(&c, seen, raw)...)
-	warnings = append(warnings, checkWorkspaceBinds(c, seen)...)
 	var ruleWarnings []Warning
 	c.Rules, ruleWarnings = finishRules(ruleOrder, c.Workspaces, seen)
 	warnings = append(warnings, ruleWarnings...)
@@ -679,7 +671,6 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 		}
 		raw["rules"] = strings.Join(names, ",")
 	}
-	sort.SliceStable(warnings, func(i, j int) bool { return warnings[i].Line < warnings[j].Line })
 	// A user bind on a digit (cmd+1, even "none") replaces the default bound
 	// to the same physical key (cmd+code:2), so older configs keep working.
 	for combo := range c.Binds {
@@ -718,6 +709,18 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 	for _, name := range slices.Sorted(maps.Keys(c.Modes)) {
 		warnings = append(warnings, resolveCmdCollisions(c.Modes[name], "mode."+name+".bind.", c.Keyboard.CmdKey, seen, raw)...)
 	}
+	for name, binds := range c.Modes {
+		if len(binds) == 0 {
+			warnings = append(warnings, Warning{Line: firstLine(seen, "mode."+name+"."), Msg: fmt.Sprintf("mode.%s: no binds left", name)})
+			delete(c.Modes, name)
+		}
+	}
+	if len(c.Modes) == 0 {
+		c.Modes = nil
+	}
+	warnings = append(warnings, checkModeBinds(&c, seen, raw)...)
+	warnings = append(warnings, checkWorkspaceBinds(c, seen)...)
+	sort.SliceStable(warnings, func(i, j int) bool { return warnings[i].Line < warnings[j].Line })
 	return c, raw, warnings, nil
 }
 
@@ -1353,22 +1356,17 @@ func allBinds(c domain.Config) iter.Seq2[string, string] {
 // declared modes no bind enters.
 func checkModeBinds(c *domain.Config, seen map[string]int, raw map[string]string) []Warning {
 	var warnings []Warning
-	entered := map[string]bool{}
 	var drop []string
 	for key, chain := range allBinds(*c) {
 		for _, a := range domain.SplitActions(chain) {
-			name, ok := strings.CutPrefix(a, "mode ")
+			name, ok := modeName(a)
 			if !ok {
 				continue
 			}
-			name = strings.TrimSpace(name)
 			if _, declared := c.Modes[name]; name != "default" && !declared {
 				warnings = append(warnings, Warning{Line: seen[key], Msg: fmt.Sprintf("%s: no mode.%s.* declared", key, name)})
 				drop = append(drop, key)
 				break
-			}
-			if !strings.HasPrefix(key, "mode."+name+".") {
-				entered[name] = true // a mode's own binds do not enter it
 			}
 		}
 	}
@@ -1381,20 +1379,39 @@ func checkModeBinds(c *domain.Config, seen map[string]int, raw map[string]string
 		name, combo, _ := strings.Cut(strings.TrimPrefix(key, "mode."), ".bind.")
 		delete(c.Modes[name], combo)
 	}
-	for name := range c.Modes {
-		if entered[name] {
-			continue
-		}
-		line := 0
-		for key, n := range seen {
-			if strings.HasPrefix(key, "mode."+name+".") && (line == 0 || n < line) {
-				line = n
+	// Entering is computed on the binds that survived; a mode's own binds
+	// do not enter it.
+	entered := map[string]bool{}
+	for key, chain := range allBinds(*c) {
+		for _, a := range domain.SplitActions(chain) {
+			if name, ok := modeName(a); ok && !strings.HasPrefix(key, "mode."+name+".") {
+				entered[name] = true
 			}
 		}
-		warnings = append(warnings, Warning{Line: line, Msg: fmt.Sprintf("mode.%s: no bind enters it (add bind.<keys> = mode %s)", name, name)})
 	}
-	sort.Slice(warnings, func(i, j int) bool { return warnings[i].Line < warnings[j].Line })
+	for name := range c.Modes {
+		if !entered[name] {
+			warnings = append(warnings, Warning{Line: firstLine(seen, "mode."+name+"."), Msg: fmt.Sprintf("mode.%s: no bind enters it (add bind.<keys> = mode %s)", name, name)})
+		}
+	}
 	return warnings
+}
+
+// modeName returns the mode of a "mode <name>" action.
+func modeName(a string) (string, bool) {
+	rest, ok := strings.CutPrefix(a, "mode ")
+	return strings.TrimSpace(rest), ok
+}
+
+// firstLine is the first line of a key starting with prefix, 0 for none.
+func firstLine(seen map[string]int, prefix string) int {
+	line := 0
+	for key, n := range seen {
+		if strings.HasPrefix(key, prefix) && (line == 0 || n < line) {
+			line = n
+		}
+	}
+	return line
 }
 
 var workspaceName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -1613,6 +1630,14 @@ func checkAction(v string) (string, error) {
 	}
 	for i, p := range parts {
 		err := checkOneAction(p)
+		if err == nil && len(parts) > 1 {
+			switch {
+			case p == "none":
+				err = fmt.Errorf("none cannot be chained")
+			case (p == "switch-column-next" || p == "switch-column-prev") && i < len(parts)-1:
+				err = fmt.Errorf("%s must be the last action", p)
+			}
+		}
 		if err == nil {
 			continue
 		}
