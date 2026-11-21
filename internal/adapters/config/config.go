@@ -347,26 +347,23 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 	for _, w := range lineWarnings {
 		warnings = append(warnings, Warning{Line: w.Line, Msg: w.Msg})
 	}
+	declared := declaredModes(entries)
+	emptyModeWarned := map[string]bool{}
 	for _, e := range entries {
 		n, key, value := e.Line, e.Key, e.Value
 		warn := func(format string, a ...any) {
 			warnings = append(warnings, Warning{Line: n, Msg: fmt.Sprintf(format, a...)})
 		}
-		// bindEntry checks a bind line and records it under prefix+canon.
-		bindEntry := func(prefix, combo string) (canon, action string, ok bool) {
-			if strings.HasSuffix(combo, "+") && strings.HasPrefix(value, "=") {
-				warn("%s: write %sequal instead of %s=", key, combo, combo)
-				return "", "", false
-			}
-			canon, err := parseCombo(combo)
+		// bindEntry checks a bind line and, when record is set, records it
+		// under prefix+canon.
+		bindEntry := func(prefix, combo string, record bool) (canon, action string, ok bool) {
+			canon, action, err := checkBindLine(combo, value, declared)
 			if err != nil {
 				warn("%s: %v", key, err)
 				return "", "", false
 			}
-			action, err = checkAction(value)
-			if err != nil {
-				warn("%s: %v", key, err)
-				return "", "", false
+			if !record {
+				return canon, action, true
 			}
 			k := prefix + canon
 			if prev, dup := seen[k]; dup {
@@ -377,7 +374,7 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 			return canon, action, true
 		}
 		if combo, ok := strings.CutPrefix(key, "bind."); ok {
-			if canon, action, ok := bindEntry("bind.", combo); ok {
+			if canon, action, ok := bindEntry("bind.", combo, true); ok {
 				c.Binds[canon] = action
 			}
 			continue
@@ -395,7 +392,15 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 				warn("%s: mode name must be letters, digits, - or _", key)
 				continue
 			}
-			canon, action, ok := bindEntry("mode."+name+".bind.", combo)
+			canon, action, ok := bindEntry("mode."+name+".bind.", combo, declared[name])
+			if !declared[name] {
+				// Lines of a mode with no usable bind are not recorded.
+				if !emptyModeWarned[name] {
+					emptyModeWarned[name] = true
+					warn("mode.%s: no binds left", name)
+				}
+				continue
+			}
 			if !ok {
 				continue
 			}
@@ -671,9 +676,6 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 		}
 		raw["rules"] = strings.Join(names, ",")
 	}
-	// Before defaults are touched: a dropped bind must not take the default
-	// on its keys (digit or cmd collision) with it.
-	warnings = append(warnings, dropUndeclaredModes(&c, seen, raw)...)
 	// A user bind on a digit (cmd+1, even "none") replaces the default bound
 	// to the same physical key (cmd+code:2), so older configs keep working.
 	for combo := range c.Binds {
@@ -711,15 +713,6 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 	warnings = append(warnings, resolveCmdCollisions(c.Binds, "bind.", c.Keyboard.CmdKey, seen, raw)...)
 	for _, name := range slices.Sorted(maps.Keys(c.Modes)) {
 		warnings = append(warnings, resolveCmdCollisions(c.Modes[name], "mode."+name+".bind.", c.Keyboard.CmdKey, seen, raw)...)
-	}
-	for name, binds := range c.Modes {
-		if len(binds) == 0 {
-			warnings = append(warnings, Warning{Line: firstLine(seen, "mode."+name+"."), Msg: fmt.Sprintf("mode.%s: no binds left", name)})
-			delete(c.Modes, name)
-		}
-	}
-	if len(c.Modes) == 0 {
-		c.Modes = nil
 	}
 	warnings = append(warnings, checkModesEntered(c, seen)...)
 	warnings = append(warnings, checkWorkspaceBinds(c, seen)...)
@@ -1355,65 +1348,62 @@ func allBinds(c domain.Config) iter.Seq2[string, string] {
 	}
 }
 
-// dropUndeclaredModes drops binds that enter an undeclared mode, in the
-// default and mode tables. A mode is declared while it has a bind that is
-// not "none"; a mode left without one is removed, which can drop more
-// binds, so it repeats until nothing changes.
-func dropUndeclaredModes(c *domain.Config, seen map[string]int, raw map[string]string) []Warning {
-	var warnings []Warning
-	defaults := Defaults()
+// checkBindLine checks the keys and action chain of a bind line; a
+// "mode X" action needs X to be default or a declared mode.
+func checkBindLine(combo, value string, declared map[string]bool) (canon, action string, err error) {
+	if strings.HasSuffix(combo, "+") && strings.HasPrefix(value, "=") {
+		return "", "", fmt.Errorf("write %sequal instead of %s=", combo, combo)
+	}
+	if canon, err = parseCombo(combo); err != nil {
+		return "", "", err
+	}
+	if action, err = checkAction(value); err != nil {
+		return "", "", err
+	}
+	for _, a := range domain.SplitActions(action) {
+		if name, ok := modeName(a); ok && name != "default" && !declared[name] {
+			return "", "", fmt.Errorf("no mode.%s.* declared", name)
+		}
+	}
+	return canon, action, nil
+}
+
+// declaredModes returns the modes with at least one usable line: valid
+// name, keys and actions, not "none", and every mode it enters declared.
+// It starts from every candidate mode and removes modes until stable.
+func declaredModes(entries []kvconf.Entry) map[string]bool {
+	type line struct{ combo, value string }
+	lines := map[string][]line{}
+	for _, e := range entries {
+		rest, ok := strings.CutPrefix(e.Key, "mode.")
+		if !ok {
+			continue
+		}
+		name, combo, ok := strings.Cut(rest, ".bind.")
+		if !ok || name == "default" || !workspaceName.MatchString(name) {
+			continue
+		}
+		lines[name] = append(lines[name], line{combo, e.Value})
+	}
+	all := map[string]bool{}
+	for name := range lines {
+		all[name] = true
+	}
+	declared := maps.Clone(all)
 	for changed := true; changed; {
 		changed = false
-		for _, name := range slices.Sorted(maps.Keys(c.Modes)) {
-			binds := c.Modes[name]
-			live := false
-			for _, a := range binds {
-				live = live || a != "none"
-			}
-			if live {
-				continue
-			}
-			warnings = append(warnings, Warning{Line: firstLine(seen, "mode."+name+"."), Msg: fmt.Sprintf("mode.%s: no binds left", name)})
-			for combo := range binds {
-				delete(raw, "mode."+name+".bind."+combo)
-			}
-			delete(c.Modes, name)
-			changed = true
-		}
-		var drop []string
-		for key, chain := range allBinds(*c) {
-			for _, a := range domain.SplitActions(chain) {
-				name, ok := modeName(a)
-				if !ok {
-					continue
-				}
-				if _, declared := c.Modes[name]; name != "default" && !declared {
-					warnings = append(warnings, Warning{Line: seen[key], Msg: fmt.Sprintf("%s: no mode.%s.* declared", key, name)})
-					drop = append(drop, key)
-					break
-				}
+		for name := range declared {
+			usable := slices.ContainsFunc(lines[name], func(l line) bool {
+				_, action, err := checkBindLine(l.combo, l.value, declared)
+				return err == nil && action != "none"
+			})
+			if !usable {
+				delete(declared, name)
+				changed = true
 			}
 		}
-		for _, key := range drop {
-			delete(raw, key)
-			if combo, ok := strings.CutPrefix(key, "bind."); ok {
-				// Like any invalid line, the bind keeps the default it replaced.
-				if d, ok := defaults.Binds[combo]; ok {
-					c.Binds[combo] = d
-				} else {
-					delete(c.Binds, combo)
-				}
-				continue
-			}
-			name, combo, _ := strings.Cut(strings.TrimPrefix(key, "mode."), ".bind.")
-			delete(c.Modes[name], combo)
-		}
-		changed = changed || len(drop) > 0
 	}
-	if len(c.Modes) == 0 {
-		c.Modes = nil
-	}
-	return warnings
+	return declared
 }
 
 // checkModesEntered warns about modes no bind enters; a mode's own binds

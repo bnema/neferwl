@@ -1,8 +1,13 @@
 package config
 
 import (
+	"fmt"
+	"maps"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/bnema/neferwl/internal/domain"
 )
 
 const resizeMode = `bind.cmd+r = mode resize
@@ -55,7 +60,7 @@ func TestModeBadName(t *testing.T) {
 
 func TestModeUndeclaredDropped(t *testing.T) {
 	c, w := parseString(t, "bind.cmd+r = focus-column-left; mode ghost")
-	if !hasWarning(w, 1, "bind.Cmd+r: no mode.ghost.* declared") {
+	if !hasWarning(w, 1, "bind.cmd+r: no mode.ghost.* declared") {
 		t.Fatalf("warnings: %v", w)
 	}
 	if c.Binds["Cmd+r"] != "cycle-column-width" {
@@ -134,7 +139,7 @@ func TestModeAllBindsDropped(t *testing.T) {
 	if !hasWarning(w, 2, "mode.resize: no binds left") || c.Modes != nil {
 		t.Fatalf("modes %v, warnings %v", c.Modes, w)
 	}
-	if !hasWarning(w, 1, "bind.Cmd+Shift+r: no mode.resize.* declared") {
+	if !hasWarning(w, 1, "bind.cmd+shift+r: no mode.resize.* declared") {
 		t.Fatalf("enter bind not dropped: %v", w)
 	}
 }
@@ -168,10 +173,44 @@ func TestBindWarningsSortedByLine(t *testing.T) {
 // entering it is dropped as well.
 func TestModeEmptiedByUndeclaredMode(t *testing.T) {
 	c, w := parseString(t, "bind.cmd+r = mode a\nmode.a.bind.x = mode ghost\n")
-	if !hasWarning(w, 2, "mode.a.bind.x: no mode.ghost.* declared") || !hasWarning(w, 2, "mode.a: no binds left") || !hasWarning(w, 1, "bind.Cmd+r: no mode.a.* declared") {
+	if !hasWarning(w, 2, "mode.a.bind.x: no mode.ghost.* declared") || !hasWarning(w, 2, "mode.a: no binds left") || !hasWarning(w, 1, "bind.cmd+r: no mode.a.* declared") {
 		t.Fatalf("warnings: %v", w)
 	}
 	if c.Modes != nil || c.Binds["Cmd+r"] != "cycle-column-width" {
 		t.Fatalf("modes %v, cmd+r %q", c.Modes, c.Binds["Cmd+r"])
+	}
+}
+
+// A line naming an undeclared mode is rejected like any invalid line: the
+// config, raw and warnings match those with an unknown action instead.
+func TestUndeclaredModeLikeInvalidLine(t *testing.T) {
+	for _, tc := range []struct{ first, second string }{
+		{"bind.cmd+r = quit", "bind.cmd+r = %s"},
+		{"bind.cmd+r = none", "bind.cmd+r = %s"},
+		{"bind.super+r = quit", "bind.cmd+r = %s"},
+		{"bind.cmd+1 = quit", "bind.cmd+code:2 = %s"},
+	} {
+		t.Run(tc.first, func(t *testing.T) {
+			parse := func(action string) (domain.Config, map[string]string, []Warning) {
+				c, raw, w, err := parseBytes([]byte(tc.first + "\n" + fmt.Sprintf(tc.second, action) + "\n"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return c, raw, w
+			}
+			c, raw, w := parse("mode ghost")
+			wantC, wantRaw, wantW := parse("bogus")
+			if !reflect.DeepEqual(c, wantC) || !maps.Equal(raw, wantRaw) {
+				t.Fatalf("binds %v raw %v, want binds %v raw %v", c.Binds, raw, wantC.Binds, wantRaw)
+			}
+			if len(w) != len(wantW) || !hasWarning(w, 2, "no mode.ghost.* declared") {
+				t.Fatalf("warnings %v, want like %v", w, wantW)
+			}
+			for _, x := range w {
+				if strings.Contains(x.Msg, "overrides line 1") {
+					t.Fatalf("warnings: %v", w)
+				}
+			}
+		})
 	}
 }
