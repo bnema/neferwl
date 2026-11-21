@@ -383,7 +383,8 @@ A swipe moves one step at most. Other gestures (pinch, hold, two-finger scroll) 
 - `code:N` is a physical key, the same on every layout: `code:2` to `code:10` are the digits 1 to 9.
 - Other keys use their xkb name (`wev` shows it).
 - `none` removes a default bind.
-- `spawn <command>` runs a program without a shell. See [Running commands](desktop.md#running-commands).
+- `spawn <command>` runs one program without a shell. See [Running commands](desktop.md#running-commands).
+- `;` chains actions, run in order: `bind.cmd+x = focus-column-left; focus-column-left`. Each program needs its own `spawn` action: `bind.cmd+r = mode resize; spawn notify-send resize`. A chain does not repeat when held.
 - Holding a move bind repeats it: focus, move, resize and workspace steps, first after 250 ms, then 8 times a second. Toggles, spawns and closes run once. The overview's arrows and `h/j/k/l` repeat the same way.
 
 ```ini
@@ -427,6 +428,7 @@ bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
 | `focus-monitor-left/right/up/down` | Focus the neighbor monitor |
 | `move-workspace-to-monitor-left/right/up/down` | Move the workspace to the neighbor monitor |
 | `scale-up` / `scale-down` | Zoom the display; the scale is saved to the config |
+| `mode <name>` | Switch to a [bind mode](#modes); `mode default` leaves it |
 | `quit` | Exit NeferWL |
 
 Note on `toggle-fullscreen`: a parentless window whose first committed size is exactly the logical size of the output it is on, without asking for fullscreen (a game in borderless-windowed mode), is put fullscreen as if by `toggle-fullscreen`, without being resized, when it is the focused window of the shown workspace. Later resizes do not.
@@ -464,6 +466,35 @@ Note on `toggle-fullscreen`: a parentless window whose first committed size is e
 | `ctrl+alt+backspace` | `quit` |
 
 With `keyboard.cmd = alt` or `ctrl`, the defaults that would combine `cmd` with that same modifier are dropped. Bind those actions to other keys.
+
+## Modes
+
+A mode is a named set of binds that replaces the normal ones while it is active. Declare it with `mode.<name>.bind.<keys> = <action>` and enter it with the `mode <name>` action:
+
+```ini
+bind.cmd+r = mode resize
+mode.resize.bind.h = set-column-width -1
+mode.resize.bind.l = set-column-width +1
+mode.resize.bind.k = set-window-height -10%
+mode.resize.bind.j = set-window-height +10%
+mode.resize.bind.return = mode default
+```
+
+- Only the mode's binds run; the normal binds do nothing.
+- Unbound keys are swallowed: windows do not receive them.
+- An unbound `escape` returns to default. Bind `escape` in the mode to give it another action.
+- NeferWL returns to default when the session locks, and on a reload that removes the active mode.
+- The state's `mode` key holds the active mode, empty in default (see [State for scripts](desktop.md#state-for-scripts)).
+
+Show the mode with a notification, and in waybar with a `custom` module (the state file is written at most once per second, so it can lag by up to a second):
+
+```ini
+bind.cmd+r = mode resize; spawn notify-send resize
+```
+
+```json
+"custom/mode": {"exec": "neferwl state | jq -r .mode", "interval": 1}
+```
 
 ## Layout
 

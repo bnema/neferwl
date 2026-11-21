@@ -180,9 +180,9 @@ log.debug =
 # keys right of 0 (- and = on US).
 # Keys are what your layout prints (cmd+é on AZERTY). Write = # and space
 # by name: cmd+equal, cmd+numbersign, cmd+space. `none` removes a default.
-# `spawn <command>` runs a program; arguments split on spaces, `;` starts
-# another command, no shell (pipes and variables go in a script: see
-# "Running commands" in docs/desktop.md).
+# `spawn <command>` runs one program. Arguments split on spaces, no shell
+# (pipes and variables go in a script: see "Running commands" in
+# docs/desktop.md). `;` chains actions, each program in its own spawn.
 bind.cmd+return = spawn-terminal
 bind.cmd+left = focus-column-left
 bind.cmd+right = focus-column-right
@@ -294,3 +294,12 @@ bind.cmd+code:12 = scale-down
 # bind.XF86MonBrightnessUp = spawn brightnessctl set +5%
 # bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
 # bind.XF86AudioPlay = spawn playerctl play-pause
+
+# Modes: a named set of binds that replaces the normal ones while active.
+# Unbound keys are swallowed; an unbound escape returns to default.
+# bind.cmd+shift+r = mode resize; spawn notify-send resize
+# mode.resize.bind.h = set-column-width -1
+# mode.resize.bind.l = set-column-width +1
+# mode.resize.bind.k = set-window-height -10%
+# mode.resize.bind.j = set-window-height +10%
+# mode.resize.bind.return = mode default

@@ -84,7 +84,7 @@ neferwl -s demo do spawn foot --until 'window-mapped app_id=foot'
 
 | Command | Effect |
 |---|---|
-| `do ACTION [ARG...]` | Run a bind action: `do focus-workspace-next`, `do spawn foot`, `do workspace dev` |
+| `do ACTION [ARG...]` | Run a bind action or a `;` chain: `do 'mode resize; spawn notify-send resize'`, `do focus-workspace-next`, `do spawn foot` |
 | `key COMBO` | Press and release a combination: `key Super+Return` |
 | `type TEXT` | Type text with the session's keymap |
 | `press COMBO`, `release COMBO` | Hold or release keys |

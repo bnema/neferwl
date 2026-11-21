@@ -2,7 +2,7 @@
 
 ## Running commands
 
-`spawn` binds, `startup` and `terminal` run a program directly, **without a shell**. The line is split on spaces: the first word is the program (from `PATH` or a full path), the rest are its arguments. `;` separates several commands, which all start at once.
+`spawn` binds, `startup` and `terminal` run a program directly, **without a shell**. The line is split on spaces: the first word is the program (from `PATH` or a full path), the rest are its arguments. In `startup`, `;` separates several commands, which all start at once. In a bind, `;` chains actions, so each program needs its own `spawn` action.
 
 ```text
 bind.ctrl+cmd+space = spawn fuzzel
@@ -160,6 +160,8 @@ Each window also carries metadata keys:
 - `sandbox`: the app ID the sandbox engine declared through `wp_security_context_v1`, else the engine name; empty when the window is not sandboxed. The sandbox declares it; NeferWL does not verify it.
 - `content_type`: `game`, `video`, `photo` or empty, from `wp_content_type_v1`.
 - `xwayland`: the window is an X11 window on either backend.
+
+The top-level `mode` key is the active [bind mode](config.md#modes), empty in default.
 
 The `workspaces` list holds every workspace with its `visible` flag, its columns and the windows in them, each with `x`, `y`, `width` and `height` in logical pixels of its output. A workspace's `cover` is its active fullscreen window, 0 if none; a window's `fullscreen` is also set for the other fullscreen windows it holds, which sit output-sized in their own column or band. The file is written at most once per second.
 
