@@ -89,7 +89,7 @@ func (c *Core) controlDo(ctx context.Context, r ports.ControlDo) error {
 	before := c.state()
 	baseline := c.sceneSeqs()
 	c.bindCombo, c.bindSource = "", domain.BindSourceControl
-	err := c.runBind(ctx, Action(r.Action))
+	err := c.runBind(ctx, Action(strings.Join(segments, "; ")))
 	if quit {
 		// There is no subsequent settle/present pass after ErrQuit.
 		now := c.state()

@@ -331,7 +331,7 @@ func bindTable(table map[string]string, cfg domain.Config) (map[binding]Action, 
 		if e := chainOrder(segments); e != nil {
 			return nil, e
 		}
-		binds[b] = Action(a)
+		binds[b] = Action(strings.Join(segments, "; "))
 	}
 	return binds, nil
 }

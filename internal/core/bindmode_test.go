@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"errors"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -385,6 +386,41 @@ func TestReloadKeepsDeclaredMode(t *testing.T) {
 		synctest.Wait()
 		if got := r.current(t).Mode; got != "resize" {
 			t.Fatalf("changed table: mode %q", got)
+		}
+	})
+}
+
+func TestControlDoRunsTrimmedText(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := runChainRig(t, "mode resize")
+		if rep := r.do(t, "focus-column-left "); rep.Err != "" {
+			t.Fatalf("do: %q", rep.Err)
+		}
+		if got := r.focused(); len(got) != 1 || got[0] != 4 {
+			t.Fatalf("focus %v, want [4]", got)
+		}
+		if rep := r.do(t, "quit "); rep.Err != "" {
+			t.Fatalf("quit: %q", rep.Err)
+		}
+		if err := <-r.done; !errors.Is(err, core.ErrQuit) {
+			t.Fatalf("run: %v, want ErrQuit", err)
+		}
+	})
+}
+
+func TestBindModeTraced(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := runChainRig(t, "focus-column-left; mode resize")
+		r.send(cmdX)
+		synctest.Wait()
+		var traces []domain.BindDispatched
+		for len(r.binds) > 0 {
+			if b, ok := (<-r.binds).(domain.BindDispatched); ok {
+				traces = append(traces, b)
+			}
+		}
+		if len(traces) != 2 || traces[1].Action != "mode resize" || traces[1].Combo == "" || traces[1].Combo != traces[0].Combo || traces[1].Source != domain.BindSourceKey {
+			t.Fatalf("traces %+v", traces)
 		}
 	})
 }
