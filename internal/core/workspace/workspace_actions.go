@@ -202,6 +202,16 @@ func NamedArg(a Action) (string, bool) {
 	return name, ok && name != "" && !strings.ContainsAny(name, " \t")
 }
 
+// modePrefix switches the bind mode: "mode resize".
+const modePrefix = "mode "
+
+// ModeArg returns the name of a "mode <name>" action.
+func ModeArg(a Action) (string, bool) {
+	rest, ok := strings.CutPrefix(string(a), modePrefix)
+	name := strings.TrimSpace(rest)
+	return name, ok && name != "" && !strings.ContainsAny(name, " \t")
+}
+
 // spawnPrefix starts a bind action that runs commands: "spawn fuzzel --flag".
 // They are split by domain.SplitCommands; there is no shell.
 const spawnPrefix = "spawn "
@@ -334,7 +344,7 @@ func ArgPrefixes() []string {
 	for _, prefix := range workspacePrefixes {
 		names = append(names, strings.TrimSpace(prefix))
 	}
-	for _, prefix := range []string{namedPrefix, spawnPrefix, stashPrefix} {
+	for _, prefix := range []string{namedPrefix, modePrefix, spawnPrefix, stashPrefix} {
 		names = append(names, strings.TrimSpace(prefix))
 	}
 	return names

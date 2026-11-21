@@ -306,8 +306,15 @@ func parseBind(s, cmd string) (binding, error) {
 	return b, nil
 }
 
-// validAction reports whether a is a single bind action core can run.
-func validAction(a Action) error {
+// validAction reports whether a is a single bind action core can run;
+// "mode X" needs X to be default or one of modes.
+func validAction(a Action, modes map[string]map[string]string) error {
+	if name, ok := ModeArg(a); ok {
+		if _, declared := modes[name]; name != "default" && !declared {
+			return fmt.Errorf("invalid action %q: no mode %q", a, name)
+		}
+		return nil
+	}
 	if _, ok := SpawnCommands(a); ok {
 		return nil
 	}
@@ -359,7 +366,7 @@ func (c *Core) apply(cfg domain.Config) error {
 			return fmt.Errorf("invalid action %q", a)
 		}
 		for _, seg := range segments {
-			if e := validAction(Action(seg)); e != nil {
+			if e := validAction(Action(seg), cfg.Modes); e != nil {
 				return e
 			}
 		}

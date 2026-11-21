@@ -108,6 +108,7 @@ var commandCatalog = []CommandSpec{
 	{Name: "move-column-to-workspace", Arg: "N", Summary: "Move column to numbered workspace.", Kind: CommandActionArg, Caps: CapAct},
 	{Name: "move-window-to-workspace", Arg: "N", Summary: "Move window to numbered workspace.", Kind: CommandActionArg, Caps: CapAct},
 	{Name: "workspace", Arg: "NAME", Summary: "Toggle named workspace.", Kind: CommandActionArg, Caps: CapAct},
+	{Name: "mode", Arg: "NAME", Summary: "Switch bind mode.", Kind: CommandActionArg, Caps: CapAct},
 	{Name: "spawn", Arg: "COMMAND", Summary: "Run commands without a shell.", Kind: CommandActionArg, Caps: CapAct},
 	{Name: "stash", Arg: "COMMAND", Summary: "Run commands into the stash.", Kind: CommandActionArg, Caps: CapAct},
 	{Name: "set-column-width", Arg: "+N|-N", Summary: "Adjust column width in cells.", Kind: CommandActionArg, Caps: CapAct},

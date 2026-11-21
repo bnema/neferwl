@@ -1519,6 +1519,12 @@ func checkOneAction(v string) error {
 		}
 		return nil
 	}
+	if rest, ok := strings.CutPrefix(v, "mode "); ok {
+		if !workspaceName.MatchString(strings.TrimSpace(rest)) {
+			return fmt.Errorf("mode needs a name (letters, digits, - or _)")
+		}
+		return nil
+	}
 	if rest, ok := strings.CutPrefix(v, "workspace "); ok {
 		if !workspaceName.MatchString(strings.TrimSpace(rest)) {
 			return fmt.Errorf("workspace needs a name (letters, digits, - or _)")

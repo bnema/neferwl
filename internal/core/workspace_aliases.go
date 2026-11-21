@@ -223,6 +223,9 @@ func WorkspaceArg(a Action) (n int, op workspacedomain.WorkspaceOp, ok bool) {
 // NamedArg calls workspace.NamedArg.
 func NamedArg(a Action) (string, bool) { return workspacedomain.NamedArg(a) }
 
+// ModeArg calls workspace.ModeArg.
+func ModeArg(a Action) (string, bool) { return workspacedomain.ModeArg(a) }
+
 // SpawnCommands calls workspace.SpawnCommands.
 func SpawnCommands(a Action) ([][]string, bool) { return workspacedomain.SpawnCommands(a) }
 

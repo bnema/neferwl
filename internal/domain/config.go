@@ -221,6 +221,9 @@ type Config struct {
 	// Outputs selects and configures physical displays (drm backend).
 	Outputs []OutputConfig
 	Binds   map[string]string
+	// Modes are the bind modes (mode.<name>.bind.* keys): mode name, then
+	// combo to action chain, like Binds.
+	Modes map[string]map[string]string
 	// DRM selects devices at startup; changes require a restart.
 	DRM    struct{ Devices, Ignore []string }
 	Render struct {
@@ -377,6 +380,7 @@ func (c Config) Equal(o Config) bool {
 		!equalSliceFunc(c.Rules, o.Rules, windowRuleEqual) ||
 		!equalSliceFunc(c.Outputs, o.Outputs, outputConfigEqual) ||
 		((c.Binds == nil) != (o.Binds == nil) || !maps.Equal(c.Binds, o.Binds)) ||
+		((c.Modes == nil) != (o.Modes == nil) || !maps.EqualFunc(c.Modes, o.Modes, maps.Equal[map[string]string])) ||
 		!equalSlice(c.DRM.Devices, o.DRM.Devices) ||
 		!equalSlice(c.DRM.Ignore, o.DRM.Ignore) ||
 		!equalSlice(c.Log.Debug, o.Log.Debug) {

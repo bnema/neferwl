@@ -12,6 +12,7 @@ func TestCatalogBindActions(t *testing.T) {
 		"move-column-to-workspace": "2",
 		"move-window-to-workspace": "2",
 		"workspace":                "dev",
+		"mode":                     "resize",
 		"spawn":                    "foot --app-id=terminal",
 		"stash":                    "foot",
 		"set-column-width":         "+1",

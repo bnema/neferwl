@@ -11,6 +11,8 @@ type State struct {
 	Windows []WindowState
 	// Workspaces is every workspace of every output.
 	Workspaces []WorkspaceState
+	// Mode is the active bind mode, empty for default.
+	Mode string
 }
 
 // WorkspaceState is one workspace and its tiled columns, left to right in
