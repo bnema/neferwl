@@ -72,7 +72,8 @@ func (c *Core) controlDo(ctx context.Context, r ports.ControlDo) error {
 	// Only a lone quit runs on a locked session: session rm needs it.
 	// Protected input runs no binds (protectedInput); control mirrors it.
 	quit := slices.Contains(segments, string(ActionQuit))
-	if !(len(segments) == 1 && quit) && c.protectionRequested() {
+	loneQuit := len(segments) == 1 && quit
+	if !loneQuit && c.protectionRequested() {
 		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrLocked})
 		return nil
 	}
