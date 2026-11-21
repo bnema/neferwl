@@ -750,6 +750,56 @@ func TestStashBind(t *testing.T) {
 	}
 }
 
+func TestBindChain(t *testing.T) {
+	c, w := parseString(t, "bind.cmd+x = focus-column-left ;focus-column-left")
+	if len(w) != 0 || c.Binds["Cmd+x"] != "focus-column-left; focus-column-left" {
+		t.Fatalf("chain: %v %v", c.Binds, w)
+	}
+	c, w = parseString(t, "bind.cmd+x = spawn a; spawn b")
+	if len(w) != 0 || c.Binds["Cmd+x"] != "spawn a; spawn b" {
+		t.Fatalf("spawn chain: %v %v", c.Binds, w)
+	}
+}
+
+func TestBindChainInvalidSegment(t *testing.T) {
+	c, w := parseString(t, "\nbind.cmd+x = focus-column-left; bogus")
+	if _, ok := c.Binds["Cmd+x"]; ok {
+		t.Fatalf("invalid chain kept: %v", c.Binds)
+	}
+	if len(w) != 1 || w[0].Line != 2 || !strings.Contains(w[0].Msg, `bind.cmd+x: action 2: unknown action "bogus"`) {
+		t.Fatalf("warnings: %v", w)
+	}
+}
+
+func TestBindChainLegacySpawnHint(t *testing.T) {
+	c, w := parseString(t, "bind.cmd+x = spawn foot; mako")
+	if _, ok := c.Binds["Cmd+x"]; ok {
+		t.Fatalf("legacy chain kept: %v", c.Binds)
+	}
+	want := `bind.cmd+x: action 2: unknown action "mako": start each program with its own spawn ("spawn mako")`
+	if len(w) != 1 || w[0].Msg != want {
+		t.Fatalf("warnings: %v", w)
+	}
+}
+
+func TestBindChainUndeclaredWorkspace(t *testing.T) {
+	_, w := parseString(t, "bind.cmd+x = focus-column-left; workspace undeclared")
+	found := false
+	for _, x := range w {
+		found = found || strings.Contains(x.Msg, "no workspace.undeclared.* declared")
+	}
+	if !found {
+		t.Fatalf("warnings: %v", w)
+	}
+}
+
+func TestStartupChainUnchanged(t *testing.T) {
+	c, w := parseString(t, "startup = a; b")
+	if len(w) != 0 || !reflect.DeepEqual(c.Startup, [][]string{{"a"}, {"b"}}) {
+		t.Fatalf("startup: %q %v", c.Startup, w)
+	}
+}
+
 func TestVRRFlipGap(t *testing.T) {
 	for _, tc := range []struct {
 		value   string

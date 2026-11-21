@@ -27,11 +27,11 @@ func TestCatalogBindActions(t *testing.T) {
 					t.Fatalf("add a valid argument fixture for %s", spec.Name)
 				}
 				text += " " + arg
-				if err := checkAction(spec.Name); err == nil {
+				if err := checkOneAction(spec.Name); err == nil {
 					t.Error("bare argument action accepted")
 				}
 			}
-			err := checkAction(text)
+			err := checkOneAction(text)
 			if action && err != nil {
 				t.Errorf("action rejected: %v", err)
 			}
@@ -41,7 +41,7 @@ func TestCatalogBindActions(t *testing.T) {
 		})
 	}
 	for _, text := range []string{"state extra", "key Super+x", "type hello", "pointer 1 2", "swipe down", "shot DP-1", "output-add 1920x1080@60", "output-rm HEADLESS-2"} {
-		if err := checkAction(text); err == nil {
+		if err := checkOneAction(text); err == nil {
 			t.Errorf("non-action %q accepted", text)
 		}
 	}

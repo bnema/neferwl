@@ -360,7 +360,8 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 				warn("%s: %v", key, err)
 				continue
 			}
-			if err := checkAction(value); err != nil {
+			value, err = checkAction(value)
+			if err != nil {
 				warn("%s: %v", key, err)
 				continue
 			}
@@ -1234,15 +1235,17 @@ func checkWorkspaceBinds(c domain.Config, seen map[string]int) []Warning {
 	}
 	bound := map[string]bool{}
 	var warnings []Warning
-	for combo, a := range c.Binds {
-		name, ok := strings.CutPrefix(a, "workspace ")
-		if !ok {
-			continue
-		}
-		name = strings.TrimSpace(name)
-		bound[name] = true
-		if !declared[name] {
-			warnings = append(warnings, Warning{Line: seen["bind."+combo], Msg: fmt.Sprintf("bind.%s: no workspace.%s.* declared", combo, name)})
+	for combo, chain := range c.Binds {
+		for _, a := range domain.SplitActions(chain) {
+			name, ok := strings.CutPrefix(a, "workspace ")
+			if !ok {
+				continue
+			}
+			name = strings.TrimSpace(name)
+			bound[name] = true
+			if !declared[name] {
+				warnings = append(warnings, Warning{Line: seen["bind."+combo], Msg: fmt.Sprintf("bind.%s: no workspace.%s.* declared", combo, name)})
+			}
 		}
 	}
 	for _, w := range c.Workspaces {
@@ -1475,7 +1478,46 @@ func splitList(v string) []string {
 	return list
 }
 
-func checkAction(v string) error {
+// checkAction checks a bind value, a chain of actions separated by
+// domain.CommandSeparator, and returns it canonicalised as "a; b".
+func checkAction(v string) (string, error) {
+	// A bare "spawn " or "stash " segment keeps its space so "spawn ;"
+	// reads as a spawn without a command.
+	var parts, checks []string
+	for raw := range strings.SplitSeq(v, domain.CommandSeparator) {
+		p := strings.TrimSpace(raw)
+		if p == "" {
+			continue
+		}
+		check := p
+		if (p == "spawn" || p == "stash") && strings.TrimLeft(raw, " \t") != p {
+			check = p + " "
+		}
+		parts = append(parts, p)
+		checks = append(checks, check)
+	}
+	if len(parts) == 0 {
+		return "", fmt.Errorf("empty action")
+	}
+	for i, p := range parts {
+		err := checkOneAction(checks[i])
+		if err == nil {
+			continue
+		}
+		if i > 0 && (strings.HasPrefix(parts[i-1], "spawn ") || strings.HasPrefix(parts[i-1], "stash ")) {
+			if spec, ok := domain.LookupCommand(p); !ok || (spec.Kind != domain.CommandAction && spec.Kind != domain.CommandActionArg) {
+				err = fmt.Errorf("unknown action %q: start each program with its own spawn (\"spawn %s\")", p, p)
+			}
+		}
+		if len(parts) > 1 {
+			return "", fmt.Errorf("action %d: %w", i+1, err)
+		}
+		return "", err
+	}
+	return strings.Join(parts, domain.CommandSeparator+" "), nil
+}
+
+func checkOneAction(v string) error {
 	if rest, ok := strings.CutPrefix(v, "spawn "); ok {
 		if len(domain.SplitCommands(rest)) == 0 {
 			return fmt.Errorf("spawn needs a command")
