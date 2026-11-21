@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
@@ -44,12 +45,20 @@ func (c *Core) controlDo(ctx context.Context, r ports.ControlDo) error {
 		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrForbidden})
 		return nil
 	}
-	spec, ok := domain.LookupCommand(r.Action)
-	if !ok || (spec.Kind != domain.CommandAction && spec.Kind != domain.CommandActionArg) {
+	// A "do" runs a bind chain: every action must be known before any runs.
+	segments := domain.SplitActions(r.Action)
+	if len(segments) == 0 {
 		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrUnknownCommand})
 		return nil
 	}
-	quit := Action(r.Action) == ActionQuit
+	for _, seg := range segments {
+		spec, ok := domain.LookupCommand(seg)
+		if !ok || (spec.Kind != domain.CommandAction && spec.Kind != domain.CommandActionArg) {
+			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrUnknownCommand})
+			return nil
+		}
+	}
+	quit := slices.Contains(segments, string(ActionQuit))
 	// Protected input runs no binds (protectedInput); control mirrors
 	// it, except quit, which session rm needs on a locked session.
 	if !quit && c.protectionRequested() {
