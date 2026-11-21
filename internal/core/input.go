@@ -481,12 +481,17 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 	name := keyName(key.Keysym)
 	// A bind on the keysym wins; then the unshifted keysym (Cmd+Shift+1
 	// prints exclam on US); then the physical key (code:N).
-	action, bound := c.binds[binding{key: name, mods: key.Mods}]
+	// An active mode replaces the default table.
+	table := c.binds
+	if c.mode != "" {
+		table = c.modes[c.mode]
+	}
+	action, bound := table[binding{key: name, mods: key.Mods}]
 	if !bound && key.Base != "" {
-		action, bound = c.binds[binding{key: keyName(key.Base), mods: key.Mods}]
+		action, bound = table[binding{key: keyName(key.Base), mods: key.Mods}]
 	}
 	if !bound && key.Keycode != 0 {
-		action, bound = c.binds[binding{key: "code:" + strconv.FormatUint(uint64(key.Keycode), 10), mods: key.Mods}]
+		action, bound = table[binding{key: "code:" + strconv.FormatUint(uint64(key.Keycode), 10), mods: key.Mods}]
 	}
 	// Track presses by physical key: Shift may be released before the key.
 	if !key.Pressed {
@@ -495,6 +500,15 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 		if consumed {
 			return nil
 		}
+	}
+	if key.Pressed && !bound && c.mode != "" {
+		// A mode swallows unbound keys; an unbound Escape leaves it.
+		c.pressed[held] = true
+		if name == "Escape" {
+			c.setMode("")
+			return c.publish(ctx)
+		}
+		return nil
 	}
 	if key.Pressed {
 		if bound {
