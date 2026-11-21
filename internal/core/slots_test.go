@@ -473,12 +473,12 @@ func TestStartupCommands(t *testing.T) {
 	})
 }
 
-// A spawn bind with several commands sends each one, in order.
+// A chain of spawn actions sends each command, in order.
 func TestSpawnBindSeveralCommands(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		cfg := altCmdDefaults()
 		cfg.Terminal.AutoOpen = "off"
-		cfg.Binds["Alt+p"] = "spawn grim -g x; notify-send done"
+		cfg.Binds["Alt+p"] = "spawn grim -g x; spawn notify-send done"
 		input := make(chan ports.InputEvent, 4)
 		output := make(chan ports.OutputEvent, 1)
 		scenes := make(chan []domain.Scene, 1)

@@ -206,14 +206,16 @@ func NamedArg(a Action) (string, bool) {
 // They are split by domain.SplitCommands; there is no shell.
 const spawnPrefix = "spawn "
 
-// SpawnCommands returns the commands of a "spawn <cmd>[; <cmd>...]" action.
+// SpawnCommands returns the command of a "spawn <cmd>" action; a bind
+// chain gives each program its own spawn action.
 func SpawnCommands(a Action) ([][]string, bool) { return prefixedCommands(a, spawnPrefix) }
 
 // stashPrefix starts a bind action that runs commands and opens their
 // windows in the stash: "stash firefox".
 const stashPrefix = "stash "
 
-// StashCommands returns the commands of a "stash <cmd>[; <cmd>...]" action.
+// StashCommands returns the command of a "stash <cmd>" action; a bind
+// chain gives each program its own stash action.
 func StashCommands(a Action) ([][]string, bool) { return prefixedCommands(a, stashPrefix) }
 
 func prefixedCommands(a Action, prefix string) ([][]string, bool) {

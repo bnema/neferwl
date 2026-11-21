@@ -305,6 +305,36 @@ func parseBind(s, cmd string) (binding, error) {
 	}
 	return b, nil
 }
+
+// validAction reports whether a is a single bind action core can run.
+func validAction(a Action) error {
+	if _, ok := SpawnCommands(a); ok {
+		return nil
+	}
+	if _, ok := StashCommands(a); ok {
+		return nil
+	}
+	if a == ActionScaleUp || a == ActionScaleDown {
+		return nil
+	}
+	if _, _, ok := WorkspaceArg(a); ok {
+		return nil
+	}
+	if _, _, ok := ResizeArg(a); ok {
+		return nil
+	}
+	if _, ok := NamedArg(a); ok {
+		return nil
+	}
+	switch a {
+	case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowStash, ActionToggleStashVisible, ActionToggleOverview, ActionCloseWindow, ActionQuit, ActionFocusWorkspacePrev, ActionFocusWorkspaceNext, ActionMoveColumnToWorkspacePrev, ActionMoveColumnToWorkspaceNext, ActionMoveWindowToWorkspacePrev, ActionMoveWindowToWorkspaceNext, ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionFocusMonitorUp, ActionFocusMonitorDown, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown, ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight,
+		ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspacePrev, ActionMoveWorkspaceNext, ActionToggleFloating, ActionSwitchColumnNext, ActionSwitchColumnPrev, ActionHint, ActionOSDPin:
+	default:
+		return fmt.Errorf("invalid action %q", a)
+	}
+	return nil
+}
+
 func (c *Core) apply(cfg domain.Config) error {
 	if cfg.Layout.MaxColumns < 1 {
 		return fmt.Errorf("invalid max columns")
@@ -324,35 +354,14 @@ func (c *Core) apply(cfg domain.Config) error {
 		if _, ok := binds[b]; ok {
 			return fmt.Errorf("duplicate bind %q", combo)
 		}
-		if _, ok := SpawnCommands(Action(a)); ok {
-			binds[b] = Action(a)
-			continue
-		}
-		if _, ok := StashCommands(Action(a)); ok {
-			binds[b] = Action(a)
-			continue
-		}
-		if Action(a) == ActionScaleUp || Action(a) == ActionScaleDown {
-			binds[b] = Action(a)
-			continue
-		}
-		if _, _, ok := WorkspaceArg(Action(a)); ok {
-			binds[b] = Action(a)
-			continue
-		}
-		if _, _, ok := ResizeArg(Action(a)); ok {
-			binds[b] = Action(a)
-			continue
-		}
-		if _, ok := NamedArg(Action(a)); ok {
-			binds[b] = Action(a)
-			continue
-		}
-		switch Action(a) {
-		case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowStash, ActionToggleStashVisible, ActionToggleOverview, ActionCloseWindow, ActionQuit, ActionFocusWorkspacePrev, ActionFocusWorkspaceNext, ActionMoveColumnToWorkspacePrev, ActionMoveColumnToWorkspaceNext, ActionMoveWindowToWorkspacePrev, ActionMoveWindowToWorkspaceNext, ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionFocusMonitorUp, ActionFocusMonitorDown, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown, ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight,
-			ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspacePrev, ActionMoveWorkspaceNext, ActionToggleFloating, ActionSwitchColumnNext, ActionSwitchColumnPrev, ActionHint, ActionOSDPin:
-		default:
+		segments := domain.SplitActions(a)
+		if len(segments) == 0 {
 			return fmt.Errorf("invalid action %q", a)
+		}
+		for _, seg := range segments {
+			if e := validAction(Action(seg)); e != nil {
+				return e
+			}
 		}
 		binds[b] = Action(a)
 	}

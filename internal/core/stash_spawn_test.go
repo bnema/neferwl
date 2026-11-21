@@ -83,7 +83,7 @@ func TestStashBindOpensWindowInStash(t *testing.T) {
 
 func TestStashBindRunsEveryCommand(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		r := stashSpawnRig(t, func(c *domain.Config) { c.Binds["Alt+Ctrl+Shift+f"] = "stash one; two" })
+		r := stashSpawnRig(t, func(c *domain.Config) { c.Binds["Alt+Ctrl+Shift+f"] = "stash one; stash two" })
 		r.key(t, "f", domain.ModAlt|domain.ModCtrl|domain.ModShift)
 		a, b := receive(t, r.spawn), receive(t, r.spawn)
 		if a.Argv[0] != "one" || b.Argv[0] != "two" || slotToken(t, a) == slotToken(t, b) {

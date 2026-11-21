@@ -499,7 +499,7 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 	if key.Pressed {
 		if bound {
 			c.pressed[held] = true
-			if repeats(action) {
+			if len(domain.SplitActions(string(action))) == 1 && repeats(action) {
 				c.startRepeat(key, action)
 			}
 			c.bindCombo, c.bindSource = c.comboOf(key), domain.BindSourceKey
@@ -515,8 +515,22 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 	return nil
 }
 
-// runBind runs the action of a bound key press.
+// runBind runs the actions of a bind chain ("a; b") in order, each with
+// the combo and source of the bind. An action error stops the chain.
 func (c *Core) runBind(ctx context.Context, action Action) error {
+	combo, source := c.bindCombo, c.bindSource
+	for _, seg := range domain.SplitActions(string(action)) {
+		c.bindCombo, c.bindSource = combo, source
+		if err := c.runAction(ctx, Action(seg)); err != nil {
+			return err
+		}
+	}
+	c.bindCombo, c.bindSource = "", ""
+	return nil
+}
+
+// runAction runs one bind action.
+func (c *Core) runAction(ctx context.Context, action Action) error {
 	if c.ch.Binds != nil {
 		defer c.traceBind(string(action), c.bindCombo, c.bindSource)()
 	}
