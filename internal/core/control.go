@@ -58,6 +58,12 @@ func (c *Core) controlDo(ctx context.Context, r ports.ControlDo) error {
 			return nil
 		}
 	}
+	for _, seg := range segments {
+		if name, ok := ModeArg(Action(seg)); ok && name != "default" && c.modes[name] == nil {
+			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBadRequest})
+			return nil
+		}
+	}
 	quit := slices.Contains(segments, string(ActionQuit))
 	// Protected input runs no binds (protectedInput); control mirrors
 	// it, except quit, which session rm needs on a locked session.

@@ -388,3 +388,36 @@ func TestModeHintKeepsPriority(t *testing.T) {
 		receive(t, h.scans)
 	})
 }
+
+func TestControlDoMode(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := runModeRig(t, "mode resize")
+		// The rig never commits configures, so a settled wait would not end.
+		do := func(action string) ports.ControlReply {
+			t.Helper()
+			reply := make(chan ports.ControlReply, 1)
+			r.control <- ports.ControlDo{Caps: domain.CapAct, Wait: domain.WaitCommitted, Action: action, Reply: reply}
+			synctest.Wait()
+			select {
+			case rep := <-reply:
+				return rep
+			default:
+				t.Fatalf("do %q: no reply", action)
+				return ports.ControlReply{}
+			}
+		}
+		if rep := do("mode ghost"); rep.Err != ports.ControlErrBadRequest {
+			t.Fatalf("do mode ghost: %+v", rep.Err)
+		}
+		if rep := do("focus-column-left; mode ghost"); rep.Err != ports.ControlErrBadRequest {
+			t.Fatalf("chain with ghost: %+v", rep.Err)
+		}
+		if got := r.focused(); len(got) != 0 {
+			t.Fatalf("rejected chain ran: focus %v", got)
+		}
+		r.noState(t)
+		if rep := do("mode resize"); rep.Err != "" || rep.Done != domain.WaitCommitted || rep.State.Mode != "resize" {
+			t.Fatalf("do mode resize: err %q done %q mode %q", rep.Err, rep.Done, rep.State.Mode)
+		}
+	})
+}
