@@ -360,9 +360,9 @@ func TestWarningsKeepDefaults(t *testing.T) {
 		{"bind.cmd+x = set-window-height +5", "set-window-height needs"},
 		{"bind.cmd+x = set-window-height -101%", "set-window-height needs"},
 		{"bind.cmd+x = set-window-height +5", "set-window-height needs"},
-		{"bind.cmd+x = spawn   ", "unknown action"},
+		{"bind.cmd+x = spawn   ", "spawn needs a command"},
 		{"bind.cmd+x = spawn ; ;", "spawn needs a command"},
-		{"bind.cmd+x = stash ", "unknown action"},
+		{"bind.cmd+x = stash ", "stash needs a command"},
 		{"bind.cmd+x = stash ; ;", "stash needs a command"},
 		{"startup = ;", "must not be empty"},
 	}

@@ -1481,26 +1481,12 @@ func splitList(v string) []string {
 // checkAction checks a bind value, a chain of actions separated by
 // domain.CommandSeparator, and returns it canonicalised as "a; b".
 func checkAction(v string) (string, error) {
-	// A bare "spawn " or "stash " segment keeps its space so "spawn ;"
-	// reads as a spawn without a command.
-	var parts, checks []string
-	for raw := range strings.SplitSeq(v, domain.CommandSeparator) {
-		p := strings.TrimSpace(raw)
-		if p == "" {
-			continue
-		}
-		check := p
-		if (p == "spawn" || p == "stash") && strings.TrimLeft(raw, " \t") != p {
-			check = p + " "
-		}
-		parts = append(parts, p)
-		checks = append(checks, check)
-	}
+	parts := domain.SplitActions(v)
 	if len(parts) == 0 {
 		return "", fmt.Errorf("empty action")
 	}
 	for i, p := range parts {
-		err := checkOneAction(checks[i])
+		err := checkOneAction(p)
 		if err == nil {
 			continue
 		}
@@ -1518,6 +1504,9 @@ func checkAction(v string) (string, error) {
 }
 
 func checkOneAction(v string) error {
+	if v == "spawn" || v == "stash" {
+		return fmt.Errorf("%s needs a command", v)
+	}
 	if rest, ok := strings.CutPrefix(v, "spawn "); ok {
 		if len(domain.SplitCommands(rest)) == 0 {
 			return fmt.Errorf("spawn needs a command")
