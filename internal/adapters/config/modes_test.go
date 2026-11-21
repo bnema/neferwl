@@ -58,8 +58,8 @@ func TestModeUndeclaredDropped(t *testing.T) {
 	if !hasWarning(w, 1, "bind.Cmd+r: no mode.ghost.* declared") {
 		t.Fatalf("warnings: %v", w)
 	}
-	if _, ok := c.Binds["Cmd+r"]; ok {
-		t.Fatalf("bind kept: %q", c.Binds["Cmd+r"])
+	if c.Binds["Cmd+r"] != "cycle-column-width" {
+		t.Fatalf("default not restored: %q", c.Binds["Cmd+r"])
 	}
 }
 
@@ -161,5 +161,17 @@ func TestBindWarningsSortedByLine(t *testing.T) {
 		if w[i-1].Line > w[i].Line {
 			t.Fatalf("unsorted: %v", w)
 		}
+	}
+}
+
+// A mode whose only bind enters an undeclared mode is emptied, so the bind
+// entering it is dropped as well.
+func TestModeEmptiedByUndeclaredMode(t *testing.T) {
+	c, w := parseString(t, "bind.cmd+r = mode a\nmode.a.bind.x = mode ghost\n")
+	if !hasWarning(w, 2, "mode.a.bind.x: no mode.ghost.* declared") || !hasWarning(w, 2, "mode.a: no binds left") || !hasWarning(w, 1, "bind.Cmd+r: no mode.a.* declared") {
+		t.Fatalf("warnings: %v", w)
+	}
+	if c.Modes != nil || c.Binds["Cmd+r"] != "cycle-column-width" {
+		t.Fatalf("modes %v, cmd+r %q", c.Modes, c.Binds["Cmd+r"])
 	}
 }

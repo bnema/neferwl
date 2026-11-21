@@ -369,6 +369,8 @@ func TestWarningsKeepDefaults(t *testing.T) {
 		{"bind.cmd+x = switch-column-next; quit", "action 1: switch-column-next must be the last action"},
 		{"bind.cmd+x = switch-column-prev; switch-column-next", "action 1: switch-column-prev must be the last action"},
 		{"bind.cmd+x = stash a; b", `unknown action "b": start each program with its own stash ("stash b")`},
+		{"bind.cmd+1 = mode ghost", "no mode.ghost.* declared"},
+		{"bind.super+r = mode ghost", "no mode.ghost.* declared"},
 		{"startup = ;", "must not be empty"},
 	}
 	for _, tc := range cases {
