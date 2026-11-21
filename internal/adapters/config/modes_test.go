@@ -214,3 +214,22 @@ func TestUndeclaredModeLikeInvalidLine(t *testing.T) {
 		})
 	}
 }
+
+// Only the last line on the same keys counts: a mode whose binds all end
+// as "none" has no binds left.
+func TestModeLastLineNone(t *testing.T) {
+	c, w := parseString(t, "bind.cmd+r = mode a\nmode.a.bind.x = quit\nmode.a.bind.x = none\n")
+	if !hasWarning(w, 2, "mode.a: no binds left") || !hasWarning(w, 1, "bind.cmd+r: no mode.a.* declared") {
+		t.Fatalf("warnings: %v", w)
+	}
+	if c.Modes != nil || c.Binds["Cmd+r"] != "cycle-column-width" {
+		t.Fatalf("modes %v, cmd+r %q", c.Modes, c.Binds["Cmd+r"])
+	}
+}
+
+func TestModesEnterEachOther(t *testing.T) {
+	c, w := parseString(t, "bind.cmd+shift+r = mode a\nmode.a.bind.b = mode b\nmode.b.bind.a = mode a\n")
+	if len(w) != 0 || c.Modes["a"]["b"] != "mode b" || c.Modes["b"]["a"] != "mode a" {
+		t.Fatalf("modes %v, warnings %v", c.Modes, w)
+	}
+}

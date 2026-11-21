@@ -1368,8 +1368,9 @@ func checkBindLine(combo, value string, declared map[string]bool) (canon, action
 	return canon, action, nil
 }
 
-// declaredModes returns the modes with at least one usable line: valid
-// name, keys and actions, not "none", and every mode it enters declared.
+// declaredModes returns the modes with at least one usable bind: the last
+// valid line on its keys (valid name, keys and actions, every mode it
+// enters declared) is not "none".
 // It starts from every candidate mode and removes modes until stable.
 func declaredModes(entries []kvconf.Entry) map[string]bool {
 	type line struct{ combo, value string }
@@ -1393,10 +1394,17 @@ func declaredModes(entries []kvconf.Entry) map[string]bool {
 	for changed := true; changed; {
 		changed = false
 		for name := range declared {
-			usable := slices.ContainsFunc(lines[name], func(l line) bool {
-				_, action, err := checkBindLine(l.combo, l.value, declared)
-				return err == nil && action != "none"
-			})
+			// As in parsing, the last valid line on the same keys wins.
+			last := map[string]string{}
+			for _, l := range lines[name] {
+				if canon, action, err := checkBindLine(l.combo, l.value, declared); err == nil {
+					last[canon] = action
+				}
+			}
+			usable := false
+			for _, action := range last {
+				usable = usable || action != "none"
+			}
 			if !usable {
 				delete(declared, name)
 				changed = true
