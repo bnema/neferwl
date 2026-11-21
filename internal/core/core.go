@@ -328,6 +328,9 @@ func bindTable(table map[string]string, cfg domain.Config) (map[binding]Action, 
 				return nil, e
 			}
 		}
+		if e := chainOrder(segments); e != nil {
+			return nil, e
+		}
 		binds[b] = Action(a)
 	}
 	return binds, nil
@@ -459,7 +462,7 @@ func (c *Core) apply(cfg domain.Config) error {
 		c.hoverLocked, c.hoverLock = false, 0
 	}
 	c.binds, c.modes = binds, modes
-	if c.mode != "" && c.modes[c.mode] == nil {
+	if !c.hasMode(c.mode) {
 		c.setMode("")
 	}
 	c.cmdMod = map[string]domain.Mods{"super": domain.ModSuper, "alt": domain.ModAlt, "ctrl": domain.ModCtrl}[cfg.Keyboard.CmdKey]

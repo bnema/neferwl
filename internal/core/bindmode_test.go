@@ -24,6 +24,7 @@ type modeRig struct {
 	client   chan ports.ClientEvent
 	control  chan ports.ControlRequest
 	epoch    *atomic.Value
+	done     chan error
 }
 
 func runModeRig(t *testing.T, chain string) modeRig {
@@ -49,7 +50,7 @@ func runModeRig(t *testing.T, chain string) modeRig {
 	cfg.Binds["Cmd+h"] = "focus-column-left"
 	cfg.Binds["Cmd+e"] = "mode esc"
 	cfg.Modes = map[string]map[string]string{
-		"resize": {"h": "set-column-width +1"}, // columns are one cell: -1 is a no-op
+		"resize": {"h": "set-column-width +1", "q": "mode default"}, // columns are one cell: -1 is a no-op
 		"esc":    {"Escape": "focus-column-left"},
 	}
 	r.cfg = cfg
@@ -58,7 +59,8 @@ func runModeRig(t *testing.T, chain string) modeRig {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() { _ = c.Run(ctx) }()
+	r.done = make(chan error, 1)
+	go func() { r.done <- c.Run(ctx) }()
 	t.Cleanup(func() { cancel(); synctest.Wait() })
 	output <- ports.OutputAdded{Info: domain.OutputInfo{Name: "OUT-1", Width: 500, Height: 100}}
 	for id := domain.WindowID(1); id <= 5; id++ {
@@ -418,6 +420,174 @@ func TestControlDoMode(t *testing.T) {
 		r.noState(t)
 		if rep := do("mode resize"); rep.Err != "" || rep.Done != domain.WaitCommitted || rep.State.Mode != "resize" {
 			t.Fatalf("do mode resize: err %q done %q mode %q", rep.Err, rep.Done, rep.State.Mode)
+		}
+	})
+}
+
+// do runs a control action and returns its reply.
+func (r modeRig) do(t *testing.T, action string) ports.ControlReply {
+	t.Helper()
+	reply := make(chan ports.ControlReply, 1)
+	r.control <- ports.ControlDo{Caps: domain.CapAct, Wait: domain.WaitCommitted, Action: action, Reply: reply}
+	synctest.Wait()
+	select {
+	case rep := <-reply:
+		return rep
+	default:
+		t.Fatalf("do %q: no reply", action)
+		return ports.ControlReply{}
+	}
+}
+
+// current is the live state, read over control.
+func (r modeRig) current(t *testing.T) domain.State {
+	t.Helper()
+	reply := make(chan ports.ControlReply, 1)
+	r.control <- ports.ControlQuery{Caps: domain.CapRead, What: "state", Reply: reply}
+	synctest.Wait()
+	return (<-reply).State
+}
+
+func TestControlLockedChainWithQuit(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := runModeRig(t, "mode resize")
+		r.epoch.Store(domain.SecurityState{Generation: 1, Protected: true})
+		if rep := r.do(t, "focus-column-left; quit"); rep.Err != ports.ControlErrLocked {
+			t.Fatalf("locked chain: %+v", rep.Err)
+		}
+		// The lock clears focus (window 0); the chain moves it nowhere.
+		if got := r.focused(); len(got) != 1 || got[0] != 0 {
+			t.Fatalf("locked chain ran: focus %v", got)
+		}
+		select {
+		case err := <-r.done:
+			t.Fatalf("core stopped: %v", err)
+		default:
+		}
+	})
+}
+
+func TestControlRejectsInvalidChains(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := runModeRig(t, "mode resize")
+		for _, action := range []string{"none; focus-column-left", "switch-column-next; focus-column-left", "mode a b", "focus-column-left; mode a b"} {
+			if rep := r.do(t, action); rep.Err != ports.ControlErrBadRequest {
+				t.Fatalf("%q: %q, want bad-request", action, rep.Err)
+			}
+		}
+		// An unknown command wins over a bad argument anywhere in the chain.
+		if rep := r.do(t, "mode a b; bogus"); rep.Err != ports.ControlErrUnknownCommand {
+			t.Fatalf("unknown after bad: %q", rep.Err)
+		}
+		if got := r.focused(); len(got) != 0 {
+			t.Fatalf("rejected chain ran: focus %v", got)
+		}
+	})
+}
+
+func TestApplyRejectsInvalidChains(t *testing.T) {
+	for _, chain := range []string{"none; focus-column-left", "focus-column-left; none", "switch-column-prev; focus-column-left"} {
+		cfg := scrollDefaults()
+		cfg.Binds["Cmd+x"] = chain
+		if _, err := core.New(cfg, core.Channels{Commands: make(chan ports.ClientCommand, 1), Scenes: make(chan []domain.Scene, 1)}, testOptions(t, core.Options{})); err == nil {
+			t.Fatalf("%q accepted", chain)
+		}
+	}
+	cfg := scrollDefaults()
+	cfg.Binds["Cmd+x"] = "focus-column-left; switch-column-next"
+	if _, err := core.New(cfg, core.Channels{Commands: make(chan ports.ClientCommand, 1), Scenes: make(chan []domain.Scene, 1)}, testOptions(t, core.Options{})); err != nil {
+		t.Fatalf("switch last: %v", err)
+	}
+}
+
+func TestBindChainStartsWithMode(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := runModeRig(t, "mode resize; focus-column-left")
+		r.input <- r.stamp(cmdX)
+		if got := r.mode(t); got != "resize" {
+			t.Fatalf("mode %q, want resize", got)
+		}
+		if got := r.focused(); len(got) != 1 || got[0] != 4 {
+			t.Fatalf("focus %v, want [4]", got)
+		}
+	})
+}
+
+func TestModeDefaultAction(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := runModeRig(t, "mode resize")
+		r.enter(t)
+		r.input <- r.stamp(key("q", 24, true))
+		if got := r.mode(t); got != "" {
+			t.Fatalf("bind mode default: %q", got)
+		}
+		r.input <- r.stamp(key("q", 24, false))
+		if rep := r.do(t, "mode resize"); rep.State.Mode != "resize" {
+			t.Fatalf("do mode resize: %q", rep.State.Mode)
+		}
+		if rep := r.do(t, "mode default"); rep.Err != "" || rep.State.Mode != "" {
+			t.Fatalf("do mode default: %+v", rep.Err)
+		}
+	})
+}
+
+func TestModeShiftEscapeLeaves(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := runModeRig(t, "mode resize")
+		r.enter(t)
+		r.input <- r.stamp(ports.KeyEvent{Keysym: "Escape", Keycode: 9, Mods: domain.ModShift, Pressed: true})
+		if got := r.mode(t); got != "" {
+			t.Fatalf("mode %q, want default", got)
+		}
+	})
+}
+
+func TestModeBindRepeats(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := runModeRig(t, "mode resize")
+		r.enter(t)
+		r.input <- r.stamp(key("h", 43, true))
+		pressed := r.widths(t)
+		time.Sleep(time.Second)
+		held := r.widths(t)
+		if len(pressed) != 5 || len(held) != 5 || held[4] <= pressed[4] {
+			t.Fatalf("widths %v then %v, want the held bind to repeat", pressed, held)
+		}
+	})
+}
+
+func TestModeOverviewTakesItsKeys(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := runModeRig(t, "mode resize")
+		r.enter(t)
+		if rep := r.do(t, "toggle-overview"); rep.Err != "" {
+			t.Fatalf("overview: %q", rep.Err)
+		}
+		// Escape closes the overview; the mode stays.
+		r.input <- r.stamp(key("Escape", 9, true))
+		r.input <- r.stamp(key("Escape", 9, false))
+		synctest.Wait()
+		if got := r.current(t).Mode; got != "resize" {
+			t.Fatalf("mode %q, want resize", got)
+		}
+	})
+}
+
+func TestReloadKeepsDeclaredMode(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := runModeRig(t, "mode resize")
+		r.enter(t)
+		r.reload <- domain.ConfigChanged{Config: r.cfg}
+		synctest.Wait()
+		if got := r.current(t).Mode; got != "resize" {
+			t.Fatalf("same config: mode %q", got)
+		}
+		cfg := r.cfg
+		cfg.Modes = map[string]map[string]string{"resize": {"l": "set-column-width +1"}}
+		r.reload <- domain.ConfigChanged{Config: cfg}
+		synctest.Wait()
+		if got := r.current(t).Mode; got != "resize" {
+			t.Fatalf("changed table: mode %q", got)
 		}
 	})
 }

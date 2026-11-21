@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 
 	"github.com/bnema/neferwl/internal/domain"
 	"github.com/bnema/neferwl/internal/ports"
@@ -51,23 +52,27 @@ func (c *Core) controlDo(ctx context.Context, r ports.ControlDo) error {
 		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrUnknownCommand})
 		return nil
 	}
+	// Unknown commands win over bad arguments, wherever they are.
+	bad := chainOrder(segments) != nil
 	for _, seg := range segments {
 		spec, ok := domain.LookupCommand(seg)
 		if !ok || (spec.Kind != domain.CommandAction && spec.Kind != domain.CommandActionArg) {
 			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrUnknownCommand})
 			return nil
 		}
-	}
-	for _, seg := range segments {
-		if name, ok := ModeArg(Action(seg)); ok && name != "default" && c.modes[name] == nil {
-			controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBadRequest})
-			return nil
+		if strings.HasPrefix(seg, "mode ") {
+			name, ok := ModeArg(Action(seg))
+			bad = bad || !ok || !c.hasMode(name)
 		}
 	}
+	if bad {
+		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrBadRequest})
+		return nil
+	}
+	// Only a lone quit runs on a locked session: session rm needs it.
+	// Protected input runs no binds (protectedInput); control mirrors it.
 	quit := slices.Contains(segments, string(ActionQuit))
-	// Protected input runs no binds (protectedInput); control mirrors
-	// it, except quit, which session rm needs on a locked session.
-	if !quit && c.protectionRequested() {
+	if !(len(segments) == 1 && quit) && c.protectionRequested() {
 		controlReply(r.Reply, ports.ControlReply{Err: ports.ControlErrLocked})
 		return nil
 	}

@@ -63,6 +63,7 @@ func (c *Core) syncSecurity() bool {
 	}
 	c.cancelSwitcher()
 	c.stopRepeat()
+	c.mode = "" // a lock or unlock starts from the default binds
 	if state.Protected {
 		c.dropCaptureSessions()
 	}
@@ -83,7 +84,6 @@ func (c *Core) securityCheckpoint(ctx context.Context) error {
 	if !c.syncSecurity() {
 		return nil
 	}
-	c.setMode("")
 	if err := c.osdWatch(ctx); err != nil {
 		return err
 	}

@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	"github.com/bnema/neferwl/internal/core/geom"
 	"github.com/bnema/neferwl/internal/domain"
@@ -513,7 +514,8 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 	if key.Pressed {
 		if bound {
 			c.pressed[held] = true
-			if len(domain.SplitActions(string(action))) == 1 && repeats(action) {
+			// repeats never matches a chain: its actions are exact names.
+			if repeats(action) {
 				c.startRepeat(key, action)
 			}
 			c.bindCombo, c.bindSource = c.comboOf(key), domain.BindSourceKey
@@ -532,31 +534,36 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 // runBind runs the actions of a bind chain ("a; b") in order, each with
 // the combo and source of the bind. An action error stops the chain.
 func (c *Core) runBind(ctx context.Context, action Action) error {
+	if !strings.Contains(string(action), domain.CommandSeparator) {
+		return c.runSegment(ctx, action)
+	}
 	combo, source := c.bindCombo, c.bindSource
-	modeChanged := false
 	for _, seg := range domain.SplitActions(string(action)) {
-		if name, ok := ModeArg(Action(seg)); ok {
-			done := func() {}
-			if c.ch.Binds != nil {
-				done = c.traceBind(seg, combo, source)
-			}
-			before := c.mode
-			c.setMode(name)
-			modeChanged = modeChanged || c.mode != before
-			done()
-			continue
-		}
 		c.bindCombo, c.bindSource = combo, source
-		if err := c.runAction(ctx, Action(seg)); err != nil {
+		if err := c.runSegment(ctx, Action(seg)); err != nil {
 			return err
 		}
-		modeChanged = false // runAction published the current mode
 	}
 	c.bindCombo, c.bindSource = "", ""
-	if modeChanged {
-		return c.publish(ctx)
-	}
 	return nil
+}
+
+// runSegment runs one action of a chain with the bind's combo and source;
+// a mode switch is published at once, so the state shows it.
+func (c *Core) runSegment(ctx context.Context, action Action) error {
+	if name, ok := ModeArg(action); ok {
+		if c.ch.Binds != nil {
+			defer c.traceBind(string(action), c.bindCombo, c.bindSource)()
+		}
+		c.bindCombo, c.bindSource = "", ""
+		before := c.mode
+		c.setMode(name)
+		if c.mode != before {
+			return c.publish(ctx)
+		}
+		return nil
+	}
+	return c.runAction(ctx, action)
 }
 
 // runAction runs one bind action.
