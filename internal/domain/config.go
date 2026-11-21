@@ -291,8 +291,9 @@ type WorkspaceConfig struct {
 	LayoutRules
 }
 
-// CommandSeparator separates commands in config values that run programs
-// (startup, spawn binds): "waybar; mako" starts both, without waiting.
+// CommandSeparator separates startup commands and bind action chains:
+// "startup = waybar; mako" starts both, without waiting, and
+// "bind.x = a; b" runs action a then action b.
 const CommandSeparator = ";"
 
 // SplitCommands splits v on CommandSeparator, then each command on
@@ -305,6 +306,18 @@ func SplitCommands(v string) [][]string {
 		}
 	}
 	return commands
+}
+
+// SplitActions splits a bind action chain on CommandSeparator. Each action
+// is trimmed; empty actions are dropped.
+func SplitActions(v string) []string {
+	var actions []string
+	for part := range strings.SplitSeq(v, CommandSeparator) {
+		if a := strings.TrimSpace(part); a != "" {
+			actions = append(actions, a)
+		}
+	}
+	return actions
 }
 
 // SlotConfig reserves column N of a workspace for the window of one command.
