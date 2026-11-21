@@ -134,6 +134,8 @@ type Core struct {
 	// reconnects from deep sleep comes back off, until the next input.
 	offGone        map[string]bool
 	binds          map[binding]Action
+	modes          map[string]map[binding]Action // bind tables of declared modes
+	mode           string                        // active bind mode, "" for default
 	pressed        map[string]bool
 	configures     configures
 	pointer        WindowID
@@ -306,6 +308,31 @@ func parseBind(s, cmd string) (binding, error) {
 	return b, nil
 }
 
+// bindTable parses one table of combo → action chain.
+func bindTable(table map[string]string, cfg domain.Config) (map[binding]Action, error) {
+	binds := map[binding]Action{}
+	for combo, a := range table {
+		b, e := parseBind(combo, cfg.Keyboard.CmdKey)
+		if e != nil {
+			return nil, e
+		}
+		if _, ok := binds[b]; ok {
+			return nil, fmt.Errorf("duplicate bind %q", combo)
+		}
+		segments := domain.SplitActions(a)
+		if len(segments) == 0 {
+			return nil, fmt.Errorf("invalid action %q", a)
+		}
+		for _, seg := range segments {
+			if e := validAction(Action(seg), cfg.Modes); e != nil {
+				return nil, e
+			}
+		}
+		binds[b] = Action(a)
+	}
+	return binds, nil
+}
+
 // validAction reports whether a is a single bind action core can run;
 // "mode X" needs X to be default or one of modes.
 func validAction(a Action, modes map[string]map[string]string) error {
@@ -352,25 +379,15 @@ func (c *Core) apply(cfg domain.Config) error {
 	if cfg.Keyboard.CmdKey != "super" && cfg.Keyboard.CmdKey != "alt" && cfg.Keyboard.CmdKey != "ctrl" {
 		return fmt.Errorf("invalid cmd key")
 	}
-	binds := map[binding]Action{}
-	for combo, a := range cfg.Binds {
-		b, e := parseBind(combo, cfg.Keyboard.CmdKey)
-		if e != nil {
-			return e
+	binds, err := bindTable(cfg.Binds, cfg)
+	if err != nil {
+		return err
+	}
+	modes := make(map[string]map[binding]Action, len(cfg.Modes))
+	for name, table := range cfg.Modes {
+		if modes[name], err = bindTable(table, cfg); err != nil {
+			return err
 		}
-		if _, ok := binds[b]; ok {
-			return fmt.Errorf("duplicate bind %q", combo)
-		}
-		segments := domain.SplitActions(a)
-		if len(segments) == 0 {
-			return fmt.Errorf("invalid action %q", a)
-		}
-		for _, seg := range segments {
-			if e := validAction(Action(seg), cfg.Modes); e != nil {
-				return e
-			}
-		}
-		binds[b] = Action(a)
 	}
 	overflow := func(v string) (Overflow, error) {
 		if _, ok := layout.Lookup(Overflow(v)); ok {
@@ -441,7 +458,10 @@ func (c *Core) apply(cfg domain.Config) error {
 	if !cfg.Focus.FollowMouse {
 		c.hoverLocked, c.hoverLock = false, 0
 	}
-	c.binds = binds
+	c.binds, c.modes = binds, modes
+	if c.mode != "" && c.modes[c.mode] == nil {
+		c.setMode("")
+	}
 	c.cmdMod = map[string]domain.Mods{"super": domain.ModSuper, "alt": domain.ModAlt, "ctrl": domain.ModCtrl}[cfg.Keyboard.CmdKey]
 	c.specs, c.rules = named, rules
 	for id := range c.windows.records {

@@ -32,7 +32,7 @@ func (c *Core) state() domain.State { return cloneState(c.stateInto(domain.State
 // its Window points into its Windows. The placeholder screen is not an
 // output.
 func (c *Core) stateInto(st domain.State) domain.State {
-	st.Output, st.Window = c.cur().name(), nil
+	st.Output, st.Window, st.Mode = c.cur().name(), nil, c.mode
 	st.Outputs, st.Windows = st.Outputs[:0], st.Windows[:0]
 	// Workspaces keep their Columns storage across calls (see workspaceInto).
 	nws := 0
@@ -179,7 +179,7 @@ func (c *Core) workspaceInto(ws []domain.WorkspaceState, i int, w *Workspace, ou
 }
 
 func sameState(a, b domain.State) bool {
-	return a.Output == b.Output && slices.Equal(a.Outputs, b.Outputs) && slices.Equal(a.Windows, b.Windows) &&
+	return a.Output == b.Output && a.Mode == b.Mode && slices.Equal(a.Outputs, b.Outputs) && slices.Equal(a.Windows, b.Windows) &&
 		slices.EqualFunc(a.Workspaces, b.Workspaces, func(x, y domain.WorkspaceState) bool {
 			return x.Focused == y.Focused && x.ID == y.ID && x.Number == y.Number && x.Name == y.Name && x.Output == y.Output && x.Visible == y.Visible && x.Overflow == y.Overflow && x.Cover == y.Cover &&
 				slices.EqualFunc(x.Columns, y.Columns, func(p, q domain.ColumnState) bool {
@@ -192,7 +192,7 @@ func sameState(a, b domain.State) bool {
 // cloneState copies st out of the scratch: empty lists stay non-nil (JSON
 // []), and Window is its own copy.
 func cloneState(st domain.State) domain.State {
-	out := domain.State{Output: st.Output, Outputs: append([]domain.OutputState{}, st.Outputs...), Windows: append([]domain.WindowState{}, st.Windows...)}
+	out := domain.State{Output: st.Output, Mode: st.Mode, Outputs: append([]domain.OutputState{}, st.Outputs...), Windows: append([]domain.WindowState{}, st.Windows...)}
 	out.Workspaces = make([]domain.WorkspaceState, len(st.Workspaces))
 	for i, w := range st.Workspaces {
 		out.Workspaces[i] = w

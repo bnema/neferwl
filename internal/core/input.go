@@ -519,13 +519,29 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 // the combo and source of the bind. An action error stops the chain.
 func (c *Core) runBind(ctx context.Context, action Action) error {
 	combo, source := c.bindCombo, c.bindSource
+	modeChanged := false
 	for _, seg := range domain.SplitActions(string(action)) {
+		if name, ok := ModeArg(Action(seg)); ok {
+			done := func() {}
+			if c.ch.Binds != nil {
+				done = c.traceBind(seg, combo, source)
+			}
+			before := c.mode
+			c.setMode(name)
+			modeChanged = modeChanged || c.mode != before
+			done()
+			continue
+		}
 		c.bindCombo, c.bindSource = combo, source
 		if err := c.runAction(ctx, Action(seg)); err != nil {
 			return err
 		}
+		modeChanged = false // runAction published the current mode
 	}
 	c.bindCombo, c.bindSource = "", ""
+	if modeChanged {
+		return c.publish(ctx)
+	}
 	return nil
 }
 

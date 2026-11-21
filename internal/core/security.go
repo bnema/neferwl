@@ -83,6 +83,7 @@ func (c *Core) securityCheckpoint(ctx context.Context) error {
 	if !c.syncSecurity() {
 		return nil
 	}
+	c.setMode("")
 	if err := c.osdWatch(ctx); err != nil {
 		return err
 	}
