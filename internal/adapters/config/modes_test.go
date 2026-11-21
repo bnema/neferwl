@@ -1,0 +1,113 @@
+package config
+
+import (
+	"strings"
+	"testing"
+)
+
+const resizeMode = `bind.cmd+r = mode resize
+mode.resize.bind.h = set-column-width -1
+mode.resize.bind.l = set-column-width +1
+mode.resize.bind.escape = mode default
+`
+
+// hasWarning reports whether one warning on line contains msg.
+func hasWarning(w []Warning, line int, msg string) bool {
+	for _, x := range w {
+		if x.Line == line && strings.Contains(x.Msg, msg) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestModeParsed(t *testing.T) {
+	c, w := parseString(t, resizeMode)
+	if len(w) != 0 {
+		t.Fatalf("warnings: %v", w)
+	}
+	if c.Binds["Cmd+r"] != "mode resize" {
+		t.Fatalf("enter bind: %q", c.Binds["Cmd+r"])
+	}
+	got := c.Modes["resize"]
+	if len(got) != 3 || got["h"] != "set-column-width -1" || got["l"] != "set-column-width +1" || got["Escape"] != "mode default" {
+		t.Fatalf("mode binds: %v", c.Modes)
+	}
+}
+
+func TestModeDefaultRejected(t *testing.T) {
+	c, w := parseString(t, "mode.default.bind.h = focus-column-left")
+	if !hasWarning(w, 1, "use bind.h") || c.Modes != nil {
+		t.Fatalf("modes %v, warnings %v", c.Modes, w)
+	}
+}
+
+func TestModeBadName(t *testing.T) {
+	c, w := parseString(t, "mode.bad name.bind.h = focus-column-left")
+	if !hasWarning(w, 1, "mode name") || c.Modes != nil {
+		t.Fatalf("modes %v, warnings %v", c.Modes, w)
+	}
+	_, w = parseString(t, "mode.resize.h = focus-column-left")
+	if !hasWarning(w, 1, "mode.<name>.bind.<keys>") {
+		t.Fatalf("missing .bind.: %v", w)
+	}
+}
+
+func TestModeUndeclaredDropped(t *testing.T) {
+	c, w := parseString(t, "bind.cmd+r = focus-column-left; mode ghost")
+	if !hasWarning(w, 1, "bind.Cmd+r: no mode.ghost.* declared") {
+		t.Fatalf("warnings: %v", w)
+	}
+	if _, ok := c.Binds["Cmd+r"]; ok {
+		t.Fatalf("bind kept: %q", c.Binds["Cmd+r"])
+	}
+}
+
+func TestModeNotEnteredWarns(t *testing.T) {
+	c, w := parseString(t, "\nmode.resize.bind.h = set-column-width -1\nmode.resize.bind.r = mode resize")
+	if !hasWarning(w, 2, "mode.resize: no bind enters it (add bind.<keys> = mode resize)") {
+		t.Fatalf("warnings: %v", w)
+	}
+	if c.Modes["resize"]["h"] != "set-column-width -1" {
+		t.Fatalf("mode dropped: %v", c.Modes)
+	}
+}
+
+func TestModeNoneDropped(t *testing.T) {
+	c, w := parseString(t, resizeMode+"mode.resize.bind.x = none\n")
+	if _, ok := c.Modes["resize"]["x"]; ok || len(w) != 0 {
+		t.Fatalf("modes %v, warnings %v", c.Modes, w)
+	}
+}
+
+func TestModeCmdCollision(t *testing.T) {
+	c, w := parseString(t, resizeMode+"mode.resize.bind.cmd+x = set-column-width -1\nmode.resize.bind.super+x = set-column-width +1\n")
+	if !hasWarning(w, 5, "mode.resize.bind.Cmd+x: overridden by mode.resize.bind.Super+x") {
+		t.Fatalf("warnings: %v", w)
+	}
+	if _, ok := c.Modes["resize"]["Cmd+x"]; ok || c.Modes["resize"]["Super+x"] != "set-column-width +1" {
+		t.Fatalf("mode binds: %v", c.Modes["resize"])
+	}
+}
+
+func TestModeWorkspaceBindChecked(t *testing.T) {
+	_, w := parseString(t, resizeMode+"mode.resize.bind.w = workspace undeclared\n")
+	if !hasWarning(w, 5, "mode.resize.bind.w: no workspace.undeclared.* declared") {
+		t.Fatalf("warnings: %v", w)
+	}
+}
+
+func TestModeBindInRaw(t *testing.T) {
+	_, a, _, err := parseBytes([]byte(resizeMode))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, b, _, err := parseBytes([]byte(strings.Replace(resizeMode, "-1", "-2", 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := "mode.resize.bind.h"
+	if a[key] != "set-column-width -1" || b[key] != "set-column-width -2" {
+		t.Fatalf("raw %q vs %q", a[key], b[key])
+	}
+}
