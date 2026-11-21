@@ -8,7 +8,9 @@ import (
 
 // State is the file format.
 type State struct {
-	Output  string   `json:"output"`
+	Output string `json:"output"`
+	// Mode is the active bind mode, empty in default.
+	Mode    string   `json:"mode"`
 	Outputs []Output `json:"outputs"`
 	Window  *Window  `json:"window"`
 	Windows []Window `json:"windows"`
@@ -110,7 +112,7 @@ type Window struct {
 
 // FromDomain converts a domain snapshot to the script-facing JSON format.
 func FromDomain(st domain.State, ids *workspaceid.IDs) State {
-	out := State{Output: st.Output, Outputs: make([]Output, 0, len(st.Outputs)), Windows: make([]Window, 0, len(st.Windows)), Workspaces: make([]Workspace, 0, len(st.Workspaces))}
+	out := State{Output: st.Output, Mode: st.Mode, Outputs: make([]Output, 0, len(st.Outputs)), Windows: make([]Window, 0, len(st.Windows)), Workspaces: make([]Workspace, 0, len(st.Workspaces))}
 	for _, o := range st.Outputs {
 		out.Outputs = append(out.Outputs, Output{HDR: o.HDR, Name: o.Name, Active: o.Active, Count: o.Count, Workspace: o.Workspace, WorkspaceID: ids.ID(o.WorkspaceID, o.Workspace)})
 	}

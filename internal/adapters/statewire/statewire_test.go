@@ -148,3 +148,15 @@ func TestWorkspaceCoverJSON(t *testing.T) {
 		t.Fatalf("held member not fullscreen: %+v", decoded.Windows)
 	}
 }
+
+func TestModeJSON(t *testing.T) {
+	for _, mode := range []string{"resize", ""} {
+		data, err := json.Marshal(FromDomain(domain.State{Mode: mode}, workspaceid.WithPrefix("test")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := `"mode":"` + mode + `"`; !strings.Contains(string(data), want) {
+			t.Fatalf("missing %s: %s", want, data)
+		}
+	}
+}
