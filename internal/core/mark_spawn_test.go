@@ -132,3 +132,22 @@ func TestStashMarkClaimLetsTerminalOpen(t *testing.T) {
 		}
 	})
 }
+
+// A marked stash token marks only its first window, even when that window
+// maps as a float and leaves the stash claim for a later one.
+func TestStashMarkMarksOnce(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := markSpawnRig(t)
+		r.mapWindow(t, 1)
+		r.key(t, "n", markMods)
+		token := slotToken(t, receive(t, r.spawn))
+		r.client <- ports.WindowMapped{ID: 2, Slot: token, Floating: true, Width: 50, Height: 50}
+		if w := stWindow(r.stateWith(t, 2), 2); w.Marks != "a" {
+			t.Fatalf("first window %+v", w)
+		}
+		w := r.mapSlot(t, 3, token)
+		if w.Marks != "" {
+			t.Fatalf("second window re-marked: %+v", w)
+		}
+	})
+}

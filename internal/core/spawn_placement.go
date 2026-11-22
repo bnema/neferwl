@@ -42,6 +42,8 @@ type spawnTarget struct {
 	ws   *Workspace
 	at   time.Time
 	mark string
+	// marked is set once a window took mark; the claim lives on for place.
+	marked bool
 }
 
 func newSpawnPlacement(tokens ports.TokenSource) spawnPlacement {
@@ -86,7 +88,7 @@ func (p *spawnPlacement) workspacePending(w *Workspace, kind spawnKind) bool {
 // markPending reports whether a live claim will mark its window name.
 func (p *spawnPlacement) markPending(name string, now time.Time) bool {
 	for _, target := range p.pending {
-		if target.mark == name && now.Sub(target.at) <= markRetry {
+		if target.mark == name && !target.marked && now.Sub(target.at) <= markRetry {
 			return true
 		}
 	}

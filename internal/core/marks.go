@@ -124,13 +124,18 @@ func (c *Core) runMark(ctx context.Context, op MarkOp, name string, cmd []string
 func (c *Core) claimMark(v ports.WindowMapped) {
 	c.placement.expireWorkspaceClaims(c.now())
 	target, ok := c.placement.pending[v.Slot]
-	if !ok || target.mark == "" {
+	if !ok || target.mark == "" || target.marked {
 		return
 	}
 	c.setMark(v.ID, target.mark)
 	if target.kind == spawnMarked {
 		delete(c.placement.pending, v.Slot)
+		return
 	}
+	// The stash claim stays for place, which may not consume it (a float
+	// map): no later window takes the mark again. It keeps markRetry.
+	target.marked = true
+	c.placement.pending[v.Slot] = target
 }
 
 // slotWindow reports whether id fills a configured slot.
