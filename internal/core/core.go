@@ -345,6 +345,9 @@ func validAction(a Action, modes map[string]map[string]string) error {
 		}
 		return nil
 	}
+	if _, _, _, ok := MarkArg(a); ok {
+		return nil
+	}
 	if _, ok := SpawnCommands(a); ok {
 		return nil
 	}

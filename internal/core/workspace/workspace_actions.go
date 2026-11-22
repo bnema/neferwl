@@ -347,5 +347,8 @@ func ArgPrefixes() []string {
 	for _, prefix := range []string{namedPrefix, modePrefix, spawnPrefix, stashPrefix} {
 		names = append(names, strings.TrimSpace(prefix))
 	}
+	for _, p := range markPrefixes {
+		names = append(names, strings.TrimSpace(p.prefix))
+	}
 	return names
 }

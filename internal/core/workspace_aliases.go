@@ -226,6 +226,24 @@ func NamedArg(a Action) (string, bool) { return workspacedomain.NamedArg(a) }
 // ModeArg calls workspace.ModeArg.
 func ModeArg(a Action) (string, bool) { return workspacedomain.ModeArg(a) }
 
+// MarkOp is the operation of a mark action.
+type MarkOp = workspacedomain.MarkOp
+
+// Mark operations.
+const (
+	MarkSet    = workspacedomain.MarkSet
+	MarkToggle = workspacedomain.MarkToggle
+	MarkUnmark = workspacedomain.MarkUnmark
+	MarkFocus  = workspacedomain.MarkFocus
+	MarkSwap   = workspacedomain.MarkSwap
+	MarkMoveTo = workspacedomain.MarkMoveTo
+)
+
+// MarkArg calls workspace.MarkArg.
+func MarkArg(a Action) (op MarkOp, name string, cmd []string, ok bool) {
+	return workspacedomain.MarkArg(a)
+}
+
 // SpawnCommands calls workspace.SpawnCommands.
 func SpawnCommands(a Action) ([][]string, bool) { return workspacedomain.SpawnCommands(a) }
 

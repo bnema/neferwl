@@ -41,7 +41,14 @@ func (m MarkSet) Names() []string {
 
 // Has reports whether name is in the set.
 func (m MarkSet) Has(name string) bool {
-	return m != "" && slices.Contains(strings.Split(string(m), " "), name)
+	for rest := string(m); rest != ""; {
+		var field string
+		field, rest, _ = strings.Cut(rest, " ")
+		if field == name {
+			return true
+		}
+	}
+	return false
 }
 
 // With returns the set plus name; an invalid name leaves it unchanged.
