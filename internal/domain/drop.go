@@ -132,19 +132,35 @@ func DefaultDropPolicy() DropPolicy {
 	return p
 }
 
-// DropAllowed reports whether action a is allowed for the config key suffix
-// (window.<side>, gap or edge.<side>).
-func DropAllowed(key string, a DropAction) bool {
-	switch key {
-	case "window.center":
-		return a == DropSwap || a == DropNone
-	case "window.left", "window.right":
-		return a == DropColumn || a == DropSwap || a == DropNone
-	case "window.top", "window.bottom":
-		return a == DropStack || a == DropSwap || a == DropNone
-	case "gap":
+// DropZoneKind is the kind of a drop policy field: a window side, the
+// gap, or an output edge.
+type DropZoneKind uint8
+
+const (
+	DropZoneWindow DropZoneKind = iota
+	DropZoneGap
+	DropZoneEdge
+)
+
+// DropAllowed reports whether action a is allowed for the policy field of
+// kind k on side s (ignored for the gap; an edge has no center).
+func DropAllowed(k DropZoneKind, s DropSide, a DropAction) bool {
+	switch k {
+	case DropZoneWindow:
+		switch s {
+		case DropSideCenter:
+			return a == DropSwap || a == DropNone
+		case DropSideLeft, DropSideRight:
+			return a == DropColumn || a == DropSwap || a == DropNone
+		case DropSideTop, DropSideBottom:
+			return a == DropStack || a == DropSwap || a == DropNone
+		}
+	case DropZoneGap:
 		return a == DropColumn || a == DropNone
-	case "edge.left", "edge.right", "edge.top", "edge.bottom":
+	case DropZoneEdge:
+		if s == DropSideCenter || s > DropSideBottom {
+			return false
+		}
 		switch a {
 		case DropAuto, DropScroll, DropWorkspace, DropColumn, DropStash, DropFloat, DropNone:
 			return true

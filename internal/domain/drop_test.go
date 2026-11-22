@@ -48,28 +48,33 @@ func TestDefaultDropPolicy(t *testing.T) {
 
 func TestDropAllowed(t *testing.T) {
 	all := []DropAction{DropAuto, DropNone, DropSwap, DropColumn, DropStack, DropScroll, DropWorkspace, DropStash, DropFloat}
-	table := map[string][]DropAction{
-		"window.center": {DropSwap, DropNone},
-		"window.left":   {DropColumn, DropSwap, DropNone},
-		"window.right":  {DropColumn, DropSwap, DropNone},
-		"window.top":    {DropStack, DropSwap, DropNone},
-		"window.bottom": {DropStack, DropSwap, DropNone},
-		"gap":           {DropColumn, DropNone},
-		"edge.left":     {DropAuto, DropScroll, DropWorkspace, DropColumn, DropStash, DropFloat, DropNone},
-		"edge.right":    {DropAuto, DropScroll, DropWorkspace, DropColumn, DropStash, DropFloat, DropNone},
-		"edge.top":      {DropAuto, DropScroll, DropWorkspace, DropColumn, DropStash, DropFloat, DropNone},
-		"edge.bottom":   {DropAuto, DropScroll, DropWorkspace, DropColumn, DropStash, DropFloat, DropNone},
-		"edge.center":   {},
-		"window":        {},
+	edge := []DropAction{DropAuto, DropScroll, DropWorkspace, DropColumn, DropStash, DropFloat, DropNone}
+	type field struct {
+		k DropZoneKind
+		s DropSide
 	}
-	for key, allowed := range table {
+	table := map[field][]DropAction{
+		{DropZoneWindow, DropSideCenter}: {DropSwap, DropNone},
+		{DropZoneWindow, DropSideLeft}:   {DropColumn, DropSwap, DropNone},
+		{DropZoneWindow, DropSideRight}:  {DropColumn, DropSwap, DropNone},
+		{DropZoneWindow, DropSideTop}:    {DropStack, DropSwap, DropNone},
+		{DropZoneWindow, DropSideBottom}: {DropStack, DropSwap, DropNone},
+		{DropZoneGap, DropSideCenter}:    {DropColumn, DropNone},
+		{DropZoneEdge, DropSideLeft}:     edge,
+		{DropZoneEdge, DropSideRight}:    edge,
+		{DropZoneEdge, DropSideTop}:      edge,
+		{DropZoneEdge, DropSideBottom}:   edge,
+		{DropZoneEdge, DropSideCenter}:   {},
+		{DropZoneWindow, DropSide(9)}:    {},
+	}
+	for f, allowed := range table {
 		for _, a := range all {
 			want := false
 			for _, b := range allowed {
 				want = want || a == b
 			}
-			if got := DropAllowed(key, a); got != want {
-				t.Errorf("DropAllowed(%q, %v) = %v, want %v", key, a, got, want)
+			if got := DropAllowed(f.k, f.s, a); got != want {
+				t.Errorf("DropAllowed(%v, %v, %v) = %v, want %v", f.k, f.s, a, got, want)
 			}
 		}
 	}
@@ -129,7 +134,7 @@ func TestDropPolicyNoAllocs(t *testing.T) {
 	var label string
 	allocs := testing.AllocsPerRun(100, func() {
 		sink = ws.Over(out.Over(DefaultDropPolicy()))
-		ok = DropAllowed("edge.top", sink.Edge[DropSideTop])
+		ok = DropAllowed(DropZoneEdge, DropSideTop, sink.Edge[DropSideTop])
 		label = sink.Window[DropSideCenter].Label()
 	})
 	if allocs != 0 || !ok || label != "swap" {

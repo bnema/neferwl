@@ -1279,13 +1279,14 @@ var dropSides = map[string]domain.DropSide{
 
 // splitDrop splits the part of a drop key after "drop." into an output
 // name (empty for the global policy) and a known suffix, stripped from the
-// right so output names may contain dots.
+// right so output names may contain dots. An output name ending in a
+// window or edge segment is a misspelt key, not an output: unknown.
 func splitDrop(rest string) (output, suffix string, ok bool) {
 	if rest == "gap" {
 		return "", rest, true
 	}
 	if out, found := strings.CutSuffix(rest, ".gap"); found && out != "" {
-		return out, "gap", true
+		return out, "gap", dropOutputName(out)
 	}
 	i := strings.LastIndex(rest, ".")
 	if i < 0 {
@@ -1299,11 +1300,18 @@ func splitDrop(rest string) (output, suffix string, ok bool) {
 	}
 	if j >= 0 {
 		output = head[:j]
-		if output == "" {
+		if output == "" || !dropOutputName(output) {
 			return "", "", false
 		}
 	}
 	return output, kind + "." + side, true
+}
+
+// dropOutputName reports whether out may name an output in a drop key:
+// its last dot segment is not a policy kind.
+func dropOutputName(out string) bool {
+	last := out[strings.LastIndex(out, ".")+1:]
+	return last != "window" && last != "edge"
 }
 
 // setDropKey applies one drop.[<output>.]<suffix> key, finding or appending
@@ -1339,18 +1347,22 @@ var errUnknownDrop = errors.New("unknown key (window.<side>, gap, edge.<side>)")
 func setDrop(p *domain.DropPolicy, suffix, v string) error {
 	kind, sideName, _ := strings.Cut(suffix, ".")
 	side, known := dropSides[sideName]
+	var zone domain.DropZoneKind
 	switch {
 	case suffix == "gap":
+		zone = domain.DropZoneGap
 	case kind == "window" && known:
+		zone = domain.DropZoneWindow
 	case kind == "edge" && known && side != domain.DropSideCenter:
+		zone = domain.DropZoneEdge
 	default:
 		return errUnknownDrop
 	}
 	a, ok := domain.ParseDropAction(v)
-	if !ok || !domain.DropAllowed(suffix, a) {
+	if !ok || !domain.DropAllowed(zone, side, a) {
 		var allowed []string
 		for x := domain.DropAuto; x <= domain.DropFloat; x++ {
-			if domain.DropAllowed(suffix, x) {
+			if domain.DropAllowed(zone, side, x) {
 				allowed = append(allowed, x.String())
 			}
 		}

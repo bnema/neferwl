@@ -56,6 +56,10 @@ func TestDropKeysInvalid(t *testing.T) {
 		{"drop.DP-1.side = none", "unknown key"},
 		{"drop.window = swap", "unknown key"},
 		{"workspace.web.drop.foo = none", "unknown key"},
+		{"drop.DP-1.window.edge.left = none", "unknown key"},
+		{"drop.DP-1.edge.window.left = none", "unknown key"},
+		{"drop.edge.gap = none", "unknown key"},
+		{"drop.window.gap = none", "unknown key"},
 	} {
 		c, w := parseString(t, tc.line+"\n")
 		if len(w) != 1 || !strings.Contains(w[0].Msg, tc.msg) {
@@ -74,5 +78,24 @@ func TestDropKeysInvalid(t *testing.T) {
 	c, w := parseString(t, "drop.window.left = swap\ndrop.window.left = stack\n")
 	if len(w) != 1 || c.Drop.Window[domain.DropSideLeft] != domain.DropSwap {
 		t.Fatal(c.Drop, w)
+	}
+}
+
+// Keys of one output, set at different places, build one entry; a key set
+// twice keeps the later value with the usual duplicate warning.
+func TestDropOutputKeysMerge(t *testing.T) {
+	c, w := parseString(t, `drop.DP-1.edge.left = none
+drop.gap = none
+drop.DP-1.gap = column
+drop.DP-1.edge.left = stash
+`)
+	var want domain.DropPolicy
+	want.SetEdge(domain.DropSideLeft, domain.DropStash)
+	want.SetGap(domain.DropColumn)
+	if len(c.Drop.Outputs) != 1 || c.Drop.Outputs[0] != (domain.OutputDrop{Output: "DP-1", DropPolicy: want}) {
+		t.Fatalf("outputs = %+v", c.Drop.Outputs)
+	}
+	if len(w) != 1 || !strings.Contains(w[0].Msg, "drop.DP-1.edge.left") {
+		t.Fatalf("warnings %v", w)
 	}
 }
