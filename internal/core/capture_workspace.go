@@ -20,6 +20,10 @@ type captureWorkspace struct {
 	frame      Rect       // ws.Output: the viewport, in monitor coordinates
 	placements []Placement
 	index      map[WindowID]int
+	// tabs is the scratch of the captured tab bars and bars the last ones
+	// published: an unchanged capture frame reuses them.
+	tabs tabBarScratch
+	bars []domain.TabBar
 }
 
 // active reports whether a hidden workspace is captured.
@@ -28,7 +32,7 @@ func (cw *captureWorkspace) active() bool { return cw != nil && cw.ws != nil }
 // reset forgets the captured workspace, keeping the storage.
 func (cw *captureWorkspace) reset() {
 	cw.sc, cw.ws, cw.frame = nil, nil, Rect{}
-	cw.placements = nil
+	cw.placements, cw.bars = nil, nil
 	clear(cw.index)
 }
 
@@ -44,6 +48,15 @@ func (cw *captureWorkspace) load(sc *screen, ws *Workspace) {
 	for i := range cw.placements {
 		cw.index[cw.placements[i].ID] = i
 	}
+}
+
+// captureTabBars builds the captured workspace's tab bars, frame-local:
+// the previous ones when unchanged, so a steady capture allocates nothing.
+func (c *Core) captureTabBars(cw *captureWorkspace, view viewport) []domain.TabBar {
+	cw.tabs.bars, cw.tabs.titles = cw.tabs.bars[:0], cw.tabs.titles[:0]
+	c.appendTabBars(&cw.tabs, cw.ws, cw.placements, view, cw.frame)
+	cw.bars = publishTabBars(&cw.tabs, cw.bars)
+	return cw.bars
 }
 
 // placement is the real placement of a window of the captured workspace.
@@ -172,9 +185,7 @@ func (c *Core) captureScene(seq uint64) *domain.Scene {
 		s.Separators[i].Rect = rebase(s.Separators[i].Rect)
 	}
 	// Tab bars are decorations, captured like the separators.
-	var tabs tabBarScratch
-	c.appendTabBars(&tabs, cw.ws, cw.placements, view, f)
-	s.TabBars = publishTabBars(&tabs, nil)
+	s.TabBars = c.captureTabBars(cw, view)
 	for _, id := range c.popupOrder {
 		p := c.popups[id]
 		if p == nil || !p.mapped {
