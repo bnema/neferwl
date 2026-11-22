@@ -34,4 +34,11 @@ func TestDropProxyNeverOnAPlane(t *testing.T) {
 	if _, _, _, reason := overlayCandidate(fs, fc, false, nil, nil); reason == "" {
 		t.Fatal("overlay with a proxy")
 	}
+	// A window over the overlay candidate too: the preview is the reason.
+	s, c := overlayScene()
+	s.Windows = append(s.Windows, domain.SceneWindow{ID: 98, Floating: true, Rect: domain.Rect{X: 120, W: 20, H: 20}})
+	s.DropPreview = &domain.DropPreview{Rect: domain.Rect{W: 4, H: 100}}
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "drop_preview" {
+		t.Fatalf("overlay reason %q, want drop_preview", reason)
+	}
 }
