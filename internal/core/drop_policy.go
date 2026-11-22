@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/bnema/neferwl/internal/domain"
 )
@@ -26,6 +27,39 @@ func (c *Core) dropPolicy(m *Monitor, w *Workspace) domain.DropPolicy {
 		}
 	}
 	return p
+}
+
+// sendDropWarnings sends the drop axis warnings of the config in effect
+// that were not sent since the drop config last changed. Like a
+// rejection, a full channel drops the warning; it is then not retried.
+func (c *Core) sendDropWarnings() {
+	for _, msg := range c.dropAxisWarnings(c.cfg) {
+		if c.dropWarned[msg] {
+			continue
+		}
+		if c.dropWarned == nil {
+			c.dropWarned = map[string]bool{}
+		}
+		c.dropWarned[msg] = true
+		select {
+		case c.ch.ConfigErrors <- domain.ConfigWarning{Component: "drag", Msg: msg}:
+		default:
+		}
+	}
+}
+
+// sameDropConfig reports whether a and b have the same drop policies:
+// global, per output and per named workspace.
+func sameDropConfig(a, b domain.Config) bool {
+	if a.Drop.DropPolicy != b.Drop.DropPolicy || !slices.Equal(a.Drop.Outputs, b.Drop.Outputs) || len(a.Workspaces) != len(b.Workspaces) {
+		return false
+	}
+	for i := range a.Workspaces {
+		if a.Workspaces[i].Name != b.Workspaces[i].Name || a.Workspaces[i].Drop != b.Workspaces[i].Drop {
+			return false
+		}
+	}
+	return true
 }
 
 // dropSideNames are the config names of the edges, by DropSide.

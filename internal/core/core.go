@@ -141,6 +141,9 @@ type Core struct {
 	pointer        WindowID
 	hover          pendingHover
 	dragHover      dragHover
+	// dropWarned holds the drop axis warnings sent since the last change
+	// of the drop config (sendDropWarnings).
+	dropWarned map[string]bool
 	hoverLocked    bool     // a non-pointer focus change holds hover focus
 	hoverLock      WindowID // hover target the hold ignores: the window under the cursor, retargeted when layout changes what lies there
 	focusByPointer bool     // set while focusPointer publishes, so syncFocus does not arm the hold
@@ -454,6 +457,9 @@ func (c *Core) apply(cfg domain.Config) error {
 	if c.cfg.Focus.FollowMouse != cfg.Focus.FollowMouse || c.cfg.Focus.FollowMouseDelay != cfg.Focus.FollowMouseDelay {
 		c.cancelHover()
 	}
+	if !sameDropConfig(c.cfg, cfg) {
+		clear(c.dropWarned)
+	}
 	c.cfg = cfg
 	c.inputBindings = false
 	for _, output := range cfg.Outputs {
@@ -488,13 +494,8 @@ func (c *Core) apply(cfg domain.Config) error {
 		}
 	}
 	// The config is in effect: warn, against the layouts now in place,
-	// about the edge actions they cannot do. Like a rejection, a full channel drops the warning.
-	for _, msg := range c.dropAxisWarnings(cfg) {
-		select {
-		case c.ch.ConfigErrors <- domain.ConfigWarning{Component: "drag", Msg: msg}:
-		default:
-		}
-	}
+	// about the edge actions they cannot do.
+	c.sendDropWarnings()
 	return nil
 }
 
@@ -1453,6 +1454,8 @@ func (c *Core) Run(ctx context.Context) error {
 				c.hdrCaps[v.Output] = v.OutputHDRCaps
 			case ports.OutputAdded:
 				c.addScreen(v.Info)
+				// A drop.<output> entry may apply now.
+				c.sendDropWarnings()
 				if c.layerChanged {
 					c.setLayers(c.allLayers())
 				}
