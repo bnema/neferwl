@@ -51,12 +51,16 @@ func TestDropAtAllocations(t *testing.T) {
 		o.Output = "OUT"
 		o.SetEdge(domain.DropSideRight, domain.DropColumn)
 		c.cfg.Drop.Outputs = []domain.OutputDrop{{Output: "other"}, o}
+		c.cur().mon.Name = "OUT"
 		w := threeTileDrag(t, c)
 		r, _ := modelPlaced(w, 2)
 		pts := [][2]float64{{float64(r.X + r.W/2), float64(r.Y + r.H/2)}, {float64(r.X + 5), float64(r.Y + r.H/2)}, {995, 300}, {5, 300}}
 		for _, p := range pts {
 			c.cursorX, c.cursorY = p[0], p[1]
 			c.retarget(w)
+		}
+		if a := c.dropAt(w, 1, 995, 300).a; a.Kind != AnchorEdge || a.Action != domain.DropColumn {
+			t.Fatalf("output entry not applied: %+v", a)
 		}
 		i := 0
 		if n := testing.AllocsPerRun(1000, func() {

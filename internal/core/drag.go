@@ -28,8 +28,8 @@ import (
 const (
 	btnLeft  = 0x110
 	btnRight = 0x111
-	// gapPad is the least half-width of the border grab zone around a
-	// gap (a right press there resizes the columns), logical px.
+	// gapPad is the least half-width of a border's resize hit zone
+	// (BorderAt), logical px.
 	gapPad = 12
 	// dragHoverFirst is how long the pointer rests on a hover edge
 	// (scroll, workspace) before it acts; it then repeats every

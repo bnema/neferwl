@@ -175,7 +175,8 @@ func (w *Workspace) valid(d dropSource, a Anchor) bool {
 			}
 			return w.columnValid(d, at)
 		case domain.DropStash, domain.DropFloat:
-			// The tile passes through a column of w: a full one has no room.
+			// receive adds the tile as a column of w first: a full one has
+			// no room for it.
 			return !d.full && (d.same || !w.full())
 		case domain.DropScroll:
 			// EdgeAction checked the axis; there must be something to scroll.
