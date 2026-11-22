@@ -194,10 +194,7 @@ func targetAllowed(a Action) bool {
 // take that selection (another window covers it fullscreen, or it is in a
 // hidden stash). close-window closes the target wherever it is.
 func (c *Core) runTargeted(ctx context.Context, id WindowID, a Action) error {
-	if c.ch.Binds != nil {
-		defer c.traceBind(string(a), c.bindCombo, c.bindSource)()
-	}
-	c.bindCombo, c.bindSource = "", ""
+	defer c.traceAction(a)()
 	s, w := c.screenOf(id)
 	if s == nil || s.mon.ov.open {
 		return nil

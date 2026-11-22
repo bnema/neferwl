@@ -552,10 +552,7 @@ func (c *Core) runBind(ctx context.Context, action Action) error {
 // a mode switch is published at once, so the state shows it.
 func (c *Core) runSegment(ctx context.Context, action Action) error {
 	if name, ok := ModeArg(action); ok {
-		if c.ch.Binds != nil {
-			defer c.traceBind(string(action), c.bindCombo, c.bindSource)()
-		}
-		c.bindCombo, c.bindSource = "", ""
+		defer c.traceAction(action)()
 		before := c.mode
 		c.setMode(name)
 		if c.mode != before {
@@ -564,10 +561,7 @@ func (c *Core) runSegment(ctx context.Context, action Action) error {
 		return nil
 	}
 	if op, name, cmd, ok := MarkArg(action); ok {
-		if c.ch.Binds != nil {
-			defer c.traceBind(string(action), c.bindCombo, c.bindSource)()
-		}
-		c.bindCombo, c.bindSource = "", ""
+		defer c.traceAction(action)()
 		return c.runMark(ctx, op, name, cmd)
 	}
 	return c.runAction(ctx, action)
@@ -575,10 +569,7 @@ func (c *Core) runSegment(ctx context.Context, action Action) error {
 
 // runAction runs one bind action.
 func (c *Core) runAction(ctx context.Context, action Action) error {
-	if c.ch.Binds != nil {
-		defer c.traceBind(string(action), c.bindCombo, c.bindSource)()
-	}
-	c.bindCombo, c.bindSource = "", ""
+	defer c.traceAction(action)()
 	if action == ActionScaleUp || action == ActionScaleDown {
 		return c.scaleBind(ctx, action)
 	}
