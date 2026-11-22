@@ -149,9 +149,12 @@ func (w *Workspace) restore(id WindowID, back *origPlace) {
 				row++
 			}
 		}
+		// Re-tab only what Normalize untabbed when the column fell to one
+		// window; a column the user untabbed or a stack stays as it is.
+		retab := back.tabbed && !c.Tabbed && len(c.Windows) == 1
 		c.Windows = slices.Insert(c.Windows, row, id)
 		c.Focus = row
-		if back.tabbed {
+		if retab {
 			c.Tabbed, c.Shares = true, nil
 		}
 		if w.Engine().MaximizeHides() && w.Focus != i {

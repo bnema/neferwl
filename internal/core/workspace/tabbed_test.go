@@ -298,5 +298,35 @@ func TestTabbedRoundTripRestoresTabs(t *testing.T) {
 				t.Fatalf("back: windows %v tabbed %v selected %d", c.Windows, c.Tabbed, c.Selected())
 			}
 		})
+		t.Run(string(a)+"/user untabbed", func(t *testing.T) {
+			w := cols(OverflowScroll, 2, 0, []WindowID{1, 2, 3})
+			w.TabBar = 20
+			w.Apply(ActionToggleColumnTabbed)
+			w.Apply(a) // 3 leaves; {1 2} stays tabbed
+			w.FocusID(1)
+			w.Apply(ActionToggleColumnTabbed)
+			if w.Columns[0].Tabbed {
+				t.Fatal("still tabbed")
+			}
+			w.Columns[0].Shares = []int{30, 70}
+			w.FocusID(3)
+			w.Apply(a)
+			if c := w.Columns[0]; c.Tabbed || !slices.Equal(c.Windows, []WindowID{1, 2, 3}) || c.Shares == nil {
+				t.Fatalf("windows %v tabbed %v shares %v", c.Windows, c.Tabbed, c.Shares)
+			}
+		})
+		t.Run(string(a)+"/sibling moved to a stack", func(t *testing.T) {
+			w := cols(OverflowScroll, 2, 0, []WindowID{1, 2}, []WindowID{4, 5})
+			w.TabBar = 20
+			w.Columns[0].Focus = 1
+			w.Apply(ActionToggleColumnTabbed)
+			w.Apply(a) // 2 leaves
+			w.Columns = []Column{{Windows: []WindowID{4, 5, 1}, Focus: 2, Shares: []int{20, 30, 50}}}
+			w.FocusID(2)
+			w.Apply(a)
+			if c := w.Columns[0]; c.Tabbed || len(c.Windows) != 4 || c.Shares == nil {
+				t.Fatalf("windows %v tabbed %v shares %v", c.Windows, c.Tabbed, c.Shares)
+			}
+		})
 	}
 }
