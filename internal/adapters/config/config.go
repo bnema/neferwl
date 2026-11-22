@@ -665,6 +665,14 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 			raw[fmt.Sprintf("startup.%d", len(c.Startup))] = value
 			continue
 		}
+		if key == "font" && c.Font != "" {
+			// Kept anyway: the file may appear before the next reload.
+			if f, err := os.Open(c.Font); err != nil {
+				warn("font: %v; the built-in font is used", err)
+			} else {
+				_ = f.Close()
+			}
+		}
 		override()
 	}
 	warnings = append(warnings, checkOutputAnchors(c.Outputs, relKeys, offsetLines, seen)...)
@@ -855,7 +863,7 @@ func set(c *domain.Config, key, v string) error {
 		}
 	case "font":
 		// Read when applied (overlaydraw.LoadFont): a bad file falls back.
-		c.Font = v
+		c.Font = expandHome(v)
 	case "background":
 		if !color.MatchString(v) {
 			return fmt.Errorf("must be #rrggbb")

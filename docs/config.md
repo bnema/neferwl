@@ -32,7 +32,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `xwayland` | `builtin` | `off`, `satellite`, `builtin` or a satellite binary path |
 | `xwayland.xsettings` | `on` | With `xwayland = builtin`, publish `Gtk/CursorThemeName`, `Gtk/CursorThemeSize`, `Xft/DPI`, `Gdk/WindowScalingFactor` and `Gdk/UnscaledDPI` to X11 apps through XSETTINGS (restart required); the scale is always announced as 1 (96 dpi) because X11 apps see logical sizes and neferwl upscales their windows; `off` leaves them to the apps |
 | `background` | `#111111` | Background color |
-| `font` | built-in Go Mono | Path of a `.ttf` or `.otf` font for all text the compositor draws (tab titles, drop and hint labels, window info); a file that does not load logs a warning and keeps the built-in font |
+| `font` | built-in Go Mono | Path of a `.ttf` or `.otf` font for all text the compositor draws (tab titles, drop and hint labels, window info); `~/` is your home. An unreadable file is a config warning; a file that does not load keeps the built-in font |
 | `border.radius` | `0` | Corner radius in logical pixels, `0` to `64`; floats always, tiles only with gaps |
 | `border.width` | `2` | Border width in pixels; `0` hides borders |
 | `border.active` / `.inactive` | `#808080` / `#111111` | Border colors of the focused / other windows |

@@ -1414,9 +1414,19 @@ func TestFollowMouseDelay(t *testing.T) {
 
 // font takes a path as is; the adapter that draws text reads it.
 func TestParseFont(t *testing.T) {
-	c, w, err := Parse(strings.NewReader("font = /usr/share/fonts/TTF/Some Font.ttf\n"))
-	if err != nil || len(w) != 0 || c.Font != "/usr/share/fonts/TTF/Some Font.ttf" {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	font := filepath.Join(home, "Some Font.ttf")
+	if err := os.WriteFile(font, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, w, err := Parse(strings.NewReader("font = ~/Some Font.ttf\n"))
+	if err != nil || len(w) != 0 || c.Font != font {
 		t.Fatalf("font %q, %v, %v", c.Font, w, err)
+	}
+	c, w, err = Parse(strings.NewReader("font = /nonexistent/x.ttf\n"))
+	if err != nil || len(w) != 1 || !strings.Contains(w[0].Msg, "font:") || c.Font != "/nonexistent/x.ttf" {
+		t.Fatalf("bad font %q, %v, %v", c.Font, w, err)
 	}
 	if c, _, _ := Parse(strings.NewReader("")); c.Font != "" {
 		t.Fatalf("default font %q", c.Font)
