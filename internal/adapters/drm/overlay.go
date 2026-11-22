@@ -88,10 +88,6 @@ func overlayCandidate(s domain.Scene, surfaces map[domain.WindowID]domain.Surfac
 		// windows.
 		return domain.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "drop_preview"
 	}
-	if len(s.TabBars) > 0 {
-		// Tab bars are composited next to their windows.
-		return domain.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "tab_bar"
-	}
 	scale := s.Scale
 	if scale <= 0 {
 		scale = 1
@@ -171,6 +167,12 @@ func overlayCandidate(s domain.Scene, surfaces map[domain.WindowID]domain.Surfac
 		if pick.Inset != 0 && s.Border.Width > 0 {
 			// The content sits inside the lines, not at the window's rect.
 			return domain.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "border"
+		}
+		for _, bar := range s.TabBars {
+			if bar.Rect.Overlaps(pick.Rect) {
+				// A bar over the window would go under the plane.
+				return domain.SceneWindow{}, domain.SurfaceContent{}, colorBypass, "tab_bar"
+			}
 		}
 		for _, sep := range s.Separators {
 			if sep.Rect.Overlaps(pick.Rect) && !linesUnder(s, sep, pick, pickAt) {
