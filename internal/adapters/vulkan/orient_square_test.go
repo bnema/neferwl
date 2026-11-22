@@ -38,10 +38,10 @@ func orientedSquare(t domain.BufferTransform, r image.Rectangle, mask uint32, sw
 	return out
 }
 
-// On a rotated or flipped output, the square corners of a tab bar and of
+// On every output transform, the square corners of a tab bar and of
 // its visible tab stay the ones they share, in target space.
 func TestOrientSquareCorners(t *testing.T) {
-	for _, transform := range []domain.BufferTransform{1, 4} {
+	for transform := domain.BufferTransform(0); transform < 8; transform++ {
 		tw, th := transform.Size(256, 128)
 		r := newTestRenderer(t, tw, th)
 		sw, sh := r.sceneSize(transform)
