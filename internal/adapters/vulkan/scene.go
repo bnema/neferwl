@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/adapters/overlaydraw"
 	"github.com/bnema/neferwl/internal/domain"
 )
 
@@ -146,14 +147,109 @@ func (w *sceneWalk) captureIndicators() {
 	}
 }
 
-// dropPreview fills where a dragged tile would land (domain.Scene.DropPreview),
-// in the active border color, over the workspace's windows.
+// dropOutline is the drop zone and thumbnail outline, logical px.
+const dropOutline = 2
+
+// dropPreview draws where a dragged tile would land (domain.Scene.DropPreview)
+// over the workspace's windows, in the active border color: the zone filled
+// at its Fill alpha with an opaque outline, the action's label, then the
+// dragged window's thumbnail (its Proxy window) with its outline.
 func (w *sceneWalk) dropPreview() {
 	p := w.s.DropPreview
 	if p == nil || p.Rect.W <= 0 || p.Rect.H <= 0 {
 		return
 	}
-	w.fill(w.physRect(p.Rect.X, p.Rect.Y, p.Rect.W, p.Rect.H), w.active)
+	alpha := w.alpha
+	w.alpha = float32(max(0, min(p.Fill, 1)))
+	radius := float32(math.Round(float64(p.Radius) * w.scale))
+	zone := w.physRect(p.Rect.X, p.Rect.Y, p.Rect.W, p.Rect.H)
+	w.fillRounded(zone, w.active, radius)
+	w.alpha = alpha
+	w.dropRing(p.Rect, p.Radius)
+	w.dropLabel(p, zone)
+	if p.Thumb == 0 {
+		return
+	}
+	for _, win := range w.s.Windows {
+		if win.Proxy && win.ID == p.Thumb && drawsAsWindow(win) {
+			w.window(win)
+			w.dropRing(win.Rect, win.Radius)
+			return
+		}
+	}
+}
+
+// dropRing outlines r (logical) dropOutline px wide, opaque, rounded with
+// radius.
+func (w *sceneWalk) dropRing(r domain.Rect, radius int) {
+	b := min(dropOutline, r.W/2, r.H/2)
+	if b <= 0 {
+		return
+	}
+	if radius > 0 {
+		w.roundedInnerBorder(r, b, radius, w.active)
+	} else {
+		w.innerBorder(r, b, w.active)
+	}
+}
+
+// dropLabelOverlay is the renderer's own shm overlay ID of the drop label:
+// core's overlay IDs stay below 1<<62 + n, so it never collides.
+const dropLabelOverlay uint64 = 1 << 63
+
+// dropLabelPad is the label pill's padding, logical px; dropLabelMargin is
+// the least room it leaves on each side of the zone.
+const (
+	dropLabelPad    = 6
+	dropLabelMargin = 8
+)
+
+// dropLabel centres the action's label pill in zone (physical) when it
+// fits with dropLabelMargin to spare. The raster is cached by label and
+// style (overlaydraw), the GPU copy by the label's hash as its Seq.
+func (w *sceneWalk) dropLabel(p *domain.DropPreview, zone image.Rectangle) {
+	r := w.r
+	if p.Label == "" || p.LabelPx <= 0 || r.lost {
+		return
+	}
+	bg, fg := overlaydraw.Colors(w.s.Border.Active, "", "")
+	style := overlaydraw.Style{FontPx: p.LabelPx, Background: bg, Foreground: fg, PadPx: dropLabelPad * w.scale}
+	pix, lw, lh := r.overlayRaster.Label(p.Label, 0, w.scale, style)
+	m := w.phys(dropLabelMargin)
+	if lw <= 0 || lh <= 0 || lw > zone.Dx()-2*m || lh > zone.Dy()-2*m {
+		return
+	}
+	x, y := zone.Min.X+(zone.Dx()-lw)/2, zone.Min.Y+(zone.Dy()-lh)/2
+	rect := image.Rect(x, y, x+lw, y+lh)
+	clip := rect.Intersect(w.bounds)
+	if clip.Empty() {
+		return
+	}
+	key := shmKey{overlay: dropLabelOverlay, scale: w.scale, style: style}
+	st := shmState{w: lw, h: lh, seq: labelSeq(p.Label)}
+	c := r.shmCached(key, st)
+	if c == nil {
+		var err error
+		if c, err = r.shmCopyFor(key, st, pix, nil, 0, lw*4, nil); err != nil {
+			_ = r.noteLoss(err)
+			return
+		}
+	}
+	dr := r.contentDraw(clip, rect, lw, lh, [4]float32{}, 0, modeBuffer, false)
+	dr.pc.color[3] = w.alpha
+	dr.shm = c
+	dr.pc.buf = [4]uint32{0, uint32(lw), uint32(lh), 0}
+	w.draws = append(w.draws, dr)
+}
+
+// labelSeq versions the drop label's GPU copy by its text (FNV-1a, never
+// zero), without allocating.
+func labelSeq(s string) uint64 {
+	h := uint64(14695981039346656037)
+	for i := 0; i < len(s); i++ {
+		h = (h ^ uint64(s[i])) * 1099511628211
+	}
+	return h | 1
 }
 
 // pill fills a rounded square (physical pixels) with three rects: a full
@@ -266,7 +362,8 @@ func (w *sceneWalk) windows() {
 	}
 	tileLines := false
 	for _, win := range w.s.Windows {
-		if !drawsAsWindow(win) {
+		if !drawsAsWindow(win) || win.Proxy {
+			// A Proxy is the drag thumbnail: dropPreview draws it.
 			continue
 		}
 		if opensFloats(win) && !tileLines {
@@ -281,120 +378,126 @@ func (w *sceneWalk) windows() {
 			// painted under where it would be), but draws nothing.
 			continue
 		}
-		w.alpha = 1 - float32(max(0, win.Fade))
-		windowBounds := w.bounds
-		if win.Tile() {
-			// A tile never draws over a panel (Scene.TileArea).
-			w.bounds = w.tileBounds
-		}
-		// Content sits inside the border; core sized the client to match.
-		b, inset := 0, domain.Sides(0)
-		if !win.Fullscreen {
-			b, inset = w.s.Border.Width, win.Inset
-		}
-		c := win.Rect.Inset(inset, b)
-		body := w.physRect(c.X, c.Y, c.W, c.H)
-		content := w.contents[win.ID]
-		// Damage counts only what is drawn: never the panel under a tile.
-		outer := w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H)
-		w.dmg.window(win.ID, content, outer.Intersect(w.bounds))
-		w.rounded = win.Radius > 0
-		var radius, innerRadius float32
-		if win.Radius > 0 {
-			radius = float32(math.Round(float64(win.Radius) * w.scale))
-			// The border's physical width, from the rects actually drawn.
-			bPhys := min(body.Min.X-outer.Min.X, body.Min.Y-outer.Min.Y, outer.Max.X-body.Max.X, outer.Max.Y-body.Max.Y)
-			innerRadius = max(radius-float32(max(bPhys, 0)), 0)
-			if col := w.ringColor(win.ID); col != "" && b > 0 {
-				if dr := w.fillRounded(outer, parseColor(col), radius); dr != nil {
-					dr.pc.misc[1] |= flagRing
-					// Opaque, the ring runs 1px under the body so no seam
-					// shows; faded, that overlap would double up: the hole
-					// is the body.
-					hole, holeRadius := body.Inset(1), max(innerRadius-1, 0)
-					if w.alpha < 1 {
-						hole, holeRadius = body, innerRadius
-					}
-					dr.roundInner = roundRect(hole)
-					dr.radii[1] = math.Float32bits(holeRadius)
-				}
-			}
-		}
-		start := len(w.draws)
-		// Until its first buffer, a window shows the background: no flash.
-		w.fill(body, w.bg)
-		filled := len(w.draws) > start
-		if !content.Empty() {
-			// An animating frame zooms its content (Zoom); a card draws
-			// at its Preview.
-			if win.Zoom > 0 {
-				w.zoom = win.Zoom
-			} else if win.Preview > 0 {
-				w.zoom = win.Preview
-			}
-			if w.r.hdrNits > 0 && win.SDRExpansion.Active() {
-				w.expand = win.SDRExpansion.Params()
-				w.expandCurve = win.SDRExpansion
-			}
-			w.place(win.ID, &content, c.X, c.Y, c.W, c.H)
-			if win.Radius == 0 && w.alpha == 1 && filled {
-				fill := w.draws[start].pc.rect
-				for _, dr := range w.draws[start+1:] {
-					r := dr.pc.rect
-					if dr.pc.misc[0] != modeSolid && dr.pc.misc[1]&flagOpaque != 0 && dr.pc.color[3] == 1 &&
-						r[0] <= fill[0] && r[1] <= fill[1] && r[2] >= fill[2] && r[3] >= fill[3] {
-						// Only an emitted covering draw can hide the body:
-						// failed imports must leave its background visible.
-						copy(w.draws[start:], w.draws[start+1:])
-						w.draws = w.draws[:len(w.draws)-1]
-						break
-					}
-				}
-			}
-			w.expand = [4]float32{}
-			w.expandCurve = domain.SDRExpansionCurve{}
-			w.zoom = 1
-		}
-		if win.Radius > 0 {
-			for j := start; j < len(w.draws); j++ {
-				roundedDraw(&w.draws[j], body, innerRadius)
-			}
-		} else {
-			w.separators(win.ID)
-		}
-		// Above this client's entire surface tree and border, below later
-		// windows and the separate popup pass. Overview cards and windows
-		// zooming in or out omit panels; rounded windows round them too.
-		if win.Preview == 0 && win.Zoom == 0 {
-			outputWidth, _ := w.r.sceneSize(w.s.Transform)
-			for _, o := range w.s.Overlays {
-				if o.Window == win.ID {
-					start := len(w.draws)
-					w.overlay(o, body, outer.Intersect(w.bounds), outputWidth)
-					if win.Radius > 0 {
-						for j := start; j < len(w.draws); j++ {
-							roundedDraw(&w.draws[j], body, innerRadius)
-						}
-					}
-				}
-			}
-		}
-		dimStart := len(w.draws)
-		if win.Dim > 0 {
-			// A stashed window peeking in: dimmed with its border.
-			w.dim(outer, win.Dim)
-		}
-		if win.Radius > 0 {
-			for j := dimStart; j < len(w.draws); j++ {
-				roundedDraw(&w.draws[j], outer, radius)
-			}
-		}
-		w.rounded = false
-		w.alpha, w.bounds = 1, windowBounds
+		w.window(win)
 	}
 	if !tileLines {
 		w.tileSeparators()
 	}
+}
+
+// window draws win (not faded out) with its border, content, overlays and
+// veil.
+func (w *sceneWalk) window(win domain.SceneWindow) {
+	w.alpha = 1 - float32(max(0, win.Fade))
+	windowBounds := w.bounds
+	if win.Tile() {
+		// A tile never draws over a panel (Scene.TileArea).
+		w.bounds = w.tileBounds
+	}
+	// Content sits inside the border; core sized the client to match.
+	b, inset := 0, domain.Sides(0)
+	if !win.Fullscreen && !win.Proxy {
+		b, inset = w.s.Border.Width, win.Inset
+	}
+	c := win.Rect.Inset(inset, b)
+	body := w.physRect(c.X, c.Y, c.W, c.H)
+	content := w.contents[win.ID]
+	// Damage counts only what is drawn: never the panel under a tile.
+	outer := w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H)
+	w.dmg.window(win.ID, content, outer.Intersect(w.bounds))
+	w.rounded = win.Radius > 0
+	var radius, innerRadius float32
+	if win.Radius > 0 {
+		radius = float32(math.Round(float64(win.Radius) * w.scale))
+		// The border's physical width, from the rects actually drawn.
+		bPhys := min(body.Min.X-outer.Min.X, body.Min.Y-outer.Min.Y, outer.Max.X-body.Max.X, outer.Max.Y-body.Max.Y)
+		innerRadius = max(radius-float32(max(bPhys, 0)), 0)
+		if col := w.ringColor(win.ID); col != "" && b > 0 {
+			if dr := w.fillRounded(outer, parseColor(col), radius); dr != nil {
+				dr.pc.misc[1] |= flagRing
+				// Opaque, the ring runs 1px under the body so no seam
+				// shows; faded, that overlap would double up: the hole
+				// is the body.
+				hole, holeRadius := body.Inset(1), max(innerRadius-1, 0)
+				if w.alpha < 1 {
+					hole, holeRadius = body, innerRadius
+				}
+				dr.roundInner = roundRect(hole)
+				dr.radii[1] = math.Float32bits(holeRadius)
+			}
+		}
+	}
+	start := len(w.draws)
+	// Until its first buffer, a window shows the background: no flash.
+	w.fill(body, w.bg)
+	filled := len(w.draws) > start
+	if !content.Empty() {
+		// An animating frame zooms its content (Zoom); a card draws
+		// at its Preview.
+		if win.Zoom > 0 {
+			w.zoom = win.Zoom
+		} else if win.Preview > 0 {
+			w.zoom = win.Preview
+		}
+		if w.r.hdrNits > 0 && win.SDRExpansion.Active() {
+			w.expand = win.SDRExpansion.Params()
+			w.expandCurve = win.SDRExpansion
+		}
+		w.place(win.ID, &content, c.X, c.Y, c.W, c.H)
+		if win.Radius == 0 && w.alpha == 1 && filled {
+			fill := w.draws[start].pc.rect
+			for _, dr := range w.draws[start+1:] {
+				r := dr.pc.rect
+				if dr.pc.misc[0] != modeSolid && dr.pc.misc[1]&flagOpaque != 0 && dr.pc.color[3] == 1 &&
+					r[0] <= fill[0] && r[1] <= fill[1] && r[2] >= fill[2] && r[3] >= fill[3] {
+					// Only an emitted covering draw can hide the body:
+					// failed imports must leave its background visible.
+					copy(w.draws[start:], w.draws[start+1:])
+					w.draws = w.draws[:len(w.draws)-1]
+					break
+				}
+			}
+		}
+		w.expand = [4]float32{}
+		w.expandCurve = domain.SDRExpansionCurve{}
+		w.zoom = 1
+	}
+	if win.Radius > 0 {
+		for j := start; j < len(w.draws); j++ {
+			roundedDraw(&w.draws[j], body, innerRadius)
+		}
+	} else {
+		w.separators(win.ID)
+	}
+	// Above this client's entire surface tree and border, below later
+	// windows and the separate popup pass. Overview cards and windows
+	// zooming in or out omit panels; rounded windows round them too.
+	if win.Preview == 0 && win.Zoom == 0 {
+		outputWidth, _ := w.r.sceneSize(w.s.Transform)
+		for _, o := range w.s.Overlays {
+			if o.Window == win.ID {
+				start := len(w.draws)
+				w.overlay(o, body, outer.Intersect(w.bounds), outputWidth)
+				if win.Radius > 0 {
+					for j := start; j < len(w.draws); j++ {
+						roundedDraw(&w.draws[j], body, innerRadius)
+					}
+				}
+			}
+		}
+	}
+	dimStart := len(w.draws)
+	if win.Dim > 0 {
+		// A stashed window peeking in: dimmed with its border.
+		w.dim(outer, win.Dim)
+	}
+	if win.Radius > 0 {
+		for j := dimStart; j < len(w.draws); j++ {
+			roundedDraw(&w.draws[j], outer, radius)
+		}
+	}
+	w.rounded = false
+	w.alpha, w.bounds = 1, windowBounds
 }
 
 // tileSeparators draws the tile lines, cut like the tiles at the panels.

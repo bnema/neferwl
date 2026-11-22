@@ -64,7 +64,7 @@ func (r *Raster) Label(text string, typed int, scale float64, styles ...Style) (
 	}
 	typed = max(0, min(typed, len(text)))
 	bg, fg := Colors("", "", "")
-	style := Style{fontSize * scale, bg, fg}
+	style := Style{FontPx: fontSize * scale, Background: bg, Foreground: fg}
 	if len(styles) > 0 {
 		style = styles[0]
 	}
@@ -121,6 +121,10 @@ func render(face font.Face, text string, typed int, style Style) entry {
 	m := face.Metrics()
 	px := int(math.Round(padX * scale))
 	py := int(math.Round(padY * scale))
+	if style.PadPx > 0 {
+		px = int(math.Round(style.PadPx))
+		py = px
+	}
 	border := 1
 	adv := font.MeasureString(face, text).Ceil()
 	w := adv + 2*px + 2*border

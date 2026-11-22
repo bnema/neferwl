@@ -11,6 +11,9 @@ import (
 type Style struct {
 	FontPx                 float64
 	Background, Foreground color.RGBA
+	// PadPx, above 0, is the padding around the text in physical pixels;
+	// 0 keeps the hint label's.
+	PadPx float64
 }
 
 // FontPixels resolves the shared physical font size.
