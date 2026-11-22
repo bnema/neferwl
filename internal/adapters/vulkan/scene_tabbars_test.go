@@ -75,23 +75,26 @@ func TestSceneTabBarsRounded(t *testing.T) {
 	require.Equal(t, float32(21), math.Float32frombits(got[0].radii[0]), "bar capped at its height")
 	require.Equal(t, cornersBottom, got[0].square, "bar bottom square")
 	require.Equal(t, float32(21), math.Float32frombits(got[2].radii[0]), "active tab rounded alike")
-	require.Equal(t, cornersTop|cornersBottom, got[2].square, "middle tab square")
+	require.Equal(t, got[0].round, got[2].round, "active tab clipped to the bar")
+	require.Equal(t, cornersBottom, got[2].square)
 
-	for _, c := range []struct {
-		active int
-		want   uint32
-	}{{0, cornerTopRight | cornersBottom}, {2, cornerTopLeft | cornersBottom}} {
+	// The first and last tabs, and a first tab narrower than the radius:
+	// clipped to the bar's shape, never past its corner.
+	for _, c := range []struct{ active, width int }{{0, 80}, {2, 80}, {0, 5}} {
 		e := tabScene("b")
 		e.TabBars[0].Radius = 30
 		tabs := append([]domain.TabTitle(nil), e.TabBars[0].Tabs...)
 		for i := range tabs {
 			tabs[i].Active = i == c.active
 		}
+		tabs[0].Rect.W = c.width
 		e.TabBars[0].Tabs = tabs
 		got := r.draws(e, nil, newDamage(&target{}, e, bounds))
 		at := 1 + c.active // the bar, the titles before it
 		require.Nil(t, got[at].shm)
-		require.Equal(t, c.want, got[at].square, "active tab %d", c.active)
+		require.Equal(t, got[0].round, got[at].round, "active tab %d width %d", c.active, c.width)
+		require.Equal(t, got[0].radii, got[at].radii)
+		require.Equal(t, cornersBottom, got[at].square)
 	}
 
 	// The visible tab right under the bar, and a window elsewhere.

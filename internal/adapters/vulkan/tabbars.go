@@ -51,19 +51,15 @@ func (w *sceneWalk) tabBars() {
 		radius = min(radius, float32(full.Dy()))
 		w.square = cornersBottom
 		w.fillRounded(full, fill, radius)
-		for i, tab := range bar.Tabs {
+		for _, tab := range bar.Tabs {
 			rect := w.physRect(tab.Rect.X, tab.Rect.Y, tab.Rect.W, tab.Rect.H).Intersect(full)
 			bg, ink := inactiveBg, inactiveInk
 			if tab.Active {
-				// Rounded only on the corners it shares with the bar.
-				w.square = cornersBottom | cornersTop
-				if i == 0 {
-					w.square &^= cornerTopLeft
+				// Clipped to the bar's shape: rounded where it reaches
+				// a bar corner, however narrow.
+				if dr := w.fillRounded(rect, w.active, radius); dr != nil {
+					roundedDraw(dr, full, radius, cornersBottom)
 				}
-				if i == len(bar.Tabs)-1 {
-					w.square &^= cornerTopRight
-				}
-				w.fillRounded(rect, w.active, radius)
 				bg, ink = activeBg, activeInk
 			}
 			// Sizes come from logical sizes, not the rounded physical
