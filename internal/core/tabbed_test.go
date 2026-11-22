@@ -161,3 +161,30 @@ func TestTabbedStateActive(t *testing.T) {
 		}
 	})
 }
+
+// Every tab of a tabbed column reports the content rect below the bar.
+func TestTabbedStateTileRects(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r, set := tabbedRig(t)
+		bar := set[0].TabBars[0].Rect
+		synctest.Wait()
+		var st domain.State
+		for len(r.state) > 0 {
+			st = <-r.state
+		}
+		for _, w := range st.Workspaces {
+			if !w.Visible {
+				continue
+			}
+			c := w.Columns[0]
+			want := domain.Rect{X: c.Rect.X, Y: c.Rect.Y + bar.H, W: c.Rect.W, H: c.Rect.H - bar.H}
+			for _, tile := range c.Windows {
+				if tile.Rect != want {
+					t.Fatalf("tile %+v, want %+v", tile, want)
+				}
+			}
+			return
+		}
+		t.Fatal("no visible workspace")
+	})
+}

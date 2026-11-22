@@ -164,6 +164,11 @@ func (c *Core) workspaceInto(ws []domain.WorkspaceState, i int, w *Workspace, ou
 		held := w.HeldColumn(ci)
 		for ri, id := range col.Windows {
 			tr := c.scratch.rows[ri]
+			if col.Tabbed {
+				// Every tab shows, when selected, below the bar.
+				bar := min(w.TabBar, r.H)
+				tr = Rect{X: r.X, Y: r.Y + bar, W: r.W, H: r.H - bar}
+			}
 			if w.Fullscreen == id {
 				tr = w.Output
 			} else if held && w.IsFullscreenMember(id) {
