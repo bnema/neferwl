@@ -140,6 +140,7 @@ var doCmd = Command{
 	Name: "do", Args: "<action> [arg...] [flags]", Summary: "Run a compositor action over the control socket.",
 	Setup: func(fs *flag.FlagSet) Runner {
 		target := addTargetFlag(fs)
+		mark := fs.String("target", "", "Act on the window holding a mark: mark:NAME.")
 		wf := addWaitFlags(fs)
 		return func(ctx context.Context, env Env, args []string) (runErr error) {
 			// flag stops at the first positional argument; accept options after
@@ -152,6 +153,9 @@ var doCmd = Command{
 				return usagef("expected an action")
 			}
 			req := map[string]any{"op": "do", "action": strings.Join(action, " ")}
+			if *mark != "" {
+				req["target"] = *mark
+			}
 			if err := wf.apply(req); err != nil {
 				return err
 			}

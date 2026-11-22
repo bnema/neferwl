@@ -22,6 +22,8 @@ func TestControlCommands(t *testing.T) {
 		reject bool
 	}{
 		{"do", []string{"do", "focus-workspace", "2", "--wait", "committed", "--until", "window-mapped app_id=foot", "--timeout", "3s"}, map[string]any{"op": "do", "action": "focus-workspace 2", "wait": "committed", "until": "window-mapped app_id=foot", "timeout": "3s", "shot": nil}, false},
+		{"do-target", []string{"do", "--target", "mark:a", "close-window"}, map[string]any{"op": "do", "action": "close-window", "target": "mark:a"}, false},
+		{"do-target-after", []string{"do", "close-window", "--target", "mark:a"}, map[string]any{"op": "do", "action": "close-window", "target": "mark:a"}, false},
 		{"do-shot", []string{"do", "focus-workspace", "2", "--shot"}, map[string]any{"op": "do", "action": "focus-workspace 2", "shot": true}, false},
 		{"key", []string{"key", "Super+Return", "--wait", "committed", "--until", "window-mapped app_id=foot", "--timeout", "3s"}, map[string]any{"op": "inject", "kind": "key", "combo": "Super+Return", "wait": "committed", "until": "window-mapped app_id=foot", "timeout": "3s"}, false},
 		{"key-shot", []string{"key", "Super+Return", "--shot=true"}, map[string]any{"op": "inject", "kind": "key", "shot": true}, false},
