@@ -7,6 +7,8 @@ neferwl --config <path>            # use another file
 neferwl validate-config [path]     # check a file
 ```
 
+`validate-config` checks keys and values; it does not check drop edge actions against the layouts.
+
 Missing keys use defaults. Empty keyboard values use the system setting. No startup commands or named workspaces are configured by default. The log lists changed keys after a reload.
 
 ## Format
@@ -611,9 +613,9 @@ While a tile is dragged, the anchor under the pointer is filled in `border.activ
 | `cascade` | left, right | top, bottom step the bands |
 | `fixed` | top, bottom | none |
 
-A workspace edge with no workspace past it has no zone: before the first workspace, after the last, and on a named workspace. An explicit `workspace` off the workspace axis, or `scroll` on a layout that does not scroll, does nothing and is reported as a config warning.
+A workspace edge with no workspace past it has no zone: before the first workspace, after the last, and on a named workspace. An explicit `workspace` off the workspace axis, or `scroll` on a workspace edge or on a layout that does not scroll, does nothing and is reported as a config warning.
 
-**Scope.** `drop.<key>` is global. `drop.<output>.<key>` overrides it on one output, and `workspace.<name>.drop.<key>` overrides both on one workspace. The target workspace's policy decides each drop. Keys that are not set inherit.
+**Scope.** `drop.<key>` is global. `drop.<output>.<key>` overrides it on one output, and `workspace.<name>.drop.<key>` overrides both on one workspace. The target workspace's policy decides each drop. Keys that are not set inherit. An invalid value warns and keeps the inherited one.
 
 ```
 drop.window.center = none
