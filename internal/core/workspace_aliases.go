@@ -245,10 +245,14 @@ func MarkArg(a Action) (op MarkOp, name string, cmd []string, ok bool) {
 }
 
 // SpawnCommands calls workspace.SpawnCommands.
-func SpawnCommands(a Action) ([][]string, bool) { return workspacedomain.SpawnCommands(a) }
+func SpawnCommands(a Action) (commands [][]string, mark string, ok bool) {
+	return workspacedomain.SpawnCommands(a)
+}
 
 // StashCommands calls workspace.StashCommands.
-func StashCommands(a Action) ([][]string, bool) { return workspacedomain.StashCommands(a) }
+func StashCommands(a Action) (commands [][]string, mark string, ok bool) {
+	return workspacedomain.StashCommands(a)
+}
 
 // MoveFullscreen calls workspace.MoveFullscreen.
 func MoveFullscreen(from, to *Workspace, at int) bool {

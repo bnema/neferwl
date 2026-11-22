@@ -216,25 +216,48 @@ func ModeArg(a Action) (string, bool) {
 // They are split by domain.SplitCommands; there is no shell.
 const spawnPrefix = "spawn "
 
-// SpawnCommands returns the command of a "spawn <cmd>" action; a bind
-// chain gives each program its own spawn action.
-func SpawnCommands(a Action) ([][]string, bool) { return prefixedCommands(a, spawnPrefix) }
+// SpawnCommands returns the command of a "spawn [--mark NAME] <cmd>"
+// action and its mark; a bind chain gives each program its own spawn action.
+func SpawnCommands(a Action) (commands [][]string, mark string, ok bool) {
+	return prefixedCommands(a, spawnPrefix)
+}
 
 // stashPrefix starts a bind action that runs commands and opens their
 // windows in the stash: "stash firefox".
 const stashPrefix = "stash "
 
-// StashCommands returns the command of a "stash <cmd>" action; a bind
-// chain gives each program its own stash action.
-func StashCommands(a Action) ([][]string, bool) { return prefixedCommands(a, stashPrefix) }
+// StashCommands returns the command of a "stash [--mark NAME] <cmd>"
+// action and its mark; a bind chain gives each program its own stash action.
+func StashCommands(a Action) (commands [][]string, mark string, ok bool) {
+	return prefixedCommands(a, stashPrefix)
+}
 
-func prefixedCommands(a Action, prefix string) ([][]string, bool) {
+// markFlag marks the first window of a spawn: "spawn --mark term foot".
+const markFlag = "--mark"
+
+// prefixedCommands parses the commands after prefix and a leading
+// "--mark NAME"; ok is false on a bad name or no command.
+func prefixedCommands(a Action, prefix string) (commands [][]string, mark string, ok bool) {
 	rest, ok := strings.CutPrefix(string(a), prefix)
 	if !ok {
-		return nil, false
+		return nil, "", false
 	}
-	commands := domain.SplitCommands(rest)
-	return commands, len(commands) > 0
+	if after, flag := strings.CutPrefix(strings.TrimLeft(rest, " \t"), markFlag); flag && (after == "" || after[0] == ' ' || after[0] == '\t') {
+		after = strings.TrimLeft(after, " \t")
+		end := strings.IndexAny(after, " \t")
+		if end < 0 {
+			end = len(after)
+		}
+		mark, rest = after[:end], after[end:]
+		if !domain.ValidMarkName(mark) {
+			return nil, "", false
+		}
+	}
+	commands = domain.SplitCommands(rest)
+	if len(commands) == 0 {
+		return nil, "", false
+	}
+	return commands, mark, true
 }
 
 // Effect describes the workspace action contract.
@@ -250,15 +273,17 @@ type Effect struct {
 	Close WindowID
 	// Quit describes the workspace action contract.
 	Quit bool
+	// Mark is given to the first window of the spawned commands.
+	Mark string
 }
 
 // Apply runs a bind action that only touches this workspace.
 func (w *Workspace) Apply(a Action) Effect {
-	if commands, ok := SpawnCommands(a); ok {
-		return Effect{Spawn: true, Commands: commands}
+	if commands, mark, ok := SpawnCommands(a); ok {
+		return Effect{Spawn: true, Commands: commands, Mark: mark}
 	}
-	if commands, ok := StashCommands(a); ok {
-		return Effect{Spawn: true, Stash: true, Commands: commands}
+	if commands, mark, ok := StashCommands(a); ok {
+		return Effect{Spawn: true, Stash: true, Commands: commands, Mark: mark}
 	}
 	if w.ApplyFree(a) {
 		return Effect{}

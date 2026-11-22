@@ -348,10 +348,10 @@ func validAction(a Action, modes map[string]map[string]string) error {
 	if _, _, _, ok := MarkArg(a); ok {
 		return nil
 	}
-	if _, ok := SpawnCommands(a); ok {
+	if _, _, ok := SpawnCommands(a); ok {
 		return nil
 	}
-	if _, ok := StashCommands(a); ok {
+	if _, _, ok := StashCommands(a); ok {
 		return nil
 	}
 	if a == ActionScaleUp || a == ActionScaleDown {

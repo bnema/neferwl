@@ -372,6 +372,10 @@ func TestWarningsKeepDefaults(t *testing.T) {
 		{"bind.cmd+1 = mode ghost", "no mode.ghost.* declared"},
 		{"bind.super+r = mode ghost", "no mode.ghost.* declared"},
 		{"startup = ;", "must not be empty"},
+		{"bind.cmd+x = spawn --mark", "spawn --mark needs a name"},
+		{"bind.cmd+x = spawn --mark a.b foot", "spawn --mark needs a name"},
+		{"bind.cmd+x = spawn --mark a", "spawn needs a command"},
+		{"bind.cmd+x = stash --mark a", "stash needs a command"},
 		{"bind.cmd+m = mark", "mark needs a name (letters, digits, - or _; at most 64)"},
 		{"bind.cmd+m = mark a b", "mark takes only a name"},
 		{"bind.cmd+m = mark a.b", "mark needs a name"},
@@ -396,6 +400,8 @@ func TestMarkBinds(t *testing.T) {
 	for line, want := range map[string]string{
 		"bind.cmd+m = mark a":                      "mark a",
 		"bind.cmd+m = unmark":                      "unmark",
+		"bind.cmd+m = spawn --mark t foot":         "spawn --mark t foot",
+		"bind.cmd+m = stash --mark t foot":         "stash --mark t foot",
 		"bind.cmd+m = focus-mark mail thunderbird": "focus-mark mail thunderbird",
 	} {
 		c, w := parseString(t, line)

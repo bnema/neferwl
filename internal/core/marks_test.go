@@ -114,3 +114,22 @@ func TestFocusMarkMissing(t *testing.T) {
 		}
 	})
 }
+
+// Mark actions do nothing while the focused screen's overview is open.
+func TestMarkOverviewNoop(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := runChainRig(t, "none")
+		r.mustDo(t, "toggle-overview")
+		r.mustDo(t, "mark a")
+		for _, w := range r.current(t).Windows {
+			if w.Marks != "" {
+				t.Fatalf("window %d marked in overview: %q", w.ID, w.Marks)
+			}
+		}
+		r.mustDo(t, "toggle-overview")
+		r.mustDo(t, "mark a")
+		if got := stateWindow(t, r.current(t), 5).Marks; got != "a" {
+			t.Fatalf("after overview: %q", got)
+		}
+	})
+}
