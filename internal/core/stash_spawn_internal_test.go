@@ -49,7 +49,7 @@ func TestSpawnStashIndependentOfCommandDrain(t *testing.T) {
 		commands := make(chan ports.ClientCommand)
 		spawn := make(chan domain.SpawnRequest, 1)
 		c := stashSpawnCore(t, commands, spawn, fixedClock(t, &now))
-		if err := c.spawnStash(context.Background(), c.cur().mon.Current(), [][]string{{"firefox"}}, false); err != nil {
+		if err := c.spawnStash(context.Background(), c.cur().mon.Current(), [][]string{{"firefox"}}, false, ""); err != nil {
 			t.Fatal(err)
 		}
 		req := <-spawn
@@ -67,7 +67,7 @@ func TestSpawnStashSuppressedLeavesNoClaim(t *testing.T) {
 		now := claimBase
 		commands := make(chan ports.ClientCommand, 8)
 		c := stashSpawnCore(t, commands, nil, fixedClock(t, &now)) // no launcher queue: every send is suppressed
-		if err := c.spawnStash(context.Background(), c.cur().mon.Current(), [][]string{{"a"}, {"b"}}, false); err != nil {
+		if err := c.spawnStash(context.Background(), c.cur().mon.Current(), [][]string{{"a"}, {"b"}}, false, ""); err != nil {
 			t.Fatal(err)
 		}
 		if c.placement.anyPending() {
@@ -101,7 +101,7 @@ func TestSpawnStashCancelsClaimsFromFirstUnissued(t *testing.T) {
 				if tc.cancelled {
 					cancel()
 				}
-				err := c.spawnStash(ctx, c.cur().mon.Current(), [][]string{{"a"}, {"b"}}, false)
+				err := c.spawnStash(ctx, c.cur().mon.Current(), [][]string{{"a"}, {"b"}}, false, "")
 				if !errors.Is(err, tc.wantErr) {
 					t.Fatalf("error %v, want %v", err, tc.wantErr)
 				}

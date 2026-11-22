@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/bnema/neferwl/internal/domain"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // markHolder returns the mapped window holding name, 0 if none.
@@ -109,4 +110,18 @@ func (c *Core) runMark(ctx context.Context, op MarkOp, name string, cmd []string
 		return c.publish(ctx)
 	}
 	return nil
+}
+
+// claimMark gives a newly mapped window the mark of its spawn claim. A
+// marked-only claim is consumed here; a stash claim stays for place.
+func (c *Core) claimMark(v ports.WindowMapped) {
+	c.placement.expireWorkspaceClaims(c.now())
+	target, ok := c.placement.pending[v.Slot]
+	if !ok || target.mark == "" {
+		return
+	}
+	c.setMark(v.ID, target.mark)
+	if target.kind == spawnMarked {
+		delete(c.placement.pending, v.Slot)
+	}
 }

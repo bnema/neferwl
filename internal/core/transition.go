@@ -419,6 +419,9 @@ func (c *Core) mapWindow(v ports.WindowMapped) (follow bool) {
 	}
 	c.mapLineage(v)
 	c.windows.mapped(v, now)
+	if !v.Remap && v.Slot != "" {
+		c.claimMark(v)
+	}
 	c.rememberTitleRules(v.ID)
 	c.matchWindowExpansion(v.ID)
 	if s, _ := c.screenOf(v.ID); s != nil || !c.animOn() || c.security.Protected {

@@ -642,7 +642,11 @@ func (c *Core) runSpawn(ctx context.Context, w *Workspace, effect Effect) error 
 		commands = [][]string{append([]string(nil), c.cfg.Terminal.Command...)}
 	}
 	if effect.Stash {
-		if err := c.spawnStash(ctx, w, commands, effect.Commands == nil); err != nil {
+		if err := c.spawnStash(ctx, w, commands, effect.Commands == nil, effect.Mark); err != nil {
+			return err
+		}
+	} else if effect.Mark != "" {
+		if err := c.spawnMarked(ctx, commands, effect.Mark); err != nil {
 			return err
 		}
 	} else {
@@ -666,7 +670,7 @@ func (c *Core) runSpawn(ctx context.Context, w *Workspace, effect Effect) error 
 // spawnEmpty does. A send the gate suppresses leaves no claim behind. With
 // terminal set (the terminal of an empty stash), nothing starts while the
 // previous one is still awaited.
-func (c *Core) spawnStash(ctx context.Context, w *Workspace, commands [][]string, terminal bool) error {
+func (c *Core) spawnStash(ctx context.Context, w *Workspace, commands [][]string, terminal bool, mark string) error {
 	if c.protectionRequested() {
 		return nil
 	}
@@ -677,7 +681,20 @@ func (c *Core) spawnStash(ctx context.Context, w *Workspace, commands [][]string
 	}
 	reqs := make([]domain.SpawnRequest, len(commands))
 	for i, argv := range commands {
-		reqs[i] = c.placement.request(argv, spawnTarget{kind: spawnStash, ws: w, at: now})
+		reqs[i] = c.placement.request(argv, spawnTarget{kind: spawnStash, ws: w, at: now, mark: mark})
+	}
+	_, err := c.dispatch(ctx, reqs)
+	return err
+}
+
+// spawnMarked runs commands whose first window gets mark, placed as any
+// new window; a suppressed send drops its claim.
+func (c *Core) spawnMarked(ctx context.Context, commands [][]string, mark string) error {
+	now := c.now()
+	c.placement.expireWorkspaceClaims(now)
+	reqs := make([]domain.SpawnRequest, len(commands))
+	for i, argv := range commands {
+		reqs[i] = c.placement.request(argv, spawnTarget{kind: spawnMarked, at: now, mark: mark})
 	}
 	_, err := c.dispatch(ctx, reqs)
 	return err

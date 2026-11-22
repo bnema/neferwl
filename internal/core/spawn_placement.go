@@ -26,15 +26,22 @@ const (
 	spawnTerminal
 	// spawnStash is a window opened straight into the stash of ws.
 	spawnStash
+	// spawnMarked only marks its window, placed as any other.
+	spawnMarked
 )
 
+// markRetry is how long a claim that marks its window waits for it.
+const markRetry = 60 * time.Second
+
 // spawnTarget identifies the destination of one pending spawn. slot is set
-// for spawnSlot; ws and at for the workspace-bound kinds.
+// for spawnSlot; ws and at for the workspace-bound kinds; mark, when set,
+// goes to the window that claims the token.
 type spawnTarget struct {
 	kind spawnKind
 	slot slotKey
 	ws   *Workspace
 	at   time.Time
+	mark string
 }
 
 func newSpawnPlacement(tokens ports.TokenSource) spawnPlacement {
@@ -75,10 +82,25 @@ func (p *spawnPlacement) workspacePending(w *Workspace, kind spawnKind) bool {
 	return false
 }
 
-// expireWorkspaceClaims drops workspace-bound claims older than the retry interval.
+// markPending reports whether a live claim will mark its window name.
+func (p *spawnPlacement) markPending(name string, now time.Time) bool {
+	for _, target := range p.pending {
+		if target.mark == name && now.Sub(target.at) <= markRetry {
+			return true
+		}
+	}
+	return false
+}
+
+// expireWorkspaceClaims drops workspace-bound claims older than the retry
+// interval: markRetry for a claim that marks its window, else termRetry.
 func (p *spawnPlacement) expireWorkspaceClaims(now time.Time) {
 	for token, target := range p.pending {
-		if target.kind != spawnSlot && now.Sub(target.at) > termRetry {
+		retry := termRetry
+		if target.mark != "" {
+			retry = markRetry
+		}
+		if target.kind != spawnSlot && now.Sub(target.at) > retry {
 			delete(p.pending, token)
 		}
 	}
