@@ -264,6 +264,7 @@ func TestSceneTabRingEnclosesBar(t *testing.T) {
 		require.Zero(t, d.square, "four rounded corners")
 		require.Equal(t, float32(12), math.Float32frombits(d.radii[0]))
 		require.Equal(t, float32(2+1), d.roundInner[1], "hole from the bar's inner top")
+		require.Equal(t, float32(12-2-1), math.Float32frombits(d.radii[1]), "hole radius concentric with the ring")
 		require.Equal(t, uint8(0x33), uint8(d.pc.color[0]*255+0.5), "active colour")
 	}
 	require.Equal(t, 1, rings)
@@ -281,6 +282,7 @@ func TestSceneTabRingEnclosesBar(t *testing.T) {
 	for _, d := range got {
 		if d.pc.misc[1]&flagRing == 0 && d.round[1] == 21 && d.pc.misc[1]&flagRounded != 0 {
 			require.Equal(t, cornersTop, d.square, "content clip square on top")
+			require.Equal(t, float32(12-2), math.Float32frombits(d.radii[0]), "body radius concentric with the ring")
 			body++
 		}
 	}

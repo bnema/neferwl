@@ -488,7 +488,12 @@ func (w *sceneWalk) window(win domain.SceneWindow) {
 	if win.Radius > 0 {
 		radius = float32(math.Round(float64(win.Radius) * w.scale))
 		// The border's physical width, from the rects actually drawn.
-		bPhys := min(body.Min.X-outer.Min.X, body.Min.Y-outer.Min.Y, outer.Max.X-body.Max.X, outer.Max.Y-body.Max.Y)
+		// A visible tab has no top border (its bar is there): its other
+		// sides give the width.
+		bPhys := min(body.Min.X-outer.Min.X, outer.Max.X-body.Max.X, outer.Max.Y-body.Max.Y)
+		if !tab {
+			bPhys = min(bPhys, body.Min.Y-outer.Min.Y)
+		}
 		innerRadius = max(radius-float32(max(bPhys, 0)), 0)
 		if col := w.ringColor(win.ID); col != "" && b > 0 {
 			// A visible tab's ring encloses its bar: one rect, four
