@@ -51,6 +51,26 @@ func (w *Workspace) FocusID(id WindowID) bool {
 	return false
 }
 
+// Select selects id as FocusID does, without the side effects of a user
+// focus on a tile: no unmaximize, the stash shown over a cover stays and
+// the view does not scroll. A float is raised as by FocusID; a window in
+// a hidden stash gives false.
+func (w *Workspace) Select(id WindowID) bool {
+	if w.floatIndex(id) >= 0 || w.StashIndex(id) >= 0 {
+		return w.FocusID(id)
+	}
+	for i := range w.Columns {
+		if j := slices.Index(w.Columns[i].Windows, id); j >= 0 {
+			w.floatFocus, w.stashFocus = false, false
+			w.raiseColumns()
+			w.Focus = i
+			w.Columns[i].Focus = j
+			return true
+		}
+	}
+	return false
+}
+
 // HoverFocusable reports whether focusing id by pointer hover leaves the
 // stacking and visibility unchanged: hover never hides the stash nor sends
 // floats behind the columns.
