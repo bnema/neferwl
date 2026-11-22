@@ -39,8 +39,6 @@ type dropAnim struct {
 	ramping  bool
 	// shown is the zone of the last sample.
 	shown Rect
-	// zoom is the thumbnail's content scale, 0 without one.
-	zoom float64
 	// screen shows the published preview: the target's, or with no
 	// target the one under the pointer (a thumbnail alone).
 	screen *screen
@@ -87,7 +85,6 @@ func (c *Core) advanceDropPreview(now time.Time) {
 		return
 	}
 	t, an := &d.target, &d.anim
-	an.zoom = 0
 	if d.float {
 		t.preview, an.screen = nil, nil
 		return
@@ -98,13 +95,13 @@ func (c *Core) advanceDropPreview(now time.Time) {
 		var sc *screen
 		if i := c.screenAt(c.cursorX, c.cursorY); d.moved && i >= 0 {
 			sc = c.screens[i]
-			p.ThumbRect, an.zoom = c.dropThumb(sc, d.id, &an.layout)
+			p.ThumbRect, p.ThumbZoom = c.dropThumb(sc, d.id, &an.layout)
 		}
-		if an.zoom <= 0 {
+		if p.ThumbZoom <= 0 {
 			t.preview, an.screen = nil, nil
 			return
 		}
-		p.Thumb, p.ThumbZoom = d.id, an.zoom
+		p.Thumb = d.id
 		c.setDropPreview(sc, p)
 		return
 	}
@@ -135,9 +132,9 @@ func (c *Core) advanceDropPreview(now time.Time) {
 		p.Radius = c.cfg.Border.Radius
 	}
 	if d.moved {
-		p.ThumbRect, an.zoom = c.dropThumb(sc, d.id, &an.layout)
-		if an.zoom > 0 {
-			p.Thumb, p.ThumbZoom = d.id, an.zoom
+		p.ThumbRect, p.ThumbZoom = c.dropThumb(sc, d.id, &an.layout)
+		if p.ThumbZoom > 0 {
+			p.Thumb = d.id
 		}
 	}
 	c.setDropPreview(sc, p)
@@ -181,15 +178,21 @@ func (c *Core) dropShown(sc *screen, id WindowID) bool {
 }
 
 // dropThumb is the thumbnail rect of id on sc, output-local, and its
-// content scale; zero when id has no placed size. buf is layout scratch.
+// content scale; zero when id has no placed size. The size is the one
+// drawn on the screen showing id's workspace (its shown layout, built once
+// per publish); buf is layout scratch for a workspace off screen.
 func (c *Core) dropThumb(sc *screen, id WindowID, buf *[]Placement) (Rect, float64) {
-	_, w := c.screenOf(id)
+	ss, w := c.screenOf(id)
 	if w == nil {
 		return Rect{}, 0
 	}
-	*buf = w.AppendLayout((*buf)[:0])
+	layout := ss.shown
+	if layout == nil || ss.rectsOwner() != w {
+		*buf = w.AppendLayout((*buf)[:0])
+		layout = *buf
+	}
 	var nat Rect
-	for _, pl := range *buf {
+	for _, pl := range layout {
 		if pl.ID == id {
 			nat = pl.Rect
 			break
@@ -215,11 +218,11 @@ func (c *Core) dropThumb(sc *screen, id WindowID, buf *[]Placement) (Rect, float
 // not draw (dropShown: hidden, or out of the view), else it is added.
 func (c *Core) dropProxy(ws []domain.SceneWindow, sc *screen) []domain.SceneWindow {
 	d := c.drag
-	if d == nil || d.anim.screen != sc || d.target.preview == nil || d.target.preview.Thumb == 0 || d.anim.zoom <= 0 {
+	if d == nil || d.anim.screen != sc || d.target.preview == nil || d.target.preview.Thumb == 0 || d.target.preview.ThumbZoom <= 0 {
 		return ws
 	}
 	p := d.target.preview
-	proxy := domain.SceneWindow{ID: p.Thumb, Proxy: true, Rect: p.ThumbRect, Zoom: d.anim.zoom}
+	proxy := domain.SceneWindow{ID: p.Thumb, Proxy: true, Rect: p.ThumbRect, Zoom: p.ThumbZoom}
 	if c.dropShown(sc, p.Thumb) {
 		return ws
 	}

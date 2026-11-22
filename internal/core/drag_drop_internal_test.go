@@ -76,3 +76,23 @@ func TestDropAtAllocations(t *testing.T) {
 		}
 	})
 }
+
+// The thumbnail takes the window's drawn size from the screen showing its
+// workspace, so it matches a window caught mid-motion; and the thumbnail
+// move does not allocate.
+func TestDropThumbUsesShownLayout(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := dragCore(t)
+		threeTileDrag(t, c)
+		sc := c.cur()
+		sc.shown = []Placement{{ID: 1, Rect: Rect{X: 0, Y: 0, W: 800, H: 400}}}
+		var buf []Placement
+		r, zoom := c.dropThumb(sc, 1, &buf)
+		if zoom != 0.25 || r.W != 200 || r.H != 100 {
+			t.Fatalf("thumb %+v zoom %v", r, zoom)
+		}
+		if n := testing.AllocsPerRun(50, func() { c.dropThumb(sc, 1, &buf) }); n != 0 {
+			t.Fatalf("%v allocs", n)
+		}
+	})
+}
