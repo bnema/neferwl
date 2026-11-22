@@ -92,7 +92,7 @@ func (w *sceneWalk) focusFlash() {
 	alpha := w.alpha
 	w.alpha = float32(f.Alpha)
 	// A visible tab flashes with its bar, like its ring.
-	r, _ := tabRing(w.s.TabBars, f.Rect)
+	r, _ := tabRing(w.s.TabBars, 0, f.Rect)
 	b := min(f.Width, r.W/2, r.H/2)
 	if f.Radius > 0 && b > 0 {
 		w.roundedInnerBorder(r, b, f.Radius, parseColor(f.Color))
@@ -477,7 +477,13 @@ func (w *sceneWalk) window(win domain.SceneWindow) {
 	outer := w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H)
 	w.dmg.window(win.ID, content, outer.Intersect(w.bounds))
 	w.rounded = win.Radius > 0
-	w.square = w.tabSquare(win.Rect)
+	// A visible tab: its ring encloses its bar, its top corners sit
+	// under it, square.
+	u, tab := tabRing(w.s.TabBars, win.ID, win.Rect)
+	w.square = 0
+	if tab {
+		w.square = cornersTop
+	}
 	var radius, innerRadius float32
 	if win.Radius > 0 {
 		radius = float32(math.Round(float64(win.Radius) * w.scale))
@@ -488,8 +494,7 @@ func (w *sceneWalk) window(win domain.SceneWindow) {
 			// A visible tab's ring encloses its bar: one rect, four
 			// rounded corners; the hole runs up to the bar's inner top.
 			ring, hole := outer, body
-			tab := w.square != 0
-			if u, ok := tabRing(w.s.TabBars, win.Rect); ok {
+			if tab {
 				ring = w.physRect(u.X, u.Y, u.W, u.H)
 				hole.Min.Y = w.phys(u.Y + min(b, u.H/2))
 			}
@@ -553,7 +558,7 @@ func (w *sceneWalk) window(win domain.SceneWindow) {
 		for j := start; j < len(w.draws); j++ {
 			roundedDraw(&w.draws[j], body, innerRadius, w.square)
 		}
-	} else if u, ok := tabRing(w.s.TabBars, win.Rect); ok {
+	} else if tab {
 		w.tabSeparators(win.ID, win.Rect, u)
 	} else {
 		w.separators(win.ID)

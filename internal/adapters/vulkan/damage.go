@@ -520,7 +520,7 @@ func tabRingDelta(s domain.Scene, area image.Rectangle, phys func(domain.Rect) i
 	}
 	for i := range s.Windows {
 		r := s.Windows[i].Rect
-		if u, ok := tabRing(s.TabBars, r); ok && phys(r).Overlaps(area) {
+		if u, ok := tabRing(s.TabBars, s.Windows[i].ID, r); ok && phys(r).Overlaps(area) {
 			out = out.Union(phys(u))
 		}
 	}

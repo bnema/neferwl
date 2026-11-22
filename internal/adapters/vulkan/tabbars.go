@@ -101,26 +101,33 @@ func tabBarFill(inactive, bg, active [3]uint8) [3]uint8 {
 	return c
 }
 
-// tabSquare is the square-corner mask of a window at r (logical): a
-// visible tab's top corners sit under its bar (domain.TabBar), square.
-func (w *sceneWalk) tabSquare(r domain.Rect) uint32 {
-	if _, ok := tabRing(w.s.TabBars, r); ok {
-		return cornersTop
-	}
-	return 0
-}
-
-// tabRing is the rect a window or flash at r (logical) outlines: for a
-// visible tab, the union of r and its bar (one entity, one ring); ok
-// false, r otherwise.
-func tabRing(bars []domain.TabBar, r domain.Rect) (domain.Rect, bool) {
+// tabRing is the rect window id or a flash (id 0) at r (logical)
+// outlines: for a visible tab, the union of r and its bar (one entity, one
+// ring); ok false, r otherwise. A window is a visible tab when it sits
+// right under a bar whose active tab it is; a flash, which names no
+// window, by geometry alone.
+func tabRing(bars []domain.TabBar, id domain.WindowID, r domain.Rect) (domain.Rect, bool) {
 	for i := range bars {
 		b := &bars[i].Rect
-		if r.Y == b.Y+b.H && r.X == b.X && r.W == b.W {
-			return domain.Rect{X: r.X, Y: b.Y, W: r.W, H: r.Y + r.H - b.Y}, true
+		if r.Y != b.Y+b.H || r.X != b.X || r.W != b.W {
+			continue
 		}
+		if id != 0 && !activeTab(&bars[i], id) {
+			continue
+		}
+		return domain.Rect{X: r.X, Y: b.Y, W: r.W, H: r.Y + r.H - b.Y}, true
 	}
 	return r, false
+}
+
+// activeTab reports whether id is bar's active tab.
+func activeTab(bar *domain.TabBar, id domain.WindowID) bool {
+	for _, tab := range bar.Tabs {
+		if tab.Active {
+			return tab.Window == id
+		}
+	}
+	return false
 }
 
 // tabBarInset is the bar's room inside its visible tab's ring: the

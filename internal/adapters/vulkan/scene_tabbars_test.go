@@ -302,3 +302,29 @@ func TestTabRingFocusDamagesBar(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, image.Rect(0, 0, 240, 83), area)
 }
+
+// A window right under a bar but not its active tab (a flash or a move
+// can leave it there) is no visible tab: four rounded corners, no ring
+// around the bar, no bar damage.
+func TestTabRingNeedsTheActiveTab(t *testing.T) {
+	r := newTestRenderer(t, 256, 128)
+	bounds := image.Rect(0, 0, 256, 128)
+	s := ringedTab(true)
+	s.Windows[0].ID = 3
+	for i := range s.Separators {
+		s.Separators[i].Window = 3
+	}
+	for _, d := range r.draws(s, nil, newDamage(&target{}, s, bounds)) {
+		require.NotEqual(t, cornersTop, d.square, "draw %+v", d.pc.rect)
+		if d.pc.misc[1]&flagRing != 0 {
+			require.Equal(t, int32(21), d.pc.rect[1], "ring around the window only")
+		}
+	}
+	phys := func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
+	old := s
+	old.Windows = []domain.SceneWindow{s.Windows[0]}
+	old.Windows[0].Focused = false
+	area, ok := sceneDelta(old, s, phys, 1<<30)
+	require.True(t, ok)
+	require.Equal(t, image.Rect(0, 21, 240, 83), area)
+}
