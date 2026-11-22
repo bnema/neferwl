@@ -117,3 +117,18 @@ func TestFocusMarkRunOrRaise(t *testing.T) {
 		}
 	})
 }
+
+// A pending marked stash spawn does not hold back the empty stash's
+// terminal.
+func TestStashMarkClaimLetsTerminalOpen(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := markSpawnRig(t)
+		r.mapWindow(t, 1)
+		r.key(t, "n", markMods)
+		receive(t, r.spawn)
+		r.key(t, "s", domain.ModAlt)
+		if req := receive(t, r.spawn); len(req.Argv) != 1 || req.Argv[0] != "foot" {
+			t.Fatalf("argv %v", req.Argv)
+		}
+	})
+}

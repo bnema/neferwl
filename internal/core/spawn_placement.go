@@ -72,10 +72,11 @@ func (p *spawnPlacement) slotPending(key slotKey) bool { return p.slots[key] != 
 // anyPending reports whether any spawn still awaits a window.
 func (p *spawnPlacement) anyPending() bool { return len(p.pending) != 0 }
 
-// workspacePending reports whether a workspace awaits a spawn of the given kind.
+// workspacePending reports whether a workspace awaits an unmarked spawn of
+// the given kind: a marked stash spawn does not stand for its terminal.
 func (p *spawnPlacement) workspacePending(w *Workspace, kind spawnKind) bool {
 	for _, target := range p.pending {
-		if target.kind == kind && target.ws == w {
+		if target.kind == kind && target.ws == w && target.mark == "" {
 			return true
 		}
 	}
