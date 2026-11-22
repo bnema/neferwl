@@ -60,6 +60,9 @@ func TestDropKeysInvalid(t *testing.T) {
 		{"drop.DP-1.edge.window.left = none", "unknown key"},
 		{"drop.edge.gap = none", "unknown key"},
 		{"drop.window.gap = none", "unknown key"},
+		{"drop.window.center.gap = none", "unknown key"},
+		{"drop.edge.left.gap = none", "unknown key"},
+		{"drop.DP-1.edge.top.edge.left = none", "unknown key"},
 	} {
 		c, w := parseString(t, tc.line+"\n")
 		if len(w) != 1 || !strings.Contains(w[0].Msg, tc.msg) {

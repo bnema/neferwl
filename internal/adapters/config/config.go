@@ -1308,10 +1308,20 @@ func splitDrop(rest string) (output, suffix string, ok bool) {
 }
 
 // dropOutputName reports whether out may name an output in a drop key:
-// its last dot segment is not a policy kind.
+// it does not end in a policy kind (window, edge) nor in a policy field
+// (<window|edge>.<side>).
 func dropOutputName(out string) bool {
-	last := out[strings.LastIndex(out, ".")+1:]
-	return last != "window" && last != "edge"
+	i := strings.LastIndex(out, ".")
+	last := out[i+1:]
+	if last == "window" || last == "edge" {
+		return false
+	}
+	if _, side := dropSides[last]; side && i > 0 {
+		head := out[:i]
+		kind := head[strings.LastIndex(head, ".")+1:]
+		return kind != "window" && kind != "edge"
+	}
+	return true
 }
 
 // setDropKey applies one drop.[<output>.]<suffix> key, finding or appending
