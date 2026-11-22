@@ -82,3 +82,38 @@ func TestMarkClaimExpiry(t *testing.T) {
 		}
 	})
 }
+
+// focus-mark NAME CMD spawns CMD once while its window is awaited, raises
+// the window once it maps, and spawns again after it unmapped.
+func TestFocusMarkRunOrRaise(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := stashSpawnRig(t, func(c *domain.Config) { c.Binds["Alt+Ctrl+Shift+o"] = "focus-mark mail thunderbird" })
+		r.mapWindow(t, 1)
+		r.key(t, "o", markMods)
+		req := receive(t, r.spawn)
+		if len(req.Argv) != 1 || req.Argv[0] != "thunderbird" {
+			t.Fatalf("argv %v", req.Argv)
+		}
+		r.input <- ports.KeyEvent{Keysym: "o", Mods: markMods, Pressed: true}
+		synctest.Wait()
+		if len(r.spawn) != 0 {
+			t.Fatal("second spawn while the claim is pending")
+		}
+		if w := r.mapSlot(t, 2, slotToken(t, req)); w.Marks != "mail" {
+			t.Fatalf("spawned window %+v", w)
+		}
+		r.mapWindow(t, 3) // takes the focus
+		r.input <- ports.KeyEvent{Keysym: "o", Mods: markMods, Pressed: true}
+		st := stateAfter(t, r.state, func(st domain.State) bool { return stFocus(st) == 2 })
+		if len(r.spawn) != 0 {
+			t.Fatalf("spawned with the window mapped: %+v", st.Window)
+		}
+		r.client <- ports.WindowUnmapped{ID: 2}
+		synctest.Wait()
+		r.input <- ports.KeyEvent{Keysym: "o", Mods: markMods, Pressed: true}
+		synctest.Wait()
+		if len(r.spawn) != 1 {
+			t.Fatalf("spawns after unmap: %d", len(r.spawn))
+		}
+	})
+}

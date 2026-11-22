@@ -97,13 +97,18 @@ func (c *Core) runMark(ctx context.Context, op MarkOp, name string, cmd []string
 		}
 	case MarkFocus:
 		holder := c.markHolder(name)
-		if holder == 0 {
-			_ = cmd // run-or-raise spawning lands with spawn claims
+		if holder != 0 {
+			return c.layoutAction(ctx, func() Effect {
+				c.raise(holder)
+				return Effect{}
+			})
+		}
+		// Run-or-raise: spawn cmd once while no window holds the mark.
+		if cmd == nil || c.placement.markPending(name, c.now()) {
 			return nil
 		}
 		return c.layoutAction(ctx, func() Effect {
-			c.raise(holder)
-			return Effect{}
+			return Effect{Spawn: true, Commands: [][]string{cmd}, Mark: name}
 		})
 	}
 	if changed {
