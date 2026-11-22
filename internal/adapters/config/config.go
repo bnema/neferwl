@@ -1206,6 +1206,9 @@ func set(c *domain.Config, key, v string) error {
 		if rest, ok := strings.CutPrefix(key, "mouse."); ok {
 			return parsePointerKey(rest, v, &c.Mouse)
 		}
+		if rest, ok := strings.CutPrefix(key, "drop."); ok {
+			return setDropKey(c, rest, v)
+		}
 		if rest, ok := strings.CutPrefix(key, "layout."); ok {
 			if i := strings.LastIndex(rest, "."); i > 0 {
 				return setOutputLayout(c, rest[:i], rest[i+1:], v)
@@ -1264,6 +1267,102 @@ func setOutputLayout(c *domain.Config, output, field, v string) error {
 		c.Layout.Outputs = append(c.Layout.Outputs, o)
 	} else {
 		c.Layout.Outputs[i] = o
+	}
+	return nil
+}
+
+// dropSides maps the side names of drop.* keys.
+var dropSides = map[string]domain.DropSide{
+	"center": domain.DropSideCenter, "left": domain.DropSideLeft, "right": domain.DropSideRight,
+	"top": domain.DropSideTop, "bottom": domain.DropSideBottom,
+}
+
+// splitDrop splits the part of a drop key after "drop." into an output
+// name (empty for the global policy) and a known suffix, stripped from the
+// right so output names may contain dots.
+func splitDrop(rest string) (output, suffix string, ok bool) {
+	if rest == "gap" {
+		return "", rest, true
+	}
+	if out, found := strings.CutSuffix(rest, ".gap"); found && out != "" {
+		return out, "gap", true
+	}
+	i := strings.LastIndex(rest, ".")
+	if i < 0 {
+		return "", "", false
+	}
+	side, head := rest[i+1:], rest[:i]
+	j := strings.LastIndex(head, ".")
+	kind := head[j+1:]
+	if kind != "window" && kind != "edge" {
+		return "", "", false
+	}
+	if j >= 0 {
+		output = head[:j]
+		if output == "" {
+			return "", "", false
+		}
+	}
+	return output, kind + "." + side, true
+}
+
+// setDropKey applies one drop.[<output>.]<suffix> key, finding or appending
+// the output's policy like setOutputLayout.
+func setDropKey(c *domain.Config, rest, v string) error {
+	output, suffix, ok := splitDrop(rest)
+	if !ok {
+		return errUnknownDrop
+	}
+	if output == "" {
+		return setDrop(&c.Drop.DropPolicy, suffix, v)
+	}
+	i := slices.IndexFunc(c.Drop.Outputs, func(o domain.OutputDrop) bool { return o.Output == output })
+	o := domain.OutputDrop{Output: output}
+	if i >= 0 {
+		o = c.Drop.Outputs[i]
+	}
+	if err := setDrop(&o.DropPolicy, suffix, v); err != nil {
+		return err
+	}
+	if i < 0 {
+		c.Drop.Outputs = append(c.Drop.Outputs, o)
+	} else {
+		c.Drop.Outputs[i] = o
+	}
+	return nil
+}
+
+var errUnknownDrop = errors.New("unknown key (window.<side>, gap, edge.<side>)")
+
+// setDrop applies one drop suffix (window.<side>, gap or edge.<side>) to p.
+// On an error p is left unchanged.
+func setDrop(p *domain.DropPolicy, suffix, v string) error {
+	kind, sideName, _ := strings.Cut(suffix, ".")
+	side, known := dropSides[sideName]
+	switch {
+	case suffix == "gap":
+	case kind == "window" && known:
+	case kind == "edge" && known && side != domain.DropSideCenter:
+	default:
+		return errUnknownDrop
+	}
+	a, ok := domain.ParseDropAction(v)
+	if !ok || !domain.DropAllowed(suffix, a) {
+		var allowed []string
+		for x := domain.DropAuto; x <= domain.DropFloat; x++ {
+			if domain.DropAllowed(suffix, x) {
+				allowed = append(allowed, x.String())
+			}
+		}
+		return fmt.Errorf("invalid value %q (allowed: %s)", v, strings.Join(allowed, ", "))
+	}
+	switch kind {
+	case "window":
+		p.SetWindow(side, a)
+	case "edge":
+		p.SetEdge(side, a)
+	default:
+		p.SetGap(a)
 	}
 	return nil
 }
@@ -1595,9 +1694,12 @@ func setWorkspace(w *domain.WorkspaceConfig, field, v string) error {
 	case "max-columns", "overflow":
 		return setLayoutRule(&w.LayoutRules, field, v)
 	default:
+		if suffix, ok := strings.CutPrefix(field, "drop."); ok {
+			return setDrop(&w.Drop, suffix, v)
+		}
 		n, ok := strings.CutPrefix(field, "column.")
 		if !ok {
-			return fmt.Errorf("unknown key (monitor, size, max-columns, overflow, column.N)")
+			return fmt.Errorf("unknown key (monitor, size, max-columns, overflow, column.N, drop.*)")
 		}
 		index, err := strconv.Atoi(n)
 		if err != nil || index < 1 || index > 16 {

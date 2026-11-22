@@ -55,6 +55,23 @@ layout.max-columns = 2
 # screen, each new window splitting the newest one (spiral).
 layout.overflow = cascade
 
+# Dragging a tile (Super + drag) drops it on an anchor. Window sides: center
+# (swap, none), left/right (column, swap, none), top/bottom (stack, swap,
+# none). gap: column or none. Edges (left, right, top, bottom): auto,
+# scroll, workspace, column, stash, float or none; auto switches workspaces
+# on the workspace axis and scrolls on the other one. Override per output
+# with drop.<output>.* and per workspace with workspace.<name>.drop.*.
+# drop.window.center = swap
+# drop.window.left = column
+# drop.window.right = column
+# drop.window.top = stack
+# drop.window.bottom = stack
+# drop.gap = column
+# drop.edge.left = auto
+# drop.edge.right = auto
+# drop.edge.top = auto
+# drop.edge.bottom = auto
+
 # Touchpad. A three-finger swipe up or down slides between workspaces, left
 # or right scrolls the columns (cascade swaps the two axes). natural-scroll
 # = on moves the content with the fingers, for scroll and swipes. tap = on
@@ -125,6 +142,7 @@ focus.flash-color =
 # max-columns and overflow override the layout.* values.
 # workspace.web.max-columns = 3
 # workspace.web.overflow = fixed
+# workspace.web.drop.edge.right = stash
 #
 # Slots: column.N = <cells>, <command> (1-16). neferwl starts each command in the
 # background and puts its first window in column N, without taking focus.
