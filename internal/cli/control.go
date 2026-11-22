@@ -139,8 +139,8 @@ func printControlState(ctx context.Context, env Env, c *controlClient) error {
 var doCmd = Command{
 	Name: "do", Args: "<action> [arg...] [flags]", Summary: "Run a compositor action over the control socket.",
 	Setup: func(fs *flag.FlagSet) Runner {
-		target := addTargetFlag(fs)
-		mark := fs.String("target", "", "Act on the window holding a mark: mark:NAME.")
+		session := addTargetFlag(fs)
+		target := fs.String("target", "", "Act on the window holding a mark: mark:NAME.")
 		wf := addWaitFlags(fs)
 		return func(ctx context.Context, env Env, args []string) (runErr error) {
 			// flag stops at the first positional argument; accept options after
@@ -152,14 +152,19 @@ var doCmd = Command{
 			if len(action) == 0 {
 				return usagef("expected an action")
 			}
+			targetSet := false
+			fs.Visit(func(f *flag.Flag) { targetSet = targetSet || f.Name == "target" })
+			if targetSet && *target == "" {
+				return usagef("--target needs mark:NAME")
+			}
 			req := map[string]any{"op": "do", "action": strings.Join(action, " ")}
-			if *mark != "" {
-				req["target"] = *mark
+			if *target != "" {
+				req["target"] = *target
 			}
 			if err := wf.apply(req); err != nil {
 				return err
 			}
-			c, err := dialControl(os.Getenv, *target)
+			c, err := dialControl(os.Getenv, *session)
 			if err != nil {
 				return err
 			}

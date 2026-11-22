@@ -380,7 +380,8 @@ func TestWarningsKeepDefaults(t *testing.T) {
 		{"bind.cmd+m = mark a b", "mark takes only a name"},
 		{"bind.cmd+m = mark a.b", "mark needs a name"},
 		{"bind.cmd+m = swap-mark a b", "swap-mark takes only a name"},
-		{"bind.cmd+m = unmark a b", "unmark takes at most a name"},
+		{"bind.cmd+m = unmark a b", "unmark takes an optional name (letters, digits, - or _; at most 64)"},
+		{"bind.cmd+m = unmark a.b", "unmark takes an optional name (letters, digits, - or _; at most 64)"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.line, func(t *testing.T) {

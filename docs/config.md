@@ -509,8 +509,8 @@ A mark is a name on a window, used to find that window again from a bind or a sc
 
 - A mark is on at most one window; marking another window moves it. A window can hold several marks.
 - Marks last until the window closes, and survive config reloads.
-- Mark actions act on the focused window of the focused screen. They do nothing, without stopping a chain, when no window is focused, no window holds the mark, or the overview is open.
-- `swap-mark` does nothing with a stashed, fullscreen or dialog window, or a window with a dialog. `move-to-mark` needs two plain tiles.
+- Mark actions use the focused window of the focused screen (`unmark <name>`, `focus-mark`, `swap-mark` and `move-to-mark` find the holder anywhere). Without a focused window or a holder they do nothing and do not stop a chain; the same holds while the overview is open.
+- `swap-mark` does nothing with a stashed, fullscreen or dialog window, a window with a dialog, a window held over a fullscreen, or the window of a [column slot](#keys) (`workspace.<name>.column.<N>`). `move-to-mark` needs two plain tiles, none of them held or a slot window.
 - `--mark` comes right after `spawn` or `stash`. The mark waits 60s for the first window of that program. It does not work for X11 (Xwayland) apps, as for `stash`.
 - `focus-mark <name> <command>` (run-or-raise) runs the command only once while its window is pending.
 - The state lists each window's `marks` (see [State for scripts](desktop.md#state-for-scripts)); scripts act on a marked window with [`neferwl do --target`](control.md#act-on-a-marked-window).

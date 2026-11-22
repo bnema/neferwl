@@ -235,3 +235,11 @@ func TestControlUsage(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// An explicitly empty --target is a usage error, before connecting.
+func TestDoEmptyTarget(t *testing.T) {
+	code, _, stderr := execute(t, "do", "--target", "", "close-window")
+	if code != 2 || !strings.Contains(stderr, "--target needs mark:NAME") {
+		t.Fatalf("exit %d, stderr %s", code, stderr)
+	}
+}

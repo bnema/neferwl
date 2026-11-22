@@ -1707,11 +1707,11 @@ func checkMarkAction(v string) (handled bool, err error) {
 		if ok {
 			fields = strings.Fields(rest)
 		}
+		if op == "unmark" && (len(fields) > 1 || len(fields) == 1 && !domain.ValidMarkName(fields[0])) {
+			return true, fmt.Errorf("unmark takes an optional name (letters, digits, - or _; at most 64)")
+		}
 		if len(fields) == 0 || !domain.ValidMarkName(fields[0]) {
 			return true, fmt.Errorf("%s needs a name (letters, digits, - or _; at most 64)", op)
-		}
-		if len(fields) > 1 && op == "unmark" {
-			return true, fmt.Errorf("unmark takes at most a name")
 		}
 		if len(fields) > 1 && op != "focus-mark" {
 			return true, fmt.Errorf("%s takes only a name", op)

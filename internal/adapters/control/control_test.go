@@ -93,7 +93,7 @@ func TestProtocol(t *testing.T) {
 	if !reflect.DeepEqual(caps, []string{"read", "act", "input", "capture", "admin"}) {
 		t.Fatal(caps)
 	}
-	for _, line := range []string{`{broken`, `{"id":2,"op":"unknown"}`, `{"id":3,"op":"do","action":"none","wait":"bad"}`, `{"id":4,"op":"do","action":"none","until":"bad"}`, `{"id":5,"op":"do","action":"none","timeout":"bad"}`, `{"id":5,"op":"do","action":"none","timeout":"6m"}`, `{"op":"do"}`, `{"id":9,"op":"do","action":"none","target":"a"}`, `{"id":9,"op":"do","action":"none","target":"mark:"}`, `{"id":9,"op":"do","action":"none","target":"mark:a b"}`} {
+	for _, line := range []string{`{broken`, `{"id":2,"op":"unknown"}`, `{"id":3,"op":"do","action":"none","wait":"bad"}`, `{"id":4,"op":"do","action":"none","until":"bad"}`, `{"id":5,"op":"do","action":"none","timeout":"bad"}`, `{"id":5,"op":"do","action":"none","timeout":"6m"}`, `{"op":"do"}`, `{"id":9,"op":"do","action":"none","target":"a"}`, `{"id":9,"op":"do","action":"none","target":"mark:"}`, `{"id":9,"op":"do","action":"none","target":"mark:a b"}`, `{"id":9,"op":"do","action":"none","target":"mark:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`, `{"id":9,"op":"do","action":"none","target":""}`} {
 		got := exchange(line)
 		if string(got["error"]) != `"bad-request"` || string(got["ok"]) != "false" {
 			t.Fatal(got)
