@@ -47,7 +47,7 @@ func TestDropAxisWarningOnOutput(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() { done <- c.Run(ctx) }()
-		defer func() { cancel(); <-done }()
+		defer func() { cancel(); discardedErr := <-done; _ = discardedErr }()
 		synctest.Wait()
 		if got := drainWarnings(errs); len(got) != 0 {
 			t.Fatalf("warned before the output: %q", got)
