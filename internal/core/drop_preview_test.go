@@ -62,6 +62,9 @@ func TestDropPreviewLabels(t *testing.T) {
 				t.Fatalf("%s: no preview at %d,%d", c.name, c.x, c.y)
 			}
 			p := *pp
+			if wantEdge := map[bool]domain.DropSide{true: domain.DropSideRight}[c.name == "stash"]; p.Edge != wantEdge {
+				t.Fatalf("%s: edge %v", c.name, p.Edge)
+			}
 			if p.Label != c.want.Label() || p.Label == "" || p.Radius != c.radius || p.LabelPx <= 0 || p.Fill != 0.18 || p.Thumb != 0 {
 				t.Fatalf("%s: preview %+v", c.name, p)
 			}

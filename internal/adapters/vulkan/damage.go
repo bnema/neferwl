@@ -376,7 +376,7 @@ func sceneDelta(old, cur domain.Scene, phys func(domain.Rect) image.Rectangle, l
 		}
 	}
 	if (old.DropPreview == nil) != (cur.DropPreview == nil) || (old.DropPreview != nil && *old.DropPreview != *cur.DropPreview) {
-		area = area.Union(dropPreviewArea(old.DropPreview, phys)).Union(dropPreviewArea(cur.DropPreview, phys))
+		area = area.Union(dropPreviewArea(old.DropPreview, old.Scale, phys)).Union(dropPreviewArea(cur.DropPreview, cur.Scale, phys))
 	}
 	for i := range old.Windows {
 		a, b := old.Windows[i], cur.Windows[i]
@@ -399,8 +399,10 @@ func sceneDelta(old, cur domain.Scene, phys func(domain.Rect) image.Rectangle, l
 const dropPreviewOutline = 2
 
 // dropPreviewArea is where p draws (physical, through phys): its zone and
-// thumbnail, outlines included; empty for nil.
-func dropPreviewArea(p *domain.DropPreview, phys func(domain.Rect) image.Rectangle) image.Rectangle {
+// thumbnail, outlines included, and for an edge band the strip beyond it
+// where its label pill may go (dropLabelAt, sized by dropPillBound);
+// empty for nil.
+func dropPreviewArea(p *domain.DropPreview, scale float64, phys func(domain.Rect) image.Rectangle) image.Rectangle {
 	var area image.Rectangle
 	if p == nil {
 		return area
@@ -414,7 +416,35 @@ func dropPreviewArea(p *domain.DropPreview, phys func(domain.Rect) image.Rectang
 	if p.Thumb != 0 && p.ThumbRect.W > 0 && p.ThumbRect.H > 0 {
 		area = area.Union(phys(grow(p.ThumbRect)))
 	}
+	if p.Edge != domain.DropSideCenter && p.Label != "" && p.LabelPx > 0 {
+		w, h := dropPillBound(p, scale)
+		r := p.Rect
+		switch p.Edge {
+		case domain.DropSideTop:
+			r = domain.Rect{X: r.X, Y: r.Y + r.H, W: r.W, H: dropLabelMargin + h}
+		case domain.DropSideBottom:
+			r = domain.Rect{X: r.X, Y: r.Y - dropLabelMargin - h, W: r.W, H: dropLabelMargin + h}
+		case domain.DropSideLeft:
+			r = domain.Rect{X: r.X + r.W, Y: r.Y, W: dropLabelMargin + w, H: r.H}
+		case domain.DropSideRight:
+			r = domain.Rect{X: r.X - dropLabelMargin - w, Y: r.Y, W: dropLabelMargin + w, H: r.H}
+		}
+		area = area.Union(phys(grow(r)))
+	}
 	return area
+}
+
+// dropPillBound is an upper bound of p's label pill size, logical px: a
+// monospace advance below 0.7 em, a line below 1.5 em, the padding, and a
+// pixel of rounding.
+func dropPillBound(p *domain.DropPreview, scale float64) (w, h int) {
+	if scale <= 0 {
+		scale = 1
+	}
+	em := p.LabelPx / scale
+	w = int(math.Ceil(float64(len(p.Label))*0.7*em)) + 2*dropLabelPadX + 2
+	h = int(math.Ceil(1.5*em)) + 2*dropLabelPadY + 2
+	return w, h
 }
 
 // separatorDelta is the region where the separator lists differ: a line in

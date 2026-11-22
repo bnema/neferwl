@@ -172,11 +172,22 @@ func (w *sceneWalk) dropPreview() {
 	}
 	for _, win := range w.s.Windows {
 		if win.Proxy && win.ID == p.Thumb && drawsAsWindow(win) {
+			win.Radius = thumbRadius(w.s.Border.Radius, win.Zoom)
 			w.window(win)
 			w.dropRing(win.Rect, win.Radius)
 			return
 		}
 	}
+}
+
+// thumbRadius is the thumbnail's corner radius, logical px: the window
+// radius at the thumbnail's zoom, at least dropThumbMinRadius; square
+// when windows are.
+func thumbRadius(radius int, zoom float64) int {
+	if radius <= 0 {
+		return 0
+	}
+	return max(int(math.Round(float64(radius)*zoom)), dropThumbMinRadius)
 }
 
 // dropRing outlines r (logical) dropOutline px wide, opaque, rounded with
@@ -197,30 +208,43 @@ func (w *sceneWalk) dropRing(r domain.Rect, radius int) {
 // core's overlay IDs stay below 1<<62 + n, so it never collides.
 const dropLabelOverlay uint64 = 1 << 63
 
-// dropLabelPad is the label pill's padding, logical px; dropLabelMargin is
-// the least room it leaves on each side of the zone.
+// The label pill, logical px: dropLabelPadX/Y pad the text, and
+// dropLabelMargin is the least room it leaves on each side of the zone,
+// and its distance from an edge band it does not fit in.
+// dropThumbMinRadius is the least thumbnail corner radius.
 const (
-	dropLabelPad    = 6
-	dropLabelMargin = 8
+	dropLabelPadX      = 8
+	dropLabelPadY      = 4
+	dropLabelMargin    = 8
+	dropLabelMinRadius = 4
+	dropThumbMinRadius = 3
 )
 
-// dropLabel centres the action's label pill in zone (physical) when it
-// fits with dropLabelMargin to spare. The raster is cached by label and
-// style (overlaydraw), the GPU copy by the label's hash as its Seq.
+// dropLabel draws the action's label pill: a rounded fill in Border.Active
+// with the text over it, centred in zone (physical) when it fits with
+// dropLabelMargin to spare; for an edge band it does not fit in, inside
+// the output, dropLabelMargin beyond the band's inner side and centred
+// along it. The text raster is cached by label and style (overlaydraw),
+// its GPU copy by the label's hash as its Seq.
 func (w *sceneWalk) dropLabel(p *domain.DropPreview, zone image.Rectangle) {
 	r := w.r
 	if p.Label == "" || p.LabelPx <= 0 || r.lost {
 		return
 	}
 	bg, fg := overlaydraw.Colors(w.s.Border.Active, "", "")
-	style := overlaydraw.Style{FontPx: p.LabelPx, Background: bg, Foreground: fg, PadPx: dropLabelPad * w.scale}
+	style := overlaydraw.Style{FontPx: p.LabelPx, Background: bg, Foreground: fg,
+		PadX: dropLabelPadX * w.scale, PadY: dropLabelPadY * w.scale, TextOnly: true}
 	pix, lw, lh := r.overlayRaster.Label(p.Label, 0, w.scale, style)
-	m := w.phys(dropLabelMargin)
-	if lw <= 0 || lh <= 0 || lw > zone.Dx()-2*m || lh > zone.Dy()-2*m {
+	if lw <= 0 || lh <= 0 {
 		return
 	}
-	x, y := zone.Min.X+(zone.Dx()-lw)/2, zone.Min.Y+(zone.Dy()-lh)/2
+	x, y, ok := dropLabelAt(p.Edge, zone, lw, lh, w.phys(dropLabelMargin))
+	if !ok {
+		return
+	}
 	rect := image.Rect(x, y, x+lw, y+lh)
+	radius := float32(max(min(float64(lh)/2, float64(w.s.Border.Radius)*w.scale), dropLabelMinRadius*w.scale))
+	w.fillRounded(rect, w.active, min(radius, float32(lh)/2))
 	clip := rect.Intersect(w.bounds)
 	if clip.Empty() {
 		return
@@ -240,6 +264,27 @@ func (w *sceneWalk) dropLabel(p *domain.DropPreview, zone image.Rectangle) {
 	dr.shm = c
 	dr.pc.buf = [4]uint32{0, uint32(lw), uint32(lh), 0}
 	w.draws = append(w.draws, dr)
+}
+
+// dropLabelAt is the top-left of an lw×lh pill (physical) for zone: centred
+// inside it with margin m to spare, else, for an edge band, m beyond its
+// inner side and centred along it. ok is false when it has no place.
+func dropLabelAt(edge domain.DropSide, zone image.Rectangle, lw, lh, m int) (x, y int, ok bool) {
+	cx, cy := zone.Min.X+(zone.Dx()-lw)/2, zone.Min.Y+(zone.Dy()-lh)/2
+	if lw <= zone.Dx()-2*m && lh <= zone.Dy()-2*m {
+		return cx, cy, true
+	}
+	switch edge {
+	case domain.DropSideTop:
+		return cx, zone.Max.Y + m, true
+	case domain.DropSideBottom:
+		return cx, zone.Min.Y - m - lh, true
+	case domain.DropSideLeft:
+		return zone.Max.X + m, cy, true
+	case domain.DropSideRight:
+		return zone.Min.X - m - lw, cy, true
+	}
+	return 0, 0, false
 }
 
 // labelSeq versions the drop label's GPU copy by its text (FNV-1a, never

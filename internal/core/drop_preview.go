@@ -107,6 +107,9 @@ func (c *Core) advanceDropPreview(now time.Time) {
 	}
 	sc := t.screen
 	p := domain.DropPreview{Rect: r, Fill: fill, Label: t.a.Action.Label(), LabelPx: c.dropLabelPx(sc)}
+	if t.a.Kind == AnchorEdge {
+		p.Edge = t.a.Side
+	}
 	if t.a.Kind == AnchorWindow && t.ws.Gap() > 0 {
 		p.Radius = c.cfg.Border.Radius
 	}

@@ -292,6 +292,9 @@ type DropPreview struct {
 	Label string
 	// LabelPx is the label font size, physical px.
 	LabelPx float64
+	// Edge is the output edge of an edge anchor, DropSideCenter for any
+	// other: its label goes beyond the band, inside the output.
+	Edge DropSide
 	// Thumb is the dragged window drawn as a thumbnail at ThumbRect, 0
 	// for none.
 	Thumb     WindowID

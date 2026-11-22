@@ -648,3 +648,16 @@ func TestHoldCopiesDropPreview(t *testing.T) {
 		t.Fatalf("hold allocated %v times", n)
 	}
 }
+
+// A moved edge label damages the strips beyond both bands, and only them
+// plus the bands.
+func TestDamageDeltaEdgeLabel(t *testing.T) {
+	bounds := image.Rect(0, 0, 1000, 500)
+	old := deltaScene(1, win(1, 0, 0, 500, 500), win(2, 500, 0, 500, 500))
+	old.DropPreview = &domain.DropPreview{Rect: domain.Rect{Y: 468, W: 1000, H: 32}, Label: "workspace", LabelPx: 13, Edge: domain.DropSideBottom}
+	cur := deltaScene(2, win(1, 0, 0, 500, 500), win(2, 500, 0, 500, 500))
+	d := newDamage(held(old), cur, bounds)
+	require.False(t, d.all())
+	_, h := dropPillBound(old.DropPreview, 1)
+	assert.Equal(t, image.Rect(0, 468-dropLabelMargin-h-2, 1000, 500), d.area)
+}
