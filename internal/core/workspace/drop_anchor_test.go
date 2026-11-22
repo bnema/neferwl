@@ -349,3 +349,25 @@ func TestAnchorInvalidSideKeepsCenterSymmetric(t *testing.T) {
 		}
 	})
 }
+
+// Hysteresis keeps the symmetric centre: the pointer just outside it,
+// over another valid band, stays on the centre it comes from.
+func TestAnchorSymmetricCenterHysteresis(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w, _ := anchorWorkspace()
+		r := rectOf(t, w, 2)
+		p := domain.DefaultDropPolicy()
+		center := w.AnchorAt(w, 1, r.X+r.W/2, r.Y+r.H/2, Anchor{}, p)
+		if center.Kind != AnchorWindow || center.Side != domain.DropSideCenter {
+			t.Fatalf("center = %+v", center)
+		}
+		x, y := r.X+r.W/2, center.Rect.Y-anchorHysteresis+1
+		top := w.AnchorAt(w, 1, x, y, Anchor{}, p)
+		if top.Kind != AnchorWindow || top.Side == domain.DropSideCenter || top == center {
+			t.Fatalf("no other band at %d,%d: %+v", x, y, top)
+		}
+		if got := w.AnchorAt(w, 1, x, y, center, p); got != center {
+			t.Fatalf("from the centre = %+v, want %+v", got, center)
+		}
+	})
+}
