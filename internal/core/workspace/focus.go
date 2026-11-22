@@ -52,11 +52,21 @@ func (w *Workspace) FocusID(id WindowID) bool {
 }
 
 // Select selects id as FocusID does, without the side effects of a user
-// focus on a tile: no unmaximize, the stash shown over a cover stays and
-// the view does not scroll. A float is raised as by FocusID; a window in
-// a hidden stash gives false.
+// focus: no unmaximize, no scroll, the stash shown over a cover stays and
+// no held window takes the cover. A float is raised to the top; a held
+// float or a window in a hidden stash gives false.
 func (w *Workspace) Select(id WindowID) bool {
-	if w.floatIndex(id) >= 0 || w.StashIndex(id) >= 0 {
+	if i := w.floatIndex(id); i >= 0 {
+		if w.IsHeld(id) {
+			return false
+		}
+		f := w.Floats[i]
+		f.below = false
+		w.Floats = append(slices.Delete(w.Floats, i, i+1), f)
+		w.floatFocus = true
+		return true
+	}
+	if w.StashIndex(id) >= 0 {
 		return w.FocusID(id)
 	}
 	for i := range w.Columns {
