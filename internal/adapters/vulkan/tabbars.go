@@ -57,8 +57,10 @@ func (w *sceneWalk) tabBars() {
 			if tab.Active {
 				// Clipped to the bar's shape: rounded where it reaches
 				// a bar corner, however narrow.
-				if dr := w.fillRounded(rect, w.active, radius); dr != nil {
-					roundedDraw(dr, full, radius, cornersBottom)
+				n := len(w.draws)
+				w.fill(rect, w.active)
+				if len(w.draws) > n && radius > 0 {
+					roundedDraw(&w.draws[n], full, radius, cornersBottom)
 				}
 				bg, ink = activeBg, activeInk
 			}
