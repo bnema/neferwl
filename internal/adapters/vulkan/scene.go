@@ -156,28 +156,47 @@ const dropOutline = 2
 // dragged window's thumbnail (its Proxy window) with its outline.
 func (w *sceneWalk) dropPreview() {
 	p := w.s.DropPreview
-	if p == nil || p.Rect.W <= 0 || p.Rect.H <= 0 {
+	if p == nil {
 		return
 	}
-	alpha := w.alpha
-	w.alpha = float32(max(0, min(p.Fill, 1)))
-	radius := float32(math.Round(float64(p.Radius) * w.scale))
-	zone := w.physRect(p.Rect.X, p.Rect.Y, p.Rect.W, p.Rect.H)
-	w.fillRounded(zone, w.active, radius)
-	w.alpha = alpha
-	w.dropRing(p.Rect, p.Radius)
-	w.dropLabel(p, zone)
+	// No zone (no target): the thumbnail alone.
+	if p.Rect.W > 0 && p.Rect.H > 0 {
+		alpha := w.alpha
+		w.alpha = float32(max(0, min(p.Fill, 1)))
+		radius := float32(math.Round(float64(p.Radius) * w.scale))
+		zone := w.physRect(p.Rect.X, p.Rect.Y, p.Rect.W, p.Rect.H)
+		w.fillRounded(zone, w.active, radius)
+		w.alpha = alpha
+		w.dropRing(p.Rect, p.Radius)
+		w.dropLabel(p, zone)
+	}
 	if p.Thumb == 0 {
 		return
 	}
-	for _, win := range w.s.Windows {
-		if win.Proxy && win.ID == p.Thumb && drawsAsWindow(win) {
-			win.Radius = thumbRadius(w.s.Border.Radius, win.Zoom)
-			w.window(win)
-			w.dropRing(win.Rect, win.Radius)
-			return
+	// The Proxy entry, else the normal one drawn again at ThumbRect.
+	found := -1
+	for i, win := range w.s.Windows {
+		if win.ID != p.Thumb || !drawsAsWindow(win) {
+			continue
+		}
+		if win.Proxy {
+			found = i
+			break
+		}
+		if found < 0 && win.Preview == 0 {
+			found = i
 		}
 	}
+	if found < 0 {
+		return
+	}
+	win := w.s.Windows[found]
+	if !win.Proxy {
+		win.Rect, win.Zoom = p.ThumbRect, p.ThumbZoom
+	}
+	win.Radius = thumbRadius(w.s.Border.Radius, win.Zoom)
+	w.window(win)
+	w.dropRing(win.Rect, win.Radius)
 }
 
 // thumbRadius is the thumbnail's corner radius, logical px: the window

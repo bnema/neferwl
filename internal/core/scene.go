@@ -48,7 +48,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		scene.Dim = c.cfg.Floating.Dim
 		scene.DimBehind = scene.Dim > 0
 	}
-	if d := c.drag; d != nil && d.target.screen == sc && d.target.a.Kind != AnchorNone {
+	if d := c.drag; d != nil && d.anim.screen == sc {
 		scene.DropPreview = d.target.preview
 	}
 	if sc.mon.ov.open {

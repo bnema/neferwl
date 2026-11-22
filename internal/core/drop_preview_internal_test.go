@@ -91,6 +91,7 @@ func TestDropThumbnailMoveReplacesPreview(t *testing.T) {
 		sc.arrange()
 		c.refreshShown()
 		c.cursorX, c.cursorY = 500, 300
+		c.drag.moved = true
 		c.retarget(w)
 		c.advanceDropPreview(c.now())
 		p := c.drag.target.preview

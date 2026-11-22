@@ -162,6 +162,35 @@ func TestSceneDropPreviewProxy(t *testing.T) {
 	require.Len(t, r.draws(s, nil, newDamage(&target{}, s, bounds)), len(r.draws(bare, nil, newDamage(&target{}, bare, bounds))))
 }
 
+// A window the output draws in place keeps its one slot draw; its
+// thumbnail draws it again at ThumbRect from the same entry, with an
+// outline, also without a zone.
+func TestSceneDropPreviewThumbFromNormalEntry(t *testing.T) {
+	r := &Renderer{width: 80, height: 60}
+	bounds := image.Rect(0, 0, 80, 60)
+	thumb := domain.Rect{X: 50, Y: 30, W: 10, H: 15}
+	for _, zone := range []domain.Rect{{X: 42, Y: 2, W: 30, H: 20}, {}} {
+		s := dropScene(&domain.DropPreview{Rect: zone, Fill: 0.18, Thumb: 1, ThumbRect: thumb, ThumbZoom: 0.25})
+		got := r.draws(s, nil, newDamage(&target{}, s, bounds))
+		slot, at := 0, -1
+		for i, d := range got {
+			switch {
+			case d.pc.rect == [4]int32{0, 0, 40, 60}:
+				slot++
+			case d.pc.rect == [4]int32{50, 30, 60, 45} && !isRed(d):
+				require.Equal(t, -1, at, "thumbnail drawn twice")
+				at = i
+			}
+		}
+		require.Equal(t, 1, slot, "zone %v: window drawn once in its slot: %+v", zone, got)
+		require.NotEqual(t, -1, at, "zone %v: no thumbnail: %+v", zone, got)
+		// Its 4 outline strips follow.
+		for _, d := range got[at+1 : at+5] {
+			require.True(t, isRed(d))
+		}
+	}
+}
+
 // With rounded windows the thumbnail and its outline are rounded at the
 // thumbnail's zoom, at least 3 px.
 func TestSceneDropPreviewRoundedProxy(t *testing.T) {

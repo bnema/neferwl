@@ -585,8 +585,8 @@ func dragFixedNoGapZone(t *testing.T, r *dragRig) {
 	r.settle(t)
 	r.press(t, 0x110, domain.ModSuper)
 	r.moveTo(float64((one.X+one.W+two.X)/2), float64(one.Y+one.H/2), 2)
-	if pv := dragScene(r.settle(t), "A").DropPreview; pv != nil {
-		t.Fatalf("fixed gap preview %+v", pv)
+	if pv := dragScene(r.settle(t), "A").DropPreview; pv == nil || pv.Rect.W != 0 || pv.Thumb != 1 {
+		t.Fatalf("fixed gap preview %+v, want the thumbnail alone", pv)
 	}
 	// Top band of 2 stacks 1 above it.
 	r.moveTo(float64(two.X+two.W/2), float64(two.Y+40), 3)

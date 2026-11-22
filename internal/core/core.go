@@ -785,7 +785,7 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 	}
 	c.advanceFlash(only)
 	// Like the flash: a flip of another output leaves the preview as it is.
-	if c.drag != nil && (only == nil || only == c.drag.target.screen) {
+	if c.drag != nil && (only == nil || only == c.drag.target.screen || only == c.drag.anim.screen) {
 		c.advanceDropPreview(c.now())
 	}
 	scenes := make([]domain.Scene, 0, len(c.screens))

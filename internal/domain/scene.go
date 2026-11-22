@@ -299,10 +299,13 @@ type DropPreview struct {
 	// Edge is the output edge of an edge anchor, DropSideCenter for any
 	// other: its label goes beyond the band, inside the output.
 	Edge DropSide
-	// Thumb is the dragged window drawn as a thumbnail at ThumbRect, 0
-	// for none.
+	// Thumb is the dragged window drawn as a thumbnail at ThumbRect with
+	// content scale ThumbZoom, 0 for none. The renderer draws it from the
+	// window's Proxy entry, or from its normal entry a second time when
+	// the output also shows it in place.
 	Thumb     WindowID
 	ThumbRect Rect
+	ThumbZoom float64
 }
 
 // Tile reports whether w is a tile: laid out in the usable area and
