@@ -128,8 +128,8 @@ neferwl -s demo state | jq '.windows[] | select(.marks | index("music")) | .id'
 
 - Allowed actions: `close-window`, `toggle-floating`, `toggle-fullscreen`, `toggle-window-stash`, `move-window-to-workspace N`. N is a workspace of the window's own output, clamped as for the bind; the focus does not follow.
 - Checks run in order: any other action, a chain or a malformed target returns `bad-request`; a locked session returns `locked`; no window holding the mark returns `no-target`.
-- `close-window` always closes the target, even in a hidden stash or under another window's fullscreen. The other actions do nothing, and reply ok, when the target cannot take its workspace's focus (it is in a hidden stash, or a float under another window's fullscreen). A floating target is raised.
-- `move-window-to-workspace N` does nothing when workspace N has a fullscreen window. It never moves the user's focus.
+- `close-window` always closes the target, even in a hidden stash or under another window's fullscreen. The other actions do nothing, and reply ok, when the target cannot take its workspace's focus: it is in a hidden stash, under another window's fullscreen, or a held fullscreen member. A floating target is raised.
+- `move-window-to-workspace N` does nothing when workspace N has a fullscreen window or the target is fullscreen. It moves the window without changing the focus or scrolling either workspace; in a fixed layout, a maximized column on workspace N is restored, as for any new window there.
 - Targeted actions do not close the window switcher or take the keyboard from a launcher.
 - While the overview is open on the window's output, nothing happens.
 

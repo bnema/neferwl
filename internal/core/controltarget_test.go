@@ -301,3 +301,17 @@ func TestTargetMoveIntoShownIsQuiet(t *testing.T) {
 		})
 	}
 }
+
+// A tile under another window's fullscreen cannot take the selection
+// either: Select does not scroll the cover away.
+func TestTargetTileUnderCoverIsNoop(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := runChainRig(t, "none")
+		r.mustDo(t, "focus-column-left; focus-column-left; mark a; focus-column-right; focus-column-right; toggle-fullscreen")
+		r.mustTarget(t, "a", "toggle-floating")
+		st := r.current(t)
+		if stateWindow(t, st, 3).Floating || !stateWindow(t, st, 5).Fullscreen || stateFocus(st) != 5 {
+			t.Fatalf("covered tile changed: 3 floating %v, focus %d", stateWindow(t, st, 3).Floating, stateFocus(st))
+		}
+	})
+}
