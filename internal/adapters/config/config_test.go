@@ -1428,6 +1428,11 @@ func TestParseFont(t *testing.T) {
 	if err != nil || len(w) != 1 || !strings.Contains(w[0].Msg, "font:") || c.Font != "/nonexistent/x.ttf" {
 		t.Fatalf("bad font %q, %v, %v", c.Font, w, err)
 	}
+	// A directory is no font file: a warning, the path kept.
+	c, w, err = Parse(strings.NewReader("font = " + home + "\n"))
+	if err != nil || len(w) != 1 || !strings.Contains(w[0].Msg, "not a regular file") || c.Font != home {
+		t.Fatalf("directory font %q, %v, %v", c.Font, w, err)
+	}
 	if c, _, _ := Parse(strings.NewReader("")); c.Font != "" {
 		t.Fatalf("default font %q", c.Font)
 	}

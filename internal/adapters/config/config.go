@@ -667,10 +667,10 @@ func parseBytes(data []byte) (domain.Config, map[string]string, []Warning, error
 		}
 		if key == "font" && c.Font != "" {
 			// Kept anyway: the file may appear before the next reload.
-			if f, err := os.Open(c.Font); err != nil {
+			if fi, err := os.Stat(c.Font); err != nil {
 				warn("font: %v; the built-in font is used", err)
-			} else {
-				_ = f.Close()
+			} else if !fi.Mode().IsRegular() {
+				warn("font: %s is not a regular file; the built-in font is used", c.Font)
 			}
 		}
 		override()
