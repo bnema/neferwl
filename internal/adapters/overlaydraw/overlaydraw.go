@@ -48,7 +48,14 @@ type entry struct {
 type Raster struct {
 	faces map[float64]font.Face
 	cache map[key]entry
+	// raw maps a key with the caller's MaxWidth to its cache key, so a
+	// hit measures nothing. It is cleared with cache.
+	raw map[key]key
 }
+
+// fitCalls counts fitWidth calls; tests check that cache hits measure
+// nothing.
+var fitCalls int
 
 // Label returns the label box for text, whose first typed characters are
 // drawn dimmed, as premultiplied BGRA at scale physical pixels per logical
@@ -68,17 +75,24 @@ func (r *Raster) Label(text string, typed int, scale float64, styles ...Style) (
 	if len(styles) > 0 {
 		style = styles[0]
 	}
+	rk := key{text, typed, scale, style}
+	if k, ok := r.raw[rk]; ok {
+		if e, ok := r.cache[k]; ok {
+			return e.pix, e.w, e.h
+		}
+	}
 	face := r.face(style.FontPx)
 	if face == nil {
 		return nil, 0, 0
 	}
 	style.MaxWidth = fitWidth(face, text, style.MaxWidth)
 	k := key{text, typed, scale, style}
+	if r.cache == nil || len(r.cache) >= maxEntries || len(r.raw) >= 4*maxEntries {
+		r.cache, r.raw = map[key]entry{}, map[key]key{}
+	}
+	r.raw[rk] = k
 	if e, ok := r.cache[k]; ok {
 		return e.pix, e.w, e.h
-	}
-	if r.cache == nil || len(r.cache) >= maxEntries {
-		r.cache = map[key]entry{}
 	}
 	e := render(face, text, typed, style)
 	r.cache[k] = e
@@ -162,6 +176,7 @@ func render(face font.Face, text string, typed int, style Style) entry {
 // floored to a multiple of the font's glyph advance (the font is
 // monospace).
 func fitWidth(face font.Face, text string, maxWidth int) int {
+	fitCalls++
 	if maxWidth <= 0 || font.MeasureString(face, text).Ceil() <= maxWidth {
 		return 0
 	}
@@ -208,7 +223,8 @@ func truncate(face font.Face, text string, maxWidth int) string {
 // Len is the number of cached labels.
 func (r *Raster) Len() int { return len(r.cache) }
 
-// maxTitles bounds the Titles cache, one entry per window.
+// maxTitles bounds the Titles cache, one entry per window, as a backstop
+// to Sweep.
 const maxTitles = 256
 
 // Titles draws and caches window titles: one raster per window, replaced
@@ -220,33 +236,55 @@ type Titles struct {
 }
 
 type titleEntry struct {
-	text  string
-	style Style
-	e     entry
+	text string
+	// raw is the caller's style, style the one drawn (MaxWidth
+	// normalised); a call with the same text and raw style is a hit.
+	raw, style Style
+	e          entry
+	// used is the frame of the last call.
+	used uint64
 }
 
 // Title returns window id's title raster, like Raster.Label without typed
-// characters; style.FontPx and MaxWidth are physical. The slice stays
-// valid until the next call for id.
-func (t *Titles) Title(id uint64, text string, style Style) (pix []byte, w, h int) {
+// characters; style.FontPx and MaxWidth are physical. frame is the
+// renderer's frame counter, read by Sweep. The slice stays valid until
+// the next call for id or a Sweep.
+func (t *Titles) Title(id uint64, text string, style Style, frame uint64) (pix []byte, w, h int) {
 	if text == "" {
 		return nil, 0, 0
+	}
+	old, ok := t.m[id]
+	if ok && old.text == text && old.raw == style {
+		old.used = frame
+		t.m[id] = old
+		return old.e.pix, old.e.w, old.e.h
 	}
 	face := cachedFace(&t.faces, style.FontPx)
 	if face == nil {
 		return nil, 0, 0
 	}
+	raw := style
 	style.MaxWidth = fitWidth(face, text, style.MaxWidth)
-	old, ok := t.m[id]
 	if ok && old.text == text && old.style == style {
+		old.raw, old.used = raw, frame
+		t.m[id] = old
 		return old.e.pix, old.e.w, old.e.h
 	}
 	if t.m == nil || !ok && len(t.m) >= maxTitles {
 		t.m = map[uint64]titleEntry{}
 	}
 	e := render(face, text, 0, style)
-	t.m[id] = titleEntry{text: text, style: style, e: e}
+	t.m[id] = titleEntry{text: text, raw: raw, style: style, e: e, used: frame}
 	return e.pix, e.w, e.h
+}
+
+// Sweep drops the titles not drawn since frame-ttl.
+func (t *Titles) Sweep(frame, ttl uint64) {
+	for id, e := range t.m {
+		if frame-e.used > ttl {
+			delete(t.m, id)
+		}
+	}
 }
 
 // Len is the number of cached titles.

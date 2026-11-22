@@ -66,7 +66,7 @@ func (w *sceneWalk) tabTitle(tab domain.TabTitle, rect image.Rectangle, style ov
 	if tab.Title == "" || style.MaxWidth <= 0 || style.FontPx < 1 || r.lost {
 		return
 	}
-	pix, lw, lh := r.tabTitles.Title(uint64(tab.Window), tab.Title, style)
+	pix, lw, lh := r.tabTitles.Title(uint64(tab.Window), tab.Title, style, r.frame)
 	if lw <= 0 || lh <= 0 {
 		return
 	}
