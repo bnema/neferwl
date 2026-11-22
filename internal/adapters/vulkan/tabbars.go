@@ -34,14 +34,25 @@ func (w *sceneWalk) tabBars() {
 		if bar.Rect.W <= 0 || bar.Rect.H <= 0 {
 			continue
 		}
-		full := w.physRect(bar.Rect.X, bar.Rect.Y, bar.Rect.W, bar.Rect.H)
+		// Inside the visible tab's ring, like a window's content.
+		in := min(w.tabBarInset(&bar), bar.Rect.W/2, bar.Rect.H)
+		full := w.physRect(bar.Rect.X+in, bar.Rect.Y+in, bar.Rect.W-2*in, bar.Rect.H-in)
+		if full.Empty() {
+			continue
+		}
 		// The visible tab's title bar: top corners rounded like the
-		// windows (with gaps), at most the bar height; bottom square.
-		radius := min(float32(math.Round(float64(bar.Radius)*w.scale)), float32(full.Dy()))
+		// windows (with gaps) within the ring, at most the bar height;
+		// bottom square.
+		radius := float32(math.Round(float64(bar.Radius) * w.scale))
+		if in > 0 && radius > 0 {
+			bPhys := min(full.Min.X-w.phys(bar.Rect.X), full.Min.Y-w.phys(bar.Rect.Y))
+			radius = max(radius-float32(max(bPhys, 0)), 0)
+		}
+		radius = min(radius, float32(full.Dy()))
 		w.square = cornersBottom
 		w.fillRounded(full, fill, radius)
 		for i, tab := range bar.Tabs {
-			rect := w.physRect(tab.Rect.X, tab.Rect.Y, tab.Rect.W, tab.Rect.H)
+			rect := w.physRect(tab.Rect.X, tab.Rect.Y, tab.Rect.W, tab.Rect.H).Intersect(full)
 			bg, ink := inactiveBg, inactiveInk
 			if tab.Active {
 				// Rounded only on the corners it shares with the bar.
@@ -90,13 +101,34 @@ func tabBarFill(inactive, bg, active [3]uint8) [3]uint8 {
 	return c
 }
 
-// tabSquare is the square-corner mask of a window or flash at r (logical):
-// a visible tab's top corners sit under its bar (domain.TabBar), square.
+// tabSquare is the square-corner mask of a window at r (logical): a
+// visible tab's top corners sit under its bar (domain.TabBar), square.
 func (w *sceneWalk) tabSquare(r domain.Rect) uint32 {
-	for i := range w.s.TabBars {
-		b := &w.s.TabBars[i].Rect
+	if _, ok := tabRing(w.s.TabBars, r); ok {
+		return cornersTop
+	}
+	return 0
+}
+
+// tabRing is the rect a window or flash at r (logical) outlines: for a
+// visible tab, the union of r and its bar (one entity, one ring); ok
+// false, r otherwise.
+func tabRing(bars []domain.TabBar, r domain.Rect) (domain.Rect, bool) {
+	for i := range bars {
+		b := &bars[i].Rect
 		if gap := r.Y - b.Y - b.H; r.X == b.X && r.W == b.W && gap >= 0 && gap <= domain.TabBarGap {
-			return cornersTop
+			return domain.Rect{X: r.X, Y: b.Y, W: r.W, H: r.Y + r.H - b.Y}, true
+		}
+	}
+	return r, false
+}
+
+// tabBarInset is the bar's room inside its visible tab's ring: the
+// border width when that window draws its own ring (gaps), else 0.
+func (w *sceneWalk) tabBarInset(bar *domain.TabBar) int {
+	for _, tab := range bar.Tabs {
+		if tab.Active && w.ringColor(tab.Window) != "" {
+			return max(w.s.Border.Width, 0)
 		}
 	}
 	return 0
@@ -140,4 +172,31 @@ func (w *sceneWalk) tabTitle(tab domain.TabTitle, rect image.Rectangle, style ov
 	dr.shm = c
 	dr.pc.buf = [4]uint32{0, uint32(lw), uint32(lh), 0}
 	w.draws = append(w.draws, dr)
+}
+
+// tabSeparators is separators for a visible tab at r without radius: its
+// lines grown to enclose its bar, u (tabRing): the top line moves to the
+// bar's top, the side lines reach it.
+func (w *sceneWalk) tabSeparators(id domain.WindowID, r, u domain.Rect) {
+	for _, sep := range w.s.Separators {
+		if sep.Window != id {
+			continue
+		}
+		col, color := w.s.Border.Inactive, w.inactive
+		if sep.Active {
+			col, color = w.s.Border.Active, w.active
+		}
+		if col == "" {
+			continue
+		}
+		s := sep.Rect
+		if s.Y == r.Y {
+			if s.H < r.H && s.W > s.H {
+				s.Y = u.Y // the top line
+			} else {
+				s.Y, s.H = u.Y, s.H+r.Y-u.Y
+			}
+		}
+		w.fill(w.physRect(s.X, s.Y, s.W, s.H), color)
+	}
 }

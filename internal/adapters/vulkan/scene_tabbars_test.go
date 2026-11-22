@@ -218,3 +218,86 @@ func TestTabBarFill(t *testing.T) {
 	got := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 256, 64)))
 	require.Equal(t, uint8(0x33), uint8(got[0].pc.color[0]*255+0.5), "visible bar")
 }
+
+// ringedTab is tabScene's bar with radius 12 over its visible tab (window
+// 2, 2 px under it) with gaps: the window owns its four border lines.
+func ringedTab(active bool) domain.Scene {
+	s := tabScene("b")
+	s.TabBars[0].Radius = 12
+	s.Border.Width, s.Border.Radius = 2, 12
+	win := domain.Rect{X: 0, Y: 23, W: 240, H: 60}
+	s.Windows = []domain.SceneWindow{{ID: 2, Rect: win, Radius: 12, Inset: domain.SideAll, Focused: active}}
+	for _, side := range []domain.Sides{domain.SideLeft, domain.SideRight, domain.SideTop, domain.SideBottom} {
+		r := win
+		switch side {
+		case domain.SideLeft:
+			r.W = 2
+		case domain.SideRight:
+			r.X, r.W = win.X+win.W-2, 2
+		case domain.SideTop:
+			r.H = 2
+		case domain.SideBottom:
+			r.Y, r.H = win.Y+win.H-2, 2
+		}
+		s.Separators = append(s.Separators, domain.Separator{Rect: r, Active: active, Window: 2})
+	}
+	return s
+}
+
+// A visible tab's ring encloses its bar: drawn once around the union, four
+// corners rounded, its hole up to the bar's inner top; the bar fill sits
+// inside the ring and the window keeps its square-top content clip.
+func TestSceneTabRingEnclosesBar(t *testing.T) {
+	r := newTestRenderer(t, 256, 128)
+	defer r.Close()
+	bounds := image.Rect(0, 0, 256, 128)
+	s := ringedTab(true)
+	got := r.draws(s, nil, newDamage(&target{}, s, bounds))
+	rings := 0
+	for _, d := range got {
+		if d.pc.misc[1]&flagRing == 0 {
+			continue
+		}
+		rings++
+		require.Equal(t, [4]int32{0, 0, 240, 83}, d.pc.rect, "ring around bar and window")
+		require.Zero(t, d.square, "four rounded corners")
+		require.Equal(t, float32(12), math.Float32frombits(d.radii[0]))
+		require.Equal(t, float32(2+1), d.roundInner[1], "hole from the bar's inner top")
+		require.Equal(t, uint8(0x33), uint8(d.pc.color[0]*255+0.5), "active colour")
+	}
+	require.Equal(t, 1, rings)
+	var bar *draw
+	for i := range got {
+		if got[i].square == cornersBottom && got[i].shm == nil {
+			bar = &got[i]
+			break
+		}
+	}
+	require.NotNil(t, bar)
+	require.Equal(t, [4]int32{2, 2, 238, 21}, bar.pc.rect, "bar inside the ring")
+	require.Equal(t, float32(10), math.Float32frombits(bar.radii[0]), "inner radius")
+	body := 0
+	for _, d := range got {
+		if d.pc.misc[1]&flagRing == 0 && d.round[1] == 25 && d.pc.misc[1]&flagRounded != 0 {
+			require.Equal(t, cornersTop, d.square, "content clip square on top")
+			body++
+		}
+	}
+	require.NotZero(t, body)
+
+	// No more allocations than the same scene without the ring.
+	bare := s
+	bare.Separators = nil
+	base := testing.AllocsPerRun(50, func() { r.draws(bare, nil, newDamage(&target{}, bare, bounds)) })
+	if n := testing.AllocsPerRun(50, func() { r.draws(s, nil, newDamage(&target{}, s, bounds)) }); n > base {
+		t.Fatalf("ring allocated %v times, %v without it", n, base)
+	}
+}
+
+// A focus change on the visible tab damages its bar with the window.
+func TestTabRingFocusDamagesBar(t *testing.T) {
+	phys := func(r domain.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
+	area, ok := sceneDelta(ringedTab(false), ringedTab(true), phys, 1<<30)
+	require.True(t, ok)
+	require.Equal(t, image.Rect(0, 0, 240, 83), area)
+}

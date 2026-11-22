@@ -89,13 +89,13 @@ func (w *sceneWalk) focusFlash() {
 	}
 	alpha := w.alpha
 	w.alpha = float32(f.Alpha)
-	b := min(f.Width, f.Rect.W/2, f.Rect.H/2)
+	// A visible tab flashes with its bar, like its ring.
+	r, _ := tabRing(w.s.TabBars, f.Rect)
+	b := min(f.Width, r.W/2, r.H/2)
 	if f.Radius > 0 && b > 0 {
-		w.square = w.tabSquare(f.Rect)
-		w.roundedInnerBorder(f.Rect, b, f.Radius, parseColor(f.Color))
-		w.square = 0
+		w.roundedInnerBorder(r, b, f.Radius, parseColor(f.Color))
 	} else {
-		w.innerBorder(f.Rect, b, parseColor(f.Color))
+		w.innerBorder(r, b, parseColor(f.Color))
 	}
 	w.alpha = alpha
 }
@@ -483,14 +483,29 @@ func (w *sceneWalk) window(win domain.SceneWindow) {
 		bPhys := min(body.Min.X-outer.Min.X, body.Min.Y-outer.Min.Y, outer.Max.X-body.Max.X, outer.Max.Y-body.Max.Y)
 		innerRadius = max(radius-float32(max(bPhys, 0)), 0)
 		if col := w.ringColor(win.ID); col != "" && b > 0 {
-			if dr := w.fillRounded(outer, parseColor(col), radius); dr != nil {
+			// A visible tab's ring encloses its bar: one rect, four
+			// rounded corners; the hole runs up to the bar's inner top.
+			ring, hole := outer, body
+			tab := w.square != 0
+			if u, ok := tabRing(w.s.TabBars, win.Rect); ok {
+				ring = w.physRect(u.X, u.Y, u.W, u.H)
+				hole.Min.Y = w.phys(u.Y + min(b, u.H/2))
+			}
+			w.square = 0
+			dr := w.fillRounded(ring, parseColor(col), radius)
+			if tab {
+				w.square = cornersTop
+			}
+			if dr != nil {
 				dr.pc.misc[1] |= flagRing
 				// Opaque, the ring runs 1px under the body so no seam
 				// shows; faded, that overlap would double up: the hole
 				// is the body.
-				hole, holeRadius := body.Inset(1), max(innerRadius-1, 0)
+				holeRadius := max(innerRadius-1, 0)
 				if w.alpha < 1 {
-					hole, holeRadius = body, innerRadius
+					holeRadius = innerRadius
+				} else {
+					hole = hole.Inset(1)
 				}
 				dr.roundInner = roundRect(hole)
 				dr.radii[1] = math.Float32bits(holeRadius)
@@ -536,6 +551,8 @@ func (w *sceneWalk) window(win domain.SceneWindow) {
 		for j := start; j < len(w.draws); j++ {
 			roundedDraw(&w.draws[j], body, innerRadius, w.square)
 		}
+	} else if u, ok := tabRing(w.s.TabBars, win.Rect); ok {
+		w.tabSeparators(win.ID, win.Rect, u)
 	} else {
 		w.separators(win.ID)
 	}

@@ -396,6 +396,7 @@ func sceneDelta(old, cur domain.Scene, phys func(domain.Rect) image.Rectangle, l
 	}
 	area = area.Union(separatorDelta(old.Separators, cur.Separators, phys))
 	area = area.Union(tabBarDelta(old.TabBars, cur.TabBars, phys))
+	area = area.Union(tabRingDelta(old, area, phys)).Union(tabRingDelta(cur, area, phys))
 	if area.Dx()*area.Dy() > limit {
 		return image.Rectangle{}, false
 	}
@@ -503,6 +504,22 @@ func countSeparator(list []domain.Separator, sep domain.Separator) int {
 		}
 	}
 	return n
+}
+
+// tabRingDelta is the bars of s whose visible tab is in area: its ring
+// (border, flash) encloses the bar, so a ring change repaints the bar too.
+func tabRingDelta(s domain.Scene, area image.Rectangle, phys func(domain.Rect) image.Rectangle) image.Rectangle {
+	var out image.Rectangle
+	if area.Empty() {
+		return out
+	}
+	for i := range s.Windows {
+		r := s.Windows[i].Rect
+		if u, ok := tabRing(s.TabBars, r); ok && phys(r).Overlaps(area) {
+			out = out.Union(phys(u))
+		}
+	}
+	return out
 }
 
 // tabBarDelta is the area of the bars that differ between old and cur: the
